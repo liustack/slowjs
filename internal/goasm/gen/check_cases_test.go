@@ -114,6 +114,7 @@ type ckCase struct {
 	metas  func([]Meta)                 // the records and metas, before emit
 	files  func(map[string]string)      // the emitted Go files, before they are built
 	poll   string                       // Go source of host_poll in the built program; "" for none
+	loads  bool                         // lower every call with its result loads (no LowerEnv.RegResult)
 	edit   func(*EngineCheck)           // what the check is told
 	facts  func(probes, facts RegFacts) // what llc's facts say
 	calls  func(*testing.T, []Meta)     // what the lowering recorded
@@ -298,9 +299,44 @@ func TestCheckCases(t *testing.T) {
 		{name: "llc passes a call's arguments elsewhere than its callee reads them",
 			facts: func(_, f RegFacts) { f["g"].Calls[0].Args = []string{"rsi", "rdi"} },
 			want:  "h reads them from [RDI RSI]"},
-		{name: "llc takes a call's result from another register",
+		{name: "llc takes a call's result from another register", loads: true,
 			facts: func(_, f RegFacts) { f["g"].Calls[0].Defs = []string{"rdx"} },
 			want:  "is not the load of the result into RDX"},
+
+		// A call to a unified function takes the result from the registers
+		// the callee stored it from (CallRecord.RegResult): only where the
+		// record says so, only of a lowered unified function, only from the
+		// registers llc takes it from, and only with the callee held to its
+		// return sequence.
+		{name: "preserve_none: a result from registers the record says is loaded", pn: true, metas: func(ms []Meta) {
+			meta(ms, "pg").Rec.Calls[0].RegResult = false
+		}, want: "is not the load of the result into RAX"},
+		{name: "preserve_none: a result load the record says is not there", pn: true, loads: true, metas: func(ms []Meta) {
+			meta(ms, "pg").Rec.Calls[0].RegResult = true
+		}, want: "generated"},
+		{name: "a call through a pointer that takes the result from registers", metas: func(ms []Meta) {
+			meta(ms, "ic").Rec.Calls[0].RegResult = true
+		}, want: "that takes the result from registers"},
+		{name: "a call to a leaf that takes the result from registers", metas: func(ms []Meta) {
+			meta(ms, "g").Rec.Calls[1].RegResult = true
+		}, want: "that takes the result from registers"},
+		{name: "preserve_none: a result from registers of a stub", pn: true, edit: func(c *EngineCheck) {
+			var ms []Meta
+			for _, m := range c.Metas {
+				if m.Name == "ph" {
+					c.Stubs = append(c.Stubs, m)
+				} else {
+					ms = append(ms, m)
+				}
+			}
+			c.Metas = ms
+		}, want: "no lowered unified function"},
+		{name: "preserve_none: llc takes a call's result from another register than the callee returns it in", pn: true,
+			facts: func(_, f RegFacts) { f["pg"].Calls[0].Defs = []string{"rdx"} },
+			want:  "ph returns it in [RAX]"},
+		{name: "preserve_none: a return that changes the result after storing it", pn: true,
+			lower: sub("ph", `(movq\s+%rax, \d+\(%rsp\))`, "${1}\n\txorl %eax, %eax"),
+			want:  "is not a jump to the epilogue"},
 		{name: "llc reads a register after a call that nothing sets",
 			facts: func(_, f RegFacts) { f["g"].Calls[0].After = append(f["g"].Calls[0].After, "ecx") },
 			want:  "reads RCX after the call"},
@@ -512,7 +548,12 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	SetCallees(specs)
 	amd := AMD64()
 	amd.PreserveNone = c.pn
-	env := &LowerEnv{Plan: plan, Funcs: funcs}
+	// As the driver does: a call to a unified function of the case takes
+	// its result from registers.
+	env := &LowerEnv{Plan: plan, Funcs: funcs, RegResult: map[string]bool{}}
+	for _, n := range unit.FuncOrder {
+		env.RegResult[n] = !leaves[n] && !c.loads
+	}
 	var metas []Meta
 	lowered := ".text\n"
 	for _, n := range unit.FuncOrder {

@@ -258,6 +258,52 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			icalls++
 		}
 	}
+	// Each call of the body is the next one of the record, and it loads its
+	// result back from the Go stack unless the record says it takes it from
+	// the result registers (CallRecord.RegResult), which only a lowered
+	// unified function leaves the result in: this check holds each of them
+	// to storing it from x0, x1 or d0 and then running only Go's epilogue.
+	unified := map[string]bool{}
+	for _, f := range k.c.Metas {
+		if f.Kind == Unified {
+			unified[f.Name] = true
+		}
+	}
+	ci := 0
+	callAt := func(pc int, reg bool, target string) error {
+		if ci >= len(m.Rec.Calls) {
+			return fmt.Errorf("the call at %#x is none of the record's", pc-r[0])
+		}
+		c := m.Rec.Calls[ci]
+		ci++
+		switch {
+		case reg && c.Kind != CallReg:
+			return fmt.Errorf("the call at %#x is through a register, the record has one to %s", pc-r[0], c.Target)
+		case !reg && c.Kind == CallReg:
+			return fmt.Errorf("the call at %#x goes to %s, the record has one through a register", pc-r[0], target)
+		case !reg && c.Target != target:
+			return fmt.Errorf("the call at %#x goes to %s, the record has one to %s", pc-r[0], target, c.Target)
+		}
+		if c.Kind == CallLeaf || c.Sig.Ret == Void {
+			if c.RegResult {
+				return fmt.Errorf("the call at %#x to %s takes from registers a result it has not", pc-r[0], c.Target)
+			}
+			return nil
+		}
+		if c.RegResult {
+			if c.Kind != CallUnified || !unified[c.Target] {
+				return fmt.Errorf("the call at %#x takes the result of %s from its registers, which is no lowered unified function", pc-r[0], c.Target)
+			}
+			return nil
+		}
+		_, retOff, _ := layout(c.Sig)
+		for n, wv := range a64FPWords(a64RetRegs(c.Sig.Ret), nil, nil, 8+retOff, true) {
+			if at := pc + 4 + 4*n; at+4 > dataAt || binary.LittleEndian.Uint32(k.o.code[at:]) != wv {
+				return fmt.Errorf("the call at %#x to %s: no load of the result after it", pc-r[0], c.Target)
+			}
+		}
+		return nil
+	}
 	for pc := r[0]; pc < r[1]; pc += 4 {
 		want := binary.LittleEndian.Uint32(k.o.code[pc:])
 		at := base + uint64(4*i)
@@ -273,6 +319,9 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			}
 			if pc < dataAt && want == a64BLRX9 {
 				icalls--
+				if err := callAt(pc, true, ""); err != nil {
+					return err
+				}
 			}
 		case rl.typ == elf.R_AARCH64_CALL26:
 			t, err := k.target(rl.sym, rl.add)
@@ -281,6 +330,9 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			}
 			if got&0xfc000000 != 0x94000000 || at+uint64(int64(int32(got<<6)>>4)) != t {
 				return fmt.Errorf("the call at %#x does not go to %s", pc-r[0], rl.sym)
+			}
+			if err := callAt(pc, false, strings.TrimPrefix(rl.sym, "go_")); err != nil {
+				return err
 			}
 		case rl.typ == elf.R_AARCH64_ADR_PREL_PG_HI21:
 			t, err := k.target(rl.sym, rl.add)
@@ -306,6 +358,9 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	}
 	if icalls != 0 {
 		return fmt.Errorf("%d indirect calls the record has not found in the body", icalls)
+	}
+	if ci != len(m.Rec.Calls) {
+		return fmt.Errorf("the record has %d calls, the body %d", len(m.Rec.Calls), ci)
 	}
 	// The result into the Go argument area, the epilogue and RET.
 	if m.Kind != Register {

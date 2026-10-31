@@ -465,35 +465,76 @@ func main() {
 			failed[r.Func] = true
 		}
 	}
+	for _, name := range unit.FuncOrder {
+		if _, ok := sigs[name]; !ok {
+			failed[name] = true
+		}
+	}
+	// A call to a unified function the lowering takes takes its result from
+	// the registers the function stored it from (gen.LowerEnv.RegResult). A
+	// function the lowering refuses becomes a stub, so the lowering runs
+	// again without it until it refuses none of them. The poison build
+	// writes over the result registers at each return and takes none.
+	regResult := map[string]bool{}
+	if !*poisonF {
+		for _, name := range unit.FuncOrder {
+			if !failed[name] && !leafSet[name] {
+				regResult[name] = true
+			}
+		}
+	}
+	env.RegResult = regResult
+	if a64env != nil {
+		a64env.RegResult = regResult
+	}
+	type lowering struct {
+		text string
+		meta gen.Meta
+		err  error
+	}
+	var low map[string]lowering
+	for again := true; again; {
+		low = map[string]lowering{}
+		for _, name := range unit.FuncOrder {
+			if failed[name] {
+				continue
+			}
+			spec := gen.FuncSpec{Name: name, Sig: sigs[name], Kind: gen.Unified}
+			if leafSet[name] {
+				spec.Kind = gen.Register
+			}
+			var l lowering
+			switch {
+			case a64:
+				l.text, l.meta, l.err = gen.LowerARM64EngineFunc(unit.Funcs[name].Lines, spec, a64env)
+			case leafSet[name]:
+				l.text, l.meta, l.err = gen.LowerRegister(asm, spec)
+			default:
+				l.text, l.meta, l.err = gen.LowerUnifiedFunc(amd, unit.Funcs[name].Lines, spec, env, "")
+			}
+			low[name] = l
+		}
+		again = false
+		for _, name := range unit.FuncOrder {
+			if low[name].err != nil && regResult[name] {
+				delete(regResult, name)
+				again = true
+			}
+		}
+	}
 	var lowered strings.Builder
 	lowered.WriteString(".text\n")
 	var metas, stubs []gen.Meta
 	var names []string
 	for _, name := range unit.FuncOrder {
 		names = append(names, name)
-		s, ok := sigs[name]
-		if !ok {
-			failed[name] = true
-		}
+		s := sigs[name]
 		if failed[name] {
 			_, _, ab := layoutOf(s)
 			stubs = append(stubs, gen.Meta{Name: name, Kind: gen.Unified, ArgBytes: ab, RetType: s.Ret})
 			continue
 		}
-		spec := gen.FuncSpec{Name: name, Sig: s, Kind: gen.Unified}
-		var text string
-		var meta gen.Meta
-		if leafSet[name] {
-			spec.Kind = gen.Register
-		}
-		switch {
-		case a64:
-			text, meta, err = gen.LowerARM64EngineFunc(unit.Funcs[name].Lines, spec, a64env)
-		case leafSet[name]:
-			text, meta, err = gen.LowerRegister(asm, spec)
-		default:
-			text, meta, err = gen.LowerUnifiedFunc(amd, unit.Funcs[name].Lines, spec, env, "")
-		}
+		text, meta, err := low[name].text, low[name].meta, low[name].err
 		if err != nil {
 			reject(name, "lower", err.Error())
 			if leafSet[name] {
