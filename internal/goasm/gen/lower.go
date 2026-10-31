@@ -196,6 +196,12 @@ type LowerEnv struct {
 	// (wrong code, for measuring the output while the C still has them).
 	Variadic     map[string]bool
 	LooseVarargs bool
+	// RegResult names the functions whose result a direct call takes from
+	// the registers they return it in instead of loading it from the Go
+	// stack (CallRecord.RegResult): the unified functions the driver lowers,
+	// never a Go callback, a stub or a register-entry leaf. A poison build
+	// takes none, since it writes over every register at a return.
+	RegResult map[string]bool
 }
 
 // LowerUnified transforms one function's GNU assembly. It returns the rewritten
@@ -500,7 +506,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			if err != nil {
 				return "", Meta{}, err
 			}
-			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase)...)
+			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase, false)...)
 			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
 			continue
 		}
@@ -520,8 +526,11 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 				rec.Calls = append(rec.Calls, CallRecord{Kind: CallLeaf, Target: m[1]})
 				continue
 			}
-			out = append(out, marshalCallTarget(a, m[1], cs, saved, saveBase)...)
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallUnified, Target: m[1], Sig: cs})
+			// The poison build writes over the result registers at each
+			// return, so its calls load the result back.
+			regResult := env != nil && env.RegResult[m[1]] && cs.Ret != Void && !a.Poison
+			out = append(out, marshalCallTarget(a, m[1], cs, saved, saveBase, regResult)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallUnified, Target: m[1], Sig: cs, RegResult: regResult})
 			continue
 		}
 		if strings.HasPrefix(n, "call") {
@@ -578,11 +587,12 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	return text, meta, nil
 }
 
-// marshalCall emits the glue around an internal call: save the live
+// marshalCallTarget emits the glue around an internal call: save the live
 // callee-saved registers, move the native argument registers into the outgoing
 // argument area, call, move the result back into the native result register,
-// and restore.
-func marshalCallTarget(a AMD64Arch, callExpr string, sig Sig, saved []string, saveBase int) []string {
+// and restore. With regResult the result stays where the callee stored it
+// from (CallRecord.RegResult).
+func marshalCallTarget(a AMD64Arch, callExpr string, sig Sig, saved []string, saveBase int, regResult bool) []string {
 	var g []string
 	for k, r := range saved {
 		g = append(g, fmt.Sprintf("movq %%%s, %d(%%rsp)", r, saveBase+8*k))
@@ -603,12 +613,13 @@ func marshalCallTarget(a AMD64Arch, callExpr string, sig Sig, saved []string, sa
 	if a.Poison {
 		g = append(g, poison()...)
 	}
-	switch sig.Ret {
-	case I64, Ptr:
+	switch {
+	case regResult:
+	case sig.Ret == I64, sig.Ret == Ptr:
 		g = append(g, fmt.Sprintf("movq %d(%%rsp), %%rax", retOff))
-	case F64:
+	case sig.Ret == F64:
 		g = append(g, fmt.Sprintf("movsd %d(%%rsp), %%xmm0", retOff))
-	case JSV:
+	case sig.Ret == JSV:
 		g = append(g, fmt.Sprintf("movq %d(%%rsp), %%rax", retOff))
 		g = append(g, fmt.Sprintf("movq %d(%%rsp), %%rdx", retOff+8))
 	}

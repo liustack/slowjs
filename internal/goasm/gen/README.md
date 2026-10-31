@@ -77,7 +77,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    as text: strip the prologue and epilogues, load the Go stack arguments into
    the native argument registers after Go's prologue, marshal each call inline
    (keep the registers the mode asks for, move the arguments to the outgoing
-   area, call, read the result, restore),
+   area, call, read the result, restore), where a call to a unified function
+   the driver lowers takes the result from the registers the callee stored
+   it from and reads nothing back from the Go stack (`LowerEnv.RegResult`),
    move LLVM's locals onto the Go frame, keep constant pools inside the
    function, and turn every return into a jump to one Go RET. A function
    starts in the lowered object where its body will sit in the binary
@@ -291,7 +293,9 @@ to its place and the padding before it to no-ops.
 Three negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
-still pass, so no code reads a register the lowering did not set.
+still pass, so no code reads a register the lowering did not set. A poison
+build reads every result back from the Go stack, since its returns write
+over the result registers.
 `GEN_KEEP_NARROW=1` leaves narrow integers as the generator once took them:
 the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
 turns it on, and any other value but an empty one is an error. The package of
@@ -342,8 +346,13 @@ the ones its dropped prologue pushes. Each call stores every argument word
 from the register llc passes it in (for a call of a unified definition,
 the one the definition reads it from) and loads each result word into the
 register llc takes it from, and llc's code may read no register after the
-call before writing it but those results and the saved registers. Each
-return stores the registers llc returns. A leaf keeps C's registers, so of
+call before writing it but those results and the saved registers. A call
+whose record says it takes the result from registers (`RegResult`) has no
+result loads: its target must be a lowered unified function, not a stub, a
+leaf or Go code, and the registers llc takes the result from must be the
+ones the callee's probe returns it in. Each return stores the registers llc
+returns and jumps to Go's epilogue, which touches only BP and SP, so those
+registers still hold the result after the RET. A leaf keeps C's registers, so of
 its facts only its calls' targets and the number of its calls and returns
 are checked. llc's own code must keep to what the build rules out: a call
 through memory fails, and so does a frame access wider than 8 bytes that is
@@ -391,8 +400,16 @@ morestack it reads but not the compare between them, and the frame the TEXT
 asks for, below 4096 bytes or a multiple of 4096), the
 loads of the arguments, the no-ops before the body, the body word for word
 with each `BL` and `ADRP`/`ADD` at the target the object names, the stores
-of the result, Go's epilogue, one RET and the call of morestack. It
-compares `engine_rodata` byte for byte, pointers by what they point to. It
+of the result, Go's epilogue, one RET and the call of morestack. Each call
+in the body is the next one of the record, and it loads its result back
+from the Go stack unless the record says it takes it from x0, x1 or d0, which
+only a call to a lowered unified function may: the check holds each of those
+to storing its result from them and then running only Go's epilogue (x29,
+x30 and SP). A direct call must agree with the pass on whether its
+target is a leaf and, when it is not, on its signature, so no record can
+skip a load by calling a unified function a leaf or one that returns
+nothing. It compares
+`engine_rodata` byte for byte, pointers by what they point to. It
 does not read llc's own object: that the lowering kept the meaning of llc's
 code rests on the lowering's rules and llc's register facts, which the
 lowering checks as it goes. `TestCheckARM64Function` changes each part of a

@@ -3,6 +3,7 @@
 package gen
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -161,6 +162,73 @@ func TestCheckIRFuncs(t *testing.T) {
 	for k := range got {
 		if strings.HasPrefix(k, "ok ") || strings.HasPrefix(k, "okfp ") {
 			t.Errorf("valid function flagged: %s", k)
+		}
+	}
+}
+
+// A call to a generated function that the post-link check holds to its
+// return sequence (LowerEnv.RegResult) takes the result from the registers
+// the callee stored it from. A call to any other function (a Go callback, a
+// stub) or through a pointer, and every call of a poison build, loads it
+// back from the Go stack.
+func TestCallResultFromRegisters(t *testing.T) {
+	sig := Sig{Params: []Type{I64, I64}, Ret: I64}
+	fn := FuncSpec{Name: "h", Sig: sig, Kind: Unified}
+	lower := func(poison bool) (string, Meta) {
+		t.Helper()
+		SetCallees([]FuncSpec{fn,
+			{Name: "gen", Sig: Sig{Params: []Type{I64}, Ret: I64}, Kind: Unified},
+			{Name: "host_now", Sig: Sig{Ret: I64}, Kind: Unified},
+		})
+		env := &LowerEnv{Plan: &DataPlan{}, Funcs: map[string]bool{"h": true, "gen": true, "host_now": true},
+			RegResult: map[string]bool{"h": true, "gen": true}}
+		body := "\tcallq\tgen\n\tmovq\t%rax, %rdi\n\tcallq\thost_now\n\tmovq\t%rax, %rcx\n" +
+			label(0, "i>i") + "\tcallq\t*%rcx\n"
+		lines := strings.Split("\tpushq\t%rbp\n\tmovq\t%rsp, %rbp\n"+body+"\tpopq\t%rbp\n\tretq\n", "\n")
+		a := AMD64()
+		a.Poison = poison
+		text, m, err := LowerUnifiedFunc(a, lines, fn, env, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return text, m
+	}
+	// after is the line that follows the call in text.
+	after := func(text, call string) string {
+		i := strings.Index(text, "\t"+call+"\n")
+		if i < 0 {
+			t.Fatalf("no %q in:\n%s", call, text)
+		}
+		rest := text[i+len(call)+2:]
+		line, _, _ := strings.Cut(rest, "\n")
+		return strings.TrimSpace(line)
+	}
+	isLoad := func(l string) bool { return strings.HasPrefix(l, "movq ") && strings.HasSuffix(l, "(%rsp), %rax") }
+	text, m := lower(false)
+	if l := after(text, "call gen"); isLoad(l) {
+		t.Errorf("the call to the generated gen loads its result back: %q", l)
+	}
+	if l := after(text, "call host_now"); !isLoad(l) {
+		t.Errorf("the call to the Go function host_now takes its result from a register: %q", l)
+	}
+	if l := after(text, "call *%rcx"); !isLoad(l) {
+		t.Errorf("the call through a pointer takes its result from a register: %q", l)
+	}
+	var got []bool
+	for _, c := range m.Rec.Calls {
+		got = append(got, c.RegResult)
+	}
+	if fmt.Sprint(got) != "[true false false]" {
+		t.Errorf("the record says the calls take the result from registers %v, want [true false false]", got)
+	}
+	// The poison build writes garbage over every register at a return.
+	text, m = lower(true)
+	if strings.Count(text, "(%rsp), %rax") < 3 {
+		t.Errorf("a poison build skips a result load:\n%s", text)
+	}
+	for _, c := range m.Rec.Calls {
+		if c.RegResult {
+			t.Errorf("a poison build takes the result of %s from registers", c.Target)
 		}
 	}
 }

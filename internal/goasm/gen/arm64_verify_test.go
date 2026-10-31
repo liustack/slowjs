@@ -62,7 +62,7 @@ func a64CheckCaseNops(tail []uint32, nops int, align64 map[string]int) (*a64Chec
 		plan.InBody = map[string][]*DataObj{"f": {{Label: ".LCPI0_0", Align: 4}}}
 		plan.Rename = map[string]map[string]string{"f": {".LCPI0_0": ".LCPI0_0.f"}}
 	}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Sigs: map[string]Sig{"g": {}}, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
 	// Go's prologue: the stack check, a frame of 64 (40, the LR, rounded
 	// for the frame pointer), the argument from 72(RSP), no-ops to 16.
 	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20}
@@ -291,5 +291,87 @@ func TestCheckARM64BodyPlace(t *testing.T) {
 	k, m, w := a64CheckCaseNops(nil, 1, nil)
 	if err := k.function(m, 0x1000, a64Bytes(w)); err != nil {
 		t.Errorf("a plain body: %v", err)
+	}
+}
+
+// a64CallCase is f(I64) I64 at 0x1000 that calls the generated g(I64) I64
+// and returns what g returns: it stores the argument, calls, and loads the
+// result back from 16(RSP) when load is set. The check is told g is a
+// lowered unified function, which it holds to its return sequence.
+func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
+	const base, gAt, morestack = 0x1000, 0x8000, 0x9000
+	sig := Sig{Params: []Type{I64}, Ret: I64}
+	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16,
+		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g", Sig: sig, RegResult: regResult}}}}
+	g := Meta{Name: "g", Kind: Unified, Rec: &FuncRecord{Name: "g", Sig: sig}}
+	// The object: str x20, [sp, #8]; bl go_g; ldr x0, [sp, #16].
+	obj := []uint32{0xf9000000 | 1<<10 | 31<<5 | 20, 0x94000000}
+	if load {
+		obj = append(obj, 0xf9400000|2<<10|31<<5|0)
+	}
+	code := make([]byte, 4*len(obj))
+	for i, w := range obj {
+		binary.LittleEndian.PutUint32(code[4*i:], w)
+	}
+	o := &a64Object{code: code, addr: map[string][2]int{"f": {0, len(code)}}, relocs: map[int]a64Reloc{
+		4: {elf.R_AARCH64_CALL26, "go_g", 0},
+	}}
+	bin := &binFile{syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}}}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: &DataPlan{}, Metas: []Meta{m, g}, Sigs: map[string]Sig{"g": sig}},
+		o: o, bin: bin, morestack: morestack}
+	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, a64Nop}
+	at := func() uint64 { return base + uint64(4*len(w)) }
+	w = append(w, obj[0], a64BL(at()+4, gAt))
+	w = append(w, obj[2:]...)
+	w = append(w, 0xf9000000|10<<10|31<<5|0, a64LoadFP, 0xf84407fe, a64Ret)
+	w[2] = 0x54000009 | uint32(len(w)-2)<<5
+	w = append(w, a64MovX3LR, a64BL(at()+4, morestack))
+	w = append(w, a64B(at(), base))
+	return k, m, w
+}
+
+// TestCheckARM64RegResult: a call may leave out the load of its result only
+// where the record says so and the callee is a lowered unified function the
+// check holds to its return sequence, and a callee's return sequence takes
+// nothing between the store of the result and the RET but Go's epilogue.
+func TestCheckARM64RegResult(t *testing.T) {
+	for name, c := range map[string]struct {
+		regResult, load bool
+		edit            func(k *a64Checker, m *Meta, w []uint32) []uint32
+		want            string
+	}{
+		"load":                   {false, true, nil, ""},
+		"from registers":         {true, false, nil, ""},
+		"no load, none declared": {false, false, nil, "no load of the result"},
+		"from registers of a stub": {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 {
+			k.c.Stubs, k.c.Metas = k.c.Metas[1:], k.c.Metas[:1]
+			return w
+		}, "no lowered unified function"},
+		"from registers of Go code": {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { k.c.Metas = k.c.Metas[:1]; return w }, "no lowered unified function"},
+		"from registers of a leaf":  {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { k.c.Metas[1].Kind = Register; return w }, "no lowered unified function"},
+		"through a pointer":         {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Kind = CallReg; return w }, "through a register"},
+		"as a leaf call":            {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Kind = CallLeaf; return w }, "the pass has g as a leaf false"},
+		"a leaf call": {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 {
+			k.c.Leaves, k.c.Metas[1].Kind = map[string]bool{"g": true}, Register
+			m.Rec.Calls[0] = CallRecord{Kind: CallLeaf, Target: "g"}
+			return w
+		}, ""},
+		"as returning nothing": {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Sig.Ret = Void; return w }, "its signature is"},
+		// mov x0, xzr after the store of the result.
+		"a word after the result store": {false, true, func(k *a64Checker, m *Meta, w []uint32) []uint32 {
+			return append(w[:12:12], append([]uint32{0xaa1f03e0}, w[12:]...)...)
+		}, "epilogue"},
+	} {
+		k, m, w := a64CallCase(c.regResult, c.load)
+		if c.edit != nil {
+			w = c.edit(k, &m, w)
+		}
+		err := k.function(m, 0x1000, a64Bytes(w))
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
 	}
 }
