@@ -41,9 +41,8 @@ const (
 // noSplitList names the functions whose TEXT says NOSPLIT, which have no
 // stack check at their entry (gen.PickNoSplit), for the tests. A constant
 // takes no room in a binary that does not use it.
-const noSplitList = "BC_add_object_ref JS_AddIntrinsicBaseObjects JS_AddIntrinsicBigInt JS_AddIntrinsicDate JS_AddIntrinsicEval JS_AddIntrinsicJSON JS_AddIntrinsicMapSet JS_AddIntrinsicPromise JS_AddIntrinsicProxy JS_AddIntrinsicRegExp JS_AddIntrinsicRegExpCompiler JS_AddIntrinsicStringNormalize JS_AddIntrinsicTypedArrays JS_AddIntrinsicWeakRef JS_AddModuleExportList JS_AtomIsArrayIndex JS_AtomIsNumericIndex JS_AtomIsNumericIndex1 JS_AtomToCStringLen JS_AtomToString JS_AtomToValue JS_Call JS_CallConstructor JS_CallConstructor2 JS_CheckBrand JS_CompactBigInt JS_ComputeMemoryUsage JS_ConcatString2 JS_ConcatStringInPlace JS_DefinePropertyGetSet_block JS_DeletePropertyInt64 JS_DetectModule JS_DupAtom JS_DupContext JS_EvalFunction JS_EvalFunctionInternal JS_FreeAtom JS_FreeAtomRT JS_FreeAtomStruct JS_FreeCString JS_FreeModuleTopLevel JS_FreePropertyEnum JS_FreeRuntime JS_GetAnyOpaque JS_GetArrayBuffer JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetClassProto JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetImportMeta JS_GetInternalDepth JS_GetInterruptFlag JS_GetIterator2 JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModuleNamespace JS_GetModulePrivateValue JS_GetOpaque JS_GetOpaque2 JS_GetOwnProperty JS_GetOwnPropertyNames JS_GetPropertyUint32 JS_GetPrototypePrimitive JS_GetRuntime JS_GetRuntimeOpaque JS_GetScriptOrModuleName JS_GetStripInfo JS_GetTypedArrayBuffer JS_HasException JS_Invoke JS_InvokeFree JS_IsArray JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_IteratorGetCompleteValue JS_LoadModule JS_LoadModuleInternal JS_NewArray JS_NewArrayBuffer JS_NewArrayBufferCopy JS_NewAtom JS_NewAtomLen JS_NewAtomString JS_NewBigInt64 JS_NewBigUint64 JS_NewCConstructor_block JS_NewCFunction2 JS_NewClassID JS_NewDate JS_NewError JS_NewHostFunction JS_NewHostFunctionRelease JS_NewObject JS_NewObjectClass JS_NewObjectProto JS_NewObjectProtoClass JS_NewObjectProtoList JS_NewPromiseCapability JS_NewTypedArray JS_NewUint8ArrayCopy JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_ReadFunctionBytecode JS_ReadObject JS_ReadSharedArrayBuffer JS_RegExpExec JS_ReleaseNextChunk JS_ReleaseNextRange JS_ReleaseStart JS_ResolveModule JS_RunGC JS_RunYoungGC JS_SameValue JS_SameValueZero JS_SetAsyncContext JS_SetCallDepth JS_SetClassProto JS_SetConstructor JS_SetConstructor2 JS_SetConstructorBit JS_SetContextOpaque JS_SetDirectCCalls JS_SetFootprintLimit JS_SetFrontCache JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleExport JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetModulePrivateValue JS_SetObjectData JS_SetOpaque JS_SetPropertyInt64 JS_SetPropertyStr JS_SetPropertyUint32 JS_SetPrototype JS_SetRegExpCache JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo JS_SetUncatchableException JS_SpeciesConstructor JS_StrictEq JS_Throw JS_ThrowErrorKind JS_ThrowErrorf JS_ThrowRangeError JS_ThrowReferenceError JS_ThrowReferenceErrorNotDefined JS_ThrowReferenceErrorUninitialized JS_ThrowReferenceErrorUninitialized2 JS_ThrowSyntaxError JS_ThrowSyntaxErrorVarRedeclaration JS_ThrowTypeError JS_ThrowTypeErrorInvalidClass JS_ThrowTypeErrorOrFalse JS_ThrowTypeErrorReadOnly JS_ToBigInt64 JS_ToBool JS_ToBoolFree JS_ToCStringLen2 JS_ToFloat64Free JS_ToIndex JS_ToInt32Clamp JS_ToInt32Sat JS_ToInt64 JS_ToInt64Clamp JS_ToInt64Ext JS_ToInt64Free JS_ToInt64Sat JS_ToLengthFree JS_ToPropertyKey JS_ToString JS_ToUint32 JS_WriteArrayBuffer JS_WriteObject JS_WriteSharedArrayBuffer __JS_FreeValue __JS_ThrowTypeErrorAtom __cos __dbuf_put_u16 __dbuf_put_u32 __dbuf_put_u64 __dbuf_putc __expo2 __js_poll_interrupts __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __rem_pio2 __rem_pio2_large __sin __tan abort acos add_arg add_arguments_var add_closure_var add_eval_this_vars add_export_entry add_fast_array_element add_global_var add_import add_pc2line_info add_private_class_field add_reloc add_star_export_entry add_var asin async_func_resume atan bc_get_atom bc_get_debug_buf bc_get_leb128 bc_get_leb128_int bc_get_leb128_u16 bc_get_u16 bc_get_u8 bc_put_atom bc_put_leb128 bc_read_object_lits bcmp block_merge_next build_backtrace bzero cbrt ceil check_define_prop_desc_block check_exception_free check_regexp_g_flag check_regexp_getter close_scopes close_var_refs code_match compute_pc2line_info compute_register_count convert_fast_array_to_array copy_str16 copysign cpool_add cr_init cr_init_char_range cr_sort_and_remove_overlap dbuf_init2 dbuf_put dbuf_put_self dbuf_put_u16 dbuf_put_u32 dbuf_putstr define_var dump_printf emit_atom emit_break emit_class_field_init emit_class_init_end emit_class_init_start emit_goto emit_iterator_close emit_label emit_object_lit emit_op emit_push_const emit_return emit_source_pos emit_u16 emit_u32 emit_u8 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 exec_module_list_cmp expand_fast_array expm1 fabs find_group_name find_line_num find_var floor fmax fmin fmod free_arg_list free_property free_token from_base64 fuse_code gc_ephemeron_activate gc_ephemeron_count gc_free_cycles gc_scan_incref_child gc_scan_incref_child2 get_date_fields get_set_record get_var_ref goasm_chunked_memcpy goasm_chunked_memmove goasm_chunked_memset goasm_number_to_int32 has_suffix heap_alloc heap_create heap_destroy heap_free heap_give_back heap_realloc heap_release_next_chunk heap_release_next_range heap_release_start heap_remap_dedicated heap_set_remap heap_take heap_usable_size hypot i32toa i64toa i64toa_radix init_class_range is_duplicate_group_name is_let js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_aggregate_error_constructor js_allocate_fast_array js_array_buffer_constructor0 js_array_buffer_isView js_array_buffer_update_typed_arrays js_async_context_wrap js_async_from_sync_iterator_unwrap_func_create js_async_function_resume js_async_generator_completed_return js_async_generator_free js_async_generator_resolve js_async_generator_resolve_or_reject js_atom_concat_num js_atomics_get_buf js_backtrace_restore js_backtrace_settle js_bigint_extend js_bigint_float64_cmp js_bigint_mul js_bigint_neg js_bigint_new_di js_bigint_new_si64 js_bigint_not js_call_enter js_closure2 js_compare_bigint js_copy_props_call_plain js_copy_props_proto_plain js_copy_shape js_create_array js_create_iterator_result js_create_var_ref js_dtoa_max_len js_emit_binary_op js_emit_spread_code js_error_isError js_execute_async_module js_free js_free_desc js_free_function_def js_free_modules js_free_rt js_free_string js_front_drain js_function_proto js_function_proto_lineNumber js_get_array_buffer js_get_atom_index js_get_exception js_get_fast_array_element_out_of_line js_get_length64 js_get_own_property_flags js_get_this js_global_object_find_uninitialized_var js_global_object_get_uninitialized_var js_has_own_call js_heap_alloc js_heap_realloc js_import_meta js_invoke js_is_live_code js_iterator_proto_iterator js_json_check_block js_json_isRawJSON js_large_give js_linearize_string_rope js_malloc_large js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_measure_call_frame js_new_module_def js_new_string_char js_new_string_rope js_obj_to_desc js_object_list_end js_object_lit_shape js_object_lits_from_def js_own_key_kinds js_own_keys_next js_own_keys_scan js_parse_check_duplicate_parameter js_parse_class_default_ctor js_parse_destructuring_var js_parse_error js_parse_error_pos js_parse_expect js_parse_expect_semi js_parse_from_clause js_parse_function_check_names js_parse_regexp js_parse_skip_parens_error js_parse_template_part js_promise_finally_value_thunk js_realloc js_realloc2 js_realloc_array js_rebalancee_string_rope js_regexp_cache_off js_resize_prop js_rope_child_free js_shape_cache_off js_strdup js_strict_eq2 js_string_delete_property js_string_eq js_string_find16 js_string_find8 js_string_find_at js_string_find_char js_string_find_check js_string_find_invalid_codepoint js_string_find_mixed js_string_find_short js_string_rope_compare js_throw_URIError js_typed_array_constructor_ta js_typed_array_create js_update_property_flags js_weakref_free json_free_parse_record json_parse_expect log10 log1p lre_canonicalize lre_case_conv lre_case_conv_entry lre_check_timeout lre_depth_enter lre_depth_leave lre_exec_backtrack lre_find lre_first_set lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_case_ignorable lre_is_cased lre_is_id_continue lre_is_id_start lre_is_space_non_ascii lre_js_is_ident_next lre_parse_escape lrint map_add_record map_decref_record map_delete_record_internal map_find_record_short map_hash_key map_hash_long_key_poll memchr memcmp memcpy memmove memset modf mp_div1norm mpb_shr_round mul_pow mul_pow_round_to_d new_label optimize_scope_make_ref optional_chain_test out_integer output_digits point_cmp poll_scan pop_scope pow promise_reaction_data_free pstrcat pstrcpy push_short_int put_lvalue put_short_code re_emit_op_u8 re_has_named_captures re_parse_captures re_parse_error re_parse_group_name re_string_cmp_len re_string_find2 re_string_list_canonicalize re_string_list_free remainingElementsCount_add remove_global_object_property reparse_ident_token resolve_pseudo_var resolve_scope_private_field1 resolve_scope_var rint round round_to_d rqsort scalbn set_date_fields set_date_fields_checked set_eval_ret_undefined set_object_name set_object_name_computed simple_next_token skip_dead_code slice_memcpy snprintf specialcase specialcase_362 sqrt stack_realloc strchr strcmp string_advance_index string_buffer_concat_rope string_buffer_end string_buffer_free string_buffer_putc16 string_buffer_putc16_slow string_buffer_putc8 string_buffer_realloc2 string_buffer_set_error string_buffer_write16 string_buffer_write8_wide_long string_get_milliseconds string_indexof_char string_rope_get strlen strrchr strstart sum_precise_renorm tlsf_add_pool tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_check tlsf_check_pool tlsf_create tlsf_create_with_pool tlsf_destroy tlsf_free tlsf_free_inside tlsf_get_pool tlsf_malloc tlsf_next_free tlsf_pool_is_free tlsf_pool_overhead tlsf_realloc tlsf_realloc_inplace tlsf_remove_pool tlsf_size tofp16 trunc typed_array_init typed_array_is_oob u32toa u64toa u64toa_radix unicode_decomp_entry unicode_from_utf8 unicode_general_category unicode_normalize unicode_sequence_prop unicode_to_utf8 update_label validate_typed_array value_buffer_free var_object_test vsnprintf young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
+const noSplitList = "JS_AddIntrinsicBaseObjects JS_AddIntrinsicBigInt JS_AddIntrinsicDate JS_AddIntrinsicEval JS_AddIntrinsicJSON JS_AddIntrinsicMapSet JS_AddIntrinsicPromise JS_AddIntrinsicProxy JS_AddIntrinsicRegExp JS_AddIntrinsicRegExpCompiler JS_AddIntrinsicStringNormalize JS_AddIntrinsicTypedArrays JS_AddIntrinsicWeakRef JS_AddModuleExportList JS_AtomIsArrayIndex JS_AtomIsNumericIndex JS_AtomToCStringLen JS_AtomToString JS_AtomToValue JS_Call JS_CallConstructor JS_CallConstructor2 JS_CheckBrand JS_CompactBigInt JS_ComputeMemoryUsage JS_ConcatString2 JS_ConcatStringInPlace JS_DefinePropertyGetSet_block JS_DeletePropertyInt64 JS_DetectModule JS_DupAtom JS_DupContext JS_EvalFunction JS_EvalFunctionInternal JS_FreeAtom JS_FreeAtomRT JS_FreeAtomStruct JS_FreeCString JS_FreeModuleTopLevel JS_FreePropertyEnum JS_FreeRuntime JS_GetAnyOpaque JS_GetArrayBuffer JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetClassProto JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetImportMeta JS_GetInternalDepth JS_GetInterruptFlag JS_GetIterator2 JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModuleNamespace JS_GetModulePrivateValue JS_GetOpaque JS_GetOpaque2 JS_GetOwnProperty JS_GetOwnPropertyNames JS_GetPropertyUint32 JS_GetRuntime JS_GetRuntimeOpaque JS_GetScriptOrModuleName JS_GetStripInfo JS_GetTypedArrayBuffer JS_HasException JS_Invoke JS_InvokeFree JS_IsArray JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_IteratorGetCompleteValue JS_LoadModuleInternal JS_NewArray JS_NewArrayBuffer JS_NewArrayBufferCopy JS_NewAtomStr JS_NewAtomString JS_NewBigInt64 JS_NewBigUint64 JS_NewCConstructor_block JS_NewCFunction2 JS_NewClassID JS_NewDate JS_NewError JS_NewHostFunction JS_NewHostFunctionRelease JS_NewObject JS_NewObjectClass JS_NewObjectProto JS_NewObjectProtoClass JS_NewObjectProtoList JS_NewPromiseCapability JS_NewTypedArray JS_NewUint8ArrayCopy JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_ReadFunctionBytecode JS_ReadSharedArrayBuffer JS_RegExpExec JS_ReleaseNextChunk JS_ReleaseNextRange JS_ReleaseStart JS_ResolveModule JS_RunGC JS_SameValue JS_SameValueZero JS_SetAsyncContext JS_SetCallDepth JS_SetClassProto JS_SetConstructor JS_SetConstructor2 JS_SetConstructorBit JS_SetContextOpaque JS_SetDirectCCalls JS_SetFootprintLimit JS_SetFrontCache JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleExport JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetModulePrivateValue JS_SetObjectData JS_SetOpaque JS_SetPropertyInt64 JS_SetPropertyStr JS_SetPropertyUint32 JS_SetPrototype JS_SetRegExpCache JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo JS_SetUncatchableException JS_SpeciesConstructor JS_StrictEq JS_Throw JS_ThrowErrorKind JS_ThrowErrorf JS_ThrowRangeError JS_ThrowReferenceError JS_ThrowReferenceErrorNotDefined JS_ThrowReferenceErrorUninitialized JS_ThrowReferenceErrorUninitialized2 JS_ThrowSyntaxError JS_ThrowSyntaxErrorVarRedeclaration JS_ThrowTypeError JS_ThrowTypeErrorInvalidClass JS_ThrowTypeErrorOrFalse JS_ThrowTypeErrorReadOnly JS_ToBigInt64 JS_ToBool JS_ToBoolFree JS_ToCStringLen2 JS_ToIndex JS_ToInt32Clamp JS_ToInt32Sat JS_ToInt64 JS_ToInt64Clamp JS_ToInt64Ext JS_ToInt64Free JS_ToInt64Sat JS_ToLengthFree JS_ToPropertyKey JS_ToString JS_ToUint32 JS_WriteArrayBuffer JS_WriteObject JS_WriteSharedArrayBuffer __JS_FreeValue __JS_ThrowTypeErrorAtom __cos __dbuf_put_u16 __dbuf_put_u32 __dbuf_put_u64 __dbuf_putc __expo2 __js_poll_interrupts __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __rem_pio2 __rem_pio2_large __sin __tan abort acos acosh add_arg add_arguments_var add_closure_var add_eval_this_vars add_export_entry add_fast_array_element add_global_var add_import add_pc2line_info add_private_class_field add_star_export_entry add_var asin asinh async_func_resume atan atan2 atanh bc_get_atom bc_get_debug_buf bc_get_leb128 bc_get_leb128_int bc_get_leb128_u16 bc_get_u16 bc_get_u8 bc_put_atom bc_put_leb128 bc_read_object_lits bcmp block_merge_next build_backtrace bzero cbrt ceil check_define_prop_desc_block check_exception_free check_regexp_g_flag check_regexp_getter close_scopes close_var_refs code_match compute_pc2line_info convert_fast_array_to_array copy_str16 copysign cpool_add cr_init dbuf_init2 dbuf_put dbuf_put_self dbuf_put_u16 dbuf_put_u32 dbuf_putstr define_var dump_printf emit_break emit_class_init_end emit_goto emit_label emit_op emit_source_pos emit_u16 emit_u32 emit_u8 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expand_fast_array expm1 fabs find_group_name find_var floor fmax fmin fmod free_arg_list free_property free_token from_base64 fuse_code gc_ephemeron_activate gc_ephemeron_count gc_free_cycles gc_scan_incref_child gc_scan_incref_child2 get_date_fields get_set_record get_var_ref goasm_chunked_memcpy goasm_chunked_memmove goasm_chunked_memset goasm_number_to_int32 has_suffix heap_alloc heap_create heap_destroy heap_free heap_give_back heap_realloc heap_release_next_chunk heap_release_next_range heap_release_start heap_remap_dedicated heap_set_remap heap_take heap_usable_size hypot i32toa i64toa i64toa_radix init_class_range is_duplicate_group_name is_let js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_aggregate_error_constructor js_alloc_string_rt js_allocate_fast_array js_array_buffer_constructor0 js_array_buffer_isView js_array_buffer_update_typed_arrays js_async_context_wrap js_async_from_sync_iterator_unwrap_func_create js_async_function_resume js_async_generator_completed_return js_async_generator_free js_async_generator_resolve js_async_generator_resolve_or_reject js_atom_concat_num js_atomics_get_buf js_backtrace_restore js_bigint_extend js_bigint_float64_cmp js_bigint_mul js_bigint_neg js_bigint_new_di js_bigint_new_si64 js_bigint_not js_call_enter js_closure2 js_compare_bigint js_copy_props_call_plain js_copy_props_proto_plain js_copy_shape js_create_array js_create_iterator_result js_dtoa_max_len js_emit_spread_code js_error_isError js_execute_async_module js_free js_free_desc js_free_modules js_free_rt js_free_string js_front_drain js_function_proto js_function_proto_lineNumber js_get_array_buffer js_get_atom_index js_get_exception js_get_fast_array_element_out_of_line js_get_length64 js_get_own_property_flags js_get_this js_global_object_find_uninitialized_var js_global_object_get_uninitialized_var js_has_own_call js_heap_alloc js_heap_realloc js_import_meta js_invoke js_is_live_code js_iterator_proto_iterator js_json_check_block js_json_isRawJSON js_large_give js_linearize_string_rope js_malloc_large js_malloc_rt js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_measure_call_frame js_new_module_def js_new_string_char js_new_string_rope js_obj_to_desc js_object_list_end js_object_lit_shape js_object_lits_from_def js_own_key_kinds js_own_keys_next js_own_keys_scan js_parse_check_duplicate_parameter js_parse_destructuring_var js_parse_error js_parse_error_pos js_parse_expect js_parse_expect_semi js_parse_from_clause js_parse_function_check_names js_parse_regexp js_parse_skip_parens_error js_parse_template_part js_promise_finally_value_thunk js_realloc js_realloc2 js_realloc_array js_rebalancee_string_rope js_regexp_cache_entry_free js_resize_prop js_rope_child_free js_shape_cache_off js_strdup js_strict_eq2 js_strict_eq_slow js_string_delete_property js_string_eq js_string_find16 js_string_find8 js_string_find_at js_string_find_char js_string_find_check js_string_find_invalid_codepoint js_string_find_mixed js_string_find_short js_string_rope_compare js_throw_URIError js_typed_array_constructor_ta js_typed_array_create js_update_property_flags js_weakref_free json_free_parse_record json_parse_expect log log10 log1p log2 lre_canonicalize lre_case_conv lre_case_conv_entry lre_check_timeout lre_depth_enter lre_depth_leave lre_exec_backtrack lre_find lre_first_set lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_case_ignorable lre_is_cased lre_is_id_continue lre_is_id_start lre_is_space_non_ascii lre_parse_escape lrint map_add_record map_decref_record map_delete_record_internal map_find_record map_hash_key map_hash_long_key_poll map_key_eq memchr memcmp memcpy memmove memset modf mp_div1norm mpb_shr_round mul_pow new_label optimize_scope_make_ref optional_chain_test out_integer output_digits poll_scan pop_scope pow promise_reaction_data_free pstrcat pstrcpy push_short_int put_lvalue put_short_code re_emit_op_u8 re_has_named_captures re_parse_captures re_parse_error re_parse_group_name remainingElementsCount_add remove_global_object_property reparse_ident_token resolve_pseudo_var resolve_scope_private_field1 resolve_scope_var rint round rqsort scalbn set_date_fields set_date_fields_checked set_eval_ret_undefined set_object_name_computed simple_next_token skip_dead_code slice_memcpy snprintf specialcase specialcase_362 sqrt strchr strcmp string_advance_index string_buffer_concat_rope string_buffer_end string_buffer_free string_buffer_putc16 string_buffer_putc16_slow string_buffer_putc8 string_buffer_realloc2 string_buffer_set_error string_buffer_write16 string_buffer_write8_wide_long string_get_milliseconds string_indexof_char string_rope_get strlen strrchr strstart sum_precise_renorm tlsf_add_pool tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_check tlsf_check_pool tlsf_create tlsf_create_with_pool tlsf_destroy tlsf_free tlsf_free_inside tlsf_get_pool tlsf_malloc tlsf_next_free tlsf_pool_is_free tlsf_pool_overhead tlsf_realloc tlsf_realloc_inplace tlsf_remove_pool tlsf_size tofp16 trunc typed_array_init typed_array_is_oob u32toa u64toa u64toa_radix unicode_decomp_entry unicode_from_utf8 unicode_general_category unicode_to_utf8 update_label validate_typed_array value_buffer_free var_object_test vsnprintf young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
 
-func BC_add_object_ref(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func JS_AddIntrinsicBaseObjects(a0 uintptr, a1 uintptr) uintptr
 func JS_AddIntrinsicBigInt(a0 uintptr, a1 uintptr) uintptr
 func JS_AddIntrinsicDate(a0 uintptr, a1 uintptr) uintptr
@@ -151,7 +150,6 @@ func JS_GetPropertyUint32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func JS_GetPropertyValue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_GetPrototype(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func JS_GetPrototypeFree(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func JS_GetPrototypePrimitive(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func JS_GetRuntime(a0 uintptr, a1 uintptr) uintptr
 func JS_GetRuntimeOpaque(a0 uintptr, a1 uintptr) uintptr
 func JS_GetScriptOrModuleName(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -251,7 +249,7 @@ func JS_SetAsyncContext(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func JS_SetCallDepth(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func JS_SetClassProto(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_SetConstructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
-func JS_SetConstructor2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
+func JS_SetConstructor2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func JS_SetConstructorBit(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_SetContextOpaque(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_SetDirectCCalls(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -314,7 +312,6 @@ func JS_ToBool(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func JS_ToBoolFree(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func JS_ToCStringLen2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func JS_ToFloat64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func JS_ToFloat64Free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToIndex(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToInt32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func JS_ToInt32Clamp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
@@ -373,7 +370,7 @@ func acos(a0 uintptr, a1 float64) float64
 func acosh(a0 uintptr, a1 float64) float64
 func add_arg(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func add_arguments_var(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
-func add_closure_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr) uintptr
+func add_closure_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func add_eval_this_vars(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func add_export_entry(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func add_fast_array_element(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
@@ -382,7 +379,6 @@ func add_import(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 u
 func add_pc2line_info(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func add_private_class_field(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func add_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func add_reloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func add_shape_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func add_star_export_entry(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func add_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -406,7 +402,7 @@ func bc_read_object_lits(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func bcmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func block_merge_next(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func build_arg_list(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func build_backtrace(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr)
+func build_backtrace(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func bzero(a0 uintptr, a1 uintptr, a2 uintptr)
 func call_setter(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
 func cbrt(a0 uintptr, a1 float64) float64
@@ -420,15 +416,13 @@ func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func close_var_refs(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func code_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func compute_pc2line_info(a0 uintptr, a1 uintptr)
-func compute_register_count(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func compute_stack_size(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func convert_fast_array_to_array(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func copy_str16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func copysign(a0 uintptr, a1 float64, a2 float64) float64
 func cos(a0 uintptr, a1 float64) float64
 func cosh(a0 uintptr, a1 float64) float64
-func cpool_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func cr_add_interval(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func cpool_add(a0 uintptr, a1 uintptr) uintptr
 func cr_copy(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func cr_free(a0 uintptr, a1 uintptr)
 func cr_init(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -438,7 +432,6 @@ func cr_op(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintpt
 func cr_op1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func cr_realloc(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func cr_regexp_canonicalize(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
-func cr_sort_and_remove_overlap(a0 uintptr, a1 uintptr)
 func dbuf_claim(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func dbuf_free(a0 uintptr, a1 uintptr)
 func dbuf_init2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -477,14 +470,12 @@ func exchange_one_int128(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func exchange_one_int16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func exchange_one_int32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func exchange_one_int64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func exec_module_list_cmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func exp(a0 uintptr, a1 float64) float64
 func expand_fast_array(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func expm1(a0 uintptr, a1 float64) float64
 func exported_names_cmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func fabs(a0 uintptr, a1 float64) float64
 func find_group_name(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func find_line_num(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func find_var(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func floor(a0 uintptr, a1 float64) float64
 func fmax(a0 uintptr, a1 float64, a2 float64) float64
@@ -509,7 +500,7 @@ func gc_free_cycles(a0 uintptr, a1 uintptr)
 func gc_remove_weak_objects(a0 uintptr, a1 uintptr)
 func gc_scan_incref_child(a0 uintptr, a1 uintptr, a2 uintptr)
 func gc_scan_incref_child2(a0 uintptr, a1 uintptr, a2 uintptr)
-func get_class_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func get_class_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func get_class_atom1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func get_closure_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) uintptr
 func get_date_field(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
@@ -537,7 +528,6 @@ func heap_remap_dedicated(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func heap_set_remap(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_take(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func heap_usable_size(a0 uintptr, a1 uintptr) uintptr
-func heapsortx(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func hypot(a0 uintptr, a1 float64, a2 float64) float64
 func i32toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func i64toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -546,7 +536,7 @@ func ident_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) u
 func init_class_range(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func internalize_json_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr) (r0, r1 uintptr)
 func is_duplicate_group_name(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func is_let(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func is_let(a0 uintptr, a1 uintptr) uintptr
 func js_Date_UTC(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_Date_now(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_Date_parse(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -576,7 +566,7 @@ func js_TA_get_uint8(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_add_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_add_string_store(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) (r0, r1 uintptr)
 func js_aggregate_error_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func js_alloc_string_rt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func js_alloc_string_rt(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_allocate_fast_array(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_arguments_define_own_property_block(a0 uintptr, a1 uintptr) uintptr
 func js_array_at(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -646,7 +636,7 @@ func js_async_generator_free(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_async_generator_function_call(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr) (r0, r1 uintptr)
 func js_async_generator_mark(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_async_generator_next(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
-func js_async_generator_resolve(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
+func js_async_generator_resolve(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_async_generator_resolve_function(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
 func js_async_generator_resolve_or_reject(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_async_generator_resume_next(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -672,7 +662,7 @@ func js_backtrace_put_frame(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uint
 func js_backtrace_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_backtrace_restore(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_backtrace_settle(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func js_bigint_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func js_bigint_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_asUintN(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_bigint_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_bigint_divrem(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -726,7 +716,6 @@ func js_create_map_iterator(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 u
 func js_create_module_function(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_create_resolving_functions(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_create_typed_array_iterator(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
-func js_create_var_ref(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_dataview_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_dataview_getValue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_dataview_get_buffer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
@@ -768,7 +757,7 @@ func js_free(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_desc(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_function_def(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_module_def(a0 uintptr, a1 uintptr, a2 uintptr)
-func js_free_modules(a0 uintptr, a1 uintptr, a2 uintptr)
+func js_free_modules(a0 uintptr, a1 uintptr)
 func js_free_rt(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_shape0(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_free_string(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -817,7 +806,7 @@ func js_index_atom_to_string(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr
 func js_inner_module_evaluation(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_inner_module_linking(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_instantiate_prototype(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
-func js_invoke(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
+func js_invoke(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_is_live_code(a0 uintptr, a1 uintptr) uintptr
 func js_iterator_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_iterator_concat_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -907,7 +896,6 @@ func js_number_toExponential(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 
 func js_number_toFixed(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_number_toPrecision(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_number_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
-func js_number_to_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_number_valueOf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_obj_to_desc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_object___defineGetter__(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
@@ -958,7 +946,7 @@ func js_parse_block(a0 uintptr, a1 uintptr) uintptr
 func js_parse_check_duplicate_parameter(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_parse_class_default_ctor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func js_parse_destructuring_element(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
+func js_parse_destructuring_element(a0 uintptr, a1 uintptr) uintptr
 func js_parse_destructuring_element1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
 func js_parse_destructuring_var(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_directives(a0 uintptr, a1 uintptr) uintptr
@@ -974,7 +962,7 @@ func js_parse_for_in_of(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_parse_from_clause(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_function_check_names(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_parse_function_decl(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func js_parse_function_decl2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
+func js_parse_function_decl2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_parse_function_decl21(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func js_parse_postfix_expr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_postfix_expr1(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1035,7 +1023,7 @@ func js_realloc2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uin
 func js_realloc_array(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_realloc_bytecode_rt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_realloc_rt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func js_rebalancee_string_rope(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
+func js_rebalancee_string_rope(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_reflect_apply(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_reflect_construct(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_reflect_deleteProperty(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1212,7 +1200,6 @@ func lre_is_cased(a0 uintptr, a1 uintptr) uintptr
 func lre_is_id_continue(a0 uintptr, a1 uintptr) uintptr
 func lre_is_id_start(a0 uintptr, a1 uintptr) uintptr
 func lre_is_space_non_ascii(a0 uintptr, a1 uintptr) uintptr
-func lre_js_is_ident_next(a0 uintptr, a1 uintptr) uintptr
 func lre_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
@@ -1226,14 +1213,15 @@ func map_find_record_short(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func map_hash_key(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func map_hash_long_key_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func map_key_eq(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
-func mark_children(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func mark_children_specialized_2(a0 uintptr, a1 uintptr, a2 uintptr)
+func mark_children_specialized_5(a0 uintptr, a1 uintptr, a2 uintptr)
+func mark_children_specialized_7(a0 uintptr, a1 uintptr, a2 uintptr)
 func memchr(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func memcmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func modf(a0 uintptr, a1 float64, a2 uintptr) float64
 func mp_div1norm(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func mpb_shr_round(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func mul_pow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
-func mul_pow_round_to_d(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func new_label(a0 uintptr, a1 uintptr) uintptr
 func next_token(a0 uintptr, a1 uintptr) uintptr
 func num_keys_cmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -1246,7 +1234,6 @@ func parse_ident(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 
 func parse_last_chunk_option(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func parse_unicode_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func perform_promise_then(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
-func point_cmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func poll_scan(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func pop_scope(a0 uintptr, a1 uintptr)
 func pow(a0 uintptr, a1 float64, a2 float64) float64
@@ -1269,13 +1256,12 @@ func re_parse_disjunction(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func re_parse_group_name(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_nested_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func re_string_cmp_len(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func re_string_find2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
+func re_string_find2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func re_string_list_canonicalize(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_string_list_free(a0 uintptr, a1 uintptr)
 func remainingElementsCount_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func remove_global_object_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func reparse_ident_token(a0 uintptr, a1 uintptr, a2 uintptr)
+func reparse_ident_token(a0 uintptr, a1 uintptr)
 func resize_properties(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func resize_shape_hash(a0 uintptr, a1 uintptr, a2 uintptr)
 func resolve_labels(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1284,7 +1270,6 @@ func resolve_scope_private_field1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr
 func resolve_scope_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) uintptr
 func rint(a0 uintptr, a1 float64) float64
 func round(a0 uintptr, a1 float64) float64
-func round_to_d(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rqsort(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func rqsort_stop(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func scalbn(a0 uintptr, a1 float64, a2 uintptr) float64
@@ -1326,7 +1311,7 @@ func string_buffer_write16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintp
 func string_buffer_write8(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_write8_wide_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_get_milliseconds(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func string_indexof_char(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_indexof_char(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func string_rope_get(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func strlen(a0 uintptr, a1 uintptr) uintptr
 func strrchr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1360,7 +1345,7 @@ func tlsf_size(a0 uintptr) uintptr
 func tlsf_walk_pool(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func tofp16(a0 uintptr, a1 float64) uintptr
 func trunc(a0 uintptr, a1 float64) float64
-func typed_array_init(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
+func typed_array_init(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func typed_array_is_oob(a0 uintptr, a1 uintptr) uintptr
 func u32toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func u64toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr

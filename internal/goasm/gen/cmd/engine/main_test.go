@@ -46,7 +46,7 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 // tests and negative builds, one at a time, and a plain build with an output
 // folder goes on.
 func TestReleaseError(t *testing.T) {
-	plain := devSwitches{NonFormat: defaultNonFormat}
+	plain := devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: strings.Join(gen.PostLinkOptArgs, " ")}
 	if err := releaseError(plain, "out"); err != nil {
 		t.Fatalf("a plain release build: %v", err)
 	}
@@ -176,6 +176,101 @@ func TestMissingNamesFormat(t *testing.T) {
 		src := "package p\n\n" + got
 		if f, err := format.Source([]byte(src)); err != nil || string(f) != src {
 			t.Errorf("%d stubs: gofmt changes %q to %q (%v)", len(c.stubs), src, f, err)
+		}
+	}
+}
+
+// TestCloneOf: llvm-link adds a number to a static whose name another file
+// also uses, the optimizer over the linked module adds .specialized and a
+// number to a function it clones, and both can follow each other. A name of C
+// that only ends in digits is not a copy.
+func TestCloneOf(t *testing.T) {
+	for name, want := range map[string]string{
+		"cr_add_interval.156":            "cr_add_interval",
+		"mark_children.specialized.2":    "mark_children",
+		"mark_children.specialized.2.7":  "mark_children",
+		"f.12.specialized.3":             "f",
+		"js_sub_string2":                 "",
+		"memcpy":                         "",
+		"js_string_pad.specialized":      "",
+		"a.b":                            "",
+		"mark_children.specialized.2x":   "",
+		"lre_exec_backtrack.specialized": "",
+	} {
+		got, ok := cloneOf(name)
+		if want == "" {
+			if ok || got != name {
+				t.Errorf("%s: cloneOf = %q, %v, want it left alone", name, got, ok)
+			}
+			continue
+		}
+		if !ok || got != want {
+			t.Errorf("%s: cloneOf = %q, %v, want %q", name, got, ok, want)
+		}
+	}
+}
+
+// TestCloneGroups: a copy of a function goes with the file of the function it
+// is a copy of, lowered or a stub, and a function some file defined keeps the
+// group of that file.
+func TestCloneGroups(t *testing.T) {
+	group := map[string]string{"mark_children": "quickjs", "cr_add_interval": "libregexp", "walk.specialized.1": "other"}
+	metas := []gen.Meta{{Name: "mark_children.specialized.2"}, {Name: "mark_children.specialized.5"}, {Name: "walk.specialized.1"}, {Name: "lonely"}}
+	stubs := []gen.Meta{{Name: "cr_add_interval.156"}, {Name: "unknown.specialized.1"}}
+	cloneGroups(group, metas, stubs)
+	for name, want := range map[string]string{
+		"mark_children.specialized.2": "quickjs",
+		"mark_children.specialized.5": "quickjs",
+		"cr_add_interval.156":         "libregexp",
+		"walk.specialized.1":          "other",
+		"lonely":                      "",
+		"unknown.specialized.1":       "",
+	} {
+		if got := group[name]; got != want {
+			t.Errorf("group of %s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// TestPostLinkOn: on and off say so, auto follows gen.PostLinkOptFor, and
+// anything else is an error before any work is done.
+func TestPostLinkOn(t *testing.T) {
+	for _, c := range []struct {
+		mode, arch string
+		want       bool
+	}{{"on", "amd64", true}, {"on", "arm64", true}, {"off", "amd64", false}, {"off", "arm64", false},
+		{"auto", "amd64", gen.PostLinkOptFor("amd64")}, {"auto", "arm64", gen.PostLinkOptFor("arm64")}} {
+		if got, err := postLinkOn(c.mode, c.arch); err != nil || got != c.want {
+			t.Errorf("%s %s: %v, %v, want %v", c.mode, c.arch, got, err, c.want)
+		}
+	}
+	for _, mode := range []string{"", "yes", "ON", "1", "true"} {
+		if _, err := postLinkOn(mode, "amd64"); err == nil || !strings.Contains(err.Error(), "-postlink-opt") {
+			t.Errorf("%q: %v", mode, err)
+		}
+	}
+}
+
+// TestReleaseErrorPostLink: a release build runs the optimizer as the
+// generator says, with its own arguments: it refuses a choice of its own.
+func TestReleaseErrorPostLink(t *testing.T) {
+	args := strings.Join(gen.PostLinkOptArgs, " ")
+	if err := releaseError(devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: args}, "out"); err != nil {
+		t.Errorf("the default switches: %v", err)
+	}
+	// An empty value is a choice too: -postlink-opt-args= would run opt with
+	// no pipeline at all.
+	for _, c := range []struct {
+		name string
+		d    devSwitches
+	}{
+		{"-postlink-opt other than auto", devSwitches{NonFormat: defaultNonFormat, PostLink: "off", PostArgs: args}},
+		{"-postlink-opt other than auto", devSwitches{NonFormat: defaultNonFormat, PostLink: "", PostArgs: args}},
+		{"-postlink-opt-args", devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: args + " -force-specialization"}},
+		{"-postlink-opt-args", devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: ""}},
+	} {
+		if err := releaseError(c.d, "out"); err == nil || !strings.Contains(err.Error(), c.name) {
+			t.Errorf("%+v: %v", c.d, err)
 		}
 	}
 }

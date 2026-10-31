@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 性能
+
+- linux/amd64 上生成的引擎，现在是在 C 文件链接成一个模块之后，让优化器再跑一遍得到的，所以文件之间的调用（`memcpy`、`memset`、`memcmp`，分配器和堆里的小函数，垃圾回收里的函数）都内联进了调用者。tifa 示例应用的页面每次渲染少跑 0.6% 到 1.2% 的指令，`r_react_ssr` 一次运行少 3.5%，HTML 不变。页面的耗时仍在代码位置的波动范围内（React 脚本和 bench 页面约为 0.98），汇编体积大 13%，解释器的栈帧大小不变。darwin/arm64 没有变。
+
 ## [v0.29.6] - 2026-10-31
 
 ### 性能

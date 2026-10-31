@@ -47,6 +47,12 @@ import (
 //   - vecpool.c: constants read with instructions that need them on 16 bytes,
 //     in functions whose bodies start 8 bytes past a multiple of 16 (-align64):
 //     the constants must still sit on 16 bytes where they run.
+//   - postlink.c (with postlink_lib.c): the optimizer that runs over the linked
+//     module inlines a small function of the other file, and with options that
+//     ask for it clones a static function for a constant function pointer
+//     (walk.specialized.N). The clones are functions the generator has not
+//     seen under a name, and they run as native code does. The leaf of the
+//     other file keeps its leaf entry.
 //   - nosplit.c: the shapes the NOSPLIT choice (PickNoSplit) tells apart run
 //     as native code does. The post-link check holds each function's stack
 //     check to the choice, and nosplit_fault below holds the choice itself,
@@ -85,30 +91,42 @@ func TestSampleRuns(t *testing.T) {
 
 	for _, s := range []struct {
 		file  string
+		more  []string // other files of the sample, in the same folder: built and linked with it, and given to the driver after it
 		extra []string // driver arguments
 		lines int      // results of run
 		pairs bool     // the results come in pairs that must be equal
 	}{
-		{"alias.c", nil, 24, false},
-		{"icalls.c", nil, 56, true},
-		{"nosplit.c", nil, 4, false},
-		{"vecpool.c", []string{"-align64", "mixa:40,mixb:8,mixc:16,mixd:24"}, 12, false},
-		{"trap.c", nil, 2, false},
-		{"narrow_va.c", []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
+		{"alias.c", nil, nil, 24, false},
+		{"icalls.c", nil, nil, 56, true},
+		{"nosplit.c", nil, nil, 4, false},
+		{"vecpool.c", nil, []string{"-align64", "mixa:40,mixb:8,mixc:16,mixd:24"}, 12, false},
+		{"trap.c", nil, nil, 2, false},
+		{"narrow_va.c", nil, []string{"-varargs-block", "-non-format-variadic", "tagged,tagged2,small,oddsum,forward,forward2"}, 12, false},
+		{"postlink.c", []string{"postlink_lib.c"}, []string{"-leaves", "pl_sum", "-postlink-opt-args", postLinkSpecialize}, 5, false},
 	} {
 		name := strings.TrimSuffix(s.file, ".c")
 		t.Run(name, func(t *testing.T) {
-			c, err := filepath.Abs(filepath.Join(src, s.file))
-			if err != nil {
-				t.Fatal(err)
+			var files []string // the sample and the rest of its files, absolute
+			for _, f := range append([]string{s.file}, s.more...) {
+				p, err := filepath.Abs(filepath.Join(src, f))
+				if err != nil {
+					t.Fatal(err)
+				}
+				files = append(files, p)
 			}
+			c := strings.Join(files, ",") // -src takes the files in this order
 			for _, u := range []struct {
 				suffix string
 				flags  []string
 			}{{"", nil}, {"-ub", ubsan}} {
-				obj, exe := at(name+u.suffix+".o"), at(name+u.suffix)
-				tool(t, "", clang, append(append(append([]string{}, plain...), u.flags...), "-c", "-o", obj, c)...)
-				tool(t, "", lld, "-static", "-e", "_start", "-o", exe, at("main.o"), obj)
+				exe := at(name + u.suffix)
+				link := []string{"-static", "-e", "_start", "-o", exe, at("main.o")}
+				for i, f := range files {
+					obj := at(fmt.Sprintf("%s%s-%d.o", name, u.suffix, i))
+					tool(t, "", clang, append(append(append([]string{}, plain...), u.flags...), "-c", "-o", obj, f)...)
+					link = append(link, obj)
+				}
+				tool(t, "", lld, link...)
 			}
 			want := tool(t, "", at(name))
 			if ub := tool(t, "", at(name+"-ub")); ub != want {

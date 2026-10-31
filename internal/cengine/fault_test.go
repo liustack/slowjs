@@ -219,9 +219,13 @@ func TestFaultsAmongVMs(t *testing.T) {
 // pushes a call of sigpanic where the fault is, and sigpanic's stack check
 // may call morestack: the generator leaves room for both below every chain.
 // js_strdup measures the string with strlen, and both are on the list, so a
-// string that points at nothing faults in strlen with js_strdup above it. One call shows the frames through
-// runtime.Callers, then fresh goroutines make the same call deeper in their
-// stacks, by steps of 8 bytes over 12 KiB, each on a VM of its own.
+// string that points at nothing faults in strlen with js_strdup above it. On
+// amd64 the optimizer that runs over the linked module inlines strlen into
+// js_strdup, and the fault is in js_strdup itself: either way the frames of
+// the engine from the fault up to the call of the test are all on the list.
+// One call shows the frames through runtime.Callers, then fresh goroutines make
+// the same call deeper in their stacks, by steps of 8 bytes over 12 KiB, each
+// on a VM of its own.
 func TestFaultNoSplit(t *testing.T) {
 	const wild = 0xdead0000
 	on := map[string]bool{}
@@ -257,8 +261,16 @@ func TestFaultNoSplit(t *testing.T) {
 		t.Fatalf("no frames of the engine below sigpanic: %v", frames)
 	}
 	const pkg = "github.com/liustack/slowjs/internal/cengine."
-	if f, g := frames[at+1], frames[at+2]; f != pkg+"strlen" || g != pkg+"js_strdup" {
-		t.Fatalf("the fault is in %s called from %s, want strlen from js_strdup: %v", f, g, frames)
+	var chain []string // the functions of the engine from the fault up, as long as they are on the list
+	for _, f := range frames[at+1:] {
+		name, ok := strings.CutPrefix(f, pkg)
+		if !ok || !on[name] {
+			break
+		}
+		chain = append(chain, name)
+	}
+	if c := strings.Join(chain, " "); c != "js_strdup" && c != "strlen js_strdup" {
+		t.Fatalf("the functions on the list from the fault up are %q, want js_strdup or strlen js_strdup: %v", c, frames)
 	}
 	brokenAfter(t, v, "a fault in a NOSPLIT chain")
 
