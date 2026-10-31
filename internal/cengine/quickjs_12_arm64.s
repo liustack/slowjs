@@ -10620,7 +10620,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x17ffff81
 	WORD $0x31001c3f
 	WORD $0xf90073ea
-	WORD $0x54004ca1
+	WORD $0x54004ee1
 	WORD $0xf90077e1
 	WORD $0xb94001e8
 	WORD $0x91018294
@@ -10897,7 +10897,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x51000529
 	WORD $0xb9096509
 	WORD $0xf94083fe
-	WORD $0x140003f2
+	WORD $0x140003fc
 	WORD $0xf9400995
 	WORD $0x91018294
 	WORD $0xaa0f03f6
@@ -11100,7 +11100,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90013f7
 	BL ·JS_IsArray(SB)
 	WORD $0x37fffda0
-	WORD $0x340009a0
+	WORD $0x34000be0
 	WORD $0xa94f23f7
 	WORD $0xf94087f5
 	WORD $0xf94077f8
@@ -11125,8 +11125,8 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9407fe9
 	WORD $0xf9402d28
 	WORD $0xf100051f
-	WORD $0xf9004fe8
-	WORD $0x5400338b
+	WORD $0xf9003fe8
+	WORD $0x5400356b
 	WORD $0xf9406fe8
 	WORD $0xa94a5ff6
 	WORD $0x91018134
@@ -11150,9 +11150,8 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9001bf9
 	BL ·JS_GetPropertyValue(SB)
 	WORD $0x7100183f
-	WORD $0xf9004be1
-	WORD $0xf9003fe0
-	WORD $0x54fff700
+	WORD $0xa90907e0
+	WORD $0x54fff720
 	WORD $0xf9407fe8
 	WORD $0xf94087f5
 	WORD $0xaa1f03f6
@@ -11168,7 +11167,26 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x7100183f
 	WORD $0xf90073e1
 	WORD $0xf90063e0
-	WORD $0x540022a1
+	WORD $0x54002501
+	WORD $0xf9404fe8
+	WORD $0x3100251f
+	WORD $0x54000223
+	WORD $0xf9404be9
+	WORD $0xb85fc128
+	WORD $0x51000508
+	WORD $0x7100011f
+	WORD $0xb81fc128
+	WORD $0x5400016c
+	WORD $0xf94087e8
+	WORD $0xa9495ff6
+	WORD $0xf9400915
+	WORD $0xf9407fe8
+	WORD $0x91018114
+	WORD $0xf90007f4
+	WORD $0xf9000bf5
+	WORD $0xf9000ff6
+	WORD $0xf90013f7
+	BL ·__JS_FreeValueRT(SB)
 	WORD $0xa94ebfe1
 	WORD $0xaa1f03ed
 	WORD $0xa94ce3e0
@@ -11176,7 +11194,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94b5ff6
 	WORD $0xf94073eb
 	WORD $0xa94a2be9
-	WORD $0x17fffe5a
+	WORD $0x17fffe48
 	WORD $0xf9406fe8
 	WORD $0xf940150e
 	WORD $0x71000ddf
@@ -11208,7 +11226,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94ebfe1
 	WORD $0x5280006b
 	WORD $0xf90063ff
-	WORD $0x17ffff85
+	WORD $0x17ffff73
 	WORD $0xf9407fe8
 	WORD $0xf94087f5
 	WORD $0xaa0d03f7
@@ -11226,7 +11244,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90063ff
 	WORD $0x5280006b
 	WORD $0xa94ebfe1
-	WORD $0x1400016a
+	WORD $0x14000167
 	WORD $0xf9400155
 	WORD $0x91018294
 	WORD $0xaa0f03f6
@@ -11245,7 +11263,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·string_buffer_set_error(SB)
-	WORD $0x17fffe99
+	WORD $0x17fffe87
 	WORD $0xf9406fe8
 	WORD $0x52800f76
 	WORD $0xf9402915
@@ -11259,7 +11277,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9402d08
 	WORD $0xf100051f
 	WORD $0xf9003be8
-	WORD $0x540024ab
+	WORD $0x5400244b
 	WORD $0x52800028
 	WORD $0xf90063ff
 	WORD $0xb9006fe8
@@ -11325,7 +11343,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9001bf9
 	BL ·JS_GetPropertyValue(SB)
 	WORD $0x7100183f
-	WORD $0x540020a0
+	WORD $0x54002040
 	WORD $0xf9407ff5
 	WORD $0xf94087e9
 	WORD $0xf9406fe8
@@ -11344,7 +11362,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x540001e1
 	WORD $0xa94727e8
 	WORD $0xeb09011f
-	WORD $0x54002cc0
+	WORD $0x54002c60
 	WORD $0xf9407fe8
 	WORD $0x92679908
 	WORD $0xf940c109
@@ -11358,7 +11376,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x17ffffa7
 	WORD $0x7100183f
 	WORD $0xa90587e0
-	WORD $0x54001c80
+	WORD $0x54001c20
 	WORD $0xb9406fe8
 	WORD $0x37000148
 	WORD $0xf9406fe8
@@ -11392,7 +11410,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90013f7
 	WORD $0xf90017f8
 	BL ·JS_ToQuotedString(SB)
-	WORD $0x35003d60
+	WORD $0x35003c60
 	WORD $0xf9406fe8
 	WORD $0x52800756
 	WORD $0xf9402915
@@ -11424,10 +11442,10 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·js_json_to_str_block(SB)
-	WORD $0x35001440
+	WORD $0x350013e0
 	WORD $0xa94727e8
 	WORD $0xeb09011f
-	WORD $0x540022a0
+	WORD $0x54002240
 	WORD $0xf9407fe8
 	WORD $0xb9006fff
 	WORD $0x92679908
@@ -11444,7 +11462,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9407ff4
 	WORD $0xf94073ea
 	WORD $0xaa0003ef
-	WORD $0x17fffcc4
+	WORD $0x17fffcb2
 	WORD $0xf94087e9
 	WORD $0xf9407ff5
 	WORD $0xf9406fe8
@@ -11452,8 +11470,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94ea7e8
 	WORD $0x910182b4
 	WORD $0xa90122a9
-	WORD $0xf9403fe9
-	WORD $0xf9404be8
+	WORD $0xa94923e9
 	WORD $0xa90222a9
 	WORD $0xf94063e9
 	WORD $0xf94073e8
@@ -11462,8 +11479,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9000bf5
 	BL ·js_json_check_block(SB)
 	WORD $0xf94073e8
-	WORD $0xf9003fe0
-	WORD $0xf9004be1
+	WORD $0xa90907e0
 	WORD $0x3100251f
 	WORD $0x54000243
 	WORD $0xf94063e9
@@ -11483,10 +11499,10 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0xf9404be8
+	WORD $0xf9404fe8
 	WORD $0x2a0803e8
 	WORD $0xf100191f
-	WORD $0x54ffcd40
+	WORD $0x54ffcb40
 	WORD $0xf94087ea
 	WORD $0xf9407ff5
 	WORD $0xf1000d1f
@@ -11494,8 +11510,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x52800048
 	WORD $0x910182b4
 	WORD $0xa90026aa
-	WORD $0xf9403fe9
-	WORD $0xf9404bea
+	WORD $0xa9492be9
 	WORD $0x9a8903e9
 	WORD $0x9a8a0108
 	WORD $0xa90122a9
@@ -11504,8 +11519,8 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·js_json_to_str_block(SB)
-	WORD $0x35ffcb00
-	WORD $0xf9404fe8
+	WORD $0x35ffc920
+	WORD $0xf9403fe8
 	WORD $0xf100051f
 	WORD $0x54001c61
 	WORD $0xf9406fe8
@@ -11592,7 +11607,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94b5ff6
 	WORD $0xa94a2be9
 	WORD $0xa9493bed
-	WORD $0x17fffcba
+	WORD $0x17fffcab
 	WORD $0xf9407be9
 	WORD $0xb85fc128
 	WORD $0x51000508
@@ -11688,20 +11703,20 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf94073e8
 	WORD $0x3100251f
-	WORD $0x54ff9de3
+	WORD $0x54ff9c03
 	WORD $0xf94063e9
 	WORD $0xb85fc128
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc128
-	WORD $0x54ff9d2c
+	WORD $0x54ff9b4c
 	WORD $0xf94087e8
 	WORD $0xf94063f6
 	WORD $0xf94073f7
 	WORD $0xf9400915
 	WORD $0xf9407fe8
 	WORD $0x91018114
-	WORD $0x17fffcdd
+	WORD $0x17fffcce
 	WORD $0xb9406fe8
 	WORD $0x3707ed88
 	WORD $0xf9406fe8
@@ -11734,12 +11749,12 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90013f7
 	BL ·string_buffer_concat_value(SB)
 	WORD $0x17ffff4e
-	WORD $0xf9404fe9
+	WORD $0xf9403fe9
 	WORD $0x52800048
 	WORD $0xcb090108
 	WORD $0xf9003be8
 	WORD $0x52800028
-	WORD $0xf9004fe8
+	WORD $0xf9003fe8
 	WORD $0xf9406fe8
 	WORD $0x52800596
 	WORD $0xf9402915
@@ -11762,7 +11777,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94f23f6
 	WORD $0xf94087f5
 	WORD $0xf94077f7
-	WORD $0xf9404ff8
+	WORD $0xf9403ff8
 	WORD $0x91018114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -11771,10 +11786,9 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf90017f8
 	BL ·JS_GetPropertyInt64(SB)
 	WORD $0x7100183f
-	WORD $0xf9004be1
-	WORD $0xf9003fe0
-	WORD $0x54000ca0
-	WORD $0xf9404fe9
+	WORD $0xa90907e0
+	WORD $0x54000c20
+	WORD $0xf9403fe9
 	WORD $0xf94087f5
 	WORD $0x9e630120
 	WORD $0xd35ffd28
@@ -11794,7 +11808,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x7100183f
 	WORD $0xf90073e1
 	WORD $0xf90063e0
-	WORD $0x54ffb1e0
+	WORD $0x54ffb000
 	WORD $0xf94087e9
 	WORD $0xf9407ff5
 	WORD $0xf9406fe8
@@ -11802,8 +11816,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xa94ea7e8
 	WORD $0x910182b4
 	WORD $0xa90122a9
-	WORD $0xf9403fe9
-	WORD $0xf9404be8
+	WORD $0xa94923e9
 	WORD $0xa90222a9
 	WORD $0xf94063e9
 	WORD $0xf94073e8
@@ -11812,8 +11825,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9000bf5
 	BL ·js_json_check_block(SB)
 	WORD $0xf94073e8
-	WORD $0xf9003fe0
-	WORD $0xf9004be1
+	WORD $0xa90907e0
 	WORD $0x3100251f
 	WORD $0x54000243
 	WORD $0xf94063e9
@@ -11833,33 +11845,31 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0xf9404be8
+	WORD $0xf9404fe8
 	WORD $0x2a0803e8
 	WORD $0xf100191f
-	WORD $0x540004c0
+	WORD $0x54000480
 	WORD $0xf1000d1f
 	WORD $0xf94087e9
 	WORD $0xf9407ff5
 	WORD $0xf9406fe8
-	WORD $0xf9404bea
 	WORD $0x910182b4
 	WORD $0xa90022a9
-	WORD $0xf9403fe8
+	WORD $0xa9492be8
 	WORD $0x52800049
-	WORD $0x9a8a0129
 	WORD $0x9a8803e8
+	WORD $0x9a8a0129
 	WORD $0xa90126a8
 	WORD $0xa94ca3e9
 	WORD $0xa90222a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	BL ·js_json_to_str_block(SB)
-	WORD $0x35000280
-	WORD $0xf9403be8
-	WORD $0xf9404fe9
+	WORD $0x35000260
+	WORD $0xa94727e8
 	WORD $0x8b090108
 	WORD $0xf100051f
-	WORD $0x54ffd420
+	WORD $0x54ffd4c0
 	WORD $0xf9407fe8
 	WORD $0x92679908
 	WORD $0xf940c109
@@ -11867,9 +11877,9 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf100013f
 	WORD $0xf900c109
 	WORD $0x5400008d
-	WORD $0xf9404fe8
+	WORD $0xf9403fe8
 	WORD $0x91000508
-	WORD $0x17ffff7e
+	WORD $0x17ffff83
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
@@ -11882,16 +11892,16 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0x5280006e
 	WORD $0xa94a2be9
 	WORD $0xf90063ff
-	WORD $0x17fffb98
+	WORD $0x17fffb8e
 	WORD $0xf94033e8
 	WORD $0x3100251f
-	WORD $0x54ffdaa3
+	WORD $0x54ffdb43
 	WORD $0xf9402fe9
 	WORD $0xb85fc128
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc128
-	WORD $0x54ffd9ec
+	WORD $0x54ffda8c
 	WORD $0xf94087e8
 	WORD $0xa945dff6
 	WORD $0xf9400915
@@ -11902,7 +11912,7 @@ TEXT ·js_json_to_str_block(SB), $264-24
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17fffec4
+	WORD $0x17fffec9
 	MOVD R0, ret+16(FP)
 	RET
 

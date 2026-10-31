@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 修复
+
+- `JSON.stringify` 处理数组时，如果把元素的下标转成字符串那一步内存不足，不再漏掉这个元素。原来这个元素连同它键的 atom 一直留到 `VM.Close`，释放时会发现还有块在用。上游 QuickJS 也有这个问题，quickjs-ng 在 `293ba08` 修了。
+
 ## [v0.29.7] - 2026-11-01
 
 ### 变更

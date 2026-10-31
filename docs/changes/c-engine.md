@@ -48,6 +48,7 @@ read_when:
 | A template literal converts each substitution to a string at once | `${c} ${c.n++}` and a `Date` that a later substitution changes print what Node prints, and a changed `String.prototype.concat` no longer changes templates. Upstream QuickJS `f8199dc`, see [upstream-commits.md](upstream-commits.md) | `compare/template_literal.js` |
 | A negative BigInt and a negative float compare right | `-0.5 < -1n` was true. Upstream QuickJS and the previous engine have the same bug | `compare/number_compare.js` |
 | `\p{Script=...}` that runs out of memory while it compiles ends the call with the out of memory error | the process crashed. Upstream QuickJS `817509a` | `unit-oom` (`test_regexp_script_oom`) |
+| `JSON.stringify` frees the element of an array whose index it could not make a string for | the conversion of the index runs out of memory. The element stayed, with its shape and the atoms of its keys, until the runtime was freed, which then found blocks in use. Upstream QuickJS has the same code. quickjs-ng `293ba08` | `unit-white` (`test_json_stringify_oom`, and `test_json_key_cache`, which stringifies what each failing parse made) |
 
 ## The small libc
 

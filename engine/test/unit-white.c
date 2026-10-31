@@ -515,7 +515,8 @@ static void test_json_count_high_bytes(void)
    the keys the script holds have their references of before. The text has
    rows of keys in changing orders, more keys than the cache has slots, keys
    that share a slot (abcde and abcxe), an escaped key equal to a plain one
-   and keys repeated in one row. */
+   and keys repeated in one row. Each failing call also stringifies what it
+   parsed and compares it with the text the setup made. */
 static void test_json_key_cache(void)
 {
     static const char setup[] =
@@ -532,7 +533,7 @@ static void test_json_key_cache(void)
         "}\n"
         "var text = '[' + parts.join(',\\n') + ']', bad = text.slice(0, -40) + '}x', held = { abcde: 1, k5: 2 }\n"
         "var want = JSON.stringify(JSON.parse(text))\n"
-        "globalThis.f = () => JSON.parse(text).length === 120; 0";
+        "globalThis.f = () => JSON.stringify(JSON.parse(text)) === want; 0";
     static const char *const held[] = { "abcde", "abcxe", "k5", "k77" };
     static const char *const calls[] = {
         "JSON.parse(text).length",
@@ -582,6 +583,60 @@ static void test_json_key_cache(void)
                   held[k], white_atom_refs(v.ctx, held[k]), before[k]);
     }
     CHECK(ooms > 100, "only %d of %d calls failed the parse", ooms, n);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
+/* JSON.stringify of an array reads each element, then converts its index to
+   a string for js_json_check. When that conversion runs out of memory, the
+   element is freed: it used to stay, with its shape and the atoms of its
+   keys, until the runtime was freed. Each call of the allocator fails in turn
+   on an array of objects, arrays and strings made for the call, and after
+   each the runtime holds as many objects and strings as before it. */
+static void test_json_stringify_oom(void)
+{
+    static const char setup[] =
+        "globalThis.f = (n) => JSON.stringify([{ a: 1, ['k' + n]: 's' + n }, [2, { b: 'x'.repeat(n) }], 'v' + n, {}])\n"
+        "f(40)";
+    static const char want[] =
+        "[{\"a\":1,\"k40\":\"s40\"},[2,{\"b\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}],\"v40\",{}]";
+    VM v = vm_new();
+    JSValue g, f, arg = JS_NewInt32(v.ctx, 40);
+    int fail, n = 0, ooms = 0;
+
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "f");
+    JS_FreeValue(v.ctx, g);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        JSMemoryUsage before, after;
+        int made;
+        JSValue r;
+
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &before);
+        r = white_call_failing(v.ctx, f, JS_UNDEFINED, 1, &arg, fail, &made);
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "call %d failing: an exception that is not out of memory", fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            const char *s = JS_ToCString(v.ctx, r);
+
+            CHECK(s && !strcmp(s, want), "call %d failing: %s", fail, s ? s : "(no string)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, r);
+        }
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &after);
+        CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count,
+              "call %d failing: %lld objects and %lld strings, before it %lld and %lld", fail,
+              (long long)after.obj_count, (long long)after.str_count, (long long)before.obj_count,
+              (long long)before.str_count);
+    }
+    CHECK(ooms > 10, "only %d of %d calls failed the stringify", ooms, n);
     JS_FreeValue(v.ctx, f);
     vm_free(&v);
 }
@@ -3382,6 +3437,7 @@ int main(void)
     test_json_plain_run();
     test_json_count_high_bytes();
     test_json_key_cache();
+    test_json_stringify_oom();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();
