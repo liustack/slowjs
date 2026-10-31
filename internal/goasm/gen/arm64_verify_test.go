@@ -62,7 +62,7 @@ func a64CheckCaseNops(tail []uint32, nops int, align64 map[string]int) (*a64Chec
 		plan.InBody = map[string][]*DataObj{"f": {{Label: ".LCPI0_0", Align: 4}}}
 		plan.Rename = map[string]map[string]string{"f": {".LCPI0_0": ".LCPI0_0.f"}}
 	}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: plan, Sigs: map[string]Sig{"g": {}}, Align64: align64}, o: o, bin: bin, morestack: morestack, rodata: rodata}
 	// Go's prologue: the stack check, a frame of 64 (40, the LR, rounded
 	// for the frame pointer), the argument from 72(RSP), no-ops to 16.
 	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20}
@@ -317,7 +317,7 @@ func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
 		4: {elf.R_AARCH64_CALL26, "go_g", 0},
 	}}
 	bin := &binFile{syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}}}
-	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: &DataPlan{}, Metas: []Meta{m, g}},
+	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: &DataPlan{}, Metas: []Meta{m, g}, Sigs: map[string]Sig{"g": sig}},
 		o: o, bin: bin, morestack: morestack}
 	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, a64Nop}
 	at := func() uint64 { return base + uint64(4*len(w)) }
@@ -350,6 +350,13 @@ func TestCheckARM64RegResult(t *testing.T) {
 		"from registers of Go code": {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { k.c.Metas = k.c.Metas[:1]; return w }, "no lowered unified function"},
 		"from registers of a leaf":  {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { k.c.Metas[1].Kind = Register; return w }, "no lowered unified function"},
 		"through a pointer":         {true, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Kind = CallReg; return w }, "through a register"},
+		"as a leaf call":            {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Kind = CallLeaf; return w }, "the pass has g as a leaf false"},
+		"a leaf call": {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 {
+			k.c.Leaves, k.c.Metas[1].Kind = map[string]bool{"g": true}, Register
+			m.Rec.Calls[0] = CallRecord{Kind: CallLeaf, Target: "g"}
+			return w
+		}, ""},
+		"as returning nothing": {false, false, func(k *a64Checker, m *Meta, w []uint32) []uint32 { m.Rec.Calls[0].Sig.Ret = Void; return w }, "its signature is"},
 		// mov x0, xzr after the store of the result.
 		"a word after the result store": {false, true, func(k *a64Checker, m *Meta, w []uint32) []uint32 {
 			return append(w[:12:12], append([]uint32{0xaa1f03e0}, w[12:]...)...)
