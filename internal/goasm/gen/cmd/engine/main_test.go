@@ -46,7 +46,7 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 // tests and negative builds, one at a time, and a plain build with an output
 // folder goes on.
 func TestReleaseError(t *testing.T) {
-	plain := devSwitches{NonFormat: defaultNonFormat}
+	plain := devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: strings.Join(gen.PostLinkOptArgs, " ")}
 	if err := releaseError(plain, "out"); err != nil {
 		t.Fatalf("a plain release build: %v", err)
 	}
@@ -255,20 +255,22 @@ func TestPostLinkOn(t *testing.T) {
 // generator says, with its own arguments: it refuses a choice of its own.
 func TestReleaseErrorPostLink(t *testing.T) {
 	args := strings.Join(gen.PostLinkOptArgs, " ")
-	for _, d := range []devSwitches{
-		{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: args},
-		{NonFormat: defaultNonFormat},
-	} {
-		if err := releaseError(d, "out"); err != nil {
-			t.Errorf("%+v: %v", d, err)
-		}
+	if err := releaseError(devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: args}, "out"); err != nil {
+		t.Errorf("the default switches: %v", err)
 	}
-	for name, d := range map[string]devSwitches{
-		"-postlink-opt other than auto": {NonFormat: defaultNonFormat, PostLink: "off"},
-		"-postlink-opt-args":            {NonFormat: defaultNonFormat, PostArgs: args + " -force-specialization"},
+	// An empty value is a choice too: -postlink-opt-args= would run opt with
+	// no pipeline at all.
+	for _, c := range []struct {
+		name string
+		d    devSwitches
+	}{
+		{"-postlink-opt other than auto", devSwitches{NonFormat: defaultNonFormat, PostLink: "off", PostArgs: args}},
+		{"-postlink-opt other than auto", devSwitches{NonFormat: defaultNonFormat, PostLink: "", PostArgs: args}},
+		{"-postlink-opt-args", devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: args + " -force-specialization"}},
+		{"-postlink-opt-args", devSwitches{NonFormat: defaultNonFormat, PostLink: "auto", PostArgs: ""}},
 	} {
-		if err := releaseError(d, "out"); err == nil || !strings.Contains(err.Error(), name) {
-			t.Errorf("%s: %v", name, err)
+		if err := releaseError(c.d, "out"); err == nil || !strings.Contains(err.Error(), c.name) {
+			t.Errorf("%+v: %v", c.d, err)
 		}
 	}
 }

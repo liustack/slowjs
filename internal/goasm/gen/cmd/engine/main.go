@@ -840,8 +840,8 @@ func releaseError(d devSwitches, out string) error {
 	add(d.ForceNoSplit != "", "GEN_FORCE_NOSPLIT")
 	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
 	add(d.NoPoll, "an engine without polls (-poll=false)")
-	add(d.PostLink != "" && d.PostLink != "auto", "-postlink-opt other than auto")
-	add(d.PostArgs != "" && d.PostArgs != strings.Join(gen.PostLinkOptArgs, " "), "-postlink-opt-args")
+	add(d.PostLink != "auto", "-postlink-opt other than auto")
+	add(d.PostArgs != strings.Join(gen.PostLinkOptArgs, " "), "-postlink-opt-args")
 	if len(bad) > 0 {
 		return fmt.Errorf("-release refuses %s: they are for surveys and tests, not for the engine", strings.Join(bad, ", "))
 	}
