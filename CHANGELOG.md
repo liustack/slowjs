@@ -2,6 +2,14 @@
 
 What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
+## [Unreleased]
+
+### Fixed
+
+- `JSON.stringify` of an array that runs out of memory while it makes the index of an element a string no longer leaks that element. The element, with the atoms of its keys, stayed until `VM.Close`, which then found blocks still in use. Upstream QuickJS has the same bug, quickjs-ng fixed it in `293ba08`.
+- `JSON.stringify` with a long string made by concatenation as its space (a rope) indents with the first 10 characters of that string. It indented with bytes read from the inner fields of the rope, a pointer among them. Upstream QuickJS has the same bug, quickjs-ng fixed it in `35e195c`.
+- `JSON.stringify` with an array of names as its replacer fails with the out of memory error when it runs out of memory while it copies those names. It went on without the name it could not copy and returned a string without that property, with the error still pending. Upstream QuickJS and quickjs-ng have the same bug.
+
 ## [v0.29.7] - 2026-11-01
 
 ### Changed
