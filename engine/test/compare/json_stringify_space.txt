@@ -1,0 +1,12 @@
+flat: --"x": 1
+flat of 12: abcdefghij"x": 1
+rope of 8 bits: aaaaaaaaaa"x": 1
+rope of 16 bits: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+rope, short piece first: xyzzzzzzzz"x": 1
+rope, 16 bits after 8: pq\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}"x": 1
+rope of ropes: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+String object of a rope: aaaaaaaaaa"x": 1
+String object of a 16-bit rope: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+number:     "x": 1
+Number object:    "x": 1
+nested: {\u{a}abcccccccc"x": 1,\u{a}abcccccccc"y": [\u{a}abccccccccabcccccccc2,\u{a}abccccccccabcccccccc{\u{a}abccccccccabccccccccabcccccccc"z": 3\u{a}abccccccccabcccccccc}\u{a}abcccccccc]\u{a}}

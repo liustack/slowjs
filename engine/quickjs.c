@@ -58919,8 +58919,10 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
                     goto exception;
                 /* XXX: could do this string conversion only when needed */
                 prop = JS_ToStringFree(ctx, JS_NewInt64(ctx, i));
-                if (JS_IsException(prop))
+                if (JS_IsException(prop)) {
+                    JS_FreeValue(ctx, v);
                     goto exception;
+                }
                 v = js_json_check(ctx, jsc, val, v, prop);
                 JS_FreeValue(ctx, prop);
                 prop = JS_UNDEFINED;
@@ -59106,7 +59108,9 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
                     goto exception;
                 }
                 if (!JS_ToBoolFree(ctx, present)) {
-                    JS_SetPropertyInt64(ctx, jsc->property_list, j++, v);
+                    /* the setter takes v, also when it fails */
+                    if (JS_SetPropertyInt64(ctx, jsc->property_list, j++, v) < 0)
+                        goto exception;
                 } else {
                     JS_FreeValue(ctx, v);
                 }
@@ -59132,7 +59136,12 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
             goto exception;
         jsc->gap = js_new_string8_len(ctx, "          ", n);
     } else if (JS_IsString(space)) {
-        JSString *p = JS_VALUE_GET_STRING(space);
+        JSString *p;
+        /* a rope is no JSString: make it flat before reading it */
+        space = JS_ToStringFree(ctx, space);
+        if (JS_IsException(space))
+            goto exception;
+        p = JS_VALUE_GET_STRING(space);
         jsc->gap = js_sub_string(ctx, p, 0, min_int(p->len, 10));
     } else {
         jsc->gap = JS_DupValue(ctx, jsc->empty);
