@@ -613,6 +613,18 @@ Median of 5 rounds at 8 code positions each (the round and the order of the buil
 
 What the generator could still give back is small or already tried. The absolute dispatch table (22% to 41% of the extra instructions) did not change the time. Dropping the no-ops and the shared `RET` is estimated under 1% of the time. Registers for the arguments of calls into the functions without a stack check would give 0.3% to 0.9% (see [What was tried and not done](#what-was-tried-and-not-done)). The shadow stack reads are the design.
 
+**Results from registers.** Since the release after v0.29.5, a call to another generated function takes the result from the registers the callee returns it in (RAX, RDX or X0 on amd64, x0, x1 or d0 on arm64) and no longer loads it back from the Go stack. The callee still stores it to its Go result slot, and after that runs only Go's epilogue, which touches the frame pointer, the return address and SP, so the registers still hold it after the `RET`. 6,982 call sites on amd64 and 7,087 on arm64 skip the load. A call through a pointer, to Go code or to a function that failed to generate keeps it. The post-link check holds each call that skips the load to a callee that is a lowered unified function, and that callee to its return sequence. Measured on 2026-10-31 against v0.29.5, instructions by callgrind on amd64, time at 4 code positions and 3 rounds on each machine (linux/amd64 on the machine above, darwin/arm64 on an Apple M4), the same HTML on both:
+
+| Workload | Instructions (amd64) | Time, amd64 | Time, arm64 |
+| --- | ---: | ---: | ---: |
+| shop workbench, 6 pages | -0.37% | 0.978 | 0.995 |
+| store, 5 pages | -0.62% | 0.980 | 0.990 |
+| MUI, 3 pages | -0.65% | 0.984 | 0.996 |
+| bench, 2 pages | -0.53% | 0.995 | 0.997 |
+| `r_react_ssr` | -0.42% | 0.973 | 0.997 |
+
+All changes in time are under 3%, so the instructions are the measure. All 4 positions agree on amd64 for every workload. The time on amd64 fell more than the instructions did, by a cause not measured. The generated assembly is 1.9% smaller on amd64 and 2.1% on arm64.
+
 ### Where a render's time goes on the C engine
 
 From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on slowjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
