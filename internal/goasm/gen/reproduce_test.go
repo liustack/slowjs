@@ -75,20 +75,30 @@ func readPackage(t *testing.T, dir string) map[string]string {
 // whatever the number of compile jobs and whichever compile finishes first,
 // and the work folder is not written into any file. The three runs use jobs of
 // 1, 4 and 4, and a bound on the size of a .s file small enough for several
-// files in each group. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
-// (SLOWJS_SHADOW_PASS).
+// files in each group, for amd64 and for arm64. It needs LLVM 22.1.8
+// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
 func TestOutputReproducible(t *testing.T) {
 	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
 		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
 	}
+	for _, arch := range [][]string{nil, {"-arch", "arm64", "-mode", "pn"}} {
+		name := "amd64"
+		if arch != nil {
+			name = "arm64"
+		}
+		t.Run(name, func(t *testing.T) { checkReproducible(t, llvm, pass, arch) })
+	}
+}
+
+func checkReproducible(t *testing.T, llvm, pass string, arch []string) {
 	work := t.TempDir()
 	src := reproduceSources(t, work)
 	run := driverRunner(t, work, llvm, pass)
 	var pkgs []map[string]string
 	for i, jobs := range []string{"1", "4", "4"} {
 		name := fmt.Sprintf("run%d", i)
-		if out, err := run(name, src, nil, "-j", jobs, "-max-file", "6000"); err != nil {
+		if out, err := run(name, src, nil, append([]string{"-j", jobs, "-max-file", "6000"}, arch...)...); err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, out)
 		}
 		pkgs = append(pkgs, readPackage(t, filepath.Join(work, "out-"+name)))
