@@ -445,9 +445,9 @@ struct JSRuntime {
        stack ends where it did */
     long call_frame;
     long stack_debt;
-    /* TRUE: the compiler leaves the pairs of fuse_code apart, and joins a
-       typeof test only as it did before typeof_is (JS_SetFusedOps, for
-       tests) */
+    /* TRUE: the compiler leaves the pairs of fuse_code apart, joins a
+       typeof test only as it did before typeof_is, and keeps every check of
+       the temporal dead zone (JS_SetFusedOps, for tests) */
     BOOL no_fused_ops;
     /* the recursions of C that are no call running now (see
        js_internal_enter) */
@@ -40615,10 +40615,273 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
     return 0;
 }
 
+/* tdz_checks drops the checks of the temporal dead zone that cannot fail
+   from the code of a function after resolve_variables (phase 2), before
+   resolve_labels. A get_loc_check or put_loc_check of a local variable
+   becomes get_loc or put_loc when the variable is known to be initialized
+   there, and the set_loc_uninitialized of a variable that then has no check
+   left, no capture and no other read is dropped (*drop[idx] set to 1), so
+   that its slot is never read before it is written, unless the code can run
+   it again (a jump back or an OP_ret to before it), since it also frees the
+   value of the run before.
+
+   Known initialized: the check u comes after an instruction p that leaves
+   the variable initialized (put_loc or set_loc of it, or a check of it,
+   which throws when it is not), with no set_loc_uninitialized of it between
+   them, and the code from p on is entered only at p. That is: take the
+   smallest stretch of code (p, e] that holds u and every instruction that
+   jumps to a label inside it. Each such jump must come after p, no label
+   inside may be the target of a catch (an exception can come from anywhere
+   its try covers) or the place an OP_ret goes back to (after an OP_gosub),
+   and no set_loc_uninitialized of the variable may be inside. Then each
+   instruction of the stretch is reached from the instruction before it or
+   from a jump inside the stretch, so every run of the code to u went
+   through p, and nothing in between made the variable uninitialized again.
+   A case of a switch, which the dispatch at its head jumps to past the
+   declarations of the earlier cases, fails the test, as does any label
+   reached from before p. Nothing else changes the state: a closure only
+   reads or writes the variable through its reference, which keeps it
+   initialized, and a yield or an await goes on at the instruction after
+   it. It is not a data flow analysis: one walk over the code, and for each
+   variable a stretch that only grows. It gives up on code it does not know
+   the jumps of, and stops looking past a budget of labels. */
+static no_inline void tdz_checks(JSContext *ctx, JSFunctionDef *s,
+                                 uint8_t **pdrop)
+{
+    typedef struct {
+        int pos;   /* the label, or the place after an OP_gosub */
+        int label; /* its number, or -1 for the place after an OP_gosub */
+        int reach; /* the last jump back to it or to a point before it */
+    } TDZPoint;
+    typedef struct {
+        int init;   /* p: the last instruction that left it initialized, or -1 */
+        int end;    /* e: the stretch (init, end] checked so far */
+        int next;   /* the first point past end */
+        int failed; /* the stretch from init cannot hold a check */
+        int uninit; /* the place of its set_loc_uninitialized, -1 for none,
+                       -2 for more than one */
+        int left;   /* checks left as they are, or reads that are not checks */
+    } TDZVar;
+    uint8_t *buf = s->byte_code.buf, *drop = NULL;
+    int len = s->byte_code.size, pos, op, idx, label, i, n_points = 0;
+    int lo, hi, budget = 64 * 1024 + 8 * len;
+    int last_ret = -1, reach;
+    int *lmin = NULL, *lmax = NULL;
+    uint8_t *lcatch = NULL;
+    TDZPoint *points = NULL;
+    TDZVar *vars = NULL;
+    BOOL any = FALSE;
+    const JSOpCode *oi;
+
+    *pdrop = NULL;
+    for (pos = 0; pos < len; pos += opcode_info[op].size) {
+        op = buf[pos];
+        if (op == OP_get_loc_check || op == OP_put_loc_check)
+            any = TRUE;
+    }
+    if (!any || s->var_count == 0 || ctx->rt->no_fused_ops)
+        return;
+    /* without memory for the walk, the checks stay: the requests do not
+       throw, so that the compile goes on as it would have */
+    lmin = js_malloc_rt(ctx->rt, sizeof(int) * (s->label_count + 1));
+    lmax = js_malloc_rt(ctx->rt, sizeof(int) * (s->label_count + 1));
+    lcatch = js_mallocz_rt(ctx->rt, s->label_count + 1);
+    vars = js_malloc_rt(ctx->rt, sizeof(*vars) * s->var_count);
+    points = js_malloc_rt(ctx->rt, sizeof(*points) * (s->label_count + len / 5 + 1));
+    if (!lmin || !lmax || !lcatch || !vars || !points)
+        goto done;
+    for (i = 0; i < s->label_count; i++) {
+        lmin[i] = INT32_MAX;
+        lmax[i] = -1;
+    }
+    for (i = 0; i < s->var_count; i++) {
+        vars[i].init = -1;
+        vars[i].uninit = -1;
+        vars[i].left = 0;
+    }
+    /* the labels, the jumps to each, and the set_loc_uninitialized */
+    for (pos = 0; pos < len; pos += oi->size) {
+        op = buf[pos];
+        oi = &opcode_info[op];
+        label = -1;
+        switch (oi->fmt) {
+        case OP_FMT_label:
+            label = get_u32(buf + pos + 1);
+            break;
+        case OP_FMT_atom_label_u8:
+            label = get_u32(buf + pos + 5);
+            break;
+        case OP_FMT_label8:
+        case OP_FMT_label16:
+        case OP_FMT_label_u16:
+        case OP_FMT_atom_label_u16:
+            /* none of these is in the code of phase 2 */
+            goto done;
+        default:
+            break;
+        }
+        if (op == OP_label) {
+            if (label < 0 || label >= s->label_count)
+                goto done;
+            points[n_points].pos = pos;
+            points[n_points++].label = label;
+            continue;
+        }
+        if (label >= 0) {
+            if (label >= s->label_count)
+                goto done;
+            lmin[label] = min_int(lmin[label], pos);
+            lmax[label] = max_int(lmax[label], pos);
+            if (op == OP_catch)
+                lcatch[label] = 1;
+            if (op == OP_gosub) {
+                points[n_points].pos = pos + oi->size;
+                points[n_points++].label = -1;
+            }
+        }
+        if (op == OP_ret)
+            last_ret = pos;
+        if (op == OP_set_loc_uninitialized) {
+            idx = get_u16(buf + pos + 1);
+            if (idx < s->var_count)
+                vars[idx].uninit = vars[idx].uninit == -1 ? pos : -2;
+        }
+    }
+    /* the points reached again from the code after them: by a jump back to
+       a label, or by an OP_ret back to the place after an OP_gosub */
+    reach = -1;
+    for (i = 0; i < n_points; i++) {
+        reach = max_int(reach, points[i].label >= 0 ? lmax[points[i].label] : last_ret);
+        points[i].reach = reach;
+    }
+    /* the checks, in the order of the code */
+    for (pos = 0; pos < len; pos += oi->size) {
+        TDZVar *v;
+
+        op = buf[pos];
+        oi = &opcode_info[op];
+        if (oi->fmt != OP_FMT_loc)
+            continue;
+        idx = get_u16(buf + pos + 1);
+        if (idx >= s->var_count)
+            continue;
+        v = &vars[idx];
+        switch (op) {
+        case OP_set_loc_uninitialized:
+            v->init = -1;
+            break;
+        case OP_put_loc:
+        case OP_set_loc:
+            v->init = pos;
+            v->end = pos;
+            v->failed = FALSE;
+            /* the first point past pos */
+            lo = 0;
+            hi = n_points;
+            while (lo < hi) {
+                i = (lo + hi) / 2;
+                if (points[i].pos <= pos)
+                    lo = i + 1;
+                else
+                    hi = i;
+            }
+            v->next = lo;
+            break;
+        case OP_get_loc_check:
+        case OP_put_loc_check:
+            if (v->init >= 0 && !v->failed && v->uninit != -2 &&
+                idx != s->this_var_idx) {
+                /* grow the stretch (init, end] to hold pos and the
+                   jumps to its labels */
+                v->end = max_int(v->end, pos);
+                while (v->next < n_points && points[v->next].pos <= v->end) {
+                    TDZPoint *pt = &points[v->next];
+                    if (--budget < 0 || pt->label < 0 || lcatch[pt->label] ||
+                        lmin[pt->label] <= v->init) {
+                        v->failed = TRUE;
+                        break;
+                    }
+                    if (lmax[pt->label] > v->end)
+                        v->end = lmax[pt->label];
+                    v->next++;
+                }
+                if (v->uninit > v->init && v->uninit <= v->end)
+                    v->failed = TRUE;
+                if (!v->failed) {
+                    buf[pos] = op == OP_get_loc_check ? OP_get_loc : OP_put_loc;
+                    break;
+                }
+            }
+            v->left++;
+            if (v->init < 0 || v->failed) {
+                /* the check leaves it initialized: a new stretch starts */
+                v->init = pos;
+                v->end = pos;
+                v->failed = FALSE;
+                lo = 0;
+                hi = n_points;
+                while (lo < hi) {
+                    i = (lo + hi) / 2;
+                    if (points[i].pos <= pos)
+                        lo = i + 1;
+                    else
+                        hi = i;
+                }
+                v->next = lo;
+            }
+            break;
+        case OP_close_loc:
+            break;
+        default:
+            /* a read that is not a check, or a check of 'this' */
+            v->left++;
+            break;
+        }
+    }
+    if (!s->has_eval_call) {
+        for (i = 0; i < s->var_count; i++) {
+            if (vars[i].uninit >= 0 && !vars[i].left &&
+                !s->vars[i].is_captured && i != s->this_var_idx) {
+                /* set_loc_uninitialized also frees the value of the slot:
+                   when the code can run it again (in a loop, in a finally),
+                   it frees the value of the run before as the block starts,
+                   and dropping it would keep that value alive until the
+                   next write. Run once, the slot still holds the undefined
+                   the frame starts with. */
+                lo = 0;
+                hi = n_points;
+                while (lo < hi) {
+                    int k = (lo + hi) / 2;
+                    if (points[k].pos <= vars[i].uninit)
+                        lo = k + 1;
+                    else
+                        hi = k;
+                }
+                if (lo > 0 && points[lo - 1].reach > vars[i].uninit)
+                    continue;
+                if (!drop) {
+                    drop = js_mallocz_rt(ctx->rt, s->var_count);
+                    if (!drop)
+                        break;
+                }
+                drop[i] = 1;
+            }
+        }
+    }
+    *pdrop = drop;
+ done:
+    js_free_rt(ctx->rt, lmin);
+    js_free_rt(ctx->rt, lmax);
+    js_free_rt(ctx->rt, lcatch);
+    js_free_rt(ctx->rt, vars);
+    js_free_rt(ctx->rt, points);
+}
+
 /* peephole optimizations and resolve goto/labels */
 static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 {
     int pos, pos_next, bc_len, op, op1, len, i, line_num;
+    uint8_t *tdz_drop = NULL;
     const uint8_t *bc_buf;
     DynBuf bc_out;
     LabelSlot *label_slots, *ls;
@@ -40652,6 +40915,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         s->line_number_last = s->source_pos;
         s->line_number_last_pc = 0;
     }
+    /* the checks of the temporal dead zone that cannot fail */
+    tdz_checks(ctx, s, &tdz_drop);
 
     /* initialize the 'home_object' variable if needed */
     if (s->home_object_var_idx >= 0) {
@@ -40733,6 +40998,11 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
                performance */
             line_num = get_u32(bc_buf + pos + 1);
             break;
+
+        case OP_set_loc_uninitialized:
+            if (tdz_drop && tdz_drop[get_u16(bc_buf + pos + 1)])
+                break;
+            goto no_change;
 
         case OP_label:
             {
@@ -41534,6 +41804,8 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     js_free(ctx, s->jump_slots);
     s->jump_slots = NULL;
 #endif
+    js_free_rt(ctx->rt, tdz_drop);
+    tdz_drop = NULL;
     /* a count in every long run of the code (JS_CallInternal) */
     if (insert_polls(ctx, s, &bc_out))
         goto fail;
@@ -41559,6 +41831,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     JS_ThrowOutOfMemory(ctx);
  fail:
     /* free the relocations of the labels not reached */
+    js_free_rt(ctx->rt, tdz_drop);
     for(i = 0; i < s->label_count; i++) {
         ls = &label_slots[i];
         for(re = ls->first_reloc; re != NULL; re = re_next) {

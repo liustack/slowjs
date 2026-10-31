@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
+summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, which checks of the temporal dead zone the compiler drops, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -16,6 +16,7 @@ read_when:
   - Changing where the generator puts the body of a function, or reading a speed change of the C engine that may be where the interpreter landed
   - Changing the flags the generator gives quickjs.c, or finding why a JSValue is copied in two moves of 8 bytes and not one of 16
   - Changing how JS_CallInternal sets up or frees the locals, operands and arguments of a call
+  - Changing how the compiler reads and writes let, const and class locals, or the checks of their temporal dead zone (tdz_checks)
 ---
 
 # The C engine
@@ -292,6 +293,33 @@ The opcodes take 6 of the 11 free numbers below 256 (`OP_COUNT` was 245), so 5 a
 ### Tests
 
 `engine/test/compare.sh` runs `engine/test/compare/fused_ops.js` and `engine/test/compare/typeof_is.js` with the opcodes on and off, and both print the files, which are what the engine printed before the change. `fused_ops.js` reads 32 kinds of values with each of the four reads (own and inherited data properties, getters, setters, proxies and a proxy as prototype, frozen and deleted keys, arrays, typed arrays, `String` objects, `arguments`, functions, classes, errors, every primitive, `undefined` and `null`), has getters and proxy traps that change or drop the local and run a collection, mapped and unmapped `arguments`, a local in its dead zone, a closure that writes the local, loops, a generator and an async function, the errors of a read of `undefined` and `null` with their line and column, and `switch` on strings that are atoms or not, ropes, wide strings, numbers, objects, symbols and a case with a getter. `typeof_is.js` tests a value of every type against each form, as values and as branches. `TestFusedOps` (root package) runs both files on the generated engine, with the opcodes on and off. `test_fused_ops` and `test_typeof_is` of `engine/test/unit-white.c` check which opcodes the compiler makes, on and off, that a jump into a pair keeps it apart, that the bytecode reads back and runs, and that `poll_scan` rejects a fused opcode whose run was changed. `test_fused_edges` runs them on an object with [[IsHTMLDDA]] in every `typeof` test, on the exports of a module namespace, which are read through their references and so leave the fast path, and on an argument or a local that a direct eval or a `with` block sets just before the read, and checks that the code has the fused opcodes. `test_short_opcode_index` checks the index of the local or argument that the disassembler prints for each opcode that holds it in the opcode.
+
+## Checks of the temporal dead zone that cannot fail
+
+A `let`, `const` or `class` local read or written before its declaration throws a `ReferenceError`, so the compiler reads and writes it with `get_loc_check` and `put_loc_check`, and sets it uninitialized with `set_loc_uninitialized` where its block starts. Most reads come after the declaration, in code that cannot be entered any other way, and need no check. `tdz_checks`, called by `resolve_labels` before it rewrites the code, turns those into `get_loc` and `put_loc`.
+
+The rule, for a check u of a local: there is an instruction p before u that leaves the local initialized (a `put_loc` or `set_loc` of it, or a check of it, which throws when it is not), and the smallest stretch of code from p to past u that holds every jump to a label inside it starts after p. No label in the stretch is the target of a `catch` (an exception can arrive from anywhere its `try` covers) or the place a `ret` goes back to after a `gosub`, and no `set_loc_uninitialized` of the local is in it. Then every way to u went through p. The stretch only grows as the walk goes on, so it is one pass over the code, not a data flow analysis, and the walk over labels has a budget (64K plus 8 a byte of code), past which the checks stay.
+
+What keeps its checks:
+
+- A case of a `switch`: the cases share one block, and the dispatch at the head jumps past the declarations of the cases before.
+- A read before the declaration, in its own initializer (`let a = a + 1`), and in a closure. A closure reads the local through its reference and keeps its own check. The closure cannot set the local uninitialized again, so the function that declares it drops its own checks after the declaration.
+- The head of a loop the local is declared in, and the code after a `catch` or a `finally` the stretch holds.
+- `this` (the derived constructor before `super()`), and everything when `JS_SetFusedOps(ctx, 0)` is set.
+
+A `yield` or an `await` goes on at the instruction after it, so generators and async functions follow the same rule.
+
+When a local is left with no check, no other read, no capture by a closure, and the function has no direct `eval`, its `set_loc_uninitialized` is dropped too: nothing reads the slot before the first write. The instruction also frees the value the slot held, so it stays where the code can run it again, in a loop or in a `finally` (a jump back or a `ret` to before it): dropped there, the value of the run before would live until the next write, and two of them could be alive at once. Run once, the slot holds the `undefined` the frame starts with. A `with` block or an `eval` keeps it too.
+
+The pass asks for its memory without throwing. With none, the checks stay, and the compile goes on as before. It gives up on code with a jump it does not know the target of. The bytecode is valid for the engine before the change too, so its version does not change.
+
+### What it gains
+
+The six workbench pages of tifa's shop run 0.61% fewer instructions a render, the store pages 0.34%, the MUI pages 0.77%, the bench pages 0.11%, and a render of `r_react_ssr` 0.06% (callgrind on linux/amd64, at position 0.0, the same HTML on the 16 pages). A round of the six workbench pages runs 12.6K `get_loc_check` where it ran 117.9K, and 28.6K `set_loc_uninitialized` where it ran 68.4K: 1.8% fewer dispatches. A run of `r_react_ssr` compiles its bundle and renders once, and takes 0.62% more instructions: the pass costs 0.66 M instructions of the compile of its bundle. Each VM of tifa reads bytecode compiled once, so a render does not pay it. [performance.md](../performance.md#checks-of-the-temporal-dead-zone) has the timings.
+
+### Tests
+
+`engine/test/compare/tdz_checks.js` prints what Node 24 prints for about 90 cases: reads and writes after the declaration, after an `if`, a loop, a ternary and a short circuit, before it and in its initializer, `switch` with fall through, a jump past the declaration, `default` first or in a loop, `const` and `class` in a case and a case that reads a later declaration, closures before and after the declaration and in loops, the heads of `for`, `for of` and `for in`, `continue`, a labeled `break` and a labeled `continue` through a `finally`, `try`, `catch` and `finally`, generators with `throw` and `return` through a `finally`, async functions and a rejected `await`, `this` before and after `super()`, a field initializer that throws, parameters that read a later or an earlier one, destructuring before the declaration and in `with`, `eval` and `with`, and more than 256 locals. `compare.sh` runs it with the checks kept too, and `TestFusedOps` (root package) on the generated engine. `test_tdz_checks` of `engine/test/unit-white.c` counts the checks and `set_loc_uninitialized` left in 28 functions, runs each against what Node gives, checks that every check stays with `JS_SetFusedOps(ctx, 0)`, and runs a loop that makes a buffer of 8 MiB in each run under a limit that holds one.
 
 ## How a JSValue is copied
 

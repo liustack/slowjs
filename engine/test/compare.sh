@@ -68,9 +68,9 @@ r="$here/compare/recorded"
 t=$here/compare/recorded
 # The scripts that have a file in the repository: SCRIPT FILE [OPTIONS of jsrun]
 # regexcache.js runs with the cache at its default, at a few entries and off,
-# and prints the same each time. fused_ops.js and typeof_is.js run again with
-# the instructions the compiler joins into one opcode left apart, and print
-# the same.
+# and prints the same each time. fused_ops.js, typeof_is.js and tdz_checks.js
+# run again with the instructions the compiler joins into one opcode left
+# apart and every check of the temporal dead zone kept, and print the same.
 cases="
 $t/bitwise.js $t/bitwise.txt -raw
 $t/coldpath.js $t/coldpath.txt -raw
@@ -98,6 +98,7 @@ $here/compare/upstream/test_language.js $here/compare/upstream/test_language.txt
 $here/compare/upstream/test_loop.js $here/compare/upstream/test_loop.txt -raw
 $here/compare/fused_ops.js $here/compare/fused_ops.txt -no-fused-ops
 $here/compare/typeof_is.js $here/compare/typeof_is.txt -no-fused-ops
+$here/compare/tdz_checks.js $here/compare/tdz_checks.txt -no-fused-ops
 $out/test_builtin.js $here/compare/upstream/test_builtin.txt -raw
 "
 # A script of engine/test/compare names the options it needs in a line

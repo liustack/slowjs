@@ -1345,6 +1345,7 @@ enum {
     W_GET_ARG0_GET_FIELD, W_GET_ARG1_GET_FIELD, W_GET_LOC0_GET_FIELD,
     W_GET_LOC8_GET_FIELD, W_DUP_CASE_ATOM,
     W_TYPEOF, W_TYPEOF_IS_UNDEFINED, W_TYPEOF_IS_FUNCTION, W_TYPEOF_IS, W_LNOT,
+    W_GET_LOC_CHECK, W_PUT_LOC_CHECK, W_SET_LOC_CHECK, W_SET_LOC_UNINITIALIZED,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -2182,6 +2183,93 @@ static void test_typeof_is(void)
     vm_free(&v);
 }
 
+/* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
+   read or a write of a let, a const or a class known to come after its
+   declaration has none, and a variable left with no check, no capture and
+   no other read is not set uninitialized on entering its block, when that
+   block runs once: in a loop or a finally it stays, since it frees the value
+   of the run before (a buffer of each run of a loop under a memory limit
+   that holds one). The checks
+   stay where a jump can reach the use without the declaration: a case of a
+   switch, a read before, in its initializer, in a closure, at the head of a
+   loop it is declared in, after a catch or a finally. Each function also runs
+   and gives what Node gives. With JS_SetFusedOps off, every check stays. */
+static int count_ops(JSContext *ctx, const char *src, int w);
+
+static void test_tdz_checks(void)
+{
+    static const struct {
+        const char *src, *call, *want;
+        int checks, uninit; /* the checks left (get, put, set) and the set_loc_uninitialized */
+    } cases[] = {
+        { "function f() { let a = 1; const b = a + 1; return a + b }", "f()", "3", 0, 0 },
+        { "function f(c) { const a = 2; if (c) { a + 1 } else { a - 1 } return a * 3 }", "f(1)", "6", 0, 0 },
+        { "function f(c) { let a = 2; if (c) a = 5; else a = 7; return a }", "f(0)", "7", 0, 0 },
+        { "function f(n) { const k = 3; let s = 0; for (let i = 0; i < n; i++) s += i * k; return s }", "f(4)", "18", 0, 0 },
+        { "function f(n) { let s = 0; let i = 0; while (i < n) { const d = i * 2; s += d; i++ } return s }", "f(4)", "12", 0, 1 },
+        { "function f(o) { const a = o && o.x; const b = a || 3; return a + b }", "f({ x: 1 })", "2", 0, 0 },
+        { "function f() { let a = 1; a = a + 1; a += 2; a++; return a }", "f()", "5", 0, 0 },
+        /* a jump into the stretch from before the declaration */
+        { "function f() { const r = a; let a = 1; return r }", "typeof f", "function", 1, 1 },
+        { "function f() { a = 2; let a = 1; return a }", "typeof f", "function", 1, 1 },
+        { "function f() { let a = a + 1; return a }", "typeof f", "function", 1, 1 },
+        { "function f(v) { switch (v) { case 0: let a = 'a'; return a; case 1: return a } }", "f(0)", "a", 1, 1 },
+        { "function f(v) { switch (v) { case 0: let a = 'x'; case 1: return a } }", "f(0)", "x", 1, 1 },
+        { "function f(v) { switch (v) { case 0: { let a = 'x'; return a } } }", "f(0)", "x", 0, 0 },
+        /* captured: no check is needed in f, but the closure still checks */
+        { "function f() { const g = () => a; let a = 1; return a + g() }", "f()", "2", 0, 1 },
+        { "function f() { let a = 2; function g() { return a } return g() + a }", "f()", "4", 0, 1 },
+        { "function f() { const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i); return fs.map(g => g()).join() }",
+          "f()", "0,1,2", 0, 1 },
+        /* a catch and a finally inside the stretch */
+        { "function f() { let a = 1; try { a = 2; throw 0 } catch (e) { a += 3 } return a }", "f()", "5", 2, 1 },
+        { "function f() { let a = 1; try { a = 2 } finally { a = 3 } return a }", "f()", "3", 2, 1 },
+        { "function f() { try { throw 4 } catch (e) { const a = e * 2; return a } }", "f()", "8", 0, 0 },
+        /* generators and async functions go on after each yield and await */
+        { "function* f() { let a = 1; yield a; a++; yield a; const b = a * 10; yield b }", "[...f()].join()", "1,2,20", 0, 0 },
+        { "async function f() { let a = 1; await null; a += 1; return a }", "typeof f", "function", 0, 0 },
+        /* a block that a loop or a finally runs again keeps its set_loc_uninitialized,
+           which frees the value of the run before */
+        { "function f(n) { let s = 0; for (let i = 0; i < n; i++) { let b = [i]; s += b[0] } return s }", "f(4)", "6", 0, 1 },
+        { "function* f() { for (let i = 0; i < 2; i++) { yield i; let b = [i]; yield b[0] } }", "[...f()].join()", "0,0,1,1", 0, 1 },
+        { "function f(c) { let r = 0; try { if (c) return 1 } finally { let b = [2]; r = b[0] } return r }", "f(0)", "2", 2, 2 },
+        { "function f() { let r = 0; try { r = 1 } finally { r += 1 } let b = [r]; return b[0] }", "f()", "2", 2, 1 },
+        /* eval and with */
+        { "function f() { let a = 3; return eval('a') + a }", "f()", "6", 0, 1 },
+        { "function f() { let a = 1; with ({ b: 2 }) { a = a + b } return a }", "f()", "3", 0, 2 },
+        { "function f() { let a = 1; with ({ a: 5 }) { a = a + 1 } return a }", "f()", "1", 0, 2 },
+    };
+    VM v = vm_new();
+    size_t i;
+    int left, uninit;
+    char src[512];
+
+    for (i = 0; i < countof(cases); i++) {
+        /* CHECK counts in checks */
+        left = count_ops(v.ctx, cases[i].src, W_GET_LOC_CHECK) + count_ops(v.ctx, cases[i].src, W_PUT_LOC_CHECK) +
+                 count_ops(v.ctx, cases[i].src, W_SET_LOC_CHECK);
+        uninit = count_ops(v.ctx, cases[i].src, W_SET_LOC_UNINITIALIZED);
+        CHECK(left == cases[i].checks && uninit == cases[i].uninit, "%s: %d checks and %d set_loc_uninitialized, want %d and %d",
+              cases[i].src, left, uninit, cases[i].checks, cases[i].uninit);
+        snprintf(src, sizeof(src), "%s; %s", cases[i].src, cases[i].call);
+        CHECK(eval_is(v.ctx, src, cases[i].want), "%s: %s", cases[i].src, cases[i].call);
+    }
+    /* with the switch off, every check stays */
+    JS_SetFusedOps(v.ctx, 0);
+    left = count_ops(v.ctx, cases[0].src, W_GET_LOC_CHECK);
+    uninit = count_ops(v.ctx, cases[0].src, W_SET_LOC_UNINITIALIZED);
+    CHECK(left == 3 && uninit == 2, "off: %d get_loc_check and %d set_loc_uninitialized, want 3 and 2", left, uninit);
+    JS_SetFusedOps(v.ctx, 1);
+    /* the value of the run before is freed as the block of a loop starts
+       again: two buffers of 8 MiB never live at once under a limit of 12 */
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 12 * 1024 * 1024);
+    CHECK(eval_is(v.ctx, "(function () { let s = 0; for (let i = 0; i < 2; i++) { "
+                  "let b = new ArrayBuffer(8 * 1024 * 1024); s += b.byteLength } return s })()", "16777216"),
+          "a buffer of each run of a loop");
+    JS_SetMemoryLimit(v.rt, (size_t)-1);
+    vm_free(&v);
+}
+
 /* The index the disassembler prints for an opcode that has it in the opcode,
    the fused reads included (they are apart from the groups of four of
    upstream), against the name of the opcode. */
@@ -3014,6 +3102,7 @@ int main(void)
     test_tail_c_calls();
     test_fused_ops();
     test_typeof_is();
+    test_tdz_checks();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();

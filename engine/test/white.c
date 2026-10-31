@@ -361,6 +361,7 @@ static const uint8_t white_ops[] = {
     OP_get_arg0_get_field, OP_get_arg1_get_field, OP_get_loc0_get_field,
     OP_get_loc8_get_field, OP_dup_case_atom,
     OP_typeof, OP_typeof_is_undefined, OP_typeof_is_function, OP_typeof_is, OP_lnot,
+    OP_get_loc_check, OP_put_loc_check, OP_set_loc_check, OP_set_loc_uninitialized,
 };
 
 int white_op(int i)
