@@ -284,6 +284,19 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 		case !reg && c.Target != target:
 			return fmt.Errorf("the call at %#x goes to %s, the record has one to %s", pc-r[0], target, c.Target)
 		}
+		// A direct call is a leaf call only if the pass has its target as a
+		// leaf, and a unified call has the signature the pass gives its
+		// target (a leaf call is kept as llc wrote it and records none): the
+		// record alone would let a call of a unified function returning a
+		// result skip the load as a leaf call or as one returning nothing.
+		if !reg {
+			if leaf := k.c.Leaves[target]; leaf != (c.Kind == CallLeaf) {
+				return fmt.Errorf("the call at %#x to %s: the record has it as a leaf call %v, the pass has %s as a leaf %v", pc-r[0], target, c.Kind == CallLeaf, target, leaf)
+			}
+			if sig, ok := k.c.Sigs[target]; c.Kind != CallLeaf && (!ok || !sameSig(sig, c.Sig)) {
+				return fmt.Errorf("the call at %#x to %s is recorded as %v, its signature is %v", pc-r[0], target, c.Sig, sig)
+			}
+		}
 		if c.Kind == CallLeaf || c.Sig.Ret == Void {
 			if c.RegResult {
 				return fmt.Errorf("the call at %#x to %s takes from registers a result it has not", pc-r[0], c.Target)

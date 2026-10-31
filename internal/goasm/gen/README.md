@@ -405,7 +405,11 @@ in the body is the next one of the record, and it loads its result back
 from the Go stack unless the record says it takes it from x0, x1 or d0, which
 only a call to a lowered unified function may: the check holds each of those
 to storing its result from them and then running only Go's epilogue (x29,
-x30 and SP). It compares `engine_rodata` byte for byte, pointers by what they point to. It
+x30 and SP). A direct call must agree with the pass on whether its
+target is a leaf and, when it is not, on its signature, so no record can
+skip a load by calling a unified function a leaf or one that returns
+nothing. It compares
+`engine_rodata` byte for byte, pointers by what they point to. It
 does not read llc's own object: that the lowering kept the meaning of llc's
 code rests on the lowering's rules and llc's register facts, which the
 lowering checks as it goes. `TestCheckARM64Function` changes each part of a

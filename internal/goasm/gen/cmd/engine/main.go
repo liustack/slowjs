@@ -665,7 +665,7 @@ func main() {
 			vpkg = *pkg
 		}
 		cr, err := gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg, Names: gonames, Plan: plan,
-			Metas: metas, Stubs: stubs, All: *verifyAll, Align64: align64})
+			Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, Align64: align64})
 		if cr != nil {
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
