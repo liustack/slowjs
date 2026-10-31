@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -168,5 +169,56 @@ func TestLowerARM64EngineLeaf(t *testing.T) {
 	if _, _, err := LowerARM64EngineFunc([]string{"str x30, [sp, #-16]!", "bl callee", "ldr x30, [sp], #16", "ret"}, fn, env); err == nil ||
 		!strings.Contains(err.Error(), "which is no leaf") {
 		t.Errorf("a leaf calling a unified entry: %v", err)
+	}
+}
+
+// TestLowerARM64EngineRegResult: a call to a generated function that the
+// post-link check holds to its return sequence (ARM64Env.RegResult) takes
+// the result from x0, where the callee stored it from. A call to any other
+// function (a Go callback, a stub) or through a pointer loads it back from
+// the Go stack.
+func TestLowerARM64EngineRegResult(t *testing.T) {
+	fn, env := a64TestEnv()
+	SetCallees([]FuncSpec{
+		fn,
+		{Name: "callee", Sig: Sig{Params: []Type{I64}, Ret: I64}, Kind: Unified},
+		{Name: "host_now", Sig: Sig{Ret: I64}, Kind: Unified},
+	})
+	env.Funcs["host_now"] = true
+	env.RegResult = map[string]bool{"f": true, "callee": true}
+	lines := []string{
+		"str x30, [sp, #-16]!",
+		"mov x20, x21",
+		"bl callee",
+		"bl host_now",
+		"mov x8, x0",
+		"@icall i>i",
+		"blr x8",
+		"ldr x30, [sp], #16",
+		"ret",
+	}
+	text, meta, err := LowerARM64EngineFunc(lines, fn, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		call string
+		load bool
+	}{{"bl go_callee", false}, {"bl go_host_now", true}, {"blr x9", true}} {
+		i := strings.Index(text, "\t"+c.call+"\n")
+		if i < 0 {
+			t.Fatalf("no %q in\n%s", c.call, text)
+		}
+		next, _, _ := strings.Cut(text[i+len(c.call)+2:], "\n")
+		if got := strings.HasPrefix(strings.TrimSpace(next), "ldr x0, [sp, #"); got != c.load {
+			t.Errorf("after %s: %q, a load of the result %v, want %v", c.call, next, got, c.load)
+		}
+	}
+	var got []bool
+	for _, c := range meta.Rec.Calls {
+		got = append(got, c.RegResult)
+	}
+	if fmt.Sprint(got) != "[true false false]" {
+		t.Errorf("the record says the calls take the result from registers %v, want [true false false]", got)
 	}
 }

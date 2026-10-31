@@ -2,6 +2,12 @@
 
 What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
+## [Unreleased]
+
+### Performance
+
+- A call from the generated engine to another of its functions takes the result from the registers the callee returns it in, where it read it back from the Go stack. Calls through a pointer, calls to Go code (the host's callbacks) and calls to a function that failed to generate keep the read, and the check of the linked binary holds every call that skips it to a callee that stores its result from those registers and then runs only Go's epilogue. A render runs 0.37% (the shop workbench) to 0.65% (MUI) fewer instructions on the pages of tifa's example apps and 0.42% fewer on `r_react_ssr`, with the same HTML on linux/amd64 and darwin/arm64. On linux/amd64 the shop workbench took 0.978 of the time, the store 0.980, MUI 0.984, the bench pages 0.995 and `r_react_ssr` 0.973 (4 code positions, 3 rounds, all under 3%), and on darwin/arm64 0.990 to 0.997. The generated assembly is 1.9% (amd64) and 2.1% (arm64) smaller ([Performance](docs/performance.md#what-the-generated-code-costs-against-native-c)).
+
 ## [v0.29.5] - 2026-10-31
 
 ### Changed

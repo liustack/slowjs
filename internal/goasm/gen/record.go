@@ -42,11 +42,16 @@ const (
 )
 
 // CallRecord is one call: its target (a C symbol, or the register of CallReg)
-// and the signature it was marshalled with.
+// and the signature it was marshalled with. RegResult says the call of
+// CallUnified loads no result back from the Go stack: the callee is a
+// lowered unified function, which the post-link check holds to storing its
+// result from the registers the call reads it from and then running only
+// Go's epilogue, so they still hold the result after its RET.
 type CallRecord struct {
-	Kind   CallKind
-	Target string
-	Sig    Sig
+	Kind      CallKind
+	Target    string
+	Sig       Sig
+	RegResult bool
 }
 
 // RefRecord is one RIP-relative reference as llc's text wrote it, label plus

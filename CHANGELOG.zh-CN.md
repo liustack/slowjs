@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 性能
+
+- 生成的引擎调用自己的另一个函数时，直接从被调函数返回结果的寄存器里取结果，不再从 Go 栈读回。经指针的调用、调用 Go 代码（宿主回调）、调用没生成成功的函数，照旧读回。链接后的检查要求每个省掉读回的调用，被调函数都从这些寄存器存结果，之后只跑 Go 的收尾指令。tifa 示例应用的页面每次渲染少跑 0.37%（shop 工作台）到 0.65%（MUI）的指令，`r_react_ssr` 少跑 0.42%，linux/amd64 和 darwin/arm64 上 HTML 都不变。linux/amd64 上 shop 工作台用时是原来的 0.978，store 0.980，MUI 0.984，bench 页面 0.995，`r_react_ssr` 0.973（4 个代码位置、3 轮，都在 3% 以内），darwin/arm64 上是 0.990 到 0.997。生成的汇编小了 1.9%（amd64）和 2.1%（arm64）（数据见 [Performance](docs/performance.md#what-the-generated-code-costs-against-native-c)）。
+
 ## [v0.29.5] - 2026-10-31
 
 ### 变更
