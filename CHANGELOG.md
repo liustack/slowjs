@@ -4,9 +4,14 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- A `WeakRef` whose target only a local that is no longer used held can give `undefined` sooner than before, since that value is now freed when the next local that shares its slot is written, not at the end of the call.
+
 ### Performance
 
 - On linux/amd64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, so the calls from one file to another (`memcpy`, `memset` and `memcmp`, the allocator and the heap into their callers, the collector) are inlined. A render runs 0.6% to 1.2% fewer instructions on the pages of tifa's example apps and 3.5% fewer on a run of `r_react_ssr`, with the same HTML. The time of a page stays inside the spread of the code positions (the React script and the bench pages take 0.98 of the time), the engine is 13% larger in assembly and the stack frame of the interpreter does not change. darwin/arm64 is not changed.
+- Locals of a function that are never live at the same time share a slot of the frame, so a call sets and frees fewer of them: the 2021 functions of the bundle of tifa's shop have 9983 slots where they had 12191 locals, and React DOM's `pushStartInstance` 11 where it had 138. Locals that a closure captures, that `eval`, `with` or a mapped `arguments` can reach, that keep a check of the temporal dead zone, or that are live where a `catch` or `finally` starts keep a slot of their own. A render runs 1.43% fewer instructions on the shop workbench, 1.02% on the store, 0.82% on MUI and 1.81% on `r_react_ssr`, with the same HTML. The time of a render on the generated build is within the spread of the code positions (1.002, 1.000, 0.995 and 0.994 of main's). The compile of a bundle takes longer (37 M instructions for that of tifa's shop), which a VM of tifa does not pay, and a run of `r_react_ssr` that compiles its bundle and renders once takes 2.6% more time ([c-engine.md](docs/changes/c-engine.md#locals-that-share-a-slot)).
 
 ## [v0.29.6] - 2026-10-31
 
