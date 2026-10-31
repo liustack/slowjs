@@ -1,0 +1,22 @@
+absent: {"done":true} {"done":true} {"done":true} 0,0,0
+undefined: {"done":true} {"done":true} {"done":true} 1,0,0
+null: {"done":true} {"done":true} {"done":true} 1,0,0
+number: TypeError {"done":true} {"done":true} 1,0,0
+primitive: TypeError {"done":true} {"done":true} 1,1,0
+object: {"done":true} {"done":true} {"done":true} 1,1,0
+get-throws: RangeError {"done":true} {"done":true} 1,0,0
+call-throws: RangeError {"done":true} {"done":true} 1,1,0
+reenter: TypeError TypeError
+reenter: {"done":true} {"done":true} {"done":true} 1,1,0
+open: RangeError {"done":true} {"done":true} 1,0,0,0
+open-non-object: TypeError {"done":true} {"done":true} 1,0,0,0
+next-get: RangeError {"done":true} {"done":true} 1,0,0,0
+next-undefined: TypeError {"done":true} {"done":true} 1,0,0,0
+next-call: RangeError {"done":true} {"done":true} 1,1,0,0
+non-object: TypeError {"done":true} {"done":true} 1,1,0,0
+done: RangeError {"done":true} {"done":true} 1,1,0,0
+value: RangeError {"done":true} {"done":true} 1,1,0,0
+fresh: true,true,true,true
+early: {"done":true} {"done":true} 0
+sequence: [1,2,3]
+exhausted: {"done":true} {"done":true}

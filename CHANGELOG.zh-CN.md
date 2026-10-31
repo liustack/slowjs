@@ -2,10 +2,13 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
-## [Unreleased]
+## [v0.29.8] - 2026-11-01
 
 ### 修复
 
+- `Iterator.concat` 的 `return` 按 IteratorClose 规则关闭底层迭代器，返回新的完成结果。推进或关闭失败后，不再继续推进或重复关闭（QuickJS `aac9bc5`）。
+- `Iterator.prototype.reduce` 在没有初始累加值的空迭代器上抛错时，不再读取或调用 `return`（QuickJS `de4c9e0`）。
+- 稀疏数组截断会先删除所有应删的元素，再压缩属性表。截断后重新写入原有索引会正确更新长度（QuickJS `3c4c6ed`）。
 - `JSON.stringify` 处理数组时，如果把元素的下标转成字符串那一步内存不足，不再漏掉这个元素。原来这个元素连同它键的 atom 一直留到 `VM.Close`，释放时会发现还有块在用。上游 QuickJS 也有这个问题，quickjs-ng 在 `293ba08` 修了。
 - `JSON.stringify` 的 space 参数是拼接出来的长字符串（rope）时，现在用这个字符串的前 10 个字符缩进。原来缩进用的是从 rope 内部字段读出的字节，里面还有指针。上游 QuickJS 也有这个问题，quickjs-ng 在 `35e195c` 修了。
 - `JSON.stringify` 的 replacer 是一个名字数组时，如果复制这些名字时内存不足，现在会以内存不足的错误失败。原来它跳过没复制成的名字接着跑，返回的字符串里少了那个属性，错误还挂着没处理。上游 QuickJS 和 quickjs-ng 也有这个问题。

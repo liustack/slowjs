@@ -87,6 +87,7 @@ go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within 50ms
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
+go test -run 'TestUpstream(ArrayTruncate|IteratorReduce|IteratorConcat)' . # upstream fixes pushed on 2026-10-31
 go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and the regexp cache give what Node gives and keep to their limits
 go test -run 'YoungGC|Ephemeron' .                       # the young collection and WeakMap ephemerons
 go test -run 'CopyProps' .                                # RegisterCopyProps: the loop that copies the props of a React element in C against React's loops (147 configs, 6,000 random ones), the property it defines

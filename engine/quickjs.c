@@ -12994,6 +12994,44 @@ static int call_setter(JSContext *ctx, JSObject *setter,
     }
 }
 
+static void delete_property_no_move(JSContext *ctx, JSObject *p, JSShapeProperty *pr_del)
+{
+    JSShape *sh;
+    JSShapeProperty *pr, *lpr, *prop;
+    JSProperty *pr1;
+    intptr_t h, h1;
+
+    sh = p->shape;
+    h1 = pr_del->atom & sh->prop_hash_mask;
+    h = sh->hash_table[h1];
+    prop = get_shape_prop(sh);
+    lpr = NULL;
+    while (h != 0) {
+        pr = &prop[h - 1];
+        if (pr == pr_del) {
+            /* remove property */
+            if (lpr) {
+                lpr->hash_next = pr->hash_next;
+            } else {
+                sh->hash_table[h1] = pr->hash_next;
+            }
+            sh->deleted_prop_count++;
+            /* free the entry */
+            pr1 = &p->prop[h - 1];
+            free_property(ctx->rt, pr1, pr->flags);
+            JS_FreeAtom(ctx, pr->atom);
+            /* put default values */
+            pr->flags = 0;
+            pr->atom = JS_ATOM_NULL;
+            pr1->u.value = JS_UNDEFINED;
+            return;
+        }
+        lpr = pr;
+        h = pr->hash_next;
+    }
+    abort();
+}
+
 /* set the array length and remove the array elements if necessary. */
 static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                             int flags)
@@ -13051,7 +13089,7 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                 }
             } else {
                 /* faster to iterate thru all the properties. Need two
-                   passes in case one of the property is not
+                   passes in case one of the properties is not
                    configurable */
                 cur_len = len;
                 for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count;
@@ -13065,18 +13103,25 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
                     }
                 }
 
+                if (js_shape_prepare_update(ctx, p, NULL))
+                    return -1;
+                sh = p->shape;
+
                 for(i = 0, pr = get_shape_prop(sh); i < sh->prop_count;
                     i++, pr++) {
                     if (pr->atom != JS_ATOM_NULL &&
                         JS_AtomIsArrayIndex(ctx, &idx, pr->atom)) {
                         if (idx >= cur_len) {
-                            /* remove the property */
-                            delete_property(ctx, p, pr->atom);
-                            /* WARNING: the shape may have been modified */
-                            sh = p->shape;
-                            pr = get_shape_prop(sh) + i;
+                            /* remove the property without compaction (cannot fail) */
+                            delete_property_no_move(ctx, p, pr);
                         }
                     }
+                }
+
+                /* compact the properties if too many deleted properties */
+                if (sh->deleted_prop_count >= 8 &&
+                    sh->deleted_prop_count >= ((unsigned)sh->prop_count / 2)) {
+                    compact_properties(ctx, p);
                 }
             }
         } else {
@@ -51112,7 +51157,7 @@ static JSValue js_iterator_constructor(JSContext *ctx, JSValueConst new_target,
 // note: deliberately doesn't use space-saving bit fields for
 // |index|, |count| and |running| because tcc miscompiles them
 typedef struct JSIteratorConcatData {
-    int index, count;             // elements (not pairs!) in values[] array
+    uint32_t index, count;        // elements (not pairs!) in values[] array
     BOOL running;
     JSValue iter, next, values[]; // array of (object, method) pairs
 } JSIteratorConcatData;
@@ -51124,7 +51169,7 @@ static void js_iterator_concat_finalizer(JSRuntime *rt, JSValue val)
     if (it) {
         JS_FreeValueRT(rt, it->iter);
         JS_FreeValueRT(rt, it->next);
-        for (int i = it->index; i < it->count; i++)
+        for (uint32_t i = it->index; i < it->count; i++)
             JS_FreeValueRT(rt, it->values[i]);
         js_free_rt(rt, it);
     }
@@ -51138,7 +51183,7 @@ static void js_iterator_concat_mark(JSRuntime *rt, JSValueConst val,
     if (it) {
         JS_MarkValue(rt, it->iter, mark_func);
         JS_MarkValue(rt, it->next, mark_func);
-        for (int i = it->index; i < it->count; i++)
+        for (uint32_t i = it->index; i < it->count; i++)
             JS_MarkValue(rt, it->values[i], mark_func);
     }
 }
@@ -51147,7 +51192,7 @@ static JSValue js_iterator_concat_next(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv,
                                        int *pdone, int magic)
 {
-    JSValue iter, item, next, val, *obj, *meth, ret;
+    JSValue item, val, ret;
     JSIteratorConcatData *it;
     int done;
 
@@ -51166,23 +51211,18 @@ static JSValue js_iterator_concat_next(JSContext *ctx, JSValueConst this_val,
             ret = JS_UNDEFINED;
             break;
         }
-        obj = &it->values[it->index + 0];
-        meth = &it->values[it->index + 1];
-        iter = it->iter;
-        if (JS_IsUndefined(iter)) {
-            iter = JS_GetIterator2(ctx, *obj, *meth);
+        if (JS_IsUndefined(it->iter)) {
+            JSValue iter, next;
+            iter = JS_GetIterator2(ctx, it->values[it->index + 0], it->values[it->index + 1]);
             if (JS_IsException(iter))
                 goto fail;
             it->iter = iter;
-        }
-        next = it->next;
-        if (JS_IsUndefined(next)) {
             next = JS_GetProperty(ctx, iter, JS_ATOM_next);
             if (JS_IsException(next))
                 goto fail;
             it->next = next;
         }
-        item = JS_IteratorNext2(ctx, iter, next, 0, NULL, &done);
+        item = JS_IteratorNext2(ctx, it->iter, it->next, 0, NULL, &done);
         if (JS_IsException(item))
             goto fail;
         if (done == 0) {
@@ -51192,25 +51232,33 @@ static JSValue js_iterator_concat_next(JSContext *ctx, JSValueConst this_val,
             val = JS_GetProperty(ctx, item, JS_ATOM_done);
             if (JS_IsException(val)) {
                 JS_FreeValue(ctx, item);
-            fail:
-                ret = JS_EXCEPTION;
-                break;
+                goto fail;
             }
             done = JS_ToBoolFree(ctx, val);
             if (done)
                 goto done_next;
             ret = JS_GetProperty(ctx, item, JS_ATOM_value);
             JS_FreeValue(ctx, item);
+            if (JS_IsException(ret)) {
+            fail:
+                JS_FreeValue(ctx, it->iter);
+                JS_FreeValue(ctx, it->next);
+                it->iter = JS_UNDEFINED;
+                it->next = JS_UNDEFINED;
+                while (it->index < it->count)
+                    JS_FreeValue(ctx, it->values[it->index++]);
+                ret = JS_EXCEPTION;
+            }
             break;
         } else {
         done_next:
             JS_FreeValue(ctx, item);
-            JS_FreeValue(ctx, iter);
-            JS_FreeValue(ctx, next);
+            JS_FreeValue(ctx, it->iter);
+            JS_FreeValue(ctx, it->next);
             it->iter = JS_UNDEFINED;
             it->next = JS_UNDEFINED;
-            JS_FreeValue(ctx, *meth);
-            JS_FreeValue(ctx, *obj);
+            JS_FreeValue(ctx, it->values[it->index + 0]);
+            JS_FreeValue(ctx, it->values[it->index + 1]);
             it->index += 2;
         }
     }
@@ -51232,12 +51280,10 @@ static JSValue js_iterator_concat_return(JSContext *ctx, JSValueConst this_val,
     ret = JS_UNDEFINED;
     if (!JS_IsUndefined(it->iter)) {
         it->running = TRUE;
-        ret = JS_GetProperty(ctx, it->iter, JS_ATOM_return);
-        if (JS_IsException(ret)) {
-            it->running = FALSE;
-            return JS_EXCEPTION;
-        }
-        ret = JS_CallFree(ctx, ret, it->iter, 0, NULL);
+        /* IteratorClose accepts a missing return method and requires an
+           object result when the method is present. */
+        if (JS_IteratorClose(ctx, it->iter, FALSE))
+            ret = JS_EXCEPTION;
         it->running = FALSE;
     }
     while (it->index < it->count)
@@ -51246,7 +51292,9 @@ static JSValue js_iterator_concat_return(JSContext *ctx, JSValueConst this_val,
     JS_FreeValue(ctx, it->next);
     it->iter = JS_UNDEFINED;
     it->next = JS_UNDEFINED;
-    return ret;
+    if (JS_IsException(ret))
+        return ret;
+    return js_create_iterator_result(ctx, JS_UNDEFINED, TRUE);
 }
 
 static const JSCFunctionListEntry js_iterator_concat_proto_funcs[] = {
@@ -51292,7 +51340,7 @@ static JSValue js_iterator_concat(JSContext *ctx, JSValueConst this_val,
     JS_SetOpaque(obj, it);
     return obj;
 fail:
-    for (int i = 0; i < it->count; i++)
+    for (uint32_t i = 0; i < it->count; i++)
         JS_FreeValue(ctx, it->values[i]);
     js_free(ctx, it);
     return JS_EXCEPTION;
@@ -51638,7 +51686,7 @@ static JSValue js_iterator_proto_reduce(JSContext *ctx, JSValueConst this_val,
             goto exception_no_close;
         if (done) {
             JS_ThrowTypeError(ctx, "empty iterator");
-            goto exception;
+            goto exception_no_close;
         }
         idx = 1;
     }

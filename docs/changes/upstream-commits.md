@@ -10,7 +10,7 @@ read_when:
 
 # Upstream commits taken into the C tree
 
-`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). Upstream has added 81 commits since (to `19d6bd8`, 2026-10-26). This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
+`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
 
 Where an upstream commit meets a change of slowjs, slowjs's change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
 
@@ -44,6 +44,25 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `1ec58aa` Await the async iterator return() when a for-await loop breaks | a for await loop that leaves early waits for `return()`, and one that ends does not call it | without its `using` branch, with a check of the result added | `compare/for_await_close.js` |
 | `19d6bd8` fixed arbitrary module namespace names | `export { x as "a-b" }` and `export * as "name" from` | all of it, and test262 runs the feature | `compare/module_string_names.mjs` |
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` is a valid regexp | it was in the C tree already | `test_builtin.js` of upstream, which now has the line |
+| `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining slowjs's shape handling | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
+| `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | an empty iterator without an initial accumulator throws without reading or calling `return` | all of it | `compare/iterator_reduce.js`, `TestUpstreamIteratorReduce` |
+| `aac9bc5` fixed Iterator.concat logic | close through IteratorClose and finish the helper after any failed step | merged into the separate next and return functions, with a fresh completed result from return | `compare/iterator_concat.js`, `TestUpstreamIteratorConcat` |
+
+## Iterator concatenation
+
+`aac9bc5` closes the active iterator through `JS_IteratorClose`. An absent, undefined or null return method is accepted, a method that returns a primitive throws TypeError, and a throwing getter or method still leaves the concat helper completed. A failed iterator open, next lookup, next call or done/value read releases the active iterator and every remaining iterable without closing or opening them. The next method is read once per opened iterator. The indices and counts use upstream's unsigned type.
+
+The fork keeps separate next and return functions. Its return function creates a fresh `{ value: undefined, done: true }` result after cleanup, including before the first next call and after exhaustion, instead of forwarding the inner return value. Reentrant next and return calls remain errors. The regression covers these paths against the corresponding [test262 concat cases](https://github.com/tc39/test262/tree/91c70759363c46557b694792bf34a2551a7af5ba/test/built-ins/Iterator/concat), named in the script. Node 24.13.0 does not provide Iterator.concat. No performance claim is made.
+
+## Empty iterator reduction
+
+`de4c9e0` takes the exception path that frees the accumulator and method without closing an exhausted iterator. A reducer callback that throws still closes its iterator. The regression compares ordinary and throwing return getters and methods, an initial accumulator and a failing callback with Node 24.13.0. No performance claim is made.
+
+## Array truncation
+
+`3c4c6ed` prepares a private shape once, removes properties without moving the remaining entries, then compacts once. Previously compaction inside the deletion loop skipped entries, so writing an old index after truncation could leave the length unchanged. Non-configurable indices still stop truncation at the highest such index plus one. The regression compares emptying, refilling, accessors, non-index keys and another array with Node 24.13.0.
+
+The generated linux/amd64 engine took a median 2.616 ms before and 2.170 ms after (0.830 of the time) to truncate 100,000 elements at indices `i * 10` to zero. The old engine left 50,000 properties behind, the fixed engine left none. These are 21 samples per build, alternating three batches of seven on the GCP VM, confined to CPUs 3 and 7. Go's monotonic clock surrounded `Eval("a.length = 0")`, excluding construction and the subsequent count of own keys. This is a focused correctness workload, not a measurement of tifa rendering.
 
 ## Speed
 

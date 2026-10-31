@@ -1,0 +1,8 @@
+empty:  0
+refill: 11 ,,,,,,,,,,2
+truncate false: true 3 0,extra 42 43
+other: 118 41
+grow: 121 new false
+truncate true: false 31 0,3,6,9,12,15,18,21,24,27,30,extra 42 43
+other: 118 41
+grow: 121 new false

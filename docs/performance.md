@@ -19,6 +19,10 @@ read_when:
 
 slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
+## Sparse array truncation
+
+QuickJS `3c4c6ed` fixes skipped properties when a sparse array is truncated. On the generated linux/amd64 engine, truncating 100,000 elements at indices `i * 10` to zero took 2.616 ms before and 2.170 ms after, medians of 21 samples per build in three alternating batches on GCP CPUs 3 and 7. Only the truncation Eval call was timed with Go's monotonic clock. The old build left 50,000 properties behind and the fixed build left none. This does not establish a render speed change. See [the regression and measurement](changes/upstream-commits.md#array-truncation).
+
 ## How the numbers were measured
 
 Unless a row says otherwise:
