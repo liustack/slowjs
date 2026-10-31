@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, what the optimizer run over the linked module gained and cost, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -579,6 +579,34 @@ On main after it took the reads of the interrupt flag in long string loops (bcd2
 | a run of `r_react_ssr`, which compiles its bundle | 108.19 M to 108.87 M | +0.62% |
 
 A round of the workbench pages dispatches 1.8% fewer opcodes: 12.6K `get_loc_check` where it ran 117.9K and 28.6K `set_loc_uninitialized` where it ran 68.4K. The store pages run 106K `get_loc_check` where they ran 1.36 M, but a check is only a few instructions more than the read without it. The pass costs 0.66 M instructions of the compile of the bundle of `r_react_ssr`, which a VM of tifa does not pay, since it reads bytecode compiled once. An upper bound, a build that drops every check of a local wherever it is and the `set_loc_uninitialized` of every local no closure captures (wrong, for measuring only), ran 0.74% fewer instructions on the workbench pages: the rule gets 0.61 of those 0.74 points. Timed on linux/amd64 at 4 code positions, 3 rounds, against the same main: the workbench pages take 0.995 of the time, MUI 0.997 and the bench pages 0.990, all under 3%, so callgrind decides. The store pages were not timed.
+
+### The optimizer over the linked module
+
+On amd64 the generator links the C files into one module and runs `opt -O2` over it (inline threshold 400, the SLP vectorizer off) before the shadow-stack pass ([README](../internal/goasm/gen/README.md#the-whole-engine)). clang had optimized each file alone, so the calls from one file to another (`memcpy`, `memset` and `memcmp` of the small libc, `tlsf_*` and `heap_*` into the allocator callers, `mark_children` in the collector) were never inlined. In native C the same second run saved 1.6% to 1.7% of the instructions of a page (0.8% on MUI). Against main (c5efd5d8), with the same HTML on the 16 pages, in the generated engine:
+
+| Pages | Instructions a render | Change |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | 850.1 M to 841.5 M | -1.01% |
+| the shop's store pages | 1,631.4 M to 1,611.3 M | -1.23% |
+| tifa's MUI test app, three pages | 672.3 M to 666.1 M | -0.93% |
+| tifa's bench app, two pages | 255.9 M to 254.3 M | -0.61% |
+| a run of `r_react_ssr`, which compiles its bundle | 108.87 M to 105.07 M | -3.49% |
+
+Instructions are callgrind's at position 0.0 (the difference of 3 renders and 1, Go's collector off). The time is the sum of the P50 of the pages of an app (60 renders after 32 warm ones, `r_react_ssr` the median of 20 runs after 5), 3 rounds at the 8 [code positions](#code-positions) on one core with its sibling idle. The ratio is the median over positions of the paired ratios, and the positions give the lowest and the highest:
+
+| Pages | Time, base to new | Ratio | Positions | By the rule of the positions |
+| --- | ---: | ---: | ---: | --- |
+| shop, six workbench pages | 157.7 ms to 157.5 ms | 1.001 | 0.991 to 1.017 | no change |
+| store pages | 284.0 ms to 282.6 ms | 0.996 | 0.989 to 1.011 | no change |
+| MUI, three pages | 130.4 ms to 130.9 ms | 1.009 | 0.995 to 1.016 | no change |
+| bench, two pages | 28.24 ms to 27.57 ms | 0.982 | 0.969 to 1.006 | no change (the spiral page 0.968, faster) |
+| `r_react_ssr` | 13.56 ms to 13.33 ms | 0.983 | 0.980 to 0.986 | no change, all 8 positions agree |
+
+A second set of 3 rounds of the shop and MUI pages gave 1.000 (positions 0.987 to 1.018) and 1.004 (0.992 to 1.020). In both sets the ratio is highest at the two positions with the body of the interpreter moved by 24 bytes (`0.24` and `32.24`, 1.015 to 1.020 for MUI and 1.017 to 1.018 for the shop). The store pages were not timed again.
+
+The instructions fall by 0.6% to 1.2% on the pages of tifa and the time does not follow, as in native C, where only the React script got faster. On the shop and the store pages the saving is about a third smaller than in native C (MUI is not smaller: 0.93% against 0.77%). The poll pass counts more ticks in the module the second run makes (2,985 against 2,280, with 1,198 bounded loop edges against 749), which takes part of the saving back. Where the new ticks come from was not traced.
+
+What it costs: the generated assembly of amd64 is 13.3% larger (9.34 MB against 8.25 MB, 380,323 lines against 337,285, 25 files against 23), and the `.text` of llc's object 18.9% (1,942,196 bytes against 1,633,929). `JS_CallInternal` is 77,133 bytes against 77,165 and its frame does not change (496 bytes of Go frame, 392 of llc's, 1472 of shadow stack). `lre_exec_backtrack` is 1.5 KB larger (10,819 bytes to 12,365). 17 static functions are gone, inlined into every caller (`BC_add_object_ref`, `cr_add_interval`, `round_to_d`, `find_line_num` and others), and the static `mark_children` is three functions, `mark_children.specialized.2`, `.5` and `.7`, one for each function it marks with. With the SLP vectorizer on, the second run puts 52 lines of vector code into the IR of `JS_CallInternal` again (none without), the 16-byte moves of a JSValue that [EngineValueFlags](changes/c-engine.md#how-a-jsvalue-is-copied) keep out. An inline threshold of 1000 makes the interpreter bigger and its frame 32 bytes taller in native C: not used. arm64 is not changed.
 
 ### Upstream commits and the scripts where the C engine was slower than C
 

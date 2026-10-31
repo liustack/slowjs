@@ -166,13 +166,57 @@ C must change, by class, and stubs it instead of stopping. `-release` is the
 formal build: it fails on any stub, needs `-out`, and refuses every switch
 made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
 `GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `GEN_FORCE_NOSPLIT`, a changed
-`-non-format-variadic`) before it does any work. `-mode` is `body` or `pn`.
+`-non-format-variadic`, a `-postlink-opt` other than `auto`, changed
+`-postlink-opt-args`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
 rejecting them. `-shadow-size-log2` is the size of the shadow-stack region
 the engine is made for (20 by default, 25 for the host's whole 32 MiB, and
 from 16 to 40: the driver and the pass refuse any other before they use it):
 `engine_decl_<arch>.go` records it as `shadowSizeLog2`, and the host refuses a
 smaller stack.
+
+The files are compiled one at a time (step 1 above, with the format checks on the
+IR as written) and linked with llvm-link. On amd64 the optimizer then runs over
+the linked module (`-postlink-opt`, default `auto`: `PostLinkOptFor`) before the
+shadow-stack pass, with `PostLinkOptArgs`: `-O2`, the inline threshold of 400
+that `engine/test/flags.sh` gives clang, and the SLP vectorizer off. clang had
+optimized each file alone, so the calls from one file to another (the small
+libc, the allocator and the heap into the interpreter and the collector) were
+never inlined. The second run does it. It saves 1.5% to 1.7% of the
+instructions of a page in native C and 0.6% to 1.2% in the generated engine,
+and makes the generated assembly 13% larger (the code 19%). A threshold of 1000
+for inlining makes the interpreter bigger and its frame 32 bytes taller: not
+used.
+
+The flags clang took from the command line travel in the IR as attributes of the
+functions (`+slow-unaligned-mem-16` of `quickjs.c`), and stay with their
+functions. `-fno-slp-vectorize` is the exception, since it is an option of the
+pipeline and not an attribute: a second -O2 would join the two 8-byte moves of a
+JSValue into one of 16 bytes again (52 lines of vector code in the IR of
+`JS_CallInternal`). The SLP vectorizer is turned off with a threshold no tree
+reaches (`TestPostLinkOptKeepsValueFlags`).
+
+The optimizer changes names, and each place of the generator that goes by a name
+reads the module as it stands after it:
+
+- A static function inlined into all its callers is gone (the pass reports,
+  and the Go declarations and `engine_keep` list, what is in the module). An
+  external function that is inlined stays defined and declared, since the Go
+  side may call it.
+- It clones a function for the constant arguments of a call
+  (`mark_children.specialized.2`). The clone is a unified function like any
+  other, with the Go name `mark_children_specialized_2` (`GoNames`), and its
+  code goes with the file of the function it was made from (`cloneGroups`,
+  `cloneOf`, which also take the numbers llvm-link adds). The register-entry
+  leaves (`-leaves`, `-shadow-leaf`) are the functions of those names and
+  nothing else: a clone of `memcpy` would be a unified function.
+- `-align64` (`JS_CallInternal`, `lre_exec_backtrack`), `DispatchCopies`, the
+  host callbacks, `host_poll` of the post-link check and `js_host_layout` name
+  external functions and data, which the optimizer keeps under their names.
+
+`-postlink-opt=on` or `off` forces the run and `-postlink-opt-args` changes its
+options, for tests and surveys (`-release` refuses both). `TestPostLinkOpt` and
+the `postlink.c` sample of `TestSampleRuns` hold all of this.
 
 `-arch` is `amd64` (the default) or `arm64`, and every file the driver
 writes ends in the architecture (`engine_arm64.s`, `engine_decl_arm64.go`,
