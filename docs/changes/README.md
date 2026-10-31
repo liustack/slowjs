@@ -29,6 +29,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
+| Iterator.concat follows IteratorClose and finishes after a failed step | Unreleased | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
 | Reducing an empty iterator without an initial accumulator does not close it | Unreleased | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | Unreleased | [upstream-commits.md](upstream-commits.md#array-truncation) |
 | Commits of upstream QuickJS after 3d5e064 taken into the C tree one at a time (Array slice and splice, borrowed operands of js_strict_eq2, template literals, unicode_script), and the ones left out | Unreleased | [upstream-commits.md](upstream-commits.md) |

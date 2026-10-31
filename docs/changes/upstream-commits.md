@@ -10,7 +10,7 @@ read_when:
 
 # Upstream commits taken into the C tree
 
-`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). Upstream has added 81 commits since (to `19d6bd8`, 2026-10-26). This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
+`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
 
 Where an upstream commit meets a change of slowjs, slowjs's change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
 
@@ -46,6 +46,13 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` is a valid regexp | it was in the C tree already | `test_builtin.js` of upstream, which now has the line |
 | `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining slowjs's shape handling | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | an empty iterator without an initial accumulator throws without reading or calling `return` | all of it | `compare/iterator_reduce.js`, `TestUpstreamIteratorReduce` |
+| `aac9bc5` fixed Iterator.concat logic | close through IteratorClose and finish the helper after any failed step | merged into the separate next and return functions, with a fresh completed result from return | `compare/iterator_concat.js`, `TestUpstreamIteratorConcat` |
+
+## Iterator concatenation
+
+`aac9bc5` closes the active iterator through `JS_IteratorClose`. An absent, undefined or null return method is accepted, a method that returns a primitive throws TypeError, and a throwing getter or method still leaves the concat helper completed. A failed iterator open, next lookup, next call or done/value read releases the active iterator and every remaining iterable without closing or opening them. The next method is read once per opened iterator. The indices and counts use upstream's unsigned type.
+
+The fork keeps separate next and return functions. Its return function creates a fresh `{ value: undefined, done: true }` result after cleanup, including before the first next call and after exhaustion, instead of forwarding the inner return value. Reentrant next and return calls remain errors. The regression covers these paths against the corresponding [test262 concat cases](https://github.com/tc39/test262/tree/91c70759363c46557b694792bf34a2551a7af5ba/test/built-ins/Iterator/concat), named in the script. Node 24.13.0 does not provide Iterator.concat. No performance claim is made.
 
 ## Empty iterator reduction
 

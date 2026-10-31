@@ -6,6 +6,7 @@
 
 ### 修复
 
+- `Iterator.concat` 的 `return` 按 IteratorClose 规则关闭底层迭代器，返回新的完成结果。推进或关闭失败后，不再继续推进或重复关闭（QuickJS `aac9bc5`）。
 - `Iterator.prototype.reduce` 在没有初始累加值的空迭代器上抛错时，不再读取或调用 `return`（QuickJS `de4c9e0`）。
 - 稀疏数组截断会先删除所有应删的元素，再压缩属性表。截断后重新写入原有索引会正确更新长度（QuickJS `3c4c6ed`）。
 
