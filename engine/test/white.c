@@ -1050,3 +1050,29 @@ size_t white_heap_limit(JSContext *ctx)
 {
     return ctx->rt->malloc_ctx.heap.limit;
 }
+
+/* ---- the keys and plain strings of JSON.parse ---- */
+
+const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end)
+{
+    return json_plain_run(p, end);
+}
+
+int white_json_count_high_bytes(const uint8_t *p, int n)
+{
+    return json_count_high_bytes(p, n);
+}
+
+/* The references the atom of the ASCII string s has, not counting one the
+   call takes and gives back, or -1 when s has no atom or a constant one. */
+int white_atom_refs(JSContext *ctx, const char *s)
+{
+    JSAtom a = __JS_FindAtom(ctx->rt, s, strlen(s), JS_ATOM_TYPE_STRING);
+    int n;
+
+    if (a == JS_ATOM_NULL || __JS_AtomIsConst(a))
+        return -1;
+    n = js_rc(ctx->rt->atom_array[a])->ref_count - 1;
+    JS_FreeAtom(ctx, a);
+    return n;
+}

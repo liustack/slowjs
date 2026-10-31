@@ -31,6 +31,9 @@ int white_string_len_max(void);
 const uint8_t *white_json_string_run(struct StringBuffer *b, const uint8_t *p, const uint8_t *end, int sep);
 int white_json_quote_run(struct StringBuffer *b, JSValueConst s, int *pi);
 uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
+const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
+int white_json_count_high_bytes(const uint8_t *p, int n);
+int white_atom_refs(JSContext *ctx, const char *s);
 int white_stack_pending(JSContext *ctx, JSValueConst obj);
 int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
@@ -411,6 +414,178 @@ static void test_json_run_too_long(void)
     }
     vm_free(&v);
 }
+/* json_plain_run against a loop of one byte at a time: every length up to 40,
+   a byte that ends the run at every place or none, and random bytes, in
+   blocks of the exact length (so that a read past the end shows under
+   AddressSanitizer), and a run that stops 65535 bytes on. */
+static size_t plain_run_bytes(const uint8_t *p, size_t len)
+{
+    size_t i, lim = len > 65535 ? 65535 : len;
+
+    for (i = 0; i < lim; i++) {
+        if (p[i] < 0x20 || p[i] >= 0x80 || p[i] == '"' || p[i] == '\\')
+            break;
+    }
+    return i;
+}
+
+static void test_json_plain_run(void)
+{
+    static const uint8_t stops[] = { 0x00, 0x01, 0x1f, '"', '\\', 0x80, 0xc3, 0xff };
+    static const uint8_t plains[] = { 0x20, 0x21, 0x23, 0x5b, 0x5d, 0x7e, 0x7f, 'a', '0', ':' };
+    uint32_t seed = 12345;
+    size_t len, pos, s, i;
+    uint8_t *buf;
+
+    for (len = 0; len <= 40; len++) {
+        for (pos = 0; pos <= len; pos++) {
+            for (s = 0; s < countof(stops); s++) {
+                buf = malloc(len ? len : 1);
+                for (i = 0; i < len; i++)
+                    buf[i] = plains[(i * 7 + len + s) % countof(plains)];
+                if (pos < len)
+                    buf[pos] = stops[s];
+                CHECK((size_t)(white_json_plain_run(buf, buf + len) - buf) == plain_run_bytes(buf, len),
+                      "plain run of %zu bytes with 0x%02x at %zu: %zu, want %zu", len, stops[s], pos,
+                      (size_t)(white_json_plain_run(buf, buf + len) - buf), plain_run_bytes(buf, len));
+                free(buf);
+                if (pos == len)
+                    break;
+            }
+        }
+    }
+    for (i = 0; i < 20000; i++) {
+        size_t n, k;
+
+        seed = seed * 1103515245 + 12345;
+        n = (seed >> 16) % 64;
+        buf = malloc(n ? n : 1);
+        for (k = 0; k < n; k++) {
+            seed = seed * 1103515245 + 12345;
+            /* mostly plain bytes, so that runs are long */
+            buf[k] = (seed >> 16) % 16 ? 0x20 + (seed >> 8) % 0x60 : (seed >> 8) & 0xff;
+        }
+        CHECK((size_t)(white_json_plain_run(buf, buf + n) - buf) == plain_run_bytes(buf, n),
+              "random plain run %zu of %zu bytes", i, n);
+        free(buf);
+    }
+    len = 70000;
+    buf = malloc(len);
+    memset(buf, 'a', len);
+    CHECK(white_json_plain_run(buf, buf + len) - buf == 65535, "a run longer than the step");
+    buf[65534] = '"';
+    CHECK(white_json_plain_run(buf, buf + len) - buf == 65534, "a quote at the last byte of the step");
+    buf[65534] = 'a';
+    buf[65535] = '"';
+    CHECK(white_json_plain_run(buf, buf + len) - buf == 65535, "a quote just past the step");
+    free(buf);
+}
+
+/* json_count_high_bytes against a loop of one byte at a time, at every
+   offset from a word and length up to 70 */
+static void test_json_count_high_bytes(void)
+{
+    uint32_t seed = 777;
+    uint8_t *buf = malloc(80);
+    int off, n, k, round;
+
+    for (round = 0; round < 50; round++) {
+        for (k = 0; k < 80; k++) {
+            seed = seed * 1103515245 + 12345;
+            buf[k] = (seed >> 16) % (round % 4 + 2) ? (seed >> 8) % 0x80 : 0x80 | (seed >> 8);
+        }
+        for (off = 0; off < 8; off++) {
+            for (n = 0; n + off <= 78; n++) {
+                int want = 0;
+
+                for (k = 0; k < n; k++)
+                    want += buf[off + k] >> 7;
+                CHECK(white_json_count_high_bytes(buf + off, n) == want, "round %d, %d bytes at %d: %d, want %d",
+                      round, n, off, white_json_count_high_bytes(buf + off, n), want);
+            }
+        }
+    }
+    free(buf);
+}
+
+/* JSON.parse keeps no reference to the atoms of the keys it read once it
+   returns: after a parse that works, one that throws a SyntaxError near the
+   end, one with a reviver, and one with each call of the allocator failing in
+   turn, the atom of a key only the text has is gone once the result is, and
+   the keys the script holds have their references of before. The text has
+   rows of keys in changing orders, more keys than the cache has slots, keys
+   that share a slot (abcde and abcxe), an escaped key equal to a plain one
+   and keys repeated in one row. */
+static void test_json_key_cache(void)
+{
+    static const char setup[] =
+        "var only = 'qq_' + 'json' + '_only', keys = ['abcde', 'abcxe', 'id', 'name', 'k5', only]\n"
+        "for (var j = 0; j < 90; j++) keys.push('k' + j)\n"
+        "var parts = []\n"
+        "for (var i = 0; i < 120; i++) {\n"
+        "  var o = [], n = 3 + i % 7\n"
+        "  for (var j = 0; j < n; j++) o.push(JSON.stringify(keys[(i * 3 + j * 7) % keys.length]) + ':' + i * j)\n"
+        "  if (i % 5 == 0) o.push('\"n\\\\u0061me\":\"e\"')\n"
+        "  if (i % 11 == 0) o.push('\"abcde\":\"dup\"')\n"
+        "  o.push(JSON.stringify(only) + ':' + i)\n"
+        "  parts.push('{' + o.join(',') + '}')\n"
+        "}\n"
+        "var text = '[' + parts.join(',\\n') + ']', bad = text.slice(0, -40) + '}x', held = { abcde: 1, k5: 2 }\n"
+        "var want = JSON.stringify(JSON.parse(text))\n"
+        "globalThis.f = () => JSON.parse(text).length === 120; 0";
+    static const char *const held[] = { "abcde", "abcxe", "k5", "k77" };
+    static const char *const calls[] = {
+        "JSON.parse(text).length",
+        "try { JSON.parse(bad) } catch (e) { e.name }",
+        "JSON.parse(text, function (k, v) { return v }).length",
+    };
+    VM v = vm_new();
+    int before[countof(held)], k, fail, n = 0, ooms = 0;
+    size_t c;
+    JSValue f, g;
+
+    JS_SetShapeCache(v.ctx, 0);
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    JS_RunGC(v.rt);
+    for (k = 0; k < (int)countof(held); k++)
+        before[k] = white_atom_refs(v.ctx, held[k]);
+    CHECK(before[0] > 0, "abcde has no atom");
+    CHECK(white_atom_refs(v.ctx, "qq_json_only") == -1, "the key only the text has has an atom before the parse");
+    for (c = 0; c < countof(calls); c++) {
+        CHECK(eval_ok(v.ctx, calls[c]), "%s threw", calls[c]);
+        JS_RunGC(v.rt);
+        CHECK(white_atom_refs(v.ctx, "qq_json_only") == -1, "%s: the key only the text has keeps its atom", calls[c]);
+        for (k = 0; k < (int)countof(held); k++)
+            CHECK(white_atom_refs(v.ctx, held[k]) == before[k], "%s: %s has %d references, want %d", calls[c], held[k],
+                  white_atom_refs(v.ctx, held[k]), before[k]);
+    }
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "f");
+    JS_FreeValue(v.ctx, g);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        int made;
+        JSValue r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "call %d failing: an exception that is not out of memory", fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_BOOL && JS_VALUE_GET_INT(r) == 1, "call %d failing: another result", fail);
+        }
+        JS_RunGC(v.rt);
+        CHECK(white_atom_refs(v.ctx, "qq_json_only") == -1, "call %d failing: the key only the text has keeps its atom", fail);
+        for (k = 0; k < (int)countof(held); k++)
+            CHECK(white_atom_refs(v.ctx, held[k]) == before[k], "call %d failing: %s has %d references, want %d", fail,
+                  held[k], white_atom_refs(v.ctx, held[k]), before[k]);
+    }
+    CHECK(ooms > 100, "only %d of %d calls failed the parse", ooms, n);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
 
 /* ---- pending stacks ---- */
 
@@ -932,6 +1107,10 @@ static void test_poll_work_gaps(void)
         /* a JSON string whose buffer is wide before runs of 32768 characters and an escape each */
         "var jn = '\"\\\\u4e2d' + ('a'.repeat(32768) + '\\\\n').repeat(8) + '\"'\n"
         "var qn = ['\\u4e2d', ('a'.repeat(32768) + '\\n').repeat(8)]\n"
+        /* tables of 3000 rows: keys and values of ASCII, values that end in a character of 2 bytes, and of 3 (a wide text) */
+        "var jt = '[' + Array(3000).fill('{\"id\":\"abcdefgh\",\"name\":\"ijkl\"}').join(',') + ']'\n"
+        "var jl = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u00e9\",\"name\":\"ijkl\"}').join(',') + ']'\n"
+        "var jy = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u4e2d\",\"name\":\"ijkl\"}').join(',') + ']'\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -1026,6 +1205,10 @@ static void test_poll_work_gaps(void)
         { "JSON.parse(jx)", ROPE_STEP + 5, 70008 + 70006 + 70000 },
         /* the same for a key: and the hash of it */
         { "JSON.parse(jk)", ROPE_STEP + 5, 200006 + 200000 + 200000 },
+        /* the text, then the bytes of each key and value, and for the wide text the characters before the wide one when the buffer is widened (the totals of the engine before keys and plain strings were read from the text) */
+        { "JSON.parse(jt).length", ROPE_STEP + 5, 96001 + 3000 * 18 },
+        { "JSON.parse(jl).length", ROPE_STEP + 5, 2 * 96001 + 3000 * 19 },
+        { "JSON.parse(jy).length", ROPE_STEP + 5, 177003 },
         /* JSON.stringify: runs, escapes and runs of wide characters */
         { "JSON.stringify(qa).length", ROPE_STEP, 200000 },
         { "JSON.stringify(qe).length", ROPE_STEP, 70000 },
@@ -3196,6 +3379,9 @@ int main(void)
     test_json_runs_oom();
     test_json_run_too_long();
     test_json_run_limit();
+    test_json_plain_run();
+    test_json_count_high_bytes();
+    test_json_key_cache();
     test_backtrace_attribute_checks();
     test_backtrace_class();
     test_backtrace_needs_data_property();

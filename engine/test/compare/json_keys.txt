@@ -1,0 +1,62 @@
+index keys: {0=number:5,1=number:4,2=number:2,10=number:6,b=number:1,a=number:3,01=number:7,-0=number:8,1.5=number:9,=number:10, 1=number:11,1 =number:12}
+large index keys: {2147483647=number:4,2147483648=number:5,4294967294=number:1,x=number:0,4294967295=number:2,4294967296=number:3,99999999999=number:6}
+index keys in rows: [{0="b",1="a",id="x"},{0="d",1="c",id="y"},{0="e",1="f",id="z"}]
+index key read: a,b,c,d,e,
+repeated: {a=number:3,b=number:2}
+repeated escaped: {name=number:4,x=number:3}
+repeated index: {0=number:4,1=number:3,a=number:2}
+repeated in rows: [{a=number:3,b=number:2},{a=number:4,b=number:5},{b=number:8,a=number:7}]
+repeated object value: {a={y=number:2},b={x=number:3}}
+proto: {__proto__={x=number:1},y=number:2} true  true
+proto escaped: {__proto__=[number:1],a=number:1} true
+proto in rows: [{__proto__=number:1,a=number:2},{__proto__={b=number:3},a=number:4},{a=number:5,__proto__=object:null}] true
+constructor keys: {constructor=number:1,toString=number:2,hasOwnProperty=number:3,valueOf={length=number:4}}
+escaped keys: {A=number:1,"=number:2,a\b=number:3,/=number:4,\u{a}\u{9}=number:5,a\u{0}b=number:6}
+wide keys: {\u{e9}=number:1,\u{4e2d}\u{6587}=number:2,a\u{e9}=number:3,\u{1f600}=number:5}
+surrogate keys: {\u{d800}=number:1,\u{dc00}=number:2,\u{d800}x=number:3,x\u{dfff}=number:4,\u{d800}\u{d800}=number:5}
+surrogate keys equal: 1 2
+keys of every plain byte:  !#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~|!#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}~| !#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmnopqrstuvwxyz{|}
+del in key: {a\u{7f}b=number:1,\u{7f}=number:2}
+whitespace: {a=number:1,b=number:2,c=number:3,d=number:4}
+no colon: SyntaxError
+two colons: SyntaxError
+colon only: SyntaxError
+comma at the end: SyntaxError
+key not closed: SyntaxError
+key at the end: SyntaxError
+key and colon at the end: SyntaxError
+control in key: SyntaxError
+tab in key: SyntaxError
+bad escape in key: SyntaxError
+short escape in key: SyntaxError
+bare key: SyntaxError
+single quoted key: SyntaxError
+number key: SyntaxError
+missing comma: SyntaxError
+data after: SyntaxError
+vertical tab: SyntaxError
+string lengths: 0.1.1.1 1.2.2.2 2.3.3.3 3.4.4.4 4.5.5.5 5.6.6.6 6.7.7.7 7.8.8.8 8.9.9.9 9.10.10.10 10.11.11.11 11.12.12.12 12.13.13.13 13.14.14.14 14.15.15.15 15.16.16.16 16.17.17.17 17.18.18.18 18.19.19.19 19.20.20.20 20.21.21.21
+string boundaries: [" ","!","#","[","]","~","\u{7f}","a"b","\"]
+empty strings: {="x",a=""}
+string not closed: SyntaxError
+control in string: SyntaxError
+reviver: [{0=boolean:true,id="a",n=number:10},{0=boolean:false,id="b",n=number:20}] 0=true,id=a,n=1,0,0=false,id=b,n=2,1,
+reviver deletes: {b=number:2,c={b=number:4}}
+reviver repeated: {a=number:102,b=number:103}
+table: 2000 {id="00000000-aaaa-bbbb-cccc",name="n0",price=number:0,ok=boolean:true,tag=object:null} {id="000007cf-aaaa-bbbb-cccc",name="n1999",price=number:2998.5,ok=boolean:false,tag=object:null} 189150/8b602590
+table in turns: [{a=number:0,bb="0",ccc=[number:0],dddd={x=number:0}},{bb="1",ccc=[number:1],dddd={x=number:1},a=number:1},{ccc=[number:2],dddd={x=number:2},a=number:2,bb="2"},{dddd={x=number:3},a=number:3,bb="3",ccc=[number:3]},{a=number:4,bb="4",ccc=[number:4],dddd={x=number:4}}] 60561/8ecd22c1
+table with gaps: [{name="r0",extra0=number:0,id="again"},{id=number:1,name="r1"},{id=number:2,name="r2"},{name="r3"},{id=number:4,name="r4"},{id=number:5,name="r5",extra5=number:5},{name="r6"},{id="again",name="r7"}] 26975/4d9fc3a1
+table of many keys: k0,k7,k14,k21,k28,k35,k42,k49,k56,k63,k70,k77 425601/9e339dcd
+table of keys that share a slot: [{abcxe=number:0,abcde="0"},{abcde=number:-1,abcxe="1"},{abcxe=number:2,abcde="2"},{abcde=number:-3,abcxe="3"}] 15531/a046b631
+nesting of the same shape: {node={node={node={leaf=number:399,kids=[{node=object:null,leaf=number:400}]}}},leaf="399"} 36473/83665a89
+deep nesting of the same shape: 400 1
+deep arrays: 400 x
+table of wide text: {id="7",\u{540d}\u{524d}="\u{5c71}\u{7530}7",note="caf\u{e9} 7",emoji="\u{1f600}7"} 91561/ff96dd5d
+table of latin-1 text: {id=number:7,name="\u{e9}t\u{e9} 7",n="a7"} 49671/b644b29b
+table reviver: 12001 189150/8b602590
+table error at the end: SyntaxError
+long ascii: 259835 9000 286835/e965639
+long latin-1: 262835 9000 304835/1b82719d
+long wide: 262835 9000 310835/c681679
+long string: 160001,1 160001/ab228bc4
+rawJSON: {"a":"abc","b":12} true

@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, which checks of the temporal dead zone the compiler drops, which locals share a slot of the frame, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
+summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, which checks of the temporal dead zone the compiler drops, which locals share a slot of the frame, how JSON.parse reads keys and plain strings from the text, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -10,6 +10,7 @@ read_when:
   - Changing where the generated code polls, where the C reads the interrupt flag, or how Interrupt stops a script
   - Choosing the size of the shadow stack, or asking what a deep recursion with big frames does when it fills the stack
   - Asking what happens to a render when the system refuses the VM memory
+  - Changing JSON.parse, its key cache or json_plain_run, or asking why a key of JSON.parse takes no StringBuffer
   - Asking how much Go stack the engine can use, or what happens when it passes the Go limit
   - Writing the Go side of host functions, strings made in Go or errors thrown from Go, or reading a value of the engine in place (JS_NewHostFunction, JS_NewStringChars, JS_ThrowErrorKind, js_host_layout, JS_NewEscapeTextFunction, JS_NewCopyPropsFunction)
   - Changing how `+` and `+=` build strings in the C tree, or asking why a string has room past its end
@@ -407,3 +408,32 @@ The engine now finds the variable instead:
 
 A string built by n appends is then copied about log1.5(n) times. A string of 64 characters or more that was copied with room keeps up to a third of its block unused until it is freed. A string `+` whose left side is a string runs about 2 more instructions in the interpreter for the checks. What it gains and costs is in [performance.md](../performance.md#strings-built-by-appending).
 
+## JSON.parse reads keys and plain strings from the text
+
+`JSON.parse` made a string for every key and every string value of its text in a `StringBuffer` that starts with room for 32 characters, grows, and shrinks to its length at the end. A key then went through `JS_ValueToAtom`, which hashes the string, finds the atom and frees the string. A table of rows repeats the same few keys thousands of times, so most of that work found an atom the parse had just found.
+
+Now, without the JSON superset (`JSON.parse` and `JS_ParseJSON`):
+
+- A key that is a string of ASCII characters with no escape, that does not start with a digit and that a `:` follows is read from the text by `json_scan_key`. `json_key_atom` takes its atom from a cache of 64 slots, chosen by the length of the key and three of its bytes, with one comparison of bytes, or else from its characters with `JS_NewAtomLen` (which looks for the atom before it makes a string), and puts the atom in its slot. The `:` token is skipped.
+- A string value of ASCII characters with no escape is made at its length in one copy (`js_new_string8_len`). A string that goes on with an escape or a character of more than one byte starts its buffer with the run of ASCII it began with, and goes on as before.
+- `json_plain_run` finds where such a run ends 8 bytes at a time: three tests on a word mark the bytes below 0x20, the quotes and the backslashes, the high bit marks the bytes above 0x7f, and the lowest mark is the first byte that ends the run (a borrow can only mark a byte after one that was found).
+- An element after the last one of the new array goes in with `add_fast_array_element`, which is what `JS_DefinePropertyValueUint32` ends up calling, without the lookups before it.
+- The text is made a C string 8 bytes at a time when it is 8-bit: the bytes above 0x7f are counted by words, and runs of 8 ASCII bytes are copied as words. The loop over a 16-bit text asks whether it is time to read the interrupt flag once a step of 65536 characters, not at every character.
+
+### Why it gives the same values and errors
+
+- The atom is the one the string would give: a key of ASCII that does not start with a digit is never an index, so `JS_NewAtomStr` would have looked it up by its characters as `JS_NewAtomLen` does. Keys that are indexes or look like numbers (`"0"`, `"4294967294"`, `"-0"`, `"01"`), keys with an escape, a character above 0x7f or 65535 bytes or more, and every key of the JSON superset still go through the token, as before. A key in the cache is compared byte for byte with the 8-bit string of its atom, and only 8-bit atoms go in.
+- The steps happen in the same order: the key's atom is taken where the loop took it from the token, after the object is made, and the `:` is a token that cannot fail. Whitespace before the key and around the `:` is the whitespace JSON allows, which `json_next_token` skips. When the text is not a plain key and a `:`, nothing moves and the token reads it, so every error has the same message and position.
+- Repeated keys, `__proto__` and the order of keys do not change: the property is defined by the same `JS_DefinePropertyValue`, and a repeated key, with or without an escape, is the same atom.
+- The cache lives in `JS_ParseJSON3`, on the stack, and each slot holds a reference to its atom. `json_key_cache_free` gives them back at the end of the parse, on every path (a value, a syntax error, out of memory, an interrupt), so no atom outlives the parse and nothing is kept from one parse to the next. A reviver runs after the parse, on the values it made.
+- The interrupt flag is read at the same places. A plain run is shorter than 65535 bytes, so the string it makes had no reading of the flag before either, and the words of the C string are counted in the same steps of 65536 characters. The units of work that `white.c` counts between two readings are the same, to the unit, on tables of 8-bit, Latin-1 and 16-bit text.
+- Running out of memory throws the same uncatchable error. A string is now asked for at its length, not at 32 characters and then grown, so the place where a memory limit is reached can move by a few bytes.
+- The depth of nesting that throws "JSON nesting too deep" is the same, 1999 objects or arrays.
+
+### What it gains
+
+`JSON.parse` of a table of 1000 rows (92 KB) runs 60% fewer instructions, and of the orders that tifa's shop workbench loads (11 KB) 31% fewer. The numbers, for texts that are not tables too, are in [performance.md](../performance.md#jsonparse-reads-keys-and-plain-strings-from-the-text).
+
+### Tests
+
+`engine/test/compare/json_keys.js` prints what Node 24 prints for keys that are indexes or look like numbers, repeated keys, `__proto__`, escaped keys and lone surrogates, whitespace around keys and colons, a reviver, `JSON.rawJSON`, tables whose rows have the same keys, keys in another order, fewer or more keys, 400 levels of one shape, and strings over 65536 bytes of ASCII, Latin-1 and 16-bit text. `engine/test/compare/recorded/json_key_errors.js` holds the messages, positions and stacks of 36 texts that throw, and the deepest nesting that parses, as the engine before this change printed them. In `engine/test/unit-white.c`, `test_json_plain_run` checks `json_plain_run` against a byte loop at every length up to 40, at every place a run can end and on random texts, and its limit of 65535 bytes. `test_json_key_cache` checks that every key atom the cache held is given back after a parse that returns, one that throws, one with a reviver, and one where each allocation in turn fails, and `test_poll_work_gaps` the units of work between two readings of the interrupt flag on 8-bit, Latin-1 and 16-bit tables.

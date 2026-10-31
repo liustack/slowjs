@@ -80,6 +80,7 @@ $t/forin.js $t/forin.txt -raw
 $t/funcshape.js $t/funcshape.txt -raw
 $t/jsonstr.js $t/jsonstr.txt -raw
 $t/jsonstr_errors.js $t/jsonstr_errors.txt -raw
+$t/json_key_errors.js $t/json_key_errors.txt -raw
 $t/objlit.js $t/objlit.txt -raw
 $t/regex.js $t/regex.txt -raw
 $t/regexcache.js $t/regexcache.txt -raw

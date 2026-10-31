@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, what the optimizer run over the linked module gained and cost, what locals that share a slot of the frame gained and cost, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, what the optimizer run over the linked module gained and cost, what locals that share a slot of the frame gained and cost, what JSON.parse gained by reading keys and plain strings from the text, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -633,6 +633,53 @@ Time on the generated build, 8 code positions, 3 rounds, one core with its sibli
 No page passes the rule for faster or slower, except the run that compiles: the pass costs 4.5 M instructions there, 37 M on the bundle of tifa's shop (3.9% of `js_create_function`, native tree). A VM of tifa reads bytecode compiled once and does not pay it. The 2021 functions of the bundle of the shop have 9,983 slots where they had 12,191 locals. The peak memory of a run of `r_react_ssr` is 8.3 MiB at the median of 24 processes, where main's is 8.7. 3 of the 240 processes ran again because other work used the sibling core.
 
 Against the engine before the optimizer over the linked module (c5efd5d8), with 2 rounds (3 for `r_react_ssr`) at the same positions, the pages were faster than they are against its successor: the shop 0.989 (0.980 to 1.000), the store pages 0.989 (0.979 to 0.998), the MUI pages 0.991 (0.983 to 1.004), `r_react_ssr` alone 1.002 (0.996 to 1.019), and a run that compiles 1.049. Time between the two baselines differs by about 1%, which is inside the spread of the code positions, so read the instruction counts above.
+
+### JSON.parse reads keys and plain strings from the text
+
+[Keys and plain strings read from the text](changes/c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text), against main at c5efd5d8 (v0.29.6). Instructions of one `JSON.parse` (the difference of 3 parses and 1), in `jsrun` built from the C (native) and in the generated engine of a Go test binary (`js_json_parse` and what it calls), a byte of the text:
+
+| Text | Bytes | Native | Change | Generated | Change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| the rows of the table page of tifa's bench app, 1000 rows | 92,001 | 62.93 to 24.88 | -60.5% | 74.97 to 27.14 | -63.8% |
+| the orders the shop's workbench loads | 10,682 | 98.95 to 68.70 | -30.6% | 124.83 to 85.29 | -31.7% |
+| the data of tifa's large store page (`/mall/en-US`) | 1,085,235 | 84.47 to 39.21 | -53.6% | 104.37 to 47.32 | -54.7% |
+| `package-lock.json` of npm/cli | 437,638 | 60.75 to 31.19 | -48.7% | 74.47 to 37.49 | -49.7% |
+| the repositories of the golang organization from the GitHub API | 322,688 | 57.69 to 28.75 | -50.2% | 71.35 to 34.59 | -51.5% |
+
+Before the change, in native callgrind, the 1000 rows spent 12.0 instructions a byte making the text a C string, 30.2 on tokens and strings, 5.7 on key atoms and 5.6 on defining properties. The orders of the shop spent 51.7 on tokens and strings (their strings hold characters of more than one byte, which still take the buffer) and 13.7 on key atoms. The lock file is not a table: 1,202 of its keys are paths of packages that appear once each, which miss the cache, and its packages have 143 different sets of keys. The repositories are 61 objects of 83 keys with objects for the owner, the license and the permissions in them. Both gain about half.
+
+A render, from callgrind at position 0.0 (the difference of 2 renders and 1, with the collector of Go off), with the same HTML on the 16 pages of tifa's apps:
+
+| Pages | Instructions a render | Change |
+| --- | ---: | ---: |
+| the table page of tifa's bench app | 117.50 M to 112.91 M | -3.91% |
+| the spiral page of tifa's bench app (the difference of 4 renders and 1, two runs) | 132.78 M to 132.79 M | 0.00% |
+| tifa's shop, six workbench pages | 833.89 M to 831.29 M | -0.31% |
+| the shop's store pages | 1,601.73 M to 1,598.73 M | -0.19% |
+| `/table/1000` of tifa's large pages, with a VM of 1 GiB | 2,258.61 M to 2,248.90 M | -0.43% |
+
+Each of the six workbench pages runs fewer instructions, from -0.03% (an order) to -0.51% (the stats of a project).
+
+Timed on the generated engine at 8 code positions, 3 rounds, the median of the ratios and their range over the positions (and the spread of main itself over the positions):
+
+| Work | Time of main | Ratio | Range over positions | Spread of main |
+| --- | ---: | ---: | ---: | ---: |
+| `JSON.parse` of the 1000 rows | 0.643 ms | 0.357 | 0.351 to 0.366 | 1.4% |
+| `JSON.parse` of the orders of the shop | 0.137 ms | 0.685 | 0.676 to 0.696 | 1.5% |
+| `JSON.parse` of the data of `/mall/en-US` | 14.09 ms | 0.517 | 0.511 to 0.524 | 2.2% |
+| `JSON.parse` of the lock file of npm/cli | 3.56 ms | 0.629 | 0.618 to 0.636 | 1.9% |
+| `JSON.parse` of the GitHub repositories | 2.38 ms | 0.509 | 0.502 to 0.516 | 1.4% |
+| the table page of the bench app | 12.43 ms | 0.968 | 0.954 to 0.977 | 2.0% |
+| the spiral page of the bench app | 14.78 ms | 0.994 | 0.974 to 1.024 | 2.3% |
+| `/inject/1` of tifa's large pages | 16.28 ms | 0.831 | 0.817 to 0.866 | 2.2% |
+| `/mall/en-US` | 191.2 ms | 0.951 | 0.938 to 0.965 | 1.4% |
+| `/table/1000` | 401.7 ms | 1.002 | 0.985 to 1.010 | 4.6% |
+| the six workbench pages | 154.9 ms | 0.986 | 0.978 to 1.006 | 1.3% |
+| the five store pages | 282.0 ms | 1.003 | 0.988 to 1.013 | 4.6% |
+
+The workbench and store pages, the spiral page and `/table/1000` are under 3%, inside the spread of main, so callgrind decides for them: they run fewer instructions, and the spiral page as many. Its difference of 2 renders and 1 moved by up to 0.19% from run to run, on both sides, so it is measured over 3 renders.
+
+On main after the optimizer over the linked module and the locals that share a slot (ffdc0bdb), against that main, callgrind as above: the table page of the bench app runs 3.94% fewer instructions (113.07 M to 108.62 M), the six workbench pages 0.49% fewer (814.00 M to 810.01 M, each of them fewer) and `/inject/1` 9.60% fewer (254.08 M to 229.69 M), with the same HTML on the 16 pages. The JSON rows, the bench pages and the store pages were timed while a check of the engine ran on two other cores of the machine. A first run of the workbench pages then gave 0.997 for the six, with the page of a project at 1.007 (7 of 8 positions), and the run in the table, with those cores idle, gives 0.991 to 1.016 for that page and 0.997 at the median.
 
 ### Upstream commits and the scripts where the C engine was slower than C
 
