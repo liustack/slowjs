@@ -13,3 +13,8 @@ import "fmt"
 func DropPages(path string) error {
 	return fmt.Errorf("dropping the cached pages of a file needs linux")
 }
+
+// Resident is only on linux.
+func Resident(path string) (n, total int, err error) {
+	return 0, 0, fmt.Errorf("reading which pages of a file are in memory needs linux")
+}

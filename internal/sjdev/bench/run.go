@@ -30,27 +30,28 @@ import (
 // the other, in the order Order, and run again together when one of them was
 // disturbed, with the next Attempt.
 type Record struct {
-	Side       string             `json:"side"`
-	Pos        string             `json:"pos"`
-	Kind       string             `json:"kind"`
-	Round      int                `json:"round"`
-	Rep        int                `json:"rep,omitempty"`
-	Attempt    int                `json:"attempt"`
-	Slot       int                `json:"slot"`            // place of the process in its block
-	Order      string             `json:"order,omitempty"` // the sides of the block, in the order they ran
-	Session    string             `json:"session,omitempty"`
-	Start      string             `json:"start,omitempty"`       // RFC 3339, UTC
-	FreshPages bool               `json:"fresh_pages,omitempty"` // the cached pages of the binary were dropped before it ran
-	Metrics    map[string]float64 `json:"metrics,omitempty"`
-	HWMKB      int64              `json:"vmhwm_kb,omitempty"`
-	WallMs     float64            `json:"wall_ms"`
-	CPUMs      float64            `json:"cpu_ms"`
-	SibPct     float64            `json:"sib_pct"`     // the sibling core busy, in percent of the wall time
-	OtherPct   float64            `json:"other_pct"`   // other work on the timing core
-	StealPct   float64            `json:"steal_pct"`   // steal time on the timing core
-	MachinePct float64            `json:"machine_pct"` // all other cores busy, summed (100 is one core)
-	Disturbed  bool               `json:"disturbed,omitempty"`
-	Err        string             `json:"err,omitempty"`
+	Side          string             `json:"side"`
+	Pos           string             `json:"pos"`
+	Kind          string             `json:"kind"`
+	Round         int                `json:"round"`
+	Rep           int                `json:"rep,omitempty"`
+	Attempt       int                `json:"attempt"`
+	Slot          int                `json:"slot"`            // place of the process in its block
+	Order         string             `json:"order,omitempty"` // the sides of the block, in the order they ran
+	Session       string             `json:"session,omitempty"`
+	Start         string             `json:"start,omitempty"`          // RFC 3339, UTC
+	FreshPages    bool               `json:"fresh_pages,omitempty"`    // dropping the cached pages of the binary was asked before it ran
+	FreshVerified bool               `json:"fresh_verified,omitempty"` // and mincore found none of them left in memory
+	Metrics       map[string]float64 `json:"metrics,omitempty"`
+	HWMKB         int64              `json:"vmhwm_kb,omitempty"`
+	WallMs        float64            `json:"wall_ms"`
+	CPUMs         float64            `json:"cpu_ms"`
+	SibPct        float64            `json:"sib_pct"`     // the sibling core busy, in percent of the wall time
+	OtherPct      float64            `json:"other_pct"`   // other work on the timing core
+	StealPct      float64            `json:"steal_pct"`   // steal time on the timing core
+	MachinePct    float64            `json:"machine_pct"` // all other cores busy, summed (100 is one core)
+	Disturbed     bool               `json:"disturbed,omitempty"`
+	Err           string             `json:"err,omitempty"`
 }
 
 // ReadRecords reads a file of records. A file that does not exist has none.
@@ -480,6 +481,7 @@ func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, pars
 			r.Err = "drop pages: " + err.Error()
 			return r
 		}
+		r.FreshVerified = true
 	}
 	var t0 map[int]CPUTicks
 	if ticks != nil {
