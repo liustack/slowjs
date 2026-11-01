@@ -261,7 +261,9 @@ func (o *RunOptions) Defaults() {
 // Variant is one binary.
 type Variant struct{ Side, Pos, Path string }
 
-// Discover lists the binaries of dir, limited by sides and positions.
+// Discover lists the binaries of dir, limited by sides and positions. Every
+// side asked for (or every side found) must have a binary at every position
+// asked for (or found).
 func Discover(dir string, sides, pos []string) ([]Variant, error) {
 	// The processes run in another folder, so the paths must not depend on this one.
 	dir, err := filepath.Abs(dir)
@@ -286,21 +288,29 @@ func Discover(dir string, sides, pos []string) ([]Variant, error) {
 	if len(vs) == 0 {
 		return nil, fmt.Errorf("no binaries named side@pos in %s", dir)
 	}
-	// Every side must have every position, or the pairs are not whole.
-	by := map[string]map[string]bool{}
-	var allPos []string
+	// The plan is every side asked for (or found) at every position asked for
+	// (or found), and each of those binaries must be there: one that is missing
+	// is an error, not a smaller plan.
+	have := map[string]bool{}
+	var allSides, allPos []string
 	for _, v := range vs {
-		if by[v.Side] == nil {
-			by[v.Side] = map[string]bool{}
+		have[v.Side+"@"+v.Pos] = true
+		if !slices.Contains(allSides, v.Side) {
+			allSides = append(allSides, v.Side)
 		}
-		by[v.Side][v.Pos] = true
 		if !slices.Contains(allPos, v.Pos) {
 			allPos = append(allPos, v.Pos)
 		}
 	}
-	for s, ps := range by {
+	if len(sides) > 0 {
+		allSides = sides
+	}
+	if len(pos) > 0 {
+		allPos = pos
+	}
+	for _, s := range allSides {
 		for _, p := range allPos {
-			if !ps[p] {
+			if !have[s+"@"+p] {
 				return nil, fmt.Errorf("side %s has no binary at position %s in %s", s, p, dir)
 			}
 		}

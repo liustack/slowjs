@@ -386,3 +386,17 @@ func TestRunRefusesRecordsWithoutAManifest(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestDiscoverWantsEverythingAskedFor(t *testing.T) {
+	// No side has 0.16: it must not drop out of the plan.
+	dir := variants(t, "a@0.0", "a@0.8", "b@0.0", "b@0.8")
+	if _, err := Discover(dir, nil, []string{"0.0", "0.8", "0.16"}); err == nil || !strings.Contains(err.Error(), "0.16") {
+		t.Errorf("a position asked for and missing: %v", err)
+	}
+	if _, err := Discover(dir, []string{"a", "b", "c"}, nil); err == nil || !strings.Contains(err.Error(), "side c") {
+		t.Errorf("a side asked for and missing: %v", err)
+	}
+	if vs, err := Discover(dir, []string{"a", "b"}, []string{"0.0", "0.8"}); err != nil || len(vs) != 4 {
+		t.Errorf("%v, %v", vs, err)
+	}
+}
