@@ -216,8 +216,8 @@ func WriteFnTable(w io.Writer, p Profile) {
 	}
 }
 
-// cgWindow runs each binary once under callgrind with the collection only inside
-// o.Toggle, which does o.Big renders after its own warm-up, keeps the raw file
+// cgWindow runs each binary once under callgrind, counting only in the window:
+// the dump the program writes around its o.Big renders after its own warm-up (or the inside of o.Toggle), keeps the raw file
 // and a table per function, and prints the counts per render.
 func cgWindow(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
 	vg, vgEnv := o.ValgrindCmd()
@@ -236,17 +236,28 @@ func cgWindow(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) e
 		if err := os.WriteFile(base+".log", []byte(r.Out), 0o644); err != nil {
 			return err
 		}
-		f, err := os.Open(base + ".cg")
+		file := base + ".cg"
+		if o.Dumps {
+			ds, err := filepath.Glob(base + ".cg.*")
+			if err != nil {
+				return err
+			}
+			if len(ds) != 1 {
+				return fmt.Errorf("%s: want one dump of the window, found %d (%v)", base, len(ds), ds)
+			}
+			file = ds[0]
+		}
+		f, err := os.Open(file)
 		if err != nil {
 			return err
 		}
 		p, err := ParseProfile(f)
 		f.Close()
 		if err != nil {
-			return fmt.Errorf("%s.cg: %w", base, err)
+			return fmt.Errorf("%s: %w", file, err)
 		}
 		if p.Event("Ir") != 0 || p.Total[0] == 0 {
-			return fmt.Errorf("%s.cg: nothing counted inside %s", base, o.Toggle)
+			return fmt.Errorf("%s: nothing counted in the window", file)
 		}
 		p = p.Scale(float64(o.Big))
 		t, err := os.Create(base + ".fn.tsv")
@@ -257,7 +268,7 @@ func cgWindow(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) e
 		t.Close()
 		ps = append(ps, p)
 	}
-	fmt.Fprintf(w, "counts per render (each page once), inside %s\n\n", o.Toggle)
+	fmt.Fprintf(w, "counts per render (each page once), in the window\n\n")
 	if len(ps) == 2 {
 		WriteProfiles(w, o.Interp, ps[0], &ps[1])
 	} else {

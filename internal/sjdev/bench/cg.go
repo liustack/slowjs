@@ -132,11 +132,12 @@ type CGOptions struct {
 	Args         []string // arguments, with {N} replaced by the renders
 	Dir          string
 	Env          []string
-	Toggle       string // collect only inside this function (empty: the whole run)
+	Toggle       string // collect only inside this function (empty: the whole run), loses counts when a goroutine moves to another stack or thread
 	ValgrindRoot string // a folder with usr/bin/valgrind inside, when valgrind is not installed
 	Out          string // folder of the callgrind files
 	Sim          bool   // simulate the branch predictor and the caches (--branch-sim=yes --cache-sim=yes)
 	Interp       string // the interpreter function, reported on its own (JS_CallInternal_block)
+	Dumps        bool   // the program zeroes the counts and dumps them itself around the window (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)
 }
 
 // Check reports why the options cannot be used.
@@ -252,7 +253,7 @@ func CG(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
 	return nil
 }
 
-// Window is the mode of docs/measuring.md: with -toggle and -small 0, one run
-// per binary that counts only inside the toggle function, after the warm-up
+// Window is the mode of docs/measuring.md: with -dumps (or -toggle) and -small 0, one run
+// per binary that counts only the window the program marks (or the toggle function), after the warm-up
 // the program does outside it.
-func (o CGOptions) Window() bool { return o.Toggle != "" && o.Small == 0 }
+func (o CGOptions) Window() bool { return (o.Toggle != "" || o.Dumps) && o.Small == 0 }

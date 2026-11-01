@@ -212,3 +212,28 @@ func TestCGWindowRunsEachBinaryOnce(t *testing.T) {
 		t.Error("the raw file is not kept")
 	}
 }
+
+func TestCGWindowReadsTheDumpOfTheProgram(t *testing.T) {
+	out := t.TempDir()
+	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+		for _, a := range c.Args {
+			if f, ok := strings.CutPrefix(a, "--callgrind-out-file="); ok {
+				// the final file has the whole run, the dump only the window
+				os.WriteFile(f, []byte(strings.Replace(cgFile, "0 10 1 0\ntotals: 560 56 7", "0 1010 1 0\ntotals: 1560 56 7", 1)), 0o644)
+				os.WriteFile(f+".1", []byte(cgFile), 0o644)
+			}
+			if strings.HasPrefix(a, "--toggle-collect") {
+				t.Errorf("toggle with dumps: %v", c.Args)
+			}
+		}
+		return sjdev.Result{}
+	}
+	o := CGOptions{Bins: []string{"/a"}, Big: 10, Dumps: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
+	var b bytes.Buffer
+	if err := CG(context.Background(), o, run, &b); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "| whole program | Ir | 56 |") {
+		t.Errorf("output:\n%s", b.String())
+	}
+}
