@@ -214,7 +214,6 @@ func benchCG(ctx context.Context, args []string) error {
 	fs.BoolVar(&o.Sim, "sim", false, "simulate the branch predictor and the caches")
 	fs.BoolVar(&o.Dumps, "dumps", false, "with -small 0: the program zeroes the counts and dumps them around the window itself (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)")
 	fs.StringVar(&o.Interp, "interp", "JS_CallInternal_block", "the interpreter, reported on its own")
-	fs.BoolVar(&o.Dumps, "dumps", false, "with -small 0: the program zeroes the counts and dumps them around the window itself (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)")
 	fs.StringVar(&o.ValgrindRoot, "valgrind-root", "", "folder with usr/bin/valgrind, when it is not installed")
 	fs.StringVar(&o.Out, "out", "", "folder for the callgrind files")
 	if err := fs.Parse(args); err != nil {
