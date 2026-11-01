@@ -186,14 +186,15 @@ type Proc struct {
 	Err  error
 }
 
-// Starter starts a process and waits for it.
+// Starter starts a process in dir, with env as its whole environment, and waits
+// for it.
 type Starter func(ctx context.Context, bin string, args []string, dir string, env []string) Proc
 
 // Start is the Starter that runs the process.
 func Start(ctx context.Context, bin string, args []string, dir string, env []string) Proc {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = env
 	t0 := time.Now()
 	out, err := cmd.CombinedOutput()
 	p := Proc{Out: string(out), Wall: time.Since(t0), Err: err}
@@ -201,6 +202,52 @@ func Start(ctx context.Context, bin string, args []string, dir string, env []str
 		p.CPU = ps.UserTime() + ps.SystemTime()
 	}
 	return p
+}
+
+// Inherited are the variables of the environment of sjdev that the processes
+// get. Everything else comes from -env, so that what a process runs with is
+// what the manifest says.
+var Inherited = []string{"HOME", "PATH", "TMPDIR"}
+
+// EffectiveEnv is the environment of the processes: the Inherited variables of
+// environ, then env (K=V, a later one wins), sorted.
+func EffectiveEnv(environ, env []string) ([]string, error) {
+	vals := map[string]string{}
+	for _, kv := range environ {
+		if k, v, ok := strings.Cut(kv, "="); ok && slices.Contains(Inherited, k) {
+			vals[k] = v
+		}
+	}
+	for _, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			return nil, fmt.Errorf("-env %q is not K=V", kv)
+		}
+		vals[k] = v
+	}
+	out := make([]string, 0, len(vals))
+	for k, v := range vals {
+		out = append(out, k+"="+v)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+// dropped names the variables of environ that look like they change a
+// measurement (GO*, TIFA_*) and that the processes do not get.
+func dropped(environ, env []string) []string {
+	var out []string
+	for _, kv := range environ {
+		k, _, _ := strings.Cut(kv, "=")
+		if !strings.HasPrefix(k, "GO") && !strings.HasPrefix(k, "TIFA_") || slices.Contains(Inherited, k) {
+			continue
+		}
+		if !slices.ContainsFunc(env, func(e string) bool { return strings.HasPrefix(e, k+"=") }) {
+			out = append(out, k)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // RunOptions say what to time.
@@ -215,8 +262,8 @@ type RunOptions struct {
 	Pos        []string // limit to these positions (empty: all)
 	Parse      string   // see ParserFor
 	Args       []string // arguments of the process
-	Dir        string   // working folder of the process
-	Env        []string // K=V
+	Dir        string   // working folder of the process (Run makes it absolute, the current one when empty)
+	Env        []string // K=V (Run makes it the whole environment, EffectiveEnv)
 	CPU        int      // the timing core (-1: do not check)
 	Sib        int      // its hyperthread sibling, which must stay idle (-1: none)
 	BusyPct    float64  // percent of a busy sibling or other work on the timing core that disturbs a block
@@ -393,6 +440,16 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	}
 	parse, err := ParserFor(o.Parse)
 	if err != nil {
+		return err
+	}
+	// The manifest records what the processes get, and they get just that.
+	if o.Dir, err = filepath.Abs(o.Dir); err != nil {
+		return err
+	}
+	if d := dropped(os.Environ(), o.Env); len(d) > 0 {
+		fmt.Fprintf(w, "not passed to the processes (give them with -env): %s\n", strings.Join(d, ", "))
+	}
+	if o.Env, err = EffectiveEnv(os.Environ(), o.Env); err != nil {
 		return err
 	}
 	vs, err := Discover(o.Bin, o.Sides, o.Pos)

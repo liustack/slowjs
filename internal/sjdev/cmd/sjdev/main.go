@@ -148,7 +148,7 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.IntVar(&o.FormalReps, "formal-reps", 3, "blocks of the formal layout (0.0) in each round")
 	fs.StringVar(&o.Parse, "parse", "", "gobench:UNIT (such as gobench:p50-ms) or jsrun")
 	fs.StringVar(&o.Dir, "dir", "", "working folder of the processes")
-	fs.Var(&envs, "env", "K=V for the processes (repeatable)")
+	fs.Var(&envs, "env", "K=V for the processes (repeatable). They get only HOME, PATH and TMPDIR of this environment besides")
 	fs.IntVar(&o.CPU, "cpu", -1, "the timing core, to check that nothing else ran on it (-1: no check)")
 	fs.IntVar(&o.Sib, "sib", -1, "its hyperthread sibling, which must stay idle (-1: no check)")
 	fs.Float64Var(&o.BusyPct, "busy", 5, "percent of busy sibling or other work on the timing core that makes the block run again")

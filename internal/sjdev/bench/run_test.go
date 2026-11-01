@@ -214,7 +214,7 @@ func TestRunWritesOneRecordPerProcessAndResumes(t *testing.T) {
 	if rs[0].Metrics["Shop/p"] != 7.5 || rs[0].HWMKB != 4096 || rs[0].Kind != "run" {
 		t.Errorf("record = %+v", rs[0])
 	}
-	if f.dirs[0] != "/work" || !slices.Equal(f.envs[0], []string{"A=1"}) {
+	if f.dirs[0] != "/work" || !slices.Contains(f.envs[0], "A=1") {
 		t.Errorf("dir %q env %v", f.dirs[0], f.envs[0])
 	}
 	// A second call with 4 rounds runs only the last two.
@@ -398,5 +398,80 @@ func TestDiscoverWantsEverythingAskedFor(t *testing.T) {
 	}
 	if vs, err := Discover(dir, []string{"a", "b"}, []string{"0.0", "0.8"}); err != nil || len(vs) != 4 {
 		t.Errorf("%v, %v", vs, err)
+	}
+}
+
+func TestEffectiveEnv(t *testing.T) {
+	got, err := EffectiveEnv([]string{"PATH=/bin", "GOMAXPROCS=4", "HOME=/h", "SSH_TTY=/dev/pts/1"}, []string{"GOGC=50", "PATH=/usr/bin", "GOGC=100"})
+	if err != nil || !slices.Equal(got, []string{"GOGC=100", "HOME=/h", "PATH=/usr/bin"}) {
+		t.Errorf("%v, %v", got, err)
+	}
+	if _, err := EffectiveEnv(nil, []string{"NOVALUE"}); err == nil {
+		t.Error("an -env without = accepted")
+	}
+}
+
+func TestRunRecordsTheEnvironmentAndFolderItUses(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
+	out := filepath.Join(t.TempDir(), "r.jsonl")
+	f := &fakeStart{out: "BenchmarkX 1 1 ns/op 3 ms\n"}
+	work := t.TempDir()
+	t.Chdir(work)
+	os.Mkdir("ssr", 0o755)
+	t.Setenv("TMPDIR", "/tmp/one")
+	t.Setenv("GOMAXPROCS", "3")
+	t.Setenv("TIFA_WARM", "5")
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "gobench:ms", Dir: "ssr", Env: []string{"GOMAXPROCS=1", "TIFA_WARM=8"}, CPU: -1, Sib: -1}
+	var log bytes.Buffer
+	if err := Run(context.Background(), o, f.start, nil, &log); err != nil {
+		t.Fatal(err)
+	}
+	m, _, _ := ReadManifest(out)
+	real, _ := filepath.EvalSymlinks(work)
+	if m.Dir != filepath.Join(real, "ssr") && m.Dir != filepath.Join(work, "ssr") {
+		t.Errorf("manifest dir %q", m.Dir)
+	}
+	// The process gets what the manifest says, nothing more.
+	for i := range f.envs {
+		if !slices.Equal(f.envs[i], m.Env) || f.dirs[i] != m.Dir {
+			t.Fatalf("process %d: dir %q env %v, manifest %q %v", i, f.dirs[i], f.envs[i], m.Dir, m.Env)
+		}
+	}
+	if !slices.Contains(m.Env, "GOMAXPROCS=1") || !slices.Contains(m.Env, "TIFA_WARM=8") || !slices.Contains(m.Env, "TMPDIR=/tmp/one") || slices.Contains(m.Env, "GOMAXPROCS=3") {
+		t.Errorf("manifest env %v", m.Env)
+	}
+	// Going on with another value of what the processes get is refused.
+	for name, env := range map[string][]string{
+		"GOMAXPROCS": {"GOMAXPROCS=2", "TIFA_WARM=8"},
+		"GOGC":       {"GOMAXPROCS=1", "TIFA_WARM=8", "GOGC=50"},
+		"TIFA_WARM":  {"GOMAXPROCS=1", "TIFA_WARM=4"},
+	} {
+		o2 := o
+		o2.Env = env
+		if err := Run(context.Background(), o2, f.start, nil, &log); err == nil || !strings.Contains(err.Error(), "env") {
+			t.Errorf("%s changed: %v", name, err)
+		}
+	}
+	t.Setenv("TMPDIR", "/tmp/two")
+	if err := Run(context.Background(), o, f.start, nil, &log); err == nil || !strings.Contains(err.Error(), "env") {
+		t.Errorf("an inherited TMPDIR changed: %v", err)
+	}
+	t.Setenv("TMPDIR", "/tmp/one")
+	// The same relative folder from another folder is another folder.
+	other := t.TempDir()
+	os.Mkdir(filepath.Join(other, "ssr"), 0o755)
+	t.Chdir(other)
+	if err := Run(context.Background(), o, f.start, nil, &log); err == nil || !strings.Contains(err.Error(), "dir") {
+		t.Errorf("another folder: %v", err)
+	}
+	// What the shell sets and -env does not is not passed, and said so.
+	t.Chdir(work)
+	t.Setenv("GOGC", "10")
+	log.Reset()
+	if err := Run(context.Background(), o, f.start, nil, &log); err != nil {
+		t.Fatalf("an inherited GOGC the processes do not get: %v", err)
+	}
+	if !strings.Contains(log.String(), "GOGC") || slices.Contains(f.envs[len(f.envs)-1], "GOGC=10") {
+		t.Errorf("log: %s", log.String())
 	}
 }
