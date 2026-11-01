@@ -258,7 +258,7 @@ func benchJudge(args []string) error {
 	kind := fs.String("kind", "run", "kind to read")
 	base := fs.String("base", "", "side that is the base")
 	nw := fs.String("new", "", "side compared with it")
-	delta := fs.Float64("delta", bench.DefaultDelta, "the regression that matters, as a fraction (0.005 is 0.5%)")
+	delta := fs.Float64("delta", bench.DefaultDelta, "the regression that matters, as a fraction (0.01 is 1%)")
 	alpha := fs.Float64("alpha", bench.DefaultAlpha, "1 - the confidence of the intervals")
 	detail := fs.Bool("detail", false, "also each layout")
 	if err := fs.Parse(args); err != nil {

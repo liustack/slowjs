@@ -16,8 +16,9 @@ import (
 
 // The defaults of docs/measuring.md.
 const (
-	// DefaultDelta is the regression that matters: 0.5%.
-	DefaultDelta = 0.005
+	// DefaultDelta is the regression that matters: 1%, about the smallest
+	// change to the engine that 2 rounds over the 16 layouts can show.
+	DefaultDelta = 0.01
 	// DefaultAlpha makes the intervals 95% two-sided.
 	DefaultAlpha = 0.05
 )
