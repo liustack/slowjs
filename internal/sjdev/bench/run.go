@@ -39,6 +39,7 @@ type Record struct {
 	Slot          int                `json:"slot"`            // place of the process in its block
 	Order         string             `json:"order,omitempty"` // the sides of the block, in the order they ran
 	Session       string             `json:"session,omitempty"`
+	Experiment    string             `json:"experiment,omitempty"`     // the id of the manifest of the file
 	Start         string             `json:"start,omitempty"`          // RFC 3339, UTC
 	FreshPages    bool               `json:"fresh_pages,omitempty"`    // dropping the cached pages of the binary was asked before it ran
 	FreshVerified bool               `json:"fresh_verified,omitempty"` // and mincore found none of them left in memory
@@ -224,7 +225,8 @@ type RunOptions struct {
 	Timeout    time.Duration
 	MinTicks   int64 // fewer busy ticks than this are noise
 	Session    string
-	FreshPages bool // drop the cached pages of a binary before each of its processes (DropPages)
+	FreshPages bool   // drop the cached pages of a binary before each of its processes (DropPages)
+	Experiment string // set by Run from the manifest
 }
 
 // Defaults fills what is not set.
@@ -324,8 +326,9 @@ type Block struct {
 // the formal one reps times. In a block the sides come in a random order in an
 // even round and in the reverse of that order in the odd round after it, so
 // every two sides meet as often in one order as in the other. The order depends
-// only on the kind and the round, so that a restart repeats it.
-func Order(vs []Variant, kind string, round, reps int) []Block {
+// only on seed (the experiment of the file, so a new experiment gets new
+// orders) and the round, so that a restart repeats it.
+func Order(vs []Variant, seed string, round, reps int) []Block {
 	var positions []string
 	by := map[string][]Variant{}
 	for _, v := range vs {
@@ -345,11 +348,11 @@ func Order(vs []Variant, kind string, round, reps int) []Block {
 			blocks = append(blocks, Block{Pos: p, Rep: rep})
 		}
 	}
-	seeded(fmt.Sprintf("%s-pos-%d", kind, round)).Shuffle(len(blocks), func(i, j int) { blocks[i], blocks[j] = blocks[j], blocks[i] })
+	seeded(fmt.Sprintf("%s-pos-%d", seed, round)).Shuffle(len(blocks), func(i, j int) { blocks[i], blocks[j] = blocks[j], blocks[i] })
 	for i := range blocks {
 		group := slices.Clone(by[blocks[i].Pos])
 		slices.SortFunc(group, func(a, b Variant) int { return strings.Compare(a.Side, b.Side) })
-		seeded(fmt.Sprintf("%s-side-%s-%d-%d", kind, blocks[i].Pos, blocks[i].Rep, round/2)).Shuffle(len(group), func(i, j int) { group[i], group[j] = group[j], group[i] })
+		seeded(fmt.Sprintf("%s-side-%s-%d-%d", seed, blocks[i].Pos, blocks[i].Rep, round/2)).Shuffle(len(group), func(i, j int) { group[i], group[j] = group[j], group[i] })
 		if round%2 == 1 {
 			slices.Reverse(group)
 		}
@@ -390,6 +393,11 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	if err != nil {
 		return err
 	}
+	m, err := Begin(o, vs, old)
+	if err != nil {
+		return err
+	}
+	o.Experiment = m.Experiment
 	nsides := map[string]bool{}
 	for _, v := range vs {
 		nsides[v.Side] = true
@@ -435,7 +443,7 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	for rd := o.Round0; rd < o.Round0+o.Rounds; rd++ {
 		t0 := time.Now()
 		reruns := 0
-		for _, b := range Order(vs, o.Kind, rd, o.FormalReps) {
+		for _, b := range Order(vs, o.Experiment, rd, o.FormalReps) {
 			k := blockKey{b.Pos, o.Kind, rd, b.Rep}
 			s := state[k]
 			if s == nil {
@@ -473,7 +481,7 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 }
 
 func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, parse Parser, start Starter, ticks Ticks) Record {
-	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session, FreshPages: o.FreshPages}
+	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session, Experiment: o.Experiment, FreshPages: o.FreshPages}
 	pctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 	if o.FreshPages {

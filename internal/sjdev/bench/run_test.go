@@ -121,6 +121,9 @@ func TestOrderIsRepeatableAndMixed(t *testing.T) {
 	if !different {
 		t.Error("every round has the same order")
 	}
+	if fmt.Sprint(Order(vs, "other experiment", 3, 1)) == fmt.Sprint(o1) {
+		t.Error("another experiment repeats the order")
+	}
 }
 
 func TestOrderBalancesEveryPairOfSides(t *testing.T) {
@@ -321,5 +324,60 @@ func TestRunStopsOnAFailedProcess(t *testing.T) {
 	os.Remove(out)
 	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err == nil {
 		t.Error("output without an eval line accepted")
+	}
+}
+
+// A run writes a manifest, a run that goes on in the file must be the same
+// experiment (same binaries, same settings) and adds its rounds, and the
+// records carry its id.
+func TestRunKeepsAManifest(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
+	out := filepath.Join(t.TempDir(), "r.jsonl")
+	f := &fakeStart{out: "BenchmarkX 1 1 ns/op 3 ms\n"}
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "gobench:ms", CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, err := ReadManifest(out)
+	if err != nil || !ok || m.Experiment == "" || fmt.Sprint(m.Plan.Rounds) != "[0 1]" || len(m.Binaries) != 2 || m.Binaries["a@0.0"] == "" {
+		t.Fatalf("%+v %v %v", m, ok, err)
+	}
+	rs, _ := ReadRecords(out)
+	for _, r := range rs {
+		if r.Experiment != m.Experiment {
+			t.Fatalf("record of experiment %q", r.Experiment)
+		}
+	}
+	// More rounds: the same experiment, with them added.
+	o.Round0, o.Rounds = 2, 2
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	m2, _, _ := ReadManifest(out)
+	if m2.Experiment != m.Experiment || fmt.Sprint(m2.Plan.Rounds) != "[0 1 2 3]" {
+		t.Errorf("%+v", m2)
+	}
+	// A binary replaced under the same name.
+	if err := os.WriteFile(filepath.Join(dir, "b@0.0"), []byte("y"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "binaries") {
+		t.Errorf("a replaced binary: %v", err)
+	}
+	// Other settings.
+	os.WriteFile(filepath.Join(dir, "b@0.0"), []byte("x"), 0o755)
+	o.Env = []string{"X=1"}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "env") {
+		t.Errorf("other settings: %v", err)
+	}
+}
+
+func TestRunRefusesRecordsWithoutAManifest(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
+	out := filepath.Join(t.TempDir(), "r.jsonl")
+	os.WriteFile(out, []byte(`{"side":"a","pos":"0.0","kind":"run","round":0,"attempt":0,"slot":0,"wall_ms":1,"cpu_ms":1,"sib_pct":0,"other_pct":0,"steal_pct":0,"machine_pct":0}`+"\n"), 0o644)
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "gobench:ms", CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, (&fakeStart{}).start, nil, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "no manifest") {
+		t.Errorf("%v", err)
 	}
 }
