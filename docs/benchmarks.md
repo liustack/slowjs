@@ -653,8 +653,8 @@ go run ./cmd/compare -name 2026-10-21-v0.26.16-gcp -merge results/2026-10-21-v0.
 
 To time a change to this engine against the engine before it, not against
 other engines, use the tool in [testing.md](testing.md#developer-tools-generate-check-time):
-it builds both at several code positions and reads the result by the rule of
-[Code positions](performance.md#code-positions).
+it builds both at several code positions and judges the result by the protocol
+of [measuring.md](measuring.md).
 
 To measure on another machine, build there or cross-build and copy `bin/`
 with it:

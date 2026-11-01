@@ -89,6 +89,8 @@ Measured in tifa on 2026-10-20 against `modernc.org/quickjs` v0.25.0 with libqui
 
 ## Measuring in tifa
 
+Judge every timing by the protocol of [measuring.md](measuring.md). This section is how to build and run tifa against a checkout.
+
 To measure a branch of slowjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
 
 ```sh
@@ -111,27 +113,22 @@ After a release, upgrade tifa and collect its engine profile again (see [releasi
 
 ### Code positions
 
-Where the interpreter's code lands in the binary changes its speed by 5% to 14% on its own, so one build against one build can show a change that is only a move. Measure each side at several positions.
+Where the interpreter's code lands in the binary changes its speed by 5% to 14% on its own, so one build against one build can show a change that is only a move. Measure each side at several positions (layouts), by the protocol of [measuring.md](measuring.md): it says which layouts, in what order, how to read the result and what it can and cannot see. The older rule here (a change is real past 2% and half the range of the base's positions, callgrind under 3%) is retired: it could not see changes under 2%, and it called a change that it could not see "no change".
 
-Go puts amd64 functions on 32 bytes, so moving the whole program by less than 32 bytes moves nothing, and the effect repeats every 64 bytes. A position is two numbers:
+A position is two numbers:
 
-- The whole program moved by 0 or 32 bytes.
-- The start of the interpreter body moved by 0, 8, 16 or 24 bytes of NOP, put right after the `PCALIGN` at its start.
+- `shift`: bytes of NOP after the first engine function that the binary keeps, so that every engine function after it moves. Go puts amd64 functions on 32 bytes and the interpreter on 64, so use a multiple of 32.
+- `front`: bytes of NOP right after the `PCALIGN` at the start of the interpreter body, a multiple of 8 from 0 to 56, so that the body takes each 8-byte place in its 64-byte block.
 
-All 8 combinations are the full set. For a quick check use 4: 0 or 32 for the first, 0 or 16 for the second. Build every position with the same flags (`-pgo=off` or the same profile), and put a measurement of the same engine at all positions next to the one of the change.
+Until the protocol of measuring.md, `shift` padded the first function of `cutils_amd64.s`, which is never called, so the linker dropped it with its NOPs: in the C engine of v0.29.8 a shift of 32 or 1664 bytes left every function at the same address and moved only some read-only data. The results below that name "the whole-program move" measured that.
+
+Build every position with the same flags (`-pgo=off` or the same profile), and put a measurement of the same engine at all positions next to the one of the change.
 
 Making the positions:
 
-- The tool in [testing.md](testing.md#developer-tools-generate-check-time) makes the positions of the C engine, runs the builds in turn and applies the rules below (`bench build`, `bench run`, `bench report`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:32 front:JS_CallInternal_block:16` on the copy (use `shift:0` and `front:...:0` for no move), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
+- The tool in [testing.md](testing.md#time-one-build-against-another) makes the positions of the C engine, runs the builds in turn and judges the result (`bench build`, `bench run`, `bench judge`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_CallInternal_block:16` on the copy (use `shift:0` and `front:...:0` for no move, and the name of the first engine function of your binary, which `go tool nm -n` shows), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
 
-Reading the result:
-
-- For each position, run the two builds in turn and take the median of the paired ratios. Report that median per position.
-- Take the range of the baseline's own positions: the same engine, new against itself at each position.
-- A change is real only when the median passes both 2% and half of that range, and most positions agree on the sign.
-- Under 3%, do not argue from timings. Count instructions with callgrind, which hardly move with the position.
-
-The 8 and 24 bytes of `front` move the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions. Make those two places with the generator instead: `-align64 JS_CallInternal:48` and `-align64 JS_CallInternal:0` put the body there with its pool on 16 bytes.
+A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions. Make those two places with the generator instead: `-align64 JS_CallInternal:48` and `-align64 JS_CallInternal:0` put the body there with its pool on 16 bytes.
 
 What does not explain the spread, measured on the C engine (`q_array_read`, 40 to 48 processes of one binary):
 

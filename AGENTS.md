@@ -31,6 +31,7 @@
    - [docs/allocator.md](docs/allocator.md): the memory allocator of the C engine in `engine/`
    - [docs/upgrading.md](docs/upgrading.md): taking commits of upstream QuickJS and new intl data
    - [docs/performance.md](docs/performance.md): render speed of each release, measured in tifa
+   - [docs/measuring.md](docs/measuring.md): how to time a change and judge it, the defaults and what they can see
    - docs/benchmarks.md: the comparison with the other pure Go JavaScript engines, with its history, run again at every release. It leaves out goja, sobek and otto. Its results are kept under `compare/engines/results/` and its changes in `compare/engines/CHANGELOG.md`
    - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
    - [docs/upstream.md](docs/upstream.md): where the code comes from, how QuickJS commits are taken in, and what changes when moving from modernc.org/quickjs
