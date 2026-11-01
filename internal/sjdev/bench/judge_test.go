@@ -6,11 +6,15 @@
 package bench
 
 import (
+	"flag"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 )
+
+var update = flag.Bool("update", false, "rewrite the expected output in testdata")
 
 func near(t *testing.T, name string, got, want, tol float64) {
 	t.Helper()
@@ -376,5 +380,49 @@ func TestAnalyzeGivesNoVerdictWhenAUnitHasNoRatio(t *testing.T) {
 	a := Analyze("m", us, 0.05, 0.01, true)
 	if a.Verdict != VerdictIncomplete || a.FormalVerdict != VerdictIncomplete || a.FormalSlower || a.FormalRegression {
 		t.Errorf("%+v", a)
+	}
+}
+
+func TestAnIncompleteRunSaysNoVerdictAtAll(t *testing.T) {
+	// r1-bench (6 sides), base against xw, from the GCP machine on 2026-11-01: 8 of 18
+	// units, and a formal layout at +2.07% [+0.68%, +3.49%] that once came
+	// out as "The formal layout is slower" under "INCOMPLETE".
+	rs, err := ReadRecords("testdata/r1-bench.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, p := range Protocol() {
+		names = append(names, p.String())
+	}
+	p, err := PlanFromRecords(rs, "bench", names, []int{0, 1}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	as, v := Judge(rs, p, "", "base", "xw", false, 0.05, 0.01)
+	if len(v.Problems) > 0 || v.Complete || v.Units != 8 || v.Planned != 18 {
+		t.Fatalf("%+v", v)
+	}
+	var b strings.Builder
+	WriteJudgement(&b, as, v, 0.01, 0.05, false)
+	got := b.String()
+	want, err := os.ReadFile("testdata/r1-bench-base-xw.judge.md")
+	if *update {
+		os.WriteFile("testdata/r1-bench-base-xw.judge.md", []byte(got), 0o644)
+	} else if err != nil || got != string(want) {
+		t.Errorf("output changed (go test -run %s -update to rewrite it):\n%s", t.Name(), got)
+	}
+	for _, a := range as {
+		if a.Verdict != VerdictIncomplete || a.FormalVerdict != VerdictIncomplete || a.FormalSlower || a.FormalRegression {
+			t.Errorf("%s: %s, %s, slower %v, regression %v", a.Metric, a.Verdict, a.FormalVerdict, a.FormalSlower, a.FormalRegression)
+		}
+	}
+	for _, s := range []string{"formal layout is slower", "opposite directions", "| faster", "| slower", "| no regression", "| inconclusive"} {
+		if strings.Contains(got, s) {
+			t.Errorf("an incomplete run says %q:\n%s", s, got)
+		}
+	}
+	if !strings.Contains(got, "+2.07% [+0.68%, +3.49%]") || !strings.Contains(got, "INCOMPLETE") {
+		t.Errorf("the numbers are gone:\n%s", got)
 	}
 }

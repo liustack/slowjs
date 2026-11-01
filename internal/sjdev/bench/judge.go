@@ -346,9 +346,9 @@ func Analyze(metric string, us []Unit, alpha, delta float64, complete bool) Anal
 		a.Formal = TInterval(Mean(f), math.Sqrt(unitVar/float64(len(f))), U-1, alpha)
 	}
 	lim := math.Log1p(delta)
-	a.FormalSlower = a.Formal.Lo > 0
-	a.FormalRegression = a.Formal.Lo > lim
 	if complete {
+		a.FormalSlower = a.Formal.Lo > 0
+		a.FormalRegression = a.Formal.Lo > lim
 		a.Verdict = Decide(a.Summary, delta)
 		a.FormalVerdict = Decide(a.Formal, delta)
 	} else {
@@ -424,12 +424,23 @@ func WriteJudgement(w io.Writer, as []Analysis, v Validation, delta, alpha float
 		fmt.Fprintln(w)
 	}
 	fmt.Fprintf(w, "%.0f%% two-sided t intervals of the change, delta %.2f%%. A unit is the two blocks of a layout in rounds 2k and 2k+1, where the sides ran in opposite orders.\n\n", 100*(1-alpha), 100*delta)
-	fmt.Fprintln(w, "| metric | units | formal layout | formal verdict | mean of the layouts | verdict | these layouts only | run SD (est.) | layout SD (est.) | order effect |")
-	fmt.Fprintln(w, "| --- | ---: | --- | --- | --- | --- | --- | ---: | ---: | --- |")
+	// An incomplete run gets the numbers, never a verdict.
+	if v.Complete {
+		fmt.Fprintln(w, "| metric | units | formal layout | formal verdict | mean of the layouts | verdict | these layouts only | run SD (est.) | layout SD (est.) | order effect |")
+		fmt.Fprintln(w, "| --- | ---: | --- | --- | --- | --- | --- | ---: | ---: | --- |")
+	} else {
+		fmt.Fprintln(w, "| metric | units | formal layout | mean of the layouts | these layouts only | run SD (est.) | layout SD (est.) | order effect |")
+		fmt.Fprintln(w, "| --- | ---: | --- | --- | --- | ---: | ---: | --- |")
+	}
 	for _, a := range as {
 		order := "-"
 		if !math.IsNaN(a.Order) {
 			order = fmt.Sprintf("%s ± %s", pct(a.Order), sdPct(a.OrderSE))
+		}
+		if !v.Complete {
+			fmt.Fprintf(w, "| %s | %d | %s | %s | %s | %s | %s | %s |\n", a.Metric, a.Units, pctIv(a.Formal), pctIv(a.Summary),
+				pctIv(a.Fixed), sdPct(a.RunSD), sdPct(a.LayoutSD), order)
+			continue
 		}
 		fmt.Fprintf(w, "| %s | %d | %s | %s | %s | %s | %s | %s | %s | %s |\n", a.Metric, a.Units, pctIv(a.Formal), a.FormalVerdict, pctIv(a.Summary), a.Verdict,
 			pctIv(a.Fixed), sdPct(a.RunSD), sdPct(a.LayoutSD), order)
@@ -440,7 +451,7 @@ func WriteJudgement(w io.Writer, as []Analysis, v Validation, delta, alpha float
 	fmt.Fprintln(w, "- these layouts only: the same mean with the run error alone, how well these very layouts were measured.")
 	fmt.Fprintln(w, "- run SD and layout SD are estimates that assume independent run errors of one variance, after taking out the order effect. A layout SD of 0 does not show that the change is the same at every layout.")
 	fmt.Fprintf(w, "\n%d attempts ran again for disturbance.\n", v.Reruns)
-	if len(as) > 0 {
+	if len(as) > 0 && v.Complete {
 		a := as[0]
 		switch {
 		case a.FormalRegression:
@@ -448,7 +459,7 @@ func WriteJudgement(w io.Writer, as []Analysis, v Validation, delta, alpha float
 		case a.FormalSlower:
 			fmt.Fprintf(w, "\n**The formal layout is slower** (%s), not shown to be past delta.\n", pctIv(a.Formal))
 		}
-		if v.Complete && conflict(a.Verdict, a.FormalVerdict) {
+		if conflict(a.Verdict, a.FormalVerdict) {
 			fmt.Fprintln(w, "\nThe formal layout and the mean of the layouts point in opposite directions: the change depends on where the code sits.")
 		}
 	}
