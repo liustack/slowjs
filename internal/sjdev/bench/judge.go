@@ -165,6 +165,18 @@ func UnitsOf(rs []Record, p Plan, experiment, base, nw string, verified bool) ([
 				v.Problems = append(v.Problems, fmt.Sprintf("%s@%s round %d attempt %d: fresh pages %v (checked %v), the plan says %v", r.Side, r.Pos, r.Round, a, r.FreshPages, r.FreshVerified, p.FreshPages))
 				return rb, rn, "page setting"
 			}
+			// Every value must give a log ratio, or a unit would drop out of the
+			// analysis after the run was found complete.
+			if len(r.Metrics) == 0 {
+				v.Problems = append(v.Problems, fmt.Sprintf("%s@%s round %d attempt %d has no metrics", r.Side, r.Pos, r.Round, a))
+				return rb, rn, "metrics"
+			}
+			for k, x := range r.Metrics {
+				if !(x > 0) || math.IsInf(x, 0) {
+					v.Problems = append(v.Problems, fmt.Sprintf("%s@%s round %d attempt %d: metric %s is %v, not a finite positive number", r.Side, r.Pos, r.Round, a, k, x))
+					return rb, rn, "metrics"
+				}
+			}
 			ks := make([]string, 0, len(r.Metrics))
 			for k := range r.Metrics {
 				ks = append(ks, k)
@@ -282,6 +294,9 @@ func Analyze(metric string, us []Unit, alpha, delta float64, complete bool) Anal
 	for _, u := range us {
 		y, ok := u.Y(metric)
 		if !ok {
+			// UnitsOf lets no such unit through. Should one come, the layouts
+			// judged are not those found complete: no verdict.
+			complete = false
 			continue
 		}
 		m := (y[0] + y[1]) / 2

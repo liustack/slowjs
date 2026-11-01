@@ -331,3 +331,50 @@ func TestPlanFromRecords(t *testing.T) {
 		t.Error("a round without its partner")
 	}
 }
+
+func TestJudgeRefusesMetricsThatAreNotPositive(t *testing.T) {
+	// The case of the review: every unit whole, one layout with a metric of 0,
+	// which once dropped out of the analysis and left "faster".
+	for name, bad := range map[string]float64{"zero": 0, "negative": -1, "NaN": math.NaN(), "infinite": math.Inf(1)} {
+		p := testPlan()
+		rs := planRecords(p, "e1", "s1", func(side, pos string, round, rep int) float64 {
+			if side == "b" && pos == "0.16" {
+				return bad
+			}
+			if side == "b" {
+				return 9.8
+			}
+			return 10
+		})
+		as, v := Judge(rs, p, "e1", "a", "b", false, 0.05, 0.01)
+		if len(v.Problems) == 0 || v.Complete || !strings.Contains(strings.Join(v.Problems, " "), "metric") {
+			t.Errorf("%s: %+v", name, v)
+		}
+		for _, a := range as {
+			if a.Verdict != VerdictIncomplete || a.FormalVerdict != VerdictIncomplete {
+				t.Errorf("%s: %s verdicts %s, %s", name, a.Metric, a.Verdict, a.FormalVerdict)
+			}
+		}
+	}
+	// A record with no metrics at all.
+	p := testPlan()
+	rs := planRecords(p, "e1", "s1", func(side, pos string, round, rep int) float64 { return 10 })
+	for i := range rs {
+		rs[i].Metrics = nil
+	}
+	if _, v := Judge(rs, p, "e1", "a", "b", false, 0.05, 0.01); len(v.Problems) == 0 || v.Complete {
+		t.Errorf("no metrics: %+v", v)
+	}
+}
+
+func TestAnalyzeGivesNoVerdictWhenAUnitHasNoRatio(t *testing.T) {
+	us := []Unit{
+		{Pos: "0.0", Base: [2]map[string]float64{{"m": 10}, {"m": 10}}, New: [2]map[string]float64{{"m": 9}, {"m": 9.1}}, NewFirst: [2]bool{true, false}},
+		{Pos: "0.0", Rep: 1, Base: [2]map[string]float64{{"m": 10}, {"m": 10}}, New: [2]map[string]float64{{"m": 9.1}, {"m": 9}}, NewFirst: [2]bool{false, true}},
+		{Pos: "0.8", Base: [2]map[string]float64{{"m": 10}, {"m": 10}}, New: [2]map[string]float64{{"m": 0}, {"m": 9}}, NewFirst: [2]bool{true, false}},
+	}
+	a := Analyze("m", us, 0.05, 0.01, true)
+	if a.Verdict != VerdictIncomplete || a.FormalVerdict != VerdictIncomplete || a.FormalSlower || a.FormalRegression {
+		t.Errorf("%+v", a)
+	}
+}
