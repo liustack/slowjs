@@ -12,17 +12,24 @@
 // It edits the *_amd64.s files of DIR in place, so run it on a copy, never on
 // the committed files. The OPs are applied in order:
 //
-//	shift:N                N bytes of NOP after the RET of the first function
-//	                       of cutils_amd64.s, where they never run, so every
-//	                       function laid out after it moves by N bytes. Go
-//	                       puts amd64 functions on 32 bytes, so N below 32
-//	                       moves nothing: use 0 or 32. A function the
-//	                       generator puts on 64 bytes does not move.
+//	shift:N[:NAME]         N bytes of NOP after the last RET of function
+//	                       NAME (without NAME, after the first RET of
+//	                       cutils_amd64.s), where they never run, so every
+//	                       function laid out after it moves by N bytes. NAME
+//	                       must be a function the linker keeps: the first
+//	                       function of cutils_amd64.s is never called, so the
+//	                       linker drops it with its NOPs and a shift without
+//	                       NAME moves no code of the C engine. sjdev bench
+//	                       build passes the engine function that the formal
+//	                       binary places first. Go puts amd64 functions on 32
+//	                       bytes, so use a multiple of 32. A function the
+//	                       generator puts on 64 bytes moves by a multiple of
+//	                       64.
 //	front:NAME:N           N bytes of multi-byte NOP at the start of the body
 //	                       of function NAME, right after its PCALIGN, which
 //	                       run at each call. They move the code of that
-//	                       function only. Use 0, 8, 16 or 24 on the
-//	                       interpreter (JS_CallInternal_block).
+//	                       function only. Use a multiple of 8 from 0 to 56 on
+//	                       the interpreter (JS_CallInternal_block).
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
 //	                       functions, or only the named): the linker then
 //	                       starts the function on a multiple of A.
@@ -125,6 +132,12 @@ func apply(dir string, ops []string) error {
 			n, err := num(1)
 			if err != nil {
 				return err
+			}
+			if len(parts) == 3 {
+				if err := padAfter(files, parts[2], n); err != nil {
+					return fmt.Errorf("%s: %w", op, err)
+				}
+				continue
 			}
 			p := filepath.Join(dir, "cutils_amd64.s")
 			s, err := os.ReadFile(p)
@@ -254,6 +267,44 @@ func apply(dir string, ops []string) error {
 		default:
 			return fmt.Errorf("unknown op %s", op)
 		}
+	}
+	return nil
+}
+
+// padAfter puts n bytes of NOP after the last RET of function name, in the one
+// file of files that has it.
+func padAfter(files []string, name string, n int) error {
+	hit := 0
+	for _, p := range files {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		s := string(b)
+		starts := textLine.FindAllStringSubmatchIndex(s, -1)
+		for i, st := range starts {
+			if s[st[2]:st[3]] != name {
+				continue
+			}
+			end := len(s)
+			if i+1 < len(starts) {
+				end = starts[i+1][0]
+			}
+			k := strings.LastIndex(s[st[0]:end], "\tRET\n")
+			if k < 0 {
+				return fmt.Errorf("no RET in %s", name)
+			}
+			k += st[0] + len("\tRET\n")
+			s = s[:k] + strings.Repeat("\tBYTE $0x90\n", n) + s[k:]
+			if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+				return err
+			}
+			hit++
+			break
+		}
+	}
+	if hit != 1 {
+		return fmt.Errorf("function %s found %d times", name, hit)
 	}
 	return nil
 }

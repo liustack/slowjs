@@ -174,3 +174,17 @@ func TestUnknownOpStops(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func TestShiftWithANamePadsAfterTheLastRETOfThatFunction(t *testing.T) {
+	d := setup(t)
+	const two = "TEXT ·live(SB), $0-8\n\tPCALIGN $16\n\tRET\n\tBYTE $0xc3\n\tRET\n\n"
+	write(t, d, "cutils_amd64.s", cutils+two)
+	run(t, d, "shift:64:live")
+	want := cutils + "TEXT ·live(SB), $0-8\n\tPCALIGN $16\n\tRET\n\tBYTE $0xc3\n\tRET\n" + strings.Repeat("\tBYTE $0x90\n", 64) + "\n"
+	if got := read(t, d, "cutils_amd64.s"); got != want {
+		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+	if err := apply(setup(t), []string{"shift:32:missing"}); err == nil {
+		t.Error("a missing function accepted")
+	}
+}
