@@ -357,6 +357,11 @@ func TestRunKeepsAManifest(t *testing.T) {
 	if m2.Experiment != m.Experiment || fmt.Sprint(m2.Plan.Rounds) != "[0 1 2 3]" {
 		t.Errorf("%+v", m2)
 	}
+	// The judge reads them as one complete plan.
+	rs, _ = ReadRecords(out)
+	if _, v := Judge(rs, m2.Plan, m2.Experiment, "a", "b", false, 0.05, 0.01); !v.Complete || v.Units != 2 {
+		t.Errorf("%+v", v)
+	}
 	// A binary replaced under the same name.
 	if err := os.WriteFile(filepath.Join(dir, "b@0.0"), []byte("y"), 0o755); err != nil {
 		t.Fatal(err)

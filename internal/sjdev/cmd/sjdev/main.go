@@ -260,6 +260,10 @@ func benchJudge(args []string) error {
 	delta := fs.Float64("delta", bench.DefaultDelta, "the regression that matters, as a fraction (0.01 is 1%)")
 	alpha := fs.Float64("alpha", bench.DefaultAlpha, "1 - the confidence of the intervals")
 	detail := fs.Bool("detail", false, "also each layout")
+	pos := fs.String("positions", "protocol", "without a manifest: the positions of the plan")
+	rounds := fs.Int("rounds", 2, "without a manifest: the rounds of the plan")
+	round0 := fs.Int("round0", 0, "without a manifest: its first round")
+	reps := fs.Int("formal-reps", 3, "without a manifest: blocks of the formal layout in a round")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -270,7 +274,32 @@ func benchJudge(args []string) error {
 	if err != nil {
 		return err
 	}
-	as, v := bench.Judge(rs, *kind, *base, *nw, *alpha, *delta)
+	m, ok, err := bench.ReadManifest(*in)
+	if err != nil {
+		return err
+	}
+	plan, experiment := m.Plan, m.Experiment
+	if ok && plan.Kind != *kind {
+		return fmt.Errorf("the manifest of %s is of kind %s, not %s", *in, plan.Kind, *kind)
+	}
+	if !ok {
+		ps, err := bench.ParsePositions(*pos)
+		if err != nil {
+			return err
+		}
+		var names []string
+		for _, p := range ps {
+			names = append(names, p.String())
+		}
+		var rds []int
+		for r := *round0; r < *round0+*rounds; r++ {
+			rds = append(rds, r)
+		}
+		if plan, err = bench.PlanFromRecords(rs, *kind, names, rds, *reps); err != nil {
+			return err
+		}
+	}
+	as, v := bench.Judge(rs, plan, experiment, *base, *nw, ok && plan.FreshPages, *alpha, *delta)
 	if len(v.Problems) > 0 {
 		for _, p := range v.Problems {
 			fmt.Fprintln(os.Stderr, p)
