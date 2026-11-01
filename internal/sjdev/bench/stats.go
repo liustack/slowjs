@@ -140,29 +140,6 @@ func TInterval(est, se, df, alpha float64) Interval {
 	return Interval{est, se, df, est - h, est + h}
 }
 
-// Holm returns, for the p values ps, which are rejected at the family-wise level
-// alpha by Holm's step-down method.
-func Holm(ps []float64, alpha float64) []bool {
-	idx := make([]int, len(ps))
-	for i := range idx {
-		idx[i] = i
-	}
-	// a simple sort by p
-	for i := 1; i < len(idx); i++ {
-		for j := i; j > 0 && ps[idx[j]] < ps[idx[j-1]]; j-- {
-			idx[j], idx[j-1] = idx[j-1], idx[j]
-		}
-	}
-	out := make([]bool, len(ps))
-	for k, i := range idx {
-		if ps[i] > alpha/float64(len(ps)-k) {
-			break
-		}
-		out[i] = true
-	}
-	return out
-}
-
 // TwoSidedP is the two-sided p value of t with df degrees of freedom.
 func TwoSidedP(t, df float64) float64 {
 	return 2 * TCDF(-math.Abs(t), df)
