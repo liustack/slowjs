@@ -4,8 +4,7 @@
 // root of this repository.
 
 // Package bench builds the code-position variants of a program, times them in
-// turn, and reads the result by the rules of "Code positions" in
-// docs/performance.md.
+// turn, and reads the result by the protocol of docs/measuring.md.
 package bench
 
 import (
@@ -15,11 +14,25 @@ import (
 	"strings"
 )
 
-// Position is where the code of the engine sits in a binary.
+// Position is where the code of the engine sits in a binary: a layout.
 type Position struct {
-	Shift int // the whole program moved by 0 or 32 bytes (Go puts functions on 32)
-	Front int // the start of the interpreter body moved by 0, 8, 16 or 24 bytes of NOP
+	// Shift moves the whole program after the first function of the engine by
+	// this many bytes, a multiple of 32 below MaxShift. Go puts functions on 32
+	// bytes and the interpreter on 64, so a shift that is an odd multiple of 32
+	// moves the other functions within their 64-byte block, and a larger one
+	// moves every function, the interpreter too, to other blocks and to another
+	// place in its 4 KiB page.
+	Shift int
+	// Front is the bytes of NOP at the start of the interpreter body, a multiple
+	// of 8 from 0 to 56: the place of the body within its 64-byte block.
+	Front int
 }
+
+// MaxShift is the limit of Shift.
+const MaxShift = 8192
+
+// Formal is the layout of the binary as it is built, with nothing moved.
+var Formal = Position{}
 
 // String is the name used in file names and records: "32.16".
 func (p Position) String() string { return fmt.Sprintf("%d.%d", p.Shift, p.Front) }
@@ -30,11 +43,44 @@ func Quick() []Position {
 	return []Position{{0, 0}, {0, 16}, {32, 0}, {32, 16}}
 }
 
-// All is the full set of 8.
+// All is the older set of 8: shift 0 or 32 and front 0 to 24. It covers only
+// half of the 64-byte block of the interpreter.
 func All() []Position {
 	var ps []Position
 	for _, s := range []int{0, 32} {
 		for _, f := range []int{0, 8, 16, 24} {
+			ps = append(ps, Position{s, f})
+		}
+	}
+	return ps
+}
+
+// protocolShifts are the shifts of the second half of Protocol, one per front.
+// They are spread over a 4 KiB page, alternate odd and even multiples of 32, and
+// do not grow with the front, so that the place in the page, the place of the
+// other functions in their block and the place of the interpreter in its block
+// change independently.
+var protocolShifts = []int{32, 1664, 3296, 576, 2208, 3840, 1120, 2752}
+
+// Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
+// to 56 at shift 0, which includes the formal layout, and every front again at
+// one of protocolShifts.
+func Protocol() []Position {
+	var ps []Position
+	for i := range 8 {
+		ps = append(ps, Position{0, 8 * i})
+	}
+	for i, s := range protocolShifts {
+		ps = append(ps, Position{s, 8 * i})
+	}
+	return ps
+}
+
+// Full is front 0 to 56 at shift 0 and at shift 32.
+func Full() []Position {
+	var ps []Position
+	for _, s := range []int{0, 32} {
+		for f := 0; f < 64; f += 8 {
 			ps = append(ps, Position{s, f})
 		}
 	}
@@ -52,22 +98,27 @@ func ParsePosition(s string) (Position, error) {
 	if err1 != nil || err2 != nil {
 		return Position{}, fmt.Errorf("position %q: want W.B, such as 32.16", s)
 	}
-	if shift != 0 && shift != 32 {
-		return Position{}, fmt.Errorf("position %q: the whole program moves by 0 or 32 bytes (Go puts functions on 32)", s)
+	if shift < 0 || shift >= MaxShift || shift%32 != 0 {
+		return Position{}, fmt.Errorf("position %q: the whole program moves by a multiple of 32 bytes below %d (Go puts functions on 32)", s, MaxShift)
 	}
-	if !slices.Contains([]int{0, 8, 16, 24}, front) {
-		return Position{}, fmt.Errorf("position %q: the interpreter body moves by 0, 8, 16 or 24 bytes", s)
+	if front < 0 || front > 56 || front%8 != 0 {
+		return Position{}, fmt.Errorf("position %q: the interpreter body moves by a multiple of 8 bytes from 0 to 56", s)
 	}
 	return Position{shift, front}, nil
 }
 
-// ParsePositions parses "quick", "all" or a comma list of positions.
+// ParsePositions parses "protocol", "full", "quick", "all" or a comma list of
+// positions.
 func ParsePositions(s string) ([]Position, error) {
 	switch s {
-	case "", "quick":
+	case "quick":
 		return Quick(), nil
 	case "all":
 		return All(), nil
+	case "full":
+		return Full(), nil
+	case "", "protocol":
+		return Protocol(), nil
 	}
 	var ps []Position
 	for _, f := range strings.Split(s, ",") {
@@ -84,9 +135,14 @@ func ParsePositions(s string) ([]Position, error) {
 }
 
 // XformOps returns the operations of internal/goasm/cmd/xform that make the
-// position, with front the name of the interpreter function.
-func (p Position) XformOps(front string) []string {
-	return []string{fmt.Sprintf("shift:%d", p.Shift), fmt.Sprintf("front:%s:%d", front, p.Front)}
+// position, with front the name of the interpreter function and pad the
+// function after which the shift goes (see shift in xform).
+func (p Position) XformOps(front, pad string) []string {
+	shift := fmt.Sprintf("shift:%d", p.Shift)
+	if pad != "" {
+		shift += ":" + pad
+	}
+	return []string{shift, fmt.Sprintf("front:%s:%d", front, p.Front)}
 }
 
 // BinName is the file name of the binary of a side at a position.
