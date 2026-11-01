@@ -222,6 +222,7 @@ type RunOptions struct {
 	Timeout    time.Duration
 	MinTicks   int64 // fewer busy ticks than this are noise
 	Session    string
+	FreshPages bool // drop the cached pages of a binary before each of its processes (DropPages)
 }
 
 // Defaults fills what is not set.
@@ -473,6 +474,12 @@ func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, pars
 	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session}
 	pctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
+	if o.FreshPages {
+		if err := DropPages(v.Path); err != nil {
+			r.Err = "drop pages: " + err.Error()
+			return r
+		}
+	}
 	var t0 map[int]CPUTicks
 	if ticks != nil {
 		t0 = ticks()

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"time"
 
@@ -153,6 +154,7 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.Float64Var(&o.BusyPct, "busy", 5, "percent of busy sibling or other work on the timing core that makes the block run again")
 	fs.Float64Var(&o.StealPct, "steal", 1, "percent of steal time on the timing core that makes the block run again")
 	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed block")
+	fs.BoolVar(&o.FreshPages, "fresh-pages", runtime.GOOS == "linux", "drop the cached pages of each binary before each of its processes, so that a copy does not keep the same physical pages (linux only, on by default there)")
 	fs.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "limit of one process")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -210,6 +212,7 @@ func benchCG(ctx context.Context, args []string) error {
 	fs.Var(&envs, "env", "K=V for the processes (repeatable)")
 	fs.StringVar(&o.Toggle, "toggle", "", "collect only inside this function (with -small 0, one run per binary that counts -big renders there). Callgrind loses part of the count when Go code inside moves to another stack or thread, so a Go program marks its window with -dumps")
 	fs.BoolVar(&o.Sim, "sim", false, "simulate the branch predictor and the caches")
+	fs.BoolVar(&o.Dumps, "dumps", false, "with -small 0: the program zeroes the counts and dumps them around the window itself (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)")
 	fs.StringVar(&o.Interp, "interp", "JS_CallInternal_block", "the interpreter, reported on its own")
 	fs.BoolVar(&o.Dumps, "dumps", false, "with -small 0: the program zeroes the counts and dumps them around the window itself (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)")
 	fs.StringVar(&o.ValgrindRoot, "valgrind-root", "", "folder with usr/bin/valgrind, when it is not installed")
