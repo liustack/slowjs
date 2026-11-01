@@ -154,7 +154,7 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.Float64Var(&o.BusyPct, "busy", 5, "percent of busy sibling or other work on the timing core that makes the block run again")
 	fs.Float64Var(&o.StealPct, "steal", 1, "percent of steal time on the timing core that makes the block run again")
 	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed block")
-	fs.BoolVar(&o.FreshPages, "fresh-pages", runtime.GOOS == "linux", "drop the cached pages of each binary before each of its processes, so that a copy does not keep the same physical pages (linux only, on by default there)")
+	fs.BoolVar(&o.FreshPages, "fresh-pages", runtime.GOOS == "linux", "before each process, drop the cached pages of its binary and check with mincore that none is left (linux only, on by default there)")
 	fs.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "limit of one process")
 	if err := fs.Parse(args); err != nil {
 		return err
