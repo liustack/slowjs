@@ -84,7 +84,7 @@ func TestCGOptions(t *testing.T) {
 		t.Errorf("%s %v", prog, env)
 	}
 	got := ok.CGArgs("/bin/x", "/o/x.cg", 12)
-	want := []string{"--tool=callgrind", "--callgrind-out-file=/o/x.cg", "--toggle-collect=pkg.RenderVM", "/bin/x", "-test.benchtime=12x"}
+	want := []string{"--tool=callgrind", "--vgdb=no", "--callgrind-out-file=/o/x.cg", "--toggle-collect=pkg.RenderVM", "/bin/x", "-test.benchtime=12x"}
 	if !slices.Equal(got, want) {
 		t.Errorf("args = %v", got)
 	}
@@ -136,5 +136,79 @@ func TestCGRunsEachBinaryTwice(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "0-x-12.incl")); err != nil {
 		t.Error(err)
+	}
+}
+
+const cgFile = `version: 1
+creator: callgrind-3.25.1
+positions: line
+events: Ir Bc Bcm
+fn=github.com/liustack/slowjs/internal/cengine.JS_CallInternal_block.abi0
+0 100 10 2
+0 50 5 1
+cfn=github.com/liustack/slowjs/internal/cengine.js_malloc.abi0
+calls=3 0
+0 400 40 4
+fn=github.com/liustack/slowjs/internal/cengine.js_malloc.abi0
+0 400 40 4
+fn=main.f'2
+0 10 1 0
+totals: 560 56 7
+`
+
+func TestParseProfileSumsSelfCostAndSkipsCalls(t *testing.T) {
+	p, err := ParseProfile(strings.NewReader(cgFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(p.Events) != "[Ir Bc Bcm]" || fmt.Sprint(p.Total) != "[560 56 7]" {
+		t.Errorf("events %v total %v", p.Events, p.Total)
+	}
+	if fmt.Sprint(p.fnRow("JS_CallInternal_block")) != "[150 15 3]" || fmt.Sprint(p.Fn["main.f"]) != "[10 1 0]" {
+		t.Errorf("fns %v", p.Fn)
+	}
+	q := p.Scale(10)
+	if q.Total[0] != 56 || q.fnRow("js_malloc")[1] != 4 {
+		t.Errorf("scaled %v", q)
+	}
+	// The file's totals must match the sum of the functions.
+	if _, err := ParseProfile(strings.NewReader(strings.Replace(cgFile, "totals: 560", "totals: 561", 1))); err == nil {
+		t.Error("totals that do not add up accepted")
+	}
+	if _, err := ParseProfile(strings.NewReader("fn=(1) x\n")); err == nil {
+		t.Error("compressed names accepted")
+	}
+	var b strings.Builder
+	WriteProfiles(&b, "JS_CallInternal_block", p, &q)
+	if !strings.Contains(b.String(), "| JS_CallInternal_block (own code) | Bcm | 3 | 0 | -90.00% |") {
+		t.Errorf("table:\n%s", b.String())
+	}
+}
+
+func TestCGWindowRunsEachBinaryOnce(t *testing.T) {
+	out := t.TempDir()
+	var cmds []sjdev.Cmd
+	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+		cmds = append(cmds, c)
+		for _, a := range c.Args {
+			if f, ok := strings.CutPrefix(a, "--callgrind-out-file="); ok {
+				os.WriteFile(f, []byte(cgFile), 0o644)
+			}
+		}
+		return sjdev.Result{}
+	}
+	o := CGOptions{Bins: []string{"/a", "/b"}, Big: 10, Toggle: "*cgWindow*", Sim: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
+	var b bytes.Buffer
+	if err := CG(context.Background(), o, run, &b); err != nil {
+		t.Fatal(err)
+	}
+	if len(cmds) != 2 || !slices.Contains(cmds[0].Args, "--branch-sim=yes") || !slices.Contains(cmds[0].Args, "--compress-pos=no") || !slices.Contains(cmds[0].Args, "-test.benchtime=10x") {
+		t.Errorf("commands %v", cmds)
+	}
+	if !strings.Contains(b.String(), "| whole program | Ir | 56 | 56 | +0.00% |") {
+		t.Errorf("output:\n%s", b.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "0-a-10.cg")); err != nil {
+		t.Error("the raw file is not kept")
 	}
 }

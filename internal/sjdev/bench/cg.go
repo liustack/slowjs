@@ -135,6 +135,8 @@ type CGOptions struct {
 	Toggle       string // collect only inside this function (empty: the whole run)
 	ValgrindRoot string // a folder with usr/bin/valgrind inside, when valgrind is not installed
 	Out          string // folder of the callgrind files
+	Sim          bool   // simulate the branch predictor and the caches (--branch-sim=yes --cache-sim=yes)
+	Interp       string // the interpreter function, reported on its own (JS_CallInternal_block)
 }
 
 // Check reports why the options cannot be used.
@@ -142,7 +144,11 @@ func (o CGOptions) Check() error {
 	if len(o.Bins) < 1 || len(o.Bins) > 2 {
 		return fmt.Errorf("give one binary, or two to compare")
 	}
-	if o.Small < 0 || o.Big <= o.Small {
+	if o.Window() {
+		if o.Big < 1 {
+			return fmt.Errorf("-big %d: the window needs renders", o.Big)
+		}
+	} else if o.Small < 0 || o.Big <= o.Small {
 		return fmt.Errorf("-small %d and -big %d: the big run must do more renders", o.Small, o.Big)
 	}
 	if o.Out == "" {
@@ -180,7 +186,13 @@ func (o CGOptions) annotate() string {
 
 // CGArgs returns the arguments of valgrind for one run.
 func (o CGOptions) CGArgs(bin, out string, n int) []string {
-	args := []string{"--tool=callgrind", "--callgrind-out-file=" + out}
+	args := []string{"--tool=callgrind", "--vgdb=no", "--callgrind-out-file=" + out}
+	if o.Window() {
+		args = append(args, "--dump-instr=no", "--compress-strings=no", "--compress-pos=no")
+	}
+	if o.Sim {
+		args = append(args, "--branch-sim=yes", "--cache-sim=yes")
+	}
 	if o.Toggle != "" {
 		args = append(args, "--toggle-collect="+o.Toggle)
 	}
@@ -199,6 +211,9 @@ func CG(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
 	}
 	if err := os.MkdirAll(o.Out, 0o755); err != nil {
 		return err
+	}
+	if o.Window() {
+		return cgWindow(ctx, o, run, w)
 	}
 	vg, vgEnv := o.ValgrindCmd()
 	env := append(append([]string(nil), o.Env...), vgEnv...)
@@ -236,3 +251,8 @@ func CG(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
 	}
 	return nil
 }
+
+// Window is the mode of docs/measuring.md: with -toggle and -small 0, one run
+// per binary that counts only inside the toggle function, after the warm-up
+// the program does outside it.
+func (o CGOptions) Window() bool { return o.Toggle != "" && o.Small == 0 }
