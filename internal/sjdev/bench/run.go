@@ -39,7 +39,8 @@ type Record struct {
 	Slot       int                `json:"slot"`            // place of the process in its block
 	Order      string             `json:"order,omitempty"` // the sides of the block, in the order they ran
 	Session    string             `json:"session,omitempty"`
-	Start      string             `json:"start,omitempty"` // RFC 3339, UTC
+	Start      string             `json:"start,omitempty"`       // RFC 3339, UTC
+	FreshPages bool               `json:"fresh_pages,omitempty"` // the cached pages of the binary were dropped before it ran
 	Metrics    map[string]float64 `json:"metrics,omitempty"`
 	HWMKB      int64              `json:"vmhwm_kb,omitempty"`
 	WallMs     float64            `json:"wall_ms"`
@@ -471,7 +472,7 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 }
 
 func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, parse Parser, start Starter, ticks Ticks) Record {
-	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session}
+	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session, FreshPages: o.FreshPages}
 	pctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 	if o.FreshPages {

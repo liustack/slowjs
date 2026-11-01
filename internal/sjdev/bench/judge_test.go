@@ -168,6 +168,7 @@ func TestPairsFindProblems(t *testing.T) {
 		"twice":        {[]Record{rec("a", "0.0", 0, 0, 0, 1), rec("a", "0.0", 0, 0, 0, 1), rec("b", "0.0", 0, 0, 1, 1)}, "twice"},
 		"metrics":      {[]Record{rec("a", "0.0", 0, 0, 0, 1), {Side: "b", Pos: "0.0", Kind: "k", Slot: 1, Metrics: map[string]float64{"p1": 1}}}, "reports the metrics"},
 		"nothing":      {nil, "no block"},
+		"fresh pages":  {[]Record{rec("a", "0.0", 0, 0, 0, 1), func() Record { r := rec("b", "0.0", 0, 0, 1, 1); r.FreshPages = true; return r }()}, "fresh pages"},
 	} {
 		_, v := Pairs(c.rs, "k", "a", "b", "sum")
 		if len(v.Problems) == 0 || !strings.Contains(strings.Join(v.Problems, "\n"), c.want) {

@@ -134,6 +134,10 @@ func Pairs(rs []Record, kind, base, nw, metric string) ([]Pair, Validation) {
 				bad = true
 			}
 		}
+		if rb.FreshPages != rn.FreshPages {
+			v.Problems = append(v.Problems, fmt.Sprintf("block %s round %d: one side ran with fresh pages and the other without", b.pos, b.round))
+			continue
+		}
 		if bad {
 			continue
 		}
