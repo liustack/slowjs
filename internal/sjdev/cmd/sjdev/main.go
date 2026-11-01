@@ -333,7 +333,11 @@ func benchAddrs(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(l.Row(b))
+		h, err := bench.HashFile(b)
+		if err != nil {
+			return err
+		}
+		fmt.Println(l.Row(b, h))
 	}
 	return nil
 }

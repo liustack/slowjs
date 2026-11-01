@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -146,16 +147,17 @@ func ReadLayout(bin, fn string, names []string) (Layout, error) {
 
 // LayoutHeader is the first line of the layouts file.
 func LayoutHeader() string {
-	cols := []string{"binary", "func", "body", "body%64", "body%4096"}
+	cols := []string{"binary", "sha256", "func", "body", "body%64", "body%4096"}
 	for _, op := range HotOps {
 		cols = append(cols, op+"%64", op+"%4096")
 	}
 	return strings.Join(cols, "\t")
 }
 
-// Row is the line of the layouts file of one binary.
-func (l Layout) Row(name string) string {
-	cols := []string{name, fmt.Sprintf("%#x", l.Func), fmt.Sprintf("%#x", l.Body), fmt.Sprint(l.Body % 64), fmt.Sprint(l.Body % 4096)}
+// Row is the line of the layouts file of one binary, with the SHA-256 of the
+// file.
+func (l Layout) Row(name, hash string) string {
+	cols := []string{name, hash, fmt.Sprintf("%#x", l.Func), fmt.Sprintf("%#x", l.Body), fmt.Sprint(l.Body % 64), fmt.Sprint(l.Body % 4096)}
 	for _, op := range HotOps {
 		if a, ok := l.Handlers[op]; ok {
 			cols = append(cols, fmt.Sprint(a%64), fmt.Sprint(a%4096))
@@ -166,31 +168,65 @@ func (l Layout) Row(name string) string {
 	return strings.Join(cols, "\t")
 }
 
-// AppendLayout adds the row of bin to the layouts file of dir.
-func AppendLayout(dir, bin, fn string, names []string) (Layout, error) {
-	l, err := ReadLayout(bin, fn, names)
-	if err != nil {
-		return l, err
+// WriteLayout puts the row of the binary name in the layouts file of dir, in
+// place of the row it had: a binary that is built again has one row, of the
+// file now there.
+func WriteLayout(dir, name, hash string, l Layout) error {
+	path := filepath.Join(dir, "layouts.tsv")
+	lines := []string{LayoutHeader()}
+	b, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+	case err != nil:
+		return err
+	default:
+		old := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+		if old[0] != LayoutHeader() {
+			return fmt.Errorf("%s has other columns: move it away", path)
+		}
+		for _, line := range old[1:] {
+			if n, _, _ := strings.Cut(line, "\t"); n != name {
+				lines = append(lines, line)
+			}
+		}
 	}
-	path := dir + "/layouts.tsv"
-	_, statErr := os.Stat(path)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return l, err
-	}
-	defer f.Close()
-	if os.IsNotExist(statErr) {
-		fmt.Fprintln(f, LayoutHeader())
-	}
-	_, err = fmt.Fprintln(f, l.Row(fileBase(bin)))
-	return l, err
+	lines = append(lines, l.Row(name, hash))
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
-func fileBase(p string) string {
-	if i := strings.LastIndex(p, "/"); i >= 0 {
-		return p[i+1:]
+// CheckLayout reports how the interpreter of a binary at p did not land where
+// p puts it, against the formal binary of the same side. The function moves by
+// the shift, rounded up to the 64 bytes the interpreter is aligned to (none
+// without a shift), and the body and every hot handler sit front bytes later
+// in it. So the body and the handlers are at the formal places plus front,
+// modulo 64.
+func CheckLayout(formal, l Layout, p Position) error {
+	d := int64(l.Func) - int64(formal.Func)
+	switch {
+	case p.Shift == 0 && d != 0:
+		return fmt.Errorf("position %s: the interpreter moved by %d bytes without a shift", p, d)
+	case p.Shift > 0 && (d < int64(p.Shift) || d-int64(p.Shift) >= 64 || d%64 != 0):
+		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not the shift of %d rounded up to 64", p, d, p.Shift)
 	}
-	return p
+	at := func(name string, a, f uint64) error {
+		if got, want := int64(a)-int64(l.Func), int64(f)-int64(formal.Func)+int64(p.Front); got != want {
+			return fmt.Errorf("position %s: %s is %d bytes into the interpreter, want %d (formal plus %d)", p, name, got, want, p.Front)
+		}
+		return nil
+	}
+	if err := at("the body", l.Body, formal.Body); err != nil {
+		return err
+	}
+	for op, f := range formal.Handlers {
+		a, ok := l.Handlers[op]
+		if !ok {
+			return fmt.Errorf("position %s: no handler of %s", p, op)
+		}
+		if err := at("the handler of "+op, a, f); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // FirstEngineFunc returns the name of the function of internal/cengine that the

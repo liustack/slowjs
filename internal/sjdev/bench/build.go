@@ -31,7 +31,7 @@ type BuildOptions struct {
 	Front     string     // the interpreter function whose body moves
 	Positions []Position // the positions to build
 	Out       string     // folder of the binaries
-	Layouts   bool       // read where the interpreter landed in each binary into Out/layouts.tsv
+	Layouts   bool       // check where the interpreter landed in each binary against the formal one, into Out/layouts.tsv
 	Pad       string     // the function the shift goes after (empty: the first engine function of the formal binary)
 }
 
@@ -257,7 +257,9 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 	}
 	shifted := slices.ContainsFunc(positions, func(p Position) bool { return p.Shift > 0 })
 	pad, formalBin := o.Pad, ""
-	if shifted && pad == "" && !slices.Contains(positions, Formal) {
+	// The formal binary gives the function to shift after, and the layout every
+	// other one is checked against. Built only for that, it stays in .work.
+	if (shifted && pad == "" || o.Layouts) && !slices.Contains(positions, Formal) {
 		positions = append([]Position{Formal}, positions...)
 		formalBin = filepath.Join(out, ".work", BinName(o.Side, Formal)+".bin")
 	}
@@ -293,14 +295,23 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 			fmt.Fprintf(log, "shifts go after %s, the first engine function of the formal binary\n", pad)
 		}
 		if o.Layouts {
-			l, err := recordLayout(tree, out, bin, front)
+			l, err := readLayout(tree, bin, front)
 			if err != nil {
 				return err
 			}
 			if p == Formal {
 				formal = l
-			} else if p.Shift >= 64 && formal.Func != 0 && l.Func == formal.Func {
-				return fmt.Errorf("%s: the shift of %d bytes did not move the interpreter", filepath.Base(bin), p.Shift)
+			} else if err := CheckLayout(formal, l, p); err != nil {
+				return fmt.Errorf("%s: %w", filepath.Base(bin), err)
+			}
+			if bin != formalBin {
+				h, err := HashFile(bin)
+				if err != nil {
+					return err
+				}
+				if err := WriteLayout(out, filepath.Base(bin), h, l); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -352,7 +363,7 @@ func Sorted(dir string) ([]string, error) {
 	return names, nil
 }
 
-func recordLayout(tree, out, bin, front string) (Layout, error) {
+func readLayout(tree, bin, front string) (Layout, error) {
 	h, err := os.Open(filepath.Join(tree, "engine", "quickjs-opcode.h"))
 	if err != nil {
 		return Layout{}, err
@@ -362,5 +373,5 @@ func recordLayout(tree, out, bin, front string) (Layout, error) {
 	if err != nil {
 		return Layout{}, err
 	}
-	return AppendLayout(out, bin, front, names)
+	return ReadLayout(bin, front, names)
 }
