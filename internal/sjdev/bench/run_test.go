@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -63,9 +64,10 @@ func TestParserJsrun(t *testing.T) {
 }
 
 func TestParseTicks(t *testing.T) {
-	stat := "cpu  10 0 5 100 0 0 0 0 0 0\ncpu0 1 0 1 50 2 0 0 0 0 0\ncpu1 7 1 2 3 4 5 0 0 0 0\nintr 5\n"
+	stat := "cpu  10 0 5 100 0 0 0 0 0 0\ncpu0 1 0 1 50 2 0 0 0 0 0\ncpu1 7 1 2 3 4 5 0 6 9 9\nintr 5\n"
 	m := ParseTicks(stat)
-	if len(m) != 2 || m[0] != 2 || m[1] != 15 {
+	// cpu1: busy is user, nice, system, irq and softirq (7+1+2+5+0), steal is apart, guest is already in user.
+	if len(m) != 2 || m[0] != (CPUTicks{2, 0}) || m[1] != (CPUTicks{15, 6}) {
 		t.Errorf("ticks = %v", m)
 	}
 }
@@ -99,34 +101,76 @@ func TestDiscover(t *testing.T) {
 func TestOrderIsRepeatableAndMixed(t *testing.T) {
 	dir := variants(t, "a@0.0", "a@0.16", "a@32.0", "a@32.16", "b@0.0", "b@0.16", "b@32.0", "b@32.16")
 	vs, _ := Discover(dir, nil, nil)
-	o1 := Order(vs, "k", 3)
-	o2 := Order(vs, "k", 3)
-	if !slices.Equal(o1, o2) {
+	o1 := Order(vs, "k", 3, 1)
+	o2 := Order(vs, "k", 3, 1)
+	if fmt.Sprint(o1) != fmt.Sprint(o2) {
 		t.Error("the order of a round is not repeatable")
 	}
-	if len(o1) != 8 {
-		t.Fatalf("%d processes", len(o1))
+	if len(o1) != 4 {
+		t.Fatalf("%d blocks", len(o1))
 	}
-	// Both sides of a position come one after the other.
-	for i := 0; i < 8; i += 2 {
-		if o1[i].Pos != o1[i+1].Pos || o1[i].Side == o1[i+1].Side {
-			t.Errorf("pair %d: %v %v", i/2, o1[i], o1[i+1])
+	for _, b := range o1 {
+		if len(b.Sides) != 2 || b.Sides[0].Side == b.Sides[1].Side || b.Sides[0].Pos != b.Pos || b.Sides[1].Pos != b.Pos {
+			t.Errorf("block %+v", b)
 		}
 	}
 	different := false
 	for r := 0; r < 8 && !different; r++ {
-		different = !slices.Equal(Order(vs, "k", r), o1)
+		different = fmt.Sprint(Order(vs, "k", r, 1)) != fmt.Sprint(o1)
 	}
 	if !different {
 		t.Error("every round has the same order")
 	}
-	// The side that goes first changes from round to round.
+}
+
+func TestOrderBalancesEveryPairOfSides(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0", "c@0.0", "d@0.0", "a@0.8", "b@0.8", "c@0.8", "d@0.8")
+	vs, _ := Discover(dir, nil, nil)
+	// before[x+y] counts the blocks where x ran before y.
+	before := map[string]int{}
 	first := map[string]int{}
 	for r := range 40 {
-		first[Order(vs, "k", r)[0].Side]++
+		for _, b := range Order(vs, "k", r, 1) {
+			first[b.Sides[0].Side]++
+			for i := range b.Sides {
+				for j := i + 1; j < len(b.Sides); j++ {
+					before[b.Sides[i].Side+b.Sides[j].Side]++
+				}
+			}
+		}
 	}
-	if first["a"] == 0 || first["b"] == 0 {
+	for _, x := range "abcd" {
+		for _, y := range "abcd" {
+			if x < y && before[string(x)+string(y)] != before[string(y)+string(x)] {
+				t.Errorf("%c before %c %d times, the other way %d", x, y, before[string(x)+string(y)], before[string(y)+string(x)])
+			}
+		}
+	}
+	if len(first) < 3 {
 		t.Errorf("first sides: %v", first)
+	}
+}
+
+func TestOrderRepeatsTheFormalLayout(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0", "a@0.8", "b@0.8")
+	vs, _ := Discover(dir, nil, nil)
+	n := map[string]int{}
+	reps := map[int]bool{}
+	for _, b := range Order(vs, "k", 0, 3) {
+		n[b.Pos]++
+		if b.Pos == "0.0" {
+			reps[b.Rep] = true
+		}
+	}
+	if n["0.0"] != 3 || n["0.8"] != 1 || len(reps) != 3 {
+		t.Errorf("blocks %v, reps %v", n, reps)
+	}
+}
+
+func TestDiscoverWantsEveryPositionOfEverySide(t *testing.T) {
+	dir := variants(t, "a@0.0", "a@0.8", "b@0.0")
+	if _, err := Discover(dir, nil, nil); err == nil {
+		t.Error("a side without a position accepted")
 	}
 }
 
@@ -170,39 +214,93 @@ func TestRunWritesOneRecordPerProcessAndResumes(t *testing.T) {
 	if f.dirs[0] != "/work" || !slices.Equal(f.envs[0], []string{"A=1"}) {
 		t.Errorf("dir %q env %v", f.dirs[0], f.envs[0])
 	}
-	// A second call with 3 rounds runs only the third.
+	// A second call with 4 rounds runs only the last two.
 	f2 := &fakeStart{out: f.out}
-	o.Rounds = 3
+	o.Rounds = 4
 	if err := Run(context.Background(), o, f2.start, nil, &log); err != nil {
 		t.Fatal(err)
 	}
-	if f2.calls != 4 {
-		t.Errorf("resumed run made %d processes, want 4", f2.calls)
+	if f2.calls != 8 {
+		t.Errorf("resumed run made %d processes, want 8", f2.calls)
 	}
 }
 
-func TestRunRunsDisturbedProcessesAgain(t *testing.T) {
-	dir := variants(t, "a@0.0")
+func TestRunRunsDisturbedBlocksAgainWhole(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
 	out := filepath.Join(t.TempDir(), "r.jsonl")
 	f := &fakeStart{out: "BenchmarkX 1 1 ns/op 3 ms\n"}
-	// The sibling core (1) is busy for 50 ticks during each process, which lasts one second.
+	// The sibling core (1) is busy for 50 ticks during the second process of
+	// the first try only; each process lasts one second.
 	n := 0
-	ticks := func() map[int]int64 {
+	busy := int64(0)
+	ticks := func() map[int]CPUTicks {
 		n++
-		return map[int]int64{0: 0, 1: int64(50 * (n / 2))}
+		if n == 4 {
+			busy += 50
+		}
+		return map[int]CPUTicks{0: {}, 1: {Busy: busy}, 2: {Busy: int64(n) * 30}}
 	}
-	o := RunOptions{Bin: dir, Out: out, Rounds: 1, Parse: "gobench:ms", CPU: 0, Sib: 1, Tries: 3}
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "gobench:ms", CPU: 0, Sib: 1, Tries: 3}
 	if err := Run(context.Background(), o, f.start, ticks, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	rs, _ := ReadRecords(out)
-	if len(rs) != 3 {
-		t.Fatalf("%d records, want 3 (the tries)", len(rs))
+	// round 0: a disturbed try of both sides, then a good one; round 1: one try.
+	if len(rs) != 6 {
+		t.Fatalf("%d records, want 6", len(rs))
 	}
-	for i, r := range rs {
-		if r.Attempt != i || !r.Disturbed {
-			t.Errorf("record %d: %+v", i, r)
+	if rs[0].Attempt != 0 || rs[1].Attempt != 0 || !rs[1].Disturbed || rs[0].Disturbed {
+		t.Errorf("first try: %+v %+v", rs[0], rs[1])
+	}
+	if rs[2].Attempt != 1 || rs[3].Attempt != 1 || rs[2].Side != rs[0].Side || rs[2].Disturbed || rs[3].Disturbed {
+		t.Errorf("second try: %+v %+v", rs[2], rs[3])
+	}
+	if rs[0].Order != rs[0].Side+","+rs[1].Side || rs[0].Slot != 0 || rs[1].Slot != 1 || rs[0].Start == "" || rs[0].Session == "" {
+		t.Errorf("order, slot, start, session: %+v", rs[0])
+	}
+	if rs[0].MachinePct != 30 {
+		t.Errorf("machine busy %v, want 30", rs[0].MachinePct)
+	}
+	// The sides run in the other order in round 1.
+	if rs[4].Side != rs[1].Side {
+		t.Errorf("round 1 starts with %s, round 0 with %s", rs[4].Side, rs[0].Side)
+	}
+	// A resumed run with nothing left to do runs nothing.
+	f2 := &fakeStart{out: f.out}
+	if err := Run(context.Background(), o, f2.start, ticks, &bytes.Buffer{}); err != nil || f2.calls != 0 {
+		t.Errorf("resumed: %d processes, %v", f2.calls, err)
+	}
+}
+
+func TestRunKeepsTheLastTryOfABlockThatStaysDisturbed(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
+	out := filepath.Join(t.TempDir(), "r.jsonl")
+	f := &fakeStart{out: "BenchmarkX 1 1 ns/op 3 ms\n"}
+	steal := int64(0)
+	ticks := func() map[int]CPUTicks {
+		steal += 10
+		return map[int]CPUTicks{0: {Steal: steal}, 1: {}}
+	}
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "gobench:ms", CPU: 0, Sib: 1, Tries: 2}
+	if err := Run(context.Background(), o, f.start, ticks, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	rs, _ := ReadRecords(out)
+	if len(rs) != 8 {
+		t.Fatalf("%d records, want 8 (2 tries of 2 sides in 2 rounds)", len(rs))
+	}
+	for _, r := range rs {
+		if !r.Disturbed || r.StealPct != 10 {
+			t.Errorf("%+v", r)
 		}
+	}
+}
+
+func TestRunWantsEvenRounds(t *testing.T) {
+	dir := variants(t, "a@0.0")
+	o := RunOptions{Bin: dir, Out: filepath.Join(t.TempDir(), "r"), Rounds: 3, Parse: "jsrun", CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, (&fakeStart{}).start, nil, &bytes.Buffer{}); err == nil {
+		t.Error("odd rounds accepted")
 	}
 }
 
@@ -210,7 +308,7 @@ func TestRunStopsOnAFailedProcess(t *testing.T) {
 	dir := variants(t, "a@0.0", "b@0.0")
 	out := filepath.Join(t.TempDir(), "r.jsonl")
 	f := &fakeStart{out: "boom", err: errors.New("exit status 2")}
-	o := RunOptions{Bin: dir, Out: out, Rounds: 1, Parse: "jsrun", CPU: -1, Sib: -1}
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "jsrun", CPU: -1, Sib: -1}
 	err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{})
 	if err == nil || !strings.Contains(err.Error(), "exit status 2") {
 		t.Fatalf("Run = %v", err)

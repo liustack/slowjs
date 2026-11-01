@@ -25,21 +25,31 @@ import (
 	"github.com/liustack/slowjs/internal/sjdev/hwm"
 )
 
-// Record is one process, written as a line of JSON.
+// Record is one process, written as a line of JSON. A block is the processes
+// of every side at one position in one round (and rep): they run one after
+// the other, in the order Order, and run again together when one of them was
+// disturbed, with the next Attempt.
 type Record struct {
-	Side      string             `json:"side"`
-	Pos       string             `json:"pos"`
-	Kind      string             `json:"kind"`
-	Round     int                `json:"round"`
-	Attempt   int                `json:"attempt"`
-	Metrics   map[string]float64 `json:"metrics,omitempty"`
-	HWMKB     int64              `json:"vmhwm_kb,omitempty"`
-	WallMs    float64            `json:"wall_ms"`
-	CPUMs     float64            `json:"cpu_ms"`
-	SibPct    float64            `json:"sib_pct"`
-	OtherPct  float64            `json:"other_pct"`
-	Disturbed bool               `json:"disturbed,omitempty"`
-	Err       string             `json:"err,omitempty"`
+	Side       string             `json:"side"`
+	Pos        string             `json:"pos"`
+	Kind       string             `json:"kind"`
+	Round      int                `json:"round"`
+	Rep        int                `json:"rep,omitempty"`
+	Attempt    int                `json:"attempt"`
+	Slot       int                `json:"slot"`            // place of the process in its block
+	Order      string             `json:"order,omitempty"` // the sides of the block, in the order they ran
+	Session    string             `json:"session,omitempty"`
+	Start      string             `json:"start,omitempty"` // RFC 3339, UTC
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+	HWMKB      int64              `json:"vmhwm_kb,omitempty"`
+	WallMs     float64            `json:"wall_ms"`
+	CPUMs      float64            `json:"cpu_ms"`
+	SibPct     float64            `json:"sib_pct"`     // the sibling core busy, in percent of the wall time
+	OtherPct   float64            `json:"other_pct"`   // other work on the timing core
+	StealPct   float64            `json:"steal_pct"`   // steal time on the timing core
+	MachinePct float64            `json:"machine_pct"` // all other cores busy, summed (100 is one core)
+	Disturbed  bool               `json:"disturbed,omitempty"`
+	Err        string             `json:"err,omitempty"`
 }
 
 // ReadRecords reads a file of records. A file that does not exist has none.
@@ -117,12 +127,15 @@ func ParserFor(spec string) (Parser, error) {
 	return nil, fmt.Errorf("parse %q: want gobench:UNIT or jsrun", spec)
 }
 
-// Ticks returns the busy ticks (everything but idle and iowait) of each cpu,
-// or nil where the machine does not say.
-type Ticks func() map[int]int64
+// CPUTicks are the ticks of one cpu: busy is everything but idle and iowait,
+// steal is the time the host gave to other machines.
+type CPUTicks struct{ Busy, Steal int64 }
+
+// Ticks returns the ticks of each cpu, or nil where the machine does not say.
+type Ticks func() map[int]CPUTicks
 
 // ProcTicks reads /proc/stat.
-func ProcTicks() map[int]int64 {
+func ProcTicks() map[int]CPUTicks {
 	b, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		return nil
@@ -131,8 +144,8 @@ func ProcTicks() map[int]int64 {
 }
 
 // ParseTicks parses the text of /proc/stat.
-func ParseTicks(stat string) map[int]int64 {
-	m := map[int]int64{}
+func ParseTicks(stat string) map[int]CPUTicks {
+	m := map[int]CPUTicks{}
 	for _, l := range strings.Split(stat, "\n") {
 		f := strings.Fields(l)
 		if len(f) < 5 || !strings.HasPrefix(f[0], "cpu") || f[0] == "cpu" {
@@ -142,15 +155,22 @@ func ParseTicks(stat string) map[int]int64 {
 		if err != nil {
 			continue
 		}
-		var sum, idle int64
+		var sum, idle, steal int64
 		for i, v := range f[1:] {
 			n, _ := strconv.ParseInt(v, 10, 64)
+			// guest and guest_nice are already in user and nice.
+			if i >= 8 {
+				break
+			}
 			sum += n
 			if i == 3 || i == 4 {
 				idle += n
 			}
+			if i == 7 {
+				steal = n
+			}
 		}
-		m[id] = sum - idle
+		m[id] = CPUTicks{Busy: sum - idle - steal, Steal: steal}
 	}
 	return m
 }
@@ -182,23 +202,26 @@ func Start(ctx context.Context, bin string, args []string, dir string, env []str
 
 // RunOptions say what to time.
 type RunOptions struct {
-	Bin      string   // folder of the binaries (side@pos)
-	Out      string   // the file of records, appended to
-	Kind     string   // label of this kind of measurement in the file
-	Rounds   int      // number of rounds
-	Round0   int      // number of the first round
-	Sides    []string // limit to these sides (empty: all)
-	Pos      []string // limit to these positions (empty: all)
-	Parse    string   // see ParserFor
-	Args     []string // arguments of the process
-	Dir      string   // working folder of the process
-	Env      []string // K=V
-	CPU      int      // the timing core (-1: do not check)
-	Sib      int      // its hyperthread sibling, which must stay idle (-1: none)
-	BusyPct  float64  // percent of a busy sibling or other work that makes a process run again
-	Tries    int
-	Timeout  time.Duration
-	MinTicks int64 // fewer busy ticks than this are noise
+	Bin        string   // folder of the binaries (side@pos)
+	Out        string   // the file of records, appended to
+	Kind       string   // label of this kind of measurement in the file
+	Rounds     int      // number of rounds, even, so that every two sides meet in both orders
+	Round0     int      // number of the first round, even
+	FormalReps int      // blocks of the formal layout in each round (the others have one)
+	Sides      []string // limit to these sides (empty: all)
+	Pos        []string // limit to these positions (empty: all)
+	Parse      string   // see ParserFor
+	Args       []string // arguments of the process
+	Dir        string   // working folder of the process
+	Env        []string // K=V
+	CPU        int      // the timing core (-1: do not check)
+	Sib        int      // its hyperthread sibling, which must stay idle (-1: none)
+	BusyPct    float64  // percent of a busy sibling or other work on the timing core that disturbs a block
+	StealPct   float64  // percent of steal time on the timing core that disturbs a block
+	Tries      int      // tries of a disturbed block
+	Timeout    time.Duration
+	MinTicks   int64 // fewer busy ticks than this are noise
+	Session    string
 }
 
 // Defaults fills what is not set.
@@ -206,8 +229,14 @@ func (o *RunOptions) Defaults() {
 	if o.Kind == "" {
 		o.Kind = "run"
 	}
+	if o.FormalReps == 0 {
+		o.FormalReps = 1
+	}
 	if o.BusyPct == 0 {
-		o.BusyPct = 10
+		o.BusyPct = 5
+	}
+	if o.StealPct == 0 {
+		o.StealPct = 1
 	}
 	if o.Tries == 0 {
 		o.Tries = 3
@@ -217,6 +246,10 @@ func (o *RunOptions) Defaults() {
 	}
 	if o.MinTicks == 0 {
 		o.MinTicks = 3
+	}
+	if o.Session == "" {
+		host, _ := os.Hostname()
+		o.Session = fmt.Sprintf("%s-%d-%d", host, os.Getpid(), time.Now().UnixNano())
 	}
 }
 
@@ -248,6 +281,25 @@ func Discover(dir string, sides, pos []string) ([]Variant, error) {
 	if len(vs) == 0 {
 		return nil, fmt.Errorf("no binaries named side@pos in %s", dir)
 	}
+	// Every side must have every position, or the pairs are not whole.
+	by := map[string]map[string]bool{}
+	var allPos []string
+	for _, v := range vs {
+		if by[v.Side] == nil {
+			by[v.Side] = map[string]bool{}
+		}
+		by[v.Side][v.Pos] = true
+		if !slices.Contains(allPos, v.Pos) {
+			allPos = append(allPos, v.Pos)
+		}
+	}
+	for s, ps := range by {
+		for _, p := range allPos {
+			if !ps[p] {
+				return nil, fmt.Errorf("side %s has no binary at position %s in %s", s, p, dir)
+			}
+		}
+	}
 	return vs, nil
 }
 
@@ -257,10 +309,20 @@ func seeded(s string) *rand.Rand {
 	return rand.New(rand.NewPCG(h.Sum64(), 1))
 }
 
-// Order returns the processes of one round: the positions in a random order,
-// and in each position the sides in a random order. The order depends only on
-// the round and the kind, so that a restart repeats it.
-func Order(vs []Variant, kind string, round int) []Variant {
+// Block is the processes of one layout in a round: every side once, one after
+// the other.
+type Block struct {
+	Pos   string
+	Rep   int // which block of the formal layout in the round
+	Sides []Variant
+}
+
+// Order returns the blocks of one round. The layouts come in a random order,
+// the formal one reps times. In a block the sides come in a random order in an
+// even round and in the reverse of that order in the odd round after it, so
+// every two sides meet as often in one order as in the other. The order depends
+// only on the kind and the round, so that a restart repeats it.
+func Order(vs []Variant, kind string, round, reps int) []Block {
 	var positions []string
 	by := map[string][]Variant{}
 	for _, v := range vs {
@@ -270,26 +332,49 @@ func Order(vs []Variant, kind string, round int) []Variant {
 		by[v.Pos] = append(by[v.Pos], v)
 	}
 	slices.Sort(positions)
-	seeded(fmt.Sprintf("%s-pos-%d", kind, round)).Shuffle(len(positions), func(i, j int) { positions[i], positions[j] = positions[j], positions[i] })
-	var out []Variant
+	var blocks []Block
 	for _, p := range positions {
-		group := by[p]
-		seeded(fmt.Sprintf("%s-side-%s-%d", kind, p, round)).Shuffle(len(group), func(i, j int) { group[i], group[j] = group[j], group[i] })
-		out = append(out, group...)
+		n := 1
+		if p == Formal.String() {
+			n = max(reps, 1)
+		}
+		for rep := range n {
+			blocks = append(blocks, Block{Pos: p, Rep: rep})
+		}
 	}
-	return out
+	seeded(fmt.Sprintf("%s-pos-%d", kind, round)).Shuffle(len(blocks), func(i, j int) { blocks[i], blocks[j] = blocks[j], blocks[i] })
+	for i := range blocks {
+		group := slices.Clone(by[blocks[i].Pos])
+		slices.SortFunc(group, func(a, b Variant) int { return strings.Compare(a.Side, b.Side) })
+		seeded(fmt.Sprintf("%s-side-%s-%d-%d", kind, blocks[i].Pos, blocks[i].Rep, round/2)).Shuffle(len(group), func(i, j int) { group[i], group[j] = group[j], group[i] })
+		if round%2 == 1 {
+			slices.Reverse(group)
+		}
+		blocks[i].Sides = group
+	}
+	return blocks
 }
 
-type key struct {
-	side, pos, kind string
-	round           int
+type blockKey struct {
+	pos, kind  string
+	round, rep int
 }
 
-// Run times the binaries in turn, round after round, and appends a record per
-// process to o.Out. Processes already in the file are not run again, so a
-// stopped run goes on where it stopped.
+// blockState is what the file already has of a block.
+type blockState struct {
+	attempts int  // the highest attempt seen, plus one
+	done     bool // the last attempt has every side and needs no rerun
+}
+
+// Run times the binaries block after block, round after round, and appends a
+// record per process to o.Out. A block where any process was disturbed runs
+// again whole, up to o.Tries times. Blocks already in the file are not run
+// again, so a stopped run goes on where it stopped.
 func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Writer) error {
 	o.Defaults()
+	if o.Rounds%2 != 0 || o.Round0%2 != 0 {
+		return fmt.Errorf("-rounds %d and -round0 %d must be even, so that the sides meet in both orders", o.Rounds, o.Round0)
+	}
 	parse, err := ParserFor(o.Parse)
 	if err != nil {
 		return err
@@ -302,13 +387,42 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	if err != nil {
 		return err
 	}
-	done, tried := map[key]bool{}, map[key]int{}
+	nsides := map[string]bool{}
+	for _, v := range vs {
+		nsides[v.Side] = true
+	}
+	state := map[blockKey]*blockState{}
+	type att struct {
+		k blockKey
+		a int
+	}
+	sidesOf := map[att]map[string]Record{}
 	for _, r := range old {
-		k := key{r.Side, r.Pos, r.Kind, r.Round}
-		tried[k]++
-		if r.Err == "" && (!r.Disturbed || tried[k] >= o.Tries) {
-			done[k] = true
+		if r.Kind != o.Kind {
+			continue
 		}
+		k := blockKey{r.Pos, r.Kind, r.Round, r.Rep}
+		if state[k] == nil {
+			state[k] = &blockState{}
+		}
+		state[k].attempts = max(state[k].attempts, r.Attempt+1)
+		a := att{k, r.Attempt}
+		if sidesOf[a] == nil {
+			sidesOf[a] = map[string]Record{}
+		}
+		sidesOf[a][r.Side] = r
+	}
+	for k, s := range state {
+		last := sidesOf[att{k, s.attempts - 1}]
+		whole, disturbed := len(last) >= len(nsides), false
+		for side := range nsides {
+			r, ok := last[side]
+			if !ok || r.Err != "" {
+				whole = false
+			}
+			disturbed = disturbed || r.Disturbed
+		}
+		s.done = whole && (!disturbed || s.attempts >= o.Tries)
 	}
 	f, err := os.OpenFile(o.Out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -317,36 +431,56 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	defer f.Close()
 	for rd := o.Round0; rd < o.Round0+o.Rounds; rd++ {
 		t0 := time.Now()
-		for _, v := range Order(vs, o.Kind, rd) {
-			k := key{v.Side, v.Pos, o.Kind, rd}
-			for !done[k] {
-				r := once(ctx, o, v, rd, tried[k], parse, start, ticks)
-				tried[k]++
-				b, _ := json.Marshal(r)
-				if _, err := f.Write(append(b, '\n')); err != nil {
-					return err
+		reruns := 0
+		for _, b := range Order(vs, o.Kind, rd, o.FormalReps) {
+			k := blockKey{b.Pos, o.Kind, rd, b.Rep}
+			s := state[k]
+			if s == nil {
+				s = &blockState{}
+				state[k] = s
+			}
+			for !s.done {
+				disturbed := false
+				order := make([]string, len(b.Sides))
+				for i, v := range b.Sides {
+					order[i] = v.Side
 				}
-				if r.Err != "" {
-					return fmt.Errorf("%s@%s round %d: %s", v.Side, v.Pos, rd, r.Err)
+				for slot, v := range b.Sides {
+					r := once(ctx, o, v, rd, s.attempts, parse, start, ticks)
+					r.Rep, r.Slot, r.Order = b.Rep, slot, strings.Join(order, ",")
+					bs, _ := json.Marshal(r)
+					if _, err := f.Write(append(bs, '\n')); err != nil {
+						return err
+					}
+					if r.Err != "" {
+						return fmt.Errorf("%s@%s round %d: %s", v.Side, v.Pos, rd, r.Err)
+					}
+					disturbed = disturbed || r.Disturbed
 				}
-				done[k] = !r.Disturbed || tried[k] >= o.Tries
+				s.attempts++
+				s.done = !disturbed || s.attempts >= o.Tries
+				if disturbed {
+					reruns++
+				}
 			}
 		}
-		fmt.Fprintf(w, "round %d done in %.0f s\n", rd, time.Since(t0).Seconds())
+		fmt.Fprintf(w, "round %d done in %.0f s, %d blocks disturbed\n", rd, time.Since(t0).Seconds(), reruns)
 	}
 	return nil
 }
 
 func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, parse Parser, start Starter, ticks Ticks) Record {
-	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt}
+	r := Record{Side: v.Side, Pos: v.Pos, Kind: o.Kind, Round: round, Attempt: attempt, Session: o.Session}
 	pctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
-	var t0 map[int]int64
+	var t0 map[int]CPUTicks
 	if ticks != nil {
 		t0 = ticks()
 	}
+	begin := time.Now()
+	r.Start = begin.UTC().Format(time.RFC3339Nano)
 	p := start(pctx, v.Path, o.Args, o.Dir, o.Env)
-	var t1 map[int]int64
+	var t1 map[int]CPUTicks
 	if ticks != nil {
 		t1 = ticks()
 	}
@@ -354,10 +488,23 @@ func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, pars
 	r.CPUMs = float64(p.CPU) / float64(time.Millisecond)
 	if t0 != nil && t1 != nil && p.Wall > 0 {
 		wall := p.Wall.Seconds()
-		sib := t1[o.Sib] - t0[o.Sib]
-		other := t1[o.CPU] - t0[o.CPU] - int64(p.CPU.Seconds()*100)
+		d := func(c int) CPUTicks {
+			return CPUTicks{t1[c].Busy - t0[c].Busy, t1[c].Steal - t0[c].Steal}
+		}
+		sib := d(o.Sib).Busy
+		cpu := d(o.CPU)
+		other := cpu.Busy - int64(p.CPU.Seconds()*100)
+		var machine int64
+		for c := range t1 {
+			if c != o.CPU && c != o.Sib {
+				machine += d(c).Busy
+			}
+		}
 		r.SibPct, r.OtherPct = float64(sib)/wall, float64(max(other, 0))/wall
-		r.Disturbed = (o.Sib >= 0 && r.SibPct > o.BusyPct && sib >= o.MinTicks) || (o.CPU >= 0 && r.OtherPct > o.BusyPct && other >= o.MinTicks)
+		r.StealPct, r.MachinePct = float64(cpu.Steal)/wall, float64(machine)/wall
+		r.Disturbed = (o.Sib >= 0 && r.SibPct > o.BusyPct && sib >= o.MinTicks) ||
+			(o.CPU >= 0 && r.OtherPct > o.BusyPct && other >= o.MinTicks) ||
+			(o.CPU >= 0 && r.StealPct > o.StealPct && cpu.Steal >= 1)
 	}
 	if pctx.Err() != nil {
 		r.Err = "timeout"

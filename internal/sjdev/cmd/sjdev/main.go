@@ -30,11 +30,13 @@ import (
 	"github.com/liustack/slowjs/internal/sjdev/bench"
 )
 
-const usage = `usage: sjdev bench build|run|report|cg|cgdiff [flags]
+const usage = `usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]
 
   build   build a binary per code position of the C engine
   run     time the binaries in turn, round after round
-  report  read the records of a run: a table with the verdict of each metric
+  judge   read the records of a run by the protocol of docs/measuring.md
+  report  the older reading: medians and the rule of 2%
+  addrs   where the interpreter and its hot handlers sit in binaries
   cg      count instructions per render with callgrind
   cgdiff  the same from callgrind_annotate files
 
@@ -77,13 +79,17 @@ func newFlags(name string) *flag.FlagSet {
 
 func cmdBench(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: sjdev bench build|run|report|cg|cgdiff [flags]")
+		return fmt.Errorf("usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]")
 	}
 	switch args[0] {
 	case "build":
 		return benchBuild(ctx, args[1:])
 	case "run":
 		return benchRun(ctx, args[1:])
+	case "judge":
+		return benchJudge(args[1:])
+	case "addrs":
+		return benchAddrs(args[1:])
 	case "report":
 		return benchReport(args[1:])
 	case "cg":
@@ -97,7 +103,8 @@ func cmdBench(ctx context.Context, args []string) error {
 func benchBuild(ctx context.Context, args []string) error {
 	fs := newFlags("bench build")
 	var o bench.BuildOptions
-	pos := fs.String("positions", "quick", "quick (4), all (8) or a list such as 0.0,32.16 (shift.front)")
+	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (16), all (8), quick (4) or a list such as 0.0,32.16 (shift.front)")
+	fs.BoolVar(&o.Layouts, "layouts", true, "write where the interpreter landed in each binary to OUT/layouts.tsv")
 	fs.StringVar(&o.Side, "side", "", "label of this side, such as base or new")
 	fs.StringVar(&o.Tree, "tree", ".", "the slowjs checkout, with the engine generated")
 	fs.StringVar(&o.App, "app", "", "build in this module (tifa) against the tree through a go.work")
@@ -107,6 +114,7 @@ func benchBuild(ctx context.Context, args []string) error {
 	fs.StringVar(&o.PGO, "pgo", "off", "the -pgo flag")
 	fs.StringVar(&o.Front, "front", "JS_CallInternal", "the function whose body moves")
 	fs.StringVar(&o.Out, "out", "", "folder of the binaries (side@shift.front)")
+	xformBin := fs.String("xform", "", "a built internal/goasm/cmd/xform to use (default: build the one of -tree)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -117,9 +125,11 @@ func benchBuild(ctx context.Context, args []string) error {
 	if err := o.Check(); err != nil {
 		return err
 	}
-	xf, err := bench.BuildXform(ctx, o.Tree, o.Out, sjdev.Exec)
-	if err != nil {
-		return err
+	xf := bench.XformCommand(*xformBin, sjdev.Exec)
+	if *xformBin == "" {
+		if xf, err = bench.BuildXform(ctx, o.Tree, o.Out, sjdev.Exec); err != nil {
+			return err
+		}
 	}
 	return bench.Build(ctx, o, xf, sjdev.Exec, os.Stdout)
 }
@@ -132,15 +142,17 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.StringVar(&o.Bin, "bin", "", "folder of the binaries (side@pos)")
 	fs.StringVar(&o.Out, "out", "", "file of records (appended to, so a stopped run goes on)")
 	fs.StringVar(&o.Kind, "kind", "run", "label of this measurement in the file")
-	fs.IntVar(&o.Rounds, "rounds", 5, "rounds")
-	fs.IntVar(&o.Round0, "round0", 0, "number of the first round")
+	fs.IntVar(&o.Rounds, "rounds", 2, "rounds, even: each side meets each other side once in each order every two rounds")
+	fs.IntVar(&o.Round0, "round0", 0, "number of the first round, even")
+	fs.IntVar(&o.FormalReps, "formal-reps", 3, "blocks of the formal layout (0.0) in each round")
 	fs.StringVar(&o.Parse, "parse", "", "gobench:UNIT (such as gobench:p50-ms) or jsrun")
 	fs.StringVar(&o.Dir, "dir", "", "working folder of the processes")
 	fs.Var(&envs, "env", "K=V for the processes (repeatable)")
 	fs.IntVar(&o.CPU, "cpu", -1, "the timing core, to check that nothing else ran on it (-1: no check)")
 	fs.IntVar(&o.Sib, "sib", -1, "its hyperthread sibling, which must stay idle (-1: no check)")
-	fs.Float64Var(&o.BusyPct, "busy", 10, "percent of busy sibling or other work that makes a process run again")
-	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed process")
+	fs.Float64Var(&o.BusyPct, "busy", 5, "percent of busy sibling or other work on the timing core that makes the block run again")
+	fs.Float64Var(&o.StealPct, "steal", 1, "percent of steal time on the timing core that makes the block run again")
+	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed block")
 	fs.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "limit of one process")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -196,7 +208,9 @@ func benchCG(ctx context.Context, args []string) error {
 	fs.IntVar(&o.Big, "big", 12, "renders of the big run")
 	fs.StringVar(&o.Dir, "dir", "", "working folder")
 	fs.Var(&envs, "env", "K=V for the processes (repeatable)")
-	fs.StringVar(&o.Toggle, "toggle", "", "collect only inside this function")
+	fs.StringVar(&o.Toggle, "toggle", "", "collect only inside this function; with -small 0, one run per binary that counts -big renders there (docs/measuring.md)")
+	fs.BoolVar(&o.Sim, "sim", false, "simulate the branch predictor and the caches")
+	fs.StringVar(&o.Interp, "interp", "JS_CallInternal_block", "the interpreter, reported on its own")
 	fs.StringVar(&o.ValgrindRoot, "valgrind-root", "", "folder with usr/bin/valgrind, when it is not installed")
 	fs.StringVar(&o.Out, "out", "", "folder for the callgrind files")
 	if err := fs.Parse(args); err != nil {
@@ -231,5 +245,63 @@ func benchCGDiff(args []string) error {
 	}
 	b := bench.Diff(*renders, read(f[2]), read(f[3]))
 	bench.WriteDiff(os.Stdout, a, &b)
+	return nil
+}
+
+func benchJudge(args []string) error {
+	fs := newFlags("bench judge")
+	in := fs.String("in", "", "file of records")
+	kind := fs.String("kind", "run", "kind to read")
+	base := fs.String("base", "", "side that is the base")
+	nw := fs.String("new", "", "side compared with it")
+	delta := fs.Float64("delta", bench.DefaultDelta, "the regression that matters, as a fraction (0.005 is 0.5%)")
+	alpha := fs.Float64("alpha", bench.DefaultAlpha, "1 - the confidence of the intervals")
+	detail := fs.Bool("detail", false, "also each layout")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *in == "" || *base == "" || *nw == "" {
+		return fmt.Errorf("-in, -base and -new are needed")
+	}
+	rs, err := bench.ReadRecords(*in)
+	if err != nil {
+		return err
+	}
+	as, v := bench.Judge(rs, *kind, *base, *nw, *alpha, *delta)
+	if len(v.Problems) > 0 {
+		for _, p := range v.Problems {
+			fmt.Fprintln(os.Stderr, p)
+		}
+		return fmt.Errorf("%d problems in the records: nothing to judge", len(v.Problems))
+	}
+	fmt.Printf("%s: %s against %s\n\n", *kind, *nw, *base)
+	bench.WriteJudgement(os.Stdout, as, v, *delta, *alpha, *detail)
+	return nil
+}
+
+func benchAddrs(args []string) error {
+	fs := newFlags("bench addrs")
+	fn := fs.String("front", "JS_CallInternal_block", "the interpreter function")
+	opcodes := fs.String("opcodes", "engine/quickjs-opcode.h", "the opcode list, to name the handlers")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	h, err := os.Open(*opcodes)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	names, err := bench.OpcodeNames(h)
+	if err != nil {
+		return err
+	}
+	fmt.Println(bench.LayoutHeader())
+	for _, b := range fs.Args() {
+		l, err := bench.ReadLayout(b, *fn, names)
+		if err != nil {
+			return err
+		}
+		fmt.Println(l.Row(b))
+	}
 	return nil
 }
