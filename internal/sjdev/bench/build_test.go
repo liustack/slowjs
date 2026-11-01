@@ -43,7 +43,7 @@ func TestParsePositions(t *testing.T) {
 	if BinName("base", Position{0, 16}) != "base@0.16" {
 		t.Error("BinName")
 	}
-	ops := Position{32, 16}.XformOps("JS_CallInternal")
+	ops := Position{32, 16}.XformOps("JS_CallInternal", "")
 	if !slices.Equal(ops, []string{"shift:32", "front:JS_CallInternal:16"}) {
 		t.Errorf("ops = %v", ops)
 	}
@@ -72,6 +72,9 @@ func fakeXform(ctx context.Context, dir string, ops []string) error {
 			file, marker = "quickjs_amd64.s", "PCALIGN $64\n"
 		}
 		n := parts[len(parts)-1]
+		if parts[0] == "shift" {
+			n = parts[1]
+		}
 		if n == "0" {
 			continue
 		}
@@ -103,7 +106,7 @@ func TestResolveFront(t *testing.T) {
 func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	tree := fakeTree(t)
 	before, _ := os.ReadFile(filepath.Join(tree, "internal/cengine/cutils_amd64.s"))
-	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16}, "JS_CallInternal", fakeXform)
+	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16}, "JS_CallInternal", "", fakeXform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,17 +124,17 @@ func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	}
 
 	// Position 0.0 changes nothing, and that is not an error.
-	ov, err = MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{}, "JS_CallInternal", fakeXform)
+	ov, err = MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{}, "JS_CallInternal", "", fakeXform)
 	if err != nil || len(ov.Replace) != 0 {
 		t.Errorf("0.0: %v, %v", ov, err)
 	}
 	// A position that moves nothing is an error: the xform did not find its place.
 	nop := func(context.Context, string, []string) error { return nil }
-	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0}, "JS_CallInternal", nop); err == nil {
+	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0}, "JS_CallInternal", "", nop); err == nil {
 		t.Error("a position that changed no file was accepted")
 	}
 	// No generated engine is an error.
-	if _, err := MakeOverlay(context.Background(), t.TempDir(), filepath.Join(t.TempDir(), "w"), Position{}, "x", fakeXform); err == nil {
+	if _, err := MakeOverlay(context.Background(), t.TempDir(), filepath.Join(t.TempDir(), "w"), Position{}, "x", "", fakeXform); err == nil {
 		t.Error("a tree without an engine was accepted")
 	}
 }
@@ -177,12 +180,16 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	}
 	var log bytes.Buffer
 	err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
-		Positions: []Position{{0, 0}, {32, 16}}, Out: out}, fakeXform, run, &log)
+		Positions: []Position{{32, 16}, {0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
 	if len(cmds) != 2 {
 		t.Fatalf("%d commands", len(cmds))
+	}
+	// The formal binary is built first.
+	if !strings.HasSuffix(cmds[0].Args[slices.Index(cmds[0].Args, "-o")+1], "base@0.0") {
+		t.Errorf("first command: %v", cmds[0])
 	}
 	c := cmds[1]
 	if c.Name != "go" || c.Args[0] != "test" || !strings.HasSuffix(c.Args[slices.Index(c.Args, "-o")+1], "base@32.16") {
@@ -249,5 +256,37 @@ func TestGenerated(t *testing.T) {
 	}
 	if strings.Join(names, ",") != "a_amd64.s,engine_decl_amd64.go,engine_keep_amd64.go" {
 		t.Errorf("Generated = %v", names)
+	}
+}
+
+func TestProtocolLayouts(t *testing.T) {
+	ps := Protocol()
+	if len(ps) != 16 || ps[0] != Formal {
+		t.Fatalf("protocol = %v", ps)
+	}
+	fronts, shifts := map[int]int{}, map[int]bool{}
+	for _, p := range ps {
+		fronts[p.Front]++
+		shifts[p.Shift] = true
+		if _, err := ParsePosition(p.String()); err != nil {
+			t.Error(err)
+		}
+	}
+	// every front of the 64-byte block twice, and 9 shifts
+	for f := 0; f < 64; f += 8 {
+		if fronts[f] != 2 {
+			t.Errorf("front %d %d times", f, fronts[f])
+		}
+	}
+	if len(shifts) != 9 {
+		t.Errorf("shifts %v", shifts)
+	}
+	if len(Full()) != 16 {
+		t.Error("full")
+	}
+	for _, bad := range []string{"48.0", "0.60", "8192.0", "-32.0", "0.12"} {
+		if _, err := ParsePosition(bad); err == nil {
+			t.Errorf("%s accepted", bad)
+		}
 	}
 }

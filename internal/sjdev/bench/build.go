@@ -31,6 +31,8 @@ type BuildOptions struct {
 	Front     string     // the interpreter function whose body moves
 	Positions []Position // the positions to build
 	Out       string     // folder of the binaries
+	Layouts   bool       // check where the interpreter landed in each binary against the formal one, into Out/layouts.tsv
+	Pad       string     // the function the shift goes after (empty: the first engine function of the formal binary)
 }
 
 // Defaults fills what is not set.
@@ -45,7 +47,7 @@ func (o *BuildOptions) Defaults() {
 		o.Front = "JS_CallInternal"
 	}
 	if len(o.Positions) == 0 {
-		o.Positions = Quick()
+		o.Positions = Protocol()
 	}
 }
 
@@ -91,7 +93,7 @@ type Overlay struct {
 // MakeOverlay copies the generated amd64 files of the tree to work, moves the
 // code in the copies, and returns the overlay that puts the changed copies in
 // place of the files of the tree. The tree is not touched.
-func MakeOverlay(ctx context.Context, tree, work string, p Position, front string, xf Xform) (Overlay, error) {
+func MakeOverlay(ctx context.Context, tree, work string, p Position, front, pad string, xf Xform) (Overlay, error) {
 	src := filepath.Join(tree, "internal", "cengine")
 	files, err := Generated(src, "amd64")
 	if err != nil {
@@ -123,7 +125,7 @@ func MakeOverlay(ctx context.Context, tree, work string, p Position, front strin
 			return Overlay{}, err
 		}
 	}
-	if err := xf(ctx, work, p.XformOps(front)); err != nil {
+	if err := xf(ctx, work, p.XformOps(front, pad)); err != nil {
 		return Overlay{}, fmt.Errorf("position %s: %w", p, err)
 	}
 	ov := Overlay{Replace: map[string]string{}}
@@ -248,10 +250,30 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 		}
 		dir, env = app, append(env, "GOWORK="+wf)
 	}
-	for _, p := range o.Positions {
+	positions := slices.Clone(o.Positions)
+	if i := slices.Index(positions, Formal); i > 0 {
+		// the formal binary first: the shifted ones are read against it
+		positions = append(append([]Position{Formal}, positions[:i]...), positions[i+1:]...)
+	}
+	shifted := slices.ContainsFunc(positions, func(p Position) bool { return p.Shift > 0 })
+	pad, formalBin := o.Pad, ""
+	// The formal binary gives the function to shift after, and the layout every
+	// other one is checked against. Built only for that, it stays in .work.
+	if (shifted && pad == "" || o.Layouts) && !slices.Contains(positions, Formal) {
+		positions = append([]Position{Formal}, positions...)
+		formalBin = filepath.Join(out, ".work", BinName(o.Side, Formal)+".bin")
+	}
+	var formal Layout
+	for _, p := range positions {
 		bin := filepath.Join(out, BinName(o.Side, p))
+		if p == Formal && formalBin != "" {
+			bin = formalBin
+		}
 		work := filepath.Join(out, ".work", BinName(o.Side, p))
-		ov, err := MakeOverlay(ctx, tree, work, p, front, xf)
+		if p.Shift > 0 && pad == "" {
+			return fmt.Errorf("no function to put the shift after: the formal binary gives it")
+		}
+		ov, err := MakeOverlay(ctx, tree, work, p, front, pad, xf)
 		if err != nil {
 			return err
 		}
@@ -266,6 +288,32 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 			return fmt.Errorf("%w\n%s", r.Err, r.Out)
 		}
 		fmt.Fprintf(log, "built %s\n", filepath.Base(bin))
+		if p == Formal && shifted && pad == "" {
+			if pad, err = FirstEngineFunc(bin); err != nil {
+				return err
+			}
+			fmt.Fprintf(log, "shifts go after %s, the first engine function of the formal binary\n", pad)
+		}
+		if o.Layouts {
+			l, err := readLayout(tree, bin, front)
+			if err != nil {
+				return err
+			}
+			if p == Formal {
+				formal = l
+			} else if err := CheckLayout(formal, l, p); err != nil {
+				return fmt.Errorf("%s: %w", filepath.Base(bin), err)
+			}
+			if bin != formalBin {
+				h, err := HashFile(bin)
+				if err != nil {
+					return err
+				}
+				if err := WriteLayout(out, filepath.Base(bin), h, l); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return nil
 }
@@ -313,4 +361,17 @@ func Sorted(dir string) ([]string, error) {
 	}
 	slices.Sort(names)
 	return names, nil
+}
+
+func readLayout(tree, bin, front string) (Layout, error) {
+	h, err := os.Open(filepath.Join(tree, "engine", "quickjs-opcode.h"))
+	if err != nil {
+		return Layout{}, err
+	}
+	defer h.Close()
+	names, err := OpcodeNames(h)
+	if err != nil {
+		return Layout{}, err
+	}
+	return ReadLayout(bin, front, names)
 }
