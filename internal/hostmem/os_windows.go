@@ -25,8 +25,10 @@ func sysAlloc(call string, addr, size uintptr, kind, prot uint32) (uintptr, erro
 	return windows.VirtualAlloc(addr, size, kind, prot)
 }
 
-func sysFree(addr uintptr) error {
-	if err := faulted("unmap", addr, 0); err != nil {
+// sysFree gives back the whole reservation at addr, size bytes. VirtualFree
+// takes no size for that, and the hook is given it as on the other systems.
+func sysFree(addr, size uintptr) error {
+	if err := faulted("unmap", addr, size); err != nil {
 		return err
 	}
 	return windows.VirtualFree(addr, 0, windows.MEM_RELEASE)
@@ -51,7 +53,7 @@ func osMap(size uintptr) (uintptr, error) {
 }
 
 func osUnmap(addr, size uintptr) error {
-	return sysFree(addr)
+	return sysFree(addr, size)
 }
 
 func osRemap(addr, size, newSize uintptr) (uintptr, error) {
@@ -81,7 +83,7 @@ func osReserveStack(size uintptr) (uintptr, error) {
 		if p, err = sysAlloc("reserve", 0, n, windows.MEM_RESERVE, windows.PAGE_NOACCESS); err != nil {
 			return 0, err
 		}
-		if cerr := sysFree(p); cerr != nil {
+		if cerr := sysFree(p, n); cerr != nil {
 			lost(p, n, nil, cerr)
 		}
 		base := alignUp(p, size)
@@ -93,7 +95,7 @@ func osReserveStack(size uintptr) (uintptr, error) {
 			return 0, err
 		}
 		if _, err := sysAlloc("commit", base, size, windows.MEM_COMMIT, windows.PAGE_READWRITE); err != nil {
-			if cerr := sysFree(base); cerr != nil {
+			if cerr := sysFree(base, size+pageSize); cerr != nil {
 				lost(base, size+pageSize, err, cerr)
 			}
 			return 0, err
@@ -104,5 +106,5 @@ func osReserveStack(size uintptr) (uintptr, error) {
 }
 
 func osFreeStack(base, size uintptr) error {
-	return sysFree(base)
+	return sysFree(base, size+pageSize)
 }

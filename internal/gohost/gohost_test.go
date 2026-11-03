@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/liustack/slowjs/internal/faulttest"
 	"github.com/liustack/slowjs/internal/hostmem"
 )
 
@@ -93,8 +94,10 @@ func TestRegistry(t *testing.T) {
 	// right above a stack is, a fault that SetPanicOnFault makes a panic, as
 	// it is in the engine.
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
-	mustPanic(t, "ByStack outside every stack", func() { ByStack(base + size) })
-	mustPanic(t, "ByStack(0)", func() { ByStack(0) })
+	if !faulttest.Unsafe {
+		mustPanic(t, "ByStack outside every stack", func() { ByStack(base + size) })
+		mustPanic(t, "ByStack(0)", func() { ByStack(0) })
+	}
 
 	id := a.ID()
 	if err := a.Close(); err != nil {
@@ -103,7 +106,9 @@ func TestRegistry(t *testing.T) {
 	if Lookup(id) != nil {
 		t.Fatal("a closed VM is still found by its id")
 	}
-	mustPanic(t, "ByStack of a closed VM", func() { ByStack(base) })
+	if !faulttest.Unsafe {
+		mustPanic(t, "ByStack of a closed VM", func() { ByStack(base) })
+	}
 	if u := a.Memory().Usage(); u.Chunks != 0 || u.Footprint != 0 || u.Stack != 0 {
 		t.Fatalf("after Close the VM holds %+v", u)
 	}
@@ -428,6 +433,7 @@ func TestEnterPanicOnFault(t *testing.T) {
 // recovers while the engine runs. Without SetPanicOnFault the runtime prints
 // "unexpected fault address" and ends the process.
 func TestFaultInEngineIsAPanic(t *testing.T) {
+	faulttest.Skip(t)
 	v := newVM(t, small)
 	base, size := v.Stack()
 	guard := (*byte)(addr(base + size))

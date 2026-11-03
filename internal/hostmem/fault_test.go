@@ -9,7 +9,6 @@ package hostmem
 
 import (
 	"errors"
-	"runtime"
 	"slices"
 	"testing"
 )
@@ -92,9 +91,8 @@ func TestCloseCalls(t *testing.T) {
 		t.Fatalf("Close made %+v, want an unmap of each chunk and of the stack", *calls)
 	}
 	for _, c := range *calls {
-		// The guard page goes with the stack. windows frees the whole
-		// reservation, which takes no size.
-		if c.addr == base && runtime.GOOS != "windows" && c.size != size+pageSize {
+		// The guard page goes with the stack.
+		if c.addr == base && c.size != size+pageSize {
 			t.Fatalf("Close unmapped %d bytes of the stack, want %d with the guard page", c.size, size+pageSize)
 		}
 	}

@@ -214,7 +214,8 @@ func TestRunWritesOneRecordPerProcessAndResumes(t *testing.T) {
 	if rs[0].Metrics["Shop/p"] != 7.5 || rs[0].HWMKB != 4096 || rs[0].Kind != "run" {
 		t.Errorf("record = %+v", rs[0])
 	}
-	if f.dirs[0] != "/work" || !slices.Contains(f.envs[0], "A=1") {
+	// Run makes the folder absolute, which on windows adds the drive.
+	if work, _ := filepath.Abs("/work"); f.dirs[0] != work || !slices.Contains(f.envs[0], "A=1") {
 		t.Errorf("dir %q env %v", f.dirs[0], f.envs[0])
 	}
 	// A second call with 4 rounds runs only the last two.

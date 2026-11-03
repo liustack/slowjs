@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // fill writes a pattern that depends on the offset, so that memory that
@@ -522,7 +524,7 @@ func TestStackResidency(t *testing.T) {
 	touch(0, 1<<20)
 	touch(size/2, pageSize)
 	touch(size-pageSize, pageSize)
-	touched := int((1<<20)/pageSize + 2)
+	touched := int((1<<20)/pageSize) + 2*touchPages
 	if n := resident(t, base, size); n != touched {
 		t.Fatalf("%d pages resident, want the %d touched", n, touched)
 	}
@@ -582,6 +584,11 @@ func readable(addr, size uintptr) (ok bool) {
 	return true
 }
 
+// touchPages is how many pages a touch of one byte makes resident: more than
+// one where the kernel backs memory in pages larger than the process sees
+// (darwin/amd64 under Rosetta).
+var touchPages = 1
+
 // sink keeps the reads of readable from being optimized away.
 var sink byte
 
@@ -598,6 +605,9 @@ func TestStackLayout(t *testing.T) {
 			if at, other := faultAt(addr); at != 0 || other != nil {
 				t.Fatalf("writing the stack of %d bytes at %#x: fault at %#x, %v", size, addr, at, other)
 			}
+		}
+		if faulttest.Unsafe {
+			continue
 		}
 		for _, off := range []uintptr{0, pageSize - 1} {
 			at, other := faultAt(base + size + off)
@@ -631,15 +641,15 @@ func TestManyStacks(t *testing.T) {
 		}
 		k := resident(t, r.base, r.size)
 		total += k
-		if k > 1 {
+		if k > touchPages {
 			if more++; more <= 4 {
 				t.Logf("the stack at %#x has %d pages resident\n%s", r.base, k, mappingDetail(r.base))
 			}
 		}
 	}
 	t.Logf("%d stacks of %d MiB: %d pages of %d bytes resident", n, DefaultStackSize>>20, total, pageSize)
-	if total > n {
-		t.Fatalf("%d pages resident in %d stacks with more than one, want at most the %d touched\n%s", total, more, n, hugePageSettings())
+	if total > n*touchPages {
+		t.Fatalf("%d pages resident in %d stacks with more than %d, want at most the %d touched\n%s", total, more, touchPages, n*touchPages, hugePageSettings())
 	}
 }
 

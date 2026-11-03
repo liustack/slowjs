@@ -9,12 +9,15 @@ import (
 	"runtime/debug"
 	"testing"
 	"unsafe"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // On the C engine the bytes of a SharedBytecode are a read-only mapping that
 // every VM reads in place: a write to them faults, while VMs that loaded them
 // run.
 func TestSharedBytecodeReadOnly(t *testing.T) {
+	faulttest.Skip(t)
 	code := compileShared(t)
 	shared := newSharedBytecode(t, code)
 	defer shared.Close()

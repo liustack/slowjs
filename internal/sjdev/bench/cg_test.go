@@ -80,7 +80,7 @@ func TestCGOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	prog, env := ok.ValgrindCmd()
-	if prog != "/vg/usr/bin/valgrind" || env[0] != "VALGRIND_LIB=/vg/usr/libexec/valgrind" {
+	if prog != filepath.FromSlash("/vg/usr/bin/valgrind") || env[0] != "VALGRIND_LIB="+filepath.FromSlash("/vg/usr/libexec/valgrind") {
 		t.Errorf("%s %v", prog, env)
 	}
 	got := ok.CGArgs("/bin/x", "/o/x.cg", 12)

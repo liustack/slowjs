@@ -2,7 +2,7 @@
 # targets the engine runs on, plain and with the test hooks. (Any other target
 # is refused on purpose, see TestEngineUnsupportedTarget.)
 set -e
-targets="darwin/arm64 linux/amd64 linux/arm64"
+targets="darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64"
 out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 for tag in none testhooks

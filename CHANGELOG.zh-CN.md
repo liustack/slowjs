@@ -7,6 +7,8 @@
 ### 新增
 
 - 模块可以在 linux/arm64 上构建和运行，用的生成引擎和 darwin/arm64 是同一份。CI 在 `ubuntu-24.04-arm` 上跑测试。
+- 模块可以在 darwin/amd64 上构建和运行，用的生成引擎和 linux/amd64 是同一份。CI 在 `macos-15` 上用 Rosetta 跑测试。
+- 模块可以在 windows/amd64 上构建和运行，用的生成引擎和 linux/amd64 是同一份。CI 在 `windows-2025` 上跑测试。在 windows 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在变成 panic 之前，可能先踩坏进程的内存，带 AMX 的 Intel 这类 CPU 上会发生。这是 Go 运行时的 bug，见 golang/go#81238。
 
 ## [v0.29.8] - 2026-11-01
 

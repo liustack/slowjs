@@ -8,6 +8,8 @@ package hostmem
 import (
 	"bytes"
 	"testing"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // TestReadOnly: MapReadOnly holds a copy of the bytes, which can be read to
@@ -33,6 +35,9 @@ func TestReadOnly(t *testing.T) {
 			t.Fatalf("the mapping of %d bytes cannot be read to its end", n)
 		}
 		for _, addr := range []uintptr{p, p + size - 1} {
+			if faulttest.Unsafe {
+				break
+			}
 			if at, other := faultAt(addr); at != addr || other != nil {
 				t.Fatalf("writing the mapping of %d bytes at %#x: fault at %#x, %v, want a fault there", n, addr, at, other)
 			}

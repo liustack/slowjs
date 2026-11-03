@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // A panic or a Goexit that goes up through the engine's frames leaves the VM
@@ -72,6 +74,7 @@ func TestNestedClockPanicRecoveredBreaksVM(t *testing.T) {
 // call is given a shadow stack with nothing left, so its first call into the
 // engine faults on the guard page.
 func TestNestedFaultRecoveredBreaksVM(t *testing.T) {
+	faulttest.Skip(t)
 	m := newTestVM(t)
 	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
 		m := a.VM()

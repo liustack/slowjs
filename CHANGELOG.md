@@ -7,6 +7,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 ### Added
 
 - The module builds and runs on linux/arm64, with the same generated engine as darwin/arm64. CI runs the tests on `ubuntu-24.04-arm`.
+- The module builds and runs on darwin/amd64, with the same generated engine as linux/amd64. CI runs the tests under Rosetta on `macos-15`.
+- The module builds and runs on windows/amd64, with the same generated engine as linux/amd64. CI runs the tests on `windows-2025`. On windows a memory fault in the engine, which only a bug of the engine makes, may break the memory of the process before it becomes a panic, on CPUs such as Intel with AMX: a bug of the Go runtime, golang/go#81238.
 
 ## [v0.29.8] - 2026-11-01
 

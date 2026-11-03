@@ -30,7 +30,24 @@ jobs:
             os: ubuntu-24.04-arm
           - name: darwin/arm64
             os: macos-15
+          # amd64 binaries on the arm64 runner, which Rosetta runs
+          - name: darwin/amd64
+            os: macos-15
+            goarch: amd64
+          - name: windows/amd64
+            os: windows-2025
+    defaults:
+      run:
+        # Git Bash on windows.
+        shell: bash
+    env:
+      # Empty: the runner's own architecture.
+      GOARCH: ${{ matrix.goarch }}
     steps:
+      # Keep the line ends of the recorded outputs as they are.
+      - name: Keep line ends as they are
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
