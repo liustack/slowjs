@@ -1325,6 +1325,55 @@ static void test_copy_props_oom(void)
     sweep_register = NULL;
 }
 
+/* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
+   names, styles and end tags they keep, the string of the tag, the text of a
+   number, and room in target: with too little memory they fail with the out
+   of memory error, leave target as it was (the next run looks) and lose
+   nothing. */
+static void register_tags(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue s = JS_NewStartTagFunction(ctx, "startTag", 8);
+    JSValue e = JS_NewEndTagFunction(ctx, "endTag", 6);
+
+    CHECK(!JS_IsException(s) && !JS_IsException(e), "no function");
+    JS_SetPropertyStr(ctx, g, "startTag", s);
+    JS_SetPropertyStr(ctx, g, "endTag", e);
+    JS_FreeValue(ctx, g);
+}
+
+static void test_tags_oom(void)
+{
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null }, T = ['x'];\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    if (T.length !== 1 || T[0] !== 'x') return 'target changed';\n"
+        "    var p = { className: 'c' + i, ['data-' + i]: i, style: { marginTop: i, width: i + 0.5, ['--v' + i]: 'a&b' },\n"
+        "      children: 'text <' + i + (i % 2 ? '\\u0100' : '') };\n"
+        "    var r = startTag(T, p, 'div', fc, hop, d);\n"
+        "    var s = T.length === 2 ? T.pop() : '';\n"
+        "    if (r !== null) return 'returned ' + (r === d ? 'decline' : r);\n"
+        "    out.push(s, endTag('div'), endTag('s' + i));\n"
+        "  }\n"
+        "  return out.join('');\n"
+        "}\n";
+    static const char *const want[] = {
+        "<div class=\"c0\" data-0=\"0\" style=\"margin-top:0;width:0.5px;--v0:a&amp;b\">text &lt;0</div></s0>"
+        "<div class=\"c1\" data-1=\"1\" style=\"margin-top:1px;width:1.5px;--v1:a&amp;b\">text &lt;1\xc4\x80</div></s1>"
+        "<div class=\"c2\" data-2=\"2\" style=\"margin-top:2px;width:2.5px;--v2:a&amp;b\">text &lt;2</div></s2>"
+        "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3>"
+        "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4>"
+        "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5>",
+        NULL
+    };
+
+    sweep_register = register_tags;
+    sweep("startTag", "tags.js", setup, "run()", want, 16384);
+    sweep_register = NULL;
+}
+
 /* A script name in a regexp (\p{Script=...}, \p{Script_Extensions=...}) is
    turned into ranges of characters by unicode_script, which gives them back
    with an error when it runs out of memory. Its error path once jumped to
@@ -1590,6 +1639,7 @@ int main(void)
     test_key_names_oom();
     test_string_append_oom();
     test_copy_props_oom();
+    test_tags_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;

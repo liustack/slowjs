@@ -1,0 +1,3 @@
+6669 calls: all as React; startTag took 4384
+641 end tags: all as React
+ok

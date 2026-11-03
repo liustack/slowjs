@@ -46,9 +46,10 @@
    memoryBlocks() the blocks of the heap in use, heapChange(bytes, blocks)
    tells whether the heap holds the same blocks as when those two were read,
    and setGCThreshold(n) sets JS_SetGCThreshold, to its largest value when n is
-   negative (the engine then never collects by itself). copyProps is the
-   function of JS_NewCopyPropsFunction. Like a VM of the Go API, the context
-   keeps SHAPE_CACHE shapes (see JS_SetShapeCache). */
+   negative (the engine then never collects by itself). copyProps, startTag and
+   endTag are the functions of JS_NewCopyPropsFunction, JS_NewStartTagFunction
+   and JS_NewEndTagFunction. Like a VM of the Go API, the context keeps
+   SHAPE_CACHE shapes (see JS_SetShapeCache). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -237,7 +238,9 @@ static int define_globals(JSContext *ctx)
         JS_SetPropertyStr(ctx, global, "memoryBlocks", JS_NewCFunction(ctx, js_memory_blocks, "memoryBlocks", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "heapChange", JS_NewCFunction(ctx, js_heap_change, "heapChange", 2)) < 0 ||
         JS_SetPropertyStr(ctx, global, "setGCThreshold", JS_NewCFunction(ctx, js_set_gc_threshold, "setGCThreshold", 1)) < 0 ||
-        JS_SetPropertyStr(ctx, global, "copyProps", JS_NewCopyPropsFunction(ctx, "copyProps", 9)) < 0)
+        JS_SetPropertyStr(ctx, global, "copyProps", JS_NewCopyPropsFunction(ctx, "copyProps", 9)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "startTag", JS_NewStartTagFunction(ctx, "startTag", 8)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "endTag", JS_NewEndTagFunction(ctx, "endTag", 6)) < 0)
         ret = -1;
     JS_FreeValue(ctx, global);
     return ret;
