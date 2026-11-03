@@ -8,6 +8,7 @@ package bench
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"debug/elf"
 	"encoding/binary"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -78,9 +80,7 @@ var nops = [][]byte{
 
 // ReadLayout finds the interpreter fn (such as JS_CallInternal_block) in the
 // amd64 ELF binary, the first instruction of its body, and, with the opcode
-// names, the handler of each of HotOps from its jump table: the most common
-// target of a lea disp(%rip),%r11 in the function, 256 offsets of 4 bytes from
-// its own start.
+// names, the handler of each of HotOps from its jump table (see jumpTable).
 func ReadLayout(bin, fn string, names []string) (Layout, error) {
 	f, err := elf.Open(bin)
 	if err != nil {
@@ -118,21 +118,14 @@ func ReadLayout(bin, fn string, names []string) (Layout, error) {
 	if len(names) == 0 {
 		return l, nil
 	}
-	count := map[uint64]int{}
-	for i := 0; i+7 <= len(code); i++ {
-		if code[i] == 0x4c && code[i+1] == 0x8d && code[i+2] == 0x1d {
-			disp := int32(binary.LittleEndian.Uint32(code[i+3:]))
-			count[uint64(int64(s.Value)+int64(i)+7+int64(disp))]++
+	base, ok := jumpTable(s.Value, code, func(a uint64) []byte {
+		if a < text.Addr || a+256*4 > text.Addr+uint64(len(data)) {
+			return nil
 		}
-	}
-	var base uint64
-	for t, c := range count {
-		if c > count[base] || (c == count[base] && t < base) {
-			base = t
-		}
-	}
-	if base < text.Addr || base+256*4 > text.Addr+uint64(len(data)) {
-		return l, fmt.Errorf("%s: the jump table of %s is not in .text", bin, fn)
+		return at(a)[:256*4]
+	})
+	if !ok {
+		return l, fmt.Errorf("%s: no jump table of %s: no address that a lea relative to the instruction pointer loads holds 256 offsets into the function", bin, fn)
 	}
 	tb := at(base)
 	for _, op := range HotOps {
@@ -279,4 +272,49 @@ func bodyStart(addr uint64, code []byte) uint64 {
 		return 0
 	}
 	return off + uint64(skipNops(code[off:]))
+}
+
+// jumpTable finds the jump table of the interpreter whose code is at addr: 256
+// offsets of 4 bytes, each relative to the table, that all land in the
+// function. The dispatch loads the address of the table with a lea relative to
+// the instruction pointer, into whichever register the compiler chose, so every
+// such lea is a candidate: the table is the most common target that holds 256
+// offsets into the function. read gives the 1024 bytes at an address, or nil
+// when they are not all in the text.
+func jumpTable(addr uint64, code []byte, read func(a uint64) []byte) (uint64, bool) {
+	count := map[uint64]int{}
+	for i := 0; i+7 <= len(code); i++ {
+		// REX.W (any of R, X, B), opcode 8d, ModRM with mod 00 and r/m 101:
+		// lea disp32(%rip), reg
+		if code[i]&0xf8 == 0x48 && code[i+1] == 0x8d && code[i+2]&0xc7 == 0x05 {
+			disp := int32(binary.LittleEndian.Uint32(code[i+3:]))
+			count[uint64(int64(addr)+int64(i)+7+int64(disp))]++
+		}
+	}
+	targets := make([]uint64, 0, len(count))
+	for t := range count {
+		targets = append(targets, t)
+	}
+	slices.SortFunc(targets, func(a, b uint64) int {
+		if c := cmp.Compare(count[b], count[a]); c != 0 {
+			return c
+		}
+		return cmp.Compare(a, b)
+	})
+	end := addr + uint64(len(code))
+	for _, t := range targets {
+		tb := read(t)
+		if tb == nil {
+			continue
+		}
+		ok := true
+		for i := 0; i < 256 && ok; i++ {
+			h := uint64(int64(t) + int64(int32(binary.LittleEndian.Uint32(tb[i*4:]))))
+			ok = h >= addr && h < end
+		}
+		if ok {
+			return t, true
+		}
+	}
+	return 0, false
 }
