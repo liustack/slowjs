@@ -491,7 +491,11 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.8...main
+[v0.29.8]: https://github.com/liustack/slowjs/compare/v0.29.7...v0.29.8
+[v0.29.7]: https://github.com/liustack/slowjs/compare/v0.29.6...v0.29.7
+[v0.29.6]: https://github.com/liustack/slowjs/compare/v0.29.5...v0.29.6
+[v0.29.5]: https://github.com/liustack/slowjs/compare/v0.29.4...v0.29.5
 [v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2

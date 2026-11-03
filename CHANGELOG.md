@@ -491,7 +491,11 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.8...main
+[v0.29.8]: https://github.com/liustack/slowjs/compare/v0.29.7...v0.29.8
+[v0.29.7]: https://github.com/liustack/slowjs/compare/v0.29.6...v0.29.7
+[v0.29.6]: https://github.com/liustack/slowjs/compare/v0.29.5...v0.29.6
+[v0.29.5]: https://github.com/liustack/slowjs/compare/v0.29.4...v0.29.5
 [v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
