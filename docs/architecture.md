@@ -50,6 +50,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/gohost/` | The Go side of the engine's callbacks: VMs by id and by shadow stack, their memory on `internal/hostmem`, clocks, seed, interrupt and the engine's own `host_call` requests. Runs without the engine |
 | `internal/idtable/` | The table of ids that the engine passes back to Go |
 | `internal/unsupported/` | The error of a build for a target the engine does not run on |
+| `internal/faulttest/` | For the tests that make a memory fault on purpose: they skip it on windows, where it may break the memory of the process (see [c-engine.md](changes/c-engine.md#when-the-engine-fails)) |
 | `internal/sjdev/` | `go tool sjdev bench`: builds a program at several code positions, times them in turn and counts instructions |
 | `intl/` | Package `github.com/liustack/slowjs/intl`, `Intl` for a VM |
 | `internal/gointl/internal/qjspack/gen/` | The shared Intl data packs, selected with Chromium's ICU inventory |

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // fill writes a pattern that depends on the offset, so that memory that
@@ -603,6 +605,9 @@ func TestStackLayout(t *testing.T) {
 			if at, other := faultAt(addr); at != 0 || other != nil {
 				t.Fatalf("writing the stack of %d bytes at %#x: fault at %#x, %v", size, addr, at, other)
 			}
+		}
+		if faulttest.Unsafe {
+			continue
 		}
 		for _, off := range []uintptr{0, pageSize - 1} {
 			at, other := faultAt(base + size + off)
