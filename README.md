@@ -20,7 +20,7 @@ Go 1.27 or later. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and c
 
 ## Platforms
 
-linux/amd64, linux/arm64 and darwin/arm64. A build for any other target stops with an error that names these three.
+linux and darwin, on amd64 and arm64. A build for any other target stops with an error that names them.
 
 ## A first VM
 

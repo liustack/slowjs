@@ -7,6 +7,7 @@
 ### 新增
 
 - 模块可以在 linux/arm64 上构建和运行，用的生成引擎和 darwin/arm64 是同一份。CI 在 `ubuntu-24.04-arm` 上跑测试。
+- 模块可以在 darwin/amd64 上构建和运行，用的生成引擎和 linux/amd64 是同一份。CI 在 `macos-15` 上用 Rosetta 跑测试。
 
 ## [v0.29.8] - 2026-11-01
 

@@ -37,10 +37,18 @@ jobs:
             os: ubuntu-24.04-arm
           - name: darwin/arm64
             os: macos-15
+          # amd64 binaries on the arm64 runner, which Rosetta runs. The
+          # native C engine is built for the runner, so it is left out here.
+          - name: darwin/amd64
+            os: macos-15
+            goarch: amd64
+            no-native: true
     env:
       # The checks that need no LLVM. scripts/check.sh runs them and keeps a log
       # for each in .build/check-logs.
       CHECK_LOGS: ${{ github.workspace }}/.build/check-logs
+      # Empty: the runner's own architecture.
+      GOARCH: ${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@v7
       - name: Show the machine
@@ -65,6 +73,7 @@ jobs:
         run: CHECK_ONLY="root" scripts/check.sh full
 
       - name: Native C engine against the recorded outputs
+        if: ${{ !matrix.no-native }}
         run: CHECK_ONLY="host-plain compare-plain" scripts/check.sh fast
 
       - name: Keep the logs of the checks
