@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,6 +78,9 @@ func TestReleaseError(t *testing.T) {
 func TestSizeLog2BeforeLLVM(t *testing.T) {
 	dir := t.TempDir()
 	drv := filepath.Join(dir, "engine")
+	if runtime.GOOS == "windows" {
+		drv += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", drv, ".")
 	build.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
