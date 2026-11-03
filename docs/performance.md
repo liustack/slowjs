@@ -583,7 +583,7 @@ A round of the workbench pages dispatches 1.8% fewer opcodes: 12.6K `get_loc_che
 
 ### The optimizer over the linked module
 
-On amd64 the generator links the C files into one module and runs `opt -O2` over it (inline threshold 400, the SLP vectorizer off) before the shadow-stack pass ([README](../internal/goasm/gen/README.md#the-whole-engine)). clang had optimized each file alone, so the calls from one file to another (`memcpy`, `memset` and `memcmp` of the small libc, `tlsf_*` and `heap_*` into the allocator callers, `mark_children` in the collector) were never inlined. In native C the same second run saved 1.6% to 1.7% of the instructions of a page (0.8% on MUI). Against main (c5efd5d8), with the same HTML on the 16 pages, in the generated engine:
+On amd64 and arm64 the generator links the C files into one module and runs `opt -O2` over it (inline threshold 400, the SLP vectorizer off) before the shadow-stack pass ([README](../internal/goasm/gen/README.md#the-whole-engine)). clang had optimized each file alone, so the calls from one file to another (`memcpy`, `memset` and `memcmp` of the small libc, `tlsf_*` and `heap_*` into the allocator callers, `mark_children` in the collector) were never inlined. In native C the same second run saved 1.6% to 1.7% of the instructions of a page (0.8% on MUI). Against main (c5efd5d8), with the same HTML on the 16 pages, in the generated engine:
 
 | Pages | Instructions a render | Change |
 | --- | ---: | ---: |
@@ -607,7 +607,36 @@ A second set of 3 rounds of the shop and MUI pages gave 1.000 (positions 0.987 t
 
 The instructions fall by 0.6% to 1.2% on the pages of tifa and the time does not follow, as in native C, where only the React script got faster. On the shop and the store pages the saving is about a third smaller than in native C (MUI is not smaller: 0.93% against 0.77%). The poll pass counts more ticks in the module the second run makes (2,985 against 2,280, with 1,198 bounded loop edges against 749), which takes part of the saving back. Where the new ticks come from was not traced.
 
-What it costs: the generated assembly of amd64 is 13.3% larger (9.34 MB against 8.25 MB, 380,323 lines against 337,285, 25 files against 23), and the `.text` of llc's object 18.9% (1,942,196 bytes against 1,633,929). `JS_CallInternal` is 77,133 bytes against 77,165 and its frame does not change (496 bytes of Go frame, 392 of llc's, 1472 of shadow stack). `lre_exec_backtrack` is 1.5 KB larger (10,819 bytes to 12,365). 17 static functions are gone, inlined into every caller (`BC_add_object_ref`, `cr_add_interval`, `round_to_d`, `find_line_num` and others), and the static `mark_children` is three functions, `mark_children.specialized.2`, `.5` and `.7`, one for each function it marks with. With the SLP vectorizer on, the second run puts 52 lines of vector code into the IR of `JS_CallInternal` again (none without), the 16-byte moves of a JSValue that [EngineValueFlags](changes/c-engine.md#how-a-jsvalue-is-copied) keep out. An inline threshold of 1000 makes the interpreter bigger and its frame 32 bytes taller in native C: not used. arm64 is not changed.
+What it costs: the generated assembly of amd64 is 13.3% larger (9.34 MB against 8.25 MB, 380,323 lines against 337,285, 25 files against 23), and the `.text` of llc's object 18.9% (1,942,196 bytes against 1,633,929). `JS_CallInternal` is 77,133 bytes against 77,165 and its frame does not change (496 bytes of Go frame, 392 of llc's, 1472 of shadow stack). `lre_exec_backtrack` is 1.5 KB larger (10,819 bytes to 12,365). 17 static functions are gone, inlined into every caller (`BC_add_object_ref`, `cr_add_interval`, `round_to_d`, `find_line_num` and others), and the static `mark_children` is three functions, `mark_children.specialized.2`, `.5` and `.7`, one for each function it marks with. With the SLP vectorizer on, the second run puts 52 lines of vector code into the IR of `JS_CallInternal` again (none without), the 16-byte moves of a JSValue that [EngineValueFlags](changes/c-engine.md#how-a-jsvalue-is-copied) keep out. An inline threshold of 1000 makes the interpreter bigger and its frame 32 bytes taller in native C: not used. The section below has arm64.
+
+#### On arm64
+
+The same run is on for arm64 (`PostLinkOptFor`). The post-link check of the whole engine passes (`-verify-all`, 1335 functions and 1382 pointers of the read-only data), `JS_CallInternal_block` keeps its frame of 504 bytes, `make check-gen` passes for both architectures, and the tests of the root package and of `./internal/...` pass on darwin/arm64 and on linux/arm64.
+
+Instructions are from callgrind on linux/arm64 (Docker on a Mac with Apple silicon, a native arm64 kernel, valgrind 3.24), the counts of one render of each page of an app in a window the benchmark marks, 3 renders after 8 warm-up renders of each page, Go's collector in the count. Against main (84761bc7):
+
+| Pages | Instructions a render, main to new | Change |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | 714.03 M to 708.81 M | -0.73% |
+| the shop's store pages | 1,360.00 M to 1,346.60 M | -0.99% |
+| tifa's MUI test app, three pages | 588.19 M to 584.32 M | -0.66% |
+| tifa's bench app, two pages | 202.97 M to 201.84 M | -0.56% |
+
+The interpreter's own code does not change (-0.06% to +0.02%), as on amd64: the saving is in the calls between files. The HTML of the 16 pages of the shop, store, MUI and bench apps, rendered once by main and once by the branch, is the same byte for byte once the time stamps are masked, on darwin/arm64 and on linux/arm64. Two runs of one binary differ in these stamps alone: each page holds 3 or 4 values `u:` followed by the 13 digits of `Date.now()` (the update time that TanStack Router writes into its dehydrated state), 9 to 20 bytes in all, and the pattern `u:1[0-9]{12}` is replaced by `u:T` before the comparison.
+
+Time was measured on a Mac with an M4 (darwin/arm64) with no control of the code position, which sjdev has on amd64 only. 8 rounds, in each one every page ran 8 warm renders and then 20 timed ones, base and new in turn, the order swapped every round, `GOMAXPROCS=1`, the P50 of a page summed over the pages of an app. The ratio is new over base, the median of the 8 rounds, with the lowest and the highest:
+
+| Pages | Time, main to new (median of rounds) | Ratio | Rounds |
+| --- | ---: | ---: | --- |
+| shop | 60.58 ms to 60.13 ms | 0.989 | 0.929 to 1.002 |
+| store pages | 110.01 ms to 108.57 ms | 0.983 | 0.930 to 1.048 |
+| MUI | 53.84 ms to 53.19 ms | 0.988 | 0.979 to 1.174 |
+| bench | 10.53 ms to 10.47 ms | 0.982 | 0.950 to 1.003 |
+| all four | 234.62 ms to 232.20 ms | 0.987 | 0.968 to 1.015 |
+
+Base alone moves 8% to 16% from round to round on this machine, so the table shows only that no slowdown was seen: new was faster in 7 of 8 rounds of the sum. It does not show a gain of 1%.
+
+What it costs: the generated assembly of arm64 is 12.4% larger (9,225,487 bytes against 8,206,329, 477,900 lines against 421,744, 24 files against 23).
 
 ### Locals that share a slot
 

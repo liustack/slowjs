@@ -2,6 +2,12 @@
 
 What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
+## [Unreleased]
+
+### Performance
+
+- On linux/arm64 and darwin/arm64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, as it already is on amd64. A render runs 0.56% to 0.99% fewer instructions on the pages of tifa's example apps (linux/arm64), with the same HTML on the 16 pages once their time stamps are masked. On an M4 no slowdown was seen (the sum of the pages took 0.987 of main's time, the median of 8 rounds, with 8% to 16% of noise between rounds), and the generated assembly of arm64 is 12% larger ([Performance](docs/performance.md#on-arm64)).
+
 ## [v0.29.9] - 2026-11-03
 
 ### Added

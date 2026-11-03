@@ -222,27 +222,50 @@ func TestFaultsAmongVMs(t *testing.T) {
 // recovers, wherever the bottom of the goroutine's stack is. The runtime
 // pushes a call of sigpanic where the fault is, and sigpanic's stack check
 // may call morestack: the generator leaves room for both below every chain.
-// js_strdup measures the string with strlen, and both are on the list, so a
-// string that points at nothing faults in strlen with js_strdup above it. On
-// amd64 the optimizer that runs over the linked module inlines strlen into
-// js_strdup, and the fault is in js_strdup itself: either way the frames of
-// the engine from the fault up to the call of the test are all on the list.
-// One call shows the frames through runtime.Callers, then fresh goroutines make
-// the same call deeper in their stacks, by steps of 8 bytes over 12 KiB, each
-// on a VM of its own.
+//
+// Each case names the chain of engine functions, from the fault up to the
+// call of the test, that the fault must show in runtime.Callers, and every
+// function of it is on the list. The optimizer that runs over the linked
+// module inlines small functions of one file into another, so a chain can be
+// shorter than the C reads: js_strdup measures the string with strlen, and
+// strlen is inlined into js_strdup on both architectures, so that fault is in
+// js_strdup alone (one frame). goasm_chunked_memcpy calls memcpy for each
+// chunk, and neither is inlined into the other on either architecture: a
+// source that points at nothing faults in memcpy with goasm_chunked_memcpy
+// above it, two frames without a stack check one on the other.
+// One call shows the frames, then fresh goroutines make the same call deeper
+// in their stacks, by steps of 8 bytes over 12 KiB, each on a VM of its own.
 func TestFaultNoSplit(t *testing.T) {
 	faulttest.Skip(t)
 	const wild = 0xdead0000
+	t.Run("js_strdup", func(t *testing.T) {
+		noSplitFault(t, "a read through the string", wild, wild+1, "js_strdup",
+			func(v *VM) func() { return func() { js_strdup(v.sp, v.ctx, wild) } })
+	})
+	t.Run("goasm_chunked_memcpy", func(t *testing.T) {
+		noSplitFault(t, "a copy from nothing", wild, wild+64, "memcpy goasm_chunked_memcpy",
+			func(v *VM) func() {
+				base, _ := v.Host().Stack()
+				return func() { goasm_chunked_memcpy(v.sp, base, wild, 64) }
+			})
+	})
+}
+
+// noSplitFault runs read on a VM, requires a fault in [lo, hi), and requires
+// the functions of the engine from the fault up, as long as they are on the
+// list, to be exactly chain. Then fresh goroutines make the call deeper in
+// their stacks.
+func noSplitFault(t *testing.T, what string, lo, hi uintptr, chain string, read func(v *VM) func()) {
+	t.Helper()
 	on := map[string]bool{}
 	for _, n := range strings.Fields(noSplitList) {
 		on[n] = true
 	}
-	for _, n := range []string{"js_strdup", "strlen"} {
+	for _, n := range strings.Fields(chain) {
 		if !on[n] {
 			t.Fatalf("%s is not on the NOSPLIT list: the test needs another chain", n)
 		}
 	}
-	read := func(v *VM) func() { return func() { js_strdup(v.sp, v.ctx, wild) } }
 
 	v := newVM(t, Options{Seed: 1})
 	var frames []string
@@ -260,23 +283,24 @@ func TestFaultNoSplit(t *testing.T) {
 		v.enter(read(v))
 		return nil
 	}()
-	wantFault(t, got, "a read through the string", wild, wild+1)
+	wantFault(t, got, what, lo, hi)
 	at := slices.Index(frames, "runtime.sigpanic")
 	if at < 0 || at+2 >= len(frames) {
 		t.Fatalf("no frames of the engine below sigpanic: %v", frames)
 	}
 	const pkg = "github.com/liustack/slowjs/internal/cengine."
-	var chain []string // the functions of the engine from the fault up, as long as they are on the list
+	var have []string // the functions of the engine from the fault up, as long as they are on the list
 	for _, f := range frames[at+1:] {
 		name, ok := strings.CutPrefix(f, pkg)
 		if !ok || !on[name] {
 			break
 		}
-		chain = append(chain, name)
+		have = append(have, name)
 	}
-	if c := strings.Join(chain, " "); c != "js_strdup" && c != "strlen js_strdup" {
-		t.Fatalf("the functions on the list from the fault up are %q, want js_strdup or strlen js_strdup: %v", c, frames)
+	if c := strings.Join(have, " "); c != chain {
+		t.Fatalf("the functions on the list from the fault up are %q, want %q: %v", c, chain, frames)
 	}
+	t.Logf("%s/%s: chain %q", runtime.GOOS, runtime.GOARCH, chain)
 	brokenAfter(t, v, "a fault in a NOSPLIT chain")
 
 	depths := map[uintptr]bool{}
@@ -295,22 +319,22 @@ func TestFaultNoSplit(t *testing.T) {
 				res <- r
 			}()
 			r := <-res
-			wantFault(t, r.got, fmt.Sprintf("a read %d bytes down the stack", r.depth), wild, wild+1)
+			wantFault(t, r.got, fmt.Sprintf("%s %d bytes down the stack", what, r.depth), lo, hi)
 			if _, err := v.Close(); err != nil {
 				t.Fatal(err)
 			}
 			depths[r.depth] = true
 		}
 	}
-	lo := slices.Min(slices.Collect(maps.Keys(depths)))
-	hi := lo
-	for depths[hi+8] {
-		hi += 8
+	top := slices.Min(slices.Collect(maps.Keys(depths)))
+	bottom := top
+	for depths[bottom+8] {
+		bottom += 8
 	}
-	if hi-lo < 8<<10 {
-		t.Fatalf("the calls start at every 8 bytes from %d to %d down the stack only", lo, hi)
+	if bottom-top < 8<<10 {
+		t.Fatalf("the calls start at every 8 bytes from %d to %d down the stack only", top, bottom)
 	}
-	t.Logf("%d faults, from %d to %d bytes down the stack", len(depths), lo, hi)
+	t.Logf("%d faults, from %d to %d bytes down the stack", len(depths), top, bottom)
 }
 
 // noSplitDive recurses n times and then calls f through the pad k picks,
