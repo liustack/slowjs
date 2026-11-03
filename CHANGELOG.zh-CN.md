@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `VM.RegisterStartTag(name)` 和 `VM.RegisterEndTag(name)` 在全局对象上定义两个函数，一个像 React DOM 服务端渲染器（react-dom 19.3）的 `pushStartGenericElement` 那样写出元素的开标签，连同属性、样式和字符串 children 转义后的文本，一个像 `endChunkForTag` 那样给出闭标签，在引擎里用 C 写成。开标签函数接 `pushStartGenericElement` 的参数、React 的 `hasOwnProperty` 和调用方的一个 `decline` 对象。它把整个标签作为一个字符串推进 target，返回 React 那个函数返回的值。React 的函数可能写出别的东西的地方（getter、被换掉的内建函数、`dangerouslySetInnerHTML`、少见的属性、自带 `toString` 的值、`javascript:` 链接，以及文档里列的其他情况），它返回 `decline`，什么都不改，脚本再跑 React 的函数。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这两个函数。在 tifa 示例页面一次渲染的 16,310 个开标签上，它们一个都没退回，写出的文本相同，一对开闭标签跑的指令约是 React 那几个函数的五分之一。（[性能](docs/performance.md#react-doms-start-and-end-tags-in-c)，[Go API](docs/changes/go-api.md#registerstarttag-and-registerendtag)）
+
 ### 性能
 
 - linux/arm64 和 darwin/arm64 上的生成引擎，也像 amd64 一样，是在 C 文件链接之后，再让优化器跑第二遍得到的。tifa 示例应用的页面，每次渲染少跑 0.56% 到 0.99% 的指令（linux/arm64），16 个页面遮掉时间戳之后 HTML 逐字节相同。在 M4 上没有观察到变慢（页面总和是 main 的 0.987 倍，8 轮的中位数，轮与轮之间有 8% 到 16% 的噪声），arm64 的生成汇编大了 12%（[性能](docs/performance.md#on-arm64)）。

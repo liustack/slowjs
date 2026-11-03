@@ -92,6 +92,7 @@ go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and t
 go test -run 'YoungGC|Ephemeron' .                       # the young collection and WeakMap ephemerons
 go test -run 'CopyProps' .                                # RegisterCopyProps: the loop that copies the props of a React element in C against React's loops (147 configs, 6,000 random ones), the property it defines
 go test -run 'EscapeText' .                               # RegisterEscapeText: React DOM's escape in C against React's own text, the property it defines, the timeout on a long string, a string too long
+go test -run 'StartTag|RegisterTags|TagsAcross|TagsStop' .  # RegisterStartTag and RegisterEndTag: React DOM's start and end tags in C against React's functions (136 listed calls, 4,000 random ones), the properties they define, the timeout on long strings, a tag too long
 go test -run 'SharedBytecode' .                          # one copy of source text and line tables for every VM, polls scanned on the first load only
 go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive

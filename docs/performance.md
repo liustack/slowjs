@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, what the optimizer run over the linked module gained and cost, what locals that share a slot of the frame gained and cost, what JSON.parse gained by reading keys and plain strings from the text, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
+summary: 'How much faster each release of slowjs renders pages, how much faster slowjs is than the engine it started from, how to measure an engine change in tifa and across code positions, where the C engine puts its hot loops and what its latest changes did to its speed, what the C engine's string appends gained, what ordinary objects of 48 bytes gained and cost, what object literals made at their final shape gained and cost, what React DOM's HTML escape written in C gained, what the loop that copies the props of a React element written in C gained, what React DOM's start and end tags written in C gain, what calls that set and free their values in fewer turns, what an end of a call that skips the values with no reference count and a start that sets eight locals to a turn gained, what dropping the checks of the temporal dead zone that cannot fail gained, what the optimizer run over the linked module gained and cost, what locals that share a slot of the frame gained and cost, what JSON.parse gained by reading keys and plain strings from the text, for in loops that hold their shape and hasOwnProperty.call answered in the interpreter gained, what a new VM and the load of a bundle cost, how fast and how large tifa's pages are on the C engine against the ccgo engine and what tifa's wiring gained, what the C engine had to pass before the switch and how it did, what the native C patch costs, what the generated code costs against native C and where a render's time goes on the C engine, which engine ideas were tried and dropped and why, and where to continue, and how the C engine holds up under load (a soak, several VMs, Go GC pauses, Interrupt and the kill)'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of slowjs on tifa's pages before a release
@@ -8,6 +8,7 @@ read_when:
   - Planning the next round of work on render speed
   - Asking what RegisterEscapeText gains in tifa's pages, or what a cache in front of it would give
   - Asking what RegisterCopyProps gains in tifa's pages, or whether a check in JavaScript in front of a spread would do
+  - Asking what RegisterStartTag and RegisterEndTag gain on the start and end tags of tifa's pages
   - Quoting how fast a release is
   - Checking that the C engine stays flat, scales over VMs, stops soon after Interrupt and holds the GC up for no longer than the ccgo engine
   - Checking what the C engine had to pass before it replaced the ccgo engine, and what it measured then
@@ -533,6 +534,32 @@ One call, from `BenchmarkCopyProps` (ns for one `createElement` or `cloneElement
 React's loop takes about 200 ns for each key in these runs ((2,545 - 580) / 10 for `createElement`), and the function about 16 ns for each key it adds ((716 - 556) / 10). The call with its checks of the config, `Object.prototype`, `hasOwnProperty` and `call` costs less than the setup of the empty `for in` it replaces. On the Apple M4 the ratios are the same: 0.96 for no keys, 0.75 for one key, 0.50 for 3 keys and 0.24 for 10 keys, against React's `createElement`.
 
 A check in JavaScript in front of one spread was measured first, as the step before this one (see [What was tried and not done](#what-was-tried-and-not-done)).
+
+### React DOM's start and end tags in C
+
+[`VM.RegisterStartTag` and `VM.RegisterEndTag`](changes/go-api.md#registerstarttag-and-registerendtag) give a host React DOM's `pushStartGenericElement` (with `pushAttribute`, `pushStyleAttribute` and the escape they call) and `endChunkForTag` as C functions of the engine. They are measured on the calls a render makes, recorded and played back, since tifa's wiring is not part of this change.
+
+The calls were recorded from one render of the pages of tifa's example apps on the native test host, with a wrapper around `pushStartGenericElement` in the bundle that saved its arguments: 9,682 calls on 16 pages of the shop (14 storefront pages and 2 workbench pages), 1,227 on the three MUI pages and 5,401 on the two bench pages. A Go program plays them back in their order on one warm VM, three ways: React's functions as the bundle has them (`js`), the C start tag with the C end tag (`c`), and a loop that only makes the arguments and calls an empty function (`loop`). Every call gives the same text as React's functions, and none declines.
+
+Instructions are callgrind's on linux/amd64, of the functions of the engine only (the Go runtime left out), for one element, a start tag and its end tag:
+
+| Pages | loop | js | c | js net of loop / c net of loop |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, storefront and workbench | 994 | 19,393 | 4,759 | 4.89 |
+| tifa's MUI test app | 994 | 18,024 | 4,325 | 5.11 |
+| tifa's bench app | 993 | 15,254 | 3,758 | 5.16 |
+
+Time on the Apple M4 (darwin/arm64, ns for one element, the median of 21 rounds):
+
+| Pages | loop | js | c | js net of loop / c net of loop |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, storefront and workbench | 32.4 | 953.1 | 221.0 | 4.89 |
+| tifa's MUI test app | 32.9 | 874.5 | 197.3 | 5.11 |
+| tifa's bench app | 32.2 | 702.5 | 161.1 | 5.20 |
+
+The C functions take about a fifth of the instructions and the time of React's. Of the instructions of `c`, the escape of the text and the attributes takes about 800, and the checks that the target, `hasOwnProperty`, `call` and `Array.prototype.push` are the built-in ones about 100. The end tags of the playback are strings that `JSON.parse` made anew for each call, so the end tag function makes each one (about 250 instructions). In a render the tag is the string of the JSX, the same for every element of that tag, and the end tag is found in the cache.
+
+A profile of the render on linux/amd64 puts the share of the time spent in these React functions at 10.4% on the workbench pages, 9.7% on the storefront pages, 4.3% on the MUI pages and 29.4% on the bench pages, so a render that uses both functions should take about 8%, 8%, 3.5% and 24% less time. tifa measures what it gains once it wires the functions in.
 
 ### Object literals that share their shape
 
