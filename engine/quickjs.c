@@ -8640,6 +8640,38 @@ static void free_zero_refcount(JSRuntime *rt)
     js_nest_leave(rt, JS_NEST_FREE);
 }
 
+/* Free the object p, whose count reached zero in the phase
+   JS_GC_PHASE_NONE, then the objects that died with it. It does for p what
+   free_zero_refcount does for the object at the front of
+   gc_zero_ref_count_list, without the loop over the list. p goes to the
+   front of the list first, as there, so that it is on no list a walk of
+   the objects of the collector reads while it is freed, such as
+   JS_ComputeMemoryUsage called by a finalizer, which would find p with its
+   shape gone. Its mark says it is about to be freed, so that
+   js_weakref_free leaves its block alone meanwhile. The objects that die
+   while p is freed join the front of the list ahead of p, as there, and
+   free_object takes p off it, so the order is the same. No call the
+   engine makes while p is freed starts a collection (engine/test/cycles.sh).
+   It calls free_object, not free_gc_object, and free_zero_refcount only
+   when something died with p: free_gc_object and free_zero_refcount keep
+   the callers they had, so that the compiler inlines into the interpreter
+   what it did before. */
+static void free_zero_refcount_first(JSRuntime *rt, JSObject *p)
+{
+    assert(js_rc(p)->ref_count == 0);
+    list_del(&p->header.link);
+    list_add(&p->header.link, &rt->gc_zero_ref_count_list);
+    js_rc(p)->mark = 1;
+    js_nest_enter(rt, JS_NEST_FREE, 1);
+    rt->gc_phase = JS_GC_PHASE_DECREF;
+    free_object(rt, p);
+    rt->gc_phase = JS_GC_PHASE_NONE;
+    js_nest_leave(rt, JS_NEST_FREE);
+    if (!list_empty(&rt->gc_zero_ref_count_list))
+        free_zero_refcount(rt);
+}
+
+
 /* Free a string whose ref_count reached zero. */
 static void js_free_string_rt(JSRuntime *rt, JSString *p)
 {
@@ -8733,7 +8765,11 @@ void __JS_FreeValueRT(JSRuntime *rt, JSValue v)
     case JS_TAG_MODULE:
         {
             JSGCObjectHeader *p = JS_VALUE_GET_PTR(v);
-            if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
+            if (rt->gc_phase == JS_GC_PHASE_NONE &&
+                js_rc(p)->gc_obj_type == JS_GC_OBJ_TYPE_JS_OBJECT) {
+                /* nothing is being freed: free the object at once */
+                free_zero_refcount_first(rt, (JSObject *)p);
+            } else if (rt->gc_phase != JS_GC_PHASE_REMOVE_CYCLES) {
                 list_del(&p->link);
                 list_add(&p->link, &rt->gc_zero_ref_count_list);
                 js_rc(p)->mark = 1; /* indicate that the object is about to be freed */

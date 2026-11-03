@@ -59,10 +59,13 @@ var noReach = []pair{
 	// start a collection.
 	{"JS_RunGC", "JS_ThrowError2"},
 	{"JS_RunYoungGC", "JS_ThrowError2"},
-	// Freeing starts no collection: free_zero_refcount is never entered
-	// twice (JS_NEST_FREE). The finalizers of the host are not in the graph.
+	// Freeing starts no collection: free_zero_refcount and
+	// free_zero_refcount_first are never entered twice (JS_NEST_FREE). The
+	// finalizers of the host are not in the graph.
 	{"free_zero_refcount", "JS_RunGC"},
 	{"free_zero_refcount", "JS_RunYoungGC"},
+	{"free_zero_refcount_first", "JS_RunGC"},
+	{"free_zero_refcount_first", "JS_RunYoungGC"},
 }
 
 const name = `("[^"]+"|[-\w.$]+)`

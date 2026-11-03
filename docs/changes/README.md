@@ -161,6 +161,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A shared shape that cannot be copied fails the call | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shared-shape-that-cannot-be-copied-fails-the-call) |
 | Objects of the built-in classes find the empty shape of their prototype | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
 | A shape is found by the shape it grew from | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
+| An object that dies alone is freed at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
 
 ## Memory
 

@@ -2202,6 +2202,161 @@ static void test_free_nesting(void)
     host_free_runtime(rt);
 }
 
+static int memory_finalized;
+
+static void memory_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSMemoryUsage u;
+
+    (void)val;
+    JS_ComputeMemoryUsage(rt, &u);
+    memory_finalized++;
+}
+
+/* A finalizer of the host may count the memory of the runtime while its
+   object is freed: JS_ComputeMemoryUsage walks the objects of the
+   collector, and the object being freed, which has let go of its shape
+   already, is not among them. An object freed while it is young, and one
+   freed after a collection made it old. */
+static void test_finalizer_memory_usage(void)
+{
+    static const JSClassDef def = {
+        "MemoryUsage", .finalizer = memory_finalizer,
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSClassID class_id = 0;
+    JSValue obj;
+
+    JS_NewClassID(rt, &class_id);
+    CHECK(JS_NewClass(rt, class_id, &def) == 0, "the class");
+    memory_finalized = 0;
+    obj = JS_NewObjectClass(ctx, class_id);
+    CHECK(JS_IsObject(obj), "the young object");
+    JS_FreeValue(ctx, obj);
+    CHECK(memory_finalized == 1, "the young object: %d finalizers ran",
+          memory_finalized);
+    obj = JS_NewObjectClass(ctx, class_id);
+    CHECK(JS_IsObject(obj), "the old object");
+    JS_RunGC(rt);
+    JS_FreeValue(ctx, obj);
+    CHECK(memory_finalized == 2, "the old object: %d finalizers ran",
+          memory_finalized);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The objects of free_node_class say when they are freed: their finalizer
+   writes their number into free_order, then lets go of the value it holds,
+   which can free more. */
+typedef struct {
+    int id;
+    JSValue held;
+} FreeNode;
+
+static JSClassID free_node_class;
+static char free_order[1024];
+
+static void free_node_finalizer(JSRuntime *rt, JSValue val)
+{
+    FreeNode *n = JS_GetOpaque(val, free_node_class);
+    size_t len = strlen(free_order);
+
+    snprintf(free_order + len, sizeof(free_order) - len, "%d ", n->id);
+    JS_FreeValueRT(rt, n->held);
+    free(n);
+}
+
+static void free_node_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
+{
+    FreeNode *n = JS_GetOpaque(val, free_node_class);
+
+    JS_MarkValue(rt, n->held, mark_func);
+}
+
+/* node(id, held): an object of free_node_class that holds held */
+static JSValue free_node_new(JSContext *ctx, JSValueConst this_val, int argc,
+                             JSValueConst *argv)
+{
+    JSValue obj;
+    FreeNode *n;
+    int id;
+
+    (void)this_val;
+    if (JS_ToInt32(ctx, &id, argv[0]))
+        return JS_EXCEPTION;
+    obj = JS_NewObjectClass(ctx, free_node_class);
+    if (JS_IsException(obj))
+        return obj;
+    n = malloc(sizeof(*n));
+    n->id = id;
+    n->held = argc > 1 ? JS_DupValue(ctx, argv[1]) : JS_UNDEFINED;
+    JS_SetOpaque(obj, n);
+    return obj;
+}
+
+/* The order in which the objects that lose their last reference are freed:
+   a tree whose properties, arrays, closures, Maps, Sets and finalizers hold
+   more objects, some of them watched by a WeakRef or a FinalizationRegistry,
+   dropped at once, after which the WeakRef finds its target gone and the
+   callback of the FinalizationRegistry gets its value once a collection
+   and the jobs ran,
+   then a cycle freed by the collection and one freed by the young
+   collection. The orders were recorded on the engine before the first
+   object to die was freed outside the loop of free_zero_refcount
+   (docs/changes/objects-and-shapes.md), and it passes this test. */
+static void test_free_order(void)
+{
+    static const JSClassDef def = {
+        "FreeNode", .finalizer = free_node_finalizer, .gc_mark = free_node_mark,
+    };
+    static const char tree[] =
+        "var t = node(1, [node(2), { a: node(3), b: [node(4), node(5)] }]);\n"
+        "t.x = node(6, node(7));\n"
+        "t.f = (() => { const c = node(8); return () => c })();\n"
+        "t.m = new Map([[node(9), node(10)], ['k', node(11)]]);\n"
+        "t.s = new Set([node(12), node(13)]);\n"
+        "var w = new WeakRef(t.x);\n"
+        "var got = [], fr = new FinalizationRegistry((h) => got.push(h)); fr.register(t.s, 's');\n"
+        "var chain = node(20); for (let i = 21; i < 25; i++) chain = node(i, { c: chain, n: node(100 + i) });\n"
+        "t.chain = chain; chain = null;\n"
+        "t.o = { p: { q: node(30) }, r: node(31) };\n"
+        "void 0";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue global;
+
+    JS_NewClassID(rt, &free_node_class);
+    CHECK(JS_NewClass(rt, free_node_class, &def) == 0, "the class");
+    global = JS_GetGlobalObject(ctx);
+    CHECK(JS_SetPropertyStr(ctx, global, "node",
+                            JS_NewCFunction(ctx, free_node_new, "node", 2)) >= 0, "node");
+    JS_FreeValue(ctx, global);
+
+    CHECK(eval(ctx, tree), "the tree");
+    free_order[0] = '\0';
+    CHECK(eval(ctx, "t = null; void 0"), "the drop");
+    CHECK(strcmp(free_order, "1 5 4 3 2 31 30 24 124 23 123 22 122 21 121 20 13 12 11 10 9 8 6 7 ") == 0, "the tree: %s", free_order);
+    CHECK(eval_is(ctx, "String(w.deref()) + ' ' + got.length", "undefined 0"), "the WeakRef after the drop");
+    /* a collection queues the callbacks of the FinalizationRegistry */
+    JS_RunGC(rt);
+    CHECK(run_jobs(rt), "jobs");
+    CHECK(eval_is(ctx, "got.join()", "s"), "the FinalizationRegistry after the drop");
+
+    free_order[0] = '\0';
+    CHECK(eval(ctx, "var cy = node(40); cy.self = cy; cy.k = node(41, { a: node(42) }); cy.l = [cy, node(43)]; cy = null; void 0"), "the cycle");
+    JS_RunGC(rt);
+    CHECK(strcmp(free_order, "42 41 40 43 ") == 0, "the cycle: %s", free_order);
+
+    free_order[0] = '\0';
+    CHECK(eval(ctx, "var yc = node(50); yc.self = [yc, node(51), { b: node(52) }]; yc = null; void 0"), "the young cycle");
+    JS_RunYoungGC(rt);
+    CHECK(strcmp(free_order, "50 51 52 ") == 0, "the young cycle: %s", free_order);
+    CHECK(run_jobs(rt), "jobs");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 static uint64_t fnv_word(uint64_t h, uint32_t v)
 {
     int i;
@@ -3520,6 +3675,8 @@ int main(void)
     host_run_thread(test_module_retry, NULL);
     test_ropes();
     test_free_nesting();
+    test_free_order();
+    test_finalizer_memory_usage();
     test_unicode_tables();
     test_class_strings();
     test_closure_lookup_fail();

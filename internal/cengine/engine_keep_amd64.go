@@ -722,7 +722,6 @@ var goasmKeep = []any{
 	js_free_desc,
 	js_free_function_def,
 	js_free_module_def,
-	js_free_modules,
 	js_free_rt,
 	js_free_shape0,
 	js_free_string,
