@@ -34,6 +34,7 @@ uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
 int white_atom_refs(JSContext *ctx, const char *s);
+int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
 int white_stack_pending(JSContext *ctx, JSValueConst obj);
 int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
@@ -3670,6 +3671,74 @@ static const char *const compile_module_scripts[] = {
    set any call of js_malloc_rt or js_realloc_rt, small blocks too (what every
    block failing alone looks like, as it does in the builds that take each
    block from the system malloc). */
+/* startTag and endTag keep how they write each attribute name, style name and
+   end tag in tables of the context that are made at their first entry and
+   grow, so that a name a page uses is made once and stays: two names never
+   take each other's place. The tables are emptied only when they would pass
+   512 names or 256 end tags. */
+static void emit_tables(VM *v, int size[3], int count[3])
+{
+    int r = white_emit_tables(v->ctx, size, count);
+
+    CHECK(r == 0, "the tables of the tags are not as made (%d)", r);
+}
+
+static void test_emit_tables(void)
+{
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null };\n"
+        "function names(from, n) {\n"
+        "  for (var i = from; i < from + n; i++) {\n"
+        "    var p = { ['data-n' + i]: i, style: { ['w' + i]: i } }, t = [];\n"
+        "    if (startTag(t, p, 'div', fc, hop, d) !== null || t[0] !== '<div data-n' + i + '=\"' + i + '\" style=\"w' + i + ':' + i + (i ? 'px' : '') + '\">')\n"
+        "      throw new Error('wrote ' + t[0]);\n"
+        "  }\n"
+        "}\n"
+        "var tags = [];\n"
+        "for (var i = 0; i < 300; i++) tags.push('t' + i);\n"
+        "function ends(from, n) {\n"
+        "  for (var i = from; i < from + n; i++)\n"
+        "    if (endTag(tags[i]) !== '</t' + i + '>') throw new Error('end ' + i);\n"
+        "}\n";
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    int size[3], count[3];
+
+    JS_SetPropertyStr(v.ctx, g, "startTag", JS_NewStartTagFunction(v.ctx, "startTag", 8));
+    JS_SetPropertyStr(v.ctx, g, "endTag", JS_NewEndTagFunction(v.ctx, "endTag", 6));
+    JS_FreeValue(v.ctx, g);
+    /* nothing is made before the first call */
+    emit_tables(&v, size, count);
+    CHECK(size[0] == 0 && size[1] == 0 && size[2] == 0, "tables of %d, %d and %d before a call", size[0], size[1], size[2]);
+    CHECK(eval_ok(v.ctx, setup), "the setup failed");
+    CHECK(eval_ok(v.ctx, "names(0, 1); 0"), "names failed");
+    emit_tables(&v, size, count);
+    /* data-n0 and style, and w0 */
+    CHECK(size[0] == 16 && count[0] == 2 && size[1] == 16 && count[1] == 1 && size[2] == 0,
+          "after one call: %d of %d names, %d of %d styles, %d end tags", count[0], size[0], count[1], size[1], size[2]);
+    /* 200 names and 100 end tags, twice: the second time makes nothing */
+    CHECK(eval_ok(v.ctx, "names(1, 199); ends(0, 100); 0"), "names failed");
+    emit_tables(&v, size, count);
+    CHECK(size[0] == 512 && count[0] == 201 && size[1] == 512 && count[1] == 200 && size[2] == 256 && count[2] == 100,
+          "after 200 names: %d of %d names, %d of %d styles, %d of %d end tags",
+          count[0], size[0], count[1], size[1], count[2], size[2]);
+    CHECK(eval_ok(v.ctx, "names(0, 200); ends(0, 100); 0"), "names failed");
+    emit_tables(&v, size, count);
+    CHECK(count[0] == 201 && count[1] == 200 && count[2] == 100,
+          "the same names again: %d names, %d styles, %d end tags", count[0], count[1], count[2]);
+    /* past 256 names (half of 512) a table is emptied and fills again, with
+       style again, and the end tags past 128 */
+    CHECK(eval_ok(v.ctx, "names(200, 100); ends(100, 200); 0"), "names failed");
+    emit_tables(&v, size, count);
+    CHECK(size[0] == 512 && count[0] == 301 - 256 + 1 && size[1] == 512 && count[1] == 300 - 256 &&
+          size[2] == 256 && count[2] == 300 - 2 * 128,
+          "past the most: %d of %d names, %d of %d styles, %d of %d end tags",
+          count[0], size[0], count[1], size[1], count[2], size[2]);
+    CHECK(eval_ok(v.ctx, "names(0, 300); ends(0, 300); 0"), "names failed after the tables were emptied");
+    emit_tables(&v, size, count);
+    vm_free(&v);
+}
+
 static void test_compile_one_failure(int calls)
 {
     static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
@@ -3797,6 +3866,7 @@ int main(void)
     test_regexp_split_budget();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
+    test_emit_tables();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

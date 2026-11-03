@@ -225,3 +225,62 @@ func TestStartTagTooLong(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// Registering the functions makes next to nothing: the tables of the names
+// and end tags they keep are made at the first call that needs them, and grow
+// with the names a page uses.
+func TestTagsMemory(t *testing.T) {
+	m := newTestVM(t)
+	before := m.MemorySize()
+	if err := m.RegisterStartTag("st"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterEndTag("et"); err != nil {
+		t.Fatal(err)
+	}
+	if grew := m.MemorySize() - before; grew > 4096 {
+		t.Errorf("registering took %d bytes, want at most 4096", grew)
+	}
+}
+
+// The tables the functions make and grow count against the memory limit: a
+// VM that runs out of memory in a call reports it as out of memory,
+// uncatchable, with target unchanged, and the calls work once the limit is
+// raised.
+func TestTagsMemoryLimit(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterStartTag("st"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterEndTag("et"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Eval(`
+	  var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null }, T = ['x'];
+	  var P = [], E = [];
+	  for (var i = 0; i < 250; i++) { P.push({ ['data-n' + i]: 'v', style: { ['w' + i]: 1 } }); E.push('t' + i) }
+	  function run() {
+	    for (var i = 0; i < P.length; i++) {
+	      if (T.length !== 1) throw new Error('target changed');
+	      st(T, P[i], 'div', fc, hop, d);
+	      if (T.pop() !== '<div data-n' + i + '="v" style="w' + i + ':1px">') throw new Error('wrote ' + i);
+	      if (et(E[i]) !== '</t' + i + '>') throw new Error('end ' + i);
+	    }
+	    return P.length;
+	  }`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.SetMemoryLimit(m.MemorySize() + 4096)
+	_, err := m.Eval(`run()`, EvalGlobal)
+	var e *Error
+	if !errors.As(err, &e) || !e.OutOfMemory || !e.Uncatchable {
+		t.Fatalf("got %v, want an uncatchable out of memory error", err)
+	}
+	m.SetMemoryLimit(^uintptr(0))
+	if got := evalString(t, m, `String(T.length) + T[0]`); got != "1x" {
+		t.Fatalf("target is %s", got)
+	}
+	if got := evalString(t, m, `String(run()) + run()`); got != "250250" {
+		t.Fatalf("after: %s", got)
+	}
+}

@@ -739,9 +739,10 @@ func js_dtoa(a0 uintptr, a1 uintptr, a2 float64, a3 uintptr, a4 uintptr, a5 uint
 func js_dtoa2(a0 uintptr, a1 uintptr, a2 float64, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_dtoa_max_len(a0 uintptr, a1 float64, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_dynamic_import_job(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func js_emit_attr_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_emit_binary_op(a0 uintptr, a1 uintptr, a2 uintptr)
+func js_emit_free(a0 uintptr, a1 uintptr)
 func js_emit_is_javascript_url(a0 uintptr, a1 uintptr) uintptr
+func js_emit_name_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_emit_new_function(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_emit_plain_keys(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_emit_put_escaped(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
@@ -750,8 +751,8 @@ func js_emit_put_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_emit_put_style(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4, a5 uintptr) uintptr
 func js_emit_put_text(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) uintptr
 func js_emit_spread_code(a0 uintptr, a1 uintptr, a2 uintptr)
-func js_emit_style_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_end_tag(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_end_tag_add(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) (r0, r1 uintptr)
 func js_end_tag_make(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_eq_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_error_constructor_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)

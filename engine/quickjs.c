@@ -55479,10 +55479,13 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    of React. */
 
 #define JS_EMIT_PROPS_MAX 32
-#define JS_EMIT_CACHE_BITS 9
-#define JS_EMIT_CACHE_SIZE (1 << JS_EMIT_CACHE_BITS)
-#define JS_EMIT_END_BITS 8
-#define JS_EMIT_END_SIZE (1 << JS_EMIT_END_BITS)
+/* the tables of names and of end tags: open addressing, made at their first
+   entry with 1 << JS_EMIT_BITS_MIN entries and doubled when half full, up to
+   1 << JS_EMIT_NAME_BITS_MAX names and 1 << JS_EMIT_END_BITS_MAX end tags,
+   where a full table is emptied and fills again */
+#define JS_EMIT_BITS_MIN 4
+#define JS_EMIT_NAME_BITS_MAX 9
+#define JS_EMIT_END_BITS_MAX 8
 /* units a call may write between two checks of the length: 32 attributes
    and 32 style keys, each a name of at most 66 units and a number of at most
    25, take fewer */
@@ -55524,12 +55527,30 @@ typedef struct JSEmitEnd {
     JSValue chunk;      /* "</tag>" */
 } JSEmitEnd;
 
+/* a table of names: 1 << bits entries, count of them in use. Until the
+   first name tab is js_emit_no_names, two empty entries no name is put in,
+   so that a lookup needs no check for it */
+typedef struct JSEmitNames {
+    JSEmitName *tab;
+    uint32_t bits, count;
+} JSEmitNames;
+
 typedef struct JSEmitCache {
     JSAtom atoms[JS_EMIT_ATOM_COUNT];
-    JSEmitEnd end[JS_EMIT_END_SIZE];
-    JSEmitName attr[JS_EMIT_CACHE_SIZE];
-    JSEmitName style[JS_EMIT_CACHE_SIZE];
+    JSEmitNames attr;
+    JSEmitNames style;
+    JSEmitEnd *end;     /* 1 << end_bits entries, js_emit_no_ends at first */
+    uint32_t end_bits, end_count;
 } JSEmitCache;
+
+static const JSEmitName js_emit_no_names[2];
+static const JSEmitEnd js_emit_no_ends[2];
+
+/* whether t has a table of its own, made at its first name */
+static inline BOOL js_emit_names_made(const JSEmitNames *t)
+{
+    return t->tab != js_emit_no_names;
+}
 
 typedef struct JSEmitAttrName {
     const char *name;
@@ -55688,15 +55709,16 @@ static BOOL js_emit_str_eq(const JSString *p, const char *s)
     return !p->is_wide_char && p->len == n && memcmp(p->u.str8, s, n) == 0;
 }
 
-static inline uint32_t js_emit_hash(JSAtom atom)
+static inline uint32_t js_emit_hash(JSAtom atom, uint32_t bits)
 {
-    return (atom * 2654435761u) >> (32 - JS_EMIT_CACHE_BITS);
+    return (atom * 2654435761u) >> (32 - bits);
 }
 
-/* the entry of an end tag, by the address of the tag string */
-static inline uint32_t js_emit_end_hash(const JSString *p)
+/* the first entry to look at for an end tag, by the address of the tag
+   string */
+static inline uint32_t js_emit_end_hash(const JSString *p, uint32_t bits)
 {
-    return (uint32_t)(((uintptr_t)p >> 3) * 2654435761u) >> (32 - JS_EMIT_END_BITS);
+    return (uint32_t)(((uintptr_t)p >> 3) * 2654435761u) >> (32 - bits);
 }
 
 /* whether b can take n more units and still JS_EMIT_SLACK */
@@ -55964,6 +55986,31 @@ static void js_emit_free_entry(JSContext *ctx, JSEmitName *e)
     }
 }
 
+static void js_emit_names_clear(JSContext *ctx, JSEmitNames *t)
+{
+    uint32_t i;
+
+    if (js_emit_names_made(t)) {
+        for (i = 0; i < ((uint32_t)1 << t->bits); i++)
+            js_emit_free_entry(ctx, &t->tab[i]);
+    }
+    t->count = 0;
+}
+
+static void js_emit_end_clear(JSContext *ctx, JSEmitCache *ec)
+{
+    uint32_t i;
+
+    if (ec->end != js_emit_no_ends) {
+        for (i = 0; i < ((uint32_t)1 << ec->end_bits); i++) {
+            JS_FreeValue(ctx, ec->end[i].tag);
+            JS_FreeValue(ctx, ec->end[i].chunk);
+            ec->end[i].tag = ec->end[i].chunk = JS_UNDEFINED;
+        }
+    }
+    ec->end_count = 0;
+}
+
 static void js_emit_free(JSContext *ctx)
 {
     JSEmitCache *ec = ctx->emit_cache;
@@ -55971,14 +56018,15 @@ static void js_emit_free(JSContext *ctx)
 
     if (!ec)
         return;
-    for (i = 0; i < JS_EMIT_CACHE_SIZE; i++) {
-        js_emit_free_entry(ctx, &ec->attr[i]);
-        js_emit_free_entry(ctx, &ec->style[i]);
-    }
-    for (i = 0; i < JS_EMIT_END_SIZE; i++) {
-        JS_FreeValue(ctx, ec->end[i].tag);
-        JS_FreeValue(ctx, ec->end[i].chunk);
-    }
+    js_emit_names_clear(ctx, &ec->attr);
+    if (js_emit_names_made(&ec->attr))
+        js_free(ctx, ec->attr.tab);
+    js_emit_names_clear(ctx, &ec->style);
+    if (js_emit_names_made(&ec->style))
+        js_free(ctx, ec->style.tab);
+    js_emit_end_clear(ctx, ec);
+    if (ec->end != js_emit_no_ends)
+        js_free(ctx, ec->end);
     for (i = 0; i < JS_EMIT_ATOM_COUNT; i++)
         JS_FreeAtom(ctx, ec->atoms[i]);
     js_free(ctx, ec);
@@ -56145,22 +56193,93 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     return 0;
 }
 
-static JSEmitName *js_emit_attr_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+/* makes room in t for one more name: the first table, a table twice as
+   large when t is half full, or an empty table when it cannot grow */
+static int js_emit_names_room(JSContext *ctx, JSEmitNames *t)
 {
-    JSEmitName *e = &ec->attr[js_emit_hash(atom)];
+    JSEmitName *tab, *o;
+    uint32_t bits, n, i, h;
+    BOOL made;
 
-    if (likely(e->atom == atom))
-        return e;
-    return js_emit_attr_fill(ctx, e, atom) < 0 ? NULL : e;
+    made = js_emit_names_made(t);
+    if (made && t->count + 1 <= ((uint32_t)1 << t->bits) / 2)
+        return 0;
+    if (made && t->bits == JS_EMIT_NAME_BITS_MAX) {
+        js_emit_names_clear(ctx, t);
+        return 0;
+    }
+    bits = made ? t->bits + 1 : JS_EMIT_BITS_MIN;
+    n = (uint32_t)1 << bits;
+    tab = js_malloc(ctx, sizeof(*tab) * n);
+    if (!tab)
+        return -1;
+    for (i = 0; i < n; i++) {
+        tab[i].atom = JS_ATOM_NULL;
+        tab[i].chunk = JS_UNDEFINED;
+    }
+    if (made) {
+        for (i = 0; i < ((uint32_t)1 << t->bits); i++) {
+            o = &t->tab[i];
+            if (o->atom == JS_ATOM_NULL)
+                continue;
+            for (h = js_emit_hash(o->atom, bits); tab[h].atom != JS_ATOM_NULL;
+                 h = (h + 1) & (n - 1))
+                ;
+            tab[h] = *o;
+        }
+        js_free(ctx, t->tab);
+    }
+    t->tab = tab;
+    t->bits = bits;
+    return 0;
 }
 
-static JSEmitName *js_emit_style_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+/* adds the entry of a name that t does not have */
+static no_inline JSEmitName *js_emit_name_add(JSContext *ctx, JSEmitNames *t,
+                                              JSAtom atom, BOOL style)
 {
-    JSEmitName *e = &ec->style[js_emit_hash(atom)];
+    JSEmitName *e;
+    uint32_t h, mask;
 
-    if (likely(e->atom == atom))
-        return e;
-    return js_emit_style_fill(ctx, e, atom) < 0 ? NULL : e;
+    if (js_emit_names_room(ctx, t) < 0)
+        return NULL;
+    mask = ((uint32_t)1 << t->bits) - 1;
+    for (h = js_emit_hash(atom, t->bits); t->tab[h].atom != JS_ATOM_NULL;
+         h = (h + 1) & mask)
+        ;
+    e = &t->tab[h];
+    if ((style ? js_emit_style_fill(ctx, e, atom) : js_emit_attr_fill(ctx, e, atom)) < 0)
+        return NULL;
+    t->count++;
+    return e;
+}
+
+/* the entry of a name: an entry stays where it is until the table grows or
+   is emptied, so a name that a page uses is made once */
+static force_inline JSEmitName *js_emit_name_entry(JSContext *ctx, JSEmitNames *t,
+                                                   JSAtom atom, BOOL style)
+{
+    JSEmitName *e;
+    uint32_t h, mask = ((uint32_t)1 << t->bits) - 1;
+
+    for (h = js_emit_hash(atom, t->bits);; h = (h + 1) & mask) {
+        e = &t->tab[h];
+        if (likely(e->atom == atom))
+            return e;
+        if (e->atom == JS_ATOM_NULL)
+            break;
+    }
+    return js_emit_name_add(ctx, t, atom, style);
+}
+
+static force_inline JSEmitName *js_emit_attr_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+{
+    return js_emit_name_entry(ctx, &ec->attr, atom, FALSE);
+}
+
+static force_inline JSEmitName *js_emit_style_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+{
+    return js_emit_name_entry(ctx, &ec->style, atom, TRUE);
 }
 
 /* puts the kinds of the keys of p into kinds, and answers whether p is an
@@ -56507,13 +56626,14 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
 
 /* "</" + tag + ">" made for js_end_tag, kept in e for a string tag (e is
    NULL for another value) */
-static no_inline JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, JSEmitEnd *e)
+/* "</" + tag + ">" for a string tag, or for any value when convert is set */
+static JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, BOOL convert)
 {
-    JSValue str = JS_UNDEFINED, chunk;
+    JSValue str = JS_UNDEFINED;
     JSString *p;
     StringBuffer b;
 
-    if (e) {
+    if (!convert) {
         p = JS_VALUE_GET_STRING(tag);
     } else {
         /* "</" + tag: ToPrimitive with no hint, then ToString */
@@ -56532,13 +56652,69 @@ static no_inline JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, JSEmi
     js_emit_wstr(&b, p, 0, p->len);
     string_buffer_putc8(&b, '>');
     JS_FreeValue(ctx, str);
-    chunk = string_buffer_end(&b);
-    if (JS_IsException(chunk) || !e)
+    return string_buffer_end(&b);
+}
+
+/* makes room for one more end tag, as js_emit_names_room does for a name */
+static int js_emit_end_room(JSContext *ctx, JSEmitCache *ec)
+{
+    JSEmitEnd *tab, *o;
+    uint32_t bits, n, i, h;
+    BOOL made;
+
+    made = ec->end != js_emit_no_ends;
+    if (made && ec->end_count + 1 <= ((uint32_t)1 << ec->end_bits) / 2)
+        return 0;
+    if (made && ec->end_bits == JS_EMIT_END_BITS_MAX) {
+        js_emit_end_clear(ctx, ec);
+        return 0;
+    }
+    bits = made ? ec->end_bits + 1 : JS_EMIT_BITS_MIN;
+    n = (uint32_t)1 << bits;
+    tab = js_malloc(ctx, sizeof(*tab) * n);
+    if (!tab)
+        return -1;
+    for (i = 0; i < n; i++)
+        tab[i].tag = tab[i].chunk = JS_UNDEFINED;
+    if (made) {
+        for (i = 0; i < ((uint32_t)1 << ec->end_bits); i++) {
+            o = &ec->end[i];
+            if (JS_VALUE_GET_TAG(o->tag) != JS_TAG_STRING)
+                continue;
+            for (h = js_emit_end_hash(JS_VALUE_GET_STRING(o->tag), bits);
+                 JS_VALUE_GET_TAG(tab[h].tag) == JS_TAG_STRING; h = (h + 1) & (n - 1))
+                ;
+            tab[h] = *o;
+        }
+        js_free(ctx, ec->end);
+    }
+    ec->end = tab;
+    ec->end_bits = bits;
+    return 0;
+}
+
+/* makes and keeps the end tag of a string that ec does not have */
+static no_inline JSValue js_end_tag_add(JSContext *ctx, JSEmitCache *ec, JSValueConst tag)
+{
+    JSValue chunk;
+    JSEmitEnd *e;
+    uint32_t h, mask;
+
+    chunk = js_end_tag_make(ctx, tag, FALSE);
+    if (JS_IsException(chunk))
         return chunk;
-    JS_FreeValue(ctx, e->tag);
-    JS_FreeValue(ctx, e->chunk);
+    if (js_emit_end_room(ctx, ec) < 0) {
+        JS_FreeValue(ctx, chunk);
+        return JS_EXCEPTION;
+    }
+    mask = ((uint32_t)1 << ec->end_bits) - 1;
+    for (h = js_emit_end_hash(JS_VALUE_GET_STRING(tag), ec->end_bits);
+         JS_VALUE_GET_TAG(ec->end[h].tag) == JS_TAG_STRING; h = (h + 1) & mask)
+        ;
+    e = &ec->end[h];
     e->tag = JS_DupValue(ctx, tag);
     e->chunk = JS_DupValue(ctx, chunk);
+    ec->end_count++;
     return chunk;
 }
 
@@ -56547,17 +56723,23 @@ static no_inline JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, JSEmi
 static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
                           int argc, JSValueConst *argv)
 {
+    JSEmitCache *ec = ctx->emit_cache;
     JSEmitEnd *e;
     JSString *p;
+    uint32_t h, mask;
 
     if (JS_VALUE_GET_TAG(argv[0]) != JS_TAG_STRING)
-        return js_end_tag_make(ctx, argv[0], NULL);
+        return js_end_tag_make(ctx, argv[0], TRUE);
     p = JS_VALUE_GET_STRING(argv[0]);
-    e = &ctx->emit_cache->end[js_emit_end_hash(p)];
-    if (likely(JS_VALUE_GET_TAG(e->tag) == JS_TAG_STRING &&
-               JS_VALUE_GET_STRING(e->tag) == p))
-        return JS_DupValue(ctx, e->chunk);
-    return js_end_tag_make(ctx, argv[0], e);
+    mask = ((uint32_t)1 << ec->end_bits) - 1;
+    for (h = js_emit_end_hash(p, ec->end_bits);; h = (h + 1) & mask) {
+        e = &ec->end[h];
+        if (JS_VALUE_GET_TAG(e->tag) != JS_TAG_STRING)
+            break;
+        if (likely(JS_VALUE_GET_STRING(e->tag) == p))
+            return JS_DupValue(ctx, e->chunk);
+    }
+    return js_end_tag_add(ctx, ec, argv[0]);
 }
 
 /* makes ctx->emit_cache with its atoms, once, and the methods it checks:
@@ -56574,13 +56756,14 @@ static int js_emit_init(JSContext *ctx)
 
     if (ctx->emit_cache)
         return 0;
+    /* the tables are made at their first entry */
     ec = js_mallocz(ctx, sizeof(*ec));
     if (!ec)
         return -1;
-    for (i = 0; i < JS_EMIT_END_SIZE; i++)
-        ec->end[i].tag = ec->end[i].chunk = JS_UNDEFINED;
-    for (i = 0; i < JS_EMIT_CACHE_SIZE; i++)
-        ec->attr[i].chunk = ec->style[i].chunk = JS_UNDEFINED;
+    ec->attr.tab = ec->style.tab = (JSEmitName *)js_emit_no_names;
+    ec->attr.bits = ec->style.bits = 1;
+    ec->end = (JSEmitEnd *)js_emit_no_ends;
+    ec->end_bits = 1;
     ctx->emit_cache = ec;
     for (i = 0; i < JS_EMIT_ATOM_COUNT; i++) {
         ec->atoms[i] = JS_NewAtom(ctx, names[i]);

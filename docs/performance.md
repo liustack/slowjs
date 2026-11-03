@@ -539,25 +539,25 @@ A check in JavaScript in front of one spread was measured first, as the step bef
 
 [`VM.RegisterStartTag` and `VM.RegisterEndTag`](changes/go-api.md#registerstarttag-and-registerendtag) give a host React DOM's `pushStartGenericElement` (with `pushAttribute`, `pushStyleAttribute` and the escape they call) and `endChunkForTag` as C functions of the engine. They are measured on the calls a render makes, recorded and played back, since tifa's wiring is not part of this change.
 
-The calls were recorded from one render of the pages of tifa's example apps on the native test host, with a wrapper around `pushStartGenericElement` in the bundle that saved its arguments: 9,682 calls on 16 pages of the shop (14 storefront pages and 2 workbench pages), 1,227 on the three MUI pages and 5,401 on the two bench pages. A Go program plays them back in their order on one warm VM, three ways: React's functions as the bundle has them (`js`), the C start tag with the C end tag (`c`), and a loop that only makes the arguments and calls an empty function (`loop`). Every call gives the same text as React's functions, and none declines.
+The calls were recorded from one render of the pages of tifa's example apps on the native test host, with a wrapper around `pushStartGenericElement` in the bundle that saved its arguments: 9,682 calls on 16 pages of the shop (14 storefront pages and 2 workbench pages), 1,227 on the three MUI pages and 5,401 on the two bench pages. A Go program plays them back in their order on one warm VM, three ways: React's functions as the bundle has them (`js`), the C start tag with the C end tag (`c`), and a loop that only makes the arguments and calls an empty function (`loop`). Each tag is passed as the string of an atom, the same string at each call, as JSX gives it. Every call gives the same text as React's functions, and none declines.
 
-Instructions are callgrind's on linux/amd64, of the functions of the engine only (the Go runtime left out), for one element, a start tag and its end tag:
+Instructions are callgrind's on linux/amd64, of the functions of the engine only (the Go runtime left out), with no collection during the counted passes, for one element, a start tag and its end tag:
 
 | Pages | loop | js | c | js net of loop / c net of loop |
 | --- | ---: | ---: | ---: | ---: |
-| tifa's shop, storefront and workbench | 994 | 19,393 | 4,759 | 4.89 |
-| tifa's MUI test app | 994 | 18,024 | 4,325 | 5.11 |
-| tifa's bench app | 993 | 15,254 | 3,758 | 5.16 |
+| tifa's shop, storefront and workbench | 993 | 19,261 | 4,444 | 5.29 |
+| tifa's MUI test app | 994 | 17,870 | 3,969 | 5.67 |
+| tifa's bench app | 993 | 15,118 | 3,453 | 5.74 |
 
 Time on the Apple M4 (darwin/arm64, ns for one element, the median of 21 rounds):
 
 | Pages | loop | js | c | js net of loop / c net of loop |
 | --- | ---: | ---: | ---: | ---: |
-| tifa's shop, storefront and workbench | 32.4 | 953.1 | 221.0 | 4.89 |
-| tifa's MUI test app | 32.9 | 874.5 | 197.3 | 5.11 |
-| tifa's bench app | 32.2 | 702.5 | 161.1 | 5.20 |
+| tifa's shop, storefront and workbench | 32.4 | 946.2 | 197.1 | 5.55 |
+| tifa's MUI test app | 32.9 | 875.1 | 172.7 | 6.02 |
+| tifa's bench app | 31.8 | 707.9 | 141.9 | 6.14 |
 
-The C functions take about a fifth of the instructions and the time of React's. Of the instructions of `c`, the escape of the text and the attributes takes about 800, and the checks that the target, `hasOwnProperty`, `call` and `Array.prototype.push` are the built-in ones about 100. The end tags of the playback are strings that `JSON.parse` made anew for each call, so the end tag function makes each one (about 250 instructions). In a render the tag is the string of the JSX, the same for every element of that tag, and the end tag is found in the cache.
+The C functions take about a fifth of the instructions and of the time of React's. Of the instructions of `c`, the escape of the text and the attributes takes about 800, and the checks that the target, `hasOwnProperty`, `call` and `Array.prototype.push` are the built-in ones about 100. The tables of names and end tags grow from 16 entries at the first call and never let two names take each other's place: a table with one place for each name (512 names and 256 end tags, made with the first function) takes 32 KB a VM, and on tifa's shop pages it makes again about 32 names and 6 end tags a render that land on the place of another. With the tables, a VM of tifa's shop holds 1.6 KB more than one without the functions once the bundle is loaded (the shop's `TestShopVMMemory` in tifa). After renders and a collection it holds 20 KB to 80 KB more with the same live size: arenas of 4 KB that the garbage of the render leaves with a block in use, which do not change when the tables are filled before the first render. The start and end tags take 0.6% to 1.6% more instructions than with the fixed table in the playback above, which has no names that take the same place.
 
 A profile of the render on linux/amd64 puts the share of the time spent in these React functions at 10.4% on the workbench pages, 9.7% on the storefront pages, 4.3% on the MUI pages and 29.4% on the bench pages, so a render that uses both functions should take about 8%, 8%, 3.5% and 24% less time. tifa measures what it gains once it wires the functions in.
 

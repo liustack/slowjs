@@ -1198,3 +1198,64 @@ int white_shape_hashed(JSValueConst obj)
 {
     return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
+
+/* ---- the cache of the start and end tags ---- */
+
+/* The sizes of the tables of names, of style names and of end tags of ctx
+   (0 for one not made yet) in size[3] and the entries in use in count[3].
+   Returns -1 when ctx has no cache, -2 when an entry in use is not where a
+   lookup from its hash finds it, or a count is not the entries in use. */
+int white_emit_tables(JSContext *ctx, int size[3], int count[3])
+{
+    JSEmitCache *ec = ctx->emit_cache;
+    JSEmitNames *t;
+    uint32_t i, h, n, mask, used;
+    int k;
+
+    if (!ec)
+        return -1;
+    for (k = 0; k < 2; k++) {
+        t = k ? &ec->style : &ec->attr;
+        size[k] = js_emit_names_made(t) ? 1 << t->bits : 0;
+        count[k] = t->count;
+        if (!js_emit_names_made(t))
+            continue;
+        n = (uint32_t)1 << t->bits;
+        mask = n - 1;
+        used = 0;
+        for (i = 0; i < n; i++) {
+            if (t->tab[i].atom == JS_ATOM_NULL)
+                continue;
+            used++;
+            for (h = js_emit_hash(t->tab[i].atom, t->bits); h != i; h = (h + 1) & mask) {
+                if (t->tab[h].atom == JS_ATOM_NULL || t->tab[h].atom == t->tab[i].atom)
+                    return -2;
+            }
+        }
+        if (used != t->count)
+            return -2;
+    }
+    size[2] = ec->end != js_emit_no_ends ? 1 << ec->end_bits : 0;
+    count[2] = ec->end_count;
+    if (ec->end != js_emit_no_ends) {
+        n = (uint32_t)1 << ec->end_bits;
+        mask = n - 1;
+        used = 0;
+        for (i = 0; i < n; i++) {
+            JSString *p;
+
+            if (JS_VALUE_GET_TAG(ec->end[i].tag) != JS_TAG_STRING)
+                continue;
+            used++;
+            p = JS_VALUE_GET_STRING(ec->end[i].tag);
+            for (h = js_emit_end_hash(p, ec->end_bits); h != i; h = (h + 1) & mask) {
+                if (JS_VALUE_GET_TAG(ec->end[h].tag) != JS_TAG_STRING ||
+                    JS_VALUE_GET_STRING(ec->end[h].tag) == p)
+                    return -2;
+            }
+        }
+        if (used != ec->end_count)
+            return -2;
+    }
+    return 0;
+}

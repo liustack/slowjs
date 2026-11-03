@@ -1326,7 +1326,8 @@ static void test_copy_props_oom(void)
 }
 
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
-   names, styles and end tags they keep, the string of the tag, the text of a
+   names, styles and end tags they keep, the tables that hold them (made at the
+   first entry and grown as they fill), the string of the tag, the text of a
    number, and room in target: with too little memory they fail with the out
    of memory error, leave target as it was (the next run looks) and lose
    nothing. */
@@ -1355,22 +1356,22 @@ static void test_tags_oom(void)
         "    var r = startTag(T, p, 'div', fc, hop, d);\n"
         "    var s = T.length === 2 ? T.pop() : '';\n"
         "    if (r !== null) return 'returned ' + (r === d ? 'decline' : r);\n"
-        "    out.push(s, endTag('div'), endTag('s' + i));\n"
+        "    out.push(s, endTag('div'), endTag('s' + i), endTag('u' + i), endTag('v' + i));\n"
         "  }\n"
         "  return out.join('');\n"
         "}\n";
     static const char *const want[] = {
-        "<div class=\"c0\" data-0=\"0\" style=\"margin-top:0;width:0.5px;--v0:a&amp;b\">text &lt;0</div></s0>"
-        "<div class=\"c1\" data-1=\"1\" style=\"margin-top:1px;width:1.5px;--v1:a&amp;b\">text &lt;1\xc4\x80</div></s1>"
-        "<div class=\"c2\" data-2=\"2\" style=\"margin-top:2px;width:2.5px;--v2:a&amp;b\">text &lt;2</div></s2>"
-        "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3>"
-        "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4>"
-        "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5>",
+        "<div class=\"c0\" data-0=\"0\" style=\"margin-top:0;width:0.5px;--v0:a&amp;b\">text &lt;0</div></s0></u0></v0>"
+        "<div class=\"c1\" data-1=\"1\" style=\"margin-top:1px;width:1.5px;--v1:a&amp;b\">text &lt;1\xc4\x80</div></s1></u1></v1>"
+        "<div class=\"c2\" data-2=\"2\" style=\"margin-top:2px;width:2.5px;--v2:a&amp;b\">text &lt;2</div></s2></u2></v2>"
+        "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3></u3></v3>"
+        "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4></u4></v4>"
+        "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5></u5></v5>",
         NULL
     };
 
     sweep_register = register_tags;
-    sweep("startTag", "tags.js", setup, "run()", want, 16384);
+    sweep("startTag", "tags.js", setup, "run()", want, 32768);
     sweep_register = NULL;
 }
 
