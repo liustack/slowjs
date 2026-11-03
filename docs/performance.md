@@ -730,6 +730,19 @@ slowjs's C changes cost nothing on the first two (the same C is as fast as the p
 - `c_string_methods`: 38900 samples against 30440, spread over many small functions: `JS_CallInternal` +940, `js_call_c_function` 1964 against 1210, `JS_ToStringInternal` 1726 against 1122, `JS_ConcatString` 1182 against 658, `js_string_includes` 967 against 523. No loop with one hot instruction. It is the cost of each call of the generated code (arguments and results through memory, a stack check, the poll counter).
 - `q_regexp_ascii`: 39700 samples against 33500. The matcher `lre_exec_backtrack` is alike (10390 against 10002) and so is `JS_CallInternal`. The extra samples are in what surrounds it: `js_regexp_exec` 3582 against 2374, `lre_find` 1540 against 615, `lre_exec` 2367 against 1660, `free_object` 2440 against 1650. Calls again.
 
+### Shapes of built-in classes, shapes found by their parent, objects that die alone
+
+Three changes, measured together and each against the one before it: [objects of the built-in classes find the empty shape of their prototype](changes/objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype), [a shape is found by the shape it grew from](changes/objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) and [an object that dies alone is freed at once](changes/objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once). Instructions per render of every page of an app are from callgrind at position 0.0, with the same HTML on the 16 pages. The first column is the native C tree, the other two the generated engine.
+
+| Pages | Built-in class shapes | Shape by its parent | Object freed at once | All three |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, six workbench pages | -0.61% | -0.82% | -0.65% | -1.93% |
+| the shop's store pages | -0.69% | -0.88% | -0.71% | -1.84% |
+| tifa's MUI test app, three pages | -0.19% | -1.38% | -0.64% | -2.13% |
+| tifa's bench app, two pages | | -0.03% | -0.45% | -0.49% |
+
+The interpreter's own instructions do not change (within 0.04%, the spread of two runs of one binary). All three against main, timed on linux/amd64 by the protocol of [measuring.md](measuring.md) (16 layouts, delta 1%), the mean of the layouts: the bench pages take 0.73% less time, faster by the rule, the MUI pages 0.57% less, the six workbench pages 0.26% less and the store pages 0.13% more, none of them a regression beyond delta. The timing was of the first form of the three, before the review moved an object that dies alone onto the list of objects to free before it is freed. That costs 0.06 to 0.18 points of the instructions above, under the 0.2 from which the time is taken again.
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.

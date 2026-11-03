@@ -67,6 +67,13 @@ int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
+unsigned long white_shape_id_hits(void);
+uint32_t white_shape_id_next(JSRuntime *rt);
+uint32_t white_shape_id_max(void);
+void white_shape_id_set(JSRuntime *rt, uint32_t next);
+int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
+int white_shape_id_twins(JSRuntime *rt);
+int white_shape_hashed(JSValueConst obj);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 void white_work_reset(void);
 int white_jsstring_header(void);
@@ -1544,6 +1551,182 @@ static void lists(VM *v, int *old, int *young, const char *when)
 
     white_gc_lists(v->rt, old, young, &bad);
     CHECK(bad == 0, "%s: a GC object on a list has a count of 0 or less (%d) or its mark set (%d)", when, bad & 1, (bad >> 1) & 1);
+}
+
+/* The ids of the shapes in the shape hash table follow their rule
+   (white_shape_ids_bad) after each step, with the shape cache on and off:
+   objects that get the same keys one at a time, the changes in place that
+   take a shape out of the table, a global function declared again, which
+   changes the flags of the shape of the global object where it is, a shape
+   that is never in the table, and the ids running out, which numbers the
+   shapes again from 1. white.c builds the engine with JS_SHAPE_ID_CHECK, so
+   a shape found by its parent id that starts with other keys than the shape
+   it grew from ends the test. Shapes are found by their parent id
+   (white_shape_id_hits) where an object held the shape before, and again
+   once the ids were given anew. */
+static int global_shape_hashed(VM *v)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx);
+    int hashed = white_shape_hashed(g);
+
+    JS_FreeValue(v->ctx, g);
+    return hashed;
+}
+
+static void shape_ids_ok(VM *v, const char *what, int cache)
+{
+    int count, parented, bad = white_shape_ids_bad(v->rt, &count, &parented);
+
+    CHECK(bad == 0, "cache %d, %s: %d of %d shapes break the rule of ids", cache, what, bad, count);
+    CHECK(count > 0, "cache %d, %s: no shape in the table", cache, what);
+}
+
+static void test_shape_ids(void)
+{
+    static const char build[] =
+        "function build(n, pre) { const o = {}; for (let i = 0; i < n; i++) o[pre + i] = i; return o }\n"
+        "function stair(n, pre) { const a = []; for (let i = 1; i <= n; i++) a.push(build(i, pre)); return a }\n"
+        "function keys(o) { return Reflect.ownKeys(o).map(String).join() }\n"
+        "void 0";
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        unsigned long hits;
+        uint32_t start;
+        int count, parented;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, build), "the script threw");
+        shape_ids_ok(&v, "a new context", cache);
+
+        /* every shape of 1 to 10 keys is held: the next object finds each */
+        CHECK(eval_ok(v.ctx, "var ks = stair(10, 'k'); void 0"), "the stair threw");
+        hits = white_shape_id_hits();
+        CHECK(eval_ok(v.ctx, "var k10 = build(10, 'k'); void 0"), "the script threw");
+        CHECK(white_shape_id_hits() >= hits + 9, "cache %d: %lu shapes found by their parent id, want 9",
+              cache, white_shape_id_hits() - hits);
+        CHECK(shape_of(&v, "k10") == shape_of(&v, "ks[9]"), "cache %d: k10 has a shape of its own", cache);
+        shape_ids_ok(&v, "a stair", cache);
+        white_shape_ids_bad(v.rt, &count, &parented);
+        CHECK(parented >= 9, "cache %d: %d shapes with a parent id", cache, parented);
+
+        /* changes in place, then the same keys again */
+        CHECK(eval_ok(v.ctx,
+                      "var d = build(4, 'k'); delete d.k1; d.k1 = 1; d.k4 = 4;\n"
+                      "var f = build(4, 'k'); Object.defineProperty(f, 'k2', { enumerable: false }); f.k4 = 4;\n"
+                      "var g = build(4, 'k'); Object.defineProperty(g, 'k0', { get() { return 9 }, configurable: true }); g.k4 = 4;\n"
+                      "var p = build(4, 'k'); Object.setPrototypeOf(p, null); p.k4 = 4;\n"
+                      "var z = build(4, 'k'); Object.freeze(z);\n"
+                      "var arr = [1, 2, 3]; arr.x = 1; arr[9] = 9; delete arr[0]; arr.y = 2;\n"
+                      "var k5 = build(5, 'k'); void 0"), "the changes threw");
+        CHECK(eval_is(v.ctx, "[d, f, g, p, arr].map(keys).join(' ')",
+                      "k0,k2,k3,k1,k4 k0,k1,k2,k3,k4 k0,k1,k2,k3,k4 k0,k1,k2,k3,k4 1,2,9,length,x,y"),
+              "cache %d: keys after the changes", cache);
+        CHECK(eval_is(v.ctx, "Object.keys(f) + ' ' + g.k0 + ' ' + Object.getPrototypeOf(p) + ' ' +"
+                             " Object.isFrozen(z) + ' ' + Object.isFrozen(ks[3])",
+                      "k0,k1,k3,k4 9 null true false"), "cache %d: flags after the changes", cache);
+        CHECK(shape_of(&v, "k5") == shape_of(&v, "ks[4]"), "cache %d: k5 after the changes", cache);
+        shape_ids_ok(&v, "changes in place", cache);
+
+        /* a global function declared again changes the flags of the shape
+           of the global object in place, a shape that is never in the
+           table */
+        CHECK(!global_shape_hashed(&v), "cache %d: the shape of the global object is in the table", cache);
+        CHECK(eval_is(v.ctx,
+                      "Object.defineProperty(globalThis, 'gf', { get() { return 1 }, configurable: true });\n"
+                      "(0, eval)('function gf() { return 2 }'); (0, eval)('function gh() { return 3 }');\n"
+                      "(0, eval)('function gh() { return 4 }'); globalThis.gz = 5;\n"
+                      "gf() + ' ' + gh() + ' ' + JSON.stringify(Object.getOwnPropertyDescriptor(globalThis, 'gh'))"
+                      ".replace(/\"value\":[^,]*,/, '')",
+                      "2 4 {\"writable\":true,\"enumerable\":true,\"configurable\":true}"),
+              "cache %d: global functions", cache);
+        CHECK(!global_shape_hashed(&v), "cache %d: the shape of the global object went in the table", cache);
+        shape_ids_ok(&v, "global functions", cache);
+
+        /* the ids run out in the middle of a stair: the shapes are numbered
+           again, and the objects keep their keys and their shapes */
+        start = white_shape_id_max() - 8;
+        white_shape_id_set(v.rt, start);
+        CHECK(eval_ok(v.ctx, "var ws = stair(12, 'w'); void 0"), "the stair threw");
+        CHECK(white_shape_id_next(v.rt) < start, "cache %d: the ids did not run out (next %u)",
+              cache, white_shape_id_next(v.rt));
+        shape_ids_ok(&v, "ids given anew", cache);
+        white_shape_ids_bad(v.rt, &count, &parented);
+        CHECK(white_shape_id_next(v.rt) <= (uint32_t)count + 64, "cache %d: next id %u for %d shapes",
+              cache, white_shape_id_next(v.rt), count);
+        CHECK(eval_is(v.ctx, "keys(ws[11]) + ' ' + keys(build(3, 'k')) + ' ' +"
+                             " ws.every((o, i) => Object.keys(o).length === i + 1)",
+                      "w0,w1,w2,w3,w4,w5,w6,w7,w8,w9,w10,w11 k0,k1,k2 true"),
+              "cache %d: keys after the ids ran out", cache);
+        CHECK(eval_ok(v.ctx, "var w12 = build(12, 'w'), k10b = build(10, 'k'); void 0"), "the script threw");
+        CHECK(shape_of(&v, "w12") == shape_of(&v, "ws[11]"), "cache %d: w12 has a shape of its own", cache);
+        CHECK(shape_of(&v, "k10b") == shape_of(&v, "ks[9]"), "cache %d: k10b has a shape of its own", cache);
+
+        /* a new stair after the ids were given anew is found by parent id */
+        CHECK(eval_ok(v.ctx, "var vs = stair(8, 'v'); void 0"), "the stair threw");
+        hits = white_shape_id_hits();
+        CHECK(eval_ok(v.ctx, "var v8 = build(8, 'v'); void 0"), "the script threw");
+        CHECK(white_shape_id_hits() >= hits + 7,
+              "cache %d: %lu shapes found by their parent id after the ids ran out, want 7",
+              cache, white_shape_id_hits() - hits);
+        CHECK(shape_of(&v, "v8") == shape_of(&v, "vs[7]"), "cache %d: v8 has a shape of its own", cache);
+        shape_ids_ok(&v, "after the ids ran out", cache);
+        vm_free(&v);
+    }
+}
+
+/* A shape held by two objects is copied into the shape hash table when one
+   of them gets a key, and the copy keeps the id of the shape it copies until
+   the key is in. When adding the key fails for lack of memory, the copy
+   stays in the table beside the shape it copies, with its id: two shapes of
+   one id with the same prototype, keys and flags, which the rule of the ids
+   allows. Each call of the allocator fails in turn, with the shape cache on
+   and off, and the objects keep their keys. */
+static void test_shape_ids_copy_oom(void)
+{
+    static const char setup[] =
+        "var s1 = {}, s2 = {};\n"
+        "for (const k of ['a', 'b', 'c', 'd']) { s1[k] = 1; s2[k] = 2 }\n"
+        "function addz(o) { o.zz = 3; return o }\n"
+        "void 0";
+    long cases = 0, twins = 0;
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        int n = 0, fail;
+
+        for (fail = 0; fail <= 1 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue global, addz, s1, r;
+            int made;
+
+            JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+            CHECK(eval_ok(v.ctx, setup), "the script threw");
+            CHECK(shape_of(&v, "s1") == shape_of(&v, "s2"), "cache %d: s1 and s2 share no shape", cache);
+            global = JS_GetGlobalObject(v.ctx);
+            addz = JS_GetPropertyStr(v.ctx, global, "addz");
+            s1 = JS_GetPropertyStr(v.ctx, global, "s1");
+            r = white_call_failing(v.ctx, addz, JS_UNDEFINED, 1, &s1, fail, &made);
+            if (fail == 0)
+                n = made;
+            cases++;
+            if (JS_IsException(r))
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            twins += white_shape_id_twins(v.rt);
+            shape_ids_ok(&v, "a copy that could not take its key", cache);
+            CHECK(eval_is(v.ctx, "Object.keys(s2) + ' ' + Object.keys(s1).slice(0, 4) + ' ' + s1.d + s2.d",
+                          "a,b,c,d a,b,c,d 12"),
+                  "cache %d, call %d failing: the keys of the objects", cache, fail);
+            JS_FreeValue(v.ctx, s1);
+            JS_FreeValue(v.ctx, addz);
+            JS_FreeValue(v.ctx, global);
+            vm_free(&v);
+        }
+        CHECK(n > 0, "cache %d: adding the key makes no call of the allocator", cache);
+    }
+    CHECK(twins > 0, "no failing call of %ld left two shapes of one id", cases);
 }
 
 /* New GC objects are young, a young collection makes what it keeps old, and a
@@ -3585,6 +3768,8 @@ int main(void)
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();
+    test_shape_ids();
+    test_shape_ids_copy_oom();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_error_nest();

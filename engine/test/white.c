@@ -62,6 +62,13 @@ static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 static unsigned long white_work, white_work_max, white_work_total;
 #define JS_WORK(n) (white_work += (n), white_work_total += (n))
 int host_poll(const volatile int *flag);
+
+/* JS_SHAPE_ID_CHECK makes find_hashed_shape_prop compare the keys of a shape
+   it finds by its parent id too, and abort when they differ, and
+   JS_SHAPE_ID_HIT counts those shapes. */
+static unsigned long white_shape_hits;
+#define JS_SHAPE_ID_CHECK 1
+#define JS_SHAPE_ID_HIT() (white_shape_hits++)
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -1075,4 +1082,119 @@ int white_atom_refs(JSContext *ctx, const char *s)
     n = js_rc(ctx->rt->atom_array[a])->ref_count - 1;
     JS_FreeAtom(ctx, a);
     return n;
+}
+
+/* ---- the ids of shapes (find_hashed_shape_prop) ---- */
+
+/* The shapes find_hashed_shape_prop has found by their parent id. */
+unsigned long white_shape_id_hits(void)
+{
+    return white_shape_hits;
+}
+
+/* The id the next shape of rt gets, and the largest id. */
+uint32_t white_shape_id_next(JSRuntime *rt)
+{
+    return rt->shape_id_next;
+}
+
+uint32_t white_shape_id_max(void)
+{
+    return JS_SHAPE_ID_MAX;
+}
+
+void white_shape_id_set(JSRuntime *rt, uint32_t next)
+{
+    rt->shape_id_next = next;
+}
+
+/* Whether sh and sh1 have the same prototype, keys and flags. */
+static int white_same_shape(JSShape *sh, JSShape *sh1)
+{
+    JSShapeProperty *pr = get_shape_prop(sh), *pr1 = get_shape_prop(sh1);
+    int k;
+
+    if (sh->proto != sh1->proto || sh->prop_count != sh1->prop_count)
+        return 0;
+    for(k = 0; k < sh->prop_count; k++) {
+        if (pr[k].atom != pr1[k].atom || pr[k].flags != pr1[k].flags)
+            return 0;
+    }
+    return 1;
+}
+
+/* The shapes of the shape hash table of rt that break the rule of the ids:
+   one with id 0, or one whose parent id is the id of another shape of the
+   table that it does not start with (another prototype, not one key less,
+   or other keys or flags before its last), and two shapes of one id with
+   another prototype, other keys or other flags. Two shapes of one id with
+   the same of all are right: a copy add_property put in the table keeps the
+   id of the shape it copies until it gets its key, and stays so when it
+   cannot. The number of shapes in the table goes to *count, and the number
+   with a parent id to *parented. */
+int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented)
+{
+    JSShape *sh, *sh1;
+    JSShapeProperty *pr, *pr1;
+    uint32_t i, j;
+    int k, bad = 0;
+
+    *count = *parented = 0;
+    for(i = 0; i < rt->shape_hash_size; i++) {
+        for(sh1 = rt->shape_hash[i]; sh1; sh1 = sh1->shape_hash_next) {
+            (*count)++;
+            if (!sh1->is_hashed || sh1->id == 0 || sh1->id >= rt->shape_id_next)
+                bad++;
+            if (sh1->parent_id != 0)
+                (*parented)++;
+            for(j = 0; j < rt->shape_hash_size; j++) {
+                for(sh = rt->shape_hash[j]; sh; sh = sh->shape_hash_next) {
+                    if (sh != sh1 && sh->id == sh1->id && !white_same_shape(sh, sh1))
+                        bad++;
+                    if (sh1->parent_id == 0 || sh == sh1 || sh->id != sh1->parent_id)
+                        continue;
+                    if (sh->proto != sh1->proto || sh->prop_count + 1 != sh1->prop_count) {
+                        bad++;
+                        continue;
+                    }
+                    pr = get_shape_prop(sh);
+                    pr1 = get_shape_prop(sh1);
+                    for(k = 0; k < sh->prop_count; k++) {
+                        if (pr[k].atom != pr1[k].atom || pr[k].flags != pr1[k].flags) {
+                            bad++;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return bad;
+}
+
+/* The pairs of shapes of the shape hash table of rt that have one id. */
+int white_shape_id_twins(JSRuntime *rt)
+{
+    JSShape *sh, *sh1;
+    uint32_t i, j;
+    int n = 0;
+
+    for(i = 0; i < rt->shape_hash_size; i++) {
+        for(sh1 = rt->shape_hash[i]; sh1; sh1 = sh1->shape_hash_next) {
+            for(j = 0; j < rt->shape_hash_size; j++) {
+                for(sh = rt->shape_hash[j]; sh; sh = sh->shape_hash_next) {
+                    if (sh != sh1 && sh->id == sh1->id)
+                        n++;
+                }
+            }
+        }
+    }
+    /* each pair was counted from both of its shapes */
+    return n / 2;
+}
+
+/* Whether the shape of obj is in the shape hash table. */
+int white_shape_hashed(JSValueConst obj)
+{
+    return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
