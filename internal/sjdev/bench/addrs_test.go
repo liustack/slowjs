@@ -61,7 +61,7 @@ func TestCheckLayoutTakesWhatTheBinariesShowed(t *testing.T) {
 	for _, c := range []struct {
 		p Position
 		d uint64
-	}{{Position{0, 0}, 0}, {Position{0, 8}, 0}, {Position{32, 0}, 64}, {Position{1664, 8}, 1664}, {Position{3296, 16}, 3328}, {Position{1120, 48}, 1152}} {
+	}{{Position{0, 0}, 0}, {Position{0, 8}, 0}, {Position{32, 0}, 64}, {Position{1664, 8}, 1664}, {Position{3296, 16}, 3328}, {Position{1120, 48}, 1152}, {Position{1120, 48}, 1088}, {Position{64, 0}, 64}} {
 		if err := CheckLayout(formalLayout, moved(c.d, c.p.Front), c.p); err != nil {
 			t.Errorf("%s: %v", c.p, err)
 		}
@@ -77,6 +77,9 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 		"moved without shift": {moved(64, 8), Position{0, 8}},
 		"moved too far":       {moved(1728, 8), Position{1664, 8}},
 		"moved by 32":         {moved(1696, 8), Position{1664, 8}},
+		"taken up, 1 shift":   {moved(0, 0), Position{32, 0}},
+		"too far from shift":  {moved(1728, 8), Position{1664, 8}},
+		"short of shift":      {moved(1600, 8), Position{1664, 8}},
 		"front not there":     {moved(1664, 0), Position{1664, 8}},
 		"handler moved": {func() Layout {
 			l := moved(1664, 8)
@@ -118,5 +121,25 @@ func TestWriteLayoutReplacesTheRowOfABinary(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "layouts.tsv"), []byte("binary\tfunc\n"), 0o644)
 	if err := WriteLayout(dir, "a@0.8", "h3", moved(0, 8)); err == nil {
 		t.Error("wrote to a file of another header")
+	}
+}
+
+func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
+	// The first function aligned to 64 after the shift takes up all of a
+	// shift of 32 when the formal binary has 32 bytes or more of padding in
+	// front of it, and nothing after it moves.
+	err := CheckLayout(formalLayout, moved(0, 0), Position{32, 0})
+	if err == nil || !strings.Contains(err.Error(), "taken up by the alignment") {
+		t.Errorf("err = %v", err)
+	}
+	// Half a shift lost to the padding is what an odd multiple of 32 does in
+	// such a binary, and is no fault of the build.
+	for _, c := range []struct {
+		p Position
+		d uint64
+	}{{Position{1120, 0}, 1088}, {Position{1120, 0}, 1152}, {Position{2208, 8}, 2176}} {
+		if err := CheckLayout(formalLayout, moved(c.d, c.p.Front), c.p); err != nil {
+			t.Errorf("%s moved by %d: %v", c.p, c.d, err)
+		}
 	}
 }

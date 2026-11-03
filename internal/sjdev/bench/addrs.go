@@ -195,18 +195,24 @@ func WriteLayout(dir, name, hash string, l Layout) error {
 }
 
 // CheckLayout reports how the interpreter of a binary at p did not land where
-// p puts it, against the formal binary of the same side. The function moves by
-// the shift, rounded up to the 64 bytes the interpreter is aligned to (none
-// without a shift), and the body and every hot handler sit front bytes later
-// in it. So the body and the handlers are at the formal places plus front,
+// p puts it, against the formal binary of the same side. The first function
+// after the shift that is aligned to 64 bytes takes up some of it in the
+// padding in front of it, and the interpreter moves with that function. So it
+// moves by a multiple of 64 within 32 bytes of the shift: the shift rounded up
+// or down to 64, whichever the padding of the formal binary allows (a shift
+// that is a multiple of 64 always moves it exactly). Nothing moves when the
+// padding takes up all of it. The body and every hot handler sit front bytes
+// later in the interpreter, so they are at the formal places plus front,
 // modulo 64.
 func CheckLayout(formal, l Layout, p Position) error {
 	d := int64(l.Func) - int64(formal.Func)
 	switch {
 	case p.Shift == 0 && d != 0:
 		return fmt.Errorf("position %s: the interpreter moved by %d bytes without a shift", p, d)
-	case p.Shift > 0 && (d < int64(p.Shift) || d-int64(p.Shift) >= 64 || d%64 != 0):
-		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not the shift of %d rounded up to 64", p, d, p.Shift)
+	case p.Shift > 0 && d == 0:
+		return fmt.Errorf("position %s: the interpreter did not move, the shift of %d was taken up by the alignment and the layout is the formal one for the code after it", p, p.Shift)
+	case p.Shift > 0 && (d%64 != 0 || d < int64(p.Shift)-32 || d > int64(p.Shift)+32):
+		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not a multiple of 64 within 32 of the shift of %d", p, d, p.Shift)
 	}
 	at := func(name string, a, f uint64) error {
 		if got, want := int64(a)-int64(l.Func), int64(f)-int64(formal.Func)+int64(p.Front); got != want {
