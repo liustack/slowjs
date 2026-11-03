@@ -31,7 +31,7 @@ slowjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本�
 - **无限递归** 抛 `RangeError`，不会让进程退出（[详情](changes/errors-and-stacks.md#endless-recursion-throws-rangeerror)）。
 - **引擎里没有 std、os 和 Worker。** 引擎去掉了 QuickJS 命令行里 Go API 从来走不到的部分：没有 `js_init_module_std`、`js_init_module_os`、`js_std_loop` 和 `js_std_init_handlers`。模块的字节码照常可用，程序小几百 KB（[详情](changes/trimmed.md)）。
 - **不能加载模块，没有命令行的辅助函数，不能阻塞。** `VM.SetModuleLoader`、`VM.SetDefaultModuleLoader` 以及 `ModuleLoaderFunc` 和 `ModuleNormalizeFunc`，`VM.StdAddHelpers`（`console.log`、`print`、`performance.now`、`__loadScript`），还有 `VM.SetCanBlock` 都删了。模块只能 import VM 里已有的模块，比如用名字 `<eval>` import 它自己，`Atomics.wait` 总是抛错（[详情](changes/go-api.md#no-module-loader-shell-helpers-or-setcanblock)）。
-- **只支持四个平台。** 模块只为 linux 和 darwin 的 amd64 与 arm64 构建。在其他平台上构建会报错，windows 也一样，错误里写明支持的平台（[详情](architecture.md#platforms)）。
+- **只支持五个平台。** 模块只为 linux 和 darwin 的 amd64 与 arm64，还有 windows/amd64 构建。在其他平台上构建会报错，错误里写明支持的平台（[详情](architecture.md#platforms)）。
 - **换了引擎。** 引擎是编译成 Go 汇编的 C，以前是翻译成 Go 的 QuickJS。脚本的结果相同，递归深度按调用次数限制（默认 5000，最多 10000），JSON 最多嵌套 2000 层（[详情](changes/c-engine.md)）。
 - **新 API。** `NewBuiltin`、`VM.NewBuiltinFunction` 和 `Args`，`VM.NewArray`，`VM.SetStrip` 和 `type Strip`，`VM.RunGC`、`VM.RunYoungGC`（[详情](changes/young-collection.md)）、`VM.MemorySize` 和 `VM.GCThreshold`，`VM.MemoryUsage` 和 `type MemoryUsage`，`VM.ReleaseMemory`，`VM.SetShapeCache` 和 `DefaultShapeCache`，`VM.OnClose`，`NewSharedBytecode` 和 `VM.EvalSharedBytecode`，`GetAsyncContext` 和 `SetAsyncContext`（[详情](changes/go-api.md)），`VM.SetClock` 和 `VM.Now`（[详情](changes/time-and-intl.md#one-wall-clock-per-vm)），以及 `temporal` 包（[详情](changes/temporal.md)）。
 

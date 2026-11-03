@@ -96,4 +96,4 @@ Every method that runs javascript (`Eval`, `EvalValue`, `Call`, `CallValue`, `Ex
 
 ## Platforms
 
-The engine runs on linux and darwin, on amd64 and arm64. Both systems run the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2 (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on all four (see [testing.md](testing.md#every-target)).
+The engine runs on linux and darwin, on amd64 and arm64, and on windows/amd64. Every system runs the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2 (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).

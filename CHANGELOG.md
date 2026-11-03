@@ -8,6 +8,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 - The module builds and runs on linux/arm64, with the same generated engine as darwin/arm64. CI runs the tests on `ubuntu-24.04-arm`.
 - The module builds and runs on darwin/amd64, with the same generated engine as linux/amd64. CI runs the tests under Rosetta on `macos-15`.
+- The module builds and runs on windows/amd64, with the same generated engine as linux/amd64. CI runs the tests on `windows-2025`.
 
 ## [v0.29.8] - 2026-11-01
 

@@ -43,16 +43,30 @@ jobs:
             os: macos-15
             goarch: amd64
             no-native: true
+          # The native C engine needs clang. Format and docs are the same as on
+          # the other platforms, and gofmt prints paths with backslashes here.
+          - name: windows/amd64
+            os: windows-2025
+            no-native: true
+            no-format: true
+    defaults:
+      run:
+        # Git Bash on windows, for the scripts.
+        shell: bash
     env:
-      # The checks that need no LLVM. scripts/check.sh runs them and keeps a log
-      # for each in .build/check-logs.
-      CHECK_LOGS: ${{ github.workspace }}/.build/check-logs
       # Empty: the runner's own architecture.
       GOARCH: ${{ matrix.goarch }}
+    # The checks that need no LLVM: scripts/check.sh runs them and keeps a log
+    # for each in .build/check-logs.
     steps:
+      # The recorded outputs are compared byte for byte, so git must not turn
+      # their line ends into CRLF.
+      - name: Keep line ends as they are
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@v7
       - name: Show the machine
-        run: (lscpu | grep "Model name") || sysctl -n machdep.cpu.brand_string
+        run: (lscpu | grep "Model name") || sysctl -n machdep.cpu.brand_string || echo "$PROCESSOR_IDENTIFIER"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -63,6 +77,7 @@ jobs:
       - name: Vet
         run: go vet -asmdecl=false ./...
       - name: Format and docs
+        if: ${{ !matrix.no-format }}
         run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
 
       - name: Test, packages other than the root
