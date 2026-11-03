@@ -17,11 +17,12 @@ import (
 // Position is where the code of the engine sits in a binary: a layout.
 type Position struct {
 	// Shift moves the whole program after the first function of the engine by
-	// this many bytes, a multiple of 32 below MaxShift. Go puts functions on 32
-	// bytes and the interpreter on 64, so a shift that is an odd multiple of 32
-	// moves the other functions within their 64-byte block, and a larger one
-	// moves every function, the interpreter too, to other blocks and to another
-	// place in its 4 KiB page.
+	// this many bytes, a multiple of 32 below MaxShift. The first function after
+	// it that is aligned to 64 bytes (the regexp matcher) takes up what is left
+	// over of a shift that is not a multiple of 64, and everything after that
+	// function, the interpreter too, moves by a multiple of 64. So a shift of
+	// 32 may move nothing, and the protocol uses multiples of 64 (see
+	// docs/measuring.md).
 	Shift int
 	// Front is the bytes of NOP at the start of the interpreter body, a multiple
 	// of 8 from 0 to 56: the place of the body within its 64-byte block.
@@ -56,11 +57,12 @@ func All() []Position {
 }
 
 // protocolShifts are the shifts of the second half of Protocol, one per front.
-// They are spread over a 4 KiB page, alternate odd and even multiples of 32, and
-// do not grow with the front, so that the place in the page, the place of the
-// other functions in their block and the place of the interpreter in its block
-// change independently.
-var protocolShifts = []int{32, 1664, 3296, 576, 2208, 3840, 1120, 2752}
+// They are multiples of 64, so that the interpreter moves by exactly the shift
+// whatever the padding in front of it. They sit in 8 different 64-byte blocks
+// of a 4 KiB page, none further than 576 bytes from the next one, and do not
+// grow with the front, so that the place in the page and the place of the
+// interpreter in its block change independently.
+var protocolShifts = []int{64, 1664, 3264, 576, 2176, 3840, 1088, 2752}
 
 // Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
 // to 56 at shift 0, which includes the formal layout, and every front again at
@@ -99,7 +101,7 @@ func ParsePosition(s string) (Position, error) {
 		return Position{}, fmt.Errorf("position %q: want W.B, such as 32.16", s)
 	}
 	if shift < 0 || shift >= MaxShift || shift%32 != 0 {
-		return Position{}, fmt.Errorf("position %q: the whole program moves by a multiple of 32 bytes below %d (Go puts functions on 32)", s, MaxShift)
+		return Position{}, fmt.Errorf("position %q: the whole program moves by a multiple of 32 bytes below %d (Go puts functions on 32, and a shift that is not a multiple of 64 may be taken up by the alignment)", s, MaxShift)
 	}
 	if front < 0 || front > 56 || front%8 != 0 {
 		return Position{}, fmt.Errorf("position %q: the interpreter body moves by a multiple of 8 bytes from 0 to 56", s)
