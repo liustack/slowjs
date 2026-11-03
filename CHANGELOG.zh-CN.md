@@ -10,6 +10,11 @@
 - 模块可以在 darwin/amd64 上构建和运行，用的生成引擎和 linux/amd64 是同一份。CI 在 `macos-15` 上用 Rosetta 跑测试。
 - 模块可以在 windows/amd64 上构建和运行，用的生成引擎和 linux/amd64 是同一份。CI 在 `windows-2025` 上跑测试。在 windows 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在变成 panic 之前，可能先踩坏进程的内存，带 AMX 的 Intel 这类 CPU 上会发生。这是 Go 运行时的 bug，见 golang/go#81238。
 
+### 修复
+
+- 用别的类的原型建数组时（比如 `F.prototype` 设成 `Map.prototype` 后调 `Reflect.construct(Array, [], F)`），如果加 `length` 时内存不够，现在会抛出内存不够的错误。以前会往空指针里写值，整个进程直接退出。上游 QuickJS 也有这个问题。
+- 对 shape 被共享的对象调 `Object.setPrototypeOf`，内存不够时不再让新原型一直留在内存里。上游 QuickJS 也有这个问题。
+
 ## [v0.29.8] - 2026-11-01
 
 ### 修复

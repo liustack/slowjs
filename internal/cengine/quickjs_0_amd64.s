@@ -3033,8 +3033,8 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	CALL ·js_front_drain(SB)
 	QUAD $0x7c8b4c5824548b48
 	QUAD $0x4c50247c8b483824
-	QUAD $0x24648b4c4824548b
-	QUAD $0x834840244c8b4c60
+	QUAD $0x244c8b4c4824548b
+	QUAD $0x83486024648b4c40
 	QUAD $0x1474ff00000930ba
 	QUAD $0x48c1894828428b48
 	QUAD $0x8a8948c10148e9d1
@@ -3091,8 +3091,8 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	CALL ·js_malloc_large(SB)
 	QUAD $0x5c8b4c38247c8b4c
 	QUAD $0x4c50247c8b485824
-	QUAD $0x24648b4c4824548b
-	QUAD $0x854840244c8b4c60
+	QUAD $0x244c8b4c4824548b
+	QUAD $0x85486024648b4c40
 	QUAD $0x4c00000224850fc0
 	QUAD $0x247c894858245c89
 	QUAD $0x894c482454894c50
@@ -3180,7 +3180,7 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	QUAD $0x08c0834800000334
 	QUAD $0xff4f8d4120438949
 	QUAD $0x158d48377730f983
-	QUAD $0x8a0c6348000003db
+	QUAD $0x8a0c63480000045b
 	QUAD $0x4b8041e1ffd10148
 	QUAD $0x00003043c7491810
 	QUAD $0x00003843c7410000
@@ -3220,12 +3220,12 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	CALL ·host_poll(SB)
 	QUAD $0x5c8b483824748b4c
 	QUAD $0x4c58245c8b4c5024
-	QUAD $0x24648b4c4824548b
-	QUAD $0x5be940244c8b4c60
+	QUAD $0x244c8b4c4824548b
+	QUAD $0x5be96024648b4c40
 	QUAD $0xffffc2c748ffffff
 	QUAD $0x848948d8894cffff
 	QUAD $0x948948000000a824
-	QUAD $0x0269e9000000b024
+	QUAD $0x02eae9000000b024
 	QUAD $0x00002843c7490000
 	QUAD $0x00033043c7490000
 	QUAD $0x48fffffed6e90000
@@ -3246,7 +3246,7 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	QUAD $0x468b4110688b4c50
 	QUAD $0xbafc468941c8fffc
 	QUAD $0x8e0fc08500000006
-	QUAD $0xe9db3145000001a2
+	QUAD $0xe9db314500000206
 	QUAD $0x2464894cffffff3e
 	QUAD $0x894c6024648b4c60
 	QUAD $0x482454894c40244c
@@ -3267,8 +3267,8 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	LEAQ ·engine_rodata+2112(SB), SI
 	QUAD $0x7c8b4838247c8b4c
 	QUAD $0x4c4824548b4c5024
-	QUAD $0x244c8b4c6024648b
-	QUAD $0xfa67850fc0854840
+	QUAD $0x24648b4c40244c8b
+	QUAD $0xfa67850fc0854860
 	QUAD $0x24894cfd8949ffff
 	BYTE $0x24
 	BYTE $0x4c
@@ -3293,8 +3293,8 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	QUAD $0x7c8b4c3024448b4c
 	QUAD $0x4858245c8b4c3824
 	QUAD $0x24548b4c50247c8b
-	QUAD $0x8b4c6024648b4c48
-	QUAD $0x8548c2894840244c
+	QUAD $0x8b4c40244c8b4c48
+	QUAD $0x8548c28948602464
 	QUAD $0xe9fffffc9d850fc0
 	QUAD $0x480a8b48fffffaac
 	QUAD $0x480871894808728b
@@ -3317,43 +3317,68 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	CALL ·add_property(SB)
 	QUAD $0x7c8b4858245c8b4c
 	QUAD $0x4c4824548b4c5024
-	QUAD $0x244c8b4c6024648b
-	QUAD $0x8b4cfffffe15e940
-	QUAD $0x4c2424894c602464
+	QUAD $0x24648b4c40244c8b
+	QUAD $0xfe11850fc0854860
+	QUAD $0x8b4d106f8b4cffff
+	QUAD $0xc8fffc468b411873
+	QUAD $0x6f7ec085fc468941
+	QUAD $0x708b4c5824448b48
+	QUAD $0x8b4c6024648b4c20
+	QUAD $0x4c2424894c50246c
 	QUAD $0x2474894c08246c89
+	BYTE $0x10
+	CALL ·js_free(SB)
+	QUAD $0x6c8b4c6024648b4c
+	QUAD $0x4c5824748b4c5024
+	QUAD $0x08246c894c242489
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x74
+	BYTE $0x24
+	BYTE $0x10
+	CALL ·js_free(SB)
+	QUAD $0x4c6024648b4c18eb
+	QUAD $0x08246c894c242489
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x74
+	BYTE $0x24
 	BYTE $0x10
 	CALL ·js_free_shape0(SB)
 	QUAD $0xdb314500000006ba
-	QUAD $0x00cde9fffffd7fe9
-	QUAD $0x0000841f0f660000
+	QUAD $0x648b4cfffffd1be9
+	QUAD $0x894c2424894c6024
+	QUAD $0x102474894c08246c
+	CALL ·js_free_shape0(SB)
+	QUAD $0x00cce9ffffff74e9
+	QUAD $0x000000841f0f0000
 	BYTE $0x00
 	BYTE $0x00
-	BYTE $0x00
-	QUAD $0xfffffdb2fffffc74
-	QUAD $0xfffffc45fffffc55
-	QUAD $0xfffffc45fffffc45
-	QUAD $0xfffffc2efffffc45
-	QUAD $0xfffffc45fffffc2e
-	QUAD $0xfffffd9efffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffdf6fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc2efffffc2e
-	QUAD $0xfffffc45fffffc33
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	QUAD $0xfffffc55fffffc55
-	BYTE $0x89
+	QUAD $0xfffffd32fffffbf4
+	QUAD $0xfffffbc5fffffbd5
+	QUAD $0xfffffbc5fffffbc5
+	QUAD $0xfffffbaefffffbc5
+	QUAD $0xfffffbc5fffffbae
+	QUAD $0xfffffd1efffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffd76fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbaefffffbae
+	QUAD $0xfffffbc5fffffbb3
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	QUAD $0xfffffbd5fffffbd5
+	BYTE $0x09
 	BYTE $0xfd
 	BYTE $0xff
 	BYTE $0xff

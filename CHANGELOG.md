@@ -10,6 +10,11 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 - The module builds and runs on darwin/amd64, with the same generated engine as linux/amd64. CI runs the tests under Rosetta on `macos-15`.
 - The module builds and runs on windows/amd64, with the same generated engine as linux/amd64. CI runs the tests on `windows-2025`. On windows a memory fault in the engine, which only a bug of the engine makes, may break the memory of the process before it becomes a panic, on CPUs such as Intel with AMX: a bug of the Go runtime, golang/go#81238.
 
+### Fixed
+
+- An array made with the prototype of another class, such as `Reflect.construct(Array, [], F)` with `F.prototype` set to `Map.prototype`, throws the out of memory error when it runs out of memory as it gets its `length`. It wrote through a null pointer and ended the process. Upstream QuickJS has the same bug.
+- `Object.setPrototypeOf` on an object whose shape is shared no longer keeps the new prototype alive when it runs out of memory. Upstream QuickJS has the same bug.
+
 ## [v0.29.8] - 2026-11-01
 
 ### Fixed
