@@ -1930,6 +1930,13 @@ static BOOL js_front_drain(JSMallocContext *s)
 #define JS_SHAPE_ID_HIT() ((void)0)
 #endif
 
+/* JS_GC_RUN(young) is called by JS_RunGC (young 0) and JS_RunYoungGC (young 1)
+   when the collection runs, past the check of the phase. white.c counts them,
+   and the engine has nothing there. */
+#ifndef JS_GC_RUN
+#define JS_GC_RUN(young) ((void)0)
+#endif
+
 /* the most characters a loop over the strings of a rope, or over one long
    string, copies, hashes or compares between two reads of the interrupt
    flag, each string of a rope counted as one more than its length */
@@ -8620,7 +8627,8 @@ static void free_gc_object(JSRuntime *rt, JSGCObjectHeader *gp)
 /* Free the objects whose count reached zero. It runs one level deep: it is
    only called in the phase JS_GC_PHASE_NONE, and while it runs the phase is
    JS_GC_PHASE_DECREF, so an object that dies meanwhile only joins the list.
-   No finalizer or free it reaches starts a collection. */
+   No finalizer or free it reaches starts a collection: JS_RunGC and
+   JS_RunYoungGC do nothing in that phase. */
 static void free_zero_refcount(JSRuntime *rt)
 {
     struct list_head *el;
@@ -8651,7 +8659,8 @@ static void free_zero_refcount(JSRuntime *rt)
    js_weakref_free leaves its block alone meanwhile. The objects that die
    while p is freed join the front of the list ahead of p, as there, and
    free_object takes p off it, so the order is the same. No call the
-   engine makes while p is freed starts a collection (engine/test/cycles.sh).
+   engine makes while p is freed starts a collection (engine/test/cycles.sh),
+   and one the host makes from a finalizer does nothing (JS_RunGC).
    It calls free_object, not free_gc_object, and free_zero_refcount only
    when something died with p: free_gc_object and free_zero_refcount keep
    the callers they had, so that the compiler inlines into the interpreter
@@ -9388,9 +9397,21 @@ static void JS_RunGCInternal(JSRuntime *rt, BOOL remove_weak_objects)
 /* A full collection. It sets the threshold of the next one to 1.5 times what
    it left, whoever starts it: the host, or js_trigger_gc when the heap passes
    the threshold. A host that asked for no collection of the runtime
-   (JS_SetGCThreshold with -1) keeps it so. */
+   (JS_SetGCThreshold with -1) keeps it so.
+
+   It does nothing while the engine frees objects, when gc_phase is not
+   JS_GC_PHASE_NONE: in free_zero_refcount, free_zero_refcount_first and
+   gc_free_cycles, also as the runtime is freed. The host runs code there,
+   the finalizer of a class of the host and host_release, and a collection
+   started from it would free the objects the engine is freeing, the one
+   whose finalizer runs among them, and start over the lists the engine is
+   going through. The threshold stays, and it is checked again when the next
+   object is made after the free. */
 void JS_RunGC(JSRuntime *rt)
 {
+    if (rt->gc_phase != JS_GC_PHASE_NONE)
+        return;
+    JS_GC_RUN(0);
     JS_RunGCInternal(rt, TRUE);
     js_front_drain(&rt->malloc_ctx);
     if (rt->malloc_gc_threshold != (size_t)-1)
@@ -9463,11 +9484,15 @@ static void young_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p)
         js_rc(p)->ref_count++;
 }
 
+/* It does nothing while the engine frees objects, as JS_RunGC. */
 void JS_RunYoungGC(JSRuntime *rt)
 {
     struct list_head *el, *el1;
     JSGCObjectHeader *p;
 
+    if (rt->gc_phase != JS_GC_PHASE_NONE)
+        return;
+    JS_GC_RUN(1);
     list_for_each(el, &rt->young_obj_list) {
         p = list_entry(el, JSGCObjectHeader, link);
         js_rc(p)->mark = 1;
