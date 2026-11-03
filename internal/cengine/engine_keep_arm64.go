@@ -1033,6 +1033,7 @@ var goasmKeep = []any{
 	js_set_union,
 	js_shape_cache_off,
 	js_shape_prepare_update,
+	js_shape_renumber,
 	js_shared_array_buffer_constructor,
 	js_shr_slow,
 	js_strdup,

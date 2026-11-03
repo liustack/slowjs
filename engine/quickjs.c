@@ -494,6 +494,8 @@ struct JSRuntime {
     int shape_hash_size;
     int shape_hash_count; /* number of hashed shapes */
     JSShape **shape_hash;
+    /* the id the next shape of the shape hash table gets (js_shape_new_id) */
+    uint32_t shape_id_next;
     /* the async context of promise jobs, an object or any other value for
        none (see JS_SetAsyncContext) */
     JSValue async_context;
@@ -1160,6 +1162,12 @@ struct JSShape {
     int prop_size; /* allocated properties */
     int prop_count; /* include deleted properties */
     int deleted_prop_count;
+    /* in the shape hash table, a number no shape with other keys, flags or
+       prototype has, and the number of the shape it was one key before it
+       got its last key, or 0. Out of the table both are 0. See
+       find_hashed_shape_prop. */
+    uint32_t id;
+    uint32_t parent_id;
     JSShape *shape_hash_next; /* in JSRuntime.shape_hash[h] list */
     JSObject *proto;
     uint32_t hash_table[]; /* prop_hash_mask + 1 elements */
@@ -1908,6 +1916,18 @@ static BOOL js_front_drain(JSMallocContext *s)
    most work between two readings, and not only how many readings there were. */
 #ifndef JS_WORK
 #define JS_WORK(n) ((void)0)
+#endif
+
+/* JS_SHAPE_ID_CHECK set to 1 makes find_hashed_shape_prop compare the keys of
+   a shape it finds by its parent id too, and abort when they differ, and
+   JS_SHAPE_ID_HIT() is called for each shape found by its parent id. white.c
+   sets both, and a build for a check can set the first (see
+   docs/changes/objects-and-shapes.md). The engine has neither. */
+#ifndef JS_SHAPE_ID_CHECK
+#define JS_SHAPE_ID_CHECK 0
+#endif
+#ifndef JS_SHAPE_ID_HIT
+#define JS_SHAPE_ID_HIT() ((void)0)
 #endif
 
 /* the most characters a loop over the strings of a rope, or over one long
@@ -6670,6 +6690,7 @@ static int init_shape_hash(JSRuntime *rt)
     rt->shape_hash_bits = 4;   /* 16 shapes */
     rt->shape_hash_size = 1 << rt->shape_hash_bits;
     rt->shape_hash_count = 0;
+    rt->shape_id_next = 1;
     rt->shape_hash = js_mallocz_rt(rt, sizeof(rt->shape_hash[0]) *
                                    rt->shape_hash_size);
     if (!rt->shape_hash)
@@ -6758,6 +6779,50 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
     rt->shape_hash_count--;
 }
 
+/* The ids of the shapes of the shape hash table (JSShape.id and parent_id).
+   A shape of the table gets a new id when it is made and each time it gets
+   a key (add_shape_property), and the id it had then becomes its parent id.
+   Nothing else changes a shape of the table: js_shape_prepare_update takes a
+   shape out of it for good before its keys, flags or prototype change, and
+   gives it the id 0. The one place that changes flags in place without it,
+   js_closure_define_global_var, changes those of the global object, whose
+   shape is never in the table: it is made out of the table
+   (JS_NewObjectProtoClassAlloc), a shape made out of the table never goes
+   in, and only an object whose shape is in the table takes another shape
+   of the table (add_property, js_copy_shape). So two shapes of the table
+   with one id have the same prototype, keys and flags, and a shape whose
+   parent id is the id of sh starts with the keys and flags of sh. */
+#define JS_SHAPE_ID_MAX UINT32_MAX
+
+/* The ids ran out: number the shapes of the table again from 1, with no
+   parent, and return the id of the next shape. Until shapes get keys again,
+   find_hashed_shape_prop compares every key. */
+static no_inline uint32_t js_shape_renumber(JSRuntime *rt)
+{
+    JSShape *sh;
+    uint32_t id = 1;
+    int i;
+
+    for(i = 0; i < rt->shape_hash_size; i++) {
+        for(sh = rt->shape_hash[i]; sh != NULL; sh = sh->shape_hash_next) {
+            sh->id = id++;
+            sh->parent_id = 0;
+        }
+    }
+    rt->shape_id_next = id + 1;
+    return id;
+}
+
+static inline uint32_t js_shape_new_id(JSRuntime *rt)
+{
+    uint32_t id = rt->shape_id_next;
+
+    if (unlikely(id == JS_SHAPE_ID_MAX))
+        return js_shape_renumber(rt);
+    rt->shape_id_next = id + 1;
+    return id;
+}
+
 /* create a new empty shape with prototype 'proto'. It is not hashed */
 static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
                                            int hash_size, int prop_size)
@@ -6778,6 +6843,8 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     sh->prop_size = prop_size;
     sh->prop_count = 0;
     sh->deleted_prop_count = 0;
+    sh->id = 0;
+    sh->parent_id = 0;
     sh->is_hashed = FALSE;
     sh->inline_grew = FALSE;
     return sh;
@@ -6803,6 +6870,7 @@ static no_inline JSShape *js_new_shape2(JSContext *ctx, JSObject *proto,
     sh->hash = shape_initial_hash(proto);
     sh->is_hashed = TRUE;
     js_shape_hash_link(ctx->rt, sh);
+    sh->id = js_shape_new_id(rt);
     return sh;
 }
 
@@ -7252,8 +7320,15 @@ static int add_shape_property(JSContext *ctx, JSShape **psh,
         sh = *psh;
     }
     if (sh->is_hashed) {
+        uint32_t id;
         sh->hash = new_shape_hash;
         js_shape_hash_link(rt, sh);
+        /* sh gets a key: it takes a new id, and the one it has now, of sh
+           without the key, becomes its parent id. js_shape_new_id may number
+           the table again, sh with it, so it runs before sh->id is read. */
+        id = js_shape_new_id(rt);
+        sh->parent_id = sh->id;
+        sh->id = id;
     }
     /* Initialize the new shape property.
        The object property at p->prop[sh->prop_count] is uninitialized */
@@ -7288,13 +7363,30 @@ static JSShape *find_hashed_shape_proto(JSRuntime *rt, JSObject *proto)
     return NULL;
 }
 
+/* Compare the first n keys and flags of two shapes. */
+static BOOL js_shape_same_keys(JSShape *sh, JSShape *sh1, uint32_t n)
+{
+    JSShapeProperty *prop = get_shape_prop(sh);
+    JSShapeProperty *prop1 = get_shape_prop(sh1);
+    uint32_t i;
+
+    for(i = 0; i < n; i++) {
+        if (unlikely(prop1[i].atom != prop[i].atom) ||
+            unlikely(prop1[i].flags != prop[i].flags))
+            return FALSE;
+    }
+    return TRUE;
+}
+
 /* find a hashed shape matching sh + (prop, prop_flags). Return NULL if
-   not found */
+   not found. sh is in the shape hash table. A shape whose parent id is the
+   id of sh starts with the keys of sh (see JS_SHAPE_ID_MAX), so only its
+   last key is compared. */
 static JSShape *find_hashed_shape_prop(JSRuntime *rt, JSShape *sh,
                                        JSAtom atom, int prop_flags)
 {
     JSShape *sh1;
-    uint32_t h, h1, i, n;
+    uint32_t h, h1, n;
 
     h = sh->hash;
     h = shape_hash(h, atom);
@@ -7306,16 +7398,20 @@ static JSShape *find_hashed_shape_prop(JSRuntime *rt, JSShape *sh,
         if (sh1->hash == h &&
             sh1->proto == sh->proto &&
             sh1->prop_count == ((n = sh->prop_count) + 1)) {
-            JSShapeProperty *prop = get_shape_prop(sh);
             JSShapeProperty *prop1 = get_shape_prop(sh1);
-            for(i = 0; i < n; i++) {
-                if (unlikely(prop1[i].atom != prop[i].atom) ||
-                    unlikely(prop1[i].flags != prop[i].flags))
-                    goto next;
-            }
+            BOOL by_id = sh1->parent_id == sh->id;
+            if (!by_id && !js_shape_same_keys(sh, sh1, n))
+                goto next;
             if (unlikely(prop1[n].atom != atom) ||
                 unlikely(prop1[n].flags != prop_flags))
                 goto next;
+            if (by_id) {
+                JS_SHAPE_ID_HIT();
+#if JS_SHAPE_ID_CHECK
+                if (sh->id == 0 || !js_shape_same_keys(sh, sh1, n))
+                    abort();
+#endif
+            }
             return sh1;
         }
     next: ;
@@ -14022,6 +14118,9 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
             js_shape_hash_unlink(ctx->rt, sh);
             sh->is_hashed = FALSE;
         }
+        /* out of the table for good: no id (see JS_SHAPE_ID_MAX) */
+        sh->id = 0;
+        sh->parent_id = 0;
     }
     return 0;
 }
@@ -21260,6 +21359,10 @@ static JSVarRef *js_closure_define_global_var(JSContext *ctx, JSClosureVar *cv,
                     assert((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF);
                     prs->flags = (prs->flags & ~JS_PROP_C_W_E) | flags;
                 }
+                /* the flags changed in place: the shape of the global
+                   object is never in the shape hash table, where a shape
+                   keeps its flags (see JS_SHAPE_ID_MAX) */
+                assert(!p->shape->is_hashed);
                 var_ref->is_const = FALSE;
             }
             return var_ref;
