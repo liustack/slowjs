@@ -6,7 +6,7 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ### Performance
 
-- On linux/arm64 and darwin/arm64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, as it already is on amd64. A render runs 0.56% to 0.99% fewer instructions on the pages of tifa's example apps (linux/arm64), with the same HTML. The time of a page on an M4 is not slower (0.98 to 0.99 of main's, with 8% to 16% of noise between rounds), and the generated assembly of arm64 is 12% larger ([Performance](docs/performance.md#on-arm64)).
+- On linux/arm64 and darwin/arm64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, as it already is on amd64. A render runs 0.56% to 0.99% fewer instructions on the pages of tifa's example apps (linux/arm64), with the same HTML on the 16 pages once their time stamps are masked. On an M4 no slowdown was seen (the sum of the pages took 0.987 of main's time, the median of 8 rounds, with 8% to 16% of noise between rounds), and the generated assembly of arm64 is 12% larger ([Performance](docs/performance.md#on-arm64)).
 
 ## [v0.29.9] - 2026-11-03
 

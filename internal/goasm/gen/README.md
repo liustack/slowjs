@@ -216,8 +216,9 @@ reads the module as it stands after it:
   external functions and data, which the optimizer keeps under their names.
 
 `-postlink-opt=on` or `off` forces the run and `-postlink-opt-args` changes its
-options, for tests and surveys (`-release` refuses both). `TestPostLinkOpt` and
-the `postlink.c` sample of `TestSampleRuns` hold all of this.
+options, for tests and surveys (`-release` refuses both). `TestPostLinkOpt` (amd64 and arm64, with the
+post-link check over a module cross-built for each) and the `postlink.c` sample of
+`TestSampleRuns` (which runs the code, on linux/amd64 only) hold all of this.
 
 `-arch` is `amd64` (the default) or `arm64`, and every file the driver
 writes ends in the architecture (`engine_arm64.s`, `engine_decl_arm64.go`,
