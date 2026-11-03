@@ -1,5 +1,5 @@
 ---
-summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, and after it running the comparison with other Go engines again, upgrading tifa and collecting its engine profile again'
+summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, and after it running the comparison with other Go engines again and upgrading tifa'
 read_when:
   - A branch was merged into main and is ready to ship
   - Choosing the version of the next release
@@ -91,6 +91,5 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 slowjs exists for tifa, so every release goes into tifa next:
 
 1. In tifa, `go get github.com/liustack/slowjs@v0.26.17` and `go mod tidy`.
-2. Collect tifa's engine profile again, as tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#the-engine-profile) says under "The engine profile": PGO finds call sites by line, so a profile of the old engine matches fewer of them. `TestEngineProfileMatchesTheDependencies` in tifa's `internal/codegen` fails until it is collected again.
-3. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
-4. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.
+2. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
+3. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.

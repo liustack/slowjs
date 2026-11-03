@@ -80,4 +80,4 @@ See [docs/releasing.md](docs/releasing.md).
 - Release patch versions only (v0.26.17, v0.26.18, ...). Do not move to a new minor version for a small problem.
 - A release is a lightweight tag on the merge commit of `main`. There are no GitHub releases.
 - Ask the user before you create a tag, and again before you push one. Never push `main` or a tag on your own.
-- After a release, run the comparison with the other engines again and update docs/benchmarks.md as docs/releasing.md says, then upgrade tifa to it, collect tifa's engine profile again as tifa's docs/testing.md says ("The engine profile"), and measure the release on tifa's pages.
+- After a release, run the comparison with the other engines again and update docs/benchmarks.md as docs/releasing.md says, then upgrade tifa to it and measure the release on tifa's pages.

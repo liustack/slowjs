@@ -29,7 +29,7 @@ Unless a row says otherwise:
 
 - Machine: a Google Cloud VM with 8 vCPUs of an AMD EPYC 7B13 (Zen 3), Linux, one core pinned with its hyperthread sibling idle. Some rows are on an Apple M4 (darwin/arm64), which is noisier.
 - The build before and the build after a change, alternated round after round in one session. Only ratios from the same rounds compare.
-- With PGO means tifa built with an engine profile collected on that same engine. A profile collected on an older engine matches fewer call sites (see [Measuring in tifa](#measuring-in-tifa)).
+- With PGO means tifa built with an engine profile collected on that same engine. tifa stopped using PGO with the C engine, where the profile made no difference, so newer rows are all without it.
 
 ## What each release gained
 
@@ -103,13 +103,13 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 ```
 
 - Build the test binary once for the old engine and once for the new one (`go test -c -o old.test`, `-o new.test`), and run them in turn on the same pinned core, round after round. Read the ratio of the sums of the six P50 within each round.
-- `go test` builds without PGO unless given `-pgo=<file>`, so these compare the engines without PGO. For numbers with PGO, collect a profile on each engine as tifa's docs/testing.md says under "The engine profile", and build each with its own profile.
+- `go test` builds without PGO unless given `-pgo=<file>`, and tifa builds without PGO too, so these compare the engines as tifa runs them.
 - Compare the HTML of every page between the two builds. The router writes the time of the render into each match (`u:` followed by 13 digits), so mask that first.
 - A benchmark with one VM cannot see contention between VMs. For a change near memory allocation or the TLS stack, also run `BenchmarkShopParallel` and read its `speedup` and `lock-wait-%`.
 - Note the load of the machine during each round, and run again when other work used more than about 10% of the CPU.
-- Remove the `replace` before committing in tifa: `TestEngineProfileMatchesTheDependencies` fails for a profile made with a `replace`.
+- Remove the `replace` before committing in tifa.
 
-After a release, upgrade tifa and collect its engine profile again (see [releasing.md](releasing.md#after-the-release)).
+After a release, upgrade tifa (see [releasing.md](releasing.md#after-the-release)).
 
 ### Code positions
 
