@@ -110,8 +110,10 @@ static JSValue js_print(JSContext *ctx, JSValueConst this_val, int argc, JSValue
     (void)this_val;
     for (int i = 0; i < argc; i++) {
         const char *s = JS_ToCString(ctx, argv[i]);
-        if (s)
-            fprintf(stderr, "%s%s", i ? " " : "", s);
+        if (!s)
+            return JS_EXCEPTION;
+        fprintf(stderr, "%s%s", i ? " " : "", s);
+        JS_FreeCString(ctx, s);
     }
     fputc('\n', stderr);
     return JS_UNDEFINED;
