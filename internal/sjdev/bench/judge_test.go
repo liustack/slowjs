@@ -391,10 +391,8 @@ func TestAnIncompleteRunSaysNoVerdictAtAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, p := range Protocol() {
-		names = append(names, p.String())
-	}
+	// the 16 layouts of that run, which had odd multiples of 32 for shifts
+	names := []string{"0.0", "0.8", "0.16", "0.24", "0.32", "0.40", "0.48", "0.56", "32.0", "1664.8", "3296.16", "576.24", "2208.32", "3840.40", "1120.48", "2752.56"}
 	p, err := PlanFromRecords(rs, "bench", names, []int{0, 1}, 3)
 	if err != nil {
 		t.Fatal(err)

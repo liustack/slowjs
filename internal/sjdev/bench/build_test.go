@@ -272,6 +272,30 @@ func TestProtocolLayouts(t *testing.T) {
 			t.Error(err)
 		}
 	}
+	// A shift is a multiple of 64, so that the interpreter moves by exactly the
+	// shift whatever the padding in front of it (docs/measuring.md). The shifts
+	// sit in different 64-byte blocks of the page, none 1 KiB from the next one
+	// or more.
+	var offs []int
+	for s := range shifts {
+		if s%64 != 0 {
+			t.Errorf("shift %d is not a multiple of 64", s)
+		}
+		offs = append(offs, s%4096)
+	}
+	slices.Sort(offs)
+	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
+		t.Errorf("shifts share a place in the page: %v", offs)
+	}
+	for i, o := range offs {
+		next := 4096
+		if i+1 < len(offs) {
+			next = offs[i+1]
+		}
+		if next-o >= 1024 {
+			t.Errorf("no shift between %d and %d of the page", o, next)
+		}
+	}
 	// every front of the 64-byte block twice, and 9 shifts
 	for f := 0; f < 64; f += 8 {
 		if fronts[f] != 2 {
