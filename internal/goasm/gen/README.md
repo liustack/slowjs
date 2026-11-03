@@ -176,15 +176,16 @@ from 16 to 40: the driver and the pass refuse any other before they use it):
 smaller stack.
 
 The files are compiled one at a time (step 1 above, with the format checks on the
-IR as written) and linked with llvm-link. On amd64 the optimizer then runs over
+IR as written) and linked with llvm-link. On amd64 and arm64 the optimizer then runs over
 the linked module (`-postlink-opt`, default `auto`: `PostLinkOptFor`) before the
 shadow-stack pass, with `PostLinkOptArgs`: `-O2`, the inline threshold of 400
 that `engine/test/flags.sh` gives clang, and the SLP vectorizer off. clang had
 optimized each file alone, so the calls from one file to another (the small
 libc, the allocator and the heap into the interpreter and the collector) were
 never inlined. The second run does it. It saves 1.5% to 1.7% of the
-instructions of a page in native C and 0.6% to 1.2% in the generated engine,
-and makes the generated assembly 13% larger (the code 19%). A threshold of 1000
+instructions of a page in native C, 0.6% to 1.2% in the generated engine of
+amd64 and 0.6% to 1.0% in that of arm64, and makes the generated assembly 13%
+larger (the code 19% on amd64). A threshold of 1000
 for inlining makes the interpreter bigger and its frame 32 bytes taller: not
 used.
 
