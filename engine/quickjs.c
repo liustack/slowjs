@@ -55541,6 +55541,10 @@ typedef struct JSEmitCache {
     JSEmitNames style;
     JSEmitEnd *end;     /* 1 << end_bits entries, js_emit_no_ends at first */
     uint32_t end_bits, end_count;
+    /* the buffer the start tag writes in, NULL until its first call and
+       while a call has it (js_emit_buf_take) */
+    JSString *buf;
+    int buf_size;       /* its size in 8-bit units */
 } JSEmitCache;
 
 static const JSEmitName js_emit_no_names[2];
@@ -55725,6 +55729,79 @@ static inline uint32_t js_emit_end_hash(const JSString *p, uint32_t bits)
 static inline BOOL js_emit_fits(const StringBuffer *b, uint64_t n)
 {
     return b->len + n <= JS_STRING_LEN_MAX - JS_EMIT_SLACK;
+}
+
+/* The strings made here have the length of their text. string_buffer_end
+   leaves a string in the block b grew to, and __js_realloc never moves an
+   arena block to a smaller size: a start tag would take a block of 160 bytes
+   or more, and those strings live until the render is written out. The
+   long-lived objects a render makes between them (the entries of a cache of
+   the page, the shapes of new props) then hold arenas that are almost empty
+   once the render is freed. */
+
+/* the start tag writes into a buffer the cache keeps from one call to the
+   next, of JS_EMIT_BUF_MIN units at first. One that grew past
+   JS_EMIT_BUF_MAX, for a long text, or became wide is freed after the call */
+#define JS_EMIT_BUF_MIN 128
+#define JS_EMIT_BUF_MAX 1024
+
+/* the string of b's text at its length, b freed. b may have failed */
+static JSValue js_emit_string(StringBuffer *b)
+{
+    JSValue str;
+
+    if (b->error_status)
+        return JS_EXCEPTION;
+    if (b->len == b->size || b->len == 0)
+        return string_buffer_end(b);
+    if (b->is_wide_char)
+        str = js_new_string16_len(b->ctx, b->str->u.str16, b->len);
+    else
+        str = js_new_string8_len(b->ctx, (const char *)b->str->u.str8, b->len);
+    string_buffer_free(b);
+    return str;
+}
+
+/* starts b on the buffer of the cache, which b has until js_emit_buf_end. A
+   call that finds none, the first one, makes one */
+static void js_emit_buf_take(JSContext *ctx, JSEmitCache *ec, StringBuffer *b)
+{
+    if (!ec->buf) {
+        string_buffer_init(ctx, b, JS_EMIT_BUF_MIN);
+        return;
+    }
+    b->ctx = ctx;
+    b->str = ec->buf;
+    b->len = 0;
+    b->size = ec->buf_size;
+    b->is_wide_char = 0;
+    b->error_status = 0;
+    ec->buf = NULL;
+}
+
+/* the string of b's text at its length (JS_EXCEPTION when b failed, and with
+   want_str FALSE JS_UNDEFINED), the buffer given back to the cache or freed */
+static JSValue js_emit_buf_end(JSContext *ctx, JSEmitCache *ec, StringBuffer *b,
+                               BOOL want_str)
+{
+    JSValue str = JS_UNDEFINED;
+
+    if (b->error_status)
+        str = JS_EXCEPTION;
+    else if (want_str && b->is_wide_char)
+        str = js_new_string16_len(ctx, b->str->u.str16, b->len);
+    else if (want_str)
+        str = js_new_string8_len(ctx, (const char *)b->str->u.str8, b->len);
+    if (b->str) {
+        if (!ec->buf && !b->is_wide_char && b->size <= JS_EMIT_BUF_MAX) {
+            ec->buf = b->str;
+            ec->buf_size = b->size;
+        } else {
+            js_free(ctx, b->str);
+        }
+        b->str = NULL;
+    }
+    return str;
 }
 
 /* writes into b without a call while it has room for 8-bit units */
@@ -56027,6 +56104,7 @@ static void js_emit_free(JSContext *ctx)
     js_emit_end_clear(ctx, ec);
     if (ec->end != js_emit_no_ends)
         js_free(ctx, ec->end);
+    js_free(ctx, ec->buf);
     for (i = 0; i < JS_EMIT_ATOM_COUNT; i++)
         JS_FreeAtom(ctx, ec->atoms[i]);
     js_free(ctx, ec);
@@ -56097,7 +56175,8 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
     switch (kind) {
     case JS_EMIT_STRING: case JS_EMIT_URL_SRC: case JS_EMIT_URL: case JS_EMIT_PLAIN:
     case JS_EMIT_DEFAULT: case JS_EMIT_DEFAULT_DA: case JS_EMIT_BOOL:
-        string_buffer_init(ctx, &b, 32);
+        /* the length of the chunk: an arena block does not shrink */
+        string_buffer_init(ctx, &b, 1 + strlen(out) + (kind == JS_EMIT_BOOL ? 3 : 2));
         string_buffer_putc8(&b, ' ');
         string_buffer_puts8(&b, out);
         string_buffer_puts8(&b, kind == JS_EMIT_BOOL ? "=\"\"" : "=\"");
@@ -56139,7 +56218,7 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
                 string_buffer_free(&b);
                 return -1;
             }
-            chunk = string_buffer_end(&b);
+            chunk = js_emit_string(&b);
         }
     } else if (p->is_wide_char ||
                (uint64_t)p->len * 6 > JS_STRING_LEN_MAX - JS_EMIT_SLACK) {
@@ -56174,7 +56253,7 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
                     return -1;
                 }
             }
-            chunk = string_buffer_end(&b);
+            chunk = js_emit_string(&b);
             for (k = 0; k < countof(js_emit_unitless); k++) {
                 if (js_emit_str_eq(p, js_emit_unitless[k])) {
                     unitless = 1;
@@ -56518,7 +56597,7 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     n = pp->shape->prop_count;
     prs = get_shape_prop(pp->shape);
 
-    string_buffer_init(ctx, &b, 128);
+    js_emit_buf_take(ctx, ec, &b);
     js_emit_c8(&b, '<');
     js_emit_wstr(&b, tp, 0, tp->len);
     for (i = 0; i < n && r == 0 && !b.error_status; i++) {
@@ -56594,14 +56673,14 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     /* a write that failed for want of memory left b empty with the error
        thrown: that is the result, not a decline */
     if (r < 0 || b.error_status) {
-        string_buffer_free(&b);
+        js_emit_buf_end(ctx, ec, &b, FALSE);
         return JS_EXCEPTION;
     }
     if (r > 0) {
-        string_buffer_free(&b);
+        js_emit_buf_end(ctx, ec, &b, FALSE);
         goto decline;
     }
-    str = string_buffer_end(&b);
+    str = js_emit_buf_end(ctx, ec, &b, TRUE);
     if (JS_IsException(str))
         return str;
     /* target.push(str), on the array js_emit_target_plain saw: nothing in
@@ -56647,7 +56726,8 @@ static JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, BOOL convert)
         JS_FreeValue(ctx, str);
         return JS_ThrowInternalError(ctx, "string too long");
     }
-    string_buffer_init(ctx, &b, p->len + 3);
+    /* a wide tag makes a wide end tag: b has its length from the start */
+    string_buffer_init2(ctx, &b, p->len + 3, p->is_wide_char);
     string_buffer_puts8(&b, "</");
     js_emit_wstr(&b, p, 0, p->len);
     string_buffer_putc8(&b, '>');

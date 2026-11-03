@@ -545,19 +545,19 @@ Instructions are callgrind's on linux/amd64, of the functions of the engine only
 
 | Pages | loop | js | c | js net of loop / c net of loop |
 | --- | ---: | ---: | ---: | ---: |
-| tifa's shop, storefront and workbench | 993 | 19,261 | 4,444 | 5.29 |
-| tifa's MUI test app | 994 | 17,870 | 3,969 | 5.67 |
-| tifa's bench app | 993 | 15,118 | 3,453 | 5.74 |
+| tifa's shop, storefront and workbench | 991 | 19,265 | 4,326 | 5.48 |
+| tifa's MUI test app | 994 | 17,884 | 3,887 | 5.84 |
+| tifa's bench app | 993 | 15,118 | 3,402 | 5.86 |
 
 Time on the Apple M4 (darwin/arm64, ns for one element, the median of 21 rounds):
 
 | Pages | loop | js | c | js net of loop / c net of loop |
 | --- | ---: | ---: | ---: | ---: |
-| tifa's shop, storefront and workbench | 32.4 | 946.2 | 197.1 | 5.55 |
-| tifa's MUI test app | 32.9 | 875.1 | 172.7 | 6.02 |
-| tifa's bench app | 31.8 | 707.9 | 141.9 | 6.14 |
+| tifa's shop, storefront and workbench | 33.7 | 978.0 | 200.7 | 5.65 |
+| tifa's MUI test app | 33.0 | 890.7 | 175.1 | 6.03 |
+| tifa's bench app | 32.8 | 720.2 | 146.8 | 6.03 |
 
-The C functions take about a fifth of the instructions and of the time of React's. Of the instructions of `c`, the escape of the text and the attributes takes about 800, and the checks that the target, `hasOwnProperty`, `call` and `Array.prototype.push` are the built-in ones about 100. The tables of names and end tags grow from 16 entries at the first call and never let two names take each other's place: a table with one place for each name (512 names and 256 end tags, made with the first function) takes 32 KB a VM, and on tifa's shop pages it makes again about 32 names and 6 end tags a render that land on the place of another. With the tables, a VM of tifa's shop holds 1.6 KB more than one without the functions once the bundle is loaded (the shop's `TestShopVMMemory` in tifa). After renders and a collection it holds 20 KB to 80 KB more with the same live size: arenas of 4 KB that the garbage of the render leaves with a block in use, which do not change when the tables are filled before the first render. The start and end tags take 0.6% to 1.6% more instructions than with the fixed table in the playback above, which has no names that take the same place.
+The C functions take about a fifth of the instructions and of the time of React's. Of the instructions of `c`, the escape of the text and the attributes takes about 800, and the checks that the target, `hasOwnProperty`, `call` and `Array.prototype.push` are the built-in ones about 100. The tables of names and end tags grow from 16 entries at the first call and never let two names take each other's place: a table with one place for each name (512 names and 256 end tags, made with the first function) takes 32 KB a VM, and on tifa's shop pages it makes again about 32 names and 6 end tags a render that land on the place of another. With the tables, a VM of tifa's shop holds 1.6 KB more than one without the functions once the bundle is loaded (the shop's `TestShopVMMemory` in tifa). After 64 renders it holds 26 KB more in tifa's pool (a young collection after each render) and 10 KB more after a full collection, with the same live size: arenas of 4 KB in which the start tags of a render, which live until it is written out, sat next to long-lived objects the render made. When the start tag kept the buffer it wrote in as its string, at least 160 bytes for any tag and all of them in one class, these were 107 KB and 70 KB. The growing tables took 0.6% to 1.6% more instructions than the fixed table in this playback, which has no names that take the same place. Writing into the buffer the cache keeps and copying the text into a string of its length takes 1.5% to 2.6% fewer instructions than a buffer of its own for each call, kept as the string (`c` was 4,443, 3,969 and 3,453), and on the M4, run in turns with that build, 1% to 3.5% less time.
 
 A profile of the render on linux/amd64 puts the share of the time spent in these React functions at 10.4% on the workbench pages, 9.7% on the storefront pages, 4.3% on the MUI pages and 29.4% on the bench pages, so a render that uses both functions should take about 8%, 8%, 3.5% and 24% less time. tifa measures what it gains once it wires the functions in.
 

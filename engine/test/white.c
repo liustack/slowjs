@@ -1259,3 +1259,79 @@ int white_emit_tables(JSContext *ctx, int size[3], int count[3])
     }
     return 0;
 }
+
+/* How many size classes the block of the string v is above the class of its
+   length: 0 when the string has the block its text needs. -1 when v is not
+   a string, -3 when its block is not of an arena (a large block, or a build
+   where every block is one, which has no classes). */
+int white_string_slack(JSValueConst v)
+{
+    JSString *p;
+    JSMallocBlockHeader *b;
+    size_t need;
+
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING)
+        return -1;
+    p = JS_VALUE_GET_STRING(v);
+    b = js_rc(p);
+    if (JS_MALLOC_LARGE_BLOCKS_ONLY || b->u.block_idx == FREE_NIL)
+        return -3;
+    need = sizeof(JSString) + (p->len << p->is_wide_char) + 1 - p->is_wide_char;
+    need = ((need + JS_MALLOC_ALIGN - 1) & ~(size_t)(JS_MALLOC_ALIGN - 1)) +
+        sizeof(JSMallocBlockHeader);
+    return b->block_size_idx - get_block_size_index(need);
+}
+
+/* The most size classes a name, style name or end tag kept by the cache of ctx
+   is above the class of its length (see white_string_slack), 0 when each has
+   the block its text needs. -1 when ctx has no cache. */
+int white_emit_chunks_slack(JSContext *ctx)
+{
+    JSEmitCache *ec = ctx->emit_cache;
+    JSEmitNames *t;
+    uint32_t i;
+    int k, s, most = 0;
+
+    if (!ec)
+        return -1;
+    for (k = 0; k < 2; k++) {
+        t = k ? &ec->style : &ec->attr;
+        if (!js_emit_names_made(t))
+            continue;
+        for (i = 0; i < (uint32_t)1 << t->bits; i++) {
+            if (t->tab[i].atom == JS_ATOM_NULL)
+                continue;
+            s = white_string_slack(t->tab[i].chunk);
+            if (s > most)
+                most = s;
+        }
+    }
+    if (ec->end != js_emit_no_ends) {
+        for (i = 0; i < (uint32_t)1 << ec->end_bits; i++) {
+            s = white_string_slack(ec->end[i].chunk);
+            if (s > most)
+                most = s;
+        }
+    }
+    return most;
+}
+
+/* The buffer the start tag of ctx writes in. op 0 gives its size in units, 0
+   when the cache holds none. op 1 takes it as a call does at its start (a
+   call made then makes a buffer of its own), and op 2 gives it back as that
+   call does at its end. -1 when ctx has no cache. */
+static StringBuffer white_emit_held;
+int white_emit_buf(JSContext *ctx, int op)
+{
+    JSEmitCache *ec = ctx->emit_cache;
+
+    if (!ec)
+        return -1;
+    if (op == 1) {
+        js_emit_buf_take(ctx, ec, &white_emit_held);
+        return white_emit_held.size;
+    }
+    if (op == 2)
+        js_emit_buf_end(ctx, ec, &white_emit_held, FALSE);
+    return ec->buf ? ec->buf_size : 0;
+}

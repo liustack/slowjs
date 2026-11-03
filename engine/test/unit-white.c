@@ -35,6 +35,9 @@ const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
 int white_atom_refs(JSContext *ctx, const char *s);
 int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
+int white_string_slack(JSValueConst v);
+int white_emit_chunks_slack(JSContext *ctx);
+int white_emit_buf(JSContext *ctx, int op);
 int white_stack_pending(JSContext *ctx, JSValueConst obj);
 int white_backtrace_class_has_handlers(JSRuntime *rt);
 int white_pending_needs_data_property(JSContext *ctx, JSValueConst err);
@@ -3739,6 +3742,101 @@ static void test_emit_tables(void)
     vm_free(&v);
 }
 
+/* the slack of the string the script src gives (see white_string_slack) */
+static int emit_slack(VM *v, const char *src)
+{
+    JSValue r = JS_Eval(v->ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int s;
+
+    CHECK(!JS_IsException(r), "%s threw", src);
+    s = white_string_slack(r);
+    JS_FreeValue(v->ctx, r);
+    return s;
+}
+
+/* A start tag is written into a buffer the cache keeps, then copied into a
+   string of its length, and the names, style names and end tags the cache
+   keeps have their length too: an arena block never shrinks, and a string
+   left in a block of the size its buffer grew to would hold an arena with
+   the long-lived objects of a render once the render is freed. A buffer that
+   grew past 1024 units, or became wide, is freed after the call. A call
+   made while the buffer is out (none can be today: nothing between the take
+   and the end runs a script) makes one of its own, and of the two the cache
+   keeps one and frees the other. */
+static void test_emit_buffer(void)
+{
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null };\n"
+        "function tag(p, type) {\n"
+        "  var t = [];\n"
+        "  if (startTag(t, p, type || 'div', fc, hop, d) === d || t.length !== 1) throw new Error('declined');\n"
+        "  return t[0];\n"
+        "}\n"
+        "var many = {};\n"
+        "for (var i = 0; i < 12; i++) many['data-attribute-' + i] = 'value ' + i;\n";
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    int s, size;
+
+    JS_SetPropertyStr(v.ctx, g, "startTag", JS_NewStartTagFunction(v.ctx, "startTag", 8));
+    JS_SetPropertyStr(v.ctx, g, "endTag", JS_NewEndTagFunction(v.ctx, "endTag", 6));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, setup), "the setup failed");
+    CHECK(white_emit_buf(v.ctx, 0) == 0, "a buffer before the first call");
+
+    /* a short tag: a buffer of 128 units is kept, the string has its length */
+    s = emit_slack(&v, "tag({ id: 'a' })");
+    CHECK(s == 0 || s == -3, "the string of a short tag is %d classes above its length", s);
+    size = white_emit_buf(v.ctx, 0);
+    CHECK(size >= 128 && size <= 1024, "a buffer of %d units after a short tag", size);
+
+    /* a tag of 300 units grows the buffer, which is kept */
+    s = emit_slack(&v, "var m = tag(many); if (m.length < 300) throw new Error(m); m");
+    CHECK(s == 0 || s == -3, "the string of a long tag is %d classes above its length", s);
+    size = white_emit_buf(v.ctx, 0);
+    CHECK(size >= 300 && size <= 1024, "a buffer of %d units after a tag of 300", size);
+
+    /* a text of 2000 units takes the buffer past 1024: it is freed */
+    CHECK(eval_ok(v.ctx, "var x = 'y'.repeat(2000); if (tag({ children: x }, 'p') !== '<p>' + x) throw new Error('long'); 0"),
+          "a long text failed");
+    CHECK(white_emit_buf(v.ctx, 0) == 0, "the buffer of a long text was kept");
+    s = emit_slack(&v, "tag({ id: 'b' })");
+    CHECK(s == 0 || s == -3, "the string after a long text is %d classes above its length", s);
+    CHECK(white_emit_buf(v.ctx, 0) > 0, "no buffer after a short tag again");
+
+    /* a wide text makes the buffer wide: the string is wide, the buffer freed */
+    CHECK(eval_ok(v.ctx, "if (tag({ children: 'a\\u4e2d' }, 'b') !== '<b>a\\u4e2d') throw new Error('wide'); 0"),
+          "a wide text failed");
+    CHECK(white_emit_buf(v.ctx, 0) == 0, "a wide buffer was kept");
+    s = emit_slack(&v, "tag({ title: '\\u4e2d'.repeat(40) })");
+    CHECK(s == 0 || s == -3, "a wide string is %d classes above its length", s);
+
+    /* a call while the buffer is out makes its own, which the cache keeps;
+       the one given back after it is freed (the host checks for a leak) */
+    CHECK(eval_ok(v.ctx, "tag({ id: 'c' }); 0"), "a tag failed");
+    size = white_emit_buf(v.ctx, 1);
+    CHECK(size >= 128 && white_emit_buf(v.ctx, 0) == 0, "the buffer was not taken (%d)", size);
+    CHECK(eval_ok(v.ctx, "if (tag({ id: 'd', className: 'e' }) !== '<div id=\"d\" class=\"e\">') throw new Error('inner'); 0"),
+          "a call while the buffer was out failed");
+    CHECK(white_emit_buf(v.ctx, 0) > 0, "the call while the buffer was out kept none");
+    CHECK(white_emit_buf(v.ctx, 2) > 0, "no buffer after the one taken came back");
+    CHECK(eval_ok(v.ctx, "if (tag({ id: 'f' }) !== '<div id=\"f\">') throw new Error('after'); 0"),
+          "a call after the buffer came back failed");
+
+    /* names, style names that grow as they are written, and end tags */
+    CHECK(eval_ok(v.ctx,
+                  "tag({ className: 'a', 'aria-label': 'b', hidden: true, style: { aBCDEFGHIJKLMNOP: 1, '--x<y>&': 2, marginTop: 3 } });\n"
+                  "if (endTag('section') !== '</section>' || endTag('\\u4e2d\\u6587') !== '</\\u4e2d\\u6587>') throw new Error('end');\n"
+                  "0"), "names failed");
+    s = white_emit_chunks_slack(v.ctx);
+    CHECK(s == 0, "a name of the cache is %d classes above its length", s);
+    s = emit_slack(&v, "endTag('section')");
+    CHECK(s == 0 || s == -3, "an end tag is %d classes above its length", s);
+    s = emit_slack(&v, "endTag('\\u4e2d\\u6587')");
+    CHECK(s == 0 || s == -3, "a wide end tag is %d classes above its length", s);
+    vm_free(&v);
+}
+
 static void test_compile_one_failure(int calls)
 {
     static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
@@ -3867,6 +3965,7 @@ int main(void)
     test_compile_one_failure(0);
     test_compile_one_failure(1);
     test_emit_tables();
+    test_emit_buffer();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

@@ -1327,10 +1327,10 @@ static void test_copy_props_oom(void)
 
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
-   first entry and grown as they fill), the string of the tag, the text of a
-   number, and room in target: with too little memory they fail with the out
-   of memory error, leave target as it was (the next run looks) and lose
-   nothing. */
+   first entry and grown as they fill), the buffer the start tag keeps (freed
+   after a long text), the string of the tag, the text of a number, and room
+   in target: with too little memory they fail with the out of memory error,
+   leave target as it was (the next run looks) and lose nothing. */
 static void register_tags(JSContext *ctx)
 {
     JSValue g = JS_GetGlobalObject(ctx);
@@ -1347,6 +1347,10 @@ static void test_tags_oom(void)
 {
     static const char setup[] =
         "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null }, T = ['x'];\n"
+        "var L = 'y'.repeat(1500);\n"
+        /* pop is made at its first use: in the setup, not in a run with
+           little memory, which would fail there with the tag pushed */
+        "[0].pop();\n"
         "function run() {\n"
         "  var out = [];\n"
         "  for (var i = 0; i < 6; i++) {\n"
@@ -1358,6 +1362,14 @@ static void test_tags_oom(void)
         "    if (r !== null) return 'returned ' + (r === d ? 'decline' : r);\n"
         "    out.push(s, endTag('div'), endTag('s' + i), endTag('u' + i), endTag('v' + i));\n"
         "  }\n"
+        "  var q = { children: L };\n"
+        "  if (startTag(T, q, 'p', fc, hop, d) !== null) return 'long declined';\n"
+        "  if (T.length !== 2) return 'long text';\n"
+        "  s = T.pop();\n"
+        "  if (s !== '<p>' + L) return 'long text';\n"
+        "  r = startTag(T, { id: 'z' }, 'i', fc, hop, d);\n"
+        "  s = T.length === 2 ? T.pop() : '';\n"
+        "  out.push('/' + r + s);\n"
         "  return out.join('');\n"
         "}\n";
     static const char *const want[] = {
@@ -1366,7 +1378,8 @@ static void test_tags_oom(void)
         "<div class=\"c2\" data-2=\"2\" style=\"margin-top:2px;width:2.5px;--v2:a&amp;b\">text &lt;2</div></s2></u2></v2>"
         "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3></u3></v3>"
         "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4></u4></v4>"
-        "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5></u5></v5>",
+        "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5></u5></v5>"
+        "/null<i id=\"z\">",
         NULL
     };
 
