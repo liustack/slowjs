@@ -159,6 +159,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A delete that cannot pack the properties for lack of memory leaves no error pending | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
 | hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 | A shared shape that cannot be copied fails the call | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shared-shape-that-cannot-be-copied-fails-the-call) |
+| Objects of the built-in classes find the empty shape of their prototype | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
 
 ## Memory
 

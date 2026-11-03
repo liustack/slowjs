@@ -653,6 +653,9 @@ struct JSContext {
     /* for each prototype of new functions, the empty shape and the shape
        with length and name, or NULL (see js_function_shape) */
     JSShape *func_shapes[4][2];
+    /* the empty shape of class_proto[i], held so that objects made with that
+       prototype find it (js_class_shape) */
+    JSShape *class_shapes[JS_CLASS_INIT_COUNT];
 
     JSValue *class_proto;
     JSValue function_proto;
@@ -3405,6 +3408,14 @@ void JS_SetClassProto(JSContext *ctx, JSClassID class_id, JSValue obj)
     JSRuntime *rt = ctx->rt;
     assert(class_id < rt->class_count);
     set_value(ctx, &ctx->class_proto[class_id], obj);
+    /* the empty shape held for the prototype replaced holds that
+       prototype: let it go, and the next object of the class takes the
+       shape of the new one (js_new_proto_shape) */
+    if (class_id < JS_CLASS_INIT_COUNT) {
+        JSShape *sh = ctx->class_shapes[class_id];
+        ctx->class_shapes[class_id] = NULL;
+        js_free_shape_null(rt, sh);
+    }
 }
 
 JSValue JS_GetClassProto(JSContext *ctx, JSClassID class_id)
@@ -3498,6 +3509,10 @@ static void JS_MarkContext(JSRuntime *rt, JSContext *ctx,
             mark_func(rt, &ctx->func_shapes[i][1]->header);
         }
     }
+    for(i = 0; i < countof(ctx->class_shapes); i++) {
+        if (ctx->class_shapes[i])
+            mark_func(rt, &ctx->class_shapes[i]->header);
+    }
 }
 
 void JS_FreeContext(JSContext *ctx)
@@ -3565,6 +3580,11 @@ void JS_FreeContext(JSContext *ctx)
         ctx->func_shapes[i][0] = ctx->func_shapes[i][1] = NULL;
         js_free_shape_null(ctx->rt, empty);
         js_free_shape_null(ctx->rt, both);
+    }
+    for(i = 0; i < countof(ctx->class_shapes); i++) {
+        JSShape *sh = ctx->class_shapes[i];
+        ctx->class_shapes[i] = NULL;
+        js_free_shape_null(ctx->rt, sh);
     }
     for(i = 0; i < JS_COPY_ATOM_COUNT; i++)
         JS_FreeAtom(ctx, ctx->copy_atoms[i]);
@@ -7580,6 +7600,26 @@ static JSObject *get_proto_obj(JSValueConst proto_val)
         return JS_VALUE_GET_OBJ(proto_val);
 }
 
+/* A new empty shape for proto. When proto is class_proto[class_id] of ctx,
+   ctx holds the shape, so it stays in the shape hash table and the next
+   object of that class finds it, rather than making and freeing it again
+   with each object. It stays empty: an object that gets a key copies a shape
+   held by more than one. */
+static no_inline JSShape *js_new_proto_shape(JSContext *ctx, JSObject *proto,
+                                             JSClassID class_id)
+{
+    JSShape *sh = js_new_shape(ctx, proto);
+
+    if (sh && proto && class_id != JS_CLASS_OBJECT &&
+        class_id < JS_CLASS_INIT_COUNT &&
+        JS_VALUE_GET_TAG(ctx->class_proto[class_id]) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_OBJ(ctx->class_proto[class_id]) == proto) {
+        js_free_shape_null(ctx->rt, ctx->class_shapes[class_id]);
+        ctx->class_shapes[class_id] = js_dup_shape(sh);
+    }
+    return sh;
+}
+
 /* WARNING: proto must be an object or JS_NULL */
 JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
                                JSClassID class_id)
@@ -7592,7 +7632,7 @@ JSValue JS_NewObjectProtoClass(JSContext *ctx, JSValueConst proto_val,
     if (likely(sh)) {
         sh = js_dup_shape(sh);
     } else {
-        sh = js_new_shape(ctx, proto);
+        sh = js_new_proto_shape(ctx, proto, class_id);
         if (!sh)
             return JS_EXCEPTION;
     }
@@ -25361,7 +25401,13 @@ static JSValue js_create_from_ctor(JSContext *ctx, JSValueConst ctor,
             proto = JS_DupValue(ctx, realm->class_proto[class_id]);
         }
     }
-    obj = JS_NewObjectProtoClass(ctx, proto, class_id);
+    /* new Array() with the prototype of arrays starts from the shape that
+       already has length, as JS_NewArray does */
+    if (class_id == JS_CLASS_ARRAY &&
+        JS_VALUE_GET_OBJ(proto) == ctx->array_shape->proto)
+        obj = JS_NewArray(ctx);
+    else
+        obj = JS_NewObjectProtoClass(ctx, proto, class_id);
     JS_FreeValue(ctx, proto);
     return obj;
 }

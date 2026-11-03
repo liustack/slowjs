@@ -884,6 +884,7 @@ func js_new_host_function_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_new_module_def(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_new_promise_capability(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) (r0, r1 uintptr)
+func js_new_proto_shape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_new_shape2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_new_string8(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_new_string_char(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)

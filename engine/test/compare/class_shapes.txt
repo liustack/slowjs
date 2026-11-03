@@ -1,0 +1,34 @@
+Map: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+Set: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+WeakMap: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+Promise: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+array iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+map iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+string iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+RegExp: ["lastIndex","a","hidden","Symbol(s)"] ["lastIndex"] ["lastIndex"] ["lastIndex","z","y"] true
+Date: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+Error: ["message","stack","a","hidden","Symbol(s)"] ["message","stack"] ["message","stack"] ["message","stack","z","y"] true
+ArrayBuffer: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+Uint8Array: ["0","1","a","hidden","Symbol(s)"] ["0","1"] ["0","1"] ["0","1","z","y"] true
+Boolean: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+Number: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+String: ["0","1","length","a","hidden","Symbol(s)"] ["0","1","length"] ["0","1","length"] ["0","1","length","z","y"] true
+Map x50: 21121121121121121121121121121121121121121121121121 []
+Set x50: 21121121121121121121121121121121121121121121121121 []
+WeakMap x50: 21121121121121121121121121121121121121121121121121 []
+Promise x50: 21121121121121121121121121121121121121121121121121 []
+array iterator x50: 21121121121121121121121121121121121121121121121121 []
+Array: ["length","x"] ["length"] 0 true {"value":0,"writable":true,"enumerable":false,"configurable":false}
+Array: ["length","x"] ["length"] 3 true {"value":3,"writable":true,"enumerable":false,"configurable":false}
+Array: ["0","1","length","x"] ["0","1","length"] 2 true {"value":2,"writable":true,"enumerable":false,"configurable":false}
+Array: ["length","x"] ["length"] 2 true {"value":2,"writable":true,"enumerable":false,"configurable":false}
+Array: ["length","x"] ["length"] 4 true {"value":4,"writable":true,"enumerable":false,"configurable":false}
+MyArray: ["length","q"] ["length"] true [object Array]
+MyMap: ["own","q"] ["own"] true [object Map]
+Reflect.construct(Map, [], F): ["q"] [] true [object Map]
+Reflect.construct(Array, [1], F): ["length","q"] ["length"] true [object Map]
+Object.create(Map.prototype): ["q"] [] true [object Map]
+Map with its prototype set: [] 1 ["k"] [] true 1
+Array with the prototype of Map: ["length","x"] ["length"] 3 true [] true
+Array after its prototype changed: ["length"] ["length"] 1 {"value":2,"writable":true,"enumerable":false,"configurable":false} true
+changed Map.prototype: ["own"] [] 1

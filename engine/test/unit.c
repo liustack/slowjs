@@ -617,6 +617,160 @@ static void test_func_shapes_kept(void)
     JS_FreeRuntime(rt);
 }
 
+/* A context holds the empty shape of the prototype of each built-in class
+   once an object of the class is made with it, so the next objects of the
+   class find it: once they are gone the context keeps that one shape, and a
+   hundred more objects make no more. new Array(n) starts from the shape of
+   arrays, which has length, and holds no other. Freeing a context frees the
+   shapes it holds, and leaves those of another context. */
+static void test_class_shapes(void)
+{
+    static const struct {
+        const char *src;
+        int kept;
+    } kinds[] = {
+        { "new Map()", 1 },
+        { "new Set()", 1 },
+        { "new Promise(function () {})", 1 },
+        { "[1, 2][Symbol.iterator]()", 1 },
+        { "new Map().entries()", 2 },
+        { "new Date(0)", 1 },
+        { "new Array(3)", 0 },
+        { "Array(2)", 0 },
+    };
+    static const char all[] =
+        "var keep = [new Map(), new Set(), new Promise(function () {}),\n"
+        "  [1][Symbol.iterator](), new Date(0), new Array(3)]\n";
+    char src[128];
+    JSRuntime *rt;
+    JSContext *ctx, *ctx2;
+    int64_t base, one, many, n, two;
+    int i;
+
+    for(i = 0; i < (int)countof(kinds); i++) {
+        rt = host_new_runtime();
+        ctx = JS_NewContext(rt);
+        JS_RunGC(rt);
+        base = shapes(rt);
+        snprintf(src, sizeof(src), "%s", kinds[i].src);
+        CHECK(eval(ctx, src), "the script threw");
+        JS_RunGC(rt);
+        one = shapes(rt) - base;
+        snprintf(src, sizeof(src), "for (var i = 0; i < 100; i++) %s",
+                 kinds[i].src);
+        CHECK(eval(ctx, src), "the script threw");
+        JS_RunGC(rt);
+        many = shapes(rt) - base;
+        CHECK(one == kinds[i].kept && many == one, "%s: %lld shapes kept "
+              "after one, %lld after a hundred, want %d", kinds[i].src,
+              (long long)one, (long long)many, kinds[i].kept);
+        JS_FreeContext(ctx);
+        JS_FreeRuntime(rt);
+    }
+
+    rt = host_new_runtime();
+    ctx = JS_NewContext(rt);
+    CHECK(eval(ctx, all), "the script threw");
+    JS_RunGC(rt);
+    base = shapes(rt);
+    /* a context and its shapes both young: the young collection keeps
+       them */
+    ctx2 = JS_NewContext(rt);
+    CHECK(eval(ctx2, all), "the script threw");
+    JS_RunYoungGC(rt);
+    CHECK(eval_is(ctx2, "keep.map((o) => Reflect.ownKeys(o).length).join()",
+                  "0,0,0,0,0,1"), "the objects of a young context");
+    JS_RunGC(rt);
+    two = shapes(rt);
+    JS_FreeContext(ctx2);
+    JS_RunYoungGC(rt);
+    JS_RunGC(rt);
+    n = shapes(rt);
+    CHECK(n == base && two > base, "%lld shapes with one context, %lld with "
+          "two, %lld with the second freed", (long long)base, (long long)two,
+          (long long)n);
+    CHECK(eval_is(ctx, "keep.map((o) => Reflect.ownKeys(o).length).join()",
+                  "0,0,0,0,0,1"), "the objects of the context left");
+    /* an old context that holds a shape made since the last collection: the
+       young collection keeps it */
+    JS_RunGC(rt);
+    base = shapes(rt);
+    CHECK(eval(ctx, "new WeakSet()"), "the script threw");
+    JS_RunYoungGC(rt);
+    CHECK(shapes(rt) == base + 1, "%lld shapes after a WeakSet, want %lld",
+          (long long)shapes(rt), (long long)(base + 1));
+    CHECK(eval_is(ctx, "var w = new WeakSet(); w.add(keep[0]); "
+                  "[w.has(keep[0]), Reflect.ownKeys(w).length].join()",
+                  "true,0"), "a WeakSet after the young collection");
+    JS_RunGC(rt);
+    CHECK(shapes(rt) == base + 1, "%lld shapes after the collection, want "
+          "%lld", (long long)shapes(rt), (long long)(base + 1));
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
+static int proto_freed;
+
+static void proto_finalizer(JSRuntime *rt, JSValue val)
+{
+    proto_freed++;
+}
+
+/* Whether the prototype of obj is want. */
+static int proto_is(JSContext *ctx, JSValueConst obj, JSValueConst want)
+{
+    JSValue v = JS_GetPrototype(ctx, obj);
+    int same = JS_VALUE_GET_PTR(v) == JS_VALUE_GET_PTR(want);
+
+    JS_FreeValue(ctx, v);
+    return same;
+}
+
+/* The empty shape a context holds for the prototype of a built-in class
+   holds that prototype. JS_SetClassProto lets the shape go with the
+   prototype it replaces, so that prototype is freed once the host drops it,
+   and the next object of the class gets the new prototype. */
+static void test_class_shape_set_proto(void)
+{
+    static const char src[] = "new Map()";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSClassDef def = { .class_name = "Proto", .finalizer = proto_finalizer };
+    JSClassID pclass = 0, map_class;
+    JSValue map, p, q, obj;
+
+    JS_NewClassID(rt, &pclass);
+    CHECK(JS_NewClass(rt, pclass, &def) == 0, "JS_NewClass failed");
+    map = JS_Eval(ctx, src, sizeof(src) - 1, "<test>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_IsObject(map), "new Map() threw");
+    map_class = JS_GetClassID(map);
+    JS_FreeValue(ctx, map);
+
+    p = JS_NewObjectClass(ctx, pclass);
+    q = JS_NewObject(ctx);
+    CHECK(JS_IsObject(p) && JS_IsObject(q), "the prototypes");
+    JS_SetClassProto(ctx, map_class, JS_DupValue(ctx, p));
+    /* the context takes the empty shape of p */
+    obj = JS_NewObjectClass(ctx, map_class);
+    CHECK(JS_IsObject(obj) && proto_is(ctx, obj, p),
+          "an object of the class with p");
+    JS_FreeValue(ctx, obj);
+
+    JS_SetClassProto(ctx, map_class, JS_DupValue(ctx, q));
+    proto_freed = 0;
+    JS_FreeValue(ctx, p);
+    JS_RunGC(rt);
+    CHECK(proto_freed == 1, "the prototype replaced was freed %d times, "
+          "want 1", proto_freed);
+    obj = JS_NewObjectClass(ctx, map_class);
+    CHECK(JS_IsObject(obj) && proto_is(ctx, obj, q),
+          "an object of the class with q");
+    JS_FreeValue(ctx, obj);
+    JS_FreeValue(ctx, q);
+    JS_FreeContext(ctx);
+    JS_FreeRuntime(rt);
+}
+
 /* The bytes the property arrays of the objects that src makes take. */
 static int64_t lit_prop_bytes(JSRuntime *rt, JSContext *ctx, const char *src)
 {
@@ -3375,6 +3529,8 @@ int main(void)
     test_shape_cache_lifetime();
     test_func_shapes();
     test_func_shapes_kept();
+    test_class_shapes();
+    test_class_shape_set_proto();
     test_object_lit_size();
     test_object_lit_one_block();
     test_atom_keys();
