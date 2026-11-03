@@ -33,6 +33,7 @@ func TestEngineDeps(t *testing.T) {
 	}{
 		{"linux/amd64", nil, []string{"GOOS=linux", "GOARCH=amd64"}, []string{cengine, gohost, hostmem}},
 		{"darwin/arm64", nil, []string{"GOOS=darwin", "GOARCH=arm64"}, []string{cengine, gohost, hostmem}},
+		{"linux/arm64", nil, []string{"GOOS=linux", "GOARCH=arm64"}, []string{cengine, gohost, hostmem}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			cmd := exec.Command(gobin, append(append([]string{"list", "-deps"}, c.args...), ".")...)
@@ -56,14 +57,13 @@ func TestEngineDeps(t *testing.T) {
 
 // A build on a target the C engine does not run on fails with the reason as
 // its only error, not under errors of the files that need the
-// engine. The engine runs on linux/amd64 and darwin/arm64 only: linux/arm64 is
-// generated but was never run on a machine of its own, so it is refused too.
+// engine. The engine runs on linux/amd64, linux/arm64 and darwin/arm64 only.
 func TestEngineUnsupportedTarget(t *testing.T) {
 	gobin, err := exec.LookPath("go")
 	if err != nil {
 		t.Skip("no go command")
 	}
-	for _, target := range []string{"windows/amd64", "darwin/amd64", "linux/arm64", "linux/386"} {
+	for _, target := range []string{"windows/amd64", "darwin/amd64", "windows/arm64", "linux/386"} {
 		t.Run(target, func(t *testing.T) {
 			goos, goarch, _ := strings.Cut(target, "/")
 			cmd := exec.Command(gobin, "build", "-o", os.DevNull, ".")
@@ -78,8 +78,8 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 					errs = append(errs, l)
 				}
 			}
-			if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_runs_only_on_linux_amd64_and_darwin_arm64_this_target_is_not_supported") {
-				t.Fatalf("the build said\n%s\nwant only the error that names the two targets", out)
+			if len(errs) != 1 || !strings.Contains(errs[0], "the_C_engine_runs_only_on_linux_amd64_linux_arm64_and_darwin_arm64_this_target_is_not_supported") {
+				t.Fatalf("the build said\n%s\nwant only the error that names the targets", out)
 			}
 		})
 	}
