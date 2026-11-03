@@ -19,12 +19,12 @@ import (
 // on its own (mark_children.specialized.N).
 var postLinkSpecialize = strings.Join(append(append([]string{}, PostLinkOptArgs...), "-force-specialization"), " ")
 
-// TestPostLinkOptFor: the optimizer over the linked module is on for amd64,
-// the only architecture measured, and the arguments are the ones the
+// TestPostLinkOptFor: the optimizer over the linked module is on for amd64
+// and arm64, off for any other name, and the arguments are the ones the
 // documents name.
 func TestPostLinkOptFor(t *testing.T) {
-	if !PostLinkOptFor("amd64") || PostLinkOptFor("arm64") {
-		t.Errorf("PostLinkOptFor: amd64 %v, arm64 %v, want true and false", PostLinkOptFor("amd64"), PostLinkOptFor("arm64"))
+	if !PostLinkOptFor("amd64") || !PostLinkOptFor("arm64") || PostLinkOptFor("riscv64") {
+		t.Errorf("PostLinkOptFor: amd64 %v, arm64 %v, riscv64 %v, want true, true and false", PostLinkOptFor("amd64"), PostLinkOptFor("arm64"), PostLinkOptFor("riscv64"))
 	}
 	want := []string{"-passes=default<O2>", "-inline-threshold=400", "-slp-threshold=1000000"}
 	if strings.Join(PostLinkOptArgs, " ") != strings.Join(want, " ") {

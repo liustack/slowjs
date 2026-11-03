@@ -216,8 +216,8 @@ func CompileUnit(cfg UnitConfig, cfile string) (*Unit, error) {
 var PostLinkOptArgs = []string{"-passes=default<O2>", "-inline-threshold=400", "-slp-threshold=1000000"}
 
 // PostLinkOptFor says whether the driver runs PostLinkOptArgs over the linked
-// module of arch by default. Only amd64 has been measured.
-func PostLinkOptFor(arch string) bool { return arch == "amd64" }
+// module of arch by default. It is on for both architectures.
+func PostLinkOptFor(arch string) bool { return arch == "amd64" || arch == "arm64" }
 
 // PostLinkOpt runs the optimizer with args over the IR file in and writes
 // the IR file out.
