@@ -199,7 +199,7 @@ In the shop's workbench pages, 7,782 calls a render take the new path, and a ren
 
 The change is in C (`engine/quickjs.c`): `OP_call_method` and `OP_tail_call_method` call `js_has_own_call` when the function is `Function.prototype.call`. `engine/test/compare/for_in_has_own.js` calls `hasOwnProperty` with keys of every type (strings, array indexes as numbers and strings, `"01"`, the empty string, symbols, `null`, `undefined`, booleans, BigInt, objects with `toString`, one that throws) and `this` values of every kind (primitives, functions, arrays, getters, deleted keys, proxies, the global object), through `call`, `apply`, `Reflect.apply`, `bind` and as a method, with `call` and `hasOwnProperty` replaced and put back. `TestHasOwnCallDepth` (root package) checks that a recursion through it ends at the same depth as through the calls.
 
-### A shared shape that cannot be copied fails the call
+## A shared shape that cannot be copied fails the call
 
 Release: Unreleased.
 
