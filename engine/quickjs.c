@@ -55481,7 +55481,8 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
 #define JS_EMIT_PROPS_MAX 32
 #define JS_EMIT_CACHE_BITS 9
 #define JS_EMIT_CACHE_SIZE (1 << JS_EMIT_CACHE_BITS)
-#define JS_EMIT_END_SIZE 64
+#define JS_EMIT_END_BITS 8
+#define JS_EMIT_END_SIZE (1 << JS_EMIT_END_BITS)
 /* units a call may write between two checks of the length: 32 attributes
    and 32 style keys, each a name of at most 66 units and a number of at most
    25, take fewer */
@@ -55692,6 +55693,12 @@ static inline uint32_t js_emit_hash(JSAtom atom)
     return (atom * 2654435761u) >> (32 - JS_EMIT_CACHE_BITS);
 }
 
+/* the entry of an end tag, by the address of the tag string */
+static inline uint32_t js_emit_end_hash(const JSString *p)
+{
+    return (uint32_t)(((uintptr_t)p >> 3) * 2654435761u) >> (32 - JS_EMIT_END_BITS);
+}
+
 /* whether b can take n more units and still JS_EMIT_SLACK */
 static inline BOOL js_emit_fits(const StringBuffer *b, uint64_t n)
 {
@@ -55749,7 +55756,7 @@ static force_inline void js_emit_wstr(StringBuffer *b, const JSString *p,
         string_buffer_write16(b, p->u.str16 + from, to - from);
 }
 
-static inline void js_emit_put_chunk(StringBuffer *b, JSValueConst chunk)
+static force_inline void js_emit_put_chunk(StringBuffer *b, JSValueConst chunk)
 {
     JSString *p = JS_VALUE_GET_STRING(chunk);
     js_emit_wstr(b, p, 0, p->len);
@@ -55819,10 +55826,10 @@ static force_inline void js_emit_escape_block(StringBuffer *b, const JSString *p
     }
 }
 
-/* escapeTextForBrowser of p[from, to) into b, reading the interrupt flag
-   every JS_ESCAPE_STEP units: -1 when the host stops it */
-static int js_emit_put_escaped(JSContext *ctx, StringBuffer *b, const JSString *p,
-                               uint32_t from, uint32_t to)
+/* js_emit_put_escaped of a string longer than JS_ESCAPE_STEP units */
+static no_inline int js_emit_put_escaped_long(JSContext *ctx, StringBuffer *b,
+                                              const JSString *p,
+                                              uint32_t from, uint32_t to)
 {
     uint32_t end;
 
@@ -55835,6 +55842,17 @@ static int js_emit_put_escaped(JSContext *ctx, StringBuffer *b, const JSString *
         if (js_poll_interrupts(ctx))
             return -1;
     }
+}
+
+/* escapeTextForBrowser of p[from, to) into b, reading the interrupt flag
+   every JS_ESCAPE_STEP units: -1 when the host stops it */
+static int js_emit_put_escaped(JSContext *ctx, StringBuffer *b, const JSString *p,
+                               uint32_t from, uint32_t to)
+{
+    if (unlikely(to - from > JS_ESCAPE_STEP))
+        return js_emit_put_escaped_long(ctx, b, p, from, to);
+    js_emit_escape_block(b, p, from, to);
+    return 0;
 }
 
 static void js_emit_put_int(StringBuffer *b, int32_t v)
@@ -55853,7 +55871,7 @@ static void js_emit_put_int(StringBuffer *b, int32_t v)
 }
 
 /* typeof v is "function" or "symbol" */
-static BOOL js_emit_fn_or_sym(JSContext *ctx, JSValueConst v)
+static force_inline BOOL js_emit_fn_or_sym(JSContext *ctx, JSValueConst v)
 {
     int tag = JS_VALUE_GET_NORM_TAG(v);
     return tag == JS_TAG_SYMBOL || (tag == JS_TAG_OBJECT && JS_IsFunction(ctx, v));
@@ -56487,27 +56505,19 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     return JS_DupValue(ctx, argv[5]);
 }
 
-/* endTag(tag): "</" + tag + ">", kept for a string by the address of the
-   string (the tags of JSX are atoms, the same string at each call) */
-static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
-                          int argc, JSValueConst *argv)
+/* "</" + tag + ">" made for js_end_tag, kept in e for a string tag (e is
+   NULL for another value) */
+static no_inline JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, JSEmitEnd *e)
 {
-    JSEmitCache *ec = ctx->emit_cache;
     JSValue str = JS_UNDEFINED, chunk;
-    JSEmitEnd *e = NULL;
     JSString *p;
     StringBuffer b;
 
-    if (JS_VALUE_GET_TAG(argv[0]) == JS_TAG_STRING) {
-        p = JS_VALUE_GET_STRING(argv[0]);
-        e = &ec->end[((uintptr_t)p >> 4) & (JS_EMIT_END_SIZE - 1)];
-        if (likely(JS_VALUE_GET_TAG(e->tag) == JS_TAG_STRING &&
-                   JS_VALUE_GET_STRING(e->tag) == p))
-            return JS_DupValue(ctx, e->chunk);
+    if (e) {
+        p = JS_VALUE_GET_STRING(tag);
     } else {
         /* "</" + tag: ToPrimitive with no hint, then ToString */
-        str = JS_ToStringFree(ctx, JS_ToPrimitiveFree(ctx, JS_DupValue(ctx, argv[0]),
-                                                      HINT_NONE));
+        str = JS_ToStringFree(ctx, JS_ToPrimitiveFree(ctx, JS_DupValue(ctx, tag), HINT_NONE));
         if (JS_IsException(str))
             return str;
         p = JS_VALUE_GET_STRING(str);
@@ -56527,9 +56537,27 @@ static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
         return chunk;
     JS_FreeValue(ctx, e->tag);
     JS_FreeValue(ctx, e->chunk);
-    e->tag = JS_DupValue(ctx, argv[0]);
+    e->tag = JS_DupValue(ctx, tag);
     e->chunk = JS_DupValue(ctx, chunk);
     return chunk;
+}
+
+/* endTag(tag): "</" + tag + ">", kept for a string by the address of the
+   string (the tags of JSX are atoms, the same string at each call) */
+static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    JSEmitEnd *e;
+    JSString *p;
+
+    if (JS_VALUE_GET_TAG(argv[0]) != JS_TAG_STRING)
+        return js_end_tag_make(ctx, argv[0], NULL);
+    p = JS_VALUE_GET_STRING(argv[0]);
+    e = &ctx->emit_cache->end[js_emit_end_hash(p)];
+    if (likely(JS_VALUE_GET_TAG(e->tag) == JS_TAG_STRING &&
+               JS_VALUE_GET_STRING(e->tag) == p))
+        return JS_DupValue(ctx, e->chunk);
+    return js_end_tag_make(ctx, argv[0], e);
 }
 
 /* makes ctx->emit_cache with its atoms, once, and the methods it checks:
