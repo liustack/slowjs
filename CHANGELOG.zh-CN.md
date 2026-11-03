@@ -8,6 +8,11 @@
 
 - 模块可以在 linux/arm64 上构建和运行，用的生成引擎和 darwin/arm64 是同一份。CI 在 `ubuntu-24.04-arm` 上跑测试。
 
+### 修复
+
+- 用别的类的原型建数组时（比如 `F.prototype` 设成 `Map.prototype` 后调 `Reflect.construct(Array, [], F)`），如果加 `length` 时内存不够，现在会抛出内存不够的错误。以前会往空指针里写值，整个进程直接退出。上游 QuickJS 也有这个问题。
+- 对 shape 被共享的对象调 `Object.setPrototypeOf`，内存不够时不再让新原型一直留在内存里。上游 QuickJS 也有这个问题。
+
 ## [v0.29.8] - 2026-11-01
 
 ### 修复

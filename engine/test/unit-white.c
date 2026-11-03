@@ -641,6 +641,81 @@ static void test_json_stringify_oom(void)
     vm_free(&v);
 }
 
+/* each_call_failing runs setup, then calls its global f with each call of the
+   allocator failing in turn. Each call either throws the out of memory error
+   or returns want, and leaves as many objects and strings as there were
+   before it. At least min_ooms of the calls fail. */
+static void each_call_failing(const char *what, const char *setup, const char *want, int min_ooms)
+{
+    VM v = vm_new();
+    JSValue g, f;
+    int fail, n = 0, ooms = 0;
+
+    CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", what);
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "f");
+    JS_FreeValue(v.ctx, g);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        JSMemoryUsage before, after;
+        int made;
+        JSValue r;
+
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &before);
+        r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "%s, call %d failing: an exception that is not out of memory", what, fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            const char *s = JS_ToCString(v.ctx, r);
+
+            CHECK(s && !strcmp(s, want), "%s, call %d failing: %s", what, fail, s ? s : "(no string)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(!JS_HasException(v.ctx), "%s, call %d failing: an exception is pending", what, fail);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &after);
+        CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count,
+              "%s, call %d failing: %lld objects and %lld strings, before it %lld and %lld", what, fail,
+              (long long)after.obj_count, (long long)after.str_count, (long long)before.obj_count,
+              (long long)before.str_count);
+    }
+    CHECK(ooms >= min_ooms, "%s: only %d of %d calls failed", what, ooms, n);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
+/* An array made with a prototype that is not that of arrays starts from the
+   empty shape of that prototype and adds length. When that shape is shared,
+   held by another object, adding length copies it, and when the copy runs out of memory the
+   construction throws the out of memory error: it used to write the length
+   through the null it got. Setting the prototype of an object whose shape is
+   shared copies the shape too, and when that runs out of memory the new
+   prototype keeps no reference more: it used to stay alive with the one taken
+   before the copy. */
+static void test_shared_shape_oom(void)
+{
+    each_call_failing("an array with the prototype of Map",
+                      "globalThis.keep = new Map()\n"
+                      "function F() {}\n"
+                      "F.prototype = Map.prototype\n"
+                      "globalThis.f = () => { const a = Reflect.construct(Array, [], F)\n"
+                      "  return [Object.getPrototypeOf(a) === Map.prototype, a.length, Array.isArray(a)].join() }\n"
+                      "f(); f()",
+                      "true,0,true", 1);
+    each_call_failing("the prototype of a new Map set",
+                      "globalThis.keep = new Map()\n"
+                      "globalThis.f = () => { const p = { x: 1 }, m = new Map()\n"
+                      "  Object.setPrototypeOf(m, p)\n"
+                      "  return [Object.getPrototypeOf(m) === p, m.x, m.size].join() }\n"
+                      "f(); f()",
+                      "true,1,", 1);
+}
+
 /* JSON.stringify with an array as its replacer copies the names of that
    array into a list of its own. When adding a name to the list runs out of
    memory, the stringify fails with the out of memory error: it used to go
@@ -3496,6 +3571,7 @@ int main(void)
     test_json_count_high_bytes();
     test_json_key_cache();
     test_json_stringify_oom();
+    test_shared_shape_oom();
     test_json_stringify_list_oom();
     test_backtrace_attribute_checks();
     test_backtrace_class();

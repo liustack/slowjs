@@ -8,6 +8,11 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 - The module builds and runs on linux/arm64, with the same generated engine as darwin/arm64. CI runs the tests on `ubuntu-24.04-arm`.
 
+### Fixed
+
+- An array made with the prototype of another class, such as `Reflect.construct(Array, [], F)` with `F.prototype` set to `Map.prototype`, throws the out of memory error when it runs out of memory as it gets its `length`. It wrote through a null pointer and ended the process. Upstream QuickJS has the same bug.
+- `Object.setPrototypeOf` on an object whose shape is shared no longer keeps the new prototype alive when it runs out of memory. Upstream QuickJS has the same bug.
+
 ## [v0.29.8] - 2026-11-01
 
 ### Fixed

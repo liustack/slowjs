@@ -198,3 +198,14 @@ Why this is safe: for these arguments neither call can run script or throw. The 
 In the shop's workbench pages, 7,782 calls a render take the new path, and a render runs about 2.5 M fewer instructions, about 1.5%. Together with [the for in loops](#a-for-in-loop-holds-the-shape-of-its-object), the shop runs 2.5% fewer instructions, the MUI pages of tifa's test app 3.4%, `r_react_ssr` 1.8% and `r_bench_spiral` 2.8%. The time is in [performance.md](../performance.md#calls-for-in-and-hasownpropertycall).
 
 The change is in C (`engine/quickjs.c`): `OP_call_method` and `OP_tail_call_method` call `js_has_own_call` when the function is `Function.prototype.call`. `engine/test/compare/for_in_has_own.js` calls `hasOwnProperty` with keys of every type (strings, array indexes as numbers and strings, `"01"`, the empty string, symbols, `null`, `undefined`, booleans, BigInt, objects with `toString`, one that throws) and `this` values of every kind (primitives, functions, arrays, getters, deleted keys, proxies, the global object), through `call`, `apply`, `Reflect.apply`, `bind` and as a method, with `call` and `hasOwnProperty` replaced and put back. `TestHasOwnCallDepth` (root package) checks that a recursion through it ends at the same depth as through the calls.
+
+### A shared shape that cannot be copied fails the call
+
+Release: Unreleased.
+
+Two places assumed that the shape of an object they changed was its own, and went wrong when it was shared, held by another object of the same prototype, and the copy of it ran out of memory. Upstream QuickJS has the same two.
+
+- An array made with another prototype, such as `Reflect.construct(Array, [], F)` with `F.prototype` set to `Map.prototype`, starts from the empty shape of that prototype and adds `length`. `JS_NewObjectFromShape` took that as unable to fail and wrote the length through the null that `add_property` gave. It now frees the object it was making and throws the out of memory error.
+- `Object.setPrototypeOf` took its reference to the new prototype before `js_shape_prepare_update` copied the shape, and returned without giving it back when the copy failed, so the prototype and all it holds stayed alive. It now takes the reference once the shape is the object's own.
+
+Neither path runs unless memory runs out, so nothing else changes and nothing is faster or slower. `test_shared_shape_oom` in `engine/test/unit-white.c` runs both with each call of the allocator failing in turn, and checks that each call throws the out of memory error or gives the result, and leaves as many objects as before it. Without the fix the first ends the test with a segmentation fault, and the second leaves one object more.

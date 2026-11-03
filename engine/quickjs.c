@@ -7361,10 +7361,17 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
                 if (likely(sh == ctx->array_shape)) {
                     pr = &p->prop[0];
                 } else {
-                    /* only used for the first array */
-                    /* cannot fail */
+                    /* an array with another prototype, or the first one:
+                       when sh is shared, adding length copies it, which
+                       can run out of memory */
                     pr = add_property(ctx, p, JS_ATOM_length,
                                       JS_PROP_WRITABLE | JS_PROP_LENGTH);
+                    if (unlikely(!pr)) {
+                        js_free_shape(ctx->rt, p->shape);
+                        js_free(ctx, p->prop);
+                        js_free(ctx, p);
+                        return JS_EXCEPTION;
+                    }
                 }
                 pr->u.value = JS_NewInt32(ctx, 0);
             }
@@ -11182,11 +11189,14 @@ static int JS_SetPrototypeInternal(JSContext *ctx, JSValueConst obj,
             /* Note: for Proxy objects, proto is NULL */
             p1 = p1->shape->proto;
         } while (p1 != NULL);
-        JS_DupValue(ctx, proto_val);
     }
 
+    /* the shape takes its reference to proto only once it is its own: a
+       shared one is copied first, which can run out of memory */
     if (js_shape_prepare_update(ctx, p, NULL))
         return -1;
+    if (proto)
+        JS_DupValue(ctx, proto_val);
     sh = p->shape;
     if (sh->proto)
         JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
