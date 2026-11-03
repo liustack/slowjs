@@ -200,7 +200,7 @@ go run ./internal/cengine/cmd/interrupt -n 10       # time from Interrupt to the
 go run ./internal/cengine/cmd/gcpause -secs 10      # how long the Go GC waits to stop VMs that stay inside one operation, for the same scripts
 ```
 
-The engine builds on linux/amd64 and darwin/arm64 only, and every other target gets `internal/unsupported`, whose error names the two. linux/arm64 is generated too (its qemu run is below) but no machine of its own has run it, so it is refused until one has. Generate arm64 on the linux/amd64 build machine with `-arch arm64 -mode pn`: the files of each architecture end in its name, so both sit in `internal/cengine` at once. The same arm64 package runs on a Mac (run the tests there as above) and on linux/arm64. With no arm64 Linux machine, cross-build the test binaries (`GOOS=linux GOARCH=arm64 go test -c -tags testhooks`) and run each under `qemu-aarch64` from its package folder, with three limits of the emulator: a test that starts the test binary again as a child (`TestExceptionConversionThrows`, `TestCloseRetry`, `TestCloseTwice`, `TestDateLocalTimeIsUTC`, `TestRegisterExistingName`) fails with "exec format error" unless binfmt runs it, `TestStackNoHugePages` fails as qemu does not pass `madvise(MADV_NOHUGEPAGE)` on, and `TestInterruptStopsLongBuiltins` failed there, killed after its 50 ms grace, when it timed the stop on the clock and the kill went by time alone: run it again, and confirm it on arm64 hardware. Check the arm64 post-link on linux/amd64: build `GOOS=linux GOARCH=arm64 go test -c -tags goasmkeep ./internal/cengine` and pass it to the generator run with `-arch arm64` as `-verify-bin`.
+The engine builds on linux/amd64, linux/arm64 and darwin/arm64 only, and every other target gets `internal/unsupported`, whose error names the three. Generate arm64 on the linux/amd64 build machine with `-arch arm64 -mode pn`: the files of each architecture end in its name, so both sit in `internal/cengine` at once. The same arm64 package runs on a Mac (run the tests there as above) and on linux/arm64, which CI runs on `ubuntu-24.04-arm`. The build machine has no arm64 cores: to run linux/arm64 there, cross-build the test binaries (`GOOS=linux GOARCH=arm64 go test -c -tags testhooks`) and run each under `qemu-aarch64` from its package folder, with three limits of the emulator: a test that starts the test binary again as a child (`TestExceptionConversionThrows`, `TestCloseRetry`, `TestCloseTwice`, `TestDateLocalTimeIsUTC`, `TestRegisterExistingName`) fails with "exec format error" unless binfmt runs it, `TestStackNoHugePages` fails as qemu does not pass `madvise(MADV_NOHUGEPAGE)` on, and `TestInterruptStopsLongBuiltins` failed there, killed after its 50 ms grace, when it timed the stop on the clock and the kill went by time alone. Check the arm64 post-link on linux/amd64: build `GOOS=linux GOARCH=arm64 go test -c -tags goasmkeep ./internal/cengine` and pass it to the generator run with `-arch arm64` as `-verify-bin`.
 
 To check that two builds of the engine print the same, run `internal/cengine/cmd/jsrun` built with each over the scripts of `engine/test/compare.sh` and compare the outputs file by file. The recorded outputs of `compare.sh` are the same on darwin/arm64 and linux/amd64.
 
@@ -251,15 +251,15 @@ The race detector ignores atomic operations on memory outside Go's heap, such as
 make build_all_targets
 ```
 
-It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the two targets the engine runs on (linux/amd64 and darwin/arm64), plain and with `-tags testhooks`. It takes a long time. For a quick look, build the main ones:
+It builds every package and compiles the tests of every package (not only the root), each package to a test binary of its own, as two packages share the name `gen`, for the targets the engine runs on (linux/amd64, linux/arm64 and darwin/arm64), plain and with `-tags testhooks`. It takes a long time. For a quick look, build the main ones:
 
 ```sh
-for t in linux/amd64 darwin/arm64; do
+for t in linux/amd64 linux/arm64 darwin/arm64; do
 	GOOS=${t%/*} GOARCH=${t#*/} go build ./...
 done
 ```
 
-A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for windows/amd64, darwin/amd64, linux/arm64 and linux/386).
+A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for windows/amd64, darwin/amd64, windows/arm64 and linux/386).
 
 ## go.work
 
@@ -358,9 +358,9 @@ scripts/remote.sh -g shop.jsonl HEAD -- make bench ARGS='report ...'      # copy
 
 ## CI
 
-GitHub Actions (`.github/workflows/`) checks every push, and every pull request from a fork, on linux/amd64 (`ubuntu-24.04`) and darwin/arm64 (`macos-15`), the two targets of the C engine. It checks that things are right and times nothing: shared machines are too noisy for that, so timing stays on the build machine.
+GitHub Actions (`.github/workflows/`) checks every push, and every pull request from a fork, on linux/amd64 (`ubuntu-24.04`), linux/arm64 (`ubuntu-24.04-arm`) and darwin/arm64 (`macos-15`), the targets of the C engine. It checks that things are right and times nothing: shared machines are too noisy for that, so timing stays on the build machine.
 
-`ci.yml` has these steps, each one on its own so that the run page shows how long it took (8 to 12 minutes in all on both platforms with a warm Go cache, most of it the root package and the native C engine):
+`ci.yml` has these steps, each one on its own so that the run page shows how long it took (8 to 12 minutes in all on each platform with a warm Go cache, most of it the root package and the native C engine):
 
 | Step | What it runs |
 | --- | --- |
@@ -369,7 +369,7 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 | Test, packages other than the root | `go test -count=1 -short -p 2` on every package but the root one |
 | Test, internal packages with the test hooks | `go test -tags testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable` |
 | Test, root package | the `root` step (`go test -p 1 .`) |
-| Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on both, so nothing is installed) |
+| Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on each, so nothing is installed) |
 
 `llvm-steps.yml` is a second workflow with one job, on linux/amd64 only, that installs LLVM 22.1.8 from apt.llvm.org (15 to 25 seconds, the version `scripts/gen-engine.sh` insists on) and runs these steps. It stops a commit that leaves the checked-in generated engine different from what the generator makes from `engine/`:
 
@@ -380,7 +380,7 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 
 The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
 
-`go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on both platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
+`go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on the three platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
 
 Left out on purpose:
 

@@ -20,7 +20,7 @@ go get github.com/liustack/slowjs
 
 ## 支持的平台
 
-linux/amd64 和 darwin/arm64。在其他平台上构建会马上报错，错误里写明这两个平台。
+linux/amd64、linux/arm64 和 darwin/arm64。在其他平台上构建会马上报错，错误里写明这三个平台。
 
 ## 第一个 VM
 

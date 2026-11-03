@@ -225,7 +225,7 @@ removes only the files of its own architecture. `-build-tag T` puts the tag T in
 front of the architecture in the `//go:build` line of every file (`T && amd64` for the `.s`
 files, `T` for `engine_decl_<arch>.go`). `scripts/gen-engine.sh` passes no tag:
 the checked-in files carry the architecture alone (`amd64`, `arm64`). The arm64 engine runs on
-darwin/arm64 (linux/arm64 is generated but no machine of its own has run it). arm64 takes `-mode pn` only:
+darwin/arm64 and linux/arm64. arm64 takes `-mode pn` only:
 preserve_none passes integers in X20 to X25 there, and its next registers,
 X26 to X28, are Go's. The other modes stay with the prototype (`proto.sh`).
 Measured on the prototype on an Apple M-series core, a call through a stub

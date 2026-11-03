@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -622,17 +624,69 @@ func TestManyStacks(t *testing.T) {
 		rs = append(rs, region{base, size})
 	}
 	slices.SortFunc(rs, func(a, b region) int { return cmp.Compare(a.base, b.base) })
-	total := 0
+	total, more := 0, 0
 	for i, r := range rs {
 		if i > 0 && rs[i-1].base+rs[i-1].size+pageSize > r.base {
 			t.Fatalf("stacks at %#x and %#x overlap", rs[i-1].base, r.base)
 		}
-		total += resident(t, r.base, r.size)
+		k := resident(t, r.base, r.size)
+		total += k
+		if k > 1 {
+			if more++; more <= 4 {
+				t.Logf("the stack at %#x has %d pages resident\n%s", r.base, k, mappingDetail(r.base))
+			}
+		}
 	}
 	t.Logf("%d stacks of %d MiB: %d pages of %d bytes resident", n, DefaultStackSize>>20, total, pageSize)
 	if total > n {
-		t.Fatalf("%d pages resident, want at most the %d touched", total, n)
+		t.Fatalf("%d pages resident in %d stacks with more than one, want at most the %d touched\n%s", total, more, n, hugePageSettings())
 	}
+}
+
+// mappingDetail returns the lines of /proc/self/smaps for the mapping that
+// holds addr, or nothing where there is no such file.
+func mappingDetail(addr uintptr) string {
+	b, err := os.ReadFile("/proc/self/smaps")
+	if err != nil {
+		return ""
+	}
+	var out []string
+	in := false
+	for _, line := range strings.Split(string(b), "\n") {
+		// a mapping starts with its range, lo-hi, and each line of it with a
+		// name that ends in a colon
+		first, _, _ := strings.Cut(line, " ")
+		if l, h, ok := strings.Cut(first, "-"); ok && !strings.HasSuffix(first, ":") {
+			if in {
+				break
+			}
+			lo, err1 := strconv.ParseUint(l, 16, 64)
+			hi, err2 := strconv.ParseUint(h, 16, 64)
+			in = err1 == nil && err2 == nil && uint64(addr) >= lo && uint64(addr) < hi
+		}
+		if in {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// hugePageSettings returns the settings of transparent huge pages, where
+// linux has them.
+func hugePageSettings() string {
+	var out []string
+	for _, f := range []string{"enabled", "defrag", "khugepaged/max_ptes_none"} {
+		if b, err := os.ReadFile("/sys/kernel/mm/transparent_hugepage/" + f); err == nil {
+			out = append(out, f+": "+strings.TrimSpace(string(b)))
+		}
+	}
+	sizes, _ := os.ReadDir("/sys/kernel/mm/transparent_hugepage")
+	for _, d := range sizes {
+		if b, err := os.ReadFile("/sys/kernel/mm/transparent_hugepage/" + d.Name() + "/enabled"); err == nil && strings.HasPrefix(d.Name(), "hugepages-") {
+			out = append(out, d.Name()+": "+strings.TrimSpace(string(b)))
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 // TestSmallStacks reserves 64 stacks of 1 MiB, which every system can commit:

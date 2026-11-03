@@ -71,8 +71,10 @@ func TestInterruptStopsLongKeys(t *testing.T) {
 		{"padEnd, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padEnd((1 << 26) + 1, '中')`, "padEnd", []int64{500, 500}, 0, 0},
 		{"padStart, a wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padStart((1 << 26) + (1 << 25), '中')`, "padStart", []int64{100}, 0, 0},
 		// the filler is one character: the call is the copy of s into the wide buffer after the allocation of the buffers, and the trials are
-		// spread over the last 40 % of it
-		{"padStart, one wide filler", `var s = 'a'.repeat(1 << 26)`, `s.padStart((1 << 26) + 1, '中')`, "padStart", nil, 300, 60},
+		// spread over the last 40 % of it. Where the host cannot remap (darwin), the buffer grows by a copy that reads no flag,
+		// about half of the call. On linux it grows in place, and the call is the copy of s alone: 128M characters
+		// keep that over 300 polls on arm64, where the copy of 64M took 210
+		{"padStart, one wide filler", `var s = 'a'.repeat(1 << 27)`, `s.padStart((1 << 27) + 1, '中')`, "padStart", nil, 300, 60},
 		// runs of narrow characters into a buffer that is wide already: each character is looked at and then copied
 		{"JSON.parse, narrow runs into a wide buffer", `var j = '"\\u4e2d' + ('a'.repeat(32768) + '\\n').repeat(1 << 9) + '"'`, `JSON.parse(j)`, "parse", nil, 0, 0},
 		{"JSON.stringify, narrow runs into a wide buffer", `var q = ['中', ('a'.repeat(32768) + '\n').repeat(1 << 9)]`, `JSON.stringify(q)`, "stringify", nil, 0, 0},

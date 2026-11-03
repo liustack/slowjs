@@ -12,7 +12,7 @@ read_when:
 
 `github.com/liustack/slowjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/quickjs` until v0.27.x. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
 
-There is no cgo and no shared library: the module cross-compiles as ordinary Go, for the two targets the engine runs on. `grep -rn 'import "C"'` finds nothing. Do not bring cgo in.
+There is no cgo and no shared library: the module cross-compiles as ordinary Go, for the targets the engine runs on. `grep -rn 'import "C"'` finds nothing. Do not bring cgo in.
 
 ## The layers
 
@@ -31,7 +31,7 @@ The Go API calls the engine only through the files below. The rest of the packag
 | `entry.go` | Going into the engine and out of it (`enter`, `leave`), the eval timeout and `Interrupt`, which the polls of the host carry out, and what a panic leaves behind |
 | `hostcall.go` | The Go functions the engine calls (`callGo`, `callBuiltin`, the class of `Then` callbacks) and the function objects that call them |
 | `enginememory.go` | `MemoryUsage`, `ReleaseMemory` and the memory of `SharedBytecode`, which is mapped read-only outside every VM |
-| `engine_unsupported.go` | On any other target, imports `internal/unsupported`, whose error, naming the two targets, is the only one the build reports |
+| `engine_unsupported.go` | On any other target, imports `internal/unsupported`, whose error, naming the targets, is the only one the build reports |
 
 The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links `internal/cengine` and its Go host.
 
@@ -96,4 +96,4 @@ Every method that runs javascript (`Eval`, `EvalValue`, `Call`, `CallValue`, `Ex
 
 ## Platforms
 
-The engine runs on linux/amd64 and darwin/arm64. Other targets are not supported: the module has no generated engine for them, so a build for one stops with an error that names the two targets (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2 (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on both (see [testing.md](testing.md#every-target)).
+The engine runs on linux/amd64, linux/arm64 and darwin/arm64. linux and darwin on arm64 run the same generated code. Other targets are not supported, so a build for one stops with an error that names these three (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2 (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on all three (see [testing.md](testing.md#every-target)).

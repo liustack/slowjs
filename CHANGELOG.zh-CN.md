@@ -2,6 +2,12 @@
 
 记录 `github.com/liustack/slowjs`（v0.27.3 及之前叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
+## [Unreleased]
+
+### 新增
+
+- 模块可以在 linux/arm64 上构建和运行，用的生成引擎和 darwin/arm64 是同一份。CI 在 `ubuntu-24.04-arm` 上跑测试。
+
 ## [v0.29.8] - 2026-11-01
 
 ### 修复
@@ -491,7 +497,11 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.4...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.8...main
+[v0.29.8]: https://github.com/liustack/slowjs/compare/v0.29.7...v0.29.8
+[v0.29.7]: https://github.com/liustack/slowjs/compare/v0.29.6...v0.29.7
+[v0.29.6]: https://github.com/liustack/slowjs/compare/v0.29.5...v0.29.6
+[v0.29.5]: https://github.com/liustack/slowjs/compare/v0.29.4...v0.29.5
 [v0.29.4]: https://github.com/liustack/slowjs/compare/v0.29.3...v0.29.4
 [v0.29.3]: https://github.com/liustack/slowjs/compare/v0.29.2...v0.29.3
 [v0.29.2]: https://github.com/liustack/slowjs/compare/v0.29.1...v0.29.2
