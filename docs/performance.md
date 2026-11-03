@@ -117,7 +117,7 @@ Where the interpreter's code lands in the binary changes its speed by 5% to 14% 
 
 A position is two numbers:
 
-- `shift`: bytes of NOP after the first engine function that the binary keeps, so that every engine function after it moves. Go puts amd64 functions on 32 bytes and the interpreter on 64, so use a multiple of 32.
+- `shift`: bytes of NOP after the first engine function that the binary keeps, so that every engine function after it moves. Go puts amd64 functions on 32 bytes, and the regexp matcher and the interpreter on 64, which takes up the rest of a shift that is not a multiple of 64, so use a multiple of 64.
 - `front`: bytes of NOP right after the `PCALIGN` at the start of the interpreter body, a multiple of 8 from 0 to 56, so that the body takes each 8-byte place in its 64-byte block.
 
 Until the protocol of measuring.md, `shift` padded the first function of `cutils_amd64.s`, which is never called, so the linker dropped it with its NOPs: in the C engine of v0.29.8 a shift of 32 or 1664 bytes left every function at the same address and moved only some read-only data. The results below that name "the whole-program move" measured that.
