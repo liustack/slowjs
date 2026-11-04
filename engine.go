@@ -163,7 +163,33 @@ type engineState struct {
 	// gohost.VM.Enter or EnterScript: a function of the engine called when
 	// it is 0 enters first (outer).
 	entered int
-	clock   func() time.Time
+	// inEngine counts the calls into the engine in progress that the Go
+	// code of this level made: the Go code that called javascript, or a Go
+	// function that javascript called, which starts a level of its own at 0
+	// (callGo). Each call adds 1 before and takes it back after it returns,
+	// so a panic or a Goexit that went up through the engine leaves it above
+	// 0 (leave and called mark the VM broken then), whatever the panic is.
+	inEngine int
+	clock    func() time.Time
+}
+
+// toEngine starts a call into the engine, which ends with m.inEngine--. It
+// panics when the engine was left halfway (abandoned): the call would run on
+// the state a panic left.
+func (m *VM) toEngine() {
+	if m.abandoned() {
+		panic(brokenPanic)
+	}
+	m.inEngine++
+}
+
+// abandoned reports whether the engine was left halfway: the VM is broken,
+// or a call into the engine that this level made has not returned, as when
+// a defer of the method runs while a panic of the engine goes up, before
+// leave marks the VM broken. Nothing calls into the engine then, not even to
+// free a value: Close gives the memory back.
+func (m *VM) abandoned() bool {
+	return m.inEngine != 0 || m.h.Broken()
 }
 
 // tmpMax is the most bytes tmp takes from the shadow stack: more go to the
@@ -183,9 +209,13 @@ func (m *VM) tmp(n uintptr) (p, sp uintptr, heap bool) {
 			return m.sp, end, false
 		}
 	}
+	m.toEngine()
 	p = cengine.Malloc(m.sp, m.rt, max(n, 1))
+	m.inEngine--
 	if p == 0 {
+		m.toEngine()
 		cengine.JS_ThrowOutOfMemory(m.sp, m.ctx)
+		m.inEngine--
 	}
 	return p, m.sp, true
 }
@@ -202,7 +232,9 @@ func (m *VM) tmpError() error {
 // tmpFree gives back what tmp took from the heap.
 func (m *VM) tmpFree(p uintptr, heap bool) {
 	if heap && p != 0 {
+		m.toEngine()
 		cengine.FreeRT(m.sp, m.rt, p)
+		m.inEngine--
 	}
 }
 
@@ -323,14 +355,20 @@ func (m *VM) jsFreeValue(v jsValue) {
 	if *refCount(v)--; *refCount(v) > 0 {
 		return
 	}
-	if m.entered == 0 {
-		// A broken VM is not entered again: Close gives its memory back.
-		if !m.h.Broken() {
-			m.outer(func() { cengine.FreeValue(m.sp, m.ctx, v.u, v.tag) })
-		}
+	if m.abandoned() {
 		return
 	}
+	if m.entered == 0 {
+		m.outer(func() {
+			m.toEngine()
+			cengine.FreeValue(m.sp, m.ctx, v.u, v.tag)
+			m.inEngine--
+		})
+		return
+	}
+	m.toEngine()
 	cengine.FreeValue(m.sp, m.ctx, v.u, v.tag)
+	m.inEngine--
 }
 
 func (m *VM) jsSetShapeCache(n int32) (r int32) {
@@ -338,7 +376,10 @@ func (m *VM) jsSetShapeCache(n int32) (r int32) {
 		m.outer(func() { r = m.jsSetShapeCache(n) })
 		return r
 	}
-	return int32(cengine.JS_SetShapeCache(m.sp, m.ctx, uintptr(n)))
+	m.toEngine()
+	r = int32(cengine.JS_SetShapeCache(m.sp, m.ctx, uintptr(n)))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsSetRegExpCache(n int32, bytes uint64) {
@@ -346,7 +387,9 @@ func (m *VM) jsSetRegExpCache(n int32, bytes uint64) {
 		m.outer(func() { m.jsSetRegExpCache(n, bytes) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_SetRegExpCache(m.sp, m.rt, uintptr(n), uintptr(bytes))
+	m.inEngine--
 }
 
 func (m *VM) jsSetMemoryLimit(limit uintptr) {
@@ -354,7 +397,9 @@ func (m *VM) jsSetMemoryLimit(limit uintptr) {
 		m.outer(func() { m.jsSetMemoryLimit(limit) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_SetMemoryLimit(m.sp, m.rt, limit)
+	m.inEngine--
 }
 
 func (m *VM) jsSetGCThreshold(threshold uintptr) {
@@ -362,7 +407,9 @@ func (m *VM) jsSetGCThreshold(threshold uintptr) {
 		m.outer(func() { m.jsSetGCThreshold(threshold) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_SetGCThreshold(m.sp, m.rt, threshold)
+	m.inEngine--
 }
 
 // killedReads reports whether m is a VM a kill left good only for Close and no
@@ -384,7 +431,10 @@ func (m *VM) jsGetGCThreshold() (r uintptr) {
 		m.outer(func() { r = m.jsGetGCThreshold() })
 		return r
 	}
-	return cengine.JS_GetGCThreshold(m.sp, m.rt)
+	m.toEngine()
+	r = cengine.JS_GetGCThreshold(m.sp, m.rt)
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsRunGC() {
@@ -392,7 +442,9 @@ func (m *VM) jsRunGC() {
 		m.outer(func() { m.jsRunGC() })
 		return
 	}
+	m.toEngine()
 	cengine.JS_RunGC(m.sp, m.rt)
+	m.inEngine--
 }
 
 func (m *VM) jsRunYoungGC() {
@@ -400,7 +452,9 @@ func (m *VM) jsRunYoungGC() {
 		m.outer(func() { m.jsRunYoungGC() })
 		return
 	}
+	m.toEngine()
 	cengine.JS_RunYoungGC(m.sp, m.rt)
+	m.inEngine--
 }
 
 func (m *VM) jsGetMemorySize() (r uintptr) {
@@ -411,7 +465,10 @@ func (m *VM) jsGetMemorySize() (r uintptr) {
 		m.outer(func() { r = m.jsGetMemorySize() })
 		return r
 	}
-	return cengine.JS_GetMemorySize(m.sp, m.rt)
+	m.toEngine()
+	r = cengine.JS_GetMemorySize(m.sp, m.rt)
+	m.inEngine--
+	return r
 }
 
 // The call depths of SetMaxStackSize (JS_DEFAULT_MAX_CALL_DEPTH and
@@ -436,7 +493,9 @@ func (m *VM) jsSetMaxStackSize(n uintptr) {
 	}
 	// It refuses while the engine runs javascript, as from a Go function
 	// that javascript called: the depth stays as it was.
+	m.toEngine()
 	cengine.JS_SetMaxCallDepth(m.sp, m.rt, n)
+	m.inEngine--
 }
 
 func (m *VM) jsSetStripInfo(flags int32) {
@@ -444,7 +503,9 @@ func (m *VM) jsSetStripInfo(flags int32) {
 		m.outer(func() { m.jsSetStripInfo(flags) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_SetStripInfo(m.sp, m.rt, uintptr(flags))
+	m.inEngine--
 }
 
 func (m *VM) setClock(now func() time.Time) {
@@ -464,7 +525,10 @@ func (m *VM) jsToString(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsToString(v) })
 		return r
 	}
-	return val(cengine.JS_ToString(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = val(cengine.JS_ToString(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsGetException() (r jsValue) {
@@ -472,7 +536,10 @@ func (m *VM) jsGetException() (r jsValue) {
 		m.outer(func() { r = m.jsGetException() })
 		return r
 	}
-	return val(cengine.JS_GetException(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_GetException(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsThrow(v jsValue) (r jsValue) {
@@ -480,7 +547,10 @@ func (m *VM) jsThrow(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsThrow(v) })
 		return r
 	}
-	return val(cengine.JS_Throw(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = val(cengine.JS_Throw(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsThrowOutOfMemory() (r jsValue) {
@@ -488,7 +558,10 @@ func (m *VM) jsThrowOutOfMemory() (r jsValue) {
 		m.outer(func() { r = m.jsThrowOutOfMemory() })
 		return r
 	}
-	return val(cengine.JS_ThrowOutOfMemory(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_ThrowOutOfMemory(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsIsUncatchableException() (r bool) {
@@ -496,7 +569,10 @@ func (m *VM) jsIsUncatchableException() (r bool) {
 		m.outer(func() { r = m.jsIsUncatchableException() })
 		return r
 	}
-	return int32(cengine.JS_IsUncatchableException(m.sp, m.ctx)) != 0
+	m.toEngine()
+	r = int32(cengine.JS_IsUncatchableException(m.sp, m.ctx)) != 0
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsSetUncatchableException(on bool) {
@@ -508,7 +584,9 @@ func (m *VM) jsSetUncatchableException(on bool) {
 	if on {
 		n = 1
 	}
+	m.toEngine()
 	cengine.JS_SetUncatchableException(m.sp, m.ctx, n)
+	m.inEngine--
 }
 
 func (m *VM) jsNewObject() (r jsValue) {
@@ -516,7 +594,10 @@ func (m *VM) jsNewObject() (r jsValue) {
 		m.outer(func() { r = m.jsNewObject() })
 		return r
 	}
-	return val(cengine.JS_NewObject(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_NewObject(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsNewArray() (r jsValue) {
@@ -524,7 +605,10 @@ func (m *VM) jsNewArray() (r jsValue) {
 		m.outer(func() { r = m.jsNewArray() })
 		return r
 	}
-	return val(cengine.JS_NewArray(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_NewArray(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsNewError() (r jsValue) {
@@ -532,7 +616,10 @@ func (m *VM) jsNewError() (r jsValue) {
 		m.outer(func() { r = m.jsNewError() })
 		return r
 	}
-	return val(cengine.JS_NewError(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_NewError(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsGetGlobalObject() (r jsValue) {
@@ -540,7 +627,10 @@ func (m *VM) jsGetGlobalObject() (r jsValue) {
 		m.outer(func() { r = m.jsGetGlobalObject() })
 		return r
 	}
-	return val(cengine.JS_GetGlobalObject(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_GetGlobalObject(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsGetPrototype(v jsValue) (r jsValue) {
@@ -548,7 +638,10 @@ func (m *VM) jsGetPrototype(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsGetPrototype(v) })
 		return r
 	}
-	return val(cengine.JS_GetPrototype(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = val(cengine.JS_GetPrototype(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsSetPrototype(v, proto jsValue) (r int32) {
@@ -556,7 +649,10 @@ func (m *VM) jsSetPrototype(v, proto jsValue) (r int32) {
 		m.outer(func() { r = m.jsSetPrototype(v, proto) })
 		return r
 	}
-	return int32(cengine.JS_SetPrototype(m.sp, m.ctx, v.u, v.tag, proto.u, proto.tag))
+	m.toEngine()
+	r = int32(cengine.JS_SetPrototype(m.sp, m.ctx, v.u, v.tag, proto.u, proto.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsIsFunction(v jsValue) (r bool) {
@@ -564,7 +660,10 @@ func (m *VM) jsIsFunction(v jsValue) (r bool) {
 		m.outer(func() { r = m.jsIsFunction(v) })
 		return r
 	}
-	return int32(cengine.JS_IsFunction(m.sp, m.ctx, v.u, v.tag)) != 0
+	m.toEngine()
+	r = int32(cengine.JS_IsFunction(m.sp, m.ctx, v.u, v.tag)) != 0
+	m.inEngine--
+	return r
 }
 
 // jsGetProperty is JS_GetProperty, an inline function of quickjs.h.
@@ -577,7 +676,10 @@ func (m *VM) jsGetPropertyInternal(obj jsValue, prop uint32, this jsValue, throw
 		m.outer(func() { r = m.jsGetPropertyInternal(obj, prop, this, throwRefError) })
 		return r
 	}
-	return val(cengine.JS_GetPropertyInternal(m.sp, m.ctx, obj.u, obj.tag, uintptr(prop), this.u, this.tag, uintptr(throwRefError)))
+	m.toEngine()
+	r = val(cengine.JS_GetPropertyInternal(m.sp, m.ctx, obj.u, obj.tag, uintptr(prop), this.u, this.tag, uintptr(throwRefError)))
+	m.inEngine--
+	return r
 }
 
 // jsSetProperty is JS_SetProperty, an inline function of quickjs.h:
@@ -589,7 +691,10 @@ func (m *VM) jsSetProperty(this jsValue, prop uint32, v jsValue) (r int32) {
 		m.outer(func() { r = m.jsSetProperty(this, prop, v) })
 		return r
 	}
-	return int32(cengine.JS_SetPropertyInternal(m.sp, m.ctx, this.u, this.tag, uintptr(prop), v.u, v.tag, this.u, this.tag, propThrow))
+	m.toEngine()
+	r = int32(cengine.JS_SetPropertyInternal(m.sp, m.ctx, this.u, this.tag, uintptr(prop), v.u, v.tag, this.u, this.tag, propThrow))
+	m.inEngine--
+	return r
 }
 
 // jsGetOwnProperty is JS_GetOwnProperty without a descriptor.
@@ -598,7 +703,10 @@ func (m *VM) jsGetOwnProperty(v jsValue, prop uint32) (r int32) {
 		m.outer(func() { r = m.jsGetOwnProperty(v, prop) })
 		return r
 	}
-	return int32(cengine.JS_GetOwnProperty(m.sp, m.ctx, 0, v.u, v.tag, uintptr(prop)))
+	m.toEngine()
+	r = int32(cengine.JS_GetOwnProperty(m.sp, m.ctx, 0, v.u, v.tag, uintptr(prop)))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsDefinePropertyValue(obj jsValue, prop uint32, v jsValue, flags int32) (r int32) {
@@ -606,7 +714,10 @@ func (m *VM) jsDefinePropertyValue(obj jsValue, prop uint32, v jsValue, flags in
 		m.outer(func() { r = m.jsDefinePropertyValue(obj, prop, v, flags) })
 		return r
 	}
-	return int32(cengine.JS_DefinePropertyValue(m.sp, m.ctx, obj.u, obj.tag, uintptr(prop), v.u, v.tag, uintptr(flags)))
+	m.toEngine()
+	r = int32(cengine.JS_DefinePropertyValue(m.sp, m.ctx, obj.u, obj.tag, uintptr(prop), v.u, v.tag, uintptr(flags)))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsDefinePropertyValueUint32(obj jsValue, i uint32, v jsValue, flags int32) (r int32) {
@@ -614,7 +725,10 @@ func (m *VM) jsDefinePropertyValueUint32(obj jsValue, i uint32, v jsValue, flags
 		m.outer(func() { r = m.jsDefinePropertyValueUint32(obj, i, v, flags) })
 		return r
 	}
-	return int32(cengine.JS_DefinePropertyValueUint32(m.sp, m.ctx, obj.u, obj.tag, uintptr(i), v.u, v.tag, uintptr(flags)))
+	m.toEngine()
+	r = int32(cengine.JS_DefinePropertyValueUint32(m.sp, m.ctx, obj.u, obj.tag, uintptr(i), v.u, v.tag, uintptr(flags)))
+	m.inEngine--
+	return r
 }
 
 // jsSetPropertyStr is JS_SetPropertyStr of the property name.
@@ -629,7 +743,9 @@ func (m *VM) jsSetPropertyStr(obj jsValue, name string, v jsValue) (r int32, err
 		return 0, m.tmpError()
 	}
 	// JS_SetPropertyStr takes over the reference to v, not the name.
+	m.toEngine()
 	r = int32(cengine.JS_SetPropertyStr(sp, m.ctx, obj.u, obj.tag, p, v.u, v.tag))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -645,7 +761,9 @@ func (m *VM) jsNewAtom(s string) (r uint32, err error) {
 	if p == 0 {
 		return atomNull, m.tmpError()
 	}
+	m.toEngine()
 	r = uint32(cengine.JS_NewAtomLen(sp, m.ctx, p, uintptr(len(s))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -660,7 +778,9 @@ func (m *VM) jsNewEscapeTextFunction(name string) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewEscapeTextFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -675,7 +795,9 @@ func (m *VM) jsNewCopyPropsFunction(name string) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewCopyPropsFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -690,7 +812,9 @@ func (m *VM) jsNewStartTagFunction(name string) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewStartTagFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -705,19 +829,24 @@ func (m *VM) jsNewEndTagFunction(name string) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewEndTagFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
 
 func (m *VM) jsFreeAtom(a uint32) {
-	if m.entered == 0 {
-		if !m.h.Broken() {
-			m.outer(func() { m.jsFreeAtom(a) })
-		}
+	if m.abandoned() {
 		return
 	}
+	if m.entered == 0 {
+		m.outer(func() { m.jsFreeAtom(a) })
+		return
+	}
+	m.toEngine()
 	cengine.JS_FreeAtom(m.sp, m.ctx, uintptr(a))
+	m.inEngine--
 }
 
 func (m *VM) jsGetAsyncContext() (r jsValue) {
@@ -725,7 +854,10 @@ func (m *VM) jsGetAsyncContext() (r jsValue) {
 		m.outer(func() { r = m.jsGetAsyncContext() })
 		return r
 	}
-	return val(cengine.JS_GetAsyncContext(m.sp, m.ctx))
+	m.toEngine()
+	r = val(cengine.JS_GetAsyncContext(m.sp, m.ctx))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsSetAsyncContext(v jsValue) {
@@ -733,7 +865,9 @@ func (m *VM) jsSetAsyncContext(v jsValue) {
 		m.outer(func() { m.jsSetAsyncContext(v) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_SetAsyncContext(m.sp, m.ctx, v.u, v.tag)
+	m.inEngine--
 }
 
 // jsJSONStringify is JS_JSONStringify without a replacer and a space, whose
@@ -743,7 +877,10 @@ func (m *VM) jsJSONStringify(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsJSONStringify(v) })
 		return r
 	}
-	return val(cengine.JS_JSONStringify(m.sp, m.ctx, v.u, v.tag, undefined.u, undefined.tag, undefined.u, undefined.tag))
+	m.toEngine()
+	r = val(cengine.JS_JSONStringify(m.sp, m.ctx, v.u, v.tag, undefined.u, undefined.tag, undefined.u, undefined.tag))
+	m.inEngine--
+	return r
 }
 
 // The file names of syntax errors.
@@ -773,7 +910,9 @@ func (m *VM) jsParseJSON2(s string, json bool, flags int32) (r jsValue, err erro
 	copy(b, fn)
 	copy(b[len(fn):], s)
 	b[len(b)-1] = 0
+	m.toEngine()
 	r = val(cengine.JS_ParseJSON2(sp, m.ctx, p+uintptr(len(fn)), uintptr(len(s)), p, uintptr(flags)))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -803,7 +942,9 @@ func (m *VM) jsEval(src string, flags int32) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_Eval(sp, m.ctx, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -818,7 +959,9 @@ func (m *VM) jsEvalThis(this jsValue, src string, flags int32) (r jsValue, err e
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_EvalThis(sp, m.ctx, this.u, this.tag, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -828,7 +971,10 @@ func (m *VM) jsEvalFunction(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsEvalFunction(v) })
 		return r
 	}
-	return val(cengine.JS_EvalFunction(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = val(cengine.JS_EvalFunction(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsResolveModule(v jsValue) (r int32) {
@@ -836,7 +982,10 @@ func (m *VM) jsResolveModule(v jsValue) (r int32) {
 		m.outer(func() { r = m.jsResolveModule(v) })
 		return r
 	}
-	return int32(cengine.JS_ResolveModule(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = int32(cengine.JS_ResolveModule(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 // setImportMeta is js_module_set_import_meta of quickjs-libc.c, which the
@@ -848,9 +997,15 @@ func (m *VM) setImportMeta(v jsValue) {
 		m.outer(func() { m.setImportMeta(v) })
 		return
 	}
+	m.toEngine()
 	name := cengine.JS_GetModuleName(m.sp, m.ctx, v.u)
+	m.inEngine--
+	m.toEngine()
 	s := val(cengine.JS_AtomToString(m.sp, m.ctx, name))
+	m.inEngine--
+	m.toEngine()
 	cengine.JS_FreeAtom(m.sp, m.ctx, name)
+	m.inEngine--
 	if isException(s) {
 		return
 	}
@@ -862,7 +1017,9 @@ func (m *VM) setImportMeta(v jsValue) {
 	if !containsByte(url, ':') {
 		url = "file://" + url
 	}
+	m.toEngine()
 	meta := val(cengine.JS_GetImportMeta(m.sp, m.ctx, v.u))
+	m.inEngine--
 	if isException(meta) {
 		return
 	}
@@ -882,7 +1039,9 @@ func (m *VM) defineStr(obj jsValue, name string, v jsValue) {
 		m.jsFreeValue(v)
 		return
 	}
+	m.toEngine()
 	cengine.JS_DefinePropertyValueStr(sp, m.ctx, obj.u, obj.tag, p, v.u, v.tag, propCWE)
+	m.inEngine--
 	m.tmpFree(p, heap)
 }
 
@@ -900,7 +1059,10 @@ func (m *VM) jsPromiseState(v jsValue) (r int32) {
 		m.outer(func() { r = m.jsPromiseState(v) })
 		return r
 	}
-	return int32(cengine.JS_PromiseState(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = int32(cengine.JS_PromiseState(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 func (m *VM) jsPromiseResult(v jsValue) (r jsValue) {
@@ -908,7 +1070,10 @@ func (m *VM) jsPromiseResult(v jsValue) (r jsValue) {
 		m.outer(func() { r = m.jsPromiseResult(v) })
 		return r
 	}
-	return val(cengine.JS_PromiseResult(m.sp, m.ctx, v.u, v.tag))
+	m.toEngine()
+	r = val(cengine.JS_PromiseResult(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
 }
 
 // jsExecutePendingJob is JS_ExecutePendingJob, which does not report the
@@ -918,7 +1083,10 @@ func (m *VM) jsExecutePendingJob() (r int32) {
 		m.outer(func() { r = m.jsExecutePendingJob() })
 		return r
 	}
-	return int32(cengine.JS_ExecutePendingJob(m.sp, m.rt, 0))
+	m.toEngine()
+	r = int32(cengine.JS_ExecutePendingJob(m.sp, m.rt, 0))
+	m.inEngine--
+	return r
 }
 
 // tmpValues is tmp of the values a, copied there, or p 0 for no values.
@@ -945,7 +1113,9 @@ func (m *VM) jsCall(f, this jsValue, args []jsValue) (r jsValue, err error) {
 	if err != nil {
 		return jsValue{}, err
 	}
+	m.toEngine()
 	r = val(cengine.JS_Call(sp, m.ctx, f.u, f.tag, this.u, this.tag, uintptr(len(args)), argv))
+	m.inEngine--
 	m.tmpFree(argv, heap)
 	return r, nil
 }
@@ -961,7 +1131,9 @@ func (m *VM) jsArrayOfValues(a []jsValue) (r jsValue, err error) {
 	if err != nil {
 		return jsValue{}, err
 	}
+	m.toEngine()
 	r = val(cengine.ArrayOf(sp, m.ctx, uintptr(len(a)), argv))
+	m.inEngine--
 	m.tmpFree(argv, heap)
 	return r, nil
 }
@@ -979,7 +1151,9 @@ func (m *VM) jsReadObject(bytecode []byte, flags int32) (r jsValue, err error) {
 		return jsValue{}, m.tmpError()
 	}
 	copy(bytesAt(p, uintptr(len(bytecode))), bytecode)
+	m.toEngine()
 	r = val(cengine.JS_ReadObject(sp, m.ctx, p, uintptr(len(bytecode)), uintptr(flags)))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -991,7 +1165,10 @@ func (m *VM) jsReadShared(b *SharedBytecode, flags int32) (r jsValue) {
 		m.outer(func() { r = m.jsReadShared(b, flags) })
 		return r
 	}
-	return val(cengine.JS_ReadObject(m.sp, m.ctx, b.p, uintptr(b.n), uintptr(flags)))
+	m.toEngine()
+	r = val(cengine.JS_ReadObject(m.sp, m.ctx, b.p, uintptr(b.n), uintptr(flags)))
+	m.inEngine--
+	return r
 }
 
 // jsWriteObject returns the bytecode of the compiled script v, and false
@@ -1002,12 +1179,16 @@ func (m *VM) jsWriteObject(v jsValue) (b []byte, ok bool) {
 		return b, ok
 	}
 	psize := m.sp
+	m.toEngine()
 	p := cengine.JS_WriteObject(m.sp+16, m.ctx, psize, v.u, v.tag, writeObjBytecode)
+	m.inEngine--
 	if p == 0 {
 		return nil, false
 	}
 	b = append([]byte(nil), bytesAt(p, *(*uintptr)(addr(psize)))...)
+	m.toEngine()
 	cengine.Free(m.sp, m.ctx, p)
+	m.inEngine--
 	return b, true
 }
 
@@ -1018,7 +1199,9 @@ func (m *VM) freeTopLevel(mod jsValue) {
 		m.outer(func() { m.freeTopLevel(mod) })
 		return
 	}
+	m.toEngine()
 	cengine.JS_FreeModuleTopLevel(m.sp, m.ctx, mod.u)
+	m.inEngine--
 }
 
 func (m *VM) jsNewPromiseCapability() (promise, resolve, reject jsValue, err error) {
@@ -1027,7 +1210,9 @@ func (m *VM) jsNewPromiseCapability() (promise, resolve, reject jsValue, err err
 		return promise, resolve, reject, err
 	}
 	funcs := m.sp
+	m.toEngine()
 	promise = val(cengine.JS_NewPromiseCapability(m.sp+2*sizeofJsValue, m.ctx, funcs))
+	m.inEngine--
 	if isException(promise) {
 		return promise, undefined, undefined, nil
 	}
@@ -1051,7 +1236,9 @@ func (m *VM) newStringChars(n int, wide bool) (r jsValue, p uintptr) {
 	if wide {
 		w = 1
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewStringChars(m.sp, m.ctx, uintptr(n), w))
+	m.inEngine--
 	if n == 0 || isException(r) {
 		return r, 0
 	}
@@ -1069,7 +1256,9 @@ func (m *VM) jsNewStringLen(s string) (r jsValue, err error) {
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.toEngine()
 	r = val(cengine.JS_NewStringLen(sp, m.ctx, p, uintptr(len(s))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
@@ -1082,7 +1271,9 @@ func (m *VM) toGoString(v jsValue, wtf8 bool) (s string, ok bool) {
 		return s, ok
 	}
 	plen := m.sp
+	m.toEngine()
 	p := cengine.JS_ToCStringLen2(m.sp+16, m.ctx, plen, v.u, v.tag, 0)
+	m.inEngine--
 	if p == 0 {
 		return "", false
 	}
@@ -1092,7 +1283,9 @@ func (m *VM) toGoString(v jsValue, wtf8 bool) (s string, ok bool) {
 	} else {
 		s = wellFormed(b)
 	}
+	m.toEngine()
 	cengine.JS_FreeCString(m.sp, m.ctx, p)
+	m.inEngine--
 	return s, true
 }
 
@@ -1135,7 +1328,9 @@ func (m *VM) jsThrowError(kind int, msg string) (r jsValue) {
 	if p == 0 {
 		return exception
 	}
+	m.toEngine()
 	r = val(cengine.JS_ThrowErrorKind(sp, m.ctx, errorKinds[kind], p, uintptr(len(msg))))
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r
 }

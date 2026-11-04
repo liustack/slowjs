@@ -53,7 +53,9 @@ func (m *VM) memoryUsage() (u MemoryUsage) {
 		return u
 	}
 	p := m.sp
+	m.toEngine()
 	cengine.JS_ComputeMemoryUsage(p+(unsafe.Sizeof(jsMemoryUsage{})+15)&^15, m.rt, p)
+	m.inEngine--
 	s := *(*jsMemoryUsage)(addr(p))
 	return MemoryUsage{
 		MallocSize:         s.MallocSize,
@@ -98,10 +100,12 @@ func (m *VM) releaseMemory(keep uintptr) (n uintptr) {
 		m.outer(func() { n = m.releaseMemory(keep) })
 		return n
 	}
+	m.toEngine()
 	cengine.JS_ReleaseStart(m.sp, m.rt, keep)
 	r, _ := m.h.Memory().Release(
 		func() (uintptr, uintptr) { return cengine.JS_ReleaseNextChunk(m.sp, m.rt) },
 		func() (uintptr, uintptr) { return cengine.JS_ReleaseNextRange(m.sp, m.rt) },
 		0)
+	m.inEngine--
 	return r.Chunks + r.Pages + r.Stack
 }
