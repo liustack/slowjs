@@ -136,7 +136,7 @@ that must fail the tests and the register scan.
 
 ## Running
 
-`proto.sh` (from the slowjs root, linux/amd64) builds the pass, generates
+`proto.sh` (from the liustack/quickjs root, linux/amd64) builds the pass, generates
 `internal/proto`, builds its tests and runs the post-link verify. `ARCH=arm64`
 generates the arm64 package and cross-builds its tests: copy the package to
 an arm64 machine to run them. `MODE` is the call mode. Set `CALL_OVERHEAD=1`

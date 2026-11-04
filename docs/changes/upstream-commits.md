@@ -1,5 +1,5 @@
 ---
-summary: 'The commits of upstream QuickJS taken into engine/ one at a time after the pinned 3d5e064 (the fixes of wrong answers, leaks and crashes, Array slice and splice, borrowed operands in js_strict_eq2, template literals, unicode_script), the faster indexOf and includes that perf found, the ones tried and taken back, the BigInt comparison fixed in slowjs, and the rest that are left out, with tests and speed'
+summary: 'The commits of upstream QuickJS taken into engine/ one at a time after the pinned 3d5e064 (the fixes of wrong answers, leaks and crashes, Array slice and splice, borrowed operands in js_strict_eq2, template literals, unicode_script), the faster indexOf and includes that perf found, the ones tried and taken back, the BigInt comparison fixed in liustack/quickjs, and the rest that are left out, with tests and speed'
 read_when:
   - Asking which upstream QuickJS commits after 2026-06-04 the C tree has, and which it does not
   - Changing js_array_slice, js_array_splice, js_strict_eq2, js_array_indexOf, js_array_includes, js_parse_template or unicode_script in engine/
@@ -12,12 +12,12 @@ read_when:
 
 `engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
 
-Where an upstream commit meets a change of slowjs, slowjs's change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
+Where an upstream commit meets a change of liustack/quickjs, that change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
 
 | Upstream commit | What it does | How it was taken | Test |
 | --- | --- | --- | --- |
 | `42d08be` optimized Array.prototype.slice and splice | slice and splice of a dense Array copy or move the elements directly | all of it, with `js_call_constructor` (which counts the call depth) where upstream calls `JS_CallConstructor` | `compare/array_slice_splice.js` |
-| `8f0c037` use JSValueConst arguments for js_strict_eq2 | `indexOf`, `lastIndexOf`, `includes`, `Map` and `Set` stop duplicating and freeing the values they compare | all but its last hunk, which edits macros slowjs does not have | `compare/strict_equal.js` |
+| `8f0c037` use JSValueConst arguments for js_strict_eq2 | `indexOf`, `lastIndexOf`, `includes`, `Map` and `Set` stop duplicating and freeing the values they compare | all but its last hunk, which edits macros liustack/quickjs does not have | `compare/strict_equal.js` |
 | `f8199dc` Fix template literal substitution | a template converts each substitution to a string at once, as the specification orders, and no longer calls `String.prototype.concat` | all of it | `compare/template_literal.js` |
 | `817509a` removed infinite loop in unicode_script() | the out of memory path of `\p{Script=...}` returns instead of jumping to itself | all of it | `unit-oom`, `test_regexp_script_oom` |
 | `c17f7fc` fixed BigInt.AsUintN() | `BigInt.asUintN` of a negative BigInt wrapped it only below 64 bits | all of it | `compare/bigint_as_n.js`, `test_bigint.js` of upstream |
@@ -44,7 +44,7 @@ Where an upstream commit meets a change of slowjs, slowjs's change stays and the
 | `1ec58aa` Await the async iterator return() when a for-await loop breaks | a for await loop that leaves early waits for `return()`, and one that ends does not call it | without its `using` branch, with a check of the result added | `compare/for_await_close.js` |
 | `19d6bd8` fixed arbitrary module namespace names | `export { x as "a-b" }` and `export * as "name" from` | all of it, and test262 runs the feature | `compare/module_string_names.mjs` |
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` is a valid regexp | it was in the C tree already | `test_builtin.js` of upstream, which now has the line |
-| `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining slowjs's shape handling | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
+| `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining the shape handling of liustack/quickjs | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | an empty iterator without an initial accumulator throws without reading or calling `return` | all of it | `compare/iterator_reduce.js`, `TestUpstreamIteratorReduce` |
 | `aac9bc5` fixed Iterator.concat logic | close through IteratorClose and finish the helper after any failed step | merged into the separate next and return functions, with a fresh completed result from return | `compare/iterator_concat.js`, `TestUpstreamIteratorConcat` |
 
@@ -148,12 +148,12 @@ Each file under `engine/test/compare` is what Node 24 prints, except for the lin
 
 ## Left out
 
-Judged by reading each diff against slowjs's tree.
+Judged by reading each diff against the tree of liustack/quickjs.
 
 - `0808cbc` (nonextensible-applies-to-private) is a proposal, not a fix. A private field or a brand cannot be added to a non-extensible object. Node 24 adds it, so the commit would make the C tree differ from Node. Taking it later is one commit: its two checks are in `JS_DefinePrivateField` and `JS_AddBrand`, and its change of `test262.conf` turns the feature on.
-- Fixes outside the table that this tree cannot use: `cac72873` (a Symbol key in `JS_PrintValue`, which the Go API does not call), `0d9e5855` (32 bit hosts), `44e85b16` (the `os` and `std` modules of the `qjs` shell), and the fixes of upstream's Temporal and Intl (`4d56487d`, `4490e58b`, `ea3deb14`, `a37f62af`, `bcb9ad17`), which slowjs does not have.
-- Already fixed in slowjs: `cd97c2b` (the stack of a syntax error out of memory, upstream #529).
+- Fixes outside the table that this tree cannot use: `cac72873` (a Symbol key in `JS_PrintValue`, which the Go API does not call), `0d9e5855` (32 bit hosts), `44e85b16` (the `os` and `std` modules of the `qjs` shell), and the fixes of upstream's Temporal and Intl (`4d56487d`, `4490e58b`, `ea3deb14`, `a37f62af`, `bcb9ad17`), which liustack/quickjs does not have.
+- Already fixed in liustack/quickjs: `cd97c2b` (the stack of a syntax error out of memory, upstream #529).
 - `4b0addb` (`JS_IteratorNext` without two unused arguments) is a cleanup of a signature. It was not tried.
 - New features, which Vite compiles away: the new iterator helpers (`zip`, `zipKeyed`, `join`, `includes`, chunking), `Promise.allKeyed`, `Array.fromAsync`, explicit resource management, `Atomics.waitAsync`.
-- API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (slowjs has go-intl) and upstream's test tools.
+- API for embedders that tifa does not use (the `JS_To*` exports and the like), upstream's Temporal and Intl (liustack/quickjs has go-intl) and upstream's test tools.
 

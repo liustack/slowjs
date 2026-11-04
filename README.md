@@ -1,8 +1,8 @@
-# slowjs
+# liustack/quickjs
 
 Run today's npm code unchanged inside one static Go binary.
 
-slowjs renders React slower than Node and faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS compiled to Go assembly and tuned for server rendering, built for tifa, a Go framework for React pages.
+liustack/quickjs renders React slower than Node and faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS compiled to Go assembly and tuned for server rendering, built for tifa, a Go framework for React pages.
 
 It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
 
@@ -13,10 +13,10 @@ English · [简体中文](README.zh-CN.md)
 ## Install
 
 ```sh
-go get github.com/liustack/slowjs
+go get github.com/liustack/quickjs
 ```
 
-Go 1.26.6 or a later 1.26 release, or Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against Go 1.26 and 1.27. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until slowjs has been checked with it and moves its limit in a patch release. `-tags quickjs_anygo` builds anyway (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
+Go 1.26.6 or a later 1.26 release, or Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against Go 1.26 and 1.27. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/quickjs has been checked with it and moves its limit in a patch release. `-tags quickjs_anygo` builds anyway (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
 
 ## Platforms
 
@@ -32,12 +32,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/intl"
 )
 
 func main() {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -51,11 +51,11 @@ func main() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, slowjs.EvalGlobal)
+	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, quickjs.EvalGlobal)
 	fmt.Println(v, err) // 1970/1/1 08:00:00 <nil>
 
-	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, slowjs.EvalGlobal)
-	var e *slowjs.Error
+	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, quickjs.EvalGlobal)
+	var e *quickjs.Error
 	if errors.As(err, &e) && e.Interrupted {
 		fmt.Println("timed out, and no catch saw it")
 	}
@@ -66,7 +66,7 @@ A VM is not safe for several goroutines at once: give each goroutine its own, or
 
 ## More API than Eval and Call
 
-The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs). Besides `NewVM`, `VM.Eval`, `VM.Call` and `Value`, which every program starts with, it has:
+The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs). Besides `NewVM`, `VM.Eval`, `VM.Call` and `Value`, which every program starts with, it has:
 
 - **`NewBuiltin(name, length, fn)` and `VM.NewBuiltinFunction(b)`**: a Go function javascript calls as it calls `Math.max`, with no reflection. `fn` reads its arguments from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`, and `Latin1` or `UTF16` for the characters of a string as the engine holds them), which convert nothing, and returns a `Value`. A call that adds two numbers takes about 55 ns on an Apple M4, against about 470 ns through `RegisterHostFunc`. Make a Builtin once per process: VMs on several goroutines call it at once. An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`), any other error as a `TypeError`. [More](docs/changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
 - **`VM.NewArray(vals...)`**: an array of values made in Go, made as an array literal makes one, so a setter a page put on `Array.prototype` never runs. [More](docs/changes/go-api.md#newarray)
@@ -97,7 +97,7 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 
 ## Why you can trust it
 
-- **The engine is upstream QuickJS.** `engine/` is Bellard's C at one pinned commit, with the changes of slowjs on top, each written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
+- **The engine is upstream QuickJS.** `engine/` is Bellard's C at one pinned commit, with the changes of liustack/quickjs on top, each written down. LLVM compiles it to Go assembly that is checked in, so building needs no C compiler, and `make check-gen` fails when the checked-in files are not what the generator makes from `engine/` ([how to check](docs/testing.md#generate-and-check)).
 - **The generator refuses what it has not checked.** It stops on an instruction, a call or a stack frame it has no rule for, and checks the linked code of a test binary, so a change of the C or of Go itself that breaks the engine shows up as a failed build or test, not as a wrong answer.
 - **Every change is written down.** [docs/changes](docs/changes/README.md) gives each change with why it is safe, what it costs in memory, what it gains on which machine, and its tests.
 - **The tests are upstream's and more.** test262 gives 33 known failures, 25 fewer since the fixes taken from upstream QuickJS, and the same ones from run to run. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
@@ -109,7 +109,7 @@ The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Char
 
 ## Thanks
 
-Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired slowjs.
+Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/quickjs.
 
 ## Documentation
 
@@ -123,12 +123,12 @@ Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan 
 | [Testing](docs/testing.md) | You are about to commit, or want to check the engine |
 | [Upgrading](docs/upgrading.md) | You are taking a commit of upstream QuickJS, or new locale data |
 | [Releasing](docs/releasing.md), [Commits](docs/commit.md) | You are making a release or a commit |
-| [Upstream](docs/upstream.md) | You are moving from modernc.org/quickjs, or want to know where the code comes from |
+| [Upstream](docs/upstream.md) | You are moving from modernc.org/quickjs or github.com/liustack/slowjs, or want to know where the code comes from |
 
-The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs).
+The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs).
 
 ## License
 
-The files slowjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. Code that came from other projects keeps its own license: what remains from modernc.org/quickjs and modernc.org/libquickjs is under BSD-3-Clause ([LICENSE](LICENSE), [LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)), the C of the engine under QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)), the allocator under TLSF's BSD-3-Clause ([LICENSE-TLSF](LICENSE-TLSF)), and the small libc under musl's MIT license and the notices in [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT). slowjs's changes to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
+The files liustack/quickjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. Code that came from other projects keeps its own license: what remains from modernc.org/quickjs and modernc.org/libquickjs is under BSD-3-Clause ([LICENSE](LICENSE), [LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)), the C of the engine under QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)), the allocator under TLSF's BSD-3-Clause ([LICENSE-TLSF](LICENSE-TLSF)), and the small libc under musl's MIT license and the notices in [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT). The changes of liustack/quickjs to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
 
 A program that ships a binary built with this module has to carry the notices of these licenses. [NOTICE.md](NOTICE.md) says which license covers which path, and which texts to include.

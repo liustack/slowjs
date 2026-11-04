@@ -25,7 +25,7 @@ read_when:
 
 # The Go API
 
-Changes an embedder sees in what the methods of `github.com/liustack/slowjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
+Changes an embedder sees in what the methods of `github.com/liustack/quickjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
 
 ## Call reports the exception of the function expression
 
@@ -63,7 +63,7 @@ Release: v0.26.7.
 
 `*Error` says whether the call ended with an exception no script could catch, and why, so that an embedder need not compare names and messages, which a script can copy. `Uncatchable` is true when the VM ran out of memory (`OutOfMemory`, also when the engine could not build the error and threw `null`), when `Interrupt` or the eval timeout stopped the script (`Interrupted`), and when a Go function that javascript called panicked (neither of the two). The same holds for the error a Go function gets from javascript it evaluates. What a script throws is never uncatchable, even `new InternalError('interrupted')` or `{name: 'InternalError', message: 'out of memory'}`, which used to look exactly like the real thing. Taking an uncatchable error runs no page code: `Name` is `InternalError`, `Message` and `Stack` are the error's own properties, and `Error()` is `InternalError: <message>`. It used to call an `Error.prototype.toString` or a `name` getter that page code installed, which could rewrite the message. An interrupt that runs out of memory building its error counts as `OutOfMemory`.
 
-A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
+A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, quickjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
 
 Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_c_test.go` on the C engine.
 
@@ -354,8 +354,8 @@ undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_t
 
 The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !quickjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
 
-- **To build anyway**, with a Go slowjs has not been checked with, add `-tags quickjs_anygo`.
-- **When a new Go comes out**, slowjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of slowjs.
+- **To build anyway**, with a Go that liustack/quickjs has not been checked with, add `-tags quickjs_anygo`.
+- **When a new Go comes out**, liustack/quickjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of liustack/quickjs.
 - **Patch releases of Go** are not told apart: a build line can name `go1.28` but not `go1.27.3`.
 
 The error is in its own package, `internal/goversion`, which `internal/cengine` imports, so the go command builds it first and it is the only error the build reports.
@@ -379,7 +379,7 @@ asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a glob
 asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
 ```
 
-The comment above each of those lines in the file says which option it is and that slowjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
+The comment above each of those lines in the file says which option it is and that liustack/quickjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
 
 - **Options that leave the engine as it is.** `-shared` (what `-buildmode=pie` passes on linux and darwin), `-spectre=index`, `-race`, `-msan`, `-asan`, `-cover` and `-gcflags` do not reach the assembler, or change only the prologue the assembler writes before the fixed bytes. On linux/amd64 `-shared` makes the stack check at the start of a function 2 bytes longer (seen in `quickjs_0_amd64.s`), which shifts the body and no branch inside it. The engine passes its tests when built with `-buildmode=pie` on linux/amd64.
 - **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.

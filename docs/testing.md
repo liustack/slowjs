@@ -268,7 +268,7 @@ There is normally no `go.work`. The whole repository, `make benchmark` in `compa
 
 Make one with `make work` for one case only: working on a module next to this one (tifa, for example) against this checkout. Delete it (`make clean`, or `rm -f go.work go.work.sum`) when you are done, or the tree keeps building against whatever is in the working copy next door instead of the version in `go.mod`.
 
-While a `go.work` exists it must keep listing `./compare`. A workspace is found by walking up from the current folder, so it also governs builds inside `compare/`, which then fail with `main module (github.com/liustack/slowjs) does not contain package github.com/liustack/slowjs/compare`. `make work` writes the current toolchain into the `go` line: a `go.work` left over from an older toolchain, below the `go` version of `compare/go.mod`, breaks `make benchmark` with `module . listed in go.work file requires go >= …`.
+While a `go.work` exists it must keep listing `./compare`. A workspace is found by walking up from the current folder, so it also governs builds inside `compare/`, which then fail with `main module (github.com/liustack/quickjs) does not contain package github.com/liustack/quickjs/compare`. `make work` writes the current toolchain into the `go` line: a `go.work` left over from an older toolchain, below the `go` version of `compare/go.mod`, breaks `make benchmark` with `module . listed in go.work file requires go >= …`.
 
 ## Developer tools: generate, check, time
 

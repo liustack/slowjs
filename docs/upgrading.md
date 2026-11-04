@@ -13,7 +13,7 @@ read_when:
 
 ## Branches and remotes
 
-`main` is the branch of slowjs.
+`main` is the branch of liustack/quickjs.
 
 Set up the remote once in a fresh clone. It is Fabrice Bellard's repository, where the C comes from:
 
@@ -26,12 +26,12 @@ Do the upgrade on a branch (`git switch -c upgrade-quickjs-<date>`) and merge it
 
 ## Taking upstream QuickJS into engine/
 
-`engine/` is QuickJS at `3d5e064` (2026-06-04) with slowjs's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream that fixes a wrong answer, a leak or a crash is taken, whether or not a page of tifa can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
+`engine/` is QuickJS at `3d5e064` (2026-06-04) with the changes of liustack/quickjs, and it changes on its own. It does not follow upstream release by release. A commit of upstream that fixes a wrong answer, a leak or a crash is taken, whether or not a page of tifa can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
 
 For each commit:
 
 1. `git fetch quickjs`, then see what is new: `git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`.
-2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of slowjs ([changes](changes/README.md) names the functions), slowjs's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
+2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of liustack/quickjs ([changes](changes/README.md) names the functions), that change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
 5. At the end of a batch, run `make check-full`. The known test262 errors (33) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
@@ -125,7 +125,7 @@ internal/gointl/qjs-sync.sh update         # copies its runtime sources here and
 internal/gointl/qjs-sync.sh chromium       # records what Chromium resolves the new tags to
 internal/gointl/qjs-sync.sh pack           # writes qjsdata/ again
 internal/gointl/qjs-sync.sh test -p 2      # go-intl's own tests, on packs of every language
-internal/gointl/qjs-sync.sh test-chromium -p 2  # slowjs's Chromium corpora on the shipped packs
+internal/gointl/qjs-sync.sh test-chromium -p 2  # the Chromium corpora of liustack/quickjs on the shipped packs
 go test ./internal/gointl/... && make gointl
 ```
 
