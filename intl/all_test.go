@@ -901,7 +901,7 @@ func TestInstallOnUse(t *testing.T) {
 	vm := newVM(t)
 	evalTests(t, vm, [][2]string{
 		{`typeof Object.getOwnPropertyDescriptor(globalThis, 'Intl').get`, "function"},
-		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+		{hostFuncsSeen, "0"},
 	})
 	if n := shimInstalls.Load() - before; n != 0 {
 		t.Fatalf("Register installed the shim %d times, want 0", n)
@@ -913,7 +913,12 @@ func TestInstallOnUse(t *testing.T) {
 		{`'value' in Object.getOwnPropertyDescriptor(globalThis, 'Intl')`, "true"},
 		{`Date.prototype.toLocaleDateString === f`, "false"},
 		{`f.call(new Date(0), 'de', {timeZone: 'UTC'})`, "1.1.1970"},
-		{`Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`, "0"},
+		{hostFuncsSeen, "0"},
+	})
+	// The check sees a name a VM without Intl does not have.
+	evalTests(t, vm, [][2]string{
+		{`globalThis.probe = 1; ` + hostFuncsSeen, "1"},
+		{`delete globalThis.probe; ` + hostFuncsSeen, "0"},
 	})
 	if n := shimInstalls.Load() - before; n != 1 {
 		t.Fatalf("the shim was installed %d times, want 1", n)

@@ -7,6 +7,7 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -26,8 +27,24 @@ const firstUse = `(() => {
 	}
 })()`
 
-// hostFuncsSeen counts the host functions a page can see on the global object.
-const hostFuncsSeen = `Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__quickjs_intl')).length`
+// hostFuncsSeen counts the names on the global object that a VM without Intl
+// does not have, other than Intl itself: the host functions of the shim, or
+// anything else an install leaves for a page to see.
+var hostFuncsSeen = globalsSeen()
+
+// globalsSeen is hostFuncsSeen for a VM that also has the globals own.
+func globalsSeen(own ...string) string {
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		panic(err)
+	}
+	defer vm.Close()
+	names, err := vm.Eval(`JSON.stringify(Object.getOwnPropertyNames(globalThis))`, quickjs.EvalGlobal)
+	if err != nil {
+		panic(err)
+	}
+	return `(b => Object.getOwnPropertyNames(globalThis).filter(n => n !== 'Intl' && !b.has(n)).length)(new Set(` + fmt.Sprint(names) + `.concat(` + strconv.Quote(strings.Join(own, ",")) + `.split(","))))`
+}
 
 // afterFailedInstall are the checks a VM whose install failed has to pass once
 // the cause is gone: nothing left behind, and the next use installs.
@@ -107,7 +124,7 @@ func TestInstallFailsOnLowMemory(t *testing.T) {
 const deepFirstUse = `
 	const failures = [];
 	let result;
-	function down() {
+	const down = function () {
 		try {
 			down();
 		} catch (e) {
@@ -246,6 +263,7 @@ func TestInstallInterrupted(t *testing.T) {
 		step = 11
 	}
 	before := interruptedInstalls.Load()
+	seen := globalsSeen("interrupt")
 	for k := 0; k <= period; k += step {
 		vm, err := quickjs.NewVM()
 		if err != nil {
@@ -270,7 +288,7 @@ func TestInstallInterrupted(t *testing.T) {
 		}
 
 		vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, quickjs.EvalGlobal)
-		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+hostFuncsSeen+`].join(' ')`, quickjs.EvalGlobal)
+		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, quickjs.EvalGlobal)
 		vm.Close()
 		if got := fmt.Sprint(v); err != nil || got != "1,234.5 1.234,5 0" {
 			t.Fatalf("interrupted %d instructions later: got %q, %v", k, got, err)
