@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·js_malloc_rt(SB), NOSPLIT, $48-32
+TEXT ·js_malloc_rt(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -64,7 +64,7 @@ TEXT ·js_malloc_rt(SB), NOSPLIT, $48-32
 	QUAD $0xadeb000000000841
 	RET
 
-TEXT ·js_malloc_large(SB), NOSPLIT, $32-32
+TEXT ·js_malloc_large(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -192,7 +192,7 @@ TEXT ·js_malloc_new_arena(SB), $160-32
 	BYTE $0x00
 	RET
 
-TEXT ·js_heap_alloc(SB), NOSPLIT, $80-32
+TEXT ·js_heap_alloc(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -233,7 +233,7 @@ TEXT ·js_heap_alloc(SB), NOSPLIT, $80-32
 	BYTE $0x00
 	RET
 
-TEXT ·js_front_drain(SB), NOSPLIT, $160-24
+TEXT ·js_front_drain(SB), $160-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -525,7 +525,7 @@ TEXT ·js_front_drain(SB), NOSPLIT, $160-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·js_free_rt(SB), NOSPLIT, $80-24
+TEXT ·js_free_rt(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -1021,7 +1021,7 @@ TEXT ·js_realloc_rt(SB), $128-40
 	BYTE $0xff
 	RET
 
-TEXT ·js_heap_realloc(SB), NOSPLIT, $80-40
+TEXT ·js_heap_realloc(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -1699,7 +1699,7 @@ TEXT ·JS_ThrowError2(SB), $160-48
 	BYTE $0xff
 	RET
 
-TEXT ·JS_Throw(SB), NOSPLIT, $64-48
+TEXT ·JS_Throw(SB), $64-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -4905,7 +4905,7 @@ TEXT ·js_backtrace_record(SB), $192-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_backtrace_restore(SB), NOSPLIT, $96-48
+TEXT ·js_backtrace_restore(SB), $96-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -5453,7 +5453,7 @@ TEXT ·js_backtrace_put_frame(SB), $160-40
 	BYTE $0xff
 	RET
 
-TEXT ·JS_FreeAtomStruct(SB), NOSPLIT, $112-24
+TEXT ·JS_FreeAtomStruct(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -6059,7 +6059,7 @@ TEXT ·js_string_to_cstring(SB), $176-56
 	QUAD $0x0101010101010101
 	RET
 
-TEXT ·JS_FreeCString(SB), NOSPLIT, $80-24
+TEXT ·JS_FreeCString(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7747,7 +7747,7 @@ TEXT ·resize_properties(SB), $192-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_shape_renumber(SB), NOSPLIT, $80-24
+TEXT ·js_shape_renumber(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7808,7 +7808,7 @@ TEXT ·js_shape_renumber(SB), NOSPLIT, $80-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_rope_child_free(SB), NOSPLIT, $80-40
+TEXT ·js_rope_child_free(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -15024,7 +15024,7 @@ TEXT ·JS_RunGCInternal(SB), $208-24
 	BYTE $0xff
 	RET
 
-TEXT ·js_free(SB), NOSPLIT, $80-24
+TEXT ·js_free(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -15095,7 +15095,7 @@ TEXT ·js_free(SB), NOSPLIT, $80-24
 	BYTE $0xff
 	RET
 
-TEXT ·free_property(SB), NOSPLIT, $64-32
+TEXT ·free_property(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -15618,7 +15618,7 @@ TEXT ·gc_scan_incref_child2(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·gc_free_cycles(SB), NOSPLIT, $128-16
+TEXT ·gc_free_cycles(SB), $128-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -15791,7 +15791,7 @@ TEXT ·gc_ephemeron_count(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·gc_ephemeron_activate(SB), NOSPLIT, $112-24
+TEXT ·gc_ephemeron_activate(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -15907,7 +15907,7 @@ TEXT ·gc_ephemeron_activate(SB), NOSPLIT, $112-24
 	BYTE $0x00
 	RET
 
-TEXT ·map_delete_record_internal(SB), NOSPLIT, $96-32
+TEXT ·map_delete_record_internal(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -16024,7 +16024,7 @@ TEXT ·map_delete_record_internal(SB), NOSPLIT, $96-32
 	BYTE $0xff
 	RET
 
-TEXT ·map_hash_key(SB), NOSPLIT, $112-40
+TEXT ·map_hash_key(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -16451,7 +16451,7 @@ TEXT ·map_hash_key(SB), NOSPLIT, $112-40
 	QUAD $0xfffffa5dfffff432
 	RET
 
-TEXT ·js_weakref_free(SB), NOSPLIT, $80-32
+TEXT ·js_weakref_free(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -16566,7 +16566,7 @@ TEXT ·js_finrec_job(SB), $32-48
 	BYTE $0x00
 	RET
 
-TEXT ·__js_poll_interrupts(SB), NOSPLIT, $64-16
+TEXT ·__js_poll_interrupts(SB), $64-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -16590,7 +16590,7 @@ TEXT ·__js_poll_interrupts(SB), NOSPLIT, $64-16
 	BYTE $0x00
 	RET
 
-TEXT ·js_call_enter(SB), NOSPLIT, $48-24
+TEXT ·js_call_enter(SB), $48-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -17451,7 +17451,7 @@ TEXT ·JS_ToObject(SB), $160-48
 	QUAD $0xfffff2b9fffff28d
 	RET
 
-TEXT ·js_object_lit_shape(SB), NOSPLIT, $176-40
+TEXT ·js_object_lit_shape(SB), $176-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -18192,7 +18192,7 @@ TEXT ·js_build_mapped_arguments(SB), $176-64
 	BYTE $0xff
 	RET
 
-TEXT ·JS_NewObjectProto(SB), NOSPLIT, $112-48
+TEXT ·JS_NewObjectProto(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -18258,7 +18258,7 @@ TEXT ·JS_NewObjectProto(SB), NOSPLIT, $112-48
 	BYTE $0xa7
 	RET
 
-TEXT ·js_import_meta(SB), NOSPLIT, $128-32
+TEXT ·js_import_meta(SB), $128-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -18413,7 +18413,7 @@ TEXT ·js_import_meta(SB), NOSPLIT, $128-32
 	BYTE $0x83
 	RET
 
-TEXT ·js_create_array(SB), NOSPLIT, $144-48
+TEXT ·js_create_array(SB), $144-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -19334,7 +19334,7 @@ TEXT ·js_function_call(SB), $32-64
 	BYTE $0x00
 	RET
 
-TEXT ·js_has_own_call(SB), NOSPLIT, $80-48
+TEXT ·js_has_own_call(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19693,7 +19693,7 @@ TEXT ·build_arg_list(SB), $176-48
 	BYTE $0xff
 	RET
 
-TEXT ·free_arg_list(SB), NOSPLIT, $96-32
+TEXT ·free_arg_list(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -20137,7 +20137,7 @@ TEXT ·js_proxy_get_prototype(SB), $144-48
 	BYTE $0xff
 	RET
 
-TEXT ·JS_CheckBrand(SB), NOSPLIT, $112-56
+TEXT ·JS_CheckBrand(SB), $112-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -21486,7 +21486,7 @@ TEXT ·__JS_NewAtom(SB), $240-48
 	QUAD $0x0000000000000004
 	RET
 
-TEXT ·JS_ThrowTypeErrorReadOnly(SB), NOSPLIT, $80-40
+TEXT ·JS_ThrowTypeErrorReadOnly(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21532,7 +21532,7 @@ TEXT ·JS_ThrowTypeErrorReadOnly(SB), NOSPLIT, $80-40
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), NOSPLIT, $80-24
+TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21560,7 +21560,7 @@ TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), NOSPLIT, $80-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowReferenceErrorUninitialized(SB), NOSPLIT, $64-24
+TEXT ·JS_ThrowReferenceErrorUninitialized(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -21600,7 +21600,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized(SB), NOSPLIT, $64-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_strict_eq2(SB), NOSPLIT, $144-64
+TEXT ·js_strict_eq2(SB), $144-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c

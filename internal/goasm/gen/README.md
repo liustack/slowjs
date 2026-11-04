@@ -165,7 +165,7 @@ stack), and the default has no stubs. `-keep-going` is for surveys: it lists eve
 C must change, by class, and stubs it instead of stopping. `-release` is the
 formal build: it fails on any stub, needs `-out`, and refuses every switch
 made for surveys and tests (`-keep-going`, `-loose-varargs`, `-poison`,
-`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, `GEN_FORCE_NOSPLIT`, a changed
+`GEN_KEEP_NARROW`, `GEN_EDIT_LOWERED`, a changed
 `-non-format-variadic`, a `-postlink-opt` other than `auto`, changed
 `-postlink-opt-args`) before it does any work. `-mode` is `body` or `pn`.
 `-varargs-block` passes variable arguments in a shadow-stack block instead of
@@ -301,29 +301,30 @@ loads it after, and stores it where it is left. The hidden option
 the check stop the pass.
 
 Functions without a stack check: every unified entry starts with Go's
-stack check unless its TEXT says NOSPLIT, and the driver chooses which ones
-do (`ChooseNoSplit`, `nosplit.go`). The list holds the leaves the Go
-assembler marks NOSPLIT by itself (no call and a frame under 128 bytes), the
-register-entry leaves, and the functions it chooses on top of those: a
-function whose address is not taken, that makes no call through a pointer,
-that is on no cycle of direct calls and whose chain of NOSPLIT calls fits the
-room the linker gives one (792 bytes on amd64 and on arm64, counted
-by `AMD64Stack` and `ARM64Stack`, which differ in the frame each call
-adds). Every recursion then goes
+stack check unless its TEXT says NOSPLIT, and the generator chooses no
+function to go without one (`MarkNoSplit`, `nosplit.go`). The NOSPLIT list
+holds only the functions that cannot have one: the register-entry leaves,
+and the leaves the Go assembler marks NOSPLIT by itself (no call and a frame
+under 128 bytes with the saved base pointer, counted by `AMD64Stack` and
+`ARM64Stack`, which differ in how a frame is rounded). An automatic leaf
+calls nothing, and a register-entry leaf calls only other register-entry
+leaves (the engine's three call nothing): the driver fails on any other
+call, on a cycle of them, and on a chain of them that takes 128 bytes or
+more below its entry. A fault in a leaf becomes a call of
+`runtime.sigpanic` pushed onto the
+goroutine's stack, and sigpanic's stack check may call morestack: that
+needs 16 bytes on amd64 and 24 on arm64, and the stack check of the leaf's
+caller left at least 800 bytes, less the leaf's frame. Every recursion goes
 through a stack check, which is where the stack grows and where the runtime
 can stop the goroutine, and every loop still calls `host_poll`, whose own
-stack check is the safe point. The room is counted as the linker counts it,
-with 64 bytes more below the deepest frame of each chain (`FaultRoom`): a
-fault there becomes a call of `runtime.sigpanic` pushed onto the goroutine's
-stack, and sigpanic's stack check may call morestack, which needs 16 bytes
-above the bottom of the stack and ends the process with "split stack
-overflow" when they are not there. A function also leaves room above it for
-the ABI wrapper of a Go func value of it (its arguments and 16 bytes). The
-linker checks the chains again on every build and fails it when one does
-not fit. The driver prints the size of the list, writes each function on it
-with its frame and height to `nosplit.txt` in the work folder, and
-`engine_decl_<arch>.go` names them in `noSplitList`, for the tests. The post-link
-check holds each entry's stack check to the list.
+stack check is the safe point. The linker checks every chain of NOSPLIT
+calls again on each build, the ABI wrapper of a Go func value included. The
+driver prints the size of the list, writes each function on it with its
+kind and frame to `nosplit.txt` in the work folder, and
+`engine_decl_<arch>.go` names them in `noSplitList`, for the tests. The
+generator writes NOSPLIT in the TEXT of each function on the list, and the
+post-link check holds each entry's stack check to it: a Go assembler that
+marks another leaf NOSPLIT by itself, or stops marking one, fails the check.
 
 Where a body starts: after Go's prologue each function has a `PCALIGN $16`,
 so the body starts on 16 bytes and moves within its lines of 64 bytes when
@@ -336,7 +337,7 @@ which run once per call). The default of the amd64 engine is
 `-src` build have none unless the flag is given. The post-link check holds each body
 to its place and the padding before it to no-ops.
 
-Three negative builds test the tests. `-poison` writes garbage into every
+Two negative builds test the tests. `-poison` writes garbage into every
 register at each entry before the arguments are loaded, after each unified
 call before the result is read and at each return: the engine's tests must
 still pass, so no code reads a register the lowering did not set. A poison
@@ -347,10 +348,7 @@ the post-link check must reject the result (`TestNarrowArgs`). Only the value 1
 turns it on, and any other value but an empty one is an error. The package of
 such a build is marked: `engine_negative_<arch>.go` does not compile without
 `-tags goasmnegative`, and `engine_decl_<arch>.go` says so. A later build into the
-same folder removes the file. `GEN_FORCE_NOSPLIT=f,g` puts those functions
-on the NOSPLIT list whatever the rules say, and marks the package the same
-way: the linker must refuse a recursion or a chain too deep for the room
-(`TestSampleRuns/nosplit_fault`).
+same folder removes the file.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine

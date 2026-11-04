@@ -2446,7 +2446,7 @@ TEXT ·JS_DefinePropertyValue(SB), $128-72
 	BYTE $0x00
 	RET
 
-TEXT ·JS_FreePropertyEnum(SB), NOSPLIT, $96-32
+TEXT ·JS_FreePropertyEnum(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -2924,7 +2924,7 @@ TEXT ·JS_HasProperty(SB), $128-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowReferenceErrorNotDefined(SB), NOSPLIT, $80-24
+TEXT ·JS_ThrowReferenceErrorNotDefined(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -2952,7 +2952,7 @@ TEXT ·JS_ThrowReferenceErrorNotDefined(SB), NOSPLIT, $80-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), NOSPLIT, $64-40
+TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), $64-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -2997,7 +2997,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), NOSPLIT, $64-40
 	BYTE $0x00
 	RET
 
-TEXT ·get_var_ref(SB), NOSPLIT, $80-48
+TEXT ·get_var_ref(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -3081,7 +3081,7 @@ TEXT ·get_var_ref(SB), NOSPLIT, $80-48
 	CALL ·abort(SB)
 	RET
 
-TEXT ·JS_ToBoolFree(SB), NOSPLIT, $80-40
+TEXT ·JS_ToBoolFree(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -3151,7 +3151,7 @@ TEXT ·JS_ToBoolFree(SB), NOSPLIT, $80-40
 	QUAD $0xfffffe96fffffe89
 	RET
 
-TEXT ·js_own_keys_scan(SB), NOSPLIT, $160-48
+TEXT ·js_own_keys_scan(SB), $160-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -3738,7 +3738,7 @@ TEXT ·JS_GetOwnPropertyInternal(SB), $144-48
 	BYTE $0xff
 	RET
 
-TEXT ·JS_AtomToValue(SB), NOSPLIT, $48-40
+TEXT ·JS_AtomToValue(SB), $48-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -4739,7 +4739,7 @@ TEXT ·js_get_function_name(SB), $64-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·JS_FreeAtom(SB), NOSPLIT, $32-24
+TEXT ·JS_FreeAtom(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -5698,7 +5698,7 @@ TEXT ·JS_ConcatString3(SB), $192-64
 	BYTE $0xff
 	RET
 
-TEXT ·js_closure2(SB), NOSPLIT, $224-80
+TEXT ·js_closure2(SB), $224-80
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000f024a48b4c
@@ -8450,7 +8450,7 @@ TEXT ·js_add_slow(SB), $128-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_ConcatStringInPlace(SB), NOSPLIT, $96-48
+TEXT ·JS_ConcatStringInPlace(SB), $96-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -13845,7 +13845,7 @@ TEXT ·js_eq_slow(SB), $176-40
 	QUAD $0xfffff482fffff74d
 	RET
 
-TEXT ·js_strict_eq_slow(SB), NOSPLIT, $144-40
+TEXT ·js_strict_eq_slow(SB), $144-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -14811,7 +14811,7 @@ TEXT ·js_backtrace_build(SB), $160-40
 	BYTE $0xff
 	RET
 
-TEXT ·close_var_refs(SB), NOSPLIT, $96-32
+TEXT ·close_var_refs(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -15660,7 +15660,7 @@ TEXT ·js_shape_prepare_update(SB), $144-40
 	QUAD $0xfffffa57e9000000
 	RET
 
-TEXT ·remove_global_object_property(SB), NOSPLIT, $80-48
+TEXT ·remove_global_object_property(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -16057,7 +16057,7 @@ TEXT ·compact_properties(SB), $192-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·convert_fast_array_to_array(SB), NOSPLIT, $112-32
+TEXT ·convert_fast_array_to_array(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -16506,7 +16506,7 @@ TEXT ·JS_GetPrototypeFree(SB), $80-48
 	BYTE $0x9c
 	RET
 
-TEXT ·js_string_rope_compare(SB), NOSPLIT, $176-88
+TEXT ·js_string_rope_compare(SB), $176-88
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -16990,7 +16990,7 @@ TEXT ·js_string_rope_compare(SB), NOSPLIT, $176-88
 	CALL ·abort(SB)
 	RET
 
-TEXT ·js_compare_bigint(SB), NOSPLIT, $128-64
+TEXT ·js_compare_bigint(SB), $128-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -19227,7 +19227,7 @@ TEXT ·js_bigint_new(SB), $80-32
 	BYTE $0x92
 	RET
 
-TEXT ·js_bigint_extend(SB), NOSPLIT, $112-40
+TEXT ·js_bigint_extend(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -19384,7 +19384,7 @@ TEXT ·js_bigint_extend(SB), NOSPLIT, $112-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·js_bigint_float64_cmp(SB), NOSPLIT, $144-32
+TEXT ·js_bigint_float64_cmp(SB), $144-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -19516,7 +19516,7 @@ TEXT ·js_bigint_float64_cmp(SB), NOSPLIT, $144-32
 	BYTE $0xff
 	RET
 
-TEXT ·js_bigint_new_di(SB), NOSPLIT, $64-32
+TEXT ·js_bigint_new_di(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -20144,7 +20144,7 @@ TEXT ·js_string_to_number(SB), $192-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_linearize_string_rope(SB), NOSPLIT, $112-48
+TEXT ·js_linearize_string_rope(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -20368,7 +20368,7 @@ TEXT ·string_buffer_init2(SB), $80-48
 	BYTE $0xff
 	RET
 
-TEXT ·string_buffer_concat_rope(SB), NOSPLIT, $96-40
+TEXT ·string_buffer_concat_rope(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -20545,7 +20545,7 @@ TEXT ·string_buffer_concat_rope(SB), NOSPLIT, $96-40
 	BYTE $0xff
 	RET
 
-TEXT ·string_buffer_end(SB), NOSPLIT, $96-32
+TEXT ·string_buffer_end(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c

@@ -9878,7 +9878,7 @@ TEXT ·JS_ThrowInternalError(SB), $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_ThrowRangeError(SB), NOSPLIT, $72-48
+TEXT ·JS_ThrowRangeError(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9936,7 +9936,7 @@ TEXT ·JS_ThrowRangeError(SB), NOSPLIT, $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_ThrowTypeError(SB), NOSPLIT, $72-48
+TEXT ·JS_ThrowTypeError(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9994,7 +9994,7 @@ TEXT ·JS_ThrowTypeError(SB), NOSPLIT, $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_ThrowReferenceError(SB), NOSPLIT, $72-48
+TEXT ·JS_ThrowReferenceError(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10052,7 +10052,7 @@ TEXT ·JS_ThrowReferenceError(SB), NOSPLIT, $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_ThrowSyntaxError(SB), NOSPLIT, $72-48
+TEXT ·JS_ThrowSyntaxError(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10110,7 +10110,7 @@ TEXT ·JS_ThrowSyntaxError(SB), NOSPLIT, $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_ThrowTypeErrorOrFalse(SB), NOSPLIT, $72-48
+TEXT ·JS_ThrowTypeErrorOrFalse(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10177,7 +10177,7 @@ TEXT ·JS_ThrowTypeErrorOrFalse(SB), NOSPLIT, $72-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_parse_error(SB), NOSPLIT, $120-32
+TEXT ·js_parse_error(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10312,7 +10312,7 @@ TEXT ·js_parse_error(SB), NOSPLIT, $120-32
 	WORD $0x14000001
 	RET
 
-TEXT ·js_parse_error_pos(SB), NOSPLIT, $120-40
+TEXT ·js_parse_error_pos(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10446,7 +10446,7 @@ TEXT ·js_parse_error_pos(SB), NOSPLIT, $120-40
 	WORD $0x14000001
 	RET
 
-TEXT ·code_match(SB), NOSPLIT, $88-40
+TEXT ·code_match(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10635,7 +10635,7 @@ TEXT ·code_match(SB), NOSPLIT, $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_throw_URIError(SB), NOSPLIT, $72-32
+TEXT ·js_throw_URIError(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10689,7 +10689,7 @@ TEXT ·js_throw_URIError(SB), NOSPLIT, $72-32
 	WORD $0x14000001
 	RET
 
-TEXT ·dump_printf(SB), NOSPLIT, $72-32
+TEXT ·dump_printf(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10732,7 +10732,7 @@ TEXT ·dump_printf(SB), NOSPLIT, $72-32
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_ThrowErrorf(SB), NOSPLIT, $72-40
+TEXT ·JS_ThrowErrorf(SB), $72-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10787,7 +10787,7 @@ TEXT ·JS_ThrowErrorf(SB), NOSPLIT, $72-40
 	WORD $0x14000001
 	RET
 
-TEXT ·js_new_string_char(SB), NOSPLIT, $88-40
+TEXT ·js_new_string_char(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10973,7 +10973,7 @@ TEXT ·tofp16(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·emit_op(SB), NOSPLIT, $56-24
+TEXT ·emit_op(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11001,7 +11001,7 @@ TEXT ·emit_op(SB), NOSPLIT, $56-24
 	WORD $0x14000001
 	RET
 
-TEXT ·emit_u16(SB), NOSPLIT, $56-24
+TEXT ·emit_u16(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11029,7 +11029,7 @@ TEXT ·emit_u16(SB), NOSPLIT, $56-24
 	WORD $0x14000001
 	RET
 
-TEXT ·dbuf_put_u16(SB), NOSPLIT, $56-24
+TEXT ·dbuf_put_u16(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11055,7 +11055,7 @@ TEXT ·dbuf_put_u16(SB), NOSPLIT, $56-24
 	WORD $0x14000001
 	RET
 
-TEXT ·emit_u8(SB), NOSPLIT, $56-24
+TEXT ·emit_u8(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

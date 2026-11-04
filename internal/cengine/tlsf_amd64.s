@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·tlsf_check(SB), NOSPLIT, $96-24
+TEXT ·tlsf_check(SB), $96-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -179,7 +179,7 @@ TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_check_pool(SB), NOSPLIT, $48-24
+TEXT ·tlsf_check_pool(SB), $48-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -264,7 +264,7 @@ TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-16
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_add_pool(SB), NOSPLIT, $16-40
+TEXT ·tlsf_add_pool(SB), $16-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -307,7 +307,7 @@ TEXT ·tlsf_add_pool(SB), NOSPLIT, $16-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_remove_pool(SB), NOSPLIT, $16-24
+TEXT ·tlsf_remove_pool(SB), $16-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -345,7 +345,7 @@ TEXT ·tlsf_remove_pool(SB), NOSPLIT, $16-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_create(SB), NOSPLIT, $64-24
+TEXT ·tlsf_create(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -400,7 +400,7 @@ TEXT ·tlsf_create(SB), NOSPLIT, $64-24
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_create_with_pool(SB), NOSPLIT, $80-32
+TEXT ·tlsf_create_with_pool(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -508,7 +508,7 @@ TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
 	QUAD $0x00eb182444894800
 	RET
 
-TEXT ·tlsf_malloc(SB), NOSPLIT, $16-32
+TEXT ·tlsf_malloc(SB), $16-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -607,7 +607,7 @@ TEXT ·tlsf_malloc(SB), NOSPLIT, $16-32
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_free(SB), NOSPLIT, $64-24
+TEXT ·tlsf_free(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -693,7 +693,7 @@ TEXT ·tlsf_free(SB), NOSPLIT, $64-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·block_merge_next(SB), NOSPLIT, $16-32
+TEXT ·block_merge_next(SB), $16-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -734,7 +734,7 @@ TEXT ·block_merge_next(SB), NOSPLIT, $16-32
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_realloc_inplace(SB), NOSPLIT, $64-40
+TEXT ·tlsf_realloc_inplace(SB), $64-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -830,7 +830,7 @@ TEXT ·tlsf_realloc_inplace(SB), NOSPLIT, $64-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_realloc(SB), NOSPLIT, $128-40
+TEXT ·tlsf_realloc(SB), $128-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -1042,7 +1042,7 @@ TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_pool_is_free(SB), NOSPLIT, $16-24
+TEXT ·tlsf_pool_is_free(SB), $16-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c

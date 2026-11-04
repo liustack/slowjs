@@ -3034,7 +3034,7 @@ TEXT ·JS_ToQuotedString(SB), $344-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·string_buffer_putc16(SB), NOSPLIT, $56-32
+TEXT ·string_buffer_putc16(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4138,7 +4138,7 @@ TEXT ·js_sub_string_long(SB), $264-56
 	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·js_new_string16_len(SB), NOSPLIT, $120-48
+TEXT ·js_new_string16_len(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4440,7 +4440,7 @@ TEXT ·JS_PreventExtensions(SB), $56-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·json_parse_record_add(SB), NOSPLIT, $136-48
+TEXT ·json_parse_record_add(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10401,7 +10401,7 @@ TEXT ·json_parse_value(SB), $248-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·free_token(SB), NOSPLIT, $72-24
+TEXT ·free_token(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10491,7 +10491,7 @@ TEXT ·free_token(SB), NOSPLIT, $72-24
 	WORD $0x14000001
 	RET
 
-TEXT ·json_parse_expect(SB), NOSPLIT, $56-32
+TEXT ·json_parse_expect(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13706,7 +13706,7 @@ TEXT ·js_regexp_constructor(SB), $184-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_RegExpExec(SB), NOSPLIT, $120-64
+TEXT ·JS_RegExpExec(SB), $120-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13863,7 +13863,7 @@ TEXT ·JS_RegExpExec(SB), NOSPLIT, $120-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_ToLengthFree(SB), NOSPLIT, $120-48
+TEXT ·JS_ToLengthFree(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22253,7 +22253,7 @@ TEXT ·js_regexp_Symbol_split(SB), $296-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·string_indexof_char(SB), NOSPLIT, $56-32
+TEXT ·string_indexof_char(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22349,7 +22349,7 @@ TEXT ·string_indexof_char(SB), NOSPLIT, $56-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·JS_ToUint32(SB), NOSPLIT, $104-48
+TEXT ·JS_ToUint32(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22427,7 +22427,7 @@ TEXT ·JS_ToUint32(SB), NOSPLIT, $104-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_NewObjectClass(SB), NOSPLIT, $120-40
+TEXT ·JS_NewObjectClass(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22517,7 +22517,7 @@ TEXT ·JS_NewObjectClass(SB), NOSPLIT, $120-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·check_regexp_getter(SB), NOSPLIT, $88-48
+TEXT ·check_regexp_getter(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22611,7 +22611,7 @@ TEXT ·check_regexp_getter(SB), NOSPLIT, $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·value_buffer_free(SB), NOSPLIT, $104-16
+TEXT ·value_buffer_free(SB), $104-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25306,7 +25306,7 @@ TEXT ·js_string_localeCompare(SB), $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_string_normalize1(SB), NOSPLIT, $152-56
+TEXT ·js_string_normalize1(SB), $152-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25772,7 +25772,7 @@ TEXT ·js_string_normalize1(SB), NOSPLIT, $152-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_new_module_def(SB), NOSPLIT, $72-32
+TEXT ·js_new_module_def(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

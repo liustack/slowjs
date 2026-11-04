@@ -5502,7 +5502,7 @@ TEXT ·js_create_function(SB), $304-40
 	BYTE $0xff
 	RET
 
-TEXT ·add_eval_this_vars(SB), NOSPLIT, $96-32
+TEXT ·add_eval_this_vars(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -5909,7 +5909,7 @@ TEXT ·js_realloc_bytecode_rt(SB), $48-40
 	BYTE $0x00
 	RET
 
-TEXT ·resolve_scope_var(SB), NOSPLIT, $240-88
+TEXT ·resolve_scope_var(SB), $240-88
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000010024a48b4c
@@ -8041,7 +8041,7 @@ TEXT ·resolve_scope_var(SB), NOSPLIT, $240-88
 	QUAD $0xffffceafffffceaf
 	RET
 
-TEXT ·resolve_scope_private_field1(SB), NOSPLIT, $192-64
+TEXT ·resolve_scope_private_field1(SB), $192-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
@@ -9009,7 +9009,7 @@ TEXT ·js_atom_concat_str(SB), $208-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·skip_dead_code(SB), NOSPLIT, $96-56
+TEXT ·skip_dead_code(SB), $96-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -17660,7 +17660,7 @@ TEXT ·compute_stack_size(SB), $176-40
 	QUAD $0xffffebd7ffffedd9
 	RET
 
-TEXT ·js_object_lits_from_def(SB), NOSPLIT, $160-32
+TEXT ·js_object_lits_from_def(SB), $160-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -17820,7 +17820,7 @@ TEXT ·js_object_lits_from_def(SB), NOSPLIT, $160-32
 	CALL ·abort(SB)
 	RET
 
-TEXT ·poll_scan(SB), NOSPLIT, $112-48
+TEXT ·poll_scan(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c

@@ -2082,7 +2082,7 @@ TEXT ·JS_ConcatStringAppend_block(SB), $168-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_string_rope_compare_block(SB), NOSPLIT, $168-24
+TEXT ·js_string_rope_compare_block(SB), $168-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2704,7 +2704,7 @@ TEXT ·js_string_rope_compare_block(SB), NOSPLIT, $168-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_compare_bigint_block(SB), NOSPLIT, $136-24
+TEXT ·js_compare_bigint_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5295,7 +5295,7 @@ TEXT ·call_setter_block(SB), $104-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_LoadModuleInternal_block(SB), NOSPLIT, $152-16
+TEXT ·JS_LoadModuleInternal_block(SB), $152-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5724,7 +5724,7 @@ TEXT ·JS_LoadModuleInternal_block(SB), NOSPLIT, $152-16
 	WORD $0x00000000
 	RET
 
-TEXT ·JS_EvalFunctionInternal_block(SB), NOSPLIT, $120-32
+TEXT ·JS_EvalFunctionInternal_block(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6777,7 +6777,7 @@ TEXT ·js_async_context_call_block(SB), $88-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·async_func_init_block(SB), NOSPLIT, $184-24
+TEXT ·async_func_init_block(SB), $184-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10455,7 +10455,7 @@ TEXT ·js_error_constructor_block(SB), $184-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_NewCConstructor_block(SB), NOSPLIT, $216-32
+TEXT ·JS_NewCConstructor_block(SB), $216-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16347,7 +16347,7 @@ TEXT ·JS_DefinePropertyValueValue_block(SB), $152-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_ToInt64Clamp_block(SB), NOSPLIT, $136-24
+TEXT ·JS_ToInt64Clamp_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17002,7 +17002,7 @@ TEXT ·JS_SetPropertyInt64_block(SB), $104-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_fast_array_find_block(SB), NOSPLIT, $152-24
+TEXT ·js_fast_array_find_block(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18606,7 +18606,7 @@ TEXT ·js_array_buffer_constructor3_block(SB), $168-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_typed_array_constructor_ta_block(SB), NOSPLIT, $168-32
+TEXT ·js_typed_array_constructor_ta_block(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18906,7 +18906,7 @@ TEXT ·js_typed_array_constructor_ta_block(SB), NOSPLIT, $168-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_array_from_iterator_block(SB), NOSPLIT, $168-32
+TEXT ·js_array_from_iterator_block(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19198,7 +19198,7 @@ TEXT ·js_array_from_iterator_block(SB), NOSPLIT, $168-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·typed_array_init_block(SB), NOSPLIT, $104-24
+TEXT ·typed_array_init_block(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19506,7 +19506,7 @@ TEXT ·JS_DefinePropertyValueStr_block(SB), $152-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_SetConstructor2_block(SB), NOSPLIT, $152-24
+TEXT ·JS_SetConstructor2_block(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27343,7 +27343,7 @@ TEXT ·js_promise_all_resolve_element_block(SB), $216-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_InvokeFree_block(SB), NOSPLIT, $104-32
+TEXT ·JS_InvokeFree_block(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

@@ -2798,7 +2798,7 @@ TEXT ·js_regexp_string_iterator_next(SB), $192-80
 	BYTE $0xff
 	RET
 
-TEXT ·JS_RegExpExec(SB), NOSPLIT, $128-64
+TEXT ·JS_RegExpExec(SB), $128-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -2928,7 +2928,7 @@ TEXT ·JS_RegExpExec(SB), NOSPLIT, $128-64
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ToLengthFree(SB), NOSPLIT, $128-48
+TEXT ·JS_ToLengthFree(SB), $128-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -10396,7 +10396,7 @@ TEXT ·js_regexp_Symbol_split(SB), $320-64
 	BYTE $0xff
 	RET
 
-TEXT ·string_indexof_char(SB), NOSPLIT, $64-32
+TEXT ·string_indexof_char(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -10460,7 +10460,7 @@ TEXT ·string_indexof_char(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ToUint32(SB), NOSPLIT, $112-48
+TEXT ·JS_ToUint32(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -10522,7 +10522,7 @@ TEXT ·JS_ToUint32(SB), NOSPLIT, $112-48
 	BYTE $0x8a
 	RET
 
-TEXT ·JS_NewObjectClass(SB), NOSPLIT, $128-40
+TEXT ·JS_NewObjectClass(SB), $128-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -10585,7 +10585,7 @@ TEXT ·JS_NewObjectClass(SB), NOSPLIT, $128-40
 	BYTE $0xa8
 	RET
 
-TEXT ·check_regexp_getter(SB), NOSPLIT, $80-48
+TEXT ·check_regexp_getter(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -10650,7 +10650,7 @@ TEXT ·check_regexp_getter(SB), NOSPLIT, $80-48
 	QUAD $0x00eb000000882484
 	RET
 
-TEXT ·value_buffer_free(SB), NOSPLIT, $96-16
+TEXT ·value_buffer_free(SB), $96-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -13241,7 +13241,7 @@ TEXT ·js_string_normalize1(SB), $176-56
 	BYTE $0xff
 	RET
 
-TEXT ·js_new_module_def(SB), NOSPLIT, $96-32
+TEXT ·js_new_module_def(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c

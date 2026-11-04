@@ -2163,7 +2163,7 @@ TEXT ·js_emit_put_text(SB), $160-48
 	QUAD $0xfffff92cffffffa0
 	RET
 
-TEXT ·js_emit_is_javascript_url(SB), NOSPLIT, $80-24
+TEXT ·js_emit_is_javascript_url(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -2605,7 +2605,7 @@ TEXT ·js_emit_buf_end(SB), $160-56
 	BYTE $0xff
 	RET
 
-TEXT ·js_emit_put_escaped(SB), NOSPLIT, $192-56
+TEXT ·js_emit_put_escaped(SB), $192-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
@@ -3546,7 +3546,7 @@ TEXT ·js_emit_put_escaped(SB), NOSPLIT, $192-56
 	QUAD $0xffffeb35ffffeb6f
 	RET
 
-TEXT ·js_emit_put_escaped_long(SB), NOSPLIT, $256-56
+TEXT ·js_emit_put_escaped_long(SB), $256-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000011024a48b4c
@@ -5208,7 +5208,7 @@ TEXT ·js_emit_string(SB), $144-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_NewEndTagFunction(SB), NOSPLIT, $64-48
+TEXT ·JS_NewEndTagFunction(SB), $64-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -6796,7 +6796,7 @@ TEXT ·js_end_tag_add(SB), $192-56
 	BYTE $0xff
 	RET
 
-TEXT ·JS_SetRegExpCache(SB), NOSPLIT, $48-32
+TEXT ·JS_SetRegExpCache(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -6905,7 +6905,7 @@ TEXT ·JS_AddIntrinsicRegExpCompiler(SB), NOSPLIT, $0-16
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ParseJSON2(SB), NOSPLIT, $80-64
+TEXT ·JS_ParseJSON2(SB), $80-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -6924,7 +6924,7 @@ TEXT ·JS_ParseJSON2(SB), NOSPLIT, $80-64
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ParseJSON(SB), NOSPLIT, $80-56
+TEXT ·JS_ParseJSON(SB), $80-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7004,7 +7004,7 @@ TEXT ·JS_GetAsyncContext(SB), NOSPLIT, $0-32
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetAsyncContext(SB), NOSPLIT, $32-32
+TEXT ·JS_SetAsyncContext(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -7031,7 +7031,7 @@ TEXT ·JS_SetAsyncContext(SB), NOSPLIT, $32-32
 	BYTE $0x00
 	RET
 
-TEXT ·JS_NewDate(SB), NOSPLIT, $144-40
+TEXT ·JS_NewDate(SB), $144-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -7189,7 +7189,7 @@ TEXT ·JS_NewDate(SB), NOSPLIT, $144-40
 	QUAD $0x433eb208c2dc0000
 	RET
 
-TEXT ·JS_NewArrayBuffer(SB), NOSPLIT, $32-72
+TEXT ·JS_NewArrayBuffer(SB), $32-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -7218,7 +7218,7 @@ TEXT ·JS_NewArrayBuffer(SB), NOSPLIT, $32-72
 	BYTE $0x00
 	RET
 
-TEXT ·JS_NewArrayBufferCopy(SB), NOSPLIT, $32-48
+TEXT ·JS_NewArrayBufferCopy(SB), $32-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -7251,7 +7251,7 @@ TEXT ·JS_NewArrayBufferCopy(SB), NOSPLIT, $32-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_GetArrayBuffer(SB), NOSPLIT, $80-48
+TEXT ·JS_GetArrayBuffer(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7303,7 +7303,7 @@ TEXT ·JS_GetArrayBuffer(SB), NOSPLIT, $80-48
 	BYTE $0xea
 	RET
 
-TEXT ·JS_NewTypedArray(SB), NOSPLIT, $80-56
+TEXT ·JS_NewTypedArray(SB), $80-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7339,7 +7339,7 @@ TEXT ·JS_NewTypedArray(SB), NOSPLIT, $80-56
 	BYTE $0x00
 	RET
 
-TEXT ·JS_GetTypedArrayBuffer(SB), NOSPLIT, $48-72
+TEXT ·JS_GetTypedArrayBuffer(SB), $48-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14217,7 +14217,7 @@ TEXT ·JS_ThrowInternalError(SB), $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowRangeError(SB), NOSPLIT, $48-48
+TEXT ·JS_ThrowRangeError(SB), $48-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14251,7 +14251,7 @@ TEXT ·JS_ThrowRangeError(SB), NOSPLIT, $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowTypeError(SB), NOSPLIT, $48-48
+TEXT ·JS_ThrowTypeError(SB), $48-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14285,7 +14285,7 @@ TEXT ·JS_ThrowTypeError(SB), NOSPLIT, $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowReferenceError(SB), NOSPLIT, $48-48
+TEXT ·JS_ThrowReferenceError(SB), $48-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14319,7 +14319,7 @@ TEXT ·JS_ThrowReferenceError(SB), NOSPLIT, $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowSyntaxError(SB), NOSPLIT, $48-48
+TEXT ·JS_ThrowSyntaxError(SB), $48-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14353,7 +14353,7 @@ TEXT ·JS_ThrowSyntaxError(SB), NOSPLIT, $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowTypeErrorOrFalse(SB), NOSPLIT, $48-48
+TEXT ·JS_ThrowTypeErrorOrFalse(SB), $48-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14399,7 +14399,7 @@ TEXT ·JS_ThrowTypeErrorOrFalse(SB), NOSPLIT, $48-48
 	BYTE $0x00
 	RET
 
-TEXT ·js_parse_error(SB), NOSPLIT, $160-32
+TEXT ·js_parse_error(SB), $160-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -14520,7 +14520,7 @@ TEXT ·js_parse_error(SB), NOSPLIT, $160-32
 	BYTE $0x00
 	RET
 
-TEXT ·js_parse_error_pos(SB), NOSPLIT, $160-40
+TEXT ·js_parse_error_pos(SB), $160-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -14641,7 +14641,7 @@ TEXT ·js_parse_error_pos(SB), NOSPLIT, $160-40
 	BYTE $0x00
 	RET
 
-TEXT ·code_match(SB), NOSPLIT, $80-40
+TEXT ·code_match(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -14779,7 +14779,7 @@ TEXT ·code_match(SB), NOSPLIT, $80-40
 	QUAD $0xffffff3bffffff4e
 	RET
 
-TEXT ·js_throw_URIError(SB), NOSPLIT, $48-32
+TEXT ·js_throw_URIError(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14810,7 +14810,7 @@ TEXT ·js_throw_URIError(SB), NOSPLIT, $48-32
 	BYTE $0x00
 	RET
 
-TEXT ·dump_printf(SB), NOSPLIT, $64-32
+TEXT ·dump_printf(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -14838,7 +14838,7 @@ TEXT ·dump_printf(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowErrorf(SB), NOSPLIT, $48-40
+TEXT ·JS_ThrowErrorf(SB), $48-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -14873,7 +14873,7 @@ TEXT ·JS_ThrowErrorf(SB), NOSPLIT, $48-40
 	BYTE $0x00
 	RET
 
-TEXT ·js_new_string_char(SB), NOSPLIT, $64-40
+TEXT ·js_new_string_char(SB), $64-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -15002,7 +15002,7 @@ TEXT ·tofp16(SB), NOSPLIT, $0-24
 	BYTE $0xde
 	RET
 
-TEXT ·emit_op(SB), NOSPLIT, $32-24
+TEXT ·emit_op(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -15027,7 +15027,7 @@ TEXT ·emit_op(SB), NOSPLIT, $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·emit_u16(SB), NOSPLIT, $32-24
+TEXT ·emit_u16(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -15050,7 +15050,7 @@ TEXT ·emit_u16(SB), NOSPLIT, $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·dbuf_put_u16(SB), NOSPLIT, $32-24
+TEXT ·dbuf_put_u16(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -15071,7 +15071,7 @@ TEXT ·dbuf_put_u16(SB), NOSPLIT, $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·emit_u8(SB), NOSPLIT, $32-24
+TEXT ·emit_u8(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c

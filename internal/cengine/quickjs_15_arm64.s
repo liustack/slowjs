@@ -559,7 +559,7 @@ TEXT ·put_lvalue_block(SB), $104-16
 	BL ·abort(SB)
 	RET
 
-TEXT ·js_parse_string_block(SB), NOSPLIT, $136-24
+TEXT ·js_parse_string_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12189,7 +12189,7 @@ TEXT ·js_string_CreateHTML_block(SB), $248-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_string_find_block(SB), NOSPLIT, $184-24
+TEXT ·js_string_find_block(SB), $184-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12592,7 +12592,7 @@ TEXT ·js_string_find_block(SB), NOSPLIT, $184-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_string_find_mixed_block(SB), NOSPLIT, $200-24
+TEXT ·js_string_find_mixed_block(SB), $200-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13477,7 +13477,7 @@ TEXT ·js_string_find_mixed_block(SB), NOSPLIT, $200-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_string_find_char_block(SB), NOSPLIT, $136-24
+TEXT ·js_string_find_char_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13750,7 +13750,7 @@ TEXT ·js_string_find_char_block(SB), NOSPLIT, $136-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_string_find_short_block(SB), NOSPLIT, $120-24
+TEXT ·js_string_find_short_block(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13972,7 +13972,7 @@ TEXT ·js_string_find_short_block(SB), NOSPLIT, $120-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_string_find8_block(SB), NOSPLIT, $216-24
+TEXT ·js_string_find8_block(SB), $216-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15617,7 +15617,7 @@ TEXT ·js_string_find8_block(SB), NOSPLIT, $216-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_string_find16_block(SB), NOSPLIT, $216-24
+TEXT ·js_string_find16_block(SB), $216-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23335,7 +23335,7 @@ TEXT ·js_object_isSealed_block(SB), $184-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_NewCFunction2_block(SB), NOSPLIT, $56-32
+TEXT ·JS_NewCFunction2_block(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23799,7 +23799,7 @@ TEXT ·js_new_host_function_block(SB), $184-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_GetOwnPropertyNames_block(SB), NOSPLIT, $72-24
+TEXT ·JS_GetOwnPropertyNames_block(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23837,7 +23837,7 @@ TEXT ·JS_GetOwnPropertyNames_block(SB), NOSPLIT, $72-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_SetPropertyUint32_block(SB), NOSPLIT, $40-24
+TEXT ·JS_SetPropertyUint32_block(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23950,7 +23950,7 @@ TEXT ·JS_SetPropertyStr_block(SB), $104-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_DefinePropertyValueInt64_block(SB), NOSPLIT, $40-24
+TEXT ·JS_DefinePropertyValueInt64_block(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23984,7 +23984,7 @@ TEXT ·JS_DefinePropertyValueInt64_block(SB), NOSPLIT, $40-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_DefinePropertyGetSet_block(SB), NOSPLIT, $104-24
+TEXT ·JS_DefinePropertyGetSet_block(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24060,7 +24060,7 @@ TEXT ·JS_DefinePropertyGetSet_block(SB), NOSPLIT, $104-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_Call_block(SB), NOSPLIT, $72-32
+TEXT ·JS_Call_block(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24127,7 +24127,7 @@ TEXT ·JS_Call_block(SB), NOSPLIT, $72-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_CallConstructor2_block(SB), NOSPLIT, $72-32
+TEXT ·JS_CallConstructor2_block(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24192,7 +24192,7 @@ TEXT ·JS_CallConstructor2_block(SB), NOSPLIT, $72-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_Invoke_block(SB), NOSPLIT, $120-32
+TEXT ·JS_Invoke_block(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25333,7 +25333,7 @@ TEXT ·JS_WriteObject2_block(SB), $216-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_NewArrayBuffer_block(SB), NOSPLIT, $56-32
+TEXT ·JS_NewArrayBuffer_block(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25366,7 +25366,7 @@ TEXT ·JS_NewArrayBuffer_block(SB), NOSPLIT, $56-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_GetTypedArrayBuffer_block(SB), NOSPLIT, $72-32
+TEXT ·JS_GetTypedArrayBuffer_block(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

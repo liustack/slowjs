@@ -189,7 +189,7 @@ TEXT ·js_emit_binary_op(SB), $104-24
 	WORD $0x17ffffd8
 	RET
 
-TEXT ·emit_push_const(SB), NOSPLIT, $104-48
+TEXT ·emit_push_const(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6001,7 +6001,7 @@ TEXT ·js_parse_template(SB), $200-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_parse_regexp(SB), NOSPLIT, $136-24
+TEXT ·js_parse_regexp(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7858,7 +7858,7 @@ TEXT ·js_parse_property_name(SB), $120-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·set_object_name_computed(SB), NOSPLIT, $56-16
+TEXT ·set_object_name_computed(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7965,7 +7965,7 @@ TEXT ·js_parse_postfix_expr(SB), $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·optional_chain_test(SB), NOSPLIT, $104-32
+TEXT ·optional_chain_test(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8534,7 +8534,7 @@ TEXT ·emit_class_field_init(SB), $88-16
 	WORD $0x17ffff69
 	RET
 
-TEXT ·js_parse_template_part(SB), NOSPLIT, $120-32
+TEXT ·js_parse_template_part(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9169,7 +9169,7 @@ TEXT ·js_parse_destructuring_var(SB), $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_emit_spread_code(SB), NOSPLIT, $104-24
+TEXT ·js_emit_spread_code(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9537,7 +9537,7 @@ TEXT ·js_emit_spread_code(SB), NOSPLIT, $104-24
 	WORD $0xffffffff
 	RET
 
-TEXT ·js_parse_skip_parens_error(SB), NOSPLIT, $56-24
+TEXT ·js_parse_skip_parens_error(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9581,7 +9581,7 @@ TEXT ·js_parse_skip_parens_error(SB), NOSPLIT, $56-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·add_global_var(SB), NOSPLIT, $88-40
+TEXT ·add_global_var(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9992,7 +9992,7 @@ TEXT ·emit_class_init_start(SB), $88-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·add_private_class_field(SB), NOSPLIT, $104-56
+TEXT ·add_private_class_field(SB), $104-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10102,7 +10102,7 @@ TEXT ·add_private_class_field(SB), NOSPLIT, $104-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_atom_concat_num(SB), NOSPLIT, $120-40
+TEXT ·js_atom_concat_num(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10555,7 +10555,7 @@ TEXT ·js_parse_class_default_ctor(SB), $120-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·emit_class_init_end(SB), NOSPLIT, $104-32
+TEXT ·emit_class_init_end(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10696,7 +10696,7 @@ TEXT ·emit_class_init_end(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_parse_check_duplicate_parameter(SB), NOSPLIT, $104-32
+TEXT ·js_parse_check_duplicate_parameter(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10801,7 +10801,7 @@ TEXT ·js_parse_check_duplicate_parameter(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·add_arg(SB), NOSPLIT, $88-40
+TEXT ·add_arg(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10882,7 +10882,7 @@ TEXT ·add_arg(SB), NOSPLIT, $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_parse_function_check_names(SB), NOSPLIT, $136-40
+TEXT ·js_parse_function_check_names(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11110,7 +11110,7 @@ TEXT ·js_parse_function_check_names(SB), NOSPLIT, $136-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·reparse_ident_token(SB), NOSPLIT, $56-16
+TEXT ·reparse_ident_token(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11213,7 +11213,7 @@ TEXT ·reparse_ident_token(SB), NOSPLIT, $56-16
 	WORD $0x14000001
 	RET
 
-TEXT ·cpool_add(SB), NOSPLIT, $72-24
+TEXT ·cpool_add(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11258,7 +11258,7 @@ TEXT ·cpool_add(SB), NOSPLIT, $72-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·find_var(SB), NOSPLIT, $56-32
+TEXT ·find_var(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11862,7 +11862,7 @@ TEXT ·parse_ident(SB), $184-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·lre_js_is_ident_next(SB), NOSPLIT, $40-24
+TEXT ·lre_js_is_ident_next(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12778,7 +12778,7 @@ TEXT ·js_date_toJSON(SB), $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·get_date_fields(SB), NOSPLIT, $120-56
+TEXT ·get_date_fields(SB), $120-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13148,7 +13148,7 @@ TEXT ·get_date_fields(SB), NOSPLIT, $120-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·set_date_fields(SB), NOSPLIT, $168-32
+TEXT ·set_date_fields(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15644,7 +15644,7 @@ TEXT ·js_Date_UTC(SB), $104-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·set_date_fields_checked(SB), NOSPLIT, $56-32
+TEXT ·set_date_fields_checked(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16399,7 +16399,7 @@ TEXT ·js_number_constructor(SB), $184-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_SetObjectData(SB), NOSPLIT, $88-56
+TEXT ·JS_SetObjectData(SB), $88-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17032,7 +17032,7 @@ TEXT ·js_symbol_constructor(SB), $88-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_AddIntrinsicBigInt(SB), NOSPLIT, $72-24
+TEXT ·JS_AddIntrinsicBigInt(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20002,7 +20002,7 @@ TEXT ·js_math_sumPrecise(SB), $168-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·sum_precise_renorm(SB), NOSPLIT, $72-16
+TEXT ·sum_precise_renorm(SB), $72-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23041,7 +23041,7 @@ TEXT ·js_string_toString(SB), $72-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·string_buffer_free(SB), NOSPLIT, $88-16
+TEXT ·string_buffer_free(SB), $88-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23142,7 +23142,7 @@ TEXT ·string_buffer_free(SB), NOSPLIT, $88-16
 	WORD $0x17ffffe0
 	RET
 
-TEXT ·check_regexp_g_flag(SB), NOSPLIT, $120-40
+TEXT ·check_regexp_g_flag(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23356,7 +23356,7 @@ TEXT ·check_regexp_g_flag(SB), NOSPLIT, $120-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_string_find_at(SB), NOSPLIT, $136-48
+TEXT ·js_string_find_at(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23469,7 +23469,7 @@ TEXT ·js_string_find_at(SB), NOSPLIT, $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_string_find_check(SB), NOSPLIT, $40-24
+TEXT ·js_string_find_check(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

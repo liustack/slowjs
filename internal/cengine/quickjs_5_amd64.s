@@ -691,7 +691,7 @@ TEXT ·string_buffer_concat_value(SB), $208-40
 	BYTE $0xff
 	RET
 
-TEXT ·string_buffer_write16(SB), NOSPLIT, $160-40
+TEXT ·string_buffer_write16(SB), $160-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -3993,7 +3993,7 @@ TEXT ·js_promise_all_resolve_element(SB), $208-80
 	BYTE $0xff
 	RET
 
-TEXT ·remainingElementsCount_add(SB), NOSPLIT, $144-48
+TEXT ·remainingElementsCount_add(SB), $144-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -4090,7 +4090,7 @@ TEXT ·remainingElementsCount_add(SB), NOSPLIT, $144-48
 	BYTE $0xff
 	RET
 
-TEXT ·JS_InvokeFree(SB), NOSPLIT, $144-72
+TEXT ·JS_InvokeFree(SB), $144-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -4186,7 +4186,7 @@ TEXT ·JS_InvokeFree(SB), NOSPLIT, $144-72
 	BYTE $0x00
 	RET
 
-TEXT ·js_aggregate_error_constructor(SB), NOSPLIT, $144-48
+TEXT ·js_aggregate_error_constructor(SB), $144-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -4282,7 +4282,7 @@ TEXT ·js_aggregate_error_constructor(SB), NOSPLIT, $144-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_async_generator_free(SB), NOSPLIT, $128-24
+TEXT ·js_async_generator_free(SB), $128-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -4725,7 +4725,7 @@ TEXT ·fulfill_or_reject_promise(SB), $192-56
 	BYTE $0xff
 	RET
 
-TEXT ·js_async_context_wrap(SB), NOSPLIT, $112-48
+TEXT ·js_async_context_wrap(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -7562,7 +7562,7 @@ TEXT ·js_atomics_notify(SB), $128-64
 	BYTE $0x00
 	RET
 
-TEXT ·js_atomics_get_buf(SB), NOSPLIT, $144-72
+TEXT ·js_atomics_get_buf(SB), $144-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -7713,7 +7713,7 @@ TEXT ·js_atomics_get_buf(SB), NOSPLIT, $144-72
 	BYTE $0xff
 	RET
 
-TEXT ·typed_array_is_oob(SB), NOSPLIT, $16-24
+TEXT ·typed_array_is_oob(SB), $16-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -8404,7 +8404,7 @@ TEXT ·js_dataview_setValue(SB), $160-72
 	QUAD $0xffffff2dffffff50
 	RET
 
-TEXT ·JS_NewBigUint64(SB), NOSPLIT, $64-40
+TEXT ·JS_NewBigUint64(SB), $64-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -9960,7 +9960,7 @@ TEXT ·parse_last_chunk_option(SB), $144-40
 	BYTE $0x00
 	RET
 
-TEXT ·from_base64(SB), NOSPLIT, $144-80
+TEXT ·from_base64(SB), $144-80
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -10974,7 +10974,7 @@ TEXT ·js_uint8array_from_hex(SB), $144-64
 	BYTE $0xff
 	RET
 
-TEXT ·JS_NewUint8ArrayCopy(SB), NOSPLIT, $160-48
+TEXT ·JS_NewUint8ArrayCopy(SB), $160-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -17332,7 +17332,7 @@ TEXT ·js_TA_get_float64(SB), NOSPLIT, $0-40
 	BYTE $0x00
 	RET
 
-TEXT ·validate_typed_array(SB), NOSPLIT, $48-40
+TEXT ·validate_typed_array(SB), $48-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -17377,7 +17377,7 @@ TEXT ·validate_typed_array(SB), NOSPLIT, $48-40
 	QUAD $0xbaeb987ffa3948c2
 	RET
 
-TEXT ·slice_memcpy(SB), NOSPLIT, $80-32
+TEXT ·slice_memcpy(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -17592,7 +17592,7 @@ TEXT ·slice_memcpy(SB), NOSPLIT, $80-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_ToInt32Clamp(SB), NOSPLIT, $128-72
+TEXT ·JS_ToInt32Clamp(SB), $128-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -17665,7 +17665,7 @@ TEXT ·JS_ToInt32Clamp(SB), NOSPLIT, $128-72
 	QUAD $0x41dfffffffc00000
 	RET
 
-TEXT ·js_get_length64(SB), NOSPLIT, $144-48
+TEXT ·js_get_length64(SB), $144-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -19150,7 +19150,7 @@ TEXT ·js_array_buffer_slice(SB), $192-72
 	QUAD $0xfffffa6cfffff98a
 	RET
 
-TEXT ·JS_GetOpaque2(SB), NOSPLIT, $80-48
+TEXT ·JS_GetOpaque2(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19194,7 +19194,7 @@ TEXT ·JS_GetOpaque2(SB), NOSPLIT, $80-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_ThrowTypeErrorInvalidClass(SB), NOSPLIT, $80-24
+TEXT ·JS_ThrowTypeErrorInvalidClass(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19224,7 +19224,7 @@ TEXT ·JS_ThrowTypeErrorInvalidClass(SB), NOSPLIT, $80-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_array_buffer_update_typed_arrays(SB), NOSPLIT, $64-16
+TEXT ·js_array_buffer_update_typed_arrays(SB), $64-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -19281,7 +19281,7 @@ TEXT ·js_array_buffer_update_typed_arrays(SB), NOSPLIT, $64-16
 	BYTE $0x00
 	RET
 
-TEXT ·js_array_buffer_constructor0(SB), NOSPLIT, $176-72
+TEXT ·js_array_buffer_constructor0(SB), $176-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -19489,7 +19489,7 @@ TEXT ·js_array_buffer_constructor0(SB), NOSPLIT, $176-72
 	BYTE $0xff
 	RET
 
-TEXT ·JS_ToInt64Free(SB), NOSPLIT, $112-48
+TEXT ·JS_ToInt64Free(SB), $112-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -21662,7 +21662,7 @@ TEXT ·js_object_groupBy(SB), $272-72
 	BYTE $0xb0
 	RET
 
-TEXT ·map_find_record(SB), NOSPLIT, $128-48
+TEXT ·map_find_record(SB), $128-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -21895,7 +21895,7 @@ TEXT ·js_map_set(SB), $128-72
 	BYTE $0xff
 	RET
 
-TEXT ·map_add_record(SB), NOSPLIT, $160-48
+TEXT ·map_add_record(SB), $160-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c

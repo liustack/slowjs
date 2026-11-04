@@ -1051,7 +1051,7 @@ func (k *checker) checkUnified(meta Meta) error {
 		return err
 	}
 	// The generator's NOSPLIT list says which functions have no stack
-	// check (PickNoSplit): a function on it must have none, and every other
+	// check (MarkNoSplit): a function on it must have none, and every other
 	// one must have it, which also catches a leaf the Go assembler made
 	// NOSPLIT by itself without the generator knowing. A function that calls
 	// keeps BP either way; a frameless one that does not is a NOSPLIT leaf

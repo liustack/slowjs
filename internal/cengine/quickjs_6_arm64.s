@@ -10015,7 +10015,7 @@ TEXT ·js_create_function(SB), $232-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·add_eval_this_vars(SB), NOSPLIT, $104-32
+TEXT ·add_eval_this_vars(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19535,7 +19535,7 @@ TEXT ·resolve_labels(SB), $344-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·compute_stack_size(SB), NOSPLIT, $168-40
+TEXT ·compute_stack_size(SB), $168-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20977,7 +20977,7 @@ TEXT ·compute_stack_size(SB), NOSPLIT, $168-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_object_lits_from_def(SB), NOSPLIT, $152-32
+TEXT ·js_object_lits_from_def(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21147,7 +21147,7 @@ TEXT ·js_object_lits_from_def(SB), NOSPLIT, $152-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·poll_scan(SB), NOSPLIT, $104-48
+TEXT ·poll_scan(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

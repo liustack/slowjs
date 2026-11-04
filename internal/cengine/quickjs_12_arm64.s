@@ -22570,7 +22570,7 @@ TEXT ·JS_CallConstructorInternal_block(SB), $152-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_strict_eq2_block(SB), NOSPLIT, $72-24
+TEXT ·js_strict_eq2_block(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26352,7 +26352,7 @@ TEXT ·JS_SetPrototypeInternal_block(SB), $136-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_closure2_block(SB), NOSPLIT, $232-32
+TEXT ·js_closure2_block(SB), $232-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

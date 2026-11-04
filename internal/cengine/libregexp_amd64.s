@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_parse_escape(SB), NOSPLIT, $64-32
+TEXT ·lre_parse_escape(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -4252,7 +4252,7 @@ TEXT ·re_parse_alternative(SB), $256-32
 	QUAD $0xffffd1d9ffffd613
 	RET
 
-TEXT ·re_parse_group_name(SB), NOSPLIT, $144-32
+TEXT ·re_parse_group_name(SB), $144-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -4598,7 +4598,7 @@ TEXT ·re_parse_group_name(SB), NOSPLIT, $144-32
 	BYTE $0xcd
 	RET
 
-TEXT ·is_duplicate_group_name(SB), NOSPLIT, $112-40
+TEXT ·is_duplicate_group_name(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -4821,7 +4821,7 @@ TEXT ·is_duplicate_group_name(SB), NOSPLIT, $112-40
 	BYTE $0x00
 	RET
 
-TEXT ·re_has_named_captures(SB), NOSPLIT, $80-24
+TEXT ·re_has_named_captures(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -4891,7 +4891,7 @@ TEXT ·re_has_named_captures(SB), NOSPLIT, $80-24
 	QUAD $0x00eb702444894868
 	RET
 
-TEXT ·find_group_name(SB), NOSPLIT, $144-40
+TEXT ·find_group_name(SB), $144-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -5142,7 +5142,7 @@ TEXT ·find_group_name(SB), NOSPLIT, $144-40
 	QUAD $0xe5ebfffffb43850f
 	RET
 
-TEXT ·re_parse_captures(SB), NOSPLIT, $128-48
+TEXT ·re_parse_captures(SB), $128-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -5303,7 +5303,7 @@ TEXT ·re_parse_captures(SB), NOSPLIT, $128-48
 	BYTE $0x00
 	RET
 
-TEXT ·re_emit_op_u8(SB), NOSPLIT, $64-32
+TEXT ·re_emit_op_u8(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -13970,7 +13970,7 @@ TEXT ·lre_exec(SB), $224-72
 	BYTE $0xff
 	RET
 
-TEXT ·lre_first_set(SB), NOSPLIT, $112-32
+TEXT ·lre_first_set(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -14222,7 +14222,7 @@ TEXT ·lre_first_set(SB), NOSPLIT, $112-32
 	BYTE $0xff
 	RET
 
-TEXT ·lre_find(SB), NOSPLIT, $192-72
+TEXT ·lre_find(SB), $192-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
@@ -14503,7 +14503,7 @@ TEXT ·lre_find(SB), NOSPLIT, $192-72
 	QUAD $0xbbeb000000982484
 	RET
 
-TEXT ·lre_exec_backtrack(SB), NOSPLIT, $208-48
+TEXT ·lre_exec_backtrack(SB), $208-48
 	NO_LOCAL_POINTERS
 	PCALIGN $64
 	QUAD $0x0000000000841f0f // NOPL 0(AX)(AX*1)
@@ -16866,7 +16866,7 @@ TEXT ·lre_get_groupnames(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·re_parse_error(SB), NOSPLIT, $64-32
+TEXT ·re_parse_error(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c

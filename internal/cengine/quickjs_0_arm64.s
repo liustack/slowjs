@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·js_malloc_rt(SB), NOSPLIT, $56-32
+TEXT ·js_malloc_rt(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -242,7 +242,7 @@ TEXT ·js_malloc_new_arena(SB), $136-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_heap_alloc(SB), NOSPLIT, $72-32
+TEXT ·js_heap_alloc(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -293,7 +293,7 @@ TEXT ·js_heap_alloc(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_front_drain(SB), NOSPLIT, $184-24
+TEXT ·js_front_drain(SB), $184-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -680,7 +680,7 @@ TEXT ·js_front_drain(SB), NOSPLIT, $184-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_free_rt(SB), NOSPLIT, $88-24
+TEXT ·js_free_rt(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -820,7 +820,7 @@ TEXT ·js_large_give(SB), NOSPLIT, $0-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_realloc_rt(SB), NOSPLIT, $136-40
+TEXT ·js_realloc_rt(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1369,7 +1369,7 @@ TEXT ·js_malloc_usable_size_rt(SB), NOSPLIT, $0-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_mallocz_rt(SB), NOSPLIT, $104-32
+TEXT ·js_mallocz_rt(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2283,7 +2283,7 @@ TEXT ·JS_ThrowError2(SB), $136-48
 	WORD $0x00000000
 	RET
 
-TEXT ·JS_Throw(SB), NOSPLIT, $72-48
+TEXT ·JS_Throw(SB), $72-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6742,7 +6742,7 @@ TEXT ·js_backtrace_record(SB), $184-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_backtrace_restore(SB), NOSPLIT, $120-48
+TEXT ·js_backtrace_restore(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7580,7 +7580,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_FreeAtomStruct(SB), NOSPLIT, $104-24
+TEXT ·JS_FreeAtomStruct(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13816,7 +13816,7 @@ TEXT ·JS_FreeContext(SB), $136-16
 	WORD $0x00000000
 	RET
 
-TEXT ·resize_shape_hash(SB), NOSPLIT, $136-24
+TEXT ·resize_shape_hash(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15206,7 +15206,7 @@ TEXT ·resize_properties(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_shape_renumber(SB), NOSPLIT, $72-24
+TEXT ·js_shape_renumber(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19893,7 +19893,7 @@ TEXT ·JS_RunGCInternal(SB), $168-24
 	WORD $0x17ffff2d
 	RET
 
-TEXT ·js_free(SB), NOSPLIT, $88-24
+TEXT ·js_free(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19988,7 +19988,7 @@ TEXT ·js_free(SB), NOSPLIT, $88-24
 	WORD $0x17ffffe3
 	RET
 
-TEXT ·free_property(SB), NOSPLIT, $72-32
+TEXT ·free_property(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20688,7 +20688,7 @@ TEXT ·gc_scan_incref_child2(SB), NOSPLIT, $0-24
 	WORD $0x14000001
 	RET
 
-TEXT ·gc_free_cycles(SB), NOSPLIT, $136-16
+TEXT ·gc_free_cycles(SB), $136-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20927,7 +20927,7 @@ TEXT ·gc_ephemeron_count(SB), NOSPLIT, $0-24
 	WORD $0x14000001
 	RET
 
-TEXT ·gc_ephemeron_activate(SB), NOSPLIT, $104-24
+TEXT ·gc_ephemeron_activate(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21096,7 +21096,7 @@ TEXT ·gc_ephemeron_activate(SB), NOSPLIT, $104-24
 	WORD $0x14000001
 	RET
 
-TEXT ·map_delete_record_internal(SB), NOSPLIT, $88-32
+TEXT ·map_delete_record_internal(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21260,7 +21260,7 @@ TEXT ·map_delete_record_internal(SB), NOSPLIT, $88-32
 	WORD $0x00000000
 	RET
 
-TEXT ·map_hash_key(SB), NOSPLIT, $72-40
+TEXT ·map_hash_key(SB), $72-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21622,7 +21622,7 @@ TEXT ·map_hash_key(SB), NOSPLIT, $72-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_weakref_free(SB), NOSPLIT, $88-32
+TEXT ·js_weakref_free(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21772,7 +21772,7 @@ TEXT ·js_finrec_job(SB), $56-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·__js_poll_interrupts(SB), NOSPLIT, $72-16
+TEXT ·__js_poll_interrupts(SB), $72-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21794,7 +21794,7 @@ TEXT ·__js_poll_interrupts(SB), NOSPLIT, $72-16
 	WORD $0x14000001
 	RET
 
-TEXT ·js_call_enter(SB), NOSPLIT, $72-24
+TEXT ·js_call_enter(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22519,7 +22519,7 @@ TEXT ·JS_ToObject(SB), $152-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_object_lit_shape(SB), NOSPLIT, $152-40
+TEXT ·js_object_lit_shape(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22761,7 +22761,7 @@ TEXT ·js_object_lit_shape(SB), NOSPLIT, $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_build_arguments(SB), NOSPLIT, $136-48
+TEXT ·js_build_arguments(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22975,7 +22975,7 @@ TEXT ·js_build_arguments(SB), NOSPLIT, $136-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_build_mapped_arguments(SB), NOSPLIT, $168-64
+TEXT ·js_build_mapped_arguments(SB), $168-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23453,7 +23453,7 @@ TEXT ·js_build_mapped_arguments(SB), NOSPLIT, $168-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_NewObjectProto(SB), NOSPLIT, $104-48
+TEXT ·JS_NewObjectProto(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23960,7 +23960,7 @@ TEXT ·js_function_call(SB), $56-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_has_own_call(SB), NOSPLIT, $88-48
+TEXT ·js_has_own_call(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24424,7 +24424,7 @@ TEXT ·build_arg_list(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·free_arg_list(SB), NOSPLIT, $120-32
+TEXT ·free_arg_list(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24930,7 +24930,7 @@ TEXT ·js_proxy_get_prototype(SB), $120-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_CheckBrand(SB), NOSPLIT, $120-56
+TEXT ·JS_CheckBrand(SB), $120-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26392,7 +26392,7 @@ TEXT ·__JS_NewAtom(SB), $280-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_ThrowTypeErrorReadOnly(SB), NOSPLIT, $88-40
+TEXT ·JS_ThrowTypeErrorReadOnly(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26437,7 +26437,7 @@ TEXT ·JS_ThrowTypeErrorReadOnly(SB), NOSPLIT, $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), NOSPLIT, $88-24
+TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26469,7 +26469,7 @@ TEXT ·JS_ThrowSyntaxErrorVarRedeclaration(SB), NOSPLIT, $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_ThrowReferenceErrorUninitialized(SB), NOSPLIT, $88-24
+TEXT ·JS_ThrowReferenceErrorUninitialized(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

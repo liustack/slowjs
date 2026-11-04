@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_parse_escape(SB), NOSPLIT, $56-32
+TEXT ·lre_parse_escape(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4775,7 +4775,7 @@ TEXT ·re_parse_alternative(SB), $232-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_parse_group_name(SB), NOSPLIT, $136-32
+TEXT ·re_parse_group_name(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5219,7 +5219,7 @@ TEXT ·re_parse_group_name(SB), NOSPLIT, $136-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·is_duplicate_group_name(SB), NOSPLIT, $104-40
+TEXT ·is_duplicate_group_name(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5546,7 +5546,7 @@ TEXT ·is_duplicate_group_name(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_has_named_captures(SB), NOSPLIT, $72-24
+TEXT ·re_has_named_captures(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5655,7 +5655,7 @@ TEXT ·re_has_named_captures(SB), NOSPLIT, $72-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·find_group_name(SB), NOSPLIT, $152-40
+TEXT ·find_group_name(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6053,7 +6053,7 @@ TEXT ·find_group_name(SB), NOSPLIT, $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_parse_captures(SB), NOSPLIT, $136-48
+TEXT ·re_parse_captures(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6289,7 +6289,7 @@ TEXT ·re_parse_captures(SB), NOSPLIT, $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·re_emit_op_u8(SB), NOSPLIT, $72-32
+TEXT ·re_emit_op_u8(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16305,7 +16305,7 @@ TEXT ·lre_get_flags(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_first_set(SB), NOSPLIT, $104-32
+TEXT ·lre_first_set(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16660,7 +16660,7 @@ TEXT ·lre_first_set(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_exec_backtrack(SB), NOSPLIT, $216-48
+TEXT ·lre_exec_backtrack(SB), $216-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19463,7 +19463,7 @@ TEXT ·lre_get_groupnames(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·re_parse_error(SB), NOSPLIT, $72-32
+TEXT ·re_parse_error(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20705,7 +20705,7 @@ TEXT ·lre_exec_block(SB), $184-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_find_block(SB), NOSPLIT, $184-24
+TEXT ·lre_find_block(SB), $184-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

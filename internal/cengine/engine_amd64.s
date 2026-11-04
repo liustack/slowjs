@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·goasm_chunked_memcpy(SB), NOSPLIT, $64-32
+TEXT ·goasm_chunked_memcpy(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -40,7 +40,7 @@ TEXT ·goasm_chunked_memcpy(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·goasm_chunked_memset(SB), NOSPLIT, $64-32
+TEXT ·goasm_chunked_memset(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -79,7 +79,7 @@ TEXT ·goasm_chunked_memset(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·goasm_chunked_memmove(SB), NOSPLIT, $64-32
+TEXT ·goasm_chunked_memmove(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c

@@ -18,7 +18,7 @@ TEXT ·heap_usable_size(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·heap_create(SB), NOSPLIT, $152-32
+TEXT ·heap_create(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -309,7 +309,7 @@ TEXT ·heap_set_remap(SB), NOSPLIT, $0-24
 	WORD $0x14000001
 	RET
 
-TEXT ·heap_alloc(SB), NOSPLIT, $56-32
+TEXT ·heap_alloc(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -354,7 +354,7 @@ TEXT ·heap_alloc(SB), NOSPLIT, $56-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·heap_take(SB), NOSPLIT, $104-40
+TEXT ·heap_take(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -560,7 +560,7 @@ TEXT ·heap_take(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·heap_free(SB), NOSPLIT, $120-24
+TEXT ·heap_free(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -648,7 +648,7 @@ TEXT ·heap_free(SB), NOSPLIT, $120-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·heap_realloc(SB), NOSPLIT, $200-40
+TEXT ·heap_realloc(SB), $200-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1060,7 +1060,7 @@ TEXT ·heap_realloc(SB), NOSPLIT, $200-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·heap_remap_dedicated(SB), NOSPLIT, $136-56
+TEXT ·heap_remap_dedicated(SB), $136-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1148,7 +1148,7 @@ TEXT ·heap_remap_dedicated(SB), NOSPLIT, $136-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·heap_give_back(SB), NOSPLIT, $88-32
+TEXT ·heap_give_back(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1186,7 +1186,7 @@ TEXT ·heap_give_back(SB), NOSPLIT, $88-32
 	WORD $0x14000001
 	RET
 
-TEXT ·heap_release_start(SB), NOSPLIT, $104-24
+TEXT ·heap_release_start(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1305,7 +1305,7 @@ TEXT ·heap_release_start(SB), NOSPLIT, $104-24
 	WORD $0x14000001
 	RET
 
-TEXT ·heap_release_next_chunk(SB), NOSPLIT, $88-32
+TEXT ·heap_release_next_chunk(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1395,7 +1395,7 @@ TEXT ·heap_release_next_chunk(SB), NOSPLIT, $88-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·heap_release_next_range(SB), NOSPLIT, $72-32
+TEXT ·heap_release_next_range(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

@@ -374,12 +374,16 @@ func TestCheckCases(t *testing.T) {
 			want: "Go frame is"},
 		{name: "a Go frame smaller than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n - 8 }),
 			want: "Go frame is"},
-		// The NOSPLIT list (ChooseNoSplit): g is on it, ic, which calls
-		// through a pointer, is not.
+		// The NOSPLIT list (MarkNoSplit): h, a leaf with no frame, is on
+		// it, and ic, which calls, is not. An assembler that marked another
+		// function NOSPLIT by itself, or stopped marking a small leaf, is
+		// caught: the second is a frame too big for it to mark.
 		{name: "a function off the NOSPLIT list with no stack check", files: addFlag("ic", "NOSPLIT"),
 			want: "not on the NOSPLIT list, but Go does not check the stack"},
-		{name: "a function on the NOSPLIT list with a stack check", files: dropFlag("g", "NOSPLIT"),
-			want: "on the NOSPLIT list, but Go checks the stack"},
+		{name: "a function on the NOSPLIT list with a stack check", files: func(files map[string]string) {
+			dropFlag("h", "NOSPLIT")(files)
+			tweakText("h", `, \$(\d+)-`, func(int) int { return autoNoSplitFrame })(files)
+		}, want: "on the NOSPLIT list, but Go checks the stack"},
 		{name: "a record that says NOSPLIT when the function does not", metas: func(ms []Meta) {
 			for i := range ms {
 				if ms[i].Name == "ic" {
@@ -576,11 +580,7 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		lowered += ".p2align 4\n.globl " + n + "\n.type " + n + ",@function\n" + s + ".size " + n + ", .-" + n + "\n"
 		metas = append(metas, m)
 	}
-	callbacks := map[string]bool{}
-	for _, h := range append(append([]string{}, HostCallbacks...), GeneratorCallbacks...) {
-		callbacks[h] = true
-	}
-	if _, _, err := ChooseNoSplit(metas, nil, nil, plan, unit, callbacks, nil); err != nil {
+	if _, err := MarkNoSplit(AMD64Stack, metas); err != nil {
 		t.Fatal(err)
 	}
 	if c.lower != nil {

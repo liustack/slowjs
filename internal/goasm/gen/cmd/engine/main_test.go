@@ -60,7 +60,6 @@ func TestReleaseError(t *testing.T) {
 		"-poison":                     func(d *devSwitches) { d.Poison = true },
 		"GEN_KEEP_NARROW":             func(d *devSwitches) { d.KeepNarrow = true },
 		"GEN_EDIT_LOWERED":            func(d *devSwitches) { d.EditLowered = "1" },
-		"GEN_FORCE_NOSPLIT":           func(d *devSwitches) { d.ForceNoSplit = "f" },
 		"-non-format-variadic":        func(d *devSwitches) { d.NonFormat = "" },
 		"without polls (-poll=false)": func(d *devSwitches) { d.NoPoll = true },
 	} {
@@ -156,7 +155,7 @@ func TestGoFileHeaders(t *testing.T) {
 		if got := keepAll(nil, nil, nil); !strings.Contains(got, c.keep) {
 			t.Errorf("tag %q: keep file lacks %q:\n%s", c.tag, c.keep, got)
 		}
-		if got := negativeBuildFile(true, ""); !strings.Contains(got, c.neg) {
+		if got := negativeBuildFile(); !strings.Contains(got, c.neg) {
 			t.Errorf("tag %q: negative file lacks %q", c.tag, c.neg)
 		}
 	}

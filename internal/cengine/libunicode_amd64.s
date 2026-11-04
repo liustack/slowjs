@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_case_conv(SB), NOSPLIT, $128-40
+TEXT ·lre_case_conv(SB), $128-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -69,7 +69,7 @@ TEXT ·lre_case_conv(SB), NOSPLIT, $128-40
 	BYTE $0xcb
 	RET
 
-TEXT ·lre_case_conv_entry(SB), NOSPLIT, $96-56
+TEXT ·lre_case_conv_entry(SB), $96-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -333,7 +333,7 @@ TEXT ·lre_case_conv_entry(SB), NOSPLIT, $96-56
 	QUAD $0xfffffee8fffffe8e
 	RET
 
-TEXT ·lre_canonicalize(SB), NOSPLIT, $112-32
+TEXT ·lre_canonicalize(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -491,7 +491,7 @@ TEXT ·lre_canonicalize(SB), NOSPLIT, $112-32
 	BYTE $0xff
 	RET
 
-TEXT ·lre_is_cased(SB), NOSPLIT, $64-24
+TEXT ·lre_is_cased(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -612,7 +612,7 @@ TEXT ·lre_is_cased(SB), NOSPLIT, $64-24
 	BYTE $0x00
 	RET
 
-TEXT ·lre_is_case_ignorable(SB), NOSPLIT, $64-24
+TEXT ·lre_is_case_ignorable(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -3095,7 +3095,7 @@ TEXT ·unicode_case1(SB), $128-32
 	QUAD $0x00eb000000a82484
 	RET
 
-TEXT ·lre_is_id_start(SB), NOSPLIT, $64-24
+TEXT ·lre_is_id_start(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -3193,7 +3193,7 @@ TEXT ·lre_is_id_start(SB), NOSPLIT, $64-24
 	BYTE $0x00
 	RET
 
-TEXT ·lre_is_id_continue(SB), NOSPLIT, $64-24
+TEXT ·lre_is_id_continue(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -4644,7 +4644,7 @@ TEXT ·unicode_normalize(SB), $256-72
 	QUAD $0xfffffb75fffffbf6
 	RET
 
-TEXT ·unicode_decomp_entry(SB), NOSPLIT, $96-64
+TEXT ·unicode_decomp_entry(SB), $96-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -6159,7 +6159,7 @@ TEXT ·unicode_script(SB), $256-40
 	BYTE $0xff
 	RET
 
-TEXT ·unicode_general_category(SB), NOSPLIT, $128-32
+TEXT ·unicode_general_category(SB), $128-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
