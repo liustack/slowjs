@@ -24,6 +24,38 @@
 
 extern char **environ;
 
+/* ---- a case in a process of its own ----
+
+   run_self runs this program again with args (it sets args[0]) and gives the
+   status the program ended with. A case that may abort runs so, and is then
+   one failed case, not the end of the test. It is a new program, not a fork:
+   the watchdog thread of host.c holds host_lock for a moment once a second,
+   and the child of a fork made in that moment waits for the lock forever. The
+   child of a fork would also have no watchdog. */
+static const char *self_path;
+
+static int run_self(char **args)
+{
+    pid_t pid, r;
+    int st, err;
+
+    args[0] = (char *)self_path;
+    fflush(stdout);
+    err = strchr(self_path, '/') ? posix_spawn(&pid, self_path, NULL, NULL, args, environ)
+                                 : posix_spawnp(&pid, self_path, NULL, NULL, args, environ);
+    if (err) {
+        fprintf(stderr, "posix_spawn %s: %s\n", self_path, strerror(err));
+        exit(2);
+    }
+    while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR)
+        ;
+    if (r != pid) {
+        perror("waitpid");
+        exit(2);
+    }
+    return st;
+}
+
 struct StringBuffer;
 struct StringBuffer *white_sb_new(JSContext *ctx, int size, int wide, int pre);
 void white_sb_free(JSContext *ctx, struct StringBuffer *b);
@@ -2071,15 +2103,11 @@ static void in_free_case(int way, int action)
     host_release_call = NULL;
 }
 
-/* the path of this program, to run a case in a process of its own */
-static const char *self_path;
-
 static void test_gc_in_free(void)
 {
-    int way, action, st, err;
+    int way, action, st;
     char way_arg[16], action_arg[16];
     char *args[5];
-    pid_t pid, r;
 
     for (way = 0; way < IN_FREE_WAYS; way++) {
         for (action = 0; action < IN_FREE_ACTIONS; action++) {
@@ -2089,24 +2117,11 @@ static void test_gc_in_free(void)
                 continue;
             snprintf(way_arg, sizeof(way_arg), "%d", way);
             snprintf(action_arg, sizeof(action_arg), "%d", action);
-            args[0] = (char *)self_path;
             args[1] = "in-free";
             args[2] = way_arg;
             args[3] = action_arg;
             args[4] = NULL;
-            fflush(stdout);
-            err = strchr(self_path, '/') ? posix_spawn(&pid, self_path, NULL, NULL, args, environ)
-                                         : posix_spawnp(&pid, self_path, NULL, NULL, args, environ);
-            if (err) {
-                fprintf(stderr, "posix_spawn %s: %s\n", self_path, strerror(err));
-                exit(2);
-            }
-            while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR)
-                ;
-            if (r != pid) {
-                perror("waitpid");
-                exit(2);
-            }
+            st = run_self(args);
             CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "%s from a finalizer, %s: %s %d", in_free_actions[action],
                   in_free_ways[way], WIFSIGNALED(st) ? "stopped by signal" : "exit status",
                   WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
@@ -3873,38 +3888,29 @@ static int compile_failing(const char *what, const char *js, int fail, int mode,
     return failed;
 }
 
-/* compile_failing_alone is compile_failing in a child process, so that a
-   compile that aborts is one failed case with its script and request, not the
-   end of the test. It returns 1 when the compile failed with the out of memory
-   error, 0 when it worked and gave want, and -1 for any other outcome. */
-static int compile_failing_alone(const char *what, const char *js, int fail, int mode, const char *want)
+/* compile_failing_alone is compile_failing in a process of its own
+   (run_self), so that a compile that aborts is one failed case with its
+   script and request, not the end of the test. The process gets the sweep,
+   the number of the script, the request and want, and makes the list of the
+   scripts again (compile_one). It returns 1 when the compile failed with the
+   out of memory error, 0 when it worked and gave want, and -1 for any other
+   outcome. */
+static int compile_failing_alone(const char *what, int calls, size_t script, int fail, const char *want)
 {
-    pid_t pid, r;
+    char calls_arg[16], script_arg[32], fail_arg[16];
+    char *args[7];
     int st;
 
-    fflush(stdout);
-    pid = fork();
-    if (pid < 0) {
-        perror("fork");
-        exit(2);
-    }
-    if (pid == 0) {
-        char got[256];
-        int n, failed;
-
-        failures = 0;
-        failed = compile_failing(what, js, fail, mode, &n, got, sizeof(got));
-        if (!failed)
-            CHECK(strcmp(got, want) == 0, "%s, request %d failing: the code compiled gives %s, want %s", what, fail, got, want);
-        fflush(stdout);
-        host_leave(failures ? 1 : failed ? 10 : 0);
-    }
-    while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR)
-        ;
-    if (r != pid) {
-        perror("waitpid");
-        exit(2);
-    }
+    snprintf(calls_arg, sizeof(calls_arg), "%d", calls);
+    snprintf(script_arg, sizeof(script_arg), "%zu", script);
+    snprintf(fail_arg, sizeof(fail_arg), "%d", fail);
+    args[1] = "compile-one";
+    args[2] = calls_arg;
+    args[3] = script_arg;
+    args[4] = fail_arg;
+    args[5] = (char *)want;
+    args[6] = NULL;
+    st = run_self(args);
     if (WIFEXITED(st) && (WEXITSTATUS(st) == 0 || WEXITSTATUS(st) == 10))
         return WEXITSTATUS(st) == 10;
     CHECK(0, "%s, request %d failing: the case %s", what, fail,
@@ -3997,15 +4003,21 @@ static const char *const compile_module_scripts[] = {
    set any call of js_malloc_rt or js_realloc_rt, small blocks too (what every
    block failing alone looks like, as it does in the builds that take each
    block from the system malloc). */
-static void test_compile_one_failure(int calls)
+struct compile_script {
+    const char *js;
+    int mode;
+};
+
+#define COMPILE_SCRIPTS \
+    (countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + 5)
+
+/* compile_sweep_scripts puts the scripts of the sweep in scripts (room for
+   COMPILE_SCRIPTS), any call a request when calls is set, and gives their
+   number. The test and the process of each case make the same list. */
+static size_t compile_sweep_scripts(int calls, struct compile_script *scripts)
 {
     static char big_scope[16384], deep_scope[8192], fields[8192], cases[8192];
-    struct {
-        const char *js;
-        int mode;
-    } scripts[countof(compile_scripts) + countof(compile_fine_scripts) + countof(compile_alloc_scripts) + countof(compile_module_scripts) + 5];
     size_t i, k = 0;
-    long cases_run = 0, bad = 0;
     int j;
 
     nested_scopes();
@@ -4046,6 +4058,36 @@ static void test_compile_one_failure(int calls)
         scripts[k].js = compile_module_scripts[i];
         scripts[k++].mode = (calls ? MODE_CALLS : 0) | MODE_MODULE;
     }
+    return k;
+}
+
+/* compile_one is the process of one case of compile_failing_alone. */
+static void compile_one(int calls, size_t script, int fail, const char *want)
+{
+    struct compile_script scripts[COMPILE_SCRIPTS];
+    size_t k = compile_sweep_scripts(calls, scripts);
+    char what[32], got[256];
+    int n, failed;
+
+    failures = 0;
+    snprintf(what, sizeof(what), "script %zu", script);
+    if (script >= k) {
+        CHECK(0, "%s: the sweep has %zu scripts", what, k);
+        host_leave(1);
+    }
+    failed = compile_failing(what, scripts[script].js, fail, scripts[script].mode, &n, got, sizeof(got));
+    if (!failed)
+        CHECK(strcmp(got, want) == 0, "%s, request %d failing: the code compiled gives %s, want %s", what, fail, got, want);
+    fflush(stdout);
+    host_leave(failures ? 1 : failed ? 10 : 0);
+}
+
+static void test_compile_one_failure(int calls)
+{
+    struct compile_script scripts[COMPILE_SCRIPTS];
+    size_t i, k = compile_sweep_scripts(calls, scripts);
+    long cases_run = 0, bad = 0;
+
     for (i = 0; i < k; i++) {
         char what[32], want[256];
         int n, fail, failures_of_script = 0, bad_of_script = 0;
@@ -4053,7 +4095,7 @@ static void test_compile_one_failure(int calls)
         snprintf(what, sizeof(what), "script %zu", i);
         CHECK(!compile_failing(what, scripts[i].js, 0, scripts[i].mode, &n, want, sizeof(want)), "%s does not compile", what);
         for (fail = 1; fail <= n; fail++) {
-            int r = compile_failing_alone(what, scripts[i].js, fail, scripts[i].mode, want);
+            int r = compile_failing_alone(what, calls, i, fail, want);
 
             cases_run++;
             if (r < 0) {
@@ -4079,6 +4121,9 @@ int main(int argc, char **argv)
         fflush(stdout);
         host_leave(failures ? 1 : 0);
     }
+    /* one case of test_compile_one_failure, in a process of its own */
+    if (argc == 6 && strcmp(argv[1], "compile-one") == 0)
+        compile_one(atoi(argv[2]), (size_t)strtoul(argv[3], NULL, 10), atoi(argv[4]), argv[5]);
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
