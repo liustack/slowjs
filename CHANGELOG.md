@@ -4,6 +4,8 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+## [v0.29.11] - 2026-11-05
+
 ### Changed
 
 - This is the last release under `github.com/liustack/slowjs`, and `go.mod` marks the module deprecated. From v0.30.0 the module is `github.com/liustack/quickjs` again, its name up to v0.27.3, with the same API: change the import path, and the package name `slowjs` to `quickjs`.

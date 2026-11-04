@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.29.11] - 2026-11-05
+
 ### 变更
 
 - 这是 `github.com/liustack/slowjs` 这个路径下的最后一个版本，`go.mod` 把模块标成了已弃用。从 v0.30.0 起模块重新叫 `github.com/liustack/quickjs`（v0.27.3 及之前就叫这个名字），API 不变：改导入路径，把包名 `slowjs` 改成 `quickjs`。
