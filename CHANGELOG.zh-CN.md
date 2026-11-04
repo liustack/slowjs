@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 引擎在 0x1000 以下的地址出内存错误（C 里的空指针就会这样）时，VM 现在会标成损坏，之后除了 `Close` 什么调用都拒绝，和其他地址的内存错误一样。Go 把这种错误变成空指针解引用的 panic，里面没有地址，而以前只有带地址的 panic 才会让 VM 标成损坏：调用方 recover 之后，还能接着用一个引擎停在半路的 VM。在 JavaScript 调用的 Go 函数里，这种错误还会被当成 Go 函数自己的 panic，变成不可捕获的错误，引擎接着往下跑。现在只要 panic 或 Goexit 离开了一次还没返回的引擎调用，不管 panic 的是什么，VM 都会标成损坏。JavaScript 调用的 Go 函数在自己的 Go 代码里（不在引擎调用之内）出的内存错误，现在和这个函数的其他 panic 一样处理，VM 照常可用（[C 引擎](docs/changes/c-engine.md#which-panics-break-a-vm)）。
+
 ## [v0.29.10] - 2026-11-04
 
 ### 新增

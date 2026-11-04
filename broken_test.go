@@ -117,3 +117,72 @@ func TestNestedHostPanicRecoveredKeepsVM(t *testing.T) {
 		t.Fatalf("after the recovered panic: %v, %v", got, err)
 	}
 }
+
+// A fault in the engine below the address 0x1000, as a NULL pointer in the C
+// makes, is a runtime.Error that names no address: the runtime makes such a
+// fault the panic of a nil dereference before it looks at SetPanicOnFault.
+// The VM is broken all the same, since the call left the engine halfway. The
+// tests make the fault by giving the engine a context at address 0.
+
+// lowFault checks that p is the panic of a fault at a low address.
+func lowFault(t *testing.T, p any) {
+	t.Helper()
+	if _, ok := p.(runtime.Error); !ok {
+		t.Fatalf("panicked with %T %v, want the runtime.Error of a fault", p, p)
+	}
+	if _, ok := p.(interface{ Addr() uintptr }); ok {
+		t.Fatalf("the fault %v names an address: the test does not make a fault at a low address", p)
+	}
+}
+
+// withoutContext runs f with the context of m at address 0, so that the
+// first call into the engine in f faults.
+func withoutContext(m *VM, f func()) {
+	ctx := m.ctx
+	m.ctx = 0
+	defer func() { m.ctx = ctx }()
+	f()
+}
+
+func TestLowFaultBreaksVM(t *testing.T) {
+	faulttest.Skip(t)
+	m := newTestVM(t)
+	var p any
+	withoutContext(m, func() { p = evalRecover(m, `1`) })
+	lowFault(t, p)
+	wantBroken(t, m, "a fault at a low address")
+}
+
+// A Go function called from javascript calls into the engine itself, which
+// faults at a low address: the panic goes on up through the engine that
+// called the Go function, and does not become the uncatchable error of a
+// panic of the Go function.
+func TestHostLowFaultBreaksVM(t *testing.T) {
+	faulttest.Skip(t)
+	m := newTestVM(t)
+	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
+		m := a.VM()
+		withoutContext(m, func() { m.NewObjectValue() })
+		return m.NewInt(0), nil
+	}))
+	lowFault(t, evalRecover(m, `inner()`))
+	wantBroken(t, m, "a fault at a low address in a Go function")
+}
+
+// The same for a fault at a low address under a nested call, which the Go
+// function recovers.
+func TestNestedLowFaultRecoveredBreaksVM(t *testing.T) {
+	faulttest.Skip(t)
+	m := newTestVM(t)
+	var inner any
+	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
+		m := a.VM()
+		withoutContext(m, func() { inner = evalRecover(m, `1`) })
+		return m.NewInt(0), nil
+	}))
+	if p := evalRecover(m, `inner()`); p != framesLeftPanic {
+		t.Fatalf("Eval panicked with %v, want %q", p, framesLeftPanic)
+	}
+	lowFault(t, inner)
+	wantBroken(t, m, "a recovered fault at a low address")
+}

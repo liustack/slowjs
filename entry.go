@@ -44,13 +44,15 @@ func (m *VM) Interrupt() {
 // poll killed the script, the outermost leave sets it to the interrupted
 // error, and the VM is broken.
 //
-// A memory fault that leaves the call went up through the engine's frames:
-// each level marks the VM broken, so that a Go function that called this one
-// from javascript and recovers the panic finds it so (called). A panic or a
-// Goexit that started in Go code the engine called is marked where the engine
-// called it (called, gohost). A panic of a Go function called from
-// javascript (repanic) went up through no frame of the engine and leaves the
-// VM as it is.
+// A panic or a Goexit that leaves the call went up through the engine's
+// frames when a call into the engine that this level made did not return
+// (inEngine): a fault in the engine at any address, a kill, an abort, or a
+// panic of Go code the engine called. Each level marks the VM broken then, so
+// that a Go function that called this one from javascript and recovers the
+// panic finds it so (called). What the panic is does not matter. A panic of
+// the Go code of this level between its calls into the engine, and that of a
+// Go function called from javascript (repanic), went up through no frame of
+// the engine and leave the VM as it is.
 func (m *VM) enter() error {
 	if m.h.Broken() {
 		if m.h.Killed() {
@@ -80,12 +82,12 @@ func (m *VM) leave(err *error) {
 	m.depth--
 	m.entered--
 	m.h.Leave()
+	if m.inEngine != 0 {
+		m.h.MarkBroken()
+	}
 	// leave recovers only to tell a return from a panic: a panic goes on with
 	// the same value.
 	if p := recover(); p != nil {
-		if isFault(p) {
-			m.h.MarkBroken()
-		}
 		if m.entered == 0 {
 			m.panicked = nil
 			if p == gohost.ErrKilled {
@@ -129,13 +131,6 @@ func (m *VM) outer(f func()) {
 	}()
 	f()
 	ok = true
-}
-
-// isFault reports whether p is a memory fault, which SetPanicOnFault makes a
-// panic of while the engine runs.
-func isFault(p any) bool {
-	_, ok := p.(interface{ Addr() uintptr })
-	return ok
 }
 
 const (

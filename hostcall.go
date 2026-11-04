@@ -54,20 +54,38 @@ func hostCall(sp uintptr, vmID uint32, this uintptr, argc int32, argv uintptr, i
 	return r.u, r.tag
 }
 
+// enterGo starts the level of a Go function that javascript calls: the calls
+// into the engine it makes count from 0 (inEngine). It returns the count of
+// the level below, for called to put back. A panic before it, which leaves
+// that count above 0, went up through the engine that called the Go function.
+func (m *VM) enterGo() (below int) {
+	below = m.inEngine
+	m.inEngine = 0
+	m.host++
+	return below
+}
+
 // called ends a call of a Go function name from javascript, deferred with
-// the shadow pointer to put back once it is done with the engine, the result r and whether the Go function
-// returned. A panic of the Go function becomes an uncatchable error
-// (hostPanicked), and goes on where the Go code that called javascript gets
-// back. A panic that went through the engine's frames below, a memory fault,
-// and a Goexit go on up through the engine, and the VM is broken.
-func (m *VM) called(saved uintptr, name string, r *jsValue, returned bool, p any) {
+// the shadow pointer to put back once it is done with the engine, the count
+// of calls into the engine of the level below (enterGo), the result r and
+// whether the Go function returned. A panic of the Go function becomes an
+// uncatchable error (hostPanicked), and goes on where the Go code that called
+// javascript gets back. When a call into the engine that the Go function made
+// did not return, a panic or a Goexit went up through the engine's frames
+// below, whatever the panic is, and the VM is broken. Such a panic, and a
+// Goexit, go on up through the engine.
+func (m *VM) called(saved uintptr, below int, name string, r *jsValue, returned bool, p any) {
 	m.host--
+	if m.inEngine != 0 {
+		m.h.MarkBroken()
+	}
+	m.inEngine = below
 	switch {
 	case p == nil && !returned:
 		m.sp = saved
 		m.h.MarkBroken() // runtime.Goexit, which goes on up through the engine
 		return
-	case p != nil && (m.h.Broken() || isFault(p)):
+	case p != nil && m.h.Broken():
 		m.sp = saved
 		m.h.MarkBroken()
 		panic(p)
@@ -93,9 +111,9 @@ func (m *VM) called(saved uintptr, name string, r *jsValue, returned bool, p any
 
 // callBuiltin calls b, whose function javascript called.
 func (m *VM) callBuiltin(saved uintptr, b *Builtin, this jsValue, argc int32, argv uintptr) (r jsValue) {
-	m.host++
+	below := m.enterGo()
 	returned := false
-	defer func() { m.called(saved, b.name, &r, returned, recover()) }()
+	defer func() { m.called(saved, below, b.name, &r, returned, recover()) }()
 	v, err := b.fn(Args{vm: m, this: this, argv: argv, argc: int(argc)})
 	if err != nil || v.vm != m && v.vm != nil {
 		r = m.builtinFailed(b, v, err)
@@ -115,9 +133,9 @@ func (m *VM) callGo(saved uintptr, handle int32, this jsValue, argc int32, argv 
 		panic(fmt.Sprintf("slowjs: a call of the Go function of handle %d, which VM %d does not hold", handle, m.id))
 	}
 
-	m.host++
+	below := m.enterGo()
 	returned := false
-	defer func() { m.called(saved, info.name, &r, returned, recover()) }()
+	defer func() { m.called(saved, below, info.name, &r, returned, recover()) }()
 	r = m.callGoFunc(info, this, argc, argv)
 	returned = true
 	return r
@@ -134,11 +152,13 @@ func (m *VM) newHostFunction(name string, length, id int32, release bool) (r jsV
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
+	m.inEngine++
 	if release {
 		r = val(cengine.JS_NewHostFunctionRelease(sp, m.ctx, p, uintptr(len(name)), uintptr(length), uintptr(id)))
 	} else {
 		r = val(cengine.JS_NewHostFunction(sp, m.ctx, p, uintptr(len(name)), uintptr(length), uintptr(id)))
 	}
+	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }

@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Fixed
+
+- A fault of the engine below the address 0x1000, as a NULL pointer in the C makes, now leaves the VM broken, so that it refuses every call but `Close`, as a fault at any other address does. Go makes such a fault the panic of a nil dereference, which names no address, and the VM was marked broken only by a panic that names one: a caller that recovered the panic could go on with a VM whose engine had stopped halfway, and in a Go function that javascript called the fault became the uncatchable error of a Go panic while the engine went on. The VM is now broken whenever a panic or a Goexit leaves a call into the engine that has not returned, whatever the panic is. A fault in the Go code of a Go function that javascript called, outside its calls into the engine, is now a panic of that function like any other, and leaves the VM usable ([C engine](docs/changes/c-engine.md#which-panics-break-a-vm)).
+
 ## [v0.29.10] - 2026-11-04
 
 ### Added
