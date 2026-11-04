@@ -3395,6 +3395,133 @@ static void test_long_key_polls(void)
     host_free_runtime(rt);
 }
 
+/* startTag and endTag read the interrupt flag in each loop over a long
+   string (test_tag_work_gaps of unit-white.c checks the steps). Each call
+   below, made from C with the arguments A so that every reading counted is
+   one of the call, reads the flag at least as often as it says, and a flag
+   set at its first reading, at the one in the middle and at its last stops
+   it: it fails with "interrupted", uncatchable, target holds what it held,
+   and the same call then gives what React's functions give. A name or an end
+   tag the functions keep is new at each call (prep), so that every call
+   makes it. The host checks for a leak when the runtime is freed. */
+static JSValue tag_call(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    JSValue f = JS_GetPropertyStr(ctx, g, "F"), a = JS_GetPropertyStr(ctx, g, "A");
+    JSValue argv[6], len = JS_GetPropertyStr(ctx, a, "length"), r;
+    int32_t n = 0;
+    int k;
+
+    JS_ToInt32(ctx, &n, len);
+    JS_FreeValue(ctx, len);
+    for (k = 0; k < n && k < 6; k++)
+        argv[k] = JS_GetPropertyUint32(ctx, a, k);
+    r = JS_Call(ctx, f, JS_UNDEFINED, k, argv);
+    while (k > 0)
+        JS_FreeValue(ctx, argv[--k]);
+    JS_FreeValue(ctx, a);
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+/* R is what the call r gave: what startTag pushed onto T, or the end tag */
+static int tag_result(JSContext *ctx, JSValue r)
+{
+    JSValue g = JS_GetGlobalObject(ctx);
+    int ok = !JS_IsException(r);
+
+    if (ok) {
+        JS_SetPropertyStr(ctx, g, "V", r);
+        ok = eval(ctx, "R = F === startTag ? (T.length === 2 ? T.pop() : 'declined') : V; 0");
+    }
+    JS_FreeValue(ctx, g);
+    return ok;
+}
+
+static void test_tag_polls(void)
+{
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null }, T = ['x'], n = 0, F, A, P, E, V, W, R\n"
+        "var tg = 'a'.repeat(1 << 22), kids = '<'.repeat(1 << 20), wide = '\\u0100&'.repeat(1 << 19), q = '\"'.repeat(1 << 20)\n"
+        "var sv = [' '.repeat(1 << 20), '<'.repeat(1 << 20)].join(''), ul = [' '.repeat(1 << 20), 'x'].join('')\n"
+        "var o = { toString() { return tg } }\n"
+        "function key(p) { return Object.keys(p.style)[0] }\n"
+        "function start(p, type) { F = startTag; A = [T, p, type, fc, hop, d] }\n"
+        "0";
+    static const struct {
+        const char *prep, *want;
+        long reads;
+    } cases[] = {
+        /* the scan of the tag, its copy and the copy of the start tag: 8, 8 and 9 steps */
+        { "start({}, tg)", "'<' + tg + '>'", 25 },
+        /* the escape: 256 steps of 4096 */
+        { "start({ children: kids }, 'div')", "'<div>' + kids.replaceAll('<', '&lt;')", 256 },
+        { "start({ children: wide }, 'div')", "'<div>' + wide.replaceAll('&', '&amp;')", 256 },
+        { "start({ title: q }, 'div')", "'<div title=\"' + q.replaceAll('\"', '&quot;') + '\">'", 256 },
+        /* the white space, then the escape */
+        { "start({ style: { color: sv } }, 'div')", "'<div style=\"color:' + sv.trim().replaceAll('<', '&lt;') + '\">'", 512 },
+        { "start({ href: ul }, 'a')", "'<a href=\"' + ul + '\">'", 512 },
+        /* a new style name each time: the escape, or the scan and the hyphens */
+        { "P = { style: { ['--' + '&'.repeat(1 << 20) + n++ % 10]: 1 } }; start(P, 'div')",
+          "'<div style=\"' + key(P).replaceAll('&', '&amp;') + ':1\">'", 256 },
+        { "P = { style: { ['aB'.repeat(1 << 21) + 'x' + n++ % 10]: 1 } }; start(P, 'div')",
+          "'<div style=\"' + key(P).replace(/([A-Z])/g, '-$1').toLowerCase() + ':1px\">'", 1024 + 8 },
+        /* a new end tag each time, and one that is not kept */
+        { "E = ['b'.repeat(1 << 22), n++ % 10].join(''); F = endTag; A = [E]", "'</' + E + '>'", 8 },
+        { "F = endTag; A = [o]", "'</' + tg + '>'", 8 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g = JS_GetGlobalObject(ctx), r, e;
+    size_t i, j;
+
+    JS_SetPropertyStr(ctx, g, "startTag", JS_NewStartTagFunction(ctx, "startTag", 8));
+    JS_SetPropertyStr(ctx, g, "endTag", JS_NewEndTagFunction(ctx, "endTag", 6));
+    JS_FreeValue(ctx, g);
+    CHECK(eval(ctx, setup), "the setup threw");
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char want[512];
+        long before, reads, at[3];
+
+        snprintf(want, sizeof(want), "W = %s; 0", cases[i].want);
+        CHECK(eval(ctx, cases[i].prep) && eval(ctx, want), "%s: the setup threw", cases[i].prep);
+        before = host_poll_reads;
+        r = tag_call(ctx);
+        reads = host_poll_reads - before;
+        CHECK(tag_result(ctx, r) && eval_is(ctx, "R === W", "true"), "%s does not give %s", cases[i].prep, cases[i].want);
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", cases[i].prep, reads, cases[i].reads);
+        at[0] = 1;
+        at[1] = reads / 2;
+        at[2] = reads;
+        for (j = 0; j < 3; j++) {
+            const char *m;
+            int stopped;
+
+            CHECK(eval(ctx, cases[i].prep) && eval(ctx, want), "%s: the setup threw", cases[i].prep);
+            host_poll_stop_after(at[j]);
+            r = tag_call(ctx);
+            host_poll_stop_after(0);
+            *JS_GetInterruptFlag(rt) = 0;
+            stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(stopped && m && strstr(m, "interrupted"), "%s was not stopped at reading %ld of %ld (%s)", cases[i].prep, at[j], reads,
+                  m ? m : "no exception");
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (!JS_IsException(r))
+                JS_FreeValue(ctx, r);
+            CHECK(eval_is(ctx, "T.length + T[0]", "1x"), "%s stopped at reading %ld: target changed", cases[i].prep, at[j]);
+            r = tag_call(ctx);
+            CHECK(tag_result(ctx, r) && eval_is(ctx, "R === W", "true"), "%s after a stop at reading %ld", cases[i].prep, at[j]);
+        }
+    }
+    CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* More loops that took a whole long string in one pass, and now read the
    interrupt flag at least every 65536 characters or 1048576 bytes: a search
    for a string of the length of the one searched, Array.prototype.indexOf,
@@ -3709,6 +3836,7 @@ int main(void)
     test_map_key_polls();
     test_long_key_polls();
     test_long_ops_polls();
+    test_tag_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

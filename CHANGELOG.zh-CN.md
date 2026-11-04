@@ -8,6 +8,10 @@
 
 - **不兼容：** 模块改回 `github.com/liustack/quickjs`（v0.27.3 及之前用的就是这个名字），根包名改回 `quickjs`（v0.28.0 到 v0.29.11 是 `github.com/liustack/slowjs`，包名 `slowjs`）。API 不变。程序要改 import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），把代码里的 `slowjs.` 改成 `quickjs.`，原来加 `slowjs_intl_` 构建标签的，改加 `-tags quickjs_intl_nonames` 或 `quickjs_intl_nocjdict`，原来加 `slowjs_anygo` 的改加 `quickjs_anygo`。脚本用的环境变量改以 `QUICKJS_` 开头（`QUICKJS_LLVM`、`QUICKJS_REMOTE` 等），`intl` 和 `temporal` 标记 VM 用的 `Symbol.for` 键换成新路径（`Symbol.for('github.com/liustack/quickjs/intl')`），根包的错误信息改以 `quickjs:` 开头。下一个版本 v0.30.0 是新路径下的第一个版本，v0.28.0 到 v0.29.11 留在 `github.com/liustack/slowjs`（[upstream.zh-CN.md](docs/upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)）。
 
+### 修复
+
+- `RegisterStartTag` 和 `RegisterEndTag` 注册的 `startTag`、`endTag` 现在遍历长字符串的每个循环都会读中断标志，标签、样式名、URL 或文本有几百万个字符时，`Interrupt` 和 eval 超时也能在几毫秒内停下这次调用。以前有四个循环从不读它：标签的检查、在样式名里找非 ASCII 字符、URL 前面的空白、拼好的开始标签的复制。超时设 10 ms 时，`TestTagsStop` 在 CI 上要到调用开始后 53 到 119 ms 才停下。在 linux/amd64 上，3200 万字符的标签最长停顿从 19.0 ms 降到 5.9 ms，前面有 3200 万个空白的 URL 从 10.5 ms 降到 3.3 ms。输出逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)）。
+
 ## [v0.29.11] - 2026-11-05
 
 ### 变更

@@ -1,5 +1,5 @@
 ---
-summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, and the eval timeout on property reads and writes, JSON and error reads'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, and the long loops of the start and end tag functions'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
@@ -134,6 +134,44 @@ Not covered, and the bound is the length of the input:
 - `<`, `>`, `<=` and `>=` on two flat strings that are equal to the end (`js_string_compare`).
 - The copy of a long piece of 8 bits into a string buffer of 8 bits when the buffer has the room (`memcpy` in `string_buffer_write8`, of tens of millions of characters), the copy of a piece of 16 bits (`string_buffer_write16`: the scan for a character above 0xff and the copy, which `JSON.stringify` of a string of 16 bits counts once), the final shrink of a buffer by `string_buffer_end`, and the leaves of a rope when it is made flat. The copy of a piece of 8 bits into a buffer of 16 bits is covered (`string_buffer_write8_wide_long`).
 - The rehash when a Map or Set doubles its table (about 1,100 polls at 8 million entries, which a VM of the default 128 MiB cannot hold), and the free of a very large result after a stop (about 1,700 polls for 8 million small objects, likewise).
+
+## The start and end tags read the interrupt flag in every long loop
+
+Release: Unreleased.
+
+The functions of [RegisterStartTag and RegisterEndTag](go-api.md#registerstarttag-and-registerendtag) went through a long string in four places without reading the interrupt flag, so a call on long strings ran on after `Interrupt` or the eval timeout. With a 10 ms timeout, `TestTagsStop` stopped its loops 53, 60 and 119 ms after they started on the linux/amd64, darwin/arm64 and darwin/amd64 runners of CI, past the 50 ms it allows. The four places:
+
+- The check of the tag against React's tag regexp scanned the whole tag.
+- The scan of a style name for a character that is not ASCII ran before the hyphens, which read the flag.
+- The finished start tag, and a style name, were copied out of their buffer into a string of their length with one `memcpy`, of tens of millions of characters.
+- The white space before a URL, and the tabs and new lines between its letters, that `isJavaScriptProtocol` skips.
+
+Now every loop of the two functions over a string longer than its step reads the flag before each step and after the last, so that the work of one loop does not run into the next: 4,096 units for the escape and the hyphens of a style name, 524,288 units (1 MiB of 16-bit units) for the scan of a tag or a style name and for each copy (a long tag, a style name, an end tag, the finished start tag). The white space around a style value and before a URL is counted as it is skipped: the flag is read before it when the string is longer than 4,096 units, then every 4,096 units of a longer run and at its end. A long piece copied into the buffer of a call first makes the buffer large enough for all of it, so the buffer grows once. A string of one step or less is done at once, with no reading, as before, so a normal tag does not read the flag at all.
+
+A stop throws the uncatchable interrupt and leaves `target` as it was: the tag is pushed only once it is whole. A style name or an end tag stopped while it is made is not kept, and the next call makes it. The text is the same, byte for byte (`start_tag.js` of `compare.sh`).
+
+The time from `Interrupt` to the end of a call, over 200 stops of a loop of calls of each case of `TestTagsStop` (strings of 16M to 64M characters), before and after:
+
+| Case of `TestTagsStop` | linux/amd64, longest of 200, before | after | M4, 99th of 200, before | after |
+|---|---|---|---|---|
+| Text to escape, 16M `<` | 3.7 ms | 4.6 ms | 10.0 ms | 3.3 ms |
+| Text with nothing to escape, 16M | 11.0 ms | 3.2 ms | 2.1 ms | 1.2 ms |
+| Wide text, 16M | 4.9 ms | 5.1 ms | 2.1 ms | 1.9 ms |
+| Attribute to escape, 16M `"` | 4.9 ms | 5.0 ms | 8.8 ms | 10.0 ms |
+| Style value in 64M of white space | 0.06 ms | 0.05 ms | 0.03 ms | 0.04 ms |
+| Style name of 16M, camel case | 16.7 ms | 4.7 ms | 2.8 ms | 0.65 ms |
+| Custom style name of 8M | 5.2 ms | 5.9 ms | 7.3 ms | 1.9 ms |
+| Tag of 32M | 19.0 ms | 5.9 ms | 20.6 ms | 11.1 ms |
+| End tag of 32M | 6.4 ms | 7.3 ms | 1.9 ms | 16 ms |
+| URL after 32M of white space | 10.5 ms | 3.3 ms | 20.0 ms | 3.6 ms |
+
+The calls were stopped 20 to 80 ms after the loop started, at random. The linux/amd64 machine was otherwise idle, the M4 was not, and its rare stops of 10 to 28 ms (in both builds) are the load of the machine. What is left after the fix, 3 to 7 ms, is mostly freeing and allocating the blocks of tens of megabytes of the call (the system calls of the heap), outside the loops of the two functions.
+
+A normal tag reads no flag and goes through the same loops as before, with one more test of a length in each. On a loop of 1,000 calls of each function on four short tags of a page, the new build timed 2% slower than the old one on linux/amd64 and about as fast on the M4. A profile on linux/amd64 puts the difference in functions the change does not touch as much as in those it does (the call of a C function, the copy of the props, with the interpreter faster), which points to where the code landed rather than to the new tests. That is within the spread between layouts that [measuring.md](../measuring.md) reports. A run of its protocol on tifa was not made.
+
+The bound of a call: its strings of one step or less (at most 32 attributes, 32 style values and a text, with their names) are done at once, so a call can do up to about 65 of them between two readings, a few milliseconds of copying at the worst. A rope given as the text or as a style value is made flat by `JS_ToString` first, which copies its leaves with no reading, as everywhere else (see the list above). The keys (at most 32 of the props and 32 of the style), the names of the default branch (fewer than 64 characters) and the tables of names and end tags (at most 512 and 256 entries) are bounded.
+
+Tests: `test_tag_work_gaps` in `engine/test/unit-white.c` counts the work between two readings of the flag (`JS_WORK`, as for `test_poll_work_gaps` above) for a tag of 600,000 characters, a tag of 524,286 characters, whose start tag is one step and is copied at once, and one of 524,288, whose start tag is copied in steps, end tags of a string and of an object, custom and plain style names of short and long steps, texts of 8 and 16 bits and an attribute to escape, white space around a style value, before a URL and between the letters of `javascript:`, a run of white space after a long escape, a run of exactly 4,096 units, and a run after a short wide value. Each must keep every stretch to its step and give its total. `test_tag_polls` in `engine/test/unit.c` calls the functions from C on a long tag, texts, an attribute, a style value, a URL, new style names and new end tags, requires a number of readings of the flag, and stops each call at its first reading, its middle one and its last: the call throws `interrupted`, uncatchable, the target is unchanged, the same call then gives what React's functions give, and the runtime is freed with no leak. `TestTagsStop` (`tags_test.go`) runs the cases above with the eval timeout through the Go API.
 
 ## Out of memory in the return method of an iterator that an exception closes
 
