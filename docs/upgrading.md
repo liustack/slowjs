@@ -41,7 +41,7 @@ To move test262 to a newer revision, change the commit and the SHA-256 at the to
 
 ## Moving to a newer Go
 
-The Go assembly of the C engine (`internal/cengine`, checked in) was made and checked with Go 1.27.2, on linux/amd64 and darwin/arm64. `go.mod` asks for 1.27.0 or later, and a newer Go stops the build with the error of `internal/goversion` (its file `newer.go` has the build line `go1.28 && !slowjs_anygo`), since the assembly was never checked against it. `-tags slowjs_anygo` builds anyway. The checks of the generator and its tests depend on these things of Go 1.27.2:
+The Go assembly of the C engine (`internal/cengine`, checked in) was made with Go 1.27.2 and checked with Go 1.26 and 1.27, on linux/amd64 and darwin/arm64. `go.mod` asks for 1.26.6 or later, and a newer Go stops the build with the error of `internal/goversion` (its file `newer.go` has the build line `go1.28 && !slowjs_anygo`), since the assembly was never checked against it. `-tags slowjs_anygo` builds anyway. The checks of the generator and its tests depend on these things of Go 1.27.2:
 
 - The stack check at the start of every function that is not NOSPLIT: a compare of the stack pointer with the guard in the goroutine, `g.stackguard0` (offset 16 of `g`, with `g` in R14 on amd64 and X28 on arm64), a branch to a call of `runtime.morestack_noctxt.abi0`, and a jump back to the start (`internal/goasm/gen/verify_insn.go`, `arm64_verify.go`).
 - The room of a chain of NOSPLIT functions: the linker gives 800 bytes, and the generator keeps 64 of them free below the deepest frame for the call of `runtime.sigpanic` that a fault adds and its call of morestack (`internal/goasm/gen/nosplit.go`). The 64 bytes come from the source of Go 1.27.2.
@@ -54,6 +54,7 @@ When Go changes any of these, a check of the generator or a test fails. A progra
 3. Read the source of `runtime.sigpanic` and the stack check of the new release if the fault tests fail, and update `FaultRoom` only for what you read there.
 4. When all pass, move the build line of `internal/goversion/newer.go` to the next version and the name in it to the version you checked, and write the new version here and in the README, in both languages. `TestNewerGoStops` checks that the line and the name agree.
 
+The lowest Go is 1.26.6, the `go` line of `go.mod`. On Go 1.26 the things above are as in 1.27.2: the stack the linker allows, the stack check, what a fault pushes and runs, the ABI wrappers and the rules of async preemption. The generator's tests, the post-link checks of both architectures and the tests of the engine pass with 1.26.0 and 1.26.10. Two things of Go set the line above 1.26.0. The compiler of 1.26.0 and 1.26.1 fails on a test file of `internal/hostmem` (golang/go#77832, fixed in 1.26.2). And before 1.26.6, when a goroutine's stack was copied, the frame of a function into which Go injected a call, as it injects `sigpanic` into the engine function that faulted, kept a frame pointer into the old stack, which the execution tracer and the block and mutex profiles may follow (`adjustframe` in `runtime/stack.go`, fixed in 1.26.6). `scripts/go-versions.sh` runs the tests with the lowest Go and the newest release of each minor version. To lower the line, run the steps above with the older Go, and read what its release notes and the files above changed since.
 
 ## Updating the intl locale data
 

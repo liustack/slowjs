@@ -22,7 +22,7 @@ func checked(t *testing.T) int {
 		t.Fatal(err)
 	}
 	line := regexp.MustCompile(`(?m)^//go:build go1\.(\d+) && !slowjs_anygo$`).FindSubmatch(b)
-	name := regexp.MustCompile(`(?m)^var _ = slowjs_was_checked_with_go1_(\d+)_only_`).FindSubmatch(b)
+	name := regexp.MustCompile(`(?m)^var _ = slowjs_is_checked_up_to_go1_(\d+)_see_`).FindSubmatch(b)
 	if line == nil || name == nil {
 		t.Fatalf("newer.go has no build line or no name of the form the test reads:\n%s", b)
 	}

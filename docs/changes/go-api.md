@@ -348,10 +348,10 @@ Release: Unreleased.
 A build with a Go newer than the one the engine was checked with stops with one error:
 
 ```
-undefined: slowjs_was_checked_with_go1_27_only_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
+undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
 ```
 
-The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, how much stack the linker lets a chain of NOSPLIT functions take, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Go 1.27.0 to the latest 1.27 release build as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !slowjs_anygo` is false for all of them. The lower bound is still the `go` line of `go.mod`.
+The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, how much stack the linker lets a chain of NOSPLIT functions take, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !slowjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
 
 - **To build anyway**, with a Go slowjs has not been checked with, add `-tags slowjs_anygo`.
 - **When a new Go comes out**, slowjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of slowjs.

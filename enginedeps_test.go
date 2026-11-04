@@ -124,7 +124,7 @@ func TestEngineNewerGo(t *testing.T) {
 		if !strings.HasPrefix(l, "internal/goversion/newer.go:") {
 			t.Fatalf("the build with %s said\n%s\nwant only the errors of internal/goversion", newer, out)
 		}
-		named = named || strings.Contains(l, "slowjs_was_checked_with_go1_")
+		named = named || strings.Contains(l, "slowjs_is_checked_up_to_go1_")
 	}
 	if !named {
 		t.Fatalf("the build with %s said\n%s\nwant the error that names the Go the engine was checked with", newer, out)
