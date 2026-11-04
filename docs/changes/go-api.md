@@ -188,7 +188,7 @@ Test: `gc_test.go` (`TestRunGC`, `TestRunGCSetsTheThreshold`), `internal/cengine
 
 ## MemoryUsage and ReleaseMemory
 
-Release: Unreleased.
+Release: v0.29.0.
 
 `VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back.
 
@@ -227,7 +227,7 @@ Test: `moduleawait_test.go`, also run under memgrind, and the module case of `Te
 
 ## A module frees its top level once it has run
 
-Release: Unreleased.
+Release: v0.28.4.
 
 When `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` or `EvalSharedBytecodeValue` has run a module to its end, it frees the module's top-level function: the code of the top level, and the variables of the top level that no function of the module uses, with what they hold. The functions the module made keep the variables they use, and the module keeps the ones it exports apart from the function. A module runs once, so nothing calls that function again. Upstream keeps it as long as the module, and a module in the context lives until the VM is closed, so a VM that loaded a module held more than one that ran the same code as a script, whose top-level function goes when it returns.
 
@@ -239,7 +239,7 @@ Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`, also run under memg
 
 ## SharedBytecode
 
-Release: Unreleased.
+Release: v0.28.1.
 
 `NewSharedBytecode(bytecode)` copies bytecode from `Compile` once, and `VM.EvalSharedBytecode(b)` and `VM.EvalSharedBytecodeValue(b)` load it as `EvalBytecode` and `EvalBytecodeValue` do, but leave the source text and line table of each function in that one copy instead of copying them into the VM. A pool of VMs that load one bundle holds them once: a VM of tifa's example shop holds 2.36 MiB less. `toString`, error stacks and line numbers do not change. `MemorySize` and the memory limit no longer count those bytes, and `SharedBytecode.Len` returns what the copy takes.
 
@@ -249,7 +249,7 @@ Test: `sharedbytecode_test.go`.
 
 ## The async context of promise jobs
 
-Release: Unreleased.
+Release: v0.28.5.
 
 `GetAsyncContext` and `SetAsyncContext` are two Builtins (see [Builtin](#builtin-a-go-function-called-as-a-built-in)) that read and set the async context of a VM: an object, or none. A promise reaction, what `then`, `catch`, `finally` and `await` register, keeps the context the VM has when it is registered, and runs with it: the VM has that context while the handler runs, and gets back the one it had when the handler returns or throws. That is what an `AsyncLocalStorage` needs to find its store after an `await`, and what V8 keeps for Node as the continuation preserved embedder data. `SetAsyncContext` of anything but an object sets none, and `GetAsyncContext` then returns undefined.
 
@@ -273,7 +273,7 @@ The change is in C (`engine/quickjs.c`): `JS_GetAsyncContext` and `JS_SetAsyncCo
 
 ## RegisterEscapeText
 
-Release: Unreleased.
+Release: v0.29.2.
 
 `VM.RegisterEscapeText(name)` defines a function named `name` on the global object that does what `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. React calls that function for every text and every attribute value it writes, about 15,000 times when each of the six workbench pages of tifa's example shop renders once, and in JavaScript each call costs a search of a regular expression, a loop over the characters of a string that has any of the five to escape, and the call itself.
 
@@ -288,7 +288,7 @@ Tests: `escape_test.go` runs the function against React's own text for all strin
 
 ## RegisterCopyProps
 
-Release: Unreleased.
+Release: v0.29.3.
 
 `VM.RegisterCopyProps(name)` defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. In QuickJS the loop takes about 250 ns for each key (a pass of `for in`, a call of `hasOwnProperty.call` and a set), and the pages of tifa's example app make 1,500 to 3,400 elements through them in one render.
 
@@ -305,7 +305,7 @@ Tests: `engine/test/compare/copy_props.js` has the functions of React 19.3 once 
 
 ## RegisterStartTag and RegisterEndTag
 
-Release: Unreleased.
+Release: v0.29.10.
 
 `VM.RegisterStartTag(name)` defines a function named `name` on the global object that writes the start tag of an element as React DOM's server renderer does in `pushStartGenericElement` (react-dom 19.3), with the functions it calls: `startChunkForTag`, `pushAttribute`, `pushStringAttribute`, `pushBooleanAttribute`, `pushStyleAttribute`, `sanitizeURL`, `isAttributeNameSafe` and `escapeTextForBrowser`. `VM.RegisterEndTag(name)` defines one that gives the end tag, as `endChunkForTag` does. Both are written in C inside the engine. In JavaScript each attribute of an element costs a call of `pushAttribute`, a switch over string compares, a call of the escape and a push of five strings onto the target, and most elements of a page go through this path: about 9,700 start tags in one render of each of tifa's shop pages.
 
@@ -332,7 +332,7 @@ Tests: `engine/test/compare/start_tag.js` holds the functions of react-dom 19.3.
 
 ## No module loader, shell helpers or SetCanBlock
 
-Release: Unreleased.
+Release: v0.29.0.
 
 `VM.SetModuleLoader` with `ModuleLoaderFunc` and `ModuleNormalizeFunc`, `VM.SetDefaultModuleLoader`, `VM.StdAddHelpers` and `VM.SetCanBlock` are gone. They are not part of what a renderer needs, and the engine of C has none of them: it reads no files and has no threads.
 
@@ -344,7 +344,7 @@ Tests: `own_keys_test.go` (a module that imports itself by `<eval>`) and `quickj
 
 ## A Go newer than the one the engine was checked with stops the build
 
-Release: Unreleased.
+Release: v0.29.11.
 
 A build with a Go newer than the one the engine was checked with stops with one error:
 
@@ -364,7 +364,7 @@ Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the r
 
 ## A build option that changes how the assembler encodes the engine stops the build
 
-Release: Unreleased.
+Release: v0.29.11.
 
 The generated engine writes the body of each function as raw bytes (`BYTE`, `WORD`, `QUAD`) with the branch offsets fixed, and leaves only the calls and the loads of symbol addresses between them to the Go assembler. A build option that makes the assembler encode one of those with another length moves the targets of the fixed branches. The build succeeds, and the first `NewVM` crashes with SIGSEGV. Two options do that:
 

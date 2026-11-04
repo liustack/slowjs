@@ -52,7 +52,7 @@ The change is in C (`engine/quickjs.c`): the field `regexp_cache` of `JSRuntime`
 
 ## Classes of regexps with the v flag
 
-Release: Unreleased.
+Release: v0.28.3.
 
 The parser reads a class of a regexp with the v flag (unicodeSets) as the specification does. It threw a SyntaxError for three things the specification allows and Node accepts:
 

@@ -76,7 +76,7 @@ Tests: `fieldchain_test.go`, whose `testdata/field_chain.js` reads methods, miss
 
 ## Own keys listed from the shape
 
-Release: Unreleased.
+Release: v0.28.5.
 
 Listing the own keys of an ordinary object costs less. Then spread and rest (`JS_CopyDataProperties`) and `Object.keys`, `values` and `entries` (`JS_GetOwnPropertyNames2`) look each key up again to read its value. React's `jsx` spreads and copies props in nearly every element. For an object that is not exotic they list the keys from the shape in Go, in the engine's order (array indexes by value, then strings, then symbols and private names, each in shape order), and spread, rest, `values` and `entries` read the values of plain data properties straight from the object. A spread into an empty object literal of an object whose keys are all enumerable, writable and configurable strings, then symbols, with the same prototype, gives the new object the shape of the source, which defining the keys one by one would have led it to, and copies the values.
 
@@ -92,7 +92,7 @@ The change is in C (`engine/quickjs.c`): `JS_GetOwnPropertyNamesInternal`, `JS_C
 
 ## Ordinary objects take 48 bytes, not 72
 
-Release: Unreleased.
+Release: v0.29.1.
 
 An ordinary object, one of class `Object` (an object literal, `{}`, `Object.create(p)`, the instance of a plain class, a React element or its props), takes a block of 48 bytes where every object took 72. A `JSObject` is a header of 40 bytes (the links of the collector, the flags, the shape and the property array) and a union of 24 bytes for the data of the class: the elements of an array, the closure of a function, the state of a `Map`. An ordinary object has no such data, so the union was dead weight. `JS_NewObjectFromShape` now allocates the header alone for class `Object` and does not write the union, and `free_object` leaves its fail-safe stores to the other classes.
 
@@ -112,7 +112,7 @@ The change is in C (`engine/quickjs.c`): `JS_NewObjectFromShape`, `free_object`,
 
 ## Spread, rest and Object.assign look each key up when its turn comes
 
-Release: Unreleased.
+Release: v0.29.2.
 
 `JS_CopyDataProperties`, behind `{...o}`, the rest of a destructuring and `Object.assign`, listed the enumerable own keys of the source once and then read each one with `JS_GetProperty`. The specification lists all the own keys, then looks each one up when its turn comes (`[[GetOwnProperty]]`, then `Get`), so a getter that deleted a later key, or made it not enumerable, leaves it out, and one that made a not enumerable key enumerable has it copied. Here a key that was gone was copied anyway, as `undefined` when nothing was left, or with the value the prototype has under that name, and a key that became enumerable was left out. `var o = { get a() { delete this.b; return 1 }, b: 2, c: 3 }; Object.keys({...o})` gave `a,b,c` where Node gives `a,c`.
 
@@ -122,7 +122,7 @@ Tests: `engine/test/compare/copy_data.js` against Node 24: getters that delete, 
 
 ## Object literals made at their final shape
 
-Release: Unreleased.
+Release: v0.29.1.
 
 An object literal of plain keys gets all its keys at once. The compiler emitted `OP_object` and then one `OP_define_field` for each key, which went through `add_property` and looked up the next shape in the shape hash table for every key, and grew the property array from 2 slots to 4, then 8. Now a run of keys of a literal that are plain names or strings, each followed by `:` and a value or written as a shorthand, compiles to the values and one `OP_object_lit`. Its operands are the number of values and the index of the run in the function. The bytecode of a function holds the keys of each run and, once the run first executes, the shape it ends with. The next objects take that shape and a property array of exactly its size, and get their values by index. React elements and their props are such literals, and so are most objects a markdown parser makes.
 
@@ -138,7 +138,7 @@ The change is in C (`engine/quickjs.c`, `engine/quickjs-opcode.h`): `js_parse_ob
 
 ## Object literals keep their properties in the block of the object
 
-Release: Unreleased.
+Release: v0.29.4.
 
 The object that `OP_object_lit` makes and its array of properties are one block, not two. The properties take the end of the block of the object, where the data of the other classes (the elements of an array, the closure of a function) would be, and `p->prop` points there. It saves a call of the allocator when the object is made, another when it is freed, and the 8 byte header of the second block. React elements and most objects a markdown parser makes are such objects.
 
@@ -161,7 +161,7 @@ Tests: `test_object_lit_one_block` in `engine/test/unit.c` checks that 1000 lite
 
 ## Object literals of the same keys share one shape
 
-Release: Unreleased.
+Release: v0.29.5.
 
 The first run of an `OP_object_lit` looks for a shape with the keys of its literal in the shape hash table, so that literals of the same keys, written in different places, share one shape with each other and with objects built key by key. It used to walk there one key at a time from the empty shape of `Object.prototype`, and that empty shape is often gone: the first object that gets a key grows it in place, since no other object holds it. The walk then found nothing, and each place that wrote such a literal made a shape of its own. In tifa's example shop that was 588 of its 4203 shapes.
 
@@ -175,7 +175,7 @@ The change is in C (`engine/quickjs.c`): `js_object_lit_shape` calls `find_hashe
 
 ## A for in loop holds the shape of its object
 
-Release: Unreleased.
+Release: v0.29.1.
 
 A `for in` loop listed the own keys of its object when it started, with `JS_GetOwnPropertyNamesInternal`: a list it malloc'd, with a reference to each key, freed at the end of the loop. React and the libraries around it run such a loop over the props of most elements and over many style objects. Now, for an object that is not exotic, whose shape is in the shape hash table and whose string keys hold no array index and no binding of a module namespace, the loop takes a reference to the shape instead and walks its keys in place, leaving out deleted keys, symbols and the keys that were not enumerable when it started. While the object still has that shape, it has every key of it, and the loop gives each without looking it up again. When the object has another shape, the loop looks each key up as before.
 
@@ -187,7 +187,7 @@ The change is in C (`engine/quickjs.c`): `JSForInIterator` has the field `sh`, s
 
 ## hasOwnProperty.call answered in the interpreter
 
-Release: Unreleased.
+Release: v0.29.1.
 
 React and the libraries around it test the keys of their `for in` loops with `Object.prototype.hasOwnProperty.call(obj, key)`. That is two calls of built-in functions, `call` and then `hasOwnProperty`, each through `JS_CallInternal` and `js_call_c_function`. `OP_call_method` now answers it itself when the function called is `Function.prototype.call` and its `this` is `hasOwnProperty` (the built-in C functions, of any realm), the object is not exotic, and the key is a string that is its own atom already or an integer that is an array index. It looks the key up in the shape with `find_own_property`, as `hasOwnProperty` does.
 
@@ -199,7 +199,7 @@ The change is in C (`engine/quickjs.c`): `OP_call_method` and `OP_tail_call_meth
 
 ## A shared shape that cannot be copied fails the call
 
-Release: Unreleased.
+Release: v0.29.9.
 
 Two places assumed that the shape of an object they changed was its own, and went wrong when it was shared, held by another object of the same prototype, and the copy of it ran out of memory. Upstream QuickJS has the same two.
 
@@ -210,7 +210,7 @@ Neither path runs unless memory runs out, so nothing else changes and nothing is
 
 ## Objects of the built-in classes find the empty shape of their prototype
 
-Release: Unreleased.
+Release: v0.29.10.
 
 An object of a built-in class, such as a `Map`, a `Promise`, a `Date` or the iterator that a destructuring of an array takes, starts from the empty shape of the prototype of its class. Nothing held that shape: the shape cache keeps only shapes whose prototype is `Object.prototype`, so the shape was freed with the last object of the class and made again for the next one. A render of the shop's workbench pages made and freed it about 1,300 times a page. The context now holds the empty shape of `class_proto[class_id]` the first time an object of that class is made with that prototype, and the next objects find it in the shape hash table. `new Array(n)` with the prototype of arrays starts from the shape of arrays, which has `length` already, as an array literal does, where it went from the empty shape through `add_property`.
 
@@ -222,7 +222,7 @@ The change is in C (`engine/quickjs.c`): `JS_NewObjectProtoClass` calls `js_new_
 
 ## A shape is found by the shape it grew from
 
-Release: Unreleased.
+Release: v0.29.10.
 
 When an object gets a key, `add_property` looks in the shape hash table for a shape with the keys the object has and the new one. A shape found by its hash used to have each of its keys and their flags compared with the object's, one by one, and an object of the shop's pages had about 4 keys before the new one. Each shape in the table now has a number, `id`, and the number of the shape it was before it got its last key, `parent_id`. When the shape found has as its parent the number of the object's shape, only its last key is compared. In the shop's workbench pages that is 80% of the shapes found, and 77% to 95% on the store, MUI and bench pages (counted on the native C tree).
 
@@ -234,7 +234,7 @@ The change is in C (`engine/quickjs.c`): `JSShape` has `id` and `parent_id`, `JS
 
 ## An object that dies alone is freed at once
 
-Release: Unreleased.
+Release: v0.29.10.
 
 When the count of an object dropped to zero outside a collection, `__JS_FreeValueRT` took it off the list of the collector, put it on `gc_zero_ref_count_list` and called `free_zero_refcount`, which took it off that list again and freed it, then freed the objects that died with it, which join the front of the list. In the shop's workbench pages 70% of the objects freed die alone. Such an object is now freed at once (`free_zero_refcount_first`): it still goes to the front of `gc_zero_ref_count_list`, but is freed there without the loop of `free_zero_refcount`, which runs after it only when something died with it. A function's bytecode, an async function or a module whose count drops to zero takes the old path.
 

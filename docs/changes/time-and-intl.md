@@ -47,7 +47,7 @@ On one core of an AMD EPYC 7B13 (linux/amd64, without PGO, `BenchmarkClock`, 6 r
 
 ## One wall clock per VM
 
-Release: Unreleased.
+Release: v0.28.2.
 
 `VM.SetClock(func() time.Time)` sets the wall clock of one VM. `Date.now()`, `new Date()`, `Date()`, `Intl.DateTimeFormat` without a date (`format()`, `formatToParts()`) and `Temporal.Now` all read it, and `VM.Now()` reads it from Go with full `time.Time` precision. `SetClock(nil)` goes back to the live `time.Now`. Date and Intl take whole milliseconds, rounded down, also before 1970. Temporal keeps the nanoseconds.
 
