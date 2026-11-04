@@ -2,7 +2,7 @@
 
 在一个静态 Go 程序里原样运行今天的 npm 代码。
 
-liustack/quickjs 渲染 React 比 Node 慢，比其他任何纯 Go JavaScript 引擎都快，不用 cgo，也不用 Node 进程。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 tifa 而做，tifa 是一个渲染 React 页面的 Go 框架。
+liustack/quickjs 渲染 React 比其他任何纯 Go JavaScript 引擎都快，不用 cgo，也不用 Node 进程。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 tifa 而做，tifa 是一个渲染 React 页面的 Go 框架。
 
 给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
 

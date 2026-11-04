@@ -2,7 +2,7 @@
 
 Run today's npm code unchanged inside one static Go binary.
 
-liustack/quickjs renders React slower than Node and faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS compiled to Go assembly and tuned for server rendering, built for tifa, a Go framework for React pages.
+liustack/quickjs renders React faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS compiled to Go assembly and tuned for server rendering, built for tifa, a Go framework for React pages.
 
 It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
 
