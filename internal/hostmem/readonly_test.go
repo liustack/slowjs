@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/faulttest"
 )
 
 // TestReadOnly: MapReadOnly holds a copy of the bytes, which can be read to

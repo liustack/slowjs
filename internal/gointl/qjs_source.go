@@ -11,7 +11,7 @@ import (
 	"io/fs"
 	"sync"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/qjspack"
+	"github.com/liustack/quickjs/internal/gointl/internal/qjspack"
 )
 
 // The data slowjs builds in, in place of go-intl's data.pack: the packs

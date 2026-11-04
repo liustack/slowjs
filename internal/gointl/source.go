@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/blob"
-	"github.com/liustack/slowjs/internal/gointl/internal/layout"
+	"github.com/liustack/quickjs/internal/gointl/internal/blob"
+	"github.com/liustack/quickjs/internal/gointl/internal/layout"
 )
 
 // Where the data comes from.

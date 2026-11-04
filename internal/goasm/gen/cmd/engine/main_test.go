@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	gen "github.com/liustack/slowjs/internal/goasm/gen"
+	gen "github.com/liustack/quickjs/internal/goasm/gen"
 )
 
 // TestFirstGroups: a function two files define goes with the first one, as

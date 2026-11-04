@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/faulttest"
 )
 
 // fill writes a pattern that depends on the offset, so that memory that

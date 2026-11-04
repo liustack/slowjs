@@ -5,7 +5,7 @@
 
 //go:build ((linux || darwin) && (amd64 || arm64)) || (windows && amd64)
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // Memory on the engine: what a VM holds, what it gives back, and the shared
 // bytecode outside every VM.
@@ -13,8 +13,8 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/cengine"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/cengine"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // allocShared returns a copy of the bytes of a SharedBytecode in a read-only
@@ -28,7 +28,7 @@ func allocShared(b []byte) (uintptr, error) {
 // more.
 func freeShared(p uintptr, n int) {
 	if err := hostmem.UnmapReadOnly(p, n); err != nil {
-		panic("slowjs: " + err.Error())
+		panic("quickjs: " + err.Error())
 	}
 }
 

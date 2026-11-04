@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 // Profile is the self cost of each function in a callgrind file, for every

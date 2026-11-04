@@ -37,7 +37,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/liustack/slowjs/compare/engines/internal/pytext"
+	"github.com/liustack/quickjs/compare/engines/internal/pytext"
 )
 
 var apps = []struct{ name, dir string }{{"bench", "test/apps/bench"}, {"mui", "test/apps/mui"}, {"shop", "examples/shop"}}

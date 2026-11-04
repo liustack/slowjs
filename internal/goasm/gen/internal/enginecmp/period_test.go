@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // TestLoopPeriod times one iteration of the JS loop used by TestGCStopsJSLoop,
 // so the time between two polls (10000 back edges) can be read off.
 func TestLoopPeriod(t *testing.T) {
-	m, err := slowjs.NewVM()
+	m, err := quickjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestLoopPeriod(t *testing.T) {
 	best := time.Duration(1 << 62)
 	for r := 0; r < 5; r++ {
 		t0 := time.Now()
-		if _, err := m.Eval(fmt.Sprintf(`{ let acc = 0; for (let i = 0; i < %d; i++) { acc += i * i } }`, n), slowjs.EvalGlobal); err != nil {
+		if _, err := m.Eval(fmt.Sprintf(`{ let acc = 0; for (let i = 0; i < %d; i++) { acc += i * i } }`, n), quickjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		if d := time.Since(t0); d < best {

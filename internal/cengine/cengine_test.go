@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 func newVM(t *testing.T, o Options) *VM {

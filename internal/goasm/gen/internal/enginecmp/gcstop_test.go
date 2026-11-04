@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // TestGCStopsJSLoop runs GOMAXPROCS-1 VMs, each on its own goroutine, in an
@@ -24,10 +24,10 @@ func TestGCStopsJSLoop(t *testing.T) {
 	if n < 1 {
 		n = 1
 	}
-	var vms []*slowjs.VM
+	var vms []*quickjs.VM
 	var wg sync.WaitGroup
 	for i := 0; i < n; i++ {
-		m, err := slowjs.NewVM()
+		m, err := quickjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -35,7 +35,7 @@ func TestGCStopsJSLoop(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			m.Eval(`let acc = 0; for (let i = 0; ; i++) { acc += i * i }`, slowjs.EvalGlobal)
+			m.Eval(`let acc = 0; for (let i = 0; ; i++) { acc += i * i }`, quickjs.EvalGlobal)
 		}()
 	}
 	read := func() *metrics.Float64Histogram {

@@ -5,9 +5,9 @@
 
 //go:build !(((linux || darwin) && (amd64 || arm64)) || (windows && amd64))
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // The engine runs on linux and darwin, on amd64 and arm64, and on
 // windows/amd64, only: another target stops the build in this import, before
 // the files that need the engine fail.
-import _ "github.com/liustack/slowjs/internal/unsupported"
+import _ "github.com/liustack/quickjs/internal/unsupported"

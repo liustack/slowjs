@@ -23,8 +23,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // The bottom of the shadow stack is the host's: past the header of gohost,
@@ -74,8 +74,8 @@ const (
 )
 
 // DefaultShapeCache is the number of shapes of plain objects a new VM keeps
-// after their last object is gone, as a VM of package slowjs does
-// (slowjs.DefaultShapeCache): an object that gets the same keys in the same
+// after their last object is gone, as a VM of package quickjs does
+// (quickjs.DefaultShapeCache): an object that gets the same keys in the same
 // order as one before it finds its shapes kept.
 const DefaultShapeCache = 2048
 

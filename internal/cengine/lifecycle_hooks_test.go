@@ -12,8 +12,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // These tests need the hooks that only a build with the tag testhooks has:

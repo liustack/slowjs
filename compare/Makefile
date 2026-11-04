@@ -9,7 +9,7 @@ all: editor
 	staticcheck 2>&1
 
 # The indirect requires here are only lower bounds; go mod tidy re-derives them
-# from ../go.mod, which "replace github.com/liustack/slowjs => ../" makes authoritative.
+# from ../go.mod, which "replace github.com/liustack/quickjs => ../" makes authoritative.
 # Without it a dependency bump in ../go.mod fails with "updates to go.mod needed".
 benchmark:
 	go mod tidy
@@ -45,11 +45,11 @@ work:
 	if [ -d ../../libquickjs ]; then go work use ../../libquickjs; fi
 
 cpu: clean
-	go test -run @ -bench BenchmarkSLOWJS -cpuprofile cpu.out
+	go test -run @ -bench BenchmarkLIUSTACK -cpuprofile cpu.out
 	go tool pprof -web *.test cpu.out
 
 mem: clean
-	go test -run @ -bench BenchmarkSLOWJS -memprofile mem.out -memprofilerate 1 -timeout 24h
+	go test -run @ -bench BenchmarkLIUSTACK -memprofile mem.out -memprofilerate 1 -timeout 24h
 	go tool pprof -lines -web -alloc_space *.test mem.out
 
 cover:

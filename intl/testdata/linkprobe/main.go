@@ -8,12 +8,12 @@
 package main
 
 import (
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/intl"
 )
 
 func main() {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -34,7 +34,7 @@ func main() {
 		new Intl.Locale('en-US').getTimeZones(),
 		Intl.supportedValuesOf('timeZone').length,
 		'i'.toLocaleUpperCase('tr'),
-	].join()`, slowjs.EvalGlobal); err != nil {
+	].join()`, quickjs.EvalGlobal); err != nil {
 		panic(err)
 	}
 }

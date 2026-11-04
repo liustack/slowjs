@@ -8,7 +8,7 @@ package unitdata
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/quickjs/internal/gointl/internal/blob"
 )
 
 // Walk reads all of a locale's data, the tables Decode leaves in the pool

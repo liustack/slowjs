@@ -5,7 +5,7 @@
 
 //go:build testhooks
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // What the system refusing memory in the middle of a render does on the C
 // engine: hostmem.SetFault makes the calls to the OS fail. The one VM whose
@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // growScript holds a few MiB in many strings and objects, which the engine

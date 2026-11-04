@@ -1,4 +1,4 @@
-module github.com/liustack/slowjs
+module github.com/liustack/quickjs
 
 go 1.26.6
 
@@ -7,4 +7,4 @@ require (
 	golang.org/x/sys v0.48.0
 )
 
-tool github.com/liustack/slowjs/internal/sjdev/cmd/sjdev
+tool github.com/liustack/quickjs/internal/sjdev/cmd/sjdev

@@ -81,7 +81,7 @@ jobs:
         run: CHECK_ONLY="gofmt docs" scripts/check.sh fast
 
       - name: Test, packages other than the root
-        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/slowjs$')
+        run: go test -count=1 -short -p 2 -timeout 60m $(go list ./... | grep -v '/quickjs$')
       - name: Test, internal packages with the test hooks
         run: go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package

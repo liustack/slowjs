@@ -8,7 +8,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/quickjs/internal/cengine"
 )
 
 const engineName = "C engine as Go assembly (internal/cengine)"

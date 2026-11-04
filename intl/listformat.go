@@ -3,14 +3,14 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"strconv"
 	"unicode/utf16"
 
-	"github.com/liustack/slowjs"
-	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/quickjs"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // listFormat is a resolved Intl.ListFormat.
@@ -96,8 +96,8 @@ func listItems(s string) ([]string, bool) {
 // that javascript writes the item it has, lone surrogates and all. An item
 // in a part that is not one of the items as they come, in order, which no
 // locale's patterns make, is written as go-intl has it.
-func listParts(vm *slowjs.VM, items []string, parts []gointl.ListPart) (slowjs.Value, error) {
-	vals := make([]slowjs.Value, 0, len(parts))
+func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs.Value, error) {
+	vals := make([]quickjs.Value, 0, len(parts))
 	free := func() {
 		for i := range vals {
 			vals[i].Free()
@@ -119,7 +119,7 @@ func listParts(vm *slowjs.VM, items []string, parts []gointl.ListPart) (slowjs.V
 		v, err := vm.NewString(p.Value)
 		if err != nil {
 			free()
-			return slowjs.Value{}, err
+			return quickjs.Value{}, err
 		}
 
 		vals = append(vals, v)

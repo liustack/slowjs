@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // How much of its shadow stack a VM uses at the deepest calls it allows.
 // The shadow stack has a size fixed when the engine is generated
@@ -16,7 +16,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/quickjs/internal/cengine"
 )
 
 // shadowStackUsed returns how far up its shadow stack the VM has ever been,

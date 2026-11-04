@@ -7,7 +7,7 @@
 // the host on every callback, and finds a thing by its id with two atomic
 // reads and no lock: callbacks of VMs on many goroutines do not wait for each
 // other, and do not write to memory they share.
-package idtable // import "github.com/liustack/slowjs/internal/idtable"
+package idtable // import "github.com/liustack/quickjs/internal/idtable"
 
 import (
 	"fmt"

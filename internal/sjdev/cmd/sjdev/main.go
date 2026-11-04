@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs/internal/sjdev"
-	"github.com/liustack/slowjs/internal/sjdev/bench"
+	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev/bench"
 )
 
 const usage = `usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]

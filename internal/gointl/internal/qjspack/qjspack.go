@@ -21,7 +21,7 @@
 //	per chunk: its method (0 stored, 1 DEFLATE), its size once inflated,
 //	    where its data starts and ends in the pack
 //	the names, then the chunks' data
-package qjspack // import "github.com/liustack/slowjs/internal/gointl/internal/qjspack"
+package qjspack // import "github.com/liustack/quickjs/internal/gointl/internal/qjspack"
 
 import (
 	"bytes"

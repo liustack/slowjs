@@ -29,7 +29,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/liustack/slowjs/compare/engines/internal/pytext"
+	"github.com/liustack/quickjs/compare/engines/internal/pytext"
 	"io/fs"
 	"math"
 	"os"

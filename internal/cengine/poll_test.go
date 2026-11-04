@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 func needPolls(t *testing.T) {

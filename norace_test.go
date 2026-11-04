@@ -5,7 +5,7 @@
 
 //go:build !race
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import "time"
 

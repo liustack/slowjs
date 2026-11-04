@@ -8,7 +8,7 @@ package cengine
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // The callbacks the generated assembly calls by name. Their Go signatures

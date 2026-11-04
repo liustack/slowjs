@@ -20,7 +20,7 @@ import (
 	"regexp"
 	"strconv"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // hookCalls counts how often a bundle called each Go function, so that a
@@ -28,10 +28,10 @@ import (
 var hookCalls struct{ murmur2, randomBytes int }
 
 // murmur2Builtin hashes a string argument and returns undefined for anything else.
-var murmur2Builtin = slowjs.NewBuiltin("murmur2", 1, func(a slowjs.Args) (slowjs.Value, error) {
+var murmur2Builtin = quickjs.NewBuiltin("murmur2", 1, func(a quickjs.Args) (quickjs.Value, error) {
 	s, ok := a.WTF8(0)
 	if !ok {
-		return slowjs.Value{}, nil
+		return quickjs.Value{}, nil
 	}
 	hookCalls.murmur2++
 	return a.VM().NewString(murmur2(s))
@@ -47,8 +47,8 @@ const murmur2Hook = `(hash) => {
   })
 }`
 
-func registerHash(vm *slowjs.VM) error {
-	define, err := vm.EvalValue(murmur2Hook, slowjs.EvalGlobal)
+func registerHash(vm *quickjs.VM) error {
+	define, err := vm.EvalValue(murmur2Hook, quickjs.EvalGlobal)
 	if err != nil {
 		return err
 	}
@@ -58,7 +58,7 @@ func registerHash(vm *slowjs.VM) error {
 		return err
 	}
 	defer b.Free()
-	r, err := define.CallValue(slowjs.UndefinedValue, b)
+	r, err := define.CallValue(quickjs.UndefinedValue, b)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func imul(x int64) int64 {
 }
 
 // registerRandom reads the OS entropy source on each call, as tifa does.
-func registerRandom(vm *slowjs.VM) error {
+func registerRandom(vm *quickjs.VM) error {
 	return vm.RegisterHostFunc("__tifa_random_bytes__", func(args []any) (any, error) {
 		if len(args) != 1 {
 			return nil, errors.New("random bytes requires a length")
@@ -182,23 +182,23 @@ const asyncContextHook = `(get, set) => {
   Object.defineProperty(globalThis, '__tifa_async_context__', { value: { get, set }, configurable: true })
 }`
 
-func registerAsyncContext(vm *slowjs.VM) error {
-	define, err := vm.EvalValue(asyncContextHook, slowjs.EvalGlobal)
+func registerAsyncContext(vm *quickjs.VM) error {
+	define, err := vm.EvalValue(asyncContextHook, quickjs.EvalGlobal)
 	if err != nil {
 		return err
 	}
 	defer define.Free()
-	get, err := vm.NewBuiltinFunction(slowjs.GetAsyncContext)
+	get, err := vm.NewBuiltinFunction(quickjs.GetAsyncContext)
 	if err != nil {
 		return err
 	}
 	defer get.Free()
-	set, err := vm.NewBuiltinFunction(slowjs.SetAsyncContext)
+	set, err := vm.NewBuiltinFunction(quickjs.SetAsyncContext)
 	if err != nil {
 		return err
 	}
 	defer set.Free()
-	r, err := define.CallValue(slowjs.UndefinedValue, get, set)
+	r, err := define.CallValue(quickjs.UndefinedValue, get, set)
 	if err != nil {
 		return err
 	}

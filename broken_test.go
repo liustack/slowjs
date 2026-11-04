@@ -3,14 +3,14 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/faulttest"
 )
 
 // A panic or a Goexit that goes up through the engine's frames leaves the VM

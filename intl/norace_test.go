@@ -5,6 +5,6 @@
 
 //go:build !race
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 const raceEnabled = false

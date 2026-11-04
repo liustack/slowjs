@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/sjdev/hwm"
 )
 
 // Record is one process, written as a line of JSON. A block is the processes

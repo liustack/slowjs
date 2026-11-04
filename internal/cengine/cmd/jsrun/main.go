@@ -28,7 +28,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/liustack/slowjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/sjdev/hwm"
 )
 
 // vm is what the runner needs of an engine.

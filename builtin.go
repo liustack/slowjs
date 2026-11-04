@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/idtable"
+	"github.com/liustack/quickjs/internal/idtable"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -77,11 +77,11 @@ var builtins struct {
 func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin {
 	switch {
 	case strings.IndexByte(name, 0) >= 0:
-		panic(fmt.Sprintf("slowjs: the name of a Builtin cannot contain a NUL byte: %q", name))
+		panic(fmt.Sprintf("quickjs: the name of a Builtin cannot contain a NUL byte: %q", name))
 	case length < 0 || length > math.MaxUint8:
-		panic(fmt.Sprintf("slowjs: the length of Builtin %s is %d, not in 0 to 255", name, length))
+		panic(fmt.Sprintf("quickjs: the length of Builtin %s is %d, not in 0 to 255", name, length))
 	case fn == nil:
-		panic(fmt.Sprintf("slowjs: Builtin %s has no function", name))
+		panic(fmt.Sprintf("quickjs: Builtin %s has no function", name))
 	}
 
 	builtins.mu.Lock()
@@ -92,7 +92,7 @@ func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin 
 		list = *p
 	}
 	if len(list) > math.MaxInt16 {
-		panic("slowjs: too many Builtins")
+		panic("quickjs: too many Builtins")
 	}
 
 	b := &Builtin{name: validUTF8(name), length: int32(length), fn: fn, magic: int32(len(list))}
@@ -342,7 +342,7 @@ func (m *VM) NewArray(vals ...Value) (Value, error) {
 	}
 	for _, v := range vals {
 		if v.vm != m && v.vm != nil {
-			return Value{}, errors.New("slowjs: NewArray of a Value of another VM")
+			return Value{}, errors.New("quickjs: NewArray of a Value of another VM")
 		}
 	}
 

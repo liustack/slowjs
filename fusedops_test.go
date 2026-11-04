@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/quickjs/internal/cengine"
 )
 
 // fusedOps turns on or off the opcodes the compiler joins from a few

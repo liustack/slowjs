@@ -8,7 +8,7 @@ package numdata
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/gointl/internal/blob"
+	"github.com/liustack/quickjs/internal/gointl/internal/blob"
 )
 
 // Walk reads all of a locale's data, the currencies Decode leaves in the pool

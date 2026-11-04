@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/sjdev/hwm"
 )
 
 // TestMain lets the tests run this binary as jsrun: with JSRUN_AS_MAIN set it

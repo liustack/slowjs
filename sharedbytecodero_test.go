@@ -3,14 +3,14 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"runtime/debug"
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/faulttest"
 )
 
 // On the C engine the bytes of a SharedBytecode are a read-only mapping that

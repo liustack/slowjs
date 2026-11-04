@@ -7,7 +7,7 @@
 
 package cengine
 
-import "github.com/liustack/slowjs/internal/gohost"
+import "github.com/liustack/quickjs/internal/gohost"
 
 // The normal build has no hooks for tests: these do nothing, and the calls to
 // them compile away. The tag testhooks swaps in hooks_testhooks.go.

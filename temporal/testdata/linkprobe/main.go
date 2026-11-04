@@ -8,12 +8,12 @@
 package main
 
 import (
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/temporal"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/temporal"
 )
 
 func main() {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -21,7 +21,7 @@ func main() {
 	if err := temporal.Register(vm); err != nil {
 		panic(err)
 	}
-	if _, err := vm.Eval(`Temporal.Now.zonedDateTimeISO("Europe/Paris").toString()`, slowjs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(`Temporal.Now.zonedDateTimeISO("Europe/Paris").toString()`, quickjs.EvalGlobal); err != nil {
 		panic(err)
 	}
 }

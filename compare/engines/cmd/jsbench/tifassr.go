@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs/compare/engines/engine"
+	"github.com/liustack/quickjs/compare/engines/engine"
 )
 
 // ---- a tifa SSR bundle ----

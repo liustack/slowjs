@@ -11,7 +11,7 @@ import (
 	"sync"
 	"weak"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // callbackHook, when a test sets it, runs first in each callback with its

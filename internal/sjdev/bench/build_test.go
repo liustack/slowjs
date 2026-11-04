@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 func TestParsePositions(t *testing.T) {

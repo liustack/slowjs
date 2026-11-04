@@ -5,7 +5,7 @@
 
 //go:build testhooks
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // Close of a VM on the C engine when the OS refuses to unmap: hostmem.SetFault
 // makes the calls fail.
@@ -14,8 +14,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // When the OS refuses to unmap the memory of the VM, Close returns the error,

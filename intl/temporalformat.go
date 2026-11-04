@@ -10,7 +10,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // The original options, including omitted fields, distinguish Temporal
@@ -44,30 +44,30 @@ var temporalDateFormatCtor = &ctor{
 	},
 }
 
-func temporalDateFormatted(a slowjs.Args, wantParts, isRange bool) (slowjs.Value, error) {
+func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Value, error) {
 	r, ok, err := formatterOf[*temporalDateFormat](a)
 	if !ok {
-		return slowjs.UndefinedValue, err
+		return quickjs.UndefinedValue, err
 	}
 	f := r.f
 	cal, _ := a.String(2)
 	if err := f.checkCalendar(cal); err != nil {
-		return slowjs.Value{}, jsErr(err)
+		return quickjs.Value{}, jsErr(err)
 	}
 	ms, _ := a.Number(1)
 	start, err := f.instant(ms)
 	if err != nil {
-		return slowjs.Value{}, jsErr(err)
+		return quickjs.Value{}, jsErr(err)
 	}
 	if isRange {
 		cal, _ = a.String(4)
 		if err := f.checkCalendar(cal); err != nil {
-			return slowjs.Value{}, jsErr(err)
+			return quickjs.Value{}, jsErr(err)
 		}
 		endMS, _ := a.Number(3)
 		end, err := f.instant(endMS)
 		if err != nil {
-			return slowjs.Value{}, jsErr(err)
+			return quickjs.Value{}, jsErr(err)
 		}
 		parts := f.f.FormatRangeToParts(start, end)
 		list := make([]string, 0, 3*len(parts))

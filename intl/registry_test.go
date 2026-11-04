@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // The expected values in this file are Node 24.13's.
@@ -97,7 +97,7 @@ func TestRegistryConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := slowjs.NewVM()
+			vm, err := quickjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -126,7 +126,7 @@ func TestRegistryConcurrent(t *testing.T) {
 				}
 				return bad.join(' ');
 			})()`, g)
-			v, err := vm.Eval(src, slowjs.EvalGlobal)
+			v, err := vm.Eval(src, quickjs.EvalGlobal)
 			if err != nil || v != "" {
 				t.Errorf("goroutine %d: %v %v", g, v, err)
 			}
@@ -303,7 +303,7 @@ func TestRegistryEviction(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := slowjs.NewVM()
+			vm, err := quickjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -316,7 +316,7 @@ func TestRegistryEviction(t *testing.T) {
 				return
 			}
 
-			if _, err := vm.Eval(fmt.Sprintf(`var g = %d, k = 0`, g), slowjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(fmt.Sprintf(`var g = %d, k = 0`, g), quickjs.EvalGlobal); err != nil {
 				t.Error(err)
 				return
 			}
@@ -324,7 +324,7 @@ func TestRegistryEviction(t *testing.T) {
 			for !stop.Load() {
 				if _, err := vm.Eval(`for (let i = 0; i < 50; i++, k++) {
 					new Intl.NumberFormat('en', {minimumIntegerDigits: 1 + k % 21, maximumFractionDigits: g * 25 + (k - k % 21) / 21 % 25});
-				}`, slowjs.EvalGlobal); err != nil {
+				}`, quickjs.EvalGlobal); err != nil {
 					t.Error(err)
 					return
 				}

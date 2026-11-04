@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 func listing(total int, fns map[string]int) string {
@@ -33,8 +33,8 @@ func TestParseListing(t *testing.T) {
 	text := `--------------------
 1,000,000 (100.0%)  PROGRAM TOTALS
 --------------------
-  900,000 (90.00%)  /go/src/github.com/liustack/slowjs/internal/cengine/engine_amd64.s:JS_CallInternal [/bin/x]
-  400,000 (40.00%)  /x/y.go:github.com/liustack/slowjs/internal/cengine.callEngine [/bin/x]
+  900,000 (90.00%)  /go/src/github.com/liustack/quickjs/internal/cengine/engine_amd64.s:JS_CallInternal [/bin/x]
+  400,000 (40.00%)  /x/y.go:github.com/liustack/quickjs/internal/cengine.callEngine [/bin/x]
   300,000 (30.00%)  /x/y.go:rec'2 [/bin/x]
   200,000 (20.00%)  /x/y.go:foo (3x) [/bin/x]
    50,000 ( 5.00%)  /x/y.go:JS_CallInternal [/bin/x]
@@ -46,7 +46,7 @@ func TestParseListing(t *testing.T) {
 	if l.Fn["JS_CallInternal"] != 900000 {
 		t.Errorf("the largest entry of a name wins: %v", l.Fn)
 	}
-	if l.Fn["github.com/liustack/slowjs/internal/cengine.callEngine"] != 400000 {
+	if l.Fn["github.com/liustack/quickjs/internal/cengine.callEngine"] != 400000 {
 		t.Errorf("fns = %v", l.Fn)
 	}
 	if _, ok := l.Fn["rec'2"]; ok || len(l.Fn) != 2 {
@@ -143,13 +143,13 @@ const cgFile = `version: 1
 creator: callgrind-3.25.1
 positions: line
 events: Ir Bc Bcm
-fn=github.com/liustack/slowjs/internal/cengine.JS_CallInternal_block.abi0
+fn=github.com/liustack/quickjs/internal/cengine.JS_CallInternal_block.abi0
 0 100 10 2
 0 50 5 1
-cfn=github.com/liustack/slowjs/internal/cengine.js_malloc.abi0
+cfn=github.com/liustack/quickjs/internal/cengine.js_malloc.abi0
 calls=3 0
 0 400 40 4
-fn=github.com/liustack/slowjs/internal/cengine.js_malloc.abi0
+fn=github.com/liustack/quickjs/internal/cengine.js_malloc.abi0
 0 400 40 4
 fn=main.f'2
 0 10 1 0

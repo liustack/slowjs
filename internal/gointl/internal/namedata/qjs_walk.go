@@ -5,7 +5,7 @@
 
 package namedata
 
-import "github.com/liustack/slowjs/internal/gointl/internal/blob"
+import "github.com/liustack/quickjs/internal/gointl/internal/blob"
 
 // Walk reads all of a locale's data, the tables Decode leaves in the pool
 // included, so that slowjs's pack tool learns which parts of the pool the

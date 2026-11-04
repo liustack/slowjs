@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	gen "github.com/liustack/slowjs/internal/goasm/gen"
+	gen "github.com/liustack/quickjs/internal/goasm/gen"
 )
 
 var (

@@ -16,7 +16,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 // BuildOptions say which binaries to build.

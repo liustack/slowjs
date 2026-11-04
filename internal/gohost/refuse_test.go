@@ -12,7 +12,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // These tests make the OS refuse calls through hostmem.SetFault, which exists

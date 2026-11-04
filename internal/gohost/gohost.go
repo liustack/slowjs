@@ -32,7 +32,7 @@
 // atomic reads in a table (package idtable), and a shadow pointer finds the
 // base of its stack by its alignment, where New wrote the VM's id
 // (StackHeader).
-package gohost // import "github.com/liustack/slowjs/internal/gohost"
+package gohost // import "github.com/liustack/quickjs/internal/gohost"
 
 import (
 	"cmp"
@@ -46,8 +46,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/hostmem"
-	"github.com/liustack/slowjs/internal/idtable"
+	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/idtable"
 )
 
 // Value is a JSValue as the engine passes it: the word of its union, then its

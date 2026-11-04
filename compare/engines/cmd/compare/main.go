@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/liustack/slowjs/compare/engines/t262"
+	"github.com/liustack/quickjs/compare/engines/t262"
 )
 
 type variant struct {

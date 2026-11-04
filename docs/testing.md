@@ -192,8 +192,8 @@ engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.
 go test -race -tags testhooks ./internal/gohost         # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort, what is left when the OS refuses
 go test -tags testhooks ./internal/cengine      # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap, the shape cache, Close and New under panics and refusals, polls and Interrupt
 go run ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one script, timed, on the C engine
-go test -p 1 .                    # the tests of package slowjs on the C engine (linux/amd64, linux/arm64, darwin/arm64), lib-only tests left out by their tag
-go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
+go test -p 1 .                    # the tests of package quickjs on the C engine (linux/amd64, linux/arm64, darwin/arm64), lib-only tests left out by their tag
+go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package quickjs
 go test -run 'TestShadowStack' -v .      # how far up its 32 MiB shadow stack a VM goes at depth limits of 5000 and 10000, and in C recursion
 go test -tags testhooks -run 'TestMapRefused|TestReleaseRefused|TestRemapRefused' .   # the system refuses memory in the middle of a render
 go test -tags testhooks -run TestInterruptStopsLongBuiltins -v ./internal/cengine   # long calls of built-ins stop within a few polls of Interrupt

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // The functions of the host of the tests, by id, and the VMs they run in, by

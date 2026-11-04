@@ -16,8 +16,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/faulttest"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // small is the stack of the VMs of most tests: the code under test does not

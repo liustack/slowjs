@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import "errors"
 
@@ -64,7 +64,7 @@ func (m *VM) ReleaseMemory(keep uintptr) (uintptr, error) {
 		return 0, err
 	}
 	if m.depth != 0 {
-		return 0, errors.New("slowjs: ReleaseMemory while the VM runs javascript")
+		return 0, errors.New("quickjs: ReleaseMemory while the VM runs javascript")
 	}
 
 	return m.releaseMemory(keep), nil

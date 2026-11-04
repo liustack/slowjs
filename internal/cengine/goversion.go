@@ -7,4 +7,4 @@ package cengine
 
 // The assembly of the engine was checked with one Go: a newer one stops the
 // build in this import, before this package is built (see docs/upgrading.md).
-import _ "github.com/liustack/slowjs/internal/goversion"
+import _ "github.com/liustack/quickjs/internal/goversion"

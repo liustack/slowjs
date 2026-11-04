@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"os"
@@ -22,9 +22,9 @@ func TestEngineDeps(t *testing.T) {
 	}
 
 	const (
-		cengine = "github.com/liustack/slowjs/internal/cengine"
-		gohost  = "github.com/liustack/slowjs/internal/gohost"
-		hostmem = "github.com/liustack/slowjs/internal/hostmem"
+		cengine = "github.com/liustack/quickjs/internal/cengine"
+		gohost  = "github.com/liustack/quickjs/internal/gohost"
+		hostmem = "github.com/liustack/quickjs/internal/hostmem"
 	)
 	for _, c := range []struct {
 		name string
@@ -146,7 +146,7 @@ func TestEngineAsmOptions(t *testing.T) {
 	if err != nil {
 		t.Skip("no go command")
 	}
-	const cengine = "github.com/liustack/slowjs/internal/cengine"
+	const cengine = "github.com/liustack/quickjs/internal/cengine"
 	for _, c := range []struct {
 		name     string
 		goos     string

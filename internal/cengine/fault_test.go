@@ -19,8 +19,8 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/slowjs/internal/faulttest"
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/faulttest"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // These tests make the engine fail on purpose, by calling its entries with
@@ -285,7 +285,7 @@ func noSplitFault(t *testing.T, what string, lo, hi uintptr, chain string, read 
 	if at < 0 || at+2 >= len(frames) {
 		t.Fatalf("no frames of the engine below sigpanic: %v", frames)
 	}
-	const pkg = "github.com/liustack/slowjs/internal/cengine."
+	const pkg = "github.com/liustack/quickjs/internal/cengine."
 	var have []string // the functions of the engine from the fault up, as long as they are on the list
 	for _, f := range frames[at+1:] {
 		name, ok := strings.CutPrefix(f, pkg)

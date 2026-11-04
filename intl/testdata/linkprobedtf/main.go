@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"time"
 
-	gointl "github.com/liustack/slowjs/internal/gointl"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 func main() {

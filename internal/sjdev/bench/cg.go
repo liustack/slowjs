@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 var cgLine = regexp.MustCompile(`^\s*([\d,]+) \(\s*[\d.]+%\)\s+(.*)$`)
@@ -78,7 +78,7 @@ func Diff(renders float64, small, big Listing) PerRender {
 }
 
 func shortName(s string) string {
-	for _, p := range []string{"github.com/liustack/slowjs/internal/", "github.com/liustack/slowjs.", "github.com/liustack/tifa/internal/"} {
+	for _, p := range []string{"github.com/liustack/quickjs/internal/", "github.com/liustack/quickjs.", "github.com/liustack/tifa/internal/"} {
 		s = strings.TrimPrefix(s, p)
 	}
 	return s
