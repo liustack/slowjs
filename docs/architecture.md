@@ -50,6 +50,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/gohost/` | The Go side of the engine's callbacks: VMs by id and by shadow stack, their memory on `internal/hostmem`, clocks, seed, interrupt and the engine's own `host_call` requests. Runs without the engine |
 | `internal/idtable/` | The table of ids that the engine passes back to Go |
 | `internal/unsupported/` | The error of a build for a target the engine does not run on |
+| `internal/goversion/` | The error of a build with a Go newer than the one the engine was checked with, which `internal/cengine` imports |
 | `internal/faulttest/` | For the tests that make a memory fault on purpose: they skip it on windows, where it may break the memory of the process (see [c-engine.md](changes/c-engine.md#when-the-engine-fails)) |
 | `internal/sjdev/` | `go tool sjdev bench`: builds a program at several code positions, times them in turn and counts instructions |
 | `intl/` | Package `github.com/liustack/slowjs/intl`, `Intl` for a VM |
@@ -97,4 +98,4 @@ Every method that runs javascript (`Eval`, `EvalValue`, `Call`, `CallValue`, `Ex
 
 ## Platforms
 
-The engine runs on linux and darwin, on amd64 and arm64, and on windows/amd64. Every system runs the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2 (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).
+The engine runs on linux and darwin, on amd64 and arm64, and on windows/amd64. Every system runs the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). The Go assembly was made and checked with Go 1.27.2, and a newer Go stops the build with the error of `internal/goversion` unless it is given `-tags slowjs_anygo` (see [upgrading.md](upgrading.md#moving-to-a-newer-go)). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).

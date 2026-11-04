@@ -1,7 +1,9 @@
 # Once a week, the tests on the newest stable Go. The generated
 # assembly depends on details inside Go (stack layout, the runtime's use of
 # registers, linker names), and a new Go release can change them. A failure
-# here is a warning for us to read. It is not a check for merging.
+# here is a warning for us to read. It is not a check for merging. A Go newer
+# than the one the engine was checked with stops the build
+# (internal/goversion), so the tests build with slowjs_anygo.
 name: go-latest
 
 on:
@@ -56,6 +58,6 @@ jobs:
           cache: true
       - run: go version
       - name: Test, internal packages with the test hooks
-        run: go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+        run: go test -count=1 -tags testhooks,slowjs_anygo ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package
-        run: go test -count=1 -p 1 -timeout 60m .
+        run: go test -count=1 -p 1 -timeout 60m -tags slowjs_anygo .

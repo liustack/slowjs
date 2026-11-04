@@ -260,7 +260,7 @@ for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
 done
 ```
 
-A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for freebsd/amd64, windows/arm64, linux/386 and linux/riscv64).
+A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for freebsd/amd64, windows/arm64, linux/386 and linux/riscv64). A build with a Go newer than the one the engine was checked with fails with the error of `internal/goversion` and no other, and builds with `-tags slowjs_anygo` (`TestEngineNewerGo`, which gives the `go1.N` tag by hand, and `TestNewerGoStops` in the package).
 
 ## go.work
 
@@ -381,7 +381,7 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 
 The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
 
-`go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on the five platforms. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
+`go-latest.yml` runs the C engine tests (`internal/cengine`, `internal/gohost`, `internal/hostmem`, `internal/idtable` and the root package) on the newest stable Go once a week, on the five platforms. It builds them with `-tags slowjs_anygo`, past the error a newer Go stops at. The checked-in assembly relies on details inside Go, and this finds out early when a new release changes one. It does not block merging. A red run is a reason to look at what the new Go changed.
 
 Left out on purpose:
 
