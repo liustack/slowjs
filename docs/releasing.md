@@ -20,7 +20,7 @@ read_when:
 
 On the branch, before it is merged:
 
-1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass.
+1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass. `scripts/go-versions.sh` passes: the Go tests of the engine with the lowest Go of `go.mod` and the newest patch release of each minor version the module lets build.
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release v0.26.17`), so that the merge commit you tag carries it.
 
