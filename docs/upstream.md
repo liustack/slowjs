@@ -29,7 +29,7 @@ The changes of slowjs to the C are listed one at a time in [changes](changes/REA
 What a program that used modernc.org/quickjs v0.25.0 runs into:
 
 - **Import paths.** `modernc.org/quickjs` becomes `github.com/liustack/slowjs`, and the package name `quickjs` becomes `slowjs`. Its `intl` and `fmt` packages move with it. The engine is inside the module, so `modernc.org/libquickjs` leaves your `go.mod`.
-- **Go version.** The module needs Go 1.27, where modernc.org/quickjs v0.25.0 needs 1.26.
+- **Go version.** The module needs Go 1.26.6 or later (and stops a Go it has not been checked with, see [upgrading.md](upgrading.md#moving-to-a-newer-go)), where modernc.org/quickjs v0.25.0 needs 1.26.
 - **Local time is UTC.** A script's local time is UTC in every VM, whatever `TZ` the process has. Name a zone to `Intl` to show another one ([details](changes/time-and-intl.md#local-time-is-utc-in-every-vm)).
 - **Intl in every locale.** Package `intl` formats in every locale Chromium has, where modernc.org/quickjs formats en-US only. Programs that import it embed the locale data and its notices ([details](changes/time-and-intl.md#intl-in-every-locale-chromium-has)).
 - **Limits end the call.** An interrupt, the eval timeout and running out of memory can no longer be caught by the script, through `catch`, promises, iterators or Go functions ([details](changes/uncatchable.md)).

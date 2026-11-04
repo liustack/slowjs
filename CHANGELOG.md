@@ -4,6 +4,11 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Changed
+
+- The module builds with Go 1.26.6 or later, where it needed Go 1.27.0. The engine was checked with Go 1.26: the Go 1.26 releases before 1.26.6 are left out, as their compiler fails on a test of the module (1.26.0 and 1.26.1) and their runtime can leave a stale frame pointer after a memory fault of the engine ([upgrading.md](docs/upgrading.md#moving-to-a-newer-go)).
+- A build with a Go newer than the one the engine was checked with, now Go 1.28 or later, stops with one error that names the Go it was checked with (`slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo`). The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover, and a change in one of them would show only when the program runs. Go 1.26.6 and later and every Go 1.27 release build. When a new Go comes out, slowjs is checked with it and lets it build in a patch release. `-tags slowjs_anygo` builds with any Go ([Go API](docs/changes/go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build)).
+
 ### Fixed
 
 - A `catch` no longer takes the out of memory error when the `return` method of an iterator runs out of memory while an exception leaves its `for...of` loop or array pattern. The call ends with the error, as it does for running out of memory anywhere else ([uncatchable.md](docs/changes/uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes)).

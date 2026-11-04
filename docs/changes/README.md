@@ -64,6 +64,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | RegisterEscapeText, React DOM's HTML escape written in C | Unreleased | [go-api.md](go-api.md#registerescapetext) |
 | RegisterCopyProps, the loop that copies the props of a React element written in C | Unreleased | [go-api.md](go-api.md#registercopyprops) |
 | RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | Unreleased | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
+| A Go newer than the one the engine was checked with stops the build | Unreleased | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
 
 ## Limits that hold
 

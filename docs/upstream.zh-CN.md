@@ -21,7 +21,7 @@ slowjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本�
 用过 modernc.org/quickjs v0.25.0 的程序会遇到这些：
 
 - **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/slowjs`，包名 `quickjs` 改成 `slowjs`，它的 `intl` 和 `fmt` 包跟着改。引擎在模块里面，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
-- **Go 版本。** 需要 Go 1.27，modernc.org/quickjs v0.25.0 需要 1.26。
+- **Go 版本。** 需要 Go 1.26.6 或更新（没核对过的更新版本会直接报错，见 [upgrading.md](upgrading.md#moving-to-a-newer-go)），modernc.org/quickjs v0.25.0 需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](changes/time-and-intl.md#local-time-is-utc-in-every-vm)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，modernc.org/quickjs 只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](changes/time-and-intl.md#intl-in-every-locale-chromium-has)）。
 - **限额一到，调用就结束。** 中断、执行时限和内存耗尽都不能再被脚本捕获，`catch`、promise、迭代器和 Go 函数都不行（[详情](changes/uncatchable.md)）。

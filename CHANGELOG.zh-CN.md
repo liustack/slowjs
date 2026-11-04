@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 模块现在用 Go 1.26.6 或更新就能构建，以前要 Go 1.27.0。引擎已经照 Go 1.26 核对过。1.26.6 之前的 1.26 版本不在范围内：1.26.0 和 1.26.1 的编译器编不过模块里的一个测试，1.26.6 之前的运行时在引擎出内存错误后可能留下指向旧栈的帧指针（[upgrading.md](docs/upgrading.md#moving-to-a-newer-go)）。
+- 用比引擎核对过的版本更新的 Go（目前是 Go 1.28 及以后）构建时，会直接报一个错，错误里写着核对过的版本（`slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo`）。引擎的 Go 汇编依赖 Go 的一些实现细节，Go 1 的兼容承诺不包括这些，其中哪一项变了，要到程序运行时才会暴露。Go 1.26.6 及以后的版本和所有 Go 1.27 版本都能构建。新版 Go 发布后，slowjs 用它核对一遍，在补丁版本里放开。加 `-tags slowjs_anygo` 可以用任何版本的 Go 构建（[Go API](docs/changes/go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build)）。
+
 ### 修复
 
 - 异常离开 `for...of` 循环或数组解构时会关闭迭代器，如果迭代器的 `return` 方法这时内存不够，`catch` 不再能接住这个内存不足的错误。调用会带着这个错误结束，和其他地方内存不足一样（[uncatchable.md](docs/changes/uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes)）。
