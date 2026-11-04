@@ -50,14 +50,14 @@
 - A new file written in slowjs starts with this header, in the comment syntax of its language and with the year it was created:
 
   ```go
-  // Copyright (c) 2026 The slowjs Authors.
+  // Copyright (c) 2026 The liustack/quickjs Authors.
   // SPDX-License-Identifier: MIT
   // Use of this source code is governed by the MIT license in LICENSE-MIT at the
   // root of this repository.
   ```
 
 - A file that came from upstream (QuickJS, modernc.org/quickjs, go-intl), a generated file, and a new file made from one of them keep the upstream header and license, however much slowjs changes them.
-- Add a new author of slowjs to `AUTHORS-SLOWJS`. `AUTHORS` lists the authors of modernc.org/quickjs and stays as that project has it.
+- Add a new author of liustack/quickjs to `AUTHORS-LIUSTACK`. `AUTHORS` lists the authors of modernc.org/quickjs and stays as that project has it.
 - New code or data from a third party keeps its license file next to it and gets a row in [NOTICE.md](NOTICE.md). Say MIT only together with what stays under the upstream licenses.
 
 ## Draft folder

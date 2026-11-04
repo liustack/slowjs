@@ -16,7 +16,7 @@ English · [简体中文](upstream.zh-CN.md)
 - **The Go API** (`VM`, `Value`, `Eval`, `Call` and the rest at the root of the module) started from [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0 (2026-10-01), commit `ea7b851` in this repository's history, and has been rewritten and extended since. Some of its names, comments and tests remain. Until v0.28 the engine under it was [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), QuickJS translated to Go by ccgo. That engine is gone, and so is its Go.
 - **Everything else** is written for slowjs, or comes from a project named in [NOTICE.md](../NOTICE.md): the allocator (TLSF), the small libc of the engine (musl), the locale data and the Go side of `Intl` and `Temporal` (go-intl, ICU, Chromium).
 
-The authors of slowjs are in [AUTHORS-SLOWJS](../AUTHORS-SLOWJS). The `AUTHORS` file of modernc.org/quickjs stays in the repository as that project has it: [AUTHORS](../AUTHORS).
+The authors of slowjs are in [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK). The `AUTHORS` file of modernc.org/quickjs stays in the repository as that project has it: [AUTHORS](../AUTHORS).
 
 ## Taking QuickJS commits
 
