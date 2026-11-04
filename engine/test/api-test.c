@@ -12,11 +12,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <spawn.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "host.h"
+
+extern char **environ;
 
 static int failures;
 static long checks;
@@ -473,36 +476,54 @@ static void test_dedicated(void)
     host_free_runtime(rt);
 }
 
-/* Runs fn in a child process with its standard error in a pipe. The child must
-   die of SIGABRT, which is how the host ends the process, after the host has
-   said that it heard the abort. */
-static void check_abort(const char *what, void (*fn)(void))
+/* the path of this program, to run a case in a process of its own */
+static const char *self_path;
+
+/* Runs case n of abort_case in a process of its own, this program started
+   again with "abort-case n", with its standard error in a pipe. It is a new
+   program, not a fork: the watchdog thread of host.c holds host_lock for a
+   moment once a second, and the child of a fork made in that moment waits for
+   the lock forever when it makes a runtime. The process must die of SIGABRT,
+   which is how the host ends the process, after the host has said that it
+   heard the abort. */
+static void check_abort(const char *what, int n)
 {
-    int fds[2];
+    posix_spawn_file_actions_t fa;
+    char arg[16], *args[4];
+    int fds[2], err;
     pid_t pid;
-    int status;
+    int status = 0;
     char text[64] = "";
-    ssize_t n;
+    ssize_t got;
 
     if (pipe(fds)) {
         perror("pipe");
         exit(2);
     }
+    snprintf(arg, sizeof arg, "%d", n);
+    args[0] = (char *)self_path;
+    args[1] = "abort-case";
+    args[2] = arg;
+    args[3] = NULL;
+    posix_spawn_file_actions_init(&fa);
+    posix_spawn_file_actions_adddup2(&fa, fds[1], 2);
+    posix_spawn_file_actions_addclose(&fa, fds[0]);
+    posix_spawn_file_actions_addclose(&fa, fds[1]);
+    fflush(stdout);
     fflush(stderr);
-    pid = fork();
-    if (pid == 0) {
-        dup2(fds[1], 2);
-        close(fds[0]);
-        close(fds[1]);
-        fn();
-        _exit(0);
+    err = strchr(self_path, '/') ? posix_spawn(&pid, self_path, &fa, NULL, args, environ)
+                                 : posix_spawnp(&pid, self_path, &fa, NULL, args, environ);
+    posix_spawn_file_actions_destroy(&fa);
+    if (err) {
+        fprintf(stderr, "posix_spawn %s: %s\n", self_path, strerror(err));
+        exit(2);
     }
     close(fds[1]);
-    n = read(fds[0], text, sizeof text - 1);
+    got = read(fds[0], text, sizeof text - 1);
     close(fds[0]);
     waitpid(pid, &status, 0);
     CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT, "%s ended the process with status %d", what, status);
-    CHECK(n > 0 && strstr(text, "engine abort"), "%s: the host did not hear the abort: [%s]", what, text);
+    CHECK(got > 0 && strstr(text, "engine abort"), "%s: the host did not hear the abort: [%s]", what, text);
 }
 
 static void call_abort(void)
@@ -533,17 +554,33 @@ static void call_set_opaque_plain(void)
     JS_SetOpaque(o, data);
 }
 
+/* the formats engine/libc does not do */
+static const char *const bad_formats[] = { "%f", "%ls", "%n", "%1$d", "%", "%99999999999d" };
+
+/* The calls that must end the process with an abort the host hears: abort
+   (0), JS_SetOpaque of an ordinary object (1), and snprintf with each of
+   bad_formats (2 on). Each runs in a process of its own (check_abort). */
+static void abort_case(int n)
+{
+    if (n == 0) {
+        call_abort();
+    } else if (n == 1) {
+        call_set_opaque_plain();
+    } else if (n - 2 < (int)(sizeof bad_formats / sizeof *bad_formats)) {
+        bad_format = bad_formats[n - 2];
+        call_snprintf();
+    }
+    _exit(0);
+}
+
 static void test_abort(void)
 {
-    static const char *bad[] = { "%f", "%ls", "%n", "%1$d", "%", "%99999999999d" };
     size_t i;
 
-    check_abort("abort", call_abort);
-    check_abort("JS_SetOpaque of an ordinary object", call_set_opaque_plain);
-    for (i = 0; i < sizeof bad / sizeof *bad; i++) {
-        bad_format = bad[i];
-        check_abort(bad[i], call_snprintf);
-    }
+    check_abort("abort", 0);
+    check_abort("JS_SetOpaque of an ordinary object", 1);
+    for (i = 0; i < sizeof bad_formats / sizeof *bad_formats; i++)
+        check_abort(bad_formats[i], 2 + (int)i);
 }
 
 /* Math.random starts from the seed of the runtime: the same seed gives the same
@@ -625,11 +662,15 @@ static void test_clock_vm(void)
     host_free_runtime(rt2);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     JSRuntime *rt;
     JSContext *ctx;
 
+    /* one case of test_abort, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "abort-case") == 0)
+        abort_case(atoi(argv[2]));
+    self_path = argv[0];
     test_clock_vm();
     test_seed();
     test_dump();
