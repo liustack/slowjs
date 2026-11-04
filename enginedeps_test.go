@@ -8,6 +8,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -121,7 +122,7 @@ func TestEngineNewerGo(t *testing.T) {
 		if strings.HasPrefix(l, "#") {
 			continue
 		}
-		if !strings.HasPrefix(l, "internal/goversion/newer.go:") {
+		if !strings.HasPrefix(filepath.ToSlash(l), "internal/goversion/newer.go:") {
 			t.Fatalf("the build with %s said\n%s\nwant only the errors of internal/goversion", newer, out)
 		}
 		named = named || strings.Contains(l, "quickjs_is_checked_up_to_go1_")
