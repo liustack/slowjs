@@ -3,9 +3,9 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Command behind lists the items where slowjs needs at least 2 times the time
-// of the median of the other pure Go engines (for the V8 suite: half the
-// score). It reads the results file of a run of cmd/compare.
+// Command behind lists the items where liustack/quickjs needs at least 2 times
+// the time of the median of the other pure Go engines (for the V8 suite: half
+// the score). It reads the results file of a run of cmd/compare.
 //
 //	go run ./cmd/behind results/<run>.json [limit]
 package main
@@ -153,10 +153,10 @@ func behind(data []byte, limit float64) ([]row, error) {
 	for _, e := range r.Engines {
 		names = append(names, e.Engine)
 	}
-	// Results files made before 2026-10-24 name the row liustack-quickjs, the
-	// module's name until v0.28.0.
+	// Results files made from 2026-10-24 to 2026-10-29, while the module was
+	// github.com/liustack/slowjs, name the row slowjs.
 	me := "liustack-quickjs"
-	if slices.Contains(names, "slowjs") || !slices.Contains(names, "liustack-quickjs") {
+	if slices.Contains(names, "slowjs") && !slices.Contains(names, "liustack-quickjs") {
 		me = "slowjs"
 	}
 	var others []string

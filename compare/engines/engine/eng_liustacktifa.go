@@ -7,7 +7,7 @@
 
 package engine
 
-// slowjs-tifa is slowjs set up the way tifa sets up a VM of its pool
+// liustack-tifa is liustack-quickjs set up the way tifa sets up a VM of its pool
 // (internal/ssr/renderer.go and pool.go of github.com/liustack/tifa, MIT),
 // for the tifa page runs only. The small pieces of Go it needs are copied
 // here, not imported, and when tifa changes them they are copied again.
@@ -41,7 +41,7 @@ func init() {
 		Interrupt:      true,
 		MemoryLimit:    true,
 		Notes: []string{
-			"slowjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__, __tifa_random_bytes__ and __tifa_async_context__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
+			"liustack-quickjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__, __tifa_random_bytes__ and __tifa_async_context__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
 			"The bundle is compiled once into a SharedBytecode that every VM loads, as an ES module when its file name ends in .mjs, as tifa compiles the bundles it builds since they are ES modules.",
 			"A bundle with @emotion/hash gets the one-line change the tifa plugin makes to murmur2 (see hashInGo), so that it asks __tifa_murmur2__ first.",
 			"A render is startRender, the promise jobs and the read of the result, as ssr.RenderVM does them. After each render comes a young GC and, by the pool's rules, a full GC (Settle), counted in the CPU time per render but not in the wall time.",

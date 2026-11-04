@@ -46,7 +46,7 @@ type variant struct {
 }
 
 var variants = []variant{
-	{"slowjs", "liustack", "eng_liustack", nil, true},
+	{"liustack-quickjs", "liustack", "eng_liustack", nil, true},
 	{"modernc-quickjs", "modernc", "eng_modernc", nil, true},
 	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, true},
 	{"go-quickjs-jit", "goquickjsjit", "eng_goquickjsjit quickjs_jit", nil, true},
@@ -60,7 +60,7 @@ var variants = []variant{
 // -engines names them: they are the same engine as one above, set up another
 // way.
 var pagesOnly = []variant{
-	{"slowjs-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
+	{"liustack-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
 }
 
 var (
@@ -76,7 +76,7 @@ var (
 	flagJobs      = flag.Int("j", 1, "test262 processes per engine (each under -memcap-test262)")
 	flagReport    = flag.String("report", "", "write Markdown for an existing results JSON and exit")
 	flagMachine   = flag.String("machine", "", "machine description for the results (default: detected)")
-	flagRun       = flag.String("name", "", "run name (default <date>-<slowjs version>-<host>)")
+	flagRun       = flag.String("name", "", "run name (default <date>-<version>-<host>)")
 	flagNoBuild   = flag.Bool("nobuild", false, "use the binaries in bin/")
 	flagReactN    = flag.Int("react-n", 200, "measured renders per round")
 	flagBuildOS   = flag.String("goos", "", "build the engine binaries for this GOOS (with -build-only, to run them on another machine)")
@@ -149,7 +149,7 @@ func main() {
 	}
 	res.MemCap = capDesc()
 	if res.Name == "" {
-		// The version of liustack/slowjs: the tag of the commit the
+		// The version of liustack/quickjs: the tag of the commit the
 		// binaries were built from.
 		ver := strings.SplitN(res.Source.Describe, "-", 2)[0]
 		if ver == "" || ver == "unknown" {

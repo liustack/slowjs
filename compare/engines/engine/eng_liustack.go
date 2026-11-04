@@ -17,7 +17,7 @@ import (
 
 func init() {
 	register(&Engine{
-		Name:           "slowjs",
+		Name:           "liustack-quickjs",
 		Module:         "github.com/liustack/quickjs",
 		New:            newLiustack,
 		SharedPrograms: true,
@@ -88,7 +88,7 @@ func newLiustack(o Options) (VM, error) {
 			return nil, err
 		}
 	}
-	// slowjs loads no modules: an import of o.ModuleDir fails.
+	// liustack-quickjs loads no modules: an import of o.ModuleDir fails.
 	return &liustackVM{vm}, nil
 }
 

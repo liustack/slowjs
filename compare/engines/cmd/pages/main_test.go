@@ -59,7 +59,7 @@ func archiveOf(t *testing.T, dir string) *jobj {
 
 func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"slowjs-pf", "slowjs-native", "quickjs-ng-pf"} {
+	for _, name := range []string{"liustack-quickjs-pf", "liustack-quickjs-native", "quickjs-ng-pf"} {
 		write(t, dir, name+".json", `{"pages": [{"input": "one.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "missing.json", "ok": false}]}`)
 	}
 	for _, name := range []string{"go-quickjs-interp-pf"} {
@@ -69,10 +69,10 @@ func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	result(t, dir, "probe-one", true, "one")
 	write(t, dir, "probe-one.meta", `{"try":0,"disturbed":1}`+"\n"+`{"try":1,"disturbed":0}`+"\n")
 	for name, body := range map[string]string{
-		"slowjs-pf":            "<p>u:1234567890123</p>",
-		"slowjs-native":        "<p>u:1234567890124</p>",
-		"go-quickjs-interp-pf": "<p>u:1234567890125</p>",
-		"quickjs-ng-pf":        "<p><!-- -->u:1234567890126</p>",
+		"liustack-quickjs-pf":     "<p>u:1234567890123</p>",
+		"liustack-quickjs-native": "<p>u:1234567890124</p>",
+		"go-quickjs-interp-pf":    "<p>u:1234567890125</p>",
+		"quickjs-ng-pf":           "<p><!-- -->u:1234567890126</p>",
 	} {
 		write(t, dir, "html/"+name+"-one.html", body)
 	}
@@ -102,24 +102,24 @@ func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	if v := cmp("pf", "quickjs-ng", "missing").m["same_as_liustack"]; v != nil {
 		t.Errorf("a page that did not render has no verdict, got %v", v)
 	}
-	if v := cmp("deployed", "slowjs", "one").m["same_as_liustack"]; v != true {
-		t.Errorf("slowjs against itself: %v", v)
+	if v := cmp("deployed", "liustack-quickjs", "one").m["same_as_liustack"]; v != true {
+		t.Errorf("liustack-quickjs against itself: %v", v)
 	}
 }
 
 func TestTifaRowIsComparedWithThePolyfillRow(t *testing.T) {
 	dir := t.TempDir()
-	result(t, dir, "slowjs-tifa-native", true, "a", "b")
-	result(t, dir, "slowjs-pf", true, "a", "b")
-	result(t, dir, "slowjs-tifa-mui-native", true, "home", "order")
-	result(t, dir, "slowjs-mui-pf", true, "home")
+	result(t, dir, "liustack-tifa-native", true, "a", "b")
+	result(t, dir, "liustack-quickjs-pf", true, "a", "b")
+	result(t, dir, "liustack-tifa-mui-native", true, "home", "order")
+	result(t, dir, "liustack-quickjs-mui-pf", true, "home")
 	for name, body := range map[string]string{
-		"slowjs-tifa-native-a":        "<p>8:00 AM u:1234567890123</p>",
-		"slowjs-pf-a":                 "<p>8:00 AM u:1234567890124</p>",
-		"slowjs-tifa-native-b":        "x 8:00 AM",
-		"slowjs-pf-b":                 "x 8:00 AM",
-		"slowjs-tifa-mui-native-home": "<p>one</p>",
-		"slowjs-mui-pf-home":          "<p>two</p>",
+		"liustack-tifa-native-a":        "<p>8:00 AM u:1234567890123</p>",
+		"liustack-quickjs-pf-a":         "<p>8:00 AM u:1234567890124</p>",
+		"liustack-tifa-native-b":        "x 8:00 AM",
+		"liustack-quickjs-pf-b":         "x 8:00 AM",
+		"liustack-tifa-mui-native-home": "<p>one</p>",
+		"liustack-quickjs-mui-pf-home":  "<p>two</p>",
 	} {
 		write(t, dir, "html/"+name+".html", body)
 	}
@@ -139,26 +139,26 @@ func TestTifaRowIsComparedWithThePolyfillRow(t *testing.T) {
 }
 
 // A row of a table: the pages that render, the pages that are the same as
-// slowjs's, the geometric mean of the ratios with its range, and the notes.
+// liustack-quickjs's, the geometric mean of the ratios with its range, and the notes.
 func TestTableRows(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "slowjs-bench.json", `{"load_ms": 7, "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 10}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
+	write(t, dir, "liustack-quickjs-bench.json", `{"load_ms": 7, "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 10}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
 	write(t, dir, "modernc-quickjs-bench.json", `{"load_ms": 4.6, "prelude_ms": [1.2], "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 20}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
 	write(t, dir, "modernc-quickjs-bench.meta", `{"try":0,"disturbed":1}`+"\n")
 	write(t, dir, "goant-interp-bench.json", `{"err": "load: SyntaxError: no\nsecond line"}`)
 	write(t, dir, "moejs-bench.json", ``)
 	write(t, dir, "node-jit-bench.json", `{"pages": [{"input": "a.json", "ok": false, "err": "boom"}, {"input": "b.json", "ok": false, "err": "bang"}]}`)
-	for _, e := range []string{"slowjs", "modernc-quickjs"} {
+	for _, e := range []string{"liustack-quickjs", "modernc-quickjs"} {
 		write(t, dir, "html/"+e+"-bench-a.html", "<p>u:1234567890123</p>")
 		write(t, dir, "html/"+e+"-bench-b.html", "<p>b</p>")
 	}
 	w := &report{}
-	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"slowjs", "modernc-quickjs", "goant-interp", "moejs", "node-jit", "go-quickjs-jit"}, "")
+	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "modernc-quickjs", "goant-interp", "moejs", "node-jit", "go-quickjs-jit"}, "")
 	want := `### Pages
 
-| Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |
+| Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
 |---|---|---|---|---|
-| slowjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
+| liustack-quickjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
 | modernc-quickjs | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
 | goant-interp | load: SyntaxError: no | 0 of 2 | | |
 | moejs | not run | | | |
@@ -174,7 +174,7 @@ func TestTableRows(t *testing.T) {
 // Pages that stop an engine come from the run of the engine without them.
 func TestRestRunReplacesFailedPages(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "slowjs-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "c.json", "ok": true, "cpu_ms_per_op": 1}]}`)
+	write(t, dir, "liustack-quickjs-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "c.json", "ok": true, "cpu_ms_per_op": 1}]}`)
 	write(t, dir, "go-quickjs-interp-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": false}, {"input": "c.json", "ok": false}]}`)
 	write(t, dir, "go-quickjs-interp-pf-rest.json", `{"pages": [{"input": "b.json", "ok": true, "cpu_ms_per_op": 3}, {"input": "a.json", "ok": true, "cpu_ms_per_op": 9}]}`)
 	r := &run{dir: dir}

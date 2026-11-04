@@ -7,5 +7,5 @@
 
 package engine
 
-// tifaName is the name of the row: slowjs as tifa runs it.
-const tifaName = "slowjs-tifa"
+// tifaName is the name of the row: liustack-quickjs as tifa runs it.
+const tifaName = "liustack-tifa"

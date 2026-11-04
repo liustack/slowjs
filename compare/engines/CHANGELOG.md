@@ -1,5 +1,18 @@
 # Changes to the engine comparison
 
+## 2026-11-05: rows named liustack-quickjs again
+
+- The module is `github.com/liustack/quickjs` again, and its rows take back
+  the names they had before the module was `github.com/liustack/slowjs`:
+  `slowjs` is now `liustack-quickjs` and `slowjs-tifa` is `liustack-tifa`, in
+  the results, the reports, `TIFA_ONLY`, `-engines` and the file names
+  `tifa/run.sh` writes. Nothing is measured differently.
+- The results files made while the module was `github.com/liustack/slowjs`
+  (the v0.28.6 PGO page runs of 2026-10-24 and the runs of 2026-10-29) keep
+  the names `slowjs` and `slowjs-tifa`. `-report` and `cmd/behind` read both
+  names. Adding to one of those runs with `-add` or `-merge` would give the
+  module two rows, so start a new run instead.
+
 ## 2026-10-29: the C engine, and the helper tools in Go
 
 - The slowjs rows run the C engine (v0.29.0). The `slowjs-tifa-nogoasm` row is gone: there is one interpreter now, so it would repeat `slowjs-tifa`. Earlier results files keep it.

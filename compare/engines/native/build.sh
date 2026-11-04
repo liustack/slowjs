@@ -5,7 +5,7 @@
 # root of this repository.
 # build.sh <dir>: downloads and builds the native reference engines into
 # <dir>, each with its own build as shipped: Bellard's QuickJS 2026-06-04
-# (the release slowjs is built from) and master at 7d1c13c5d8 with `make qjs` (gcc -O2, no
+# (the release liustack/quickjs is built from) and master at 7d1c13c5d8 with `make qjs` (gcc -O2, no
 # LTO, and no -DNDEBUG so asserts run), QuickJS-NG v0.17.0 with `make` (CMake Release), and Node v24.11.1
 # (linux-x64 binary). CMake 3.31.6 is fetched for QuickJS-NG.
 set -e

@@ -15,9 +15,9 @@ func TestSelfRowReadsOldResultsFiles(t *testing.T) {
 		engines []string
 		want    string
 	}{
-		{[]string{"slowjs", "moejs"}, "slowjs"},
 		{[]string{"liustack-quickjs", "moejs"}, "liustack-quickjs"},
-		{[]string{"moejs"}, "slowjs"},
+		{[]string{"slowjs", "moejs"}, "slowjs"},
+		{[]string{"moejs"}, "liustack-quickjs"},
 	} {
 		m := map[string][]json.RawMessage{}
 		for _, e := range c.engines {
