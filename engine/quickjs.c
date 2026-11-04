@@ -694,9 +694,12 @@ struct JSContext {
                              const char *input, size_t input_len,
                              const char *filename, int flags, int scope_idx);
     void *user_opaque;
-    /* the atoms of JS_NewCopyPropsFunction, or JS_ATOM_NULL until it ran: last, so
-       that no field of a context moves */
+    /* the atoms of JS_NewCopyPropsFunction, or JS_ATOM_NULL until it ran: after
+       the others, so that no field of a context moves */
     JSAtom copy_atoms[JS_COPY_ATOM_COUNT];
+    /* the atoms and the caches of JS_NewStartTagFunction and
+       JS_NewEndTagFunction, or NULL until one of them ran (see js_start_tag) */
+    struct JSEmitCache *emit_cache;
 };
 
 typedef union JSFloat64Union {
@@ -1614,6 +1617,7 @@ static JSValue js_array_from_iterator(JSContext *ctx, uint32_t *plen,
                                       JSValueConst obj, JSValueConst method);
 static int js_string_find_invalid_codepoint(JSString *p);
 static inline __exception int js_poll_interrupts(JSContext *ctx);
+static void js_emit_free(JSContext *ctx);
 static JSValue js_string_to_number(JSContext *ctx, JSValue val);
 static JSValue js_dtoa2(JSContext *ctx,
                         double d, int radix, int n_digits, int flags);
@@ -3608,6 +3612,7 @@ void JS_FreeContext(JSContext *ctx)
     }
     for(i = 0; i < JS_COPY_ATOM_COUNT; i++)
         JS_FreeAtom(ctx, ctx->copy_atoms[i]);
+    js_emit_free(ctx);
     js_free_shape_null(ctx->rt, ctx->array_shape);
     js_free_shape_null(ctx->rt, ctx->arguments_shape);
     js_free_shape_null(ctx->rt, ctx->mapped_arguments_shape);
@@ -55224,13 +55229,13 @@ static BOOL js_copy_props_proto_plain(JSObject *op)
    (any realm's, it does the same), it has no property of its own but length
    and name and Function.prototype of ctx is its prototype (the shape the
    context keeps for built-in functions, or the same by looking), and
-   Function.prototype.call is a data property that holds the built-in. */
-static BOOL js_copy_props_call_plain(JSContext *ctx, JSValueConst hop)
+   Function.prototype.call is a data property that holds the built-in. call is
+   the atom "call", which js_start_tag also passes. */
+static BOOL js_copy_props_call_plain(JSContext *ctx, JSValueConst hop, JSAtom call)
 {
     JSObject *p, *fp;
     JSShapeProperty *prs;
     JSProperty *pr;
-    JSAtom call = ctx->copy_atoms[JS_COPY_ATOM_CALL];
 
     if (!js_is_cfunction(hop, js_object_hasOwnProperty))
         return FALSE;
@@ -55311,7 +55316,8 @@ static JSValue js_copy_props(JSContext *ctx, JSValueConst this_val,
         kept[nkept++] = i;
     }
     /* the places it reads and sets */
-    if (!js_copy_props_call_plain(ctx, argv[2]) || !js_copy_props_proto_plain(op))
+    if (!js_copy_props_call_plain(ctx, argv[2], atoms[JS_COPY_ATOM_CALL]) ||
+        !js_copy_props_proto_plain(op))
         return JS_FALSE;
     if (nkept == 0)
         return JS_TRUE;
@@ -55396,6 +55402,1537 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
     }
     JS_FreeAtom(ctx, name_atom);
     return func_obj;
+}
+
+/* ---- the start and end tags of an element in React DOM ---- */
+
+/* React DOM's server renderer (19.3) writes the start tag of most elements
+   with pushStartGenericElement:
+
+       target.push(startChunkForTag(tag));
+       for (propKey in props)
+         if (hasOwnProperty.call(props, propKey)) {
+           var propValue = props[propKey];
+           if (null != propValue)
+             switch (propKey) {
+               case "children": children = propValue; break;
+               case "dangerouslySetInnerHTML": innerHTML = propValue; break;
+               default: pushAttribute(target, propKey, propValue);
+             }
+         }
+       pushViewTransitionAttributes(target, formatContext);
+       target.push(">");
+       pushInnerHTML(target, innerHTML, children);
+       return "string" === typeof children
+         ? (target.push(escapeTextForBrowser(children)), null) : children;
+
+   and its end tag with endChunkForTag, "</" + tag + ">" kept in a Map. In
+   QuickJS each attribute takes a call of pushAttribute, a switch over string
+   compares, a call of escapeTextForBrowser and a push of five strings. For a
+   host that asks for them (JS_NewStartTagFunction, JS_NewEndTagFunction),
+   js_start_tag writes the whole start tag, with the escaped text when
+   children is a string, and pushes it onto target as one string, and
+   js_end_tag gives the end tag. target then holds other strings than React's
+   would, and the same text when they are joined.
+
+   js_start_tag returns its argument decline, having changed nothing, for any
+   call where React's functions could do something else than it does, and the
+   script then runs them. It writes only when:
+
+   - hasOwnProperty is the built-in and Function.prototype.call too
+     (js_copy_props_call_plain), so that hasOwnProperty.call(props, key) runs
+     nothing else;
+   - target is an array of the realm with no property but its length (the
+     shape of a new array), fast, extensible, with a length equal to its
+     count, and Array.prototype.push is the built-in (js_emit_target_plain),
+     so that target.push(s) adds s at the end and runs nothing else;
+   - tag is a string that React's tag regexp /^[a-zA-Z][a-zA-Z:_\.\-\d]*$/
+     takes (React throws for any other);
+   - formatContext.viewTransition is an own data property that holds null,
+     so that pushViewTransitionAttributes writes nothing;
+   - props, and style when it is not null or undefined, are ordinary objects
+     whose prototype is Object.prototype, with at most JS_EMIT_PROPS_MAX own
+     keys, none of them an array index (for in lists those first), and every
+     enumerable string key a plain data property, so that the loop reads
+     their keys in the order of the shape, and no getter runs;
+   - no value it turns into a string is an object (a function is dropped as
+     React drops it) or a bigint, so that no toString or valueOf runs, and no
+     style value is a function or a symbol either;
+   - dangerouslySetInnerHTML is null or undefined, none of xlinkHref,
+     capture, download, cols, rows, size, span, rowSpan and start is set (the
+     rare branches of pushAttribute), and a name of the default branch of
+     pushAttribute is ASCII and shorter than 64 characters (or skipped as
+     React skips it, onX and a name its regexp refuses);
+   - no URL (src, href, action, formAction) is a javascript: URL by React's
+     regexp, which React writes as a URL of its own, or a string not
+     flattened yet;
+   - a style name that does not start with -- is ASCII;
+   - the string it builds cannot be longer than JS_STRING_LEN_MAX: each
+     string is counted 6 times (an entity takes up to 6 units), and
+     JS_EMIT_SLACK units are kept for the names and numbers in between.
+
+   What React's functions call on String.prototype, RegExp.prototype,
+   Map.prototype and Set.prototype is taken as the built-ins. It throws only
+   when the engine has no memory or the host interrupts it, target unchanged,
+   and reads the interrupt flag every JS_ESCAPE_STEP units of a long string.
+   engine/test/compare/start_tag.js checks all of this against the functions
+   of React. */
+
+#define JS_EMIT_PROPS_MAX 32
+/* the tables of names and of end tags: open addressing, made at their first
+   entry with 1 << JS_EMIT_BITS_MIN entries and doubled when half full, up to
+   1 << JS_EMIT_NAME_BITS_MAX names and 1 << JS_EMIT_END_BITS_MAX end tags,
+   where a full table is emptied and fills again */
+#define JS_EMIT_BITS_MIN 4
+#define JS_EMIT_NAME_BITS_MAX 9
+#define JS_EMIT_END_BITS_MAX 8
+/* units a call may write between two checks of the length: 32 attributes
+   and 32 style keys, each a name of at most 66 units and a number of at most
+   25, take fewer */
+#define JS_EMIT_SLACK 8192
+
+/* how the name of an attribute or a style is written */
+enum {
+    JS_EMIT_DECLINE = 0, /* the call goes to React's functions */
+    JS_EMIT_SKIP,        /* never written */
+    JS_EMIT_STRING,      /* pushStringAttribute: not a function, symbol or boolean */
+    JS_EMIT_URL_SRC,     /* src, href: "" is skipped, then as JS_EMIT_URL */
+    JS_EMIT_URL,         /* action, formAction: sanitizeURL, then as a string */
+    JS_EMIT_BOOL,        /* name="" when truthy and not a function or symbol */
+    JS_EMIT_PLAIN,       /* not a function or symbol: booleans as true or false */
+    JS_EMIT_DEFAULT,     /* the default branch: booleans dropped */
+    JS_EMIT_DEFAULT_DA,  /* the default branch, data- and aria-: booleans written */
+    JS_EMIT_STYLE,
+    JS_EMIT_CHILDREN,
+    JS_EMIT_STYLE_NAME,  /* a style name, hyphenated */
+    JS_EMIT_STYLE_CUSTOM, /* a style name that starts with --, as it is */
+};
+
+enum {
+    JS_EMIT_ATOM_VIEW_TRANSITION,
+    JS_EMIT_ATOM_CALL,
+    JS_EMIT_ATOM_PUSH,
+    JS_EMIT_ATOM_COUNT
+};
+
+typedef struct JSEmitName {
+    JSAtom atom;        /* the key, held, or JS_ATOM_NULL for an empty entry */
+    uint8_t kind;
+    uint8_t unitless;   /* a style name of unitlessNumbers */
+    JSValue chunk;      /* ` name="`, ` name=""` or the style name, or undefined */
+} JSEmitName;
+
+typedef struct JSEmitEnd {
+    JSValue tag;        /* the tag, held: found by the address of the string */
+    JSValue chunk;      /* "</tag>" */
+} JSEmitEnd;
+
+/* a table of names: 1 << bits entries, count of them in use. Until the
+   first name tab is js_emit_no_names, two empty entries no name is put in,
+   so that a lookup needs no check for it */
+typedef struct JSEmitNames {
+    JSEmitName *tab;
+    uint32_t bits, count;
+} JSEmitNames;
+
+typedef struct JSEmitCache {
+    JSAtom atoms[JS_EMIT_ATOM_COUNT];
+    JSEmitNames attr;
+    JSEmitNames style;
+    JSEmitEnd *end;     /* 1 << end_bits entries, js_emit_no_ends at first */
+    uint32_t end_bits, end_count;
+    /* the buffer the start tag writes in, NULL until its first call and
+       while a call has it (js_emit_buf_take) */
+    JSString *buf;
+    int buf_size;       /* its size in 8-bit units */
+} JSEmitCache;
+
+static const JSEmitName js_emit_no_names[2];
+static const JSEmitEnd js_emit_no_ends[2];
+
+/* whether t has a table of its own, made at its first name */
+static inline BOOL js_emit_names_made(const JSEmitNames *t)
+{
+    return t->tab != js_emit_no_names;
+}
+
+typedef struct JSEmitAttrName {
+    const char *name;
+    uint8_t kind;
+    const char *out;    /* the name written, NULL for the name itself */
+} JSEmitAttrName;
+
+/* the names of the switches of pushStartGenericElement and pushAttribute */
+static const JSEmitAttrName js_emit_attr_names[] = {
+    { "children", JS_EMIT_CHILDREN, NULL },
+    /* not null or undefined: React writes the HTML or throws */
+    { "dangerouslySetInnerHTML", JS_EMIT_DECLINE, NULL },
+    { "className", JS_EMIT_STRING, "class" },
+    { "tabIndex", JS_EMIT_STRING, "tabindex" },
+    { "dir", JS_EMIT_STRING, NULL },
+    { "role", JS_EMIT_STRING, NULL },
+    { "viewBox", JS_EMIT_STRING, NULL },
+    { "width", JS_EMIT_STRING, NULL },
+    { "height", JS_EMIT_STRING, NULL },
+    { "style", JS_EMIT_STYLE, NULL },
+    { "src", JS_EMIT_URL_SRC, NULL },
+    { "href", JS_EMIT_URL_SRC, NULL },
+    { "action", JS_EMIT_URL, NULL },
+    { "formAction", JS_EMIT_URL, NULL },
+    { "defaultValue", JS_EMIT_SKIP, NULL },
+    { "defaultChecked", JS_EMIT_SKIP, NULL },
+    { "innerHTML", JS_EMIT_SKIP, NULL },
+    { "suppressContentEditableWarning", JS_EMIT_SKIP, NULL },
+    { "suppressHydrationWarning", JS_EMIT_SKIP, NULL },
+    { "ref", JS_EMIT_SKIP, NULL },
+    { "autoFocus", JS_EMIT_BOOL, "autofocus" },
+    { "multiple", JS_EMIT_BOOL, NULL },
+    { "muted", JS_EMIT_BOOL, NULL },
+    { "xlinkHref", JS_EMIT_DECLINE, NULL },
+    { "contentEditable", JS_EMIT_PLAIN, NULL },
+    { "spellCheck", JS_EMIT_PLAIN, NULL },
+    { "draggable", JS_EMIT_PLAIN, NULL },
+    { "value", JS_EMIT_PLAIN, NULL },
+    { "autoReverse", JS_EMIT_PLAIN, NULL },
+    { "externalResourcesRequired", JS_EMIT_PLAIN, NULL },
+    { "focusable", JS_EMIT_PLAIN, NULL },
+    { "preserveAlpha", JS_EMIT_PLAIN, NULL },
+    { "inert", JS_EMIT_BOOL, NULL },
+    { "allowFullScreen", JS_EMIT_BOOL, NULL },
+    { "async", JS_EMIT_BOOL, NULL },
+    { "autoPlay", JS_EMIT_BOOL, NULL },
+    { "controls", JS_EMIT_BOOL, NULL },
+    { "credentialless", JS_EMIT_BOOL, NULL },
+    { "default", JS_EMIT_BOOL, NULL },
+    { "defer", JS_EMIT_BOOL, NULL },
+    { "disabled", JS_EMIT_BOOL, NULL },
+    { "disablePictureInPicture", JS_EMIT_BOOL, NULL },
+    { "disableRemotePlayback", JS_EMIT_BOOL, NULL },
+    { "formNoValidate", JS_EMIT_BOOL, NULL },
+    { "hidden", JS_EMIT_BOOL, NULL },
+    { "loop", JS_EMIT_BOOL, NULL },
+    { "noModule", JS_EMIT_BOOL, NULL },
+    { "noValidate", JS_EMIT_BOOL, NULL },
+    { "open", JS_EMIT_BOOL, NULL },
+    { "playsInline", JS_EMIT_BOOL, NULL },
+    { "readOnly", JS_EMIT_BOOL, NULL },
+    { "required", JS_EMIT_BOOL, NULL },
+    { "reversed", JS_EMIT_BOOL, NULL },
+    { "scoped", JS_EMIT_BOOL, NULL },
+    { "seamless", JS_EMIT_BOOL, NULL },
+    { "itemScope", JS_EMIT_BOOL, NULL },
+    { "capture", JS_EMIT_DECLINE, NULL },
+    { "download", JS_EMIT_DECLINE, NULL },
+    { "cols", JS_EMIT_DECLINE, NULL },
+    { "rows", JS_EMIT_DECLINE, NULL },
+    { "size", JS_EMIT_DECLINE, NULL },
+    { "span", JS_EMIT_DECLINE, NULL },
+    { "rowSpan", JS_EMIT_DECLINE, NULL },
+    { "start", JS_EMIT_DECLINE, NULL },
+    { "xlinkActuate", JS_EMIT_STRING, "xlink:actuate" },
+    { "xlinkArcrole", JS_EMIT_STRING, "xlink:arcrole" },
+    { "xlinkRole", JS_EMIT_STRING, "xlink:role" },
+    { "xlinkShow", JS_EMIT_STRING, "xlink:show" },
+    { "xlinkTitle", JS_EMIT_STRING, "xlink:title" },
+    { "xlinkType", JS_EMIT_STRING, "xlink:type" },
+    { "xmlBase", JS_EMIT_STRING, "xml:base" },
+    { "xmlLang", JS_EMIT_STRING, "xml:lang" },
+    { "xmlSpace", JS_EMIT_STRING, "xml:space" },
+};
+
+/* the aliases of React DOM, in pairs */
+static const char *const js_emit_aliases[] = {
+    "acceptCharset", "accept-charset", "htmlFor", "for",
+    "httpEquiv", "http-equiv", "crossOrigin", "crossorigin",
+    "accentHeight", "accent-height", "alignmentBaseline", "alignment-baseline",
+    "arabicForm", "arabic-form", "baselineShift", "baseline-shift",
+    "capHeight", "cap-height", "clipPath", "clip-path", "clipRule", "clip-rule",
+    "colorInterpolation", "color-interpolation",
+    "colorInterpolationFilters", "color-interpolation-filters",
+    "colorProfile", "color-profile", "colorRendering", "color-rendering",
+    "dominantBaseline", "dominant-baseline", "enableBackground", "enable-background",
+    "fillOpacity", "fill-opacity", "fillRule", "fill-rule",
+    "floodColor", "flood-color", "floodOpacity", "flood-opacity",
+    "fontFamily", "font-family", "fontSize", "font-size",
+    "fontSizeAdjust", "font-size-adjust", "fontStretch", "font-stretch",
+    "fontStyle", "font-style", "fontVariant", "font-variant",
+    "fontWeight", "font-weight", "glyphName", "glyph-name",
+    "glyphOrientationHorizontal", "glyph-orientation-horizontal",
+    "glyphOrientationVertical", "glyph-orientation-vertical",
+    "horizAdvX", "horiz-adv-x", "horizOriginX", "horiz-origin-x",
+    "imageRendering", "image-rendering", "letterSpacing", "letter-spacing",
+    "lightingColor", "lighting-color", "markerEnd", "marker-end",
+    "markerMid", "marker-mid", "markerStart", "marker-start",
+    "maskType", "mask-type", "overlinePosition", "overline-position",
+    "overlineThickness", "overline-thickness", "paintOrder", "paint-order",
+    "panose-1", "panose-1", "pointerEvents", "pointer-events",
+    "renderingIntent", "rendering-intent", "shapeRendering", "shape-rendering",
+    "stopColor", "stop-color", "stopOpacity", "stop-opacity",
+    "strikethroughPosition", "strikethrough-position",
+    "strikethroughThickness", "strikethrough-thickness",
+    "strokeDasharray", "stroke-dasharray", "strokeDashoffset", "stroke-dashoffset",
+    "strokeLinecap", "stroke-linecap", "strokeLinejoin", "stroke-linejoin",
+    "strokeMiterlimit", "stroke-miterlimit", "strokeOpacity", "stroke-opacity",
+    "strokeWidth", "stroke-width", "textAnchor", "text-anchor",
+    "textDecoration", "text-decoration", "textRendering", "text-rendering",
+    "transformOrigin", "transform-origin", "underlinePosition", "underline-position",
+    "underlineThickness", "underline-thickness", "unicodeBidi", "unicode-bidi",
+    "unicodeRange", "unicode-range", "unitsPerEm", "units-per-em",
+    "vAlphabetic", "v-alphabetic", "vHanging", "v-hanging",
+    "vIdeographic", "v-ideographic", "vMathematical", "v-mathematical",
+    "vectorEffect", "vector-effect", "vertAdvY", "vert-adv-y",
+    "vertOriginX", "vert-origin-x", "vertOriginY", "vert-origin-y",
+    "wordSpacing", "word-spacing", "writingMode", "writing-mode",
+    "xmlnsXlink", "xmlns:xlink", "xHeight", "x-height",
+};
+
+/* unitlessNumbers of React DOM */
+static const char *const js_emit_unitless[] = {
+    "animationIterationCount", "aspectRatio", "borderImageOutset",
+    "borderImageSlice", "borderImageWidth", "boxFlex", "boxFlexGroup",
+    "boxOrdinalGroup", "columnCount", "columns", "flex", "flexGrow",
+    "flexPositive", "flexShrink", "flexNegative", "flexOrder", "gridArea",
+    "gridRow", "gridRowEnd", "gridRowSpan", "gridRowStart", "gridColumn",
+    "gridColumnEnd", "gridColumnSpan", "gridColumnStart", "fontWeight",
+    "lineClamp", "lineHeight", "opacity", "order", "orphans", "scale",
+    "tabSize", "widows", "zIndex", "zoom", "fillOpacity", "floodOpacity",
+    "stopOpacity", "strokeDasharray", "strokeDashoffset", "strokeMiterlimit",
+    "strokeOpacity", "strokeWidth", "MozAnimationIterationCount", "MozBoxFlex",
+    "MozBoxFlexGroup", "MozLineClamp", "msAnimationIterationCount", "msFlex",
+    "msZoom", "msFlexGrow", "msFlexNegative", "msFlexOrder", "msFlexPositive",
+    "msFlexShrink", "msGridColumn", "msGridColumnSpan", "msGridRow",
+    "msGridRowSpan", "WebkitAnimationIterationCount", "WebkitBoxFlex",
+    "WebKitBoxFlexGroup", "WebkitBoxOrdinalGroup", "WebkitColumnCount",
+    "WebkitColumns", "WebkitFlex", "WebkitFlexGrow", "WebkitFlexPositive",
+    "WebkitFlexShrink", "WebkitLineClamp",
+};
+
+static BOOL js_emit_str_eq(const JSString *p, const char *s)
+{
+    size_t n = strlen(s);
+    return !p->is_wide_char && p->len == n && memcmp(p->u.str8, s, n) == 0;
+}
+
+static inline uint32_t js_emit_hash(JSAtom atom, uint32_t bits)
+{
+    return (atom * 2654435761u) >> (32 - bits);
+}
+
+/* the first entry to look at for an end tag, by the address of the tag
+   string */
+static inline uint32_t js_emit_end_hash(const JSString *p, uint32_t bits)
+{
+    return (uint32_t)(((uintptr_t)p >> 3) * 2654435761u) >> (32 - bits);
+}
+
+/* whether b can take n more units and still JS_EMIT_SLACK */
+static inline BOOL js_emit_fits(const StringBuffer *b, uint64_t n)
+{
+    return b->len + n <= JS_STRING_LEN_MAX - JS_EMIT_SLACK;
+}
+
+/* The strings made here have the length of their text. string_buffer_end
+   leaves a string in the block b grew to, and __js_realloc never moves an
+   arena block to a smaller size: a start tag would take a block of 160 bytes
+   or more, and those strings live until the render is written out. The
+   long-lived objects a render makes between them (the entries of a cache of
+   the page, the shapes of new props) then hold arenas that are almost empty
+   once the render is freed. */
+
+/* the start tag writes into a buffer the cache keeps from one call to the
+   next, of JS_EMIT_BUF_MIN units at first. One that grew past
+   JS_EMIT_BUF_MAX, for a long text, or became wide is freed after the call */
+#define JS_EMIT_BUF_MIN 128
+#define JS_EMIT_BUF_MAX 1024
+
+/* the string of b's text at its length, b freed. b may have failed */
+static JSValue js_emit_string(StringBuffer *b)
+{
+    JSValue str;
+
+    if (b->error_status)
+        return JS_EXCEPTION;
+    if (b->len == b->size || b->len == 0)
+        return string_buffer_end(b);
+    if (b->is_wide_char)
+        str = js_new_string16_len(b->ctx, b->str->u.str16, b->len);
+    else
+        str = js_new_string8_len(b->ctx, (const char *)b->str->u.str8, b->len);
+    string_buffer_free(b);
+    return str;
+}
+
+/* starts b on the buffer of the cache, which b has until js_emit_buf_end. A
+   call that finds none, the first one, makes one */
+static void js_emit_buf_take(JSContext *ctx, JSEmitCache *ec, StringBuffer *b)
+{
+    if (!ec->buf) {
+        string_buffer_init(ctx, b, JS_EMIT_BUF_MIN);
+        return;
+    }
+    b->ctx = ctx;
+    b->str = ec->buf;
+    b->len = 0;
+    b->size = ec->buf_size;
+    b->is_wide_char = 0;
+    b->error_status = 0;
+    ec->buf = NULL;
+}
+
+/* the string of b's text at its length (JS_EXCEPTION when b failed, and with
+   want_str FALSE JS_UNDEFINED), the buffer given back to the cache or freed */
+static JSValue js_emit_buf_end(JSContext *ctx, JSEmitCache *ec, StringBuffer *b,
+                               BOOL want_str)
+{
+    JSValue str = JS_UNDEFINED;
+
+    if (b->error_status)
+        str = JS_EXCEPTION;
+    else if (want_str && b->is_wide_char)
+        str = js_new_string16_len(ctx, b->str->u.str16, b->len);
+    else if (want_str)
+        str = js_new_string8_len(ctx, (const char *)b->str->u.str8, b->len);
+    if (b->str) {
+        if (!ec->buf && !b->is_wide_char && b->size <= JS_EMIT_BUF_MAX) {
+            ec->buf = b->str;
+            ec->buf_size = b->size;
+        } else {
+            js_free(ctx, b->str);
+        }
+        b->str = NULL;
+    }
+    return str;
+}
+
+/* writes into b without a call while it has room for 8-bit units */
+static force_inline void js_emit_w8(StringBuffer *b, const void *s, uint32_t n)
+{
+    if (likely(!b->is_wide_char && b->len + n <= (uint32_t)b->size)) {
+        memcpy(b->str->u.str8 + b->len, s, n);
+        b->len += n;
+    } else {
+        string_buffer_write8(b, s, n);
+    }
+}
+
+static force_inline void js_emit_c8(StringBuffer *b, uint8_t c)
+{
+    js_emit_w8(b, &c, 1);
+}
+
+#define js_emit_s8(b, lit) js_emit_w8(b, lit, sizeof(lit) - 1)
+
+/* p[from, to) into b, JS_COPY_STEP bytes at a time with the interrupt flag
+   read after each: an interrupt leaves b failed, as a write that found no
+   memory does */
+static no_inline void js_emit_put_long(StringBuffer *b, const JSString *p,
+                                       uint32_t from, uint32_t to)
+{
+    uint32_t step = JS_COPY_STEP >> 1, end;
+
+    while (from < to) {
+        end = to - from > step ? from + step : to;
+        if (!p->is_wide_char)
+            string_buffer_write8(b, p->u.str8 + from, end - from);
+        else
+            string_buffer_write16(b, p->u.str16 + from, end - from);
+        from = end;
+        if (from < to && js_poll_interrupts(b->ctx)) {
+            string_buffer_set_error(b);
+            return;
+        }
+    }
+}
+
+static force_inline void js_emit_wstr(StringBuffer *b, const JSString *p,
+                                      uint32_t from, uint32_t to)
+{
+    if (unlikely(to - from > (JS_COPY_STEP >> 1)))
+        js_emit_put_long(b, p, from, to);
+    else if (!p->is_wide_char)
+        js_emit_w8(b, p->u.str8 + from, to - from);
+    else
+        string_buffer_write16(b, p->u.str16 + from, to - from);
+}
+
+static force_inline void js_emit_put_chunk(StringBuffer *b, JSValueConst chunk)
+{
+    JSString *p = JS_VALUE_GET_STRING(chunk);
+    js_emit_wstr(b, p, 0, p->len);
+}
+
+static force_inline void js_emit_put_entity(StringBuffer *b, int c)
+{
+    switch (c) {
+    case '&': js_emit_s8(b, "&amp;"); break;
+    case '<': js_emit_s8(b, "&lt;"); break;
+    case '>': js_emit_s8(b, "&gt;"); break;
+    case '"': js_emit_s8(b, "&quot;"); break;
+    default: js_emit_s8(b, "&#x27;"); break;
+    }
+}
+
+/* whether a byte of the 8 bytes of w is one of & < > " ' */
+#define JS_EMIT_ONES 0x0101010101010101ULL
+#define JS_EMIT_HAS_ZERO(v) (((v) - JS_EMIT_ONES) & ~(v) & (JS_EMIT_ONES << 7))
+#define JS_EMIT_HAS_SPECIAL(w)                                          \
+    (JS_EMIT_HAS_ZERO((w) ^ (JS_EMIT_ONES * '&')) |                     \
+     JS_EMIT_HAS_ZERO((w) ^ (JS_EMIT_ONES * '<')) |                     \
+     JS_EMIT_HAS_ZERO((w) ^ (JS_EMIT_ONES * '>')) |                     \
+     JS_EMIT_HAS_ZERO((w) ^ (JS_EMIT_ONES * '"')) |                     \
+     JS_EMIT_HAS_ZERO((w) ^ (JS_EMIT_ONES * '\'')))
+
+/* escapeTextForBrowser of p[from, to) into b */
+static force_inline void js_emit_escape_block(StringBuffer *b, const JSString *p,
+                                              uint32_t from, uint32_t to)
+{
+    uint32_t i, last = from;
+
+    if (!p->is_wide_char) {
+        const uint8_t *s = p->u.str8;
+        for (i = from; i < to; i++) {
+            /* eight bytes at a time while none of them is one of the five */
+            while (i + 8 <= to) {
+                uint64_t w;
+                memcpy(&w, s + i, 8);
+                if (JS_EMIT_HAS_SPECIAL(w))
+                    break;
+                i += 8;
+            }
+            if (i >= to)
+                break;
+            if (likely(!js_escape_extra[s[i]]))
+                continue;
+            if (i > last)
+                js_emit_w8(b, s + last, i - last);
+            js_emit_put_entity(b, s[i]);
+            last = i + 1;
+        }
+        if (to > last)
+            js_emit_w8(b, s + last, to - last);
+    } else {
+        const uint16_t *s = p->u.str16;
+        for (i = from; i < to; i++) {
+            if (likely(s[i] >= 256 || !js_escape_extra[s[i]]))
+                continue;
+            if (i > last)
+                string_buffer_write16(b, s + last, i - last);
+            js_emit_put_entity(b, s[i]);
+            last = i + 1;
+        }
+        if (to > last)
+            string_buffer_write16(b, s + last, to - last);
+    }
+}
+
+/* js_emit_put_escaped of a string longer than JS_ESCAPE_STEP units */
+static no_inline int js_emit_put_escaped_long(JSContext *ctx, StringBuffer *b,
+                                              const JSString *p,
+                                              uint32_t from, uint32_t to)
+{
+    uint32_t end;
+
+    for (;;) {
+        end = to - from > JS_ESCAPE_STEP ? from + JS_ESCAPE_STEP : to;
+        js_emit_escape_block(b, p, from, end);
+        if (end == to)
+            return 0;
+        from = end;
+        if (js_poll_interrupts(ctx))
+            return -1;
+    }
+}
+
+/* escapeTextForBrowser of p[from, to) into b, reading the interrupt flag
+   every JS_ESCAPE_STEP units: -1 when the host stops it */
+static int js_emit_put_escaped(JSContext *ctx, StringBuffer *b, const JSString *p,
+                               uint32_t from, uint32_t to)
+{
+    if (unlikely(to - from > JS_ESCAPE_STEP))
+        return js_emit_put_escaped_long(ctx, b, p, from, to);
+    js_emit_escape_block(b, p, from, to);
+    return 0;
+}
+
+static void js_emit_put_int(StringBuffer *b, int32_t v)
+{
+    char buf[16];
+    int i = 16;
+    uint32_t u = v < 0 ? -(uint32_t)v : (uint32_t)v;
+
+    do {
+        buf[--i] = '0' + u % 10;
+        u /= 10;
+    } while (u);
+    if (v < 0)
+        buf[--i] = '-';
+    js_emit_w8(b, buf + i, 16 - i);
+}
+
+/* typeof v is "function" or "symbol" */
+static force_inline BOOL js_emit_fn_or_sym(JSContext *ctx, JSValueConst v)
+{
+    int tag = JS_VALUE_GET_NORM_TAG(v);
+    return tag == JS_TAG_SYMBOL || (tag == JS_TAG_OBJECT && JS_IsFunction(ctx, v));
+}
+
+/* "" + v of a string, a number or a boolean as a string, held in *hold
+   when it is made here: NULL for an exception */
+static JSString *js_emit_flat(JSContext *ctx, JSValueConst v, JSValue *hold)
+{
+    *hold = JS_UNDEFINED;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING)
+        return JS_VALUE_GET_STRING(v);
+    *hold = JS_ToString(ctx, v);
+    if (JS_IsException(*hold))
+        return NULL;
+    return JS_VALUE_GET_STRING(*hold);
+}
+
+/* escapeTextForBrowser(v) into b: 0 when written, 1 to decline, -1 for an
+   exception */
+static int js_emit_put_text(JSContext *ctx, StringBuffer *b, JSValueConst v)
+{
+    JSValue hold;
+    JSString *p;
+    int r;
+
+    switch (JS_VALUE_GET_NORM_TAG(v)) {
+    case JS_TAG_INT:
+        js_emit_put_int(b, JS_VALUE_GET_INT(v));
+        return 0;
+    case JS_TAG_BOOL:
+        if (JS_VALUE_GET_BOOL(v))
+            js_emit_s8(b, "true");
+        else
+            js_emit_s8(b, "false");
+        return 0;
+    case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
+    case JS_TAG_FLOAT64:
+        p = js_emit_flat(ctx, v, &hold);
+        if (!p)
+            return -1;
+        if (js_emit_fits(b, (uint64_t)p->len * 6))
+            r = js_emit_put_escaped(ctx, b, p, 0, p->len);
+        else
+            r = 1;
+        JS_FreeValue(ctx, hold);
+        return r;
+    default:
+        /* an object would run its toString, a bigint is rare */
+        return 1;
+    }
+}
+
+/* whether the url matches isJavaScriptProtocol of React:
+   /^[\u0000-\u001F ]*j[\r\n\t]*a[\r\n\t]*v...t[\r\n\t]*:/i */
+static BOOL js_emit_is_javascript_url(const JSString *p)
+{
+    static const char word[] = "javascript:";
+    uint32_t i = 0, n = p->len;
+    int k, c;
+
+    while (i < n && string_get(p, i) <= 0x20)
+        i++;
+    for (k = 0; word[k]; k++) {
+        if (k > 0) {
+            while (i < n && (string_get(p, i) == '\r' || string_get(p, i) == '\n' ||
+                             string_get(p, i) == '\t'))
+                i++;
+        }
+        if (i >= n)
+            return FALSE;
+        c = string_get(p, i);
+        if (c >= 'A' && c <= 'Z')
+            c += 'a' - 'A';
+        if (c != word[k])
+            return FALSE;
+        i++;
+    }
+    return TRUE;
+}
+
+static void js_emit_free_entry(JSContext *ctx, JSEmitName *e)
+{
+    if (e->atom != JS_ATOM_NULL) {
+        JS_FreeAtom(ctx, e->atom);
+        JS_FreeValue(ctx, e->chunk);
+        e->atom = JS_ATOM_NULL;
+        e->chunk = JS_UNDEFINED;
+    }
+}
+
+static void js_emit_names_clear(JSContext *ctx, JSEmitNames *t)
+{
+    uint32_t i;
+
+    if (js_emit_names_made(t)) {
+        for (i = 0; i < ((uint32_t)1 << t->bits); i++)
+            js_emit_free_entry(ctx, &t->tab[i]);
+    }
+    t->count = 0;
+}
+
+static void js_emit_end_clear(JSContext *ctx, JSEmitCache *ec)
+{
+    uint32_t i;
+
+    if (ec->end != js_emit_no_ends) {
+        for (i = 0; i < ((uint32_t)1 << ec->end_bits); i++) {
+            JS_FreeValue(ctx, ec->end[i].tag);
+            JS_FreeValue(ctx, ec->end[i].chunk);
+            ec->end[i].tag = ec->end[i].chunk = JS_UNDEFINED;
+        }
+    }
+    ec->end_count = 0;
+}
+
+static void js_emit_free(JSContext *ctx)
+{
+    JSEmitCache *ec = ctx->emit_cache;
+    int i;
+
+    if (!ec)
+        return;
+    js_emit_names_clear(ctx, &ec->attr);
+    if (js_emit_names_made(&ec->attr))
+        js_free(ctx, ec->attr.tab);
+    js_emit_names_clear(ctx, &ec->style);
+    if (js_emit_names_made(&ec->style))
+        js_free(ctx, ec->style.tab);
+    js_emit_end_clear(ctx, ec);
+    if (ec->end != js_emit_no_ends)
+        js_free(ctx, ec->end);
+    js_free(ctx, ec->buf);
+    for (i = 0; i < JS_EMIT_ATOM_COUNT; i++)
+        JS_FreeAtom(ctx, ec->atoms[i]);
+    js_free(ctx, ec);
+    ctx->emit_cache = NULL;
+}
+
+/* whether the n bytes of buf are the name s: a name of a script may hold a
+   NUL, which strcmp would take for its end */
+static BOOL js_emit_name_is(const char *buf, size_t n, const char *s)
+{
+    return strlen(s) == n && memcmp(buf, s, n) == 0;
+}
+
+/* puts kind and chunk into e for the attribute name atom */
+static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
+{
+    const JSString *p = ctx->rt->atom_array[atom];
+    const char *out = NULL;
+    char buf[64], pre[6];
+    int kind = JS_EMIT_DECLINE, c;
+    size_t i, n;
+    StringBuffer b;
+    JSValue chunk = JS_UNDEFINED;
+
+    if (!p->is_wide_char && p->len < sizeof(buf)) {
+        n = p->len;
+        memcpy(buf, p->u.str8, n);
+        buf[n] = '\0';
+        for (i = 0; i < countof(js_emit_attr_names); i++) {
+            if (js_emit_name_is(buf, n, js_emit_attr_names[i].name)) {
+                kind = js_emit_attr_names[i].kind;
+                out = js_emit_attr_names[i].out ? js_emit_attr_names[i].out :
+                    js_emit_attr_names[i].name;
+                break;
+            }
+        }
+        if (i < countof(js_emit_attr_names)) {
+            /* a name of the switches */
+        } else if (n > 2 && (buf[0] == 'o' || buf[0] == 'O') &&
+                   (buf[1] == 'n' || buf[1] == 'N')) {
+            kind = JS_EMIT_SKIP;
+        } else {
+            out = buf;
+            for (i = 0; i < countof(js_emit_aliases); i += 2) {
+                if (js_emit_name_is(buf, n, js_emit_aliases[i])) {
+                    out = js_emit_aliases[i + 1];
+                    break;
+                }
+            }
+            /* isAttributeNameSafe, for an ASCII name: a NUL in it is refused */
+            if (out != buf)
+                n = strlen(out);
+            kind = n > 0 ? JS_EMIT_DEFAULT : JS_EMIT_SKIP;
+            for (i = 0; i < n; i++) {
+                c = (uint8_t)out[i];
+                if (c >= 0x80) {
+                    kind = JS_EMIT_DECLINE;
+                    break;
+                }
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      c == ':' || c == '_' ||
+                      (i > 0 && ((c >= '0' && c <= '9') || c == '-' || c == '.')))) {
+                    kind = JS_EMIT_SKIP;
+                    break;
+                }
+            }
+            if (kind == JS_EMIT_DEFAULT && n >= 5) {
+                for (i = 0; i < 5; i++)
+                    pre[i] = (out[i] >= 'A' && out[i] <= 'Z') ? out[i] + 32 : out[i];
+                pre[5] = '\0';
+                if (!strcmp(pre, "data-") || !strcmp(pre, "aria-"))
+                    kind = JS_EMIT_DEFAULT_DA;
+            }
+        }
+    }
+    switch (kind) {
+    case JS_EMIT_STRING: case JS_EMIT_URL_SRC: case JS_EMIT_URL: case JS_EMIT_PLAIN:
+    case JS_EMIT_DEFAULT: case JS_EMIT_DEFAULT_DA: case JS_EMIT_BOOL:
+        /* the length of the chunk: an arena block does not shrink */
+        string_buffer_init(ctx, &b, 1 + strlen(out) + (kind == JS_EMIT_BOOL ? 3 : 2));
+        string_buffer_putc8(&b, ' ');
+        string_buffer_puts8(&b, out);
+        string_buffer_puts8(&b, kind == JS_EMIT_BOOL ? "=\"\"" : "=\"");
+        chunk = string_buffer_end(&b);
+        if (JS_IsException(chunk))
+            return -1;
+        break;
+    default:
+        break;
+    }
+    js_emit_free_entry(ctx, e);
+    e->atom = JS_DupAtom(ctx, atom);
+    e->kind = kind;
+    e->unitless = 0;
+    e->chunk = chunk;
+    return 0;
+}
+
+/* puts kind, unitless and chunk into e for the style name atom: the name as
+   pushStyleAttribute writes it, escapeTextForBrowser(name) for --name, and
+   escapeTextForBrowser(name.replace(/([A-Z])/g, "-$1").toLowerCase()
+   .replace(/^ms-/, "-ms-")) for the others */
+static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
+{
+    const JSString *p = ctx->rt->atom_array[atom];
+    int kind, unitless = 0, c;
+    uint32_t i;
+    size_t k;
+    StringBuffer b;
+    JSValue chunk = JS_UNDEFINED;
+
+    if (p->len >= 2 && string_get(p, 0) == '-' && string_get(p, 1) == '-') {
+        kind = JS_EMIT_STYLE_CUSTOM;
+        if ((uint64_t)p->len * 6 > JS_STRING_LEN_MAX - JS_EMIT_SLACK) {
+            kind = JS_EMIT_DECLINE;
+        } else {
+            string_buffer_init(ctx, &b, p->len + 8);
+            if (js_emit_put_escaped(ctx, &b, p, 0, p->len) < 0) {
+                string_buffer_free(&b);
+                return -1;
+            }
+            chunk = js_emit_string(&b);
+        }
+    } else if (p->is_wide_char ||
+               (uint64_t)p->len * 6 > JS_STRING_LEN_MAX - JS_EMIT_SLACK) {
+        kind = JS_EMIT_DECLINE;
+    } else {
+        kind = JS_EMIT_STYLE_NAME;
+        for (i = 0; i < p->len; i++) {
+            if (p->u.str8[i] >= 0x80)
+                kind = JS_EMIT_DECLINE;
+        }
+        if (kind == JS_EMIT_STYLE_NAME) {
+            /* the hyphens and the letters of an ASCII name: only & < > " '
+               are escaped, and none of them is a letter */
+            string_buffer_init(ctx, &b, p->len + 8);
+            /* the hyphenated name starts with ms- */
+            if (p->len >= 3 && p->u.str8[0] == 'm' && p->u.str8[1] == 's' &&
+                (p->u.str8[2] == '-' || (p->u.str8[2] >= 'A' && p->u.str8[2] <= 'Z')))
+                string_buffer_putc8(&b, '-');
+            for (i = 0; i < p->len; i++) {
+                c = p->u.str8[i];
+                if (c >= 'A' && c <= 'Z') {
+                    string_buffer_putc8(&b, '-');
+                    string_buffer_putc8(&b, c + 32);
+                } else if (js_escape_extra[c]) {
+                    js_emit_put_entity(&b, c);
+                } else {
+                    string_buffer_putc8(&b, c);
+                }
+                if ((i & (JS_ESCAPE_STEP - 1)) == JS_ESCAPE_STEP - 1 &&
+                    js_poll_interrupts(ctx)) {
+                    string_buffer_free(&b);
+                    return -1;
+                }
+            }
+            chunk = js_emit_string(&b);
+            for (k = 0; k < countof(js_emit_unitless); k++) {
+                if (js_emit_str_eq(p, js_emit_unitless[k])) {
+                    unitless = 1;
+                    break;
+                }
+            }
+        }
+    }
+    if (JS_IsException(chunk))
+        return -1;
+    js_emit_free_entry(ctx, e);
+    e->atom = JS_DupAtom(ctx, atom);
+    e->kind = kind;
+    e->unitless = unitless;
+    e->chunk = chunk;
+    return 0;
+}
+
+/* makes room in t for one more name: the first table, a table twice as
+   large when t is half full, or an empty table when it cannot grow */
+static int js_emit_names_room(JSContext *ctx, JSEmitNames *t)
+{
+    JSEmitName *tab, *o;
+    uint32_t bits, n, i, h;
+    BOOL made;
+
+    made = js_emit_names_made(t);
+    if (made && t->count + 1 <= ((uint32_t)1 << t->bits) / 2)
+        return 0;
+    if (made && t->bits == JS_EMIT_NAME_BITS_MAX) {
+        js_emit_names_clear(ctx, t);
+        return 0;
+    }
+    bits = made ? t->bits + 1 : JS_EMIT_BITS_MIN;
+    n = (uint32_t)1 << bits;
+    tab = js_malloc(ctx, sizeof(*tab) * n);
+    if (!tab)
+        return -1;
+    for (i = 0; i < n; i++) {
+        tab[i].atom = JS_ATOM_NULL;
+        tab[i].chunk = JS_UNDEFINED;
+    }
+    if (made) {
+        for (i = 0; i < ((uint32_t)1 << t->bits); i++) {
+            o = &t->tab[i];
+            if (o->atom == JS_ATOM_NULL)
+                continue;
+            for (h = js_emit_hash(o->atom, bits); tab[h].atom != JS_ATOM_NULL;
+                 h = (h + 1) & (n - 1))
+                ;
+            tab[h] = *o;
+        }
+        js_free(ctx, t->tab);
+    }
+    t->tab = tab;
+    t->bits = bits;
+    return 0;
+}
+
+/* adds the entry of a name that t does not have */
+static no_inline JSEmitName *js_emit_name_add(JSContext *ctx, JSEmitNames *t,
+                                              JSAtom atom, BOOL style)
+{
+    JSEmitName *e;
+    uint32_t h, mask;
+
+    if (js_emit_names_room(ctx, t) < 0)
+        return NULL;
+    mask = ((uint32_t)1 << t->bits) - 1;
+    for (h = js_emit_hash(atom, t->bits); t->tab[h].atom != JS_ATOM_NULL;
+         h = (h + 1) & mask)
+        ;
+    e = &t->tab[h];
+    if ((style ? js_emit_style_fill(ctx, e, atom) : js_emit_attr_fill(ctx, e, atom)) < 0)
+        return NULL;
+    t->count++;
+    return e;
+}
+
+/* the entry of a name: an entry stays where it is until the table grows or
+   is emptied, so a name that a page uses is made once */
+static force_inline JSEmitName *js_emit_name_entry(JSContext *ctx, JSEmitNames *t,
+                                                   JSAtom atom, BOOL style)
+{
+    JSEmitName *e;
+    uint32_t h, mask = ((uint32_t)1 << t->bits) - 1;
+
+    for (h = js_emit_hash(atom, t->bits);; h = (h + 1) & mask) {
+        e = &t->tab[h];
+        if (likely(e->atom == atom))
+            return e;
+        if (e->atom == JS_ATOM_NULL)
+            break;
+    }
+    return js_emit_name_add(ctx, t, atom, style);
+}
+
+static force_inline JSEmitName *js_emit_attr_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+{
+    return js_emit_name_entry(ctx, &ec->attr, atom, FALSE);
+}
+
+static force_inline JSEmitName *js_emit_style_entry(JSContext *ctx, JSEmitCache *ec, JSAtom atom)
+{
+    return js_emit_name_entry(ctx, &ec->style, atom, TRUE);
+}
+
+/* puts the kinds of the keys of p into kinds, and answers whether p is an
+   ordinary object of Object.prototype that for in and hasOwnProperty read as
+   the loop here does: at most JS_EMIT_PROPS_MAX keys, no array index, and
+   every enumerable string key a plain data property */
+static BOOL js_emit_plain_keys(JSContext *ctx, JSObject *p, uint8_t *kinds)
+{
+    JSShape *sh = p->shape;
+    JSShapeProperty *prs;
+    uint32_t v;
+    int i, n = sh->prop_count;
+
+    if (p->class_id != JS_CLASS_OBJECT ||
+        sh->proto != JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]) ||
+        n > JS_EMIT_PROPS_MAX)
+        return FALSE;
+    prs = get_shape_prop(sh);
+    if (!js_own_key_kinds(ctx->rt, sh, kinds)) {
+        for (i = 0; i < n; i++)
+            kinds[i] = js_own_key_kind(ctx->rt, prs[i].atom, &v);
+    }
+    for (i = 0; i < n; i++) {
+        if (kinds[i] == JS_OWN_KIND_INDEX)
+            return FALSE;
+        if (kinds[i] == JS_OWN_KIND_STRING && (prs[i].flags & JS_PROP_ENUMERABLE) &&
+            (prs[i].flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+/* the value of a style after its name: escapeTextForBrowser(("" + v).trim())
+   for a string, or the number, with px where React adds it. 0, 1 to decline
+   or -1 for an exception */
+static int js_emit_put_style_value(JSContext *ctx, StringBuffer *b, JSValueConst v,
+                                   const JSEmitName *e)
+{
+    JSValue hold;
+    JSString *p;
+    uint32_t a, z;
+    int r = 0;
+
+    switch (JS_VALUE_GET_NORM_TAG(v)) {
+    case JS_TAG_INT:
+        js_emit_put_int(b, JS_VALUE_GET_INT(v));
+        if (e->kind == JS_EMIT_STYLE_NAME && JS_VALUE_GET_INT(v) != 0 && !e->unitless)
+            js_emit_s8(b, "px");
+        return 0;
+    case JS_TAG_FLOAT64:
+        if (JS_VALUE_GET_FLOAT64(v) == 0) {
+            js_emit_c8(b, '0');
+            return 0;
+        }
+        hold = JS_ToString(ctx, v);
+        if (JS_IsException(hold))
+            return -1;
+        js_emit_put_chunk(b, hold);
+        JS_FreeValue(ctx, hold);
+        if (e->kind == JS_EMIT_STYLE_NAME && !e->unitless)
+            js_emit_s8(b, "px");
+        return 0;
+    case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
+        p = js_emit_flat(ctx, v, &hold);
+        if (!p)
+            return -1;
+        /* trim, reading the interrupt flag in a long run of white space */
+        a = 0;
+        z = p->len;
+        while (a < z && lre_is_space(string_get(p, a))) {
+            a++;
+            if ((a & (JS_ESCAPE_STEP - 1)) == 0 && js_poll_interrupts(ctx)) {
+                r = -1;
+                goto done;
+            }
+        }
+        while (z > a && lre_is_space(string_get(p, z - 1))) {
+            z--;
+            if ((z & (JS_ESCAPE_STEP - 1)) == 0 && js_poll_interrupts(ctx)) {
+                r = -1;
+                goto done;
+            }
+        }
+        if (js_emit_fits(b, (uint64_t)(z - a) * 6))
+            r = js_emit_put_escaped(ctx, b, p, a, z);
+        else
+            r = 1;
+    done:
+        JS_FreeValue(ctx, hold);
+        return r;
+    default:
+        /* an object or a function would run its toString, a symbol throws */
+        return 1;
+    }
+}
+
+/* pushStyleAttribute: 0, 1 to decline or -1 for an exception */
+static int js_emit_put_style(JSContext *ctx, JSEmitCache *ec, StringBuffer *b,
+                             JSValueConst style)
+{
+    JSObject *p;
+    JSShapeProperty *prs;
+    uint8_t kinds[JS_EMIT_PROPS_MAX];
+    BOOL first = TRUE;
+    int i, n, r, tag;
+
+    /* a string or a function makes React throw */
+    if (JS_VALUE_GET_TAG(style) != JS_TAG_OBJECT)
+        return 1;
+    p = JS_VALUE_GET_OBJ(style);
+    if (!js_emit_plain_keys(ctx, p, kinds))
+        return 1;
+    n = p->shape->prop_count;
+    prs = get_shape_prop(p->shape);
+    for (i = 0; i < n; i++) {
+        JSValueConst v;
+        JSEmitName *e;
+
+        if (kinds[i] != JS_OWN_KIND_STRING || !(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        v = p->prop[i].u.value;
+        tag = JS_VALUE_GET_NORM_TAG(v);
+        if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED || tag == JS_TAG_BOOL)
+            continue;
+        if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
+            continue;
+        e = js_emit_style_entry(ctx, ec, prs[i].atom);
+        if (!e)
+            return -1;
+        if (e->kind == JS_EMIT_DECLINE ||
+            !js_emit_fits(b, JS_VALUE_GET_STRING(e->chunk)->len))
+            return 1;
+        if (first)
+            js_emit_s8(b, " style=\"");
+        else
+            js_emit_c8(b, ';');
+        first = FALSE;
+        js_emit_put_chunk(b, e->chunk);
+        js_emit_c8(b, ':');
+        r = js_emit_put_style_value(ctx, b, v, e);
+        if (r)
+            return r;
+    }
+    if (!first)
+        js_emit_c8(b, '"');
+    return 0;
+}
+
+/* VALID_TAG_REGEX of React: /^[a-zA-Z][a-zA-Z:_\.\-\d]*$/ */
+static BOOL js_emit_valid_tag(const JSString *p)
+{
+    uint32_t i;
+    int c;
+
+    if (p->is_wide_char || p->len == 0)
+        return FALSE;
+    for (i = 0; i < p->len; i++) {
+        c = p->u.str8[i];
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
+            continue;
+        if (i > 0 && ((c >= '0' && c <= '9') || c == ':' || c == '_' ||
+                      c == '.' || c == '-'))
+            continue;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/* Whether target.push(s) on the array p only adds s at its end: p has the
+   shape of a new array of ctx (no property but a writable length, and
+   Array.prototype of ctx as its prototype), is fast, its length is its count,
+   it can grow as js_array_push grows it (extensible, and no index was ever
+   put on Array.prototype or Object.prototype, where push would set it: a
+   setter, or a read-only index that throws), and Array.prototype.push is a
+   data property that holds the built-in. */
+static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
+{
+    JSObject *ap, *f;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+
+    if (p->shape != ctx->array_shape || p->class_id != JS_CLASS_ARRAY ||
+        !p->fast_array || !can_extend_fast_array(p) ||
+        JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT ||
+        JS_VALUE_GET_INT(p->prop[0].u.value) != p->u.array.count ||
+        p->u.array.count >= INT32_MAX)
+        return FALSE;
+    ap = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY]);
+    prs = find_own_property(&pr, ap, ec->atoms[JS_EMIT_ATOM_PUSH]);
+    if (!prs || (prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT)
+        return FALSE;
+    f = JS_VALUE_GET_OBJ(pr->u.value);
+    return f->class_id == JS_CLASS_C_FUNCTION &&
+        f->u.cfunc.cproto == JS_CFUNC_generic_magic &&
+        f->u.cfunc.c_function.generic_magic == js_array_push &&
+        f->u.cfunc.magic == 0;
+}
+
+/* startTag(target, props, type, formatContext, hasOwnProperty, decline) */
+static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv)
+{
+    JSValueConst target = argv[0], props = argv[1], typev = argv[2];
+    JSValueConst fctx = argv[3], children = JS_NULL;
+    JSEmitCache *ec = ctx->emit_cache;
+    JSObject *pt, *pp, *pf;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSString *tp;
+    StringBuffer b;
+    uint8_t kinds[JS_EMIT_PROPS_MAX];
+    JSValue str, ret;
+    uint32_t count;
+    int i, n, tag, r = 0;
+
+    /* argv has the six values: that is the length of the function */
+    if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(props) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(typev) != JS_TAG_STRING ||
+        JS_VALUE_GET_TAG(fctx) != JS_TAG_OBJECT)
+        goto decline;
+    pt = JS_VALUE_GET_OBJ(target);
+    tp = JS_VALUE_GET_STRING(typev);
+    if (!js_emit_target_plain(ctx, ec, pt) || !js_emit_valid_tag(tp) ||
+        tp->len > JS_STRING_LEN_MAX - JS_EMIT_SLACK)
+        goto decline;
+    pf = JS_VALUE_GET_OBJ(fctx);
+    prs = find_own_property(&pr, pf, ec->atoms[JS_EMIT_ATOM_VIEW_TRANSITION]);
+    if (!prs || (prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_NULL)
+        goto decline;
+    pp = JS_VALUE_GET_OBJ(props);
+    if (!js_emit_plain_keys(ctx, pp, kinds) ||
+        !js_copy_props_call_plain(ctx, argv[4], ec->atoms[JS_EMIT_ATOM_CALL]))
+        goto decline;
+    n = pp->shape->prop_count;
+    prs = get_shape_prop(pp->shape);
+
+    js_emit_buf_take(ctx, ec, &b);
+    js_emit_c8(&b, '<');
+    js_emit_wstr(&b, tp, 0, tp->len);
+    for (i = 0; i < n && r == 0 && !b.error_status; i++) {
+        JSValueConst v;
+        JSEmitName *e;
+
+        if (kinds[i] != JS_OWN_KIND_STRING || !(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        v = pp->prop[i].u.value;
+        tag = JS_VALUE_GET_NORM_TAG(v);
+        if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[i].atom);
+        if (!e) {
+            r = -1;
+            break;
+        }
+        switch (e->kind) {
+        case JS_EMIT_SKIP:
+            break;
+        case JS_EMIT_CHILDREN:
+            children = v;
+            break;
+        case JS_EMIT_STYLE:
+            r = js_emit_put_style(ctx, ec, &b, v);
+            break;
+        case JS_EMIT_STRING:
+        case JS_EMIT_DEFAULT:
+            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+                break;
+            goto text;
+        case JS_EMIT_PLAIN:
+        case JS_EMIT_DEFAULT_DA:
+            if (js_emit_fn_or_sym(ctx, v))
+                break;
+        text:
+            js_emit_put_chunk(&b, e->chunk);
+            r = js_emit_put_text(ctx, &b, v);
+            js_emit_c8(&b, '"');
+            break;
+        case JS_EMIT_URL_SRC:
+            if (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(v)->len == 0)
+                break;
+            /* fall through */
+        case JS_EMIT_URL:
+            if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
+                break;
+            /* a javascript: URL React writes as one of its own, and a rope is
+               not looked at */
+            if (tag == JS_TAG_STRING_ROPE ||
+                (tag == JS_TAG_STRING &&
+                 js_emit_is_javascript_url(JS_VALUE_GET_STRING(v)))) {
+                r = 1;
+                break;
+            }
+            goto text;
+        case JS_EMIT_BOOL:
+            if (js_emit_fn_or_sym(ctx, v) || !JS_ToBool(ctx, v))
+                break;
+            js_emit_put_chunk(&b, e->chunk);
+            break;
+        default:
+            r = 1;
+            break;
+        }
+    }
+    if (r == 0) {
+        js_emit_c8(&b, '>');
+        tag = JS_VALUE_GET_TAG(children);
+        if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
+            r = js_emit_put_text(ctx, &b, children);
+    }
+    /* a write that failed for want of memory left b empty with the error
+       thrown: that is the result, not a decline */
+    if (r < 0 || b.error_status) {
+        js_emit_buf_end(ctx, ec, &b, FALSE);
+        return JS_EXCEPTION;
+    }
+    if (r > 0) {
+        js_emit_buf_end(ctx, ec, &b, FALSE);
+        goto decline;
+    }
+    str = js_emit_buf_end(ctx, ec, &b, TRUE);
+    if (JS_IsException(str))
+        return str;
+    /* target.push(str), on the array js_emit_target_plain saw: nothing in
+       between ran a script */
+    count = pt->u.array.count;
+    if (count >= pt->u.array.u1.size && expand_fast_array(ctx, pt, count + 1)) {
+        JS_FreeValue(ctx, str);
+        return JS_EXCEPTION;
+    }
+    pt->u.array.u.values[count] = str;
+    pt->u.array.count = count + 1;
+    pt->prop[0].u.value = JS_NewInt32(ctx, count + 1);
+    tag = JS_VALUE_GET_TAG(children);
+    if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
+        ret = JS_NULL;
+    else
+        ret = JS_DupValue(ctx, children);
+    return ret;
+ decline:
+    return JS_DupValue(ctx, argv[5]);
+}
+
+/* "</" + tag + ">" made for js_end_tag, kept in e for a string tag (e is
+   NULL for another value) */
+/* "</" + tag + ">" for a string tag, or for any value when convert is set */
+static JSValue js_end_tag_make(JSContext *ctx, JSValueConst tag, BOOL convert)
+{
+    JSValue str = JS_UNDEFINED;
+    JSString *p;
+    StringBuffer b;
+
+    if (!convert) {
+        p = JS_VALUE_GET_STRING(tag);
+    } else {
+        /* "</" + tag: ToPrimitive with no hint, then ToString */
+        str = JS_ToStringFree(ctx, JS_ToPrimitiveFree(ctx, JS_DupValue(ctx, tag), HINT_NONE));
+        if (JS_IsException(str))
+            return str;
+        p = JS_VALUE_GET_STRING(str);
+    }
+    if (p->len > JS_STRING_LEN_MAX - 3) {
+        /* what the concatenation throws */
+        JS_FreeValue(ctx, str);
+        return JS_ThrowInternalError(ctx, "string too long");
+    }
+    /* a wide tag makes a wide end tag: b has its length from the start */
+    string_buffer_init2(ctx, &b, p->len + 3, p->is_wide_char);
+    string_buffer_puts8(&b, "</");
+    js_emit_wstr(&b, p, 0, p->len);
+    string_buffer_putc8(&b, '>');
+    JS_FreeValue(ctx, str);
+    return string_buffer_end(&b);
+}
+
+/* makes room for one more end tag, as js_emit_names_room does for a name */
+static int js_emit_end_room(JSContext *ctx, JSEmitCache *ec)
+{
+    JSEmitEnd *tab, *o;
+    uint32_t bits, n, i, h;
+    BOOL made;
+
+    made = ec->end != js_emit_no_ends;
+    if (made && ec->end_count + 1 <= ((uint32_t)1 << ec->end_bits) / 2)
+        return 0;
+    if (made && ec->end_bits == JS_EMIT_END_BITS_MAX) {
+        js_emit_end_clear(ctx, ec);
+        return 0;
+    }
+    bits = made ? ec->end_bits + 1 : JS_EMIT_BITS_MIN;
+    n = (uint32_t)1 << bits;
+    tab = js_malloc(ctx, sizeof(*tab) * n);
+    if (!tab)
+        return -1;
+    for (i = 0; i < n; i++)
+        tab[i].tag = tab[i].chunk = JS_UNDEFINED;
+    if (made) {
+        for (i = 0; i < ((uint32_t)1 << ec->end_bits); i++) {
+            o = &ec->end[i];
+            if (JS_VALUE_GET_TAG(o->tag) != JS_TAG_STRING)
+                continue;
+            for (h = js_emit_end_hash(JS_VALUE_GET_STRING(o->tag), bits);
+                 JS_VALUE_GET_TAG(tab[h].tag) == JS_TAG_STRING; h = (h + 1) & (n - 1))
+                ;
+            tab[h] = *o;
+        }
+        js_free(ctx, ec->end);
+    }
+    ec->end = tab;
+    ec->end_bits = bits;
+    return 0;
+}
+
+/* makes and keeps the end tag of a string that ec does not have */
+static no_inline JSValue js_end_tag_add(JSContext *ctx, JSEmitCache *ec, JSValueConst tag)
+{
+    JSValue chunk;
+    JSEmitEnd *e;
+    uint32_t h, mask;
+
+    chunk = js_end_tag_make(ctx, tag, FALSE);
+    if (JS_IsException(chunk))
+        return chunk;
+    if (js_emit_end_room(ctx, ec) < 0) {
+        JS_FreeValue(ctx, chunk);
+        return JS_EXCEPTION;
+    }
+    mask = ((uint32_t)1 << ec->end_bits) - 1;
+    for (h = js_emit_end_hash(JS_VALUE_GET_STRING(tag), ec->end_bits);
+         JS_VALUE_GET_TAG(ec->end[h].tag) == JS_TAG_STRING; h = (h + 1) & mask)
+        ;
+    e = &ec->end[h];
+    e->tag = JS_DupValue(ctx, tag);
+    e->chunk = JS_DupValue(ctx, chunk);
+    ec->end_count++;
+    return chunk;
+}
+
+/* endTag(tag): "</" + tag + ">", kept for a string by the address of the
+   string (the tags of JSX are atoms, the same string at each call) */
+static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    JSEmitCache *ec = ctx->emit_cache;
+    JSEmitEnd *e;
+    JSString *p;
+    uint32_t h, mask;
+
+    if (JS_VALUE_GET_TAG(argv[0]) != JS_TAG_STRING)
+        return js_end_tag_make(ctx, argv[0], TRUE);
+    p = JS_VALUE_GET_STRING(argv[0]);
+    mask = ((uint32_t)1 << ec->end_bits) - 1;
+    for (h = js_emit_end_hash(p, ec->end_bits);; h = (h + 1) & mask) {
+        e = &ec->end[h];
+        if (JS_VALUE_GET_TAG(e->tag) != JS_TAG_STRING)
+            break;
+        if (likely(JS_VALUE_GET_STRING(e->tag) == p))
+            return JS_DupValue(ctx, e->chunk);
+    }
+    return js_end_tag_add(ctx, ec, argv[0]);
+}
+
+/* makes the property atom of the built-in object obj when the engine makes
+   it at its first use (JS_PROP_AUTOINIT), with no script run. What a script
+   put there before, an accessor or another value, is left as it is, and the
+   checks of the calls, which look for the built-in by its C function, then
+   decline. */
+static int js_emit_make_builtin(JSContext *ctx, JSValueConst obj, JSAtom atom)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    JSShapeProperty *prs;
+    JSProperty *pr;
+
+    prs = find_own_property(&pr, p, atom);
+    if (prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT)
+        return JS_AutoInitProperty(ctx, p, atom, pr, prs);
+    return 0;
+}
+
+/* makes ctx->emit_cache with its atoms, once, and the methods it checks:
+   Function.prototype.call and Array.prototype.push, which the engine makes
+   at their first use, are made now so that the checks find them in place.
+   It runs no script (registering has no timeout, and a getter could register
+   again while the cache is made), and puts the cache in ctx only once it is
+   whole. */
+static int js_emit_init(JSContext *ctx)
+{
+    static const char *const names[JS_EMIT_ATOM_COUNT] = {
+        "viewTransition", "call", "push",
+    };
+    JSEmitCache *ec;
+    int i;
+
+    if (ctx->emit_cache)
+        return 0;
+    /* the tables are made at their first entry */
+    ec = js_mallocz(ctx, sizeof(*ec));
+    if (!ec)
+        return -1;
+    ec->attr.tab = ec->style.tab = (JSEmitName *)js_emit_no_names;
+    ec->attr.bits = ec->style.bits = 1;
+    ec->end = (JSEmitEnd *)js_emit_no_ends;
+    ec->end_bits = 1;
+    for (i = 0; i < JS_EMIT_ATOM_COUNT; i++) {
+        ec->atoms[i] = JS_NewAtom(ctx, names[i]);
+        if (ec->atoms[i] == JS_ATOM_NULL)
+            goto fail;
+    }
+    if (js_emit_make_builtin(ctx, ctx->function_proto, ec->atoms[JS_EMIT_ATOM_CALL]) < 0 ||
+        js_emit_make_builtin(ctx, ctx->class_proto[JS_CLASS_ARRAY], ec->atoms[JS_EMIT_ATOM_PUSH]) < 0)
+        goto fail;
+    ctx->emit_cache = ec;
+    return 0;
+ fail:
+    for (i = 0; i < JS_EMIT_ATOM_COUNT; i++)
+        JS_FreeAtom(ctx, ec->atoms[i]);
+    js_free(ctx, ec);
+    return -1;
+}
+
+/* a function of ctx shaped as a built-in: no prototype property, not a
+   constructor, with its length and name */
+static JSValue js_emit_new_function(JSContext *ctx, JSCFunction *func, int length,
+                                    const char *name, size_t name_len)
+{
+    JSValue func_obj;
+    JSObject *p;
+    JSAtom name_atom;
+
+    if (js_emit_init(ctx) < 0)
+        return JS_EXCEPTION;
+    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto, JS_CLASS_C_FUNCTION);
+    if (JS_IsException(func_obj))
+        return func_obj;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->u.cfunc.realm = JS_DupContext(ctx);
+    p->u.cfunc.c_function.generic = func;
+    p->u.cfunc.length = length;
+    p->u.cfunc.cproto = JS_CFUNC_generic;
+    p->u.cfunc.magic = 0;
+    p->is_constructor = FALSE;
+    name_atom = JS_NewAtomLen(ctx, name, name_len);
+    if (name_atom == JS_ATOM_NULL) {
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    if (js_function_set_properties(ctx, func_obj, name_atom, length) < 0) {
+        JS_FreeAtom(ctx, name_atom);
+        JS_FreeValue(ctx, func_obj);
+        return JS_EXCEPTION;
+    }
+    JS_FreeAtom(ctx, name_atom);
+    return func_obj;
+}
+
+JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len)
+{
+    return js_emit_new_function(ctx, js_start_tag, 6, name, name_len);
+}
+
+JSValue JS_NewEndTagFunction(JSContext *ctx, const char *name, size_t name_len)
+{
+    return js_emit_new_function(ctx, js_end_tag, 1, name, name_len);
 }
 
 

@@ -55,6 +55,8 @@ Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
 		"RegisterFunc error read":                    true,
 		"RegisterCopyProps error read":               true,
 		"RegisterEscapeText error read":              true,
+		"RegisterStartTag error read":                true,
+		"RegisterEndTag error read":                  true,
 	}
 	// ErrorFromValue has no error result.
 	noResult := map[string]bool{
@@ -176,6 +178,12 @@ Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
 		}},
 		{"RegisterEscapeText error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
 			return m.RegisterEscapeText("fixed")
+		}},
+		{"RegisterStartTag error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			return m.RegisterStartTag("fixed")
+		}},
+		{"RegisterEndTag error read", `Object.defineProperty(TypeError.prototype, "name", { get() { spin(); return "TypeError" }, configurable: true })`, func(t *testing.T, m *VM) error {
+			return m.RegisterEndTag("fixed")
 		}},
 	}
 

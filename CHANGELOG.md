@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Added
+
+- `VM.RegisterStartTag(name)` and `VM.RegisterEndTag(name)` define functions on the global object that write the start tag of an element as `pushStartGenericElement` does in React DOM's server renderer (react-dom 19.3), with its attributes, style and the escaped text of a string children, and give its end tag as `endChunkForTag` does, written in C inside the engine. The start tag function takes the arguments of `pushStartGenericElement`, React's `hasOwnProperty` and a `decline` object of the caller. It pushes the whole tag onto the target as one string and returns what React's function returns, and where React's functions could write anything else (a getter, a replaced built-in, `dangerouslySetInnerHTML`, a rare attribute, a value with its own `toString`, a `javascript:` URL, and the other cases its doc lists) it returns `decline`, having changed nothing, and the script runs React's function. The engine puts nothing on the global object by itself: the functions are in a VM only when its host registers them. On the 16,310 start tags of one render of tifa's example pages they decline none, write the same text, and run about a fifth of the instructions of React's functions for a start and an end tag. ([Performance](docs/performance.md#react-doms-start-and-end-tags-in-c), [Go API](docs/changes/go-api.md#registerstarttag-and-registerendtag))
+
 ### Performance
 
 - On linux/arm64 and darwin/arm64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, as it already is on amd64. A render runs 0.56% to 0.99% fewer instructions on the pages of tifa's example apps (linux/arm64), with the same HTML on the 16 pages once their time stamps are masked. On an M4 no slowdown was seen (the sum of the pages took 0.987 of main's time, the median of 8 rounds, with 8% to 16% of noise between rounds), and the generated assembly of arm64 is 12% larger ([Performance](docs/performance.md#on-arm64)).

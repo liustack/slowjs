@@ -680,6 +680,36 @@ func (m *VM) jsNewCopyPropsFunction(name string) (r jsValue, err error) {
 	return r, nil
 }
 
+// jsNewStartTagFunction is JS_NewStartTagFunction of name.
+func (m *VM) jsNewStartTagFunction(name string) (r jsValue, err error) {
+	if m.entered == 0 {
+		m.outer(func() { r, err = m.jsNewStartTagFunction(name) })
+		return r, err
+	}
+	p, sp, heap := m.tmpString(name, false)
+	if p == 0 {
+		return jsValue{}, m.tmpError()
+	}
+	r = val(cengine.JS_NewStartTagFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.tmpFree(p, heap)
+	return r, nil
+}
+
+// jsNewEndTagFunction is JS_NewEndTagFunction of name.
+func (m *VM) jsNewEndTagFunction(name string) (r jsValue, err error) {
+	if m.entered == 0 {
+		m.outer(func() { r, err = m.jsNewEndTagFunction(name) })
+		return r, err
+	}
+	p, sp, heap := m.tmpString(name, false)
+	if p == 0 {
+		return jsValue{}, m.tmpError()
+	}
+	r = val(cengine.JS_NewEndTagFunction(sp, m.ctx, p, uintptr(len(name))))
+	m.tmpFree(p, heap)
+	return r, nil
+}
+
 func (m *VM) jsFreeAtom(a uint32) {
 	if m.entered == 0 {
 		if !m.h.Broken() {
