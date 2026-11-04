@@ -260,7 +260,7 @@ for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
 done
 ```
 
-A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for freebsd/amd64, windows/arm64, linux/386 and linux/riscv64). A build with a Go newer than the one the engine was checked with fails with the error of `internal/goversion` and no other, and builds with `-tags slowjs_anygo` (`TestEngineNewerGo`, which gives the `go1.N` tag by hand, and `TestNewerGoStops` in the package).
+A build for any other target fails with the error of `internal/unsupported` and no other (`TestEngineUnsupportedTarget` checks it for freebsd/amd64, windows/arm64, linux/386 and linux/riscv64). A build with a Go newer than the one the engine was checked with fails with the error of `internal/goversion` and no other, and builds with `-tags slowjs_anygo` (`TestEngineNewerGo`, which gives the `go1.N` tag by hand, and `TestNewerGoStops` in the package). A build with `-asmflags=-spectre=ret` on amd64 or with `-dynlink` (what `-buildmode=plugin`, `-buildmode=shared` and `-linkshared` pass) fails with the error of the tripwire in `internal/cengine` and no other, and `-shared` (`-buildmode=pie`) and `-spectre=index` still build (`TestEngineAsmOptions`, which limits the option to the engine package, and `TestEngineBuildmodeShared`, which builds with `-buildmode=shared` for linux/amd64 and is skipped by `-short`).
 
 ## go.work
 
