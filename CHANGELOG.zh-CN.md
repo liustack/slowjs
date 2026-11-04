@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- 异常离开 `for...of` 循环或数组解构时会关闭迭代器，如果迭代器的 `return` 方法这时内存不够，`catch` 不再能接住这个内存不足的错误。调用会带着这个错误结束，和其他地方内存不足一样（[uncatchable.md](docs/changes/uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes)）。
+
 ## [v0.29.10] - 2026-11-04
 
 ### 新增

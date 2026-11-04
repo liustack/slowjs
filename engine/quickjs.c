@@ -25370,6 +25370,10 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
                     JS_FreeValue(ctx, sp[-1]); /* drop the next method */
                     sp--;
                     JS_IteratorClose(ctx, sp[-1], TRUE);
+                    /* closing may leave an uncatchable error in place of the
+                       exception: no catch further down may take it */
+                    if (unlikely(rt->current_exception_is_uncatchable))
+                        break;
                 } else {
                     *sp++ = rt->current_exception;
                     rt->current_exception = JS_UNINITIALIZED;
