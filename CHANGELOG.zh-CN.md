@@ -4,9 +4,11 @@
 
 ## [Unreleased]
 
+## [v0.29.10] - 2026-11-04
+
 ### 新增
 
-- `VM.RegisterStartTag(name)` 和 `VM.RegisterEndTag(name)` 在全局对象上定义两个函数，一个像 React DOM 服务端渲染器（react-dom 19.3）的 `pushStartGenericElement` 那样写出元素的开标签，连同属性、样式和字符串 children 转义后的文本，一个像 `endChunkForTag` 那样给出闭标签，在引擎里用 C 写成。开标签函数接 `pushStartGenericElement` 的参数、React 的 `hasOwnProperty` 和调用方的一个 `decline` 对象。它把整个标签作为一个字符串推进 target，返回 React 那个函数返回的值。React 的函数可能写出别的东西的地方（getter、被换掉的内建函数、`dangerouslySetInnerHTML`、少见的属性、自带 `toString` 的值、`javascript:` 链接，以及文档里列的其他情况），它返回 `decline`，什么都不改，脚本再跑 React 的函数。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这两个函数。在 tifa 示例页面一次渲染的 16,310 个开标签上，它们一个都没退回，写出的文本相同，一对开闭标签跑的指令约是 React 那几个函数的五分之一。（[性能](docs/performance.md#react-doms-start-and-end-tags-in-c)，[Go API](docs/changes/go-api.md#registerstarttag-and-registerendtag)）
+- `VM.RegisterStartTag(name)` 和 `VM.RegisterEndTag(name)` 在全局对象上定义两个函数，一个像 React DOM 服务端渲染器（react-dom 19.3）的 `pushStartGenericElement` 那样写出元素的开标签，连同属性、样式和字符串 children 转义后的文本，一个像 `endChunkForTag` 那样给出闭标签，在引擎里用 C 写成。开标签函数接 `pushStartGenericElement` 的参数、React 的 `hasOwnProperty` 和调用方的一个 `decline` 对象。它把整个标签作为一个字符串推进 target，返回 React 那个函数返回的值。React 的函数可能写出别的东西的地方（getter、被换掉的内建函数、`dangerouslySetInnerHTML`、少见的属性、自带 `toString` 的值、`javascript:` 链接，以及文档里列的其他情况），它返回 `decline`，什么都不改，脚本再跑 React 的函数。引擎自己不往全局对象上放任何东西：宿主注册了，VM 里才有这两个函数。在 tifa 示例页面一次渲染的 16,310 个开标签上，它们一个都没退回，写出的文本相同，一对开闭标签跑的指令约是 React 那几个函数的五分之一。tifa 的 React DOM 调用它们之后，商店工作台页面每次渲染的耗时少 7.3%，商店前台页面少 7.0%，MUI 测试应用的页面少 3.8%，bench 页面少 33%，tifa 池里每个 VM 多占约 26 KB 内存。（[性能](docs/performance.md#react-doms-start-and-end-tags-in-c)，[Go API](docs/changes/go-api.md#registerstarttag-and-registerendtag)）
 
 ### 性能
 
