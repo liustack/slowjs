@@ -1,15 +1,20 @@
 # 更新记录
 
-记录 `github.com/liustack/quickjs`（v0.27.3 及之前和 v0.30.0 起都叫这个名字，v0.28.0 到 v0.29.10 叫 `github.com/liustack/slowjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
+记录 `github.com/liustack/quickjs`（v0.27.3 及之前和 v0.30.0 起都叫这个名字，v0.28.0 到 v0.29.11 叫 `github.com/liustack/slowjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
 
 ## [Unreleased]
 
 ### 变更
 
-- **不兼容：** 模块改回 `github.com/liustack/quickjs`（v0.27.3 及之前用的就是这个名字），根包名改回 `quickjs`（v0.28.0 到 v0.29.10 是 `github.com/liustack/slowjs`，包名 `slowjs`）。API 不变。程序要改 import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），把代码里的 `slowjs.` 改成 `quickjs.`，原来加 `slowjs_intl_` 构建标签的，改加 `-tags quickjs_intl_nonames` 或 `quickjs_intl_nocjdict`。脚本用的环境变量改以 `QUICKJS_` 开头（`QUICKJS_LLVM`、`QUICKJS_REMOTE` 等），`intl` 和 `temporal` 标记 VM 用的 `Symbol.for` 键换成新路径（`Symbol.for('github.com/liustack/quickjs/intl')`），根包的错误信息改以 `quickjs:` 开头。下一个版本 v0.30.0 是新路径下的第一个版本，v0.28.0 到 v0.29.10 留在 `github.com/liustack/slowjs`（[upstream.zh-CN.md](docs/upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)）。
+- **不兼容：** 模块改回 `github.com/liustack/quickjs`（v0.27.3 及之前用的就是这个名字），根包名改回 `quickjs`（v0.28.0 到 v0.29.11 是 `github.com/liustack/slowjs`，包名 `slowjs`）。API 不变。程序要改 import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），把代码里的 `slowjs.` 改成 `quickjs.`，原来加 `slowjs_intl_` 构建标签的，改加 `-tags quickjs_intl_nonames` 或 `quickjs_intl_nocjdict`，原来加 `slowjs_anygo` 的改加 `quickjs_anygo`。脚本用的环境变量改以 `QUICKJS_` 开头（`QUICKJS_LLVM`、`QUICKJS_REMOTE` 等），`intl` 和 `temporal` 标记 VM 用的 `Symbol.for` 键换成新路径（`Symbol.for('github.com/liustack/quickjs/intl')`），根包的错误信息改以 `quickjs:` 开头。下一个版本 v0.30.0 是新路径下的第一个版本，v0.28.0 到 v0.29.11 留在 `github.com/liustack/slowjs`（[upstream.zh-CN.md](docs/upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)）。
 
+## [v0.29.11] - 2026-11-05
+
+### 变更
+
+- 这是 `github.com/liustack/slowjs` 这个路径下的最后一个版本，`go.mod` 把模块标成了已弃用。从 v0.30.0 起模块重新叫 `github.com/liustack/quickjs`（v0.27.3 及之前就叫这个名字），API 不变：改导入路径，把包名 `slowjs` 改成 `quickjs`。
 - 模块现在用 Go 1.26.6 或更新就能构建，以前要 Go 1.27.0。引擎已经照 Go 1.26 核对过。1.26.6 之前的 1.26 版本不在范围内：1.26.0 和 1.26.1 的编译器编不过模块里的一个测试，1.26.6 之前的运行时在引擎出内存错误后可能留下指向旧栈的帧指针（[upgrading.md](docs/upgrading.md#moving-to-a-newer-go)）。
-- 用比引擎核对过的版本更新的 Go（目前是 Go 1.28 及以后）构建时，会直接报一个错，错误里写着核对过的版本（`quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo`）。引擎的 Go 汇编依赖 Go 的一些实现细节，Go 1 的兼容承诺不包括这些，其中哪一项变了，要到程序运行时才会暴露。Go 1.26.6 及以后的版本和所有 Go 1.27 版本都能构建。新版 Go 发布后，liustack/quickjs 用它核对一遍，在补丁版本里放开。加 `-tags quickjs_anygo` 可以用任何版本的 Go 构建（[Go API](docs/changes/go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build)）。
+- 用比引擎核对过的版本更新的 Go（目前是 Go 1.28 及以后）构建时，会直接报一个错，错误里写着核对过的版本（`slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo`）。引擎的 Go 汇编依赖 Go 的一些实现细节，Go 1 的兼容承诺不包括这些，其中哪一项变了，要到程序运行时才会暴露。Go 1.26.6 及以后的版本和所有 Go 1.27 版本都能构建。新版 Go 发布后，slowjs 用它核对一遍，在补丁版本里放开。加 `-tags slowjs_anygo` 可以用任何版本的 Go 构建（[Go API](docs/changes/go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build)）。
 - 生成的引擎里，凡是调用了别的函数的函数，开头现在都有 Go 的栈检查。以前生成器另外给大约 450 个函数省掉了栈检查，它们安全的前提是引擎出内存错误时，下面还剩 64 字节空间。这个数是从 Go 1.27.2 的运行时源码里读来的，Go 并不承诺。现在内存错误能用的空间和任何 Go 程序里的空指针一样。tifa 示例应用的页面渲染最多慢 0.6%（指令多 0.27% 到 0.36%），HTML 不变（[c-engine.md](docs/changes/c-engine.md#functions-without-a-stack-check)）。
 
 - 用会让汇编器改变引擎指令编码长度的构建选项构建时，现在会直接报错，以前能构建成功，却在第一次 `NewVM` 时崩溃：amd64 上的 `-asmflags=-spectre=ret` 和 `-spectre=all`，以及 `-dynlink`（`-buildmode=plugin`、`-buildmode=shared` 和 `-linkshared` 会带上它）。错误指向 `internal/cengine/goasm_tripwire.<arch>.s` 里的一行，那一行的注释写明了原因（[Go API](docs/changes/go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build)）。`-buildmode=pie` 和其他选项照旧能构建。
@@ -537,7 +542,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.29.10...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.29.11...main
+[v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10
 [v0.29.9]: https://github.com/liustack/slowjs/compare/v0.29.8...v0.29.9
 [v0.29.8]: https://github.com/liustack/slowjs/compare/v0.29.7...v0.29.8

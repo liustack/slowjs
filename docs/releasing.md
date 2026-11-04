@@ -14,7 +14,7 @@ read_when:
 
 - Releases are patch versions: v0.26.0, v0.26.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the functions it removed from `lib`. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
 - `github.com/liustack/quickjs` has no GitHub releases. A release is a tag, and users get it with `go get github.com/liustack/quickjs@<version>`.
-- v0.28.0 renamed the module to `github.com/liustack/slowjs`, and v0.30.0 renames it back to `github.com/liustack/quickjs`. The `go.mod` of every tag from v0.28.0 to v0.29.10 names `github.com/liustack/slowjs`, so those versions stay available only at that path, and the Go module proxy keeps serving them there. The tags up to v0.27.x and from v0.30.0 on name `github.com/liustack/quickjs`.
+- v0.28.0 renamed the module to `github.com/liustack/slowjs`, and v0.30.0 renames it back to `github.com/liustack/quickjs`. The `go.mod` of every tag from v0.28.0 to v0.29.11 names `github.com/liustack/slowjs`, so those versions stay available only at that path, and the Go module proxy keeps serving them there. The `go.mod` of v0.29.11, the last of them, marks the module deprecated and names the new path. The tags up to v0.27.x and from v0.30.0 on name `github.com/liustack/quickjs`.
 
 ## Before the release
 

@@ -10,7 +10,7 @@ read_when:
 
 # Architecture
 
-`github.com/liustack/quickjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/slowjs` from v0.28.0 to v0.29.10. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
+`github.com/liustack/quickjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/slowjs` from v0.28.0 to v0.29.11. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
 
 There is no cgo and no shared library: the module cross-compiles as ordinary Go, for the targets the engine runs on. `grep -rn 'import "C"'` finds nothing. Do not bring cgo in.
 

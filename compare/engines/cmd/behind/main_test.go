@@ -56,7 +56,7 @@ func TestBehind(t *testing.T) {
 	}
 }
 
-// The module's name from v0.28.0 to v0.29.10 names the row of the results
+// The module's name from v0.28.0 to v0.29.11 names the row of the results
 // files of 2026-10-24 to 2026-10-29.
 func TestBehindOldName(t *testing.T) {
 	old := strings.NewReplacer(`"engine": "liustack-quickjs"`, `"engine": "slowjs"`, `"liustack-quickjs":`, `"slowjs":`).Replace(fixture)

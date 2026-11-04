@@ -2,7 +2,7 @@
 
 ## Goal
 
-`github.com/liustack/quickjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. From v0.28.0 to v0.29.10 it was named `github.com/liustack/slowjs`, and those versions stay at that path. The Go API at the root started from `modernc.org/quickjs`. The engine is QuickJS in C (`engine/`), compiled by LLVM to Go assembly that is checked in, so building needs no C compiler. Until v0.28 the engine was QuickJS translated to Go by ccgo, and that engine is gone. liustack/quickjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine.
+`github.com/liustack/quickjs` is a pure Go JavaScript engine from QuickJS, built and kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages to HTML inside the Go process. From v0.28.0 to v0.29.11 it was named `github.com/liustack/slowjs`, and those versions stay at that path. The Go API at the root started from `modernc.org/quickjs`. The engine is QuickJS in C (`engine/`), compiled by LLVM to Go assembly that is checked in, so building needs no C compiler. Until v0.28 the engine was QuickJS translated to Go by ccgo, and that engine is gone. liustack/quickjs makes renders faster, makes limits hold (a timeout or running out of memory ends the call whatever the script does), and makes output the same on every machine.
 
 ## Hard constraints
 

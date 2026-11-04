@@ -39,7 +39,7 @@ liustack/quickjs 对这份 C 的改动逐项列在 [changes](changes/README.md)�
 
 ## 从 github.com/liustack/slowjs 换过来
 
-v0.28.0 到 v0.29.10 是以 `github.com/liustack/slowjs` 发布的，从 v0.30.0 起模块又叫 `github.com/liustack/quickjs`，API 不变。用过 `github.com/liustack/slowjs` 的程序只需要改名字：import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），代码里的包名（`slowjs.NewVM` 改成 `quickjs.NewVM`），以及构建标签（`slowjs_intl_nonames` 和 `slowjs_intl_nocjdict` 改成 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict`）。宿主如果靠 `intl` 或 `temporal` 标记 VM 的那个 `Symbol.for` 键来认 VM，键里的路径也换成新的。根包的错误信息改以 `quickjs:` 开头。
+v0.28.0 到 v0.29.11 是以 `github.com/liustack/slowjs` 发布的，从 v0.30.0 起模块又叫 `github.com/liustack/quickjs`，API 不变。用过 `github.com/liustack/slowjs` 的程序只需要改名字：import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），代码里的包名（`slowjs.NewVM` 改成 `quickjs.NewVM`），以及构建标签（`slowjs_intl_nonames` 和 `slowjs_intl_nocjdict` 改成 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict`，v0.29.11 加的 `slowjs_anygo` 改成 `quickjs_anygo`）。宿主如果靠 `intl` 或 `temporal` 标记 VM 的那个 `Symbol.for` 键来认 VM，键里的路径也换成新的。根包的错误信息改以 `quickjs:` 开头。
 
 ## 致谢
 

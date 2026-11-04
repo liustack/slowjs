@@ -47,7 +47,7 @@ The [changelog](../CHANGELOG.md) has every change of each release.
 
 ## Moving from github.com/liustack/slowjs
 
-v0.28.0 to v0.29.10 were published as `github.com/liustack/slowjs`, and from v0.30.0 the module is `github.com/liustack/quickjs` again, with the same API. A program that used `github.com/liustack/slowjs` changes only names: the import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), the package name in the code (`slowjs.NewVM` becomes `quickjs.NewVM`), and the build tags (`slowjs_intl_nonames` and `slowjs_intl_nocjdict` become `quickjs_intl_nonames` and `quickjs_intl_nocjdict`). A host that looks for the `Symbol.for` key with which `intl` or `temporal` marks a VM uses the new path in it, and the errors of the root package start with `quickjs:`.
+v0.28.0 to v0.29.11 were published as `github.com/liustack/slowjs`, and from v0.30.0 the module is `github.com/liustack/quickjs` again, with the same API. A program that used `github.com/liustack/slowjs` changes only names: the import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), the package name in the code (`slowjs.NewVM` becomes `quickjs.NewVM`), and the build tags (`slowjs_intl_nonames` and `slowjs_intl_nocjdict` become `quickjs_intl_nonames` and `quickjs_intl_nocjdict`, and `slowjs_anygo`, which v0.29.11 added, becomes `quickjs_anygo`). A host that looks for the `Symbol.for` key with which `intl` or `temporal` marks a VM uses the new path in it, and the errors of the root package start with `quickjs:`.
 
 ## Credits
 
