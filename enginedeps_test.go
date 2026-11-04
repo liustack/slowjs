@@ -133,3 +133,87 @@ func TestEngineNewerGo(t *testing.T) {
 		t.Fatalf("the build with %s and slowjs_anygo failed:\n%s", newer, out)
 	}
 }
+
+// A build option that makes the assembler encode the calls and the loads of
+// symbol addresses of the engine with other lengths stops the build, with the
+// error of the tripwire in internal/cengine and no other. Without the stop the
+// build succeeds and the first NewVM crashes. -asmflags=PKG=... limits the
+// option to the engine, as -buildmode=plugin and -buildmode=shared would pass
+// -dynlink to every package. Options that leave the encodings of the engine
+// alone still build.
+func TestEngineAsmOptions(t *testing.T) {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go command")
+	}
+	const cengine = "github.com/liustack/slowjs/internal/cengine"
+	for _, c := range []struct {
+		name     string
+		goos     string
+		goarch   string
+		asmflags string
+		want     string // empty: the build must succeed
+	}{
+		{"spectre=ret/linux/amd64", "linux", "amd64", "-spectre=ret", "non-retpoline-compatible"},
+		{"spectre=all/darwin/amd64", "darwin", "amd64", "-spectre=all", "non-retpoline-compatible"},
+		{"spectre=ret/windows/amd64", "windows", "amd64", "-spectre=ret", "non-retpoline-compatible"},
+		{"dynlink/linux/amd64", "linux", "amd64", "-dynlink", "R15 is clobbered"},
+		{"dynlink/linux/arm64", "linux", "arm64", "-dynlink", "do not know how to handle TYPE_ADDR"},
+		{"dynlink/darwin/arm64", "darwin", "arm64", "-dynlink", "do not know how to handle TYPE_ADDR"},
+		// What -buildmode=pie passes on linux and darwin, and -spectre=index
+		// (for the compiler only).
+		{"shared/linux/amd64", "linux", "amd64", "-shared", ""},
+		{"shared/linux/arm64", "linux", "arm64", "-shared", ""},
+		{"spectre=index/linux/amd64", "linux", "amd64", "-spectre=index", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cmd := exec.Command(gobin, "build", "-asmflags="+cengine+"="+c.asmflags, "-o", os.DevNull, ".")
+			cmd.Env = append(os.Environ(), "GOFLAGS=", "CGO_ENABLED=0", "GOOS="+c.goos, "GOARCH="+c.goarch)
+			out, err := cmd.CombinedOutput()
+			if c.want == "" {
+				if err != nil {
+					t.Fatalf("the build failed:\n%s", out)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("the build with %s succeeded", c.asmflags)
+			}
+			named := false
+			for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+				if strings.HasPrefix(l, "#") || l == "asm: assembly failed" {
+					continue
+				}
+				if !strings.Contains(l, "goasm_tripwire.") {
+					t.Fatalf("the build said\n%s\nwant only the errors of the tripwire", out)
+				}
+				named = named || strings.Contains(l, c.want)
+			}
+			if !named {
+				t.Fatalf("the build said\n%s\nwant the error %q", out, c.want)
+			}
+		})
+	}
+}
+
+// -buildmode=shared passes -dynlink to the assembler of every package, and is
+// the way to reach it without cgo (-buildmode=plugin needs cgo). The build
+// stops at the tripwire of the engine.
+func TestEngineBuildmodeShared(t *testing.T) {
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("no go command")
+	}
+	if testing.Short() {
+		t.Skip("builds the standard library again for -buildmode=shared")
+	}
+	cmd := exec.Command(gobin, "build", "-buildmode=shared", "./internal/cengine")
+	cmd.Env = append(os.Environ(), "GOFLAGS=", "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatal("the build succeeded")
+	}
+	if !strings.Contains(string(out), "R15 is clobbered") {
+		t.Fatalf("the build said\n%s\nwant the error of the tripwire", out)
+	}
+}

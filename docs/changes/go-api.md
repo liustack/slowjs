@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink'
 read_when:
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -20,6 +20,7 @@ read_when:
   - Giving a VM the start and end tags React DOM writes for an element as functions written in C (RegisterStartTag, RegisterEndTag)
   - Reading what a VM holds by kind, or giving the memory it keeps free back to the system (MemoryUsage, ReleaseMemory)
   - Moving code that called SetModuleLoader, SetDefaultModuleLoader, StdAddHelpers or SetCanBlock
+  - A build fails at internal/cengine/goasm_tripwire.<arch>.s, or you want to build with -spectre=ret, -dynlink, -buildmode=plugin, -buildmode=shared or -linkshared
 ---
 
 # The Go API
@@ -360,3 +361,27 @@ The Go assembly of the engine leans on things of Go that the Go 1 promise does n
 The error is in its own package, `internal/goversion`, which `internal/cengine` imports, so the go command builds it first and it is the only error the build reports.
 
 Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `slowjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `slowjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
+
+## A build option that changes how the assembler encodes the engine stops the build
+
+Release: Unreleased.
+
+The generated engine writes the body of each function as raw bytes (`BYTE`, `WORD`, `QUAD`) with the branch offsets fixed, and leaves only the calls and the loads of symbol addresses between them to the Go assembler. A build option that makes the assembler encode one of those with another length moves the targets of the fixed branches. The build succeeds, and the first `NewVM` crashes with SIGSEGV. Two options do that:
+
+- `-asmflags=all=-spectre=ret` (and `-spectre=all`), on amd64. `CALL AX` of 2 bytes becomes a call of 5 bytes through a retpoline (`runtime.retpolineAX`), in `src/cmd/internal/obj/x86/asm6.go` (the `ctxt.Retpoline` block of `span6`). On arm64 the assembler refuses the option itself (`-spectre=ret not supported on arm64`).
+- `-dynlink`, which the go command passes to the assembler for `-buildmode=plugin`, `-buildmode=shared` and `-linkshared` (a linked program needs cgo and linux for them). On amd64 `LEAQ sym+off(SB)` becomes a load from the GOT and an `LEAQ`, two instructions, and R15 carries the address (`rewriteToUseGot` in `obj6.go`). On arm64 `MOVD $sym(SB)` becomes a load from the GOT and an `ADD` (`rewriteToUseGot` in `obj7.go`).
+
+Both builds now stop in the assembler, with an error at a line of `internal/cengine/goasm_tripwire.<arch>.s`:
+
+```
+asm: non-retpoline-compatible: 00002 (.../internal/cengine/goasm_tripwire.amd64.s:26)	CALL	(AX)
+asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a global variable access and is used here: ...	MOVQ	R15, BX
+asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
+```
+
+The comment above each of those lines in the file says which option it is and that slowjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
+
+- **Options that leave the engine as it is.** `-shared` (what `-buildmode=pie` passes on linux and darwin), `-spectre=index`, `-race`, `-msan`, `-asan`, `-cover` and `-gcflags` do not reach the assembler, or change only the prologue the assembler writes before the fixed bytes. On linux/amd64 `-shared` makes the stack check at the start of a function 2 bytes longer (seen in `quickjs_0_amd64.s`), which shifts the body and no branch inside it. The engine passes its tests when built with `-buildmode=pie` on linux/amd64.
+- **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.
+
+Tests: `TestEngineAsmOptions` (`enginedeps_test.go`) builds the engine with `-asmflags=<engine package>=-spectre=ret` and `-dynlink` on the targets they affect, and expects the errors of the tripwire and no other. It also builds with `-shared` and `-spectre=index`, which must work. `TestEngineBuildmodeShared` builds with `-buildmode=shared` for linux/amd64, which needs no cgo, and expects the same.
