@@ -3085,6 +3085,59 @@ static void test_typeof_is(void)
     vm_free(&v);
 }
 
+/* An exception thrown out of the body of a for...of loop, or out of a
+   default of an array pattern, closes the iterator: its return method runs
+   with the exception pending, then the catch takes the exception. Running
+   out of memory in the return method is uncatchable: the catch of the same
+   function does not take it. Each call of the allocator fails in turn: the
+   run gives the closes and the exceptions in order, or fails with the out of
+   memory error. */
+static void test_iterator_close_oom(void)
+{
+    static const char setup[] =
+        "globalThis.run = function () {\n"
+        "  var out = [];\n"
+        "  var it = { [Symbol.iterator]() { return it }, next() { return { value: undefined } },\n"
+        "    return() { out.push('r' + out.length); return {} } };\n"
+        "  try { for (var v of it) throw 't' } catch (e) { out.push(e) }\n"
+        "  try { var [a = (() => { throw 'd' })()] = it } catch (e) { out.push(e) }\n"
+        "  function* gen() { try { for (var v of it) throw 'g' } catch (e) { out.push(e) } }\n"
+        "  gen().next();\n"
+        "  try { try { for (var v of it) throw 'u' } finally { out.push('f') } } catch (e) { out.push(e) }\n"
+        "  (async function () { try { for (var v of it) throw 'a' } catch (e) { out.push(e) } })();\n"
+        "  return out.join(' ');\n"
+        "}; 0";
+    VM v = vm_new();
+    int fail, n = 0, ooms = 0;
+    JSValue f, g;
+
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "run");
+    JS_FreeValue(v.ctx, g);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        int made;
+        JSValue r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "call %d failing: an exception that is not out of memory", fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            char *t = value_text(v.ctx, r);
+
+            CHECK(t && strcmp(t, "r0 t r2 d r4 g r6 f u r9 a") == 0, "call %d failing: %s", fail, t ? t : "(no text)");
+            free(t);
+        }
+        JS_FreeValue(v.ctx, r);
+    }
+    CHECK(n > 4 && ooms > 4, "only %d of %d calls failed the run", ooms, n);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
 /* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
    read or a write of a let, a const or a class known to come after its
    declaration has none, and a variable left with no check, no capture and
@@ -4332,6 +4385,7 @@ int main(int argc, char **argv)
     test_fused_ops();
     test_typeof_is();
     test_share_local_slots();
+    test_iterator_close_oom();
     test_tdz_checks();
     test_short_opcode_index();
     test_fused_edges();

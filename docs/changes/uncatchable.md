@@ -134,3 +134,15 @@ Not covered, and the bound is the length of the input:
 - `<`, `>`, `<=` and `>=` on two flat strings that are equal to the end (`js_string_compare`).
 - The copy of a long piece of 8 bits into a string buffer of 8 bits when the buffer has the room (`memcpy` in `string_buffer_write8`, of tens of millions of characters), the copy of a piece of 16 bits (`string_buffer_write16`: the scan for a character above 0xff and the copy, which `JSON.stringify` of a string of 16 bits counts once), the final shrink of a buffer by `string_buffer_end`, and the leaves of a rope when it is made flat. The copy of a piece of 8 bits into a buffer of 16 bits is covered (`string_buffer_write8_wide_long`).
 - The rehash when a Map or Set doubles its table (about 1,100 polls at 8 million entries, which a VM of the default 128 MiB cannot hold), and the free of a very large result after a stop (about 1,700 polls for 8 million small objects, likewise).
+
+## Out of memory in the return method of an iterator that an exception closes
+
+Release: Unreleased.
+
+An exception that leaves a `for...of` loop, or a default of an array pattern, closes the iterator: the interpreter runs its `return` method with the exception pending, then looks for a `catch` or a `finally` in the same function. It decided whether to look once, before the close. When the `return` method ran out of memory, the out of memory error took the place of the exception, and the `catch` of the same function took it, so a script could catch running out of memory. An interrupt was not caught this way: the flag stays set, and the interpreter reads it again as soon as the `catch` starts.
+
+Now the unwind reads the flag again right after the close, and when an uncatchable exception is pending it stops looking, so the call ends with it. What is left on the stack is freed by the same code that frees it when the search finds nothing. The iterators of the loops further out are not closed, as for any uncatchable exception. Upstream QuickJS has no uncatchable out of memory, and its out of memory error is caught there by design.
+
+The check is one test of a flag the unwind has in hand, on a path that only runs while an exception leaves an iterator. The frame of the interpreter stays $496 on amd64 and $504 on arm64.
+
+Test: `test_iterator_close_oom` in `engine/test/unit-white.c` leaves a loop and a pattern by a `throw`, and a loop in a generator, in an async function and under a `finally` block, with an iterator whose `return` method allocates, and fails each call of the allocator in turn: the run gives the closes and the exceptions in order, or fails with the out of memory error.

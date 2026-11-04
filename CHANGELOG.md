@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 
 ## [Unreleased]
 
+### Fixed
+
+- A `catch` no longer takes the out of memory error when the `return` method of an iterator runs out of memory while an exception leaves its `for...of` loop or array pattern. The call ends with the error, as it does for running out of memory anywhere else ([uncatchable.md](docs/changes/uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes)).
+
 ## [v0.29.10] - 2026-11-04
 
 ### Added
