@@ -90,7 +90,7 @@ func TestEngineUnsupportedTarget(t *testing.T) {
 }
 
 // A Go newer than the one the engine was checked with stops the build with
-// the error of internal/goversion and no other, and -tags slowjs_anygo builds
+// the error of internal/goversion and no other, and -tags quickjs_anygo builds
 // anyway. The go1.N tag given by hand stands for the newer Go: with it, the go
 // command also says the file of the error asks for a newer Go.
 func TestEngineNewerGo(t *testing.T) {
@@ -102,7 +102,7 @@ func TestEngineNewerGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := regexp.MustCompile(`(?m)^//go:build (go1\.\d+) && !slowjs_anygo$`).FindSubmatch(src)
+	m := regexp.MustCompile(`(?m)^//go:build (go1\.\d+) && !quickjs_anygo$`).FindSubmatch(src)
 	if m == nil {
 		t.Fatalf("internal/goversion/newer.go has no build line of the form the test reads:\n%s", src)
 	}
@@ -124,13 +124,13 @@ func TestEngineNewerGo(t *testing.T) {
 		if !strings.HasPrefix(l, "internal/goversion/newer.go:") {
 			t.Fatalf("the build with %s said\n%s\nwant only the errors of internal/goversion", newer, out)
 		}
-		named = named || strings.Contains(l, "slowjs_is_checked_up_to_go1_")
+		named = named || strings.Contains(l, "quickjs_is_checked_up_to_go1_")
 	}
 	if !named {
 		t.Fatalf("the build with %s said\n%s\nwant the error that names the Go the engine was checked with", newer, out)
 	}
-	if out, err := build(newer + ",slowjs_anygo"); err != nil {
-		t.Fatalf("the build with %s and slowjs_anygo failed:\n%s", newer, out)
+	if out, err := build(newer + ",quickjs_anygo"); err != nil {
+		t.Fatalf("the build with %s and quickjs_anygo failed:\n%s", newer, out)
 	}
 }
 

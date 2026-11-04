@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_TEST_TESTUTIL_H
-#define SLOWJS_TEST_TESTUTIL_H
+#ifndef QUICKJS_TEST_TESTUTIL_H
+#define QUICKJS_TEST_TESTUTIL_H
 
 /* What the unit programs that came from the Go tests share (unit-oom.c,
    unit-api.c): a runtime with a context, a way to give it a little memory

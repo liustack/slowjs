@@ -147,12 +147,12 @@ func TestDecodeFixtures(t *testing.T) {
 // pass in both call modes. It then builds the package from wrong code or
 // data, one fault at a time, each a mistake the lowering or the data plan
 // could make, and the check must reject every one. It needs LLVM 22.1.8
-// (SLOWJS_LLVM), the built pass (SLOWJS_SHADOW_PASS) and the go tool, on
+// (QUICKJS_LLVM), the built pass (QUICKJS_SHADOW_PASS) and the go tool, on
 // linux/amd64.
 func TestPostLinkCheck(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("builds and reads a linux/amd64 binary")
@@ -516,11 +516,11 @@ var forbiddenEncodings = map[string]string{
 // TestStubsNeedKeepGoing: without -keep-going a rejection stops the run and
 // nothing is written, so no package with a stub in it comes from a normal
 // build. With it the same input gives a package. It needs LLVM 22.1.8
-// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+// (QUICKJS_LLVM) and the built pass (QUICKJS_SHADOW_PASS).
 func TestStubsNeedKeepGoing(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	drv := filepath.Join(work, "engine")

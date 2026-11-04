@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_LIMITS_H
-#define SLOWJS_LIBC_LIMITS_H
+#ifndef QUICKJS_LIBC_LIMITS_H
+#define QUICKJS_LIBC_LIMITS_H
 
 #define CHAR_BIT __CHAR_BIT__
 #define SCHAR_MAX __SCHAR_MAX__

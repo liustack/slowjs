@@ -15,11 +15,11 @@ import (
 // TestValueFlagsCopyInEightByteMoves: a copy of a JSValue (16 bytes in two
 // words) is two moves of 8 bytes with EngineValueFlags, so that a load of it
 // can be forwarded from the two 8-byte stores that wrote it, and one SSE move
-// without them. Needs LLVM (SLOWJS_LLVM).
+// without them. Needs LLVM (QUICKJS_LLVM).
 func TestValueFlagsCopyInEightByteMoves(t *testing.T) {
-	llvm := os.Getenv("SLOWJS_LLVM")
+	llvm := os.Getenv("QUICKJS_LLVM")
 	if llvm == "" {
-		t.Skip("set SLOWJS_LLVM")
+		t.Skip("set QUICKJS_LLVM")
 	}
 	asm := func(flags []string) map[string]string {
 		args := append(append([]string{}, EngineCFlags...), flags...)

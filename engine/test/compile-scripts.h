@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_TEST_COMPILE_SCRIPTS_H
-#define SLOWJS_TEST_COMPILE_SCRIPTS_H
+#ifndef QUICKJS_TEST_COMPILE_SCRIPTS_H
+#define QUICKJS_TEST_COMPILE_SCRIPTS_H
 
 /* The scripts the tests of compiling with little memory use (unit-oom.c and
    unit-white.c): they run the parts of the compiler that move or rewrite

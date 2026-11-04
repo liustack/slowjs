@@ -349,18 +349,18 @@ Release: Unreleased.
 A build with a Go newer than the one the engine was checked with stops with one error:
 
 ```
-undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
+undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo
 ```
 
-The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !slowjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
+The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !quickjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
 
-- **To build anyway**, with a Go slowjs has not been checked with, add `-tags slowjs_anygo`.
+- **To build anyway**, with a Go slowjs has not been checked with, add `-tags quickjs_anygo`.
 - **When a new Go comes out**, slowjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of slowjs.
 - **Patch releases of Go** are not told apart: a build line can name `go1.28` but not `go1.27.3`.
 
 The error is in its own package, `internal/goversion`, which `internal/cengine` imports, so the go command builds it first and it is the only error the build reports.
 
-Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `slowjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `slowjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
+Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `quickjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `quickjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
 
 ## A build option that changes how the assembler encodes the engine stops the build
 

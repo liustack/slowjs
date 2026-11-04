@@ -98,11 +98,11 @@ func TestPlanDataARM64Tiny(t *testing.T) {
 // section for each function (an adr between two functions of the tiny code
 // model may be too far to resolve in one section), so the check of the
 // object reads the relocations of every section of code, not only .text. It
-// needs clang (SLOWJS_LLVM).
+// needs clang (QUICKJS_LLVM).
 func TestCheckObjectFunctionSections(t *testing.T) {
-	llvm := os.Getenv("SLOWJS_LLVM")
+	llvm := os.Getenv("QUICKJS_LLVM")
 	if llvm == "" {
-		t.Skip("set SLOWJS_LLVM")
+		t.Skip("set QUICKJS_LLVM")
 	}
 	dir := t.TempDir()
 	src := filepath.Join(dir, "f.c")

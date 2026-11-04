@@ -142,9 +142,9 @@ generates the arm64 package and cross-builds its tests: copy the package to
 an arm64 machine to run them. `MODE` is the call mode. Set `CALL_OVERHEAD=1`
 to run the call-overhead timing. The proto
 tests are `testdata/*.txt`, kept as text so this package does not compile
-them. `go test` here runs the rule tests. With `SLOWJS_LLVM` (an LLVM bin
-dir) and `SLOWJS_SHADOW_PASS` (the built pass) set, it also runs every sample
-in `testdata/reject` through the real pipeline, and with `SLOWJS_LLD`
+them. `go test` here runs the rule tests. With `QUICKJS_LLVM` (an LLVM bin
+dir) and `QUICKJS_SHADOW_PASS` (the built pass) set, it also runs every sample
+in `testdata/reject` through the real pipeline, and with `QUICKJS_LLD`
 (ld.lld) as well, `TestNarrowArgs` runs `testdata/narrow` natively and
 generated, and `TestSampleRuns` does the same for each sample of
 `testdata/run`: each defines `long run(long *r, int one)`, is run natively

@@ -16,12 +16,12 @@ import (
 // function) stops the run with nothing written, while the same input as a
 // survey (-keep-going) still gives its package with a stub. -keep-going with
 // -release, and GEN_KEEP_NARROW with it, are refused before any work is done.
-// It needs LLVM 22.1.8 (SLOWJS_LLVM), the built pass (SLOWJS_SHADOW_PASS) and
+// It needs LLVM 22.1.8 (QUICKJS_LLVM), the built pass (QUICKJS_SHADOW_PASS) and
 // the go tool.
 func TestReleaseBuild(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	at := func(n string) string { return filepath.Join(work, n) }

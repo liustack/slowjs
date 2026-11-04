@@ -146,7 +146,7 @@ func TestGoFileHeaders(t *testing.T) {
 	defer func(old string) { *buildTag = old }(*buildTag)
 	for _, c := range []struct{ tag, decl, keep, neg string }{
 		{"", "", "//go:build goasmkeep\n", "//go:build !goasmnegative\n"},
-		{"slowjs_cengine", "//go:build slowjs_cengine\n", "//go:build slowjs_cengine && goasmkeep\n", "//go:build slowjs_cengine && !goasmnegative\n"},
+		{"quickjs_cengine", "//go:build quickjs_cengine\n", "//go:build quickjs_cengine && goasmkeep\n", "//go:build quickjs_cengine && !goasmnegative\n"},
 	} {
 		*buildTag = c.tag
 		if got := declBuildLine(); got != c.decl {

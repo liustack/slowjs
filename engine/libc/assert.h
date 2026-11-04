@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_ASSERT_H
-#define SLOWJS_LIBC_ASSERT_H
+#ifndef QUICKJS_LIBC_ASSERT_H
+#define QUICKJS_LIBC_ASSERT_H
 
 /* A failed assertion is an abort: there is no stderr to write to. */
 #include <stdlib.h>

@@ -17,12 +17,12 @@ import (
 // before it does any work (a build that read 0 as on would be the mistake the
 // switch exists to show). A negative build over a fixture writes a package
 // that does not compile without the tag goasmnegative, and the next build
-// into the same folder removes the mark. It needs LLVM 22.1.8 (SLOWJS_LLVM),
-// the built pass (SLOWJS_SHADOW_PASS) and the go tool.
+// into the same folder removes the mark. It needs LLVM 22.1.8 (QUICKJS_LLVM),
+// the built pass (QUICKJS_SHADOW_PASS) and the go tool.
 func TestNegativeBuild(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	run := driverRunner(t, work, llvm, pass)

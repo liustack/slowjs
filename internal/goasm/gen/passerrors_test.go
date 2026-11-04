@@ -16,11 +16,11 @@ import (
 // TestPassSizeLog2: the pass takes the same range of -shadow-size-log2 as
 // CheckShadowSizeLog2, and stops outside it with one line and status 1. A
 // shift of 1 by 64 or more in the pass would be undefined. It needs LLVM
-// 22.1.8 (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+// 22.1.8 (QUICKJS_LLVM) and the built pass (QUICKJS_SHADOW_PASS).
 func TestPassSizeLog2(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	ir := filepath.Join(t.TempDir(), "f.ll")
 	if err := os.WriteFile(ir, []byte("define i64 @f(i64 %x) {\n  ret i64 %x\n}\n"), 0o644); err != nil {

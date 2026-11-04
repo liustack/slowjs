@@ -26,7 +26,7 @@ if [ $# -gt 0 ]; then
 	versions=$*
 else
 	low=$(sed -n 's/^go \(1\.[0-9]*\.[0-9]*\)$/\1/p' go.mod)
-	stop=$(sed -n 's/^\/\/go:build go1\.\([0-9]*\) && !slowjs_anygo$/\1/p' internal/goversion/newer.go)
+	stop=$(sed -n 's/^\/\/go:build go1\.\([0-9]*\) && !quickjs_anygo$/\1/p' internal/goversion/newer.go)
 	if [ -z "$low" ] || [ -z "$stop" ]; then
 		echo "go-versions.sh: no go line in go.mod or no build line in internal/goversion/newer.go" >&2
 		exit 2

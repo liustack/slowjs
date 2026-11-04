@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_STDARG_H
-#define SLOWJS_LIBC_STDARG_H
+#ifndef QUICKJS_LIBC_STDARG_H
+#define QUICKJS_LIBC_STDARG_H
 
 /* Only until the variadic functions are removed from the C tree. */
 typedef __builtin_va_list va_list;

@@ -6,8 +6,8 @@
  */
 /* What musl's src/include/features.h gives its own sources. The build puts
    it in front of every musl file with -include. */
-#ifndef SLOWJS_LIBC_FEATURES_H
-#define SLOWJS_LIBC_FEATURES_H
+#ifndef QUICKJS_LIBC_FEATURES_H
+#define QUICKJS_LIBC_FEATURES_H
 
 #define weak __attribute__((__weak__))
 #define hidden __attribute__((__visibility__("hidden")))
@@ -19,10 +19,10 @@
 #else
 /* The name is expanded before it is put in a string, so that a test can build
    the library with its functions renamed. */
-#define SLOWJS_STR_(x) #x
-#define SLOWJS_STR(x) SLOWJS_STR_(x)
+#define QUICKJS_STR_(x) #x
+#define QUICKJS_STR(x) QUICKJS_STR_(x)
 #define weak_alias(old, new) \
-	extern __typeof(old) new __attribute__((__weak__, __alias__(SLOWJS_STR(old))))
+	extern __typeof(old) new __attribute__((__weak__, __alias__(QUICKJS_STR(old))))
 #endif
 
 #endif

@@ -12,11 +12,11 @@ import (
 
 // TestAddrTakenLeafRejected: a register-entry leaf whose address is taken has
 // no unified entry an indirect call could reach, so the pass must stop. Needs
-// LLVM 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+// LLVM 22.1.8 (QUICKJS_LLVM) and the pass (QUICKJS_SHADOW_PASS).
 func TestAddrTakenLeafRejected(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "a.ll")

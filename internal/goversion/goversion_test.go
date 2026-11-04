@@ -21,8 +21,8 @@ func checked(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line := regexp.MustCompile(`(?m)^//go:build go1\.(\d+) && !slowjs_anygo$`).FindSubmatch(b)
-	name := regexp.MustCompile(`(?m)^var _ = slowjs_is_checked_up_to_go1_(\d+)_see_`).FindSubmatch(b)
+	line := regexp.MustCompile(`(?m)^//go:build go1\.(\d+) && !quickjs_anygo$`).FindSubmatch(b)
+	name := regexp.MustCompile(`(?m)^var _ = quickjs_is_checked_up_to_go1_(\d+)_see_`).FindSubmatch(b)
 	if line == nil || name == nil {
 		t.Fatalf("newer.go has no build line or no name of the form the test reads:\n%s", b)
 	}
@@ -44,7 +44,7 @@ func TestNewerGoStops(t *testing.T) {
 		{minor, nil, false},
 		{minor + 1, nil, true},
 		{minor + 2, nil, true},
-		{minor + 1, []string{"slowjs_anygo"}, false},
+		{minor + 1, []string{"quickjs_anygo"}, false},
 	} {
 		ctx := build.Default
 		ctx.ReleaseTags = nil

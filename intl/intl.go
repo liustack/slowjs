@@ -131,7 +131,7 @@
 // The six embedded packs total 9.35 MB. Their shared tables stay in the
 // binary's read-only data. Other chunks inflate into the Go heap on first
 // use, once per process. Date and Temporal formatting use the same packs.
-// The build tags slowjs_intl_nonames and slowjs_intl_nocjdict omit display
+// The build tags quickjs_intl_nonames and quickjs_intl_nocjdict omit display
 // names and the Chinese and Japanese word dictionary respectively.
 //
 // Register installs stand-ins. The first use installs the javascript half

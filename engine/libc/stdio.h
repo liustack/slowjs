@@ -4,8 +4,8 @@
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_STDIO_H
-#define SLOWJS_LIBC_STDIO_H
+#ifndef QUICKJS_LIBC_STDIO_H
+#define QUICKJS_LIBC_STDIO_H
 
 #include <stdarg.h>
 #include <stddef.h>

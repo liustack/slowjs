@@ -37,11 +37,11 @@ func TestPostLinkOptFor(t *testing.T) {
 // an attribute of the functions, so a run with it on joins the two 8-byte
 // moves of a JSValue into one 16-byte move again (EngineValueFlags);
 // PostLinkOptArgs turn it off. +slow-unaligned-mem-16 is an attribute and
-// stays with its function. Needs LLVM (SLOWJS_LLVM).
+// stays with its function. Needs LLVM (QUICKJS_LLVM).
 func TestPostLinkOptKeepsValueFlags(t *testing.T) {
-	llvm := os.Getenv("SLOWJS_LLVM")
+	llvm := os.Getenv("QUICKJS_LLVM")
 	if llvm == "" {
-		t.Skip("set SLOWJS_LLVM")
+		t.Skip("set QUICKJS_LLVM")
 	}
 	work := t.TempDir()
 	ir := filepath.Join(work, "copy.ll")
@@ -104,12 +104,12 @@ func firstLines(text string, re *regexp.Regexp, n int) string {
 //
 // It does this for amd64 and for arm64 (mode pn), and runs the post-link check
 // over the on and spec builds of each, with a binary cross-built for linux. It
-// needs LLVM 22.1.8 (SLOWJS_LLVM), the built pass (SLOWJS_SHADOW_PASS) and the
+// needs LLVM 22.1.8 (QUICKJS_LLVM), the built pass (QUICKJS_SHADOW_PASS) and the
 // go tool.
 func TestPostLinkOpt(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	run := driverRunner(t, work, llvm, pass)

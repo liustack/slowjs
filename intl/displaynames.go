@@ -20,7 +20,7 @@ type displayNames struct {
 	LanguageDisplay string `json:"languageDisplay,omitempty"`
 
 	// d is nil in a build without the display names
-	// (slowjs_intl_nonames), where every code falls back.
+	// (quickjs_intl_nonames), where every code falls back.
 	d *gointl.DisplayNames
 	// long names a region code ICU has replaced, in any style, as ICU
 	// does: it looks the short name up by the code asked for, finds none,

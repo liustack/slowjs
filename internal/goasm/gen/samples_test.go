@@ -59,12 +59,12 @@ import (
 //     stack check to the NOSPLIT list (MarkNoSplit), and nosplit_fault below
 //     holds the list itself and faults in a leaf without a stack check.
 //
-// It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld
-// (SLOWJS_LLD), on linux/amd64.
+// It needs LLVM 22.1.8 (QUICKJS_LLVM), the pass (QUICKJS_SHADOW_PASS) and ld.lld
+// (QUICKJS_LLD), on linux/amd64.
 func TestSampleRuns(t *testing.T) {
-	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
+	llvm, pass, lld := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS"), os.Getenv("QUICKJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
-		t.Skip("set SLOWJS_LLVM, SLOWJS_SHADOW_PASS and SLOWJS_LLD")
+		t.Skip("set QUICKJS_LLVM, QUICKJS_SHADOW_PASS and QUICKJS_LLD")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("runs linux/amd64 code")

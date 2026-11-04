@@ -8,6 +8,6 @@
 // function and handles a fault, which the Go 1 promise does not cover, so a
 // newer Go builds it without checking it (see docs/upgrading.md).
 // internal/cengine imports it: the go command builds it first, and its error
-// is the only one the build reports. Build with -tags slowjs_anygo to build
+// is the only one the build reports. Build with -tags quickjs_anygo to build
 // anyway.
 package goversion

@@ -188,7 +188,7 @@ The VM asks the system for memory in chunks (`host_memory_grow`), and a refusal 
 
 ### The size of the shadow stack
 
-The shadow stack is 32 MiB (`-shadow-size-log2=25` of the generator), fixed when the engine is generated. A call level takes about 1.25 KB of it plus 16 bytes for each argument, local variable and operand slot of the function, so each level the engine counts takes 1.2 to 2.1 KB (a native function in the middle, such as `sort` or `map`, adds a count of its own). `TestShadowStackAtDepth` and `TestShadowStackInternalDepth` (with `-tags slowjs_cengine`) measure the highest point the stack reached, from the highest word that is not zero:
+The shadow stack is 32 MiB (`-shadow-size-log2=25` of the generator), fixed when the engine is generated. A call level takes about 1.25 KB of it plus 16 bytes for each argument, local variable and operand slot of the function, so each level the engine counts takes 1.2 to 2.1 KB (a native function in the middle, such as `sort` or `map`, adds a count of its own). `TestShadowStackAtDepth` and `TestShadowStackInternalDepth` measure the highest point the stack reached, from the highest word that is not zero:
 
 - At a depth limit of 10000, functions with few locals use 37% to 62% of the stack. The most is a `sort` comparator that sorts again (20.7 MB, since `sort` and the comparator each count a level). Functions with 100 locals or arguments use 85% (28 MB). A function with 250 locals gets 6379 levels deep, where the next frame would not fit, and throws `RangeError` there. A limit of 5000 uses half as much.
 - The recursions of C (the parser, JSON, the regexp parser, `flat`, stringify) end at their 2000 levels of internal depth with under 3% used. A string made of arrays nested 100000 deep takes 47%.
