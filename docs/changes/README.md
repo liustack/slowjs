@@ -24,6 +24,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | Unreleased | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
 | Locals that are never live together share a slot of the frame | Unreleased | [c-engine.md](c-engine.md#locals-that-share-a-slot) |
 | JSON.parse reads keys and plain strings from the text, with a cache of key atoms for one parse | Unreleased | [c-engine.md](c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text) |
+| A collection asked for while the engine frees objects does nothing | Unreleased | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
 
 ## Commits of upstream QuickJS
 

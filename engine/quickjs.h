@@ -451,6 +451,11 @@ void *JS_GetRuntimeOpaque(JSRuntime *rt);
 void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque);
 typedef void JS_MarkFunc(JSRuntime *rt, JSGCObjectHeader *gp);
 void JS_MarkValue(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func);
+/* A collection asked for while the engine frees objects, from a finalizer or
+   from host_release, does nothing and returns: the objects being freed are not
+   whole until the free ends. An object made there starts no collection either:
+   the threshold is checked again when the next object is made after the free.
+   JS_ComputeMemoryUsage and JS_DumpMemoryUsage may be called there. */
 void JS_RunGC(JSRuntime *rt);
 void JS_RunYoungGC(JSRuntime *rt);
 JS_BOOL JS_IsLiveObject(JSRuntime *rt, JSValueConst obj);

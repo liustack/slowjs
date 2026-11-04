@@ -15,11 +15,14 @@
 
      unit-white */
 #include <errno.h>
+#include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "compile-scripts.h"
 #include "testutil.h"
+
+extern char **environ;
 
 struct StringBuffer;
 struct StringBuffer *white_sb_new(JSContext *ctx, int size, int wide, int pre);
@@ -78,6 +81,7 @@ void white_shape_id_set(JSRuntime *rt, uint32_t next);
 int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
+unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 void white_work_reset(void);
 int white_jsstring_header(void);
@@ -1788,6 +1792,329 @@ static void test_young_leaves_no_zero_count(void)
         lists(&v, &old, &young, "after a full collection");
         CHECK(eval_is(v.ctx, "String(wr === null || wr.deref() === undefined)", "true"), "observer %zu: the weak reference holds the object", i);
         vm_free(&v);
+    }
+}
+
+/* ---- a collection asked for while objects are freed ----
+
+   The host runs code while the engine frees objects: the finalizer of a class
+   of the host, and host_release for a function of JS_NewHostFunctionRelease.
+   A collection started from there, by the host (JS_RunGC, JS_RunYoungGC) or by
+   the threshold when the host makes an object, does nothing: it would free
+   what the engine is in the middle of freeing, the object whose finalizer runs
+   among them. white_gc_run_count counts the collections that ran. Each case
+   runs in a process of its own, the test run again with the case as its
+   arguments, so that a case that crashes is one failed case, and the process
+   starts with no lock held and its own watchdog. */
+
+enum {
+    IN_FREE_RUN_GC,     /* JS_RunGC */
+    IN_FREE_YOUNG_GC,   /* JS_RunYoungGC */
+    IN_FREE_NEW_OBJECT, /* JS_NewObject with the heap past the threshold */
+    IN_FREE_USAGE,      /* JS_ComputeMemoryUsage and JS_DumpMemoryUsage */
+    IN_FREE_ACTIONS,
+};
+
+static const char *const in_free_actions[IN_FREE_ACTIONS] = {
+    "JS_RunGC", "JS_RunYoungGC", "an object past the threshold", "JS_ComputeMemoryUsage",
+};
+
+/* How the objects are freed. */
+enum {
+    IN_FREE_COUNT,      /* the host drops the last reference to an array of
+                           them: the array goes at once
+                           (free_zero_refcount_first), and what it held in
+                           free_zero_refcount */
+    IN_FREE_EACH_YOUNG, /* the host drops the last reference to each object of
+                           the array, made since the last collection: each goes
+                           at once, a probe too (free_zero_refcount_first) */
+    IN_FREE_EACH_OLD,   /* the same after a collection made them old */
+    IN_FREE_CYCLE,      /* JS_RunGC frees a cycle: gc_free_cycles */
+    IN_FREE_YOUNG,      /* JS_RunYoungGC frees a young cycle: gc_free_cycles */
+    IN_FREE_DEFERRED,   /* JS_RunYoungGC frees a young cycle that held the last
+                           reference to an old array: the array waits on
+                           young_dead_list and goes in free_zero_refcount */
+    IN_FREE_WEAK,       /* JS_RunGC deletes the entry of a WeakMap whose key
+                           died: gc_remove_weak_objects */
+    IN_FREE_EPHEMERON,  /* JS_RunGC deletes the entry of a WeakMap whose key is
+                           in a cycle: gc_ephemeron_prune, then gc_free_cycles */
+    IN_FREE_RUNTIME,    /* the runtime is freed: a pending exception
+                           (free_zero_refcount), then the global object
+                           (gc_free_cycles) */
+    IN_FREE_WAYS,
+};
+
+static const char *const in_free_ways[IN_FREE_WAYS] = {
+    "the last reference dropped",
+    "the last reference to each young object dropped",
+    "the last reference to each old object dropped",
+    "a cycle in JS_RunGC",
+    "a cycle in JS_RunYoungGC",
+    "an old array that a young cycle held",
+    "the value of a WeakMap whose key died",
+    "the value of a WeakMap whose key is in a cycle",
+    "the runtime freed",
+};
+
+#define IN_FREE_PROBES 8
+
+static struct {
+    JSRuntime *rt;
+    JSContext *ctx;
+    JSClassID class_id;
+    uint32_t vm;
+    int action;
+    int finalized, released, made, releasers;
+    unsigned long runs; /* collections that ran in calls from the host */
+} in_free;
+
+static unsigned long in_free_run_count(void)
+{
+    return white_gc_run_count(0) + white_gc_run_count(1);
+}
+
+static void in_free_act(void)
+{
+    JSRuntime *rt = in_free.rt;
+    unsigned long runs = in_free_run_count();
+    JSMemoryUsage u;
+    char buf[128];
+    JSValue o;
+
+    switch (in_free.action) {
+    case IN_FREE_RUN_GC:
+        JS_RunGC(rt);
+        break;
+    case IN_FREE_YOUNG_GC:
+        JS_RunYoungGC(rt);
+        break;
+    case IN_FREE_NEW_OBJECT:
+        o = JS_NewObject(in_free.ctx);
+        CHECK(!JS_IsException(o), "no object made in a finalizer");
+        JS_FreeValue(in_free.ctx, o);
+        break;
+    case IN_FREE_USAGE:
+        JS_ComputeMemoryUsage(rt, &u);
+        CHECK(JS_DumpMemoryUsage(buf, sizeof(buf), &u, rt) > 0, "an empty report");
+        break;
+    }
+    in_free.runs += in_free_run_count() - runs;
+}
+
+static void in_free_finalizer(JSRuntime *rt, JSValue val)
+{
+    CHECK(rt == in_free.rt, "the finalizer of another runtime");
+    in_free.finalized++;
+    in_free_act();
+}
+
+static void in_free_release(uint32_t vm, uint32_t handle)
+{
+    CHECK(vm == in_free.vm, "a release of another VM");
+    in_free.released++;
+    in_free_act();
+}
+
+/* probe() makes an object of the class, release() a function whose release
+   reaches the host. */
+static JSValue in_free_probe(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    in_free.made++;
+    return JS_NewObjectClass(ctx, in_free.class_id);
+}
+
+static JSValue in_free_releaser(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    JSValue f = JS_NewHostFunctionRelease(ctx, "r", 1, 0, ++in_free.releasers);
+
+    if (JS_IsException(f))
+        in_free.releasers--;
+    return f;
+}
+
+/* make() gives an array of probes and functions to release, with plain
+   objects between them, that the engine frees after the first finalizer ran. */
+#define IN_FREE_MAKE \
+    "function make() {\n" \
+    "  var a = [];\n" \
+    "  for (var i = 0; i < 8; i++) a.push({ i }, probe(), [i], release(), { o: { i } });\n" \
+    "  return a;\n" \
+    "}\n"
+
+static void in_free_case(int way, int action)
+{
+    JSClassDef def = { "InFree", in_free_finalizer };
+    VM v = vm_new();
+    JSValue g, a, each[40];
+    unsigned long full, young;
+    int i, n = 0;
+
+    memset(&in_free, 0, sizeof(in_free));
+    in_free.rt = v.rt;
+    in_free.ctx = v.ctx;
+    in_free.vm = host_vm_id(v.rt);
+    in_free.action = -1;
+    host_release_call = in_free_release;
+    JS_NewClassID(v.rt, &in_free.class_id);
+    CHECK(JS_NewClass(v.rt, in_free.class_id, &def) == 0, "JS_NewClass");
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "probe", JS_NewCFunction(v.ctx, in_free_probe, "probe", 0));
+    JS_SetPropertyStr(v.ctx, g, "release", JS_NewCFunction(v.ctx, in_free_releaser, "release", 0));
+    JS_FreeValue(v.ctx, g);
+    /* no collection by the threshold until the case asks for one */
+    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+    CHECK(eval_ok(v.ctx, IN_FREE_MAKE), "make");
+
+    switch (way) {
+    case IN_FREE_COUNT:
+        a = JS_Eval(v.ctx, "make()", 6, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(a), "make()");
+        break;
+    case IN_FREE_EACH_YOUNG:
+    case IN_FREE_EACH_OLD:
+        a = JS_Eval(v.ctx, "make()", 6, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(a), "make()");
+        for (n = 0; n < (int)countof(each); n++)
+            each[n] = JS_GetPropertyUint32(v.ctx, a, n);
+        JS_FreeValue(v.ctx, a);
+        if (way == IN_FREE_EACH_OLD)
+            JS_RunGC(v.rt);
+        break;
+    case IN_FREE_CYCLE:
+    case IN_FREE_YOUNG:
+        CHECK(eval_ok(v.ctx, "(function () { var a = make(); a.push(a) })()"), "a cycle");
+        break;
+    case IN_FREE_DEFERRED:
+        CHECK(eval_ok(v.ctx, "var old = make()"), "old");
+        JS_RunGC(v.rt);
+        CHECK(eval_ok(v.ctx, "(function () { var a = { old }, b = { a }; a.b = b; old = null })()"), "a young cycle");
+        break;
+    case IN_FREE_WEAK:
+        /* the key dies at once, and its entry waits for the next collection */
+        CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); (function () { wm.set({}, make()) })()"), "a weak map");
+        break;
+    case IN_FREE_EPHEMERON:
+        CHECK(eval_ok(v.ctx, "var wm = new WeakMap(); (function () { var k = {}; k.k = k; wm.set(k, make()) })()"),
+              "a weak map");
+        break;
+    case IN_FREE_RUNTIME:
+        /* a pending exception the runtime frees first, and a cycle through
+           the global object it frees in its collection */
+        CHECK(eval_ok(v.ctx, "var kept = make()"), "kept");
+        JS_Throw(v.ctx, JS_Eval(v.ctx, "make()", 6, "<unit>", JS_EVAL_TYPE_GLOBAL));
+        break;
+    }
+    CHECK(in_free.finalized == 0 && in_free.released == 0, "%d finalized and %d released before the free",
+          in_free.finalized, in_free.released);
+
+    in_free.action = action;
+    if (action == IN_FREE_NEW_OBJECT)
+        JS_SetGCThreshold(v.rt, 1);
+    full = white_gc_run_count(0);
+    young = white_gc_run_count(1);
+    switch (way) {
+    case IN_FREE_COUNT:
+        JS_FreeValue(v.ctx, a);
+        break;
+    case IN_FREE_EACH_YOUNG:
+    case IN_FREE_EACH_OLD:
+        for (i = 0; i < n; i++)
+            JS_FreeValue(v.ctx, each[i]);
+        break;
+    case IN_FREE_CYCLE:
+    case IN_FREE_WEAK:
+    case IN_FREE_EPHEMERON:
+        JS_RunGC(v.rt);
+        full++;
+        break;
+    case IN_FREE_YOUNG:
+    case IN_FREE_DEFERRED:
+        JS_RunYoungGC(v.rt);
+        young++;
+        break;
+    case IN_FREE_RUNTIME:
+        vm_free(&v);
+        break;
+    }
+    CHECK(in_free.made == (way == IN_FREE_RUNTIME ? 2 : 1) * IN_FREE_PROBES, "%d probes made", in_free.made);
+    CHECK(in_free.finalized == in_free.made, "%d of %d probes finalized", in_free.finalized, in_free.made);
+    CHECK(in_free.released == in_free.releasers && in_free.releasers == in_free.made, "%d of %d functions released",
+          in_free.released, in_free.releasers);
+    CHECK(in_free.runs == 0, "%lu collections ran in the calls from the host", in_free.runs);
+    CHECK(white_gc_run_count(0) == full && white_gc_run_count(1) == young,
+          "%ld full and %ld young collections ran besides the one the case started",
+          (long)(white_gc_run_count(0) - full), (long)(white_gc_run_count(1) - young));
+    in_free.action = -1;
+    if (way == IN_FREE_RUNTIME) {
+        host_release_call = NULL;
+        return;
+    }
+
+    /* the threshold is checked again at the next object, and it is still
+       past unless the collection that freed the objects set it again */
+    if (action == IN_FREE_NEW_OBJECT && way != IN_FREE_CYCLE && way != IN_FREE_WEAK && way != IN_FREE_EPHEMERON) {
+        CHECK(JS_GetGCThreshold(v.rt) == 1, "the threshold moved to %zu during the free", JS_GetGCThreshold(v.rt));
+        full = white_gc_run_count(0);
+        a = JS_NewObject(v.ctx);
+        JS_FreeValue(v.ctx, a);
+        CHECK(white_gc_run_count(0) == full + 1, "the next object started %lu collections", white_gc_run_count(0) - full);
+    }
+    /* the runtime still works, and frees with no block left */
+    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+    full = white_gc_run_count(0);
+    young = white_gc_run_count(1);
+    JS_RunGC(v.rt);
+    JS_RunYoungGC(v.rt);
+    CHECK(white_gc_run_count(0) == full + 1 && white_gc_run_count(1) == young + 1,
+          "after the free, JS_RunGC and JS_RunYoungGC ran %lu and %lu collections", white_gc_run_count(0) - full,
+          white_gc_run_count(1) - young);
+    CHECK(eval_is(v.ctx, "var b = make(); b.length + ':' + typeof b[1]", "40:object"), "make after the free");
+    for (i = 0; i < 2; i++)
+        JS_RunGC(v.rt);
+    vm_free(&v);
+    host_release_call = NULL;
+}
+
+/* the path of this program, to run a case in a process of its own */
+static const char *self_path;
+
+static void test_gc_in_free(void)
+{
+    int way, action, st, err;
+    char way_arg[16], action_arg[16];
+    char *args[5];
+    pid_t pid, r;
+
+    for (way = 0; way < IN_FREE_WAYS; way++) {
+        for (action = 0; action < IN_FREE_ACTIONS; action++) {
+            /* a finalizer must not make an object as the runtime is freed
+               (see docs/changes/c-engine.md) */
+            if (way == IN_FREE_RUNTIME && action == IN_FREE_NEW_OBJECT)
+                continue;
+            snprintf(way_arg, sizeof(way_arg), "%d", way);
+            snprintf(action_arg, sizeof(action_arg), "%d", action);
+            args[0] = (char *)self_path;
+            args[1] = "in-free";
+            args[2] = way_arg;
+            args[3] = action_arg;
+            args[4] = NULL;
+            fflush(stdout);
+            err = strchr(self_path, '/') ? posix_spawn(&pid, self_path, NULL, NULL, args, environ)
+                                         : posix_spawnp(&pid, self_path, NULL, NULL, args, environ);
+            if (err) {
+                fprintf(stderr, "posix_spawn %s: %s\n", self_path, strerror(err));
+                exit(2);
+            }
+            while ((r = waitpid(pid, &st, 0)) < 0 && errno == EINTR)
+                ;
+            if (r != pid) {
+                perror("waitpid");
+                exit(2);
+            }
+            CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "%s from a finalizer, %s: %s %d", in_free_actions[action],
+                  in_free_ways[way], WIFSIGNALED(st) ? "stopped by signal" : "exit status",
+                  WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+        }
     }
 }
 
@@ -3910,8 +4237,16 @@ static void test_compile_one_failure(int calls)
     printf("unit-white: test_compile_one_failure (%s): %ld cases, %ld bad\n", calls ? "every call" : "heap requests", cases_run, bad);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    /* one case of test_gc_in_free, in a process of its own */
+    if (argc == 4 && strcmp(argv[1], "in-free") == 0) {
+        failures = 0;
+        in_free_case(atoi(argv[2]), atoi(argv[3]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
+    self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
     test_json_runs_oom();
@@ -3939,6 +4274,7 @@ int main(void)
     test_shape_ids_copy_oom();
     test_young_lists();
     test_young_leaves_no_zero_count();
+    test_gc_in_free();
     test_error_nest();
     test_function_properties_oom();
     test_poll_scan();

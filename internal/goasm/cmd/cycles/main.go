@@ -61,7 +61,9 @@ var noReach = []pair{
 	{"JS_RunYoungGC", "JS_ThrowError2"},
 	// Freeing starts no collection: free_zero_refcount and
 	// free_zero_refcount_first are never entered twice (JS_NEST_FREE). The
-	// finalizers of the host are not in the graph.
+	// finalizers of the host and host_release are not in the graph: for them
+	// JS_RunGC and JS_RunYoungGC check gc_phase and do nothing while objects
+	// are freed (unit-white, test_gc_in_free).
 	{"free_zero_refcount", "JS_RunGC"},
 	{"free_zero_refcount", "JS_RunYoungGC"},
 	{"free_zero_refcount_first", "JS_RunGC"},

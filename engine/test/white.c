@@ -69,6 +69,10 @@ int host_poll(const volatile int *flag);
 static unsigned long white_shape_hits;
 #define JS_SHAPE_ID_CHECK 1
 #define JS_SHAPE_ID_HIT() (white_shape_hits++)
+
+/* JS_GC_RUN counts the collections that run, full (0) and young (1). */
+static unsigned long white_gc_runs[2];
+#define JS_GC_RUN(young) (white_gc_runs[young]++)
 #define host_poll white_host_poll
 
 #include "../quickjs.c"
@@ -1082,6 +1086,15 @@ int white_atom_refs(JSContext *ctx, const char *s)
     n = js_rc(ctx->rt->atom_array[a])->ref_count - 1;
     JS_FreeAtom(ctx, a);
     return n;
+}
+
+/* ---- collections that run (JS_RunGC, JS_RunYoungGC) ---- */
+
+/* The full (young 0) or young (young 1) collections that ran, past the check
+   of the phase. */
+unsigned long white_gc_run_count(int young)
+{
+    return white_gc_runs[young != 0];
 }
 
 /* ---- the ids of shapes (find_hashed_shape_prop) ---- */

@@ -13,6 +13,10 @@
 - linux/arm64 和 darwin/arm64 上的生成引擎，也像 amd64 一样，是在 C 文件链接之后，再让优化器跑第二遍得到的。tifa 示例应用的页面，每次渲染少跑 0.56% 到 0.99% 的指令（linux/arm64），16 个页面遮掉时间戳之后 HTML 逐字节相同。在 M4 上没有观察到变慢（页面总和是 main 的 0.987 倍，8 轮的中位数，轮与轮之间有 8% 到 16% 的噪声），arm64 的生成汇编大了 12%（[性能](docs/performance.md#on-arm64)）。
 - 内建类的对象从原型的空 shape 开始，这个 shape 由上下文保存。对象的下一个 shape 是从当前 shape 长出来的时候，只比较最后一个键。在收集之外引用数归零、又没有别的东西要一起释放的对象，当场释放。tifa 的商店和 MUI 应用的页面，每次渲染少跑 1.84% 到 2.13% 的指令，bench 页面少 0.49%，bench 页面的耗时少 0.73%（[性能](docs/performance.md#shapes-of-built-in-classes-shapes-found-by-their-parent-objects-that-die-alone)）。
 
+### 修复
+
+- C 引擎在释放对象的过程中（宿主类的 finalizer 里，或 `host_release` 里）被调用 `JS_RunGC`、`JS_RunYoungGC` 时，现在什么也不做直接返回。在那里新建对象也不会开始回收，释放结束后新建下一个对象时会重新检查阈值。以前这次回收会把引擎正在释放的对象一起释放掉（正在跑 finalizer 的那个也在内），结果是进程退出，或者读到已经释放的内存。Go 程序碰不到这个问题：Go API 不注册类，它的 `host_release` 也不跑用户代码。上游 QuickJS 和 quickjs-ng 的代码也是这样（[C 引擎](docs/changes/c-engine.md#a-collection-asked-for-while-objects-are-freed)）。
+
 ## [v0.29.9] - 2026-11-03
 
 ### 新增

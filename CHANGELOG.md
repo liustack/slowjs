@@ -13,6 +13,10 @@ What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs
 - On linux/arm64 and darwin/arm64 the generated engine is made from a module the optimizer ran over a second time, after the C files were linked, as it already is on amd64. A render runs 0.56% to 0.99% fewer instructions on the pages of tifa's example apps (linux/arm64), with the same HTML on the 16 pages once their time stamps are masked. On an M4 no slowdown was seen (the sum of the pages took 0.987 of main's time, the median of 8 rounds, with 8% to 16% of noise between rounds), and the generated assembly of arm64 is 12% larger ([Performance](docs/performance.md#on-arm64)).
 - Objects of the built-in classes start from the empty shape of their prototype, which the context keeps. The next shape of an object is found by comparing only its last key when it grew from the object's shape, and an object whose count drops to zero outside a collection, with nothing else to free, is freed at once. A render runs 1.84% to 2.13% fewer instructions on the pages of tifa's shop and MUI apps and 0.49% fewer on its bench pages, and the bench pages take 0.73% less time ([Performance](docs/performance.md#shapes-of-built-in-classes-shapes-found-by-their-parent-objects-that-die-alone)).
 
+### Fixed
+
+- `JS_RunGC` and `JS_RunYoungGC` of the C engine do nothing when they are called while the engine frees objects, from the finalizer of a class of the host or from `host_release`, and an object made there starts no collection either: the threshold is checked again when the next object is made after the free. Such a collection freed the objects the engine was freeing, the one whose finalizer ran among them, and ended the process or read freed memory. No Go program could reach it: the Go API registers no class and its `host_release` runs no code of the user. Upstream QuickJS and quickjs-ng have the same code ([C engine](docs/changes/c-engine.md#a-collection-asked-for-while-objects-are-freed)).
+
 ## [v0.29.9] - 2026-11-03
 
 ### Added
