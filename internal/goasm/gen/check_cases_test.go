@@ -375,9 +375,12 @@ func TestCheckCases(t *testing.T) {
 		{name: "a Go frame smaller than declared", files: tweakText("g", `, \$(\d+)-`, func(n int) int { return n - 8 }),
 			want: "Go frame is"},
 		// The NOSPLIT list (MarkNoSplit): h, a leaf with no frame, is on
-		// it, and ic, which calls, is not. An assembler that marked another
-		// function NOSPLIT by itself, or stopped marking a small leaf, is
-		// caught: the second is a frame too big for it to mark.
+		// it, and ic, which calls, is not. The generated files say NOSPLIT
+		// for each function on the list, so what the assembler marks by
+		// itself does not change them. An assembler that marked another
+		// function NOSPLIT by itself is caught, and so is a function on the
+		// list with a stack check (here without the flag, and with a frame
+		// too big for the assembler to mark it).
 		{name: "a function off the NOSPLIT list with no stack check", files: addFlag("ic", "NOSPLIT"),
 			want: "not on the NOSPLIT list, but Go does not check the stack"},
 		{name: "a function on the NOSPLIT list with a stack check", files: func(files map[string]string) {
