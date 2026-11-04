@@ -1390,9 +1390,10 @@ static void test_tags_oom(void)
 
 /* Registering makes the cache of the tags, and Function.prototype.call and
    Array.prototype.push, which the engine makes at their first use. With too
-   little memory it fails with the out of memory error and leaves no cache
-   behind, and registering again with the memory back gives a function that
-   works. */
+   little memory it fails with the out of memory error. A failure before the
+   cache is complete leaves no cache, and one after it, in making the function,
+   leaves the whole cache to the next registration. Registering again with the
+   memory back gives a function that works. */
 static void test_tags_register_oom(void)
 {
     static const char call[] =
