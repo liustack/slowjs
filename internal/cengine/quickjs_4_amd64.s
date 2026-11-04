@@ -6159,7 +6159,7 @@ TEXT ·JS_NewAtomInt64(SB), $128-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_ToInt64Clamp(SB), NOSPLIT, $144-72
+TEXT ·JS_ToInt64Clamp(SB), $144-72
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -6632,7 +6632,7 @@ TEXT ·JS_CopySubArray(SB), $224-72
 	BYTE $0x00
 	RET
 
-TEXT ·JS_DeletePropertyInt64(SB), NOSPLIT, $112-56
+TEXT ·JS_DeletePropertyInt64(SB), $112-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -6798,7 +6798,7 @@ TEXT ·JS_DeletePropertyInt64(SB), NOSPLIT, $112-56
 	QUAD $0x00eb000000b02484
 	RET
 
-TEXT ·js_allocate_fast_array(SB), NOSPLIT, $144-40
+TEXT ·js_allocate_fast_array(SB), $144-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -6935,7 +6935,7 @@ TEXT ·js_allocate_fast_array(SB), NOSPLIT, $144-40
 	BYTE $0xff
 	RET
 
-TEXT ·JS_SetPropertyInt64(SB), NOSPLIT, $96-64
+TEXT ·JS_SetPropertyInt64(SB), $96-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -7559,7 +7559,7 @@ TEXT ·js_object_toString(SB), $160-64
 	CALL ·abort(SB)
 	RET
 
-TEXT ·string_buffer_set_error(SB), NOSPLIT, $96-16
+TEXT ·string_buffer_set_error(SB), $96-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -8608,7 +8608,7 @@ TEXT ·js_typed_array_constructor(SB), $192-72
 	BYTE $0xff
 	RET
 
-TEXT ·js_typed_array_create(SB), NOSPLIT, $192-64
+TEXT ·js_typed_array_create(SB), $192-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
@@ -8808,7 +8808,7 @@ TEXT ·js_typed_array_create(SB), NOSPLIT, $192-64
 	BYTE $0xff
 	RET
 
-TEXT ·js_invoke(SB), NOSPLIT, $144-56
+TEXT ·js_invoke(SB), $144-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -8869,7 +8869,7 @@ TEXT ·js_invoke(SB), NOSPLIT, $144-56
 	BYTE $0x00
 	RET
 
-TEXT ·check_exception_free(SB), NOSPLIT, $48-40
+TEXT ·check_exception_free(SB), $48-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -8963,7 +8963,7 @@ TEXT ·js_array_buffer_free(SB), $80-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_ToIndex(SB), NOSPLIT, $128-48
+TEXT ·JS_ToIndex(SB), $128-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -9045,7 +9045,7 @@ TEXT ·JS_ToIndex(SB), NOSPLIT, $128-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_typed_array_constructor_ta(SB), NOSPLIT, $160-80
+TEXT ·js_typed_array_constructor_ta(SB), $160-80
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -9597,7 +9597,7 @@ TEXT ·js_array_from_iterator(SB), $208-72
 	BYTE $0xff
 	RET
 
-TEXT ·typed_array_init(SB), NOSPLIT, $96-56
+TEXT ·typed_array_init(SB), $96-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -11128,7 +11128,7 @@ TEXT ·js_get_this(SB), NOSPLIT, $0-48
 	BYTE $0x00
 	RET
 
-TEXT ·JS_GetIterator2(SB), NOSPLIT, $80-64
+TEXT ·JS_GetIterator2(SB), $80-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -11736,7 +11736,7 @@ TEXT ·JS_NewContext(SB), $96-24
 	BYTE $0xef
 	RET
 
-TEXT ·JS_AddIntrinsicBaseObjects(SB), NOSPLIT, $144-24
+TEXT ·JS_AddIntrinsicBaseObjects(SB), $144-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -14036,7 +14036,7 @@ TEXT ·__JS_EvalInternal(SB), $224-88
 	QUAD $0x8000000080000000
 	RET
 
-TEXT ·JS_AddIntrinsicRegExp(SB), NOSPLIT, $112-24
+TEXT ·JS_AddIntrinsicRegExp(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -14244,7 +14244,7 @@ TEXT ·JS_AddIntrinsicRegExp(SB), NOSPLIT, $112-24
 	QUAD $0xfffffe6ce9c189c0
 	RET
 
-TEXT ·JS_AddIntrinsicProxy(SB), NOSPLIT, $128-24
+TEXT ·JS_AddIntrinsicProxy(SB), $128-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -14398,7 +14398,7 @@ TEXT ·JS_AddIntrinsicProxy(SB), NOSPLIT, $128-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_AddIntrinsicMapSet(SB), NOSPLIT, $128-24
+TEXT ·JS_AddIntrinsicMapSet(SB), $128-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -14604,7 +14604,7 @@ TEXT ·JS_AddIntrinsicMapSet(SB), NOSPLIT, $128-24
 	QUAD $0x00eb000000a02484
 	RET
 
-TEXT ·JS_AddIntrinsicTypedArrays(SB), NOSPLIT, $144-24
+TEXT ·JS_AddIntrinsicTypedArrays(SB), $144-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -15052,7 +15052,7 @@ TEXT ·JS_AddIntrinsicTypedArrays(SB), NOSPLIT, $144-24
 	BYTE $0xff
 	RET
 
-TEXT ·JS_AddIntrinsicPromise(SB), NOSPLIT, $112-24
+TEXT ·JS_AddIntrinsicPromise(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -15376,7 +15376,7 @@ TEXT ·JS_AddIntrinsicPromise(SB), NOSPLIT, $112-24
 	BYTE $0xff
 	RET
 
-TEXT ·JS_AddIntrinsicWeakRef(SB), NOSPLIT, $80-24
+TEXT ·JS_AddIntrinsicWeakRef(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19647,7 +19647,7 @@ TEXT ·js_function_constructor(SB), $240-72
 	BYTE $0xff
 	RET
 
-TEXT ·JS_NewObjectProtoList(SB), NOSPLIT, $112-64
+TEXT ·JS_NewObjectProtoList(SB), $112-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -19700,7 +19700,7 @@ TEXT ·JS_NewObjectProtoList(SB), NOSPLIT, $112-64
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetConstructor2(SB), NOSPLIT, $128-56
+TEXT ·JS_SetConstructor2(SB), $128-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -20705,7 +20705,7 @@ TEXT ·js_async_generator_resume_next(SB), $192-24
 	QUAD $0xffffff3effffffdd
 	RET
 
-TEXT ·js_async_generator_resolve(SB), NOSPLIT, $96-24
+TEXT ·js_async_generator_resolve(SB), $96-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -20753,7 +20753,7 @@ TEXT ·js_async_generator_resolve(SB), NOSPLIT, $96-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_async_generator_completed_return(SB), NOSPLIT, $160-40
+TEXT ·js_async_generator_completed_return(SB), $160-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -20950,7 +20950,7 @@ TEXT ·js_async_generator_completed_return(SB), NOSPLIT, $160-40
 	BYTE $0x00
 	RET
 
-TEXT ·js_async_generator_resolve_or_reject(SB), NOSPLIT, $80-48
+TEXT ·js_async_generator_resolve_or_reject(SB), $80-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21102,7 +21102,7 @@ TEXT ·js_async_generator_resolve_or_reject(SB), NOSPLIT, $80-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_create_iterator_result(SB), NOSPLIT, $160-56
+TEXT ·js_create_iterator_result(SB), $160-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -22121,7 +22121,7 @@ TEXT ·js_async_from_sync_iterator_next(SB), $192-72
 	BYTE $0xff
 	RET
 
-TEXT ·JS_IteratorGetCompleteValue(SB), NOSPLIT, $128-56
+TEXT ·JS_IteratorGetCompleteValue(SB), $128-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -22178,7 +22178,7 @@ TEXT ·JS_IteratorGetCompleteValue(SB), NOSPLIT, $128-56
 	BYTE $0x00
 	RET
 
-TEXT ·js_async_from_sync_iterator_unwrap_func_create(SB), NOSPLIT, $80-40
+TEXT ·js_async_from_sync_iterator_unwrap_func_create(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c

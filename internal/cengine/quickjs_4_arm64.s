@@ -620,7 +620,7 @@ TEXT ·js_promise_withResolvers(SB), $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·remainingElementsCount_add(SB), NOSPLIT, $136-48
+TEXT ·remainingElementsCount_add(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -719,7 +719,7 @@ TEXT ·remainingElementsCount_add(SB), NOSPLIT, $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_aggregate_error_constructor(SB), NOSPLIT, $136-48
+TEXT ·js_aggregate_error_constructor(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -918,7 +918,7 @@ TEXT ·js_aggregate_error_constructor(SB), NOSPLIT, $136-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_async_generator_free(SB), NOSPLIT, $136-24
+TEXT ·js_async_generator_free(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1212,7 +1212,7 @@ TEXT ·js_async_generator_free(SB), NOSPLIT, $136-24
 	WORD $0x17ffffe1
 	RET
 
-TEXT ·js_async_context_wrap(SB), NOSPLIT, $88-48
+TEXT ·js_async_context_wrap(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4326,7 +4326,7 @@ TEXT ·js_atomics_notify(SB), $104-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·typed_array_is_oob(SB), NOSPLIT, $8-24
+TEXT ·typed_array_is_oob(SB), $8-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4520,7 +4520,7 @@ TEXT ·js_dataview_get_byteOffset(SB), $72-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_NewBigUint64(SB), NOSPLIT, $72-40
+TEXT ·JS_NewBigUint64(SB), $72-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6013,7 +6013,7 @@ TEXT ·js_uint8array_set_from_hex(SB), $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_make_read_written(SB), NOSPLIT, $120-48
+TEXT ·js_make_read_written(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8246,7 +8246,7 @@ TEXT ·js_uint8array_from_hex(SB), $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_NewUint8ArrayCopy(SB), NOSPLIT, $152-48
+TEXT ·JS_NewUint8ArrayCopy(SB), $152-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13517,7 +13517,7 @@ TEXT ·js_TA_get_float64(SB), NOSPLIT, $0-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·validate_typed_array(SB), NOSPLIT, $72-40
+TEXT ·validate_typed_array(SB), $72-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13576,7 +13576,7 @@ TEXT ·validate_typed_array(SB), NOSPLIT, $72-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·slice_memcpy(SB), NOSPLIT, $88-32
+TEXT ·slice_memcpy(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13830,7 +13830,7 @@ TEXT ·slice_memcpy(SB), NOSPLIT, $88-32
 	WORD $0x17ffff91
 	RET
 
-TEXT ·js_get_length64(SB), NOSPLIT, $120-48
+TEXT ·js_get_length64(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14910,7 +14910,7 @@ TEXT ·js_array_buffer_get_resizable(SB), $88-56
 	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·JS_GetOpaque2(SB), NOSPLIT, $88-48
+TEXT ·JS_GetOpaque2(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14959,7 +14959,7 @@ TEXT ·JS_GetOpaque2(SB), NOSPLIT, $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_ThrowTypeErrorInvalidClass(SB), NOSPLIT, $88-24
+TEXT ·JS_ThrowTypeErrorInvalidClass(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14994,7 +14994,7 @@ TEXT ·JS_ThrowTypeErrorInvalidClass(SB), NOSPLIT, $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·js_array_buffer_update_typed_arrays(SB), NOSPLIT, $56-16
+TEXT ·js_array_buffer_update_typed_arrays(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15071,7 +15071,7 @@ TEXT ·js_array_buffer_update_typed_arrays(SB), NOSPLIT, $56-16
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_ToInt64Free(SB), NOSPLIT, $104-48
+TEXT ·JS_ToInt64Free(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15814,7 +15814,7 @@ TEXT ·map_add_record(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·map_hash_long_key_poll(SB), NOSPLIT, $136-56
+TEXT ·map_hash_long_key_poll(SB), $136-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16374,7 +16374,7 @@ TEXT ·map_hash_long_key_poll(SB), NOSPLIT, $136-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·map_find_record_long(SB), NOSPLIT, $104-56
+TEXT ·map_find_record_long(SB), $104-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20242,7 +20242,7 @@ TEXT ·js_set_union(SB), $168-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_copy_set(SB), NOSPLIT, $152-48
+TEXT ·js_copy_set(SB), $152-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23555,7 +23555,7 @@ TEXT ·js_proxy_prevent_extensions(SB), $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_free_desc(SB), NOSPLIT, $72-24
+TEXT ·js_free_desc(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23622,7 +23622,7 @@ TEXT ·js_free_desc(SB), NOSPLIT, $72-24
 	WORD $0x14000001
 	RET
 
-TEXT ·js_obj_to_desc(SB), NOSPLIT, $152-48
+TEXT ·js_obj_to_desc(SB), $152-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26298,7 +26298,7 @@ TEXT ·js_json_stringify(SB), $56-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_sub_string(SB), NOSPLIT, $184-56
+TEXT ·js_sub_string(SB), $184-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27035,7 +27035,7 @@ TEXT ·js_sub_string(SB), NOSPLIT, $184-56
 	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·JS_IsArray(SB), NOSPLIT, $104-40
+TEXT ·JS_IsArray(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27118,7 +27118,7 @@ TEXT ·JS_IsArray(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_putc8(SB), NOSPLIT, $72-24
+TEXT ·string_buffer_putc8(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

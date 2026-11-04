@@ -20,7 +20,7 @@ TEXT ·heap_usable_size(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·heap_create(SB), NOSPLIT, $128-32
+TEXT ·heap_create(SB), $128-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -250,7 +250,7 @@ TEXT ·heap_set_remap(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·heap_alloc(SB), NOSPLIT, $64-32
+TEXT ·heap_alloc(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -280,7 +280,7 @@ TEXT ·heap_alloc(SB), NOSPLIT, $64-32
 	QUAD $0x00eb6824448948c8
 	RET
 
-TEXT ·heap_take(SB), NOSPLIT, $96-40
+TEXT ·heap_take(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -419,7 +419,7 @@ TEXT ·heap_take(SB), NOSPLIT, $96-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·heap_free(SB), NOSPLIT, $112-24
+TEXT ·heap_free(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -492,7 +492,7 @@ TEXT ·heap_free(SB), NOSPLIT, $112-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·heap_realloc(SB), NOSPLIT, $192-40
+TEXT ·heap_realloc(SB), $192-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
@@ -818,7 +818,7 @@ TEXT ·heap_realloc(SB), NOSPLIT, $192-40
 	CALL ·abort(SB)
 	RET
 
-TEXT ·heap_remap_dedicated(SB), NOSPLIT, $128-56
+TEXT ·heap_remap_dedicated(SB), $128-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -885,7 +885,7 @@ TEXT ·heap_remap_dedicated(SB), NOSPLIT, $128-56
 	CALL ·abort(SB)
 	RET
 
-TEXT ·heap_give_back(SB), NOSPLIT, $64-32
+TEXT ·heap_give_back(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -917,7 +917,7 @@ TEXT ·heap_give_back(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·heap_release_start(SB), NOSPLIT, $96-24
+TEXT ·heap_release_start(SB), $96-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -999,7 +999,7 @@ TEXT ·heap_release_start(SB), NOSPLIT, $96-24
 	BYTE $0x00
 	RET
 
-TEXT ·heap_release_next_chunk(SB), NOSPLIT, $96-32
+TEXT ·heap_release_next_chunk(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -1065,7 +1065,7 @@ TEXT ·heap_release_next_chunk(SB), NOSPLIT, $96-32
 	QUAD $0x0000000000000000
 	RET
 
-TEXT ·heap_release_next_range(SB), NOSPLIT, $80-32
+TEXT ·heap_release_next_range(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c

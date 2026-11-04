@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·u32toa(SB), NOSPLIT, $104-32
+TEXT ·u32toa(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -211,7 +211,7 @@ TEXT ·u32toa(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·i32toa(SB), NOSPLIT, $88-32
+TEXT ·i32toa(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -601,7 +601,7 @@ TEXT ·i32toa(SB), NOSPLIT, $88-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·u64toa(SB), NOSPLIT, $104-32
+TEXT ·u64toa(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1214,7 +1214,7 @@ TEXT ·u64toa(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·i64toa(SB), NOSPLIT, $56-32
+TEXT ·i64toa(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1241,7 +1241,7 @@ TEXT ·i64toa(SB), NOSPLIT, $56-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·u64toa_radix(SB), NOSPLIT, $104-40
+TEXT ·u64toa_radix(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1382,7 +1382,7 @@ TEXT ·u64toa_radix(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·i64toa_radix(SB), NOSPLIT, $104-40
+TEXT ·i64toa_radix(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3048,7 +3048,7 @@ TEXT ·js_dtoa(SB), $248-64
 	MOVD R0, ret+56(FP)
 	RET
 
-TEXT ·mpb_shr_round(SB), NOSPLIT, $168-32
+TEXT ·mpb_shr_round(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3837,7 +3837,7 @@ TEXT ·mpb_shr_round(SB), NOSPLIT, $168-32
 	WORD $0x17ffffee
 	RET
 
-TEXT ·output_digits(SB), NOSPLIT, $168-56
+TEXT ·output_digits(SB), $168-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5496,7 +5496,7 @@ TEXT ·js_atod(SB), $264-56
 	FMOVD F0, ret+48(FP)
 	RET
 
-TEXT ·mul_pow_block(SB), NOSPLIT, $168-24
+TEXT ·mul_pow_block(SB), $168-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5901,7 +5901,7 @@ TEXT ·mul_pow_block(SB), NOSPLIT, $168-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·mp_div1norm_block(SB), NOSPLIT, $104-24
+TEXT ·mp_div1norm_block(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

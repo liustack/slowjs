@@ -6608,7 +6608,7 @@ TEXT ·get_lvalue(SB), $192-80
 	QUAD $0xffffeaddffffff48
 	RET
 
-TEXT ·put_lvalue(SB), NOSPLIT, $80-64
+TEXT ·put_lvalue(SB), $80-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -13123,7 +13123,7 @@ TEXT ·js_parse_template(SB), $240-40
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_regexp(SB), NOSPLIT, $144-24
+TEXT ·js_parse_regexp(SB), $144-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -14562,7 +14562,7 @@ TEXT ·js_parse_property_name(SB), $112-56
 	BYTE $0xff
 	RET
 
-TEXT ·set_object_name_computed(SB), NOSPLIT, $32-16
+TEXT ·set_object_name_computed(SB), $32-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -14640,7 +14640,7 @@ TEXT ·js_parse_postfix_expr(SB), $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·optional_chain_test(SB), NOSPLIT, $112-32
+TEXT ·optional_chain_test(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -15606,7 +15606,7 @@ TEXT ·js_parse_string(SB), $160-64
 	QUAD $0xfffff5f6fffff5ff
 	RET
 
-TEXT ·js_parse_template_part(SB), NOSPLIT, $144-32
+TEXT ·js_parse_template_part(SB), $144-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -15956,7 +15956,7 @@ TEXT ·js_parse_template_part(SB), NOSPLIT, $144-32
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_destructuring_var(SB), NOSPLIT, $96-32
+TEXT ·js_parse_destructuring_var(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -16089,7 +16089,7 @@ TEXT ·js_parse_destructuring_var(SB), NOSPLIT, $96-32
 	BYTE $0xff
 	RET
 
-TEXT ·js_emit_spread_code(SB), NOSPLIT, $96-24
+TEXT ·js_emit_spread_code(SB), $96-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -16406,7 +16406,7 @@ TEXT ·js_emit_spread_code(SB), NOSPLIT, $96-24
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_skip_parens_error(SB), NOSPLIT, $32-24
+TEXT ·js_parse_skip_parens_error(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -16430,7 +16430,7 @@ TEXT ·js_parse_skip_parens_error(SB), NOSPLIT, $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·add_global_var(SB), NOSPLIT, $96-40
+TEXT ·add_global_var(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -16741,7 +16741,7 @@ TEXT ·emit_class_init_start(SB), $128-32
 	BYTE $0xff
 	RET
 
-TEXT ·add_private_class_field(SB), NOSPLIT, $96-56
+TEXT ·add_private_class_field(SB), $96-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -16830,7 +16830,7 @@ TEXT ·add_private_class_field(SB), NOSPLIT, $96-56
 	BYTE $0xff
 	RET
 
-TEXT ·js_atom_concat_num(SB), NOSPLIT, $112-40
+TEXT ·js_atom_concat_num(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -17140,7 +17140,7 @@ TEXT ·js_parse_class_default_ctor(SB), $128-40
 	BYTE $0xff
 	RET
 
-TEXT ·emit_class_init_end(SB), NOSPLIT, $96-32
+TEXT ·emit_class_init_end(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -17251,7 +17251,7 @@ TEXT ·emit_class_init_end(SB), NOSPLIT, $96-32
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_check_duplicate_parameter(SB), NOSPLIT, $96-32
+TEXT ·js_parse_check_duplicate_parameter(SB), $96-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -17333,7 +17333,7 @@ TEXT ·js_parse_check_duplicate_parameter(SB), NOSPLIT, $96-32
 	BYTE $0x00
 	RET
 
-TEXT ·add_arg(SB), NOSPLIT, $96-40
+TEXT ·add_arg(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -17394,7 +17394,7 @@ TEXT ·add_arg(SB), NOSPLIT, $96-40
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_function_check_names(SB), NOSPLIT, $128-40
+TEXT ·js_parse_function_check_names(SB), $128-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -17582,7 +17582,7 @@ TEXT ·js_parse_function_check_names(SB), NOSPLIT, $128-40
 	BYTE $0x00
 	RET
 
-TEXT ·reparse_ident_token(SB), NOSPLIT, $64-16
+TEXT ·reparse_ident_token(SB), $64-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -17656,7 +17656,7 @@ TEXT ·reparse_ident_token(SB), NOSPLIT, $64-16
 	QUAD $0xfffffe69e9000001
 	RET
 
-TEXT ·cpool_add(SB), NOSPLIT, $80-24
+TEXT ·cpool_add(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -17692,7 +17692,7 @@ TEXT ·cpool_add(SB), NOSPLIT, $80-24
 	BYTE $0xff
 	RET
 
-TEXT ·find_var(SB), NOSPLIT, $64-32
+TEXT ·find_var(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -19490,7 +19490,7 @@ TEXT ·js_date_toJSON(SB), $160-64
 	CALL ·abort(SB)
 	RET
 
-TEXT ·get_date_fields(SB), NOSPLIT, $128-56
+TEXT ·get_date_fields(SB), $128-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -19729,7 +19729,7 @@ TEXT ·get_date_fields(SB), NOSPLIT, $128-56
 	QUAD $0x4026000000000000
 	RET
 
-TEXT ·set_date_fields(SB), NOSPLIT, $144-32
+TEXT ·set_date_fields(SB), $144-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
@@ -21498,7 +21498,7 @@ TEXT ·js_Date_UTC(SB), $128-64
 	QUAD $0x41dfffffffc00000
 	RET
 
-TEXT ·set_date_fields_checked(SB), NOSPLIT, $32-32
+TEXT ·set_date_fields_checked(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -22403,7 +22403,7 @@ TEXT ·js_number_constructor(SB), $224-64
 	QUAD $0x41dfffffffc00000
 	RET
 
-TEXT ·JS_SetObjectData(SB), NOSPLIT, $80-56
+TEXT ·JS_SetObjectData(SB), $80-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c

@@ -7537,7 +7537,7 @@ TEXT ·share_local_slots(SB), $568-24
 	WORD $0x17fff95d
 	RET
 
-TEXT ·put_short_code(SB), NOSPLIT, $72-32
+TEXT ·put_short_code(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7733,7 +7733,7 @@ TEXT ·put_short_code(SB), NOSPLIT, $72-32
 	WORD $0x6b705c57
 	RET
 
-TEXT ·update_label(SB), NOSPLIT, $8-32
+TEXT ·update_label(SB), $8-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7783,7 +7783,7 @@ TEXT ·add_pc2line_info(SB), NOSPLIT, $0-32
 	WORD $0x14000001
 	RET
 
-TEXT ·push_short_int(SB), NOSPLIT, $72-24
+TEXT ·push_short_int(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7917,7 +7917,7 @@ TEXT ·push_short_int(SB), NOSPLIT, $72-24
 	WORD $0x17ffffc5
 	RET
 
-TEXT ·dbuf_put_u32(SB), NOSPLIT, $56-24
+TEXT ·dbuf_put_u32(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7942,7 +7942,7 @@ TEXT ·dbuf_put_u32(SB), NOSPLIT, $56-24
 	WORD $0x14000001
 	RET
 
-TEXT ·fuse_code(SB), NOSPLIT, $152-32
+TEXT ·fuse_code(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8540,7 +8540,7 @@ TEXT ·fuse_code(SB), NOSPLIT, $152-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·compute_pc2line_info(SB), NOSPLIT, $200-16
+TEXT ·compute_pc2line_info(SB), $200-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9573,7 +9573,7 @@ TEXT ·compute_pc2line_info(SB), NOSPLIT, $200-16
 	WORD $0x17fffd54
 	RET
 
-TEXT ·link_var_scopes(SB), NOSPLIT, $88-16
+TEXT ·link_var_scopes(SB), $88-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9790,7 +9790,7 @@ TEXT ·link_var_scopes(SB), NOSPLIT, $88-16
 	WORD $0x17fffff5
 	RET
 
-TEXT ·resolve_pseudo_var(SB), NOSPLIT, $88-48
+TEXT ·resolve_pseudo_var(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10117,7 +10117,7 @@ TEXT ·resolve_pseudo_var(SB), NOSPLIT, $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·add_arguments_var(SB), NOSPLIT, $72-32
+TEXT ·add_arguments_var(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10191,7 +10191,7 @@ TEXT ·add_arguments_var(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·add_closure_var(SB), NOSPLIT, $88-40
+TEXT ·add_closure_var(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10781,7 +10781,7 @@ TEXT ·emit_iterator_close(SB), $88-32
 	WORD $0x17fffe4d
 	RET
 
-TEXT ·emit_goto(SB), NOSPLIT, $104-40
+TEXT ·emit_goto(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10923,7 +10923,7 @@ TEXT ·emit_goto(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·simple_next_token(SB), NOSPLIT, $120-32
+TEXT ·simple_next_token(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13940,7 +13940,7 @@ TEXT ·js_parse_function_decl2(SB), $72-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_string_find_invalid_codepoint(SB), NOSPLIT, $56-24
+TEXT ·js_string_find_invalid_codepoint(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14211,7 +14211,7 @@ TEXT ·add_export_entry(SB), $136-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_parse_expect(SB), NOSPLIT, $56-32
+TEXT ·js_parse_expect(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14429,7 +14429,7 @@ TEXT ·js_parse_from_clause(SB), $120-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·add_star_export_entry(SB), NOSPLIT, $88-40
+TEXT ·add_star_export_entry(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16774,7 +16774,7 @@ TEXT ·js_parse_var(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_parse_expect_semi(SB), NOSPLIT, $56-24
+TEXT ·js_parse_expect_semi(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20582,7 +20582,7 @@ TEXT ·js_parse_statement_or_decl1(SB), $184-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·emit_label(SB), NOSPLIT, $72-24
+TEXT ·emit_label(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20643,7 +20643,7 @@ TEXT ·emit_label(SB), NOSPLIT, $72-24
 	WORD $0x17ffffe2
 	RET
 
-TEXT ·pop_scope(SB), NOSPLIT, $88-16
+TEXT ·pop_scope(SB), $88-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20915,7 +20915,7 @@ TEXT ·js_parse_expr2(SB), $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·emit_source_pos(SB), NOSPLIT, $88-24
+TEXT ·emit_source_pos(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20962,7 +20962,7 @@ TEXT ·emit_source_pos(SB), NOSPLIT, $88-24
 	WORD $0x17ffffeb
 	RET
 
-TEXT ·set_eval_ret_undefined(SB), NOSPLIT, $72-16
+TEXT ·set_eval_ret_undefined(SB), $72-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22962,7 +22962,7 @@ TEXT ·js_parse_for_in_of(SB), $184-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·is_let(SB), NOSPLIT, $88-24
+TEXT ·is_let(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23046,7 +23046,7 @@ TEXT ·is_let(SB), NOSPLIT, $88-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·close_scopes(SB), NOSPLIT, $88-32
+TEXT ·close_scopes(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23146,7 +23146,7 @@ TEXT ·close_scopes(SB), NOSPLIT, $88-32
 	WORD $0x14000001
 	RET
 
-TEXT ·new_label(SB), NOSPLIT, $88-24
+TEXT ·new_label(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23202,7 +23202,7 @@ TEXT ·new_label(SB), NOSPLIT, $88-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·emit_break(SB), NOSPLIT, $120-40
+TEXT ·emit_break(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23580,7 +23580,7 @@ TEXT ·emit_break(SB), NOSPLIT, $120-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·emit_u32(SB), NOSPLIT, $56-24
+TEXT ·emit_u32(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23906,7 +23906,7 @@ TEXT ·js_parse_destructuring_element(SB), $72-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_define_var(SB), NOSPLIT, $72-40
+TEXT ·js_define_var(SB), $72-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23986,7 +23986,7 @@ TEXT ·js_define_var(SB), NOSPLIT, $72-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·add_var(SB), NOSPLIT, $88-40
+TEXT ·add_var(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

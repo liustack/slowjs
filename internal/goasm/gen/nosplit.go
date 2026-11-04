@@ -5,139 +5,61 @@
 
 // Functions without Go's stack check. Every unified entry starts with the
 // stack check of the Go assembler, three instructions that compare the stack
-// pointer with the guard in g and call morestack below it. A function whose
-// TEXT says NOSPLIT has none: the Go documentation of the assembler gives it
-// the room left above the guard, and the linker adds up every chain of
-// NOSPLIT calls and fails the build when one needs more than that room
-// (cmd/link/internal/ld/stackcheck.go: 800 bytes less one CALL on amd64,
-// "nosplit stack over 792 byte limit"). The Go assembler marks a function
-// NOSPLIT on its own when it calls nothing and its frame with the saved base
-// pointer is under 128 bytes.
+// pointer with the guard in g and call morestack below it, unless its TEXT
+// says NOSPLIT. The generator chooses no function to go without it. The
+// functions without one are those that cannot have one:
 //
-// PickNoSplit chooses the functions whose TEXT says NOSPLIT. The list holds
-// the leaves the assembler would mark anyway, named so that the post-link
-// check knows every function without a stack check, the register-entry
-// leaves, which are NOSPLIT by their form, and the functions it chooses on
-// top of those. A chosen function
+//   - the register-entry leaves (memcpy, memmove, memset), which are NOSPLIT
+//     by their form: they take their arguments in registers that morestack
+//     would not keep,
+//   - the leaves the Go assembler marks NOSPLIT by itself: a function that
+//     calls nothing and whose frame with the saved base pointer is under 128
+//     bytes (abi.StackSmall, cmd/internal/obj/x86/obj6.go and
+//     cmd/internal/obj/arm64/obj7.go).
 //
-//   - has no address taken, so that no call through a pointer reaches it: the
-//     linker takes the target of an indirect call for a function with a
-//     stack check and counts only the CALL,
-//   - makes no call through a pointer, so that every function a chain of
-//     NOSPLIT calls reaches is one the linker counts (an automatic NOSPLIT
-//     leaf whose address is taken is then reached only from functions with
-//     a stack check),
-//   - is on no cycle of direct calls, so that a recursion always goes through
-//     a stack check, which grows the stack and is where the Go runtime can
-//     stop the goroutine,
-//   - and fits the room, with what a fault and a Go caller add to it (below).
+// The generator names both in their TEXT, so that the list is written down
+// and the post-link check holds every entry to it: a function on it must have
+// no stack check, every other one must have one. A Go assembler that marks
+// other leaves by itself, or no longer marks these, fails that check.
 //
-// A chain of NOSPLIT calls starts below a function with a stack check, which
-// leaves at least 800 bytes above the bottom of the goroutine's stack once
-// its frame is made (internal/abi.StackNosplitBase, which the runtime's guard
-// adds to the 128 bytes of abi.StackSmall). The room a chain may take is
-// counted as the linker counts it: each frame with its saved base pointer,
-// 8 bytes for each CALL, 8 for the CALL of morestack of a function with a
-// stack check that a chain calls, and the height of each NOSPLIT callee. Two
-// things the linker does not count are added:
-//
-//   - A fault in a NOSPLIT function (a wild pointer of the C) becomes a call
-//     of runtime.sigpanic that the signal handler pushes onto the
-//     goroutine's stack where the fault is (runtime/signal_amd64.go,
-//     pushCall), and sigpanic has a stack check that may call morestack
-//     (runtime/signal_unix.go: it must not be nosplit "because the linker
-//     doesn't know where sigpanic calls can be injected"). morestack needs
-//     those two return addresses, 16 bytes, to fit above the bottom of the
-//     stack: newstack throws "split stack overflow", which ends the process,
-//     when they do not. FaultRoom is kept below the deepest frame of every
-//     chain for this.
-//   - A Go func value of an assembly function calls it through an ABI
-//     wrapper that the compiler marks NOSPLIT (cmd/compile/internal/ssagen/
-//     abi.go), with a frame for the function's arguments: the linker counts
-//     the arguments, the saved base pointer and the CALL above the function,
-//     ArgBytes + 16 (a goasmkeep build takes the value of every function).
-//     Each chosen function leaves that room above it.
-//
-// Go host callbacks are reached through such a wrapper too, the other way
-// round, and are counted with CallbackHeight (the linker counted at most 72
-// bytes for those of internal/cengine: the wrapper of host_call).
-//
-// The choice goes from the callees up: a function is taken when its chain
-// fits with the callees taken so far, and taking it changes only the
-// functions that call it, which come later. Nothing depends on how often a
-// function is called, so the same C gives the same list.
+// An automatic leaf calls nothing. A register-entry leaf calls nothing but
+// other register-entry leaves, whose arguments stay in registers (the
+// engine's three call nothing), and MarkNoSplit fails when a function on the
+// list makes another call, when register-entry leaves call each other in a
+// cycle, or when one takes 128 bytes or more below its entry with the leaves
+// it calls. A leaf is entered from a function that passed its stack check,
+// which leaves at least 800 bytes above the bottom of the goroutine's stack
+// once its frame is made (internal/abi.StackNosplitBase with the 128 bytes of
+// abi.StackSmall in the guard). A fault in the leaf (a wild pointer of the C)
+// becomes a call of runtime.sigpanic that the signal handler pushes where the
+// fault is, and sigpanic's stack check may call morestack: that takes 16
+// bytes on amd64 and 24 on arm64, far below what the leaf leaves of the 800.
+// The linker still adds up every chain of NOSPLIT calls on each build
+// (cmd/link/internal/ld/stackcheck.go), the ABI wrapper of a Go func value
+// that calls a leaf included.
 package gen
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 )
 
-const (
-	// NoSplitLimit is the room the linker gives a chain of NOSPLIT calls on
-	// amd64: StackNosplit (800) less the CALL into the chain.
-	NoSplitLimit = 792
-	// FaultRoom is kept below the deepest frame of a chosen chain for the
-	// call of sigpanic that a fault adds, and its call of morestack: 16
-	// bytes, and as much again four times over in case a runtime needs more.
-	FaultRoom = 64
-	// CallbackHeight is what a call of a Go host callback adds below the
-	// CALL: its ABI wrapper and the CALL of morestack of the Go function.
-	CallbackHeight = 128
-	// autoNoSplitFrame is the frame, with the saved base pointer, under
-	// which the Go assembler marks a function that calls nothing NOSPLIT
-	// (abi.StackSmall, cmd/internal/obj/x86/obj6.go).
-	autoNoSplitFrame = 128
-)
+// autoNoSplitFrame is the frame, with the saved base pointer, under which
+// the Go assembler marks a function that calls nothing NOSPLIT
+// (abi.StackSmall, cmd/internal/obj/x86/obj6.go).
+const autoNoSplitFrame = 128
 
-// NoSplitFunc is what the choice reads of one generated function.
-type NoSplitFunc struct {
-	Name     string
-	Kind     Kind
-	Frame    int      // the Go TEXT frame, without the saved base pointer
-	ArgBytes int      // the Go TEXT argument and result area
-	Calls    []string // direct call targets, in order, repeats allowed
-	Indirect bool     // calls through a register
-	Stub     bool     // a stub of a function the generator could not take
-}
-
-// NoSplitPick is the choice: the functions without a stack check, and why.
-type NoSplitPick struct {
-	// Set holds every function whose TEXT says NOSPLIT.
-	Set map[string]bool
-	// Auto are the leaves the assembler marks NOSPLIT by itself, Register
-	// the register-entry leaves, Chosen the others in Set.
-	Auto, Register, Chosen []string
-	// Height is the room each function of Set takes below its entry,
-	// FaultRoom included, as the choice counts it.
-	Height map[string]int
-	// Left are the functions that could not be chosen, by reason.
-	Left map[string][]string
-}
-
-// StackRules are the numbers of the Go toolchain the choice counts with,
-// which differ by architecture.
+// StackRules is how the Go assembler of an architecture lays out a frame.
 type StackRules struct {
 	Arch string
-	// Limit is the room the linker gives a chain of NOSPLIT calls.
-	Limit int
-	// Call is what a call adds to the stack: the return address amd64
-	// pushes, nothing on arm64, which keeps it in LR.
-	Call int
-	// Wrapper is what the ABI wrapper of a Go func value adds above a
-	// function with argBytes of arguments and results.
-	Wrapper func(argBytes int) int
 	// Local is the bytes a frame of the TEXT size frame takes below the
 	// entry, for a function that calls (or calls nothing).
 	Local func(frame int, calls bool) int
 }
 
-// AMD64Stack: the linker gives 800 bytes less one CALL (cmd/link/internal/
-// ld/stackcheck.go), a frame takes the saved base pointer on top, and the
-// wrapper its arguments, the base pointer and its CALL.
-var AMD64Stack = StackRules{Arch: "amd64", Limit: 792, Call: 8,
-	Wrapper: func(a int) int { return a + 16 },
+// AMD64Stack: a frame takes the saved base pointer on top, and a leaf with
+// no frame takes nothing.
+var AMD64Stack = StackRules{Arch: "amd64",
 	Local: func(frame int, calls bool) int {
 		if frame == 0 && !calls {
 			return 0
@@ -145,15 +67,11 @@ var AMD64Stack = StackRules{Arch: "amd64", Limit: 792, Call: 8,
 		return frame + 8
 	}}
 
-// ARM64Stack: the linker gives 800 bytes less 8 for the frame pointer a
-// callee saves below its SP, a call pushes nothing, and a frame is the TEXT
-// size with the saved LR rounded up as cmd/internal/obj/arm64/obj7.go does:
-// 8 more bytes when that is 8 past a multiple of 16, else 16, for the frame
-// pointer. A leaf with no frame gets no frame at all (NOFRAME). The wrapper
-// of a func value has its arguments, the LR and the frame pointer, rounded
-// the same way: at most ArgBytes + 24.
-var ARM64Stack = StackRules{Arch: "arm64", Limit: 792, Call: 0,
-	Wrapper: func(a int) int { return a + 24 },
+// ARM64Stack: a frame is the TEXT size with the saved LR rounded up as
+// cmd/internal/obj/arm64/obj7.go does: 8 more bytes when that is 8 past a
+// multiple of 16, else 16, for the frame pointer. A leaf with no frame gets
+// no frame at all (NOFRAME).
+var ARM64Stack = StackRules{Arch: "arm64",
 	Local: func(frame int, calls bool) int {
 		if frame == 0 && !calls {
 			return 0
@@ -165,322 +83,102 @@ var ARM64Stack = StackRules{Arch: "arm64", Limit: 792, Call: 0,
 		return s + 16
 	}}
 
-// local is the bytes a function's own frame takes below its entry.
-func (f *NoSplitFunc) local(r StackRules) int {
-	return r.Local(f.Frame, len(f.Calls) > 0 || f.Indirect)
+// NoSplitList is the functions whose TEXT says NOSPLIT.
+type NoSplitList struct {
+	// Set holds every one of them, Auto the leaves the assembler marks
+	// NOSPLIT by itself and Register the register-entry leaves.
+	Set            map[string]bool
+	Auto, Register []string
 }
 
-// autoNoSplit says whether the Go assembler marks f NOSPLIT by itself (or,
-// for an arm64 leaf with no frame, gives it no stack check at all).
-func (f *NoSplitFunc) autoNoSplit(r StackRules) bool {
-	return f.Kind == Unified && !f.Stub && len(f.Calls) == 0 && !f.Indirect && f.local(r) < autoNoSplitFrame
+// autoNoSplit says whether the Go assembler marks a unified function with
+// this frame NOSPLIT by itself (or, for an arm64 leaf with no frame, gives
+// it no stack check at all).
+func autoNoSplit(r StackRules, frame int, calls bool) bool {
+	return !calls && r.Local(frame, false) < autoNoSplitFrame
 }
 
-// PickNoSplit chooses the NOSPLIT functions of funcs. taken lists the
-// functions whose address is used other than by a direct call, callbacks the
-// Go functions the engine calls. force adds functions whatever the rules say,
-// for the negative build that shows the linker refuses a recursion. It
-// fails when a call goes to a function it does not know, or when the
-// choice breaks its own rules.
-func PickNoSplit(funcs []NoSplitFunc, taken, callbacks map[string]bool, force []string) (*NoSplitPick, error) {
-	return PickNoSplitFor(AMD64Stack, funcs, taken, callbacks, force)
-}
-
-// PickNoSplitFor is PickNoSplit with the numbers of an architecture.
-func PickNoSplitFor(r StackRules, funcs []NoSplitFunc, taken, callbacks map[string]bool, force []string) (*NoSplitPick, error) {
-	by := map[string]*NoSplitFunc{}
-	for i := range funcs {
-		f := &funcs[i]
-		if by[f.Name] != nil {
-			return nil, fmt.Errorf("nosplit: %s twice", f.Name)
-		}
-		by[f.Name] = f
+// MarkNoSplit sets Meta.NoSplit, and NoSplit of its record, on the functions
+// without a stack check: the register-entry leaves and the unified leaves
+// the Go assembler marks NOSPLIT by itself. It fails when a register-entry
+// leaf calls anything but another one, when they call each other in a cycle,
+// or when one takes autoNoSplitFrame bytes or more below its entry with the
+// leaves it calls (8 bytes for each call, on arm64 too).
+func MarkNoSplit(r StackRules, metas []Meta) (*NoSplitList, error) {
+	l := &NoSplitList{Set: map[string]bool{}}
+	by := map[string]*Meta{}
+	for i := range metas {
+		by[metas[i].Name] = &metas[i]
 	}
-	for _, f := range funcs {
-		for _, c := range f.Calls {
-			if by[c] == nil && !callbacks[c] {
-				return nil, fmt.Errorf("nosplit: %s calls %s, which is neither generated nor a host callback", f.Name, c)
-			}
+	const busy = -1
+	height := map[string]int{}
+	var leafHeight func(m *Meta) (int, error)
+	leafHeight = func(m *Meta) (int, error) {
+		switch h, ok := height[m.Name]; {
+		case h == busy:
+			return 0, fmt.Errorf("nosplit: the register-entry leaf %s calls itself through other leaves", m.Name)
+		case ok:
+			return h, nil
 		}
-	}
-	p := &NoSplitPick{Set: map[string]bool{}, Height: map[string]int{}, Left: map[string][]string{}}
-	names := make([]string, 0, len(by))
-	for n := range by {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		switch f := by[n]; {
-		case f.Kind == Register:
-			p.Set[n] = true
-			p.Register = append(p.Register, n)
-		case f.autoNoSplit(r):
-			p.Set[n] = true
-			p.Auto = append(p.Auto, n)
-		}
-	}
-	cyclic := onCycle(names, by)
-	// height is the room f takes below its entry with the set as it is.
-	// A NOSPLIT function never reaches itself: a leaf calls nothing, and a
-	// chosen function is on no cycle.
-	memo := map[string]int{}
-	var height func(n string) int
-	height = func(n string) int {
-		if h, ok := memo[n]; ok {
-			return h
-		}
-		f := by[n]
-		l := f.local(r)
-		h := l + FaultRoom
-		for _, c := range f.Calls {
-			var below int
-			switch {
-			case p.Set[c]:
-				below = height(c)
-			case by[c] != nil:
-				below = r.Call // the CALL of morestack in its stack check
-			default: // a Go callback
-				below = CallbackHeight
-			}
-			h = max(h, l+r.Call+below)
-		}
-		memo[n] = h
-		return h
-	}
-	fits := func(f *NoSplitFunc) bool { return height(f.Name)+r.Wrapper(f.ArgBytes) <= r.Limit }
-	for _, n := range calleesFirst(names, by) {
-		f := by[n]
-		if p.Set[n] {
-			continue
-		}
-		var why string
-		switch {
-		case f.Stub:
-			why = "stub"
-		case taken[n]:
-			why = "address taken"
-		case f.Indirect:
-			why = "calls through a pointer"
-		case cyclic[n]:
-			why = "on a cycle of calls"
-		}
-		if why == "" {
-			p.Set[n] = true
-			if !fits(f) {
-				delete(p.Set, n)
-				why = "over the room"
-			}
-			// Taking f or not changes no height known so far: only the
-			// functions that call f, which come later, depend on it.
-			delete(memo, n)
-		}
-		if why != "" {
-			p.Left[why] = append(p.Left[why], n)
-			continue
-		}
-		p.Chosen = append(p.Chosen, n)
-	}
-	forced := map[string]bool{}
-	for _, n := range force {
-		if by[n] == nil {
-			return nil, fmt.Errorf("nosplit: forced %s is not a generated function", n)
-		}
-		if !p.Set[n] {
-			p.Set[n] = true
-			p.Chosen = append(p.Chosen, n)
-			forced[n] = true
-		}
-	}
-	sort.Strings(p.Chosen)
-	if len(forced) > 0 {
-		// A negative build: what was forced may recurse, and only the
-		// linker judges it.
-		return p, nil
-	}
-	// The rules again, on the final set.
-	memo = map[string]int{}
-	for _, n := range names {
-		if !p.Set[n] {
-			continue
-		}
-		f := by[n]
-		if f.Kind == Unified && !f.autoNoSplit(r) {
-			if taken[n] || f.Indirect || cyclic[n] || f.Stub {
-				return nil, fmt.Errorf("nosplit: %s was chosen against the rules", n)
-			}
-			if !fits(f) {
-				return nil, fmt.Errorf("nosplit: %s takes %d bytes with its arguments, over %d", n, height(n)+r.Wrapper(f.ArgBytes), r.Limit)
-			}
-		}
-		p.Height[n] = height(n)
-	}
-	return p, nil
-}
-
-// onCycle reports the functions on a cycle of direct calls (Tarjan).
-func onCycle(names []string, by map[string]*NoSplitFunc) map[string]bool {
-	index, low := map[string]int{}, map[string]int{}
-	on := map[string]bool{}
-	var stack []string
-	out := map[string]bool{}
-	next := 0
-	var visit func(n string)
-	visit = func(n string) {
-		index[n], low[n] = next, next
-		next++
-		stack = append(stack, n)
-		on[n] = true
-		for _, c := range by[n].Calls {
-			if by[c] == nil {
-				continue
-			}
-			if c == n {
-				out[n] = true
-			}
-			if _, seen := index[c]; !seen {
-				visit(c)
-				low[n] = min(low[n], low[c])
-			} else if on[c] {
-				low[n] = min(low[n], index[c])
-			}
-		}
-		if low[n] == index[n] {
-			var scc []string
-			for {
-				m := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				on[m] = false
-				scc = append(scc, m)
-				if m == n {
-					break
-				}
-			}
-			if len(scc) > 1 {
-				for _, m := range scc {
-					out[m] = true
-				}
-			}
-		}
-	}
-	for _, n := range names {
-		if _, seen := index[n]; !seen {
-			visit(n)
-		}
-	}
-	return out
-}
-
-// calleesFirst orders the functions so that each comes after the functions
-// it calls, but for the calls of a cycle: a depth-first walk from each name
-// in order, writing a function down once its callees are.
-func calleesFirst(names []string, by map[string]*NoSplitFunc) []string {
-	seen := map[string]bool{}
-	var out []string
-	var walk func(n string)
-	walk = func(n string) {
-		seen[n] = true
-		cs := append([]string{}, by[n].Calls...)
-		sort.Strings(cs)
-		for _, c := range cs {
-			if by[c] != nil && !seen[c] {
-				walk(c)
-			}
-		}
-		out = append(out, n)
-	}
-	for _, n := range names {
-		if !seen[n] {
-			walk(n)
-		}
-	}
-	return out
-}
-
-// ChooseNoSplit runs PickNoSplit on the lowered functions and the stubs and
-// marks the chosen ones in their Meta and its record, and returns what it
-// read of them. A function's address is taken when addrTaken (the pass's
-// report) says so, when code loads it and when engine_rodata holds it. The
-// calls of a function name their targets as llc's text does, an alias
-// (unit.Sets) going to the function it names.
-func ChooseNoSplit(metas, stubs []Meta, addrTaken map[string]bool, plan *DataPlan, unit *AsmUnit, callbacks map[string]bool, force []string) (*NoSplitPick, []NoSplitFunc, error) {
-	return ChooseNoSplitFor(AMD64Stack, metas, stubs, addrTaken, plan, unit, callbacks, force)
-}
-
-// ChooseNoSplitFor is ChooseNoSplit with the numbers of an architecture.
-func ChooseNoSplitFor(r StackRules, metas, stubs []Meta, addrTaken map[string]bool, plan *DataPlan, unit *AsmUnit, callbacks map[string]bool, force []string) (*NoSplitPick, []NoSplitFunc, error) {
-	resolve := func(n string) string {
-		for i := 0; i < 8; i++ {
-			t, ok := unit.Sets[n]
-			if !ok {
-				break
-			}
-			n = t
-		}
-		return n
-	}
-	taken := map[string]bool{}
-	mark := func(n string) {
-		for i := 0; i < 8 && n != ""; i++ {
-			taken[n] = true
-			n = unit.Sets[n]
-		}
-	}
-	for n := range addrTaken {
-		mark(n)
-	}
-	var fs []NoSplitFunc
-	for _, m := range metas {
-		f := NoSplitFunc{Name: m.Name, Kind: m.Kind, Frame: m.Frame, ArgBytes: m.ArgBytes}
+		height[m.Name] = busy
+		own := r.Local(m.Frame, len(m.Rec.Calls) > 0)
+		h := own
 		for _, c := range m.Rec.Calls {
-			if c.Kind == CallReg {
-				f.Indirect = true
-				continue
+			callee := by[c.Target]
+			if c.Kind != CallLeaf || callee == nil || callee.Kind != Register {
+				return 0, fmt.Errorf("nosplit: the register-entry leaf %s calls %s, which is not a register-entry leaf", m.Name, c.Target)
 			}
-			f.Calls = append(f.Calls, resolve(c.Target))
-		}
-		for _, r := range m.Rec.Refs {
-			if r.Func {
-				mark(r.Label)
+			ch, err := leafHeight(callee)
+			if err != nil {
+				return 0, err
 			}
+			h = max(h, own+8+ch)
 		}
-		fs = append(fs, f)
-	}
-	for _, m := range stubs {
-		fs = append(fs, NoSplitFunc{Name: m.Name, Kind: Unified, ArgBytes: m.ArgBytes, Stub: true})
-	}
-	for _, r := range plan.Relocs {
-		if r.Func {
-			mark(r.Sym)
-		}
-	}
-	p, err := PickNoSplitFor(r, fs, taken, callbacks, force)
-	if err != nil {
-		return nil, nil, err
+		height[m.Name] = h
+		return h, nil
 	}
 	for i := range metas {
-		metas[i].NoSplit = p.Set[metas[i].Name]
-		metas[i].Rec.NoSplit = metas[i].NoSplit
+		m := &metas[i]
+		calls := len(m.Rec.Calls) > 0
+		switch {
+		case m.Kind == Register:
+			h, err := leafHeight(m)
+			if err != nil {
+				return nil, err
+			}
+			if h >= autoNoSplitFrame {
+				return nil, fmt.Errorf("nosplit: the register-entry leaf %s takes %d bytes below its entry with the leaves it calls, %d at most", m.Name, h, autoNoSplitFrame-1)
+			}
+			l.Register = append(l.Register, m.Name)
+		case m.Kind == Unified && autoNoSplit(r, m.Frame, calls):
+			l.Auto = append(l.Auto, m.Name)
+		default:
+			m.NoSplit, m.Rec.NoSplit = false, false
+			continue
+		}
+		if l.Set[m.Name] {
+			return nil, fmt.Errorf("nosplit: %s twice", m.Name)
+		}
+		l.Set[m.Name] = true
+		m.NoSplit, m.Rec.NoSplit = true, true
 	}
-	return p, fs, nil
+	return l, nil
 }
 
 // NoSplitReport is the list as the generator writes it down: one line per
-// function, its kind (auto, register or chosen), frame and height.
-func NoSplitReport(p *NoSplitPick, funcs []NoSplitFunc) string {
+// function, its kind (auto or register), frame and arguments.
+func NoSplitReport(l *NoSplitList, metas []Meta) string {
 	kind := map[string]string{}
-	for _, n := range p.Auto {
+	for _, n := range l.Auto {
 		kind[n] = "auto"
 	}
-	for _, n := range p.Register {
+	for _, n := range l.Register {
 		kind[n] = "register"
 	}
-	for _, n := range p.Chosen {
-		kind[n] = "chosen"
-	}
 	var b strings.Builder
-	for _, f := range funcs {
-		if p.Set[f.Name] {
-			fmt.Fprintf(&b, "%s %s frame %d args %d height %d\n", f.Name, kind[f.Name], f.Frame, f.ArgBytes, p.Height[f.Name])
+	for _, m := range metas {
+		if l.Set[m.Name] {
+			fmt.Fprintf(&b, "%s %s frame %d args %d\n", m.Name, kind[m.Name], m.Frame, m.ArgBytes)
 		}
 	}
 	return b.String()

@@ -2235,7 +2235,7 @@ TEXT ·JS_HasProperty(SB), $120-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_ThrowReferenceErrorNotDefined(SB), NOSPLIT, $88-24
+TEXT ·JS_ThrowReferenceErrorNotDefined(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2267,7 +2267,7 @@ TEXT ·JS_ThrowReferenceErrorNotDefined(SB), NOSPLIT, $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), NOSPLIT, $88-40
+TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2320,7 +2320,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized2(SB), NOSPLIT, $88-40
 	WORD $0x14000001
 	RET
 
-TEXT ·async_func_free(SB), NOSPLIT, $72-24
+TEXT ·async_func_free(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2438,7 +2438,7 @@ TEXT ·async_func_free(SB), NOSPLIT, $72-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·get_var_ref(SB), NOSPLIT, $88-48
+TEXT ·get_var_ref(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2560,7 +2560,7 @@ TEXT ·get_var_ref(SB), NOSPLIT, $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_ToBoolFree(SB), NOSPLIT, $104-40
+TEXT ·JS_ToBoolFree(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2695,7 +2695,7 @@ TEXT ·JS_ToBoolFree(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_own_keys_scan(SB), NOSPLIT, $184-48
+TEXT ·js_own_keys_scan(SB), $184-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3314,7 +3314,7 @@ TEXT ·JS_GetOwnPropertyInternal(SB), $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_AtomToValue(SB), NOSPLIT, $56-40
+TEXT ·JS_AtomToValue(SB), $56-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4436,7 +4436,7 @@ TEXT ·js_get_function_name(SB), $88-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·JS_FreeAtom(SB), NOSPLIT, $40-24
+TEXT ·JS_FreeAtom(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6906,7 +6906,7 @@ TEXT ·js_add_slow(SB), $136-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·JS_ConcatStringInPlace(SB), NOSPLIT, $104-48
+TEXT ·JS_ConcatStringInPlace(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12765,7 +12765,7 @@ TEXT ·js_eq_slow(SB), $136-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_strict_eq_slow(SB), NOSPLIT, $88-40
+TEXT ·js_strict_eq_slow(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14067,7 +14067,7 @@ TEXT ·js_backtrace_build(SB), $152-40
 	WORD $0x17ffffd9
 	RET
 
-TEXT ·close_var_refs(SB), NOSPLIT, $88-32
+TEXT ·close_var_refs(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14771,7 +14771,7 @@ TEXT ·js_backtrace_now_text(SB), $168-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_shape_prepare_update(SB), NOSPLIT, $152-40
+TEXT ·js_shape_prepare_update(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15167,7 +15167,7 @@ TEXT ·js_shape_prepare_update(SB), NOSPLIT, $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·remove_global_object_property(SB), NOSPLIT, $88-48
+TEXT ·remove_global_object_property(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15721,7 +15721,7 @@ TEXT ·compact_properties(SB), $168-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·convert_fast_array_to_array(SB), NOSPLIT, $120-32
+TEXT ·convert_fast_array_to_array(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18967,7 +18967,7 @@ TEXT ·js_atof(SB), $200-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_bigint_new(SB), NOSPLIT, $104-32
+TEXT ·js_bigint_new(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19293,7 +19293,7 @@ TEXT ·js_bigint_extend(SB), $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_bigint_float64_cmp(SB), NOSPLIT, $120-32
+TEXT ·js_bigint_float64_cmp(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19466,7 +19466,7 @@ TEXT ·js_bigint_float64_cmp(SB), NOSPLIT, $120-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_bigint_new_di(SB), NOSPLIT, $72-32
+TEXT ·js_bigint_new_di(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19577,7 +19577,7 @@ TEXT ·js_bigint_new_di(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_bigint_shl(SB), NOSPLIT, $136-40
+TEXT ·js_bigint_shl(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20489,7 +20489,7 @@ TEXT ·js_linearize_string_rope(SB), $120-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·string_buffer_init2(SB), NOSPLIT, $104-48
+TEXT ·string_buffer_init2(SB), $104-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20626,7 +20626,7 @@ TEXT ·string_buffer_init2(SB), NOSPLIT, $104-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·string_buffer_concat_rope(SB), NOSPLIT, $104-40
+TEXT ·string_buffer_concat_rope(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21920,7 +21920,7 @@ TEXT ·string_buffer_realloc(SB), $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_widen(SB), NOSPLIT, $152-32
+TEXT ·string_buffer_widen(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22355,7 +22355,7 @@ TEXT ·string_buffer_widen(SB), NOSPLIT, $152-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·string_buffer_write8_wide_long(SB), NOSPLIT, $152-40
+TEXT ·string_buffer_write8_wide_long(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22937,7 +22937,7 @@ TEXT ·string_buffer_realloc2(SB), $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_malloc_moving(SB), NOSPLIT, $104-40
+TEXT ·js_malloc_moving(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23123,7 +23123,7 @@ TEXT ·js_malloc_usable_size(SB), NOSPLIT, $0-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_bigint_neg(SB), NOSPLIT, $120-32
+TEXT ·js_bigint_neg(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23270,7 +23270,7 @@ TEXT ·js_bigint_neg(SB), NOSPLIT, $120-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_bigint_not(SB), NOSPLIT, $104-32
+TEXT ·js_bigint_not(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26034,7 +26034,7 @@ TEXT ·__JS_ToFloat64Free(SB), $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·copy_str16(SB), NOSPLIT, $88-32
+TEXT ·copy_str16(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26317,7 +26317,7 @@ TEXT ·copy_str16(SB), NOSPLIT, $88-32
 	WORD $0x14000001
 	RET
 
-TEXT ·js_bigint_add(SB), NOSPLIT, $152-40
+TEXT ·js_bigint_add(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26489,7 +26489,7 @@ TEXT ·js_bigint_add(SB), NOSPLIT, $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_CompactBigInt(SB), NOSPLIT, $88-40
+TEXT ·JS_CompactBigInt(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26594,7 +26594,7 @@ TEXT ·JS_CompactBigInt(SB), NOSPLIT, $88-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·JS_ConcatString1(SB), NOSPLIT, $168-48
+TEXT ·JS_ConcatString1(SB), $168-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27601,7 +27601,7 @@ TEXT ·JS_ConcatString1(SB), NOSPLIT, $168-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_new_string_rope(SB), NOSPLIT, $136-64
+TEXT ·js_new_string_rope(SB), $136-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27802,7 +27802,7 @@ TEXT ·js_new_string_rope(SB), NOSPLIT, $136-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_ConcatString2(SB), NOSPLIT, $120-64
+TEXT ·JS_ConcatString2(SB), $120-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27889,7 +27889,7 @@ TEXT ·JS_ConcatString2(SB), NOSPLIT, $120-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_rebalancee_string_rope(SB), NOSPLIT, $200-48
+TEXT ·js_rebalancee_string_rope(SB), $200-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

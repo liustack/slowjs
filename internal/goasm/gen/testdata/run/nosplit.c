@@ -3,16 +3,14 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// The shapes the NOSPLIT choice tells apart (TestSampleRuns, and
-// TestNoSplitSample, which checks the choice and faults at the bottom of the
-// chain). poke goes down a chain of 24 calls, too tall to go without a stack
-// check as a whole, to a leaf that reads through the pointer it was given:
-// the choice takes the bottom of the chain as far as it fits, leaves the
-// function above with its stack check, and takes the ones above that again.
-// self and the pair ping and pong recurse, so they keep their stack checks,
-// and so do viaptr, whose address a table holds, and icaller, which calls
-// through it. Their callers can go without one. Nothing here loops, so
-// nothing polls.
+// Calls of each shape, for the NOSPLIT list (TestSampleRuns and its
+// nosplit_fault, which checks the list and faults in the leaf at the bottom
+// of the chain). poke goes down a chain of 24 calls to a leaf that reads
+// through the pointer it was given. self and the pair ping and pong recurse,
+// viaptr's address is in a table and icaller calls through it. Every
+// function that calls keeps its stack check: only the leaves down23 and sq
+// go without one, which the Go assembler gives them by itself. Nothing here
+// loops, so nothing polls.
 __attribute__((noinline)) long down23(long *p, long k) { return *p + k; }
 
 // Each step keeps k across its call, so that it has a frame.

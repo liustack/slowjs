@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·pstrcpy(SB), NOSPLIT, $64-32
+TEXT ·pstrcpy(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -46,7 +46,7 @@ TEXT ·pstrcpy(SB), NOSPLIT, $64-32
 	BYTE $0x00
 	RET
 
-TEXT ·pstrcat(SB), NOSPLIT, $80-40
+TEXT ·pstrcat(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -156,7 +156,7 @@ TEXT ·pstrcat(SB), NOSPLIT, $80-40
 	BYTE $0x00
 	RET
 
-TEXT ·strstart(SB), NOSPLIT, $64-40
+TEXT ·strstart(SB), $64-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -193,7 +193,7 @@ TEXT ·strstart(SB), NOSPLIT, $64-40
 	BYTE $0x00
 	RET
 
-TEXT ·has_suffix(SB), NOSPLIT, $64-32
+TEXT ·has_suffix(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -426,7 +426,7 @@ TEXT ·dbuf_claim(SB), $64-32
 	BYTE $0xff
 	RET
 
-TEXT ·dbuf_put(SB), NOSPLIT, $112-40
+TEXT ·dbuf_put(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -553,7 +553,7 @@ TEXT ·dbuf_put(SB), NOSPLIT, $112-40
 	BYTE $0x00
 	RET
 
-TEXT ·dbuf_put_self(SB), NOSPLIT, $112-40
+TEXT ·dbuf_put_self(SB), $112-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -671,7 +671,7 @@ TEXT ·dbuf_put_self(SB), NOSPLIT, $112-40
 	QUAD $0xfffffceae9682464
 	RET
 
-TEXT ·__dbuf_put_u32(SB), NOSPLIT, $48-32
+TEXT ·__dbuf_put_u32(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -700,7 +700,7 @@ TEXT ·__dbuf_put_u32(SB), NOSPLIT, $48-32
 	BYTE $0xad
 	RET
 
-TEXT ·__dbuf_put_u64(SB), NOSPLIT, $48-32
+TEXT ·__dbuf_put_u64(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -729,7 +729,7 @@ TEXT ·__dbuf_put_u64(SB), NOSPLIT, $48-32
 	BYTE $0xad
 	RET
 
-TEXT ·dbuf_putstr(SB), NOSPLIT, $112-32
+TEXT ·dbuf_putstr(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -988,7 +988,7 @@ TEXT ·unicode_to_utf8(SB), NOSPLIT, $0-32
 	QUAD $0x00eb2024448948c0
 	RET
 
-TEXT ·unicode_from_utf8(SB), NOSPLIT, $96-40
+TEXT ·unicode_from_utf8(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -2360,7 +2360,7 @@ TEXT ·exchange_bytes(SB), $80-32
 	BYTE $0xff
 	RET
 
-TEXT ·rqsort(SB), NOSPLIT, $64-48
+TEXT ·rqsort(SB), $64-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -2512,7 +2512,7 @@ TEXT ·dbuf_printf(SB), $112-40
 	BYTE $0x00
 	RET
 
-TEXT ·__dbuf_putc(SB), NOSPLIT, $48-32
+TEXT ·__dbuf_putc(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -2540,7 +2540,7 @@ TEXT ·__dbuf_putc(SB), NOSPLIT, $48-32
 	BYTE $0xae
 	RET
 
-TEXT ·__dbuf_put_u16(SB), NOSPLIT, $48-32
+TEXT ·__dbuf_put_u16(SB), $48-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c

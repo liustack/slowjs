@@ -54,7 +54,8 @@ type Meta struct {
 	ArgBytes int    // Go TEXT argument+result area size
 	RetType  Type
 	// NoSplit says the TEXT has NOSPLIT, so Go puts no stack check at the
-	// entry (ChooseNoSplit). A register-entry leaf always has it.
+	// entry (MarkNoSplit): a register-entry leaf, or a leaf the Go
+	// assembler marks NOSPLIT by itself.
 	NoSplit bool
 	// Rec is every rewrite the lowering made, for the instruction-level
 	// post-link check (nil for the prototype's units).

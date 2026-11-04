@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -53,11 +54,10 @@ import (
 //     (walk.specialized.N). The clones are functions the generator has not
 //     seen under a name, and they run as native code does. The leaf of the
 //     other file keeps its leaf entry.
-//   - nosplit.c: the shapes the NOSPLIT choice (PickNoSplit) tells apart run
-//     as native code does. The post-link check holds each function's stack
-//     check to the choice, and nosplit_fault below holds the choice itself,
-//     faults at the bottom of its chain and forces it past what the linker
-//     takes.
+//   - nosplit.c: a deep chain of calls, recursion and calls through a pointer
+//     run as native code does. The post-link check holds each function's
+//     stack check to the NOSPLIT list (MarkNoSplit), and nosplit_fault below
+//     holds the list itself and faults in a leaf without a stack check.
 //
 // It needs LLVM 22.1.8 (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld
 // (SLOWJS_LLD), on linux/amd64.
@@ -209,39 +209,30 @@ func TestSampleRuns(t *testing.T) {
 		}
 	})
 
-	// The NOSPLIT choice on nosplit.c: the bottom of the chain and the
-	// callers of what recurses or goes through a pointer are chosen, what
-	// recurses, has its address taken or calls through a pointer is not, and
-	// one function of the chain is left for the room. A wild pointer read at
-	// the bottom of the chain must be a panic that recovers whatever the depth
-	// of the goroutine's stack above it, and forcing a recursion or the whole
-	// chain onto the list must fail the build at the linker.
+	// The NOSPLIT list of nosplit.c: the two small leaves, down23 at the
+	// bottom of the chain and sq, and no function that calls. A wild pointer
+	// read in down23 must be a panic that recovers whatever the depth of the
+	// goroutine's stack above it.
 	t.Run("nosplit_fault", func(t *testing.T) {
 		c, err := filepath.Abs(filepath.Join(src, "nosplit.c"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		gen := func(name, main string, env ...string) (string, string) {
-			mod, w := at("nosplit-"+name), at("w-nosplit-"+name)
-			cmd := exec.Command(drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", "pn", "-leaves", "",
-				"-work", w, "-pkg", "nw", "-out", filepath.Join(mod, "nw"))
-			cmd.Env = append(append([]string{}, goEnv...), env...)
-			if out, err := cmd.CombinedOutput(); err != nil {
-				t.Fatalf("the driver: %v\n%s", err, out)
-			}
-			for f, text := range map[string]string{
-				"go.mod":      "module samples\n\ngo 1.22\n",
-				"main.go":     main,
-				"nw/host.go":  sampleGoHost,
-				"nw/sweep.go": sampleGoSweep,
-			} {
-				if err := os.WriteFile(filepath.Join(mod, f), []byte(text), 0o644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			return mod, w
+		mod, w := at("nosplit-sweep"), at("w-nosplit-sweep")
+		if out, err := runIn("", goEnv, drv, "-src", c, "-llvm", llvm, "-pass", pass, "-mode", "pn", "-leaves", "",
+			"-work", w, "-pkg", "nw", "-out", filepath.Join(mod, "nw")); err != nil {
+			t.Fatalf("the driver: %v\n%s", err, out)
 		}
-		mod, w := gen("ok", sampleGoMainSweep)
+		for f, text := range map[string]string{
+			"go.mod":      "module samples\n\ngo 1.22\n",
+			"main.go":     sampleGoMainSweep,
+			"nw/host.go":  sampleGoHost,
+			"nw/sweep.go": sampleGoSweep,
+		} {
+			if err := os.WriteFile(filepath.Join(mod, f), []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
 		b, err := os.ReadFile(filepath.Join(w, "nosplit.txt"))
 		if err != nil {
 			t.Fatal(err)
@@ -252,25 +243,8 @@ func TestSampleRuns(t *testing.T) {
 				on[f[0]] = f[1]
 			}
 		}
-		for n, kind := range map[string]string{"down23": "auto", "down22": "chosen", "poke": "chosen", "run": "chosen",
-			"callsrec": "chosen", "callsptr": "chosen", "sq": "auto"} {
-			if on[n] != kind {
-				t.Errorf("%s is %q on the list, want %s", n, on[n], kind)
-			}
-		}
-		for _, n := range []string{"self", "ping", "pong", "viaptr", "icaller"} {
-			if on[n] != "" {
-				t.Errorf("%s is on the list", n)
-			}
-		}
-		var cut []string
-		for i := 0; i <= 22; i++ {
-			if n := fmt.Sprintf("down%d", i); on[n] == "" {
-				cut = append(cut, n)
-			}
-		}
-		if len(cut) == 0 || len(cut) > 2 {
-			t.Fatalf("the chain is cut at %v, want one or two functions:\n%s", cut, b)
+		if want := map[string]string{"down23": "auto", "sq": "auto"}; !reflect.DeepEqual(on, want) {
+			t.Fatalf("the NOSPLIT list is %v, want %v:\n%s", on, want, b)
 		}
 
 		// The goroutine's stack starts at its smallest, so that the sweep
@@ -289,23 +263,7 @@ func TestSampleRuns(t *testing.T) {
 		if hi-lo < 6<<10 || sigpanic == 0 {
 			t.Fatalf("the sweep did not reach the bottom of the stack: %s", out)
 		}
-		t.Logf("cut at %v, %s", cut, strings.TrimSpace(out))
-
-		for _, force := range []string{"self", "ping,pong", strings.Join(cut, ",")} {
-			t.Run("force_"+force, func(t *testing.T) {
-				// The linker checks what the program reaches: run calls
-				// every function.
-				mod, _ := gen("force", sampleGoMain, "GEN_FORCE_NOSPLIT="+force)
-				if o, err := runIn(mod, goEnv, "go", "build", "-o", "run", "."); err == nil ||
-					!strings.Contains(o, "negative_build_of_the_generator_is_not_an_engine") {
-					t.Fatalf("a forced build compiled without the tag: %v\n%s", err, o)
-				}
-				if o, err := runIn(mod, goEnv, "go", "build", "-tags", "goasmnegative", "-o", "run", "."); err == nil ||
-					!strings.Contains(o, "nosplit stack over 792 byte limit") {
-					t.Fatalf("the linker took %s on the NOSPLIT list: %v\n%s", force, err, o)
-				}
-			})
-		}
+		t.Log(strings.TrimSpace(out))
 	})
 
 	// A leaf has no shadow pointer to call host_trap with, so one that traps
@@ -427,8 +385,8 @@ func main() { fmt.Println(nw.Sweep()) }
 // counts the calls that grew the stack. Each place is also run with a pointer
 // that reads, in a goroutine of its own, which starts with the same stack:
 // sigpanic counts the places where only the fault grew the stack, where the
-// chain went below the guard and the fault came there, so that only the
-// room the chain left let sigpanic call morestack.
+// leaf went below the guard and the fault came there, so that only the room
+// the stack check of its caller left let sigpanic call morestack.
 var sampleGoSweep = `package nw
 
 import (

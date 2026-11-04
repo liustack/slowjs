@@ -26,6 +26,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | JSON.parse reads keys and plain strings from the text, with a cache of key atoms for one parse | Unreleased | [c-engine.md](c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text) |
 | A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | Unreleased | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
 | A collection asked for while the engine frees objects does nothing | Unreleased | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
+| Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | Unreleased | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
 
 ## Commits of upstream QuickJS
 

@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_case_conv(SB), NOSPLIT, $104-40
+TEXT ·lre_case_conv(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -81,7 +81,7 @@ TEXT ·lre_case_conv(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·lre_case_conv_entry(SB), NOSPLIT, $88-56
+TEXT ·lre_case_conv_entry(SB), $88-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -370,7 +370,7 @@ TEXT ·lre_case_conv_entry(SB), NOSPLIT, $88-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·lre_canonicalize(SB), NOSPLIT, $104-32
+TEXT ·lre_canonicalize(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -547,7 +547,7 @@ TEXT ·lre_canonicalize(SB), NOSPLIT, $104-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_is_cased(SB), NOSPLIT, $56-24
+TEXT ·lre_is_cased(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -722,7 +722,7 @@ TEXT ·lre_is_cased(SB), NOSPLIT, $56-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_is_case_ignorable(SB), NOSPLIT, $56-24
+TEXT ·lre_is_case_ignorable(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3558,7 +3558,7 @@ TEXT ·unicode_case1(SB), $136-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_is_id_start(SB), NOSPLIT, $56-24
+TEXT ·lre_is_id_start(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3694,7 +3694,7 @@ TEXT ·lre_is_id_start(SB), NOSPLIT, $56-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_is_id_continue(SB), NOSPLIT, $56-24
+TEXT ·lre_is_id_continue(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5370,7 +5370,7 @@ TEXT ·unicode_script(SB), $232-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·unicode_general_category(SB), NOSPLIT, $152-32
+TEXT ·unicode_general_category(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11349,7 +11349,7 @@ TEXT ·unicode_normalize_block(SB), $200-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·unicode_decomp_entry_block(SB), NOSPLIT, $120-24
+TEXT ·unicode_decomp_entry_block(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

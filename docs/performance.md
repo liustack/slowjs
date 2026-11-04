@@ -779,6 +779,19 @@ Three changes, measured together and each against the one before it: [objects of
 
 The interpreter's own instructions do not change (within 0.04%, the spread of two runs of one binary). All three against main, timed on linux/amd64 by the protocol of [measuring.md](measuring.md) (16 layouts, delta 1%), the mean of the layouts: the bench pages take 0.73% less time, faster by the rule, the MUI pages 0.57% less, the six workbench pages 0.26% less and the store pages 0.13% more, none of them a regression beyond delta. The timing was of the first form of the three, before the review moved an object that dies alone onto the list of objects to free before it is freed. That costs 0.06 to 0.18 points of the instructions above, under the 0.2 from which the time is taken again.
 
+### Every function that calls has a stack check
+
+[Functions without a stack check](changes/c-engine.md#functions-without-a-stack-check) is a change that costs speed, made so that a fault in the engine does not depend on room read from one release of the Go runtime. Against main at 053d158e, on linux/amd64, with the same list of functions without a stack check as the change. Instructions are from callgrind (`BenchmarkAppCG`), counted as what the functions that lost NOSPLIT run more, since the whole program moves by up to 0.4% between two builds of the same engine.
+
+| Pages | Instructions | Mean of the 16 layouts | Formal layout |
+| --- | ---: | --- | --- |
+| tifa's shop, six workbench pages | +0.27% | +0.47% [+0.00%, +0.94%] | +0.61% [-0.36%, +1.60%] |
+| the shop's store pages | +0.32% | +0.04% [-0.51%, +0.59%] | +1.09% [-0.11%, +2.31%] |
+| tifa's MUI test app, three pages | +0.36% | +0.63% [+0.22%, +1.04%] | +1.07% [+0.35%, +1.79%] |
+| tifa's bench pages | +0.29% | +0.17% [-0.34%, +0.68%] | +0.81% [+0.24%, +1.38%] |
+
+Time is the sum of the pages, as [measuring.md](measuring.md) says: 16 layouts, 2 rounds, delta 1%, 95% intervals, cpu 0 with its sibling idle. The mean of the layouts is slower by less than delta on the shop, slower on MUI, and shows no regression beyond delta on the store and the bench pages. No app is shown to be past 1%.
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.

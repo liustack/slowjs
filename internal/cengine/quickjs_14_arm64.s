@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·js_atomics_get_buf_block(SB), NOSPLIT, $136-24
+TEXT ·js_atomics_get_buf_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -865,7 +865,7 @@ TEXT ·js_dataview_setValue_block(SB), $136-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·from_base64_block(SB), NOSPLIT, $136-24
+TEXT ·from_base64_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3461,7 +3461,7 @@ TEXT ·js_typed_array_indexOf_block(SB), $152-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_ToInt32Clamp_block(SB), NOSPLIT, $120-24
+TEXT ·JS_ToInt32Clamp_block(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4218,7 +4218,7 @@ TEXT ·js_array_buffer_slice_block(SB), $168-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_array_buffer_constructor0_block(SB), NOSPLIT, $136-32
+TEXT ·js_array_buffer_constructor0_block(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6965,7 +6965,7 @@ TEXT ·js_map_set_block(SB), $136-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·map_key_eq_block(SB), NOSPLIT, $40-24
+TEXT ·map_key_eq_block(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8305,7 +8305,7 @@ TEXT ·js_create_map_iterator_block(SB), $136-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·get_set_record_block(SB), NOSPLIT, $152-24
+TEXT ·get_set_record_block(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10770,7 +10770,7 @@ TEXT ·js_proxy_set_block(SB), $168-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·check_define_prop_desc_block(SB), NOSPLIT, $88-24
+TEXT ·check_define_prop_desc_block(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12155,7 +12155,7 @@ TEXT ·JS_JSONStringify_block(SB), $184-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_json_check_block(SB), NOSPLIT, $120-32
+TEXT ·js_json_check_block(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15113,7 +15113,7 @@ TEXT ·internalize_json_property_block(SB), $248-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·build_backtrace_block(SB), NOSPLIT, $184-16
+TEXT ·build_backtrace_block(SB), $184-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17024,7 +17024,7 @@ TEXT ·js_function_apply_block(SB), $136-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_new_function_def_block(SB), NOSPLIT, $136-24
+TEXT ·js_new_function_def_block(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17496,7 +17496,7 @@ TEXT ·get_closure_var_block(SB), $152-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·resolve_scope_var_block(SB), NOSPLIT, $200-24
+TEXT ·resolve_scope_var_block(SB), $200-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20095,7 +20095,7 @@ TEXT ·resolve_scope_var_block(SB), NOSPLIT, $200-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·resolve_scope_private_field1_block(SB), NOSPLIT, $152-24
+TEXT ·resolve_scope_private_field1_block(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20327,7 +20327,7 @@ TEXT ·resolve_scope_private_field1_block(SB), NOSPLIT, $152-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·check_polls_block(SB), NOSPLIT, $152-24
+TEXT ·check_polls_block(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20671,7 +20671,7 @@ TEXT ·check_polls_block(SB), NOSPLIT, $152-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·var_object_test_block(SB), NOSPLIT, $120-16
+TEXT ·var_object_test_block(SB), $120-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20858,7 +20858,7 @@ TEXT ·var_object_test_block(SB), NOSPLIT, $120-16
 	WORD $0xffffffff
 	RET
 
-TEXT ·optimize_scope_make_ref_block(SB), NOSPLIT, $120-24
+TEXT ·optimize_scope_make_ref_block(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

@@ -217,33 +217,30 @@ func TestFaultsAmongVMs(t *testing.T) {
 	}
 }
 
-// TestFaultNoSplit: a fault at the bottom of a chain of functions without a
-// stack check (the generator's NOSPLIT list, noSplitList) is a panic that
-// recovers, wherever the bottom of the goroutine's stack is. The runtime
-// pushes a call of sigpanic where the fault is, and sigpanic's stack check
-// may call morestack: the generator leaves room for both below every chain.
+// TestFaultNoSplit: a fault in a function without a stack check (the
+// generator's NOSPLIT list, noSplitList) is a panic that recovers, wherever
+// the bottom of the goroutine's stack is. The runtime pushes a call of
+// sigpanic where the fault is, and sigpanic's stack check may call
+// morestack. The functions on the list are leaves, so each is the whole
+// chain: its caller has a stack check, which leaves the room for both.
 //
-// Each case names the chain of engine functions, from the fault up to the
-// call of the test, that the fault must show in runtime.Callers, and every
-// function of it is on the list. The optimizer that runs over the linked
-// module inlines small functions of one file into another, so a chain can be
-// shorter than the C reads: js_strdup measures the string with strlen, and
-// strlen is inlined into js_strdup on both architectures, so that fault is in
-// js_strdup alone (one frame). goasm_chunked_memcpy calls memcpy for each
-// chunk, and neither is inlined into the other on either architecture: a
-// source that points at nothing faults in memcpy with goasm_chunked_memcpy
-// above it, two frames without a stack check one on the other.
+// Each case names the functions of the engine on the list, from the fault
+// up, that the fault must show in runtime.Callers: one leaf. unicode_to_utf8
+// is a leaf the Go assembler marks NOSPLIT by itself, and writes through the
+// pointer it is given. memcpy is a register-entry leaf, which
+// goasm_chunked_memcpy calls for each chunk: a source that points at nothing
+// faults in memcpy, and goasm_chunked_memcpy above it has a stack check.
 // One call shows the frames, then fresh goroutines make the same call deeper
 // in their stacks, by steps of 8 bytes over 12 KiB, each on a VM of its own.
 func TestFaultNoSplit(t *testing.T) {
 	faulttest.Skip(t)
 	const wild = 0xdead0000
-	t.Run("js_strdup", func(t *testing.T) {
-		noSplitFault(t, "a read through the string", wild, wild+1, "js_strdup",
-			func(v *VM) func() { return func() { js_strdup(v.sp, v.ctx, wild) } })
+	t.Run("unicode_to_utf8", func(t *testing.T) {
+		noSplitFault(t, "a write through the buffer", wild, wild+1, "unicode_to_utf8",
+			func(v *VM) func() { return func() { unicode_to_utf8(v.sp, wild, 'a') } })
 	})
-	t.Run("goasm_chunked_memcpy", func(t *testing.T) {
-		noSplitFault(t, "a copy from nothing", wild, wild+64, "memcpy goasm_chunked_memcpy",
+	t.Run("memcpy", func(t *testing.T) {
+		noSplitFault(t, "a copy from nothing", wild, wild+64, "memcpy",
 			func(v *VM) func() {
 				base, _ := v.Host().Stack()
 				return func() { goasm_chunked_memcpy(v.sp, base, wild, 64) }
@@ -301,7 +298,7 @@ func noSplitFault(t *testing.T, what string, lo, hi uintptr, chain string, read 
 		t.Fatalf("the functions on the list from the fault up are %q, want %q: %v", c, chain, frames)
 	}
 	t.Logf("%s/%s: chain %q", runtime.GOOS, runtime.GOARCH, chain)
-	brokenAfter(t, v, "a fault in a NOSPLIT chain")
+	brokenAfter(t, v, "a fault in a NOSPLIT leaf")
 
 	depths := map[uintptr]bool{}
 	for n := 0; n < 192; n++ {

@@ -1521,7 +1521,7 @@ TEXT ·js_proxy_set_block(SB), $176-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·check_define_prop_desc_block(SB), NOSPLIT, $112-24
+TEXT ·check_define_prop_desc_block(SB), $112-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -2735,7 +2735,7 @@ TEXT ·JS_JSONStringify_block(SB), $208-32
 	BYTE $0xff
 	RET
 
-TEXT ·js_json_check_block(SB), NOSPLIT, $176-32
+TEXT ·js_json_check_block(SB), $176-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -5145,7 +5145,7 @@ TEXT ·JS_DefinePropertyValueValue_block(SB), $160-24
 	BYTE $0xa7
 	RET
 
-TEXT ·JS_DefinePropertyGetSet_block(SB), NOSPLIT, $80-24
+TEXT ·JS_DefinePropertyGetSet_block(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c

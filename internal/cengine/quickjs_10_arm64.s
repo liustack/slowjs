@@ -919,7 +919,7 @@ TEXT ·JS_WriteObjectTag(SB), $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_WriteArrayBuffer(SB), NOSPLIT, $104-40
+TEXT ·JS_WriteArrayBuffer(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1130,7 +1130,7 @@ TEXT ·JS_WriteArrayBuffer(SB), NOSPLIT, $104-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_WriteSharedArrayBuffer(SB), NOSPLIT, $104-40
+TEXT ·JS_WriteSharedArrayBuffer(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1582,7 +1582,7 @@ TEXT ·JS_WriteTypedArray(SB), $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_WriteObject(SB), NOSPLIT, $40-56
+TEXT ·JS_WriteObject(SB), $40-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6523,7 +6523,7 @@ TEXT ·JS_ReadModule(SB), $136-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·js_get_array_buffer(SB), NOSPLIT, $88-40
+TEXT ·js_get_array_buffer(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6568,7 +6568,7 @@ TEXT ·js_get_array_buffer(SB), NOSPLIT, $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_ReadSharedArrayBuffer(SB), NOSPLIT, $104-32
+TEXT ·JS_ReadSharedArrayBuffer(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6818,7 +6818,7 @@ TEXT ·JS_ReadSharedArrayBuffer(SB), NOSPLIT, $104-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·bc_get_leb128(SB), NOSPLIT, $72-32
+TEXT ·bc_get_leb128(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6894,7 +6894,7 @@ TEXT ·bc_get_leb128(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_get_leb128_int(SB), NOSPLIT, $72-32
+TEXT ·bc_get_leb128_int(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6970,7 +6970,7 @@ TEXT ·bc_get_leb128_int(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_get_atom(SB), NOSPLIT, $88-32
+TEXT ·bc_get_atom(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7089,7 +7089,7 @@ TEXT ·bc_get_atom(SB), NOSPLIT, $88-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_get_u8(SB), NOSPLIT, $72-32
+TEXT ·bc_get_u8(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7129,7 +7129,7 @@ TEXT ·bc_get_u8(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_get_leb128_u16(SB), NOSPLIT, $88-32
+TEXT ·bc_get_leb128_u16(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7209,7 +7209,7 @@ TEXT ·bc_get_leb128_u16(SB), NOSPLIT, $88-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_get_u16(SB), NOSPLIT, $72-32
+TEXT ·bc_get_u16(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7248,7 +7248,7 @@ TEXT ·bc_get_u16(SB), NOSPLIT, $72-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·bc_read_object_lits(SB), NOSPLIT, $168-32
+TEXT ·bc_read_object_lits(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7970,7 +7970,7 @@ TEXT ·JS_ReadFunctionBytecode(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·bc_get_debug_buf(SB), NOSPLIT, $136-48
+TEXT ·bc_get_debug_buf(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8177,7 +8177,7 @@ TEXT ·bc_get_debug_buf(SB), NOSPLIT, $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_AddModuleExportList(SB), NOSPLIT, $88-48
+TEXT ·JS_AddModuleExportList(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8647,7 +8647,7 @@ TEXT ·JS_SetModuleExportList(SB), $168-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_SetConstructor(SB), NOSPLIT, $40-56
+TEXT ·JS_SetConstructor(SB), $40-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8674,7 +8674,7 @@ TEXT ·JS_SetConstructor(SB), NOSPLIT, $40-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_string_codePointRange(SB), NOSPLIT, $104-64
+TEXT ·js_string_codePointRange(SB), $104-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11351,7 +11351,7 @@ TEXT ·js_copy_props(SB), $200-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_copy_props_call_plain(SB), NOSPLIT, $56-48
+TEXT ·js_copy_props_call_plain(SB), $56-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11479,7 +11479,7 @@ TEXT ·js_copy_props_call_plain(SB), NOSPLIT, $56-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_copy_props_proto_plain(SB), NOSPLIT, $40-24
+TEXT ·js_copy_props_proto_plain(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11542,7 +11542,7 @@ TEXT ·js_copy_props_proto_plain(SB), NOSPLIT, $40-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·JS_NewStartTagFunction(SB), NOSPLIT, $88-48
+TEXT ·JS_NewStartTagFunction(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13479,7 +13479,7 @@ TEXT ·js_emit_new_function(SB), $184-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_emit_plain_keys(SB), NOSPLIT, $152-40
+TEXT ·js_emit_plain_keys(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13687,7 +13687,7 @@ TEXT ·js_emit_plain_keys(SB), NOSPLIT, $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_emit_buf_take(SB), NOSPLIT, $72-32
+TEXT ·js_emit_buf_take(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20353,7 +20353,7 @@ TEXT ·js_emit_put_style(SB), $280-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_emit_put_text(SB), NOSPLIT, $136-48
+TEXT ·js_emit_put_text(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20706,7 +20706,7 @@ TEXT ·js_emit_put_text(SB), NOSPLIT, $136-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_emit_is_javascript_url(SB), NOSPLIT, $72-24
+TEXT ·js_emit_is_javascript_url(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20841,7 +20841,7 @@ TEXT ·js_emit_is_javascript_url(SB), NOSPLIT, $72-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_emit_buf_end(SB), NOSPLIT, $168-56
+TEXT ·js_emit_buf_end(SB), $168-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24142,7 +24142,7 @@ TEXT ·js_emit_put_escaped_long(SB), $360-56
 	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_emit_string(SB), NOSPLIT, $152-32
+TEXT ·js_emit_string(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24529,7 +24529,7 @@ TEXT ·js_emit_string(SB), NOSPLIT, $152-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_NewEndTagFunction(SB), NOSPLIT, $88-48
+TEXT ·JS_NewEndTagFunction(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26445,7 +26445,7 @@ TEXT ·js_end_tag_add(SB), $200-56
 	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·JS_SetRegExpCache(SB), NOSPLIT, $56-32
+TEXT ·JS_SetRegExpCache(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26567,7 +26567,7 @@ TEXT ·JS_AddIntrinsicRegExpCompiler(SB), NOSPLIT, $0-16
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_ParseJSON2(SB), NOSPLIT, $56-64
+TEXT ·JS_ParseJSON2(SB), $56-64
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26593,7 +26593,7 @@ TEXT ·JS_ParseJSON2(SB), NOSPLIT, $56-64
 	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·JS_ParseJSON(SB), NOSPLIT, $56-56
+TEXT ·JS_ParseJSON(SB), $56-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26700,7 +26700,7 @@ TEXT ·JS_GetAsyncContext(SB), NOSPLIT, $0-32
 	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·JS_SetAsyncContext(SB), NOSPLIT, $56-32
+TEXT ·JS_SetAsyncContext(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26749,7 +26749,7 @@ TEXT ·JS_SetAsyncContext(SB), NOSPLIT, $56-32
 	WORD $0x00000000
 	RET
 
-TEXT ·JS_NewDate(SB), NOSPLIT, $136-40
+TEXT ·JS_NewDate(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26944,7 +26944,7 @@ TEXT ·JS_NewDate(SB), NOSPLIT, $136-40
 	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·JS_NewArrayBufferCopy(SB), NOSPLIT, $56-48
+TEXT ·JS_NewArrayBufferCopy(SB), $56-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26975,7 +26975,7 @@ TEXT ·JS_NewArrayBufferCopy(SB), NOSPLIT, $56-48
 	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·JS_GetArrayBuffer(SB), NOSPLIT, $88-48
+TEXT ·JS_GetArrayBuffer(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27034,7 +27034,7 @@ TEXT ·JS_GetArrayBuffer(SB), NOSPLIT, $88-48
 	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·JS_NewTypedArray(SB), NOSPLIT, $72-56
+TEXT ·JS_NewTypedArray(SB), $72-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

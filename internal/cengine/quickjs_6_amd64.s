@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·map_hash_long_key_poll(SB), NOSPLIT, $176-56
+TEXT ·map_hash_long_key_poll(SB), $176-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -1215,7 +1215,7 @@ TEXT ·map_find_record_short(SB), $160-56
 	BYTE $0xc8
 	RET
 
-TEXT ·map_key_eq(SB), NOSPLIT, $112-64
+TEXT ·map_key_eq(SB), $112-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -5255,7 +5255,7 @@ TEXT ·js_create_map_iterator(SB), $144-72
 	BYTE $0xff
 	RET
 
-TEXT ·get_set_record(SB), NOSPLIT, $176-64
+TEXT ·get_set_record(SB), $176-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -8991,7 +8991,7 @@ TEXT ·js_proxy_prevent_extensions(SB), $128-40
 	BYTE $0xff
 	RET
 
-TEXT ·js_free_desc(SB), NOSPLIT, $64-24
+TEXT ·js_free_desc(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -9042,7 +9042,7 @@ TEXT ·js_free_desc(SB), NOSPLIT, $64-24
 	BYTE $0x00
 	RET
 
-TEXT ·js_obj_to_desc(SB), NOSPLIT, $176-48
+TEXT ·js_obj_to_desc(SB), $176-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -11583,7 +11583,7 @@ TEXT ·js_sub_string(SB), $224-56
 	QUAD $0x00ff00ff00ff00ff
 	RET
 
-TEXT ·JS_IsArray(SB), NOSPLIT, $96-40
+TEXT ·JS_IsArray(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -11668,7 +11668,7 @@ TEXT ·JS_IsArray(SB), NOSPLIT, $96-40
 	BYTE $0x8e
 	RET
 
-TEXT ·string_buffer_putc8(SB), NOSPLIT, $64-24
+TEXT ·string_buffer_putc8(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -14231,7 +14231,7 @@ TEXT ·JS_ToQuotedString(SB), $352-48
 	BYTE $0xff
 	RET
 
-TEXT ·string_buffer_putc16(SB), NOSPLIT, $32-32
+TEXT ·string_buffer_putc16(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -14253,7 +14253,7 @@ TEXT ·string_buffer_putc16(SB), NOSPLIT, $32-32
 	BYTE $0x00
 	RET
 
-TEXT ·string_buffer_putc16_slow(SB), NOSPLIT, $80-32
+TEXT ·string_buffer_putc16_slow(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -15952,7 +15952,7 @@ TEXT ·JS_ParseJSON3(SB), $128-72
 	BYTE $0xff
 	RET
 
-TEXT ·json_free_parse_record(SB), NOSPLIT, $128-24
+TEXT ·json_free_parse_record(SB), $128-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -21280,7 +21280,7 @@ TEXT ·json_parse_value(SB), $272-40
 	BYTE $0xff
 	RET
 
-TEXT ·free_token(SB), NOSPLIT, $64-24
+TEXT ·free_token(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -21357,7 +21357,7 @@ TEXT ·free_token(SB), NOSPLIT, $64-24
 	QUAD $0xffffff07fffffefb
 	RET
 
-TEXT ·build_backtrace(SB), NOSPLIT, $176-56
+TEXT ·build_backtrace(SB), $176-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
@@ -21769,7 +21769,7 @@ TEXT ·build_backtrace(SB), NOSPLIT, $176-56
 	BYTE $0xff
 	RET
 
-TEXT ·json_parse_expect(SB), NOSPLIT, $32-32
+TEXT ·json_parse_expect(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c

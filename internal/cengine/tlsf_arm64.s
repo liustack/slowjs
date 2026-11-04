@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·tlsf_check(SB), NOSPLIT, $104-24
+TEXT ·tlsf_check(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -229,7 +229,7 @@ TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_check_pool(SB), NOSPLIT, $40-24
+TEXT ·tlsf_check_pool(SB), $40-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -329,7 +329,7 @@ TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-16
 	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_add_pool(SB), NOSPLIT, $8-40
+TEXT ·tlsf_add_pool(SB), $8-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -390,7 +390,7 @@ TEXT ·tlsf_add_pool(SB), NOSPLIT, $8-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_remove_pool(SB), NOSPLIT, $8-24
+TEXT ·tlsf_remove_pool(SB), $8-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -454,7 +454,7 @@ TEXT ·tlsf_remove_pool(SB), NOSPLIT, $8-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·tlsf_create(SB), NOSPLIT, $56-24
+TEXT ·tlsf_create(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -515,7 +515,7 @@ TEXT ·tlsf_create(SB), NOSPLIT, $56-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_create_with_pool(SB), NOSPLIT, $88-32
+TEXT ·tlsf_create_with_pool(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -653,7 +653,7 @@ TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
 	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_malloc(SB), NOSPLIT, $8-32
+TEXT ·tlsf_malloc(SB), $8-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -842,7 +842,7 @@ TEXT ·tlsf_malloc(SB), NOSPLIT, $8-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·tlsf_free(SB), NOSPLIT, $72-24
+TEXT ·tlsf_free(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -985,7 +985,7 @@ TEXT ·tlsf_free(SB), NOSPLIT, $72-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·block_merge_next(SB), NOSPLIT, $8-32
+TEXT ·block_merge_next(SB), $8-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1056,7 +1056,7 @@ TEXT ·block_merge_next(SB), NOSPLIT, $8-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·tlsf_realloc_inplace(SB), NOSPLIT, $88-40
+TEXT ·tlsf_realloc_inplace(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1210,7 +1210,7 @@ TEXT ·tlsf_realloc_inplace(SB), NOSPLIT, $88-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_realloc(SB), NOSPLIT, $136-40
+TEXT ·tlsf_realloc(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1477,7 +1477,7 @@ TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_pool_is_free(SB), NOSPLIT, $8-24
+TEXT ·tlsf_pool_is_free(SB), $8-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21

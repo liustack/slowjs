@@ -1,5 +1,5 @@
 ---
-summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, which checks of the temporal dead zone the compiler drops, which locals share a slot of the frame, how JSON.parse reads keys and plain strings from the text, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
+summary: 'The changes of the C engine in engine/ against upstream QuickJS and against the ccgo engine it replaced: the small libc, time and abort through host callbacks, no blocking Atomics, class IDs per runtime, the report of JS_DumpMemoryUsage in a buffer, recursion bounded by counted depths instead of the stack, what happens when the C faults, which generated functions go without the stack check of Go, how the generated code lets Go stop it and how Interrupt stops a script, where the interpreter and the regexp matcher sit in their lines of code, how a call sets and frees its values, how the interpreter calls a C function without JS_CallInternal, how the generator makes LLVM copy a JSValue in two moves of 8 bytes, the C API a Go host calls without variable arguments, how a string built by appending to a variable grows, which checks of the temporal dead zone the compiler drops, which locals share a slot of the frame, how JSON.parse reads keys and plain strings from the text, and which checks and tests guard them, how big the shadow stack is, and what the system refusing memory does'
 read_when:
   - Changing engine/libc, engine/host.h, or what the C tree asks of its host
   - Changing where the C tree counts the call depth or the internal depth, or adding a recursion to it
@@ -136,6 +136,34 @@ On windows a fault may break the memory of the process before it becomes the pan
 Not covered, as in a program written in C: a write through a bad pointer to memory that is mapped changes that memory and nothing tells; a loop that never ends runs until the host interrupts it (see [Polls and interrupts](#polls-and-interrupts)); the runtime ends the process when a goroutine stack passes 1 GB, which the counted depths keep the engine from; and the system may kill the process for memory.
 
 Turning on `SetPanicOnFault` takes two calls of the runtime, 3.5 ns at each entry from Go into the engine (an entry and its `Leave` go from 2.5 to 6.0 ns, and a script that does next to nothing, 1.5 µs, takes 10 ns more), and an entry from a callback inside the engine takes nothing. The scripts of the speed set take 0.3 to 0.8 s and enter the engine a few times, so it cannot be seen there. It sits in `Enter` and not where a pool lends a VM because the setting belongs to the goroutine, and a VM may be lent to a different goroutine each time. `TestFault*` in [testing.md](../testing.md#the-go-host-of-the-generated-engine) run each failure on the real engine.
+
+### Functions without a stack check
+
+Every generated function that calls something starts with Go's stack check. The only functions without one (NOSPLIT) are the three register-entry leaves (`memcpy`, `memmove`, `memset`) and the leaves the Go assembler marks NOSPLIT by itself: 174 on amd64 and 172 on arm64, each a function that calls nothing and has no frame. A fault in one of them becomes a call of `runtime.sigpanic` that the signal handler pushes onto the goroutine's stack where the fault is, and sigpanic's stack check may call morestack, which needs 16 bytes on amd64 and 24 on arm64 above the bottom of the stack and ends the process with "split stack overflow" when they are not there. The leaf's caller passed its stack check, which leaves at least 800 bytes, so the room is the same as for a nil pointer in any Go program.
+
+The generator used to choose more functions to go without a stack check, 446 on amd64 and 456 on arm64: any function whose address was not taken, that made no call through a pointer, was on no cycle of calls, and whose chain of NOSPLIT calls fit the 792 bytes the linker allows with 64 bytes kept free below the deepest frame for the fault. The deepest chain, under `JS_FreeRuntime`, left exactly those 64 bytes, a number read from the runtime of Go 1.27.2, which Go does not promise and which a newer Go could change without any build failing. It does not choose any now (`MarkNoSplit` in `internal/goasm/gen/nosplit.go`), and fails when a function on the list calls anything but a register-entry leaf, or when such leaves call each other in a cycle or take 128 bytes or more below their entry. The post-link check still holds every entry's stack check to the list, so a Go assembler that marks other leaves by itself, or stops marking these, fails the check. The generated code is the code before the change with `NOSPLIT` taken off those functions, and some functions move to the next file.
+
+What it costs, measured on linux/amd64 on an engine made from main at 053d158e with the same list. Callgrind counts the instructions of a render in tifa's `BenchmarkAppCG`. The whole program moves by up to 0.4% between two builds of the same engine, from the work of the young collections, so the cost counted is what the functions that lost NOSPLIT run more: about 3.2 instructions for each check.
+
+| Pages | Instructions | Stack checks more a render |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | +0.27% | 643,000 |
+| the shop's store pages | +0.32% | 1,350,000 |
+| tifa's MUI test app, three pages | +0.36% | 616,000 |
+| tifa's bench pages | +0.29% | 185,000 |
+
+Time, as [measuring.md](../measuring.md) says: 16 layouts, 2 rounds, delta 1%, cpu 0 with its sibling idle, 0 runs again for disturbance. The sum of the pages, 95% intervals:
+
+| Pages | Mean of the layouts | Verdict | Formal layout | Verdict |
+| --- | --- | --- | --- | --- |
+| shop | +0.47% [+0.00%, +0.94%] | slower, by less than delta | +0.61% [-0.36%, +1.60%] | inconclusive |
+| store | +0.04% [-0.51%, +0.59%] | no regression beyond delta | +1.09% [-0.11%, +2.31%] | inconclusive |
+| MUI | +0.63% [+0.22%, +1.04%] | slower | +1.07% [+0.35%, +1.79%] | slower |
+| bench | +0.17% [-0.34%, +0.68%] | no regression beyond delta | +0.81% [+0.24%, +1.38%] | slower |
+
+So a render takes 0.04% to 0.63% longer by the mean of the layouts, and no app is shown to be past 1%. The text of the engine is 14 KB larger. Keeping the choice with more room, 320 bytes in place of 64, would have cost 0.05% to 0.07% of the instructions, but it would still rest on a number read from the runtime.
+
+Tests: `TestMarkNoSplit` and `TestMarkNoSplitErrors` (`internal/goasm/gen`) check the list on a small engine for both architectures, and refuse a register-entry leaf that calls a unified function, leaves that call each other in a cycle and a chain of leaves of 128 bytes. Two cases of the post-link check (`TestCheckCases`) give a function off the list no stack check and a function on the list one, by a frame too big for the assembler to mark. `TestSampleRuns/nosplit_fault` checks the list of a sample with a chain 24 calls deep, which is its two leaves, and faults in the leaf at its bottom at every place of the bottom of a goroutine's stack. `TestFaultNoSplit` (`internal/cengine`) faults in `unicode_to_utf8` and in `memcpy` under `goasm_chunked_memcpy` at every 8 bytes over 12 KiB of the stack.
 
 ### Which panics break a VM
 

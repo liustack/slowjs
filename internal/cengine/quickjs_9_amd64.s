@@ -5231,7 +5231,7 @@ TEXT ·share_local_slots(SB), $560-24
 	QUAD $0xffffcfe7ffffd03a
 	RET
 
-TEXT ·put_short_code(SB), NOSPLIT, $64-32
+TEXT ·put_short_code(SB), $64-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -5359,7 +5359,7 @@ TEXT ·put_short_code(SB), NOSPLIT, $64-32
 	QUAD $0xfffffee6fffffeec
 	RET
 
-TEXT ·update_label(SB), NOSPLIT, $16-32
+TEXT ·update_label(SB), $16-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
@@ -5400,7 +5400,7 @@ TEXT ·add_pc2line_info(SB), NOSPLIT, $0-32
 	BYTE $0x00
 	RET
 
-TEXT ·push_short_int(SB), NOSPLIT, $64-24
+TEXT ·push_short_int(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -5505,7 +5505,7 @@ TEXT ·push_short_int(SB), NOSPLIT, $64-24
 	BYTE $0xff
 	RET
 
-TEXT ·dbuf_put_u32(SB), NOSPLIT, $32-24
+TEXT ·dbuf_put_u32(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -5521,7 +5521,7 @@ TEXT ·dbuf_put_u32(SB), NOSPLIT, $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·fuse_code(SB), NOSPLIT, $160-32
+TEXT ·fuse_code(SB), $160-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -6021,7 +6021,7 @@ TEXT ·fuse_code(SB), NOSPLIT, $160-32
 	QUAD $0xfffffb8cfffffb6e
 	RET
 
-TEXT ·compute_pc2line_info(SB), NOSPLIT, $208-16
+TEXT ·compute_pc2line_info(SB), $208-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
@@ -6765,7 +6765,7 @@ TEXT ·compute_pc2line_info(SB), NOSPLIT, $208-16
 	BYTE $0xff
 	RET
 
-TEXT ·link_var_scopes(SB), NOSPLIT, $112-16
+TEXT ·link_var_scopes(SB), $112-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -7012,7 +7012,7 @@ TEXT ·link_var_scopes(SB), NOSPLIT, $112-16
 	QUAD $0x8000000080000000
 	RET
 
-TEXT ·var_object_test(SB), NOSPLIT, $128-64
+TEXT ·var_object_test(SB), $128-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -7143,7 +7143,7 @@ TEXT ·var_object_test(SB), NOSPLIT, $128-64
 	CALL ·abort(SB)
 	RET
 
-TEXT ·resolve_pseudo_var(SB), NOSPLIT, $96-48
+TEXT ·resolve_pseudo_var(SB), $96-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -7389,7 +7389,7 @@ TEXT ·resolve_pseudo_var(SB), NOSPLIT, $96-48
 	BYTE $0xff
 	RET
 
-TEXT ·optimize_scope_make_ref(SB), NOSPLIT, $128-64
+TEXT ·optimize_scope_make_ref(SB), $128-64
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -7559,7 +7559,7 @@ TEXT ·optimize_scope_make_ref(SB), NOSPLIT, $128-64
 	QUAD $0xb2b2b2b2b2b2b2b2
 	RET
 
-TEXT ·add_arguments_var(SB), NOSPLIT, $80-32
+TEXT ·add_arguments_var(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -7618,7 +7618,7 @@ TEXT ·add_arguments_var(SB), NOSPLIT, $80-32
 	BYTE $0xff
 	RET
 
-TEXT ·add_closure_var(SB), NOSPLIT, $96-40
+TEXT ·add_closure_var(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -8115,7 +8115,7 @@ TEXT ·emit_iterator_close(SB), $96-32
 	BYTE $0xff
 	RET
 
-TEXT ·emit_goto(SB), NOSPLIT, $96-40
+TEXT ·emit_goto(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
@@ -8255,7 +8255,7 @@ TEXT ·emit_goto(SB), NOSPLIT, $96-40
 	BYTE $0xff
 	RET
 
-TEXT ·simple_next_token(SB), NOSPLIT, $128-32
+TEXT ·simple_next_token(SB), $128-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -13317,7 +13317,7 @@ TEXT ·js_parse_function_decl2(SB), $80-56
 	BYTE $0x00
 	RET
 
-TEXT ·js_string_find_invalid_codepoint(SB), NOSPLIT, $64-24
+TEXT ·js_string_find_invalid_codepoint(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -13354,7 +13354,7 @@ TEXT ·js_string_find_invalid_codepoint(SB), NOSPLIT, $64-24
 	QUAD $0x00eb602444894800
 	RET
 
-TEXT ·add_export_entry(SB), NOSPLIT, $160-56
+TEXT ·add_export_entry(SB), $160-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -13514,7 +13514,7 @@ TEXT ·add_export_entry(SB), NOSPLIT, $160-56
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_expect(SB), NOSPLIT, $32-32
+TEXT ·js_parse_expect(SB), $32-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -13544,7 +13544,7 @@ TEXT ·js_parse_expect(SB), NOSPLIT, $32-32
 	BYTE $0x00
 	RET
 
-TEXT ·js_parse_from_clause(SB), NOSPLIT, $112-32
+TEXT ·js_parse_from_clause(SB), $112-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
@@ -13678,7 +13678,7 @@ TEXT ·js_parse_from_clause(SB), NOSPLIT, $112-32
 	BYTE $0xff
 	RET
 
-TEXT ·add_star_export_entry(SB), NOSPLIT, $80-40
+TEXT ·add_star_export_entry(SB), $80-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -13854,7 +13854,7 @@ TEXT ·set_object_name(SB), $96-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·define_var(SB), NOSPLIT, $160-48
+TEXT ·define_var(SB), $160-48
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -15535,7 +15535,7 @@ TEXT ·js_parse_var(SB), $208-48
 	BYTE $0xff
 	RET
 
-TEXT ·js_parse_expect_semi(SB), NOSPLIT, $32-24
+TEXT ·js_parse_expect_semi(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -15898,7 +15898,7 @@ TEXT ·js_parse_with_clause(SB), $144-32
 	BYTE $0xff
 	RET
 
-TEXT ·add_import(SB), NOSPLIT, $160-56
+TEXT ·add_import(SB), $160-56
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
@@ -19038,7 +19038,7 @@ TEXT ·js_parse_statement_or_decl1(SB), $224-32
 	QUAD $0xffffd8d4ffffeba2
 	RET
 
-TEXT ·emit_label(SB), NOSPLIT, $64-24
+TEXT ·emit_label(SB), $64-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
@@ -19086,7 +19086,7 @@ TEXT ·emit_label(SB), NOSPLIT, $64-24
 	BYTE $0xff
 	RET
 
-TEXT ·pop_scope(SB), NOSPLIT, $80-16
+TEXT ·pop_scope(SB), $80-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19306,7 +19306,7 @@ TEXT ·js_parse_expr2(SB), $96-32
 	BYTE $0xff
 	RET
 
-TEXT ·emit_source_pos(SB), NOSPLIT, $80-24
+TEXT ·emit_source_pos(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -19348,7 +19348,7 @@ TEXT ·emit_source_pos(SB), NOSPLIT, $80-24
 	BYTE $0x8a
 	RET
 
-TEXT ·set_eval_ret_undefined(SB), NOSPLIT, $48-16
+TEXT ·set_eval_ret_undefined(SB), $48-16
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
@@ -21124,7 +21124,7 @@ TEXT ·js_parse_for_in_of(SB), $272-40
 	BYTE $0xff
 	RET
 
-TEXT ·is_let(SB), NOSPLIT, $80-24
+TEXT ·is_let(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21191,7 +21191,7 @@ TEXT ·is_let(SB), NOSPLIT, $80-24
 	BYTE $0xc1
 	RET
 
-TEXT ·close_scopes(SB), NOSPLIT, $80-32
+TEXT ·close_scopes(SB), $80-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21276,7 +21276,7 @@ TEXT ·close_scopes(SB), NOSPLIT, $80-32
 	BYTE $0x00
 	RET
 
-TEXT ·new_label(SB), NOSPLIT, $80-24
+TEXT ·new_label(SB), $80-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
@@ -21314,7 +21314,7 @@ TEXT ·new_label(SB), NOSPLIT, $80-24
 	BYTE $0xff
 	RET
 
-TEXT ·emit_break(SB), NOSPLIT, $128-40
+TEXT ·emit_break(SB), $128-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
@@ -21584,7 +21584,7 @@ TEXT ·emit_break(SB), NOSPLIT, $128-40
 	BYTE $0x00
 	RET
 
-TEXT ·emit_u32(SB), NOSPLIT, $32-24
+TEXT ·emit_u32(SB), $32-24
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
@@ -21972,7 +21972,7 @@ TEXT ·js_define_var(SB), $48-40
 	QUAD $0xffffff37ffffff6a
 	RET
 
-TEXT ·add_var(SB), NOSPLIT, $96-40
+TEXT ·add_var(SB), $96-40
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c

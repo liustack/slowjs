@@ -20504,7 +20504,7 @@ TEXT ·js_arguments_define_own_property_block(SB), $176-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·JS_NewCConstructor_block(SB), NOSPLIT, $208-32
+TEXT ·JS_NewCConstructor_block(SB), $208-32
 	NO_LOCAL_POINTERS
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
