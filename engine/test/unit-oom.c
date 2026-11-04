@@ -1388,6 +1388,56 @@ static void test_tags_oom(void)
     sweep_register = NULL;
 }
 
+/* Registering makes the cache of the tags, and Function.prototype.call and
+   Array.prototype.push, which the engine makes at their first use. With too
+   little memory it fails with the out of memory error and leaves no cache
+   behind, and registering again with the memory back gives a function that
+   works. */
+static void test_tags_register_oom(void)
+{
+    static const char call[] =
+        "var t = []; s(t, { a: 1 }, 'p', { viewTransition: null }, Object.prototype.hasOwnProperty, {}); t[0] + [].push.name";
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), nbytes = 4096 / 8 + 1, k;
+    int failed = 0, worked = 0;
+
+    for (k = 0; k < nbytes + nfill; k++) {
+        VM v = vm_new();
+        JSValue g, f;
+        char *t;
+
+        if (k < nbytes) {
+            room(&v, k * 8);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
+        }
+        f = JS_NewStartTagFunction(v.ctx, "s", 1);
+        if (k < nbytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (JS_IsException(f)) {
+            failed++;
+            CHECK(JS_IsUncatchableException(v.ctx), "register tags: room %zu: a catchable exception", k);
+            free(exception_text(v.ctx));
+            f = JS_NewStartTagFunction(v.ctx, "s", 1);
+            CHECK(!JS_IsException(f), "register tags: room %zu: failed with the memory back", k);
+        } else {
+            worked++;
+        }
+        g = JS_GetGlobalObject(v.ctx);
+        JS_SetPropertyStr(v.ctx, g, "s", f);
+        JS_FreeValue(v.ctx, g);
+        t = eval_text(v.ctx, call);
+        CHECK(t && !strcmp(t, "<p a=\"1\">push"), "register tags: room %zu: %s", k, t ? t : "(exception)");
+        free(t);
+        free(exception_text(v.ctx));
+        vm_free(&v);
+    }
+    CHECK(failed > 0 && worked > 0, "register tags: %d rooms failed, %d worked", failed, worked);
+}
+
 /* A script name in a regexp (\p{Script=...}, \p{Script_Extensions=...}) is
    turned into ranges of characters by unicode_script, which gives them back
    with an error when it runs out of memory. Its error path once jumped to
@@ -1654,6 +1704,7 @@ int main(void)
     test_string_append_oom();
     test_copy_props_oom();
     test_tags_oom();
+    test_tags_register_oom();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;

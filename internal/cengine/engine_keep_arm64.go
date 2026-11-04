@@ -705,7 +705,6 @@ var goasmKeep = []any{
 	js_emit_binary_op,
 	js_emit_buf_end,
 	js_emit_buf_take,
-	js_emit_free,
 	js_emit_is_javascript_url,
 	js_emit_name_add,
 	js_emit_new_function,

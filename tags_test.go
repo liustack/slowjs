@@ -284,3 +284,96 @@ func TestTagsMemoryLimit(t *testing.T) {
 		t.Fatalf("after: %s", got)
 	}
 }
+
+// Registering runs no script: it does not read Function.prototype.call or
+// Array.prototype.push through a getter, so a getter can neither register
+// another function while the cache is being made nor keep the registration
+// from returning (it has no timeout). A built-in replaced or made a getter
+// before registration makes the calls decline, as one replaced after it.
+func TestRegisterTagsRunsNoScript(t *testing.T) {
+	t.Run("a getter that registers", func(t *testing.T) {
+		m := newTestVM(t)
+		if err := m.RegisterFunc("installInner", func() string {
+			if err := m.RegisterEndTag("inner"); err != nil {
+				return err.Error()
+			}
+			return "ok"
+		}, false); err != nil {
+			t.Fatal(err)
+		}
+		evalString(t, m, `var ran = 0; Object.defineProperty(Array.prototype, 'push', { configurable: true,
+			get() { ran++; installInner(); throw new Error('getter') } }); 0`)
+		if err := m.RegisterStartTag("outer"); err != nil {
+			t.Fatal(err)
+		}
+		if got := evalString(t, m, `ran + ' ' + typeof inner`); got != "0 undefined" {
+			t.Fatalf("getter: %s", got)
+		}
+		got := evalString(t, m, `var t = [], d = {}; outer(t, { a: 1 }, 'p', { viewTransition: null }, Object.prototype.hasOwnProperty, d) === d && t.length === 0`)
+		if got != "true" {
+			t.Fatalf("a getter for push: %s", got)
+		}
+	})
+	t.Run("a getter that never returns", func(t *testing.T) {
+		m := newTestVM(t)
+		if err := m.SetEvalTimeout(200 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		evalString(t, m, `Object.defineProperty(Array.prototype, 'push', { configurable: true, get() { for (;;) {} } });
+			Object.defineProperty(Function.prototype, 'call', { configurable: true, get() { for (;;) {} } }); 0`)
+		done := make(chan error, 2)
+		go func() {
+			err := m.RegisterStartTag("s")
+			if err == nil {
+				err = m.RegisterEndTag("e")
+			}
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatal("registering ran the getter")
+		}
+	})
+	t.Run("replaced before registering", func(t *testing.T) {
+		for _, setup := range []string{
+			`var push = Array.prototype.push; Array.prototype.push = function () { return push.apply(this, arguments) }`,
+			`Array.prototype.push = Array.prototype.unshift`,
+			`var call = Function.prototype.call; Function.prototype.call = function () { return call.apply(this, arguments) }`,
+		} {
+			m := newTestVM(t)
+			evalString(t, m, setup+"; 0")
+			if err := m.RegisterStartTag("s"); err != nil {
+				t.Fatal(err)
+			}
+			got := evalString(t, m, `var t = [], d = {}; s(t, { a: 1 }, 'p', { viewTransition: null }, Object.prototype.hasOwnProperty, d) === d && t.length === 0`)
+			if got != "true" {
+				t.Errorf("%s: %s", setup, got)
+			}
+		}
+	})
+}
+
+// target.push(s) sets an index found on the prototype chain, a setter or a
+// read-only one: React's push runs it or throws, so the start tag declines.
+func TestStartTagIndexOnPrototype(t *testing.T) {
+	for _, setup := range []string{
+		`Object.defineProperty(Array.prototype, '0', { configurable: true, set(v) { throw new Error('setter ran') } })`,
+		`Object.defineProperty(Array.prototype, '0', { configurable: true, value: 'r', writable: false })`,
+		`Object.defineProperty(Object.prototype, '0', { configurable: true, set(v) { throw new Error('setter ran') } })`,
+		`Object.defineProperty(Array.prototype, '3', { configurable: true, value: 'r' }); delete Array.prototype[3]`,
+	} {
+		m := newTestVM(t)
+		if err := m.RegisterStartTag("s"); err != nil {
+			t.Fatal(err)
+		}
+		evalString(t, m, setup+"; 0")
+		got := evalString(t, m, `var t = [], d = {}; s(t, { a: 1 }, 'p', { viewTransition: null }, Object.prototype.hasOwnProperty, d) === d && t.length === 0`)
+		if got != "true" {
+			t.Errorf("%s: %s", setup, got)
+		}
+	}
+}

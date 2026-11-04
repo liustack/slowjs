@@ -28,20 +28,23 @@ import (
 // React pushes the same text in several strings. When it cannot be sure to
 // write what React writes it returns decline, having changed nothing, and the
 // script runs React's function. That is the case for an unusual target (not a
-// plain array, or Array.prototype.push replaced), a tag React refuses, a
-// formatContext whose viewTransition is not null, props or a style that are
-// not plain objects of Object.prototype with at most 32 keys, a getter, an
-// array index key, dangerouslySetInnerHTML, the rare attributes xlinkHref,
-// capture, download, cols, rows, size, span, rowSpan and start, a value that
-// React would turn into a string by calling its toString (an object) or a
-// bigint, a javascript: URL, a name of the default branch that is not ASCII or
-// is 64 characters or more, a style name that is not ASCII and does not start
-// with --, a tag that would be too long, and hasOwnProperty.call that is not
-// the built-in function calling the built-in. It assumes that the built-in
-// methods of String, RegExp, Map and Set that React's functions call are
-// still those of the engine. It throws only when the engine has no memory, or
-// when an interrupt or the eval timeout stops it on a long string, and target
-// is then unchanged.
+// plain array, an index property ever put on Array.prototype or
+// Object.prototype, where push would set it, or Array.prototype.push
+// replaced), a tag React refuses, a formatContext whose viewTransition is not
+// null, props or a style that are not plain objects of Object.prototype with
+// at most 32 keys, a getter, an array index key, dangerouslySetInnerHTML, the
+// rare attributes xlinkHref, capture, download, cols, rows, size, span,
+// rowSpan and start, a value that React would turn into a string by calling
+// its toString (an object) or a bigint, a javascript: URL, a name of the
+// default branch that is not ASCII or is 64 characters or more, a style name
+// that is not ASCII and does not start with --, a tag that would be too long,
+// and hasOwnProperty.call that is not the built-in function calling the
+// built-in. The built-ins are found by their C function, so one replaced
+// before registering is not taken for them, and registering runs no script.
+// It assumes that the built-in methods of String, RegExp, Map and Set that
+// React's functions call are still those of the engine. It throws only when
+// the engine has no memory, or when an interrupt or the eval timeout stops it
+// on a long string, and target is then unchanged.
 //
 // The function is not on the global object unless a host calls this. The
 // property is writable, configurable and not enumerable, and it replaces a

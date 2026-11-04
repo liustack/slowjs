@@ -56111,6 +56111,13 @@ static void js_emit_free(JSContext *ctx)
     ctx->emit_cache = NULL;
 }
 
+/* whether the n bytes of buf are the name s: a name of a script may hold a
+   NUL, which strcmp would take for its end */
+static BOOL js_emit_name_is(const char *buf, size_t n, const char *s)
+{
+    return strlen(s) == n && memcmp(buf, s, n) == 0;
+}
+
 /* puts kind and chunk into e for the attribute name atom */
 static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
 {
@@ -56127,7 +56134,7 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
         memcpy(buf, p->u.str8, n);
         buf[n] = '\0';
         for (i = 0; i < countof(js_emit_attr_names); i++) {
-            if (!strcmp(buf, js_emit_attr_names[i].name)) {
+            if (js_emit_name_is(buf, n, js_emit_attr_names[i].name)) {
                 kind = js_emit_attr_names[i].kind;
                 out = js_emit_attr_names[i].out ? js_emit_attr_names[i].out :
                     js_emit_attr_names[i].name;
@@ -56142,13 +56149,14 @@ static int js_emit_attr_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
         } else {
             out = buf;
             for (i = 0; i < countof(js_emit_aliases); i += 2) {
-                if (!strcmp(buf, js_emit_aliases[i])) {
+                if (js_emit_name_is(buf, n, js_emit_aliases[i])) {
                     out = js_emit_aliases[i + 1];
                     break;
                 }
             }
-            /* isAttributeNameSafe, for an ASCII name */
-            n = strlen(out);
+            /* isAttributeNameSafe, for an ASCII name: a NUL in it is refused */
+            if (out != buf)
+                n = strlen(out);
             kind = n > 0 ? JS_EMIT_DEFAULT : JS_EMIT_SKIP;
             for (i = 0; i < n; i++) {
                 c = (uint8_t)out[i];
@@ -56530,9 +56538,11 @@ static BOOL js_emit_valid_tag(const JSString *p)
 
 /* Whether target.push(s) on the array p only adds s at its end: p has the
    shape of a new array of ctx (no property but a writable length, and
-   Array.prototype of ctx as its prototype), is fast and extensible, its
-   length is its count, and Array.prototype.push is a data property that
-   holds the built-in. */
+   Array.prototype of ctx as its prototype), is fast, its length is its count,
+   it can grow as js_array_push grows it (extensible, and no index was ever
+   put on Array.prototype or Object.prototype, where push would set it: a
+   setter, or a read-only index that throws), and Array.prototype.push is a
+   data property that holds the built-in. */
 static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
 {
     JSObject *ap, *f;
@@ -56540,7 +56550,7 @@ static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
     JSProperty *pr;
 
     if (p->shape != ctx->array_shape || p->class_id != JS_CLASS_ARRAY ||
-        !p->fast_array || !p->extensible ||
+        !p->fast_array || !can_extend_fast_array(p) ||
         JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT ||
         JS_VALUE_GET_INT(p->prop[0].u.value) != p->u.array.count ||
         p->u.array.count >= INT32_MAX)
@@ -56822,16 +56832,35 @@ static JSValue js_end_tag(JSContext *ctx, JSValueConst this_val,
     return js_end_tag_add(ctx, ec, argv[0]);
 }
 
+/* makes the property atom of the built-in object obj when the engine makes
+   it at its first use (JS_PROP_AUTOINIT), with no script run. What a script
+   put there before, an accessor or another value, is left as it is, and the
+   checks of the calls, which look for the built-in by its C function, then
+   decline. */
+static int js_emit_make_builtin(JSContext *ctx, JSValueConst obj, JSAtom atom)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    JSShapeProperty *prs;
+    JSProperty *pr;
+
+    prs = find_own_property(&pr, p, atom);
+    if (prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT)
+        return JS_AutoInitProperty(ctx, p, atom, pr, prs);
+    return 0;
+}
+
 /* makes ctx->emit_cache with its atoms, once, and the methods it checks:
    Function.prototype.call and Array.prototype.push, which the engine makes
-   at their first use, are made now so that the checks find them in place */
+   at their first use, are made now so that the checks find them in place.
+   It runs no script (registering has no timeout, and a getter could register
+   again while the cache is made), and puts the cache in ctx only once it is
+   whole. */
 static int js_emit_init(JSContext *ctx)
 {
     static const char *const names[JS_EMIT_ATOM_COUNT] = {
         "viewTransition", "call", "push",
     };
     JSEmitCache *ec;
-    JSValue f;
     int i;
 
     if (ctx->emit_cache)
@@ -56844,23 +56873,20 @@ static int js_emit_init(JSContext *ctx)
     ec->attr.bits = ec->style.bits = 1;
     ec->end = (JSEmitEnd *)js_emit_no_ends;
     ec->end_bits = 1;
-    ctx->emit_cache = ec;
     for (i = 0; i < JS_EMIT_ATOM_COUNT; i++) {
         ec->atoms[i] = JS_NewAtom(ctx, names[i]);
         if (ec->atoms[i] == JS_ATOM_NULL)
             goto fail;
     }
-    f = JS_GetProperty(ctx, ctx->function_proto, ec->atoms[JS_EMIT_ATOM_CALL]);
-    if (JS_IsException(f))
+    if (js_emit_make_builtin(ctx, ctx->function_proto, ec->atoms[JS_EMIT_ATOM_CALL]) < 0 ||
+        js_emit_make_builtin(ctx, ctx->class_proto[JS_CLASS_ARRAY], ec->atoms[JS_EMIT_ATOM_PUSH]) < 0)
         goto fail;
-    JS_FreeValue(ctx, f);
-    f = JS_GetProperty(ctx, ctx->class_proto[JS_CLASS_ARRAY], ec->atoms[JS_EMIT_ATOM_PUSH]);
-    if (JS_IsException(f))
-        goto fail;
-    JS_FreeValue(ctx, f);
+    ctx->emit_cache = ec;
     return 0;
  fail:
-    js_emit_free(ctx);
+    for (i = 0; i < JS_EMIT_ATOM_COUNT; i++)
+        JS_FreeAtom(ctx, ec->atoms[i]);
+    js_free(ctx, ec);
     return -1;
 }
 

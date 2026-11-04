@@ -573,6 +573,8 @@ const cases = [
   ['div', { 'data-n': 0, 'data-f': 0.25, 'aria-level': 3, 'data-': true, 'aria': true }, 'take'],
   ['div', { onClick: fn, onclick: 'x', ON: 'y', on: 'z', onX: 1, One: 'o', Onx: 2, oN: 3, o: 4 }, 'take'],
   ['div', { '': 'e', '1a': 'x', 'a b': 'x', 'a"b': 'x', ':ok': 'y', _ok: 'y', 'a-b.c:d_9': 'z', '-x': 'x', '.x': 'x' }, 'take'],
+  ['div', { 'children\u0000x': 'hello' }, 'take'],
+  ['div', { 'id\u0000x': 'a', 'style\u0000': 'b', 'on\u0000': 'c', '\u0000': 'd', 'dangerouslySetInnerHTML\u0000': 'e', 'x\u0000': 'f', 'children\u0000': 'g' }, 'take'],
   ['a', { href: '/x?a=1&b=2', src: '', action: '/post', formAction: '/f' }, 'take'],
   ['div', { href: '', src: '/img.png' }, 'take'],
   ['div', { href: 12, src: 0, action: 1.5 }, 'take'],
@@ -785,7 +787,7 @@ const names = ['className', 'tabIndex', 'dir', 'role', 'viewBox', 'width', 'heig
   'hidden', 'open', 'xlinkActuate', 'xmlLang', 'htmlFor', 'crossOrigin', 'strokeWidth', 'fillRule', 'panose-1', 'data-id',
   'data-x', 'aria-label', 'aria-hidden', 'DATA-up', 'id', 'title', 'alt', 'type', 'name', 'onClick', 'onclick', 'on', 'One',
   'a b', '1a', 'x"y', 'children', 'é', '中', 'xlinkHref', 'download', 'cols', 'dangerouslySetInnerHTML', '_x', ':x', 'a.b-c',
-  'innerHTML', 'suppressHydrationWarning', 'style', 'style']
+  'innerHTML', 'suppressHydrationWarning', 'style', 'style', 'children\u0000x', 'id\u0000x']
 const styleNames = ['color', 'marginTop', 'zIndex', 'opacity', 'lineHeight', 'WebkitTransform', 'msTransform', 'msFlex',
   'MozBoxFlex', '--brand', '--x<', 'fontFamily', '颜色', 'ms', 'mSx', 'content', 'width', 'flexGrow', 'a&b', '--中']
 function styleValue() {
@@ -828,6 +830,17 @@ function props() {
 }
 for (let t = 0; t < 4000; t++)
   check('random ' + t, rand(20) === 0 ? pick(['1x', 'my-el', 'svg', 'x:y', '']) : 'div', props())
+
+// An index on Array.prototype makes push set it there, and React's push runs
+// the setter. startTag declines from then on, as push leaves its fast path.
+// Last of the calls, since the engine never takes back that Array.prototype
+// has had an index.
+{
+  Object.defineProperty(Array.prototype, '0', { set(v) { throw new Error('setter ran') }, configurable: true })
+  check('Array.prototype with a setter at 0', 'div', { a: 1 }, 'decline', FC, null, [])
+  delete Array.prototype[0]
+  check('Array.prototype that had an index', 'div', { a: 1 }, 'decline', FC, null, [])
+}
 
 out.unshift(count + ' calls: ' + (bad ? bad + ' wrong' : 'all as React') + '; startTag took ' + taken)
 
