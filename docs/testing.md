@@ -285,6 +285,7 @@ CHECK_LIST=1 scripts/check.sh full   # the steps and their tier
 make check-fast                # every commit
 make check-full                # the end of a batch
 CHECK_ONLY="goasm root" make check-full     # some steps (CHECK_SKIP leaves some out, CHECK_STOP=1 stops at the first failure)
+CHECK_TAGS=slowjs_anygo make check-fast      # with tags added to every go command, such as past the gate of a newer Go
 ```
 
 The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_decl_<arch>.go` and `engine_keep_<arch>.go` files of amd64 and arm64 (about 18 MiB, 3 MiB compressed), because a user of the module has no LLVM. A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` goes in with the files made again by `make gen` and `make gen ARCH=arm64`, in the same commit, and `make check-gen` fails when they are not. It compares the bytes in the git index, so run `git add internal/cengine` after `make gen` and before `make check-gen`. The generator gives the same bytes whatever `GEN_JOBS` and whichever folder it runs in.

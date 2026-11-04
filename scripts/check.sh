@@ -18,6 +18,10 @@
 #   LLVM_BIN     bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
 #   LLD          linker of the generator tests (default: ld.lld or ld, first found)
 #   CHECK_LIST   1: print the steps and stop
+#   CHECK_TAGS   build tags added to every go command of the checks, such as
+#                slowjs_anygo to run them with a Go newer than internal/goversion
+#                lets build (GOFLAGS alone does not reach a command that gives
+#                its own -tags)
 set -u
 
 tier=${1:-}
@@ -72,20 +76,26 @@ step() {
 	printf '%s\t%s\t%ss\t%s\n' "$name" "$res" "$t" "$note" >> "$logs/summary.tmp"
 }
 
+xtags=
+if [ -n "${CHECK_TAGS:-}" ]; then
+	xtags=,$CHECK_TAGS
+	GOFLAGS="${GOFLAGS:+$GOFLAGS }-tags=$CHECK_TAGS"
+	export GOFLAGS
+fi
 gc="env CGO_ENABLED=0 go"
 # Fast: every commit.
 step build fast - "$gc build ./..."
 step gofmt fast - "out=\$(gofmt -l -s . | grep -v -e '^\\.build/' -e '^internal/cengine/engine_'); [ -z \"\$out\" ] || { echo \"\$out\"; exit 1; }"
 step docs fast - "scripts/docs-list.sh --check"
 step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 SLOWJS_LLVM=$llvm SLOWJS_SHADOW_PASS=$root/.build/shadow.so SLOWJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
-step cengine fast tests "$gc test -count=1 -v -tags testhooks ./internal/cengine"
+step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain"
 step cycles fast last "engine/test/cycles.sh"
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"
 step math full last "engine/test/math.sh"
-step testhooks full tests "$gc test -count=1 -v -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable"
+step testhooks full tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m ."
 step race full tests "env CGO_ENABLED=1 go test -count=1 -v -race -short -timeout 60m -p 1 . ./internal/gohost ./internal/hostmem ./internal/idtable"
 step host-asan full - "engine/test/build.sh asan"
