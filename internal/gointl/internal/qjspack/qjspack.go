@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Package qjspack is the layout of the go-intl data slowjs embeds: the files
+// Package qjspack is the layout of the go-intl data liustack/quickjs embeds: the files
 // of go-intl's data directory, grouped into chunks, each chunk stored as it is
 // or compressed with DEFLATE.
 //

@@ -13,7 +13,7 @@ import (
 )
 
 // Walking reports whether the pool parts read are recorded, which only the
-// gointl_walk build tag does, for slowjs's pack tool.
+// gointl_walk build tag does, for the pack tool of liustack/quickjs.
 const Walking = true
 
 var walk struct {

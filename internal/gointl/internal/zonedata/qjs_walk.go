@@ -12,7 +12,7 @@ import (
 )
 
 // Walk reads all of a locale's data, the tables Decode leaves in the pool
-// included, so that slowjs's pack tool learns which parts of the pool the
+// included, so that the pack tool of liustack/quickjs learns which parts of the pool the
 // locale reaches.
 func Walk(data []byte, pool blob.Shared) error {
 	l, err := Decode(data, pool)

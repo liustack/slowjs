@@ -20,11 +20,11 @@
 // generator deletes every file that matches *_amd64.s when it makes the engine
 // again.
 TEXT ·goasmTripwire(SB), NOSPLIT|NOFRAME, $0-0
-	// BUILD ERROR: slowjs does not build with -asmflags=-spectre=ret (or all).
+	// BUILD ERROR: liustack/quickjs does not build with -asmflags=-spectre=ret (or all).
 	// It turns the 2 byte CALL through a register into a 5 byte call through
 	// a retpoline, and the engine's branches land wrong. Build without it.
 	CALL (AX)
-	// BUILD ERROR: slowjs does not build with -dynlink, which the go command
+	// BUILD ERROR: liustack/quickjs does not build with -dynlink, which the go command
 	// passes for -buildmode=plugin, -buildmode=shared and -linkshared. It
 	// splits a load of a symbol address into two instructions and uses R15
 	// for it, and the engine's branches land wrong. Build without it.

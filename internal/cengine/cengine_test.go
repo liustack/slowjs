@@ -54,7 +54,7 @@ func sameFootprint(t *testing.T, v *VM, when string) Usage {
 
 // TestExpressions runs the expressions of the first runs of the generated
 // engine and more, each in a new VM. The expected results are what package
-// slowjs gives.
+// quickjs gives.
 func TestExpressions(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`1+1`, `2`},
@@ -430,7 +430,7 @@ func TestGCWhileRunning(t *testing.T) {
 
 // TestShapeCache: a new VM keeps the shapes of plain objects after their last
 // object is gone, at most DefaultShapeCache of them, as a VM of package
-// slowjs does. Shapes no later object reuses do not build up, and turning the
+// quickjs does. Shapes no later object reuses do not build up, and turning the
 // cache off lets the kept shapes go.
 func TestShapeCache(t *testing.T) {
 	v := newVM(t, Options{Seed: 1})

@@ -66,7 +66,7 @@ jobs:
   # The Go releases the module lets build: the go line of go.mod and the
   # newest patch release of each minor version up to the one
   # internal/goversion stops. Unlike the job above, a failure here is a
-  # release slowjs says it supports.
+  # release liustack/quickjs says it supports.
   releases:
     name: releases (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

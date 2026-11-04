@@ -1,8 +1,8 @@
 // Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 
-// Package enginecmp measures the current slowjs engine under the same GC stop
-// setup as the generated prototype, for comparison.
+// Package enginecmp measures the current engine of liustack/quickjs under the same GC
+// stop setup as the generated prototype, for comparison.
 package enginecmp
 
 import (
@@ -63,7 +63,7 @@ func TestGCStopsJSLoop(t *testing.T) {
 		counts[i] = after.Counts[i] - before.Counts[i]
 		total += counts[i]
 	}
-	fmt.Printf("current slowjs JS loop: %d workers, %d stops\n", n, total)
+	fmt.Printf("current liustack/quickjs JS loop: %d workers, %d stops\n", n, total)
 	for i, c := range counts {
 		if c > 0 {
 			fmt.Printf("  [%.1f, %.1f) µs: %d\n", after.Buckets[i]*1e6, after.Buckets[i+1]*1e6, c)

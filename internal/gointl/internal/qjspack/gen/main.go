@@ -4,7 +4,7 @@
 // root of this repository.
 
 // Command gen writes internal/gointl/qjsdata, the packs of go-intl's data that
-// slowjs embeds in place of go-intl's data.pack, from go-intl's data
+// liustack/quickjs embeds in place of go-intl's data.pack, from go-intl's data
 // directory. Run it from the root of the module, with the build tag that lets
 // it see which pool parts a locale reads (qjs-sync.sh pack does this):
 //
