@@ -6,6 +6,7 @@
 package bench
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,4 +143,62 @@ func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
 			t.Errorf("%s moved by %d: %v", c.p, c.d, err)
 		}
 	}
+}
+
+// leaRIP is lea disp32(%rip) into register reg (0 to 15) at address at, loading
+// target.
+func leaRIP(reg int, at, target uint64) []byte {
+	rex := byte(0x48)
+	if reg >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	b := []byte{rex, 0x8d, byte(0x05 | (reg&7)<<3), 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(b[3:], uint32(int32(int64(target)-int64(at+7))))
+	return b
+}
+
+func TestJumpTableInAnyRegister(t *testing.T) {
+	const fn, size = 0x10000, 0x2000
+	const table, decoy = 0x20000, 0x21000
+	// the table: 256 offsets, relative to it, of handlers in the function
+	mem := map[uint64][]byte{table: make([]byte, 1024), decoy: make([]byte, 1024)}
+	for i := range 256 {
+		binary.LittleEndian.PutUint32(mem[table][i*4:], uint32(int32(int64(fn+0x100+16*i)-table)))
+		// the decoy is read more often, but its offsets point outside the function
+		binary.LittleEndian.PutUint32(mem[decoy][i*4:], uint32(int32(0x30000+i-decoy)))
+	}
+	read := func(a uint64) []byte { return mem[a] }
+	// r11 is where the jump table was until the engine of exp/array-iter-fast
+	// put it in r10. rax, r10 and r11 cover REX.R both ways.
+	for _, reg := range []int{11, 10, 0, 14} {
+		t.Run(fmt.Sprint("r", reg), func(t *testing.T) {
+			code := make([]byte, size)
+			at := 0
+			put := func(r int, target uint64) {
+				copy(code[at:], leaRIP(r, fn+uint64(at), target))
+				at += 7 + 5
+			}
+			for range 5 {
+				put(reg, table)
+			}
+			decoyReg := 3
+			if reg == 3 {
+				decoyReg = 4
+			}
+			for range 9 {
+				put(decoyReg, decoy)
+			}
+			got, ok := jumpTable(fn, code, read)
+			if !ok || got != table {
+				t.Fatalf("jump table at %#x (found %v), want %#x", got, ok, uint64(table))
+			}
+		})
+	}
+	t.Run("none", func(t *testing.T) {
+		code := make([]byte, size)
+		copy(code, leaRIP(10, fn, decoy))
+		if got, ok := jumpTable(fn, code, read); ok {
+			t.Errorf("found a jump table at %#x in code that has none", got)
+		}
+	})
 }
