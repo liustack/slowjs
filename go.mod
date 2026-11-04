@@ -1,3 +1,5 @@
+// Deprecated: the module is github.com/liustack/quickjs again, from v0.30.0 on.
+// Change the import path and the package name slowjs to quickjs.
 module github.com/liustack/slowjs
 
 go 1.26.6
