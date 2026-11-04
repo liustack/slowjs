@@ -73,31 +73,31 @@ func (m *VM) enterGo() (below int) {
 // javascript gets back. When a call into the engine that the Go function made
 // did not return, a panic or a Goexit went up through the engine's frames
 // below, whatever the panic is, and the VM is broken. Such a panic, and a
-// Goexit, go on up through the engine.
+// Goexit, go on up through the engine. The calls into the engine that called
+// does itself count at the level of the Go function, which ends with them:
+// the call of the level below that called the Go function is in progress.
 func (m *VM) called(saved uintptr, below int, name string, r *jsValue, returned bool, p any) {
 	m.host--
 	if m.inEngine != 0 {
 		m.h.MarkBroken()
 	}
-	m.inEngine = below
+	defer func() {
+		m.sp = saved
+		m.inEngine = below
+	}()
 	switch {
 	case p == nil && !returned:
-		m.sp = saved
 		m.h.MarkBroken() // runtime.Goexit, which goes on up through the engine
 		return
 	case p != nil && m.h.Broken():
-		m.sp = saved
-		m.h.MarkBroken()
 		panic(p)
 	case p == nil && m.h.Broken():
-		m.sp = saved
 		panic(framesLeftPanic)
 	case p != nil:
 		// Above the frames of the call still: what the engine is passed
 		// goes past them.
 		m.hostPanicked(name, p)
 	}
-	defer func() { m.sp = saved }()
 	// An interrupt or running out of memory in converting the arguments,
 	// in the Go function or in converting its result stays pending (see
 	// takeException). It is the result whatever the Go function returned.
@@ -152,7 +152,7 @@ func (m *VM) newHostFunction(name string, length, id int32, release bool) (r jsV
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
-	m.inEngine++
+	m.toEngine()
 	if release {
 		r = val(cengine.JS_NewHostFunctionRelease(sp, m.ctx, p, uintptr(len(name)), uintptr(length), uintptr(id)))
 	} else {

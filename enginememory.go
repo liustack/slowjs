@@ -53,7 +53,7 @@ func (m *VM) memoryUsage() (u MemoryUsage) {
 		return u
 	}
 	p := m.sp
-	m.inEngine++
+	m.toEngine()
 	cengine.JS_ComputeMemoryUsage(p+(unsafe.Sizeof(jsMemoryUsage{})+15)&^15, m.rt, p)
 	m.inEngine--
 	s := *(*jsMemoryUsage)(addr(p))
@@ -100,7 +100,7 @@ func (m *VM) releaseMemory(keep uintptr) (n uintptr) {
 		m.outer(func() { n = m.releaseMemory(keep) })
 		return n
 	}
-	m.inEngine++
+	m.toEngine()
 	cengine.JS_ReleaseStart(m.sp, m.rt, keep)
 	r, _ := m.h.Memory().Release(
 		func() (uintptr, uintptr) { return cengine.JS_ReleaseNextChunk(m.sp, m.rt) },

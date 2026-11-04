@@ -186,3 +186,68 @@ func TestNestedLowFaultRecoveredBreaksVM(t *testing.T) {
 	lowFault(t, inner)
 	wantBroken(t, m, "a recovered fault at a low address")
 }
+
+// zeroContext is an argument whose JSON takes the context of m away, so that
+// the next call into the engine in the Call that converts it faults at a low
+// address.
+type zeroContext struct{ m *VM }
+
+func (z zeroContext) MarshalJSON() ([]byte, error) {
+	z.m.ctx = 0
+	return []byte(`1`), nil
+}
+
+// After a call into the engine left it halfway, the engine is not entered
+// again: Call freed the function it evaluated, in a defer that runs before
+// leave, on the engine the fault had left. inEngine counts the call that
+// faulted, and a call made after it, which the context at 0 makes fault too,
+// would still count.
+func TestLowFaultInCallFreesNothing(t *testing.T) {
+	faulttest.Skip(t)
+	m := newTestVM(t)
+	ctx := m.ctx
+	p := func() (p any) {
+		defer func() { p = recover() }()
+		m.Call(`(() => () => 1)()`, zeroContext{m})
+		return nil
+	}()
+	m.ctx = ctx
+	lowFault(t, p)
+	if m.inEngine != 1 {
+		t.Fatalf("%d calls into the engine left halfway, want 1: the engine was entered again after the fault", m.inEngine)
+	}
+	wantBroken(t, m, "a fault at a low address in Call")
+}
+
+// A Go function that recovers a fault of its own call into the engine cannot
+// call into the engine again.
+func TestHostLowFaultRecoveredRefusesEngine(t *testing.T) {
+	faulttest.Skip(t)
+	m := newTestVM(t)
+	var fault, again any
+	var calls int
+	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
+		m := a.VM()
+		withoutContext(m, func() {
+			defer func() { fault = recover() }()
+			m.NewObjectValue()
+		})
+		func() {
+			defer func() { again = recover() }()
+			m.NewObjectValue()
+		}()
+		calls = m.inEngine
+		return m.NewInt(0), nil
+	}))
+	if p := evalRecover(m, `inner()`); p != framesLeftPanic && p != brokenPanic {
+		t.Fatalf("Eval panicked with %v, want %q or %q", p, framesLeftPanic, brokenPanic)
+	}
+	lowFault(t, fault)
+	if again != brokenPanic {
+		t.Fatalf("a call into the engine after the fault panicked with %v, want %q", again, brokenPanic)
+	}
+	if calls != 1 {
+		t.Fatalf("%d calls into the engine left halfway, want 1", calls)
+	}
+	wantBroken(t, m, "a recovered fault at a low address in a Go function")
+}
