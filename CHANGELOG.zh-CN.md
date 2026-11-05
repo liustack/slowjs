@@ -200,7 +200,7 @@
 - tifa 示例商店、MUI 测试应用和 bench 应用的 11 个页面，渲染耗时是原来的 0.834 到 0.860（每个位置都更快），HTML 相同，只有 2001 层 JSON 的页面除外。
 - Go 垃圾回收的停顿保持一样短：1 个 VM 时一次停顿的 P99 是 131 到 164 µs（以前 164），3 个 VM 是 197 µs（以前 197），最长 3.1 ms（以前 4.2）和 0.9 ms（以前 2.1）。
 - 商店的一个 VM 加载后占 8.3 到 8.6 MiB，渲染 300 次后 12.8 到 12.9 MiB，池把空闲内存还给系统后 9.7 MiB。商店程序大 0.5%，帧信息表小 152 KB。
-- 150 分钟、211,076 次渲染的 soak 没有错误，没有 VM 被换掉，VM 的内存没有变化。方法和其余数字见 [Performance](docs/performance.md#acceptance-before-the-switch)。
+- 150 分钟、211,076 次渲染的 soak 没有错误，没有 VM 被换掉，VM 的内存没有变化。方法和其余数字见 [历史](docs/history.zh-CN.md#切换前的验收)。
 - 跑同一份 JavaScript，tifa 示例商店、MUI 测试应用和 bench 应用的页面耗时是 C QuickJS 2026-06-04 的 0.98 到 1.06 倍，MUI 页面是 0.81。用自带的 `Intl`（C 得靠 polyfill）时，商店是 0.82，MUI 是 0.52。能渲染这些页面的其他纯 Go 引擎耗时是 slowjs 的 1.6 到 6.6 倍（[Benchmarks](docs/benchmarks.md#tifa-pages)）。
 
 ### 修复
