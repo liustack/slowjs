@@ -13,6 +13,8 @@ read_when:
 
 # Time and Intl
 
+English · [简体中文](time-and-intl.zh-CN.md)
+
 Server rendered pages must come out the same on every machine and match what a browser shows. [Updating the intl locale data](../upgrading.md#updating-the-intl-locale-data) says how to move to a new CLDR, tzdb or Chromium.
 
 ## Local time is UTC in every VM

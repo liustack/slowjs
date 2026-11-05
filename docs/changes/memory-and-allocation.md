@@ -8,6 +8,8 @@ read_when:
 
 # Memory and allocation
 
+English · [简体中文](memory-and-allocation.zh-CN.md)
+
 The engine has an allocator of its own, with a front cache of freed small blocks, which [allocator.md](../allocator.md) describes. This page has what liustack/quickjs changes about how the VMs of one program share memory.
 
 ## One copy of source text and line tables for every VM

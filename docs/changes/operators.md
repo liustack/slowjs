@@ -6,6 +6,8 @@ read_when:
 
 # Operators
 
+English · [简体中文](operators.zh-CN.md)
+
 The interpreter does an operator itself only for the simplest operands, two ints, and calls a slow function of the engine for everything else. These changes answer more pairs without that call.
 
 ## Bitwise operators on floats skip the slow path

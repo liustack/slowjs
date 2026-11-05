@@ -1,5 +1,7 @@
 # engine/libc
 
+English · [简体中文](README.zh-CN.md)
+
 The small libc of the C tree in `engine/`. The engine C is built with `-ffreestanding -nostdinc` and sees only this folder: no system header, no system library. What it asks of the outside is the callbacks of `engine/host.h` and `host_memory_grow` of `engine/heap.h`.
 
 ## What is here

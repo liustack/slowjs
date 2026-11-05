@@ -10,6 +10,8 @@ read_when:
 
 # Temporal
 
+English · [简体中文](temporal.zh-CN.md)
+
 QuickJS has no Temporal. Package `temporal` adds it for a VM that calls `temporal.Register(vm)`, the way package `intl` adds `Intl`.
 
 ## Temporal on go-intl

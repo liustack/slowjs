@@ -9,6 +9,8 @@ read_when:
 
 # Regular expressions
 
+English · [简体中文](regexp.zh-CN.md)
+
 The engine compiles a regexp to bytecode and runs it in a backtracking machine. The C tree in `engine/` has them in C, as each section says.
 
 ## Skip to where a regexp can match

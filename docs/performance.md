@@ -17,6 +17,8 @@ read_when:
 
 # Performance
 
+English · [简体中文](performance.zh-CN.md)
+
 liustack/quickjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
 The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/quickjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).

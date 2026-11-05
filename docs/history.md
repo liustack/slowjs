@@ -10,6 +10,8 @@ read_when:
 
 # History of the numbers before the C engine
 
+English · [简体中文](history.zh-CN.md)
+
 These are the measurements of the engine that ran up to v0.28, QuickJS translated to Go by ccgo, and of the switch to the C engine in v0.29.0. That engine is gone, so nothing here describes how liustack/quickjs runs now. It is kept because the numbers are the record of why some things are the way they are, and a reader sometimes needs to look one up. The speed of the C engine, and how to measure a change, are in [performance.md](performance.md).
 
 In these sections `lib` is the ccgo engine (the `lib/` folder it lived in), "with PGO" means tifa was built with an engine profile collected on that engine, and counts such as the 58 known test262 errors are the counts of that day (33 now).

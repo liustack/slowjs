@@ -10,6 +10,8 @@ read_when:
 
 # Measuring a change
 
+English · [简体中文](measuring.zh-CN.md)
+
 A change for speed is judged by timing tifa's pages, the same way every time. This page is the protocol, its defaults, what one batch of runs with known effects gave, and what it cannot do. The tool is `go tool measure bench` (commands in [testing.md](testing.md#time-one-build-against-another)).
 
 Results hold for the machine they were measured on. A result on linux/amd64 says nothing about darwin/arm64, and the layouts below exist only on amd64.

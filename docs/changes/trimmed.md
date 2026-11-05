@@ -7,6 +7,8 @@ read_when:
 
 # Left out of the engine
 
+English · [简体中文](trimmed.zh-CN.md)
+
 ## No shell library
 
 `quickjs-libc.c` is the C file of QuickJS's shell, `qjs`: the `std`, `os` and `Worker` modules, the event loop and a few helpers. The C tree in `engine/` does not have it. The Go API registers no such module, so no script run through it could reach one, and the Go API gives what the shell gave a script in Go: `console`-like helpers are the program's to add as [Builtins](go-api.md#builtin-a-go-function-called-as-a-built-in), the module loader is the program's, and a module's top-level `await` is waited for in Go (see [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go)).

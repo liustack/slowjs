@@ -23,6 +23,8 @@ read_when:
 
 # The C engine
 
+English · [简体中文](c-engine.zh-CN.md)
+
 `engine/` is the engine of the module: QuickJS at the pinned commit with the changes of liustack/quickjs, compiled to Go assembly by the generator. The tables below are what it does differently from upstream QuickJS, the fixes it took from upstream and quickjs-ng, and what a user of v0.28 or earlier sees against the engine they ran, QuickJS translated to Go by ccgo (the "previous engine" below). The changelogs have the same list for users.
 
 ## Differences from upstream QuickJS

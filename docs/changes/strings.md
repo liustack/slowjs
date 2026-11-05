@@ -6,6 +6,8 @@ read_when:
 
 # Strings
 
+English · [简体中文](strings.zh-CN.md)
+
 ## Searches skip to where the string is
 
 Release: v0.27.3 (timings in this entry were taken on the engine of that release, before the C engine).

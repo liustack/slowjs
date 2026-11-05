@@ -16,6 +16,8 @@ read_when:
 
 # Testing and verification
 
+English · [简体中文](testing.zh-CN.md)
+
 ## Before committing
 
 Every change must pass:

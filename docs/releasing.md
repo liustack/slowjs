@@ -10,6 +10,8 @@ read_when:
 
 # Releasing
 
+English · [简体中文](releasing.zh-CN.md)
+
 ## Versions
 
 - Releases are patch versions: v0.30.0, v0.30.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the module loaders it removed. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.

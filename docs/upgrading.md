@@ -11,6 +11,8 @@ read_when:
 
 # Upgrading from upstream
 
+English · [简体中文](upgrading.zh-CN.md)
+
 ## Branches and remotes
 
 `main` is the branch of liustack/quickjs.

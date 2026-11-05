@@ -8,6 +8,8 @@ read_when:
 
 # Uncatchable exceptions, out of memory and interrupts
 
+English · [简体中文](uncatchable.zh-CN.md)
+
 An embedder that sets a memory limit or a timeout needs the call to end when either is hit, whatever the page code does. These changes make sure no `catch`, `finally`, rejection handler or Go function of the script can take such an exception, and that the VM stays usable or at least closable after it. The Go API reports why a call ended this way (see [go-api.md](go-api.md#error-says-why-a-call-ended)).
 
 ## No leak when converting a string runs out of memory

@@ -8,6 +8,8 @@ read_when:
 
 # Objects and shapes
 
+English · [简体中文](objects-and-shapes.zh-CN.md)
+
 A shape is the list of an object's keys in order, shared by objects with the same keys.
 
 ## New properties of plain objects skip the generic path

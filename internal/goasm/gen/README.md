@@ -1,5 +1,7 @@
 # Engine generator
 
+English · [简体中文](README.zh-CN.md)
+
 The generator turns the C engine in `engine/` into the Go assembly in
 `internal/cengine`. It handles the calling convention, the stack rules and
 the shadow stack on amd64 and arm64.
