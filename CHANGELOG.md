@@ -4,9 +4,11 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.0] - 2026-11-05
+
 ### Changed
 
-- **Breaking:** the module is `github.com/liustack/quickjs` again, its name up to v0.27.3, and the root package is named `quickjs` (from v0.28.0 to v0.29.11 it was `github.com/liustack/slowjs`, package `slowjs`). The API is the same. A program changes its import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), writes `quickjs.` where it wrote `slowjs.`, and passes `-tags quickjs_intl_nonames` or `quickjs_intl_nocjdict` where it passed the `slowjs_intl_` tags, and `-tags quickjs_anygo` where it passed `slowjs_anygo`. The variables of the scripts start with `QUICKJS_` (`QUICKJS_LLVM`, `QUICKJS_REMOTE` and the others), the `Symbol.for` key with which `intl` and `temporal` mark a VM names the new path (`Symbol.for('github.com/liustack/quickjs/intl')`), and the errors of the root package start with `quickjs:`. The next release, v0.30.0, is the first under the new path, and the releases from v0.28.0 to v0.29.11 stay at `github.com/liustack/slowjs` ([upstream.md](docs/upstream.md#moving-from-githubcomliustackslowjs)).
+- **Breaking:** the module is `github.com/liustack/quickjs` again, its name up to v0.27.3, and the root package is named `quickjs` (from v0.28.0 to v0.29.11 it was `github.com/liustack/slowjs`, package `slowjs`). The API is the same. A program changes its import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), writes `quickjs.` where it wrote `slowjs.`, and passes `-tags quickjs_intl_nonames` or `quickjs_intl_nocjdict` where it passed the `slowjs_intl_` tags, and `-tags quickjs_anygo` where it passed `slowjs_anygo`. The variables of the scripts start with `QUICKJS_` (`QUICKJS_LLVM`, `QUICKJS_REMOTE` and the others), the `Symbol.for` key with which `intl` and `temporal` mark a VM names the new path (`Symbol.for('github.com/liustack/quickjs/intl')`), and the errors of the root package start with `quickjs:`. v0.30.0 is the first release under the new path, and the releases from v0.28.0 to v0.29.11 stay at `github.com/liustack/slowjs` ([upstream.md](docs/upstream.md#moving-from-githubcomliustackslowjs)).
 
 ### Fixed
 
@@ -546,7 +548,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.29.11...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10
 [v0.29.9]: https://github.com/liustack/slowjs/compare/v0.29.8...v0.29.9

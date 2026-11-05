@@ -137,7 +137,7 @@ Not covered, and the bound is the length of the input:
 
 ## The start and end tags read the interrupt flag in every long loop
 
-Release: Unreleased.
+Release: v0.30.0.
 
 The functions of [RegisterStartTag and RegisterEndTag](go-api.md#registerstarttag-and-registerendtag) went through a long string in four places without reading the interrupt flag, so a call on long strings ran on after `Interrupt` or the eval timeout. With a 10 ms timeout, `TestTagsStop` stopped its loops 53, 60 and 119 ms after they started on the linux/amd64, darwin/arm64 and darwin/amd64 runners of CI, past the 50 ms it allows. The four places:
 

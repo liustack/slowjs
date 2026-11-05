@@ -4,9 +4,11 @@
 
 ## [Unreleased]
 
+## [v0.30.0] - 2026-11-05
+
 ### 变更
 
-- **不兼容：** 模块改回 `github.com/liustack/quickjs`（v0.27.3 及之前用的就是这个名字），根包名改回 `quickjs`（v0.28.0 到 v0.29.11 是 `github.com/liustack/slowjs`，包名 `slowjs`）。API 不变。程序要改 import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），把代码里的 `slowjs.` 改成 `quickjs.`，原来加 `slowjs_intl_` 构建标签的，改加 `-tags quickjs_intl_nonames` 或 `quickjs_intl_nocjdict`，原来加 `slowjs_anygo` 的改加 `quickjs_anygo`。脚本用的环境变量改以 `QUICKJS_` 开头（`QUICKJS_LLVM`、`QUICKJS_REMOTE` 等），`intl` 和 `temporal` 标记 VM 用的 `Symbol.for` 键换成新路径（`Symbol.for('github.com/liustack/quickjs/intl')`），根包的错误信息改以 `quickjs:` 开头。下一个版本 v0.30.0 是新路径下的第一个版本，v0.28.0 到 v0.29.11 留在 `github.com/liustack/slowjs`（[upstream.zh-CN.md](docs/upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)）。
+- **不兼容：** 模块改回 `github.com/liustack/quickjs`（v0.27.3 及之前用的就是这个名字），根包名改回 `quickjs`（v0.28.0 到 v0.29.11 是 `github.com/liustack/slowjs`，包名 `slowjs`）。API 不变。程序要改 import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），把代码里的 `slowjs.` 改成 `quickjs.`，原来加 `slowjs_intl_` 构建标签的，改加 `-tags quickjs_intl_nonames` 或 `quickjs_intl_nocjdict`，原来加 `slowjs_anygo` 的改加 `quickjs_anygo`。脚本用的环境变量改以 `QUICKJS_` 开头（`QUICKJS_LLVM`、`QUICKJS_REMOTE` 等），`intl` 和 `temporal` 标记 VM 用的 `Symbol.for` 键换成新路径（`Symbol.for('github.com/liustack/quickjs/intl')`），根包的错误信息改以 `quickjs:` 开头。v0.30.0 是新路径下的第一个版本，v0.28.0 到 v0.29.11 留在 `github.com/liustack/slowjs`（[upstream.zh-CN.md](docs/upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)）。
 
 ### 修复
 
@@ -546,7 +548,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.29.11...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10
 [v0.29.9]: https://github.com/liustack/slowjs/compare/v0.29.8...v0.29.9
