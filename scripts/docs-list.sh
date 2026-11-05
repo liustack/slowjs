@@ -96,7 +96,7 @@ echo
 echo 'Reminder: before coding, check the "Read when" hints above and read the docs that apply.'
 
 # Every doc is in English and in Chinese (AGENTS.md).
-paired="README.md CHANGELOG.md compare/engines/CHANGELOG.md engine/libc/README.md internal/goasm/gen/README.md internal/arewefastyet/README.md"
+paired="README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md compare/engines/CHANGELOG.md engine/libc/README.md internal/goasm/gen/README.md internal/arewefastyet/README.md"
 unpaired=0
 if $check; then
   for file in $files $paired; do

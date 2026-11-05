@@ -150,13 +150,22 @@ func main() {
 
 ## 社区
 
-随时欢迎提 issue：[新建一个](https://github.com/liustack/quickjs/issues/new)。你拿它跑什么、哪里慢、下一步该做什么，都可以说。推荐你关注公众号 liustack，也欢迎你来 X 上聊：**[@liustack](https://x.com/liustack)**。liustack/quickjs 和 tifa 有什么变化，都会在公众号和 X 同步更新。
+随时欢迎提 issue：[新建一个](https://github.com/liustack/quickjs/issues/new/choose)。你拿它跑什么、哪里慢、下一步该做什么，都可以说。推荐你关注公众号 liustack，也欢迎你来 X 上聊：**[@liustack](https://x.com/liustack)**。liustack/quickjs 和 tifa 有什么变化，都会在公众号和 X 同步更新。
 
 关注微信公众号「liustack」：AI 创业机会、独立开发见解、AI 实战与工具，第一时间推送。微信扫码，或搜一搜「liustack」：
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/liustack/quickjs/main/assets/wechat-qrcode.png" width="420" alt="微信公众号 liustack" />
 </p>
+
+## 参与贡献
+
+liustack/quickjs 不接受 pull request。每一行都由一个维护者审读、负责到底，这是有意的选择，为的是引擎靠得住。真正有用的参与方式有两种：
+
+- **[提一个 issue](https://github.com/liustack/quickjs/issues/new/choose)。** 算错了，渲染慢，限制没拦住，文档不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。
+- **Fork 一份。** 你的那份完全归你，想怎么改、怎么发布都行。
+
+安全问题请按 [SECURITY.zh-CN.md](SECURITY.zh-CN.md) 私下报告。其余见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
 
 ## 许可证
 

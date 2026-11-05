@@ -47,6 +47,10 @@
 7. English: keep it short and direct, use everyday words, and do not invent terms. Chinese: do not use semicolons, and do not use dashes as punctuation.
 8. Code comments and error messages point to a doc by its path, such as `docs/upgrading.md`, never to a section of the README.
 
+## Issues and pull requests
+
+liustack/quickjs does not accept pull requests: [CONTRIBUTING.md](CONTRIBUTING.md) says so, and `.github/PULL_REQUEST_TEMPLATE.md` tells whoever opens one. Bugs and ideas come in as issues through the templates in `.github/ISSUE_TEMPLATE/`, and security problems as private reports ([SECURITY.md](SECURITY.md)). Do not merge a pull request, and keep these files the same in spirit as those of liustack/modlens and tifa.
+
 ## License headers
 
 - A new file written in liustack/quickjs starts with this header, in the comment syntax of its language and with the year it was created:

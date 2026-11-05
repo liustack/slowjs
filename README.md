@@ -150,13 +150,22 @@ Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan 
 
 ## Community
 
-Issues are welcome any time: [open one](https://github.com/liustack/quickjs/issues/new). Tell us what you run in it, where it is slow, and what should come next. Follow the liustack WeChat official account, and come find me on X: **[@liustack](https://x.com/liustack)**. What changes in liustack/quickjs and tifa is shared on WeChat and X.
+Issues are welcome any time: [open one](https://github.com/liustack/quickjs/issues/new/choose). Tell us what you run in it, where it is slow, and what should come next. Follow the liustack WeChat official account, and come find me on X: **[@liustack](https://x.com/liustack)**. What changes in liustack/quickjs and tifa is shared on WeChat and X.
 
 The **liustack** WeChat official account: AI startup opportunities, indie-dev insights, and hands-on AI tooling, delivered as they happen. Scan the QR code in WeChat, or search for "liustack":
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/liustack/quickjs/main/assets/wechat-qrcode.png" width="420" alt="liustack WeChat official account" />
 </p>
+
+## Contributing
+
+liustack/quickjs does not accept pull requests. One maintainer reviews and owns every line, on purpose, so the engine stays dependable. Two ways that help:
+
+- **[Open an issue](https://github.com/liustack/quickjs/issues/new/choose).** A wrong answer, a slow render, a limit that did not hold, an unclear doc. Issues are read and decide what gets built next.
+- **Fork it.** Your copy is yours to change and publish.
+
+A security problem goes in a private report, as [SECURITY.md](SECURITY.md) says. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest.
 
 ## License
 
