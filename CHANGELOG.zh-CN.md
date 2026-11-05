@@ -10,7 +10,7 @@
 
 ### 修复
 
-- `RegisterStartTag` 和 `RegisterEndTag` 注册的 `startTag`、`endTag` 现在遍历长字符串的每个循环都会读中断标志，标签、样式名、URL 或文本有几百万个字符时，`Interrupt` 和 eval 超时也能在几毫秒内停下这次调用。以前有四个循环从不读它：标签的检查、在样式名里找非 ASCII 字符、URL 前面的空白、拼好的开始标签的复制。超时设 10 ms 时，`TestTagsStop` 在 CI 上要到调用开始后 53 到 119 ms 才停下。在 linux/amd64 上，3200 万字符的标签最长停顿从 19.0 ms 降到 5.9 ms，前面有 3200 万个空白的 URL 从 10.5 ms 降到 3.3 ms。输出逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)）。
+- `RegisterStartTag` 和 `RegisterEndTag` 注册的 `startTag`、`endTag` 现在遍历长字符串的每个循环都会读中断标志，标签、样式名、URL 或文本有几百万个字符时，`Interrupt` 和 eval 超时也能在几毫秒内停下这次调用。以前有四个循环从不读它：标签的检查、在样式名里找非 ASCII 字符、URL 前面的空白、拼好的开始标签的复制。超时设 10 ms 时，`TestTagsStop` 在 CI 上要到调用开始后 53 到 119 ms 才停下。在 linux/amd64 上，3200 万字符的标签最长停顿从 19.0 ms 降到 5.9 ms，前面有 3200 万个空白的 URL 从 10.5 ms 降到 3.3 ms。渲染 tifa 的页面多跑 0.002% 到 0.018% 的指令，时间的变化小于测量能分辨的 1%。输出逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)）。
 
 ## [v0.29.11] - 2026-11-05
 
