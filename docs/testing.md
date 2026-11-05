@@ -47,9 +47,15 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make test` | `go test -failfast -v -timeout 24h -count=1 ./...` |
 | `make shorttest` | The same with `-short`, which skips the long cases (test262 among them) |
 | `make build_all_targets` | `./build_all_targets.sh` (see [Every target](#every-target)) |
+| `make gen`, `make gen ARCH=arm64` | The engine of `engine/` as Go assembly in `internal/cengine`, on a machine with LLVM 22.1.8 (see [Generate and check](#generate-and-check)) |
+| `make check-fast`, `make check-full` | The checks of a change to the C engine, one table at the end: fast for every commit, full for the end of a batch (see [Generate and check](#generate-and-check)) |
+| `make check-gen` | That the checked-in engine is what `make gen` makes now, for both architectures (part of `check-full`) |
+| `make bench ARGS="..."` | `go tool measure bench`: code-position timing and callgrind (see [Time one build against another](#time-one-build-against-another)) |
+| `make remote RUN="..."` | Another make target on another machine (see [On another machine](#on-another-machine)) |
 | `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
-| `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (58 of them, as goja or fastschema/qjs fails the other 6), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), QuickJS's own suite |
+| `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (goja or fastschema/qjs fails 6 of them, so the three engines share the other 58), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), QuickJS's own suite |
 | `make compare-engines` | `go run ./cmd/compare $(ARGS)` in `compare/engines`: the comparison with the other pure Go JavaScript engines in [benchmarks.md](benchmarks.md) (support, speed, memory, limits, tifa pages), each engine in a binary of its own |
+| `make cpu`, `make mem` | `make -C compare cpu` and `make -C compare mem`: the CPU and memory profiles of the comparison benchmarks |
 | `make cover` | Coverage of the root package, shown as HTML |
 | `make work` | Writes a `go.work` (see [go.work](#gowork)) |
 | `make clean` | Deletes test binaries, profiles and `go.work` |
@@ -88,18 +94,10 @@ go test -tags testhooks -run TestInterruptStopsRegExpCompile ./internal/cengine 
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within a few polls
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
-go test -run 'TestUpstream(ArrayTruncate|IteratorReduce|IteratorConcat)' . # fixes taken from upstream
 go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and the regexp cache give what Node gives and keep to their limits
-go test -run 'YoungGC|Ephemeron' .                       # the young collection and WeakMap ephemerons
-go test -run 'CopyProps' .                                # RegisterCopyProps: the loop that copies the props of a React element in C against React's loops (147 configs, 6,000 random ones), the property it defines
-go test -run 'EscapeText' .                               # RegisterEscapeText: React DOM's escape in C against React's own text, the property it defines, the timeout on a long string, a string too long
-go test -run 'StartTag|RegisterTags|TagsAcross|TagsStop|TagsMemory' .  # RegisterStartTag and RegisterEndTag: React DOM's start and end tags in C against React's functions (136 listed calls, 4,000 random ones), the properties they define, the timeout on long strings, a tag too long, the memory they take and running out of it
-go test -run 'SharedBytecode' .                          # one copy of source text and line tables for every VM, polls scanned on the first load only
-go test -run 'RunGC|GCThreshold|GCAfterClose' .          # RunGC, MemorySize and GCThreshold (gc_test.go)
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
 go test -run 'Close(Twice|CallbackPanics)' .             # Close again does nothing, and a panicking OnClose function keeps no other step from running
 go test -tags testhooks -run 'CloseUnmap|CloseSharedDrop|MapRefused|ReleaseRefused|RemapRefused' . # Close again frees what the OS refused to unmap, and a refused map ends the call with out of memory
-go test -run 'SameAsEngine|UTF8Units|BuiltinStringRoundTrip|BuiltinLatin1UTF16|EscapeView' . # strings of Builtins converted in Go give what the engine gives
 go test -p 2 -run 'VMClock|MonoNow' .                    # VM.SetClock: Date, Intl and Temporal share one clock, reset, Close and timeouts
 go test -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable # the generated engine's host, with the test hooks
 HOSTMEM_RESIDENCY=1 go test -run StackResidency ./internal/hostmem # exact counts of shadow stack pages in memory, a snapshot the system can change
