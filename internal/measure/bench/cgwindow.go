@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 // Profile is the self cost of each function in a callgrind file, for every
@@ -219,7 +219,7 @@ func WriteFnTable(w io.Writer, p Profile) {
 // cgWindow runs each binary once under callgrind, counting only in the window:
 // the dump the program writes around its o.Big renders after its own warm-up (or the inside of o.Toggle), keeps the raw file
 // and a table per function, and prints the counts per render.
-func cgWindow(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
+func cgWindow(ctx context.Context, o CGOptions, run measure.Runner, w io.Writer) error {
 	vg, vgEnv := o.ValgrindCmd()
 	env := append(append([]string(nil), o.Env...), vgEnv...)
 	var ps []Profile
@@ -229,7 +229,7 @@ func cgWindow(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) e
 			return err
 		}
 		base := filepath.Join(o.Out, fmt.Sprintf("%d-%s-%d", i, filepath.Base(bin), o.Big))
-		r := run(ctx, sjdev.Cmd{Dir: o.Dir, Env: env, Name: vg, Args: o.CGArgs(abs, base+".cg", o.Big)}, nil)
+		r := run(ctx, measure.Cmd{Dir: o.Dir, Env: env, Name: vg, Args: o.CGArgs(abs, base+".cg", o.Big)}, nil)
 		if r.Err != nil {
 			return fmt.Errorf("%w\n%s", r.Err, trunc(r.Out, 2000))
 		}

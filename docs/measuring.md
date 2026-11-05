@@ -3,14 +3,14 @@ summary: 'How to measure whether a change makes renders faster or slower, down t
 read_when:
   - Timing a change to the engine or to tifa against the code before it
   - Deciding whether a change of less than a few percent is real
-  - Reading the output of sjdev bench judge, or a result someone else measured
-  - Changing sjdev bench, the layouts it builds or the defaults of the protocol
+  - Reading the output of measure bench judge, or a result someone else measured
+  - Changing measure bench, the layouts it builds or the defaults of the protocol
   - Using callgrind to explain a timing
 ---
 
 # Measuring a change
 
-A change for speed is judged by timing tifa's pages, the same way every time. This page is the protocol, its defaults, what one batch of runs with known effects gave, and what it cannot do. The tool is `go tool sjdev bench` (commands in [testing.md](testing.md#time-one-build-against-another)).
+A change for speed is judged by timing tifa's pages, the same way every time. This page is the protocol, its defaults, what one batch of runs with known effects gave, and what it cannot do. The tool is `go tool measure bench` (commands in [testing.md](testing.md#time-one-build-against-another)).
 
 Results hold for the machine they were measured on. A result on linux/amd64 says nothing about darwin/arm64, and the layouts below exist only on amd64.
 

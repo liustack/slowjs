@@ -4,12 +4,12 @@
 // root of this repository.
 
 // Package hwm reads the most memory the calling process held, from the
-// process itself, for the programs that sjdev times.
+// process itself, for the programs that go tool measure times.
 //
 // A parent that reads the peak of a child with wait4 gets a number that is not
 // below the parent's own peak, because the child starts as a copy of it. So a
 // program under test prints its own peak just before it exits, as a line
-// "vmhwm-kb: N", and `sjdev bench run` reads that line.
+// "vmhwm-kb: N", and `measure bench run` reads that line.
 package hwm
 
 import (
@@ -20,7 +20,7 @@ import (
 	"strings"
 )
 
-// Prefix starts the line a program prints for sjdev.
+// Prefix starts the line a program prints for go tool measure.
 const Prefix = "vmhwm-kb:"
 
 // Parse returns the VmHWM line of the text of /proc/PID/status, in KiB.

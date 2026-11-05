@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 func TestParsePositions(t *testing.T) {
@@ -173,10 +173,10 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	tree := fakeTree(t)
 	app := t.TempDir()
 	out := filepath.Join(t.TempDir(), "bin")
-	var cmds []sjdev.Cmd
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	var cmds []measure.Cmd
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, c)
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	var log bytes.Buffer
 	err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
@@ -222,10 +222,10 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 
 func TestBuildInTheTreeWithoutAnApp(t *testing.T) {
 	tree := fakeTree(t)
-	var cmds []sjdev.Cmd
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	var cmds []measure.Cmd
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, c)
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
 	if err != nil {

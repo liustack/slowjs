@@ -313,29 +313,29 @@ The list is in `scripts/check.sh`. A new check goes there and into the table abo
 
 ### Time one build against another
 
-A speed result is measured by the protocol of [measuring.md](measuring.md). `go tool sjdev bench` (the Go program in `internal/sjdev`, standard library only, registered as a tool in `go.mod`) builds the layouts, times them in balanced blocks and judges the result. `make bench ARGS="..."` runs the same.
+A speed result is measured by the protocol of [measuring.md](measuring.md). `go tool measure bench` (the Go program in `internal/measure`, standard library only, registered as a tool in `go.mod`) builds the layouts, times them in balanced blocks and judges the result. `make bench ARGS="..."` runs the same.
 
 ```sh
 # 1. the 16 protocol layouts of each side. Generate the engine in each tree first (make gen).
-go tool sjdev bench build -side base -tree ../base -app ../tifa -pkg ./test/ssr -test -out bin
-go tool sjdev bench build -side new  -tree .       -app ../tifa -pkg ./test/ssr -test -out bin
+go tool measure bench build -side base -tree ../base -app ../tifa -pkg ./test/ssr -test -out bin
+go tool measure bench build -side new  -tree .       -app ../tifa -pkg ./test/ssr -test -out bin
 # 2. time them in blocks, 2 rounds (even). Records are appended to the file, so a stopped run goes on (shop.jsonl.manifest.json must match).
-go tool sjdev bench run -bin bin -out shop.jsonl -kind shop -rounds 2 -parse gobench:p50-ms \
+go tool measure bench run -bin bin -out shop.jsonl -kind shop -rounds 2 -parse gobench:p50-ms \
     -dir ../tifa/test/ssr -env TIFA_SSR_SHOP=1 -env GOMAXPROCS=1 -cpu 2 -sib 6 \
     -- -test.run '^$' -test.bench 'Shop/^render' -test.benchtime 20x
 # 3. the verdict, as Markdown
-go tool sjdev bench judge -in shop.jsonl -kind shop -base base -new new           # -detail adds each layout, -delta 0.01 for 1%
+go tool measure bench judge -in shop.jsonl -kind shop -base base -new new           # -detail adds each layout, -delta 0.01 for 1%
 ```
 
 - `bench build` copies the generated `*_amd64.s` files, moves the code with `internal/goasm/cmd/xform` and builds with `go build -overlay`, so the tree is not touched. A layout is written `shift.front`, such as `1664.8`: `shift` bytes of NOP after the engine function the formal binary places first (it builds the formal binary first to find it), and `front` bytes of NOP at the start of the interpreter body. `-positions protocol` (the default) is the set of [measuring.md](measuring.md#the-protocol). `full` is front 0 to 56 at shift 0 and 32, `all` and `quick` are the older sets of 8 and 4. It checks each layout against the formal binary of the side (built in `.work` when 0.0 is not asked for): the interpreter moved by a multiple of 64 within 32 bytes of the shift, and its body and 10 hot handlers sit front bytes later in it, or the build fails. It writes `layouts.tsv`, one row per binary with its SHA-256 and the addresses of the body and the handlers, and a binary built again replaces its row (`bench addrs BIN...` prints the same rows). The interpreter is `JS_CallInternal_block` in the generated assembly, since it takes its arguments in a block, and `bench build` finds that name by itself. With `-app`, it builds in that module (tifa) through a `go.work` it writes. `-xform BIN` uses a built xform instead of building the one of `-tree`. Only amd64 has layouts.
 - `bench run` runs every side of a layout as a block, one after the other, the blocks in a random order per round and the formal layout `-formal-reps` times (3), the sides in a random order in an even round and in the reverse order in the next one. It writes `OUT.manifest.json` first: a random experiment id, the plan, the SHA-256 of every binary and the settings of the run, with the folder made absolute and the whole environment of the processes (HOME, PATH and TMPDIR of the shell, then `-env`: nothing else of the shell is passed). A side or a position asked for with `-sides` or `-positions` that has no binary is an error. The orders are drawn from the experiment id and the round, so a run that goes on in the file repeats its own orders and a new file gets new ones. Going on with other binaries, other settings or other layouts is refused, more rounds (`-round0`) and a higher `-tries` are not. With `-cpu` and `-sib` it reads `/proc/stat` and runs a whole block again, up to `-tries` (3), when the sibling hyperthread or other work on the timing core was over `-busy` percent (5) or steal time over `-steal` percent (1) during any of its processes. `-fresh-pages` (on by default on linux) syncs a binary, drops its cached pages (`fadvise DONTNEED`) and checks with `mincore` that none is left before each of its processes, and stops with an error when one is, so a copy does not keep its physical pages from one process to the next. Records say `fresh_pages` (asked) and `fresh_verified` (checked). `-parse gobench:UNIT` reads the UNIT metric of each Benchmark line, `-parse jsrun` the median of the `eval:` line of `jsrun`.
-- The memory of a process is the `vmhwm-kb: N` line it prints itself (`internal/sjdev/hwm`, which `jsrun` uses). Reading the peak of a child with `wait4` is wrong: the child starts with the peak of its parent.
+- The memory of a process is the `vmhwm-kb: N` line it prints itself (`internal/measure/hwm`, which `jsrun` uses). Reading the peak of a child with `wait4` is wrong: the child starts with the peak of its parent.
 - `bench judge` reads the records against the plan of the manifest: the unit is the two blocks of a layout in rounds 2k and 2k+1, used whole or not at all. A failed process, a record twice, a record of another experiment or outside the plan, a metric that is not a finite positive number, or a block that ran in two sessions stops it. A layout without a usable unit makes the run incomplete: it prints the numbers without any verdict. Then it reads the sum of the metrics, which decides, and each metric alone, as [measuring.md](measuring.md#reading-a-result) says. For a file without a manifest, `-rounds`, `-round0`, `-formal-reps` and `-positions` give the plan, and the binaries are not checked. `bench report` is the older reading by medians and the rule of 2%, kept to read old records.
 
 ```sh
-go tool sjdev bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 0 -big 3 -dumps -sim -out cg \
+go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 0 -big 3 -dumps -sim -out cg \
     -env GODEBUG=asyncpreemptoff=1 -- -test.run '^$' -test.bench AppCG -test.benchtime {N}x   # counts per render inside the window
-go tool sjdev bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 2 -big 12 -out cg \
+go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 2 -big 12 -out cg \
     -- -test.run '^$' -test.bench 'Shop/^render' -test.benchtime {N}x    # the older difference of two runs
 ```
 

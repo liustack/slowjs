@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/measure/hwm"
 )
 
 // TestMain lets the tests run this binary as jsrun: with JSRUN_AS_MAIN set it
@@ -58,7 +58,7 @@ func TestOutputSaysWhatIsTimed(t *testing.T) {
 	}
 }
 
-// TestOutputEndsWithItsOwnPeakMemory: sjdev bench run reads the peak memory from
+// TestOutputEndsWithItsOwnPeakMemory: measure bench run reads the peak memory from
 // the line the process prints itself.
 func TestOutputEndsWithItsOwnPeakMemory(t *testing.T) {
 	if runtime.GOOS != "linux" {

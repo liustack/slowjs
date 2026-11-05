@@ -3,9 +3,9 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Package sjdev holds what the sjdev subcommands share: running a command with
-// its output kept and timed.
-package sjdev
+// Package measure holds what the subcommands of go tool measure share:
+// running a command with its output kept and timed.
+package measure
 
 import (
 	"bytes"
