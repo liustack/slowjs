@@ -72,7 +72,9 @@ the C engine does not need.
   regular expressions 2.9 times faster without its JIT and 5.2 times
   faster with it, and is faster on 32 (JIT: 51) of 63 QuickJS micro
   benchmarks. moejs writes JSON 2.0 times faster and go-quickjs 1.3 times
-  faster. goant parses JSON 1.1 times faster.
+  faster. goant parses JSON 1.1 times faster. C QuickJS 2026-06-04 scores
+  1.025 times as high on the V8 suite (see
+  [V8 suite against C QuickJS](#v8-suite-against-c-quickjs)).
 - **Far behind.** Nothing is at twice the median of the other pure Go
   engines. The farthest are the empty loop (1.71), number
   arithmetic (1.52 to 1.59) and the loop over an array (1.44): see
@@ -195,6 +197,27 @@ that compiled it (`goant.go` 205 to 208), so it loads from source. moejs
 makes each runtime with its own mutable builtins, which its guide says costs
 about 25 times as much as its default of frozen builtins shared by every
 runtime.
+
+### V8 suite against C QuickJS
+
+C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
+same machine and core, taking turns with liustack/quickjs, 5 rounds each.
+`native/qjs-v8.js` runs the suite on `qjs` with the steps of the driver.
+Score per benchmark, median of the rounds:
+
+| Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs | 978 | 852 | 820 | 1424 | 1963 | 521 | 4250 | 1728 | 1283 (1273–1295) |
+| C QuickJS 2026-06-04 (reference) | 899 | 821 | 991 | 1728 | 2244 | 418 | 3647 | 1994 | 1315 (1296–1326) |
+| C QuickJS 2026-06-04, `-DNDEBUG` (reference) | 911 | 829 | 1000 | 1721 | 2263 | 395 | 3639 | 1941 | 1307 (1295–1319) |
+
+C QuickJS scores 1.025 times as high. It is ahead on RayTrace (1.21),
+Crypto (1.21), EarleyBoyer (1.14) and NavierStokes (1.15), and behind on RegExp
+(0.80), Splay (0.86), Richards (0.92) and DeltaBlue (0.96). Its asserts
+cost nothing that the rounds can show: the build with `-DNDEBUG` scores the
+same within their spread. liustack/quickjs scored 1268 in the main run, 1.2%
+under this session. Every round:
+[`compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md`](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md).
 
 ## tifa pages
 
@@ -716,6 +739,13 @@ pieces on a shared machine, and `TIFA_CPU` and `TIFA_SIBLING` pin the runs to
 another CPU and its hyperthread sibling than CPU 1 and 5. The check, timer and
 memory runs belong to `liustack-quickjs`.
 
+The V8 suite on C QuickJS, on the same CPU as the driver's runs:
+
+```sh
+cd compare/engines
+taskset -c 1 "$HOME/jsnative/quickjs-2026-06-04/qjs" --std native/qjs-v8.js ../../internal/arewefastyet/v8-v7
+```
+
 `TIFA_BUNDLES=<dir>` runs another set of bundles and inputs, laid out as
 `tifa/` (`bundles/<app>.js`, `in/<app>/*.json`), in place of the pinned ones.
 tifa builds its SSR bundle as an ES module: put it there as
@@ -788,6 +818,7 @@ At each release, follow "Engine comparison" in
 
 | Run | liustack/quickjs | Machine | Notes |
 |---|---|---|---|
+| [2026-11-06-v0.30.1-gcp-v8-c](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md) | main `c23e76e6` (the engine of v0.30.1) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | the V8 suite only, on liustack/quickjs and C QuickJS 2026-06-04 (as shipped, and with `-DNDEBUG`), 5 rounds each, the first row of C QuickJS on the V8 suite |
 | [2026-11-06-v0.30.1-gcp](../compare/engines/results/2026-11-06-v0.30.1-gcp.md) | v0.30.1 (main `5e99b850`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again ([pages](../compare/engines/results/2026-11-06-v0.30.1-gcp-pages.md)), go-quickjs at v0.34.1 and modernc.org/quickjs at v0.27.0. Timed workloads and tifa pages in short pieces under a lock on the core pair, test262 on another pair at low priority and merged in. go-quickjs-jit rendered the bench `table` page differently between two renders in the page run, so that page was measured in a run of its own. The version column of the Engines table in the results file reads `v0.30.1 => ../../`, and the driver reports `v0.30.1-dirty` because `go.mod` of the comparison was edited for the newer engines |
 | [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0 (main `0cc6d332`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again, the first run of the C engine ([pages](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)). Timed workloads, then the tifa pages, then test262 on both cores, one after the other. go-quickjs failed pages were measured in rest runs. The row `liustack-tifa-nogoasm` is gone. The version column of the Engines table in the results file reads `v0.26.16 => ../../`, as `go.mod` of the comparison was not moved: the engine is the checkout |
 | [2026-10-24-v0.28.6-gcp-pages](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md) | v0.28.6 | GCP c2d-standard-8, AMD EPYC 7B13, CPU 3 | tifa pages only, on the bundles tifa c729ad2 builds rather than the pinned ones: liustack/quickjs three times (same JavaScript, as tifa runs it, and as tifa runs it without the Go assembly interpreter), C QuickJS 2026-06-04 and master, QuickJS-NG and Node with and without its JIT. Core pair 3-7 under a lock. The other engines were not run again |

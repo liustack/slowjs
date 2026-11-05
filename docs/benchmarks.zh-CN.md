@@ -46,7 +46,8 @@ liustack/quickjs 的行叫 `liustack-quickjs` 和 `liustack-tifa`。模块还叫
   得分是它的 4.1 倍，不带 JIT 的 go-quickjs（默认）是 1.4 倍，
   带 JIT 的 goant 和 moejs 得分比它低。go-quickjs 跑正则表达式，不带 JIT 快 2.9 倍，带 JIT 快 5.2
   倍，在 63 个 QuickJS 微基准里有 32 个更快（JIT：51 个）。moejs 写 JSON 快 2.0 倍，go-quickjs 快 1.3
-  倍。goant 解析 JSON 快 1.1 倍。
+  倍。goant 解析 JSON 快 1.1 倍。C QuickJS 2026-06-04 在 V8 套件上的得分是它的
+  1.025 倍（见 [V8 套件对比 C QuickJS](#v8-套件对比-c-quickjs)）。
 - **远远落后。** 没有一项达到其他纯 Go 引擎中位数的两倍。
   最远的是空循环（1.71）、数字运算（1.52 到 1.59）和数组上的循环（1.44）：见
   [liustack/quickjs 远远落后的地方](#liustackquickjs-远远落后的地方)。
@@ -155,6 +156,25 @@ bundle 并渲染了一个页面。goant 的 Program 只服务编译它的
 那个运行时（`goant.go` 205 到 208），所以它从源码加载。moejs
 给每个运行时配自己的可变内建对象，它的指南说这大约要多花
 25 倍，默认情况是冻结的内建对象由所有运行时共用。
+
+### V8 套件对比 C QuickJS
+
+C QuickJS 2026-06-04 的 V8 套件是在同一台机器、同一个核上单独一场跑的，
+和 liustack/quickjs 轮流跑，各 5 轮。`native/qjs-v8.js` 按驱动程序的步骤在 `qjs` 上跑这个套件。
+每个基准的得分，取各轮中位数：
+
+| 引擎 | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | 总分 |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs | 978 | 852 | 820 | 1424 | 1963 | 521 | 4250 | 1728 | 1283（1273–1295） |
+| C QuickJS 2026-06-04（参照） | 899 | 821 | 991 | 1728 | 2244 | 418 | 3647 | 1994 | 1315（1296–1326） |
+| C QuickJS 2026-06-04，`-DNDEBUG`（参照） | 911 | 829 | 1000 | 1721 | 2263 | 395 | 3639 | 1941 | 1307（1295–1319） |
+
+C QuickJS 的得分是它的 1.025 倍。RayTrace（1.21）、Crypto（1.21）、EarleyBoyer（1.14）和
+NavierStokes（1.15）领先，RegExp（0.80）、Splay（0.86）、Richards（0.92）和
+DeltaBlue（0.96）落后。它的 assert 没有花掉各轮能看出来的时间：用 `-DNDEBUG`
+构建的得分在各轮的波动范围内一样。liustack/quickjs 在主运行里得 1268 分，比这一场低 1.2%。
+每一轮的数据：
+[`compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md`](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md)。
 
 ## tifa 页面
 
@@ -665,6 +685,13 @@ go run ./cmd/pages "$page_dir" --output "results/$run-pages"
 CPU 1 和 5 以外的另一个 CPU 和它的超线程同伴核。检查、计时和
 内存的运行属于 `liustack-quickjs`。
 
+在 C QuickJS 上跑 V8 套件，用驱动程序运行时的同一个 CPU：
+
+```sh
+cd compare/engines
+taskset -c 1 "$HOME/jsnative/quickjs-2026-06-04/qjs" --std native/qjs-v8.js ../../internal/arewefastyet/v8-v7
+```
+
 `TIFA_BUNDLES=<dir>` 运行另一组 bundle 和输入，布局和
 `tifa/` 一样（`bundles/<app>.js`、`in/<app>/*.json`），代替固定的那组。
 tifa 把它的 SSR bundle 构建成 ES 模块：把它放在那里，
@@ -736,6 +763,7 @@ tifa 把它的 SSR bundle 构建成 ES 模块：把它放在那里，
 
 | 运行 | liustack/quickjs | 机器 | 备注 |
 |---|---|---|---|
+| [2026-11-06-v0.30.1-gcp-v8-c](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md) | main `c23e76e6`（v0.30.1 的引擎） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 只跑 V8 套件，liustack/quickjs 和 C QuickJS 2026-06-04（原样构建，以及加 `-DNDEBUG`），各 5 轮，C QuickJS 第一次有 V8 套件的数据 |
 | [2026-11-06-v0.30.1-gcp](../compare/engines/results/2026-11-06-v0.30.1-gcp.md) | v0.30.1（main `5e99b850`） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 所有引擎重新运行（[页面](../compare/engines/results/2026-11-06-v0.30.1-gcp-pages.md)），go-quickjs 是 v0.34.1，modernc.org/quickjs 是 v0.27.0。计时的负载和 tifa 页面在一对核的锁下分成短的几段运行，test262 在另一对核上以低优先级运行并合并进来。页面运行里 go-quickjs-jit 在两次渲染之间把 bench 的 `table` 页面渲染得不一样，所以那个页面是在单独的一次运行里测的。结果文件里引擎表的版本列写的是 `v0.30.1 => ../../`，驱动程序报 `v0.30.1-dirty`，因为对比的 `go.mod` 为了用更新的引擎被改过 |
 | [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0（main `0cc6d332`） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 所有引擎重新运行，这是 C 引擎的第一次运行（[页面](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)）。先是计时的负载，然后是 tifa 页面，然后是两个核上的 test262，一个接一个。go-quickjs 失败的页面在补跑里测。`liustack-tifa-nogoasm` 这一行没有了。结果文件里引擎表的版本列写的是 `v0.26.16 => ../../`，因为对比的 `go.mod` 没有往前移：引擎就是这份检出 |
 | [2026-10-24-v0.28.6-gcp-pages](../compare/engines/results/2026-10-24-v0.28.6-gcp-pages.md) | v0.28.6 | GCP c2d-standard-8，AMD EPYC 7B13，CPU 3 | 只有 tifa 页面，用的是 tifa c729ad2 构建的 bundle，不是固定的那些：liustack/quickjs 三次（同样的 JavaScript、按 tifa 的方式运行、以及按 tifa 的方式但不带 Go 汇编解释器运行），C QuickJS 2026-06-04 和 master，QuickJS-NG，以及带 JIT 和不带 JIT 的 Node。一对核 3-7 在锁下。其他引擎没有重新运行 |

@@ -19,6 +19,9 @@ English · [简体中文](CHANGELOG.zh-CN.md)
   the page without a time. The page was run alone into
   `go-quickjs-jit-bench-rest.json`, which `cmd/pages` reads, and the run
   that passed is the one in the tables.
+- C QuickJS 2026-06-04 has a row on the V8 suite: `native/qjs-v8.js` runs the
+  suite on `qjs` with the steps of `runV8`. It was run in a session of its own,
+  taking turns with liustack-quickjs ([2026-11-06-v0.30.1-gcp-v8-c](results/2026-11-06-v0.30.1-gcp-v8-c.md)).
 
 ## 2026-11-05: rows named liustack-quickjs again
 

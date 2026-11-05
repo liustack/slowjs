@@ -17,6 +17,9 @@
   时间。这个页面单独运行，写进
   `go-quickjs-jit-bench-rest.json`，`cmd/pages` 会读它，
   表里用的是通过的那次运行。
+- C QuickJS 2026-06-04 有了 V8 套件的一行：`native/qjs-v8.js` 按 `runV8` 的步骤
+  在 `qjs` 上跑这个套件。它是单独一场跑的，和 liustack-quickjs 轮流跑
+  （[2026-11-06-v0.30.1-gcp-v8-c](results/2026-11-06-v0.30.1-gcp-v8-c.md)）。
 
 ## 2026-11-05：行又叫 liustack-quickjs 了
 

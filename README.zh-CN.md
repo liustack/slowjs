@@ -42,16 +42,19 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，同样的 JavaSc
 
 liustack/quickjs v0.30.1，GCP c2d-standard-8（AMD EPYC 7B13），Go 1.27.2。MUI 和商店页面要用 `Intl`，C QuickJS 和大多数其他引擎没有，所以每个引擎都在 FormatJS polyfill 上跑这两组。用它自己的 `Intl`，也就是 tifa 的跑法，liustack/quickjs 的耗时是 C QuickJS 的 0.75、0.34 和 0.72。Node 24 开 JIT 的耗时是 liustack/quickjs 的 0.21 到 0.23，`--jitless` 是 0.60 到 0.69。
 
-它不是每一项都最快的纯 Go 引擎。V8 测试套件的得分（越高越好）：
+它不是每一项都最快的引擎。V8 测试套件的得分（越高越好）：
 
-| 引擎 | V8 套件得分 |
-| :-- | --: |
-| go-quickjs 开 JIT | 5157 |
-| go-quickjs | 1785 |
-| **liustack/quickjs** | **1268** |
-| goant 开 JIT | 1130 |
-| moejs | 811 |
-| modernc.org/quickjs | 431 |
+| 引擎 | 纯 Go | V8 套件得分 |
+| :-- | :-: | --: |
+| go-quickjs 开 JIT | 是 | 5157 |
+| go-quickjs | 是 | 1785 |
+| C QuickJS 2026-06-04 | 否，C | 1315 |
+| **liustack/quickjs** | 是 | **1268** |
+| goant 开 JIT | 是 | 1130 |
+| moejs | 是 | 811 |
+| modernc.org/quickjs | 是 | 431 |
+
+C QuickJS 是在同一台机器上单独一场跑的，和 liustack/quickjs 轮流跑，那一场 liustack/quickjs 得 1283 分：C 的得分是它的 1.025 倍，RayTrace、Crypto、EarleyBoyer 和 NavierStokes 领先，RegExp、Splay、Richards 和 DeltaBlue 落后。
 
 所有表格、每个引擎的 test262 结果、liustack/quickjs 最慢的几类负载，以及怎么重跑，见 [docs/benchmarks.zh-CN.md](docs/benchmarks.zh-CN.md)。
 
