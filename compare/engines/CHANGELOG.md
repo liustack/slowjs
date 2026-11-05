@@ -1,5 +1,7 @@
 # Changes to the engine comparison
 
+English · [简体中文](CHANGELOG.zh-CN.md)
+
 ## 2026-11-06: newer go-quickjs and modernc, a core pair under a lock
 
 - go-quickjs is v0.34.1 (it was v0.28.0) and modernc.org/quickjs is v0.27.0

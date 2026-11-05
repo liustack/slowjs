@@ -10,6 +10,8 @@ read_when:
 
 # Pure Go JavaScript engines compared
 
+English · [简体中文](benchmarks.zh-CN.md)
+
 Run of 2026-11-06: liustack/quickjs v0.30.1 against five other engines that
 build with `CGO_ENABLED=0`, two of them twice (with and without their JIT).
 GCP c2d-standard-8 (AMD EPYC 7B13), Linux 7.3, Go 1.27.2, every engine
