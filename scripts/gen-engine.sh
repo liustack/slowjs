@@ -47,9 +47,15 @@ src="internal/goasm/gen/pass/shadow.cpp internal/goasm/gen/pass/poll.cpp interna
 stale=0
 [ -f $pass ] || stale=1
 for f in $src; do [ "$f" -nt $pass ] && stale=1; done
+# On macOS the clang of LLVM does not find the C headers of the system by
+# itself, and the pass leaves the symbols of LLVM to opt, which loads it.
+hostflags=
+if [ "$(uname -s)" = Darwin ]; then
+	hostflags="-isysroot $(xcrun --show-sdk-path) -undefined dynamic_lookup"
+fi
 if [ $stale = 1 ]; then
-	# shellcheck disable=SC2046
-	"$llvm/clang++" -shared -fPIC -O1 $("$llvm/llvm-config" --cxxflags) $src -o $pass
+	# shellcheck disable=SC2046,SC2086
+	"$llvm/clang++" -shared -fPIC -O1 $("$llvm/llvm-config" --cxxflags) $hostflags $src -o $pass
 else
 	echo "the pass is up to date"
 fi
