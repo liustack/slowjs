@@ -129,6 +129,11 @@ The shop had no complete A/A run with fresh pages: its run SD is that of drop_ge
 - **The power table is from that model.** It was not checked by simulation or by many repeated runs.
 - **No correction over apps or pairs.** Each verdict is one comparison at 95%.
 - **Fresh pages do not pick the physical pages.** The check says the old pages left the page cache, not where the new ones land.
+- **What does not explain the spread of one binary at one layout.** Measured on the C engine (`q_array_read`, 40 to 48 processes of one binary):
+  - Switching address randomization off, or changing the length of the environment, changes nothing: in each case about 1 process in 17 is 5% to 25% slower. The spread belongs to the layout: of four layouts, one ran steady (753 to 756 ms) and one ranged from 715 to 966 ms with randomization off too.
+  - The place of the goroutine stack does not matter. The stack moved by 31 offsets (all 64 positions in a line and every 256 bytes over 4 KiB) left `q_array_read` within 1.5% and `c_string_concat` within 1.1%.
+  - The sibling hyperthread does: the two slowest processes (77% and 52% slower) ran while it was busy, which is why the rule asks it to be idle.
+  - Aligning more did not help on average. The linker's `-funcalign=64` gave a geometric mean of 1.013 of the time on 4 scripts and `-funcalign=128` 1.037. All functions on 64 bytes gave 1.012, and keeping the 319 alignments of 16 bytes that `llc` writes in `JS_CallInternal` 1.034 to 1.038. With every function and body on 64 bytes the spread of `q_int_arith` over positions fell from 11.5% to 2.8%, but `q_prop_read` got 4.5% faster and `q_array_read` 10% to 15% slower, and `JS_CallInternal` grew by 20% (116,699 to 140,490 bytes) with about 8 more no-ops a call. The fixed place of the body below is what was kept.
 
 ## When not to trust a result
 

@@ -200,7 +200,7 @@ Against the last release with its PGO profile, the C engine without PGO, on linu
 - The pages of tifa's example shop, MUI test app and bench app render in 0.834 to 0.860 of the time (11 pages, every position faster), with the same HTML except the page of the 2001 level JSON.
 - The pause of the Go garbage collector stays as short: the P99 of a stop is 131 to 164 µs with 1 VM (164 before) and 197 µs with 3 VMs (197 before), the longest 3.1 ms (4.2 before) and 0.9 ms (2.1 before).
 - A VM of the shop holds 8.3 to 8.6 MiB after loading, 12.8 to 12.9 MiB after 300 renders and 9.7 MiB once the pool gives its free memory back. The shop program is 0.5% larger, and its table of frames 152 KB smaller.
-- A soak of 150 minutes, 211,076 renders, ended with no error and no VM replaced, and the memory of the VMs did not move. [Performance](docs/performance.md#acceptance-before-the-switch) has the method and the rest.
+- A soak of 150 minutes, 211,076 renders, ended with no error and no VM replaced, and the memory of the VMs did not move. [History](docs/history.md#acceptance-before-the-switch) has the method and the rest.
 - On the same JavaScript, a page of tifa's example shop, MUI test app and bench app takes 0.98 to 1.06 times as long as in C QuickJS 2026-06-04, 0.81 on the MUI pages. With its own `Intl`, where C needs a polyfill, the shop takes 0.82 and MUI 0.52. The other pure Go engines that render these pages take 1.6 to 6.6 times as long as slowjs ([Benchmarks](docs/benchmarks.md#tifa-pages)).
 
 ### Fixed

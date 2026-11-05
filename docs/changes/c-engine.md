@@ -244,6 +244,8 @@ The constant pool and the jump tables a function keeps after its code are aligne
 
 A change elsewhere in the engine now moves these bodies by whole lines only. It still changes their speed somewhat, as other code and data move: see [performance.md](../performance.md#code-positions) for the numbers and for how the code positions of a measurement work with the fixed places.
 
+The interpreter dispatches with upstream's computed goto, as the C tree builds it. An earlier patch of the ccgo engine turned it off for native builds, and with it off alone the V8-v7 score fell to 0.91 (gcc 15.3) and 0.88 (clang 22.1.8) of unpatched C ([numbers](../history.md#native-c-patch-cost)). Keep it on.
+
 ## How a call sets and frees its values
 
 `JS_CallInternal` sets each local variable of a bytecode function to `undefined` when the call starts, and frees the local variables and the operands left on the stack when it returns. `OP_call` and `OP_call_method` free the function, `this` and the arguments once the call is back. Each of these loops did one value a turn. In the generated code a turn that set a local took 9 instructions: LLVM read `b->var_count` again after every store, since a store of a JSValue might have changed it, and the poll pass cuts a loop whose count it does not know into chunks with a count of their own. A turn that freed a value took about 10. An average render of the six workbench pages of tifa's example shop enters `JS_CallInternal` 113,866 times, runs bytecode in 67,076 of them, sets 520,962 locals and frees 581,838 values at the ends of the calls: the two loops took about 6.5% of its instructions.
