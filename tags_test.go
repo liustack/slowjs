@@ -158,20 +158,25 @@ func TestTagsAcrossCollections(t *testing.T) {
 	}
 }
 
-// A long string stops at an interrupt or the eval timeout within the
-// function, wherever it is: the text of children or of an attribute, a style
-// value or name, the tag, an end tag.
+// A long string stops at an interrupt or the eval timeout within a few polls
+// of the function, wherever it is: the text of children or of an attribute, a
+// style value or name, the tag, an end tag.
 func TestTagsStop(t *testing.T) {
-	for _, c := range []struct{ name, setup, loop string }{
-		{"dirty children", `var p = { children: '<'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"clean children", `var p = { children: 'a'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"16-bit children", `var p = { children: 'Ā&'.repeat(1 << 23) }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"attribute", `var p = { title: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"style value", `var p = { style: { color: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"style name", `var p = { style: { ['aB'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"custom style name", `var p = { style: { ['--' + '&'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`},
-		{"tag", `var p = {}, tag = 'a'.repeat(1 << 25)`, `for (;;) st([], p, tag, fc, hop, d)`},
-		{"end tag", `var s = 'a'.repeat(1 << 25), o = { toString() { return s } }`, `for (;;) et(o)`},
+	for _, c := range []struct {
+		name, setup, loop string
+		limit             int64
+	}{
+		{"dirty children", `var p = { children: '<'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"clean children", `var p = { children: 'a'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"16-bit children", `var p = { children: 'Ā&'.repeat(1 << 23) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"attribute", `var p = { title: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		// a rope, made flat by the first call
+		{"style value", `var p = { style: { color: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"style name", `var p = { style: { ['aB'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		{"custom style name", `var p = { style: { ['--' + '&'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		// the scan of a tag reads the flag every 524,288 characters: up to 53 polls
+		{"tag", `var p = {}, tag = 'a'.repeat(1 << 25)`, `for (;;) st([], p, tag, fc, hop, d)`, 80},
+		{"end tag", `var s = 'a'.repeat(1 << 25), o = { toString() { return s } }`, `for (;;) et(o)`, stopPolls},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := newTestVM(t)
@@ -188,14 +193,7 @@ func TestTagsStop(t *testing.T) {
 			m.SetEvalTimeout(10 * time.Millisecond)
 			start := time.Now()
 			_, err := m.Eval(c.loop, EvalGlobal)
-			took := time.Since(start)
-			var e *Error
-			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
-				t.Fatalf("got %v, want interrupted", err)
-			}
-			if took > stopLimit {
-				t.Errorf("stopped %v after the call started, want about 10ms", took)
-			}
+			checkStopped(t, m, err, time.Since(start), c.limit, "")
 		})
 	}
 }

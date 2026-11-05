@@ -90,18 +90,26 @@ func TestRegExpCacheMemoryLimit(t *testing.T) {
 }
 
 // The eval timeout and Interrupt stop a loop that makes regexps the cache
-// keeps, as one that compiles them, within a few milliseconds: compiling a
+// keeps, as one that compiles them, within a few polls: compiling a
 // long pattern counts its steps toward the interrupt check, so the check
 // does not wait for thousands of compiles, and one long compile stops in
 // the middle. A catch block does not take the interrupt.
 func TestRegExpCacheStops(t *testing.T) {
-	for _, js := range []string{
-		`for (;;) new RegExp(p, 'g')`,
-		`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`,
-		`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`,
-		`for (let i = 0; ; i++) eval('/' + p + i + '/g')`,
-		`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`,
+	for _, r := range []struct {
+		js    string
+		limit int64
+	}{
+		{`for (;;) new RegExp(p, 'g')`, stopPolls},
+		{`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`, stopPolls},
+		{`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`, stopPolls},
+		{`for (let i = 0; ; i++) eval('/' + p + i + '/g')`, stopPolls},
+		// the bytecode of a compile is copied as it grows, with no reading of
+		// the flag: up to 43 polls in the first 900 of this compile, which
+		// is where 10 ms falls on a machine up to 6 times as fast as an
+		// Apple M4
+		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, 50},
 	} {
+		js := r.js
 		for _, c := range []struct {
 			name string
 			arm  func(m *VM) (stop func())
@@ -124,13 +132,10 @@ func TestRegExpCacheStops(t *testing.T) {
 				start := time.Now()
 				_, err := m.Eval(js, EvalGlobal)
 				took := time.Since(start)
-				var e *Error
-				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || e.Message != "interrupted" {
+				if e := (*Error)(nil); !errors.As(err, &e) || e.Message != "interrupted" {
 					t.Fatalf("%s: got %v, want interrupted", js, err)
 				}
-				if took > stopLimit {
-					t.Errorf("%s: stopped %v after the call started, want about 10ms", js, took)
-				}
+				checkStopped(t, m, err, took, r.limit, js+": ")
 			})
 		}
 	}

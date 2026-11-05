@@ -85,7 +85,7 @@ go test -run 'HostPanic|Handover|Clock' .                # a panic or Goexit in 
 go test -run 'Interrupt|Killed' .                        # Interrupt, and the kill of a script that does not stop
 go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
-go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within 50ms
+go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within a few polls
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
 go test -run 'TestUpstream(ArrayTruncate|IteratorReduce|IteratorConcat)' . # upstream fixes pushed on 2026-10-31
 go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and the regexp cache give what Node gives and keep to their limits
@@ -114,6 +114,8 @@ go test -run '^$' -bench CopyProps .                    # the cost of createElem
 go test -run '^$' -bench EscapeText .                    # the cost of React DOM's escape in C against React's own and tifa's cache, on the texts of a page
 go test -run '^$' -bench Clock .                         # the cost of Date.now and new Date()
 ```
+
+The stop tests (`TestBuiltinWorkStops`, `TestStringSearchStops`, `TestRegExpCacheStops`, `TestEscapeTextStops` and `TestTagsStop`) stop a loop with a 10 ms timeout or `Interrupt` and judge the stop by the polls that saw the request (`gohost.VM.StopPolls`), not by the time it took: at most 5 (`stopPolls` in `stoppolls_test.go`), 9 for a loop that reads the flag every 65,536 characters with a tick for each, and more for a case with a longer step, named with its reason. The count depends on the code the engine runs between two readings of the flag, not on the speed or the load of the machine or on the race detector, so a slow runner does not fail them and a gap of a few polls does.
 
 Each doc under [changes](changes/README.md) names the tests of its changes.
 

@@ -134,6 +134,7 @@ Not covered, and the bound is the length of the input:
 - `<`, `>`, `<=` and `>=` on two flat strings that are equal to the end (`js_string_compare`).
 - The copy of a long piece of 8 bits into a string buffer of 8 bits when the buffer has the room (`memcpy` in `string_buffer_write8`, of tens of millions of characters), the copy of a piece of 16 bits (`string_buffer_write16`: the scan for a character above 0xff and the copy, which `JSON.stringify` of a string of 16 bits counts once), and the final shrink of a buffer by `string_buffer_end`. The copy of a piece of 8 bits into a buffer of 16 bits is covered (`string_buffer_write8_wide_long`).
 - The rehash when a Map or Set doubles its table (about 1,100 polls at 8 million entries, which a VM of the default 128 MiB cannot hold), and the free of a very large result after a stop (about 1,700 polls for 8 million small objects, likewise).
+- Around the parse of one long regexp: the conversion of the pattern to UTF-8 (`JS_ToCStringLen2`, 41 polls for 13.2M characters of ASCII), the copy of the bytecode when its buffer grows (stretches that grow by half each time, 43 polls by the 900th poll of that compile), and the work after the parse (`compute_register_count` and the moves of the bytecode, about 1,360 polls for that pattern, past the 1000 polls after which a poll kills the script).
 
 ## The start and end tags read the interrupt flag in every long loop
 
