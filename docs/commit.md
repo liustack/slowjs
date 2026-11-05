@@ -38,7 +38,7 @@ build!: rename the module to github.com/liustack/quickjs
 - One commit does one thing, and can be verified and reverted on its own.
 - A behavior change and its tests go in the same commit.
 - Mechanical changes such as pure refactors, formatting and renames are committed separately, not mixed with behavior changes.
-- A change to the C of `engine/`, to the generator under `internal/goasm/gen` or to the flags of `scripts/gen-engine.sh` goes in the same commit as the files of `internal/cengine` that `make gen` and `make gen ARCH=arm64` make from it, so that `make check-gen` passes at every commit. Never edit the generated files by hand.
+- A change to the C of `engine/`, to the generator under `internal/goasm/gen` or to the flags of `scripts/gen-engine.sh` or `engine/test/flags.sh` goes in the same commit as the files of `internal/cengine` that `make gen` and `make gen ARCH=arm64` make from it, so that `make check-gen` passes at every commit. Never edit the generated files by hand.
 - Do not commit build or test output: `*.test`, `mem.out`, the test262 archive and the folders `engine/test/out` and `.build`, `go.work`. They are in `.gitignore`.
 - Do not use summaries like "WIP" or "fix stuff" that do not say what changed.
 

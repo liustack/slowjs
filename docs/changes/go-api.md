@@ -65,7 +65,7 @@ Release: v0.26.7.
 
 A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, quickjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
 
-Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_c_test.go` on the C engine.
+Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_test.go`.
 
 ## RegisterFunc no longer aborts on an existing name
 
@@ -80,8 +80,6 @@ Test: `register_test.go`.
 Release: v0.26.14.
 
 When `NewVM` cannot make a context, for example with no memory left, it frees what it allocated before: the `argv` of `toString` and the interrupt flag, which it leaked.
-
-Test: `TestNewVMContextFailure` in `close_test.go`, also run under memgrind.
 
 ## SetShapeCache and DefaultShapeCache
 
@@ -136,7 +134,7 @@ Measured with `BenchmarkBuiltinString` on linux/amd64 (AMD EPYC 7B13, one pinned
 
 A Builtin that adds two numbers took 72 ns before and 75 to 81 ns after, depending on the code layout: nothing on its path changed, and the same layouts move it by as much.
 
-Tests: `TestArgStringSameAsEngine`, `TestNewStringSameAsEngine`, `TestUTF8Units` and `TestBuiltinStringRoundTrip` in `jsstring_test.go`, also run under memgrind.
+Tests: `TestArgStringSameAsEngine`, `TestNewStringSameAsEngine`, `TestUTF8Units` and `TestBuiltinStringRoundTrip` in `jsstring_test.go`.
 
 If upstream changes how `JS_ToCStringLen2` or `JS_NewStringLen` convert, change `jsstring.go` to match: the tests above compare the two on every form of string and fail first.
 
@@ -148,7 +146,7 @@ Release: v0.27.2.
 
 A Builtin that looks at the characters of short strings and often returns its argument as it is, such as an escape for HTML, converts nothing this way: it reads the characters in place and returns `a.Value(0).Dup()`. React's escape of text written that way takes 99 ns a call for a 16-character string without a character to escape, against 200 ns for React's own javascript and 156 ns before (125 ns after the change above) for one that reads with `Args.WTF8`. For a string with three characters to escape it takes 163 ns, where React's javascript takes 3.3 µs.
 
-Test: `TestBuiltinLatin1UTF16` in `jsstring_test.go`, also run under memgrind, and `TestEscapeView` in `builtinstring_test.go`.
+Test: `TestBuiltinLatin1UTF16` in `jsstring_test.go`, and `TestEscapeView` in `builtinstring_test.go`.
 
 ## Error() of an Error made in Go
 
@@ -196,7 +194,7 @@ Release: v0.29.0.
 
 As with `SetGCThreshold`, no other goroutine may use the VM meanwhile, and `MemoryUsage` after `Close` panics.
 
-Test: `memory_test.go`, also run under memgrind.
+Test: `memory_test.go`.
 
 ## OnClose
 
@@ -223,7 +221,7 @@ Release: v0.27.0.
 
 They called `js_std_await` of `quickjs-libc.c`, the helper of the `qjs` shell. When the job queue ran dry with the promise pending, it read the state that `js_std_init_handlers` sets up, which a VM never sets up, and the process crashed with a nil pointer dereference. A job that failed was printed to stderr and dropped, so the eval timeout after a module's first `await` crashed the same way once the queue was empty. The `qjs` shell does not crash there, it spins on the empty queue for good, and Node ends a module whose top-level await never settles with exit code 13.
 
-Test: `moduleawait_test.go`, also run under memgrind, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
+Test: `moduleawait_test.go`, and the module case of `TestNestedEvalKeepsTimeout` and `TestNestedEvalKeepsInterrupt` in `timeout_test.go`.
 
 ## A module frees its top level once it has run
 
@@ -235,7 +233,7 @@ A module that is still pending when the call returns, and one that failed, keep 
 
 The SSR bundle of tifa's example shop as a module: a VM holds 8.66 MiB after loading rather than 9.44 MiB, where the same bundle as a script (an IIFE) gives 8.63 MiB. Measured on darwin/arm64 with `MemorySize` after `RunGC`.
 
-Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`, also run under memgrind.
+Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`.
 
 ## SharedBytecode
 
@@ -340,7 +338,7 @@ Release: v0.29.0.
 - `console.log`, `print`, `performance.now` and `__loadScript` are not defined. Give a VM what it needs as Builtins or with `RegisterFunc`.
 - `Atomics.wait` throws a `TypeError` (`cannot block in this thread`), which it already did unless `SetCanBlock(true)` was called.
 
-Tests: `own_keys_test.go` (a module that imports itself by `<eval>`) and `quickjslibc_test.go` (the bytecode of a module with a top-level `await` and `import.meta`).
+Test: `own_keys_test.go` (a module that imports itself by `<eval>`).
 
 ## A Go newer than the one the engine was checked with stops the build
 
