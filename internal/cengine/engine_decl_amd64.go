@@ -41,7 +41,7 @@ const (
 // noSplitList names the functions whose TEXT says NOSPLIT, which have no
 // stack check at their entry (gen.MarkNoSplit), for the tests. A constant
 // takes no room in a binary that does not use it.
-const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo JS_SetUncatchableException __cos __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos acosh add_pc2line_info asin asinh atan atan2 atanh cbrt ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 goasm_number_to_int32 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk js_string_delete_property log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf rint round scalbn specialcase specialcase_362 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
+const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo JS_SetUncatchableException __cos __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos acosh add_pc2line_info asin asinh atan atan2 atanh cbrt ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 goasm_number_to_int32 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk js_string_delete_property log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf re_interval_cmp re_string_list_init rint round scalbn specialcase specialcase_362 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
 
 func JS_AddIntrinsicBaseObjects(a0 uintptr, a1 uintptr) uintptr
 func JS_AddIntrinsicBigInt(a0 uintptr, a1 uintptr) uintptr
@@ -426,6 +426,7 @@ func copysign(a0 uintptr, a1 float64, a2 float64) float64
 func cos(a0 uintptr, a1 float64) float64
 func cosh(a0 uintptr, a1 float64) float64
 func cpool_add(a0 uintptr, a1 uintptr) uintptr
+func cr_add_interval(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func cr_copy(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func cr_free(a0 uintptr, a1 uintptr)
 func cr_init(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -435,6 +436,7 @@ func cr_op(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintpt
 func cr_op1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func cr_realloc(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func cr_regexp_canonicalize(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func cr_sort_and_remove_overlap(a0 uintptr, a1 uintptr)
 func dbuf_claim(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func dbuf_free(a0 uintptr, a1 uintptr)
 func dbuf_init2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -862,6 +864,7 @@ func js_make_read_written(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r
 func js_malloc(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_malloc_large(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_malloc_moving(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func js_malloc_moving_rt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_malloc_new_arena(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_malloc_rt(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_malloc_usable_size(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1131,6 +1134,7 @@ func js_string_normalize1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func js_string_pad(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_string_raw(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_repeat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_string_repeat_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_string_replace(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) uintptr
 func js_string_slice(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1141,6 +1145,7 @@ func js_string_toLowerCase(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_string_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_toWellFormed(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_to_cstring(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
+func js_string_to_cstring_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_string_to_number(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_string_trim(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -1227,6 +1232,7 @@ func lre_is_id_start(a0 uintptr, a1 uintptr) uintptr
 func lre_is_space_non_ascii(a0 uintptr, a1 uintptr) uintptr
 func lre_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func lre_realloc_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
 func map_add_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func map_decref_record(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -1255,6 +1261,7 @@ func optional_chain_test(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func out_integer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func output_digits(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func parse_alphabet_option(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func parse_digits(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func parse_ident(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func parse_last_chunk_option(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func parse_unicode_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
@@ -1270,20 +1277,31 @@ func push_scope(a0 uintptr, a1 uintptr) uintptr
 func push_short_int(a0 uintptr, a1 uintptr, a2 uintptr)
 func put_lvalue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr)
 func put_short_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func re_code(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func re_emit_char(a0 uintptr, a1 uintptr, a2 uintptr)
+func re_emit_goto_u8_u32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func re_emit_op(a0 uintptr, a1 uintptr, a2 uintptr)
+func re_emit_op_u32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_emit_op_u8(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func re_emit_range(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_emit_string_list(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
-func re_has_named_captures(a0 uintptr, a1 uintptr) uintptr
+func re_insert(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_interval_cmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_need_group_names(a0 uintptr, a1 uintptr) uintptr
 func re_parse_alternative(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_captures(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func re_parse_class_set_operand(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_disjunction(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func re_parse_group_name(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func re_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_parse_group_name(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_nested_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_string_find2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func re_string_list_canonicalize(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_string_list_free(a0 uintptr, a1 uintptr)
+func re_string_list_init(a0 uintptr, a1 uintptr, a2 uintptr)
+func re_string_list_op(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_zero(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func remainingElementsCount_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func remove_global_object_property(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func reparse_ident_token(a0 uintptr, a1 uintptr)
@@ -1322,8 +1340,10 @@ func strcmp(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func string_advance_index(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_buffer_concat_rope(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_concat_rope_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat_value(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_end(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func string_buffer_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_buffer_free(a0 uintptr, a1 uintptr)
 func string_buffer_init2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_buffer_putc16(a0 uintptr, a1 uintptr, a2 uintptr) uintptr

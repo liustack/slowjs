@@ -4,6 +4,15 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.1] - 2026-11-06
+
+### Fixed
+
+- `Interrupt` and the eval timeout now stop a call while a long string made by `+` (a rope) is being made flat. The copy of each of its strings read no interrupt flag, so a string of tens of millions of characters made by `+` held off the stop for the whole copy, the first time a built-in, a key or the tag functions needed its characters: with a 10 ms timeout, a style value of 64M characters stopped 68 ms after the call started on CI. Now the copy reads the flag every 65,536 characters, and that call stops at once. The string made is the same, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)).
+- `String.prototype.repeat` now reads the interrupt flag every 65,536 characters, where it read it every 1,048,576 and only between two whole copies of its string, and a call of fewer than 1,048,576 characters read it never. `'x'.repeat(1 << 20)` ran 105 polls of the engine (each 10,000 ticks) with no reading, and a loop of `'x'.repeat(1e5)` stopped only at the next call. The result is the same ([uncatchable.md](docs/changes/uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters)).
+- `Interrupt` and the eval timeout now end the compile of one long regexp with the interrupt, where they could kill the VM. Four stretches of the compile read no interrupt flag: the conversion of the pattern to UTF-8, the copies of the code as it grows, the scan of the code for its registers and the copy of the code into its string. For a pattern of 13.2M characters the scan alone ran about 1,360 polls of the engine (each 10,000 ticks), past the 1000 after which the Go host kills the script, so the call ended with `ErrKilled` and the VM could only be closed. The long digits of a count, of `\u{…}` and of a group name, the operands of `&&` and `--`, the strings of `\q{…}`, the compare of one of them with the strings of the same hash before it, and a lookup of a long pattern in the regexp cache read no flag either. Now each reads it in steps, and that compile stops within a few polls. A regexp compiles to the same code, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop)).
+- A regexp class of many characters or many strings now stops within a few polls of `Interrupt` or the eval timeout, and compiles much faster. Each character of a class was merged into the ranges before it by making them all anew, with no interrupt check, so a class of 60,000 characters that are not next to each other took 557,426 polls of the engine (each 10,000 ticks) to compile. Now a class in order takes one step for each character and one in any order is sorted once: that class compiles in 51 to 137 polls. The strings of `\q{…}` were sorted, moved when their table grew, and freed after a stop, each in one pass with no interrupt check (up to 146 polls for 262,144 strings), and the walk of an empty table read none either. All of these now check in steps. A regexp compiles to the same code, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has)).
+
 ## [v0.30.0] - 2026-11-05
 
 ### Changed
@@ -548,7 +557,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10

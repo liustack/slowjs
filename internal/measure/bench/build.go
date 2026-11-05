@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/version"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 // BuildOptions say which binaries to build.
@@ -106,7 +107,7 @@ func MakeOverlay(ctx context.Context, tree, work string, p Position, front, pad 
 		}
 	}
 	if len(asm) == 0 {
-		return Overlay{}, fmt.Errorf("no generated amd64 assembly in %s: run sjdev gen", src)
+		return Overlay{}, fmt.Errorf("no generated amd64 assembly in %s: run make gen", src)
 	}
 	if err := os.RemoveAll(work); err != nil {
 		return Overlay{}, err
@@ -197,7 +198,7 @@ func WorkFile(goVersion string, dirs ...string) string {
 }
 
 // Build makes one binary per position in o.Out.
-func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log io.Writer) error {
+func Build(ctx context.Context, o BuildOptions, xf Xform, run measure.Runner, log io.Writer) error {
 	o.Defaults()
 	if err := o.Check(); err != nil {
 		return err
@@ -233,19 +234,26 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 		if err != nil {
 			return err
 		}
-		mod, err := os.ReadFile(filepath.Join(tree, "go.mod"))
-		if err != nil {
-			return err
-		}
-		m := goVersionRe.FindSubmatch(mod)
-		if m == nil {
-			return fmt.Errorf("no go line in %s/go.mod", tree)
+		// A go.work below the go line of one of its modules does not load.
+		goVersion := ""
+		for _, d := range []string{tree, app} {
+			mod, err := os.ReadFile(filepath.Join(d, "go.mod"))
+			if err != nil {
+				return err
+			}
+			m := goVersionRe.FindSubmatch(mod)
+			if m == nil {
+				return fmt.Errorf("no go line in %s/go.mod", d)
+			}
+			if v := string(m[1]); goVersion == "" || version.Compare("go"+v, "go"+goVersion) > 0 {
+				goVersion = v
+			}
 		}
 		wf := filepath.Join(out, ".work", o.Side+".work")
 		if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(wf, []byte(WorkFile(string(m[1]), app, tree)), 0o644); err != nil {
+		if err := os.WriteFile(wf, []byte(WorkFile(goVersion, app, tree)), 0o644); err != nil {
 			return err
 		}
 		dir, env = app, append(env, "GOWORK="+wf)
@@ -282,7 +290,7 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 		if err := os.WriteFile(ovFile, b, 0o644); err != nil {
 			return err
 		}
-		c := sjdev.Cmd{Dir: dir, Env: env, Name: "go", Args: o.BuildArgs(ovFile, bin)}
+		c := measure.Cmd{Dir: dir, Env: env, Name: "go", Args: o.BuildArgs(ovFile, bin)}
 		fmt.Fprintf(log, "+ %s\n", c)
 		if r := run(ctx, c, nil); r.Err != nil {
 			return fmt.Errorf("%w\n%s", r.Err, r.Out)
@@ -319,9 +327,9 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run sjdev.Runner, log 
 }
 
 // XformCommand returns the Xform that runs the built xform binary.
-func XformCommand(bin string, run sjdev.Runner) Xform {
+func XformCommand(bin string, run measure.Runner) Xform {
 	return func(ctx context.Context, dir string, ops []string) error {
-		r := run(ctx, sjdev.Cmd{Name: bin, Args: append([]string{dir}, ops...)}, nil)
+		r := run(ctx, measure.Cmd{Name: bin, Args: append([]string{dir}, ops...)}, nil)
 		if r.Err != nil {
 			return fmt.Errorf("%w\n%s", r.Err, r.Out)
 		}
@@ -331,7 +339,7 @@ func XformCommand(bin string, run sjdev.Runner) Xform {
 
 // BuildXform builds internal/goasm/cmd/xform of the tree into out and returns
 // the Xform that runs it.
-func BuildXform(ctx context.Context, tree, out string, run sjdev.Runner) (Xform, error) {
+func BuildXform(ctx context.Context, tree, out string, run measure.Runner) (Xform, error) {
 	bin := filepath.Join(out, ".xform")
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return nil, err
@@ -340,7 +348,7 @@ func BuildXform(ctx context.Context, tree, out string, run sjdev.Runner) (Xform,
 	if err != nil {
 		return nil, err
 	}
-	r := run(ctx, sjdev.Cmd{Dir: tree, Env: []string{"CGO_ENABLED=0"}, Name: "go", Args: []string{"build", "-o", abs, "./internal/goasm/cmd/xform"}}, nil)
+	r := run(ctx, measure.Cmd{Dir: tree, Env: []string{"CGO_ENABLED=0"}, Name: "go", Args: []string{"build", "-o", abs, "./internal/goasm/cmd/xform"}}, nil)
 	if r.Err != nil {
 		return nil, fmt.Errorf("%w\n%s", r.Err, r.Out)
 	}

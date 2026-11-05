@@ -67,5 +67,10 @@ int lre_check_timeout(void *opaque);
    to stop, which an execution reads at each of its steps */
 const volatile int *lre_interrupt_flag(void *opaque);
 void *lre_realloc(void *opaque, void *ptr, size_t size);
+/* must be provided by the user: lre_realloc for the code of a compile,
+   which grows by half each time. A block that moves may be copied in steps
+   that read the interrupt flag, and NULL then means that the flag is set,
+   or that there is no memory. */
+void *lre_realloc_code(void *opaque, void *ptr, size_t size);
 
 #endif /* LIBREGEXP_H */

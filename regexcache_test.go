@@ -90,18 +90,30 @@ func TestRegExpCacheMemoryLimit(t *testing.T) {
 }
 
 // The eval timeout and Interrupt stop a loop that makes regexps the cache
-// keeps, as one that compiles them, within a few milliseconds: compiling a
+// keeps, as one that compiles them, within a few polls: compiling a
 // long pattern counts its steps toward the interrupt check, so the check
 // does not wait for thousands of compiles, and one long compile stops in
 // the middle. A catch block does not take the interrupt.
 func TestRegExpCacheStops(t *testing.T) {
-	for _, js := range []string{
-		`for (;;) new RegExp(p, 'g')`,
-		`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`,
-		`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`,
-		`for (let i = 0; ; i++) eval('/' + p + i + '/g')`,
-		`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`,
+	for _, r := range []struct {
+		js    string
+		limit int64
+	}{
+		{`for (;;) new RegExp(p, 'g')`, stopPolls},
+		{`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`, stopPolls},
+		{`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`, stopPolls},
+		{`for (let i = 0; ; i++) eval('/' + p + i + '/g')`, stopPolls},
+		// one compile of a pattern of 13.2M characters: its conversion to
+		// UTF-8 ran 41 polls with no reading of the flag, and the work after
+		// the parse about 1,360, past the 1000 after which a poll kills the
+		// script
+		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, stopPolls},
+		// strings of one hash and one length in a class: a string was
+		// compared with the ones before it in one pass of memcmp, a byte
+		// at a time, up to 31 times 128 KiB with no reading of the flag
+		{`new RegExp('[\\q{' + q + '}]', 'v')`, stopPolls},
 	} {
+		js := r.js
 		for _, c := range []struct {
 			name string
 			arm  func(m *VM) (stop func())
@@ -117,20 +129,17 @@ func TestRegExpCacheStops(t *testing.T) {
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				m := newTestVM(t)
-				if _, err := m.Eval(`var p = '(a|b|c)+d'.repeat(200); 0`, EvalGlobal); err != nil {
+				if _, err := m.Eval(`var p = '(a|b|c)+d'.repeat(200), q = []; for (let i = 0; i < 32; i++) { let s = 'x'.repeat(1 << 15); for (let j = 0; j < 5; j++) s += i >> j & 1 ? 'b\u00f9' : 'a\u0200'; q.push(s) } q = q.join('|'); 0`, EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				defer c.arm(m)()
 				start := time.Now()
 				_, err := m.Eval(js, EvalGlobal)
 				took := time.Since(start)
-				var e *Error
-				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || e.Message != "interrupted" {
+				if e := (*Error)(nil); !errors.As(err, &e) || e.Message != "interrupted" {
 					t.Fatalf("%s: got %v, want interrupted", js, err)
 				}
-				if took > stopLimit {
-					t.Errorf("%s: stopped %v after the call started, want about 10ms", js, took)
-				}
+				checkStopped(t, m, err, took, r.limit, js+": ")
 			})
 		}
 	}

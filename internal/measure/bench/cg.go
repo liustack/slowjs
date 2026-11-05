@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 var cgLine = regexp.MustCompile(`^\s*([\d,]+) \(\s*[\d.]+%\)\s+(.*)$`)
@@ -206,7 +206,7 @@ func (o CGOptions) CGArgs(bin, out string, n int) []string {
 
 // CG runs callgrind on each binary with the small and the big count, and prints
 // the instructions per render.
-func CG(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
+func CG(ctx context.Context, o CGOptions, run measure.Runner, w io.Writer) error {
 	if err := o.Check(); err != nil {
 		return err
 	}
@@ -228,11 +228,11 @@ func CG(ctx context.Context, o CGOptions, run sjdev.Runner, w io.Writer) error {
 		var ls [2]Listing
 		for j, n := range []int{o.Small, o.Big} {
 			base := filepath.Join(o.Out, fmt.Sprintf("%d-%s-%d", i, filepath.Base(bin), n))
-			r := run(ctx, sjdev.Cmd{Dir: o.Dir, Env: env, Name: vg, Args: o.CGArgs(abs, base+".cg", n)}, nil)
+			r := run(ctx, measure.Cmd{Dir: o.Dir, Env: env, Name: vg, Args: o.CGArgs(abs, base+".cg", n)}, nil)
 			if r.Err != nil {
 				return fmt.Errorf("%w\n%s", r.Err, trunc(r.Out, 2000))
 			}
-			a := run(ctx, sjdev.Cmd{Env: vgEnv, Name: o.annotate(), Args: []string{"--inclusive=yes", "--threshold=100", base + ".cg"}}, nil)
+			a := run(ctx, measure.Cmd{Env: vgEnv, Name: o.annotate(), Args: []string{"--inclusive=yes", "--threshold=100", base + ".cg"}}, nil)
 			if a.Err != nil {
 				return fmt.Errorf("%w\n%s", a.Err, trunc(a.Out, 2000))
 			}

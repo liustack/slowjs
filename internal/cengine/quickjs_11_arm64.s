@@ -10200,7 +10200,7 @@ TEXT ·js_parse_error(SB), $120-32
 	WORD $0x7103fd1f
 	WORD $0x54000de8
 	WORD $0x32180108
-	MOVD $·engine_rodata+52873(SB), R22
+	MOVD $·engine_rodata+52877(SB), R22
 	WORD $0x91020174
 	WORD $0x9100c177
 	WORD $0xaa0c03f5
@@ -10334,7 +10334,7 @@ TEXT ·js_parse_error_pos(SB), $120-40
 	WORD $0x7103fd1f
 	WORD $0x54000de8
 	WORD $0x32180108
-	MOVD $·engine_rodata+52873(SB), R22
+	MOVD $·engine_rodata+52877(SB), R22
 	WORD $0x91020174
 	WORD $0x9100c177
 	WORD $0xaa0c03f5

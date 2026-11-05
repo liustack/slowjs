@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 func TestParsePositions(t *testing.T) {
@@ -172,11 +172,12 @@ func TestBuildCheck(t *testing.T) {
 func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	tree := fakeTree(t)
 	app := t.TempDir()
+	os.WriteFile(filepath.Join(app, "go.mod"), []byte("module app\n\ngo 1.27.0\n"), 0o644)
 	out := filepath.Join(t.TempDir(), "bin")
-	var cmds []sjdev.Cmd
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	var cmds []measure.Cmd
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, c)
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	var log bytes.Buffer
 	err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
@@ -220,12 +221,49 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	}
 }
 
+// TestBuildWorkFileTakesTheHigherGoVersion: a go.work whose go line is below
+// the go line of one of its modules does not load, so the build of an app that
+// needs a newer Go than the tree takes the app's go line, and the other way
+// round.
+func TestBuildWorkFileTakesTheHigherGoVersion(t *testing.T) {
+	for _, c := range []struct{ tree, app, want string }{
+		{"1.26.6", "1.27.0", "1.27.0"},
+		{"1.27.0", "1.26.6", "1.27.0"},
+		{"1.26.10", "1.26.6", "1.26.10"},
+	} {
+		tree := fakeTree(t)
+		os.WriteFile(filepath.Join(tree, "go.mod"), []byte("module m\n\ngo "+c.tree+"\n"), 0o644)
+		app := t.TempDir()
+		os.WriteFile(filepath.Join(app, "go.mod"), []byte("module app\n\ngo "+c.app+"\n"), 0o644)
+		out := filepath.Join(t.TempDir(), "bin")
+		var work string
+		run := func(ctx context.Context, cmd measure.Cmd, _ io.Writer) measure.Result {
+			for _, e := range cmd.Env {
+				if v, ok := strings.CutPrefix(e, "GOWORK="); ok {
+					work = v
+				}
+			}
+			return measure.Result{}
+		}
+		var log bytes.Buffer
+		err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
+			Positions: []Position{{0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+		if err != nil {
+			t.Fatalf("tree %s, app %s: %v\n%s", c.tree, c.app, err, log.String())
+		}
+		text, err := os.ReadFile(work)
+		if err != nil || !strings.HasPrefix(string(text), "go "+c.want+"\n") {
+			t.Errorf("tree %s, app %s: go.work = %q, %v, want go %s", c.tree, c.app, text, err, c.want)
+		}
+	}
+}
+
 func TestBuildInTheTreeWithoutAnApp(t *testing.T) {
 	tree := fakeTree(t)
-	var cmds []sjdev.Cmd
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	var cmds []measure.Cmd
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, c)
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
 	if err != nil {

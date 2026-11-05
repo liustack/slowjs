@@ -38,10 +38,10 @@ check-full:
 check-gen:
 	scripts/check-gen.sh
 
-# Code-position timing and callgrind (internal/sjdev), for example
+# Code-position timing and callgrind (internal/measure), for example
 # make bench ARGS="report -in shop.jsonl -base base -new new".
 bench:
-	go tool sjdev bench $(ARGS)
+	go tool measure bench $(ARGS)
 
 # A make target on another machine (scripts/remote.sh): make remote RUN="gen",
 # make remote REF=my-branch TREE=new RUN="check-fast". The machine comes from

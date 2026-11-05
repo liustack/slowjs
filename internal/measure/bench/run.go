@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/quickjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/measure/hwm"
 )
 
 // Record is one process, written as a line of JSON. A block is the processes
@@ -204,9 +204,9 @@ func Start(ctx context.Context, bin string, args []string, dir string, env []str
 	return p
 }
 
-// Inherited are the variables of the environment of sjdev that the processes
-// get. Everything else comes from -env, so that what a process runs with is
-// what the manifest says.
+// Inherited are the variables of the environment of the measure tool that
+// the processes get. Everything else comes from -env, so that what a process
+// runs with is what the manifest says.
 var Inherited = []string{"HOME", "PATH", "TMPDIR"}
 
 // EffectiveEnv is the environment of the processes: the Inherited variables of

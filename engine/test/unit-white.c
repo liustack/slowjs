@@ -1297,12 +1297,30 @@ static void test_buffer_copy_work(void)
 static void test_poll_work_gaps(void)
 {
     enum { ROPE_STEP = 1 << 16, PAD_STEP = 1 << 16, SUB_STEP = 1 << 20 };
+    /* a case whose total is not checked: the code of a regexp is copied as it
+       grows, and how often depends on the room the allocator gives each block
+       (the sanitizers use the system's) */
+    const unsigned long ANY = (unsigned long)-1;
     static const char setup[] =
         "var f1 = 'ab'.repeat(65535) + 'c', f2 = 'ab'.repeat(32768), f3 = 'ab'.repeat(32769) + 'c'\n"
         "var wide = ['\\u4e00', '\\u00e9'.repeat(2 << 20)].join('')\n"
         "var wlast = ['\\u00e9'.repeat(3 << 20), '\\u4e00'].join('')\n"
         "var w15 = ['\\u4e00', '\\u00e9'.repeat(3 << 19)].join('')\n"
         "var nar = '\\u00e9'.repeat((3 << 20) + 5)\n"
+        /* patterns of regexps: 2.2M characters of groups, a group of 2M characters with a quantifier, an alternative of 2M characters, a name used before its group, and 1M wide characters */
+        "var xa = '(?:a|b|c)+d'.repeat(200000), xg = '(?:' + 'a'.repeat(1 << 21) + ')+', xo = 'a'.repeat(1 << 21) + '|b'\n"
+        "var xk = '\\\\k<n>' + 'a'.repeat(1 << 21) + '(?<n>x)', xw = '\\u4e2d'.repeat(1 << 20)\n"
+        "xg = String(xg), xo = String(xo), xk = String(xk)\n"
+        /* terms of 2M characters: a count, an escape and a group name of leading zeros, and two patterns of 900,002 characters that are the same (the cache keeps the first) */
+        "var xd = String('a{' + '0'.repeat(1 << 21) + '1}'), xu = String('\\\\u{' + '0'.repeat(1 << 21) + '61}')\n"
+        "var xn = String('(?<\\\\u{' + '0'.repeat(1 << 21) + '61}>b)')\n"
+        "var yc = String('[' + 'a'.repeat(900000) + ']'), yc2 = String('[' + 'a'.repeat(900000) + ']'); new RegExp(yc)\n"
+        /* a class of 32 strings of one hash and one length, which differ only in their last 10 characters */
+        "var yq = []; for (let i = 0; i < 32; i++) { let s = 'x'.repeat(1 << 12); for (let j = 0; j < 5; j++) s += i >> j & 1 ? 'b\\u00f9' : 'a\\u0200'; yq.push(s) }\n"
+        "yq = String('[\\\\q{' + yq.join('|') + '}]')\n"
+        /* a class of 60,000 characters above 0xFFFF, downward, and one of 16,384 strings of 5 to 68 characters */
+        "var zd = []; for (var c = 0x10000 + 120000; c > 0x10000; c -= 2) zd.push(String.fromCodePoint(c)); zd = String('[' + zd.join('') + ']')\n"
+        "var zl = []; for (let i = 0; i < 1 << 14; i++) zl.push((i + 1e6).toString(36) + 'x'.repeat(i * 7919 % 64)); zl = String('[\\\\q{' + zl.join('|') + '}]')\n"
         "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535), l4 = 'w'.repeat(65533)\n"
         "var flat = 'ab'.repeat(1 << 20)\n"
         "var ra = l1 + l2 + l3, rb = l1 + l2 + l3\n"
@@ -1346,6 +1364,11 @@ static void test_poll_work_gaps(void)
         "var jt = '[' + Array(3000).fill('{\"id\":\"abcdefgh\",\"name\":\"ijkl\"}').join(',') + ']'\n"
         "var jl = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u00e9\",\"name\":\"ijkl\"}').join(',') + ']'\n"
         "var jy = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u4e2d\",\"name\":\"ijkl\"}').join(',') + ']'\n"
+        /* strings of a rope longer than a step: 200000 = 3 steps and 3392, 70000, 600 (made a rope of), and a wide one */
+        "var rf1 = 'a'.repeat(200000), rf2 = 'b'.repeat(70000), rf3 = 'x'.repeat(600), rfw = '\\u4e2d'.repeat(100000), rraw = { raw: ['', ''] }, rs1 = 'a'.repeat(40000), rsw = '\\u4e2d'.repeat(40000)\n"
+        /* the ropes of the cases that are not about ropes are made flat here, so that a case counts the work of its own call */
+        "f1 = String(f1), e3 = String(e3), ja = String(ja), je = String(je), jm = String(jm), ju = String(ju), jx = String(jx), jk = String(jk)\n"
+        "jt = String(jt), jl = String(jl), jy = String(jy), jn = String(jn)\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -1369,7 +1392,8 @@ static void test_poll_work_gaps(void)
         { "wlast.slice(1)", SUB_STEP, 6291456 },
         /* a string of 8 bits is copied, not scanned */
         { "nar.slice(3)", SUB_STEP, (3 << 20) + 2 },
-        { "(' ' + nar).trim()", SUB_STEP, (3 << 20) + 5 },
+        /* the rope of the space and nar is made flat first: its characters and one for each of its 2 strings */
+        { "(' ' + nar).trim()", SUB_STEP, (3 << 20) + 5 + (3 << 20) + 6 + 2 },
         /* the hash of a key: leaves of 65534, 65536 and 65535 characters, and one for each leaf */
         { "s0.has(l1 + l2)", ROPE_STEP, 65534 + 65536 + 2 },
         { "s0.has(l3 + l2 + l1)", ROPE_STEP, 65535 + 65536 + 65534 + 3 },
@@ -1435,15 +1459,31 @@ static void test_poll_work_gaps(void)
         { "JSON.parse(jm)", ROPE_STEP + 5, 98312 + 98310 },
         { "JSON.parse(ju)", ROPE_STEP + 5, 120002 + 120000 },
         { "JSON.parse(jw)", ROPE_STEP + 5, 70003 + 70003 + 70000 },
-        /* a rope is made flat first, which widens the characters before the wide one too (1 for the quote) */
-        { "JSON.parse(jwr)", ROPE_STEP + 5, 70003 + 70003 + 70000 + 70001 },
+        /* a rope is made flat first: its 70003 characters and one for each of its 3 strings */
+        { "JSON.parse(jwr)", ROPE_STEP + 5, 70003 + 70003 + 70000 + 70006 },
         { "JSON.parse(jx)", ROPE_STEP + 5, 70008 + 70006 + 70000 },
         /* the same for a key: and the hash of it */
         { "JSON.parse(jk)", ROPE_STEP + 5, 200006 + 200000 + 200000 },
-        /* the text, then the bytes of each key and value, and for the wide text the characters before the wide one when the buffer is widened (the totals of the engine before keys and plain strings were read from the text) */
+        /* the text, then the bytes of each key and value, and for the wide text the characters before the wide one when the buffer is widened (the totals of the engine before keys and plain strings were read from the text, less the 2 narrow strings of the rope jy, which the setup now makes flat) */
         { "JSON.parse(jt).length", ROPE_STEP + 5, 96001 + 3000 * 18 },
         { "JSON.parse(jl).length", ROPE_STEP + 5, 2 * 96001 + 3000 * 19 },
-        { "JSON.parse(jy).length", ROPE_STEP + 5, 177003 },
+        { "JSON.parse(jy).length", ROPE_STEP + 5, 177001 },
+        /* a rope made flat (String): each string in steps, and one more for it; the strings of 8 bits of a wide rope are written into its wide buffer */
+        { "String(rf1 + rf2).length", ROPE_STEP, 270000 + 2 },
+        { "String(rf1 + rf3 + rf2).length", ROPE_STEP, 270600 + 3 },
+        { "String(rf2 + rf1 + rf2).length", ROPE_STEP, 340000 + 3 },
+        { "String(rf1 + rfw + rf2).length", ROPE_STEP, 370000 + 3 },
+        /* repeat in steps: of one character, of two, of a string longer than a step (pieces that end at the end of the string or of the step), of a wide one */
+        { "'x'.repeat(200000).length", ROPE_STEP, 200000 },
+        { "'ab'.repeat(100000).length", ROPE_STEP, 200000 },
+        { "rf2.repeat(3).length", ROPE_STEP, 210000 },
+        { "rfw.repeat(2).length", ROPE_STEP, 200000 },
+        { "'\\u4e2d'.repeat(70000).length", ROPE_STEP, 70000 },
+        /* a rope appended to a string buffer (String.raw), which is widened at the wide string: the 200000 characters before it once more */
+        { "String.raw(rraw, rf1 + rf2).length", ROPE_STEP, 270000 + 2 },
+        { "String.raw(rraw, rf1 + rfw).length", ROPE_STEP, 300000 + 2 + 200000 },
+        /* the same with fewer than a step before the wide string, which is widened at once with no reading of the flag */
+        { "String.raw(rraw, rs1 + rsw).length", ROPE_STEP, 80000 + 2 + 40000 },
         /* JSON.stringify: runs, escapes and runs of wide characters */
         { "JSON.stringify(qa).length", ROPE_STEP, 200000 },
         { "JSON.stringify(qe).length", ROPE_STEP, 70000 },
@@ -1453,6 +1493,22 @@ static void test_poll_work_gaps(void)
         /* runs of narrow characters into a buffer that is wide already: each counts twice, once for the scan and once for the copy */
         { "JSON.parse(jn)", ROPE_STEP + 5, 262160 + 8 * 2 * 32768 + 6 + 16 },
         { "JSON.stringify(qn).length", ROPE_STEP + 1, 2 + 1 + 8 * 2 * 32768 + 8 },
+        /* compiling a long regexp: the pattern as UTF-8, the code copied as it grows, the code scanned for its registers, for an atom with a quantifier and moved for an alternative or a quantifier, the pattern scanned for a name used before its group, and the code copied into its string */
+        { "new RegExp(xa), 0", SUB_STEP, ANY },
+        { "new RegExp(xg), 0", SUB_STEP, ANY },
+        { "new RegExp(xo), 0", SUB_STEP, ANY },
+        { "new RegExp(xk), 0", SUB_STEP, ANY },
+        { "new RegExp(xw), 0", SUB_STEP, ANY },
+        { "new RegExp(xd), 0", SUB_STEP, 4194312 },
+        { "new RegExp(xu, 'u'), 0", SUB_STEP, 4194312 },
+        { "new RegExp(xn), 0", SUB_STEP, 4194318 },
+        /* the lookup in the cache: the hash of the pattern, and the compare with the one kept (one more for each leaf) */
+        { "new RegExp(yc2), 0", ROPE_STEP, 900002 + 900002 + 14 },
+        /* each string compared with the ones before it in their chain (the bytes compared and the strings passed, read every 16,384), and the pattern as UTF-8 */
+        { "new RegExp(yq, 'v'), 0", ROPE_STEP, ANY },
+        /* the characters of a class not in order merged into its ranges (the intervals passed, read every 16,384 bytes of them), the ranges turned into code, and the strings of a class put in a table that grows (the strings moved and the table cleared) */
+        { "new RegExp(zd, 'u'), 0", SUB_STEP, ANY },
+        { "new RegExp(zl, 'v'), 0", SUB_STEP, ANY },
     };
     VM v = vm_new();
     size_t i;
@@ -1467,7 +1523,7 @@ static void test_poll_work_gaps(void)
         total = white_work_sum();
         CHECK(longest <= cases[i].step, "%s: %lu units of work between two readings of the flag, at most %lu", cases[i].call,
               longest, cases[i].step);
-        CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
+        CHECK(cases[i].total == ANY || total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
     }
     vm_free(&v);
 }
@@ -4089,6 +4145,9 @@ static const char *const compile_alloc_scripts[] = {
     /* regexp literals and flags, with a group name read before a class escape */
     "const a = /[a-z]+(?<n>\\d)\\k<n>/giu, b = /(?:x|y)+?z$/m, c = /\\p{L}+/v; 'ab11'.match(a)[0] + b.test('xyz') + c.test('ab') + /[/]\\//.source",
     "const r = /(?<year>\\d{4})-(?<month>\\d\\d)|[\\w&&[^\\d]]\\s\\S\\W\\D/gs; 'x 2024-05'.replace(r, '$<month>') + /\\u{1F600}/u.test('x')",
+    /* a class of strings, with an empty one and a range: each goto of the
+       strings is patched after code that may have failed to grow */
+    "/[a-c\\q{abc|xy|}]/v.test('xy') + /[\\q{abc|}x]/vi.source + /[\\q{ab|cd}--\\q{cd}]/v.test('cd')",
     /* templates, tagged and nested, with escapes (and a bad escape in a tag) */
     "const t = (s, ...v) => s.raw.length + v.length; `a${`b${1 + 1}c`}d` + t`x\\n${1}y${2}z` + `\\u{41}${'q'}`",
     "const t = (s, ...v) => String(s[0]) + s.raw[0] + v.length; t`\\unicode and \\xerxes ${1} \\u{110000}`",

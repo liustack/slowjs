@@ -28,7 +28,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/liustack/quickjs/internal/sjdev/hwm"
+	"github.com/liustack/quickjs/internal/measure/hwm"
 )
 
 // vm is what the runner needs of an engine.
@@ -147,7 +147,7 @@ func main() {
 	}
 	fmt.Printf("eval: %d runs, min %v, median %v, mean %v, max %v\n", len(times),
 		times[0], times[len(times)/2], sum/time.Duration(len(times)), times[len(times)-1])
-	// The process's own peak memory, for sjdev bench run (a parent cannot read it
+	// The process's own peak memory, for measure bench run (a parent cannot read it
 	// right: the peak a child reports to wait4 starts at the parent's).
 	hwm.Print(os.Stdout)
 }

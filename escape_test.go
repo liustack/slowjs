@@ -6,7 +6,6 @@
 package quickjs // import "github.com/liustack/quickjs"
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -215,14 +214,7 @@ func TestEscapeTextStops(t *testing.T) {
 			m.SetEvalTimeout(10 * time.Millisecond)
 			start := time.Now()
 			_, err := m.Eval(c.loop, EvalGlobal)
-			took := time.Since(start)
-			var e *Error
-			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable {
-				t.Fatalf("got %v, want interrupted", err)
-			}
-			if took > stopLimit {
-				t.Errorf("stopped %v after the call started, want about 10ms", took)
-			}
+			checkStopped(t, m, err, time.Since(start), stopPolls, "")
 		})
 	}
 }

@@ -423,6 +423,18 @@ void cr_init(CharRange *cr, void *mem_opaque, DynBufReallocFunc *realloc_func)
     cr->points = NULL;
     cr->mem_opaque = mem_opaque;
     cr->realloc_func = realloc_func;
+    cr->stop = NULL;
+}
+
+/* Whether the flag cr->stop is set, read when *pcount, the points gone
+   through since the last reading, n more now, reaches CR_POLL_POINTS. */
+static inline BOOL cr_poll(const CharRange *cr, int *pcount, int n)
+{
+    *pcount += n;
+    if (likely(*pcount < CR_POLL_POINTS))
+        return FALSE;
+    *pcount = 0;
+    return cr->stop && poll_flag(cr->stop);
 }
 
 void cr_free(CharRange *cr)
@@ -456,10 +468,12 @@ int cr_copy(CharRange *cr, const CharRange *cr1)
     return 0;
 }
 
-/* merge consecutive intervals and remove empty intervals */
-static void cr_compress(CharRange *cr)
+/* merge consecutive intervals and remove empty intervals: -1 when the flag
+   cr->stop is set, with cr left to be freed. polls is a constant of each
+   copy (cr_compress). */
+static force_inline int cr_compress1(CharRange *cr, BOOL polls)
 {
-    int i, j, k, len;
+    int i, j, k, len, count = 0;
     uint32_t *pt;
 
     pt = cr->points;
@@ -468,13 +482,18 @@ static void cr_compress(CharRange *cr)
     j = 0;
     k = 0;
     while ((i + 1) < len) {
+        if (polls && cr_poll(cr, &count, 2))
+            return -1;
         if (pt[i] == pt[i + 1]) {
             /* empty interval */
             i += 2;
         } else {
             j = i;
-            while ((j + 3) < len && pt[j + 1] == pt[j + 2])
+            while ((j + 3) < len && pt[j + 1] == pt[j + 2]) {
+                if (polls && cr_poll(cr, &count, 2))
+                    return -1;
                 j += 2;
+            }
             /* just copy */
             pt[k] = pt[i];
             pt[k + 1] = pt[j + 1];
@@ -483,18 +502,31 @@ static void cr_compress(CharRange *cr)
         }
     }
     cr->len = k;
+    return 0;
 }
 
-/* union or intersection */
-int cr_op(CharRange *cr, const uint32_t *a_pt, int a_len,
-          const uint32_t *b_pt, int b_len, int op)
+/* Only ranges with a flag and of more than CR_POLL_POINTS points read it:
+   the others, as the case tables, go through a copy with no count. */
+static int cr_compress(CharRange *cr)
 {
-    int a_idx, b_idx, is_in;
+    if (cr->stop && cr->len > CR_POLL_POINTS)
+        return cr_compress1(cr, TRUE);
+    return cr_compress1(cr, FALSE);
+}
+
+/* union or intersection. polls is a constant of each copy (cr_op). */
+static force_inline int cr_op2(CharRange *cr, const uint32_t *a_pt, int a_len,
+                               const uint32_t *b_pt, int b_len, int op,
+                               BOOL polls)
+{
+    int a_idx, b_idx, is_in, count = 0;
     uint32_t v;
 
     a_idx = 0;
     b_idx = 0;
     for(;;) {
+        if (polls && cr_poll(cr, &count, 1))
+            return -1;
         /* get one more point from a or b in increasing order */
         if (a_idx < a_len && b_idx < b_len) {
             if (a_pt[a_idx] < b_pt[b_idx]) {
@@ -537,14 +569,22 @@ int cr_op(CharRange *cr, const uint32_t *a_pt, int a_len,
                 return -1;
         }
     }
-    cr_compress(cr);
-    return 0;
+    return cr_compress(cr);
+}
+
+int cr_op(CharRange *cr, const uint32_t *a_pt, int a_len,
+          const uint32_t *b_pt, int b_len, int op)
+{
+    if (cr->stop && a_len + b_len > CR_POLL_POINTS)
+        return cr_op2(cr, a_pt, a_len, b_pt, b_len, op, TRUE);
+    return cr_op2(cr, a_pt, a_len, b_pt, b_len, op, FALSE);
 }
 
 int cr_op1(CharRange *cr, const uint32_t *b_pt, int b_len, int op)
 {
     CharRange a = *cr;
     int ret;
+    /* a keeps the points, and cr takes new ones */
     cr->len = 0;
     cr->size = 0;
     cr->points = NULL;
@@ -553,18 +593,31 @@ int cr_op1(CharRange *cr, const uint32_t *b_pt, int b_len, int op)
     return ret;
 }
 
+/* the points that cr_invert moves at once when cr has a flag (1 MiB) */
+#define CR_MOVE_POINTS (1 << 18)
+
 int cr_invert(CharRange *cr)
 {
-    int len;
+    int len, n, m;
     len = cr->len;
     if (cr_realloc(cr, len + 2))
         return -1;
-    memmove(cr->points + 1, cr->points, len * sizeof(cr->points[0]));
+    if (!cr->stop) {
+        memmove(cr->points + 1, cr->points, len * sizeof(cr->points[0]));
+    } else {
+        /* up by one point, from the end, with the flag read between steps */
+        for(n = len; n > 0; n -= m) {
+            m = n < CR_MOVE_POINTS ? n : CR_MOVE_POINTS;
+            if (n != len && poll_flag(cr->stop))
+                return -1;
+            memmove(cr->points + n - m + 1, cr->points + n - m,
+                    m * sizeof(cr->points[0]));
+        }
+    }
     cr->points[0] = 0;
     cr->points[len + 1] = UINT32_MAX;
     cr->len = len + 2;
-    cr_compress(cr);
-    return 0;
+    return cr_compress(cr);
 }
 
 #define CASE_U (1 << 0)
@@ -693,6 +746,10 @@ int cr_regexp_canonicalize(CharRange *cr, BOOL is_unicode)
     cr_init(&cr_inter, cr->mem_opaque, cr->realloc_func);
     cr_init(&cr_result, cr->mem_opaque, cr->realloc_func);
     cr_init(&cr_sub, cr->mem_opaque, cr->realloc_func);
+    /* the ranges as long as cr read its flag (cr_mask and cr_result are
+       bounded by the case tables) */
+    cr_inter.stop = cr->stop;
+    cr_sub.stop = cr->stop;
 
     if (unicode_case1(&cr_mask, is_unicode ? CASE_F : CASE_U))
         goto fail;

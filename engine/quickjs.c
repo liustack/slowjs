@@ -4933,18 +4933,25 @@ static int string_buffer_set_error(StringBuffer *s)
    request against the count less the old block. That is the check of the
    heap on the count and the limit. The footprint limit and the host, which
    may refuse another mapping while the old block is there, are not changed. */
-static void *js_malloc_moving(JSContext *ctx, size_t size, void *old)
+static void *js_malloc_moving_rt(JSRuntime *rt, size_t size, void *old)
 {
-    JSHeap *h = &ctx->rt->malloc_ctx.heap;
+    JSHeap *h = &rt->malloc_ctx.heap;
     size_t limit = h->limit, room;
     void *q;
 
     /* the old block is a large block (it holds 1 MiB or more): the heap counts
        it with its header, and the request for the new one with its header */
-    room = js_malloc_usable_size(ctx, old) + sizeof(JSMallocLargeBlockHeader);
+    room = js_malloc_usable_size_rt(rt, old) + sizeof(JSMallocLargeBlockHeader);
     h->limit = room > SIZE_MAX - limit ? SIZE_MAX : limit + room;
-    q = js_malloc_rt(ctx->rt, size);
+    q = js_malloc_rt(rt, size);
     h->limit = limit;
+    return q;
+}
+
+static void *js_malloc_moving(JSContext *ctx, size_t size, void *old)
+{
+    void *q = js_malloc_moving_rt(ctx->rt, size, old);
+
     /* the error is made with the limit back, not with the room of the old block */
     if (!q)
         JS_ThrowOutOfMemory(ctx);
@@ -5667,20 +5674,20 @@ static inline int json_count_high_bytes(const uint8_t *p, int n)
     return count;
 }
 
-/* js_string_to_cstring for the text of JSON.parse, which reads the interrupt
-   flag each time JS_ROPE_STEP characters have been looked at since the last
-   reading, in the count of the 8-bit characters and in each of the loops that
-   write the bytes (a string of fewer characters has no read). It is a copy of
-   js_string_to_cstring and not a flag of it: the function that makes the
-   message of an error reaches js_string_to_cstring, and making an error reads
-   no flag (see JS_ThrowError2 and internal/goasm/cmd/cycles). */
+/* js_string_to_cstring for the text of JSON.parse and the pattern of a
+   regexp, which reads the interrupt flag each time JS_ROPE_STEP characters
+   have been looked at since the last reading, in the count of the 8-bit
+   characters and in each of the loops that write the bytes (a string of
+   fewer characters has no read). It is a copy of js_string_to_cstring and
+   not a flag of it: the function that makes the message of an error reaches
+   js_string_to_cstring, and making an error reads no flag (see
+   JS_ThrowError2 and internal/goasm/cmd/cycles). */
 static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
-                                             JSValue val)
+                                             JSValue val, BOOL cesu8)
 {
     JSString *str, *str_new;
     int pos, len, c, c1, mark, end, i;
     uint8_t *q;
-    BOOL cesu8 = FALSE;
 
     str = JS_VALUE_GET_STRING(val);
     len = str->len;
@@ -5839,11 +5846,13 @@ static const char *js_string_to_cstring_json(JSContext *ctx, size_t *plen,
     return NULL;
 }
 
-/* A string as the C string JSON.parse reads, with the flag read each time
-   JS_ROPE_STEP characters have been looked at since the last reading (JSON
-   text of tens of millions of characters), or NULL with "interrupted" thrown.
-   JS_ToCStringLen2 is the same without the reads. */
-static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSValueConst val1)
+/* A string as the C string JSON.parse and a regexp compile read, with the
+   flag read each time JS_ROPE_STEP characters have been looked at since the
+   last reading (JSON text or a pattern of tens of millions of characters),
+   or NULL with "interrupted" thrown. JS_ToCStringLen2 is the same without
+   the reads. */
+static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSValueConst val1,
+                                             BOOL cesu8)
 {
     JSValue val;
 
@@ -5857,7 +5866,7 @@ static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSVal
     } else {
         val = JS_DupValue(ctx, val1);
     }
-    return js_string_to_cstring_json(ctx, plen, val);
+    return js_string_to_cstring_json(ctx, plen, val, cesu8);
 }
 
 /* return (NULL, 0) if exception. */
@@ -6127,14 +6136,79 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
+/* string_buffer_concat_rope for a rope of JS_ROPE_STEP characters or more:
+   each string is copied in pieces, so that no more than JS_ROPE_STEP
+   characters are copied between two readings of the flag, each string
+   counting one more than its length, as in hash_string_rope_poll. The flag
+   is read before the first piece, so that the work before the call is not
+   added to it, and after the last one. A string of 8 bits copied into a
+   buffer of 16 bits is counted (JS_WORK) by string_buffer_write8. A stop
+   sets the error of the buffer, which frees it, and leaves the rope as it
+   was. */
+static no_inline int string_buffer_concat_rope_long(StringBuffer *s, JSValueConst rope)
+{
+    JSStringRopeIter it;
+    JSString *p;
+    uint32_t off, n, widen, work = 0;
+    BOOL counted;
+
+    if (js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        for (off = 0; off < p->len; off += n) {
+            /* a buffer of 8 bits that a wide string may widen is widened at
+               once when it holds fewer than JS_ROPE_STEP characters, with
+               no reading of the flag: its length is kept out of the step
+               (the flag is read first if it does not fit), and counted when
+               the piece widened it */
+            widen = 0;
+            if (!s->is_wide_char && p->is_wide_char && s->len < JS_ROPE_STEP) {
+                widen = s->len;
+                if (work + widen >= JS_ROPE_STEP) {
+                    work = 0;
+                    if (js_poll_interrupts(s->ctx))
+                        return string_buffer_set_error(s);
+                }
+            }
+            n = min_uint32(p->len - off, JS_ROPE_STEP - work - widen);
+            counted = s->is_wide_char && !p->is_wide_char;
+            if (string_buffer_concat(s, p, off, off + n))
+                return -1;
+            if (!counted)
+                JS_WORK(n);
+            if (widen != 0 && s->is_wide_char)
+                work += widen;
+            work += n;
+            if (work >= JS_ROPE_STEP) {
+                work = 0;
+                if (js_poll_interrupts(s->ctx))
+                    return string_buffer_set_error(s);
+            }
+        }
+        JS_WORK(1);
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(s->ctx))
+                return string_buffer_set_error(s);
+        }
+    }
+    if (work != 0 && js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    return 0;
+}
+
 /* append the strings of a rope in order, reading the interrupt flag now and
-   then: a rope can hold as many strings as it has characters */
+   then: a rope can hold as many strings as it has characters. A rope of
+   fewer than JS_ROPE_STEP characters copies each string at once. */
 static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
 {
     JSStringRopeIter it;
     JSString *p;
     int work = 0;
 
+    if (unlikely(JS_VALUE_GET_STRING_ROPE(rope)->len >= JS_ROPE_STEP))
+        return string_buffer_concat_rope_long(s, rope);
     string_rope_iter_init(&it, rope);
     while ((p = string_rope_iter_next(&it)) != NULL) {
         if (string_buffer_concat(s, p, 0, p->len))
@@ -54406,9 +54480,43 @@ fail1:
     return JS_EXCEPTION;
 }
 
-/* the most characters repeat writes between two reads of the interrupt
-   flag */
-#define JS_REPEAT_CHUNK (1 << 20)
+/* repeat for a result of JS_ROPE_STEP characters or more, into b, which has
+   the room: at most JS_ROPE_STEP characters are written between two
+   readings of the interrupt flag, as for a pad, with a reading before the
+   first step and after the last. A string of one character is written by
+   string_buffer_fill, one character at a time, and a longer one is copied a
+   piece at a time, a piece ending at the end of the string or of the step.
+   0, or -1 with the exception "interrupted" thrown. */
+static no_inline int js_string_repeat_long(JSContext *ctx, StringBuffer *b,
+                                           JSString *p, int total)
+{
+    int i, m, off = 0, work = 0;
+
+    if (js_poll_interrupts(ctx))
+        return -1;
+    for (i = 0; i < total; i += m) {
+        if (p->len == 1) {
+            m = min_int(total - i, JS_ROPE_STEP);
+            string_buffer_fill(b, string_get(p, 0), m);
+        } else {
+            m = min_int(min_int(total - i, p->len - off), JS_ROPE_STEP - work);
+            string_buffer_concat(b, p, off, off + m);
+            off += m;
+            if (off == p->len)
+                off = 0;
+        }
+        JS_WORK(m);
+        work += m;
+        if (work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    if (work != 0 && js_poll_interrupts(ctx))
+        return -1;
+    return 0;
+}
 
 static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
@@ -54417,7 +54525,7 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     StringBuffer b_s, *b = &b_s;
     JSString *p;
     int64_t val;
-    int n, len, m, run, ret;
+    int n, len, ret;
 
     str = JS_ToStringCheckObject(ctx, this_val);
     if (JS_IsException(str))
@@ -54443,25 +54551,14 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     n = val;
     if (string_buffer_init2(ctx, b, n * len, p->is_wide_char))
         goto fail;
-    if (len == 1) {
-        while (n > 0) {
-            m = min_int(n, JS_REPEAT_CHUNK);
-            string_buffer_fill(b, string_get(p, 0), m);
-            n -= m;
-            if (n > 0 && js_poll_interrupts(ctx))
-                goto fail_buffer;
-        }
+    if (n * len >= JS_ROPE_STEP) {
+        if (js_string_repeat_long(ctx, b, p, n * len))
+            goto fail_buffer;
+    } else if (len == 1) {
+        string_buffer_fill(b, string_get(p, 0), n);
     } else {
-        run = 0;
-        while (n-- > 0) {
+        while (n-- > 0)
             string_buffer_concat(b, p, 0, len);
-            run += len;
-            if (run >= JS_REPEAT_CHUNK && n > 0) {
-                run = 0;
-                if (js_poll_interrupts(ctx))
-                    goto fail_buffer;
-            }
-        }
     }
     JS_FreeValue(ctx, str);
     return string_buffer_end(b);
@@ -57851,24 +57948,71 @@ static BOOL js_regexp_cache_key(JSValueConst pattern, JSValueConst flags,
     }
 }
 
-static uint32_t js_regexp_cache_hash(const JSString *p, const JSString *f)
+/* The most entries and bytes the regexp cache of rt keeps. */
+static void js_regexp_cache_limits(const JSRegExpCache *rc, int *pmax_count,
+                                   size_t *pmax_bytes)
 {
-    uint32_t h = hash_string(p, 0);
-    if (f)
-        h = hash_string(f, h * 263 + 1);
-    return h;
+    *pmax_count = rc->set ? rc->max_count : JS_REGEXP_CACHE_ENTRIES;
+    *pmax_bytes = rc->set ? rc->max_bytes : JS_REGEXP_CACHE_BYTES;
+}
+
+/* js_regexp_cache_hash gives in *ph the hash of the key of pattern and
+   flags and returns 1, or returns 0 when the cache cannot keep them (it is
+   off, it cannot look them up, or the characters of the pattern alone take
+   more than its bytes), or -1 with "interrupted" thrown. The strings are
+   hashed in steps that read the interrupt flag (hash_string_poll). The
+   hash is the one of the key for js_regexp_cache_get and for
+   js_regexp_cache_put. */
+static int js_regexp_cache_hash(JSContext *ctx, JSValueConst pattern,
+                                JSValueConst flags, uint32_t *ph)
+{
+    JSString *p, *f;
+    uint32_t h = 0, work = 0;
+    int max_count;
+    size_t max_bytes;
+
+    js_regexp_cache_limits(&ctx->rt->regexp_cache, &max_count, &max_bytes);
+    if (max_count <= 0 || !js_regexp_cache_key(pattern, flags, &p, &f) ||
+        ((size_t)p->len << p->is_wide_char) > max_bytes)
+        return 0;
+    if (hash_string_poll(ctx, p, &h, &work))
+        return -1;
+    if (f) {
+        h = h * 263 + 1;
+        if (hash_string_poll(ctx, f, &h, &work))
+            return -1;
+    }
+    /* a reading after the last step, as the compare that may follow
+       starts a step of its own */
+    if (p->len >= JS_ROPE_STEP && js_poll_interrupts(ctx))
+        return -1;
+    *ph = h;
+    return 1;
 }
 
 /* js_regexp_cache_same reports whether the strings a and b, either of
-   which can be NULL, hold the same code units. */
-static BOOL js_regexp_cache_same(JSContext *ctx, const JSString *a,
-                                 const JSString *b)
+   which can be NULL, hold the same code units: 1 or 0, or -1 with
+   "interrupted" thrown. Long strings are compared in steps that read the
+   interrupt flag, *pwork the work since the last reading
+   (js_string_rope_compare). A compare that ends inside the step is the
+   flat one, with no reading. */
+static int js_regexp_cache_same(JSContext *ctx, JSString *a, JSString *b,
+                                uint32_t *pwork)
 {
+    int res;
+
     if (a == b)
-        return TRUE;
+        return 1;
     if (!a || !b)
-        return FALSE;
-    return js_string_compare(ctx, a, b) == 0;
+        return 0;
+    if (*pwork + a->len < JS_ROPE_STEP) {
+        *pwork += a->len;
+        return js_string_compare(ctx, a, b) == 0;
+    }
+    if (js_string_rope_compare(ctx, &res, JS_MKPTR(JS_TAG_STRING, a),
+                               JS_MKPTR(JS_TAG_STRING, b), TRUE, TRUE, pwork))
+        return -1;
+    return res == 0;
 }
 
 /* js_regexp_cache_unlink takes the entry e out of the list by use. It
@@ -57914,21 +58058,30 @@ static void js_regexp_cache_drop_oldest(JSRuntime *rt, JSRegExpCache *rc)
 }
 
 /* js_regexp_cache_get returns a new reference to the bytecode the cache
-   holds for pattern and flags, or JS_UNDEFINED. */
+   holds for pattern and flags, whose key has the hash h
+   (js_regexp_cache_hash returned 1), or JS_UNDEFINED, or JS_EXCEPTION with
+   "interrupted" thrown. */
 static JSValue js_regexp_cache_get(JSContext *ctx, JSValueConst pattern,
-                                   JSValueConst flags)
+                                   JSValueConst flags, uint32_t h)
 {
     JSRegExpCache *rc = &ctx->rt->regexp_cache;
     JSRegExpCacheEntry *e;
     JSString *p, *f;
-    uint32_t h;
+    uint32_t work = 0;
+    int same;
 
-    if (rc->count == 0 || !js_regexp_cache_key(pattern, flags, &p, &f))
+    if (rc->count == 0)
         return JS_UNDEFINED;
-    h = js_regexp_cache_hash(p, f);
+    js_regexp_cache_key(pattern, flags, &p, &f);
     for (e = *js_regexp_cache_chain(rc, h); e; e = e->chain) {
-        if (e->hash != h || !js_regexp_cache_same(ctx, e->pattern, p) ||
-            !js_regexp_cache_same(ctx, e->flags, f))
+        if (e->hash != h)
+            continue;
+        same = js_regexp_cache_same(ctx, e->pattern, p, &work);
+        if (same > 0)
+            same = js_regexp_cache_same(ctx, e->flags, f, &work);
+        if (same < 0)
+            return JS_EXCEPTION;
+        if (!same)
             continue;
         if (rc->newest != e) {
             js_regexp_cache_unlink(rc, e);
@@ -57940,11 +58093,11 @@ static JSValue js_regexp_cache_get(JSContext *ctx, JSValueConst pattern,
 }
 
 /* js_regexp_cache_put keeps a reference to pattern, flags and the bytecode
-   bc js_compile_regexp made for them, if the cache can look them up and
-   has room. When there is no memory for the entry it keeps nothing, and
-   leaves no exception. */
+   bc js_compile_regexp made for them, whose key has the hash h
+   (js_regexp_cache_hash returned 1), if the cache has room. When there is
+   no memory for the entry it keeps nothing, and leaves no exception. */
 static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
-                                JSValueConst flags, JSValueConst bc)
+                                JSValueConst flags, JSValueConst bc, uint32_t h)
 {
     JSRuntime *rt = ctx->rt;
     JSRegExpCache *rc = &rt->regexp_cache;
@@ -57956,10 +58109,7 @@ static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
     if (JS_VALUE_GET_TAG(bc) != JS_TAG_STRING ||
         !js_regexp_cache_key(pattern, flags, &p, &f))
         return;
-    max_count = rc->set ? rc->max_count : JS_REGEXP_CACHE_ENTRIES;
-    max_bytes = rc->set ? rc->max_bytes : JS_REGEXP_CACHE_BYTES;
-    if (max_count <= 0)
-        return;
+    js_regexp_cache_limits(rc, &max_count, &max_bytes);
     b = JS_VALUE_GET_STRING(bc);
     size = sizeof(JSRegExpCacheEntry) + js_malloc_usable_size_rt(rt, b) +
         js_malloc_usable_size_rt(rt, p);
@@ -57984,7 +58134,7 @@ static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
     e->flags = f;
     e->bc = b;
     e->size = size;
-    e->hash = js_regexp_cache_hash(p, f);
+    e->hash = h;
     JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, p));
     if (f)
         JS_DupValueRT(rt, JS_MKPTR(JS_TAG_STRING, f));
@@ -57995,6 +58145,35 @@ static void js_regexp_cache_put(JSContext *ctx, JSValueConst pattern,
     js_regexp_cache_push_newest(rc, e);
     rc->count++;
     rc->bytes += size;
+}
+
+/* The string that holds the code of a regexp, a copy of it. Code of
+   JS_COPY_STEP bytes or more is copied JS_COPY_STEP bytes at a time, with
+   the flag read before the first step and after each: the exception
+   "interrupted" thrown. */
+static JSValue js_regexp_code_string(JSContext *ctx, const uint8_t *buf, int len)
+{
+    JSString *str;
+    int off, m;
+
+    if (likely(len < JS_COPY_STEP))
+        return js_new_string8_len(ctx, (const char *)buf, len);
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    str = js_alloc_string(ctx, len, 0);
+    if (!str)
+        return JS_EXCEPTION;
+    for (off = 0; off < len; off += m) {
+        m = min_int(len - off, JS_COPY_STEP);
+        memcpy(str->u.str8 + off, buf + off, m);
+        JS_WORK(m);
+        if (js_poll_interrupts(ctx)) {
+            js_free_string(ctx->rt, str);
+            return JS_EXCEPTION;
+        }
+    }
+    str->u.str8[len] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, str);
 }
 
 /* create a string containing the RegExp bytecode */
@@ -58008,10 +58187,17 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     int re_bytecode_len;
     JSValue ret;
     char error_msg[64];
+    uint32_t h;
+    int cached;
 
-    ret = js_regexp_cache_get(ctx, pattern, flags);
-    if (!JS_IsUndefined(ret))
-        return ret;
+    cached = js_regexp_cache_hash(ctx, pattern, flags, &h);
+    if (cached < 0)
+        return JS_EXCEPTION;
+    if (cached) {
+        ret = js_regexp_cache_get(ctx, pattern, flags, h);
+        if (!JS_IsUndefined(ret))
+            return ret;
+    }
     re_flags = 0;
     if (!JS_IsUndefined(flags)) {
         str = JS_ToCStringLen(ctx, &len, flags);
@@ -58063,7 +58249,7 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
         return JS_ThrowSyntaxError(ctx, "invalid regular expression flags");
     }
     
-    str = JS_ToCStringLen2(ctx, &len, pattern, !(re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)));
+    str = js_string_to_cstring_poll(ctx, &len, pattern, !(re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)));
     if (!str)
         return JS_EXCEPTION;
     re_bytecode_buf = lre_compile(&re_bytecode_len, error_msg,
@@ -58079,9 +58265,10 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
         return JS_EXCEPTION;
     }
 
-    ret = js_new_string8_len(ctx, (const char *)re_bytecode_buf, re_bytecode_len);
+    ret = js_regexp_code_string(ctx, re_bytecode_buf, re_bytecode_len);
     js_free(ctx, re_bytecode_buf);
-    js_regexp_cache_put(ctx, pattern, flags, ret);
+    if (cached)
+        js_regexp_cache_put(ctx, pattern, flags, ret, h);
     return ret;
 }
 
@@ -58471,6 +58658,43 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
     JSContext *ctx = opaque;
     /* No JS exception is raised here */
     return js_realloc_rt(ctx->rt, ptr, size);
+}
+
+/* lre_realloc for the code of a regexp, which grows by half each time. A
+   block of JS_COPY_STEP bytes or more that grows is moved here and not by the
+   allocator, JS_COPY_STEP bytes at a time with the flag read before the first
+   step and after each, as string_buffer_realloc2 does for a string buffer:
+   the code of a pattern of millions of characters is tens of MB. NULL when
+   the flag is set or there is no memory, and the old block is then still
+   ptr. No JS exception is raised here. */
+void *lre_realloc_code(void *opaque, void *ptr, size_t size)
+{
+    JSContext *ctx = opaque;
+    JSRuntime *rt = ctx->rt;
+    size_t used, off, m;
+    uint8_t *q;
+
+    if (!ptr || size == 0)
+        return js_realloc_rt(rt, ptr, size);
+    used = js_malloc_usable_size_rt(rt, ptr);
+    if (likely(used < JS_COPY_STEP || size <= used))
+        return js_realloc_rt(rt, ptr, size);
+    if (lre_check_timeout(opaque))
+        return NULL;
+    q = js_malloc_moving_rt(rt, size, ptr);
+    if (!q)
+        return NULL;
+    for (off = 0; off < used; off += m) {
+        m = used - off < JS_COPY_STEP ? used - off : JS_COPY_STEP;
+        memcpy(q + off, (const uint8_t *)ptr + off, m);
+        JS_WORK(m);
+        if (lre_check_timeout(opaque)) {
+            js_free_rt(rt, q);
+            return NULL;
+        }
+    }
+    js_free_rt(rt, ptr);
+    return q;
 }
 
 static JSValue js_regexp_escape(JSContext *ctx, JSValueConst this_val,
@@ -60452,7 +60676,7 @@ static JSValue js_json_parse(JSContext *ctx, JSValueConst this_val,
     const char *str;
     size_t len;
     
-    str = js_string_to_cstring_poll(ctx, &len, argv[0]);
+    str = js_string_to_cstring_poll(ctx, &len, argv[0], FALSE);
     if (!str)
         return JS_EXCEPTION;
     if (argc > 1 && JS_IsFunction(ctx, argv[1])) {

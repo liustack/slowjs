@@ -9,6 +9,10 @@
    added at its end that give its static functions to unit-white.c, as white.c
    does for quickjs.c. It is built as the engine is and linked in place of
    libregexp.o: build.sh does that. */
+/* the work of the loops of the compiler that read the interrupt flag is
+   counted with that of quickjs.c (white.c) */
+void white_lre_work(unsigned long n);
+#define LRE_WORK(n) white_lre_work(n)
 #include "../libregexp.c"
 
 /* lre_split on the bytecode of a split op that takes itself, pushes a char

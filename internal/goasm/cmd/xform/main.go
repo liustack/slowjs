@@ -19,7 +19,7 @@
 //	                       must be a function the linker keeps: the first
 //	                       function of cutils_amd64.s is never called, so the
 //	                       linker drops it with its NOPs and a shift without
-//	                       NAME moves no code of the C engine. sjdev bench
+//	                       NAME moves no code of the C engine. measure bench
 //	                       build passes the engine function that the formal
 //	                       binary places first. Go puts amd64 functions on 32
 //	                       bytes, so use a multiple of 32. A function the

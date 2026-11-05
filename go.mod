@@ -7,4 +7,4 @@ require (
 	golang.org/x/sys v0.48.0
 )
 
-tool github.com/liustack/quickjs/internal/sjdev/cmd/sjdev
+tool github.com/liustack/quickjs/internal/measure/cmd/measure

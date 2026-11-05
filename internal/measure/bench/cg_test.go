@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/measure"
 )
 
 func listing(total int, fns map[string]int) string {
@@ -111,7 +111,7 @@ func TestCGOptions(t *testing.T) {
 func TestCGRunsEachBinaryTwice(t *testing.T) {
 	dir := t.TempDir()
 	var cmds []string
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, filepath.Base(c.Name)+" "+strings.Join(c.Args, " "))
 		if filepath.Base(c.Name) == "callgrind_annotate" {
 			big := strings.Contains(c.Args[len(c.Args)-1], "-12.")
@@ -119,9 +119,9 @@ func TestCGRunsEachBinaryTwice(t *testing.T) {
 			if big {
 				total, fn = 3_000_000, 2_400_000
 			}
-			return sjdev.Result{Out: listing(total, map[string]int{"/a.go:render": fn})}
+			return measure.Result{Out: listing(total, map[string]int{"/a.go:render": fn})}
 		}
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	var out bytes.Buffer
 	err := CG(context.Background(), CGOptions{Bins: []string{"x"}, Small: 2, Big: 12, Args: []string{"-n={N}"}, Out: dir}, run, &out)
@@ -187,15 +187,15 @@ func TestParseProfileSumsSelfCostAndSkipsCalls(t *testing.T) {
 
 func TestCGWindowRunsEachBinaryOnce(t *testing.T) {
 	out := t.TempDir()
-	var cmds []sjdev.Cmd
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	var cmds []measure.Cmd
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		cmds = append(cmds, c)
 		for _, a := range c.Args {
 			if f, ok := strings.CutPrefix(a, "--callgrind-out-file="); ok {
 				os.WriteFile(f, []byte(cgFile), 0o644)
 			}
 		}
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	o := CGOptions{Bins: []string{"/a", "/b"}, Big: 10, Toggle: "*cgWindow*", Sim: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
 	var b bytes.Buffer
@@ -215,7 +215,7 @@ func TestCGWindowRunsEachBinaryOnce(t *testing.T) {
 
 func TestCGWindowReadsTheDumpOfTheProgram(t *testing.T) {
 	out := t.TempDir()
-	run := func(ctx context.Context, c sjdev.Cmd, _ io.Writer) sjdev.Result {
+	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
 		for _, a := range c.Args {
 			if f, ok := strings.CutPrefix(a, "--callgrind-out-file="); ok {
 				// the final file has the whole run, the dump only the window
@@ -226,7 +226,7 @@ func TestCGWindowReadsTheDumpOfTheProgram(t *testing.T) {
 				t.Errorf("toggle with dumps: %v", c.Args)
 			}
 		}
-		return sjdev.Result{}
+		return measure.Result{}
 	}
 	o := CGOptions{Bins: []string{"/a"}, Big: 10, Dumps: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
 	var b bytes.Buffer

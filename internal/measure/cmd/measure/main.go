@@ -3,18 +3,18 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Command sjdev times builds of the C engine against each other. It makes the
+// Command measure times builds of the C engine against each other. It makes the
 // code-position variants of a program, runs them in turn, reads the result by
 // the rule of "Code positions" in docs/performance.md and counts instructions
 // with callgrind. It uses only the standard library and is registered as a
-// tool, so `go tool sjdev bench ...` runs it. Generating the engine, the checks
+// tool, so `go tool measure bench ...` runs it. Generating the engine, the checks
 // and running on another machine are make targets (see docs/testing.md).
 //
-//	sjdev bench build   a binary per code position
-//	sjdev bench run     time the binaries in turn
-//	sjdev bench report  the result as a Markdown table
-//	sjdev bench cg      instructions per render under callgrind
-//	sjdev bench cgdiff  the same from callgrind_annotate files
+//	measure bench build   a binary per code position
+//	measure bench run     time the binaries in turn
+//	measure bench report  the result as a Markdown table
+//	measure bench cg      instructions per render under callgrind
+//	measure bench cgdiff  the same from callgrind_annotate files
 package main
 
 import (
@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/quickjs/internal/sjdev"
-	"github.com/liustack/quickjs/internal/sjdev/bench"
+	"github.com/liustack/quickjs/internal/measure"
+	"github.com/liustack/quickjs/internal/measure/bench"
 )
 
-const usage = `usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]
+const usage = `usage: measure bench build|run|judge|report|cg|cgdiff|addrs [flags]
 
   build   build a binary per code position of the C engine
   run     time the binaries in turn, round after round
@@ -41,7 +41,7 @@ const usage = `usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]
   cg      count instructions per render with callgrind
   cgdiff  the same from callgrind_annotate files
 
-sjdev bench COMMAND -h lists the flags of a command.`
+measure bench COMMAND -h lists the flags of a command.`
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -54,7 +54,7 @@ func main() {
 		if err == flag.ErrHelp {
 			return
 		}
-		fmt.Fprintln(os.Stderr, "sjdev:", err)
+		fmt.Fprintln(os.Stderr, "measure:", err)
 		os.Exit(1)
 	}
 }
@@ -80,7 +80,7 @@ func newFlags(name string) *flag.FlagSet {
 
 func cmdBench(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]")
+		return fmt.Errorf("usage: measure bench build|run|judge|report|cg|cgdiff|addrs [flags]")
 	}
 	switch args[0] {
 	case "build":
@@ -126,13 +126,13 @@ func benchBuild(ctx context.Context, args []string) error {
 	if err := o.Check(); err != nil {
 		return err
 	}
-	xf := bench.XformCommand(*xformBin, sjdev.Exec)
+	xf := bench.XformCommand(*xformBin, measure.Exec)
 	if *xformBin == "" {
-		if xf, err = bench.BuildXform(ctx, o.Tree, o.Out, sjdev.Exec); err != nil {
+		if xf, err = bench.BuildXform(ctx, o.Tree, o.Out, measure.Exec); err != nil {
 			return err
 		}
 	}
-	return bench.Build(ctx, o, xf, sjdev.Exec, os.Stdout)
+	return bench.Build(ctx, o, xf, measure.Exec, os.Stdout)
 }
 
 func benchRun(ctx context.Context, args []string) error {
@@ -220,7 +220,7 @@ func benchCG(ctx context.Context, args []string) error {
 		return err
 	}
 	o.Bins, o.Env, o.Args = bins, envs, fs.Args()
-	return bench.CG(ctx, o, sjdev.Exec, os.Stdout)
+	return bench.CG(ctx, o, measure.Exec, os.Stdout)
 }
 
 func benchCGDiff(args []string) error {
@@ -236,7 +236,7 @@ func benchCGDiff(args []string) error {
 	read := func(p string) bench.Listing {
 		b, err := os.ReadFile(p)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "sjdev:", err)
+			fmt.Fprintln(os.Stderr, "measure:", err)
 			os.Exit(1)
 		}
 		return bench.ParseListing(string(b))
