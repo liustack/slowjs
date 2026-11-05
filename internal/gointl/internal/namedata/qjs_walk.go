@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 package namedata
 
-import "github.com/liustack/slowjs/internal/gointl/internal/blob"
+import "github.com/liustack/quickjs/internal/gointl/internal/blob"
 
 // Walk reads all of a locale's data, the tables Decode leaves in the pool
-// included, so that slowjs's pack tool learns which parts of the pool the
+// included, so that the pack tool of liustack/quickjs learns which parts of the pool the
 // locale reaches.
 func Walk(data []byte, pool blob.Shared) error {
 	l, err := Decode(data, pool)

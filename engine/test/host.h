@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The slowjs Authors.
+ * Copyright (c) 2026 The liustack/quickjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_TEST_HOST_H
-#define SLOWJS_TEST_HOST_H
+#ifndef QUICKJS_TEST_HOST_H
+#define QUICKJS_TEST_HOST_H
 
 #include "../host.h"
 #include "quickjs.h"

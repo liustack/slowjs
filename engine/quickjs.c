@@ -55502,10 +55502,20 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
 
    What React's functions call on String.prototype, RegExp.prototype,
    Map.prototype and Set.prototype is taken as the built-ins. It throws only
-   when the engine has no memory or the host interrupts it, target unchanged,
-   and reads the interrupt flag every JS_ESCAPE_STEP units of a long string.
+   when the engine has no memory or the host interrupts it, target unchanged.
    engine/test/compare/start_tag.js checks all of this against the functions
-   of React. */
+   of React.
+
+   A loop over a string longer than its step reads the interrupt flag before
+   each step and after the last: JS_ESCAPE_STEP units for the escape and the
+   hyphens of a style name, JS_EMIT_COPY_STEP units for the scan of a tag or
+   of a style name and for a copy (a long tag, a name, an end tag, the string
+   of the text). The white space around a style value and at the start of a
+   URL is counted as it is skipped: the flag is read before it when the
+   string is longer than JS_ESCAPE_STEP, and a run longer than that reads it
+   before each step after the first and at its end. A string of one step or
+   less is done at once, with no reading. The loops say what they did with
+   JS_WORK, so that the work of one loop is not added to that of the next. */
 
 #define JS_EMIT_PROPS_MAX 32
 /* the tables of names and of end tags: open addressing, made at their first
@@ -55519,6 +55529,9 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    and 32 style keys, each a name of at most 66 units and a number of at most
    25, take fewer */
 #define JS_EMIT_SLACK 8192
+/* units a long copy or scan does between two reads of the interrupt flag:
+   JS_COPY_STEP bytes of 16-bit units */
+#define JS_EMIT_COPY_STEP (JS_COPY_STEP >> 1)
 
 /* how the name of an attribute or a style is written */
 enum {
@@ -55774,6 +55787,44 @@ static inline BOOL js_emit_fits(const StringBuffer *b, uint64_t n)
 #define JS_EMIT_BUF_MIN 128
 #define JS_EMIT_BUF_MAX 1024
 
+/* js_emit_copy of a text of more than JS_EMIT_COPY_STEP units */
+static no_inline JSValue js_emit_copy_long(JSContext *ctx, const StringBuffer *b)
+{
+    JSString *q;
+    uint32_t off, m, n = b->len, shift = b->is_wide_char;
+
+    q = js_alloc_string(ctx, n, shift);
+    if (!q)
+        return JS_EXCEPTION;
+    for (off = 0;; off += m) {
+        if (js_poll_interrupts(ctx)) {
+            js_free_string(ctx->rt, q);
+            return JS_EXCEPTION;
+        }
+        if (off == n)
+            break;
+        m = min_uint32(n - off, JS_EMIT_COPY_STEP);
+        memcpy(q->u.str8 + (off << shift), b->str->u.str8 + (off << shift), m << shift);
+        JS_WORK(m);
+    }
+    if (!shift)
+        q->u.str8[n] = '\0';
+    return JS_MKPTR(JS_TAG_STRING, q);
+}
+
+/* a new string of b's text (b has one unit or more), at its length: a text
+   of more than JS_EMIT_COPY_STEP units is copied a step at a time, with the
+   interrupt flag read before each step and after the last. b is left as it
+   is */
+static force_inline JSValue js_emit_copy(JSContext *ctx, const StringBuffer *b)
+{
+    if (unlikely((uint32_t)b->len > JS_EMIT_COPY_STEP))
+        return js_emit_copy_long(ctx, b);
+    if (b->is_wide_char)
+        return js_new_string16_len(ctx, b->str->u.str16, b->len);
+    return js_new_string8_len(ctx, (const char *)b->str->u.str8, b->len);
+}
+
 /* the string of b's text at its length, b freed. b may have failed */
 static JSValue js_emit_string(StringBuffer *b)
 {
@@ -55783,10 +55834,7 @@ static JSValue js_emit_string(StringBuffer *b)
         return JS_EXCEPTION;
     if (b->len == b->size || b->len == 0)
         return string_buffer_end(b);
-    if (b->is_wide_char)
-        str = js_new_string16_len(b->ctx, b->str->u.str16, b->len);
-    else
-        str = js_new_string8_len(b->ctx, (const char *)b->str->u.str8, b->len);
+    str = js_emit_copy(b->ctx, b);
     string_buffer_free(b);
     return str;
 }
@@ -55817,10 +55865,8 @@ static JSValue js_emit_buf_end(JSContext *ctx, JSEmitCache *ec, StringBuffer *b,
 
     if (b->error_status)
         str = JS_EXCEPTION;
-    else if (want_str && b->is_wide_char)
-        str = js_new_string16_len(ctx, b->str->u.str16, b->len);
     else if (want_str)
-        str = js_new_string8_len(ctx, (const char *)b->str->u.str8, b->len);
+        str = js_emit_copy(ctx, b);
     if (b->str) {
         if (!ec->buf && !b->is_wide_char && b->size <= JS_EMIT_BUF_MAX) {
             ec->buf = b->str;
@@ -55851,32 +55897,39 @@ static force_inline void js_emit_c8(StringBuffer *b, uint8_t c)
 
 #define js_emit_s8(b, lit) js_emit_w8(b, lit, sizeof(lit) - 1)
 
-/* p[from, to) into b, JS_COPY_STEP bytes at a time with the interrupt flag
-   read after each: an interrupt leaves b failed, as a write that found no
-   memory does */
+/* p[from, to) into b, JS_EMIT_COPY_STEP units at a time with the interrupt
+   flag read before each step and after the last: an interrupt leaves b
+   failed, as a write that found no memory does. b is made large enough for
+   all of it first, so that it grows once and not at each step */
 static no_inline void js_emit_put_long(StringBuffer *b, const JSString *p,
                                        uint32_t from, uint32_t to)
 {
-    uint32_t step = JS_COPY_STEP >> 1, end;
+    uint32_t end;
 
-    while (from < to) {
-        end = to - from > step ? from + step : to;
+    if (b->len + (to - from) > (uint32_t)b->size &&
+        string_buffer_realloc(b, b->len + (to - from), 0))
+        return;
+    for (;;) {
+        if (js_poll_interrupts(b->ctx)) {
+            string_buffer_set_error(b);
+            return;
+        }
+        if (from == to)
+            return;
+        end = to - from > JS_EMIT_COPY_STEP ? from + JS_EMIT_COPY_STEP : to;
         if (!p->is_wide_char)
             string_buffer_write8(b, p->u.str8 + from, end - from);
         else
             string_buffer_write16(b, p->u.str16 + from, end - from);
+        JS_WORK(end - from);
         from = end;
-        if (from < to && js_poll_interrupts(b->ctx)) {
-            string_buffer_set_error(b);
-            return;
-        }
     }
 }
 
 static force_inline void js_emit_wstr(StringBuffer *b, const JSString *p,
                                       uint32_t from, uint32_t to)
 {
-    if (unlikely(to - from > (JS_COPY_STEP >> 1)))
+    if (unlikely(to - from > JS_EMIT_COPY_STEP))
         js_emit_put_long(b, p, from, to);
     else if (!p->is_wide_char)
         js_emit_w8(b, p->u.str8 + from, to - from);
@@ -55961,19 +56014,23 @@ static no_inline int js_emit_put_escaped_long(JSContext *ctx, StringBuffer *b,
 {
     uint32_t end;
 
+    /* before the first block too, so that what came before is not added to
+       it, and after the last, so that what comes after is not */
     for (;;) {
-        end = to - from > JS_ESCAPE_STEP ? from + JS_ESCAPE_STEP : to;
-        js_emit_escape_block(b, p, from, end);
-        if (end == to)
-            return 0;
-        from = end;
         if (js_poll_interrupts(ctx))
             return -1;
+        if (from == to)
+            return 0;
+        end = to - from > JS_ESCAPE_STEP ? from + JS_ESCAPE_STEP : to;
+        js_emit_escape_block(b, p, from, end);
+        JS_WORK(end - from);
+        from = end;
     }
 }
 
 /* escapeTextForBrowser of p[from, to) into b, reading the interrupt flag
-   every JS_ESCAPE_STEP units: -1 when the host stops it */
+   before each JS_ESCAPE_STEP units of a longer string and after the last:
+   -1 when the host stops it */
 static int js_emit_put_escaped(JSContext *ctx, StringBuffer *b, const JSString *p,
                                uint32_t from, uint32_t to)
 {
@@ -56054,32 +56111,67 @@ static int js_emit_put_text(JSContext *ctx, StringBuffer *b, JSValueConst v)
     }
 }
 
+/* counts in *w one more unit of the white space a value or a URL starts
+   with. A run of more than JS_ESCAPE_STEP units in all reads the interrupt
+   flag before each step after the first, and at its end (js_emit_skip_end).
+   A run of a step or less is done at once. The loop reads the flag before
+   the run when the string is longer than a step, so that its first step is
+   not added to what came before. -1 when the host stops it */
+static force_inline int js_emit_skipped(JSContext *ctx, uint32_t *w)
+{
+    if (unlikely((*w & (JS_ESCAPE_STEP - 1)) == 0 && *w != 0)) {
+        JS_WORK(JS_ESCAPE_STEP);
+        if (js_poll_interrupts(ctx))
+            return -1;
+    }
+    ++*w;
+    return 0;
+}
+
+/* the end of a run of w units js_emit_skipped counted */
+static int js_emit_skip_end(JSContext *ctx, uint32_t w)
+{
+    if (likely(w <= JS_ESCAPE_STEP))
+        return 0;
+    JS_WORK(((w - 1) & (JS_ESCAPE_STEP - 1)) + 1);
+    return js_poll_interrupts(ctx);
+}
+
 /* whether the url matches isJavaScriptProtocol of React:
-   /^[\u0000-\u001F ]*j[\r\n\t]*a[\r\n\t]*v...t[\r\n\t]*:/i */
-static BOOL js_emit_is_javascript_url(const JSString *p)
+   /^[\u0000-\u001F ]*j[\r\n\t]*a[\r\n\t]*v...t[\r\n\t]*:/i. 1 or 0, or -1
+   when the host stops a long run of what the regexp skips */
+static int js_emit_is_javascript_url(JSContext *ctx, const JSString *p)
 {
     static const char word[] = "javascript:";
-    uint32_t i = 0, n = p->len;
-    int k, c;
+    uint32_t i = 0, n = p->len, w = 0;
+    int k, c, r = 0;
 
-    while (i < n && string_get(p, i) <= 0x20)
-        i++;
+    if (n > JS_ESCAPE_STEP && js_poll_interrupts(ctx))
+        return -1;
     for (k = 0; word[k]; k++) {
-        if (k > 0) {
-            while (i < n && (string_get(p, i) == '\r' || string_get(p, i) == '\n' ||
-                             string_get(p, i) == '\t'))
-                i++;
+        /* [\u0000-\u001F ]* before the first letter, [\r\n\t]* before the
+           others */
+        for (; i < n; i++) {
+            c = string_get(p, i);
+            if (k == 0 ? c > 0x20 : (c != '\r' && c != '\n' && c != '\t'))
+                break;
+            if (js_emit_skipped(ctx, &w))
+                return -1;
         }
         if (i >= n)
-            return FALSE;
+            goto done;
         c = string_get(p, i);
         if (c >= 'A' && c <= 'Z')
             c += 'a' - 'A';
         if (c != word[k])
-            return FALSE;
+            goto done;
         i++;
     }
-    return TRUE;
+    r = 1;
+ done:
+    if (js_emit_skip_end(ctx, w))
+        return -1;
+    return r;
 }
 
 static void js_emit_free_entry(JSContext *ctx, JSEmitName *e)
@@ -56240,7 +56332,7 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
 {
     const JSString *p = ctx->rt->atom_array[atom];
     int kind, unitless = 0, c;
-    uint32_t i;
+    uint32_t i, from, end;
     size_t k;
     StringBuffer b;
     JSValue chunk = JS_UNDEFINED;
@@ -56262,9 +56354,21 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
         kind = JS_EMIT_DECLINE;
     } else {
         kind = JS_EMIT_STYLE_NAME;
-        for (i = 0; i < p->len; i++) {
-            if (p->u.str8[i] >= 0x80)
-                kind = JS_EMIT_DECLINE;
+        /* the scan for a character that is not ASCII, a step at a time with
+           the flag read before each step and after the last when the name
+           is longer than one */
+        for (from = 0;; from = end) {
+            if (p->len > JS_EMIT_COPY_STEP && js_poll_interrupts(ctx))
+                return -1;
+            if (from == p->len || kind != JS_EMIT_STYLE_NAME)
+                break;
+            end = min_uint32(p->len, from + JS_EMIT_COPY_STEP);
+            if (p->len > JS_EMIT_COPY_STEP)
+                JS_WORK(end - from);
+            for (i = from; i < end; i++) {
+                if (p->u.str8[i] >= 0x80)
+                    kind = JS_EMIT_DECLINE;
+            }
         }
         if (kind == JS_EMIT_STYLE_NAME) {
             /* the hyphens and the letters of an ASCII name: only & < > " '
@@ -56274,20 +56378,28 @@ static int js_emit_style_fill(JSContext *ctx, JSEmitName *e, JSAtom atom)
             if (p->len >= 3 && p->u.str8[0] == 'm' && p->u.str8[1] == 's' &&
                 (p->u.str8[2] == '-' || (p->u.str8[2] >= 'A' && p->u.str8[2] <= 'Z')))
                 string_buffer_putc8(&b, '-');
-            for (i = 0; i < p->len; i++) {
-                c = p->u.str8[i];
-                if (c >= 'A' && c <= 'Z') {
-                    string_buffer_putc8(&b, '-');
-                    string_buffer_putc8(&b, c + 32);
-                } else if (js_escape_extra[c]) {
-                    js_emit_put_entity(&b, c);
-                } else {
-                    string_buffer_putc8(&b, c);
-                }
-                if ((i & (JS_ESCAPE_STEP - 1)) == JS_ESCAPE_STEP - 1 &&
-                    js_poll_interrupts(ctx)) {
+            /* JS_ESCAPE_STEP characters at a time, with the flag read before
+               each step and after the last when the name is longer than one */
+            for (from = 0;; from = end) {
+                if (p->len > JS_ESCAPE_STEP && js_poll_interrupts(ctx)) {
                     string_buffer_free(&b);
                     return -1;
+                }
+                if (from == p->len)
+                    break;
+                end = min_uint32(p->len, from + JS_ESCAPE_STEP);
+                if (p->len > JS_ESCAPE_STEP)
+                    JS_WORK(end - from);
+                for (i = from; i < end; i++) {
+                    c = p->u.str8[i];
+                    if (c >= 'A' && c <= 'Z') {
+                        string_buffer_putc8(&b, '-');
+                        string_buffer_putc8(&b, c + 32);
+                    } else if (js_escape_extra[c]) {
+                        js_emit_put_entity(&b, c);
+                    } else {
+                        string_buffer_putc8(&b, c);
+                    }
                 }
             }
             chunk = js_emit_string(&b);
@@ -56436,7 +56548,7 @@ static int js_emit_put_style_value(JSContext *ctx, StringBuffer *b, JSValueConst
 {
     JSValue hold;
     JSString *p;
-    uint32_t a, z;
+    uint32_t a, z, w = 0;
     int r = 0;
 
     switch (JS_VALUE_GET_NORM_TAG(v)) {
@@ -56463,22 +56575,31 @@ static int js_emit_put_style_value(JSContext *ctx, StringBuffer *b, JSValueConst
         p = js_emit_flat(ctx, v, &hold);
         if (!p)
             return -1;
-        /* trim, reading the interrupt flag in a long run of white space */
+        /* trim, reading the interrupt flag in a long run of white space:
+           the two ends count their units together */
         a = 0;
         z = p->len;
+        if (z > JS_ESCAPE_STEP && js_poll_interrupts(ctx)) {
+            r = -1;
+            goto done;
+        }
         while (a < z && lre_is_space(string_get(p, a))) {
             a++;
-            if ((a & (JS_ESCAPE_STEP - 1)) == 0 && js_poll_interrupts(ctx)) {
+            if (js_emit_skipped(ctx, &w)) {
                 r = -1;
                 goto done;
             }
         }
         while (z > a && lre_is_space(string_get(p, z - 1))) {
             z--;
-            if ((z & (JS_ESCAPE_STEP - 1)) == 0 && js_poll_interrupts(ctx)) {
+            if (js_emit_skipped(ctx, &w)) {
                 r = -1;
                 goto done;
             }
+        }
+        if (js_emit_skip_end(ctx, w)) {
+            r = -1;
+            goto done;
         }
         if (js_emit_fits(b, (uint64_t)(z - a) * 6))
             r = js_emit_put_escaped(ctx, b, p, a, z);
@@ -56545,15 +56666,14 @@ static int js_emit_put_style(JSContext *ctx, JSEmitCache *ec, StringBuffer *b,
     return 0;
 }
 
-/* VALID_TAG_REGEX of React: /^[a-zA-Z][a-zA-Z:_\.\-\d]*$/ */
-static BOOL js_emit_valid_tag(const JSString *p)
+/* whether the 8-bit units p[from, to) are where they are in a tag of
+   VALID_TAG_REGEX of React: /^[a-zA-Z][a-zA-Z:_\.\-\d]*$/ */
+static force_inline BOOL js_emit_tag_chars(const JSString *p, uint32_t from, uint32_t to)
 {
     uint32_t i;
     int c;
 
-    if (p->is_wide_char || p->len == 0)
-        return FALSE;
-    for (i = 0; i < p->len; i++) {
+    for (i = from; i < to; i++) {
         c = p->u.str8[i];
         if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))
             continue;
@@ -56563,6 +56683,35 @@ static BOOL js_emit_valid_tag(const JSString *p)
         return FALSE;
     }
     return TRUE;
+}
+
+/* js_emit_valid_tag of a tag of more than JS_EMIT_COPY_STEP units: a step at
+   a time, with the interrupt flag read before each step and after the last */
+static no_inline int js_emit_valid_tag_long(JSContext *ctx, const JSString *p)
+{
+    uint32_t from, end;
+    int r = 1;
+
+    for (from = 0;; from = end) {
+        if (js_poll_interrupts(ctx))
+            return -1;
+        if (from == p->len || !r)
+            return r;
+        end = min_uint32(p->len, from + JS_EMIT_COPY_STEP);
+        JS_WORK(end - from);
+        r = js_emit_tag_chars(p, from, end);
+    }
+}
+
+/* whether the string p matches VALID_TAG_REGEX of React: 1 or 0, or -1 when
+   the host stops the scan of a long one */
+static int js_emit_valid_tag(JSContext *ctx, const JSString *p)
+{
+    if (p->is_wide_char || p->len == 0)
+        return 0;
+    if (unlikely(p->len > JS_EMIT_COPY_STEP))
+        return js_emit_valid_tag_long(ctx, p);
+    return js_emit_tag_chars(p, 0, p->len);
 }
 
 /* Whether target.push(s) on the array p only adds s at its end: p has the
@@ -56611,7 +56760,7 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     uint8_t kinds[JS_EMIT_PROPS_MAX];
     JSValue str, ret;
     uint32_t count;
-    int i, n, tag, r = 0;
+    int i, n, tag, valid, r = 0;
 
     /* argv has the six values: that is the length of the function */
     if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
@@ -56621,8 +56770,13 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
         goto decline;
     pt = JS_VALUE_GET_OBJ(target);
     tp = JS_VALUE_GET_STRING(typev);
-    if (!js_emit_target_plain(ctx, ec, pt) || !js_emit_valid_tag(tp) ||
+    if (!js_emit_target_plain(ctx, ec, pt) ||
         tp->len > JS_STRING_LEN_MAX - JS_EMIT_SLACK)
+        goto decline;
+    valid = js_emit_valid_tag(ctx, tp);
+    if (valid < 0)
+        return JS_EXCEPTION;
+    if (!valid)
         goto decline;
     pf = JS_VALUE_GET_OBJ(fctx);
     prs = find_own_property(&pr, pf, ec->atoms[JS_EMIT_ATOM_VIEW_TRANSITION]);
@@ -56685,12 +56839,16 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
             if (tag == JS_TAG_BOOL || js_emit_fn_or_sym(ctx, v))
                 break;
             /* a javascript: URL React writes as one of its own, and a rope is
-               not looked at */
-            if (tag == JS_TAG_STRING_ROPE ||
-                (tag == JS_TAG_STRING &&
-                 js_emit_is_javascript_url(JS_VALUE_GET_STRING(v)))) {
+               not looked at: r is 1 to decline, or -1 when the host stops
+               the check */
+            if (tag == JS_TAG_STRING_ROPE) {
                 r = 1;
                 break;
+            }
+            if (tag == JS_TAG_STRING) {
+                r = js_emit_is_javascript_url(ctx, JS_VALUE_GET_STRING(v));
+                if (r)
+                    break;
             }
             goto text;
         case JS_EMIT_BOOL:

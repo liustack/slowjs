@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -264,12 +264,12 @@ done:
 // marks without their ticks, and a count in a register that is not stored
 // before a call that may tick, not loaded again after it, or not stored where
 // its loop is left. An offset that is not a word inside the region stops it
-// too. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the built pass
-// (SLOWJS_SHADOW_PASS).
+// too. It needs LLVM 22.1.8 (QUICKJS_LLVM) and the built pass
+// (QUICKJS_SHADOW_PASS).
 func TestPassPolls(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	dir := t.TempDir()
 	ir, outIR := filepath.Join(dir, "f.ll"), filepath.Join(dir, "out.ll")

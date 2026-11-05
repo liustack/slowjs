@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The slowjs Authors.
+ * Copyright (c) 2026 The liustack/quickjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_STDINT_H
-#define SLOWJS_LIBC_STDINT_H
+#ifndef QUICKJS_LIBC_STDINT_H
+#define QUICKJS_LIBC_STDINT_H
 
 /* The types come from the compiler's own macros, so that they are the ones
    the target's ABI uses (int64_t is long on LP64 Linux and long long on
@@ -47,15 +47,15 @@ typedef __UINTMAX_TYPE__ uintmax_t;
 
 /* The suffix of a 64-bit constant is whatever the compiler's own int64_t is
    (L on Linux, LL on macOS). */
-#define SLOWJS_CAT_(a, b) a##b
-#define SLOWJS_CAT(a, b) SLOWJS_CAT_(a, b)
+#define QUICKJS_CAT_(a, b) a##b
+#define QUICKJS_CAT(a, b) QUICKJS_CAT_(a, b)
 #define INT8_C(c) c
 #define INT16_C(c) c
 #define INT32_C(c) c
-#define INT64_C(c) SLOWJS_CAT(c, __INT64_C_SUFFIX__)
+#define INT64_C(c) QUICKJS_CAT(c, __INT64_C_SUFFIX__)
 #define UINT8_C(c) c
 #define UINT16_C(c) c
 #define UINT32_C(c) c##U
-#define UINT64_C(c) SLOWJS_CAT(c, __UINT64_C_SUFFIX__)
+#define UINT64_C(c) QUICKJS_CAT(c, __UINT64_C_SUFFIX__)
 
 #endif

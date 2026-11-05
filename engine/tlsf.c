@@ -5,7 +5,7 @@
 **
 ** This is tlsf.c of github.com/mattconte/tlsf at commit
 ** deff9ab509341f264addbd3c8ada533678591905, converted to LF line ends, with
-** the changes of the slowjs fork. They make a request or a pool that TLSF
+** the changes of liustack/quickjs. They make a request or a pool that TLSF
 ** cannot hold fail (issues 9, 22 and 35 of the project), take out what needs
 ** stdio, stdlib and the debug self test, and take out tlsf_memalign, which
 ** the engine does not use. engine/test/tlsf-edges.sh shows what each change

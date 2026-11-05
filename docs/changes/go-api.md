@@ -25,7 +25,7 @@ read_when:
 
 # The Go API
 
-Changes an embedder sees in what the methods of `github.com/liustack/slowjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
+Changes an embedder sees in what the methods of `github.com/liustack/quickjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
 
 ## Call reports the exception of the function expression
 
@@ -63,7 +63,7 @@ Release: v0.26.7.
 
 `*Error` says whether the call ended with an exception no script could catch, and why, so that an embedder need not compare names and messages, which a script can copy. `Uncatchable` is true when the VM ran out of memory (`OutOfMemory`, also when the engine could not build the error and threw `null`), when `Interrupt` or the eval timeout stopped the script (`Interrupted`), and when a Go function that javascript called panicked (neither of the two). The same holds for the error a Go function gets from javascript it evaluates. What a script throws is never uncatchable, even `new InternalError('interrupted')` or `{name: 'InternalError', message: 'out of memory'}`, which used to look exactly like the real thing. Taking an uncatchable error runs no page code: `Name` is `InternalError`, `Message` and `Stack` are the error's own properties, and `Error()` is `InternalError: <message>`. It used to call an `Error.prototype.toString` or a `name` getter that page code installed, which could rewrite the message. An interrupt that runs out of memory building its error counts as `OutOfMemory`.
 
-A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, slowjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
+A script that runs on 50 ms past its eval timeout or an `Interrupt`, and has kept the engine at work for 1000 polls since it was asked to stop, is killed. Time in a Go function the script called, or while the OS or the Go scheduler runs something else, adds no polls. The call returns an interrupted `*Error` that also matches `ErrKilled` (`errors.Is(err, quickjs.ErrKilled)`), and the VM is good only for `Close`: the methods that return an error return one that matches `ErrKilled`, the others panic, and `Value.Free` does nothing. `MemorySize` and `GCThreshold` are the exceptions: they only read a counter, so they answer as on any VM, and a pool can read how much memory the VM held before it replaces it.
 
 Tests: `uncatchable_test.go`, `hostuncatchable_test.go`, `hostpanic_test.go`, and `killed_c_test.go` on the C engine.
 
@@ -188,7 +188,7 @@ Test: `gc_test.go` (`TestRunGC`, `TestRunGCSetsTheThreshold`), `internal/cengine
 
 ## MemoryUsage and ReleaseMemory
 
-Release: Unreleased.
+Release: v0.29.0.
 
 `VM.MemoryUsage()` returns a `MemoryUsage`: what `JS_ComputeMemoryUsage` counts in the VM, with Go names. `MallocSize` is what `MemorySize` returns, `MallocLimit` the memory limit (-1 for none), and the other fields count atoms, strings, objects, properties, shapes, the bytecode of functions with its line tables, functions of the engine and of Go, arrays and their elements, and ArrayBuffers. It walks every object, so it is for measurements: run `RunGC` first to leave out what javascript can no longer reach. `Footprint`, `FootprintLimit`, `Chunks` and `ReleaseCandidate` are what the VM took from the system, in how many chunks, and what was offered back.
 
@@ -227,7 +227,7 @@ Test: `moduleawait_test.go`, also run under memgrind, and the module case of `Te
 
 ## A module frees its top level once it has run
 
-Release: Unreleased.
+Release: v0.28.4.
 
 When `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` or `EvalSharedBytecodeValue` has run a module to its end, it frees the module's top-level function: the code of the top level, and the variables of the top level that no function of the module uses, with what they hold. The functions the module made keep the variables they use, and the module keeps the ones it exports apart from the function. A module runs once, so nothing calls that function again. Upstream keeps it as long as the module, and a module in the context lives until the VM is closed, so a VM that loaded a module held more than one that ran the same code as a script, whose top-level function goes when it returns.
 
@@ -239,7 +239,7 @@ Test: `TestModuleFreesItsTopLevel` in `moduleawait_test.go`, also run under memg
 
 ## SharedBytecode
 
-Release: Unreleased.
+Release: v0.28.1.
 
 `NewSharedBytecode(bytecode)` copies bytecode from `Compile` once, and `VM.EvalSharedBytecode(b)` and `VM.EvalSharedBytecodeValue(b)` load it as `EvalBytecode` and `EvalBytecodeValue` do, but leave the source text and line table of each function in that one copy instead of copying them into the VM. A pool of VMs that load one bundle holds them once: a VM of tifa's example shop holds 2.36 MiB less. `toString`, error stacks and line numbers do not change. `MemorySize` and the memory limit no longer count those bytes, and `SharedBytecode.Len` returns what the copy takes.
 
@@ -249,7 +249,7 @@ Test: `sharedbytecode_test.go`.
 
 ## The async context of promise jobs
 
-Release: Unreleased.
+Release: v0.28.5.
 
 `GetAsyncContext` and `SetAsyncContext` are two Builtins (see [Builtin](#builtin-a-go-function-called-as-a-built-in)) that read and set the async context of a VM: an object, or none. A promise reaction, what `then`, `catch`, `finally` and `await` register, keeps the context the VM has when it is registered, and runs with it: the VM has that context while the handler runs, and gets back the one it had when the handler returns or throws. That is what an `AsyncLocalStorage` needs to find its store after an `await`, and what V8 keeps for Node as the continuation preserved embedder data. `SetAsyncContext` of anything but an object sets none, and `GetAsyncContext` then returns undefined.
 
@@ -273,7 +273,7 @@ The change is in C (`engine/quickjs.c`): `JS_GetAsyncContext` and `JS_SetAsyncCo
 
 ## RegisterEscapeText
 
-Release: Unreleased.
+Release: v0.29.2.
 
 `VM.RegisterEscapeText(name)` defines a function named `name` on the global object that does what `escapeTextForBrowser` does in React DOM's string renderer, written in C inside the engine. React calls that function for every text and every attribute value it writes, about 15,000 times when each of the six workbench pages of tifa's example shop renders once, and in JavaScript each call costs a search of a regular expression, a loop over the characters of a string that has any of the five to escape, and the call itself.
 
@@ -288,7 +288,7 @@ Tests: `escape_test.go` runs the function against React's own text for all strin
 
 ## RegisterCopyProps
 
-Release: Unreleased.
+Release: v0.29.3.
 
 `VM.RegisterCopyProps(name)` defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. In QuickJS the loop takes about 250 ns for each key (a pass of `for in`, a call of `hasOwnProperty.call` and a set), and the pages of tifa's example app make 1,500 to 3,400 elements through them in one render.
 
@@ -305,7 +305,7 @@ Tests: `engine/test/compare/copy_props.js` has the functions of React 19.3 once 
 
 ## RegisterStartTag and RegisterEndTag
 
-Release: Unreleased.
+Release: v0.29.10.
 
 `VM.RegisterStartTag(name)` defines a function named `name` on the global object that writes the start tag of an element as React DOM's server renderer does in `pushStartGenericElement` (react-dom 19.3), with the functions it calls: `startChunkForTag`, `pushAttribute`, `pushStringAttribute`, `pushBooleanAttribute`, `pushStyleAttribute`, `sanitizeURL`, `isAttributeNameSafe` and `escapeTextForBrowser`. `VM.RegisterEndTag(name)` defines one that gives the end tag, as `endChunkForTag` does. Both are written in C inside the engine. In JavaScript each attribute of an element costs a call of `pushAttribute`, a switch over string compares, a call of the escape and a push of five strings onto the target, and most elements of a page go through this path: about 9,700 start tags in one render of each of tifa's shop pages.
 
@@ -323,7 +323,7 @@ Release: Unreleased.
   It assumes that the built-in methods of `String`, `RegExp`, `Map` and `Set` that React's functions call are those of the engine. On the 16,310 start tags of one render of each page of tifa's example apps it declines none.
 - **The end tag.** `endTag(type)` gives `"</" + type + ">"`. It keeps the end tag of each string by the address of the string, so the same tag, which JSX makes as one string, gives the same end tag again without a copy. An argument that is not a string becomes one as in `"</" + type` (ToPrimitive with no hint, then ToString), and the function throws what that throws.
 - **Opt in.** The engine puts nothing on the global object by itself. The functions exist in a VM only when the host registers them, under the names the host chooses, with the rules for the property and the name of [`RegisterEscapeText`](#registerescapetext). They are shaped as built-ins: `length` is 6 and 1, there is no `prototype`, they cannot be called with `new`, and `toString` shows `[native code]`.
-- **Limits hold.** A call reads at most 32 keys of the props and 32 of the style. It reads the interrupt flag every 4096 units while it escapes or trims a long string, and every 524,288 units while it copies one (a long tag, a long style name, an end tag), so an `Interrupt` or the eval timeout stops it there. It throws only when the engine has no memory or the host stops it, and `target` is then as it was.
+- **Limits hold.** A call reads at most 32 keys of the props and 32 of the style. Each of its loops over a string longer than its step reads the interrupt flag before each step and after the last: every 4096 units while it escapes a string, writes the hyphens of a style name or skips the white space around a style value or before a URL, and every 524,288 units while it scans a tag or a style name or copies a long piece (a tag, a style name, an end tag, the finished start tag), so an `Interrupt` or the eval timeout stops it there ([uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)). It throws only when the engine has no memory or the host stops it, and `target` is then as it was.
 - **What it keeps.** Each context keeps one small cache for both functions, made with the first of them, with the atoms it looks for (`viewTransition`, `call`, `push`). Making it runs no script: `Function.prototype.call` and `Array.prototype.push`, which the engine makes at their first use, are made then without reading them through a getter, so registering, which has no timeout, cannot run one, and the cache is put in the context only once it is whole. How each attribute name and each style name is written, and the end tag of each tag string, go into three tables. Each is made at the first call that needs it, with 16 entries, and doubles when it is half full, up to 512 names and 256 end tags. A name stays where it was put until its table would pass half of that, when the table is emptied and fills again, so a page makes each of its names once. The start tag is written into a buffer the cache keeps from one call to the next (128 units at first, freed after a call that took it past 1024 units or made it wide), then copied into a string of its length, and the names and end tags the cache keeps have their length too. A string left in its buffer would keep the block the buffer grew to, since an arena block never shrinks, and these strings live until the render is written out: the long-lived objects a render makes between them (the entries of a cache of the page, the shapes of new props) would then hold arenas that are almost empty once the render is freed. Registering makes no table and no buffer: the two functions add 1.8 KB to `MemorySize`, most of it the two properties of the global object. On tifa's shop a VM holds 1.6 KB more than one that does not register them once the bundle is loaded, and the tables hold about 8 KB once the pages have been rendered. In tifa's pool, with a young collection after each render, a VM of the shop holds 26 KB more after 64 or 1,000 renders (107 KB when the start tag kept its buffer as the string). Nothing in the cache is visible to a script, and it is freed with the context.
 
 The C is `js_start_tag`, `js_end_tag`, `JS_NewStartTagFunction(ctx, name, name_len)` and `JS_NewEndTagFunction(ctx, name, name_len)` in `engine/quickjs.c` and `quickjs.h`, which the Go methods call. The check of `hasOwnProperty.call` is the one of `RegisterCopyProps` (`js_copy_props_call_plain`). `JSContext` holds the cache (`emit_cache`).
@@ -332,7 +332,7 @@ Tests: `engine/test/compare/start_tag.js` holds the functions of react-dom 19.3.
 
 ## No module loader, shell helpers or SetCanBlock
 
-Release: Unreleased.
+Release: v0.29.0.
 
 `VM.SetModuleLoader` with `ModuleLoaderFunc` and `ModuleNormalizeFunc`, `VM.SetDefaultModuleLoader`, `VM.StdAddHelpers` and `VM.SetCanBlock` are gone. They are not part of what a renderer needs, and the engine of C has none of them: it reads no files and has no threads.
 
@@ -344,27 +344,27 @@ Tests: `own_keys_test.go` (a module that imports itself by `<eval>`) and `quickj
 
 ## A Go newer than the one the engine was checked with stops the build
 
-Release: Unreleased.
+Release: v0.29.11.
 
 A build with a Go newer than the one the engine was checked with stops with one error:
 
 ```
-undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
+undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo
 ```
 
-The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !slowjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
+The Go assembly of the engine leans on things of Go that the Go 1 promise does not cover: how the assembler lays out a frame and starts a function, which small functions it leaves without a stack check, and what Go puts on the stack when a memory fault turns into a panic ([upgrading.md](../upgrading.md#moving-to-a-newer-go)). A newer Go builds the module either way, and a change in one of these would show only when the program runs. The build now stops instead. Every Go the module lets build, 1.26.6 and later releases of 1.26 and every release of 1.27, builds as before: the `go1.N` tags of a build line follow the Go that builds, so the line `go1.28 && !quickjs_anygo` is false for all of them. The lower bound is the `go` line of `go.mod`, lowered at the same time from 1.27.0 to 1.26.6 once the engine was checked with Go 1.26 (see [upgrading.md](../upgrading.md#moving-to-a-newer-go) for why 1.26.6 and not 1.26.0).
 
-- **To build anyway**, with a Go slowjs has not been checked with, add `-tags slowjs_anygo`.
-- **When a new Go comes out**, slowjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of slowjs.
+- **To build anyway**, with a Go that liustack/quickjs has not been checked with, add `-tags quickjs_anygo`.
+- **When a new Go comes out**, liustack/quickjs runs the checks of [upgrading.md](../upgrading.md#moving-to-a-newer-go) with it and moves the line to the next version in a patch release. A program that moves to the new Go then moves to that release of liustack/quickjs.
 - **Patch releases of Go** are not told apart: a build line can name `go1.28` but not `go1.27.3`.
 
 The error is in its own package, `internal/goversion`, which `internal/cengine` imports, so the go command builds it first and it is the only error the build reports.
 
-Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `slowjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `slowjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
+Tests: `TestNewerGoStops` (`internal/goversion`) reads the build line with the release tags of the Go that was checked, of the next two and with `quickjs_anygo`, and checks that the name of the error and the line give the same version. `TestEngineNewerGo` (`enginedeps_test.go`) builds the package with the `go1.N` tag of the line given by hand: the build fails with the errors of `internal/goversion/newer.go` only, one of them the name above, and with `quickjs_anygo` as well it builds. A tag given by hand also makes the go command say that the file asks for a newer Go, which a newer Go does not say.
 
 ## A build option that changes how the assembler encodes the engine stops the build
 
-Release: Unreleased.
+Release: v0.29.11.
 
 The generated engine writes the body of each function as raw bytes (`BYTE`, `WORD`, `QUAD`) with the branch offsets fixed, and leaves only the calls and the loads of symbol addresses between them to the Go assembler. A build option that makes the assembler encode one of those with another length moves the targets of the fixed branches. The build succeeds, and the first `NewVM` crashes with SIGSEGV. Two options do that:
 
@@ -379,7 +379,7 @@ asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a glob
 asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
 ```
 
-The comment above each of those lines in the file says which option it is and that slowjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
+The comment above each of those lines in the file says which option it is and that liustack/quickjs does not build with it. The function is never called and never linked, so it adds nothing to a program. The files are named `goasm_tripwire.<arch>.s` with a dot, since `make gen` deletes every `*_<arch>.s` of the folder. Each of the lines is an instruction that the assembler accepts as written and refuses under the option (`CALL (AX)` is a call through memory, which a retpoline cannot replace, and a read of R15 after a global access is refused under `-dynlink`).
 
 - **Options that leave the engine as it is.** `-shared` (what `-buildmode=pie` passes on linux and darwin), `-spectre=index`, `-race`, `-msan`, `-asan`, `-cover` and `-gcflags` do not reach the assembler, or change only the prologue the assembler writes before the fixed bytes. On linux/amd64 `-shared` makes the stack check at the start of a function 2 bytes longer (seen in `quickjs_0_amd64.s`), which shifts the body and no branch inside it. The engine passes its tests when built with `-buildmode=pie` on linux/amd64.
 - **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.

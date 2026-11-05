@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package temporal // import "github.com/liustack/slowjs/temporal"
+package temporal // import "github.com/liustack/quickjs/temporal"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // TestConcurrentVMs uses Temporal on several VMs at once, each with a clock
@@ -29,7 +29,7 @@ func TestConcurrentVMs(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := slowjs.NewVM()
+			vm, err := quickjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -45,13 +45,13 @@ func TestConcurrentVMs(t *testing.T) {
 
 			<-start
 			for range 3 {
-				v, err := vm.Eval(probe, slowjs.EvalGlobal)
+				v, err := vm.Eval(probe, quickjs.EvalGlobal)
 				if err != nil {
 					t.Error(err)
 					return
 				}
 				got[w] = fmt.Sprint(v)
-				v, err = vm.Eval(`Temporal.Now.instant().toString() + ' ' + Temporal.Now.zonedDateTimeISO('Pacific/Chatham').offset`, slowjs.EvalGlobal)
+				v, err = vm.Eval(`Temporal.Now.instant().toString() + ' ' + Temporal.Now.zonedDateTimeISO('Pacific/Chatham').offset`, quickjs.EvalGlobal)
 				if err != nil {
 					t.Error(err)
 					return

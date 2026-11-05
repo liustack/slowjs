@@ -13,7 +13,7 @@ read_when:
 
 ## Branches and remotes
 
-`main` is the branch of slowjs.
+`main` is the branch of liustack/quickjs.
 
 Set up the remote once in a fresh clone. It is Fabrice Bellard's repository, where the C comes from:
 
@@ -26,12 +26,12 @@ Do the upgrade on a branch (`git switch -c upgrade-quickjs-<date>`) and merge it
 
 ## Taking upstream QuickJS into engine/
 
-`engine/` is QuickJS at `3d5e064` (2026-06-04) with slowjs's changes, and it changes on its own. It does not follow upstream release by release. A commit of upstream that fixes a wrong answer, a leak or a crash is taken, whether or not a page of tifa can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
+`engine/` is QuickJS at `3d5e064` (2026-06-04) with the changes of liustack/quickjs, and it changes on its own. It does not follow upstream release by release. A commit of upstream that fixes a wrong answer, a leak or a crash is taken, whether or not a page of tifa can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Each one is a commit of its own. [changes/upstream-commits.md](changes/upstream-commits.md) lists the ones taken, the ones tried and taken back, and the ones left out.
 
 For each commit:
 
 1. `git fetch quickjs`, then see what is new: `git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`.
-2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of slowjs ([changes](changes/README.md) names the functions), slowjs's change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
+2. Apply its diff to the C tree: `git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`. Where it meets a change of liustack/quickjs ([changes](changes/README.md) names the functions), that change stays and the upstream text is merged around it. Leave out hunks that edit things `engine/` does not have (the shell library, `fuzz/`, the Makefile).
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
 5. At the end of a batch, run `make check-full`. The known test262 errors (33) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
@@ -41,16 +41,16 @@ To move test262 to a newer revision, change the commit and the SHA-256 at the to
 
 ## Moving to a newer Go
 
-The Go assembly of the C engine (`internal/cengine`, checked in) was made with Go 1.27.2 and checked with Go 1.26 and 1.27, on linux/amd64 and darwin/arm64. `go.mod` asks for 1.26.6 or later, and a newer Go stops the build with the error of `internal/goversion` (its file `newer.go` has the build line `go1.28 && !slowjs_anygo`), since the assembly was never checked against it. `-tags slowjs_anygo` builds anyway. The checks of the generator and its tests depend on these things of Go 1.27.2:
+The Go assembly of the C engine (`internal/cengine`, checked in) was made with Go 1.27.2 and checked with Go 1.26 and 1.27, on linux/amd64 and darwin/arm64. `go.mod` asks for 1.26.6 or later, and a newer Go stops the build with the error of `internal/goversion` (its file `newer.go` has the build line `go1.28 && !quickjs_anygo`), since the assembly was never checked against it. `-tags quickjs_anygo` builds anyway. The checks of the generator and its tests depend on these things of Go 1.27.2:
 
 - The stack check at the start of every function that is not NOSPLIT: a compare of the stack pointer with the guard in the goroutine, `g.stackguard0` (offset 16 of `g`, with `g` in R14 on amd64 and X28 on arm64), a branch to a call of `runtime.morestack_noctxt.abi0`, and a jump back to the start (`internal/goasm/gen/verify_insn.go`, `arm64_verify.go`).
 - Which functions are NOSPLIT: the generator chooses none, and marks only the register-entry leaves and the leaves the Go assembler marks NOSPLIT by itself, a function that calls nothing and has a frame under 128 bytes with the saved base pointer (`internal/goasm/gen/nosplit.go`). In the engine none of them calls anything, so a fault in one has the room the stack check of its caller left, at least 800 bytes less its frame, and needs 16 bytes of it on amd64 and 24 on arm64 for the call of `runtime.sigpanic` and its call of morestack. If the assembler marks other leaves by itself, or stops marking these, the post-link check fails.
 - The preemption hammer (`internal/cengine/hammer_test.go`) reads `g` and writes its stack guard.
 
-When Go changes any of these, a check of the generator or a test fails. A program is not checked when it is built, which is why a newer Go stops the build. So, before you move to a newer Go, run these with it, each with `-tags slowjs_anygo` added to its tags:
+When Go changes any of these, a check of the generator or a test fails. A program is not checked when it is built, which is why a newer Go stops the build. So, before you move to a newer Go, run these with it, each with `-tags quickjs_anygo` added to its tags:
 
-1. Run `go test -p 1 -tags testhooks,slowjs_anygo ./internal/cengine .`, and the hammer (`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,slowjs_anygo -run Hammer ./internal/cengine`). The fault tests (`TestFault*`, `TestFaultNoSplit`) are the ones that see a changed signal path.
-2. Run the generator's tests with the new Go (`CHECK_TAGS=slowjs_anygo make check-fast`, its `goasm` step. `GOFLAGS=-tags=...` alone does not do: a command that gives its own `-tags` replaces it, and the gate stops it). They build sample programs, link them, and check the stack check, the call of `runtime.morestack_noctxt.abi0` and which functions are NOSPLIT in the linked binary, so a changed shape fails there. Then check the engine itself the same way, with the post-link check of [testing.md](testing.md#the-go-host-of-the-generated-engine) (`-verify-bin`, on a test binary built with `-tags goasmkeep,slowjs_anygo`). `make check-gen` does not test the Go version: it only checks that the files checked in are what the generator makes.
+1. Run `go test -p 1 -tags testhooks,quickjs_anygo ./internal/cengine .`, and the hammer (`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,quickjs_anygo -run Hammer ./internal/cengine`). The fault tests (`TestFault*`, `TestFaultNoSplit`) are the ones that see a changed signal path.
+2. Run the generator's tests with the new Go (`CHECK_TAGS=quickjs_anygo make check-fast`, its `goasm` step. `GOFLAGS=-tags=...` alone does not do: a command that gives its own `-tags` replaces it, and the gate stops it). They build sample programs, link them, and check the stack check, the call of `runtime.morestack_noctxt.abi0` and which functions are NOSPLIT in the linked binary, so a changed shape fails there. Then check the engine itself the same way, with the post-link check of [testing.md](testing.md#the-go-host-of-the-generated-engine) (`-verify-bin`, on a test binary built with `-tags goasmkeep,quickjs_anygo`). `make check-gen` does not test the Go version: it only checks that the files checked in are what the generator makes.
 3. If the fault tests fail, read the source of `runtime.sigpanic` and of the stack check of the new release to find out why. If the assembler marks other functions NOSPLIT by itself, change `autoNoSplit` in `internal/goasm/gen/nosplit.go` to what you read there and make the engine again.
 4. When all pass, move the build line of `internal/goversion/newer.go` to the next version and the name in it to the version you checked, and write the new version here and in the README, in both languages. `TestNewerGoStops` checks that the line and the name agree.
 
@@ -89,8 +89,8 @@ The files and directories named `qjs*`, and `UPSTREAM`, are ours. `qjs_temporalf
 The data is in `internal/gointl/qjsdata/`, written by `internal/gointl/internal/qjspack/gen` from go-intl's `data/` directory:
 
 - `core.bin` (3.39 MB), everything but those below.
-- `names.bin` (1.9 MB), the display names. Build with `-tags slowjs_intl_nonames` to leave it out: `Intl.DisplayNames` then has no names, and `of` answers every code with its fallback, the code or `undefined` with `fallback: 'none'`.
-- `cjdict.bin` (2.0 MB), the Chinese and Japanese word dictionary. Build with `-tags slowjs_intl_nocjdict` to leave it out: a run of Chinese or Japanese is then one word, as in an ICU without the dictionary.
+- `names.bin` (1.9 MB), the display names. Build with `-tags quickjs_intl_nonames` to leave it out: `Intl.DisplayNames` then has no names, and `of` answers every code with its fallback, the code or `undefined` with `fallback: 'none'`.
+- `cjdict.bin` (2.0 MB), the Chinese and Japanese word dictionary. Build with `-tags quickjs_intl_nocjdict` to leave it out: a run of Chinese or Japanese is then one word, as in an ICU without the dictionary.
 - `tz.bin` (92 KB), what package `temporal` reads: ICU's time zones, the zone names Temporal takes, the tables of the Chinese, Korean and Umm al-Qura calendars, and `tzversion.bin`, the tz release of the zones. `Embedded` serves it with the rest, and `EmbeddedTemporalSource` serves it alone. The two share one copy: a chunk read through either is inflated once.
 - The readers' packs, each linked only into a binary that links a function reading it (`qjs_readers.go`): `dates.bin` (677 KB), what go-intl's `DateTimeFormat` reads, `zonenames.bin` (1.27 MB), the zone names, and `hostzones.bin` (6 KB), the tables of the guess at the host's zone. Package `intl` uses these packs for Date and Temporal values and ranges. It links the date and zone-name packs, but not the host-zone pack (`TestLinksOnlyReadData`). Each loader of their data calls `qjsUseDates`, `qjsUseZoneNames` or `qjsUseHostZones` first, through `qjs.patch`, and `TestQJSReadersUsePacks` fails when a function of a new go-intl release reads one of their data sets without that call: add it to the patch. A data set a new release adds for a new reader gets a pack of its own the same way, in `packOf` of the pack tool, a variable in `qjs_readers.go` and the calls in its loaders.
 
@@ -125,7 +125,7 @@ internal/gointl/qjs-sync.sh update         # copies its runtime sources here and
 internal/gointl/qjs-sync.sh chromium       # records what Chromium resolves the new tags to
 internal/gointl/qjs-sync.sh pack           # writes qjsdata/ again
 internal/gointl/qjs-sync.sh test -p 2      # go-intl's own tests, on packs of every language
-internal/gointl/qjs-sync.sh test-chromium -p 2  # slowjs's Chromium corpora on the shipped packs
+internal/gointl/qjs-sync.sh test-chromium -p 2  # the Chromium corpora of liustack/quickjs on the shipped packs
 go test ./internal/gointl/... && make gointl
 ```
 

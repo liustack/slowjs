@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -122,9 +122,9 @@ type ckCase struct {
 }
 
 func TestCheckCases(t *testing.T) {
-	llvm := os.Getenv("SLOWJS_LLVM")
+	llvm := os.Getenv("QUICKJS_LLVM")
 	if llvm == "" {
-		t.Skip("set SLOWJS_LLVM")
+		t.Skip("set QUICKJS_LLVM")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("builds and reads a linux/amd64 binary")

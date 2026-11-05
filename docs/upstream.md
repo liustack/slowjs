@@ -1,7 +1,7 @@
 ---
-summary: 'Where the engine and the Go API come from, how a commit of upstream QuickJS is taken in, what a program moving from modernc.org/quickjs runs into, and who wrote the code slowjs is built on'
+summary: 'Where the engine and the Go API come from, how a commit of upstream QuickJS is taken in, what a program moving from modernc.org/quickjs runs into, and who wrote the code liustack/quickjs is built on'
 read_when:
-  - Moving a program from modernc.org/quickjs to slowjs
+  - Moving a program from modernc.org/quickjs to liustack/quickjs
   - Asking which QuickJS commit the engine is built on, or who wrote the code
   - Taking a commit of upstream QuickJS into the engine
 ---
@@ -12,23 +12,23 @@ English · [简体中文](upstream.zh-CN.md)
 
 ## Where the code comes from
 
-- **The engine** is [QuickJS](https://bellard.org/quickjs), the JavaScript engine in C by Fabrice Bellard and Charlie Gordon, at the release of 2026-06-04, commit `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`. `engine/` holds that C with the changes of slowjs on top. `internal/goasm/gen` compiles it to Go assembly, which is checked in. The generated files are never edited by hand, and `make check-gen` fails when they are not what the generator makes. The test262 suite gives 33 known failures, listed in `engine/test/test262_errors.txt`.
+- **The engine** is [QuickJS](https://bellard.org/quickjs), the JavaScript engine in C by Fabrice Bellard and Charlie Gordon, at the release of 2026-06-04, commit `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`. `engine/` holds that C with the changes of liustack/quickjs on top. `internal/goasm/gen` compiles it to Go assembly, which is checked in. The generated files are never edited by hand, and `make check-gen` fails when they are not what the generator makes. The test262 suite gives 33 known failures, listed in `engine/test/test262_errors.txt`.
 - **The Go API** (`VM`, `Value`, `Eval`, `Call` and the rest at the root of the module) started from [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0 (2026-10-01), commit `ea7b851` in this repository's history, and has been rewritten and extended since. Some of its names, comments and tests remain. Until v0.28 the engine under it was [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs), QuickJS translated to Go by ccgo. That engine is gone, and so is its Go.
-- **Everything else** is written for slowjs, or comes from a project named in [NOTICE.md](../NOTICE.md): the allocator (TLSF), the small libc of the engine (musl), the locale data and the Go side of `Intl` and `Temporal` (go-intl, ICU, Chromium).
+- **Everything else** is written for liustack/quickjs, or comes from a project named in [NOTICE.md](../NOTICE.md): the allocator (TLSF), the small libc of the engine (musl), the locale data and the Go side of `Intl` and `Temporal` (go-intl, ICU, Chromium).
 
-The authors of slowjs are in [AUTHORS-SLOWJS](../AUTHORS-SLOWJS). The `AUTHORS` file of modernc.org/quickjs stays in the repository as that project has it: [AUTHORS](../AUTHORS).
+The authors of liustack/quickjs are in [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK). The `AUTHORS` file of modernc.org/quickjs stays in the repository as that project has it: [AUTHORS](../AUTHORS).
 
 ## Taking QuickJS commits
 
 The C tree in `engine/` does not follow upstream release by release. A commit of upstream QuickJS made after the pinned one is taken into it on its own, with a test, when it fixes a wrong answer, a leak or a crash (whether or not a page can reach it) or makes renders faster, and a new feature or a change for speed when tifa has a use for it. Those commits, and the ones tried and taken back, are in [upstream-commits.md](changes/upstream-commits.md). [upgrading.md](upgrading.md) says how to take one in.
 
-The changes of slowjs to the C are listed one at a time in [changes](changes/README.md): limits that no script can catch, the same output on every machine, `Intl` in every locale Chromium has, and faster renders.
+The changes of liustack/quickjs to the C are listed one at a time in [changes](changes/README.md): limits that no script can catch, the same output on every machine, `Intl` in every locale Chromium has, and faster renders.
 
 ## Moving from modernc.org/quickjs
 
 What a program that used modernc.org/quickjs v0.25.0 runs into:
 
-- **Import paths.** `modernc.org/quickjs` becomes `github.com/liustack/slowjs`, and the package name `quickjs` becomes `slowjs`. Its `intl` and `fmt` packages move with it. The engine is inside the module, so `modernc.org/libquickjs` leaves your `go.mod`.
+- **Import paths.** `modernc.org/quickjs` becomes `github.com/liustack/quickjs`, and the package keeps its name, `quickjs`. Its `intl` and `fmt` packages move with it. The engine is inside the module, so `modernc.org/libquickjs` leaves your `go.mod`.
 - **Go version.** The module needs Go 1.26.6 or later (and stops a Go it has not been checked with, see [upgrading.md](upgrading.md#moving-to-a-newer-go)), where modernc.org/quickjs v0.25.0 needs 1.26.
 - **Local time is UTC.** A script's local time is UTC in every VM, whatever `TZ` the process has. Name a zone to `Intl` to show another one ([details](changes/time-and-intl.md#local-time-is-utc-in-every-vm)).
 - **Intl in every locale.** Package `intl` formats in every locale Chromium has, where modernc.org/quickjs formats en-US only. Programs that import it embed the locale data and its notices ([details](changes/time-and-intl.md#intl-in-every-locale-chromium-has)).
@@ -45,6 +45,10 @@ What a program that used modernc.org/quickjs v0.25.0 runs into:
 
 The [changelog](../CHANGELOG.md) has every change of each release.
 
+## Moving from github.com/liustack/slowjs
+
+v0.28.0 to v0.29.11 were published as `github.com/liustack/slowjs`, and from v0.30.0 the module is `github.com/liustack/quickjs` again, with the same API. A program that used `github.com/liustack/slowjs` changes only names: the import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), the package name in the code (`slowjs.NewVM` becomes `quickjs.NewVM`), and the build tags (`slowjs_intl_nonames` and `slowjs_intl_nocjdict` become `quickjs_intl_nonames` and `quickjs_intl_nocjdict`, and `slowjs_anygo`, which v0.29.11 added, becomes `quickjs_anygo`). A host that looks for the `Symbol.for` key with which `intl` or `temporal` marks a VM uses the new path in it, and the errors of the root package start with `quickjs:`.
+
 ## Credits
 
-The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. slowjs thanks them for the API it started from. Their license files stay in the repository, as the code that remains from them needs: [LICENSE](../LICENSE) and [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS), and [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS) for QuickJS.
+The engine is Fabrice Bellard's and Charlie Gordon's QuickJS. The Go API began as modernc.org/quickjs, by the quickjs-go authors Jan Mercl and Dan Kortschak, who also translated QuickJS to Go with ccgo as modernc.org/libquickjs. liustack/quickjs thanks them for the API it started from. Their license files stay in the repository, as the code that remains from them needs: [LICENSE](../LICENSE) and [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS), and [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS) for QuickJS.

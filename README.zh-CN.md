@@ -1,8 +1,8 @@
-# slowjs
+# liustack/quickjs
 
 在一个静态 Go 程序里原样运行今天的 npm 代码。
 
-slowjs 渲染 React 比 Node 慢，比其他任何纯 Go JavaScript 引擎都快，不用 cgo，也不用 Node 进程。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 tifa 而做，tifa 是一个渲染 React 页面的 Go 框架。
+liustack/quickjs 渲染 React 比其他任何纯 Go JavaScript 引擎都快，不用 cgo，也不用 Node 进程。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 tifa 而做，tifa 是一个渲染 React 页面的 Go 框架。
 
 给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。
 
@@ -13,10 +13,10 @@ slowjs 渲染 React 比 Node 慢，比其他任何纯 Go JavaScript 引擎都快
 ## 安装
 
 ```sh
-go get github.com/liustack/slowjs
+go get github.com/liustack/quickjs
 ```
 
-需要 Go 1.26.6 及以后的 1.26 版本，或 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编是照 Go 1.26 和 1.27 核对过的。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见 [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)）。
+需要 Go 1.26.6 及以后的 1.26 版本，或 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编是照 Go 1.26 和 1.27 核对过的。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/quickjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags quickjs_anygo` 可以照样构建（见 [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)）。
 
 ## 支持的平台
 
@@ -32,12 +32,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/intl"
 )
 
 func main() {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		panic(err)
 	}
@@ -51,11 +51,11 @@ func main() {
 		panic(err)
 	}
 
-	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, slowjs.EvalGlobal)
+	v, err := vm.Eval(`new Date(0).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'})`, quickjs.EvalGlobal)
 	fmt.Println(v, err) // 1970/1/1 08:00:00 <nil>
 
-	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, slowjs.EvalGlobal)
-	var e *slowjs.Error
+	_, err = vm.Eval(`try { for (;;) {} } catch (e) { 'caught' }`, quickjs.EvalGlobal)
+	var e *quickjs.Error
 	if errors.As(err, &e) && e.Interrupted {
 		fmt.Println("timed out, and no catch saw it")
 	}
@@ -66,7 +66,7 @@ func main() {
 
 ## 除了 Eval 和 Call，还有什么
 
-API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。除了每个程序都从它开始的 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value`，还有这些：
+API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。除了每个程序都从它开始的 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value`，还有这些：
 
 - **`NewBuiltin(name, length, fn)` 和 `VM.NewBuiltinFunction(b)`**：JavaScript 像调用 `Math.max` 那样调用的 Go 函数，不走反射。`fn` 从 `Args`（`Number`、`String`、`Bool`、`Value`、`This`、`VM`，还有按引擎存放样子给出字符串字符的 `Latin1` 或 `UTF16`）里取参数，不做任何转换，返回一个 `Value`。在 Apple M4 上一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。Builtin 每个进程只建一次：多个 goroutine 上的 VM 会同时调用它。它返回的 `*Error` 按 `Name` 抛成对应的构造器（`Error`、`TypeError`、`RangeError`、`SyntaxError`、`ReferenceError` 或 `InternalError`），其他错误抛成 `TypeError`。[详情](docs/changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
 - **`VM.NewArray(vals...)`**：用 Go 里建的值做一个数组，做法和数组字面量一样，页面在 `Array.prototype` 上放的 setter 不会被触发。[详情](docs/changes/go-api.md#newarray)
@@ -97,7 +97,7 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 
 ## 凭什么信它
 
-- **引擎就是上游 QuickJS。** `engine/` 是 Bellard 的 C 代码在一个固定的提交上，加上 slowjs 的改动，每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.md#generate-and-check)）。
+- **引擎就是上游 QuickJS。** `engine/` 是 Bellard 的 C 代码在一个固定的提交上，加上 liustack/quickjs 的改动，每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.md#generate-and-check)）。
 - **生成器不放过没核对过的东西。** 遇到它没有规则的指令、调用或栈帧就停下，还会检查测试程序链接后的代码，所以 C 或 Go 本身的改动弄坏了引擎，表现为构建或测试失败，而不是答案错了。
 - **每处改动都有记录。** [docs/changes](docs/changes/README.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
 - **测试用上游的，还多加了一层。** test262 有 33 个已知失败，比搬进上游的修正之前少了 25 个，每次跑都是同样这些。另外还有引擎的记录输出、在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下跑的 C 检查，以及 Go API 的测试。
@@ -109,7 +109,7 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 
 ## 致谢
 
-感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 slowjs。
+感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 liustack/quickjs。
 
 ## 文档
 
@@ -125,12 +125,12 @@ API 的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。�
 | [Testing](docs/testing.md) | 准备提交，或者想核对引擎 |
 | [Upgrading](docs/upgrading.md) | 要合入上游新版本，或者更新语言数据 |
 | [Releasing](docs/releasing.md)、[Commits](docs/commit.md) | 要发版或提交 |
-| [上游](docs/upstream.zh-CN.md) | 要从 modernc.org/quickjs 换过来，或者想知道代码从哪来 |
+| [上游](docs/upstream.zh-CN.md) | 要从 modernc.org/quickjs 或 github.com/liustack/slowjs 换过来，或者想知道代码从哪来 |
 
-API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
+API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。
 
 ## 许可证
 
-slowjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。来自其他项目的代码保留各自的许可证：modernc.org/quickjs 和 modernc.org/libquickjs 留下的部分用 BSD-3-Clause（[LICENSE](LICENSE)、[LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)），引擎的 C 代码用 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)），分配器用 TLSF 的 BSD-3-Clause（[LICENSE-TLSF](LICENSE-TLSF)），小 libc 用 musl 的 MIT 许可证和 [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT) 里的声明。slowjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
+liustack/quickjs 新建的文件用 [MIT 许可证](LICENSE-MIT)，其中的源码文件带 SPDX 标识。来自其他项目的代码保留各自的许可证：modernc.org/quickjs 和 modernc.org/libquickjs 留下的部分用 BSD-3-Clause（[LICENSE](LICENSE)、[LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)），引擎的 C 代码用 QuickJS 的 MIT 许可证（[LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)），分配器用 TLSF 的 BSD-3-Clause（[LICENSE-TLSF](LICENSE-TLSF)），小 libc 用 musl 的 MIT 许可证和 [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT) 里的声明。liustack/quickjs 对这些文件的改动同时也以 MIT 提供，这些文件仍可只按上游的许可证使用。`intl` 内嵌的语言数据仍用 Unicode License V3 和 [intl/LICENSE-DATA](intl/LICENSE-DATA) 里的其他声明，go-intl 的副本 `internal/gointl` 用 go-intl 的 [Unicode License V3](internal/gointl/LICENSE)，它用到的 ICU 数据，以及 go-intl 从 V8 和 Rust 包移植的代码，另有各自的声明，列在 [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects)。
 
 用这个模块构建并分发二进制的程序，要附上这些许可证的声明。哪个路径用哪个许可证、要附哪些文本，见 [NOTICE.md](NOTICE.md)。

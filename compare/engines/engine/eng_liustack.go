@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -11,14 +11,14 @@ import (
 	"errors"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/intl"
 )
 
 func init() {
 	register(&Engine{
-		Name:           "slowjs",
-		Module:         "github.com/liustack/slowjs",
+		Name:           "liustack-quickjs",
+		Module:         "github.com/liustack/quickjs",
 		New:            newLiustack,
 		SharedPrograms: true,
 		CompileShared:  compileLiustack,
@@ -32,20 +32,20 @@ func init() {
 	})
 }
 
-type liustackVM struct{ vm *slowjs.VM }
+type liustackVM struct{ vm *quickjs.VM }
 
 // compileVM is the VM that compiles shared programs. Bytecode is
 // independent of the VM that made it.
-var compileVM *slowjs.VM
+var compileVM *quickjs.VM
 
 func compileLiustack(name, src string) (Program, error) {
 	if compileVM == nil {
 		var err error
-		if compileVM, err = slowjs.NewVM(); err != nil {
+		if compileVM, err = quickjs.NewVM(); err != nil {
 			return nil, err
 		}
 	}
-	b, err := compileVM.Compile(src, slowjs.EvalGlobal)
+	b, err := compileVM.Compile(src, quickjs.EvalGlobal)
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
@@ -53,7 +53,7 @@ func compileLiustack(name, src string) (Program, error) {
 }
 
 func newLiustack(o Options) (VM, error) {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func newLiustack(o Options) (VM, error) {
 		vm.Close()
 		return nil, err
 	}
-	if _, err := vm.Eval(PrintShim, slowjs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(PrintShim, quickjs.EvalGlobal); err != nil {
 		vm.Close()
 		return nil, err
 	}
@@ -88,12 +88,12 @@ func newLiustack(o Options) (VM, error) {
 			return nil, err
 		}
 	}
-	// slowjs loads no modules: an import of o.ModuleDir fails.
+	// liustack-quickjs loads no modules: an import of o.ModuleDir fails.
 	return &liustackVM{vm}, nil
 }
 
 func qjsErr(err error, compile bool) error {
-	var e *slowjs.Error
+	var e *quickjs.Error
 	if errors.As(err, &e) {
 		return &JSError{Name: e.Name, Message: e.Message, Compile: compile}
 	}
@@ -101,7 +101,7 @@ func qjsErr(err error, compile bool) error {
 }
 
 func (v *liustackVM) Eval(name, src string) (string, error) {
-	r, err := v.vm.Eval(src, slowjs.EvalGlobal)
+	r, err := v.vm.Eval(src, quickjs.EvalGlobal)
 	if err != nil {
 		return "", qjsErr(err, false)
 	}
@@ -109,7 +109,7 @@ func (v *liustackVM) Eval(name, src string) (string, error) {
 }
 
 func (v *liustackVM) Compile(name, src string) (Program, error) {
-	b, err := v.vm.Compile(src, slowjs.EvalGlobal)
+	b, err := v.vm.Compile(src, quickjs.EvalGlobal)
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
@@ -141,7 +141,7 @@ func (v *liustackVM) RunJobs() error {
 }
 
 func (v *liustackVM) EvalModule(name, src string) error {
-	_, err := v.vm.Eval(src, slowjs.EvalModule)
+	_, err := v.vm.Eval(src, quickjs.EvalModule)
 	if err != nil {
 		return qjsErr(err, false)
 	}

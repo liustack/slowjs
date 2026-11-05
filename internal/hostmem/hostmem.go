@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -41,7 +41,7 @@
 // does not ask for, a chunk or range the VM does not hold, a call after Close
 // or after a Release that did not return. New panics too when the OS refuses
 // to give back what the setup of a stack mapped itself.
-package hostmem // import "github.com/liustack/slowjs/internal/hostmem"
+package hostmem // import "github.com/liustack/quickjs/internal/hostmem"
 
 import (
 	"errors"

@@ -1,19 +1,20 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // firstUse touches Intl for the first time and reports the outcome as a value,
@@ -26,8 +27,24 @@ const firstUse = `(() => {
 	}
 })()`
 
-// hostFuncsSeen counts the host functions a page can see on the global object.
-const hostFuncsSeen = `Object.getOwnPropertyNames(globalThis).filter(n => n.startsWith('__slowjs_intl')).length`
+// hostFuncsSeen counts the names on the global object that a VM without Intl
+// does not have, other than Intl itself: the host functions of the shim, or
+// anything else an install leaves for a page to see.
+var hostFuncsSeen = globalsSeen()
+
+// globalsSeen is hostFuncsSeen for a VM that also has the globals own.
+func globalsSeen(own ...string) string {
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		panic(err)
+	}
+	defer vm.Close()
+	names, err := vm.Eval(`JSON.stringify(Object.getOwnPropertyNames(globalThis))`, quickjs.EvalGlobal)
+	if err != nil {
+		panic(err)
+	}
+	return `(b => Object.getOwnPropertyNames(globalThis).filter(n => n !== 'Intl' && !b.has(n)).length)(new Set(` + fmt.Sprint(names) + `.concat(` + strconv.Quote(strings.Join(own, ",")) + `.split(","))))`
+}
 
 // afterFailedInstall are the checks a VM whose install failed has to pass once
 // the cause is gone: nothing left behind, and the next use installs.
@@ -49,7 +66,7 @@ var afterFailedInstall = [][2]string{
 func TestInstallFailsOnLowMemory(t *testing.T) {
 	// firstUseWith reports what the first use answers on a fresh VM limited to limit
 	// bytes, and how many installs it started.
-	firstUseWith := func(limit uintptr) (*slowjs.VM, string, int64) {
+	firstUseWith := func(limit uintptr) (*quickjs.VM, string, int64) {
 		vm := newVM(t)
 		// The engine creates some builtins, JSON among them, on first touch,
 		// and one it fails to create for want of memory stays undefined for
@@ -58,7 +75,7 @@ func TestInstallFailsOnLowMemory(t *testing.T) {
 		eval(t, vm, `JSON`)
 		vm.SetMemoryLimit(limit)
 		before := shimInstalls.Load()
-		v, err := vm.Eval(firstUse, slowjs.EvalGlobal)
+		v, err := vm.Eval(firstUse, quickjs.EvalGlobal)
 		got := fmt.Sprint(v)
 		if err != nil {
 			got = "error: " + err.Error()
@@ -107,7 +124,7 @@ func TestInstallFailsOnLowMemory(t *testing.T) {
 const deepFirstUse = `
 	const failures = [];
 	let result;
-	function down() {
+	const down = function () {
 		try {
 			down();
 		} catch (e) {
@@ -224,7 +241,7 @@ func TestInstallKeepsInterrupt(t *testing.T) {
 		}
 	}()
 
-	_, err := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US'); for (;;) {}`, slowjs.EvalGlobal)
+	_, err := vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US'); for (;;) {}`, quickjs.EvalGlobal)
 	if err == nil || lost.Load() {
 		t.Fatalf("got %v, lost the interrupt request: %v", err, lost.Load())
 	}
@@ -246,8 +263,9 @@ func TestInstallInterrupted(t *testing.T) {
 		step = 11
 	}
 	before := interruptedInstalls.Load()
+	seen := globalsSeen("interrupt")
 	for k := 0; k <= period; k += step {
-		vm, err := slowjs.NewVM()
+		vm, err := quickjs.NewVM()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -265,12 +283,12 @@ func TestInstallInterrupted(t *testing.T) {
 
 		// Spend k checks' worth of the engine's countdown, so that the
 		// interrupt below lands k instructions later.
-		if _, err := vm.Eval(fmt.Sprintf(`for (let i = 0; i < %d; i++) {}`, k), slowjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(fmt.Sprintf(`for (let i = 0; i < %d; i++) {}`, k), quickjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 
-		vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, slowjs.EvalGlobal)
-		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+hostFuncsSeen+`].join(' ')`, slowjs.EvalGlobal)
+		vm.Eval(`interrupt(); (1234.5).toLocaleString('en-US')`, quickjs.EvalGlobal)
+		v, err := vm.Eval(`[(1234.5).toLocaleString('en-US'), new Intl.NumberFormat('de').format(1234.5), `+seen+`].join(' ')`, quickjs.EvalGlobal)
 		vm.Close()
 		if got := fmt.Sprint(v); err != nil || got != "1,234.5 1.234,5 0" {
 			t.Fatalf("interrupted %d instructions later: got %q, %v", k, got, err)

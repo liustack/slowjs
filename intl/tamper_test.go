@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // TestTamper runs pages that replace or change built-ins, Array.prototype.push,
@@ -36,7 +36,7 @@ func TestTamper(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	plain, err := slowjs.NewVM()
+	plain, err := quickjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestTamper(t *testing.T) {
 	for _, s := range scripts {
 		name, src := s[0], s[1]
 		t.Run(name, func(t *testing.T) {
-			got, err := newVM(t).Eval(src, slowjs.EvalGlobal)
+			got, err := newVM(t).Eval(src, quickjs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}

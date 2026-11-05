@@ -1,8 +1,18 @@
 # Changelog
 
-What changed in `github.com/liustack/slowjs` (named `github.com/liustack/quickjs` up to v0.27.3) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
+What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again from v0.30.0, `github.com/liustack/slowjs` from v0.28.0 to v0.29.11) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
 
 ## [Unreleased]
+
+## [v0.30.0] - 2026-11-05
+
+### Changed
+
+- **Breaking:** the module is `github.com/liustack/quickjs` again, its name up to v0.27.3, and the root package is named `quickjs` (from v0.28.0 to v0.29.11 it was `github.com/liustack/slowjs`, package `slowjs`). The API is the same. A program changes its import paths (`github.com/liustack/slowjs/intl` becomes `github.com/liustack/quickjs/intl`, and so on), writes `quickjs.` where it wrote `slowjs.`, and passes `-tags quickjs_intl_nonames` or `quickjs_intl_nocjdict` where it passed the `slowjs_intl_` tags, and `-tags quickjs_anygo` where it passed `slowjs_anygo`. The variables of the scripts start with `QUICKJS_` (`QUICKJS_LLVM`, `QUICKJS_REMOTE` and the others), the `Symbol.for` key with which `intl` and `temporal` mark a VM names the new path (`Symbol.for('github.com/liustack/quickjs/intl')`), and the errors of the root package start with `quickjs:`. v0.30.0 is the first release under the new path, and the releases from v0.28.0 to v0.29.11 stay at `github.com/liustack/slowjs` ([upstream.md](docs/upstream.md#moving-from-githubcomliustackslowjs)).
+
+### Fixed
+
+- `startTag` and `endTag` of `RegisterStartTag` and `RegisterEndTag` now read the interrupt flag in every loop over a long string, so `Interrupt` and the eval timeout stop a call on a tag, a style name, a URL or a text of millions of characters within milliseconds. Four of their loops never read it: the check of the tag, the scan of a style name for a character that is not ASCII, the white space before a URL, and the copy of the finished start tag. With a 10 ms timeout, `TestTagsStop` stopped 53 to 119 ms after the call started on CI. On linux/amd64 the longest stop of a tag of 32M characters went from 19.0 ms to 5.9 ms, and of a URL after 32M of white space from 10.5 ms to 3.3 ms. A render of tifa's pages runs 0.002% to 0.018% more instructions, and its time moved by less than the 1% the measurement can tell. The output is the same, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)).
 
 ## [v0.29.11] - 2026-11-05
 
@@ -538,7 +548,10 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.29.9...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
+[v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
+[v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10
 [v0.29.9]: https://github.com/liustack/slowjs/compare/v0.29.8...v0.29.9
 [v0.29.8]: https://github.com/liustack/slowjs/compare/v0.29.7...v0.29.8
 [v0.29.7]: https://github.com/liustack/slowjs/compare/v0.29.6...v0.29.7

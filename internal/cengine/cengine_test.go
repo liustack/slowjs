@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/slowjs/internal/gohost"
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 func newVM(t *testing.T, o Options) *VM {
@@ -54,7 +54,7 @@ func sameFootprint(t *testing.T, v *VM, when string) Usage {
 
 // TestExpressions runs the expressions of the first runs of the generated
 // engine and more, each in a new VM. The expected results are what package
-// slowjs gives.
+// quickjs gives.
 func TestExpressions(t *testing.T) {
 	for _, c := range []struct{ src, want string }{
 		{`1+1`, `2`},
@@ -430,7 +430,7 @@ func TestGCWhileRunning(t *testing.T) {
 
 // TestShapeCache: a new VM keeps the shapes of plain objects after their last
 // object is gone, at most DefaultShapeCache of them, as a VM of package
-// slowjs does. Shapes no later object reuses do not build up, and turning the
+// quickjs does. Shapes no later object reuses do not build up, and turning the
 // cache off lets the kept shapes go.
 func TestShapeCache(t *testing.T) {
 	v := newVM(t, Options{Seed: 1})

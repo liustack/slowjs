@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -8,7 +8,7 @@ package cengine
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // The callbacks the generated assembly calls by name. Their Go signatures

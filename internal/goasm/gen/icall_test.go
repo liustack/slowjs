@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 package gen
 
@@ -74,11 +74,11 @@ func TestICallID(t *testing.T) {
 // reported for that function's indirect calls, the text must have the label
 // right before the call, and no symbol may sit anywhere else. Without the
 // pass option, llc with the plugin must stop. It needs LLVM 22.1.8
-// (SLOWJS_LLVM) and the built pass (SLOWJS_SHADOW_PASS).
+// (QUICKJS_LLVM) and the built pass (QUICKJS_SHADOW_PASS).
 func TestICallSymbols(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	if runtime.GOARCH != "amd64" {
 		t.Skip("decodes amd64 code")

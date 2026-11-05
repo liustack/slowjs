@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -27,8 +27,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs/internal/sjdev"
-	"github.com/liustack/slowjs/internal/sjdev/bench"
+	"github.com/liustack/quickjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev/bench"
 )
 
 const usage = `usage: sjdev bench build|run|judge|report|cg|cgdiff|addrs [flags]
@@ -107,7 +107,7 @@ func benchBuild(ctx context.Context, args []string) error {
 	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (16), all (8), quick (4) or a list such as 0.0,32.16 (shift.front)")
 	fs.BoolVar(&o.Layouts, "layouts", true, "write where the interpreter landed in each binary to OUT/layouts.tsv")
 	fs.StringVar(&o.Side, "side", "", "label of this side, such as base or new")
-	fs.StringVar(&o.Tree, "tree", ".", "the slowjs checkout, with the engine generated")
+	fs.StringVar(&o.Tree, "tree", ".", "the liustack/quickjs checkout, with the engine generated")
 	fs.StringVar(&o.App, "app", "", "build in this module (tifa) against the tree through a go.work")
 	fs.StringVar(&o.Pkg, "pkg", "", "package to build, relative to -app (or -tree)")
 	fs.BoolVar(&o.Test, "test", false, "build the test binary of the package (go test -c)")

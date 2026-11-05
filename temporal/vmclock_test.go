@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -7,7 +7,7 @@ package temporal
 
 import (
 	"fmt"
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 	"testing"
 	"time"
 )
@@ -20,7 +20,7 @@ func TestVMClock(t *testing.T) {
 	// continue reading the VM's current clock after it changes.
 	code, err := vm.Compile(`const now = Date.now; const f = new Intl.DateTimeFormat('en-US', {timeZone:'UTC', dateStyle:'full', timeStyle:'long'});
  globalThis.readClock = () => [now(), new Date().getTime(), Date() === new Date(now()).toString(), Temporal.Now.instant().epochMilliseconds, f.format() === f.format(now()), JSON.stringify(f.formatToParts()) === JSON.stringify(f.formatToParts(now())), String(Temporal.Now.instant().epochNanoseconds)].join('|');
- globalThis.loadedClock = readClock();`, slowjs.EvalModule)
+ globalThis.loadedClock = readClock();`, quickjs.EvalModule)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestVMClock(t *testing.T) {
 	check := func(expr string) {
 		t.Helper()
 		want := fmt.Sprintf("%d|%d|true|%d|true|true|%d", at.UnixMilli(), at.UnixMilli(), at.UnixMilli(), at.UnixNano())
-		got, err := vm.Eval(expr, slowjs.EvalGlobal)
+		got, err := vm.Eval(expr, quickjs.EvalGlobal)
 		if err != nil || got != want {
 			t.Fatalf("%s = %v, %v, want %s", expr, got, err, want)
 		}
@@ -39,7 +39,7 @@ func TestVMClock(t *testing.T) {
 	for _, next := range []time.Time{time.Unix(-1, 999999999), time.Unix(1800000000, 987654321)} {
 		at = next
 		check("readClock()")
-		if _, err := vm.Eval(`Promise.resolve().then(() => { globalThis.laterClock = readClock() })`, slowjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(`Promise.resolve().then(() => { globalThis.laterClock = readClock() })`, quickjs.EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := vm.ExecutePendingJobs(); err != nil {
@@ -49,7 +49,7 @@ func TestVMClock(t *testing.T) {
 	}
 	vm.SetClock(nil)
 	before := time.Now().UnixMilli()
-	got, err := vm.Eval(`Date.now()`, slowjs.EvalGlobal)
+	got, err := vm.Eval(`Date.now()`, quickjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}

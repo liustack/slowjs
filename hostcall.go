@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build ((linux || darwin) && (amd64 || arm64)) || (windows && amd64)
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // How javascript calls Go on the C engine: functions of the host
 // (JS_NewHostFunction), whose calls the engine sends to host_call of
@@ -19,8 +19,8 @@ package slowjs // import "github.com/liustack/slowjs"
 import (
 	"fmt"
 
-	"github.com/liustack/slowjs/internal/cengine"
-	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/quickjs/internal/cengine"
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // builtinFuncs is the id of the first Builtin: the handles of the host, from
@@ -41,7 +41,7 @@ func init() {
 func hostCall(sp uintptr, vmID uint32, this uintptr, argc int32, argv uintptr, id int32) (uintptr, uintptr) {
 	m := vms.Get(vmID)
 	if m == nil {
-		panic(fmt.Sprintf("slowjs: a call of a host function of VM %d, which is not open", vmID))
+		panic(fmt.Sprintf("quickjs: a call of a host function of VM %d, which is not open", vmID))
 	}
 	saved := m.sp
 	m.sp = (sp + 15) &^ 15
@@ -130,7 +130,7 @@ func (m *VM) callGo(saved uintptr, handle int32, this jsValue, argc int32, argv 
 	if info == nil {
 		// Only a function of the handle calls it, and the engine releases
 		// the handle once the function is gone.
-		panic(fmt.Sprintf("slowjs: a call of the Go function of handle %d, which VM %d does not hold", handle, m.id))
+		panic(fmt.Sprintf("quickjs: a call of the Go function of handle %d, which VM %d does not hold", handle, m.id))
 	}
 
 	below := m.enterGo()

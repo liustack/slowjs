@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -17,23 +17,23 @@ import (
 // read as a number. The workloads are 2 times the median for "react" and the
 // same for the rest.
 const fixture = `{
- "engines": [{"engine": "slowjs"}, {"engine": "a"}, {"engine": "b"}],
+ "engines": [{"engine": "liustack-quickjs"}, {"engine": "a"}, {"engine": "b"}],
  "timed": {
   "upstream": {
-   "slowjs": [{"tests": {"loop": {"ns_per_n": 30}, "calls": {"ns_per_n": 10}}}, {"tests": {"loop": {"ns_per_n": 50}, "calls": {"ns_per_n": 10}}}],
+   "liustack-quickjs": [{"tests": {"loop": {"ns_per_n": 30}, "calls": {"ns_per_n": 10}}}, {"tests": {"loop": {"ns_per_n": 50}, "calls": {"ns_per_n": 10}}}],
    "a": [{"tests": {"loop": {"ns_per_n": 10}, "calls": {"ns_per_n": 10}}}],
    "b": [{"tests": {"loop": {"ns_per_n": 10}, "calls": {"ns_per_n": 10}, "only_b": {"ns_per_n": 1}}}]
   },
   "v8": {
-   "slowjs": [{"scores": {"Crypto": "100"}}],
+   "liustack-quickjs": [{"scores": {"Crypto": "100"}}],
    "a": [{"scores": {"Crypto": "400"}}],
    "b": [{"scores": {"Crypto": 200}}]
   },
-  "react": {"slowjs": [{"ok": true, "cpu_ms_per_op": 20}, {"ok": false}], "a": [{"ok": true, "cpu_ms_per_op": 10}], "b": [{"ok": true, "cpu_ms_per_op": 10}]},
-  "micro/json-parse": {"slowjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
-  "micro/json-stringify": {"slowjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
-  "micro/regexp": {"slowjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
-  "micro/string-concat": {"slowjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]}
+  "react": {"liustack-quickjs": [{"ok": true, "cpu_ms_per_op": 20}, {"ok": false}], "a": [{"ok": true, "cpu_ms_per_op": 10}], "b": [{"ok": true, "cpu_ms_per_op": 10}]},
+  "micro/json-parse": {"liustack-quickjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
+  "micro/json-stringify": {"liustack-quickjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
+  "micro/regexp": {"liustack-quickjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]},
+  "micro/string-concat": {"liustack-quickjs": [{"ok": true, "cpu_ms_per_op": 1}], "a": [{"ok": true, "cpu_ms_per_op": 1}], "b": [{"ok": true, "cpu_ms_per_op": 1}]}
  }
 }`
 
@@ -56,9 +56,10 @@ func TestBehind(t *testing.T) {
 	}
 }
 
-// The module's name before v0.28.0 names the row of older results files.
+// The module's name from v0.28.0 to v0.29.11 names the row of the results
+// files of 2026-10-24 to 2026-10-29.
 func TestBehindOldName(t *testing.T) {
-	old := strings.NewReplacer(`"engine": "slowjs"`, `"engine": "liustack-quickjs"`, `"slowjs":`, `"liustack-quickjs":`).Replace(fixture)
+	old := strings.NewReplacer(`"engine": "liustack-quickjs"`, `"engine": "slowjs"`, `"liustack-quickjs":`, `"slowjs":`).Replace(fixture)
 	rows, err := behind([]byte(old), 3.5)
 	if err != nil {
 		t.Fatal(err)

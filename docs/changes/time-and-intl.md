@@ -47,7 +47,7 @@ On one core of an AMD EPYC 7B13 (linux/amd64, without PGO, `BenchmarkClock`, 6 r
 
 ## One wall clock per VM
 
-Release: Unreleased.
+Release: v0.28.2.
 
 `VM.SetClock(func() time.Time)` sets the wall clock of one VM. `Date.now()`, `new Date()`, `Date()`, `Intl.DateTimeFormat` without a date (`format()`, `formatToParts()`) and `Temporal.Now` all read it, and `VM.Now()` reads it from Go with full `time.Time` precision. `SetClock(nil)` goes back to the live `time.Now`. Date and Intl take whole milliseconds, rounded down, also before 1970. Temporal keeps the nanoseconds.
 
@@ -115,14 +115,14 @@ Each constructor takes the locales Chromium 156 has, and serves the data Chromiu
 
 Historical measurements for this first group of constructors, on an AMD EPYC 7B13 core, without PGO, against the version before:
 
-- Size before the Temporal formatting change below: tifa's example shop, built for linux/amd64, is 9.8 MB larger (37.6 MB against 27.9 MB), nearly all of it go-intl's data: `core.bin` (4.4 MB), `names.bin` (1.9 MB), `cjdict.bin` (2.0 MB) and `tz.bin` (91 KB). Built with `-tags slowjs_intl_nonames,slowjs_intl_nocjdict`, which leave out the display names (`Intl.DisplayNames` then answers each code with its fallback) and the Chinese and Japanese word dictionary (a run of Chinese or Japanese is then one word), it is 5.8 MB larger. go-intl's dates and zone names (2.8 MB), which only its `DateTimeFormat` reads, stayed out of the binary at that stage (see [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)): with them the shop was 12.6 MB larger.
+- Size before the Temporal formatting change below: tifa's example shop, built for linux/amd64, is 9.8 MB larger (37.6 MB against 27.9 MB), nearly all of it go-intl's data: `core.bin` (4.4 MB), `names.bin` (1.9 MB), `cjdict.bin` (2.0 MB) and `tz.bin` (91 KB). Built with `-tags quickjs_intl_nonames,quickjs_intl_nocjdict`, which leave out the display names (`Intl.DisplayNames` then answers each code with its fallback) and the Chinese and Japanese word dictionary (a run of Chinese or Japanese is then one word), it is 5.8 MB larger. go-intl's dates and zone names (2.8 MB), which only its `DateTimeFormat` reads, stayed out of the binary at that stage (see [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)): with them the shop was 12.6 MB larger.
 - Memory and start: `Register` takes 0.01 ms and 4 KB more. The first use in a VM takes 0.49 ms (0.24 ms before), and a VM that has used `Intl` holds 151 KB more than after `Register` (77 KB before). The javascript it installs went from 17 KB to 36 KB of source. The first collation in the process takes 4.7 ms and the first segmentation 2.7 ms, to read their data.
 - Calls: `new Intl.Collator('de')` 2.8 µs and `compare` 2.4 µs, `new Intl.Segmenter('en', {granularity: 'word'})` 4.0 µs and iterating the words of 60 characters 78 µs (its graphemes 185 µs), `RelativeTimeFormat.format` 2.4 µs, `ListFormat.format` of three items 6.5 µs, `DisplayNames.of` 1.6 µs, `DurationFormat.format` 11 to 16 µs, `new Intl.Locale` 19 µs, `maximize` 18 µs, `getWeekInfo` 105 µs, `supportedValuesOf('timeZone')` 61 µs, and `toLocaleUpperCase('tr')` of 60 characters 4.8 µs (1.4 µs without a locale).
 - Making a `NumberFormat` or `PluralRules` takes 0.1 µs more and a `DateTimeFormat` 0.3 µs more. Formatting takes no longer.
 
 A program that imports `intl` now links `internal/gointl` and `internal/gointl/temporal`, and has to carry their notices (see [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)).
 
-Tests: `intl/golden_gointl_test.go`, `intl/chromiumroot_test.go`, `intl/registry_gointl_test.go`, `intl/values_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `intl/link_test.go`, `intl/nonames_test.go` (with `-tags slowjs_intl_nonames`), `internal/gointl/qjs_readers_test.go`, and `builtin_test.go` for `Args.WTF8`.
+Tests: `intl/golden_gointl_test.go`, `intl/chromiumroot_test.go`, `intl/registry_gointl_test.go`, `intl/values_test.go`, `intl/shape_test.go`, `intl/tamper_test.go`, `intl/link_test.go`, `intl/nonames_test.go` (with `-tags quickjs_intl_nonames`), `internal/gointl/qjs_readers_test.go`, and `builtin_test.go` for `Args.WTF8`.
 
 ## Stand-ins leave what a page put in their place
 
@@ -176,7 +176,7 @@ All 74,868 existing golden expressions pass their exact comparisons or existing 
 
 On GCP linux/amd64, test262 `2e0a5676` runs every Intl402 file in both modes with the same fresh-VM runner, registering Intl and Temporal. Against main `641e996`, passes rise from 6276 to 6618 of 6764 runs. There are 366 new passes and 24 new failures. Chromium 156 fails all 24 of those assertions too: Islamic-calendar fallback, the legacy ACT zone alias, and Temporal era and hour-cycle rules. The 146 remaining failures include NumberFormat ranges, second-realm tests the runner cannot host, and existing V8 differences. No new failure passes in Chromium. The engine's separate 58-error suite was not rerun.
 
-The number pack records that its ICU resources are already resolved. Raw go-intl sources keep their separate number and currency alias rules. `qjs-sync.sh test` checks raw full data against upstream corpora, while `test-chromium` checks the shipped packs against slowjs's browser corpora.
+The number pack records that its ICU resources are already resolved. Raw go-intl sources keep their separate number and currency alias rules. `qjs-sync.sh test` checks raw full data against upstream corpora, while `test-chromium` checks the shipped packs against the browser corpora of liustack/quickjs.
 
 The six linked data packs total 9,352,287 bytes. The host-zone guessing pack remains unlinked. On GCP linux/amd64 with Go 1.27.2, tifa shop `fb31f616` built by `go tool tifa build` with `-ldflags=-w` and the same application PGO profile is 31,967,614 bytes, against 32,078,049 on main `641e996`. This is 110,435 bytes smaller, about 0.34%. The profile SHA256 is `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`.
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 //
 // Phase-0 driver: compile the C test programs with LLVM 22.1.8, lower each
@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	gen "github.com/liustack/slowjs/internal/goasm/gen"
+	gen "github.com/liustack/quickjs/internal/goasm/gen"
 )
 
 func main() {
@@ -23,7 +23,7 @@ func main() {
 	out := flag.String("out", "proto", "output package dir")
 	bin := flag.String("bin", "", "linked binary to verify against (post-link check)")
 	pass := flag.String("pass", "", "shadow-stack pass plugin (pass/shadow.cpp built as a shared object)")
-	pkg := flag.String("pkg", "github.com/liustack/slowjs/internal/goasm/gen/internal/proto", "Go import path of the generated package")
+	pkg := flag.String("pkg", "github.com/liustack/quickjs/internal/goasm/gen/internal/proto", "Go import path of the generated package")
 	arch := flag.String("arch", "amd64", "target: amd64 or arm64")
 	mode := flag.String("mode", "body", "how a unified call keeps registers: body (the ones the caller's body uses), all, pn (preserve_none), stub (arm64: all, in a stub)")
 	flag.Parse()

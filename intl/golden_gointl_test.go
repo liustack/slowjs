@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"compress/gzip"
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	gointl "github.com/liustack/slowjs/internal/gointl"
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // The corpora of the constructors built on go-intl. Their locales are a

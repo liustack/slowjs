@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The slowjs Authors.
+ * Copyright (c) 2026 The liustack/quickjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
@@ -1465,6 +1465,95 @@ static void test_poll_work_gaps(void)
         CHECK(eval_ok(v.ctx, cases[i].call), "%s: the script threw", cases[i].call);
         longest = white_work_longest();
         total = white_work_sum();
+        CHECK(longest <= cases[i].step, "%s: %lu units of work between two readings of the flag, at most %lu", cases[i].call,
+              longest, cases[i].step);
+        CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
+    }
+    vm_free(&v);
+}
+
+/* startTag and endTag read the interrupt flag before each step of a loop over
+   a long string: JS_ESCAPE_STEP (4096) units for the escape, the hyphens of a
+   style name and the white space before a value or a URL, JS_EMIT_COPY_STEP
+   (524288) units for the scan of a tag or a style name and for a copy. A
+   string of a step or less is done at once and not counted. The strings here
+   keep every buffer under 1 MiB, so that no growth of a buffer is counted
+   (test_buffer_copy_work has that). The keys of the props are made in the
+   setup: the hash of a long key is counted too. */
+static void test_tag_work_gaps(void)
+{
+    enum { E = 4096, C = 524288 };
+    static const char setup[] =
+        "var hop = Object.prototype.hasOwnProperty, d = {}, fc = { viewTransition: null }\n"
+        "function st(p, type) { var t = []; if (startTag(t, p, type || 'div', fc, hop, d) === d || t.length !== 1) throw new Error('declined'); return t[0].length }\n"
+        "var tg = 'a'.repeat(600000), tg2 = 'c'.repeat(600000), tg4 = 'e'.repeat(524286), tg5 = 'f'.repeat(524288)\n"
+        "var pc1 = { style: { ['--' + '&'.repeat(100000)]: 1 } }, pc2 = { style: { ['--' + '<'.repeat(150000)]: 1 } }\n"
+        "var ps1 = { style: { ['aB'.repeat(100000)]: 1 } }, ps2 = { style: { ['cD'.repeat(300000)]: 1 } }\n"
+        "var c1 = '<'.repeat(100000), c2 = '>'.repeat(200000), c3 = '\\u0100&'.repeat(50000), a1 = '\"'.repeat(80000)\n"
+        "var sp = [' '.repeat(10000), 'x', ' '.repeat(10000)].join(''), se = [' '.repeat(5000), '<'.repeat(5000)].join('')\n"
+        "var ul = [' '.repeat(10000), 'x'].join(''), ut = ['j', '\\t'.repeat(10000), 'x'].join(''), uj = ['j', '\\t'.repeat(10000), 'avascript:x'].join('')\n"
+        "var x8 = 'x'.repeat(8192), s8 = ' '.repeat(8192), u8 = [' '.repeat(8192), 'x'].join(''), uv = [' '.repeat(8192), 'javascript:x'].join(''), u4 = [' '.repeat(4096), 'x'].join('')\n"
+        "0";
+    static const struct {
+        const char *call;
+        unsigned long step, total;
+        const char *want;
+    } cases[] = {
+        /* the scan of the tag, its copy and the copy of "<" + tag + ">" */
+        { "st({}, tg)", C, 600000 + 600000 + 600002, "600002" },
+        /* a tag of a step is scanned and copied at once, and so is a text of a step */
+        { "st({}, tg4)", C, 0, "524288" },
+        { "st({}, tg5)", C, 524290, "524290" },
+        { "endTag(tg).length", C, 600000, "600003" },
+        { "endTag({ toString() { return tg2 } }).length", C, 600000, "600003" },
+        /* a custom style name: the escape; the name of 500002 units and the tag are copied at once */
+        { "st(pc1)", E, 100002, "500018" },
+        /* the escape, then the name of 600002 units copied out of its buffer, into the tag and the tag out of it */
+        { "st(pc2)", C, 150002 + 600002 + 600002 + 600018, "600018" },
+        /* a style name: the hyphens; the scan of 200000 is done at once */
+        { "st(ps1)", E, 200000, "300018" },
+        { "st(ps2)", C, 600000 + 600000 + 900000 + 900000 + 900018, "900018" },
+        /* the text: the escape, and the tag copied out of its buffer when it is long */
+        { "st({ children: c1 })", E, 100000, "400005" },
+        { "st({ children: c2 })", C, 200000 + 800005, "800005" },
+        /* a wide text: the entities are written into a wide buffer, which counts their units (5 for &amp;), and "<div>" is widened */
+        { "st({ children: c3 })", 7 * E, 100000 + 5 + 50000 * 5, "300005" },
+        { "st({ title: a1 })", E, 80000, "480014" },
+        /* the white space around a style value, both ends together, and then the escape of what is left */
+        { "st({ style: { color: sp } })", E, 20000, "21" },
+        { "st({ style: { width: se } })", E, 5000 + 5000, "20020" },
+        /* the white space and tabs isJavaScriptProtocol skips, and the escape of the URL */
+        { "st({ href: ul }, 'a')", E, 10000 + 10001, "10012" },
+        { "st({ href: ut }, 'a')", E, 10000 + 10002, "10013" },
+        { "startTag([], { href: uj }, 'a', fc, hop, d) === d", E, 10000, "true" },
+        /* a run of white space after a long escape: the escape reads the flag after its last block, so the two are not one stretch */
+        { "st({ style: { color: x8, width: s8 } })", E, 8192 + 8192, "8219" },
+        { "st({ title: x8, href: u8 }, 'a')", E, 8192 + 8192 + 8193, "16405" },
+        /* a run of a step is skipped at once */
+        { "st({ href: u4 }, 'a')", E, 4097, "4108" },
+        /* a short wide value makes the buffer wide, which counts "<a title=\"" and the quote after it, and the flag is read before the white space of a long URL */
+        { "startTag([], { title: '\\u0100', href: uv }, 'a', fc, hop, d) === d", E, 10 + 1 + 8192, "true" },
+    };
+    VM v = vm_new();
+    JSValue g = JS_GetGlobalObject(v.ctx);
+    size_t i;
+
+    JS_SetPropertyStr(v.ctx, g, "startTag", JS_NewStartTagFunction(v.ctx, "startTag", 8));
+    JS_SetPropertyStr(v.ctx, g, "endTag", JS_NewEndTagFunction(v.ctx, "endTag", 6));
+    JS_FreeValue(v.ctx, g);
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    for (i = 0; i < countof(cases); i++) {
+        unsigned long longest, total;
+        char *got;
+
+        white_work_reset();
+        got = eval_text(v.ctx, cases[i].call);
+        longest = white_work_longest();
+        total = white_work_sum();
+        CHECK(got != NULL, "%s: the script threw", cases[i].call);
+        if (got && cases[i].want)
+            CHECK(strcmp(got, cases[i].want) == 0, "%s: gave %s, want %s", cases[i].call, got, cases[i].want);
+        free(got);
         CHECK(longest <= cases[i].step, "%s: %lu units of work between two readings of the flag, at most %lu", cases[i].call,
               longest, cases[i].step);
         CHECK(total == cases[i].total, "%s: %lu units of work, want %lu", cases[i].call, total, cases[i].total);
@@ -4364,6 +4453,7 @@ int main(int argc, char **argv)
     test_object_inline_props();
     test_object_inline_oom();
     test_poll_work_gaps();
+    test_tag_work_gaps();
     test_buffer_copy_work();
     test_buffer_limit();
     test_object_inline_limit();

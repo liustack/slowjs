@@ -2,14 +2,14 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package fmt // import "github.com/liustack/slowjs/fmt"
+package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
 	"os"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 func TestMain(m *testing.M) {
@@ -17,12 +17,12 @@ func TestMain(m *testing.M) {
 }
 
 func ExampleRegister_printf() {
-	m, _ := slowjs.NewVM()
+	m, _ := quickjs.NewVM()
 	defer m.Close()
 	g := m.GlobalObject()
 	defer g.Free()
 	Register(g.Dup())
-	v, _ := m.Eval("fmt.printf('Math.PI=%v\\n', Math.PI)", slowjs.EvalGlobal)
+	v, _ := m.Eval("fmt.printf('Math.PI=%v\\n', Math.PI)", quickjs.EvalGlobal)
 	fmt.Print(v)
 	// Output:
 	// Math.PI=3.141592653589793
@@ -30,12 +30,12 @@ func ExampleRegister_printf() {
 }
 
 func ExampleRegister_sprint() {
-	m, _ := slowjs.NewVM()
+	m, _ := quickjs.NewVM()
 	defer m.Close()
 	g := m.GlobalObject()
 	defer g.Free()
 	Register(g.Dup())
-	v, _ := m.Eval("fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])", slowjs.EvalGlobal)
+	v, _ := m.Eval("fmt.sprint([2*21, 'foo', {bar: Math.exp(1)}])", quickjs.EvalGlobal)
 	fmt.Print(v)
 	// Output:
 	// [42,"foo",{"bar":2.718281828459045}]

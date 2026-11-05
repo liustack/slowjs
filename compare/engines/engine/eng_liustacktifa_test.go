@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // emotionHash is murmur2 of @emotion/hash 0.9.2 (MIT, Copyright (c) Emotion
@@ -40,7 +40,7 @@ const emotionHash = `function emotionHash(str) {
 }`
 
 func TestMurmur2HookIsTheHashOfEmotion(t *testing.T) {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestMurmur2HookIsTheHashOfEmotion(t *testing.T) {
 	if err := registerHash(vm); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := vm.Eval(emotionHash, slowjs.EvalGlobal); err != nil {
+	if _, err := vm.Eval(emotionHash, quickjs.EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	got, err := vm.Eval(`(() => {
@@ -66,7 +66,7 @@ func TestMurmur2HookIsTheHashOfEmotion(t *testing.T) {
   }
   const wrong = strings.filter((s) => __tifa_murmur2__(s) !== emotionHash(s))
   return strings.length + ' ' + wrong.length
-})()`, slowjs.EvalGlobal)
+})()`, quickjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}

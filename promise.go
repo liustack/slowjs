@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package slowjs
+package quickjs
 
 // PromiseCapability holds a Promise along with its resolve and reject
 // functions, obtained without evaluating JS source.

@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build testhooks
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 // Close of a VM on the C engine when the OS refuses to unmap a SharedBytecode:
 // hostmem.SetFault makes the call fail.
@@ -15,7 +15,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 var errRefused = errors.New("refused by the test")

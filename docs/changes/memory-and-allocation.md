@@ -8,11 +8,11 @@ read_when:
 
 # Memory and allocation
 
-The engine has an allocator of its own, with a front cache of freed small blocks, which [allocator.md](../allocator.md) describes. This page has what slowjs changes about how the VMs of one program share memory.
+The engine has an allocator of its own, with a front cache of freed small blocks, which [allocator.md](../allocator.md) describes. This page has what liustack/quickjs changes about how the VMs of one program share memory.
 
 ## One copy of source text and line tables for every VM
 
-Release: Unreleased.
+Release: v0.28.1.
 
 A VM that loads bytecode with `EvalBytecode` copies into its own memory the source text of each function, which `toString` returns, and the table that maps its bytecode to line numbers, which error stacks read. A server that loads one bundle into a pool of VMs holds those bytes once per VM, and no VM ever writes them. `NewSharedBytecode` now copies the bytecode once, outside Go's heap, and `VM.EvalSharedBytecode` (and `EvalSharedBytecodeValue`) loads it with the flag `JS_READ_OBJ_SHARED_DEBUG` of `JS_ReadObject`: the source text and line table of each function it reads point into that copy, and the function says so with the bit `shared_debug` of `JSFunctionBytecode`. Everything else a VM reads, the code, the atoms and the constants, is still its own.
 
@@ -39,7 +39,7 @@ The functions of the bundle that stay after loading hold 1.34 MB of source text 
 
 ## Shared bytecode is scanned for the polls on its first load only
 
-Release: Unreleased.
+Release: v0.29.1.
 
 A VM that reads bytecode holds the code of each function to the rule of the polls (`check_polls`, then `poll_scan`): no run of more than 127 instructions without a count, no opcode the interpreter does not have, and the places `OP_ret` may go. That scan was half of `JS_ReadObject`: 2.1 M of the 4.7 M instructions of reading the 117 KB React bundle, and 26.9 M of the 67.5 M of reading the bundle of the example shop in the comparison. A pool that loads one `SharedBytecode` into every VM scanned the same bytes again for each of them.
 

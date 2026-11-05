@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -7,7 +7,7 @@
 
 package engine
 
-// slowjs-tifa is slowjs set up the way tifa sets up a VM of its pool
+// liustack-tifa is liustack-quickjs set up the way tifa sets up a VM of its pool
 // (internal/ssr/renderer.go and pool.go of github.com/liustack/tifa, MIT),
 // for the tifa page runs only. The small pieces of Go it needs are copied
 // here, not imported, and when tifa changes them they are copied again.
@@ -18,9 +18,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
-	"github.com/liustack/slowjs/temporal"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/intl"
+	"github.com/liustack/quickjs/temporal"
 )
 
 // The defaults of tifa's ssr.vm_memory, ssr.vm_stack_depth and ssr.timeout
@@ -34,14 +34,14 @@ const (
 func init() {
 	register(&Engine{
 		Name:           tifaName,
-		Module:         "github.com/liustack/slowjs",
+		Module:         "github.com/liustack/quickjs",
 		New:            newTifa,
 		SharedPrograms: true,
 		CompileShared:  compileTifa,
 		Interrupt:      true,
 		MemoryLimit:    true,
 		Notes: []string{
-			"slowjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__, __tifa_random_bytes__ and __tifa_async_context__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
+			"liustack-quickjs set up as tifa sets up a VM of its pool: its own Intl and Temporal, no polyfill, __tifa_murmur2__, __tifa_random_bytes__ and __tifa_async_context__ as Go functions, a memory limit of 128 MiB, a stack of 10000 slots and a 3 s time budget set before each step of a render.",
 			"The bundle is compiled once into a SharedBytecode that every VM loads, as an ES module when its file name ends in .mjs, as tifa compiles the bundles it builds since they are ES modules.",
 			"A bundle with @emotion/hash gets the one-line change the tifa plugin makes to murmur2 (see hashInGo), so that it asks __tifa_murmur2__ first.",
 			"A render is startRender, the promise jobs and the read of the result, as ssr.RenderVM does them. After each render comes a young GC and, by the pool's rules, a full GC (Settle), counted in the CPU time per render but not in the wall time.",
@@ -50,7 +50,7 @@ func init() {
 }
 
 type tifaVM struct {
-	vm *slowjs.VM
+	vm *quickjs.VM
 	// The state of tifa's pooledVM (internal/ssr/pool.go).
 	live, baseline, need, threshold uintptr
 	young                           int
@@ -69,8 +69,8 @@ func gcThreshold(live, need, memory uintptr) uintptr {
 }
 
 var (
-	tifaCompileVM *slowjs.VM
-	tifaPrograms  = map[string]*slowjs.SharedBytecode{}
+	tifaCompileVM *quickjs.VM
+	tifaPrograms  = map[string]*quickjs.SharedBytecode{}
 	// bundleRewrites counts the functions hashInGo changed.
 	bundleRewrites int
 )
@@ -79,15 +79,15 @@ var (
 // does, and returns the same SharedBytecode for the same text compiled the
 // same way: as an ES module when name ends in .mjs, else as a script.
 func compileTifa(name, src string) (Program, error) {
-	flags, key := slowjs.EvalGlobal, "script:"+src
+	flags, key := quickjs.EvalGlobal, "script:"+src
 	if strings.HasSuffix(name, ".mjs") {
-		flags, key = slowjs.EvalModule, "module:"+src
+		flags, key = quickjs.EvalModule, "module:"+src
 	}
 	if p, ok := tifaPrograms[key]; ok {
 		return p, nil
 	}
 	if tifaCompileVM == nil {
-		vm, err := slowjs.NewVM()
+		vm, err := quickjs.NewVM()
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,7 @@ func compileTifa(name, src string) (Program, error) {
 	if err != nil {
 		return nil, qjsErr(err, true)
 	}
-	p, err := slowjs.NewSharedBytecode(code)
+	p, err := quickjs.NewSharedBytecode(code)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func compileTifa(name, src string) (Program, error) {
 
 // newTifa makes a VM as ssr.Load does, up to the bundle.
 func newTifa(o Options) (VM, error) {
-	vm, err := slowjs.NewVM()
+	vm, err := quickjs.NewVM()
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func newTifa(o Options) (VM, error) {
 }
 
 func (v *tifaVM) Eval(name, src string) (string, error) {
-	r, err := v.vm.Eval(src, slowjs.EvalGlobal)
+	r, err := v.vm.Eval(src, quickjs.EvalGlobal)
 	if err != nil {
 		return "", qjsErr(err, false)
 	}
@@ -149,7 +149,7 @@ func (v *tifaVM) Eval(name, src string) (string, error) {
 func (v *tifaVM) Compile(name, src string) (Program, error) { return compileTifa(name, src) }
 
 func (v *tifaVM) Run(p Program) (string, error) {
-	r, err := v.vm.EvalSharedBytecode(p.(*slowjs.SharedBytecode))
+	r, err := v.vm.EvalSharedBytecode(p.(*quickjs.SharedBytecode))
 	if err != nil {
 		return "", qjsErr(err, false)
 	}
@@ -202,7 +202,7 @@ func (v *tifaVM) Render(input string) (string, error) {
 	if err := budget(); err != nil {
 		return "", err
 	}
-	if _, err := vm.Eval("globalThis.renderResult = undefined", slowjs.EvalGlobal); err != nil {
+	if _, err := vm.Eval("globalThis.renderResult = undefined", quickjs.EvalGlobal); err != nil {
 		return "", qjsErr(err, false)
 	}
 	if err := budget(); err != nil {
@@ -220,7 +220,7 @@ func (v *tifaVM) Render(input string) (string, error) {
 	if err := budget(); err != nil {
 		return "", err
 	}
-	value, err := vm.Eval("(() => { const result = globalThis.renderResult; globalThis.renderResult = undefined; return result })()", slowjs.EvalGlobal)
+	value, err := vm.Eval("(() => { const result = globalThis.renderResult; globalThis.renderResult = undefined; return result })()", quickjs.EvalGlobal)
 	if err != nil {
 		return "", qjsErr(err, false)
 	}
@@ -278,7 +278,7 @@ func (v *tifaVM) Counters() map[string]int {
 }
 
 func qjsErr(err error, compile bool) error {
-	var e *slowjs.Error
+	var e *quickjs.Error
 	if errors.As(err, &e) {
 		return &JSError{Name: e.Name, Message: e.Message, Compile: compile}
 	}

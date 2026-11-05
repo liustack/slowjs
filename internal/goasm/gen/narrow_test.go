@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -31,12 +31,12 @@ import (
 // the generator once took them (GEN_KEEP_NARROW): preserve_none passes them
 // in other registers than the lowering moves. That build's probe must show
 // the fault: right when called plainly, wrong once morestack ran. It needs LLVM 22.1.8
-// (SLOWJS_LLVM), the pass (SLOWJS_SHADOW_PASS) and ld.lld (SLOWJS_LLD), on
+// (QUICKJS_LLVM), the pass (QUICKJS_SHADOW_PASS) and ld.lld (QUICKJS_LLD), on
 // linux/amd64.
 func TestNarrowArgs(t *testing.T) {
-	llvm, pass, lld := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS"), os.Getenv("SLOWJS_LLD")
+	llvm, pass, lld := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS"), os.Getenv("QUICKJS_LLD")
 	if llvm == "" || pass == "" || lld == "" {
-		t.Skip("set SLOWJS_LLVM, SLOWJS_SHADOW_PASS and SLOWJS_LLD")
+		t.Skip("set QUICKJS_LLVM, QUICKJS_SHADOW_PASS and QUICKJS_LLD")
 	}
 	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
 		t.Skip("runs linux/amd64 code")
@@ -175,11 +175,11 @@ func TestNarrowArgs(t *testing.T) {
 // (GEN_KEEP_NARROW) shows the mistake the widening removes: preserve_none
 // leaves the narrow ones to the C rules, which start at W0, and the lowering
 // refuses each function whose entry llc reads from other registers than it
-// loads. It needs LLVM 22.1.8 (SLOWJS_LLVM) and the pass (SLOWJS_SHADOW_PASS).
+// loads. It needs LLVM 22.1.8 (QUICKJS_LLVM) and the pass (QUICKJS_SHADOW_PASS).
 func TestNarrowArgsARM64(t *testing.T) {
-	llvm, pass := os.Getenv("SLOWJS_LLVM"), os.Getenv("SLOWJS_SHADOW_PASS")
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
-		t.Skip("set SLOWJS_LLVM and SLOWJS_SHADOW_PASS")
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	work := t.TempDir()
 	drv := filepath.Join(work, "engine")

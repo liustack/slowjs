@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 var cgLine = regexp.MustCompile(`^\s*([\d,]+) \(\s*[\d.]+%\)\s+(.*)$`)
@@ -78,7 +78,7 @@ func Diff(renders float64, small, big Listing) PerRender {
 }
 
 func shortName(s string) string {
-	for _, p := range []string{"github.com/liustack/slowjs/internal/", "github.com/liustack/slowjs.", "github.com/liustack/tifa/internal/"} {
+	for _, p := range []string{"github.com/liustack/quickjs/internal/", "github.com/liustack/quickjs.", "github.com/liustack/tifa/internal/"} {
 		s = strings.TrimPrefix(s, p)
 	}
 	return s

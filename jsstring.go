@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/binary"
@@ -131,7 +131,7 @@ var utf16Scratch = sync.Pool{New: func() any { return new([]byte) }}
 // unit, as utf16String converts it, and returns how many bytes it wrote.
 func utf16Write(out []byte, u []uint16, wtf8 bool) int {
 	if len(out) < 3*len(u) {
-		panic("slowjs: no room for the UTF-8 of the units")
+		panic("quickjs: no room for the UTF-8 of the units")
 	}
 	d := unsafe.Pointer(unsafe.SliceData(out))
 	j := uintptr(0)
@@ -418,5 +418,5 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 }
 
 func errStringTooLong(n int) error {
-	return fmt.Errorf("slowjs: a string of %d characters is longer than javascript allows (%d)", n, stringLenMax)
+	return fmt.Errorf("quickjs: a string of %d characters is longer than javascript allows (%d)", n, stringLenMax)
 }

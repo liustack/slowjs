@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2026 The slowjs Authors.
+ * Copyright (c) 2026 The liustack/quickjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
  */
-#ifndef SLOWJS_LIBC_FLOAT_H
-#define SLOWJS_LIBC_FLOAT_H
+#ifndef QUICKJS_LIBC_FLOAT_H
+#define QUICKJS_LIBC_FLOAT_H
 
 /* double and float only: the C tree has no long double. */
 #define FLT_RADIX 2

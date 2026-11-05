@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package slowjs is a pure Go embeddable Javascript engine. It supports the
+// Package quickjs is a pure Go embeddable Javascript engine. It supports the
 // ECMA script 14 ([ES2023]) specification including modules, asynchronous
 // generators, proxies and BigInt.
 //
@@ -13,10 +13,10 @@
 // The engine has no Intl. ECMA-402 is not implemented by the C library this
 // package wraps, so a page or bundle reaching for Intl.DateTimeFormat gets a
 // ReferenceError, and the toLocale* methods it ships ignore both their locale
-// and their timeZone argument. Package [github.com/liustack/slowjs/intl] adds
+// and their timeZone argument. Package [github.com/liustack/quickjs/intl] adds
 // every Intl constructor, with the data of every locale Chromium has, and
 // replaces those toLocale* methods and localeCompare, for a VM that opts in by
-// calling its Register. Package [github.com/liustack/slowjs/temporal] adds
+// calling its Register. Package [github.com/liustack/quickjs/temporal] adds
 // Temporal the same way. With no locale argument the locale is en-US, and with
 // no timeZone option the zone is UTC. Both use the time zone data built into
 // the module and never read the host's zoneinfo.
@@ -50,7 +50,7 @@
 //
 // [C QuickJS]: https://bellard.org/quickjs
 // [ES2023]: https://tc39.es/ecma262/2023/
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/json"

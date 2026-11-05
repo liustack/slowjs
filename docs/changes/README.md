@@ -1,5 +1,5 @@
 ---
-summary: 'Index of every change slowjs makes to the QuickJS C tree and to the Go API, by area: one line per change with the release it shipped in and the doc that has what it does, why it is safe, what it gains and which tests check it'
+summary: 'Index of every change liustack/quickjs makes to the QuickJS C tree and to the Go API, by area: one line per change with the release it shipped in and the doc that has what it does, why it is safe, what it gains and which tests check it'
 read_when:
   - Asking why a change to the engine is safe, what it costs and what it gains
   - Looking for the doc of a change before changing the same code
@@ -10,32 +10,32 @@ read_when:
 
 The engine is QuickJS release 2026-06-04 (commit `3d5e064`, the C) with the changes below on top. Each doc below takes one area. For each change it says what the change does, why it is safe, what it gains or costs and how that was measured, and which tests check it. [upgrading.md](../upgrading.md) has the procedure of taking a new QuickJS release and [CHANGELOG.md](../../CHANGELOG.md) what each release changed for users.
 
-The engine is the C in `engine/`, which the generator compiles to Go assembly. A change to it is a change of the C, checked in with the generated files (see [AGENTS.md](../../AGENTS.md)). Releases up to v0.28 ran QuickJS translated to Go by ccgo, with slowjs's changes written into that Go by a tool that is gone now. The entries that name those releases keep the C form of their change here, and their timings were taken on that engine. [performance.md](../performance.md) has the speed of the C engine.
+The engine is the C in `engine/`, which the generator compiles to Go assembly. A change to it is a change of the C, checked in with the generated files (see [AGENTS.md](../../AGENTS.md)). Releases up to v0.28 ran QuickJS translated to Go by ccgo, with the changes of liustack/quickjs written into that Go by a tool that is gone now. The entries that name those releases keep the C form of their change here, and their timings were taken on that engine. [performance.md](../performance.md) has the speed of the C engine.
 
 ## The C engine
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| The C tree of the new engine: a small libc, host callbacks, no blocking Atomics, class IDs per runtime, recursion bounded by counted depths | Unreleased | [c-engine.md](c-engine.md) |
-| A call sets and frees its values in fewer loop turns | Unreleased | [c-engine.md](c-engine.md#how-a-call-sets-and-frees-its-values) |
-| The interpreter calls a C function without JS_CallInternal | Unreleased | [c-engine.md](c-engine.md#how-the-interpreter-calls-a-c-function) |
-| The end of a call skips the values with no reference count | Unreleased | [c-engine.md](c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count) |
-| A call sets its locals eight to a turn | Unreleased | [c-engine.md](c-engine.md#a-call-sets-its-locals-eight-to-a-turn) |
-| Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | Unreleased | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
-| Locals that are never live together share a slot of the frame | Unreleased | [c-engine.md](c-engine.md#locals-that-share-a-slot) |
-| JSON.parse reads keys and plain strings from the text, with a cache of key atoms for one parse | Unreleased | [c-engine.md](c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text) |
-| A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | Unreleased | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
-| A collection asked for while the engine frees objects does nothing | Unreleased | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
-| Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | Unreleased | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
+| The C tree of the new engine: a small libc, host callbacks, no blocking Atomics, class IDs per runtime, recursion bounded by counted depths | v0.29.0 | [c-engine.md](c-engine.md) |
+| A call sets and frees its values in fewer loop turns | v0.29.1 | [c-engine.md](c-engine.md#how-a-call-sets-and-frees-its-values) |
+| The interpreter calls a C function without JS_CallInternal | v0.29.4 | [c-engine.md](c-engine.md#how-the-interpreter-calls-a-c-function) |
+| The end of a call skips the values with no reference count | v0.29.5 | [c-engine.md](c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count) |
+| A call sets its locals eight to a turn | v0.29.5 | [c-engine.md](c-engine.md#a-call-sets-its-locals-eight-to-a-turn) |
+| Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | v0.29.5 | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
+| Locals that are never live together share a slot of the frame | v0.29.7 | [c-engine.md](c-engine.md#locals-that-share-a-slot) |
+| JSON.parse reads keys and plain strings from the text, with a cache of key atoms for one parse | v0.29.7 | [c-engine.md](c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text) |
+| A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | v0.29.11 | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
+| A collection asked for while the engine frees objects does nothing | v0.29.10 | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
+| Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | v0.29.11 | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
 
 ## Commits of upstream QuickJS
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| Iterator.concat follows IteratorClose and finishes after a failed step | Unreleased | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
-| Reducing an empty iterator without an initial accumulator does not close it | Unreleased | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
-| Sparse array truncation removes indices before compacting the property table | Unreleased | [upstream-commits.md](upstream-commits.md#array-truncation) |
-| Commits of upstream QuickJS after 3d5e064 taken into the C tree one at a time (Array slice and splice, borrowed operands of js_strict_eq2, template literals, unicode_script), and the ones left out | Unreleased | [upstream-commits.md](upstream-commits.md) |
+| Iterator.concat follows IteratorClose and finishes after a failed step | v0.29.8 | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
+| Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
+| Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
+| Commits of upstream QuickJS after 3d5e064 taken into the C tree one at a time (Array slice and splice, borrowed operands of js_strict_eq2, template literals, unicode_script), and the ones left out | v0.29.0 | [upstream-commits.md](upstream-commits.md) |
 
 ## Go API
 
@@ -62,11 +62,11 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Args.Latin1, Args.UTF16, NewStringLatin1 and NewStringUTF16 | v0.27.2 | [go-api.md](go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16) |
 | A module frees its top level once it has run | v0.28.4 | [go-api.md](go-api.md#a-module-frees-its-top-level-once-it-has-run) |
 | The async context of promise jobs, for AsyncLocalStorage | v0.28.5 | [go-api.md](go-api.md#the-async-context-of-promise-jobs) |
-| RegisterEscapeText, React DOM's HTML escape written in C | Unreleased | [go-api.md](go-api.md#registerescapetext) |
-| RegisterCopyProps, the loop that copies the props of a React element written in C | Unreleased | [go-api.md](go-api.md#registercopyprops) |
-| RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | Unreleased | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
-| A Go newer than the one the engine was checked with stops the build | Unreleased | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
-| A build option that changes how the assembler encodes the engine stops the build | Unreleased | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
+| RegisterEscapeText, React DOM's HTML escape written in C | v0.29.2 | [go-api.md](go-api.md#registerescapetext) |
+| RegisterCopyProps, the loop that copies the props of a React element written in C | v0.29.3 | [go-api.md](go-api.md#registercopyprops) |
+| RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | v0.29.10 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
+| A Go newer than the one the engine was checked with stops the build | v0.29.11 | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
+| A build option that changes how the assembler encodes the engine stops the build | v0.29.11 | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
 
 ## Limits that hold
 
@@ -83,9 +83,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Interrupt is safe during and after Close | v0.26.10 | [uncatchable.md](uncatchable.md#interrupt-is-safe-during-and-after-close) |
 | Compiling a regexp counts toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#compiling-a-regexp-counts-toward-the-interrupt-check) |
 | Parsing and building strings count toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#parsing-and-building-strings-count-toward-the-interrupt-check) |
-| Every method that can run javascript has the eval timeout | Unreleased | [uncatchable.md](uncatchable.md#every-method-that-can-run-javascript-has-the-eval-timeout) |
-| Out of memory in the return method of an iterator that an exception closes is not caught | Unreleased | [uncatchable.md](uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes) |
-| Loops over a long string read the interrupt flag in steps | Unreleased | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
+| Every method that can run javascript has the eval timeout | v0.29.5 | [uncatchable.md](uncatchable.md#every-method-that-can-run-javascript-has-the-eval-timeout) |
+| Out of memory in the return method of an iterator that an exception closes is not caught | v0.29.11 | [uncatchable.md](uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes) |
+| Loops over a long string read the interrupt flag in steps | v0.29.5 | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
+| The start and end tag functions read the interrupt flag in every long loop | v0.30.0 | [uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop) |
 
 ## Errors and stacks
 
@@ -157,25 +158,25 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | New functions get length and name at once | v0.26.17 | [objects-and-shapes.md](objects-and-shapes.md#new-functions-get-length-and-name-at-once) |
 | Methods of strings, numbers and arrays found in the interpreter | v0.27.1 | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
 | Own keys listed from the shape | v0.28.5 | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
-| Ordinary objects take 48 bytes, not 72 | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72) |
-| Spread, rest and Object.assign look each key up when its turn comes | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
-| Object literals made at their final shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
-| Object literals keep their properties in the block of the object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
-| Object literals of the same keys share one shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape) |
-| A for in loop holds the shape of its object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
-| A delete that cannot pack the properties for lack of memory leaves no error pending | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
-| hasOwnProperty.call answered in the interpreter | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
-| A shared shape that cannot be copied fails the call | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shared-shape-that-cannot-be-copied-fails-the-call) |
-| Objects of the built-in classes find the empty shape of their prototype | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
-| A shape is found by the shape it grew from | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
-| An object that dies alone is freed at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
+| Ordinary objects take 48 bytes, not 72 | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72) |
+| Spread, rest and Object.assign look each key up when its turn comes | v0.29.2 | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
+| Object literals made at their final shape | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
+| Object literals keep their properties in the block of the object | v0.29.4 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
+| Object literals of the same keys share one shape | v0.29.5 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape) |
+| A for in loop holds the shape of its object | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
+| A delete that cannot pack the properties for lack of memory leaves no error pending | v0.29.5 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
+| hasOwnProperty.call answered in the interpreter | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
+| A shared shape that cannot be copied fails the call | v0.29.9 | [objects-and-shapes.md](objects-and-shapes.md#a-shared-shape-that-cannot-be-copied-fails-the-call) |
+| Objects of the built-in classes find the empty shape of their prototype | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
+| A shape is found by the shape it grew from | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
+| An object that dies alone is freed at once | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
 
 ## Memory
 
 | Change | Release | Doc |
 | --- | --- | --- |
 | One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
-| Shared bytecode is scanned for the polls on its first load only | Unreleased | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
+| Shared bytecode is scanned for the polls on its first load only | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
 
 ## Young collection
 
@@ -197,6 +198,6 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 ## Adding a change
 
-- Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table of that area, with "Unreleased" as its release until it ships. Never write it into README.md, which only links here.
+- Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table of that area, with "Unreleased" as its release. The release step in [releasing.md](../releasing.md#before-the-release) replaces "Unreleased" with the version, in the tables here and in the Release lines of the area docs. Never write it into README.md, which only links here.
 - Say what it does, why it is safe, what it gains or costs with the machine and how it was measured, and which tests check it.
 - Add it to [CHANGELOG.md](../../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../../CHANGELOG.zh-CN.md), and a change for speed to [performance.md](../performance.md).

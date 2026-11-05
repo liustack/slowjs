@@ -742,7 +742,8 @@ func js_dynamic_import_job(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, 
 func js_emit_binary_op(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_emit_buf_end(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_emit_buf_take(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func js_emit_is_javascript_url(a0 uintptr, a1 uintptr) uintptr
+func js_emit_copy_long(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
+func js_emit_is_javascript_url(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_emit_name_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_emit_new_function(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_emit_plain_keys(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -753,6 +754,7 @@ func js_emit_put_style(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintpt
 func js_emit_put_text(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_emit_spread_code(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_emit_string(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func js_emit_valid_tag_long(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_end_tag(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_end_tag_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_end_tag_make(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)

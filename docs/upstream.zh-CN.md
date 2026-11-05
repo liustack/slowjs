@@ -4,23 +4,23 @@
 
 ## 代码从哪来
 
-- **引擎**是 [QuickJS](https://bellard.org/quickjs)，Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎，取 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`。`engine/` 是这份 C 加上 slowjs 的改动。`internal/goasm/gen` 把它编译成 Go 汇编，提交进仓库。生成的文件从不手改，和生成器的结果不一致时 `make check-gen` 会失败。test262 有 33 个已知失败，列在 `engine/test/test262_errors.txt`。
+- **引擎**是 [QuickJS](https://bellard.org/quickjs)，Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎，取 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`。`engine/` 是这份 C 加上 liustack/quickjs 的改动。`internal/goasm/gen` 把它编译成 Go 汇编，提交进仓库。生成的文件从不手改，和生成器的结果不一致时 `make check-gen` 会失败。test262 有 33 个已知失败，列在 `engine/test/test262_errors.txt`。
 - **Go API**（模块根目录的 `VM`、`Value`、`Eval`、`Call` 等）起步于 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0（2026-10-01），也就是本仓库历史里的提交 `ea7b851`，之后重写并扩充过。其中一些名字、注释和测试还在。v0.28 之前，它下面的引擎是 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)，ccgo 把 QuickJS 转译成的 Go。那个引擎已经删掉，它的 Go 也不在了。
-- **其余部分**是为 slowjs 写的，或者来自 [NOTICE.md](../NOTICE.md) 里列出的项目：分配器（TLSF）、引擎自带的小 libc（musl）、语言数据，以及 `Intl` 和 `Temporal` 的 Go 部分（go-intl、ICU、Chromium）。
+- **其余部分**是为 liustack/quickjs 写的，或者来自 [NOTICE.md](../NOTICE.md) 里列出的项目：分配器（TLSF）、引擎自带的小 libc（musl）、语言数据，以及 `Intl` 和 `Temporal` 的 Go 部分（go-intl、ICU、Chromium）。
 
-slowjs 的作者列在 [AUTHORS-SLOWJS](../AUTHORS-SLOWJS)。modernc.org/quickjs 的 `AUTHORS` 文件按它原样保留为 [AUTHORS](../AUTHORS)。
+liustack/quickjs 的作者列在 [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK)。modernc.org/quickjs 的 `AUTHORS` 文件按它原样保留为 [AUTHORS](../AUTHORS)。
 
 ## 合入 QuickJS 的提交
 
 `engine/` 里的 C 树不跟着上游的每个版本走。钉住的提交之后上游的提交，凡是修正确性、内存泄漏、崩溃的（不管页面碰不碰得到），或者让渲染更快的，单独搬进来，带测试。新功能和只为速度的改动，tifa 用得上才搬。搬进来的、试过又撤回的提交都在 [upstream-commits.md](changes/upstream-commits.md)。怎么合入一个提交，见 [upgrading.md](upgrading.md)。
 
-slowjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本捕获不了的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。
+liustack/quickjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本捕获不了的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。
 
 ## 从 modernc.org/quickjs 换过来
 
 用过 modernc.org/quickjs v0.25.0 的程序会遇到这些：
 
-- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/slowjs`，包名 `quickjs` 改成 `slowjs`，它的 `intl` 和 `fmt` 包跟着改。引擎在模块里面，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
+- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/quickjs`，包名还是 `quickjs`，它的 `intl` 和 `fmt` 包跟着改。引擎在模块里面，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
 - **Go 版本。** 需要 Go 1.26.6 或更新（没核对过的更新版本会直接报错，见 [upgrading.md](upgrading.md#moving-to-a-newer-go)），modernc.org/quickjs v0.25.0 需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](changes/time-and-intl.md#local-time-is-utc-in-every-vm)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，modernc.org/quickjs 只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](changes/time-and-intl.md#intl-in-every-locale-chromium-has)）。
@@ -37,6 +37,10 @@ slowjs 对这份 C 的改动逐项列在 [changes](changes/README.md)：脚本�
 
 每个版本的所有改动见[更新记录](../CHANGELOG.zh-CN.md)。
 
+## 从 github.com/liustack/slowjs 换过来
+
+v0.28.0 到 v0.29.11 是以 `github.com/liustack/slowjs` 发布的，从 v0.30.0 起模块又叫 `github.com/liustack/quickjs`，API 不变。用过 `github.com/liustack/slowjs` 的程序只需要改名字：import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），代码里的包名（`slowjs.NewVM` 改成 `quickjs.NewVM`），以及构建标签（`slowjs_intl_nonames` 和 `slowjs_intl_nocjdict` 改成 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict`，v0.29.11 加的 `slowjs_anygo` 改成 `quickjs_anygo`）。宿主如果靠 `intl` 或 `temporal` 标记 VM 的那个 `Symbol.for` 键来认 VM，键里的路径也换成新的。根包的错误信息改以 `quickjs:` 开头。
+
 ## 致谢
 
-引擎是 Fabrice Bellard 和 Charlie Gordon 的 QuickJS。Go API 起步于 modernc.org/quickjs，作者是 quickjs-go 的 Jan Mercl 和 Dan Kortschak，Jan Mercl 还用 ccgo 把 QuickJS 转译成 Go，做成 modernc.org/libquickjs。slowjs 感谢他们带来的最初那套 API。还留在仓库里的那部分代码需要他们的许可证文件，所以都保留着：[LICENSE](../LICENSE) 和 [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS)，QuickJS 的是 [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS)。
+引擎是 Fabrice Bellard 和 Charlie Gordon 的 QuickJS。Go API 起步于 modernc.org/quickjs，作者是 quickjs-go 的 Jan Mercl 和 Dan Kortschak，Jan Mercl 还用 ccgo 把 QuickJS 转译成 Go，做成 modernc.org/libquickjs。liustack/quickjs 感谢他们带来的最初那套 API。还留在仓库里的那部分代码需要他们的许可证文件，所以都保留着：[LICENSE](../LICENSE) 和 [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS)，QuickJS 的是 [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS)。

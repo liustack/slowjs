@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 package cengine
 
-// What package slowjs needs of the engine besides the JS_ functions of
+// What package quickjs needs of the engine besides the JS_ functions of
 // engine_decl_<arch>.go, which it calls directly: the layout of values it reads and
 // writes in place, the built-in atoms it names, the few lower-case functions
 // it calls, and where a VM's runtime, context and stack are.

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -19,7 +19,7 @@ import (
 )
 
 // Every engine process runs under a hard memory cap. GOMEMLIMIT is not
-// enough: slowjs and modernc-quickjs keep the memory of a VM outside the Go heap. On Linux the cap is a cgroup
+// enough: liustack-quickjs and modernc-quickjs keep the memory of a VM outside the Go heap. On Linux the cap is a cgroup
 // (systemd-run --user --scope -p MemoryMax), which counts all of it. On top
 // of that, and as the only cap elsewhere, the driver reads the resident size
 // of the process and kills it when it goes over.

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -31,8 +31,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/internal/cengine/cmd/scenarios"
+	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/cengine/cmd/scenarios"
 )
 
 func main() {
@@ -74,13 +74,13 @@ func main() {
 		var times []float64
 		killed := 0
 		for trial := range *n {
-			m, err := slowjs.NewVM()
+			m, err := quickjs.NewVM()
 			if err != nil {
 				fail(err)
 			}
 			done := make(chan error, 1)
 			go func() {
-				_, err := m.Eval(sc.JS, slowjs.EvalGlobal)
+				_, err := m.Eval(sc.JS, quickjs.EvalGlobal)
 				done <- err
 			}()
 			time.Sleep(*warm + time.Duration(rand.Int64N(int64(*spread)+1)))
@@ -110,7 +110,7 @@ func main() {
 			if err2 == nil {
 				fail(fmt.Errorf("%s: the script ended without an error", sc.Name))
 			}
-			if errors.Is(err2, slowjs.ErrKilled) {
+			if errors.Is(err2, quickjs.ErrKilled) {
 				killed++
 			}
 			if err := m.Close(); err != nil {

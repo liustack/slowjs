@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 func TestParsePositions(t *testing.T) {

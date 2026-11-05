@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -16,13 +16,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/liustack/slowjs/internal/sjdev"
+	"github.com/liustack/quickjs/internal/sjdev"
 )
 
 // BuildOptions say which binaries to build.
 type BuildOptions struct {
 	Side      string     // label of the side, such as "base" or "new"
-	Tree      string     // the slowjs checkout, with the engine generated into internal/cengine
+	Tree      string     // the liustack/quickjs checkout, with the engine generated into internal/cengine
 	App       string     // build in this module instead (tifa), with a go.work that uses Tree
 	Pkg       string     // the package to build, relative to App (or Tree)
 	Test      bool       // build the test binary of Pkg (go test -c)

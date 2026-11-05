@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/slowjs/intl"
+package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/slowjs"
+	"github.com/liustack/quickjs"
 )
 
 // goIntlUses are objects of the constructors built on go-intl, made once and
@@ -89,7 +89,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			vm, err := slowjs.NewVM()
+			vm, err := quickjs.NewVM()
 			if err != nil {
 				t.Error(err)
 				return
@@ -102,7 +102,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 				return
 			}
 
-			if _, err := vm.Eval(goIntlHold(), slowjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(goIntlHold(), quickjs.EvalGlobal); err != nil {
 				t.Error(err)
 				return
 			}
@@ -112,7 +112,7 @@ func TestRegistryGoIntlConcurrent(t *testing.T) {
 					new Intl.NumberFormat('en', {minimumIntegerDigits: 1 + k %% 21, maximumFractionDigits: %d});
 				}
 				%s`, (g*20+i)%101, goIntlCheck())
-				if v, err := vm.Eval(src, slowjs.EvalGlobal); err != nil || v != "" {
+				if v, err := vm.Eval(src, quickjs.EvalGlobal); err != nil || v != "" {
 					t.Errorf("goroutine %d: %v %v", g, v, err)
 					return
 				}

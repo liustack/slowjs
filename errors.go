@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package slowjs // import "github.com/liustack/slowjs"
+package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"errors"
@@ -13,7 +13,7 @@ import (
 // returned by [VM.Eval], [VM.Call] and the other eval-family methods is an
 // *Error; recover the fields with [errors.As]:
 //
-//	var e *slowjs.Error
+//	var e *quickjs.Error
 //	if errors.As(err, &e) {
 //		fmt.Println(e.Stack)
 //	}
@@ -68,10 +68,10 @@ type Error struct {
 // that matches ErrKilled, the others panic, and [Value.Free] does nothing.
 // The exceptions are [VM.MemorySize] and [VM.GCThreshold], which only read a
 // counter and answer as they do on any VM.
-var ErrKilled = errors.New("slowjs: the script did not stop in time and was killed")
+var ErrKilled = errors.New("quickjs: the script did not stop in time and was killed")
 
 // errKilledVM is the error of a method called after a kill.
-var errKilledVM = fmt.Errorf("slowjs: the VM is good only for Close: %w", ErrKilled)
+var errKilledVM = fmt.Errorf("quickjs: the VM is good only for Close: %w", ErrKilled)
 
 // Is reports whether e is the error of a killed call, for target ErrKilled.
 func (e *Error) Is(target error) bool {

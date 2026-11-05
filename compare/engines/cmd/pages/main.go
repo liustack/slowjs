@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The slowjs Authors.
+// Copyright (c) 2026 The liustack/quickjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -15,12 +15,12 @@
 // Date.now() of the render) are masked: they differ between any two renders.
 // Times are per render: the mean of the CPU time of the timed renders where
 // the engine reports it, else the mean wall time (the C QuickJS rows, timed in
-// the script on a CPU of their own). Ratios are against slowjs on the same
+// the script on a CPU of their own). Ratios are against liustack-quickjs on the same
 // page, as a geometric mean over the pages with the range in brackets.
 //
-// slowjs-tifa is slowjs set up the way tifa sets it up (own Intl and Temporal,
+// liustack-tifa is liustack-quickjs set up the way tifa sets it up (own Intl and Temporal,
 // tifa's Go functions, no polyfill), so it has no pf runs. Its pages are
-// compared with the pages of slowjs on the polyfill, where the Intl output of
+// compared with the pages of liustack-quickjs on the polyfill, where the Intl output of
 // the two may differ in U+202F (see tifaRowCheck).
 package main
 
@@ -29,7 +29,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/liustack/slowjs/compare/engines/internal/pytext"
+	"github.com/liustack/quickjs/compare/engines/internal/pytext"
 	"io/fs"
 	"math"
 	"os"
@@ -41,9 +41,9 @@ import (
 )
 
 var (
-	goEngines = []string{"slowjs", "slowjs-tifa", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"}
+	goEngines = []string{"liustack-quickjs", "liustack-tifa", "modernc-quickjs", "go-quickjs-interp", "go-quickjs-jit", "goant-interp", "goant-jit", "moejs"}
 	refEngine = []string{"quickjs-2026-06-04", "quickjs-master", "quickjs-ng", "node-jit", "node-jitless"}
-	ownIntl   = []string{"slowjs", "slowjs-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
+	ownIntl   = []string{"liustack-quickjs", "liustack-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 	label     = map[string]string{
 		"quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
 		"quickjs-master":     "C QuickJS master 7d1c13c5d8 (reference)",
@@ -56,7 +56,7 @@ var (
 
 // notRun says why a run is missing, for the runs left out of run.sh.
 func notRun(engine, kind string) string {
-	if engine == "slowjs-tifa" && (kind == "pf" || kind == "mui-pf") {
+	if engine == "liustack-tifa" && (kind == "pf" || kind == "mui-pf") {
 		return "not run: this row has no polyfill"
 	}
 	return "not run"
@@ -357,8 +357,8 @@ func asDeployed(own, polyfill string) kind {
 	}}
 }
 
-// comparisons compares the pages of every engine with those of slowjs, the
-// kind of base (or the engine's own kind) being the run of slowjs.
+// comparisons compares the pages of every engine with those of liustack-quickjs, the
+// kind of base (or the engine's own kind) being the run of liustack-quickjs.
 func (r *run) comparisons(k kind, baseKind string) map[string]map[string]equality {
 	result := map[string]map[string]equality{}
 	for _, e := range append(slices.Clone(goEngines), refEngine...) {
@@ -368,7 +368,7 @@ func (r *run) comparisons(k kind, baseKind string) map[string]map[string]equalit
 			base = kk
 		}
 		ps := pages(r.loadMerged(e + "-" + kk))
-		refs := pages(r.loadMerged("slowjs-" + base))
+		refs := pages(r.loadMerged("liustack-quickjs-" + base))
 		m := map[string]equality{}
 		for _, pg := range union(ps, refs) {
 			var eq equality
@@ -376,7 +376,7 @@ func (r *run) comparisons(k kind, baseKind string) map[string]map[string]equalit
 				eq.actual = r.html(e, kk, pg)
 			}
 			if v, ok := refs.m[pg]; ok && truthy(get(v, "ok")) {
-				eq.ref = r.html("slowjs", base, pg)
+				eq.ref = r.html("liustack-quickjs", base, pg)
 			}
 			m[pg] = eq
 		}
@@ -407,7 +407,7 @@ var tifaKinds = []tifaKind{{"bench", "bench", "bench"}, {"mui", "mui-native", "m
 
 var narrowSpace = []byte(" ")
 
-// tifaRowEvidence compares the pages of slowjs-tifa with those of slowjs on
+// tifaRowEvidence compares the pages of liustack-tifa with those of liustack-quickjs on
 // the polyfill (the same JavaScript on another Intl). `same` is byte for byte
 // after masking. `same_but_u202f` says the pages are the same once the narrow
 // no-break space U+202F, which the FormatJS polyfill writes before AM and PM
@@ -415,15 +415,15 @@ var narrowSpace = []byte(" ")
 func (r *run) tifaRowEvidence() (keys []string, result map[string]map[string]any) {
 	result = map[string]map[string]any{}
 	for _, tk := range tifaKinds {
-		ps := pages(r.loadMerged("slowjs-tifa-" + tk.tifa))
-		refs := pages(r.loadMerged("slowjs-" + tk.polyfill))
+		ps := pages(r.loadMerged("liustack-tifa-" + tk.tifa))
+		refs := pages(r.loadMerged("liustack-quickjs-" + tk.polyfill))
 		for _, pg := range union(ps, refs) {
 			var eq equality
 			if v, ok := ps.m[pg]; ok && truthy(get(v, "ok")) {
-				eq.actual = r.html("slowjs-tifa", tk.tifa, pg)
+				eq.actual = r.html("liustack-tifa", tk.tifa, pg)
 			}
 			if v, ok := refs.m[pg]; ok && truthy(get(v, "ok")) {
-				eq.ref = r.html("slowjs", tk.polyfill, pg)
+				eq.ref = r.html("liustack-quickjs", tk.polyfill, pg)
 			}
 			e := eq.object()
 			delete(e, "same_as_liustack")
@@ -449,7 +449,7 @@ func (r *run) tifaRowEvidence() (keys []string, result map[string]map[string]any
 
 func (r *run) checkEquality(app, page string) equality {
 	read := func(tag string) html {
-		return r.read(filepath.Join("check", fmt.Sprintf("slowjs-%s-%s-%s.html", app, tag, page)))
+		return r.read(filepath.Join("check", fmt.Sprintf("liustack-quickjs-%s-%s-%s.html", app, tag, page)))
 	}
 	return equality{read("stub"), read("normal")}
 }
@@ -679,10 +679,10 @@ func (r *run) table(w *report, k kind, title string, engines []string, baseKind 
 	if bk == "" {
 		bk = k.fixed
 	}
-	base := timesOf(pages(r.loadMerged("slowjs-" + bk)))
+	base := timesOf(pages(r.loadMerged("liustack-quickjs-" + bk)))
 	evidence := r.comparisons(k, baseKind)
 	w.printf("### %s\n", title)
-	w.println("| Engine | Load ms | Pages that render | Same page as slowjs | Time per render vs slowjs |")
+	w.println("| Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |")
 	w.println("|---|---|---|---|---|")
 	for _, e := range engines {
 		kk := k.of(e)
@@ -766,7 +766,7 @@ func (r *run) perPage(w *report, k kind, engines []string, baseKind string) {
 	if bk == "" {
 		bk = k.fixed
 	}
-	base := timesOf(pages(r.load("slowjs-" + bk)))
+	base := timesOf(pages(r.load("liustack-quickjs-" + bk)))
 	w.println("| Page | " + strings.Join(engines, " | ") + " |")
 	w.println("|---|" + strings.Repeat("---|", len(engines)))
 	rs := map[string]times{}
@@ -784,7 +784,7 @@ func (r *run) perPage(w *report, k kind, engines []string, baseKind string) {
 			}
 			x := rs[e].v[pg]
 			if !base.ok[pg] || base.v[pg] == 0 {
-				fail("page %s: the slowjs time is missing, cannot give a ratio", pg)
+				fail("page %s: the liustack-quickjs time is missing, cannot give a ratio", pg)
 			}
 			cells = append(cells, fmt.Sprintf("%s (%.2f)", f(x), x/base.v[pg]))
 		}
@@ -794,7 +794,7 @@ func (r *run) perPage(w *report, k kind, engines []string, baseKind string) {
 }
 
 func (r *run) tifaRowCheck(w *report) {
-	w.println("### slowjs-tifa against the same JavaScript on the polyfill\n")
+	w.println("### liustack-tifa against the same JavaScript on the polyfill\n")
 	w.println("| Bundle | Pages | Same HTML | Same but for U+202F | Other difference | Not compared |")
 	w.println("|---|---|---|---|---|---|")
 	keys, ev := r.tifaRowEvidence()
@@ -831,15 +831,15 @@ func (r *run) vsC(w *report) {
 		label, engine string
 		kinds         map[string]string
 	}{
-		{"slowjs, same JavaScript (polyfill)", "slowjs", pf},
-		{"slowjs, own Intl only", "slowjs", own},
-		{"slowjs-tifa, as tifa runs it", "slowjs-tifa", own},
+		{"liustack-quickjs, same JavaScript (polyfill)", "liustack-quickjs", pf},
+		{"liustack-quickjs, own Intl only", "liustack-quickjs", own},
+		{"liustack-tifa, as tifa runs it", "liustack-tifa", own},
 		{"C QuickJS 2026-06-04", "quickjs-2026-06-04", pf},
 		{"Node v24.11.1", "node-jit", pf},
 		{"Node v24.11.1 --jitless", "node-jitless", pf},
 	}
 	w.println("### Per bundle, against C QuickJS 2026-06-04\n")
-	w.println("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but slowjs-tifa and the \"own Intl only\" row runs them on the polyfill.\n")
+	w.println("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but liustack-tifa and the \"own Intl only\" row runs them on the polyfill.\n")
 	w.println("| Row | bench | MUI | shop |")
 	w.println("|---|---|---|---|")
 	for _, row := range rows {
@@ -859,25 +859,25 @@ func (r *run) vsC(w *report) {
 }
 
 func (r *run) polyfillCost(w *report) {
-	w.println("### What the polyfill costs slowjs\n")
-	pf, nat := r.load("slowjs-pf"), r.load("slowjs-native")
+	w.println("### What the polyfill costs liustack-quickjs\n")
+	pf, nat := r.load("liustack-quickjs-pf"), r.load("liustack-quickjs-native")
 	prelude := 0.0
 	for _, x := range need(pf, "prelude_ms").([]any) {
 		prelude += num(x)
 	}
 	w.printf("- Loading it: %.0f ms per VM, before the bundle (%.0f ms after it, %.0f ms without it).", prelude, num(need(pf, "load_ms")), num(need(nat, "load_ms")))
 	for _, k := range []string{"pf", "native"} {
-		m := orObj(get(orObj(r.load("slowjs-mem-"+k)), "mem"))
+		m := orObj(get(orObj(r.load("liustack-quickjs-mem-"+k)), "mem"))
 		g := orObj(get(orObj(r.load("go-quickjs-interp-mem-"+k)), "mem"))
 		what := "own Intl"
 		if k == "pf" {
 			what = "polyfill"
 		}
-		w.printf("- Memory per VM, %s: slowjs %.1f MiB RSS, go-quickjs-interp %.1f MiB RSS (%.1f MiB Go heap)", what,
+		w.printf("- Memory per VM, %s: liustack-quickjs %.1f MiB RSS, go-quickjs-interp %.1f MiB RSS (%.1f MiB Go heap)", what,
 			numOr(get(m, "rss_per_vm_bytes"))/(1<<20), numOr(get(g, "rss_per_vm_bytes"))/(1<<20), numOr(get(g, "go_heap_per_vm_bytes"))/(1<<20))
 	}
 	for _, t := range []struct{ k, what string }{{"timer-pf", "the polyfill"}, {"timer-native", "its own Intl"}} {
-		res := r.load("slowjs-" + t.k)
+		res := r.load("liustack-quickjs-" + t.k)
 		if !truthy(res) {
 			continue
 		}
@@ -896,7 +896,7 @@ func (r *run) polyfillCost(w *report) {
 			ren += num(need(e, "cpu_ms_per_op"))
 		}
 		if ren == 0 {
-			fail("no render time in slowjs-%s", t.k)
+			fail("no render time in liustack-quickjs-%s", t.k)
 		}
 		w.printf("- Time inside %s: %.1f ms of %.1f ms per render summed over the pages (%.0f%%), %.0f calls.", t.what, tot, ren, 100*tot/ren, calls)
 	}

@@ -4,7 +4,7 @@
 # runtime's use of registers, linker names), and a new Go release can change
 # them. A failure of the job engine is a warning for us to read, not a check
 # for merging. A Go newer than the one the engine was checked with stops the
-# build (internal/goversion), so that job builds with slowjs_anygo.
+# build (internal/goversion), so that job builds with quickjs_anygo.
 name: go-latest
 
 on:
@@ -59,14 +59,14 @@ jobs:
           cache: true
       - run: go version
       - name: Test, internal packages with the test hooks
-        run: go test -count=1 -tags testhooks,slowjs_anygo ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+        run: go test -count=1 -tags testhooks,quickjs_anygo ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package
-        run: go test -count=1 -p 1 -timeout 60m -tags slowjs_anygo .
+        run: go test -count=1 -p 1 -timeout 60m -tags quickjs_anygo .
 
   # The Go releases the module lets build: the go line of go.mod and the
   # newest patch release of each minor version up to the one
   # internal/goversion stops. Unlike the job above, a failure here is a
-  # release slowjs says it supports.
+  # release liustack/quickjs says it supports.
   releases:
     name: releases (${{ matrix.name }})
     runs-on: ${{ matrix.os }}

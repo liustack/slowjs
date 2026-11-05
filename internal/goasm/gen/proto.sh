@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerate the proto package and build its tests. Run from the slowjs root
+# Regenerate the proto package and build its tests. Run from the liustack/quickjs root
 # with LLVM 22.1.8. ARCH=amd64 (the default) builds the test binary and
 # verifies it after linking. ARCH=arm64 cross-builds the test binary as a
 # compile check: copy the package to an arm64 machine to run it. MODE picks
