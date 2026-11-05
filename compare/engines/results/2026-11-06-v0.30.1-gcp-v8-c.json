@@ -1,0 +1,276 @@
+{
+  "run": "2026-11-06-v0.30.1-gcp-v8-c",
+  "machine": "GCP c2d-standard-8, AMD EPYC 7B13, CPU 0",
+  "engines": {
+    "liustack": "liustack/quickjs at main c23e76e6 (v0.30.1 engine), cmd/jsbench v8, GOMAXPROCS=1, Go 1.27.2",
+    "qjs": "C QuickJS 2026-06-04, qjs built by native/build.sh (gcc -O2, asserts on)",
+    "qjs-ndebug": "C QuickJS 2026-06-04, make qjs with -DNDEBUG added to DEFINES"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "engine": "liustack",
+      "result": {
+        "scores": {
+          "Crypto": "845",
+          "DeltaBlue": "844",
+          "EarleyBoyer": "1969",
+          "NavierStokes": "1698",
+          "RayTrace": "1424",
+          "RegExp": "521",
+          "Richards": "978",
+          "Score": "1283",
+          "Splay": "4250"
+        },
+        "wall_s": 35.803799847,
+        "cpu_s": 35.80252
+      }
+    },
+    {
+      "round": 1,
+      "engine": "qjs",
+      "result": {
+        "Richards": "896",
+        "DeltaBlue": "821",
+        "Crypto": "974",
+        "RayTrace": "1735",
+        "EarleyBoyer": "2235",
+        "RegExp": "408",
+        "Splay": "3615",
+        "NavierStokes": "1969",
+        "Score": "1298"
+      },
+      "user_s": "37.27",
+      "sys_s": "0.20"
+    },
+    {
+      "round": 2,
+      "engine": "qjs",
+      "result": {
+        "Richards": "899",
+        "DeltaBlue": "821",
+        "Crypto": "961",
+        "RayTrace": "1728",
+        "EarleyBoyer": "2244",
+        "RegExp": "405",
+        "Splay": "3595",
+        "NavierStokes": "1981",
+        "Score": "1296"
+      },
+      "user_s": "37.42",
+      "sys_s": "0.21"
+    },
+    {
+      "round": 2,
+      "engine": "liustack",
+      "result": {
+        "scores": {
+          "Crypto": "820",
+          "DeltaBlue": "850",
+          "EarleyBoyer": "1959",
+          "NavierStokes": "1728",
+          "RayTrace": "1414",
+          "RegExp": "516",
+          "Richards": "957",
+          "Score": "1273",
+          "Splay": "4193"
+        },
+        "wall_s": 36.038958632,
+        "cpu_s": 36.036049
+      }
+    },
+    {
+      "round": 3,
+      "engine": "liustack",
+      "result": {
+        "scores": {
+          "Crypto": "814",
+          "DeltaBlue": "852",
+          "EarleyBoyer": "1947",
+          "NavierStokes": "1715",
+          "RayTrace": "1406",
+          "RegExp": "512",
+          "Richards": "978",
+          "Score": "1278",
+          "Splay": "4360"
+        },
+        "wall_s": 36.126290796,
+        "cpu_s": 36.123393
+      }
+    },
+    {
+      "round": 3,
+      "engine": "qjs",
+      "result": {
+        "Richards": "895",
+        "DeltaBlue": "817",
+        "Crypto": "1029",
+        "RayTrace": "1694",
+        "EarleyBoyer": "2232",
+        "RegExp": "418",
+        "Splay": "3729",
+        "NavierStokes": "2024",
+        "Score": "1315"
+      },
+      "user_s": "36.62",
+      "sys_s": "0.21"
+    },
+    {
+      "round": 4,
+      "engine": "qjs",
+      "result": {
+        "Richards": "901",
+        "DeltaBlue": "821",
+        "Crypto": "1031",
+        "RayTrace": "1720",
+        "EarleyBoyer": "2271",
+        "RegExp": "419",
+        "Splay": "3647",
+        "NavierStokes": "1994",
+        "Score": "1318"
+      },
+      "user_s": "36.95",
+      "sys_s": "0.21"
+    },
+    {
+      "round": 4,
+      "engine": "liustack",
+      "result": {
+        "scores": {
+          "Crypto": "859",
+          "DeltaBlue": "858",
+          "EarleyBoyer": "1992",
+          "NavierStokes": "1731",
+          "RayTrace": "1430",
+          "RegExp": "523",
+          "Richards": "980",
+          "Score": "1295",
+          "Splay": "4250"
+        },
+        "wall_s": 35.58188018,
+        "cpu_s": 35.579311
+      }
+    },
+    {
+      "round": 5,
+      "engine": "liustack",
+      "result": {
+        "scores": {
+          "Crypto": "812",
+          "DeltaBlue": "860",
+          "EarleyBoyer": "1963",
+          "NavierStokes": "1733",
+          "RayTrace": "1436",
+          "RegExp": "521",
+          "Richards": "980",
+          "Score": "1286",
+          "Splay": "4295"
+        },
+        "wall_s": 37.02340569,
+        "cpu_s": 37.020474
+      }
+    },
+    {
+      "round": 5,
+      "engine": "qjs",
+      "result": {
+        "Richards": "905",
+        "DeltaBlue": "824",
+        "Crypto": "991",
+        "RayTrace": "1747",
+        "EarleyBoyer": "2270",
+        "RegExp": "420",
+        "Splay": "3732",
+        "NavierStokes": "2072",
+        "Score": "1326"
+      },
+      "user_s": "36.86",
+      "sys_s": "0.18"
+    },
+    {
+      "round": 1,
+      "engine": "qjs-ndebug",
+      "result": {
+        "Richards": "918",
+        "DeltaBlue": "831",
+        "Crypto": "1032",
+        "RayTrace": "1720",
+        "EarleyBoyer": "2269",
+        "RegExp": "394",
+        "Splay": "3769",
+        "NavierStokes": "2004",
+        "Score": "1319"
+      },
+      "user_s": "37.49",
+      "sys_s": "0.19"
+    },
+    {
+      "round": 2,
+      "engine": "qjs-ndebug",
+      "result": {
+        "Richards": "905",
+        "DeltaBlue": "835",
+        "Crypto": "995",
+        "RayTrace": "1743",
+        "EarleyBoyer": "2264",
+        "RegExp": "389",
+        "Splay": "3618",
+        "NavierStokes": "1898",
+        "Score": "1295"
+      },
+      "user_s": "37.56",
+      "sys_s": "0.18"
+    },
+    {
+      "round": 3,
+      "engine": "qjs-ndebug",
+      "result": {
+        "Richards": "905",
+        "DeltaBlue": "829",
+        "Crypto": "1000",
+        "RayTrace": "1705",
+        "EarleyBoyer": "2254",
+        "RegExp": "420",
+        "Splay": "3753",
+        "NavierStokes": "1964",
+        "Score": "1315"
+      },
+      "user_s": "36.86",
+      "sys_s": "0.23"
+    },
+    {
+      "round": 4,
+      "engine": "qjs-ndebug",
+      "result": {
+        "Richards": "917",
+        "DeltaBlue": "826",
+        "Crypto": "1028",
+        "RayTrace": "1733",
+        "EarleyBoyer": "2263",
+        "RegExp": "395",
+        "Splay": "3639",
+        "NavierStokes": "1941",
+        "Score": "1307"
+      },
+      "user_s": "37.42",
+      "sys_s": "0.19"
+    },
+    {
+      "round": 5,
+      "engine": "qjs-ndebug",
+      "result": {
+        "Richards": "911",
+        "DeltaBlue": "824",
+        "Crypto": "973",
+        "RayTrace": "1721",
+        "EarleyBoyer": "2241",
+        "RegExp": "416",
+        "Splay": "3594",
+        "NavierStokes": "1931",
+        "Score": "1299"
+      },
+      "user_s": "37.09",
+      "sys_s": "0.21"
+    }
+  ]
+}
