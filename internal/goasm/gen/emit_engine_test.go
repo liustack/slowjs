@@ -35,7 +35,7 @@ func TestEmitLeafFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	obj := filepath.Join(work, "l.o")
-	if out, err := exec.Command(filepath.Join(llvm, "clang"), "-c", srcPath, "-o", obj).CombinedOutput(); err != nil {
+	if out, err := exec.Command(filepath.Join(llvm, "clang"), "--target=x86_64-linux-gnu", "-c", srcPath, "-o", obj).CombinedOutput(); err != nil {
 		t.Fatalf("assemble: %v\n%s", err, out)
 	}
 	asmGo, err := Emit(obj, []Meta{m}, NameMap{"savingleaf": m.GoName}, "amd64")
