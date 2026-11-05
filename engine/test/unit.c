@@ -3655,12 +3655,18 @@ static void test_rope_flat_polls(void)
    the code copied into its string, and the loops of a single term: the
    digits of a count, of \u{...} and of a group name, the operands of && and
    --, and the strings of \q{...}, parsed, made lower case and turned into
-   code. The compile, called from C so that every
-   reading counted is one of it, reads the flag at least as often as it
-   says, and a flag set at its first reading, at the one in the middle and
-   at its last stops it: it throws "interrupted", uncatchable, and the same
-   compile then gives a regexp that matches. The host checks for a leak when
-   the runtime is freed. */
+   code, and the classes of many characters or strings: the characters
+   merged into the ranges of a class, in order or not, the ranges of two
+   classes intersected, the strings sorted by length, the table of the
+   strings grown, and the ranges turned into code. The compile, called from
+   C so that every reading counted is one of it, reads the flag at least as
+   often as it says, and a flag set at its first reading, at the one in the
+   middle and at its last stops it: it throws "interrupted", uncatchable, and
+   the same compile then gives a regexp that matches. A case marked late is
+   also stopped at readings spread over the end of its compile (the last
+   one, and 1, 2, 4, 8, ... before it), where the loops after the parse of
+   a class read the flag. The host checks for a leak when the runtime is
+   freed. */
 static JSValue regexp_compile_call(JSContext *ctx)
 {
     JSValue g = JS_GetGlobalObject(ctx), c = JS_GetPropertyStr(ctx, g, "RegExp"), ret;
@@ -3678,10 +3684,20 @@ static void test_regexp_compile_polls(void)
 {
     static const char setup[] =
         "var P, F, T, V\n"
-        "var Z = '0'.repeat(1 << 21), M = []; for (var i = 0; i < 1 << 17; i++) M.push((i + 1e6).toString(36)); M = M.join('|'); 0";
+        "var Z = '0'.repeat(1 << 21), M = []; for (var i = 0; i < 1 << 17; i++) M.push((i + 1e6).toString(36)); M = M.join('|')\n"
+        /* 60,000 characters every other code point above 0xFFFF, upward
+           and downward, 330,000 upward, 17,000 below it downward, and 16,384
+           strings of 5 to 68 characters in an order of their lengths that is
+           not sorted */
+        "var U = [], D, Q = [], B = [], L = []; for (var c = 0x10000; c < 0x10000 + 120000; c += 2) U.push(String.fromCodePoint(c))\n"
+        "D = U.slice().reverse().join(''); U = U.join('')\n"
+        "for (var c = 0x10000; c < 0x10000 + 660000; c += 2) Q.push(String.fromCodePoint(c)); Q = Q.join('')\n"
+        "for (var c = 0xd000; c > 0x100; c -= 3) B.push(String.fromCharCode(c)); B = B.join('')\n"
+        "for (var i = 0; i < 1 << 14; i++) L.push((i + 1e6).toString(36) + 'x'.repeat(i * 7919 % 64)); L = L.join('|'); 0";
     static const struct {
         const char *pattern, *flags, *text;
         long reads;
+        int late;
     } cases[] = {
         /* the parse reads the flag at each term (the first number, all that
            was read before), and the other loops at least the second */
@@ -3703,6 +3719,19 @@ static void test_regexp_compile_polls(void)
         { "'[\\\\q{' + 'a'.repeat(1 << 21) + '}]'", "'vi'", "'A'.repeat(1 << 21)", 4 + (3 << 21) },
         { "'[\\\\q{' + M + '}]'", "'v'", "(1e6).toString(36)", 1 << 20 },
         { "'[[\\\\q{' + M + '}]&&[\\\\q{' + M + '}]]'", "'v'", "(1e6).toString(36)", 1 << 21 },
+        /* classes of many characters and strings: the parse reads the flag
+           at each atom */
+        { "'[' + U + ']'", "'u'", "String.fromCodePoint(0x10000 + 119998)", 60000, 1 },
+        { "'[' + D + ']'", "'u'", "String.fromCodePoint(0x10000 + 2)", 60000, 1 },
+        { "'[^' + D + ']'", "'u'", "String.fromCodePoint(0x10000 + 3)", 60000, 1 },
+        { "'[[' + U + ']&&[' + D + ']]'", "'v'", "String.fromCodePoint(0x10000 + 4)", 120000, 1 },
+        { "'[[^' + Q + ']&&[\\\\u{10000}-\\\\u{10010}]]'", "'v'", "String.fromCodePoint(0x10001)", 330000, 1 },
+        { "'[' + B + ']'", "'i'", "String.fromCharCode(0x103)", 17000, 1 },
+        { "'[\\\\q{' + L + '}]'", "'v'", "(1e6 + 1).toString(36) + 'x'.repeat(7919 % 64)", 1 << 14, 1 },
+        { "'[\\\\q{' + L + '}]'", "'vi'", "(1e6).toString(36).toUpperCase()", 1 << 14, 1 },
+        /* an intersection that leaves no string, and another over the empty
+           buckets: the flag at each */
+        { "'[[\\\\q{' + M + '}]&&[\\\\q{zz}]&&[\\\\q{yy}]]|a'", "'v'", "'a'", 1 << 19, 1 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -3714,7 +3743,8 @@ static void test_regexp_compile_polls(void)
     CHECK(eval(ctx, setup), "the setup threw");
     for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         char prep[256];
-        long before, reads, at[3];
+        long before, reads, at[40], k;
+        size_t n_at;
 
         snprintf(prep, sizeof(prep), "P = String(%s); F = %s; T = %s; 0", cases[i].pattern, cases[i].flags,
                  cases[i].text);
@@ -3732,7 +3762,10 @@ static void test_regexp_compile_polls(void)
         at[0] = 1;
         at[1] = reads / 2;
         at[2] = reads;
-        for (j = 0; j < 3; j++) {
+        n_at = 3;
+        for (k = 1; cases[i].late && k < reads / 2; k *= 2)
+            at[n_at++] = reads - k;
+        for (j = 0; j < n_at; j++) {
             const char *m;
             int stopped;
 
@@ -3757,7 +3790,7 @@ static void test_regexp_compile_polls(void)
             CHECK(eval_is(ctx, "V.test(T)", "true"), "%s after a stop at reading %ld does not match", cases[i].pattern, at[j]);
         }
     }
-    CHECK(eval_is(ctx, "P = F = T = V = Z = M = null; [1, 2, 3].map(x => x * 2).join()", "2,4,6"),
+    CHECK(eval_is(ctx, "P = F = T = V = Z = M = U = D = Q = B = L = null; [1, 2, 3].map(x => x * 2).join()", "2,4,6"),
           "the context after the stops");
     JS_FreeContext(ctx);
     host_free_runtime(rt);

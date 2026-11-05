@@ -142,15 +142,36 @@ typedef struct REString {
     uint32_t buf[];
 } REString;
 
+/* The strings of a list are kept in blocks, which are freed together:
+   freeing them one by one took as long as making them, with no reading of
+   the interrupt flag, after a compile that a stop ended too. */
+typedef struct REStringBlock {
+    struct REStringBlock *next;
+    size_t size; /* bytes in data */
+    size_t used;
+    uint8_t data[];
+} REStringBlock;
+
+/* the first block of a list, and the most a block is made with: a block
+   twice the size of the one before it, and a string longer than that one
+   in a block of its own */
+#define RE_STRING_BLOCK_MIN 256
+#define RE_STRING_BLOCK_MAX (64 << 10)
+
 typedef struct {
     /* the string list is the union of 'char_range' and of the strings
        in hash_table[]. The strings in hash_table[] have a length !=
        1. */
     CharRange cr;
+    /* intervals still to be merged into cr (re_string_list_add_interval) */
+    CharRange pend;
     uint32_t n_strings;
     uint32_t hash_size;
     int hash_bits;
     REString **hash_table;
+    /* the blocks of the strings, the one strings are taken from first. A
+       string taken out of the list stays in its block. */
+    REStringBlock *blocks;
 } REStringList;
 
 static uint32_t re_string_hash(int len, const uint32_t *buf)
@@ -166,25 +187,93 @@ static uint32_t re_string_hash(int len, const uint32_t *buf)
 static void re_string_list_init(REParseState *s1, REStringList *s)
 {
     cr_init(&s->cr, s1->opaque, lre_realloc);
+    /* the merges of the ranges of a class read the interrupt flag */
+    s->cr.stop = lre_interrupt_flag(s1->opaque);
+    cr_init(&s->pend, s1->opaque, lre_realloc);
     s->n_strings = 0;
     s->hash_size = 0;
     s->hash_bits = 0;
     s->hash_table = NULL;
+    s->blocks = NULL;
 }
 
+/* Free the list s. It does not go through the strings, so it frees a list
+   that a stop left in the middle of a change, as a regrowth of its table
+   leaves it. */
 static void re_string_list_free(REStringList *s)
 {
-    REString *p, *p_next;
-    int i;
-    for(i = 0; i < s->hash_size; i++) {
-        for(p = s->hash_table[i]; p != NULL; p = p_next) {
-            p_next = p->next;
-            lre_realloc(s->cr.mem_opaque, p, 0);
-        }
+    REStringBlock *b, *b_next;
+
+    for(b = s->blocks; b != NULL; b = b_next) {
+        b_next = b->next;
+        lre_realloc(s->cr.mem_opaque, b, 0);
     }
     lre_realloc(s->cr.mem_opaque, s->hash_table, 0);
 
     cr_free(&s->cr);
+    if (s->pend.points)
+        cr_free(&s->pend);
+}
+
+/* A string of len characters, taken from the blocks of s, or NULL when
+   there is no memory. */
+static REString *re_string_alloc(REStringList *s, int len)
+{
+    REStringBlock *b = s->blocks, *nb;
+    size_t n, size;
+
+    n = (sizeof(REString) + len * sizeof(uint32_t) + 7) & ~(size_t)7;
+    if (b && b->size - b->used >= n) {
+        b->used += n;
+        return (REString *)(b->data + b->used - n);
+    }
+    size = RE_STRING_BLOCK_MIN;
+    if (b)
+        size = b->size * 2 < RE_STRING_BLOCK_MAX ? b->size * 2 : RE_STRING_BLOCK_MAX;
+    if (n > size) {
+        /* a long string, in a block of its own behind the first */
+        nb = lre_realloc(s->cr.mem_opaque, NULL, sizeof(REStringBlock) + n);
+        if (!nb)
+            return NULL;
+        nb->size = nb->used = n;
+        if (b) {
+            nb->next = b->next;
+            b->next = nb;
+        } else {
+            nb->next = NULL;
+            s->blocks = nb;
+        }
+        return (REString *)nb->data;
+    }
+    nb = lre_realloc(s->cr.mem_opaque, NULL, sizeof(REStringBlock) + size);
+    if (!nb)
+        return NULL;
+    nb->size = size;
+    nb->used = n;
+    nb->next = b;
+    s->blocks = nb;
+    return (REString *)nb->data;
+}
+
+/* memset of n bytes to 0: LRE_COPY_STEP bytes or more are set in steps,
+   with the flag read after each. 0, or -1 when the interrupt flag of opaque
+   is set. */
+static int re_zero(void *opaque, void *p, size_t n)
+{
+    size_t off, m;
+
+    if (n < LRE_COPY_STEP) {
+        memset(p, 0, n);
+        return 0;
+    }
+    for (off = 0; off < n; off += m) {
+        m = n - off < LRE_COPY_STEP ? n - off : LRE_COPY_STEP;
+        memset((uint8_t *)p + off, 0, m);
+        LRE_WORK(m);
+        if (lre_check_timeout(opaque))
+            return -1;
+    }
+    return 0;
 }
 
 /* Whether the len characters of a and b are the same, or -1 when the
@@ -237,12 +326,83 @@ static int re_string_copy(void *opaque, uint32_t *dst, const uint32_t *src,
     return 0;
 }
 
+/* cr = cr | [c1, c2] (c1 <= c2 < 0x110000) for a class read one character
+   or range at a time. One after the last range of s->cr is added at its end,
+   and one that starts in the last range or where it ends makes that range
+   longer, so that a class in order costs one step for each. Any other goes
+   to s->pend, unsorted, merged into s->cr at once by re_string_list_flush
+   before s->cr is read. The union of each one with s->cr, which made all of
+   s->cr anew, took a time of n * n for a class of n characters not in
+   order. */
+static int re_string_list_add_interval(REStringList *s, uint32_t c1,
+                                       uint32_t c2)
+{
+    CharRange *cr = &s->cr;
+    uint32_t e = c2 + 1;
+
+    if (cr->len == 0 || c1 > cr->points[cr->len - 1])
+        return cr_add_interval(cr, c1, e);
+    if (c1 >= cr->points[cr->len - 2]) {
+        if (e > cr->points[cr->len - 1])
+            cr->points[cr->len - 1] = e;
+        return 0;
+    }
+    return cr_add_interval(&s->pend, c1, e);
+}
+
+static int re_interval_cmp(const void *a, const void *b, void *opaque)
+{
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return (x > y) - (x < y);
+}
+
+/* s->cr = s->cr | s->pend, and s->pend emptied: the intervals of s->pend
+   are sorted by their start, the ones that meet or touch made one, and the
+   result is merged into s->cr (cr_op1), with the interrupt flag read all
+   along. The ranges are those the unions one at a time gave. -1 when there
+   is no memory or the flag is set, with s then good only to be freed. */
+static int re_string_list_flush(REStringList *s)
+{
+    uint32_t *pt = s->pend.points;
+    int i, j, n = s->pend.len;
+    void *opaque = s->cr.mem_opaque;
+
+    if (n == 0)
+        return 0;
+    s->pend.len = 0;
+    rqsort_stop(pt, n / 2, 2 * sizeof(pt[0]), re_interval_cmp, NULL,
+                lre_interrupt_flag(opaque));
+    if (lre_check_timeout(opaque))
+        return -1;
+    j = 0;
+    for(i = 0; i < n; i += 2) {
+        if (unlikely((i & (LRE_SCAN_STEP / 4 - 1)) == LRE_SCAN_STEP / 4 - 2)) {
+            LRE_WORK(LRE_SCAN_STEP);
+            if (lre_check_timeout(opaque))
+                return -1;
+        }
+        if (j != 0 && pt[i] <= pt[j - 1]) {
+            if (pt[i + 1] > pt[j - 1])
+                pt[j - 1] = pt[i + 1];
+        } else {
+            pt[j++] = pt[i];
+            pt[j++] = pt[i + 1];
+        }
+    }
+    LRE_WORK((n & (LRE_SCAN_STEP / 4 - 1)) * 4);
+    return cr_op1(&s->cr, pt, j, CR_OP_UNION);
+}
+
 /* 1 when the list s has the string buf, or has it now that add_flag added
    it, 0 when it has not, or -1 when there is no memory or the interrupt
    flag is set (a long string is compared and copied in steps that read it,
    and a long chain is walked in steps, and the parser tells the two apart:
-   re_parse_out_of_memory). The table grows by moving every string at once,
-   with no reading. */
+   re_parse_out_of_memory). The table grows by moving every string, with
+   the flag read every LRE_SCAN_STEP buckets and strings (the buckets count
+   too: a list filled from another in the order of its table has the
+   strings of the first part of the hashes only, and many buckets empty): a
+   stop there leaves s with strings in neither table, to be freed only
+   (re_string_list_free). */
 static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
                            uint32_t h0, BOOL add_flag)
 {
@@ -285,13 +445,29 @@ static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
                                      sizeof(new_hash_table[0]) * new_hash_size);
         if (!new_hash_table)
             return -1;
-        memset(new_hash_table, 0, sizeof(new_hash_table[0]) * new_hash_size);
+        if (re_zero(s->cr.mem_opaque, new_hash_table,
+                    sizeof(new_hash_table[0]) * new_hash_size))
+            goto fail_table;
+        work = 0;
         for(i = 0; i < s->hash_size; i++) {
-            for(p = s->hash_table[i]; p != NULL; p = p_next) {
+            p = s->hash_table[i];
+            for(;;) {
+                if (unlikely(++work >= LRE_SCAN_STEP)) {
+                    LRE_WORK(work);
+                    work = 0;
+                    if (lre_check_timeout(s->cr.mem_opaque)) {
+                    fail_table:
+                        lre_realloc(s->cr.mem_opaque, new_hash_table, 0);
+                        return -1;
+                    }
+                }
+                if (p == NULL)
+                    break;
                 p_next = p->next;
                 h = p->hash >> (32 - new_hash_bits);
                 p->next = new_hash_table[h];
                 new_hash_table[h] = p;
+                p = p_next;
             }
         }
         lre_realloc(s->cr.mem_opaque, s->hash_table, 0);
@@ -301,13 +477,12 @@ static int re_string_find2(REStringList *s, int len, const uint32_t *buf,
         h = h0 >> (32 - s->hash_bits);
     }
 
-    p = lre_realloc(s->cr.mem_opaque, NULL, sizeof(REString) + len * sizeof(buf[0]));
+    p = re_string_alloc(s, len);
     if (!p)
         return -1;
-    if (re_string_copy(s->cr.mem_opaque, p->buf, buf, len)) {
-        lre_realloc(s->cr.mem_opaque, p, 0);
+    /* a stop leaves the string in its block, outside the list */
+    if (re_string_copy(s->cr.mem_opaque, p->buf, buf, len))
         return -1;
-    }
     p->next = s->hash_table[h];
     s->hash_table[h] = p;
     s->n_strings++;
@@ -328,7 +503,7 @@ static int re_string_find(REStringList *s, int len, const uint32_t *buf,
 static int re_string_add(REStringList *s, int len, const uint32_t *buf)
 {
     if (len == 1) {
-        return cr_union_interval(&s->cr, buf[0], buf[0]);
+        return re_string_list_add_interval(s, buf[0], buf[0]);
     }
     if (re_string_find(s, len, buf, TRUE) < 0)
         return -1;
@@ -342,27 +517,30 @@ static int re_string_add_hash(REStringList *s, int len, const uint32_t *buf,
                               uint32_t h)
 {
     if (len == 1)
-        return cr_union_interval(&s->cr, buf[0], buf[0]);
+        return re_string_list_add_interval(s, buf[0], buf[0]);
     if (re_string_find2(s, len, buf, h * 0x61C88647, TRUE) < 0)
         return -1;
     return 0;
 }
 
-/* a = a op b. The interrupt flag is read for each string, and when it is
-   set -1 is returned as for no memory: the parser tells the two apart
-   (re_parse_out_of_memory). */
+/* a = a op b. The interrupt flag is read for each bucket of a table and
+   each string, and when it is set -1 is returned as for no memory: the
+   parser tells the two apart (re_parse_out_of_memory). */
 static int re_string_list_op(REStringList *a, REStringList *b, int op)
 {
     int i, ret;
     REString *p, **pp;
 
-    if (cr_op1(&a->cr, b->cr.points, b->cr.len, op))
+    if (re_string_list_flush(a) || re_string_list_flush(b) ||
+        cr_op1(&a->cr, b->cr.points, b->cr.len, op))
         return -1;
 
     switch(op) {
     case CR_OP_UNION:
         if (b->n_strings != 0) {
             for(i = 0; i < b->hash_size; i++) {
+                if (lre_check_timeout(a->cr.mem_opaque))
+                    return -1;
                 for(p = b->hash_table[i]; p != NULL; p = p->next) {
                     if (lre_check_timeout(a->cr.mem_opaque) ||
                         re_string_find2(a, p->len, p->buf, p->hash, TRUE) < 0)
@@ -374,6 +552,8 @@ static int re_string_list_op(REStringList *a, REStringList *b, int op)
     case CR_OP_INTER:
     case CR_OP_SUB:
         for(i = 0; i < a->hash_size; i++) {
+            if (lre_check_timeout(a->cr.mem_opaque))
+                return -1;
             pp = &a->hash_table[i];
             for(;;) {
                 p = *pp;
@@ -387,10 +567,9 @@ static int re_string_list_op(REStringList *a, REStringList *b, int op)
                 if (op == CR_OP_SUB)
                     ret = !ret;
                 if (!ret) {
-                    /* remove it */
+                    /* remove it: it stays in its block */
                     *pp = p->next;
                     a->n_strings--;
-                    lre_realloc(a->cr.mem_opaque, p, 0);
                 } else {
                     /* keep it */
                     pp = &p->next;
@@ -407,7 +586,8 @@ static int re_string_list_op(REStringList *a, REStringList *b, int op)
 static int re_string_list_canonicalize(REParseState *s1,
                                        REStringList *s, BOOL is_unicode)
 {
-    if (cr_regexp_canonicalize(&s->cr, is_unicode))
+    if (re_string_list_flush(s) ||
+        cr_regexp_canonicalize(&s->cr, is_unicode))
         return -1;
     if (s->n_strings != 0) {
         REStringList a_s, *a = &a_s;
@@ -422,13 +602,17 @@ static int re_string_list_canonicalize(REParseState *s1,
         a->hash_size = s->hash_size;
         a->hash_bits = s->hash_bits;
         a->hash_table = s->hash_table;
+        a->blocks = s->blocks;
         
         s->n_strings = 0;
         s->hash_size = 0;
         s->hash_bits = 0;
         s->hash_table = NULL;
+        s->blocks = NULL;
 
         for(i = 0; i < a->hash_size; i++) {
+            if (lre_check_timeout(s1->opaque))
+                goto fail;
             for(p = a->hash_table[i]; p != NULL; p = p->next) {
                 h = 1;
                 for(j = 0; j < p->len; j++) {
@@ -1151,6 +1335,7 @@ static int parse_unicode_property(REParseState *s, REStringList *cr,
         if (ret < 0 && !is_inv && allow_sequence_prop) {
             CharRange cr_tmp;
             cr_init(&cr_tmp, s->opaque, lre_realloc);
+            cr_tmp.stop = cr->cr.stop;
             ret = unicode_sequence_prop(name, seq_prop_cb, cr, &cr_tmp);
             cr_free(&cr_tmp);
             if (ret == -1) {
@@ -1176,7 +1361,7 @@ static int parse_unicode_property(REParseState *s, REStringList *cr,
         }
     }
     if (is_inv) {
-        if (cr_invert(&cr->cr)) {
+        if (re_string_list_flush(cr) || cr_invert(&cr->cr)) {
             re_string_list_free(cr);
             goto out_of_memory;
         }
@@ -1466,6 +1651,9 @@ static int get_class_atom(REParseState *s, REStringList *cr,
     return get_class_atom1(s, cr, pp, inclass);
 }
 
+/* The code of the ranges of cr: up to 65,534 ranges, written with the
+   interrupt flag read every LRE_SCAN_STEP bytes of code (-1 with
+   "interrupted" set). */
 static int re_emit_range(REParseState *s, const CharRange *cr)
 {
     int len, i;
@@ -1485,18 +1673,30 @@ static int re_emit_range(REParseState *s, const CharRange *cr)
                infinity */
             re_emit_op_u16(s, s->ignore_case ? REOP_range_i : REOP_range, len);
             for(i = 0; i < cr->len; i += 2) {
+                if (unlikely((i & (LRE_SCAN_STEP / 2 - 1)) == LRE_SCAN_STEP / 2 - 2)) {
+                    LRE_WORK(LRE_SCAN_STEP);
+                    if (re_poll_interrupts(s))
+                        return -1;
+                }
                 dbuf_put_u16(re_code(s, 2), cr->points[i]);
                 high = cr->points[i + 1] - 1;
                 if (high == UINT32_MAX - 1)
                     high = 0xffff;
                 dbuf_put_u16(re_code(s, 2), high);
             }
+            LRE_WORK((cr->len & (LRE_SCAN_STEP / 2 - 1)) * 2);
         } else {
             re_emit_op_u16(s, s->ignore_case ? REOP_range32_i : REOP_range32, len);
             for(i = 0; i < cr->len; i += 2) {
+                if (unlikely((i & (LRE_SCAN_STEP / 4 - 1)) == LRE_SCAN_STEP / 4 - 2)) {
+                    LRE_WORK(LRE_SCAN_STEP);
+                    if (re_poll_interrupts(s))
+                        return -1;
+                }
                 dbuf_put_u32(re_code(s, 4), cr->points[i]);
                 dbuf_put_u32(re_code(s, 4), cr->points[i + 1] - 1);
             }
+            LRE_WORK((cr->len & (LRE_SCAN_STEP / 4 - 1)) * 4);
         }
     }
     return 0;
@@ -1518,15 +1718,19 @@ static void re_emit_char(REParseState *s, int c)
 }
 
 /* The code of a class with strings. Every loop over the strings, and over
-   the characters of a string, reads the interrupt flag at each turn, except
-   the sort: -1 with "interrupted" set. */
-static int re_emit_string_list(REParseState *s, const REStringList *sl)
+   the characters of a string, reads the interrupt flag at each turn, and
+   the sort at each step: -1 with "interrupted" set. */
+static int re_emit_string_list(REParseState *s, REStringList *sl)
 {
     REString **tab, *p;
     int i, j, split_pos, last_match_pos, n;
     BOOL has_empty_string, is_last;
     
     //    re_string_list_dump("sl", sl);
+    if (re_string_list_flush(sl)) {
+        re_parse_out_of_memory(s);
+        return -1;
+    }
     if (sl->n_strings == 0) {
         /* simple case: only characters */
         if (re_emit_range(s, &sl->cr))
@@ -1556,7 +1760,12 @@ static int re_emit_string_list(REParseState *s, const REStringList *sl)
         }
         assert(n <= sl->n_strings);
         
-        rqsort(tab, n, sizeof(tab[0]), re_string_cmp_len, NULL);
+        /* the order of rqsort, which rqsort_stop is, with the flag read
+           at each step */
+        rqsort_stop(tab, n, sizeof(tab[0]), re_string_cmp_len, NULL,
+                    lre_interrupt_flag(s->opaque));
+        if (re_poll_interrupts(s))
+            goto fail;
 
         last_match_pos = -1;
         for(i = 0; i < n; i++) {
@@ -1631,7 +1840,7 @@ static int re_parse_class_set_operand(REParseState *s, REStringList *cr, const u
             re_string_list_init(s, cr);
             if (s->ignore_case)
                 c1 = lre_canonicalize(c1, s->is_unicode);
-            if (cr_union_interval(&cr->cr, c1, c1)) {
+            if (re_string_list_add_interval(cr, c1, c1)) {
                 re_string_list_free(cr);
                 return -1;
             }
@@ -1704,16 +1913,24 @@ static int re_parse_nested_class1(REParseState *s, REStringList *cr, const uint8
                 }
                 if (s->ignore_case) {
                     CharRange cr2_s, *cr2 = &cr2_s;
+                    int k;
                     cr_init(cr2, s->opaque, lre_realloc);
+                    cr2->stop = cr->cr.stop;
                     if (cr_add_interval(cr2, c1, c2 + 1) ||
-                        cr_regexp_canonicalize(cr2, s->is_unicode) ||
-                        cr_op1(&cr->cr, cr2->points, cr2->len, CR_OP_UNION)) {
+                        cr_regexp_canonicalize(cr2, s->is_unicode)) {
                         cr_free(cr2);
                         goto memory_error;
                     }
+                    for(k = 0; k < cr2->len; k += 2) {
+                        if (re_string_list_add_interval(cr, cr2->points[k],
+                                                 cr2->points[k + 1] - 1)) {
+                            cr_free(cr2);
+                            goto memory_error;
+                        }
+                    }
                     cr_free(cr2);
                 } else {
-                    if (cr_union_interval(&cr->cr, c1, c2))
+                    if (re_string_list_add_interval(cr, c1, c2))
                         goto memory_error;
                 }
                 is_first = FALSE; /* union operation */
@@ -1728,7 +1945,7 @@ static int re_parse_nested_class1(REParseState *s, REStringList *cr, const uint8
                 } else {
                     if (s->ignore_case)
                         c1 = lre_canonicalize(c1, s->is_unicode);
-                    if (cr_union_interval(&cr->cr, c1, c1))
+                    if (re_string_list_add_interval(cr, c1, c1))
                         goto memory_error;
                 }
             }
@@ -1789,7 +2006,7 @@ static int re_parse_nested_class1(REParseState *s, REStringList *cr, const uint8
             re_parse_error(s, "negated character class with strings in regular expression debugger eval code");
             goto fail;
         }
-        if (cr_invert(&cr->cr))
+        if (re_string_list_flush(cr) || cr_invert(&cr->cr))
             goto memory_error;
     }
     return 0;

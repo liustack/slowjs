@@ -44,7 +44,15 @@ typedef struct {
     uint32_t *points; /* points sorted by increasing value */
     void *mem_opaque;
     void *(*realloc_func)(void *opaque, void *ptr, size_t size);
+    /* NULL, or a flag (poll_flag of cutils.h) that cr_op, cr_op1 and
+       cr_invert read every CR_POLL_POINTS points they go through when they
+       go through more (and cr_invert between moves of 1 MiB), with -1
+       returned when it is set, as for no memory. cr_init sets it to NULL,
+       and the ranges made from cr by the functions below take it. */
+    const volatile int *stop;
 } CharRange;
+
+#define CR_POLL_POINTS 4096
 
 typedef enum {
     CR_OP_UNION,

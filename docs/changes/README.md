@@ -90,6 +90,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A long rope is made flat in steps that read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#a-long-rope-is-made-flat-in-steps) |
 | repeat reads the interrupt flag every 65,536 characters | Unreleased | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
 | Compiling one long regexp reads the interrupt flag in every long loop | Unreleased | [uncatchable.md](uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop) |
+| A class of a regexp reads the interrupt flag however many characters or strings it has | Unreleased | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
 
 ## Errors and stacks
 

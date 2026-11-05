@@ -1318,6 +1318,9 @@ static void test_poll_work_gaps(void)
         /* a class of 32 strings of one hash and one length, which differ only in their last 10 characters */
         "var yq = []; for (let i = 0; i < 32; i++) { let s = 'x'.repeat(1 << 12); for (let j = 0; j < 5; j++) s += i >> j & 1 ? 'b\\u00f9' : 'a\\u0200'; yq.push(s) }\n"
         "yq = String('[\\\\q{' + yq.join('|') + '}]')\n"
+        /* a class of 60,000 characters above 0xFFFF, downward, and one of 16,384 strings of 5 to 68 characters */
+        "var zd = []; for (var c = 0x10000 + 120000; c > 0x10000; c -= 2) zd.push(String.fromCodePoint(c)); zd = String('[' + zd.join('') + ']')\n"
+        "var zl = []; for (let i = 0; i < 1 << 14; i++) zl.push((i + 1e6).toString(36) + 'x'.repeat(i * 7919 % 64)); zl = String('[\\\\q{' + zl.join('|') + '}]')\n"
         "var l1 = 'x'.repeat(65534), l2 = 'y'.repeat(65536), l3 = 'z'.repeat(65535), l4 = 'w'.repeat(65533)\n"
         "var flat = 'ab'.repeat(1 << 20)\n"
         "var ra = l1 + l2 + l3, rb = l1 + l2 + l3\n"
@@ -1503,6 +1506,9 @@ static void test_poll_work_gaps(void)
         { "new RegExp(yc2), 0", ROPE_STEP, 900002 + 900002 + 14 },
         /* each string compared with the ones before it in their chain (the bytes compared and the strings passed, read every 16,384), and the pattern as UTF-8 */
         { "new RegExp(yq, 'v'), 0", ROPE_STEP, ANY },
+        /* the characters of a class not in order merged into its ranges (the intervals passed, read every 16,384 bytes of them), the ranges turned into code, and the strings of a class put in a table that grows (the strings moved and the table cleared) */
+        { "new RegExp(zd, 'u'), 0", SUB_STEP, ANY },
+        { "new RegExp(zl, 'v'), 0", SUB_STEP, ANY },
     };
     VM v = vm_new();
     size_t i;

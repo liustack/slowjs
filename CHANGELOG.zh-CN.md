@@ -9,6 +9,7 @@
 - 用 `+` 拼出来的长字符串（rope）在被拼成一整块时，`Interrupt` 和 eval 超时现在也能停下这次调用。以前拷贝它的每一段时都不读中断标志，几千万字符的 `+` 拼接字符串第一次被内置函数、属性键或标签函数用到时，要整个拷完才能停：超时设 10 ms 时，6400 万字符的样式值在 CI 上要到调用开始后 68 ms 才停下。现在拷贝时每 65536 个字符读一次标志，这样的调用会马上停下。拼出来的字符串逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)）。
 - `String.prototype.repeat` 现在每 65536 个字符读一次中断标志。以前每 1048576 个字符才读一次，而且只在两次整段拷贝之间读，不到 1048576 个字符的调用根本不读。`'x'.repeat(1 << 20)` 要跑 105 次引擎轮询（每次 10000 个 tick）都不读标志，`'x'.repeat(1e5)` 的循环要到下一次调用才停。结果不变（[uncatchable.md](docs/changes/uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters)）。
 - `Interrupt` 和 eval 超时现在会用中断结束一个长正则的编译，以前可能直接杀掉 VM。编译里有四段不读中断标志：把 pattern 转成 UTF-8、代码变长时的拷贝、扫描代码数寄存器、把代码拷进字符串。1320 万字符的 pattern 光扫寄存器就要跑约 1360 次引擎轮询（每次 10000 个 tick），超过 Go 宿主杀掉脚本的 1000 次，于是调用以 `ErrKilled` 结束，VM 只能关掉。计数、`\u{…}` 和组名里很长的数字，`&&` 和 `--` 的操作数，`\q{…}` 的字符串，其中一个字符串和它之前同哈希字符串的比较，以及在正则缓存里查一个长 pattern，也都不读标志。现在这些地方都分步读标志，这样的编译几次轮询内就停下。正则编译出的代码逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop)）。
+- 含很多字符或很多字符串的正则字符类，现在在 `Interrupt` 或 eval 超时后几次轮询内就停下，编译也快得多。以前类里每个字符都要和前面的区间整体重建一遍来合并，中间不检查中断，6 万个互不相邻字符的类要跑 557,426 次引擎轮询（每次 10000 个 tick）才编译完。现在按顺序的类每个字符一步，乱序的类只排序一次，同一个类 51 到 137 次轮询就编译完。`\q{…}` 的字符串排序、哈希表变大时的搬移、停下后的释放，都是一趟到底不检查中断（26 万个字符串时最多 146 次轮询），遍历一个空表也不检查。这些现在都分步检查。正则编译出的代码逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has)）。
 
 ## [v0.30.0] - 2026-11-05
 
