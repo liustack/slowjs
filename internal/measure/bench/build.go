@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/version"
 	"io"
 	"os"
 	"path/filepath"
@@ -233,19 +234,26 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run measure.Runner, lo
 		if err != nil {
 			return err
 		}
-		mod, err := os.ReadFile(filepath.Join(tree, "go.mod"))
-		if err != nil {
-			return err
-		}
-		m := goVersionRe.FindSubmatch(mod)
-		if m == nil {
-			return fmt.Errorf("no go line in %s/go.mod", tree)
+		// A go.work below the go line of one of its modules does not load.
+		goVersion := ""
+		for _, d := range []string{tree, app} {
+			mod, err := os.ReadFile(filepath.Join(d, "go.mod"))
+			if err != nil {
+				return err
+			}
+			m := goVersionRe.FindSubmatch(mod)
+			if m == nil {
+				return fmt.Errorf("no go line in %s/go.mod", d)
+			}
+			if v := string(m[1]); goVersion == "" || version.Compare("go"+v, "go"+goVersion) > 0 {
+				goVersion = v
+			}
 		}
 		wf := filepath.Join(out, ".work", o.Side+".work")
 		if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(wf, []byte(WorkFile(string(m[1]), app, tree)), 0o644); err != nil {
+		if err := os.WriteFile(wf, []byte(WorkFile(goVersion, app, tree)), 0o644); err != nil {
 			return err
 		}
 		dir, env = app, append(env, "GOWORK="+wf)

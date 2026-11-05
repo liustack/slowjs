@@ -172,6 +172,7 @@ func TestBuildCheck(t *testing.T) {
 func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	tree := fakeTree(t)
 	app := t.TempDir()
+	os.WriteFile(filepath.Join(app, "go.mod"), []byte("module app\n\ngo 1.27.0\n"), 0o644)
 	out := filepath.Join(t.TempDir(), "bin")
 	var cmds []measure.Cmd
 	run := func(ctx context.Context, c measure.Cmd, _ io.Writer) measure.Result {
@@ -217,6 +218,43 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	}
 	if cmds[0].Args[slices.Index(cmds[0].Args, "-overlay")+1] == ovFile {
 		t.Error("two positions share an overlay file")
+	}
+}
+
+// TestBuildWorkFileTakesTheHigherGoVersion: a go.work whose go line is below
+// the go line of one of its modules does not load, so the build of an app that
+// needs a newer Go than the tree takes the app's go line, and the other way
+// round.
+func TestBuildWorkFileTakesTheHigherGoVersion(t *testing.T) {
+	for _, c := range []struct{ tree, app, want string }{
+		{"1.26.6", "1.27.0", "1.27.0"},
+		{"1.27.0", "1.26.6", "1.27.0"},
+		{"1.26.10", "1.26.6", "1.26.10"},
+	} {
+		tree := fakeTree(t)
+		os.WriteFile(filepath.Join(tree, "go.mod"), []byte("module m\n\ngo "+c.tree+"\n"), 0o644)
+		app := t.TempDir()
+		os.WriteFile(filepath.Join(app, "go.mod"), []byte("module app\n\ngo "+c.app+"\n"), 0o644)
+		out := filepath.Join(t.TempDir(), "bin")
+		var work string
+		run := func(ctx context.Context, cmd measure.Cmd, _ io.Writer) measure.Result {
+			for _, e := range cmd.Env {
+				if v, ok := strings.CutPrefix(e, "GOWORK="); ok {
+					work = v
+				}
+			}
+			return measure.Result{}
+		}
+		var log bytes.Buffer
+		err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
+			Positions: []Position{{0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+		if err != nil {
+			t.Fatalf("tree %s, app %s: %v\n%s", c.tree, c.app, err, log.String())
+		}
+		text, err := os.ReadFile(work)
+		if err != nil || !strings.HasPrefix(string(text), "go "+c.want+"\n") {
+			t.Errorf("tree %s, app %s: go.work = %q, %v, want go %s", c.tree, c.app, text, err, c.want)
+		}
 	}
 }
 
