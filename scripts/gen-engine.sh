@@ -19,6 +19,10 @@
 #                regenerates into one and compares)
 #   GEN_RELEASE  1 (default) is a formal build. 0 allows the survey and test
 #                switches of the generator and prints a warning.
+#   GEN_VERIFY_BIN  a test binary of internal/cengine for ARCH, linked with
+#                -tags goasmkeep: run the post-link check of every function
+#                against it (scripts/go-versions.sh). Set GEN_OUT as well, so
+#                that internal/cengine stays as it is.
 set -eu
 
 arch=${1:-amd64}
@@ -43,9 +47,15 @@ src="internal/goasm/gen/pass/shadow.cpp internal/goasm/gen/pass/poll.cpp interna
 stale=0
 [ -f $pass ] || stale=1
 for f in $src; do [ "$f" -nt $pass ] && stale=1; done
+# On macOS the clang of LLVM does not find the C headers of the system by
+# itself, and the pass leaves the symbols of LLVM to opt, which loads it.
+hostflags=
+if [ "$(uname -s)" = Darwin ]; then
+	hostflags="-isysroot $(xcrun --show-sdk-path) -undefined dynamic_lookup"
+fi
 if [ $stale = 1 ]; then
-	# shellcheck disable=SC2046
-	"$llvm/clang++" -shared -fPIC -O1 $("$llvm/llvm-config" --cxxflags) $src -o $pass
+	# shellcheck disable=SC2046,SC2086
+	"$llvm/clang++" -shared -fPIC -O1 $("$llvm/llvm-config" --cxxflags) $hostflags $src -o $pass
 else
 	echo "the pass is up to date"
 fi
@@ -59,10 +69,14 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 	release=
 	echo "warning: GEN_RELEASE=0 is not a formal build" >&2
 fi
+verify=
+if [ -n "${GEN_VERIFY_BIN:-}" ]; then
+	verify="-verify-bin $GEN_VERIFY_BIN -verify-pkg github.com/liustack/quickjs/internal/cengine -verify-all"
+fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
 	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" \
-	-j "${GEN_JOBS:-2}" $release
+	-j "${GEN_JOBS:-2}" $release $verify
 
 if [ -n "${GEN_KEEP:-}" ]; then
 	rm -rf "$GEN_KEEP"

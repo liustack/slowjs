@@ -51,7 +51,8 @@ func TestNegativeBuild(t *testing.T) {
 	}
 	gobuild := func(tags ...string) (string, error) {
 		cmd := exec.Command("go", append(append([]string{"build"}, tags...), "./out-neg")...)
-		cmd.Dir, cmd.Env = work, append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+		// The generated files are for linux/amd64, whatever the host is.
+		cmd.Dir, cmd.Env = work, append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 		o, err := cmd.CombinedOutput()
 		return string(o), err
 	}

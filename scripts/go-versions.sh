@@ -4,18 +4,31 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# go-versions.sh [VERSION...]: run the Go tests of the engine with the Go
-# releases the module lets build: the one of the go line of go.mod, and the
-# newest patch release of each minor version from it up to the one
-# internal/goversion/newer.go stops. A patch release does not change what the
-# assembly leans on, so one for each minor version is enough. Or with the
-# releases given (such as go1.27.1). The go command fetches each release
+# go-versions.sh [VERSION...]: check the engine with every Go release the
+# module lets build: the one of the go line of go.mod and each later patch
+# release, up to the minor version internal/goversion/newer.go stops. Or with
+# the releases given (such as go1.27.1). The go command fetches each release
 # (GOTOOLCHAIN), so it needs the network the first time. One line per release
 # at the end. See docs/testing.md.
+#
+# The checks of each release:
+#   go          go build, go vet, and the Go tests of the engine (internal/cengine
+#               and the host packages with the testhooks tag, then the root package)
+#   goasm       the tests of the generator (internal/goasm), which build sample
+#               programs, link them and check the stack check, the call of
+#               morestack and which functions are NOSPLIT
+#   postlink-X  the post-link check of the whole engine of architecture X (amd64
+#               and arm64) against a test binary of internal/cengine linked with
+#               this release (-verify-bin, scripts/gen-engine.sh)
+# goasm and postlink need LLVM 22.1.8 (see GO_VERSIONS_LLVM) and write the engine
+# into .build only. internal/cengine stays as it is.
 #
 # Environment:
 #   GO_VERSIONS_LOGS  folder of the logs, one file per release (default .build/go-versions)
 #   GO_VERSIONS_LIST  1: print the releases and stop
+#   GO_VERSIONS_LLVM  1: run goasm and postlink, and stop if LLVM is not there.
+#                     0: leave them out. Default: run them when clang is in LLVM_BIN
+#   LLVM_BIN          bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
 set -u
 
 cd "$(dirname "$0")/.." || exit 2
@@ -39,14 +52,9 @@ else
 	versions=$(go list -m -versions golang.org/toolchain | tr ' ' '\n' |
 		sed -n "s/^v0\.0\.1-go\(1\.[0-9]*\.[0-9]*\)\.$platform\$/\1/p" |
 		awk -F. -v lm="$lowminor" -v lp="$lowpatch" -v stop="$stop" \
-			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop {
-			if (!($2 in top) || $3 > top[$2]) top[$2] = $3
-		}
-		END {
-			print "go1." lm "." lp
-			for (m in top) if (m != lm || top[m] != lp) print "go1." m "." top[m]
-		}' |
-		sort -t. -k2,2n -k3,3n)
+			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop { print "go" $0 }
+			END { print "go1." lm "." lp }' |
+		sort -u -t. -k2,2n -k3,3n)
 	if [ -z "$versions" ]; then
 		echo "go-versions.sh: found no Go release from $low up to go1.$stop for $platform" >&2
 		exit 2
@@ -58,26 +66,61 @@ if [ "${GO_VERSIONS_LIST:-}" = 1 ]; then
 	exit 0
 fi
 
+llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
+use_llvm=${GO_VERSIONS_LLVM:-auto}
+case $use_llvm in
+auto) if [ -x "$llvm/clang" ]; then use_llvm=1; else use_llvm=0; fi ;;
+0 | 1) ;;
+*) echo "go-versions.sh: GO_VERSIONS_LLVM: want 0, 1 or unset" >&2; exit 2 ;;
+esac
+if [ "$use_llvm" = 1 ]; then
+	# The pass of the generator does not depend on the Go release.
+	if ! LLVM_BIN=$llvm scripts/gen-engine.sh pass >"$logs/pass.log" 2>&1; then
+		cat "$logs/pass.log" >&2
+		echo "go-versions.sh: cannot build the LLVM pass (GO_VERSIONS_LLVM=0 leaves goasm and postlink out)" >&2
+		exit 2
+	fi
+fi
+
 status=0
 summary=
 for v in $versions; do
 	log=$logs/$v.log
+	t0=$(date +%s)
 	(
-		export GOTOOLCHAIN=$v GOFLAGS=
+		export GOTOOLCHAIN=$v GOFLAGS= CGO_ENABLED=0 LLVM_BIN=$llvm
 		set -e
+		step() { # step NAME CMD...
+			echo "== $1"
+			shift
+			"$@"
+		}
+		postlink() { # postlink ARCH: the engine of ARCH against a test binary built by this release
+			bin=$logs/$v.$1.test
+			GOOS=linux GOARCH=$1 go test -c -tags goasmkeep -o "$bin" ./internal/cengine
+			GEN_OUT=$logs/$v.$1.gen GEN_VERIFY_BIN=$bin scripts/gen-engine.sh "$1"
+			rm -rf "$bin" "$logs/$v.$1.gen"
+		}
 		go version
 		test "$(go env GOVERSION)" = "$v"
-		go build ./...
-		go vet -asmdecl=false ./...
-		go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
-		go test -count=1 -p 1 -timeout 60m .
+		step go-build go build ./...
+		step go-vet go vet -asmdecl=false ./...
+		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
+		step go-test-root go test -count=1 -p 1 -timeout 60m .
+		if [ "$use_llvm" = 1 ]; then
+			step goasm env CHECK_ONLY=goasm CHECK_LOGS="$logs/$v.check" scripts/check.sh fast
+			step postlink-amd64 postlink amd64
+			step postlink-arm64 postlink arm64
+		fi
 	) >"$log" 2>&1
-	if [ $? -eq 0 ]; then
+	rc=$?
+	t=$(( $(date +%s) - t0 ))
+	if [ $rc -eq 0 ]; then
 		summary="$summary
-ok    $v"
+ok    $v  (${t}s)"
 	else
 		summary="$summary
-FAIL  $v  ($log)"
+FAIL  $v  (${t}s, $log)"
 		status=1
 	fi
 done
