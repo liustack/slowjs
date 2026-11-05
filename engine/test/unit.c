@@ -3209,13 +3209,16 @@ static void test_iterator_polls(void)
    16-bit string for a character past 0xff) and the filler of padStart and
    padEnd, which is written in steps of 65536 characters whatever its length.
    Each call reads the flag at least as often as it says, and a flag set in the
-   middle stops it with the error "interrupted". */
+   middle stops it with the error "interrupted". The strings are made flat by
+   join: a rope made by + is made flat by the first call alone, which reads
+   the flag for that too (test_rope_flat_polls), and the middle of the first
+   call would not be the middle of the next. */
 static void test_string_loop_polls(void)
 {
     static const char setup[] =
         "var h = 'a'.repeat(1 << 20), nd = 'a'.repeat(100) + 'b', ab = 'ab'.repeat(1 << 17)\n"
-        "var sp = ' ' + 'x'.repeat(1 << 24) + ' '\n"
-        "var wsp = ' ' + '\\u4e00'.repeat(1 << 23) + ' '\n"
+        "var sp = [' ', 'x'.repeat(1 << 24), ' '].join('')\n"
+        "var wsp = [' ', '\\u4e00'.repeat(1 << 23), ' '].join('')\n"
         "var nsp = ['\\u4e00', ' ', '\\u00e9'.repeat(1 << 23), ' '].join('')\n"
         "var fill = 'ab'.repeat(1 << 22); 0\n";
     static const struct {
@@ -3518,6 +3521,122 @@ static void test_tag_polls(void)
         }
     }
     CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A rope of long strings is made flat in steps of JS_ROPE_STEP (65536)
+   characters, with the flag read before the first step and after the last
+   (test_poll_work_gaps of unit-white.c checks the steps): by JS_ToString,
+   called from C so that every reading counted is one of the flatten, and
+   when it is appended to a string buffer (String.raw). Each call reads the
+   flag at least as often as it says, and a flag set at its first reading,
+   at the one in the middle and at its last stops it: it fails with
+   "interrupted", uncatchable, the rope holds what it held and is still a
+   rope, and the same call then gives the flat string. The host checks for a
+   leak when the runtime is freed. */
+static JSValue rope_flat_call(JSContext *ctx, int raw)
+{
+    JSValue g = JS_GetGlobalObject(ctx), r = JS_GetPropertyStr(ctx, g, "R"), f, a[2], ret;
+
+    if (!raw) {
+        ret = JS_ToString(ctx, r);
+    } else {
+        f = JS_GetPropertyStr(ctx, g, "raw");
+        a[0] = JS_GetPropertyStr(ctx, g, "rawArg");
+        a[1] = r;
+        ret = JS_Call(ctx, f, JS_UNDEFINED, 2, a);
+        JS_FreeValue(ctx, a[0]);
+        JS_FreeValue(ctx, f);
+    }
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, g);
+    return ret;
+}
+
+static int rope_is_rope(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx), r = JS_GetPropertyStr(ctx, g, "R");
+    int ok = JS_VALUE_GET_TAG(r) == JS_TAG_STRING_ROPE;
+
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, g);
+    return ok;
+}
+
+static void test_rope_flat_polls(void)
+{
+    static const char setup[] =
+        "var a = 'a'.repeat(1 << 22), b = 'b'.repeat(1 << 22), w = '\\u4e2d'.repeat(1 << 21), R, W, V\n"
+        "var raw = String.raw, rawArg = { raw: ['', ''] }\n"
+        "0";
+    static const struct {
+        const char *rope;
+        int raw;
+        long reads;
+    } cases[] = {
+        /* 2^23 characters: 128 steps */
+        { "a + b", 0, 128 },
+        { "a + w + b", 0, 160 },
+        { "w + a", 0, 96 },
+        { "a + b", 1, 128 },
+        { "a + w", 1, 96 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g, r, e;
+    size_t i, j;
+
+    CHECK(eval(ctx, setup), "the setup threw");
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *how = cases[i].raw ? "String.raw" : "JS_ToString";
+        char prep[128];
+        long before, reads, at[3];
+
+        snprintf(prep, sizeof(prep), "R = %s; W = [%s].join(''); 0", cases[i].rope, cases[i].rope);
+        CHECK(eval(ctx, prep) && rope_is_rope(ctx), "%s: the setup threw, or R is not a rope", cases[i].rope);
+        before = host_poll_reads;
+        r = rope_flat_call(ctx, cases[i].raw);
+        reads = host_poll_reads - before;
+        CHECK(!JS_IsException(r), "%s by %s threw", cases[i].rope, how);
+        g = JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx, g, "V", r);
+        JS_FreeValue(ctx, g);
+        CHECK(eval_is(ctx, "V === W", "true"), "%s by %s does not give the flat string", cases[i].rope, how);
+        CHECK(reads >= cases[i].reads, "%s by %s: %ld readings of the flag, want at least %ld", cases[i].rope, how, reads,
+              cases[i].reads);
+        at[0] = 1;
+        at[1] = reads / 2;
+        at[2] = reads;
+        for (j = 0; j < 3; j++) {
+            const char *m;
+            int stopped;
+
+            CHECK(eval(ctx, prep) && rope_is_rope(ctx), "%s: the setup threw, or R is not a rope", cases[i].rope);
+            host_poll_stop_after(at[j]);
+            r = rope_flat_call(ctx, cases[i].raw);
+            host_poll_stop_after(0);
+            *JS_GetInterruptFlag(rt) = 0;
+            stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(stopped && m && strstr(m, "interrupted"), "%s by %s was not stopped at reading %ld of %ld (%s)", cases[i].rope, how,
+                  at[j], reads, m ? m : "no exception");
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (!JS_IsException(r))
+                JS_FreeValue(ctx, r);
+            CHECK(rope_is_rope(ctx) && eval_is(ctx, "R.length === W.length && R === W", "true"),
+                  "%s by %s stopped at reading %ld: the rope changed", cases[i].rope, how, at[j]);
+            r = rope_flat_call(ctx, cases[i].raw);
+            CHECK(!JS_IsException(r), "%s by %s after a stop at reading %ld threw", cases[i].rope, how, at[j]);
+            g = JS_GetGlobalObject(ctx);
+            JS_SetPropertyStr(ctx, g, "V", r);
+            JS_FreeValue(ctx, g);
+            CHECK(eval_is(ctx, "V === W", "true"), "%s by %s after a stop at reading %ld", cases[i].rope, how, at[j]);
+        }
+    }
+    CHECK(eval_is(ctx, "R = V = W = null; [1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
     JS_FreeContext(ctx);
     host_free_runtime(rt);
 }
@@ -3837,6 +3956,7 @@ int main(void)
     test_long_key_polls();
     test_long_ops_polls();
     test_tag_polls();
+    test_rope_flat_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

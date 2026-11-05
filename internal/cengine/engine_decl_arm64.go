@@ -1321,6 +1321,7 @@ func strcmp(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func string_advance_index(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_buffer_concat_rope(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
+func string_buffer_concat_rope_long(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func string_buffer_concat_value(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func string_buffer_end(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func string_buffer_free(a0 uintptr, a1 uintptr)

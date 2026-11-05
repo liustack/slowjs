@@ -6127,14 +6127,79 @@ static JSString *string_rope_iter_next(JSStringRopeIter *s)
     }
 }
 
+/* string_buffer_concat_rope for a rope of JS_ROPE_STEP characters or more:
+   each string is copied in pieces, so that no more than JS_ROPE_STEP
+   characters are copied between two readings of the flag, each string
+   counting one more than its length, as in hash_string_rope_poll. The flag
+   is read before the first piece, so that the work before the call is not
+   added to it, and after the last one. A string of 8 bits copied into a
+   buffer of 16 bits is counted (JS_WORK) by string_buffer_write8. A stop
+   sets the error of the buffer, which frees it, and leaves the rope as it
+   was. */
+static no_inline int string_buffer_concat_rope_long(StringBuffer *s, JSValueConst rope)
+{
+    JSStringRopeIter it;
+    JSString *p;
+    uint32_t off, n, widen, work = 0;
+    BOOL counted;
+
+    if (js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    string_rope_iter_init(&it, rope);
+    while ((p = string_rope_iter_next(&it)) != NULL) {
+        for (off = 0; off < p->len; off += n) {
+            /* a buffer of 8 bits that a wide string may widen is widened at
+               once when it holds fewer than JS_ROPE_STEP characters, with
+               no reading of the flag: its length is kept out of the step
+               (the flag is read first if it does not fit), and counted when
+               the piece widened it */
+            widen = 0;
+            if (!s->is_wide_char && p->is_wide_char && s->len < JS_ROPE_STEP) {
+                widen = s->len;
+                if (work + widen >= JS_ROPE_STEP) {
+                    work = 0;
+                    if (js_poll_interrupts(s->ctx))
+                        return string_buffer_set_error(s);
+                }
+            }
+            n = min_uint32(p->len - off, JS_ROPE_STEP - work - widen);
+            counted = s->is_wide_char && !p->is_wide_char;
+            if (string_buffer_concat(s, p, off, off + n))
+                return -1;
+            if (!counted)
+                JS_WORK(n);
+            if (widen != 0 && s->is_wide_char)
+                work += widen;
+            work += n;
+            if (work >= JS_ROPE_STEP) {
+                work = 0;
+                if (js_poll_interrupts(s->ctx))
+                    return string_buffer_set_error(s);
+            }
+        }
+        JS_WORK(1);
+        if (++work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(s->ctx))
+                return string_buffer_set_error(s);
+        }
+    }
+    if (work != 0 && js_poll_interrupts(s->ctx))
+        return string_buffer_set_error(s);
+    return 0;
+}
+
 /* append the strings of a rope in order, reading the interrupt flag now and
-   then: a rope can hold as many strings as it has characters */
+   then: a rope can hold as many strings as it has characters. A rope of
+   fewer than JS_ROPE_STEP characters copies each string at once. */
 static int string_buffer_concat_rope(StringBuffer *s, JSValueConst rope)
 {
     JSStringRopeIter it;
     JSString *p;
     int work = 0;
 
+    if (unlikely(JS_VALUE_GET_STRING_ROPE(rope)->len >= JS_ROPE_STEP))
+        return string_buffer_concat_rope_long(s, rope);
     string_rope_iter_init(&it, rope);
     while ((p = string_rope_iter_next(&it)) != NULL) {
         if (string_buffer_concat(s, p, 0, p->len))

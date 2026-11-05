@@ -1285,6 +1285,7 @@ var goasmKeep = []any{
 	string_advance_index,
 	string_buffer_concat,
 	string_buffer_concat_rope,
+	string_buffer_concat_rope_long,
 	string_buffer_concat_value,
 	string_buffer_end,
 	string_buffer_free,

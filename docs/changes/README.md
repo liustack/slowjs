@@ -87,6 +87,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Out of memory in the return method of an iterator that an exception closes is not caught | v0.29.11 | [uncatchable.md](uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes) |
 | Loops over a long string read the interrupt flag in steps | v0.29.5 | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
 | The start and end tag functions read the interrupt flag in every long loop | v0.30.0 | [uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop) |
+| A long rope is made flat in steps that read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#a-long-rope-is-made-flat-in-steps) |
 
 ## Errors and stacks
 

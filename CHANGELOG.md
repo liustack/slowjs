@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+### Fixed
+
+- `Interrupt` and the eval timeout now stop a call while a long string made by `+` (a rope) is being made flat. The copy of each of its strings read no interrupt flag, so a string of tens of millions of characters made by `+` held off the stop for the whole copy, the first time a built-in, a key or the tag functions needed its characters: with a 10 ms timeout, a style value of 64M characters stopped 68 ms after the call started on CI. Now the copy reads the flag every 65,536 characters, and that call stops at once. The string made is the same, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)).
+
 ## [v0.30.0] - 2026-11-05
 
 ### Changed

@@ -1346,6 +1346,11 @@ static void test_poll_work_gaps(void)
         "var jt = '[' + Array(3000).fill('{\"id\":\"abcdefgh\",\"name\":\"ijkl\"}').join(',') + ']'\n"
         "var jl = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u00e9\",\"name\":\"ijkl\"}').join(',') + ']'\n"
         "var jy = '[' + Array(3000).fill('{\"id\":\"abcdefg\\u4e2d\",\"name\":\"ijkl\"}').join(',') + ']'\n"
+        /* strings of a rope longer than a step: 200000 = 3 steps and 3392, 70000, 600 (made a rope of), and a wide one */
+        "var rf1 = 'a'.repeat(200000), rf2 = 'b'.repeat(70000), rf3 = 'x'.repeat(600), rfw = '\\u4e2d'.repeat(100000), rraw = { raw: ['', ''] }, rs1 = 'a'.repeat(40000), rsw = '\\u4e2d'.repeat(40000)\n"
+        /* the ropes of the cases that are not about ropes are made flat here, so that a case counts the work of its own call */
+        "f1 = String(f1), e3 = String(e3), ja = String(ja), je = String(je), jm = String(jm), ju = String(ju), jx = String(jx), jk = String(jk)\n"
+        "jt = String(jt), jl = String(jl), jy = String(jy), jn = String(jn)\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -1369,7 +1374,8 @@ static void test_poll_work_gaps(void)
         { "wlast.slice(1)", SUB_STEP, 6291456 },
         /* a string of 8 bits is copied, not scanned */
         { "nar.slice(3)", SUB_STEP, (3 << 20) + 2 },
-        { "(' ' + nar).trim()", SUB_STEP, (3 << 20) + 5 },
+        /* the rope of the space and nar is made flat first: its characters and one for each of its 2 strings */
+        { "(' ' + nar).trim()", SUB_STEP, (3 << 20) + 5 + (3 << 20) + 6 + 2 },
         /* the hash of a key: leaves of 65534, 65536 and 65535 characters, and one for each leaf */
         { "s0.has(l1 + l2)", ROPE_STEP, 65534 + 65536 + 2 },
         { "s0.has(l3 + l2 + l1)", ROPE_STEP, 65535 + 65536 + 65534 + 3 },
@@ -1435,15 +1441,25 @@ static void test_poll_work_gaps(void)
         { "JSON.parse(jm)", ROPE_STEP + 5, 98312 + 98310 },
         { "JSON.parse(ju)", ROPE_STEP + 5, 120002 + 120000 },
         { "JSON.parse(jw)", ROPE_STEP + 5, 70003 + 70003 + 70000 },
-        /* a rope is made flat first, which widens the characters before the wide one too (1 for the quote) */
-        { "JSON.parse(jwr)", ROPE_STEP + 5, 70003 + 70003 + 70000 + 70001 },
+        /* a rope is made flat first: its 70003 characters and one for each of its 3 strings */
+        { "JSON.parse(jwr)", ROPE_STEP + 5, 70003 + 70003 + 70000 + 70006 },
         { "JSON.parse(jx)", ROPE_STEP + 5, 70008 + 70006 + 70000 },
         /* the same for a key: and the hash of it */
         { "JSON.parse(jk)", ROPE_STEP + 5, 200006 + 200000 + 200000 },
-        /* the text, then the bytes of each key and value, and for the wide text the characters before the wide one when the buffer is widened (the totals of the engine before keys and plain strings were read from the text) */
+        /* the text, then the bytes of each key and value, and for the wide text the characters before the wide one when the buffer is widened (the totals of the engine before keys and plain strings were read from the text, less the 2 narrow strings of the rope jy, which the setup now makes flat) */
         { "JSON.parse(jt).length", ROPE_STEP + 5, 96001 + 3000 * 18 },
         { "JSON.parse(jl).length", ROPE_STEP + 5, 2 * 96001 + 3000 * 19 },
-        { "JSON.parse(jy).length", ROPE_STEP + 5, 177003 },
+        { "JSON.parse(jy).length", ROPE_STEP + 5, 177001 },
+        /* a rope made flat (String): each string in steps, and one more for it; the strings of 8 bits of a wide rope are written into its wide buffer */
+        { "String(rf1 + rf2).length", ROPE_STEP, 270000 + 2 },
+        { "String(rf1 + rf3 + rf2).length", ROPE_STEP, 270600 + 3 },
+        { "String(rf2 + rf1 + rf2).length", ROPE_STEP, 340000 + 3 },
+        { "String(rf1 + rfw + rf2).length", ROPE_STEP, 370000 + 3 },
+        /* a rope appended to a string buffer (String.raw), which is widened at the wide string: the 200000 characters before it once more */
+        { "String.raw(rraw, rf1 + rf2).length", ROPE_STEP, 270000 + 2 },
+        { "String.raw(rraw, rf1 + rfw).length", ROPE_STEP, 300000 + 2 + 200000 },
+        /* the same with fewer than a step before the wide string, which is widened at once with no reading of the flag */
+        { "String.raw(rraw, rs1 + rsw).length", ROPE_STEP, 80000 + 2 + 40000 },
         /* JSON.stringify: runs, escapes and runs of wide characters */
         { "JSON.stringify(qa).length", ROPE_STEP, 200000 },
         { "JSON.stringify(qe).length", ROPE_STEP, 70000 },
