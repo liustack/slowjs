@@ -1,5 +1,23 @@
 # Changes to the engine comparison
 
+## 2026-11-06: newer go-quickjs and modernc, a core pair under a lock
+
+- go-quickjs is v0.34.1 (it was v0.28.0) and modernc.org/quickjs is v0.27.0
+  (it was v0.25.0), both from `go get <module>@latest`. goant (v0.2.1) and
+  moejs (v0.1.0-alpha.11) were already the newest. The adapters needed no
+  change. Numbers in earlier result files are those of the old versions.
+- The run of 2026-11-06 was made on the GCP machine shared with other
+  sessions: timed workloads and the tifa pages ran in short pieces on CPU 0
+  and its sibling 4, one piece at a time under a lock (`-add` for the
+  driver, `TIFA_ONLY`, `TIFA_CPU=0` and `TIFA_SIBLING=4` for `tifa/run.sh`),
+  and test262 ran on CPU 2 at low priority and was merged in. The method of
+  the measurements did not change.
+- go-quickjs-jit rendered the bench `table` page differently between two
+  renders in the page run (`output changed between renders`), which leaves
+  the page without a time. The page was run alone into
+  `go-quickjs-jit-bench-rest.json`, which `cmd/pages` reads, and the run
+  that passed is the one in the tables.
+
 ## 2026-11-05: rows named liustack-quickjs again
 
 - The module is `github.com/liustack/quickjs` again, and its rows take back
