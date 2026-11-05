@@ -104,6 +104,12 @@ unsigned long white_work_sum(void)
     return white_work_total;
 }
 
+/* LRE_WORK of libregexp.c (white-regexp.c) */
+void white_lre_work(unsigned long n)
+{
+    JS_WORK(n);
+}
+
 /* ---- string buffers and the runs of JSON ---- */
 
 /* A string buffer with room for size characters of 8 bits, or of 16 bits when

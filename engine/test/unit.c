@@ -3647,6 +3647,178 @@ static void test_rope_flat_polls(void)
     host_free_runtime(rt);
 }
 
+/* Compiling a long regexp reads the interrupt flag in every long loop, not
+   only at each term of the parse (test_poll_work_gaps of unit-white.c checks
+   the steps): the pattern made a C string, the code copied as it grows,
+   scanned for an atom with a quantifier and for its registers, moved for an
+   alternative, the pattern scanned for a name used before its group, and
+   the code copied into its string, and the loops of a single term: the
+   digits of a count, of \u{...} and of a group name, the operands of && and
+   --, and the strings of \q{...}, parsed, made lower case and turned into
+   code. The compile, called from C so that every
+   reading counted is one of it, reads the flag at least as often as it
+   says, and a flag set at its first reading, at the one in the middle and
+   at its last stops it: it throws "interrupted", uncatchable, and the same
+   compile then gives a regexp that matches. The host checks for a leak when
+   the runtime is freed. */
+static JSValue regexp_compile_call(JSContext *ctx)
+{
+    JSValue g = JS_GetGlobalObject(ctx), c = JS_GetPropertyStr(ctx, g, "RegExp"), ret;
+    JSValue a[2] = { JS_GetPropertyStr(ctx, g, "P"), JS_GetPropertyStr(ctx, g, "F") };
+
+    ret = JS_CallConstructor(ctx, c, 2, (JSValueConst *)a);
+    JS_FreeValue(ctx, a[0]);
+    JS_FreeValue(ctx, a[1]);
+    JS_FreeValue(ctx, c);
+    JS_FreeValue(ctx, g);
+    return ret;
+}
+
+static void test_regexp_compile_polls(void)
+{
+    static const char setup[] =
+        "var P, F, T, V\n"
+        "var Z = '0'.repeat(1 << 21), M = []; for (var i = 0; i < 1 << 17; i++) M.push((i + 1e6).toString(36)); M = M.join('|'); 0";
+    static const struct {
+        const char *pattern, *flags, *text;
+        long reads;
+    } cases[] = {
+        /* the parse reads the flag at each term (the first number, all that
+           was read before), and the other loops at least the second */
+        { "'(?:a|b|c)+d'.repeat(200000)", "undefined", "'ad'.repeat(200000)", 1400001 + 100 },
+        { "'(?:' + 'a'.repeat(1 << 21) + ')+'", "undefined", "'a'.repeat(1 << 21)", 2097154 + 120 },
+        { "'a'.repeat(1 << 21) + '|b'", "undefined", "'b'", 2097155 + 80 },
+        { "'\\\\k<n>' + 'a'.repeat(1 << 21) + '(?<n>x)'", "undefined", "'a'.repeat(1 << 21) + 'x'", 2097156 + 110 },
+        { "'\\u4e2d'.repeat(1 << 20)", "undefined", "'\\u4e2d'.repeat(1 << 20)", 1048577 + 38 },
+        /* a term of millions of characters: a count, an escape and a group
+           name of leading zeros, operands of && and --, and \q{...} with
+           one long string and with many, also made lower case */
+        { "'a{' + Z + '1}'", "undefined", "'a'", 3 + 120 },
+        { "'a{' + Z + '1,' + Z + '2}'", "undefined", "'a'", 3 + 250 },
+        { "'\\\\u{' + Z + '61}'", "'u'", "'a'", 2 + 120 },
+        { "'(?<\\\\u{' + Z + '61}>b)'", "undefined", "'b'", 3 + 120 },
+        { "'[a' + '&&a'.repeat(1 << 19) + ']'", "'v'", "'a'", 4 + (1 << 19) },
+        { "'[a' + '--b'.repeat(1 << 19) + ']'", "'v'", "'a'", 4 + (1 << 19) },
+        { "'[\\\\q{' + 'a'.repeat(1 << 21) + '}]'", "'v'", "'a'.repeat(1 << 21)", 4 + (2 << 21) },
+        { "'[\\\\q{' + 'a'.repeat(1 << 21) + '}]'", "'vi'", "'A'.repeat(1 << 21)", 4 + (3 << 21) },
+        { "'[\\\\q{' + M + '}]'", "'v'", "(1e6).toString(36)", 1 << 20 },
+        { "'[[\\\\q{' + M + '}]&&[\\\\q{' + M + '}]]'", "'v'", "(1e6).toString(36)", 1 << 21 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g, r, e;
+    size_t i, j;
+
+    /* every call compiles, and no lookup in the cache reads the flag */
+    JS_SetRegExpCache(rt, 0, 0);
+    CHECK(eval(ctx, setup), "the setup threw");
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        char prep[256];
+        long before, reads, at[3];
+
+        snprintf(prep, sizeof(prep), "P = String(%s); F = %s; T = %s; 0", cases[i].pattern, cases[i].flags,
+                 cases[i].text);
+        CHECK(eval(ctx, prep), "%s: the setup threw", cases[i].pattern);
+        before = host_poll_reads;
+        r = regexp_compile_call(ctx);
+        reads = host_poll_reads - before;
+        CHECK(!JS_IsException(r), "%s threw", cases[i].pattern);
+        g = JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx, g, "V", r);
+        JS_FreeValue(ctx, g);
+        CHECK(eval_is(ctx, "V.test(T)", "true"), "%s does not match", cases[i].pattern);
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", cases[i].pattern, reads,
+              cases[i].reads);
+        at[0] = 1;
+        at[1] = reads / 2;
+        at[2] = reads;
+        for (j = 0; j < 3; j++) {
+            const char *m;
+            int stopped;
+
+            host_poll_stop_after(at[j]);
+            r = regexp_compile_call(ctx);
+            host_poll_stop_after(0);
+            *JS_GetInterruptFlag(rt) = 0;
+            stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(stopped && m && strstr(m, "interrupted"), "%s was not stopped at reading %ld of %ld (%s)", cases[i].pattern,
+                  at[j], reads, m ? m : "no exception");
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (!JS_IsException(r))
+                JS_FreeValue(ctx, r);
+            r = regexp_compile_call(ctx);
+            CHECK(!JS_IsException(r), "%s after a stop at reading %ld threw", cases[i].pattern, at[j]);
+            g = JS_GetGlobalObject(ctx);
+            JS_SetPropertyStr(ctx, g, "V", r);
+            JS_FreeValue(ctx, g);
+            CHECK(eval_is(ctx, "V.test(T)", "true"), "%s after a stop at reading %ld does not match", cases[i].pattern, at[j]);
+        }
+    }
+    CHECK(eval_is(ctx, "P = F = T = V = Z = M = null; [1, 2, 3].map(x => x * 2).join()", "2,4,6"),
+          "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A lookup in the regexp cache hashes the pattern and compares it with the
+   one of an entry in steps that read the interrupt flag: a pattern of
+   900,002 characters (a class, whose code is short enough for the cache to
+   keep), another string with the same characters as one the cache keeps,
+   is found in 20 to 999 readings (a compile would read the flag for each
+   character), and a flag set at the first reading, at the one in the
+   middle and at the last stops the lookup with "interrupted", uncatchable.
+   The lookup then finds it. */
+static void test_regexp_cache_polls(void)
+{
+    static const char setup[] =
+        "var P = String('[' + 'a'.repeat(900000) + ']'), Q = String('[' + 'a'.repeat(900000) + ']'), F, V = new RegExp(P);\n"
+        "P = Q; 0";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue r, e;
+    long before, reads, at[3];
+    size_t j;
+
+    CHECK(eval(ctx, setup), "the setup threw");
+    before = host_poll_reads;
+    r = regexp_compile_call(ctx);
+    reads = host_poll_reads - before;
+    CHECK(!JS_IsException(r), "the lookup threw");
+    JS_FreeValue(ctx, r);
+    CHECK(reads >= 20 && reads < 1000, "the lookup read the flag %ld times, want 20 to 999", reads);
+    at[0] = 1;
+    at[1] = reads / 2;
+    at[2] = reads;
+    for (j = 0; j < 3; j++) {
+        const char *m;
+        int stopped;
+
+        host_poll_stop_after(at[j]);
+        r = regexp_compile_call(ctx);
+        host_poll_stop_after(0);
+        *JS_GetInterruptFlag(rt) = 0;
+        stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+        e = JS_GetException(ctx);
+        m = JS_ToCString(ctx, e);
+        CHECK(stopped && m && strstr(m, "interrupted"), "the lookup was not stopped at reading %ld of %ld (%s)", at[j], reads,
+              m ? m : "no exception");
+        JS_FreeCString(ctx, m);
+        JS_FreeValue(ctx, e);
+        if (!JS_IsException(r))
+            JS_FreeValue(ctx, r);
+        before = host_poll_reads;
+        r = regexp_compile_call(ctx);
+        CHECK(!JS_IsException(r) && host_poll_reads - before == reads, "the lookup after a stop at reading %ld", at[j]);
+        JS_FreeValue(ctx, r);
+    }
+    CHECK(eval_is(ctx, "P = Q = V = null; [1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* More loops that took a whole long string in one pass, and now read the
    interrupt flag at least every 65536 characters or 1048576 bytes: a search
    for a string of the length of the one searched, Array.prototype.indexOf,
@@ -3963,6 +4135,8 @@ int main(void)
     test_long_ops_polls();
     test_tag_polls();
     test_rope_flat_polls();
+    test_regexp_compile_polls();
+    test_regexp_cache_polls();
     test_async_context_job();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

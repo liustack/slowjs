@@ -23,7 +23,8 @@ import (
 // the tests read the flag at least every few thousand ticks, or every few
 // tens of thousands where a step is long, and so stop within 4 polls.
 // Each of the old gaps these tests met (a rope made flat in one copy, the
-// long loops of the tag functions) was 13 polls or more.
+// long loops of the tag functions, the loops around the parse of a long
+// regexp) was 13 polls or more.
 const stopPolls = 5
 
 // stepStopPolls is the limit of a loop that reads the flag every 65,536

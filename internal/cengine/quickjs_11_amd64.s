@@ -345,7 +345,7 @@ TEXT ·js_symbol_constructor(SB), $96-64
 	BYTE $0x09
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+53321(SB), R14
+	LEAQ ·engine_rodata+53325(SB), R14
 	QUAD $0x5824748948cd8949
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
@@ -2026,7 +2026,7 @@ TEXT ·js_symbol_for(SB), $96-64
 	BYTE $0x09
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+53321(SB), R14
+	LEAQ ·engine_rodata+53325(SB), R14
 	QUAD $0x7c8b4c50246c8b4c
 	QUAD $0x4c58244c89484024
 	QUAD $0x08246c894c242489

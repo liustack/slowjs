@@ -3572,7 +3572,7 @@ TEXT ·JS_CallInternal_block(SB), $504-32
 	WORD $0x54079928
 	WORD $0x32180108
 	WORD $0xf940fff7
-	MOVD $·engine_rodata+52873(SB), R22
+	MOVD $·engine_rodata+52877(SB), R22
 	WORD $0x79130128
 	WORD $0xaa1103f5
 	WORD $0xf84706f4
@@ -11605,7 +11605,7 @@ TEXT ·JS_CallInternal_block(SB), $504-32
 	WORD $0x54000308
 	WORD $0x32180108
 	WORD $0xf940fff7
-	MOVD $·engine_rodata+52873(SB), R22
+	MOVD $·engine_rodata+52877(SB), R22
 	WORD $0x79130128
 	WORD $0xaa1103f5
 	WORD $0xf84706f4
@@ -13132,7 +13132,7 @@ TEXT ·JS_CallInternal_block(SB), $504-32
 	WORD $0x365fff4e
 	MOVD $·engine_rodata+4455(SB), R22
 	WORD $0xf94001f4
-	MOVD $·engine_rodata+109490(SB), R25
+	MOVD $·engine_rodata+109498(SB), R25
 	WORD $0xaa1103f5
 	WORD $0xaa0203f7
 	WORD $0xaa0103f8

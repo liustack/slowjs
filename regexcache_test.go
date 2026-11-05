@@ -103,11 +103,15 @@ func TestRegExpCacheStops(t *testing.T) {
 		{`for (let i = 0; ; i++) new RegExp(p + (i % 1000), 'g')`, stopPolls},
 		{`for (let i = 0; ; i++) try { new RegExp(p + i, 'g') } catch (e) {}`, stopPolls},
 		{`for (let i = 0; ; i++) eval('/' + p + i + '/g')`, stopPolls},
-		// the bytecode of a compile is copied as it grows, with no reading of
-		// the flag: up to 43 polls in the first 900 of this compile, which
-		// is where 10 ms falls on a machine up to 6 times as fast as an
-		// Apple M4
-		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, 50},
+		// one compile of a pattern of 13.2M characters: its conversion to
+		// UTF-8 ran 41 polls with no reading of the flag, and the work after
+		// the parse about 1,360, past the 1000 after which a poll kills the
+		// script
+		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, stopPolls},
+		// strings of one hash and one length in a class: a string was
+		// compared with the ones before it in one pass of memcmp, a byte
+		// at a time, up to 31 times 128 KiB with no reading of the flag
+		{`new RegExp('[\\q{' + q + '}]', 'v')`, stopPolls},
 	} {
 		js := r.js
 		for _, c := range []struct {
@@ -125,7 +129,7 @@ func TestRegExpCacheStops(t *testing.T) {
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				m := newTestVM(t)
-				if _, err := m.Eval(`var p = '(a|b|c)+d'.repeat(200); 0`, EvalGlobal); err != nil {
+				if _, err := m.Eval(`var p = '(a|b|c)+d'.repeat(200), q = []; for (let i = 0; i < 32; i++) { let s = 'x'.repeat(1 << 15); for (let j = 0; j < 5; j++) s += i >> j & 1 ? 'b\u00f9' : 'a\u0200'; q.push(s) } q = q.join('|'); 0`, EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				defer c.arm(m)()
