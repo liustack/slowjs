@@ -176,7 +176,7 @@ Tests: `test_tag_work_gaps` in `engine/test/unit-white.c` counts the work betwee
 
 ## A long rope is made flat in steps
 
-Release: Unreleased.
+Release: v0.30.1.
 
 A string made by `+` from long strings is a rope: a tree of the strings, kept until something needs the characters in one block. Then the rope is made flat, its strings copied one after the other into a new string. Each string was copied with one `memcpy`, and the interrupt flag was read only between two strings, so a rope of two strings of 32M characters held off `Interrupt` and the eval timeout for the whole copy. With a 10 ms timeout, the case "style value" of `TestTagsStop`, whose value of 64M characters is a rope, stopped 68 ms after the call started on the darwin/amd64 runner of CI. On an Apple M4 the engine ran up to 26 polls (of 10,000 ticks each) after the request before it stopped, where the same value made flat first stopped at the first.
 
@@ -192,7 +192,7 @@ Tests: `test_poll_work_gaps` in `engine/test/unit-white.c` makes ropes flat with
 
 ## repeat reads the interrupt flag every 65,536 characters
 
-Release: Unreleased.
+Release: v0.30.1.
 
 `String.prototype.repeat` read the interrupt flag every 1,048,576 characters, and only between two whole copies of its string. It writes a string of one character one character at a time, about one tick of the 10,000 of a poll for each, so `'x'.repeat(1 << 20)` ran 105 polls with no reading, and a string longer than that was copied whole between two readings (16M characters in 13 polls). A call of fewer than 1,048,576 characters read nothing, so a loop of `'x'.repeat(1e5)` stopped only at the next call, up to 11 polls after the request.
 
@@ -204,7 +204,7 @@ Tests: `test_poll_work_gaps` in `engine/test/unit-white.c` repeats one character
 
 ## Compiling one long regexp reads the interrupt flag in every long loop
 
-Release: Unreleased.
+Release: v0.30.1.
 
 The regexp parser reads the interrupt flag at each term (see [above](#compiling-a-regexp-counts-toward-the-interrupt-check)), but the work around the parse, and the loops inside one term, read none. A pattern of 13.2M characters (`'(?:a|b|c)+d'` 1.2 million times) runs about 2,300 polls of 10,000 cycles, and in four stretches the flag was not read: the conversion of the pattern to UTF-8 (41 polls), the copies of the code as its buffer grows (stretches that grow by half each time, up to 45 polls), the scan of the code for its registers (`compute_register_count`, 1,320 polls), and the copy of the code into its string (46 polls). A stop asked for in the scan of the registers came after more than the 1000 polls after which the Go host kills the script: the call ended with `ErrKilled` and the VM was good only for `Close`, where it should have ended with the interrupt. Inside one term, the digits of a count (`a{000…1}`), of `\u{…}` and of a group name, the operands of `&&` and `--` in a class, and the strings of `\q{…}` were read in one pass, however long, and a string of `\q{…}` was compared with each string of the same hash and length before it with no reading. A lookup in the regexp cache hashed the pattern and compared it with the one of an entry in one pass too.
 
@@ -228,7 +228,7 @@ Tests: `test_poll_work_gaps` in `engine/test/unit-white.c` compiles a pattern of
 
 ## A class of a regexp reads the interrupt flag however many characters or strings it has
 
-Release: Unreleased.
+Release: v0.30.1.
 
 A class of many characters or of many strings of `\q{…}` still had stretches with no reading of the flag after the change above, and one of them took a time of n * n:
 

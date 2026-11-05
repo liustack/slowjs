@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.30.1] - 2026-11-06
+
 ### 修复
 
 - 用 `+` 拼出来的长字符串（rope）在被拼成一整块时，`Interrupt` 和 eval 超时现在也能停下这次调用。以前拷贝它的每一段时都不读中断标志，几千万字符的 `+` 拼接字符串第一次被内置函数、属性键或标签函数用到时，要整个拷完才能停：超时设 10 ms 时，6400 万字符的样式值在 CI 上要到调用开始后 68 ms 才停下。现在拷贝时每 65536 个字符读一次标志，这样的调用会马上停下。拼出来的字符串逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)）。
@@ -555,7 +557,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10

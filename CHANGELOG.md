@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.1] - 2026-11-06
+
 ### Fixed
 
 - `Interrupt` and the eval timeout now stop a call while a long string made by `+` (a rope) is being made flat. The copy of each of its strings read no interrupt flag, so a string of tens of millions of characters made by `+` held off the stop for the whole copy, the first time a built-in, a key or the tag functions needed its characters: with a 10 ms timeout, a style value of 64M characters stopped 68 ms after the call started on CI. Now the copy reads the flag every 65,536 characters, and that call stops at once. The string made is the same, byte for byte ([uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)).
@@ -555,7 +557,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.0...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11
 [v0.29.10]: https://github.com/liustack/slowjs/compare/v0.29.9...v0.29.10
