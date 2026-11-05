@@ -11,7 +11,7 @@ read_when:
 
 ## 没有 shell 库
 
-`quickjs-libc.c` 是 QuickJS 的 shell `qjs` 的 C 文件：`std`、`os` 和 `Worker` 模块、事件循环和几个辅助函数。`engine/` 里的 C 树没有它。Go API 不注册这类模块，所以通过它运行的脚本碰不到它们，shell 原来给脚本的东西，Go API 用 Go 来给：类似 `console` 的辅助函数由程序自己加成 [Builtin](go-api.md#builtin-a-go-function-called-as-a-built-in)，模块加载器由程序自己提供，模块顶层 `await` 在 Go 里等待（见 [go-api.md](go-api.md#evalbytecode-waits-for-a-modules-top-level-await-in-go)）。
+`quickjs-libc.c` 是 QuickJS 的 shell `qjs` 的 C 文件：`std`、`os` 和 `Worker` 模块、事件循环和几个辅助函数。`engine/` 里的 C 树没有它。Go API 不注册这类模块，所以通过它运行的脚本碰不到它们，shell 原来给脚本的东西，Go API 用 Go 来给：类似 `console` 的辅助函数由程序自己加成 [Builtin](go-api.zh-CN.md#builtin作为内建函数调用的-go-函数)，模块加载器由程序自己提供，模块顶层 `await` 在 Go 里等待（见 [go-api.md](go-api.zh-CN.md#evalbytecode-在-go-里等待模块的顶层-await)）。
 
 引擎仍然需要那个文件里的少量东西，它们写在 `engine/` 或 Go host 里：`JS_PrintValue` 打印错误（只在有 `CONFIG_PRINT_VALUE` 时，原生测试 host 会设它）、模块的 `import.meta`（由 Go host 设置），以及原生测试 host 加载文件（`engine/test/host.c`）。
 

@@ -1,5 +1,5 @@
 ---
-summary: '模块是怎么搭起来的：从 Go API 到 C 引擎的各层，Go API 的引擎层，每个目录放什么，核心类型和它们的规则，值的表示，javascript 怎么调用 Go 函数，执行时限和 Interrupt 怎么工作，以及引擎在哪些平台上运行'
+summary: '模块是怎么搭起来的：从 Go API 到 C 引擎的各层，Go API 的引擎层，每个目录放什么，核心类型和它们的规则，值的表示，javascript 怎么调用 Go 函数，eval 超时和 Interrupt 怎么工作，以及引擎在哪些平台上运行'
 read_when:
   - 第一次在这个仓库里干活
   - 改根包的 Go API，从它调用引擎，或者加一个运行 javascript 的方法
@@ -29,8 +29,8 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 | 文件 | 内容 |
 | --- | --- |
-| `engine.go` | 值类型 `jsValue` 和它的辅助函数（`tag`、`newInt32`、`valueAt`、`dupValue`、`stringChars` 等），包用到的 tag、atom 和标志，VM 的运行时和上下文（`engineState`，由 `vmState` 内嵌），以及包调用的每个 C 函数各一个方法，按 C 函数命名（`jsEval`、`jsFreeValue`、`jsGetProperty` 等）。调用引擎时要传影子指针，也就是 VM 影子栈的第一个空闲字节：`m.sp`，javascript 调用的 Go 函数会把它移到这次调用的帧之上 |
-| `entry.go` | 进入引擎和离开引擎（`enter`、`leave`），执行时限和 `Interrupt`（由宿主的轮询执行），以及 panic 之后留下什么 |
+| `engine.go` | 值类型 `jsValue` 和它的辅助函数（`tag`、`newInt32`、`valueAt`、`dupValue`、`stringChars` 等），包用到的 tag、atom（引擎给属性名和常用字符串的编号） 和标志，VM 的运行时和上下文（`engineState`，由 `vmState` 内嵌），以及包调用的每个 C 函数各一个方法，按 C 函数命名（`jsEval`、`jsFreeValue`、`jsGetProperty` 等）。调用引擎时要传影子指针，也就是 VM 影子栈的第一个空闲字节：`m.sp`，javascript 调用的 Go 函数会把它移到这次调用的帧之上 |
+| `entry.go` | 进入引擎和离开引擎（`enter`、`leave`），eval 超时和 `Interrupt`（由宿主的轮询执行），以及 panic 之后留下什么 |
 | `hostcall.go` | 引擎调用的 Go 函数（`callGo`、`callBuiltin`、`Then` 回调的类），以及调用它们的函数对象 |
 | `enginememory.go` | `MemoryUsage`、`ReleaseMemory`，以及 `SharedBytecode` 的内存（映射在所有 VM 之外，只读） |
 | `engine_unsupported.go` | 在其他任何平台上，import `internal/unsupported`，构建只报它的错误，错误里写明支持的平台 |
@@ -45,7 +45,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `engine/` | 引擎的 C 树：钉住提交的 QuickJS 加上 liustack/quickjs 对 C 的改动。没有 Go 文件，Go 包目录里也不能放 C 文件（`layout_test.go`） |
 | `engine/libc/` | C 树的小 libc：musl 的内存、字符串和数学函数，一个 `snprintf` 和头文件，让引擎能用 `-ffreestanding -nostdinc` 构建（见它的 [README](../engine/libc/README.zh-CN.md)） |
 | `engine/host.h` | 引擎向宿主要的回调。原生测试宿主和 Go 宿主都实现它们 |
-| `engine/test/` | 原生测试宿主：用普通 clang 和它的小 libc 构建的 C 树，test262、记录下来的输出和 C 写的检查都在它上面跑，也在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下跑（见 [testing.md](testing.md#the-c-tree-and-its-native-test-host)）。从不属于 Go 构建 |
+| `engine/test/` | 原生测试宿主：用普通 clang 和它的小 libc 构建的 C 树，test262、记录下来的输出和 C 写的检查都在它上面跑，也在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下跑（见 [testing.md](testing.zh-CN.md#c-树和它的原生测试宿主)）。从不属于 Go 构建 |
 | `internal/cengine/` | 生成的引擎（amd64 和 arm64 的 `.s`、`engine_decl_<arch>.go`、`engine_keep_<arch>.go`，提交进仓库），以及旁边的宿主文件：汇编调用的回调，一个带 Eval、RunGC、ReleaseMemory 和 Close 的 VM，测量它的 `cmd/jsrun`、`cmd/gcpause`、`cmd/interrupt`，以及绊线文件对 `goasm_tripwire.<arch>.s` 和 `.go`：一个从不链接的函数，只有构建原样保留指令时才能汇编通过 |
 | `internal/goasm/gen/` | 用 LLVM 22.1.8 把 `engine/` 编译成 Go 汇编的生成器，它的 pass 和检查（见它的 [README](../internal/goasm/gen/README.zh-CN.md)）。`internal/goasm/cmd/xform` 移动代码，好在几个位置上给一个构建计时 |
 | `internal/hostmem/` | Go 宿主给引擎的内存，映射在 Go 堆之外：一个 VM 堆的内存块和它们的总量，以及带保护页的影子栈 |
@@ -53,14 +53,14 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `internal/idtable/` | 引擎交还给 Go 的 id 表 |
 | `internal/unsupported/` | 为引擎不支持的平台构建时的错误 |
 | `internal/goversion/` | 用比引擎核对过的版本更新的 Go 构建时的错误，由 `internal/cengine` import |
-| `internal/faulttest/` | 给故意制造内存错误的测试用：它们在 windows 上跳过，因为在那里可能破坏进程的内存（见 [c-engine.md](changes/c-engine.md#when-the-engine-fails)） |
+| `internal/faulttest/` | 给故意制造内存错误的测试用：它们在 windows 上跳过，因为在那里可能破坏进程的内存（见 [c-engine.md](changes/c-engine.zh-CN.md#引擎出错时)） |
 | `internal/measure/` | `go tool measure bench`：在几个代码位置上构建一个程序，轮流计时，并数指令数 |
 | `intl/` | 包 `github.com/liustack/quickjs/intl`，给 VM 用的 `Intl` |
 | `internal/gointl/internal/qjspack/gen/` | 共用的 Intl 数据包，按 Chromium 的 ICU 清单挑选 |
 | `intl/testdata/chromium/` | Chromium 的答案，给 golden 测试用，以及记录它们的 `record.cjs` |
 | `temporal/` | 包 `github.com/liustack/quickjs/temporal`，给 VM 用的 `Temporal` |
 | `temporal/testdata/` | 和 Chromium 对照的表达式及它的答案，以及链接测试构建的程序 |
-| `internal/gointl/` | go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.md#updating-go-intl-internalgointl)） |
+| `internal/gointl/` | go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-go-intlinternalgointl)） |
 | `internal/intlhook/` | 包 `temporal` 从包 `intl` 拿的东西：它的 `toLocaleString` 的格式化，以及 VM 的默认时区 |
 | `fmt/` | 包 `github.com/liustack/quickjs/fmt` |
 | `compare/` | 一个独立的模块，从上游保留下来，在这个引擎、goja 和 fastschema/qjs 上跑 QuickJS 的微基准 |
@@ -82,11 +82,11 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 `RegisterFunc`、`RegisterHostFunc` 和 `Then` 的 Go 函数由一个 id（`keepFunc`）保存，调用它们的函数对象持有这个 id。这个 id 是 VM 的宿主的一个句柄（`gohost.VM.Keep`），引擎释放函数对象时把它交还，`Close` 清掉剩下的。引擎通过 `host_call` 调用 Go，`internal/cengine` 把它转给 `hostCall`。
 
-`Builtin`（`builtin.go`）是快路径：每个进程用 `NewBuiltin` 创建一次，保存在写时复制的 `builtins.list` 里，以它的 magic 为下标，每个 VM 用 `VM.NewBuiltinFunction` 把它变成函数对象。`callBuiltin` 从上下文的 opaque 找到它的 VM，也就是 `vms` 里这个 VM 的 id，这个表的读取不加锁。它保留了 `callGo` 对 panic 和不可捕获错误的处理：改一个，另一个也要改。`VM.NewArray` 用 `JS_DefinePropertyValueUint32` 构建数组，所以 `Array.prototype` 上的 setter 不会运行：Builtin 用它返回列表。
+`Builtin`（`builtin.go`）是快路径：每个进程用 `NewBuiltin` 创建一次，保存在写时复制的 `builtins.list` 里，以它的 magic 为下标，每个 VM 用 `VM.NewBuiltinFunction` 把它变成函数对象。`callBuiltin` 从上下文的 opaque 找到它的 VM，也就是 `vms` 里这个 VM 的 id，这个表的读取不加锁。它保留了 `callGo` 对 panic 和无法捕获错误的处理：改一个，另一个也要改。`VM.NewArray` 用 `JS_DefinePropertyValueUint32` 构建数组，所以 `Array.prototype` 上的 setter 不会运行：Builtin 用它返回列表。
 
-## 执行时限和 Interrupt
+## eval 超时和 Interrupt
 
-每个运行 javascript 的方法（`Eval`、`EvalValue`、`Call`、`CallValue`、`ExecutePendingJobs` 等）在运行 javascript 之前都先调用 `m.enter()` 和 `defer m.leave(&err)`。`enter` 记录调用嵌套了多深，只有最外层的调用才会按 `m.timeout` 设定截止时间，并在宿主里清掉中断标志。所以，在同一个 VM 上再执行更多 javascript 的 Go 函数，仍在外层调用的时限之内，也保留着待处理的 `Interrupt()`。引擎在生成的代码做轮询的地方，以及 C 里读这个标志的地方读它（[c-engine.md](changes/c-engine.md#polls-and-interrupts)）。截止时间用单调时钟（见 [uncatchable.md](changes/uncatchable.md#the-eval-timeout-runs-on-the-monotonic-clock)）。
+每个运行 javascript 的方法（`Eval`、`EvalValue`、`Call`、`CallValue`、`ExecutePendingJobs` 等）在运行 javascript 之前都先调用 `m.enter()` 和 `defer m.leave(&err)`。`enter` 记录调用嵌套了多深，只有最外层的调用才会按 `m.timeout` 设定截止时间，并在宿主里清掉中断标志。所以，在同一个 VM 上再执行更多 javascript 的 Go 函数，仍在外层调用的时限之内，也保留着待处理的 `Interrupt()`。引擎在生成的代码做轮询的地方，以及 C 里读这个标志的地方读它（[c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)）。截止时间用单调时钟（见 [uncatchable.md](changes/uncatchable.zh-CN.md#eval-超时用单调时钟)）。
 
 `SetEvalTimeout` 设置时长。`Interrupt()` 以原子方式设置标志，可以从任何 goroutine 调用。它通过 `VM.intr` 到达标志，`VM.intr` 把 VM 的宿主放在 Go 内存里，并用 `Close` 排好顺序。`Close` 只清内嵌的 `vmState`，从不清 `intr`，所以 `Interrupt` 在 `Close` 期间和之后从任何 goroutine 调用都是安全的。新的 VM 字段放进 `vmState`。加一个运行 javascript 的方法时，要加上 `enter` 和 `leave` 这一对，否则时限对它不起作用。所有可能碰到 getter、setter、proxy 陷阱、`toJSON`、`toString` 或被替换的内置方法的方法都算，不只是执行源码的那些：`GetProperty`、`SetProperty`、`Value.Any`、`Value.MarshalJSON` 和 `ErrorFromValue` 也有这一对，而 `outer`（没有时限，不能终止）留给不可能运行脚本的调用。由异常生成的 `*Error` 用 `ErrorFromValue` 读它的字段，所以在调用之外读出的错误也受时限约束。
 
@@ -94,10 +94,10 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 - **`intl/`**：所有 `Intl` 构造函数、`toLocale*` 和 `localeCompare`，给调用了 `Register(vm)` 的 VM 用。QuickJS 没有 `Intl`，所以没调用 `Register` 就去用它的页面会得到 `ReferenceError`。javascript 一侧是 `intl.js` 和 `stub.js`，决定在 Go 里做，建在 `internal/gointl` 上，`bridge.go` 顶部的注释说明怎么加一个构造函数。改过格式化器之后，`intl/golden_test.go` 是最要紧的检查：数据知道规范不知道的细节。它怎么工作，输出怎么和 Chromium 对照：见 [time-and-intl.md](changes/time-and-intl.zh-CN.md)。
 - **`temporal/`**：`Temporal`，给调用了 `Register(vm)` 的 VM 用，和 `intl/` 的构造方式一样。go-intl 的 temporal 包做所有计算，通过 `bridge.go` 里的一个 Builtin，它的第一个参数写明操作名（`opNames` 列表）。见 [temporal.md](changes/temporal.zh-CN.md)。
-- **`internal/gointl/`**：go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，停在 `internal/gointl/UPSTREAM` 里的提交，`intl` 和 `temporal` 使用它。只有 `qjs*` 文件和 `UPSTREAM` 是我们的。go-intl 的文件只能通过 `qjs.patch` 和 `qjs-sync.sh` 改（见[更新 go-intl](upgrading.md#updating-go-intl-internalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
+- **`internal/gointl/`**：go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，停在 `internal/gointl/UPSTREAM` 里的提交，`intl` 和 `temporal` 使用它。只有 `qjs*` 文件和 `UPSTREAM` 是我们的。go-intl 的文件只能通过 `qjs.patch` 和 `qjs-sync.sh` 改（见[更新 go-intl](upgrading.zh-CN.md#更新-go-intlinternalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
 - **`fmt/`**：包 `github.com/liustack/quickjs/fmt`，是这个模块的一部分。它用 `Register(obj Value)` 给 VM 提供 Go 的 `fmt.Printf`、`Println`、`Sprintf` 和 `Sprintln`，在 javascript 里用小写名字（`fmt.println`）。
 - **`compare/`**：一个独立的模块（`github.com/liustack/quickjs/compare`），在这个引擎、goja 和 `github.com/fastschema/qjs` 上运行 `compare/testdata/` 里的 QuickJS 微基准。`make benchmark` 在那里运行。它独立成模块，是为了让它的依赖不进库的 `go.mod`。`compare/go.mod` 把 `github.com/liustack/quickjs` 替换成 `../`，所以基准构建的是工作树，而 `go mod tidy`（`benchmark` 目标先运行它）从根 `go.mod` 取其他版本：不要手工复制它们。
 
 ## 平台
 
-引擎在 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64 上运行。每个系统运行的是各自架构下同一份生成的代码。其他平台不支持，所以为它们构建会停下来报错，错误里写明支持的平台（`internal/unsupported`）。哪个 Go 能构建，更新的 Go 会怎样，见 [upgrading.md](upgrading.md#moving-to-a-newer-go)。改动必须保证 `make build_all_targets` 在全部五个平台上通过（见 [testing.md](testing.md#every-target)）。
+引擎在 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64 上运行。每个系统运行的是各自架构下同一份生成的代码。其他平台不支持，所以为它们构建会停下来报错，错误里写明支持的平台（`internal/unsupported`）。哪个 Go 能构建，更新的 Go 会怎样，见 [upgrading.md](upgrading.zh-CN.md#换用更新的-go)。改动必须保证 `make build_all_targets` 在全部五个平台上通过（见 [testing.md](testing.zh-CN.md#每个目标平台)）。

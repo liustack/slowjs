@@ -46,7 +46,7 @@ read_when:
 | `1ec58aa` Await the async iterator return() when a for-await loop breaks | 提前离开的 for await 循环会等待 `return()`，正常结束的则不调用它 | 去掉它的 `using` 分支，并加了对结果的检查 | `compare/for_await_close.js` |
 | `19d6bd8` fixed arbitrary module namespace names | `export { x as "a-b" }` 和 `export * as "name" from` | 全部，test262 会运行这个特性 | `compare/module_string_names.mjs` |
 | `a479eff` fixed regexp unicode set parsing | `/-&&/v` 是合法的正则 | C 树里已经有了 | 上游的 `test_builtin.js`，现在有了这一行 |
-| `3c4c6ed` fixed slow Array truncation | 稀疏数组截断先删除所有符合条件的下标，再压实属性表 | 全部，保留 liustack/quickjs 对 shape 的处理 | `compare/array_truncate.js`、`TestUpstreamArrayTruncate` |
+| `3c4c6ed` fixed slow Array truncation | 稀疏数组截断先删除所有符合条件的下标，再压实属性表 | 全部，保留 liustack/quickjs 对 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 的处理 | `compare/array_truncate.js`、`TestUpstreamArrayTruncate` |
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | 没有初始累加值的空迭代器抛错，不读取也不调用 `return` | 全部 | `compare/iterator_reduce.js`、`TestUpstreamIteratorReduce` |
 | `aac9bc5` fixed Iterator.concat logic | 通过 IteratorClose 关闭，并在任何一步失败后结束 helper | 合并进单独的 next 和 return 函数，return 返回一个新的已完成结果 | `compare/iterator_concat.js`、`TestUpstreamIteratorConcat` |
 
@@ -68,7 +68,7 @@ read_when:
 
 ## 速度
 
-测量方法见 [performance.md](../performance.md#how-the-numbers-were-measured)，在 Google Cloud VM 上，用 [Code positions](../performance.md#code-positions) 的 8 个代码位置（整个程序移动 0 或 32 字节，解释器主体移动 0、8、16 或 24 字节，这样解释器的入口始终在它的 64 字节行上，只有其他函数随第一个移动），5 轮，每个提交和它前一个对比。当各位置的中位数偏离 1 超过 2%，而且超过基线在自己各位置上范围的一半，并且大多数位置在同一侧时，才算有变化。各阶段的行用的是 5e22e512 的生成器。
+测量方法见 [performance.md](../performance.zh-CN.md#数字是怎么测的)，在 Google Cloud VM 上，用 [Code positions](../performance.zh-CN.md#代码位置) 的 8 个代码位置（整个程序移动 0 或 32 字节，解释器主体移动 0、8、16 或 24 字节，这样解释器的入口始终在它的 64 字节行上，只有其他函数随第一个移动），5 轮，每个提交和它前一个对比。当各位置的中位数偏离 1 超过 2%，而且超过基线在自己各位置上范围的一半，并且大多数位置在同一侧时，才算有变化。各阶段的行用的是 5e22e512 的生成器。
 
 | 提交 | 脚本 | 用时 | 各位置 | 基线的范围 |
 | --- | --- | ---: | --- | ---: |
@@ -96,7 +96,7 @@ read_when:
 
 ## indexOf 和 includes 对大多数元素不用调用就能判断
 
-不是来自上游。在 `c_array_methods` 上，把 perf 的结果和同一份 C 用 clang 原生构建的结果（`engine/test`）对比，差距出在 `js_array_includes` 和 `js_array_indexOf`：6020 和 3915 个样本，对 1826 和 957。它们的循环对每个元素调用 `js_strict_eq2`，而带有可能轮询的调用的循环，会把轮询计数器放在内存里：每一轮读、减、写一个字，这占了 `js_array_includes` 样本的 36%。`js_quick_strict_eq` 回答不需要调用的那些组合（int、布尔值、null、undefined、对象、symbol、浮点数、int 与浮点数、是同一个字符串或长度不同或都是 atom 的字符串，以及永远不相等的两种不同类型的值），`js_fast_array_find` 用它遍历稠密 Array，只对其余的调用 `js_strict_eq2`：不是 atom 的两个字符串、rope 和 BigInt。`lastIndexOf` 没有针对稠密 Array 的循环，没有改。`compare/strict_equal.js` 在 int、浮点数、atom、新建的字符串、混合值以及每种类型各一个的数组里搜索，带 from-index，输出和 Node 24 一致。
+不是来自上游。在 `c_array_methods` 上，把 perf 的结果和同一份 C 用 clang 原生构建的结果（`engine/test`）对比，差距出在 `js_array_includes` 和 `js_array_indexOf`：6020 和 3915 个样本，对 1826 和 957。它们的循环对每个元素调用 `js_strict_eq2`，而带有可能轮询的调用的循环，会把轮询计数器放在内存里：每一轮读、减、写一个字，这占了 `js_array_includes` 样本的 36%。`js_quick_strict_eq` 回答不需要调用的那些组合（int、布尔值、null、undefined、对象、symbol、浮点数、int 与浮点数、是同一个字符串或长度不同或都是 atom（引擎给属性名和常用字符串的编号） 的字符串，以及永远不相等的两种不同类型的值），`js_fast_array_find` 用它遍历稠密 Array，只对其余的调用 `js_strict_eq2`：不是 atom 的两个字符串、rope（几段字符串连成的树，读的时候才拼成一段） 和 BigInt。`lastIndexOf` 没有针对稠密 Array 的循环，没有改。`compare/strict_equal.js` 在 int、浮点数、atom、新建的字符串、混合值以及每种类型各一个的数组里搜索，带 from-index，输出和 Node 24 一致。
 
 在分支合并后的状态（提交 `a57b9148`）上，对比加上这次改动之后的同一状态：`c_array_methods` 0.583（各位置 0.562 到 0.588，基线范围 3.9%，8 个位置全部低于 1）。`r_react_ssr` 1.001，`c_map_set_iter` 1.002，`c_string_methods` 0.987，`q_array_read` 1.003，都在噪声之内。
 

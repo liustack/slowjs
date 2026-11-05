@@ -16,7 +16,7 @@ read_when:
 
 发布版本：v0.28.1。
 
-用 `EvalBytecode` 加载字节码的 VM，会把每个函数的源码文本（`toString` 返回的内容）和把字节码映射到行号的表（错误 stack 要读它）复制进自己的内存。把一个 bundle 加载进一池 VM 的服务器，每个 VM 都存了一份这些字节，而且没有 VM 会写它们。现在 `NewSharedBytecode` 在 Go 堆之外把字节码复制一次，`VM.EvalSharedBytecode`（和 `EvalSharedBytecodeValue`）用 `JS_ReadObject` 的标志 `JS_READ_OBJ_SHARED_DEBUG` 加载它：读出的每个函数的源码文本和行表都指向这份副本，函数用 `JSFunctionBytecode` 的 `shared_debug` 位表明这一点。VM 读出的其他东西（代码、atom 和常量）仍然是各自私有的。
+用 `EvalBytecode` 加载字节码的 VM，会把每个函数的源码文本（`toString` 返回的内容）和把字节码映射到行号的表（错误 stack 要读它）复制进自己的内存。把一个 bundle 加载进一池 VM 的服务器，每个 VM 都存了一份这些字节，而且没有 VM 会写它们。现在 `NewSharedBytecode` 在 Go 堆之外把字节码复制一次，`VM.EvalSharedBytecode`（和 `EvalSharedBytecodeValue`）用 `JS_ReadObject` 的标志 `JS_READ_OBJ_SHARED_DEBUG` 加载它：读出的每个函数的源码文本和行表都指向这份副本，函数用 `JSFunctionBytecode` 的 `shared_debug` 位表明这一点。VM 读出的其他东西（代码、atom（引擎给属性名和常用字符串的编号） 和常量）仍然是各自私有的。
 
 JavaScript 看到的不变：`toString` 给出同样的文本，错误 stack 给出同样的行和列。`TestSharedBytecodeSameAsCopy` 拿它和 `EvalBytecode` 对照检查过，覆盖函数、箭头函数、带 getter 和静态方法的类、async 方法、在两层调用之下抛出的错误、在函数里生成的 stack，以及有 256 KiB 源码的函数。
 
@@ -36,7 +36,7 @@ JavaScript 看到的不变：`toString` 给出同样的文本，错误 stack 给
 | tifa 的示例商店 | 5.27 MB | 11,459,272 字节 | 8,986,552 | 2.36 MiB (0.784) |
 | tifa 的 MUI 测试应用 | 2.73 MB | 5,436,184 字节 | 4,155,576 | 1.22 MiB (0.764) |
 
-商店里加载后留下的 bundle 函数，持有 1.34 MB 的源码文本和 0.30 MB 的行表。差额的其余部分是分配器给这些块加的头和取整。有 8 个 VM 时，进程的 RSS 在商店上从 122.0 降到 100.9 MB，在 MUI 上从 72.7 降到 57.9 MB。渲染时间不变。在 tifa 里不开 PGO 计时，一个 VM 跑在一个空闲核对的一个线程上，main 和这个分支在 3 种代码布局下轮流跑（23 对运行），商店的 6 个工作台页面渲染用时的中位数是原来的 0.994（0.979 到 1.015），MUI 测试应用的 3 个页面是 0.994（0.981 到 1.005）。池的回收频率和以前一样（young 和 full 回收的次数相同），HTML 逐字节相同。
+商店里加载后留下的 bundle 函数，持有 1.34 MB 的源码文本和 0.30 MB 的行表。差额的其余部分是分配器给这些块加的头和取整。有 8 个 VM 时，进程的 RSS 在商店上从 122.0 降到 100.9 MB，在 MUI 上从 72.7 降到 57.9 MB。渲染时间不变。在 tifa 里不开 PGO 计时，一个 VM 跑在一个空闲核对的一个线程上，main 和这个分支在 3 种代码布局下轮流跑（23 对运行），商店的 6 个工作台页面渲染用时的中位数是原来的 0.994（0.979 到 1.015），MUI 测试应用的 3 个页面是 0.994（0.981 到 1.005）。池的回收频率和以前一样（年轻代回收和完整回收的次数相同），HTML 逐字节相同。
 
 
 ## 共享字节码只在第一次加载时扫描轮询点

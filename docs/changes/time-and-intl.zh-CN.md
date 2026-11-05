@@ -15,7 +15,7 @@ read_when:
 
 [English](time-and-intl.md) · 简体中文
 
-服务端渲染的页面必须在每台机器上输出相同的内容，并且和浏览器显示的一致。[Updating the intl locale data](../upgrading.md#updating-the-intl-locale-data) 说明了怎样换到新的 CLDR、tzdb 或 Chromium。
+服务端渲染的页面必须在每台机器上输出相同的内容，并且和浏览器显示的一致。[Updating the intl locale data](../upgrading.zh-CN.md#更新-intl-语言数据) 说明了怎样换到新的 CLDR、tzdb 或 Chromium。
 
 ## 每个 VM 里本地时间都是 UTC
 
@@ -39,9 +39,9 @@ read_when:
 | --- | --- | --- |
 | `date_now` | `Date.now()`、`new Date()`、`Date()` | `time.Now().UnixMilli()`：1970 年以来的整毫秒，向下取整，和以前一样 |
 | `js_random_init` | 新 context 里 `Math.random` 的种子 | `time.Now().UnixMicro()`，为 0 时用 1，和以前一样 |
-| `get_time_ns` | `StdAddHelpers` 的 `performance.now()`，现在已经没有了（[go-api.md](go-api.zh-CN.md#no-module-loader-shell-helpers-or-setcanblock)） | Go 的单调时钟，从进程启动算起 |
+| `get_time_ns` | `StdAddHelpers` 的 `performance.now()`，现在已经没有了（[go-api.md](go-api.zh-CN.md#没有模块加载器shell-辅助函数和-setcanblock)） | Go 的单调时钟，从进程启动算起 |
 
-`Atomics.wait` 仍然读 libc 的 `CLOCK_REALTIME`：它把截止时间交给 libc 的 `pthread_cond_timedwait`，后者按那个时钟计时，而且它不是热路径。求值超时本来就跑在 Go 的单调时钟上（见 [uncatchable.md](uncatchable.zh-CN.md#the-eval-timeout-runs-on-the-monotonic-clock)），本地时间仍然是 UTC。
+`Atomics.wait` 仍然读 libc 的 `CLOCK_REALTIME`：它把截止时间交给 libc 的 `pthread_cond_timedwait`，后者按那个时钟计时，而且它不是热路径。eval 超时本来就跑在 Go 的单调时钟上（见 [uncatchable.md](uncatchable.zh-CN.md#eval-超时用单调时钟)），本地时间仍然是 UTC。
 
 脚本能看到的变化：`performance.now()` 和 Node 一样，从进程启动算起。以前在 Linux 和 macOS 上，它从系统启动算起，在 Windows 上 quickjs-libc 为它读墙上时钟（`gettimeofday`），给出的是 1970 年以来的毫秒数，系统时钟被调整时它会跟着动。它的精度（以毫秒为单位的 double 里的纳秒）不变，速率也不变，macOS 除外：macOS 以前的 `CLOCK_MONOTONIC` 在系统睡眠时继续走，而 Go 的单调时钟（`mach_absolute_time`）不走，所以跨过一次睡眠的脚本看到流逝的时间更少。在 Windows 上，`Date.now()` 和 `new Date()` 不再在 2038 年溢出：那里 libc 的 `timeval` 只有 32 位秒。
 
@@ -61,10 +61,10 @@ vm.SetClock(nil)
 ```
 
 - 在调用 JavaScript 的间隙设置它。绝不要在 VM 运行时、从 VM 内部的回调里、或从另一个 goroutine 里设置。要让模块的初始化也受控，就在执行模块字节码之前设置。
-- 回调不能阻塞，因为求值超时无法打断它。多个 VM 共用一个回调时，它必须能安全地被并发调用。它里面的 panic 遵循引擎里 panic 的规则：关闭那个 VM。
+- 回调不能阻塞，因为eval 超时无法打断它。多个 VM 共用一个回调时，它必须能安全地被并发调用。它里面的 panic 遵循引擎里 panic 的规则：关闭那个 VM。
 - 非 nil 的 `temporal.Clock` 仍然只覆盖 `Temporal.Now`，并且优先于 VM 时钟。没有它，或者 `Clock(nil)`，Temporal 每次调用都读 VM 时钟，之后再调用 `SetClock` 也一样。
 - 保存下来的函数读的是调用时当前的时钟：模块加载时保存的 `Date.now`、`Temporal.Now` 的方法、`Intl` 的格式化器。Intl 在注册时取原生的 `Date.now`，所以页面替换 `Date.now` 不会改变 Intl 读到的。
-- 它只是墙上时钟。求值超时、`Atomics.wait` 和 `Math.random` 的种子保留它们各自的时钟。
+- 它只是墙上时钟。eval 超时、`Atomics.wait` 和 `Math.random` 的种子保留它们各自的时钟。
 - `Close` 和 `SetClock(nil)` 会释放回调，即使它引用着这个 VM。
 
 运行时里只存一个标志，从不存 Go 指针，因为运行时内存在 Go 堆之外。有时钟的 VM，它的回调存在按运行时索引的 Go 注册表里，在被替换、重置或关闭之前一直保持存活。没有时钟时，调用像以前一样读 Go 的时钟：一次标志测试，不查表、不加锁、不分配。
@@ -99,11 +99,11 @@ vm.SetClock(nil)
 
 发布版本：v0.26.17。
 
-`intl` 包通过 `Builtin` 调用 Go（见 [go-api.md](go-api.zh-CN.md#builtin-a-go-function-called-as-a-built-in)），进来的路上没有反射也没有 JSON，并且把它的格式化器放在整个进程共用的一个注册表里：在另一个 VM 里用同样的 locale 和选项、或者换一种写法做出的 `NumberFormat`，会复用已经做好的那个。注册表最多保存 1024 个格式化器，丢弃最旧的，格式化器被丢掉的对象会在下次调用时重新创建它。它的函数有内置函数的形状（`length`、`name`、没有 `prototype`、`toString` 显示 `[native code]`、访问器和描述符与 ECMA-402 一致），页面在 `Register` 之后改动 `Array.prototype`、`Object.prototype`、`JSON` 或其他内置对象，不会改变它的行为。
+`intl` 包通过 `Builtin` 调用 Go（见 [go-api.md](go-api.zh-CN.md#builtin作为内建函数调用的-go-函数)），进来的路上没有反射也没有 JSON，并且把它的格式化器放在整个进程共用的一个注册表里：在另一个 VM 里用同样的 locale 和选项、或者换一种写法做出的 `NumberFormat`，会复用已经做好的那个。注册表最多保存 1024 个格式化器，丢弃最旧的，格式化器被丢掉的对象会在下次调用时重新创建它。它的函数有内置函数的 shape（引擎记录一个对象有哪些键、按什么顺序的结构，这里是 `length`、`name`、没有 `prototype`、`toString` 显示 `[native code]`、访问器和描述符与 ECMA-402 一致），页面在 `Register` 之后改动 `Array.prototype`、`Object.prototype`、`JSON` 或其他内置对象，不会改变它的行为。
 
 在 AMD EPYC 7B13 的一个核上：`new Intl.NumberFormat('en')` 用 2.7 µs（以前 16.5 µs），`format` 用 3.2 µs（5.6 µs），`formatToParts` 用 6.7 µs（12.9 µs），带时区的 `DateTimeFormat` 创建用 8.1 µs（32.0 µs），格式化用 2.6 µs（5.2 µs），`PluralRules.select` 用 0.9 µs（2.9 µs），带选项的 `toLocaleDateString` 用 9.5 µs（41.8 µs）。用过 `Intl` 的 VM 少占约 15 KB。test262 的 intl402 测试在 6764 个运行中通过 912 个（以前 770 个），以前通过的没有一个失败。
 
-工作原理见 [architecture.md](../architecture.md#packages-next-to-the-engine)，`intl/bridge.go` 顶部的注释说明了怎样添加一个构造函数。
+工作原理见 [architecture.md](../architecture.zh-CN.md#引擎旁边的包)，`intl/bridge.go` 顶部的注释说明了怎样添加一个构造函数。
 
 测试：`intl/registry_test.go`、`intl/shape_test.go`、`intl/tamper_test.go`、`intl/convert_test.go`、`intl/legacy_test.go`。
 
@@ -111,13 +111,13 @@ vm.SetClock(nil)
 
 发布版本：v0.27.0。
 
-`intl` 包加上了 `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，它们建立在 go-intl 上（`internal/gointl`，见 [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)），和其他构造函数共用同一座桥和同一个注册表。`localeCompare` 按 locale 的排序规则排序，`toLocaleUpperCase` 和 `toLocaleLowerCase` 像 V8 一样遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则，而 QuickJS 按码点排序，各种语言的大小写映射也一样。`Intl.Locale` 在任何构造函数接收 locale 的地方都代表它的标签。其余的构造函数现在使用同样的数据包，见下文。
+`intl` 包加上了 `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，它们建立在 go-intl 上（`internal/gointl`，见 [Updating go-intl](../upgrading.zh-CN.md#更新-go-intlinternalgointl)），和其他构造函数共用同一座桥和同一个注册表。`localeCompare` 按 locale 的排序规则排序，`toLocaleUpperCase` 和 `toLocaleLowerCase` 像 V8 一样遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则，而 QuickJS 按码点排序，各种语言的大小写映射也一样。`Intl.Locale` 在任何构造函数接收 locale 的地方都代表它的标签。其余的构造函数现在使用同样的数据包，见下文。
 
-每个构造函数接受 Chromium 156 有的 locale，并提供 Chromium 为它们提供的数据：Chromium 的 ICU 数据里缺少某种语言的相对时间、列表或单位的地方（az、bs、kk、kok、pa、sd、uz 以及它们的一些文字和地区就是这样），输出是 root 的或英语的，和 Chromium 一样（`intl/gointl.go` 里的 `chromiumData`，由 `TestChromiumData` 推导出来）。输出与 Chromium 的在这些语言的 14,269 个表达式上做了对比（`intl/golden_gointl_test.go`，用 `record.cjs golden <set>` 记录）。现在有 13,671 个完全一致。另外 598 个不同，原因在包文档里列出，每个都对应 `intl/golden_test.go` 里 `goldenDifferences` 的一条规则：`Segmenter` 的 2,901 个里有 104 个（Chromium 自己的断词规则以及老挝语和高棉语的词典），`DisplayNames` 的 1,635 个里有 475 个（Chromium 的 ICU 数据名称更少，另有几个它自己的名称），`DurationFormat` 的 1,042 个里有 6 个（V8 在超过 2\*\*63 纳秒时按机器的规则溢出），`supportedValuesOf` 的 23 个里有 1 个（更多的货币），`Locale` 的 1,415 个里有 12 个（001 的五个时区、`baseName` 里的 `-u-va-posix`、未知地区）。`Collator`（1,372）、`RelativeTimeFormat`（1,247）、`ListFormat`（1,298）和大小写映射（3,336）完全一致。test262 对 ECMA-402 的理解与 V8 不同时，答案以 V8 为准：值为 `yes` 的 `-u-` 关键字、没有已知书写方向的文字的 `getTextInfo`、只检查第一个 locale 的 `toLocaleUpperCase`，以及两个 `DurationFormat` 的用例。这些函数有内置函数的形状，并且和其他的一样忽略页面对内置对象的改动：`shape.json` 和 `tamper.json` 是在 Chromium 里记录的。在 Temporal 和其余格式化器迁到 go-intl 之前，test262 的 Intl402 测试在 6764 个运行中通过 2282 个。当前完整的对比见下文。
+每个构造函数接受 Chromium 156 有的 locale，并提供 Chromium 为它们提供的数据：Chromium 的 ICU 数据里缺少某种语言的相对时间、列表或单位的地方（az、bs、kk、kok、pa、sd、uz 以及它们的一些文字和地区就是这样），输出是 root 的或英语的，和 Chromium 一样（`intl/gointl.go` 里的 `chromiumData`，由 `TestChromiumData` 推导出来）。输出与 Chromium 的在这些语言的 14,269 个表达式上做了对比（`intl/golden_gointl_test.go`，用 `record.cjs golden <set>` 记录）。现在有 13,671 个完全一致。另外 598 个不同，原因在包文档里列出，每个都对应 `intl/golden_test.go` 里 `goldenDifferences` 的一条规则：`Segmenter` 的 2,901 个里有 104 个（Chromium 自己的断词规则以及老挝语和高棉语的词典），`DisplayNames` 的 1,635 个里有 475 个（Chromium 的 ICU 数据名称更少，另有几个它自己的名称），`DurationFormat` 的 1,042 个里有 6 个（V8 在超过 2\*\*63 纳秒时按机器的规则溢出），`supportedValuesOf` 的 23 个里有 1 个（更多的货币），`Locale` 的 1,415 个里有 12 个（001 的五个时区、`baseName` 里的 `-u-va-posix`、未知地区）。`Collator`（1,372）、`RelativeTimeFormat`（1,247）、`ListFormat`（1,298）和大小写映射（3,336）完全一致。test262 对 ECMA-402 的理解与 V8 不同时，答案以 V8 为准：值为 `yes` 的 `-u-` 关键字、没有已知书写方向的文字的 `getTextInfo`、只检查第一个 locale 的 `toLocaleUpperCase`，以及两个 `DurationFormat` 的用例。这些函数有内置函数的 shape，并且和其他的一样忽略页面对内置对象的改动：`shape.json` 和 `tamper.json` 是在 Chromium 里记录的。在 Temporal 和其余格式化器迁到 go-intl 之前，test262 的 Intl402 测试在 6764 个运行中通过 2282 个。当前完整的对比见下文。
 
 这第一批构造函数的代价，在 AMD EPYC 7B13 的一个核上，不开 PGO，对比之前的版本：
 
-- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags quickjs_intl_nonames,quickjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.md#updating-go-intl-internalgointl)）：带上它们，商店大 12.6 MB。
+- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags quickjs_intl_nonames,quickjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.zh-CN.md#更新-go-intlinternalgointl)）：带上它们，商店大 12.6 MB。
 - 内存和启动：`Register` 多用 0.01 ms 和 4 KB。VM 里第一次使用用 0.49 ms（以前 0.24 ms），用过 `Intl` 的 VM 比 `Register` 之后多占 151 KB（以前 77 KB）。它安装的 JavaScript 从 17 KB 的源码变成了 36 KB。进程里第一次排序用 4.7 ms，第一次分词用 2.7 ms，用来读取它们的数据。
 - 调用：`new Intl.Collator('de')` 用 2.8 µs，`compare` 用 2.4 µs，`new Intl.Segmenter('en', {granularity: 'word'})` 用 4.0 µs，遍历 60 个字符的词用 78 µs（它的字素用 185 µs），`RelativeTimeFormat.format` 用 2.4 µs，三项的 `ListFormat.format` 用 6.5 µs，`DisplayNames.of` 用 1.6 µs，`DurationFormat.format` 用 11 到 16 µs，`new Intl.Locale` 用 19 µs，`maximize` 用 18 µs，`getWeekInfo` 用 105 µs，`supportedValuesOf('timeZone')` 用 61 µs，60 个字符的 `toLocaleUpperCase('tr')` 用 4.8 µs（不带 locale 时 1.4 µs）。
 - 创建 `NumberFormat` 或 `PluralRules` 多用 0.1 µs，创建 `DateTimeFormat` 多用 0.3 µs。格式化用时不变。
@@ -203,7 +203,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 | DateTimeFormat/zh-CN/Format | 2.791 (2.771 to 2.829) | 2.008 (1.998 to 2.020) | 0.719 |
 | DateTimeFormat/zh-CN/Resolve | 10.275 (10.257 to 10.380) | 42.288 (41.645 to 43.010) | 4.115 |
 
-数字格式化比 main 少用 41% 到 42% 的时间，日期格式化少用 28% 到 37%。NumberFormat 每次调用分配 600 字节、8 次分配，main 是 1888 字节、24 次。DateTimeFormat 英语分配 152 字节、7 次，中文分配 128 字节、7 次，main 是 1220 字节、25 次和 1144 字节、22 次。带缓存的 JavaScript 构造在这次运行里慢了 0.4% 到 2.4%。这些都是固定输入下的代价。[History](../history.md#intl-formatting) 描述了这次对比。
+数字格式化比 main 少用 41% 到 42% 的时间，日期格式化少用 28% 到 37%。NumberFormat 每次调用分配 600 字节、8 次分配，main 是 1888 字节、24 次。DateTimeFormat 英语分配 152 字节、7 次，中文分配 128 字节、7 次，main 是 1220 字节、25 次和 1144 字节、22 次。带缓存的 JavaScript 构造在这次运行里慢了 0.4% 到 2.4%。这些都是固定输入下的代价。[History](../history.zh-CN.md#intl-格式化) 描述了这次对比。
 
 不带缓存的 Resolve，数字用 9.8 到 10.0 µs，日期用 42.3 到 48.8 µs。在编译并共享计划之前，大约分别是 25 到 26 µs 和 108 到 109 µs。locale 和选项的解析、货币间距和数字规则，每个新格式化器仍然要运行。日期构造还要选择一个模式并构建它的区间规则。这些依赖选项的步骤仍然在数据缓存之外。当完整的请求以前见过时，格式化器注册表会避开它们。
 
@@ -227,7 +227,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 | NumberFormat/en-US | 1109.000 (1109.000 to 1109.000) | 1395.000 (1375.000 to 1405.000) |
 | NumberFormat/zh-CN | 1109.000 (1109.000 to 1109.000) | 1405.000 (1390.000 to 1410.000) |
 
-测试：`TestGoIntlMigration`、`TestEmbeddedZonePack`、每个 Intl golden 集合、Temporal 格式化语料、构造函数的形状、篡改、注册表的共享和淘汰，以及链接测试。`qjs-sync.sh pack -check` 检查可复现性，数据包测试检查共享池的引用。go-intl 或 Chromium 更新之后，重新记录 ICU 清单，重建数据包，并复查每个有变化的表达式。见 [upgrading.md](../upgrading.md#updating-the-intl-locale-data)。
+测试：`TestGoIntlMigration`、`TestEmbeddedZonePack`、每个 Intl golden 集合、Temporal 格式化语料、构造函数的形状、篡改、注册表的共享和淘汰，以及链接测试。`qjs-sync.sh pack -check` 检查可复现性，数据包测试检查共享池的引用。go-intl 或 Chromium 更新之后，重新记录 ICU 清单，重建数据包，并复查每个有变化的表达式。见 [upgrading.md](../upgrading.zh-CN.md#更新-intl-语言数据)。
 
 ## 编译好的 Intl 格式化计划
 
@@ -239,6 +239,6 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 
 对英语和中文的 Format 调用做 profile，发现 parts 分类和桥上的复制，约占 NumberFormat 所分配字节的 56%。日期的分段、parts 和桥上的复制，约占 DateTimeFormat 的 86%。全部 74,868 个 golden 答案和 5,097 个迁移与 Temporal 的答案保持逐字节不变，包括已有的、有文档记录的 Chromium 差异。同样的十个商店页面的 HTML 也保持不变，只对路由器的时间戳做了规范化。
 
-最终的 profile 把数字剩下的分配挪到了取决于值的分组和组装上。日期分配的是它的输出、空格替换和数字字段。这些共享的舍入和字段例程仍然同时服务字符串和 parts。[页面测量](../history.md#intl-formatting) 并不能证明整页变快了。
+最终的 profile 把数字剩下的分配挪到了取决于值的分组和组装上。日期分配的是它的输出、空格替换和数字字段。这些共享的舍入和字段例程仍然同时服务字符串和 parts。[页面测量](../history.zh-CN.md#intl-格式化) 并不能证明整页变快了。
 
 测试：`TestFormatStringMatchesParts`、`TestQJSCachedSource`、`TestQJSDataCacheBound`、现有的 Chromium 语料、并发注册表测试、篡改和链接测试。`BenchmarkFormat` 用上面的输入覆盖构造、格式化和不带缓存的 resolve。上游的改动保留在 `qjs.patch` 里。更新 go-intl 之后，从那个补丁重建它，检查源的隔离和并发使用，对比每个记录下来的答案，并重复针对性的测量。

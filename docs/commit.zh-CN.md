@@ -48,4 +48,4 @@ build!: rename the module to github.com/liustack/quickjs
 
 - 不要直接在 `main` 上开发。先运行 `git switch -c <branch>`。
 - 分支用合并提交（`git merge --no-ff`）进入 `main`，信息是 `merge: <分支做了什么>`，比如 `merge: count interrupts down inline, cache small blocks and keep shapes`。这样 `git log --first-parent main` 读起来就是改动的列表，版本就打在这些合并提交上（见 [releasing.md](releasing.zh-CN.md)）。
-- 提交之前，运行 [testing.md](testing.md#before-committing) 里的检查。
+- 提交之前，运行 [testing.md](testing.zh-CN.md#提交前) 里的检查。

@@ -13,7 +13,7 @@ read_when:
 
 发布版本：v0.26.1。
 
-创建错误时不再格式化它的 `stack`。引擎只记录栈帧（函数名、字节码和位置），第一次读取 `stack` 时才格式化出文本，结果和以前一样。创建很多错误、只读其中少数 stack 的代码，例如 React 的开发构建（每个 JSX 元素一个错误），跑得快得多。在 darwin/arm64 上，用开发构建服务端渲染一个 100 项的 React 组件，中位数是 11.2 ms，以前是 42.1 ms。同一组件的生产构建、一个四路由应用的生产构建和一个 JSON 与数组的基准，都和以前相差不到 1%。每次运行创建 500 个错误的顶层代码用时 1.8 ms，以前是 3.2 ms。`stack` 是普通的可写、可配置的数据属性，所以这个错误的形状和一开始就格式化了 stack 的错误一样。一旦读过，它就是那个字符串。有区别的地方是：
+创建错误时不再格式化它的 `stack`。引擎只记录栈帧（函数名、字节码和位置），第一次读取 `stack` 时才格式化出文本，结果和以前一样。创建很多错误、只读其中少数 stack 的代码，例如 React 的开发构建（每个 JSX 元素一个错误），跑得快得多。在 darwin/arm64 上，用开发构建服务端渲染一个 100 项的 React 组件，中位数是 11.2 ms，以前是 42.1 ms。同一组件的生产构建、一个四路由应用的生产构建和一个 JSON 与数组的基准，都和以前相差不到 1%。每次运行创建 500 个错误的顶层代码用时 1.8 ms，以前是 3.2 ms。`stack` 是普通的可写、可配置的数据属性，所以这个错误的 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 和一开始就格式化了 stack 的错误一样。一旦读过，它就是那个字符串。有区别的地方是：
 
 - stack 还没格式化时，`stack` 的值是一个内部对象，里面存着记录下来的栈帧。所以一个待格式化的错误多出三次小的分配：这个对象、它的属性列表和栈帧记录（短 stack 约 150 字节）。对 `stack` 赋值、定义或删除，会像释放其他值一样释放它们。这个内部对象属于一个私有类，是每个运行时都有的内置类。
 - 没有代码能看到这个内部对象。所有读取 `stack` 的值的操作都会先格式化它：脚本里和通过 C API 的属性读取、`Object.getOwnPropertyDescriptor(s)` 和 `JS_GetOwnProperty`，以及用一个值重新定义已冻结的 `stack`（引擎要比较旧值和新值）。只看键或属性特性的操作会让它保持待格式化：`Object.keys`、`Object.freeze`、`Object.seal`、`Object.isFrozen`、`Object.isSealed`、`propertyIsEnumerable`、`__lookupGetter__`、`__lookupSetter__`，以及目标是这个错误的 proxy 在 `has`、`deleteProperty` 或 `ownKeys` trap 之后做的检查。`stack` 不可枚举，所以展开、`Object.assign`、`Object.entries` 和 `JSON.stringify` 都会跳过它。
@@ -29,4 +29,4 @@ read_when:
 
 发布版本：v0.26.6。
 
-无限递归会抛出 `RangeError: Maximum call stack size exceeded`，措辞和 V8 一样，默认设置下脚本可以捕获它。`SetMaxStackSize` 设置调用最多嵌套多深：默认 5000，最大 10000（tifa 示例商店一个页面的 React 渲染需要约 470）。解析器和 `JSON.parse` 对嵌套过深也报同样的 `RangeError`，和 V8 的解析器一样，嵌套过深的正则表达式则编译失败，报 `SyntaxError: stack overflow`。深度怎么计算、每种形式能嵌套多深，见 [c-engine.md](c-engine.md#depth-of-calls-and-of-c-recursion)。
+无限递归会抛出 `RangeError: Maximum call stack size exceeded`，措辞和 V8 一样，默认设置下脚本可以捕获它。`SetMaxStackSize` 设置调用最多嵌套多深：默认 5000，最大 10000（tifa 示例商店一个页面的 React 渲染需要约 470）。解析器和 `JSON.parse` 对嵌套过深也报同样的 `RangeError`，和 V8 的解析器一样，嵌套过深的正则表达式则编译失败，报 `SyntaxError: stack overflow`。深度怎么计算、每种形式能嵌套多深，见 [c-engine.md](c-engine.zh-CN.md#调用深度与-c-递归)。

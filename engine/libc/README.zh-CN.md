@@ -52,4 +52,4 @@ musl 的 `log`、`log2` 和 `pow` 为硬件 fma 准备了第二条路径，两�
 - `engine/test/math.sh` 对着记录下来的哈希检查 `Math.*` 的结果，以及 libc 的数学函数本身。
 - `engine/libc/vendor.sh --verify` 检查取自 musl 的文件。
 
-见 [docs/testing.md](../../docs/testing.md#the-c-tree-and-its-native-test-host)。
+见 [docs/testing.md](../../docs/testing.zh-CN.md#c-树和它的原生测试宿主)。

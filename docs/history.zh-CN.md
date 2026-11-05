@@ -18,45 +18,45 @@ read_when:
 
 ## 每个版本的收益，到 v0.28 为止
 
-到 v0.28 的各行测的是那些版本的引擎，也就是被 C 引擎替换掉的、由 ccgo 翻译成 Go 的 QuickJS。它们当时链接的、讲这些改动 Go 形式的文档已经没有了，名字只留作文字。C 引擎的速度见下面的 [C 引擎](performance.md#the-c-engine)。
+到 v0.28 的各行测的是那些版本的引擎，也就是被 C 引擎替换掉的、由 ccgo 翻译成 Go 的 QuickJS。它们当时链接的、讲这些改动 Go 形式的文档已经没有了，名字只留作文字。C 引擎的速度见下面的 [C 引擎](performance.zh-CN.md#c-引擎)。
 
 | 版本 | 改动 | 对商店渲染的影响 |
 | --- | --- | --- |
-| v0.26.1 | [错误栈在第一次读取时才格式化](changes/errors-and-stacks.md#error-stacks-formatted-when-first-read) | 用 React 开发构建时，一个 100 项的组件中位数 11.2 ms，原来是 42.1 ms（darwin/arm64）。生产构建变化在 1% 以内 |
+| v0.26.1 | [错误栈在第一次读取时才格式化](changes/errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) | 用 React 开发构建时，一个 100 项的组件中位数 11.2 ms，原来是 42.1 ms（darwin/arm64）。生产构建变化在 1% 以内 |
 | v0.26.12 | 调用不再分配 Go 内存 | linux/amd64 上时间少约 11%，darwin/arm64 上少 14%。把字节码加载进 VM 在 linux 上少约 11%。它还把 libc 分配器的锁从每次调用里拿掉了，那把锁原来会拖住多个 VM |
 | v0.26.13 | 解释器循环里的栈操作更少 | linux/amd64 上少约 12%，darwin/arm64 上少 17%。`JS_CallInternal` 的 Go 栈帧在 amd64 上从 2608 字节降到 896，在 arm64 上从 7744 降到 944 |
-| v0.26.13 | [普通对象的新属性跳过通用路径](changes/objects-and-shapes.md#new-properties-of-plain-objects-skip-the-generic-path) | 少约 6%。对象字面量里的一个属性约 55 ns，原来是 95 ns |
+| v0.26.13 | [普通对象的新属性跳过通用路径](changes/objects-and-shapes.zh-CN.md#普通对象的新属性跳过通用路径) | 少约 6%。对象字面量里的一个属性约 55 ns，原来是 95 ns |
 | v0.26.15 | 栈帧不用 defer 释放 | linux/amd64 上少约 10%，有没有 PGO 都一样 |
-| v0.26.15 | [跳到正则可能匹配的位置](changes/regexp.md#skip-to-where-a-regexp-can-match) | 少约 3% |
+| v0.26.15 | [跳到正则可能匹配的位置](changes/regexp.zh-CN.md#跳到正则可能匹配的位置) | 少约 3% |
 | v0.26.15 | `===` 和键名的冷路径 | 有 PGO 少 0.7%，没有少 2% |
 | v0.26.15 | 非 linux 上每个 VM 一整块 TLS 栈 | Apple M4 上 10 个 VM 每秒渲染的页数是原来的 1.4 到 1.55 倍，等锁的时间约占 0.5%，原来是 3.8% 到 5.3%。一个 VM 和 linux 上没有变化 |
 | v0.26.16 | TLS 栈帧按语句取 | linux/amd64 上有 PGO 少 1.6%，没有少 1.1%，darwin/arm64 上有 PGO 少 2.6% |
 | v0.26.16 | 解释器里直接写出 set_value | 少 1.4%，有没有 PGO 都一样。加上按语句取栈帧，有 PGO 比 v0.26.15 少 2.8%，没有少 2.9% |
 | v0.26.16 | 解释器内部的中断倒计时 | 有 PGO 少 0.6%，没有大致一样 |
 | v0.26.16 | 小块的前置缓存 | 只看 PGO 少 0.9%，没有大致一样 |
-| v0.26.16 | [留存形状](changes/objects-and-shapes.md#kept-shapes) | 单独看，没有 PGO 少 3.6%。加上前置缓存和中断倒计时，比没有这三项少 4.5%。同一个核的两个超线程上跑两个 VM，每秒多渲染 2.9% 的页 |
-| v0.26.17 | [for in 跳过没有可枚举属性的原型](changes/objects-and-shapes.md#for-in-skips-prototypes-with-no-enumerable-property) | 商店几乎不变（0.996）。tifa 的 bench 应用里 for in 循环很多的 spiral 和 table 页，没有 PGO 时分别是原来时间的 0.983 和 0.971 |
-| v0.26.17 | [已经是 atom 的字符串键](changes/objects-and-shapes.md#string-keys-that-are-already-atoms) | 没有 PGO 少 1.3%，是在 for in、位运算和比较这几项改动之前测的。微基准里用字符串键读少 13% 时间，写少 30% |
-| v0.26.17 | [JSON 成段复制普通字符](changes/json.md#json-copies-runs-of-plain-characters) | 少 0.2% 到 1.7%，在一轮的波动范围内：JSON 约占一次渲染的 1%。把一个路由的数据引成一个字符串少 41% 时间，渲染数据的 `JSON.parse` 少 9.5% |
-| v0.26.17 | [浮点数的位运算跳过慢路径](changes/operators.md#bitwise-operators-on-floats-skip-the-slow-path) | 商店没有收益。tifa 的 MUI 应用的页面，没有 PGO 时是原来时间的 0.952 到 0.960 |
-| v0.26.17 | [常见的比较在解释器里直接得出结果](changes/operators.md#the-usual-comparisons-answered-in-the-interpreter) | 没有 PGO 时是原来时间的 0.982。bench 页 0.940 和 0.942，MUI 页 0.982 到 0.985 |
+| v0.26.16 | [留存 shape](changes/objects-and-shapes.zh-CN.md#保留-shape) | 单独看，没有 PGO 少 3.6%。加上前置缓存和中断倒计时，比没有这三项少 4.5%。同一个核的两个超线程上跑两个 VM，每秒多渲染 2.9% 的页 |
+| v0.26.17 | [for in 跳过没有可枚举属性的原型](changes/objects-and-shapes.zh-CN.md#for-in-跳过没有可枚举属性的原型) | 商店几乎不变（0.996）。tifa 的 bench 应用里 for in 循环很多的 spiral 和 table 页，没有 PGO 时分别是原来时间的 0.983 和 0.971 |
+| v0.26.17 | [已经是 atom 的字符串键](changes/objects-and-shapes.zh-CN.md#本来就是-atom-的字符串键) | 没有 PGO 少 1.3%，是在 for in、位运算和比较这几项改动之前测的。微基准里用字符串键读少 13% 时间，写少 30% |
+| v0.26.17 | [JSON 成段复制普通字符](changes/json.zh-CN.md#json-成段复制普通字符) | 少 0.2% 到 1.7%，在一轮的波动范围内：JSON 约占一次渲染的 1%。把一个路由的数据引成一个字符串少 41% 时间，渲染数据的 `JSON.parse` 少 9.5% |
+| v0.26.17 | [浮点数的位运算跳过慢路径](changes/operators.zh-CN.md#浮点数的位运算跳过慢路径) | 商店没有收益。tifa 的 MUI 应用的页面，没有 PGO 时是原来时间的 0.952 到 0.960 |
+| v0.26.17 | [常见的比较在解释器里直接得出结果](changes/operators.zh-CN.md#常见的比较在解释器里直接回答) | 没有 PGO 时是原来时间的 0.982。bench 页 0.940 和 0.942，MUI 页 0.982 到 0.985 |
 | v0.26.17 | linux 上每次调用一个 TLS 栈帧，另有 22 个函数不用 TLS 栈帧，12 个改成按语句取栈帧 | 每次渲染的 TLS 栈帧少约五分之一。没有 PGO 时比 v0.26.16 少 1.4%，tifa 的 bench 和 mui 测试应用少 2.2% 和 3.1% |
-| v0.26.17 | [不可能匹配的分支不入栈](changes/regexp.md#alternatives-that-cannot-match-are-not-pushed) | 没有 PGO 少约 1% 到 2.5%，tifa 测试应用的 MUI 页少 3% 到 5%。用 react-spring 那个含 148 个颜色名的正则做 `replace`，5.9 µs，原来是 44.5 µs |
-| v0.26.17 | [新函数一次得到 length 和 name](changes/objects-and-shapes.md#new-functions-get-length-and-name-at-once) | 没有 PGO，在正则改动之上是原来时间的 0.982。3,000 个新函数产生 2,000 个形状，原来是 5,001 个 |
-| v0.26.17 | [Intl 通过 Builtins 调用 Go](changes/time-and-intl.md#intl-calls-go-through-builtins) | 没有在渲染上测。`new Intl.NumberFormat('en')` 2.7 µs，原来是 16.5 µs，带时区的 `DateTimeFormat` 创建 8.1 µs，原来是 32.0 µs，用过 `Intl` 的 VM 少占约 15 KB |
-| v0.27.0 | [每个 VM 保留编译过的正则](changes/regexp.md#compiled-regexps-kept-per-vm) | tifa 示例商店里高亮 CSS 的日志文章页，每次渲染编译 392 个正则，没有 PGO 时是原来时间的 0.893（3 种代码布局、6 轮里是 0.841 到 0.903）。其他页面时间不变。商店的一个 VM 多占 12 KiB |
-| v0.27.0 | [引擎读 Go 的时钟](changes/time-and-intl.md#the-engine-reads-gos-clocks) | 商店不变（6 轮里 0.994 到 1.009，中位数 1.000），没有 PGO。`Date.now()` 122 ns，原来是 689 ns，`new Date()` 261 ns，原来是 870 ns，`performance.now()` 107 ns，原来是 686 ns |
+| v0.26.17 | [不可能匹配的分支不入栈](changes/regexp.zh-CN.md#不会匹配的分支不入栈) | 没有 PGO 少约 1% 到 2.5%，tifa 测试应用的 MUI 页少 3% 到 5%。用 react-spring 那个含 148 个颜色名的正则做 `replace`，5.9 µs，原来是 44.5 µs |
+| v0.26.17 | [新函数一次得到 length 和 name](changes/objects-and-shapes.zh-CN.md#新函数一次得到-length-和-name) | 没有 PGO，在正则改动之上是原来时间的 0.982。3,000 个新函数产生 2,000 个 shape（引擎记录一个对象有哪些键、按什么顺序的结构），原来是 5,001 个 |
+| v0.26.17 | [Intl 通过 Builtins 调用 Go](changes/time-and-intl.zh-CN.md#intl-通过-builtin-调用-go) | 没有在渲染上测。`new Intl.NumberFormat('en')` 2.7 µs，原来是 16.5 µs，带时区的 `DateTimeFormat` 创建 8.1 µs，原来是 32.0 µs，用过 `Intl` 的 VM 少占约 15 KB |
+| v0.27.0 | [每个 VM 保留编译过的正则](changes/regexp.zh-CN.md#按-vm-保存编译好的正则) | tifa 示例商店里高亮 CSS 的日志文章页，每次渲染编译 392 个正则，没有 PGO 时是原来时间的 0.893（3 种代码布局、6 轮里是 0.841 到 0.903）。其他页面时间不变。商店的一个 VM 多占 12 KiB |
+| v0.27.0 | [引擎读 Go 的时钟](changes/time-and-intl.zh-CN.md#引擎读-go-的时钟) | 商店不变（6 轮里 0.994 到 1.009，中位数 1.000），没有 PGO。`Date.now()` 122 ns，原来是 689 ns，`new Date()` 261 ns，原来是 870 ns，`performance.now()` 107 ns，原来是 686 ns |
 | v0.27.0 | 可能和不可能的测试按条件分支 | 没有 PGO 时是原来时间的 0.983（0.976 到 0.984），tifa 的 bench 页 0.976 到 0.987。指令少 1.6% |
 | v0.27.0 | linux 上不通过调用取 TLS 栈帧 | 在上一行之上是 0.998 倍时间（0.995 到 1.004），bench 页 0.990。指令少 1.9%。和上一行合起来，是 v0.26.17 时间的 0.979，bench 页 0.967 |
-| v0.27.0 | [编译好的 Intl 格式化方案](changes/time-and-intl.md#compiled-intl-formatting-plans) | 固定输入下 NumberFormat 比 main 少 41% 到 42% 时间，DateTimeFormat 少 28% 到 37%。[十个商店页](#intl-格式化)没有 PGO 时渲染时间是 main 的 0.9998 到 1.0081 |
-| v0.27.1 | [在解释器里找到字符串、数字和数组的方法](changes/objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) | 没有 PGO 时是 0.996 倍时间（3 种代码布局、6 轮里 0.992 到 0.998），tifa 测试应用的 MUI 页是 0.975（0.966 到 0.986），它的订单列表每次渲染读字符串方法约 320000 次。MUI 页指令少 1.0%，商店少于 0.1% |
+| v0.27.0 | [编译好的 Intl 格式化方案](changes/time-and-intl.zh-CN.md#编译好的-intl-格式化计划) | 固定输入下 NumberFormat 比 main 少 41% 到 42% 时间，DateTimeFormat 少 28% 到 37%。[十个商店页](#intl-格式化)没有 PGO 时渲染时间是 main 的 0.9998 到 1.0081 |
+| v0.27.1 | [在解释器里找到字符串、数字和数组的方法](changes/objects-and-shapes.zh-CN.md#字符串数字和数组的方法在解释器里查找) | 没有 PGO 时是 0.996 倍时间（3 种代码布局、6 轮里 0.992 到 0.998），tifa 测试应用的 MUI 页是 0.975（0.966 到 0.986），它的订单列表每次渲染读字符串方法约 320000 次。MUI 页指令少 1.0%，商店少于 0.1% |
 | v0.27.1 | js_malloc 自己取缓存的块 | 没有 PGO 时是 0.985 倍时间（3 种代码布局、6 轮里 0.971 到 0.992），tifa 测试应用的 MUI 页 0.983。商店指令少 2.1% 到 2.3%，MUI 页少 1.3%。内存不变 |
-| v0.27.2 | [WeakMap 条目在一次完整 GC 里释放](changes/weak-collections.md#what-it-costs) | 是修复，不是提速。渲染时间不变。没有 PGO 时，每次渲染后做一次完整 GC，商店是 0.989 倍时间，MUI 页是 1.046（指令多 1.0% 和 0.3%）。大的弱映射回收更慢：一条有 100,000 个存活条目的链要 2.9 倍时间 |
-| v0.27.2 | [Builtins 的字符串在 Go 里转换](changes/go-api.md#strings-of-builtins-converted-in-go) | 商店看不出变化：没有 PGO 时是 1.004 倍时间（3 种代码布局、6 轮里 0.997 到 1.018），因为它的 Builtins 很少收字符串。一个读 16 字符字符串并返回新字符串的 Builtin 134 ns，原来是 230 ns，返回自己参数的 81 ns，原来是 97 ns，对比之下一次 javascript 函数调用是 60 ns。用上 [Args.Latin1 和 Args.UTF16](changes/go-api.md#argslatin1-argsutf16-newstringlatin1-and-newstringutf16)，React 对 16 字符字符串的转义在 Go 里 99 ns，在 javascript 里 200 ns |
-| v0.27.3 | [搜索直接跳到字符串所在位置](changes/strings.md#searches-skip-to-where-the-string-is) | 没有 PGO 时是 0.995 倍时间（6 种代码布局、6 轮里 0.975 到 1.032），tifa 测试应用的 MUI 页 1.003，都在布局的波动范围内。`String.prototype.includes` 在商店 profile 里的占比从 1.06% 降到 0.27%，在 100 KB 的 HTML 里搜索 81 µs，原来是 320 µs |
-| v0.27.3 | [年轻代回收，VM.RunYoungGC](changes/young-collection.md) | tifa 每次渲染后跑一次年轻代回收、偶尔跑一次完整回收，一个 VM 且页面随机顺序时，商店渲染的 P99 是原来的 0.748，两个 VM 时是 0.796。tifa 测试应用的 MUI 页是 0.940 和 0.919。P50 和 CPU 在 2.1% 以内，峰值 RSS 是原来的 0.82 到 0.88，没有 PGO |
-| v0.28.1 | [所有 VM 共用一份源码文本和行号表](changes/memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) | 是内存，不是速度：用 `EvalSharedBytecode`，商店的一个 VM 加载后少占 2.36 MiB，tifa 的 MUI 测试应用的一个 VM 少占 1.22 MiB。渲染时间不变：没有 PGO 时商店是 0.994 倍时间（3 种代码布局、23 对运行里 0.979 到 1.015），MUI 页 0.994（0.981 到 1.005） |
-| v0.28.5 | [从形状里列出自有键](changes/objects-and-shapes.md#own-keys-listed-from-the-shape) | 没有 PGO 时 bench 页是 0.990 倍时间（3 种代码布局、6 轮里 0.958 到 1.020），商店页 0.994，tifa 测试应用的 MUI 页 0.987：在一种布局里少 2.2% 到 2.4%，另外两种大致一样。六个键的 `Object.keys` 134 ns，原来是 542 ns，六个键的展开 74 ns，原来是 250 ns（Apple M4）。一个 VM 多占 8 KiB |
+| v0.27.2 | [WeakMap 条目在一次完整 GC 里释放](changes/weak-collections.zh-CN.md#代价) | 是修复，不是提速。渲染时间不变。没有 PGO 时，每次渲染后做一次完整 GC，商店是 0.989 倍时间，MUI 页是 1.046（指令多 1.0% 和 0.3%）。大的弱映射回收更慢：一条有 100,000 个存活条目的链要 2.9 倍时间 |
+| v0.27.2 | [Builtins 的字符串在 Go 里转换](changes/go-api.zh-CN.md#builtin-的字符串在-go-里转换) | 商店看不出变化：没有 PGO 时是 1.004 倍时间（3 种代码布局、6 轮里 0.997 到 1.018），因为它的 Builtins 很少收字符串。一个读 16 字符字符串并返回新字符串的 Builtin 134 ns，原来是 230 ns，返回自己参数的 81 ns，原来是 97 ns，对比之下一次 javascript 函数调用是 60 ns。用上 [Args.Latin1 和 Args.UTF16](changes/go-api.zh-CN.md#argslatin1argsutf16newstringlatin1-和-newstringutf16)，React 对 16 字符字符串的转义在 Go 里 99 ns，在 javascript 里 200 ns |
+| v0.27.3 | [搜索直接跳到字符串所在位置](changes/strings.zh-CN.md#搜索直接跳到字符串所在的位置) | 没有 PGO 时是 0.995 倍时间（6 种代码布局、6 轮里 0.975 到 1.032），tifa 测试应用的 MUI 页 1.003，都在布局的波动范围内。`String.prototype.includes` 在商店 profile 里的占比从 1.06% 降到 0.27%，在 100 KB 的 HTML 里搜索 81 µs，原来是 320 µs |
+| v0.27.3 | [年轻代回收，VM.RunYoungGC](changes/young-collection.zh-CN.md) | tifa 每次渲染后跑一次年轻代回收、偶尔跑一次完整回收，一个 VM 且页面随机顺序时，商店渲染的 P99 是原来的 0.748，两个 VM 时是 0.796。tifa 测试应用的 MUI 页是 0.940 和 0.919。P50 和 CPU 在 2.1% 以内，峰值 RSS 是原来的 0.82 到 0.88，没有 PGO |
+| v0.28.1 | [所有 VM 共用一份源码文本和行号表](changes/memory-and-allocation.zh-CN.md#所有-vm-共用一份源码文本和行表) | 是内存，不是速度：用 `EvalSharedBytecode`，商店的一个 VM 加载后少占 2.36 MiB，tifa 的 MUI 测试应用的一个 VM 少占 1.22 MiB。渲染时间不变：没有 PGO 时商店是 0.994 倍时间（3 种代码布局、23 对运行里 0.979 到 1.015），MUI 页 0.994（0.981 到 1.005） |
+| v0.28.5 | [从 shape 里列出自有键](changes/objects-and-shapes.zh-CN.md#自有键从-shape-列出) | 没有 PGO 时 bench 页是 0.990 倍时间（3 种代码布局、6 轮里 0.958 到 1.020），商店页 0.994，tifa 测试应用的 MUI 页 0.987：在一种布局里少 2.2% 到 2.4%，另外两种大致一样。六个键的 `Object.keys` 134 ns，原来是 542 ns，六个键的展开 74 ns，原来是 250 ns（Apple M4）。一个 VM 多占 8 KiB |
 | v0.28.5 | goasm 解释器，在 linux/amd64 上需主动开启 | 用 `-tags goasm`，没有 PGO 时商店是 0.940 倍时间（3 种代码布局、18 对运行里 0.922 到 0.964），tifa 测试应用的 MUI 页 0.850（0.834 到 0.875）。不带这个 tag 什么都不变 |
 | v0.28.6 | goasm 解释器，在 linux/amd64 上成为默认 | 在 tifa 的池里用多个 VM，没有 PGO：4 个 VM 在 4 个核上，商店页每秒数是 Go 解释器的 1.046 倍（3 种代码布局、3 轮里 1.026 到 1.082），8 个 VM 在 8 个超线程上是 1.085 倍（1.060 到 1.118），MUI 页是 1.171 倍（1.148 到 1.194）和 1.211 倍（1.205 到 1.219）。8 个 VM 跑十分钟后，RSS 在商店上是 0.93，在 MUI 页上是 0.88 |
 
@@ -66,7 +66,7 @@ read_when:
 - v0.26.15 渲染时间是 v0.26.14 的 0.859，两者都重新收集了 profile（6 轮里 0.857 到 0.861），没有 PGO 是 0.843。6 个 VM 跑在 3 个物理核上，整个请求能服务的数量是原来的 1.17 倍。在 Apple M4 上，没有 PGO，一个 VM 每秒渲染 108 页，原来是 84 到 86 页，10 个 VM 是 532 到 549 页，原来是 288 到 305 页，是原来的 1.80 到 1.88 倍。
 - v0.26.16 还没有在 tifa 里作为整个版本测过。它的改动已经在上面各行里逐项测过。
 
-内存上的代价：v0.26.16 让商店的一个 VM 在一次 GC 后多占 722 KiB（8.03 MiB，原来是 7.33），其中 647 KiB 是留存的形状。自 v0.26.15 起，非 linux 上每个 VM 最多留着 1 MiB 的 TLS 栈。
+内存上的代价：v0.26.16 让商店的一个 VM 在一次 GC 后多占 722 KiB（8.03 MiB，原来是 7.33），其中 647 KiB 是留存的 shape。自 v0.26.15 起，非 linux 上每个 VM 最多留着 1 MiB 的 TLS 栈。
 
 
 ### 对比 liustack/quickjs 起步时的引擎
@@ -75,7 +75,7 @@ read_when:
 
 ## Intl 格式化
 
-v0.27.0，对比 main `641e996`，tifa 商店用 `fb31f616`。共用的 go-intl 格式化器使用[编译好的方案和直接输出字符串](changes/time-and-intl.md#compiled-intl-formatting-plans)。固定输入的 NumberFormat 用例比 main 少 41% 到 42% 时间，DateTimeFormat 少 28% 到 37%。[完整的调用表](changes/time-and-intl.md#focused-timing-and-memory-costs)包括构造、未缓存的解析、分配和内存开销。
+v0.27.0，对比 main `641e996`，tifa 商店用 `fb31f616`。共用的 go-intl 格式化器使用[编译好的方案和直接输出字符串](changes/time-and-intl.zh-CN.md#编译好的-intl-格式化计划)。固定输入的 NumberFormat 用例比 main 少 41% 到 42% 时间，DateTimeFormat 少 28% 到 37%。[完整的调用表](changes/time-and-intl.zh-CN.md#针对性的计时和内存代价)包括构造、未缓存的解析、分配和内存开销。
 
 十个商店页在 AMD EPYC 7B13、Linux、Go 1.27.2、`CGO_ENABLED=0`、`-pgo=off` 下测量。两个构建使用同一个 SSR bundle 和抓下来的同一批导航输入。驱动程序仿照 BenchmarkShop：一个 VM，256 次热身渲染，然后每页 200 次计时渲染，在 main 和分支交替的六轮里各做一遍。它包括六个工作台页，加上两种语言的商店列表页和商品页。HTTP 和取数据在计时之外。只把路由器的 `u:` 时间戳遮掉后，HTML 完全相同。
 
@@ -169,7 +169,7 @@ Callgrind 用固定工作量，不用自适应的计分程序。每个基准做�
 
 ## tifa 的页面在 C 引擎上，对比旧引擎
 
-用 tifa 的 `test/ssr` 在上面那台 Google Cloud VM 上测量，一个核固定，它的超线程同伴核空闲：`examples/shop` 的六个工作台页（`BenchmarkShop` 的页面）、`test/apps/mui` 的三个页面和 `test/apps/bench` 的两个页面。每页在一个 VM 的热身池里渲染，`GOMAXPROCS=1`，先 64 次渲染热身，然后取 100 次渲染（MUI 页 60 次）的 P50。在 8 个[代码位置](performance.md#code-positions)各跑 3 轮。`lib/` 的引擎分别在没有 PGO 和用 500 次商店渲染收集的 profile 下构建。比值是各位置配对比值的中位数，C 引擎在每一页的全部 8 个位置上都更快。
+用 tifa 的 `test/ssr` 在上面那台 Google Cloud VM 上测量，一个核固定，它的超线程同伴核空闲：`examples/shop` 的六个工作台页（`BenchmarkShop` 的页面）、`test/apps/mui` 的三个页面和 `test/apps/bench` 的两个页面。每页在一个 VM 的热身池里渲染，`GOMAXPROCS=1`，先 64 次渲染热身，然后取 100 次渲染（MUI 页 60 次）的 P50。在 8 个[代码位置](performance.zh-CN.md#代码位置)各跑 3 轮。`lib/` 的引擎分别在没有 PGO 和用 500 次商店渲染收集的 profile 下构建。比值是各位置配对比值的中位数，C 引擎在每一页的全部 8 个位置上都更快。
 
 | 页面 | lib (ms) | lib 加 PGO (ms) | C 引擎 (ms) | C / lib | C / lib 加 PGO |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -196,7 +196,7 @@ Callgrind 用固定工作量，不用自适应的计分程序。每个基准做�
 
 tifa 的接线相对它之前的 C 引擎改了什么，用 callgrind 每次渲染的指令数（12 次渲染一页的一次运行减去 2 次渲染的运行，这样加载抵消掉）和 8 个位置上的时间来衡量（两边的引擎都是 main 的 09e731a3）：
 
-- **javascript 交给 Go 的字符串，在引擎存放它们的地方直接读**：包括一次渲染的结果、对象的 JSON 和 Go 函数的参数。`JS_ToCStringLen2` 会对任何非 ASCII 字符串在 VM 的内存里做一份 UTF-8 拷贝（16 位字符串每个单元 3 字节），VM 没空间时会因内存不足而失败。rope 先被拼起来。16 位字符串一趟转成 UTF-8，在单元是 ASCII 或全部来自 U+0800 的地方一次处理四个，写进一个会复用的缓冲区，然后拷贝一次。先数字节再转，需要两趟，比 C 还慢：商店页是中文，指令多 1.05%。一趟的做法在商店一次渲染里用 103 万条指令，C 版本用 134 万条：商店少 0.22%，MUI 和 bench 页少 0.03%。
+- **javascript 交给 Go 的字符串，在引擎存放它们的地方直接读**：包括一次渲染的结果、对象的 JSON 和 Go 函数的参数。`JS_ToCStringLen2` 会对任何非 ASCII 字符串在 VM 的内存里做一份 UTF-8 拷贝（16 位字符串每个单元 3 字节），VM 没空间时会因内存不足而失败。rope（几段字符串连成的树，读的时候才拼成一段） 先被拼起来。16 位字符串一趟转成 UTF-8，在单元是 ASCII 或全部来自 U+0800 的地方一次处理四个，写进一个会复用的缓冲区，然后拷贝一次。先数字节再转，需要两趟，比 C 还慢：商店页是中文，指令多 1.05%。一趟的做法在商店一次渲染里用 103 万条指令，C 版本用 134 万条：商店少 0.22%，MUI 和 bench 页少 0.03%。
 - **emotion 的哈希**（tifa 给 `@emotion/hash` 写的 Builtin）在引擎存放 8 位和 16 位字符串的地方直接读，并按 JavaScript 里两半相乘的结果用 32 位乘法：一次 MUI 页渲染从 510 万条指令降到 110 万条，占这次渲染的 1.86%。
 - **tifa 在 Load 时一次取好 `startRender` 和它的读取函数**，原来每次渲染编译三个小脚本：指令少 0.07% 到 0.14%。
 - **tifa 用 `ReleaseMemory` 把内存还回去**：Load 之后所有空闲内存（商店 2.1 MB，MUI 1.0 MB），以及一次完整 GC 之后，超出到下一次 GC 之前这些渲染所需的部分。加载好的 VM 少占 0.2 到 0.4 MiB。渲染之后空闲内存又被用上，完整 GC 只会还回在 GC 阈值降回来之后，某次大渲染一次性多占的那部分。
@@ -216,7 +216,7 @@ tifa 的接线相对它之前的 C 引擎改了什么，用 callgrind 每次渲�
 
 | 关卡 | 结果 |
 | --- | --- |
-| test262 和以前一样 | 原生 C 树：同样的 58 个已知错误，逐行一致（83,426 里的 58 个）。Go 宿主：96,540 次运行里 80,215 次通过，和 [benchmarks.md](benchmarks.zh-CN.md) 里 v0.27.2 那一行的数字相同，各个领域、ES2023 及更早版本、每个 feature tag 下都相同。0 次崩溃、超时和内存不足 |
+| test262 和以前一样 | 原生 C 树：同样的 58 个已知错误，逐行一致（83,426 里的 58 个）。Go 宿主：96,540 次运行里 80,215 次通过，和 [benchmarks.md](benchmarks.md) 里 v0.27.2 那一行的数字相同，各个领域、ES2023 及更早版本、每个 feature tag 下都相同。0 次崩溃、超时和内存不足 |
 | tifa 的测试页，HTML 相同 | shop 160 页，pages 33，tailwind 2，mui 60，bench 4，extreme 30：全部相同，只有 extreme 的 `/json/2001`，C 引擎回答 500（它的 JSON 最多嵌套 2,000 层，tifa 的文档里这么写）。`api` 没有页面。tifa 的 `go test ./...` 在默认构建上通过，在 C 引擎上除了 `internal/ssr` 的一个测试（见下）都通过。端到端测试两边都通过 |
 | 没有哪一页比带 PGO 的 `lib/` 更慢 | 11 页在全部 8 个代码位置上都更快：时间是 0.834 到 0.860 |
 | GC 暂停 P99 | 不高于保存下来的 `lib/` 数字：1 个 VM 是 131 到 164 µs，对 164，3 个 VM 是 197 µs，对 197 |
@@ -226,7 +226,7 @@ tifa 的接线相对它之前的 C 引擎改了什么，用 callgrind 每次渲�
 
 **C 引擎上有一个测试失败。** tifa `internal/ssr` 里的 `TestFullGCGivesBackWhatTheThresholdNoLongerNeeds` 每次都以同样的方式失败，在 darwin/arm64 上也一样：渲染 1,000 次后，完整 GC 还回了 68,688 字节，而它要求至少是存活大小的一半，即 112,008。那里的 VM 存活大小是 224,016 字节，占用的内存是一个 262,144 字节的块。它在 `lib/` 上会跳过，因为 `lib/` 从 libc 拿内存，而 tifa 之前锁定的版本也没有可以运行它的引擎。它旁边的测试通过。
 
-**速度。** 4 轮里 C 引擎 / 带 PGO 的 `lib/` 配对比值的中位数，在 8 个[代码位置](performance.md#code-positions)上，`GOMAXPROCS=1`，一个核，同伴核空闲。工具的 `range` 列（`lib/` 各位置之间的差）在这些页面上是 1.4% 到 4.2%。没有进程需要重跑。旁边的两个核上全程在跑另一个测试。
+**速度。** 4 轮里 C 引擎 / 带 PGO 的 `lib/` 配对比值的中位数，在 8 个[代码位置](performance.zh-CN.md#代码位置)上，`GOMAXPROCS=1`，一个核，同伴核空闲。工具的 `range` 列（`lib/` 各位置之间的差）在这些页面上是 1.4% 到 4.2%。没有进程需要重跑。旁边的两个核上全程在跑另一个测试。
 
 | 页面 | 带 PGO 的 `lib/` (ms) | C 引擎 (ms) | C / lib |
 | --- | ---: | ---: | ---: |
@@ -244,7 +244,7 @@ tifa 的接线相对它之前的 C 引擎改了什么，用 callgrind 每次渲�
 
 商店的订单页和统计页是上面那张表里的两到三倍，因为那次测量之后商店的页面变大了。
 
-**GC 暂停。** 用[负载下的稳定性](performance.md#stability-under-load)一批的方法：一个 goroutine 每秒分配 512 MB，让 Go GC 每秒跑 65 到 86 次，同时池在 10 秒热身之后渲染那 18 页，持续 60 秒。1 个 VM 在核 1,2（两个物理核）上，3 个 VM 在核 1,5,2,6 上，各 5 轮。`lib/` 的数字是稳定性那批里的单次运行。
+**GC 暂停。** 用[负载下的稳定性](performance.zh-CN.md#负载下的稳定性)一批的方法：一个 goroutine 每秒分配 512 MB，让 Go GC 每秒跑 65 到 86 次，同时池在 10 秒热身之后渲染那 18 页，持续 60 秒。1 个 VM 在核 1,2（两个物理核）上，3 个 VM 在核 1,5,2,6 上，各 5 轮。`lib/` 的数字是稳定性那批里的单次运行。
 
 | 整个停顿的暂停 | C 引擎 P50 | P99 | 最大 | `lib/` P99 | 最大 |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -268,7 +268,7 @@ runtime 的直方图有相邻的桶边界 131.1 和 163.8，所以 1 个 VM 的 
 
 ## 在旧引擎上试过但没做的
 
-和 [performance.md](performance.md#what-was-tried-and-not-done) 里同类的清单，针对 ccgo 翻译出来的引擎。大多数跟它的 TLS 栈（libc 栈里的一块，翻译后用来存放那些取了地址的 C 函数局部变量）、它的 libc 分配器和它的 Go 解释器循环有关，C 引擎里这些都不存在。
+和 [performance.md](performance.zh-CN.md#试过但没做的) 里同类的清单，针对 ccgo 翻译出来的引擎。大多数跟它的 TLS 栈（libc 栈里的一块，翻译后用来存放那些取了地址的 C 函数局部变量）、它的 libc 分配器和它的 Go 解释器循环有关，C 引擎里这些都不存在。
 
 - **去掉另外 135 个小函数的 TLS 栈帧**（TLS 栈帧是 libc 的 TLS 栈里的一块，Go 翻译在这里存放函数里被取了地址的 C 局部变量）：约 0.24% 的渲染时间，小到测不出，却要多维护 135 个条目。
 - **让一次调用超过 768 字节的空间也放进它的 TLS 栈帧**：1024 字节只多覆盖 0.02% 的调用，却让 Linux 上每个调用深度保留的块从 2 KB 翻倍到 4 KB。

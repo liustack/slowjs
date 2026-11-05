@@ -74,7 +74,7 @@ host_memory_grow, host_call (memory release, remap)            the host
 
 ## 测试
 
-全部在原生测试宿主上运行（见 [testing.md](testing.md#the-c-tree-and-its-native-test-host)）。
+全部在原生测试宿主上运行（见 [testing.md](testing.zh-CN.md#c-树和它的原生测试宿主)）。
 
 ```sh
 engine/test/tlsf-edges.sh                    # TLSF edge cases, pinned file and engine/tlsf.c

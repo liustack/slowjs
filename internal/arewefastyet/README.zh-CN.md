@@ -3,7 +3,7 @@
 
 [English](README.md) · 简体中文
 
-这个项目已被弃用，取而代之的是 Perfherder（后端）和 https://github.com/mozilla-frontend-infra/js-perf-dashboard （前端）的组合。如果你对 AWFY 有任何反馈，欢迎到那里提 issue 和 pull request！
+这个项目已被弃用，取而代之的是 Perfherder（后端）和 https://github.com/mozilla-frontend-infra/js-perf-dashboard（前端）的组合。如果你对 AWFY 有任何反馈，欢迎到那里提 issue 和 pull request！
 
 AreWeFastYet
 ============

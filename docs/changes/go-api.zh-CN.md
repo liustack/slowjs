@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对不可捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink'
 read_when:
   - 修改 quickjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
   - 从 javascript 得到的 Go 字符串里有替换字符，或者从 Go 传出的字符串在 javascript 里读起来不一样
@@ -35,7 +35,7 @@ read_when:
 
 `VM.Call` 和 `VM.CallValue` 报告对函数表达式求值时抛出的异常（比如内存不足，或者一个没有定义的名字），不再报告 `cannot call a non-function`。
 
-## Go无法转换的字符串作为错误返回
+## Go 无法转换的字符串作为错误返回
 
 发布版本：v0.26.5。
 
@@ -43,7 +43,7 @@ read_when:
 
 测试：`gostring_test.go`。
 
-## 孤立代理项得到合法的UTF-8
+## 孤立代理项得到合法的 UTF-8
 
 发布版本：v0.26.8。
 
@@ -51,7 +51,7 @@ read_when:
 
 测试：`surrogate_test.go`。
 
-## Go来的非法UTF-8每个字节变成一个U+FFFD
+## Go 来的非法 UTF-8 每个字节变成一个 U+FFFD
 
 发布版本：v0.26.10。
 
@@ -63,7 +63,7 @@ read_when:
 
 发布版本：v0.26.7。
 
-`*Error` 说明调用是否以脚本无法捕获的异常结束，以及原因，这样嵌入方不必比较名字和消息，而脚本是可以复制名字和消息的。VM 内存不足时（`OutOfMemory`，引擎造不出错误而抛出 `null` 时也算），`Interrupt` 或 eval 超时停住了脚本时（`Interrupted`），以及 javascript 调用的 Go 函数 panic 时（两者都不是），`Uncatchable` 为 true。Go 函数从它所求值的 javascript 得到的错误同样如此。脚本抛出的东西永远不是不可捕获的，即使是 `new InternalError('interrupted')` 或 `{name: 'InternalError', message: 'out of memory'}`，这些过去看起来和真的一模一样。取走一个不可捕获的错误不运行任何页面代码：`Name` 是 `InternalError`，`Message` 和 `Stack` 是错误自己的属性，`Error()` 是 `InternalError: <message>`。它过去会调用页面代码安装的 `Error.prototype.toString` 或 `name` getter，这可能改写消息。中断时在构造错误的过程中内存不足，算作 `OutOfMemory`。
+`*Error` 说明调用是否以脚本无法捕获的异常结束，以及原因，这样嵌入方不必比较名字和消息，而脚本是可以复制名字和消息的。VM 内存不足时（`OutOfMemory`，引擎造不出错误而抛出 `null` 时也算），`Interrupt` 或 eval 超时停住了脚本时（`Interrupted`），以及 javascript 调用的 Go 函数 panic 时（两者都不是），`Uncatchable` 为 true。Go 函数从它所求值的 javascript 得到的错误同样如此。脚本抛出的东西永远不是无法捕获的，即使是 `new InternalError('interrupted')` 或 `{name: 'InternalError', message: 'out of memory'}`，这些过去看起来和真的一模一样。取走一个无法捕获的错误不运行任何页面代码：`Name` 是 `InternalError`，`Message` 和 `Stack` 是错误自己的属性，`Error()` 是 `InternalError: <message>`。它过去会调用页面代码安装的 `Error.prototype.toString` 或 `name` getter，这可能改写消息。中断时在构造错误的过程中内存不足，算作 `OutOfMemory`。
 
 脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, quickjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
 
@@ -87,15 +87,15 @@ read_when:
 
 发布版本：v0.26.16。
 
-`DefaultShapeCache`（2048）是新 VM 在对象消失后继续保留的形状（shape）数量，`VM.SetShapeCache(n)` 为单个 VM 修改它，0 表示关闭。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[保留的形状](objects-and-shapes.md#kept-shapes)。
+`DefaultShapeCache`（2048）是新 VM 在对象消失后继续保留的 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 数量，`VM.SetShapeCache(n)` 为单个 VM 修改它，0 表示关闭。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[保留的 shape](objects-and-shapes.zh-CN.md#保留-shape)。
 
 ## SetRegExpCache 和 DefaultRegExpCache
 
 发布版本：v0.27.0。
 
-`DefaultRegExpCache`（256）和 `DefaultRegExpCacheBytes`（1 MiB）是新 VM 最多保留多少个编译好的正则，以及占多少字节（计入它们的模式和标志）。`VM.SetRegExpCache(n, bytes)` 为单个 VM 修改这两者，并放掉它保留的东西，0 表示关闭。`n` 最多是 `math.MaxInt32/8`，和 `SetShapeCache` 一样。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[每个 VM 保留编译好的正则](regexp.md#compiled-regexps-kept-per-vm)。
+`DefaultRegExpCache`（256）和 `DefaultRegExpCacheBytes`（1 MiB）是新 VM 最多保留多少个编译好的正则，以及占多少字节（计入它们的模式和标志）。`VM.SetRegExpCache(n, bytes)` 为单个 VM 修改这两者，并放掉它保留的东西，0 表示关闭。`n` 最多是 `math.MaxInt32/8`，和 `SetShapeCache` 一样。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[每个 VM 保留编译好的正则](regexp.zh-CN.md#按-vm-保存编译好的正则)。
 
-## Builtin
+## Builtin，作为内建函数调用的 Go 函数
 
 发布版本：v0.26.17。
 
@@ -103,7 +103,7 @@ read_when:
 
 它返回的 `*Error` 会被抛成它的 `Name` 所说的构造函数（`Error`、`TypeError`、`RangeError`、`SyntaxError`、`ReferenceError` 或 `InternalError`，其他名字都当作 `Error`），栈从这个 Builtin 开始，任何其他错误都当作 `TypeError`。
 
-在 Apple M4 上，一次把两个数相加的调用，连循环算在内约 55 ns，而同样的调用用 `RegisterHostFunc` 的函数约 470 ns。VM 的上下文现在带一个 id，调用就是靠它不加锁地找到自己的 VM。`intl` 包以这种方式调用 Go（见 [time-and-intl.md](time-and-intl.md#intl-calls-go-through-builtins)）。
+在 Apple M4 上，一次把两个数相加的调用，连循环算在内约 55 ns，而同样的调用用 `RegisterHostFunc` 的函数约 470 ns。VM 的上下文现在带一个 id，调用就是靠它不加锁地找到自己的 VM。`intl` 包以这种方式调用 Go（见 [time-and-intl.md](time-and-intl.zh-CN.md#intl-通过-builtin-调用-go)）。
 
 测试：`builtin_test.go`。
 
@@ -190,7 +190,7 @@ read_when:
 
 发布版本：v0.29.0。
 
-`VM.MemoryUsage()` 返回一个 `MemoryUsage`：`JS_ComputeMemoryUsage` 在 VM 里数出的东西，带 Go 的名字。`MallocSize` 是 `MemorySize` 返回的值，`MallocLimit` 是内存上限（-1 表示没有），其他字段数 atom、字符串、对象、属性、形状、函数的字节码连同它的行表、引擎和 Go 的函数、数组和它们的元素，以及 ArrayBuffer。它遍历每个对象，所以是用来测量的：先运行 `RunGC` 把 javascript 已经够不着的东西排除在外。`Footprint`、`FootprintLimit`、`Chunks` 和 `ReleaseCandidate` 是 VM 从系统拿了多少、分了多少块，以及提出归还的有多少。
+`VM.MemoryUsage()` 返回一个 `MemoryUsage`：`JS_ComputeMemoryUsage` 在 VM 里数出的东西，带 Go 的名字。`MallocSize` 是 `MemorySize` 返回的值，`MallocLimit` 是内存上限（-1 表示没有），其他字段数 atom（引擎给属性名和常用字符串的编号）、字符串、对象、属性、shape、函数的字节码连同它的行表、引擎和 Go 的函数、数组和它们的元素，以及 ArrayBuffer。它遍历每个对象，所以是用来测量的：先运行 `RunGC` 把 javascript 已经够不着的东西排除在外。`Footprint`、`FootprintLimit`、`Chunks` 和 `ReleaseCandidate` 是 VM 从系统拿了多少、分了多少块，以及提出归还的有多少。
 
 `VM.ReleaseMemory(keep)` 把 VM 留着不用的内存还给系统，只留下 `keep` 个字节，返回它还回去多少字节。对象保持原样。VM 正在运行 javascript 时它返回一个错误，比如从 javascript 调用的 Go 函数里。
 
@@ -218,7 +218,7 @@ read_when:
 
 - 兑现的模块返回它的结果，被拒绝的模块把拒绝原因作为错误返回，和以前一样。
 - 抛错的任务不会停止等待。当页面让 promise 的反应抛错时，它们就会抛，比如 `Promise` 子类的 species 给出一个会抛错的 resolve 函数，和模块毫无关系的 `FinalizationRegistry` 回调也一样。模块继续运行，调用返回第一个这样的错误。模块自己被拒绝时，则它的拒绝原因就是错误，就像 Node 报告模块的错误而丢掉任务的错误那样。
-- 不可捕获的异常（中断、eval 超时、内存不足、Go 函数里的 panic）立刻以它的 `*Error` 或它的 panic 结束调用。模块排进队列的其他任务留在队列里，和 `ExecutePendingJobs` 留下它们的方式一样（见 [uncatchable.md](uncatchable.md#interrupts-cannot-be-caught-through-promises-or-iterators)）。
+- 无法捕获的异常（中断、eval 超时、内存不足、Go 函数里的 panic）立刻以它的 `*Error` 或它的 panic 结束调用。模块排进队列的其他任务留在队列里，和 `ExecutePendingJobs` 留下它们的方式一样（见 [uncatchable.md](uncatchable.zh-CN.md#中断无法穿过-promise-或迭代器被捕获)）。
 - 当没有任务了而模块仍在挂起，比如 `await new Promise(() => {})`，错误会说模块的顶层 await 仍在挂起，且没有任务可以运行（如果有任务抛过错，就和第一个任务的错误连在一起），VM 可以继续使用。模块在等待的东西仍可能从任务队列之外完成：Go 函数返回、Go 以后再兑现的 promise，或者嵌套的 `EvalBytecode` 返回之后由外层调用兑现的 promise。那么之后的 `ExecutePendingJobs` 会运行模块的其余部分。
 
 它们过去调用 `quickjs-libc.c` 的 `js_std_await`，也就是 `qjs` shell 的辅助函数。当任务队列已空而 promise 仍在挂起时，它读 `js_std_init_handlers` 设置的状态，而 VM 从不设置它，进程就因空指针解引用崩溃。失败的任务被打印到 stderr 然后丢掉，所以模块第一个 `await` 之后的 eval 超时，在队列变空后同样崩溃。`qjs` shell 在那里不会崩溃，它在空队列上永远空转，而 Node 对顶层 await 永不完成的模块，以退出码 13 结束它。
@@ -243,7 +243,7 @@ read_when:
 
 `NewSharedBytecode(bytecode)` 把 `Compile` 得到的字节码复制一次，`VM.EvalSharedBytecode(b)` 和 `VM.EvalSharedBytecodeValue(b)` 像 `EvalBytecode` 和 `EvalBytecodeValue` 那样加载它，但把每个函数的源文本和行表留在那一份副本里，不复制进 VM。加载同一个包的一池 VM 只持有它们一份：tifa 示例商店的一个 VM 少占 2.36 MiB。`toString`、错误栈和行号不变。`MemorySize` 和内存上限不再计入这些字节，`SharedBytecode.Len` 返回副本占用的大小。
 
-`SharedBytecode.Close` 放弃 `SharedBytecode` 的持有，加载了它的每个 VM 一直持有它到 `VM.Close`：最后一个释放副本，所以 VM 可以比创建它的池子活得更久。`Close` 之后再加载会返回错误。`SharedBytecode` 对多个 goroutine 同时使用是安全的。它如何工作、能省多少，见 [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm)。
+`SharedBytecode.Close` 放弃 `SharedBytecode` 的持有，加载了它的每个 VM 一直持有它到 `VM.Close`：最后一个释放副本，所以 VM 可以比创建它的池子活得更久。`Close` 之后再加载会返回错误。`SharedBytecode` 对多个 goroutine 同时使用是安全的。它如何工作、能省多少，见 [memory-and-allocation.md](memory-and-allocation.zh-CN.md#所有-vm-共用一份源码文本和行表)。
 
 测试：`sharedbytecode_test.go`。
 
@@ -251,7 +251,7 @@ read_when:
 
 发布版本：v0.28.5。
 
-`GetAsyncContext` 和 `SetAsyncContext` 是两个 Builtin（见 [Builtin](#builtin)），读取和设置 VM 的异步上下文：一个对象，或者没有。promise 的反应，也就是 `then`、`catch`、`finally` 和 `await` 注册的东西，保存它被注册时 VM 所处的上下文，并带着它运行：处理函数运行期间 VM 有那个上下文，处理函数返回或抛错时恢复到原来的上下文。`AsyncLocalStorage` 需要这一点才能在 `await` 之后找到它的存储，这也是 V8 为 Node 保存的，叫作 continuation preserved embedder data。`SetAsyncContext` 传入任何不是对象的东西，就是设为没有，之后 `GetAsyncContext` 返回 undefined。
+`GetAsyncContext` 和 `SetAsyncContext` 是两个 Builtin（见 [Builtin](#builtin作为内建函数调用的-go-函数)），读取和设置 VM 的异步上下文：一个对象，或者没有。promise 的反应，也就是 `then`、`catch`、`finally` 和 `await` 注册的东西，保存它被注册时 VM 所处的上下文，并带着它运行：处理函数运行期间 VM 有那个上下文，处理函数返回或抛错时恢复到原来的上下文。`AsyncLocalStorage` 需要这一点才能在 `await` 之后找到它的存储，这也是 V8 为 Node 保存的，叫作 continuation preserved embedder data。`SetAsyncContext` 传入任何不是对象的东西，就是设为没有，之后 `GetAsyncContext` 返回 undefined。
 
 这个对象就是整个上下文：`AsyncLocalStorage` 把它的存储放在里面，用一个从每个实例到它的存储的 `Map`，`run` 造一个带有自己存储的新对象，设置它，调用函数，再把旧的设回去。对象一旦设置，就没有东西会改它，所以反应通过引用持有它的上下文。
 
@@ -280,7 +280,7 @@ VM 开始时没有上下文，没有上下文时，一个反应多花一次测�
 - **它给出什么。**参数按 `"" + text` 变成字符串：字符串保持原样，数字、布尔值或 bigint 变成它的文本，对象以提示 `"default"` 经过 `valueOf` 和 `toString`（或 `Symbol.toPrimitive`），symbol，或者抛错的 `toString`，抛出 `"" + text` 所抛的错。然后 `&`、`<`、`>`、`"` 和 `'` 各自变成 `&amp;`、`&lt;`、`&gt;`、`&quot;` 或 `&#x27;`，一次一个 UTF-16 码元，所以孤立代理项原样通过。不含这五个字符的字符串，作为同一个字符串返回，不复制。没有参数时给出 `"undefined"`。结果超过 1,073,741,823 个码元时抛构造这种字符串时抛的 `RangeError`。
 - **选择加入。**引擎自己不往全局对象上放任何东西。只有宿主调用 `RegisterEscapeText` 时，这个函数才存在于 VM 里，名字由宿主选。属性可写、可配置、不可枚举，并替换该名字的可配置属性，和 `RegisterFunc` 一样。全局对象不能放弃的名字（`undefined`、`NaN`、脚本的 `var`）是一个错误。函数的外形像内置函数：`name` 是给定的名字，`length` 是 1，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
 - **限制仍然有效。**它在长字符串每 4096 个码元一块的开头读中断标志，在计数时读一次，写入时再读一次，所以 `Interrupt` 或 eval 超时会在那里停住它，两次读取之间不会超过 4096 个码元。渲染在构造结果时内存不足，就以内存不足错误结束，和任何字符串一样。
-- **为什么用C而不是Go。**Go 的 `Builtin` 每次调用比引擎的 C 函数多约 22 ns（48 到 55 ns 对 26 到 38 ns），而对短文本，这就是转义代价的大部分。在 tifa 里，Go 版本让商店渲染得更慢，而这一版让它渲染得更快（[性能](../performance.md#react-doms-text-escape-in-c)）。
+- **为什么用C而不是Go。**Go 的 `Builtin` 每次调用比引擎的 C 函数多约 22 ns（48 到 55 ns 对 26 到 38 ns），而对短文本，这就是转义代价的大部分。在 tifa 里，Go 版本让商店渲染得更慢，而这一版让它渲染得更快（[性能](../performance.zh-CN.md#c-里的-react-dom-文本转义)）。
 
 C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_escape_text` 和 `JS_NewEscapeTextFunction(ctx, name, name_len)`，Go 方法调用它们。
 
@@ -294,14 +294,14 @@ C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_escape_text` 和 `J
 
 - **它接收什么，给出什么。**`copy(config, props, hasOwnProperty, isClone)`：配置，React 造的 props 对象（`createElement` 里是 `{}`，`cloneElement` 里是元素 props 的副本），React 自己的 `hasOwnProperty`（它加载时拿到的 `Object.prototype.hasOwnProperty`），以及 `cloneElement` 用的 `true`，此时当 `config.ref` 是 undefined 时它还会跳过 `ref`。复制了就回答 `true`，什么也没改就回答 `false`，此时脚本运行 React 的循环。不管哪种情况，props 都是循环会造出来的样子。
 - **何时复制。**只在它的结果和循环的结果在脚本可见的任何方面都不可能不同时。配置是普通对象（不是 proxy、数组、函数、类实例或 String 对象），原型是 `Object.prototype`，自己的键最多 32 个，没有数组下标、`__proto__` 或 `stack`，循环读的每个键都是普通数据属性。getter、setter、symbol 键和不可枚举的键，要么循环不读，要么让调用转去循环。props 是原型相同、可以扩展的普通对象，只有普通的可写数据属性。`Object.prototype` 除了 `__proto__` 之外没有 setter 和只读属性，这样设置一个键就是创建它。`hasOwnProperty` 是内置的，`hasOwnProperty.call` 是内置的 `Function.prototype.call`。页面在 React 加载之后改了其中任何一项，后面的调用就转去循环。
-- **如何复制。**对一个还没有任何属性的 props 对象，如果配置的属性全是可枚举、可写、可配置的字符串键，且没有要跳过的，它一步就取得配置的形状和值（展开用的那一步）。否则，键一个接一个地添加，props 已有的就改设值。
+- **如何复制。**对一个还没有任何属性的 props 对象，如果配置的属性全是可枚举、可写、可配置的字符串键，且没有要跳过的，它一步就取得配置的 shape 和值（展开用的那一步）。否则，键一个接一个地添加，props 已有的就改设值。
 - **选择加入。**引擎自己不往全局对象上放任何东西。只有宿主调用 `RegisterCopyProps` 时，这个函数才存在于 VM 里，名字由宿主选，属性和名字的规则同 [`RegisterEscapeText`](#registerescapetext)。它的外形像内置函数：`length` 是 4，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
-- **限制仍然有效。**这个函数在写入任何东西之前，最多读配置的 32 个键，以及 props 的形状和 `Object.prototype` 的形状里最多 64 个槽位（包括被删除的键）。新的 `Object.prototype` 有 12 个槽位，tifa 页面里元素的 props 最多 24 个。任何一项超过，就转去循环，循环由中断标志和 eval 超时照常停住，而限制之内的复制花几百纳秒，所以这个函数不读中断标志。添加一个键时内存不足，调用以内存不足错误结束，和循环里的设置一样。
+- **限制仍然有效。**这个函数在写入任何东西之前，最多读配置的 32 个键，以及 props 的 shape 和 `Object.prototype` 的 shape 里最多 64 个槽位（包括被删除的键）。新的 `Object.prototype` 有 12 个槽位，tifa 页面里元素的 props 最多 24 个。任何一项超过，就转去循环，循环由中断标志和 eval 超时照常停住，而限制之内的复制花几百纳秒，所以这个函数不读中断标志。添加一个键时内存不足，调用以内存不足错误结束，和循环里的设置一样。
 - **为什么不在JavaScript里做检查。**在 JavaScript 里测试配置，再用一次展开复制它，每次调用要 310 到 380 ns，比循环处理一个有零个、一个或两个键的配置还多，而且它排除不了 proxy、删掉后面某个键的 getter，或者 React 加载之后加到 `Object.prototype` 上的 setter。在 C 里，这些检查是调用的一部分，能排除它们：没有键的配置，经过这个函数比经过空循环用的时间更少。
 
-C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_copy_props` 和 `JS_NewCopyPropsFunction(ctx, name, name_len)`，Go 方法调用它们。它用展开的形状那一步（`js_copy_shape`）、键缓存保存的键的种类，以及 `add_property`。`JSContext` 保存它用来比较键的五个 atom（`copy_atoms`），在函数创建时造出，随上下文释放。
+C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_copy_props` 和 `JS_NewCopyPropsFunction(ctx, name, name_len)`，Go 方法调用它们。它用展开的 shape 那一步（`js_copy_shape`）、键缓存保存的键的种类，以及 `add_property`。`JSContext` 保存它用来比较键的五个 atom（`copy_atoms`），在函数创建时造出，随上下文释放。
 
-测试：`engine/test/compare/copy_props.js` 里有 React 19.3 的函数，一份是 React 写的样子，一份是在循环前面加上这个调用，像 tifa 的插件写的那样，并给它们 147 个配置（普通的和空的，各个位置上的 `key` 和 `ref`，`__self` 和 `__source`，任何键上的 getter 和 setter，会添加、改变或删除键的 getter，symbol，原型，null 原型，类实例，`__proto__` 键，下标键，冻结和密封的对象，数组，函数，原始值，proxy，32 个和 33 个键，被改过的 `Object.prototype`，被替换的 `Function.prototype.call`），配上 `cloneElement` 的 16 种 props（其中有 64、65 和 200 个槽位的 props，以及一个有 75 个被删除的键的 props），一个多了 50 个和 100 个可写属性的 `Object.prototype`，然后是从固定种子生成的 6,000 个随机配置（3,000 轮里每轮造一个 `createElement` 和一个 `cloneElement`，用一种 props）。它还冻结、密封配置、props 和与副本共用形状的第三个对象，并给它们换一个原型，检查其他对象不变且仍能增长。每一对必须给出同样的键，同样顺序、同样描述符的 props，同样的错误，以及同样的读取和调用，而列出的配置是否被这个函数复制，必须和文件里写的一致。它还用 React 从不给的参数调用这个函数，检查它回答 `false` 且什么也没改。C 树在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下运行它，`unit-oom` 在每个空位上拒绝内存来复制，`copyprops_test.go` 通过 Go API 运行同一个文件，带上它定义的属性、第二次注册和它不能使用的名字。每个条件都轮流去掉一次，看这个文件是否失败，只有对 `Object.prototype` 上访问器的测试没有失败，因为访问器没有可写标志，对不可写属性的测试也会抓到它。
+测试：`engine/test/compare/copy_props.js` 里有 React 19.3 的函数，一份是 React 写的样子，一份是在循环前面加上这个调用，像 tifa 的插件写的那样，并给它们 147 个配置（普通的和空的，各个位置上的 `key` 和 `ref`，`__self` 和 `__source`，任何键上的 getter 和 setter，会添加、改变或删除键的 getter，symbol，原型，null 原型，类实例，`__proto__` 键，下标键，冻结和密封的对象，数组，函数，原始值，proxy，32 个和 33 个键，被改过的 `Object.prototype`，被替换的 `Function.prototype.call`），配上 `cloneElement` 的 16 种 props（其中有 64、65 和 200 个槽位的 props，以及一个有 75 个被删除的键的 props），一个多了 50 个和 100 个可写属性的 `Object.prototype`，然后是从固定种子生成的 6,000 个随机配置（3,000 轮里每轮造一个 `createElement` 和一个 `cloneElement`，用一种 props）。它还冻结、密封配置、props 和与副本共用 shape 的第三个对象，并给它们换一个原型，检查其他对象不变且仍能增长。每一对必须给出同样的键，同样顺序、同样描述符的 props，同样的错误，以及同样的读取和调用，而列出的配置是否被这个函数复制，必须和文件里写的一致。它还用 React 从不给的参数调用这个函数，检查它回答 `false` 且什么也没改。C 树在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下运行它，`unit-oom` 在每个空位上拒绝内存来复制，`copyprops_test.go` 通过 Go API 运行同一个文件，带上它定义的属性、第二次注册和它不能使用的名字。每个条件都轮流去掉一次，看这个文件是否失败，只有对 `Object.prototype` 上访问器的测试没有失败，因为访问器没有可写标志，对不可写属性的测试也会抓到它。
 
 ## RegisterStartTag 和 RegisterEndTag
 
@@ -323,12 +323,12 @@ C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_copy_props` 和 `JS
   它假定 React 的函数调用的 `String`、`RegExp`、`Map` 和 `Set` 的内置方法就是引擎的方法。在 tifa 示例应用每个页面各渲染一次的 16,310 个开始标签上，它一个也没拒绝。
 - **结束标签。**`endTag(type)` 给出 `"</" + type + ">"`。它按字符串的地址保存每个字符串的结束标签，所以同一个标签（JSX 把它造成一个字符串）再次给出同样的结束标签，不用复制。不是字符串的参数按 `"</" + type` 变成字符串（不带提示的 ToPrimitive，然后 ToString），而这个函数抛出那一步所抛的错。
 - **选择加入。**引擎自己不往全局对象上放任何东西。只有宿主注册它们时，这些函数才存在于 VM 里，名字由宿主选，属性和名字的规则同 [`RegisterEscapeText`](#registerescapetext)。它们的外形像内置函数：`length` 分别是 6 和 1，没有 `prototype`，不能用 `new` 调用，`toString` 显示 `[native code]`。
-- **限制仍然有效。**一次调用最多读 props 的 32 个键和样式的 32 个键。它对比自己的步长更长的字符串所做的每个循环，在每一步之前和最后一步之后读中断标志：转义字符串、写样式名的连字符，或者跳过样式值周围或 URL 之前的空白时，每 4096 个码元一次，扫描标签或样式名，或者复制长的片段（标签、样式名、结束标签、做好的开始标签）时，每 524,288 个码元一次，所以 `Interrupt` 或 eval 超时会在那里停住它（[uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop)）。它只在引擎没有内存或宿主停住它时才抛错，此时 `target` 保持原样。
-- **它保存什么。**每个上下文为两个函数保存一个小缓存，随它们中的第一个创建，里面有它要找的 atom（`viewTransition`、`call`、`push`）。创建它不运行脚本：`Function.prototype.call` 和 `Array.prototype.push` 是引擎在第一次用到时才创建的，这时创建它们，不经过 getter 读取，所以没有超时的注册不可能运行脚本，而缓存要等它完整之后才放进上下文。每个属性名和每个样式名的写法，以及每个标签字符串的结束标签，放进三张表。每张表在第一次需要它的调用时创建，有 16 个条目，半满时翻倍，最多 512 个名字和 256 个结束标签。一个名字放在哪里就留在哪里，直到它的表将超过这个数的一半，此时表被清空再重新填，所以一个页面每个名字只造一次。开始标签写进缓存在两次调用之间保留的一个缓冲区（一开始 128 个码元，在一次调用把它撑到超过 1024 个码元或变成宽字符之后释放），然后复制成一个刚好那么长的字符串，缓存保存的名字和结束标签也都是刚好的长度。留在缓冲区里的字符串会占着缓冲区长到的那么大的块，因为 arena 块从不缩小，而这些字符串一直活到渲染被写出，渲染在这期间创建的长寿对象（页面缓存的条目，新 props 的形状）就会在渲染被释放后握着几乎空了的 arena。注册既不造表也不造缓冲区：这两个函数给 `MemorySize` 加 1.8 KB，大部分是全局对象的两个属性。在 tifa 的商店上，包加载完后，一个 VM 比没注册它们的多占 1.6 KB，页面渲染过之后这些表占约 8 KB。在 tifa 的池子里，每次渲染之后做一次年轻代回收，商店的一个 VM 在 64 次或 1,000 次渲染之后多占 26 KB（开始标签把缓冲区当作字符串保存时是 107 KB）。缓存里的任何东西对脚本都不可见，它随上下文释放。
+- **限制仍然有效。**一次调用最多读 props 的 32 个键和样式的 32 个键。它对比自己的步长更长的字符串所做的每个循环，在每一步之前和最后一步之后读中断标志：转义字符串、写样式名的连字符，或者跳过样式值周围或 URL 之前的空白时，每 4096 个码元一次，扫描标签或样式名，或者复制长的片段（标签、样式名、结束标签、做好的开始标签）时，每 524,288 个码元一次，所以 `Interrupt` 或 eval 超时会在那里停住它（[uncatchable.md](uncatchable.zh-CN.md#开始和结束标签函数在每个长循环里读中断标志)）。它只在引擎没有内存或宿主停住它时才抛错，此时 `target` 保持原样。
+- **它保存什么。**每个上下文为两个函数保存一个小缓存，随它们中的第一个创建，里面有它要找的 atom（`viewTransition`、`call`、`push`）。创建它不运行脚本：`Function.prototype.call` 和 `Array.prototype.push` 是引擎在第一次用到时才创建的，这时创建它们，不经过 getter 读取，所以没有超时的注册不可能运行脚本，而缓存要等它完整之后才放进上下文。每个属性名和每个样式名的写法，以及每个标签字符串的结束标签，放进三张表。每张表在第一次需要它的调用时创建，有 16 个条目，半满时翻倍，最多 512 个名字和 256 个结束标签。一个名字放在哪里就留在哪里，直到它的表将超过这个数的一半，此时表被清空再重新填，所以一个页面每个名字只造一次。开始标签写进缓存在两次调用之间保留的一个缓冲区（一开始 128 个码元，在一次调用把它撑到超过 1024 个码元或变成宽字符之后释放），然后复制成一个刚好那么长的字符串，缓存保存的名字和结束标签也都是刚好的长度。留在缓冲区里的字符串会占着缓冲区长到的那么大的块，因为 arena 块从不缩小，而这些字符串一直活到渲染被写出，渲染在这期间创建的长寿对象（页面缓存的条目，新 props 的 shape）就会在渲染被释放后握着几乎空了的 arena。注册既不造表也不造缓冲区：这两个函数给 `MemorySize` 加 1.8 KB，大部分是全局对象的两个属性。在 tifa 的商店上，包加载完后，一个 VM 比没注册它们的多占 1.6 KB，页面渲染过之后这些表占约 8 KB。在 tifa 的池子里，每次渲染之后做一次年轻代回收，商店的一个 VM 在 64 次或 1,000 次渲染之后多占 26 KB（开始标签把缓冲区当作字符串保存时是 107 KB）。缓存里的任何东西对脚本都不可见，它随上下文释放。
 
 C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_start_tag`、`js_end_tag`、`JS_NewStartTagFunction(ctx, name, name_len)` 和 `JS_NewEndTagFunction(ctx, name, name_len)`，Go 方法调用它们。对 `hasOwnProperty.call` 的检查就是 `RegisterCopyProps` 的那个（`js_copy_props_call_plain`）。`JSContext` 保存缓存（`emit_cache`）。
 
-测试：`engine/test/compare/start_tag.js` 里有 react-dom 19.3.1 的原样函数，并让每次调用既经过它们，也经过 `startTag`。139 个列出的调用走遍 `pushAttribute` 和 `pushStyleAttribute` 的每个分支（转义、数字、布尔值、函数、symbol、别名、`data-` 和 `aria-` 名字、`on` 名字、不安全的名字、URL、`ms` 前缀、自定义属性、要裁掉的空白）和上面每一种拒绝，每个都带它必须给出的答案。更多的调用替换 `hasOwnProperty`、`Function.prototype.call` 和 `Array.prototype.push`（用 `unshift`，同一个 C 函数，另一个 magic），给出被冻结、被密封、长度超过元素个数、子类或另一个原型的 target，以及没有普通 `null` 的 `viewTransition` 的 `formatContext` 值。2,400 次调用用到比缓存能容纳的更多的属性名和样式名，4,000 次调用用从固定种子生成的随机 props。对每次调用，`startTag` 必须压入 React 压入的文本并返回 React 返回的东西，或者拒绝并让 `target` 保持原样，并且在 React 会抛错的地方它从不接手这次调用。结束标签对着 `endChunkForTag` 检查：字符串、数字、带 `toString`、`valueOf` 和 `Symbol.toPrimitive` 的对象，以及 symbol 和抛错的 `toString` 的错误。`unit-oom` 在每个空位上拒绝内存来写开始标签和结束标签，包括表创建和增长的时候，以及缓冲区因长文本而超过最大值而增长的时候，并检查 target 没有变。`unit-white`（`test_emit_tables`）检查第一次调用之前没有造表，200 个名字和 100 个结束标签留在它们的表里，所以第二遍不会添加，以及超过最大值的表被清空再重新填。`test_emit_buffer` 检查短的、长的和宽的标签的字符串，名字、样式名和结束标签的字符串，都有与其长度相符的大小类别，缓冲区在一个 300 个码元的标签之后保留，在 2,000 个码元的文本或宽字符之后释放，以及缓冲区被占用时发生的调用会造自己的缓冲区，缓存保留两个中的一个并释放另一个。`tags_test.go` 通过 Go API 运行同一个文件，带上每个函数定义的属性、第二次注册、不能使用的名字、对长的 children 文本、属性、样式值、样式名、标签和结束标签的超时，以及把标签留给 React 的精确长度。`TestTagsMemory` 检查注册不造表，`TestTagsMemoryLimit` 检查表增长时内存不足是不可捕获的内存不足错误，target 不变，并且上限提高后调用能工作。`TestRegisterTagsRunsNoScript` 在 `Array.prototype.push` 和 `Function.prototype.call` 上放 getter，它们或者注册另一个函数，或者永不返回，并在注册之前替换这两者：注册不会运行这两个 getter，而这些调用会拒绝。`TestStartTagIndexOnPrototype` 在 `Array.prototype` 或 `Object.prototype` 上放一个 setter 或只读的下标，调用会拒绝，`start_tag.js` 对着 React 检查下标 0 上的 setter。带 NUL 的名字（`children\u0000x`、`id\u0000x` 等）像 React 跳过它们那样被跳过。`unit-oom`（`test_tags_register_oom`）在每个空位上拒绝内存来注册，并检查再次注册能工作。
+测试：`engine/test/compare/start_tag.js` 里有 react-dom 19.3.1 的原样函数，并让每次调用既经过它们，也经过 `startTag`。139 个列出的调用走遍 `pushAttribute` 和 `pushStyleAttribute` 的每个分支（转义、数字、布尔值、函数、symbol、别名、`data-` 和 `aria-` 名字、`on` 名字、不安全的名字、URL、`ms` 前缀、自定义属性、要裁掉的空白）和上面每一种拒绝，每个都带它必须给出的答案。更多的调用替换 `hasOwnProperty`、`Function.prototype.call` 和 `Array.prototype.push`（用 `unshift`，同一个 C 函数，另一个 magic），给出被冻结、被密封、长度超过元素个数、子类或另一个原型的 target，以及没有普通 `null` 的 `viewTransition` 的 `formatContext` 值。2,400 次调用用到比缓存能容纳的更多的属性名和样式名，4,000 次调用用从固定种子生成的随机 props。对每次调用，`startTag` 必须压入 React 压入的文本并返回 React 返回的东西，或者拒绝并让 `target` 保持原样，并且在 React 会抛错的地方它从不接手这次调用。结束标签对着 `endChunkForTag` 检查：字符串、数字、带 `toString`、`valueOf` 和 `Symbol.toPrimitive` 的对象，以及 symbol 和抛错的 `toString` 的错误。`unit-oom` 在每个空位上拒绝内存来写开始标签和结束标签，包括表创建和增长的时候，以及缓冲区因长文本而超过最大值而增长的时候，并检查 target 没有变。`unit-white`（`test_emit_tables`）检查第一次调用之前没有造表，200 个名字和 100 个结束标签留在它们的表里，所以第二遍不会添加，以及超过最大值的表被清空再重新填。`test_emit_buffer` 检查短的、长的和宽的标签的字符串，名字、样式名和结束标签的字符串，都有与其长度相符的大小类别，缓冲区在一个 300 个码元的标签之后保留，在 2,000 个码元的文本或宽字符之后释放，以及缓冲区被占用时发生的调用会造自己的缓冲区，缓存保留两个中的一个并释放另一个。`tags_test.go` 通过 Go API 运行同一个文件，带上每个函数定义的属性、第二次注册、不能使用的名字、对长的 children 文本、属性、样式值、样式名、标签和结束标签的超时，以及把标签留给 React 的精确长度。`TestTagsMemory` 检查注册不造表，`TestTagsMemoryLimit` 检查表增长时内存不足是无法捕获的内存不足错误，target 不变，并且上限提高后调用能工作。`TestRegisterTagsRunsNoScript` 在 `Array.prototype.push` 和 `Function.prototype.call` 上放 getter，它们或者注册另一个函数，或者永不返回，并在注册之前替换这两者：注册不会运行这两个 getter，而这些调用会拒绝。`TestStartTagIndexOnPrototype` 在 `Array.prototype` 或 `Object.prototype` 上放一个 setter 或只读的下标，调用会拒绝，`start_tag.js` 对着 React 检查下标 0 上的 setter。带 NUL 的名字（`children\u0000x`、`id\u0000x` 等）像 React 跳过它们那样被跳过。`unit-oom`（`test_tags_register_oom`）在每个空位上拒绝内存来注册，并检查再次注册能工作。
 
 ## 没有模块加载器、shell 辅助函数和 SetCanBlock
 
@@ -352,10 +352,10 @@ C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_start_tag`、`js_en
 undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo
 ```
 
-引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.md#moving-to-a-newer-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !quickjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.md#moving-to-a-newer-go)）。
+引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !quickjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。
 
 - **仍要构建时**，用一个 liustack/quickjs 没有检查过的 Go，加上 `-tags quickjs_anygo`。
-- **新的Go发布时**，liustack/quickjs 用它运行 [upgrading.md](../upgrading.md#moving-to-a-newer-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/quickjs 的这个发布版本。
+- **新的Go发布时**，liustack/quickjs 用它运行 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/quickjs 的这个发布版本。
 - **Go 的补丁发布**不加区分：构建行可以写 `go1.28`，但不能写 `go1.27.3`。
 
 这个错误在它自己的包 `internal/goversion` 里，`internal/cengine` 导入它，所以 go 命令先构建它，它是构建报告的唯一错误。
@@ -382,6 +382,6 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 文件里每一行上面的注释说明是哪个选项，并说 liustack/quickjs 不能用它构建。这个函数从不被调用，也从不被链接，所以它不给程序增加任何东西。这些文件用带点的名字 `goasm_tripwire.<arch>.s`，因为 `make gen` 会删除文件夹里每个 `*_<arch>.s`。每一行都是汇编器按原样接受、在该选项下拒绝的指令（`CALL (AX)` 是经内存的调用，retpoline 没法替换它，而在全局访问之后读 R15 在 `-dynlink` 下被拒绝）。
 
 - **让引擎保持原样的选项。**`-shared`（linux 和 darwin 上 `-buildmode=pie` 传的就是它）、`-spectre=index`、`-race`、`-msan`、`-asan`、`-cover` 和 `-gcflags` 到不了汇编器，或者只改变汇编器在固定字节之前写的前导。在 linux/amd64 上，`-shared` 让函数开头的栈检查长 2 个字节（见 `quickjs_0_amd64.s`），这会移动函数体，但不移动里面的任何分支。引擎用 `-buildmode=pie` 在 linux/amd64 上构建时通过它的测试。
-- **新的Go发布时**，[upgrading.md](../upgrading.md#moving-to-a-newer-go) 的步骤包括再用这些选项构建一次。
+- **新的Go发布时**，[upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的步骤包括再用这些选项构建一次。
 
 测试：`TestEngineAsmOptions`（`enginedeps_test.go`）在它们影响的目标上，用 `-asmflags=<engine package>=-spectre=ret` 和 `-dynlink` 构建引擎，期望得到 tripwire 的错误，没有别的错误。它还用 `-shared` 和 `-spectre=index` 构建，这两个必须能成功。`TestEngineBuildmodeShared` 对 linux/amd64 用 `-buildmode=shared` 构建，它不需要 cgo，期望得到同样的结果。

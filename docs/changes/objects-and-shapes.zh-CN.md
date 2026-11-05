@@ -24,7 +24,7 @@ shape 是一个对象的键按顺序排成的列表，键相同的对象共享�
 
 发布版本：v0.26.16。
 
-VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是它的键按顺序排成的列表，对象字面量每加一个键就经过一个 shape。以前只有它的对象在用一个 shape 时，`add_property` 会原地增长这个 shape，所以对象有了全部的键之后，中间的 shape 就都没了，最后一个随最后一个对象消失：下一个带同样键的字面量又要把它们全部复制、增长一遍。现在下一个带同样键的字面量，在 shape 哈希表里找到它需要的每一个 shape，一个也不用新建。本条里的计时都是在 linux/amd64（AMD EPYC）上不开 PGO 测得的。一次复制要花一次分配加上到目前为止的键，而一个对象一个一个地得到别的对象都没有的键，每个键都要付出这笔开销，而且永远收不回来：这样的对象构建时间长了 22%。所以 `add_property` 找到的每个 shape 赚得一次复制，最多 64 次，没有额度时 shape 原地增长。这样中间的 shape 仍然被保留，只是晚一点：对象找到下一个被保留的 shape 时离开的那个 shape 会被保留。键是别的对象都没有的对象，现在构建时间比关掉缓存时长约 6%，键相同的对象字面量少用 30%。只有原型是 VM 的 `Object.prototype`、最多 32 个键、而且没有未注册 symbol 作为键的 shape 才会被保留，所以被保留的 shape 除了那个原型和它的键的 atom 之外，不会让任何东西存活，目标是 symbol 的 `WeakRef` 或 `FinalizationRegistry` 会像没有缓存时一样看到它消失。循环回收器释放的 shape 不保留，`JS_FreeRuntime` 会放掉每个被保留的 shape。这个环在运行时的状态里，紧挨着前端缓存（见 [allocator.md](../allocator.zh-CN.md)）。新 VM 保留 `DefaultShapeCache`（2048）个 shape，`VM.SetShapeCache` 可以改它，`VM.Close` 在释放 context 之前先把它关掉。
+VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是它的键按顺序排成的列表，对象字面量每加一个键就经过一个 shape。以前只有它的对象在用一个 shape 时，`add_property` 会原地增长这个 shape，所以对象有了全部的键之后，中间的 shape 就都没了，最后一个随最后一个对象消失：下一个带同样键的字面量又要把它们全部复制、增长一遍。现在下一个带同样键的字面量，在 shape 哈希表里找到它需要的每一个 shape，一个也不用新建。本条里的计时都是在 linux/amd64（AMD EPYC）上不开 PGO 测得的。一次复制要花一次分配加上到目前为止的键，而一个对象一个一个地得到别的对象都没有的键，每个键都要付出这笔开销，而且永远收不回来：这样的对象构建时间长了 22%。所以 `add_property` 找到的每个 shape 赚得一次复制，最多 64 次，没有额度时 shape 原地增长。这样中间的 shape 仍然被保留，只是晚一点：对象找到下一个被保留的 shape 时离开的那个 shape 会被保留。键是别的对象都没有的对象，现在构建时间比关掉缓存时长约 6%，键相同的对象字面量少用 30%。只有原型是 VM 的 `Object.prototype`、最多 32 个键、而且没有未注册 symbol 作为键的 shape 才会被保留，所以被保留的 shape 除了那个原型和它的键的 atom（引擎给属性名和常用字符串的编号） 之外，不会让任何东西存活，目标是 symbol 的 `WeakRef` 或 `FinalizationRegistry` 会像没有缓存时一样看到它消失。循环回收器释放的 shape 不保留，`JS_FreeRuntime` 会放掉每个被保留的 shape。这个环在运行时的状态里，紧挨着前端缓存（见 [allocator.md](../allocator.zh-CN.md)）。新 VM 保留 `DefaultShapeCache`（2048）个 shape，`VM.SetShapeCache` 可以改它，`VM.Close` 在释放 context 之前先把它关掉。
 
 内存：商店的一个 VM 在一次 GC 之后多占 647 KiB，连前端缓存一起多占 722 KiB（8.03 MiB，以前是 7.33）。1024 个 shape 时是多占 190 KiB 和 461 到 502 KiB，4096 个 shape 加前端缓存多占 1.26 MiB。内存块在 arena 里怎么落，会让这些数字在两次运行之间相差最多 0.5 MiB，剩下的 shape 和对象是一样的。单是加载商店的 bundle 就会保留约 1250 个 shape，所以 1024 的环在第一次渲染之前就满了。被保留的 shape 计入 VM 的内存上限，分配失败时也不会放掉它们：`add_property` 里的一次分配，可能正好发生在对象要取得一个只有缓存持有的 shape 之前。一个有 32 个键、每个键约十个字符、别的对象都没有的 shape，连同它的键的 atom 约占 3 KiB，所以 2048 个这样的 shape 约占 6 MiB，它们消失之后 atom 表保持它长到的大小。接近内存上限运行的脚本，开着缓存可能内存耗尽，不开则不会：给这样的 VM 一个更小的缓存，或者不给。不开 PGO，在 linux/amd64（AMD EPYC）上，HTML 相同，单是 shape 缓存就让一次渲染快 3.6%，加上前端缓存和中断倒计数之后，一次渲染比没有这三者时少用 4.5% 的时间（六轮）。一个核的两个硬件线程上的两个 VM，每秒多渲染 2.9% 的页面。
 
@@ -60,7 +60,7 @@ VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是�
 
 为什么安全：shape 是共享的，多于一个对象持有它时从不原地改变（`add_property` 和 `js_shape_prepare_update` 先复制它），而 `js_function_shape` 同时持有这两个，所以它们保持原样，空 shape 也不会被释放、内存也不会被别的 shape 占用。有两者的 shape 就是 `add_property` 会给出的那个，原型、键、顺序、标志和属性数组的大小都相同，name 在函数改变之前创建，所以可能在那时运行的循环回收器看到的是原样。这些 shape 是为 context 持有的，就像 context 持有它的数组和 `arguments` 对象的 shape 一样：`JS_MarkContext` 标记它们，所以循环回收器会释放一个只靠它们才活着的 context，`JS_FreeContext` 会放掉它们。其他一切（不是普通可扩展对象、或者 shape 不同的对象）走旧路径。
 
-持有的 shape 给一个 VM 多加一两个 shape（商店的一个 VM 里是 88 到 176 字节）。不开 PGO，在 linux/amd64（AMD EPYC，单核）上，HTML 相同，tifa 示例商店的一次渲染，用时是只有[正则分支改动](regexp.md#alternatives-that-cannot-match-are-not-pushed)时的 0.982（10 轮的中位数，0.967 到 0.989），MUI 页面是 0.993 到 1.000，bench 页面是 0.984 和 0.995，每一侧各用一个构建。对比 `80261af`，其他地方的代码不同，商店是 0.972（0.951 到 1.003），MUI 页面是 0.990 到 1.004，bench 页面是 0.993 和 0.995。在 `de42e83` 上，3 轮给出商店 0.988，MUI 页面 0.983 到 0.997。
+持有的 shape 给一个 VM 多加一两个 shape（商店的一个 VM 里是 88 到 176 字节）。不开 PGO，在 linux/amd64（AMD EPYC，单核）上，HTML 相同，tifa 示例商店的一次渲染，用时是只有[正则分支改动](regexp.zh-CN.md#不会匹配的分支不入栈)时的 0.982（10 轮的中位数，0.967 到 0.989），MUI 页面是 0.993 到 1.000，bench 页面是 0.984 和 0.995，每一侧各用一个构建。对比 `80261af`，其他地方的代码不同，商店是 0.972（0.951 到 1.003），MUI 页面是 0.990 到 1.004，bench 页面是 0.993 和 0.995。在 `de42e83` 上，3 轮给出商店 0.988，MUI 页面 0.983 到 0.997。
 
 改动在 C 里（`engine/quickjs.c`）：`js_function_set_properties` 先调用 `js_function_shape`。那里 shape 是按 context 持有的，放在 `JSContext` 的字段 `func_shapes` 里，而不是按运行时、给创建最后一个函数的 context 持有，所以一个运行时的两个 context 不会互相抢槽位。`JS_MarkContext` 标记它们，`JS_FreeContext` 放掉它们。`engine/test/compare.sh` 会运行 `testdata/funcshape.js`，`engine/test/unit.c` 检查四种原型各自保留它们的两个 shape 并且新函数会重用它们，两个 context 各保留自己的，循环回收器会释放一个只靠它们才活着的 context，而在存活的 context 里则保留它们。
 
@@ -74,7 +74,7 @@ VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是�
 
 不开 PGO，在 linux/amd64（AMD EPYC 7B13，单核）上，对比 v0.27.0，HTML 相同，tifa 测试应用的四个 MUI 页面渲染用时是原来的 0.975（3 种代码布局跑 6 轮，0.966 到 0.986），商店的六个页面是 0.996（0.992 到 0.998）。在 callgrind 下，引擎在 MUI 页面上少执行 1.0% 的指令，在商店上少执行不到 0.1%。时间降得比指令数多：`JS_GetPropertyInternal` 和它的属性查找大多在等内存。
 
-测试：`fieldchain_test.go`，它的 `testdata/field_chain.js` 在字符串、rope、数字和数组上读取方法、不存在的键和后来加上的键，带上非严格和严格模式下的 getter，只读键，`String.prototype` 上方的 proxy 和被冻结的对象，被冻结、被密封、稀疏的和类型化的数组，`arguments`，String 对象，symbol，`with` 和 `eval`，并对照 Node，还检查这类 getter 或方法里的中断或内存耗尽不能被捕获。
+测试：`fieldchain_test.go`，它的 `testdata/field_chain.js` 在字符串、rope（几段字符串连成的树，读的时候才拼成一段）、数字和数组上读取方法、不存在的键和后来加上的键，带上非严格和严格模式下的 getter，只读键，`String.prototype` 上方的 proxy 和被冻结的对象，被冻结、被密封、稀疏的和类型化的数组，`arguments`，String 对象，symbol，`with` 和 `eval`，并对照 Node，还检查这类 getter 或方法里的中断或内存耗尽不能被捕获。
 
 ## 自有键从 shape 列出
 
@@ -82,9 +82,9 @@ VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是�
 
 列出普通对象自有键的开销更小。展开和 rest（`JS_CopyDataProperties`）以及 `Object.keys`、`values` 和 `entries`（`JS_GetOwnPropertyNames2`）以前要为读取值而把每个键再查找一遍。React 的 `jsx` 几乎在每个元素里都展开和复制 props。对不是 exotic 的对象，它们现在在 Go 里按引擎的顺序（数组下标按值，然后是字符串，然后是 symbol 和私有名字，每类按 shape 顺序）从 shape 列出键，展开、rest、`values` 和 `entries` 直接从对象读取普通数据属性的值。把键全是可枚举、可写、可配置的字符串然后是 symbol 的对象，展开到一个空的对象字面量里，并且原型相同时，新对象得到源对象的 shape，这正是一个一个定义键最终会到达的 shape，然后复制值。
 
-shape 的各个键的种类保存在运行时的键缓存里，256 项，每项是最多 24 个键的种类，每个 VM 约 8 KiB，这样下次列出同一 shape 的对象时，不用读任何 atom。它和被放弃的 [shape 步骤表](../performance.md#what-was-tried-and-not-done) 不同：那张表会让 shape 一直活着，每个 VM 多占 28 KB 到 142 KB，还会改变循环回收器的运行时机。键缓存不持有 shape、atom 或对象，每个键只有一个字节。它只为 shape 哈希表里的 shape 保存条目，shape 离开哈希表时丢掉它的条目（`js_shape_hash_unlink` 调用 `ownKeyCacheDrop`）。哈希表里的 shape 从不原地改变：加键之前（`add_shape_property`）、删键或改变其标志之前（`js_shape_prepare_update`）以及释放之前（`js_free_shape0`），它都会先离开哈希表。所以缓存里某个 shape 的种类就是它的键的种类，它的内存也不会被别的 shape 占去。标志在每次列出时从 shape 读取。
+shape 的各个键的种类保存在运行时的键缓存里，256 项，每项是最多 24 个键的种类，每个 VM 约 8 KiB，这样下次列出同一 shape 的对象时，不用读任何 atom。它和被放弃的 [shape 步骤表](../performance.zh-CN.md#试过但没做的) 不同：那张表会让 shape 一直活着，每个 VM 多占 28 KB 到 142 KB，还会改变循环回收器的运行时机。键缓存不持有 shape、atom 或对象，每个键只有一个字节。它只为 shape 哈希表里的 shape 保存条目，shape 离开哈希表时丢掉它的条目（`js_shape_hash_unlink` 调用 `ownKeyCacheDrop`）。哈希表里的 shape 从不原地改变：加键之前（`add_shape_property`）、删键或改变其标志之前（`js_shape_prepare_update`）以及释放之前（`js_free_shape0`），它都会先离开哈希表。所以缓存里某个 shape 的种类就是它的键的种类，它的内存也不会被别的 shape 占去。标志在每次列出时从 shape 读取。
 
-为什么安全：对不是 exotic 的对象，`JS_GetOwnPropertyNamesInternal` 只读 shape，不调用类的任何方法，只会在遇到尚未初始化的模块命名空间绑定时抛错，用 `JS_GPN_ENUM_ONLY` 或 `JS_GPN_SET_ENUM` 列出时才会这样。`ownKeys` 把这样的绑定，以及数组下标多于 16 个的对象，留给引擎处理。Exotic 对象（数组、`arguments`、`String` 对象、类型化数组、proxy、模块命名空间）走旧路径，所以 proxy 的 trap 照旧运行。只有列出的每个键都是普通数据属性时，才直接读取值：这时在列出和读取之间，没有任何会改变对象的东西在运行。有 getter、setter 或绑定的对象，或者有 `stack` 键的对象（它可能装着还没格式化的[错误 stack](errors-and-stacks.md#error-stacks-formatted-when-first-read) 的标记），对它的值走引擎自己的路径。`Object.assign` 是设置而不是定义，列出之后保持它自己的路径。上游和 Node 不同的地方保持不变：展开一个字符串原始值什么也不复制。
+为什么安全：对不是 exotic 的对象，`JS_GetOwnPropertyNamesInternal` 只读 shape，不调用类的任何方法，只会在遇到尚未初始化的模块命名空间绑定时抛错，用 `JS_GPN_ENUM_ONLY` 或 `JS_GPN_SET_ENUM` 列出时才会这样。`ownKeys` 把这样的绑定，以及数组下标多于 16 个的对象，留给引擎处理。Exotic 对象（数组、`arguments`、`String` 对象、类型化数组、proxy、模块命名空间）走旧路径，所以 proxy 的 trap 照旧运行。只有列出的每个键都是普通数据属性时，才直接读取值：这时在列出和读取之间，没有任何会改变对象的东西在运行。有 getter、setter 或绑定的对象，或者有 `stack` 键的对象（它可能装着还没格式化的[错误 stack](errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) 的标记），对它的值走引擎自己的路径。`Object.assign` 是设置而不是定义，列出之后保持它自己的路径。上游和 Node 不同的地方保持不变：展开一个字符串原始值什么也不复制。
 
 在 linux/amd64、不开 PGO（AMD EPYC 7B13，单核）上，对比 v0.28.2，HTML 相同，tifa 示例商店的六个 bench 页面渲染用时是原来的 0.990（3 种代码布局跑 6 轮，0.958 到 1.020），它的十个 store 页面是 0.994（0.952 到 1.036），tifa 测试应用的四个 MUI 页面是 0.987（0.957 到 1.047）。收益取决于代码的布局：一种布局下是 0.976 到 0.978，另外两种是 0.991 到 1.006。一次渲染里 99.9% 的列出走新路径，每次约四个键，约四分之一的展开取得了源对象的 shape。在 Apple M4 上，展开六个键到新字面量用 74 ns，以前是 250，`{...a, ...b}` 是 155，以前是 372，解构的 rest 是 239，以前是 316，六个键的 `Object.keys` 是 134，以前是 542，`Object.values` 是 128，以前是 567，`Object.entries` 是 529，以前是 1452，单独的 `for in` 是 261，以前是 291。键缓存给一个 VM 增加 8 KiB。
 
@@ -106,7 +106,7 @@ shape 的各个键的种类保存在运行时的键缓存里，256 项，每项�
 - 关掉回收器，这样没有回收来移动终点，同一个页面渲染结束时持有 394.3 MB，之后是 379.9 MB（少 3.7%，14.4 MB）。
 - tifa 示例商店的 20 个页面，峰值合计是 253.5 MB，之后是 240.9 MB（少 5.0%），结束时是 244.3 MB，关掉回收器之后是 240.0 MB（少 1.8%）。
 
-在 linux/amd64（AMD EPYC 7B13，单核，8 个代码位置）上的速度：没有变化。React 页面、bench、MUI 和商店页面用时是原来的 0.993 到 1.004，引擎在创建和释放对象时因为多了一次测试，多执行 0.01% 到 0.27% 的指令（表见 [performance.md](../performance.md#ordinary-objects-of-48-bytes)）。
+在 linux/amd64（AMD EPYC 7B13，单核，8 个代码位置）上的速度：没有变化。React 页面、bench、MUI 和商店页面用时是原来的 0.993 到 1.004，引擎在创建和释放对象时因为多了一次测试，多执行 0.01% 到 0.27% 的指令（表见 [performance.md](../performance.zh-CN.md#48-字节的普通对象)）。
 
 测试：`engine/test/unit-api.c` 运行 300 个有 70 个属性的普通对象，带空洞、被冻结、被密封、带访问器，作为原型，作为 `WeakMap` 和 `WeakSet` 的键，在 `WeakRef` 和 `FinalizationRegistry` 之下，以及处在环里，然后运行 `JS_ComputeMemoryUsage` 和那些 getter。在使用系统 malloc 的构建上（`build.sh asan`），每个块单独存在，带红区，所以越过 40 字节的读或写都会被报告：第一次尝试只用更小的块，就在 `JS_NewObjectFromShape` 里被抓到，然后是 `free_object`、`JS_ComputeMemoryUsage` 和 `JS_GetOpaque`。`engine/test/unit-white.c` 检查普通对象的块比一个 `JSObject` 小，数组的块则装得下整个 `JSObject`。`engine/test/api-test.c` 检查对普通对象调用 `JS_SetOpaque` 会在 host 听到之后以 `SIGABRT` 结束进程。
 
@@ -134,7 +134,7 @@ shape 的各个键的种类保存在运行时的键缓存里，256 项，每项�
 
 字节码版本从 5 变成 6：读取器在每个函数的闭包变量之后读取键，检查计数（最多 65535 串，每串 1 到 32 个键，一串里没有重复的键），并拒绝下标或计数与它读到的键不符的 `OP_object_lit`（`SyntaxError: invalid object literal`）。共享字节码时，每个 VM 读取自己的函数，持有自己的 shape，所以不需要按运行时或按 context 的表。
 
-在 linux/amd64（AMD EPYC 7B13，单核，它的同伴线程空闲）上，对比改动之前的引擎，在 8 个代码位置上跑 4 轮，HTML 相同：tifa 示例商店的六个工作台页面渲染用时是原来的 0.956（各位置 0.935 到 0.963），tifa 测试应用的三个 MUI 页面是 0.969（0.948 到 0.976），它的 bench 应用的 table 页面是 0.942（0.914 到 0.950），它的 spiral 页面（0.989，指令少 3.5%）和 `r_react_ssr`（0.991，指令少 3.1%）按规则看没有变化。商店的一个 VM 在第一次渲染之后多占约 0.17 MiB，用于它的字面量的键和它们的 shape，而一个很长的 markdown 页面的峰值少 1.6%，因为它的对象没有多余的槽。其余见 [performance.md](../performance.md#object-literals-made-at-their-final-shape)。
+在 linux/amd64（AMD EPYC 7B13，单核，它的同伴线程空闲）上，对比改动之前的引擎，在 8 个代码位置上跑 4 轮，HTML 相同：tifa 示例商店的六个工作台页面渲染用时是原来的 0.956（各位置 0.935 到 0.963），tifa 测试应用的三个 MUI 页面是 0.969（0.948 到 0.976），它的 bench 应用的 table 页面是 0.942（0.914 到 0.950），它的 spiral 页面（0.989，指令少 3.5%）和 `r_react_ssr`（0.991，指令少 3.1%）按规则看没有变化。商店的一个 VM 在第一次渲染之后多占约 0.17 MiB，用于它的字面量的键和它们的 shape，而一个很长的 markdown 页面的峰值少 1.6%，因为它的对象没有多余的槽。其余见 [performance.md](../performance.zh-CN.md#一次建成最终-shape-的对象字面量)。
 
 改动在 C 里（`engine/quickjs.c`、`engine/quickjs-opcode.h`）：`js_parse_object_literal` 收集键，`emit_object_lit` 发出这个 opcode，`JSFunctionBytecode` 有 `object_lits` 和 `object_lit_count`，`js_new_object_lit` 和 `js_object_lit_shape` 创建对象，`mark_children` 标记这些 shape，`free_function_bytecode` 释放它们，`JS_WriteFunctionTag` 和 `bc_read_object_lits` 写入和读取键，`add_property` 在链入复制出来的 shape 之前增大 shape 哈希表（`js_shape_keepable` 以前只对它自己的副本这样做）。`engine/test/compare.sh` 会运行 `engine/test/compare/object_literal.js`，它的文件就是 Node 24 打印的内容：键和值的计算顺序、重复的键、下标键、各种形式的 `__proto__`、计算出来的键、展开、方法、getter 和 setter、作为键的 `get`、`set` 和 `async`、函数名、抛错的值、用到周围变量或同一字面量之前创建的对象的值、32、33 和 45 个键、一个字面量数超过 16 位能表示的函数、解构、`Object.prototype` 上的 setter，以及创建后丢弃的函数的字面量让堆里仍在使用的块保持不变。`engine/test/unit.c` 检查字面量得到刚好这么大的属性数组，`engine/test/unit-white.c` 检查它的字节码能读回来并运行，但改动了 `OP_object_lit` 的操作数后就不行。`internal/cengine` 的 `TestShapeCache` 检查，几轮字面量的对象各自得到一个独有的键，在第四轮之后 VM 的内存保持不变。
 
@@ -155,7 +155,7 @@ shape 的各个键的种类保存在运行时的键缓存里，256 项，每项�
 
 对象在键多于块里的空间时留在块里的空间，在对象消失之前都浪费了。所以当一个把属性放在自己块里的对象得到一个键时，它的 shape 会记下这一点（`inline_grew`，在 `JSShape` 的填充位里），然后 `OP_object_lit` 对这个 shape 的下一批对象，像以前一样把数组分开放。这样事后才填充的字面量（`const o = { a, b }; o.c = 1`）对每个 shape 只浪费一次空间。没有这个标志，商店的 store 页面渲染之后，VM 比改动之前多占 0.7%。
 
-在 linux/amd64 上，对比 main，没有哪组页面按规则算更快或更慢（商店 0.991，MUI 页面 0.998，bench 应用 0.985，一次 React 渲染 0.995），一次渲染的指令少 0.14% 到 0.82%，渲染并回收一次之后 VM 少占 1.0% 到 2.4%（表见 [performance.md](../performance.md#object-literals-with-their-properties-in-the-block-of-the-object)）。
+在 linux/amd64 上，对比 main，没有哪组页面按规则算更快或更慢（商店 0.991，MUI 页面 0.998，bench 应用 0.985，一次 React 渲染 0.995），一次渲染的指令少 0.14% 到 0.82%，渲染并回收一次之后 VM 少占 1.0% 到 2.4%（表见 [performance.md](../performance.zh-CN.md#属性放在对象自己块里的对象字面量)）。
 
 改动在 C 里（`engine/quickjs.c`）：`js_new_object_lit` 和 `js_new_object_inline` 创建对象，`js_props_inline`、`js_resize_prop`、`free_object`、`compact_properties`、`add_property`、`js_copy_shape`、`resize_properties` 和 `JS_ComputeMemoryUsage` 认得这两种情形，`JSShape` 有 `inline_grew`。
 
@@ -193,9 +193,9 @@ tifa 页面的一个 VM 在一次渲染之后少持有 12% 到 15% 的 shape（�
 
 React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来测试它们 `for in` 循环里的键。这是两次内置函数的调用，先 `call` 再 `hasOwnProperty`，每次都经过 `JS_CallInternal` 和 `js_call_c_function`。现在当被调用的函数是 `Function.prototype.call`，它的 `this` 是 `hasOwnProperty`（内置的 C 函数，任何 realm 的都行），对象不是 exotic，键是一个本身就是 atom 的字符串或一个是数组下标的整数时，`OP_call_method` 自己回答它。它像 `hasOwnProperty` 那样，用 `find_own_property` 在 shape 里查找这个键。
 
-为什么安全：对这些参数，两次调用都不会运行脚本或抛错。键不需要可能调用方法的转换，对象就是它自己的 `ToObject`，普通对象的自有属性在它的 shape 里就能找到。被脚本替换的 `call` 或 `hasOwnProperty`，或者被绑定的，是另一个函数，仍然走这些调用。这两次调用在进入时做的事先检查：调用深度（两层）、影子栈（留两个余量，因为每次调用的栈帧先于它的检查）、待处理的中断和待处理的不可捕获异常。任何一次调用本来会抛错的地方，仍然发出这些调用并像以前一样抛错。模块命名空间的绑定在设置之前可能抛错，也走这些调用。没有发出调用时，那里不为下一次轮询计数：循环仍然在它们的跳转处计数。
+为什么安全：对这些参数，两次调用都不会运行脚本或抛错。键不需要可能调用方法的转换，对象就是它自己的 `ToObject`，普通对象的自有属性在它的 shape 里就能找到。被脚本替换的 `call` 或 `hasOwnProperty`，或者被绑定的，是另一个函数，仍然走这些调用。这两次调用在进入时做的事先检查：调用深度（两层）、影子栈（留两个余量，因为每次调用的栈帧先于它的检查）、待处理的中断和待处理的无法捕获异常。任何一次调用本来会抛错的地方，仍然发出这些调用并像以前一样抛错。模块命名空间的绑定在设置之前可能抛错，也走这些调用。没有发出调用时，那里不为下一次轮询计数：循环仍然在它们的跳转处计数。
 
-在商店的工作台页面里，每次渲染有 7,782 次调用走新路径，一次渲染少执行约 2.5 M 条指令，约 1.5%。连同 [for in 循环](#for-in-循环持有它的对象的-shape)，商店少执行 2.5% 的指令，tifa 测试应用的 MUI 页面少 3.4%，`r_react_ssr` 少 1.8%，`r_bench_spiral` 少 2.8%。时间见 [performance.md](../performance.md#calls-for-in-and-hasownpropertycall)。
+在商店的工作台页面里，每次渲染有 7,782 次调用走新路径，一次渲染少执行约 2.5 M 条指令，约 1.5%。连同 [for in 循环](#for-in-循环持有它的对象的-shape)，商店少执行 2.5% 的指令，tifa 测试应用的 MUI 页面少 3.4%，`r_react_ssr` 少 1.8%，`r_bench_spiral` 少 2.8%。时间见 [performance.md](../performance.zh-CN.md#调用for-in-和-hasownpropertycall)。
 
 改动在 C 里（`engine/quickjs.c`）：当函数是 `Function.prototype.call` 时，`OP_call_method` 和 `OP_tail_call_method` 调用 `js_has_own_call`。`engine/test/compare/for_in_has_own.js` 用各种类型的键（字符串、作为数和字符串的数组下标、`"01"`、空字符串、symbol、`null`、`undefined`、布尔值、BigInt、带 `toString` 的对象、抛错的对象）和各种 `this` 值（原始值、函数、数组、getter、被删除的键、proxy、全局对象），通过 `call`、`apply`、`Reflect.apply`、`bind` 以及作为方法调用 `hasOwnProperty`，并替换和还原 `call` 与 `hasOwnProperty`。`TestHasOwnCallDepth`（根包）检查通过它的递归，和通过这些调用的递归在同样的深度结束。
 
@@ -240,7 +240,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 在回收之外，一个对象的计数降到零时，`__JS_FreeValueRT` 过去是把它从回收器的列表上取下来，放到 `gc_zero_ref_count_list` 上，再调用 `free_zero_refcount`，后者又把它从那个列表上取下来并释放它，然后释放和它一起死去的对象，这些对象加到列表的前端。在商店的工作台页面里，被释放的对象有 70% 是单独死去的。这样的对象现在立刻释放（`free_zero_refcount_first`）：它仍然进入 `gc_zero_ref_count_list` 的前端，但在那里被释放，不经过 `free_zero_refcount` 的循环，只有当有东西和它一起死去时，这个循环才在它之后运行。函数的字节码、async 函数或计数降到零的模块走旧路径。
 
-为什么安全：`free_zero_refcount` 本来会先取这个对象，因为它在列表的前端，而在它被释放时死去的对象按同样的顺序加到列表的前端，所以每个对象都在和以前相同的时间点被释放。对象被释放时和以前一样在 `gc_zero_ref_count_list` 上，而不在回收器的任何一个列表上，所以在它被释放期间遍历那些列表（比如 host 的 finalizer 调用的 `JS_ComputeMemoryUsage`），不会找到一个 shape 已经没有的它。对象被释放期间阶段是 `JS_GC_PHASE_DECREF`，和以前一样，所以引擎在释放期间发起的任何调用，都不会开始一次回收，也不会立刻释放另一个对象，释放始终只有一层深（`engine/test/cycles.sh` 检查 `free_zero_refcount_first` 不通过引擎的调用到达任何回收）。host 的回调，比如类的 finalizer，不在 `cycles.sh` 检查的图里：阶段不是 `JS_GC_PHASE_NONE` 时，它们请求的回收什么也不做（见 [引擎在释放对象时被请求的回收](c-engine.md#a-collection-asked-for-while-objects-are-freed)），`unit-white` 的 `test_gc_in_free` 对这条路径也做了检查，对年轻对象和旧对象都检查。它的标记先设好，和以前一样，所以 finalizer 运行期间 `js_weakref_free` 不会释放它的块，因为弱引用而保留的对象，它的标记也像以前一样回到 0。在回收期间什么都不变：阶段不是 `JS_GC_PHASE_NONE` 时死去的对象加入列表，在环被移除期间死去的则由 `young_defer` 放在一边。
+为什么安全：`free_zero_refcount` 本来会先取这个对象，因为它在列表的前端，而在它被释放时死去的对象按同样的顺序加到列表的前端，所以每个对象都在和以前相同的时间点被释放。对象被释放时和以前一样在 `gc_zero_ref_count_list` 上，而不在回收器的任何一个列表上，所以在它被释放期间遍历那些列表（比如 host 的 finalizer 调用的 `JS_ComputeMemoryUsage`），不会找到一个 shape 已经没有的它。对象被释放期间阶段是 `JS_GC_PHASE_DECREF`，和以前一样，所以引擎在释放期间发起的任何调用，都不会开始一次回收，也不会立刻释放另一个对象，释放始终只有一层深（`engine/test/cycles.sh` 检查 `free_zero_refcount_first` 不通过引擎的调用到达任何回收）。host 的回调，比如类的 finalizer，不在 `cycles.sh` 检查的图里：阶段不是 `JS_GC_PHASE_NONE` 时，它们请求的回收什么也不做（见 [引擎在释放对象时被请求的回收](c-engine.zh-CN.md#释放对象时被要求回收)），`unit-white` 的 `test_gc_in_free` 对这条路径也做了检查，对年轻对象和旧对象都检查。它的标记先设好，和以前一样，所以 finalizer 运行期间 `js_weakref_free` 不会释放它的块，因为弱引用而保留的对象，它的标记也像以前一样回到 0。在回收期间什么都不变：阶段不是 `JS_GC_PHASE_NONE` 时死去的对象加入列表，在环被移除期间死去的则由 `young_defer` 放在一边。
 
 新路径自己调用 `free_object`，而不是 `free_gc_object`，并让 `free_zero_refcount` 保持原样。如果让 `__JS_FreeValueRT` 调用 `free_gc_object`，或者改动 `free_zero_refcount`，这些函数就会有别的调用者或另一个大小，编译器随后就会在某一个架构上把 `free_zero_refcount` 或 `async_func_free` 内联进 `JS_CallInternal`，这会改变它的栈帧（amd64 上 480 字节，arm64 上 520 字节）。现在这样，`JS_CallInternal` 是同样的代码、同样的栈帧，`__JS_FreeValueRT` 仍然是解释器调用的独立函数。
 

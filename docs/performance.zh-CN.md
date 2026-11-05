@@ -19,7 +19,7 @@ read_when:
 
 [English](performance.md) · 简体中文
 
-liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.zh-CN.md)。
+liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.md)。
 
 光是到 v0.26.15 为止的引擎改动，就让渲染比 liustack/quickjs 起步时的引擎（modernc.org/quickjs v0.25.0 加 libquickjs v0.13.1）快了 1.63 到 1.66 倍，再加上 tifa 的 Vite 插件重写和 PGO，是 2.07 倍（2026-10-20 测量）。C 引擎之前的引擎（到 v0.28）的数字在 [history.md](history.zh-CN.md)。
 
@@ -32,14 +32,14 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 
 ## 每个版本的收益
 
-从 v0.29.0 起的版本运行 C 引擎。指令数用 callgrind 在 tifa 示例应用的页面上数，每一行的 HTML 都和以前相同。时间是相对于改动之前构建的比值，在所指的页面上，按 [measuring.md](measuring.zh-CN.md) 的规则测。落在代码位置波动范围内的比值，算没有变化。到 v0.28 为止的各行（ccgo 翻译出来的引擎）在 [history.md](history.md#what-each-release-gained-up-to-v028)。
+从 v0.29.0 起的版本运行 C 引擎。指令数用 callgrind 在 tifa 示例应用的页面上数，每一行的 HTML 都和以前相同。时间是相对于改动之前构建的比值，在所指的页面上，按 [measuring.md](measuring.zh-CN.md) 的规则测。落在代码位置波动范围内的比值，算没有变化。到 v0.28 为止的各行（ccgo 翻译出来的引擎）在 [history.md](history.zh-CN.md#每个版本的收益到-v028-为止)。
 
 | 版本 | 改动 | 对一次渲染的影响 |
 | --- | --- | --- |
-| v0.29.0 | C 引擎取代 ccgo 翻译出来的引擎（[数字](history.md#tifas-pages-on-the-c-engine-against-the-old-engine)） | tifa 的商店、MUI 应用和 bench 应用的 11 个页面，渲染时间是带 PGO 构建的旧引擎的 0.834 到 0.860，在每个代码位置上都更快。Go GC 的暂停时间一样短 |
+| v0.29.0 | C 引擎取代 ccgo 翻译出来的引擎（[数字](history.zh-CN.md#tifa-的页面在-c-引擎上对比旧引擎)） | tifa 的商店、MUI 应用和 bench 应用的 11 个页面，渲染时间是带 PGO 构建的旧引擎的 0.834 到 0.860，在每个代码位置上都更快。Go GC 的暂停时间一样短 |
 | v0.29.1 | [普通对象占 48 字节](#48-字节的普通对象) | 是内存，不是速度：一个长 Markdown 页的最高 `MemorySize` 低 3.8%，商店在一次渲染结束时少占 1.8% |
-| v0.29.1 | [对象字面量一次建成最终形状](#一次建成最终形状的对象字面量) | 商店的工作台页是原来时间的 0.956，MUI 页 0.969，bench 的 table 页 0.942。单看 React 是 0.991 |
-| v0.29.1 | [调用一次设置四个局部变量，for in 持有形状，hasOwnProperty.call 在解释器里完成](#调用-for-in-和-hasownpropertycall) | bench 的 table 页和 spiral 页是 0.958 和 0.967。加上 for in 和 hasOwnProperty.call 的改动，商店 0.984，MUI 页 0.981，React 0.988（指令少 2.5% 到 3.1%） |
+| v0.29.1 | [对象字面量一次建成最终 shape](#一次建成最终-shape-的对象字面量) | 商店的工作台页是原来时间的 0.956，MUI 页 0.969，bench 的 table 页 0.942。单看 React 是 0.991 |
+| v0.29.1 | [调用一次设置四个局部变量，for in 持有 shape，hasOwnProperty.call 在解释器里完成](#调用for-in-和-hasownpropertycall) | bench 的 table 页和 spiral 页是 0.958 和 0.967。加上 for in 和 hasOwnProperty.call 的改动，商店 0.984，MUI 页 0.981，React 0.988（指令少 2.5% 到 3.1%） |
 | v0.29.1 | [共用的字节码只扫描一次](#新建-vm-和加载-bundle-的开销) | `EvalSharedBytecode` 在第一次加载之后，加载一个 bundle 只要原来的 0.79 到 0.86 的时间 |
 | v0.29.2 | [RegisterEscapeText](#c-里的-react-dom-文本转义) | 指令少 0.7% 到 4.5%。商店是原来时间的 0.974，bench 页 0.938 |
 | v0.29.3 | [RegisterCopyProps](#c-里复制-react-元素的-props) | 指令少 2.1% 到 4.1%。商店 0.988 和 0.989，MUI 页 0.980 |
@@ -47,7 +47,7 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 | v0.29.4 | [对象字面量把属性放在对象自己的块里](#属性放在对象自己块里的对象字面量) | 一次渲染之后内存少 1.0% 到 2.4%，指令少 0.1% 到 0.8%。没有页面变快或变慢 |
 | v0.29.5 | [一次调用的结尾，以及一轮设置八个局部变量](#调用的结尾和开头) | 调用结尾指令少 0.7% 到 2.1%，局部变量指令少 0.2% 到 0.5% |
 | v0.29.5 | [一次做好几条指令的操作码](#一次做好几条指令的操作码) | 指令少 1.59% 到 3.41%。bench 页时间少 3.4% |
-| v0.29.5 | [共用形状的对象字面量](#共用形状的对象字面量) | 一个 VM 里的形状少 12% 到 15%，内存少 0.7% 到 1.7% |
+| v0.29.5 | [共用 shape 的对象字面量](#共用-shape-的对象字面量) | 一个 VM 里的 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 少 12% 到 15%，内存少 0.7% 到 1.7% |
 | v0.29.5 | [上游 QuickJS 的 23 项修复](#上游提交与-c-引擎比-c-慢的脚本) | 是修复。37 个脚本的几何平均是这批之前时间的 0.917，几乎全来自 `q_array_slice`（0.085）。`r_react_ssr` 0.977，在它的噪声之内 |
 | v0.29.6 | [生成函数之间调用的结果放在寄存器里](#生成的代码相对原生-c-的开销) | 指令少 0.37% 到 0.65%。商店是原来时间的 0.978，MUI 0.984 |
 | v0.29.6 | [去掉不可能失败的暂时性死区检查](#暂时性死区的检查) | 指令少 0.06% 到 0.77%。商店 0.995，MUI 0.997 |
@@ -57,10 +57,10 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 | v0.29.8 | 从上游取来的修复（迭代器、稀疏数组截断） | 不是速度改动 |
 | v0.29.9 | 移植到 linux/arm64、darwin/amd64 和 windows/amd64 | 不是速度改动 |
 | v0.29.10 | [优化器在链接后的模块上再跑一遍（arm64）](#在-arm64-上) | linux/arm64 上指令少 0.56% 到 0.99%。M4 上没有变慢 |
-| v0.29.10 | [内建类的形状、按父形状查找的形状、独自死亡的对象](#内建类形状-按父形状找形状-独自死亡的对象) | 商店和 MUI 页指令少 1.84% 到 2.13%，bench 页少 0.49%。bench 页时间少 0.73% |
+| v0.29.10 | [内建类的 shape、按父 shape 查找的 shape、独自死亡的对象](#内建类的-shape按父-shape-找到的-shape独自死亡的对象) | 商店和 MUI 页指令少 1.84% 到 2.13%，bench 页少 0.49%。bench 页时间少 0.73% |
 | v0.29.10 | [RegisterStartTag 和 RegisterEndTag](#c-里的-react-dom-开始和结束标签) | 商店的工作台页时间少 7.3%，店面页少 7.0%，MUI 页少 3.8%，bench 页少 33%。一个 VM 多占约 26 KB |
 | v0.29.11 | [每个会调用的函数都有栈检查](#每个会调用的函数都有栈检查) | 是代价，换来一次安全的出错：时间最多多 0.6%（指令多 0.27% 到 0.36%） |
-| v0.30.0, v0.30.1 | Interrupt 能到达标签函数、长 rope、`repeat` 和正则编译 | 是修复。不声称速度变化 |
+| v0.30.0, v0.30.1 | Interrupt 能到达标签函数、长 rope（几段字符串连成的树，读的时候才拼成一段）、`repeat` 和正则编译 | 是修复。不声称速度变化 |
 
 ## 在 tifa 里测量
 
@@ -84,7 +84,7 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 - 记下每一轮里机器的负载，其他工作占用超过约 10% 的 CPU 时要重跑。
 - 在 tifa 里提交之前，去掉那个 `replace`。
 
-发布之后，升级 tifa（见 [releasing.md](releasing.md#after-the-release)）。
+发布之后，升级 tifa（见 [releasing.md](releasing.zh-CN.md#发布后)）。
 
 
 ### 代码位置
@@ -97,17 +97,17 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 做出这些位置：
 
-- [testing.md](testing.md#time-one-build-against-another) 里的工具能做出 C 引擎的位置、轮流运行构建并判断结果（`bench build`、`bench run`、`bench judge`），还能数指令（`bench cg`）。手工做：C 引擎（`internal/cengine`）：复制生成的 `*_amd64.s` 文件，在副本上运行 `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_CallInternal_block:16`（不移动就用 `shift:0` 和 `front:...:0`，用你的二进制里第一个引擎函数的名字，`go tool nm -n` 能看到），然后用这份副本构建。`shift` 的字节在一条 `RET` 之后，从不执行。`front` 的字节在解释器函数体开头的 `PCALIGN` 之后，每次调用执行一次。
+- [testing.md](testing.zh-CN.md#给两个构建计时对比) 里的工具能做出 C 引擎的位置、轮流运行构建并判断结果（`bench build`、`bench run`、`bench judge`），还能数指令（`bench cg`）。手工做：C 引擎（`internal/cengine`）：复制生成的 `*_amd64.s` 文件，在副本上运行 `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_CallInternal_block:16`（不移动就用 `shift:0` 和 `front:...:0`，用你的二进制里第一个引擎函数的名字，`go tool nm -n` 能看到），然后用这份副本构建。`shift` 的字节在一条 `RET` 之后，从不执行。`front` 的字节在解释器函数体开头的 `PCALIGN` 之后，每次调用执行一次。
 
 不是 16 的倍数的 `front`（8、24、40、56）会把函数体和它代码后面的常量池一起移动，所以常量池离开了它的 16 字节对齐。现在构建出来的解释器只用标量指令读它的常量池（`movsd`、`ucomisd`），这不要求对齐，所以今天这没有坏处。如果某个构建用需要 16 字节对齐的指令读常量池（带 profile 的构建在 19 个地方这样做过），就会在这些位置上出错。要用生成器来做这两个位置：`-align64 JS_CallInternal:48` 和 `-align64 JS_CallInternal:0` 能把函数体放在那里，并让常量池落在 16 字节对齐上。
 
 ## C 引擎
 
-`internal/cengine` 的 C 引擎自切换以来是唯一的引擎。它的数字来自上面那台 Google Cloud VM 上的 `jsrun` 二进制，一个核固定、超线程同伴核空闲，在[代码位置](#代码位置)的 8 个位置上，以及来自 callgrind。C 引擎在 v0.29.0 取代 ccgo 引擎时，tifa 的每个页面渲染时间是原来的 0.834 到 0.860，HTML 相同，Go GC 的暂停也没有比以前更长（[history.md](history.md#acceptance-before-the-switch)）。
+`internal/cengine` 的 C 引擎自切换以来是唯一的引擎。它的数字来自上面那台 Google Cloud VM 上的 `jsrun` 二进制，一个核固定、超线程同伴核空闲，在[代码位置](#代码位置)的 8 个位置上，以及来自 callgrind。C 引擎在 v0.29.0 取代 ccgo 引擎时，tifa 的每个页面渲染时间是原来的 0.834 到 0.860，HTML 相同，Go GC 的暂停也没有比以前更长（[history.md](history.zh-CN.md#切换前的验收)）。
 
 ### C 引擎的热循环在固定位置
 
-生成器把 C 引擎解释器的函数体放在一条 64 字节行内的第 40 字节（在 JSValue 改成两次 8 字节移动复制之前是 0，见[下文](#c-引擎用两次-8-字节的移动复制-jsvalue)），把它的正则匹配器的函数体放在 16（`-align64`，见 [c-engine.md](changes/c-engine.md#where-the-interpreter-and-the-regexp-matcher-sit)）。以前每个函数体都跟在一条 `PCALIGN $16` 之后，在它前面链接的任何代码一变，它在行内的位置就跟着动。
+生成器把 C 引擎解释器的函数体放在一条 64 字节行内的第 40 字节（在 JSValue 改成两次 8 字节移动复制之前是 0，见[下文](#c-引擎用两次-8-字节的移动复制-jsvalue)），把它的正则匹配器的函数体放在 16（`-align64`，见 [c-engine.md](changes/c-engine.zh-CN.md#解释器和正则匹配器的位置)）。以前每个函数体都跟在一条 `PCALIGN $16` 之后，在它前面链接的任何代码一变，它在行内的位置就跟着动。
 
 函数体固定之后，一个位置的整个程序移动不再改变解释器函数体在行内的位置：它移动的是周围的代码和数据，而 front 的 NOP 仍然移动函数体。所以这 8 个位置现在让函数体偏离它的位置 0、8、16 和 24 字节，每种各配两种其余部分的位置。继续测全部 8 个，或者快速检查用的 4 个：光是其余部分的移动，仍会让 `q_array_read` 变化多达 8%，`q_int_arith` 多达 6%，`q_prop_read` 和 `c_string_concat` 多达 5%。即使两个构建里的解释器在同一个地址，`q_regexp_ascii` 在一个里用了 389 ms，在另一个里用了 399 ms。
 
@@ -131,7 +131,7 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 ### C 引擎用两次 8 字节的移动复制 JSValue
 
-`quickjs.c` 构建时关掉了 SLP 向量化器并带 `+slow-unaligned-mem-16`（见 [c-engine.md](changes/c-engine.md#how-a-jsvalue-is-copied)），所以一个 JSValue 用两次 8 字节的 load 和两次 8 字节的 store 复制，代替一次 16 字节的 SSE 移动。解释器把一个 JSValue 写成两次 8 字节的 store，在 Zen 3（EPYC 7B13）上，覆盖它们的一次 16 字节 load 不能被转发。它要等两次 store 都到达缓存。用内存轨迹数，在 `r_react_ssr` 的短运行里，这样的 load 从 433,938 降到 4,541，被分段读回的 16 字节 store 从 813,223 降到 14,349。
+`quickjs.c` 构建时关掉了 SLP 向量化器并带 `+slow-unaligned-mem-16`（见 [c-engine.md](changes/c-engine.zh-CN.md#jsvalue-如何复制)），所以一个 JSValue 用两次 8 字节的 load 和两次 8 字节的 store 复制，代替一次 16 字节的 SSE 移动。解释器把一个 JSValue 写成两次 8 字节的 store，在 Zen 3（EPYC 7B13）上，覆盖它们的一次 16 字节 load 不能被转发。它要等两次 store 都到达缓存。用内存轨迹数，在 `r_react_ssr` 的短运行里，这样的 load 从 433,938 降到 4,541，被分段读回的 16 字节 store 从 813,223 降到 14,349。
 
 按上面的规则测量，对比 main（5db67b0f）。解释器函数体现在固定在它所在行的第 40 字节，main 的在 0，所以每边在自己的位置上，剩下的位置是 0 和 32 字节的整个程序移动。时间是这 2 个位置上配对比值的中位数，4 轮，全部 37 个脚本：
 
@@ -170,7 +170,7 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 ### 靠追加建出来的字符串
 
-追加到一个变量上的字符串，[带着余量复制](changes/c-engine.md#strings-built-by-appending)，不是每次追加都复制。对比它之前的引擎，在 8 个位置、全部 37 个脚本上跑 3 轮。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围：
+追加到一个变量上的字符串，[带着余量复制](changes/c-engine.zh-CN.md#用追加方式构建的字符串)，不是每次追加都复制。对比它之前的引擎，在 8 个位置、全部 37 个脚本上跑 3 轮。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围：
 
 | 脚本 | 指令数 | 时间 | 范围 |
 | --- | ---: | ---: | ---: |
@@ -188,7 +188,7 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 ### 48 字节的普通对象
 
-一个普通对象占一个[48 字节的块，不是 72 字节](changes/objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72)。它没有让任何页面变快或变慢：在下面这些页面上，引擎执行的指令从少 0.07% 到多 0.27%，没有时间变化超过规则。对比 main（01c3da62），8 个位置、5 轮（商店 3 轮），EPYC 7B13 的一个核，它的同伴核空闲。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围，每次渲染的指令数来自 callgrind 在位置 0.0 的结果（12 次渲染的运行减去 2 次渲染的运行）。
+一个普通对象占一个[48 字节的块，不是 72 字节](changes/objects-and-shapes.zh-CN.md#普通对象占-48-字节不是-72)。它没有让任何页面变快或变慢：在下面这些页面上，引擎执行的指令从少 0.07% 到多 0.27%，没有时间变化超过规则。对比 main（01c3da62），8 个位置、5 轮（商店 3 轮），EPYC 7B13 的一个核，它的同伴核空闲。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围，每次渲染的指令数来自 callgrind 在位置 0.0 的结果（12 次渲染的运行减去 2 次渲染的运行）。
 
 | 脚本或页面 | 时间 | 范围 | 指令数 |
 | --- | ---: | ---: | ---: |
@@ -209,11 +209,11 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 | --- | ---: | ---: | ---: |
 | 最高 `MemorySize`，11 个 300 到 500 KB 的 Markdown 页，比值的平均 | | | -3.8%（-11.8% 到 +2.7%） |
 | 最高 `MemorySize`，400 KB 的那个页 | 180.8 MB | 181.1 MB | +0.2% |
-| 那次渲染结束时，收集器关闭 | 394.3 MB | 379.9 MB | -3.7% |
+| 那次渲染结束时，回收器关闭 | 394.3 MB | 379.9 MB | -3.7% |
 | 最高 `MemorySize`，tifa 商店的 20 个页，合计 | 253.5 MB | 240.9 MB | -5.0% |
-| 20 个页渲染结束时，收集器关闭，合计 | 244.3 MB | 240.0 MB | -1.8% |
+| 20 个页渲染结束时，回收器关闭，合计 | 244.3 MB | 240.0 MB | -1.8% |
 
-最高值跟着收集器的阈值走（上一次收集后计数的 1.5 倍），所以一个页可能刚好在一次收集之前或之后达到峰值：一串大小的平均值，或者关掉收集器的一次渲染，才显示出这些对象省了什么。开着收集器时一次渲染结束时的计数，也跟着同一个阈值动（400 KB 的那个页结束在 174.8 MB，再一次是 177.2 MB，收集器在它周期里的另一个点）。
+最高值跟着回收器的阈值走（上一次收集后计数的 1.5 倍），所以一个页可能刚好在一次收集之前或之后达到峰值：一串大小的平均值，或者关掉回收器的一次渲染，才显示出这些对象省了什么。开着回收器时一次渲染结束时的计数，也跟着同一个阈值动（400 KB 的那个页结束在 174.8 MB，再一次是 177.2 MB，回收器在它周期里的另一个点）。
 
 ### 新建 VM 和加载 bundle 的开销
 
@@ -225,18 +225,18 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 | --- | ---: |
 | `JS_NewContext`（每个内建对象和函数） | 671 K |
 | 其中 `JS_SetPropertyFunctionList`，定义内建对象的函数和属性 | 486 K |
-| `JS_NewAtomLen`，由 C 字符串建 atom（每个 VM 调用 357 次） | 274 K |
+| `JS_NewAtomLen`，由 C 字符串建 atom（引擎给属性名和常用字符串的编号，每个 VM 调用 357 次） | 274 K |
 | `JS_NewRuntime`（atom 表、类） | 110 K |
 | `snprintf`，用于 getter 和 setter 的名字（43 次调用） | 24 K |
 | `JS_SetShapeCache` | 25 K |
 
-内建对象有 164 个对象和 515 个 atom，174 KB，占商店一个 VM 的 2%。加载 bundle 是其余部分。新建一个 VM 再对 React 的 bundle 做 `EvalSharedBytecode`（含关闭共 11.05 M 条指令），读字节码占 4.7 M，其中为轮询做的扫描占 2.5 M（见[共用字节码](changes/memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only)），运行顶层占 3.5 M，关闭占 2.0 M。
+内建对象有 164 个对象和 515 个 atom，174 KB，占商店一个 VM 的 2%。加载 bundle 是其余部分。新建一个 VM 再对 React 的 bundle 做 `EvalSharedBytecode`（含关闭共 11.05 M 条指令），读字节码占 4.7 M，其中为轮询做的扫描占 2.5 M（见[共用字节码](changes/memory-and-allocation.zh-CN.md#共享字节码只在第一次加载时扫描轮询点)），运行顶层占 3.5 M，关闭占 2.0 M。
 
-tifa 商店的一个 VM 加载后占 8.47 MB（`TestShopVMMemory`）：1.48 MB 是函数（7,149 个），其中 0.72 MB 是它们的字节码，0.82 MB 是 atom，0.80 MB 是对象，0.73 MB 是属性，0.65 MB 是形状，0.31 MB 是字符串，其余是 2,600 个块的 8 字节头和取整。tifa 的池里一个 VM 的 RSS 是加载后 8.6 MiB，渲染后 12.8，池把空闲内存还回去之后 9.6，接近引擎数出的数。那 174 KB 的内建对象，是不管加载什么、每个 VM 都有的唯一部分。
+tifa 商店的一个 VM 加载后占 8.47 MB（`TestShopVMMemory`）：1.48 MB 是函数（7,149 个），其中 0.72 MB 是它们的字节码，0.82 MB 是 atom，0.80 MB 是对象，0.73 MB 是属性，0.65 MB 是 shape，0.31 MB 是字符串，其余是 2,600 个块的 8 字节头和取整。tifa 的池里一个 VM 的 RSS 是加载后 8.6 MiB，渲染后 12.8，池把空闲内存还回去之后 9.6，接近引擎数出的数。那 174 KB 的内建对象，是不管加载什么、每个 VM 都有的唯一部分。
 
-### 一次建成最终形状的对象字面量
+### 一次建成最终 shape 的对象字面量
 
-一个由普通键组成的对象字面量[一次拿到它所有的键](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)。对比 main（dfd2caee，已含 48 字节的普通对象），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，每次渲染的指令数来自 callgrind 在位置 0.0 的结果。
+一个由普通键组成的对象字面量[一次拿到它所有的键](changes/objects-and-shapes.zh-CN.md#对象字面量直接按最终的-shape-创建)。对比 main（dfd2caee，已含 48 字节的普通对象），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，每次渲染的指令数来自 callgrind 在位置 0.0 的结果。
 
 | 页面 | 时间 | 各位置 | 基线范围 | 指令数 |
 | --- | ---: | ---: | ---: | ---: |
@@ -259,11 +259,11 @@ tifa 商店的一个 VM 加载后占 8.47 MB（`TestShopVMMemory`）：1.48 MB �
 | 最高 `MemorySize`，tifa 商店的 20 个页，合计 | 216.1 MiB | 219.5 MiB | +1.6% |
 | 20 个页第一次渲染结束时，合计 | 206.6 MiB | 210.0 MiB | +1.6% |
 
-商店的一个 VM 在第一次渲染后多占约 0.17 MiB，为的是它 5088 个字面量的键和它们的形状，这些现在和它们的函数活得一样久。一个长 Markdown 页占得更少，因为它的对象不再有多余的槽。`r_react_ssr` 一个进程的最高内存从 8.0 变成 8.3 MiB（32 个进程的中位数）。
+商店的一个 VM 在第一次渲染后多占约 0.17 MiB，为的是它 5088 个字面量的键和它们的 shape，这些现在和它们的函数活得一样久。一个长 Markdown 页占得更少，因为它的对象不再有多余的槽。`r_react_ssr` 一个进程的最高内存从 8.0 变成 8.3 MiB（32 个进程的中位数）。
 
 ### 属性放在对象自己块里的对象字面量
 
-一个对象字面量[把它的属性放在对象自己的块里](changes/objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object)。它让一次渲染少 0.1% 到 0.8% 的指令，每个页面的时间都留在规则认为没有变化的范围之内。对比 main（a9d61185），8 个位置、2 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围。每次渲染的指令数来自 callgrind 在位置 0.0 的结果（两次渲染次数不同的运行之差）。
+一个对象字面量[把它的属性放在对象自己的块里](changes/objects-and-shapes.zh-CN.md#对象字面量把属性放在对象自己的内存块里)。它让一次渲染少 0.1% 到 0.8% 的指令，每个页面的时间都留在规则认为没有变化的范围之内。对比 main（a9d61185），8 个位置、2 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，范围是基线自己在各位置上的范围。每次渲染的指令数来自 callgrind 在位置 0.0 的结果（两次渲染次数不同的运行之差）。
 
 | 页面 | 时间 | 范围 | 指令数 |
 | --- | ---: | ---: | ---: |
@@ -280,13 +280,13 @@ tifa 页面的一个 VM 的内存（引擎的 `MallocSize`，来自 `ssr.Load` �
 | --- | ---: | ---: | ---: | ---: |
 | 加载之后 | -0.2% | -0.2% | -0.3% | -0.2% |
 | 96 次渲染并完整回收之后 | -1.5% | -2.4% | -2.0% | -1.0% |
-| 一次渲染结束时的平均值，收集器开着 | -0.7% | -0.8% | -0.7% | -1.8% |
+| 一次渲染结束时的平均值，回收器开着 | -0.7% | -0.8% | -0.7% | -1.8% |
 
-收集器关掉，让页面留下的东西都不被回收，一次渲染增加的内存在不同页面之间从 -2.8% 到 +4.5%（平均 +0.7%）。一个说得通但没有证实的原因：48 到 130 字节的对象，现在落进的大小类和属性个数一样多，而某一个类留下的前置缓存空闲块，另一个类用不上。`r_react_ssr` 进程最多持有的内存是 8.5 MiB，然后是 8.4。
+回收器关掉，让页面留下的东西都不被回收，一次渲染增加的内存在不同页面之间从 -2.8% 到 +4.5%（平均 +0.7%）。一个说得通但没有证实的原因：48 到 130 字节的对象，现在落进的大小类和属性个数一样多，而某一个类留下的前置缓存空闲块，另一个类用不上。`r_react_ssr` 进程最多持有的内存是 8.5 MiB，然后是 8.4。
 
-### 调用 for in 和 hasOwnProperty.call
+### 调用、for in 和 hasOwnProperty.call
 
-两项改动，一个叠在另一个之上测量：[一次调用用更少的循环轮次设置并释放它的值](changes/c-engine.md#how-a-call-sets-and-frees-its-values)，然后是[for in 循环持有它的对象的形状](changes/objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object)，再加上[hasOwnProperty.call 在解释器里直接回答](changes/objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter)。对比 main（9fd4bdb0，已含一次建成最终形状的对象字面量），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，positions 给出其中最低和最高的。每次渲染的指令数来自 callgrind 在位置 0.0 的结果：商店是每页 12 次和 4 次渲染之差，MUI 页和脚本是 3 次和 1 次之差。bench 页在 `r_bench_table` 和 `r_bench_spiral` 上数，它们渲染的是同样的页。
+两项改动，一个叠在另一个之上测量：[一次调用用更少的循环轮次设置并释放它的值](changes/c-engine.zh-CN.md#一次调用如何设置和释放它的值)，然后是[for in 循环持有它的对象的 shape](changes/objects-and-shapes.zh-CN.md#for-in-循环持有它的对象的-shape)，再加上[hasOwnProperty.call 在解释器里直接回答](changes/objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答)。对比 main（9fd4bdb0，已含一次建成最终 shape 的对象字面量），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置配对比值的中位数，positions 给出其中最低和最高的。每次渲染的指令数来自 callgrind 在位置 0.0 的结果：商店是每页 12 次和 4 次渲染之差，MUI 页和脚本是 3 次和 1 次之差。bench 页在 `r_bench_table` 和 `r_bench_spiral` 上数，它们渲染的是同样的页。
 
 调用，对比 main：
 
@@ -314,7 +314,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### 解释器调用的 C 函数
 
-[解释器自己调用一个普通的 C 函数](changes/c-engine.md#how-the-interpreter-calls-a-c-function)，不经过 `JS_CallInternal` 的入口，并把它跳过的那个栈帧算作已经占用栈。对比 main（a9d61185），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，商店、MUI 应用、bench 应用和店面共 16 个页，HTML 相同。时间是各位置配对比值的中位数，positions 给出其中最低和最高的。每次渲染的指令数来自 callgrind 在位置 0.0 的结果：tifa 的页面是每页 5 次和 2 次渲染之差，`r_react_ssr` 是 3 次和 1 次运行之差。
+[解释器自己调用一个普通的 C 函数](changes/c-engine.zh-CN.md#解释器如何调用-c-函数)，不经过 `JS_CallInternal` 的入口，并把它跳过的那个栈帧算作已经占用栈。对比 main（a9d61185），8 个位置、4 轮，EPYC 7B13 的一个核，同伴核空闲，商店、MUI 应用、bench 应用和店面共 16 个页，HTML 相同。时间是各位置配对比值的中位数，positions 给出其中最低和最高的。每次渲染的指令数来自 callgrind 在位置 0.0 的结果：tifa 的页面是每页 5 次和 2 次渲染之差，`r_react_ssr` 是 3 次和 1 次运行之差。
 
 | 页面 | 时间 | 各位置 | 基线范围 | 指令数 |
 | --- | ---: | ---: | ---: | ---: |
@@ -327,7 +327,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### 调用的结尾和开头
 
-第一项改动是[调用结尾跳过没有引用计数的值](changes/c-engine.md#the-end-of-a-call-skips-the-values-with-no-reference-count)。对比 main（14271f3f，v0.29.3），8 个位置、5 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置上一个页的 P50（热身 16 次渲染之后的 100 次渲染）配对比值的中位数，positions 给出其中最低和最高的。指令数来自 callgrind 在位置 0.0 的结果：一个应用的页在一个 VM 里是 4 轮和 1 轮之差，脚本是 3 次运行和 1 次之差。这些页是 tifa 的 bench 应用的页，也是唯一指令降幅达到 2% 或更多的页。
+第一项改动是[调用结尾跳过没有引用计数的值](changes/c-engine.zh-CN.md#调用结束时跳过没有引用计数的值)。对比 main（14271f3f，v0.29.3），8 个位置、5 轮，EPYC 7B13 的一个核，同伴核空闲，HTML 相同。时间是各位置上一个页的 P50（热身 16 次渲染之后的 100 次渲染）配对比值的中位数，positions 给出其中最低和最高的。指令数来自 callgrind 在位置 0.0 的结果：一个应用的页在一个 VM 里是 4 轮和 1 轮之差，脚本是 3 次运行和 1 次之差。这些页是 tifa 的 bench 应用的页，也是唯一指令降幅达到 2% 或更多的页。
 
 | 页面 | 时间 | 各位置 | 基线范围 | 指令数 |
 | --- | ---: | ---: | ---: | ---: |
@@ -337,11 +337,11 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 每个页在全部 8 个位置上都更快。其他页降幅不到 2%，没有计时：商店的六个工作台页 -1.07%，它的五个店面页 -0.71%，三个 MUI 页 -0.76%，`r_react_ssr` -1.29%。内存不变：调用结尾释放的是同样的值。
 
-第二项改动是[一次调用一轮设置八个局部变量](changes/c-engine.md#a-call-sets-its-locals-eight-to-a-turn)。对比第一项，用同样的方式在位置 0.0 数，它让商店工作台页少执行 0.35% 的指令，店面页少 0.16%，MUI 页少 0.18%，bench 页少 0.54%，`r_react_ssr` 少 0.32%，`r_bench_table` 少 0.52%，`r_bench_spiral` 少 0.31%。没有一项超过规则要求计时的 2%。调用一个有 200 个局部变量的函数时，每个局部变量花 6.3 条指令，第一项改动之前是 11.6，之后是 7.3。
+第二项改动是[一次调用一轮设置八个局部变量](changes/c-engine.zh-CN.md#调用每次设置八个局部变量)。对比第一项，用同样的方式在位置 0.0 数，它让商店工作台页少执行 0.35% 的指令，店面页少 0.16%，MUI 页少 0.18%，bench 页少 0.54%，`r_react_ssr` 少 0.32%，`r_bench_table` 少 0.52%，`r_bench_spiral` 少 0.31%。没有一项超过规则要求计时的 2%。调用一个有 200 个局部变量的函数时，每个局部变量花 6.3 条指令，第一项改动之前是 11.6，之后是 7.3。
 
 ### C 里的 React DOM 文本转义
 
-[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/quickjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterEscapeText`](changes/go-api.zh-CN.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/quickjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 在 linux/amd64（EPYC 7B13 的一个核，同伴核空闲）上，在 8 个代码位置各跑 3 轮。时间是一个应用的各页 p50 之和，取各位置配对比值的中位数。指令数是 callgrind 的，每次渲染所有页，位置 0.0（5 次渲染的运行和 2 次渲染的运行之差）：
 
@@ -374,7 +374,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里复制 React 元素的 props
 
-[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/quickjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterCopyProps`](changes/go-api.zh-CN.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/quickjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 它被问到的频率，来自 tifa 里每个页的一次渲染，带一个数它的回答的包装：六个工作台页用 `createElement` 做了 980 个元素，用 `cloneElement` 做了 518 个，五个店面页是 2,507 和 328，三个 MUI 页是 3,266 和 114，每个 bench 页是 1。这个函数复制了其中所有的，只有一个有 39 个键的 config 除外（MUI 的 input，在订单列表和订单页上），它超过了函数接受的 32 个键，走循环。
 
@@ -408,7 +408,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里的 React DOM 开始和结束标签
 
-[`VM.RegisterStartTag` 和 `VM.RegisterEndTag`](changes/go-api.md#registerstarttag-and-registerendtag) 把 React DOM 的 `pushStartGenericElement`（连同它调用的 `pushAttribute`、`pushStyleAttribute` 和转义）和 `endChunkForTag` 作为引擎的 C 函数提供给宿主。它们按一次渲染所做的调用来测量，先录下来再回放，因为 tifa 的接线不属于这项改动。
+[`VM.RegisterStartTag` 和 `VM.RegisterEndTag`](changes/go-api.zh-CN.md#registerstarttag-和-registerendtag) 把 React DOM 的 `pushStartGenericElement`（连同它调用的 `pushAttribute`、`pushStyleAttribute` 和转义）和 `endChunkForTag` 作为引擎的 C 函数提供给宿主。它们按一次渲染所做的调用来测量，先录下来再回放，因为 tifa 的接线不属于这项改动。
 
 这些调用是在原生测试宿主上，从 tifa 示例应用页面的一次渲染里录下来的，用 bundle 里一个包着 `pushStartGenericElement` 的包装保存它的参数：商店的 16 个页（14 个店面页和 2 个工作台页）9,682 次调用，三个 MUI 页 1,227 次，两个 bench 页 5,401 次。一个 Go 程序在一个热身后的 VM 上按顺序以三种方式回放它们：React 的函数，就是 bundle 里的样子（`js`），C 的开始标签加 C 的结束标签（`c`），以及一个只生成参数并调用一个空函数的循环（`loop`）。每个标签作为一个 atom 的字符串传入，每次调用都是同一个字符串，和 JSX 给出的一样。每次调用给出的文本都和 React 的函数相同，没有一次拒绝。
 
@@ -441,11 +441,11 @@ Apple M4（darwin/arm64）上的时间，每个元素的 ns，21 轮的中位数
 
 指令数比较的是没有这些调用的 v0.29.9 和有这些调用的 v0.29.10，各跑一次。对比 v0.29.9，同一个 tifa 在没有这些调用的 v0.29.10 上，每一类的变化都不超过 1%，只有 bench 页在正式布局上是 +1.61% [+0.49, +2.75]，各布局的平均没有显示出来（+0.20% [-0.62, +1.02]）。这些页的 HTML 逐字节相同。
 
-### 共用形状的对象字面量
+### 共用 shape 的对象字面量
 
-[键相同的对象字面量共用一个形状](changes/objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape)。对比 v0.29.4（c2e07b7d），16 个页的 HTML 相同。内存是 `ssr.Load` 建出的一个 VM 的引擎 `MallocSize`，在这个应用每个页渲染一次之后和渲染 120 次之后，并做一次完整回收。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差）。
+[键相同的对象字面量共用一个 shape](changes/objects-and-shapes.zh-CN.md#键相同的对象字面量共用一个-shape)。对比 v0.29.4（c2e07b7d），16 个页的 HTML 相同。内存是 `ssr.Load` 建出的一个 VM 的引擎 `MallocSize`，在这个应用每个页渲染一次之后和渲染 120 次之后，并做一次完整回收。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差）。
 
-| 页面 | 形状 | 1 次渲染后的内存 | 120 次之后 | 指令数 |
+| 页面 | shape | 1 次渲染后的内存 | 120 次之后 | 指令数 |
 | --- | ---: | ---: | ---: | ---: |
 | tifa 的商店，六个工作台页 | 4203 到 3615 | -0.66% | -0.54% | -0.13% |
 | 商店的店面页 | 5210 到 4403 | -1.67% | -2.10% | -0.03% |
@@ -453,11 +453,11 @@ Apple M4（darwin/arm64）上的时间，每个元素的 ns，21 轮的中位数
 | tifa 的 bench 应用，两个页 | 940 到 928 | 0 | 0 | +0.02% |
 | `r_react_ssr` | | | | +0.03% |
 
-MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 KB：形状数和一次渲染之后一样多，差别在于那一刻收集器和分配器留着什么。指令数不变，所以没有取时间。
+MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 KB：shape 数和一次渲染之后一样多，差别在于那一刻回收器和分配器留着什么。指令数不变，所以没有取时间。
 
 ### 一次做好几条指令的操作码
 
-[读一个局部变量并紧跟它的 get_field、对字符串做 switch 的 case](changes/c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string)和 [typeof 测试](changes/c-engine.md#typeof-as-one-opcode)各合成一个操作码。每项改动对比它之前的那项，从上面的形状开始，16 个页的 HTML 相同。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差，`r_react_ssr` 是 3 次和 1 次运行之差）。
+[读一个局部变量并紧跟它的 get_field、对字符串做 switch 的 case](changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)和 [typeof 测试](changes/c-engine.zh-CN.md#typeof-作为一个操作码)各合成一个操作码。每项改动对比它之前的那项，从上面的 shape 开始，16 个页的 HTML 相同。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差，`r_react_ssr` 是 3 次和 1 次运行之差）。
 
 | 页面 | 合并的读取和 case | typeof | 编译器用的表 | 三项全部 |
 | --- | ---: | ---: | ---: | ---: |
@@ -467,15 +467,15 @@ MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 K
 | tifa 的 bench 应用，两个页 | -3.41% | -1.42% | -0.03% | -4.82% |
 | `r_react_ssr` | +2.07% | -0.08% | -0.47% | +1.46% |
 
-`r_react_ssr` 的一次运行先编译它的 bundle，再渲染一次，编译占了它大部分的指令。编译器要为查找这些连续操作码付出代价：`fuse_code` 在第一版里一次运行用 1.45 M 条指令，改成在表里查操作码之后（第三列）用 0.98 M。tifa 的每个 VM 读的是编译一次的字节码，所以它的渲染不付这个代价。这些页在每个应用上渲染的指令都更少。在 8 个代码位置、3 轮计时，合并的读取和 case 加上面的形状对比 v0.29.4：bench 页，也就是唯一一步超过 2% 的应用，用了原来时间的 0.966（spiral 页从 16.49 ms 到 15.97 ms，table 页从 15.25 ms 到 14.76 ms），`r_react_ssr` 在 `fuse_code` 的第一版下是 1.018，低于 3%，所以由 callgrind 判定。三项全部对比 v0.29.4，用同样的方式计时：bench 页用了原来时间的 0.943，六个工作台页 0.976，店面页 0.980。后两个低于 3%，所以由 callgrind 判定，MUI 页没有计时。
+`r_react_ssr` 的一次运行先编译它的 bundle，再渲染一次，编译占了它大部分的指令。编译器要为查找这些连续操作码付出代价：`fuse_code` 在第一版里一次运行用 1.45 M 条指令，改成在表里查操作码之后（第三列）用 0.98 M。tifa 的每个 VM 读的是编译一次的字节码，所以它的渲染不付这个代价。这些页在每个应用上渲染的指令都更少。在 8 个代码位置、3 轮计时，合并的读取和 case 加上面的 shape 对比 v0.29.4：bench 页，也就是唯一一步超过 2% 的应用，用了原来时间的 0.966（spiral 页从 16.49 ms 到 15.97 ms，table 页从 15.25 ms 到 14.76 ms），`r_react_ssr` 在 `fuse_code` 的第一版下是 1.018，低于 3%，所以由 callgrind 判定。三项全部对比 v0.29.4，用同样的方式计时：bench 页用了原来时间的 0.943，六个工作台页 0.976，店面页 0.980。后两个低于 3%，所以由 callgrind 判定，MUI 页没有计时。
 
 一个 VM 的内存不变：合并的操作码占据它们这一串里第一条指令的位置，一个 `typeof` 测试占的字节数和以前一样或更少。
 
-在 main 把长字符串循环里读中断标志的部分改掉之后（bcd2eb1a），对比那个 main，用 callgrind 同样的方式，并关掉 Go 的收集器（`GOGC=off`）：三项合起来让六个工作台页的一次渲染少 3.03% 的指令，MUI 页少 2.53%，商店、店面和 MUI 页的 HTML 相同。
+在 main 把长字符串循环里读中断标志的部分改掉之后（bcd2eb1a），对比那个 main，用 callgrind 同样的方式，并关掉 Go 的回收器（`GOGC=off`）：三项合起来让六个工作台页的一次渲染少 3.03% 的指令，MUI 页少 2.53%，商店、店面和 MUI 页的 HTML 相同。
 
 ### 暂时性死区的检查
 
-[不可能失败的检查](changes/c-engine.md#checks-of-the-temporal-dead-zone-that-cannot-fail)被编译器去掉，对比 main 的 74e4ddd7。每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差），16 个页的 HTML 相同：
+[不可能失败的检查](changes/c-engine.zh-CN.md#不会失败的暂时性死区检查)被编译器去掉，对比 main 的 74e4ddd7。每次渲染的指令数来自 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差），16 个页的 HTML 相同：
 
 | 页面 | 一次渲染的指令数 | 变化 |
 | --- | ---: | ---: |
@@ -486,11 +486,11 @@ MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 K
 | `r_react_ssr` 的一次渲染，编译一次 | 54.92 M 到 54.88 M | -0.06% |
 | `r_react_ssr` 的一次运行，它会编译自己的 bundle | 108.19 M 到 108.87 M | +0.62% |
 
-一轮工作台页分派的操作码少 1.8%：`get_loc_check` 是 12.6K 次，原来是 117.9K，`set_loc_uninitialized` 是 28.6K 次，原来是 68.4K。店面页执行 `get_loc_check` 106K 次，原来是 136 万次，但一次检查比不带检查的读取只多几条指令。这个 pass 在 `r_react_ssr` 的 bundle 编译里花 0.66 M 条指令，tifa 的 VM 不付这个，因为它读的是编译一次的字节码。一个上限：一个构建，不管变量在哪里，去掉每一个局部变量的检查，并去掉所有没有闭包捕获的局部变量的 `set_loc_uninitialized`（这是错的，只用来测量），工作台页少执行 0.74% 的指令：这个规则拿到了那 0.74 个点里的 0.61。在 linux/amd64 上 4 个代码位置、3 轮计时，对比同一个 main：工作台页用了原来时间的 0.995，MUI 0.997，bench 页 0.990，都低于 3%，所以由 callgrind 判定。店面页没有计时。
+一轮工作台页分发的操作码少 1.8%：`get_loc_check` 是 12.6K 次，原来是 117.9K，`set_loc_uninitialized` 是 28.6K 次，原来是 68.4K。店面页执行 `get_loc_check` 106K 次，原来是 136 万次，但一次检查比不带检查的读取只多几条指令。这个 pass 在 `r_react_ssr` 的 bundle 编译里花 0.66 M 条指令，tifa 的 VM 不付这个，因为它读的是编译一次的字节码。一个上限：一个构建，不管变量在哪里，去掉每一个局部变量的检查，并去掉所有没有闭包捕获的局部变量的 `set_loc_uninitialized`（这是错的，只用来测量），工作台页少执行 0.74% 的指令：这个规则拿到了那 0.74 个点里的 0.61。在 linux/amd64 上 4 个代码位置、3 轮计时，对比同一个 main：工作台页用了原来时间的 0.995，MUI 0.997，bench 页 0.990，都低于 3%，所以由 callgrind 判定。店面页没有计时。
 
 ### 链接后整个模块上的优化器
 
-在 amd64 和 arm64 上，生成器把各个 C 文件链接成一个模块，并在影子栈 pass 之前对它运行 `opt -O2`（内联阈值 400，SLP 向量化器关闭）（[README](../internal/goasm/gen/README.md#the-whole-engine)）。clang 之前是对每个文件单独优化的，所以从一个文件到另一个文件的调用（小 libc 的 `memcpy`、`memset` 和 `memcmp`，调用分配器的地方的 `tlsf_*` 和 `heap_*`，收集器里的 `mark_children`）从没被内联过。在原生 C 里，同样的第二遍运行让一个页省了 1.6% 到 1.7% 的指令（MUI 0.8%）。对比 main（c5efd5d8），16 个页的 HTML 相同，在生成的引擎里：
+在 amd64 和 arm64 上，生成器把各个 C 文件链接成一个模块，并在影子栈 pass 之前对它运行 `opt -O2`（内联阈值 400，SLP 向量化器关闭）（[README](../internal/goasm/gen/README.zh-CN.md#整个引擎)）。clang 之前是对每个文件单独优化的，所以从一个文件到另一个文件的调用（小 libc 的 `memcpy`、`memset` 和 `memcmp`，调用分配器的地方的 `tlsf_*` 和 `heap_*`，回收器里的 `mark_children`）从没被内联过。在原生 C 里，同样的第二遍运行让一个页省了 1.6% 到 1.7% 的指令（MUI 0.8%）。对比 main（c5efd5d8），16 个页的 HTML 相同，在生成的引擎里：
 
 | 页面 | 一次渲染的指令数 | 变化 |
 | --- | ---: | ---: |
@@ -500,7 +500,7 @@ MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 K
 | tifa 的 bench 应用，两个页 | 255.9 M 到 254.3 M | -0.61% |
 | `r_react_ssr` 的一次运行，它会编译自己的 bundle | 108.87 M 到 105.07 M | -3.49% |
 
-指令数是 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差，Go 的收集器关闭）。时间是一个应用各页 P50 之和（热身 32 次后 60 次渲染，`r_react_ssr` 是热身 5 次后 20 次运行的中位数），在 8 个[代码位置](#代码位置)上跑 3 轮，一个核，同伴核空闲。比值是各位置配对比值的中位数，positions 给出最低和最高的：
+指令数是 callgrind 在位置 0.0 的结果（3 次渲染和 1 次之差，Go 的回收器关闭）。时间是一个应用各页 P50 之和（热身 32 次后 60 次渲染，`r_react_ssr` 是热身 5 次后 20 次运行的中位数），在 8 个[代码位置](#代码位置)上跑 3 轮，一个核，同伴核空闲。比值是各位置配对比值的中位数，positions 给出最低和最高的：
 
 | 页面 | 时间，基线到新版 | 比值 | 各位置 | 按位置的规则 |
 | --- | ---: | ---: | ---: | --- |
@@ -514,13 +514,13 @@ MUI 页在 120 次渲染之后多占 41 KB，而在一次渲染之后少占 41 K
 
 tifa 的页面指令数少了 0.6% 到 1.2%，时间没有跟着变，和原生 C 一样，那里只有 React 脚本变快了。在商店和店面页上，节省比原生 C 里小约三分之一（MUI 没有更小：0.93%，对 0.77%）。第二遍运行做出的模块里，轮询 pass 数到的计数点更多（2,985，对 2,280，有界的循环边是 1,198，对 749），这拿回了一部分节省。新的计数点来自哪里，没有追查。
 
-代价：amd64 的生成汇编大了 13.3%（9.34 MB，对 8.25 MB，380,323 行，对 337,285，25 个文件，对 23），llc 目标文件的 `.text` 大了 18.9%（1,942,196 字节，对 1,633,929）。`JS_CallInternal` 是 77,133 字节，对 77,165，它的栈帧不变（Go 栈帧 496 字节，llc 的 392，影子栈 1472）。`lre_exec_backtrack` 大了 1.5 KB（10,819 字节到 12,365）。17 个静态函数没有了，被内联进每个调用者（`BC_add_object_ref`、`cr_add_interval`、`round_to_d`、`find_line_num` 等），静态的 `mark_children` 变成三个函数，`mark_children.specialized.2`、`.5` 和 `.7`，对应它所标记的每个函数各一个。开着 SLP 向量化器时，第二遍运行又把 52 行向量代码放进 `JS_CallInternal` 的 IR（关着时一行也没有），也就是 [EngineValueFlags](changes/c-engine.md#how-a-jsvalue-is-copied) 挡在外面的 JSValue 16 字节移动。内联阈值 1000 会让原生 C 里的解释器更大，栈帧高 32 字节：没有采用。下一节是 arm64。
+代价：amd64 的生成汇编大了 13.3%（9.34 MB，对 8.25 MB，380,323 行，对 337,285，25 个文件，对 23），llc 目标文件的 `.text` 大了 18.9%（1,942,196 字节，对 1,633,929）。`JS_CallInternal` 是 77,133 字节，对 77,165，它的栈帧不变（Go 栈帧 496 字节，llc 的 392，影子栈 1472）。`lre_exec_backtrack` 大了 1.5 KB（10,819 字节到 12,365）。17 个静态函数没有了，被内联进每个调用者（`BC_add_object_ref`、`cr_add_interval`、`round_to_d`、`find_line_num` 等），静态的 `mark_children` 变成三个函数，`mark_children.specialized.2`、`.5` 和 `.7`，对应它所标记的每个函数各一个。开着 SLP 向量化器时，第二遍运行又把 52 行向量代码放进 `JS_CallInternal` 的 IR（关着时一行也没有），也就是 [EngineValueFlags](changes/c-engine.zh-CN.md#jsvalue-如何复制) 挡在外面的 JSValue 16 字节移动。内联阈值 1000 会让原生 C 里的解释器更大，栈帧高 32 字节：没有采用。下一节是 arm64。
 
 #### 在 arm64 上
 
 arm64 也开了同样的这一遍（`PostLinkOptFor`）。整个引擎的链接后检查通过（`-verify-all`，1335 个函数和 1382 个只读数据指针），`JS_CallInternal_block` 保持它 504 字节的栈帧，两种架构的 `make check-gen` 都通过，根包和 `./internal/...` 的测试在 darwin/arm64 和 linux/arm64 上都通过。
 
-指令数来自 callgrind 在 linux/arm64 上的结果（Mac 上的 Docker，Apple silicon，原生 arm64 内核，valgrind 3.24），是一个应用每个页在基准标出的窗口里渲染一次的计数，每个页热身 8 次渲染之后渲染 3 次，计数里含 Go 的收集器。对比 main（84761bc7）：
+指令数来自 callgrind 在 linux/arm64 上的结果（Mac 上的 Docker，Apple silicon，原生 arm64 内核，valgrind 3.24），是一个应用每个页在基准标出的窗口里渲染一次的计数，每个页热身 8 次渲染之后渲染 3 次，计数里含 Go 的回收器。对比 main（84761bc7）：
 
 | 页面 | 一次渲染的指令数，main 到新版 | 变化 |
 | --- | ---: | ---: |
@@ -547,7 +547,7 @@ arm64 也开了同样的这一遍（`PostLinkOptFor`）。整个引擎的链接�
 
 ### 共用一个槽的局部变量
 
-[共用栈帧一个槽的局部变量](changes/c-engine.md#locals-that-share-a-slot)，对比带链接后整个模块优化器的 main（619e1bc8）。指令数来自 linux/amd64 上生成构建的 callgrind，位置 0.0，含 Go 一侧：一个应用的各页，是同一个 VM 里 5 轮和 2 轮之差再取三分之一，`r_react_ssr` 是一个进程里 3 次运行和 1 次之差再取一半。`r_react_ssr` 单独一次渲染，是 38 次渲染的运行和单次渲染的运行之差，除以 37。商店、店面和 MUI 共 14 个页的 HTML 相同。
+[共用栈帧一个槽的局部变量](changes/c-engine.zh-CN.md#共用槽位的局部变量)，对比带链接后整个模块优化器的 main（619e1bc8）。指令数来自 linux/amd64 上生成构建的 callgrind，位置 0.0，含 Go 一侧：一个应用的各页，是同一个 VM 里 5 轮和 2 轮之差再取三分之一，`r_react_ssr` 是一个进程里 3 次运行和 1 次之差再取一半。`r_react_ssr` 单独一次渲染，是 38 次渲染的运行和单次渲染的运行之差，除以 37。商店、店面和 MUI 共 14 个页的 HTML 相同。
 
 | 页面 | main | 共用槽 |
 | --- | ---: | ---: |
@@ -573,7 +573,7 @@ arm64 也开了同样的这一遍（`PostLinkOptFor`）。整个引擎的链接�
 
 ### JSON.parse 从文本里直接读键和普通字符串
 
-[直接从文本里读键和普通字符串](changes/c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text)，对比 c5efd5d8（v0.29.6）的 main。一次 `JSON.parse` 的指令数（3 次解析和 1 次之差），在由 C 构建的 `jsrun`（原生）里，以及在一个 Go 测试二进制的生成引擎里（`js_json_parse` 和它调用的），每字节文本：
+[直接从文本里读键和普通字符串](changes/c-engine.zh-CN.md#jsonparse-直接从文本读键和普通字符串)，对比 c5efd5d8（v0.29.6）的 main。一次 `JSON.parse` 的指令数（3 次解析和 1 次之差），在由 C 构建的 `jsrun`（原生）里，以及在一个 Go 测试二进制的生成引擎里（`js_json_parse` 和它调用的），每字节文本：
 
 | 文本 | 字节数 | 原生 | 变化 | 生成的 | 变化 |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -585,7 +585,7 @@ arm64 也开了同样的这一遍（`PostLinkOptFor`）。整个引擎的链接�
 
 改动之前，在原生 callgrind 里，那 1000 行每字节花 12.0 条指令把文本变成 C 字符串，30.2 条在词法单元和字符串上，5.7 条在键 atom 上，5.6 条在定义属性上。商店的订单在词法单元和字符串上花 51.7（它们的字符串里有多字节的字符，仍要走缓冲区），在键 atom 上花 13.7。lock 文件不是一张表：它的 1,202 个键是每个只出现一次的包路径，会在缓存里未命中，它的包有 143 种不同的键集合。这些仓库是 61 个对象，每个 83 个键，里面还有 owner、license 和 permissions 的对象。两者都得到约一半的收益。
 
-一次渲染，来自 callgrind 在位置 0.0 的结果（2 次渲染和 1 次之差，Go 的收集器关闭），tifa 应用 16 个页的 HTML 相同：
+一次渲染，来自 callgrind 在位置 0.0 的结果（2 次渲染和 1 次之差，Go 的回收器关闭），tifa 应用 16 个页的 HTML 相同：
 
 | 页面 | 一次渲染的指令数 | 变化 |
 | --- | ---: | ---: |
@@ -633,15 +633,15 @@ C 引擎比 C 版 QuickJS 构建慢的地方，用同样的 `engine/` 的 C 代�
 
 liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 和固定的 QuickJS 一样快，或者更快），所以剩下的是汇编的代价：这三个脚本上 20% 到 30%，`r_react_ssr` 上 6%。在 `q_regexp_ascii` 上，同样的 C 比固定的 QuickJS 慢 8%（0.829，对 0.765 到 0.777）。原因没有去找：原生宿主也调用 `host_poll`（占 2% 的样本）。perf（4999 Hz，同样 20 次运行的样本，汇编对同样的 C）：
 
-- `c_array_methods`：`js_array_includes` 6020 个样本，对 1826，`js_array_indexOf` 3915，对 957，`JS_CallInternal` 10743，对 8749，其余相近（`js_strict_eq2` 13630，对 13231）。这些循环对每个元素调用 `js_strict_eq2`，而带可能轮询的调用的循环把它的轮询计数放在内存里，每轮就是对一个字做读、减、写：`js_array_includes` 36% 的样本落在那个减法上。用[不经调用就判定大多数元素](changes/upstream-commits.md#indexof-and-includes-decide-most-elements-without-a-call)修好了：脚本用了原来时间的 0.583。
+- `c_array_methods`：`js_array_includes` 6020 个样本，对 1826，`js_array_indexOf` 3915，对 957，`JS_CallInternal` 10743，对 8749，其余相近（`js_strict_eq2` 13630，对 13231）。这些循环对每个元素调用 `js_strict_eq2`，而带可能轮询的调用的循环把它的轮询计数放在内存里，每轮就是对一个字做读、减、写：`js_array_includes` 36% 的样本落在那个减法上。用[不经调用就判定大多数元素](changes/upstream-commits.zh-CN.md#indexof-和-includes-对大多数元素不用调用就能判断)修好了：脚本用了原来时间的 0.583。
 - `c_string_methods`：38900 个样本，对 30440，分散在许多小函数里：`JS_CallInternal` +940，`js_call_c_function` 1964，对 1210，`JS_ToStringInternal` 1726，对 1122，`JS_ConcatString` 1182，对 658，`js_string_includes` 967，对 523。没有哪个循环里有一条热指令。这是生成代码每次调用的代价（参数和结果经过内存、栈检查、轮询计数）。
 - `q_regexp_ascii`：39700 个样本，对 33500。匹配器 `lre_exec_backtrack` 相近（10390，对 10002），`JS_CallInternal` 也是。多出来的样本在它周围：`js_regexp_exec` 3582，对 2374，`lre_find` 1540，对 615，`lre_exec` 2367，对 1660，`free_object` 2440，对 1650。还是调用。
 
-### 内建类形状 按父形状找形状 独自死亡的对象
+### 内建类的 shape、按父 shape 找到的 shape、独自死亡的对象
 
-三项改动，一起测量，每项对比它之前的那项：[内建类的对象找到它们原型的空形状](changes/objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype)，[一个形状由它长出来的那个形状找到](changes/objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from)，以及[独自死亡的对象立即释放](changes/objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once)。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果，16 个页的 HTML 相同。第一列是原生 C 树，另外两列是生成的引擎。
+三项改动，一起测量，每项对比它之前的那项：[内建类的对象找到它们原型的空 shape](changes/objects-and-shapes.zh-CN.md#内置类的对象找到它们原型的空-shape)，[一个 shape 由它长出来的那个 shape 找到](changes/objects-and-shapes.zh-CN.md#通过-shape-由哪个-shape-长出来来找到它)，以及[独自死亡的对象立即释放](changes/objects-and-shapes.zh-CN.md#单独死去的对象立刻释放)。一个应用所有页每次渲染的指令数来自 callgrind 在位置 0.0 的结果，16 个页的 HTML 相同。第一列是原生 C 树，另外两列是生成的引擎。
 
-| 页面 | 内建类形状 | 按父形状找形状 | 对象立即释放 | 三项全部 |
+| 页面 | 内建类 shape | 按父 shape 找 shape | 对象立即释放 | 三项全部 |
 | --- | ---: | ---: | ---: | ---: |
 | tifa 的商店，六个工作台页 | -0.61% | -0.82% | -0.65% | -1.93% |
 | 商店的店面页 | -0.69% | -0.88% | -0.71% | -1.84% |
@@ -652,7 +652,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 ### 每个会调用的函数都有栈检查
 
-[没有栈检查的函数](changes/c-engine.md#functions-without-a-stack-check)是一项花速度的改动，这样做是为了让引擎里的一次出错，不依赖于从某个 Go runtime 版本读出的空间。对比 main 的 053d158e，在 linux/amd64 上，没有栈检查的函数清单与这项改动相同。指令数来自 callgrind（`BenchmarkAppCG`），算作失去 NOSPLIT 的那些函数多执行的部分，因为同一个引擎的两个构建之间整个程序会移动多达 0.4%。
+[没有栈检查的函数](changes/c-engine.zh-CN.md#没有栈检查的函数)是一项花速度的改动，这样做是为了让引擎里的一次出错，不依赖于从某个 Go runtime 版本读出的空间。对比 main 的 053d158e，在 linux/amd64 上，没有栈检查的函数清单与这项改动相同。指令数来自 callgrind（`BenchmarkAppCG`），算作失去 NOSPLIT 的那些函数多执行的部分，因为同一个引擎的两个构建之间整个程序会移动多达 0.4%。
 
 | 页面 | 指令数 | 16 种布局的平均 | 正式布局 |
 | --- | ---: | --- | --- |
@@ -686,13 +686,13 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 - **代码选项不花什么。** N1 比 N0 多约 2% 的指令，用同样的时间。只有 bench 页更快（SLP 选项，它会拆散 JSValue 的复制）。
 - **翻译花 11% 到 13%**（G0 对 N1，8 个位置上符号都相同），轮询在此之上再花 2% 到 7%（商店页 4% 到 5%，bench 页 6.8%）。N1 有一项生成代码没有的开销：它对影子栈的检查是一次调用。把这个检查内联后，N1 快 0.7% 到 3%，所以那 11% 到 13% 大约低了一个点。
 - **指令和内存。** G0 比 N1 多执行 13% 到 19% 的指令，多 19% 到 25% 的 load 和 store。它的指令缓存未命中是 2.2 到 3.7 倍，数据缓存未命中只多 6% 到 9%。轮询增加 3.8% 到 7.5% 的指令和 11% 到 26% 的指令缓存未命中。`JS_CallInternal` 在原生里是 48,413 字节，生成后是 86,767（多 79%），指令缓存未命中就来自这里。
-- **多出来的指令来自哪里**，把 N1 的影子栈检查内联后（商店工作台页，其他负载在几个点之内）：经过 Go 栈的参数和结果占 25% 到 43%，通过相对偏移表分派（比绝对表多 3 条指令）占 22% 到 41%，Go 栈检查、序言之后的空操作和跳到唯一共用的 `RET`，合起来占 17% 到 27%。为取了地址的局部变量读写影子栈，又占 18% 到 22%。在调用前后保存和重新加载寄存器的账是平的，因为 `preserve_none` 把它放在被调用方，原生代码把它放在 push 和 pop 里。其余的一切（移动、算术）在生成的代码里指令更少，原因没有去找。
+- **多出来的指令来自哪里**，把 N1 的影子栈检查内联后（商店工作台页，其他负载在几个点之内）：经过 Go 栈的参数和结果占 25% 到 43%，通过相对偏移表分发（比绝对表多 3 条指令）占 22% 到 41%，Go 栈检查、序言之后的空操作和跳到唯一共用的 `RET`，合起来占 17% 到 27%。为取了地址的局部变量读写影子栈，又占 18% 到 22%。在调用前后保存和重新加载寄存器的账是平的，因为 `preserve_none` 把它放在被调用方，原生代码把它放在 push 和 pop 里。其余的一切（移动、算术）在生成的代码里指令更少，原因没有去找。
 - **按函数。** `JS_CallInternal` 占商店页差异的 52%，占 `r_react_ssr` 的 74%。函数越小，比值越高，因为栈检查、参数的读取和结果的存储对每次调用是固定的价格：`js_call_c_function` 是 1.45 倍的指令，`JS_GetPropertyValue` 1.32，`add_property` 1.17，`free_object` 1.06。字符串和正则大致持平。
 - **没有测的。** 每个原因花多少时间：VM 上的 `perf` 没有 cycles，而且用指令数和指令缓存未命中数去拟合时间，偏差最多达 35%。时间增长是指令增长的 0.65 倍，所以多出来的指令比其余的便宜（命中缓存的 load、空操作）。
 
-生成器还能还回来的很少，或者已经试过。绝对分派表（占多出指令的 22% 到 41%）没有改变时间。去掉空操作和共用的 `RET`，估计低于时间的 1%。给调用没有栈检查的函数的参数用寄存器，会带来 0.3% 到 0.9%（见[试过但没做的](#试过但没做的)）。影子栈的读取是设计。
+生成器还能还回来的很少，或者已经试过。绝对分发表（占多出指令的 22% 到 41%）没有改变时间。去掉空操作和共用的 `RET`，估计低于时间的 1%。给调用没有栈检查的函数的参数用寄存器，会带来 0.3% 到 0.9%（见[试过但没做的](#试过但没做的)）。影子栈的读取是设计。
 
-**结果放在寄存器里。** 自 v0.29.5 之后的那个版本起，对另一个生成函数的调用，从被调用方返回结果所用的寄存器里取结果（amd64 上是 RAX、RDX 或 X0，arm64 上是 x0、x1 或 d0），不再从 Go 栈上加载回来。被调用方仍然把它存进它的 Go 结果槽，之后只运行 Go 的尾声，那只碰帧指针、返回地址和 SP，所以寄存器在 `RET` 之后仍然保存着它。amd64 上 6,982 个调用点、arm64 上 7,087 个跳过了这次 load。通过指针的调用，调用 Go 代码或生成失败的函数的调用，仍保留它。链接后检查要求每个跳过 load 的调用，其被调用方是一个降级后的统一函数，并且那个被调用方走它的返回序列。2026-10-31 对比 v0.29.5 测量，amd64 上的指令数由 callgrind 数，时间在每台机器上取 4 个代码位置、3 轮（linux/amd64 是上面那台机器，darwin/arm64 是 Apple M4），两边的 HTML 相同：
+**结果放在寄存器里。** 自 v0.29.5 之后的那个版本起，对另一个生成函数的调用，从被调用方返回结果所用的寄存器里取结果（amd64 上是 RAX、RDX 或 X0，arm64 上是 x0、x1 或 d0），不再从 Go 栈上加载回来。被调用方仍然把它存进它的 Go 结果槽，之后只运行 Go 的尾声，那只碰帧指针、返回地址和 SP，所以寄存器在 `RET` 之后仍然保存着它。amd64 上 6,982 个调用点、arm64 上 7,087 个跳过了这次 load。通过指针的调用，调用 Go 代码或生成失败的函数的调用，仍保留它。链接后检查要求每个跳过 load 的调用，其被调用方是一个 lowering（把 LLVM 的中间表示换成目标机器的指令） 后的统一函数，并且那个被调用方走它的返回序列。2026-10-31 对比 v0.29.5 测量，amd64 上的指令数由 callgrind 数，时间在每台机器上取 4 个代码位置、3 轮（linux/amd64 是上面那台机器，darwin/arm64 是 Apple M4），两边的 HTML 相同：
 
 | 工作负载 | 指令数（amd64） | 时间，amd64 | 时间，arm64 |
 | --- | ---: | ---: | ---: |
@@ -710,7 +710,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 | 一次渲染的占比 | 商店工作台 | 店面 | MUI | bench | `r_react_ssr` | Markdown 400 KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 分派和操作码本身 | 19.9% | 19.4% | 24.9% | 20.4% | 31.6% | 18.7% |
+| 分发和操作码本身 | 19.9% | 19.4% | 24.9% | 20.4% | 31.6% | 18.7% |
 | 读写属性，添加属性 | 20.4% | 22.8% | 24.2% | 15.2% | 12.7% | 19.0% |
 | 调用和返回（栈帧、参数、C 函数） | 18.8% | 17.4% | 15.2% | 21.8% | 17.8% | 18.9% |
 | 创建和释放对象，引用计数 | 16.8% | 15.6% | 15.8% | 14.8% | 14.7% | 17.1% |
@@ -722,11 +722,11 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 | 轮询和栈检查（只算指令） | 8.1% | 8.2% | 7.0% | 10.1% | 8.5% | 8.1% |
 | 解析 | 0.0% | 0.0% | 0.0% | 0.1% | 2.2% | 1.5% |
 
-- 没有哪一类超过 25%，属性、调用和对象加起来是 50% 到 55%。光是分派（每个操作码 4 条指令）就占 `JS_CallInternal` 的 10% 到 12%，占一次渲染的 5% 到 7%。
+- 没有哪一类超过 25%，属性、调用和对象加起来是 50% 到 55%。光是分发（每个操作码 4 条指令）就占 `JS_CallInternal` 的 10% 到 12%，占一次渲染的 5% 到 7%。
 - 一次工作台渲染大约运行 73,000 次 JavaScript 调用和 128 万个操作码：每个操作码 81 条原生指令（算上它调用的东西），在入口、出口和调用操作码里，每次调用约 190 条，其中约 95 条是入口。入口里最大的一块是把局部变量设成 `undefined` 的循环（占 `JS_CallInternal` 原生指令的 2.1%）。
 - 轮询，通过构建一个没有它们的引擎来测：商店、店面和 MUI 页用了原来时间的 0.953 到 0.955，bench 页 0.930，8 个位置全部如此。指令少 4.9% 到 8.3%。`JS_CallInternal` 占一个店面页轮询指令的 41%，占一个 bench 页的 64%，其余分散在约 40 个函数里。栈检查是 1320 个函数里 729 个开头的 4 条指令，占一个页指令数的 1.2% 到 1.8%。
 - 回收只在长 Markdown 上要紧：占它时间的 8.5%，占它最后一级未命中的 40%。在 tifa 的页面上它低于 2%。
-- 对比带 `--jitless` 的 Node，liustack/quickjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用-for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的收集器（`resetHooksState` 3.5 到 4.9 倍）。
+- 对比带 `--jitless` 的 Node，liustack/quickjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的回收器（`resetHooksState` 3.5 到 4.9 倍）。
 
 ### 负载下的稳定性
 
@@ -795,7 +795,7 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 
 决定时间的有两类。不读标志的循环会一直运行到结束或被强制终止：`fill`、`join`、`normalize` 和在 C 里匹配的全局 `replace` 过去就是这样，现在分别每 4096、1024、4096 个字符以及每次匹配读一次。出错之后，调用还要释放它做出来的东西，而那里没有标志可读：一次 `JSON.parse` 的 300,000 个对象要 36 ms 释放（`lib/` 的引擎：58 ms），64 Mi 个字符的 `split` 的 3300 万个字符串，以及 32 Mi 个字符的通用 `replace` 到结束前一直持有的 1600 万个数组，也会这样（没有单独计时）。一次调用里构建超过约 400,000 个对象的脚本，可能在释放它们时被强制终止。`JSON.parse` 循环的停下，跟着树的大小走：10,000 个对象是 1.8 ms，30,000 个是 5.5 ms，100,000 个是 20 ms，600,000 个时被强制终止（lib：12.5 ms、38 ms、145 ms、1.4 s）。不管哪种，VM 都没了，由池来替换它。`JSON.stringify` 在每个值处读标志，它的 2.5 到 4 ms 是释放写了一半的字符串（25 MB 要 1.7 ms）和分配错误对象。对几十万位的 BigInt 做乘法或乘方，在 libbf 里不读标志：一直运行到强制终止。
 
-`split`、`isWellFormed`、`toWellFormed`、`padStart`、`padEnd`、`trim`、`anchor` 的属性和其他 HTML 方法、`escape`、`unescape`、`encodeURI`、`decodeURI`、`Array.from`、类型化数组构造函数、把 rope 变平，以及对两个 rope 的 `<`，现在也读这个标志（见 [c-engine.md](changes/c-engine.md#polls-and-interrupts)）。上表的 `split` 一行，是场景 `string_repeat_split`（4 Mi 个字符，切成 2 Mi 段）在 `interrupt` 的 20 次停下上的结果：中位数原来是 67.8 ms，最高是 243 ms，现在是 23.3 ms 和 39.7 ms（EPYC 7B13 的核 5，两次运行都没有终止 VM）。剩下的是到目前为止已做出的那些段的释放。`array_join` 和 `normalize` 的停下没有变化（4.3 和 4.1 ms，然后 3.5 和 4.1 ms）。新的循环对页面的开销不超过 callgrind 运行里 Go runtime 的噪声：每次渲染，`r_react_ssr` 多执行 0.06% 的指令（2,511.2 M，然后 2,512.8 M），商店的六个工作台页多 0.18%（978.1 M，然后 979.9 M，两次运行里 Go 收集器的工作比这个差值还大），四个 MUI 页多 0.06%（751.2 M，然后 751.6 M），bench 页多 0.09%（309.9 M，然后 310.2 M），对比 main（4cdd3a27）。
+`split`、`isWellFormed`、`toWellFormed`、`padStart`、`padEnd`、`trim`、`anchor` 的属性和其他 HTML 方法、`escape`、`unescape`、`encodeURI`、`decodeURI`、`Array.from`、类型化数组构造函数、把 rope 变平，以及对两个 rope 的 `<`，现在也读这个标志（见 [c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)）。上表的 `split` 一行，是场景 `string_repeat_split`（4 Mi 个字符，切成 2 Mi 段）在 `interrupt` 的 20 次停下上的结果：中位数原来是 67.8 ms，最高是 243 ms，现在是 23.3 ms 和 39.7 ms（EPYC 7B13 的核 5，两次运行都没有终止 VM）。剩下的是到目前为止已做出的那些段的释放。`array_join` 和 `normalize` 的停下没有变化（4.3 和 4.1 ms，然后 3.5 和 4.1 ms）。新的循环对页面的开销不超过 callgrind 运行里 Go runtime 的噪声：每次渲染，`r_react_ssr` 多执行 0.06% 的指令（2,511.2 M，然后 2,512.8 M），商店的六个工作台页多 0.18%（978.1 M，然后 979.9 M，两次运行里 Go 回收器的工作比这个差值还大），四个 MUI 页多 0.06%（751.2 M，然后 751.6 M），bench 页多 0.09%（309.9 M，然后 310.2 M），对比 main（4cdd3a27）。
 
 **池里的超时和强制终止。** 4 个 VM，3 个调用方一直在渲染，300 ms 超时。第四个调用方每秒发一个请求，要么永远循环（`loop`），要么在它调用的一个 Go 函数里睡 1.5 秒（`sleep`），要么轮流两种。两次运行，每次 20 秒，核 1,3,5,7，在 v0.29.0 上测的，当时睡眠之后的第一次轮询超过了宽限期而被终止：
 
@@ -812,43 +812,43 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 
 每一项说明它能带来什么，以及为什么放弃。试其中任何一项之前先在这里查一下。这些数字来自 tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) 和 [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md)，以及各项改动的文档。
 
-- **通过闭包或函数表分派操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/quickjs 只做机械改动的规则。没有试。
+- **通过闭包或函数表分发操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/quickjs 只做机械改动的规则。没有试。
 - **在 `createElement` 和 `cloneElement` 的 props 的一次展开前面用 JavaScript 做检查**，在 v0.29.1 上、`RegisterCopyProps` 之前测的：插件检查 config（原型、symbol、`__proto__`、`__self` 和 `__source`、`key` 背后的 getter），然后用解构的其余部分复制它。这个检查每次调用花 310 到 380 ns，比循环处理没有键、一个键或两个键的 config 还多，所以 `createElement` 在没有键时用了 1.57 倍的时间，一个键时 1.07，一个 `key` 加一两个其他键时 1.13 到 1.40。商店用了 0.99 的时间（指令少 1.6% 到 2.5%），没有页面过规则。它也排除不了 proxy、删除后面一个键的 getter，以及 React 加载之后加到 `Object.prototype` 上的 setter。同样的检查在 C 里比空循环花得更少，这个函数让指令少 2.1% 到 4.1%。
-- **对象展开的快速路径**（`JS_CopyDataProperties`）：在 Apple M4 的微基准里，一次展开 240 ns，原来是 415 ns，但商店没变（0.997 到 1.005）。后来已经做了，连同键的列举一起，它和 `for in` 和 `Object.keys` 共用后者（见[从形状里列出自有键](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)）。
-- **在 `JS_CallInternal` 入口处调用 `_js_uncatchable_pending` 之前先测不可捕获标志**：这个辅助函数太大，没法内联进解释器，所以每次 JavaScript 调用都要付一次真正的调用。先内联地测运行时的标志，在正常路径上跳过这次调用，并保留完整检查，那仍然需要，因为异常被取走之后标志仍然置着。V8 上指令少 0.06%，商店少 0.09%，MUI 少 0.41%。在三种代码布局上跑六轮，V8 是基线分数的 0.9988（0.9883 到 1.0254），商店是时间的 0.9927（0.9859 到 1.0014），MUI 0.9850（0.9763 到 1.0265）。符号跟着布局走：MUI 在一种布局的两轮里是时间的 1.027 和 1.012，在另外两种布局的四轮里是 0.976 到 0.988。这个收益和布局的噪声分不开。
-- **单独只读一次局部变量的个数**：调用开始时，解释器在设置每个局部变量之后又读一次 `b->var_count`。只读一次，React 指令少 1.0%，但一个算术循环多 3.9%，来自一个处理函数里溢出的寄存器，时间没有变。后来已经做了，连同一次设置四个局部变量和一次释放两个值（见[调用 for in 和 hasOwnProperty.call](#调用-for-in-和-hasownpropertycall)）。
+- **对象展开的快速路径**（`JS_CopyDataProperties`）：在 Apple M4 的微基准里，一次展开 240 ns，原来是 415 ns，但商店没变（0.997 到 1.005）。后来已经做了，连同键的列举一起，它和 `for in` 和 `Object.keys` 共用后者（见[从 shape 里列出自有键](changes/objects-and-shapes.zh-CN.md#自有键从-shape-列出)）。
+- **在 `JS_CallInternal` 入口处调用 `_js_uncatchable_pending` 之前先测无法捕获标志**：这个辅助函数太大，没法内联进解释器，所以每次 JavaScript 调用都要付一次真正的调用。先内联地测运行时的标志，在正常路径上跳过这次调用，并保留完整检查，那仍然需要，因为异常被取走之后标志仍然置着。V8 上指令少 0.06%，商店少 0.09%，MUI 少 0.41%。在三种代码布局上跑六轮，V8 是基线分数的 0.9988（0.9883 到 1.0254），商店是时间的 0.9927（0.9859 到 1.0014），MUI 0.9850（0.9763 到 1.0265）。符号跟着布局走：MUI 在一种布局的两轮里是时间的 1.027 和 1.012，在另外两种布局的四轮里是 0.976 到 0.988。这个收益和布局的噪声分不开。
+- **单独只读一次局部变量的个数**：调用开始时，解释器在设置每个局部变量之后又读一次 `b->var_count`。只读一次，React 指令少 1.0%，但一个算术循环多 3.9%，来自一个处理函数里溢出的寄存器，时间没有变。后来已经做了，连同一次设置四个局部变量和一次释放两个值（见[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)）。
 - **不经迭代器展开一个稠密数组**：在 linux/amd64 的微基准里，v0.26.17 上，三个元素的 `[...a]` 用 165 ns，原来是 615 ns，带展开参数的调用 394 ns，原来是 869 ns。商店的六个页（0.997）和三个 MUI 页（1.007）没有超出代码布局给出的波动范围，因为页面很少展开数组。它会多出约 870 行 fixlib 规则。
-- **保留每个对象字面量的中间形状**，在 v0.26.16 之前：在新属性快速路径之上多约 2%，但两个列表页用光了 VM 内存，因为留存的形状持有它们的原型和这些原型能到达的一切。v0.26.16 只保留原型是 `Object.prototype`、最多 32 个键且没有未注册 symbol 键的形状，放在 2048 的环里（见[留存形状](changes/objects-and-shapes.md#kept-shapes)）。
-- **没有其他对象有这些键时，原地构建形状**：在形状缓存的第一版里，复制每个形状会让键别的对象都没有的对象构建慢 22%。v0.26.16 对每个找到的形状复制一次，最多 64 个，让这些对象慢约 6%。
-- **字节码里的字面量模板**，像 V8 复制预先建好的对象那样：需要改编译器和字节码格式，quickjs-ng 试过，没看到明显差别。后来已经做了，做成每一串普通键一个操作码，其最终形状由函数保存（见[一次建成最终形状的对象字面量](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)）。
-- **按字面量的最终大小分配属性数组**：创建对象的操作码不知道个数，而用别的方式增长数组会让每个小对象多花内存。只有配合留存的形状才划算。后来已经做了，用那个知道键个数的操作码。
-- **属性读取的内联缓存**：quickjs-ng 加了又去掉。在 17 个真实工具上，从慢 11% 到快 54%，平均快 4%，而且内存更多。在 v0.27.0 之后试过，是一张 4096 个条目的表，以字节码位置为键，每个条目持有一个形状和一个自有数据属性的下标，对照形状本身来检查（下标在它的个数之内、同一个键、普通标志），所以不需要失效。tifa 页面上大多数读取读的是对象的自有属性，`find_own_property` 一次哈希就能找到，而命中原型上的属性，跳不过沿途对形状的检查。指令少 0.3%，但商店用了时间的 1.006，MUI 页 1.007（6 轮，3 种布局），每个 VM 多 96 KiB。2026-10-30 在 C 引擎上又试了一次，做成每个函数一张表，其字节码的每个字节一个 16 字节的条目，持有对形状的引用：71% 到 98% 按名字读属性的地方只见到一种形状，但一次命中花的指令和它跳过的哈希查找差不多。对比 v0.29.4 的引擎，callgrind 给出指令 -0.29% 到 +0.93%，把缓存未命中算进去，周期多 1.2% 到 2.7%：它所服务的三种读取的未命中减少了 70% 到 90%，但那只占周期的 0.52% 到 0.64%，而表的读取未命中更多。一张紧凑的表，每个读取的地方一个条目，最多能赢回约 0.4%，还要减去它自己的未命中，代价是一种新的字节码格式，以及一个被缓存持有、其唯一对象再也不能原地修改的形状。没有做。
-- **新键的形状步进表**：`add_property` 在形状哈希表里找对象要去的形状，那次查找经常未命中缓存（占商店一次渲染指令的 2.4%，占它缓存未命中的 7.7%）。每个运行时 1024 个步进的表，从一个形状和一个键到下一个形状，两者都持有，让商店和 MUI 页少 0.8% 的指令，但商店用了时间的 1.008，MUI 页 1.019（6 轮，3 种布局）：它持有的存活形状（一个 MUI 页 2718 到 3504 个）每个 VM 多 28 KB 到 142 KB，还改变了循环收集器运行的时机。
+- **保留每个对象字面量的中间 shape**，在 v0.26.16 之前：在新属性快速路径之上多约 2%，但两个列表页用光了 VM 内存，因为留存的 shape 持有它们的原型和这些原型能到达的一切。v0.26.16 只保留原型是 `Object.prototype`、最多 32 个键且没有未注册 symbol 键的 shape，放在 2048 的环里（见[留存 shape](changes/objects-and-shapes.zh-CN.md#保留-shape)）。
+- **没有其他对象有这些键时，原地构建 shape**：在 shape 缓存的第一版里，复制每个 shape 会让键别的对象都没有的对象构建慢 22%。v0.26.16 对每个找到的 shape 复制一次，最多 64 个，让这些对象慢约 6%。
+- **字节码里的字面量模板**，像 V8 复制预先建好的对象那样：需要改编译器和字节码格式，quickjs-ng 试过，没看到明显差别。后来已经做了，做成每一串普通键一个操作码，其最终 shape 由函数保存（见[一次建成最终 shape 的对象字面量](changes/objects-and-shapes.zh-CN.md#对象字面量直接按最终的-shape-创建)）。
+- **按字面量的最终大小分配属性数组**：创建对象的操作码不知道个数，而用别的方式增长数组会让每个小对象多花内存。只有配合留存的 shape 才划算。后来已经做了，用那个知道键个数的操作码。
+- **属性读取的内联缓存**：quickjs-ng 加了又去掉。在 17 个真实工具上，从慢 11% 到快 54%，平均快 4%，而且内存更多。在 v0.27.0 之后试过，是一张 4096 个条目的表，以字节码位置为键，每个条目持有一个 shape 和一个自有数据属性的下标，对照 shape 本身来检查（下标在它的个数之内、同一个键、普通标志），所以不需要失效。tifa 页面上大多数读取读的是对象的自有属性，`find_own_property` 一次哈希就能找到，而命中原型上的属性，跳不过沿途对 shape 的检查。指令少 0.3%，但商店用了时间的 1.006，MUI 页 1.007（6 轮，3 种布局），每个 VM 多 96 KiB。2026-10-30 在 C 引擎上又试了一次，做成每个函数一张表，其字节码的每个字节一个 16 字节的条目，持有对 shape 的引用：71% 到 98% 按名字读属性的地方只见到一种 shape，但一次命中花的指令和它跳过的哈希查找差不多。对比 v0.29.4 的引擎，callgrind 给出指令 -0.29% 到 +0.93%，把缓存未命中算进去，周期多 1.2% 到 2.7%：它所服务的三种读取的未命中减少了 70% 到 90%，但那只占周期的 0.52% 到 0.64%，而表的读取未命中更多。一张紧凑的表，每个读取的地方一个条目，最多能赢回约 0.4%，还要减去它自己的未命中，代价是一种新的字节码格式，以及一个被缓存持有、其唯一对象再也不能原地修改的 shape。没有做。
+- **新键的 shape 步进表**：`add_property` 在 shape 哈希表里找对象要去的 shape，那次查找经常未命中缓存（占商店一次渲染指令的 2.4%，占它缓存未命中的 7.7%）。每个运行时 1024 个步进的表，从一个 shape 和一个键到下一个 shape，两者都持有，让商店和 MUI 页少 0.8% 的指令，但商店用了时间的 1.008，MUI 页 1.019（6 轮，3 种布局）：它持有的存活 shape（一个 MUI 页 2718 到 3504 个）每个 VM 多 28 KB 到 142 KB，还改变了循环回收器运行的时机。
 - **`every`、`some`、`forEach`、`map` 和 `filter` 里的快速数组**，不对每个元素询问 `JS_TryGetPropertyInt64`：`js_array_every`（五者都跑它），在 tifa 示例商店十个店面页 85.6 秒的 profile 里，回调之外自己花了 0.67 秒，其中 `JS_TryGetPropertyInt64` 占 0.19 秒。快速路径最多能省一次店面渲染的约 0.5%，那被代码布局盖住了。`find`、`findIndex` 和 `includes` 已经直接读快速数组。
 - **`+slow-unaligned-mem-16` 用在每个文件上，或者开着 SLP 向量化器用**（C 引擎）：libc 的 `memcpy` 里得到 8 字节的移动，开着向量化器时 `r_shiki_regexp` 用了 1.028 到 1.033 倍的时间，`JS_CallInternal` 里留下 29 个 SSE 移动。只有 `quickjs.c` 得到它，向量化器关闭（[数字](#c-引擎用两次-8-字节的移动复制-jsvalue)）。
 - **等 Go 1.28**：一个开发构建让没改过的引擎在 amd64 上快 5%，在 arm64 上快 2%，但重写过的引擎在 amd64 上慢 5% 到 6.5%，原因没找到。重写在那里仍然赢，amd64 上赢 4.2%，arm64 上赢 15.5%。
 - **从字节码里去掉函数源码**（`JS_SetStripInfo`）以省 VM 内存：tifa 的页面用的 seroval 会用 `toString` 读它自己辅助函数的源码并写进页面，所以浏览器会坏掉。
 - **去掉 arm64 上字节码位置的 store**：它看上去占解释器自己时间的最多 11.6%，其实是采样器把等下一个操作码的等待放在了那里。这个 store 是 Go 为那些要读回它的调用保存局部变量 `pc`，在每个操作码都走的路径上。只有移动指令才把样本放到操作码的 load 上（8.8% 降到 0.4%），指令数、周期和渲染时间都不变。
 - **C 引擎里更早用 rope**，针对 React 的页面字符串：任何超过 512 个字符的结果都做成 rope（`JS_STRING_ROPE_SHORT2_LEN` 取 512 而不是 8192），让 `q_string_build1` 在原生上从 0.18 秒变成 0.32 秒，因为那时对局部变量的 `+=` 离开了它原地追加的做法而改用 rope，而且给 React 带来的收益不比带余量的复制更多（见[靠追加建出来的字符串](#靠追加建出来的字符串)）。
-- **循环收集器跳过叶子对象**，像 CPython 跳过只含 atom 的元组：一个不含 GC 值（只有数字、字符串、布尔值之类）的普通对象、数组或闭包变量，被移到收集器从不遍历的链表里，一旦有 GC 值存进去就移回来。在一个 400 KB Markdown 页的渲染里，收集器访问的东西里，只有 7.6% 是这样活下来的对象（4.0M 次访问里的 304k），因为它访问的 61% 是上次收集以来产生的垃圾。原型让收集器的工作少了它指令的 6.6%，让那次渲染用了时间的 0.978（8 个位置、5 轮，0.964 到 0.991，基线自己的范围 2.9%），但存储时的检查和它推迟的释放，花的指令和收集器省下的一样多（一次渲染 -0.00%），`r_react_ssr` 多付 0.11%。tifa 的页面很少在渲染中途收集，没有变化（商店 1.004，MUI 0.999，bench 1.002）。每一次把 GC 值存进对象、数组或闭包变量，都需要这个检查，C 里约有 150 处，漏掉一处就会把垃圾留到运行时被释放，而 `JS_FreeRuntime` 的块计数看不出这一点。一个在每次收集时检查那个链表的构建，在它运行的 `compare.sh` 的头几个脚本里就找到了一处漏掉的存储（一个在被函数用到之后才定义的全局变量）。叶子还会藏住它到原型的边，所以一个在运行时仍然存活时被释放的上下文，会留到运行时被释放为止。CPython 在 3.14 里对 dict 放弃了同样的方案（[gh-127010](https://github.com/python/cpython/issues/127010)）：每次存储的检查比收集器省下的还花钱。quickjs-ng 没有类似的东西。
+- **循环回收器跳过叶子对象**，像 CPython 跳过只含 atom 的元组：一个不含 GC 值（只有数字、字符串、布尔值之类）的普通对象、数组或闭包变量，被移到回收器从不遍历的链表里，一旦有 GC 值存进去就移回来。在一个 400 KB Markdown 页的渲染里，回收器访问的东西里，只有 7.6% 是这样活下来的对象（4.0M 次访问里的 304k），因为它访问的 61% 是上次收集以来产生的垃圾。原型让回收器的工作少了它指令的 6.6%，让那次渲染用了时间的 0.978（8 个位置、5 轮，0.964 到 0.991，基线自己的范围 2.9%），但存储时的检查和它推迟的释放，花的指令和回收器省下的一样多（一次渲染 -0.00%），`r_react_ssr` 多付 0.11%。tifa 的页面很少在渲染中途收集，没有变化（商店 1.004，MUI 0.999，bench 1.002）。每一次把 GC 值存进对象、数组或闭包变量，都需要这个检查，C 里约有 150 处，漏掉一处就会把垃圾留到运行时被释放，而 `JS_FreeRuntime` 的块计数看不出这一点。一个在每次收集时检查那个链表的构建，在它运行的 `compare.sh` 的头几个脚本里就找到了一处漏掉的存储（一个在被函数用到之后才定义的全局变量）。叶子还会藏住它到原型的边，所以一个在运行时仍然存活时被释放的上下文，会留到运行时被释放为止。CPython 在 3.14 里对 dict 放弃了同样的方案（[gh-127010](https://github.com/python/cpython/issues/127010)）：每次存储的检查比回收器省下的还花钱。quickjs-ng 没有类似的东西。
 - **给没有栈检查的函数（NOSPLIT 的那些，因为 Go 的 morestack 会丢掉寄存器）用寄存器传参数和结果**，用 callgrind 在 C 引擎上测过，没有构建。生成函数之间每 171 到 283 条指令有一次调用，其中 23% 到 27% 去往一个 NOSPLIT 的被调用方。通过 Go 栈搬运它们的参数和结果的 store 和 load，占 `r_react_ssr` 指令的 0.72%，占 tifa 页面的 1.25% 到 1.38%（arm64，由同样的调用次数算出：0.75% 到 1.49%）。按 0.65 倍的指令，或者按第 0 阶段微基准每次调用的节省来算，约占时间的 0.3% 到 0.9%，低于代码位置让一次渲染移动的 2% 到 3%。所有调用的搬运占 5.6% 到 8.3%，但其余的都去了有栈检查的函数（`JS_CallInternal` 的参数块 1.2% 到 2.4%，处在调用环里的函数 1.3% 到 2.3%，通过指针的调用 0.5% 到 1.0%）。链接器给一串 NOSPLIT 调用的 792 字节已经用上了（最高的一串占 752）：栈帧一共小 7.6 KB，不会多出 NOSPLIT 函数，而在一个函数处打断每个调用环，会多出 41 个（链接器接受），但让去往 NOSPLIT 被调用方的搬运占比，在商店和 MUI 页上变化 +0.2% 到 +0.3%，在 bench 页上是 -0.14%。这会要求生成器和两个链接后检查里新增一种条目，要花 4 到 6 天，换来低于代码位置噪声的收益。
-- **绝对分派表**（C 引擎），每个 VM 用操作码处理函数的地址填一次，这样一次分派就是一次间接跳转，不是 llc 为位置无关代码生成的相对表多出的 3 条指令：2026-10-27 做了原型。时间没有变，`r_bench_table` 变慢了，而且这张表放在可写内存里，一次乱写可能改变解释器跳去哪里。
+- **绝对分发表**（C 引擎），每个 VM 用操作码处理函数的地址填一次，这样一次分发就是一次间接跳转，不是 llc 为位置无关代码生成的相对表多出的 3 条指令：2026-10-27 做了原型。时间没有变，`r_bench_table` 变慢了，而且这张表放在可写内存里，一次乱写可能改变解释器跳去哪里。
 - **去掉序言之后的空操作和跳到共用 `RET` 的跳转**（C 引擎）：指令 1.6% 到 2.6%，但估计时间不到 1%，因为这些空操作很便宜。这些空操作就是把每个函数体放到 16 字节上的 `PCALIGN`，它保住了常量池的对齐（`FuncPlace`）以及它用于代码位置测量的位置，而每个返回处都放一个 Go 尾声会让代码更大。
 - **`JS_CallInternal` 的参数更少**（C 引擎），2026-10-30 做了原型。它的七个参数（上下文、函数、作为值的 `this` 和 `new.target`、个数、参数数组和标志）占 10 个字，加上影子指针是 11 个，比 amd64 上一个入口的寄存器多一个，所以每次调用都把它们写进一个块并传这个块的地址。原型把函数的地址放在调用方的栈里传，也就是解释器把它放在参数下面、方法调用的 `this` 上面的位置，并在一个标志指明时在它下面读 `this` 和 `new.target`：6 个字，没有块，每次调用少 10 到 14 条指令。引擎于是在 tifa 商店每次渲染少执行 0.77% 的指令，MUI 页 0.71%，bench 页 0.93%，`r_react_ssr` 0.85%（callgrind），低于值得在代码位置上计时的 1%。这 6 个字和结果仍然经过 Go 栈，因为解释器保留着它的栈检查，所以把个数和标志压成一个字，每次调用只能再省大约 2 条指令。这个原型还让解释器的影子栈帧在 amd64 上大了 96 字节：LLVM 内联进去的调用（`js_call`、`JS_CallFree`）各自保留了自己的一对函数和 `this`，原来它们共用一个块，而一个有 250 个局部变量的递归，在 10000 的深度限制下止于 5978 层，原来是 6082 层。`js_call_c_function` 的参数（9 个字，通过指针调用）没有试：即使它们一个都不搬，一次渲染也只会少执行 0.27%（MUI）到 0.79%（bench）的指令，`r_react_ssr` 是 0.40%。
 - **让一层调用占用更少的 Go 栈**，2026-10-27 研究过。设计上界是一层调用 5,600 字节（两次深度计数之间最长的栈帧链是 38），但真实的递归每层用 416 到 2,224 字节（一个普通递归 480）。在 `body` 模式下，上界的 71% 在每个栈帧里都一样（返回地址和帧指针 608，传出参数区 1,896，保存寄存器的区域 1,480），29% 是 LLVM 保留的局部变量（1,616），而 `preserve_none` 把保存挪进局部变量，总量并没有变小。LLVM 在 `-O2` 下已经复用栈槽，而 shrink-wrapping 改变的是栈帧何时建立，不是它的大小。没做：在影子栈帧里传调用的参数，并把影子指针放在闭包寄存器里（上界降到 2,184，但它依赖 Go 怎么用那个寄存器，那不是可以依赖的机制），把两个字以上的参数打包进一个块（少 17%，慢 2.5% 到 2.9%），以及统计每一段最坏的字节数，而不是 1（它只省内存，还要多加计数）。让引擎在自己的栈上运行，像 cgo、wazero 和 purego 那样，会让一层占用的 Go 栈降到 0，但那样 C 里的一次出错就不能再变成只结束这个 VM 的 panic，而是结束整个进程。对服务器这不可接受，所以引擎把它的栈帧放在 goroutine 栈上。
 - **C 引擎的 Clang PGO**，2026-10-29 测量。插桩构建用 `r_react_ssr`、400 KB Markdown、18 个商店页、3 个 MUI 页和 2 个 bench 页训练。在原生 C 树上，8 个位置，3 轮：`r_react_ssr` 用了时间的 1.096，bench 页 1.083（8 个位置全部），Markdown 0.962，商店页 0.987，MUI 1.017（后两个都低于规则按 2% 算的门槛）。只含 4 个商店页的 profile 没有让这 4 个页更快（1.000）。在生成的引擎上（tifa 的页面，4 个位置，6 轮），每一组页面都更慢，商店 1.058，店面 1.051，MUI 1.064，bench 页 1.150，4 个位置符号相同。bench 的 table 页多执行 32.5% 的指令：`JS_FreeValue` 不再内联（它 19.7% 的指令成了调用），`JS_CallInternal` 多执行 22% 到 23% 的指令，栈帧是 640 字节，原来是 496。把四个内联阈值放回 400 后仍然多 29.4%，所以阈值不是全部原因，其余的没找到。生成器不加改动就能接受 profile（一个包装的 clang，在生成 IR 时加上 `-fprofile-instr-use`），它让 `.s` 大了 22%（8.0 MB 到 9.77 MB）。它还发现，生成代码的常量池是按函数内部对齐的，不是按它的绝对地址，所以当 `JS_CallInternal` 的函数体位于它所在行的 40 字节处时，对常量池的对齐 SSE 读取会出错（PGO 构建有 19 处这样的读取）。main 的 `JS_CallInternal` 一处也没有。
 - **8 字节的值**（NaN boxing，`CONFIG_NAN_BOXING64`），2026-10-30 在用生成器的选项构建的原生 C 树上测量，同一个 commit，有这个标志和没有。读少了 8% 到 11%，写少了 12% 到 17%，数据缓存未命中少了 13% 到 20%，但每次 load 的指令数都增加了：商店工作台 2.6%，店面 2.8%，MUI 4.8%，`r_react_ssr` 6.9%。标签、指针掩码，以及 `undefined` 这类常量，是 64 位的数，x86-64 只能从寄存器里比较和做掩码，所以 `quickjs.o` 里的 `movabs` 从 580 个涨到 9,310 个，`JS_CallInternal` 大了 16%，指令缓存多未命中 8% 到 12%。`JS_FreeValue` 不再内联，那是 `r_react_ssr` 增加量的 70%，强制它内联又让那四次 load 慢了 2% 到 11%。时间没有变（8 个位置的中位数 0.983 到 1.008），低于第二步（8 字节的属性）要继续做所需的、每个位置上的 3%。只有当 VM 的内存而不是一次渲染的时间成为限制时，才值得再看。
-- **更便宜的轮询**，在测过代价之后（见[生成的代码相对原生 C 的开销](#生成的代码相对原生-c-的开销)）。`host_poll` 的调用不是代价：间隔取 1,000、10,000 和 100,000 次轮询，一个脚本用的时间相同，`host_poll` 和 Go runtime 占增加指令的 0.2% 到 1.1%（占 tifa 一次渲染的 0.06% 到 0.16%）。代价在计数上：它占着的寄存器，每次调用之前写回、之后读取的计数，以及更大的代码。把计数从分派里拿走只省了 6% 的指令，再把函数为计数占着的寄存器和它调用周围的同步也拿走，一个 `jsloop` 仍是没有轮询的引擎的 1.41 倍指令。已经做的见[轮询和中断](changes/c-engine.md#polls-and-interrupts)：只在向回跳转和函数入口处计数，分块运行、每块计一次数的循环，每个循环计数放在寄存器里或内存里，以及不再给 `llc` 尾部复制选项。没做的：
+- **更便宜的轮询**，在测过代价之后（见[生成的代码相对原生 C 的开销](#生成的代码相对原生-c-的开销)）。`host_poll` 的调用不是代价：间隔取 1,000、10,000 和 100,000 次轮询，一个脚本用的时间相同，`host_poll` 和 Go runtime 占增加指令的 0.2% 到 1.1%（占 tifa 一次渲染的 0.06% 到 0.16%）。代价在计数上：它占着的寄存器，每次调用之前写回、之后读取的计数，以及更大的代码。把计数从分发里拿走只省了 6% 的指令，再把函数为计数占着的寄存器和它调用周围的同步也拿走，一个 `jsloop` 仍是没有轮询的引擎的 1.41 倍指令。已经做的见[轮询和中断](changes/c-engine.zh-CN.md#轮询与中断)：只在向回跳转和函数入口处计数，分块运行、每块计一次数的循环，每个循环计数放在寄存器里或内存里，以及不再给 `llc` 尾部复制选项。没做的：
   - **所有代码里为计数固定一个寄存器（H2）。** 它可以在 Go 下做对，但 x86 需要 LLVM 23，而且 OCaml 发现，计数放在虚拟寄存器里多半溢出而且更慢，DTVM 在它的优化模式下又回到了普通寄存器。
   - **像 HotSpot 那样把循环的上限切成块（M1）。** 只对编译器能算出迭代次数的循环有效。在它能加速的脚本里，`strsearch` 5% 到 10%，React 约 0，而且上限的算术一旦出错，就是一次越界访问。
   - **把只调用 `host_poll` 的小函数的 `NOSPLIT` 还给它们（L3）。** 把所有 C 函数的计数都拿掉后，上限是 `json` 15%，`strsearch` 11%，React 4%，`r_react_ssr` 0%，所以一个页低于 0.5%。
   - **只给解释器用尾部复制的 `llc` 选项（M2）。** 没有它们时，整个引擎里只有 `JS_CallInternal` 会变，所以只给它这些选项得到同样的字节。后来已经去掉，它们在计数移到向回跳转之前让 `jsloop` 慢了 20%，之后让它更快了。
-  - **短循环里什么都不计数（C 里的形状哈希链、`lre_find`、`free_object` 的属性循环）。** 这需要 C 承诺上界，而生成器检查不了，这和先前一个被否掉的想法是同一个弱点。
+  - **短循环里什么都不计数（C 里的 shape 哈希链、`lre_find`、`free_object` 的属性循环）。** 这需要 C 承诺上界，而生成器检查不了，这和先前一个被否掉的想法是同一个弱点。
   - **在通过指针的调用里跳过不会轮询的目标（L4）**，按指针的类型来判断：类型只说明参数的个数和种类，所以一个可能调用 JavaScript 的比较函数和不会调用的那些共用同一个类型。
   - `taindexof` 带轮询时慢 25%，结果是代码落点造成的：它 7 条指令的内层循环横跨了一行 64 字节，带不带轮询都慢 22% 到 25%。
-- **比较和它后面的条件跳转合成一个操作码**，2026-10-31 在去掉暂时性死区检查之上测量。`fuse_code` 把后面跟着 `if_false`、`if_true`、`if_false8` 或 `if_true8` 的 `strict_eq`、`lt`、`is_null` 和 `is_undefined`，变成 `strict_eq_if`、`lt_if`、`is_null_if` 和 `is_undefined_if`，在一次分派里比较并跳转，除非有一个跳转落在这个跳转上，或比较在已合并成 `dup_case_atom` 的 `switch` 的某个 case 里。这四类占工作台六个页一轮里 182K 次后面跟着跳转的比较中的 127K（`===` 48K，`=== null` 45K，`=== undefined` 21K，`<` 14K，然后 `typeof` 18K，`!=` 9K，`!==` 8K），分派次数在那里少了 3.3%，店面页 2.9%，MUI 1.5%，bench 页 3.3%。但省一次分派约是 17 条指令，所以工作台页一次渲染只少执行 0.26% 的指令，店面页 0.34%，MUI 0.22%，bench 页 0.28%，`r_react_ssr` 0.86%（callgrind，16 个页的 HTML 相同），而它需要在工作台上达到 0.7%。把每个后面跟着跳转的比较都合并（`!==` 通过把跳转反过来，`typeof`、`==`、`!=` 和 `>=` 放在最后空着的操作码编号里）还能多 0.1%。它也会把最后空着的操作码编号用到 256 以下。
-- **用查找 atom 的表来分派字符串 `switch`**，像 Hermes 对 10 个 case 或更多时所做的那样，2026-10-31 估算。工作台六个页的一轮，比较 38K 个字符串 case：其中 26.5K 个是 `dup_case_atom`，连分派约 25 条指令每个，11.7K 个仍然是 `dup`、`push_atom_value`、`strict_eq` 加一个跳转，也就是共用一个函数体的那些 case 的形状，它们用 `if_true` 跳转。这约占一次渲染指令数的 0.2%，低于值得做的 0.3%，因为 tifa 的 Vite 插件已经在 React DOM 的长 switch 前面放了一个 `Set.has` 测试（`guardSwitches`）。没有插件的 React DOM 一次渲染比较 83K 个 case（30K 个是 `dup_case_atom`，53K 个是 `if_true` 形状），约占 `r_react_ssr` 一次渲染指令的 9%：这张表对插件没有覆盖的库有用，或者在去掉 `guardSwitches` 之后有用。给 `if_true` 形状做一个 `dup_case_atom`，可以不用表，一个操作码就拿到其中很大一部分。
-- **和字符串字面量比较，做成一个操作码**（`strict_eq_atom`、`strict_neq_atom`、`strict_eq_loc`、`strict_neq_loc`），2026-10-31 在 v0.29.6（c5efd5d8）之上测量。`x === "lit"` 和 `x !== "lit"`，字面量在任一侧，原地比较字符串的 atom，局部变量也一样，字符串 `switch` 的 case 也用了它。工作台六个页的一轮，运行了 26.6K 次 `push_atom_value` 加 `strict_eq`，19.5K 次 `push_atom_value` 加 `strict_neq`，其中 26.5K 次紧跟在一个 `get_loc` 之后。一次渲染的指令数在 `r_react_ssr`（2.29%）和工作台页（0.10%）上下降，在店面页（0.19%）和 MUI 页（0.15%）上上升，callgrind 在 linux/amd64 上位置 0.0，HTML 相同，那里 LLVM 为多出来的四个 case 把解释器重新排了布局。时间还是上升了：在生成构建上，8 个代码位置，`r_react_ssr` 的一次渲染用了时间的 1.026（1.009 到 1.047，3 轮），编译 bundle 并渲染一次的运行是 1.012，六个工作台页 1.022（一轮）。Callgrind 对 `r_react_ssr` 一次渲染的缓存和分支模拟发现，间接跳转（分派）少 8.4%，未命中的一样多，未命中的条件分支多 4.4%，指令缓存未命中多 4.1%：按每次分支未命中 15 到 20 个周期算，大约就是损失的那 2.6%。这些操作码用掉了 256 以下 5 个空着的编号里的 4 个，还有字节码版本。没有采用。
+- **比较和它后面的条件跳转合成一个操作码**，2026-10-31 在去掉暂时性死区检查之上测量。`fuse_code` 把后面跟着 `if_false`、`if_true`、`if_false8` 或 `if_true8` 的 `strict_eq`、`lt`、`is_null` 和 `is_undefined`，变成 `strict_eq_if`、`lt_if`、`is_null_if` 和 `is_undefined_if`，在一次分发里比较并跳转，除非有一个跳转落在这个跳转上，或比较在已合并成 `dup_case_atom` 的 `switch` 的某个 case 里。这四类占工作台六个页一轮里 182K 次后面跟着跳转的比较中的 127K（`===` 48K，`=== null` 45K，`=== undefined` 21K，`<` 14K，然后 `typeof` 18K，`!=` 9K，`!==` 8K），分发次数在那里少了 3.3%，店面页 2.9%，MUI 1.5%，bench 页 3.3%。但省一次分发约是 17 条指令，所以工作台页一次渲染只少执行 0.26% 的指令，店面页 0.34%，MUI 0.22%，bench 页 0.28%，`r_react_ssr` 0.86%（callgrind，16 个页的 HTML 相同），而它需要在工作台上达到 0.7%。把每个后面跟着跳转的比较都合并（`!==` 通过把跳转反过来，`typeof`、`==`、`!=` 和 `>=` 放在最后空着的操作码编号里）还能多 0.1%。它也会把最后空着的操作码编号用到 256 以下。
+- **用查找 atom 的表来分发字符串 `switch`**，像 Hermes 对 10 个 case 或更多时所做的那样，2026-10-31 估算。工作台六个页的一轮，比较 38K 个字符串 case：其中 26.5K 个是 `dup_case_atom`，连分发约 25 条指令每个，11.7K 个仍然是 `dup`、`push_atom_value`、`strict_eq` 加一个跳转，也就是共用一个函数体的那些 case 的 shape，它们用 `if_true` 跳转。这约占一次渲染指令数的 0.2%，低于值得做的 0.3%，因为 tifa 的 Vite 插件已经在 React DOM 的长 switch 前面放了一个 `Set.has` 测试（`guardSwitches`）。没有插件的 React DOM 一次渲染比较 83K 个 case（30K 个是 `dup_case_atom`，53K 个是 `if_true` shape），约占 `r_react_ssr` 一次渲染指令的 9%：这张表对插件没有覆盖的库有用，或者在去掉 `guardSwitches` 之后有用。给 `if_true` shape 做一个 `dup_case_atom`，可以不用表，一个操作码就拿到其中很大一部分。
+- **和字符串字面量比较，做成一个操作码**（`strict_eq_atom`、`strict_neq_atom`、`strict_eq_loc`、`strict_neq_loc`），2026-10-31 在 v0.29.6（c5efd5d8）之上测量。`x === "lit"` 和 `x !== "lit"`，字面量在任一侧，原地比较字符串的 atom，局部变量也一样，字符串 `switch` 的 case 也用了它。工作台六个页的一轮，运行了 26.6K 次 `push_atom_value` 加 `strict_eq`，19.5K 次 `push_atom_value` 加 `strict_neq`，其中 26.5K 次紧跟在一个 `get_loc` 之后。一次渲染的指令数在 `r_react_ssr`（2.29%）和工作台页（0.10%）上下降，在店面页（0.19%）和 MUI 页（0.15%）上上升，callgrind 在 linux/amd64 上位置 0.0，HTML 相同，那里 LLVM 为多出来的四个 case 把解释器重新排了布局。时间还是上升了：在生成构建上，8 个代码位置，`r_react_ssr` 的一次渲染用了时间的 1.026（1.009 到 1.047，3 轮），编译 bundle 并渲染一次的运行是 1.012，六个工作台页 1.022（一轮）。Callgrind 对 `r_react_ssr` 一次渲染的缓存和分支模拟发现，间接跳转（分发）少 8.4%，未命中的一样多，未命中的条件分支多 4.4%，指令缓存未命中多 4.1%：按每次分支未命中 15 到 20 个周期算，大约就是损失的那 2.6%。这些操作码用掉了 256 以下 5 个空着的编号里的 4 个，还有字节码版本。没有采用。
 - **`return x`（局部变量或参数）做成一个把值移出去的操作码**（`return_loc`），2026-10-31 在上面那个和字符串字面量比较的操作码之上测量。它只在返回之后没有什么能读这个变量的地方才做（没有捕获、没有直接 `eval`、没有 `with`、没有映射的 `arguments`，不是生成器或 async 函数，不在 `finally` 里面），省一次取引用和一次释放：工作台六个页的一轮用这种方式返回参数 14.6K 次，返回局部变量 6.5K 次。但每个应用一次渲染还是多执行了指令：工作台页 0.13%，店面 0.10%，MUI 0.73%，`r_react_ssr` 的一次渲染 0.55%，callgrind 在 linux/amd64 上。这个操作码用掉了 256 以下最后一个空着的编号，代价在 LLVM 多一个 case 之后给 `JS_CallInternal` 排的布局里，比一次返回省下的那几条指令更大。
 
 ## 接下来
@@ -856,7 +856,7 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 上面的测量给 C 引擎留下的，都不大。低于约 3% 的改动需要[代码位置](#代码位置)，再低要用 callgrind。
 
 - **解释器函数**占 tifa 页面指令数的 52.7%（15 个页，平均每次渲染 4,147 M 条指令），下一个函数远远落后：`add_property` 4.9%，`free_object` 2.8%，`js_call_c_function` 2.2%，`JS_NewObjectFromShape` 1.7%，`JS_GetPropertyInternal` 1.7%，`lre_find` 1.6%。
-- **一次 JavaScript 调用的入口**占一次调用 190 条原生指令中的约 95 条，而 73,000 次调用构成一次工作台渲染。把局部变量设成 `undefined` 的循环占解释器原生指令的 2.1%。更小的入口已经试过（[调用 for in 和 hasOwnProperty.call](#调用-for-in-和-hasownpropertycall)，以及上面的更少参数）。
-- **添加属性**（`add_property`，占指令的 4.9% 和最后一级未命中的 8.6%）是属性访问里剩下的最大一块。对象字面量现在对普通键跳过它（[一次建成最终形状的对象字面量](#一次建成最终形状的对象字面量)）。
+- **一次 JavaScript 调用的入口**占一次调用 190 条原生指令中的约 95 条，而 73,000 次调用构成一次工作台渲染。把局部变量设成 `undefined` 的循环占解释器原生指令的 2.1%。更小的入口已经试过（[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)，以及上面的更少参数）。
+- **添加属性**（`add_property`，占指令的 4.9% 和最后一级未命中的 8.6%）是属性访问里剩下的最大一块。对象字面量现在对普通键跳过它（[一次建成最终 shape 的对象字面量](#一次建成最终-shape-的对象字面量)）。
 - **翻译**花 11% 到 13%，轮询花 2% 到 7%。原因里剩下的，要么是设计（局部变量放在影子栈上），要么是上面试过的。
 - **内存**，每个 VM：渲染临时空间里的空闲页、影子栈碰过的页，以及空闲块之间的空洞，构成一个 VM 的常驻内存和引擎对它的块的计数之间的差距（商店每个 VM 4.2 MiB，MUI 2.9，来自渲染后 8 个 VM 对 1 个）。池让一个 VM 等待时，`ReleaseMemory` 把空闲页还回去。

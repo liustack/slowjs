@@ -24,7 +24,7 @@ git remote add quickjs https://github.com/bellard/quickjs.git
 git fetch quickjs
 ```
 
-升级在一个分支上做（`git switch -c upgrade-quickjs-<date>`），并按 [commit.md](commit.md#branches-and-merges) 所说合并进 `main`。
+升级在一个分支上做（`git switch -c upgrade-quickjs-<date>`），并按 [commit.md](commit.zh-CN.md#分支和合并) 所说合并进 `main`。
 
 ## 把上游 QuickJS 搬进 engine/
 
@@ -34,10 +34,10 @@ git fetch quickjs
 
 1. `git fetch quickjs`，然后看有什么新的：`git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`。
 2. 把它的 diff 应用到 C 树上：`git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`。碰到 liustack/quickjs 的改动时（[changes](changes/README.zh-CN.md) 里写了涉及的函数），那个改动保留，上游的文字围着它合并。丢掉修改 `engine/` 里没有的东西的那些块（shell 库、`fuzz/`、Makefile）。
-3. 写一个没有这个提交就失败、有了就通过的测试，放在 `engine/test/` 里（`engine/test/compare/` 里的一个脚本加它的输出，或者 `unit.c`、`unit-oom.c` 或 `unit-white.c` 里的一个检查），如 [testing.md](testing.md#the-c-tree-and-its-native-test-host) 所述。
-4. 运行 `make check-fast`，为两种架构重新生成引擎（`make gen`、`make gen ARCH=arm64`，见 [testing.md](testing.md#generate-and-check)），并把 C、测试和生成的文件一起提交，提交信息里写明上游的提交。
+3. 写一个没有这个提交就失败、有了就通过的测试，放在 `engine/test/` 里（`engine/test/compare/` 里的一个脚本加它的输出，或者 `unit.c`、`unit-oom.c` 或 `unit-white.c` 里的一个检查），如 [testing.md](testing.zh-CN.md#c-树和它的原生测试宿主) 所述。
+4. 运行 `make check-fast`，为两种架构重新生成引擎（`make gen`、`make gen ARCH=arm64`，见 [testing.md](testing.zh-CN.md#生成并检查)），并把 C、测试和生成的文件一起提交，提交信息里写明上游的提交。
 5. 一批改动做完时，运行 `make check-full`。test262 的已知错误（33 个）必须逐行保持不变，除非这个提交修好了其中一些。那就更新 `engine/test/test262_errors.txt` 并说明。
-6. 按 [performance.md](performance.md#how-the-numbers-were-measured) 所说测量它，在 [changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 里加一行，用户能看到时在两份更新记录里各加一行。
+6. 按 [performance.md](performance.zh-CN.md#数字是怎么测的) 所说测量它，在 [changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 里加一行，用户能看到时在两份更新记录里各加一行。
 
 要把 test262 换到更新的修订，改 `engine/test/test262.sh` 开头的提交和 SHA-256，检查 `engine/test/test262.diff`（上游 QuickJS 给 test262 打的补丁）还能打上，运行 `engine/test/test262.sh`，读过每个新错误之后，用它报告的错误替换 `engine/test/test262_errors.txt`。
 
@@ -52,7 +52,7 @@ C 引擎的 Go 汇编（`internal/cengine`，提交进仓库的）是用 Go 1.27
 Go 改了其中任何一项，生成器的某个检查或某个测试就会失败。程序在构建时不做这个检查，所以更新的 Go 会让构建停下。因此，在换用更新的 Go 之前，用它运行下面这些，每条命令的标签里都加上 `-tags quickjs_anygo`：
 
 1. 运行 `go test -p 1 -tags testhooks,quickjs_anygo ./internal/cengine .`，以及抢占锤（`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,quickjs_anygo -run Hammer ./internal/cengine`）。故障测试（`TestFault*`、`TestFaultNoSplit`）是能发现信号路径变化的那些。
-2. 用新的 Go 运行生成器的测试（`CHECK_TAGS=quickjs_anygo make check-fast`，它的 `goasm` 步骤。光用 `GOFLAGS=-tags=...` 不行：自己带 `-tags` 的命令会替换它，门会把它挡住）。它们构建样本程序，把它们链接起来，检查栈检查、对 `runtime.morestack_noctxt.abi0` 的调用，以及链接后的二进制里哪些函数是 NOSPLIT，所以形状变了会在那里失败。然后用 [testing.md](testing.md#the-go-host-of-the-generated-engine) 的链接后检查（`-verify-bin`，对一个用 `-tags goasmkeep,quickjs_anygo` 构建的测试二进制）以同样的方式检查引擎本身。`make check-gen` 不测 Go 版本：它只检查提交进仓库的文件就是生成器生成的。
+2. 用新的 Go 运行生成器的测试（`CHECK_TAGS=quickjs_anygo make check-fast`，它的 `goasm` 步骤。光用 `GOFLAGS=-tags=...` 不行：自己带 `-tags` 的命令会替换它，门会把它挡住）。它们构建样本程序，把它们链接起来，检查栈检查、对 `runtime.morestack_noctxt.abi0` 的调用，以及链接后的二进制里哪些函数是 NOSPLIT，所以 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 变了会在那里失败。然后用 [testing.md](testing.zh-CN.md#生成引擎的-go-宿主) 的链接后检查（`-verify-bin`，对一个用 `-tags goasmkeep,quickjs_anygo` 构建的测试二进制）以同样的方式检查引擎本身。`make check-gen` 不测 Go 版本：它只检查提交进仓库的文件就是生成器生成的。
 3. 如果故障测试失败，就读新版本里 `runtime.sigpanic` 和栈检查的源码，找出原因。如果汇编器自己把别的函数标成了 NOSPLIT，就把 `internal/goasm/gen/nosplit.go` 里的 `autoNoSplit` 改成你在那里读到的样子，并重新生成引擎。
 4. 全部通过后，把 `internal/goversion/newer.go` 的构建行移到下一个版本，把里面的名字改成你核对过的版本，并把新版本写在这里和 README 里，中英文两份都写。`TestNewerGoStops` 检查这一行和名字是一致的。
 
@@ -114,7 +114,7 @@ go-intl v0.6.1 用 tz 2026c 生成它的时区。数据包带的是更晚的一�
 
 1. 在 `qjstz` 里设置 `TZ_VERSION` 和四个校验和，校验和取自 `tzdata/icunew/<version>/44` 下四个文件的 `sha256sum`。
 2. 运行 `qjs-sync.sh checkout`，然后运行 `qjs-sync.sh pack`。
-3. 修改 `TestQJSTZVersion` 里、[temporal.md](changes/temporal.md#zone-data) 里和 `temporal` 的包文档里的版本，并在 `temporal/all_test.go` 的 `TestZoneData` 里为更新改过的一个时区加一个用例。
+3. 修改 `TestQJSTZVersion` 里、[temporal.md](changes/temporal.zh-CN.md#时区数据) 里和 `temporal` 的包文档里的版本，并在 `temporal/all_test.go` 的 `TestZoneData` 里为更新改过的一个时区加一个用例。
 4. 运行 `qjs-sync.sh test -p 2`、`qjs-sync.sh test-chromium -p 2`、`go test ./internal/gointl/... ./temporal` 和 `make gointl`。
 
 当 go-intl 自己换到那次更新或更晚的更新时，`checkout` 写出的仍是 `qjstz` 的时区。那时要把 `qjstz` 设成 go-intl 的版本或更晚的，绝不能更早。
