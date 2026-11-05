@@ -146,7 +146,7 @@ the current engine under the same GC stop setup as those tests.
 as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
 declarations. The host provides the callbacks of `engine/host.h` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. `-allow` names more external symbols the run accepts. It still defaults to the malloc family, which the engine does not call. A rejection stops the run and nothing is written (a rejection by the
+in `missingNames`. `-allow` names more external symbols the run accepts. It names none by default. A rejection stops the run and nothing is written (a rejection by the
 pass is one `LLVM ERROR:` line and exit status 1, not an abort with opt's
 stack), and the default has no stubs. `-keep-going` is for surveys: it lists every function the
 C must change, by class, and stubs it instead of stopping. `-release` is the
