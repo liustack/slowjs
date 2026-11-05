@@ -1,5 +1,7 @@
 # Engine generator
 
+English · [简体中文](README.zh-CN.md)
+
 The generator turns the C engine in `engine/` into the Go assembly in
 `internal/cengine`. It handles the calling convention, the stack rules and
 the shadow stack on amd64 and arm64.
@@ -108,39 +110,27 @@ code and morestack clobber:
 - `body` (default): the call site saves the ones the calling function's body
   uses (amd64 RBX, R12 to R15, arm64 R19 to R25 and F8 to F15).
 - `all`: the call site saves all of them (for comparison).
-- `stub` (arm64): the call goes through a stub that saves all 15 (the first
-  arm64 backend, for comparison).
+- `stub` (arm64): the call goes through a stub that saves all 15 (for
+  comparison).
 - `pn`: the code is compiled with preserve_none, so LLVM keeps across a call
   only what is live, in its own frame, and no call site saves anything.
   Arguments then use amd64 R12 to R15, RDI, RSI, RDX, RCX, R8, R9 and arm64
   X20 to X25. A seventh arm64 argument would land in X26, which the scan
   rejects, so the pass moves larger argument lists into a block.
 
-What a call costs in each mode, from a loop that calls a unified entry (the
-least of 5 runs of 300 million calls, in ns a call). On amd64 (EPYC 7B13)
-`body` takes 2.59 for an int and 2.88 for a JSValue, `all` 0.29 more, and `pn`
-0.3 to 0.6 less. On arm64 (Apple Silicon) `stub` takes 4.9 and `all` 4.6, since
-saving all 15 registers costs 2.6 to 2.7 more than `body` (1.9). There `pn`
-takes the same as `body` for an int, 0.16 more for a JSValue and 0.5 to 0.6
-more for a double, where LLVM stores and reloads the accumulator around the
-call instead of keeping it in d8. The 48 unified call sites of the test unit (arm64)
-save 720 registers in `all` and `stub`, 233 in `body` and none in `pn`, and the
-lowered code of the unit is 3% smaller on amd64 and 8% on arm64 with `pn` than
-with `body`. `pn` is the mode of the engine: as fast as `body` or faster, and
-the call site saves nothing, which keeps the lowering simplest. The code
-position moves such a loop by about 0.3 ns, so only the numbers of one build
-compare.
+`pn` is the mode of the engine: it is as fast as `body` or faster, and the call
+site saves nothing, which keeps the lowering simplest.
 
 `GEN_NO_SAVES=1` with `body` and `GEN_NO_PACK=1` with `pn` are negative builds
 that must fail the tests and the register scan.
 
 ## Running
 
-`proto.sh` (from the liustack/quickjs root, linux/amd64) builds the pass, generates
-`internal/proto`, builds its tests and runs the post-link verify. `ARCH=arm64`
+The test package is a small C module of samples that exercises the generator on its own. `proto.sh` (from the liustack/quickjs root, linux/amd64) builds the pass, generates
+it as `internal/proto` (not checked in), builds its tests and runs the post-link verify. `ARCH=arm64`
 generates the arm64 package and cross-builds its tests: copy the package to
 an arm64 machine to run them. `MODE` is the call mode. Set `CALL_OVERHEAD=1`
-to run the call-overhead timing. The proto
+to run the call-overhead timing. Its
 tests are `testdata/*.txt`, kept as text so this package does not compile
 them. `go test` here runs the rule tests. With `QUICKJS_LLVM` (an LLVM bin
 dir) and `QUICKJS_SHADOW_PASS` (the built pass) set, it also runs every sample
@@ -150,16 +140,15 @@ generated, and `TestSampleRuns` does the same for each sample of
 `testdata/run`: each defines `long run(long *r, int one)`, is run natively
 (also under UBSan) and from Go in body, pn and pn poison builds, and must print
 the same lines, and the post-link check must pass on it. `internal/enginecmp` measures
-the current engine under the same GC stop setup as the proto tests.
+the current engine under the same GC stop setup as those tests.
 
 ## The whole engine
 
 `cmd/engine` runs the same pipeline over all of `engine/` and `engine/libc`
 as one module and writes a Go package (`-out`): the functions in .s files
 bounded in size, the read-only data as `engine_rodata`, and the Go
-declarations. The host provides `host_now`, `malloc`, `realloc`, `free`,
-`malloc_usable_size` and `goasmMissing`, which each stub calls with its index
-in `missingNames`. A rejection stops the run and nothing is written (a rejection by the
+declarations. The host provides the callbacks of `engine/host.h` and `goasmMissing`, which each stub calls with its index
+in `missingNames`. `-allow` names more external symbols the run accepts. It names none by default. A rejection stops the run and nothing is written (a rejection by the
 pass is one `LLVM ERROR:` line and exit status 1, not an abort with opt's
 stack), and the default has no stubs. `-keep-going` is for surveys: it lists every function the
 C must change, by class, and stubs it instead of stopping. `-release` is the
@@ -229,10 +218,7 @@ files, `T` for `engine_decl_<arch>.go`). `scripts/gen-engine.sh` passes no tag:
 the checked-in files carry the architecture alone (`amd64`, `arm64`). The arm64 engine runs on
 darwin/arm64 and linux/arm64. arm64 takes `-mode pn` only:
 preserve_none passes integers in X20 to X25 there, and its next registers,
-X26 to X28, are Go's. The other modes stay with the prototype (`proto.sh`).
-Measured on the prototype on an Apple M-series core, a call through a stub
-or with all callee-saved registers saved took about 3.9 ns, `body` about 1 ns
-and `pn` about 1.1 ns, and `pn` has no saves at any call site. arm64 has no
+X26 to X28, are Go's. The other modes are only in the test package (`proto.sh`). arm64 has no
 `-poison` or `-loose-varargs` build and refuses both. It lowers each function
 in `LowerARM64EngineFunc` (`arm64_engine.go`) and holds every entry, call and
 return to the registers llc's facts and probes name, as the amd64 post-link

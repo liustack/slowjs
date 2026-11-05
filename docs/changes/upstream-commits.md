@@ -10,6 +10,8 @@ read_when:
 
 # Upstream commits taken into the C tree
 
+English · [简体中文](upstream-commits.zh-CN.md)
+
 `engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
 
 Where an upstream commit meets a change of liustack/quickjs, that change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
@@ -106,7 +108,7 @@ Three more commits were taken and then reverted, each by a commit of its own, be
 - `445624b` (the number cases of `==` and `===`, merged into `goasm_eq_fast`, which already has its other cases): nothing moved. `r_react_ssr` 0.995, `q_float_arith` 1.004, `v8_navier_stokes` 1.004, `v8_raytrace` 0.986 (range 2.0%). Upstream's follow-up `762e6fc` fixes a typo in the macros it adds, which the fork never had.
 - `888481d` (`String.prototype.concat` in one buffer): `c_string_methods` 0.997, `c_escape_html` 0.995, `c_string_concat` 1.019 (range 5.8%), `r_react_ssr` 1.002. tifa's pages do not call `concat`.
 
-The 23 fixes of 2026-10-31 together, against main (`bcd2eb1a`, with the stability 5 batch), without PGO and with the GC of Go off (`GOGC=off`), at position 0.0 on one core of an EPYC 7B13 with its sibling idle. Instructions are callgrind's, per render of every page of an app on one VM that rendered each page once before (the difference of a run of 3 renders and one of 1). Time was not measured. The fixes that could cost speed are `9a0197f` (every element of a sort is written back), `fce112d` (a test of extensibility moved down), `abf571a` and `1ec58aa`.
+The 23 fixes of 2026-10-31 together, against main (`bcd2eb1a`, with the stability 5 batch), with the GC of Go off (`GOGC=off`), at position 0.0 on one core of an EPYC 7B13 with its sibling idle. Instructions are callgrind's, per render of every page of an app on one VM that rendered each page once before (the difference of a run of 3 renders and one of 1). Time was not measured. The fixes that could cost speed are `9a0197f` (every element of a sort is written back), `fce112d` (a test of extensibility moved down), `abf571a` and `1ec58aa`.
 
 | App | Main | This branch | Change |
 | --- | ---: | ---: | ---: |

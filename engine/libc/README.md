@@ -1,16 +1,18 @@
 # engine/libc
 
+English · [简体中文](README.zh-CN.md)
+
 The small libc of the C tree in `engine/`. The engine C is built with `-ffreestanding -nostdinc` and sees only this folder: no system header, no system library. What it asks of the outside is the callbacks of `engine/host.h` and `host_memory_grow` of `engine/heap.h`.
 
 ## What is here
 
 | Part | Where | Source |
 | --- | --- | --- |
-| Memory and string functions: `memmove memset memcmp bcmp bzero memchr strlen strcmp strchr strrchr` | `string/` | musl, as it is |
+| Memory and string functions: `memmove memset memcmp bcmp bzero memchr memrchr strlen strcmp strchr strchrnul strrchr` | `string/` | musl, as it is |
 | `memcpy` | `string/memcpy.c` | written here, in place of musl's. Overlapping loads and stores of one width up to 128 bytes, then a loop of 128 bytes with the destination aligned to 16. SSE2 and NEON moves only, no `REP MOVSB`, no AVX. Tested by `engine/test/libc-test.sh` |
 | 34 math functions: the 22 that need a real algorithm (`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`), the 12 that are exact (`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`), and the helpers and tables they use | `math/`, `internal/libm.h` | musl. `libm.h` has a patch (below) |
 | `snprintf`, `vsnprintf` | `stdio.c` | written here. Flags `- + space 0 #`, width and precision (a number or `*`), lengths `hh h l ll z j t` on the integer conversions only, conversions `d i u x X o c s p %`. No floating-point conversions. Anything else calls `abort` before the argument is read: another conversion, a length on `c s p %`, a format that ends inside a conversion, a width or precision that does not fit an int, an output over INT_MAX |
-| `abort` | `abort.c` | written here. It calls `host_call` with the magic `HOST_CALL_ABORT`. The Go host panics and marks the VM close-only, as it does today. A trap would be a signal, and a signal kills the Go process |
+| `abort` | `abort.c` | written here. It calls `host_call` with the magic `HOST_CALL_ABORT`. The Go host panics and marks the VM close-only. A trap would be a signal, and a signal kills the Go process |
 | `sqrt`, `fabs` | `math.c` | written here, one instruction each. musl's `sqrt` is in software |
 | Headers: `stddef.h stdint.h inttypes.h limits.h float.h stdarg.h stdatomic.h stdlib.h stdio.h string.h strings.h math.h assert.h endian.h fenv.h` | the root | written here, on the compiler's own macros and builtins. `abort()` asks the host (below), `alloca` is the builtin, a failed `assert` is an `abort()` |
 
@@ -36,16 +38,11 @@ musl's `log`, `log2` and `pow` have a second path for a hardware fma, and the tw
 
 ## Flags
 
-The engine files and these are built with the flags of `engine/test/flags.sh`, which `engine/test/build.sh`, `engine/test/check-symbols.sh` and the generator (`internal/goasm/gen`) read:
-
-```
--ffreestanding -nostdinc -fno-math-errno -ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF
--U__SIZEOF_INT128__ -fno-stack-protector -fwrapv -funsigned-char
-```
+The engine files and these are built with the flags of `engine/test/flags.sh`, which `engine/test/build.sh`, `engine/test/check-symbols.sh` and the generator (`internal/goasm/gen`) read. The list is there, with the reason for each flag. Nothing else in the repository repeats it.
 
 On arm64 `-mno-outline-atomics` comes with them, so that an atomic stays an instruction and does not become a call of `__aarch64_*`, a function nobody defines.
 
-`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as they were in the previous engine. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
+`-ffreestanding` also means `-fno-builtin`, so a call to `pow(2, 10)` is a call, and the file that defines `memcpy` cannot be turned into a call to itself. `-fno-math-errno` makes `sqrt` an instruction. `-ffp-contract=off` and `-U__FP_FAST_FMA` keep fused multiply-add out of the math, so that every target gives the same results. `-U__SIZEOF_INT128__` keeps the BigInt limbs 32 bits wide, as in every earlier release. Add `-I engine/libc` for the engine files, and `-I engine/libc/internal -include engine/libc/internal/features.h` for these.
 
 ## Checks
 

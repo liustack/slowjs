@@ -6,9 +6,11 @@ read_when:
 
 # Young collection
 
+English · [简体中文](young-collection.zh-CN.md)
+
 Release: v0.27.3.
 
-They visit only those objects. A full collection, `JS_RunGC`, visits every object twice, and on a VM of tifa's example shop that is about 30,000 objects of the bundle before any garbage. An embedder that runs one unit of work at a time, such as a page render, can run a young collection after each and a full one now and then, and spend on each collection about as long as the garbage of that unit.
+A young collection visits only the GC objects made since the last collection. A full collection, `JS_RunGC`, visits every object twice, and on a VM of tifa's example shop that is about 30,000 objects of the bundle before any garbage. An embedder that runs one unit of work at a time, such as a page render, can run a young collection after each and a full one now and then, and spend on each collection about as long as the garbage of that unit.
 
 ## How it works
 
@@ -49,7 +51,7 @@ A VM of the shop holds 14.2 MB after a collection against 15.5, and the MUI page
 
 `younggc_test.go` in the root package checks the Go API: 400 rounds of random graphs with closures, Maps, Sets, arrays, old objects, an old closure variable and an old WeakMap keep what the roots reach after each young and each seventh full collection, and in the end a full collection frees as much as without young collections (`TestYoungGCKeepsReachable`). A young collection frees young cycles as the full one does and keeps a suspended generator whose frame holds a cycle (`TestYoungGCFreesCycles`), frees an old object that only young garbage held, with its weak map entry, WeakRef or registration (`TestYoungGCFreesWhatOnlyGarbageHeld`), and leaves every case of the ephemeron tests to the next full collection unless the key is garbage on its own (`TestYoungGCEphemeron`).
 
-`TestYoungGCDefersSuspendedAsyncFrame` creates an async call suspended on an unreachable promise and exports a factory for closures over its local payload. A full GC makes the frame and its attached var-ref old. A new closure, held only by a young self-cycle, becomes the var-ref's only owner. Freeing that closure releases the old var-ref during the young sweep, so `async_func_free` must defer the old frame. The test first checks that the old frame is suspended with one reference, then checks that it leaves the GC lists and its payload's WeakRef clears. On darwin/arm64, removing only the `youngDefer` call in `async_func_free` through a Go overlay makes this test fail with a zero-count object left on the old list. Removing only the call in `__JS_FreeValueRT` makes all six cases of the existing `TestYoungGCLeavesNoZeroCount` fail with the same invariant violation. The generated files themselves are unchanged by these mutation checks.
+The `suspended async frame` case of `engine/test/compare/young_gc.js` creates an async call suspended on an unreachable promise and exports a factory for closures over its local payload. A full GC makes the frame and its attached var-ref old. A new closure, held only by a young self-cycle, becomes the var-ref's only owner. Freeing that closure releases the old var-ref during the young sweep, so `async_func_free` must defer the old frame. The test first checks that the old frame is suspended with one reference, then checks that it leaves the GC lists and its payload's WeakRef clears. On darwin/arm64, removing only the `youngDefer` call in `async_func_free` through a Go overlay makes this case fail with a zero-count object left on the old list. Removing only the call in `__JS_FreeValueRT` makes all six cases of `leavesNoZeroCount` in the same file fail with the same invariant violation. The generated files themselves are unchanged by these mutation checks.
 
 ## In C
 

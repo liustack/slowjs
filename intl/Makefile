@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all clean edit editor leak test
+.PHONY:	all clean edit editor test
 
 all: editor
 	golint 2>&1
@@ -20,9 +20,6 @@ editor:
 	go test -c -o /dev/null ./...
 	go install -v  ./...
 	staticcheck 2>&1
-
-leak:
-	go test -v -run TestMemgrind2 -tags=libc.memgrind
 
 test:
 	go test -failfast -v -timeout 24h -count=1 ./...

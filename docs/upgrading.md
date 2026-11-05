@@ -11,6 +11,8 @@ read_when:
 
 # Upgrading from upstream
 
+English · [简体中文](upgrading.zh-CN.md)
+
 ## Branches and remotes
 
 `main` is the branch of liustack/quickjs.
@@ -60,7 +62,7 @@ The lowest Go is 1.26.6, the `go` line of `go.mod`. On Go 1.26 the things above 
 
 ## Updating the intl locale data
 
-All Intl constructors use the go-intl packs below. `intl/cldr.bin`, its generator and the host-zone DST table have been removed. Builds and tests need no network or browser.
+All Intl constructors use the go-intl packs below. Builds and tests need no network or browser.
 
 The pack generator reads `intl/testdata/chromium/icu.json.gz`. It records ICU resource inheritance, raw calendar and zone strings, non-Latin number symbols and the RBNF bundles Chromium ships. The generator applies those choices to go-intl's models and encodes one shared pool for each data set. Missing RBNF data follows ICU's style-construction failure path. It does not substitute an invented value.
 
@@ -76,7 +78,7 @@ node intl/testdata/chromium/record.cjs probes migration
 go test -short -p 2 ./intl/... ./temporal/...
 ```
 
-Record each other golden set with `record.cjs golden <set>`, as the recorder's header lists. Chromium 156.0.8078.4 uses ICU commit `5aa526207171ecadf31597f0980a7b7ad8872f33`. The pack tool now owns the ICU parser formerly in `intl/internal/gen`.
+Record each other golden set with `record.cjs golden <set>`, as the recorder's header lists. Chromium 156.0.8078.4 uses ICU commit `5aa526207171ecadf31597f0980a7b7ad8872f33`.
 
 Keep the raw browser answers. Explain every changed expression before updating expectations. The three Winnipeg cases in `TestGoIntlMigration` name exact tz 2026e answers because the reference browser has older zones.
 

@@ -1,6 +1,8 @@
 WARNING
 =======
 
+English · [简体中文](README.zh-CN.md)
+
 This project has been deprecated in favor of a combination of Perfherder (backend) and https://github.com/mozilla-frontend-infra/js-perf-dashboard (frontend). If you have any feedback about AWFY, feel free to open issues and pull requests there!
 
 AreWeFastYet

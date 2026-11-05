@@ -1,14 +1,59 @@
-# liustack/quickjs
+<h1 align="center"><img src="assets/brand/quickjs-banner.png" alt="liustack/quickjs"></h1>
 
-Run today's npm code unchanged inside one static Go binary.
+<p align="center"><b>The fastest pure Go JavaScript engine for rendering React.</b></p>
 
-liustack/quickjs renders React faster than any other pure Go JavaScript engine, with no cgo and no Node process. It is QuickJS compiled to Go assembly and tuned for server rendering, built for tifa, a Go framework for React pages.
+<p align="center">
+  <a href="./README.zh-CN.md">简体中文</a> ·
+  <a href="#how-fast">How fast</a> ·
+  <a href="docs/api.md">API</a> ·
+  <a href="docs/benchmarks.md">Benchmarks</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale.
+<p align="center">
+  <a href="https://x.com/liustack"><img src="https://img.shields.io/badge/follow-%40liustack-black?style=flat-square&logo=x&logoColor=white" alt="Follow @liustack on X"></a>
+  <a href="https://pkg.go.dev/github.com/liustack/quickjs"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=flat-square&logo=go&logoColor=white" alt="Go reference"></a>
+  <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/liustack/quickjs?style=flat-square" alt="Go version"></a>
+  <img src="https://img.shields.io/badge/CGO-off-success?style=flat-square" alt="CGO off">
+  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
+  <img src="https://img.shields.io/badge/Not%20backed%20by-Y%20Combinator-FF6600?style=flat-square&logo=ycombinator&logoColor=white" alt="Not backed by Y Combinator">
+  <img src="https://img.shields.io/badge/users-unknown-lightgrey?style=flat-square" alt="Users unknown">
+</p>
+
+Your Go server renders React pages itself, faster than C QuickJS on the same code, in one static binary with no cgo and no Node process beside it.
+
+It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale. It is QuickJS compiled to Go assembly and tuned for server rendering, built for [tifa](https://github.com/liustack/tifa), a Go framework for React pages.
 
 It is an engine, not Node: there is no `require`, `fs` or `process`. Code from npm runs unchanged once it is bundled as for a browser, as React is.
 
-English · [简体中文](README.zh-CN.md)
+## How fast
+
+CPU time of one render of the server bundles of tifa's apps, with the same JavaScript on one core, as a multiple of liustack/quickjs (lower is faster):
+
+| Engine | Pure Go | React bench pages | MUI pages | Shop pages |
+| :-- | :-: | --: | --: | --: |
+| **liustack/quickjs** | yes | **1.00** | **1.00** | **1.00** |
+| C QuickJS 2026-06-04 | no, C | 1.32 | 1.30 | 1.04 |
+| go-quickjs | yes | 1.87 | 1.39 | 1.73 |
+| go-quickjs with its JIT | yes | 2.03 | 1.58 | 2.85 |
+| moejs | yes | 2.29 | 1.51 | does not load |
+| modernc.org/quickjs | yes | 3.97 | 4.00 | 2.56 |
+| goant with its JIT | yes | 5.04 | 3.97 | 4.03 |
+
+liustack/quickjs v0.30.1 on a GCP c2d-standard-8 (AMD EPYC 7B13), Go 1.27.2. The MUI and shop pages need `Intl`, which C QuickJS and most of the others do not have, so every engine runs them on the FormatJS polyfill. With its own `Intl`, as tifa runs it, liustack/quickjs takes 0.75, 0.34 and 0.72 of the time of C QuickJS. Node 24 with its JIT takes 0.21 to 0.23 of the time of liustack/quickjs, and 0.60 to 0.69 with `--jitless`.
+
+It is not the fastest pure Go engine on everything. On the V8 benchmark suite (higher is better):
+
+| Engine | V8 suite score |
+| :-- | --: |
+| go-quickjs with its JIT | 5157 |
+| go-quickjs | 1785 |
+| **liustack/quickjs** | **1268** |
+| goant with its JIT | 1130 |
+| moejs | 811 |
+| modernc.org/quickjs | 431 |
+
+[docs/benchmarks.md](docs/benchmarks.md) has every table, the test262 results of each engine, the workloads where liustack/quickjs is slowest, and how to run it all again.
 
 ## Install
 
@@ -64,36 +109,14 @@ func main() {
 
 A VM is not safe for several goroutines at once: give each goroutine its own, or keep a pool. Intl and Temporal use embedded tz 2026e, so they need no host zoneinfo.
 
-## More API than Eval and Call
-
-The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs). Besides `NewVM`, `VM.Eval`, `VM.Call` and `Value`, which every program starts with, it has:
-
-- **`NewBuiltin(name, length, fn)` and `VM.NewBuiltinFunction(b)`**: a Go function javascript calls as it calls `Math.max`, with no reflection. `fn` reads its arguments from `Args` (`Number`, `String`, `Bool`, `Value`, `This`, `VM`, and `Latin1` or `UTF16` for the characters of a string as the engine holds them), which convert nothing, and returns a `Value`. A call that adds two numbers takes about 55 ns on an Apple M4, against about 470 ns through `RegisterHostFunc`. Make a Builtin once per process: VMs on several goroutines call it at once. An `*Error` it returns is thrown as the constructor its `Name` says (`Error`, `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError` or `InternalError`), any other error as a `TypeError`. [More](docs/changes/go-api.md#builtin-a-go-function-called-as-a-built-in)
-- **`VM.NewArray(vals...)`**: an array of values made in Go, made as an array literal makes one, so a setter a page put on `Array.prototype` never runs. [More](docs/changes/go-api.md#newarray)
-- **`VM.SetStrip(s)`** with `type Strip`: `StripSource` compiles functions without their source, so their `toString` shows `[native code]`, and `StripDebug` leaves out line and column numbers. [More](docs/changes/go-api.md#setstrip)
-- **`Error()` of an `*Error` made in Go** is `Name: Message`, as `Error.prototype.toString` writes it, where it was empty. An error taken from javascript keeps the engine's text. [More](docs/changes/go-api.md#error-of-an-error-made-in-go)
-- **`VM.RunGC()`, `VM.MemorySize()` and `VM.GCThreshold()`**: run a GC now, read the memory a VM takes and the threshold of its next GC, so a program can collect between two calls into javascript and set the threshold for the next one. [More](docs/changes/go-api.md#rungc-memorysize-and-gcthreshold)
-- **`VM.MemoryUsage()` and `VM.ReleaseMemory(keep)`**: see what a VM holds, by objects, strings, functions and arrays, and give memory it keeps free back to the system. [More](docs/changes/go-api.md#memoryusage-and-releasememory)
-- **`VM.RunYoungGC()`**: collect only the objects made since the last GC, so a server that runs a young GC after each render and a full one now and then spends on each GC about as long as the garbage of one render. [More](docs/changes/young-collection.md)
-- **`VM.OnClose(f)`**: run `f` when the VM is closed, so a package that keeps something per VM in a table of its own can drop it then. [More](docs/changes/go-api.md#onclose)
-- **`NewSharedBytecode(bytecode)` and `VM.EvalSharedBytecode(b)`**: VMs that load the same bytecode keep the source text and line tables of its functions in one copy, so each VM of tifa's example shop holds 2.36 MiB less, with the same `toString` and stacks. [More](docs/changes/go-api.md#sharedbytecode)
-- **Package `temporal`**: `temporal.Register(vm)` adds `Temporal`, every type and method V8 ships, computed in Go by go-intl with ICU's zones for tz 2026e built in, so the host's zoneinfo is never read. `Temporal.Now` reads the VM clock, and `temporal.Clock` overrides it for `Temporal.Now` alone. See the linked doc for current binary size measurements. [More](docs/changes/temporal.md)
-- **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`**: why a call ended, which no script can fake. [More](docs/changes/go-api.md#error-says-why-a-call-ended)
-- **`VM.SetClock(now)` and `VM.Now()`**: set and read the wall clock of a VM, which Date, Intl and Temporal all read. nil restores the live clock. [More](docs/changes/time-and-intl.md#one-wall-clock-per-vm)
-- **`VM.SetShapeCache(n)` and `DefaultShapeCache`**: how many shapes of plain objects (a shape is the engine's record of which keys an object has, in which order) a VM keeps for the next object with the same keys. [More](docs/changes/go-api.md#setshapecache-and-defaultshapecache)
-- **`GetAsyncContext` and `SetAsyncContext`**: two Builtins that read and set an object promise jobs carry: a `then` or an `await` runs with the one set when it was registered, so an `AsyncLocalStorage` written on them finds its store after `await` as in Node. A VM that never sets one runs promises as before. [More](docs/changes/go-api.md#the-async-context-of-promise-jobs)
-- **`VM.RegisterEscapeText(name)`**: defines a function named `name` on the global object that escapes text for HTML as React DOM's string renderer does (`&`, `<`, `>`, `"` and `'` become entities, and the argument becomes a string as in `"" + text`), written in C inside the engine. Nothing is on the global object until a host calls it. With it in tifa, the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. [More](docs/changes/go-api.md#registerescapetext)
-- **`VM.RegisterCopyProps(name)`**: defines a function named `name` on the global object that does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, written in C inside the engine. It copies only where its result and the loop's cannot differ, and answers `false` for any other config, which the script gives to the loop. Nothing is on the global object until a host calls it. With it in tifa, the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. [More](docs/changes/go-api.md#registercopyprops)
-- **`VM.RegisterStartTag(name)` and `VM.RegisterEndTag(name)`**: define functions on the global object that write the start tag of an element, with its attributes, style and text, as React DOM's server renderer does in `pushStartGenericElement`, and give its end tag as `endChunkForTag` does, written in C inside the engine. The start tag function writes only where React's functions could write nothing else, and returns the caller's `decline` object for any other call, which the script gives to React. Nothing is on the global object until a host calls them. On the start and end tags of one render of tifa's example pages they run about a fifth of the instructions React's functions take. [More](docs/changes/go-api.md#registerstarttag-and-registerendtag)
-
-The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.7, the shape cache in v0.26.16, `VM.OnClose` and package `temporal` in v0.27.0, `VM.RunYoungGC` in v0.27.3, `SharedBytecode` in v0.28.1, `VM.SetClock` and `VM.Now` in v0.28.2, and the async context in v0.28.5. `VM.RegisterEscapeText` came in v0.29.2 and `VM.RegisterCopyProps` in v0.29.3, and `VM.RegisterStartTag` and `VM.RegisterEndTag` are not released yet.
+Beyond `Eval` and `Call`, the API has Go functions that JavaScript calls as built-ins, control of the GC and the memory of a VM, a clock per VM, `Temporal`, and parts of React's server renderer written in C. [docs/api.md](docs/api.md) lists them, and [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs) documents each.
 
 ## What changes for you
 
 - **A limit ends the call.** A script that runs past its eval timeout or its memory limit stops there, whatever it catches: no `catch`, `finally`, promise handler or Go function of the page gets to run on. `*Error` says whether it was a timeout or memory. A panic in a Go function you gave the VM comes back to your Go code, and a VM that ran out of memory still closes without a leak.
 - **The same page on every machine.** A script's local time is UTC in every VM, without setting `TZ` for the whole process. `Intl` formats in every locale Chromium has, compared with Chromium 156 on about 75,000 expressions.
-- **Strings arrive whole.** A Go string from javascript is always valid UTF-8, and a Go string with invalid bytes reads in javascript as Go itself decodes it.
-- **C speed, without C.** A React page of the example shop of [tifa](https://github.com/liustack/tifa), a Go framework that renders React on the server, takes 0.98 to 1.06 times as long as in Bellard's C QuickJS on the same JavaScript (0.81 on the MUI pages), and the other pure Go engines that render these pages need 1.6 to 6.6 times as long (see [the comparison](docs/benchmarks.md#tifa-pages)). Several VMs on several cores do not wait on one lock.
+- **Strings arrive whole.** A Go string from JavaScript is always valid UTF-8, and a Go string with invalid bytes reads in JavaScript as Go itself decodes it.
+- **Faster than C, without C.** The changes of liustack/quickjs to the C of QuickJS make up for more than what compiling it to Go assembly costs (see [the table above](#how-fast)). Several VMs on several cores do not wait on one lock.
 
 ## Why you can trust it
 
@@ -103,32 +126,38 @@ The first five came in v0.26.17. Of the rest, the `*Error` fields came in v0.26.
 - **The tests are upstream's and more.** test262 gives 33 known failures, 25 fewer since the fixes taken from upstream QuickJS, and the same ones from run to run. On top come the recorded outputs of the engine, checks in C under AddressSanitizer and UndefinedBehaviorSanitizer, and the Go tests of the API.
 - **Someone depends on it.** It is kept for [tifa](https://github.com/liustack/tifa), a Go framework that renders React pages in it, and each release is measured on tifa's pages before tifa takes it.
 
-## Where it comes from
-
-The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/upstream.md](docs/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
-
-## Thanks
-
-Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/quickjs.
-
 ## Documentation
 
 | Doc | Read it when |
 | :-- | :-- |
+| [API](docs/api.md) | You want the Go API beyond `Eval` and `Call` |
 | [Changes](docs/changes/README.md) | You want to know why each change to the engine is safe, what it costs and what it gains |
 | [Performance](docs/performance.md) | You want to know how fast each release renders, or what was tried |
 | [Benchmarks](docs/benchmarks.md) | You want to know how this engine compares with the other pure Go JavaScript engines |
 | [Changelog](CHANGELOG.md) | You are upgrading and want to know what changed |
 | [Architecture](docs/architecture.md) | You are about to change the code |
 | [Testing](docs/testing.md) | You are about to commit, or want to check the engine |
-| [Upgrading](docs/upgrading.md) | You are taking a commit of upstream QuickJS, or new locale data |
+| [Upgrading](docs/upgrading.md) | You are taking a commit of upstream QuickJS, new locale data or a newer Go |
 | [Releasing](docs/releasing.md), [Commits](docs/commit.md) | You are making a release or a commit |
 | [Upstream](docs/upstream.md) | You are moving from modernc.org/quickjs or github.com/liustack/slowjs, or want to know where the code comes from |
+| [History](docs/history.md) | You want the numbers of the engine before v0.29, QuickJS translated to Go by ccgo |
 
-The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs).
+## Where it comes from
+
+The engine is [QuickJS](https://bellard.org/quickjs) by Fabrice Bellard and Charlie Gordon, the release of 2026-06-04. [docs/upstream.md](docs/upstream.md) has the exact version, how new QuickJS commits are taken in, and what to expect when you move from modernc.org/quickjs.
+
+Thanks to Fabrice Bellard and Charlie Gordon for QuickJS, and to Jan Mercl, Dan Kortschak and the other authors of [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) and [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs). Their work showed that QuickJS can run inside a pure Go program, and it inspired liustack/quickjs.
+
+## Community
+
+Issues are welcome any time: [open one](https://github.com/liustack/quickjs/issues/new). Tell us what you run in it, where it is slow, and what should come next. Follow the liustack WeChat official account, and come find me on X: **[@liustack](https://x.com/liustack)**. What changes in liustack/quickjs and tifa is shared on WeChat and X.
+
+The **liustack** WeChat official account: AI startup opportunities, indie-dev insights, and hands-on AI tooling, delivered as they happen. Scan the QR code in WeChat, or search for "liustack":
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/liustack/quickjs/main/assets/wechat-qrcode.png" width="420" alt="liustack WeChat official account" />
+</p>
 
 ## License
 
-The files liustack/quickjs created are under the [MIT license](LICENSE-MIT), and its source files carry an SPDX line. Code that came from other projects keeps its own license: what remains from modernc.org/quickjs and modernc.org/libquickjs is under BSD-3-Clause ([LICENSE](LICENSE), [LICENSE-MODERNC-LIBQUICKJS](LICENSE-MODERNC-LIBQUICKJS)), the C of the engine under QuickJS's MIT license ([LICENSE-LIBQUICKJS](LICENSE-LIBQUICKJS)), the allocator under TLSF's BSD-3-Clause ([LICENSE-TLSF](LICENSE-TLSF)), and the small libc under musl's MIT license and the notices in [engine/libc/COPYRIGHT](engine/libc/COPYRIGHT). The changes of liustack/quickjs to those files are offered under MIT as well, and the files stay usable under their upstream licenses. The locale data that `intl` embeds stays under the Unicode License V3 and the other notices in [intl/LICENSE-DATA](intl/LICENSE-DATA), and `internal/gointl`, a copy of go-intl, under go-intl's [Unicode License V3](internal/gointl/LICENSE), with the notices of the ICU data and of the V8 and Rust code that go-intl ported, which [NOTICE.md](NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) lists.
-
-A program that ships a binary built with this module has to carry the notices of these licenses. [NOTICE.md](NOTICE.md) says which license covers which path, and which texts to include.
+The files liustack/quickjs created are under the [MIT license](LICENSE-MIT). Code that came from other projects keeps its own license: the C of QuickJS, what remains from modernc.org/quickjs, the TLSF allocator, musl's libc functions and the locale data of `intl` and go-intl. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.

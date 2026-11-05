@@ -9,6 +9,8 @@ read_when:
 
 # The allocator of the C engine
 
+English · [简体中文](allocator.zh-CN.md)
+
 The allocator of the C engine in `engine/`. The Go host and the native test host (`engine/test/`) both use it.
 
 ## Layers
@@ -34,7 +36,7 @@ host_memory_grow, host_call (memory release, remap)            the host
 - `count` (`JS_GetMemorySize`, `malloc_size` of `JS_ComputeMemoryUsage`) is the size of the runtime plus, for each block in use, its TLSF block size and the 8 byte size word before it. An arena counts whole, slots in the front cache included. A freed large block that waits in the cache of large blocks counts too (see below). Free memory and chunk headers do not count. `count` is what the memory limit and the GC threshold use.
 - The memory limit (`JS_SetMemoryLimit`) fails an allocation when `count` plus the size asked for (the arena, or the user size plus the 8 byte header) passes it, then counts the real block. A resize is checked as upstream checks it: `count` plus the new size, less the usable size of the old block, against the limit (the old block does not count twice, and its 8 byte word stays in `count`, since the block is still a block). Once the resize is done, `count` changes by the difference of the two usable sizes. Lowering the limit frees nothing. A failure makes the engine throw out of memory.
 - The footprint is what the VM took from the host, the sum of its chunks. `JS_SetFootprintLimit` bounds it, 0 for none. It only stops growth: a VM that holds more keeps it, and nothing is taken back by it. It covers the chunks only, not the shadow stack, shared bytecode or the Go side. There is no default.
-- TLSF rounds a block up by at most 1/32, where the allocator of the previous engine, the one ccgo made, rounded to a power of two, so `count` is about 13% to 15% lower than that engine's `MemorySize` was for the same heap. Against glibc's malloc in the C tree it is the same within 1.3%: after 3000 renders of tifa's pages the shop holds 39.84 MB against 39.85, the MUI test app 29.91 against 29.52, the bench app 2.15 against 2.12.
+- TLSF rounds a block up by at most 1/32. Against glibc's malloc it is the same within 1.3%: after 3000 renders of tifa's pages the shop holds 39.84 MB against 39.85, the MUI test app 29.91 against 29.52, the bench app 2.15 against 2.12.
 
 ## Chunks
 
@@ -49,7 +51,7 @@ host_memory_grow, host_call (memory release, remap)            the host
 
 Dedicated chunks are given back at once (see Chunks). Shared chunks are not: nothing of them is given back unless the host asks. `JS_ReleaseStart(rt, keep)` first gives the front cache and the cache of large blocks back to the heap, then plans to offer all the free memory but `keep` bytes. `JS_ReleaseNextChunk` then returns whole free chunks (not the first), largest first, taken out of the heap and out of the footprint, until its length is 0. `JS_ReleaseNextRange` returns the inside of free blocks of 4 KiB or more, which the host may drop the pages of: TLSF never reads it, it only writes there when it splits or merges a block. The host does not use the runtime in between, unmaps the chunks and rounds each range inward to its page size. A range may be offered again by a later release. `release_candidate` of `JS_ComputeMemoryUsage` totals what was offered. `keep` is a target and not an exact amount: chunks are counted by their whole size, ranges by what is left of a free block without its TLSF words, and a range is at least 4 KiB, so one big free block can take the total past the target.
 
-A buffer that grows by realloc past half a chunk used to leave a chain of empty chunks behind it, mapped until a release: a string of 1 GiB built in 1 MiB steps (`staging/sm/String/replace-math.js`) took 6.7 GB. With dedicated chunks it takes 1.05 GB in 1.2 seconds with remap (the old C tree on glibc: 1.09 GB, 1.2 seconds) and 2.0 GB in 4.5 seconds without it, where the old chunk waits for the copy to end.
+A buffer that grows by realloc past half a chunk gets a chunk of its own, so no chain of empty chunks stays mapped behind it. A string of 1 GiB built in 1 MiB steps (`staging/sm/String/replace-math.js`) takes 1.05 GB in 1.2 seconds with remap (glibc: 1.09 GB, 1.2 seconds) and 2.0 GB in 4.5 seconds without it, where the old chunk waits for the copy to end.
 
 ## The cache of large blocks
 

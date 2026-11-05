@@ -3,8 +3,8 @@
 // either the name of the error it throws or what it matches: every
 // printable ASCII character it matches on its own, then the result of
 // exec on a few more strings. Error messages differ between engines, so
-// only the name of the error is printed. testdata/regexpv.txt is what Node
-// prints for it (see TestRegexpVSemantics).
+// only the name of the error is printed. regexpv.txt is what Node prints
+// for it, and engine/test/compare.sh checks the engine against it.
 var punct = '&-!#%,:;<=>@`~';         // ClassSetReservedPunctuator
 var syntax = '^$\\.*+?()[]{}|/';       // SyntaxCharacter and /
 var double = '&!#$%*+,.:;<=>?@^`~';    // ClassSetReservedDoublePunctuator, by halves

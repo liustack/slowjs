@@ -10,11 +10,13 @@ read_when:
 
 # Releasing
 
+English · [简体中文](releasing.zh-CN.md)
+
 ## Versions
 
-- Releases are patch versions: v0.26.0, v0.26.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the functions it removed from `lib`. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
+- Releases are patch versions: v0.30.0, v0.30.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the module loaders it removed. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
 - `github.com/liustack/quickjs` has no GitHub releases. A release is a tag, and users get it with `go get github.com/liustack/quickjs@<version>`.
-- v0.28.0 renamed the module to `github.com/liustack/slowjs`, and v0.30.0 renames it back to `github.com/liustack/quickjs`. The `go.mod` of every tag from v0.28.0 to v0.29.11 names `github.com/liustack/slowjs`, so those versions stay available only at that path, and the Go module proxy keeps serving them there. The `go.mod` of v0.29.11, the last of them, marks the module deprecated and names the new path. The tags up to v0.27.x and from v0.30.0 on name `github.com/liustack/quickjs`.
+- The versions from v0.28.0 to v0.29.11 are at `github.com/liustack/slowjs`, all others at `github.com/liustack/quickjs`. The Go module proxy keeps serving the old ones there, and the `go.mod` of v0.29.11 marks the module deprecated and names the new path. How the rename went is in [upstream.md](upstream.md#moving-from-githubcomliustackslowjs).
 
 ## Before the release
 
@@ -22,7 +24,7 @@ On the branch, before it is merged:
 
 1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass. `scripts/go-versions.sh` passes: the checks of the engine with every patch release of Go the module lets build, from the lowest Go of `go.mod` up (the Go tests, and on a machine with LLVM the generator tests and the post-link check, see [testing.md](testing.md#ci)).
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
-3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release v0.26.17`), so that the merge commit you tag carries it.
+3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
 4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelogs. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
 
 Then merge it into `main` with a merge commit, `merge: <what the branch does>` (see [commit.md](commit.md#branches-and-merges)).
@@ -35,18 +37,18 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
 
    ```sh
    git log --first-parent --oneline -3 main    # the merge commit to tag
-   git tag v0.26.17 <merge commit>
-   git cat-file -t v0.26.17                    # commit, not tag
+   git tag <version> <merge commit>
+   git cat-file -t <version>                    # commit, not tag
    ```
 
 2. Push `main` and the tag:
 
    ```sh
    git push origin main
-   git push origin v0.26.17
+   git push origin <version>
    ```
 
-3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@v0.26.17`.
+3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@<version>`.
 
 ## After the release
 
@@ -91,6 +93,6 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 
 liustack/quickjs exists for tifa, so every release goes into tifa next:
 
-1. In tifa, `go get github.com/liustack/quickjs@v0.26.17` and `go mod tidy`.
+1. In tifa, `go get github.com/liustack/quickjs@<version>` and `go mod tidy`.
 2. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
 3. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.

@@ -7,7 +7,7 @@
 // written with charCodeAt alone: on strings of 8-bit and 16-bit characters,
 // ropes and slices, found and not found, at the ends, more than once and
 // longer than the 64 characters a needle of the other width is widened or
-// narrowed into. The script is the one of TestStringSearch.
+// narrowed into. engine/test/compare.sh checks its output against stringsearch.txt.
 (() => {
   function find(s, v, from, back) {
     const n = s.length, m = v.length
