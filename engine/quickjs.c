@@ -54471,9 +54471,43 @@ fail1:
     return JS_EXCEPTION;
 }
 
-/* the most characters repeat writes between two reads of the interrupt
-   flag */
-#define JS_REPEAT_CHUNK (1 << 20)
+/* repeat for a result of JS_ROPE_STEP characters or more, into b, which has
+   the room: at most JS_ROPE_STEP characters are written between two
+   readings of the interrupt flag, as for a pad, with a reading before the
+   first step and after the last. A string of one character is written by
+   string_buffer_fill, one character at a time, and a longer one is copied a
+   piece at a time, a piece ending at the end of the string or of the step.
+   0, or -1 with the exception "interrupted" thrown. */
+static no_inline int js_string_repeat_long(JSContext *ctx, StringBuffer *b,
+                                           JSString *p, int total)
+{
+    int i, m, off = 0, work = 0;
+
+    if (js_poll_interrupts(ctx))
+        return -1;
+    for (i = 0; i < total; i += m) {
+        if (p->len == 1) {
+            m = min_int(total - i, JS_ROPE_STEP);
+            string_buffer_fill(b, string_get(p, 0), m);
+        } else {
+            m = min_int(min_int(total - i, p->len - off), JS_ROPE_STEP - work);
+            string_buffer_concat(b, p, off, off + m);
+            off += m;
+            if (off == p->len)
+                off = 0;
+        }
+        JS_WORK(m);
+        work += m;
+        if (work >= JS_ROPE_STEP) {
+            work = 0;
+            if (js_poll_interrupts(ctx))
+                return -1;
+        }
+    }
+    if (work != 0 && js_poll_interrupts(ctx))
+        return -1;
+    return 0;
+}
 
 static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
@@ -54482,7 +54516,7 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     StringBuffer b_s, *b = &b_s;
     JSString *p;
     int64_t val;
-    int n, len, m, run, ret;
+    int n, len, ret;
 
     str = JS_ToStringCheckObject(ctx, this_val);
     if (JS_IsException(str))
@@ -54508,25 +54542,14 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
     n = val;
     if (string_buffer_init2(ctx, b, n * len, p->is_wide_char))
         goto fail;
-    if (len == 1) {
-        while (n > 0) {
-            m = min_int(n, JS_REPEAT_CHUNK);
-            string_buffer_fill(b, string_get(p, 0), m);
-            n -= m;
-            if (n > 0 && js_poll_interrupts(ctx))
-                goto fail_buffer;
-        }
+    if (n * len >= JS_ROPE_STEP) {
+        if (js_string_repeat_long(ctx, b, p, n * len))
+            goto fail_buffer;
+    } else if (len == 1) {
+        string_buffer_fill(b, string_get(p, 0), n);
     } else {
-        run = 0;
-        while (n-- > 0) {
+        while (n-- > 0)
             string_buffer_concat(b, p, 0, len);
-            run += len;
-            if (run >= JS_REPEAT_CHUNK && n > 0) {
-                run = 0;
-                if (js_poll_interrupts(ctx))
-                    goto fail_buffer;
-            }
-        }
     }
     JS_FreeValue(ctx, str);
     return string_buffer_end(b);

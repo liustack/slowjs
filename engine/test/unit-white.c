@@ -1455,6 +1455,12 @@ static void test_poll_work_gaps(void)
         { "String(rf1 + rf3 + rf2).length", ROPE_STEP, 270600 + 3 },
         { "String(rf2 + rf1 + rf2).length", ROPE_STEP, 340000 + 3 },
         { "String(rf1 + rfw + rf2).length", ROPE_STEP, 370000 + 3 },
+        /* repeat in steps: of one character, of two, of a string longer than a step (pieces that end at the end of the string or of the step), of a wide one */
+        { "'x'.repeat(200000).length", ROPE_STEP, 200000 },
+        { "'ab'.repeat(100000).length", ROPE_STEP, 200000 },
+        { "rf2.repeat(3).length", ROPE_STEP, 210000 },
+        { "rfw.repeat(2).length", ROPE_STEP, 200000 },
+        { "'\\u4e2d'.repeat(70000).length", ROPE_STEP, 70000 },
         /* a rope appended to a string buffer (String.raw), which is widened at the wide string: the 200000 characters before it once more */
         { "String.raw(rraw, rf1 + rf2).length", ROPE_STEP, 270000 + 2 },
         { "String.raw(rraw, rf1 + rfw).length", ROPE_STEP, 300000 + 2 + 200000 },

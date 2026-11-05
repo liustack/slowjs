@@ -88,6 +88,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Loops over a long string read the interrupt flag in steps | v0.29.5 | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
 | The start and end tag functions read the interrupt flag in every long loop | v0.30.0 | [uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop) |
 | A long rope is made flat in steps that read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#a-long-rope-is-made-flat-in-steps) |
+| repeat reads the interrupt flag every 65,536 characters | Unreleased | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
 
 ## Errors and stacks
 

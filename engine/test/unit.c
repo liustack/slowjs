@@ -3204,7 +3204,8 @@ static void test_iterator_polls(void)
    call nothing read the interrupt flag: the search of replace and replaceAll
    for a string (as indexOf does, so a needle that almost matches at each
    index does not take the product of the lengths without a read), the
-   matches of replaceAll (every 1024), the copy of a long piece of a string
+   matches of replaceAll (every 1024), repeat (every 65536 characters, as
+   the filler of padStart), the copy of a long piece of a string
    (trim, slice and substring, every 1048576 characters, after the scan of a
    16-bit string for a character past 0xff) and the filler of padStart and
    padEnd, which is written in steps of 65536 characters whatever its length.
@@ -3233,6 +3234,9 @@ static void test_string_loop_polls(void)
         { "sp.slice(1)", 15 },
         { "wsp.substring(1)", 7 },
         { "nsp.slice(1)", 7 },
+        { "'x'.repeat(1 << 24)", 255 },
+        { "'ab'.repeat(1 << 23)", 255 },
+        { "fill.repeat(2)", 255 },
         { "'x'.padStart(1 << 24, fill)", 255 },
         { "'x'.padEnd(1 << 24, fill)", 255 },
     };
@@ -3258,6 +3262,8 @@ static void test_string_loop_polls(void)
                   "16777216,8388608,8388608,16777216,8388609"), "the length of the pieces");
     CHECK(eval_is(ctx, "[/^x+$/.test(sp.trim()), wsp.trim() === '\\u4e00'.repeat(1 << 23), nsp.slice(1).trim() === '\\u00e9'.repeat(1 << 23), nsp.slice(1) === ' ' + '\\u00e9'.repeat(1 << 23) + ' '].join()",
                   "true,true,true,true"), "the pieces");
+    CHECK(eval_is(ctx, "var r1 = 'ab'.repeat(1 << 23), r2 = fill.repeat(2), r3 = 'x'.repeat((1 << 24) + 3), r4 = '\\u4e2d\\u00e9'.repeat(40000); [r1 === fill + fill, r2 === r1, r3.length, /^x+$/.test(r3), r4.length, r4.slice(79998) === '\\u4e2d\\u00e9', 'abc'.repeat(21846).slice(-4)].join()",
+                  "true,true,16777219,true,80000,true,cabc"), "the repeats");
     CHECK(eval_is(ctx, "var pa = 'x'.padStart(100003, 'abc'); [pa.length, pa.slice(0, 7), pa.slice(-7), 'x'.padEnd(10, 'abc')].join()",
                   "100003,abcabca,abcabcx,xabcabcabc"), "the pad");
     /* replace and replaceAll search a string of up to 256 characters with a loop of their own and a longer one with the search of indexOf: both give what indexOf and split give */

@@ -7,6 +7,7 @@
 ### 修复
 
 - 用 `+` 拼出来的长字符串（rope）在被拼成一整块时，`Interrupt` 和 eval 超时现在也能停下这次调用。以前拷贝它的每一段时都不读中断标志，几千万字符的 `+` 拼接字符串第一次被内置函数、属性键或标签函数用到时，要整个拷完才能停：超时设 10 ms 时，6400 万字符的样式值在 CI 上要到调用开始后 68 ms 才停下。现在拷贝时每 65536 个字符读一次标志，这样的调用会马上停下。拼出来的字符串逐字节不变（[uncatchable.md](docs/changes/uncatchable.md#a-long-rope-is-made-flat-in-steps)）。
+- `String.prototype.repeat` 现在每 65536 个字符读一次中断标志。以前每 1048576 个字符才读一次，而且只在两次整段拷贝之间读，不到 1048576 个字符的调用根本不读。`'x'.repeat(1 << 20)` 要跑 105 次引擎轮询（每次 10000 个 tick）都不读标志，`'x'.repeat(1e5)` 的循环要到下一次调用才停。结果不变（[uncatchable.md](docs/changes/uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters)）。
 
 ## [v0.30.0] - 2026-11-05
 

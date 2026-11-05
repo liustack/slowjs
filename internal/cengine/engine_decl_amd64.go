@@ -1131,6 +1131,7 @@ func js_string_normalize1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func js_string_pad(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_string_raw(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_repeat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_string_repeat_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_string_replace(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_string_rope_compare(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) uintptr
 func js_string_slice(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1325,6 +1326,7 @@ func string_buffer_concat_rope(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) u
 func string_buffer_concat_rope_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat_value(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_end(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func string_buffer_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_buffer_free(a0 uintptr, a1 uintptr)
 func string_buffer_init2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_buffer_putc16(a0 uintptr, a1 uintptr, a2 uintptr) uintptr

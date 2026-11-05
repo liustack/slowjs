@@ -1,5 +1,5 @@
 ---
-summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, and making a long rope flat'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, making a long rope flat, and repeat'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
@@ -189,6 +189,18 @@ Cost: tifa's pages make ropes of 65,536 characters or more flat, so they take th
 The keys of a Map or Set that are ropes are hashed in steps too (`hash_string_rope_poll`). The rehash of the keys when a table grows (`hash_string_rope`) is not, as the list of the previous section says.
 
 Tests: `test_poll_work_gaps` in `engine/test/unit-white.c` makes ropes flat with `String` and appends them with `String.raw`: strings of 200,000 and 70,000 characters (the first ends 3,392 characters into a step), with a string of 600 between them, the short one first, a wide string between two narrow ones, whose characters of 8 bits are written into a buffer of 16 bits, and a wide string after 200,000 characters of 8 bits appended to a buffer, which is widened, and after 40,000, which is widened at once. Each must keep every stretch to 65,536 and give its total: the characters and one for each string, and the characters widened. The ropes of the other cases of that test are made flat in the setup, so that each case counts the work of its own call. `test_rope_flat_polls` in `engine/test/unit.c` makes ropes of 6M to 10M characters flat by `JS_ToString` from C and by `String.raw`, requires a number of readings of the flag, and stops each at its first reading, its middle one and its last: the call throws `interrupted`, uncatchable, the rope is still a rope with the same characters, the same call then gives the flat string, and the runtime is freed with no leak. Before the change those calls read the flag 2 to 133 times, below what the test requires. `TestTagsStop` (`tags_test.go`) runs the case "style value" through the Go API.
+
+## repeat reads the interrupt flag every 65,536 characters
+
+Release: Unreleased.
+
+`String.prototype.repeat` read the interrupt flag every 1,048,576 characters, and only between two whole copies of its string. It writes a string of one character one character at a time, about one tick of the 10,000 of a poll for each, so `'x'.repeat(1 << 20)` ran 105 polls with no reading, and a string longer than that was copied whole between two readings (16M characters in 13 polls). A call of fewer than 1,048,576 characters read nothing, so a loop of `'x'.repeat(1e5)` stopped only at the next call, up to 11 polls after the request.
+
+Now a result of 65,536 characters or more is written in steps of 65,536 characters, as the filler of `padStart` is, with a reading before the first step and after the last (`js_string_repeat_long`). A string of more than one character is copied a piece at a time, a piece ending at the end of the string or of the step, so a string longer than a step is copied in steps too. A shorter result is written at once, as before, with no reading. A stop throws the uncatchable interrupt and frees the buffer. The string is the same, byte for byte.
+
+Cost: no page of tifa repeats a string to 65,536 characters, so `js_string_repeat_long` does not run there (callgrind, 3 renders of every page), and a shorter repeat runs the code it ran before with one more test of the length.
+
+Tests: `test_poll_work_gaps` in `engine/test/unit-white.c` repeats one character, two, a string of 70,000 characters (pieces that cross the end of a step) and a wide one, and requires every stretch to keep to 65,536 and the total to be the length of the result. `test_string_loop_polls` in `engine/test/unit.c` requires 255 readings of the flag for repeats of 16M characters, of one character, of two and of a string of 8M, which read it 3 to 17 times before, stops each in the middle, and checks what the repeats make. `TestBuiltinWorkStops` runs a loop of `'x'.repeat(1e5)` with the eval timeout.
 
 ## Out of memory in the return method of an iterator that an exception closes
 
