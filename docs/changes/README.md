@@ -24,18 +24,18 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Opcodes that do a few instructions at once: a read of a local and its get_field, the case of a switch on a string, typeof tests | v0.29.5 | [c-engine.md](c-engine.md#opcodes-that-do-a-few-instructions-at-once) |
 | Locals that are never live together share a slot of the frame | v0.29.7 | [c-engine.md](c-engine.md#locals-that-share-a-slot) |
 | JSON.parse reads keys and plain strings from the text, with a cache of key atoms for one parse | v0.29.7 | [c-engine.md](c-engine.md#jsonparse-reads-keys-and-plain-strings-from-the-text) |
-| A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | v0.29.11 | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
 | A collection asked for while the engine frees objects does nothing | v0.29.10 | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
+| A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | v0.29.11 | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
 | Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | v0.29.11 | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
 
 ## Commits of upstream QuickJS
 
 | Change | Release | Doc |
 | --- | --- | --- |
+| Commits of upstream QuickJS after 3d5e064 taken into the C tree one at a time (Array slice and splice, borrowed operands of js_strict_eq2, template literals, unicode_script), and the ones left out | v0.29.0 | [upstream-commits.md](upstream-commits.md) |
 | Iterator.concat follows IteratorClose and finishes after a failed step | v0.29.8 | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
-| Commits of upstream QuickJS after 3d5e064 taken into the C tree one at a time (Array slice and splice, borrowed operands of js_strict_eq2, template literals, unicode_script), and the ones left out | v0.29.0 | [upstream-commits.md](upstream-commits.md) |
 
 ## Go API
 
@@ -84,8 +84,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Compiling a regexp counts toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#compiling-a-regexp-counts-toward-the-interrupt-check) |
 | Parsing and building strings count toward the interrupt check | v0.27.2 | [uncatchable.md](uncatchable.md#parsing-and-building-strings-count-toward-the-interrupt-check) |
 | Every method that can run javascript has the eval timeout | v0.29.5 | [uncatchable.md](uncatchable.md#every-method-that-can-run-javascript-has-the-eval-timeout) |
-| Out of memory in the return method of an iterator that an exception closes is not caught | v0.29.11 | [uncatchable.md](uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes) |
 | Loops over a long string read the interrupt flag in steps | v0.29.5 | [uncatchable.md](uncatchable.md#loops-over-a-long-string-read-the-interrupt-flag-in-steps) |
+| Out of memory in the return method of an iterator that an exception closes is not caught | v0.29.11 | [uncatchable.md](uncatchable.md#out-of-memory-in-the-return-method-of-an-iterator-that-an-exception-closes) |
 | The start and end tag functions read the interrupt flag in every long loop | v0.30.0 | [uncatchable.md](uncatchable.md#the-start-and-end-tags-read-the-interrupt-flag-in-every-long-loop) |
 | A long rope is made flat in steps that read the interrupt flag | v0.30.1 | [uncatchable.md](uncatchable.md#a-long-rope-is-made-flat-in-steps) |
 | repeat reads the interrupt flag every 65,536 characters | v0.30.1 | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
@@ -103,7 +103,6 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
 | Intl in every locale Chromium has | v0.26.2 | [time-and-intl.md](time-and-intl.md#intl-in-every-locale-chromium-has) |
 | Local time is UTC in every VM | v0.26.3 | [time-and-intl.md](time-and-intl.md#local-time-is-utc-in-every-vm) |
 | Fraction digits as ECMA-402 reads them since 2021 | v0.26.4 | [time-and-intl.md](time-and-intl.md#fraction-digits-as-ecma-402-reads-them-since-2021) |
@@ -116,6 +115,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | DateTimeFormat takes Temporal values and formats ranges | v0.27.0 | [time-and-intl.md](time-and-intl.md#datetimeformat-takes-temporal-values) |
 | Temporal durations use DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
 | The engine reads Go's clocks | v0.27.0 | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
+| One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
 
 ## Temporal
 
@@ -127,10 +127,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 | Skip to where a regexp can match | v0.26.15 | [regexp.md](regexp.md#skip-to-where-a-regexp-can-match) |
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
+| Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 
 ## Strings
 
@@ -163,13 +163,13 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Methods of strings, numbers and arrays found in the interpreter | v0.27.1 | [objects-and-shapes.md](objects-and-shapes.md#methods-of-strings-numbers-and-arrays-found-in-the-interpreter) |
 | Own keys listed from the shape | v0.28.5 | [objects-and-shapes.md](objects-and-shapes.md#own-keys-listed-from-the-shape) |
 | Ordinary objects take 48 bytes, not 72 | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#ordinary-objects-take-48-bytes-not-72) |
-| Spread, rest and Object.assign look each key up when its turn comes | v0.29.2 | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
 | Object literals made at their final shape | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-made-at-their-final-shape) |
+| A for in loop holds the shape of its object | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
+| hasOwnProperty.call answered in the interpreter | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
+| Spread, rest and Object.assign look each key up when its turn comes | v0.29.2 | [objects-and-shapes.md](objects-and-shapes.md#spread-rest-and-objectassign-look-each-key-up-when-its-turn-comes) |
 | Object literals keep their properties in the block of the object | v0.29.4 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
 | Object literals of the same keys share one shape | v0.29.5 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-of-the-same-keys-share-one-shape) |
-| A for in loop holds the shape of its object | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object) |
 | A delete that cannot pack the properties for lack of memory leaves no error pending | v0.29.5 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-keep-their-properties-in-the-block-of-the-object) |
-| hasOwnProperty.call answered in the interpreter | v0.29.1 | [objects-and-shapes.md](objects-and-shapes.md#hasownpropertycall-answered-in-the-interpreter) |
 | A shared shape that cannot be copied fails the call | v0.29.9 | [objects-and-shapes.md](objects-and-shapes.md#a-shared-shape-that-cannot-be-copied-fails-the-call) |
 | Objects of the built-in classes find the empty shape of their prototype | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
 | A shape is found by the shape it grew from | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
