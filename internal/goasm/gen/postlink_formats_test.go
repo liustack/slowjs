@@ -207,6 +207,19 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"a dynamic relocation of its own table", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
 				elfRelaInto(t, bin, b, arch)
 			}, "linux"},
+			// The edges of what a section holds in the file: a fixup that
+			// ends at its last byte is taken, one a byte further, or in a
+			// section of zeros the file does not hold, is not.
+			{"a relocation of the last 8 bytes .data holds in the file", "", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peSectionFileEnd(t, bin, ".data")-8, peRelDir64)
+			}, "windows"},
+			{"a relocation that ends a byte past what .data holds in the file", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peSectionFileEnd(t, bin, ".data")-7, peRelDir64)
+			}, "windows"},
+			{"a rebase of __DATA,__bss", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				lo, hi := rodataRange(t, bin, arch)
+				machoRebaseInto(t, bin, b, lo, hi, "__DATA", machoSectAddr(t, bin, "__DATA", "__bss")-machoSegAddr(t, bin, "__DATA"))
+			}, "darwin"},
 		} {
 			// A fixed ELF executable has only faults of its own.
 			if fault.only != "" && fault.only != goos || !pie && fault.only == "" {
@@ -222,6 +235,12 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				t.Fatal(err)
 			}
 			out, err := check(bad)
+			if fault.want == "" { // a change the check must take
+				if err != nil || !strings.Contains(out, "post-link check passed") {
+					t.Errorf("%s/%s, %s: refused: %v\n%s", goos, arch, fault.name, err, lastLine(out))
+				}
+				continue
+			}
 			if err == nil || strings.Contains(out, "post-link check passed") || !strings.Contains(out, fault.want) {
 				t.Errorf("%s/%s, %s: not refused with %q: %v\n%s", goos, arch, fault.name, fault.want, err, lastLine(out))
 			} else {
@@ -1156,6 +1175,60 @@ func TestMetaWrites(t *testing.T) {
 		err := b.metaWrites()
 		if (err != nil) != c.refused || (err != nil && !strings.Contains(err.Error(), "inside the table")) {
 			t.Errorf("a fixup of %d bytes at %#x, the table at %#x+%#x: %v, refused %v", c.width, c.at, c.lo, c.n, err, c.refused)
+		}
+	}
+}
+
+// peSectionFileEnd is the address right after the bytes the file of bin
+// holds of section name.
+func peSectionFileEnd(t *testing.T, bin, name string) uint64 {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	s := f.Section(name)
+	if s == nil {
+		t.Fatalf("no %s in %s", name, bin)
+	}
+	return f.OptionalHeader.(*pe.OptionalHeader64).ImageBase + uint64(s.VirtualAddress) + uint64(min(int(s.VirtualSize), int(s.Size)))
+}
+
+// machoSectAddr is the address of section sect of segment seg of bin.
+func machoSectAddr(t *testing.T, bin, seg, sect string) uint64 {
+	t.Helper()
+	f, err := macho.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	for _, s := range f.Sections {
+		if s.Seg == seg && s.Name == sect {
+			return s.Addr
+		}
+	}
+	t.Fatalf("no %s,%s in %s", seg, sect, bin)
+	return 0
+}
+
+// TestPlacedEdges: a fixup that ends at the last byte of a section the
+// loader may write is taken, and one that starts before it or ends a byte
+// past it is not.
+func TestPlacedEdges(t *testing.T) {
+	const lo, n = 0x1000, 0x100
+	for _, c := range []struct {
+		at    uint64
+		width int
+		ok    bool
+	}{
+		{lo, 8, true}, {lo + n - 8, 8, true}, {lo + n - 7, 8, false}, {lo + n - 4, 4, true},
+		{lo + n - 3, 4, false}, {lo - 1, 8, false}, {lo + n, 8, false}, {^uint64(0) - 3, 8, false},
+	} {
+		b := &binFile{fixups: map[uint64]fixup{c.at: {width: c.width, what: "a rebase"}}, fixAt: []uint64{c.at},
+			writable: []metaRange{{lo, n, "data"}}}
+		if err := b.placed(); (err == nil) != c.ok {
+			t.Errorf("a fixup of %d bytes at %#x in %#x+%#x: %v, taken %v", c.width, c.at, lo, n, err, c.ok)
 		}
 	}
 }
