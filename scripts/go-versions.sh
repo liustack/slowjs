@@ -107,8 +107,10 @@ for v in $versions; do
 				bins=${bins:+$bins,}$bin
 			done
 			GEN_OUT=$logs/$v.$arch.gen GEN_VERIFY_BIN=$bins scripts/gen-engine.sh "$arch"
-			# shellcheck disable=SC2046
-			rm -rf "$logs/$v.$arch.gen" $(echo "$bins" | tr , " ")
+			rm -rf "$logs/$v.$arch.gen"
+			for os in "$@"; do
+				rm -f "$logs/$v.$os-$arch.test"
+			done
 		}
 		go version
 		test "$(go env GOVERSION)" = "$v"
