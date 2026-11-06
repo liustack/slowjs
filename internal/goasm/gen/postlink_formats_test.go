@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"debug/elf"
 	"debug/macho"
 	"debug/pe"
 	"encoding/binary"
@@ -108,9 +109,6 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			t.Fatalf("%s: the report says pointers the loader slides: %v, want %v\n%s", goos, !pie, pie, out)
 		}
 		t.Logf("%s/%s: %s", goos, arch, reportLines(out))
-		if !pie {
-			continue
-		}
 		for _, fault := range []struct {
 			name, want string
 			edit       func(t *testing.T, bin string, b []byte)
@@ -170,12 +168,48 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"a relocation of the load config", "inside the load config", func(t *testing.T, bin string, b []byte) {
 				peAddReloc(t, bin, b, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG)+88, peRelDir64)
 			}, "windows"},
-			{"a rebase of the load commands", "inside the header and load commands", func(t *testing.T, bin string, b []byte) {
+			// The loader writes only into the sections the linker puts
+			// pointers in, and never onto what the check reads to find
+			// its writes.
+			{"a rebase of the load commands", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
 				lo, hi := rodataRange(t, bin, arch)
-				machoRebaseHeader(t, bin, b, lo, hi)
+				machoRebaseInto(t, bin, b, lo, hi, "__TEXT", 0x20)
 			}, "darwin"},
+			{"a rebase of __LINKEDIT", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				lo, hi := rodataRange(t, bin, arch)
+				machoRebaseInto(t, bin, b, lo, hi, "__LINKEDIT", 0x20)
+			}, "darwin"},
+			{"a rebase of code", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				lo, hi := rodataRange(t, bin, arch)
+				machoRebaseInto(t, bin, b, lo, hi, "__TEXT", binSymbol(t, bin, arch, "runtime.main")-machoSegAddr(t, bin, "__TEXT"))
+			}, "darwin"},
+			{"a relocation of the size of the load config, both sizes at 0", "inside the load config", func(t *testing.T, bin string, b []byte) {
+				lc := peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG)
+				binary.LittleEndian.PutUint32(b[binFileOffset(t, bin, lc):], 0)
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, peDirectoryRVA(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), 0)
+				peAddReloc(t, bin, b, lc, peRelHighLow)
+			}, "windows"},
+			{"a relocation of a lookup table", "inside the lookup table of import descriptor 0", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peImportLookup(t, bin), peRelDir64)
+			}, "windows"},
+			{"a relocation of the headers", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peImageBase(t, bin)+0x100, peRelDir64)
+			}, "windows"},
+			{"a relocation of the base relocation table", "inside the base relocation table", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_BASERELOC), peRelHighLow)
+			}, "windows"},
+			{"a relocation of code", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, binSymbol(t, bin, arch, "runtime.main"), peRelDir64)
+			}, "windows"},
+			{"a relocation inside an import slot", "overlap", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_IAT)+4, peRelHighLow)
+			}, "windows"},
+			{"a dynamic relocation of its own table", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+				elfRelaInto(t, bin, b, arch)
+			}, "linux"},
 		} {
-			if fault.only != "" && fault.only != goos {
+			// A fixed ELF executable has only faults of its own.
+			if fault.only != "" && fault.only != goos || !pie && fault.only == "" {
 				continue
 			}
 			raw, err := os.ReadFile(bin)
@@ -956,11 +990,10 @@ func peAddReloc(t *testing.T, bin string, b []byte, addr uint64, typ uint16) {
 	t.Fatalf("the base relocations of %s are in no section", bin)
 }
 
-// machoRebaseHeader turns a rebase of bin outside engine_rodata, one that a
-// SET_SEGMENT_AND_OFFSET names on its own, into a rebase of the load
-// commands: of the bytes 0x20 into __TEXT, in a LEB128 number of the length
-// the old offset had.
-func machoRebaseHeader(t *testing.T, bin string, b []byte, lo, hi uint64) {
+// machoRebaseInto turns a rebase of bin outside engine_rodata, one that a
+// SET_SEGMENT_AND_OFFSET names on its own, into a rebase of offset off of
+// segment seg, in a LEB128 number of the length the old offset had.
+func machoRebaseInto(t *testing.T, bin string, b []byte, lo, hi uint64, seg string, off uint64) {
 	t.Helper()
 	f, err := macho.Open(bin)
 	if err != nil {
@@ -968,25 +1001,28 @@ func machoRebaseHeader(t *testing.T, bin string, b []byte, lo, hi uint64) {
 	}
 	defer f.Close()
 	var segs []*macho.Segment
-	text := -1
+	to := -1
 	for _, l := range f.Loads {
 		if s, ok := l.(*macho.Segment); ok {
-			if s.Name == "__TEXT" {
-				text = len(segs)
+			if s.Name == seg {
+				to = len(segs)
 			}
 			segs = append(segs, s)
 		}
+	}
+	if to < 0 || to > 0xf {
+		t.Fatalf("no segment %s in %s", seg, bin)
 	}
 	for _, l := range f.Loads {
 		r := l.Raw()
 		if binary.LittleEndian.Uint32(r) != lcDyldInfoOnly {
 			continue
 		}
-		off, n := int(binary.LittleEndian.Uint32(r[8:])), int(binary.LittleEndian.Uint32(r[12:]))
-		d := b[off : off+n]
+		at, n := int(binary.LittleEndian.Uint32(r[8:])), int(binary.LittleEndian.Uint32(r[12:]))
+		d := b[at : at+n]
 		for i := 0; i < len(d) && d[i] != 0; {
 			op := d[i] & 0xf0
-			at := i
+			set := i
 			i++
 			if op != 0x20 {
 				continue
@@ -995,24 +1031,105 @@ func machoRebaseHeader(t *testing.T, bin string, b []byte, lo, hi uint64) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			a := segs[d[at]&0xf].Addr + o
-			if (a >= lo && a < hi) || i+1 >= len(d) || d[i] != 0x51 || (d[i+1]&0xf0 != 0x20 && d[i+1] != 0) {
+			a := segs[d[set]&0xf].Addr + o
+			if (a >= lo && a < hi) || i+1 >= len(d) || d[i] != 0x51 || (d[i+1]&0xf0 != 0x20 && d[i+1] != 0) || !padUleb(d[set+1:i], off) {
 				continue
 			}
-			d[at] = 0x20 | byte(text)
-			for j := at + 1; j < i; j++ {
-				d[j] = 0x80 // 0x20, then zeros
-			}
-			d[at+1] |= 0x20
-			if i-1 > at+1 {
-				d[i-1] = 0
-			} else {
-				d[at+1] = 0x20
-			}
+			d[set] = 0x20 | byte(to)
 			return
 		}
 	}
 	t.Fatalf("no rebase of %s to move", bin)
+}
+
+// padUleb writes v into d as a LEB128 number of exactly len(d) bytes, if it
+// fits.
+func padUleb(d []byte, v uint64) bool {
+	if len(d) < 10 && v>>(7*len(d)) != 0 {
+		return false
+	}
+	for i := range d {
+		d[i] = byte(v&0x7f) | 0x80
+		v >>= 7
+	}
+	d[len(d)-1] &= 0x7f
+	return true
+}
+
+// machoSegAddr is the address of segment seg of bin.
+func machoSegAddr(t *testing.T, bin, seg string) uint64 {
+	t.Helper()
+	f, err := macho.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if s := f.Segment(seg); s != nil {
+		return s.Addr
+	}
+	t.Fatalf("no segment %s in %s", seg, bin)
+	return 0
+}
+
+// peImageBase is the image base of bin, and peImportLookup the address of
+// the lookup table of its first import descriptor.
+func peImageBase(t *testing.T, bin string) uint64 {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	return f.OptionalHeader.(*pe.OptionalHeader64).ImageBase
+}
+
+func peImportLookup(t *testing.T, bin string) uint64 {
+	t.Helper()
+	raw, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := binFileOffset(t, bin, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_IMPORT))
+	lookup := binary.LittleEndian.Uint32(raw[at:])
+	if lookup == 0 {
+		t.Fatalf("the first import descriptor of %s has no lookup table", bin)
+	}
+	return peImageBase(t, bin) + uint64(lookup)
+}
+
+// elfRelaInto makes the section .note.go.buildid of bin a table of dynamic
+// relocations, each of a slot of the table itself.
+func elfRelaInto(t *testing.T, bin string, b []byte, arch string) {
+	t.Helper()
+	f, err := elf.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rel := uint64(elf.R_X86_64_RELATIVE)
+	if arch == "arm64" {
+		rel = uint64(elf.R_AARCH64_RELATIVE)
+	}
+	shoff := binary.LittleEndian.Uint64(b[0x28:])
+	for i, s := range f.Sections {
+		if s.Name != ".note.go.buildid" {
+			continue
+		}
+		if s.Size < 24 || s.Flags&elf.SHF_ALLOC == 0 {
+			t.Fatalf("%s of %s: %d bytes, flags %v", s.Name, bin, s.Size, s.Flags)
+		}
+		for e := uint64(0); e+24 <= s.Size; e += 24 {
+			at := s.Offset + e
+			binary.LittleEndian.PutUint64(b[at:], s.Addr+e/3)
+			binary.LittleEndian.PutUint64(b[at+8:], rel)
+			binary.LittleEndian.PutUint64(b[at+16:], 0)
+		}
+		sh := shoff + 64*uint64(i)
+		binary.LittleEndian.PutUint32(b[sh+4:], uint32(elf.SHT_RELA))
+		binary.LittleEndian.PutUint64(b[sh+56:], 24) // sh_entsize
+		return
+	}
+	t.Fatalf("no .note.go.buildid in %s", bin)
 }
 
 // TestMetaWrites: a fixup that overlaps a byte of what the check read to
@@ -1032,6 +1149,7 @@ func TestMetaWrites(t *testing.T) {
 		{0x1000, 0x10, 0x1000 + 0x10, 8, false},
 		{3, 0x10, 0, 8, true},
 		{0x1000, 0, 0x1000, 8, false},
+		{0x1000, 0, 0x1000 - 4, 8, false},
 	} {
 		b := &binFile{fixups: map[uint64]fixup{c.at: {width: c.width, what: "a rebase"}}, fixAt: []uint64{c.at},
 			meta: []metaRange{{c.lo, c.n, "the table"}}}

@@ -34,9 +34,17 @@
 // or run more than the imports and the slots of the load config (TLS, delay
 // and bound imports, CLR, and the parts of the load config that patch code).
 // The PE imports are fixups too: the loader fills each slot of an import
-// address table. A fixup of what the check reads to find the fixups (the
-// headers, the load commands, the tables of fixups and of imports) is
-// refused, as the loader would apply it before it reads them (metaWrites).
+// address table.
+//
+// Where the loader may write at all is a rule of its own (placed): each
+// fixup lies, its whole width, in the bytes the file holds of a section the
+// linker puts pointers in (pointerSections), and no two fixups overlap.
+// That leaves out the headers, the load commands, the tables of fixups and
+// of imports and code, whatever a binary does with them. What the check
+// reads to find the fixups and that lies in such a section (the load config
+// of a PE is in .rdata) is recorded as it is read, each read with its own
+// bytes, and no fixup may be there either, as the loader would apply it
+// before it reads them (metaWrites).
 package gen
 
 import (
@@ -47,6 +55,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -96,10 +105,12 @@ type binFile struct {
 	// slots it checked as pointers (with a slide fixup where pie).
 	touched  map[uint64]bool
 	pointers map[uint64]bool
-	// meta is what the check read to find where the loader writes (the
-	// headers, the load commands, the tables of fixups and of imports), so
-	// no fixup may be there (metaWrites).
-	meta []metaRange
+	// meta is what the check read to find where the loader writes, so no
+	// fixup may be there (metaWrites), and writable the bytes of the
+	// sections the linker puts pointers in, the only ones a fixup may be in
+	// (placed).
+	meta     []metaRange
+	writable []metaRange
 }
 
 type metaRange struct {
@@ -153,19 +164,72 @@ func openBin(path, arch string) (*binFile, error) {
 		b.fixAt = append(b.fixAt, a)
 	}
 	sort.Slice(b.fixAt, func(i, j int) bool { return b.fixAt[i] < b.fixAt[j] })
-	if err := b.metaWrites(); err != nil {
+	if err := b.placed(); err != nil {
 		b.Close()
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return b, nil
 }
 
+// pointerSections are the sections each format's linker puts pointers in,
+// and so the only ones the loader writes: the Go linker and ld64 put them in
+// __DATA and __DATA_CONST of Mach-O, the Go linker in .data and .rdata of
+// PE, and an ELF linker in the writable sections.
+var pointerSections = map[string][]string{
+	"Mach-O": {"__DATA", "__DATA_CONST"},
+	"PE":     {".data", ".rdata"},
+}
+
+// placed holds the fixups to where the loader may write: no two overlap
+// (one would change what the loader reads of the other), none is on what the
+// check read to find them (metaWrites), and each lies in full in writable.
+func (b *binFile) placed() error {
+	for i := 0; i+1 < len(b.fixAt); i++ {
+		a, next := b.fixAt[i], b.fixAt[i+1]
+		if next-a < uint64(b.fixups[a].width) {
+			return fmt.Errorf("%s at %#x and %s at %#x overlap", b.fixups[a].what, a, b.fixups[next].what, next)
+		}
+	}
+	if err := b.metaWrites(); err != nil {
+		return err
+	}
+	for _, a := range b.fixAt {
+		w := uint64(b.fixups[a].width)
+		in := false
+		for _, r := range b.writable {
+			if a >= r.lo && r.n >= w && a-r.lo <= r.n-w {
+				in = true
+				break
+			}
+		}
+		if !in {
+			var names []string
+			for _, r := range b.writable {
+				names = append(names, r.what)
+			}
+			return fmt.Errorf("%s at %#x is outside the sections the linker puts pointers in (%s)", b.fixups[a].what, a, strings.Join(names, ", "))
+		}
+	}
+	return nil
+}
+
+// addMeta records n bytes at lo that the check read to find where the
+// loader writes. A read of no bytes reads nothing.
+func (b *binFile) addMeta(lo, n uint64, what string) {
+	if n > 0 {
+		b.meta = append(b.meta, metaRange{lo, n, what})
+	}
+}
+
 // metaWrites refuses a fixup inside what the check read to find where the
 // loader writes. The loader applies its fixups before it reads its imports,
-// and a fixup of a table or a header changes what the loader then reads, so
-// the file would not say where it writes.
+// and a fixup of a table changes what the loader then reads, so the file
+// would not say where it writes.
 func (b *binFile) metaWrites() error {
 	for _, m := range b.meta {
+		if m.n == 0 {
+			continue
+		}
 		lo := m.lo - min64(m.lo, 7)
 		i := sort.Search(len(b.fixAt), func(i int) bool { return b.fixAt[i] >= lo })
 		for ; i < len(b.fixAt); i++ {
@@ -215,6 +279,9 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 	for _, s := range f.Sections {
 		if s.Type == elf.SHT_PROGBITS {
 			b.secs = append(b.secs, &binSec{name: s.Name, addr: s.Addr, size: s.Size, load: s.Data})
+			if s.Flags&(elf.SHF_ALLOC|elf.SHF_WRITE) == elf.SHF_ALLOC|elf.SHF_WRITE {
+				b.writable = append(b.writable, metaRange{s.Addr, s.Size, s.Name})
+			}
 		}
 	}
 	// A fixed executable is not moved, but a dynamic one still has the
@@ -233,7 +300,7 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 		if s.Type == elf.SHT_REL {
 			step = 16
 		}
-		b.meta = append(b.meta, metaRange{s.Addr, s.Size, "the dynamic relocations in " + s.Name})
+
 		for i := 0; i+step <= len(d); i += step {
 			at := binary.LittleEndian.Uint64(d[i:])
 			typ := binary.LittleEndian.Uint64(d[i+8:]) & 0xffffffff
@@ -256,7 +323,6 @@ const (
 	machoGBZerofill    = 0xc
 	machoTLVZerofill   = 0x12
 	machoRebasePointer = 1
-	machoHeaderSize    = 32 // mach_header_64
 )
 
 func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
@@ -285,6 +351,9 @@ func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
 			continue
 		}
 		b.secs = append(b.secs, &binSec{name: s.Seg + "," + s.Name, addr: s.Addr, size: s.Size, load: s.Data})
+		if slices.Contains(pointerSections["Mach-O"], s.Seg) {
+			b.writable = append(b.writable, metaRange{s.Addr, s.Size, s.Seg + "," + s.Name})
+		}
 	}
 	if f.Symtab == nil {
 		return fail(fmt.Errorf("no symbol table (a binary linked with -s cannot be checked)"))
@@ -310,15 +379,6 @@ func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
 	for _, l := range f.Loads {
 		if s, ok := l.(*macho.Segment); ok {
 			segs = append(segs, s)
-			// The segment that maps the start of the file holds the
-			// header and the load commands, and __LINKEDIT the tables of
-			// fixups.
-			if s.Offset == 0 && s.Filesz != 0 {
-				b.meta = append(b.meta, metaRange{s.Addr, machoHeaderSize + uint64(f.Cmdsz), "the header and load commands"})
-			}
-			if s.Name == "__LINKEDIT" {
-				b.meta = append(b.meta, metaRange{s.Addr, s.Memsz, "__LINKEDIT"})
-			}
 		}
 	}
 	info := 0
@@ -717,7 +777,7 @@ func openPE(path string, m uint16) (*binFile, error) {
 	}
 	base := oh.ImageBase
 	b := &binFile{format: "PE", goos: "windows", syms: map[string]binSym{}, closer: f, fixups: map[uint64]fixup{}}
-	b.meta = append(b.meta, metaRange{base, uint64(oh.SizeOfHeaders), "the headers"})
+
 	for _, s := range f.Sections {
 		n := uint64(s.VirtualSize)
 		if raw := uint64(s.Size); raw < n {
@@ -727,6 +787,9 @@ func openPE(path string, m uint16) (*binFile, error) {
 			continue
 		}
 		b.secs = append(b.secs, &binSec{name: s.Name, addr: base + uint64(s.VirtualAddress), size: n, load: s.Data})
+		if slices.Contains(pointerSections["PE"], s.Name) {
+			b.writable = append(b.writable, metaRange{base + uint64(s.VirtualAddress), n, s.Name})
+		}
 	}
 	var named []namedSym
 	for _, s := range f.Symbols {
@@ -760,11 +823,10 @@ func openPE(path string, m uint16) (*binFile, error) {
 	if !relocs {
 		return b, nil
 	}
-	table, err := peRVA(f, uint64(dir.VirtualAddress), uint64(dir.Size))
+	table, err := b.peRead(f, base, uint64(dir.VirtualAddress), uint64(dir.Size), "the base relocation table")
 	if err != nil {
 		return fail(fmt.Errorf("the base relocation table: %w", err))
 	}
-	b.meta = append(b.meta, metaRange{base + uint64(dir.VirtualAddress), uint64(dir.Size), "the base relocation table"})
 	for i := 0; i < len(table); {
 		if i+8 > len(table) {
 			return fail(fmt.Errorf("a base relocation block cut short"))
@@ -794,6 +856,16 @@ func openPE(path string, m uint16) (*binFile, error) {
 		i += n
 	}
 	return b, nil
+}
+
+// peRead gives the n bytes at rva as peRVA does, and records them as read to
+// find where the loader writes (addMeta).
+func (b *binFile) peRead(f *pe.File, base, rva, n uint64, what string) ([]byte, error) {
+	d, err := peRVA(f, rva, n)
+	if err == nil {
+		b.addMeta(base+rva, n, what)
+	}
+	return d, err
 }
 
 // peRVA gives the n bytes the file holds at rva, inside one section.
@@ -877,15 +949,16 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 		}
 	}
 	base := oh.ImageBase
-	u32 := func(rva uint64) (uint64, error) {
-		d, err := peRVA(f, rva, 4)
+	// Each read of the tables is recorded with its own bytes (peRead).
+	u32 := func(rva uint64, what string) (uint64, error) {
+		d, err := b.peRead(f, base, rva, 4, what)
 		if err != nil {
 			return 0, err
 		}
 		return uint64(binary.LittleEndian.Uint32(d)), nil
 	}
-	u64 := func(rva uint64) (uint64, error) {
-		d, err := peRVA(f, rva, 8)
+	u64 := func(rva uint64, what string) (uint64, error) {
+		d, err := b.peRead(f, base, rva, 8, what)
 		if err != nil {
 			return 0, err
 		}
@@ -897,13 +970,12 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 			if i >= 1<<12 {
 				return fmt.Errorf("more than %d import descriptors", i)
 			}
-			d, err := peRVA(f, uint64(dir.VirtualAddress)+20*i, 20)
+			d, err := b.peRead(f, base, uint64(dir.VirtualAddress)+20*i, 20, "the import descriptors")
 			if err != nil {
 				return fmt.Errorf("import descriptor %d: %w", i, err)
 			}
 			lookup, first := uint64(binary.LittleEndian.Uint32(d)), uint64(binary.LittleEndian.Uint32(d[16:]))
 			if string(d) == string(make([]byte, 20)) {
-				b.meta = append(b.meta, metaRange{base + uint64(dir.VirtualAddress), 20 * (i + 1), "the import descriptors"})
 				break
 			}
 			if first == 0 {
@@ -916,19 +988,21 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 				if e >= 1<<16 {
 					return fmt.Errorf("import descriptor %d: more than %d imports", i, e)
 				}
-				v, err := u64(lookup + 8*e)
+				// A lookup table of its own is read as it is. When it is
+				// the import address table, each entry is a fixup, and only
+				// the zero entry after them is a read.
+				var v uint64
+				if lookup != first {
+					v, err = u64(lookup+8*e, fmt.Sprintf("the lookup table of import descriptor %d", i))
+				} else if d, err = peRVA(f, lookup+8*e, 8); err == nil {
+					if v = binary.LittleEndian.Uint64(d); v == 0 {
+						b.addMeta(base+lookup+8*e, 8, fmt.Sprintf("the end of the import address table of descriptor %d", i))
+					}
+				}
 				if err != nil {
 					return fmt.Errorf("import descriptor %d: %w", i, err)
 				}
 				if v == 0 {
-					// The lookup table, up to its zero entry. When it is
-					// the import address table, that is the entry after
-					// the imports.
-					if lookup != first {
-						b.meta = append(b.meta, metaRange{base + lookup, 8 * (e + 1), fmt.Sprintf("the lookup table of import descriptor %d", i)})
-					} else {
-						b.meta = append(b.meta, metaRange{base + first + 8*e, 8, fmt.Sprintf("the end of the import address table of descriptor %d", i)})
-					}
 					break
 				}
 				if err := b.addFixup(base+first+8*e, fixup{width: 8, what: fmt.Sprintf("an import of descriptor %d", i)}); err != nil {
@@ -940,21 +1014,24 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]; dir.VirtualAddress != 0 {
 		// Its own size, or the size of the directory when that is more:
 		// the fields either names.
-		n, err := u32(uint64(dir.VirtualAddress))
+		// Its Size field is a read like the others, and the whole of what
+		// either size names is held too, as the loader reads the fields the
+		// check does not.
+		n, err := u32(uint64(dir.VirtualAddress), "the load config")
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
 		n = max64(n, uint64(dir.Size))
-		b.meta = append(b.meta, metaRange{base + uint64(dir.VirtualAddress), n, "the load config"})
+		b.addMeta(base+uint64(dir.VirtualAddress), max64(n, 4), "the load config")
 		field := func(off int, width uint64) (uint64, bool, error) {
 			if uint64(off)+width > n {
 				return 0, false, nil
 			}
 			if width == 4 {
-				v, err := u32(uint64(dir.VirtualAddress) + uint64(off))
+				v, err := u32(uint64(dir.VirtualAddress)+uint64(off), "the load config")
 				return v, true, err
 			}
-			v, err := u64(uint64(dir.VirtualAddress) + uint64(off))
+			v, err := u64(uint64(dir.VirtualAddress)+uint64(off), "the load config")
 			return v, true, err
 		}
 		for off, name := range peLoadConfigRefused {
