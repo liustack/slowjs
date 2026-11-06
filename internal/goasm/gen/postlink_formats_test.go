@@ -235,6 +235,33 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				lo, hi := rodataRange(t, bin, arch)
 				machoRebaseInto(t, bin, b, lo, hi, "__DATA", machoSectAddr(t, bin, "__DATA", "__bss")-machoSegAddr(t, bin, "__DATA"))
 			}, "darwin"},
+			// What the loader maps from the file, and where: the check
+			// reads that, not what the sections say. b has as many bytes
+			// again after the file, for the copies these faults make.
+			{"a segment that ends in the file before engine_rodata", "not where its segment maps it from the file", func(t *testing.T, bin string, b []byte) {
+				lo, _ := rodataRange(t, bin, arch)
+				shortSegment(t, bin, b, lo)
+			}, "linux"},
+			{"a segment that ends in the file before engine_rodata", "not where its segment maps it from the file", func(t *testing.T, bin string, b []byte) {
+				lo, _ := rodataRange(t, bin, arch)
+				shortSegment(t, bin, b, lo)
+			}, "darwin"},
+			{"a section that ends in the file before engine_rodata", "in no section of the file", func(t *testing.T, bin string, b []byte) {
+				lo, _ := rodataRange(t, bin, arch)
+				shortSegment(t, bin, b, lo)
+			}, "windows"},
+			{"a section read from a copy, the code the loader maps changed", "where its segment maps it from the file", func(t *testing.T, bin string, b []byte) {
+				sectionFromCopy(t, bin, b, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
+			}, "linux"},
+			{"a section read from a copy, the code the loader maps changed", "where its segment maps it from the file", func(t *testing.T, bin string, b []byte) {
+				sectionFromCopy(t, bin, b, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
+			}, "darwin"},
+			{"a section the loader reads from a rounded offset", "not a multiple of 0x200", func(t *testing.T, bin string, b []byte) {
+				sectionFromCopy(t, bin, b, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
+			}, "windows"},
+			{"a second segment over the code", "overlap", func(t *testing.T, bin string, b []byte) {
+				elfLoadOver(t, bin, b, arch, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
+			}, "linux"},
 		} {
 			// A fixed ELF executable has only faults of its own.
 			if fault.only != "" && fault.only != goos || !pie && fault.only == "" {
@@ -244,6 +271,7 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			if err != nil {
 				t.Fatal(err)
 			}
+			raw = append(raw, make([]byte, len(raw))...)
 			fault.edit(t, bin, raw)
 			bad := bin + "-bad"
 			if err := os.WriteFile(bad, raw, 0o755); err != nil {
@@ -1313,6 +1341,195 @@ func TestPlacedEdges(t *testing.T) {
 			writable: []metaRange{{lo, n, "data"}}}
 		if err := b.placed(); (err == nil) != c.ok {
 			t.Errorf("a fixup of %d bytes at %#x in %#x+%#x: %v, taken %v", c.width, c.at, lo, n, err, c.ok)
+		}
+	}
+}
+
+// mapHeader is a header of bin that maps file bytes to addresses: a
+// program header of ELF, a segment of Mach-O, a section of PE. at is where
+// it is in the file; addr, off and n where it maps from and to, with
+// fields to write each.
+type mapHeader struct {
+	at, addr, off, n uint64
+	setOff, setN     func(b []byte, v uint64)
+}
+
+// mapHeaders gives the headers of bin that say where the loader maps the
+// file (segments), or where the sections are in the file (sections).
+func mapHeaders(t *testing.T, bin string, b []byte, segments bool) []mapHeader {
+	t.Helper()
+	put32 := func(at uint64) func(b []byte, v uint64) {
+		return func(b []byte, v uint64) { binary.LittleEndian.PutUint32(b[at:], uint32(v)) }
+	}
+	put64 := func(at uint64) func(b []byte, v uint64) {
+		return func(b []byte, v uint64) { binary.LittleEndian.PutUint64(b[at:], v) }
+	}
+	u32 := func(at uint64) uint64 { return uint64(binary.LittleEndian.Uint32(b[at:])) }
+	u64 := func(at uint64) uint64 { return binary.LittleEndian.Uint64(b[at:]) }
+	var hs []mapHeader
+	switch {
+	case string(b[:4]) == "\x7fELF" && segments:
+		phoff, phnum := u64(0x20), binary.LittleEndian.Uint16(b[0x38:])
+		for i := range uint64(phnum) {
+			ph := phoff + 56*i
+			if elf.ProgType(u32(ph)) == elf.PT_LOAD {
+				hs = append(hs, mapHeader{ph, u64(ph + 16), u64(ph + 8), u64(ph + 32), put64(ph + 8), put64(ph + 32)})
+			}
+		}
+	case string(b[:4]) == "\x7fELF":
+		shoff, shnum := u64(0x28), binary.LittleEndian.Uint16(b[0x3c:])
+		for i := range uint64(shnum) {
+			sh := shoff + 64*i
+			if elf.SectionType(u32(sh+4)) == elf.SHT_PROGBITS && u64(sh+8)&uint64(elf.SHF_ALLOC) != 0 {
+				hs = append(hs, mapHeader{sh, u64(sh + 16), u64(sh + 24), u64(sh + 32), put64(sh + 24), put64(sh + 32)})
+			}
+		}
+	case u32(0) == uint64(macho.Magic64):
+		at, ncmd := uint64(32), u32(16)
+		for range ncmd {
+			if u32(at) == uint64(macho.LoadCmdSegment64) {
+				if segments {
+					hs = append(hs, mapHeader{at, u64(at + 24), u64(at + 40), u64(at + 48), put64(at + 40), put64(at + 48)})
+				} else {
+					for j := range u32(at + 64) {
+						s := at + 72 + 80*j
+						hs = append(hs, mapHeader{s, u64(s + 32), u32(s + 48), u64(s + 40), put32(s + 48), put64(s + 40)})
+					}
+				}
+			}
+			at += u32(at + 4)
+		}
+	default:
+		ph := uint64(peHeader(t, b))
+		base := u64(ph + 24)
+		sh := ph + u32(ph-20+16)&0xffff
+		for i := range u32(ph-20+2) & 0xffff {
+			s := sh + 40*i
+			hs = append(hs, mapHeader{s, base + u32(s+12), u32(s + 20), min64(u32(s+8), u32(s+16)), put32(s + 20), put32(s + 16)})
+		}
+	}
+	return hs
+}
+
+// mapHeaderOf is the header of hs that holds addr.
+func mapHeaderOf(t *testing.T, hs []mapHeader, addr uint64) mapHeader {
+	t.Helper()
+	for _, h := range hs {
+		if addr >= h.addr && addr-h.addr < h.n {
+			return h
+		}
+	}
+	t.Fatalf("no header maps %#x", addr)
+	return mapHeader{}
+}
+
+// shortSegment makes the segment of bin that holds addr (a section of PE)
+// end in the file before addr, leaving the sections and the bytes as they
+// are: the loader fills the rest with zeros.
+func shortSegment(t *testing.T, bin string, b []byte, addr uint64) {
+	t.Helper()
+	h := mapHeaderOf(t, mapHeaders(t, bin, b, true), addr)
+	n := addr - h.addr
+	if string(b[:2]) == "MZ" {
+		n &^= 0x1ff
+	}
+	h.setN(b, n)
+}
+
+// fileSize is the size of bin.
+func fileSize(t *testing.T, bin string) uint64 {
+	t.Helper()
+	st, err := os.Stat(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uint64(st.Size())
+}
+
+// sectionFromCopy copies the section of bin that holds addr past the end of
+// the file and points the section at the copy, then changes the byte at addr
+// where the loader maps it. In PE, where the sections are what the loader
+// maps, the copy starts 0x100 bytes past a multiple of 0x200, and the
+// loader reads the section from that multiple.
+func sectionFromCopy(t *testing.T, bin string, b []byte, addr uint64) {
+	t.Helper()
+	h := mapHeaderOf(t, mapHeaders(t, bin, b, false), addr)
+	dst := (fileSize(t, bin) + 0x1ff) &^ 0x1ff
+	if string(b[:2]) == "MZ" {
+		dst += 0x100
+	}
+	if dst+h.n > uint64(len(b)) {
+		t.Fatalf("no room for a copy of %d bytes", h.n)
+	}
+	copy(b[dst:dst+h.n], b[h.off:h.off+h.n])
+	h.setOff(b, dst)
+	b[h.off+addr-h.addr] ^= 0xff
+}
+
+// elfLoadOver adds a PT_LOAD (in place of PT_GNU_STACK) that maps a page
+// past the end of the file over the page of addr: a copy of that page with
+// the byte at addr changed.
+func elfLoadOver(t *testing.T, bin string, b []byte, arch string, addr uint64) {
+	t.Helper()
+	page := uint64(0x1000)
+	if arch == "arm64" {
+		page = 0x10000
+	}
+	lo := addr &^ (page - 1)
+	h := mapHeaderOf(t, mapHeaders(t, bin, b, true), lo)
+	src := h.off + lo - h.addr
+	dst := (fileSize(t, bin) + page - 1) &^ (page - 1)
+	copy(b[dst:dst+page], b[src:src+page])
+	b[dst+addr-lo] ^= 0xff
+	phoff, phnum := binary.LittleEndian.Uint64(b[0x20:]), binary.LittleEndian.Uint16(b[0x38:])
+	for i := range uint64(phnum) {
+		ph := phoff + 56*i
+		if elf.ProgType(binary.LittleEndian.Uint32(b[ph:])) != elf.PT_GNU_STACK {
+			continue
+		}
+		binary.LittleEndian.PutUint32(b[ph:], uint32(elf.PT_LOAD))
+		binary.LittleEndian.PutUint32(b[ph+4:], uint32(elf.PF_R|elf.PF_X))
+		for j, v := range []uint64{dst, lo, lo, page, page, page} {
+			binary.LittleEndian.PutUint64(b[ph+8+8*uint64(j):], v)
+		}
+		return
+	}
+	t.Fatalf("no PT_GNU_STACK in %s", bin)
+}
+
+// TestMapFile: the check reads the bytes a mapping takes from the file and
+// none past them, and refuses mappings that overlap in a page, map more of
+// the file than of memory or more than the file has, and a section that is
+// not where its mapping takes it from.
+func TestMapFile(t *testing.T) {
+	raw := make([]byte, 0x3000)
+	for i := range raw {
+		raw[i] = byte(i)
+	}
+	b := &binFile{}
+	if err := b.mapFile(raw, []mapping{{"text", 0x10000, 0x1000, 0x10, 0x100}, {"data", 0x11000, 0x2000, 0x800, 0x1000}},
+		[]mapping{{".text", 0x10008, 0x1008, 8, 8}, {".data", 0x11000, 0x2000, 0x800, 0x800}}, 0x1000); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := b.read(0x10008, 8); err != nil || d[0] != raw[0x1008] {
+		t.Errorf("the last 8 bytes text maps from the file: %v", err)
+	}
+	if _, err := b.read(0x10009, 8); err == nil || !strings.Contains(err.Error(), "the loader maps from the file") {
+		t.Errorf("a read past what text maps from the file: %v", err)
+	}
+	for name, c := range map[string]struct {
+		ms, secs []mapping
+		want     string
+	}{
+		"in one page":       {[]mapping{{"a", 0x10000, 0, 0x10, 0x10}, {"b", 0x10800, 0x800, 0x10, 0x10}}, nil, "overlap"},
+		"more file":         {[]mapping{{"a", 0x10000, 0, 0x20, 0x10}}, nil, "into 0x10 bytes of memory"},
+		"past the file":     {[]mapping{{"a", 0x10000, 0x2ff0, 0x20, 0x20}}, nil, "of a file of"},
+		"section elsewhere": {[]mapping{{"a", 0x10000, 0, 0x100, 0x100}}, []mapping{{".s", 0x10010, 0x20, 8, 8}}, "not where its segment maps it"},
+		"section past":      {[]mapping{{"a", 0x10000, 0, 0x100, 0x200}}, []mapping{{".s", 0x100f8, 0xf8, 0x10, 0x10}}, "not where its segment maps it"},
+		"at the top":        {[]mapping{{"a", ^uint64(0) - 0x10, 0, 0x10, 0x10}}, nil, "top of the address space"},
+	} {
+		if err := (&binFile{}).mapFile(raw, c.ms, c.secs, 0x1000); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
 	}
 }

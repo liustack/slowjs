@@ -9,6 +9,13 @@
 // addresses and sizes, the bytes the file holds at an address, and the places
 // the loader writes when it starts the program (its fixups).
 //
+// The bytes at an address are those the loader maps there from the file:
+// the PT_LOAD program headers of ELF, the segments of Mach-O, the headers
+// and sections of PE, each up to what it takes from the file (the rest is
+// zero, and the check reads none of it). The mappings must not overlap in a
+// page, and each section must lie where its mapping takes it from, so what
+// the sections say and what the loader maps cannot differ (mapFile).
+//
 // A position-independent program is placed by the loader at an address of
 // its choosing, so a pointer in it only holds once the loader has added the
 // distance it moved the program (the slide). The Go linker writes each
@@ -66,12 +73,75 @@ type binSym struct {
 }
 
 // binSec is the part of a section the file holds bytes for, at its address.
+// binSec is a range of addresses the loader maps from the file, the bytes
+// the file holds there (mapFile).
 type binSec struct {
 	name string
 	addr uint64
 	size uint64
-	load func() ([]byte, error)
 	data []byte
+}
+
+// mapping is what a header of the file tells the loader to map: n bytes of
+// the file at off to addr, in mem bytes of memory (the rest zero). A section
+// is given the same way, with what the file holds of it.
+type mapping struct {
+	name         string
+	addr, off, n uint64
+	mem          uint64
+}
+
+// inRange reports whether the n bytes at lo lie in the n2 bytes at lo2,
+// without overflow.
+func inRange(lo, n, lo2, n2 uint64) bool {
+	return lo >= lo2 && n <= n2 && lo-lo2 <= n2-n
+}
+
+// mapFile sets the bytes the check reads to those the loader maps: for each
+// mapping of ms, the bytes of raw it maps, at their address. The mappings
+// must not overlap, each rounded out to pages of page bytes, as a later
+// one would replace what an earlier one maps, and each section of secs must
+// lie in one mapping, at the place of the file it maps there: the check
+// reads no byte from where the sections say but the loader does not map.
+func (b *binFile) mapFile(raw []byte, ms, secs []mapping, page uint64) error {
+	ms = slices.Clone(ms)
+	sort.Slice(ms, func(i, j int) bool { return ms[i].addr < ms[j].addr })
+	for i, m := range ms {
+		if m.n > m.mem {
+			return fmt.Errorf("%s at %#x maps %#x bytes of the file into %#x bytes of memory", m.name, m.addr, m.n, m.mem)
+		}
+		if m.off > uint64(len(raw)) || m.n > uint64(len(raw))-m.off {
+			return fmt.Errorf("%s at %#x maps %#x bytes at %#x of a file of %#x bytes", m.name, m.addr, m.n, m.off, len(raw))
+		}
+		if m.addr > ^uint64(0)-page || m.mem > ^uint64(0)-page-m.addr {
+			return fmt.Errorf("%s at %#x runs past the top of the address space", m.name, m.addr)
+		}
+		if i+1 < len(ms) {
+			end := (m.addr + m.mem + page - 1) &^ (page - 1)
+			if next := ms[i+1]; m.mem != 0 && next.mem != 0 && end > next.addr&^(page-1) {
+				return fmt.Errorf("%s at %#x and %s at %#x overlap in pages of %#x bytes", m.name, m.addr, next.name, next.addr, page)
+			}
+		}
+		if m.n > 0 {
+			b.secs = append(b.secs, &binSec{name: m.name, addr: m.addr, size: m.n, data: raw[m.off : m.off+m.n]})
+		}
+	}
+	for _, s := range secs {
+		if s.n == 0 {
+			continue
+		}
+		ok := false
+		for _, m := range ms {
+			if inRange(s.addr, s.n, m.addr, m.n) && s.off == m.off+(s.addr-m.addr) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return fmt.Errorf("section %s at %#x (%#x bytes at %#x of the file) is not where its segment maps it from the file", s.name, s.addr, s.n, s.off)
+		}
+	}
+	return nil
 }
 
 // fixup is a place the loader writes when it starts the program.
@@ -290,6 +360,32 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 		}
 	}
 	b := &binFile{format: "ELF", goos: "linux", syms: map[string]binSym{}, closer: f, fixups: map[uint64]fixup{}}
+	// The kernel maps each PT_LOAD, in pages of 4 KiB on amd64 and up to
+	// 64 KiB on arm64.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	page := uint64(0x1000)
+	if m == elf.EM_AARCH64 {
+		page = 0x10000
+	}
+	var ms, secs []mapping
+	for _, p := range f.Progs {
+		if p.Type == elf.PT_LOAD {
+			ms = append(ms, mapping{"PT_LOAD", p.Vaddr, p.Off, p.Filesz, p.Memsz})
+		}
+	}
+	for _, s := range f.Sections {
+		if s.Flags&elf.SHF_ALLOC != 0 && s.Type != elf.SHT_NOBITS {
+			secs = append(secs, mapping{s.Name, s.Addr, s.Offset, s.Size, s.Size})
+		}
+	}
+	if err := b.mapFile(raw, ms, secs, page); err != nil {
+		f.Close()
+		return nil, err
+	}
 	syms, err := f.Symbols()
 	if err != nil {
 		f.Close()
@@ -297,11 +393,6 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 	}
 	for _, s := range syms {
 		b.syms[s.Name] = binSym{s.Value, s.Size}
-	}
-	for _, s := range f.Sections {
-		if s.Type == elf.SHT_PROGBITS {
-			b.secs = append(b.secs, &binSec{name: s.Name, addr: s.Addr, size: s.Size, load: s.Data})
-		}
 	}
 	return b, nil
 }
@@ -339,18 +430,35 @@ func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
 		return fail(err)
 	}
 	b := &binFile{format: "Mach-O", goos: "darwin", syms: map[string]binSym{}, closer: f, pie: f.Flags&machoPIE != 0, fixups: map[uint64]fixup{}}
+	// dyld maps each segment with memory (not __DWARF), in pages of 4 KiB
+	// on amd64 and 16 KiB on arm64, and its sections are where it maps them.
+	page := uint64(0x1000)
+	if cpu == macho.CpuArm64 {
+		page = 0x4000
+	}
+	var ms, secs []mapping
+	mapped := map[string]bool{}
+	for _, l := range f.Loads {
+		if s, ok := l.(*macho.Segment); ok && s.Memsz != 0 {
+			ms = append(ms, mapping{s.Name, s.Addr, s.Offset, s.Filesz, s.Memsz})
+			mapped[s.Name] = true
+		}
+	}
 	for _, s := range f.Sections {
 		switch s.Flags & 0xff {
 		case machoZerofill, machoGBZerofill, machoTLVZerofill:
 			continue
 		}
-		if s.Offset == 0 {
+		if !mapped[s.Seg] {
 			continue
 		}
-		b.secs = append(b.secs, &binSec{name: s.Seg + "," + s.Name, addr: s.Addr, size: s.Size, load: s.Data})
+		secs = append(secs, mapping{s.Seg + "," + s.Name, s.Addr, uint64(s.Offset), s.Size, s.Size})
 		if slices.Contains(pointerSections["Mach-O"], s.Seg) {
 			b.writable = append(b.writable, metaRange{s.Addr, s.Size, s.Seg + "," + s.Name})
 		}
+	}
+	if err := b.mapFile(raw, ms, secs, page); err != nil {
+		return fail(err)
 	}
 	if f.Symtab == nil {
 		return fail(fmt.Errorf("no symbol table (a binary linked with -s cannot be checked)"))
@@ -774,19 +882,29 @@ func openPE(path string, m uint16) (*binFile, error) {
 	}
 	base := oh.ImageBase
 	b := &binFile{format: "PE", goos: "windows", syms: map[string]binSym{}, closer: f, fixups: map[uint64]fixup{}}
-
+	// The loader maps the headers and each section: SizeOfRawData bytes
+	// from PointerToRawData, which it rounds down to a multiple of 0x200,
+	// up to VirtualSize, the rest zero. The sections are the mappings.
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fail(err)
+	}
+	ms := []mapping{{"the headers", base, 0, uint64(oh.SizeOfHeaders), uint64(oh.SizeOfHeaders)}}
 	for _, s := range f.Sections {
-		n := uint64(s.VirtualSize)
-		if raw := uint64(s.Size); raw < n {
-			n = raw // the rest is zero in memory, and not in the file
+		n, mem := uint64(min(int(s.VirtualSize), int(s.Size))), uint64(s.VirtualSize)
+		if s.Size != 0 && s.Offset%0x200 != 0 {
+			return fail(fmt.Errorf("section %s at %#x of the file, not a multiple of 0x200: the loader reads it from %#x", s.Name, s.Offset, s.Offset&^0x1ff))
 		}
-		if n == 0 {
-			continue
+		if mem == 0 && s.Size != 0 {
+			return fail(fmt.Errorf("section %s has %#x bytes in the file and a VirtualSize of 0", s.Name, s.Size))
 		}
-		b.secs = append(b.secs, &binSec{name: s.Name, addr: base + uint64(s.VirtualAddress), size: n, load: s.Data})
+		ms = append(ms, mapping{s.Name, base + uint64(s.VirtualAddress), uint64(s.Offset), n, mem})
 		if slices.Contains(pointerSections["PE"], s.Name) {
 			b.writable = append(b.writable, metaRange{base + uint64(s.VirtualAddress), n, s.Name})
 		}
+	}
+	if err := b.mapFile(raw, ms, nil, max64(uint64(oh.SectionAlignment), 0x1000)); err != nil {
+		return fail(err)
 	}
 	var named []namedSym
 	for _, s := range f.Symbols {
@@ -1121,17 +1239,7 @@ func (b *binFile) upTo(addr uint64, n int) ([]byte, error) {
 func (b *binFile) read(addr uint64, n int) ([]byte, error) {
 	s := b.sec(addr)
 	if s == nil || n < 0 || uint64(n) > s.size-(addr-s.addr) {
-		return nil, fmt.Errorf("address %#x+%d not in the binary", addr, n)
-	}
-	if s.data == nil {
-		d, err := s.load()
-		if err != nil {
-			return nil, err
-		}
-		if uint64(len(d)) < s.size {
-			return nil, fmt.Errorf("section %s holds %d bytes in the file, %d in memory", s.name, len(d), s.size)
-		}
-		s.data = d
+		return nil, fmt.Errorf("address %#x+%d is not in the bytes the loader maps from the file", addr, n)
 	}
 	// A fixup starts at most 7 bytes before addr and overlaps it.
 	lo := addr - min64(addr, 7)
