@@ -196,7 +196,10 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 		for i := 0; i+step <= len(d); i += step {
 			at := binary.LittleEndian.Uint64(d[i:])
 			typ := binary.LittleEndian.Uint64(d[i+8:]) & 0xffffffff
-			b.fixups[at] = fixup{width: 8, what: fmt.Sprintf("a dynamic relocation of type %d in %s", typ, s.Name)}
+			if err := b.addFixup(at, fixup{width: 8, what: fmt.Sprintf("a dynamic relocation of type %d in %s", typ, s.Name)}); err != nil {
+				f.Close()
+				return nil, err
+			}
 		}
 	}
 	return b, nil
@@ -422,17 +425,16 @@ func (b *binFile) machoChained(d []byte, segs []*macho.Segment, raw []byte) erro
 				}
 				v := binary.LittleEndian.Uint64(raw[seg.Offset+off:])
 				a := seg.Addr + off
-				if _, dup := b.fixups[a]; dup {
-					return fmt.Errorf("two fixups at %#x", a)
-				}
-				if v>>63 != 0 {
-					b.fixups[a] = fixup{width: 8, chained: true, what: fmt.Sprintf("a chained bind to import %d", v&0xffffff)}
-				} else {
+				f := fixup{width: 8, chained: true, what: fmt.Sprintf("a chained bind to import %d", v&0xffffff)}
+				if v>>63 == 0 {
 					t := v & (1<<36 - 1)
 					if format == chainedPtr64Offset {
 						t += image
 					}
-					b.fixups[a] = fixup{width: 8, slide: true, chained: true, target: v>>36&0xff<<56 | t, what: "a chained rebase"}
+					f = fixup{width: 8, slide: true, chained: true, target: v>>36&0xff<<56 | t, what: "a chained rebase"}
+				}
+				if err := b.addFixup(a, f); err != nil {
+					return err
 				}
 				next := v >> 51 & 0xfff
 				if next == 0 {
@@ -442,6 +444,18 @@ func (b *binFile) machoChained(d []byte, segs []*macho.Segment, raw []byte) erro
 			}
 		}
 	}
+	return nil
+}
+
+// addFixup records the fixup f at a, and refuses a second record of the
+// same place: two rebases or base relocations of one pointer slide it twice,
+// and a bind and a rebase of one slot leave it to the order the loader takes
+// them in, so the file says what the loader does only with one.
+func (b *binFile) addFixup(a uint64, f fixup) error {
+	if g, dup := b.fixups[a]; dup {
+		return fmt.Errorf("two fixups at %#x: %s and %s", a, g.what, f.what)
+	}
+	b.fixups[a] = f
 	return nil
 }
 
@@ -482,13 +496,12 @@ func (b *binFile) machoRebase(d []byte, segs []*macho.Segment) error {
 		if err != nil {
 			return err
 		}
+		f := fixup{width: 4, what: fmt.Sprintf("a rebase of type %d", typ)}
 		if typ == machoRebasePointer {
-			b.fixups[a] = fixup{width: 8, slide: true, what: "a rebase"}
-		} else {
-			b.fixups[a] = fixup{width: 4, what: fmt.Sprintf("a rebase of type %d", typ)}
+			f = fixup{width: 8, slide: true, what: "a rebase"}
 		}
 		off += 8
-		return nil
+		return b.addFixup(a, f)
 	}
 	for i := 0; i < len(d); {
 		op, imm := d[i]&0xf0, uint64(d[i]&0x0f)
@@ -560,9 +573,8 @@ func (b *binFile) machoBind(d []byte, segs []*macho.Segment) error {
 		if err != nil {
 			return err
 		}
-		b.fixups[a] = fixup{width: 8, what: "a bind to " + sym}
 		off += 8
-		return nil
+		return b.addFixup(a, fixup{width: 8, what: "a bind to " + sym})
 	}
 	for i := 0; i < len(d); {
 		op, imm := d[i]&0xf0, uint64(d[i]&0x0f)
@@ -712,14 +724,18 @@ func openPE(path string, m uint16) (*binFile, error) {
 		for j := i + 8; j < i+n; j += 2 {
 			e := binary.LittleEndian.Uint16(table[j:])
 			a := base + uint64(page) + uint64(e&0xfff)
+			var err error
 			switch e >> 12 {
 			case peRelAbsolute: // padding, the loader does nothing
 			case peRelDir64:
-				b.fixups[a] = fixup{width: 8, slide: true, what: "a DIR64 base relocation"}
+				err = b.addFixup(a, fixup{width: 8, slide: true, what: "a DIR64 base relocation"})
 			case peRelHighLow:
-				b.fixups[a] = fixup{width: 4, what: "a HIGHLOW base relocation"}
+				err = b.addFixup(a, fixup{width: 4, what: "a HIGHLOW base relocation"})
 			default:
-				return fail(fmt.Errorf("a base relocation of type %d, which the check does not read", e>>12))
+				err = fmt.Errorf("a base relocation of type %d, which the check does not read", e>>12)
+			}
+			if err != nil {
+				return fail(err)
 			}
 		}
 		i += n

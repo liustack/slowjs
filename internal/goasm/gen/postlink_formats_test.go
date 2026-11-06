@@ -126,6 +126,10 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"the fixup of a pointer", "has no fixup", func(t *testing.T, bin string, b []byte) {
 				dropFixup(t, bin, b, firstRodataPointer(t, bin, arch))
 			}},
+			{"a second fixup of a pointer", "two fixups at", func(t *testing.T, bin string, b []byte) {
+				lo, hi := rodataRange(t, bin, arch)
+				dupFixup(t, bin, b, firstRodataPointer(t, bin, arch), lo, hi)
+			}},
 		} {
 			raw, err := os.ReadFile(bin)
 			if err != nil {
@@ -423,6 +427,8 @@ func TestMachOFixupOpcodes(t *testing.T) {
 		"rebase LEB cut short":    {true, []byte{0x21, 0x80}, "cut short"},
 		"threaded bind":           {false, []byte{0xd0, 0x00}, "does not read"},
 		"bind with no end":        {false, []byte{0x71, 0x00, 0x90}, "no DONE"},
+		"rebase twice":            {true, []byte{0x11, 0x21, 0x10, 0x51, 0x21, 0x10, 0x51, 0x00}, "two fixups at 0x1010"},
+		"bind twice":              {false, []byte{0x71, 0x10, 0x90, 0x71, 0x10, 0x90, 0x00}, "two fixups at 0x1010"},
 	} {
 		b := &binFile{fixups: map[uint64]fixup{}}
 		var err error
@@ -575,4 +581,119 @@ func TestMachOChained(t *testing.T) {
 	if err := b.pointer(data+16, 0); err == nil || !strings.Contains(err.Error(), "an import") {
 		t.Errorf("a chained bind: %v", err)
 	}
+}
+
+// TestMachORebaseAndBind: a slot that the rebase info and the bind info both
+// name is refused.
+func TestMachORebaseAndBind(t *testing.T) {
+	segs := []*macho.Segment{{SegmentHeader: macho.SegmentHeader{Addr: 0, Memsz: 0x1000}},
+		{SegmentHeader: macho.SegmentHeader{Addr: 0x1000, Memsz: 0x100}}}
+	b := &binFile{fixups: map[uint64]fixup{}}
+	if err := b.machoRebase([]byte{0x11, 0x21, 0x10, 0x51, 0x00}, segs); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.machoBind([]byte{0x71, 0x10, 0x90, 0x00}, segs); err == nil || !strings.Contains(err.Error(), "two fixups at 0x1010") {
+		t.Errorf("a bind at a rebased slot: %v", err)
+	}
+}
+
+// ulebIn writes v as an unsigned LEB128 number of exactly n bytes, with
+// continuation bytes of no value where it needs fewer, and reports whether
+// it fits.
+func ulebIn(d []byte, v uint64) bool {
+	for i := range d {
+		c := byte(v & 0x7f)
+		v >>= 7
+		if i < len(d)-1 {
+			c |= 0x80
+		}
+		d[i] = c
+	}
+	return v == 0
+}
+
+// dupFixup gives the pointer at addr a second fixup in the file b: in Mach-O
+// another rebase of the Go linker's (a segment and offset, then one rebase)
+// is made to name it, with its offset written in as many bytes as it had, in
+// PE another entry of the same block is made the same as its entry. The
+// entry taken is none of engine_rodata (lo to hi), so the second fixup is
+// the only fault.
+func dupFixup(t *testing.T, bin string, b []byte, addr, lo, hi uint64) {
+	t.Helper()
+	if f, err := macho.Open(bin); err == nil {
+		defer f.Close()
+		var segs []*macho.Segment
+		for _, l := range f.Loads {
+			if s, ok := l.(*macho.Segment); ok {
+				segs = append(segs, s)
+			}
+		}
+		for _, l := range f.Loads {
+			r := l.Raw()
+			if binary.LittleEndian.Uint32(r) != lcDyldInfoOnly {
+				continue
+			}
+			off, n := int(binary.LittleEndian.Uint32(r[8:])), int(binary.LittleEndian.Uint32(r[12:]))
+			d := b[off : off+n]
+			seg := -1
+			for i := 0; i < len(d) && d[i] != 0; {
+				op := d[i] & 0xf0
+				at := i
+				i++
+				if op != 0x20 {
+					continue
+				}
+				o, err := uleb(d, &i)
+				if err != nil {
+					t.Fatal(err)
+				}
+				s := int(d[at] & 0xf)
+				if segs[s].Addr+o == addr {
+					seg = s
+					continue
+				}
+				// Another rebase, after the pointer's and outside engine_rodata:
+				// make it name the pointer.
+				if a := segs[s].Addr + o; seg >= 0 && (a < lo || a >= hi) && d[i] == 0x51 && ulebIn(d[at+1:i], addr-segs[seg].Addr) {
+					d[at] = 0x20 | byte(seg)
+					return
+				}
+			}
+		}
+	} else if f, err := pe.Open(bin); err == nil {
+		defer f.Close()
+		oh := f.OptionalHeader.(*pe.OptionalHeader64)
+		dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_BASERELOC]
+		at := binFileOffset(t, bin, oh.ImageBase+uint64(dir.VirtualAddress))
+		d := b[at : at+int(dir.Size)]
+		for i := 0; i < len(d); {
+			page, n := binary.LittleEndian.Uint32(d[i:]), int(binary.LittleEndian.Uint32(d[i+4:]))
+			mine, other := -1, -1
+			for j := i + 8; j < i+n; j += 2 {
+				e := binary.LittleEndian.Uint16(d[j:])
+				switch {
+				case e>>12 == peRelDir64 && oh.ImageBase+uint64(page)+uint64(e&0xfff) == addr:
+					mine = j
+				case other < 0 && (e>>12 == peRelAbsolute || oh.ImageBase+uint64(page)+uint64(e&0xfff) < lo || oh.ImageBase+uint64(page)+uint64(e&0xfff) >= hi):
+					other = j
+				}
+			}
+			if mine >= 0 && other >= 0 {
+				copy(d[other:other+2], d[mine:mine+2])
+				return
+			}
+			i += n
+		}
+	}
+	t.Fatalf("cannot give %#x a second fixup in %s", addr, bin)
+}
+
+// rodataRange is where engine_rodata of checkmini/mini is in bin.
+func rodataRange(t *testing.T, bin, arch string) (uint64, uint64) {
+	t.Helper()
+	s, ok := openTestBin(t, bin, arch).syms["checkmini/mini."+RodataGo]
+	if !ok {
+		t.Fatalf("no engine_rodata in %s", bin)
+	}
+	return s.Value, s.Value + s.Size
 }
