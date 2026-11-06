@@ -104,7 +104,7 @@ func cmdBench(ctx context.Context, args []string) error {
 func benchBuild(ctx context.Context, args []string) error {
 	fs := newFlags("bench build")
 	var o bench.BuildOptions
-	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (16), all (8), quick (4) or a list such as 0.0,32.16 (shift.front)")
+	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (16), all (8), quick (4) or a list such as 0.0,32.16 or 64.8.2208 (shift.front or shift.front.shift2)")
 	fs.BoolVar(&o.Layouts, "layouts", true, "write where the interpreter landed in each binary to OUT/layouts.tsv")
 	fs.StringVar(&o.Side, "side", "", "label of this side, such as base or new")
 	fs.StringVar(&o.Tree, "tree", ".", "the liustack/quickjs checkout, with the engine generated")
@@ -114,7 +114,7 @@ func benchBuild(ctx context.Context, args []string) error {
 	fs.StringVar(&o.Tags, "tags", "", "build tags, if any")
 	fs.StringVar(&o.PGO, "pgo", "off", "the -pgo flag")
 	fs.StringVar(&o.Front, "front", "JS_CallInternal", "the function whose body moves")
-	fs.StringVar(&o.Out, "out", "", "folder of the binaries (side@shift.front)")
+	fs.StringVar(&o.Out, "out", "", "folder of the binaries (side@shift.front or side@shift.front.shift2)")
 	xformBin := fs.String("xform", "", "a built internal/goasm/cmd/xform to use (default: build the one of -tree)")
 	if err := fs.Parse(args); err != nil {
 		return err
