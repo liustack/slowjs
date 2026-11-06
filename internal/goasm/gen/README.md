@@ -432,16 +432,24 @@ What the check takes on trust, and where it stops:
   or a slot its load config names. So do two fixups of one place, and a
   table the check does not read (lazy or weak binds, the pointer formats of
   arm64e, other PE relocation types, the TLS, delay import, bound import and
-  CLR directories of a PE). A binary cut short or with bent tables is
-  refused with an error (`TestOpenBinBent`). That the loader applies
+  CLR directories of a PE). A PE directory is read when it has an address,
+  whatever its size, as the loader does, and one with a size and no address
+  is refused. A fixup of what the check reads to find the fixups (the PE
+  headers, import descriptors, lookup tables, load config and base
+  relocation table, the Mach-O load commands and `__LINKEDIT`) is refused:
+  the loader applies it before it reads them. A binary cut short or with
+  bent tables is refused with an error (`TestOpenBinBent`). That the loader applies
   each fixup as its format says is trusted. On amd64 Go's prologue loads g
   in the form of the system (from FS on linux, from GS on darwin, through
   `runtime.tls_g` on windows), and each form is taken only for its own
   system. `TestPostLinkFormats` checks a binary of each of the five
   targets and refuses a changed byte, a wrong pointer, a dropped fixup and
-  a second fixup of one pointer in each Mach-O and PE one, and in the PE one
-  an import table or a slot of the load config in engine_rodata, a TLS
-  directory and a delay import directory.
+  a second fixup of one pointer in each Mach-O and PE one, a rebase of the
+  load commands in each Mach-O one, and in the PE one an import table or a
+  slot of the load config in engine_rodata (also with the size of its
+  directory at 0), a directory with a size and no address, a relocation of
+  an import descriptor or of the load config, a TLS directory and a delay
+  import directory.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc
