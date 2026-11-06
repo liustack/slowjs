@@ -148,7 +148,7 @@ C 能在 Go 代码不会出错的地方出错，而 Go 进程对其中大多数�
 
 生成器守着这一点：它的检查拒绝文本中和解码后的代码里出现 `ud0`、`ud1`、`ud2`、`hlt` 和 `int3`，范围包括 llc 的目标文件和 amd64 的链接后二进制，以及 arm64 上的 `brk`、`udf`、`hlt` 和 `dcps`，在文本里和汇编后的目标文件的字里都查，arm64 的链接后检查把链接后的代码逐字与之比对。`debugtrap` 和 `ubsantrap` 会让 pass 停下，寄存器入口的叶子函数里的陷阱也是，因为它没有影子指针可以拿去调用 `host_trap`。
 
-在 windows 上，一次故障可能在变成 panic 之前就破坏进程的内存。Windows 把故障时 CPU 的状态写到 goroutine 的栈上，而 Go 在每个栈下面给它留了 4 KiB。在状态更大的 CPU 上，比如带 AMX 的 Intel，它要用约 11.7 KiB，故障发生在栈底附近时，这次写入会越过栈底写进堆里。这是 Go 运行时的 bug（[golang/go#81238](https://github.com/golang/go/issues/81238)），在那里任何 Go 程序里的空指针也会碰到它。引擎里的故障是引擎的 bug，所以正常工作的脚本不会遇到。故意触发故障的测试在 windows 上跳过它们的故障（`internal/faulttest`）。
+在 windows 上，系统把故障时 CPU 的状态写在栈指针下面，而 Go 在那里留的空间比带 AMX 的 CPU 需要的少（[golang/go#81238](https://github.com/golang/go/issues/81238)）。生成的引擎自己留出这块空间，所以引擎里的故障在那里也是同样的 panic（见 [windows 上给故障留的空间](#windows-上给故障留的空间)）。
 
 没有覆盖的，和用 C 写的程序一样：通过坏指针写入已映射的内存，会改掉那块内存而没人通知。一个永不结束的循环会一直跑，直到宿主中断它（见[轮询与中断](#轮询与中断)）。goroutine 栈超过 1 GB 时运行时会结束进程，计数的深度让引擎碰不到这一点。系统也可能因为内存而杀掉进程。
 
@@ -181,6 +181,31 @@ C 能在 Go 代码不会出错的地方出错，而 Go 进程对其中大多数�
 所以按各布局的均值，一次渲染多花 0.04% 到 0.63% 的时间，没有哪个应用被证明超过 1%。引擎的代码段大了 14 KB。保留余量更大的选择（320 字节，不是 64）会多花 0.05% 到 0.07% 的指令，但它仍然要靠一个从运行时里读出来的数。
 
 测试：`TestMarkNoSplit` 和 `TestMarkNoSplitErrors`（`internal/goasm/gen`）在一个小引擎上对两种架构检查名单，并拒绝调用统一函数的寄存器入口叶子、互相成环的叶子，以及 128 字节的叶子链。链接后检查的两个用例（`TestCheckCases`）：一个让名单之外的函数没有栈检查，一个让名单上的函数有栈检查（用一个太大、汇编器不会去标记的栈帧）。`TestSampleRuns/nosplit_fault` 检查一个调用链 24 层深的样本的名单，也就是它的两个叶子，并在 goroutine 栈底的每个位置，让最底下的叶子出故障。`TestFaultNoSplit`（`internal/cengine`）在栈的 12 KiB 范围内每隔 8 字节，让 `unicode_to_utf8` 和 `goasm_chunked_memcpy` 下的 `memcpy` 出故障。
+
+### windows 上给故障留的空间
+
+出错时，windows 先把 CPU 的状态存到出错线程的栈上，就在栈指针下面，然后才调用 Go 运行时的处理函数：一个 `CONTEXT`，带着 CPU 的扩展状态（`CONTEXT_EX`，也就是 XSAVE 存的东西），一个 `EXCEPTION_RECORD`，还有 `KiUserExceptionDispatcher` 的栈帧。在引擎里这个栈就是 goroutine 的栈：生成的代码在它上面运行，影子栈只放 C 的栈帧。Go 在 windows 上给系统在每个栈的 guard 下面留 4,096 字节（`stackSystem`），所以在 windows/amd64 上 guard 在栈底以上 5,024 字节。状态有多大取决于 CPU：CPUID 的 0xD 号叶给出系统打开的那些特性的 XSAVE 大小。在带 AMX 的 Intel 上，tile 数据在 AVX-512 的 2.7 KiB 之外再加 8,192 字节，它的配置加 64 字节，`CONTEXT_EX` 占 11.6 到 11.7 KiB，系统一共在栈指针下面写 12,816 字节，这是在 GitHub 的 windows 机器上量的（[golang/go#81238](https://github.com/golang/go/issues/81238)）。在栈底附近，这次写入会越过栈写进堆里。
+
+生成的引擎自己留出这块空间。只在 windows 的汇编里（`#ifdef GOOS_windows`），每个统一函数在 Go 的序言之后紧接着检查：它的栈指针减去 12 KiB（`internal/goasm/gen/emit.go` 的 `RoomBelow`）是否还在 goroutine 的 guard 之上，不在就调用 `goasm_room`。这个函数什么也不做，栈帧是 12,416 字节，它自己的栈检查让运行时把栈加大。NOSPLIT 列表上的函数先载入 g。这样，一个函数体的栈指针下面至少有 12,288 + 5,024 = 17,312 字节，它调用的寄存器入口叶子函数（`memcpy`、`memmove`、`memset`，用不到 128 字节外加返回地址）至少有 17,176 字节。这比 AMX 的 12,816 字节多 4,360 字节，也比 16 KiB 多。
+
+栈移动时这块空间依然在。运行时加大栈的办法是复制它，空间不会变少。它只在 goroutine 在一次调用处为运行时停下的地方缩小栈，从不在汇编中间。在引擎里，这只可能是生成函数的栈检查，它接着运行时会再做一次空间检查，或者是宿主的回调，它在返回引擎之前再留一次空间（`internal/cengine/host.go` 里的 `makeRoom`）。函数返回到调用者时，调用者的栈指针更高，所以调用者至少有它自己那么多的空间。
+
+它管不到的：Go 代码里的错误。宿主或程序的 Go 函数里的一次空指针，下面只有 Go 的 4 KiB，和 windows 上的任何 Go 程序一样，要等 Go 修好 golang/go#81238（正在审的修法留出 `InitializeContext` 报的大小再加 2 KiB）。宿主 Go 代码里的错误是宿主的 bug，就像引擎里的错误是引擎的 bug。`faulttest.Room` 是一个栈帧和 `goasm_room` 一样的函数，故意在 Go 代码里出错的测试可以在出错之前紧接着调用它，留出同样的空间。
+
+linux 和 darwin 没有改：它们的代码除了函数的位置以外逐字节相同，所以 tifa 的页面、已知的 test262 错误和调用深度都和原来一样。深度由引擎自己计数，不取决于 Go 的栈。
+
+在 windows 上的代价：每次调用生成的函数多 4 条指令（一条 `LEA`、一条 `CMP`、一次跳转、一个单字节的空操作），NOSPLIT 列表上的 176 个函数为载入 g 再多 2 到 3 条，回调返回时调用一次 `goasm_room`。在 linux/amd64（AMD EPYC 7B13）上打开 windows 的代码（`-asmflags=github.com/liustack/quickjs/internal/cengine=-D=GOOS_windows`）测量，6 轮交替运行，取每轮变化的中位数，括号里是各轮的范围：
+
+| 渲染 | 变化 |
+| --- | --- |
+| `compare/engines` 的 React SSR | +0.0%（-0.6% 到 +1.4%） |
+| tifa 商店的 studio 工作台页 | +1.0%（-0.8% 到 +3.0%） |
+| tifa 商店的首页 | +2.4%（+1.1% 到 +2.9%） |
+| tifa 商店的一个商品页 | +1.7%（+0.7% 到 +2.7%） |
+
+引擎里的 goroutine 的栈下面多出 12 KiB。运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB，渲染 React SSR 或递归 2,000 层的 goroutine 和原来一样（64 KiB 和 1 MiB），这是在关掉回收器时测 64 个 goroutine 得到的。windows 的生成代码大 36 KB（从 2,662,176 到 2,698,336 字节，+1.4%）。
+
+测试：`TestRoomCheck` 检查 `funcHeader` 给每种函数写的检查，以及 `faulttest.Room` 的栈帧和 `goasm_room` 一样，`TestRoomCheckAssembles` 检查 windows/amd64 的汇编器在一个长函数体之前接受它（Go 1.26.11 和 1.27.4 之前，汇编器遇到跳向 `PCALIGN` 的分支会无限循环，[golang/go#81792](https://github.com/golang/go/issues/81792)，单字节的空操作避开了它）。对 windows 二进制的链接后检查要求每个统一函数都有这个检查，并要求 `goasm_room` 有它的栈帧：`TestPostLinkFormats` 给一个 windows 二进制换上要的空间更少的检查、去掉调用的检查和短了 8 字节的 `goasm_room`，要求每一个都被拒绝。`TestCallbacksMakeRoom`（`internal/cengine`）要求生成代码调用的每个回调最后都留一次空间。
 
 ### 哪些 panic 会让 VM 报废
 

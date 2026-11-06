@@ -6,6 +6,13 @@
 
 TEXT ·JS_CallInternal_block(SB), $496-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $64
 	QUAD $0x0000000000841f0f // NOPL 0(AX)(AX*1)
 	QUAD $0x0000000000841f0f // NOPL 0(AX)(AX*1)
@@ -16063,6 +16070,13 @@ TEXT ·JS_CallInternal_block(SB), $496-32
 
 TEXT ·JS_SetPropertyInternal_block(SB), $192-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
 	QUAD $0x000000d824ac8b4c
@@ -17087,6 +17101,13 @@ TEXT ·JS_SetPropertyInternal_block(SB), $192-24
 
 TEXT ·JS_DefineProperty_block(SB), $208-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -18146,6 +18167,13 @@ TEXT ·JS_DefineProperty_block(SB), $208-24
 
 TEXT ·JS_SetPropertyValue_block(SB), $144-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -18756,6 +18784,13 @@ TEXT ·JS_SetPropertyValue_block(SB), $144-24
 
 TEXT ·JS_CopyDataProperties_block(SB), $240-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000010024a48b4c
 	QUAD $0x0000010824ac8b4c
@@ -19440,6 +19475,13 @@ TEXT ·JS_CopyDataProperties_block(SB), $240-24
 
 TEXT ·JS_NewCFunction3_block(SB), $144-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -19619,6 +19661,13 @@ TEXT ·JS_NewCFunction3_block(SB), $144-32
 
 TEXT ·JS_CreateProperty_block(SB), $192-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
 	QUAD $0x000000d824ac8b4c
@@ -20257,6 +20306,13 @@ TEXT ·JS_CreateProperty_block(SB), $192-24
 
 TEXT ·js_string_define_own_property_block(SB), $64-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x8b49005d8b4d5824
@@ -20349,6 +20405,13 @@ TEXT ·js_string_define_own_property_block(SB), $64-24
 
 TEXT ·js_arguments_define_own_property_block(SB), $176-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
 	QUAD $0x000000c824ac8b4c
@@ -20506,6 +20569,13 @@ TEXT ·js_arguments_define_own_property_block(SB), $176-24
 
 TEXT ·JS_NewCConstructor_block(SB), $208-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -20812,6 +20882,13 @@ TEXT ·JS_NewCConstructor_block(SB), $208-32
 
 TEXT ·JS_FlattenIntoArray_block(SB), $272-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000012024a48b4c
 	QUAD $0x0000012824ac8b4c

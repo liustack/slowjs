@@ -6,6 +6,13 @@
 
 TEXT ·tlsf_check(SB), $96-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x8d49205d8b417824
@@ -110,6 +117,13 @@ TEXT ·tlsf_check(SB), $96-24
 
 TEXT ·tlsf_walk_pool(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -163,8 +177,16 @@ TEXT ·tlsf_walk_pool(SB), $96-32
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
+TEXT ·tlsf_block_size(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x490f74ed854d1024
@@ -181,6 +203,13 @@ TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
 
 TEXT ·tlsf_check_pool(SB), $48-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x840ff8c583494824
@@ -211,32 +240,64 @@ TEXT ·tlsf_check_pool(SB), $48-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_size(SB), NOSPLIT, $0-16
+TEXT ·tlsf_size(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x1988b80824648b4c
 	QUAD $0xeb10244489480000
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_align_size(SB), NOSPLIT, $0-16
+TEXT ·tlsf_align_size(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0008b80824648b4c
 	QUAD $0xeb10244489480000
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_block_size_min(SB), NOSPLIT, $0-16
+TEXT ·tlsf_block_size_min(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0018b80824648b4c
 	QUAD $0xeb10244489480000
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_block_size_max(SB), NOSPLIT, $0-16
+TEXT ·tlsf_block_size_max(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x00b8480824648b4c
 	QUAD $0x4800000001000000
@@ -248,16 +309,32 @@ TEXT ·tlsf_block_size_max(SB), NOSPLIT, $0-16
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_pool_overhead(SB), NOSPLIT, $0-16
+TEXT ·tlsf_pool_overhead(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0010b80824648b4c
 	QUAD $0xeb10244489480000
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-16
+TEXT ·tlsf_alloc_overhead(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0008b80824648b4c
 	QUAD $0xeb10244489480000
@@ -266,6 +343,13 @@ TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-16
 
 TEXT ·tlsf_add_pool(SB), $16-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0x4c3024748b4c2824
@@ -309,6 +393,13 @@ TEXT ·tlsf_add_pool(SB), $16-40
 
 TEXT ·tlsf_remove_pool(SB), $16-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0x493024748b4c2824
@@ -347,6 +438,13 @@ TEXT ·tlsf_remove_pool(SB), $16-24
 
 TEXT ·tlsf_create(SB), $64-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x087407c5f6415824
@@ -402,6 +500,13 @@ TEXT ·tlsf_create(SB), $64-24
 
 TEXT ·tlsf_create_with_pool(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x497024748b4c6824
@@ -490,8 +595,16 @@ TEXT ·tlsf_create_with_pool(SB), $80-32
 	CALL ·abort(SB)
 	RET
 
-TEXT ·tlsf_destroy(SB), NOSPLIT, $0-16
+TEXT ·tlsf_destroy(SB), NOSPLIT|NOFRAME, $0-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	BYTE $0x24
@@ -500,8 +613,16 @@ TEXT ·tlsf_destroy(SB), NOSPLIT, $0-16
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
+TEXT ·tlsf_get_pool(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x001988858d491024
@@ -510,6 +631,13 @@ TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
 
 TEXT ·tlsf_malloc(SB), $16-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0x493024748b4c2824
@@ -609,6 +737,13 @@ TEXT ·tlsf_malloc(SB), $16-32
 
 TEXT ·tlsf_free(SB), $64-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4d6024748b4c5824
@@ -695,6 +830,13 @@ TEXT ·tlsf_free(SB), $64-24
 
 TEXT ·block_merge_next(SB), $16-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0x493024748b4c2824
@@ -736,6 +878,13 @@ TEXT ·block_merge_next(SB), $16-32
 
 TEXT ·tlsf_realloc_inplace(SB), $64-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824
@@ -832,6 +981,13 @@ TEXT ·tlsf_realloc_inplace(SB), $64-40
 
 TEXT ·tlsf_realloc(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -989,8 +1145,16 @@ TEXT ·tlsf_realloc(SB), $128-40
 	BYTE $0x00
 	RET
 
-TEXT ·tlsf_next_free(SB), NOSPLIT, $0-40
+TEXT ·tlsf_next_free(SB), NOSPLIT|NOFRAME, $0-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4c1824748b4c1024
@@ -1028,8 +1192,16 @@ TEXT ·tlsf_next_free(SB), NOSPLIT, $0-40
 	BYTE $0xff
 	RET
 
-TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
+TEXT ·tlsf_free_inside(SB), NOSPLIT|NOFRAME, $0-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4c1824748b4c1024
@@ -1044,6 +1216,13 @@ TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
 
 TEXT ·tlsf_pool_is_free(SB), $16-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0xc031004d8b492824

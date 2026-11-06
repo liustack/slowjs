@@ -6,6 +6,7 @@
 package gen
 
 import (
+	"bytes"
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
@@ -262,6 +263,27 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			}, "darwin"},
 			{"a section the loader reads from a rounded offset", "not a multiple of 0x200", func(t *testing.T, bin string, b []byte) {
 				sectionFromCopy(t, bin, b, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
+			}, "windows"},
+			// The room for the state of the CPU at a fault, which only the
+			// code of windows has: a check that asks for less, a check
+			// whose call is gone, and a goasm_room whose frame is too small.
+			{"a room check that asks for less", "no room check", func(t *testing.T, bin string, b []byte) {
+				at := roomLEA(t, bin, b, arch)
+				less := int32(8 - RoomBelow)
+				binary.LittleEndian.PutUint32(b[at+4:], uint32(less))
+			}, "windows"},
+			{"a room check without its call", "no room check", func(t *testing.T, bin string, b []byte) {
+				at := roomLEA(t, bin, b, arch) + 8 + 4 + 2 // LEA, CMP, JA
+				if b[at] != 0xe8 {
+					t.Fatalf("no call after the room check of fib: % x", b[at:at+5])
+				}
+				copy(b[at:], []byte{0x0f, 0x1f, 0x44, 0x00, 0x00})
+			}, "windows"},
+			{"a goasm_room whose frame leaves its caller 8 bytes short", "goasm_room does not make", func(t *testing.T, bin string, b []byte) {
+				roomSub(t, bin, b, arch, RoomBelow-16)
+			}, "windows"},
+			{"a goasm_room whose frame leaves its caller just the room", "", func(t *testing.T, bin string, b []byte) {
+				roomSub(t, bin, b, arch, RoomBelow-8)
 			}, "windows"},
 			{"a second segment over the code", "overlap", func(t *testing.T, bin string, b []byte) {
 				elfLoadOver(t, bin, b, arch, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
@@ -1567,4 +1589,37 @@ func TestMapFile(t *testing.T) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
 	}
+}
+
+// roomLEA is the file offset of the LEAQ -RoomBelow(SP), R12 of the room
+// check of fib in the binary for windows.
+func roomLEA(t *testing.T, bin string, b []byte, arch string) int {
+	t.Helper()
+	fib := binFileOffset(t, bin, binSymbol(t, bin, arch, "checkmini/mini.fib"))
+	lea := []byte{0x4c, 0x8d, 0xa4, 0x24, 0, 0, 0, 0}
+	disp := int32(-RoomBelow)
+	binary.LittleEndian.PutUint32(lea[4:], uint32(disp))
+	i := bytes.Index(b[fib:fib+64], lea)
+	if i < 0 {
+		t.Fatalf("no room check in fib: % x", b[fib:fib+64])
+	}
+	return fib + i
+}
+
+// roomSub sets the frame that the stack check of goasm_room asks for, the
+// operand of its SUBQ $imm32, R12, in the binary for windows: it makes
+// room for its caller's RoomBelow when it is at least RoomBelow - 8.
+func roomSub(t *testing.T, bin string, b []byte, arch string, frame uint32) {
+	t.Helper()
+	room := binFileOffset(t, bin, binSymbol(t, bin, arch, "checkmini/mini.goasm_room"))
+	sub := []byte{0x49, 0x81, 0xec}
+	i := bytes.Index(b[room:room+64], sub)
+	if i < 0 {
+		t.Fatalf("no SUBQ of R12 in goasm_room: % x", b[room:room+64])
+	}
+	at := room + i + len(sub)
+	if got := binary.LittleEndian.Uint32(b[at:]); got != RoomFrame+8-128 {
+		t.Fatalf("goasm_room asks for %d bytes, want %d", got, RoomFrame+8-128)
+	}
+	binary.LittleEndian.PutUint32(b[at:], frame)
 }

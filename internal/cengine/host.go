@@ -18,17 +18,27 @@ import (
 // comes in a whole word whose upper half is garbage, so each is cut to its
 // C type here. engine_decl_<arch>.go lists the signatures the engine was generated
 // with at its end.
+//
+// Each callback that returns calls makeRoom last, right before its one
+// return, and returns only values already computed: on windows the stack
+// may have shrunk while it ran, and the engine code it returns to has to
+// have the room for a fault below it again (room_windows_amd64.go).
+// TestCallbacksMakeRoom holds them to it.
 
 // host_memory_grow is uintptr_t host_memory_grow(uint32_t vm, uintptr_t size).
 func host_memory_grow(sp, vm, size uintptr) uintptr {
 	hook("host_memory_grow", vm)
-	return gohost.MemoryGrow(uint32(vm), size)
+	p := gohost.MemoryGrow(uint32(vm), size)
+	makeRoom()
+	return p
 }
 
 // host_now is int64_t host_now(uint32_t vm, int kind).
 func host_now(sp, vm, kind uintptr) int64 {
 	hook("host_now", vm)
-	return gohost.Now(uint32(vm), int32(kind))
+	t := gohost.Now(uint32(vm), int32(kind))
+	makeRoom()
+	return t
 }
 
 // host_call is JSValue host_call(uint32_t vm, const JSValue *this_val, int
@@ -39,6 +49,12 @@ func host_now(sp, vm, kind uintptr) int64 {
 // are the requests of the engine, which gohost answers, and so is a function
 // of the host when none is registered.
 func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
+	r0, r1 = hostCall(sp, vm, this, argc, argv, magic)
+	makeRoom()
+	return r0, r1
+}
+
+func hostCall(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
 	hook("host_call", vm)
 	if r, ok := callOverride(int32(magic)); ok {
 		return r.U, r.Tag
@@ -88,12 +104,14 @@ func host_trap(sp uintptr) {
 // the engine, which the post-link check holds it to.
 func host_poll(sp uintptr) {
 	gohost.Poll(sp)
+	makeRoom()
 }
 
 // host_release is not called yet: no Go function is registered. It takes the
 // form the plan gives it: host_release(vm, handle).
 func host_release(sp, vm, handle uintptr) {
 	gohost.Release(uint32(vm), uint32(handle))
+	makeRoom()
 }
 
 // goasmMissing is what a function the generator could not take calls in its
