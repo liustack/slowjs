@@ -5,7 +5,12 @@
 
 package hostmem
 
-import "golang.org/x/sys/unix"
+import (
+	"testing"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
+)
 
 func init() {
 	// Under Rosetta an amd64 process sees pages of 4 KiB, while the kernel
@@ -17,4 +22,20 @@ func init() {
 	if uintptr(n) > pageSize {
 		touchPages = int(uintptr(n) / pageSize)
 	}
+}
+
+// resident counts the pages of [addr, addr+size) in memory, by mincore.
+// x/sys has no wrapper for it on darwin, so it is a system call.
+func resident(t *testing.T, addr, size uintptr) int {
+	t.Helper()
+	vec := make([]byte, (size+pageSize-1)/pageSize)
+	_, _, e := unix.Syscall(unix.SYS_MINCORE, addr, size, uintptr(unsafe.Pointer(&vec[0])))
+	if e != 0 {
+		t.Fatalf("mincore of %d bytes at %#x: %v", size, addr, e)
+	}
+	n := 0
+	for _, v := range vec {
+		n += int(v & 1)
+	}
+	return n
 }
