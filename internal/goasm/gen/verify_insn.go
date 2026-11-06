@@ -78,6 +78,9 @@ type EngineCheck struct {
 
 // CheckReport counts what was checked and lists what was not, by reason.
 type CheckReport struct {
+	// Binary says what the check read the linked binary as: its format,
+	// whether the loader may move it and how many fixups it holds.
+	Binary  string
 	Checked map[string]int
 	Skipped map[string][]string
 }
@@ -92,9 +95,11 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 	if k.low, err = openObj(c.Lowered); err != nil {
 		return nil, err
 	}
-	if k.bin, err = openBin(c.Bin); err != nil {
+	if k.bin, err = openBin(c.Bin, "amd64"); err != nil {
 		return nil, err
 	}
+	defer k.bin.Close()
+	k.rep.Binary = k.bin.describe()
 	if err := k.checkRodata(); err != nil {
 		return k.rep, err
 	}
@@ -158,6 +163,13 @@ func CheckEngine(c EngineCheck) (*CheckReport, error) {
 			return k.rep, fmt.Errorf("stub %s: %w", m.Name, err)
 		}
 		k.rep.Checked["stubs"]++
+	}
+	n, err := k.bin.loaderWrites()
+	if err != nil {
+		return k.rep, err
+	}
+	if k.bin.pie {
+		k.rep.Checked["pointers the loader slides"] = n
 	}
 	if c.All {
 		for why, fns := range k.rep.Skipped {
@@ -358,79 +370,6 @@ func (o *objFile) extent(s elf.Symbol) (int, error) {
 		}
 	}
 	return int(n), nil
-}
-
-// ---- the linked binary ----
-
-type binFile struct {
-	f    *elf.File
-	syms map[string]elf.Symbol
-	secs map[*elf.Section][]byte
-}
-
-func openBin(path string) (*binFile, error) { return openBinMachine(path, elf.EM_X86_64) }
-
-// openBinMachine opens a linked executable of the machine m.
-func openBinMachine(path string, m elf.Machine) (*binFile, error) {
-	f, err := elf.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	if f.Type != elf.ET_EXEC || f.Machine != m {
-		return nil, fmt.Errorf("%s: not a linked %v executable (PIE pointers are not in the file)", path, m)
-	}
-	syms, err := f.Symbols()
-	if err != nil {
-		return nil, err
-	}
-	b := &binFile{f: f, syms: map[string]elf.Symbol{}, secs: map[*elf.Section][]byte{}}
-	for _, s := range syms {
-		b.syms[s.Name] = s
-	}
-	return b, nil
-}
-
-// upTo reads at most n bytes at addr, fewer at the end of a section.
-func (b *binFile) upTo(addr uint64, n int) ([]byte, error) {
-	for _, s := range b.f.Sections {
-		if s.Type == elf.SHT_PROGBITS && addr >= s.Addr && addr < s.Addr+s.Size {
-			if end := s.Addr + s.Size; addr+uint64(n) > end {
-				n = int(end - addr)
-			}
-			return b.read(addr, n)
-		}
-	}
-	return nil, fmt.Errorf("address %#x not in the binary", addr)
-}
-
-func (b *binFile) read(addr uint64, n int) ([]byte, error) {
-	for _, s := range b.f.Sections {
-		if s.Type != elf.SHT_PROGBITS || addr < s.Addr || addr+uint64(n) > s.Addr+s.Size {
-			continue
-		}
-		d, ok := b.secs[s]
-		if !ok {
-			var err error
-			if d, err = s.Data(); err != nil {
-				return nil, err
-			}
-			b.secs[s] = d
-		}
-		return d[addr-s.Addr : addr-s.Addr+uint64(n)], nil
-	}
-	return nil, fmt.Errorf("address %#x+%d not in the binary", addr, n)
-}
-
-// abi0 gives the ABI0 entry of a Go-visible function: the assembly body
-// (pkg.f, or pkg.f.abi0 when Go also has an ABIInternal wrapper) or the ABI0
-// wrapper of a Go function. Every CALL, LEAQ and DATA of the generated
-// assembly names this symbol.
-func (b *binFile) abi0(pkg, goName string) (elf.Symbol, bool) {
-	if s, ok := b.syms[pkg+"."+goName+".abi0"]; ok {
-		return s, true
-	}
-	s, ok := b.syms[pkg+"."+goName]
-	return s, ok
 }
 
 func (k *checker) funcAddr(cname string) (uint64, error) {
@@ -753,6 +692,55 @@ func spAdjust(in x86asm.Inst) (int64, bool) {
 	return 0, false
 }
 
+// gLoad checks the load of g into R14 that starts a split ABI0 function at a
+// (in is its first instruction) in the form the system of the binary has, and
+// gives the address after it. The thread-local slot of g is -8(FS) on linux
+// (cmd/link/internal/ld/sym.go, the ELF TLS offset), 0x30(GS) on darwin (the
+// slot Apple keeps for Go), and on windows an offset from GS that the runtime
+// keeps in runtime.tls_g, read and then loaded through
+// (cmd/internal/obj/x86/obj6.go, progedit).
+func (k *checker) gLoad(a uint64, in x86asm.Inst) (uint64, error) {
+	bad := func(in x86asm.Inst) (uint64, error) {
+		return 0, fmt.Errorf("unknown load of g for %s at %#x: %v", k.bin.goos, a, in)
+	}
+	mem := func(in x86asm.Inst) (x86asm.Mem, bool) {
+		m, ok := in.Args[1].(x86asm.Mem)
+		return normMem(m), ok && in.Op == x86asm.MOV && in.DataSize == 64 && isReg(in.Args[0], x86asm.R14) && in.Args[2] == nil
+	}
+	m, ok := mem(in)
+	switch k.bin.goos {
+	case "linux":
+		if !ok || m != (x86asm.Mem{Segment: x86asm.FS, Disp: -8}) {
+			return bad(in)
+		}
+	case "darwin":
+		if !ok || m != (x86asm.Mem{Segment: x86asm.GS, Disp: 0x30}) {
+			return bad(in)
+		}
+	case "windows":
+		tls, found := k.bin.syms["runtime.tls_g"]
+		if !found {
+			return 0, fmt.Errorf("no runtime.tls_g in the binary")
+		}
+		if !ok || m.Segment != 0 || m.Base != x86asm.RIP || m.Index != 0 || uint64(int64(a)+int64(in.Len)+m.Disp) != tls.Value {
+			return bad(in)
+		}
+		for _, want := range []x86asm.Mem{{Segment: x86asm.GS, Base: x86asm.R14}, {Base: x86asm.R14}} {
+			a += uint64(in.Len)
+			var err error
+			if in, err = k.dec(a); err != nil {
+				return 0, err
+			}
+			if m, ok := mem(in); !ok || m != want {
+				return bad(in)
+			}
+		}
+	default:
+		return 0, fmt.Errorf("no load of g known for %s", k.bin.goos)
+	}
+	return a + uint64(in.Len), nil
+}
+
 // goPrologue reads the prologue the Go assembler put before a body: the g
 // load and stack check of a split function, then BP and the frame.
 func (k *checker) goPrologue(start uint64) (goFrame, error) {
@@ -763,12 +751,10 @@ func (k *checker) goPrologue(start uint64) (goFrame, error) {
 		return g, err
 	}
 	if in.Op == x86asm.MOV && isReg(in.Args[0], x86asm.R14) {
-		m, ok := in.Args[1].(x86asm.Mem)
-		if !ok || m.Segment != x86asm.FS || m.Base != 0 || m.Disp != -8 {
-			return g, fmt.Errorf("unknown Go prologue at %#x: %v", a, in)
+		if a, err = k.gLoad(a, in); err != nil {
+			return g, err
 		}
 		g.split = true
-		a += uint64(in.Len)
 		if in, err = k.dec(a); err != nil {
 			return g, err
 		}
@@ -825,7 +811,7 @@ func (k *checker) goPrologue(start uint64) (goFrame, error) {
 
 // goEpilogue checks what follows a body at e: Go's expansion of RET, then
 // for a split function the morestack call and the jump back to the start.
-func (k *checker) goEpilogue(g goFrame, e uint64, sym elf.Symbol) error {
+func (k *checker) goEpilogue(g goFrame, e uint64, sym binSym) error {
 	a := e
 	next := func() (x86asm.Inst, error) {
 		in, err := k.dec(a)
@@ -2239,7 +2225,10 @@ func (k *checker) checkStub(meta Meta, idx int) error {
 // object llc's object has one in.
 func (k *checker) checkRodata() error {
 	p := k.c.Plan
-	rs, ok := k.bin.syms[k.c.Pkg+"."+RodataGo]
+	rs, ok, err := k.bin.dataSym(k.c.Pkg+"."+RodataGo, uint64(RodataSize(p)))
+	if err != nil {
+		return err
+	}
 	if !ok {
 		if len(p.Blob) == 0 {
 			return nil
@@ -2371,8 +2360,8 @@ func (k *checker) blobSlot(blob []byte, base uint64, bo, si int, lo uint64, relo
 			}
 			want = uint64(int64(base) + int64(lb) + br.LabelAdd)
 		}
-		if got := binary.LittleEndian.Uint64(blob[bo:]); got != want {
-			return 0, fmt.Errorf("the pointer is %#x in the binary, should be %#x (%s%+d)", got, want, br.Label, br.LabelAdd)
+		if err := k.bin.pointer(base+uint64(bo), want); err != nil {
+			return 0, fmt.Errorf("%w (%s%+d)", err, br.Label, br.LabelAdd)
 		}
 		return 8, nil
 	case rel && r.typ == elf.R_X86_64_PC32:

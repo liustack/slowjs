@@ -53,7 +53,7 @@ func a64CheckCaseNops(tail []uint32, nops int, align64 map[string]int) (*a64Chec
 		8:  {elf.R_AARCH64_ADR_PREL_PG_HI21, "__goasm_rodata", 16},
 		12: {elf.R_AARCH64_ADD_ABS_LO12_NC, "__goasm_rodata", 16},
 	}}
-	bin := &binFile{syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}}}
+	bin := &binFile{syms: map[string]binSym{"p.g.abi0": {Value: gAt}}}
 	plan := &DataPlan{}
 	if tail != nil {
 		at := 4 * (len(obj) - 4)
@@ -157,9 +157,8 @@ func TestCheckARM64Rodata(t *testing.T) {
 		return b
 	}
 	check := func(b []byte) error {
-		sec := &elf.Section{SectionHeader: elf.SectionHeader{Type: elf.SHT_PROGBITS, Addr: rodata, Size: uint64(len(b))}}
-		bin := &binFile{f: &elf.File{Sections: []*elf.Section{sec}}, secs: map[*elf.Section][]byte{sec: b},
-			syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}, "p." + RodataGo: {Value: rodata, Size: uint64(len(b))}}}
+		bin := &binFile{format: "ELF", secs: []*binSec{{name: "rodata", addr: rodata, size: uint64(len(b)), data: b}},
+			syms: map[string]binSym{"p.g.abi0": {Value: gAt}, "p." + RodataGo: {Value: rodata, Size: uint64(len(b))}}}
 		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan}, bin: bin, rodata: rodata}
 		_, err := k.checkRodata()
 		return err
@@ -316,7 +315,7 @@ func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
 	o := &a64Object{code: code, addr: map[string][2]int{"f": {0, len(code)}}, relocs: map[int]a64Reloc{
 		4: {elf.R_AARCH64_CALL26, "go_g", 0},
 	}}
-	bin := &binFile{syms: map[string]elf.Symbol{"p.g.abi0": {Value: gAt}}}
+	bin := &binFile{syms: map[string]binSym{"p.g.abi0": {Value: gAt}}}
 	k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"f": "f", "g": "g"}, Plan: &DataPlan{}, Metas: []Meta{m, g}, Sigs: map[string]Sig{"g": sig}},
 		o: o, bin: bin, morestack: morestack}
 	w := []uint32{a64StackGuard, 0xeb3063ff, 0, 0xf81c0ffe, a64SaveFP, a64SetFP, 0xf9400000 | 9<<10 | 31<<5 | 20, a64Nop}

@@ -674,6 +674,7 @@ func main() {
 		cr, err := gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg, Names: gonames, Plan: plan,
 			Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, Align64: align64})
 		if cr != nil {
+			fmt.Fprintf(os.Stderr, "binary: %s\n", cr.Binary)
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
 			}
@@ -709,6 +710,7 @@ func main() {
 			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
 			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls, Align64: align64})
 		if cr != nil {
+			fmt.Fprintf(os.Stderr, "binary: %s\n", cr.Binary)
 			for _, k := range gen.SortedKeys(cr.Checked) {
 				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
 			}

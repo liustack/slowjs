@@ -59,11 +59,12 @@ func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	bin, err := openBinMachine(c.Bin, elf.EM_AARCH64)
+	bin, err := openBin(c.Bin, "arm64")
 	if err != nil {
 		return nil, err
 	}
-	defer bin.f.Close()
+	defer bin.Close()
+	rep.Binary = bin.describe()
 	ms, ok := bin.syms["runtime.morestack_noctxt.abi0"]
 	if !ok {
 		return nil, fmt.Errorf("no runtime.morestack_noctxt in the binary")
@@ -97,6 +98,13 @@ func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 		return rep, fmt.Errorf("engine_rodata: %w", err)
 	}
 	rep.Checked["engine_rodata pointers"] = n
+	slid, err := bin.loaderWrites()
+	if err != nil {
+		return rep, err
+	}
+	if bin.pie {
+		rep.Checked["pointers the loader slides"] = slid
+	}
 	return rep, nil
 }
 
@@ -495,7 +503,10 @@ func (k *a64Checker) checkRodata() (int, error) {
 	if len(p.Blob) == 0 {
 		return 0, nil
 	}
-	s, ok := k.bin.syms[k.c.Pkg+"."+RodataGo]
+	s, ok, err := k.bin.dataSym(k.c.Pkg+"."+RodataGo, uint64(RodataSize(p)))
+	if err != nil {
+		return 0, err
+	}
 	if !ok {
 		return 0, fmt.Errorf("not in the binary")
 	}
@@ -525,8 +536,8 @@ func (k *a64Checker) checkRodata() (int, error) {
 				// addend is the offset in engine_rodata.
 				return 0, fmt.Errorf("pointer at %d to %s, which is not engine_rodata", off, r.Sym)
 			}
-			if got := binary.LittleEndian.Uint64(blob[off:]); got != want {
-				return 0, fmt.Errorf("pointer at %d is %#x, want %#x (%s%+d)", off, got, want, r.Sym, r.Add)
+			if err := k.bin.pointer(s.Value+uint64(off), want); err != nil {
+				return 0, fmt.Errorf("pointer at %d: %w (%s%+d)", off, err, r.Sym, r.Add)
 			}
 			off += 8
 			continue
