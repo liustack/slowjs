@@ -434,10 +434,14 @@ What the check takes on trust, and where it stops:
   arm64e, other PE relocation types, the TLS, delay import, bound import and
   CLR directories of a PE). A PE directory is read when it has an address,
   whatever its size, as the loader does, and one with a size and no address
-  is refused. A fixup of what the check reads to find the fixups (the PE
-  headers, import descriptors, lookup tables, load config and base
-  relocation table, the Mach-O load commands and `__LINKEDIT`) is refused:
-  the loader applies it before it reads them. A binary cut short or with
+  is refused. Every fixup must lie, its whole width, in the bytes the file
+  holds of a section the linker puts pointers in (`__DATA` and
+  `__DATA_CONST` of Mach-O, `.data` and `.rdata` of PE, the writable
+  sections of ELF), and no two may overlap: so none is in the headers, the
+  load commands, `__LINKEDIT`, the import and relocation tables or code.
+  What the check reads of a PE to find the fixups is recorded read by read,
+  and the load config, which lies in `.rdata`, as a whole: a fixup there is
+  refused too, as the loader applies it before it reads them. A binary cut short or with
   bent tables is refused with an error (`TestOpenBinBent`). That the loader applies
   each fixup as its format says is trusted. On amd64 Go's prologue loads g
   in the form of the system (from FS on linux, from GS on darwin, through
@@ -445,10 +449,13 @@ What the check takes on trust, and where it stops:
   system. `TestPostLinkFormats` checks a binary of each of the five
   targets and refuses a changed byte, a wrong pointer, a dropped fixup and
   a second fixup of one pointer in each Mach-O and PE one, a rebase of the
-  load commands in each Mach-O one, and in the PE one an import table or a
-  slot of the load config in engine_rodata (also with the size of its
-  directory at 0), a directory with a size and no address, a relocation of
-  an import descriptor or of the load config, a TLS directory and a delay
+  load commands, of `__LINKEDIT` and of code in each Mach-O one, a dynamic
+  relocation of its own table in each ELF one, and in the PE one an import
+  table or a slot of the load config in engine_rodata (also with the size
+  of its directory at 0), a directory with a size and no address, a
+  relocation of an import descriptor, a lookup table, the load config (also
+  of its Size field with both sizes at 0), the headers, the base relocation
+  table, code or the inside of an import slot, a TLS directory and a delay
   import directory.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
