@@ -29,8 +29,12 @@
 // What the check does not read it refuses, so nothing passes unread: an ELF
 // PIE (ET_DYN), chained fixups of a pointer format other than the two of
 // arm64 and x86_64 (DYLD_CHAINED_PTR_64 and _64_OFFSET, not arm64e), lazy or
-// weak binds, threaded binds, Mach-O local relocations, and PE base
-// relocations other than DIR64 and HIGHLOW.
+// weak binds, threaded binds, Mach-O local relocations, PE base relocations
+// other than DIR64 and HIGHLOW, and a PE directory that makes the loader write
+// or run more than the imports and the slots of the load config (TLS, delay
+// and bound imports, CLR, and the parts of the load config that patch code).
+// The PE imports are fixups too: the loader fills each slot of an import
+// address table.
 package gen
 
 import (
@@ -696,6 +700,9 @@ func openPE(path string, m uint16) (*binFile, error) {
 	if b.pie && !relocs {
 		return fail(fmt.Errorf("a dynamic base with no base relocations: where the loader slides its pointers is not known"))
 	}
+	if err := b.peLoaderWrites(f, oh); err != nil {
+		return fail(err)
+	}
 	if !relocs {
 		return b, nil
 	}
@@ -741,6 +748,174 @@ func openPE(path string, m uint16) (*binFile, error) {
 		i += n
 	}
 	return b, nil
+}
+
+// peRVA gives the n bytes the file holds at rva, inside one section.
+func peRVA(f *pe.File, rva, n uint64) ([]byte, error) {
+	for _, s := range f.Sections {
+		lo, raw := uint64(s.VirtualAddress), uint64(min(int(s.VirtualSize), int(s.Size)))
+		if rva < lo || rva-lo >= raw || n > raw-(rva-lo) {
+			continue
+		}
+		d, err := s.Data()
+		if err != nil {
+			return nil, err
+		}
+		if uint64(len(d)) < raw {
+			return nil, fmt.Errorf("section %s is cut short", s.Name)
+		}
+		return d[rva-lo : rva-lo+n], nil
+	}
+	return nil, fmt.Errorf("%d bytes at %#x are in no section of the file", n, rva)
+}
+
+// PE data directories that make the loader write into the image or run
+// code in it, which the check does not read (winnt.h IMAGE_DIRECTORY_ENTRY_*).
+var peRefused = map[int]string{
+	pe.IMAGE_DIRECTORY_ENTRY_ARCHITECTURE:   "architecture",
+	pe.IMAGE_DIRECTORY_ENTRY_GLOBALPTR:      "global pointer",
+	pe.IMAGE_DIRECTORY_ENTRY_TLS:            "TLS",
+	pe.IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT:   "bound import",
+	pe.IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT:   "delay import",
+	pe.IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR: "CLR",
+}
+
+// peLoadConfigSlots are the fields of IMAGE_LOAD_CONFIG_DIRECTORY64 that
+// hold the address of a slot the loader writes when it starts the program:
+// the security cookie and the pointers of the control flow guard.
+var peLoadConfigSlots = map[int]string{
+	88:  "SecurityCookie",
+	112: "GuardCFCheckFunctionPointer",
+	120: "GuardCFDispatchFunctionPointer",
+	216: "GuardRFFailureRoutineFunctionPointer",
+	232: "GuardRFVerifyStackPointerFunctionPointer",
+	280: "GuardXFGCheckFunctionPointer",
+	288: "GuardXFGDispatchFunctionPointer",
+	296: "GuardXFGTableDispatchFunctionPointer",
+	304: "CastGuardOsDeterminedFailureMode",
+	312: "GuardMemcpyFunctionPointer",
+}
+
+// peLoadConfigRefused are the fields of the load config that make the
+// loader change code or data in ways the check does not read: the LOCK
+// prefixes it may remove, and the dynamic value relocations, the hybrid
+// metadata and the hot patches.
+var peLoadConfigRefused = map[int]string{
+	40:  "LockPrefixTable",
+	192: "DynamicValueRelocTable",
+	200: "CHPEMetadataPointer",
+	224: "DynamicValueRelocTableOffset",
+	240: "HotPatchTableOffset",
+}
+
+// peLoaderWrites records the places the PE loader writes besides the base
+// relocations: the import address table of each import descriptor (the
+// slots its FirstThunk names, one for each entry of its lookup table), and
+// the slots the load config names. A directory that makes the loader write
+// or run more than that is refused. A Go 1.27.2 binary has an import
+// directory, a load config with no slots, an exception directory and the
+// base relocations, and nothing else that writes.
+func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
+	for i, name := range peRefused {
+		if i < len(oh.DataDirectory) && (oh.DataDirectory[i].Size != 0 || oh.DataDirectory[i].VirtualAddress != 0) {
+			return fmt.Errorf("a %s directory, which the check does not read", name)
+		}
+	}
+	base := oh.ImageBase
+	u32 := func(rva uint64) (uint64, error) {
+		d, err := peRVA(f, rva, 4)
+		if err != nil {
+			return 0, err
+		}
+		return uint64(binary.LittleEndian.Uint32(d)), nil
+	}
+	u64 := func(rva uint64) (uint64, error) {
+		d, err := peRVA(f, rva, 8)
+		if err != nil {
+			return 0, err
+		}
+		return binary.LittleEndian.Uint64(d), nil
+	}
+	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]; dir.Size != 0 {
+		// The loader reads descriptors up to one of zeros.
+		for i := uint64(0); ; i++ {
+			if i >= 1<<12 {
+				return fmt.Errorf("more than %d import descriptors", i)
+			}
+			d, err := peRVA(f, uint64(dir.VirtualAddress)+20*i, 20)
+			if err != nil {
+				return fmt.Errorf("import descriptor %d: %w", i, err)
+			}
+			lookup, first := uint64(binary.LittleEndian.Uint32(d)), uint64(binary.LittleEndian.Uint32(d[16:]))
+			if string(d) == string(make([]byte, 20)) {
+				break
+			}
+			if first == 0 {
+				return fmt.Errorf("import descriptor %d has no import address table", i)
+			}
+			if lookup == 0 {
+				lookup = first
+			}
+			for e := uint64(0); ; e++ {
+				if e >= 1<<16 {
+					return fmt.Errorf("import descriptor %d: more than %d imports", i, e)
+				}
+				v, err := u64(lookup + 8*e)
+				if err != nil {
+					return fmt.Errorf("import descriptor %d: %w", i, err)
+				}
+				if v == 0 {
+					break
+				}
+				if err := b.addFixup(base+first+8*e, fixup{width: 8, what: fmt.Sprintf("an import of descriptor %d", i)}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]; dir.Size != 0 {
+		n, err := u32(uint64(dir.VirtualAddress))
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+		n = uint64(min(int(n), int(dir.Size)))
+		field := func(off int, width uint64) (uint64, bool, error) {
+			if uint64(off)+width > n {
+				return 0, false, nil
+			}
+			if width == 4 {
+				v, err := u32(uint64(dir.VirtualAddress) + uint64(off))
+				return v, true, err
+			}
+			v, err := u64(uint64(dir.VirtualAddress) + uint64(off))
+			return v, true, err
+		}
+		for off, name := range peLoadConfigRefused {
+			width := uint64(8)
+			if off == 224 || off == 240 {
+				width = 4
+			}
+			v, _, err := field(off, width)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			if v != 0 {
+				return fmt.Errorf("the load config has a %s, which the check does not read", name)
+			}
+		}
+		for off, name := range peLoadConfigSlots {
+			v, _, err := field(off, 8)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			if v != 0 {
+				if err := b.addFixup(v, fixup{width: 8, what: "the slot of " + name + " in the load config"}); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 type namedSym struct {

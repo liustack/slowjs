@@ -114,23 +114,42 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 		for _, fault := range []struct {
 			name, want string
 			edit       func(t *testing.T, bin string, b []byte)
+			only       string // the system of the fault, or every one
 		}{
 			{"a byte of a function", "fib", func(t *testing.T, bin string, b []byte) {
 				at := binFileOffset(t, bin, binSymbol(t, bin, arch, "checkmini/mini.fib")+24)
 				b[at] ^= 0xff
-			}},
+			}, ""},
 			{"a pointer of engine_rodata", "the pointer is", func(t *testing.T, bin string, b []byte) {
 				at := binFileOffset(t, bin, firstRodataPointer(t, bin, arch))
 				binary.LittleEndian.PutUint64(b[at:], binary.LittleEndian.Uint64(b[at:])+8)
-			}},
+			}, ""},
 			{"the fixup of a pointer", "has no fixup", func(t *testing.T, bin string, b []byte) {
 				dropFixup(t, bin, b, firstRodataPointer(t, bin, arch))
-			}},
+			}, ""},
 			{"a second fixup of a pointer", "two fixups at", func(t *testing.T, bin string, b []byte) {
 				lo, hi := rodataRange(t, bin, arch)
 				dupFixup(t, bin, b, firstRodataPointer(t, bin, arch), lo, hi)
-			}},
+			}, ""},
+			// The other places the PE loader writes: the import address
+			// table of a descriptor, the slots the load config names, and
+			// what a TLS directory asks for.
+			{"an import table in engine_rodata", "an import", func(t *testing.T, bin string, b []byte) {
+				peImportInto(t, bin, b, firstRodataPointer(t, bin, arch))
+			}, "windows"},
+			{"a cookie of the load config in engine_rodata", "the loader writes 1 places", func(t *testing.T, bin string, b []byte) {
+				peLoadConfigSlot(t, bin, b, 88, firstRodataPlain(t, bin, arch))
+			}, "windows"},
+			{"a TLS directory", "TLS", func(t *testing.T, bin string, b []byte) {
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_TLS, 0x1000, 0x28)
+			}, "windows"},
+			{"a delay import directory", "delay import", func(t *testing.T, bin string, b []byte) {
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT, 0x1000, 0x20)
+			}, "windows"},
 		} {
+			if fault.only != "" && fault.only != goos {
+				continue
+			}
 			raw, err := os.ReadFile(bin)
 			if err != nil {
 				t.Fatal(err)
@@ -696,4 +715,79 @@ func rodataRange(t *testing.T, bin, arch string) (uint64, uint64) {
 		t.Fatalf("no engine_rodata in %s", bin)
 	}
 	return s.Value, s.Value + s.Size
+}
+
+// peHeader gives where the optional header of the PE file b starts.
+func peHeader(t *testing.T, b []byte) int {
+	t.Helper()
+	at := int(binary.LittleEndian.Uint32(b[0x3c:]))
+	if string(b[at:at+4]) != "PE\x00\x00" {
+		t.Fatal("no PE signature")
+	}
+	return at + 4 + 20
+}
+
+// peDirectory sets data directory i of the PE file b.
+func peDirectory(t *testing.T, bin string, b []byte, i int, rva, size uint32) {
+	t.Helper()
+	at := peHeader(t, b) + 112 + 8*i // the directories of PE32+
+	binary.LittleEndian.PutUint32(b[at:], rva)
+	binary.LittleEndian.PutUint32(b[at+4:], size)
+}
+
+// peImportInto moves the import address table of the first import
+// descriptor of bin to addr: the loader then writes the imports there.
+func peImportInto(t *testing.T, bin string, b []byte, addr uint64) {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	oh := f.OptionalHeader.(*pe.OptionalHeader64)
+	dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]
+	if dir.Size == 0 {
+		t.Fatalf("no imports in %s", bin)
+	}
+	at := binFileOffset(t, bin, oh.ImageBase+uint64(dir.VirtualAddress))
+	binary.LittleEndian.PutUint32(b[at+16:], uint32(addr-oh.ImageBase))
+}
+
+// peLoadConfigSlot sets the field at off of the load config of bin to the
+// address addr.
+func peLoadConfigSlot(t *testing.T, bin string, b []byte, off int, addr uint64) {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	oh := f.OptionalHeader.(*pe.OptionalHeader64)
+	dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]
+	if dir.Size < uint32(off+8) {
+		t.Fatalf("a load config of %d bytes in %s", dir.Size, bin)
+	}
+	at := binFileOffset(t, bin, oh.ImageBase+uint64(dir.VirtualAddress))
+	binary.LittleEndian.PutUint64(b[at+off:], addr)
+}
+
+// firstRodataPlain is the first 8 bytes of engine_rodata that no fixup
+// touches.
+func firstRodataPlain(t *testing.T, bin, arch string) uint64 {
+	t.Helper()
+	b := openTestBin(t, bin, arch)
+	lo, hi := rodataRange(t, bin, arch)
+	for a := lo; a+8 <= hi; a += 8 {
+		free := true
+		for _, f := range b.fixAt {
+			if f+8 > a && f < a+8 {
+				free = false
+			}
+		}
+		if free {
+			return a
+		}
+	}
+	t.Fatalf("no 8 bytes of engine_rodata without a fixup in %s", bin)
+	return 0
 }
