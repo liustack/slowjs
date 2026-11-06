@@ -448,6 +448,8 @@ func TestMachOFixupOpcodes(t *testing.T) {
 		"bind with no end":        {false, []byte{0x71, 0x00, 0x90}, "no DONE"},
 		"rebase twice":            {true, []byte{0x11, 0x21, 0x10, 0x51, 0x21, 0x10, 0x51, 0x00}, "two fixups at 0x1010"},
 		"bind twice":              {false, []byte{0x71, 0x10, 0x90, 0x71, 0x10, 0x90, 0x00}, "two fixups at 0x1010"},
+		"rebase across the end":   {true, []byte{0x11, 0x21, 0xfc, 0x01, 0x51, 0x00}, "outside it"},
+		"bind across the end":     {false, []byte{0x71, 0xfc, 0x01, 0x90, 0x00}, "outside it"},
 	} {
 		b := &binFile{fixups: map[uint64]fixup{}}
 		var err error
@@ -459,6 +461,11 @@ func TestMachOFixupOpcodes(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
+	}
+	// A 32-bit slot fits in the last 4 bytes of a segment.
+	b = &binFile{fixups: map[uint64]fixup{}}
+	if err := b.machoRebase([]byte{0x12, 0x21, 0xfc, 0x01, 0x51, 0x00}, segs); err != nil || b.fixups[0x10fc].width != 4 {
+		t.Errorf("a 32-bit rebase at the end of a segment: %v", err)
 	}
 }
 
@@ -599,6 +606,46 @@ func TestMachOChained(t *testing.T) {
 	}
 	if err := b.pointer(data+16, 0); err == nil || !strings.Contains(err.Error(), "an import") {
 		t.Errorf("a chained bind: %v", err)
+	}
+}
+
+// TestMachOChainedBounds: a segment whose bytes the file does not hold, by
+// its offset or its size, is refused with an error, not read past the file.
+func TestMachOChainedBounds(t *testing.T) {
+	const image, data = 0x100000000, 0x100004000
+	d := make([]byte, 80)
+	binary.LittleEndian.PutUint32(d[4:], 32)
+	binary.LittleEndian.PutUint32(d[32:], 3)
+	binary.LittleEndian.PutUint32(d[44:], 16)
+	binary.LittleEndian.PutUint32(d[48:], 24)
+	binary.LittleEndian.PutUint16(d[52:], 0x4000)
+	binary.LittleEndian.PutUint16(d[54:], chainedPtr64Offset)
+	binary.LittleEndian.PutUint64(d[56:], 0x4000)
+	binary.LittleEndian.PutUint16(d[68:], 1)
+	binary.LittleEndian.PutUint16(d[70:], 8)
+	raw := make([]byte, 0x8000)
+	for name, seg := range map[string]macho.SegmentHeader{
+		"offset past the file": {Offset: 0x10000, Filesz: 0x4000},
+		"offset at the end":    {Offset: 0x8000 - 12, Filesz: 0x4000},
+		"offset wraps around":  {Offset: ^uint64(0) - 7, Filesz: 0x4000},
+		"size past the file":   {Offset: 0x4000, Filesz: 1 << 40},
+		"size and offset wrap": {Offset: 1 << 63, Filesz: 1<<63 + 0x10},
+	} {
+		seg.Name, seg.Addr, seg.Memsz = "__DATA", data, 0x4000
+		segs := []*macho.Segment{{SegmentHeader: macho.SegmentHeader{Name: "__PAGEZERO"}},
+			{SegmentHeader: macho.SegmentHeader{Name: "__TEXT", Addr: image, Memsz: 0x4000, Filesz: 0x4000}},
+			{SegmentHeader: seg}}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%s: panic: %v", name, r)
+				}
+			}()
+			b := &binFile{fixups: map[uint64]fixup{}}
+			if err := b.machoChained(d, segs, raw); err == nil || !strings.Contains(err.Error(), "outside") {
+				t.Errorf("%s: %v, want a chained entry outside the file", name, err)
+			}
+		}()
 	}
 }
 

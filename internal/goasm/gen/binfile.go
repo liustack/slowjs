@@ -286,8 +286,8 @@ func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
 				return fail(fmt.Errorf("a short LC_DYLD_CHAINED_FIXUPS"))
 			}
 			info++
-			off, n := binary.LittleEndian.Uint32(r[8:]), binary.LittleEndian.Uint32(r[12:])
-			if uint64(off)+uint64(n) > uint64(len(raw)) {
+			off, n := uint64(binary.LittleEndian.Uint32(r[8:])), uint64(binary.LittleEndian.Uint32(r[12:]))
+			if off+n > uint64(len(raw)) {
 				return fail(fmt.Errorf("chained fixups past the end of the file"))
 			}
 			if err := b.machoChained(raw[off:off+n], segs, raw); err != nil {
@@ -299,8 +299,8 @@ func openMachO(path string, cpu macho.Cpu) (*binFile, error) {
 			}
 			info++
 			part := func(i int) ([]byte, error) {
-				off, n := binary.LittleEndian.Uint32(r[8+8*i:]), binary.LittleEndian.Uint32(r[12+8*i:])
-				if uint64(off)+uint64(n) > uint64(len(raw)) {
+				off, n := uint64(binary.LittleEndian.Uint32(r[8+8*i:])), uint64(binary.LittleEndian.Uint32(r[12+8*i:]))
+				if off+n > uint64(len(raw)) {
 					return nil, fmt.Errorf("dyld info past the end of the file")
 				}
 				return raw[off : off+n], nil
@@ -405,6 +405,11 @@ func (b *binFile) machoChained(d []byte, segs []*macho.Segment, raw []byte) erro
 			}
 		}
 		seg := segs[si]
+		// Each entry is read from the bytes of its segment in the file, so
+		// those are first held to the file.
+		if seg.Offset > uint64(len(raw)) || seg.Filesz > uint64(len(raw))-seg.Offset {
+			return fmt.Errorf("segment %s has %#x bytes at %#x of the file, outside its %d bytes", seg.Name, seg.Filesz, seg.Offset, len(raw))
+		}
 		if high != 0 || image+segOff != seg.Addr {
 			return fmt.Errorf("segment %s at offset %#x of the image, the file has it at %#x", seg.Name, high<<32|segOff, seg.Addr-image)
 		}
@@ -480,9 +485,10 @@ func uleb(d []byte, i *int) (uint64, error) {
 	return 0, fmt.Errorf("a LEB128 number cut short")
 }
 
-// machoSlot is the address of offset off in segment seg.
-func machoSlot(segs []*macho.Segment, seg, off uint64) (uint64, error) {
-	if seg >= uint64(len(segs)) || off >= segs[seg].Memsz {
+// machoSlot is the address of the slot of width bytes at offset off in
+// segment seg, which must hold all of it.
+func machoSlot(segs []*macho.Segment, seg, off, width uint64) (uint64, error) {
+	if seg >= uint64(len(segs)) || off > segs[seg].Memsz || width > segs[seg].Memsz-off {
 		return 0, fmt.Errorf("offset %#x of segment %d is outside it", off, seg)
 	}
 	return segs[seg].Addr + off, nil
@@ -496,13 +502,13 @@ func (b *binFile) machoRebase(d []byte, segs []*macho.Segment) error {
 		if !segSet {
 			return fmt.Errorf("a rebase before its segment")
 		}
-		a, err := machoSlot(segs, seg, off)
-		if err != nil {
-			return err
-		}
 		f := fixup{width: 4, what: fmt.Sprintf("a rebase of type %d", typ)}
 		if typ == machoRebasePointer {
 			f = fixup{width: 8, slide: true, what: "a rebase"}
+		}
+		a, err := machoSlot(segs, seg, off, uint64(f.width))
+		if err != nil {
+			return err
 		}
 		off += 8
 		return b.addFixup(a, f)
@@ -573,7 +579,7 @@ func (b *binFile) machoBind(d []byte, segs []*macho.Segment) error {
 		if !segSet {
 			return fmt.Errorf("a bind before its segment")
 		}
-		a, err := machoSlot(segs, seg, off)
+		a, err := machoSlot(segs, seg, off, 8)
 		if err != nil {
 			return err
 		}
@@ -706,18 +712,9 @@ func openPE(path string, m uint16) (*binFile, error) {
 	if !relocs {
 		return b, nil
 	}
-	var table []byte
-	for _, s := range f.Sections {
-		if dir.VirtualAddress >= s.VirtualAddress && uint64(dir.VirtualAddress)+uint64(dir.Size) <= uint64(s.VirtualAddress)+uint64(s.Size) {
-			d, err := s.Data()
-			if err != nil {
-				return fail(err)
-			}
-			table = d[dir.VirtualAddress-s.VirtualAddress:][:dir.Size]
-		}
-	}
-	if table == nil {
-		return fail(fmt.Errorf("the base relocation table is in no section of the file"))
+	table, err := peRVA(f, uint64(dir.VirtualAddress), uint64(dir.Size))
+	if err != nil {
+		return fail(fmt.Errorf("the base relocation table: %w", err))
 	}
 	for i := 0; i < len(table); {
 		if i+8 > len(table) {
@@ -955,7 +952,7 @@ func sizeToNext(named []namedSym) map[string]binSym {
 
 func (b *binFile) sec(addr uint64) *binSec {
 	for _, s := range b.secs {
-		if addr >= s.addr && addr < s.addr+s.size {
+		if addr >= s.addr && addr-s.addr < s.size {
 			return s
 		}
 	}
@@ -968,17 +965,18 @@ func (b *binFile) upTo(addr uint64, n int) ([]byte, error) {
 	if s == nil {
 		return nil, fmt.Errorf("address %#x not in the binary", addr)
 	}
-	if end := s.addr + s.size; addr+uint64(n) > end {
-		n = int(end - addr)
+	if rest := s.size - (addr - s.addr); n > 0 && uint64(n) > rest {
+		n = int(rest)
 	}
 	return b.read(addr, n)
 }
 
 // read gives the n bytes the file holds at addr, and notes each fixup among
-// them (loaderWrites).
+// them (loaderWrites). The bounds are held as lengths inside the section, so
+// no address wraps around.
 func (b *binFile) read(addr uint64, n int) ([]byte, error) {
 	s := b.sec(addr)
-	if s == nil || addr+uint64(n) > s.addr+s.size {
+	if s == nil || n < 0 || uint64(n) > s.size-(addr-s.addr) {
 		return nil, fmt.Errorf("address %#x+%d not in the binary", addr, n)
 	}
 	if s.data == nil {
@@ -992,17 +990,22 @@ func (b *binFile) read(addr uint64, n int) ([]byte, error) {
 		s.data = d
 	}
 	// A fixup starts at most 7 bytes before addr and overlaps it.
-	i := sort.Search(len(b.fixAt), func(i int) bool { return b.fixAt[i]+8 > addr })
-	for ; i < len(b.fixAt) && b.fixAt[i] < addr+uint64(n); i++ {
+	lo := addr - min64(addr, 7)
+	i := sort.Search(len(b.fixAt), func(i int) bool { return b.fixAt[i] >= lo })
+	for ; i < len(b.fixAt); i++ {
 		a := b.fixAt[i]
-		if a+uint64(b.fixups[a].width) > addr {
+		if a >= addr && a-addr >= uint64(n) {
+			break
+		}
+		if a >= addr || addr-a < uint64(b.fixups[a].width) {
 			if b.touched == nil {
 				b.touched = map[uint64]bool{}
 			}
 			b.touched[a] = true
 		}
 	}
-	return s.data[addr-s.addr : addr-s.addr+uint64(n)], nil
+	off := addr - s.addr
+	return s.data[off : off+uint64(n)], nil
 }
 
 // pointer checks the 8-byte slot at addr, which the plan holds a pointer to
@@ -1102,4 +1105,11 @@ func (b *binFile) describe() string {
 		}
 	}
 	return fmt.Sprintf("%s for %s, position independent, %d fixups of which %d slide a pointer", b.format, b.goos, len(b.fixups), slides)
+}
+
+func min64(a, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
 }
