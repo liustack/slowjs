@@ -53,7 +53,7 @@ var formalLayout = Layout{
 	Func: 0x6f7e00, Body: 0x6f7e68, Size: 9000, Handlers: map[string]uint64{"get_loc0": 0x6f804d, "call": 0x6f8129},
 	Matcher: 0x6f0000,
 	Funcs: map[string]uint64{
-		"first": 0x600000, "lre_exec_backtrack": 0x6f0000,
+		"first": 0x600000, "heap_alloc": 0x640020, "re_parse_error": 0x6ea0c0, "lre_exec_backtrack": 0x6f0000,
 		"js_malloc_rt": 0x6f4b20, "js_free_rt": 0x6f4e60, "JS_NewObjectFromShape": 0x6f6c80,
 		"JS_CallInternal_block": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
 	},
@@ -61,7 +61,8 @@ var formalLayout = Layout{
 
 // moved is the binary at p when the matcher moved by dm bytes and the
 // interpreter by d, with every offset in the interpreter front later. The
-// functions between the two moved by dm plus the second shift of p.
+// functions between the two moved by dm plus the second shift of p, and the
+// ones between the first engine function and the matcher by the shift of p.
 func moved(p Position, dm, d uint64) Layout {
 	l := Layout{Func: formalLayout.Func + d, Body: formalLayout.Body + d + uint64(p.Front), Size: formalLayout.Size + uint64(p.Front),
 		Handlers: map[string]uint64{}, Matcher: formalLayout.Matcher + dm, Funcs: map[string]uint64{}}
@@ -74,6 +75,8 @@ func moved(p Position, dm, d uint64) Layout {
 			a += dm + uint64(p.Shift2)
 		case a >= formalLayout.Func:
 			a += d + uint64(p.Front)
+		case a > formalLayout.Funcs["first"] && a < formalLayout.Matcher:
+			a += uint64(p.Shift)
 		case a == formalLayout.Matcher:
 			a += dm
 		}
@@ -98,6 +101,9 @@ func TestCheckLayoutTakesWhatTheBinariesShowed(t *testing.T) {
 		// 32 more can be taken up by the alignment of the interpreter, and the
 		// functions before it have still moved
 		{Position{0, 0, 32}, 0, 0}, {Position{0, 0, 32}, 0, 64},
+		// an odd multiple of 32 as the first shift: the matcher goes down or up to
+		// a multiple of 64, and the functions before it move by the shift itself
+		{Position{1376, 8, 1120}, 1344, 2432}, {Position{1376, 8, 1120}, 1408, 2496}, {Position{96, 0, 32}, 64, 64}, {Position{96, 0, 32}, 128, 128},
 	} {
 		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p); err != nil {
 			t.Errorf("%s (matcher %d, interpreter %d): %v", c.p, c.dm, c.d, err)
@@ -112,15 +118,30 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 		l Layout
 		p Position
 	}{
-		"not moved":            {moved(p, 0, 0), p},
-		"moved without shift":  {moved(Position{0, 8, 0}, 64, 64), Position{0, 8, 0}},
-		"moved too far":        {moved(p, 1728, 1728), p},
-		"moved by 32":          {moved(p, 1696, 1696), p},
-		"short of shift":       {moved(p, 1600, 1600), p},
-		"interpreter lags":     {moved(p, 1664, 1600), p},
-		"front not there":      {moved(Position{1664, 0, 0}, 1664, 1664), p},
-		"handler moved":        {withHandler(moved(p, 1664, 1664), "call", 64), p},
-		"handler missing":      {withoutHandler(moved(p, 1664, 1664), "call"), p},
+		"not moved":           {moved(p, 0, 0), p},
+		"moved without shift": {moved(Position{0, 8, 0}, 64, 64), Position{0, 8, 0}},
+		"moved too far":       {moved(p, 1728, 1728), p},
+		"moved by 32":         {moved(p, 1696, 1696), p},
+		"short of shift":      {moved(p, 1600, 1600), p},
+		"interpreter lags":    {moved(p, 1664, 1600), p},
+		"front not there":     {moved(Position{1664, 0, 0}, 1664, 1664), p},
+		"handler moved":       {withHandler(moved(p, 1664, 1664), "call", 64), p},
+		"handler missing":     {withoutHandler(moved(p, 1664, 1664), "call"), p},
+		"before the matcher lagged": {func() Layout {
+			l := moved(Position{1376, 8, 0}, 1344, 1344)
+			l.Funcs["heap_alloc"] = formalLayout.Funcs["heap_alloc"] + 1344
+			return l
+		}(), Position{1376, 8, 0}},
+		"before the matcher missing": {func() Layout {
+			l := moved(p, 1664, 1664)
+			delete(l.Funcs, "re_parse_error")
+			return l
+		}(), p},
+		"first function moved": {func() Layout {
+			l := moved(p, 1664, 1664)
+			l.Funcs["first"] += 1664
+			return l
+		}(), p},
 		"second shift ignored": {moved(Position{64, 8, 0}, 64, 64), q},
 		"second shift only in the interpreter": {func() Layout {
 			l := moved(Position{64, 8, 0}, 64, 2240)

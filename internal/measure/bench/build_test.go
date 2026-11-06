@@ -334,39 +334,29 @@ func TestProtocolLayouts(t *testing.T) {
 		if _, err := ParsePosition(p.String()); err != nil {
 			t.Error(err)
 		}
+		// Only the formal layout has no shift. A shift of 32 can be taken up
+		// entirely by the alignment of the regexp matcher, any other multiple of
+		// 32 moves it (by a multiple of 64 within 32 of the shift).
+		if p != Formal && (p.Shift < 64 || p.Shift%32 != 0) {
+			t.Errorf("%s: shift %d", p, p.Shift)
+		}
 	}
-	// A shift is a multiple of 64, so that the interpreter moves by exactly the
-	// shift whatever the padding in front of it (docs/measuring.md). The shifts
-	// sit in different 64-byte blocks of the page, none 1 KiB from the next one
-	// or more.
+	// 16 shifts, in different places of the page, none 512 bytes or more from
+	// the next one (the code from the first engine function to the matcher
+	// moves by exactly the shift).
+	if len(shifts) != 16 {
+		t.Errorf("%d different shifts", len(shifts))
+	}
 	var offs []int
 	for s := range shifts {
-		if s%64 != 0 {
-			t.Errorf("shift %d is not a multiple of 64", s)
-		}
 		offs = append(offs, s%4096)
 	}
-	slices.Sort(offs)
-	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
-		t.Errorf("shifts share a place in the page: %v", offs)
-	}
-	for i, o := range offs {
-		next := 4096
-		if i+1 < len(offs) {
-			next = offs[i+1]
-		}
-		if next-o >= 1024 {
-			t.Errorf("no shift between %d and %d of the page", o, next)
-		}
-	}
-	// every front of the 64-byte block twice, and 9 shifts
+	checkSpread(t, "the shifts", offs)
+	// every front of the 64-byte block twice
 	for f := 0; f < 64; f += 8 {
 		if fronts[f] != 2 {
 			t.Errorf("front %d %d times", f, fronts[f])
 		}
-	}
-	if len(shifts) != 9 {
-		t.Errorf("shifts %v", shifts)
 	}
 	if len(Full()) != 16 {
 		t.Error("full")
@@ -378,22 +368,42 @@ func TestProtocolLayouts(t *testing.T) {
 	}
 }
 
-// TestProtocolSecondShifts: the second shifts move the code between the regexp
-// matcher and the interpreter, whose places in a 64-byte block can only be the
-// formal one or 32 bytes later (Go starts a function on 32). Half of the
-// layouts take each, evenly among the fronts, in each half of the set, and the
-// places of that code in the page (the two shifts added) sit no 512 bytes or
-// more from the next one.
-func TestProtocolSecondShifts(t *testing.T) {
+// checkSpread wants the places in a page all different and each no 512 bytes
+// or more from the next, the last from the first around the page.
+func checkSpread(t *testing.T, what string, offs []int) {
+	t.Helper()
+	slices.Sort(offs)
+	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
+		t.Errorf("%s share a place in the page: %v", what, offs)
+	}
+	for i, o := range offs {
+		next := offs[(i+1)%len(offs)] + 4096*b2i(i+1 == len(offs))
+		if next-o >= 512 {
+			t.Errorf("no place of %s between %d and %d of the page", what, o, next%4096)
+		}
+	}
+}
+
+// TestProtocolSections: the three sections of the engine have their own place
+// modulo 64, and each is one of two, since Go starts a function on 32. The code
+// from the first engine function to the matcher follows the shift, the code
+// from the matcher to the interpreter the second shift (the matcher and the
+// interpreter take up a multiple of 64 of either, so the sum is no use), and the
+// code after the interpreter the front. In each half of the set, each of the
+// first two is 32 bytes into the block in 4 layouts, and each of the 5 two-way
+// choices (shift, shift2 and the 3 bits of the front) is independent of the
+// others: any two have 2 layouts with both set. The places in the page of the
+// code of the first two sections, taken as the shift and the shift plus the
+// second shift, are 16 different ones about 256 bytes apart.
+func TestProtocolSections(t *testing.T) {
 	ps := Protocol()
 	if ps[0].Shift2 != 0 {
 		t.Errorf("the formal layout has a second shift: %v", ps[0])
 	}
-	halves := [2][]Position{ps[:8], ps[8:]}
-	var offs []int
-	for h, half := range halves {
-		half32 := 0
-		perBit := [3]int{}
+	var between []int
+	var all [2][2]int
+	for h, half := range [2][]Position{ps[:8], ps[8:]} {
+		var col [5][8]bool
 		for i, p := range half {
 			if p.Shift2%32 != 0 || p.Shift2 < 0 || p.Shift2 >= MaxShift {
 				t.Errorf("second shift of %s", p)
@@ -401,30 +411,39 @@ func TestProtocolSecondShifts(t *testing.T) {
 			if p.Shift2 == 0 && p != Formal {
 				t.Errorf("%s has no second shift", p)
 			}
-			if p.Shift2%64 == 32 {
-				half32++
-				for b := range perBit {
-					if i>>b&1 == 1 {
-						perBit[b]++
-					}
+			if p.Front != 8*i {
+				t.Errorf("%s: the %dth of a half has front %d", p, i, p.Front)
+			}
+			col[0][i], col[1][i] = p.Shift%64 == 32, p.Shift2%64 == 32
+			for b := range 3 {
+				col[2+b][i] = i>>b&1 == 1
+			}
+			all[b2i(col[0][i])][b2i(col[1][i])]++
+			between = append(between, (p.Shift+p.Shift2)%4096)
+		}
+		for x := range col {
+			n := 0
+			for _, v := range col[x] {
+				n += b2i(v)
+			}
+			if n != 4 {
+				t.Errorf("half %d: choice %d is set in %d layouts", h, x, n)
+			}
+			for y := x + 1; y < len(col); y++ {
+				n := 0
+				for i := range 8 {
+					n += b2i(col[x][i] && col[y][i])
+				}
+				if n != 2 {
+					t.Errorf("half %d: choices %d and %d are both set in %d layouts", h, x, y, n)
 				}
 			}
-			offs = append(offs, (p.Shift+p.Shift2)%4096)
-		}
-		if half32 != 4 || perBit != [3]int{2, 2, 2} {
-			t.Errorf("half %d: %d layouts 32 bytes into the block, by bit of the front %v", h, half32, perBit)
 		}
 	}
-	slices.Sort(offs)
-	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
-		t.Errorf("places of the code between the matcher and the interpreter in the page repeat: %v", offs)
+	if all != [2][2]int{{4, 4}, {4, 4}} {
+		t.Errorf("shift and second shift 32 bytes into the block: %v", all)
 	}
-	for i, o := range offs {
-		next := offs[(i+1)%len(offs)] + 4096*b2i(i+1 == len(offs))
-		if next-o >= 512 {
-			t.Errorf("no place of that code between %d and %d of the page", o, next%4096)
-		}
-	}
+	checkSpread(t, "the code between the matcher and the interpreter", between)
 }
 
 func b2i(b bool) int {

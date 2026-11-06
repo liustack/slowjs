@@ -201,7 +201,9 @@ func WriteLayout(dir, name, hash string, l Layout) error {
 // takes up some of a first shift that is not a multiple of 64 in the padding in
 // front of it, so it moves by a multiple of 64 within 32 of the shift (exactly
 // the shift when that is a multiple of 64), and nothing moves when the padding
-// takes up all of it. The functions after it move with it, so each function
+// takes up all of it. The functions between the first engine function and the
+// matcher move by the shift itself, exactly (the first one does not move). The
+// functions after the matcher move with it, so each function
 // between the matcher and the interpreter moves by what the matcher moved plus
 // the second shift, exactly: Go starts them on 32 bytes and a shift is a
 // multiple of 32. The interpreter moves with the matcher when there is no
@@ -222,6 +224,36 @@ func CheckLayout(formal, l Layout, p Position) error {
 		return fmt.Errorf("position %s: the regexp matcher did not move, the shift of %d was taken up by the alignment and the layout is the formal one for the code after it", p, p.Shift)
 	case p.Shift > 0 && (dm%64 != 0 || dm < int64(p.Shift)-32 || dm > int64(p.Shift)+32):
 		return fmt.Errorf("position %s: the regexp matcher moved by %d bytes, not a multiple of 64 within 32 of the shift of %d", p, dm, p.Shift)
+	}
+	// the code from the first engine function, which the shift goes after, to
+	// the matcher: it moves by the shift itself, whatever the matcher takes up
+	first, before := "", 0
+	for name, a := range formal.Funcs {
+		if first == "" || a < formal.Funcs[first] {
+			first = name
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(formal.Funcs)) {
+		f := formal.Funcs[name]
+		if f < formal.Funcs[first] || f >= formal.Matcher {
+			continue
+		}
+		a, ok := l.Funcs[name]
+		if !ok {
+			return fmt.Errorf("position %s: no function %s", p, name)
+		}
+		want := int64(p.Shift)
+		if name == first {
+			want = 0
+		} else {
+			before++
+		}
+		if got := int64(a) - int64(f); got != want {
+			return fmt.Errorf("position %s: %s, before the regexp matcher, moved by %d bytes, want %d", p, name, got, want)
+		}
+	}
+	if before == 0 {
+		return fmt.Errorf("position %s: no engine function between the first one and the regexp matcher to check", p)
 	}
 	// the code between the matcher and the interpreter
 	want := dm + int64(p.Shift2)

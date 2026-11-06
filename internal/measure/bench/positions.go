@@ -21,8 +21,8 @@ type Position struct {
 	// it that is aligned to 64 bytes (the regexp matcher) takes up what is left
 	// over of a shift that is not a multiple of 64, and everything after that
 	// function, the interpreter too, moves by a multiple of 64. So a shift of
-	// 32 may move nothing, and the protocol uses multiples of 64 (see
-	// docs/measuring.md).
+	// 32 may move nothing. The functions before the matcher move by exactly
+	// the shift (see docs/measuring.md).
 	Shift int
 	// Front is the bytes of NOP at the start of the interpreter body, a multiple
 	// of 8 from 0 to 56: the place of the body within its 64-byte block.
@@ -30,8 +30,8 @@ type Position struct {
 	// Shift2 moves the code after the regexp matcher by this many bytes more, a
 	// multiple of 32 below MaxShift: NOPs after the last RET of the matcher
 	// (Matcher). The functions between the matcher and the interpreter, the
-	// allocator and object creation among them, move by Shift plus Shift2
-	// exactly. Go starts a function on 32 bytes, so their place in a 64-byte
+	// allocator and object creation among them, move by what the
+	// matcher moved plus Shift2 exactly. Go starts a function on 32 bytes, so their place in a 64-byte
 	// block takes two values, the formal one and 32 bytes later. The
 	// interpreter is aligned to 64 bytes and moves by a multiple of 64 within 32
 	// of the sum, so the code after it does not follow the half block.
@@ -77,41 +77,49 @@ func All() []Position {
 	return ps
 }
 
-// protocolShifts are the shifts of the second half of Protocol, one per front.
-// They are multiples of 64, so that the interpreter moves by exactly the shift
-// whatever the padding in front of it. They sit in 8 different 64-byte blocks
-// of a 4 KiB page, none further than 576 bytes from the next one, and do not
-// grow with the front, so that the place in the page and the place of the
-// interpreter in its block change independently.
-var protocolShifts = []int{64, 1664, 3264, 576, 2176, 3840, 1088, 2752}
+// protocolShifts and protocolShifts2 are the shifts and second shifts of the 16
+// layouts of Protocol, in its order: the 8 fronts of the first half, then the 8
+// of the second. Formal is first, with neither.
+//
+// The engine has three sections, each with its own place modulo 64, and each
+// can only be one of two since Go starts a function on 32 bytes:
+//   - from the first engine function to the regexp matcher (the heap, libc,
+//     the regexp compiler) moves by exactly the shift. The matcher takes up the
+//     rest of a shift that is not a multiple of 64, so an odd multiple of 32
+//     puts this section 32 bytes into the block and the matcher on a multiple
+//     of 64.
+//   - from the matcher to the interpreter (the allocator, object creation)
+//     moves by what the matcher moved plus the second shift. The matcher moved
+//     by a multiple of 64, so its place modulo 64 is that of the second shift.
+//   - the interpreter and the code after it move by a multiple of 64 and then
+//     take their place modulo 64 from the front.
+//
+// In each half, the shift and the second shift are each 32 bytes into a block
+// in 4 layouts, and with the 3 bits of the front the 5 choices are independent
+// of each other (any two both set in 2 layouts): the shift follows x0^x1 and
+// the second shift x0^x2 of the number x of the front in the first half, x1^x2
+// and x0^x1^x2 in the second. The shifts sit in 16 different places of the
+// page, one in each 256 bytes, and so do the sums of the two shifts (the
+// matcher may take 32 bytes of that off or add 32 to it). Only the formal
+// layout has no shift, and no shift is 32, which the matcher may take up
+// entirely.
+var protocolShifts = []int{
+	0, 1376, 2784, 896, 3584, 1952, 3168, 448,
+	2176, 3328, 736, 2912, 1760, 3936, 1024, 2432,
+}
 
-// protocolShifts2 are the second shifts of the layouts of Protocol, in the
-// order of its layouts: the 8 of shift 0 first, then the 8 of protocolShifts.
-// They are multiples of 32, since Go starts a function on 32 bytes and the
-// code between the regexp matcher and the interpreter moves by exactly the
-// sum of the two shifts. In each half, four of them are 32 bytes into a
-// 64-byte block (so those layouts put that code half a block later) and four
-// are not, two of the four with each bit of the front, so the place of that
-// code in its block does not follow the place of the interpreter body. The
-// sums of the two shifts, modulo 4 KiB, are 16 different places of that code
-// in the page, about 256 bytes apart (480 at most): the formal layout at 0,
-// then 480, 704, 896, 1120, 1312, 1696, 1856, 2272, 2464, 2720, 2816, 3072,
-// 3520, 3648 and 3936.
 var protocolShifts2 = []int{
-	0, 2464, 1120, 3520, 1696, 2816, 704, 3936,
-	2208, 3328, 3904, 4000, 1472, 1568, 1632, 3200,
+	0, 1120, 2432, 2592, 2208, 896, 1632, 3456,
+	4032, 1760, 2336, 1600, 1824, 1600, 1728, 3552,
 }
 
 // Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
-// to 56 at shift 0, which includes the formal layout, and every front again at
-// one of protocolShifts, each with a second shift of protocolShifts2.
+// to 56 twice, with the shifts and second shifts above. The first is the formal
+// layout.
 func Protocol() []Position {
 	var ps []Position
-	for i := range 8 {
-		ps = append(ps, Position{0, 8 * i, protocolShifts2[i]})
-	}
-	for i, s := range protocolShifts {
-		ps = append(ps, Position{s, 8 * i, protocolShifts2[8+i]})
+	for i := range 16 {
+		ps = append(ps, Position{protocolShifts[i], 8 * (i % 8), protocolShifts2[i]})
 	}
 	return ps
 }
