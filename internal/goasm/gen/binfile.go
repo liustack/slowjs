@@ -106,7 +106,13 @@ func inRange(lo, n, lo2, n2 uint64) bool {
 func (b *binFile) mapFile(raw []byte, ms, secs []mapping, page uint64) error {
 	ms = slices.Clone(ms)
 	sort.Slice(ms, func(i, j int) bool { return ms[i].addr < ms[j].addr })
-	for i, m := range ms {
+	// end is the page end of the mappings before m that take memory, and
+	// last the one of them that ends there: a mapping of no memory maps
+	// nothing, so it must not hide an overlap of the ones around it.
+	var end uint64
+	var last *mapping
+	for i := range ms {
+		m := ms[i]
 		if m.n > m.mem {
 			return fmt.Errorf("%s at %#x maps %#x bytes of the file into %#x bytes of memory", m.name, m.addr, m.n, m.mem)
 		}
@@ -116,10 +122,12 @@ func (b *binFile) mapFile(raw []byte, ms, secs []mapping, page uint64) error {
 		if m.addr > ^uint64(0)-page || m.mem > ^uint64(0)-page-m.addr {
 			return fmt.Errorf("%s at %#x runs past the top of the address space", m.name, m.addr)
 		}
-		if i+1 < len(ms) {
-			end := (m.addr + m.mem + page - 1) &^ (page - 1)
-			if next := ms[i+1]; m.mem != 0 && next.mem != 0 && end > next.addr&^(page-1) {
-				return fmt.Errorf("%s at %#x and %s at %#x overlap in pages of %#x bytes", m.name, m.addr, next.name, next.addr, page)
+		if m.mem != 0 {
+			if last != nil && end > m.addr&^(page-1) {
+				return fmt.Errorf("%s at %#x and %s at %#x overlap in pages of %#x bytes", last.name, last.addr, m.name, m.addr, page)
+			}
+			if e := (m.addr + m.mem + page - 1) &^ (page - 1); e > end {
+				end, last = e, &ms[i]
 			}
 		}
 		if m.n > 0 {

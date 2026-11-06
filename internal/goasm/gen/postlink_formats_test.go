@@ -1522,6 +1522,8 @@ func TestMapFile(t *testing.T) {
 		want     string
 	}{
 		"in one page":       {[]mapping{{"a", 0x10000, 0, 0x10, 0x10}, {"b", 0x10800, 0x800, 0x10, 0x10}}, nil, "overlap"},
+		"past an empty one": {[]mapping{{"a", 0x10000, 0, 0x3000, 0x3000}, {"e", 0x11000, 0x1000, 0, 0}, {"b", 0x12000, 0x2000, 0x10, 0x10}}, nil, "overlap"},
+		"past a small one":  {[]mapping{{"a", 0x10000, 0, 0x3000, 0x3000}, {"c", 0x11000, 0x1000, 0x10, 0x10}, {"b", 0x12000, 0x2000, 0x10, 0x10}}, nil, "overlap"},
 		"more file":         {[]mapping{{"a", 0x10000, 0, 0x20, 0x10}}, nil, "into 0x10 bytes of memory"},
 		"past the file":     {[]mapping{{"a", 0x10000, 0x2ff0, 0x20, 0x20}}, nil, "of a file of"},
 		"section elsewhere": {[]mapping{{"a", 0x10000, 0, 0x100, 0x100}}, []mapping{{".s", 0x10010, 0x20, 8, 8}}, "not where its segment maps it"},
