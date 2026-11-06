@@ -358,8 +358,8 @@ the table cannot drift apart.
 
 The post-link check is the gate for the output. Build a binary of the
 package with `-tags goasmkeep` (`engine_keep_<arch>.go` then keeps every function)
-and pass it as `-verify-bin`, with the package's import path as
-`-verify-pkg`. The check reads llc's own object file and the binary, decodes
+and pass it as `-verify-bin` (several, separated by commas, are checked one
+after another), with the package's import path as `-verify-pkg`. The check reads llc's own object file and the binary, decodes
 both with x/arch, and matches every generated function instruction by
 instruction. It refuses code that would not run as decoded: a prefix the
 processor rejects or ignores, an unknown or cut-short instruction, a no-op
@@ -418,9 +418,24 @@ What the check takes on trust, and where it stops:
   `TestNarrowArgs` runs it with garbage above each narrow value.
 - A Go frame of 4096 bytes or more has a stack check the check does not
   know, so such a function fails it.
-- Only a non-PIE linux binary: linux/amd64, or linux/arm64 for the arm64
-  engine. darwin/arm64 links the same code, so the linux/arm64 check covers
-  it.
+- The loader. The check reads the binary in the format of its system: ELF
+  for linux, linked at a fixed address (an ELF PIE, `-buildmode=pie`, is
+  refused), Mach-O for darwin and PE for windows, which Go links as a PIE by
+  default. Mach-O and PE give no symbol sizes, so each symbol runs to the
+  next one, and what lies between a function and the next is held to
+  padding. In a PIE each pointer of engine_rodata must hold its target at the
+  image base of the file and have the fixup that tells the loader to move it:
+  a rebase of the dyld info (the Go linker), an entry of the chained fixups
+  (ld64, which links a darwin program with cgo) or a DIR64 base relocation
+  (PE). Any other fixup inside code or data the check read fails, and so
+  does a table of fixups it does not read (lazy or weak binds, the pointer
+  formats of arm64e, other PE relocation types). That the loader applies
+  each fixup as its format says is trusted. On amd64 Go's prologue loads g
+  in the form of the system (from FS on linux, from GS on darwin, through
+  `runtime.tls_g` on windows), and each form is taken only for its own
+  system. `TestPostLinkFormats` checks a binary of each of the five
+  targets and refuses a changed byte, a wrong pointer and a dropped fixup in
+  each Mach-O and PE one.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc
