@@ -55,3 +55,21 @@ func vmFlags(t *testing.T, addr uintptr) string {
 	t.Fatalf("no mapping at %#x in /proc/self/smaps", addr)
 	return ""
 }
+
+// TestStackReadPages reads the first 8 MiB of a shadow stack after a write
+// of its first byte. A page read but never written maps the shared zero page
+// of the kernel and takes no memory, so only the page written counts. On the
+// linux/arm64 runners of CI, something other than the test read 8 MiB of one
+// stack of TestManyStacks, and mincore counted those 2048 pages as resident.
+func TestStackReadPages(t *testing.T) {
+	m := newMemory(t, DefaultStackSize)
+	base, size := m.Stack()
+	bytesAt(base, 1)[0] = 1
+	b := bytesAt(base, 8<<20)
+	for i := 0; i < len(b); i += int(pageSize) {
+		sink += b[i]
+	}
+	if n := resident(t, base, size); n != 1 {
+		t.Fatalf("%d pages resident after a write of one byte and reads of 8 MiB, want 1\n%s", n, mappingDetail(base))
+	}
+}
