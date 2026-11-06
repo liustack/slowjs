@@ -159,6 +159,21 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"a directory with a size and no address", "a size and no address", func(t *testing.T, bin string, b []byte) {
 				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_DEBUG, 0, 0x1c)
 			}, "windows"},
+			// A fixup of what the check reads to find the loader's writes:
+			// the loader applies it first. An import address table 64 KiB
+			// times k below engine_rodata, with a relocation of its address,
+			// is in engine_rodata when the loader slides the program by that.
+			{"a relocation of an import descriptor", "inside the import descriptors", func(t *testing.T, bin string, b []byte) {
+				desc := peImportShifted(t, bin, b, firstRodataPointer(t, bin, arch))
+				peAddReloc(t, bin, b, desc+16, peRelHighLow)
+			}, "windows"},
+			{"a relocation of the load config", "inside the load config", func(t *testing.T, bin string, b []byte) {
+				peAddReloc(t, bin, b, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG)+88, peRelDir64)
+			}, "windows"},
+			{"a rebase of the load commands", "inside the header and load commands", func(t *testing.T, bin string, b []byte) {
+				lo, hi := rodataRange(t, bin, arch)
+				machoRebaseHeader(t, bin, b, lo, hi)
+			}, "darwin"},
 		} {
 			if fault.only != "" && fault.only != goos {
 				continue
@@ -876,4 +891,153 @@ func peDirectoryAddr(t *testing.T, bin string, i int) uint64 {
 	}
 	defer f.Close()
 	return f.OptionalHeader.(*pe.OptionalHeader64).ImageBase + uint64(peDirectoryRVA(t, bin, i))
+}
+
+// peImportShifted moves the import address table of the first import
+// descriptor of bin to 64 KiB times k below addr, for the first k at which
+// it overlaps no fixup, and gives the address of that descriptor.
+func peImportShifted(t *testing.T, bin string, b []byte, addr uint64) uint64 {
+	t.Helper()
+	tb := openTestBin(t, bin, "amd64")
+	n := uint64(0)
+	for _, f := range tb.fixups {
+		if f.what == "an import of descriptor 0" {
+			n++
+		}
+	}
+	desc := peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_IMPORT)
+	for k := uint64(1); k < 64; k++ {
+		lo := addr - k<<16
+		free := true
+		for _, a := range tb.fixAt {
+			if a+8 > lo && a < lo+8*n {
+				free = false
+			}
+		}
+		if free {
+			peImportInto(t, bin, b, lo)
+			return desc
+		}
+	}
+	t.Fatalf("no place below %#x for the imports of %s", addr, bin)
+	return 0
+}
+
+// peAddReloc adds a block to the base relocation table of bin with one
+// relocation of type typ at addr, in the room the file has after the table.
+func peAddReloc(t *testing.T, bin string, b []byte, addr uint64, typ uint16) {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	oh := f.OptionalHeader.(*pe.OptionalHeader64)
+	dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_BASERELOC]
+	for i, s := range f.Sections {
+		if dir.VirtualAddress < s.VirtualAddress || dir.VirtualAddress >= s.VirtualAddress+s.VirtualSize {
+			continue
+		}
+		end := dir.VirtualAddress - s.VirtualAddress + dir.Size
+		if end+12 > s.Size || end != s.VirtualSize {
+			t.Fatalf("no room after the base relocations of %s", bin)
+		}
+		at := int(s.Offset + end)
+		rva := uint32(addr - oh.ImageBase)
+		binary.LittleEndian.PutUint32(b[at:], rva&^0xfff)
+		binary.LittleEndian.PutUint32(b[at+4:], 12)
+		binary.LittleEndian.PutUint16(b[at+8:], typ<<12|uint16(rva&0xfff))
+		binary.LittleEndian.PutUint16(b[at+10:], 0)
+		peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_BASERELOC, dir.VirtualAddress, dir.Size+12)
+		sh := peHeader(t, b) + int(f.FileHeader.SizeOfOptionalHeader) + 40*i
+		binary.LittleEndian.PutUint32(b[sh+8:], s.VirtualSize+12)
+		return
+	}
+	t.Fatalf("the base relocations of %s are in no section", bin)
+}
+
+// machoRebaseHeader turns a rebase of bin outside engine_rodata, one that a
+// SET_SEGMENT_AND_OFFSET names on its own, into a rebase of the load
+// commands: of the bytes 0x20 into __TEXT, in a LEB128 number of the length
+// the old offset had.
+func machoRebaseHeader(t *testing.T, bin string, b []byte, lo, hi uint64) {
+	t.Helper()
+	f, err := macho.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var segs []*macho.Segment
+	text := -1
+	for _, l := range f.Loads {
+		if s, ok := l.(*macho.Segment); ok {
+			if s.Name == "__TEXT" {
+				text = len(segs)
+			}
+			segs = append(segs, s)
+		}
+	}
+	for _, l := range f.Loads {
+		r := l.Raw()
+		if binary.LittleEndian.Uint32(r) != lcDyldInfoOnly {
+			continue
+		}
+		off, n := int(binary.LittleEndian.Uint32(r[8:])), int(binary.LittleEndian.Uint32(r[12:]))
+		d := b[off : off+n]
+		for i := 0; i < len(d) && d[i] != 0; {
+			op := d[i] & 0xf0
+			at := i
+			i++
+			if op != 0x20 {
+				continue
+			}
+			o, err := uleb(d, &i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			a := segs[d[at]&0xf].Addr + o
+			if (a >= lo && a < hi) || i+1 >= len(d) || d[i] != 0x51 || (d[i+1]&0xf0 != 0x20 && d[i+1] != 0) {
+				continue
+			}
+			d[at] = 0x20 | byte(text)
+			for j := at + 1; j < i; j++ {
+				d[j] = 0x80 // 0x20, then zeros
+			}
+			d[at+1] |= 0x20
+			if i-1 > at+1 {
+				d[i-1] = 0
+			} else {
+				d[at+1] = 0x20
+			}
+			return
+		}
+	}
+	t.Fatalf("no rebase of %s to move", bin)
+}
+
+// TestMetaWrites: a fixup that overlaps a byte of what the check read to
+// find the loader's writes is refused, and one that ends before it or
+// starts after it is not.
+func TestMetaWrites(t *testing.T) {
+	for _, c := range []struct {
+		lo, n, at uint64
+		width     int
+		refused   bool
+	}{
+		{0x1000, 0x10, 0x1000 - 8, 8, false},
+		{0x1000, 0x10, 0x1000 - 7, 8, true},
+		{0x1000, 0x10, 0x1000 - 4, 4, false},
+		{0x1000, 0x10, 0x1000 - 3, 4, true},
+		{0x1000, 0x10, 0x1000 + 0xf, 8, true},
+		{0x1000, 0x10, 0x1000 + 0x10, 8, false},
+		{3, 0x10, 0, 8, true},
+		{0x1000, 0, 0x1000, 8, false},
+	} {
+		b := &binFile{fixups: map[uint64]fixup{c.at: {width: c.width, what: "a rebase"}}, fixAt: []uint64{c.at},
+			meta: []metaRange{{c.lo, c.n, "the table"}}}
+		err := b.metaWrites()
+		if (err != nil) != c.refused || (err != nil && !strings.Contains(err.Error(), "inside the table")) {
+			t.Errorf("a fixup of %d bytes at %#x, the table at %#x+%#x: %v, refused %v", c.width, c.at, c.lo, c.n, err, c.refused)
+		}
+	}
 }
