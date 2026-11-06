@@ -427,15 +427,21 @@ What the check takes on trust, and where it stops:
   image base of the file and have the fixup that tells the loader to move it:
   a rebase of the dyld info (the Go linker), an entry of the chained fixups
   (ld64, which links a darwin program with cgo) or a DIR64 base relocation
-  (PE). Any other fixup inside code or data the check read fails, and so
-  does a table of fixups it does not read (lazy or weak binds, the pointer
-  formats of arm64e, other PE relocation types). That the loader applies
+  (PE). Any other place the loader writes inside code or data the check
+  read fails it: another fixup, a slot of the import address table of a PE
+  or a slot its load config names. So do two fixups of one place, and a
+  table the check does not read (lazy or weak binds, the pointer formats of
+  arm64e, other PE relocation types, the TLS, delay import, bound import and
+  CLR directories of a PE). A binary cut short or with bent tables is
+  refused with an error (`TestOpenBinBent`). That the loader applies
   each fixup as its format says is trusted. On amd64 Go's prologue loads g
   in the form of the system (from FS on linux, from GS on darwin, through
   `runtime.tls_g` on windows), and each form is taken only for its own
   system. `TestPostLinkFormats` checks a binary of each of the five
-  targets and refuses a changed byte, a wrong pointer and a dropped fixup in
-  each Mach-O and PE one.
+  targets and refuses a changed byte, a wrong pointer, a dropped fixup and
+  a second fixup of one pointer in each Mach-O and PE one, and in the PE one
+  an import table or a slot of the load config in engine_rodata, a TLS
+  directory and a delay import directory.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc
