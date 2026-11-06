@@ -105,7 +105,7 @@ func TestCheckLayoutTakesWhatTheBinariesShowed(t *testing.T) {
 		// a multiple of 64, and the functions before it move by the shift itself
 		{Position{1376, 8, 1120}, 1344, 2432}, {Position{1376, 8, 1120}, 1408, 2496}, {Position{96, 0, 32}, 64, 64}, {Position{96, 0, 32}, 128, 128},
 	} {
-		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p); err != nil {
+		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p, "first"); err != nil {
 			t.Errorf("%s (matcher %d, interpreter %d): %v", c.p, c.dm, c.d, err)
 		}
 	}
@@ -161,19 +161,19 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 			return l
 		}(), q},
 	} {
-		if err := CheckLayout(formalLayout, c.l, c.p); err == nil {
+		if err := CheckLayout(formalLayout, c.l, c.p, "first"); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	// Nothing between the matcher and the interpreter to check is an error too.
 	empty := formalLayout
-	empty.Funcs = map[string]uint64{"lre_exec_backtrack": formalLayout.Matcher, "JS_CallInternal_block": formalLayout.Func}
-	if err := CheckLayout(empty, empty, Position{}); err == nil || !strings.Contains(err.Error(), "between") {
+	empty.Funcs = map[string]uint64{"first": formalLayout.Funcs["first"], "lre_exec_backtrack": formalLayout.Matcher, "JS_CallInternal_block": formalLayout.Func}
+	if err := CheckLayout(empty, empty, Position{}, ""); err == nil || !strings.Contains(err.Error(), "between") {
 		t.Errorf("no function between: %v", err)
 	}
 	noMatcher := formalLayout
 	noMatcher.Matcher = 0
-	if err := CheckLayout(noMatcher, moved(Position{}, 0, 0), Position{}); err == nil {
+	if err := CheckLayout(noMatcher, moved(Position{}, 0, 0), Position{}, ""); err == nil {
 		t.Error("no matcher accepted")
 	}
 }
@@ -212,7 +212,7 @@ func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
 	// has 32 bytes or more of padding in front of it, and nothing after it
 	// moves.
 	p := Position{32, 0, 0}
-	err := CheckLayout(formalLayout, moved(p, 0, 0), p)
+	err := CheckLayout(formalLayout, moved(p, 0, 0), p, "first")
 	if err == nil || !strings.Contains(err.Error(), "taken up by the alignment") {
 		t.Errorf("err = %v", err)
 	}
@@ -222,7 +222,7 @@ func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
 		p     Position
 		dm, d uint64
 	}{{Position{1120, 0, 0}, 1088, 1088}, {Position{1120, 0, 0}, 1152, 1152}, {Position{2208, 8, 0}, 2176, 2176}} {
-		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p); err != nil {
+		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p, "first"); err != nil {
 			t.Errorf("%s moved by %d: %v", c.p, c.dm, err)
 		}
 	}
@@ -233,7 +233,7 @@ func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
 		p Position
 		d uint64
 	}{{Position{0, 0, 96}, 64}, {Position{0, 0, 96}, 128}, {Position{0, 8, 2336}, 2304}, {Position{0, 8, 2336}, 2368}} {
-		if err := CheckLayout(formalLayout, moved(c.p, 0, c.d), c.p); err != nil {
+		if err := CheckLayout(formalLayout, moved(c.p, 0, c.d), c.p, "first"); err != nil {
 			t.Errorf("%s, interpreter moved by %d: %v", c.p, c.d, err)
 		}
 	}
@@ -246,7 +246,7 @@ func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
 			l.Funcs[name] = formalLayout.Funcs[name]
 		}
 	}
-	if err := CheckLayout(formalLayout, l, p); err == nil || !strings.Contains(err.Error(), "between") {
+	if err := CheckLayout(formalLayout, l, p, "first"); err == nil || !strings.Contains(err.Error(), "between") {
 		t.Errorf("err = %v", err)
 	}
 }
@@ -326,5 +326,42 @@ func TestEngineFuncsLeavesOutWhatIsNotAnAssemblyFunctionOfTheEngine(t *testing.T
 	want := map[string]uint64{"lre_exec_backtrack": 0x6f0000, "js_malloc_rt": 0x6f4b20}
 	if !maps.Equal(got, want) {
 		t.Errorf("engineFuncs = %v, want %v", got, want)
+	}
+}
+
+func TestCheckLayoutGoesByTheFunctionTheShiftWentAfter(t *testing.T) {
+	p := Position{1376, 8, 0}
+	// The shift went after heap_alloc, not after the lowest function: the
+	// functions up to it stay, the ones after it and before the matcher move.
+	l := moved(p, 1344, 1344)
+	l.Funcs["heap_alloc"] = formalLayout.Funcs["heap_alloc"]
+	if err := CheckLayout(formalLayout, l, p, "heap_alloc"); err != nil {
+		t.Errorf("pad heap_alloc: %v", err)
+	}
+	if err := CheckLayout(formalLayout, l, p, "first"); err == nil {
+		t.Error("heap_alloc stayed, with the shift after first: accepted")
+	}
+	// the function the shift went after moved
+	if err := CheckLayout(formalLayout, moved(p, 1344, 1344), p, "heap_alloc"); err == nil {
+		t.Error("the pad function moved: accepted")
+	}
+	// A pad whose name is used twice is not in Funcs: say so, and do not take
+	// another function in its place.
+	dup := formalLayout
+	dup.Funcs = maps.Clone(formalLayout.Funcs)
+	delete(dup.Funcs, "heap_alloc")
+	ld := moved(p, 1344, 1344)
+	delete(ld.Funcs, "heap_alloc")
+	err := CheckLayout(dup, ld, p, "heap_alloc")
+	if err == nil || !strings.Contains(err.Error(), "heap_alloc") || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("pad named twice: %v", err)
+	}
+	// A shift needs the function it went after.
+	if err := CheckLayout(formalLayout, moved(p, 1344, 1344), p, ""); err == nil {
+		t.Error("a shift with no pad function: accepted")
+	}
+	// Without a shift nothing before the matcher moves, whatever the pad.
+	if err := CheckLayout(formalLayout, moved(Position{}, 0, 0), Position{}, ""); err != nil {
+		t.Errorf("no shift, no pad: %v", err)
 	}
 }

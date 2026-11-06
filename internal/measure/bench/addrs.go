@@ -201,8 +201,9 @@ func WriteLayout(dir, name, hash string, l Layout) error {
 // takes up some of a first shift that is not a multiple of 64 in the padding in
 // front of it, so it moves by a multiple of 64 within 32 of the shift (exactly
 // the shift when that is a multiple of 64), and nothing moves when the padding
-// takes up all of it. The functions between the first engine function and the
-// matcher move by the shift itself, exactly (the first one does not move). The
+// takes up all of it. The functions after pad, the function the shift went
+// after, and before the matcher move by the shift itself, exactly, and pad and
+// the ones before it do not move (pad is empty without a shift). The
 // functions after the matcher move with it, so each function
 // between the matcher and the interpreter moves by what the matcher moved plus
 // the second shift, exactly: Go starts them on 32 bytes and a shift is a
@@ -212,7 +213,7 @@ func WriteLayout(dir, name, hash string, l Layout) error {
 // there, which is no fault since the functions between did move. The body and
 // every hot handler sit front bytes later in the interpreter, so they are at
 // the formal places plus front, modulo 64.
-func CheckLayout(formal, l Layout, p Position) error {
+func CheckLayout(formal, l Layout, p Position, pad string) error {
 	if formal.Matcher == 0 || l.Matcher == 0 {
 		return fmt.Errorf("position %s: no regexp matcher (%s) in the binary to read the layout from", p, Matcher)
 	}
@@ -225,35 +226,44 @@ func CheckLayout(formal, l Layout, p Position) error {
 	case p.Shift > 0 && (dm%64 != 0 || dm < int64(p.Shift)-32 || dm > int64(p.Shift)+32):
 		return fmt.Errorf("position %s: the regexp matcher moved by %d bytes, not a multiple of 64 within 32 of the shift of %d", p, dm, p.Shift)
 	}
-	// the code from the first engine function, which the shift goes after, to
-	// the matcher: it moves by the shift itself, whatever the matcher takes up
-	first, before := "", 0
-	for name, a := range formal.Funcs {
-		if first == "" || a < formal.Funcs[first] {
-			first = name
+	// The code up to the regexp matcher. The shift went after the function
+	// pad (the one the build used), so that function and the ones before it
+	// stay, and the ones after it move by the shift itself, whatever the
+	// matcher takes up.
+	var padAt uint64
+	switch {
+	case pad != "":
+		a, ok := formal.Funcs[pad]
+		if !ok {
+			return fmt.Errorf("position %s: the function %s that the shift goes after is not among the engine functions of the formal binary (a name that two symbols have is used twice and left out): give the build another Pad", p, pad)
 		}
+		padAt = a
+	case p.Shift > 0:
+		return fmt.Errorf("position %s: no function that the shift went after", p)
 	}
+	before := 0
 	for _, name := range slices.Sorted(maps.Keys(formal.Funcs)) {
 		f := formal.Funcs[name]
-		if f < formal.Funcs[first] || f >= formal.Matcher {
+		if f >= formal.Matcher {
 			continue
 		}
 		a, ok := l.Funcs[name]
 		if !ok {
 			return fmt.Errorf("position %s: no function %s", p, name)
 		}
-		want := int64(p.Shift)
-		if name == first {
-			want = 0
-		} else {
+		want := int64(0)
+		if pad != "" && f > padAt {
+			want = int64(p.Shift)
+			before++
+		} else if pad == "" {
 			before++
 		}
 		if got := int64(a) - int64(f); got != want {
-			return fmt.Errorf("position %s: %s, before the regexp matcher, moved by %d bytes, want %d", p, name, got, want)
+			return fmt.Errorf("position %s: %s, before the regexp matcher, moved by %d bytes, want %d (the shift went after %s)", p, name, got, want, pad)
 		}
 	}
 	if before == 0 {
-		return fmt.Errorf("position %s: no engine function between the first one and the regexp matcher to check", p)
+		return fmt.Errorf("position %s: no engine function after %s and before the regexp matcher to check", p, pad)
 	}
 	// the code between the matcher and the interpreter
 	want := dm + int64(p.Shift2)

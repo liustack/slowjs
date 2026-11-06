@@ -309,7 +309,7 @@ func Build(ctx context.Context, o BuildOptions, xf Xform, run measure.Runner, lo
 			}
 			if p == Formal {
 				formal = l
-			} else if err := CheckLayout(formal, l, p); err != nil {
+			} else if err := CheckLayout(formal, l, p, pad); err != nil {
 				return fmt.Errorf("%s: %w", filepath.Base(bin), err)
 			}
 			if bin != formalBin {
