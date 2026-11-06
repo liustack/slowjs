@@ -419,8 +419,11 @@ What the check takes on trust, and where it stops:
 - A Go frame of 4096 bytes or more has a stack check the check does not
   know, so such a function fails it.
 - The loader. The check reads the binary in the format of its system: ELF
-  for linux, linked at a fixed address (an ELF PIE, `-buildmode=pie`, is
-  refused), Mach-O for darwin and PE for windows, which Go links as a PIE by
+  for linux, a static executable linked at a fixed address, which nothing
+  writes into after the kernel maps it (an ELF PIE, `-buildmode=pie`, and
+  a file with a dynamic table, a program interpreter or a section of
+  relocations, as cgo makes, are refused), Mach-O for darwin and PE for
+  windows, which Go links as a PIE by
   default. Mach-O and PE give no symbol sizes, so each symbol runs to the
   next one, and what lies between a function and the next is held to
   padding. In a PIE each pointer of engine_rodata must hold its target at the
@@ -436,8 +439,8 @@ What the check takes on trust, and where it stops:
   whatever its size, as the loader does, and one with a size and no address
   is refused. Every fixup must lie, its whole width, in the bytes the file
   holds of a section the linker puts pointers in (`__DATA` and
-  `__DATA_CONST` of Mach-O, `.data` and `.rdata` of PE, the writable
-  sections of ELF), and no two may overlap: so none is in the headers, the
+  `__DATA_CONST` of Mach-O, `.data` and `.rdata` of PE), and no two may
+  overlap: so none is in the headers, the
   load commands, `__LINKEDIT`, the import and relocation tables or code.
   What the check reads of a PE to find the fixups is recorded read by read,
   and the load config, which lies in `.rdata`, as a whole: a fixup there is
@@ -449,8 +452,11 @@ What the check takes on trust, and where it stops:
   system. `TestPostLinkFormats` checks a binary of each of the five
   targets and refuses a changed byte, a wrong pointer, a dropped fixup and
   a second fixup of one pointer in each Mach-O and PE one, a rebase of the
-  load commands, of `__LINKEDIT` and of code in each Mach-O one, a dynamic
-  relocation of its own table in each ELF one, and in the PE one an import
+  load commands, of `__LINKEDIT`, of `__DATA,__bss` and of code in each
+  Mach-O one, a relocation table, a TLSDESC or COPY relocation at the end of
+  `.data` and a dynamic table the section table does not show in each ELF
+  one, and in the PE one a relocation that ends a byte past what `.data`
+  holds in the file (one that ends at its last byte is taken), an import
   table or a slot of the load config in engine_rodata (also with the size
   of its directory at 0), a directory with a size and no address, a
   relocation of an import descriptor, a lookup table, the load config (also
