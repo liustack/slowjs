@@ -85,16 +85,33 @@ func All() []Position {
 // interpreter in its block change independently.
 var protocolShifts = []int{64, 1664, 3264, 576, 2176, 3840, 1088, 2752}
 
+// protocolShifts2 are the second shifts of the layouts of Protocol, in the
+// order of its layouts: the 8 of shift 0 first, then the 8 of protocolShifts.
+// They are multiples of 32, since Go starts a function on 32 bytes and the
+// code between the regexp matcher and the interpreter moves by exactly the
+// sum of the two shifts. In each half, four of them are 32 bytes into a
+// 64-byte block (so those layouts put that code half a block later) and four
+// are not, two of the four with each bit of the front, so the place of that
+// code in its block does not follow the place of the interpreter body. The
+// sums of the two shifts, modulo 4 KiB, are 16 different places of that code
+// in the page, about 256 bytes apart (480 at most): the formal layout at 0,
+// then 480, 704, 896, 1120, 1312, 1696, 1856, 2272, 2464, 2720, 2816, 3072,
+// 3520, 3648 and 3936.
+var protocolShifts2 = []int{
+	0, 2464, 1120, 3520, 1696, 2816, 704, 3936,
+	2208, 3328, 3904, 4000, 1472, 1568, 1632, 3200,
+}
+
 // Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
 // to 56 at shift 0, which includes the formal layout, and every front again at
-// one of protocolShifts.
+// one of protocolShifts, each with a second shift of protocolShifts2.
 func Protocol() []Position {
 	var ps []Position
 	for i := range 8 {
-		ps = append(ps, Position{0, 8 * i, 0})
+		ps = append(ps, Position{0, 8 * i, protocolShifts2[i]})
 	}
 	for i, s := range protocolShifts {
-		ps = append(ps, Position{s, 8 * i, 0})
+		ps = append(ps, Position{s, 8 * i, protocolShifts2[8+i]})
 	}
 	return ps
 }

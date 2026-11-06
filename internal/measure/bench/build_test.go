@@ -377,3 +377,59 @@ func TestProtocolLayouts(t *testing.T) {
 		}
 	}
 }
+
+// TestProtocolSecondShifts: the second shifts move the code between the regexp
+// matcher and the interpreter, whose places in a 64-byte block can only be the
+// formal one or 32 bytes later (Go starts a function on 32). Half of the
+// layouts take each, evenly among the fronts, in each half of the set, and the
+// places of that code in the page (the two shifts added) sit no 512 bytes or
+// more from the next one.
+func TestProtocolSecondShifts(t *testing.T) {
+	ps := Protocol()
+	if ps[0].Shift2 != 0 {
+		t.Errorf("the formal layout has a second shift: %v", ps[0])
+	}
+	halves := [2][]Position{ps[:8], ps[8:]}
+	var offs []int
+	for h, half := range halves {
+		half32 := 0
+		perBit := [3]int{}
+		for i, p := range half {
+			if p.Shift2%32 != 0 || p.Shift2 < 0 || p.Shift2 >= MaxShift {
+				t.Errorf("second shift of %s", p)
+			}
+			if p.Shift2 == 0 && p != Formal {
+				t.Errorf("%s has no second shift", p)
+			}
+			if p.Shift2%64 == 32 {
+				half32++
+				for b := range perBit {
+					if i>>b&1 == 1 {
+						perBit[b]++
+					}
+				}
+			}
+			offs = append(offs, (p.Shift+p.Shift2)%4096)
+		}
+		if half32 != 4 || perBit != [3]int{2, 2, 2} {
+			t.Errorf("half %d: %d layouts 32 bytes into the block, by bit of the front %v", h, half32, perBit)
+		}
+	}
+	slices.Sort(offs)
+	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
+		t.Errorf("places of the code between the matcher and the interpreter in the page repeat: %v", offs)
+	}
+	for i, o := range offs {
+		next := offs[(i+1)%len(offs)] + 4096*b2i(i+1 == len(offs))
+		if next-o >= 512 {
+			t.Errorf("no place of that code between %d and %d of the page", o, next%4096)
+		}
+	}
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
