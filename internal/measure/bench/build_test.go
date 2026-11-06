@@ -29,7 +29,7 @@ func TestParsePositions(t *testing.T) {
 		t.Fatalf("all = %v, %v", a, err)
 	}
 	got, err := ParsePositions("0.0, 32.16")
-	if err != nil || len(got) != 2 || got[1] != (Position{32, 16}) {
+	if err != nil || len(got) != 2 || got[1] != (Position{32, 16, 0}) {
 		t.Fatalf("list = %v, %v", got, err)
 	}
 	for _, bad := range []string{"16.0", "0.4", "0", "a.b", "0.0,0.0", "0.0.0"} {
@@ -37,15 +37,40 @@ func TestParsePositions(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	if s := (Position{32, 8}).String(); s != "32.8" {
+	if s := (Position{32, 8, 0}).String(); s != "32.8" {
 		t.Errorf("String = %s", s)
 	}
-	if BinName("base", Position{0, 16}) != "base@0.16" {
+	if BinName("base", Position{0, 16, 0}) != "base@0.16" {
 		t.Error("BinName")
 	}
-	ops := Position{32, 16}.XformOps("JS_CallInternal", "")
+	ops := Position{32, 16, 0}.XformOps("JS_CallInternal", "")
 	if !slices.Equal(ops, []string{"shift:32", "front:JS_CallInternal:16"}) {
 		t.Errorf("ops = %v", ops)
+	}
+	// The second shift goes after the regexp matcher, between the first shift and the front.
+	ops = Position{64, 8, 2208}.XformOps("JS_CallInternal_block", "dbuf_init2")
+	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_CallInternal_block:8"}) {
+		t.Errorf("ops = %v", ops)
+	}
+	ops = Position{0, 0, 32}.XformOps("JS_CallInternal_block", "")
+	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_CallInternal_block:0"}) {
+		t.Errorf("ops = %v", ops)
+	}
+	for _, c := range []struct {
+		p Position
+		s string
+	}{{Position{0, 0, 0}, "0.0"}, {Position{64, 8, 2208}, "64.8.2208"}, {Position{0, 56, 32}, "0.56.32"}} {
+		if c.p.String() != c.s {
+			t.Errorf("String of %v = %s, want %s", c.p, c.p.String(), c.s)
+		}
+		if q, err := ParsePosition(c.s); err != nil || q != c.p {
+			t.Errorf("ParsePosition(%s) = %v, %v", c.s, q, err)
+		}
+	}
+	for _, bad := range []string{"0.0.16x", "0.0.8", "0.0.8192", "0.0.-32", "0.0.32.0", "0.0.0"} {
+		if _, err := ParsePosition(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }
 
@@ -106,7 +131,7 @@ func TestResolveFront(t *testing.T) {
 func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	tree := fakeTree(t)
 	before, _ := os.ReadFile(filepath.Join(tree, "internal/cengine/cutils_amd64.s"))
-	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16}, "JS_CallInternal", "", fakeXform)
+	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16, 0}, "JS_CallInternal", "", fakeXform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +155,7 @@ func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	}
 	// A position that moves nothing is an error: the xform did not find its place.
 	nop := func(context.Context, string, []string) error { return nil }
-	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0}, "JS_CallInternal", "", nop); err == nil {
+	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0, 0}, "JS_CallInternal", "", nop); err == nil {
 		t.Error("a position that changed no file was accepted")
 	}
 	// No generated engine is an error.
@@ -181,7 +206,7 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	}
 	var log bytes.Buffer
 	err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
-		Positions: []Position{{32, 16}, {0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+		Positions: []Position{{32, 16, 0}, {0, 0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
@@ -247,7 +272,7 @@ func TestBuildWorkFileTakesTheHigherGoVersion(t *testing.T) {
 		}
 		var log bytes.Buffer
 		err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
-			Positions: []Position{{0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+			Positions: []Position{{0, 0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
 		if err != nil {
 			t.Fatalf("tree %s, app %s: %v\n%s", c.tree, c.app, err, log.String())
 		}
@@ -265,7 +290,7 @@ func TestBuildInTheTreeWithoutAnApp(t *testing.T) {
 		cmds = append(cmds, c)
 		return measure.Result{}
 	}
-	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
+	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,39 +334,29 @@ func TestProtocolLayouts(t *testing.T) {
 		if _, err := ParsePosition(p.String()); err != nil {
 			t.Error(err)
 		}
+		// Only the formal layout has no shift. A shift of 32 can be taken up
+		// entirely by the alignment of the regexp matcher, any other multiple of
+		// 32 moves it (by a multiple of 64 within 32 of the shift).
+		if p != Formal && (p.Shift < 64 || p.Shift%32 != 0) {
+			t.Errorf("%s: shift %d", p, p.Shift)
+		}
 	}
-	// A shift is a multiple of 64, so that the interpreter moves by exactly the
-	// shift whatever the padding in front of it (docs/measuring.md). The shifts
-	// sit in different 64-byte blocks of the page, none 1 KiB from the next one
-	// or more.
+	// 16 shifts, in different places of the page, none 512 bytes or more from
+	// the next one (the code from the first engine function to the matcher
+	// moves by exactly the shift).
+	if len(shifts) != 16 {
+		t.Errorf("%d different shifts", len(shifts))
+	}
 	var offs []int
 	for s := range shifts {
-		if s%64 != 0 {
-			t.Errorf("shift %d is not a multiple of 64", s)
-		}
 		offs = append(offs, s%4096)
 	}
-	slices.Sort(offs)
-	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
-		t.Errorf("shifts share a place in the page: %v", offs)
-	}
-	for i, o := range offs {
-		next := 4096
-		if i+1 < len(offs) {
-			next = offs[i+1]
-		}
-		if next-o >= 1024 {
-			t.Errorf("no shift between %d and %d of the page", o, next)
-		}
-	}
-	// every front of the 64-byte block twice, and 9 shifts
+	checkSpread(t, "the shifts", offs)
+	// every front of the 64-byte block twice
 	for f := 0; f < 64; f += 8 {
 		if fronts[f] != 2 {
 			t.Errorf("front %d %d times", f, fronts[f])
 		}
-	}
-	if len(shifts) != 9 {
-		t.Errorf("shifts %v", shifts)
 	}
 	if len(Full()) != 16 {
 		t.Error("full")
@@ -351,4 +366,89 @@ func TestProtocolLayouts(t *testing.T) {
 			t.Errorf("%s accepted", bad)
 		}
 	}
+}
+
+// checkSpread wants the places in a page all different and each no 512 bytes
+// or more from the next, the last from the first around the page.
+func checkSpread(t *testing.T, what string, offs []int) {
+	t.Helper()
+	slices.Sort(offs)
+	if len(slices.Compact(slices.Clone(offs))) != len(offs) {
+		t.Errorf("%s share a place in the page: %v", what, offs)
+	}
+	for i, o := range offs {
+		next := offs[(i+1)%len(offs)] + 4096*b2i(i+1 == len(offs))
+		if next-o >= 512 {
+			t.Errorf("no place of %s between %d and %d of the page", what, o, next%4096)
+		}
+	}
+}
+
+// TestProtocolSections: the three sections of the engine have their own place
+// modulo 64, and each is one of two, since Go starts a function on 32. The code
+// from the first engine function to the matcher follows the shift, the code
+// from the matcher to the interpreter the second shift (the matcher and the
+// interpreter take up a multiple of 64 of either, so the sum is no use), and the
+// code after the interpreter the front. In each half of the set, each of the
+// first two is 32 bytes into the block in 4 layouts, and each of the 5 two-way
+// choices (shift, shift2 and the 3 bits of the front) is independent of the
+// others: any two have 2 layouts with both set. The places in the page of the
+// code of the first two sections, taken as the shift and the shift plus the
+// second shift, are 16 different ones about 256 bytes apart.
+func TestProtocolSections(t *testing.T) {
+	ps := Protocol()
+	if ps[0].Shift2 != 0 {
+		t.Errorf("the formal layout has a second shift: %v", ps[0])
+	}
+	var between []int
+	var all [2][2]int
+	for h, half := range [2][]Position{ps[:8], ps[8:]} {
+		var col [5][8]bool
+		for i, p := range half {
+			if p.Shift2%32 != 0 || p.Shift2 < 0 || p.Shift2 >= MaxShift {
+				t.Errorf("second shift of %s", p)
+			}
+			if p.Shift2 == 0 && p != Formal {
+				t.Errorf("%s has no second shift", p)
+			}
+			if p.Front != 8*i {
+				t.Errorf("%s: the %dth of a half has front %d", p, i, p.Front)
+			}
+			col[0][i], col[1][i] = p.Shift%64 == 32, p.Shift2%64 == 32
+			for b := range 3 {
+				col[2+b][i] = i>>b&1 == 1
+			}
+			all[b2i(col[0][i])][b2i(col[1][i])]++
+			between = append(between, (p.Shift+p.Shift2)%4096)
+		}
+		for x := range col {
+			n := 0
+			for _, v := range col[x] {
+				n += b2i(v)
+			}
+			if n != 4 {
+				t.Errorf("half %d: choice %d is set in %d layouts", h, x, n)
+			}
+			for y := x + 1; y < len(col); y++ {
+				n := 0
+				for i := range 8 {
+					n += b2i(col[x][i] && col[y][i])
+				}
+				if n != 2 {
+					t.Errorf("half %d: choices %d and %d are both set in %d layouts", h, x, y, n)
+				}
+			}
+		}
+	}
+	if all != [2][2]int{{4, 4}, {4, 4}} {
+		t.Errorf("shift and second shift 32 bytes into the block: %v", all)
+	}
+	checkSpread(t, "the code between the matcher and the interpreter", between)
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
