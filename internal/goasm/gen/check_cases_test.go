@@ -392,7 +392,12 @@ func TestCheckCases(t *testing.T) {
 		}, want: "NOSPLIT true), the function ic"},
 		{name: "a return without its result store", lower: sub("h", `\n\tmovq\s+%rax, 24\(%rsp\)`, ""),
 			want: "is not the store of"},
-		{name: "a result stored in the wrong slot", lower: sub("h", `movq\s+%rax, 24\(%rsp\)`, "movq %rax, 32(%rsp)"),
+		// emit writes the moves of the Go argument area by name through FP
+		// and refuses one at an offset that is no word of it. A move by name
+		// to another word assembles, and the check refuses it.
+		{name: "a result stored past the result slot", lower: sub("h", `movq\s+%rax, 24\(%rsp\)`, "movq %rax, 32(%rsp)"),
+			want: "no result word at 24 in the Go argument area"},
+		{name: "a result stored in the wrong slot", files: subInText("h", "MOVQ AX, ret+16(FP)", "MOVQ AX, a1+8(FP)"),
 			want: "is not the store of"},
 		{name: "a return that is a plain RET", lower: sub("h", `jmp\s+\.Lret_h`, "retq"),
 			want: "is not a jump to the epilogue"},
@@ -888,5 +893,22 @@ func dropRET(fn string) func(map[string]string) {
 			panic("no RET in " + fn)
 		}
 		files[name] = text[:at] + body[:i] + "\tBYTE $0x90" + body[i+len("\tRET"):] + text[end:]
+	}
+}
+
+// subInText replaces the first old in the emitted text of fn with new.
+func subInText(fn, old, new string) func(map[string]string) {
+	return func(files map[string]string) {
+		name, at := emitted(files, fn)
+		text := files[name]
+		end := len(text)
+		if i := strings.Index(text[at+1:], "\nTEXT "); i >= 0 {
+			end = at + 1 + i
+		}
+		i := strings.Index(text[at:end], old)
+		if i < 0 {
+			panic("no " + old + " in the text of " + fn)
+		}
+		files[name] = text[:at+i] + new + text[at+i+len(old):]
 	}
 }

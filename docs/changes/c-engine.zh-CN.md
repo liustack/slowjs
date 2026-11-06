@@ -237,6 +237,20 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 - 渲染示例商店的 18 个页面，最多占 0.85 MiB（2.6%）。
 - 所以 32 MiB 够容纳深度上限 10000 且最多约 130 个槽位的任何函数，以及深度上限 5000 且约 340 个槽位的函数。更大的栈帧会在栈用完之前以 `RangeError` 结束，保护页从不会被碰到。把栈加到 64 MiB，只会把这两个数移到 340 和 760 个槽位，而且在 linux 和 darwin 上占地址空间，在 windows 上给每个 VM 占已提交内存。
 
+## 按名字读写参数和结果
+
+生成的函数经过 Go 的 FP 伪寄存器按名字读参数、写结果（`MOVQ a0+0(FP), R12`、`MOVQ AX, ret+24(FP)`），名字就是它们在 `engine_decl_<arch>.go` 里的 Go 声明用的名字。这是 Go 承诺的拿到汇编函数参数的方式（[doc/asm.html](https://go.dev/doc/asm)）。amd64 的代码以前在离 SP 固定偏移的地方读它们，这个偏移写死在函数体的字节里：栈帧，加上 Go 保存的基址指针，再加上返回地址，所以一个 `$64-32` 的函数在 80(SP) 读第一个参数。这个偏移是汇编器现在排布栈帧的方式（`cmd/internal/obj/x86/obj6.go`），不是承诺，它一变，每次调用都会读错字。arm64 的代码本来就按名字读写。
+
+改的是 amd64 的 `.s` 文件。每次移动参数或结果都换成一条 Go 指令，不再是它的字节（1,375 个统一函数里共 8,039 条），函数代码之后的数据跟在一行 `// data` 后面。文件的大小上限按每个函数全写成字节时的大小来算，所以每个函数都留在原来的文件里，在二进制里的位置也不变。arm64 的文件不变。
+
+为什么安全：生成的代码还是同样的指令，在同样的位置。lowering 后的文本仍把每条移动写在 Go 现在用的偏移上，所以 clang 像以前一样排它前后的分支，Go 的汇编器按名字编码这条移动时，寄存器和位移都一样。和改动之前的引擎相比，在每个系统上把它构建进 `internal/cengine` 的测试二进制（`-tags goasmkeep`），每个生成的函数都在同一个地址，指令也一样：在 linux/amd64、linux/arm64 和 darwin/arm64 上字节相同，在 darwin/amd64 和 windows/amd64 上除了对挪动过的数据的引用的位移以外字节相同，这些引用指向同一个符号和偏移（Go 代码的行号表变大了，排在它后面的数据随之挪动）。所以速度、tifa 的页面、test262 的 33 个已知错误、调用深度和计时用的布局都和原来一样。链接后的检查像以前一样，要求每条移动落在 Go 的序言在二进制里给参数区留的位置上。
+
+它管不到的：一条移动的长度取决于它的位移，127 以内是一个字节，超过是四个字节。如果 Go 换一种方式排布栈帧，位移在 128 字节附近的移动会变长或变短，挪动跨过它的那些分支，而这些分支是写成字节的：参数还能找到，代码却跑不了。链接后的检查拿 `scripts/go-versions.sh` 跑的每个 Go 版本比对这些字节，`internal/goversion` 会挡住比 1.27 新的 Go。1.26 或 1.27 新出的补丁版本挡不住：它若有这样的改动，要等 `scripts/go-versions.sh` 用它跑时才会发现，程序用它构建时发现不了。引擎发出的调用的参数仍放在 0(SP) 往上，也就是 ABI0 里调用者写它们的地方，和 Go 自己在 doc/asm.html 里的例子一样。
+
+`go vet -asmdecl` 现在在生成的文件里只报四个没有 Go 声明的函数：`memcpy`、`memmove` 和 `memset`，它们是 amd64 的寄存器入口叶子函数，TEXT 不像 arm64 上那样写 NOFRAME，还有 `goasm_room`，它只在 windows 上有声明，而 `engine_room_amd64.s` 在每个系统上都参与构建。以前它还会报 amd64 的 634 个函数，说没看到写结果。
+
+测试：`TestEngineArgsByName`（`internal/goasm/gen`）解码两种架构每个生成函数的字节，只要有指令从 SP 够过栈帧的局部变量就失败。`TestEngineAsmDecl` 在五个系统上对 `internal/cengine` 运行 `go vet -asmdecl`，只接受上面那四条报告。`TestEmitFPMoves` 检查 emit 写出的移动，并且拒绝访问保存的基址指针或返回地址、访问不是参数或结果的字、宽度不对、或者经过不对的那类寄存器的指令。`TestFPMovesAssembleAsLowered` 为 amd64 的 linux、darwin 和 windows 构建每种栈帧的函数（一个有调用的，一个没有栈帧的 NOSPLIT 叶子函数，一个有栈帧的，一个位移超过 8 位的），并在二进制里找到每个函数体，和 lowering 后的一样。`TestPostLinkCheck` 的两个用例从下一个字加载参数、把结果存进参数字，检查要拒绝这两个。
+
 ## 释放对象时被要求回收
 
 引擎在释放对象期间，也就是 `gc_phase` 不是 `JS_GC_PHASE_NONE` 时，`JS_RunGC` 和 `JS_RunYoungGC` 立刻返回，什么也不做：在释放引用计数降到零的对象的 `free_zero_refcount` 里，在立即释放引用计数降到零的普通对象的 `free_zero_refcount_first` 里（见 [objects-and-shapes.zh-CN.md](objects-and-shapes.zh-CN.md)），在释放一次回收找到的环的 `gc_free_cycles` 里，以及释放运行时的这两处。创建对象时阈值要求的回收也经过 `JS_RunGC`，所以这时创建的对象同样不会开始回收。阈值不动，在释放之后创建下一个对象时会再检查。

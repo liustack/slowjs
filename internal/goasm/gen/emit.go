@@ -185,10 +185,14 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 		if cs, ok := o.funcs[m.Name+".const"]; ok {
 			code = int(cs[0])
 		}
-		if err := emitFunc(&b, o, lo, code, names); err != nil {
+		fp, err := fpArgsOf(m)
+		if err != nil {
+			return "", err
+		}
+		if err := emitFunc(&b, o, lo, code, names, fp); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
-		if err := emitBytes(&b, o.code[code:hi]); err != nil {
+		if err := emitData(&b, o.code[code:hi]); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&b, "\tRET\n\n")
@@ -209,8 +213,107 @@ func emitBytes(b *strings.Builder, data []byte) error {
 	return nil
 }
 
-// emitFunc disassembles [lo,hi) and writes bytes with CALLs made symbolic.
-func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap) error {
+// emitData writes the data a function carries after its code (constants and
+// jump tables) after dataComment, so that a reader of the .s file knows these
+// bytes are no instructions.
+func emitData(b *strings.Builder, data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	b.WriteString(dataComment + "\n")
+	return emitBytes(b, data)
+}
+
+// fpArgs is what emitFunc needs to write the moves of a unified function's
+// arguments and result by name through FP: the frame its TEXT declares,
+// where the lowered text has the Go argument area from SP (Meta.ArgBase) and
+// the words of that area by their offset in it.
+type fpArgs struct {
+	frame, base     int64
+	params, results map[int64]GoSlot
+}
+
+// fpArgsOf gives the argument area of m, nil for a register-entry leaf,
+// which has none.
+func fpArgsOf(m Meta) (*fpArgs, error) {
+	if m.Kind != Unified {
+		return nil, nil
+	}
+	if m.Rec == nil {
+		return nil, fmt.Errorf("%s: no record of the lowering, so no signature", m.Name)
+	}
+	if m.ArgBase < m.Frame+8 {
+		return nil, fmt.Errorf("%s: the argument area at %d(SP) is inside the frame of %d bytes and the return address", m.Name, m.ArgBase, m.Frame)
+	}
+	fp := &fpArgs{frame: int64(m.Frame), base: int64(m.ArgBase), params: map[int64]GoSlot{}, results: map[int64]GoSlot{}}
+	params, results := GoSlots(m.Rec.Sig)
+	for _, s := range params {
+		fp.params[int64(s.Off)] = s
+	}
+	for _, s := range results {
+		fp.results[int64(s.Off)] = s
+	}
+	return fp, nil
+}
+
+// goMove gives the Go instruction for an instruction of the lowered text
+// that reaches above the frame from SP. That must be a load of an argument
+// word or a store of a result word, as the lowering writes them, and it is
+// written by name through FP: Go promises to find an argument that way, not
+// at an offset from SP. The Go assembler encodes it with the same registers
+// and, while it lays out the frame as the lowering expects, the same
+// displacement, so the bytes stay the same, and the post-link check holds
+// them to where Go's prologue puts the area. ok is false for any other
+// instruction.
+func (fp *fpArgs) goMove(in x86asm.Inst) (line string, ok bool, err error) {
+	mi := -1
+	for k, a := range in.Args {
+		if m, isMem := a.(x86asm.Mem); isMem && m.Base == x86asm.RSP && normMem(m).Disp >= fp.frame {
+			mi = k
+		}
+	}
+	if mi < 0 {
+		return "", false, nil
+	}
+	m := normMem(in.Args[mi].(x86asm.Mem))
+	if m.Disp < fp.base {
+		return "", false, fmt.Errorf("%v reaches %d(SP), Go's saved base pointer or return address", in, m.Disp)
+	}
+	if mi > 1 {
+		return "", false, fmt.Errorf("%v reaches the Go argument area and is no 8-byte move of a register", in)
+	}
+	sse := in.Op == x86asm.MOVSD_XMM
+	reg, isReg := in.Args[1-mi].(x86asm.Reg)
+	if (in.Op != x86asm.MOV || in.DataSize != 64) && !sse || !isReg || in.Args[2] != nil || in.MemBytes != 8 ||
+		!plain(in) || m != (x86asm.Mem{Base: x86asm.RSP, Disp: m.Disp}) {
+		return "", false, fmt.Errorf("%v reaches the Go argument area and is no 8-byte move of a register", in)
+	}
+	slots, what := fp.params, "argument"
+	if mi == 0 {
+		slots, what = fp.results, "result"
+	}
+	s, found := slots[m.Disp-fp.base]
+	if !found {
+		return "", false, fmt.Errorf("%v: no %s word at %d in the Go argument area", in, what, m.Disp-fp.base)
+	}
+	if s.Float != sse {
+		return "", false, fmt.Errorf("%v moves the %s word %s through the wrong kind of register", in, what, s.Name)
+	}
+	op := "MOVQ"
+	if sse {
+		op = "MOVSD"
+	}
+	r := goReg(strings.ToLower(reg.String()))
+	if mi == 0 {
+		return fmt.Sprintf("\t%s %s, %s+%d(FP)\n", op, r, s.Name, s.Off), true, nil
+	}
+	return fmt.Sprintf("\t%s %s+%d(FP), %s\n", op, s.Name, s.Off, r), true, nil
+}
+
+// emitFunc disassembles [lo,hi) and writes bytes with CALLs made symbolic,
+// and for a unified function (fp not nil) each move of an argument or of the
+// result by name through FP.
+func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap, fp *fpArgs) error {
 	i := lo
 	pending := []byte{} // raw bytes awaiting a flush
 	flush := func() {
@@ -237,6 +340,18 @@ func emitFunc(b *strings.Builder, o *object, lo, hi int, names NameMap) error {
 		}
 		if why, bad := systemOps[inst.Op]; bad {
 			return fmt.Errorf("forbidden instruction at %#x: %v %s", i, inst, why)
+		}
+		if fp != nil {
+			line, ok, err := fp.goMove(inst)
+			if err != nil {
+				return fmt.Errorf("at %#x: %w", i, err)
+			}
+			if ok {
+				flush()
+				b.WriteString(line)
+				i += inst.Len
+				continue
+			}
 		}
 		if r, at, ok := o.refIn(i, i+inst.Len); ok {
 			// A LEA of read-only data or of a function: the Go assembler
@@ -328,3 +443,7 @@ func (o *object) sortedCallOffsets() []int {
 	sort.Ints(offs)
 	return offs
 }
+
+// dataComment is the line before the data a function carries after its code
+// (its constants and jump tables), which are bytes but not instructions.
+const dataComment = "\t// data"

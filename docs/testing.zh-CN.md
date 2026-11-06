@@ -30,7 +30,7 @@ scripts/docs-list.sh --check           # every doc has a summary
 go test -count=1 -p 1 .                # about a minute
 ```
 
-- `go vet` 不带 `-asmdecl`，这一项会报告生成的汇编里的问题（看不到写出来的返回，没有 Go 声明的函数）。汇编的声明改由生成器和 `internal/cengine` 的测试检查。
+- `go vet` 不带 `-asmdecl`，这一项会报告 amd64 生成的汇编里四个没有 Go 声明的函数（`memcpy`、`memmove` 和 `memset`，以及 windows 之外的 `goasm_room`）。生成的汇编其余部分都能通过它：`TestEngineAsmDecl`（`internal/goasm/gen`）在五个系统上运行它，只接受这四条。
 - 改了 `engine/` 里的 C、生成器，或者 `scripts/gen-engine.sh` 和 `engine/test/flags.sh` 的参数，还要重新生成引擎，放在同一个提交里（`make gen`、`make gen ARCH=arm64`），并运行 `make check-fast`。一批改动做完时运行 `make check-full`（见[生成并检查](#生成并检查)）。
 - 改了 `intl/`，还要运行 `go test ./intl`（golden 测试在里面）。
 - 改了 `internal/gointl`，还要运行 `go test ./internal/gointl/...` 和 `make gointl`。

@@ -30,7 +30,7 @@ scripts/docs-list.sh --check           # every doc has a summary
 go test -count=1 -p 1 .                # about a minute
 ```
 
-- `go vet` leaves out `-asmdecl`, which reports the generated assembly (a return it does not see written, a function with no Go declaration). The generator and the tests of `internal/cengine` check the declarations of that assembly instead.
+- `go vet` leaves out `-asmdecl`, which reports four functions of the generated assembly of amd64 without a Go declaration (`memcpy`, `memmove` and `memset`, and `goasm_room` off windows). The rest of the generated assembly passes it: `TestEngineAsmDecl` (`internal/goasm/gen`) runs it on five systems and accepts only those four.
 - A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` and `engine/test/flags.sh` also makes the generated engine again, in the same commit (`make gen`, `make gen ARCH=arm64`), and runs `make check-fast`. At the end of a batch it runs `make check-full` (see [Generate and check](#generate-and-check)).
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.

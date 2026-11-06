@@ -18,7 +18,8 @@ type EngineEmit struct {
 	Metas []Meta  // lowered functions, in output order
 	Names NameMap // C symbol -> Go identifier
 	// Group gives the file group of each function (its C source file);
-	// MaxBytes bounds the size of one .s file.
+	// MaxBytes bounds the size of one .s file, with each function counted as
+	// the text it takes with its instructions written as bytes.
 	Group    map[string]string
 	MaxBytes int
 	// Stubs are functions emitted as a call to ·goasmMissing(index). With
@@ -114,9 +115,14 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 	files := map[string]string{}
 	parts := map[string]int{}
 	cur := map[string]*strings.Builder{}
+	// MaxBytes bounds a file by what its functions take written all as bytes
+	// (bytesLen), not by the text emit writes, so that the moves written by
+	// name through FP do not move a function to another file, and so to
+	// another place in the order the linker lays the functions out in.
+	used := map[string]int{}
 	open := func(group string, n int) *strings.Builder {
 		b := cur[group]
-		if b != nil && b.Len()+n > e.MaxBytes && b.Len() > len(header) {
+		if b != nil && used[group]+n > e.MaxBytes && used[group] > len(header) {
 			files[fmt.Sprintf("%s_%d_%s.s", group, parts[group], e.Arch)] = b.String()
 			parts[group]++
 			b = nil
@@ -125,7 +131,9 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 			b = &strings.Builder{}
 			b.WriteString(header)
 			cur[group] = b
+			used[group] = len(header)
 		}
+		used[group] += n
 		return b
 	}
 	aligned := 0
@@ -154,10 +162,24 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		if cs, ok := o.funcs[m.Name+".const"]; ok {
 			code = int(cs[0])
 		}
-		if err := emitFunc(&fb, o, lo, code, e.Names); err != nil {
+		// The size the file bound counts: the function with every
+		// instruction but its calls and loads of addresses written as bytes.
+		var asBytes strings.Builder
+		if err := emitFunc(&asBytes, o, lo, code, e.Names, nil); err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
-		if err := emitBytes(&fb, o.code[code:hi]); err != nil {
+		if err := emitBytes(&asBytes, o.code[code:hi]); err != nil {
+			return nil, fmt.Errorf("%s: %w", m.Name, err)
+		}
+		bytesLen := fb.Len() + asBytes.Len() + len("\tRET\n\n")
+		fp, err := fpArgsOf(m)
+		if err != nil {
+			return nil, err
+		}
+		if err := emitFunc(&fb, o, lo, code, e.Names, fp); err != nil {
+			return nil, fmt.Errorf("%s: %w", m.Name, err)
+		}
+		if err := emitData(&fb, o.code[code:hi]); err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&fb, "\tRET\n\n")
@@ -165,7 +187,7 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		if group == "" {
 			group = "engine"
 		}
-		open(group, fb.Len()).WriteString(fb.String())
+		open(group, bytesLen).WriteString(fb.String())
 	}
 	if aligned != len(e.Align64) {
 		return nil, fmt.Errorf("%d functions to put on 64 bytes, but only %d of them are lowered", len(e.Align64), aligned)

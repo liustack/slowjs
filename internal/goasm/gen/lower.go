@@ -52,7 +52,12 @@ type Meta struct {
 	GoName   string // exported-to-asm Go identifier, e.g. recAsm
 	Frame    int    // Go TEXT frame size
 	ArgBytes int    // Go TEXT argument+result area size
-	RetType  Type
+	// ArgBase is where the lowered text of a unified function has the Go
+	// argument area from SP, as Go lays out its frame: the frame, Go's saved
+	// base pointer when it saves one, and the return address. Emit writes every
+	// access of the area by name through FP instead (fpArgs).
+	ArgBase int
+	RetType Type
 	// NoSplit says the TEXT has NOSPLIT, so Go puts no stack check at the
 	// entry (MarkNoSplit): a register-entry leaf, or a leaf the Go
 	// assembler marks NOSPLIT by itself.
@@ -584,7 +589,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	}
 
 	text := fn.Name + ":\n\t" + strings.Join(out, "\n\t") + "\n"
-	meta := Meta{Name: fn.Name, Kind: Unified, GoName: goIdent(fn.Name), Frame: frame, ArgBytes: argBytes, RetType: fn.Sig.Ret, Rec: rec}
+	meta := Meta{Name: fn.Name, Kind: Unified, GoName: goIdent(fn.Name), Frame: frame, ArgBytes: argBytes, ArgBase: argBase, RetType: fn.Sig.Ret, Rec: rec}
 	return text, meta, nil
 }
 
