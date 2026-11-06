@@ -49,21 +49,17 @@ func host_now(sp, vm, kind uintptr) int64 {
 // are the requests of the engine, which gohost answers, and so is a function
 // of the host when none is registered.
 func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
-	r0, r1 = hostCall(sp, vm, this, argc, argv, magic)
-	makeRoom()
-	return r0, r1
-}
-
-func hostCall(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
 	hook("host_call", vm)
 	if r, ok := callOverride(int32(magic)); ok {
-		return r.U, r.Tag
+		r0, r1 = r.U, r.Tag
+	} else if id := int32(magic); id >= 0 && hostFunc != nil {
+		r0, r1 = hostFunc(sp, uint32(vm), this, int32(argc), argv, id)
+	} else {
+		r := gohost.Call(sp, uint32(vm), this, int32(argc), argv, int32(magic))
+		r0, r1 = r.U, r.Tag
 	}
-	if id := int32(magic); id >= 0 && hostFunc != nil {
-		return hostFunc(sp, uint32(vm), this, int32(argc), argv, id)
-	}
-	r := gohost.Call(sp, uint32(vm), this, int32(argc), argv, int32(magic))
-	return r.U, r.Tag
+	makeRoom()
+	return r0, r1
 }
 
 // A HostFunc answers the calls of the functions of the host: id is what
