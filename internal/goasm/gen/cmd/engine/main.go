@@ -45,7 +45,7 @@ var (
 	jobs      = flag.Int("j", 2, "parallel clang jobs")
 	looseVar  = flag.Bool("loose-varargs", false, "lower variadic calls with their fixed arguments only (wrong code, to measure the output)")
 	varBlock  = flag.Bool("varargs-block", false, "experimental: the pass passes variable arguments in a shadow-stack block")
-	verifyBin = flag.String("verify-bin", "", "a linked binary of the output package: match every generated function and engine_rodata against llc's object")
+	verifyBin = flag.String("verify-bin", "", "linked binaries of the output package, separated by commas: match every generated function and engine_rodata of each against llc's object")
 	verifyPkg = flag.String("verify-pkg", "", "the output package's import path (link symbol prefix) for -verify-bin")
 	verifyAll = flag.Bool("verify-all", false, "with -verify-bin: fail unless every function was in the binary and checked (build it with -tags goasmkeep)")
 	nonFormat = flag.String("non-format-variadic", defaultNonFormat, "variadic functions whose extra arguments are not printf arguments, left out of the format check (for -src tests)")
@@ -665,62 +665,57 @@ func main() {
 		wrappers = append(wrappers, src)
 	}
 	// The post-link check: every generated function, instruction by
-	// instruction, and engine_rodata, byte by byte, against llc's object.
-	if *verifyBin != "" && a64 {
+	// instruction, and engine_rodata, byte by byte, against llc's object,
+	// once for each binary of -verify-bin.
+	if *verifyBin != "" {
 		vpkg := *verifyPkg
 		if vpkg == "" {
 			vpkg = *pkg
 		}
-		cr, err := gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg, Names: gonames, Plan: plan,
-			Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, Align64: align64})
-		if cr != nil {
-			for _, k := range gen.SortedKeys(cr.Checked) {
-				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
-			}
-			for _, why := range gen.SortedKeys(cr.Skipped) {
-				fmt.Fprintf(os.Stderr, "not checked: %d functions, %s\n", len(cr.Skipped[why]), why)
-			}
-		}
-		if err != nil {
-			die(fmt.Errorf("post-link check: %w", err))
-		}
-		fmt.Fprintf(os.Stderr, "post-link check passed for %s\n", *verifyBin)
-	} else if *verifyBin != "" {
-		vpkg := *verifyPkg
-		if vpkg == "" {
-			vpkg = *pkg
-		}
-		probes, err := gen.ParseRegFacts(readFile(probeFacts))
-		if err != nil {
-			die(err)
-		}
-		facts, err := gen.ParseRegFacts(readFile(factsPath))
-		if err != nil {
-			die(err)
-		}
-		// Code with no cycle has no tick, and its binary no host_poll.
+		var probes, facts gen.RegFacts
 		polls := false
-		for _, m := range metas {
-			for _, c := range m.Rec.Calls {
-				polls = polls || c.Target == "host_poll"
+		if !a64 {
+			var err error
+			if probes, err = gen.ParseRegFacts(readFile(probeFacts)); err != nil {
+				die(err)
+			}
+			if facts, err = gen.ParseRegFacts(readFile(factsPath)); err != nil {
+				die(err)
+			}
+			// Code with no cycle has no tick, and its binary no host_poll.
+			for _, m := range metas {
+				for _, c := range m.Rec.Calls {
+					polls = polls || c.Target == "host_poll"
+				}
 			}
 		}
-		cr, err := gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: *verifyBin, Pkg: vpkg,
-			Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
-			PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls, Align64: align64})
-		if cr != nil {
-			for _, k := range gen.SortedKeys(cr.Checked) {
-				fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
+		for _, bin := range strings.Split(*verifyBin, ",") {
+			fmt.Fprintf(os.Stderr, "post-link check of %s\n", bin)
+			var cr *gen.CheckReport
+			var err error
+			if a64 {
+				cr, err = gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: bin, Pkg: vpkg, Names: gonames, Plan: plan,
+					Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, Align64: align64})
+			} else {
+				cr, err = gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: bin, Pkg: vpkg,
+					Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
+					PreserveNone: *mode == "pn", Probes: probes, Facts: facts, All: *verifyAll, HostPoll: *pollOn && polls, Align64: align64})
 			}
-			for _, why := range gen.SortedKeys(cr.Skipped) {
-				fns := cr.Skipped[why]
-				fmt.Fprintf(os.Stderr, "not checked: %d functions, %s: %s\n", len(fns), why, strings.Join(fns[:min(len(fns), 8)], " "))
+			if cr != nil {
+				fmt.Fprintf(os.Stderr, "binary: %s\n", cr.Binary)
+				for _, k := range gen.SortedKeys(cr.Checked) {
+					fmt.Fprintf(os.Stderr, "checked: %d %s\n", cr.Checked[k], k)
+				}
+				for _, why := range gen.SortedKeys(cr.Skipped) {
+					fns := cr.Skipped[why]
+					fmt.Fprintf(os.Stderr, "not checked: %d functions, %s: %s\n", len(fns), why, strings.Join(fns[:min(len(fns), 8)], " "))
+				}
 			}
+			if err != nil {
+				die(fmt.Errorf("post-link check: %w", err))
+			}
+			fmt.Fprintf(os.Stderr, "post-link check passed for %s\n", bin)
 		}
-		if err != nil {
-			die(fmt.Errorf("post-link check: %w", err))
-		}
-		fmt.Fprintf(os.Stderr, "post-link check passed for %s\n", *verifyBin)
 	}
 	if *out == "" {
 		fmt.Fprintf(os.Stderr, "time: compile %v, llvm %v, lower %v, total %v\n", tCompile, tLLVM, tLower, time.Since(t0))

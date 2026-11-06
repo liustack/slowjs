@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -125,9 +124,6 @@ func TestCheckCases(t *testing.T) {
 	llvm := os.Getenv("QUICKJS_LLVM")
 	if llvm == "" {
 		t.Skip("set QUICKJS_LLVM")
-	}
-	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		t.Skip("builds and reads a linux/amd64 binary")
 	}
 	// The helpers below edit fixed text: a miss is a mistake of the case,
 	// reported by a panic.
@@ -649,7 +645,8 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	bin := filepath.Join(dir, "bin")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Dir = mod
-	cmd.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0")
+	// Built for linux/amd64 on any host, and only read.
+	cmd.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build: %v\n%s", err, out)
 	}

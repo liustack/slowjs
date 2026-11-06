@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -147,23 +146,25 @@ func TestDecodeFixtures(t *testing.T) {
 // pass in both call modes. It then builds the package from wrong code or
 // data, one fault at a time, each a mistake the lowering or the data plan
 // could make, and the check must reject every one. It needs LLVM 22.1.8
-// (QUICKJS_LLVM), the built pass (QUICKJS_SHADOW_PASS) and the go tool, on
-// linux/amd64.
+// (QUICKJS_LLVM), the built pass (QUICKJS_SHADOW_PASS) and the go tool, and
+// runs on any host: the binary is built for linux/amd64 and only read.
 func TestPostLinkCheck(t *testing.T) {
 	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
 	if llvm == "" || pass == "" {
 		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
-	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
-		t.Skip("builds and reads a linux/amd64 binary")
-	}
 	work := t.TempDir()
 	goEnv := []string{"GOWORK=off", "CGO_ENABLED=0"}
+	// run runs a command in dir: the driver is built for the host (dir is
+	// empty), the package in its module for linux/amd64.
 	run := func(dir string, name string, args ...string) {
 		t.Helper()
 		cmd := exec.Command(name, args...)
 		cmd.Dir = dir
 		cmd.Env = append(os.Environ(), goEnv...)
+		if dir != "" {
+			cmd.Env = append(cmd.Env, "GOOS=linux", "GOARCH=amd64")
+		}
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, out)
 		}

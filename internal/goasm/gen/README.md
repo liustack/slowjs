@@ -358,8 +358,8 @@ the table cannot drift apart.
 
 The post-link check is the gate for the output. Build a binary of the
 package with `-tags goasmkeep` (`engine_keep_<arch>.go` then keeps every function)
-and pass it as `-verify-bin`, with the package's import path as
-`-verify-pkg`. The check reads llc's own object file and the binary, decodes
+and pass it as `-verify-bin` (several, separated by commas, are checked one
+after another), with the package's import path as `-verify-pkg`. The check reads llc's own object file and the binary, decodes
 both with x/arch, and matches every generated function instruction by
 instruction. It refuses code that would not run as decoded: a prefix the
 processor rejects or ignores, an unknown or cut-short instruction, a no-op
@@ -418,9 +418,59 @@ What the check takes on trust, and where it stops:
   `TestNarrowArgs` runs it with garbage above each narrow value.
 - A Go frame of 4096 bytes or more has a stack check the check does not
   know, so such a function fails it.
-- Only a non-PIE linux binary: linux/amd64, or linux/arm64 for the arm64
-  engine. darwin/arm64 links the same code, so the linux/arm64 check covers
-  it.
+- The loader. The check reads the binary in the format of its system: ELF
+  for linux, a static executable linked at a fixed address, which nothing
+  writes into after the kernel maps it (an ELF PIE, `-buildmode=pie`, and
+  a file with a dynamic table, a program interpreter or a section of
+  relocations, as cgo makes, are refused), Mach-O for darwin and PE for
+  windows, which Go links as a PIE by
+  default. It reads every byte through what the loader maps from the file
+  (the PT_LOAD program headers of ELF, the segments of Mach-O, the headers
+  and sections of PE, each up to what it takes from the file), and refuses
+  mappings that overlap in a page, a section that is not where its mapping
+  takes it from, and a PE section at an offset of the file that is no
+  multiple of 0x200, which the loader rounds down. Mach-O and PE give no symbol sizes, so each symbol runs to the
+  next one, and what lies between a function and the next is held to
+  padding. In a PIE each pointer of engine_rodata must hold its target at the
+  image base of the file and have the fixup that tells the loader to move it:
+  a rebase of the dyld info (the Go linker), an entry of the chained fixups
+  (ld64, which links a darwin program with cgo) or a DIR64 base relocation
+  (PE). Any other place the loader writes inside code or data the check
+  read fails it: another fixup, a slot of the import address table of a PE
+  or a slot its load config names. So do two fixups of one place, and a
+  table the check does not read (lazy or weak binds, the pointer formats of
+  arm64e, other PE relocation types, the TLS, delay import, bound import and
+  CLR directories of a PE). A PE directory is read when it has an address,
+  whatever its size, as the loader does, and one with a size and no address
+  is refused. Every fixup must lie, its whole width, in the bytes the file
+  holds of a section the linker puts pointers in (`__DATA` and
+  `__DATA_CONST` of Mach-O, `.data` and `.rdata` of PE), and no two may
+  overlap: so none is in the headers, the
+  load commands, `__LINKEDIT`, the import and relocation tables or code.
+  What the check reads of a PE to find the fixups is recorded read by read,
+  and the load config, which lies in `.rdata`, as a whole: a fixup there is
+  refused too, as the loader applies it before it reads them. A binary cut short or with
+  bent tables is refused with an error (`TestOpenBinBent`). That the loader applies
+  each fixup as its format says is trusted. On amd64 Go's prologue loads g
+  in the form of the system (from FS on linux, from GS on darwin, through
+  `runtime.tls_g` on windows), and each form is taken only for its own
+  system. `TestPostLinkFormats` checks a binary of each of the five
+  targets and refuses a changed byte, a wrong pointer, a dropped fixup and
+  a second fixup of one pointer in each Mach-O and PE one, a rebase of the
+  load commands, of `__LINKEDIT`, of `__DATA,__bss` and of code in each
+  Mach-O one, a relocation table, a TLSDESC or COPY relocation at the end of
+  `.data` and a dynamic table the section table does not show in each ELF
+  one, and in the PE one a relocation that ends a byte past what `.data`
+  holds in the file (one that ends at its last byte is taken), an import
+  table or a slot of the load config in engine_rodata (also with the size
+  of its directory at 0), a directory with a size and no address, a
+  relocation of an import descriptor, a lookup table, the load config (also
+  of its Size field with both sizes at 0), the headers, the base relocation
+  table, code or the inside of an import slot, a TLS directory and a delay
+  import directory. It also refuses, where they apply, a segment or section
+  cut short in the file before engine_rodata, a section read from a copy
+  while the loader maps changed bytes, a second PT_LOAD over the code and a
+  PE section at an offset the loader rounds down.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc

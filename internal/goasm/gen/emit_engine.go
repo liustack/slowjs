@@ -197,16 +197,22 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 	return files, nil
 }
 
+// RodataSize is the size of engine_rodata that EmitRodata declares: the blob
+// rounded up to 8 bytes, and 8 for an empty one.
+func RodataSize(p *DataPlan) int {
+	n := len(p.Blob)
+	if n == 0 {
+		n = 8
+	}
+	return alignUp(n, 8)
+}
+
 // EmitRodata writes engine_rodata as Go DATA: the bytes, the pointers to
 // functions and to itself as relocations. Zero words are left to GLOBL.
 func EmitRodata(p *DataPlan, names NameMap, header string) string {
 	var b strings.Builder
 	b.WriteString(header)
-	n := len(p.Blob)
-	if n == 0 {
-		n = 8
-	}
-	size := alignUp(n, 8)
+	size := RodataSize(p)
 	fmt.Fprintf(&b, "GLOBL ·%s(SB), RODATA|NOPTR, $%d\n", RodataGo, size)
 	blob := append(append([]byte(nil), p.Blob...), make([]byte, size-len(p.Blob))...)
 	ri := 0
