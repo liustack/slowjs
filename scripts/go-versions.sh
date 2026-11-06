@@ -19,7 +19,9 @@
 #               morestack and which functions are NOSPLIT
 #   postlink-X  the post-link check of the whole engine of architecture X (amd64
 #               and arm64) against a test binary of internal/cengine linked with
-#               this release (-verify-bin, scripts/gen-engine.sh)
+#               this release for each system the module builds for on X: linux,
+#               darwin and windows for amd64, linux and darwin for arm64, as go
+#               builds them by default (-verify-bin, scripts/gen-engine.sh)
 # goasm and postlink need LLVM 22.1.8 (see GO_VERSIONS_LLVM) and write the engine
 # into .build only. internal/cengine stays as it is.
 #
@@ -95,11 +97,18 @@ for v in $versions; do
 			shift
 			"$@"
 		}
-		postlink() { # postlink ARCH: the engine of ARCH against a test binary built by this release
-			bin=$logs/$v.$1.test
-			GOOS=linux GOARCH=$1 go test -c -tags goasmkeep -o "$bin" ./internal/cengine
-			GEN_OUT=$logs/$v.$1.gen GEN_VERIFY_BIN=$bin scripts/gen-engine.sh "$1"
-			rm -rf "$bin" "$logs/$v.$1.gen"
+		postlink() { # postlink ARCH SYSTEM...: the engine of ARCH against a test binary built by this release for each system
+			arch=$1
+			shift
+			bins=
+			for os in "$@"; do
+				bin=$logs/$v.$os-$arch.test
+				GOOS=$os GOARCH=$arch go test -c -tags goasmkeep -o "$bin" ./internal/cengine
+				bins=${bins:+$bins,}$bin
+			done
+			GEN_OUT=$logs/$v.$arch.gen GEN_VERIFY_BIN=$bins scripts/gen-engine.sh "$arch"
+			# shellcheck disable=SC2046
+			rm -rf "$logs/$v.$arch.gen" $(echo "$bins" | tr , " ")
 		}
 		go version
 		test "$(go env GOVERSION)" = "$v"
@@ -109,8 +118,8 @@ for v in $versions; do
 		step go-test-root go test -count=1 -p 1 -timeout 60m .
 		if [ "$use_llvm" = 1 ]; then
 			step goasm env CHECK_ONLY=goasm CHECK_LOGS="$logs/$v.check" scripts/check.sh fast
-			step postlink-amd64 postlink amd64
-			step postlink-arm64 postlink arm64
+			step postlink-amd64 postlink amd64 linux darwin windows
+			step postlink-arm64 postlink arm64 linux darwin
 		fi
 	) >"$log" 2>&1
 	rc=$?
