@@ -1031,34 +1031,7 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		"// stack check at their entry (gen.MarkNoSplit), for the tests. A constant\n" +
 		"// takes no room in a binary that does not use it.\n")
 	fmt.Fprintf(&b, "const noSplitList = %q\n\n", strings.Join(ns, " "))
-	decl := func(name string) {
-		s := sigs[name]
-		var ps []string
-		w := 0
-		for _, p := range s.Params {
-			switch p {
-			case gen.F64:
-				ps = append(ps, fmt.Sprintf("a%d float64", w))
-				w++
-			case gen.JSV:
-				ps = append(ps, fmt.Sprintf("a%d, a%d uintptr", w, w+1))
-				w += 2
-			default:
-				ps = append(ps, fmt.Sprintf("a%d uintptr", w))
-				w++
-			}
-		}
-		ret := ""
-		switch s.Ret {
-		case gen.I64, gen.Ptr:
-			ret = " uintptr"
-		case gen.F64:
-			ret = " float64"
-		case gen.JSV:
-			ret = " (r0, r1 uintptr)"
-		}
-		fmt.Fprintf(&b, "func %s(%s)%s\n", names[name], strings.Join(ps, ", "), ret)
-	}
+	decl := func(name string) { b.WriteString(gen.GoDecl(names[name], sigs[name])) }
 	all := append(append([]gen.Meta{}, metas...), stubs...)
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	for _, m := range all {
