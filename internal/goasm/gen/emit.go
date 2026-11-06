@@ -95,7 +95,12 @@ func readObject(path string) (*object, error) {
 // by both emit entries so a register-entry leaf's saved-register frame is
 // always declared. A leaf that saved registers (Meta.Frame > 0) must not be
 // written with a zero frame: Go would give it no stack space and its stores
-// would overwrite the return address.
+// would overwrite the return address. A leaf without a frame or a call says
+// NOFRAME, which changes nothing in its code (Go writes no prologue for a
+// NOSPLIT function with neither) and is what go vet -asmdecl asks of a
+// function with no Go declaration. With a call, Go saves BP, which NOFRAME
+// would stop, so such a leaf, like one with a frame, would need a Go
+// declaration for that check (TestEngineAsmDecl).
 //
 // A NOSPLIT unified function without a frame says NOFRAME as well, which the
 // Go assembler gives a frameless leaf by itself: on windows its room check
@@ -103,6 +108,9 @@ func readObject(path string) (*object, error) {
 // and move the arguments the body reads. Every unified function is followed
 // by its room check (roomCheck).
 func funcHeader(goName string, m Meta) string {
+	if m.Kind == Register && m.Frame == 0 && len(m.Rec.Calls) == 0 {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-0\n", goName)
+	}
 	if m.Kind == Register {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-0\n", goName, m.Frame)
 	}
@@ -134,6 +142,10 @@ const RoomBelow = 12 << 10
 // grows the stack for that frame.
 const RoomFrame = RoomBelow + 128
 
+// RoomFile is the generated file of goasm_room. Its name builds it on
+// windows/amd64 only, the one system with the room check.
+const RoomFile = "engine_room_windows_amd64.s"
+
 // roomCheck is the check that follows Go's prologue of a unified function, in
 // the assembly of windows only: when the stack less RoomBelow is at or below
 // the guard in g, it calls goasm_room, whose stack check grows the stack.
@@ -153,12 +165,21 @@ func roomCheck(m Meta) string {
 		"#endif\n"
 }
 
-// roomFunc is goasm_room, in the assembly of windows only: a function with a
-// frame of RoomFrame bytes that does nothing, so that its stack check makes
-// the room (see RoomBelow). The host's callbacks call it too, before they
-// return into the engine, since the stack may have shrunk while they ran.
+// roomText is goasm_room: a function with a frame of RoomFrame bytes that
+// does nothing, so that its stack check makes the room (see RoomBelow). The
+// host's callbacks call it too, before they return into the engine, since the
+// stack may have shrunk while they ran. Only windows/amd64 has it: EmitEngine
+// writes it into a file whose name says so, as the name of its Go
+// declaration does, so that go vet -asmdecl finds the declaration wherever
+// the function is built.
+func roomText() string {
+	return fmt.Sprintf("// goasm_room makes RoomBelow bytes of room below the stack pointer of its\n// caller: its stack check grows the stack for a frame it never touches.\nTEXT ·goasm_room(SB), $%d-0\n\tNO_LOCAL_POINTERS\n\tRET\n", RoomFrame)
+}
+
+// roomFunc is goasm_room for the one file Emit writes, which every system
+// builds: only windows assembles the function in it.
 func roomFunc() string {
-	return fmt.Sprintf("#ifdef GOOS_windows\n// goasm_room makes RoomBelow bytes of room below the stack pointer of its\n// caller: its stack check grows the stack for a frame it never touches.\nTEXT ·goasm_room(SB), $%d-0\n\tNO_LOCAL_POINTERS\n\tRET\n#endif\n", RoomFrame)
+	return "#ifdef GOOS_windows\n" + roomText() + "#endif\n"
 }
 
 // Emit writes the Go assembly for the functions described by metas.

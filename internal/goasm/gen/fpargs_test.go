@@ -179,30 +179,29 @@ func a64SPOffset(a arm64asm.Arg) (int, bool) {
 
 // TestEngineAsmDecl runs go vet's check of the assembly over the generated
 // engine for each system: every argument and result the assembly names
-// must be the one of its Go declaration, at its offset and of its size, and
-// every function with a result writes it. What is left are the
-// register-entry leaves of amd64, which have no Go declaration, and
-// goasm_room, which has one on windows only (see docs/testing.md).
+// must be the one of its Go declaration, at its offset and of its size,
+// every function with a result writes it, and every function with a frame
+// has a Go declaration. It reports nothing: the register-entry leaves of
+// amd64 say NOFRAME, and goasm_room is in a file of windows/amd64 only, as
+// its declaration is.
 func TestEngineAsmDecl(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs go vet")
 	}
-	known := regexp.MustCompile(`: function (memcpy|memmove|memset|goasm_room) missing Go declaration$`)
 	for _, target := range []string{"linux/amd64", "windows/amd64", "darwin/amd64", "linux/arm64", "darwin/arm64"} {
 		goos, goarch, _ := strings.Cut(target, "/")
 		cmd := exec.Command("go", "vet", "-asmdecl", "./internal/cengine")
 		cmd.Dir = filepath.Join("..", "..", "..")
 		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0", "GOFLAGS=")
-		out, _ := cmd.CombinedOutput()
-		var left []string
+		out, err := cmd.CombinedOutput()
+		var lines []string
 		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if l == "" || strings.HasPrefix(l, "#") || known.MatchString(l) {
-				continue
+			if l != "" && !strings.HasPrefix(l, "#") {
+				lines = append(lines, l)
 			}
-			left = append(left, l)
 		}
-		if len(left) > 0 {
-			t.Errorf("%s: go vet -asmdecl reports %d lines, such as\n%s", target, len(left), strings.Join(left[:min(len(left), 10)], "\n"))
+		if err != nil || len(lines) > 0 {
+			t.Errorf("%s: go vet -asmdecl: %v, %d lines, such as\n%s", target, err, len(lines), strings.Join(lines[:min(len(lines), 10)], "\n"))
 		}
 	}
 }

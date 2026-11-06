@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·memcpy(SB), NOSPLIT, $0-0
+TEXT ·memcpy(SB), NOSPLIT|NOFRAME, $0-0
 	PCALIGN $16
 	QUAD $0x7710fa8348f88948
 	QUAD $0x48307208fa83481b
@@ -70,7 +70,7 @@ TEXT ·memcpy(SB), NOSPLIT, $0-0
 	BYTE $0x00
 	RET
 
-TEXT ·memmove(SB), NOSPLIT, $0-0
+TEXT ·memmove(SB), NOSPLIT|NOFRAME, $0-0
 	PCALIGN $16
 	QUAD $0x840ff73948f88948
 	QUAD $0x48f78948000005f5
@@ -342,7 +342,7 @@ TEXT ·memmove(SB), NOSPLIT, $0-0
 	QUAD $0xfffff7d8e9fa8948
 	RET
 
-TEXT ·memset(SB), NOSPLIT, $0-0
+TEXT ·memset(SB), NOSPLIT|NOFRAME, $0-0
 	PCALIGN $16
 	QUAD $0x840fd28548f88948
 	QUAD $0x40308840000000d1
