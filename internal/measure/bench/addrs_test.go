@@ -6,8 +6,10 @@
 package bench
 
 import (
+	"debug/elf"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,69 +47,128 @@ func TestOpcodeNames(t *testing.T) {
 	}
 }
 
-// formalLayout and moved are the formal binary of all2.tsv and a binary at p
-// that landed d bytes later, with every offset in the function front later.
-var formalLayout = Layout{Func: 0x6f7e00, Body: 0x6f7e68, Size: 9000, Handlers: map[string]uint64{"get_loc0": 0x6f804d, "call": 0x6f8129}}
+// formalLayout is the formal binary of all2.tsv, with the regexp matcher, the
+// engine functions between it and the interpreter, and one on each side.
+var formalLayout = Layout{
+	Func: 0x6f7e00, Body: 0x6f7e68, Size: 9000, Handlers: map[string]uint64{"get_loc0": 0x6f804d, "call": 0x6f8129},
+	Matcher: 0x6f0000,
+	Funcs: map[string]uint64{
+		"first": 0x600000, "lre_exec_backtrack": 0x6f0000,
+		"js_malloc_rt": 0x6f4b20, "js_free_rt": 0x6f4e60, "JS_NewObjectFromShape": 0x6f6c80,
+		"JS_CallInternal_block": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
+	},
+}
 
-func moved(d uint64, front int) Layout {
-	l := Layout{Func: formalLayout.Func + d, Body: formalLayout.Body + d + uint64(front), Size: formalLayout.Size + uint64(front), Handlers: map[string]uint64{}}
+// moved is the binary at p when the matcher moved by dm bytes and the
+// interpreter by d, with every offset in the interpreter front later. The
+// functions between the two moved by dm plus the second shift of p.
+func moved(p Position, dm, d uint64) Layout {
+	l := Layout{Func: formalLayout.Func + d, Body: formalLayout.Body + d + uint64(p.Front), Size: formalLayout.Size + uint64(p.Front),
+		Handlers: map[string]uint64{}, Matcher: formalLayout.Matcher + dm, Funcs: map[string]uint64{}}
 	for op, a := range formalLayout.Handlers {
-		l.Handlers[op] = a + d + uint64(front)
+		l.Handlers[op] = a + d + uint64(p.Front)
+	}
+	for name, a := range formalLayout.Funcs {
+		switch {
+		case a > formalLayout.Matcher && a < formalLayout.Func:
+			a += dm + uint64(p.Shift2)
+		case a >= formalLayout.Func:
+			a += d + uint64(p.Front)
+		case a == formalLayout.Matcher:
+			a += dm
+		}
+		l.Funcs[name] = a
 	}
 	return l
 }
 
 func TestCheckLayoutTakesWhatTheBinariesShowed(t *testing.T) {
-	// The moves of all2.tsv: a shift lands on the next 64 bytes.
+	// The moves of all2.tsv: a shift lands on the next 64 bytes, and the
+	// interpreter moves with the matcher.
 	for _, c := range []struct {
-		p Position
-		d uint64
-	}{{Position{0, 0, 0}, 0}, {Position{0, 8, 0}, 0}, {Position{32, 0, 0}, 64}, {Position{1664, 8, 0}, 1664}, {Position{3296, 16, 0}, 3328}, {Position{1120, 48, 0}, 1152}, {Position{1120, 48, 0}, 1088}, {Position{64, 0, 0}, 64}} {
-		if err := CheckLayout(formalLayout, moved(c.d, c.p.Front), c.p); err != nil {
-			t.Errorf("%s: %v", c.p, err)
+		p     Position
+		dm, d uint64
+	}{
+		{Position{0, 0, 0}, 0, 0}, {Position{0, 8, 0}, 0, 0}, {Position{32, 0, 0}, 64, 64}, {Position{1664, 8, 0}, 1664, 1664},
+		{Position{3296, 16, 0}, 3328, 3328}, {Position{1120, 48, 0}, 1152, 1152}, {Position{1120, 48, 0}, 1088, 1088}, {Position{64, 0, 0}, 64, 64},
+		// a second shift moves the functions between the two by exactly its
+		// size, and the interpreter to the multiple of 64 within 32 of it
+		{Position{0, 0, 2464}, 0, 2496}, {Position{0, 0, 2464}, 0, 2432}, {Position{0, 8, 2432}, 0, 2432},
+		{Position{576, 24, 3328}, 576, 3904}, {Position{64, 0, 2208}, 64, 2240}, {Position{64, 0, 2208}, 64, 2304},
+		// 32 more can be taken up by the alignment of the interpreter, and the
+		// functions before it have still moved
+		{Position{0, 0, 32}, 0, 0}, {Position{0, 0, 32}, 0, 64},
+	} {
+		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p); err != nil {
+			t.Errorf("%s (matcher %d, interpreter %d): %v", c.p, c.dm, c.d, err)
 		}
 	}
 }
 
 func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
+	p := Position{1664, 8, 0}
+	q := Position{64, 8, 2208}
 	for name, c := range map[string]struct {
 		l Layout
 		p Position
 	}{
-		"not moved":           {moved(0, 8), Position{1664, 8, 0}},
-		"moved without shift": {moved(64, 8), Position{0, 8, 0}},
-		"moved too far":       {moved(1728, 8), Position{1664, 8, 0}},
-		"moved by 32":         {moved(1696, 8), Position{1664, 8, 0}},
-		"taken up, 1 shift":   {moved(0, 0), Position{32, 0, 0}},
-		"too far from shift":  {moved(1728, 8), Position{1664, 8, 0}},
-		"short of shift":      {moved(1600, 8), Position{1664, 8, 0}},
-		"front not there":     {moved(1664, 0), Position{1664, 8, 0}},
-		"handler moved": {func() Layout {
-			l := moved(1664, 8)
-			l.Handlers["call"] += 64
+		"not moved":            {moved(p, 0, 0), p},
+		"moved without shift":  {moved(Position{0, 8, 0}, 64, 64), Position{0, 8, 0}},
+		"moved too far":        {moved(p, 1728, 1728), p},
+		"moved by 32":          {moved(p, 1696, 1696), p},
+		"short of shift":       {moved(p, 1600, 1600), p},
+		"interpreter lags":     {moved(p, 1664, 1600), p},
+		"front not there":      {moved(Position{1664, 0, 0}, 1664, 1664), p},
+		"handler moved":        {withHandler(moved(p, 1664, 1664), "call", 64), p},
+		"handler missing":      {withoutHandler(moved(p, 1664, 1664), "call"), p},
+		"second shift ignored": {moved(Position{64, 8, 0}, 64, 64), q},
+		"second shift only in the interpreter": {func() Layout {
+			l := moved(Position{64, 8, 0}, 64, 2240)
 			return l
-		}(), Position{1664, 8, 0}},
-		"handler missing": {func() Layout {
-			l := moved(1664, 8)
-			delete(l.Handlers, "call")
+		}(), q},
+		"second shift too big":           {moved(Position{64, 8, 4416}, 64, 4480), q},
+		"second shift moved the matcher": {moved(q, 2272, 2304), q},
+		"interpreter did not follow":     {moved(q, 64, 64), q},
+		"a function between lagged": {func() Layout {
+			l := moved(q, 64, 2240)
+			l.Funcs["js_free_rt"] -= 32
 			return l
-		}(), Position{1664, 8, 0}},
+		}(), q},
+		"a function between missing": {func() Layout {
+			l := moved(q, 64, 2240)
+			delete(l.Funcs, "js_malloc_rt")
+			return l
+		}(), q},
 	} {
 		if err := CheckLayout(formalLayout, c.l, c.p); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
+	// Nothing between the matcher and the interpreter to check is an error too.
+	empty := formalLayout
+	empty.Funcs = map[string]uint64{"lre_exec_backtrack": formalLayout.Matcher, "JS_CallInternal_block": formalLayout.Func}
+	if err := CheckLayout(empty, empty, Position{}); err == nil || !strings.Contains(err.Error(), "between") {
+		t.Errorf("no function between: %v", err)
+	}
+	noMatcher := formalLayout
+	noMatcher.Matcher = 0
+	if err := CheckLayout(noMatcher, moved(Position{}, 0, 0), Position{}); err == nil {
+		t.Error("no matcher accepted")
+	}
 }
+
+func withHandler(l Layout, op string, d uint64) Layout { l.Handlers[op] += d; return l }
+func withoutHandler(l Layout, op string) Layout        { delete(l.Handlers, op); return l }
 
 func TestWriteLayoutReplacesTheRowOfABinary(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteLayout(dir, "a@0.8", "h1", moved(0, 8)); err != nil {
+	if err := WriteLayout(dir, "a@0.8", "h1", moved(Position{0, 8, 0}, 0, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteLayout(dir, "a@32.0", "h2", moved(64, 0)); err != nil {
+	if err := WriteLayout(dir, "a@32.0", "h2", moved(Position{32, 0, 0}, 64, 64)); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteLayout(dir, "a@0.8", "h3", moved(0, 8)); err != nil {
+	if err := WriteLayout(dir, "a@0.8", "h3", moved(Position{0, 8, 0}, 0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, "layouts.tsv"))
@@ -120,28 +181,52 @@ func TestWriteLayoutReplacesTheRowOfABinary(t *testing.T) {
 	}
 	// A file of another format is not added to.
 	os.WriteFile(filepath.Join(dir, "layouts.tsv"), []byte("binary\tfunc\n"), 0o644)
-	if err := WriteLayout(dir, "a@0.8", "h3", moved(0, 8)); err == nil {
+	if err := WriteLayout(dir, "a@0.8", "h3", moved(Position{0, 8, 0}, 0, 0)); err == nil {
 		t.Error("wrote to a file of another header")
 	}
 }
 
 func TestCheckLayoutSaysWhenTheAlignmentTookUpTheShift(t *testing.T) {
-	// The first function aligned to 64 after the shift takes up all of a
-	// shift of 32 when the formal binary has 32 bytes or more of padding in
-	// front of it, and nothing after it moves.
-	err := CheckLayout(formalLayout, moved(0, 0), Position{32, 0, 0})
+	// The regexp matcher takes up all of a shift of 32 when the formal binary
+	// has 32 bytes or more of padding in front of it, and nothing after it
+	// moves.
+	p := Position{32, 0, 0}
+	err := CheckLayout(formalLayout, moved(p, 0, 0), p)
 	if err == nil || !strings.Contains(err.Error(), "taken up by the alignment") {
 		t.Errorf("err = %v", err)
 	}
 	// Half a shift lost to the padding is what an odd multiple of 32 does in
 	// such a binary, and is no fault of the build.
 	for _, c := range []struct {
+		p     Position
+		dm, d uint64
+	}{{Position{1120, 0, 0}, 1088, 1088}, {Position{1120, 0, 0}, 1152, 1152}, {Position{2208, 8, 0}, 2176, 2176}} {
+		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p); err != nil {
+			t.Errorf("%s moved by %d: %v", c.p, c.dm, err)
+		}
+	}
+	// A second shift of 32 or 96 and the like is taken up by the alignment of
+	// the interpreter in the same way. The functions before it moved, so the
+	// layout is not the formal one for them.
+	for _, c := range []struct {
 		p Position
 		d uint64
-	}{{Position{1120, 0, 0}, 1088}, {Position{1120, 0, 0}, 1152}, {Position{2208, 8, 0}, 2176}} {
-		if err := CheckLayout(formalLayout, moved(c.d, c.p.Front), c.p); err != nil {
-			t.Errorf("%s moved by %d: %v", c.p, c.d, err)
+	}{{Position{0, 0, 96}, 64}, {Position{0, 0, 96}, 128}, {Position{0, 8, 2336}, 2304}, {Position{0, 8, 2336}, 2368}} {
+		if err := CheckLayout(formalLayout, moved(c.p, 0, c.d), c.p); err != nil {
+			t.Errorf("%s, interpreter moved by %d: %v", c.p, c.d, err)
 		}
+	}
+	// But a second shift that moved no function between the two is a layout
+	// that is the formal one for them, and fails.
+	p = Position{0, 0, 96}
+	l := moved(p, 0, 64)
+	for name, a := range l.Funcs {
+		if a > formalLayout.Matcher && a < l.Func {
+			l.Funcs[name] = formalLayout.Funcs[name]
+		}
+	}
+	if err := CheckLayout(formalLayout, l, p); err == nil || !strings.Contains(err.Error(), "between") {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -201,4 +286,24 @@ func TestJumpTableInAnyRegister(t *testing.T) {
 			t.Errorf("found a jump table at %#x in code that has none", got)
 		}
 	})
+}
+
+func TestEngineFuncsLeavesOutWhatIsNotAnAssemblyFunctionOfTheEngine(t *testing.T) {
+	const pkg = "github.com/liustack/quickjs/internal/cengine."
+	fn := func(name string, v uint64) elf.Symbol {
+		return elf.Symbol{Name: name, Value: v, Info: byte(elf.STT_FUNC)}
+	}
+	got := engineFuncs([]elf.Symbol{
+		fn(pkg+"lre_exec_backtrack.abi0", 0x6f0000),
+		fn(pkg+"js_malloc_rt.abi0", 0x6f4b20),
+		fn(pkg+"New", 0x5dbae0),              // Go, not assembly
+		fn("runtime.memmove.abi0", 0x401000), // another package
+		fn(pkg+"dup.abi0", 0x6f1000),         // named twice: left out
+		fn(pkg+"dup.abi0", 0x6f2000),
+		{Name: pkg + "tbl.abi0", Value: 0x700000, Info: byte(elf.STT_OBJECT)},
+	})
+	want := map[string]uint64{"lre_exec_backtrack": 0x6f0000, "js_malloc_rt": 0x6f4b20}
+	if !maps.Equal(got, want) {
+		t.Errorf("engineFuncs = %v, want %v", got, want)
+	}
 }

@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -30,6 +31,8 @@ type Layout struct {
 	Body     uint64            // the first instruction after the NOPs at its start
 	Size     uint64            // bytes of the function
 	Handlers map[string]uint64 // the start of the handler of each hot opcode
+	Matcher  uint64            // the start of the regexp matcher (Matcher)
+	Funcs    map[string]uint64 // the start of each assembly function of the engine whose name is not used twice
 }
 
 // OpcodeNames reads the names of the opcodes, in the order of their numbers,
@@ -115,6 +118,10 @@ func ReadLayout(bin, fn string, names []string) (Layout, error) {
 	at := func(a uint64) []byte { return data[a-text.Addr:] }
 	code := at(s.Value)[:s.Size]
 	l := Layout{Func: s.Value, Size: s.Size, Body: s.Value + bodyStart(s.Value, code), Handlers: map[string]uint64{}}
+	l.Funcs = engineFuncs(syms)
+	if l.Matcher = l.Funcs[Matcher]; l.Matcher == 0 {
+		return Layout{}, fmt.Errorf("%s: no symbol %s, or two of them", bin, Matcher)
+	}
 	if len(names) == 0 {
 		return l, nil
 	}
@@ -187,25 +194,61 @@ func WriteLayout(dir, name, hash string, l Layout) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
-// CheckLayout reports how the interpreter of a binary at p did not land where
-// p puts it, against the formal binary of the same side. The first function
-// after the shift that is aligned to 64 bytes takes up some of it in the
-// padding in front of it, and the interpreter moves with that function. So it
-// moves by a multiple of 64 within 32 bytes of the shift: the shift rounded up
-// or down to 64, whichever the padding of the formal binary allows (a shift
-// that is a multiple of 64 always moves it exactly). Nothing moves when the
-// padding takes up all of it. The body and every hot handler sit front bytes
-// later in the interpreter, so they are at the formal places plus front,
-// modulo 64.
+// CheckLayout reports how a binary at p did not land where p puts the code,
+// against the formal binary of the same side.
+//
+// The regexp matcher and the interpreter are aligned to 64 bytes. The matcher
+// takes up some of a first shift that is not a multiple of 64 in the padding in
+// front of it, so it moves by a multiple of 64 within 32 of the shift (exactly
+// the shift when that is a multiple of 64), and nothing moves when the padding
+// takes up all of it. The functions after it move with it, so each function
+// between the matcher and the interpreter moves by what the matcher moved plus
+// the second shift, exactly: Go starts them on 32 bytes and a shift is a
+// multiple of 32. The interpreter moves with the matcher when there is no
+// second shift. With one, it moves by the multiple of 64 within 32 of what the
+// functions before it moved, and the alignment may take up all of a shift of 32
+// there, which is no fault since the functions between did move. The body and
+// every hot handler sit front bytes later in the interpreter, so they are at
+// the formal places plus front, modulo 64.
 func CheckLayout(formal, l Layout, p Position) error {
+	if formal.Matcher == 0 || l.Matcher == 0 {
+		return fmt.Errorf("position %s: no regexp matcher (%s) in the binary to read the layout from", p, Matcher)
+	}
+	dm := int64(l.Matcher) - int64(formal.Matcher)
+	switch {
+	case p.Shift == 0 && dm != 0:
+		return fmt.Errorf("position %s: the regexp matcher moved by %d bytes without a shift", p, dm)
+	case p.Shift > 0 && dm == 0:
+		return fmt.Errorf("position %s: the regexp matcher did not move, the shift of %d was taken up by the alignment and the layout is the formal one for the code after it", p, p.Shift)
+	case p.Shift > 0 && (dm%64 != 0 || dm < int64(p.Shift)-32 || dm > int64(p.Shift)+32):
+		return fmt.Errorf("position %s: the regexp matcher moved by %d bytes, not a multiple of 64 within 32 of the shift of %d", p, dm, p.Shift)
+	}
+	// the code between the matcher and the interpreter
+	want := dm + int64(p.Shift2)
+	between := 0
+	for _, name := range slices.Sorted(maps.Keys(formal.Funcs)) {
+		f := formal.Funcs[name]
+		if f <= formal.Matcher || f >= formal.Func {
+			continue
+		}
+		between++
+		a, ok := l.Funcs[name]
+		if !ok {
+			return fmt.Errorf("position %s: no function %s", p, name)
+		}
+		if got := int64(a) - int64(f); got != want {
+			return fmt.Errorf("position %s: %s, between the regexp matcher and the interpreter, moved by %d bytes, want %d (the matcher's %d plus the second shift of %d)", p, name, got, want, dm, p.Shift2)
+		}
+	}
+	if between == 0 {
+		return fmt.Errorf("position %s: no engine function between the regexp matcher and the interpreter to check", p)
+	}
 	d := int64(l.Func) - int64(formal.Func)
 	switch {
-	case p.Shift == 0 && d != 0:
-		return fmt.Errorf("position %s: the interpreter moved by %d bytes without a shift", p, d)
-	case p.Shift > 0 && d == 0:
-		return fmt.Errorf("position %s: the interpreter did not move, the shift of %d was taken up by the alignment and the layout is the formal one for the code after it", p, p.Shift)
-	case p.Shift > 0 && (d%64 != 0 || d < int64(p.Shift)-32 || d > int64(p.Shift)+32):
-		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not a multiple of 64 within 32 of the shift of %d", p, d, p.Shift)
+	case p.Shift2 == 0 && d != dm:
+		return fmt.Errorf("position %s: the interpreter moved by %d bytes, the regexp matcher by %d", p, d, dm)
+	case p.Shift2 > 0 && (d%64 != 0 || d < want-32 || d > want+32):
+		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not a multiple of 64 within 32 of the %d the functions before it moved", p, d, want)
 	}
 	at := func(name string, a, f uint64) error {
 		if got, want := int64(a)-int64(l.Func), int64(f)-int64(formal.Func)+int64(p.Front); got != want {
@@ -317,4 +360,27 @@ func jumpTable(addr uint64, code []byte, read func(a uint64) []byte) (uint64, bo
 		}
 	}
 	return 0, false
+}
+
+// engineFuncs maps the name of each assembly function of internal/cengine in
+// the symbols of a binary to its address. A name that two symbols have is left
+// out, since the address of one cannot be told from the other's.
+func engineFuncs(syms []elf.Symbol) map[string]uint64 {
+	const pkg = "/internal/cengine."
+	m, twice := map[string]uint64{}, map[string]bool{}
+	for _, s := range syms {
+		i := strings.Index(s.Name, pkg)
+		if i < 0 || !strings.HasSuffix(s.Name, ".abi0") || elf.ST_TYPE(s.Info) != elf.STT_FUNC {
+			continue
+		}
+		name := strings.TrimSuffix(s.Name[i+len(pkg):], ".abi0")
+		if _, ok := m[name]; ok {
+			twice[name] = true
+		}
+		m[name] = s.Value
+	}
+	for name := range twice {
+		delete(m, name)
+	}
+	return m
 }
