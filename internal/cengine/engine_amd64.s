@@ -6,6 +6,13 @@
 
 TEXT ·goasm_chunked_memcpy(SB), $64-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824
@@ -42,6 +49,13 @@ TEXT ·goasm_chunked_memcpy(SB), $64-32
 
 TEXT ·goasm_chunked_memset(SB), $64-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824
@@ -81,6 +95,13 @@ TEXT ·goasm_chunked_memset(SB), $64-32
 
 TEXT ·goasm_chunked_memmove(SB), $64-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824

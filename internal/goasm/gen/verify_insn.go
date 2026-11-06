@@ -217,6 +217,7 @@ type checker struct {
 	llc, low *objFile
 	bin      *binFile
 	rep      *CheckReport
+	roomOK   bool // goasm_room was checked (roomFunc)
 }
 
 func (k *checker) skip(why, fn string) { k.rep.Skipped[why] = append(k.rep.Skipped[why], fn) }
@@ -742,15 +743,17 @@ func (k *checker) gLoad(a uint64, in x86asm.Inst) (uint64, error) {
 }
 
 // goPrologue reads the prologue the Go assembler put before a body: the g
-// load and stack check of a split function, then BP and the frame.
-func (k *checker) goPrologue(start uint64) (goFrame, error) {
+// load and stack check of a split function, then BP and the frame. With
+// roomFirst, the function is on the NOSPLIT list in a binary for windows,
+// where a load of g at its start is the one of its room check, not Go's.
+func (k *checker) goPrologue(start uint64, roomFirst bool) (goFrame, error) {
 	var g goFrame
 	a := start
 	in, err := k.dec(a)
 	if err != nil {
 		return g, err
 	}
-	if in.Op == x86asm.MOV && isReg(in.Args[0], x86asm.R14) {
+	if in.Op == x86asm.MOV && isReg(in.Args[0], x86asm.R14) && !roomFirst {
 		if a, err = k.gLoad(a, in); err != nil {
 			return g, err
 		}
@@ -880,6 +883,160 @@ func (k *checker) goEpilogue(g goFrame, e uint64, sym binSym) error {
 		}
 	}
 	return nil
+}
+
+// roomCheck reads the room check the emitter puts after the Go prologue of a
+// unified function (roomCheck in emit.go) in a binary for windows, and gives
+// the address after it: with load (a function on the NOSPLIT list) a load of
+// g in the form of the system, then LEAQ -RoomBelow(SP), R12, CMPQ R12,
+// 16(R14), a branch on above over the next instruction and a call of
+// goasm_room. A binary for another system has none, and the check gives a
+// back as it is: anything there is then code the body does not explain.
+func (k *checker) roomCheck(a uint64, load bool) (uint64, error) {
+	if k.bin.goos != "windows" {
+		return a, nil
+	}
+	fail := func(at uint64, in x86asm.Inst) (uint64, error) {
+		return 0, fmt.Errorf("no room check for the state of the CPU at a fault (%d bytes past the guard) at %#x: %v", RoomBelow, at, in)
+	}
+	in, err := k.dec(a)
+	if err != nil {
+		return 0, err
+	}
+	if load {
+		if in.Op != x86asm.MOV || !isReg(in.Args[0], x86asm.R14) {
+			return fail(a, in)
+		}
+		if a, err = k.gLoad(a, in); err != nil {
+			return 0, err
+		}
+		if in, err = k.dec(a); err != nil {
+			return 0, err
+		}
+	}
+	if m, ok := in.Args[1].(x86asm.Mem); in.Op != x86asm.LEA || !isReg(in.Args[0], x86asm.R12) || in.DataSize != 64 || !ok ||
+		normMem(m) != (x86asm.Mem{Base: x86asm.RSP, Disp: -RoomBelow}) {
+		return fail(a, in)
+	}
+	a += uint64(in.Len)
+	if in, err = k.dec(a); err != nil {
+		return 0, err
+	}
+	if m, ok := in.Args[1].(x86asm.Mem); in.Op != x86asm.CMP || !isReg(in.Args[0], x86asm.R12) || in.DataSize != 64 || !ok ||
+		normMem(m) != (x86asm.Mem{Base: x86asm.R14, Disp: 16}) {
+		return fail(a, in)
+	}
+	a += uint64(in.Len)
+	if in, err = k.dec(a); err != nil {
+		return 0, err
+	}
+	ja, jaAt := in, a
+	rel, ok := in.Args[0].(x86asm.Rel)
+	if in.Op != x86asm.JA || !ok {
+		return fail(a, in)
+	}
+	a += uint64(in.Len)
+	if in, err = k.dec(a); err != nil {
+		return 0, err
+	}
+	room, err := k.roomFunc()
+	if err != nil {
+		return 0, err
+	}
+	crel, ok := in.Args[0].(x86asm.Rel)
+	end := a + uint64(in.Len)
+	if in.Op != x86asm.CALL || !ok || uint64(int64(end)+int64(crel)) != room.Value {
+		return fail(a, in)
+	}
+	if uint64(int64(jaAt)+int64(ja.Len)+int64(rel)) != end {
+		return fail(jaAt, ja)
+	}
+	return end, nil
+}
+
+// roomFunc finds goasm_room in a binary for windows and, the first time,
+// checks that its stack check is the one of a frame that makes the room:
+// MOVQ SP, R12, SUBQ $n, R12 with n at least RoomBelow - 8 (so that the room
+// check of its caller, 8 bytes higher, passes after it), a branch on carry
+// and a branch on below or equal to the call of morestack, then its frame,
+// nothing else, and the return.
+func (k *checker) roomFunc() (binSym, error) {
+	sym, ok := k.bin.abi0(k.c.Pkg, "goasm_room")
+	if !ok {
+		return sym, fmt.Errorf("goasm_room is not in the binary for windows")
+	}
+	if k.roomOK {
+		return sym, nil
+	}
+	fail := func(at uint64, in x86asm.Inst) (binSym, error) {
+		return sym, fmt.Errorf("goasm_room does not make %d bytes of room past the guard: %v at %#x", RoomBelow, in, at)
+	}
+	a := sym.Value
+	in, err := k.dec(a)
+	if err != nil {
+		return sym, err
+	}
+	if in.Op != x86asm.MOV || !isReg(in.Args[0], x86asm.R14) {
+		return fail(a, in)
+	}
+	if a, err = k.gLoad(a, in); err != nil {
+		return sym, err
+	}
+	next := func() (x86asm.Inst, uint64, error) {
+		at := a
+		in, err := k.dec(a)
+		if err == nil {
+			a += uint64(in.Len)
+		}
+		return in, at, err
+	}
+	in, at, err := next()
+	if err != nil {
+		return sym, err
+	}
+	if in.Op != x86asm.MOV || !isReg(in.Args[0], x86asm.R12) || !isReg(in.Args[1], x86asm.RSP) {
+		return fail(at, in)
+	}
+	if in, at, err = next(); err != nil {
+		return sym, err
+	}
+	imm, ok := in.Args[1].(x86asm.Imm)
+	if in.Op != x86asm.SUB || !isReg(in.Args[0], x86asm.R12) || !ok || int64(imm) < RoomBelow-8 {
+		return fail(at, in)
+	}
+	var more []uint64
+	for _, op := range []x86asm.Op{x86asm.JB, x86asm.CMP, x86asm.JBE} {
+		if in, at, err = next(); err != nil {
+			return sym, err
+		}
+		if in.Op != op {
+			return fail(at, in)
+		}
+		if op == x86asm.CMP {
+			if m, ok := in.Args[1].(x86asm.Mem); !isReg(in.Args[0], x86asm.R12) || !ok || normMem(m) != (x86asm.Mem{Base: x86asm.R14, Disp: 16}) {
+				return fail(at, in)
+			}
+			continue
+		}
+		rel, ok := in.Args[0].(x86asm.Rel)
+		if !ok {
+			return fail(at, in)
+		}
+		more = append(more, uint64(int64(a)+int64(rel)))
+	}
+	g, err := k.goPrologue(a, true)
+	if err != nil {
+		return sym, err
+	}
+	g.split, g.more = true, more[0]
+	if more[1] != more[0] {
+		return sym, fmt.Errorf("goasm_room branches to %#x and to %#x for morestack", more[0], more[1])
+	}
+	if err := k.goEpilogue(g, g.afterLead, sym); err != nil {
+		return sym, fmt.Errorf("goasm_room: %w", err)
+	}
+	k.roomOK = true
+	return sym, nil
 }
 
 // bodyAt is where the emitter puts the body of a function whose Go prologue
@@ -1032,7 +1189,7 @@ func (k *checker) checkUnified(meta Meta) error {
 		return err
 	}
 	bsym, _ := k.bin.abi0(k.c.Pkg, k.c.Names[r.Name])
-	g, err := k.goPrologue(bsym.Value)
+	g, err := k.goPrologue(bsym.Value, r.NoSplit && k.bin.goos == "windows")
 	if err != nil {
 		return err
 	}
@@ -1055,8 +1212,15 @@ func (k *checker) checkUnified(meta Meta) error {
 	if g.frame != int64(r.Frame) {
 		return fmt.Errorf("Go frame is %d bytes, the lowering declared %d", g.frame, r.Frame)
 	}
-	body := k.bodyAt(r.Name, g.afterLead)
-	if err := k.allPad(g.afterLead, body); err != nil {
+	lead, err := k.roomCheck(g.afterLead, r.NoSplit)
+	if err != nil {
+		return err
+	}
+	if lead != g.afterLead {
+		k.rep.Checked["room checks for a fault on windows"]++
+	}
+	body := k.bodyAt(r.Name, lead)
+	if err := k.allPad(lead, body); err != nil {
 		return err
 	}
 	lowSym, codeLen, err := k.bodyOf(r.Name)
@@ -2023,7 +2187,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 		return err
 	}
 	bsym, _ := k.bin.abi0(k.c.Pkg, k.c.Names[r.Name])
-	g, err := k.goPrologue(bsym.Value)
+	g, err := k.goPrologue(bsym.Value, false)
 	if err != nil {
 		return err
 	}
@@ -2186,7 +2350,7 @@ func (k *checker) checkLeaf(meta Meta) error {
 // index: MOVQ $i, 0(SP); CALL goasmMissing.
 func (k *checker) checkStub(meta Meta, idx int) error {
 	bsym, _ := k.bin.abi0(k.c.Pkg, k.c.Names[meta.Name])
-	g, err := k.goPrologue(bsym.Value)
+	g, err := k.goPrologue(bsym.Value, false)
 	if err != nil {
 		return err
 	}

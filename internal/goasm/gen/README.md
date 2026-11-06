@@ -99,8 +99,9 @@ runs its own checks and lowering in Go (`debug/elf`,
    call a Go-visible CALL or BL.
 7. VerifyLinked checks the linked binary: body bytes unchanged, a stack-check
    prologue on every entry off the NOSPLIT list and on `host_poll`, none on
-   the entries on it, the function table points only at unified entries, no
-   hidden calls or tail jumps.
+   the entries on it, on windows the room check for a fault on every unified
+   entry, the function table points only at unified entries, no hidden calls
+   or tail jumps.
 
 ## Call modes
 
@@ -311,6 +312,28 @@ kind and frame to `nosplit.txt` in the work folder, and
 generator writes NOSPLIT in the TEXT of each function on the list, and the
 post-link check holds each entry's stack check to it: a Go assembler that
 marks another leaf NOSPLIT by itself, or stops marking one, fails the check.
+
+Room for a fault on windows: windows writes the state of the CPU at a fault
+below the stack pointer, on the goroutine's stack, and Go keeps 4 KiB below
+each stack for it (golang/go#81238), less than a CPU with AMX needs. So in
+the assembly of windows only (`#ifdef GOOS_windows`), every unified function
+checks after Go's prologue that its stack pointer less `RoomBelow` (12 KiB,
+`emit.go`) is above the guard in g, and calls `goasm_room` when it is not: a
+function that does nothing, with a frame of `RoomFrame` bytes, whose own
+stack check makes the runtime grow the stack. A function on the NOSPLIT list
+loads g first, and one without a frame says NOFRAME, so that the call does
+not change its frame. The branch over the call lands on a one-byte no-op,
+not on the `PCALIGN` of the body: Go before 1.26.11 and 1.27.4 loops forever
+on a forward branch to a `PCALIGN` (golang/go#81792). A register-entry leaf
+has no check: its caller's check leaves it the room. The callbacks of the host
+make the room again before they return into the engine
+(`internal/cengine/host.go`). On linux and darwin the code is what it was.
+The post-link check of a windows binary holds every unified function to the
+check, its call to `goasm_room` and its branch to right after that call,
+and `goasm_room` to a stack check of at least `RoomBelow` - 8 bytes below
+its own stack pointer, so that its caller has `RoomBelow`. `TestPostLinkFormats` changes each of these in a
+windows binary and the check must refuse it. See docs/changes/c-engine.md
+(When the engine fails) for the numbers.
 
 Where a body starts: after Go's prologue each function has a `PCALIGN $16`,
 so the body starts on 16 bytes and moves within its lines of 64 bytes when

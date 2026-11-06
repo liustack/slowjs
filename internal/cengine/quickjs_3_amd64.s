@@ -4,8 +4,398 @@
 #include "textflag.h"
 #include "funcdata.h"
 
+TEXT ·async_func_resume(SB), $128-40
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	QUAD $0x0000009024a48b4c
+	QUAD $0x0000009824ac8b4c
+	QUAD $0x000000a024b48b4c
+	QUAD $0x00287e8341e7894c
+	QUAD $0x8b490000046f850f
+	QUAD $0x4878244489481045
+	QUAD $0x48000000005047c7
+	QUAD $0x41000000035847c7
+	QUAD $0x49684e8b4920468b
+	QUAD $0x4c18768b4910568b
+	QUAD $0x4c602474894c2f89
+	QUAD $0x001047c748087789
+	QUAD $0x4818578948000000
+	QUAD $0x002847c748207789
+	QUAD $0x033047c748000000
+	QUAD $0x8948384789000000
+	QUAD $0x0000044847c7404f
+	QUAD $0x64894c60678d4c00
+	QUAD $0x4950247c89483024
+	QUAD $0x894c2424894cfd89
+	BYTE $0x6c
+	BYTE $0x24
+	BYTE $0x08
+	CALL ·JS_CallInternal_block(SB)
+	QUAD $0x03fa83097406fa83
+	QUAD $0x8b48000003cd850f
+	QUAD $0x4c584f8b4860247c
+	QUAD $0x1f7503fa8328418b
+	QUAD $0x48000000908f8b48
+	QUAD $0x48f8518b48f0418b
+	QUAD $0x4800000000f041c7
+	QUAD $0x4800000003f841c7
+	QUAD $0x2444894828245489
+	QUAD $0x000000012847c720
+	QUAD $0xd285664050b70f41
+	QUAD $0x648b4c78246c8b4c
+	QUAD $0x000001eb840f5024
+	QUAD $0x4d000009088d8d4d
+	QUAD $0x894d00002ac09d8d
+	QUAD $0xfe000000e28149e2
+	QUAD $0xbb00000180828b49
+	QUAD $0x784f8b4800000001
+	QUAD $0xf6854df8d9748b4c
+	QUAD $0x0000008c87f63b74
+	QUAD $0x4a74fc4fff057404
+	QUAD $0x480a8b4818568b49
+	QUAD $0x0372f7fa8308528b
+	QUAD $0x4920768d49fc41ff
+	QUAD $0x4928568949204e89
+	QUAD $0x011046c641187689
+	QUAD $0xcab70f4050b70f41
+	QUAD $0x00016b830fcb3948
+	QUAD $0x0fc08548c8ff4800
+	QUAD $0xc3ff48000000ff8e
+	QUAD $0x000928bd80419aeb
+	QUAD $0xd0bd83413f750200
+	QUAD $0x7f80a2740000002a
+	QUAD $0x480f8b489c7800fb
+	QUAD $0x480851894808578b
+	QUAD $0x00000007c7480a89
+	QUAD $0x087989480b8b4900
+	QUAD $0x49085f894c0f8948
+	QUAD $0x6de980fb4f803b89
+	QUAD $0x8b480f8b48ffffff
+	QUAD $0x8948085189480857
+	QUAD $0x0000000847c7480a
+	QUAD $0x000009108d8b4900
+	QUAD $0x4c00000910bd8949
+	QUAD $0x8948084f89480f89
+	QUAD $0x00000928bd804139
+	QUAD $0x49ffffff31850f00
+	QUAD $0x8349000001808289
+	QUAD $0x4c78246c8b4c60c4
+	QUAD $0x244c894c70244489
+	QUAD $0x894c582454894c68
+	QUAD $0x40245c894838245c
+	QUAD $0x24894c482474894c
+	BYTE $0x24
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x6c
+	BYTE $0x24
+	BYTE $0x08
+	CALL ·free_zero_refcount(SB)
+	QUAD $0x5c8b484824748b4c
+	QUAD $0x4c38245c8b4c4024
+	QUAD $0x244c8b4c5824548b
+	QUAD $0x8b4c7024448b4c68
+	QUAD $0x60247c8b48502464
+	QUAD $0x828b4978246c8b4c
+	QUAD $0xfffebce900000180
+	QUAD $0x894c702444894cff
+	QUAD $0x582454894c68244c
+	QUAD $0x5c894838245c894c
+	QUAD $0x4c48245489664024
+	BYTE $0x89
+	BYTE $0x24
+	BYTE $0x24
+	CALL ·host_poll(SB)
+	QUAD $0x5c8b48482454b70f
+	QUAD $0x4c38245c8b4c4024
+	QUAD $0x244c8b4c5824548b
+	QUAD $0x8b4c7024448b4c68
+	QUAD $0x60247c8b48502464
+	QUAD $0x828b4978246c8b4c
+	QUAD $0xfffea1e900000180
+	QUAD $0x00000180828949ff
+	QUAD $0x4800000090b78b48
+	QUAD $0x0000019a840ff685
+	QUAD $0x0ff2394868578b48
+	QUAD $0xe0894c000000e083
+	QUAD $0x8948fe0000002548
+	QUAD $0x0180808b48702444
+	QUAD $0x8341087a8b4c0000
+	QUAD $0x41328b4c6a72f7ff
+	QUAD $0x4e8941c9fffc4e8b
+	QUAD $0x4c8b48597fc985fc
+	QUAD $0x0001808189487024
+	QUAD $0x6c8b4c60c4834900
+	QUAD $0x4c68245489487824
+	QUAD $0x08246c894c242489
+	QUAD $0x7c894c102474894c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x648b4c6824548b48
+	QUAD $0x4c60247c8b485024
+	QUAD $0x24448b4878246c8b
+	QUAD $0x00000180808b4870
+	QUAD $0x4800000090b78b48
+	QUAD $0x4273f2394810c283
+	QUAD $0x8f0fc08548c8ff48
+	QUAD $0x24548948ffffff77
+	QUAD $0x894c582474894868
+	BYTE $0x24
+	BYTE $0x24
+	CALL ·host_poll(SB)
+	QUAD $0x548b485824748b48
+	QUAD $0x485024648b4c6824
+	QUAD $0x246c8b4c60247c8b
+	QUAD $0x3ae97024448b4878
+	QUAD $0x70244c8b48ffffff
+	QUAD $0x4c00000180818948
+	QUAD $0x72f7ff8341607f8b
+	QUAD $0x468b4158778b4c3e
+	QUAD $0x85fc468941c8fffc
+	QUAD $0x3024648b4c2c7fc0
+	QUAD $0x24894c78246c8b4c
+	QUAD $0x894c08246c894c24
+	QUAD $0x18247c894c102474
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x6c8b4c60247c8b48
+	QUAD $0x8341187f8b4c7824
+	QUAD $0x10778b4c2f72f7ff
+	QUAD $0x8941c8fffc468b41
+	QUAD $0x8b4c1d7fc085fc46
+	QUAD $0x4c2424894c302464
+	QUAD $0x2474894c08246c89
+	BYTE $0x10
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x548b482024448b48
+	QUAD $0x00a8248489482824
+	QUAD $0x00b0249489480000
+	QUAD $0x60c783481eeb0000
+	BYTE $0x49
+	BYTE $0x89
+	BYTE $0xfc
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x24
+	BYTE $0x24
+	CALL ·abort(SB)
+	QUAD $0x24894c3024648b4c
+	BYTE $0x24
+	CALL ·abort(SB)
+	RET
+
+TEXT ·js_promise_resolve(SB), $160-72
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	QUAD $0x000000b024a48b4c
+	QUAD $0x000000b824ac8b4c
+	QUAD $0x000000c024b48b4c
+	QUAD $0x000000c824bc8b4c
+	QUAD $0x000000d024bc8b48
+	QUAD $0x000000d824b48b48
+	QUAD $0x000000e024948b48
+	QUAD $0x850fffff83ff894c
+	QUAD $0x4df1894800000193
+	QUAD $0xd2855c245489f789
+	QUAD $0x0000008824ac894c
+	QUAD $0x748948602464894c
+	QUAD $0x000001a6850f5024
+	QUAD $0x0ffffa8308518b48
+	QUAD $0x318b480000019985
+	QUAD $0x8b850f34127e8366
+	QUAD $0x00287e8348000001
+	QUAD $0x894c00000180840f
+	QUAD $0x70247c894868247c
+	QUAD $0x4c00000090c48149
+	QUAD $0x490000009024a489
+	QUAD $0x0040bfd78949f689
+	QUAD $0x2424894cc9310000
+	QUAD $0x74894c08246c894c
+	QUAD $0x4818247c894c1024
+	QUAD $0x2474894820247c89
+	QUAD $0x8948302454894828
+	BYTE $0x4c
+	BYTE $0x24
+	BYTE $0x38
+	CALL ·JS_GetPropertyInternal(SB)
+	QUAD $0x000322840f06fa83
+	QUAD $0x00009024a48b4c00
+	QUAD $0x00008824ac8b4c00
+	QUAD $0x48d78949c6894900
+	QUAD $0x24748b4868247c8b
+	QUAD $0x0000802494894870
+	QUAD $0x894800000001ba00
+	QUAD $0x4c2424894c782444
+	QUAD $0x2474894c08246c89
+	QUAD $0x894818247c894c10
+	QUAD $0x282474894820247c
+	BYTE $0x48
+	BYTE $0x89
+	BYTE $0x54
+	BYTE $0x24
+	BYTE $0x30
+	CALL ·js_strict_eq2(SB)
+	QUAD $0x0000008024bc8b4c
+	QUAD $0x41c1897824748b4c
+	QUAD $0x468b414872f7ff83
+	QUAD $0x85fc468941c8fffc
+	QUAD $0x8824848b483a7fc0
+	QUAD $0x4c10688b4c000000
+	QUAD $0x890000009024a48b
+	QUAD $0x894c00000090248c
+	QUAD $0x4c08246c894c2424
+	QUAD $0x247c894c10247489
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x8500000090248c8b
+	QUAD $0x00008824ac8b4cc9
+	QUAD $0x8b486024648b4c00
+	QUAD $0x70247c8b4850244c
+	QUAD $0x484f7468247c8b4c
+	QUAD $0xfa8308518b48018b
+	QUAD $0xff0000023c820ff7
+	QUAD $0x4d00000234e9fc40
+	QUAD $0x90c4814950247c8d
+	BYTE $0x00
+	BYTE $0x00
+	BYTE $0x00
+	LEAQ ·engine_rodata+1308(SB), R14
+	QUAD $0x246c894c2424894c
+	QUAD $0x894c102474894c08
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·JS_ThrowTypeError(SB)
+	QUAD $0xe9c03100000006ba
+	QUAD $0x24748d4d000001fd
+	QUAD $0x00000090c4814970
+	QUAD $0x24894c702464894c
+	QUAD $0x894c08246c894c24
+	QUAD $0x18247c894c102474
+	BYTE $0x48
+	BYTE $0x89
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x20
+	CALL ·js_new_promise_capability(SB)
+	QUAD $0x0001c6840f06fa83
+	QUAD $0x0000902484894800
+	QUAD $0x6348682454894800
+	QUAD $0x4c04e0c1485c2444
+	QUAD $0x054c8b4960246c8b
+	QUAD $0xc7497805448b4970
+	QUAD $0xc749000000005845
+	QUAD $0x8b48000000036045
+	QUAD $0x89490000008824b4
+	QUAD $0x8949084d89490075
+	QUAD $0x00001845c7491045
+	QUAD $0x00032045c7490000
+	QUAD $0x00002845c7490000
+	QUAD $0x00033045c7490000
+	QUAD $0x00013845c7410000
+	QUAD $0x495024448b480000
+	QUAD $0x024845c741404589
+	QUAD $0x7024648b4c000000
+	QUAD $0x246c894c2424894c
+	BYTE $0x08
+	CALL ·JS_CallInternal_block(SB)
+	QUAD $0x7e8b4c6024748b48
+	QUAD $0x4c6072f7ff834178
+	QUAD $0x8b41c1894870768b
+	QUAD $0xfc468941c8fffc46
+	QUAD $0x48487fc88948c085
+	QUAD $0x24848b4878244489
+	QUAD $0x10688b4c00000088
+	QUAD $0x9489487024648b4c
+	QUAD $0x24894c0000008024
+	QUAD $0x894c08246c894c24
+	QUAD $0x18247c894c102474
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x948b486024748b48
+	QUAD $0x448b480000008024
+	QUAD $0x000088be8b4c7824
+	QUAD $0x4c5e72f7ff834100
+	QUAD $0x894800000080b68b
+	QUAD $0x41c8fffc468b41c1
+	QUAD $0xc88948c085fc4689
+	QUAD $0x487824448948437f
+	QUAD $0x4c0000008824848b
+	QUAD $0x7024648b4c10688b
+	QUAD $0x0000008024948948
+	QUAD $0x246c894c2424894c
+	QUAD $0x894c102474894c08
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x0000008024948b48
+	QUAD $0x06fa837824448b48
+	QUAD $0x4c29757024648b4c
+	QUAD $0xf7ff834168247c8b
+	QUAD $0xb48b4cc189484272
+	QUAD $0x468b410000009024
+	QUAD $0x85fc468941c8fffc
+	QUAD $0x24ebc889483b7ec0
+	QUAD $0x6824748b48f7fa83
+	QUAD $0xfc408bc189480f72
+	QUAD $0x7ec085fc4189c8ff
+	QUAD $0x00009024848b485d
+	QUAD $0x24848948f2894800
+	QUAD $0x24948948000000e8
+	QUAD $0x8b487ceb000000f0
+	QUAD $0x8b4c000000882484
+	QUAD $0x4878244c89481068
+	QUAD $0x4c00000080249489
+	QUAD $0x08246c894c242489
+	QUAD $0x7c894c102474894c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x0000008024948b48
+	QUAD $0x49aeeb7824448b48
+	QUAD $0x008824848b48ce89
+	QUAD $0x894910688b4c0000
+	QUAD $0x6c894c2424894cd7
+	QUAD $0x4c102474894c0824
+	BYTE $0x89
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	QUAD $0x0000009024848b48
+	QUAD $0xff72e96824548b48
+	BYTE $0xff
+	BYTE $0xff
+	RET
+
 TEXT ·js_async_module_execution_fulfilled(SB), $224-80
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000f024a48b4c
 	QUAD $0x000000f824ac8b4c
@@ -974,6 +1364,13 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-80
 
 TEXT ·js_async_module_execution_rejected(SB), $160-80
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
 	QUAD $0x000000b824ac8b4c
@@ -1134,6 +1531,13 @@ TEXT ·js_async_module_execution_rejected(SB), $160-80
 
 TEXT ·gather_available_ancestors(SB), $160-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
 	QUAD $0x000000b824ac8b4c
@@ -1289,6 +1693,13 @@ TEXT ·gather_available_ancestors(SB), $160-40
 
 TEXT ·js_strndup(SB), $112-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -1484,6 +1895,13 @@ TEXT ·js_strndup(SB), $112-40
 
 TEXT ·num_keys_cmp(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -1615,6 +2033,13 @@ TEXT ·num_keys_cmp(SB), $96-40
 
 TEXT ·string_rope_get(SB), $48-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -1650,6 +2075,13 @@ TEXT ·string_rope_get(SB), $48-40
 
 TEXT ·js_promise_executor(SB), $48-80
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -1680,6 +2112,13 @@ TEXT ·js_promise_executor(SB), $48-80
 
 TEXT ·js_promise_constructor(SB), $144-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -1977,6 +2416,13 @@ TEXT ·js_promise_constructor(SB), $144-64
 
 TEXT ·js_create_from_ctor(SB), $160-56
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
 	QUAD $0x000000b824ac8b4c
@@ -2125,6 +2571,13 @@ TEXT ·js_create_from_ctor(SB), $160-56
 
 TEXT ·js_create_resolving_functions(SB), $176-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
 	QUAD $0x000000c824ac8b4c
@@ -2471,6 +2924,13 @@ TEXT ·js_create_resolving_functions(SB), $176-48
 
 TEXT ·JS_GetFunctionRealm(SB), $64-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824
@@ -2564,6 +3024,13 @@ TEXT ·JS_GetFunctionRealm(SB), $64-40
 
 TEXT ·js_new_string8(SB), $112-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -2839,6 +3306,13 @@ TEXT ·js_new_string8(SB), $112-40
 
 TEXT ·js_bigint_to_string1(SB), $192-56
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000d024a48b4c
 	QUAD $0x000000d824ac8b4c
@@ -4212,6 +4686,13 @@ TEXT ·js_bigint_to_string1(SB), $192-56
 
 TEXT ·js_alloc_string_rt(SB), $48-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x445024748b4c4824
@@ -4286,6 +4767,13 @@ TEXT ·js_alloc_string_rt(SB), $48-32
 
 TEXT ·JS_AtomToString(SB), $48-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x455024748b4c4824
@@ -4312,6 +4800,13 @@ TEXT ·JS_AtomToString(SB), $48-40
 
 TEXT ·JS_ResizeAtomHash(SB), $128-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -4574,6 +5069,13 @@ TEXT ·JS_ResizeAtomHash(SB), $128-32
 
 TEXT ·JS_GetPrototype(SB), $48-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -4621,6 +5123,13 @@ TEXT ·JS_GetPrototype(SB), $48-48
 
 TEXT ·js_object_hasOwnProperty(SB), $128-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -4794,6 +5303,13 @@ TEXT ·js_object_hasOwnProperty(SB), $128-64
 
 TEXT ·js_get_atom_index(SB), $64-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x496024748b4c5824
@@ -4842,6 +5358,13 @@ TEXT ·js_get_atom_index(SB), $64-32
 
 TEXT ·js_new_shape2(SB), $112-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -5058,6 +5581,13 @@ TEXT ·js_new_shape2(SB), $112-48
 
 TEXT ·js_realloc(SB), $80-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -5092,6 +5622,13 @@ TEXT ·js_realloc(SB), $80-40
 
 TEXT ·js_realloc2(SB), $80-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -5146,6 +5683,13 @@ TEXT ·js_realloc2(SB), $80-48
 
 TEXT ·js_strdup(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -5228,6 +5772,13 @@ TEXT ·js_strdup(SB), $96-32
 
 TEXT ·JS_NewRuntime(SB), $112-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -5597,6 +6148,13 @@ TEXT ·JS_NewRuntime(SB), $112-32
 
 TEXT ·__JS_NewAtomInit(SB), $144-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -5813,6 +6371,13 @@ TEXT ·__JS_NewAtomInit(SB), $144-48
 
 TEXT ·init_class_range(SB), $224-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000f024a48b4c
 	QUAD $0x000000f824ac8b4c
@@ -6056,6 +6621,13 @@ TEXT ·init_class_range(SB), $224-48
 
 TEXT ·js_c_function_data_call(SB), $208-88
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -6201,6 +6773,13 @@ TEXT ·js_c_function_data_call(SB), $208-88
 
 TEXT ·js_call_bound_function(SB), $240-88
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000010024a48b4c
 	QUAD $0x0000010824ac8b4c
@@ -6423,6 +7002,13 @@ TEXT ·js_call_bound_function(SB), $240-88
 
 TEXT ·js_generator_function_call(SB), $144-88
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -6652,6 +7238,13 @@ TEXT ·js_generator_function_call(SB), $144-88
 
 TEXT ·JS_FreeRuntime(SB), $144-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -7282,6 +7875,13 @@ TEXT ·JS_FreeRuntime(SB), $144-24
 
 TEXT ·js_regexp_cache_off(SB), $96-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x49482464894c7824
@@ -7395,6 +7995,13 @@ TEXT ·js_regexp_cache_off(SB), $96-16
 
 TEXT ·js_shape_cache_off(SB), $112-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -7544,6 +8151,13 @@ TEXT ·js_shape_cache_off(SB), $112-16
 
 TEXT ·js_regexp_cache_entry_free(SB), $96-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -7837,6 +8451,13 @@ TEXT ·js_regexp_cache_entry_free(SB), $96-24
 
 TEXT ·js_module_ns_has(SB), $48-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -7872,6 +8493,13 @@ TEXT ·js_module_ns_has(SB), $48-48
 
 TEXT ·js_string_get_own_property(SB), $64-56
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c5024648b4c
 	QUAD $0x4c6024748b4c5824
@@ -7907,8 +8535,16 @@ TEXT ·js_string_get_own_property(SB), $64-56
 	BYTE $0x00
 	RET
 
-TEXT ·js_string_delete_property(SB), NOSPLIT, $0-48
+TEXT ·js_string_delete_property(SB), NOSPLIT|NOFRAME, $0-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4c1824748b4c1024
@@ -7929,6 +8565,13 @@ TEXT ·js_string_delete_property(SB), NOSPLIT, $0-48
 
 TEXT ·js_backtrace_finalizer(SB), $144-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -8144,6 +8787,13 @@ TEXT ·js_backtrace_finalizer(SB), $144-32
 
 TEXT ·js_backtrace_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8196,6 +8846,13 @@ TEXT ·js_backtrace_mark(SB), $96-40
 
 TEXT ·js_array_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8306,6 +8963,13 @@ TEXT ·js_array_finalizer(SB), $96-32
 
 TEXT ·js_array_mark(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -8391,6 +9055,13 @@ TEXT ·js_array_mark(SB), $128-40
 
 TEXT ·js_object_data_finalizer(SB), $48-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -8418,6 +9089,13 @@ TEXT ·js_object_data_finalizer(SB), $48-32
 
 TEXT ·js_object_data_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8474,6 +9152,13 @@ TEXT ·js_object_data_mark(SB), $96-40
 
 TEXT ·js_mapped_arguments_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8581,6 +9266,13 @@ TEXT ·js_mapped_arguments_finalizer(SB), $96-32
 
 TEXT ·js_mapped_arguments_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8625,6 +9317,13 @@ TEXT ·js_mapped_arguments_mark(SB), $96-40
 
 TEXT ·js_c_function_finalizer(SB), $48-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4c5024748b4c4824
@@ -8655,6 +9354,13 @@ TEXT ·js_c_function_finalizer(SB), $48-32
 
 TEXT ·js_c_function_mark(SB), $32-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
 	QUAD $0x4c4024748b4c3824
@@ -8669,6 +9375,13 @@ TEXT ·js_c_function_mark(SB), $32-40
 
 TEXT ·js_bytecode_function_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8799,6 +9512,13 @@ TEXT ·js_bytecode_function_finalizer(SB), $96-32
 
 TEXT ·js_bytecode_function_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -8868,6 +9588,13 @@ TEXT ·js_bytecode_function_mark(SB), $96-40
 
 TEXT ·js_bound_function_finalizer(SB), $112-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -9020,6 +9747,13 @@ TEXT ·js_bound_function_finalizer(SB), $112-32
 
 TEXT ·js_bound_function_mark(SB), $144-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -9225,6 +9959,13 @@ TEXT ·js_bound_function_mark(SB), $144-40
 
 TEXT ·js_c_function_data_finalizer(SB), $112-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -9337,6 +10078,13 @@ TEXT ·js_c_function_data_finalizer(SB), $112-32
 
 TEXT ·js_c_function_data_mark(SB), $144-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -9442,6 +10190,13 @@ TEXT ·js_c_function_data_mark(SB), $144-40
 
 TEXT ·js_for_in_iterator_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -9653,6 +10408,13 @@ TEXT ·js_for_in_iterator_finalizer(SB), $96-32
 
 TEXT ·js_for_in_iterator_mark(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -9736,6 +10498,13 @@ TEXT ·js_for_in_iterator_mark(SB), $128-40
 
 TEXT ·js_regexp_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -9900,6 +10669,13 @@ TEXT ·js_regexp_finalizer(SB), $96-32
 
 TEXT ·js_array_buffer_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -10015,6 +10791,13 @@ TEXT ·js_array_buffer_finalizer(SB), $96-32
 
 TEXT ·js_typed_array_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -10102,6 +10885,13 @@ TEXT ·js_typed_array_finalizer(SB), $80-32
 
 TEXT ·js_typed_array_mark(SB), $32-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
 	QUAD $0x4c4024748b4c3824
@@ -10120,6 +10910,13 @@ TEXT ·js_typed_array_mark(SB), $32-40
 
 TEXT ·js_map_finalizer(SB), $144-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -10404,6 +11201,13 @@ TEXT ·js_map_finalizer(SB), $144-32
 
 TEXT ·js_map_mark(SB), $144-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -10556,6 +11360,13 @@ TEXT ·js_map_mark(SB), $144-40
 
 TEXT ·js_iterator_concat_finalizer(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -10691,6 +11502,13 @@ TEXT ·js_iterator_concat_finalizer(SB), $96-32
 
 TEXT ·js_iterator_concat_mark(SB), $144-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -10896,6 +11714,13 @@ TEXT ·js_iterator_concat_mark(SB), $144-40
 
 TEXT ·js_iterator_helper_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -11012,6 +11837,13 @@ TEXT ·js_iterator_helper_finalizer(SB), $80-32
 
 TEXT ·js_iterator_helper_mark(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -11292,6 +12124,13 @@ TEXT ·js_iterator_helper_mark(SB), $128-40
 
 TEXT ·js_iterator_wrap_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -11391,6 +12230,13 @@ TEXT ·js_iterator_wrap_finalizer(SB), $80-32
 
 TEXT ·js_iterator_wrap_mark(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -11515,6 +12361,13 @@ TEXT ·js_iterator_wrap_mark(SB), $128-40
 
 TEXT ·js_map_iterator_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -11613,6 +12466,13 @@ TEXT ·js_map_iterator_finalizer(SB), $80-32
 
 TEXT ·js_map_iterator_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -11673,6 +12533,13 @@ TEXT ·js_map_iterator_mark(SB), $96-40
 
 TEXT ·js_array_iterator_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -11754,6 +12621,13 @@ TEXT ·js_array_iterator_finalizer(SB), $80-32
 
 TEXT ·js_array_iterator_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -11814,6 +12688,13 @@ TEXT ·js_array_iterator_mark(SB), $96-40
 
 TEXT ·js_regexp_string_iterator_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -11913,6 +12794,13 @@ TEXT ·js_regexp_string_iterator_finalizer(SB), $80-32
 
 TEXT ·js_regexp_string_iterator_mark(SB), $128-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000009024a48b4c
 	QUAD $0x0000009824ac8b4c
@@ -12037,6 +12925,13 @@ TEXT ·js_regexp_string_iterator_mark(SB), $128-40
 
 TEXT ·js_generator_finalizer(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x4c7024748b4c6824
@@ -12146,6 +13041,13 @@ TEXT ·js_generator_finalizer(SB), $80-32
 
 TEXT ·js_generator_mark(SB), $32-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
 	QUAD $0x4c4024748b4c3824
@@ -12162,6 +13064,13 @@ TEXT ·js_generator_mark(SB), $32-40
 
 TEXT ·js_global_object_finalizer(SB), $32-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
 	QUAD $0x4c4024748b4c3824
@@ -12183,6 +13092,13 @@ TEXT ·js_global_object_finalizer(SB), $32-32
 
 TEXT ·js_global_object_mark(SB), $96-40
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -12239,6 +13155,13 @@ TEXT ·js_global_object_mark(SB), $96-40
 
 TEXT ·map_decref_record(SB), $80-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0x417024748b4c6824
@@ -12309,24 +13232,48 @@ TEXT ·map_decref_record(SB), $80-24
 	CALL ·abort(SB)
 	RET
 
-TEXT ·JS_GetRuntimeOpaque(SB), NOSPLIT, $0-24
+TEXT ·JS_GetRuntimeOpaque(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x002aa0858b491024
 	QUAD $0x00eb182444894800
 	RET
 
-TEXT ·JS_SetRuntimeOpaque(SB), NOSPLIT, $0-24
+TEXT ·JS_SetRuntimeOpaque(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4d1824748b4c1024
 	QUAD $0x00eb00002aa0b589
 	RET
 
-TEXT ·JS_SetMemoryLimit(SB), NOSPLIT, $0-24
+TEXT ·JS_SetMemoryLimit(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4d1824748b4c1024
@@ -12337,8 +13284,16 @@ TEXT ·JS_SetMemoryLimit(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetFootprintLimit(SB), NOSPLIT, $0-24
+TEXT ·JS_SetFootprintLimit(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4d1824748b4c1024
@@ -12349,8 +13304,16 @@ TEXT ·JS_SetFootprintLimit(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_GetMemorySize(SB), NOSPLIT, $0-24
+TEXT ·JS_GetMemorySize(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x894828458b491024
@@ -12361,16 +13324,32 @@ TEXT ·JS_GetMemorySize(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_GetGCThreshold(SB), NOSPLIT, $0-24
+TEXT ·JS_GetGCThreshold(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x000930858b491024
 	QUAD $0x00eb182444894800
 	RET
 
-TEXT ·JS_SetHostRemap(SB), NOSPLIT, $0-24
+TEXT ·JS_SetHostRemap(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x311824748b4c1024
@@ -12384,6 +13363,13 @@ TEXT ·JS_SetHostRemap(SB), NOSPLIT, $0-24
 
 TEXT ·JS_SetFrontCache(SB), $48-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x445024748b4c4824
@@ -12405,6 +13391,13 @@ TEXT ·JS_SetFrontCache(SB), $48-24
 
 TEXT ·JS_ReleaseStart(SB), $112-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000008024a48b4c
 	QUAD $0x0000008824ac8b4c
@@ -12483,6 +13476,13 @@ TEXT ·JS_ReleaseStart(SB), $112-24
 
 TEXT ·JS_ReleaseNextChunk(SB), $96-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x3b4968458b497824
@@ -12549,6 +13549,13 @@ TEXT ·JS_ReleaseNextChunk(SB), $96-32
 
 TEXT ·JS_ReleaseNextRange(SB), $80-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c6024648b4c
 	QUAD $0xd23168458b4d6824
@@ -12615,24 +13622,48 @@ TEXT ·JS_ReleaseNextRange(SB), $80-32
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetGCThreshold(SB), NOSPLIT, $0-24
+TEXT ·JS_SetGCThreshold(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4d1824748b4c1024
 	QUAD $0x00eb00000930b589
 	RET
 
-TEXT ·JS_GetInterruptFlag(SB), NOSPLIT, $0-24
+TEXT ·JS_GetInterruptFlag(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x000990858d491024
 	QUAD $0x00eb182444894800
 	RET
 
-TEXT ·JS_SetSharedArrayBufferFunctions(SB), NOSPLIT, $0-24
+TEXT ·JS_SetSharedArrayBufferFunctions(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x491824748b4c1024
@@ -12647,16 +13678,32 @@ TEXT ·JS_SetSharedArrayBufferFunctions(SB), NOSPLIT, $0-24
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetStripInfo(SB), NOSPLIT, $0-24
+TEXT ·JS_SetStripInfo(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x451824748b4c1024
 	QUAD $0x00eb00000a08b588
 	RET
 
-TEXT ·JS_GetStripInfo(SB), NOSPLIT, $0-24
+TEXT ·JS_GetStripInfo(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x0a0885b60f411024
@@ -12666,6 +13713,13 @@ TEXT ·JS_GetStripInfo(SB), NOSPLIT, $0-24
 
 TEXT ·JS_EnqueueJob(SB), $96-48
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c7024648b4c
 	QUAD $0x008024b48b4c7824
@@ -12795,8 +13849,16 @@ TEXT ·JS_EnqueueJob(SB), $96-48
 	BYTE $0xff
 	RET
 
-TEXT ·JS_IsJobPending(SB), NOSPLIT, $0-24
+TEXT ·JS_IsJobPending(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x0009a88d8d491024
@@ -12810,6 +13872,13 @@ TEXT ·JS_IsJobPending(SB), NOSPLIT, $0-24
 
 TEXT ·JS_ExecutePendingJob(SB), $144-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -13012,8 +14081,16 @@ TEXT ·JS_ExecutePendingJob(SB), $144-32
 	BYTE $0xff
 	RET
 
-TEXT ·JS_SetRuntimeInfo(SB), NOSPLIT, $0-24
+TEXT ·JS_SetRuntimeInfo(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4d1824748b4c1024
@@ -13027,6 +14104,13 @@ TEXT ·JS_SetRuntimeInfo(SB), NOSPLIT, $0-24
 
 TEXT ·JS_FreeAtomRT(SB), $32-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c3024648b4c
 	QUAD $0x414024748b4c3824
@@ -13047,6 +14131,13 @@ TEXT ·JS_FreeAtomRT(SB), $32-24
 
 TEXT ·JS_SetDirectCCalls(SB), $16-32
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c2024648b4c
 	QUAD $0x493024748b4c2824
@@ -13068,6 +14159,13 @@ TEXT ·JS_SetDirectCCalls(SB), $16-32
 
 TEXT ·js_measure_call_frame(SB), $48-16
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c4024648b4c
 	QUAD $0x4d8b49e0894c4824
@@ -13099,8 +14197,16 @@ TEXT ·js_measure_call_frame(SB), $48-16
 	BYTE $0x00
 	RET
 
-TEXT ·JS_SetFusedOps(SB), NOSPLIT, $0-24
+TEXT ·JS_SetFusedOps(SB), NOSPLIT|NOFRAME, $0-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x311824748b4c1024
@@ -13113,6 +14219,13 @@ TEXT ·JS_SetFusedOps(SB), NOSPLIT, $0-24
 
 TEXT ·JS_NewContextRaw(SB), $208-24
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -14146,8 +15259,16 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	BYTE $0xff
 	RET
 
-TEXT ·js_function_proto(SB), NOSPLIT, $0-64
+TEXT ·js_function_proto(SB), NOSPLIT|NOFRAME, $0-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	MOVQ (TLS), R14
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x6c8b4c0824648b4c
 	QUAD $0x4c1824748b4c1024
@@ -14160,6 +15281,13 @@ TEXT ·js_function_proto(SB), NOSPLIT, $0-64
 
 TEXT ·js_error_constructor(SB), $224-72
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000f024a48b4c
 	QUAD $0x000000f824ac8b4c
@@ -14672,6 +15800,13 @@ TEXT ·js_error_constructor(SB), $224-72
 
 TEXT ·js_array_constructor(SB), $144-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000a024a48b4c
 	QUAD $0x000000a824ac8b4c
@@ -14842,6 +15977,13 @@ TEXT ·js_array_constructor(SB), $144-64
 
 TEXT ·js_array_at(SB), $160-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000b024a48b4c
 	QUAD $0x000000b824ac8b4c
@@ -15160,6 +16302,13 @@ TEXT ·js_array_at(SB), $160-64
 
 TEXT ·js_array_with(SB), $240-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000010024a48b4c
 	QUAD $0x0000010824ac8b4c
@@ -15752,6 +16901,13 @@ TEXT ·js_array_with(SB), $240-64
 
 TEXT ·js_array_concat(SB), $256-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000011024a48b4c
 	QUAD $0x0000011824ac8b4c
@@ -16424,6 +17580,13 @@ TEXT ·js_array_concat(SB), $256-64
 
 TEXT ·js_array_every(SB), $272-72
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000012024a48b4c
 	QUAD $0x0000012824ac8b4c
@@ -17741,6 +18904,13 @@ TEXT ·js_array_every(SB), $272-72
 
 TEXT ·js_array_reduce(SB), $208-72
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -18520,6 +19690,13 @@ TEXT ·js_array_reduce(SB), $208-72
 
 TEXT ·js_array_fill(SB), $176-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000c024a48b4c
 	QUAD $0x000000c824ac8b4c
@@ -18899,6 +20076,13 @@ TEXT ·js_array_fill(SB), $176-64
 
 TEXT ·js_array_find(SB), $256-72
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x0000011024a48b4c
 	QUAD $0x0000011824ac8b4c
@@ -19295,6 +20479,13 @@ TEXT ·js_array_find(SB), $256-72
 
 TEXT ·js_array_indexOf(SB), $208-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -19790,6 +20981,13 @@ TEXT ·js_array_indexOf(SB), $208-64
 
 TEXT ·js_array_lastIndexOf(SB), $208-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -20262,6 +21460,13 @@ TEXT ·js_array_lastIndexOf(SB), $208-64
 
 TEXT ·js_array_includes(SB), $208-64
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000e024a48b4c
 	QUAD $0x000000e824ac8b4c
@@ -20709,6 +21914,13 @@ TEXT ·js_array_includes(SB), $208-64
 
 TEXT ·js_array_join(SB), $224-72
 	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
 	PCALIGN $16
 	QUAD $0x000000f024a48b4c
 	QUAD $0x000000f824ac8b4c
@@ -21320,850 +22532,6 @@ TEXT ·js_array_join(SB), $224-72
 	QUAD $0xfffff242fffff31c
 	BYTE $0x23
 	BYTE $0xf3
-	BYTE $0xff
-	BYTE $0xff
-	RET
-
-TEXT ·js_array_toString(SB), $128-64
-	NO_LOCAL_POINTERS
-	PCALIGN $16
-	QUAD $0x0000009024a48b4c
-	QUAD $0x0000009824ac8b4c
-	QUAD $0x000000a024b48b4c
-	QUAD $0x000000a824bc8b4c
-	QUAD $0x000000b024bc8b48
-	QUAD $0x000000b824b48b48
-	QUAD $0xc48349782464894c
-	QUAD $0x894c602464894c60
-	QUAD $0x4c2424894c70246c
-	QUAD $0x2474894c08246c89
-	BYTE $0x10
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·JS_ToObject(SB)
-	QUAD $0x0006be0c7506fa83
-	QUAD $0x00028ee9c0310000
-	QUAD $0x8b4c6024648b4c00
-	QUAD $0x8949c6894970246c
-	QUAD $0x89480000005fbfd7
-	QUAD $0x8948c68948502444
-	QUAD $0x24894cc931682454
-	QUAD $0x894c08246c894c24
-	QUAD $0x18247c894c102474
-	QUAD $0x74894820247c8948
-	QUAD $0x4830245489482824
-	BYTE $0x89
-	BYTE $0x4c
-	BYTE $0x24
-	BYTE $0x38
-	CALL ·JS_GetPropertyInternal(SB)
-	QUAD $0x48467406fa83d689
-	QUAD $0x0f5475fffa83c789
-	QUAD $0x8b480df8831247b7
-	QUAD $0x78246c8b4c702474
-	QUAD $0x24748b4c60658d4d
-	QUAD $0x840f68247c8b4c50
-	QUAD $0x0f33f883000000eb
-	QUAD $0x478b48000000c785
-	QUAD $0xd4850f0020788028
-	QUAD $0x7c8b4c2feb000000
-	QUAD $0xf7ff8341c0316824
-	QUAD $0xdbe90000018b830f
-	QUAD $0x8b48f7fe83000001
-	QUAD $0x6024648b4c702474
-	QUAD $0x7c8b4c5024748b4c
-	QUAD $0xfffc478b4c726824
-	QUAD $0x407fc085fc4789c8
-	QUAD $0x688b4c7024448b48
-	QUAD $0x89496024648b4c10
-	QUAD $0x2424894cd78949fe
-	QUAD $0x74894c08246c894c
-	BYTE $0x24
-	BYTE $0x10
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x748b4c68247c8b4c
-	QUAD $0x486024648b4c5024
-	QUAD $0x4cf589497024748b
-	QUAD $0x08246c894c242489
-	QUAD $0x7c894c102474894c
-	QUAD $0x4820247c89481824
-	BYTE $0x89
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x28
-	CALL ·js_object_toString(SB)
-	QUAD $0x68247c8b4cd68948
-	QUAD $0x00ea830ff7ff8341
-	QUAD $0x480000013ae90000
-	QUAD $0x08e0898b48104e8b
-	QUAD $0x834880048d480000
-	QUAD $0xff5d840f0018c17c
-	QUAD $0x00005045c749ffff
-	QUAD $0x00035845c7490000
-	QUAD $0x8949007589490000
-	QUAD $0x894d10558949087d
-	QUAD $0xc749207d894d1875
-	QUAD $0xc749000000002845
-	QUAD $0xc741000000033045
-	QUAD $0xc749000000003845
-	QUAD $0xc741000000004045
-	QUAD $0x8948000000024845
-	QUAD $0x78247c8948582454
-	QUAD $0x246c894c2424894c
-	BYTE $0x08
-	CALL ·JS_CallInternal_block(SB)
-	QUAD $0xc189487824748b4c
-	QUAD $0xfffc468b41d68948
-	QUAD $0x7fc085fc468941c8
-	QUAD $0x8b4c7024448b483f
-	QUAD $0x4c6024648b4c1068
-	QUAD $0x244c894858247c8b
-	QUAD $0x894c582474894878
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x4c8b485824748b48
-	QUAD $0x4868247c8b4c7824
-	QUAD $0x5572f7ff8341c889
-	QUAD $0x5024748b4cc18948
-	QUAD $0x8941c8fffc468b41
-	QUAD $0x8948057ec085fc46
-	QUAD $0x7024448b483aebc8
-	QUAD $0x24648b4c10688b4c
-	QUAD $0x894878244c894860
-	QUAD $0x4c2424894c582474
-	QUAD $0x2474894c08246c89
-	BYTE $0x10
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x448b485824748b48
-	QUAD $0x848948f289487824
-	QUAD $0x948948000000c024
-	BYTE $0x24
-	BYTE $0xc8
-	BYTE $0x00
-	BYTE $0x00
-	BYTE $0x00
-	BYTE $0xeb
-	BYTE $0x00
-	RET
-
-TEXT ·js_array_pop(SB), $176-72
-	NO_LOCAL_POINTERS
-	PCALIGN $16
-	QUAD $0x000000c024a48b4c
-	QUAD $0x000000c824ac8b4c
-	QUAD $0x000000d024b48b4c
-	QUAD $0x000000d824bc8b4c
-	QUAD $0x000000e024bc8b48
-	QUAD $0x000000e824b48b48
-	QUAD $0x000000f024948b48
-	QUAD $0x24ac894c64245489
-	QUAD $0x24a4894c00000090
-	QUAD $0x60c4834900000088
-	QUAD $0x24894c582464894c
-	QUAD $0x894c08246c894c24
-	QUAD $0x18247c894c102474
-	CALL ·JS_ToObject(SB)
-	QUAD $0xac8b4c5824648b4c
-	QUAD $0xc689490000009024
-	QUAD $0x00000032bfd78949
-	QUAD $0x0000008024848948
-	QUAD $0x7824548948c68948
-	QUAD $0x894c2424894cc931
-	QUAD $0x102474894c08246c
-	QUAD $0x7c894818247c894c
-	QUAD $0x4828247489482024
-	QUAD $0x244c894830245489
-	BYTE $0x38
-	CALL ·JS_GetPropertyInternal(SB)
-	QUAD $0x000630840f06fa83
-	QUAD $0x0000a02494894800
-	QUAD $0x40ff0372f7fa8300
-	QUAD $0x000088248c8b48fc
-	QUAD $0xfe000000e1814800
-	QUAD $0x00000098248c8948
-	QUAD $0xc689497024448948
-	QUAD $0x000000a024948b48
-	QUAD $0x48d089127708fa83
-	QUAD $0x63480000075f0d8d
-	QUAD $0x48e0ffc801488104
-	QUAD $0x4c0000008824848b
-	QUAD $0x9024ac8b4c60608d
-	QUAD $0xff31d78949000000
-	QUAD $0x246c894c2424894c
-	QUAD $0x894c102474894c08
-	QUAD $0x20247c894818247c
-	CALL ·JS_ToNumberHintFree(SB)
-	QUAD $0x0000af840f06fa83
-	QUAD $0x248c8b48c6894900
-	QUAD $0x80818b4800000098
-	QUAD $0x8948c8ff48000001
-	QUAD $0xc085480000018081
-	QUAD $0x008824a48b4c897f
-	QUAD $0x48682474894c0000
-	QUAD $0x2424894c50245489
-	CALL ·host_poll(SB)
-	QUAD $0x748b4c5024548b48
-	QUAD $0x49ffffff5fe96824
-	QUAD $0xc0854801b640c663
-	QUAD $0xffffffffb9485b78
-	QUAD $0x48c83948001fffff
-	QUAD $0x31c9314aebc8420f
-	QUAD $0x3deb01b64044ebf6
-	QUAD $0x66c931c66e0f4966
-	QUAD $0x2f7a01b640c02e0f
-	QUAD $0x0000067b0d100ff2
-	QUAD $0x24848b48c82e0f66
-	QUAD $0x0f662177000000a0
-	QUAD $0x830f0000066d052e
-	QUAD $0x2c0f48f20000058a
-	QUAD $0x48c931f6319febc0
-	QUAD $0x83000000a024848b
-	QUAD $0x24548b486872f7f8
-	QUAD $0x4289c8fffc428b70
-	QUAD $0x848b48577fc085fc
-	QUAD $0x688b4c0000009024
-	QUAD $0x00008824848b4810
-	QUAD $0x748b4c60608d4c00
-	QUAD $0x00a024bc8b4c7024
-	QUAD $0x4868244c89480000
-	QUAD $0x4c0000009824b489
-	QUAD $0x08246c894c242489
-	QUAD $0x7c894c102474894c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x0000009824b48b48
-	QUAD $0xf6844068244c8b48
-	QUAD $0x854800000472840f
-	QUAD $0x480000015e840fc9
-	QUAD $0x78247c8b4cff798d
-	QUAD $0x24b48b4cffff8341
-	QUAD $0x244c894800000080
-	QUAD $0x657570247c894868
-	QUAD $0x5d7502127e834166
-	QUAD $0x415674101046f641
-	QUAD $0x4d75d1394838568b
-	QUAD $0x64247c83307e8b49
-	QUAD $0x48000004c8840f00
-	QUAD $0x009824848948078b
-	QUAD $0x8d48085f8b480000
-	QUAD $0x04e2c148caff1077
-	QUAD $0x0f00040001fa8148
-	BYTE $0x83
-	BYTE $0x0e
-	BYTE $0x05
-	BYTE $0x00
-	BYTE $0x00
-	CALL ·memmove(SB)
-	QUAD $0x8b4ccaff38568b41
-	QUAD $0x9ce9000000982484
-	QUAD $0x0064247c83000004
-	QUAD $0x0000008824848b48
-	QUAD $0x0187840f60608d4c
-	QUAD $0x009024ac8b4c0000
-	QUAD $0x894cf631ff310000
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	QUAD $0x894820247c894818
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x28
-	CALL ·JS_GetPropertyValue(SB)
-	QUAD $0xfb83d38948c08949
-	QUAD $0xbe0000034d840f06
-	QUAD $0x24648b4c00000001
-	QUAD $0x00009024ac8b4c58
-	QUAD $0x00008024b48b4c00
-	QUAD $0xff3178247c8b4c00
-	QUAD $0x0001b97024548b48
-	QUAD $0x00a0249c89480000
-	QUAD $0x00982484894c0000
-	QUAD $0x894c2424894c0000
-	QUAD $0x102474894c08246c
-	QUAD $0x7c894818247c894c
-	QUAD $0x4828247489482024
-	QUAD $0x244c894830245489
-	BYTE $0x38
-	CALL ·JS_CopySubArray(SB)
-	QUAD $0x0000009824848b4c
-	QUAD $0x000000a0249c8b48
-	QUAD $0x000002ce850fc085
-	QUAD $0x0003b800000254e9
-	QUAD $0x00a0248489480000
-	QUAD $0x00982484c7480000
-	QUAD $0xff31000000000000
-	QUAD $0x0090248c8b48c031
-	QUAD $0x008024948b480000
-	QUAD $0x4c7824748b480000
-	QUAD $0x490000008824ac8b
-	QUAD $0x4958758949505589
-	QUAD $0x4908558949004d89
-	QUAD $0x321845c741107589
-	QUAD $0x49207d8949000000
-	QUAD $0x4930558949284589
-	QUAD $0x004045c741387589
-	QUAD $0x4c60658d4d000040
-	QUAD $0x08246c894c242489
-	CALL ·JS_SetPropertyInternal_block(SB)
-	QUAD $0x0000008b880fc085
-	QUAD $0xff834178247c8b4c
-	QUAD $0x4c00000091820ff7
-	QUAD $0x410000008024b48b
-	QUAD $0x468941c8fffc468b
-	QUAD $0xa024948b48c085fc
-	QUAD $0x9824848b48000000
-	QUAD $0x0002c48f0f000000
-	QUAD $0x01b80000026de900
-	QUAD $0x6d73c13948800000
-	QUAD $0x0000008824848b48
-	QUAD $0x24ac8b4c60608d4c
-	QUAD $0x894cf63100000090
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	QUAD $0x894820247c894818
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x28
-	CALL ·JS_GetPropertyValue(SB)
-	QUAD $0x3ce9d38948c08949
-	QUAD $0xa0249c8b48000001
-	QUAD $0x9824848b4c000000
-	QUAD $0x000001a1e9000000
-	QUAD $0x000000a024948b48
-	QUAD $0x0000009824848b48
-	QUAD $0x848b4800000248e9
-	QUAD $0x608d4c0000008824
-	QUAD $0x00009024ac8b4c60
-	QUAD $0x2424894cfe894900
-	QUAD $0x74894c08246c894c
-	BYTE $0x24
-	BYTE $0x10
-	CALL ·JS_NewAtomInt64(SB)
-	QUAD $0x0000019c840fc085
-	QUAD $0x008824848b48c189
-	QUAD $0x8b4c60608d4c0000
-	QUAD $0x8b480000009024ac
-	QUAD $0x89490000008024b4
-	QUAD $0x89497824548b48f6
-	QUAD $0x00000098248c89d7
-	QUAD $0x310000009824bc8b
-	QUAD $0x6c894c2424894cc9
-	QUAD $0x4c102474894c0824
-	QUAD $0x247c894818247c89
-	QUAD $0x8948282474894820
-	QUAD $0x38244c8948302454
-	CALL ·JS_GetPropertyInternal(SB)
-	QUAD $0x4900000098248c8b
-	QUAD $0xf2f981d38948c089
-	QUAD $0x848b48667c000000
-	QUAD $0x688b4c0000009024
-	QUAD $0x000008c8858b4910
-	QUAD $0x8b41c8348b4cc989
-	QUAD $0xfc468941c8fffc46
-	QUAD $0x24848b483f7fc085
-	QUAD $0x60608d4c00000088
-	QUAD $0x000000a0249c8948
-	QUAD $0x000000982484894c
-	QUAD $0x246c894c2424894c
-	BYTE $0x08
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x10
-	CALL ·JS_FreeAtomStruct(SB)
-	QUAD $0x0000009824848b4c
-	QUAD $0x000000a0249c8b48
-	QUAD $0x84894c757406fb83
-	QUAD $0x9c89480000009824
-	QUAD $0x848b48000000a024
-	QUAD $0x608d4c0000008824
-	QUAD $0x00009024ac8b4c60
-	QUAD $0x00008024b48b4c00
-	QUAD $0x8b4878247c8b4c00
-	QUAD $0x00004000be70247c
-	QUAD $0x246c894c2424894c
-	QUAD $0x894c102474894c08
-	QUAD $0x20247c894818247c
-	BYTE $0x48
-	BYTE $0x89
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x28
-	CALL ·JS_DeletePropertyInt64(SB)
-	QUAD $0x0000009824848b4c
-	QUAD $0x000000a0249c8b48
-	QUAD $0x000000ff890fc085
-	QUAD $0x408b413d72f7fb83
-	QUAD $0x85fc408941c8fffc
-	QUAD $0x9024848b482f7fc0
-	QUAD $0x4c10688b4c000000
-	QUAD $0x49c6894d5824648b
-	QUAD $0x894c2424894cdf89
-	QUAD $0x102474894c08246c
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0xff834178247c8b4c
-	QUAD $0x8024b48b4c6872f7
-	QUAD $0xfffc4e8b41000000
-	QUAD $0x0006bafc4e8941c9
-	QUAD $0x527fc985c0310000
-	QUAD $0x0000009824848948
-	QUAD $0x000000a024948948
-	QUAD $0x0000009024848b48
-	QUAD $0x24648b4c10688b4c
-	QUAD $0x6c894c2424894c58
-	QUAD $0x4c102474894c0824
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x0000009824848b48
-	QUAD $0x000000a024948b48
-	QUAD $0x3100000006ba07eb
-	QUAD $0x0000f824848948c0
-	QUAD $0x0001002494894800
-	QUAD $0xb948000000cee900
-	QUAD $0x001fffffffffffff
-	QUAD $0xfffa7b830ff7f883
-	QUAD $0xcafffffffadee9ff
-	QUAD $0x4c04e0c148d08948
-	QUAD $0x08075c8b4807048b
-	QUAD $0x000001b838568941
-	QUAD $0x8948682444394880
-	QUAD $0x894c000000a0249c
-	QUAD $0x2173000000982484
-	QUAD $0x0090248c8b48c031
-	QUAD $0x008024948b480000
-	QUAD $0x487824748b480000
-	QUAD $0xfffc2de970247c8b
-	QUAD $0x2a0f48f2c0570fff
-	QUAD $0xc77e0f4866702444
-	QUAD $0xfbffe900000008b8
-	QUAD $0x008824848b48ffff
-	QUAD $0x894960608d4c0000
-	QUAD $0x48d78949f68949fd
-	QUAD $0x4c000000a0249c89
-	QUAD $0x08246c894c242489
-	QUAD $0x7c894c102474894c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·goasm_chunked_memmove(SB)
-	QUAD $0x000000a0249c8b48
-	QUAD $0x0000008024b48b4c
-	QUAD $0x0f39ebfffffaade9
-	BYTE $0x1f
-	BYTE $0x44
-	BYTE $0x00
-	BYTE $0x00
-	QUAD $0xc3e0000000000000
-	QUAD $0x43e0000000000000
-	QUAD $0xfffff934fffff934
-	QUAD $0xfffff958fffff934
-	QUAD $0xfffff8aafffff8aa
-	QUAD $0xfffff8aafffff952
-	BYTE $0x5d
-	BYTE $0xf9
-	BYTE $0xff
-	BYTE $0xff
-	RET
-
-TEXT ·js_array_push(SB), $192-72
-	NO_LOCAL_POINTERS
-	PCALIGN $16
-	QUAD $0x000000d024a48b4c
-	QUAD $0x000000d824ac8b4c
-	QUAD $0x000000e024b48b4c
-	QUAD $0x000000e824bc8b4c
-	QUAD $0x000000f024bc8b48
-	QUAD $0x000000f824b48b48
-	QUAD $0x0000010024948b48
-	QUAD $0x410000009024bc89
-	QUAD $0x8024a4894cffff83
-	QUAD $0x75d2851a75000000
-	QUAD $0x7502127e83416616
-	QUAD $0xa8d0f710468b410e
-	QUAD $0x890000016b840f12
-	QUAD $0x7024748948502454
-	QUAD $0x4c00000090c48149
-	QUAD $0x4c000000a824a489
-	QUAD $0x4c000000b024ac89
-	QUAD $0x08246c894c242489
-	QUAD $0x7c894c102474894c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·JS_ToObject(SB)
-	QUAD $0x000000a824a48b4c
-	QUAD $0x000000b024ac8b4c
-	QUAD $0x32bfd78949c68949
-	QUAD $0x6824448948000000
-	QUAD $0x8824948948c68948
-	QUAD $0x24894cc931000000
-	QUAD $0x894c08246c894c24
-	QUAD $0x18247c894c102474
-	QUAD $0x74894820247c8948
-	QUAD $0x4830245489482824
-	BYTE $0x89
-	BYTE $0x4c
-	BYTE $0x24
-	BYTE $0x38
-	CALL ·JS_GetPropertyInternal(SB)
-	QUAD $0x0007da840f06fa83
-	QUAD $0x40ff0372f7fa8300
-	QUAD $0x000080248c8b48fc
-	QUAD $0xfe000000e1814800
-	QUAD $0x84894878244c8948
-	QUAD $0xc689490000009824
-	QUAD $0x000000a024948948
-	QUAD $0x000000b024ac8b4c
-	QUAD $0x48d089127708fa83
-	QUAD $0x63480000087a0d8d
-	QUAD $0x4ce0ffc801488104
-	QUAD $0x49000000a824a48b
-	QUAD $0x2424894cff31d789
-	QUAD $0x74894c08246c894c
-	QUAD $0x4818247c894c1024
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x20
-	CALL ·JS_ToNumberHintFree(SB)
-	QUAD $0x00021e840f06fa83
-	QUAD $0x244c8b48c6894900
-	QUAD $0x00000180818b4878
-	QUAD $0x0180818948c8ff48
-	QUAD $0xa48b4cc085480000
-	QUAD $0xac8b4c0000008024
-	QUAD $0x4c887f000000b024
-	QUAD $0x2454894860247489
-	BYTE $0x58
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x24
-	BYTE $0x24
-	CALL ·host_poll(SB)
-	QUAD $0x748b4c5824548b48
-	QUAD $0x49ffffff5ee96024
-	QUAD $0x4838488b4818468b
-	QUAD $0x011041f60a74c985
-	QUAD $0x8b49fffffe7e840f
-	QUAD $0x850f00087983204e
-	QUAD $0x3941198bfffffe70
-	QUAD $0xfffffe64850f385e
-	QUAD $0x08478844f618488b
-	QUAD $0x9c03fffffe56840f
-	QUAD $0x49880f0000009024
-	QUAD $0x0f285e3b41fffffe
-	QUAD $0x24848b0000072287
-	QUAD $0x8e0fc08500000090
-	QUAD $0x4dc08941000000cc
-	QUAD $0x000000e18149e189
-	QUAD $0x00000180818b49fe
-	QUAD $0x4508c68348c8ff49
-	QUAD $0x0144384e8b41d231
-	QUAD $0x4e034904e1c148d1
-	QUAD $0x3e8b48f8568b4830
-	QUAD $0xfc42ff0372f7ff83
-	QUAD $0x4d08798948118948
-	QUAD $0x48c8ff487d74d039
-	QUAD $0x10c68348097ec085
-	QUAD $0x748948c5ebc2ff49
-	QUAD $0x00b024b4894c7024
-	QUAD $0x0000a8249c890000
-	QUAD $0x0000902484894c00
-	QUAD $0x894c78244c894c00
-	QUAD $0x894c000000882494
-	BYTE $0x24
-	BYTE $0x24
-	CALL ·host_poll(SB)
-	QUAD $0x0000008824948b4c
-	QUAD $0x848b4c78244c8b4c
-	QUAD $0x249c8b0000009024
-	QUAD $0x24b48b4c000000a8
-	QUAD $0x24748b48000000b0
-	QUAD $0x00008024a48b4c70
-	QUAD $0x00000180818b4900
-	QUAD $0x0001808189498beb
-	QUAD $0x48d889204e8b4900
-	QUAD $0x00000841c7480189
-	QUAD $0xd231385e89410000
-	QUAD $0xc6634900000619e9
-	QUAD $0x000000a024bc8b4c
-	QUAD $0x481b78c0854801b1
-	QUAD $0x1fffffffffffffbe
-	QUAD $0xf0420f48f0394800
-	QUAD $0x0000009824b48b4c
-	QUAD $0x24b48b4cf63168eb
-	QUAD $0xf6315ceb00000098
-	QUAD $0x6e0f496646ebc931
-	QUAD $0xb1c02e0f66f631c6
-	QUAD $0x3b0d100ff2377a01
-	QUAD $0x4cc82e0f66000006
-	QUAD $0x0f000000a024bc8b
-	QUAD $0x2e0f66000004d187
-	QUAD $0xd0830f0000062905
-	QUAD $0xc02c0f48f2000004
-	QUAD $0xc93102eb01b18eeb
-	QUAD $0x009824b48b4cf631
-	QUAD $0x00a024bc8b4c0000
-	QUAD $0x1272f7ff83410000
-	QUAD $0x8941c8fffc468b41
-	QUAD $0x00e18e0fc085fc46
-	QUAD $0x0507840fc9840000
-	QUAD $0x00009024948b0000
-	QUAD $0x3e0c8d48fa634800
-	QUAD $0xffffffffffffb848
-	QUAD $0x4c407ec13948001f
-	QUAD $0x490000008024bc8b
-	BYTE $0x83
-	BYTE $0xc7
-	BYTE $0x50
-	LEAQ ·engine_rodata+10628(SB), R14
-	QUAD $0x000000a824a48b4c
-	QUAD $0x000000b024ac8b4c
-	QUAD $0x246c894c2424894c
-	QUAD $0x894c102474894c08
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·JS_ThrowTypeError(SB)
-	QUAD $0x4c8948000004aae9
-	QUAD $0x0f0050247c835824
-	QUAD $0x08c19e0fd285c094
-	QUAD $0x4c000000bb850fc1
-	QUAD $0x4c000000a824a48b
-	QUAD $0x48000000b024ac8b
-	QUAD $0x4c6824748b4cf289
-	QUAD $0x310000008824bc8b
-	QUAD $0x894cffffffffb9f6
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	QUAD $0x894820247c894818
-	QUAD $0x3024548948282474
-	BYTE $0x48
-	BYTE $0x89
-	BYTE $0x4c
-	BYTE $0x24
-	BYTE $0x38
-	CALL ·JS_CopySubArray(SB)
-	QUAD $0x0fc08500000000be
-	QUAD $0x4861eb0000043085
-	QUAD $0x4c000000b024848b
-	QUAD $0xa824a48b4c10688b
-	QUAD $0x9824b48948000000
-	QUAD $0xa0248c8948000000
-	QUAD $0x4c2424894c000000
-	QUAD $0x2474894c08246c89
-	BYTE $0x10
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x7c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x000000a0248c8b48
-	QUAD $0x0000009824b48b48
-	QUAD $0xfffffed3850fc984
-	QUAD $0x0fd285000003d5e9
-	QUAD $0x24848b0000022f8e
-	QUAD $0x04e0c14800000090
-	QUAD $0x24448948f0c08348
-	QUAD $0x8024ac8b4cd23150
-	QUAD $0x7024448b48000000
-	QUAD $0x000000a824a48b4c
-	QUAD $0x10448b48100c8b48
-	QUAD $0x41ff0372f7f88308
-	QUAD $0x00009024948948fc
-	QUAD $0x858949784d894900
-	QUAD $0xfffe814800000080
-	QUAD $0x9824b489487fffff
-	QUAD $0x848b485b77000000
-	QUAD $0x458949000000b024
-	QUAD $0x89496824448b4800
-	QUAD $0x008824848b480845
-	QUAD $0x8949104589490000
-	QUAD $0x00002045c7491875
-	QUAD $0x8b4978458b490000
-	QUAD $0x458949000000808d
-	QUAD $0x45c741304d894928
-	QUAD $0x24894c0000400038
-	BYTE $0x24
-	BYTE $0x4c
-	BYTE $0x89
-	BYTE $0x6c
-	BYTE $0x24
-	BYTE $0x08
-	CALL ·JS_SetPropertyValue_block(SB)
-	QUAD $0x4c89480000010be9
-	QUAD $0x00a0248489486024
-	QUAD $0x00b024ac8b4c0000
-	QUAD $0x24894cf689490000
-	QUAD $0x894c08246c894c24
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x10
-	CALL ·JS_NewAtomInt64(SB)
-	QUAD $0x00000292840fc085
-	QUAD $0x008024ac8b4cc689
-	QUAD $0x4968244c8b480000
-	QUAD $0x8824848b48684d89
-	QUAD $0x4870458949000000
-	QUAD $0x49000000b024948b
-	QUAD $0x49084d8949005589
-	QUAD $0x4818758941104589
-	QUAD $0x205589496024548b
-	QUAD $0x000000a024948b48
-	QUAD $0x304d894928558949
-	QUAD $0x4045c74138458949
-	QUAD $0x24a48b4c00004000
-	QUAD $0xa024b489000000a8
-	QUAD $0x4c2424894c000000
-	BYTE $0x89
-	BYTE $0x6c
-	BYTE $0x24
-	BYTE $0x08
-	CALL ·JS_SetPropertyInternal_block(SB)
-	QUAD $0x81000000a024b48b
-	QUAD $0x48507c000000f2fe
-	QUAD $0x4c000000b0248c8b
-	QUAD $0x08c8958b4910698b
-	QUAD $0xca348b4cf1890000
-	QUAD $0x8941c9fffc4e8b41
-	QUAD $0x8b4c297fc985fc4e
-	QUAD $0x8489000000a824a4
-	QUAD $0x24894c000000a024
-	QUAD $0x894c08246c894c24
-	BYTE $0x74
-	BYTE $0x24
-	BYTE $0x10
-	CALL ·JS_FreeAtomStruct(SB)
-	QUAD $0x85000000a024848b
-	QUAD $0x00009824b48b48c0
-	QUAD $0x00009024948b4800
-	QUAD $0x48000001ef880f00
-	QUAD $0x8b484a7450245439
-	QUAD $0x0180818b4878244c
-	QUAD $0x818948c8ff480000
-	QUAD $0x7ec0854800000180
-	QUAD $0xc6ff4810c283480c
-	QUAD $0xa48b4cfffffe0ae9
-	QUAD $0x24894c0000008024
-	BYTE $0x24
-	CALL ·host_poll(SB)
-	QUAD $0x0000009024948b48
-	QUAD $0x0000009824b48b48
-	QUAD $0x4858244c8b48d1eb
-	QUAD $0x40c83948f631c163
-	QUAD $0x48f2c0570fc6950f
-	QUAD $0x0f4866c089c12a0f
-	QUAD $0xe6c1f8440f48c77e
-	QUAD $0x00008024ac8b4c03
-	QUAD $0x89496824548b4800
-	QUAD $0x0088248c8b485855
-	QUAD $0x8b48604d89490000
-	QUAD $0x8949000000b02484
-	QUAD $0x8949085589490045
-	QUAD $0x00321845c741104d
-	QUAD $0x4978247c89480000
-	QUAD $0x9024b48948207d89
-	QUAD $0x4928758949000000
-	QUAD $0x41384d8949305589
-	QUAD $0x4c000040004045c7
-	QUAD $0x4c000000a824a48b
-	QUAD $0x08246c894c242489
-	CALL ·JS_SetPropertyInternal_block(SB)
-	QUAD $0x000000fb880fc085
-	QUAD $0xf70000008824bc83
-	QUAD $0x8b4c0000008e820f
-	QUAD $0xfffc468b41682474
-	QUAD $0x48c085fc468941c8
-	QUAD $0x480000009024948b
-	QUAD $0x01268f0f7824448b
-	QUAD $0x00b024848b480000
-	QUAD $0x8b4c10688b4c0000
-	QUAD $0x8b4c000000a824a4
-	QUAD $0x894c0000008824bc
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x948b487824448b48
-	QUAD $0x00e0e90000009024
-	QUAD $0x009824b48b4c0000
-	QUAD $0x48fffffb4fe90000
-	QUAD $0x1fffffffffffffbe
-	QUAD $0x00009824b48b4c00
-	QUAD $0x8b48fffffb38e900
-	QUAD $0x8b48000000902494
-	QUAD $0x000000aae9782444
-	QUAD $0x000000a024bc8b4c
-	QUAD $0x24748b4cf7ff8341
-	QUAD $0xfffc468b413a7260
-	QUAD $0x7fc085fc468941c8
-	QUAD $0x0000b024848b482c
-	QUAD $0xa48b4c10688b4c00
-	QUAD $0x24894c000000a824
-	QUAD $0x894c08246c894c24
-	QUAD $0x18247c894c102474
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x24bc8300000006ba
-	QUAD $0x4c4c72f700000088
-	QUAD $0xfc468b416824748b
-	QUAD $0xc085fc468941c8ff
-	QUAD $0x00b024848b48397f
-	QUAD $0x8b4c10688b4c0000
-	QUAD $0x8b4c000000a824a4
-	QUAD $0x894c0000008824bc
-	QUAD $0x4c08246c894c2424
-	QUAD $0x247c894c10247489
-	BYTE $0x18
-	CALL ·__JS_FreeValueRT(SB)
-	QUAD $0x48c03100000006ba
-	QUAD $0x4800000108248489
-	QUAD $0xeb00000110249489
-	QUAD $0x00000090c4814963
-	QUAD $0x000000b024b4894c
-	QUAD $0x000000b024b48b4c
-	QUAD $0x7024748948df8941
-	QUAD $0x4c000000a8249c89
-	QUAD $0x08246c894c242489
-	QUAD $0x7c894c102474894c
-	BYTE $0x24
-	BYTE $0x18
-	CALL ·expand_fast_array(SB)
-	QUAD $0x4c000000a8249c8b
-	QUAD $0x48000000b024b48b
-	QUAD $0x24a48b4c7024748b
-	QUAD $0x8975c08500000080
-	QUAD $0x9035ebfffff87be9
-	QUAD $0xc3e0000000000000
-	QUAD $0x43e0000000000000
-	QUAD $0xfffff95ffffff95f
-	QUAD $0xfffff9dcfffff95f
-	QUAD $0xfffff78ffffff78f
-	QUAD $0xfffff78ffffff998
-	BYTE $0x9e
-	BYTE $0xf9
 	BYTE $0xff
 	BYTE $0xff
 	RET

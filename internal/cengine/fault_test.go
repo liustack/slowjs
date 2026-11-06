@@ -19,7 +19,6 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/faulttest"
 	"github.com/liustack/quickjs/internal/gohost"
 )
 
@@ -64,7 +63,6 @@ func wantFault(t *testing.T, got any, what string, lo, hi uintptr) {
 // what any target maps: Go links linux/arm64 text at 0x10000, and Linux keeps
 // the first 32 KiB (arm64) or 64 KiB (amd64) unmapped.
 func TestFaultWildPointer(t *testing.T) {
-	faulttest.Skip(t)
 	wilds := []uintptr{0xdead0000, 0x4000, 1 << 46}
 	if runtime.GOARCH == "amd64" {
 		wilds = append(wilds, 0xdeadbeefdeadbeef) // not canonical: a general protection fault, no address
@@ -111,7 +109,6 @@ func hex(x uintptr) string {
 // into its guard page. The C checks the room left before it recurses, so this
 // takes an entry that is given a stack with nothing left.
 func TestFaultShadowStackEnd(t *testing.T) {
-	faulttest.Skip(t)
 	v := newVM(t, Options{Seed: 1})
 	base, size := v.Host().Stack()
 	end := base + size
@@ -153,7 +150,6 @@ func TestFaultTrap(t *testing.T) {
 // TestFaultsAmongVMs: a VM that fails does not touch the VMs that run beside
 // it on other goroutines, nor the ones made after it.
 func TestFaultsAmongVMs(t *testing.T) {
-	faulttest.Skip(t)
 	const workers = 4
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -233,7 +229,6 @@ func TestFaultsAmongVMs(t *testing.T) {
 // One call shows the frames, then fresh goroutines make the same call deeper
 // in their stacks, by steps of 8 bytes over 12 KiB, each on a VM of its own.
 func TestFaultNoSplit(t *testing.T) {
-	faulttest.Skip(t)
 	const wild = 0xdead0000
 	t.Run("unicode_to_utf8", func(t *testing.T) {
 		noSplitFault(t, "a write through the buffer", wild, wild+1, "unicode_to_utf8",

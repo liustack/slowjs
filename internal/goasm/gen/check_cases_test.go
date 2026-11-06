@@ -380,7 +380,7 @@ func TestCheckCases(t *testing.T) {
 		{name: "a function off the NOSPLIT list with no stack check", files: addFlag("ic", "NOSPLIT"),
 			want: "not on the NOSPLIT list, but Go does not check the stack"},
 		{name: "a function on the NOSPLIT list with a stack check", files: func(files map[string]string) {
-			dropFlag("h", "NOSPLIT")(files)
+			dropFlag("h", "NOSPLIT|NOFRAME")(files)
 			tweakText("h", `, \$(\d+)-`, func(int) int { return autoNoSplitFrame })(files)
 		}, want: "on the NOSPLIT list, but Go checks the stack"},
 		{name: "a record that says NOSPLIT when the function does not", metas: func(ms []Meta) {

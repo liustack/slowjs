@@ -96,14 +96,69 @@ func readObject(path string) (*object, error) {
 // always declared. A leaf that saved registers (Meta.Frame > 0) must not be
 // written with a zero frame: Go would give it no stack space and its stores
 // would overwrite the return address.
+//
+// A NOSPLIT unified function without a frame says NOFRAME as well, which the
+// Go assembler gives a frameless leaf by itself: on windows its room check
+// calls goasm_room, and the call would otherwise make the assembler save BP
+// and move the arguments the body reads. Every unified function is followed
+// by its room check (roomCheck).
 func funcHeader(goName string, m Meta) string {
 	if m.Kind == Register {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-0\n", goName, m.Frame)
 	}
-	if m.NoSplit {
-		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
+	if m.NoSplit && m.Frame == 0 {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-%d\n\tNO_LOCAL_POINTERS\n", goName, m.ArgBytes) + roomCheck(m)
 	}
-	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes)
+	if m.NoSplit {
+		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
+	}
+	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
+}
+
+// RoomBelow is how many bytes past Go's stack guard every unified function
+// on windows has below its frame before its body runs (docs/changes/c-engine.md,
+// When the engine fails). Windows writes the state of the CPU at a fault
+// below the stack pointer of the faulting thread, which is the goroutine's
+// stack, and Go keeps 4 KiB below each stack for it (golang/go#81238). With
+// AMX that state takes 11.7 KiB, and with the frames of the exception
+// dispatch 12.8 KiB. The guard is 5024 bytes above the bottom of the stack
+// on windows/amd64 (800 + 4096 + 128), so a body has at least
+// RoomBelow + 5024 bytes below its stack pointer, and a register-entry leaf
+// it calls, which takes less than 128 bytes and the return address, at least
+// 17176. A NOSPLIT function checks too, since Go calls some directly.
+const RoomBelow = 12 << 10
+
+// RoomFrame is the frame of goasm_room. Its own stack check passes only when
+// SP - (RoomFrame + 8 - 128) is above the guard, so the room check of the
+// function that called it then passes with 8 bytes to spare, and morestack
+// grows the stack for that frame.
+const RoomFrame = RoomBelow + 128
+
+// roomCheck is the check that follows Go's prologue of a unified function, in
+// the assembly of windows only: when the stack less RoomBelow is at or below
+// the guard in g, it calls goasm_room, whose stack check grows the stack.
+// R14 holds g after a split prologue, and a NOSPLIT function loads it first.
+// No argument is in a register yet (the body loads them from the Go stack)
+// and R12 is the scratch register of Go's own check, so both are free.
+// The JHI lands on a NOP, not on the PCALIGN of the body that follows: Go
+// before 1.26.11 and 1.27.4 loops forever on a forward branch to a PCALIGN
+// once a branch of the function needs its long form (golang/go#81792).
+func roomCheck(m Meta) string {
+	load := ""
+	if m.NoSplit {
+		load = "\tMOVQ (TLS), R14\n"
+	}
+	return "#ifdef GOOS_windows\n" + load +
+		fmt.Sprintf("\tLEAQ -%d(SP), R12\n\tCMPQ R12, 16(R14)\n\tJHI 2(PC)\n\tCALL ·goasm_room(SB)\n\tBYTE $0x90\n", RoomBelow) +
+		"#endif\n"
+}
+
+// roomFunc is goasm_room, in the assembly of windows only: a function with a
+// frame of RoomFrame bytes that does nothing, so that its stack check makes
+// the room (see RoomBelow). The host's callbacks call it too, before they
+// return into the engine, since the stack may have shrunk while they ran.
+func roomFunc() string {
+	return fmt.Sprintf("#ifdef GOOS_windows\n// goasm_room makes RoomBelow bytes of room below the stack pointer of its\n// caller: its stack check grows the stack for a frame it never touches.\nTEXT ·goasm_room(SB), $%d-0\n\tNO_LOCAL_POINTERS\n\tRET\n#endif\n", RoomFrame)
 }
 
 // Emit writes the Go assembly for the functions described by metas.
@@ -138,6 +193,7 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 		}
 		fmt.Fprintf(&b, "\tRET\n\n")
 	}
+	b.WriteString(roomFunc())
 	return b.String(), nil
 }
 

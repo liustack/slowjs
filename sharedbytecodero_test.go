@@ -17,7 +17,6 @@ import (
 // every VM reads in place: a write to them faults, while VMs that loaded them
 // run.
 func TestSharedBytecodeReadOnly(t *testing.T) {
-	faulttest.Skip(t)
 	code := compileShared(t)
 	shared := newSharedBytecode(t, code)
 	defer shared.Close()
@@ -33,13 +32,16 @@ func TestSharedBytecodeReadOnly(t *testing.T) {
 	}
 }
 
-// writeFaults reports whether writing the byte at p faults.
+// writeFaults reports whether writing the byte at p faults. Room comes right
+// before the write, so that the fault has room below it on windows
+// (internal/faulttest).
 func writeFaults(p uintptr) (faulted bool) {
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	defer func() {
 		_, faulted = recover().(interface{ Addr() uintptr })
 	}()
 	b := (*byte)(*(*unsafe.Pointer)(unsafe.Pointer(&p)))
+	faulttest.Room()
 	*b ^= noChange
 	return false
 }

@@ -29,6 +29,7 @@ read_when:
 | 引擎在释放对象时被请求的回收什么也不做 | v0.29.10 | [c-engine.md](c-engine.zh-CN.md#释放对象时被要求回收) |
 | 离开进入引擎的调用时发生到一半的 panic 会让 VM 报废，不论是什么 panic，包括低于 0x1000 的地址错误，之后不会再进入那个引擎，连释放一个值也不行 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#哪些-panic-会让-vm-报废) |
 | 每个调用了别的函数的生成函数都有 Go 的栈检查，所以地址错误不再取决于生成器在一串没有栈检查的函数下面留出的空间 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#没有栈检查的函数) |
+| 在 windows 上每个生成函数在栈指针下面多留出 12 KiB 空间，这样在带 AMX 的 CPU 上，系统在出错时写下的 CPU 状态仍在栈内 | Unreleased | [c-engine.md](c-engine.zh-CN.md#windows-上给故障留的空间) |
 
 ## 上游 QuickJS 的提交
 

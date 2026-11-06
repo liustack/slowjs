@@ -92,12 +92,13 @@ func TestRegistry(t *testing.T) {
 	// ByStack reads the header of the stack a pointer would be in: outside
 	// every stack that may be memory mapped to nothing, as the guard page
 	// right above a stack is, a fault that SetPanicOnFault makes a panic, as
-	// it is in the engine.
+	// it is in the engine. On windows the fault is in Go code past the stack
+	// check of ByStack, where no room for it can be made (internal/faulttest).
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	if !faulttest.Unsafe {
 		mustPanic(t, "ByStack outside every stack", func() { ByStack(base + size) })
-		mustPanic(t, "ByStack(0)", func() { ByStack(0) })
 	}
+	mustPanic(t, "ByStack(0)", func() { ByStack(0) })
 
 	id := a.ID()
 	if err := a.Close(); err != nil {
@@ -433,12 +434,11 @@ func TestEnterPanicOnFault(t *testing.T) {
 // recovers while the engine runs. Without SetPanicOnFault the runtime prints
 // "unexpected fault address" and ends the process.
 func TestFaultInEngineIsAPanic(t *testing.T) {
-	faulttest.Skip(t)
 	v := newVM(t, small)
 	base, size := v.Stack()
 	guard := (*byte)(addr(base + size))
 	v.Enter()
-	got := mustPanic(t, "a write to the guard page", func() { *guard = 1 })
+	got := mustPanic(t, "a write to the guard page", func() { faulttest.Room(); *guard = 1 })
 	v.Leave()
 	err, ok := got.(runtime.Error)
 	if !ok {
