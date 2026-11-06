@@ -9,8 +9,6 @@ import (
 	"runtime"
 	"testing"
 	"time"
-
-	"github.com/liustack/quickjs/internal/faulttest"
 )
 
 // A panic or a Goexit that goes up through the engine's frames leaves the VM
@@ -74,7 +72,6 @@ func TestNestedClockPanicRecoveredBreaksVM(t *testing.T) {
 // call is given a shadow stack with nothing left, so its first call into the
 // engine faults on the guard page.
 func TestNestedFaultRecoveredBreaksVM(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
 		m := a.VM()
@@ -145,7 +142,6 @@ func withoutContext(m *VM, f func()) {
 }
 
 func TestLowFaultBreaksVM(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	var p any
 	withoutContext(m, func() { p = evalRecover(m, `1`) })
@@ -158,7 +154,6 @@ func TestLowFaultBreaksVM(t *testing.T) {
 // called the Go function, and does not become the uncatchable error of a
 // panic of the Go function.
 func TestHostLowFaultBreaksVM(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
 		m := a.VM()
@@ -172,7 +167,6 @@ func TestHostLowFaultBreaksVM(t *testing.T) {
 // The same for a fault at a low address under a nested call, which the Go
 // function recovers.
 func TestNestedLowFaultRecoveredBreaksVM(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	var inner any
 	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
@@ -203,7 +197,6 @@ func (z zeroContext) MarshalJSON() ([]byte, error) {
 // faulted, and a call made after it, which the context at 0 makes fault too,
 // would still count.
 func TestLowFaultInCallFreesNothing(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	ctx := m.ctx
 	p := func() (p any) {
@@ -222,7 +215,6 @@ func TestLowFaultInCallFreesNothing(t *testing.T) {
 // A Go function that recovers a fault of its own call into the engine cannot
 // call into the engine again.
 func TestHostLowFaultRecoveredRefusesEngine(t *testing.T) {
-	faulttest.Skip(t)
 	m := newTestVM(t)
 	var fault, again any
 	var calls int

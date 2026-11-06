@@ -554,7 +554,8 @@ func TestStackResidency(t *testing.T) {
 }
 
 // faultAt writes a byte at addr and returns the address of the fault it
-// makes, or 0 when there is none.
+// makes, or 0 when there is none. Room comes right before the write, so that
+// the fault has room below it on windows (internal/faulttest).
 func faultAt(addr uintptr) (at uintptr, other any) {
 	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
 	defer func() {
@@ -565,7 +566,9 @@ func faultAt(addr uintptr) (at uintptr, other any) {
 			other = r
 		}
 	}()
-	bytesAt(addr, 1)[0] = 1
+	b := bytesAt(addr, 1)
+	faulttest.Room()
+	b[0] = 1
 	return 0, nil
 }
 
@@ -605,9 +608,6 @@ func TestStackLayout(t *testing.T) {
 			if at, other := faultAt(addr); at != 0 || other != nil {
 				t.Fatalf("writing the stack of %d bytes at %#x: fault at %#x, %v", size, addr, at, other)
 			}
-		}
-		if faulttest.Unsafe {
-			continue
 		}
 		for _, off := range []uintptr{0, pageSize - 1} {
 			at, other := faultAt(base + size + off)

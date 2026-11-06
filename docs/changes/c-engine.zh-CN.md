@@ -190,7 +190,7 @@ C 能在 Go 代码不会出错的地方出错，而 Go 进程对其中大多数�
 
 栈移动时这块空间依然在。运行时加大栈的办法是复制它，空间不会变少。它只在 goroutine 在一次调用处为运行时停下的地方缩小栈，从不在汇编中间。在引擎里，这只可能是生成函数的栈检查，它接着运行时会再做一次空间检查，或者是宿主的回调，它在返回引擎之前再留一次空间（`internal/cengine/host.go` 里的 `makeRoom`）。函数返回到调用者时，调用者的栈指针更高，所以调用者至少有它自己那么多的空间。
 
-它管不到的：Go 代码里的错误。宿主或程序的 Go 函数里的一次空指针，下面只有 Go 的 4 KiB，和 windows 上的任何 Go 程序一样，要等 Go 修好 golang/go#81238（正在审的修法留出 `InitializeContext` 报的大小再加 2 KiB）。宿主 Go 代码里的错误是宿主的 bug，就像引擎里的错误是引擎的 bug。`faulttest.Room` 是一个栈帧和 `goasm_room` 一样的函数，故意在 Go 代码里出错的测试可以在出错之前紧接着调用它，留出同样的空间。
+它管不到的：Go 代码里的错误。宿主或程序的 Go 函数里的一次空指针，下面只有 Go 的 4 KiB，和 windows 上的任何 Go 程序一样，要等 Go 修好 golang/go#81238（正在审的修法留出 `InitializeContext` 报的大小再加 2 KiB）。宿主 Go 代码里的错误是宿主的 bug，就像引擎里的错误是引擎的 bug。故意在 Go 代码里出错的测试在出错之前紧接着调用 `faulttest.Room`，一个栈帧和 `goasm_room` 一样的函数。`TestRegistry` 里在 `ByStack` 内部出错的两个用例做不到这一点，在 windows 上跳过（`faulttest.Unsafe`）。
 
 linux 和 darwin 没有改：它们的代码除了函数的位置以外逐字节相同，所以 tifa 的页面、已知的 test262 错误和调用深度都和原来一样。深度由引擎自己计数，不取决于 Go 的栈。
 
@@ -205,7 +205,7 @@ linux 和 darwin 没有改：它们的代码除了函数的位置以外逐字节
 
 引擎里的 goroutine 的栈下面多出 12 KiB。运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB，渲染 React SSR 或递归 2,000 层的 goroutine 和原来一样（64 KiB 和 1 MiB），这是在关掉回收器时测 64 个 goroutine 得到的。windows 的生成代码大 36 KB（从 2,662,176 到 2,698,336 字节，+1.4%）。
 
-测试：`TestRoomCheck` 检查 `funcHeader` 给每种函数写的检查，以及 `faulttest.Room` 的栈帧和 `goasm_room` 一样，`TestRoomCheckAssembles` 检查 windows/amd64 的汇编器在一个长函数体之前接受它（Go 1.26.11 和 1.27.4 之前，汇编器遇到跳向 `PCALIGN` 的分支会无限循环，[golang/go#81792](https://github.com/golang/go/issues/81792)，单字节的空操作避开了它）。对 windows 二进制的链接后检查要求每个统一函数都有这个检查，并要求 `goasm_room` 有它的栈帧：`TestPostLinkFormats` 给一个 windows 二进制换上要的空间更少的检查、去掉调用的检查和短了 8 字节的 `goasm_room`，要求每一个都被拒绝。`TestCallbacksMakeRoom`（`internal/cengine`）要求生成代码调用的每个回调最后都留一次空间。
+测试：`TestRoomCheck` 检查 `funcHeader` 给每种函数写的检查，以及 `faulttest.Room` 的栈帧和 `goasm_room` 一样，`TestRoomCheckAssembles` 检查 windows/amd64 的汇编器在一个长函数体之前接受它（Go 1.26.11 和 1.27.4 之前，汇编器遇到跳向 `PCALIGN` 的分支会无限循环，[golang/go#81792](https://github.com/golang/go/issues/81792)，单字节的空操作避开了它）。对 windows 二进制的链接后检查要求每个统一函数都有这个检查，并要求 `goasm_room` 有它的栈帧：`TestPostLinkFormats` 给一个 windows 二进制换上要的空间更少的检查、去掉调用的检查和短了 8 字节的 `goasm_room`，要求每一个都被拒绝。`TestCallbacksMakeRoom`（`internal/cengine`）要求生成代码调用的每个回调最后都留一次空间。[testing.md](../testing.zh-CN.md#生成引擎的-go-宿主) 里的故障测试重新在 windows 上运行。
 
 ### 哪些 panic 会让 VM 报废
 

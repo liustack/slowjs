@@ -53,7 +53,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `internal/idtable/` | 引擎交还给 Go 的 id 表 |
 | `internal/unsupported/` | 为引擎不支持的平台构建时的错误 |
 | `internal/goversion/` | 用比引擎核对过的版本更新的 Go 构建时的错误，由 `internal/cengine` import |
-| `internal/faulttest/` | 给故意制造内存错误的测试用：它们在 windows 上跳过，因为在那里可能破坏进程的内存（见 [c-engine.md](changes/c-engine.zh-CN.md#引擎出错时)） |
+| `internal/faulttest/` | 给故意制造内存错误的测试用：`Room` 由测试在 Go 代码里的错误之前紧接着调用，让 windows 有空间写下 CPU 的状态。`Unsafe` 用于 `Room` 没法紧挨在前面的 Go 代码里的错误（见 [c-engine.md](changes/c-engine.zh-CN.md#windows-上给故障留的空间)） |
 | `internal/measure/` | `go tool measure bench`：在几个代码位置上构建一个程序，轮流计时，并数指令数 |
 | `intl/` | 包 `github.com/liustack/quickjs/intl`，给 VM 用的 `Intl` |
 | `internal/gointl/internal/qjspack/gen/` | 共用的 Intl 数据包，按 Chromium 的 ICU 清单挑选 |
