@@ -424,7 +424,12 @@ What the check takes on trust, and where it stops:
   a file with a dynamic table, a program interpreter or a section of
   relocations, as cgo makes, are refused), Mach-O for darwin and PE for
   windows, which Go links as a PIE by
-  default. Mach-O and PE give no symbol sizes, so each symbol runs to the
+  default. It reads every byte through what the loader maps from the file
+  (the PT_LOAD program headers of ELF, the segments of Mach-O, the headers
+  and sections of PE, each up to what it takes from the file), and refuses
+  mappings that overlap in a page, a section that is not where its mapping
+  takes it from, and a PE section at an offset of the file that is no
+  multiple of 0x200, which the loader rounds down. Mach-O and PE give no symbol sizes, so each symbol runs to the
   next one, and what lies between a function and the next is held to
   padding. In a PIE each pointer of engine_rodata must hold its target at the
   image base of the file and have the fixup that tells the loader to move it:
@@ -462,7 +467,10 @@ What the check takes on trust, and where it stops:
   relocation of an import descriptor, a lookup table, the load config (also
   of its Size field with both sizes at 0), the headers, the base relocation
   table, code or the inside of an import slot, a TLS directory and a delay
-  import directory.
+  import directory. It also refuses, where they apply, a segment or section
+  cut short in the file before engine_rodata, a section read from a copy
+  while the loader maps changed bytes, a second PT_LOAD over the code and a
+  PE section at an offset the loader rounds down.
 
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc
