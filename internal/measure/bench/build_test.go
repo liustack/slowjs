@@ -29,7 +29,7 @@ func TestParsePositions(t *testing.T) {
 		t.Fatalf("all = %v, %v", a, err)
 	}
 	got, err := ParsePositions("0.0, 32.16")
-	if err != nil || len(got) != 2 || got[1] != (Position{32, 16}) {
+	if err != nil || len(got) != 2 || got[1] != (Position{32, 16, 0}) {
 		t.Fatalf("list = %v, %v", got, err)
 	}
 	for _, bad := range []string{"16.0", "0.4", "0", "a.b", "0.0,0.0", "0.0.0"} {
@@ -37,15 +37,40 @@ func TestParsePositions(t *testing.T) {
 			t.Errorf("%q accepted", bad)
 		}
 	}
-	if s := (Position{32, 8}).String(); s != "32.8" {
+	if s := (Position{32, 8, 0}).String(); s != "32.8" {
 		t.Errorf("String = %s", s)
 	}
-	if BinName("base", Position{0, 16}) != "base@0.16" {
+	if BinName("base", Position{0, 16, 0}) != "base@0.16" {
 		t.Error("BinName")
 	}
-	ops := Position{32, 16}.XformOps("JS_CallInternal", "")
+	ops := Position{32, 16, 0}.XformOps("JS_CallInternal", "")
 	if !slices.Equal(ops, []string{"shift:32", "front:JS_CallInternal:16"}) {
 		t.Errorf("ops = %v", ops)
+	}
+	// The second shift goes after the regexp matcher, between the first shift and the front.
+	ops = Position{64, 8, 2208}.XformOps("JS_CallInternal_block", "dbuf_init2")
+	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_CallInternal_block:8"}) {
+		t.Errorf("ops = %v", ops)
+	}
+	ops = Position{0, 0, 32}.XformOps("JS_CallInternal_block", "")
+	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_CallInternal_block:0"}) {
+		t.Errorf("ops = %v", ops)
+	}
+	for _, c := range []struct {
+		p Position
+		s string
+	}{{Position{0, 0, 0}, "0.0"}, {Position{64, 8, 2208}, "64.8.2208"}, {Position{0, 56, 32}, "0.56.32"}} {
+		if c.p.String() != c.s {
+			t.Errorf("String of %v = %s, want %s", c.p, c.p.String(), c.s)
+		}
+		if q, err := ParsePosition(c.s); err != nil || q != c.p {
+			t.Errorf("ParsePosition(%s) = %v, %v", c.s, q, err)
+		}
+	}
+	for _, bad := range []string{"0.0.16x", "0.0.8", "0.0.8192", "0.0.-32", "0.0.32.0", "0.0.0"} {
+		if _, err := ParsePosition(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }
 
@@ -106,7 +131,7 @@ func TestResolveFront(t *testing.T) {
 func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	tree := fakeTree(t)
 	before, _ := os.ReadFile(filepath.Join(tree, "internal/cengine/cutils_amd64.s"))
-	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16}, "JS_CallInternal", "", fakeXform)
+	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16, 0}, "JS_CallInternal", "", fakeXform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +155,7 @@ func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	}
 	// A position that moves nothing is an error: the xform did not find its place.
 	nop := func(context.Context, string, []string) error { return nil }
-	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0}, "JS_CallInternal", "", nop); err == nil {
+	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0, 0}, "JS_CallInternal", "", nop); err == nil {
 		t.Error("a position that changed no file was accepted")
 	}
 	// No generated engine is an error.
@@ -181,7 +206,7 @@ func TestBuildMakesOneBinaryPerPosition(t *testing.T) {
 	}
 	var log bytes.Buffer
 	err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
-		Positions: []Position{{32, 16}, {0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+		Positions: []Position{{32, 16, 0}, {0, 0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
@@ -247,7 +272,7 @@ func TestBuildWorkFileTakesTheHigherGoVersion(t *testing.T) {
 		}
 		var log bytes.Buffer
 		err := Build(context.Background(), BuildOptions{Side: "base", Tree: tree, App: app, Pkg: "./test/ssr", Test: true,
-			Positions: []Position{{0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
+			Positions: []Position{{0, 0, 0}}, Out: out, Pad: "live"}, fakeXform, run, &log)
 		if err != nil {
 			t.Fatalf("tree %s, app %s: %v\n%s", c.tree, c.app, err, log.String())
 		}
@@ -265,7 +290,7 @@ func TestBuildInTheTreeWithoutAnApp(t *testing.T) {
 		cmds = append(cmds, c)
 		return measure.Result{}
 	}
-	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
+	err := Build(context.Background(), BuildOptions{Side: "x", Tree: tree, Pkg: "./internal/cengine/cmd/jsrun", Positions: []Position{{0, 0, 0}}, Out: t.TempDir()}, fakeXform, run, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
