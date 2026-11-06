@@ -174,7 +174,7 @@ func openBin(path, arch string) (*binFile, error) {
 // pointerSections are the sections each format's linker puts pointers in,
 // and so the only ones the loader writes: the Go linker and ld64 put them in
 // __DATA and __DATA_CONST of Mach-O, the Go linker in .data and .rdata of
-// PE, and an ELF linker in the writable sections.
+// PE. An ELF file the check takes has no fixup (openELF).
 var pointerSections = map[string][]string{
 	"Mach-O": {"__DATA", "__DATA_CONST"},
 	"PE":     {".data", ".rdata"},
@@ -267,6 +267,28 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 		f.Close()
 		return nil, fmt.Errorf("not an ELF executable linked at a fixed address (%v): the check does not read the dynamic relocations of an ELF PIE, build it with -buildmode=exe", f.Type)
 	}
+	// A static executable, which go builds for linux by default, has the
+	// kernel map it and nothing write into it. A dynamic one has ld.so
+	// apply the relocations its dynamic table names, whatever the section
+	// table says, and the check does not read that table: it is refused,
+	// and so is a table of relocations or a dynamic section in the section
+	// table, which a static executable does not have. So an ELF file the
+	// check takes has no fixup at all.
+	for _, p := range f.Progs {
+		if p.Type == elf.PT_DYNAMIC || p.Type == elf.PT_INTERP {
+			f.Close()
+			return nil, fmt.Errorf("a %v program header: the check reads only a static executable, which go builds for linux without cgo", p.Type)
+		}
+	}
+	for _, s := range f.Sections {
+		switch s.Type {
+		case elf.SHT_REL, elf.SHT_RELA, elfRelr, elf.SHT_DYNAMIC:
+			if s.Flags&elf.SHF_ALLOC != 0 {
+				f.Close()
+				return nil, fmt.Errorf("section %s of type %v, which a static executable does not have", s.Name, s.Type)
+			}
+		}
+	}
 	b := &binFile{format: "ELF", goos: "linux", syms: map[string]binSym{}, closer: f, fixups: map[uint64]fixup{}}
 	syms, err := f.Symbols()
 	if err != nil {
@@ -279,39 +301,14 @@ func openELF(path string, m elf.Machine) (*binFile, error) {
 	for _, s := range f.Sections {
 		if s.Type == elf.SHT_PROGBITS {
 			b.secs = append(b.secs, &binSec{name: s.Name, addr: s.Addr, size: s.Size, load: s.Data})
-			if s.Flags&(elf.SHF_ALLOC|elf.SHF_WRITE) == elf.SHF_ALLOC|elf.SHF_WRITE {
-				b.writable = append(b.writable, metaRange{s.Addr, s.Size, s.Name})
-			}
-		}
-	}
-	// A fixed executable is not moved, but a dynamic one still has the
-	// loader write its relocations: none of them may be in what the check
-	// reads (a static Go program has none).
-	for _, s := range f.Sections {
-		if s.Flags&elf.SHF_ALLOC == 0 || (s.Type != elf.SHT_RELA && s.Type != elf.SHT_REL) {
-			continue
-		}
-		d, err := s.Data()
-		if err != nil {
-			f.Close()
-			return nil, err
-		}
-		step := 24
-		if s.Type == elf.SHT_REL {
-			step = 16
-		}
-
-		for i := 0; i+step <= len(d); i += step {
-			at := binary.LittleEndian.Uint64(d[i:])
-			typ := binary.LittleEndian.Uint64(d[i+8:]) & 0xffffffff
-			if err := b.addFixup(at, fixup{width: 8, what: fmt.Sprintf("a dynamic relocation of type %d in %s", typ, s.Name)}); err != nil {
-				f.Close()
-				return nil, err
-			}
 		}
 	}
 	return b, nil
 }
+
+// elfRelr is SHT_RELR, the section type of relative relocations in a packed
+// form, which debug/elf does not name.
+const elfRelr elf.SectionType = 19
 
 // Mach-O constants of mach-o/loader.h that debug/macho does not name.
 const (

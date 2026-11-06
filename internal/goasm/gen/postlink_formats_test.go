@@ -204,8 +204,23 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"a relocation inside an import slot", "overlap", func(t *testing.T, bin string, b []byte) {
 				peAddReloc(t, bin, b, peDirectoryAddr(t, bin, pe.IMAGE_DIRECTORY_ENTRY_IAT)+4, peRelHighLow)
 			}, "windows"},
-			{"a dynamic relocation of its own table", "outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
+			// A fixed ELF executable has nothing the loader writes: a
+			// relocation table, or a dynamic table that names one, is
+			// refused whatever its relocations are.
+			{"a dynamic relocation of its own table", "of type SHT_RELA", func(t *testing.T, bin string, b []byte) {
 				elfRelaInto(t, bin, b, arch)
+			}, "linux"},
+			{"a TLSDESC relocation of the last 8 bytes of .data", "of type SHT_RELA", func(t *testing.T, bin string, b []byte) {
+				typ := map[string]uint64{"amd64": uint64(elf.R_X86_64_TLSDESC), "arm64": uint64(elf.R_AARCH64_TLSDESC)}[arch]
+				elfRelaOne(t, bin, b, true, typ, elfSectionEnd(t, bin, ".data")-8)
+			}, "linux"},
+			{"a COPY relocation of the last 8 bytes of .data", "of type SHT_RELA", func(t *testing.T, bin string, b []byte) {
+				typ := map[string]uint64{"amd64": uint64(elf.R_X86_64_COPY), "arm64": uint64(elf.R_AARCH64_COPY)}[arch]
+				elfRelaOne(t, bin, b, true, typ, elfSectionEnd(t, bin, ".data")-8)
+			}, "linux"},
+			{"a dynamic table the section table does not show", "PT_DYNAMIC", func(t *testing.T, bin string, b []byte) {
+				typ := map[string]uint64{"amd64": uint64(elf.R_X86_64_RELATIVE), "arm64": uint64(elf.R_AARCH64_RELATIVE)}[arch]
+				elfRelaOne(t, bin, b, false, typ, binSymbol(t, bin, arch, "runtime.main"))
 			}, "linux"},
 			// The edges of what a section holds in the file: a fixup that
 			// ends at its last byte is taken, one a byte further, or in a
@@ -1177,6 +1192,75 @@ func TestMetaWrites(t *testing.T) {
 			t.Errorf("a fixup of %d bytes at %#x, the table at %#x+%#x: %v, refused %v", c.width, c.at, c.lo, c.n, err, c.refused)
 		}
 	}
+}
+
+// elfSectionEnd is the address right after section name of bin.
+func elfSectionEnd(t *testing.T, bin, name string) uint64 {
+	t.Helper()
+	f, err := elf.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	s := f.Section(name)
+	if s == nil {
+		t.Fatalf("no %s in %s", name, bin)
+	}
+	return s.Addr + s.Size
+}
+
+// elfRelaOne writes one dynamic relocation of type typ at addr into the
+// section .note.gnu.build-id of bin. With section, the section table names
+// that section a table of relocations. Without, the section table stays as
+// it is, and a dynamic table in .note.go.buildid, which the program header
+// of the stack now names, points the loader to it.
+func elfRelaOne(t *testing.T, bin string, b []byte, section bool, typ, addr uint64) {
+	t.Helper()
+	f, err := elf.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	rela, dyn := f.Section(".note.gnu.build-id"), f.Section(".note.go.buildid")
+	if rela == nil || dyn == nil || rela.Size < 24 || dyn.Size < 64 {
+		t.Fatalf("no room for a relocation in the notes of %s", bin)
+	}
+	binary.LittleEndian.PutUint64(b[rela.Offset:], addr)
+	binary.LittleEndian.PutUint64(b[rela.Offset+8:], typ)
+	binary.LittleEndian.PutUint64(b[rela.Offset+16:], 0)
+	if section {
+		shoff := binary.LittleEndian.Uint64(b[0x28:])
+		for i, s := range f.Sections {
+			if s == rela {
+				sh := shoff + 64*uint64(i)
+				binary.LittleEndian.PutUint32(b[sh+4:], uint32(elf.SHT_RELA))
+				binary.LittleEndian.PutUint64(b[sh+32:], 24) // sh_size
+				binary.LittleEndian.PutUint64(b[sh+56:], 24) // sh_entsize
+			}
+		}
+		return
+	}
+	for i, tag := range [][2]uint64{{uint64(elf.DT_RELA), rela.Addr}, {uint64(elf.DT_RELASZ), 24}, {uint64(elf.DT_RELAENT), 24}, {uint64(elf.DT_NULL), 0}} {
+		binary.LittleEndian.PutUint64(b[dyn.Offset+16*uint64(i):], tag[0])
+		binary.LittleEndian.PutUint64(b[dyn.Offset+16*uint64(i)+8:], tag[1])
+	}
+	phoff, phnum := binary.LittleEndian.Uint64(b[0x20:]), int(binary.LittleEndian.Uint16(b[0x38:]))
+	for i := range phnum {
+		ph := phoff + 56*uint64(i)
+		if elf.ProgType(binary.LittleEndian.Uint32(b[ph:])) != elf.PT_GNU_STACK {
+			continue
+		}
+		binary.LittleEndian.PutUint32(b[ph:], uint32(elf.PT_DYNAMIC))
+		binary.LittleEndian.PutUint32(b[ph+4:], uint32(elf.PF_R))
+		binary.LittleEndian.PutUint64(b[ph+8:], dyn.Offset)
+		binary.LittleEndian.PutUint64(b[ph+16:], dyn.Addr)
+		binary.LittleEndian.PutUint64(b[ph+24:], dyn.Addr)
+		binary.LittleEndian.PutUint64(b[ph+32:], 64)
+		binary.LittleEndian.PutUint64(b[ph+40:], 64)
+		binary.LittleEndian.PutUint64(b[ph+48:], 8)
+		return
+	}
+	t.Fatalf("no PT_GNU_STACK in %s", bin)
 }
 
 // peSectionFileEnd is the address right after the bytes the file of bin
