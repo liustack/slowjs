@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -246,7 +247,10 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				lo, _ := rodataRange(t, bin, arch)
 				shortSegment(t, bin, b, lo)
 			}, "darwin"},
-			{"a section that ends in the file before engine_rodata", "in no section of the file", func(t *testing.T, bin string, b []byte) {
+			// The load config, which Go writes since Go 1.27, is read first
+			// and refuses it; a binary without one refuses the relocations
+			// of what no longer is in the file.
+			{"a section that ends in the file before engine_rodata", "in no section of the file|outside the sections the linker puts pointers in", func(t *testing.T, bin string, b []byte) {
 				lo, _ := rodataRange(t, bin, arch)
 				shortSegment(t, bin, b, lo)
 			}, "windows"},
@@ -267,6 +271,13 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			if fault.only != "" && fault.only != goos || !pie && fault.only == "" {
 				continue
 			}
+			// Go writes a load config into a windows binary since Go 1.27.
+			// A binary without one has no slot of it for the loader to
+			// write, so there is nothing to bend.
+			if goos == "windows" && strings.Contains(fault.name, "load config") && !peHasDirectory(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG) {
+				t.Logf("%s/%s, %s: no load config in a binary of %s", goos, arch, fault.name, runtime.Version())
+				continue
+			}
 			raw, err := os.ReadFile(bin)
 			if err != nil {
 				t.Fatal(err)
@@ -284,7 +295,7 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				}
 				continue
 			}
-			if err == nil || strings.Contains(out, "post-link check passed") || !strings.Contains(out, fault.want) {
+			if err == nil || strings.Contains(out, "post-link check passed") || !containsOneOf(out, fault.want) {
 				t.Errorf("%s/%s, %s: not refused with %q: %v\n%s", goos, arch, fault.name, fault.want, err, lastLine(out))
 			} else {
 				t.Logf("%s/%s, %s: %s", goos, arch, fault.name, lastLine(out))
@@ -965,6 +976,28 @@ func firstRodataPlain(t *testing.T, bin, arch string) uint64 {
 
 // peDirectoryRVA is the address of data directory i of bin, relative to its
 // image base, and peDirectoryAddr the address itself.
+// containsOneOf reports whether s holds one of the texts of want, separated
+// by "|".
+func containsOneOf(s, want string) bool {
+	for _, w := range strings.Split(want, "|") {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// peHasDirectory reports whether bin has the data directory i.
+func peHasDirectory(t *testing.T, bin string, i int) bool {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	return f.OptionalHeader.(*pe.OptionalHeader64).DataDirectory[i].VirtualAddress != 0
+}
+
 func peDirectoryRVA(t *testing.T, bin string, i int) uint32 {
 	t.Helper()
 	f, err := pe.Open(bin)
