@@ -72,7 +72,7 @@ Plans, design drafts, experiment notes and raw measurement data go in the reposi
 
 ## Verification and commits
 
-- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet -asmdecl=false ./...` and `scripts/docs-list.sh --check`, and `go test -count=1 -p 1 .` (about a minute). The branch passes `make check-full` before it is merged. The `-asmdecl=false` leaves out the check of the declarations of the generated assembly, which the generator and the tests of `internal/cengine` make instead.
+- See [docs/testing.md](docs/testing.md) for verification commands and [docs/commit.md](docs/commit.md) for commit rules. Every commit passes `go build ./...`, `go vet ./...` and `scripts/docs-list.sh --check`, and `go test -count=1 -p 1 .` (about a minute). The branch passes `make check-full` before it is merged.
 - The generated files are large. Build and test a few packages at a time (`-p 2`), and run heavy jobs such as test262, `make build_all_targets` or the race detector one after another, not in parallel.
 - For new behavior, write a failing test first, then implement. For a bug, find the root cause before changing code, and do not hide it with fallback values.
 - After a new release of QuickJS, follow [docs/upgrading.md](docs/upgrading.md).

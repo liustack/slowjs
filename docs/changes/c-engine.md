@@ -253,7 +253,7 @@ Tests: `TestEngineArgsByName` (`internal/goasm/gen`) decodes the bytes of every 
 
 ## go vet checks the generated assembly
 
-`go vet -asmdecl` finds nothing in the assembly of the generated engine. It checks that every argument and result a function names is the one of its Go declaration, at its offset and of its size, that every function with a result writes it, and that every function with a frame has a Go declaration. Before, it reported the amd64 code, which read its arguments at an offset from SP ([Arguments and results by name](#arguments-and-results-by-name)), and four functions without a Go declaration.
+`go vet -asmdecl` finds nothing in the assembly of the generated engine, so `go vet ./...` runs it on every commit and in CI, no longer with `-asmdecl=false`. It checks that every argument and result a function names is the one of its Go declaration, at its offset and of its size, that every function with a result writes it, and that every function with a frame has a Go declaration. Before, it reported the amd64 code, which read its arguments at an offset from SP ([Arguments and results by name](#arguments-and-results-by-name)), and four functions without a Go declaration.
 
 The generator writes two things differently for amd64:
 

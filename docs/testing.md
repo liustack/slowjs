@@ -25,12 +25,12 @@ Every change must pass:
 ```sh
 go build ./...
 gofmt -l -s . | grep -v -e '^internal/cengine/engine_'   # prints nothing
-go vet -asmdecl=false ./...
+go vet ./...
 scripts/docs-list.sh --check           # every doc has a summary
 go test -count=1 -p 1 .                # about a minute
 ```
 
-- `go vet` leaves out `-asmdecl`, which reports four functions of the generated assembly of amd64 without a Go declaration (`memcpy`, `memmove` and `memset`, and `goasm_room` off windows). The rest of the generated assembly passes it: `TestEngineAsmDecl` (`internal/goasm/gen`) runs it on five systems and accepts only those four.
+- `go vet` checks the generated assembly too (asmdecl), for the system it runs on. `TestEngineAsmDecl` (`internal/goasm/gen`) runs that check over `internal/cengine` for all five systems.
 - A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` and `engine/test/flags.sh` also makes the generated engine again, in the same commit (`make gen`, `make gen ARCH=arm64`), and runs `make check-fast`. At the end of a batch it runs `make check-full` (see [Generate and check](#generate-and-check)).
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
@@ -370,7 +370,7 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 
 | Step | What it runs |
 | --- | --- |
-| Build, Vet | `go build ./...` and `go vet -asmdecl=false ./...` |
+| Build, Vet | `go build ./...` and `go vet ./...` |
 | Format and docs | the `gofmt` and `docs` steps of `scripts/check.sh` |
 | Test, packages other than the root | `go test -count=1 -short -p 2` on every package but the root one |
 | Test, internal packages with the test hooks | `go test -tags testhooks` on `internal/cengine`, `internal/gohost`, `internal/hostmem` and `internal/idtable` |
