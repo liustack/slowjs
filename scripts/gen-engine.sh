@@ -19,10 +19,11 @@
 #                regenerates into one and compares)
 #   GEN_RELEASE  1 (default) is a formal build. 0 allows the survey and test
 #                switches of the generator and prints a warning.
-#   GEN_VERIFY_BIN  a test binary of internal/cengine for ARCH, linked with
-#                -tags goasmkeep: run the post-link check of every function
-#                against it (scripts/go-versions.sh). Set GEN_OUT as well, so
-#                that internal/cengine stays as it is.
+#   GEN_VERIFY_BIN  test binaries of internal/cengine for ARCH, separated by
+#                commas, linked with -tags goasmkeep for any system of ARCH:
+#                run the post-link check of every function against each
+#                (scripts/go-versions.sh). Set GEN_OUT as well, so that
+#                internal/cengine stays as it is.
 set -eu
 
 arch=${1:-amd64}

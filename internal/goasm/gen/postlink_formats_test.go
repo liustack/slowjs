@@ -86,8 +86,10 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 		systems = systems[:2] // the module does not build for windows/arm64
 	}
 	format := map[string]string{"linux": "ELF", "darwin": "Mach-O", "windows": "PE"}
+	var bins []string
 	for _, goos := range systems {
 		bin := filepath.Join(work, goos+"-"+arch)
+		bins = append(bins, bin)
 		b := exec.Command("go", "build", "-tags", "goasmkeep", "-o", bin, ".")
 		b.Dir = mod
 		b.Env = append(os.Environ(), "GOWORK=off", "CGO_ENABLED=0", "GOOS="+goos, "GOARCH="+arch, "GOFLAGS=")
@@ -141,6 +143,11 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 				t.Logf("%s/%s, %s: %s", goos, arch, fault.name, lastLine(out))
 			}
 		}
+	}
+	// -verify-bin takes them all at once, separated by commas.
+	out, err := check(strings.Join(bins, ","))
+	if err != nil || strings.Count(out, "post-link check passed for ") != len(bins) {
+		t.Fatalf("the check of %d binaries at once: %v\n%s", len(bins), err, out)
 	}
 }
 
