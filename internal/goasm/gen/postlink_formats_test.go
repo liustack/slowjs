@@ -146,6 +146,19 @@ func postLinkFormatsArch(t *testing.T, work, drv, llvm, pass, src, arch string) 
 			{"a delay import directory", "delay import", func(t *testing.T, bin string, b []byte) {
 				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT, 0x1000, 0x20)
 			}, "windows"},
+			// A directory the loader reads by its address alone, its size
+			// left at 0.
+			{"an import table in engine_rodata, its directory with no size", "an import", func(t *testing.T, bin string, b []byte) {
+				peImportInto(t, bin, b, firstRodataPointer(t, bin, arch))
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_IMPORT, peDirectoryRVA(t, bin, pe.IMAGE_DIRECTORY_ENTRY_IMPORT), 0)
+			}, "windows"},
+			{"a cookie of the load config in engine_rodata, its directory with no size", "the loader writes 1 places", func(t *testing.T, bin string, b []byte) {
+				peLoadConfigSlot(t, bin, b, 88, firstRodataPlain(t, bin, arch))
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, peDirectoryRVA(t, bin, pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG), 0)
+			}, "windows"},
+			{"a directory with a size and no address", "a size and no address", func(t *testing.T, bin string, b []byte) {
+				peDirectory(t, bin, b, pe.IMAGE_DIRECTORY_ENTRY_DEBUG, 0, 0x1c)
+			}, "windows"},
 		} {
 			if fault.only != "" && fault.only != goos {
 				continue
@@ -837,4 +850,30 @@ func firstRodataPlain(t *testing.T, bin, arch string) uint64 {
 	}
 	t.Fatalf("no 8 bytes of engine_rodata without a fixup in %s", bin)
 	return 0
+}
+
+// peDirectoryRVA is the address of data directory i of bin, relative to its
+// image base, and peDirectoryAddr the address itself.
+func peDirectoryRVA(t *testing.T, bin string, i int) uint32 {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	dir := f.OptionalHeader.(*pe.OptionalHeader64).DataDirectory[i]
+	if dir.VirtualAddress == 0 {
+		t.Fatalf("no directory %d in %s", i, bin)
+	}
+	return dir.VirtualAddress
+}
+
+func peDirectoryAddr(t *testing.T, bin string, i int) uint64 {
+	t.Helper()
+	f, err := pe.Open(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	return f.OptionalHeader.(*pe.OptionalHeader64).ImageBase + uint64(peDirectoryRVA(t, bin, i))
 }

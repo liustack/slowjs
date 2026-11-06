@@ -813,6 +813,15 @@ var peLoadConfigRefused = map[int]string{
 // directory, a load config with no slots, an exception directory and the
 // base relocations, and nothing else that writes.
 func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
+	// The loader finds a directory by its address and takes the size of
+	// some from what is there (the imports end at a descriptor of zeros, the
+	// load config gives its own size), so a directory with an address is
+	// read whatever its size, and one with a size and no address refused.
+	for i, d := range oh.DataDirectory {
+		if d.VirtualAddress == 0 && d.Size != 0 {
+			return fmt.Errorf("data directory %d has a size and no address", i)
+		}
+	}
 	for i, name := range peRefused {
 		if i < len(oh.DataDirectory) && (oh.DataDirectory[i].Size != 0 || oh.DataDirectory[i].VirtualAddress != 0) {
 			return fmt.Errorf("a %s directory, which the check does not read", name)
@@ -833,7 +842,7 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 		}
 		return binary.LittleEndian.Uint64(d), nil
 	}
-	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]; dir.Size != 0 {
+	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_IMPORT]; dir.VirtualAddress != 0 {
 		// The loader reads descriptors up to one of zeros.
 		for i := uint64(0); ; i++ {
 			if i >= 1<<12 {
@@ -870,12 +879,14 @@ func (b *binFile) peLoaderWrites(f *pe.File, oh *pe.OptionalHeader64) error {
 			}
 		}
 	}
-	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]; dir.Size != 0 {
+	if dir := oh.DataDirectory[pe.IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG]; dir.VirtualAddress != 0 {
+		// Its own size, or the size of the directory when that is more:
+		// the fields either names.
 		n, err := u32(uint64(dir.VirtualAddress))
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
-		n = uint64(min(int(n), int(dir.Size)))
+		n = max64(n, uint64(dir.Size))
 		field := func(off int, width uint64) (uint64, bool, error) {
 			if uint64(off)+width > n {
 				return 0, false, nil
@@ -1105,6 +1116,13 @@ func (b *binFile) describe() string {
 		}
 	}
 	return fmt.Sprintf("%s for %s, position independent, %d fixups of which %d slide a pointer", b.format, b.goos, len(b.fixups), slides)
+}
+
+func max64(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func min64(a, b uint64) uint64 {
