@@ -96,7 +96,19 @@ runs its own checks and lowering in Go (`debug/elf`,
 5. clang -c (llvm-mc on arm64) re-assembles the lowered text so every branch
    offset is fixed.
 6. Emit writes Go assembly: one TEXT per function, the body as bytes, every
-   call a Go-visible CALL or BL.
+   call a Go-visible CALL or BL, and every load of an argument and store of
+   the result as a move by name through FP (`a0+0(FP)`, `ret+24(FP)`, the
+   names of `GoSlots` and of the Go declarations). Go promises to find an
+   argument that way, and not at an offset from SP, which depends on how the
+   assembler lays out the frame. On amd64 the lowered text still has the move
+   at the offset Go uses now, so that clang lays out the branches around it,
+   and the Go assembler writes the same bytes (`TestFPMovesAssembleAsLowered`).
+   Any other instruction that reaches above the frame from SP stops the
+   build, and the data after a function's code follows a `// data` line.
+   The size bound of a `.s` file of the whole engine counts each function as
+   the text it takes with its instructions written as bytes, so that a move
+   by name moves no function to another file, and so to another place in
+   the order the linker lays the functions out in.
 7. VerifyLinked checks the linked binary: body bytes unchanged, a stack-check
    prologue on every entry off the NOSPLIT list and on `host_poll`, none on
    the entries on it, on windows the room check for a fault on every unified

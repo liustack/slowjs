@@ -443,6 +443,24 @@ func TestPostLinkCheck(t *testing.T) {
 	sub := func(repl string) func(string) string {
 		return func(m string) string { return repl }
 	}
+	// The moves of add3's arguments and result are written by name through
+	// FP: a load of the wrong word and a store of the result into an argument
+	// word assemble, and the check must refuse them.
+	add3File := ""
+	if fs, err := filepath.Glob(filepath.Join(pkgDir, "*_amd64.s")); err == nil {
+		for _, f := range fs {
+			if b, err := os.ReadFile(f); err == nil && strings.Contains(string(b), "TEXT ·add3(SB)") {
+				add3File = filepath.Base(f)
+			}
+		}
+	}
+	if add3File == "" {
+		t.Fatal("no TEXT of add3 in the emitted files")
+	}
+	inAdd3 := `TEXT ·add3\(SB\)[^\n]*\n(?:[^\n]*\n)*?\t`
+	swap := func(old, new string) func(string) string {
+		return func(m string) string { return strings.Replace(m, old, new, 1) }
+	}
 	for _, c := range []struct {
 		name, file, re string
 		edit           func(string) string
@@ -453,6 +471,8 @@ func TestPostLinkCheck(t *testing.T) {
 		{"a wrong pointer", "engine_rodata_amd64.s", `\$·engine_rodata(\+\d+)?\(SB\)`, sub("$·engine_rodata+101(SB)"), "the pointer"},
 		{"a pointer to the wrong function", "engine_rodata_amd64.s", `\$·add3\(SB\)`, sub("$·mul3(SB)"), "the pointer"},
 		{"a stub with the wrong index", "engine_stubs_amd64.s", `MOVQ \$0, 0\(SP\)`, sub("MOVQ $1, 0(SP)"), "index"},
+		{"an argument loaded from the next word", add3File, inAdd3 + `MOVQ a1\+8\(FP\), `, swap("a1+8(FP)", "a2+16(FP)"), "is not the load of argument word 1"},
+		{"the result stored into an argument word", add3File, inAdd3 + `MOVQ \w+, ret\+32\(FP\)`, swap("ret+32(FP)", "a3+24(FP)"), "is not the store of"},
 	} {
 		path := filepath.Join(pkgDir, c.file)
 		orig, err := os.ReadFile(path)

@@ -1438,7 +1438,8 @@ func (m *matcher) run() error {
 		return fmt.Errorf("llc's prologue pushes %v and reserves %d, the lowering declared %v and %d", pushed, local, m.r.Pushed, m.r.Local)
 	}
 	// The entry loads each argument word from the Go argument area into
-	// the register llc reads it from, and llc's code reads no other
+	// the register llc reads it from (the .s file names the word through
+	// FP, and argBase is where Go's prologue left the area), and llc's code reads no other
 	// register before writing it: its prologue's pushes, which the lowering
 	// drops, are the only other readers at the entry.
 	loaded := map[x86asm.Reg]bool{}

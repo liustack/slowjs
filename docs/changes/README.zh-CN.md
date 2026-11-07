@@ -30,6 +30,8 @@ read_when:
 | 离开进入引擎的调用时发生到一半的 panic 会让 VM 报废，不论是什么 panic，包括低于 0x1000 的地址错误，之后不会再进入那个引擎，连释放一个值也不行 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#哪些-panic-会让-vm-报废) |
 | 每个调用了别的函数的生成函数都有 Go 的栈检查，所以地址错误不再取决于生成器在一串没有栈检查的函数下面留出的空间 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#没有栈检查的函数) |
 | 在 windows 上每个生成函数在栈指针下面多留出 12 KiB 空间，这样在带 AMX 的 CPU 上，系统在出错时写下的 CPU 状态仍在栈内 | Unreleased | [c-engine.md](c-engine.zh-CN.md#windows-上给故障留的空间) |
+| 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
+| `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
 
 ## 上游 QuickJS 的提交
 

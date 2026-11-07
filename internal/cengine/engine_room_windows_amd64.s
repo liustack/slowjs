@@ -4,10 +4,8 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-#ifdef GOOS_windows
 // goasm_room makes RoomBelow bytes of room below the stack pointer of its
 // caller: its stack check grows the stack for a frame it never touches.
 TEXT ·goasm_room(SB), $12416-0
 	NO_LOCAL_POINTERS
 	RET
-#endif

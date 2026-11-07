@@ -158,6 +158,8 @@ func TestRoomCheck(t *testing.T) {
 		{Meta{Kind: Unified, NoSplit: true, ArgBytes: 24}, "TEXT ·f(SB), NOSPLIT|NOFRAME, $0-24\n\tNO_LOCAL_POINTERS\n" + leafCheck},
 		{Meta{Kind: Unified, NoSplit: true, Frame: 16, ArgBytes: 24}, "TEXT ·f(SB), NOSPLIT, $16-24\n\tNO_LOCAL_POINTERS\n" + leafCheck},
 		{Meta{Kind: Register, NoSplit: true, Frame: 8}, "TEXT ·f(SB), NOSPLIT, $8-0\n"},
+		{Meta{Kind: Register, NoSplit: true, Rec: &FuncRecord{}}, "TEXT ·f(SB), NOSPLIT|NOFRAME, $0-0\n"},
+		{Meta{Kind: Register, NoSplit: true, Rec: &FuncRecord{Calls: []CallRecord{{Kind: CallLeaf, Target: "g"}}}}, "TEXT ·f(SB), NOSPLIT, $0-0\n"},
 	} {
 		if got := funcHeader("f", c.m); got != c.want {
 			t.Errorf("funcHeader of %+v:\n%s\nwant\n%s", c.m, got, c.want)
@@ -168,6 +170,12 @@ func TestRoomCheck(t *testing.T) {
 	}
 	if !strings.Contains(roomFunc(), fmt.Sprintf("TEXT ·goasm_room(SB), $%d-0\n", RoomFrame)) {
 		t.Fatalf("goasm_room:\n%s", roomFunc())
+	}
+	if strings.Contains(roomText(), "#ifdef") || roomFunc() != "#ifdef GOOS_windows\n"+roomText()+"#endif\n" {
+		t.Fatalf("goasm_room in a file of its own has to build on windows by the name of the file:\n%s", roomText())
+	}
+	if !strings.HasSuffix(RoomFile, "_windows_amd64.s") {
+		t.Fatalf("%s does not build on windows/amd64 only", RoomFile)
 	}
 	b, err := os.ReadFile(filepath.Join("..", "..", "faulttest", "room_windows_amd64.s"))
 	if err != nil {

@@ -679,7 +679,6 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 			return nil, fmt.Errorf("%s: absent from the object", m.Name)
 		}
 		var fb strings.Builder
-		argOff, retOff, _ := layout(m.Rec.Sig)
 		gn := e.Names[m.Name]
 		switch {
 		case m.Kind == Register && m.Frame == 0:
@@ -696,18 +695,14 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", m.Name, err)
 			}
-			k := 0
-			for i, p := range m.Rec.Sig.Params {
-				for w, fp := range wordTypes([]Type{p}) {
-					mov := "MOVD"
-					if fp {
-						mov = "FMOVD"
-					}
-					// The names are those of the Go declaration (engine_decl): a
-					// word each, numbered across the arguments.
-					fmt.Fprintf(&fb, "\t%s a%d+%d(FP), %s\n", mov, k, argOff[i]+8*w, a64GoReg(regs[k]))
-					k++
+			// The names are those of the Go declaration (GoDecl).
+			params, _ := GoSlots(m.Rec.Sig)
+			for k, s := range params {
+				mov := "MOVD"
+				if s.Float {
+					mov = "FMOVD"
 				}
+				fmt.Fprintf(&fb, "\t%s %s+%d(FP), %s\n", mov, s.Name, s.Off, a64GoReg(regs[k]))
 			}
 		}
 		if off, ok := e.Align64[m.Name]; ok {
@@ -804,16 +799,13 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 			return nil, fmt.Errorf("%s: %d indirect calls not found in the bytes", m.Name, icalls)
 		}
 		if m.Kind != Register {
+			_, results := GoSlots(m.Rec.Sig)
 			for k, reg := range a64RetRegs(m.Rec.Sig.Ret) {
 				mov := "MOVD"
 				if reg[0] == 'd' {
 					mov = "FMOVD"
 				}
-				name := "ret"
-				if m.Rec.Sig.Ret == JSV {
-					name = fmt.Sprintf("r%d", k)
-				}
-				fmt.Fprintf(&fb, "\t%s %s, %s+%d(FP)\n", mov, a64GoReg(reg), name, retOff+8*k)
+				fmt.Fprintf(&fb, "\t%s %s, %s+%d(FP)\n", mov, a64GoReg(reg), results[k].Name, results[k].Off)
 			}
 		}
 		fb.WriteString("\tRET\n\n")
