@@ -307,13 +307,13 @@ func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
 		}
 	}()
 
-	// A Value is Dup'ed: the call frees the references the result handed it
-	// (resultRefs), which has refused a Value of another VM.
+	// A Value is a node of the snapshot of a result (result.go), never a leaf
+	// that jsValue converts.
 	switch x := in.Interface().(type) {
 	case nil:
 		return null, nil
 	case Value:
-		return dupValue(x.jsValue()), nil
+		return out, fmt.Errorf("internal error: a Value outside the snapshot of a result (%v:)", origin(1))
 	case Undefined:
 		return undefined, nil
 	case error:
@@ -393,9 +393,10 @@ func (m *VM) jsPtrValue(in reflect.Value) (out jsValue, err error) {
 	}
 }
 
-// jsMap converts a Go map to a Javascript object. Like jsArray, and unlike the
-// JSON round trip used for structs, it converts every value with jsValue, so a
-// Value stays a live reference and a *big.Int stays a BigInt.
+// jsMap converts a Go map that can hold no Value to a Javascript object.
+// Like jsArray, and unlike the JSON round trip used for structs, it converts
+// every value with jsValue, so a *big.Int stays a BigInt. A map that can
+// hold a Value goes through the snapshot of its result (result.go).
 func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	if in.IsNil() {
 		return null, nil

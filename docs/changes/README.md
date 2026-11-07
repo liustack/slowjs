@@ -82,6 +82,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A Value returned as an any is taken as a Value | Unreleased | [go-api.md](go-api.md#a-value-returned-as-an-any-is-taken-as-a-value) |
 | A place a result reaches twice is one reference | Unreleased | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
 | A result that contains itself is an error | Unreleased | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
+| A result converts from a snapshot the program cannot change | Unreleased | [go-api.md](go-api.md#a-result-converts-from-a-snapshot-the-program-cannot-change) |
 
 ## Limits that hold
 

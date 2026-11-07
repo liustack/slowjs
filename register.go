@@ -59,8 +59,15 @@ type goFunc struct {
 // results convert, fail to convert or panic. A copy of a Value is not a new
 // reference, only Dup makes one, and a place the results reach twice,
 // through the same slice, map or pointer, is one reference. A struct
-// converts through encoding/json, and the Values in it stay the caller's.
-// UndefinedValue and the zero Value are undefined.
+// converts through encoding/json, and a value whose type has an Error method,
+// such as a []Value with one, converts to the string of Error: the Values in
+// either stay the caller's. A String method changes nothing. UndefinedValue
+// and the zero Value are undefined.
+//
+// Before it converts anything, the call takes a snapshot of the slices, maps
+// and pointers of the results and the references they hold, and converts
+// from that snapshot. Code of the program that the conversion runs, such as
+// an Error or MarshalJSON method, cannot change what is converted.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
@@ -106,8 +113,11 @@ type HostFunc func(args []any) (any, error)
 // JavaScript exception.
 //
 // The value fn returns is converted as a result of RegisterFunc is, and
-// hands the call its references to Values of the VM the same way. With a
-// non-nil error the value is not converted, and those references are freed.
+// hands the call its references to Values of the VM the same way, from a
+// snapshot of the value. A struct and a value whose type has an Error method
+// keep their Values, which stay the caller's. With a non-nil error the value
+// is not converted, and its references are freed before the Error method of
+// the error runs.
 //
 // This differs from RegisterFunc, whose reflection mapping turns a Go
 // multiple-return into a JS array and converts a returned error like any other
@@ -369,31 +379,26 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 
 	out := info.f.Call(in)
 
-	// The results hand the call the references they hold, which are freed
-	// once it is done with them, whatever it does (see result.go). A host
-	// function's error is not converted.
+	// The results hand the call the references they hold, which it frees
+	// once it is done with them, whatever it does. A result whose type can
+	// hold a Value converts from its snapshot (see result.go).
 	var err error
-	if info.refs {
-		converted := out
-		if info.hostFunc {
-			converted = out[:1]
-		}
-		var held []jsValue
-		held, err = m.resultRefs(converted, m.refs[:0])
-		if len(held) != 0 {
-			m.refs = nil
-			defer m.freeRefs(held)
-		}
-	}
 
 	// A host function (RegisterHostFunc) has the fixed shape func(...any) (any,
 	// error): return its single value, or throw a JS exception for a non-nil
 	// error — rather than array-wrapping the (value, error) pair.
 	if info.hostFunc {
 		if e, _ := out[1].Interface().(error); e != nil {
+			// The value is not converted. Its references are freed before
+			// Error, which can panic, runs.
+			if info.refs {
+				m.dropResult(out[0])
+			}
 			return m.jsThrowError(errorKindType, e.Error())
 		}
-		if err == nil {
+		if info.refs {
+			r, err = m.convertResults(out[:1], false)
+		} else {
 			r, err = m.jsValue(out[0])
 		}
 		if err != nil {
@@ -406,14 +411,18 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 	case 0:
 		return undefined
 	case 1:
-		if err == nil {
+		if info.refs {
+			r, err = m.convertResults(out, false)
+		} else {
 			r, err = m.jsValue(out[0])
 		}
 		if err != nil {
 			return m.jsThrowError(errorKindType, fmt.Sprintf("cannot convert value: %v", err))
 		}
 	default:
-		if err == nil {
+		if info.refs {
+			r, err = m.convertResults(out, true)
+		} else {
 			r, err = m.jsArray(out)
 		}
 	}

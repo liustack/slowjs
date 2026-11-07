@@ -420,11 +420,13 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 `RegisterFunc` 或 `RegisterHostFunc` 的 Go 函数把它的结果持有的、指向本 VM 的 `Value` 的引用交给这次调用。结果转换到一半失败时（比如遇到一个 channel），它前面那些结果造出的值永远不会被释放，它后面的 `Value` 也一样：channel 前面的一个 4 KiB 字符串会一直留在 VM 里，脚本每接住一次就多 4 KiB 左右，GC 也收不回来。转换拒绝的结果里的 `Value` 同样留下：数组、指向指针的指针、以 `Value` 为键或键的类型 javascript 用不了的 map。宿主函数连同错误一起返回的值里的 `Value` 也留下，转换 panic 时（比如某个 `Error` 方法 panic）则全部留下。
 
-现在调用在转换任何东西之前先收集结果持有的引用，一次遍历走过每个切片、数组、map（它的键和值）、指针和接口（`result.go` 里的 `resultRefs`），并在调用结束时把每个引用释放一次：结果转换成功时，转换失败时，宿主函数返回错误时，以及转换 panic 时。转换只对放进 javascript 值里的 `Value` 做 `Dup`，失败或 panic 时释放自己造出的值，所以两者分开释放。别的 VM 的 `Value` 不释放（见[每个入口都拒绝别的 VM 的 Value](#每个入口都拒绝别的-vm-的-value)）。结构体经由 `encoding/json` 转换，其中的 `Value` 仍归调用方所有，和以前一样。
+现在调用在转换任何东西之前先给结果拍一份快照，一次遍历走过每个切片、数组、map（它的键和值）、指针和接口（`result.go`）。快照里有结果交出的每个引用，每个只记一次，调用结束时把每个引用释放一次：结果转换成功时，转换失败时，宿主函数返回错误时，以及转换 panic 时。转换只对放进 javascript 值里的 `Value` 做 `Dup`，失败或 panic 时释放自己造出的值，所以两者分开释放。别的 VM 的 `Value` 不释放（见[每个入口都拒绝别的 VM 的 Value](#每个入口都拒绝别的-vm-的-value)）。
 
-代价：类型装不下 `Value` 的结果没有代价，比如 int、字符串、结构体或 `map[string]string`：遍历在类型处就停下，每种容器类型只在缓存里查一次。装得下的结果，要看一眼里面的每个值，并为每个装着 `Value` 的元素、指针目标或 map 在一个 Go map 里记一项（见[结果两次到达的同一个位置只算一个引用](#结果两次到达的同一个位置只算一个引用)）。éå `[]any` å `map[string]any` æ¶ç¨ Go ç rangeï¼åªçç±»åè£å¾ä¸ `Value` çå¼ï¼å­æ¾å¼ç¨çç©ºé´çå¨ VM ä¸ä¾ä¸ä¸æ¬¡è°ç¨ä½¿ç¨ï¼æä»¥ç¬¬ä¸æ¬¡è°ç¨ä¹åéåä¸ååéåå­ãå¨ GCP æºå¨ä¸æµéï¼cpu 0ï¼GOMAXPROCS=1ï¼ä¸¤è¾¹è½®æµåè· 8 è½®ï¼å javascript åèµ·çä¸æ¬¡è°ç¨çä¸­ä½æ°ï¼ï¼intãå­ç¬¦ä¸²ãç»æä½å 20 ä¸ªå­ç¬¦ä¸²ç map ä¸æ¹å¨ä¹åç¨æ¶ç¸åã`Value` ä» 413 ns åæ 465 nsï¼å®¿ä¸»å½æ°è¿åçå­ç¬¦ä¸²ä» 759 ns åæ 790 nsï¼ä¸ä¸ªæ°å­ãä¸ä¸ªå­ç¬¦ä¸²åä¸ä¸ªå¸å°å¼ç `[]any` ä» 1.32 Âµs åæ 1.46 Âµsï¼20 ä¸ªå­ç¬¦ä¸²ç `map[string]any` ä» 9.5 Âµs åæ 10.4 Âµsï¼10 ä¸ªåç´ ç `[]Value` ä» 2.36 Âµs åæ 2.84 Âµsã
+遍历在叶子处停下。叶子整体转换，里面的 `Value` 仍归调用方所有：结构体，和以前一样经由 `encoding/json` 转换，以及类型带 `Error` 方法的值，比如带这个方法的 `type E []Value`，转换成 `Error` 返回的字符串。`String` 方法不改变什么：带这个方法的切片或 map 和别的一样被遍历。
 
-测试：`TestResultReferences` 和 `TestResultsReferences`（`result_test.go`）从两种 Go 函数以上面每种形状返回同一个对象：数组、数组的 map、指向指针的指针、作为 map 键的 `Value`，每种也带上宿主函数返回的错误，还有在切片、嵌套切片、map 和宿主函数的错误里 panic 的 `Error` 方法。要求 GC 之后这个对象只剩测试自己持有的两个引用。`TestResultReferencesNested` 返回一个结构体，其中 `Value` 的 `toJSON` 会调用另一个返回 `Value` 的 Go 函数，要求两次调用各自释放自己的引用。`TestFailedResultLeaksNothing`（`register_test.go`）调用几个 Go 函数，它们在一个 channel 前后返回 4 KiB 的字符串和 `Value`，分别作为多个结果、放在切片里、放在嵌套切片里、放在 map 里，或在 channel 之后嵌套在切片、map 和指针里，还有一个以浮点数为键的 `Value` map，每个调用 500 次，每次接住 `TypeError`。要求 GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 到 6 MB。
+代价：结果类型装不下 `Value` 的 Go 函数没有代价，比如 int、字符串、结构体或 `map[string]string`：注册函数时类型就说明了这一点，调用直接跳过遍历。单独一个 `Value`，或装在 `any` 里的 `Value`，也不用遍历。其余的结果，里面每个值在快照里占一个节点，每个装着 `Value` 的元素、指针目标或 map 再记一项（见[结果两次到达的同一个位置只算一个引用](#结果两次到达的同一个位置只算一个引用)）。遍历 `[]any` 和 `map[string]any` 时用 Go 的 range。VM 把快照留给下一次调用使用，所以只要 VM 留下的空间够用，遍历就不分配内存：值、引用、元素和位置都不超过 256 个时，在一次同样大小的调用之后就是这样。不是 `map[string]any` 的 map 遍历时要分配两次。在 Apple M4 上和这些改动之前的代码对比（两边轮流各跑 6 轮，取从 javascript 发起的一次调用的中位数）：int、字符串和结构体用时不变。`Value` 从 145 ns 变成 150 ns。宿主函数返回的字符串从 252 ns 变成 241 ns，一个数字、一个字符串和一个布尔值的 `[]any` 从 505 ns 变成 427 ns，10 个元素的 `[]Value` 从 902 ns 变成 792 ns，20 个字符串的 `map[string]any` 从 3.88 µs 变成 2.18 µs，分配从 52 次变成 2 次，因为遍历用 Go 的 range 读这个 map，不再用反射。
+
+测试：`TestResultReferences` 和 `TestResultsReferences`（`result_test.go`）从两种 Go 函数以上面每种形状返回同一个对象：数组、数组的 map、指向指针的指针、作为 map 键的 `Value`，每种也带上宿主函数返回的错误，还有在切片、嵌套切片、map 和宿主函数的错误里 panic 的 `Error` 方法。要求 GC 之后这个对象只剩测试自己持有的两个引用。`TestResultErrorKeepsItsValues` 返回一个带 `Error` 方法的 `[]Value`，要求脚本里得到它的字符串，它的 `Value` 仍归调用方所有。`TestResultReferencesNested` 返回一个结构体，其中 `Value` 的 `toJSON` 会调用另一个返回 `Value` 的 Go 函数，要求两次调用各自释放自己的引用。`TestResultWalkAllocs` 要求返回 40 个 `Value` 的调用和返回 2 个的分配一样多。`TestHoldsRefs` 检查遍历会走进哪些类型。`TestFailedResultLeaksNothing`（`register_test.go`）调用几个 Go 函数，它们在一个 channel 前后返回 4 KiB 的字符串和 `Value`，分别作为多个结果、放在切片里、放在嵌套切片里、放在 map 里，或在 channel 之后嵌套在切片、map 和指针里，还有一个以浮点数为键的 `Value` map，每个调用 500 次，每次接住 `TypeError`。要求 GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 到 6 MB。
 
 ## UndefinedValue 作为参数和属性值
 
@@ -480,7 +482,7 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 
 现在每个结果的转换先认出 `Value`，不管装着它的是什么类型：本 VM 的 `Value` 把它的引用交给调用，和类型为 `Value` 的结果一样（[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)），别的 VM 的 `Value` 抛出 `TypeError` 且不释放，`UndefinedValue` 和零值 `Value` 是 `undefined`。宿主函数连同值一起返回错误时，抛出这个错误，值里本 VM 的 `Value` 被释放。
 
-代价：没有。转换开头的类型 switch 多一个分支。
+代价：单独装在 `any` 里的 `Value` 没有代价，调用像接管 `Value` 类型的结果一样接管它。在切片或 map 里的，见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)。
 
 测试：`TestResultValueTaken`（`register_test.go`）从两种 Go 函数把一个 4 KiB 的字符串作为 `any` 返回，并从宿主函数连同错误一起返回，各 500 次，要求脚本里得到这个字符串，GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 MB。`TestValueOfAnotherVM` 和 `TestValueOfNoVM`（`othervm_test.go`）把别的 VM 的 `Value`、`UndefinedValue` 和零值 `Value` 作为 `any` 返回。
 
@@ -490,11 +492,11 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 
 `Value` 里没有任何东西能区分副本和 `Dup`：两者是同样的两个字。所以一个引用就是一个装着本 VM 的 `Value` 的位置：一个结果，切片或数组的一个元素，map 的一个键或值，指针的目标，以及装着它们之一的 `any`。不经 `Dup` 复制到两个位置的 `Value`，是函数并不拥有的两个引用，`Value` 的文档也这样说。转换每遇到一次 `Value` 就接管一个引用，所以结果两次到达的同一个位置，比如以 `[]any{s, s}` 返回的 `Value` 切片 `s`、返回两次的同一个 map，或者同一个数组上互相重叠的两个切片，会在函数只有一个引用的地方交给引擎两个：对象在脚本还在用的时候就被释放了。
 
-现在结果的遍历（见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)）每个位置只走一次：它记下走过的每个元素、指针目标和 `any` 的地址和类型，以及每个 map，再遇到时跳过。转换每次把 `Value` 放进 javascript 值时都做一次 `Dup`，所以 `[]any{s, s}` 是两个装着同样对象的数组，每个位置的引用只释放一次。放在两个位置的 `Value` 和它的 `Dup` 是两个引用。
+现在结果的遍历（见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)）每个位置只走一次：它记下走过的每个元素、指针目标和 `any` 的地址和类型，map 则只按 map 本身记，所以同一个 map 用它类型的哪个名字都是一个位置，比如 `type M map[string]Value` 的 `M(mp)` 和 `mp`。再遇到的位置就用它第一次在快照里做出的那部分。转换每次把 `Value` 放进 javascript 值时都做一次 `Dup`，所以 `[]any{s, s}` 是两个装着同样对象的数组，每个位置的引用只释放一次。放在两个位置的 `Value` 和它的 `Dup` 是两个引用。
 
 代价：见上一节。
 
-测试：`TestResultReferences`（`result_test.go`）返回两次同一个切片、同一个数组上互相重叠的两个切片、两次同一个指针、一个切片和指向它元素的指针、两次同一个 map、两个键下放着同一个切片的 map、一个 `Value` 和它的 `Dup`，以及带着宿主函数错误的两次同一个切片。`TestResultsReferences` 把同一个切片和同一个指针作为两个结果返回。要求 GC 之后对象只剩测试持有的两个引用。
+测试：`TestResultReferences`（`result_test.go`）返回两次同一个切片、同一个数组上互相重叠的两个切片、两次同一个指针、一个切片和指向它元素的指针、两次同一个 map、分别用类型的两个名字返回的同一个 map 和同一个切片、两个键下放着同一个切片的 map、一个 `Value` 和它的 `Dup`，以及带着宿主函数错误的两次同一个切片。`TestResultsReferences` 把同一个切片和同一个指针作为两个结果返回。`TestResultReferencesRandom` 随机造 2000 个由切片、map 和指针组成的结果，有嵌套，有共用，有的用自己的类型名，有的包含自身，要求 javascript 值和 `encoding/json` 对这个结果的输出一样，或者是环的 `TypeError`。要求 GC 之后对象只剩测试持有的两个引用。
 
 ## 包含自身的结果是一个错误
 
@@ -506,4 +508,16 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 代价：见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)。
 
-测试：`TestResultReferences`（`result_test.go`）返回包含自身的切片、map 和指针，一个里面没有 `Value` 的环，一个包含自身的 `type loop []loop` 值，以及带着宿主函数错误的环。`TestResultsReferences` 在两个结果里把环放在一个 `Value` 之后返回。要求抛出 `TypeError`，并且 GC 之后只剩测试持有的两个引用。改动之前，除带错误的那个以外，每个都会让测试进程退出。
+测试：`TestResultReferences`（`result_test.go`）返回包含自身的切片、map 和指针，一个里面没有 `Value` 的环，一个包含自身的 `type loop []loop` 值，以及带着宿主函数错误的环。`TestResultsReferences` 在两个结果里把环放在一个 `Value` 之后返回，`TestResultReferencesRandom` 则是随机的环。要求抛出 `TypeError`，并且 GC 之后只剩测试持有的两个引用。改动之前，除带错误的那个以外，每个都会让测试进程退出。
+
+## 结果从程序改不动的快照转换
+
+发布版本：Unreleased。
+
+结果的转换会运行程序的代码：错误的 `Error` 方法、结构体的 `MarshalJSON`，以及结构体里 `Value` 的 `toJSON`，它还能再调用 Go。这些代码可以在转换进行中改动结果。切片变得包含自身时，比如某个 `Error` 执行了 `s[1] = s`，转换会一直递归到进程因栈溢出退出。放进去的别的 VM 的 `Value`，会在不拥有它的 VM 里被改动计数。被拿走的 `Value` 则永远不会被释放。
+
+现在结果的遍历在这些代码运行之前给结果拍一份快照，遍历本身不运行任何程序代码（见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)）：引用，切片、map 和指针当时的样子，以及叶子，程序的代码改不动它们。转换只读快照，所以转换的是 Go 函数返回那一刻的结果。之后程序的代码改了什么都不会被转换。
+
+代价：见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)。
+
+测试：`TestResultReferences`（`result_test.go`）返回一个 `Error` 让它包含自身的切片、一个 `Error` 从里面拿走 `Value` 的切片，以及一个 map，其中结构体的 `MarshalJSON` 让这个 map 包含自身。`TestResultChangedDuringConversion` 返回一个 `Error` 往里放别的 VM 的 `Value` 的切片，要求那个位置是 `null`，那个 `Value` 的计数不变。改动之前，两个环会让测试进程退出。

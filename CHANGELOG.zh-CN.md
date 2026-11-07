@@ -17,8 +17,9 @@
 - `Value.Then` 返回 `then` 的 getter 抛出的东西，原来返回 `TypeError: not a function`（[Go API](docs/changes/go-api.zh-CN.md#then-返回-then-getter-抛出的异常)）。
 - Go 函数返回的 Go map 变成的对象，键都是自有数据属性，每个键完整保留。原来键在第一个 NUL 字节处被截断，`"a"` 和 `"a\x00b"` 成了同一个键，键 `__proto__` 会改掉对象的原型，`Object.prototype` 上以某个键的名字放的 setter 会拿到它的值运行（[Go API](docs/changes/go-api.zh-CN.md#go-map-变成只有自有数据属性的对象)）。
 - Go 函数作为 `any` 返回的 `Value`（来自 `RegisterFunc` 或 `RegisterHostFunc`）现在按 `Value` 接管：本 VM 的把它的引用交给调用，别的 VM 的抛出 `TypeError`，`UndefinedValue` 和零值 `Value` 是 `undefined`。原来它走 JSON，遇到 `UndefinedValue` 会 panic，本 VM 的每个 `Value` 的引用都永远留下。宿主函数连同值一起返回错误时，现在会释放值里的 `Value`（[Go API](docs/changes/go-api.zh-CN.md#作为-any-返回的-value-按-value-接管)）。
-- Go 函数的结果经由同一个位置两次到达的 `Value`，比如以 `[]any{s, s}` 返回的同一个 `Value` 切片、返回两次的同一个 map，或者同一个数组上互相重叠的两个切片，只算一个引用，只释放一次。原来转换每遇到一次就再接管一次引用，所以对象在脚本还在用的时候就被释放了。一个 `Value` 和它的 `Dup` 是两个引用，`Value` 的副本不是（[Go API](docs/changes/go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用)）。
+- Go 函数的结果经由同一个位置两次到达的 `Value`，比如以 `[]any{s, s}` 返回的同一个 `Value` 切片、返回两次的同一个 map（不管用它类型的哪个名字），或者同一个数组上互相重叠的两个切片，只算一个引用，只释放一次。原来转换每遇到一次就再接管一次引用，所以对象在脚本还在用的时候就被释放了。一个 `Value` 和它的 `Dup` 是两个引用，`Value` 的副本不是（[Go API](docs/changes/go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用)）。
 - 包含自身的 Go 函数结果，比如 `s[0] = s` 的切片 `s`、装着自身的 map 或指向自身的指针，会抛出 `TypeError`。原来转换一直递归到 Go 的栈上限，`fatal error: stack overflow`，进程直接退出（[Go API](docs/changes/go-api.zh-CN.md#包含自身的结果是一个错误)）。
+- Go 函数的结果按函数返回那一刻的样子转换。转换会运行程序的代码，`Error` 方法、`MarshalJSON` 或结构体里 `Value` 的 `toJSON`，它们可以在转换进行中改动结果：变得包含自身的切片让进程因栈溢出退出，放进去的别的 VM 的 `Value` 在不拥有它的 VM 里被改动计数，被拿走的 `Value` 则永远留在 VM 里。类型带 `Error` 方法的值和以前一样转换成那个字符串，里面的 `Value` 和结构体里的一样仍归调用方所有（[Go API](docs/changes/go-api.zh-CN.md#结果从程序改不动的快照转换)）。
 
 ## [v0.30.1] - 2026-11-06
 
