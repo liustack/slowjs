@@ -428,7 +428,7 @@ static int run(const char *path)
     JS_SetShapeCache(ctx, 0);
     JS_SetAsyncContext(ctx, JS_UNDEFINED);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     return 0;
 }
 
@@ -459,6 +459,7 @@ int main(int argc, char **argv)
 {
     Args a = { argc, argv };
     int i;
+    int status;
 
     for (i = 1; i < argc && argv[i][0] == '-' && argv[i][1]; i++) {
         if (strcmp(argv[i], "-raw") == 0) {
@@ -491,5 +492,12 @@ int main(int argc, char **argv)
         }
     }
     /* a script may recurse as deep as the engine allows */
-    return host_run_thread(run_all, &a);
+    status = host_run_thread(run_all, &a);
+    /* every runtime of the batch was freed through the host, which keeps the
+       memory of each until then */
+    if (status == 0 && host_live_vms() != 0) {
+        fprintf(stderr, "jsrun: %zu runtimes are still known to the host\n", host_live_vms());
+        return 87;
+    }
+    return status;
 }

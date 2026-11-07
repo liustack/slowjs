@@ -164,7 +164,7 @@ static void test_regexp_cache(void)
         else
             off = strings(rt) - before;
         JS_FreeContext(ctx);
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
     }
     /* 200 patterns either way, 4 bytecodes with the cache, 200 without. */
     CHECK(off - on >= 190, "%lld strings with the cache, %lld without",
@@ -232,7 +232,7 @@ static void free_regexp_context(JSContext *ctx)
     JSRuntime *rt = JS_GetRuntime(ctx);
 
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* kept_regexps returns how many of the 40 patterns, compiled in order, the
@@ -359,7 +359,7 @@ static int64_t run_shapes(int n, int off, const char *src)
     after = shapes(rt);
     JS_SetShapeCache(ctx, 0);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
     return after - before;
 }
 
@@ -488,7 +488,7 @@ static void test_shape_cache_lifetime(void)
     CHECK(ok, "the objects never grew");
     JS_SetShapeCache(ctx, 0);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 
     /* freed with shapes in the ring, which hold the context */
     rt = host_new_runtime();
@@ -496,7 +496,7 @@ static void test_shape_cache_lifetime(void)
     CHECK(JS_SetShapeCache(ctx, 2048) == 0, "no ring");
     CHECK(eval(ctx, ten), "the script threw");
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The shapes of new functions a context holds hold its Function.prototype,
@@ -531,7 +531,7 @@ static void test_func_shapes(void)
     CHECK(eval_is(ctx1, check, "3,h,length,name,prototype"),
           "a function after the cycle collector");
     JS_FreeContext(ctx1);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* Each of the four prototypes of new functions keeps two shapes, the one a
@@ -582,7 +582,7 @@ static void test_func_shapes_kept(void)
         CHECK(n == 0, "%s: an object of its prototype made %lld shapes",
               kinds[i], (long long)n);
         JS_FreeContext(ctx);
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
     }
 
     rt = host_new_runtime();
@@ -614,7 +614,7 @@ static void test_func_shapes_kept(void)
     CHECK(shapes(rt) - base == n, "%lld shapes after more functions, want "
           "%lld", (long long)(shapes(rt) - base), (long long)n);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* A context holds the empty shape of the prototype of each built-in class
@@ -665,7 +665,7 @@ static void test_class_shapes(void)
               "after one, %lld after a hundred, want %d", kinds[i].src,
               (long long)one, (long long)many, kinds[i].kept);
         JS_FreeContext(ctx);
-        JS_FreeRuntime(rt);
+        host_free_runtime(rt);
     }
 
     rt = host_new_runtime();
@@ -706,7 +706,7 @@ static void test_class_shapes(void)
     CHECK(shapes(rt) == base + 1, "%lld shapes after the collection, want "
           "%lld", (long long)shapes(rt), (long long)(base + 1));
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 static int proto_freed;
@@ -768,7 +768,7 @@ static void test_class_shape_set_proto(void)
     JS_FreeValue(ctx, obj);
     JS_FreeValue(ctx, q);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The bytes the property arrays of the objects that src makes take. */
@@ -808,7 +808,7 @@ static void test_object_lit_size(void)
                   "{\"a\":7,\"b\":7,\"c\":7,\"d\":7,\"e\":7}]"),
           "the objects");
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 
@@ -877,7 +877,7 @@ static void test_object_lit_one_block(void)
     blocks = blocks_now(rt, NULL) - base;
     CHECK(blocks < 40, "%lld blocks left after dropping the objects", (long long)blocks);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* A string key that is already an atom takes the reference JS_DupAtom
@@ -899,7 +899,7 @@ static void test_atom_keys(void)
     CHECK(after.atom_count == before.atom_count, "%lld atoms left",
           (long long)(after.atom_count - before.atom_count));
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The key cache across the cycle collector: an object in a cycle whose keys
@@ -929,7 +929,7 @@ static void test_own_keys_collected(void)
     }
     CHECK(eval_is(ctx, "r + ' ' + bad", "200 0"), "listings after collections");
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The interrupt flag stops a script where the engine reads it: at calls
@@ -991,7 +991,7 @@ static void test_interrupt_points(void)
           "a short indexOf");
     *JS_GetInterruptFlag(rt) = 0;
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* now returns the time of the monotonic clock in seconds. */
@@ -1050,7 +1050,7 @@ static void test_search_linear(void)
         CHECK(t < 0.5, "%s took %.3f s", cases[i].src, t);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* A long search reads the interrupt flag while it runs, at least every
@@ -1124,7 +1124,7 @@ static void test_search_interrupt(void)
               src);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* stop_later asks the runtime arg to stop after 20 ms, from a thread of its
@@ -1262,7 +1262,7 @@ static void test_async_context_job(void)
           "the context of a handler registered with none");
     set_n(ctx, -1);
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* depth_reached runs a recursion until it throws and returns how many levels
@@ -2947,7 +2947,7 @@ static void test_regexp_stops(void)
     }
     *JS_GetInterruptFlag(rt) = 0;
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* lre_skip reads the interrupt flag after each LRE_SKIP_CHUNK (65536) units
@@ -3008,7 +3008,7 @@ static void test_regexp_skip_polls(void)
         free(buf);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The strings of a rope are copied and compared in loops that read the
@@ -3058,7 +3058,7 @@ static void test_rope_polls(void)
         CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", cases[i].name);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* A Map or Set that holds a long string or a rope finds an equal one after
@@ -3197,7 +3197,7 @@ static void test_iterator_polls(void)
         CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The loops of the string methods that run for as long as the string is and
@@ -3278,7 +3278,7 @@ static void test_string_loop_polls(void)
     CHECK(eval_is(ctx, "var p3 = 'xy'.padEnd((1 << 17) + 5, f2); [p3.length, p3.slice(0, 3), p3.slice(2, 5), p3.slice(131073, 131077), p3.slice(-4)].join()",
                   "131077,xya,aba,bcab,bcab"), "padEnd with a filler longer than a step");
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* The loops of padStart, padEnd and the long piece of a string read the
@@ -3323,7 +3323,7 @@ static void test_string_loop_gaps(void)
               cases[i].reads);
     }
     JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
+    host_free_runtime(rt);
 }
 
 /* A property key that is a string of millions of characters is hashed, and
