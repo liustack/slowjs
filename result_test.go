@@ -357,6 +357,23 @@ func TestResultChangedDuringConversion(t *testing.T) {
 	}
 }
 
+// The data of a result with no code of the program in its conversion is
+// what the Go function returned, whatever an Error method changes while
+// the result converts.
+func TestResultDataAsReturned(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterFunc("f", func() []any {
+		xs, n, mp := []int{1}, 1, map[string]int{"a": 1}
+		change := mutator{func() { xs[0], n, mp["a"], mp["b"] = 9, 9, 9, 9 }}
+		return []any{change, xs, &n, mp, []any{xs}}
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := m.Eval(`JSON.stringify(f())`, EvalGlobal); err != nil || r != `["mutator",[1],1,{"a":1},[[1]]]` {
+		t.Fatalf("got %v, %v", r, err)
+	}
+}
+
 // errValues is a slice of Values that is an error, so that the conversion of
 // a result turns it into the string of its Error method.
 type errValues []Value

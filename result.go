@@ -8,6 +8,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"slices"
 	"strconv"
@@ -32,13 +33,16 @@ var errCycle = errors.New("quickjs: a result that contains itself")
 //     slice, map or pointer, under any name of its type, is still one.
 //   - One walk of the results, which runs no code of the program, takes a
 //     snapshot of them: the references, each once, the slices, arrays, maps
-//     and pointers as they are, and the leaves the conversion turns into
-//     javascript one by one. It refuses a result that contains itself and
-//     a Value of another VM.
+//     and pointers that can hold a Value as they are, and the leaves, which
+//     hold none. It refuses a result that contains itself and a Value of
+//     another VM. It converts each leaf whose conversion runs no code of the
+//     program, such as a string, an []int or a map[string]int.
 //   - The conversion reads only the snapshot. The code of the program it
 //     runs, an Error method, a MarshalJSON, a toJSON that calls Go again,
 //     can change the results but not the snapshot, so it cannot make the
 //     conversion recurse without end or reach a Value the walk did not see.
+//     Only the leaves that convert through that code, a struct and a value
+//     whose type has an Error method, are read when they convert.
 //   - The conversion Dups the Values it puts in the javascript value, and
 //     the call frees the references of the snapshot when it is done: when
 //     the results convert, when they do not, when a host function returns
@@ -54,8 +58,8 @@ type snapKind uint8
 
 const (
 	snapNull   snapKind = iota // null: a nil interface, pointer or map
-	snapLeaf                   // leaf, which holds no Value and converts as it is
-	snapValue                  // v, a Value of the VM or of none
+	snapLeaf                   // leaf, which holds no Value and converts through code of the program
+	snapValue                  // v, a Value of the VM or of none, or a leaf converted by the walk
 	snapArray                  // the kids [start, start+n), in order
 	snapObject                 // the kids [start, start+n), in the order of their keys
 	snapFail                   // err: the conversion refuses it
@@ -169,7 +173,7 @@ func (m *VM) convertResults(out []reflect.Value, many bool) (r jsValue, err erro
 // convert, as that of a host function that returns an error.
 func (m *VM) dropResult(v reflect.Value) {
 	s := m.takeSnapshot()
-	w := refWalk{m: m, s: s}
+	w := refWalk{m: m, s: s, drop: true}
 	w.node(v, false)
 	m.releaseSnapshot(s)
 }
@@ -179,6 +183,8 @@ type refWalk struct {
 	m   *VM
 	s   *snapshot
 	err error
+	// drop is set for a walk that only frees the references.
+	drop bool
 	// The places and maps the walk is in (node -1), to find a cycle, and
 	// the ones it is done with and their nodes, to go through each once:
 	// the first ones in few, and all of them in s.many once few is full.
@@ -301,14 +307,10 @@ func (w *refWalk) node(v reflect.Value, inline bool) int32 {
 			return w.add(snapNode{kind: snapNull})
 		}
 		if x := v.Elem(); !holdsRefs(x.Type()) {
-			// What an any holds cannot change: the leaf is the conversion's.
-			return w.add(snapNode{kind: snapLeaf, leaf: x})
+			return w.leaf(x)
 		}
 	} else if !holdsRefs(v.Type()) {
-		// A leaf of a type of its own is a result, which the program cannot
-		// reach: in a container the walk goes through, every place whose
-		// type holds no Value is an any, or a key the walk copies.
-		return w.add(snapNode{kind: snapLeaf, leaf: v})
+		return w.leaf(v)
 	}
 	if (kind == reflect.Pointer || kind == reflect.Map) && v.IsNil() {
 		return w.add(snapNode{kind: snapNull})
@@ -330,6 +332,29 @@ func (w *refWalk) node(v reflect.Value, inline bool) int32 {
 	nd = w.content(v, kind, inline)
 	w.leave(at, slot, nd)
 	return nd
+}
+
+// leaf adds the node of x, which holds no Value. A leaf whose conversion
+// runs no code of the program is converted now, so that the conversion
+// gives what the Go function returned. The others, a struct and a value
+// whose type has an Error method, convert with the snapshot, through that
+// code. A walk that only frees the references converts nothing.
+func (w *refWalk) leaf(x reflect.Value) int32 {
+	switch {
+	case w.drop:
+		return w.add(snapNode{kind: snapNull})
+	case !fixedType(x.Type()):
+		return w.add(snapNode{kind: snapLeaf, leaf: x})
+	}
+	jv, err := w.m.jsValue(x)
+	if err != nil {
+		// The conversion fails here, after the values before it.
+		return w.add(snapNode{kind: snapFail, err: err})
+	}
+	if hasRefCount(jv) {
+		w.s.held = append(w.s.held, jv)
+	}
+	return w.add(snapNode{kind: snapValue, v: jv})
 }
 
 // content adds the node of v, of a type that holdsRefs.
@@ -480,7 +505,7 @@ func (w *refWalk) anySlice(v reflect.Value) int32 {
 		case x == nil:
 			nd = w.add(snapNode{kind: snapNull})
 		case !holdsRefs(reflect.TypeOf(x)):
-			nd = w.add(snapNode{kind: snapLeaf, leaf: reflect.ValueOf(x)})
+			nd = w.leaf(reflect.ValueOf(x))
 		default:
 			nd = w.node(reflect.ValueOf(&s[i]).Elem(), false)
 		}
@@ -499,7 +524,7 @@ func (w *refWalk) anyMap(v reflect.Value) int32 {
 		case x == nil:
 			nd = w.add(snapNode{kind: snapNull})
 		case !holdsRefs(reflect.TypeOf(x)):
-			nd = w.add(snapNode{kind: snapLeaf, leaf: reflect.ValueOf(x)})
+			nd = w.leaf(reflect.ValueOf(x))
 		default:
 			nd = w.node(reflect.ValueOf(x), true)
 		}
@@ -589,6 +614,39 @@ func (m *VM) buildObject(s *snapshot, start, n int32) (out jsValue, err error) {
 	}
 	done = true
 	return obj, nil
+}
+
+// fixedTypes caches fixedType of the types of containers.
+var fixedTypes sync.Map // reflect.Type -> bool
+
+var (
+	objectPtrType = reflect.TypeFor[*Object]()
+	bigIntPtrType = reflect.TypeFor[*big.Int]()
+)
+
+// fixedType reports whether jsValue converts a value of type t, which holds
+// no Value, without running code of the program: a bool, a number, a
+// string, an *Object, a *big.Int, and pointers, slices and maps of them. A
+// struct converts through encoding/json, which can run a MarshalJSON, and a
+// type with an Error method through Error.
+func fixedType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64, reflect.String:
+		return !t.Implements(errorType)
+	case reflect.Pointer, reflect.Slice, reflect.Map:
+	default:
+		return false
+	}
+	if r, ok := fixedTypes.Load(t); ok {
+		return r.(bool)
+	}
+	// A type that holds no Value does not hold itself (holdsRefs), so this
+	// ends.
+	r := t == objectPtrType || t == bigIntPtrType || !t.Implements(errorType) && fixedType(t.Elem())
+	fixedTypes.Store(t, r)
+	return r
 }
 
 // refTypes caches holdsRefs of the types of containers.

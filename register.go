@@ -65,9 +65,11 @@ type goFunc struct {
 // and the zero Value are undefined.
 //
 // Before it converts anything, the call takes a snapshot of the slices, maps
-// and pointers of the results and the references they hold, and converts
-// from that snapshot. Code of the program that the conversion runs, such as
-// an Error or MarshalJSON method, cannot change what is converted.
+// and pointers of the results, the references they hold and the data with
+// no Value in it, and converts from that snapshot. Code of the program that
+// the conversion runs, such as an Error or MarshalJSON method, cannot change
+// what is converted, but for the structs and the values with an Error
+// method, which convert through that code.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
