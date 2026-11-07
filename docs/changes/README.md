@@ -127,6 +127,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Intl.Segmenter finds segments as they are read | Unreleased | [time-and-intl.md](time-and-intl.md#intlsegmenter-finds-segments-as-they-are-read) |
 | The caches of Temporal formats keep short requests only | Unreleased | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
 | Number options are checked before they are rounded down | Unreleased | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
+| A long locale tag resolves in time linear in its length | Unreleased | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
 
 ## Temporal
 

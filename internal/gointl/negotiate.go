@@ -70,6 +70,9 @@ type LocaleMatcher struct {
 	// is read where it lies.
 	list      string
 	available blob.Index
+	// longest is the length of the list's longest tag: no longer tag is
+	// available.
+	longest int
 }
 
 // NewLocaleMatcher reads a service's available locales from a source.
@@ -99,7 +102,16 @@ func NewLocaleMatcher(src Source, service Service) (*LocaleMatcher, error) {
 	if k, _ := index.At(first); !strings.HasPrefix(string(k), prefix) {
 		return nil, fmt.Errorf("intl: no available locales for %s", service)
 	}
-	return &LocaleMatcher{service: service, list: list, available: index}, nil
+	longest := 0
+	for i := first; i < index.Len(); i++ {
+		k, _ := index.At(i)
+		tag, ok := strings.CutPrefix(string(k), prefix)
+		if !ok {
+			break
+		}
+		longest = max(longest, len(tag))
+	}
+	return &LocaleMatcher{service: service, list: list, available: index, longest: longest}, nil
 }
 
 // Available reports whether the service is available in exactly this tag.
@@ -137,10 +149,12 @@ func (m *LocaleMatcher) Locales() []string {
 
 // bestAvailable is ECMA-402's BestAvailableLocale: the tag, or the longest
 // part of it the service is available in, cutting it short a subtag at a
-// time and a singleton with the subtag after it; empty if none.
+// time and a singleton with the subtag after it; empty if none. A part
+// longer than every available tag is not looked up, so a long tag takes time
+// linear in its length.
 func (m *LocaleMatcher) bestAvailable(candidate string) string {
 	for {
-		if m.Available(candidate) {
+		if len(candidate) <= m.longest && m.Available(candidate) {
 			return candidate
 		}
 		pos := strings.LastIndexByte(candidate, '-')

@@ -274,3 +274,13 @@ Release: Unreleased.
 A number option such as `fractionalSecondDigits`, `minimumIntegerDigits`, `maximumFractionDigits` or `roundingIncrement` is now checked against its range before it is rounded down, as ECMA-402's DefaultNumberOption does, so a value just past the top of the range is a RangeError, as in Chromium. `fractionalSecondDigits: 3.9` and `minimumIntegerDigits: 21.9` were rounded down to 3 and 21 first, and taken. A value in the range is rounded down as before: `fractionalSecondDigits: 1.5` is 1.
 
 Tests: `TestNumberOptionRange` in `intl/options_test.go` (20 options of DateTimeFormat, NumberFormat and PluralRules at the ends of their ranges, with the answers of Node 24).
+
+## A long locale tag resolves in time linear in its length
+
+Release: Unreleased.
+
+An Intl constructor, `supportedLocalesOf` and `toLocaleString` now resolve a long locale tag in time linear in its length. ECMA-402's BestAvailableLocale cuts a tag short one subtag at a time until a service is available in what is left, and go-intl looked up every part it cut, copying it into the key of the lookup each time: time that grows with the square of the tag. A valid tag can be long, as private use takes any number of subtags: `new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")`, a tag of 1 MiB, took 6.8 seconds on an M-series Mac, and one of 4 MiB 58 seconds, in Go, with no check of the interrupt flag.
+
+Now `negotiate.go` of go-intl, through `qjs.patch`, keeps the length of the longest tag of each service's list, and looks up no part longer than that, which no service can be available in. The parts are cut as before, so every answer is the same. The two tags now take 33 and 55 ms, the time of putting them in canonical form. A tag as pages pass it is shorter than every limit and is looked up as before.
+
+Tests: `TestLongTagResolves` in `intl/limits_test.go` (a constructor and `supportedLocalesOf` on a private use tag of 64Ki subtags, which took a second or more each).

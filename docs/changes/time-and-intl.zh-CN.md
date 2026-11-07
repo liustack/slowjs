@@ -274,3 +274,13 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 `fractionalSecondDigits`、`minimumIntegerDigits`、`maximumFractionDigits`、`roundingIncrement` 这类数字选项，现在像 ECMA-402 的 DefaultNumberOption 那样，先检查是否在范围内再向下取整，所以刚超出范围上端的值是 RangeError，和 Chromium 一样。原来 `fractionalSecondDigits: 3.9` 和 `minimumIntegerDigits: 21.9` 先被向下取整成 3 和 21，然后被接受。范围内的值照旧向下取整：`fractionalSecondDigits: 1.5` 是 1。
 
 测试：`intl/options_test.go` 里的 `TestNumberOptionRange`（DateTimeFormat、NumberFormat 和 PluralRules 的 20 个选项，取在范围两端，答案来自 Node 24）。
+
+## 长的 locale 标签按长度的线性时间解析
+
+Release: Unreleased.
+
+Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标签长度成正比的时间解析一个长的 locale 标签。ECMA-402 的 BestAvailableLocale 每次从标签末尾去掉一个子标签，直到某个服务支持剩下的部分，而 go-intl 对去掉后的每一段都查一次，每次都把它复制进查找用的键里，所用时间随标签长度的平方增长。合法的标签可以很长，因为私用部分可以带任意多个子标签：`new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")` 是一个 1 MiB 的标签，在 M 系列 Mac 上要 6.8 秒，4 MiB 的要 58 秒，都在 Go 里，而且不检查中断标志。
+
+现在 go-intl 的 `negotiate.go` 通过 `qjs.patch` 记下每个服务列表里最长标签的长度，比它长的部分不再查找，因为没有服务支持这么长的标签。去掉子标签的方式和原来一样，所以每个答案都不变。上面两个标签现在分别要 33 和 55 ms，也就是把它们变成规范形式的时间。页面传的那种标签比每个上限都短，查找方式和原来一样。
+
+测试：`intl/limits_test.go` 里的 `TestLongTagResolves`（在一个带 64Ki 个子标签的私用标签上测构造函数和 `supportedLocalesOf`，原来每个都要一秒以上）。

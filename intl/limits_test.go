@@ -187,3 +187,25 @@ func TestLongListTimeout(t *testing.T) {
 		})
 	}
 }
+
+// A long tag resolves in time linear in its length: the matcher tries no
+// part of it longer than the longest tag a service is available in. Cutting
+// a private use tag of 64Ki subtags short one subtag at a time, trying each
+// part, took two seconds.
+func TestLongTagResolves(t *testing.T) {
+	vm := newVM(t)
+	eval(t, vm, `var tag = 'en-x-' + 'abcdefgh-'.repeat(1 << 16) + 'x'; new Intl.NumberFormat('en'); 1`)
+	for _, js := range []string{
+		`new Intl.NumberFormat(tag).resolvedOptions().locale`,
+		`Intl.Collator.supportedLocalesOf(tag)[0] === tag`,
+	} {
+		start := time.Now()
+		got := eval(t, vm, js)
+		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+			t.Errorf("%s took %v", js, elapsed)
+		}
+		if got != "en" && got != true {
+			t.Errorf("%s is %v", js, got)
+		}
+	}
+}

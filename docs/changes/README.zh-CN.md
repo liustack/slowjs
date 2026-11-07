@@ -127,6 +127,7 @@ read_when:
 | Intl.Segmenter 边读边找分段 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#intlsegmenter-边读边找分段) |
 | Temporal 格式的缓存只保留短请求 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
 | 数字选项先检查范围再向下取整 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
+| 长的 locale 标签按长度的线性时间解析 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
 
 ## Temporal
 
