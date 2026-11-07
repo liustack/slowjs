@@ -21,6 +21,12 @@ mkdir "$d/bin"
 cat > "$d/bin/jsrun" <<'EOS'
 #!/bin/sh
 echo "== fake"
+# Like the sanitizer: of options given twice the last one counts.
+opt() { printf '%s\n' "${UBSAN_OPTIONS:-}" | tr ':' '\n' | sed -n "s/^$1=//p" | tail -n 1; }
+if [ -n "${FAKE_UB:-}" ]; then
+	echo "runtime error: fake" >&2
+	[ "$(opt halt_on_error)" = 1 ] && exit "$(opt exitcode)"
+fi
 cat "$FAKE_OUT"
 exit "${FAKE_RC:-0}"
 EOS
@@ -42,10 +48,19 @@ run() {
 	if [ "$want" = pass ] && [ "$rc" -ne 0 ]; then echo "compare-test: $name: should pass, got $rc"; cat "$d/log"; exit 1; fi
 	if [ "$want" = fail ] && [ "$rc" -eq 0 ]; then echo "compare-test: $name: should fail, passed"; cat "$d/log"; exit 1; fi
 	echo "compare-test: $name: $want, as expected"
+	# a shell that keeps the variables set in front of a function call (POSIX
+	# mode) must not hand them to the next case
+	unset FAKE_UB UBSAN_OPTIONS
 }
 
 FAKE_OUT=$d/same.txt FAKE_RC=0 run "same output, exit 0" pass
 FAKE_OUT=$d/other.txt FAKE_RC=0 run "other output, exit 0" fail
 FAKE_OUT=$d/same.txt FAKE_RC=87 run "same output, exit 87" fail
 FAKE_OUT=$d/same.txt FAKE_RC=139 run "same output, killed by a signal" fail
-export FAKE_OUT FAKE_RC
+FAKE_OUT=$d/same.txt FAKE_RC=0 FAKE_UB=1 run "a UBSan report in the run" fail
+# options the caller already has must not turn the stop off
+FAKE_OUT=$d/same.txt FAKE_RC=0 FAKE_UB=1 UBSAN_OPTIONS=halt_on_error=0 run "a UBSan report, halt_on_error=0 inherited" fail
+FAKE_OUT=$d/same.txt FAKE_RC=0 FAKE_UB=1 UBSAN_OPTIONS=halt_on_error=0:exitcode=0 run "a UBSan report, exitcode=0 inherited" fail
+FAKE_OUT=$d/same.txt FAKE_RC=0 FAKE_UB=1 UBSAN_OPTIONS=print_stacktrace=0 run "a UBSan report, other options inherited" fail
+FAKE_OUT=$d/same.txt FAKE_RC=0 UBSAN_OPTIONS=halt_on_error=0:exitcode=0 run "no report, options inherited" pass
+

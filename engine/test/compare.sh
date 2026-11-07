@@ -48,6 +48,13 @@ bin=$bindir/jsrun
 [ -x "$bin" ] || { echo "compare.sh: $bin is missing: run engine/test/build.sh $mode" >&2; exit 2; }
 mkdir -p "$out"
 
+# A finding of UndefinedBehaviorSanitizer stops the run with status 86. It would
+# otherwise print the finding and go on, and the run would pass (Address-
+# Sanitizer stops by default). These options come last, so that the caller's own
+# (halt_on_error=0, exitcode=0) cannot turn the stop off: the last one wins.
+UBSAN_OPTIONS=${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}halt_on_error=1:exitcode=86:print_stacktrace=1
+export UBSAN_OPTIONS
+
 # shikire.js runs on the regexps and the text that its test sets first.
 r="$here/compare/recorded"
 {
