@@ -47,7 +47,8 @@ type goFunc struct {
 // Any Go <-> Javascript failing type conversion between arguments/return
 // values throws a Javascript type error exception. So does a Value of
 // another VM among the results, alone or in a slice or a map, which is not
-// freed: it stays its owner's.
+// freed: it stays its owner's. The results take the Values of the VM among
+// them, also when one fails to convert: they are freed then.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.

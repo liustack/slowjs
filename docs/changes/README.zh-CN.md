@@ -74,6 +74,7 @@ read_when:
 | 改变汇编器编码引擎方式的构建选项会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#会改变汇编器对引擎编码方式的构建选项会让构建停下) |
 | 每个接收 Value 的入口都拒绝别的 VM 的 Value | Unreleased | [go-api.md](go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value) |
 | 值的构造函数会报告内存不足 | Unreleased | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
+| 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
 
 ## 守得住的限额
 

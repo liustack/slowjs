@@ -74,6 +74,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A build option that changes how the assembler encodes the engine stops the build | v0.29.11 | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
 | A Value of another VM is refused at every entry that takes one | Unreleased | [go-api.md](go-api.md#a-value-of-another-vm-is-refused-at-every-entry) |
 | The constructors of values report running out of memory | Unreleased | [go-api.md](go-api.md#the-constructors-of-values-report-running-out-of-memory) |
+| A result that fails to convert leaves nothing behind | Unreleased | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
 
 ## Limits that hold
 

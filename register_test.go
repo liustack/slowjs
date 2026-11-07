@@ -207,3 +207,67 @@ func testRegisterExistingName(t *testing.T) {
 		t.Errorf("typeof fresh = %v, want %v", g, e)
 	}
 }
+
+// A Go function whose results fail to convert part way leaves nothing in the
+// VM: neither the values made for the results before the one that failed,
+// nor the Values it returned, before or after it.
+func TestFailedResultLeaksNothing(t *testing.T) {
+	big := strings.Repeat("x", 4096)
+	for name, f := range map[string]func(m *VM) any{
+		"results": func(m *VM) any {
+			return func() (string, chan int) { return big + "a", make(chan int) }
+		},
+		"Value results": func(m *VM) any {
+			return func() (Value, chan int, Value) {
+				return mustString(t, m, big+"a"), make(chan int), mustString(t, m, big+"b")
+			}
+		},
+		"slice": func(m *VM) any {
+			return func() []any {
+				return []any{big + "a", mustString(t, m, big+"b"), make(chan int), mustString(t, m, big+"c")}
+			}
+		},
+		"nested slice": func(m *VM) any {
+			return func() []any { return []any{[]any{big + "a", make(chan int)}, mustString(t, m, big+"b")} }
+		},
+		"map": func(m *VM) any {
+			return func() map[string]any {
+				return map[string]any{"a": big + "a", "b": mustString(t, m, big+"b"), "c": make(chan int), "d": mustString(t, m, big+"d")}
+			}
+		},
+		"map key": func(m *VM) any {
+			return func() map[float64]Value { return map[float64]Value{1: mustString(t, m, big+"a")} }
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newTestVM(t)
+			if err := m.RegisterFunc("bad", f(m), false); err != nil {
+				t.Fatal(err)
+			}
+			run := func(n int) {
+				for range n {
+					if _, err := m.Eval(`try { bad(); throw 0 } catch (e) { if (!(e instanceof TypeError)) throw e }`, EvalGlobal); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			run(10)
+			m.RunGC()
+			before := m.MemorySize()
+			run(500)
+			m.RunGC()
+			if grew := int(m.MemorySize()) - int(before); grew > 100<<10 {
+				t.Fatalf("500 failed calls left %d bytes in the VM after a GC", grew)
+			}
+		})
+	}
+}
+
+func mustString(t *testing.T, m *VM, s string) Value {
+	t.Helper()
+	v, err := m.NewString(s)
+	if err != nil {
+		t.Error(err)
+	}
+	return v
+}
