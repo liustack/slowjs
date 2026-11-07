@@ -77,6 +77,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A result that fails to convert leaves nothing behind | Unreleased | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
 | UndefinedValue as an argument and a property value | Unreleased | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
 | Close inside a call into the VM is refused | Unreleased | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
+| Then returns the exception of a then getter | Unreleased | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
 
 ## Limits that hold
 

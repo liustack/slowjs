@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined, Close refused during a call into the VM'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined, Close refused during a call into the VM, Then returning the exception of a then getter'
 read_when:
   - Closing a VM from a Go function that javascript called
   - Passing a Value to a method of a VM, or returning Values or a map from a Go function, and what happens when that fails
@@ -449,3 +449,13 @@ Now `Close` checks first that no call into the VM is in progress: no script, no 
 Cost: one compare when `Close` starts.
 
 Test: `TestCloseInsideACall` (`closetwice_test.go`) closes the VM from a Go function that javascript called, and requires the error, the result of the script, the next call to work, and the `Close` after it to close the VM.
+
+## Then returns the exception of a then getter
+
+Release: Unreleased.
+
+`Value.Then` read the `then` of the promise and called it without looking at the read. When a getter of `then` threw, it called the exception marker, and returned `TypeError: not a function` in place of what the getter threw. Now it returns the exception of the read, as `GetPropertyValue` does.
+
+Cost: one compare of a tag.
+
+Test: `TestThenGetterThrows` (`then_test.go`) calls `Then` on a promise whose `then` getter throws a `RangeError`, and requires that error and no exception left pending.

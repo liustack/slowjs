@@ -53,6 +53,9 @@ func (v Value) Then(onFulfilled, onRejected func(Value)) (_ Value, err error) {
 	}
 	defer m.leave(&err)
 	thenFn := m.jsGetProperty(v.v, atomThen)
+	if isException(thenFn) {
+		return Value{}, m.errFromException()
+	}
 	result, err := m.jsCall(thenFn, v.v, jsArgs)
 	m.jsFreeValue(thenFn)
 	if err != nil {

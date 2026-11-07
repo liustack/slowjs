@@ -77,6 +77,7 @@ read_when:
 | 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
 | UndefinedValue 作为参数和属性值 | Unreleased | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
 | 拒绝在对 VM 的调用进行中 Close | Unreleased | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
+| Then 返回 then getter 抛出的异常 | Unreleased | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
 
 ## 守得住的限额
 

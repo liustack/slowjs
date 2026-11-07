@@ -14,6 +14,7 @@
 - `RegisterFunc` 的 Go 函数的结果，或它返回的切片或 map，转换到一半失败时不再泄漏：失败那一项之前的结果造出的值和它返回的 `Value` 都会被释放。channel 前面的一个 4 KiB 字符串过去每次调用后都永远留在 VM 里（[Go API](docs/changes/go-api.zh-CN.md#转换失败的结果不留下任何东西)）。
 - 把 `UndefinedValue` 作为 `Call` 和其他调用方法的参数，或者作为 `SetPropertyValue` 的值传入时，得到的是 `undefined`，原来会因空指针 panic。`RegisterFunc` 的 Go 函数返回的零值 `Value` 也是 `undefined`，原来是 0，作为 `Value.Call` 的 `this` 时也是，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#undefinedvalue-作为参数和属性值)）。
 - 在对 VM 的调用进行中（比如在这个 VM 上的 javascript 调用的 Go 函数里）对它调用 `Close`，现在返回错误，什么也不改，VM 继续可用。原来它会释放还在 Go 函数下面运行的引擎，调用随后以空指针 panic（[Go API](docs/changes/go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close)）。
+- `Value.Then` 返回 `then` 的 getter 抛出的东西，原来返回 `TypeError: not a function`（[Go API](docs/changes/go-api.zh-CN.md#then-返回-then-getter-抛出的异常)）。
 
 ## [v0.30.1] - 2026-11-06
 

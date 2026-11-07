@@ -14,6 +14,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 - A Go function of `RegisterFunc` whose results, or the slice or map it returns, fail to convert part way no longer leaks: the values made for the results before the one that failed, and the `Value`s it returned, are freed. A string of 4 KiB before a channel stayed in the VM after every call, for good ([Go API](docs/changes/go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind)).
 - `UndefinedValue` passed as an argument of `Call` and the other call methods, or as the value of `SetPropertyValue`, is `undefined`, where it panicked with a nil pointer. The zero `Value` that a Go function of `RegisterFunc` returns is `undefined` too, where it was 0, and so is the zero `Value` as the `this` of `Value.Call`, as it is for `NewArray` and a `Builtin` ([Go API](docs/changes/go-api.md#undefinedvalue-as-an-argument-and-a-property-value)).
 - `Close` of a VM while a call into it is in progress, as from a Go function that javascript on it called, now returns an error and changes nothing, and the VM goes on. It freed the engine that was still running below the Go function, and the call then panicked with a nil pointer ([Go API](docs/changes/go-api.md#close-inside-a-call-into-the-vm-is-refused)).
+- `Value.Then` returns what a getter of `then` threw, where it returned `TypeError: not a function` ([Go API](docs/changes/go-api.md#then-returns-the-exception-of-a-then-getter)).
 
 ## [v0.30.1] - 2026-11-06
 
