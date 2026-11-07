@@ -11,10 +11,7 @@ import (
 	"math"
 	"math/big"
 	"runtime"
-	"runtime/debug"
-	"runtime/metrics"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -170,83 +167,91 @@ func TestUnclosedIndexesRoom(t *testing.T) {
 	}
 }
 
-// What Go holds at once to make the output of a call is at most held times
-// the bound on its output: the most the heap held above what it held before,
-// with the collector run often, for long outputs of each kind, the buffer
-// grown by append and by padding, and the verbs that make their bytes in a
-// slice of their own, quoting a string and writing a float.
-func TestHeldUnderNeed(t *testing.T) {
+// What Go allocates to make the output of a call, all of it, as none of it
+// may be collected before the call returns, is at most allocated times the
+// bound on the output, for long outputs of each kind: the buffer grown by
+// append, from nothing and from what each length makes it, and by padding,
+// the verbs that make their bytes in a slice of their own, quoting a string
+// and writing a float, and the digits of big ints. "%[1]s" 33 times of
+// 64 KiB made Go allocate 6.8 times the bound, and "%[1]q" of control
+// characters up to 10.9 times, more than the 6 times they were checked
+// against while the test made the collector run often and measured what the
+// heap held at once.
+func TestAllocatedUnderBound(t *testing.T) {
 	s := strings.Repeat("\x01", 1<<20)
 	b := new(big.Int).Lsh(big.NewInt(1), 1<<20)
-	for _, c := range []struct {
+	type call struct {
 		format string
 		a      []any
-	}{
+	}
+	calls := []call{
 		{"%1000000s", []any{""}},
 		{strings.Repeat("%1000000[1]s", 4), []any{""}},
 		{"%s%1000000s%s%999999s", []any{s, "", s, ""}},
 		{"%[1]q%[1]q", []any{s}},
 		{"%+q", []any{s}},
+		{"%#q", []any{strings.Repeat("x", 1<<20)}},
 		{"%# x", []any{s}},
 		{"%.1000000f", []any{1.5}},
 		{"%1000000.1000000e", []any{1.5}},
-		{"%d %b %x", []any{b, b, b}},
+		{"%d %b %x %o %v", []any{b, b, b, b, b}},
+		{"%1000000d %s", []any{b, b}},
 		{"%1000w", []any{b}},
 		{"%#[1]w%#[1]v", []any{s}},
 		{strings.Repeat("%v", 1<<20), nil},
 		{strings.Repeat("x", 1<<20) + "%1000000s", []any{s}},
-	} {
+		{"%1000000d%[1]*d", []any{1000000}},
+	}
+	// The lengths where the buffer grows by append or by padding, and
+	// where Go rounds what it allocates up the most.
+	for _, n := range []int{255, 256, 1000, 32 << 10, 32<<10 + 1, 40 << 10, 64 << 10, 100000, 1 << 20} {
+		x := strings.Repeat("x", n)
+		for _, k := range []int{1, 2, 3, 5, 9, 17, 33, 65} {
+			if n*k > 8<<20 {
+				break
+			}
+			calls = append(calls,
+				call{strings.Repeat("%[1]s", k), []any{x}},
+				call{strings.Repeat("%[1]q", k), []any{s[:n]}},
+				call{"%s" + strings.Repeat("%[2]*[1]s", k), []any{x, n + 1}},
+				call{strings.Repeat("%[1]s%[2]*[3]s", k), []any{x, n / 4, ""}},
+			)
+		}
+	}
+	most := 0.0
+	for _, c := range calls {
 		bound, read, ok := sizePrintf(c.format, c.a, -1)
 		if !ok {
 			t.Fatal(c.format)
 		}
 		var out string
-		h := heldDuring(func() { out = fmt.Sprintf(read, c.a...) })
-		t.Logf("%.40q: %d bytes, bound %d, held %d", c.format, len(out), bound, h)
-		if h > held*bound {
-			t.Fatalf("%.40q: Go held %d bytes, more than %d times the bound of %d", c.format, h, held, bound)
+		alloc := allocatedDuring(func() { out = fmt.Sprintf(read, c.a...) })
+		most = max(most, float64(alloc)/float64(bound))
+		if alloc > allocated*bound {
+			t.Errorf("%.40q: Go allocated %d bytes for %d, more than %d times the bound of %d", c.format, alloc, len(out), allocated, bound)
 		}
 	}
+	t.Logf("Go allocated at most %.1f times the bound", most)
 	for _, a := range [][]any{{s, s, b}, {s, 1.5, "x"}} {
 		bound := sizePrint(a)
-		h := heldDuring(func() { _ = fmt.Sprintln(a...) })
-		if h > held*bound {
-			t.Fatalf("sprintln: Go held %d bytes, more than %d times the bound of %d", h, held, bound)
+		for _, f := range []func(...any) string{fmt.Sprint, fmt.Sprintln} {
+			if alloc := allocatedDuring(func() { _ = f(a...) }); alloc > allocated*bound {
+				t.Errorf("Go allocated %d bytes, more than %d times the bound of %d", alloc, allocated, bound)
+			}
 		}
 	}
 }
 
-// heldDuring runs f and returns the most bytes the heap held at once while
-// it ran, above what it held before, with GOGC at 10.
-func heldDuring(f func()) int64 {
-	defer debug.SetGCPercent(debug.SetGCPercent(10))
+// allocatedDuring runs f and returns the bytes Go allocated while it ran,
+// with nothing in the pool of fmt's printers, as after a collection.
+func allocatedDuring(f func()) int64 {
 	runtime.GC()
-	objects := func() int64 {
-		s := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
-		metrics.Read(s)
-		return int64(s[0].Value.Uint64())
-	}
-	base := objects()
-	var peak atomic.Int64
-	done := make(chan struct{})
-	sampled := make(chan struct{})
-	go func() {
-		defer close(sampled)
-		for {
-			if h := objects() - base; h > peak.Load() {
-				peak.Store(h)
-			}
-			select {
-			case <-done:
-				return
-			case <-time.After(50 * time.Microsecond):
-			}
-		}
-	}()
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
 	f()
-	close(done)
-	<-sampled
-	return max(peak.Load(), objects()-base)
+	runtime.ReadMemStats(&after)
+	return int64(after.TotalAlloc - before.TotalAlloc)
 }
 
 // Every format of up to 6 bytes of "%[]1x*." makes the same output as the

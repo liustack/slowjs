@@ -18,8 +18,8 @@ import (
 // up to about ten million bytes in each verb, and the same argument in many
 // verbs. So the functions here find a bound on the bytes of the output from
 // the format and the arguments, without making them, and end the call with
-// the out of memory error when what Go may hold to make that many bytes
-// (held in fmt.go) is more than the VM has room for.
+// the out of memory error when what Go may allocate to make that many bytes
+// (allocated in fmt.go) is more than the VM has room for.
 // The bound follows fmt's reading of the format (see doPrintf in
 // fmt/print.go): which argument each verb takes, and what each verb can make
 // of it.
