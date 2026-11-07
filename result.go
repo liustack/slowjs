@@ -294,13 +294,12 @@ func refsIn(v reflect.Value) bool {
 // their map.
 func (w *refWalk) node(v reflect.Value, inline bool) int32 {
 	kind := v.Kind()
-	switch kind {
-	case reflect.Interface, reflect.Pointer, reflect.Map:
+	// A leaf comes first, as in jsValue, so that a nil value whose type has
+	// an Error method converts to the string of Error.
+	if kind == reflect.Interface {
 		if v.IsNil() {
 			return w.add(snapNode{kind: snapNull})
 		}
-	}
-	if kind == reflect.Interface {
 		if x := v.Elem(); !holdsRefs(x.Type()) {
 			// What an any holds cannot change: the leaf is the conversion's.
 			return w.add(snapNode{kind: snapLeaf, leaf: x})
@@ -310,6 +309,9 @@ func (w *refWalk) node(v reflect.Value, inline bool) int32 {
 		// reach: in a container the walk goes through, every place whose
 		// type holds no Value is an any, or a key the walk copies.
 		return w.add(snapNode{kind: snapLeaf, leaf: v})
+	}
+	if (kind == reflect.Pointer || kind == reflect.Map) && v.IsNil() {
+		return w.add(snapNode{kind: snapNull})
 	}
 	var at refPlace
 	switch {
@@ -445,10 +447,14 @@ func (w *refWalk) genericMap(v reflect.Value) int32 {
 		w.s.kids[start+i] = snapKid{key(k), w.node(val, true)}
 		i++
 	}
-	if key == nil {
-		return w.failed(fmt.Errorf("unsupported map key type: %s", t.Key()))
+	switch {
+	case key != nil:
+		return w.object(start, i)
+	case v.Len() == 0:
+		// No key needs a name, as in jsMap.
+		return w.object(len(w.s.kids), 0)
 	}
-	return w.object(start, i)
+	return w.failed(fmt.Errorf("unsupported map key type: %s", t.Key()))
 }
 
 // anySliceType and anyMapType are the types of the most common results that

@@ -415,7 +415,10 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		key = func(k reflect.Value) string { return strconv.FormatUint(k.Uint(), 10) }
 	default:
-		return out, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
+		// An empty map needs no name for a key.
+		if in.Len() > 0 {
+			return out, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
+		}
 	}
 	type kv struct {
 		key string
