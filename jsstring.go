@@ -377,6 +377,9 @@ func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 		return Value{}, errStringTooLong(len(b))
 	}
 	v, p := m.newStringChars(len(b), false)
+	if isException(v) {
+		return Value{}, m.errFromException()
+	}
 	if p != 0 {
 		copy(unsafe.Slice((*byte)(addr(p)), len(b)), b)
 	}
@@ -403,6 +406,9 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 		}
 	}
 	v, p := m.newStringChars(len(u), wide)
+	if isException(v) {
+		return Value{}, m.errFromException()
+	}
 	if p == 0 {
 		return Value{vm: m, v: v}, nil
 	}

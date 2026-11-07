@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory'
 read_when:
   - Passing a Value to a method of a VM, or returning Values or a map from a Go function, and what happens when that fails
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
@@ -400,3 +400,15 @@ Now one check, `VM.foreign`, guards every entry that takes a `Value`, before it 
 Cost: one compare of two pointers for each `Value` an entry takes.
 
 Test: `TestValueOfAnotherVM` (`othervm_test.go`) gives a string and an object of one VM to each of these entries of another, and requires an error or a `TypeError`, and the two values with the counts they had.
+
+## The constructors of values report running out of memory
+
+Release: Unreleased.
+
+`NewString`, `NewStringLatin1`, `NewStringUTF16` and `NewObjectValue` did not look at what the engine gave back. When it ran out of memory they returned the engine's exception marker wrapped as a `Value`, with a nil error, and left the out of memory error pending in the context, for the next call to find.
+
+Now each returns the out of memory error, an `*Error` with `Uncatchable` and `OutOfMemory` set, and takes it out of the context, as every other method does. Inside a Go function that javascript called it stays pending, so the script that called the function ends with it ([uncatchable.md](uncatchable.md#interrupts-and-out-of-memory-inside-go-functions)): a `Builtin` that returns the error of `NewString`, or the `Value` it gave before, ends the same way. The check is in `newString`, which every Go string goes through on its way to javascript, so arguments and results of Go functions are covered too.
+
+Cost: one compare of the tag of the new value.
+
+Tests: `TestConstructorsOutOfMemory` (`memory_test.go`) makes a string of 2 MiB with each string constructor under a 1 MiB limit, passes one to `Call`, and makes objects until the limit is reached, and requires the out of memory error and no exception left pending.

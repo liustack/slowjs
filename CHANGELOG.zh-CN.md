@@ -10,6 +10,7 @@
 - `EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode` 和 `EvalSharedBytecodeValue` 现在从读取字节码到把结果转换完，都是一次进入 javascript 的调用，在 eval 超时之内。结果的转换原来在调用结束之后才进行，所以字节码最后得到的对象的 `toJSON` 或 getter，或被替换的 `BigInt.prototype.toString`，运行时没有超时，`Interrupt` 也停不下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果)）。
 - 读取脚本抛出的异常时（它的 `toString`，或者它的 `name`、`message`、`stack` 的 getter），如果被中断、eval 超时或内存不足停住，调用现在以这个错误结束，`Uncatchable` 已设置。过去读取把它和脚本抛出的东西一起丢掉，所以调用返回一个字段为空、也不是无法捕获的 `*Error`。Go 函数的参数转换遇到这样的异常时，脚本接住一个 `TypeError`，一直运行到结束。这种情况下 `ErrorFromValue` 返回被中断或内存不足的错误，过去它把被超时截断的字段留空（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用)）。
 - 每个接收 `Value` 的方法现在都在进入引擎之前拒绝别的 VM 的 `Value`：`SetPropertyValue`（它的值和接收者），`SetProperty`、`GetPropertyValue` 和 `GetProperty` 的接收者，`EvalThis` 和 `EvalThisValue` 的 `this`，以及 `RegisterFunc` 的 Go 函数返回的 `Value`（单独返回、在多个结果里、在切片或 map 里），后者会抛出 `TypeError`。`SetPropertyValue` 原来会把这样的值存进对象，对象于是指向另一个 VM 的内存，那个 VM 关闭后这块内存就被解除映射。被拒绝的 `Value` 不会被释放。`Call` 和 `Value.Call` 现在也拒绝别的 VM 的数字，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value)）。
+- `NewString`、`NewStringLatin1`、`NewStringUTF16` 和 `NewObjectValue` 在 VM 内存不足时现在返回内存不足的错误。它们原来把引擎的异常标记当作 `Value` 返回，错误为 nil，并把错误留着挂起，等下一个调用发现（[Go API](docs/changes/go-api.zh-CN.md#值的构造函数会报告内存不足)）。
 
 ## [v0.30.1] - 2026-11-06
 

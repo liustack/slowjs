@@ -55,21 +55,31 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 	if err := m.usable(); err != nil {
 		return r, err
 	}
-	return Value{vm: m, v: m.jsNewObject()}, nil
+	v := m.jsNewObject()
+	if isException(v) {
+		return r, m.errFromException()
+	}
+	return Value{vm: m, v: v}, nil
 }
 
 // newString makes the string of NewString, and of the Go strings of the
 // other methods. It refuses a VM a kill left good only for Close here, not in
 // NewString, which stays small enough to inline (Builtins return strings).
+// When the engine has no memory for the string, the error is its exception.
 func (m *VM) newString(s string) (r jsValue, err error) {
 	if err := m.usable(); err != nil {
 		return r, err
 	}
-	if v, ok := m.newStringFast(s); ok {
-		return v, nil
+	r, ok := m.newStringFast(s)
+	if !ok {
+		if r, err = m.newStringEngine(s); err != nil {
+			return r, err
+		}
 	}
-
-	return m.newStringEngine(s)
+	if isException(r) {
+		return r, m.errFromException()
+	}
+	return r, nil
 }
 
 // newStringEngine is newString through JS_NewStringLen, for a string longer

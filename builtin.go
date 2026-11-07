@@ -300,11 +300,6 @@ func (m *VM) throwError(msg string) jsValue {
 		return m.jsThrowOutOfMemory()
 	}
 
-	if isException(s) {
-		m.jsFreeValue(exc)
-		return s
-	}
-
 	// JS_DefinePropertyValue takes s, also when it fails.
 	if m.jsDefinePropertyValue(exc, atomMessage, s, propWritable|propConfigurable) < 0 {
 		m.jsFreeValue(exc)
