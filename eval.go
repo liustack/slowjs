@@ -90,8 +90,13 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 	return n, err
 }
 
-// EvalThis is like eval but sets javascript 'this' to 'obj'.
+// EvalThis is like eval but sets javascript 'this' to 'obj'. It takes obj:
+// obj is freed when EvalThis returns. A Value of another VM is an error, and
+// it is not freed.
 func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error) {
+	if m.foreign(obj) {
+		return nil, errForeignValue
+	}
 	defer obj.Free()
 
 	if err = m.enter(); err != nil {
@@ -135,8 +140,12 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 	return Value{vm: m, v: v}, nil
 }
 
-// EvalThisValue is like EvalValue but sets javascript 'this' to obj.
+// EvalThisValue is like EvalValue but sets javascript 'this' to obj. It
+// takes obj as EvalThis does.
 func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, err error) {
+	if m.foreign(obj) {
+		return r, errForeignValue
+	}
 	defer obj.Free()
 
 	if err = m.enter(); err != nil {

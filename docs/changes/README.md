@@ -72,6 +72,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | v0.29.10 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 | A Go newer than the one the engine was checked with stops the build | v0.29.11 | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
 | A build option that changes how the assembler encodes the engine stops the build | v0.29.11 | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
+| A Value of another VM is refused at every entry that takes one | Unreleased | [go-api.md](go-api.md#a-value-of-another-vm-is-refused-at-every-entry) |
 
 ## Limits that hold
 

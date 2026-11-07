@@ -1,6 +1,7 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry'
 read_when:
+  - Passing a Value to a method of a VM, or returning Values or a map from a Go function, and what happens when that fails
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
   - Telling an interrupt or out of memory from an error a script threw
@@ -385,3 +386,17 @@ The comment above each of those lines in the file says which option it is and th
 - **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.
 
 Tests: `TestEngineAsmOptions` (`enginedeps_test.go`) builds the engine with `-asmflags=<engine package>=-spectre=ret` and `-dynlink` on the targets they affect, and expects the errors of the tripwire and no other. It also builds with `-shared` and `-spectre=index`, which must work. `TestEngineBuildmodeShared` builds with `-buildmode=shared` for linux/amd64, which needs no cgo, and expects the same.
+
+## A Value of another VM is refused at every entry
+
+Release: Unreleased.
+
+A `Value` holds a reference into the memory of its VM. Given to another VM, that VM would keep a pointer into memory it does not own: `SetPropertyValue` stored it in an object, and once the other VM was closed the object pointed at memory that was unmapped, and while both were open the wrong allocator could free it. `Call`, `Value.Call`, `NewArray` and the result of a `Builtin` checked for it. `SetPropertyValue` (its value and its receiver), the receiver of `SetProperty`, `GetPropertyValue` and `GetProperty`, the `this` of `EvalThis` and `EvalThisValue`, and a `Value` that a Go function of `RegisterFunc` returned, alone, among several results, or in a slice or a map, did not.
+
+Now one check, `VM.foreign`, guards every entry that takes a `Value`, before it reaches the engine: a `Value` belongs to the VM or to none (`UndefinedValue`, the zero `Value`), and any other is refused, a number too, as `NewArray` and a `Builtin` already did. A method returns an error, a Go function throws a `TypeError` in the script that called it, as a `Builtin` does. The refused `Value` is neither used nor freed: it stays its owner's, for its owner to free. So `EvalThis` and `EvalThisValue`, which free `obj` when they return, leave a `Value` of another VM as it is.
+
+`Call` and `Value.Call` refused only a `Value` of another VM that has a reference count, and passed a number of another VM on. They now refuse it too.
+
+Cost: one compare of two pointers for each `Value` an entry takes.
+
+Test: `TestValueOfAnotherVM` (`othervm_test.go`) gives a string and an object of one VM to each of these entries of another, and requires an error or a `TypeError`, and the two values with the counts they had.

@@ -1,6 +1,7 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value'
 read_when:
+  - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，以及失败时会怎样
   - 修改 quickjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
   - 从 javascript 得到的 Go 字符串里有替换字符，或者从 Go 传出的字符串在 javascript 里读起来不一样
   - 区分中断或内存不足与脚本抛出的错误
@@ -385,3 +386,17 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 - **新的Go发布时**，[upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的步骤包括再用这些选项构建一次。
 
 测试：`TestEngineAsmOptions`（`enginedeps_test.go`）在它们影响的目标上，用 `-asmflags=<engine package>=-spectre=ret` 和 `-dynlink` 构建引擎，期望得到 tripwire 的错误，没有别的错误。它还用 `-shared` 和 `-spectre=index` 构建，这两个必须能成功。`TestEngineBuildmodeShared` 对 linux/amd64 用 `-buildmode=shared` 构建，它不需要 cgo，期望得到同样的结果。
+
+## 每个入口都拒绝别的 VM 的 Value
+
+发布版本：Unreleased。
+
+`Value` 持有它所在 VM 内存里的一个引用。交给别的 VM 后，那个 VM 会留着一个指向不归它管的内存的指针：`SetPropertyValue` 把它存进对象，另一个 VM 关闭后，这个对象就指向已经解除映射的内存，两个 VM 都开着时，它也可能被错误的分配器释放。`Call`、`Value.Call`、`NewArray` 和 `Builtin` 的结果检查了这一点。`SetPropertyValue`（它的值和接收者）、`SetProperty`、`GetPropertyValue` 和 `GetProperty` 的接收者、`EvalThis` 和 `EvalThisValue` 的 `this`，以及 `RegisterFunc` 的 Go 函数返回的 `Value`（单独返回、在多个结果里、在切片或 map 里），都没有检查。
+
+现在同一个检查 `VM.foreign` 在进入引擎之前守住每个接收 `Value` 的入口：`Value` 要么属于这个 VM，要么不属于任何 VM（`UndefinedValue`、零值 `Value`），其他的一律拒绝，数字也一样，和 `NewArray` 与 `Builtin` 原来的做法一致。方法返回错误，Go 函数在调用它的脚本里抛出 `TypeError`，和 `Builtin` 一样。被拒绝的 `Value` 既不使用也不释放：它仍归原主，由原主释放。所以返回时会释放 `obj` 的 `EvalThis` 和 `EvalThisValue`，对别的 VM 的 `Value` 原样不动。
+
+`Call` 和 `Value.Call` 原来只拒绝别的 VM 里有引用计数的 `Value`，别的 VM 的数字照样传过去。现在也拒绝它。
+
+代价：入口接收的每个 `Value` 多比较一次两个指针。
+
+测试：`TestValueOfAnotherVM`（`othervm_test.go`）把一个 VM 的字符串和对象交给另一个 VM 的这些入口，要求得到错误或 `TypeError`，并且这两个值的计数保持原样。

@@ -341,8 +341,8 @@ func (m *VM) NewArray(vals ...Value) (Value, error) {
 		return Value{}, err
 	}
 	for _, v := range vals {
-		if v.vm != m && v.vm != nil {
-			return Value{}, errors.New("quickjs: NewArray of a Value of another VM")
+		if m.foreign(v) {
+			return Value{}, errForeignValue
 		}
 	}
 

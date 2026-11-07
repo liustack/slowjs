@@ -428,6 +428,10 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 		var jv jsValue
 		switch x := kv.val.Interface().(type) {
 		case Value:
+			if m.foreign(x) {
+				m.jsFreeValue(obj)
+				return out, errForeignValue
+			}
 			jv = x.v
 		default:
 			if jv, err = m.jsValue(kv.val); err != nil {
@@ -458,6 +462,9 @@ func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
 	for _, v := range a {
 		switch x := v.Interface().(type) {
 		case Value:
+			if m.foreign(x) {
+				return out, errForeignValue
+			}
 			s = append(s, x.v)
 		default:
 			jv, err := m.jsValue(v)

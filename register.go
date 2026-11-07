@@ -45,7 +45,9 @@ type goFunc struct {
 // method.
 //
 // Any Go <-> Javascript failing type conversion between arguments/return
-// values throws a Javascript type error exception.
+// values throws a Javascript type error exception. So does a Value of
+// another VM among the results, alone or in a slice or a map, which is not
+// freed: it stays its owner's.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
@@ -370,6 +372,10 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 			x, ok := out[0].Interface().(Value)
 			if !ok {
 				return m.jsThrowError(errorKindType, fmt.Sprintf("internal error: native Javascript value does not have type 'Value' (%v:)", origin(1)))
+			}
+			if m.foreign(x) {
+				// Freeing it here would use the other VM.
+				return m.jsThrowError(errorKindType, fmt.Sprintf("Go function %s returned a Value of another VM", info.name))
 			}
 
 			r = x.v
