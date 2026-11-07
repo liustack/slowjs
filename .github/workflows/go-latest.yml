@@ -62,6 +62,8 @@ jobs:
         run: go test -count=1 -tags testhooks,quickjs_anygo ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package
         run: go test -count=1 -p 1 -timeout 60m -tags quickjs_anygo .
+      - name: Test, root package with the test hooks
+        run: go test -count=1 -p 1 -timeout 60m -tags testhooks,quickjs_anygo .
 
   # The Go releases the module lets build: the go line of go.mod and every
   # later patch release up to the minor version internal/goversion stops.

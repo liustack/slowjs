@@ -307,6 +307,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | 全档 | `go test -p 1 .` |
+| `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |
 | `race` | 全档 | 根包和上面三个包的 `go test -race -short -p 1` |
 | `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh` |
 | `test262` | 全档 | `engine/test/test262.sh -m plain -T 2` |
@@ -376,6 +377,7 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 | Test, packages other than the root | 对除根包之外的每个包运行 `go test -count=1 -short -p 2` |
 | Test, internal packages with the test hooks | 对 `internal/cengine`、`internal/gohost`、`internal/hostmem` 和 `internal/idtable` 运行 `go test -tags testhooks` |
 | Test, root package | `root` 步骤（`go test -p 1 .`） |
+| Test, root package with the test hooks | `root-hooks` 步骤（`go test -tags testhooks -p 1 .`） |
 | Native C engine | `host-plain` 和 `compare-plain` 步骤：`engine/test/build.sh plain` 和 `compare.sh plain`，用运行器上有的 C 编译器构建（每个上面都是 clang，所以不用安装任何东西） |
 
 `llvm-steps.yml` 是第二个工作流，只有一个任务，只在 linux/amd64 上，它从 apt.llvm.org 安装 LLVM 22.1.8（15 到 25 秒，这是 `scripts/gen-engine.sh` 坚持要求的版本）并运行这些步骤。它会拦下一个让提交进仓库的生成引擎与生成器从 `engine/` 生成的结果不一样的提交：
@@ -387,7 +389,7 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 
 `scripts/check.sh` 的步骤用 `CHECK_ONLY` 选择，它们的日志作为 artifact 保留 7 天。其中的跳过是预期的：`TestStackResidency` 要 `HOSTMEM_RESIDENCY=1`，重新映射的测试和 `TestStackWithoutHugePages` 只在 linux 上。
 
-`go-latest.yml` 每周一次，在最新的稳定版 Go 上，在五个平台上运行 C 引擎的测试（`internal/cengine`、`internal/gohost`、`internal/hostmem`、`internal/idtable` 和根包）。它带 `-tags quickjs_anygo` 构建它们，越过更新的 Go 会停下的那个错误。它的第二个任务在 linux/amd64、linux/arm64、darwin/arm64 和 windows/amd64 上运行 `scripts/go-versions.sh`，用从 `go.mod` 的 `go` 行到 `internal/goversion` 停下的那个次版本之前的每个 Go 补丁版本，由 go 命令取来（`GOTOOLCHAIN`）。补丁版本也可能改变汇编所依赖的东西，所以一个都不漏，新的补丁版本会在下一次每周运行里测到。每个版本都跑 `go build`、`go vet` 和上面那些 Go 测试。在 linux/amd64 上它还装 LLVM 22.1.8，跑生成器的测试（`scripts/check.sh` 的 `goasm` 一步）和对 amd64、arm64 整个引擎的链接后检查（`-verify-bin` 加 `-verify-all`，对象是这个版本的 Go 带 `-tags goasmkeep` 编出的 `internal/cengine` 测试程序，amd64 有 linux、darwin 和 windows 三个，arm64 有 linux 和 darwin 两个，经由 `scripts/gen-engine.sh` 的 `GEN_VERIFY_BIN`）。这两项检查把引擎写进 `.build`，不动 `internal/cengine`。发布之前运行这个脚本。在装了 LLVM 的机器上它做全部这些，没有 LLVM 时（`GO_VERSIONS_LLVM=0`）不做生成器的检查，`GO_VERSIONS_LIST=1` 会打印它选了哪些版本。取不到或读不懂版本列表时（go list 失败，或列表里没有 `go` 行的那个版本），脚本以状态 2 停下，什么也不检查：它不会退到只检查最低版本。`scripts/go-versions-test.sh` 用一个代替 `go` 的程序测试这一点。提交进仓库的汇编依赖 Go 内部的一些细节，新版本一改动其中一个，这个检查就能早早发现。它不阻止合并。运行变红是去看新的 Go 改了什么的理由。
+`go-latest.yml` 每周一次，在最新的稳定版 Go 上，在五个平台上运行 C 引擎的测试（`internal/cengine`、`internal/gohost`、`internal/hostmem`、`internal/idtable` 和根包）。它带 `-tags quickjs_anygo` 构建它们，越过更新的 Go 会停下的那个错误。它的第二个任务在 linux/amd64、linux/arm64、darwin/arm64 和 windows/amd64 上运行 `scripts/go-versions.sh`，用从 `go.mod` 的 `go` 行到 `internal/goversion` 停下的那个次版本之前的每个 Go 补丁版本，由 go 命令取来（`GOTOOLCHAIN`）。补丁版本也可能改变汇编所依赖的东西，所以一个都不漏，新的补丁版本会在下一次每周运行里测到。每个版本都跑 `go build`、`go vet` 和上面那些 Go 测试（根包带和不带 `testhooks` 各一遍）。在 linux/amd64 上它还装 LLVM 22.1.8，跑生成器的测试（`scripts/check.sh` 的 `goasm` 一步）和对 amd64、arm64 整个引擎的链接后检查（`-verify-bin` 加 `-verify-all`，对象是这个版本的 Go 带 `-tags goasmkeep` 编出的 `internal/cengine` 测试程序，amd64 有 linux、darwin 和 windows 三个，arm64 有 linux 和 darwin 两个，经由 `scripts/gen-engine.sh` 的 `GEN_VERIFY_BIN`）。这两项检查把引擎写进 `.build`，不动 `internal/cengine`。发布之前运行这个脚本。在装了 LLVM 的机器上它做全部这些，没有 LLVM 时（`GO_VERSIONS_LLVM=0`）不做生成器的检查，`GO_VERSIONS_LIST=1` 会打印它选了哪些版本。取不到或读不懂版本列表时（go list 失败，或列表里没有 `go` 行的那个版本），脚本以状态 2 停下，什么也不检查：它不会退到只检查最低版本。`scripts/go-versions-test.sh` 用一个代替 `go` 的程序测试这一点。提交进仓库的汇编依赖 Go 内部的一些细节，新版本一改动其中一个，这个检查就能早早发现。它不阻止合并。运行变红是去看新的 Go 改了什么的理由。
 
 有意不做的：
 

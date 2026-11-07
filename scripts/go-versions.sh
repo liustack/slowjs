@@ -13,7 +13,8 @@
 #
 # The checks of each release:
 #   go          go build, go vet, and the Go tests of the engine (internal/cengine
-#               and the host packages with the testhooks tag, then the root package)
+#               and the host packages with the testhooks tag, then the root package
+#               with and without it)
 #   goasm       the tests of the generator (internal/goasm), which build sample
 #               programs, link them and check the stack check, the call of
 #               morestack and which functions are NOSPLIT
@@ -132,6 +133,7 @@ for v in $versions; do
 		step go-vet go vet ./...
 		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
 		step go-test-root go test -count=1 -p 1 -timeout 60m .
+		step go-test-root-hooks go test -count=1 -p 1 -timeout 60m -tags testhooks .
 		if [ "$use_llvm" = 1 ]; then
 			step goasm env CHECK_ONLY=goasm CHECK_LOGS="$logs/$v.check" scripts/check.sh fast
 			step postlink-amd64 postlink amd64 linux darwin windows
