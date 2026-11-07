@@ -75,6 +75,7 @@ read_when:
 | 每个接收 Value 的入口都拒绝别的 VM 的 Value | Unreleased | [go-api.md](go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value) |
 | 值的构造函数会报告内存不足 | Unreleased | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
 | 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
+| UndefinedValue 作为参数和属性值 | Unreleased | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
 
 ## 守得住的限额
 

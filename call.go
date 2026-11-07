@@ -109,7 +109,7 @@ func (m *VM) convertArgs(goArgs ...any) (jsArgs, free []jsValue, err error) {
 				return nil, free, errForeignValue
 			}
 
-			dup := x.Dup().v
+			dup := dupValue(x.jsValue())
 			free = append(free, dup)
 			jsArgs = append(jsArgs, dup)
 		case Undefined:

@@ -93,3 +93,55 @@ func TestValueOfAnotherVM(t *testing.T) {
 		t.Errorf("the string of b is now %q, %v", got, err)
 	}
 }
+
+// TestValueOfNoVM gives UndefinedValue and the zero Value, which belong to
+// no VM, to the entries that take a Value. Each is javascript's undefined
+// there, as for a Builtin: an argument, a property value, the this of a call
+// and the result of a Go function, alone or in a slice.
+func TestValueOfNoVM(t *testing.T) {
+	m := newTestVM(t)
+	p := atomOrFatal(t, m, "p")
+	var v Value
+	if err := m.RegisterFunc("one", func() Value { return v }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterFunc("slice", func() []Value { return []Value{v} }, false); err != nil {
+		t.Fatal(err)
+	}
+	for name, val := range map[string]Value{"UndefinedValue": UndefinedValue, "the zero Value": {}} {
+		t.Run(name, func(t *testing.T) {
+			v = val
+			typeOf := func(what string, r any, err error) {
+				t.Helper()
+				if err != nil || r != "undefined" {
+					t.Errorf("%s: got %v, %v, want undefined", what, r, err)
+				}
+			}
+
+			r, err := m.Call(`(x => typeof x)`, v)
+			typeOf("Call", r, err)
+
+			obj := evalValueOrFatal(t, m, `({ p: 1 })`)
+			defer obj.Free()
+			if err := m.SetPropertyValue(obj, p, v); err != nil {
+				t.Fatal(err)
+			}
+			r, err = m.EvalThis(obj.Dup(), `typeof this.p`, EvalGlobal)
+			typeOf("SetPropertyValue", r, err)
+
+			f := evalValueOrFatal(t, m, `(function () { 'use strict'; return typeof this })`)
+			defer f.Free()
+			r, err = f.Call(v)
+			typeOf("Value.Call of its this", r, err)
+
+			if _, err := m.GetProperty(v, p); err == nil {
+				t.Error("GetProperty of undefined gave no error")
+			}
+
+			r, err = m.Eval(`typeof one()`, EvalGlobal)
+			typeOf("the result of a Go function", r, err)
+			r, err = m.Eval(`typeof slice()[0]`, EvalGlobal)
+			typeOf("a slice a Go function returns", r, err)
+		})
+	}
+}

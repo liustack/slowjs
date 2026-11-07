@@ -478,7 +478,7 @@ func (m *VM) jsElement(v reflect.Value) (jsValue, error) {
 		if m.foreign(x) {
 			return jsValue{}, errForeignValue
 		}
-		return x.v, nil
+		return x.jsValue(), nil
 	}
 	return m.jsValue(v)
 }

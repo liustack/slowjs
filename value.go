@@ -11,7 +11,8 @@ import (
 
 var (
 	// UndefinedValue is a Value representing Javascript value 'undefined'. It is
-	// not associated with any particular VM.
+	// not associated with any particular VM: every method that takes a Value
+	// takes it, and the zero Value, as undefined.
 	UndefinedValue = Value{v: undefined}
 )
 
@@ -63,8 +64,7 @@ func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
 
 // setPropertyValue is SetPropertyValue inside a call into javascript.
 func (m *VM) setPropertyValue(this Value, prop Atom, val Value) error {
-	dup := val.Dup()
-	if m.jsSetProperty(this.v, prop, dup.v) < 0 {
+	if m.jsSetProperty(this.jsValue(), prop, dupValue(val.jsValue())) < 0 {
 		return m.errFromException()
 	}
 
@@ -111,7 +111,7 @@ func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 		return r, err
 	}
 	defer m.leave(&err)
-	v := m.jsGetProperty(this.v, prop)
+	v := m.jsGetProperty(this.jsValue(), prop)
 	if isException(v) {
 		err = m.errFromException()
 	}
@@ -130,7 +130,7 @@ func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
 		return nil, err
 	}
 	defer m.leave(&err)
-	return m.value(m.jsGetProperty(this.v, prop), true)
+	return m.value(m.jsGetProperty(this.jsValue(), prop), true)
 }
 
 // Value represents a native Javascript value. Values are reference counted and
@@ -315,7 +315,7 @@ func (v Value) Call(this Value, args ...any) (r any, err error) {
 		return
 	}
 	defer v.vm.leave(&err)
-	return v.vm.call(v.v, this.v, args...)
+	return v.vm.call(v.v, this.jsValue(), args...)
 }
 
 // CallValue is like [Value.Call] but returns (Value, error) like
@@ -333,7 +333,7 @@ func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
 		return
 	}
 	defer v.vm.leave(&err)
-	return v.vm.callValue(v.v, this.v, args...)
+	return v.vm.callValue(v.v, this.jsValue(), args...)
 }
 
 // checkCall validates the receiver and 'this' of the Value call methods. It

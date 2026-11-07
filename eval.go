@@ -103,7 +103,7 @@ func (m *VM) EvalThis(obj Value, javascript string, flags int) (r any, err error
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
+	v, err := m.jsEvalThis(obj.jsValue(), javascript, int32(flags))
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, er
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEvalThis(obj.v, javascript, int32(flags))
+	v, err := m.jsEvalThis(obj.jsValue(), javascript, int32(flags))
 	if err != nil {
 		return r, err
 	}

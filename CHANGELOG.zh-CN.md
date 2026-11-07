@@ -12,6 +12,7 @@
 - 每个接收 `Value` 的方法现在都在进入引擎之前拒绝别的 VM 的 `Value`：`SetPropertyValue`（它的值和接收者），`SetProperty`、`GetPropertyValue` 和 `GetProperty` 的接收者，`EvalThis` 和 `EvalThisValue` 的 `this`，以及 `RegisterFunc` 的 Go 函数返回的 `Value`（单独返回、在多个结果里、在切片或 map 里），后者会抛出 `TypeError`。`SetPropertyValue` 原来会把这样的值存进对象，对象于是指向另一个 VM 的内存，那个 VM 关闭后这块内存就被解除映射。被拒绝的 `Value` 不会被释放。`Call` 和 `Value.Call` 现在也拒绝别的 VM 的数字，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value)）。
 - `NewString`、`NewStringLatin1`、`NewStringUTF16` 和 `NewObjectValue` 在 VM 内存不足时现在返回内存不足的错误。它们原来把引擎的异常标记当作 `Value` 返回，错误为 nil，并把错误留着挂起，等下一个调用发现（[Go API](docs/changes/go-api.zh-CN.md#值的构造函数会报告内存不足)）。
 - `RegisterFunc` 的 Go 函数的结果，或它返回的切片或 map，转换到一半失败时不再泄漏：失败那一项之前的结果造出的值和它返回的 `Value` 都会被释放。channel 前面的一个 4 KiB 字符串过去每次调用后都永远留在 VM 里（[Go API](docs/changes/go-api.zh-CN.md#转换失败的结果不留下任何东西)）。
+- 把 `UndefinedValue` 作为 `Call` 和其他调用方法的参数，或者作为 `SetPropertyValue` 的值传入时，得到的是 `undefined`，原来会因空指针 panic。`RegisterFunc` 的 Go 函数返回的零值 `Value` 也是 `undefined`，原来是 0，作为 `Value.Call` 的 `this` 时也是，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#undefinedvalue-作为参数和属性值)）。
 
 ## [v0.30.1] - 2026-11-06
 

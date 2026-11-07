@@ -379,7 +379,7 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 				return m.jsThrowError(errorKindType, fmt.Sprintf("Go function %s returned a Value of another VM", info.name))
 			}
 
-			r = x.v
+			r = x.jsValue()
 		default:
 			r, err = m.jsValue(out[0])
 			if err != nil {
