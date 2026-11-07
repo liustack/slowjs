@@ -46,9 +46,11 @@ type goFunc struct {
 //
 // Any Go <-> Javascript failing type conversion between arguments/return
 // values throws a Javascript type error exception. So does a Value of
-// another VM among the results, alone or in a slice or a map, which is not
-// freed: it stays its owner's. The results take the Values of the VM among
-// them, also when one fails to convert: they are freed then.
+// another VM among the results, alone, as an any, or in a slice or a map,
+// which is not freed: it stays its owner's. The results take the Values of
+// the VM among them, at any depth of slices and maps, also when one fails to
+// convert: they are freed then. UndefinedValue and the zero Value are
+// undefined.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
@@ -92,6 +94,11 @@ type HostFunc func(args []any) (any, error)
 // arrives in the single []any slice (already converted to Go values), fn returns
 // exactly one value to convert back to JS, and a non-nil error is thrown as a
 // JavaScript exception.
+//
+// The value fn returns is converted as a result of RegisterFunc is: it takes
+// the Values of the VM in it, and a Value of another VM throws a TypeError.
+// With a non-nil error the value is not converted, and the Values of the VM
+// in it are freed.
 //
 // This differs from RegisterFunc, whose reflection mapping turns a Go
 // multiple-return into a JS array and converts a returned error like any other
@@ -355,6 +362,8 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 	// error — rather than array-wrapping the (value, error) pair.
 	if info.hostFunc {
 		if e, _ := out[1].Interface().(error); e != nil {
+			// The result is not converted: the Values it holds are freed.
+			m.freeResult(out[0])
 			return m.jsThrowError(errorKindType, e.Error())
 		}
 		r, err = m.jsValue(out[0])
@@ -368,23 +377,9 @@ func (m *VM) callGoFunc(info *goFunc, this jsValue, argc int32, argv uintptr) (r
 	case 0:
 		return undefined
 	case 1:
-		switch {
-		case isNative(info.out[0]):
-			x, ok := out[0].Interface().(Value)
-			if !ok {
-				return m.jsThrowError(errorKindType, fmt.Sprintf("internal error: native Javascript value does not have type 'Value' (%v:)", origin(1)))
-			}
-			if m.foreign(x) {
-				// Freeing it here would use the other VM.
-				return m.jsThrowError(errorKindType, fmt.Sprintf("Go function %s returned a Value of another VM", info.name))
-			}
-
-			r = x.jsValue()
-		default:
-			r, err = m.jsValue(out[0])
-			if err != nil {
-				return m.jsThrowError(errorKindType, fmt.Sprintf("cannot convert value: %v", err))
-			}
+		r, err = m.jsValue(out[0])
+		if err != nil {
+			return m.jsThrowError(errorKindType, fmt.Sprintf("cannot convert value: %v", err))
 		}
 	default:
 		r, err = m.jsArray(out)

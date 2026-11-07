@@ -307,9 +307,16 @@ func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
 		}
 	}()
 
+	// A Value of m is taken as it is, without a copy: the conversion of a
+	// result takes it. One of another VM stays its owner's.
 	switch x := in.Interface().(type) {
 	case nil:
 		return null, nil
+	case Value:
+		if m.foreign(x) {
+			return out, errForeignValue
+		}
+		return x.jsValue(), nil
 	case Undefined:
 		return undefined, nil
 	case error:
@@ -447,9 +454,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	}
 
 	for i, kv := range a {
-		// Like jsArray, a Value is passed on as is rather than converted, and the
-		// reference it holds is the one handed over below.
-		jv, err := m.jsElement(kv.val)
+		jv, err := m.jsValue(kv.val)
 		if err != nil {
 			m.jsFreeValue(obj)
 			return fail(i+1, err)
@@ -478,19 +483,6 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	return obj, nil
 }
 
-// jsElement converts v, an element of a slice or a value of a map: a Value
-// is taken as it is, without a copy. When it fails, it holds nothing of v:
-// only a Value of another VM, which is its owner's, is left.
-func (m *VM) jsElement(v reflect.Value) (jsValue, error) {
-	if x, ok := v.Interface().(Value); ok {
-		if m.foreign(x) {
-			return jsValue{}, errForeignValue
-		}
-		return x.jsValue(), nil
-	}
-	return m.jsValue(v)
-}
-
 // freeResult frees the Values of m in v, a result or a part of one that is
 // not converted after another failed: what jsValue would have taken, in
 // the slices, maps, interfaces and pointers it goes through. A Value of
@@ -502,9 +494,8 @@ func (m *VM) freeResult(v reflect.Value) {
 			m.freeResult(v.Elem())
 		}
 	case reflect.Pointer:
-		// jsPtrValue converts no pointer to a pointer, and a *Value through
-		// JSON, which takes nothing.
-		if k := v.Elem().Kind(); !v.IsNil() && k != reflect.Pointer && k != reflect.Struct {
+		// jsPtrValue converts no pointer to a pointer.
+		if !v.IsNil() && v.Elem().Kind() != reflect.Pointer {
 			m.freeResult(v.Elem())
 		}
 	case reflect.Slice:
@@ -546,7 +537,7 @@ func mayHoldValue(t reflect.Type) bool {
 func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
 	s := make([]jsValue, 0, len(a))
 	for i, v := range a {
-		jv, err := m.jsElement(v)
+		jv, err := m.jsValue(v)
 		if err != nil {
 			for _, v := range s {
 				m.jsFreeValue(v)

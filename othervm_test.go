@@ -73,6 +73,8 @@ func TestValueOfAnotherVM(t *testing.T) {
 		{"theirsInSlice", func() []any { return []any{"x", str} }},
 		{"theirsInMap", func() map[string]any { return map[string]any{"k": str} }},
 		{"theirsAmongResults", func() (string, Value) { return "x", obj }},
+		{"theirsAsAny", func() any { return str }},
+		{"theirsAsAnyInSlice", func() []any { return []any{[]any{obj}} }},
 	}
 	for _, f := range funcs {
 		if err := a.RegisterFunc(f.name, f.f, false); err != nil {
@@ -82,6 +84,13 @@ func TestValueOfAnotherVM(t *testing.T) {
 		if err != nil || got != "TypeError" {
 			t.Errorf("%s: got %v, %v, want a TypeError", f.name, got, err)
 		}
+	}
+
+	if err := a.RegisterHostFunc("theirsFromHost", func([]any) (any, error) { return obj, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Eval(`try { theirsFromHost(); 'returned' } catch (e) { e.constructor.name }`, EvalGlobal); err != nil || got != "TypeError" {
+		t.Errorf("theirsFromHost: got %v, %v, want a TypeError", got, err)
 	}
 
 	for _, v := range []Value{str, obj} {
@@ -106,6 +115,12 @@ func TestValueOfNoVM(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := m.RegisterFunc("slice", func() []Value { return []Value{v} }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterFunc("asAny", func() any { return v }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("host", func([]any) (any, error) { return v, nil }); err != nil {
 		t.Fatal(err)
 	}
 	for name, val := range map[string]Value{"UndefinedValue": UndefinedValue, "the zero Value": {}} {
@@ -142,6 +157,10 @@ func TestValueOfNoVM(t *testing.T) {
 			typeOf("the result of a Go function", r, err)
 			r, err = m.Eval(`typeof slice()[0]`, EvalGlobal)
 			typeOf("a slice a Go function returns", r, err)
+			r, err = m.Eval(`typeof asAny()`, EvalGlobal)
+			typeOf("an any a Go function returns", r, err)
+			r, err = m.Eval(`typeof host()`, EvalGlobal)
+			typeOf("the value of a host function", r, err)
 		})
 	}
 }

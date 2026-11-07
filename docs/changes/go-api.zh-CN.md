@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，以及失败时会怎样
@@ -471,3 +471,15 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 代价：每个键从一次进入引擎变成三次。键带着长度交给引擎，不再作为 C 字符串。map 是 `RegisterFunc` 和 `RegisterHostFunc` 的结果，不是 `Builtin` 的。
 
 测试：`TestMapResultKeys`（`register_test.go`）返回一个带 NUL 字节键的 map、一个键为 `__proto__` 的 map、一个键名会被 `Object.prototype` 的 setter 截获的 map，要求每个键都在对象上，原型不变，setter 不运行。
+
+## 作为 any 返回的 Value 按 Value 接管
+
+发布版本：Unreleased。
+
+结果类型为 `any` 的 `RegisterFunc` 的 Go 函数，或者 `RegisterHostFunc` 的函数，都可以返回 `Value`。原来只有类型就是 `Value` 的结果，以及切片或 map 里的 `Value` 会被当作 `Value` 读。放在 `any` 里的 `Value` 走 `Value.MarshalJSON` 的 JSON：别的 VM 的 `Value` 会经由那个 VM 读出，`UndefinedValue` 和零值 `Value` 会因空指针 panic，本 VM 的 `Value` 被复制成一个新值，它持有的引用却永远留在 VM 里，每次返回 4 KiB 字符串的调用多留 4 KiB 左右。
+
+现在每个结果的转换先认出 `Value`，不管装着它的是什么类型：本 VM 的 `Value` 原样接管，别的 VM 的 `Value` 抛出 `TypeError` 且不释放，`UndefinedValue` 和零值 `Value` 是 `undefined`。宿主函数连同值一起返回错误时，抛出这个错误，值里本 VM 的 `Value` 被释放。
+
+代价：没有。转换开头的类型 switch 多一个分支。
+
+测试：`TestResultValueTaken`（`register_test.go`）从两种 Go 函数把一个 4 KiB 的字符串作为 `any` 返回，并从宿主函数连同错误一起返回，各 500 次，要求脚本里得到这个字符串，GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 MB。`TestValueOfAnotherVM` 和 `TestValueOfNoVM`（`othervm_test.go`）把别的 VM 的 `Value`、`UndefinedValue` 和零值 `Value` 作为 `any` 返回。

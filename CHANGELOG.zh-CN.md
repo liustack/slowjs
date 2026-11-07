@@ -16,6 +16,7 @@
 - 在对 VM 的调用进行中（比如在这个 VM 上的 javascript 调用的 Go 函数里）对它调用 `Close`，现在返回错误，什么也不改，VM 继续可用。原来它会释放还在 Go 函数下面运行的引擎，调用随后以空指针 panic（[Go API](docs/changes/go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close)）。
 - `Value.Then` 返回 `then` 的 getter 抛出的东西，原来返回 `TypeError: not a function`（[Go API](docs/changes/go-api.zh-CN.md#then-返回-then-getter-抛出的异常)）。
 - Go 函数返回的 Go map 变成的对象，键都是自有数据属性，每个键完整保留。原来键在第一个 NUL 字节处被截断，`"a"` 和 `"a\x00b"` 成了同一个键，键 `__proto__` 会改掉对象的原型，`Object.prototype` 上以某个键的名字放的 setter 会拿到它的值运行（[Go API](docs/changes/go-api.zh-CN.md#go-map-变成只有自有数据属性的对象)）。
+- Go 函数作为 `any` 返回的 `Value`（来自 `RegisterFunc` 或 `RegisterHostFunc`）现在按 `Value` 接管：本 VM 的原样传下去，别的 VM 的抛出 `TypeError`，`UndefinedValue` 和零值 `Value` 是 `undefined`。原来它走 JSON，遇到 `UndefinedValue` 会 panic，本 VM 的每个 `Value` 的引用都永远留下。宿主函数连同值一起返回错误时，现在会释放值里的 `Value`（[Go API](docs/changes/go-api.zh-CN.md#作为-any-返回的-value-按-value-接管)）。
 
 ## [v0.30.1] - 2026-11-06
 

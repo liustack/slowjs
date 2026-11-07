@@ -79,6 +79,7 @@ read_when:
 | 拒绝在对 VM 的调用进行中 Close | Unreleased | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
 | Then 返回 then getter 抛出的异常 | Unreleased | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
 | Go map 变成只有自有数据属性的对象 | Unreleased | [go-api.md](go-api.zh-CN.md#go-map-变成只有自有数据属性的对象) |
+| 作为 any 返回的 Value 按 Value 接管 | Unreleased | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
 
 ## 守得住的限额
 

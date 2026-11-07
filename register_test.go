@@ -7,6 +7,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -320,6 +321,47 @@ delete Object.prototype.k;
 		r, err := m.Eval(c.js, EvalGlobal)
 		if err != nil || r != c.want {
 			t.Errorf("%s: got %v, %v, want %s", c.js, r, err, c.want)
+		}
+	}
+}
+
+// A Value a Go function returns as an any, from RegisterFunc or
+// RegisterHostFunc, is taken as one of a static type Value is: the script
+// gets the string, and nothing of it stays in the VM. A host function that
+// returns an error with a Value frees the Value.
+func TestResultValueTaken(t *testing.T) {
+	big := strings.Repeat("x", 4096)
+	m := newTestVM(t)
+	if err := m.RegisterFunc("asAny", func() any { return mustString(t, m, big) }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("host", func([]any) (any, error) { return mustString(t, m, big), nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("hostFails", func([]any) (any, error) {
+		return []any{mustString(t, m, big)}, errors.New("no")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, js := range []string{
+		`asAny() === "x".repeat(4096)`,
+		`host() === "x".repeat(4096)`,
+		`try { hostFails(); false } catch (e) { e instanceof TypeError && e.message === "no" }`,
+	} {
+		run := func(n int) {
+			for range n {
+				if r, err := m.Eval(js, EvalGlobal); err != nil || r != true {
+					t.Fatalf("%s: got %v, %v", js, r, err)
+				}
+			}
+		}
+		run(10)
+		m.RunGC()
+		before := m.MemorySize()
+		run(500)
+		m.RunGC()
+		if grew := int(m.MemorySize()) - int(before); grew > 100<<10 {
+			t.Errorf("%s: 500 calls left %d bytes in the VM after a GC", js, grew)
 		}
 	}
 }
