@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，有很多字符或字符串的类，以及 Intl 读不了的字符串参数'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -265,3 +265,13 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 这个检查是对展开手里已有的一个标志做一次测试，在只有异常离开迭代器时才运行的路径上。解释器的栈帧保持 amd64 上 $496、arm64 上 $504。
 
 测试：`engine/test/unit-white.c` 里的 `test_iterator_close_oom` 用 `throw` 离开一个循环和一个模式，以及在生成器里、async 函数里和 `finally` 块之下的一个循环，迭代器的 `return` 方法要分配内存，并让分配器的每次调用依次失败：运行按顺序给出关闭和异常，或者以内存不足错误失败。
+
+## Intl 读不了的字符串参数会结束调用
+
+发布版本：Unreleased。
+
+`Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个 VM 没有内存去读的字符串时，现在以内存不足的错误结束调用，原来是在 Go 里 panic。用 `+` 拼出来的字符串（rope）在 Go 读它之前要先拼接成一整段，拼接用的内存算在 VM 的上限里。拼接失败时，`Args.String` 说这个参数不是字符串，格式化器既没拿到数字也没拿到字符串，于是以 `intl: unexpected number bridge value` panic，这个 panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 也一样把这种参数当成空字符串接着干，白做一遍活，最后调用才以内存不足的错误结束。
+
+现在这两个包的每个 Builtin 都由 `intlhook.NewBuiltin` 创建，用 `intlhook.String` 和 `intlhook.WTF8` 读字符串（`internal/intlhook/args.go`）。读取失败时 Builtin 立刻停下，调用以挂起的错误结束：内存不足，或者拼接期间来了 `Interrupt` 或 eval 超时时的中断。没有失败的读取返回的就是 `Args.String` 返回的东西，判断失败的检查只对不是字符串的参数运行，而且在 Go 里做，所以成功的调用格式化结果和以前一样。
+
+测试：`intl/limits_test.go` 里的 `TestStringArgumentOutOfMemory`（在限额 16 MiB 的 VM 里，对 32 MiB 的 rope 调用 NumberFormat、它的构造函数、`getCanonicalLocales`、Collator、`localeCompare`、Segmenter 和 `toLocaleUpperCase`），以及 `temporal/limits_test.go` 里的同名测试（`PlainDate.from`、`Duration.from`、`toLocaleString`）。

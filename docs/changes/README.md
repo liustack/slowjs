@@ -96,6 +96,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | repeat reads the interrupt flag every 65,536 characters | v0.30.1 | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
 | Compiling one long regexp reads the interrupt flag in every long loop | v0.30.1 | [uncatchable.md](uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop) |
 | A class of a regexp reads the interrupt flag however many characters or strings it has | v0.30.1 | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
+| A string argument Intl cannot read ends the call | Unreleased | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
 
 ## Errors and stacks
 

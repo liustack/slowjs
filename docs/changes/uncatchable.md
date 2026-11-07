@@ -1,5 +1,5 @@
 ---
-summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, making a long rope flat, repeat, the long loops of the compile of one regexp, and the classes of many characters or strings'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, making a long rope flat, repeat, the long loops of the compile of one regexp, the classes of many characters or strings, and a string argument Intl cannot read'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
@@ -264,3 +264,13 @@ Now the unwind reads the flag again right after the close, and when an uncatchab
 The check is one test of a flag the unwind has in hand, on a path that only runs while an exception leaves an iterator. The frame of the interpreter stays $496 on amd64 and $504 on arm64.
 
 Test: `test_iterator_close_oom` in `engine/test/unit-white.c` leaves a loop and a pattern by a `throw`, and a loop in a generator, in an async function and under a `finally` block, with an iterator whose `return` method allocates, and fails each call of the allocator in turn: the run gives the closes and the exceptions in order, or fails with the out of memory error.
+
+## A string argument Intl cannot read ends the call
+
+Release: Unreleased.
+
+`format` and `formatToParts` of `Intl.NumberFormat`, given a string the VM has no memory to read, now end the call with the out of memory error, where they panicked in Go. A string made by `+` (a rope) is joined before Go reads it, and the join takes memory under the VM's limit. When it failed, `Args.String` said the argument was not a string, the formatter found neither a number nor a string and panicked with `intl: unexpected number bridge value`, and the panic went on in the Go code that called `Eval`. The other Builtins of `intl` and `temporal` took such an argument for the empty string the same way and went on, doing work for nothing before the call ended with the out of memory error.
+
+Now every Builtin of the two packages is made by `intlhook.NewBuiltin` and reads its strings with `intlhook.String` and `intlhook.WTF8` (`internal/intlhook/args.go`). When a read fails, the Builtin stops at once and the call ends with the error that is pending: out of memory, or the interrupt when `Interrupt` or the eval timeout came during the join. A read that does not fail returns what `Args.String` returns, and the check of a failure runs only for an argument that is not a string, in Go, so a call that succeeds formats as before.
+
+Tests: `TestStringArgumentOutOfMemory` in `intl/limits_test.go` (NumberFormat, its constructor, `getCanonicalLocales`, Collator, `localeCompare`, Segmenter and `toLocaleUpperCase` on a rope of 32 MiB in a VM limited to 16 MiB) and in `temporal/limits_test.go` (`PlainDate.from`, `Duration.from`, `toLocaleString`).

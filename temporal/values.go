@@ -15,6 +15,7 @@ import (
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
 	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // How the values of temporal.js cross to Go. A Temporal object keeps its
@@ -72,12 +73,12 @@ func (c *args) optInt() *int {
 
 // str is the next argument, a string.
 func (c *args) str() string {
-	s, _ := c.a.String(c.next())
+	s, _ := intlhook.String(c.a, c.next())
 	return s
 }
 
 // optStr is the next argument, a string or undefined.
-func (c *args) optStr() (string, bool) { return c.a.String(c.next()) }
+func (c *args) optStr() (string, bool) { return intlhook.String(c.a, c.next()) }
 
 func (c *args) bool() bool {
 	b, _ := c.a.Bool(c.next())

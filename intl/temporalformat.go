@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // The original options, including omitted fields, distinguish Temporal
@@ -50,7 +51,7 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.UndefinedValue, err
 	}
 	f := r.f
-	cal, _ := a.String(2)
+	cal, _ := intlhook.String(a, 2)
 	if err := f.checkCalendar(cal); err != nil {
 		return quickjs.Value{}, jsErr(err)
 	}
@@ -60,7 +61,7 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.Value{}, jsErr(err)
 	}
 	if isRange {
-		cal, _ = a.String(4)
+		cal, _ = intlhook.String(a, 4)
 		if err := f.checkCalendar(cal); err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}

@@ -200,15 +200,15 @@ const (
 	tfOptions = tfLocales + 2
 )
 
-var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
-	kindName, _ := a.String(tfKind)
+var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
+	kindName, _ := intlhook.String(a, tfKind)
 	k := temporalKinds[kindName]
 	if k == nil {
 		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
 	}
-	cal, _ := a.String(tfCalendar)
+	cal, _ := intlhook.String(a, tfCalendar)
 	ms, _ := a.Number(tfTime)
-	zone, _ := a.String(tfZone)
+	zone, _ := intlhook.String(a, tfZone)
 	defaultZone := defaultZoneOf(a.VM())
 
 	key := []byte(kindName)
@@ -221,7 +221,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 	for i := tfLocales; i < tfOptions+len(opts); i++ {
 		switch {
 		case !a.Value(i).IsUndefined():
-			if s, ok := a.String(i); ok {
+			if s, ok := intlhook.String(a, i); ok {
 				key = append(key, 's')
 				key = strconv.AppendInt(key, int64(len(s)), 10)
 				key = append(key, ':')
@@ -247,9 +247,9 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 	temporalFormatsMu.Unlock()
 	if tf == nil {
 		req := request{Options: map[string]any{}}
-		if s, ok := a.String(tfLocales); ok {
+		if s, ok := intlhook.String(a, tfLocales); ok {
 			req.Locales = []string{s}
-		} else if s, ok := a.String(tfLocales + 1); ok {
+		} else if s, ok := intlhook.String(a, tfLocales+1); ok {
 			l, ok := splitLocales(s)
 			if !ok {
 				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
@@ -260,7 +260,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 			j := tfOptions + i
 			switch o.kind {
 			case 's':
-				if s, ok := a.String(j); ok {
+				if s, ok := intlhook.String(a, j); ok {
 					req.Options[o.name] = s
 				}
 			case 'n':

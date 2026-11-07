@@ -352,7 +352,7 @@ var installing sync.Map
 // built-ins stub.js took, the zone, the option lists and the bridge, and
 // returns what calling it returns, the objects stub.js then puts in place.
 // Its third argument says the previous install was cut short.
-var installBuiltin = quickjs.NewBuiltin("install", 3, func(a quickjs.Args) (quickjs.Value, error) {
+var installBuiltin = intlhook.NewBuiltin("install", 3, func(a quickjs.Args) (quickjs.Value, error) {
 	vm := a.VM()
 	if _, busy := installing.LoadOrStore(vm, true); busy {
 		// The shim calls no code of the page while it installs, so nothing
