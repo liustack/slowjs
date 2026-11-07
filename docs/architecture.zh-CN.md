@@ -101,3 +101,16 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 ## 平台
 
 引擎在 linux 和 darwin 的 amd64 与 arm64，以及 windows/amd64 上运行。每个系统运行的是各自架构下同一份生成的代码。其他平台不支持，所以为它们构建会停下来报错，错误里写明支持的平台（`internal/unsupported`）。哪个 Go 能构建，更新的 Go 会怎样，见 [upgrading.md](upgrading.zh-CN.md#换用更新的-go)。改动必须保证 `make build_all_targets` 在全部五个平台上通过（见 [testing.md](testing.zh-CN.md#每个目标平台)）。
+
+## 让引擎更快
+
+为了速度做的改动守这几条规则，liustack/sqlite 也守同样的规则：
+
+1. 不碰 Go 私有的东西：不用 `go:linkname` 接进运行时，不依赖 Go 怎么用某个寄存器（比如闭包寄存器），不依赖运行时的内部实现。这些在 Go 的版本之间会变，而模块要能用 1.26.6 起的每个补丁版本构建。生成的代码对 Go 的汇编器和链接器的依赖，由链接后的检查在 `scripts/go-versions.sh` 跑的每个版本上把关。
+2. 引擎跑在 goroutine 的栈上，从不像 cgo、wazero 和 purego 那样用一个自己的栈，这样 C 里的一次故障只结束一个 VM，不结束整个进程。
+3. [measuring.md](measuring.zh-CN.md) 的计时分不出它和代码位置噪声（一次渲染 2% 到 3%）的收益，不管改动多干净都不要。
+4. 每个平台上的位都一样：引擎用 `-ffp-contract=off` 构建，生成器拒绝融合乘加（[c-engine.md](changes/c-engine.zh-CN.md#小-libc)）。
+5. 引擎给出的东西不变：tifa 页面的 HTML，test262 的 33 个已知错误，以及调用深度。
+6. C 只做机械的改动，从不重写，每处改动都写进 [docs/changes](changes/README.zh-CN.md)。这一条和 liustack/sqlite 不同：它从不改发布出来的 C，而这里的 C 树是 QuickJS 加上 docs/changes 里的改动。
+
+试过又放弃的，以及原因：见 [performance.md](performance.zh-CN.md#试过但没做的)，v0.28 之前的引擎见 [history.md](history.zh-CN.md#在旧引擎上试过但没做的)。
