@@ -957,7 +957,7 @@ index 2cc9527..25e21b2 100644
  
  // gannen reports whether a Japanese year is written by ICU's jpanyear rules,
 diff --git a/source.go b/source.go
-index 56a6838..bc096cf 100644
+index 56a6838..45b6c78 100644
 --- a/source.go
 +++ b/source.go
 @@ -1,14 +1,11 @@
@@ -990,7 +990,7 @@ index 56a6838..bc096cf 100644
  // simple path needs no setting up, and it is only a default: anything taking a
  // Source can be given another.
 +//
-+// In quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
++// In liustack/quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
 +// qjs_source.go serves.
  var Embedded EmbeddedSource
  
