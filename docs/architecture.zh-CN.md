@@ -91,7 +91,14 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 `SetEvalTimeout` 设置时长。`Interrupt()` 以原子方式设置标志，可以从任何 goroutine 调用。它通过 `VM.intr` 到达标志，`VM.intr` 把 VM 的宿主放在 Go 内存里，并用 `Close` 排好顺序。`Close` 只清内嵌的 `vmState`，从不清 `intr`，所以 `Interrupt` 在 `Close` 期间和之后从任何 goroutine 调用都是安全的。新的 VM 字段放进 `vmState`。加一个运行 javascript 的方法时，要加上 `enter` 和 `leave` 这一对，否则时限对它不起作用。所有可能碰到 getter、setter、proxy 陷阱、`toJSON`、`toString` 或被替换的内置方法的方法都算，不只是执行源码的那些：`GetProperty`、`SetProperty`、`Value.Any`、`Value.MarshalJSON` 和 `ErrorFromValue` 也有这一对，而 `outer`（没有时限，不能终止）留给不可能运行脚本的调用。由异常生成的 `*Error` 用 `ErrorFromValue` 读它的字段，所以在调用之外读出的错误也受时限约束。
 
-javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 `Interrupt` 在那里都停不下它，它在 Go 里分配的内存也不在内存上限之内。这个模块里那些工作量由脚本随意放大的 Go 函数，通过 `internal/vmhook` 守住限制：在长循环里每隔一段调用一次 `vmhook.Stop`，一旦为真就返回，这时无法捕获的 "interrupted" 已经挂起，和轮询抛出的一样（轮询检查的就是 `gohost.VM.Stopping`）。在构建大小由脚本决定的结果之前先看 `vmhook.Room`，放不下就用 `vmhook.OutOfMemory` 结束这次调用。
+javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 `Interrupt` 在那里都停不下它，它在 Go 里分配的内存也不在内存上限之内。这个模块的 Go 函数靠 `internal/vmhook` 守住限制：在长循环里每隔一段调用一次 `vmhook.Stop`，一旦为真就返回，这时无法捕获的 "interrupted" 已经挂起，和轮询抛出的一样（轮询检查的就是 `gohost.VM.Stopping`）。在构建大小由脚本决定的结果之前先看 `vmhook.Room`，放不下就用 `vmhook.OutOfMemory` 结束这次调用。函数只在做了这些调用的地方守得住限制。现在做了这些调用的有：
+
+- `intl` 和 `temporal` 里字符串参数读不出来的每个 Builtin。
+- Intl 遍历脚本传入的列表（locale 列表或 `Intl.ListFormat` 的各项）的循环，每 256 个标签或项检查一次。
+- `Intl.Segmenter`，读到哪里才一批批找到哪里的分段，每 256 个检查一次。
+- `fmt` 的各个函数，在 Go 造出输出之前拿输出的上界和 `vmhook.Room` 比较。
+
+脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.NumberFormat` 解析和格式化很长的数字字符串，`Intl.Collator` 和 `localeCompare`，`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，`Temporal` 里 ISO 以外日历的运算，读一个很长的 locale 标签或列表项，`Intl.DurationFormat` 解析很长的时长，`Intl.Segmenter` 找一批分段时对词典的扫描，以及 Go 造出 `fmt` 的输出（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
 
 ## 引擎旁边的包
 
