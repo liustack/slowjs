@@ -67,3 +67,47 @@ func TestUncatchableThroughHostFunc(t *testing.T) {
 		}
 	}
 }
+
+// An interrupt or running out of memory while the VM reads an exception the
+// script threw, to report it, ends the call: the read runs the toString and
+// the getters of the thrown value, and what stops them is the error, not the
+// thrown value with the fields it could not read left empty. In a script,
+// where Eval reads the exception it ends with, and in a host function, where
+// converting an argument reads the exception of its toJSON: there the
+// script must not go on to its end.
+func TestUncatchableReadingAnException(t *testing.T) {
+	for _, c := range []struct {
+		name, js string
+		kind     errorKind
+		setup    func(m *VM)
+	}{
+		{"timeout in toString", `throw { toString() { for (;;) {} } }`, interrupted, func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
+		{"timeout in a getter", `const e = new Error("x"); Object.defineProperty(e, "message", { get() { for (;;) {} } }); throw e`, interrupted, func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
+		{"out of memory in toString", `throw { toString() { return new Uint8Array(8 << 20) } }`, outOfMemory, func(m *VM) { m.SetMemoryLimit(4 << 20) }},
+		{"out of memory in an argument", `
+const bad = { toString() { return new Uint8Array(8 << 20) } };
+try { noop({ toJSON() { throw bad } }) } catch (e) {}
+42`, outOfMemory, func(m *VM) { m.SetMemoryLimit(4 << 20) }},
+		{"timeout in an argument", `
+const bad = { toString() { for (;;) {} } };
+try { noop({ toJSON() { throw bad } }) } catch (e) {}
+42`, interrupted, func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			mustHost(t, m, "noop", func([]any) (any, error) { return nil, nil })
+			c.setup(m)
+			r, err := m.Eval(c.js, EvalGlobal)
+			if err == nil {
+				t.Fatalf("the script ran to its end with %v", r)
+			}
+			wantKind(t, err, c.kind)
+			wantNoPendingException(t, m)
+			m.SetEvalTimeout(0)
+			m.SetMemoryLimit(^uintptr(0))
+			if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
+				t.Errorf("the next call gave %v, %v", r, err)
+			}
+		})
+	}
+}

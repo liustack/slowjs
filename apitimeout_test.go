@@ -47,23 +47,6 @@ globalThis.fixed = 1;
 Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
 `
 
-	// readsError names the cases where the loop runs while the error of a call is
-	// read. A field the timeout cut off is left empty (see ErrorFromValue), so
-	// the call ends with that error and not with the interrupted one.
-	readsError := map[string]bool{
-		"SetProperty of a frozen object, error read": true,
-		"RegisterFunc error read":                    true,
-		"RegisterCopyProps error read":               true,
-		"RegisterEscapeText error read":              true,
-		"RegisterStartTag error read":                true,
-		"RegisterEndTag error read":                  true,
-	}
-	// ErrorFromValue has no error result.
-	noResult := map[string]bool{
-		"ErrorFromValue name getter": true,
-		"ErrorFromValue toString":    true,
-	}
-
 	cases := []struct {
 		name string
 		// patch runs in the page before the timeout is set, and may be empty.
@@ -228,14 +211,12 @@ Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
 			err = c.run(t, m)
 			elapsed := time.Since(start)
 
+			// The cases that name an error read run the loop while the error
+			// of a call is read, and those of ErrorFromValue while it reads
+			// one: the timeout stops the read, which gives the interrupted
+			// error in place of the one it read.
 			var e *Error
-			switch {
-			case noResult[c.name]:
-			case readsError[c.name]:
-				if err == nil {
-					t.Errorf("the call returned no error")
-				}
-			case !errors.As(err, &e) || !e.Interrupted:
+			if !errors.As(err, &e) || !e.Interrupted {
 				t.Errorf("the error is %v, want the interrupted error", err)
 			}
 			if elapsed > limit {
@@ -273,10 +254,11 @@ func atomOrFatal(t *testing.T, m *VM, s string) Atom {
 }
 
 // TestErrorFromValueTimeout reads an error whose name getter and toString run
-// for 300 ms, in a VM with a 10 ms eval timeout. The fields it could not read
-// are left empty, the others are read, no exception stays pending, and the
-// next call, also another ErrorFromValue, works. The same inside a Go
-// function called from a script, where the outer call's time runs.
+// for 300 ms, in a VM with a 10 ms eval timeout. The read stops at the
+// timeout and gives the interrupted error, no exception stays pending, and
+// the next call, also another ErrorFromValue, works. Inside a Go function
+// called from a script, where the outer call's time runs, the interrupt
+// also ends the script.
 func TestErrorFromValueTimeout(t *testing.T) {
 	m, err := NewVM()
 	if err != nil {
@@ -308,8 +290,8 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 	}
 	check := func(e *Error, name, message, raw string) {
 		t.Helper()
-		if e.Name != name || e.Message != message || e.Error() != raw {
-			t.Errorf("got name %q, message %q, string %q, want %q, %q, %q", e.Name, e.Message, e.Error(), name, message, raw)
+		if e.Name != name || e.Message != message || e.Error() != raw || !e.Interrupted || !e.Uncatchable {
+			t.Errorf("got %#v, want name %q, message %q, string %q, interrupted", e, name, message, raw)
 		}
 		wantNoPendingException(t, m)
 		got := read("plain")
@@ -320,8 +302,8 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 			t.Errorf("the next call gave %v, %v", r, err)
 		}
 	}
-	check(read("slowName"), "", "m1", "")
-	check(read("slowString"), "RangeError", "m2", "")
+	check(read("slowName"), "InternalError", "interrupted", "InternalError: interrupted")
+	check(read("slowString"), "InternalError", "interrupted", "InternalError: interrupted")
 	if e := read("plain"); e.Error() != "SyntaxError: m3" {
 		t.Errorf("a plain error reads as %q", e.Error())
 	}
@@ -337,15 +319,15 @@ globalThis.plain = new SyntaxError("m3");`, EvalGlobal); err != nil {
 	if err := m.SetEvalTimeout(300 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	// The script is stopped by the same deadline, so the host function reads
-	// what it can of the name before it.
+	// The read is stopped by the deadline of the script, and the interrupt
+	// ends the script too, whatever the host function returns.
 	start := time.Now()
 	r, err := m.Eval(`readNested(); spin(); "done"`, EvalGlobal)
 	if d := time.Since(start); d > 700*time.Millisecond {
 		t.Errorf("the call took %v", d)
 	}
 	wantInterrupted(t, r, err)
-	if inner == nil || inner.Message != "m1" {
+	if inner == nil || !inner.Interrupted || inner.Message != "interrupted" {
 		t.Errorf("the nested read gave %#v", inner)
 	}
 	wantNoPendingException(t, m)

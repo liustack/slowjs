@@ -238,17 +238,16 @@ var nestedEntries = map[string]func(m *VM) error{
 	},
 	"ErrorFromValue": func(m *VM) error {
 		// The name getter runs loop, which the timeout, the interrupt or the
-		// kill stops. ErrorFromValue has no error: a field it could not read
-		// stays empty, and that is what is reported here.
+		// kill stops. ErrorFromValue then returns the error that stopped it.
 		h, err := hookValue(m, "hookErr")
 		if err != nil {
 			return err
 		}
 		defer h.Free()
-		if e := ErrorFromValue(h); e.Name == "" {
-			return errors.New("the name was left empty")
+		if e := ErrorFromValue(h); e.Uncatchable {
+			return e
 		}
-		return nil
+		return errors.New("the read of the name was not stopped")
 	},
 	"Eval": func(m *VM) error {
 		_, err := m.Eval(`loop()`, EvalGlobal)

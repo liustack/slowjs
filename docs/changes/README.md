@@ -97,6 +97,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Compiling one long regexp reads the interrupt flag in every long loop | v0.30.1 | [uncatchable.md](uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop) |
 | A class of a regexp reads the interrupt flag however many characters or strings it has | v0.30.1 | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
 | The bytecode calls convert their result inside the eval timeout | Unreleased | [uncatchable.md](uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout) |
+| An uncatchable exception met while an exception is read ends the call | Unreleased | [uncatchable.md](uncatchable.md#an-uncatchable-exception-met-while-an-exception-is-read-ends-the-call) |
 
 ## Errors and stacks
 

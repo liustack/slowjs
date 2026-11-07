@@ -170,19 +170,34 @@ func (m *VM) goString(v jsValue) (string, error) {
 	return s, nil
 }
 
-// errString converts the JS value 'v' to a Go string for ErrorFromValue, which
-// has no error result, and which errFromException calls, so it cannot turn a
-// failure into an error the way goString does without recursing. When the
-// conversion throws, errString drops that new exception and returns "": the
+// errString converts the JS value 'v' to a Go string for readError, which
+// errFromException calls, so it cannot turn a failure into an error the way
+// goString does without recursing. When the conversion throws what the
+// script throws, errString drops that new exception and returns "": the
 // exception being read is the one to report, and a second one left pending
-// would be found by the next JS_GetException of an unrelated call.
-func (m *VM) errString(v jsValue) string {
-	s, ok := m.argString(v, false)
+// would be found by the next JS_GetException of an unrelated call. ok is
+// false when the conversion threw an uncatchable exception, which stays
+// pending (dropCatchable).
+func (m *VM) errString(v jsValue) (s string, ok bool) {
+	s, ok = m.argString(v, false)
 	if !ok {
-		m.dropException()
+		return "", m.dropCatchable()
 	}
 
-	return s
+	return s, true
+}
+
+// dropCatchable drops the exception that a read of an error threw, and
+// reports true, when the script threw it. An uncatchable one (an interrupt,
+// the eval timeout, running out of memory, a panic in a Go function) ends
+// the call whatever reads what: it stays pending, and dropCatchable reports
+// false.
+func (m *VM) dropCatchable() bool {
+	if m.uncatchablePending() {
+		return false
+	}
+	m.dropException()
+	return true
 }
 
 // dropException frees the exception pending in m's context.
