@@ -69,6 +69,10 @@ type vmState struct {
 	depth int
 	// host counts the calls of Go functions from javascript in progress.
 	host int
+	// refs is the room for the references the results of a Go function hand
+	// over (resultRefs), kept from one call to the next. A call takes it while
+	// it holds references in it, so a call inside makes its own.
+	refs []jsValue
 	// panicked holds what a Go function called from javascript panicked
 	// with, until the panic goes on in the Go code that called javascript
 	// (see hostPanicked).

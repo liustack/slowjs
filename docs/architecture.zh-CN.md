@@ -35,7 +35,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `enginememory.go` | `MemoryUsage`、`ReleaseMemory`，以及 `SharedBytecode` 的内存（映射在所有 VM 之外，只读） |
 | `engine_unsupported.go` | 在其他任何平台上，import `internal/unsupported`，构建只报它的错误，错误里写明支持的平台 |
 
-共用的文件放 API：`vm.go`（创建、设置和关闭 VM）、`eval.go`、`call.go`、`convert.go`（Go 值和 javascript 之间互转）、`errors.go`、`register.go`（`RegisterFunc`）、`value.go`、`builtin.go`、`jsstring.go`、`promise.go`、`sharedbytecode.go`、`memory.go`、`asynccontext.go`、`vmclock.go` 和 `etc.go`。`TestEngineDeps`（`enginedeps_test.go`）检查这个包链接了 `internal/cengine` 和它的 Go 宿主。
+共用的文件放 API：`vm.go`（创建、设置和关闭 VM）、`eval.go`、`call.go`、`convert.go`（Go 值和 javascript 之间互转）、`errors.go`、`register.go`（`RegisterFunc`）、`result.go`（Go 函数的结果交出的 `Value` 引用）、`value.go`、`builtin.go`、`jsstring.go`、`promise.go`、`sharedbytecode.go`、`memory.go`、`asynccontext.go`、`vmclock.go` 和 `etc.go`。`TestEngineDeps`（`enginedeps_test.go`）检查这个包链接了 `internal/cengine` 和它的 Go 宿主。
 
 ## 目录
 

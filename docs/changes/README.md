@@ -80,6 +80,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Then returns the exception of a then getter | Unreleased | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
 | A Go map becomes an object of its own data properties | Unreleased | [go-api.md](go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties) |
 | A Value returned as an any is taken as a Value | Unreleased | [go-api.md](go-api.md#a-value-returned-as-an-any-is-taken-as-a-value) |
+| A place a result reaches twice is one reference | Unreleased | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
+| A result that contains itself is an error | Unreleased | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
 
 ## Limits that hold
 

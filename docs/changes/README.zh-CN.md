@@ -80,6 +80,8 @@ read_when:
 | Then 返回 then getter 抛出的异常 | Unreleased | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
 | Go map 变成只有自有数据属性的对象 | Unreleased | [go-api.md](go-api.zh-CN.md#go-map-变成只有自有数据属性的对象) |
 | 作为 any 返回的 Value 按 Value 接管 | Unreleased | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
+| 结果两次到达的同一个位置只算一个引用 | Unreleased | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
+| 包含自身的结果是一个错误 | Unreleased | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
 
 ## 守得住的限额
 

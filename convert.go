@@ -307,16 +307,13 @@ func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
 		}
 	}()
 
-	// A Value of m is taken as it is, without a copy: the conversion of a
-	// result takes it. One of another VM stays its owner's.
+	// A Value is Dup'ed: the call frees the references the result handed it
+	// (resultRefs), which has refused a Value of another VM.
 	switch x := in.Interface().(type) {
 	case nil:
 		return null, nil
 	case Value:
-		if m.foreign(x) {
-			return out, errForeignValue
-		}
-		return x.jsValue(), nil
+		return dupValue(x.jsValue()), nil
 	case Undefined:
 		return undefined, nil
 	case error:
@@ -407,7 +404,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	// Javascript property names are strings. Integer keys stringify the same way
 	// they do in JSON and the same way obj[1] and obj["1"] are the same property
 	// in Javascript. Check the type of the keys before creating the object so a
-	// bad key needs no cleanup but the Values of the map.
+	// bad key needs no cleanup.
 	var key func(k reflect.Value) string
 	switch in.Type().Key().Kind() {
 	case reflect.String:
@@ -417,7 +414,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		key = func(k reflect.Value) string { return strconv.FormatUint(k.Uint(), 10) }
 	default:
-		err = fmt.Errorf("unsupported map key type: %s", in.Type().Key())
+		return out, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
 	}
 	type kv struct {
 		key string
@@ -425,14 +422,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	}
 	a := make([]kv, 0, in.Len())
 	for it := in.MapRange(); it.Next(); {
-		if err != nil {
-			m.freeResult(it.Value())
-			continue
-		}
 		a = append(a, kv{key(it.Key()), it.Value()})
-	}
-	if err != nil {
-		return out, err
 	}
 
 	// Javascript property order is observable, via Object.keys, JSON.stringify or
@@ -440,24 +430,22 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	// always produces the same object, which is what encoding/json does too.
 	sort.Slice(a, func(i, j int) bool { return a[i].key < a[j].key })
 
-	// The object takes the Values of the map, also when it cannot be made:
-	// what is not in it yet is freed then.
-	fail := func(i int, err error) (jsValue, error) {
-		for _, kv := range a[i:] {
-			m.freeResult(kv.val)
-		}
-		return out, err
-	}
 	obj := m.jsNewObject()
 	if isException(obj) {
-		return fail(0, m.errFromException())
+		return out, m.errFromException()
 	}
+	// The object is freed when a value fails to convert, or panics.
+	done := false
+	defer func() {
+		if !done {
+			m.jsFreeValue(obj)
+		}
+	}()
 
-	for i, kv := range a {
+	for _, kv := range a {
 		jv, err := m.jsValue(kv.val)
 		if err != nil {
-			m.jsFreeValue(obj)
-			return fail(i+1, err)
+			return out, err
 		}
 
 		// The key is an atom of all its bytes, NULs too, and an own data
@@ -469,96 +457,39 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 		}
 		if err != nil {
 			m.jsFreeValue(jv)
-			m.jsFreeValue(obj)
-			return fail(i+1, err)
+			return out, err
 		}
 		rc := m.jsDefinePropertyValue(obj, atom, jv, propCWE|propThrow)
 		m.jsFreeAtom(atom)
 		if rc < 0 {
-			m.jsFreeValue(obj)
-			return fail(i+1, m.errFromException())
+			return out, m.errFromException()
 		}
 	}
 
+	done = true
 	return obj, nil
 }
 
-// freeResult frees the Values of m in v, a result or a part of one that is
-// not converted after another failed: what jsValue would have taken, in
-// the slices, maps, interfaces and pointers it goes through. A Value of
-// another VM is its owner's.
-func (m *VM) freeResult(v reflect.Value) {
-	switch v.Kind() {
-	case reflect.Interface:
-		if !v.IsNil() {
-			m.freeResult(v.Elem())
-		}
-	case reflect.Pointer:
-		// jsPtrValue converts no pointer to a pointer.
-		if !v.IsNil() && v.Elem().Kind() != reflect.Pointer {
-			m.freeResult(v.Elem())
-		}
-	case reflect.Slice:
-		if mayHoldValue(v.Type().Elem()) {
-			for i := range v.Len() {
-				m.freeResult(v.Index(i))
-			}
-		}
-	case reflect.Map:
-		if mayHoldValue(v.Type().Elem()) {
-			for it := v.MapRange(); it.Next(); {
-				m.freeResult(it.Value())
-			}
-		}
-	case reflect.Struct:
-		if v.Type() == rvt {
-			if x := v.Interface().(Value); !m.foreign(x) {
-				m.jsFreeValue(x.v)
-			}
-		}
-	}
-}
-
-// mayHoldValue reports whether an element of type t can hold a Value that
-// jsValue takes, so that freeResult skips the elements of a []byte.
-func mayHoldValue(t reflect.Type) bool {
-	switch t.Kind() {
-	case reflect.Interface, reflect.Pointer, reflect.Slice, reflect.Map:
-		return true
-	case reflect.Struct:
-		return t == rvt
-	}
-	return false
-}
-
-// jsArray converts the elements a to a javascript array. The array takes the
-// Values among them, also when it cannot be made: then it frees what it
-// converted and the Values it was handed.
+// jsArray converts the elements a to a javascript array.
 func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
+	// What is converted is freed when an element fails to convert or
+	// panics, and once the array has its own references.
 	s := make([]jsValue, 0, len(a))
-	for i, v := range a {
+	defer func() {
+		for _, v := range s {
+			m.jsFreeValue(v)
+		}
+	}()
+	for _, v := range a {
 		jv, err := m.jsValue(v)
 		if err != nil {
-			for _, v := range s {
-				m.jsFreeValue(v)
-			}
-			for _, v := range a[i+1:] {
-				m.freeResult(v)
-			}
 			return out, err
 		}
 		s = append(s, jv)
 	}
-	return m.jsArrayOf(s)
-}
-
-func (m *VM) jsArrayOf(a []jsValue) (out jsValue, err error) {
-	out, err = m.jsArrayOfValues(a)
+	out, err = m.jsArrayOfValues(s)
 	if err == nil && isException(out) {
 		err = m.errFromException()
-	}
-	for _, v := range a {
-		m.jsFreeValue(v)
 	}
 	return out, err
 }
