@@ -266,3 +266,11 @@ The formats `toLocaleString` and `DateTimeFormat.prototype.format` make for Temp
 Now the cache of `toLocaleString` keeps a format only when its request is at most 512 bytes, as the registry does, and only when it resolved: an error is made again on each call, as it may hold what the page passed. So the cache takes at most 256 KiB of requests. A Temporal date format keeps the SHA-256 of its request, 64 bytes in hex, in place of the request, which still tells apart the formats that only the request tells apart. Requests of up to 512 bytes, the ones pages make, are cached as before, so the common calls take the same time. The 40 closed VMs now keep less than 1 MiB.
 
 Tests: `TestFormatCachesAfterClose` in `temporal/limits_test.go` (a failed calendar of 1 MiB, and `DateTimeFormat.format` and `toLocaleString` of a list of 10,000 locales, each in 40 VMs closed after the call).
+
+## Number options are checked before they are rounded down
+
+Release: Unreleased.
+
+A number option such as `fractionalSecondDigits`, `minimumIntegerDigits`, `maximumFractionDigits` or `roundingIncrement` is now checked against its range before it is rounded down, as ECMA-402's DefaultNumberOption does, so a value just past the top of the range is a RangeError, as in Chromium. `fractionalSecondDigits: 3.9` and `minimumIntegerDigits: 21.9` were rounded down to 3 and 21 first, and taken. A value in the range is rounded down as before: `fractionalSecondDigits: 1.5` is 1.
+
+Tests: `TestNumberOptionRange` in `intl/options_test.go` (20 options of DateTimeFormat, NumberFormat and PluralRules at the ends of their ranges, with the answers of Node 24).

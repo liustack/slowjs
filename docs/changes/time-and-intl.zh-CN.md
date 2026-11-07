@@ -266,3 +266,11 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 现在 `toLocaleString` 的缓存只在请求不超过 512 字节（和注册表一样）并且解析成功时才保留格式：错误每次调用都重新造，因为它可能带着页面传进来的东西。所以这个缓存里的请求最多占 256 KiB。Temporal 的日期格式不再保留请求本身，改为保留它的 SHA-256（十六进制 64 字节），这仍然能区分那些只有请求才能区分开的格式。不超过 512 字节的请求（页面造的就是这种）照旧缓存，所以常见调用花的时间不变。关闭的 40 个 VM 现在留下的不到 1 MiB。
 
 测试：`temporal/limits_test.go` 里的 `TestFormatCachesAfterClose`（1 MiB 的失败历法，以及对 10,000 个 locale 的列表调用 `DateTimeFormat.format` 和 `toLocaleString`，每种都在调用后关闭的 40 个 VM 里做）。
+
+## 数字选项先检查范围再向下取整
+
+发布版本：Unreleased。
+
+`fractionalSecondDigits`、`minimumIntegerDigits`、`maximumFractionDigits`、`roundingIncrement` 这类数字选项，现在像 ECMA-402 的 DefaultNumberOption 那样，先检查是否在范围内再向下取整，所以刚超出范围上端的值是 RangeError，和 Chromium 一样。原来 `fractionalSecondDigits: 3.9` 和 `minimumIntegerDigits: 21.9` 先被向下取整成 3 和 21，然后被接受。范围内的值照旧向下取整：`fractionalSecondDigits: 1.5` 是 1。
+
+测试：`intl/options_test.go` 里的 `TestNumberOptionRange`（DateTimeFormat、NumberFormat 和 PluralRules 的 20 个选项，取在范围两端，答案来自 Node 24）。
