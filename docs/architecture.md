@@ -101,3 +101,16 @@ Every method that runs javascript (`Eval`, `EvalValue`, `Call`, `CallValue`, `Ex
 ## Platforms
 
 The engine runs on linux and darwin, on amd64 and arm64, and on windows/amd64. Every system runs the same generated code of each architecture. Other targets are not supported, so a build for one stops with an error that names the supported ones (`internal/unsupported`). Which Go builds it, and what a newer Go does, is in [upgrading.md](upgrading.md#moving-to-a-newer-go). A change must keep `make build_all_targets` passing on all five (see [testing.md](testing.md#every-target)).
+
+## Making the engine faster
+
+A change made for speed keeps to these rules, which liustack/sqlite keeps too:
+
+1. Nothing private to Go: no `go:linkname` into the runtime, no reliance on how Go uses a register (such as the closure register), no runtime internals. They change between Go releases, and the module builds with every patch release from 1.26.6 on. What the generated code needs of Go's assembler and linker is held by the post-link check, on every release `scripts/go-versions.sh` runs.
+2. The engine runs on the goroutine stack, never on a stack of its own as cgo, wazero and purego do, so that a fault in the C ends one VM, not the process.
+3. A gain the timing of [measuring.md](measuring.md) cannot tell from the noise of the code position (2% to 3% for a render) is not taken, however clean the change.
+4. The same bits on every target: the engine is built with `-ffp-contract=off` and the generator refuses a fused multiply-add ([c-engine.md](changes/c-engine.md#the-small-libc)).
+5. What the engine gives stays the same: the HTML of tifa's pages, the 33 known errors of test262 and the call depth.
+6. The C is changed mechanically, never rewritten, and each change is written up in [docs/changes](changes/README.md). This is where liustack/sqlite differs: it never edits the C as released, and here the C tree is QuickJS with the changes of docs/changes.
+
+What was tried and dropped, and why: [performance.md](performance.md#what-was-tried-and-not-done), and for the engine before v0.28 [history.md](history.md#what-was-tried-and-not-done-on-the-old-engine).
