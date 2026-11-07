@@ -242,3 +242,17 @@ Profiles of English and Chinese Format calls found that part classification and 
 The final profiles move the remaining number allocations to value-dependent grouping and assembly. Dates allocate their output, space replacement and numeric fields. These shared rounding and field routines still serve both strings and parts. The [page measurements](../history.md#intl-formatting) do not establish a whole-page speedup.
 
 Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheBound`, the existing Chromium corpora, concurrent registry tests, tampering and link tests. `BenchmarkFormat` covers construction, formatting and uncached resolution with the inputs above. The upstream changes stay in `qjs.patch`. After updating go-intl, rebuild it from that patch, check source isolation and concurrent use, compare every recorded answer and repeat the focused measurements.
+
+## Intl.Segmenter finds segments as they are read
+
+Release: Unreleased.
+
+`containing` and the iterator of a Segments object now find the segments of its text as javascript reads them, a batch at a time, where the first call found every segment of the whole text in Go. On a text of 8 MiB, `containing(0)` made go-intl list all 8,388,608 graphemes: 1,260 MiB of allocations in Go, outside the VM's memory limit, and 0.8 to 1.5 seconds with no check of the interrupt flag. It now takes 24 MiB, the text in UTF-16 and its copy as Go reads it, and 17 to 36 ms on GCP.
+
+The first batch is 64 breaks, and each next one is as long as all those before it, up to 65,536, so reading every segment takes few calls. The work of each batch checks the VM every 256 breaks (see [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list)). `breaker.go` of go-intl finds one boundary at a time through `qjs.patch`, and `qjs_segments.go` hands them out as `Segmenter.Iter`.
+
+A batch goes on where the last one stopped, with the same break iterator. The breaks go-intl finds depend on what its iterator saw before (the runs a dictionary breaks, the break engines it found), so they are those of one walk of the whole text only when one iterator finds them all. So a VM keeps the iterators of the 4 Segments objects it read last, each with its text in UTF-16, until it is closed. A Segments object whose iterator was dropped makes it again from the start of its text and walks past the breaks it has: the same breaks come out, for more time. Every segment is the same as before, through the iterator and through `containing` at any offset.
+
+Reading every word of 1 MiB of mixed text takes 1.38 seconds, as before, and 35 MiB of allocations in Go, where it took 88. Reading every word of a short text 10,000 times takes 315 ms, where it took 311 ms (one run each on GCP cores 0 and 4).
+
+Tests: `TestSegmentsInBatches` in `intl/segmenter_test.go` checks the iterator, `containing` on new Segments objects and on one, and more Segments objects read in turn than a VM keeps iterators for, against go-intl's whole walk, on 100,000 code units of several scripts with lone surrogates, for six locales and granularities. `TestSegmentsMemory` checks that the first segments of 8 MiB take less than 64 MiB in Go.

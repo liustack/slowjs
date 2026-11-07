@@ -242,3 +242,17 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 最终的 profile 把数字剩下的分配挪到了取决于值的分组和组装上。日期分配的是它的输出、空格替换和数字字段。这些共享的舍入和字段例程仍然同时服务字符串和 parts。[页面测量](../history.zh-CN.md#intl-格式化) 并不能证明整页变快了。
 
 测试：`TestFormatStringMatchesParts`、`TestQJSCachedSource`、`TestQJSDataCacheBound`、现有的 Chromium 语料、并发注册表测试、篡改和链接测试。`BenchmarkFormat` 用上面的输入覆盖构造、格式化和不带缓存的 resolve。上游的改动保留在 `qjs.patch` 里。更新 go-intl 之后，从那个补丁重建它，检查源的隔离和并发使用，对比每个记录下来的答案，并重复针对性的测量。
+
+## Intl.Segmenter 边读边找分段
+
+发布版本：Unreleased。
+
+Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。
+
+第一批是 64 个断点，之后每批和前面所有批加起来一样长，最多 65,536 个，所以读完所有分段只要很少几次调用。每批的活每 256 个断点检查一次 VM（见 [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。go-intl 的 `breaker.go` 通过 `qjs.patch` 改成一次找一个边界，`qjs_segments.go` 把它们作为 `Segmenter.Iter` 提供出来。
+
+每一批从上一批停下的地方接着找，用的是同一个断点迭代器。go-intl 找到的断点取决于它的迭代器之前看到过什么（词典切分的那些片段，它找到的断词引擎），所以只有一个迭代器从头找到尾，结果才和整段走一遍相同。因此 VM 保留最近读过的 4 个 Segments 对象的迭代器，每个带着它的 UTF-16 文本，直到 VM 关闭。迭代器被丢掉的 Segments 对象会从文本开头重新建一个，并走过它已经有的断点：出来的断点一样，只是多花些时间。每个分段都和原来一样，不管是通过迭代器，还是在任何位置调用 `containing`。
+
+读完 1 MiB 混合文本的每个词要 1.38 秒，和原来一样，Go 里分配 35 MiB，原来是 88 MiB。把一段短文本的每个词读 10,000 遍要 315 ms，原来是 311 ms（在 GCP 的 0 和 4 号核上各跑一次）。
+
+测试：`intl/segmenter_test.go` 里的 `TestSegmentsInBatches` 在 10 万个码元、几种文字、带孤立代理项的文本上，对六种 locale 和粒度，把迭代器、在新的 Segments 对象上和在同一个对象上调用 `containing`、以及轮流读比 VM 保留的迭代器更多的 Segments 对象，都和 go-intl 整段走一遍的结果比较。`TestSegmentsMemory` 检查 8 MiB 文本的头几个分段在 Go 里用不到 64 MiB。

@@ -595,15 +595,7 @@ var bridge = []*quickjs.Builtin{
 		return a.VM().NewInt(c.c.Compare(x, y)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
-	intlhook.NewBuiltin("breaks", 2, func(a quickjs.Args) (quickjs.Value, error) {
-		s, ok, err := formatterOf[*segmenter](a)
-		if !ok {
-			return quickjs.UndefinedValue, err
-		}
-
-		text, _ := intlhook.WTF8(a, 1)
-		return intArray(a.VM(), s.breaks(text))
-	}),
+	segBreaks,
 	resolveBuiltin(relativeTimeFormatCtor),
 	// rtfFormat and rtfParts take the value, a number, and the unit, a
 	// string. The parts are their type, value and unit in turn, the unit

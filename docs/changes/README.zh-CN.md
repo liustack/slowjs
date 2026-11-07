@@ -123,6 +123,7 @@ read_when:
 | Temporal 的 duration 使用 DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-的-duration-使用-durationformat) |
 | 引擎读 Go 的时钟 | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#引擎读-go-的时钟) |
 | Date、Intl 和 Temporal 每个 VM 共用一个墙上时钟，用 `VM.SetClock` 设置 | v0.28.2 | [time-and-intl.md](time-and-intl.zh-CN.md#每个-vm-一个墙上时钟) |
+| Intl.Segmenter 边读边找分段 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#intlsegmenter-边读边找分段) |
 
 ## Temporal
 
