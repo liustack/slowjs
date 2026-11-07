@@ -92,7 +92,7 @@ step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/c
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain"
 step cycles fast last "engine/test/cycles.sh"
-step scripts fast last "engine/test/compare-test.sh"
+step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh"
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"
 step math full last "engine/test/math.sh"

@@ -51,16 +51,30 @@ else
 	lowpatch=${low##*.}
 	platform=$(go env GOHOSTOS)-$(go env GOHOSTARCH)
 	# The toolchains the go command can fetch, as v0.0.1-go1.N.P.GOOS-GOARCH.
-	versions=$(go list -m -versions golang.org/toolchain | tr ' ' '\n' |
+	# The list is fetched on its own so that a failure of go list stops the
+	# script: in a pipe its status would be lost, and a list that could not be
+	# read would pass for a list of the lowest release alone.
+	listed=$(go list -m -versions golang.org/toolchain) || {
+		echo "go-versions.sh: go list -m -versions golang.org/toolchain failed: the releases cannot be listed (the network, or GOPROXY)" >&2
+		exit 2
+	}
+	versions=$(printf '%s\n' "$listed" | tr ' ' '\n' |
 		sed -n "s/^v0\.0\.1-go\(1\.[0-9]*\.[0-9]*\)\.$platform\$/\1/p" |
 		awk -F. -v lm="$lowminor" -v lp="$lowpatch" -v stop="$stop" \
-			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop { print "go" $0 }
-			END { print "go1." lm "." lp }' |
+			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop { print "go" $0 }' |
 		sort -u -t. -k2,2n -k3,3n)
-	if [ -z "$versions" ]; then
-		echo "go-versions.sh: found no Go release from $low up to go1.$stop for $platform" >&2
+	# The release of the go line is in the list too, or the list is not read right.
+	case "
+$versions
+" in
+	*"
+go$low
+"*) ;;
+	*)
+		echo "go-versions.sh: go1.$lowminor.$lowpatch (the go line of go.mod) is not among the releases listed for $platform up to go1.$stop: the list could not be read" >&2
 		exit 2
-	fi
+		;;
+	esac
 fi
 
 if [ "${GO_VERSIONS_LIST:-}" = 1 ]; then
