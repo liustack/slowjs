@@ -62,6 +62,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `temporal/testdata/` | 和 Chromium 对照的表达式及它的答案，以及链接测试构建的程序 |
 | `internal/gointl/` | go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-go-intlinternalgointl)） |
 | `internal/intlhook/` | 包 `temporal` 从包 `intl` 拿的东西：它的 `toLocaleString` 的格式化，以及 VM 的默认时区 |
+| `internal/vmhook/` | `intl`、`temporal` 和 `fmt` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `quickjs` 设置（`vmhook.go`） |
 | `fmt/` | 包 `github.com/liustack/quickjs/fmt` |
 | `compare/` | 一个独立的模块，从上游保留下来，在这个引擎、goja 和 fastschema/qjs 上跑 QuickJS 的微基准 |
 | `internal/arewefastyet/` | compare/engines 运行的 V8 基准套件（v8-v7） |
@@ -89,6 +90,8 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 每个运行 javascript 的方法（`Eval`、`EvalValue`、`Call`、`CallValue`、`ExecutePendingJobs` 等）在运行 javascript 之前都先调用 `m.enter()` 和 `defer m.leave(&err)`。`enter` 记录调用嵌套了多深，只有最外层的调用才会按 `m.timeout` 设定截止时间，并在宿主里清掉中断标志。所以，在同一个 VM 上再执行更多 javascript 的 Go 函数，仍在外层调用的时限之内，也保留着待处理的 `Interrupt()`。引擎在生成的代码做轮询的地方，以及 C 里读这个标志的地方读它（[c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)）。截止时间用单调时钟（见 [uncatchable.md](changes/uncatchable.zh-CN.md#eval-超时用单调时钟)）。
 
 `SetEvalTimeout` 设置时长。`Interrupt()` 以原子方式设置标志，可以从任何 goroutine 调用。它通过 `VM.intr` 到达标志，`VM.intr` 把 VM 的宿主放在 Go 内存里，并用 `Close` 排好顺序。`Close` 只清内嵌的 `vmState`，从不清 `intr`，所以 `Interrupt` 在 `Close` 期间和之后从任何 goroutine 调用都是安全的。新的 VM 字段放进 `vmState`。加一个运行 javascript 的方法时，要加上 `enter` 和 `leave` 这一对，否则时限对它不起作用。所有可能碰到 getter、setter、proxy 陷阱、`toJSON`、`toString` 或被替换的内置方法的方法都算，不只是执行源码的那些：`GetProperty`、`SetProperty`、`Value.Any`、`Value.MarshalJSON` 和 `ErrorFromValue` 也有这一对，而 `outer`（没有时限，不能终止）留给不可能运行脚本的调用。由异常生成的 `*Error` 用 `ErrorFromValue` 读它的字段，所以在调用之外读出的错误也受时限约束。
+
+javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 `Interrupt` 在那里都停不下它，它在 Go 里分配的内存也不在内存上限之内。这个模块里那些工作量由脚本随意放大的 Go 函数，通过 `internal/vmhook` 守住限制：在长循环里每隔一段调用一次 `vmhook.Stop`，一旦为真就返回，这时无法捕获的 "interrupted" 已经挂起，和轮询抛出的一样（轮询检查的就是 `gohost.VM.Stopping`）。在构建大小由脚本决定的结果之前先看 `vmhook.Room`，放不下就用 `vmhook.OutOfMemory` 结束这次调用。
 
 ## 引擎旁边的包
 
