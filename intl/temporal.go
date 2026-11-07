@@ -137,7 +137,7 @@ func resolveTemporal(k *temporalKind, req request, defaultZone, zone string) *te
 		o["timeZone"] = zone
 		o["_temporalZone"] = true
 	}
-	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o}, defaultZone)
+	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o, vm: req.vm}, defaultZone)
 	if err != nil {
 		return &temporalFormat{err: err}
 	}
@@ -246,11 +246,11 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 	tf := temporalFormats[string(key)]
 	temporalFormatsMu.Unlock()
 	if tf == nil {
-		req := request{Options: map[string]any{}}
+		req := request{Options: map[string]any{}, vm: a.VM()}
 		if s, ok := intlhook.String(a, tfLocales); ok {
 			req.Locales = []string{s}
 		} else if s, ok := intlhook.String(a, tfLocales+1); ok {
-			l, ok := splitLocales(s)
+			l, ok := splitLocales(a.VM(), s)
 			if !ok {
 				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
 			}

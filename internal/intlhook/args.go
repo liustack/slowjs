@@ -22,13 +22,18 @@ import (
 // took the empty string for the argument and went on could do work for
 // nothing, or fail an invariant of its own and panic, which would go on in
 // the Go code that called javascript. So String and WTF8 panic with
-// failedArg instead, and the Builtin's function, made by NewBuiltin, returns
-// at once. A Builtin reads its arguments before it makes a Value, so that
-// the panic leaves none behind.
+// stopped instead, and the Builtin's function, made by NewBuiltin, returns
+// at once. A Builtin reads its arguments, and makes its last call of Check,
+// before it makes a Value, so that the panic leaves none behind.
+//
+// A loop whose length a script controls, such as one over the locales of a
+// list, calls Check every so often, which stops the Builtin the same way
+// once Interrupt or the eval timeout asked the call to end. Its caller holds
+// no lock then.
 
-// failedArg is what String and WTF8 panic with when an argument that is a
-// string could not be read.
-type failedArg struct{}
+// stopped is what String and WTF8 panic with when an argument that is a
+// string could not be read, and Check when the call is to end.
+type stopped struct{}
 
 // NewBuiltin is quickjs.NewBuiltin, for a function fn that reads its string
 // arguments with String and WTF8: when one fails, the Builtin returns at
@@ -38,7 +43,7 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 		defer func() {
 			switch p := recover(); p.(type) {
 			case nil:
-			case failedArg:
+			case stopped:
 				// The error is pending (see Args.String).
 				v, err = quickjs.UndefinedValue, nil
 			default:
@@ -53,7 +58,7 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 func String(a quickjs.Args, i int) (string, bool) {
 	s, ok := a.String(i)
 	if !ok && failed(a, i) {
-		panic(failedArg{})
+		panic(stopped{})
 	}
 	return s, ok
 }
@@ -62,7 +67,7 @@ func String(a quickjs.Args, i int) (string, bool) {
 func WTF8(a quickjs.Args, i int) (string, bool) {
 	s, ok := a.WTF8(i)
 	if !ok && failed(a, i) {
-		panic(failedArg{})
+		panic(stopped{})
 	}
 	return s, ok
 }
@@ -81,4 +86,12 @@ func failed(a quickjs.Args, i int) bool {
 		return false
 	}
 	return vmhook.Stop(a.VM())
+}
+
+// Check stops the Builtin, as a failed read does, when vmhook.Stop says that
+// the call is to end, for a function given to NewBuiltin.
+func Check(vm *quickjs.VM) {
+	if vmhook.Stop(vm) {
+		panic(stopped{})
+	}
 }

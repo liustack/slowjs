@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"github.com/liustack/quickjs"
 )
 
 // part is one element of an Intl formatToParts result.
@@ -20,6 +22,9 @@ type part struct {
 type request struct {
 	Locales []string       `json:"locales"`
 	Options map[string]any `json:"options"`
+	// vm is the VM whose Builtin resolves the request, which a long list of
+	// locales stops at its eval timeout (see goLocales).
+	vm *quickjs.VM
 }
 
 // jsError is an error that crosses into javascript as a particular error type.

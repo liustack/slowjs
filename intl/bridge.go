@@ -334,7 +334,7 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 
 // request returns the request the arguments a make.
 func (c *ctor) request(a quickjs.Args) (request, error) {
-	req := request{Options: map[string]any{}}
+	req := request{Options: map[string]any{}, vm: a.VM()}
 	for i, name := range c.fixed {
 		s, _ := intlhook.String(a, i)
 		req.Options[name] = s
@@ -343,7 +343,7 @@ func (c *ctor) request(a quickjs.Args) (request, error) {
 	if s, ok := intlhook.String(a, n); ok {
 		req.Locales = []string{s}
 	} else if s, ok := intlhook.String(a, n+1); ok {
-		l, ok := splitLocales(s)
+		l, ok := splitLocales(a.VM(), s)
 		if !ok {
 			return request{}, errors.New("intl: internal error: a malformed locale list")
 		}
@@ -379,10 +379,12 @@ func (c *ctor) request(a quickjs.Args) (request, error) {
 
 // splitLocales parses the list of tags javascript passes as one string: each
 // tag preceded by its length, in UTF-16 code units as javascript counts them,
-// and a colon, "5:en-US2:de".
-func splitLocales(s string) ([]string, bool) {
+// and a colon, "5:en-US2:de". A long list stops at the eval timeout of vm
+// (see checkTurn).
+func splitLocales(vm *quickjs.VM, s string) ([]string, bool) {
 	r := []string{}
 	for s != "" {
+		checkTurn(vm, len(r))
 		i := 0
 		n := 0
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -404,6 +406,11 @@ func splitLocales(s string) ([]string, bool) {
 				return nil, false
 			}
 
+			if s[j] < utf8.RuneSelf {
+				j++
+				n--
+				continue
+			}
 			c, size := utf8.DecodeRuneInString(s[j:])
 			j += size
 			n -= utf16.RuneLen(c)
@@ -533,14 +540,18 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
+		// Each canonical tag once, in the order of its first time.
 		r := []string{}
-		for _, tag := range tags {
+		seen := make(map[string]bool, len(tags))
+		for i, tag := range tags {
+			checkTurn(a.VM(), i)
 			s, err := canonicalLocale(tag)
 			if err != nil {
 				return quickjs.Value{}, jsErr(err)
 			}
 
-			if !contains(r, s) {
+			if !seen[s] {
+				seen[s] = true
 				r = append(r, s)
 			}
 		}
@@ -563,7 +574,7 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
-		r, err := goSupported(c.goSvc, tags)
+		r, err := goSupported(a.VM(), c.goSvc, tags)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
@@ -642,12 +653,14 @@ var bridge = []*quickjs.Builtin{
 		}
 
 		s, _ := intlhook.WTF8(a, 1)
-		items, ok := listItems(s)
+		items, ok := listItems(a.VM(), s)
 		if !ok {
 			return quickjs.Value{}, typeError("malformed list")
 		}
 
-		return listParts(a.VM(), items, f.f.FormatToParts(items))
+		vm := a.VM()
+		parts := f.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) })
+		return listParts(vm, items, parts)
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.
@@ -803,7 +816,7 @@ func localesArg(a quickjs.Args, i int) ([]string, error) {
 		return nil, nil
 	}
 
-	l, ok := splitLocales(s)
+	l, ok := splitLocales(a.VM(), s)
 	if !ok {
 		return nil, errors.New("intl: internal error: a malformed locale list")
 	}
@@ -886,7 +899,11 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 			vals[i].Free()
 		}
 	}
-	for _, s := range l {
+	for i, s := range l {
+		if stopTurn(vm, i) {
+			free()
+			return quickjs.UndefinedValue, nil
+		}
 		v, err := vm.NewString(s)
 		if err != nil {
 			free()

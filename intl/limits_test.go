@@ -7,10 +7,14 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/liustack/quickjs"
+	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // The work Intl does in Go for a script stays inside the limits of its VM:
@@ -87,6 +91,99 @@ func TestStringArgumentOutOfMemory(t *testing.T) {
 				t.Fatalf("panic: %v", pan)
 			}
 			wantUncatchable(t, err, false)
+		})
+	}
+}
+
+// A list a script passes Intl, however long, ends at the eval timeout: the
+// work Go does over it checks the VM between batches. Each case takes Go
+// several hundred milliseconds or more over a million tags or items, and the
+// timeout is 20ms. The list comes from Go, made before the call, so that the
+// time is all that of the Go work: none goes to the javascript of intl.js
+// that makes the list a Builtin gets.
+func TestLongListTimeout(t *testing.T) {
+	tags := make([]string, 1<<20)
+	var list strings.Builder
+	for i := range tags {
+		tags[i] = "zxx-x-" + strconv.FormatInt(int64(i), 36)
+		list.WriteString(strconv.Itoa(len(tags[i])) + ":" + tags[i])
+	}
+	lf, err := resolveListFormat(request{Locales: []string{"en"}, Options: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		js string
+		fn func(*quickjs.VM) (quickjs.Value, error)
+	}{
+		"getCanonicalLocales": {js: `bridge.getCanonicalLocales(undefined, bridge._list)`},
+		"supportedLocalesOf":  {js: `bridge.supportedLocalesOf("NumberFormat", undefined, bridge._list)`},
+		"resolve": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+			_, err := goResolve(vm, gointl.ServiceNumberFormat, tags)
+			return quickjs.UndefinedValue, err
+		}},
+		"supported": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
+			return quickjs.UndefinedValue, err
+		}},
+		"list": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+			items, _ := listItems(vm, list.String())
+			return listParts(vm, items, lf.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) }))
+		}},
+		"stringArray": {fn: func(vm *quickjs.VM) (quickjs.Value, error) { return stringArray(vm, tags) }},
+	} {
+		t.Run(name, func(t *testing.T) {
+			vm := newVM(t)
+			fns := map[string]*quickjs.Builtin{"work": intlhook.NewBuiltin("work", 0, func(a quickjs.Args) (quickjs.Value, error) {
+				return c.fn(a.VM())
+			})}
+			for _, b := range bridge {
+				f, err := vm.NewBuiltinFunction(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				n, err := vm.Call("(f => f.name)", f)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fns[n.(string)] = b
+				f.Free()
+			}
+			set, err := vm.EvalValue(`(name, f) => { (globalThis.bridge ??= {})[name] = f }`, quickjs.EvalGlobal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer set.Free()
+			for n, b := range fns {
+				f, err := vm.NewBuiltinFunction(b)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = set.Call(quickjs.UndefinedValue, n, f)
+				f.Free()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := set.Call(quickjs.UndefinedValue, "_list", list.String()); err != nil {
+				t.Fatal(err)
+			}
+			js := c.js
+			if js == "" {
+				js = `bridge.work()`
+			}
+			if err := vm.SetEvalTimeout(20 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			_, err, pan, elapsed := evalGuarded(t, vm, js, time.Minute)
+			if pan != nil {
+				t.Fatalf("panic: %v", pan)
+			}
+			wantUncatchable(t, err, true)
+			if elapsed > time.Second {
+				t.Fatalf("a timeout of 20ms ended the call after %v", elapsed)
+			}
+			t.Logf("ended after %v", elapsed)
 		})
 	}
 }

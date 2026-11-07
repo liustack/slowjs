@@ -37,7 +37,7 @@ func (p *pluralFormat) init() error { return nil }
 
 func resolvePluralRules(req request) (*pluralFormat, error) {
 	o := req.Options
-	loc, err := goResolve(gointl.ServicePluralRules, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServicePluralRules, req.Locales)
 	if err != nil {
 		return nil, err
 	}

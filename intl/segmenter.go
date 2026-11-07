@@ -27,7 +27,7 @@ func resolveSegmenter(req request) (*segmenter, error) {
 		return nil, err
 	}
 
-	loc, err := goResolve(gointl.ServiceSegmenter, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceSegmenter, req.Locales)
 	if err != nil {
 		return nil, err
 	}

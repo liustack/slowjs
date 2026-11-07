@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，有很多字符或字符串的类，以及 Intl 读不了的字符串参数'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，有很多字符或字符串的类，Intl 读不了的字符串参数，以及 Intl 在长列表上的循环'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -275,3 +275,15 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 现在这两个包的每个 Builtin 都由 `intlhook.NewBuiltin` 创建，用 `intlhook.String` 和 `intlhook.WTF8` 读字符串（`internal/intlhook/args.go`）。读取失败时 Builtin 立刻停下，调用以挂起的错误结束：内存不足，或者拼接期间来了 `Interrupt` 或 eval 超时时的中断。没有失败的读取返回的就是 `Args.String` 返回的东西，判断失败的检查只对不是字符串的参数运行，而且在 Go 里做，所以成功的调用格式化结果和以前一样。
 
 测试：`intl/limits_test.go` 里的 `TestStringArgumentOutOfMemory`（在限额 16 MiB 的 VM 里，对 32 MiB 的 rope 调用 NumberFormat、它的构造函数、`getCanonicalLocales`、Collator、`localeCompare`、Segmenter 和 `toLocaleUpperCase`），以及 `temporal/limits_test.go` 里的同名测试（`PlainDate.from`、`Duration.from`、`toLocaleString`）。
+
+## Intl 在长列表的循环里读中断标志
+
+发布版本：Unreleased。
+
+`Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的每个 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 的 `format` 和 `formatToParts`，现在不管列表多长都会在 `Interrupt` 和 eval 超时时停下。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完为止。`getCanonicalLocales` 找重复还要把每个标签和它前面的所有标签比一遍：10 万个互不相同的标签大约要比较 50 亿次，在 GCP 上要 8.5 秒，什么超时都打断不了。
+
+现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。
+
+把标签和某个服务的 locale 匹配时一次处理 256 个标签：一段里如果没有这个服务有的 locale 就跳过，答案就是列表剩下部分的答案，因为 ResolveLocale 取的是它找到的第一个标签。不超过 256 个标签的列表（页面传的就是这种）走的还是原来的路，每个答案都一样。
+
+测试：`intl/limits_test.go` 里的 `TestLongListTimeout`（`getCanonicalLocales`、`supportedLocalesOf`、构造函数的匹配、ListFormat 的各部分和结果的数组，每个都用在 Go 里造好的列表，这样时间里没有一点是造列表的 javascript）。

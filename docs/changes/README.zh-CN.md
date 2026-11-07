@@ -97,6 +97,7 @@ read_when:
 | 编译一个很长的正则时，每个长循环都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#编译一个长正则时在每个长循环里读中断标志) |
 | 正则的类不管有多少字符或字符串，都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#无论正则的类有多少字符或字符串都读中断标志) |
 | Intl 读不了的字符串参数会结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用) |
+| Intl 在长列表的循环里读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
 
 ## 错误和调用栈
 

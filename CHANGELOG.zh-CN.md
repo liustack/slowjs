@@ -7,6 +7,7 @@
 ### 修复
 
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个用 `+` 拼成、VM 没有内存拼接的字符串时，现在以无法捕获的内存不足错误结束调用。原来它们以 `intl: unexpected number bridge value` panic，panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 遇到这种参数也会停下，原来它们把它当成空字符串接着做，直到调用结束（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用)）。
+- `Interrupt` 和 eval 超时现在能让 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 停下，不管列表多长。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完。`getCanonicalLocales` 找重复时还要把每个标签和它前面的所有标签比一遍，10 万个互不相同的标签要 8.5 秒，现在只要 0.32 秒。超时设为 20 ms 时，这些调用在大约一百万个标签或项的列表上现在都在 60 ms 内停下，原来 Go 的活要跑 0.2 到 3.5 秒。每个答案都和原来一样（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。
 - 在 windows/amd64 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在每种 CPU 上都直接变成它的 panic，不再先踩坏进程的内存。windows 在出错时把 CPU 的状态写在栈指针下面，带 AMX 的 Intel 上是 12.8 KiB，而 Go 只在 goroutine 的栈下面留 4 KiB（golang/go#81238），所以这次写入可能越过栈写进堆里。现在每个生成函数都确保栈指针下面再多 12 KiB，一共至少 16.9 KiB。只有 windows 的代码变了：在 linux 上用这份代码测量，那里的渲染慢 0 到 2.4%，运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB。Go 代码里的错误，不管是宿主的还是程序的，在 Go 修好之前仍然只有 Go 的 4 KiB（[c-engine.md](docs/changes/c-engine.zh-CN.md#windows-上给故障留的空间)）。
 
 ## [v0.30.1] - 2026-11-06

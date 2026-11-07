@@ -62,7 +62,7 @@ func resolveCollator(req request) (*collator, error) {
 	case s == "false":
 		opts.CaseFirst = gointl.CaseFirstFalse
 	}
-	loc, err := goResolve(gointl.ServiceCollator, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceCollator, req.Locales)
 	if err != nil {
 		return nil, err
 	}

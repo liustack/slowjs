@@ -38,7 +38,7 @@ func resolveDisplayNames(req request) (*displayNames, error) {
 		return nil, err
 	}
 
-	loc, err := goResolve(gointl.ServiceDisplayNames, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceDisplayNames, req.Locales)
 	if err != nil {
 		return nil, err
 	}

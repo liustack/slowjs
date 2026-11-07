@@ -41,7 +41,7 @@ func (f *numberFormat) init() error { return nil }
 
 func resolveNumberFormat(req request) (*numberFormat, error) {
 	o := req.Options
-	loc, err := goResolve(gointl.ServiceNumberFormat, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceNumberFormat, req.Locales)
 	if err != nil {
 		return nil, err
 	}
