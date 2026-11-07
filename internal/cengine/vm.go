@@ -335,7 +335,10 @@ const unprintable = "an exception whose String() threw"
 // exception takes the pending exception of the context. It converts the
 // exception and its stack once each, and leaves out what does not convert:
 // an exception may throw again on every conversion, so what a conversion
-// here throws is dropped, not converted in turn.
+// here throws is dropped, not converted in turn. An uncatchable exception
+// that a conversion throws (an interrupt, the timeout, out of memory) is
+// not dropped: it ends the call, and exception returns it in place of the
+// one it was converting.
 func (v *VM) exception() error {
 	// The flag of an uncatchable exception outlives it: cleared here, or
 	// the next exception would be uncatchable too.
@@ -343,41 +346,67 @@ func (v *VM) exception() error {
 	u, tag := JS_GetException(v.sp, v.ctx)
 	JS_SetUncatchableException(v.sp, v.ctx, 0)
 	var e *JSError
+	ok := true
 	if uncatchable {
 		e = v.engineError(u, tag)
 	} else {
-		e = v.thrown(u, tag)
+		e, ok = v.thrown(u, tag)
 	}
 	v.free(u, tag)
+	if !ok {
+		return v.exception()
+	}
 	return e
 }
 
 // thrown converts (u, tag), an exception the script threw: String() of it
-// and its stack.
-func (v *VM) thrown(u, tag uintptr) *JSError {
-	e := &JSError{Message: unprintable}
+// and its stack. ok is false when a conversion met an uncatchable
+// exception, which stays pending: one it threw, or one a built-in it called
+// only recorded, such as a promise resolve function whose then getter was
+// interrupted.
+func (v *VM) thrown(u, tag uintptr) (e *JSError, ok bool) {
+	if e, ok = v.convertThrown(u, tag); ok && JS_IsUncatchableException(v.sp, v.ctx) != 0 {
+		return nil, false
+	}
+	return e, ok
+}
+
+// convertThrown is thrown, but for an uncatchable exception left pending by
+// a conversion that ended well.
+func (v *VM) convertThrown(u, tag uintptr) (e *JSError, ok bool) {
+	e = &JSError{Message: unprintable}
 	if msg, ok := v.text(u, tag); ok {
 		e.Message = msg
-	} else {
-		v.dropException()
+	} else if v.uncatchable() {
+		return nil, false
 	}
 	if int32(tag) != tagObject {
-		return e
+		return e, true
 	}
 	su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
 	if int32(stag) == tagException {
-		v.dropException()
-		return e
+		return e, !v.uncatchable()
 	}
+	ok = true
 	if int32(stag) != tagUndefined {
-		if s, ok := v.text(su, stag); ok {
+		if s, sok := v.text(su, stag); sok {
 			e.Stack = s
 		} else {
-			v.dropException()
+			ok = !v.uncatchable()
 		}
 	}
 	v.free(su, stag)
-	return e
+	return e, ok
+}
+
+// uncatchable reports whether the exception a conversion threw is
+// uncatchable, and leaves it pending then. One the script threw is dropped.
+func (v *VM) uncatchable() bool {
+	if JS_IsUncatchableException(v.sp, v.ctx) != 0 {
+		return true
+	}
+	v.dropException()
+	return false
 }
 
 // engineError converts an uncatchable exception, which the engine made, and

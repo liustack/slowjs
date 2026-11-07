@@ -67,6 +67,35 @@ func TestExceptionConversionThrows(t *testing.T) {
 	})
 }
 
+// TestExceptionConversionUncatchable: when the timeout stops String() of what
+// was thrown, or the getter of its stack, Eval returns the uncatchable
+// interrupted error, not the thrown value with what did not convert left
+// out, and the VM goes on.
+func TestExceptionConversionUncatchable(t *testing.T) {
+	needPolls(t)
+	for _, src := range []string{
+		`throw { toString() { for (;;) {} } }`,
+		`const e = new Error("x"); Object.defineProperty(e, "stack", { get() { for (;;) {} } }); throw e`,
+		`const e = new Error("y"); Object.defineProperty(e, "stack", { value: { toString() { for (;;) {} } } }); throw e`,
+		// The getter ends well: the resolve function only records the interrupt
+		// of the then getter, which stays pending.
+		`let resolve; new Promise(r => { resolve = r }); const e = new Error("z"); Object.defineProperty(e, "stack", { get: resolve.bind(null, { get then() { for (;;) {} } }) }); throw e`,
+	} {
+		v := newVM(t, Options{Seed: 1})
+		v.SetTimeout(20 * time.Millisecond)
+		_, err := v.Eval(src, "throws.js")
+		var e *JSError
+		if !errors.As(err, &e) || !e.Uncatchable || e.Message != "InternalError: interrupted" {
+			t.Errorf("%s: got %#v, want the uncatchable interrupted error", src, err)
+		}
+		v.SetTimeout(0)
+		if got, err := v.Eval(`1+1`, "after.js"); err != nil || got != "2" {
+			t.Errorf("%s: then 1+1 gave %q, %v", src, got, err)
+		}
+		closeVM(t, v)
+	}
+}
+
 // brokenAfter checks what a VM must be after the engine failed in it: broken,
 // refusing every entry with ErrBroken, and closing without a leak of host
 // memory. The goroutine must have its setting of SetPanicOnFault back.
