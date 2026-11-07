@@ -457,7 +457,9 @@ func TestResultWalkAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer obj.Free()
-	few, many := make([]Value, 2), make([]Value, 40)
+	// 250 Values make 251 nodes, 250 kids, references and places, close
+	// to keepSnapshot.
+	few, many, most := make([]Value, 2), make([]Value, 40), make([]Value, 250)
 	fill := func(s []Value) []Value {
 		for i := range s {
 			s[i] = obj.Dup()
@@ -468,6 +470,9 @@ func TestResultWalkAllocs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := m.RegisterFunc("many", func() []Value { return fill(many) }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterFunc("most", func() []Value { return fill(most) }, false); err != nil {
 		t.Fatal(err)
 	}
 	allocs := func(name string) float64 {
@@ -482,8 +487,12 @@ func TestResultWalkAllocs(t *testing.T) {
 			}
 		})
 	}
-	if a, b := allocs("few"), allocs("many"); a != b {
+	a := allocs("few")
+	if b := allocs("many"); a != b {
 		t.Errorf("a call that returns 2 Values allocates %v times, one that returns 40 %v", a, b)
+	}
+	if b := allocs("most"); a != b {
+		t.Errorf("a call that returns 2 Values allocates %v times, one that returns 250 %v", a, b)
 	}
 }
 

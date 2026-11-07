@@ -93,8 +93,8 @@ type snapshot struct {
 	many map[refPlace]int32
 }
 
-// keepSnapshot is the most of each slice and map of a snapshot that the VM
-// keeps for the next call.
+// keepSnapshot is the most nodes, kids, references and places of a call
+// whose snapshot the VM keeps for the next call.
 const keepSnapshot = 256
 
 // takeSnapshot gives the call the snapshot the VM keeps, or a new one when
@@ -121,8 +121,12 @@ func (m *VM) releaseSnapshot(s *snapshot) {
 		s.many = nil
 	}
 	clear(s.many)
+	// A call of up to keepSnapshot nodes, kids and references leaves its
+	// slices for the next: they hold at most about twice that, as append
+	// grows them, and vals no more than the kids of the arrays being made.
+	keep := len(s.nodes) <= keepSnapshot && len(s.kids) <= keepSnapshot && len(s.held) <= keepSnapshot
 	s.nodes, s.kids, s.held, s.vals = s.nodes[:0], s.kids[:0], s.held[:0], s.vals[:0]
-	if cap(s.nodes) <= keepSnapshot && cap(s.kids) <= keepSnapshot && cap(s.held) <= keepSnapshot && cap(s.vals) <= keepSnapshot {
+	if keep {
 		m.snap = s
 	}
 }
