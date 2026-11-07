@@ -1638,6 +1638,9 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       for (auto *II : lifetimes)
         II->eraseFromParent();
 
+      for (auto *A : dynamic)
+        if (A->getAlign().value() > 16)
+          rejected = true;
       const bool dyn = !dynamic.empty() || !saves.empty();
       uint64_t off = dyn ? 16 : 0; // word 0 holds the running top
       SmallVector<std::pair<AllocaInst *, uint64_t>> placed;

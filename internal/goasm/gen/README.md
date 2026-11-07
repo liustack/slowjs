@@ -452,7 +452,12 @@ What the check takes on trust, and where it stops:
   callee relies on. The pass's widening makes every one a whole i32, and
   `TestNarrowArgs` runs it with garbage above each narrow value.
 - A Go frame of 4096 bytes or more has a stack check the check does not
-  know, so such a function fails it.
+  know, so such a function fails it. For a smaller frame the check holds the
+  compare to the frame: on amd64 no LEA up to 128 bytes (the frame with the
+  8 bytes of BP) and `LEAQ -(frame-128)(SP), R12` past it, on arm64 the words
+  of the compare. `host_poll` has its stack check read on both architectures.
+  A dynamic alloca aligned beyond 16 is refused by the shadow-stack pass, as
+  a fixed one is.
 - The loader. The check reads the binary in the format of its system: ELF
   for linux, a static executable linked at a fixed address, which nothing
   writes into after the kernel maps it (an ELF PIE, `-buildmode=pie`, and
@@ -510,9 +515,10 @@ What the check takes on trust, and where it stops:
 On arm64 the check (`CheckEngineARM64`, `arm64_verify.go`) is narrower. It
 holds each generated function in the linked binary to the object llvm-mc
 made of the lowered text: Go's prologue (a stack check exactly when the
-function is off the NOSPLIT list, whose load of the guard and branch to
-morestack it reads but not the compare between them, and the frame the TEXT
-asks for, below 4096 bytes or a multiple of 4096), the
+function is off the NOSPLIT list, whose load of the guard, compare and branch to
+morestack it reads word for word as Go writes them for the frame the TEXT
+asks for, SP against the guard up to 128 bytes and SP less (frame - 128) in x17
+up to 4096, with a frame past 4096 refused, and the frame itself), the
 loads of the arguments, the no-ops before the body, the body word for word
 with each `BL` and `ADRP`/`ADD` at the target the object names, the stores
 of the result, Go's epilogue, one RET and the call of morestack. Each call

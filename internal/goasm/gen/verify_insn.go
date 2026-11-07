@@ -748,6 +748,8 @@ func (k *checker) gLoad(a uint64, in x86asm.Inst) (uint64, error) {
 // where a load of g at its start is the one of its room check, not Go's.
 func (k *checker) goPrologue(start uint64, roomFirst bool) (goFrame, error) {
 	var g goFrame
+	var leaDisp int64
+	hasLea := false
 	a := start
 	in, err := k.dec(a)
 	if err != nil {
@@ -763,9 +765,11 @@ func (k *checker) goPrologue(start uint64, roomFirst bool) (goFrame, error) {
 		}
 		check := x86asm.RSP
 		if in.Op == x86asm.LEA && isReg(in.Args[0], x86asm.R12) {
-			if m, ok := in.Args[1].(x86asm.Mem); !ok || m.Base != x86asm.RSP || m.Index != 0 {
+			m, ok := in.Args[1].(x86asm.Mem)
+			if !ok || m.Base != x86asm.RSP || m.Index != 0 {
 				return g, fmt.Errorf("unknown Go stack check at %#x: %v", a, in)
 			}
+			leaDisp, hasLea = m.Disp, true
 			check = x86asm.R12
 			a += uint64(in.Len)
 			if in, err = k.dec(a); err != nil {
@@ -809,7 +813,40 @@ func (k *checker) goPrologue(start uint64, roomFirst bool) (goFrame, error) {
 		}
 	}
 	g.afterLead = a
+	if g.split {
+		if err := stackCheckFits(g, hasLea, leaDisp); err != nil {
+			return g, err
+		}
+	}
 	return g, nil
+}
+
+// stackCheckFits holds the stack check of a prologue to the frame it came
+// with: Go's assembler checks SP against the guard when the frame (the
+// TEXT size, and the 8 bytes of BP when it is saved) is at most abi.StackSmall
+// (128) bytes, and SP less (frame - 128) up to abi.StackBig (4096), as
+// LEAQ -(frame-128)(SP), R12 (cmd/internal/obj/x86/obj6.go, stacksplit). A
+// different displacement, or a LEA that a small frame does not have, checks
+// the wrong depth. A frame past StackBig has a longer form with a test of
+// underflow, which no function of the engine has and nothing has reviewed.
+func stackCheckFits(g goFrame, hasLea bool, leaDisp int64) error {
+	frame := g.frame
+	if g.bp {
+		frame += 8
+	}
+	switch {
+	case frame <= 128:
+		if hasLea {
+			return fmt.Errorf("the stack check takes SP less %d for a frame of %d bytes, which is checked against SP itself", -leaDisp, frame)
+		}
+	case frame <= 4096:
+		if !hasLea || leaDisp != -(frame-128) {
+			return fmt.Errorf("the stack check of a frame of %d bytes takes SP less %d, want less %d (a LEA: %v)", frame, -leaDisp, frame-128, hasLea)
+		}
+	default:
+		return fmt.Errorf("a stack check for a frame of %d bytes, past the 4096 whose form is reviewed", frame)
+	}
+	return nil
 }
 
 // goEpilogue checks what follows a body at e: Go's expansion of RET, then
@@ -1099,10 +1136,19 @@ func (k *checker) checkHostPoll() error {
 	}
 	called := false
 	for n := 0; n < 24; n++ {
+		if t >= sym.Value+sym.Size {
+			break
+		}
 		if in, err = k.dec(t); err != nil {
 			return err
 		}
 		rel, isRel := in.Args[0].(x86asm.Rel)
+		// The block the JBE goes to is one straight run: the spill of the
+		// arguments, the call of morestack, the reload and a JMP to the start
+		// (the runtime wants nothing else set up for a function with no
+		// context). Any other jump in it (a conditional one, JRCXZ or LOOP, an
+		// indirect one, a RET) can skip the call while the call is still
+		// there to be seen, so none is allowed.
 		switch {
 		case in.Op == x86asm.CALL && isRel && uint64(int64(t)+int64(in.Len)+int64(rel)) == ms.Value:
 			called = true
@@ -1111,8 +1157,10 @@ func (k *checker) checkHostPoll() error {
 				return fail("its stack check does not call morestack and jump back to the start")
 			}
 			return nil
-		case in.Op == x86asm.RET || in.Op == x86asm.CALL:
-			return fail("its stack check does not call morestack and jump back to the start")
+		case in.Op == x86asm.CALL:
+			return fail("its stack check calls something else than morestack")
+		case in.Op == x86asm.RET, in.Op == x86asm.JMP, strings.HasPrefix(in.Op.String(), "J"), strings.HasPrefix(in.Op.String(), "LOOP"):
+			return fail("its stack check has a branch of its own (%v) that can skip the call of morestack", in)
 		}
 		t += uint64(in.Len)
 	}

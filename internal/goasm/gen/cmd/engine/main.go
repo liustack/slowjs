@@ -673,7 +673,6 @@ func main() {
 			vpkg = *pkg
 		}
 		var probes, facts gen.RegFacts
-		polls := false
 		if !a64 {
 			var err error
 			if probes, err = gen.ParseRegFacts(readFile(probeFacts)); err != nil {
@@ -682,11 +681,12 @@ func main() {
 			if facts, err = gen.ParseRegFacts(readFile(factsPath)); err != nil {
 				die(err)
 			}
-			// Code with no cycle has no tick, and its binary no host_poll.
-			for _, m := range metas {
-				for _, c := range m.Rec.Calls {
-					polls = polls || c.Target == "host_poll"
-				}
+		}
+		// Code with no cycle has no tick, and its binary no host_poll.
+		polls := false
+		for _, m := range metas {
+			for _, c := range m.Rec.Calls {
+				polls = polls || c.Target == "host_poll"
 			}
 		}
 		for _, bin := range strings.Split(*verifyBin, ",") {
@@ -695,7 +695,7 @@ func main() {
 			var err error
 			if a64 {
 				cr, err = gen.CheckEngineARM64(gen.EngineCheck{Lowered: loweredObj, Bin: bin, Pkg: vpkg, Names: gonames, Plan: plan,
-					Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, Align64: align64})
+					Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf, All: *verifyAll, HostPoll: *pollOn && polls, Align64: align64})
 			} else {
 				cr, err = gen.CheckEngine(gen.EngineCheck{LLC: objPath, Lowered: loweredObj, Bin: bin, Pkg: vpkg,
 					Names: gonames, Unit: unit, Plan: plan, Metas: metas, Stubs: stubs, Sigs: sigs, Leaves: rep.Leaf,
