@@ -90,11 +90,14 @@ func main() {
 	}
 }
 
-// head matches the start of a function NAME: its TEXT line, the
-// NO_LOCAL_POINTERS line it may have and the PCALIGN of its body, with or
-// without a tab before the lines after TEXT.
+// head matches the start of a function NAME: its TEXT line, the lines the
+// generator writes before the body (a NO_LOCAL_POINTERS line, and the block
+// "#ifdef GOOS_windows ... #endif" with the room check of windows/amd64, whose
+// lines are indented) and the PCALIGN of the body. Group 1 is everything up to
+// the PCALIGN, group 2 the white space before it. Lines of the block must be
+// indented, so a match never runs on into the next function.
 func head(name string) *regexp.Regexp {
-	return regexp.MustCompile(`(?m)^(TEXT ·` + regexp.QuoteMeta(name) + `\(SB\).*\n(?:[ \t]*NO_LOCAL_POINTERS\n)?)([ \t]*)PCALIGN \$\d+\n`)
+	return regexp.MustCompile(`(?m)^(TEXT ·` + regexp.QuoteMeta(name) + `\(SB\).*\n(?:[ \t]*NO_LOCAL_POINTERS\n)?(?:#ifdef [^\n]*\n(?:[ \t][^\n]*\n)*#endif\n)?)([ \t]*)PCALIGN \$\d+\n`)
 }
 
 var textLine = regexp.MustCompile(`(?m)^TEXT ·([A-Za-z0-9_$.]+)\(SB\)`)
