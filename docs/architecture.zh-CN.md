@@ -69,7 +69,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 ## 核心类型
 
-- `VM`，主要的句柄：一个 JS realm 和它在引擎里的运行时，带着 Go 宿主给它的内存。由 `NewVM()` 创建，`Close()` 释放。多个 goroutine 并发使用它不安全。
+- `VM`，主要的句柄：一个 JS realm 和它在引擎里的运行时，带着 Go 宿主给它的内存。由 `NewVM()` 创建，`Close()` 释放。多个 goroutine 并发使用它不安全。有错误结果的方法用这个错误报告它能看出的误用，而不是 panic：在对 VM 的调用进行中（比如在 javascript 调用的 Go 函数里）调用 `Close` 和 `ReleaseMemory`，会返回错误，什么也不改。
 - `Value`：包装一个引用计数的 `jsValue`。`Dup()` 和 `Free()` 必须严格成对，并且正确嵌套（类型的文档说明了跨 goroutine 和 channel 时怎么会出错）。用错会导致泄漏或释放后使用，原生测试宿主的 sanitizer 和 `internal/cengine` 的检查能抓到。
 - `Object`、`Atom` 和 `HostFunc`（`func(args []any) (any, error)`）。
 - `Builtin`，javascript 当作内置函数调用的 Go 函数，以及 `Args`，它被调用时的参数（见[从 JavaScript 调用的 Go 函数](#从-javascript-调用的-go-函数)）。

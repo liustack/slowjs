@@ -76,6 +76,7 @@ read_when:
 | 值的构造函数会报告内存不足 | Unreleased | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
 | 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
 | UndefinedValue 作为参数和属性值 | Unreleased | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
+| 拒绝在对 VM 的调用进行中 Close | Unreleased | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
 
 ## 守得住的限额
 

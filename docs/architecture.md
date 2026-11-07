@@ -69,7 +69,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 
 ## Core types
 
-- `VM`, the main handle: a JS realm and its runtime in the engine, with the memory the Go host gave it. Made by `NewVM()`, released by `Close()`. Not safe for concurrent use by several goroutines.
+- `VM`, the main handle: a JS realm and its runtime in the engine, with the memory the Go host gave it. Made by `NewVM()`, released by `Close()`. Not safe for concurrent use by several goroutines. A method with an error result reports a misuse it can see with that error, not a panic: `Close` and `ReleaseMemory` during a call into the VM, such as from a Go function that javascript called, return an error and change nothing.
 - `Value`: wraps a reference-counted `jsValue`. `Dup()` and `Free()` must be strictly paired and properly nested (the type's doc says how this breaks across goroutines and channels). Getting it wrong causes leaks or use after free, which the sanitizers of the native test host and the checks of `internal/cengine` catch.
 - `Object`, `Atom` and `HostFunc` (`func(args []any) (any, error)`).
 - `Builtin`, a Go function javascript calls as a built-in, and `Args`, the arguments of its call (see [Go functions called from javascript](#go-functions-called-from-javascript)).

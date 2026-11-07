@@ -1,6 +1,7 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close'
 read_when:
+  - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，以及失败时会怎样
   - 修改 quickjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
   - 从 javascript 得到的 Go 字符串里有替换字符，或者从 Go 传出的字符串在 javascript 里读起来不一样
@@ -436,3 +437,15 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 代价：没有。复制仍是同样的两个字的移动。
 
 测试：`TestValueOfNoVM`（`othervm_test.go`）把 `UndefinedValue` 和零值 `Value` 传给 `Call`，作为 `Value.Call` 的 `this`，传给 `SetPropertyValue` 和 `GetProperty`，并从 Go 函数单独或在切片里返回它们，要求脚本里得到 `undefined`。
+
+## 拒绝在对 VM 的调用进行中 Close
+
+发布版本：Unreleased。
+
+在这个 VM 上的 javascript 调用的 Go 函数里对 VM 调用 `Close`，会释放运行时、解除内存映射、清空 VM 的状态，而引擎此时还在 Go 函数下面运行，用的正是 `Close` 刚交还的栈帧和内存。Go 函数返回后，调用外围的代码读到被清空的状态，以空指针 panic，从运行脚本的 `Eval` 里冒出来。
+
+现在 `Close` 先检查有没有对这个 VM 的调用在进行：没有脚本，没有 javascript 调用的 Go 函数，也没有别的进入引擎的调用。有的话，它返回错误，什么也不改，VM 继续可用。调用返回之后的 `Close` 才关闭它。返回错误符合 API 的规则（[architecture.md](../architecture.zh-CN.md#核心类型)）：`Close` 本来就返回错误（操作系统拒绝归还内存时），有错误可返回的方法不 panic。`OnClose` 的函数里调用的 `Close` 仍然返回 nil，因为那时 `Close` 已经在运行。
+
+代价：`Close` 开始时多比较一次。
+
+测试：`TestCloseInsideACall`（`closetwice_test.go`）在 javascript 调用的 Go 函数里关闭 VM，要求得到错误、脚本的结果、下一次调用正常，以及之后的 `Close` 关闭 VM。

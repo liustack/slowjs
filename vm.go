@@ -5,6 +5,7 @@
 package quickjs // import "github.com/liustack/quickjs"
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -305,9 +306,16 @@ func (m *VM) SetStrip(s Strip) {
 // A step of Close that panics does not keep the others from running: if a
 // function of OnClose panics, the rest still run. Close then panics with the
 // first panic. A Close inside a function of OnClose returns nil.
+//
+// Close during a call into m, as from a Go function that javascript on m
+// called, returns an error and changes nothing: the engine is still running
+// below that function. m goes on, and a Close after the call closes it.
 func (m *VM) Close() error {
 	if m.closing {
 		return nil
+	}
+	if m.entered != 0 {
+		return errCloseInCall
 	}
 	if m.closed {
 		return m.closeEngineAgain()
@@ -351,6 +359,9 @@ func (m *VM) Close() error {
 // A package that keeps something per VM in a table of its own, such as a
 // closure that may reference the VM, removes it here, so that the table
 // does not keep the VM, or what it closes over, reachable after Close.
+// errCloseInCall is the error of a Close during a call into the VM.
+var errCloseInCall = errors.New("quickjs: Close while the VM runs a call")
+
 func (m *VM) OnClose(f func()) {
 	m.onClose = append(m.onClose, f)
 }

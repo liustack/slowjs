@@ -1,6 +1,7 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined, Close refused during a call into the VM'
 read_when:
+  - Closing a VM from a Go function that javascript called
   - Passing a Value to a method of a VM, or returning Values or a map from a Go function, and what happens when that fails
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
@@ -436,3 +437,15 @@ Release: Unreleased.
 Cost: none. The copy is the same move of two words.
 
 Test: `TestValueOfNoVM` (`othervm_test.go`) passes `UndefinedValue` and the zero `Value` to `Call`, as the `this` of `Value.Call`, to `SetPropertyValue` and `GetProperty`, and returns them from Go functions, alone and in a slice, and requires `undefined` in the script.
+
+## Close inside a call into the VM is refused
+
+Release: Unreleased.
+
+`Close` of a VM from a Go function that javascript on that VM called freed the runtime, unmapped the memory and cleared the state of the VM while the engine was still running below the Go function, on frames and memory that `Close` had just given back. When the Go function returned, the code around the call read the cleared state and panicked with a nil pointer, out of the `Eval` that ran the script.
+
+Now `Close` checks first that no call into the VM is in progress: no script, no Go function that javascript called and no other call into the engine. During one it returns an error and changes nothing, and the VM goes on. A `Close` after the call returns closes it. An error fits the rules of the API ([architecture.md](../architecture.md#core-types)): `Close` already returns an error, for the memory the OS refuses, and a method that has an error to return does not panic. A `Close` from a function of `OnClose` still returns nil, as `Close` is already running then.
+
+Cost: one compare when `Close` starts.
+
+Test: `TestCloseInsideACall` (`closetwice_test.go`) closes the VM from a Go function that javascript called, and requires the error, the result of the script, the next call to work, and the `Close` after it to close the VM.

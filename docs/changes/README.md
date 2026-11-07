@@ -76,6 +76,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The constructors of values report running out of memory | Unreleased | [go-api.md](go-api.md#the-constructors-of-values-report-running-out-of-memory) |
 | A result that fails to convert leaves nothing behind | Unreleased | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
 | UndefinedValue as an argument and a property value | Unreleased | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
+| Close inside a call into the VM is refused | Unreleased | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
 
 ## Limits that hold
 

@@ -55,3 +55,36 @@ func TestCloseTwice(t *testing.T) {
 		t.Fatalf("the other VM gives %v, %v", v, err)
 	}
 }
+
+// TestCloseInsideACall closes the VM from a Go function that javascript on
+// it called. Close returns an error and changes nothing: the script runs on
+// to its end, the VM goes on, and a Close after the call closes it.
+func TestCloseInsideACall(t *testing.T) {
+	m, err := NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var closeErr error
+	if err := m.RegisterHostFunc("shut", func([]any) (any, error) {
+		closeErr = m.Close()
+		return 1, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Eval(`shut() + 1`, EvalGlobal)
+	if err != nil || r != 2 {
+		t.Fatalf("the script got %v, %v, want 2", r, err)
+	}
+	if closeErr == nil {
+		t.Fatal("Close inside the call returned nil")
+	}
+	if r, err := m.Eval(`[1, 2].map(x => x * 2).join()`, EvalGlobal); err != nil || r != "2,4" {
+		t.Fatalf("the next call got %v, %v", r, err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if !m.closed {
+		t.Fatal("the Close after the call did not close the VM")
+	}
+}
