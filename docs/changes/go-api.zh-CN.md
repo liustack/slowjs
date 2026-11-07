@@ -420,11 +420,11 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 `RegisterFunc` 的 Go 函数有多个结果，或者返回一个切片或 map 时，结果会逐个转换成一个数组或对象。某一个转换失败（比如一个 channel）时，调用抛出 `TypeError`，而它前面那些结果造出的值永远不会被释放：channel 前面的一个 4 KiB 字符串会一直留在 VM 里，脚本每接住一次就多 4 KiB 左右，GC 也收不回来。函数在失败那一项之后返回的 `Value`，以及键的类型 javascript 用不了的 map 里的 `Value`，也都不会被释放。
 
-现在结果的切片或 map 接管其中每个本 VM 的 `Value`，不管转换成功与否：失败时，它释放自己造出的值和交给它的 `Value`。别的 VM 的 `Value` 不释放（见[每个入口都拒绝别的 VM 的 Value](#每个入口都拒绝别的-vm-的-value)）。
+现在结果的切片或 map 接管其中每个本 VM 的 `Value`，不管转换成功与否：失败时，它释放自己造出的值和交给它的 `Value`，还没转换到的部分里嵌套的切片和 map 中的 `Value` 也一样。别的 VM 的 `Value` 不释放（见[每个入口都拒绝别的 VM 的 Value](#每个入口都拒绝别的-vm-的-value)）。
 
 代价：转换成功时没有。转换好的值所在的切片一次按大小分配。
 
-测试：`TestFailedResultLeaksNothing`（`register_test.go`）调用几个 Go 函数，它们在一个 channel 前后返回 4 KiB 的字符串和 `Value`，分别作为多个结果、放在切片里、放在嵌套切片里、放在 map 里，还有一个以浮点数为键的 `Value` map，每个调用 500 次，每次接住 `TypeError`。要求 GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 到 6 MB。
+测试：`TestFailedResultLeaksNothing`（`register_test.go`）调用几个 Go 函数，它们在一个 channel 前后返回 4 KiB 的字符串和 `Value`，分别作为多个结果、放在切片里、放在嵌套切片里、放在 map 里，或在 channel 之后嵌套在切片、map 和指针里，还有一个以浮点数为键的 `Value` map，每个调用 500 次，每次接住 `TypeError`。要求 GC 之后 VM 的内存增长少于 100 KiB。改动之前增长了 2 到 6 MB。
 
 ## UndefinedValue 作为参数和属性值
 

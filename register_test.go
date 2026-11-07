@@ -238,6 +238,21 @@ func TestFailedResultLeaksNothing(t *testing.T) {
 		"map key": func(m *VM) any {
 			return func() map[float64]Value { return map[float64]Value{1: mustString(t, m, big+"a")} }
 		},
+		"nested after the failure": func(m *VM) any {
+			return func() []any {
+				return []any{make(chan int), []Value{mustString(t, m, big+"a")}, map[string]any{"k": []any{mustString(t, m, big+"b")}}}
+			}
+		},
+		"nested in a map after the failure": func(m *VM) any {
+			return func() map[string]any {
+				return map[string]any{"a": make(chan int), "b": []any{mustString(t, m, big+"b")}, "c": &[]Value{mustString(t, m, big+"c")}}
+			}
+		},
+		"results after the failure": func(m *VM) any {
+			return func() (chan int, any, map[int]Value) {
+				return make(chan int), mustString(t, m, big+"a"), map[int]Value{1: mustString(t, m, big+"b")}
+			}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			m := newTestVM(t)

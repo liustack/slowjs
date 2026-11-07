@@ -420,11 +420,11 @@ Release: Unreleased.
 
 A Go function of `RegisterFunc` with several results, or one that returns a slice or a map, has its results converted one by one into an array or an object. When one failed to convert, such as a channel, the call threw a `TypeError`, and the values made for the results before it were never freed: a string of 4 KiB before the channel stayed in the VM for good, about 4 KiB for each call that a script caught, which no GC could collect. The `Value`s the function returned after the one that failed, and those of a map whose keys have a type javascript cannot use, were never freed either.
 
-Now a slice or a map of results takes every `Value` of the VM in it, whether the conversion succeeds or not: when it fails, it frees what it made and the `Value`s it was handed. A `Value` of another VM is not freed (see [A Value of another VM is refused at every entry](#a-value-of-another-vm-is-refused-at-every-entry)).
+Now a slice or a map of results takes every `Value` of the VM in it, whether the conversion succeeds or not: when it fails, it frees what it made and the `Value`s it was handed, those of the slices and maps nested in what it did not reach too. A `Value` of another VM is not freed (see [A Value of another VM is refused at every entry](#a-value-of-another-vm-is-refused-at-every-entry)).
 
 Cost: none on a conversion that succeeds. The slice of converted values is made at its size once.
 
-Test: `TestFailedResultLeaksNothing` (`register_test.go`) calls Go functions that return strings of 4 KiB and `Value`s around a channel, as results, in a slice, in a nested slice and in a map, and a map of `Value`s with float keys, 500 times each, catching the `TypeError` each time. It requires the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 to 6 MB before the change.
+Test: `TestFailedResultLeaksNothing` (`register_test.go`) calls Go functions that return strings of 4 KiB and `Value`s around a channel, as results, in a slice, in a nested slice and in a map, nested in a slice, a map and a pointer after the channel, and a map of `Value`s with float keys, 500 times each, catching the `TypeError` each time. It requires the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 to 6 MB before the change.
 
 ## UndefinedValue as an argument and a property value
 

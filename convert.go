@@ -419,7 +419,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	a := make([]kv, 0, in.Len())
 	for it := in.MapRange(); it.Next(); {
 		if err != nil {
-			m.freeValue(it.Value())
+			m.freeResult(it.Value())
 			continue
 		}
 		a = append(a, kv{key(it.Key()), it.Value()})
@@ -437,7 +437,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	// what is not in it yet is freed then.
 	fail := func(i int, err error) (jsValue, error) {
 		for _, kv := range a[i:] {
-			m.freeValue(kv.val)
+			m.freeResult(kv.val)
 		}
 		return out, err
 	}
@@ -491,13 +491,53 @@ func (m *VM) jsElement(v reflect.Value) (jsValue, error) {
 	return m.jsValue(v)
 }
 
-// freeValue frees v when it is a Value of m: a slice or a map of results
-// that cannot be converted frees the Values it was handed. A Value of
+// freeResult frees the Values of m in v, a result or a part of one that is
+// not converted after another failed: what jsValue would have taken, in
+// the slices, maps, interfaces and pointers it goes through. A Value of
 // another VM is its owner's.
-func (m *VM) freeValue(v reflect.Value) {
-	if x, ok := v.Interface().(Value); ok && !m.foreign(x) {
-		m.jsFreeValue(x.v)
+func (m *VM) freeResult(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Interface:
+		if !v.IsNil() {
+			m.freeResult(v.Elem())
+		}
+	case reflect.Pointer:
+		// jsPtrValue converts no pointer to a pointer, and a *Value through
+		// JSON, which takes nothing.
+		if k := v.Elem().Kind(); !v.IsNil() && k != reflect.Pointer && k != reflect.Struct {
+			m.freeResult(v.Elem())
+		}
+	case reflect.Slice:
+		if mayHoldValue(v.Type().Elem()) {
+			for i := range v.Len() {
+				m.freeResult(v.Index(i))
+			}
+		}
+	case reflect.Map:
+		if mayHoldValue(v.Type().Elem()) {
+			for it := v.MapRange(); it.Next(); {
+				m.freeResult(it.Value())
+			}
+		}
+	case reflect.Struct:
+		if v.Type() == rvt {
+			if x := v.Interface().(Value); !m.foreign(x) {
+				m.jsFreeValue(x.v)
+			}
+		}
 	}
+}
+
+// mayHoldValue reports whether an element of type t can hold a Value that
+// jsValue takes, so that freeResult skips the elements of a []byte.
+func mayHoldValue(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Interface, reflect.Pointer, reflect.Slice, reflect.Map:
+		return true
+	case reflect.Struct:
+		return t == rvt
+	}
+	return false
 }
 
 // jsArray converts the elements a to a javascript array. The array takes the
@@ -512,7 +552,7 @@ func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
 				m.jsFreeValue(v)
 			}
 			for _, v := range a[i+1:] {
-				m.freeValue(v)
+				m.freeResult(v)
 			}
 			return out, err
 		}
