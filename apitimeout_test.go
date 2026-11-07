@@ -160,6 +160,23 @@ Object.defineProperty(globalThis, "fixed", { value: 1, configurable: false });
 			_, err := m.GetProperty(obj, atomOrFatal(t, m, "b"))
 			return err
 		}},
+		{"EvalBytecode result toJSON", "", func(t *testing.T, m *VM) error {
+			_, err := m.EvalBytecode(compileOrFatal(t, m, "hostile"))
+			return err
+		}},
+		{"EvalBytecode result BigInt", `BigInt.prototype.toString = function () { spin(); return "1" }`, func(t *testing.T, m *VM) error {
+			_, err := m.EvalBytecode(compileOrFatal(t, m, "makeBigInt()"))
+			return err
+		}},
+		{"EvalSharedBytecode result toJSON", "", func(t *testing.T, m *VM) error {
+			b, err := NewSharedBytecode(compileOrFatal(t, m, "hostile"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer b.Close()
+			_, err = m.EvalSharedBytecode(b)
+			return err
+		}},
 		{"ErrorFromValue name getter", "", func(t *testing.T, m *VM) error {
 			e := evalValueOrFatal(t, m, "errorWithGetter")
 			defer e.Free()
@@ -235,6 +252,15 @@ func evalValueOrFatal(t *testing.T, m *VM, src string) Value {
 		t.Fatalf("%s: %v", src, err)
 	}
 	return v
+}
+
+func compileOrFatal(t *testing.T, m *VM, src string) []byte {
+	t.Helper()
+	b, err := m.Compile(src, EvalGlobal)
+	if err != nil {
+		t.Fatalf("%s: %v", src, err)
+	}
+	return b
 }
 
 func atomOrFatal(t *testing.T, m *VM, s string) Atom {

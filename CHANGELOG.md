@@ -7,6 +7,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 ### Fixed
 
 - On windows/amd64 a memory fault in the engine, which only a bug of the engine makes, becomes its panic on every CPU without first breaking the memory of the process. Windows writes the state of the CPU at a fault below the stack pointer, 12.8 KiB on Intel with AMX, where Go keeps 4 KiB below a goroutine's stack (golang/go#81238), so the write could go past the stack into the heap. Every generated function now makes sure of 12 KiB more below its stack pointer, at least 16.9 KiB in all. Only the code of windows changes: renders there take 0 to 2.4% longer, measured with that code on linux, and a goroutine that runs a tiny script takes 32 KiB of stack in place of 8. A fault in Go code, of the host or of a program, still has only Go's 4 KiB until Go fixes it ([c-engine.md](docs/changes/c-engine.md#room-for-a-fault-on-windows)).
+- `EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode` and `EvalSharedBytecodeValue` are now one call into javascript from the read of the bytecode to the end of the conversion of the result, inside the eval timeout. The conversion of the result ran after the call had ended, so a `toJSON` or a getter of the object the bytecode ended with, or a replaced `BigInt.prototype.toString`, ran with no timeout, and `Interrupt` could not stop it ([uncatchable.md](docs/changes/uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout)).
 
 ## [v0.30.1] - 2026-11-06
 

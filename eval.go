@@ -163,13 +163,21 @@ func (m *VM) EvalThisValue(obj Value, javascript string, flags int) (r Value, er
 // its execution. Hence the bytecode should not be loaded from untrusted sources.
 //
 // Note: Javascript 'this' is always set to the global context.
+//
+// Loading the bytecode, running it and converting its result to a Go value
+// (which runs toJSON, getters and BigInt.prototype.toString) are one call
+// into javascript, inside the eval timeout.
 func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
-	v, err := m.EvalBytecodeValue(bytecode)
+	if err = m.enter(); err != nil {
+		return nil, err
+	}
+	defer m.leave(&err)
+	v, err := m.runBytecode(bytecode)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.value(v.v, true)
+	return m.value(v, true)
 }
 
 // EvalBytecodeValue is like EvalValue but operates on QuickJS bytecode.
@@ -182,34 +190,42 @@ func (m *VM) EvalBytecode(bytecode []byte) (r any, err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) EvalBytecodeValue(bytecode []byte) (r Value, err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return r, err
 	}
+	defer m.leave(&err)
+	v, err := m.runBytecode(bytecode)
+	if err != nil {
+		return r, err
+	}
+
+	return Value{vm: m, v: v}, nil
+}
+
+// runBytecode reads bytecode and runs it, inside a call into javascript
+// (enter).
+func (m *VM) runBytecode(bytecode []byte) (jsValue, error) {
 	// https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs-libc.c#L4292
 	obj, err := m.jsReadObject(bytecode, readObjBytecode)
 	if err != nil {
-		return r, err
+		return obj, err
 	}
 
 	return m.evalBytecode(obj)
 }
 
-// evalBytecode runs obj, what JS_ReadObject read, which it takes.
-func (m *VM) evalBytecode(obj jsValue) (r Value, err error) {
+// evalBytecode runs obj, what JS_ReadObject read, which it takes, inside a
+// call into javascript (enter).
+func (m *VM) evalBytecode(obj jsValue) (jsValue, error) {
 	if isException(obj) {
-		return r, m.errFromException()
+		return obj, m.errFromException()
 	}
-
-	if err = m.enter(); err != nil {
-		return
-	}
-	defer m.leave(&err)
 
 	var v jsValue
 	if tag(obj) == tagModule {
 		if m.jsResolveModule(obj) < 0 {
 			m.jsFreeValue(obj)
-			return r, m.errFromException()
+			return exception, m.errFromException()
 		}
 
 		m.setImportMeta(obj)
@@ -221,8 +237,9 @@ func (m *VM) evalBytecode(obj jsValue) (r Value, err error) {
 		// see https://github.com/bellard/quickjs/blob/eb2c89087def1829ed99630cb14b549d7a98408c/quickjs.c#L36045
 		v = m.settled(m.jsEvalFunction(obj))
 		if !isException(v) {
+			var err error
 			if v, err = m.await(v); err != nil {
-				return r, err
+				return exception, err
 			}
 			m.freeTopLevel(obj)
 		}
@@ -232,10 +249,10 @@ func (m *VM) evalBytecode(obj jsValue) (r Value, err error) {
 
 	if isException(v) {
 		m.jsFreeValue(v)
-		return r, m.errFromException()
+		return exception, m.errFromException()
 	}
 
-	return Value{vm: m, v: v}, nil
+	return v, nil
 }
 
 // errAwaitPending is the error of EvalBytecode and EvalBytecodeValue for a

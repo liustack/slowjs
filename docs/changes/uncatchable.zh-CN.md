@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，还有字节码调用的结果'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -265,3 +265,15 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 这个检查是对展开手里已有的一个标志做一次测试，在只有异常离开迭代器时才运行的路径上。解释器的栈帧保持 amd64 上 $496、arm64 上 $504。
 
 测试：`engine/test/unit-white.c` 里的 `test_iterator_close_oom` 用 `throw` 离开一个循环和一个模式，以及在生成器里、async 函数里和 `finally` 块之下的一个循环，迭代器的 `return` 方法要分配内存，并让分配器的每次调用依次失败：运行按顺序给出关闭和异常，或者以内存不足错误失败。
+
+## 字节码调用在 eval 超时内转换结果
+
+发布版本：Unreleased。
+
+`EvalBytecode` 和 `EvalSharedBytecode` 在 eval 超时内运行字节码，却在调用结束之后才把结果转成 Go 值，这时既没有超时，也不会被杀死。这次转换会运行 javascript：对象要转成 JSON，会运行它的 `toJSON` 和 getter，BigInt 会运行 `BigInt.prototype.toString`。所以 `({ toJSON() { for (;;) {} } })` 的字节码不管超时设成多少，都会让调用永远挂住，`Interrupt` 也停不下它。字节码的读取同样在调用之外。
+
+现在四个字节码方法（`EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode`、`EvalSharedBytecodeValue`）从读取字节码到转换结束都是一次进入 javascript 的调用，和 `Eval` 一样，共用它的时间。被杀死后只能 `Close` 的 VM 得到被杀死的 VM 的错误，和以前一样。
+
+常见路径的工作量不变：原来读取和运行各进入引擎一次，现在只进入一次。
+
+测试：`TestAPIEntriesHaveTheEvalTimeout`（`apitimeout_test.go`）在 10 ms 的超时下，对 `toJSON` 循环 300 ms 的对象和 `toString` 循环 300 ms 的 BigInt 运行 `EvalBytecode`，对这个对象运行 `EvalSharedBytecode`，要求在 150 ms 内返回被中断的错误。改动之前每一个都跑满 300 ms，而且不返回错误。

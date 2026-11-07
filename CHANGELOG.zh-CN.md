@@ -7,6 +7,7 @@
 ### 修复
 
 - 在 windows/amd64 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在每种 CPU 上都直接变成它的 panic，不再先踩坏进程的内存。windows 在出错时把 CPU 的状态写在栈指针下面，带 AMX 的 Intel 上是 12.8 KiB，而 Go 只在 goroutine 的栈下面留 4 KiB（golang/go#81238），所以这次写入可能越过栈写进堆里。现在每个生成函数都确保栈指针下面再多 12 KiB，一共至少 16.9 KiB。只有 windows 的代码变了：在 linux 上用这份代码测量，那里的渲染慢 0 到 2.4%，运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB。Go 代码里的错误，不管是宿主的还是程序的，在 Go 修好之前仍然只有 Go 的 4 KiB（[c-engine.md](docs/changes/c-engine.zh-CN.md#windows-上给故障留的空间)）。
+- `EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode` 和 `EvalSharedBytecodeValue` 现在从读取字节码到把结果转换完，都是一次进入 javascript 的调用，在 eval 超时之内。结果的转换原来在调用结束之后才进行，所以字节码最后得到的对象的 `toJSON` 或 getter，或被替换的 `BigInt.prototype.toString`，运行时没有超时，`Interrupt` 也停不下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果)）。
 
 ## [v0.30.1] - 2026-11-06
 

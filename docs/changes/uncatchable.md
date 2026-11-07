@@ -1,5 +1,5 @@
 ---
-summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, making a long rope flat, repeat, the long loops of the compile of one regexp, and the classes of many characters or strings'
+summary: 'Changes that make interrupts, timeouts and running out of memory end the call whatever the script does: no catch through promises, iterators or Go functions, panics of Go functions, compiling with little memory, the leak of JS_ToCStringLen2, the eval timeout on the monotonic clock, nested calls, Interrupt during Close, regexp compiles, parsing and string building counted toward the interrupt check, the eval timeout on property reads and writes, JSON and error reads, the long loops of the start and end tag functions, making a long rope flat, repeat, the long loops of the compile of one regexp, and the classes of many characters or strings, and the result of the bytecode calls'
 read_when:
   - A script caught an interrupt or an out of memory error, or a timeout did not stop a script
   - A Go function given to javascript panics, or gets an error from javascript it evaluates
@@ -264,3 +264,15 @@ Now the unwind reads the flag again right after the close, and when an uncatchab
 The check is one test of a flag the unwind has in hand, on a path that only runs while an exception leaves an iterator. The frame of the interpreter stays $496 on amd64 and $504 on arm64.
 
 Test: `test_iterator_close_oom` in `engine/test/unit-white.c` leaves a loop and a pattern by a `throw`, and a loop in a generator, in an async function and under a `finally` block, with an iterator whose `return` method allocates, and fails each call of the allocator in turn: the run gives the closes and the exceptions in order, or fails with the out of memory error.
+
+## The bytecode calls convert their result inside the eval timeout
+
+Release: Unreleased.
+
+`EvalBytecode` and `EvalSharedBytecode` ran the bytecode inside the eval timeout, but converted its result to a Go value after the call had ended, with no timeout and no kill. That conversion runs javascript: `toJSON` and the getters of an object, which becomes JSON, and `BigInt.prototype.toString` for a BigInt. So bytecode of `({ toJSON() { for (;;) {} } })` hung the call forever under any timeout, and `Interrupt` could not stop it. The read of the bytecode was outside the call too.
+
+Now each of the four bytecode methods (`EvalBytecode`, `EvalBytecodeValue`, `EvalSharedBytecode`, `EvalSharedBytecodeValue`) is one call into javascript from the read of the bytecode to the end of the conversion, as `Eval` is, and they share its time. A VM that a kill left good only for Close gets the error of a killed VM, as before.
+
+The common path does the same work: one entry into the engine where there were two, the read and the run.
+
+Test: `TestAPIEntriesHaveTheEvalTimeout` (`apitimeout_test.go`) runs `EvalBytecode` of an object whose `toJSON` loops for 300 ms, and of a BigInt whose `toString` does, and `EvalSharedBytecode` of the object, with a 10 ms timeout, and requires the interrupted error within 150 ms. Before the change each ran the 300 ms and returned no error.

@@ -96,6 +96,7 @@ read_when:
 | repeat 每 65,536 个字符读取一次中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#repeat-每-65536-个字符读一次中断标志) |
 | 编译一个很长的正则时，每个长循环都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#编译一个长正则时在每个长循环里读中断标志) |
 | 正则的类不管有多少字符或字符串，都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#无论正则的类有多少字符或字符串都读中断标志) |
+| 字节码调用在 eval 超时内转换结果 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果) |
 
 ## 错误和调用栈
 

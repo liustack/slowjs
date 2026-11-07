@@ -104,22 +104,37 @@ func (b *SharedBytecode) dropLocked() {
 // the source text and line tables of its functions into m (see
 // [SharedBytecode]). m holds b until it is closed.
 func (m *VM) EvalSharedBytecode(b *SharedBytecode) (r any, err error) {
-	v, err := m.EvalSharedBytecodeValue(b)
+	if err = m.enter(); err != nil {
+		return nil, err
+	}
+	defer m.leave(&err)
+	v, err := m.runShared(b)
 	if err != nil {
 		return nil, err
 	}
 
-	return m.value(v.v, true)
+	return m.value(v, true)
 }
 
 // EvalSharedBytecodeValue is like [VM.EvalBytecodeValue], but loads b as
 // [VM.EvalSharedBytecode] does.
 func (m *VM) EvalSharedBytecodeValue(b *SharedBytecode) (r Value, err error) {
-	if err := m.usable(); err != nil {
+	if err = m.enter(); err != nil {
 		return r, err
 	}
+	defer m.leave(&err)
+	v, err := m.runShared(b)
+	if err != nil {
+		return r, err
+	}
+
+	return Value{vm: m, v: v}, nil
+}
+
+// runShared reads b and runs it, inside a call into javascript (enter).
+func (m *VM) runShared(b *SharedBytecode) (jsValue, error) {
 	if !b.hold() {
-		return r, errSharedClosed
+		return exception, errSharedClosed
 	}
 	// The functions read from b point into it until the runtime is freed, also
 	// when the read fails half way, so m keeps its hold until Close.
