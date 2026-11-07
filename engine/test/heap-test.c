@@ -2001,6 +2001,10 @@ static void scenario_budget_exact(void)
 
     /* a remapped chunk grows by the difference of the chunks */
     for (int move = 0; move < 2; move++) {
+#ifndef __linux__
+        if (!move)
+            continue;  /* the system remap (mremap) is linux only */
+#endif
         heap_model_start(&m);
         h = m.h;
         host = &vms[m.vm];
@@ -2111,6 +2115,10 @@ static void scenario_max_request(void)
 
     /* a dedicated block of 5 MiB that grows to the biggest, remapped and copied */
     for (int mode = 0; mode < 3; mode++) {
+#ifndef __linux__
+        if (mode == 1)
+            continue;  /* the system remap (mremap) is linux only */
+#endif
         heap_set_remap(h, mode != 2);
         host->move_remap = mode == 0;
         q = heap_alloc(h, (size_t)5 << 20);
