@@ -130,7 +130,7 @@ engine/test/test262.sh -m plain -T 2      # about 1.5 minutes
 ```
 
 - `engine/test/test262_errors.txt` 列出已知会失败的 33 个测试，每个一行（文件、行号和错误）。脚本把找到的错误和这份列表逐行比较，有任何差别就失败。对引擎的改动必须留下同样的 33 个错误。
-- 运行器是 `engine/test/run-test262.c`，也就是上游 QuickJS 的运行器加了几处改动。配置是 `engine/test/test262.conf`，给 test262 打的补丁是 `engine/test/test262.diff`。
+- 运行器是 `engine/test/run-test262.c`，也就是上游 QuickJS 的运行器加了几处改动。配置是 `engine/test/test262.conf`，给 test262 打的补丁是 `engine/test/test262.diff`。解包后的 test262 在 `engine/test/out/test262-MODE/run` 里，带一个戳（`test262.stamp`：压缩包名，压缩包和补丁的 SHA-256）。固定的提交、压缩包或补丁一变，脚本就重新解包并打补丁，戳在两步都成功之后才写。`engine/test/test262-test.sh`（`scripts` 步骤）测试这一点。
 - Go API 和 Go 宿主不在 test262 上运行。它们新增的部分由根包的 Go 测试检查，Go 和引擎之间交互的部分由 `internal/cengine` 的测试检查。
 
 ## C 树和它的原生测试宿主
@@ -302,7 +302,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `goasm` | 快档 | `internal/goasm/...` 的测试，设了 `QUICKJS_LLVM`、`QUICKJS_SHADOW_PASS` 和 `QUICKJS_LLD`，这样它们不会跳过 |
 | `cengine` | 快档 | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain`、`cycles.sh` |
-| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
+| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |

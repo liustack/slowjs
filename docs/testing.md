@@ -130,7 +130,7 @@ engine/test/test262.sh -m plain -T 2      # about 1.5 minutes
 ```
 
 - `engine/test/test262_errors.txt` lists the 33 tests known to fail, one line each (the file, the line and the error). The script compares the errors it found with that list, line by line, and fails on any difference. A change to the engine must leave the same 33 errors.
-- The runner is `engine/test/run-test262.c`, upstream QuickJS's runner with a few changes. The configuration is `engine/test/test262.conf` and the patch to test262 is `engine/test/test262.diff`.
+- The runner is `engine/test/run-test262.c`, upstream QuickJS's runner with a few changes. The configuration is `engine/test/test262.conf` and the patch to test262 is `engine/test/test262.diff`. The unpacked test262 in `engine/test/out/test262-MODE/run` carries a stamp (`test262.stamp`: the archive name, the SHA-256 of the archive and of the patch). When the pinned commit, the archive or the patch change, the script unpacks and patches it again, and the stamp is written only after both worked. `engine/test/test262-test.sh` (the `scripts` step) tests that.
 - The Go API and the Go host are not run on test262. What they add is tested by the Go tests of the root package, and what crosses between Go and the engine by the tests of `internal/cengine`.
 
 ## The C tree and its native test host
@@ -302,7 +302,7 @@ The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_d
 | `goasm` | fast | the tests of `internal/goasm/...` with `QUICKJS_LLVM`, `QUICKJS_SHADOW_PASS` and `QUICKJS_LLD` set, so that they do not skip |
 | `cengine` | fast | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`, `compare-plain`, `cycles` | fast | `engine/test/build.sh plain`, `compare.sh plain`, `cycles.sh` |
-| `scripts` | fast | `engine/test/compare-test.sh`, `scripts/go-versions-test.sh`: the tests of the shell scripts of the checks, with stand-ins for the programs they run |
+| `scripts` | fast | `engine/test/compare-test.sh`, `scripts/go-versions-test.sh`, `engine/test/test262-test.sh`: the tests of the shell scripts of the checks, with stand-ins for the programs they run |
 | `gen` | full | `scripts/check-gen.sh` (`make check-gen`): generates both architectures into `.build/check-gen/` and requires every file of `internal/cengine` to be the same bytes, with none missing, none left over and none outside git. What is checked in is what the git index holds (an ignored file is not, and `git add` the files after `make gen`), the folder has to be the same bytes, the generated files are found by their `Code generated` header anywhere in them, and the names of an older generator (`engine_decl.go`, `engine_keep.go`, `engine_negative.go`) count as left over with or without it |
 | `math` | full | `engine/test/math.sh` (about 4 minutes, most of it hashing in the shell) |
 | `testhooks` | full | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |

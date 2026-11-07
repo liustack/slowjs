@@ -47,8 +47,7 @@ bin=$here/out/$mode/run-test262
 zipname=5c8206929d81b2d3d727ca6aac56c18358c8d790.zip
 sha256=c34bd60057f1c5128ad5d4e496dc69d712da9a2260eb3308e6f225ba7d3a3096
 
-if command -v sha256sum >/dev/null 2>&1; then sum() { sha256sum "$1" | cut -d' ' -f1; }
-else sum() { shasum -a 256 "$1" | cut -d' ' -f1; }; fi
+. "$here/test262-unpack.sh"
 
 mkdir -p "$work"
 work=$(cd "$work" && pwd)
@@ -60,12 +59,7 @@ fi
 [ "$(sum "$archive")" = "$sha256" ] || { echo "test262.sh: $archive is not the pinned archive (SHA-256)" >&2; exit 2; }
 
 run=$work/run
-if [ ! -d "$run/test262" ]; then
-	mkdir -p "$run"
-	unzip -q "$archive" -d "$run"
-	mv "$run/test262-${zipname%.zip}" "$run/test262"
-	patch -s -p1 -d "$run/test262" < "$here/test262.diff"
-fi
+unpack_test262 "$run" "$archive" "$zipname" "$here/test262.diff"
 cp "$here/test262.conf" "$run/test262.conf"
 : > "$run/test262_errors.txt"
 
