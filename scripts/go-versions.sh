@@ -13,7 +13,8 @@
 #
 # The checks of each release:
 #   go          go build, go vet, and the Go tests of the engine (internal/cengine
-#               and the host packages with the testhooks tag, then the root package)
+#               and the host packages with the testhooks tag, then the root package
+#               with and without it)
 #   goasm       the tests of the generator (internal/goasm), which build sample
 #               programs, link them and check the stack check, the call of
 #               morestack and which functions are NOSPLIT
@@ -51,16 +52,30 @@ else
 	lowpatch=${low##*.}
 	platform=$(go env GOHOSTOS)-$(go env GOHOSTARCH)
 	# The toolchains the go command can fetch, as v0.0.1-go1.N.P.GOOS-GOARCH.
-	versions=$(go list -m -versions golang.org/toolchain | tr ' ' '\n' |
+	# The list is fetched on its own so that a failure of go list stops the
+	# script: in a pipe its status would be lost, and a list that could not be
+	# read would pass for a list of the lowest release alone.
+	listed=$(go list -m -versions golang.org/toolchain) || {
+		echo "go-versions.sh: go list -m -versions golang.org/toolchain failed: the releases cannot be listed (the network, or GOPROXY)" >&2
+		exit 2
+	}
+	versions=$(printf '%s\n' "$listed" | tr ' ' '\n' |
 		sed -n "s/^v0\.0\.1-go\(1\.[0-9]*\.[0-9]*\)\.$platform\$/\1/p" |
 		awk -F. -v lm="$lowminor" -v lp="$lowpatch" -v stop="$stop" \
-			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop { print "go" $0 }
-			END { print "go1." lm "." lp }' |
+			'($2 > lm || ($2 == lm && $3 >= lp)) && $2 < stop { print "go" $0 }' |
 		sort -u -t. -k2,2n -k3,3n)
-	if [ -z "$versions" ]; then
-		echo "go-versions.sh: found no Go release from $low up to go1.$stop for $platform" >&2
+	# The release of the go line is in the list too, or the list is not read right.
+	case "
+$versions
+" in
+	*"
+go$low
+"*) ;;
+	*)
+		echo "go-versions.sh: go1.$lowminor.$lowpatch (the go line of go.mod) is not among the releases listed for $platform up to go1.$stop: the list could not be read" >&2
 		exit 2
-	fi
+		;;
+	esac
 fi
 
 if [ "${GO_VERSIONS_LIST:-}" = 1 ]; then
@@ -118,6 +133,7 @@ for v in $versions; do
 		step go-vet go vet ./...
 		step go-test-internal go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
 		step go-test-root go test -count=1 -p 1 -timeout 60m .
+		step go-test-root-hooks go test -count=1 -p 1 -timeout 60m -tags testhooks .
 		if [ "$use_llvm" = 1 ]; then
 			step goasm env CHECK_ONLY=goasm CHECK_LOGS="$logs/$v.check" scripts/check.sh fast
 			step postlink-amd64 postlink amd64 linux darwin windows

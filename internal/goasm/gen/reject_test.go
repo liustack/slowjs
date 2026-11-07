@@ -19,18 +19,20 @@ func TestRejectSamples(t *testing.T) {
 		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
 	}
 	cases := map[string]string{
-		"writable_bss.c":    "writable data section",
-		"writable_data.c":   "writable data section",
-		"thread_local.c":    "writable data section",
-		"external.c":        "outside the allow list",
-		"tail_call.c":       "tail call",
-		"variadic.c":        "variadic",
-		"byval.c":           "byval",
-		"sret.c":            "sret",
-		"inline_asm.c":      "inline assembly",
-		"rodata_table.c":    "unsupported read-only reference",
-		"format_float.c":    "format string",
-		"format_variable.c": "format string",
+		"writable_bss.c":           "writable data section",
+		"writable_data.c":          "writable data section",
+		"thread_local.c":           "writable data section",
+		"external.c":               "outside the allow list",
+		"tail_call.c":              "tail call",
+		"variadic.c":               "variadic",
+		"byval.c":                  "byval",
+		"sret.c":                   "sret",
+		"inline_asm.c":             "inline assembly",
+		"alloca_aligned_fixed.c":   "local aligned beyond 16",
+		"alloca_aligned_dynamic.c": "local aligned beyond 16",
+		"rodata_table.c":           "unsupported read-only reference",
+		"format_float.c":           "format string",
+		"format_variable.c":        "format string",
 	}
 	for file, want := range cases {
 		t.Run(file, func(t *testing.T) {

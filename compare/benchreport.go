@@ -17,13 +17,26 @@ import (
 	"strings"
 )
 
+// Exit status 1 when the output is not the complete result of a run: a line of
+// a failed benchmark or package, no result at all, a result that is not a
+// positive finite number, or an engine that lacks an argument another has.
 func main() {
+	if err := report(os.Stdin, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "benchreport:", err)
+		os.Exit(1)
+	}
+}
+
+func report(in io.Reader, out io.Writer) error {
 	b := bytes.NewBuffer(nil)
-	io.Copy(io.MultiWriter(os.Stdout, b), os.Stdin)
+	io.Copy(b, in)
 	m := map[string]map[string]float64{}
 	a := strings.Split(b.String(), "\n")
 	var args []string
 	for _, v := range a {
+		if strings.HasPrefix(v, "FAIL") || strings.HasPrefix(v, "--- FAIL") || strings.HasPrefix(v, "panic:") {
+			return fmt.Errorf("the run failed: %s", v)
+		}
 		if !strings.HasPrefix(v, "Benchmark") {
 			continue
 		}
@@ -41,7 +54,10 @@ func main() {
 
 		bench, arg := k[0], k[1]
 		args = append(args, arg)
-		t, _ := strconv.ParseFloat(f[2], 4)
+		t, err := strconv.ParseFloat(f[2], 64)
+		if err != nil || t <= 0 || math.IsInf(t, 0) || math.IsNaN(t) {
+			return fmt.Errorf("%s: %q is not a positive time", f[0], f[2])
+		}
 		m2 := m[bench]
 		if m2 == nil {
 			m2 = map[string]float64{}
@@ -56,15 +72,25 @@ func main() {
 	slices.Sort(benches)
 	slices.Sort(args)
 	args = slices.Compact(args)
-	fmt.Printf("%35s", "arg")
+	if len(benches) == 0 {
+		return fmt.Errorf("no benchmark result in the input")
+	}
+	for _, bench := range benches {
+		for _, arg := range args {
+			if _, ok := m[bench][arg]; !ok {
+				return fmt.Errorf("%s has no result for %s", bench, arg)
+			}
+		}
+	}
+	fmt.Fprintf(out, "%35s", "arg")
 	for _, v := range benches {
-		fmt.Printf("%12s", v)
+		fmt.Fprintf(out, "%12s", v)
 	}
 	hr := strings.Repeat("-", 35+12*(len(benches)))
-	fmt.Printf("\n%s\n", hr)
+	fmt.Fprintf(out, "\n%s\n", hr)
 	nums := map[string][]float64{}
 	for _, arg := range args {
-		fmt.Printf("%35s", arg)
+		fmt.Fprintf(out, "%35s", arg)
 		var t1 float64
 		for i, bench := range benches {
 			t := m[bench][arg]
@@ -73,20 +99,21 @@ func main() {
 			}
 			k := t / t1
 			nums[bench] = append(nums[bench], k)
-			fmt.Printf("%12.3f", k)
+			fmt.Fprintf(out, "%12.3f", k)
 		}
-		fmt.Println()
+		fmt.Fprintln(out)
 	}
-	fmt.Printf("%s\n%35s", hr, "geomean")
+	fmt.Fprintf(out, "%s\n%35s", hr, "geomean")
 	for _, bench := range benches {
-		fmt.Printf("%12.3f", geoMean(nums[bench]))
+		fmt.Fprintf(out, "%12.3f", geoMean(nums[bench]))
 	}
-	fmt.Println()
-	fmt.Printf("%35s", "")
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%35s", "")
 	for _, v := range benches {
-		fmt.Printf("%12s", v)
+		fmt.Fprintf(out, "%12s", v)
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
+	return nil
 }
 
 func geoMean(s []float64) float64 {

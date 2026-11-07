@@ -86,6 +86,8 @@ jobs:
         run: go test -count=1 -tags testhooks ./internal/cengine ./internal/gohost ./internal/hostmem ./internal/idtable
       - name: Test, root package
         run: CHECK_ONLY="root" scripts/check.sh full
+      - name: Test, root package with the test hooks
+        run: CHECK_ONLY="root-hooks" scripts/check.sh full
 
       - name: Native C engine against the recorded outputs
         if: ${{ !matrix.no-native }}

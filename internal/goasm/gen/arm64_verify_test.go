@@ -103,23 +103,78 @@ func TestCheckARM64Function(t *testing.T) {
 	}{
 		"no stack check":       {func(w []uint32, m *Meta) { w[0] = a64Nop }, "stack check false"},
 		"NOSPLIT with a check": {func(w []uint32, m *Meta) { m.NoSplit = true }, "stack check true"},
-		"other frame":          {func(w []uint32, m *Meta) { w[3] = 0xf81b0ffe }, "a frame of 80 bytes, want 64"},
-		"argument elsewhere":   {func(w []uint32, m *Meta) { w[6]++ }, "argument load"},
-		"no padding":           {func(w []uint32, m *Meta) { w[7] = 0xaa1403e0 }, "where only no-ops go"},
-		"body word":            {func(w []uint32, m *Meta) { w[8] = 0xaa1503e0 }, "the object has"},
-		"call elsewhere":       {func(w []uint32, m *Meta) { w[9]++ }, "does not go to go_g"},
-		"address elsewhere":    {func(w []uint32, m *Meta) { w[11] += 1 << 10 }, "is not __goasm_rodata+16"},
-		"result elsewhere":     {func(w []uint32, m *Meta) { w[12] += 1 << 10 }, "result store"},
-		"frame freed wrong":    {func(w []uint32, m *Meta) { w[14] = 0xf84507fe }, "not freed as made"},
-		"no RET":               {func(w []uint32, m *Meta) { w[15] = a64Nop }, "where the RET goes"},
-		"no morestack":         {func(w []uint32, m *Meta) { w[17] = a64Nop }, "no call of morestack"},
-		"code after the end":   {func(w []uint32, m *Meta) { w[19] = a64Ret }, "after the end"},
-		"another call":         {func(w []uint32, m *Meta) { m.Rec.Calls = append(m.Rec.Calls, CallRecord{Kind: CallReg}) }, "indirect calls"},
+		// The words between the load of the guard and the branch are the compare.
+		"compare is a no-op":          {func(w []uint32, m *Meta) { w[1] = a64Nop }, "want cmp sp, x16"},
+		"compare of another register": {func(w []uint32, m *Meta) { w[1] = 0xeb3163ff }, "want cmp sp, x16"},
+		"compare of the big form":     {func(w []uint32, m *Meta) { w[1] = a64CmpTmpGuard }, "want cmp sp, x16"},
+		"branch is no b.ls":           {func(w []uint32, m *Meta) { w[2] = a64Nop }, "no branch to morestack"},
+		"other frame":                 {func(w []uint32, m *Meta) { w[3] = 0xf81b0ffe }, "a frame of 80 bytes, want 64"},
+		"argument elsewhere":          {func(w []uint32, m *Meta) { w[6]++ }, "argument load"},
+		"no padding":                  {func(w []uint32, m *Meta) { w[7] = 0xaa1403e0 }, "where only no-ops go"},
+		"body word":                   {func(w []uint32, m *Meta) { w[8] = 0xaa1503e0 }, "the object has"},
+		"call elsewhere":              {func(w []uint32, m *Meta) { w[9]++ }, "does not go to go_g"},
+		"address elsewhere":           {func(w []uint32, m *Meta) { w[11] += 1 << 10 }, "is not __goasm_rodata+16"},
+		"result elsewhere":            {func(w []uint32, m *Meta) { w[12] += 1 << 10 }, "result store"},
+		"frame freed wrong":           {func(w []uint32, m *Meta) { w[14] = 0xf84507fe }, "not freed as made"},
+		"no RET":                      {func(w []uint32, m *Meta) { w[15] = a64Nop }, "where the RET goes"},
+		"no morestack":                {func(w []uint32, m *Meta) { w[17] = a64Nop }, "no call of morestack"},
+		"code after the end":          {func(w []uint32, m *Meta) { w[19] = a64Ret }, "after the end"},
+		"another call":                {func(w []uint32, m *Meta) { m.Rec.Calls = append(m.Rec.Calls, CallRecord{Kind: CallReg}) }, "indirect calls"},
 	} {
 		k, m, w := a64CheckCase()
 		c.edit(w, &m)
 		if err := k.function(m, 0x1000, a64Bytes(w)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+// TestARM64StackCheck: the stack check of a function is the compare the Go
+// assembler writes for its frame, and each other word is refused. Frames past
+// abi.StackSmall have SP less (frame - 128) compared, kept in x17.
+func TestARM64StackCheck(t *testing.T) {
+	const bls = 0x54000009 | 20<<5
+	small := []uint32{a64StackGuard, a64CmpSPGuard, bls}
+	big := func(frame int) []uint32 {
+		return []uint32{a64StackGuard, a64SubSPTmp | uint32(frame-128)<<10, a64CmpTmpGuard, bls}
+	}
+	for _, c := range []struct {
+		name  string
+		frame int
+		w     []uint32
+		next  int // the first word after the check, 0 for none (an error)
+		want  string
+	}{
+		{"a small frame", 64, small, 3, ""},
+		{"no frame", 0, small, 3, ""},
+		{"the largest small frame", 128, small, 3, ""},
+		{"the smallest big frame", 144, big(144), 4, ""},
+		{"a frame of 176", 176, big(176), 4, ""},
+		{"the largest big frame", 4096, big(4096), 4, ""},
+		{"a frame past 4096", 4112, big(4112), 0, "past the 4096"},
+		{"a big frame with the small compare", 176, small, 0, "want sub x17"},
+		{"a small frame with the big compare", 64, big(176), 0, "want cmp sp, x16"},
+		{"the subtraction of another frame", 176, big(160), 0, "want sub x17, sp, #48"},
+		{"the subtraction of the frame, not less 128", 176, []uint32{a64StackGuard, a64SubSPTmp | 176<<10, a64CmpTmpGuard, bls}, 0, "want sub x17, sp, #48"},
+		{"the subtraction from another register", 176, []uint32{a64StackGuard, big(176)[1] + 1<<5, a64CmpTmpGuard, bls}, 0, "want sub x17, sp, #48"},
+		{"the subtraction a no-op", 176, []uint32{a64StackGuard, a64Nop, a64CmpTmpGuard, bls}, 0, "want sub x17, sp, #48"},
+		{"the big compare a no-op", 176, []uint32{a64StackGuard, big(176)[1], a64Nop, bls}, 0, "want cmp x17, x16"},
+		{"the big compare of another register", 176, []uint32{a64StackGuard, big(176)[1], 0xeb11021f, bls}, 0, "want cmp x17, x16"},
+		{"no branch after the big compare", 176, []uint32{a64StackGuard, big(176)[1], a64CmpTmpGuard, a64Nop}, 0, "no branch to morestack"},
+		{"the check cut short", 176, big(176)[:3], 0, "no branch to morestack"},
+		// host_poll, made by the compiler: the frame is not known.
+		{"an unknown frame, small", -1, small, 3, ""},
+		{"an unknown frame, big", -1, big(300), 4, ""},
+		{"an unknown frame, the compare a no-op", -1, []uint32{a64StackGuard, a64Nop, bls}, 0, "no compare of the stack"},
+	} {
+		next, more, err := a64StackCheck(a64Bytes(c.w), c.frame)
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v", c.name, err)
+		case c.want == "" && (next != c.next || more != len(c.w)-1+20):
+			t.Errorf("%s: next %d, branch to %d, want %d and %d", c.name, next, more, c.next, len(c.w)-1+20)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: %v, want %q", c.name, err, c.want)
 		}
 	}
 }
@@ -372,5 +427,67 @@ func TestCheckARM64RegResult(t *testing.T) {
 		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
+	}
+}
+
+// a64HostPoll is host_poll at 0x2000 as the compiler makes it (the prologue of
+// the checked-in engine): the stack check with the load of the guard, a frame
+// and a call, then after the RET the spill of its argument, the call of
+// morestack and the jump back to the start.
+func a64HostPoll() (*a64Checker, []uint32) {
+	const at, morestack, other = 0x2000, 0x9000, 0x7000
+	w := []uint32{a64StackGuard, a64CmpSPGuard, 0x54000109 | 0, 0xf81e0ffe, a64SaveFP, a64SetFP, a64BL(at+4*6, other),
+		a64LoadFP, 0xf84207fe, a64Ret, 0xf90007e0, a64MovX3LR, a64BL(at+4*12, morestack), 0xf94007e0, a64B(at+4*14, at), 0}
+	w[2] = 0x54000009 | 8<<5 // b.ls to word 10
+	bin := &binFile{format: "ELF", syms: map[string]binSym{"p.host_poll": {Value: at, Size: uint64(4 * len(w))}}}
+	setText := func(w []uint32) {
+		bin.secs = []*binSec{{name: "text", addr: at, size: uint64(4 * len(w)), data: a64Bytes(w)}}
+	}
+	setText(w)
+	return &a64Checker{c: EngineCheck{Pkg: "p"}, bin: bin, morestack: morestack}, w
+}
+
+// TestCheckARM64HostPoll: host_poll must begin with Go's stack check and
+// call morestack and jump back to its start, as the amd64 check holds it.
+func TestCheckARM64HostPoll(t *testing.T) {
+	k, _ := a64HostPoll()
+	if err := k.checkHostPoll(); err != nil {
+		t.Fatalf("host_poll as the compiler makes it: %v", err)
+	}
+	const at, other = 0x2000, 0x7000
+	for name, c := range map[string]struct {
+		edit func(w []uint32)
+		want string
+	}{
+		"no stack check, a NOSPLIT leaf":  {func(w []uint32) { w[0] = a64Nop }, "not the load of the guard"},
+		"the compare a no-op":             {func(w []uint32) { w[1] = a64Nop }, "no compare of the stack"},
+		"the compare of another register": {func(w []uint32) { w[1] = 0xeb3163ff }, "no compare of the stack"},
+		"the branch a no-op":              {func(w []uint32) { w[2] = a64Nop }, "no branch to morestack"},
+		"the branch outside":              {func(w []uint32) { w[2] = 0x54000009 | 100<<5 }, "outside the function"},
+		"no call of morestack":            {func(w []uint32) { w[12] = a64Nop }, "does not call morestack"},
+		// a branch that jumps over the call, with the words of the call in place
+		"a b.cond over the call":       {func(w []uint32) { w[11] = 0x54000069 }, "branch of its own"},
+		"a b.cond before the call":     {func(w []uint32) { w[10] = 0x54000069 | 2<<5 }, "branch of its own"},
+		"a cbz over the call":          {func(w []uint32) { w[10] = 0xb4000000 | 3<<5 }, "branch of its own"},
+		"a tbnz over the call":         {func(w []uint32) { w[10] = 0x37000000 | 3<<5 }, "branch of its own"},
+		"a br over the call":           {func(w []uint32) { w[10] = 0xd61f0200 }, "branch of its own"},
+		"mov x3, x30 left out":         {func(w []uint32) { w[11] = a64Nop }, "does not follow mov x3, x30"},
+		"another move before bl":       {func(w []uint32) { w[11] = 0xaa1d03e3 }, "does not follow mov x3, x30"},
+		"the call of another function": {func(w []uint32) { w[12] = a64BL(at+4*12, other) }, "branch of its own"},
+		"the jump back elsewhere":      {func(w []uint32) { w[14] = a64B(at+4*14, at+4) }, "does not call morestack"},
+		"a RET where morestack goes":   {func(w []uint32) { w[11] = a64Ret }, "branch of its own"},
+		"no jump back":                 {func(w []uint32) { w[14] = a64Nop; w[15] = a64Nop }, "does not call morestack"},
+	} {
+		k, w := a64HostPoll()
+		c.edit(w)
+		k.bin.secs[0].data = a64Bytes(w)
+		if err := k.checkHostPoll(); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+	k, _ = a64HostPoll()
+	delete(k.bin.syms, "p.host_poll")
+	if err := k.checkHostPoll(); err == nil || !strings.Contains(err.Error(), "not in the binary") {
+		t.Errorf("host_poll absent: %v", err)
 	}
 }

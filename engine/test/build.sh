@@ -35,7 +35,9 @@
 # the object files: those of the engine here, and those of its
 # libc in libc/ (heap-fuzz for fuzz). CC picks another compiler. A sanitizer
 # reports a finding and goes on, so that a run over test262 lists them all: run
-# with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too.
+# with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too. compare.sh and
+# heap.sh set halt_on_error=1 for UndefinedBehaviorSanitizer, so a finding fails
+# them.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)

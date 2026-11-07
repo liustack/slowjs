@@ -36,19 +36,22 @@ import (
 )
 
 const (
-	a64Ret        = 0xd65f03c0
-	a64Nop        = 0xd503201f
-	a64StackGuard = 0xf9400b90 // ldr x16, [x28, #16]: g.stackguard0
-	a64BLRX9      = 0xd63f0120
-	a64MovX3LR    = 0xaa1e03e3 // mov x3, x30, before the call of morestack
-	a64SaveFP     = 0xf81f83fd // stur x29, [sp, #-8]
-	a64SetFP      = 0xd10023fd // sub x29, sp, #8
-	a64LoadFP     = 0xf85f83fd // ldur x29, [sp, #-8]
-	a64BigSave    = 0xa93ffa9d // stp x29, x30, [x20, #-8]
-	a64BigSetSP   = 0x9100029f // mov sp, x20
-	a64BigLoad    = 0xa97ffbfd // ldp x29, x30, [sp, #-8]
-	a64AddFP      = 0x910003fd // add x29, sp, #0: the leaf epilogue, with #frame-8 in bits 10 to 21
-	a64AddSP      = 0x910003ff // add sp, sp, #0: with #frame in bits 10 to 21
+	a64Ret         = 0xd65f03c0
+	a64Nop         = 0xd503201f
+	a64StackGuard  = 0xf9400b90 // ldr x16, [x28, #16]: g.stackguard0
+	a64CmpSPGuard  = 0xeb3063ff // cmp sp, x16: the check of a frame of at most StackSmall
+	a64CmpTmpGuard = 0xeb10023f // cmp x17, x16: the check of a bigger frame
+	a64SubSPTmp    = 0xd10003f1 // sub x17, sp, #0: with #(frame - StackSmall) in bits 10 to 21
+	a64BLRX9       = 0xd63f0120
+	a64MovX3LR     = 0xaa1e03e3 // mov x3, x30, before the call of morestack
+	a64SaveFP      = 0xf81f83fd // stur x29, [sp, #-8]
+	a64SetFP       = 0xd10023fd // sub x29, sp, #8
+	a64LoadFP      = 0xf85f83fd // ldur x29, [sp, #-8]
+	a64BigSave     = 0xa93ffa9d // stp x29, x30, [x20, #-8]
+	a64BigSetSP    = 0x9100029f // mov sp, x20
+	a64BigLoad     = 0xa97ffbfd // ldp x29, x30, [sp, #-8]
+	a64AddFP       = 0x910003fd // add x29, sp, #0: the leaf epilogue, with #frame-8 in bits 10 to 21
+	a64AddSP       = 0x910003ff // add sp, sp, #0: with #frame in bits 10 to 21
 )
 
 // CheckEngineARM64 runs the check on c.Bin, a linked linux/arm64 binary of
@@ -74,6 +77,12 @@ func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 		rodata = s.Value
 	}
 	k := &a64Checker{c: c, o: o, bin: bin, morestack: ms.Value, rodata: rodata}
+	if c.HostPoll {
+		if err := k.checkHostPoll(); err != nil {
+			return rep, err
+		}
+		rep.Checked["host_poll"]++
+	}
 	for _, m := range c.Metas {
 		gn := c.Names[m.Name]
 		s, ok := bin.abi0(c.Pkg, gn)
@@ -137,10 +146,124 @@ func (k *a64Checker) target(sym string, add int64) (uint64, error) {
 	return uint64(int64(s.Value) + add), nil
 }
 
+// checkHostPoll holds the Go function host_poll to the one thing the poll is
+// for: a safe point. As on amd64 (checker.checkHostPoll), it must begin with
+// Go's stack check, the load of the guard, a compare of the stack (or the
+// stack less the frame) with it and a branch on lower or same to a call of
+// runtime.morestack_noctxt and a jump back to its start. The compiler makes
+// host_poll, so its frame is not known here, and either form of the compare
+// is taken. A small function that calls nothing is marked NOSPLIT by the
+// compiler and has none of this.
+func (k *a64Checker) checkHostPoll() error {
+	sym, ok := k.bin.syms[k.c.Pkg+".host_poll"]
+	if !ok {
+		return fmt.Errorf("host_poll is called but is not in the binary")
+	}
+	fail := func(f string, a ...any) error {
+		return fmt.Errorf("host_poll has no stack check, so the Go runtime cannot stop C code at it: "+f, a...)
+	}
+	b, err := k.bin.read(sym.Value, int(sym.Size)&^3)
+	if err != nil {
+		return err
+	}
+	n := len(b) / 4
+	if n == 0 || a64Word(b, 0) != a64StackGuard {
+		first := uint32(0)
+		if n > 0 {
+			first = a64Word(b, 0)
+		}
+		return fail("it starts with %#08x, not the load of the guard", first)
+	}
+	_, more, err := a64StackCheck(b, -1)
+	if err != nil {
+		return fail("%v", err)
+	}
+	if more < 0 || more >= n {
+		return fail("its stack check branches to word %d, outside the function", more)
+	}
+	// The block the b.ls goes to is one straight run of words: the spill of
+	// the arguments, mov x3, x30, bl morestack, the reload and a b to the
+	// start. Any other branch in it (a b.cond or a cbz that jumps over the call,
+	// a br, a blr, a ret) lets the stack check be skipped while the words of
+	// the call are still there, so none is allowed.
+	called := false
+	for t := more; t < n && t < more+24; t++ {
+		w := a64Word(b, t)
+		at := sym.Value + uint64(4*t)
+		target := at + uint64(int64(int32(w<<6)>>4))
+		switch {
+		case w&0xfc000000 == 0x94000000 && target == k.morestack: // bl morestack
+			if t == more || a64Word(b, t-1) != a64MovX3LR {
+				return fail("the call of morestack does not follow mov x3, x30")
+			}
+			called = true
+		case w&0xfc000000 == 0x14000000: // b
+			if !called || target != sym.Value {
+				return fail("its stack check does not call morestack and jump back to the start")
+			}
+			return nil
+		case w&0xfc000000 == 0x94000000, // bl elsewhere
+			w&0xff000010 == 0x54000000,                             // b.cond
+			w&0x7e000000 == 0x34000000,                             // cbz, cbnz
+			w&0x7e000000 == 0x36000000,                             // tbz, tbnz
+			w&0xff9ffc1f == 0xd61f0000, w&0xfffffc1f == 0xd65f0000: // br, blr, ret
+			return fail("its stack check has a branch of its own (%#08x) that can jump over the call of morestack", w)
+		}
+	}
+	return fail("its stack check does not call morestack and jump back to the start")
+}
+
 func a64Word(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[4*i:]) }
 
 // a64Imm9 is the signed 9-bit offset of a load or store with writeback.
 func a64Imm9(w uint32) int { return int(int32(w<<11) >> 23) }
+
+// a64StackCheck reads the stack check at the start of b (word 0 is the load
+// of the guard) as Go's assembler writes it for a function whose frame is
+// frame bytes (cmd/internal/obj/arm64/obj7.go, stacksplit): for a frame of at
+// most abi.StackSmall (128) the compare of SP with the guard, for a bigger one
+// up to abi.StackBig (4096) the compare with it of SP less (frame - 128),
+// kept in x17. Then b.ls. It returns the index of the first word after the
+// check and the index the branch goes to. A frame past StackBig has a longer
+// form that tests for underflow, which no function of the engine has and
+// nothing has reviewed. With frame below 0 (the frame is not known, as for
+// host_poll, which the compiler makes) either form is taken.
+func a64StackCheck(b []byte, frame int) (next, morestackAt int, err error) {
+	word := func(i int) uint32 {
+		if 4*i+4 > len(b) {
+			return 0
+		}
+		return a64Word(b, i)
+	}
+	i := 1
+	switch {
+	case frame > 4096:
+		return 0, 0, fmt.Errorf("a stack check for a frame of %d bytes, past the 4096 whose form is reviewed", frame)
+	case frame >= 0 && frame <= 128, frame < 0 && word(1) == a64CmpSPGuard:
+		if word(i) != a64CmpSPGuard {
+			return 0, 0, fmt.Errorf("the stack check has %#08x, want cmp sp, x16 (%#08x) for a frame of %d bytes", word(i), uint32(a64CmpSPGuard), frame)
+		}
+		i++
+	default:
+		sub := word(i)
+		if frame >= 0 {
+			if want := a64SubSPTmp | uint32(frame-128)<<10; sub != want {
+				return 0, 0, fmt.Errorf("the stack check has %#08x, want sub x17, sp, #%d (%#08x) for a frame of %d bytes", sub, frame-128, want, frame)
+			}
+		} else if sub&0xffc003ff != a64SubSPTmp {
+			return 0, 0, fmt.Errorf("the stack check starts with %#08x, which is no compare of the stack with the guard", sub)
+		}
+		if cmp := word(i + 1); cmp != a64CmpTmpGuard {
+			return 0, 0, fmt.Errorf("the stack check has %#08x, want cmp x17, x16 (%#08x)", cmp, uint32(a64CmpTmpGuard))
+		}
+		i += 2
+	}
+	w := word(i)
+	if w&0xff00001f != 0x54000009 { // b.ls
+		return 0, 0, fmt.Errorf("a stack check with no branch to morestack: %#08x", w)
+	}
+	return i + 1, i + int(int32(w<<8)>>13), nil
+}
 
 func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	n := len(b) / 4
@@ -153,7 +276,14 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 		i++
 		return w, nil
 	}
-	// Go's stack check: ldr x16, [x28, #16], a compare, b.ls to the call of
+	// The frame the TEXT asks for, which the stack check is made for.
+	calls := len(m.Rec.Calls) > 0
+	frame := 0
+	if m.Frame > 0 || calls {
+		frame = ARM64Stack.Local(m.Frame, calls)
+	}
+	// Go's stack check: ldr x16, [x28, #16], the compare of the stack (less
+	// what the frame needs past StackSmall) with it, b.ls to the call of
 	// morestack after the RET.
 	checked := n > 0 && a64Word(b, 0) == a64StackGuard
 	if checked == m.NoSplit {
@@ -161,24 +291,13 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	}
 	morestackAt := -1
 	if checked {
-		i = 1
-		for ; i < n && i < 5; i++ {
-			w := a64Word(b, i)
-			if w&0xff00001f == 0x54000009 { // b.ls
-				morestackAt = i + int(int32(w<<8)>>13)
-				i++
-				break
-			}
-		}
-		if morestackAt < 0 {
-			return fmt.Errorf("a stack check with no branch to morestack")
+		var err error
+		if i, morestackAt, err = a64StackCheck(b, frame); err != nil {
+			return err
 		}
 	}
 	// The frame.
-	calls := len(m.Rec.Calls) > 0
-	frame := 0
 	if m.Frame > 0 || calls {
-		frame = ARM64Stack.Local(m.Frame, calls)
 		w, err := next()
 		if err != nil {
 			return err

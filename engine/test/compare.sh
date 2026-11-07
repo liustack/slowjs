@@ -22,6 +22,11 @@
 # the file when they differ). Wrap the script in taskset or systemd-run to
 # keep it to the CPUs and the memory you give it.
 #
+# COMPARE_CASES=FILE runs the cases of FILE in place of the built in ones (one
+# line each: SCRIPT FILE [OPTIONS]), COMPARE_BIN_DIR names the folder of jsrun
+# and the unit programs, and COMPARE_OUT the folder of the results. The test of
+# this script (engine/test/compare-test.sh) uses them.
+#
 # COMPARE_UPDATE=native writes the file of each script that has none yet
 # (those of engine/test/compare) from the output of the C tree. Read what it
 # wrote before it goes into a commit: a file kept is a claim about what the
@@ -35,12 +40,20 @@ set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$(dirname "$here")")
 mode=${1:-plain}
-out=$here/out/compare-$mode
+out=${COMPARE_OUT:-$here/out/compare-$mode}
 update=${COMPARE_UPDATE:-}
 
-bin=$here/out/$mode/jsrun
+bindir=${COMPARE_BIN_DIR:-$here/out/$mode}
+bin=$bindir/jsrun
 [ -x "$bin" ] || { echo "compare.sh: $bin is missing: run engine/test/build.sh $mode" >&2; exit 2; }
 mkdir -p "$out"
+
+# A finding of UndefinedBehaviorSanitizer stops the run with status 86. It would
+# otherwise print the finding and go on, and the run would pass (Address-
+# Sanitizer stops by default). These options come last, so that the caller's own
+# (halt_on_error=0, exitcode=0) cannot turn the stop off: the last one wins.
+UBSAN_OPTIONS=${UBSAN_OPTIONS:+$UBSAN_OPTIONS:}halt_on_error=1:exitcode=86:print_stacktrace=1
+export UBSAN_OPTIONS
 
 # shikire.js runs on the regexps and the text that its test sets first.
 r="$here/compare/recorded"
@@ -115,7 +128,11 @@ done
 
 total=0
 failed=0
-printf '%s\n' "$cases" | grep -v '^$' > "$out/cases.list"
+if [ -n "${COMPARE_CASES:-}" ]; then
+	grep -v '^$' "$COMPARE_CASES" > "$out/cases.list"
+else
+	printf '%s\n' "$cases" | grep -v '^$' > "$out/cases.list"
+fi
 
 while read -r script want opts; do
 	# A name for the outputs: the file it must equal, and the cache setting.
@@ -125,8 +142,18 @@ while read -r script want opts; do
 	case $opts in *no-fused-ops*) tag=$tag-apart ;; esac
 	total=$((total + 1))
 	# "== NAME" is the line jsrun puts before each script.
+	# jsrun runs alone and its exit status is read: the exit of a pipe is the
+	# status of its last command, and jsrun fails after it has printed all of
+	# its output (a leak found when the runtime is freed, a sanitizer report).
+	rc=0
 	# shellcheck disable=SC2086
-	"$bin" $opts "$script" | tail -n +2 > "$out/$tag.out"
+	"$bin" $opts "$script" > "$out/$tag.raw" || rc=$?
+	tail -n +2 "$out/$tag.raw" > "$out/$tag.out"
+	if [ "$rc" -ne 0 ]; then
+		echo "compare: $tag: jsrun exited with status $rc, the output is in $out/$tag.out" >&2
+		failed=$((failed + 1))
+		continue
+	fi
 	file=${want%%#*}
 	if [ "$file" != "$want" ]; then
 		# FILE#go: the part before the stacks of the Go API
@@ -153,7 +180,7 @@ done < "$out/cases.list"
 
 # What the scripts cannot see, checked in C.
 for u in unit unit-oom unit-api unit-white; do
-	"$here/out/$mode/$u"
+	"$bindir/$u"
 done
 if [ "$failed" -ne 0 ]; then
 	echo "compare: $failed of $total runs differ" >&2
