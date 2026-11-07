@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，以及失败时会怎样
@@ -459,3 +459,15 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 代价：多比较一次标签。
 
 测试：`TestThenGetterThrows`（`then_test.go`）对一个 `then` getter 会抛 `RangeError` 的 promise 调用 `Then`，要求得到这个错误，并且不留下挂起的异常。
+
+## Go map 变成只有自有数据属性的对象
+
+发布版本：Unreleased。
+
+Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来每个键用 `JS_SetPropertyStr` 设置，它接收 C 字符串，像 `obj[key] = value` 那样赋值。所以键在第一个 NUL 字节处被截断，`"a"` 和 `"a\x00b"` 变成同一个键，丢掉一个值。键 `"__proto__"` 会运行 `Object.prototype` 的 setter，改掉对象的原型，而它本该只是一个键。页面在 `Object.prototype` 上以某个键的名字放的 setter，会拿到 map 的值运行，这个键也就不在对象上。
+
+现在每个键按它的字节和长度做成 atom（`JS_NewAtomLen`），定义成可枚举、可写、可配置的自有数据属性，和 `JSON.parse` 与对象字面量定义键的方式一样（`JS_DefinePropertyValue`），之后释放 atom。所以 map 的每个键都完整地成为对象的键，`__proto__` 也一样，也不运行任何 setter。键仍按排序后的顺序。
+
+代价：每个键从一次进入引擎变成三次。键带着长度交给引擎，不再作为 C 字符串。map 是 `RegisterFunc` 和 `RegisterHostFunc` 的结果，不是 `Builtin` 的。
+
+测试：`TestMapResultKeys`（`register_test.go`）返回一个带 NUL 字节键的 map、一个键为 `__proto__` 的 map、一个键名会被 `Object.prototype` 的 setter 截获的 map，要求每个键都在对象上，原型不变，setter 不运行。

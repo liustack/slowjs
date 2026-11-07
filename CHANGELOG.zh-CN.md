@@ -15,6 +15,7 @@
 - 把 `UndefinedValue` 作为 `Call` 和其他调用方法的参数，或者作为 `SetPropertyValue` 的值传入时，得到的是 `undefined`，原来会因空指针 panic。`RegisterFunc` 的 Go 函数返回的零值 `Value` 也是 `undefined`，原来是 0，作为 `Value.Call` 的 `this` 时也是，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#undefinedvalue-作为参数和属性值)）。
 - 在对 VM 的调用进行中（比如在这个 VM 上的 javascript 调用的 Go 函数里）对它调用 `Close`，现在返回错误，什么也不改，VM 继续可用。原来它会释放还在 Go 函数下面运行的引擎，调用随后以空指针 panic（[Go API](docs/changes/go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close)）。
 - `Value.Then` 返回 `then` 的 getter 抛出的东西，原来返回 `TypeError: not a function`（[Go API](docs/changes/go-api.zh-CN.md#then-返回-then-getter-抛出的异常)）。
+- Go 函数返回的 Go map 变成的对象，键都是自有数据属性，每个键完整保留。原来键在第一个 NUL 字节处被截断，`"a"` 和 `"a\x00b"` 成了同一个键，键 `__proto__` 会改掉对象的原型，`Object.prototype` 上以某个键的名字放的 setter 会拿到它的值运行（[Go API](docs/changes/go-api.zh-CN.md#go-map-变成只有自有数据属性的对象)）。
 
 ## [v0.30.1] - 2026-11-06
 

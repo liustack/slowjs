@@ -455,15 +455,23 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 			return fail(i+1, err)
 		}
 
-		// JS_SetPropertyStr takes over the reference to jv, also when there is
-		// no memory for the C string of the name.
-		rc, err := m.jsSetPropertyStr(obj, validUTF8(kv.key), jv)
-		if err == nil && rc < 0 {
+		// The key is an atom of all its bytes, NULs too, and an own data
+		// property as in an object literal: no setter runs, and __proto__ is
+		// a key. JS_DefinePropertyValue takes jv, also when it fails.
+		atom, err := m.jsNewAtom(validUTF8(kv.key))
+		if err == nil && atom == atomNull {
 			err = m.errFromException()
 		}
 		if err != nil {
+			m.jsFreeValue(jv)
 			m.jsFreeValue(obj)
 			return fail(i+1, err)
+		}
+		rc := m.jsDefinePropertyValue(obj, atom, jv, propCWE|propThrow)
+		m.jsFreeAtom(atom)
+		if rc < 0 {
+			m.jsFreeValue(obj)
+			return fail(i+1, m.errFromException())
 		}
 	}
 

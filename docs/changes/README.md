@@ -78,6 +78,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | UndefinedValue as an argument and a property value | Unreleased | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
 | Close inside a call into the VM is refused | Unreleased | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
 | Then returns the exception of a then getter | Unreleased | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
+| A Go map becomes an object of its own data properties | Unreleased | [go-api.md](go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties) |
 
 ## Limits that hold
 

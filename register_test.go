@@ -271,3 +271,40 @@ func mustString(t *testing.T, m *VM, s string) Value {
 	}
 	return v
 }
+
+// A Go map becomes an object whose keys are its own data properties, each
+// key whole: a key with a NUL byte stays apart from the key before the NUL,
+// __proto__ is a key and leaves the prototype alone, and a setter on
+// Object.prototype under the name of a key does not run.
+func TestMapResultKeys(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterHostFunc("nul", func([]any) (any, error) {
+		return map[string]int{"a": 1, "a\x00b": 2}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("proto", func([]any) (any, error) {
+		return map[string]any{"__proto__": map[string]any{"evil": 1}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("setter", func([]any) (any, error) {
+		return map[string]any{"k": 1}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ js, want string }{
+		{`const o = nul(); JSON.stringify(Object.keys(o)) + o.a + o["a\0b"]`, `["a","a\u0000b"]12`},
+		{`const p = proto(); [Object.keys(p).join(), Object.getPrototypeOf(p) === Object.prototype, "evil" in p].join()`, `__proto__,true,false`},
+		{`let hit = 0
+Object.defineProperty(Object.prototype, "k", { configurable: true, set(v) { hit++ } })
+const s = setter()
+delete Object.prototype.k;
+[hit, Object.keys(s).join(), s.k].join()`, `0,k,1`},
+	} {
+		r, err := m.Eval(c.js, EvalGlobal)
+		if err != nil || r != c.want {
+			t.Errorf("%s: got %v, %v, want %s", c.js, r, err, c.want)
+		}
+	}
+}

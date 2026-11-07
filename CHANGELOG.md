@@ -15,6 +15,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 - `UndefinedValue` passed as an argument of `Call` and the other call methods, or as the value of `SetPropertyValue`, is `undefined`, where it panicked with a nil pointer. The zero `Value` that a Go function of `RegisterFunc` returns is `undefined` too, where it was 0, and so is the zero `Value` as the `this` of `Value.Call`, as it is for `NewArray` and a `Builtin` ([Go API](docs/changes/go-api.md#undefinedvalue-as-an-argument-and-a-property-value)).
 - `Close` of a VM while a call into it is in progress, as from a Go function that javascript on it called, now returns an error and changes nothing, and the VM goes on. It freed the engine that was still running below the Go function, and the call then panicked with a nil pointer ([Go API](docs/changes/go-api.md#close-inside-a-call-into-the-vm-is-refused)).
 - `Value.Then` returns what a getter of `then` threw, where it returned `TypeError: not a function` ([Go API](docs/changes/go-api.md#then-returns-the-exception-of-a-then-getter)).
+- A Go map that a Go function returns becomes an object whose keys are own data properties, each key whole. A key was cut at its first NUL byte, so `"a"` and `"a\x00b"` became one, the key `__proto__` changed the prototype of the object, and a setter on `Object.prototype` under the name of a key ran with its value ([Go API](docs/changes/go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties)).
 
 ## [v0.30.1] - 2026-11-06
 
