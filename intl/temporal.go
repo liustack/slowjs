@@ -113,7 +113,12 @@ var (
 )
 
 // maxTemporalFormats bounds the formats kept: more are dropped all at once,
-// as a page making up options in a loop would otherwise grow the map.
+// as a page making up options in a loop would otherwise grow the map. Only
+// a request whose key is at most maxRequestKey bytes long is kept, as in
+// the registry, so the keys take at most 256 KiB, and only one that
+// resolved: an error is made again on each call, as it may hold what the
+// page passed, at any length. The process keeps what the VMs that made the
+// requests asked for after they are closed, within these bounds.
 const maxTemporalFormats = 512
 
 func copyOptions(o map[string]any) map[string]any {
@@ -242,9 +247,12 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 		}
 	}
 
-	temporalFormatsMu.Lock()
-	tf := temporalFormats[string(key)]
-	temporalFormatsMu.Unlock()
+	var tf *temporalFormat
+	if len(key) <= maxRequestKey {
+		temporalFormatsMu.Lock()
+		tf = temporalFormats[string(key)]
+		temporalFormatsMu.Unlock()
+	}
 	if tf == nil {
 		req := request{Options: map[string]any{}, vm: a.VM()}
 		if s, ok := intlhook.String(a, tfLocales); ok {
@@ -275,12 +283,14 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 		}
 		req.Options["_required"], req.Options["_defaults"] = k.required, k.defaults
 		tf = resolveTemporal(k, req, defaultZone, zone)
-		temporalFormatsMu.Lock()
-		if len(temporalFormats) >= maxTemporalFormats {
-			temporalFormats = map[string]*temporalFormat{}
+		if tf.err == nil && len(key) <= maxRequestKey {
+			temporalFormatsMu.Lock()
+			if len(temporalFormats) >= maxTemporalFormats {
+				temporalFormats = map[string]*temporalFormat{}
+			}
+			temporalFormats[string(key)] = tf
+			temporalFormatsMu.Unlock()
 		}
-		temporalFormats[string(key)] = tf
-		temporalFormatsMu.Unlock()
 	}
 
 	if err := tf.checkCalendar(cal); err != nil {

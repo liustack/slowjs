@@ -256,3 +256,13 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 读完 1 MiB 混合文本的每个词要 1.38 秒，和原来一样，Go 里分配 35 MiB，原来是 88 MiB。把一段短文本的每个词读 10,000 遍要 315 ms，原来是 311 ms（在 GCP 的 0 和 4 号核上各跑一次）。
 
 测试：`intl/segmenter_test.go` 里的 `TestSegmentsInBatches` 在 10 万个码元、几种文字、带孤立代理项的文本上，对六种 locale 和粒度，把迭代器、在新的 Segments 对象上和在同一个对象上调用 `containing`、以及轮流读比 VM 保留的迭代器更多的 Segments 对象，都和 go-intl 整段走一遍的结果比较。`TestSegmentsMemory` 检查 8 MiB 文本的头几个分段在 Go 里用不到 64 MiB。
+
+## Temporal 格式的缓存只保留短请求
+
+发布版本：Unreleased。
+
+`toLocaleString` 和 `DateTimeFormat.prototype.format` 为 Temporal 值造的格式由进程里所有 VM 共用，它们会把页面要求的东西不管多长都留下来，VM 关闭之后也还在。`toLocaleString` 的缓存最多存 512 个格式，但每个都带着页面给的原样请求，失败的也一样：一个 1 MiB 长、根本不是历法的历法选项，会和它的错误一起留下。格式化器的注册表最多留 1,024 个格式化器，每个都带着它的解析后选项，而 Temporal 日期格式的解析后选项里装着整个请求。在 GCP 上，做过这类调用后关闭的 40 个 VM，失败的历法留下了 81 MiB，用 10,000 个 locale 的列表对 Temporal 值调用 `DateTimeFormat.format` 留下了 11 MiB。
+
+现在 `toLocaleString` 的缓存只在请求不超过 512 字节（和注册表一样）并且解析成功时才保留格式：错误每次调用都重新造，因为它可能带着页面传进来的东西。所以这个缓存里的请求最多占 256 KiB。Temporal 的日期格式不再保留请求本身，改为保留它的 SHA-256（十六进制 64 字节），这仍然能区分那些只有请求才能区分开的格式。不超过 512 字节的请求（页面造的就是这种）照旧缓存，所以常见调用花的时间不变。关闭的 40 个 VM 现在留下的不到 1 MiB。
+
+测试：`temporal/limits_test.go` 里的 `TestFormatCachesAfterClose`（1 MiB 的失败历法，以及对 10,000 个 locale 的列表调用 `DateTimeFormat.format` 和 `toLocaleString`，每种都在调用后关闭的 40 个 VM 里做）。

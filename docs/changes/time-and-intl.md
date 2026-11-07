@@ -256,3 +256,13 @@ A batch goes on where the last one stopped, with the same break iterator. The br
 Reading every word of 1 MiB of mixed text takes 1.38 seconds, as before, and 35 MiB of allocations in Go, where it took 88. Reading every word of a short text 10,000 times takes 315 ms, where it took 311 ms (one run each on GCP cores 0 and 4).
 
 Tests: `TestSegmentsInBatches` in `intl/segmenter_test.go` checks the iterator, `containing` on new Segments objects and on one, and more Segments objects read in turn than a VM keeps iterators for, against go-intl's whole walk, on 100,000 code units of several scripts with lone surrogates, for six locales and granularities. `TestSegmentsMemory` checks that the first segments of 8 MiB take less than 64 MiB in Go.
+
+## The caches of Temporal formats keep short requests only
+
+Release: Unreleased.
+
+The formats `toLocaleString` and `DateTimeFormat.prototype.format` make for Temporal values are shared by every VM of the process, and they kept what a page asked for at any length, after its VM was closed. The cache of `toLocaleString` held at most 512 formats, but each with its request as the page gave it, a failed one too: a calendar option of 1 MiB that was no calendar stayed with its error. The formatter registry keeps at most 1,024 formatters, each with its resolved options, and those of a Temporal date format held its whole request. On GCP, 40 VMs closed after such calls kept 81 MiB for the failed calendar, and 11 MiB for `DateTimeFormat.format` of a Temporal value with a list of 10,000 locales.
+
+Now the cache of `toLocaleString` keeps a format only when its request is at most 512 bytes, as the registry does, and only when it resolved: an error is made again on each call, as it may hold what the page passed. So the cache takes at most 256 KiB of requests. A Temporal date format keeps the SHA-256 of its request, 64 bytes in hex, in place of the request, which still tells apart the formats that only the request tells apart. Requests of up to 512 bytes, the ones pages make, are cached as before, so the common calls take the same time. The 40 closed VMs now keep less than 1 MiB.
+
+Tests: `TestFormatCachesAfterClose` in `temporal/limits_test.go` (a failed calendar of 1 MiB, and `DateTimeFormat.format` and `toLocaleString` of a list of 10,000 locales, each in 40 VMs closed after the call).

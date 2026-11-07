@@ -124,6 +124,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The engine reads Go's clocks | v0.27.0 | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
 | One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
 | Intl.Segmenter finds segments as they are read | Unreleased | [time-and-intl.md](time-and-intl.md#intlsegmenter-finds-segments-as-they-are-read) |
+| The caches of Temporal formats keep short requests only | Unreleased | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
 
 ## Temporal
 
