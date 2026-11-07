@@ -247,7 +247,7 @@ Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheB
 
 Release: Unreleased.
 
-`containing` and the iterator of a Segments object now find the segments of its text as javascript reads them, a batch at a time, where the first call found every segment of the whole text in Go. On a text of 8 MiB, `containing(0)` made go-intl list all 8,388,608 graphemes: 1,260 MiB of allocations in Go, outside the VM's memory limit, and 0.8 to 1.5 seconds with no check of the interrupt flag. It now takes 24 MiB, the text in UTF-16 and its copy as Go reads it, and 17 to 36 ms on GCP.
+`containing` and the iterator of a Segments object now find the segments of its text as javascript reads them, a batch at a time, where the first call found every segment of the whole text in Go. On a text of 8 MiB, `containing(0)` made go-intl list all 8,388,608 graphemes: 1,260 MiB of allocations in Go, outside the VM's memory limit, and 0.8 to 1.5 seconds with no check of the interrupt flag. It now takes 24 MiB, the text in UTF-16 and its copy as Go reads it, and 17 to 36 ms on GCP. That memory is not counted against the memory limit of the VM, nor is the text each kept iterator holds (below), and one break far ahead, as after a long run of text that a dictionary breaks, is found with no check of the VM.
 
 The first batch is 64 breaks, and each next one is as long as all those before it, up to 65,536, so reading every segment takes few calls. The work of each batch checks the VM every 256 breaks (see [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list)). `breaker.go` of go-intl finds one boundary at a time through `qjs.patch`, and `qjs_segments.go` hands them out as `Segmenter.Iter`.
 

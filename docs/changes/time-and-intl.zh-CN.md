@@ -247,7 +247,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 
 发布版本：Unreleased。
 
-Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。
+Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。这些内存不算在 VM 的内存上限里，VM 留着的每个迭代器带着的文本（见下文）也不算，而且前面很远处的一个断点（比如一长段要用词典切分的文本之后的断点）是在不检查 VM 的情况下找出来的。
 
 第一批是 64 个断点，之后每批和前面所有批加起来一样长，最多 65,536 个，所以读完所有分段只要很少几次调用。每批的活每 256 个断点检查一次 VM（见 [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。go-intl 的 `breaker.go` 通过 `qjs.patch` 改成一次找一个边界，`qjs_segments.go` 把它们作为 `Segmenter.Iter` 提供出来。
 

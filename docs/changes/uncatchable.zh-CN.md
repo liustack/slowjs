@@ -282,7 +282,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的每个 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 的 `format` 和 `formatToParts`，现在不管列表多长都会在 `Interrupt` 和 eval 超时时停下。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完为止。`getCanonicalLocales` 找重复还要把每个标签和它前面的所有标签比一遍：10 万个互不相同的标签大约要比较 50 亿次，在 GCP 上要 8.5 秒，什么超时都打断不了。
 
-现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。
+现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。这些检查按标签和项计数，不按字节：单独一个很长的标签或项，在 Go 里读入、变成规范形式和匹配时仍然不检查 VM，占的内存也不算在它的上限里，比如在 M 系列 Mac 上对 16 MiB 的私有用途标签调用 `new Intl.NumberFormat(tag)` 要 0.2 秒，分配 289 MiB。
 
 把标签和某个服务的 locale 匹配时一次处理 256 个标签：一段里如果没有这个服务有的 locale 就跳过，答案就是列表剩下部分的答案，因为 ResolveLocale 取的是它找到的第一个标签。不超过 256 个标签的列表（页面传的就是这种）走的还是原来的路，每个答案都一样。
 
