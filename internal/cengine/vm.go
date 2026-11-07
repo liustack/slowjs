@@ -288,17 +288,24 @@ func (v *VM) eval(src, file string) (string, error) {
 	if int32(tag) == tagException {
 		return "", v.exception()
 	}
-	defer v.free(u, tag)
+	// The value is freed on the way out only when the engine returned: a
+	// panic that leaves it halfway (a kill, a fault) leaves the value to
+	// Close, as nothing may enter that engine again. So no free here or
+	// below is deferred.
 	for {
 		r := int32(JS_ExecutePendingJob(v.sp, v.rt, v.base+scratchCtx))
 		if r < 0 {
-			return "", v.exception()
+			err := v.exception()
+			v.free(u, tag)
+			return "", err
 		}
 		if r == 0 {
 			break
 		}
 	}
-	return v.string(u, tag)
+	s, err := v.string(u, tag)
+	v.free(u, tag)
+	return s, err
 }
 
 // string is String(value), or the exception it threw as an error.
@@ -335,31 +342,41 @@ func (v *VM) exception() error {
 	uncatchable := JS_IsUncatchableException(v.sp, v.ctx) != 0
 	u, tag := JS_GetException(v.sp, v.ctx)
 	JS_SetUncatchableException(v.sp, v.ctx, 0)
-	defer v.free(u, tag)
+	var e *JSError
 	if uncatchable {
-		return v.engineError(u, tag)
+		e = v.engineError(u, tag)
+	} else {
+		e = v.thrown(u, tag)
 	}
+	v.free(u, tag)
+	return e
+}
+
+// thrown converts (u, tag), an exception the script threw: String() of it
+// and its stack.
+func (v *VM) thrown(u, tag uintptr) *JSError {
 	e := &JSError{Message: unprintable}
 	if msg, ok := v.text(u, tag); ok {
 		e.Message = msg
 	} else {
 		v.dropException()
 	}
-	if int32(tag) == tagObject {
-		su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
-		if int32(stag) == tagException {
-			v.dropException()
+	if int32(tag) != tagObject {
+		return e
+	}
+	su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
+	if int32(stag) == tagException {
+		v.dropException()
+		return e
+	}
+	if int32(stag) != tagUndefined {
+		if s, ok := v.text(su, stag); ok {
+			e.Stack = s
 		} else {
-			if int32(stag) != tagUndefined {
-				if s, ok := v.text(su, stag); ok {
-					e.Stack = s
-				} else {
-					v.dropException()
-				}
-			}
-			v.free(su, stag)
+			v.dropException()
 		}
 	}
+	v.free(su, stag)
 	return e
 }
 
@@ -391,7 +408,13 @@ func (v *VM) ownString(u, tag uintptr, name string) string {
 		v.dropException()
 		return ""
 	}
-	defer JS_FreeAtom(v.sp, v.ctx, atom)
+	s := v.ownAtomString(u, tag, atom, name)
+	JS_FreeAtom(v.sp, v.ctx, atom)
+	return s
+}
+
+// ownAtomString is ownString once the atom of name is made.
+func (v *VM) ownAtomString(u, tag, atom uintptr, name string) string {
 	switch int32(JS_GetOwnProperty(v.sp, v.ctx, 0, u, tag, atom)) {
 	case 1:
 	case 0:
@@ -405,14 +428,15 @@ func (v *VM) ownString(u, tag uintptr, name string) string {
 		v.dropException()
 		return ""
 	}
-	defer v.free(pu, ptag)
 	if int32(ptag) != tagString && int32(ptag) != tagRope {
+		v.free(pu, ptag)
 		return ""
 	}
 	s, ok := v.text(pu, ptag)
 	if !ok {
 		v.dropException()
 	}
+	v.free(pu, ptag)
 	return s
 }
 
