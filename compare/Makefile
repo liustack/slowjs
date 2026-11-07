@@ -13,7 +13,14 @@ all: editor
 # Without it a dependency bump in ../go.mod fails with "updates to go.mod needed".
 benchmark:
 	go mod tidy
-	go test -vet=off -timeout 24h -run @ -bench . -benchtime 5s | go run benchreport.go
+	# The benchmarks run on their own and the report is made once they
+	# succeeded: in a pipe the status of go test would be lost, and a table
+	# of the benchmarks that finished would pass for the whole. make clean
+	# removes bench.out.
+	go test -vet=off -timeout 24h -run @ -bench . -benchtime 5s > bench.out; \
+	rc=$$?; cat bench.out; \
+	if [ $$rc -ne 0 ]; then echo "benchmark: go test failed with status $$rc, no report"; exit $$rc; fi; \
+	go run benchreport.go < bench.out
 
 clean:
 	rm -f log-* cpu.test mem.test *.out go.work*
