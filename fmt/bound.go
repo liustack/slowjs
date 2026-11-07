@@ -18,15 +18,35 @@ import (
 // up to about ten million bytes in each verb, and the same argument in many
 // verbs. So the functions here find a bound on the bytes of the output from
 // the format and the arguments, without making them, and end the call with
-// the out of memory error when the bound is more than the VM has room for.
+// the out of memory error when what Go may hold to make that many bytes
+// (held in fmt.go) is more than the VM has room for.
 // The bound follows fmt's reading of the format (see doPrintf in
 // fmt/print.go): which argument each verb takes, and what each verb can make
 // of it.
 
-// sizePrintf is a bound on the bytes of fmt.Sprintf(format, a...).
-func sizePrintf(format string, a []any) int64 {
+// sizePrintf is a bound on the bytes of fmt.Sprintf(format, a...), and the
+// format as fmt is to read it, which makes the same output in time linear
+// in its length. It is false when that format does not fit in room bytes,
+// which a room below 0 always does.
+//
+// fmt reads an index from a '[' to the first ']' after it, and a '[' with
+// no ']' after it as an index that is not a number, which takes the '['
+// alone. So fmt reads a format with many of these, such as "%[x" a million
+// times, in time quadratic in its length: it looks for a ']' to the end
+// after each. The format sizePrintf returns has "[]" for each of them with
+// at least 3 bytes from it to the end, which fmt reads as the same index
+// that is not a number, in the same place, so its output is the same.
+// fmt takes such a '[' alone at most 3 times in a verb, and the verb has a
+// byte more for each of them ('%', '.' and the verb itself), so there are
+// at most half as many of them as bytes from the first to the end, which
+// is all the format may grow by.
+func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 	n := int64(len(format))
 	end := len(format)
+	lastClose := strings.LastIndexByte(format, ']')
+	var read strings.Builder
+	at := 0
+	fits := true
 	argNum := 0
 	afterIndex := false
 	reordered := false
@@ -37,6 +57,25 @@ func sizePrintf(format string, a []any) int64 {
 			return argNum, i, false, true
 		}
 		reordered = true
+		if i > lastClose {
+			// parseArgNumber without its look for a ']'. It takes the '['
+			// alone before fewer than 3 bytes, ']' or not, so "[]" stands
+			// for "[" only before 3 or more.
+			if end-i >= 3 && fits {
+				if read.Cap() == 0 {
+					size := len(format) + (end-i)/2 + 2
+					if room >= 0 && int64(size) > room {
+						fits = false
+						return argNum, i + 1, false, false
+					}
+					read.Grow(size)
+				}
+				read.WriteString(format[at : i+1])
+				read.WriteByte(']')
+				at = i + 1
+			}
+			return argNum, i + 1, false, false
+		}
 		index, wid, ok := parseArgNumber(format[i:])
 		if ok && 0 <= index && index < len(a) {
 			return index, i + wid, true, true
@@ -113,58 +152,77 @@ func sizePrintf(format string, a []any) int64 {
 		verb, size := utf8.DecodeRuneInString(format[i:])
 		i += size
 		if verb != '%' && good && argNum < len(a) {
-			n += int64(wid) + int64(prec) + sizeArg(a[argNum], verb, sharp, space)
+			n += sizeArg(a[argNum], verb, sharp, space, wid, prec)
 			argNum++
 		}
 	}
 	if !reordered {
 		for _, arg := range a[min(argNum, len(a)):] {
-			n += 64 + sizeArg(arg, 'v', false, false)
+			n += 64 + sizeArg(arg, 'v', false, false, 0, 0)
 		}
 	}
-	return n
+	if !fits {
+		return 0, "", false
+	}
+	if read.Cap() == 0 {
+		return n, format, true
+	}
+	read.WriteString(format[at:])
+	return n, read.String(), true
 }
 
 // sizePrint is a bound on the bytes of fmt.Sprint(a...) and fmt.Sprintln(a...).
 func sizePrint(a []any) int64 {
 	n := int64(1)
 	for _, arg := range a {
-		n += 1 + sizeArg(arg, 'v', false, false)
+		n += 1 + sizeArg(arg, 'v', false, false, 0, 0)
 	}
 	return n
 }
 
 // sizeArg is a bound on the bytes verb makes of arg, with the flags sharp
-// and space and no width or precision, for the arguments the VM gives a Go
-// function (see quickjs.VM.Eval): a string, or an object as its json, comes
-// out at most five times as long as it is, a number in at most a few
-// hundred bytes. A verb that does not fit arg writes it as %v in the text of
-// the error, in 64 bytes more.
-func sizeArg(arg any, verb rune, sharp, space bool) int64 {
+// and space, the width wid and the precision prec, for the arguments the VM
+// gives a Go function (see quickjs.VM.Eval): a string, or an object as its
+// json, comes out at most five times as long as it is, a number in at most
+// a few hundred bytes, and either padded to wid or prec once. A verb that
+// does not fit arg writes it as %v in the text of the error, in 64 bytes
+// more.
+//
+// %w, which only Errorf reads, writes arg in the text of the error as %v
+// does with Go's reflection, which calls no String or Format method: an
+// object as its struct, its json quoted for %#w as %#v quotes it, and a
+// big.Int as its struct too, a list of words, each padded to wid and prec.
+func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
+	w := int64(wid) + int64(prec)
 	switch arg := arg.(type) {
 	case string:
-		return sizeString(len(arg), verb, sharp, space)
+		return w + sizeString(len(arg), verb, sharp, space)
 	case *quickjs.Object:
-		return sizeString(len(arg.String()), verb, sharp, space)
+		return w + sizeString(len(arg.String()), verb, sharp, space)
 	case *big.Int:
-		return int64(arg.BitLen()) + 64
+		if verb == 'w' {
+			// A word is at most 20 digits, or 18 for %#w (0xffffffffffffffff),
+			// and ", " after it.
+			return int64(len(arg.Bits())+2)*(w+24) + 64
+		}
+		return w + int64(arg.BitLen()) + 64
 	case float64:
 		// %f of the largest float64 is 309 digits.
-		return 384
+		return w + 384
 	case int, bool, nil, quickjs.Undefined, quickjs.Unsupported:
 		// %b of an int is 64 digits, and %#v of the structs their name.
-		return 128
+		return w + 128
 	}
 	panic("fmt: internal error: an argument of a type the VM does not give")
 }
 
 // sizeString is sizeArg for a string of n bytes: %q writes a byte as up to
-// four (\x80), %x as two, % x as three and %# x as five (" 0x80"), %#v as
-// %q does, and any other verb as the string itself.
+// four (\x80), %x as two, % x as three and %# x as five (" 0x80"), %#v and
+// %#w as %q does, and any other verb as the string itself.
 func sizeString(n int, verb rune, sharp, space bool) int64 {
 	k := int64(1)
 	switch {
-	case verb == 'q', verb == 'v' && sharp:
+	case verb == 'q', (verb == 'v' || verb == 'w') && sharp:
 		k = 4
 	case (verb == 'x' || verb == 'X') && space && sharp:
 		k = 5
