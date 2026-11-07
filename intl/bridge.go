@@ -301,6 +301,12 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 	b = append(b, c.tag)
 	n := len(c.fixed) + 2 + len(c.options)
 	for i := range n {
+		// Most options are undefined, found first with one check.
+		if a.Value(i).IsUndefined() {
+			b = append(b, 'u')
+			continue
+		}
+
 		if s, ok := intlhook.String(a, i); ok {
 			b = append(b, 's')
 			b = strconv.AppendInt(b, int64(len(s)), 10)
@@ -318,11 +324,7 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 
 		switch v, ok := a.Bool(i); {
 		case !ok:
-			if !a.Value(i).IsUndefined() {
-				return nil, errors.New("intl: internal error: an argument of " + c.name + " has the wrong type")
-			}
-
-			b = append(b, 'u')
+			return nil, errors.New("intl: internal error: an argument of " + c.name + " has the wrong type")
 		case v:
 			b = append(b, 't')
 		default:

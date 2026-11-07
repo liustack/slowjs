@@ -272,7 +272,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 `Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个 VM 没有内存去读的字符串时，现在以内存不足的错误结束调用，原来是在 Go 里 panic。用 `+` 拼出来的字符串（rope）在 Go 读它之前要先拼接成一整段，拼接用的内存算在 VM 的上限里。拼接失败时，`Args.String` 说这个参数不是字符串，格式化器既没拿到数字也没拿到字符串，于是以 `intl: unexpected number bridge value` panic，这个 panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 也一样把这种参数当成空字符串接着干，白做一遍活，最后调用才以内存不足的错误结束。
 
-现在这两个包的每个 Builtin 都由 `intlhook.NewBuiltin` 创建，用 `intlhook.String` 和 `intlhook.WTF8` 读字符串（`internal/intlhook/args.go`）。读取失败时 Builtin 立刻停下，调用以挂起的错误结束：内存不足，或者拼接期间来了 `Interrupt` 或 eval 超时时的中断。没有失败的读取返回的就是 `Args.String` 返回的东西，判断失败的检查只对不是字符串的参数运行，而且在 Go 里做，所以成功的调用格式化结果和以前一样。
+现在这两个包的每个 Builtin 都由 `intlhook.NewBuiltin` 创建，用 `intlhook.String` 和 `intlhook.WTF8` 读字符串（`internal/intlhook/args.go`）。读取失败时 Builtin 立刻停下，调用以挂起的错误结束：内存不足，或者拼接期间来了 `Interrupt` 或 eval 超时时的中断。没有失败的读取返回的就是 `Args.String` 返回的东西，判断失败的检查只对不是字符串的参数运行，而且在 Go 里做，所以成功的调用格式化结果和以前一样。构造函数用来查找格式化器的键，现在先用一次检查找出 undefined 的选项（大多数选项都是），再试其他类型，所以 `new Intl.NumberFormat` 和 `new Intl.DateTimeFormat` 比这些改动之前少用 2% 到 3% 的时间，`format` 不变（`intl` 的 `BenchmarkFormat`，在 GCP 的 0 和 4 号核上交替各跑六次：en-US 的 NumberFormat 是 4,448 对 4,313 ns，DateTimeFormat 是 4,672 对 4,583 ns）。
 
 测试：`intl/limits_test.go` 里的 `TestStringArgumentOutOfMemory`（在限额 16 MiB 的 VM 里，对 32 MiB 的 rope 调用 NumberFormat、它的构造函数、`getCanonicalLocales`、Collator、`localeCompare`、Segmenter 和 `toLocaleUpperCase`），以及 `temporal/limits_test.go` 里的同名测试（`PlainDate.from`、`Duration.from`、`toLocaleString`）。
 
