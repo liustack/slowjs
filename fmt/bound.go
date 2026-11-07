@@ -192,8 +192,25 @@ func sizePrint(a []any) int64 {
 // does with Go's reflection, which calls no String or Format method: an
 // object as its struct, its json quoted for %#w as %#v quotes it, and a
 // big.Int as its struct too, a list of words, each padded to wid and prec.
+//
+// %T writes the name of the type of arg, whatever arg holds, and %p of an
+// object or a big int the address it is at in hex, so neither grows with
+// arg: they come out in their width and precision and a few bytes. %p of
+// any other type writes arg in the text of the error, as any verb that
+// does not fit arg does.
 func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 	w := int64(wid) + int64(prec)
+	switch verb {
+	case 'T':
+		// The longest name is that of quickjs.Unsupported.
+		return w + 64
+	case 'p':
+		switch arg.(type) {
+		case *quickjs.Object, *big.Int:
+			// 0x and 16 digits.
+			return w + 64
+		}
+	}
 	switch arg := arg.(type) {
 	case string:
 		return w + sizeString(len(arg), verb, sharp, space)

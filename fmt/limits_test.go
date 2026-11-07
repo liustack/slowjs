@@ -288,3 +288,46 @@ func TestShortFormats(t *testing.T) {
 	}
 	walk("")
 }
+
+// %T writes the name of the type of its argument, and %p the address an
+// object or a big int is at, so neither is longer for a longer argument: in
+// a VM with 2 MiB left under its memory limit, "%T" of a string of 1 MiB
+// writes "string", where the bound counted the string and ended the call.
+// Their bound is their width and precision and a few bytes, and what they
+// write is in it.
+func TestTypeAndPointer(t *testing.T) {
+	vm := newVM(t)
+	if _, err := vm.Eval(`var s = "x".repeat(1 << 20), o = {a: s}, b = 1n << 1048000n; 1`, quickjs.EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	vm.SetMemoryLimit(vm.MemorySize() + 2<<20)
+	for _, c := range []struct{ js, want string }{
+		{`fmt.sprintf("%T", s)`, "string"},
+		{`fmt.sprintf("%12T|%-12.3T|", s, b)`, "      string|*bi         |"},
+		{`fmt.sprintf("%T %T", o, b)`, "*quickjs.Object *big.Int"},
+		{`fmt.sprintf("%p", o).slice(0, 2)`, "0x"},
+		{`fmt.sprintf("%#p", b).length < 20`, "true"},
+	} {
+		got, err := vm.Eval(c.js, quickjs.EvalGlobal)
+		if err != nil || fmt.Sprint(got) != c.want {
+			t.Errorf("%s: got %v, %v, want %q", c.js, got, err, c.want)
+		}
+	}
+	s := strings.Repeat("x", 1<<20)
+	obj, err := vm.Eval(`({a: 1})`, quickjs.EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := new(big.Int).Lsh(big.NewInt(1), 1<<20)
+	for _, c := range []struct {
+		format string
+		a      any
+	}{
+		{"%T", s}, {"%T", b}, {"%-20T", nil}, {"%T", quickjs.Undefined{}}, {"%p", b}, {"%#20.30p", b}, {"%p", obj},
+	} {
+		bound, _, _ := sizePrintf(c.format, []any{c.a}, -1)
+		if out := fmt.Sprintf(c.format, c.a); int64(len(out)) > bound || bound > 256 {
+			t.Errorf("%s of %T: a bound of %d for %d bytes", c.format, c.a, bound, len(out))
+		}
+	}
+}
