@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，有很多字符或字符串的类，Intl 读不了的字符串参数，以及 Intl 在长列表上的循环'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，有很多字符或字符串的类，Intl 读不了的字符串参数，Intl 在长列表上的循环，以及 fmt 的输出'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -287,3 +287,15 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 把标签和某个服务的 locale 匹配时一次处理 256 个标签：一段里如果没有这个服务有的 locale 就跳过，答案就是列表剩下部分的答案，因为 ResolveLocale 取的是它找到的第一个标签。不超过 256 个标签的列表（页面传的就是这种）走的还是原来的路，每个答案都一样。
 
 测试：`intl/limits_test.go` 里的 `TestLongListTimeout`（`getCanonicalLocales`、`supportedLocalesOf`、构造函数的匹配、ListFormat 的各部分和结果的数组，每个都用在 Go 里造好的列表，这样时间里没有一点是造列表的 javascript）。
+
+## fmt 的函数在输出放不下时结束调用
+
+发布版本：Unreleased。
+
+包 `fmt` 的 `fmt.sprintf`、`fmt.printf`、`fmt.sprint` 和 `fmt.println`，在输出可能放不进 VM 在内存上限下还剩的空间时，现在会在 Go 造出输出之前以无法捕获的内存不足错误结束调用。Go 的 fmt 先造出一次调用的全部输出，再返回或写出去，而很短的格式就能要很长的输出：`fmt.sprintf("%1000000[1]s".repeat(256), "")` 的格式只有 3 KiB，要的却是 256 MB。在限额 16 MiB 的 VM 里，Go 先分配了 1,210 MiB，在 GCP 上花了 1.4 秒，VM 才拒绝这个字符串，而 `printf` 会把它全部写到 stdout。
+
+每个函数先从格式和参数算出输出字节数的上界，不去造输出（`fmt/bound.go`）。算上界时按 fmt 的方式读格式，所以知道每个动词取哪个参数、宽度和精度是多少，并按每个动词能把参数变成多长来计算：字符串或对象的 json 最多是自身长度的五倍（`%q` 和 `% #x`），数字最多几百字节。VM 有内存上限、上界又超过 `vmhook.Room`（`internal/vmhook`）报告的剩余空间时，函数用 `vmhook.OutOfMemory` 抛出错误，什么都不造。上界最多是输出的五倍（精度截短字符串时会更多），所以输出只占剩余空间一小部分的调用和原来一样运行。没有内存上限的 VM 上，每次调用都和原来一样。
+
+`printf` 和 `println` 写到 `os.Stdout`，会阻塞的写入（比如写一个满了又没人读的管道）仍然会卡住调用，直到写完：Go 运行时正在做的写入，`Interrupt` 和 eval 超时都结束不了。要结束它，这个包得接收一个可以取消的 writer，这是 API 的改动，所以 `Register` 的文档写明了这一点。包 `fmt` 是 modernc.org/quickjs 原有的一个小便利，供写程序时让脚本打印东西，tifa 不用它。
+
+测试：`fmt/limits_test.go` 里的 `TestOutputLimit`（宽度、`*` 宽度、精度、`%q` 和 `sprint` 要的超过 16 MiB 的 VM 所有，Go 里的分配少于 64 MiB，以及一次放得下的调用）和 `TestSizeAtLeastOutput`（对大约 15,000 个用到各种标志、下标、宽度和精度的格式，在 VM 给 Go 函数的每种类型的参数上，把上界和 fmt 的输出比较）。
