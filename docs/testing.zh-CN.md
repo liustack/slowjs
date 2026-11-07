@@ -305,6 +305,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
+| `heap` | 全档 | `engine/test/heap.sh -s 2 -n 100000`：分配器的各个场景，以及对堆 100000 步、对运行时 300000 步的两个种子的随机序列，用 plain 构建（约 30 秒）。poison 和其他模式见[分配器的检查](#分配器) |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | 全档 | `go test -p 1 .` |
 | `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |

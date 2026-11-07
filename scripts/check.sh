@@ -96,6 +96,7 @@ step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"
 step math full last "engine/test/math.sh"
+step heap full last "engine/test/heap.sh -s 2 -n 100000"
 step testhooks full tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m ."
 step root-hooks full tests "$gc test -count=1 -v -p 1 -timeout 60m -tags testhooks$xtags ."
