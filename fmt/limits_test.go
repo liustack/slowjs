@@ -355,3 +355,77 @@ func TestTypeAndPointer(t *testing.T) {
 		}
 	}
 }
+
+// A precision makes an output longer only where Go's fmt pads to it
+// (precGrows). For every verb, with and without '#', and every kind of
+// argument the VM gives, the bound of the verb with a precision of 1000000
+// holds what it writes, and stays short when that is short: "%.1000000t"
+// of true writes "true", where the bound counted the precision and a call
+// with less than 16 MB left ended. In a VM with 2 MiB left under its memory
+// limit, the short outputs are made, and the long ones end the call.
+func TestPrecision(t *testing.T) {
+	vm := newVM(t)
+	obj, err := vm.Eval(`({a: "b"})`, quickjs.EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []any{
+		"ab", obj, big.NewInt(5), new(big.Int).Lsh(big.NewInt(1), 200), 1.5, 0.1, 5e-324,
+		-math.MaxFloat64, 7, -7, true, nil, quickjs.Undefined{}, quickjs.Unsupported{},
+	}
+	const short = 4 << 10
+	for _, verbs := range []string{"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"} {
+		for _, verb := range verbs {
+			for _, flags := range []string{"", "#", "+", "# "} {
+				format := "%" + flags + ".1000000" + string(verb)
+				for _, a := range args {
+					out := fmt.Sprintf(format, a)
+					bound, _, _ := sizePrintf(format, []any{a}, -1)
+					if int64(len(out)) > bound {
+						t.Errorf("%s of %T: a bound of %d under %d bytes", format, a, bound, len(out))
+					}
+					if len(out) < short && bound >= short {
+						t.Errorf("%s of %T: a bound of %d for %d bytes", format, a, bound, len(out))
+					}
+				}
+			}
+		}
+	}
+	if _, err := vm.Eval(`var b = 5n, o = {a: "b"}; 1`, quickjs.EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	vm.SetMemoryLimit(vm.MemorySize() + 2<<20)
+	for _, c := range []struct{ js, want string }{
+		{`fmt.sprintf("%.1000000t", true)`, "true"},
+		{`fmt.sprintf("%.1000000v", true)`, "true"},
+		{`fmt.sprintf("%.1000000c", 65)`, "A"},
+		{`fmt.sprintf("%.1000000q", 65)`, "'A'"},
+		{`fmt.sprintf("%.1000000s|%.1000000q|%.1000000x", "ab", "ab", "ab")`, `ab|"ab"|6162`},
+		{`fmt.sprintf("%.1000000v|%.1000000d", o, o)`, `{"a":"b"}|&{%!d(string={"a":"b"})}`},
+		{`fmt.sprintf("%.1000000g|%.1000000v|%#.1000000v|%.1000000b", 1.5, 1.5, 1.5, 1.5)`, "1.5|1.5|1.5|6755399441055744p-52"},
+		{`fmt.sprintf("%.1000000c|%.1000000t", b, null)`, "%!c(big.Int=5)|%!t(<nil>)"},
+		{`fmt.sprintf("%.1000000v|%.1000000d", undefined, undefined)`, "undefined|{}"},
+	} {
+		got, err := vm.Eval(c.js, quickjs.EvalGlobal)
+		if err != nil || fmt.Sprint(got) != c.want {
+			t.Errorf("%s: got %v, %v, want %q", c.js, got, err, c.want)
+		}
+	}
+	for _, js := range []string{
+		`fmt.sprintf("%.1000000d", 1)`,
+		`fmt.sprintf("%.1000000U", 65)`,
+		`fmt.sprintf("%.1000000z", 1)`,
+		`fmt.sprintf("%.1000000e", 1.5)`,
+		`fmt.sprintf("%.1000000x", 1.5)`,
+		`fmt.sprintf("%#.1000000g", 1.5)`,
+		`fmt.sprintf("%#.1000000z", 1.5)`,
+		`fmt.sprintf("%.1000000s", b)`,
+		`fmt.sprintf("%.1000000p", o)`,
+	} {
+		_, err := vm.Eval(`var r = "ok"; try { `+js+` } catch (e) { r = "caught " + e } r`, quickjs.EvalGlobal)
+		var e *quickjs.Error
+		if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
+			t.Errorf("%s: got %v, want the uncatchable out of memory error", js, err)
+		}
+	}
+}

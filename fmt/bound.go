@@ -184,9 +184,9 @@ func sizePrint(a []any) int64 {
 // and space, the width wid and the precision prec, for the arguments the VM
 // gives a Go function (see quickjs.VM.Eval): a string, or an object as its
 // json, comes out at most five times as long as it is, a number in at most
-// a few hundred bytes, and either padded to wid or prec once. A verb that
-// does not fit arg writes it as %v in the text of the error, in 64 bytes
-// more.
+// a thousand bytes or so, padded to wid, and to prec where the precision
+// can make it longer (precGrows). A verb that does not fit arg writes it
+// as %v in the text of the error, in 64 bytes more.
 //
 // %w, which only Errorf reads, writes arg in the text of the error as %v
 // does with Go's reflection, which calls no String or Format method: an
@@ -195,17 +195,18 @@ func sizePrint(a []any) int64 {
 //
 // %T writes the name of the type of arg, whatever arg holds, and %p of an
 // object or a big int the address it is at in hex, so neither grows with
-// arg: %T comes out in its width and a few bytes, as a precision only cuts
-// the name, and %p in its width and precision and a few bytes. %p of any
-// other type writes arg in the text of the error, as any verb that does
-// not fit arg does.
+// arg: %T comes out in its width and a few bytes, and %p in its width and
+// precision and a few bytes. %p of any other type writes arg in the text
+// of the error, as any verb that does not fit arg does.
 func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
-	w := int64(wid) + int64(prec)
+	w := int64(wid)
+	if precGrows(arg, verb, sharp) {
+		w += int64(prec)
+	}
 	switch verb {
 	case 'T':
-		// The longest name is that of quickjs.Unsupported, and a precision
-		// only cuts it.
-		return int64(wid) + 64
+		// The longest name is that of quickjs.Unsupported.
+		return w + 64
 	case 'p':
 		switch arg.(type) {
 		case *quickjs.Object, *big.Int:
@@ -226,13 +227,68 @@ func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 		}
 		return w + int64(arg.BitLen()) + 64
 	case float64:
-		// %f of the largest float64 is 309 digits.
-		return w + 384
+		// %f of the largest float64 is 309 digits, and %g with a precision
+		// that does not pad it at most 767 significant digits, those of
+		// the smallest.
+		return w + 1024
 	case int, bool, nil, quickjs.Undefined, quickjs.Unsupported:
 		// %b of an int is 64 digits, and %#v of the structs their name.
 		return w + 128
 	}
 	panic("fmt: internal error: an argument of a type the VM does not give")
+}
+
+// precGrows reports whether a precision can make verb write arg, with the
+// flag sharp, longer than it is without one, as Go's fmt reads it, the
+// same from Go 1.26.6 to 1.27 (fmt/print.go, fmt/format.go, and Int.Format
+// in math/big/intconv.go):
+//
+//   - an int: %d %b %o %O %x %X %v pad it with zeros to that many digits,
+//     and %U pads its hex digits; %c and %q do not read it;
+//   - a float64: %e %E %f %F %x %X write that many digits, and %g %G do
+//     with '#', which keeps the zeros at the end; %b does not read it, and
+//     %v and %w do not keep the zeros, as fmt takes the '#' of %#v as Go
+//     syntax and drops it;
+//   - a big.Int: %d %s %v %b %o %O %x %X pad it with zeros (Int.Format),
+//     and %w writes its words as ints; Int.Format writes any other verb
+//     in the text of an error of its own, which reads no width or
+//     precision;
+//   - %p of an object or a big.Int pads the address with zeros as an int;
+//   - a precision only cuts a string, and an object, undefined and
+//     unsupported, which fmt writes as strings, and the name %T writes; a
+//     bool and nil do not read it.
+//
+// A verb that does not fit arg writes it in the text of the error as %v
+// (badVerb in fmt/print.go), with the same flags: one that does not fit an
+// int pads it, and one that does not fit a float64 pads it with '#'.
+func precGrows(arg any, verb rune, sharp bool) bool {
+	switch verb {
+	case 'T':
+		return false
+	case 'p':
+		switch arg.(type) {
+		case *quickjs.Object, *big.Int:
+			return true
+		}
+	}
+	switch arg.(type) {
+	case int:
+		return verb != 'c' && verb != 'q'
+	case float64:
+		switch verb {
+		case 'e', 'E', 'f', 'F', 'x', 'X':
+			return true
+		case 'b', 'v', 'w':
+			return false
+		}
+		return sharp
+	case *big.Int:
+		switch verb {
+		case 'd', 's', 'v', 'b', 'o', 'O', 'x', 'X', 'w':
+			return true
+		}
+	}
+	return false
 }
 
 // sizeString is sizeArg for a string of n bytes: %q writes a byte as up to
