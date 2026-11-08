@@ -1471,7 +1471,7 @@ static int hash_string_poll(JSContext *ctx, const JSString *p, uint32_t *ph, uin
 static int js_string_rope_compare(JSContext *ctx, int *pres, JSValueConst op1,
                                  JSValueConst op2, BOOL eq_only, BOOL poll,
                                  uint32_t *pwork);
-static JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p);
+static JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p, int atom_type);
 static BOOL js_same_value(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static BOOL js_same_value_zero(JSContext *ctx, JSValueConst op1, JSValueConst op2);
 static JSValue JS_ToObject(JSContext *ctx, JSValueConst val);
@@ -4189,14 +4189,16 @@ static void __JS_FreeAtom(JSRuntime *rt, uint32_t i)
     JS_FreeAtomStruct(rt, p);
 }
 
-/* js_new_string_atom for a string of JS_ROPE_STEP characters or more, with
-   the flag read every JS_ROPE_STEP characters of the hash and of the
-   comparison with an atom of the same hash and length. Returns JS_ATOM_NULL
+/* js_new_string_atom for a string of JS_ROPE_STEP characters or more, and
+   the key of Symbol.for (atom_type JS_ATOM_TYPE_GLOBAL_SYMBOL), with the
+   flag read every JS_ROPE_STEP characters of the hash and of the comparison
+   with an atom of the same type, hash and length. Returns JS_ATOM_NULL
    with "interrupted" thrown when it was stopped ('p' is freed then too). */
-static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p)
+static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p,
+                                                int atom_type)
 {
     JSRuntime *rt = ctx->rt;
-    uint32_t h = JS_ATOM_TYPE_STRING, work = 0, hm, i;
+    uint32_t h = atom_type, work = 0, hm, i;
     JSAtomStruct *q;
     JSAtom atom;
     int res;
@@ -4213,7 +4215,7 @@ static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p)
     hm = h & JS_ATOM_HASH_MASK;
     for (i = rt->atom_hash[hm & (rt->atom_hash_size - 1)]; i != 0; i = q->hash_next) {
         q = rt->atom_array[i];
-        if (q->hash == hm && q->atom_type == JS_ATOM_TYPE_STRING && q->len == p->len) {
+        if (q->hash == hm && q->atom_type == atom_type && q->len == p->len) {
             if (js_string_rope_compare(ctx, &res, JS_MKPTR(JS_TAG_STRING, q),
                                        JS_MKPTR(JS_TAG_STRING, p), TRUE, TRUE, &work))
                 goto stop;
@@ -4225,7 +4227,7 @@ static no_inline JSAtom js_new_long_string_atom(JSContext *ctx, JSString *p)
             }
         }
     }
-    atom = __JS_NewAtom(rt, p, JS_ATOM_TYPE_STRING, &h);
+    atom = __JS_NewAtom(rt, p, atom_type, &h);
     if (atom == JS_ATOM_NULL)
         JS_ThrowOutOfMemory(ctx);
     return atom;
@@ -4242,7 +4244,7 @@ static JSAtom js_new_string_atom(JSContext *ctx, JSString *p)
     JSAtom atom;
 
     if (unlikely(p->len >= JS_ROPE_STEP) && p->atom_type != JS_ATOM_TYPE_STRING)
-        return js_new_long_string_atom(ctx, p);
+        return js_new_long_string_atom(ctx, p, JS_ATOM_TYPE_STRING);
     atom = __JS_NewAtom(ctx->rt, p, JS_ATOM_TYPE_STRING, NULL);
     if (atom == JS_ATOM_NULL)
         JS_ThrowOutOfMemory(ctx);
@@ -5200,22 +5202,27 @@ static int string_getc(const JSString *p, int *pidx)
     return c;
 }
 
-/* string_buffer_write8 into a buffer of 16 bits: the room is made. It copies
-   JS_ROPE_STEP characters at a time with the flag read after each step, when
-   there are more than that to copy (a long string written after a character
-   above 0xff). */
-static no_inline int string_buffer_write8_wide_long(StringBuffer *s, const uint8_t *p, int len)
+/* string_buffer_write8 of JS_ROPE_STEP characters or more into a buffer of
+   16 bits, or of JS_COPY_STEP bytes or more into one of 8 bits: the room is
+   made. It copies JS_ROPE_STEP characters at a time, or JS_COPY_STEP bytes
+   into a buffer of 8 bits, with the flag read after each step. */
+static no_inline int string_buffer_write8_long(StringBuffer *s, const uint8_t *p, int len)
 {
     int i = 0, j, m;
-    uint16_t *dst = s->str->u.str16 + s->len;
 
     if (js_poll_interrupts(s->ctx))
         return string_buffer_set_error(s);
     while (i < len) {
-        m = min_int(len - i, JS_ROPE_STEP);
-        for (j = 0; j < m; j++)
-            dst[i + j] = p[i + j];
-        JS_WORK(m);
+        if (s->is_wide_char) {
+            uint16_t *dst = s->str->u.str16 + s->len;
+            m = min_int(len - i, JS_ROPE_STEP);
+            for (j = 0; j < m; j++)
+                dst[i + j] = p[i + j];
+            JS_WORK(m);
+        } else {
+            m = min_int(len - i, JS_COPY_STEP);
+            memcpy(s->str->u.str8 + s->len + i, p + i, m);
+        }
         i += m;
         if (js_poll_interrupts(s->ctx))
             return string_buffer_set_error(s);
@@ -5230,12 +5237,14 @@ static int string_buffer_write8(StringBuffer *s, const uint8_t *p, int len)
         if (string_buffer_realloc(s, s->len + len, 0))
             return -1;
     }
+    /* the checks of a long string are in each branch, so that the copy of a
+       short one keeps its registers */
     if (s->is_wide_char) {
         int i;
         uint16_t *dst;
 
         if (unlikely(len >= JS_ROPE_STEP))
-            return string_buffer_write8_wide_long(s, p, len);
+            return string_buffer_write8_long(s, p, len);
         dst = s->str->u.str16 + s->len;
         for (i = 0; i < len; i++)
             dst[i] = p[i];
@@ -5243,7 +5252,46 @@ static int string_buffer_write8(StringBuffer *s, const uint8_t *p, int len)
         s->len += len;
         return 0;
     }
+    if (unlikely(len >= JS_COPY_STEP))
+        return string_buffer_write8_long(s, p, len);
     memcpy(&s->str->u.str8[s->len], p, len);
+    s->len += len;
+    return 0;
+}
+
+/* string_buffer_write16 of JS_ROPE_STEP characters or more: the look for a
+   character above 0xff and the copy go JS_ROPE_STEP characters at a time with
+   the flag read after each step, and the room is made once, as for a short
+   one */
+static no_inline int string_buffer_write16_long(StringBuffer *s, const uint16_t *p, int len)
+{
+    int c = 0, i, j, m;
+
+    for (i = 0; i < len; i += m) {
+        m = min_int(len - i, JS_ROPE_STEP);
+        for (j = 0; j < m; j++)
+            c |= p[i + j];
+        if (js_poll_interrupts(s->ctx))
+            return string_buffer_set_error(s);
+    }
+    if (s->len + len > s->size) {
+        if (string_buffer_realloc(s, s->len + len, c))
+            return -1;
+    } else if (!s->is_wide_char && c >= 0x100) {
+        if (string_buffer_widen(s, s->size))
+            return -1;
+    }
+    for (i = 0; i < len; i += m) {
+        m = min_int(len - i, JS_ROPE_STEP);
+        if (s->is_wide_char) {
+            memcpy(&s->str->u.str16[s->len + i], p + i, m << 1);
+        } else {
+            for (j = 0; j < m; j++)
+                s->str->u.str8[s->len + i + j] = p[i + j];
+        }
+        if (js_poll_interrupts(s->ctx))
+            return string_buffer_set_error(s);
+    }
     s->len += len;
     return 0;
 }
@@ -5252,6 +5300,8 @@ static int string_buffer_write16(StringBuffer *s, const uint16_t *p, int len)
 {
     int c = 0, i;
 
+    if (unlikely(len >= JS_ROPE_STEP))
+        return string_buffer_write16_long(s, p, len);
     for (i = 0; i < len; i++) {
         c |= p[i];
     }
@@ -6099,6 +6149,44 @@ static int js_string_compare(JSContext *ctx,
 {
     int res, len;
     len = min_int(p1->len, p2->len);
+    res = js_string_memcmp(p1, 0, p2, 0, len);
+    if (res == 0) {
+        if (p1->len == p2->len)
+            res = 0;
+        else if (p1->len < p2->len)
+            res = -1;
+        else
+            res = 1;
+    }
+    return res;
+}
+
+/* js_string_compare_poll of two strings of JS_ROPE_STEP characters or more */
+static no_inline int js_string_compare_long(JSContext *ctx, JSString *p1,
+                                            JSString *p2)
+{
+    int res;
+
+    if (js_string_rope_compare(ctx, &res, JS_MKPTR(JS_TAG_STRING, p1),
+                               JS_MKPTR(JS_TAG_STRING, p2), FALSE, TRUE, NULL))
+        return INT32_MIN;
+    return res;
+}
+
+/* js_string_compare for a script: two strings of JS_ROPE_STEP characters or
+   more are compared in steps that read the interrupt flag
+   (js_string_rope_compare). INT32_MIN with "interrupted" thrown, which no
+   compare gives: it gives the difference of two characters, or -1, 0 or 1.
+   The check of the length is on the length the compare takes, so that a
+   short one costs a compare and a branch. */
+static force_inline int js_string_compare_poll(JSContext *ctx, JSString *p1,
+                                               JSString *p2)
+{
+    int res, len;
+
+    len = min_int(p1->len, p2->len);
+    if (unlikely(len >= JS_ROPE_STEP))
+        return js_string_compare_long(ctx, p1, p2);
     res = js_string_memcmp(p1, 0, p2, 0, len);
     if (res == 0) {
         if (p1->len == p2->len)
@@ -19724,8 +19812,13 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
 
     if (tag_is_string(tag1) && tag_is_string(tag2)) {
         if (tag1 == JS_TAG_STRING && tag2 == JS_TAG_STRING) {
-            res = js_string_compare(ctx, JS_VALUE_GET_STRING(op1),
-                                    JS_VALUE_GET_STRING(op2));
+            res = js_string_compare_poll(ctx, JS_VALUE_GET_STRING(op1),
+                                         JS_VALUE_GET_STRING(op2));
+            if (unlikely(res == INT32_MIN)) {
+                JS_FreeValue(ctx, op1);
+                JS_FreeValue(ctx, op2);
+                goto exception;
+            }
         } else {
             if (js_string_rope_compare(ctx, &res, op1, op2, FALSE, TRUE, NULL)) {
                 JS_FreeValue(ctx, op1);
@@ -36316,27 +36409,46 @@ static const JSClassExoticMethods js_module_ns_exotic_methods = {
     .has_property = js_module_ns_has,
 };
 
+typedef struct ExportedNamesSort {
+    JSContext *ctx;
+    int exception; /* the stop of rqsort_stop: a compare threw */
+} ExportedNamesSort;
+
+/* The compare of two export names for rqsort_stop, which reads the interrupt
+   flag at each compare, as the sort of an array does: two names of
+   JS_ROPE_STEP characters or more are compared in steps that read it
+   (js_string_compare_poll). Once one has thrown it answers 0 with no
+   effect, and the sort stops. */
 static int exported_names_cmp(const void *p1, const void *p2, void *opaque)
 {
-    JSContext *ctx = opaque;
+    ExportedNamesSort *es = opaque;
+    JSContext *ctx = es->ctx;
     const ExportedNameEntry *me1 = p1;
     const ExportedNameEntry *me2 = p2;
     JSValue str1, str2;
     int ret;
 
+    if (es->exception)
+        return 0;
+    if (js_poll_interrupts(ctx))
+        goto exception;
     /* XXX: should avoid allocation memory in atom comparison */
     str1 = JS_AtomToString(ctx, me1->export_name);
     str2 = JS_AtomToString(ctx, me2->export_name);
     if (JS_IsException(str1) || JS_IsException(str2)) {
-        /* XXX: raise an error ? */
-        ret = 0;
+        ret = INT32_MIN;
     } else {
-        ret = js_string_compare(ctx, JS_VALUE_GET_STRING(str1),
-                                JS_VALUE_GET_STRING(str2));
+        ret = js_string_compare_poll(ctx, JS_VALUE_GET_STRING(str1),
+                                     JS_VALUE_GET_STRING(str2));
     }
     JS_FreeValue(ctx, str1);
     JS_FreeValue(ctx, str2);
+    if (unlikely(ret == INT32_MIN))
+        goto exception;
     return ret;
+ exception:
+    es->exception = 1;
+    return 0;
 }
 
 static JSValue js_module_ns_autoinit(JSContext *ctx, JSObject *p, JSAtom atom,
@@ -36426,9 +36538,16 @@ static JSValue js_build_module_ns(JSContext *ctx, JSModuleDef *m)
         }
     }
 
-    /* sort the exported names */
-    rqsort(s->exported_names, s->exported_names_count,
-           sizeof(s->exported_names[0]), exported_names_cmp, ctx);
+    /* sort the exported names: the sort stops at the first exception */
+    {
+        ExportedNamesSort es = { ctx, 0 };
+
+        rqsort_stop(s->exported_names, s->exported_names_count,
+                    sizeof(s->exported_names[0]), exported_names_cmp, &es,
+                    &es.exception);
+        if (es.exception)
+            goto fail;
+    }
 
     for(i = 0; i < s->exported_names_count; i++) {
         ExportedNameEntry *en = &s->exported_names[i];
@@ -51613,7 +51732,9 @@ static int js_array_cmp_generic(const void *a, const void *b, void *opaque) {
                 goto exception;
             bp->str = JS_VALUE_GET_STRING(str);
         }
-        cmp = js_string_compare(ctx, ap->str, bp->str);
+        cmp = js_string_compare_poll(ctx, ap->str, bp->str);
+        if (unlikely(cmp == INT32_MIN))
+            goto exception;
     }
     if (cmp != 0)
         return cmp;
@@ -53549,11 +53670,15 @@ static JSValue js_string_raw(JSContext *ctx, JSValueConst this_val,
     if (js_get_length64(ctx, &n, raw) < 0)
         goto exception;
 
+    /* n is any length below 2^53: read the interrupt flag every 1024 */
     for (i = 0; i < n; i++) {
+        if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto exception;
         val = JS_ToStringFree(ctx, JS_GetPropertyInt64(ctx, raw, i));
         if (JS_IsException(val))
             goto exception;
-        string_buffer_concat_value_free(b, val);
+        if (string_buffer_concat_value_free(b, val))
+            goto exception;
         if (i < n - 1 && i + 1 < argc) {
             if (string_buffer_concat_value(b, argv[i + 1]))
                 goto exception;
@@ -53716,10 +53841,10 @@ static int string_cmp(JSString *p1, JSString *p2, int x1, int x2, int len)
     return 0;
 }
 
-static int string_indexof_char(JSString *p, int c, int from)
+static int string_indexof_char_to(JSString *p, int c, int from, int len)
 {
-    /* assuming 0 <= from <= p->len */
-    int i, len = p->len;
+    /* assuming 0 <= from <= len <= p->len */
+    int i;
     if (p->is_wide_char) {
         for (i = from; i < len; i++) {
             if (p->u.str16[i] == c)
@@ -53734,6 +53859,68 @@ static int string_indexof_char(JSString *p, int c, int from)
         }
     }
     return -1;
+}
+
+static int string_indexof_char(JSString *p, int c, int from)
+{
+    return string_indexof_char_to(p, c, from, p->len);
+}
+
+static no_inline int string_indexof_char_long(JSContext *ctx, JSString *p,
+                                              int c, int from)
+{
+    int len = p->len, end, r;
+
+    for (;;) {
+        end = len - from > JS_ROPE_STEP ? from + JS_ROPE_STEP : len;
+        r = string_indexof_char_to(p, c, from, end);
+        if (r >= 0 || end == len)
+            return r;
+        if (js_poll_interrupts(ctx))
+            return -2;
+        from = end;
+    }
+}
+
+/* string_indexof_char of a string a script made, of any length: past
+   JS_ROPE_STEP characters to look at, it reads the interrupt flag every
+   JS_ROPE_STEP characters it goes past (string_indexof_char_long), and
+   returns -2 with "interrupted" thrown when it is set. */
+static force_inline int string_indexof_char_poll(JSContext *ctx, JSString *p,
+                                                 int c, int from)
+{
+    if (likely(p->len - from <= JS_ROPE_STEP))
+        return string_indexof_char(p, c, from);
+    return string_indexof_char_long(ctx, p, c, from);
+}
+
+/* The flags of a regexp that js_regexp_flags finds in the string of its
+   flags property. */
+#define JS_REGEXP_HAS_G 1
+#define JS_REGEXP_HAS_UNICODE 2 /* u or v */
+#define JS_REGEXP_HAS_Y 4
+
+/* Which of g, u or v, and y the flags string p of a regexp has, or -1 with
+   "interrupted" thrown: the string comes from a getter and can be of any
+   length, so it reads the interrupt flag every JS_ROPE_STEP characters. */
+static int js_regexp_flags(JSContext *ctx, JSString *p)
+{
+    uint32_t i, len = p->len;
+    int c, r = 0;
+
+    for (i = 0; i < len; i++) {
+        if (unlikely((i & (JS_ROPE_STEP - 1)) == JS_ROPE_STEP - 1) &&
+            js_poll_interrupts(ctx))
+            return -1;
+        c = string_get(p, i);
+        if (c == 'g')
+            r |= JS_REGEXP_HAS_G;
+        else if (c == 'u' || c == 'v')
+            r |= JS_REGEXP_HAS_UNICODE;
+        else if (c == 'y')
+            r |= JS_REGEXP_HAS_Y;
+    }
+    return r;
 }
 
 /* The least index from from where p1 has the characters of p2, or -1: the
@@ -54425,9 +54612,11 @@ static int check_regexp_g_flag(JSContext *ctx, JSValueConst regexp)
         flags = JS_ToStringFree(ctx, flags);
         if (JS_IsException(flags))
             return -1;
-        ret = string_indexof_char(JS_VALUE_GET_STRING(flags), 'g', 0);
+        ret = js_regexp_flags(ctx, JS_VALUE_GET_STRING(flags));
         JS_FreeValue(ctx, flags);
-        if (ret < 0) {
+        if (ret < 0)
+            return -1;
+        if (!(ret & JS_REGEXP_HAS_G)) {
             JS_ThrowTypeError(ctx, "regexp must have the 'g' flag");
             return -1;
         }
@@ -54500,7 +54689,7 @@ static int js_string_GetSubstitution(JSContext *ctx,
 {
     JSValue capture, name, s;
     uint32_t len, matched_len;
-    int i, j, j0, k, k1, shift;
+    int i, j, j0, k, k1, shift, gt, count;
     int c, c1;
     JSString *rp;
 
@@ -54523,28 +54712,41 @@ static int js_string_GetSubstitution(JSContext *ctx,
             goto exception;
     }
 
+    /* rep is a string of the script: the searches read the interrupt flag,
+       and so does the loop every 1024 '$', and it leaves at once when a
+       write to b fails */
     len = rp->len;
     i = 0;
-    for(;;) {
-        j = string_indexof_char(rp, '$', i);
+    gt = -2;
+    for(count = 1;; count++) {
+        if (unlikely((count & 1023) == 0) && js_poll_interrupts(ctx))
+            goto exception;
+        j = string_indexof_char_poll(ctx, rp, '$', i);
+        if (j == -2)
+            goto exception;
         if (j < 0 || j + 1 >= len)
             break;
-        string_buffer_concat(b, rp, i, j);
+        if (string_buffer_concat(b, rp, i, j))
+            goto exception;
         j0 = j++;
         c = string_get(rp, j++);
         if (c == '$') {
-            string_buffer_putc8(b, '$');
+            if (string_buffer_putc8(b, '$'))
+                goto exception;
         } else if (c == '&') {
             if (captures) {
-                string_buffer_concat(b, sp, position, position + matched_len);
+                if (string_buffer_concat(b, sp, position, position + matched_len))
+                    goto exception;
             } else {
                 if (string_buffer_concat_value(b, matched))
                     goto exception;
             }
         } else if (c == '`') {
-            string_buffer_concat(b, sp, 0, position);
+            if (string_buffer_concat(b, sp, 0, position))
+                goto exception;
         } else if (c == '\'') {
-            string_buffer_concat(b, sp, position + matched_len, sp->len);
+            if (string_buffer_concat(b, sp, position + matched_len, sp->len))
+                goto exception;
         } else if (c >= '0' && c <= '9') {
             k = c - '0';
             if (j < len) {
@@ -54566,7 +54768,8 @@ static int js_string_GetSubstitution(JSContext *ctx,
                     if (captures[2 * k] && captures[2 * k + 1]) {
                         start = (captures[2 * k] - sp->u.str8) >> shift;
                         end = (captures[2 * k + 1] - sp->u.str8) >> shift;
-                        string_buffer_concat(b, sp, start, end);
+                        if (string_buffer_concat(b, sp, start, end))
+                            goto exception;
                     }
                 } else {
                     s = JS_GetPropertyInt64(ctx, captures_val, k);
@@ -54581,9 +54784,16 @@ static int js_string_GetSubstitution(JSContext *ctx,
                 goto norep;
             }
         } else if (c == '<' && !JS_IsUndefined(namedCaptures)) {
-            k = string_indexof_char(rp, '>', j);
-            if (k < 0)
+            /* the first '>' from j: when there is none, there is none
+               for the "$<" after, which are not searched again */
+            if (gt != -1 && gt < j) {
+                gt = string_indexof_char_poll(ctx, rp, '>', j);
+                if (gt == -2)
+                    goto exception;
+            }
+            if (gt < 0)
                 goto norep;
+            k = gt;
             name = js_sub_string(ctx, rp, j, k);
             if (JS_IsException(name))
                 goto exception;
@@ -54597,11 +54807,13 @@ static int js_string_GetSubstitution(JSContext *ctx,
             j = k + 1;
         } else {
         norep:
-            string_buffer_concat(b, rp, j0, j);
+            if (string_buffer_concat(b, rp, j0, j))
+                goto exception;
         }
         i = j;
     }
-    string_buffer_concat(b, rp, i, rp->len);
+    if (string_buffer_concat(b, rp, i, rp->len))
+        goto exception;
     return 0;
 exception:
     return -1;
@@ -54696,7 +54908,8 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             }
         }
 
-        string_buffer_concat(b, sp, endOfLastMatch, pos);
+        if (string_buffer_concat(b, sp, endOfLastMatch, pos))
+            goto exception;
 
         if (functionalReplace) {
             args[0] = search_str;
@@ -54705,7 +54918,8 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
             repl_str = JS_ToStringFree(ctx, js_call(ctx, replaceValue, JS_UNDEFINED, 3, args));
             if (JS_IsException(repl_str))
                 goto exception;
-            string_buffer_concat_value_free(b, repl_str);
+            if (string_buffer_concat_value_free(b, repl_str))
+                goto exception;
         } else {
             if (js_string_GetSubstitution(ctx, b, search_str, sp, pos,
                                           JS_UNDEFINED, JS_UNDEFINED, replaceValue_str,
@@ -54723,7 +54937,8 @@ static JSValue js_string_replace(JSContext *ctx, JSValueConst this_val,
         if ((++matches & 1023) == 0 && js_poll_interrupts(ctx))
             goto exception;
     }
-    string_buffer_concat(b, sp, endOfLastMatch, sp->len);
+    if (string_buffer_concat(b, sp, endOfLastMatch, sp->len))
+        goto exception;
     JS_FreeValue(ctx, search_str);
     JS_FreeValue(ctx, replaceValue_str);
     JS_FreeValue(ctx, str);
@@ -59708,7 +59923,7 @@ static JSValue js_regexp_Symbol_match(JSContext *ctx, JSValueConst this_val,
     // [Symbol.match](str)
     JSValueConst rx = this_val;
     JSValue A, S, flags, result, matchStr;
-    int global, n, fullUnicode, isEmpty;
+    int global, n, fullUnicode, isEmpty, has;
     JSString *p;
 
     if (!JS_IsObject(rx))
@@ -59730,12 +59945,14 @@ static JSValue js_regexp_Symbol_match(JSContext *ctx, JSValueConst this_val,
         goto exception;
     p = JS_VALUE_GET_STRING(flags);
 
-    global = (-1 != string_indexof_char(p, 'g', 0));
+    has = js_regexp_flags(ctx, p);
+    if (has < 0)
+        goto exception;
+    global = (has & JS_REGEXP_HAS_G) != 0;
     if (!global) {
         A = JS_RegExpExec(ctx, rx, S);
     } else {
-        fullUnicode = (string_indexof_char(p, 'u', 0) >= 0 ||
-                       string_indexof_char(p, 'v', 0) >= 0);
+        fullUnicode = (has & JS_REGEXP_HAS_UNICODE) != 0;
 
         if (JS_SetProperty(ctx, rx, JS_ATOM_lastIndex, JS_NewInt32(ctx, 0)) < 0)
             goto exception;
@@ -59876,7 +60093,7 @@ static JSValue js_regexp_Symbol_matchAll(JSContext *ctx, JSValueConst this_val,
     JSValueConst R = this_val;
     JSValue S, C, flags, matcher, iter;
     JSValueConst args[2];
-    JSString *strp;
+    int has;
     int64_t lastIndex;
     JSRegExpStringIteratorData *it;
 
@@ -59909,6 +60126,9 @@ static JSValue js_regexp_Symbol_matchAll(JSContext *ctx, JSValueConst this_val,
                        JS_NewInt64(ctx, lastIndex)) < 0)
         goto exception;
 
+    has = js_regexp_flags(ctx, JS_VALUE_GET_STRING(flags));
+    if (has < 0)
+        goto exception;
     iter = JS_NewObjectClass(ctx, JS_CLASS_REGEXP_STRING_ITERATOR);
     if (JS_IsException(iter))
         goto exception;
@@ -59917,10 +60137,8 @@ static JSValue js_regexp_Symbol_matchAll(JSContext *ctx, JSValueConst this_val,
         goto exception;
     it->iterating_regexp = matcher;
     it->iterated_string = S;
-    strp = JS_VALUE_GET_STRING(flags);
-    it->global = string_indexof_char(strp, 'g', 0) >= 0;
-    it->unicode = (string_indexof_char(strp, 'u', 0) >= 0 ||
-                   string_indexof_char(strp, 'v', 0) >= 0);
+    it->global = (has & JS_REGEXP_HAS_G) != 0;
+    it->unicode = (has & JS_REGEXP_HAS_UNICODE) != 0;
     it->done = FALSE;
     JS_SetOpaque(iter, it);
 
@@ -60082,7 +60300,7 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
     JSString *p, *sp;
     StringBuffer b_s, *b = &b_s;
     ValueBuffer v_b, *results = &v_b;
-    int nextSourcePosition, n, j, functionalReplace, is_global, fullUnicode;
+    int nextSourcePosition, n, j, functionalReplace, is_global, fullUnicode, has;
     uint32_t nCaptures;
     int64_t position;
 
@@ -60126,17 +60344,23 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
         goto exception;
     p = JS_VALUE_GET_STRING(flags);
 
+    has = js_regexp_flags(ctx, p);
+    if (has < 0)
+        goto exception;
     fullUnicode = 0;
-    is_global = (-1 != string_indexof_char(p, 'g', 0));
+    is_global = (has & JS_REGEXP_HAS_G) != 0;
     if (is_global) {
-        fullUnicode = (string_indexof_char(p, 'u', 0) >= 0 ||
-                       string_indexof_char(p, 'v', 0) >= 0);
+        fullUnicode = (has & JS_REGEXP_HAS_UNICODE) != 0;
         if (JS_SetProperty(ctx, rx, JS_ATOM_lastIndex, JS_NewInt32(ctx, 0)) < 0)
             goto exception;
     }
 
+    /* the results can be millions, and the exec of each a call to C: read
+       the interrupt flag every 1024 in both loops */
     for(;;) {
         JSValue result;
+        if ((results->len & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto exception;
         result = JS_RegExpExec(ctx, rx, str);
         if (JS_IsException(result))
             goto exception;
@@ -60163,6 +60387,8 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
     nextSourcePosition = 0;
     for(j = 0; j < results->len; j++) {
         JSValueConst result;
+        if ((j & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto exception;
         result = results->arr[j];
         if (js_get_length32(ctx, &nCaptures, result) < 0)
             goto exception;
@@ -60242,12 +60468,14 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
         if (JS_IsException(rep_str))
             goto exception;
         if (position >= nextSourcePosition) {
-            string_buffer_concat(b, sp, nextSourcePosition, position);
-            string_buffer_concat_value(b, rep_str);
+            if (string_buffer_concat(b, sp, nextSourcePosition, position) ||
+                string_buffer_concat_value(b, rep_str))
+                goto exception;
             nextSourcePosition = position + JS_VALUE_GET_STRING(matched)->len;
         }
     }
-    string_buffer_concat(b, sp, nextSourcePosition, sp->len);
+    if (string_buffer_concat(b, sp, nextSourcePosition, sp->len))
+        goto exception;
     res = string_buffer_end(b);
     goto done1;
 
@@ -60334,7 +60562,7 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
     JSValue str, ctor, splitter, A, flags, z, sub;
     JSString *strp;
     uint32_t lim, size, p, q;
-    int unicodeMatching;
+    int unicodeMatching, has;
     int64_t lengthA, e, numberOfCaptures, i;
 
     if (!JS_IsObject(rx))
@@ -60354,10 +60582,11 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
     flags = JS_ToStringFree(ctx, JS_GetProperty(ctx, rx, JS_ATOM_flags));
     if (JS_IsException(flags))
         goto exception;
-    strp = JS_VALUE_GET_STRING(flags);
-    unicodeMatching = (string_indexof_char(strp, 'u', 0) >= 0 ||
-                       string_indexof_char(strp, 'v', 0) >= 0);
-    if (string_indexof_char(strp, 'y', 0) < 0) {
+    has = js_regexp_flags(ctx, JS_VALUE_GET_STRING(flags));
+    if (has < 0)
+        goto exception;
+    unicodeMatching = (has & JS_REGEXP_HAS_UNICODE) != 0;
+    if (!(has & JS_REGEXP_HAS_Y)) {
         flags = JS_ConcatString3(ctx, "", flags, "y");
         if (JS_IsException(flags))
             goto exception;
@@ -63320,6 +63549,16 @@ static JSValue js_symbol_for(JSContext *ctx, JSValueConst this_val,
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
         return JS_EXCEPTION;
+    /* the key of millions of characters is hashed and compared with the
+       keys of the registry in steps that read the interrupt flag */
+    if (unlikely(JS_VALUE_GET_STRING(str)->len >= JS_ROPE_STEP) &&
+        JS_VALUE_GET_STRING(str)->atom_type != JS_ATOM_TYPE_GLOBAL_SYMBOL) {
+        JSAtom atom = js_new_long_string_atom(ctx, JS_VALUE_GET_STRING(str),
+                                              JS_ATOM_TYPE_GLOBAL_SYMBOL);
+        if (atom == JS_ATOM_NULL)
+            return JS_EXCEPTION;
+        return JS_MKPTR(JS_TAG_SYMBOL, ctx->rt->atom_array[atom]);
+    }
     return JS_NewSymbol(ctx, JS_VALUE_GET_STRING(str), JS_ATOM_TYPE_GLOBAL_SYMBOL);
 }
 

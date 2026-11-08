@@ -116,6 +116,7 @@ read_when:
 | BigInt 的长运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#bigint-的长运算读中断标志) |
 | 把长字符串转成数字时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#把长字符串转成数字时读中断标志) |
 | 解析很长的源码时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#解析很长的源码时读中断标志) |
+| 比较和复制很长的字符串时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#比较和复制很长的字符串时读中断标志) |
 
 ## 错误和调用栈
 

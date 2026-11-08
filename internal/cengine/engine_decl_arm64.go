@@ -906,7 +906,7 @@ func js_module_ns_autoinit(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_module_ns_has(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) uintptr
 func js_new_function_def_block(a0 uintptr, a1 uintptr) uintptr
 func js_new_host_function_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
-func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_new_module_def(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_new_promise_capability(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) (r0, r1 uintptr)
 func js_new_proto_shape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -1075,6 +1075,7 @@ func js_regexp_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a
 func js_regexp_escape(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_regexp_exec(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_regexp_finalizer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
+func js_regexp_flags(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_regexp_get_flag(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_regexp_get_flags(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func js_regexp_get_source(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
@@ -1112,6 +1113,7 @@ func js_string_charAt_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_string_charCodeAt(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_codePointAt(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_codePointRange(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_string_compare_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_string_concat(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_define_own_property_block(a0 uintptr, a1 uintptr) uintptr
@@ -1350,6 +1352,7 @@ func string_buffer_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func string_buffer_concat_rope(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func string_buffer_concat_rope_long(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func string_buffer_concat_value(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
+func string_buffer_concat_value_free(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func string_buffer_end(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func string_buffer_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_buffer_free(a0 uintptr, a1 uintptr)
@@ -1362,10 +1365,12 @@ func string_buffer_realloc2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 u
 func string_buffer_set_error(a0 uintptr, a1 uintptr)
 func string_buffer_widen(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func string_buffer_write16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_write16_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_write8(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func string_buffer_write8_wide_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_write8_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_get_milliseconds(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_indexof_char(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func string_indexof_char_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_rope_get(a0 uintptr, a1, a2 uintptr, a3 uintptr) uintptr
 func strlen(a0 uintptr, a1 uintptr) uintptr
 func strrchr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr

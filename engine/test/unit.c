@@ -4241,6 +4241,97 @@ static void test_parse_polls(void)
     host_free_runtime(rt);
 }
 
+/* Comparing two strings of a million characters and copying one into a
+   string buffer read the interrupt flag every 65536 characters, or every MiB
+   of a copy of bytes, and so do the hash of the key of Symbol.for and its
+   compare with the key of a symbol there is. Each call reads it at least 12
+   times, and stopped at its readings (every one, or 64 spread over them) it
+   throws "interrupted" and leaves the context good. A sort is left to
+   TestStringCompareCopyStops of the root package: this host sets the flag it
+   reads, and a sort reads its own stop too. */
+static void test_string_copy_polls(void)
+{
+    static const char setup[] =
+        "var n = 1 << 20, s = 'a'.repeat(n), s2 = 'a'.repeat(n), w = '\\u3000'.repeat(n), w2 = '\\u3000'.repeat(n)\n"
+        "var b = 'b'.repeat(n << 4), k = 'k'.repeat(n), ks = Symbol.for(k.slice(1)); 0\n";
+    static const char *const cases[] = {
+        "s < s2", "w < w2", "Symbol.for(k.slice(1))",
+        "[b, 'x'].join('')", "[w, 'x'].join('')", "[b].join()", "b.padEnd((n << 4) + 1)",
+        "b.replace('b', 'c')", "w.replace('\\u3000', 'c')", "String.raw({raw: [b, b]}, 1)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+        }
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    CHECK(eval_is(ctx, "[s < s2, s + 'a' < s2 + 'b', w2 + 'b' < w + 'a', [w + 'b', w + 'a'].sort()[0] === w + 'a', "
+                       "Symbol.keyFor(ks) === k.slice(1), Symbol.for(k.slice(1)) === ks, "
+                       "[b, 'x'].join('') === b + 'x', [w, 'x'].join('') === w + 'x', b.padEnd((n << 4) + 1, 'z').slice(-2), "
+                       "b.replace('b', 'c').slice(0, 2), w.replace('\\u3000', 'c').length, "
+                       "String.raw({raw: [b, b]}, 1) === b + '1' + b].join()",
+                  "false,true,false,true,true,true,true,true,bz,cb,1048576,true"), "the results");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The export names of a module are sorted by a compare that reads the
+   interrupt flag (exported_names_cmp, with rqsort_stop): two names of a
+   million characters that differ in the last one and 3,000 short names in a
+   shuffled order come out of a namespace import in the order of the strings.
+   The stops are left to the Go test (TestModuleExportNamesStop), as for the
+   sort of an array: the native host sets the flag it reads, and the sort
+   reads its own stop too. */
+static void test_module_export_order(void)
+{
+    static const char gen[] =
+        "var p = 'a'.repeat(1 << 20), names = [p + 'b', p + 'a'];\n"
+        "for (var i = 0; i < 3000; i++) names.push('n' + (i * 7919) % 3000);\n"
+        "'const x = 1; export {' + names.map(k => 'x as ' + JSON.stringify(k)).join(', ') + '}'\n";
+    static const char importer[] =
+        "import * as ns from 'long.mjs'\n"
+        "var k = Object.keys(ns)\n"
+        "globalThis.r = [k.length, k[0].length, k[0].slice(-1), k[1].slice(-1), k[2], k[3001],\n"
+        "    k.every((x, i) => i == 0 || k[i - 1] < x), ns[k[1]]].join()\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue src, v;
+    const char *s;
+    size_t len;
+
+    src = JS_Eval(ctx, gen, strlen(gen), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(src), "the generator threw");
+    s = JS_ToCStringLen(ctx, &len, src);
+    CHECK(s, "the source of the module");
+    v = JS_Eval(ctx, s, len, "long.mjs", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(v), "the exporting module threw");
+    JS_FreeValue(ctx, v);
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, src);
+    v = JS_Eval(ctx, importer, strlen(importer), "main.mjs", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(v), "the importing module threw");
+    JS_FreeValue(ctx, v);
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval_is(ctx, "r", "3002,1048577,a,b,n0,n999,true,1"), "the order of the export names");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4486,6 +4577,8 @@ int main(void)
     test_number_polls();
     test_parse_polls();
     test_long_utf8_decode();
+    test_string_copy_polls();
+    test_module_export_order();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();
