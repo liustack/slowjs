@@ -168,15 +168,15 @@ func TestUnclosedIndexesRoom(t *testing.T) {
 }
 
 // What Go allocates to make the output of a call, all of it, as none of it
-// may be collected before the call returns, is at most allocated times the
-// bound on the output, for long outputs of each kind: the buffer grown by
-// append, from nothing and from what each length makes it, and by padding,
-// the verbs that make their bytes in a slice of their own, quoting a string
-// and writing a float, and the digits of big ints. "%[1]s" 33 times of
-// 64 KiB made Go allocate 6.8 times the bound, and "%[1]q" of control
-// characters up to 10.9 times, more than the 6 times they were checked
-// against while the test made the collector run often and measured what the
-// heap held at once.
+// may be collected before the call returns, is at most its budget, for
+// empty and short outputs under a few GOMAXPROCS, and for long outputs of
+// each kind: the buffer grown by append, from nothing and from what each
+// length makes it, and by padding, the verbs that make their bytes in a
+// slice of their own, quoting a string and writing a float, and the digits
+// of big ints. "%[1]s" 33 times of 64 KiB made Go allocate 6.8 times the
+// bound, and "%[1]q" of control characters up to 10.9 times, more than the
+// 6 times they were checked against while the test made the collector run
+// often and measured what the heap held at once.
 func TestAllocatedUnderBound(t *testing.T) {
 	s := strings.Repeat("\x01", 1<<20)
 	b := new(big.Int).Lsh(big.NewInt(1), 1<<20)
@@ -201,6 +201,9 @@ func TestAllocatedUnderBound(t *testing.T) {
 		{strings.Repeat("%v", 1<<20), nil},
 		{strings.Repeat("x", 1<<20) + "%1000000s", []any{s}},
 		{"%1000000d%[1]*d", []any{1000000}},
+		{"", nil},
+		{"x", nil},
+		{"%s", []any{"x"}},
 	}
 	// The lengths where the buffer grows by append or by padding, and
 	// where Go rounds what it allocates up the most.
@@ -218,6 +221,18 @@ func TestAllocatedUnderBound(t *testing.T) {
 			)
 		}
 	}
+	// A short call allocates what Go's fmt allocates for any call, which
+	// grows with GOMAXPROCS.
+	for _, procs := range []int{1, 2, 8, 64} {
+		old := runtime.GOMAXPROCS(procs)
+		for _, c := range []call{{"", nil}, {"x", nil}, {"%d", []any{1}}} {
+			bound, read, _ := sizePrintf(c.format, c.a, -1)
+			if alloc := allocatedDuring(func() { _ = fmt.Sprintf(read, c.a...) }); alloc > budget(bound, 0) {
+				t.Errorf("%q with GOMAXPROCS %d: Go allocated %d bytes, more than the %d of the bound of %d", c.format, procs, alloc, budget(bound, 0), bound)
+			}
+		}
+		runtime.GOMAXPROCS(old)
+	}
 	most := 0.0
 	for _, c := range calls {
 		bound, read, ok := sizePrintf(c.format, c.a, -1)
@@ -226,17 +241,19 @@ func TestAllocatedUnderBound(t *testing.T) {
 		}
 		var out string
 		alloc := allocatedDuring(func() { out = fmt.Sprintf(read, c.a...) })
-		most = max(most, float64(alloc)/float64(bound))
-		if alloc > allocated*bound {
-			t.Errorf("%.40q: Go allocated %d bytes for %d, more than %d times the bound of %d", c.format, alloc, len(out), allocated, bound)
+		if bound >= 4<<10 {
+			most = max(most, float64(alloc)/float64(bound))
+		}
+		if alloc > budget(bound, 0) {
+			t.Errorf("%.40q: Go allocated %d bytes for %d, more than the %d of the bound of %d", c.format, alloc, len(out), budget(bound, 0), bound)
 		}
 	}
-	t.Logf("Go allocated at most %.1f times the bound", most)
+	t.Logf("on outputs of 4 KiB or more, Go allocated at most %.1f times the bound", most)
 	for _, a := range [][]any{{s, s, b}, {s, 1.5, "x"}} {
 		bound := sizePrint(a)
 		for _, f := range []func(...any) string{fmt.Sprint, fmt.Sprintln} {
-			if alloc := allocatedDuring(func() { _ = f(a...) }); alloc > allocated*bound {
-				t.Errorf("Go allocated %d bytes, more than %d times the bound of %d", alloc, allocated, bound)
+			if alloc := allocatedDuring(func() { _ = f(a...) }); alloc > budget(bound, 0) {
+				t.Errorf("Go allocated %d bytes, more than the %d of the bound of %d", alloc, budget(bound, 0), bound)
 			}
 		}
 	}

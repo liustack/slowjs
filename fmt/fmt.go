@@ -8,6 +8,7 @@ package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
+	"runtime"
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/internal/vmhook"
@@ -33,11 +34,12 @@ const pkg = "fmt"
 // function first finds a bound on the bytes of its output, from the format
 // and the arguments, and when the VM has a memory limit (see
 // [quickjs.VM.SetMemoryLimit]) and what Go may allocate to make that many
-// bytes, sixteen times them, is more than the VM has left under it, the
-// call ends with the uncatchable out of memory error and makes nothing. The
-// bound is at most five times the output and a few hundred bytes for each
-// verb, more when a string has a precision or for %w, so a call whose
-// output fits in a small part of what is left runs as before. Go makes the
+// bytes, sixteen times them and a few KiB for any call, is more than the VM
+// has left under it, the call ends with the uncatchable out of memory error
+// and makes nothing. The bound is at most five times the output and a few
+// hundred bytes for each verb, more when a string has a precision or for
+// %w, so a call whose output fits in a small part of what is left runs as
+// before. Go makes the
 // output without a check of the VM, so neither [quickjs.VM.Interrupt] nor
 // the eval timeout ends it, in a time that grows with the bound.
 //
@@ -124,6 +126,17 @@ func Register(obj quickjs.Value) (err error) {
 // times the bound.
 const allocated = 16
 
+// budget is what Go may allocate to make an output of at most n bytes with
+// more bytes allocated beside it: allocated times n, more, and what Go's fmt
+// allocates for any call. That is its printer (pp in fmt/print.go), a few
+// hundred bytes, and, when a collection has emptied the pool of printers,
+// the slots of the pool, 128 bytes for each P (poolLocal in sync/pool.go),
+// which Go rounds up, and the place of the pool in the list of pools. On
+// "" fmt.Sprintf allocated 312 bytes with GOMAXPROCS 1 and 9,656 with 64.
+func budget(n, more int64) int64 {
+	return allocated*n + more + 1<<10 + 256*int64(runtime.GOMAXPROCS(0))
+}
+
 // fitsPrintf is the format sizePrintf hands fmt, and whether what Go
 // allocates to make fmt.Sprintf of it fits in what vm has left under its
 // memory limit (fits).
@@ -147,7 +160,7 @@ func fitsPrintf(vm *quickjs.VM, format string, a []any) (string, bool) {
 // out of memory error, which ends the call: what the function returns then
 // is dropped.
 func fits(vm *quickjs.VM, room, n, more int64) bool {
-	if room >= 0 && allocated*n+more > room {
+	if room >= 0 && budget(n, more) > room {
 		vmhook.OutOfMemory(vm)
 		return false
 	}
