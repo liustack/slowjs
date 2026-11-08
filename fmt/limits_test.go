@@ -362,8 +362,9 @@ func TestTypeAndPointer(t *testing.T) {
 // (precGrows). For every verb, with and without '#', and every kind of
 // argument the VM gives, the bound of the verb with a precision of 1000000
 // holds what it writes, and stays short when that is short: "%.1000000t"
-// of true writes "true", where the bound counted the precision and a call
-// with less than 16 MB left ended. In a VM with 2 MiB left under its memory
+// of true writes "true", and "%.1000000f" of NaN "NaN", where the bound
+// counted the precision and a call with less than 16 MB left ended. In a
+// VM with 2 MiB left under its memory
 // limit, the short outputs are made, and the long ones end the call.
 func TestPrecision(t *testing.T) {
 	vm := newVM(t)
@@ -373,7 +374,8 @@ func TestPrecision(t *testing.T) {
 	}
 	args := []any{
 		"ab", obj, big.NewInt(5), new(big.Int).Lsh(big.NewInt(1), 200), 1.5, 0.1, 5e-324,
-		-math.MaxFloat64, 7, -7, true, nil, quickjs.Undefined{}, quickjs.Unsupported{},
+		-math.MaxFloat64, math.NaN(), math.Inf(1), math.Inf(-1), 7, -7, true, nil, quickjs.Undefined{},
+		quickjs.Unsupported{},
 	}
 	const short = 4 << 10
 	for _, verbs := range []string{"ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"} {
@@ -405,6 +407,7 @@ func TestPrecision(t *testing.T) {
 		{`fmt.sprintf("%.1000000s|%.1000000q|%.1000000x", "ab", "ab", "ab")`, `ab|"ab"|6162`},
 		{`fmt.sprintf("%.1000000v|%.1000000d", o, o)`, `{"a":"b"}|&{%!d(string={"a":"b"})}`},
 		{`fmt.sprintf("%.1000000g|%.1000000v|%#.1000000v|%.1000000b", 1.5, 1.5, 1.5, 1.5)`, "1.5|1.5|1.5|6755399441055744p-52"},
+		{`fmt.sprintf("%.1000000f|%.1000000e|%#.1000000g|%#.1000000x", NaN, Infinity, NaN, -Infinity)`, "NaN|+Inf|NaN|-Inf"},
 		{`fmt.sprintf("%.1000000c|%.1000000t", b, null)`, "%!c(big.Int=5)|%!t(<nil>)"},
 		{`fmt.sprintf("%.1000000v|%.1000000d", undefined, undefined)`, "undefined|{}"},
 	} {

@@ -6,6 +6,7 @@
 package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
+	"math"
 	"math/big"
 	"strings"
 	"unicode/utf8"
@@ -248,7 +249,9 @@ func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 //   - a float64: %e %E %f %F %x %X write that many digits, and %g %G do
 //     with '#', which keeps the zeros at the end; %b does not read it, and
 //     %v and %w do not keep the zeros, as fmt takes the '#' of %#v as Go
-//     syntax and drops it;
+//     syntax and drops it; NaN and the infinities come out as NaN, +Inf
+//     and -Inf in any verb, as fmtFloat in fmt/format.go writes them
+//     before it reads the precision;
 //   - a big.Int: %d %s %v %b %o %O %x %X pad it with zeros (Int.Format),
 //     and %w writes its words as ints; Int.Format writes any other verb
 //     in the text of an error of its own, which reads no width or
@@ -271,10 +274,13 @@ func precGrows(arg any, verb rune, sharp bool) bool {
 			return true
 		}
 	}
-	switch arg.(type) {
+	switch arg := arg.(type) {
 	case int:
 		return verb != 'c' && verb != 'q'
 	case float64:
+		if math.IsNaN(arg) || math.IsInf(arg, 0) {
+			return false
+		}
 		switch verb {
 		case 'e', 'E', 'f', 'F', 'x', 'X':
 			return true
