@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，以及读取异常时遇到的中断或内存不足'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，以及 fmt 的输出'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -291,3 +291,49 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 代价：读取一个异常多进入引擎一次，在最后一个字段之后检查标志，丢弃读取抛出的东西之前再进入一次。两者都不在不抛异常的路径上。
 
 测试：`TestUncatchableReadingAnException`（`hostuncatchable_test.go`）在脚本里，以及在 Go 函数参数的转换里，用超时停住被抛出值的 `toString` 和 `message` getter 的读取，用内存不足停住它的 `toString`，要求得到被中断或内存不足的错误，并且不留下挂起的异常。改动之前，带参数的脚本运行到结束并返回 42，其他的返回一个不是无法捕获的错误。`TestErrorFromValueTimeout` 和 `TestAPIEntriesHaveTheEvalTimeout`（`apitimeout_test.go`）要求 `ErrorFromValue`，以及 `SetProperty`、`RegisterFunc` 和其他 `Register` 方法读取错误时，都返回被中断的错误。
+
+## Intl 读不了的字符串参数会结束调用
+
+发布版本：Unreleased。
+
+`Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个 VM 没有内存去读的字符串时，现在以内存不足的错误结束调用，原来是在 Go 里 panic。用 `+` 拼出来的字符串（rope）在 Go 读它之前要先拼接成一整段，拼接用的内存算在 VM 的上限里。拼接失败时，`Args.String` 说这个参数不是字符串，格式化器既没拿到数字也没拿到字符串，于是以 `intl: unexpected number bridge value` panic，这个 panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 也一样把这种参数当成空字符串接着干，白做一遍活，最后调用才以内存不足的错误结束。
+
+现在这两个包的每个 Builtin 都由 `intlhook.NewBuiltin` 创建，用 `intlhook.String` 和 `intlhook.WTF8` 读字符串（`internal/intlhook/args.go`）。读取失败时 Builtin 立刻停下，调用以挂起的错误结束：内存不足，或者拼接期间来了 `Interrupt` 或 eval 超时时的中断。没有失败的读取返回的就是 `Args.String` 返回的东西，判断失败的检查只对不是字符串的参数运行，而且在 Go 里做，所以成功的调用格式化结果和以前一样。构造函数用来查找格式化器的键，现在先用一次检查找出 undefined 的选项（大多数选项都是），再试其他类型，所以 `new Intl.NumberFormat` 和 `new Intl.DateTimeFormat` 比这些改动之前少用 2% 到 3% 的时间，`format` 不变（`intl` 的 `BenchmarkFormat`，在 GCP 的 0 和 4 号核上交替各跑六次：en-US 的 NumberFormat 是 4,448 对 4,313 ns，DateTimeFormat 是 4,672 对 4,583 ns）。
+
+测试：`intl/limits_test.go` 里的 `TestStringArgumentOutOfMemory`（在限额 16 MiB 的 VM 里，对 32 MiB 的 rope 调用 NumberFormat、它的构造函数、`getCanonicalLocales`、Collator、`localeCompare`、Segmenter 和 `toLocaleUpperCase`），以及 `temporal/limits_test.go` 里的同名测试（`PlainDate.from`、`Duration.from`、`toLocaleString`）。
+
+## Intl 在长列表的循环里读中断标志
+
+发布版本：Unreleased。
+
+`Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的每个 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 的 `format` 和 `formatToParts`，现在不管列表多长都会在 `Interrupt` 和 eval 超时时停下。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完为止。`getCanonicalLocales` 找重复还要把每个标签和它前面的所有标签比一遍：10 万个互不相同的标签大约要比较 50 亿次，在 GCP 上要 8.5 秒，什么超时都打断不了。
+
+现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。这些检查按标签和项计数，不按字节：单独一个很长的标签或项，在 Go 里读入、变成规范形式和匹配时仍然不检查 VM，占的内存也不算在它的上限里，比如在 M 系列 Mac 上对 16 MiB 的私有用途标签调用 `new Intl.NumberFormat(tag)` 要 0.2 秒，分配 289 MiB。
+
+把标签和某个服务的 locale 匹配时一次处理 256 个标签：一段里如果没有这个服务有的 locale 就跳过，答案就是列表剩下部分的答案，因为 ResolveLocale 取的是它找到的第一个标签。不超过 256 个标签的列表（页面传的就是这种）走的还是原来的路，每个答案都一样。
+
+测试：`intl/limits_test.go` 里的 `TestLongListTimeout`（`getCanonicalLocales`、`supportedLocalesOf`、构造函数的匹配、ListFormat 的各部分和结果的数组，每个都用在 Go 里造好的列表，这样时间里没有一点是造列表的 javascript）。
+
+## fmt 的函数在输出放不下时结束调用
+
+发布版本：Unreleased。
+
+包 `fmt` 的 `fmt.sprintf`、`fmt.printf`、`fmt.sprint` 和 `fmt.println`，在输出可能放不进 VM 在内存上限下还剩的空间时，现在会在 Go 造出输出之前以无法捕获的内存不足错误结束调用。Go 的 fmt 先造出一次调用的全部输出，再返回或写出去，而很短的格式就能要很长的输出：`fmt.sprintf("%1000000[1]s".repeat(256), "")` 的格式只有 3 KiB，要的却是 256 MB。在限额 16 MiB 的 VM 里，Go 先分配了 1,210 MiB，在 GCP 上花了 1.4 秒，VM 才拒绝这个字符串，而 `printf` 会把它全部写到 stdout。
+
+每个函数先从格式和参数算出输出字节数的上界，不去造输出（`fmt/bound.go`）。算上界时按 fmt 的方式读格式，所以知道每个动词取哪个参数、宽度和精度是多少，并按每个动词能把参数变成多长来计算：字符串或对象的 json 最多是自身长度的五倍（`%q` 和 `% #x`），数字最多一千字节左右，都加上宽度，精度能让它变长时再加上精度。输出让 Go 的 fmt 分配的内存比输出本身多，检查把它整个算进去，因为调用返回之前 Go 可能一点都没有回收：fmt 的缓冲区靠 `append` 增长到原来的至少 1.25 倍，靠补齐增长到两倍，所以它用过的各个缓冲区加起来最多是输出的 8 倍，`Sprintf` 再把缓冲区复制成要返回的字符串，给字符串加引号或写浮点数的动词先在自己的切片里造出字节，这些切片也这样增长。所以 Go 分配的内存最多是上界的 16 倍（`fmt/fmt.go` 里的 `allocated`，注释里按 Go 的 fmt 和切片的增长方式推出了这个数），测试里的长输出实际分配最多是上界的 10.9 倍。Go 同一时刻占着的内存要少一些，但按它来检查是守不住的：调用期间没有回收时，对 64 KiB 的字符串做 `"%[1]s".repeat(33)`，Go 分配了上界的 6.8 倍。不管输出多长，Go 的 fmt 还要分配同样的一份：它的 printer，几百字节，回收之后还有 printer 池的槽位，每个 P 128 字节，`GOMAXPROCS` 为 64 时 `fmt.sprintf("")` 分配了 9,656 字节。所以检查另加 1 KiB 和每个 P 256 字节（`budget`）。Go 运行时为它的池做的准备不算在内：回收之后，程序的每个池第一次用到时，会被重新放进运行时的池列表，这个列表随程序用的池的多少增长，和脚本要什么无关。VM 有内存上限、这个总量又超过 `vmhook.Room`（`internal/vmhook`）报告的剩余空间时，函数用 `vmhook.OutOfMemory` 抛出错误，什么都不造。上界是从格式和参数算出来的，不是从输出算的，可能远大于输出：参数比写出来的部分长时，比如被精度截短的字符串，或者宽度或精度没被用上时，比如动词不适用于参数（`fmt.sprintf("%1000000c", 5n)`），或者精度为 0 时写出的零（对 `0n` 做 `%1000000.0d`）。内存上限很紧时，这样的调用可能被拒绝。上界只占剩余空间一小部分的调用和原来一样运行。没有内存上限的 VM 上，每次调用都和原来一样。
+
+上界也跟着 fmt 算进它的错误文本。`%w` 只有 `Errorf` 才读，在 `sprintf` 里 fmt 用 Go 的反射把参数写进错误文本，不调用 `String` 或 `Format` 方法：`big.Int` 写成它的 64 位字的列表，每个字都按宽度和精度补齐，`%#w` 还会像 `%#v` 那样给字符串或对象的 json 加引号转义。`fmt.sprintf("%1000000w", 1n << 16384n)` 要 257 MB，上界只算了 1 MB，对 1 MiB 的控制字符做 `"%#[1]w".repeat(8)` 要 32 MiB，上界只算了 8 MiB。现在上界把每个字和引号转义都算进去（`sizeArg`）。
+
+`%T` 写的是参数类型的名字，不管参数里装着什么，`%p` 写的是对象或 big int 的地址，所以两者都不随参数变长。原来上界按参数的长度来算它们，在内存上限下只剩 2 MiB 的 VM 里，对 1 MiB 的字符串 s 做 `fmt.sprintf("%T", s)` 会以内存不足错误结束，而它写出的只是 `string`。现在上界对 `%T` 只算宽度再加几个字节，因为精度只会截短类型名，所以 `fmt.sprintf("%.1000000T", 0)` 在任何 VM 里都写出 `int`，对 `%p` 算宽度、精度再加几个字节。
+
+精度只在某些动词里让数字变长，对字符串和 `%T` 写的类型名只会截短。原来上界对 `%T` 以外的每个动词都算上精度，所以在剩余空间不到 16 MB 的 VM 里，写出 `true` 的 `fmt.sprintf("%.1000000t", true)` 会以内存不足错误结束，对数字做 `%.1000000c` 和 `%.1000000q` 也一样。现在上界只在 Go 的 fmt 按精度补齐的地方算精度（`fmt/bound.go` 里的 `precGrows`，读自 `fmt/print.go`、`fmt/format.go` 和 `math/big` 的 `Int.Format`，从 Go 1.26.6 到 1.27 都一样）：整数或 big int 的 `%d`、`%b`、`%o`、`%O`、`%x`、`%X` 和 `%v`，整数的 `%U`，big int 的 `%s`，浮点数的 `%e`、`%E`、`%f`、`%F`、`%x` 和 `%X`，带 `#` 的 `%g` 和 `%G`，对象或 big int 的 `%p`，big int 的 `%w`，以及不适用于整数、或带 `#` 时不适用于浮点数的动词，它们把参数按 `%v` 写进错误文本。NaN 和无穷大在任何动词里都不用精度，写出来就是 `NaN`、`+Inf` 和 `-Inf`。不补齐时，带精度的浮点数最多写出 767 位有效数字，所以浮点数的上界现在是宽度再加 1 KiB。
+
+fmt 读下标时从 `[` 一直读到它后面第一个 `]`，所以一个格式里有很多后面没有 `]` 的 `[` 时，算上界和 fmt 自己花的时间都随长度的平方增长：`"%[x".repeat(1000000)` 在 Go 里要几分钟，期间不检查 VM。现在上界先找到最后一个 `]` 在哪，交给 fmt 的格式里把每个这样的 `[` 换成 `[]`，fmt 把它读成同一个位置上同样不是数字的下标：输出一样，这次调用现在只要 34 ms。格式最多增长从第一个这样的 `[` 到结尾的字节数的一半，上界在造出新格式之前先检查它放不放得进 VM 剩下的空间。
+
+上界是在干活之前算出来的，不是边造输出边设的限制，因为 Go 的 fmt 先在自己的缓冲区里造出全部输出，才交给 writer：一个到了限额就停的 writer 要等输出全在内存里了才看得到它。按 fmt 的方式读格式，是事先知道大小的唯一办法。`TestSizeAtLeastOutput` 保证它是对的：它把上界和上界交给 fmt 的格式，同运行测试的这个 Go 的 fmt 的输出比较，换了一个读格式方式不同的 Go，这个测试就会失败。
+
+上界做不到的是在超时时结束一次很长的调用。算上界要把格式读一遍，时间和格式长度成正比，之后 Go 的 fmt 造输出时也不检查 VM，所以 `Interrupt` 和 eval 超时要等这些做完才结束调用：对 1 MiB 的控制字符做 `"%[1]q".repeat(16)` 要 0.13 秒，而输出的长度只受内存上限约束。
+
+`printf` 和 `println` 写到 `os.Stdout`，会阻塞的写入（比如写一个满了又没人读的管道）仍然会卡住调用，直到写完：Go 运行时正在做的写入，`Interrupt` 和 eval 超时都结束不了。要结束它，这个包得接收一个可以取消的 writer，这是 API 的改动，所以 `Register` 的文档写明了这一点。包 `fmt` 是 modernc.org/quickjs 原有的一个小便利，供写程序时让脚本打印东西，tifa 不用它。
+
+测试：`fmt/limits_test.go` 里的 `TestOutputLimit`（宽度、`*` 宽度、精度、`%q` 和 `sprint` 要的超过 16 MiB 的 VM 所有，Go 里的分配少于 64 MiB，以及一次放得下的调用）和 `TestSizeAtLeastOutput`（对大约 15,000 个用到各种标志、下标、宽度和精度的格式，在 VM 给 Go 函数的每种类型的参数上，把上界和 fmt 的输出比较，其中有长 big int 和字符串的 `%w`，并检查上界交给 fmt 的格式造出同样的输出），`TestShortFormats`（由 `%[]1x*.` 组成、不超过 6 字节的每个格式，以及格式增长了多少），`TestUnclosedIndexes`（那一百万个 "%[x"），`TestUnclosedIndexesRoom`（增长之后放不下的格式）、`TestTypeAndPointer`（在剩余空间很少的 VM 里对长字符串、对象和 big int 做 `%T` 和 `%p`，精度为一百万的 `%T`，以及它们的上界），`TestPrecision`（从 `A` 到 `z` 的每个动词，不带标志、带 `#`、`+` 和 `# `，精度为一百万，在每种参数上，其中有 NaN 和无穷大：上界装得下输出，输出短时上界也短，在剩余 2 MiB 的 VM 里短输出照常造出，长输出结束调用）和 `TestOutputAllocatedUnderBudget`（各种长输出下，以及在缓冲区增长、Go 向上取整最多的那些长度上，中间不回收时输出让 Go 的 fmt 分配的内存，对照上界的 16 倍，以及在 `GOMAXPROCS` 为 1、2、8 和 64 时的空输出和短输出，对照这个总量）。

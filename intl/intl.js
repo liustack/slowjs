@@ -621,7 +621,7 @@
 		segment(string) {
 			const i = internal(this, 'Segmenter');
 			return new Slots({__proto__: segmentsPrototype}, {
-				__proto__: null, kind: 'Segments', segmenter: i, string: toString(string), breaks: undefined
+				__proto__: null, kind: 'Segments', segmenter: i, string: toString(string), breaks: undefined, cursor: 0
 			});
 		},
 		resolvedOptions() {
@@ -630,15 +630,31 @@
 		[toStringTag]: 'Intl.Segmenter'
 	});
 
-	// breaks returns what the segBreaks Builtin answers for s, a Segments'
-	// slots: 1 if its segments may be word-like, else 0, then where each
-	// segment ends, as twice the offset, plus one for a word-like segment.
-	// It is asked on first use and kept.
-	function breaks(s) {
+	// breaksPast returns the breaks of s, a Segments' slots, that the
+	// segBreaks Builtin has answered, as far as the first segment that ends
+	// past the offset n, which is in s's string: 1 if its segments may be
+	// word-like, else 0, then where each segment ends, as twice the offset,
+	// plus one for a word-like segment. They are asked a batch at a time, as
+	// far as they are needed, and kept.
+	function breaksPast(s, n) {
 		if (s.breaks === undefined) {
-			s.breaks = call(s.segmenter, segBreaks, s.string);
+			s.breaks = bare([]);
 		}
-		return s.breaks;
+		const b = s.breaks;
+		while (b.length < 2 || half(b[b.length - 1]) <= n) {
+			const r = call(s.segmenter, segBreaks, s.string, s.cursor, b.length === 0 ? 0 : b.length - 1);
+			if (r.length === 2) {
+				throw new Error('Intl.Segmenter: internal error: no segment past ' + n);
+			}
+			s.cursor = r[0];
+			if (b.length === 0) {
+				b[0] = r[1];
+			}
+			for (let i = 2; i < r.length; i++) {
+				b[b.length] = r[i];
+			}
+		}
+		return b;
 	}
 
 	function half(n) {
@@ -649,7 +665,7 @@
 	// offset n, which is in s's string, and where it ends: the first break
 	// past n, found by bisection, ends it.
 	function segmentAt(s, n) {
-		const b = breaks(s);
+		const b = breaksPast(s, n);
 		let lo = 1, hi = b.length;
 		while (lo < hi) {
 			const mid = (lo + hi) >>> 1;

@@ -16,7 +16,10 @@
 # construction and notices: source.go stops embedding data.pack and serves our packs
 # instead, internal/blob reports the pool parts it reads when the pack tool
 # walks the data, dictbe.go takes a missing break dictionary for none, so
-# that a build without the CJK dictionary still segments, the loaders of the
+# that a build without the CJK dictionary still segments, breaker.go finds
+# one boundary at a time for qjs_segments.go, list.go calls a check of the
+# caller for each item, negotiate.go looks up no part of a tag longer than
+# the longest tag a service has, the loaders of the
 # data in dates.bin, zonenames.bin and hostzones.bin call the function that
 # links that pack (qjs_readers.go), and the files
 # ported from calendrical_calculations (temporal/solar.go,

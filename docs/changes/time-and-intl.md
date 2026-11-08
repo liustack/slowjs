@@ -242,3 +242,45 @@ Profiles of English and Chinese Format calls found that part classification and 
 The final profiles move the remaining number allocations to value-dependent grouping and assembly. Dates allocate their output, space replacement and numeric fields. These shared rounding and field routines still serve both strings and parts. The [page measurements](../history.md#intl-formatting) do not establish a whole-page speedup.
 
 Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheBound`, the existing Chromium corpora, concurrent registry tests, tampering and link tests. `BenchmarkFormat` covers construction, formatting and uncached resolution with the inputs above. The upstream changes stay in `qjs.patch`. After updating go-intl, rebuild it from that patch, check source isolation and concurrent use, compare every recorded answer and repeat the focused measurements.
+
+## Intl.Segmenter finds segments as they are read
+
+Release: Unreleased.
+
+`containing` and the iterator of a Segments object now find the segments of its text as javascript reads them, a batch at a time, where the first call found every segment of the whole text in Go. On a text of 8 MiB, `containing(0)` made go-intl list all 8,388,608 graphemes: 1,260 MiB of allocations in Go, outside the VM's memory limit, and 0.8 to 1.5 seconds with no check of the interrupt flag. It now takes 24 MiB, the text in UTF-16 and its copy as Go reads it, and 17 to 36 ms on GCP. That memory is not counted against the memory limit of the VM, nor is the text each kept iterator holds (below), and one break far ahead, as after a long run of text that a dictionary breaks, is found with no check of the VM.
+
+The first batch is 64 breaks, and each next one is as long as all those before it, up to 65,536, so reading every segment takes few calls. The work of each batch checks the VM every 256 breaks (see [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list)). `breaker.go` of go-intl finds one boundary at a time through `qjs.patch`, and `qjs_segments.go` hands them out as `Segmenter.Iter`.
+
+A batch goes on where the last one stopped, with the same break iterator. The breaks go-intl finds depend on what its iterator saw before (the runs a dictionary breaks, the break engines it found), so they are those of one walk of the whole text only when one iterator finds them all. So a VM keeps the iterators of the 4 Segments objects it read last, each with its text in UTF-16, until it is closed. A Segments object whose iterator was dropped makes it again from the start of its text and walks past the breaks it has: the same breaks come out, for more time. Every segment is the same as before, through the iterator and through `containing` at any offset.
+
+Reading every word of 1 MiB of mixed text takes 1.38 seconds, as before, and 35 MiB of allocations in Go, where it took 88. Reading every word of a short text 10,000 times takes 315 ms, where it took 311 ms (one run each on GCP cores 0 and 4).
+
+Tests: `TestSegmentsInBatches` in `intl/segmenter_test.go` checks the iterator, `containing` on new Segments objects and on one, and more Segments objects read in turn than a VM keeps iterators for, against go-intl's whole walk, on 100,000 code units of several scripts with lone surrogates, for six locales and granularities. `TestSegmentsMemory` checks that the first segments of 8 MiB take less than 64 MiB in Go.
+
+## The caches of Temporal formats keep short requests only
+
+Release: Unreleased.
+
+The formats `toLocaleString` and `DateTimeFormat.prototype.format` make for Temporal values are shared by every VM of the process, and they kept what a page asked for at any length, after its VM was closed. The cache of `toLocaleString` held at most 512 formats, but each with its request as the page gave it, a failed one too: a calendar option of 1 MiB that was no calendar stayed with its error. The formatter registry keeps at most 1,024 formatters, each with its resolved options, and those of a Temporal date format held its whole request. On GCP, 40 VMs closed after such calls kept 81 MiB for the failed calendar, and 11 MiB for `DateTimeFormat.format` of a Temporal value with a list of 10,000 locales.
+
+Now the cache of `toLocaleString` keeps a format only when its request is at most 512 bytes, as the registry does, and only when it resolved: an error is made again on each call, as it may hold what the page passed. So the cache takes at most 256 KiB of requests. A Temporal date format keeps the SHA-256 of its request, 64 bytes in hex, in place of the request, which still tells apart the formats that only the request tells apart. Requests of up to 512 bytes, the ones pages make, are cached as before, so the common calls take the same time. The 40 closed VMs now keep less than 1 MiB.
+
+Tests: `TestFormatCachesAfterClose` in `temporal/limits_test.go` (a failed calendar of 1 MiB, and `DateTimeFormat.format` and `toLocaleString` of a list of 10,000 locales, each in 40 VMs closed after the call).
+
+## Number options are checked before they are rounded down
+
+Release: Unreleased.
+
+A number option such as `fractionalSecondDigits`, `minimumIntegerDigits`, `maximumFractionDigits` or `roundingIncrement` is now checked against its range before it is rounded down, as ECMA-402's DefaultNumberOption does, so a value just past the top of the range is a RangeError, as in Chromium. `fractionalSecondDigits: 3.9` and `minimumIntegerDigits: 21.9` were rounded down to 3 and 21 first, and taken. A value in the range is rounded down as before: `fractionalSecondDigits: 1.5` is 1.
+
+Tests: `TestNumberOptionRange` in `intl/options_test.go` (20 options of DateTimeFormat, NumberFormat and PluralRules at the ends of their ranges, with the answers of Node 24).
+
+## A long locale tag resolves in time linear in its length
+
+Release: Unreleased.
+
+An Intl constructor, `supportedLocalesOf` and `toLocaleString` now resolve a long locale tag in time linear in its length. ECMA-402's BestAvailableLocale cuts a tag short one subtag at a time until a service is available in what is left, and go-intl looked up every part it cut, copying it into the key of the lookup each time: time that grows with the square of the tag. A valid tag can be long, as private use takes any number of subtags: `new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")`, a tag of 1 MiB, took 6.8 seconds on an M-series Mac, and one of 4 MiB 58 seconds, in Go, with no check of the interrupt flag.
+
+Now `negotiate.go` of go-intl, through `qjs.patch`, keeps the length of the longest tag of each service's list, and looks up no part longer than that, which no service can be available in. The parts are cut as before, so every answer is the same. The two tags now take 33 and 55 ms, the time of putting them in canonical form. A tag as pages pass it is shorter than every limit and is looked up as before.
+
+Tests: `TestLongTagResolves` in `intl/limits_test.go` (a constructor and `supportedLocalesOf` on a private use tag of 64Ki subtags, which took a second or more each).

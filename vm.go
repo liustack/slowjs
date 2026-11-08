@@ -64,6 +64,8 @@ type vmState struct {
 	// ids, which RegisterFunc refuses to take again.
 	goFuncs map[string]int32
 	timeout time.Duration
+	// memoryLimit is the limit SetMemoryLimit gave the engine, 0 for none.
+	memoryLimit uintptr
 	// depth counts the calls into javascript in progress: a host function
 	// that evaluates more javascript is one level down.
 	depth int
@@ -196,7 +198,12 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 // exception object itself.  The particular value of "small" is unspecified and
 // subject to change without notice.
 func (m *VM) SetMemoryLimit(limit uintptr) {
-	m.jsSetMemoryLimit(max(limit, 128*1024))
+	limit = max(limit, 128*1024)
+	m.jsSetMemoryLimit(limit)
+	m.memoryLimit = limit
+	if limit == ^uintptr(0) {
+		m.memoryLimit = 0 // the engine's own value for no limit
+	}
 }
 
 // SetGCThreshold sets the memory threshold at which a GC will be performed, in

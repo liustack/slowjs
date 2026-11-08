@@ -133,45 +133,59 @@ func (d *dictionaryCache) following(from int) (boundary, bool) {
 
 // boundaries are every boundary of a text, from 0 to its length.
 func (b *breaker) boundaries() []boundary {
-	out := []boundary{{0, 0}}
+	cur := b.first()
+	out := []boundary{cur}
+	for {
+		next, ok := b.following(cur)
+		if !ok {
+			break
+		}
+		out = append(out, next)
+		cur = next
+	}
+	return out
+}
+
+// first sets the breaker to iterate from the start of its text, and returns
+// the boundary there.
+func (b *breaker) first() boundary {
 	// ICU leaves the look-ahead results unset: the rules record each before
 	// they complete it.
 	b.lookAhead = make([]int, b.rules.forward.lookAheadSize)
 	for i := range b.lookAhead {
 		b.lookAhead[i] = -1
 	}
-	cur := out[0]
-	for {
-		if next, ok := b.dict.following(cur.pos); ok {
-			out = append(out, next)
-			cur = next
-			continue
-		}
-		pos, done := b.handleNext(cur.pos)
-		if done {
-			break
-		}
-		next := boundary{pos, b.ruleStatus}
-		if b.dictCount > 0 {
-			b.populateDictionary(cur.pos, pos, cur.status, b.ruleStatus)
-			if d, ok := b.dict.following(cur.pos); ok {
-				next = d
-			}
-		}
-		if next.pos <= cur.pos || next.pos > len(b.t.text) {
-			// Rules or a dictionary a Source corrupted, which went back or
-			// past the end: on by a code point, as a match of nothing is.
-			b.t.setIndex(cur.pos)
-			b.t.next32()
-			next = boundary{b.t.index(), 0}
-			if next.pos <= cur.pos {
-				break
-			}
-		}
-		out = append(out, next)
-		cur = next
+	return boundary{0, 0}
+}
+
+// following is the boundary after cur, the last one the breaker returned,
+// and false at the end of the text.
+func (b *breaker) following(cur boundary) (boundary, bool) {
+	if next, ok := b.dict.following(cur.pos); ok {
+		return next, true
 	}
-	return out
+	pos, done := b.handleNext(cur.pos)
+	if done {
+		return boundary{}, false
+	}
+	next := boundary{pos, b.ruleStatus}
+	if b.dictCount > 0 {
+		b.populateDictionary(cur.pos, pos, cur.status, b.ruleStatus)
+		if d, ok := b.dict.following(cur.pos); ok {
+			next = d
+		}
+	}
+	if next.pos <= cur.pos || next.pos > len(b.t.text) {
+		// Rules or a dictionary a Source corrupted, which went back or
+		// past the end: on by a code point, as a match of nothing is.
+		b.t.setIndex(cur.pos)
+		b.t.next32()
+		next = boundary{b.t.index(), 0}
+		if next.pos <= cur.pos {
+			return boundary{}, false
+		}
+	}
+	return next, true
 }
 
 // handleNext is RuleBasedBreakIterator::handleNext: the rules' state

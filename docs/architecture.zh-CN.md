@@ -62,6 +62,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `temporal/testdata/` | 和 Chromium 对照的表达式及它的答案，以及链接测试构建的程序 |
 | `internal/gointl/` | go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-go-intlinternalgointl)） |
 | `internal/intlhook/` | 包 `temporal` 从包 `intl` 拿的东西：它的 `toLocaleString` 的格式化，以及 VM 的默认时区 |
+| `internal/vmhook/` | `intl`、`temporal` 和 `fmt` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `quickjs` 设置（`vmhook.go`） |
 | `fmt/` | 包 `github.com/liustack/quickjs/fmt` |
 | `compare/` | 一个独立的模块，从上游保留下来，在这个引擎、goja 和 fastschema/qjs 上跑 QuickJS 的微基准 |
 | `internal/arewefastyet/` | compare/engines 运行的 V8 基准套件（v8-v7） |
@@ -90,12 +91,21 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 `SetEvalTimeout` 设置时长。`Interrupt()` 以原子方式设置标志，可以从任何 goroutine 调用。它通过 `VM.intr` 到达标志，`VM.intr` 把 VM 的宿主放在 Go 内存里，并用 `Close` 排好顺序。`Close` 只清内嵌的 `vmState`，从不清 `intr`，所以 `Interrupt` 在 `Close` 期间和之后从任何 goroutine 调用都是安全的。新的 VM 字段放进 `vmState`。加一个运行 javascript 的方法时，要加上 `enter` 和 `leave` 这一对，否则时限对它不起作用。所有可能碰到 getter、setter、proxy 陷阱、`toJSON`、`toString` 或被替换的内置方法的方法都算，不只是执行源码的那些：`GetProperty`、`SetProperty`、`Value.Any`、`Value.MarshalJSON` 和 `ErrorFromValue` 也有这一对，而 `outer`（没有时限，不能终止）留给不可能运行脚本的调用。由异常生成的 `*Error` 用 `ErrorFromValue` 读它的字段，所以在调用之外读出的错误也受时限约束。
 
+javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 `Interrupt` 在那里都停不下它，它在 Go 里分配的内存也不在内存上限之内。这个模块的 Go 函数靠 `internal/vmhook` 守住限制：在长循环里每隔一段调用一次 `vmhook.Stop`，一旦为真就返回，这时无法捕获的 "interrupted" 已经挂起，和轮询抛出的一样（轮询检查的就是 `gohost.VM.Stopping`）。在构建大小由脚本决定的结果之前先看 `vmhook.Room`，放不下就用 `vmhook.OutOfMemory` 结束这次调用。函数只在做了这些调用的地方守得住限制。现在做了这些调用的有：
+
+- `intl` 和 `temporal` 里字符串参数读不出来的每个 Builtin。
+- Intl 遍历脚本传入的列表（locale 列表或 `Intl.ListFormat` 的各项）的循环，每 256 个标签或项检查一次。
+- `Intl.Segmenter`，读到哪里才一批批找到哪里的分段，每 256 个检查一次。
+- `fmt` 的各个函数，在 Go 造出输出之前拿输出的上界和 `vmhook.Room` 比较。
+
+脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.NumberFormat` 解析和格式化很长的数字字符串，`Intl.Collator` 和 `localeCompare`，`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，`Temporal` 里 ISO 以外日历的运算，读一个很长的 locale 标签或列表项，`Intl.DurationFormat` 解析很长的时长，以及 `Intl.Segmenter` 找一批分段时对词典的扫描。Go 造出 `fmt` 的输出时同样不检查调用，用时随输出的上界增长，不过输出可能让它分配的内存在开始之前已经和 VM 剩下的空间比过（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
+
 ## 引擎旁边的包
 
 - **`intl/`**：所有 `Intl` 构造函数、`toLocale*` 和 `localeCompare`，给调用了 `Register(vm)` 的 VM 用。QuickJS 没有 `Intl`，所以没调用 `Register` 就去用它的页面会得到 `ReferenceError`。javascript 一侧是 `intl.js` 和 `stub.js`，决定在 Go 里做，建在 `internal/gointl` 上，`bridge.go` 顶部的注释说明怎么加一个构造函数。改过格式化器之后，`intl/golden_test.go` 是最要紧的检查：数据知道规范不知道的细节。它怎么工作，输出怎么和 Chromium 对照：见 [time-and-intl.md](changes/time-and-intl.zh-CN.md)。
 - **`temporal/`**：`Temporal`，给调用了 `Register(vm)` 的 VM 用，和 `intl/` 的构造方式一样。go-intl 的 temporal 包做所有计算，通过 `bridge.go` 里的一个 Builtin，它的第一个参数写明操作名（`opNames` 列表）。见 [temporal.md](changes/temporal.zh-CN.md)。
 - **`internal/gointl/`**：go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，停在 `internal/gointl/UPSTREAM` 里的提交，`intl` 和 `temporal` 使用它。只有 `qjs*` 文件和 `UPSTREAM` 是我们的。go-intl 的文件只能通过 `qjs.patch` 和 `qjs-sync.sh` 改（见[更新 go-intl](upgrading.zh-CN.md#更新-go-intlinternalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
-- **`fmt/`**：包 `github.com/liustack/quickjs/fmt`，是这个模块的一部分。它用 `Register(obj Value)` 给 VM 提供 Go 的 `fmt.Printf`、`Println`、`Sprintf` 和 `Sprintln`，在 javascript 里用小写名字（`fmt.println`）。
+- **`fmt/`**：包 `github.com/liustack/quickjs/fmt`，是这个模块的一部分。它用 `Register(obj Value)` 给 VM 提供 Go 的 `fmt.Printf`、`Println`、`Sprintf` 和 `Sprint`，在 javascript 里用小写名字（`fmt.println`）。每个函数先从格式和参数算出输出字节数的上界（`fmt/bound.go`），输出可能让 Go 的 fmt 分配的内存（上界的 16 倍再加造输出的 printer 的几 KiB）超过 VM 在内存上限下还剩的空间时，以内存不足的错误结束调用（Go 运行时为它的池做的准备不算在内）。Go 造输出时不检查 VM，所以 `Interrupt` 和 eval 超时都停不下它。
 - **`compare/`**：一个独立的模块（`github.com/liustack/quickjs/compare`），在这个引擎、goja 和 `github.com/fastschema/qjs` 上运行 `compare/testdata/` 里的 QuickJS 微基准。`make benchmark` 在那里运行。它独立成模块，是为了让它的依赖不进库的 `go.mod`。`compare/go.mod` 把 `github.com/liustack/quickjs` 替换成 `../`，所以基准构建的是工作树，而 `go mod tidy`（`benchmark` 目标先运行它）从根 `go.mod` 取其他版本：不要手工复制它们。
 
 ## 平台

@@ -31,7 +31,7 @@ func resolveListFormat(req request) (*listFormat, error) {
 		return nil, err
 	}
 
-	loc, err := goResolve(gointl.ServiceListFormat, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceListFormat, req.Locales)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +71,12 @@ func (f *listFormat) init() error { return nil }
 
 // listItems splits the items intl.js sends as one string, in WTF-8 as
 // Args.WTF8 reads it: each is its length in UTF-16 code units, a colon and
-// the item.
-func listItems(s string) ([]string, bool) {
+// the item. A long list stops at the eval timeout of vm (see checkTurn).
+func listItems(vm *quickjs.VM, s string) ([]string, bool) {
 	u := utf16Of(s)
 	var items []string
 	for i := 0; i < len(u); {
+		checkTurn(vm, len(items))
 		j := i
 		for j < len(u) && u[j] != ':' {
 			j++
@@ -104,7 +105,11 @@ func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs
 		}
 	}
 	next := 0
-	for _, p := range parts {
+	for i, p := range parts {
+		if stopTurn(vm, i) {
+			free()
+			return quickjs.UndefinedValue, nil
+		}
 		if p.Kind == gointl.ListElement {
 			for next < len(items) && items[next] == "" && p.Value != "" {
 				next++

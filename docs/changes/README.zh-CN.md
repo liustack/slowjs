@@ -83,6 +83,7 @@ read_when:
 | 结果两次到达的同一个位置只算一个引用 | Unreleased | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
 | 包含自身的结果是一个错误 | Unreleased | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
 | 结果的引用在程序代码运行之前取下 | Unreleased | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
+| NewArray 在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 
 ## 守得住的限额
 
@@ -109,6 +110,9 @@ read_when:
 | 正则的类不管有多少字符或字符串，都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#无论正则的类有多少字符或字符串都读中断标志) |
 | 字节码调用在 eval 超时内转换结果 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果) |
 | 读取异常时遇到的无法捕获的异常结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用) |
+| Intl 读不了的字符串参数会结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用) |
+| Intl 在长列表的循环里读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
+| fmt 的函数在输出放不下时结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用) |
 
 ## 错误和调用栈
 
@@ -134,6 +138,10 @@ read_when:
 | Temporal 的 duration 使用 DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-的-duration-使用-durationformat) |
 | 引擎读 Go 的时钟 | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#引擎读-go-的时钟) |
 | Date、Intl 和 Temporal 每个 VM 共用一个墙上时钟，用 `VM.SetClock` 设置 | v0.28.2 | [time-and-intl.md](time-and-intl.zh-CN.md#每个-vm-一个墙上时钟) |
+| Intl.Segmenter 边读边找分段 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#intlsegmenter-边读边找分段) |
+| Temporal 格式的缓存只保留短请求 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
+| 数字选项先检查范围再向下取整 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
+| 长的 locale 标签按长度的线性时间解析 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
 
 ## Temporal
 

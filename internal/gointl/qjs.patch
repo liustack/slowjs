@@ -1,3 +1,97 @@
+diff --git a/breaker.go b/breaker.go
+index f66e0ec..9f3f264 100644
+--- a/breaker.go
++++ b/breaker.go
+@@ -133,45 +133,59 @@ func (d *dictionaryCache) following(from int) (boundary, bool) {
+ 
+ // boundaries are every boundary of a text, from 0 to its length.
+ func (b *breaker) boundaries() []boundary {
+-	out := []boundary{{0, 0}}
++	cur := b.first()
++	out := []boundary{cur}
++	for {
++		next, ok := b.following(cur)
++		if !ok {
++			break
++		}
++		out = append(out, next)
++		cur = next
++	}
++	return out
++}
++
++// first sets the breaker to iterate from the start of its text, and returns
++// the boundary there.
++func (b *breaker) first() boundary {
+ 	// ICU leaves the look-ahead results unset: the rules record each before
+ 	// they complete it.
+ 	b.lookAhead = make([]int, b.rules.forward.lookAheadSize)
+ 	for i := range b.lookAhead {
+ 		b.lookAhead[i] = -1
+ 	}
+-	cur := out[0]
+-	for {
+-		if next, ok := b.dict.following(cur.pos); ok {
+-			out = append(out, next)
+-			cur = next
+-			continue
+-		}
+-		pos, done := b.handleNext(cur.pos)
+-		if done {
+-			break
+-		}
+-		next := boundary{pos, b.ruleStatus}
+-		if b.dictCount > 0 {
+-			b.populateDictionary(cur.pos, pos, cur.status, b.ruleStatus)
+-			if d, ok := b.dict.following(cur.pos); ok {
+-				next = d
+-			}
++	return boundary{0, 0}
++}
++
++// following is the boundary after cur, the last one the breaker returned,
++// and false at the end of the text.
++func (b *breaker) following(cur boundary) (boundary, bool) {
++	if next, ok := b.dict.following(cur.pos); ok {
++		return next, true
++	}
++	pos, done := b.handleNext(cur.pos)
++	if done {
++		return boundary{}, false
++	}
++	next := boundary{pos, b.ruleStatus}
++	if b.dictCount > 0 {
++		b.populateDictionary(cur.pos, pos, cur.status, b.ruleStatus)
++		if d, ok := b.dict.following(cur.pos); ok {
++			next = d
+ 		}
+-		if next.pos <= cur.pos || next.pos > len(b.t.text) {
+-			// Rules or a dictionary a Source corrupted, which went back or
+-			// past the end: on by a code point, as a match of nothing is.
+-			b.t.setIndex(cur.pos)
+-			b.t.next32()
+-			next = boundary{b.t.index(), 0}
+-			if next.pos <= cur.pos {
+-				break
+-			}
++	}
++	if next.pos <= cur.pos || next.pos > len(b.t.text) {
++		// Rules or a dictionary a Source corrupted, which went back or
++		// past the end: on by a code point, as a match of nothing is.
++		b.t.setIndex(cur.pos)
++		b.t.next32()
++		next = boundary{b.t.index(), 0}
++		if next.pos <= cur.pos {
++			return boundary{}, false
+ 		}
+-		out = append(out, next)
+-		cur = next
+ 	}
+-	return out
++	return next, true
+ }
+ 
+ // handleNext is RuleBasedBreakIterator::handleNext: the rules' state
 diff --git a/calendar.go b/calendar.go
 index 492875a..0eebc28 100644
 --- a/calendar.go
@@ -290,6 +384,142 @@ index 7e8f383..318f321 100644
  	// i is compared with the parts there are, not multiplied out, which
  	// overflows past 2^61; an end past 2^31 is negative on 32 bits.
  	if i < 0 || i >= len(s.ends)/4 {
+diff --git a/list.go b/list.go
+index 0f4538a..b2f3177 100644
+--- a/list.go
++++ b/list.go
+@@ -248,9 +248,16 @@ type ListPart struct {
+ // first with the start pattern. That is what makes "a, b, and c" rather than
+ // one separator repeated.
+ func (f *ListFormat) FormatToParts(items []string) []ListPart {
+-	parts := f.formatToParts(items)
++	return f.FormatToPartsCheck(items, func(int) {})
++}
++
++// FormatToPartsCheck is FormatToParts, calling check with the index of each
++// item, and of each part it drops empty items from, as it goes: a caller
++// whose list is long checks there whether to go on, and panics to stop.
++func (f *ListFormat) FormatToPartsCheck(items []string, check func(int)) []ListPart {
++	parts := f.formatToParts(items, check)
+ 	if f.opts.Compat.Has(EmptyListItems) {
+-		parts = dropEmptyItems(parts)
++		parts = dropEmptyItems(parts, check)
+ 	}
+ 	return parts
+ }
+@@ -258,9 +265,10 @@ func (f *ListFormat) FormatToParts(items []string) []ListPart {
+ // dropEmptyItems leaves out the items that are empty, joining the text
+ // either side of each, as ICU's FormattedList has no field for an empty
+ // span: ["a", "", "b"] is "a", ", , and ", "b".
+-func dropEmptyItems(parts []ListPart) []ListPart {
++func dropEmptyItems(parts []ListPart, check func(int)) []ListPart {
+ 	out := parts[:0:0]
+-	for _, p := range parts {
++	for i, p := range parts {
++		check(i)
+ 		switch {
+ 		case p.Kind == ListElement && p.Value == "":
+ 		case p.Kind == ListLiteral && len(out) > 0 && out[len(out)-1].Kind == ListLiteral:
+@@ -272,7 +280,7 @@ func dropEmptyItems(parts []ListPart) []ListPart {
+ 	return out
+ }
+ 
+-func (f *ListFormat) formatToParts(items []string) []ListPart {
++func (f *ListFormat) formatToParts(items []string, check func(int)) []ListPart {
+ 	switch len(items) {
+ 	case 0:
+ 		return nil
+@@ -284,17 +292,22 @@ func (f *ListFormat) formatToParts(items []string) []ListPart {
+ 			[]ListPart{{ListElement, items[1]}})
+ 	}
+ 
+-	if parts, ok := f.formatInOrder(items); ok {
++	if parts, ok := f.formatInOrderCheck(items, check); ok {
+ 		return parts
+ 	}
+-	return f.formatFolding(items)
++	return f.formatFoldingCheck(items, check)
+ }
+ 
+ // formatFolding is FormatToParts as the patterns say it, each item folded in
+ // with the parts so far, which serves for any pattern.
+ func (f *ListFormat) formatFolding(items []string) []ListPart {
++	return f.formatFoldingCheck(items, func(int) {})
++}
++
++func (f *ListFormat) formatFoldingCheck(items []string, check func(int)) []ListPart {
+ 	parts := []ListPart{{ListElement, items[len(items)-1]}}
+ 	for i := len(items) - 2; i >= 1; i-- {
++		check(i)
+ 		p := f.patterns.Middle
+ 		if i == len(items)-2 {
+ 			p = f.end(items[len(items)-1])
+@@ -311,6 +324,10 @@ func (f *ListFormat) formatFolding(items []string) []ListPart {
+ // they put after goes at the end, innermost first. Folding each item into
+ // the parts so far copied them for every item.
+ func (f *ListFormat) formatInOrder(items []string) ([]ListPart, bool) {
++	return f.formatInOrderCheck(items, func(int) {})
++}
++
++func (f *ListFormat) formatInOrderCheck(items []string, check func(int)) ([]ListPart, bool) {
+ 	start, ok1 := splitListPattern(f.patterns.Start)
+ 	middle, ok2 := splitListPattern(f.patterns.Middle)
+ 	end, ok3 := splitListPattern(f.end(items[len(items)-1]))
+@@ -325,6 +342,7 @@ func (f *ListFormat) formatInOrder(items []string) ([]ListPart, bool) {
+ 	}
+ 	var after []string
+ 	for i, item := range items[:len(items)-1] {
++		check(i)
+ 		p := middle
+ 		switch i {
+ 		case 0:
+diff --git a/negotiate.go b/negotiate.go
+index 4097374..5b812bb 100644
+--- a/negotiate.go
++++ b/negotiate.go
+@@ -70,6 +70,9 @@ type LocaleMatcher struct {
+ 	// is read where it lies.
+ 	list      string
+ 	available blob.Index
++	// longest is the length of the list's longest tag: no longer tag is
++	// available.
++	longest int
+ }
+ 
+ // NewLocaleMatcher reads a service's available locales from a source.
+@@ -99,7 +102,16 @@ func NewLocaleMatcher(src Source, service Service) (*LocaleMatcher, error) {
+ 	if k, _ := index.At(first); !strings.HasPrefix(string(k), prefix) {
+ 		return nil, fmt.Errorf("intl: no available locales for %s", service)
+ 	}
+-	return &LocaleMatcher{service: service, list: list, available: index}, nil
++	longest := 0
++	for i := first; i < index.Len(); i++ {
++		k, _ := index.At(i)
++		tag, ok := strings.CutPrefix(string(k), prefix)
++		if !ok {
++			break
++		}
++		longest = max(longest, len(tag))
++	}
++	return &LocaleMatcher{service: service, list: list, available: index, longest: longest}, nil
+ }
+ 
+ // Available reports whether the service is available in exactly this tag.
+@@ -137,10 +149,12 @@ func (m *LocaleMatcher) Locales() []string {
+ 
+ // bestAvailable is ECMA-402's BestAvailableLocale: the tag, or the longest
+ // part of it the service is available in, cutting it short a subtag at a
+-// time and a singleton with the subtag after it; empty if none.
++// time and a singleton with the subtag after it; empty if none. A part
++// longer than every available tag is not looked up, so a long tag takes time
++// linear in its length.
+ func (m *LocaleMatcher) bestAvailable(candidate string) string {
+ 	for {
+-		if m.Available(candidate) {
++		if len(candidate) <= m.longest && m.Available(candidate) {
+ 			return candidate
+ 		}
+ 		pos := strings.LastIndexByte(candidate, '-')
 diff --git a/number.go b/number.go
 index 236e08a..d3ce06e 100644
 --- a/number.go
@@ -774,7 +1004,7 @@ index 2cc9527..25e21b2 100644
  
  // gannen reports whether a Japanese year is written by ICU's jpanyear rules,
 diff --git a/source.go b/source.go
-index 56a6838..bc096cf 100644
+index 56a6838..45b6c78 100644
 --- a/source.go
 +++ b/source.go
 @@ -1,14 +1,11 @@
@@ -807,7 +1037,7 @@ index 56a6838..bc096cf 100644
  // simple path needs no setting up, and it is only a default: anything taking a
  // Source can be given another.
 +//
-+// In quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
++// In liustack/quickjs it is not go-intl's data.pack but the packs of qjsdata/, which
 +// qjs_source.go serves.
  var Embedded EmbeddedSource
  

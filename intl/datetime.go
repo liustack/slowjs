@@ -45,7 +45,7 @@ type dateTimeFormat struct {
 func (f *dateTimeFormat) init() error { return nil }
 
 func resolveDateTimeFormat(req request, defaultZone string) (*dateTimeFormat, error) {
-	loc, err := goResolve(gointl.ServiceDateTimeFormat, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceDateTimeFormat, req.Locales)
 	if err != nil {
 		return nil, err
 	}

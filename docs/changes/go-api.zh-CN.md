@@ -521,3 +521,11 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 代价：见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)。
 
 测试：`TestResultReferences`（`result_test.go`）返回一个 `Error` 让它包含自身的切片、一个 `Error` 从里面拿走 `Value` 的切片，以及一个 map，其中结构体的 `MarshalJSON` 让这个 map 包含自身。`TestResultChangedDuringConversion` 返回一个 `Error` 往里放别的 VM 的 `Value` 的切片，要求那个位置是 `null`，那个 `Value` 的计数不变。`TestResultExceptionMovesValue` 返回一个装着 `Value` 和空 `*Object` 的切片，空 `*Object` 的 JSON 解析会失败，并把 `SyntaxError` 的 `toString` 换成一个把 `Value` 挪到切片另一个元素的函数，转换读异常消息时会调用它。要求 GC 之后只剩测试持有的两个引用。`TestResultLeafKeptByWalk` 返回一个切片，它的 `Error` 把其中一个字符串换成另一个，要求得到遍历找到的那个字符串。改动之前，两个环会让测试进程退出。
+
+## NewArray 在调用的限制处停下
+
+发布版本：Unreleased。
+
+在 javascript 调用的 Go 函数里，`VM.NewArray` 现在每 16,384 个元素看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，由 Builtin 返回出去。引擎加一个元素约 50 ns，每个元素都是从 Go 发起的一次调用，期间不读中断标志：4 Mi 个元素的数组在 M 系列 Mac 上要 0.14 到 0.2 秒。造数组期间来的停止要等到造完才生效，还可能超过脚本被杀掉之前的宽限期（[ErrKilled](go-api.zh-CN.md#error-说明调用为什么结束)）：对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')` 会造这样的数组，造数组期间来的超时会让它的 VM 被杀掉。少于 16,384 个元素的数组什么也不读，用时和原来一样：在 M 系列 Mac 上，返回 3 个元素数组的 Builtin 改动前后每次调用都是 155 ns。在调用 javascript 之外造的数组，以及在停止之前造完的数组，和原来一样。
+
+测试：`builtin_test.go` 里的 `TestNewArrayInterrupted`（`Interrupt` 之后造 4 Mi 个元素的数组：NewArray 返回中断错误，不返回数组，之后 VM 仍可用；在调用之外，无论是在被中断的调用之后，还是 VM 空闲时调用过 `Interrupt` 之后，都造出整个数组）。

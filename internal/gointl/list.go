@@ -248,9 +248,16 @@ type ListPart struct {
 // first with the start pattern. That is what makes "a, b, and c" rather than
 // one separator repeated.
 func (f *ListFormat) FormatToParts(items []string) []ListPart {
-	parts := f.formatToParts(items)
+	return f.FormatToPartsCheck(items, func(int) {})
+}
+
+// FormatToPartsCheck is FormatToParts, calling check with the index of each
+// item, and of each part it drops empty items from, as it goes: a caller
+// whose list is long checks there whether to go on, and panics to stop.
+func (f *ListFormat) FormatToPartsCheck(items []string, check func(int)) []ListPart {
+	parts := f.formatToParts(items, check)
 	if f.opts.Compat.Has(EmptyListItems) {
-		parts = dropEmptyItems(parts)
+		parts = dropEmptyItems(parts, check)
 	}
 	return parts
 }
@@ -258,9 +265,10 @@ func (f *ListFormat) FormatToParts(items []string) []ListPart {
 // dropEmptyItems leaves out the items that are empty, joining the text
 // either side of each, as ICU's FormattedList has no field for an empty
 // span: ["a", "", "b"] is "a", ", , and ", "b".
-func dropEmptyItems(parts []ListPart) []ListPart {
+func dropEmptyItems(parts []ListPart, check func(int)) []ListPart {
 	out := parts[:0:0]
-	for _, p := range parts {
+	for i, p := range parts {
+		check(i)
 		switch {
 		case p.Kind == ListElement && p.Value == "":
 		case p.Kind == ListLiteral && len(out) > 0 && out[len(out)-1].Kind == ListLiteral:
@@ -272,7 +280,7 @@ func dropEmptyItems(parts []ListPart) []ListPart {
 	return out
 }
 
-func (f *ListFormat) formatToParts(items []string) []ListPart {
+func (f *ListFormat) formatToParts(items []string, check func(int)) []ListPart {
 	switch len(items) {
 	case 0:
 		return nil
@@ -284,17 +292,22 @@ func (f *ListFormat) formatToParts(items []string) []ListPart {
 			[]ListPart{{ListElement, items[1]}})
 	}
 
-	if parts, ok := f.formatInOrder(items); ok {
+	if parts, ok := f.formatInOrderCheck(items, check); ok {
 		return parts
 	}
-	return f.formatFolding(items)
+	return f.formatFoldingCheck(items, check)
 }
 
 // formatFolding is FormatToParts as the patterns say it, each item folded in
 // with the parts so far, which serves for any pattern.
 func (f *ListFormat) formatFolding(items []string) []ListPart {
+	return f.formatFoldingCheck(items, func(int) {})
+}
+
+func (f *ListFormat) formatFoldingCheck(items []string, check func(int)) []ListPart {
 	parts := []ListPart{{ListElement, items[len(items)-1]}}
 	for i := len(items) - 2; i >= 1; i-- {
+		check(i)
 		p := f.patterns.Middle
 		if i == len(items)-2 {
 			p = f.end(items[len(items)-1])
@@ -311,6 +324,10 @@ func (f *ListFormat) formatFolding(items []string) []ListPart {
 // they put after goes at the end, innermost first. Folding each item into
 // the parts so far copied them for every item.
 func (f *ListFormat) formatInOrder(items []string) ([]ListPart, bool) {
+	return f.formatInOrderCheck(items, func(int) {})
+}
+
+func (f *ListFormat) formatInOrderCheck(items []string, check func(int)) ([]ListPart, bool) {
 	start, ok1 := splitListPattern(f.patterns.Start)
 	middle, ok2 := splitListPattern(f.patterns.Middle)
 	end, ok3 := splitListPattern(f.end(items[len(items)-1]))
@@ -325,6 +342,7 @@ func (f *ListFormat) formatInOrder(items []string) ([]ListPart, bool) {
 	}
 	var after []string
 	for i, item := range items[:len(items)-1] {
+		check(i)
 		p := middle
 		switch i {
 		case 0:

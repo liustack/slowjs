@@ -83,6 +83,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A place a result reaches twice is one reference | Unreleased | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
 | A result that contains itself is an error | Unreleased | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
 | The references of a result are taken before code of the program runs | Unreleased | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
+| NewArray stops at the limits of the call | Unreleased | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
 
 ## Limits that hold
 
@@ -109,6 +110,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A class of a regexp reads the interrupt flag however many characters or strings it has | v0.30.1 | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
 | The bytecode calls convert their result inside the eval timeout | Unreleased | [uncatchable.md](uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout) |
 | An uncatchable exception met while an exception is read ends the call | Unreleased | [uncatchable.md](uncatchable.md#an-uncatchable-exception-met-while-an-exception-is-read-ends-the-call) |
+| A string argument Intl cannot read ends the call | Unreleased | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
+| Intl reads the interrupt flag in loops over a long list | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
+| The functions of fmt end the call when their output does not fit | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
 
 ## Errors and stacks
 
@@ -134,6 +138,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Temporal durations use DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
 | The engine reads Go's clocks | v0.27.0 | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
 | One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
+| Intl.Segmenter finds segments as they are read | Unreleased | [time-and-intl.md](time-and-intl.md#intlsegmenter-finds-segments-as-they-are-read) |
+| The caches of Temporal formats keep short requests only | Unreleased | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
+| Number options are checked before they are rounded down | Unreleased | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
+| A long locale tag resolves in time linear in its length | Unreleased | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
 
 ## Temporal
 

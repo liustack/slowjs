@@ -73,7 +73,7 @@ func resolveDurationFormat(req request) (*durationFormat, error) {
 
 		opts.NumberingSystem = s
 	}
-	loc, err := goResolve(gointl.ServiceDurationFormat, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceDurationFormat, req.Locales)
 	if err != nil {
 		return nil, err
 	}

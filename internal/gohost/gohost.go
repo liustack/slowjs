@@ -633,21 +633,9 @@ func Poll(sp uintptr) {
 	if v.counter != 0 {
 		*(*int64)(addr(v.counter)) = v.interval
 	}
-	// t is when the engine was asked to stop, plus 1: at Interrupt or at
-	// the deadline, whichever came first, so that an Interrupt after the
-	// deadline does not move the grace on.
-	t := v.interrupt.Load()
-	if v.deadline != 0 && (t == 0 || t-1 > v.deadline) {
-		if int64(time.Since(start)) >= v.deadline {
-			v.interrupt.CompareAndSwap(0, v.deadline+1)
-			t = v.deadline + 1
-		}
-	}
+	t := v.stopAt()
 	if t == 0 {
 		return
-	}
-	if v.flag != 0 {
-		*(*int32)(addr(v.flag)) = 1
 	}
 	v.seen++
 	if v.script && v.grace >= 0 && v.seen > KillPolls && time.Since(start)-time.Duration(t-1) >= v.grace {
@@ -656,6 +644,33 @@ func Poll(sp uintptr) {
 		panic(ErrKilled)
 	}
 }
+
+// stopAt returns when the engine was asked to stop, plus 1: at Interrupt or
+// at the deadline, whichever came first, so that an Interrupt after the
+// deadline does not move the grace on. It is 0 when nothing asked yet. Once
+// something asked, it sets the engine's interrupt flag, which the engine
+// throws "interrupted" on where it can.
+func (v *VM) stopAt() int64 {
+	t := v.interrupt.Load()
+	if v.deadline != 0 && (t == 0 || t-1 > v.deadline) {
+		if int64(time.Since(start)) >= v.deadline {
+			v.interrupt.CompareAndSwap(0, v.deadline+1)
+			t = v.deadline + 1
+		}
+	}
+	if t != 0 && v.flag != 0 {
+		*(*int32)(addr(v.flag)) = 1
+	}
+	return t
+}
+
+// Stopping reports what the next poll would find: whether Interrupt asked
+// the engine to stop, or the deadline of EnterScript passed, since the
+// outermost entry began. Then it sets the engine's interrupt flag, as Poll
+// does. It is for Go code that the engine called and that works long, which
+// no poll interrupts: such code calls it every so often and returns once it
+// is true. It never kills, and does not count as a poll.
+func (v *VM) Stopping() bool { return v.stopAt() != 0 }
 
 // Call is host_call. A magic of 0 or more names a function of the host:
 // none is registered yet. Below 0 are the requests of the engine itself.

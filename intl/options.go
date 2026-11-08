@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
+
+	"github.com/liustack/quickjs"
 )
 
 // part is one element of an Intl formatToParts result.
@@ -20,6 +22,9 @@ type part struct {
 type request struct {
 	Locales []string       `json:"locales"`
 	Options map[string]any `json:"options"`
+	// vm is the VM whose Builtin resolves the request, which a long list of
+	// locales stops at its eval timeout (see goLocales).
+	vm *quickjs.VM
 }
 
 // jsError is an error that crosses into javascript as a particular error type.
@@ -61,8 +66,9 @@ func optString(o map[string]any, key string, allowed ...string) (string, error) 
 	return "", rangeError("value %s out of range for Intl options property %s", s, key)
 }
 
-// optInt returns the integer valued option key and whether it was present. The
-// value must be within [min, max].
+// optInt returns the integer valued option key and whether it was present:
+// ECMA-402's DefaultNumberOption, which checks that the value is within
+// [min, max] before it floors it, so that 3.9 is out of [0, 3].
 func optInt(o map[string]any, key string, min, max int) (int, bool, error) {
 	v, ok := o[key]
 	if !ok {
@@ -74,12 +80,11 @@ func optInt(o map[string]any, key string, min, max int) (int, bool, error) {
 		return 0, false, rangeError("value %v out of range for Intl options property %s", v, key)
 	}
 
-	n := int(math.Floor(f))
-	if n < min || n > max {
+	if f < float64(min) || f > float64(max) {
 		return 0, false, rangeError("value %v out of range for Intl options property %s", v, key)
 	}
 
-	return n, true, nil
+	return int(math.Floor(f)), true, nil
 }
 
 // optBool returns the boolean valued option key and whether it was present.

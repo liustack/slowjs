@@ -242,3 +242,45 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 最终的 profile 把数字剩下的分配挪到了取决于值的分组和组装上。日期分配的是它的输出、空格替换和数字字段。这些共享的舍入和字段例程仍然同时服务字符串和 parts。[页面测量](../history.zh-CN.md#intl-格式化) 并不能证明整页变快了。
 
 测试：`TestFormatStringMatchesParts`、`TestQJSCachedSource`、`TestQJSDataCacheBound`、现有的 Chromium 语料、并发注册表测试、篡改和链接测试。`BenchmarkFormat` 用上面的输入覆盖构造、格式化和不带缓存的 resolve。上游的改动保留在 `qjs.patch` 里。更新 go-intl 之后，从那个补丁重建它，检查源的隔离和并发使用，对比每个记录下来的答案，并重复针对性的测量。
+
+## Intl.Segmenter 边读边找分段
+
+发布版本：Unreleased。
+
+Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。这些内存不算在 VM 的内存上限里，VM 留着的每个迭代器带着的文本（见下文）也不算，而且前面很远处的一个断点（比如一长段要用词典切分的文本之后的断点）是在不检查 VM 的情况下找出来的。
+
+第一批是 64 个断点，之后每批和前面所有批加起来一样长，最多 65,536 个，所以读完所有分段只要很少几次调用。每批的活每 256 个断点检查一次 VM（见 [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。go-intl 的 `breaker.go` 通过 `qjs.patch` 改成一次找一个边界，`qjs_segments.go` 把它们作为 `Segmenter.Iter` 提供出来。
+
+每一批从上一批停下的地方接着找，用的是同一个断点迭代器。go-intl 找到的断点取决于它的迭代器之前看到过什么（词典切分的那些片段，它找到的断词引擎），所以只有一个迭代器从头找到尾，结果才和整段走一遍相同。因此 VM 保留最近读过的 4 个 Segments 对象的迭代器，每个带着它的 UTF-16 文本，直到 VM 关闭。迭代器被丢掉的 Segments 对象会从文本开头重新建一个，并走过它已经有的断点：出来的断点一样，只是多花些时间。每个分段都和原来一样，不管是通过迭代器，还是在任何位置调用 `containing`。
+
+读完 1 MiB 混合文本的每个词要 1.38 秒，和原来一样，Go 里分配 35 MiB，原来是 88 MiB。把一段短文本的每个词读 10,000 遍要 315 ms，原来是 311 ms（在 GCP 的 0 和 4 号核上各跑一次）。
+
+测试：`intl/segmenter_test.go` 里的 `TestSegmentsInBatches` 在 10 万个码元、几种文字、带孤立代理项的文本上，对六种 locale 和粒度，把迭代器、在新的 Segments 对象上和在同一个对象上调用 `containing`、以及轮流读比 VM 保留的迭代器更多的 Segments 对象，都和 go-intl 整段走一遍的结果比较。`TestSegmentsMemory` 检查 8 MiB 文本的头几个分段在 Go 里用不到 64 MiB。
+
+## Temporal 格式的缓存只保留短请求
+
+发布版本：Unreleased。
+
+`toLocaleString` 和 `DateTimeFormat.prototype.format` 为 Temporal 值造的格式由进程里所有 VM 共用，它们会把页面要求的东西不管多长都留下来，VM 关闭之后也还在。`toLocaleString` 的缓存最多存 512 个格式，但每个都带着页面给的原样请求，失败的也一样：一个 1 MiB 长、根本不是历法的历法选项，会和它的错误一起留下。格式化器的注册表最多留 1,024 个格式化器，每个都带着它的解析后选项，而 Temporal 日期格式的解析后选项里装着整个请求。在 GCP 上，做过这类调用后关闭的 40 个 VM，失败的历法留下了 81 MiB，用 10,000 个 locale 的列表对 Temporal 值调用 `DateTimeFormat.format` 留下了 11 MiB。
+
+现在 `toLocaleString` 的缓存只在请求不超过 512 字节（和注册表一样）并且解析成功时才保留格式：错误每次调用都重新造，因为它可能带着页面传进来的东西。所以这个缓存里的请求最多占 256 KiB。Temporal 的日期格式不再保留请求本身，改为保留它的 SHA-256（十六进制 64 字节），这仍然能区分那些只有请求才能区分开的格式。不超过 512 字节的请求（页面造的就是这种）照旧缓存，所以常见调用花的时间不变。关闭的 40 个 VM 现在留下的不到 1 MiB。
+
+测试：`temporal/limits_test.go` 里的 `TestFormatCachesAfterClose`（1 MiB 的失败历法，以及对 10,000 个 locale 的列表调用 `DateTimeFormat.format` 和 `toLocaleString`，每种都在调用后关闭的 40 个 VM 里做）。
+
+## 数字选项先检查范围再向下取整
+
+发布版本：Unreleased。
+
+`fractionalSecondDigits`、`minimumIntegerDigits`、`maximumFractionDigits`、`roundingIncrement` 这类数字选项，现在像 ECMA-402 的 DefaultNumberOption 那样，先检查是否在范围内再向下取整，所以刚超出范围上端的值是 RangeError，和 Chromium 一样。原来 `fractionalSecondDigits: 3.9` 和 `minimumIntegerDigits: 21.9` 先被向下取整成 3 和 21，然后被接受。范围内的值照旧向下取整：`fractionalSecondDigits: 1.5` 是 1。
+
+测试：`intl/options_test.go` 里的 `TestNumberOptionRange`（DateTimeFormat、NumberFormat 和 PluralRules 的 20 个选项，取在范围两端，答案来自 Node 24）。
+
+## 长的 locale 标签按长度的线性时间解析
+
+Release: Unreleased.
+
+Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标签长度成正比的时间解析一个长的 locale 标签。ECMA-402 的 BestAvailableLocale 每次从标签末尾去掉一个子标签，直到某个服务支持剩下的部分，而 go-intl 对去掉后的每一段都查一次，每次都把它复制进查找用的键里，所用时间随标签长度的平方增长。合法的标签可以很长，因为私用部分可以带任意多个子标签：`new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")` 是一个 1 MiB 的标签，在 M 系列 Mac 上要 6.8 秒，4 MiB 的要 58 秒，都在 Go 里，而且不检查中断标志。
+
+现在 go-intl 的 `negotiate.go` 通过 `qjs.patch` 记下每个服务列表里最长标签的长度，比它长的部分不再查找，因为没有服务支持这么长的标签。去掉子标签的方式和原来一样，所以每个答案都不变。上面两个标签现在分别要 33 和 55 ms，也就是把它们变成规范形式的时间。页面传的那种标签比每个上限都短，查找方式和原来一样。
+
+测试：`intl/limits_test.go` 里的 `TestLongTagResolves`（在一个带 64Ki 个子标签的私用标签上测构造函数和 `supportedLocalesOf`，原来每个都要一秒以上）。

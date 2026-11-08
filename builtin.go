@@ -325,16 +325,24 @@ func (v Value) jsValue() jsValue {
 // VMs on several goroutines calling Builtins do not wait for each other.
 var vms idtable.Table[VM]
 
+// newArrayStep is how many elements NewArray adds between two reads of
+// whether the call is to stop: a millisecond or so of its work.
+const newArrayStep = 1 << 14
+
 // NewArray returns a new array of vals, made as an array literal makes one:
 // its elements are own properties, which no setter a page put on
 // Array.prototype sees. It borrows vals, as [VM.SetPropertyValue] and
 // [Value.Call] do: the caller still owns them. The zero Value is undefined.
 // A Value of another VM, a number too, is an error, as it is for a
-// [Builtin] to return one.
+// [Builtin] to return one. In a Builtin, a long array ends at Interrupt,
+// the eval timeout or an uncatchable error of the call, with that error,
+// as a loop of the engine does.
 func (m *VM) NewArray(vals ...Value) (Value, error) {
 	if err := m.usable(); err != nil {
 		return Value{}, err
 	}
+	// A read of a field for each value, which needs no stop: about 1 ns an
+	// element, 2 to 8 ms for 4 Mi on an M-series Mac.
 	for _, v := range vals {
 		if m.foreign(v) {
 			return Value{}, errForeignValue
@@ -346,7 +354,15 @@ func (m *VM) NewArray(vals ...Value) (Value, error) {
 		return Value{}, m.errFromException()
 	}
 
+	// The engine adds an element in about 50 ns, and reads no interrupt flag
+	// while it does: a long array in a call into javascript reads whether
+	// the call is to stop every newArrayStep elements.
+	steps := len(vals) >= newArrayStep && m.host > 0
 	for i, v := range vals {
+		if steps && i&(newArrayStep-1) == newArrayStep-1 && m.goStop() {
+			m.jsFreeValue(a)
+			return Value{}, m.errFromException()
+		}
 		// JS_DefinePropertyValueUint32 takes the copy, also when it fails.
 		e := dupValue(v.jsValue())
 		if m.jsDefinePropertyValueUint32(a, uint32(i), e, propCWE|propThrow) < 0 {

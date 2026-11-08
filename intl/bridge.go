@@ -15,6 +15,7 @@ import (
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // The bridge between intl.js and the formatters.
@@ -43,8 +44,9 @@ import (
 //     (see the note on numberFormatCtor for how the checks differ),
 //     and its entry in ctors. resolveBuiltin(c) is its constructor's
 //     Builtin.
-//  3. Builtins for its methods, appended to bridge. Each takes the id first
-//     and starts with formatterOf, returning undefined when that says the
+//  3. Builtins for its methods, appended to bridge, made with
+//     intlhook.NewBuiltin. Each takes the id first and starts with
+//     formatterOf, returning undefined when that says the
 //     registry dropped the formatter. Errors are jsErr(err): a rangeError or
 //     a typeError is thrown as that javascript error.
 //  4. In intl.js, a parameter for each new Builtin, in bridge order, and the
@@ -87,9 +89,11 @@ import (
 //     gointl.Service in goSvc, which supportedLocalesOf answers from too, and
 //     resolve makes the go-intl object, so init has nothing left to do.
 //     resolvedOptions is the go-intl object's, in the json fields.
-//   - Strings from javascript are Args.String, with U+FFFD for each lone
-//     surrogate, or Args.WTF8 where a lone surrogate must stay itself, as it
-//     does in Collator.compare.
+//   - Strings from javascript are intlhook.String, with U+FFFD for each lone
+//     surrogate, or intlhook.WTF8 where a lone surrogate must stay itself, as
+//     it does in Collator.compare: never Args.String or Args.WTF8 directly,
+//     whose failure, for want of memory, has to end the Builtin (see
+//     internal/intlhook/args.go).
 //   - The default locale and time zone come from the request, as _zone,
 //     the zone Register hands intl.js, does for DateTimeFormat, never from
 //     gointl.HostLocale or gointl.HostTimeZone, which read the machine the
@@ -297,7 +301,13 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 	b = append(b, c.tag)
 	n := len(c.fixed) + 2 + len(c.options)
 	for i := range n {
-		if s, ok := a.String(i); ok {
+		// Most options are undefined, found first with one check.
+		if a.Value(i).IsUndefined() {
+			b = append(b, 'u')
+			continue
+		}
+
+		if s, ok := intlhook.String(a, i); ok {
 			b = append(b, 's')
 			b = strconv.AppendInt(b, int64(len(s)), 10)
 			b = append(b, ':')
@@ -314,11 +324,7 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 
 		switch v, ok := a.Bool(i); {
 		case !ok:
-			if !a.Value(i).IsUndefined() {
-				return nil, errors.New("intl: internal error: an argument of " + c.name + " has the wrong type")
-			}
-
-			b = append(b, 'u')
+			return nil, errors.New("intl: internal error: an argument of " + c.name + " has the wrong type")
 		case v:
 			b = append(b, 't')
 		default:
@@ -330,16 +336,16 @@ func (c *ctor) key(b []byte, a quickjs.Args) ([]byte, error) {
 
 // request returns the request the arguments a make.
 func (c *ctor) request(a quickjs.Args) (request, error) {
-	req := request{Options: map[string]any{}}
+	req := request{Options: map[string]any{}, vm: a.VM()}
 	for i, name := range c.fixed {
-		s, _ := a.String(i)
+		s, _ := intlhook.String(a, i)
 		req.Options[name] = s
 	}
 	n := len(c.fixed)
-	if s, ok := a.String(n); ok {
+	if s, ok := intlhook.String(a, n); ok {
 		req.Locales = []string{s}
-	} else if s, ok := a.String(n + 1); ok {
-		l, ok := splitLocales(s)
+	} else if s, ok := intlhook.String(a, n+1); ok {
+		l, ok := splitLocales(a.VM(), s)
 		if !ok {
 			return request{}, errors.New("intl: internal error: a malformed locale list")
 		}
@@ -351,7 +357,7 @@ func (c *ctor) request(a quickjs.Args) (request, error) {
 		j := n + i
 		switch o.kind {
 		case 's':
-			if s, ok := a.String(j); ok {
+			if s, ok := intlhook.String(a, j); ok {
 				req.Options[o.name] = s
 			}
 		case 'n':
@@ -365,7 +371,7 @@ func (c *ctor) request(a quickjs.Args) (request, error) {
 		case 'g':
 			if v, ok := a.Bool(j); ok {
 				req.Options[o.name] = v
-			} else if s, ok := a.String(j); ok {
+			} else if s, ok := intlhook.String(a, j); ok {
 				req.Options[o.name] = s
 			}
 		}
@@ -375,10 +381,12 @@ func (c *ctor) request(a quickjs.Args) (request, error) {
 
 // splitLocales parses the list of tags javascript passes as one string: each
 // tag preceded by its length, in UTF-16 code units as javascript counts them,
-// and a colon, "5:en-US2:de".
-func splitLocales(s string) ([]string, bool) {
+// and a colon, "5:en-US2:de". A long list stops at the eval timeout of vm
+// (see checkTurn).
+func splitLocales(vm *quickjs.VM, s string) ([]string, bool) {
 	r := []string{}
 	for s != "" {
+		checkTurn(vm, len(r))
 		i := 0
 		n := 0
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -400,6 +408,11 @@ func splitLocales(s string) ([]string, bool) {
 				return nil, false
 			}
 
+			if s[j] < utf8.RuneSelf {
+				j++
+				n--
+				continue
+			}
 			c, size := utf8.DecodeRuneInString(s[j:])
 			j += size
 			n -= utf16.RuneLen(c)
@@ -417,7 +430,7 @@ func splitLocales(s string) ([]string, bool) {
 // resolveBuiltin returns the Builtin resolving the arguments of a new c into
 // the id of its formatter.
 func resolveBuiltin(c *ctor) *quickjs.Builtin {
-	return quickjs.NewBuiltin(c.name, 0, func(a quickjs.Args) (quickjs.Value, error) {
+	return intlhook.NewBuiltin(c.name, 0, func(a quickjs.Args) (quickjs.Value, error) {
 		var buf [256]byte
 		key, err := c.key(buf[:0], a)
 		if err != nil {
@@ -474,7 +487,7 @@ func numberArg(a quickjs.Args, i int) any {
 		return f
 	}
 
-	if s, ok := a.String(i); ok {
+	if s, ok := intlhook.String(a, i); ok {
 		return s
 	}
 
@@ -484,21 +497,21 @@ func numberArg(a quickjs.Args, i int) any {
 // The Builtins intl.js is made with, in the order of its parameters.
 var bridge = []*quickjs.Builtin{
 	resolveBuiltin(numberFormatCtor),
-	quickjs.NewBuiltin("format", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("format", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		return numberFormatted(a, false)
 	}),
-	quickjs.NewBuiltin("formatToParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("formatToParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		return numberFormatted(a, true)
 	}),
 	resolveBuiltin(dateTimeFormatCtor),
-	quickjs.NewBuiltin("format", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("format", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		return dateFormatted(a, false)
 	}),
-	quickjs.NewBuiltin("formatToParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("formatToParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		return dateFormatted(a, true)
 	}),
 	resolveBuiltin(pluralRulesCtor),
-	quickjs.NewBuiltin("select", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("select", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
@@ -506,7 +519,7 @@ var bridge = []*quickjs.Builtin{
 
 		return a.VM().NewString(p.selectNumber(numberArg(a, 1)))
 	}),
-	quickjs.NewBuiltin("selectRange", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("selectRange", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		p, ok, err := formatterOf[*pluralFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
@@ -514,7 +527,7 @@ var bridge = []*quickjs.Builtin{
 
 		return a.VM().NewString(p.selectRange(numberArg(a, 1), numberArg(a, 2)))
 	}),
-	quickjs.NewBuiltin("resolvedOptions", 1, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("resolvedOptions", 1, func(a quickjs.Args) (quickjs.Value, error) {
 		id, _ := a.Number(0)
 		e := formatters.entry(id)
 		if e == nil {
@@ -523,27 +536,31 @@ var bridge = []*quickjs.Builtin{
 
 		return a.VM().NewString(e.options)
 	}),
-	quickjs.NewBuiltin("getCanonicalLocales", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("getCanonicalLocales", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		tags, err := localesArg(a, 0)
 		if err != nil {
 			return quickjs.Value{}, err
 		}
 
+		// Each canonical tag once, in the order of its first time.
 		r := []string{}
-		for _, tag := range tags {
+		seen := make(map[string]bool, len(tags))
+		for i, tag := range tags {
+			checkTurn(a.VM(), i)
 			s, err := canonicalLocale(tag)
 			if err != nil {
 				return quickjs.Value{}, jsErr(err)
 			}
 
-			if !contains(r, s) {
+			if !seen[s] {
+				seen[s] = true
 				r = append(r, s)
 			}
 		}
 		return stringArray(a.VM(), r)
 	}),
-	quickjs.NewBuiltin("supportedLocalesOf", 3, func(a quickjs.Args) (quickjs.Value, error) {
-		name, _ := a.String(0)
+	intlhook.NewBuiltin("supportedLocalesOf", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		name, _ := intlhook.String(a, 0)
 		var c *ctor
 		for _, v := range ctors {
 			if v.name == name {
@@ -559,7 +576,7 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.Value{}, err
 		}
 
-		r, err := goSupported(c.goSvc, tags)
+		r, err := goSupported(a.VM(), c.goSvc, tags)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
@@ -567,7 +584,7 @@ var bridge = []*quickjs.Builtin{
 		return stringArray(a.VM(), r)
 	}),
 	resolveBuiltin(collatorCtor),
-	quickjs.NewBuiltin("compare", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("compare", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		c, ok, err := formatterOf[*collator](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
@@ -575,32 +592,24 @@ var bridge = []*quickjs.Builtin{
 
 		// go-intl weighs a lone surrogate by its code point, as ICU does, so
 		// the strings keep theirs.
-		x, _ := a.WTF8(1)
-		y, _ := a.WTF8(2)
+		x, _ := intlhook.WTF8(a, 1)
+		y, _ := intlhook.WTF8(a, 2)
 		return a.VM().NewInt(c.c.Compare(x, y)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
-	quickjs.NewBuiltin("breaks", 2, func(a quickjs.Args) (quickjs.Value, error) {
-		s, ok, err := formatterOf[*segmenter](a)
-		if !ok {
-			return quickjs.UndefinedValue, err
-		}
-
-		text, _ := a.WTF8(1)
-		return intArray(a.VM(), s.breaks(text))
-	}),
+	segBreaks,
 	resolveBuiltin(relativeTimeFormatCtor),
 	// rtfFormat and rtfParts take the value, a number, and the unit, a
 	// string. The parts are their type, value and unit in turn, the unit
 	// empty for the text around the number.
-	quickjs.NewBuiltin("rtfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("rtfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
-		u, _ := a.String(2)
+		u, _ := intlhook.String(a, 2)
 		unit, err := f.unit(v, u)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
@@ -608,14 +617,14 @@ var bridge = []*quickjs.Builtin{
 
 		return a.VM().NewString(f.f.Format(v, unit))
 	}),
-	quickjs.NewBuiltin("rtfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("rtfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		f, ok, err := formatterOf[*relativeTimeFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
 		v, _ := a.Number(1)
-		u, _ := a.String(2)
+		u, _ := intlhook.String(a, 2)
 		unit, err := f.unit(v, u)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
@@ -631,29 +640,31 @@ var bridge = []*quickjs.Builtin{
 	resolveBuiltin(listFormatCtor),
 	// lfParts takes the items as listItems reads them and answers as
 	// listParts writes them.
-	quickjs.NewBuiltin("lfParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("lfParts", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		f, ok, err := formatterOf[*listFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
-		s, _ := a.WTF8(1)
-		items, ok := listItems(s)
+		s, _ := intlhook.WTF8(a, 1)
+		items, ok := listItems(a.VM(), s)
 		if !ok {
 			return quickjs.Value{}, typeError("malformed list")
 		}
 
-		return listParts(a.VM(), items, f.f.FormatToParts(items))
+		vm := a.VM()
+		parts := f.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) })
+		return listParts(vm, items, parts)
 	}),
 	resolveBuiltin(displayNamesCtor),
 	// dnOf answers the name, or the number 0 for none.
-	quickjs.NewBuiltin("dnOf", 2, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("dnOf", 2, func(a quickjs.Args) (quickjs.Value, error) {
 		d, ok, err := formatterOf[*displayNames](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
-		code, _ := a.String(1)
+		code, _ := intlhook.String(a, 1)
 		name, ok, err := d.of(code)
 		switch {
 		case err != nil:
@@ -668,13 +679,13 @@ var bridge = []*quickjs.Builtin{
 	// string, and true for fields. The parts are their type, value and
 	// unit in turn, the unit empty for the list's own text.
 	durationFormatBuiltin,
-	quickjs.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
+	intlhook.NewBuiltin("dfParts", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		f, ok, err := formatterOf[*durationFormat](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
-		s, _ := a.WTF8(1)
+		s, _ := intlhook.WTF8(a, 1)
 		fields, _ := a.Bool(2)
 		d, err := durationOf(s, fields)
 		if err != nil {
@@ -693,8 +704,8 @@ var bridge = []*quickjs.Builtin{
 		return stringArray(a.VM(), l)
 	}),
 	// supportedValuesOf answers a new array of the list of the key.
-	quickjs.NewBuiltin("supportedValuesOf", 1, func(a quickjs.Args) (quickjs.Value, error) {
-		key, _ := a.String(0)
+	intlhook.NewBuiltin("supportedValuesOf", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		key, _ := intlhook.String(a, 0)
 		values, err := supportedValues()
 		if err != nil {
 			return quickjs.Value{}, err
@@ -709,9 +720,9 @@ var bridge = []*quickjs.Builtin{
 	}),
 	// localeCheck throws the RangeError of Intl.Locale for its tag or one of
 	// the options checkLocale checks.
-	quickjs.NewBuiltin("localeCheck", 2, func(a quickjs.Args) (quickjs.Value, error) {
-		kind, _ := a.String(0)
-		s, _ := a.String(1)
+	intlhook.NewBuiltin("localeCheck", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		kind, _ := intlhook.String(a, 0)
+		s, _ := intlhook.String(a, 1)
 		if err := checkLocale(kind, s); err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
@@ -720,11 +731,11 @@ var bridge = []*quickjs.Builtin{
 	}),
 	// localeNew takes the tag and the options of Intl.Locale, each a string
 	// or undefined, and answers the json of the new Locale's slots.
-	quickjs.NewBuiltin("localeNew", 1+locOptions, func(a quickjs.Args) (quickjs.Value, error) {
-		tag, _ := a.String(0)
+	intlhook.NewBuiltin("localeNew", 1+locOptions, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := intlhook.String(a, 0)
 		var opts [locOptions]*string
 		for i := range opts {
-			if s, ok := a.String(1 + i); ok {
+			if s, ok := intlhook.String(a, 1+i); ok {
 				opts[i] = &s
 			}
 		}
@@ -743,15 +754,15 @@ var bridge = []*quickjs.Builtin{
 	// localeInfo answers what the method of Intl.Locale named by its second
 	// argument answers for the tag of a Locale, its first: maximize and
 	// minimize the tag of the Locale to make.
-	quickjs.NewBuiltin("localeInfo", 2, func(a quickjs.Args) (quickjs.Value, error) {
-		tag, _ := a.String(0)
-		what, _ := a.String(1)
+	intlhook.NewBuiltin("localeInfo", 2, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := intlhook.String(a, 0)
+		what, _ := intlhook.String(a, 1)
 		return localeInfo(a.VM(), tag, what)
 	}),
 	// caseLanguage answers the language whose case rules toLocaleUpperCase
 	// and toLocaleLowerCase follow for a tag, or "" for the default ones.
-	quickjs.NewBuiltin("caseLanguage", 1, func(a quickjs.Args) (quickjs.Value, error) {
-		tag, _ := a.String(0)
+	intlhook.NewBuiltin("caseLanguage", 1, func(a quickjs.Args) (quickjs.Value, error) {
+		tag, _ := intlhook.String(a, 0)
 		lang, err := caseLanguage(tag)
 		if err != nil {
 			return quickjs.Value{}, jsErr(err)
@@ -764,9 +775,9 @@ var bridge = []*quickjs.Builtin{
 	// string, for the engine to map the rest: a string, or an array of
 	// strings and the code units of lone surrogates; undefined where they
 	// change nothing.
-	quickjs.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
-		s, _ := a.WTF8(0)
-		lang, _ := a.String(1)
+	intlhook.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
+		s, _ := intlhook.WTF8(a, 0)
+		lang, _ := intlhook.String(a, 1)
 		upper, _ := a.Bool(2)
 		pieces, ok, err := premapCase(s, lang, upper)
 		switch {
@@ -782,24 +793,24 @@ var bridge = []*quickjs.Builtin{
 		return mixedArray(a.VM(), pieces)
 	}),
 	resolveBuiltin(temporalDateFormatCtor),
-	quickjs.NewBuiltin("temporalFormat", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, false) }),
-	quickjs.NewBuiltin("temporalParts", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, false) }),
-	quickjs.NewBuiltin("temporalRange", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, true) }),
-	quickjs.NewBuiltin("temporalRangeParts", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, true) }),
+	intlhook.NewBuiltin("temporalFormat", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, false) }),
+	intlhook.NewBuiltin("temporalParts", 3, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, false) }),
+	intlhook.NewBuiltin("temporalRange", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, false, true) }),
+	intlhook.NewBuiltin("temporalRangeParts", 5, func(a quickjs.Args) (quickjs.Value, error) { return temporalDateFormatted(a, true, true) }),
 }
 
 // localesArg returns the locales arguments i and i+1 of a.
 func localesArg(a quickjs.Args, i int) ([]string, error) {
-	if s, ok := a.String(i); ok {
+	if s, ok := intlhook.String(a, i); ok {
 		return []string{s}, nil
 	}
 
-	s, ok := a.String(i + 1)
+	s, ok := intlhook.String(a, i+1)
 	if !ok {
 		return nil, nil
 	}
 
-	l, ok := splitLocales(s)
+	l, ok := splitLocales(a.VM(), s)
 	if !ok {
 		return nil, errors.New("intl: internal error: a malformed locale list")
 	}
@@ -882,7 +893,11 @@ func stringArray(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 			vals[i].Free()
 		}
 	}
-	for _, s := range l {
+	for i, s := range l {
+		if stopTurn(vm, i) {
+			free()
+			return quickjs.UndefinedValue, nil
+		}
 		v, err := vm.NewString(s)
 		if err != nil {
 			free()
@@ -946,13 +961,13 @@ func jsErr(err error) error {
 	return &quickjs.Error{Name: "Error", Message: err.Error()}
 }
 
-var durationFormatBuiltin = quickjs.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
+var durationFormatBuiltin = intlhook.NewBuiltin("dfFormat", 3, func(a quickjs.Args) (quickjs.Value, error) {
 	f, ok, err := formatterOf[*durationFormat](a)
 	if !ok {
 		return quickjs.UndefinedValue, err
 	}
 
-	s, _ := a.WTF8(1)
+	s, _ := intlhook.WTF8(a, 1)
 	fields, _ := a.Bool(2)
 	d, err := durationOf(s, fields)
 	if err != nil {

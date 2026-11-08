@@ -25,12 +25,17 @@ import (
 // the locales as V8 reads them: "tr" for Turkish and Azeri, "lt", "el", or
 // "" for the default rules. A tag that is not one is a RangeError.
 func caseLanguage(tag string) (string, error) {
-	l, err := goLocales([]string{tag})
+	c, err := goCanonicalizer()
 	if err != nil {
 		return "", err
 	}
 
-	switch lang := l[0].Language.String(); lang {
+	l, err := c.Canonicalize(tag)
+	if err != nil {
+		return "", rangeError("Incorrect locale information provided")
+	}
+
+	switch lang := l.Language.String(); lang {
 	case "tr", "az":
 		return "tr", nil
 	case "lt", "el":

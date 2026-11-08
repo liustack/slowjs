@@ -12,6 +12,7 @@ import (
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // maxInstantSec is how far from the epoch an Instant can be, in seconds:
@@ -51,7 +52,7 @@ var opNames = func() string {
 	return string(b)
 }()
 
-var bridge = quickjs.NewBuiltin("temporal", 0, func(a quickjs.Args) (quickjs.Value, error) {
+var bridge = intlhook.NewBuiltin("temporal", 0, func(a quickjs.Args) (quickjs.Value, error) {
 	n, _ := a.Number(0)
 	i := int(n)
 	if float64(i) != n || i < 0 || i >= len(ops) {

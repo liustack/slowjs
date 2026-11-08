@@ -37,7 +37,7 @@ func resolveRelativeTimeFormat(req request) (*relativeTimeFormat, error) {
 
 		opts.NumberingSystem = s
 	}
-	loc, err := goResolve(gointl.ServiceRelativeTimeFormat, req.Locales)
+	loc, err := goResolve(req.vm, gointl.ServiceRelativeTimeFormat, req.Locales)
 	if err != nil {
 		return nil, err
 	}

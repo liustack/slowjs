@@ -530,3 +530,58 @@ func TestNewArrayValueOfAnotherVM(t *testing.T) {
 		}
 	}
 }
+
+// A Builtin that makes a long array after Interrupt has asked the VM to
+// stop gets the interrupt from NewArray, and no array: NewArray reads the
+// request every 16,384 elements. Made in one pass of the engine, an array
+// of 4 Mi elements took 0.14 to 0.2 seconds on an M-series Mac, past the
+// grace after which a script is killed. Outside a call into javascript,
+// after an interrupted call and after Interrupt while the VM is idle,
+// NewArray makes the whole array.
+func TestNewArrayInterrupted(t *testing.T) {
+	m := newTestVM(t)
+	vals := make([]Value, 4<<20)
+	for i := range vals {
+		vals[i] = m.NewInt(i)
+	}
+	var got Value
+	var gotErr error
+	defineBuiltin(t, m, "long", NewBuiltin("long", 0, func(a Args) (Value, error) {
+		a.VM().Interrupt()
+		got, gotErr = a.VM().NewArray(vals...)
+		return got, gotErr
+	}))
+	_, err := m.Eval(`long(); 1`, EvalGlobal)
+	var e *Error
+	if !errors.As(gotErr, &e) || !e.Uncatchable || !e.Interrupted || got != (Value{}) {
+		t.Fatalf("NewArray after Interrupt: %v, %v, want no array and the interrupt", got, gotErr)
+	}
+	if !errors.As(err, &e) || !e.Interrupted || errors.Is(err, ErrKilled) {
+		t.Fatalf("got %v, want the interrupt", err)
+	}
+	if got, err := m.Eval(`[1, 2].length`, EvalGlobal); err != nil || got != 2 {
+		t.Errorf("after the interrupt: %v, %v", got, err)
+	}
+	for _, idle := range []bool{false, true} {
+		if idle {
+			m.Interrupt()
+		}
+		a, err := m.NewArray(vals...)
+		if err != nil {
+			t.Fatalf("outside a call, idle %v: %v", idle, err)
+		}
+		length, err := m.NewAtom("length")
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, err := a.GetPropertyValue(length)
+		a.Free()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := n.Any(); got != len(vals) {
+			t.Errorf("outside a call, idle %v: length %v", idle, got)
+		}
+		n.Free()
+	}
+}

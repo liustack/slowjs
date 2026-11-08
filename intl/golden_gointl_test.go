@@ -661,7 +661,7 @@ var dnChromiumNamesIn sync.Map
 
 func dnChromiumNamesOf(loc string) *strings.Replacer {
 	var pairs []string
-	l, err := goResolve(gointl.ServiceDisplayNames, []string{loc})
+	l, err := goResolve(nil, gointl.ServiceDisplayNames, []string{loc}) // one tag: no check of a VM
 	if err != nil {
 		return strings.NewReplacer()
 	}

@@ -6,16 +6,23 @@
 package intl
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // The original options, including omitted fields, distinguish Temporal
 // patterns that have the same resolved legacy pattern. Keep them in the
-// registry key so default fields are chosen per type.
+// registry key so default fields are chosen per type. The key holds the
+// SHA-256 of the request's json, not the json: a request has the locales
+// and options as the page gave them, which can be long, as a list of many
+// locales or a calendar option, any type sequence, is, and the registry
+// keeps its keys for as long as the process runs.
 type temporalDateFormat struct {
 	Request string `json:"_request"`
 	f       *temporalFormat
@@ -40,7 +47,8 @@ var temporalDateFormatCtor = &ctor{
 		if err != nil {
 			return nil, err
 		}
-		return &temporalDateFormat{Request: string(key), f: f}, nil
+		sum := sha256.Sum256(key)
+		return &temporalDateFormat{Request: hex.EncodeToString(sum[:]), f: f}, nil
 	},
 }
 
@@ -50,7 +58,7 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.UndefinedValue, err
 	}
 	f := r.f
-	cal, _ := a.String(2)
+	cal, _ := intlhook.String(a, 2)
 	if err := f.checkCalendar(cal); err != nil {
 		return quickjs.Value{}, jsErr(err)
 	}
@@ -60,7 +68,7 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.Value{}, jsErr(err)
 	}
 	if isRange {
-		cal, _ = a.String(4)
+		cal, _ = intlhook.String(a, 4)
 		if err := f.checkCalendar(cal); err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}

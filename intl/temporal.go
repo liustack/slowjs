@@ -113,7 +113,12 @@ var (
 )
 
 // maxTemporalFormats bounds the formats kept: more are dropped all at once,
-// as a page making up options in a loop would otherwise grow the map.
+// as a page making up options in a loop would otherwise grow the map. Only
+// a request whose key is at most maxRequestKey bytes long is kept, as in
+// the registry, so the keys take at most 256 KiB, and only one that
+// resolved: an error is made again on each call, as it may hold what the
+// page passed, at any length. The process keeps what the VMs that made the
+// requests asked for after they are closed, within these bounds.
 const maxTemporalFormats = 512
 
 func copyOptions(o map[string]any) map[string]any {
@@ -137,7 +142,7 @@ func resolveTemporal(k *temporalKind, req request, defaultZone, zone string) *te
 		o["timeZone"] = zone
 		o["_temporalZone"] = true
 	}
-	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o}, defaultZone)
+	main, err := resolveDateTimeFormat(request{Locales: req.Locales, Options: o, vm: req.vm}, defaultZone)
 	if err != nil {
 		return &temporalFormat{err: err}
 	}
@@ -200,15 +205,15 @@ const (
 	tfOptions = tfLocales + 2
 )
 
-var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
-	kindName, _ := a.String(tfKind)
+var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
+	kindName, _ := intlhook.String(a, tfKind)
 	k := temporalKinds[kindName]
 	if k == nil {
 		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
 	}
-	cal, _ := a.String(tfCalendar)
+	cal, _ := intlhook.String(a, tfCalendar)
 	ms, _ := a.Number(tfTime)
-	zone, _ := a.String(tfZone)
+	zone, _ := intlhook.String(a, tfZone)
 	defaultZone := defaultZoneOf(a.VM())
 
 	key := []byte(kindName)
@@ -221,7 +226,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 	for i := tfLocales; i < tfOptions+len(opts); i++ {
 		switch {
 		case !a.Value(i).IsUndefined():
-			if s, ok := a.String(i); ok {
+			if s, ok := intlhook.String(a, i); ok {
 				key = append(key, 's')
 				key = strconv.AppendInt(key, int64(len(s)), 10)
 				key = append(key, ':')
@@ -242,15 +247,18 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 		}
 	}
 
-	temporalFormatsMu.Lock()
-	tf := temporalFormats[string(key)]
-	temporalFormatsMu.Unlock()
+	var tf *temporalFormat
+	if len(key) <= maxRequestKey {
+		temporalFormatsMu.Lock()
+		tf = temporalFormats[string(key)]
+		temporalFormatsMu.Unlock()
+	}
 	if tf == nil {
-		req := request{Options: map[string]any{}}
-		if s, ok := a.String(tfLocales); ok {
+		req := request{Options: map[string]any{}, vm: a.VM()}
+		if s, ok := intlhook.String(a, tfLocales); ok {
 			req.Locales = []string{s}
-		} else if s, ok := a.String(tfLocales + 1); ok {
-			l, ok := splitLocales(s)
+		} else if s, ok := intlhook.String(a, tfLocales+1); ok {
+			l, ok := splitLocales(a.VM(), s)
 			if !ok {
 				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
 			}
@@ -260,7 +268,7 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 			j := tfOptions + i
 			switch o.kind {
 			case 's':
-				if s, ok := a.String(j); ok {
+				if s, ok := intlhook.String(a, j); ok {
 					req.Options[o.name] = s
 				}
 			case 'n':
@@ -275,12 +283,14 @@ var temporalFormatBuiltin = quickjs.NewBuiltin("toLocaleString", 0, func(a quick
 		}
 		req.Options["_required"], req.Options["_defaults"] = k.required, k.defaults
 		tf = resolveTemporal(k, req, defaultZone, zone)
-		temporalFormatsMu.Lock()
-		if len(temporalFormats) >= maxTemporalFormats {
-			temporalFormats = map[string]*temporalFormat{}
+		if tf.err == nil && len(key) <= maxRequestKey {
+			temporalFormatsMu.Lock()
+			if len(temporalFormats) >= maxTemporalFormats {
+				temporalFormats = map[string]*temporalFormat{}
+			}
+			temporalFormats[string(key)] = tf
+			temporalFormatsMu.Unlock()
 		}
-		temporalFormats[string(key)] = tf
-		temporalFormatsMu.Unlock()
 	}
 
 	if err := tf.checkCalendar(cal); err != nil {

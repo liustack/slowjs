@@ -155,13 +155,13 @@ func TestSplitLocales(t *testing.T) {
 		{"2:\U0001F600", []string{"\U0001F600"}},
 		{"1:�3:abc", []string{"�", "abc"}},
 	} {
-		got, ok := splitLocales(test.in)
+		got, ok := splitLocales(nil, test.in)
 		if !ok || fmt.Sprint(got) != fmt.Sprint(test.want) || len(got) != len(test.want) {
 			t.Errorf("%q: got %q, %v, want %q", test.in, got, ok, test.want)
 		}
 	}
 	for _, in := range []string{"5:en", "x", "1", ":", "1:\U0001F600", "99999999999999999999:a"} {
-		if got, ok := splitLocales(in); ok {
+		if got, ok := splitLocales(nil, in); ok {
 			t.Errorf("%q: got %q, want an error", in, got)
 		}
 	}

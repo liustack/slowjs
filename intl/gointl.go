@@ -9,7 +9,10 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/quickjs/internal/vmhook"
 )
 
 // The constructors built on go-intl (internal/gointl) resolve their locales
@@ -54,8 +57,9 @@ func goMatcher(s gointl.Service) (*gointl.LocaleMatcher, error) {
 
 // goLocales is CanonicalizeLocaleList for tags, which javascript has already
 // made strings: each in canonical form, once. A tag that is not one is a
-// RangeError.
-func goLocales(tags []string) ([]gointl.Locale, error) {
+// RangeError. It is for a Builtin of vm, which a long list stops at the
+// eval timeout or Interrupt (see intlhook.Check).
+func goLocales(vm *quickjs.VM, tags []string) ([]gointl.Locale, error) {
 	c, err := goCanonicalizer()
 	if err != nil {
 		return nil, err
@@ -63,7 +67,8 @@ func goLocales(tags []string) ([]gointl.Locale, error) {
 
 	r := make([]gointl.Locale, 0, len(tags))
 	seen := make(map[string]bool, len(tags))
-	for _, tag := range tags {
+	for i, tag := range tags {
+		checkTurn(vm, i)
 		l, err := c.Canonicalize(tag)
 		if err != nil {
 			return nil, rangeError("Incorrect locale information provided")
@@ -80,8 +85,8 @@ func goLocales(tags []string) ([]gointl.Locale, error) {
 // goResolve is ResolveLocale for s as far as the locale: the first of tags
 // s is available in, with its Unicode extension, or else en-US. Both
 // matchers match alike, in V8 as in go-intl.
-func goResolve(s gointl.Service, tags []string) (gointl.Locale, error) {
-	l, err := goLocales(tags)
+func goResolve(vm *quickjs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
+	l, err := goLocales(vm, tags)
 	if err != nil {
 		return gointl.Locale{}, err
 	}
@@ -91,13 +96,20 @@ func goResolve(s gointl.Service, tags []string) (gointl.Locale, error) {
 		return gointl.Locale{}, err
 	}
 
+	// A long list goes checkEvery locales at a time, with a check between.
+	// Supported finds none that s is available in before the part where it
+	// finds one, so resolving from the start of that part resolves the list.
+	for len(l) > checkEvery && len(m.Supported(l[:checkEvery], gointl.BestFit)) == 0 {
+		intlhook.Check(vm)
+		l = l[checkEvery:]
+	}
 	return m.Resolve(l, gointl.BestFit, goDefaultLocale), nil
 }
 
 // goSupported is SupportedLocales for s: those of tags s is available in, in
 // canonical form.
-func goSupported(s gointl.Service, tags []string) ([]string, error) {
-	l, err := goLocales(tags)
+func goSupported(vm *quickjs.VM, s gointl.Service, tags []string) ([]string, error) {
+	l, err := goLocales(vm, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +119,16 @@ func goSupported(s gointl.Service, tags []string) ([]string, error) {
 		return nil, err
 	}
 
+	// Supported takes each locale on its own: a long list goes checkEvery
+	// locales at a time, with a check between.
 	r := []string{}
-	for _, l := range m.Supported(l, gointl.BestFit) {
-		r = append(r, l.String())
+	for i := 0; i < len(l); i += checkEvery {
+		if i > 0 {
+			intlhook.Check(vm)
+		}
+		for _, x := range m.Supported(l[i:min(i+checkEvery, len(l))], gointl.BestFit) {
+			r = append(r, x.String())
+		}
 	}
 	return r, nil
 }
@@ -247,4 +266,24 @@ func (chromiumData) Open(m gointl.Marker, d gointl.DataLocale) ([]byte, error) {
 		}
 	}
 	return gointl.Embedded.Open(m, d)
+}
+
+// checkEvery is how many turns a loop of a Builtin over a list a script
+// passed takes between two calls of intlhook.Check: about a millisecond of
+// work or less, for a canonicalization of a few microseconds.
+const checkEvery = 256
+
+// checkTurn calls intlhook.Check on turn i of such a loop, once every
+// checkEvery turns.
+func checkTurn(vm *quickjs.VM, i int) {
+	if i%checkEvery == checkEvery-1 {
+		intlhook.Check(vm)
+	}
+}
+
+// stopTurn is checkTurn for a loop that has made javascript values, which
+// it frees before it returns when stopTurn is true: then the call is to
+// end, with its error pending, and the Builtin returns at once.
+func stopTurn(vm *quickjs.VM, i int) bool {
+	return i%checkEvery == checkEvery-1 && vmhook.Stop(vm)
 }
