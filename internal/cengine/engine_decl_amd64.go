@@ -648,8 +648,10 @@ func js_async_generator_resolve_or_reject(a0 uintptr, a1 uintptr, a2 uintptr, a3
 func js_async_generator_resume_next(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_async_module_execution_fulfilled(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
 func js_async_module_execution_rejected(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
-func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) float64
-func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64
+func js_atod_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64
+func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
+func js_atof_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_atom_concat_num(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atom_concat_str(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atomics_get_buf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
@@ -674,6 +676,7 @@ func js_bigint_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_bigint_divrem(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_extend(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_float64_cmp(a0 uintptr, a1 uintptr, a2 float64) uintptr
+func js_bigint_from_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_mul(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_neg(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1145,7 +1148,7 @@ func js_string_toLowerCase(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_string_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_toWellFormed(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_to_cstring(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
-func js_string_to_cstring_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
+func js_string_to_cstring_json(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_string_to_number(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_string_trim(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr

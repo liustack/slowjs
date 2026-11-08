@@ -3991,6 +3991,54 @@ static void test_bigint_polls(void)
     host_free_runtime(rt);
 }
 
+/* Turning a string of a million characters into a number or a BigInt reads
+   the interrupt flag every 65536 characters in each loop over them: the
+   conversion to UTF-8, the spaces around the number, the scan of its digits
+   and their copy in js_atof, the digits js_atod reads, the leading zeros of
+   a BigInt, and the digits and spaces of a JSON text, spaces of three bytes
+   of UTF-8 and \r\n among them. Each call reads it at least 12 times, and stopped in the middle it throws "interrupted" and
+   leaves the context good. The strings are flat (a rope is made flat in
+   steps that read the flag on their own). */
+static void test_number_polls(void)
+{
+    static const char setup[] =
+        "function flat(...a) { return a.join('') }\n"
+        "var n = 1 << 20, ones = '1'.repeat(n), zeros = '0'.repeat(n), sp = flat(' '.repeat(n), '1')\n"
+        "var fr = flat('0.', ones), ex = flat('1e', zeros), hx = flat('0x', zeros, '1')\n"
+        "var oc = flat('0', '7'.repeat(n)), bx = flat('0x', zeros, '1n')\n"
+        "var ws = flat('\\u3000'.repeat(n >> 1), '1'), crlf = flat('\\r\\n'.repeat(n >> 1), '1'); 0\n";
+    static const char *const cases[] = {
+        "+ones", "Number(zeros)", "Number(sp)", "Number(fr)", "Number(ex)", "Number(hx)",
+        "isNaN(ones)", "parseInt(ones)", "parseInt(sp, 16)", "parseFloat(fr)",
+        "BigInt(zeros)", "BigInt(sp)", "BigInt(hx)", "1n == zeros", "1n < sp",
+        "JSON.parse(ones)", "JSON.parse(fr)", "JSON.parse(sp)",
+        "(0, eval)(ones)", "(0, eval)(bx)", "(0, eval)(oc)", "Number(ws)", "JSON.parse(crlf)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    CHECK(eval_is(ctx, "[+ones, Number(zeros), Number(sp), Number(fr), Number(ex), Number(hx), parseInt(sp, 16), "
+                  "String(BigInt(zeros)), String(BigInt(sp)), String(BigInt(hx)), 1n == zeros, 1n < sp, "
+                  "JSON.parse(sp), (0, eval)(bx) === 1n, (0, eval)(oc) === Infinity, Number(ws), JSON.parse(crlf)].join()",
+                  "Infinity,0,1,0.1111111111111111,1,1,1,0,1,1,false,false,1,true,true,1,1"), "the results");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4233,6 +4281,7 @@ int main(void)
     test_long_key_polls();
     test_long_ops_polls();
     test_bigint_polls();
+    test_number_polls();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();

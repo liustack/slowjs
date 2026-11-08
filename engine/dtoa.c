@@ -1334,10 +1334,24 @@ static void mpb_mul1_base(mpb_t *r, limb_t radix_base, limb_t a)
     }
 }
 
+/* the count of the characters left before the next reading of *stop (see
+   dtoa.h), with a jump to fail when it is set. With stop NULL, the copy of
+   js_atod1 in js_atod has none of it. */
+#define ATOD_POLL() do {                                         \
+        if (stop && unlikely(--budget == 0)) {                  \
+            budget = JS_ATOD_POLL_STEP;                         \
+            if (poll_flag(stop))                                \
+                goto fail;                                      \
+        }                                                       \
+    } while (0)
+
 /* XXX: add fast path for small integers */
-double js_atod(const char *str, const char **pnext, int radix, int flags,
-               JSATODTempMem *tmp_mem)
+static force_inline double js_atod1(const char *str, const char **pnext,
+                                    int radix, int flags,
+                                    JSATODTempMem *tmp_mem,
+                                    const volatile int *stop)
 {
+    int budget = JS_ATOD_POLL_STEP;
     uint64_t *mptr = tmp_mem->mem;
     const char *p, *p_start;
     limb_t cur_limb, radix_base, extra_digits;
@@ -1384,7 +1398,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
             int i;
             sep = 256;
             for (i = 1; (p[i] >= '0' && p[i] <= '7'); i++)
-                continue;
+                ATOD_POLL();
             if (p[i] == '8' || p[i] == '9')
                 goto no_prefix;
             p += 1;
@@ -1425,6 +1439,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
     dot_pos = -1;
     /* skip leading zeros */
     for(;;) {
+        ATOD_POLL();
         if (*p == '.' && (p > p_start || to_digit(p[1]) < radix) &&
             !(flags & JS_ATOD_INT_ONLY)) {
             if (*p == sep)
@@ -1445,6 +1460,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
     sig_pos = pos;
     for(;;) {
         limb_t c;
+        ATOD_POLL();
         if (*p == '.' && (p > p_start || to_digit(p[1]) < radix) &&
             !(flags & JS_ATOD_INT_ONLY)) {
             if (*p == sep)
@@ -1520,6 +1536,7 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
         expn = c;
         p++;
         for(;;) {
+            ATOD_POLL();
             if (*p == sep && to_digit(p[1]) < 10)
                 p++;
             c = to_digit(*p);
@@ -1601,4 +1618,22 @@ double js_atod(const char *str, const char **pnext, int radix, int flags,
  fail:
     dval = NAN;
     goto done1;
+}
+#undef ATOD_POLL
+
+/* the copy of js_atod1 with the reads of *stop, for a long string */
+static no_inline double js_atod_poll(const char *str, const char **pnext,
+                                     int radix, int flags,
+                                     JSATODTempMem *tmp_mem,
+                                     const volatile int *stop)
+{
+    return js_atod1(str, pnext, radix, flags, tmp_mem, stop);
+}
+
+double js_atod(const char *str, const char **pnext, int radix, int flags,
+               JSATODTempMem *tmp_mem, const volatile int *stop)
+{
+    if (unlikely(stop != NULL))
+        return js_atod_poll(str, pnext, radix, flags, tmp_mem, stop);
+    return js_atod1(str, pnext, radix, flags, tmp_mem, NULL);
 }

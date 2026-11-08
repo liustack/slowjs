@@ -1516,7 +1516,8 @@ static void test_poll_work_gaps(void)
         { "ba * bb, 0", BIG_STEP, 5001 * 10001 },
         { "ba / bb, 0", BIG_STEP, 5000 * 5001 },
         { "yb.toString(2).length", BIG_STEP, 200000 },
-        { "BigInt(sb2), 0", ROPE_STEP, 200004 + 200000 },
+        /* the rope of sb2 made flat, its conversion to a C string, then the digits */
+        { "BigInt(sb2), 0", ROPE_STEP, 200004 + 200002 + 200000 },
         { "String(xw).length", BIG_STEP, ANY },
         { "BigInt(sd), 0", BIG_STEP, ANY },
     };

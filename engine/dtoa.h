@@ -67,8 +67,15 @@ int js_dtoa_max_len(double d, int radix, int n_digits, int flags);
 /* return the string length */
 int js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
             JSDTOATempMem *tmp_mem);
+/* When stop is not NULL, js_atod reads *stop (poll_flag of cutils.h) every
+   JS_ATOD_POLL_STEP characters its loops go through, and gives NAN as soon
+   as it is set, so that the host can stop the conversion of a string of
+   millions of digits. A caller that gets NAN reads the flag to tell. A
+   caller passes it for a string of JS_ATOD_POLL_STEP characters or more,
+   and NULL for a shorter one, which runs the code without the reads. */
+#define JS_ATOD_POLL_STEP (1 << 16)
 double js_atod(const char *str, const char **pnext, int radix, int flags,
-               JSATODTempMem *tmp_mem);
+               JSATODTempMem *tmp_mem, const volatile int *stop);
 
 #ifdef JS_DTOA_DUMP_STATS
 void js_dtoa_dump_stats(void);

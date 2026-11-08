@@ -647,8 +647,10 @@ func js_async_generator_resolve_or_reject(a0 uintptr, a1 uintptr, a2 uintptr, a3
 func js_async_generator_resume_next(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_async_module_execution_fulfilled_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_async_module_execution_rejected_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
-func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) float64
-func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_atod_block(a0 uintptr, a1 uintptr) float64
+func js_atod_poll_block(a0 uintptr, a1 uintptr) float64
+func js_atof_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func js_atof_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_atom_concat_num(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atom_concat_str(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atomics_get_buf_block(a0 uintptr, a1 uintptr) uintptr
@@ -673,6 +675,7 @@ func js_bigint_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a
 func js_bigint_divrem(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_extend(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_float64_cmp(a0 uintptr, a1 uintptr, a2 float64) uintptr
+func js_bigint_from_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_mul(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_neg(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1143,7 +1146,7 @@ func js_string_toLowerCase_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_string_toString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_toWellFormed(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_to_cstring(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, a5 uintptr) uintptr
-func js_string_to_cstring_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, a5 uintptr) uintptr
+func js_string_to_cstring_json(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr, a5 uintptr) uintptr
 func js_string_to_number(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func js_string_trim_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -2821,6 +2824,51 @@ func js_async_module_execution_rejected(a0 uintptr, a1 uintptr, a2, a3 uintptr, 
 	*(*uintptr)(packedSlot(a0 + 40)) = a6
 	*(*uintptr)(packedSlot(a0 + 48)) = a7
 	return js_async_module_execution_rejected_block(a0+64, a0)
+}
+
+// js_atod stores its arguments in a block at the shadow pointer for
+// js_atod_block (gen.PackedGo).
+func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64 {
+	if (a0+48)&(1<<shadowSizeLog2-1) < 48 {
+		panic("cengine: the block of js_atod ends past the shadow-stack region")
+	}
+	*(*uintptr)(packedSlot(a0 + 0)) = a1
+	*(*uintptr)(packedSlot(a0 + 8)) = a2
+	*(*uintptr)(packedSlot(a0 + 16)) = a3
+	*(*uintptr)(packedSlot(a0 + 24)) = a4
+	*(*uintptr)(packedSlot(a0 + 32)) = a5
+	*(*uintptr)(packedSlot(a0 + 40)) = a6
+	return js_atod_block(a0+48, a0)
+}
+
+// js_atod_poll stores its arguments in a block at the shadow pointer for
+// js_atod_poll_block (gen.PackedGo).
+func js_atod_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64 {
+	if (a0+48)&(1<<shadowSizeLog2-1) < 48 {
+		panic("cengine: the block of js_atod_poll ends past the shadow-stack region")
+	}
+	*(*uintptr)(packedSlot(a0 + 0)) = a1
+	*(*uintptr)(packedSlot(a0 + 8)) = a2
+	*(*uintptr)(packedSlot(a0 + 16)) = a3
+	*(*uintptr)(packedSlot(a0 + 24)) = a4
+	*(*uintptr)(packedSlot(a0 + 32)) = a5
+	*(*uintptr)(packedSlot(a0 + 40)) = a6
+	return js_atod_poll_block(a0+48, a0)
+}
+
+// js_atof stores its arguments in a block at the shadow pointer for
+// js_atof_block (gen.PackedGo).
+func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr) {
+	if (a0+48)&(1<<shadowSizeLog2-1) < 48 {
+		panic("cengine: the block of js_atof ends past the shadow-stack region")
+	}
+	*(*uintptr)(packedSlot(a0 + 0)) = a1
+	*(*uintptr)(packedSlot(a0 + 8)) = a2
+	*(*uintptr)(packedSlot(a0 + 16)) = a3
+	*(*uintptr)(packedSlot(a0 + 24)) = a4
+	*(*uintptr)(packedSlot(a0 + 32)) = a5
+	*(*uintptr)(packedSlot(a0 + 40)) = a6
+	return js_atof_block(a0+48, a0)
 }
 
 // js_atomics_get_buf stores its arguments in a block at the shadow pointer for

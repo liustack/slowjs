@@ -114,6 +114,7 @@ read_when:
 | Intl 在长列表的循环里读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
 | fmt 的函数在输出放不下时结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用) |
 | BigInt 的长运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#bigint-的长运算读中断标志) |
+| 把长字符串转成数字时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#把长字符串转成数字时读中断标志) |
 
 ## 错误和调用栈
 

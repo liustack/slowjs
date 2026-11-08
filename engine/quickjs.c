@@ -1946,6 +1946,16 @@ static BOOL js_front_drain(JSMallocContext *s)
    flag, each string of a rope counted as one more than its length */
 #define JS_ROPE_STEP (1 << 16)
 
+/* A scan of the bytes of a C string whose length it does not know, a
+   number, the spaces around it, reads the interrupt flag where its pointer
+   meets a multiple of JS_ROPE_STEP: js_poll_at(p) for a pointer that moves
+   one byte at a time, js_poll_cross(p, q) for a step from p to q of fewer
+   than JS_ROPE_STEP bytes. A long string has a reading every JS_ROPE_STEP
+   bytes, and a scan keeps no count. */
+#define js_poll_at(p) unlikely(((uintptr_t)(p) & (JS_ROPE_STEP - 1)) == 0)
+#define js_poll_cross(p, q) \
+    unlikely(((uintptr_t)(p) ^ (uintptr_t)(q)) >= JS_ROPE_STEP)
+
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
    would pass. */
@@ -5867,6 +5877,30 @@ static const char *js_string_to_cstring_poll(JSContext *ctx, size_t *plen, JSVal
         val = JS_DupValue(ctx, val1);
     }
     return js_string_to_cstring_json(ctx, plen, val, cesu8);
+}
+
+/* A value as the C string that parseInt, parseFloat and BigInt read: a
+   string of JS_ROPE_STEP characters or more is converted with the reads of
+   the flag (js_string_to_cstring_json), and a shorter one with the
+   conversion of JS_ToCStringLen2, which is faster on a few characters. */
+static const char *js_number_to_cstring(JSContext *ctx, size_t *plen,
+                                        JSValueConst val1)
+{
+    JSValue val;
+
+    if (JS_VALUE_GET_TAG(val1) != JS_TAG_STRING) {
+        val = JS_ToString(ctx, val1);
+        if (JS_IsException(val)) {
+            if (plen)
+                *plen = 0;
+            return NULL;
+        }
+    } else {
+        val = JS_DupValue(ctx, val1);
+    }
+    if (JS_VALUE_GET_STRING(val)->len >= JS_ROPE_STEP)
+        return js_string_to_cstring_json(ctx, plen, val, FALSE);
+    return js_string_to_cstring(ctx, plen, val, FALSE);
 }
 
 /* return (NULL, 0) if exception. */
@@ -15208,7 +15242,11 @@ int JS_ToBool(JSContext *ctx, JSValueConst val)
     return JS_ToBoolFree(ctx, JS_DupValue(ctx, val));
 }
 
-static int skip_spaces(const char *pc)
+/* The length of the spaces at the start of pc, or -1 with "interrupted"
+   thrown: the flag is read every JS_ROPE_STEP bytes (js_poll_at), for a
+   string of millions of spaces around a number
+   (docs/changes/uncatchable.md). */
+static int skip_spaces(JSContext *ctx, const char *pc)
 {
     const uint8_t *p, *p_next, *p_start;
     uint32_t c;
@@ -15220,10 +15258,14 @@ static int skip_spaces(const char *pc)
             if (!((c >= 0x09 && c <= 0x0d) || (c == 0x20)))
                 break;
             p++;
+            if (js_poll_at(p) && js_poll_interrupts(ctx))
+                return -1;
         } else {
             c = unicode_from_utf8(p, UTF8_CHAR_LEN_MAX, &p_next);
             if (!lre_is_space(c))
                 break;
+            if (js_poll_cross(p, p_next) && js_poll_interrupts(ctx))
+                return -1;
             p = p_next;
         }
     }
@@ -16457,10 +16499,11 @@ static const js_limb_t js_pow_dec[JS_LIMB_DIGITS + 1] = {
 #endif
 };
 
-/* syntax: [-]digits in base radix. Return NULL if memory error. radix
-   = 10, 2, 8 or 16. */
+/* syntax: [-]digits in base radix, str_len characters. Return NULL if
+   memory error or interrupted. radix = 10, 2, 8 or 16. */
 static JSBigInt *js_bigint_from_string(JSContext *ctx,
-                                       const char *str, int radix)
+                                       const char *str, size_t str_len,
+                                       int radix)
 {
     const char *p = str;
     size_t n_digits1;
@@ -16474,9 +16517,14 @@ static JSBigInt *js_bigint_from_string(JSContext *ctx,
         is_neg = 1;
         p++;
     }
-    while (*p == '0')
+    /* the leading zeros of a string of millions of them, the flag read
+       every JS_ROPE_STEP */
+    while (*p == '0') {
         p++;
-    n_digits1 = strlen(p);
+        if (js_poll_at(p) && js_poll_interrupts(ctx))
+            return NULL;
+    }
+    n_digits1 = str_len - (p - str);
     /* the real check for overflox is done js_bigint_new(). Here
        we just avoid integer overflow */
     if (n_digits1 > JS_BIGINT_MAX_SIZE * JS_LIMB_BITS) {
@@ -16792,11 +16840,20 @@ static JSValue JS_CompactBigInt(JSContext *ctx, JSBigInt *p)
 /* accept -0x1 */
 #define ATOD_ACCEPT_PREFIX_AFTER_SIGN (1 << 10)
 
-/* return an exception in case of memory error. Return JS_NAN if
-   invalid syntax */
+/* return an exception in case of memory error or when interrupted. Return
+   JS_NAN if invalid syntax. With poll, the loops over the characters read
+   the interrupt flag every JS_ROPE_STEP of them (ATOF_POLL(p), p the
+   pointer the loop moves one byte at a time), and js_atod and
+   js_bigint_from_string read it too, for a number of millions of digits. */
+#define ATOF_POLL(p) do {                                        \
+        if (poll && js_poll_at(p) && js_poll_interrupts(ctx))   \
+            goto interrupted;                                   \
+    } while (0)
+
 /* XXX: directly use js_atod() */
-static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
-                       int radix, int flags)
+static force_inline JSValue js_atof1(JSContext *ctx, const char *str,
+                                     const char **pp, int radix, int flags,
+                                     BOOL poll)
 {
     const char *p, *p_start;
     int sep, is_neg;
@@ -16846,7 +16903,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
             has_legacy_octal = TRUE;
             sep = 256;
             for (i = 1; (p[i] >= '0' && p[i] <= '7'); i++)
-                continue;
+                ATOF_POLL(p + i);
             if (p[i] == '8' || p[i] == '9')
                 goto no_prefix;
             p += 1;
@@ -16879,6 +16936,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
                               p != p_start + 1 || p[-1] != '0') &&
                 to_digit((uint8_t)p[1]) < radix)) {
         p++;
+        ATOF_POLL(p);
     }
     if (!(flags & ATOD_INT_ONLY) && radix == 10) {
         if (*p == '.' && (p > p_start || to_digit((uint8_t)p[1]) < radix)) {
@@ -16887,8 +16945,10 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
             if (*p == sep)
                 goto fail;
             while (to_digit((uint8_t)*p) < radix ||
-                   (*p == sep && to_digit((uint8_t)p[1]) < radix))
+                   (*p == sep && to_digit((uint8_t)p[1]) < radix)) {
                 p++;
+                ATOF_POLL(p);
+            }
         }
         if (p > p_start && (*p == 'e' || *p == 'E')) {
             const char *p1 = p + 1;
@@ -16900,8 +16960,10 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
             }
             if (is_digit((uint8_t)*p1)) {
                 p = p1 + 1;
-                while (is_digit((uint8_t)*p) || (*p == sep && is_digit((uint8_t)p[1])))
+                while (is_digit((uint8_t)*p) || (*p == sep && is_digit((uint8_t)p[1]))) {
                     p++;
+                    ATOF_POLL(p);
+                }
             }
         }
     }
@@ -16924,6 +16986,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
     for (i = 0; i < len; i++) {
         if (p_start[i] != '_')
             buf[j++] = p_start[i];
+        ATOF_POLL(p_start + i);
     }
     buf[j] = '\0';
 
@@ -16936,8 +16999,16 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
     case ATOD_TYPE_FLOAT64:
         {
             double d;
+            /* the reads of the flag, for a number of JS_ATOD_POLL_STEP
+               digits or more (dtoa.h) */
+            const volatile int *stop = poll && j >= JS_ATOD_POLL_STEP ?
+                &ctx->rt->interrupt_flag : NULL;
             d = js_atod(buf, NULL, radix, is_float ? 0 : JS_ATOD_INT_ONLY,
-                        &atod_mem);
+                        &atod_mem, stop);
+            if (unlikely(isnan(d)) && stop && js_poll_interrupts(ctx)) {
+                val = JS_EXCEPTION;
+                goto done;
+            }
             /* return int or float64 */
             val = JS_NewFloat64(ctx, d);
         }
@@ -16947,7 +17018,7 @@ static JSValue js_atof(JSContext *ctx, const char *str, const char **pp,
             JSBigInt *r;
             if (has_legacy_octal || is_float)
                 goto fail;
-            r = js_bigint_from_string(ctx, buf, radix);
+            r = js_bigint_from_string(ctx, buf, j, radix);
             if (!r) {
                 val = JS_EXCEPTION;
                 goto done;
@@ -16971,6 +17042,28 @@ done:
  mem_error:
     val = JS_ThrowOutOfMemory(ctx);
     goto done;
+ interrupted:
+    val = JS_EXCEPTION;
+    goto done;
+}
+#undef ATOF_POLL
+
+/* the copy of js_atof1 with the reads of the flag, for a long string */
+static no_inline JSValue js_atof_poll(JSContext *ctx, const char *str,
+                                      const char **pp, int radix, int flags)
+{
+    return js_atof1(ctx, str, pp, radix, flags, TRUE);
+}
+
+/* str_len is the number of bytes from str to the end of its string: one of
+   fewer than JS_ROPE_STEP bytes runs the code without the reads of the
+   flag, the code js_atof ran before they came */
+static JSValue js_atof(JSContext *ctx, const char *str, size_t str_len,
+                       const char **pp, int radix, int flags)
+{
+    if (unlikely(str_len >= JS_ROPE_STEP))
+        return js_atof_poll(ctx, str, pp, radix, flags);
+    return js_atof1(ctx, str, pp, radix, flags, FALSE);
 }
 
 typedef enum JSToNumberHintEnum {
@@ -16987,25 +17080,36 @@ static JSValue js_string_to_number(JSContext *ctx, JSValue val)
     const char *p;
     size_t len;
     JSValue ret;
+    int n;
 
     if (JS_VALUE_GET_TAG(val) == JS_TAG_STRING_ROPE) {
         val = js_linearize_string_rope(ctx, val);
         if (JS_IsException(val))
             return val;
     }
-    str = js_string_to_cstring(ctx, &len, val, FALSE);
+    /* the conversion, the spaces and the number read the flag on a long
+       string */
+    if (JS_VALUE_GET_STRING(val)->len >= JS_ROPE_STEP)
+        str = js_string_to_cstring_json(ctx, &len, val, FALSE);
+    else
+        str = js_string_to_cstring(ctx, &len, val, FALSE);
     if (!str)
         return JS_EXCEPTION;
     p = str;
-    p += skip_spaces(p);
-    if ((p - str) == len) {
+    n = skip_spaces(ctx, p);
+    if (n < 0) {
+        ret = JS_EXCEPTION;
+    } else if ((p += n) - str == len) {
         ret = JS_NewInt32(ctx, 0);
     } else {
         int flags = ATOD_ACCEPT_BIN_OCT;
-        ret = js_atof(ctx, p, &p, 0, flags);
+        ret = js_atof(ctx, p, len - (p - str), &p, 0, flags);
         if (!JS_IsException(ret)) {
-            p += skip_spaces(p);
-            if ((p - str) != len) {
+            n = skip_spaces(ctx, p);
+            if (n < 0) {
+                JS_FreeValue(ctx, ret);
+                ret = JS_EXCEPTION;
+            } else if ((p + n) - str != len) {
                 JS_FreeValue(ctx, ret);
                 ret = JS_NAN;
             }
@@ -18623,22 +18727,29 @@ static JSValue JS_StringToBigInt(JSContext *ctx, JSValue val)
 {
     const char *str, *p;
     size_t len;
-    int flags;
+    int flags, n;
 
-    str = JS_ToCStringLen(ctx, &len, val);
+    /* the conversion, the spaces and the digits read the flag on a long
+       string */
+    str = js_number_to_cstring(ctx, &len, val);
     JS_FreeValue(ctx, val);
     if (!str)
         return JS_EXCEPTION;
     p = str;
-    p += skip_spaces(p);
-    if ((p - str) == len) {
+    n = skip_spaces(ctx, p);
+    if (n < 0) {
+        val = JS_EXCEPTION;
+    } else if ((p += n) - str == len) {
         val = JS_NewBigInt64(ctx, 0);
     } else {
         flags = ATOD_INT_ONLY | ATOD_ACCEPT_BIN_OCT | ATOD_TYPE_BIG_INT;
-        val = js_atof(ctx, p, &p, 0, flags);
-        p += skip_spaces(p);
+        val = js_atof(ctx, p, len - (p - str), &p, 0, flags);
         if (!JS_IsException(val)) {
-            if ((p - str) != len) {
+            n = skip_spaces(ctx, p);
+            if (n < 0) {
+                JS_FreeValue(ctx, val);
+                val = JS_EXCEPTION;
+            } else if ((p + n) - str != len) {
                 JS_FreeValue(ctx, val);
                 val = JS_NAN;
             }
@@ -27981,8 +28092,8 @@ static __exception int next_token(JSParseState *s)
             int flags;
             flags = ATOD_ACCEPT_BIN_OCT | ATOD_ACCEPT_LEGACY_OCTAL |
                 ATOD_ACCEPT_UNDERSCORES | ATOD_ACCEPT_SUFFIX;
-            ret = js_atof(s->ctx, (const char *)p, (const char **)&p, 0,
-                          flags);
+            ret = js_atof(s->ctx, (const char *)p, s->buf_end - p,
+                          (const char **)&p, 0, flags);
             if (JS_IsException(ret))
                 goto fail;
             /* reject `10instanceof Number` */
@@ -28523,6 +28634,28 @@ static int json_parse_string(JSParseState *s, const uint8_t **pp, int sep)
     return -1;
 }
 
+/* The number of a JSON text. Its digits, millions of them in a text a
+   script makes, are read with the flag read every JS_ROPE_STEP of them
+   (JSON_POLL(p), p the pointer the loop moves one byte at a time), and so
+   does js_atod, for a number of JS_ATOD_POLL_STEP characters or more. */
+#define JSON_POLL(p) do {                                        \
+        if (js_poll_at(p) && js_poll_interrupts(s->ctx))        \
+            return -1;                                          \
+    } while (0)
+/* the digits from p, read with the flag in a text of JS_ROPE_STEP bytes
+   or more, and with the loop of before in a shorter one */
+#define JSON_DIGITS() do {                                       \
+        if (unlikely(poll)) {                                   \
+            while (is_digit(*p)) {                              \
+                p++;                                            \
+                JSON_POLL(p);                                   \
+            }                                                   \
+        } else {                                                \
+            while (is_digit(*p))                                \
+                p++;                                            \
+        }                                                       \
+    } while (0)
+
 static int json_parse_number(JSParseState *s, const uint8_t **pp)
 {
     const uint8_t *p = *pp;
@@ -28530,6 +28663,8 @@ static int json_parse_number(JSParseState *s, const uint8_t **pp)
     int radix;
     double d;
     JSATODTempMem atod_mem;
+    const volatile int *stop;
+    BOOL poll = s->buf_end - p >= JS_ROPE_STEP;
     
     if (*p == '+' || *p == '-')
         p++;
@@ -28572,8 +28707,14 @@ static int json_parse_number(JSParseState *s, const uint8_t **pp)
                 unexpected_token:
                     return js_parse_error_pos(s, p, "Unexpected token '%c'", *p);
                 }
+                /* the digits js_atod reads are in the rest of the text */
+                stop = s->buf_end - p_start >= JS_ATOD_POLL_STEP ?
+                    &s->ctx->rt->interrupt_flag : NULL;
                 d = js_atod((const char *)p_start, (const char **)&p, 0,
-                            JS_ATOD_INT_ONLY | JS_ATOD_ACCEPT_BIN_OCT, &atod_mem);
+                            JS_ATOD_INT_ONLY | JS_ATOD_ACCEPT_BIN_OCT, &atod_mem,
+                            stop);
+                if (unlikely(isnan(d)) && stop && js_poll_interrupts(s->ctx))
+                    return -1;
                 goto done;
             }
         }
@@ -28581,15 +28722,13 @@ static int json_parse_number(JSParseState *s, const uint8_t **pp)
             return js_parse_error_pos(s, p, "Unexpected number");
     }
 
-    while (is_digit(*p))
-        p++;
+    JSON_DIGITS();
 
     if (*p == '.') {
         p++;
         if (!is_digit(*p))
             return js_parse_error_pos(s, p, "Unterminated fractional number");
-        while (is_digit(*p))
-            p++;
+        JSON_DIGITS();
     }
     if (*p == 'e' || *p == 'E') {
         p++;
@@ -28597,16 +28736,20 @@ static int json_parse_number(JSParseState *s, const uint8_t **pp)
             p++;
         if (!is_digit(*p))
             return js_parse_error_pos(s, p, "Exponent part is missing a number");
-        while (is_digit(*p))
-            p++;
+        JSON_DIGITS();
     }
-    d = js_atod((const char *)p_start, NULL, 10, 0, &atod_mem);
+    stop = p - p_start >= JS_ATOD_POLL_STEP ? &s->ctx->rt->interrupt_flag : NULL;
+    d = js_atod((const char *)p_start, NULL, 10, 0, &atod_mem, stop);
+    if (unlikely(isnan(d)) && stop && js_poll_interrupts(s->ctx))
+        return -1;
  done:
     s->token.val = TOK_NUMBER;
     s->token.u.num.val = JS_NewFloat64(s->ctx, d);
     *pp = p;
     return 0;
 }
+#undef JSON_POLL
+#undef JSON_DIGITS
 
 static __exception int json_next_token(JSParseState *s)
 {
@@ -28640,13 +28783,12 @@ static __exception int json_next_token(JSParseState *s)
             goto fail;
         break;
     case '\r':  /* accept DOS and MAC newline sequences */
-        if (p[1] == '\n') {
-            p++;
-        }
+        /* the \n of \r\n is the next space, so that the spaces go one byte
+           at a time */
         /* fall thru */
     case '\n':
         p++;
-        goto redo;
+        goto space;
     case '\f':
     case '\v':
         if (!s->ext_json) {
@@ -28657,6 +28799,11 @@ static __exception int json_next_token(JSParseState *s)
     case ' ':
     case '\t':
         p++;
+    space:
+        /* the spaces before a token, millions of them in a text a script
+           makes, with the flag read every JS_ROPE_STEP */
+        if (js_poll_at(p) && js_poll_interrupts(s->ctx))
+            goto fail;
         goto redo;
     case '/':
         if (!s->ext_json) {
@@ -52786,10 +52933,13 @@ static JSValue js_parseInt(JSContext *ctx, JSValueConst this_val,
                            int argc, JSValueConst *argv)
 {
     const char *str, *p;
-    int radix, flags;
+    int radix, flags, n;
+    size_t len;
     JSValue ret;
 
-    str = JS_ToCString(ctx, argv[0]);
+    /* the conversion, the spaces and the digits read the flag on a long
+       string */
+    str = js_number_to_cstring(ctx, &len, argv[0]);
     if (!str)
         return JS_EXCEPTION;
     if (JS_ToInt32(ctx, &radix, argv[1])) {
@@ -52800,9 +52950,12 @@ static JSValue js_parseInt(JSContext *ctx, JSValueConst this_val,
         ret = JS_NAN;
     } else {
         p = str;
-        p += skip_spaces(p);
+        n = skip_spaces(ctx, p);
         flags = ATOD_INT_ONLY | ATOD_ACCEPT_PREFIX_AFTER_SIGN;
-        ret = js_atof(ctx, p, NULL, radix, flags);
+        if (n < 0)
+            ret = JS_EXCEPTION;
+        else
+            ret = js_atof(ctx, p + n, len - n, NULL, radix, flags);
     }
     JS_FreeCString(ctx, str);
     return ret;
@@ -52813,13 +52966,20 @@ static JSValue js_parseFloat(JSContext *ctx, JSValueConst this_val,
 {
     const char *str, *p;
     JSValue ret;
+    int n;
+    size_t len;
 
-    str = JS_ToCString(ctx, argv[0]);
+    /* the conversion, the spaces and the digits read the flag on a long
+       string */
+    str = js_number_to_cstring(ctx, &len, argv[0]);
     if (!str)
         return JS_EXCEPTION;
     p = str;
-    p += skip_spaces(p);
-    ret = js_atof(ctx, p, NULL, 10, 0);
+    n = skip_spaces(ctx, p);
+    if (n < 0)
+        ret = JS_EXCEPTION;
+    else
+        ret = js_atof(ctx, p + n, len - n, NULL, 10, 0);
     JS_FreeCString(ctx, str);
     return ret;
 }
