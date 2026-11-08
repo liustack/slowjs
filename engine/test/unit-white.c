@@ -1296,7 +1296,7 @@ static void test_buffer_copy_work(void)
    twice as often in one place and not at all in another reads as often. */
 static void test_poll_work_gaps(void)
 {
-    enum { ROPE_STEP = 1 << 16, PAD_STEP = 1 << 16, SUB_STEP = 1 << 20 };
+    enum { ROPE_STEP = 1 << 16, PAD_STEP = 1 << 16, SUB_STEP = 1 << 20, BIG_STEP = 1 << 15 };
     /* a case whose total is not checked: the code of a regexp is copied as it
        grows, and how often depends on the room the allocator gives each block
        (the sanitizers use the system's) */
@@ -1369,6 +1369,9 @@ static void test_poll_work_gaps(void)
         /* the ropes of the cases that are not about ropes are made flat here, so that a case counts the work of its own call */
         "f1 = String(f1), e3 = String(e3), ja = String(ja), je = String(je), jm = String(jm), ju = String(ju), jx = String(jx), jk = String(jk)\n"
         "jt = String(jt), jl = String(jl), jy = String(jy), jn = String(jn)\n"
+        /* BigInts: a product of 10001 limbs by 5001, the same divided, 200,000 binary digits, and a decimal number of 20,000 digits */
+        "var ba = 2n ** 320000n - 1n, bb = 2n ** 160000n + 1n, yb = 2n ** 200000n - 1n, sb2 = '0b' + '1'.repeat(200000)\n"
+        "var xw = 10n ** 20000n, sd = '9'.repeat(20000)\n"
         "var s0 = new Set(), c0; 0";
     static const struct {
         const char *call;
@@ -1509,6 +1512,13 @@ static void test_poll_work_gaps(void)
         /* the characters of a class not in order merged into its ranges (the intervals passed, read every 16,384 bytes of them), the ranges turned into code, and the strings of a class put in a table that grows (the strings moved and the table cleared) */
         { "new RegExp(zd, 'u'), 0", SUB_STEP, ANY },
         { "new RegExp(zl, 'v'), 0", SUB_STEP, ANY },
+        /* BigInts: the limbs of each row of a product or a division, each digit of a radix that is a power of two, and the limbs of each division of a conversion to or from radix 10, in steps of JS_BIGINT_MAX_SIZE (32768 limbs of 32 bits), and the string of BigInt as a C string first (in steps of 65536) */
+        { "ba * bb, 0", BIG_STEP, 5001 * 10001 },
+        { "ba / bb, 0", BIG_STEP, 5000 * 5001 },
+        { "yb.toString(2).length", BIG_STEP, 200000 },
+        { "BigInt(sb2), 0", ROPE_STEP, 200004 + 200000 },
+        { "String(xw).length", BIG_STEP, ANY },
+        { "BigInt(sd), 0", BIG_STEP, ANY },
     };
     VM v = vm_new();
     size_t i;

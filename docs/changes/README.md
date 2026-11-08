@@ -113,6 +113,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A string argument Intl cannot read ends the call | Unreleased | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
 | Intl reads the interrupt flag in loops over a long list | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 | The functions of fmt end the call when their output does not fit | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
+| Long operations on BigInts read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#long-operations-on-bigints-read-the-interrupt-flag) |
 
 ## Errors and stacks
 

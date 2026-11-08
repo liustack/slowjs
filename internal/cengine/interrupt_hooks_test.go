@@ -177,6 +177,16 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 		{"Object.is, equal strings", `var a = 'ab'.repeat(1 << 24), b = 'ab'.repeat(1 << 24)`, `Object.is(a, b)`, "is"},
 		{"JSON.stringify, a long string", `var s = 'a'.repeat(1 << 26)`, `JSON.stringify(s)`, "stringify"},
 		{"JSON.stringify, escapes", `var s = '\n'.repeat(1 << 24)`, `JSON.stringify(s)`, "stringify"},
+		// BigInts of about a million bits: the conversion to a string and from one, and the operators of the
+		// interpreter (a product, a quotient, a power and a comparison with a string, which converts it), whose
+		// loops grow as the square of the length.
+		{"BigInt toString", `var x = 10n ** 300000n`, `x.toString()`, "toString"},
+		{"String of a BigInt", `var x = 10n ** 300000n`, `String(x)`, "String"},
+		{"BigInt of a string", `var s = '9'.repeat(300000)`, `BigInt(s)`, "BigInt"},
+		{"BigInt product", `var a = 2n ** 500000n - 1n, b = 2n ** 499999n + 12345n`, `a * b`, "<eval>"},
+		{"BigInt quotient", `var w = 2n ** 1000000n - 1n, h = 2n ** 500000n + 12345n`, `w / h`, "<eval>"},
+		{"BigInt power", ``, `10n ** 300000n`, "<eval>"},
+		{"BigInt compared with a string", `var x = 10n ** 300000n, xs = '1' + '0'.repeat(300000)`, `x == xs`, "<eval>"},
 	}
 	// These make a result of as many pieces as the input has. Freeing it takes
 	// polls, up to a third of the polls of the call or more, and so many

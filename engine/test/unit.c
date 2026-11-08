@@ -3925,6 +3925,72 @@ static void test_long_ops_polls(void)
     host_free_runtime(rt);
 }
 
+/* The loops of BigInt whose work grows as the square of the length (a
+   product, a division, a power, a conversion to or from a string in a radix
+   that is not a power of two) and the loops over each digit of a string in
+   a radix that is a power of two read the interrupt flag every 32768 limbs
+   of 32 bits or digits (JS_BIGINT_MAX_SIZE). Each call reads the flag at least as often as it says, and a
+   flag set in the middle stops it with the error "interrupted": a
+   comparison of a BigInt with a string too, which converts the string. The
+   runtime is freed with no block left, so a call stopped in the middle frees
+   what it made, and so does a power whose product is too large. */
+static void test_bigint_polls(void)
+{
+    static const char setup[] =
+        "var x = 10n ** 100000n, nx = -x, xs = '1' + '0'.repeat(100000)\n"
+        "var a = 2n ** 170000n - 1n, b = 2n ** 169999n + 12345n\n"
+        "var w = 2n ** 340000n - 1n, h = 2n ** 170000n + 12345n\n"
+        "var s = '9'.repeat(100000), sb = '0b' + '1'.repeat(1 << 19); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "String(x)", 500 },
+        { "String(nx)", 500 },
+        { "x.toString(7)", 500 },
+        { "x.toString(2)", 8 },
+        { "x.toString(16)", 2 },
+        { "a * b", 300 },
+        { "(-a) * b", 300 },
+        { "w / h", 300 },
+        { "w % h", 300 },
+        { "10n ** 100000n", 300 },
+        { "BigInt(s)", 500 },
+        { "BigInt(sb)", 25 },
+        { "x == xs", 500 },
+        { "x < xs", 500 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, cases[i].reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* what they make is what they made */
+    CHECK(eval_is(ctx, "[String(x) === xs, String(nx) === '-' + xs, x.toString(2).length, BigInt('0b' + x.toString(2)) === x, "
+                  "BigInt('0x' + x.toString(16)) === x, x.toString(7).length, x.toString(7).slice(0, 12), x.toString(7).slice(-12)].join()",
+                  "true,true,332193,true,true,118330,232254152365,203562641334"), "the strings");
+    CHECK(eval_is(ctx, "var p = a * b; [p / b === a, p % b, ((-a) * b) / b === -a, w / h * h + w % h === w, (-w) % h === -(w % h), "
+                  "10n ** 100000n === x, BigInt(s) === x - 1n, BigInt(sb) === 2n ** 524288n - 1n, x == xs, x < xs, x - 1n < xs].join()",
+                  "true,0,true,true,true,true,true,true,true,false,true"), "the numbers");
+    /* the square of 634,000 bits is too large, and the power frees its last product */
+    CHECK(eval_is(ctx, "try { (3n ** 400000n) ** 3n } catch (e) { e instanceof RangeError }", "true"),
+          "a power too large");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4166,6 +4232,7 @@ int main(void)
     test_map_key_polls();
     test_long_key_polls();
     test_long_ops_polls();
+    test_bigint_polls();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();

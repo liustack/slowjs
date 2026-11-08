@@ -15378,19 +15378,51 @@ static js_limb_t mp_add_mul1(js_limb_t *tabr, const js_limb_t *taba, js_limb_t n
     return l;
 }
 
-/* size of the result : op1_size + op2_size. */
-static void mp_mul_basecase(js_limb_t *result,
-                            const js_limb_t *op1, js_limb_t op1_size,
-                            const js_limb_t *op2, js_limb_t op2_size)
+/* The loops of BigInt whose work grows as the square of the length (a
+   product, a division, a conversion from or to a radix that is not a power
+   of two) and the loops over each digit of a string read the interrupt flag
+   whenever they have gone through JS_BIGINT_POLL_STEP limbs or digits since
+   the last reading, so that one operation on BigInts of a million bits stops
+   within a few polls (docs/changes/uncatchable.md). A loop that goes once
+   through the limbs (an add, a shift, asUintN) goes through at most
+   JS_BIGINT_MAX_SIZE of them, a step, and reads no flag. */
+#define JS_BIGINT_POLL_STEP JS_BIGINT_MAX_SIZE
+
+/* js_bigint_poll comes before a pass over n limbs or digits, n at most a
+   step. *work is what the loop went through since its last reading of the
+   flag: when the pass would take it past a step, the flag is read first, so
+   no stretch between two readings is longer than a step. It returns -1 with
+   the error "interrupted" when the flag is set. */
+static inline __exception int js_bigint_poll(JSContext *ctx, int *work, int n)
 {
-    int i;
+    if (unlikely(*work + n > JS_BIGINT_POLL_STEP)) {
+        *work = 0;
+        if (js_poll_interrupts(ctx))
+            return -1;
+    }
+    *work += n;
+    JS_WORK(n);
+    return 0;
+}
+
+/* size of the result : op1_size + op2_size. Return -1 when interrupted
+   (js_bigint_poll). */
+static __exception int mp_mul_basecase(JSContext *ctx, js_limb_t *result,
+                                       const js_limb_t *op1, js_limb_t op1_size,
+                                       const js_limb_t *op2, js_limb_t op2_size)
+{
+    int i, work = op1_size;
     js_limb_t r;
     
+    JS_WORK(op1_size);
     result[op1_size] = mp_mul1(result, op1, op1_size, op2[0], 0);
     for(i=1;i<op2_size;i++) {
+        if (js_bigint_poll(ctx, &work, op1_size))
+            return -1;
         r = mp_add_mul1(result + i, op1, op1_size, op2[i]);
         result[i + op1_size] = r;
     }
+    return 0;
 }
 
 /* tabr[] -= taba[] * b. Return the value to substract to the high
@@ -15469,17 +15501,19 @@ static js_limb_t mp_div1norm(js_limb_t *tabr, const js_limb_t *taba, js_limb_t n
 /* base case division: divides taba[0..na-1] by tabb[0..nb-1]. tabb[nb
    - 1] must be >= 1 << (JS_LIMB_BITS - 1). na - nb must be >= 0. 'taba'
    is modified and contains the remainder (nb limbs). tabq[0..na-nb]
-   contains the quotient with tabq[na - nb] <= 1. */
-static void mp_divnorm(js_limb_t *tabq, js_limb_t *taba, js_limb_t na,
-                       const js_limb_t *tabb, js_limb_t nb)
+   contains the quotient with tabq[na - nb] <= 1. Return -1 when
+   interrupted (js_bigint_poll). */
+static __exception int mp_divnorm(JSContext *ctx, js_limb_t *tabq,
+                                  js_limb_t *taba, js_limb_t na,
+                                  const js_limb_t *tabb, js_limb_t nb)
 {
     js_limb_t r, a, c, q, v, b1, b1_inv, n, dummy_r;
-    int i, j;
+    int i, j, work = 0;
 
     b1 = tabb[nb - 1];
     if (nb == 1) {
         taba[0] = mp_div1norm(tabq, taba, na, b1, 0);
-        return;
+        return 0;
     }
     n = na - nb;
 
@@ -15503,6 +15537,8 @@ static void mp_divnorm(js_limb_t *tabq, js_limb_t *taba, js_limb_t na,
     }
 
     for(i = n - 1; i >= 0; i--) {
+        if (js_bigint_poll(ctx, &work, nb))
+            return -1;
         if (unlikely(taba[i + nb] >= b1)) {
             q = -1;
         } else if (b1_inv) {
@@ -15535,6 +15571,7 @@ static void mp_divnorm(js_limb_t *tabq, js_limb_t *taba, js_limb_t na,
         }
         tabq[i] = q;
     }
+    return 0;
 }
 
 /* 1 <= shift <= JS_LIMB_BITS - 1 */
@@ -15825,7 +15862,10 @@ static JSBigInt *js_bigint_mul(JSContext *ctx, const JSBigInt *a,
     r = js_bigint_new(ctx, a->len + b->len);
     if (!r)
         return NULL;
-    mp_mul_basecase(r->tab, a->tab, a->len, b->tab, b->len);
+    if (mp_mul_basecase(ctx, r->tab, a->tab, a->len, b->tab, b->len)) {
+        js_free(ctx, r);
+        return NULL;
+    }
     /* correct the result if negative operands (no overflow is
        possible) */
     if (js_bigint_sign(a))
@@ -15915,7 +15955,12 @@ static JSBigInt *js_bigint_divrem(JSContext *ctx, const JSBigInt *a,
 
     //    js_bigint_dump1(ctx, "a", r->tab, na);
     //    js_bigint_dump1(ctx, "b", tabb, nb);
-    mp_divnorm(q->tab, r->tab, na, tabb, nb);
+    if (mp_divnorm(ctx, q->tab, r->tab, na, tabb, nb)) {
+        js_free(ctx, q);
+        js_free(ctx, r);
+        js_free(ctx, tabb);
+        return NULL;
+    }
     js_free(ctx, tabb);
 
     if (is_rem) {
@@ -16128,18 +16173,22 @@ static JSBigInt *js_bigint_pow(JSContext *ctx, const JSBigInt *a, JSBigInt *b)
     for(i = n_bits - 2; i >= 0; i--) {
         r1 = js_bigint_mul(ctx, r, r);
         if (!r1)
-            return NULL;
+            goto fail;
         js_free(ctx, r);
         r = r1;
         if ((e >> i) & 1) {
             r1 = js_bigint_mul(ctx, r, a);
             if (!r1)
-                return NULL;
+                goto fail;
             js_free(ctx, r);
             r = r1;
         }
     }
     return r;
+ fail:
+    /* an interrupt, or a product too large */
+    js_free(ctx, r);
+    return NULL;
  overflow:
     JS_ThrowRangeError(ctx, "BigInt is too large");
     return NULL;
@@ -16418,6 +16467,7 @@ static JSBigInt *js_bigint_from_string(JSContext *ctx,
     int is_neg, n_digits, n_limbs, len, log2_radix, n_bits, i;
     JSBigInt *r;
     js_limb_t v, c, h;
+    int work = 0;
     
     is_neg = 0;
     if (*p == '-') {
@@ -16462,6 +16512,10 @@ static JSBigInt *js_bigint_from_string(JSContext *ctx,
             }
             if (i == 0)
                 break;
+            if (js_bigint_poll(ctx, &work, len)) {
+                js_free(ctx, r);
+                return NULL;
+            }
             if (len == 1 && r->tab[0] == 0) {
                 r->tab[0] = v;
             } else {
@@ -16481,17 +16535,25 @@ static JSBigInt *js_bigint_from_string(JSContext *ctx,
         /* power of two base: no multiplication is needed */
         r->len = n_limbs;
         memset(r->tab, 0, sizeof(r->tab[0]) * n_limbs);
-        for(i = 0; i < n_digits; i++) {
-            c = to_digit(p[n_digits - 1 - i]);
-            assert(c < radix);
-            bit_pos = i * log2_radix;
-            shift = bit_pos & (JS_LIMB_BITS - 1);
-            pos = bit_pos / JS_LIMB_BITS;
-            r->tab[pos] |= c << shift;
-            /* if log2_radix does not divide JS_LIMB_BITS, needed an
-               additional op */
-            if (shift + log2_radix > JS_LIMB_BITS) {
-                r->tab[pos + 1] |= c >> (JS_LIMB_BITS - shift);
+        for(i = 0; i < n_digits;) {
+            /* a step of digits at a time, the flag read between two */
+            int end = min_int(n_digits, i + JS_BIGINT_POLL_STEP);
+            if (js_bigint_poll(ctx, &work, end - i)) {
+                js_free(ctx, r);
+                return NULL;
+            }
+            for(; i < end; i++) {
+                c = to_digit(p[n_digits - 1 - i]);
+                assert(c < radix);
+                bit_pos = i * log2_radix;
+                shift = bit_pos & (JS_LIMB_BITS - 1);
+                pos = bit_pos / JS_LIMB_BITS;
+                r->tab[pos] |= c << shift;
+                /* if log2_radix does not divide JS_LIMB_BITS, needed an
+                   additional op */
+                if (shift + log2_radix > JS_LIMB_BITS) {
+                    r->tab[pos + 1] |= c >> (JS_LIMB_BITS - shift);
+                }
             }
         }
     }
@@ -16642,7 +16704,7 @@ static JSValue js_bigint_to_string1(JSContext *ctx, JSValueConst val, int radix)
         *--q = '\0';
         buf_end = q;
         if (!is_binary_radix) {
-            int len;
+            int len, work = 0;
             js_limb_t radix_base, v;
             radix_base = radix_base_table[radix - 2];
             len = r->len;
@@ -16657,26 +16719,34 @@ static JSValue js_bigint_to_string1(JSContext *ctx, JSValueConst val, int radix)
                     }
                     break;
                 } else {
+                    if (js_bigint_poll(ctx, &work, len))
+                        goto fail;
                     v = mp_div1(r->tab, r->tab, len, radix_base, 0);
                     q = limb_to_a(q, v, radix, digits_per_limb_table[radix - 2]);
                 }
             }
         } else {
-            int i, shift;
+            int i, shift, work = 0;
             unsigned int bit_pos, pos, c;
 
             /* radix is a power of two */
-            for(i = 0; i < n_digits; i++) {
-                bit_pos = i * log2_radix;
-                pos = bit_pos / JS_LIMB_BITS;
-                shift = bit_pos % JS_LIMB_BITS;
-                c = r->tab[pos] >> shift;
-                if ((shift + log2_radix) > JS_LIMB_BITS &&
-                    (pos + 1) < r->len) {
-                    c |= r->tab[pos + 1] << (JS_LIMB_BITS - shift);
+            for(i = 0; i < n_digits;) {
+                /* a step of digits at a time, the flag read between two */
+                int end = min_int(n_digits, i + JS_BIGINT_POLL_STEP);
+                if (js_bigint_poll(ctx, &work, end - i))
+                    goto fail;
+                for(; i < end; i++) {
+                    bit_pos = i * log2_radix;
+                    pos = bit_pos / JS_LIMB_BITS;
+                    shift = bit_pos % JS_LIMB_BITS;
+                    c = r->tab[pos] >> shift;
+                    if ((shift + log2_radix) > JS_LIMB_BITS &&
+                        (pos + 1) < r->len) {
+                        c |= r->tab[pos + 1] << (JS_LIMB_BITS - shift);
+                    }
+                    c &= (radix - 1);
+                    *--q = digits[c];
                 }
-                c &= (radix - 1);
-                *--q = digits[c];
             }
         }
         if (is_neg)
@@ -16685,6 +16755,10 @@ static JSValue js_bigint_to_string1(JSContext *ctx, JSValueConst val, int radix)
         res = js_new_string8_len(ctx, q, buf_end - q);
         js_free(ctx, buf);
         return res;
+    fail:
+        js_free(ctx, tmp);
+        js_free(ctx, buf);
+        return JS_EXCEPTION;
     }
 }
 
@@ -19478,6 +19552,9 @@ static no_inline int js_relational_slow(JSContext *ctx, JSValue *sp,
                 invalid_bigint_string:
                     JS_FreeValue(ctx, op1);
                     JS_FreeValue(ctx, op2);
+                    /* an interrupt or no memory in the conversion */
+                    if (JS_IsException(op1) || JS_IsException(op2))
+                        goto exception;
                     res = FALSE;
                     goto done;
                 }
@@ -19617,6 +19694,9 @@ static no_inline __exception int js_eq_slow(JSContext *ctx, JSValue *sp,
                 invalid_bigint_string:
                     JS_FreeValue(ctx, op1);
                     JS_FreeValue(ctx, op2);
+                    /* an interrupt or no memory in the conversion */
+                    if (JS_IsException(op1) || JS_IsException(op2))
+                        goto exception;
                     res = FALSE;
                     goto done;
                 }
