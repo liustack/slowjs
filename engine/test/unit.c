@@ -4039,6 +4039,208 @@ static void test_number_polls(void)
     host_free_runtime(rt);
 }
 
+/* A name or the source of a function of 65536 bytes or more is decoded in
+   steps that read the interrupt flag, and gives the string the whole decode
+   gives (JS_NewStringLen) for every text: a run of continuation bytes, an
+   overlong form, a sequence cut short, a form of five bytes, a surrogate and
+   a valid character of four bytes, each placed across a step, and the byte
+   that the decode of an error swallows after a run. */
+static void test_long_utf8_decode(void)
+{
+    static const struct {
+        const char *name;
+        const char *bytes;
+        int len;
+    } pats[] = {
+        { "valid 4", "\xf0\x9f\x98\x80", 4 },
+        { "overlong 2", "\xc0\x80", 2 },
+        { "overlong 3", "\xe0\x80\x80", 3 },
+        { "overlong 4", "\xf0\x80\x80\x80", 4 },
+        { "cut 3", "\xe2\x82" "a", 3 },
+        { "cut 4", "\xf0\x9f\x98" "a", 4 },
+        { "form of 5", "\xf8\x88\x80\x80\x80", 5 },
+        { "surrogate", "\xed\xa0\x80", 3 },
+        { "lead and 6 continuations", "\xe2\x80\x80\x80\x80\x80\x80", 7 },
+        { "continuation and ASCII", "\x80" "a", 2 },
+        { "continuations and a lead", "\x80\x80\x80\xe2\x82\xac", 6 },
+        { "above 10ffff", "\xf4\x90\x80\x80", 4 },
+    };
+    static const int runs[] = { 0, 3, 5, 65536, 65541 };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t total = 3 << 16, i, j, r, off;
+    char *buf = malloc(total + 64);
+    int d, bad = 0, cases = 0;
+
+    for(i = 0; i < sizeof(pats) / sizeof(pats[0]); i++) {
+        for(r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
+            for(d = -8; d <= 8; d++) {
+                JSValue whole, part;
+                JSAtom atom;
+                size_t len;
+
+                /* the pattern, then a run of 0x80 of runs[r] bytes, from
+                   d bytes before the end of the first step */
+                memset(buf, 'a', total);
+                off = (1 << 16) + d - pats[i].len / 2;
+                memcpy(buf + off, pats[i].bytes, pats[i].len);
+                len = off + pats[i].len;
+                for(j = 0; j < (size_t)runs[r] && len < total - 8; j++)
+                    buf[len++] = (char)0x80;
+                len = total;
+                whole = JS_NewStringLen(ctx, buf, len);
+                atom = JS_NewAtomLen(ctx, buf, len);
+                part = atom == JS_ATOM_NULL ? JS_EXCEPTION : JS_AtomToString(ctx, atom);
+                cases++;
+                if (JS_IsException(whole) || JS_IsException(part) || !JS_StrictEq(ctx, whole, part)) {
+                    if (bad++ < 8)
+                        printf("long decode of %s with a run of %d at %d differs from the whole\n",
+                               pats[i].name, runs[r], d);
+                }
+                JS_FreeValue(ctx, whole);
+                JS_FreeValue(ctx, part);
+                if (atom != JS_ATOM_NULL)
+                    JS_FreeAtom(ctx, atom);
+            }
+        }
+    }
+    CHECK(bad == 0, "%d of %d long decodes differ from the whole", bad, cases);
+    /* the source a function keeps, as Function.prototype.toString decodes
+       it, with a run of continuation bytes across a step in a comment */
+    {
+        static const char head[] = "(function f() {/*", tail[] = "*/})";
+        size_t n = 3 << 16, hl = sizeof(head) - 1, tl = sizeof(tail) - 1, len = hl + n + tl;
+        char *src = malloc(len + 1);
+        JSValue f, s, want;
+
+        memcpy(src, head, hl);
+        memset(src + hl, 'a', n);
+        memset(src + (1 << 16) - 100, 0x80, 200 + (1 << 16));
+        memcpy(src + hl + n, tail, tl);
+        src[len] = '\0';
+        f = JS_Eval(ctx, src, len, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(f), "the function of a comment of continuation bytes threw");
+        s = JS_ToString(ctx, f);
+        want = JS_NewStringLen(ctx, src + 1, len - 2);
+        CHECK(!JS_IsException(s) && JS_StrictEq(ctx, s, want), "toString of a source with a run of continuation bytes differs from the whole decode");
+        JS_FreeValue(ctx, f);
+        JS_FreeValue(ctx, s);
+        JS_FreeValue(ctx, want);
+        free(src);
+    }
+    /* a run of 4 MiB of continuation bytes is one character, and its decode
+       reads the flag every 65536 bytes of it: each of the first 64 readings
+       stops it with "interrupted" */
+    {
+        size_t n = 4 << 20;
+        char *run = malloc(n);
+        long before, reads, k;
+        JSAtom atom;
+
+        memset(run, 0x80, n);
+        before = host_poll_reads;
+        atom = JS_NewAtomLen(ctx, run, n);
+        reads = host_poll_reads - before;
+        CHECK(atom != JS_ATOM_NULL, "the name of a run of continuation bytes threw");
+        JS_FreeAtom(ctx, atom);
+        CHECK(reads >= 64, "a run of continuation bytes: %ld readings of the flag, want at least 64", reads);
+        for(k = 1; k <= 64; k++) {
+            JSValue e;
+            const char *m;
+
+            host_poll_stop_after(k);
+            atom = JS_NewAtomLen(ctx, run, n);
+            *JS_GetInterruptFlag(rt) = 0;
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(atom == JS_ATOM_NULL && m && strstr(m, "interrupted"),
+                  "a run of continuation bytes was not stopped at reading %ld", k);
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (atom != JS_ATOM_NULL)
+                JS_FreeAtom(ctx, atom);
+        }
+        host_poll_stop_after(0);
+        free(run);
+    }
+    free(buf);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Parsing a script or a JSON text of a million spaces, newlines, comment
+   characters or identifier characters reads the interrupt flag every 65536
+   bytes of them, and so does the look at the token after the current one
+   (simple_next_token). Each call reads it at least 12 times, and stopped in
+   the middle it throws "interrupted" and leaves the context good. The calls
+   catch the SyntaxError or ReferenceError of the parse that is not stopped. */
+static void test_parse_polls(void)
+{
+    static const char setup[] =
+        "function flat(...a) { return a.join('') }\n"
+        "function run(f, s) { try { return f(s) } catch (e) { if (!(e instanceof SyntaxError || e instanceof ReferenceError)) throw e } }\n"
+        "var n = 1 << 20, ev = s => (0, eval)(s)\n"
+        "var sp = flat(' '.repeat(n), '1'), nl = flat('\\r\\n'.repeat(n >> 1), '1'), ws = flat('\\u3000'.repeat(n >> 1), '1')\n"
+        "var bc = flat('/*', '\\u00e9'.repeat(n), '*/1'), lc = flat('//', 'a'.repeat(n)), id = 'a'.repeat(n)\n"
+        "var as = flat('async', ' '.repeat(n), 'function f() {}'), ac = flat('async /*', 'a'.repeat(n), '*/ function f() {}')\n"
+        "var st = flat('\"', 'a\\u00e9'.repeat(n >> 1), '\"'), tp = flat('`', 'a'.repeat(n), '`'), rx = flat('/', 'a'.repeat(n), '/')\n"
+        "var pn = flat('class A { #', 'a'.repeat(n), ' }'), fs = flat('(function () { /*', 'a'.repeat(n), '*/ })')\n"
+        "var se = flat('a'.repeat(n), ' +'), jw = flat('t', 'r'.repeat(n)), id4 = 'b'.repeat(n << 2); 0\n";
+    static const char *const cases[] = {
+        "run(ev, sp)", "run(ev, nl)", "run(ev, ws)", "run(ev, bc)", "run(ev, lc)", "run(ev, id)",
+        "run(ev, as)", "run(ev, ac)", "run(ev, st)", "run(ev, tp)", "run(ev, rx)", "run(ev, pn)",
+        "String(ev(fs))", "run(ev, se)", "run(JSON.parse, jw)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    /* Each parse of a source of a million bytes reads the flag at least 12
+       times, and is stopped at its readings, every one of them or 64 spread
+       over them: the scans, the atom of an identifier, the source a function
+       keeps, the lines and columns of the code and of the error. The context
+       goes on after each, and the runtime keeps no block of them. */
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+        }
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* the buffer of an identifier of 4 MiB is copied in steps that read the
+       flag each time it grows past a MiB: each of the first 96 readings,
+       those of the scan and of the copies among them, stops it */
+    {
+        long before = host_poll_reads, reads, k;
+
+        CHECK(eval(ctx, "run(ev, id4)"), "run(ev, id4): the script threw");
+        reads = host_poll_reads - before;
+        CHECK(reads >= 96, "run(ev, id4): %ld readings of the flag, want at least 96", reads);
+        for(k = 1; k <= 96; k++) {
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, "run(ev, id4)"), "run(ev, id4) was not stopped at reading %ld", k);
+        }
+        host_poll_stop_after(0);
+    }
+    CHECK(eval_is(ctx, "[ev(sp), ev(nl), ev(ws), ev(bc), run(ev, lc), typeof ev(as + '; f'), typeof ev(ac + '; f')].join()",
+                  "1,1,1,1,,function,function"), "the results");
+    CHECK(eval_is(ctx, "[ev(st) === 'a\\u00e9'.repeat(n >> 1), ev(tp).length, ev(rx).source.length, String(ev(fs)) === fs.slice(1, -1), "
+                       "typeof ev(pn + '; A')].join()",
+                  "true,1048576,1048576,true,function"), "the results of strings and functions");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4282,6 +4484,8 @@ int main(void)
     test_long_ops_polls();
     test_bigint_polls();
     test_number_polls();
+    test_parse_polls();
+    test_long_utf8_decode();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();

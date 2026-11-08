@@ -419,7 +419,7 @@ func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func close_var_refs(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func code_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func compact_properties(a0 uintptr, a1 uintptr, a2 uintptr)
-func compute_pc2line_info(a0 uintptr, a1 uintptr)
+func compute_pc2line_info(a0 uintptr, a1 uintptr) uintptr
 func compute_stack_size(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func convert_fast_array_to_array(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func copy_str16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -513,6 +513,8 @@ func get_date_field_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func get_date_fields(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func get_date_string_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func get_exported_names(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func get_line_col(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func get_line_col_cached(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func get_lvalue_block(a0 uintptr, a1 uintptr) uintptr
 func get_set_record_block(a0 uintptr, a1 uintptr) uintptr
 func get_var_ref(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -912,6 +914,7 @@ func js_new_shape2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) u
 func js_new_string16_len(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_new_string8(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_new_string_char(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
+func js_new_string_len_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_new_string_rope(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) (r0, r1 uintptr)
 func js_not_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_number_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -979,6 +982,7 @@ func js_parse_destructuring_var(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_directives(a0 uintptr, a1 uintptr) uintptr
 func js_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_parse_error_pos(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func js_parse_error_v(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_parse_expect(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_expect_semi(a0 uintptr, a1 uintptr) uintptr
 func js_parse_expr(a0 uintptr, a1 uintptr) uintptr
@@ -1084,6 +1088,7 @@ func js_resize_prop(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) 
 func js_resolve_export(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_resolve_export1_block(a0 uintptr, a1 uintptr) uintptr
 func js_resolve_module(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func js_resolve_module_top(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_set_difference(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_set_fast_array_element_out_of_line_block(a0 uintptr, a1 uintptr) uintptr
 func js_set_intersection(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1150,6 +1155,7 @@ func js_string_to_cstring_json(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintpt
 func js_string_to_number(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func js_string_trim_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func js_strndup_source(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_sub_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_sub_string_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_symbol_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1203,6 +1209,7 @@ func json_free_parse_record(a0 uintptr, a1 uintptr, a2 uintptr)
 func json_next_token(a0 uintptr, a1 uintptr) uintptr
 func json_parse_expect(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func json_parse_record_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func json_parse_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func json_parse_value(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func link_var_scopes(a0 uintptr, a1 uintptr)
 func log(a0 uintptr, a1 float64) float64
@@ -1233,6 +1240,7 @@ func lre_is_id_start(a0 uintptr, a1 uintptr) uintptr
 func lre_is_space_non_ascii(a0 uintptr, a1 uintptr) uintptr
 func lre_js_is_ident_next(a0 uintptr, a1 uintptr) uintptr
 func lre_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func lre_parse_escape_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lre_realloc_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
@@ -1294,7 +1302,7 @@ func re_parse_captures(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintpt
 func re_parse_class_set_operand(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_disjunction(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func re_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func re_parse_group_name(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_nested_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_string_find2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -1325,7 +1333,7 @@ func set_eval_ret_undefined(a0 uintptr, a1 uintptr)
 func set_object_name(a0 uintptr, a1 uintptr, a2 uintptr)
 func set_object_name_computed(a0 uintptr, a1 uintptr)
 func share_local_slots(a0 uintptr, a1 uintptr, a2 uintptr)
-func simple_next_token(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func simple_next_token(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func sin(a0 uintptr, a1 float64) float64
 func sinh(a0 uintptr, a1 float64) float64
 func skip_dead_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr

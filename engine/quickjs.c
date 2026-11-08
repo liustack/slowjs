@@ -1955,6 +1955,12 @@ static BOOL js_front_drain(JSMallocContext *s)
 #define js_poll_at(p) unlikely(((uintptr_t)(p) & (JS_ROPE_STEP - 1)) == 0)
 #define js_poll_cross(p, q) \
     unlikely(((uintptr_t)(p) ^ (uintptr_t)(q)) >= JS_ROPE_STEP)
+/* JS_POLL_SHORT_STEP for a scan that does more for each byte: one whose
+   characters of several bytes cost a look in the tables of Unicode each
+   (js_poll_cross_short), or one that counts lines and columns */
+#define JS_POLL_SHORT_STEP (1 << 12)
+#define js_poll_cross_short(p, q) \
+    unlikely(((uintptr_t)(p) ^ (uintptr_t)(q)) >= JS_POLL_SHORT_STEP)
 
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
@@ -4269,6 +4275,9 @@ static size_t count_ascii(const uint8_t *buf, size_t len)
 }
 
 /* str is UTF-8 encoded */
+static JSValue js_new_string_len_long(JSContext *ctx, const char *buf, size_t len);
+static void JS_ThrowInterrupted(JSContext *ctx);
+
 JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
 {
     JSValue val;
@@ -4280,7 +4289,10 @@ JSAtom JS_NewAtomLen(JSContext *ctx, const char *str, size_t len)
         if (atom)
             return atom;
     }
-    val = JS_NewStringLen(ctx, str, len);
+    if (unlikely(len >= JS_ROPE_STEP))
+        val = js_new_string_len_long(ctx, str, len);
+    else
+        val = JS_NewStringLen(ctx, str, len);
     if (JS_IsException(val))
         return JS_ATOM_NULL;
     return JS_NewAtomStr(ctx, JS_VALUE_GET_STRING(val));
@@ -4371,7 +4383,11 @@ static const char *JS_AtomGetStrRT(JSRuntime *rt, char *buf, int buf_size,
             assert(!atom_is_free(p));
             str = p;
             if (str) {
-                if (!str->is_wide_char) {
+                /* an atom of millions of characters (an identifier of a
+                   script, in a message) is copied as far as buf goes: its
+                   own characters would be scanned here and by the printf
+                   of the message, which reads no interrupt flag */
+                if (!str->is_wide_char && str->len < JS_ROPE_STEP) {
                     /* special case ASCII strings */
                     c = 0;
                     for(i = 0; i < str->len; i++) {
@@ -5425,19 +5441,47 @@ __attribute__((used)) const int64_t js_host_layout[JS_HOST_LAYOUT_COUNT] = {
 };
 
 /* create a string from a UTF-8 buffer */
-/* The 16-bit units of the UTF-8 text from p to p_end, which JS_NewStringLen
-   makes a string of: the units go to out16, or as bytes to out8 (when all are
-   below 0x100), or nowhere when both are NULL and the units are only counted.
-   *pmax is the or of them. A sequence that is none gives 0xfffd for it and
-   the continuation bytes that follow. */
-static size_t js_utf8_to_units(const uint8_t *p, const uint8_t *p_end,
-                               uint16_t *out16, uint8_t *out8, uint32_t *pmax)
+/* The end of the run of continuation bytes at p, or NULL when stop is set:
+   with stop, *stop is read every JS_ROPE_STEP bytes of the run. */
+static force_inline const uint8_t *js_utf8_skip_cont(const uint8_t *p,
+                                                     const uint8_t *p_end,
+                                                     const volatile int *stop)
 {
-    const uint8_t *p_next;
+    const uint8_t *p_last = p;
+
+    while (p < p_end && (*p >= 0x80 && *p < 0xc0)) {
+        p++;
+        if (stop && js_poll_cross(p_last, p)) {
+            if (poll_flag(stop))
+                return NULL;
+            p_last = p;
+        }
+    }
+    return p;
+}
+
+/* The 16-bit units of the UTF-8 text at *pp, which JS_NewStringLen makes a
+   string of: the units go to out16, or as bytes to out8 (when all are below
+   0x100), or nowhere when both are NULL and the units are only counted.
+   *pmax is the or of them. A sequence that is none gives 0xfffd for it and
+   the continuation bytes that follow. It decodes the characters that start
+   before p_stop, the last ending past p_stop if it must but not past p_end,
+   and sets *pp to where it ended: the decode of the text from *pp to p_end
+   starts a character there too, so steps decode as the whole would. With
+   stop, it returns (size_t)-1 when *stop is set, read in a long run of bytes
+   that are not a character (js_utf8_skip_cont). It is inlined, so that
+   the decode of JS_NewStringLen, with no stop and p_stop at p_end, has the
+   code it had before the steps. */
+static force_inline size_t js_utf8_to_units(const uint8_t **pp, const uint8_t *p_stop,
+                                            const uint8_t *p_end, uint16_t *out16,
+                                            uint8_t *out8, uint32_t *pmax,
+                                            const volatile int *stop)
+{
+    const uint8_t *p = *pp, *p_next;
     uint32_t c, hi, max = *pmax;
     size_t n = 0;
 
-    while (p < p_end) {
+    while (p < p_stop) {
         hi = 0;
         if (*p < 128) {
             c = *p++;
@@ -5456,13 +5500,11 @@ static size_t js_utf8_to_units(const uint8_t *p, const uint8_t *p_end,
                 c = 0xfffd;
                 /* skip the invalid chars */
                 /* XXX: seems incorrect. Why not just use c = *p++; ? */
-                while (p < p_end && (*p >= 0x80 && *p < 0xc0))
-                    p++;
-                if (p < p_end) {
-                    p++;
-                    while (p < p_end && (*p >= 0x80 && *p < 0xc0))
-                        p++;
-                }
+                p = js_utf8_skip_cont(p, p_end, stop);
+                if (p && p < p_end)
+                    p = js_utf8_skip_cont(p + 1, p_end, stop);
+                if (!p)
+                    return (size_t)-1;
             }
         }
         if (hi) {
@@ -5479,38 +5521,61 @@ static size_t js_utf8_to_units(const uint8_t *p, const uint8_t *p_end,
         max |= c;
     }
     *pmax = max;
+    *pp = p;
     return n;
 }
 
 /* The string of a UTF-8 text with a character above 127: len1 ASCII bytes,
-   then the rest. It does not use a string buffer, which reads the interrupt
-   flag when it grows past a step: JS_NewStringLen makes the messages and the
-   stack of an error, and making an error reads no flag (see JS_ThrowError2
-   and internal/goasm/cmd/cycles). The text is decoded twice, to count the
-   units and then to write them into a string of the exact size. */
-static JSValue js_new_string_utf8(JSContext *ctx, const uint8_t *p_start,
-                                  size_t len1, const uint8_t *p_end)
+   then the characters that start before p_stop, the last ending at most at
+   p_end, with *pp set to where it ended (see js_utf8_to_units). It does not
+   use a string buffer, which reads the interrupt flag when it grows past a
+   step: JS_NewStringLen makes the messages and the stack of an error, and
+   making an error reads no flag (see JS_ThrowError2 and
+   internal/goasm/cmd/cycles). Only js_new_string_len_long gives stop, which
+   it reads as js_utf8_to_units does: when it is set, it returns JS_EXCEPTION
+   with nothing thrown and *pp NULL, for the caller to throw "interrupted".
+   The text is decoded twice, to count the units and then to write them into
+   a string of the exact size. */
+static force_inline JSValue js_new_string_utf8(JSContext *ctx, const uint8_t *p_start,
+                                               size_t len1, const uint8_t *p_stop,
+                                               const uint8_t *p_end, const uint8_t **pp,
+                                               const volatile int *stop)
 {
+    const uint8_t *p;
     uint32_t max = 0;
-    size_t n, i;
+    size_t n, n1, i;
     JSString *str;
 
-    n = len1 + js_utf8_to_units(p_start + len1, p_end, NULL, NULL, &max);
+    p = p_start + len1;
+    n1 = js_utf8_to_units(&p, p_stop, p_end, NULL, NULL, &max, stop);
+    if (n1 == (size_t)-1)
+        goto interrupted;
+    n = len1 + n1;
     if (n > JS_STRING_LEN_MAX)
         return JS_ThrowInternalError(ctx, "string too long");
     str = js_alloc_string(ctx, n, max >= 0x100);
     if (!str)
         return JS_EXCEPTION;
+    p = p_start + len1;
     if (max >= 0x100) {
         for (i = 0; i < len1; i++)
             str->u.str16[i] = p_start[i];
-        js_utf8_to_units(p_start + len1, p_end, str->u.str16 + len1, NULL, &max);
+        n1 = js_utf8_to_units(&p, p_stop, p_end, str->u.str16 + len1, NULL, &max, stop);
     } else {
         memcpy(str->u.str8, p_start, len1);
-        js_utf8_to_units(p_start + len1, p_end, NULL, str->u.str8 + len1, &max);
+        n1 = js_utf8_to_units(&p, p_stop, p_end, NULL, str->u.str8 + len1, &max, stop);
         str->u.str8[n] = '\0';
     }
+    if (n1 == (size_t)-1) {
+        js_free_string(ctx->rt, str);
+        goto interrupted;
+    }
+    if (pp)
+        *pp = p;
     return JS_MKPTR(JS_TAG_STRING, str);
+ interrupted:
+    *pp = NULL;
+    return JS_EXCEPTION;
 }
 
 JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
@@ -5528,7 +5593,51 @@ JSValue JS_NewStringLen(JSContext *ctx, const char *buf, size_t buf_len)
         /* ASCII string */
         return js_new_string8_len(ctx, buf, buf_len);
     }
-    return js_new_string_utf8(ctx, p_start, len1, p_end);
+    return js_new_string_utf8(ctx, p_start, len1, p_end, p_end, NULL, NULL);
+}
+
+/* JS_NewStringLen of millions of bytes (an identifier of a script, the
+   source of a function), decoded a step of JS_ROPE_STEP bytes at a time with
+   the flag read after each step. A step decodes the characters that start in
+   it, the last ending past it if it must, and the next step starts where it
+   ended, so the steps decode as the whole would (see js_utf8_to_units). */
+static no_inline JSValue js_new_string_len_long(JSContext *ctx, const char *buf, size_t len)
+{
+    StringBuffer b_s, *b = &b_s;
+    const uint8_t *p, *p_stop, *p_end;
+    size_t len1;
+    JSValue v;
+
+    /* room for every byte, so that the buffer is not copied as it grows */
+    if (string_buffer_init(ctx, b, min_int64(len, JS_STRING_LEN_MAX)))
+        return JS_EXCEPTION;
+    p = (const uint8_t *)buf;
+    p_end = p + len;
+    while (p < p_end) {
+        p_stop = p_end - p > JS_ROPE_STEP ? p + JS_ROPE_STEP : p_end;
+        len1 = count_ascii(p, p_stop - p);
+        if (p + len1 == p_stop) {
+            if (string_buffer_write8(b, p, len1))
+                goto fail;
+            p = p_stop;
+        } else {
+            v = js_new_string_utf8(ctx, p, len1, p_stop, p_end, &p,
+                                   &ctx->rt->interrupt_flag);
+            if (JS_IsException(v)) {
+                if (!p)
+                    JS_ThrowInterrupted(ctx);
+                goto fail;
+            }
+            if (string_buffer_concat_value_free(b, v))
+                goto fail;
+        }
+        if (p < p_end && js_poll_interrupts(ctx))
+            goto fail;
+    }
+    return string_buffer_end(b);
+ fail:
+    string_buffer_free(b);
+    return JS_EXCEPTION;
 }
 
 static JSValue JS_ConcatString3(JSContext *ctx, const char *str1,
@@ -27315,31 +27424,43 @@ static void free_token(JSParseState *s, JSToken *token)
 
 /* return the zero based line and column number in the source. */
 /* Note: we no longer support '\r' as line terminator */
-static int get_line_col(int *pcol_num, const uint8_t *buf, size_t len)
+/* A span of millions of bytes (a long token, or the error at the end of a
+   long source) reads the interrupt flag after each JS_POLL_SHORT_STEP bytes
+   of it, and gives -1 with "interrupted" thrown when it is set. A shorter
+   span reads nothing. */
+static int get_line_col(JSContext *ctx, int *pcol_num, const uint8_t *buf, size_t len)
 {
     int line_num, col_num, c;
-    size_t i;
+    size_t i, end;
     
     line_num = 0;
     col_num = 0;
-    for(i = 0; i < len; i++) {
-        c = buf[i];
-        if (c == '\n') {
-            line_num++;
-            col_num = 0;
-        } else if (c < 0x80 || c >= 0xc0) {
-            col_num++;
+    for(i = 0; i < len; i = end) {
+        end = len - i > JS_POLL_SHORT_STEP ? i + JS_POLL_SHORT_STEP : len;
+        for(; i < end; i++) {
+            c = buf[i];
+            if (c == '\n') {
+                line_num++;
+                col_num = 0;
+            } else if (c < 0x80 || c >= 0xc0) {
+                col_num++;
+            }
         }
+        if (end < len && js_poll_interrupts(ctx))
+            return -1;
     }
     *pcol_num = col_num;
     return line_num;
 }
 
-static int get_line_col_cached(GetLineColCache *s, int *pcol_num, const uint8_t *ptr)
+/* -1 with "interrupted" thrown when the flag is set on a long way */
+static int get_line_col_cached(JSContext *ctx, GetLineColCache *s, int *pcol_num, const uint8_t *ptr)
 {
     int line_num, col_num;
     if (ptr >= s->ptr) {
-        line_num = get_line_col(&col_num, s->ptr, ptr - s->ptr);
+        line_num = get_line_col(ctx, &col_num, s->ptr, ptr - s->ptr);
+        if (line_num < 0)
+            return -1;
         if (line_num == 0) {
             s->col_num += col_num;
         } else {
@@ -27347,7 +27468,9 @@ static int get_line_col_cached(GetLineColCache *s, int *pcol_num, const uint8_t 
             s->col_num = col_num;
         }
     } else {
-        line_num = get_line_col(&col_num, ptr, s->ptr - ptr);
+        line_num = get_line_col(ctx, &col_num, ptr, s->ptr - ptr);
+        if (line_num < 0)
+            return -1;
         if (line_num == 0) {
             s->col_num -= col_num;
         } else {
@@ -27361,6 +27484,9 @@ static int get_line_col_cached(GetLineColCache *s, int *pcol_num, const uint8_t 
                 } else if (*p < 0x80 || *p >= 0xc0) {
                     col_num++;
                 }
+                /* the start of a line of millions of bytes */
+                if (js_poll_at(p) && js_poll_interrupts(ctx))
+                    return -1;
             }
             s->col_num = col_num;
         }
@@ -27381,7 +27507,9 @@ js_parse_error_v(JSParseState *s, const uint8_t *ptr, const char *fmt, va_list a
        after that is running out of memory. */
     if (s->cur_func && dbuf_error(&s->cur_func->byte_code))
         return JS_ThrowOutOfMemory(ctx), -1;
-    line_num = get_line_col(&col_num, s->buf_start, ptr - s->buf_start);
+    line_num = get_line_col(ctx, &col_num, s->buf_start, ptr - s->buf_start);
+    if (line_num < 0)
+        return -1;
     JS_ThrowError2(ctx, JS_SYNTAX_ERROR, fmt, ap, FALSE);
     build_backtrace(ctx, ctx->rt->current_exception, s->filename,
                     line_num + 1, col_num + 1, 0);
@@ -27444,11 +27572,17 @@ static __exception int js_parse_template_part(JSParseState *s, const uint8_t *p)
     uint32_t c;
     StringBuffer b_s, *b = &b_s;
     JSValue str;
+    const uint8_t *p_last;
 
     /* p points to the first byte of the template part */
     if (string_buffer_init(s->ctx, b, 32))
         goto fail;
+    p_last = p;
     for(;;) {
+        /* a part of millions of bytes reads the flag */
+        if (js_poll_cross(p_last, p) && js_poll_interrupts(s->ctx))
+            goto fail;
+        p_last = p;
         if (p >= s->buf_end)
             goto unexpected_eof;
         c = *p++;
@@ -27509,13 +27643,18 @@ static __exception int js_parse_string(JSParseState *s, int sep,
     int ret;
     uint32_t c;
     StringBuffer b_s, *b = &b_s;
-    const uint8_t *p_escape;
+    const uint8_t *p_escape, *p_last;
     JSValue str;
 
     /* string */
     if (string_buffer_init(s->ctx, b, 32))
         goto fail;
+    p_last = p;
     for(;;) {
+        /* a string of millions of bytes reads the flag */
+        if (js_poll_cross(p_last, p) && js_poll_interrupts(s->ctx))
+            goto fail;
+        p_last = p;
         if (p >= s->buf_end)
             goto invalid_char;
         c = *p;
@@ -27593,8 +27732,13 @@ static __exception int js_parse_string(JSParseState *s, int sep,
                         continue;
                 } else {
                 parse_escape:
-                    ret = lre_parse_escape(&p, TRUE);
-                    if (ret == -1) {
+                    /* \u{...} with millions of leading zeros reads the
+                       flag in its digits */
+                    ret = lre_parse_escape_poll(&p, TRUE, &s->ctx->rt->interrupt_flag);
+                    if (unlikely(ret == -3)) {
+                        JS_ThrowInterrupted(s->ctx);
+                        goto fail;
+                    } else if (ret == -1) {
                     invalid_escape:
                         if (do_throw)
                             js_parse_error_pos(s, p_escape, "malformed escape sequence in string literal");
@@ -27646,7 +27790,7 @@ static inline BOOL token_is_pseudo_keyword(JSParseState *s, JSAtom atom) {
 
 static __exception int js_parse_regexp(JSParseState *s)
 {
-    const uint8_t *p;
+    const uint8_t *p, *p_last;
     BOOL in_class;
     StringBuffer b_s, *b = &b_s;
     StringBuffer b2_s, *b2 = &b2_s;
@@ -27660,7 +27804,12 @@ static __exception int js_parse_regexp(JSParseState *s)
         return -1;
     if (string_buffer_init(s->ctx, b2, 1))
         goto fail;
+    p_last = p;
     for(;;) {
+        /* a regexp of millions of bytes reads the flag */
+        if (js_poll_cross(p_last, p) && js_poll_interrupts(s->ctx))
+            goto fail;
+        p_last = p;
         if (p >= s->buf_end) {
         eof_error:
             js_parse_error(s, "unexpected end of regexp");
@@ -27718,6 +27867,9 @@ static __exception int js_parse_regexp(JSParseState *s)
     /* flags */
     for(;;) {
         const uint8_t *p_next = p;
+        if (js_poll_cross(p_last, p) && js_poll_interrupts(s->ctx))
+            goto fail;
+        p_last = p;
         c = *p_next++;
         if (c >= 0x80) {
             c = unicode_from_utf8(p, UTF8_CHAR_LEN_MAX, &p_next);
@@ -27752,6 +27904,32 @@ static __exception int js_parse_regexp(JSParseState *s)
     return -1;
 }
 
+/* js_strndup for the source a function keeps (Function.prototype.toString):
+   a source of millions of bytes is copied JS_COPY_STEP bytes at a time with
+   the flag read after each step. NULL with "interrupted" or out of memory
+   thrown. */
+static char *js_strndup_source(JSContext *ctx, const char *s, size_t n)
+{
+    char *ptr;
+    size_t i, m;
+
+    if (likely(n < JS_COPY_STEP))
+        return js_strndup(ctx, s, n);
+    ptr = js_malloc(ctx, n + 1);
+    if (!ptr)
+        return NULL;
+    for(i = 0; i < n; i += m) {
+        m = n - i < JS_COPY_STEP ? n - i : JS_COPY_STEP;
+        memcpy(ptr + i, s + i, m);
+        if (js_poll_interrupts(ctx)) {
+            js_free(ctx, ptr);
+            return NULL;
+        }
+    }
+    ptr[n] = '\0';
+    return ptr;
+}
+
 static __exception int ident_realloc(JSContext *ctx, char **pbuf, size_t *psize,
                                      char *static_buf)
 {
@@ -27769,6 +27947,27 @@ static __exception int ident_realloc(JSContext *ctx, char **pbuf, size_t *psize,
         if (!new_buf)
             return -1;
         memcpy(new_buf, buf, size);
+    } else if (unlikely(size >= JS_COPY_STEP)) {
+        /* an identifier of millions of characters: js_realloc would copy
+           it in one go, so it is copied as string_buffer_realloc2 copies a
+           string buffer, JS_COPY_STEP bytes at a time with the flag read
+           after each step, and the new block is asked for with the room of
+           the old one in the limit. The caller frees buf on error. */
+        size_t i, m;
+        if (js_poll_interrupts(ctx))
+            return -1;
+        new_buf = js_malloc_moving(ctx, new_size, buf);
+        if (!new_buf)
+            return -1;
+        for (i = 0; i < size; i += m) {
+            m = size - i < JS_COPY_STEP ? size - i : JS_COPY_STEP;
+            memcpy(new_buf + i, buf + i, m);
+            if (js_poll_interrupts(ctx)) {
+                js_free(ctx, new_buf);
+                return -1;
+            }
+        }
+        js_free(ctx, buf);
     } else {
         new_buf = js_realloc(ctx, buf, new_size);
         if (!new_buf)
@@ -27858,13 +28057,25 @@ static JSAtom parse_ident(JSParseState *s, const uint8_t **pp,
         }
         c = *p1++;
         if (c == '\\' && *p1 == 'u') {
-            c = lre_parse_escape(&p1, TRUE);
+            c = lre_parse_escape_poll(&p1, TRUE, &s->ctx->rt->interrupt_flag);
+            if (unlikely(c == -3)) {
+                JS_ThrowInterrupted(s->ctx);
+                atom = JS_ATOM_NULL;
+                goto done;
+            }
             *pident_has_escape = TRUE;
         } else if (c >= 128) {
             c = unicode_from_utf8(p, UTF8_CHAR_LEN_MAX, &p1);
         }
         if (!lre_js_is_ident_next(c))
             break;
+        /* an identifier of millions of characters reads the flag, more
+           often where they are not ASCII */
+        if ((c < 128 ? js_poll_cross(p, p1) : js_poll_cross_short(p, p1)) &&
+            js_poll_interrupts(s->ctx)) {
+            atom = JS_ATOM_NULL;
+            goto done;
+        }
         p = p1;
         if (unlikely(ident_pos >= ident_size - UTF8_CHAR_LEN_MAX)) {
             if (ident_realloc(s->ctx, &buf, &ident_size, ident_buf)) {
@@ -27921,26 +28132,34 @@ static __exception int next_token(JSParseState *s)
             goto fail;
         break;
     case '\r':  /* accept DOS and MAC newline sequences */
-        if (p[1] == '\n') {
-            p++;
-        }
+        /* the \n of \r\n is the next space, so that the spaces go one byte
+           at a time */
         /* fall thru */
     case '\n':
         p++;
     line_terminator:
         s->got_lf = TRUE;
+        /* the spaces between two tokens, millions of them in a script a
+           script makes, with the flag read every JS_ROPE_STEP (the step is
+           from s->token.ptr, the start of this space) */
+        if (js_poll_cross(s->token.ptr, p) && js_poll_interrupts(s->ctx))
+            goto fail;
         goto redo;
     case '\f':
     case '\v':
     case ' ':
     case '\t':
         p++;
+        if (js_poll_at(p) && js_poll_interrupts(s->ctx))
+            goto fail;
         goto redo;
     case '/':
         if (p[1] == '*') {
             /* comment */
             p += 2;
             for(;;) {
+                /* a comment of millions of characters reads the flag */
+                const uint8_t *p0 = p;
                 if (*p == '\0' && p >= s->buf_end) {
                     js_parse_error(s, "unexpected end of comment");
                     goto fail;
@@ -27962,6 +28181,8 @@ static __exception int next_token(JSParseState *s)
                 } else {
                     p++;
                 }
+                if (js_poll_cross(p0, p) && js_poll_interrupts(s->ctx))
+                    goto fail;
             }
             goto redo;
         } else if (p[1] == '/') {
@@ -27969,6 +28190,7 @@ static __exception int next_token(JSParseState *s)
             p += 2;
         skip_line_comment:
             for(;;) {
+                const uint8_t *p0 = p;
                 if (*p == '\0' && p >= s->buf_end)
                     break;
                 if (*p == '\r' || *p == '\n')
@@ -27984,6 +28206,8 @@ static __exception int next_token(JSParseState *s)
                 } else {
                     p++;
                 }
+                if (js_poll_cross(p0, p) && js_poll_interrupts(s->ctx))
+                    goto fail;
             }
             goto redo;
         } else if (p[1] == '=') {
@@ -27997,7 +28221,11 @@ static __exception int next_token(JSParseState *s)
     case '\\':
         if (p[1] == 'u') {
             const uint8_t *p1 = p + 1;
-            int c1 = lre_parse_escape(&p1, TRUE);
+            int c1 = lre_parse_escape_poll(&p1, TRUE, &s->ctx->rt->interrupt_flag);
+            if (unlikely(c1 == -3)) {
+                JS_ThrowInterrupted(s->ctx);
+                goto fail;
+            }
             if (c1 >= 0 && lre_js_is_ident_first(c1)) {
                 c = c1;
                 p = p1;
@@ -28045,7 +28273,11 @@ static __exception int next_token(JSParseState *s)
             p1 = p;
             c = *p1++;
             if (c == '\\' && *p1 == 'u') {
-                c = lre_parse_escape(&p1, TRUE);
+                c = lre_parse_escape_poll(&p1, TRUE, &s->ctx->rt->interrupt_flag);
+                if (unlikely(c == -3)) {
+                    JS_ThrowInterrupted(s->ctx);
+                    goto fail;
+                }
             } else if (c >= 128) {
                 c = unicode_from_utf8(p, UTF8_CHAR_LEN_MAX, &p1);
             }
@@ -28301,6 +28533,9 @@ static __exception int next_token(JSParseState *s)
                 goto line_terminator;
             default:
                 if (lre_is_space(c)) {
+                    if (js_poll_cross(s->token.ptr, p) &&
+                        js_poll_interrupts(s->ctx))
+                        goto fail;
                     goto redo;
                 } else if (lre_js_is_ident_first(c)) {
                     ident_has_escape = FALSE;
@@ -28345,6 +28580,11 @@ static JSAtom json_parse_ident(JSParseState *s, const uint8_t **pp, int c)
         if (c >= 128 || !lre_is_id_continue_byte(c))
             break;
         p++;
+        /* an identifier of millions of characters reads the flag */
+        if (js_poll_at(p) && js_poll_interrupts(s->ctx)) {
+            atom = JS_ATOM_NULL;
+            goto done;
+        }
         if (unlikely(ident_pos >= ident_size - UTF8_CHAR_LEN_MAX)) {
             if (ident_realloc(s->ctx, &buf, &ident_size, ident_buf)) {
                 atom = JS_ATOM_NULL;
@@ -28814,6 +29054,7 @@ static __exception int json_next_token(JSParseState *s)
             /* comment */
             p += 2;
             for(;;) {
+                const uint8_t *p0 = p;
                 if (*p == '\0' && p >= s->buf_end) {
                     js_parse_error(s, "unexpected end of comment");
                     goto fail;
@@ -28830,12 +29071,15 @@ static __exception int json_next_token(JSParseState *s)
                 } else {
                     p++;
                 }
+                if (js_poll_cross(p0, p) && js_poll_interrupts(s->ctx))
+                    goto fail;
             }
             goto redo;
         } else if (p[1] == '/') {
             /* line comment */
             p += 2;
             for(;;) {
+                const uint8_t *p0 = p;
                 if (*p == '\0' && p >= s->buf_end)
                     break;
                 if (*p == '\r' || *p == '\n')
@@ -28851,6 +29095,8 @@ static __exception int json_next_token(JSParseState *s)
                 } else {
                     p++;
                 }
+                if (js_poll_cross(p0, p) && js_poll_interrupts(s->ctx))
+                    goto fail;
             }
             goto redo;
         } else {
@@ -28944,14 +29190,27 @@ static int match_identifier(const uint8_t *p, const char *s) {
    - TOK_IDENT is returned for other identifiers and keywords
    - otherwise the next character or unicode codepoint is returned.
  */
-static int simple_next_token(const uint8_t **pp, BOOL no_line_terminator)
+static int simple_next_token(const uint8_t **pp, BOOL no_line_terminator,
+                             const volatile int *stop)
 {
-    const uint8_t *p;
+    const uint8_t *p, *p0;
     uint32_t c;
 
+    /* millions of spaces and comments before the token: when the flag is
+       set, the scan stops there and gives TOK_EOF, a token that no caller
+       looks for. The caller goes on to next_token, which reads the flag in
+       the same spaces and throws "interrupted". A parser that looks again
+       before that gets TOK_EOF at once. */
+    if (stop && poll_flag(stop))
+        return TOK_EOF;
     /* skip spaces and comments */
-    p = *pp;
+    p = p0 = *pp;
     for (;;) {
+        if (stop && js_poll_cross(p0, p)) {
+            if (poll_flag(stop))
+                return TOK_EOF;
+            p0 = p;
+        }
         switch(c = *p++) {
         case '\r':
         case '\n':
@@ -28967,12 +29226,17 @@ static int simple_next_token(const uint8_t **pp, BOOL no_line_terminator)
             if (*p == '/') {
                 if (no_line_terminator)
                     return '\n';
-                while (*p && *p != '\r' && *p != '\n')
+                while (*p && *p != '\r' && *p != '\n') {
                     p++;
+                    if (stop && js_poll_at(p) && poll_flag(stop))
+                        return TOK_EOF;
+                }
                 continue;
             }
             if (*p == '*') {
                 while (*++p) {
+                    if (stop && js_poll_at(p) && poll_flag(stop))
+                        return TOK_EOF;
                     if ((*p == '\r' || *p == '\n') && no_line_terminator)
                         return '\n';
                     if (*p == '*' && p[1] == '/') {
@@ -29009,7 +29273,10 @@ static int simple_next_token(const uint8_t **pp, BOOL no_line_terminator)
             return TOK_IDENT;
         case '\\':
             if (*p == 'u') {
-                if (lre_js_is_ident_first(lre_parse_escape(&p, TRUE)))
+                int c1 = lre_parse_escape_poll(&p, TRUE, stop);
+                if (c1 == -3)
+                    return TOK_EOF;
+                if (lre_js_is_ident_first(c1))
                     return TOK_IDENT;
             }
             break;
@@ -29032,17 +29299,26 @@ static int simple_next_token(const uint8_t **pp, BOOL no_line_terminator)
 static int peek_token(JSParseState *s, BOOL no_line_terminator)
 {
     const uint8_t *p = s->buf_ptr;
-    return simple_next_token(&p, no_line_terminator);
+    return simple_next_token(&p, no_line_terminator, &s->ctx->rt->interrupt_flag);
 }
 
-static void skip_shebang(const uint8_t **pp, const uint8_t *buf_end)
+/* The hashbang line, of millions of bytes if a script wants: with stop, it
+   reads *stop every JS_ROPE_STEP bytes and returns -1 when it is set. */
+static int skip_shebang(const uint8_t **pp, const uint8_t *buf_end,
+                        const volatile int *stop)
 {
-    const uint8_t *p = *pp;
+    const uint8_t *p = *pp, *p_last;
     int c;
 
     if (p[0] == '#' && p[1] == '!') {
         p += 2;
+        p_last = p;
         while (p < buf_end) {
+            if (stop && js_poll_cross(p_last, p)) {
+                if (poll_flag(stop))
+                    return -1;
+                p_last = p;
+            }
             if (*p == '\n' || *p == '\r') {
                 break;
             } else if (*p >= 0x80) {
@@ -29058,6 +29334,7 @@ static void skip_shebang(const uint8_t **pp, const uint8_t *buf_end)
         }
         *pp = p;
     }
+    return 0;
 }
 
 /* return true if 'input' contains the source of a module
@@ -29071,10 +29348,10 @@ BOOL JS_DetectModule(const char *input, size_t input_len)
     const uint8_t *p = (const uint8_t *)input;
     int tok;
 
-    skip_shebang(&p, p + input_len);
-    switch(simple_next_token(&p, FALSE)) {
+    skip_shebang(&p, p + input_len, NULL);
+    switch(simple_next_token(&p, FALSE, NULL)) {
     case TOK_IMPORT:
-        tok = simple_next_token(&p, FALSE);
+        tok = simple_next_token(&p, FALSE, NULL);
         return (tok != '.' && tok != '(');
     case TOK_EXPORT:
         return TRUE;
@@ -31131,8 +31408,8 @@ static __exception int js_parse_class(JSParseState *s, BOOL is_class_expr,
     if (!fd->strip_source) {
         js_free(ctx, ctor_fd->source);
         ctor_fd->source_len = s->buf_ptr - class_start_ptr;
-        ctor_fd->source = js_strndup(ctx, (const char *)class_start_ptr,
-                                     ctor_fd->source_len);
+        ctor_fd->source = js_strndup_source(ctx, (const char *)class_start_ptr,
+                                            ctor_fd->source_len);
         if (!ctor_fd->source)
             goto fail;
     }
@@ -32419,7 +32696,9 @@ static __exception int js_parse_postfix_expr1(JSParseState *s, int parse_flags)
             if (JS_IsException(str)) {
                 /* add the line number info */
                 int line_num, col_num;
-                line_num = get_line_col(&col_num, s->buf_start, s->token.ptr - s->buf_start);
+                line_num = get_line_col(s->ctx, &col_num, s->buf_start, s->token.ptr - s->buf_start);
+                if (line_num < 0)
+                    return -1;
                 build_backtrace(s->ctx, s->ctx->rt->current_exception,
                                 s->filename, line_num + 1, col_num + 1, 0);
                 return -1;
@@ -32617,8 +32896,11 @@ static __exception int js_parse_postfix_expr1(JSParseState *s, int parse_flags)
         }
         break;
     default:
+        /* the message holds 255 bytes (JS_ThrowError2), and printf
+           looks for a NUL as far as the precision, millions of bytes for
+           a long token */
         return js_parse_error(s, "unexpected token in expression: '%.*s'",
-                              (int)(s->buf_ptr - s->token.ptr), s->token.ptr);
+                              min_int(s->buf_ptr - s->token.ptr, 255), s->token.ptr);
     }
 
     optional_chaining_label = -1;
@@ -40564,7 +40846,9 @@ static void add_pc2line_info(JSFunctionDef *s, uint32_t pc, uint32_t source_pos)
    bytes. Alternatively, get_line_col_cached() could be issued in
    emit_source_pos() so that the deltas are more likely to be
    small. */
-static void compute_pc2line_info(JSFunctionDef *s)
+/* -1 with "interrupted" thrown when the flag is set on a long way through
+   the source (get_line_col) */
+static int compute_pc2line_info(JSFunctionDef *s)
 {
     if (!s->strip_debug) {
         int last_line_num, last_col_num;
@@ -40573,9 +40857,11 @@ static void compute_pc2line_info(JSFunctionDef *s)
         const uint8_t *buf_start = s->get_line_col_cache->buf_start;
         js_dbuf_init(s->ctx, &s->pc2line);
 
-        last_line_num = get_line_col_cached(s->get_line_col_cache,
+        last_line_num = get_line_col_cached(s->ctx, s->get_line_col_cache,
                                             &last_col_num,
                                             buf_start + s->source_pos);
+        if (last_line_num < 0)
+            return -1;
         dbuf_put_leb128(&s->pc2line, last_line_num); /* line number minus 1 */
         dbuf_put_leb128(&s->pc2line, last_col_num); /* column number minus 1 */
 
@@ -40590,8 +40876,10 @@ static void compute_pc2line_info(JSFunctionDef *s)
             if (diff_pc < 0)
                 continue;
 
-            line_num = get_line_col_cached(s->get_line_col_cache, &col_num,
+            line_num = get_line_col_cached(s->ctx, s->get_line_col_cache, &col_num,
                                            buf_start + source_pos);
+            if (line_num < 0)
+                return -1;
             diff_line = line_num - last_line_num;
             diff_col = col_num - last_col_num;
             if (diff_line == 0 && diff_col == 0)
@@ -40615,6 +40903,7 @@ static void compute_pc2line_info(JSFunctionDef *s)
             last_col_num = col_num;
         }
     }
+    return 0;
 }
 
 static RelocEntry *add_reloc(JSContext *ctx, LabelSlot *ls, uint32_t addr, int size)
@@ -42080,7 +42369,7 @@ static no_inline void share_local_slots(JSContext *ctx, JSFunctionDef *s)
 /* peephole optimizations and resolve goto/labels */
 static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 {
-    int pos, pos_next, bc_len, op, op1, len, i, line_num;
+    int pos, pos_next, bc_len, op, op1, len, i, line_num, ret;
     const uint8_t *bc_buf;
     DynBuf bc_out;
     LabelSlot *label_slots, *ls;
@@ -43014,7 +43303,9 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     js_free(ctx, s->label_slots);
     s->label_slots = NULL;
     /* XXX: should delay until copying to runtime bytecode function */
-    compute_pc2line_info(s);
+    /* an interrupt there leaves the function whole, with the code set
+       below, and the caller frees it */
+    ret = compute_pc2line_info(s);
     js_free(ctx, s->line_number_slots);
     s->line_number_slots = NULL;
     /* set the new byte code */
@@ -43025,7 +43316,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
         JS_ThrowOutOfMemory(ctx);
         return -1;
     }
-    return 0;
+    return ret;
  out_of_memory:
     JS_ThrowOutOfMemory(ctx);
  fail:
@@ -43794,9 +44085,12 @@ static __exception int js_parse_directives(JSParseState *s)
     js_parse_get_pos(s, &pos);
 
     while(s->token.val == TOK_STRING) {
-        /* Copy actual source string representation */
+        /* Copy actual source string representation. The precision is no
+           more than the room, as snprintf looks for a NUL as far as the
+           precision, millions of bytes for a long string. */
         snprintf(str, sizeof str, "%.*s",
-                 (int)(s->buf_ptr - s->token.ptr - 2), s->token.ptr + 1);
+                 min_int(s->buf_ptr - s->token.ptr - 2, sizeof str - 1),
+                 s->token.ptr + 1);
 
         if (next_token(s))
             return -1;
@@ -44368,7 +44662,7 @@ static __exception int js_parse_function_decl21(JSParseState *s,
                 /* the end of the function source code is after the last
                    token of the function source stored into s->last_ptr */
                 fd->source_len = s->last_ptr - ptr;
-                fd->source = js_strndup(ctx, (const char *)ptr, fd->source_len);
+                fd->source = js_strndup_source(ctx, (const char *)ptr, fd->source_len);
                 if (!fd->source)
                     goto fail;
             }
@@ -44395,7 +44689,7 @@ static __exception int js_parse_function_decl21(JSParseState *s,
     if (!fd->strip_source) {
         /* save the function source code */
         fd->source_len = s->buf_ptr - ptr;
-        fd->source = js_strndup(ctx, (const char *)ptr, fd->source_len);
+        fd->source = js_strndup_source(ctx, (const char *)ptr, fd->source_len);
         if (!fd->source)
             goto fail;
     }
@@ -44690,7 +44984,10 @@ static JSValue __JS_EvalInternal(JSContext *ctx, JSValueConst this_obj,
     JSModuleDef *m;
 
     js_parse_init(ctx, s, input, input_len, filename);
-    skip_shebang(&s->buf_ptr, s->buf_end);
+    if (skip_shebang(&s->buf_ptr, s->buf_end, &ctx->rt->interrupt_flag)) {
+        JS_ThrowInterrupted(ctx);
+        return JS_EXCEPTION;
+    }
 
     eval_type = flags & JS_EVAL_TYPE_MASK;
     m = NULL;
@@ -44823,7 +45120,9 @@ static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
 
     if (!JS_IsString(val))
         return JS_DupValue(ctx, val);
-    str = JS_ToCStringLen(ctx, &len, val);
+    /* a source of millions of characters is converted to UTF-8 with the
+       interrupt flag read every JS_ROPE_STEP of them */
+    str = js_string_to_cstring_poll(ctx, &len, val, FALSE);
     if (!str)
         return JS_EXCEPTION;
     ret = JS_EvalInternal(ctx, this_obj, str, len, "<input>", flags, scope_idx);
@@ -49107,6 +49406,10 @@ static JSValue js_function_toString(JSContext *ctx, JSValueConst this_val,
     if (js_class_has_bytecode(p->class_id)) {
         JSFunctionBytecode *b = p->u.func.function_bytecode;
         if (b->has_debug && b->debug.source) {
+            /* a source of millions of bytes is decoded in steps that read
+               the flag */
+            if (b->debug.source_len >= JS_ROPE_STEP)
+                return js_new_string_len_long(ctx, b->debug.source, b->debug.source_len);
             return JS_NewStringLen(ctx, b->debug.source, b->debug.source_len);
         }
         func_kind = b->func_kind;
@@ -60721,8 +61024,10 @@ static JSValue json_parse_value1(JSParseState *s, JSONParseRecord *pr)
         if (s->token.val == TOK_EOF) {
             js_parse_error(s, "Unexpected end of JSON input");
         } else {
+            /* no more than the 255 bytes of the message, as in
+               js_parse_postfix_expr */
             js_parse_error(s, "unexpected token: '%.*s'",
-                           (int)(s->buf_ptr - s->token.ptr), s->token.ptr);
+                           min_int(s->buf_ptr - s->token.ptr, 255), s->token.ptr);
         }
         goto fail;
     }

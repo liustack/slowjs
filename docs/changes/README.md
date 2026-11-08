@@ -115,6 +115,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The functions of fmt end the call when their output does not fit | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
 | Long operations on BigInts read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#long-operations-on-bigints-read-the-interrupt-flag) |
 | Turning a long string into a number reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#turning-a-long-string-into-a-number-reads-the-interrupt-flag) |
+| Parsing a long source reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 

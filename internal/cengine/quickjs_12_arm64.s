@@ -3907,7 +3907,7 @@ TEXT ·JS_CallInternal_block(SB), $504-32
 	WORD $0xf90013f7
 	WORD $0xf90017f8
 	WORD $0xf9001bf9
-	BL ·js_string_to_cstring(SB)
+	BL ·js_string_to_cstring_json(SB)
 	WORD $0xb40004e0
 	WORD $0xf940f7ea
 	WORD $0xf900c7e0
@@ -4283,7 +4283,7 @@ TEXT ·JS_CallInternal_block(SB), $504-32
 	WORD $0xf90013f7
 	WORD $0xf90017f8
 	WORD $0xf9001bf9
-	BL ·js_string_to_cstring(SB)
+	BL ·js_string_to_cstring_json(SB)
 	WORD $0xb40004a0
 	WORD $0xf940f7ea
 	WORD $0xf900abe0
