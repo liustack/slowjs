@@ -15,6 +15,7 @@
 - `fmt.sprintf` 和 `printf` 现在把 `%w` 写出的参数也算进上界：big int 的每个字都按宽度补齐，`%#w` 还给字符串加引号转义。`fmt.sprintf("%1000000w", 1n << 16384n)` 原来在限额 16 MiB 的 VM 里让 Go 分配 1,459 MiB，现在以内存不足错误结束。每个函数现在拿输出可能让 Go 的 fmt 分配的内存（输出上界的 16 倍再加造输出的 printer 的几 KiB）和 VM 剩下的空间比较。上界只在 Go 的 fmt 按精度补齐的地方算精度，所以 `fmt.sprintf("%.1000000t", true)` 在剩余空间很少的 VM 里也写出 `true`。一个格式里有很多后面没有 `]` 的 `[` 时，比如 `"%[x".repeat(1000000)`，原来 Go 要几分钟，现在 34 ms 就造出同样的输出（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
 - Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和长度成正比的时间解析一个长的 locale 标签，原来 go-intl 在去掉子标签的过程中对每一段都查一次，时间随长度的平方增长：1 MiB 的私用标签要 6.8 秒，期间不检查中断标志，现在只要 33 ms。每个答案都不变（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析)）。
 - 在 windows/amd64 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在每种 CPU 上都直接变成它的 panic，不再先踩坏进程的内存。windows 在出错时把 CPU 的状态写在栈指针下面，带 AMX 的 Intel 上是 12.8 KiB，而 Go 只在 goroutine 的栈下面留 4 KiB（golang/go#81238），所以这次写入可能越过栈写进堆里。现在每个生成函数都确保栈指针下面再多 12 KiB，一共至少 16.9 KiB。只有 windows 的代码变了：在 linux 上用这份代码测量，那里的渲染慢 0 到 2.4%，运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB。Go 代码里的错误，不管是宿主的还是程序的，在 Go 修好之前仍然只有 Go 的 4 KiB（[c-engine.md](docs/changes/c-engine.zh-CN.md#windows-上给故障留的空间)）。
+- 在 javascript 调用的 Go 函数里，`VM.NewArray` 现在碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，原来要先把整个数组造完：4 Mi 个元素的数组要 0.14 到 0.2 秒，期间不检查，可能超过脚本被杀掉之前的宽限期。对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')`，原来造数组期间来的超时会让它的 VM 被杀掉，现在以中断结束（[go-api.md](docs/changes/go-api.zh-CN.md#newarray-在调用的限制处停下)）。
 
 ## [v0.30.1] - 2026-11-06
 

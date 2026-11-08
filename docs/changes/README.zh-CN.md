@@ -72,6 +72,7 @@ read_when:
 | RegisterStartTag 和 RegisterEndTag，用 C 写的 React DOM 为元素写出的开始标签和结束标签 | v0.29.10 | [go-api.md](go-api.zh-CN.md#registerstarttag-和-registerendtag) |
 | 比引擎检查时用的版本更新的 Go 会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#比检查过引擎的-go-更新的-go-会让构建停下) |
 | 改变汇编器编码引擎方式的构建选项会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#会改变汇编器对引擎编码方式的构建选项会让构建停下) |
+| NewArray 在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 
 ## 守得住的限额
 

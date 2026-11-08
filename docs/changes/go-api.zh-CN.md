@@ -385,3 +385,11 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 - **新的Go发布时**，[upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的步骤包括再用这些选项构建一次。
 
 测试：`TestEngineAsmOptions`（`enginedeps_test.go`）在它们影响的目标上，用 `-asmflags=<engine package>=-spectre=ret` 和 `-dynlink` 构建引擎，期望得到 tripwire 的错误，没有别的错误。它还用 `-shared` 和 `-spectre=index` 构建，这两个必须能成功。`TestEngineBuildmodeShared` 对 linux/amd64 用 `-buildmode=shared` 构建，它不需要 cgo，期望得到同样的结果。
+
+## NewArray 在调用的限制处停下
+
+发布版本：Unreleased。
+
+在 javascript 调用的 Go 函数里，`VM.NewArray` 现在每 16,384 个元素看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，由 Builtin 返回出去。引擎加一个元素约 50 ns，每个元素都是从 Go 发起的一次调用，期间不读中断标志：4 Mi 个元素的数组在 M 系列 Mac 上要 0.14 到 0.2 秒。造数组期间来的停止要等到造完才生效，还可能超过脚本被杀掉之前的宽限期（[ErrKilled](go-api.zh-CN.md#error-说明调用为什么结束)）：对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')` 会造这样的数组，造数组期间来的超时会让它的 VM 被杀掉。少于 16,384 个元素的数组什么也不读，用时和原来一样：在 M 系列 Mac 上，返回 3 个元素数组的 Builtin 改动前后每次调用都是 155 ns。在调用 javascript 之外造的数组，以及在停止之前造完的数组，和原来一样。
+
+测试：`builtin_test.go` 里的 `TestNewArrayInterrupted`（`Interrupt` 之后造 4 Mi 个元素的数组：NewArray 返回中断错误，不返回数组，之后 VM 仍可用；在调用之外，无论是在被中断的调用之后，还是 VM 空闲时调用过 `Interrupt` 之后，都造出整个数组）。

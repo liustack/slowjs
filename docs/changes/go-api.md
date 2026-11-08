@@ -385,3 +385,11 @@ The comment above each of those lines in the file says which option it is and th
 - **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.
 
 Tests: `TestEngineAsmOptions` (`enginedeps_test.go`) builds the engine with `-asmflags=<engine package>=-spectre=ret` and `-dynlink` on the targets they affect, and expects the errors of the tripwire and no other. It also builds with `-shared` and `-spectre=index`, which must work. `TestEngineBuildmodeShared` builds with `-buildmode=shared` for linux/amd64, which needs no cgo, and expects the same.
+
+## NewArray stops at the limits of the call
+
+Release: Unreleased.
+
+`VM.NewArray`, in a Go function that javascript called, now reads whether the call is to end every 16,384 elements, and ends at `Interrupt`, the eval timeout or an uncatchable error of the call, with that error, which the Builtin returns. The engine adds an element in about 50 ns, a call of its own from Go for each, and reads no interrupt flag while it does: an array of 4 Mi elements took 0.14 to 0.2 seconds on an M-series Mac. A stop that came while it was made was held off until the end, and past the grace after which a script is killed ([ErrKilled](go-api.md#error-says-why-a-call-ended)): `toLocaleUpperCase('tr')` of 2M lone surrogates, each before an `i`, makes such an array, and a timeout that came while it was made got its VM killed. An array of fewer than 16,384 elements reads nothing, and takes the time it took: a Builtin that returns an array of 3 took 155 ns a call before and after on an M-series Mac. An array made outside a call into javascript, or that is done before a stop, is made as before.
+
+Test: `TestNewArrayInterrupted` in `builtin_test.go` (an array of 4 Mi elements after `Interrupt`: NewArray returns the interrupt and no array, and the VM is usable after; outside a call, after the interrupted call and after `Interrupt` while the VM is idle, the whole array is made).
