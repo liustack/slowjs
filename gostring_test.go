@@ -272,6 +272,31 @@ func TestBigIntToStringThrows(t *testing.T) {
 	}
 }
 
+// A panic of a Go function that the toString of a value calls, while
+// ErrorFromValue reads it, goes on to the caller of ErrorFromValue.
+func TestErrorFromValueGoPanic(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterHostFunc("boom", func([]any) (any, error) { panic("boom") }); err != nil {
+		t.Fatal(err)
+	}
+	v, err := m.EvalValue(`({ toString() { boom() } })`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer v.Free()
+	p := func() (p any) {
+		defer func() { p = recover() }()
+		ErrorFromValue(v)
+		return nil
+	}()
+	if p != "boom" {
+		t.Fatalf("recovered %v, want boom", p)
+	}
+	if r, err := m.Eval("1 + 1", EvalGlobal); err != nil || r != 2 {
+		t.Fatalf("1 + 1 after the panic: %v, %v", r, err)
+	}
+}
+
 // ErrorFromValue reads properties of the thrown value. A getter that throws
 // leaves that field empty and its exception must not stay pending.
 func TestErrorFromValueGetterThrows(t *testing.T) {

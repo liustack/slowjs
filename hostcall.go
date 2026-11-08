@@ -115,7 +115,7 @@ func (m *VM) callBuiltin(saved uintptr, b *Builtin, this jsValue, argc int32, ar
 	returned := false
 	defer func() { m.called(saved, below, b.name, &r, returned, recover()) }()
 	v, err := b.fn(Args{vm: m, this: this, argv: argv, argc: int(argc)})
-	if err != nil || v.vm != m && v.vm != nil {
+	if err != nil || m.foreign(v) {
 		r = m.builtinFailed(b, v, err)
 	} else {
 		r = v.jsValue()

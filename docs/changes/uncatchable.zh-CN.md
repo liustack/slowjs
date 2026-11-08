@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，以及读取异常时遇到的中断或内存不足'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -99,7 +99,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 `GetProperty`、`GetPropertyValue`、`SetProperty`、`SetPropertyValue`（以及调用它们的 `Value` 方法）、`Value.MarshalJSON`、`Value.Any` 和 `ErrorFromValue` 过去没有 eval 超时。它们是以不运行脚本的调用（`outer`）进入引擎的，所以 getter、setter、proxy 陷阱、`toJSON`、被替换的 `BigInt.prototype.toString`，或者 `ErrorFromValue` 对错误调用的 `toString`，可以想跑多久就跑多久。超时 10 ms 时，一个 200 ms 的 getter 和 setter 会跑到结束并返回 42，没有错误，而同样的循环用 `Eval` 在 10 ms 后返回被中断的错误。
 
-现在它们每一个都像 `Eval` 和 `Call` 那样进入（`enter` 和 `leave`），所以最外层的那个设置截止时间，挂起的 `Interrupt` 会停住它，而在宽限之后仍在运行的脚本会被杀死。结果转成 Go 值，以及错误的读取，都在同一个调用里，共用它的时间。`ErrorFromValue` 把被超时截断的字段留空，并在被杀死后只能 `Close` 的 VM 上 panic，和以前一样。脚本之外返回到 Go 的任何其他调用的错误读取（对不能定义的名字调用 `RegisterFunc`、`RegisterCopyProps`、`RegisterEscapeText`），也受 `ErrorFromValue` 限制，`takeException` 调用的就是它。
+现在它们每一个都像 `Eval` 和 `Call` 那样进入（`enter` 和 `leave`），所以最外层的那个设置截止时间，挂起的 `Interrupt` 会停住它，而在宽限之后仍在运行的脚本会被杀死。结果转成 Go 值，以及错误的读取，都在同一个调用里，共用它的时间。`ErrorFromValue` 当时把被超时截断的字段留空（现在返回被中断的错误，见[读取异常时遇到的无法捕获的异常结束调用](#读取异常时遇到的无法捕获的异常结束调用)），并在被杀死后只能 `Close` 的 VM 上 panic，和以前一样。脚本之外返回到 Go 的任何其他调用的错误读取（对不能定义的名字调用 `RegisterFunc`、`RegisterCopyProps`、`RegisterEscapeText`），也受 `ErrorFromValue` 限制，`takeException` 调用的就是它。
 
 `SetPropertyValue` 和 `SetProperty` 把 setter 抛出的异常作为它们的错误返回。它们过去返回 `failed to set property`，并把异常留在上下文里挂起，等下一个取异常的调用去发现。
 
@@ -265,3 +265,29 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 这个检查是对展开手里已有的一个标志做一次测试，在只有异常离开迭代器时才运行的路径上。解释器的栈帧保持 amd64 上 $496、arm64 上 $504。
 
 测试：`engine/test/unit-white.c` 里的 `test_iterator_close_oom` 用 `throw` 离开一个循环和一个模式，以及在生成器里、async 函数里和 `finally` 块之下的一个循环，迭代器的 `return` 方法要分配内存，并让分配器的每次调用依次失败：运行按顺序给出关闭和异常，或者以内存不足错误失败。
+
+## 字节码调用在 eval 超时内转换结果
+
+发布版本：Unreleased。
+
+`EvalBytecode` 和 `EvalSharedBytecode` 在 eval 超时内运行字节码，却在调用结束之后才把结果转成 Go 值，这时既没有超时，也不会被杀死。这次转换会运行 javascript：对象要转成 JSON，会运行它的 `toJSON` 和 getter，BigInt 会运行 `BigInt.prototype.toString`。所以 `({ toJSON() { for (;;) {} } })` 的字节码不管超时设成多少，都会让调用永远挂住，`Interrupt` 也停不下它。字节码的读取同样在调用之外。
+
+现在四个字节码方法（`EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode`、`EvalSharedBytecodeValue`）从读取字节码到转换结束都是一次进入 javascript 的调用，和 `Eval` 一样，共用它的时间。被杀死后只能 `Close` 的 VM 得到被杀死的 VM 的错误，和以前一样。
+
+常见路径的工作量不变：原来读取和运行各进入引擎一次，现在只进入一次。
+
+测试：`TestAPIEntriesHaveTheEvalTimeout`（`apitimeout_test.go`）在 10 ms 的超时下，对 `toJSON` 循环 300 ms 的对象和 `toString` 循环 300 ms 的 BigInt 运行 `EvalBytecode`，对这个对象运行 `EvalSharedBytecode`，要求在 150 ms 内返回被中断的错误。改动之前每一个都跑满 300 ms，而且不返回错误。
+
+## 读取异常时遇到的无法捕获的异常结束调用
+
+发布版本：Unreleased。
+
+为了报告脚本抛出的异常，VM 要读取它：通过它的 `toString` 得到字符串形式，再读 `name`、`message`、`stack`、`lineNumber`、`columnNumber` 和 `fileName`，这些都可以是 getter。这会运行 javascript，VM 过去把这段 javascript 抛出的任何东西都丢掉，把这个字段留空，这样每次读都会再抛的值也能被报告。中断、eval 超时和内存不足也被这样丢掉。所以在超时下，`throw { toString() { for (;;) {} } }` 返回的 `*Error` 所有字段都为空，`Uncatchable` 和 `Interrupted` 都没有设置。在 Go 函数里更糟：参数转换遇到异常（一个会抛的 `toJSON`），读这个异常时内存不足，内存不足的错误被丢掉，转换改抛一个可以捕获的 `TypeError`，脚本接住它，一直运行到结束。
+
+现在每读一个字段都会检查它抛出了什么。脚本抛出的仍然丢掉，字段留空。无法捕获的异常保持挂起：读取停下，调用取出这个异常，替代原来在读的那个，所以调用以被中断或内存不足的错误结束，`Uncatchable` 已设置，和同样的事发生在别处时一样。在 javascript 调用的 Go 函数里，它一直挂起到函数返回，所以调用这个函数的脚本也会结束（[Go 函数里的中断和内存不足](#go-函数里的中断和内存不足)）。读完最后一个字段后，还会检查有没有只记录错误的内建函数留下挂起的无法捕获的异常（[中断无法穿过 promise 或迭代器被捕获](#中断无法穿过-promise-或迭代器被捕获)）。
+
+`ErrorFromValue` 也一样：读取被这样停住时，它返回让它停下的错误，设置 `Uncatchable` 以及 `Interrupted` 或 `OutOfMemory`，替代它那个值的各个字段。它过去把被超时截断的字段留空（[每个能运行 javascript 的方法都有 eval 超时](#每个能运行-javascript-的方法都有-eval-超时)）。
+
+代价：读取一个异常多进入引擎一次，在最后一个字段之后检查标志，丢弃读取抛出的东西之前再进入一次。两者都不在不抛异常的路径上。
+
+测试：`TestUncatchableReadingAnException`（`hostuncatchable_test.go`）在脚本里，以及在 Go 函数参数的转换里，用超时停住被抛出值的 `toString` 和 `message` getter 的读取，用内存不足停住它的 `toString`，要求得到被中断或内存不足的错误，并且不留下挂起的异常。改动之前，带参数的脚本运行到结束并返回 42，其他的返回一个不是无法捕获的错误。`TestErrorFromValueTimeout` 和 `TestAPIEntriesHaveTheEvalTimeout`（`apitimeout_test.go`）要求 `ErrorFromValue`，以及 `SetProperty`、`RegisterFunc` 和其他 `Register` 方法读取错误时，都返回被中断的错误。

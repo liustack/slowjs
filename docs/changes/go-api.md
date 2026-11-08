@@ -1,6 +1,8 @@
 ---
-summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink'
+summary: 'Changes to the Go API: what Call reports, strings Go cannot convert, lone surrogates and invalid UTF-8 between Go and javascript, what *Error says about an uncatchable end, RegisterFunc on an existing name, NewVM failing cleanly, SetShapeCache, SetRegExpCache, Builtin, Args.WTF8, strings of Builtins converted in Go, Args.Latin1 and Args.UTF16 with NewStringLatin1 and NewStringUTF16, NewArray, SetStrip, the text of an Error made in Go, RunGC, MemorySize and GCThreshold, OnClose, SharedBytecode, how EvalBytecode waits for a module's top-level await, how a module frees its top level once it has run, the async context that promise jobs keep for an AsyncLocalStorage, RegisterEscapeText (React DOM's HTML escape written in C), RegisterCopyProps (the loop with which React copies the props of an element, written in C), RegisterStartTag and RegisterEndTag (the start and end tags React DOM writes for an element, written in C), MemoryUsage and ReleaseMemory, and the module loaders, shell helpers and SetCanBlock that are gone, and the builds that stop: a newer Go, and the assembler options -spectre=ret and -dynlink, a Value of another VM refused at every entry, the constructors of values reporting out of memory, a result that fails to convert leaving nothing behind, UndefinedValue and the zero Value taken as undefined, Close refused during a call into the VM, Then returning the exception of a then getter, a Go map made an object of its own data properties, a Value returned as an any taken as a Value, a place a result reaches twice taken as one reference, a result that contains itself refused'
 read_when:
+  - Closing a VM from a Go function that javascript called
+  - Passing a Value to a method of a VM, or returning Values or a map from a Go function, who frees those Values, and what happens when that fails
   - Changing quickjs.go, or how strings, errors or host functions cross between Go and javascript
   - A Go string from javascript has replacement characters, or a string from Go reads differently in javascript
   - Telling an interrupt or out of memory from an error a script threw
@@ -385,3 +387,137 @@ The comment above each of those lines in the file says which option it is and th
 - **When a new Go comes out**, the steps of [upgrading.md](../upgrading.md#moving-to-a-newer-go) include building with these options again.
 
 Tests: `TestEngineAsmOptions` (`enginedeps_test.go`) builds the engine with `-asmflags=<engine package>=-spectre=ret` and `-dynlink` on the targets they affect, and expects the errors of the tripwire and no other. It also builds with `-shared` and `-spectre=index`, which must work. `TestEngineBuildmodeShared` builds with `-buildmode=shared` for linux/amd64, which needs no cgo, and expects the same.
+
+## A Value of another VM is refused at every entry
+
+Release: Unreleased.
+
+A `Value` holds a reference into the memory of its VM. Given to another VM, that VM would keep a pointer into memory it does not own: `SetPropertyValue` stored it in an object, and once the other VM was closed the object pointed at memory that was unmapped, and while both were open the wrong allocator could free it. `Call`, `Value.Call`, `NewArray` and the result of a `Builtin` checked for it. `SetPropertyValue` (its value and its receiver), the receiver of `SetProperty`, `GetPropertyValue` and `GetProperty`, the `this` of `EvalThis` and `EvalThisValue`, and a `Value` that a Go function of `RegisterFunc` returned, alone, among several results, or in a slice or a map, did not.
+
+Now one check, `VM.foreign`, guards every entry that takes a `Value`, before it reaches the engine: a `Value` belongs to the VM or to none (`UndefinedValue`, the zero `Value`), and any other is refused, a number too, as `NewArray` and a `Builtin` already did. A method returns an error, a Go function throws a `TypeError` in the script that called it, as a `Builtin` does. The refused `Value` is neither used nor freed: it stays its owner's, for its owner to free. So `EvalThis` and `EvalThisValue`, which free `obj` when they return, leave a `Value` of another VM as it is.
+
+`Call` and `Value.Call` refused only a `Value` of another VM that has a reference count, and passed a number of another VM on. They now refuse it too.
+
+Cost: one compare of two pointers for each `Value` an entry takes.
+
+Test: `TestValueOfAnotherVM` (`othervm_test.go`) gives a string and an object of one VM to each of these entries of another, and requires an error or a `TypeError`, and the two values with the counts they had.
+
+## The constructors of values report running out of memory
+
+Release: Unreleased.
+
+`NewString`, `NewStringLatin1`, `NewStringUTF16` and `NewObjectValue` did not look at what the engine gave back. When it ran out of memory they returned the engine's exception marker wrapped as a `Value`, with a nil error, and left the out of memory error pending in the context, for the next call to find.
+
+Now each returns the out of memory error, an `*Error` with `Uncatchable` and `OutOfMemory` set, and takes it out of the context, as every other method does. Inside a Go function that javascript called it stays pending, so the script that called the function ends with it ([uncatchable.md](uncatchable.md#interrupts-and-out-of-memory-inside-go-functions)): a `Builtin` that returns the error of `NewString`, or the `Value` it gave before, ends the same way. The check is in `newString`, which every Go string goes through on its way to javascript, so arguments and results of Go functions are covered too.
+
+Cost: one compare of the tag of the new value.
+
+Tests: `TestConstructorsOutOfMemory` (`memory_test.go`) makes a string of 2 MiB with each string constructor under a 1 MiB limit, passes one to `Call`, and makes objects until the limit is reached, and requires the out of memory error and no exception left pending.
+
+## A result that fails to convert leaves nothing behind
+
+Release: Unreleased.
+
+A Go function of `RegisterFunc` or `RegisterHostFunc` hands the call the references to `Value`s of the VM that its results hold. When the conversion of the results failed part way, such as at a channel, the values made for the results before it were never freed, and neither were the `Value`s after it: a string of 4 KiB before the channel stayed in the VM for good, about 4 KiB for each call that a script caught, which no GC could collect. The `Value`s in a result the conversion refuses stayed too: an array, a pointer to a pointer, a map with a `Value` as a key or with keys of a type javascript cannot use (when it has an entry: an empty one is `{}`, as before). So did those of a value a host function returned with an error, and everything when the conversion panicked, as at an `Error` method that panics.
+
+Now the call takes a snapshot of its results before it converts anything, in one walk through every slice, array, map (its keys and its values), pointer and interface (`result.go`). The snapshot has every reference the results hand over, each once, and the call frees each of them once when it is done: when the results convert, when they fail to convert, when a host function returns an error, and when the conversion panics. The conversion only `Dup`s the `Value`s it puts in the javascript value, and frees what it made when it fails or panics, so the two are freed apart. A `Value` of another VM is not freed (see [A Value of another VM is refused at every entry](#a-value-of-another-vm-is-refused-at-every-entry)).
+
+The walk stops at a leaf, which converts as a whole and whose `Value`s stay the caller's: a struct, which converts through `encoding/json` as before, and a value whose type has an `Error` method, such as `type E []Value` with one, which converts to the string of `Error` as before, a nil one too. A `String` method changes nothing: a slice or a map that has one is walked like another.
+
+Cost: none for a Go function whose result types can hold no `Value`, such as an int, a string, a struct or a `map[string]string`: the call skips the walk, as the types tell when the function is registered. A `Value` alone, or in an `any`, needs no walk either. For the others, a node of the snapshot for each value inside, and an entry for each element, pointer target or map that holds a `Value` (see [A place a result reaches twice is one reference](#a-place-a-result-reaches-twice-is-one-reference)). The walk goes through a `[]any` and a `map[string]any` with a range of Go. A call whose snapshot has up to 256 nodes, one for each value inside and each result, 256 elements and properties, 256 references and 256 places leaves the room of its snapshot on the VM for the next call, so a call of that size allocates nothing for its walk after one like it. A map that is not a `map[string]any` costs two allocations for its walk. Measured on the GCP machine against the code before these changes (cpu 0, GOMAXPROCS=1, 8 runs of each side in turns, the medians of one call from javascript): an int, a string, a struct and a `Value` take the same time, and the string of a host function 711 ns where it took 735 ns. A `[]any` of a number, a string and a bool takes 1.15 µs where it took 1.45 µs, a `[]any` of a number and an `[]int` of 20 4.07 µs where it took 4.93 µs, a `[]Value` of 10 1.75 µs where it took 2.17 µs, and a `map[string]any` of 20 strings 4.59 µs where it took 11.78 µs, with 2 allocations where it made 52, since the walk reads the map with a range of Go in place of reflection.
+
+Tests: `TestResultReferences` and `TestResultsReferences` (`result_test.go`) return one object in every shape above, from both kinds of Go function: arrays, a map of arrays, a pointer to a pointer, a `Value` as a map key, each with an error from a host function, and an `Error` method that panics in a slice, a nested slice, a map and the error of a host function. They require the object to have, after a GC, the two references the test holds. `TestResultErrorKeepsItsValues` returns a `[]Value` that has an `Error` method, and requires its string in the script and its `Value` still the caller's. `TestResultReferencesNested` returns a struct with a `Value` whose `toJSON` calls another Go function that returns `Value`s, and requires each call to free its own references. `TestResultWalkAllocs` requires a call that returns 40 `Value`s, and one that returns 250, to allocate as much as one that returns 2. `TestHoldsRefs` checks which types the walk goes into. `TestResultShapesMatchMain` (`result_shapes_test.go`) returns results with no `Value` in them, nil and empty slices and maps, nil pointers, error types with nil receivers, named types, structs and values in an any, alone, in an any and beside a `Value`, and requires javascript to see what it saw on main before these changes, with no object met twice where main made two. `TestFailedResultLeaksNothing` (`register_test.go`) calls Go functions that return strings of 4 KiB and `Value`s around a channel, as results, in a slice, in a nested slice and in a map, nested in a slice, a map and a pointer after the channel, and a map of `Value`s with float keys, 500 times each, catching the `TypeError` each time. It requires the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 to 6 MB before the change.
+
+## UndefinedValue as an argument and a property value
+
+Release: Unreleased.
+
+`UndefinedValue` belongs to no VM, and the doc of `Value.Call` says to pass it as `this`. Passed as an argument of `Call` and the other call methods, or as the value of `SetPropertyValue`, it panicked with a nil pointer: those copied it with `Value.Dup`, which needs the VM of the value. Now they copy the value itself, which has no reference count and needs no VM, so `UndefinedValue` and the zero `Value` are `undefined` there, as they are for `NewArray` and the result of a `Builtin`. A `Value` that a Go function of `RegisterFunc` returns, alone or in a slice or a map, is read the same way, so the zero `Value` is `undefined` there too, where it was the number 0. So it is as the `this` of `Value.Call` and `EvalThis` and the receiver of the property methods.
+
+`Value.Dup` of a `Value` of no VM still panics, which catches a `Value` used after its `Free`.
+
+Cost: none. The copy is the same move of two words.
+
+Test: `TestValueOfNoVM` (`othervm_test.go`) passes `UndefinedValue` and the zero `Value` to `Call`, as the `this` of `Value.Call`, to `SetPropertyValue` and `GetProperty`, and returns them from Go functions, alone and in a slice, and requires `undefined` in the script.
+
+## Close inside a call into the VM is refused
+
+Release: Unreleased.
+
+`Close` of a VM from a Go function that javascript on that VM called freed the runtime, unmapped the memory and cleared the state of the VM while the engine was still running below the Go function, on frames and memory that `Close` had just given back. When the Go function returned, the code around the call read the cleared state and panicked with a nil pointer, out of the `Eval` that ran the script.
+
+Now `Close` checks first that no call into the VM is in progress: no script, no Go function that javascript called and no other call into the engine. During one it returns an error and changes nothing, and the VM goes on. A `Close` after the call returns closes it. An error fits the rules of the API ([architecture.md](../architecture.md#core-types)): `Close` already returns an error, for the memory the OS refuses, and a method that has an error to return does not panic. A `Close` from a function of `OnClose` still returns nil, as `Close` is already running then.
+
+Cost: one compare when `Close` starts.
+
+Test: `TestCloseInsideACall` (`closetwice_test.go`) closes the VM from a Go function that javascript called, and requires the error, the result of the script, the next call to work, and the `Close` after it to close the VM.
+
+## Then returns the exception of a then getter
+
+Release: Unreleased.
+
+`Value.Then` read the `then` of the promise and called it without looking at the read. When a getter of `then` threw, it called the exception marker, and returned `TypeError: not a function` in place of what the getter threw. Now it returns the exception of the read, as `GetPropertyValue` does.
+
+Cost: one compare of a tag.
+
+Test: `TestThenGetterThrows` (`then_test.go`) calls `Then` on a promise whose `then` getter throws a `RangeError`, and requires that error and no exception left pending.
+
+## A Go map becomes an object of its own data properties
+
+Release: Unreleased.
+
+A Go map that a Go function returns becomes an object whose keys are the keys of the map. Each was set with `JS_SetPropertyStr`, which takes a C string and assigns as `obj[key] = value` does. So a key was cut at its first NUL byte, and `"a"` and `"a\x00b"` became one key, one value lost. The key `"__proto__"` ran the setter of `Object.prototype` and changed the prototype of the object, where it should be a key, and a setter a page had put on `Object.prototype` under the name of a key ran with the value of the map and kept the key off the object.
+
+Now each key is made an atom from its bytes and length (`JS_NewAtomLen`), defined as an own data property, enumerable, writable and configurable, as `JSON.parse` and an object literal define their keys (`JS_DefinePropertyValue`), and the atom is freed after. So every key of the map is a key of the object, whole, `__proto__` included, and no setter runs. Keys are in sorted order, as before.
+
+Cost: three calls into the engine for each key where there was one. The key goes to the engine with its length, not as a C string. Measured on the GCP machine (cpu 0, GOMAXPROCS=1, 8 runs of each side in turns), a Go function that returns a map of 20 string keys, called from javascript, takes 8.60 µs a call where it took 10.58 µs, the medians. A map is a result of `RegisterFunc` and `RegisterHostFunc`, not of a `Builtin`.
+
+Test: `TestMapResultKeys` (`register_test.go`) returns a map with a key that has a NUL byte, one with the key `__proto__`, and one under a name a setter of `Object.prototype` catches, and requires every key on the object, the prototype unchanged and the setter not run.
+
+## A Value returned as an any is taken as a Value
+
+Release: Unreleased.
+
+A Go function of `RegisterFunc` whose result type is `any`, or a function of `RegisterHostFunc`, can return a `Value`. Only a result of the type `Value` and a `Value` in a slice or a map were read as one. A `Value` in an `any` went through the JSON of `Value.MarshalJSON`: one of another VM was read through that VM, `UndefinedValue` and the zero `Value` panicked with a nil pointer, and one of the VM was copied into a new value while the reference it held stayed in the VM for good, about 4 KiB for each call that returned a string of 4 KiB.
+
+Now the conversion of every result reads a `Value` first, whatever the type that holds it: a `Value` of the VM hands its reference to the call, as a result of the type `Value` does ([A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)), one of another VM throws a `TypeError` and is not freed, and `UndefinedValue` and the zero `Value` are `undefined`. A host function that returns an error with its value throws the error, and the `Value`s of the VM in the value are freed.
+
+Cost: none for a `Value` alone in an `any`, which the call takes as it takes a result of the type `Value`. For one inside a slice or a map, see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultValueTaken` (`register_test.go`) returns a string of 4 KiB as an `any` from both kinds of Go function, and with an error from a host function, 500 times each, and requires the string in the script and the memory of the VM after a GC to grow by less than 100 KiB. It grew by 2 MB before the change. `TestValueOfAnotherVM` and `TestValueOfNoVM` (`othervm_test.go`) return a `Value` of another VM, `UndefinedValue` and the zero `Value` as an `any`.
+
+## A place a result reaches twice is one reference
+
+Release: Unreleased.
+
+Nothing in a `Value` tells a copy from a `Dup`: both are the same two words. So a reference is a place that holds a `Value` of the VM: a result, an element of a slice or an array, a key or a value of a map, the target of a pointer, and the `any` that holds one of them. A `Value` copied into two places without `Dup` is two references the function does not have, as the doc of `Value` says. The conversion took one reference each time it met a `Value`, so a place the results reach twice, such as a slice `s` of `Value`s returned as `[]any{s, s}`, a map returned twice, or two slices of one array that overlap, gave the engine two references where the function had one: the object was freed while the script still used it.
+
+Now the walk of the results (see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)) goes through each place once: it keeps the address and the type of each element, pointer target and `any` it has been through, and each map by the map alone, so that a map is one place under every name of its type, as `M(mp)` and `mp` for a `type M map[string]Value`. A place met again is the part of the snapshot it made the first time. The conversion `Dup`s each `Value` each time it puts it in the javascript value, so `[]any{s, s}` is two arrays that hold the same objects, and the reference of each place is freed once. A `Value` and its `Dup` in two places are two references.
+
+Cost: see the section above.
+
+Tests: `TestResultReferences` (`result_test.go`) returns one slice twice, two slices of one array that overlap, one pointer twice, a slice and a pointer to its element, one map twice, a map and a slice each under two names of their types, a map with one slice under two keys, a `Value` and its `Dup`, and one slice twice with an error from a host function. `TestResultsReferences` returns one slice and one pointer as two results. `TestResultReferencesRandom` makes 2000 random results of slices, maps and pointers, nested, shared, some under names of their own and some that contain themselves, and requires the javascript value to be what `encoding/json` makes of the result, or the `TypeError` of a cycle. They require the object to have, after a GC, the two references the test holds.
+
+## A result that contains itself is an error
+
+Release: Unreleased.
+
+A slice, map or pointer that a Go function returned and that contains itself, such as a slice `s` with `s[0] = s`, made the conversion recurse until Go stopped it at the stack limit of 1 GB with `fatal error: stack overflow`, which no `recover` catches: the process died. A type that holds itself, such as `type loop []loop`, did the same.
+
+Now the walk of the results keeps the slices, maps, pointers and `any`s it is inside, and a result that leads back to one of them throws a `TypeError`, `a result that contains itself`, as `encoding/json` refuses such a value. The walk goes on through the rest, so the references of the result are freed. One slice or map reached twice beside itself, not inside it, is not a cycle. A struct that contains itself goes through `encoding/json`, which already refuses it.
+
+Cost: see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultReferences` (`result_test.go`) returns a slice, a map and a pointer that contain themselves, a cycle with no `Value` in it, a value of `type loop []loop` that holds itself, and a cycle with an error from a host function. `TestResultsReferences` returns a cycle after a `Value` among two results, and `TestResultReferencesRandom` random ones. They require the `TypeError` and, after a GC, only the two references the test holds. Before the change, each but the one with an error killed the test process.
+
+## The references of a result are taken before code of the program runs
+
+Release: Unreleased.
+
+The conversion of a result runs code of the program: the `Error` method of an error, the `MarshalJSON` of a struct, and the `toJSON` of a `Value` in a struct, which can call Go again. That code could change the result while it converted. A slice that came to hold itself, as when an `Error` sets `s[1] = s`, made the conversion recurse until the process died of a stack overflow, a `Value` of another VM put in had its count changed in a VM that does not own it, and a `Value` taken out was never freed.
+
+Now the walk of the results takes a snapshot of them before any of that code runs, and runs none itself (see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind)): each reference the results hand over, the slices, maps and pointers that can hold a `Value` as they are, and the checks for a cycle and for a `Value` of another VM. The conversion goes by the snapshot, so a cycle or a `Value` the code of the program puts in is not converted, and each reference is freed once, wherever that code moves it. The data with no `Value` in it, such as a string, an `[]int` or a struct, is a leaf of the snapshot: the walk keeps the leaf itself, the string or the slice it found, and the conversion reads what the leaf points to when it converts. So a slot of a slice or a map of the result that the code of the program sets to another leaf afterwards is not converted, but a change to what a leaf shares, such as the elements of an `[]int`, is in the javascript value, as before. A Go function whose result types can hold no `Value` takes no snapshot, and its results are read when they convert.
+
+Cost: see [A result that fails to convert leaves nothing behind](#a-result-that-fails-to-convert-leaves-nothing-behind).
+
+Tests: `TestResultReferences` (`result_test.go`) returns a slice whose `Error` makes it hold itself, one whose `Error` takes a `Value` out, and a map with a struct whose `MarshalJSON` makes the map hold itself. `TestResultChangedDuringConversion` returns a slice whose `Error` puts a `Value` of another VM in it, and requires `null` in its place and the count of that `Value` unchanged. `TestResultExceptionMovesValue` returns a slice with a `Value` and an empty `*Object`, whose JSON fails to parse, and replaces the `toString` of `SyntaxError`, which the conversion calls for the message, with one that moves the `Value` to another element of the slice. It requires the two references the test holds after a GC. `TestResultLeafKeptByWalk` returns a slice whose `Error` sets one of its strings to another, and requires the string the walk found. Before the change, the two cycles killed the test process.

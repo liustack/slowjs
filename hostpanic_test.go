@@ -81,3 +81,35 @@ func TestHostPanicNested(t *testing.T) {
 	wantNoPendingException(t, m)
 	wantTimeoutWorks(t, m)
 }
+
+// A Go function that panics while the exception of a script is read, in its
+// toString: the panic reaches the caller of Eval, and the exception, with
+// the megabyte it holds, is freed on the way.
+func TestHostPanicReadingAnException(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterHostFunc("boom", func([]any) (any, error) { panic("boom") }); err != nil {
+		t.Fatal(err)
+	}
+	throw := func() (p any) {
+		defer func() { p = recover() }()
+		m.Eval(`throw { payload: new ArrayBuffer(1 << 20), toString() { boom() } }`, EvalGlobal)
+		return nil
+	}
+	if p := throw(); p != "boom" {
+		t.Fatalf("got the panic %v, want boom", p)
+	}
+	m.RunGC()
+	before := m.MemorySize()
+	for range 20 {
+		if p := throw(); p != "boom" {
+			t.Fatalf("got the panic %v, want boom", p)
+		}
+	}
+	m.RunGC()
+	if grew := int(m.MemorySize()) - int(before); grew > 1<<20 {
+		t.Fatalf("20 panics left %d bytes in the VM after a GC", grew)
+	}
+	if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
+		t.Fatalf("the next call got %v, %v", r, err)
+	}
+}

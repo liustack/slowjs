@@ -35,7 +35,7 @@ The Go API calls the engine only through the files below. The rest of the packag
 | `enginememory.go` | `MemoryUsage`, `ReleaseMemory` and the memory of `SharedBytecode`, which is mapped read-only outside every VM |
 | `engine_unsupported.go` | On any other target, imports `internal/unsupported`, whose error, naming the targets, is the only one the build reports |
 
-The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links `internal/cengine` and its Go host.
+The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval.go`, `call.go`, `convert.go` (Go values to javascript and back), `errors.go`, `register.go` (`RegisterFunc`), `result.go` (the snapshot of the results of a Go function, with the references to `Value`s they hand over), `value.go`, `builtin.go`, `jsstring.go`, `promise.go`, `sharedbytecode.go`, `memory.go`, `asynccontext.go`, `vmclock.go` and `etc.go`. `TestEngineDeps` (`enginedeps_test.go`) checks that the package links `internal/cengine` and its Go host.
 
 ## Folders
 
@@ -69,7 +69,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 
 ## Core types
 
-- `VM`, the main handle: a JS realm and its runtime in the engine, with the memory the Go host gave it. Made by `NewVM()`, released by `Close()`. Not safe for concurrent use by several goroutines.
+- `VM`, the main handle: a JS realm and its runtime in the engine, with the memory the Go host gave it. Made by `NewVM()`, released by `Close()`. Not safe for concurrent use by several goroutines. A method with an error result reports a misuse it can see with that error, not a panic: `Close` and `ReleaseMemory` during a call into the VM, such as from a Go function that javascript called, return an error and change nothing.
 - `Value`: wraps a reference-counted `jsValue`. `Dup()` and `Free()` must be strictly paired and properly nested (the type's doc says how this breaks across goroutines and channels). Getting it wrong causes leaks or use after free, which the sanitizers of the native test host and the checks of `internal/cengine` catch.
 - `Object`, `Atom` and `HostFunc` (`func(args []any) (any, error)`).
 - `Builtin`, a Go function javascript calls as a built-in, and `Args`, the arguments of its call (see [Go functions called from javascript](#go-functions-called-from-javascript)).

@@ -72,6 +72,17 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | v0.29.10 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 | A Go newer than the one the engine was checked with stops the build | v0.29.11 | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
 | A build option that changes how the assembler encodes the engine stops the build | v0.29.11 | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
+| A Value of another VM is refused at every entry that takes one | Unreleased | [go-api.md](go-api.md#a-value-of-another-vm-is-refused-at-every-entry) |
+| The constructors of values report running out of memory | Unreleased | [go-api.md](go-api.md#the-constructors-of-values-report-running-out-of-memory) |
+| A result that fails to convert leaves nothing behind | Unreleased | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
+| UndefinedValue as an argument and a property value | Unreleased | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
+| Close inside a call into the VM is refused | Unreleased | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
+| Then returns the exception of a then getter | Unreleased | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
+| A Go map becomes an object of its own data properties | Unreleased | [go-api.md](go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties) |
+| A Value returned as an any is taken as a Value | Unreleased | [go-api.md](go-api.md#a-value-returned-as-an-any-is-taken-as-a-value) |
+| A place a result reaches twice is one reference | Unreleased | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
+| A result that contains itself is an error | Unreleased | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
+| The references of a result are taken before code of the program runs | Unreleased | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
 
 ## Limits that hold
 
@@ -96,6 +107,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | repeat reads the interrupt flag every 65,536 characters | v0.30.1 | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
 | Compiling one long regexp reads the interrupt flag in every long loop | v0.30.1 | [uncatchable.md](uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop) |
 | A class of a regexp reads the interrupt flag however many characters or strings it has | v0.30.1 | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
+| The bytecode calls convert their result inside the eval timeout | Unreleased | [uncatchable.md](uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout) |
+| An uncatchable exception met while an exception is read ends the call | Unreleased | [uncatchable.md](uncatchable.md#an-uncatchable-exception-met-while-an-exception-is-read-ends-the-call) |
 
 ## Errors and stacks
 

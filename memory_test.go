@@ -97,3 +97,55 @@ func TestReleaseMemory(t *testing.T) {
 		t.Errorf("ReleaseMemory from a Go function javascript called: %v", inside)
 	}
 }
+
+// The constructors of a Value return the error of running out of memory,
+// not a Value of the exception the engine returns then.
+func TestConstructorsOutOfMemory(t *testing.T) {
+	big := strings.Repeat("x", 2<<20)
+	for name, f := range map[string]func(m *VM) (Value, error){
+		"NewString":        func(m *VM) (Value, error) { return m.NewString(big) },
+		"NewString latin1": func(m *VM) (Value, error) { return m.NewString(strings.Repeat("é", 1<<20)) },
+		"NewString wide":   func(m *VM) (Value, error) { return m.NewString(strings.Repeat("中", 1<<20)) },
+		"NewStringLatin1":  func(m *VM) (Value, error) { return m.NewStringLatin1([]byte(big)) },
+		"NewStringUTF16":   func(m *VM) (Value, error) { return m.NewStringUTF16(make([]uint16, 2<<20)) },
+		"Call with a string": func(m *VM) (Value, error) {
+			_, err := m.Call("String", big)
+			return Value{}, err
+		},
+		"NewObjectValue": func(m *VM) (Value, error) {
+			// Fill the memory, so that an object fails.
+			var kept []Value
+			defer func() {
+				for _, v := range kept {
+					v.Free()
+				}
+			}()
+			for range 1 << 20 {
+				v, err := m.NewObjectValue()
+				if err != nil || isException(v.v) {
+					return v, err
+				}
+				kept = append(kept, v)
+			}
+			return Value{}, nil
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newTestVM(t)
+			m.SetMemoryLimit(1 << 20)
+			v, err := f(m)
+			if err == nil {
+				t.Fatalf("got no error, a Value of tag %d", tag(v.v))
+			}
+			wantOutOfMemory(t, name, err)
+			if e := err.(*Error); !e.Uncatchable || !e.OutOfMemory {
+				t.Fatalf("got %#v, want an uncatchable out of memory error", e)
+			}
+			wantNoPendingException(t, m)
+			m.SetMemoryLimit(^uintptr(0))
+			if r, err := m.Eval(`1 + 1`, EvalGlobal); err != nil || r != 2 {
+				t.Fatalf("the next call got %v, %v", r, err)
+			}
+		})
+	}
+}

@@ -5,14 +5,27 @@
 package quickjs // import "github.com/liustack/quickjs"
 
 import (
+	"errors"
 	"fmt"
 )
 
 var (
 	// UndefinedValue is a Value representing Javascript value 'undefined'. It is
-	// not associated with any particular VM.
+	// not associated with any particular VM: every method that takes a Value
+	// takes it, and the zero Value, as undefined.
 	UndefinedValue = Value{v: undefined}
 )
+
+// errForeignValue is the error of a method given a Value of another VM.
+var errForeignValue = errors.New("quickjs: a Value of another VM")
+
+// foreign reports whether v belongs to a VM other than m: every method that
+// takes a Value refuses it before it reaches the engine, where it would keep
+// a pointer into the memory of the other VM, or free it with the wrong
+// allocator. It is neither used nor freed then: it stays its owner's. A
+// Value of no VM, UndefinedValue or the zero Value, holds no reference and
+// is every VM's.
+func (m *VM) foreign(v Value) bool { return v.vm != m && v.vm != nil }
 
 // Atom is an unique identifier of, for example, a string value. Atom values
 // are VM-specific.
@@ -39,6 +52,9 @@ func (m *VM) NewAtom(s string) (r Atom, err error) {
 // runs javascript: it runs inside the eval timeout like [VM.Eval], and its
 // exception is the error.
 func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
+	if m.foreign(this) || m.foreign(val) {
+		return errForeignValue
+	}
 	if err = m.enter(); err != nil {
 		return err
 	}
@@ -48,8 +64,7 @@ func (m *VM) SetPropertyValue(this Value, prop Atom, val Value) (err error) {
 
 // setPropertyValue is SetPropertyValue inside a call into javascript.
 func (m *VM) setPropertyValue(this Value, prop Atom, val Value) error {
-	dup := val.Dup()
-	if m.jsSetProperty(this.v, prop, dup.v) < 0 {
+	if m.jsSetProperty(this.jsValue(), prop, dupValue(val.jsValue())) < 0 {
 		return m.errFromException()
 	}
 
@@ -59,6 +74,9 @@ func (m *VM) setPropertyValue(this Value, prop Atom, val Value) error {
 // SetProperty sets this.prop = val. It runs javascript as [VM.SetPropertyValue]
 // does, inside the eval timeout.
 func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
+	if m.foreign(this) {
+		return errForeignValue
+	}
 	if err = m.enter(); err != nil {
 		return err
 	}
@@ -86,11 +104,14 @@ func (m *VM) SetProperty(this Value, prop Atom, val any) (err error) {
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
 func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
+	if m.foreign(this) {
+		return r, errForeignValue
+	}
 	if err = m.enter(); err != nil {
 		return r, err
 	}
 	defer m.leave(&err)
-	v := m.jsGetProperty(this.v, prop)
+	v := m.jsGetProperty(this.jsValue(), prop)
 	if isException(v) {
 		err = m.errFromException()
 	}
@@ -102,11 +123,14 @@ func (m *VM) GetPropertyValue(this Value, prop Atom) (r Value, err error) {
 // through its toString, an object through toJSON and its getters), inside the
 // same eval timeout.
 func (m *VM) GetProperty(this Value, prop Atom) (r any, err error) {
+	if m.foreign(this) {
+		return nil, errForeignValue
+	}
 	if err = m.enter(); err != nil {
 		return nil, err
 	}
 	defer m.leave(&err)
-	return m.value(m.jsGetProperty(this.v, prop), true)
+	return m.value(m.jsGetProperty(this.jsValue(), prop), true)
 }
 
 // Value represents a native Javascript value. Values are reference counted and
@@ -291,7 +315,7 @@ func (v Value) Call(this Value, args ...any) (r any, err error) {
 		return
 	}
 	defer v.vm.leave(&err)
-	return v.vm.call(v.v, this.v, args...)
+	return v.vm.call(v.v, this.jsValue(), args...)
 }
 
 // CallValue is like [Value.Call] but returns (Value, error) like
@@ -309,7 +333,7 @@ func (v Value) CallValue(this Value, args ...any) (r Value, err error) {
 		return
 	}
 	defer v.vm.leave(&err)
-	return v.vm.callValue(v.v, this.v, args...)
+	return v.vm.callValue(v.v, this.jsValue(), args...)
 }
 
 // checkCall validates the receiver and 'this' of the Value call methods. It
@@ -320,10 +344,8 @@ func (v Value) checkCall(this Value) error {
 		return fmt.Errorf("cannot call a Value not associated with a VM")
 	}
 
-	// Same test as in convertArgs: values with a reference count, ie. those
-	// belonging to a particular runtime heap, must not cross VMs.
-	if this.vm != v.vm && tag(this.v) < 0 {
-		return fmt.Errorf("cannot use a Value from a different VM")
+	if v.vm.foreign(this) {
+		return errForeignValue
 	}
 
 	return nil

@@ -55,21 +55,31 @@ func (m *VM) NewObjectValue() (r Value, err error) {
 	if err := m.usable(); err != nil {
 		return r, err
 	}
-	return Value{vm: m, v: m.jsNewObject()}, nil
+	v := m.jsNewObject()
+	if isException(v) {
+		return r, m.errFromException()
+	}
+	return Value{vm: m, v: v}, nil
 }
 
 // newString makes the string of NewString, and of the Go strings of the
 // other methods. It refuses a VM a kill left good only for Close here, not in
 // NewString, which stays small enough to inline (Builtins return strings).
+// When the engine has no memory for the string, the error is its exception.
 func (m *VM) newString(s string) (r jsValue, err error) {
 	if err := m.usable(); err != nil {
 		return r, err
 	}
-	if v, ok := m.newStringFast(s); ok {
-		return v, nil
+	r, ok := m.newStringFast(s)
+	if !ok {
+		if r, err = m.newStringEngine(s); err != nil {
+			return r, err
+		}
 	}
-
-	return m.newStringEngine(s)
+	if isException(r) {
+		return r, m.errFromException()
+	}
+	return r, nil
 }
 
 // newStringEngine is newString through JS_NewStringLen, for a string longer
@@ -170,19 +180,34 @@ func (m *VM) goString(v jsValue) (string, error) {
 	return s, nil
 }
 
-// errString converts the JS value 'v' to a Go string for ErrorFromValue, which
-// has no error result, and which errFromException calls, so it cannot turn a
-// failure into an error the way goString does without recursing. When the
-// conversion throws, errString drops that new exception and returns "": the
+// errString converts the JS value 'v' to a Go string for readError, which
+// errFromException calls, so it cannot turn a failure into an error the way
+// goString does without recursing. When the conversion throws what the
+// script throws, errString drops that new exception and returns "": the
 // exception being read is the one to report, and a second one left pending
-// would be found by the next JS_GetException of an unrelated call.
-func (m *VM) errString(v jsValue) string {
-	s, ok := m.argString(v, false)
+// would be found by the next JS_GetException of an unrelated call. ok is
+// false when the conversion threw an uncatchable exception, which stays
+// pending (dropCatchable).
+func (m *VM) errString(v jsValue) (s string, ok bool) {
+	s, ok = m.argString(v, false)
 	if !ok {
-		m.dropException()
+		return "", m.dropCatchable()
 	}
 
-	return s
+	return s, true
+}
+
+// dropCatchable drops the exception that a read of an error threw, and
+// reports true, when the script threw it. An uncatchable one (an interrupt,
+// the eval timeout, running out of memory, a panic in a Go function) ends
+// the call whatever reads what: it stays pending, and dropCatchable reports
+// false.
+func (m *VM) dropCatchable() bool {
+	if m.uncatchablePending() {
+		return false
+	}
+	m.dropException()
+	return true
 }
 
 // dropException frees the exception pending in m's context.
@@ -282,9 +307,13 @@ func (m *VM) jsValue(in reflect.Value) (out jsValue, err error) {
 		}
 	}()
 
+	// A Value is a node of the snapshot of a result (result.go), never a leaf
+	// that jsValue converts.
 	switch x := in.Interface().(type) {
 	case nil:
 		return null, nil
+	case Value:
+		return out, fmt.Errorf("internal error: a Value outside the snapshot of a result (%v:)", origin(1))
 	case Undefined:
 		return undefined, nil
 	case error:
@@ -364,9 +393,10 @@ func (m *VM) jsPtrValue(in reflect.Value) (out jsValue, err error) {
 	}
 }
 
-// jsMap converts a Go map to a Javascript object. Like jsArray, and unlike the
-// JSON round trip used for structs, it converts every value with jsValue, so a
-// Value stays a live reference and a *big.Int stays a BigInt.
+// jsMap converts a Go map that can hold no Value to a Javascript object.
+// Like jsArray, and unlike the JSON round trip used for structs, it converts
+// every value with jsValue, so a *big.Int stays a BigInt. A map that can
+// hold a Value goes through the snapshot of its result (result.go).
 func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	if in.IsNil() {
 		return null, nil
@@ -374,27 +404,29 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 
 	// Javascript property names are strings. Integer keys stringify the same way
 	// they do in JSON and the same way obj[1] and obj["1"] are the same property
-	// in Javascript. Collect and validate them before creating the object so a
+	// in Javascript. Check the type of the keys before creating the object so a
 	// bad key needs no cleanup.
+	var key func(k reflect.Value) string
+	switch in.Type().Key().Kind() {
+	case reflect.String:
+		key = reflect.Value.String
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		key = func(k reflect.Value) string { return strconv.FormatInt(k.Int(), 10) }
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		key = func(k reflect.Value) string { return strconv.FormatUint(k.Uint(), 10) }
+	default:
+		// An empty map needs no name for a key.
+		if in.Len() > 0 {
+			return out, fmt.Errorf("unsupported map key type: %s", in.Type().Key())
+		}
+	}
 	type kv struct {
 		key string
 		val reflect.Value
 	}
-	var a []kv
-	for _, k := range in.MapKeys() {
-		var key string
-		switch k.Kind() {
-		case reflect.String:
-			key = k.String()
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			key = strconv.FormatInt(k.Int(), 10)
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			key = strconv.FormatUint(k.Uint(), 10)
-		default:
-			return out, fmt.Errorf("unsupported map key type: %s", k.Type())
-		}
-
-		a = append(a, kv{key, in.MapIndex(k)})
+	a := make([]kv, 0, in.Len())
+	for it := in.MapRange(); it.Next(); {
+		a = append(a, kv{key(it.Key()), it.Value()})
 	}
 
 	// Javascript property order is observable, via Object.keys, JSON.stringify or
@@ -406,63 +438,62 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	if isException(obj) {
 		return out, m.errFromException()
 	}
+	// The object is freed when a value fails to convert, or panics.
+	done := false
+	defer func() {
+		if !done {
+			m.jsFreeValue(obj)
+		}
+	}()
 
 	for _, kv := range a {
-		// Like jsArray, a Value is passed on as is rather than converted, and the
-		// reference it holds is the one handed over below.
-		var jv jsValue
-		switch x := kv.val.Interface().(type) {
-		case Value:
-			jv = x.v
-		default:
-			if jv, err = m.jsValue(kv.val); err != nil {
-				m.jsFreeValue(obj)
-				return out, err
-			}
+		jv, err := m.jsValue(kv.val)
+		if err != nil {
+			return out, err
 		}
 
-		// JS_SetPropertyStr takes over the reference to jv, also when there is
-		// no memory for the C string of the name.
-		rc, err2 := m.jsSetPropertyStr(obj, validUTF8(kv.key), jv)
-		if err2 != nil {
-			m.jsFreeValue(obj)
-			return out, err2
+		// The key is an atom of all its bytes, NULs too, and an own data
+		// property as in an object literal: no setter runs, and __proto__ is
+		// a key. JS_DefinePropertyValue takes jv, also when it fails.
+		atom, err := m.jsNewAtom(validUTF8(kv.key))
+		if err == nil && atom == atomNull {
+			err = m.errFromException()
 		}
-
+		if err != nil {
+			m.jsFreeValue(jv)
+			return out, err
+		}
+		rc := m.jsDefinePropertyValue(obj, atom, jv, propCWE|propThrow)
+		m.jsFreeAtom(atom)
 		if rc < 0 {
-			m.jsFreeValue(obj)
 			return out, m.errFromException()
 		}
 	}
 
+	done = true
 	return obj, nil
 }
 
+// jsArray converts the elements a to a javascript array.
 func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
-	var s []jsValue
-	for _, v := range a {
-		switch x := v.Interface().(type) {
-		case Value:
-			s = append(s, x.v)
-		default:
-			jv, err := m.jsValue(v)
-			if err != nil {
-				return out, err
-			}
-
-			s = append(s, jv)
+	// What is converted is freed when an element fails to convert or
+	// panics, and once the array has its own references.
+	s := make([]jsValue, 0, len(a))
+	defer func() {
+		for _, v := range s {
+			m.jsFreeValue(v)
 		}
+	}()
+	for _, v := range a {
+		jv, err := m.jsValue(v)
+		if err != nil {
+			return out, err
+		}
+		s = append(s, jv)
 	}
-	return m.jsArrayOf(s)
-}
-
-func (m *VM) jsArrayOf(a []jsValue) (out jsValue, err error) {
-	out, err = m.jsArrayOfValues(a)
+	out, err = m.jsArrayOfValues(s)
 	if err == nil && isException(out) {
 		err = m.errFromException()
-	}
-	for _, v := range a {
-		m.jsFreeValue(v)
 	}
 	return out, err
 }

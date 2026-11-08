@@ -99,15 +99,15 @@ func (e *Error) Error() string {
 	return name + ": " + e.Message
 }
 
-// errStrProp reads the string-valued property 'name' from error value 'v',
-// returning "" when the property is absent or not a string, when reading it
-// throws, or when there is no memory to convert it. Like errString it drops
-// the exception, see there. 'v' is borrowed.
-func (m *VM) errStrProp(v jsValue, name uint32) (r string) {
+// errStrProp reads the string-valued property 'name' from error value 'v'
+// for readError, returning "" when the property is absent or not a string,
+// when reading it throws, or when converting it does. ok is false when that
+// was an uncatchable exception, which stays pending (see readError). 'v' is
+// borrowed.
+func (m *VM) errStrProp(v jsValue, name uint32) (r string, ok bool) {
 	vr := m.jsGetProperty(v, name)
 	if isException(vr) {
-		m.dropException()
-		return ""
+		return "", m.dropCatchable()
 	}
 
 	defer m.jsFreeValue(vr)
@@ -116,29 +116,28 @@ func (m *VM) errStrProp(v jsValue, name uint32) (r string) {
 		return m.errString(vr)
 	}
 
-	return ""
+	return "", true
 }
 
-// errIntProp reads the integer-valued property 'name' from error value 'v',
-// returning 0 when the property is absent or not numeric, or when reading it
-// throws. Like errString it drops the exception, see there. 'v' is borrowed.
-func (m *VM) errIntProp(v jsValue, name uint32) (r int) {
+// errIntProp reads the integer-valued property 'name' from error value 'v'
+// for readError, returning 0 when the property is absent or not numeric, or
+// when reading it throws. ok is as for errStrProp. 'v' is borrowed.
+func (m *VM) errIntProp(v jsValue, name uint32) (r int, ok bool) {
 	vr := m.jsGetProperty(v, name)
 	if isException(vr) {
-		m.dropException()
-		return 0
+		return 0, m.dropCatchable()
 	}
 
 	defer m.jsFreeValue(vr)
 
 	switch tag(vr) {
 	case tagInt:
-		return int(jsvToInt32(vr))
+		return int(jsvToInt32(vr)), true
 	case tagFloat64:
-		return int(jsvToFloat64(vr))
+		return int(jsvToFloat64(vr)), true
 	}
 
-	return 0
+	return 0, true
 }
 
 // ErrorFromValue extracts structured error information from JavaScript error
@@ -148,17 +147,31 @@ func (m *VM) errIntProp(v jsValue, name uint32) (r int) {
 // responsible for its lifetime. Like all VM operations it must be called from
 // the VM's own goroutine. See [Error] for which fields are populated.
 //
-// A field that cannot be read is left empty: the string form of 'v' (the
-// result of Error) when its toString throws, a property whose getter throws,
-// and any string field when there is no memory for its UTF-8 copy. The
-// exception that reading throws is dropped, so ErrorFromValue leaves no
-// exception pending.
+// A field that cannot be read because of what the script throws is left
+// empty: the string form of 'v' (the result of Error) when its toString
+// throws, and a property whose getter throws. That exception is dropped, so
+// ErrorFromValue leaves no exception pending.
 //
 // Reading runs javascript (a getter, or a toString that a script replaced), so
-// it runs inside the eval timeout like [VM.Eval]: a field the timeout cut off
-// is left empty. On a VM a kill left good only for Close, it panics.
-func ErrorFromValue(v Value) (e *Error) {
-	m := v.vm
+// it runs inside the eval timeout like [VM.Eval]. When the read is stopped
+// by what ends a call, the eval timeout, [VM.Interrupt] or running out of
+// memory, ErrorFromValue returns that error in place of the fields of 'v':
+// Uncatchable is set, and Interrupted or OutOfMemory says which, as in the
+// error of a call. The read stops there. Inside a Go function that
+// javascript called, that error also stays pending and ends the javascript
+// that called the function, as every call into javascript does then.
+//
+// A panic of a Go function that the read calls is not returned: it goes on
+// to the caller of ErrorFromValue, as from any call into javascript. On a VM
+// a kill left good only for Close, ErrorFromValue panics.
+func ErrorFromValue(v Value) *Error {
+	return v.vm.errorFrom(v.v)
+}
+
+// errorFrom is ErrorFromValue of v, borrowed, which can also be the
+// exception takeException took. A script cannot make an *Error with
+// Uncatchable set: only an uncatchable exception and a kill give one.
+func (m *VM) errorFrom(v jsValue) (e *Error) {
 	var err error
 	if err = m.enter(); err != nil {
 		panic(brokenPanic)
@@ -171,16 +184,45 @@ func ErrorFromValue(v Value) (e *Error) {
 	}()
 	defer m.leave(&err)
 
-	return &Error{
-		engine:       true,
-		raw:          m.errString(v.v),
-		Name:         m.errStrProp(v.v, atomName),
-		Message:      m.errStrProp(v.v, atomMessage),
-		Stack:        m.errStrProp(v.v, atomStack),
-		LineNumber:   m.errIntProp(v.v, atomLineNumber),
-		ColumnNumber: m.errIntProp(v.v, atomColumnNumber),
-		FileName:     m.errStrProp(v.v, atomFileName),
+	e, ok := m.readError(v)
+	if !ok {
+		e, _ = m.takeException()
 	}
+	return e
+}
+
+// readError reads the fields of 'v', borrowed, as ErrorFromValue says. ok is
+// false when a read met an uncatchable exception: it stays pending, for the
+// caller to take as the error in place of 'v', and the fields are not read
+// further. So is one that javascript the read ran left pending without
+// failing (see settled).
+func (m *VM) readError(v jsValue) (e *Error, ok bool) {
+	e = &Error{engine: true}
+	if e.raw, ok = m.errString(v); !ok {
+		return nil, false
+	}
+	if e.Name, ok = m.errStrProp(v, atomName); !ok {
+		return nil, false
+	}
+	if e.Message, ok = m.errStrProp(v, atomMessage); !ok {
+		return nil, false
+	}
+	if e.Stack, ok = m.errStrProp(v, atomStack); !ok {
+		return nil, false
+	}
+	if e.LineNumber, ok = m.errIntProp(v, atomLineNumber); !ok {
+		return nil, false
+	}
+	if e.ColumnNumber, ok = m.errIntProp(v, atomColumnNumber); !ok {
+		return nil, false
+	}
+	if e.FileName, ok = m.errStrProp(v, atomFileName); !ok {
+		return nil, false
+	}
+	if m.uncatchablePending() {
+		return nil, false
+	}
+	return e, true
 }
 
 func (m *VM) errFromException() error {
@@ -190,49 +232,55 @@ func (m *VM) errFromException() error {
 
 // takeException takes the pending exception out of the context and returns
 // it as an *Error, and whether it was uncatchable (an interrupt, running out
-// of memory, or a panic in a Go function).
+// of memory, or a panic in a Go function). Reading an exception the script
+// threw runs javascript: when that meets an uncatchable exception, the
+// uncatchable one is what takeException takes and returns, as the call
+// ends with it.
 func (m *VM) takeException() (err *Error, uncatchable bool) {
 	uncatchable = m.uncatchablePending()
 	e := m.jsGetException()
 	// The flag outlives the exception. Clear it, so that it does not stay
 	// with the next exception the engine fails to throw.
 	m.jsSetUncatchableException(false)
-
+	// Deferred: a Go function that panics while e is read goes on panicking
+	// through here (repanic).
 	defer m.jsFreeValue(e)
 
-	switch {
-	case uncatchable && tag(e) == tagNull:
+	if !uncatchable {
+		// Reading e runs javascript, inside the eval timeout. When that
+		// met an uncatchable exception, it is the error (errorFrom).
+		err = m.errorFrom(e)
+		return err, err.Uncatchable
+	}
+
+	if tag(e) == tagNull {
 		// The engine throws null when it runs out of memory building an
 		// error.
 		err = outOfMemoryError()
-	case uncatchable:
+	} else {
 		err = m.uncatchableError(e)
-	default:
-		err = ErrorFromValue(Value{vm: m, v: e})
 	}
-	if uncatchable {
-		// No script can throw an uncatchable exception, and none runs
-		// between the engine making it and here (uncatchableError runs
-		// none either), so this is one of the errors the engine or the VM
-		// ends a call with, with the message it was made with: an interrupt,
-		// running out of memory, or a panic in a Go function (hostPanicked).
-		err.Uncatchable = true
-		switch err.Message {
-		case "out of memory":
-			err.OutOfMemory = true
-		case "interrupted":
-			err.Interrupted = true
-		}
+	// No script can throw an uncatchable exception, and none runs between
+	// the engine making it and here (uncatchableError runs none either), so
+	// this is one of the errors the engine or the VM ends a call with, with
+	// the message it was made with: an interrupt, running out of memory, or
+	// a panic in a Go function (hostPanicked).
+	err.Uncatchable = true
+	switch err.Message {
+	case "out of memory":
+		err.OutOfMemory = true
+	case "interrupted":
+		err.Interrupted = true
 	}
 	defer m.repanic()
-	if uncatchable && m.host > 0 {
+	if m.host > 0 {
 		// Inside a Go function called from javascript, the exception ends
 		// that javascript too: it stays pending, so that every call into
 		// javascript fails until callGo returns it to the engine.
 		m.jsThrow(dupValue(e))
 		m.jsSetUncatchableException(true)
 	}
-	return err, uncatchable
+	return err, true
 }
 
 // hostPanicked keeps p, what the Go function name called from javascript

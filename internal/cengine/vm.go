@@ -288,17 +288,24 @@ func (v *VM) eval(src, file string) (string, error) {
 	if int32(tag) == tagException {
 		return "", v.exception()
 	}
-	defer v.free(u, tag)
+	// The value is freed on the way out only when the engine returned: a
+	// panic that leaves it halfway (a kill, a fault) leaves the value to
+	// Close, as nothing may enter that engine again. So no free here or
+	// below is deferred.
 	for {
 		r := int32(JS_ExecutePendingJob(v.sp, v.rt, v.base+scratchCtx))
 		if r < 0 {
-			return "", v.exception()
+			err := v.exception()
+			v.free(u, tag)
+			return "", err
 		}
 		if r == 0 {
 			break
 		}
 	}
-	return v.string(u, tag)
+	s, err := v.string(u, tag)
+	v.free(u, tag)
+	return s, err
 }
 
 // string is String(value), or the exception it threw as an error.
@@ -328,39 +335,78 @@ const unprintable = "an exception whose String() threw"
 // exception takes the pending exception of the context. It converts the
 // exception and its stack once each, and leaves out what does not convert:
 // an exception may throw again on every conversion, so what a conversion
-// here throws is dropped, not converted in turn.
+// here throws is dropped, not converted in turn. An uncatchable exception
+// that a conversion throws (an interrupt, the timeout, out of memory) is
+// not dropped: it ends the call, and exception returns it in place of the
+// one it was converting.
 func (v *VM) exception() error {
 	// The flag of an uncatchable exception outlives it: cleared here, or
 	// the next exception would be uncatchable too.
 	uncatchable := JS_IsUncatchableException(v.sp, v.ctx) != 0
 	u, tag := JS_GetException(v.sp, v.ctx)
 	JS_SetUncatchableException(v.sp, v.ctx, 0)
-	defer v.free(u, tag)
+	var e *JSError
+	ok := true
 	if uncatchable {
-		return v.engineError(u, tag)
-	}
-	e := &JSError{Message: unprintable}
-	if msg, ok := v.text(u, tag); ok {
-		e.Message = msg
+		e = v.engineError(u, tag)
 	} else {
-		v.dropException()
+		e, ok = v.thrown(u, tag)
 	}
-	if int32(tag) == tagObject {
-		su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
-		if int32(stag) == tagException {
-			v.dropException()
-		} else {
-			if int32(stag) != tagUndefined {
-				if s, ok := v.text(su, stag); ok {
-					e.Stack = s
-				} else {
-					v.dropException()
-				}
-			}
-			v.free(su, stag)
-		}
+	v.free(u, tag)
+	if !ok {
+		return v.exception()
 	}
 	return e
+}
+
+// thrown converts (u, tag), an exception the script threw: String() of it
+// and its stack. ok is false when a conversion met an uncatchable
+// exception, which stays pending: one it threw, or one a built-in it called
+// only recorded, such as a promise resolve function whose then getter was
+// interrupted.
+func (v *VM) thrown(u, tag uintptr) (e *JSError, ok bool) {
+	if e, ok = v.convertThrown(u, tag); ok && JS_IsUncatchableException(v.sp, v.ctx) != 0 {
+		return nil, false
+	}
+	return e, ok
+}
+
+// convertThrown is thrown, but for an uncatchable exception left pending by
+// a conversion that ended well.
+func (v *VM) convertThrown(u, tag uintptr) (e *JSError, ok bool) {
+	e = &JSError{Message: unprintable}
+	if msg, ok := v.text(u, tag); ok {
+		e.Message = msg
+	} else if v.uncatchable() {
+		return nil, false
+	}
+	if int32(tag) != tagObject {
+		return e, true
+	}
+	su, stag := JS_GetPropertyStr(v.sp, v.ctx, u, tag, v.cstring("stack"))
+	if int32(stag) == tagException {
+		return e, !v.uncatchable()
+	}
+	ok = true
+	if int32(stag) != tagUndefined {
+		if s, sok := v.text(su, stag); sok {
+			e.Stack = s
+		} else {
+			ok = !v.uncatchable()
+		}
+	}
+	v.free(su, stag)
+	return e, ok
+}
+
+// uncatchable reports whether the exception a conversion threw is
+// uncatchable, and leaves it pending then. One the script threw is dropped.
+func (v *VM) uncatchable() bool {
+	if JS_IsUncatchableException(v.sp, v.ctx) != 0 {
+		return true
+	}
+	v.dropException()
+	return false
 }
 
 // engineError converts an uncatchable exception, which the engine made, and
@@ -391,7 +437,13 @@ func (v *VM) ownString(u, tag uintptr, name string) string {
 		v.dropException()
 		return ""
 	}
-	defer JS_FreeAtom(v.sp, v.ctx, atom)
+	s := v.ownAtomString(u, tag, atom, name)
+	JS_FreeAtom(v.sp, v.ctx, atom)
+	return s
+}
+
+// ownAtomString is ownString once the atom of name is made.
+func (v *VM) ownAtomString(u, tag, atom uintptr, name string) string {
 	switch int32(JS_GetOwnProperty(v.sp, v.ctx, 0, u, tag, atom)) {
 	case 1:
 	case 0:
@@ -405,14 +457,15 @@ func (v *VM) ownString(u, tag uintptr, name string) string {
 		v.dropException()
 		return ""
 	}
-	defer v.free(pu, ptag)
 	if int32(ptag) != tagString && int32(ptag) != tagRope {
+		v.free(pu, ptag)
 		return ""
 	}
 	s, ok := v.text(pu, ptag)
 	if !ok {
 		v.dropException()
 	}
+	v.free(pu, ptag)
 	return s
 }
 

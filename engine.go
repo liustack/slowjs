@@ -731,25 +731,6 @@ func (m *VM) jsDefinePropertyValueUint32(obj jsValue, i uint32, v jsValue, flags
 	return r
 }
 
-// jsSetPropertyStr is JS_SetPropertyStr of the property name.
-func (m *VM) jsSetPropertyStr(obj jsValue, name string, v jsValue) (r int32, err error) {
-	if m.entered == 0 {
-		m.outer(func() { r, err = m.jsSetPropertyStr(obj, name, v) })
-		return r, err
-	}
-	p, sp, heap := m.tmpString(name, true)
-	if p == 0 {
-		m.jsFreeValue(v)
-		return 0, m.tmpError()
-	}
-	// JS_SetPropertyStr takes over the reference to v, not the name.
-	m.toEngine()
-	r = int32(cengine.JS_SetPropertyStr(sp, m.ctx, obj.u, obj.tag, p, v.u, v.tag))
-	m.inEngine--
-	m.tmpFree(p, heap)
-	return r, nil
-}
-
 // jsNewAtom is JS_NewAtomLen of s. It returns atomNull and an error when
 // there is no memory to pass s.
 func (m *VM) jsNewAtom(s string) (r uint32, err error) {

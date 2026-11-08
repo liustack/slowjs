@@ -10,7 +10,9 @@ package cengine
 import (
 	"errors"
 	"runtime"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/liustack/quickjs/internal/gohost"
 	"github.com/liustack/quickjs/internal/hostmem"
@@ -310,4 +312,51 @@ func TestCloseCleanupRefused(t *testing.T) {
 			t.Errorf("%s: the engine was freed %d times", how, teardowns(v))
 		}
 	}
+}
+
+// TestEvalFreesNothingAfterKill: when a poll kills a pending job of Eval, the
+// value the script ended with is not freed on the way out. Freeing it enters
+// the engine that the kill left halfway, here to give the 64 MiB of an
+// ArrayBuffer back through a callback. Close gives the memory back instead.
+func TestEvalFreesNothingAfterKill(t *testing.T) {
+	needPolls(t)
+	v := newVM(t, Options{Seed: 1})
+	v.Host().SetKillGrace(0)
+	if _, err := v.Eval("var a = { length: 2 ** 31 - 1 }", "setup.js"); err != nil {
+		t.Fatal(err)
+	}
+	v.RunGC()
+
+	var afterBroken atomic.Int64
+	start := v.Host().Polls()
+	callbackHook = func(name string, vm uintptr) {
+		if v.Host().Broken() {
+			afterBroken.Add(1)
+		}
+	}
+	defer func() { callbackHook = nil }()
+
+	src := `Promise.resolve().then(() => Array.prototype.lastIndexOf.call(a, -1));
+new ArrayBuffer(1 << 26)`
+	done := make(chan error, 1)
+	go func() { _, err := v.Eval(src, "kill.js"); done <- err }()
+	for v.Host().Polls()-start < 20000 {
+		select {
+		case err := <-done:
+			t.Fatalf("Eval ended before the kill: %v", err)
+		default:
+			time.Sleep(50 * time.Microsecond)
+		}
+	}
+	v.Interrupt()
+	if err := <-done; !errors.Is(err, ErrKilled) {
+		t.Fatalf("Eval gave %v, want ErrKilled", err)
+	}
+	if !v.Host().Broken() {
+		t.Fatal("the VM is not broken after the kill")
+	}
+	if n := afterBroken.Load(); n != 0 {
+		t.Errorf("the engine called the host %d times after the kill broke the VM", n)
+	}
+	closeVM(t, v)
 }

@@ -35,7 +35,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `enginememory.go` | `MemoryUsage`、`ReleaseMemory`，以及 `SharedBytecode` 的内存（映射在所有 VM 之外，只读） |
 | `engine_unsupported.go` | 在其他任何平台上，import `internal/unsupported`，构建只报它的错误，错误里写明支持的平台 |
 
-共用的文件放 API：`vm.go`（创建、设置和关闭 VM）、`eval.go`、`call.go`、`convert.go`（Go 值和 javascript 之间互转）、`errors.go`、`register.go`（`RegisterFunc`）、`value.go`、`builtin.go`、`jsstring.go`、`promise.go`、`sharedbytecode.go`、`memory.go`、`asynccontext.go`、`vmclock.go` 和 `etc.go`。`TestEngineDeps`（`enginedeps_test.go`）检查这个包链接了 `internal/cengine` 和它的 Go 宿主。
+共用的文件放 API：`vm.go`（创建、设置和关闭 VM）、`eval.go`、`call.go`、`convert.go`（Go 值和 javascript 之间互转）、`errors.go`、`register.go`（`RegisterFunc`）、`result.go`（Go 函数结果的快照，连同结果交出的 `Value` 引用）、`value.go`、`builtin.go`、`jsstring.go`、`promise.go`、`sharedbytecode.go`、`memory.go`、`asynccontext.go`、`vmclock.go` 和 `etc.go`。`TestEngineDeps`（`enginedeps_test.go`）检查这个包链接了 `internal/cengine` 和它的 Go 宿主。
 
 ## 目录
 
@@ -69,7 +69,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 
 ## 核心类型
 
-- `VM`，主要的句柄：一个 JS realm 和它在引擎里的运行时，带着 Go 宿主给它的内存。由 `NewVM()` 创建，`Close()` 释放。多个 goroutine 并发使用它不安全。
+- `VM`，主要的句柄：一个 JS realm 和它在引擎里的运行时，带着 Go 宿主给它的内存。由 `NewVM()` 创建，`Close()` 释放。多个 goroutine 并发使用它不安全。有错误结果的方法用这个错误报告它能看出的误用，而不是 panic：在对 VM 的调用进行中（比如在 javascript 调用的 Go 函数里）调用 `Close` 和 `ReleaseMemory`，会返回错误，什么也不改。
 - `Value`：包装一个引用计数的 `jsValue`。`Dup()` 和 `Free()` 必须严格成对，并且正确嵌套（类型的文档说明了跨 goroutine 和 channel 时怎么会出错）。用错会导致泄漏或释放后使用，原生测试宿主的 sanitizer 和 `internal/cengine` 的检查能抓到。
 - `Object`、`Atom` 和 `HostFunc`（`func(args []any) (any, error)`）。
 - `Builtin`，javascript 当作内置函数调用的 Go 函数，以及 `Args`，它被调用时的参数（见[从 JavaScript 调用的 Go 函数](#从-javascript-调用的-go-函数)）。

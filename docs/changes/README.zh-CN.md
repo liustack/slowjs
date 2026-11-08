@@ -72,6 +72,17 @@ read_when:
 | RegisterStartTag 和 RegisterEndTag，用 C 写的 React DOM 为元素写出的开始标签和结束标签 | v0.29.10 | [go-api.md](go-api.zh-CN.md#registerstarttag-和-registerendtag) |
 | 比引擎检查时用的版本更新的 Go 会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#比检查过引擎的-go-更新的-go-会让构建停下) |
 | 改变汇编器编码引擎方式的构建选项会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#会改变汇编器对引擎编码方式的构建选项会让构建停下) |
+| 每个接收 Value 的入口都拒绝别的 VM 的 Value | Unreleased | [go-api.md](go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value) |
+| 值的构造函数会报告内存不足 | Unreleased | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
+| 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
+| UndefinedValue 作为参数和属性值 | Unreleased | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
+| 拒绝在对 VM 的调用进行中 Close | Unreleased | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
+| Then 返回 then getter 抛出的异常 | Unreleased | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
+| Go map 变成只有自有数据属性的对象 | Unreleased | [go-api.md](go-api.zh-CN.md#go-map-变成只有自有数据属性的对象) |
+| 作为 any 返回的 Value 按 Value 接管 | Unreleased | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
+| 结果两次到达的同一个位置只算一个引用 | Unreleased | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
+| 包含自身的结果是一个错误 | Unreleased | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
+| 结果的引用在程序代码运行之前取下 | Unreleased | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
 
 ## 守得住的限额
 
@@ -96,6 +107,8 @@ read_when:
 | repeat 每 65,536 个字符读取一次中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#repeat-每-65536-个字符读一次中断标志) |
 | 编译一个很长的正则时，每个长循环都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#编译一个长正则时在每个长循环里读中断标志) |
 | 正则的类不管有多少字符或字符串，都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#无论正则的类有多少字符或字符串都读中断标志) |
+| 字节码调用在 eval 超时内转换结果 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果) |
+| 读取异常时遇到的无法捕获的异常结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用) |
 
 ## 错误和调用栈
 

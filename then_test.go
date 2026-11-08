@@ -5,6 +5,7 @@
 package quickjs
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -298,4 +299,20 @@ func TestThenReleasesHandlers(t *testing.T) {
 			t.Fatalf("%d Go functions held after the promise was freed, want %d", got, n)
 		}
 	})
+}
+
+// Then returns what a getter of the then of the promise throws, and leaves
+// no exception pending.
+func TestThenGetterThrows(t *testing.T) {
+	m := newTestVM(t)
+	p := evalValueOrFatal(t, m, `const p = Promise.resolve(1)
+Object.defineProperty(p, "then", { get() { throw new RangeError("original") } })
+p`)
+	defer p.Free()
+	_, err := p.Then(func(Value) {}, nil)
+	var e *Error
+	if !errors.As(err, &e) || e.Name != "RangeError" || e.Message != "original" {
+		t.Fatalf("got %v, want the RangeError the getter threw", err)
+	}
+	wantNoPendingException(t, m)
 }

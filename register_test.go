@@ -7,6 +7,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -205,5 +206,162 @@ func testRegisterExistingName(t *testing.T) {
 	}
 	if g, e := eval(`typeof fresh`), "undefined"; g != e {
 		t.Errorf("typeof fresh = %v, want %v", g, e)
+	}
+}
+
+// A Go function whose results fail to convert part way leaves nothing in the
+// VM: neither the values made for the results before the one that failed,
+// nor the Values it returned, before or after it.
+func TestFailedResultLeaksNothing(t *testing.T) {
+	big := strings.Repeat("x", 4096)
+	for name, f := range map[string]func(m *VM) any{
+		"results": func(m *VM) any {
+			return func() (string, chan int) { return big + "a", make(chan int) }
+		},
+		"Value results": func(m *VM) any {
+			return func() (Value, chan int, Value) {
+				return mustString(t, m, big+"a"), make(chan int), mustString(t, m, big+"b")
+			}
+		},
+		"slice": func(m *VM) any {
+			return func() []any {
+				return []any{big + "a", mustString(t, m, big+"b"), make(chan int), mustString(t, m, big+"c")}
+			}
+		},
+		"nested slice": func(m *VM) any {
+			return func() []any { return []any{[]any{big + "a", make(chan int)}, mustString(t, m, big+"b")} }
+		},
+		"map": func(m *VM) any {
+			return func() map[string]any {
+				return map[string]any{"a": big + "a", "b": mustString(t, m, big+"b"), "c": make(chan int), "d": mustString(t, m, big+"d")}
+			}
+		},
+		"map key": func(m *VM) any {
+			return func() map[float64]Value { return map[float64]Value{1: mustString(t, m, big+"a")} }
+		},
+		"nested after the failure": func(m *VM) any {
+			return func() []any {
+				return []any{make(chan int), []Value{mustString(t, m, big+"a")}, map[string]any{"k": []any{mustString(t, m, big+"b")}}}
+			}
+		},
+		"nested in a map after the failure": func(m *VM) any {
+			return func() map[string]any {
+				return map[string]any{"a": make(chan int), "b": []any{mustString(t, m, big+"b")}, "c": &[]Value{mustString(t, m, big+"c")}}
+			}
+		},
+		"results after the failure": func(m *VM) any {
+			return func() (chan int, any, map[int]Value) {
+				return make(chan int), mustString(t, m, big+"a"), map[int]Value{1: mustString(t, m, big+"b")}
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := newTestVM(t)
+			if err := m.RegisterFunc("bad", f(m), false); err != nil {
+				t.Fatal(err)
+			}
+			run := func(n int) {
+				for range n {
+					if _, err := m.Eval(`try { bad(); throw 0 } catch (e) { if (!(e instanceof TypeError)) throw e }`, EvalGlobal); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			run(10)
+			m.RunGC()
+			before := m.MemorySize()
+			run(500)
+			m.RunGC()
+			if grew := int(m.MemorySize()) - int(before); grew > 100<<10 {
+				t.Fatalf("500 failed calls left %d bytes in the VM after a GC", grew)
+			}
+		})
+	}
+}
+
+func mustString(t *testing.T, m *VM, s string) Value {
+	t.Helper()
+	v, err := m.NewString(s)
+	if err != nil {
+		t.Error(err)
+	}
+	return v
+}
+
+// A Go map becomes an object whose keys are its own data properties, each
+// key whole: a key with a NUL byte stays apart from the key before the NUL,
+// __proto__ is a key and leaves the prototype alone, and a setter on
+// Object.prototype under the name of a key does not run.
+func TestMapResultKeys(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterHostFunc("nul", func([]any) (any, error) {
+		return map[string]int{"a": 1, "a\x00b": 2}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("proto", func([]any) (any, error) {
+		return map[string]any{"__proto__": map[string]any{"evil": 1}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("setter", func([]any) (any, error) {
+		return map[string]any{"k": 1}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ js, want string }{
+		{`const o = nul(); JSON.stringify(Object.keys(o)) + o.a + o["a\0b"]`, `["a","a\u0000b"]12`},
+		{`const p = proto(); [Object.keys(p).join(), Object.getPrototypeOf(p) === Object.prototype, "evil" in p].join()`, `__proto__,true,false`},
+		{`let hit = 0
+Object.defineProperty(Object.prototype, "k", { configurable: true, set(v) { hit++ } })
+const s = setter()
+delete Object.prototype.k;
+[hit, Object.keys(s).join(), s.k].join()`, `0,k,1`},
+	} {
+		r, err := m.Eval(c.js, EvalGlobal)
+		if err != nil || r != c.want {
+			t.Errorf("%s: got %v, %v, want %s", c.js, r, err, c.want)
+		}
+	}
+}
+
+// A Value a Go function returns as an any, from RegisterFunc or
+// RegisterHostFunc, is taken as one of a static type Value is: the script
+// gets the string, and nothing of it stays in the VM. A host function that
+// returns an error with a Value frees the Value.
+func TestResultValueTaken(t *testing.T) {
+	big := strings.Repeat("x", 4096)
+	m := newTestVM(t)
+	if err := m.RegisterFunc("asAny", func() any { return mustString(t, m, big) }, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("host", func([]any) (any, error) { return mustString(t, m, big), nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.RegisterHostFunc("hostFails", func([]any) (any, error) {
+		return []any{mustString(t, m, big)}, errors.New("no")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, js := range []string{
+		`asAny() === "x".repeat(4096)`,
+		`host() === "x".repeat(4096)`,
+		`try { hostFails(); false } catch (e) { e instanceof TypeError && e.message === "no" }`,
+	} {
+		run := func(n int) {
+			for range n {
+				if r, err := m.Eval(js, EvalGlobal); err != nil || r != true {
+					t.Fatalf("%s: got %v, %v", js, r, err)
+				}
+			}
+		}
+		run(10)
+		m.RunGC()
+		before := m.MemorySize()
+		run(500)
+		m.RunGC()
+		if grew := int(m.MemorySize()) - int(before); grew > 100<<10 {
+			t.Errorf("%s: 500 calls left %d bytes in the VM after a GC", js, grew)
+		}
 	}
 }
