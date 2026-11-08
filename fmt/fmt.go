@@ -35,12 +35,17 @@ const pkg = "fmt"
 // and the arguments, and when the VM has a memory limit (see
 // [quickjs.VM.SetMemoryLimit]) and what the output may make Go's fmt
 // allocate, sixteen times its bytes and a few KiB for the printer that
-// makes it, is more than the VM has left under it, the call ends with the uncatchable out of memory error
-// and makes nothing. The bound is at most five times the output and about
-// a KiB for each verb, more for %w, so a call whose output fits in a small
-// part of what is left runs as before. Go makes the output without a check
-// of the VM, so neither [quickjs.VM.Interrupt] nor the eval timeout ends
-// it, in a time that grows with the bound.
+// makes it, is more than the VM has left under it, the call ends with the
+// uncatchable out of memory error and makes nothing. The bound comes from
+// the format and the arguments, not from the output, and can be far above
+// it: when an argument is longer than what is printed of it, as a string
+// cut by its precision, or when a width or a precision is not used, as by
+// a verb that does not fit its argument or for a zero printed with a
+// precision of 0. Such a call can be refused under a tight memory limit. A
+// call whose bound fits in a small part of what is left runs as before. Go
+// makes the output without a check of the VM, so neither
+// [quickjs.VM.Interrupt] nor the eval timeout ends it, in a time that grows
+// with the bound.
 //
 // printf and println write to os.Stdout, and a write that blocks, as one to
 // a full pipe nobody reads does, holds the call, and the goroutine running
