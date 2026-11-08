@@ -167,8 +167,8 @@ func TestUnclosedIndexesRoom(t *testing.T) {
 	}
 }
 
-// What Go allocates to make the output of a call, all of it, as none of it
-// may be collected before the call returns, is at most its budget, for
+// What the output of a call makes Go's fmt allocate, counted whole, as none
+// of it may be collected before the call returns, is at most its budget, for
 // empty and short outputs under a few GOMAXPROCS, and for long outputs of
 // each kind: the buffer grown by append, from nothing and from what each
 // length makes it, and by padding, the verbs that make their bytes in a
@@ -176,8 +176,10 @@ func TestUnclosedIndexesRoom(t *testing.T) {
 // of big ints. "%[1]s" 33 times of 64 KiB made Go allocate 6.8 times the
 // bound, and "%[1]q" of control characters up to 10.9 times, more than the
 // 6 times they were checked against while the test made the collector run
-// often and measured what the heap held at once.
-func TestAllocatedUnderBound(t *testing.T) {
+// often and measured what the heap held at once. What Go allocates to put
+// the pool of printers in the runtime's list of pools, which the budget
+// does not count, is small here, as the test program has few pools.
+func TestOutputAllocatedUnderBudget(t *testing.T) {
 	s := strings.Repeat("\x01", 1<<20)
 	b := new(big.Int).Lsh(big.NewInt(1), 1<<20)
 	type call struct {
@@ -221,8 +223,8 @@ func TestAllocatedUnderBound(t *testing.T) {
 			)
 		}
 	}
-	// A short call allocates what Go's fmt allocates for any call, which
-	// grows with GOMAXPROCS.
+	// A short output makes Go's fmt allocate its printer, and the slots of
+	// its pool, which grow with GOMAXPROCS.
 	for _, procs := range []int{1, 2, 8, 64} {
 		old := runtime.GOMAXPROCS(procs)
 		for _, c := range []call{{"", nil}, {"x", nil}, {"%d", []any{1}}} {

@@ -33,9 +33,9 @@ const pkg = "fmt"
 // Go's fmt does, and a short format can ask for a long output. So each
 // function first finds a bound on the bytes of its output, from the format
 // and the arguments, and when the VM has a memory limit (see
-// [quickjs.VM.SetMemoryLimit]) and what Go may allocate to make that many
-// bytes, sixteen times them and a few KiB for any call, is more than the VM
-// has left under it, the call ends with the uncatchable out of memory error
+// [quickjs.VM.SetMemoryLimit]) and what the output may make Go's fmt
+// allocate, sixteen times its bytes and a few KiB for the printer that
+// makes it, is more than the VM has left under it, the call ends with the uncatchable out of memory error
 // and makes nothing. The bound is at most five times the output and about
 // a KiB for each verb, more for %w, so a call whose output fits in a small
 // part of what is left runs as before. Go makes the output without a check
@@ -103,8 +103,8 @@ func Register(obj quickjs.Value) (err error) {
 }
 
 // allocated is how many times the bound on its output Go's fmt may
-// allocate to make it (see fmt/print.go and fmt/format.go), all of it
-// counted, as Go may collect none of it before the call returns:
+// allocate to make it (see fmt/print.go and fmt/format.go), counted whole,
+// as Go may collect none of it before the call returns:
 //
 //   - its buffer grows by append, to at least 1.25 times what it held
 //     (growslice in runtime/slice.go), and by writePadding, to twice its
@@ -121,24 +121,29 @@ func Register(obj quickjs.Value) (err error) {
 //     them, in less than its bound.
 //
 // That is 16 times the bound, with the bytes Go rounds each object up to.
-// On the long outputs of TestAllocatedUnderBound, Go allocated up to 11
+// On the long outputs of TestOutputAllocatedUnderBudget, Go allocated up to 11
 // times the bound.
 const allocated = 16
 
-// budget is what Go may allocate to make an output of at most n bytes with
-// more bytes allocated beside it: allocated times n, more, and what Go's fmt
-// allocates for any call. That is its printer (pp in fmt/print.go), a few
-// hundred bytes, and, when a collection has emptied the pool of printers,
-// the slots of the pool, 128 bytes for each P (poolLocal in sync/pool.go),
-// which Go rounds up, and the place of the pool in the list of pools. On
-// "" fmt.Sprintf allocated 312 bytes with GOMAXPROCS 1 and 9,656 with 64.
+// budget is what an output of at most n bytes, with more bytes allocated
+// beside it, may make Go's fmt allocate: allocated times n, more, and the
+// printer that makes it, the same for any output. That is the printer (pp
+// in fmt/print.go), a few hundred bytes, and, when a collection has emptied
+// the pool of printers, the slots of the pool, 128 bytes for each P
+// (poolLocal in sync/pool.go), which Go rounds up. On "" fmt.Sprintf
+// allocated 312 bytes with GOMAXPROCS 1 and 9,656 with 64.
+//
+// What Go's runtime sets up for its pools is not counted: after a
+// collection, the first use of each pool of the program puts it in the
+// runtime's list of pools again (allPools in sync/pool.go), which grows
+// with how many pools the program uses, not with what the script asks.
 func budget(n, more int64) int64 {
 	return allocated*n + more + 1<<10 + 256*int64(runtime.GOMAXPROCS(0))
 }
 
-// fitsPrintf is the format sizePrintf hands fmt, and whether what Go
-// allocates to make fmt.Sprintf of it fits in what vm has left under its
-// memory limit (fits).
+// fitsPrintf is the format sizePrintf hands fmt, and whether what the
+// output of fmt.Sprintf of it may make Go's fmt allocate fits in what vm
+// has left under its memory limit (fits).
 func fitsPrintf(vm *quickjs.VM, format string, a []any) (string, bool) {
 	room := vmhook.Room(vm)
 	n, read, ok := sizePrintf(format, a, room)
