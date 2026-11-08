@@ -82,7 +82,7 @@ read_when:
 | 作为 any 返回的 Value 按 Value 接管 | Unreleased | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
 | 结果两次到达的同一个位置只算一个引用 | Unreleased | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
 | 包含自身的结果是一个错误 | Unreleased | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
-| 结果从程序改不动的快照转换 | Unreleased | [go-api.md](go-api.zh-CN.md#结果从程序改不动的快照转换) |
+| 结果的引用在程序代码运行之前取下 | Unreleased | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
 
 ## 守得住的限额
 

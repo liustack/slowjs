@@ -14,7 +14,8 @@ import (
 
 // The shapes of results with no Value in them, and how javascript sees each,
 // from each of the ways a Go function can return it. A way beside a Value
-// takes the snapshot of the results (result.go), the others need not.
+// takes the snapshot of the results (result.go), the others need not. Each
+// output says how many objects javascript meets twice in the value.
 
 type (
 	shapeInts     []int
@@ -116,6 +117,18 @@ func resultShapes() map[string]func() reflect.Value {
 		"empty maps nested": func() reflect.Value {
 			return reflect.ValueOf([]any{map[float64]int{}, map[bool]Value{}, map[string]map[float64]int{"f": {}}})
 		},
+		"map twice": func() reflect.Value {
+			mp := map[string]any{"x": []int{1}, "y": map[string]int{"a": 1}}
+			return reflect.ValueOf([]any{mp, mp})
+		},
+		"slice twice": func() reflect.Value {
+			s := []any{[]int{1}, map[string]int{"a": 1}}
+			return reflect.ValueOf([]any{s, s})
+		},
+		"leaves twice": func() reflect.Value {
+			xs, mi := []int{1}, map[string]int{"a": 1}
+			return reflect.ValueOf([]any{xs, xs, mi, mi, &xs, &xs})
+		},
 		"bad key nested": func() reflect.Value {
 			return reflect.ValueOf([]any{1, map[float64]int{2: 2}})
 		},
@@ -192,7 +205,23 @@ func resultShapeOutputs(t *testing.T) map[string]string {
 			if (r === undefined) {
 				return "undefined";
 			}
-			return typeof r + " " + JSON.stringify(r);
+			// An object met twice, which the conversion made once.
+			const seen = new Set();
+			let shared = 0;
+			(function walk(x) {
+				if (x === null || typeof x !== "object") {
+					return;
+				}
+				if (seen.has(x)) {
+					shared++;
+					return;
+				}
+				seen.add(x);
+				for (const k of Object.keys(x)) {
+					walk(x[k]);
+				}
+			})(r);
+			return typeof r + " " + JSON.stringify(r) + (shared ? " shared " + shared : "");
 		}
 	`, EvalGlobal); err != nil {
 		t.Fatal(err)
@@ -318,11 +347,21 @@ var mainResultShapes = map[string]string{
 	"float key map/map":                "throw TypeError: cannot convert value: unsupported map key type: float64",
 	"float key map/results":            "throw TypeError: callback: unsupported map key type: float64",
 	"float key map/slice":              "throw TypeError: cannot convert value: unsupported map key type: float64",
+	"leaves twice/alone":               "object [[1],[1],{\"a\":1},{\"a\":1},[1],[1]]",
+	"leaves twice/any":                 "object [[1],[1],{\"a\":1},{\"a\":1},[1],[1]]",
+	"leaves twice/map":                 "object [[1],[1],{\"a\":1},{\"a\":1},[1],[1]]",
+	"leaves twice/results":             "object [[1],[1],{\"a\":1},{\"a\":1},[1],[1]]",
+	"leaves twice/slice":               "object [[1],[1],{\"a\":1},{\"a\":1},[1],[1]]",
 	"map of ints/alone":                "object {\"a\":1,\"b\":2}",
 	"map of ints/any":                  "object {\"a\":1,\"b\":2}",
 	"map of ints/map":                  "object {\"a\":1,\"b\":2}",
 	"map of ints/results":              "object {\"a\":1,\"b\":2}",
 	"map of ints/slice":                "object {\"a\":1,\"b\":2}",
+	"map twice/alone":                  "object [{\"x\":[1],\"y\":{\"a\":1}},{\"x\":[1],\"y\":{\"a\":1}}]",
+	"map twice/any":                    "object [{\"x\":[1],\"y\":{\"a\":1}},{\"x\":[1],\"y\":{\"a\":1}}]",
+	"map twice/map":                    "object [{\"x\":[1],\"y\":{\"a\":1}},{\"x\":[1],\"y\":{\"a\":1}}]",
+	"map twice/results":                "object [{\"x\":[1],\"y\":{\"a\":1}},{\"x\":[1],\"y\":{\"a\":1}}]",
+	"map twice/slice":                  "object [{\"x\":[1],\"y\":{\"a\":1}},{\"x\":[1],\"y\":{\"a\":1}}]",
 	"nil any/alone":                    "object null",
 	"nil any/any":                      "object null",
 	"nil any/map":                      "object null",
@@ -473,6 +512,11 @@ var mainResultShapes = map[string]string{
 	"pointer to pointer/map":           "throw TypeError: cannot convert value: type not supported: **int",
 	"pointer to pointer/results":       "throw TypeError: callback: type not supported: **int",
 	"pointer to pointer/slice":         "throw TypeError: cannot convert value: type not supported: **int",
+	"slice twice/alone":                "object [[[1],{\"a\":1}],[[1],{\"a\":1}]]",
+	"slice twice/any":                  "object [[[1],{\"a\":1}],[[1],{\"a\":1}]]",
+	"slice twice/map":                  "object [[[1],{\"a\":1}],[[1],{\"a\":1}]]",
+	"slice twice/results":              "object [[[1],{\"a\":1}],[[1],{\"a\":1}]]",
+	"slice twice/slice":                "object [[[1],{\"a\":1}],[[1],{\"a\":1}]]",
 	"struct with values/alone":         "object {\"A\":1,\"B\":[2],\"C\":{\"c\":3},\"D\":1,\"E\":\"e\"}",
 	"struct with values/any":           "object {\"A\":1,\"B\":[2],\"C\":{\"c\":3},\"D\":1,\"E\":\"e\"}",
 	"struct with values/map":           "object {\"A\":1,\"B\":[2],\"C\":{\"c\":3},\"D\":1,\"E\":\"e\"}",

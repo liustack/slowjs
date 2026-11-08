@@ -357,21 +357,36 @@ func TestResultChangedDuringConversion(t *testing.T) {
 	}
 }
 
-// The data of a result with no code of the program in its conversion is
-// what the Go function returned, whatever an Error method changes while
-// the result converts.
-func TestResultDataAsReturned(t *testing.T) {
+// The conversion of a result reads the message of an exception it meets,
+// here of the JSON of an empty *Object, through a toString of the script,
+// which can call Go and move a Value in the result. The walk took each
+// reference before any of that ran, so each is freed once.
+func TestResultExceptionMovesValue(t *testing.T) {
 	m := newTestVM(t)
-	if err := m.RegisterFunc("f", func() []any {
-		xs, n, mp := []int{1}, 1, map[string]int{"a": 1}
-		change := mutator{func() { xs[0], n, mp["a"], mp["b"] = 9, 9, 9, 9 }}
-		return []any{change, xs, &n, mp, []any{xs}}
-	}, false); err != nil {
+	obj, err := m.NewObjectValue()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if r, err := m.Eval(`JSON.stringify(f())`, EvalGlobal); err != nil || r != `["mutator",[1],1,{"a":1},[[1]]]` {
-		t.Fatalf("got %v, %v", r, err)
+	_ = obj.Dup()
+	var s []any
+	moved := 0
+	if err := m.RegisterFunc("move", func() { s[2], s[0] = s[0], nil; moved++ }, false); err != nil {
+		t.Fatal(err)
 	}
+	if err := m.RegisterFunc("f", func() []any { s = []any{obj.Dup(), &Object{}, nil}; return s }, false); err != nil {
+		t.Fatal(err)
+	}
+	r, err := m.Eval(`
+		SyntaxError.prototype.toString = function () { move(); return "moved"; };
+		try { f(); "returned" } catch (e) { String(e) }
+	`, EvalGlobal)
+	if err != nil || r == "returned" {
+		t.Fatalf("got %v, %v, want an exception", r, err)
+	}
+	if moved == 0 {
+		t.Fatal("the toString of the exception did not run")
+	}
+	wantTestReferences(t, m, obj)
 }
 
 // errValues is a slice of Values that is an error, so that the conversion of
