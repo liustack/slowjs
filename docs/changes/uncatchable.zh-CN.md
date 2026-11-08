@@ -298,7 +298,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 上界也跟着 fmt 算进它的错误文本。`%w` 只有 `Errorf` 才读，在 `sprintf` 里 fmt 用 Go 的反射把参数写进错误文本，不调用 `String` 或 `Format` 方法：`big.Int` 写成它的 64 位字的列表，每个字都按宽度和精度补齐，`%#w` 还会像 `%#v` 那样给字符串或对象的 json 加引号转义。`fmt.sprintf("%1000000w", 1n << 16384n)` 要 257 MB，上界只算了 1 MB，对 1 MiB 的控制字符做 `"%#[1]w".repeat(8)` 要 32 MiB，上界只算了 8 MiB。现在上界把每个字和引号转义都算进去（`sizeArg`）。
 
-`%T` 写的是参数类型的名字，不管参数里装着什么，`%p` 写的是对象或 big int 的地址，所以两者都不随参数变长。原来上界按参数的长度来算它们，在内存上限下只剩 2 MiB 的 VM 里，对 1 MiB 的字符串 s 做 `fmt.sprintf("%T", s)` 会以内存不足错误结束，而它写出的只是 `string`。现在上界只算它们的宽度、精度再加几个字节。
+`%T` 写的是参数类型的名字，不管参数里装着什么，`%p` 写的是对象或 big int 的地址，所以两者都不随参数变长。原来上界按参数的长度来算它们，在内存上限下只剩 2 MiB 的 VM 里，对 1 MiB 的字符串 s 做 `fmt.sprintf("%T", s)` 会以内存不足错误结束，而它写出的只是 `string`。现在上界对 `%T` 只算宽度再加几个字节，因为精度只会截短类型名，所以 `fmt.sprintf("%.1000000T", 0)` 在任何 VM 里都写出 `int`，对 `%p` 算宽度、精度再加几个字节。
 
 fmt 读下标时从 `[` 一直读到它后面第一个 `]`，所以一个格式里有很多后面没有 `]` 的 `[` 时，算上界和 fmt 自己花的时间都随长度的平方增长：`"%[x".repeat(1000000)` 在 Go 里要几分钟，期间不检查 VM。现在上界先找到最后一个 `]` 在哪，交给 fmt 的格式里把每个这样的 `[` 换成 `[]`，fmt 把它读成同一个位置上同样不是数字的下标：输出一样，这次调用现在只要 34 ms。格式最多增长从第一个这样的 `[` 到结尾的字节数的一半，上界在造出新格式之前先检查它放不放得进 VM 剩下的空间。
 
@@ -308,4 +308,4 @@ fmt 读下标时从 `[` 一直读到它后面第一个 `]`，所以一个格式�
 
 `printf` 和 `println` 写到 `os.Stdout`，会阻塞的写入（比如写一个满了又没人读的管道）仍然会卡住调用，直到写完：Go 运行时正在做的写入，`Interrupt` 和 eval 超时都结束不了。要结束它，这个包得接收一个可以取消的 writer，这是 API 的改动，所以 `Register` 的文档写明了这一点。包 `fmt` 是 modernc.org/quickjs 原有的一个小便利，供写程序时让脚本打印东西，tifa 不用它。
 
-测试：`fmt/limits_test.go` 里的 `TestOutputLimit`（宽度、`*` 宽度、精度、`%q` 和 `sprint` 要的超过 16 MiB 的 VM 所有，Go 里的分配少于 64 MiB，以及一次放得下的调用）和 `TestSizeAtLeastOutput`（对大约 15,000 个用到各种标志、下标、宽度和精度的格式，在 VM 给 Go 函数的每种类型的参数上，把上界和 fmt 的输出比较，其中有长 big int 和字符串的 `%w`，并检查上界交给 fmt 的格式造出同样的输出），`TestShortFormats`（由 `%[]1x*.` 组成、不超过 6 字节的每个格式，以及格式增长了多少），`TestUnclosedIndexes`（那一百万个 "%[x"），`TestUnclosedIndexesRoom`（增长之后放不下的格式）、`TestTypeAndPointer`（在剩余空间很少的 VM 里对长字符串、对象和 big int 做 `%T` 和 `%p`，以及它们的上界）和 `TestAllocatedUnderBound`（各种长输出下，以及在缓冲区增长、Go 向上取整最多的那些长度上，中间不回收时 Go 分配的全部内存，对照上界的 16 倍，以及在 `GOMAXPROCS` 为 1、2、8 和 64 时的空输出和短输出，对照这个总量）。
+测试：`fmt/limits_test.go` 里的 `TestOutputLimit`（宽度、`*` 宽度、精度、`%q` 和 `sprint` 要的超过 16 MiB 的 VM 所有，Go 里的分配少于 64 MiB，以及一次放得下的调用）和 `TestSizeAtLeastOutput`（对大约 15,000 个用到各种标志、下标、宽度和精度的格式，在 VM 给 Go 函数的每种类型的参数上，把上界和 fmt 的输出比较，其中有长 big int 和字符串的 `%w`，并检查上界交给 fmt 的格式造出同样的输出），`TestShortFormats`（由 `%[]1x*.` 组成、不超过 6 字节的每个格式，以及格式增长了多少），`TestUnclosedIndexes`（那一百万个 "%[x"），`TestUnclosedIndexesRoom`（增长之后放不下的格式）、`TestTypeAndPointer`（在剩余空间很少的 VM 里对长字符串、对象和 big int 做 `%T` 和 `%p`，精度为一百万的 `%T`，以及它们的上界）和 `TestAllocatedUnderBound`（各种长输出下，以及在缓冲区增长、Go 向上取整最多的那些长度上，中间不回收时 Go 分配的全部内存，对照上界的 16 倍，以及在 `GOMAXPROCS` 为 1、2、8 和 64 时的空输出和短输出，对照这个总量）。

@@ -195,15 +195,17 @@ func sizePrint(a []any) int64 {
 //
 // %T writes the name of the type of arg, whatever arg holds, and %p of an
 // object or a big int the address it is at in hex, so neither grows with
-// arg: they come out in their width and precision and a few bytes. %p of
-// any other type writes arg in the text of the error, as any verb that
-// does not fit arg does.
+// arg: %T comes out in its width and a few bytes, as a precision only cuts
+// the name, and %p in its width and precision and a few bytes. %p of any
+// other type writes arg in the text of the error, as any verb that does
+// not fit arg does.
 func sizeArg(arg any, verb rune, sharp, space bool, wid, prec int) int64 {
 	w := int64(wid) + int64(prec)
 	switch verb {
 	case 'T':
-		// The longest name is that of quickjs.Unsupported.
-		return w + 64
+		// The longest name is that of quickjs.Unsupported, and a precision
+		// only cuts it.
+		return int64(wid) + 64
 	case 'p':
 		switch arg.(type) {
 		case *quickjs.Object, *big.Int:

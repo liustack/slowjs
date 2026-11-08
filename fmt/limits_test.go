@@ -329,6 +329,8 @@ func TestTypeAndPointer(t *testing.T) {
 		{`fmt.sprintf("%T %T", o, b)`, "*quickjs.Object *big.Int"},
 		{`fmt.sprintf("%p", o).slice(0, 2)`, "0x"},
 		{`fmt.sprintf("%#p", b).length < 20`, "true"},
+		{`fmt.sprintf("%.1000000T", 0)`, "int"},
+		{`fmt.sprintf("%.*T|%-*.*T|", 1000000, s, 6, 1000000, b)`, "string|*big.Int|"},
 	} {
 		got, err := vm.Eval(c.js, quickjs.EvalGlobal)
 		if err != nil || fmt.Sprint(got) != c.want {
@@ -345,7 +347,7 @@ func TestTypeAndPointer(t *testing.T) {
 		format string
 		a      any
 	}{
-		{"%T", s}, {"%T", b}, {"%-20T", nil}, {"%T", quickjs.Undefined{}}, {"%p", b}, {"%#20.30p", b}, {"%p", obj},
+		{"%T", s}, {"%T", b}, {"%-20T", nil}, {"%T", quickjs.Undefined{}}, {"%p", b}, {"%#20.30p", b}, {"%p", obj}, {"%.1000000T", 1}, {"%20.1000000T", s},
 	} {
 		bound, _, _ := sizePrintf(c.format, []any{c.a}, -1)
 		if out := fmt.Sprintf(c.format, c.a); int64(len(out)) > bound || bound > 256 {
