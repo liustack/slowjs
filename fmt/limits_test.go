@@ -36,8 +36,8 @@ func newVM(t *testing.T) *quickjs.VM {
 // A short format that asks for a long output, in a VM with a memory limit,
 // ends the call with the uncatchable out of memory error before Go makes
 // the output: "%1000000[1]s" 256 times asked Go for 256 MB in a VM limited
-// to 16 MiB, and printf wrote them to stdout. A call whose output fits runs
-// as before.
+// to 16 MiB, and printf wrote them to stdout. A call whose budget fits runs
+// as before, and the budget can be far above the output.
 func TestOutputLimit(t *testing.T) {
 	vm := newVM(t)
 	vm.SetMemoryLimit(16 << 20)
