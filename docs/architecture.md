@@ -6,6 +6,7 @@ read_when:
   - Looking for where a piece of the engine, a change to it or a tool lives
   - Touching how a value is encoded, or reading a JSValue by hand
   - Changing the intl, temporal, fmt or compare packages, or internal/gointl or internal/intlhook
+  - Serving short requests next to long calls, or choosing GOMAXPROCS for a number of VMs
 ---
 
 # Architecture
@@ -99,6 +100,10 @@ No poll runs while a Go function that javascript called works in Go, so neither 
 - the functions of `fmt`, which check a bound on their output against `vmhook.Room` before Go makes it.
 
 Work in Go that a script can make long and that makes none of these calls still runs to its end, and what it allocates is outside the memory limit: the parse and format of a long number string by `Intl.NumberFormat`, `Intl.Collator` and `localeCompare`, the case mapping of `toLocaleUpperCase` and `toLocaleLowerCase`, the arithmetic of a calendar other than ISO in `Temporal`, the read of one long locale tag or list item, the parse of a long duration by `Intl.DurationFormat`, and the scan of the dictionary for one batch of `Intl.Segmenter`. Go makes the output of `fmt` with no check of the call either, in a time that grows with its bound, but what the output may make it allocate is checked against the room of the VM before it starts ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit)).
+
+## A long call and the Go scheduler
+
+A call into the engine keeps its P (the processor of the Go scheduler that runs it) for as long as the script runs. Go preempts it as it preempts other Go code: at the next function entry, once the runtime asks, since the signal of asynchronous preemption cannot stop generated assembly. In Go 1.26 and 1.27, when every P is busy, the runtime looks at the network about every 10 ms, and gives a running goroutine a 10 ms slice counted from the first check that sees it. So when every P runs a long call, a goroutine the network wakes, such as a short HTTP request, waits about two such checks before it runs: about 20 ms on Linux. Go code that only computes waits the same, and `GODEBUG=asyncpreemptoff=1` does not change it. Go does not promise this timing, and the engine does not try to change it: each way to yield from a call that was tried gained only through scheduler details Go does not document. When the wait matters, keep a P free for such work: set GOMAXPROCS above the number of VMs that run at once.
 
 ## Packages next to the engine
 
