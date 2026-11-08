@@ -6,6 +6,7 @@ read_when:
   - 找引擎的某一块、对它的某项改动或某个工具放在哪
   - 动值的编码方式，或者手工读一个 JSValue
   - 改 intl、temporal、fmt 或 compare 包，或者 internal/gointl、internal/intlhook
+  - 在长调用旁边服务短请求，或者按 VM 数定 GOMAXPROCS
 ---
 
 # 架构
@@ -99,6 +100,10 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 - `fmt` 的各个函数，在 Go 造出输出之前拿输出的上界和 `vmhook.Room` 比较。
 
 脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.NumberFormat` 解析和格式化很长的数字字符串，`Intl.Collator` 和 `localeCompare`，`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，`Temporal` 里 ISO 以外日历的运算，读一个很长的 locale 标签或列表项，`Intl.DurationFormat` 解析很长的时长，以及 `Intl.Segmenter` 找一批分段时对词典的扫描。Go 造出 `fmt` 的输出时同样不检查调用，用时随输出的上界增长，不过输出可能让它分配的内存在开始之前已经和 VM 剩下的空间比过（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
+
+## 一次长调用和 Go 的调度器
+
+一次进入引擎的调用，在脚本运行期间一直占着它的 P（Go 调度器里运行它的那个处理器）。Go 像抢占其他 Go 代码一样抢占它：在运行时提出要求之后，到下一个函数入口处。异步抢占的信号停不下生成的汇编。在 Go 1.26 和 1.27 里，每个 P 都忙时，运行时大约每 10 ms 查一次网络，并给正在运行的 goroutine 一个 10 ms 的时间片，从第一次看到它的那次检查算起。所以每个 P 都在跑长调用时，被网络唤醒的 goroutine（比如一个短的 HTTP 请求）要等大约两次这样的检查才能运行，在 Linux 上约 20 ms。只做计算的 Go 代码也一样要等，`GODEBUG=asyncpreemptoff=1` 也不改变这一点。Go 没有承诺这个时间，引擎也不去改它：试过的每一种从调用里让出的办法，收益都来自 Go 没有写进文档的调度细节。这段等待要紧时，给这类工作留一个空闲的 P：让 GOMAXPROCS 大于同时运行的 VM 数。
 
 ## 引擎旁边的包
 
