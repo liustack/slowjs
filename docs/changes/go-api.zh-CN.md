@@ -516,8 +516,8 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 结果的转换会运行程序的代码：错误的 `Error` 方法、结构体的 `MarshalJSON`，以及结构体里 `Value` 的 `toJSON`，它还能再调用 Go。这些代码可以在转换进行中改动结果。切片变得包含自身时，比如某个 `Error` 执行了 `s[1] = s`，转换会一直递归到进程因栈溢出退出。放进去的别的 VM 的 `Value`，会在不拥有它的 VM 里被改动计数。被拿走的 `Value` 则永远不会被释放。
 
-现在结果的遍历在这些代码运行之前给结果拍一份快照，遍历本身不运行任何程序代码（见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)）：结果交出的每个引用，装得下 `Value` 的切片、map 和指针当时的样子，以及环和别的 VM 的 `Value` 的检查。转换按快照进行，所以程序代码放进去的环或 `Value` 不会被转换，每个引用也只释放一次，不管那些代码把它挪到哪里。不带 `Value` 的数据，比如字符串、`[]int` 或结构体，和以前一样在转换时读取，所以程序代码先改了它，javascript 值里就是改过的样子。结果类型都装不下 `Value` 的 Go 函数不拍快照，它的全部结果也是这样。
+现在结果的遍历在这些代码运行之前给结果拍一份快照，遍历本身不运行任何程序代码（见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)）：结果交出的每个引用，装得下 `Value` 的切片、map 和指针当时的样子，以及环和别的 VM 的 `Value` 的检查。转换按快照进行，所以程序代码放进去的环或 `Value` 不会被转换，每个引用也只释放一次，不管那些代码把它挪到哪里。不带 `Value` 的数据，比如字符串、`[]int` 或结构体，是快照的叶子：遍历记下的是叶子本身，即它找到的那个字符串或切片，转换时再读叶子指向的内容。所以程序代码之后把结果里切片或 map 的某个位置换成别的叶子，换上的不会被转换，但叶子共用的数据改了，比如 `[]int` 的元素，javascript 值里就是改过的样子，和以前一样。结果类型都装不下 `Value` 的 Go 函数不拍快照，它的结果在转换时读取。
 
 代价：见[转换失败的结果不留下任何东西](#转换失败的结果不留下任何东西)。
 
-测试：`TestResultReferences`（`result_test.go`）返回一个 `Error` 让它包含自身的切片、一个 `Error` 从里面拿走 `Value` 的切片，以及一个 map，其中结构体的 `MarshalJSON` 让这个 map 包含自身。`TestResultChangedDuringConversion` 返回一个 `Error` 往里放别的 VM 的 `Value` 的切片，要求那个位置是 `null`，那个 `Value` 的计数不变。`TestResultExceptionMovesValue` 返回一个装着 `Value` 和空 `*Object` 的切片，空 `*Object` 的 JSON 解析会失败，并把 `SyntaxError` 的 `toString` 换成一个把 `Value` 挪到切片另一个元素的函数，转换读异常消息时会调用它。要求 GC 之后只剩测试持有的两个引用。改动之前，两个环会让测试进程退出。
+测试：`TestResultReferences`（`result_test.go`）返回一个 `Error` 让它包含自身的切片、一个 `Error` 从里面拿走 `Value` 的切片，以及一个 map，其中结构体的 `MarshalJSON` 让这个 map 包含自身。`TestResultChangedDuringConversion` 返回一个 `Error` 往里放别的 VM 的 `Value` 的切片，要求那个位置是 `null`，那个 `Value` 的计数不变。`TestResultExceptionMovesValue` 返回一个装着 `Value` 和空 `*Object` 的切片，空 `*Object` 的 JSON 解析会失败，并把 `SyntaxError` 的 `toString` 换成一个把 `Value` 挪到切片另一个元素的函数，转换读异常消息时会调用它。要求 GC 之后只剩测试持有的两个引用。`TestResultLeafKeptByWalk` 返回一个切片，它的 `Error` 把其中一个字符串换成另一个，要求得到遍历找到的那个字符串。改动之前，两个环会让测试进程退出。

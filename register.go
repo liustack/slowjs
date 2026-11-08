@@ -69,8 +69,12 @@ type goFunc struct {
 // they hold, and checks them for a cycle and for a Value of another VM.
 // Code of the program that the conversion runs, such as an Error or
 // MarshalJSON method, cannot change which references the call takes and
-// frees. The data with no Value in it is read when it converts, and so are
-// all the results when no result type can hold a Value.
+// frees. The data with no Value in it, such as a string or an []int, is a
+// leaf the walk keeps: setting its place in the result to another leaf
+// afterwards changes nothing, but what the leaf points to, such as the
+// elements of an []int, is read when it converts. When no result type can
+// hold a Value, the call takes no snapshot, and the results are read when
+// they convert.
 //
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.

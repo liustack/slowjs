@@ -154,11 +154,12 @@ func (m *VM) errIntProp(v jsValue, name uint32) (r int, ok bool) {
 //
 // Reading runs javascript (a getter, or a toString that a script replaced), so
 // it runs inside the eval timeout like [VM.Eval]. When the read is stopped
-// by what ends a call, the eval timeout, [VM.Interrupt], running out of
-// memory or a panic of a Go function javascript called, ErrorFromValue
-// returns that error in place of the fields of 'v': Uncatchable is set, and
-// Interrupted or OutOfMemory says which, as in the error of a call. The read
-// stops there. Inside a Go function that javascript called, that error also
+// by what ends a call, the eval timeout, [VM.Interrupt] or running out of
+// memory, ErrorFromValue returns that error in place of the fields of 'v':
+// Uncatchable is set, and Interrupted or OutOfMemory says which, as in the
+// error of a call. The read stops there. A panic of a Go function that the
+// read calls is not an error: it goes on to the caller of ErrorFromValue,
+// as from any call into javascript. Inside a Go function that javascript called, that error also
 // stays pending and ends the javascript that called the function, as every
 // call into javascript does then. On a VM a kill left good only for Close, it
 // panics.

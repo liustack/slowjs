@@ -389,6 +389,22 @@ func TestResultExceptionMovesValue(t *testing.T) {
 	wantTestReferences(t, m, obj)
 }
 
+// A leaf of a result is what the walk found: a string that an Error method
+// puts in its place afterwards is not converted.
+func TestResultLeafKeptByWalk(t *testing.T) {
+	m := newTestVM(t)
+	if err := m.RegisterFunc("f", func() []any {
+		s := []any{nil, "before"}
+		s[0] = mutator{func() { s[1] = "after" }}
+		return s
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	if r, err := m.Eval(`JSON.stringify(f())`, EvalGlobal); err != nil || r != `["mutator","before"]` {
+		t.Fatalf("got %v, %v", r, err)
+	}
+}
+
 // errValues is a slice of Values that is an error, so that the conversion of
 // a result turns it into the string of its Error method.
 type errValues []Value
