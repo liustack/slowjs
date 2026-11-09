@@ -117,6 +117,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Turning a long string into a number reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#turning-a-long-string-into-a-number-reads-the-interrupt-flag) |
 | Parsing a long source reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
 | Comparing and copying long strings reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#comparing-and-copying-long-strings-reads-the-interrupt-flag) |
+| Resizing a large ArrayBuffer reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#resizing-a-large-arraybuffer-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 

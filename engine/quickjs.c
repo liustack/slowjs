@@ -1964,7 +1964,8 @@ static BOOL js_front_drain(JSMallocContext *s)
 
 /* The heap, and when it fails, once more after the front cache is given
    back: it may hold the memory the request needs, or the count the limit
-   would pass. */
+   would pass. A move the interrupt flag stopped (heap.stopped) is not tried
+   again. */
 static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 {
     void *p;
@@ -1984,7 +1985,7 @@ static no_inline void *js_heap_realloc(JSMallocContext *s, void *ptr, size_t siz
     if (unlikely(JS_HEAP_FAILS(s, size)))
         return NULL;
     p = heap_realloc(&s->heap, ptr, size);
-    if (unlikely(!p) && js_front_drain(s))
+    if (unlikely(!p) && !s->heap.stopped && js_front_drain(s))
         p = heap_realloc(&s->heap, ptr, size);
     return p;
 }
@@ -69253,6 +69254,53 @@ static JSValue js_array_buffer_get_resizable(JSContext *ctx,
     return JS_NewBool(ctx, array_buffer_is_resizable(abuf));
 }
 
+/* js_realloc of the block of an ArrayBuffer that resize or transfer changes:
+   the heap copies a block that moves a MiB at a time, with a read of the
+   interrupt flag before each step (heap_copy), and a stop throws the
+   interrupt and leaves the block as it was. Only these two let the heap read
+   the flag. Both handle a failed resize, while other callers of js_realloc
+   are not all made for a failure that a run with memory to spare can give
+   (see docs/changes/uncatchable.md). */
+static void *js_array_buffer_realloc(JSContext *ctx, void *ptr, size_t size)
+{
+    JSRuntime *rt = ctx->rt;
+    JSHeap *h = &rt->malloc_ctx.heap;
+    void *p;
+
+    h->stopped = 0;
+    h->stop = &rt->interrupt_flag;
+    p = js_realloc_rt(rt, ptr, size);
+    h->stop = NULL;
+    if (unlikely(!p)) {
+        /* the flag stays set once read, so this throws the interrupt */
+        if (h->stopped && js_poll_interrupts(ctx))
+            return NULL;
+        JS_ThrowOutOfMemory(ctx);
+    }
+    return p;
+}
+
+/* memset(p, 0, n) of the bytes a buffer gains, JS_COPY_STEP bytes at a time
+   with the interrupt flag read before each step when there is more than one,
+   as the heap copies a block that moves. -1 with "interrupted" thrown, and
+   part of the bytes cleared. */
+static int js_array_buffer_clear(JSContext *ctx, uint8_t *p, size_t n)
+{
+    size_t off, m;
+
+    if (likely(n < JS_COPY_STEP)) {
+        memset(p, 0, n);
+        return 0;
+    }
+    for (off = 0; off < n; off += m) {
+        if (js_poll_interrupts(ctx))
+            return -1;
+        m = n - off < JS_COPY_STEP ? n - off : JS_COPY_STEP;
+        memset(p + off, 0, m);
+    }
+    return 0;
+}
+
 static void js_array_buffer_update_typed_arrays(JSArrayBuffer *abuf)
 {
     uint32_t size_log2, size_elem;
@@ -69418,13 +69466,20 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
                 res = js_array_buffer_constructor2(ctx, JS_UNDEFINED, 0, pmax_len, JS_CLASS_ARRAY_BUFFER);
                 if (JS_IsException(res))
                     return res;
-                new_bs = js_realloc(ctx, abuf->data, new_len);
+                new_bs = js_array_buffer_realloc(ctx, abuf->data, new_len);
                 if (!new_bs) {
                     JS_FreeValue(ctx, res);
                     return JS_EXCEPTION;
                 }
-                if (new_len > old_len)
-                    memset(new_bs + old_len, 0, new_len - old_len);
+                if (new_len > old_len &&
+                    js_array_buffer_clear(ctx, new_bs + old_len, new_len - old_len)) {
+                    /* the buffer keeps the block, which may have moved,
+                       and its length, and is not detached */
+                    abuf->data = new_bs;
+                    js_array_buffer_update_typed_arrays(abuf);
+                    JS_FreeValue(ctx, res);
+                    return JS_EXCEPTION;
+                }
                 new_abuf = JS_GetOpaque2(ctx, res, JS_CLASS_ARRAY_BUFFER);
                 js_free(ctx, new_abuf->data);
                 new_abuf->data = new_bs;
@@ -69486,13 +69541,18 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
         // 2 bytes big in A, and 1 byte big in B
         abuf->byte_length = len;
     } else {
-        data = js_realloc(ctx, abuf->data, max_int(len, 1));
+        data = js_array_buffer_realloc(ctx, abuf->data, max_int(len, 1));
         if (!data)
             return JS_EXCEPTION;
-        if (len > abuf->byte_length)
-            memset(&data[abuf->byte_length], 0, len - abuf->byte_length);
-        abuf->byte_length = len;
         abuf->data = data;
+        if (len > abuf->byte_length &&
+            js_array_buffer_clear(ctx, &data[abuf->byte_length], len - abuf->byte_length)) {
+            /* the block may have moved: the views follow it, and the
+               buffer keeps its length */
+            js_array_buffer_update_typed_arrays(abuf);
+            return JS_EXCEPTION;
+        }
+        abuf->byte_length = len;
     }
     js_array_buffer_update_typed_arrays(abuf);
     return JS_UNDEFINED;

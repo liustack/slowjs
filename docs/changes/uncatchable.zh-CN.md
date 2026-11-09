@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，以及比较和复制很长的字符串'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -355,6 +355,35 @@ eval 超时依次设成一次调用用时的每个六分之一时，这些对 64
 代价：在 linux/amd64 上用 callgrind 计数，比较的是一次 `Eval` 里十次调用的指令数，对照的是改到[解析](#解析很长的源码时读中断标志)为止的引擎（取 12 次和 2 次 `Eval` 之差）。两个短字符串的 `<` 多 0.24%，给 2,000 个短字符串排序多 2.56%（每字符两字节的字符串多 2.66%，每次约 200 条指令的比较里多约 5 条），对 2,000 个短字符串做 `join` 多 2.22%，来自每次复制时对长度的检查，而对它们做 `+=` 不变（-0.20%）。在 2,000 段的文本里用正则做全局 `replace` 多 2.19%，大部分在 `js_string_GetSubstitution` 里，来自对每次写入和剩下要找的长度的检查，对 2,000 个短字符串做 `padEnd` 多 0.14%，做 `Symbol.for` 多 0.21%。tifa 的两个 bench 页面渲染一次，改动前 266,702,384 条指令，改动后 267,024,572 条，+0.12%，一半在 `string_buffer_concat` 里，每复制一个短字符串多 3 条指令，其余大多在 `JSON.parse` 和 `JSON.stringify` 用的 `json_parse_string` 和 `JS_ToQuotedString` 的复制里（`compare/engines` 的 `jsbench tifa-ssr`，用 callgrind 计数）。
 
 测试：`TestStringCompareCopyStops`（根包）对两个 64 Mi 个单字节字符或 32 Mi 个双字节字符的字符串做 `<`、排序，对其中一个做 `Symbol.for`、`join`、`padEnd`、`replace`、`String.raw` 和 `Function`，用 64 Mi 个字符的替换串做 `replace`（1 MiB 之后有 `$$`、没有 `$`、16 Mi 个 `$$`，以及带分组的 16 Ki 个 `$<`），64 Mi 个字符的正则 flags，以及 `raw.length` 为 4 Mi 的 `String.raw`，每种都在新的 VM 里做，因为某个键的第一次 `Symbol.for` 会造出后面几次找到的 atom。它先给一次调用计时，再在这段时间的每个六分之一处停下这个调用的循环，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`，也就是解析的上限，因为 `Function` 会解析它复制的源码），每次之后还能算 `1+1`。改动前的引擎在 linux/amd64 上每种都失败，在 darwin/arm64 上前 13 种里除了 `Function` 每种都失败。`TestModuleExportNamesStop` 用同样的方法停下对一个模块的命名空间导入，这个模块的两个导出名各有 64 Mi 个字符、只在最后一个字符不同，每次都在新的 VM 里先放好导出它们的模块，并检查两个名字的顺序。`TestStringCompareCopyLongResults` 检查 200,000 个字符以上的字符串做比较、排序、取键和复制的结果，以及替换串里的 `$`、后面有和没有 `>` 的 `$<`、`String.raw` 和 70,001 个字符的 flags 字符串的结果。`engine/test/unit.c` 里的 `test_string_copy_polls` 要求对一百万个字符的字符串（按字节复制时 16 Mi）做的每次比较、取键和复制至少读 12 次标志，在这些读取处停下每一次（每一处，或者均匀分布的 64 处），检查每次之后的上下文和结果，最后释放运行时时不剩任何内存块。改动前的引擎在它的 10 个调用里有 9 个失败。排序留给 Go 的测试：原生宿主会设置它读的那个标志，而排序也会读它自己的停止标志。`test_module_export_order` 检查两个一百万个字符的导出名和打乱顺序的 3,000 个短导出名，从命名空间导入出来时按字符串的顺序排列。
+
+## 改变很大的 ArrayBuffer 的大小时读中断标志
+
+发布版本：Unreleased。
+
+`ArrayBuffer.prototype.resize` 和 `transfer` 用 `js_realloc` 改缓冲区那块内存的大小。`heap_realloc` 没法在原地改一块内存的大小时，堆就搬动这块内存：专用 chunk 里的块缩到不足 chunk 的一半时，在每个系统上都要搬，块长得超出 chunk、而宿主不能重映射 chunk 时（darwin 和 windows）要搬，共享 chunk 里后面没有空位的块也要搬。它用一次 `memcpy` 复制整块，`resize` 和 `transfer` 接着用一次 `memset` 清零缓冲区多出来的字节。两处都不读中断标志。把 256 MiB 的 `ArrayBuffer` 先 `resize` 到四分之一再改回来，在 linux/amd64 上约 150 ms，要复制 64 MiB、清零 192 MiB：eval 超时依次设成这次调用的每个六分之一时，5 次停止里有 4 次在约 143 ms、清零做完之后才停下，见到请求后过了 136 到 767 次轮询，`transfer` 的 5 次里也有 4 次这样。
+
+现在：
+
+- `resize` 和 `transfer` 用 `js_array_buffer_realloc` 改这块内存的大小，它只在这一次调用期间把中断标志的地址交给堆（`JSHeap.stop`）。这时 `heap_realloc` 搬动一块内存时每次复制 1 MiB（`heap_copy`，`HEAP_COPY_STEP`），复制量在 1 MiB 以上时，每步之前读一次标志。标志被设置时，堆把新块还回去，专用 chunk 立刻还给宿主，然后像拒绝一次改大小那样失败：旧块留在原处，内容、大小和计数都不变。它设置 `JSHeap.stopped`，于是 `js_heap_realloc` 不再把前端缓存还回去再试一次，`js_array_buffer_realloc` 像别处读到标志时一样抛出无法捕获的中断，不抛内存不足的错误。
+- 它们清零缓冲区多出来的字节时每次清 1 MiB，每步之前读一次标志（`js_array_buffer_clear`）。在这里停下时，缓冲区保持原来的长度，不会被分离，用的是它的块（这块可能已经搬过、变大了），它的视图跟着这块走。
+
+为什么只有这两处：停止就是一次失败的改大小，`resize` 和 `transfer` 会处理。`resize` 留着它的块和长度，`transfer` 释放它造出的缓冲区，旧的保持原样。`js_realloc` 的其他调用方只在内存用完时才见到失败，每次搬动都能停的话，这种失败在只在内存上限附近测过的路径上就会常见，调用方在失败后自己造错误的地方，还会把有的中断变成内存不足的错误。所以堆对别的块都不读标志，`js_array_buffer_realloc` 的调用之外 `JSHeap.stop` 是 NULL。造错误和原来一样不读标志（`engine/test/cycles.sh`），而堆里的读取是一次读内存，cycles.sh 看不到，所以 `test_error_reads_no_flag` 检查造一个栈有 4 MiB 的错误时读标志 0 次。不到 1 MiB 的复制还是原来的 `memcpy`。原生测试的 `asan` 构建用的分配器（`engine/test/heap-system.c`）以同样的步子搬动 1 MiB 以上、要变大的块，因为系统的 `realloc` 停不下来，缩小则交给这个 `realloc`。
+
+eval 超时依次设成一次调用用时的每个六分之一时，把 256 MiB 的缓冲区 `resize` 或 `transfer` 到四分之一再改回来，现在在 linux/amd64 上见到请求后 1 到 3 次轮询就停下，后三次在截止后 0.6 ms 以内，前两次在截止后 4.5 到 8.1 ms。
+
+代价：不到 1 MiB 的复制还是原来的 `memcpy`，不到 1 MiB 的清零还是原来的 `memset`，`js_array_buffer_realloc` 在改大小前后多三次写入，所以一次改大小在堆里只多一次比较和一次对 `stopped` 的写入。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench tifa-ssr`，取 12 次和 2 次渲染之差），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 265,290,640 条，改动后 265,227,430 条，-0.02%：`heap_realloc` 多 196 条，解释器少约 63,000 条，它生成的代码会随周围的 C 改变。tifa 的每个页面渲染出的 HTML 都不变。
+
+
+没有覆盖的：按字节或元素走的循环，受脚本造出的东西的大小限制，也就受内存上限限制，但不读标志。在 linux/amd64 上超时设 10 ms 时，下面前四种的循环都在见到请求后 1000 次轮询被杀掉：
+- 新的 `ArrayBuffer` 或类型化数组的清零（`new ArrayBuffer(1 << 30)` 要 576 ms），
+- `ArrayBuffer.prototype.slice`、`TypedArray.prototype.slice` 和用另一个类型化数组造类型化数组时的复制（512 MiB 约 320 ms），
+- 快速数组的 `Array.prototype.slice`（32 Mi 个元素 410 ms），
+- 列出对象的键时（比如 `Object.keys`）给它的下标键排序（`num_keys_cmp` 配 `rqsort`，4 Mi 个键 1.3 s），
+- `TypedArray.prototype.set`，一次 `memmove`，512 MiB 要 35 ms，它一直做到结束，没有被杀，
+- 别的大块内存的搬动，比如长数组的元素、大 Map 的表、长字符串在末尾的缩小，一次 `memcpy`，最多是这块内存的大小，
+- `JS_DetectModule` 在源码开头找 `import` 和 `export`，不读标志，因为它没有运行时。Go API 不调用它。
+
+测试：`TestArrayBufferMoveStops`（根包）给把 256 MiB 的 `ArrayBuffer` `resize` 和 `transfer` 到四分之一再改回来计时，再在这段时间的每个六分之一处停下这个调用的循环，每次都在新的 VM 里，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`），缓冲区是两个长度之一、字节还在、没有被分离，之后还能再做一次这个调用。改动前的引擎每种的 5 次停止里有 4 次失败。`engine/test/unit.c` 里的 `test_heap_move_polls` 要求把 32 MiB 的缓冲区 `resize` 和 `transfer` 到四分之一再改回来至少读 32 次标志，在每次读取处停下，检查调用以 `interrupted` 结束而不是以内存不足的错误结束，检查之后的缓冲区，最后释放运行时，不剩一块内存。`engine/test/heap-test.c` 里的 `scenario_move_stop` 在每次读标志处停下一个要搬动的专用块的变大和缩小，要求失败、`stopped` 已设置，堆、它的 chunk 和这块都和原来一样（见 [allocator.md](../allocator.zh-CN.md#测试)）。`test_error_reads_no_flag` 在一个 C 函数里造错误，标志在第一次读取时就会被置上，栈超过 4 MiB，要求一次也不读、栈完整。
 
 ## 异常关闭迭代器时，迭代器 return 方法里的内存不足
 

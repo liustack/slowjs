@@ -535,6 +535,7 @@ func heap_release_start(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_remap_dedicated(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func heap_set_remap(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_take(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func heap_untake(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_usable_size(a0 uintptr, a1 uintptr) uintptr
 func hypot(a0 uintptr, a1 float64, a2 float64) float64
 func i32toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -578,6 +579,7 @@ func js_alloc_string_rt(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_allocate_fast_array(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_arguments_define_own_property_block(a0 uintptr, a1 uintptr) uintptr
 func js_array_at(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_array_buffer_clear(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_array_buffer_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_array_buffer_constructor0(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_constructor3_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -588,6 +590,7 @@ func js_array_buffer_get_detached(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr
 func js_array_buffer_get_maxByteLength(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_array_buffer_get_resizable(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_array_buffer_isView(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_array_buffer_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_array_buffer_resize(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_slice(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_transfer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)

@@ -4332,6 +4332,103 @@ static void test_module_export_order(void)
     host_free_runtime(rt);
 }
 
+/* A block that the heap moves is copied a MiB at a time with a read of the
+   interrupt flag before each step (heap_copy), and the bytes an ArrayBuffer
+   gains are cleared a MiB at a time the same way (js_array_buffer_clear).
+   resize and transfer of a buffer of 32 MiB to a quarter and back, which
+   moves the block out of its chunk, are stopped at each of their readings,
+   every one or 64 spread over them: the call ends with "interrupted", not
+   with the out of memory error of a failed resize, the buffer keeps one of
+   its two lengths and its bytes, and it is set back to its full length
+   before the next stop. The runtime is freed with no block left. */
+static void test_heap_move_polls(void)
+{
+    static const char setup[] =
+        "var n = 1 << 25, b = new ArrayBuffer(n, {maxByteLength: n}); new Uint8Array(b).fill(7); 0\n";
+    static const char after[] =
+        "[b.byteLength === n || b.byteLength === n >> 2, new Uint8Array(b)[0], "
+        "new Uint8Array(b)[(n >> 2) - 1], b.detached].join()";
+    static const char reset[] = "b.byteLength === n || (b = b.transfer(n)), 0";
+    static const char *const cases[] = {
+        "(b.resize(n >> 2), b.resize(n))",
+        "(b = b.transfer(n >> 2), b = b.transfer(n))",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        /* the copy of 8 MiB and the clear of 24 MiB */
+        CHECK(reads >= 32, "%s: %ld readings of the flag, want at least 32", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+            host_poll_stop_after(0);
+            CHECK(eval_is(ctx, after, "true,7,7,false"), "the buffer after %s was stopped at reading %ld", call, k);
+            /* the next stop starts from the full length, so that it reads as often */
+            CHECK(eval(ctx, reset), "%s: the reset after reading %ld threw", call, k);
+        }
+        CHECK(eval(ctx, call), "%s after the stops: the script threw", call);
+        CHECK(eval_is(ctx, "b.byteLength === n && new Uint8Array(b)[n - 1] === 0", "true"), "the buffer after %s", call);
+    }
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* readings of the flag while js_make_error made its error */
+static long error_reads;
+
+/* makeError() throws a TypeError made with the interrupt flag set at the
+   first reading, as when a stop is asked for while an error is made. */
+static JSValue js_make_error(JSContext *ctx, JSValueConst this_val, int argc,
+                             JSValueConst *argv)
+{
+    long before = host_poll_reads;
+
+    host_poll_stop_after(1);
+    JS_ThrowTypeError(ctx, "made");
+    error_reads = host_poll_reads - before;
+    host_poll_stop_after(0);
+    *JS_GetInterruptFlag(JS_GetRuntime(ctx)) = 0;
+    return JS_EXCEPTION;
+}
+
+/* Making an error reads no interrupt flag (JS_ThrowError2), and the heap,
+   which reads it while it moves a block of a MiB or more only for the resize
+   of an ArrayBuffer (js_array_buffer_realloc), reads none while an error and
+   its backtrace are made. A function named with 4 Mi characters makes a
+   stack of more than 4 MiB, which grows its buffer past a MiB, and the error
+   it throws is made with no reading of the flag and with its whole stack,
+   though the flag would be set at the first. */
+static void test_error_reads_no_flag(void)
+{
+    static const char src[] =
+        "var name = 'a'.repeat(1 << 22), r;\n"
+        "function f() { return makeError(); }\n"
+        "Object.defineProperty(f, 'name', {value: name});\n"
+        "try { f() } catch (e) { r = [e.message, e.stack.includes(name)].join() }\n"
+        "r\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g = JS_GetGlobalObject(ctx);
+
+    JS_SetPropertyStr(ctx, g, "makeError",
+                      JS_NewCFunction(ctx, js_make_error, "makeError", 0));
+    JS_FreeValue(ctx, g);
+    CHECK(eval_is(ctx, src, "made,true"), "the error and its stack");
+    CHECK(error_reads == 0, "%ld readings of the flag while an error was made, want 0", error_reads);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4579,6 +4676,8 @@ int main(void)
     test_long_utf8_decode();
     test_string_copy_polls();
     test_module_export_order();
+    test_heap_move_polls();
+    test_error_reads_no_flag();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();

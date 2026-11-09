@@ -11,6 +11,7 @@
 
 #include "heap.h"
 
+#include "cutils.h"
 #include "host.h"
 #include "tlsf.h"
 
@@ -375,6 +376,41 @@ static void *heap_remap_dedicated(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link,
     return heap_dedicated_block(c);
 }
 
+/* Copy n bytes of a block that moves: HEAP_COPY_STEP bytes at a time, with a
+   read of the interrupt flag before each step (see heap.h). -1 when the flag
+   is set, with part of the copy made. */
+static int heap_copy(const JSHeap *h, void *dst, const void *src, size_t n)
+{
+    size_t off, m;
+
+    if (n < HEAP_COPY_STEP || !h->stop) {
+        memcpy(dst, src, n);
+        return 0;
+    }
+    for (off = 0; off < n; off += m) {
+        if (poll_flag(h->stop))
+            return -1;
+        m = n - off < HEAP_COPY_STEP ? n - off : HEAP_COPY_STEP;
+        memcpy((uint8_t *)dst + off, (const uint8_t *)src + off, m);
+    }
+    return 0;
+}
+
+/* Give back the block p that heap_take gave and nothing counted: the new
+   block of a move that stopped. A dedicated chunk goes back to the host. */
+static void heap_untake(JSHeap *h, void *p)
+{
+    JSHeapChunk *c, **link;
+
+    c = heap_dedicated_of(h, p, &link);
+    if (c) {
+        heap_give_back(h, c, link);
+        return;
+    }
+    heap_poison(p, tlsf_block_size(p));
+    tlsf_free(h->tlsf, p);
+}
+
 /* A block may grow into a free neighbor, shrink, or move. The count is checked
    for the size after the resize, as upstream checks it: count + the request -
    the usable size of the old block, against the limit (the old block does not
@@ -383,13 +419,15 @@ static void *heap_remap_dedicated(JSHeap *h, JSHeapChunk *c, JSHeapChunk **link,
    moves: when the chunks have none, a new one is mapped, and the budget
    applies to it. A block that moves away from a dedicated chunk gives the
    chunk to the host once the data is in the new block. A failure leaves the
-   old block, its content and the count of the heap alone. */
+   old block, its content and the count of the heap alone, and so does a move
+   stopped by the interrupt flag (heap_copy), which sets stopped. */
 void *heap_realloc(JSHeap *h, void *ptr, size_t size)
 {
     size_t old_size, new_size, base;
     JSHeapChunk *c, **link;
     void *p;
 
+    h->stopped = 0;
     if (!ptr)
         return heap_alloc(h, size);
     if (size == 0) {
@@ -431,7 +469,11 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
             return NULL;
         new_size = tlsf_block_size(p);
         heap_unpoison(p, new_size);
-        memcpy(p, ptr, old_size < size ? old_size : size);
+        if (heap_copy(h, p, ptr, old_size < size ? old_size : size)) {
+            heap_untake(h, p);
+            h->stopped = 1;
+            return NULL;
+        }
         h->count = base + new_size;
         if (c) {
             /* the chunk list may have a new head: find the link again */

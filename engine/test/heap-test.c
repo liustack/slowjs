@@ -39,10 +39,16 @@
 
 /* ---- the fake host ---- */
 
-/* The engine reads its stop flags through this (poll_flag in cutils.h).
-   Nothing here asks a runtime to stop. */
+/* The engine reads its stop flags through this (poll_flag in cutils.h), and
+   so does the heap when a block moves (heap_copy). It counts the reads, and
+   sets the flag at the read poll_stop_at (1 is the first, 0 for none): only
+   scenario_move_stop does. Nothing here asks a runtime to stop. */
+static long poll_reads, poll_stop_at;
+
 int host_poll(const volatile int *flag)
 {
+    if (++poll_reads == poll_stop_at)
+        *(volatile int *)flag = 1;
     return *flag;
 }
 
@@ -3099,6 +3105,63 @@ static void scenario_js_objects(void)
 }
 #endif
 
+/* A block that moves is copied a MiB at a time, with a read of the stop flag
+   before each step (heap_copy). A dedicated block of 6 MiB that grows to
+   12 MiB in a heap that does not remap, and one that shrinks to 2 MiB, out of
+   its chunk, are stopped at each read in turn: the call fails at that read,
+   with stopped set, and the heap, its chunks and the block are as they were.
+   With the flag clear the move reads it once for each MiB, works, and clears
+   stopped. */
+static void scenario_move_stop(void)
+{
+    static const size_t to[2] = { (size_t)12 << 20, (size_t)2 << 20 };
+
+    for (int s = 0; s < 2; s++) {
+        HeapModel m;
+        JSHeap *h;
+        HostVM *host;
+        int flag = 0;
+        long reads, k;
+        size_t n;
+
+        heap_model_start(&m);
+        h = m.h;
+        host = &vms[m.vm];
+        heap_set_remap(h, 0);
+        h->stop = &flag;
+        CHECK(model_alloc(&m, (size_t)6 << 20), "alloc 6 MiB");
+        n = m.live[0].usable < to[s] ? m.live[0].usable : to[s];
+        reads = (long)((n + HEAP_COPY_STEP - 1) / HEAP_COPY_STEP);
+        for (k = 1; k <= reads; k++) {
+            size_t count = h->count, fp = h->footprint, chunks = h->chunk_count;
+            int held = host->n;
+            void *old = m.live[0].p;
+
+            flag = 0;
+            poll_reads = 0;
+            poll_stop_at = k;
+            CHECK(!heap_realloc(h, old, to[s]), "a move to %zu stopped at read %ld of %ld went on", to[s], k, reads);
+            CHECK(h->stopped, "a stopped move did not set stopped");
+            CHECK(poll_reads == k, "a move stopped at read %ld read the flag %ld times", k, poll_reads);
+            CHECK(h->count == count && h->footprint == fp && h->chunk_count == chunks && host->n == held,
+                  "a move stopped at read %ld changed the heap or kept a chunk", k);
+            CHECK(m.live[0].p == old && heap_usable_size(old) == m.live[0].usable, "a stopped move changed the block");
+            check_content(&m.live[0], m.live[0].usable, "stopped move");
+            heap_model_check(&m);
+        }
+        flag = 0;
+        poll_reads = 0;
+        poll_stop_at = 0;
+        model_realloc(&m, 0, to[s]);
+        CHECK(m.live[0].usable >= to[s] && !h->stopped && poll_reads == reads,
+              "the move to %zu with the flag clear: %ld reads, want %ld", to[s], poll_reads, reads);
+        heap_model_check(&m);
+        model_free(&m, 0);
+        heap_model_finish(&m);
+    }
+    ok("move stop: a block that moves stops at each read of the flag, the heap and the block as they were");
+}
+
 static void scenarios(void)
 {
     scenario_limit();
@@ -3110,6 +3173,7 @@ static void scenarios(void)
     scenario_dedicated();
     scenario_remap();
     scenario_remap_positions();
+    scenario_move_stop();
     scenario_budget_exact();
     scenario_max_request();
     scenario_release();
