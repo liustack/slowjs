@@ -24009,26 +24009,42 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             BREAK;
 
         CASE(OP_dup_case_atom):
-            /* dup, push_atom_value, strict_eq, if_false8: a case of a switch
-               on strings. pc points to the push_atom_value. When the value
-               is told apart from the string without its characters, the
-               comparison and the branch are done here as if_false8 does
-               them, else the dup is, and the rest runs as it would have. */
-            {
+            /* dup, push_atom_value, strict_eq and a conditional jump (if_false8,
+               if_true8, if_false or if_true): a case of a switch on strings.
+               pc points to the push_atom_value. When the value is told apart
+               from the string without its characters, the comparison and the
+               branch are done here as the jump does them, poll included, else
+               the dup is, and the rest runs as it would have. When the
+               instruction it then comes to is another such case, it goes on
+               with that one in the same dispatch, so that a chain of cases
+               takes one. */
+            for (;;) {
                 int eq = goasm_case_atom(rt, sp[-1], get_u32(pc + 1));
+                int jop = pc[6];
 
-                if (likely(eq >= 0)) {
+                if (unlikely(eq < 0))
+                    goto dup_case_atom_apart;
+                if (jop == OP_if_false8 || jop == OP_if_true8) {
                     pc += 8;
-                    if (!eq) {
+                    if (eq == (jop == OP_if_true8)) {
                         JUMP_TO(pc + (int8_t)pc[-1] - 1);
                     }
-                    if (unlikely(js_poll_interrupts(ctx)))
-                        goto exception;
-                    BREAK;
+                } else {
+                    pc += 11;
+                    if (eq == (jop == OP_if_true)) {
+                        JUMP_TO(pc + (int32_t)get_u32(pc - 4) - 4);
+                    }
                 }
-                sp[0] = JS_DupValue(ctx, sp[-1]);
-                sp++;
+                if (unlikely(js_poll_interrupts(ctx)))
+                    goto exception;
+                if (*pc != OP_dup_case_atom)
+                    goto dup_case_atom_done;
+                pc += 1;
             }
+        dup_case_atom_apart:
+            sp[0] = JS_DupValue(ctx, sp[-1]);
+            sp++;
+        dup_case_atom_done:
             BREAK;
 #endif
             
@@ -40567,26 +40583,44 @@ static void put_short_code(DynBuf *bc_out, int op, int idx)
 
 /* The runs of instructions that one opcode does at once, its first
    instruction made that opcode (fuse_code): the opcodes of the run, the
-   fused opcode last. poll_scan holds code read by JS_ReadObject to them. */
+   fused opcode last. A fused opcode may stand for several runs, which
+   differ in their last instruction: the case of a switch ends with any of
+   the four conditional jumps. poll_scan holds code read by JS_ReadObject to
+   them. */
 static const uint8_t fused_runs[][5] = {
     { OP_get_arg0, OP_get_field, 0, 0, OP_get_arg0_get_field },
     { OP_get_arg1, OP_get_field, 0, 0, OP_get_arg1_get_field },
     { OP_get_loc0, OP_get_field, 0, 0, OP_get_loc0_get_field },
     { OP_get_loc8, OP_get_field, 0, 0, OP_get_loc8_get_field },
     { OP_dup, OP_push_atom_value, OP_strict_eq, OP_if_false8, OP_dup_case_atom },
+    { OP_dup, OP_push_atom_value, OP_strict_eq, OP_if_true8, OP_dup_case_atom },
+    { OP_dup, OP_push_atom_value, OP_strict_eq, OP_if_false, OP_dup_case_atom },
+    { OP_dup, OP_push_atom_value, OP_strict_eq, OP_if_true, OP_dup_case_atom },
 };
 
-/* The run of the fused opcode op, or NULL when op is none. The fused
-   opcodes are the last ones of quickjs-opcode.h but typeof_is, from
-   get_arg0_get_field to dup_case_atom. */
-static const uint8_t *fused_run(int op)
+static BOOL fused_run_at(const uint8_t *bc_buf, int bc_len, int pos,
+                         const uint8_t *run, int op0);
+
+/* Whether op is a fused opcode. The fused opcodes are the last ones of
+   quickjs-opcode.h but typeof_is, from get_arg0_get_field to
+   dup_case_atom. */
+static inline BOOL is_fused_op(int op)
+{
+    return op >= OP_get_arg0_get_field && op <= OP_dup_case_atom;
+}
+
+/* The run of fused_runs that the instructions at pos spell out, or NULL.
+   With fused, the instruction at pos is that fused opcode and the run is
+   one of its own. Without, op0 is the plain opcode of the instruction at
+   pos, the first of the run. */
+static const uint8_t *fused_run_match(const uint8_t *bc_buf, int bc_len,
+                                      int pos, int op0, BOOL fused)
 {
     size_t i;
 
-    if (op < OP_get_arg0_get_field || op > OP_dup_case_atom)
-        return NULL;
     for (i = 0; i < countof(fused_runs); i++) {
-        if (fused_runs[i][4] == op)
+        if (fused_runs[i][fused ? 4 : 0] == op0 &&
+            fused_run_at(bc_buf, bc_len, pos, fused_runs[i], fused_runs[i][0]))
             return fused_runs[i];
     }
     return NULL;
@@ -40640,7 +40674,6 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
     int pos, len, op, r, in, falls, next, jumps;
     int64_t target;
     const JSOpCode *oi;
-    const uint8_t *fused;
 
     memset(run, POLL_NONE, bc_len);
     for (pos = 0; pos < bc_len; pos += len) {
@@ -40651,8 +40684,7 @@ static const char *poll_scan(const uint8_t *bc_buf, int bc_len, uint8_t *run,
         if (len > bc_len - pos)
             return "an instruction past the end of the code";
         run[pos] = 0;
-        fused = fused_run(op);
-        if (fused && !fused_run_at(bc_buf, bc_len, pos, fused, fused[0]))
+        if (is_fused_op(op) && !fused_run_match(bc_buf, bc_len, pos, op, TRUE))
             return "a fused opcode without the instructions it reads";
     }
     /* the entry counts */
@@ -40935,26 +40967,6 @@ static int insert_polls(JSContext *ctx, JSFunctionDef *s, DynBuf *bc)
    positions, the jumps, the line numbers and the polls of the code stay as
    they are, and so do the errors, which only the rest of the run can
    throw. */
-/* The run of fused_runs that the instruction op starts, if any. */
-static const uint8_t *fused_run_from(int op)
-{
-    size_t i;
-
-    switch (op) {
-    case OP_get_arg0:
-    case OP_get_arg1:
-    case OP_get_loc0:
-    case OP_get_loc8:
-    case OP_dup:
-        for (i = 0; i < countof(fused_runs); i++) {
-            if (fused_runs[i][0] == op)
-                return fused_runs[i];
-        }
-        break;
-    }
-    return NULL;
-}
-
 /* What fuse_code looks at in an instruction, by opcode, in the order of
    opcode_info: a jump and the format of its offset, OP_gosub, or the first
    instruction of a run of fused_runs. */
@@ -41037,8 +41049,7 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
                 mark[pos + size] |= 1;
             break;
         default: /* FUSE_RUN */
-            run = fused_run_from(op);
-            if (run && fused_run_at(buf, len, pos, run, op)) {
+            if (fused_run_match(buf, len, pos, op, FALSE)) {
                 mark[pos] |= 2;
                 if (runs < countof(at))
                     at[runs] = pos;
@@ -41057,7 +41068,7 @@ static no_inline int fuse_code(JSContext *ctx, DynBuf *bc)
             while (!(mark[pos] & 2))
                 pos++;
         }
-        run = fused_run_from(buf[pos]);
+        run = fused_run_match(buf, len, pos, buf[pos], FALSE);
         end = pos;
         for (k = 0; k < 4 && run[k]; k++)
             end += short_opcode_info(run[k]).size;
@@ -44770,7 +44781,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 7
+#define BC_VERSION 8
 
 typedef struct BCWriterState {
     JSContext *ctx;

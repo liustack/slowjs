@@ -3788,7 +3788,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $232-56
 	WORD $0x9102c1b4
 	WORD $0x9101a1b5
 	WORD $0x52800816
-	MOVD $·engine_rodata+10012(SB), R23
+	MOVD $·engine_rodata+10027(SB), R23
 	WORD $0xf8060f08
 	WORD $0x9101a1a8
 	WORD $0xf90057e8
@@ -4024,7 +4024,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $232-56
 	WORD $0x9102c1b4
 	WORD $0x9101a1b5
 	WORD $0x52800816
-	MOVD $·engine_rodata+10019(SB), R23
+	MOVD $·engine_rodata+10034(SB), R23
 	WORD $0xf8060f08
 	WORD $0x9101a1a8
 	WORD $0xf90037e8
@@ -9108,7 +9108,7 @@ TEXT ·JS_AtomIsNumericIndex1(SB), $200-40
 	WORD $0x510246c9
 	WORD $0x7100113f
 	WORD $0x54000122
-	MOVD $·engine_rodata+51136(SB), R8
+	MOVD $·engine_rodata+51152(SB), R8
 	WORD $0x52800101
 	WORD $0xf8695900
 	WORD $0x14000013
@@ -19537,7 +19537,7 @@ TEXT ·JS_GetFunctionRealm(SB), $72-40
 	WORD $0xf90027f5
 	WORD $0x34000489
 	WORD $0xf94027f5
-	MOVD $·engine_rodata+20061(SB), R22
+	MOVD $·engine_rodata+20077(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xf90007f4

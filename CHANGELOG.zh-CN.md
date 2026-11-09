@@ -30,6 +30,10 @@
 - Go 函数的结果交出的引用，以及其中装得下 `Value` 的切片、map 和指针，现在在任何程序代码运行之前读取。转换会运行程序的代码，`Error` 方法、`MarshalJSON` 或结构体里 `Value` 的 `toJSON`，它们可以在转换进行中改动结果：变得包含自身的切片让进程因栈溢出退出，放进去的别的 VM 的 `Value` 在不拥有它的 VM 里被改动计数，被拿走的 `Value` 则永远留在 VM 里。不带 `Value` 的数据是遍历记下的叶子，它指向的内容，比如 `[]int` 的元素，在转换时读取。类型带 `Error` 方法的值和以前一样转换成那个字符串，里面的 `Value` 和结构体里的一样仍归调用方所有（[Go API](docs/changes/go-api.zh-CN.md#结果的引用在程序代码运行之前取下)）。
 - 在 javascript 调用的 Go 函数里，`VM.NewArray` 现在碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，原来要先把整个数组造完：4 Mi 个元素的数组要 0.14 到 0.2 秒，期间不检查，可能超过脚本被杀掉之前的宽限期。对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')`，原来造数组期间来的超时会让它的 VM 被杀掉，现在以中断结束（[go-api.md](docs/changes/go-api.zh-CN.md#newarray-在调用的限制处停下)）。
 
+### 变更
+
+- 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 8：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+
 ## [v0.30.1] - 2026-11-06
 
 ### 修复

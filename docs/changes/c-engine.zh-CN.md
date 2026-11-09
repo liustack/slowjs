@@ -395,18 +395,18 @@ tifa 的页面经常运行的两种指令序列，现在各只用解释器的一
 | `get_arg1` `get_field` | `get_arg1_get_field` |
 | `get_loc0` `get_field` | `get_loc0_get_field` |
 | `get_loc8 n` `get_field` | `get_loc8_get_field n` |
-| `dup` `push_atom_value` `strict_eq` `if_false8`，字符串 `switch` 的 case | `dup_case_atom` |
+| `dup` `push_atom_value` `strict_eq`，再加 `if_false8`、`if_true8`、`if_false` 或 `if_true`，字符串 `switch` 的 case | `dup_case_atom` |
 
 只改那一个字节。新操作码的大小、栈效果和格式都和它所替换的指令相同，序列的其余部分仍照原样留在代码里。所以每条指令保持它的位置：跳转、行列表、轮询和函数的栈大小都和以前一样。序列里如果有跳转落在它里面，在第一条指令之后，就不动它（先标出每个跳转的目标，以及 `gosub` 之后的那条指令）。
 
 这些操作码做什么：
 
 - 四种读取不取引用地查看局部变量的值，并走 `get_field` 对不需要运行任何东西就能找到的属性所走的路径：自己的数据属性，或者越过非 exotic 对象的原型链上的属性，或者字符串或数字的原型，或者链的末端。然后它们压入这个属性，并跳过 `get_field`。其他所有情况：getter、setter、proxy、exotic 对象、`undefined` 或 `null`、错误的 `stack`，它们像单独读取那样压入局部变量，之后的 `get_field` 照常运行，带着它自己的错误以及行列号。
-- `dup_case_atom` 在答案不需要看字符时，拿 `switch` 的值和 case 的字符串比较：atom 在运行时里是唯一的，所以是 atom 的字符串只有在同一个 atom 时才相等，长度不同的字符串不相等，不是字符串的值永远不等。然后它像 `if_false8` 那样分支，包括轮询。否则（不是 atom 的字符串，rope）它做 `dup`，其余的照常运行。
+- `dup_case_atom` 在答案不需要看字符时，拿 `switch` 的值和 case 的字符串比较：atom 在运行时里是唯一的，所以是 atom 的字符串只有在同一个 atom 时才相等，长度不同的字符串不相等，不是字符串的值永远不等。然后它像序列里的那条跳转那样分支，包括轮询。否则（不是 atom 的字符串，rope）它做 `dup`，其余的照常运行。它接下来到达的指令（跳过去的或顺着走到的）如果又是一个 `dup_case_atom`，它就在同一次分发里接着比这个 case，所以一串 case 只用一次分发。接着比下一个 case，和为它单独分发做的事一样：两者之间不运行任何东西，每个 case 都像它的跳转那样分支、读中断标志，往回的跳转照样计数，遇到不是 atom 的值就用 `dup` 结束这一串，这个 case 的其余部分照它的指令运行。有自己的 body 的 case 以 `if_false8` 结尾，body 长时是 `if_false`。几个 case 共用一个 body 时，用 `if_true8` 跳到 body，前面的 case 多时是 `if_true`，React DOM 比较的 case 大多是这种（每次渲染 83K 个里有 53K 个，见[下面](#收益)）。
 
 为什么借用是安全的：在快速路径上，读局部变量和压入属性之间不运行任何东西，所以没有东西能改变或释放这个局部变量。任何可能运行代码的情况（getter、proxy 陷阱、其中的回收）都走慢速路径，它像那两条指令一样先取引用。`fuse_code` 作用在已完成的代码上，所以 `arguments` 对象、闭包变量和 `let`、`const` 声明之前的检查，编译方式和以前一样：处于暂时性死区的局部变量用 `get_loc_check` 读，它不被融合。
 
-字节码版本从 6 升到 7。`JS_ReadObject` 用 `poll_scan` 检查它读入的代码，现在它还拒绝后面没有跟着其序列其余部分的融合操作码（`invalid bytecode: a fused opcode without the instructions it reads`），所以宿主写入的字节码不能让解释器跨过一条它没检查过的指令。
+加这些操作码时字节码版本从 6 升到 7，`dup_case_atom` 接上另外三种跳转时从 7 升到 8。`JS_ReadObject` 用 `poll_scan` 检查它读入的代码，现在它还拒绝后面没有跟着其序列其余部分的融合操作码（`invalid bytecode: a fused opcode without the instructions it reads`），所以宿主写入的字节码不能让解释器跨过一条它没检查过的指令。
 
 `JS_SetFusedOps(ctx, 0)` 让运行时把这些序列重新分开编译，供测试使用。
 
@@ -420,13 +420,17 @@ tifa 的页面经常运行的两种指令序列，现在各只用解释器的一
 
 每个应用每个页面一次渲染的指令数，callgrind 在 linux/amd64 上，每项改动对比它前一项：融合的读取和 case，在 tifa 商店的六个工作台页面上少 1.85%，店面页面少 1.59%，tifa 测试应用的 MUI 页面少 1.66%，bench 页面少 3.41%，在这之上 `typeof` 操作码又分别少 0.63%、0.83%、0.75% 和 1.42%。16 个页面的 HTML 相同。在 8 个代码位置、3 轮计时，上述形式的融合读取和 case，对比 v0.29.4：bench 页面用 0.966 的时间，`r_react_ssr` 是 1.018，它低于 callgrind 起决定作用的 3%。三项一起：bench 页面 0.943，工作台页面 0.976，店面页面 0.980。
 
+字符串 case 串成一次分发，对比 main（4551c4ab），tifa 商店、MUI 和 bench 应用各页的 HTML 不变：React DOM 每次渲染的分发少 20.3%（1,148,706 到 915,371，在 C 树上计数），因为它每次渲染的 83K 个字符串 case 里有 53K 个是共用 body 的 case。linux/amd64 上生成版引擎的 callgrind：`r_react_ssr` 的 React 页（`compare/engines/react/react-ssr.js`，不含编译）每次渲染的指令少 5.7%（54.70 M 到 51.60 M，`JS_CallInternal` 里少 7.3%），tifa 商店、MUI 和 bench 应用的页面少 0.43%、0.43% 和 0.64%。这些页面的分发只少 1.0% 到 1.2%，因为 tifa 的构建已经给 React DOM 的长 switch 加了守卫。在 EPYC 7B13 的一个核上计时（同核的另一个线程空着），16 个代码位置，2 轮：这次渲染的时间少 9.5%（各位置平均值的 95% 区间是 7.7% 到 11.2%），bench 页 +0.18%（-0.97% 到 +1.34%），商店的页面和 MUI 页用 4 轮再计时一次，分别是 +0.36%（-0.23% 到 +0.95%）和 +0.51%（-0.16% 到 +1.19%），都在 1% 的门槛以内，只是 MUI 页区间的上限略超过 1%（2 轮时是 +0.97%，+0.35% 到 +1.60%）。
+
+代价：arm64 上 `JS_CallInternal_block` 的 Go 栈帧从 504 字节变成 520 字节（amd64 仍是 496）。脚本能递归多深由计数决定，不由栈决定，两种架构上的深度和每层用的影子栈都不变（`TestCallDepthInLevels`、`TestShadowStackAtDepth`、`TestShadowStackInternalDepth`、`TestHasOwnCallDepth`、`TestCCallDepth`），所以 arm64 上每层多用 16 字节 Go 栈，深度 10000 时是 160 KB，对比 [Go 栈空间](#go-栈空间) 里的余量。
+
 编译器为查找这些序列付出代价：`fuse_code` 用一张说明哪些操作码是跳转或序列起点的表（`fuse_kind`），多走一遍每个函数的代码，对小于 256 字节的函数把它的标记放在栈上。编译 `r_react_ssr` 的包大约多花 0.98 M 条指令，它每次运行都要编译再渲染，所以三项改动一起让那里的一次运行多 1.46% 的指令。tifa 的每个 VM 读的是编译好一次的字节码，所以渲染不付这笔钱。数字见 [performance.zh-CN.md](../performance.zh-CN.md#一次做好几条指令的操作码)。
 
 这些操作码占了 256 以下 11 个空闲编号里的 6 个（`OP_COUNT` 过去是 245），所以还剩 5 个。
 
 ### 测试
 
-`engine/test/compare.sh` 在开和关这些操作码的情况下，运行 `engine/test/compare/fused_ops.js` 和 `engine/test/compare/typeof_is.js`，两者打印的文件，都和改动之前引擎打印的一致。`fused_ops.js` 用四种读取各读 32 种值（自己的和继承的数据属性、getter、setter、proxy 以及作为原型的 proxy、冻结的和被删除的键、数组、类型化数组、`String` 对象、`arguments`、函数、类、错误、每种原始值、`undefined` 和 `null`），有会改变或丢掉局部变量并运行回收的 getter 和 proxy 陷阱，映射的和非映射的 `arguments`，处于死区的局部变量，写局部变量的闭包，循环，一个生成器和一个 async 函数，读 `undefined` 和 `null` 的错误以及它们的行列号，以及对 atom 或非 atom 字符串、rope、宽字符串、数字、对象、symbol 和带 getter 的 case 做的 `switch`。`typeof_is.js` 对每种形式测试每种类型的值，既作为值也作为分支。`TestFusedOps`（根包）在生成的引擎上开和关操作码各运行这两个文件。`engine/test/unit-white.c` 的 `test_fused_ops` 和 `test_typeof_is` 检查，开和关时编译器产生了哪些操作码，跳进一对指令中间的跳转让它们保持分开，字节码能读回并运行，以及 `poll_scan` 拒绝序列被改过的融合操作码。`test_fused_edges` 在每个 `typeof` 测试里对带 [[IsHTMLDDA]] 的对象运行它们，对模块命名空间的导出运行它们（这些是经引用读取的，所以离开快速路径），对紧接着读取之前被直接 eval 或 `with` 块设置的参数或局部变量运行它们，并检查代码里有融合操作码。`test_short_opcode_index` 检查反汇编器为每个把局部变量或参数的下标放在操作码里的操作码所打印的下标。
+`engine/test/compare.sh` 在开和关这些操作码的情况下，运行 `engine/test/compare/fused_ops.js` 和 `engine/test/compare/typeof_is.js`，两者打印的文件，都和改动之前引擎打印的一致。`fused_ops.js` 用四种读取各读 32 种值（自己的和继承的数据属性、getter、setter、proxy 以及作为原型的 proxy、冻结的和被删除的键、数组、类型化数组、`String` 对象、`arguments`、函数、类、错误、每种原始值、`undefined` 和 `null`），有会改变或丢掉局部变量并运行回收的 getter 和 proxy 陷阱，映射的和非映射的 `arguments`，处于死区的局部变量，写局部变量的闭包，循环，一个生成器和一个 async 函数，读 `undefined` 和 `null` 的错误以及它们的行列号，以及对 atom 或非 atom 字符串、rope、宽字符串、数字、对象、symbol 和带 getter 的 case 做的 `switch`。`typeof_is.js` 对每种形式测试每种类型的值，既作为值也作为分支。`case_chain.js` 运行 case 以四种跳转各自结尾的 switch（每个 case 有自己的 body、共用 body、长 body、一个 body 前有 19 个 case），贯穿的 body，夹在 case 中间的 `default`，一串 case 中间不是字符串字面量的 case（常量、数字、模板、getter、`null`），字符串 case 中间的数字和 BigInt，每种值（atom 和与之相等但不是 atom 的字符串、rope、宽字符串、`String` 对象、proxy、symbol），带 `continue` 和带标签 `break` 的循环，嵌套的 switch，跨 `yield` 和 `await` 做 switch 的生成器和 async 函数，body 里抛出的错误及其行列号，`try` 和 `finally`，case 里的 `let`，以及 case 求值的顺序。`TestFusedOps`（根包）在生成的引擎上开和关操作码各运行这些文件。`engine/test/unit-white.c` 的 `test_fused_ops` 和 `test_typeof_is` 检查，开和关时编译器产生了哪些操作码，一个 switch 的 20 个 case 里 case 的四种形式，跳进一对指令中间的跳转让它们保持分开，字节码能读回并运行，以及 `poll_scan` 拒绝序列被改过的融合操作码（对 case，四种跳转各改它的字符串、比较和跳转）。`test_fused_edges` 在每个 `typeof` 测试里对带 [[IsHTMLDDA]] 的对象运行它们，对模块命名空间的导出运行它们（这些是经引用读取的，所以离开快速路径），对紧接着读取之前被直接 eval 或 `with` 块设置的参数或局部变量运行它们，并检查代码里有融合操作码。`test_short_opcode_index` 检查反汇编器为每个把局部变量或参数的下标放在操作码里的操作码所打印的下标。
 
 ## 不会失败的暂时性死区检查
 

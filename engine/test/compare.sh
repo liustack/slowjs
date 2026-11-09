@@ -81,10 +81,10 @@ r="$here/compare/recorded"
 t=$here/compare/recorded
 # The scripts that have a file in the repository: SCRIPT FILE [OPTIONS of jsrun]
 # regexcache.js runs with the cache at its default, at a few entries and off,
-# and prints the same each time. fused_ops.js, typeof_is.js, tdz_checks.js and
-# share_slots.js run again with the instructions the compiler joins into one
-# opcode left apart, every check of the temporal dead zone kept and every local
-# in a slot of its own, and print the same.
+# and prints the same each time. fused_ops.js, case_chain.js, typeof_is.js,
+# tdz_checks.js and share_slots.js run again with the instructions the
+# compiler joins into one opcode left apart, every check of the temporal dead
+# zone kept and every local in a slot of its own, and print the same.
 cases="
 $t/bitwise.js $t/bitwise.txt -raw
 $t/coldpath.js $t/coldpath.txt -raw
@@ -112,6 +112,7 @@ $here/compare/upstream/test_closure.js $here/compare/upstream/test_closure.txt -
 $here/compare/upstream/test_language.js $here/compare/upstream/test_language.txt -raw
 $here/compare/upstream/test_loop.js $here/compare/upstream/test_loop.txt -raw
 $here/compare/fused_ops.js $here/compare/fused_ops.txt -no-fused-ops
+$here/compare/case_chain.js $here/compare/case_chain.txt -no-fused-ops
 $here/compare/typeof_is.js $here/compare/typeof_is.txt -no-fused-ops
 $here/compare/tdz_checks.js $here/compare/tdz_checks.txt -no-fused-ops
 $here/compare/share_slots.js $here/compare/share_slots.txt -no-fused-ops

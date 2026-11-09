@@ -30,6 +30,10 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 - The references that the results of a Go function hand over, and their slices, maps and pointers that can hold a `Value`, are now read before any code of the program runs. Code of the program that the conversion runs, an `Error` method, a `MarshalJSON` or the `toJSON` of a `Value` in a struct, could change the result while it converted: a slice made to hold itself killed the process with a stack overflow, a `Value` of another VM put in had its count changed in a VM that does not own it, and a `Value` taken out stayed in the VM for good. The data with no `Value` in it is a leaf that the walk keeps, and what it points to, such as the elements of an `[]int`, is read when it converts. A value whose type has an `Error` method converts to that string as before, and the `Value`s in it stay the caller's, as those in a struct do ([Go API](docs/changes/go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs)).
 - `VM.NewArray` in a Go function that javascript called now ends at `Interrupt`, the eval timeout or an uncatchable error of the call, with that error, where it made the whole array first: an array of 4 Mi elements took 0.14 to 0.2 seconds with no check, which could go past the grace after which a script is killed. `toLocaleUpperCase('tr')` of 2M lone surrogates, each before an `i`, got its VM killed by a timeout that came while the array was made, and now ends with the interrupt ([go-api.md](docs/changes/go-api.md#newarray-stops-at-the-limits-of-the-call)).
 
+### Changed
+
+- A render of React DOM from a bundle that tifa's build has not rewritten takes about 9.5% less time: the string cases of a `switch` that end with any conditional jump are one opcode, and a chain of them runs in one dispatch ([c-engine.md](docs/changes/c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string)). Bytecode is version 8: bytecode written by an earlier release no longer loads (`SyntaxError: invalid version`), and has to be compiled again.
+
 ## [v0.30.1] - 2026-11-06
 
 ### Fixed

@@ -32,6 +32,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | On windows every generated function makes room for 12 KiB more below its stack pointer, so that the state of the CPU the system writes at a fault stays inside the stack on CPUs with AMX | Unreleased | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
 | The generated code reads its arguments and writes its results by name through FP, as Go promises, and no longer at an offset from SP that depends on how the assembler lays out a frame. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#arguments-and-results-by-name) |
 | `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
+| The string cases of a `switch` that end with any conditional jump take one opcode, and a chain of them runs in one dispatch. Bytecode version 8 | Unreleased | [c-engine.md](c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) |
 
 ## Commits of upstream QuickJS
 

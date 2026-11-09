@@ -951,19 +951,24 @@ uintptr_t white_shape_of(JSValueConst obj)
 
 /* ---- the pairs of instructions that one opcode does ---- */
 
-/* The number of instructions of code that are each fused opcode, in the
-   order of fused_runs, into count (as many as fused_runs has), and in all. */
-int white_fused_ops(const uint8_t *code, int len, int *count)
+/* The number of instructions of code that are the fused opcode of each run
+   of fused_runs, followed by the rest of that run, in the order of
+   fused_runs, into count (cap entries, as many as fused_runs has, or it
+   aborts), and in all. */
+int white_fused_ops(const uint8_t *code, int len, int *count, size_t cap)
 {
     int pos, op, n = 0;
     size_t i;
 
+    if (cap != countof(fused_runs))
+        abort(); /* the caller counts a different number of runs */
     for (i = 0; i < countof(fused_runs); i++)
         count[i] = 0;
     for (pos = 0; pos < len; pos += short_opcode_info(op).size) {
         op = code[pos];
         for (i = 0; i < countof(fused_runs); i++) {
-            if (fused_runs[i][4] == op) {
+            if (fused_runs[i][4] == op &&
+                fused_run_at(code, len, pos, fused_runs[i], fused_runs[i][0])) {
                 count[i]++;
                 n++;
             }

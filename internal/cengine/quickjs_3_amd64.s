@@ -2129,7 +2129,7 @@ TEXT ·js_promise_executor(SB), $48-80
 	QUAD $0x418948fc40ff0372
 	QUAD $0x0003ba1851894810
 	QUAD $0x10678d4d28eb0000
-	LEAQ ·engine_rodata+22992(SB), R14
+	LEAQ ·engine_rodata+23008(SB), R14
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	BYTE $0x7c
@@ -3034,7 +3034,7 @@ TEXT ·JS_GetFunctionRealm(SB), $64-40
 	BYTE $0x44
 	BYTE $0x24
 	BYTE $0x10
-	LEAQ ·engine_rodata+20149(SB), R14
+	LEAQ ·engine_rodata+20165(SB), R14
 	QUAD $0x8b4cc48949e7894d
 	QUAD $0x4c2424894c30246c
 	QUAD $0x2474894c08246c89
@@ -15004,7 +15004,7 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+31394(SB), AX
+	LEAQ ·engine_rodata+31410(SB), AX
 	BYTE $0x48
 	BYTE $0x89
 	BYTE $0x41
@@ -15016,12 +15016,12 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	QUAD $0x0000003841c748ff
 	QUAD $0x0000034041c74800
 	BYTE $0x00
-	LEAQ ·engine_rodata+31424(SB), AX
+	LEAQ ·engine_rodata+31440(SB), AX
 	QUAD $0x015041c748418948
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+31472(SB), AX
+	LEAQ ·engine_rodata+31488(SB), AX
 	QUAD $0x036041c758418948
 	QUAD $0x00006841c7000000
 	QUAD $0x0000e0a18d4c0000
@@ -15044,7 +15044,7 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+31584(SB), AX
+	LEAQ ·engine_rodata+31600(SB), AX
 	QUAD $0x48ff316824448948
 	QUAD $0x48000000b8248c8b
 	QUAD $0x894800000090818d
@@ -15190,7 +15190,7 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+31400(SB), AX
+	LEAQ ·engine_rodata+31416(SB), AX
 	BYTE $0x48
 	BYTE $0x89
 	BYTE $0x41
@@ -15202,12 +15202,12 @@ TEXT ·JS_NewContextRaw(SB), $208-24
 	QUAD $0x0000003841c74800
 	QUAD $0x0000034041c74800
 	BYTE $0x00
-	LEAQ ·engine_rodata+32112(SB), AX
+	LEAQ ·engine_rodata+32128(SB), AX
 	QUAD $0x045041c748418948
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+32496(SB), AX
+	LEAQ ·engine_rodata+32512(SB), AX
 	QUAD $0x286041c758418948
 	QUAD $0x00026841c7000000
 	QUAD $0x24894ccd89490000
@@ -17054,7 +17054,7 @@ TEXT ·js_array_with(SB), $240-64
 	BYTE $0x49
 	BYTE $0x89
 	BYTE $0x0f
-	LEAQ ·engine_rodata+33776(SB), R14
+	LEAQ ·engine_rodata+33792(SB), R14
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	BYTE $0x7c
@@ -17825,14 +17825,14 @@ TEXT ·js_array_concat(SB), $256-64
 	QUAD $0x8349000001808189
 	BYTE $0xc0
 	BYTE $0x50
-	LEAQ ·engine_rodata+20149(SB), R14
+	LEAQ ·engine_rodata+20165(SB), R14
 	BYTE $0xeb
 	BYTE $0x0b
 	BYTE $0x49
 	BYTE $0x83
 	BYTE $0xc0
 	BYTE $0x50
-	LEAQ ·engine_rodata+10628(SB), R14
+	LEAQ ·engine_rodata+10644(SB), R14
 	QUAD $0x000000c824a48b4c
 	QUAD $0x894cc7894df58949
 	QUAD $0x4c08246c894c2424
@@ -17965,7 +17965,7 @@ TEXT ·js_array_every(SB), $272-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+45606(SB), R14
+	LEAQ ·engine_rodata+45622(SB), R14
 	QUAD $0x00d824848b481aeb
 	QUAD $0x8d4c50788d4c0000
 	BYTE $0xa0
@@ -17973,7 +17973,7 @@ TEXT ·js_array_every(SB), $272-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+45589(SB), R14
+	LEAQ ·engine_rodata+45605(SB), R14
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	BYTE $0x7c
@@ -18238,7 +18238,7 @@ TEXT ·js_array_every(SB), $272-72
 	QUAD $0x00d0a08d4c50788d
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+45589(SB), R14
+	LEAQ ·engine_rodata+45605(SB), R14
 	QUAD $0x8c8b48fffffd2ee9
 	QUAD $0x41c748000000d824
 	QUAD $0x41c7480000000068
@@ -18925,7 +18925,7 @@ TEXT ·js_array_every(SB), $272-72
 	QUAD $0x8d4c000000d82484
 	QUAD $0x0000d0a08d4c5078
 	BYTE $0x00
-	LEAQ ·engine_rodata+45589(SB), R14
+	LEAQ ·engine_rodata+45605(SB), R14
 	QUAD $0x4c2424894cc5894d
 	QUAD $0x2474894c08246c89
 	BYTE $0x10
@@ -19330,7 +19330,7 @@ TEXT ·js_array_reduce(SB), $208-72
 	QUAD $0x8d4c000000902484
 	QUAD $0x0000b0a08d4c5078
 	BYTE $0x00
-	LEAQ ·engine_rodata+45606(SB), R14
+	LEAQ ·engine_rodata+45622(SB), R14
 	QUAD $0x009024848b481aeb
 	QUAD $0x8d4c50788d4c0000
 	BYTE $0xa0
@@ -19338,7 +19338,7 @@ TEXT ·js_array_reduce(SB), $208-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+45589(SB), R14
+	LEAQ ·engine_rodata+45605(SB), R14
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	BYTE $0x7c
@@ -19830,7 +19830,7 @@ TEXT ·js_array_reduce(SB), $208-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+33832(SB), R14
+	LEAQ ·engine_rodata+33848(SB), R14
 	QUAD $0x4c2424894cf58949
 	QUAD $0x2474894c08246c89
 	BYTE $0x10
