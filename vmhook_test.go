@@ -52,10 +52,10 @@ func defineBuiltins(t *testing.T, m *VM, bs ...*Builtin) {
 func TestVMHookStop(t *testing.T) {
 	for _, c := range []struct {
 		name  string
-		setup func(m *VM)
+		setup func(m *VM) (stop func())
 	}{
-		{"timeout", func(m *VM) { m.SetEvalTimeout(50 * time.Millisecond) }},
-		{"interrupt", func(m *VM) { time.AfterFunc(50*time.Millisecond, m.Interrupt) }},
+		{"timeout", func(m *VM) func() { m.SetEvalTimeout(50 * time.Millisecond); return func() {} }},
+		{"interrupt", func(m *VM) func() { return interruptAfter(m, 50*time.Millisecond) }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := newTestVM(t)
@@ -63,9 +63,9 @@ func TestVMHookStop(t *testing.T) {
 			if _, err := m.Eval(`globalThis.seen = []; globalThis.fail = () => { seen.push(loop()) }`, EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
-			c.setup(m)
+			stop := c.setup(m)
 			start := time.Now()
-			err, seen := runUncatchable(t, m, `try { fail() } catch (e) { seen.push('catch') } finally { seen.push('finally') }`)
+			err, seen := runUncatchableThen(t, m, `try { fail() } catch (e) { seen.push('catch') } finally { seen.push('finally') }`, stop)
 			if d := time.Since(start); d > 2*time.Second {
 				t.Errorf("the call took %v", d)
 			}

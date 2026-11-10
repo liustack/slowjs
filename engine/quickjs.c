@@ -59004,12 +59004,24 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
     }
     re_flags = 0;
     if (!JS_IsUndefined(flags)) {
-        str = JS_ToCStringLen(ctx, &len, flags);
-        if (!str)
+        JSValue fs = JS_ToString(ctx, flags);
+        JSString *f;
+
+        if (JS_IsException(fs))
             return JS_EXCEPTION;
+        f = JS_VALUE_GET_STRING(fs);
+        len = f->len;
+        /* there are 8 flags, each allowed once: a longer string has one
+           twice or another character, which is found by the 9th. So no
+           loop goes over a string of millions of flags without reading
+           the interrupt flag, as converting it to a C string did */
+        if (len > 8) {
+            JS_FreeValue(ctx, fs);
+            goto bad_flags1;
+        }
         /* XXX: re_flags = LRE_FLAG_OCTAL unless strict mode? */
         for (i = 0; i < len; i++) {
-            switch(str[i]) {
+            switch(string_get(f, i)) {
             case 'd':
                 mask = LRE_FLAG_INDICES;
                 break;
@@ -59039,12 +59051,12 @@ static JSValue js_compile_regexp(JSContext *ctx, JSValueConst pattern,
             }
             if ((re_flags & mask) != 0) {
             bad_flags:
-                JS_FreeCString(ctx, str);
+                JS_FreeValue(ctx, fs);
                 goto bad_flags1;
             }
             re_flags |= mask;
         }
-        JS_FreeCString(ctx, str);
+        JS_FreeValue(ctx, fs);
     }
 
     /* 'u' and 'v' cannot be both set */
