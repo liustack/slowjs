@@ -1057,6 +1057,24 @@ func (m *VM) jsPromiseResult(v jsValue) (r jsValue) {
 	return r
 }
 
+// jsClearKeptObjects lets go of the targets of WeakRef the job that ended kept
+// alive (ClearKeptObjects in the specification), inside the entry of the
+// call: see endJob and endCall.
+func (m *VM) jsClearKeptObjects() {
+	m.toEngine()
+	cengine.JS_ClearKeptObjects(m.sp, m.rt)
+	m.inEngine--
+}
+
+// endJob ends the job that ran before the next job of the outermost call.
+// In a call made from a Go function that javascript called, the job of the
+// call below goes on, and the targets stay.
+func (m *VM) endJob() {
+	if m.entered == 1 {
+		m.jsClearKeptObjects()
+	}
+}
+
 // jsExecutePendingJob is JS_ExecutePendingJob, which does not report the
 // context of the job: a VM has one.
 func (m *VM) jsExecutePendingJob() (r int32) {

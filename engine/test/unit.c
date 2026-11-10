@@ -115,14 +115,18 @@ static int interrupted(JSContext *ctx, const char *src)
     return r;
 }
 
-/* run_jobs runs the jobs of rt until none is left and reports whether none
-   threw. */
+/* run_jobs ends the job that ran (JS_ClearKeptObjects), runs the jobs of rt,
+   each its own job, until none is left, and reports whether none threw. */
 static int run_jobs(JSRuntime *rt)
 {
     JSContext *ctx;
     int r, ok = 1;
 
-    while ((r = JS_ExecutePendingJob(rt, &ctx)) != 0) {
+    for (;;) {
+        JS_ClearKeptObjects(rt);
+        r = JS_ExecutePendingJob(rt, &ctx);
+        if (r == 0)
+            break;
         if (r < 0) {
             JS_FreeValue(ctx, JS_GetException(ctx));
             ok = 0;
@@ -2334,6 +2338,9 @@ static void test_free_order(void)
     JS_FreeValue(ctx, global);
 
     CHECK(eval(ctx, tree), "the tree");
+    /* the job that made the WeakRef ends, and with it the hold of its
+       target (docs/changes/weak-collections.md) */
+    CHECK(run_jobs(rt), "the end of the job of the tree");
     free_order[0] = '\0';
     CHECK(eval(ctx, "t = null; void 0"), "the drop");
     CHECK(strcmp(free_order, "1 5 4 3 2 31 30 24 124 23 123 22 122 21 121 20 13 12 11 10 9 8 6 7 ") == 0, "the tree: %s", free_order);

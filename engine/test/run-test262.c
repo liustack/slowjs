@@ -624,6 +624,7 @@ static void *agent_start(void *arg)
     JS_FreeValue(ctx, ret_val);
 
     for(;;) {
+        JS_ClearKeptObjects(JS_GetRuntime(ctx)); /* the job before has ended */
         ret = JS_ExecutePendingJob(JS_GetRuntime(ctx), NULL);
         if (ret < 0) {
             js_std_dump_error(ctx);
@@ -909,6 +910,15 @@ static JSValue js_gc(JSContext *ctx, JSValueConst this_val,
     return JS_UNDEFINED;
 }
 
+/* $262.clearKeptObjects: ends the hold of the targets of WeakRef, as the end
+   of a job does */
+static JSValue js_clear_kept_objects(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv)
+{
+    JS_ClearKeptObjects(JS_GetRuntime(ctx));
+    return JS_UNDEFINED;
+}
+
 static JSValue add_helpers1(JSContext *ctx)
 {
     JSValue global_obj;
@@ -942,6 +952,9 @@ static JSValue add_helpers1(JSContext *ctx)
     JS_SetPropertyStr(ctx, obj262, "IsHTMLDDA", obj);
     JS_SetPropertyStr(ctx, obj262, "gc",
                       JS_NewCFunction(ctx, js_gc, "gc", 0));
+    JS_SetPropertyStr(ctx, obj262, "clearKeptObjects",
+                      JS_NewCFunction(ctx, js_clear_kept_objects,
+                                      "clearKeptObjects", 0));
 
     JS_SetPropertyStr(ctx, global_obj, "$262", JS_DupValue(ctx, obj262));
 
@@ -1401,6 +1414,7 @@ static int eval_buf(JSContext *ctx, const char *buf, size_t buf_len,
             JS_FreeValue(ctx, res_val);
         }
         for(;;) {
+            JS_ClearKeptObjects(JS_GetRuntime(ctx)); /* the job before has ended */
             ret = JS_ExecutePendingJob(JS_GetRuntime(ctx), NULL);
             if (ret < 0) {
                 res_val = JS_EXCEPTION;
@@ -2073,6 +2087,7 @@ int run_test262_harness_test(ThreadLocalStorage *tls,
             JS_FreeValue(ctx, res_val);
         }
         for(;;) {
+            JS_ClearKeptObjects(JS_GetRuntime(ctx)); /* the job before has ended */
             ret = JS_ExecutePendingJob(JS_GetRuntime(ctx), NULL);
             if (ret < 0) {
                 js_std_dump_error(ctx);

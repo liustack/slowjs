@@ -16,6 +16,13 @@
 // allowed SLACK bytes more than the engine alone would give. The payloads and
 // the garbage of the cases are a hundred times that.
 setGCThreshold(-1)
+// A collection here stands for one the host makes after a job has ended: the
+// targets that the WeakRefs of the job kept alive to its end go first.
+{
+	const full = gc, young = youngGC
+	globalThis.gc = () => { clearKeptObjects(); full() }
+	globalThis.youngGC = () => { clearKeptObjects(); young() }
+}
 const out = []
 const line = (name, ok, detail) => out.push(name + ": " + (ok ? "ok" : "FAIL " + detail))
 const ev = (src) => (0, eval)(src)

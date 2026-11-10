@@ -79,15 +79,21 @@ func (m *VM) usable() error {
 }
 
 func (m *VM) leave(err *error) {
+	// leave recovers only to tell a return from a panic: a panic goes on with
+	// the same value.
+	p := recover()
+	if m.entered == 1 && m.inEngine == 0 && !m.h.Broken() {
+		if q := m.endCall(); p == nil {
+			p = q
+		}
+	}
 	m.depth--
 	m.entered--
 	m.h.Leave()
 	if m.inEngine != 0 {
 		m.h.MarkBroken()
 	}
-	// leave recovers only to tell a return from a panic: a panic goes on with
-	// the same value.
-	if p := recover(); p != nil {
+	if p != nil {
 		if m.entered == 0 {
 			m.panicked = nil
 			if p == gohost.ErrKilled {
@@ -98,6 +104,19 @@ func (m *VM) leave(err *error) {
 		panic(p)
 	}
 	m.repanic()
+}
+
+// endCall ends the job of the outermost call as control comes back to Go
+// (ClearKeptObjects in the specification), so that a VM used for many calls,
+// as a pool of VMs uses one for many renders, keeps no target of a WeakRef
+// from one call to the next. It runs inside the entry of the call, which the
+// polls of the call count, and returns the panic that left it: ErrKilled from
+// a poll past the grace after a stop, or a fault, which leaves a call into
+// the engine open (inEngine), so that leave ends the call all the same.
+func (m *VM) endCall() (p any) {
+	defer func() { p = recover() }()
+	m.jsClearKeptObjects()
+	return nil
 }
 
 // killedError is the error of a call whose script a poll killed.

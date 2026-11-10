@@ -977,6 +977,10 @@ function test_weak_ref()
         assert(w2.deref(), o);
         
         o = null;
+        /* the target is kept to the end of the job (AddToKeptObjects),
+           which the host ends here */
+        assert(w1.deref() !== undefined && w1.deref() === w2.deref(), true);
+        clearKeptObjects();
         assert(w1.deref(), undefined);
         assert(w2.deref(), undefined);
         std.gc();

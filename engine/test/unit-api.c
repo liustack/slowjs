@@ -338,7 +338,7 @@ static struct {
 static JSContext *host_ctx;
 
 /* The functions of test_host_function: id 1 adds its two arguments, id
-   0x7fffffff returns how many it got, and id 2 throws. */
+   0x7fffffff returns how many it got, id 2 throws, and id 3 runs the jobs. */
 static JSValue test_host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id)
 {
     host_last.vm = vm;
@@ -359,6 +359,15 @@ static JSValue test_host_call(uint32_t vm, const JSValue *this_val, int argc, JS
         return JS_NewInt32(host_ctx, argc);
     case 2:
         return JS_ThrowErrorKind(host_ctx, JS_ERROR_KIND_RANGE, "from the host", 13);
+    case 3: {
+        /* runs the jobs from inside javascript (test_weakref_kept) */
+        JSContext *jc;
+        int n = 0;
+
+        while (JS_ExecutePendingJob(JS_GetRuntime(host_ctx), &jc) > 0)
+            n++;
+        return JS_NewInt32(host_ctx, n);
+    }
     }
     return JS_UNDEFINED;
 }
@@ -1227,6 +1236,94 @@ static void test_read_truncated_bigint(void)
     }
 }
 
+/* job_ends ends the job that ran (JS_ClearKeptObjects), as a host does when
+   control comes back to it, and runs the jobs that are queued, ending each. */
+static void job_ends(VM *v)
+{
+    JSContext *jc;
+
+    do
+        JS_ClearKeptObjects(v->rt);
+    while (JS_ExecutePendingJob(v->rt, &jc) > 0);
+}
+
+/* The WeakRef constructor and deref keep their target to the end of the job
+   (AddToKeptObjects in the specification), and no longer: a target nothing
+   else holds is there for deref in the job that made the WeakRef or read it,
+   and gone in the next. */
+static void test_weakref_kept(void)
+{
+    VM v = vm_new();
+    size_t before;
+
+    CHECK(eval_is(v.ctx, "globalThis.wr = new WeakRef({ a: 1 }); String(wr.deref()?.a)", "1"),
+          "the target of a new WeakRef in its job");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(wr.deref())", "undefined"), "the target outlived its job");
+
+    CHECK(eval_ok(v.ctx, "globalThis.o = { b: 2 }; globalThis.wr2 = new WeakRef(o)"), "setup");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "wr2.deref(); o = null; String(wr2.deref()?.b)", "2"),
+          "the target of deref in its job");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(wr2.deref())", "undefined"), "the target of deref outlived its job");
+
+    CHECK(eval_is(v.ctx, "globalThis.ws = new WeakRef(Symbol('s')); String(ws.deref()?.description)", "s"),
+          "a symbol target in its job");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(ws.deref())", "undefined"), "a symbol target outlived its job");
+
+    /* each promise job is a job of its own */
+    CHECK(eval_ok(v.ctx, "globalThis.seen = []; Promise.resolve()"
+                  ".then(() => { globalThis.wj = new WeakRef({}); seen.push(wj.deref() !== undefined) })"
+                  ".then(() => seen.push(wj.deref() !== undefined))"), "setup");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "seen.join()", "true,false"), "a job kept the target of the job before it");
+
+    /* a function of the host that runs the jobs inside javascript does not
+       end the job it is in, with jobs to run and with none */
+    host_ctx = v.ctx;
+    host_function_call = test_host_call;
+    define_host(v.ctx, "drain", 0, 3);
+    CHECK(eval_is(v.ctx, "globalThis.wd = new WeakRef({ d: 4 }); Promise.resolve().then(() => {});"
+                  "String(drain()) + drain() + wd.deref()?.d", "104"),
+          "running the jobs inside javascript ended its job");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(wd.deref())", "undefined"), "the target outlived its job");
+
+    /* the collections keep a target of the job that runs: the set holds it */
+    CHECK(eval_ok(v.ctx, "globalThis.wg = new WeakRef({ g: 5 })"), "setup");
+    JS_RunYoungGC(v.rt);
+    JS_RunGC(v.rt);
+    CHECK(eval_is(v.ctx, "String(wg.deref()?.g)", "5"), "a collection freed a target of the job");
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(wg.deref())", "undefined"), "the target outlived its job");
+
+    /* a target read many times is kept once, and the memory of the targets
+       of a job comes back after it */
+    job_ends(&v);
+    JS_RunGC(v.rt);
+    before = JS_GetMemorySize(v.rt);
+    CHECK(eval_ok(v.ctx, "globalThis.many = []; for (let i = 0; i < 10000; i++) many.push(new WeakRef({ i }));"
+                  "for (let k = 0; k < 100; k++) for (const w of many) w.deref()"), "setup");
+    CHECK(JS_GetMemorySize(v.rt) < before + (4 << 20),
+          "10000 targets read 100 times each take %zu bytes in their job",
+          JS_GetMemorySize(v.rt) - before);
+    job_ends(&v);
+    CHECK(eval_is(v.ctx, "String(many.filter(w => w.deref()).length)", "0"), "targets outlived their job");
+    CHECK(eval_ok(v.ctx, "many = null"), "drop");
+    job_ends(&v);
+    JS_RunGC(v.rt);
+    CHECK(JS_GetMemorySize(v.rt) <= before + (64 << 10), "the job left %zu bytes behind",
+          JS_GetMemorySize(v.rt) - before);
+    vm_free(&v);
+
+    /* the runtime frees what it keeps when the host frees it in a job */
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, "globalThis.wf = new WeakRef({ big: 'x'.repeat(1000) })"), "setup");
+    vm_free(&v);
+}
+
 int main(void)
 {
     test_for_in_keeps_shape();
@@ -1247,6 +1344,7 @@ int main(void)
     test_throw_error_kind();
     test_escape_text();
     test_read_truncated_bigint();
+    test_weakref_kept();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;
