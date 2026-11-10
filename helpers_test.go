@@ -52,7 +52,15 @@ var uncatchableCases = []struct{ name, js string }{
 // the first error, with what page code pushed onto seen.
 func runUncatchable(t *testing.T, m *VM, js string) (error, string) {
 	t.Helper()
+	return runUncatchableThen(t, m, js, func() {})
+}
+
+// runUncatchableThen is runUncatchable that calls after once the call of js
+// has returned, before it calls into m again.
+func runUncatchableThen(t *testing.T, m *VM, js string, after func()) (error, string) {
+	t.Helper()
 	_, err := m.Eval(js, EvalGlobal)
+	after()
 	if err == nil {
 		_, err = m.ExecutePendingJobs()
 	}

@@ -46,3 +46,38 @@ func checkStopped(t *testing.T, m *VM, err error, took time.Duration, limit int6
 		t.Errorf("%s%d polls saw the request to stop, want at most %d (stopped %v after the call started)", what, n, limit, took)
 	}
 }
+
+// interruptAfter calls Interrupt on m after d, and again every millisecond
+// until stop: the outermost entry into the engine clears a request made
+// before it, so one call of Interrupt made while the goroutine of the test
+// was held up before its call, longer than d on a loaded runner, would be
+// lost, and the call would run to its end, or for ever in a loop. Stop it
+// before the test calls into m again.
+func interruptAfter(m *VM, d time.Duration) (stop func()) {
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		timer := time.NewTimer(d)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-done:
+			return
+		}
+		tick := time.NewTicker(time.Millisecond)
+		defer tick.Stop()
+		for {
+			m.Interrupt()
+			select {
+			case <-tick.C:
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		<-finished
+	}
+}

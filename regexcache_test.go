@@ -126,10 +126,7 @@ func TestRegExpCacheStops(t *testing.T) {
 				m.SetEvalTimeout(10 * time.Millisecond)
 				return func() {}
 			}},
-			{"interrupt", func(m *VM) func() {
-				timer := time.AfterFunc(10*time.Millisecond, m.Interrupt)
-				return func() { timer.Stop() }
-			}},
+			{"interrupt", func(m *VM) func() { return interruptAfter(m, 10*time.Millisecond) }},
 		} {
 			t.Run(c.name, func(t *testing.T) {
 				m := newTestVM(t)

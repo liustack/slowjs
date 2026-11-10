@@ -408,10 +408,7 @@ func TestRegexScanStops(t *testing.T) {
 			m.SetEvalTimeout(10 * time.Millisecond)
 			return func() {}
 		}},
-		{"interrupt", func(m *VM) func() {
-			timer := time.AfterFunc(10*time.Millisecond, m.Interrupt)
-			return func() { timer.Stop() }
-		}},
+		{"interrupt", func(m *VM) func() { return interruptAfter(m, 10*time.Millisecond) }},
 	} {
 		for _, w := range []struct{ name, s, re string }{
 			{"8bit", `'a'`, `/["&<>]/`}, {"16bit", `'中'`, `/["&<>]/`},
@@ -453,10 +450,7 @@ func TestRegexMatchStops(t *testing.T) {
 			m.SetEvalTimeout(20 * time.Millisecond)
 			return func() {}
 		}},
-		{"interrupt", func(m *VM) func() {
-			timer := time.AfterFunc(20*time.Millisecond, m.Interrupt)
-			return func() { timer.Stop() }
-		}},
+		{"interrupt", func(m *VM) func() { return interruptAfter(m, 20*time.Millisecond) }},
 	} {
 		for _, w := range []struct{ name, s, re string }{
 			{"plus", `'a'`, `/a+b/`},
