@@ -1105,8 +1105,10 @@ static int re_parse_expect(REParseState *s, const uint8_t **pp, int c)
    With s, the regexp parser's, the digits of \u{...}, which can go on for
    any length with leading zeros, are read LRE_SCAN_STEP at a time, with the
    interrupt flag read after each step and after the last: -3 with
-   "interrupted" set. */
-static int re_parse_escape(const uint8_t **pp, int allow_utf16, REParseState *s)
+   "interrupted" set. With flag instead (the parser of a script), the same
+   steps read *flag, and -3 is returned when it is set. */
+static int re_parse_escape(const uint8_t **pp, int allow_utf16, REParseState *s,
+                           const volatile int *flag)
 {
     const uint8_t *p, *mark;
     uint32_t c;
@@ -1163,16 +1165,17 @@ static int re_parse_escape(const uint8_t **pp, int allow_utf16, REParseState *s)
                         return -1;
                     if (*p == '}')
                         break;
-                    if (s && unlikely(p - mark >= LRE_SCAN_STEP)) {
+                    if ((s || flag) && unlikely(p - mark >= LRE_SCAN_STEP)) {
                         LRE_WORK(p - mark);
                         mark = p;
-                        if (re_poll_interrupts(s))
+                        if (s ? re_poll_interrupts(s) : poll_flag(flag) != 0)
                             return -3;
                     }
                 }
-                if (s) {
+                if (s || flag) {
                     LRE_WORK(p - mark);
-                    if (mark != *pp + 2 && re_poll_interrupts(s))
+                    if (mark != *pp + 2 &&
+                        (s ? re_poll_interrupts(s) : poll_flag(flag) != 0))
                         return -3;
                 }
                 p++;
@@ -1237,7 +1240,13 @@ static int re_parse_escape(const uint8_t **pp, int allow_utf16, REParseState *s)
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16)
 {
-    return re_parse_escape(pp, allow_utf16, NULL);
+    return re_parse_escape(pp, allow_utf16, NULL, NULL);
+}
+
+int lre_parse_escape_poll(const uint8_t **pp, int allow_utf16,
+                          const volatile int *flag)
+{
+    return re_parse_escape(pp, allow_utf16, NULL, flag);
 }
 
 #ifdef CONFIG_ALL_UNICODE
@@ -1549,7 +1558,7 @@ static int get_class_atom1(REParseState *s, REStringList *cr,
         default:
         default_escape:
             p--;
-            ret = re_parse_escape(&p, s->is_unicode * 2, s);
+            ret = re_parse_escape(&p, s->is_unicode * 2, s, NULL);
             if (ret >= 0) {
                 c = ret;
             } else if (ret == -3) {
@@ -2153,7 +2162,7 @@ static int re_parse_group_name(REParseState *s, char *buf, int buf_size,
             p++;
             if (*p != 'u')
                 return -1;
-            ret = re_parse_escape(&p, 2, s); // accept surrogate pairs
+            ret = re_parse_escape(&p, 2, s, NULL); // accept surrogate pairs
             if (ret == -3)
                 return -2;
             c = ret;

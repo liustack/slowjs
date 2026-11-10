@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，以及 fmt 的输出'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -134,8 +134,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 没有覆盖的，界限是输入的长度：
 - 那些返回布尔值、不能报告异常、用 `js_strict_eq2`、`js_same_value` 或 `js_same_value_zero` 的入口对两个相等字符串的比较：对值做 `Object.defineProperty` 和 `Reflect.defineProperty` 的检查，Proxy 的不变式，C API 的 `JS_IsStrictEqual`、`JS_SameValue` 和 `JS_SameValueZero`，等等。
-- 两个一直相等到末尾的扁平字符串上的 `<`、`>`、`<=` 和 `>=`（`js_string_compare`）。
-- 缓冲区有空位时，把 8 位的长片段复制进 8 位字符串缓冲区（`string_buffer_write8` 里的 `memcpy`，几千万个字符），复制 16 位的片段（`string_buffer_write16`：扫描大于 0xff 的字符和复制，`JSON.stringify` 一个 16 位字符串只算一次），以及 `string_buffer_end` 最后缩小缓冲区。把 8 位片段复制进 16 位缓冲区是覆盖了的（`string_buffer_write8_wide_long`）。
+- `string_buffer_end` 最后缩小缓冲区。两个扁平字符串的比较和把长片段复制进字符串缓冲区是覆盖了的（见[下文](#比较和复制很长的字符串时读中断标志)）。
 - Map 或 Set 的表翻倍时的重新哈希（800 万个条目时约 1,100 次轮询，默认 128 MiB 的 VM 容纳不下），以及停止之后释放一个很大的结果（800 万个小对象约 1,700 次轮询，同样容纳不下）。
 
 ## 开始和结束标签函数在每个长循环里读中断标志
@@ -253,6 +252,154 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 代价：在 linux/amd64 上用 callgrind 数（tifa 每个页面 3 次渲染，对比改动前的引擎）。store 每次渲染编译 271 个正则，它们的编译现在每次渲染少运行 230,981 条指令，每个约少 850 条：类不再为每个字符重新造它的范围，而 `cr_op` 多运行约 500,000 条，它现在是 `cr_regexp_canonicalize` 调用的一个独立函数，原来是内联的。shop、mui 和 bench 不编译正则，它们的正则代码运行的和以前一样。整个程序变化了 -0.00%（bench）到 +0.29%（shop），全部在 tifa 在渲染之后于另一个 goroutine 里运行的年轻代回收和 Go 的回收器上，它们落在被计数的渲染之内还是之外，取决于那个 goroutine 的时机。
 
 测试：`TestInterruptStopsRegExpCompile`（`internal/cengine`，`-tags testhooks`）编译这些：524,288 个 4 个字符的字符串的类，262,144 个 4 到 67 个字符的字符串的类，524,288 个字符串的类与两个不含它们的类相交，60,000 个字符向上的类，同样向下的类，两个这样的类的交集，以及 33 万个字符取反再与一个范围相交的类，在均匀分布于编译过程中的位置停住每次编译，按轮询计（`InterruptAtPoll`），并把每次停止限制在 9 次轮询之内，改动之前的引擎在每个用例里都超过了它。`engine/test/unit.c` 里的 `test_regexp_compile_polls` 从 C 编译这些：60,000 个字符向上的、向下的、取反的和相交的类，33 万个字符取反的类，17,000 个低于 0xFFFF、向下、带 `i` 的字符的类，带和不带 `i` 的、有多种长度的 16,384 个字符串的类，以及一个没有留下字符串的交集后面跟着另一个，并在每个的第一次读取、中间一次、最后一次读取，以及最后一次之前的 1、2、4、8……次处停住它，那里是解析一个类之后的循环读标志的地方：编译抛 `interrupted`，同样的编译随后给出一个能匹配的正则，运行时释放后没有泄漏。`test_poll_work_gaps`（`unit-white`）把 60,000 个字符向下的类的合并，以及 16,384 个字符串的类的表，限制在它们的步长之内。
+
+## BigInt 的长运算读中断标志
+
+发布版本：Unreleased。
+
+一个 BigInt 最多 1,048,576 位，也就是 32,768 个 32 位的 limb（引擎编译时不用 128 位整数，所以每个目标上 limb 都是 32 位）。乘法、除法、乘方，以及在不是 2 的幂的进制下和字符串互转，耗时是 limb 数的平方，而且它们的循环都不读中断标志：`String(10n ** 300000n)` 要跑约 52,000 次引擎轮询（每次 10,000 个计数），在 Apple M 上要 1.9 s，五十万位的乘法或除法约 12,000 次。生成的代码在这些循环里照样轮询，所以 Go 宿主看到了停止请求，50 ms 和 1000 次轮询之后就杀掉了脚本：超时设 20 ms 时，这些调用都在开始后 70 ms 以 `ErrKilled` 结束，VM 只能 `Close`。
+
+现在这些循环每走过 32,768 个 limb 或数字就读一次标志（`quickjs.c` 里的 `js_bigint_poll`，一步是 `JS_BIGINT_MAX_SIZE`），在会越过这一步的那一趟之前读，所以两次读取之间的一段不会超过一步：
+
+- 乘法的每一行（`mp_mul_basecase`），也就是 `*` 和 `**`，乘方是一串乘法，
+- 除法的每一行（`mp_divnorm`），也就是 `/` 和 `%`，
+- 在不是 2 的幂的进制下转成字符串时的每次除法，以及在 2 的幂进制下的每个数字（`js_bigint_to_string1`：`String`、`toString`、模板字符串、和字符串做 `+`），
+- 从十进制字符串转来时的每次乘法，以及从 2 的幂进制字符串转来时的每个数字（`js_bigint_from_string`：对字符串调用 `BigInt`，以及 BigInt 和字符串的比较）。
+
+停下时抛出无法捕获的中断，并释放这次运算造出来的东西。只把 limb 走一遍的循环（加法、移位、位运算、`asUintN` 和 `asIntN`、比较）最多走一步，不读标志。有两处以前把错误丢掉，现在会传出去：乘方里某次乘法失败时，直接返回而没释放之前的积，`**` 每次报 `RangeError: BigInt is too large to allocate` 都漏一块内存（每次停下也会漏）。BigInt 和字符串的 `==` 与 `<`，把字符串转换时的错误当成「字符串不是 BigInt」，给出 `false`，错误还留在那里没处理。合法输入的结果逐位不变。
+
+超时设 20 ms 时，这些调用在 linux/amd64 上现在都在截止时间之后 0.05 到 0.25 ms 停下，也就是请求后 1 到 3 次轮询，以前是在 70 ms 被杀掉。
+
+代价：在 linux/amd64 上用 callgrind 数，和改动前的引擎比一次运算的指令数（一次 `Eval` 跑 1000 次，取 12 次和 2 次 `Eval` 之差）。256 位的乘法多 0.38%（2,081 到 2,089），除法多 0.96%，256 位的 `toString` 多 3.1%（3,276 到 3,379，每次除法一次检查），4096 位的 `toString(16)` 多 0.09%，对 40 位数字的字符串调用 `BigInt`，以及 BigInt 和这个字符串做 `==`，多 2.3%（2,839 到 2,904）。短字符串的 `s|0`（`compare/` 的 `string_to_int.js`），它的 `js_atof` 内联了 `js_bigint_from_string`，多 3 条指令，0.18%。在 EPYC 7B13 的 0 号核上计时（8 次的中位数），同样这些运算从快 26%（256 位乘法）到慢 28%（4096 位的 `toString(16)`）都有，跟着代码落在哪里走：`toString(16)` 的数字循环和以前是同样的指令。tifa 的页面不用 BigInt：两个 bench 页面各渲染一次，改动前 266,528,836 条指令，改动后 266,529,248 条，+0.00%（`compare/engines` 的 `jsbench tifa-ssr` 跑在 callgrind 下）。按 [measuring.md](../measuring.zh-CN.md) 的规程在 shop 的六个页面上计时（16 种布局，2 轮，EPYC 7B13 的 0 号核），它们 P50 之和在各布局上变了 +0.31% [-0.40%, +1.01%]，在正式布局上变了 +0.09% [-1.34%, +1.53%]：对 1% 的 delta 来说没有结论，因为上界超过它 0.01%，也没有哪个页面单独变慢。
+
+测试：`TestBigIntWorkStops`（根包）用 20 ms 超时循环运行上面每一种调用（`String`、10 进制、7 进制和 2 进制的 `toString`、模板字符串、负数、`**`、`*`、`/`、`%`、对十进制字符串调用 `BigInt`、和字符串做 `==` 与 `<`），要求 8 次轮询之内得到无法捕获的中断而不是被杀，之后还能算 `1+1`。改动前的引擎除了 2 进制之外每种都被杀掉。`TestInterruptStopsLongBuiltins`（`internal/cengine`，`-tags testhooks`）在 `toString`、`String`、对字符串调用 `BigInt`、乘法、除法、乘方和与字符串的 `==` 上，在一次 12,000 到 52,000 次轮询的调用里均匀取 6 个位置打断，每次都在 3 次轮询内停下。`engine/test/unit.c` 里的 `test_bigint_polls` 要求每种调用读够一定次数的标志（十万位十进制数的转换要 500 次），在中间停下每一种，检查结果，最后释放运行时时不剩任何内存块，乘方结果过大之后也一样。`test_poll_work_gaps`（`unit-white`）要求乘法、除法和各种转换每段都不超过一步，并核对乘法、除法和二进制数字的总量。
+
+## 把长字符串转成数字时读中断标志
+
+发布版本：Unreleased。
+
+一个字符串最多十亿个字符，把它转成数字或 BigInt 要把这些字符走好几遍：转成 UTF-8，跳过数字前后的空白，在 `js_atof` 里扫描数字，复制一遍，再由 `js_atod` 或 `js_bigint_from_string` 读这些数字。这些循环都不读中断标志。在 linux/amd64 上 `+'1'.repeat(1 << 27)` 一次要 250 到 600 ms，对 128 Mi 个零调用 `BigInt` 要 285 ms。超时设 20 ms 时，`Number`、一元 `+`、`isNaN`、`parseInt`、`parseFloat`、`BigInt`、BigInt 和字符串的 `==` 与 `<`、对数字或空白做 `JSON.parse`、对数字字面量做 `eval`，每一种都在开始后 70 ms 以 `ErrKilled` 被杀掉。
+
+现在这些循环每走过 65,536 个字节读一次标志。扫描一个不知道长度的 C 字符串时，在指针走到 65,536 的整数倍地址处读（`js_poll_at`，一步跨多个字节时用 `js_poll_cross`），所以不用计数。`js_atof`、`js_atod` 和 JSON 数字的各位的循环由同一份函数体编出两份，一份读标志，一份不读，不到 65,536 个字节的字符串或 JSON 文本走不读的那份，也就是以前的代码：
+
+- `skip_spaces`，也就是 `Number`、`parseInt`、`parseFloat` 和 `BigInt` 的数字前后的空白，包括占两三个 UTF-8 字节的空白，
+- `js_atof` 里对整数部分、小数部分和指数的数字的扫描，旧式八进制字面量的数字，以及去掉分隔符的数字复制。它现在多拿一个参数，即字符串剩下的字节数，用来选走哪一份，
+- `js_atod`（`dtoa.c`）里开头的零、数字和指数的数字，通过新加的最后一个参数传进要读的标志，调用方对 65,536 个字符以上的数字传它，更短的传 NULL。标志被设置时它给出 NaN，调用方再读一次标志，把它和输入本身的 NaN 区分开，
+- `js_bigint_from_string` 开头的零，它现在从 `js_atof` 拿字符串的长度，不再调用 `strlen`，
+- `JSON.parse` 里数字的各位，以及记号之间的空白。那里的 `\r\n` 现在算两个一字节的空白，而不是一个两字节的空白，结果相同，
+- `Number`、`parseInt`、`parseFloat` 和 `BigInt` 把字符串转成 UTF-8 的那一步：65,536 个字符以上的字符串走 `js_string_to_cstring_json`，也就是 `JSON.parse` 用的那份转换的副本，每 65,536 个字符读一次标志，更短的字符串照旧走 `js_string_to_cstring`。
+
+脚本里的数字字面量也走 `js_atof`。停下时抛出无法捕获的中断，并释放 C 字符串和数字的副本。每种输入的结果都不变。
+
+超时设 20 ms 时，对 64 Mi 个字符的字符串做上面每一种调用，在 linux/amd64 上现在都在截止时间后 0.03 到 1.5 ms 停下，离请求 1 到 7 次轮询。以前测试里 24 种调用有 22 种在 70 ms 时被杀掉，另外两种在开始后 66 到 68 ms 才停下，离请求已经超过 5,000 次轮询。
+
+代价：在 linux/amd64 上用 callgrind 计数，按一次操作的指令数，和只做了 BigInt 改动的引擎比（一次 `Eval` 做 1000 次，取 12 次和 2 次 `Eval` 之差）。短字符串的一次转换多 14 到 41 条指令，用在按长度选走哪一份代码，以及现在可能抛错的空白检查上：`+'12345'` 多 1.4%（1,826 到 1,852），`Number(' 3.25e2 ')` 多 0.7%，对它做 `parseFloat` 多 0.8%，`parseInt('12345')` 多 2.2%，对 39 位数字做 `BigInt` 多 0.3%，`compare/` 里的 `s|0` 和 `+s`（`string_to_int.js` 和 `string_to_float.js`）在引擎里分别多 1.8% 和 1.3%。对 6 KB（100 个对象）做 `JSON.parse` 多 0.53%，带缩进的同样内容多 0.82%。tifa 的两个 bench 页面渲染一次，改动前 266,543,139 条指令，改动后 266,681,981 条，+0.05%（`compare/engines` 的 `jsbench tifa-ssr` 的 callgrind）。
+
+测试：`TestNumberConversionStops`（根包）对 64 Mi 个字符的扁平字符串（数字、零、数字前的空白、三字节 UTF-8 的空白、JSON 文本里的 `\r\n`、很长的小数或指数、十六进制数字、十六进制 BigInt 字面量、旧式八进制字面量），用 20 ms 超时循环运行上面每一种转换，要求 8 次轮询之内得到无法捕获的中断而不是被杀（`numberStopPolls`），之后还能算 `1+1`。改动前的引擎每种都失败。`TestNumberConversionLongResults` 检查 200,000 个字符以上的字符串的转换结果，这些字符串越过了循环读标志的位置。`engine/test/unit.c` 里的 `test_number_polls` 要求每种转换一百万个字符的字符串至少读 12 次标志，在中间停下每一种，检查之后的上下文和结果，最后释放运行时时不剩任何内存块。
+
+## 解析很长的源码时读中断标志
+
+发布版本：Unreleased。
+
+脚本可以把十亿个字符的源码交给 `eval`、`Function` 或 `JSON.parse`。`js_parse_init` 会把源码计入中断检查（[见上文](#解析和构建字符串计入中断检查)），但处理函数要到解释器下一次轮询才被调用，而解析器和编译器走过一个很长的记号或很长一段源码的循环都不读标志：开头的 hashbang 行，两个记号之间的空白和换行，注释、标识符、字符串、模板或正则，其中转义 `\u{...}` 的数字，长名字的复制和它的 atom，长记号之后代码的行号和列号，以及点出这个名字的错误消息。在 linux/amd64 上，对 64 Mi 个字符的标识符做一次 `eval` 要 436 ms，对同样长的注释要 225 ms。超时设 20 ms 时，对 64 Mi 个空白、换行、注释字符或标识符字符做 `eval`，都在开始后 70 ms 以 `ErrKilled` 被杀掉，而在扫完很长的标识符、字符串或正则之后才来的停止请求，要再过几千次轮询才停下。
+
+现在这些循环每走过 65,536 个字节读一次标志，在指针走到 65,536 的整数倍处读（`js_poll_at` 和 `js_poll_cross`，和把字符串转成数字时一样），每个字节花得更多的地方每 4,096 个字节读一次（`JS_POLL_SHORT_STEP`）：
+
+- `eval` 和 `Function` 把源码转成 UTF-8 的那一步（`JS_EvalObject`），现在走 `js_string_to_cstring_poll`，也就是 `JSON.parse` 用的转换，这么长的源码每 65,536 个字符读一次。以前 32 Mi 个 `é` 或 16 Mi 个 `　` 的源码在第一个记号之前一口气转完，调用晚 40 ms 才停下，
+- 脚本开头的 hashbang 行 `#!`（`skip_shebang`），
+- `next_token` 里两个记号之间的空白和换行，占多个 UTF-8 字节的空白和行分隔符，块注释、行注释和 HTML 注释 `-->`。`\r\n` 现在算两个一字节的换行，而不是一个两字节的换行，得到的记号相同，
+- `parse_ident`，也就是标识符和私有名，包括其中的转义和多字节字符，不是 ASCII 的字符每 4,096 个字节读一次，因为每个字符都要查一次 Unicode 的表，以及长标识符的缓冲区每次变大时的复制：`ident_realloc` 把 1 MiB 以上的缓冲区每次复制 1 MiB，每步之后读一次，申请新块时把旧块占的空间算进内存上限，和 `string_buffer_realloc2` 对字符串缓冲区的做法一样，以前 `js_realloc` 一口气复制整块，
+- `js_parse_string`、`js_parse_template_part` 和 `js_parse_regexp`，也就是脚本里的字符串、模板和正则，包括正则的 flags。存放它们值的缓冲区按会读标志的步子增长，但每一步加上已有的一半，所以最后几步要走过几百万个字符才读一次，
+- 字符串、模板、标识符或私有名里码点转义 `\u{...}` 的数字，以及 `simple_next_token` 里的，和正则一样每 16,384 个数字读一次：`lre_parse_escape_poll` 读交给它的标志。以前 `"\u{" + "0".repeat(1 << 27) + "41}"` 要到转义结束才读，
+- 长名字的 atom：`JS_NewAtomLen` 把 65,536 字节以上的内容分步解码（`js_new_string_len_long`），放进一开始就够装下全部的缓冲区。每一步解码在这一步里开头的字符，最后一个必要时越过这一步的末尾，下一步从它结束的地方开始，所以对每种文本，包括不是 UTF-8 的字节，分步得到的字符串都和整体解码相同。以前每一步在一个字符的开头字节之前结束，一串不是 UTF-8 的字节跨过它时会多出一个 U+FFFD：解码器把这样一串字节连同后面那个字节当作一个字符。这样一串字节不管多长也分步读，
+- `get_line_col`，也就是源码里某处的行号和列号，编译器在代码的每一处都要问（`compute_pc2line_info`），错误也要问它自己的位置，现在每 4,096 个字节读一次。中断时它经过 `get_line_col_cached` 和 `compute_pc2line_info` 把 -1 交给 `resolve_labels`，后者像成功时一样设好函数的代码，交给调用方释放，
+- 函数为 `toString` 保存的源码的复制（`js_strndup_source`，每次 1 MiB），以及 `Function.prototype.toString` 对它的解码，
+- `json_next_token` 里扩展 JSON 的注释，以及 `json_parse_ident`，也就是 JSON 文本里的单词，
+- `simple_next_token`，也就是看当前记号后面那个记号的 `peek_token`，它现在多拿一个要读的标志（`JS_DetectModule` 传 NULL）。标志被设置时它给出 `TOK_EOF`，没有调用方会找这个记号，标志已经设置时一开始就给出，调用方接着走到 `next_token`，后者在同一段空白里读到标志并抛出。
+
+有三个地方不读标志，现在做的事有了上限。检查 `"use strict"` 时把字符串的长度当作 `snprintf` 的精度，而 `snprintf` 会找 NUL 一直找到这个长度：精度现在是它保留的 19 个字节。"unexpected token" 消息给 `snprintf` 的最多是一条消息能装下的 255 个字节。`JS_AtomGetStrRT` 以前把 ASCII 的 atom 本身交给消息，先自己扫一遍，`snprintf` 再扫一遍，现在对 65,536 个字符以上的 atom 给出它复制的前 58 个字符：对这样的名字抛出的 `ReferenceError` 引用 58 个字符，以前引用 254 个，也就是一条消息能留下的全部。
+
+停下时抛出无法捕获的中断。每种源码得到的记号、值以及行号和列号都不变，函数 `toString` 的文本也不变，包括不是 UTF-8 的字节。
+
+没有覆盖的：`JS_DetectModule` 在源码开头找 `import` 和 `export`，不读标志，因为它没有运行时，Go API 也不调用它。长名字或长字符串的缓冲区在末尾缩小、堆要搬动这块内存时，也没有覆盖（见[对长字符串的循环按步读中断标志](#对长字符串的循环按步读中断标志)的末尾）。
+
+eval 超时依次设成一次调用用时的每个六分之一时，这些对 16 Mi 字节源码的解析现在在 linux/amd64 上于截止后 0.04 到 8.7 ms 停下，多数在 3.6 ms 以内，见到请求后最多 11 次轮询。以前在那里，测试的 35 种情况里有 34 种失败：5 种被杀掉，其余的在截止后最多 47 ms 才停下，见到请求后最多过了 4,141 次轮询。
+
+代价：在 linux/amd64 上用 callgrind 计数，比较的是对同一份源码做十次 `eval` 的指令数，对照的是改到[把长字符串转成数字](#把长字符串转成数字时读中断标志)为止的引擎（一次 `Eval`，取 12 次和 2 次之差）。对 1,500 个小函数（209 KB 的 ASCII）做 `eval` 多 0.05%，对 500 行含非 ASCII 的注释、名字和字符串（19 KB）多 1.20%，主要在 `next_token` 和 `js_parse_string` 里，它们要检查一个多字节字符是否跨过了一步，对 1,500 行字符串、模板和正则（122 KB）多 0.17%。tifa 的两个 bench 页面渲染一次，改动前 267,009,683 条指令，改动后 266,708,583 条，-0.11%（`compare/engines` 的 `jsbench tifa-ssr`，用 callgrind 计数）。
+
+测试：`TestParseStops`（根包）造出 16 Mi 字节的扁平源码，内容是空格、制表符、换行、`\r\n`、三字节的空白和行分隔符、单字节和双字节字符的块注释、行注释、HTML 注释、单字节和双字节字符的标识符、私有名、属性名、单字节和三字节字符或转义组成的字符串、指令、模板、带标签的模板、正则、正则的 flags、字符串、模板、私有名和标识符里 16 Mi 个数字的转义 `\u{...}`（在标识符开头、中间和 `async` 之后）、hashbang 行、长行之后的语法错误、`peek_token` 在 `async`、`let` 之后和 `=>` 之前越过的空白和注释，以及给 `JSON.parse` 的一个单词。它先给一次调用计时，再在这段时间的每个六分之一处停下这个调用的循环，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`parseStopPolls`：两步，因为 `peek_token` 在它那一步的末尾读到标志后，`next_token` 还要从头走过同一段，直到它自己的第一步，而长名字的 atom 做哈希和比较时每一步对每个字符做的事更多），每次之后还能算 `1+1`。改动前的引擎在 linux/amd64 上除了正则每种都失败，在 darwin/arm64 上前 28 种每种都失败。`TestParseLongResults` 检查同样几类 200,000 个字符以上的源码的结果、长行之后语法错误的行号和列号，以及两条消息。`TestParseLongRawBytes` 给 `eval` 一个函数的源码，里面有一串跨过一步、最长 300,000 字节的 0x80，要求它的 `toString` 里只有一个 U+FFFD。`engine/test/unit.c` 里的 `test_parse_polls` 要求每次解析一百万字节的源码至少读 12 次标志，在这些读取处停下每一次（每一处，或者均匀分布的 64 处），在 4 MiB 标识符的前 96 次读取处逐一停下它，其中包括它的缓冲区复制时的读取，检查每次之后的上下文和结果，最后释放运行时时不剩任何内存块。`test_long_utf8_decode` 解码 196,608 字节的文本，里面有一串后续字节、过长形式、被截断的序列、五字节形式、代理项、四字节字符等，放在一步末尾附近的 17 个位置上，后面再跟最长 65,541 字节的 0x80，要求 `JS_NewAtomLen` 的名字和 `toString` 里得到的都是整体解码的字符串，并在 4 MiB 这样一串字节的前 64 次读取处逐一停下它的解码。
+
+## 比较和复制很长的字符串时读中断标志
+
+发布版本：Unreleased。
+
+脚本可以持有十亿个字符的字符串，在一次调用里比较或复制它们。两个扁平字符串的 `<`、`<=`、`>` 和 `>=`，以及不带比较函数的数组排序，在 `js_string_compare` 里走过这两个字符串，不读中断标志。`Symbol.for` 对它的键做哈希、和注册表里的键比较，也是这样。把字符串复制进字符串缓冲区（`string_buffer_write8` 和 `string_buffer_write16`）时，`join`、`padEnd`、`replace`、`String.raw`、`Function` 和许多别的函数都用它，它把很长的字符串一口气复制完，只有每字符一字节的字符串写进每字符两字节的缓冲区时除外。在 linux/amd64 上，对两个相同的 64 Mi 个字符的字符串做 `s < s2` 要 40 ms，中途请求停止，要到截止后最多 34 ms、见到请求后 5,610 次轮询才停下。对这样的键做 `Symbol.for` 时请求停止，最多晚 65 ms，复制时晚 31 到 45 ms，见到请求后过了 40 到 52 次轮询。
+
+现在它们每 65,536 个字符读一次标志，按字节复制时每 1 MiB 读一次：
+
+- `js_string_compare_poll` 比较两个都有 65,536 个字符以上的字符串时，走 `js_string_rope_compare`，也就是比较 rope 的函数，它每 65,536 个字符读一次标志。`js_relational_slow`（`<` 和另外几个）和 `js_array_cmp_generic`（不带比较函数的排序）用它。它检查两个长度里较短的那个，比较本来就要用它，所以短字符串只多一次比较和一次分支，照旧比较，
+- `Symbol.for` 的键有 65,536 个字符以上时，走 `js_new_long_string_atom`，也就是长 atom 已经在用的分步哈希和比较，它现在多拿一个 atom 的类型（注册表里的键不是字符串 atom），
+- `string_buffer_write8` 往 16 位的缓冲区写 65,536 个字符以上，或者往 8 位的缓冲区写 1 MiB 以上时（`string_buffer_write8_long`），前者和以前一样每次复制 65,536 个字符，后者每次用 `memcpy` 复制 1 MiB，每步之后读一次。以前往 8 位缓冲区的复制是一次 `memcpy`。两个分支各自检查长度，这样短字符串的复制保持原来的代码，
+- `string_buffer_write16` 写 65,536 个字符以上时（`string_buffer_write16_long`），每次找 65,536 个字符里有没有大于 0xff 的字符、复制 65,536 个字符，每步之后读一次，空间只腾一次，和短字符串一样，
+- 替换串的代换（`js_string_GetSubstitution`，供 `replace`、`replaceAll` 和 `RegExp.prototype[Symbol.replace]` 用）找每个 `$` 和 `>` 时用 `string_indexof_char_poll`，它每 65,536 个字符读一次标志，每 1,024 个 `$` 也读一次。后面没有 `>` 的 `$<`，以前对它后面的每个 `$<` 都要再找一遍，用时是替换串长度的平方，现在只找一次，
+- 正则的 flags 字符串，`replaceAll`、`matchAll` 以及 `RegExp.prototype[Symbol.match]`、`[Symbol.matchAll]`、`[Symbol.replace]` 和 `[Symbol.split]` 从它的 getter 拿到，可以任意长，现在只读一遍，每 65,536 个字符读一次标志（`js_regexp_flags`），以前每个 flag 都扫一遍，
+- `String.raw` 每 1,024 段读一次标志，和 `join` 一样，因为它的 `raw.length` 最大可以到 2^53，`RegExp.prototype[Symbol.replace]` 的两个循环每 1,024 个结果读一次，
+- 命名空间导入要给模块的导出名排序（`js_build_module_ns`），现在用 `js_string_compare_poll` 比较、用 `rqsort_stop` 排序，每次比较读一次标志（`exported_names_cmp`），和数组排序一样。以前 `rqsort` 一口气比较两个 64 Mi 个字符的名字，比较失败时答 0，排序接着做。
+
+写入字符串缓冲区现在会在中断处停下，所以写入失败后还接着做的调用方现在立刻离开：`js_string_GetSubstitution` 以前接着在替换串剩下的部分里找 `$`，`String.raw` 接着做到 `raw.length` 的末尾，`replace` 和 `[Symbol.replace]` 接着处理它们的匹配。`"x".replace("x", "a".repeat(1 << 20) + "$$" + "b".repeat(1 << 27))` 在第一次复制时被停下，以前还要接着走过它后面的 128 Mi 个字符。
+
+停下时抛出无法捕获的中断。结果不变。
+
+eval 超时依次设成一次调用用时的每个六分之一时，这些对 64 Mi 个字符的字符串做的调用现在在 linux/amd64 上，见到请求后最多 7 次轮询就停下：比较、排序和 `Symbol.for` 在截止后 0.2 ms 以内，复制在截止后 5 到 10 ms，见到请求后 1 到 3 次轮询。替换、flags 和 `raw.length` 很大的 `String.raw` 在截止后 4.6 ms 内停下。以前这 6 种每种都失败：16 Mi 个 `$$` 和 `$<` 的替换被杀掉，其余的在见到请求后最多 6,813 次轮询才停下。两个导出名各有 64 Mi 个字符、只在最后一个字符不同的模块，对它做命名空间导入，现在在截止后 0.05 ms 内停下，见到请求后最多 6 次轮询，以前要等比较做完、导入进行到 40 ms 才停下，见到请求后最多 5,605 次轮询。
+
+代价：在 linux/amd64 上用 callgrind 计数，比较的是一次 `Eval` 里十次调用的指令数，对照的是改到[解析](#解析很长的源码时读中断标志)为止的引擎（取 12 次和 2 次 `Eval` 之差）。两个短字符串的 `<` 多 0.24%，给 2,000 个短字符串排序多 2.56%（每字符两字节的字符串多 2.66%，每次约 200 条指令的比较里多约 5 条），对 2,000 个短字符串做 `join` 多 2.22%，来自每次复制时对长度的检查，而对它们做 `+=` 不变（-0.20%）。在 2,000 段的文本里用正则做全局 `replace` 多 2.19%，大部分在 `js_string_GetSubstitution` 里，来自对每次写入和剩下要找的长度的检查，对 2,000 个短字符串做 `padEnd` 多 0.14%，做 `Symbol.for` 多 0.21%。tifa 的两个 bench 页面渲染一次，改动前 266,702,384 条指令，改动后 267,024,572 条，+0.12%，一半在 `string_buffer_concat` 里，每复制一个短字符串多 3 条指令，其余大多在 `JSON.parse` 和 `JSON.stringify` 用的 `json_parse_string` 和 `JS_ToQuotedString` 的复制里（`compare/engines` 的 `jsbench tifa-ssr`，用 callgrind 计数）。
+
+测试：`TestStringCompareCopyStops`（根包）对两个 64 Mi 个单字节字符或 32 Mi 个双字节字符的字符串做 `<`、排序，对其中一个做 `Symbol.for`、`join`、`padEnd`、`replace`、`String.raw` 和 `Function`，用 64 Mi 个字符的替换串做 `replace`（1 MiB 之后有 `$$`、没有 `$`、16 Mi 个 `$$`，以及带分组的 16 Ki 个 `$<`），64 Mi 个字符的正则 flags，以及 `raw.length` 为 4 Mi 的 `String.raw`，每种都在新的 VM 里做，因为某个键的第一次 `Symbol.for` 会造出后面几次找到的 atom。它先给一次调用计时，再在这段时间的每个六分之一处停下这个调用的循环，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`，也就是解析的上限，因为 `Function` 会解析它复制的源码），每次之后还能算 `1+1`。改动前的引擎在 linux/amd64 上每种都失败，在 darwin/arm64 上前 13 种里除了 `Function` 每种都失败。`TestModuleExportNamesStop` 用同样的方法停下对一个模块的命名空间导入，这个模块的两个导出名各有 64 Mi 个字符、只在最后一个字符不同，每次都在新的 VM 里先放好导出它们的模块，并检查两个名字的顺序。`TestStringCompareCopyLongResults` 检查 200,000 个字符以上的字符串做比较、排序、取键和复制的结果，以及替换串里的 `$`、后面有和没有 `>` 的 `$<`、`String.raw` 和 70,001 个字符的 flags 字符串的结果。`engine/test/unit.c` 里的 `test_string_copy_polls` 要求对一百万个字符的字符串（按字节复制时 16 Mi）做的每次比较、取键和复制至少读 12 次标志，在这些读取处停下每一次（每一处，或者均匀分布的 64 处），检查每次之后的上下文和结果，最后释放运行时时不剩任何内存块。改动前的引擎在它的 10 个调用里有 9 个失败。排序留给 Go 的测试：原生宿主会设置它读的那个标志，而排序也会读它自己的停止标志。`test_module_export_order` 检查两个一百万个字符的导出名和打乱顺序的 3,000 个短导出名，从命名空间导入出来时按字符串的顺序排列。
+
+## 改变很大的 ArrayBuffer 的大小时读中断标志
+
+发布版本：Unreleased。
+
+`ArrayBuffer.prototype.resize` 和 `transfer` 用 `js_realloc` 改缓冲区那块内存的大小。`heap_realloc` 没法在原地改一块内存的大小时，堆就搬动这块内存：专用 chunk 里的块缩到不足 chunk 的一半时，在每个系统上都要搬，块长得超出 chunk、而宿主不能重映射 chunk 时（darwin 和 windows）要搬，共享 chunk 里后面没有空位的块也要搬。它用一次 `memcpy` 复制整块，`resize` 和 `transfer` 接着用一次 `memset` 清零缓冲区多出来的字节。两处都不读中断标志。把 256 MiB 的 `ArrayBuffer` 先 `resize` 到四分之一再改回来，在 linux/amd64 上约 150 ms，要复制 64 MiB、清零 192 MiB：eval 超时依次设成这次调用的每个六分之一时，5 次停止里有 4 次在约 143 ms、清零做完之后才停下，见到请求后过了 136 到 767 次轮询，`transfer` 的 5 次里也有 4 次这样。
+
+现在：
+
+- 对内存归引擎管的缓冲区，`resize` 和 `transfer` 用 `js_array_buffer_realloc` 改这块内存的大小，它只在这一次调用期间把中断标志的地址交给堆（`JSHeap.stop`）。这时 `heap_realloc` 搬动一块内存时每次复制 1 MiB（`heap_copy`，`HEAP_COPY_STEP`），复制量在 1 MiB 以上时，每步之前读一次标志。标志被设置时，堆把新块还回去，专用 chunk 立刻还给宿主，然后像拒绝一次改大小那样失败：旧块留在原处，内容、大小和计数都不变。它设置 `JSHeap.stopped`，于是 `js_heap_realloc` 不再把前端缓存还回去再试一次，`js_array_buffer_realloc` 像别处读到标志时一样抛出无法捕获的中断，不抛内存不足的错误。
+- 它们清零缓冲区多出来的字节时每次清 1 MiB，每步之前读一次标志（`js_array_buffer_clear`）。在这里停下时，缓冲区保持原来的长度，不会被分离，用的是它的块（这块可能已经搬过、变大了），它的视图跟着这块走。
+
+为什么只有这两处：停止就是一次失败的改大小，`resize` 和 `transfer` 会处理。`resize` 留着它的块和长度，`transfer` 释放它造出的缓冲区，旧的保持原样。`js_realloc` 的其他调用方只在内存用完时才见到失败，每次搬动都能停的话，这种失败在只在内存上限附近测过的路径上就会常见，调用方在失败后自己造错误的地方，还会把有的中断变成内存不足的错误。所以堆对别的块都不读标志，`js_array_buffer_realloc` 的调用之外 `JSHeap.stop` 是 NULL。造错误和原来一样不读标志（`engine/test/cycles.sh`），而堆里的读取是一次读内存，cycles.sh 看不到，所以 `test_error_reads_no_flag` 检查造一个栈有 4 MiB 的错误时读标志 0 次。不到 1 MiB 的复制还是原来的 `memcpy`。原生测试的 `asan` 构建用的分配器（`engine/test/heap-system.c`）以同样的步子搬动 1 MiB 以上、要变大的块，因为系统的 `realloc` 停不下来，缩小则交给这个 `realloc`。
+
+eval 超时依次设成一次调用用时的每个六分之一时，把 256 MiB 的缓冲区 `resize` 或 `transfer` 到四分之一再改回来，现在在 linux/amd64 上见到请求后 1 到 3 次轮询就停下，后三次在截止后 0.6 ms 以内，前两次在截止后 4.5 到 8.1 ms。
+
+代价：不到 1 MiB 的复制还是原来的 `memcpy`，不到 1 MiB 的清零还是原来的 `memset`，`js_array_buffer_realloc` 在改大小前后多三次写入，所以一次改大小在堆里只多一次比较和一次对 `stopped` 的写入。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench tifa-ssr`，取 12 次和 2 次渲染之差），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 265,290,640 条，改动后 265,227,430 条，-0.02%：`heap_realloc` 多 196 条，解释器少约 63,000 条，它生成的代码会随周围的 C 改变。tifa 的每个页面渲染出的 HTML 都不变。
+
+
+没有覆盖的：按字节或元素走的循环，受脚本造出的东西的大小限制，也就受内存上限限制，但不读标志。在 linux/amd64 上超时设 10 ms 时，下面前四种的循环都在见到请求后 1000 次轮询被杀掉：
+- 新的 `ArrayBuffer` 或类型化数组的清零（`new ArrayBuffer(1 << 30)` 要 576 ms），
+- `ArrayBuffer.prototype.slice`、`TypedArray.prototype.slice` 和用另一个类型化数组造类型化数组时的复制（512 MiB 约 320 ms），
+- 快速数组的 `Array.prototype.slice`（32 Mi 个元素 410 ms），
+- 列出对象的键时（比如 `Object.keys`）给它的下标键排序（`num_keys_cmp` 配 `rqsort`，4 Mi 个键 1.3 s），
+- `TypedArray.prototype.set`，一次 `memmove`，512 MiB 要 35 ms，它一直做到结束，没有被杀，
+- 别的大块内存的搬动，比如长数组的元素、大 Map 的表、长字符串在末尾的缩小，一次 `memcpy`，最多是这块内存的大小，
+- `JS_DetectModule` 在源码开头找 `import` 和 `export`，不读标志，因为它没有运行时。Go API 不调用它。
+- 内存由宿主给出、带自己的释放函数（`JS_NewArrayBuffer`）的缓冲区 `transfer` 到新长度时，造一个整块清零的新缓冲区，再用一次 `memcpy` 把旧的复制进去。`resize` 不接受这种缓冲区，Go API 也不造这种缓冲区，
+- `resize` 或 `transfer` 之后更新缓冲区的视图，每个视图一步，受这些视图占的内存限制。
+
+测试：`TestArrayBufferMoveStops`（根包）给把 256 MiB 的 `ArrayBuffer` `resize` 和 `transfer` 到四分之一再改回来计时，再在这段时间的每个六分之一处停下这个调用的循环，每次都在新的 VM 里，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`），缓冲区是两个长度之一、字节还在、没有被分离，调用前造的视图（一个定长的和一个跟随长度的 `Uint8Array`，一个 `DataView`）跟着它的块走，长度和 `maxByteLength` 都对，`transfer` 分离了缓冲区时视图为空，之后还能再做一次这个调用。改动前的引擎每种的 5 次停止里有 4 次失败。`engine/test/unit.c` 里的 `test_heap_move_polls` 要求把 32 MiB 的缓冲区 `resize` 和 `transfer` 到四分之一再改回来至少读 32 次标志，在每次读取处停下，检查调用以 `interrupted` 结束而不是以内存不足的错误结束，检查之后的缓冲区和这些视图，检查停在短长度的缓冲区长回来的字节是零，最后释放运行时，不剩一块内存。`engine/test/heap-test.c` 里的 `scenario_move_stop` 在每次读标志处停下一个要搬动的专用块的变大和缩小，要求失败、`stopped` 已设置，堆、它的 chunk 和这块都和原来一样（见 [allocator.md](../allocator.zh-CN.md#测试)）。`test_error_reads_no_flag` 在一个 C 函数里造错误，标志在第一次读取时就会被置上，栈超过 4 MiB，要求一次也不读、栈完整。
+
+## normalize 和 Map 变大时的内存不足
+
+发布版本：Unreleased。
+
+`String.prototype.normalize` 把字符串分解进一个会变大的缓冲区（`to_nfd`）。变大失败时，`unicode_normalize` 返回失败却不释放这个缓冲区，`js_string_normalize1` 把失败返回出去，也不抛异常：调用失败了，却没有挂着的异常，Go API 没法把它报告成内存不足，运行时也永远留着这块内存。对 `'ﬃ'.repeat(300).normalize('NFKD')` 在从零到 16 KiB 的每个剩余空间下扫一遍，有 40 个空间失败时抛出的异常不是无法捕获的，158 个运行时释放时还有内存块在用。上游 QuickJS 是同样的代码（commit `092277ac`）。
+
+Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一倍（`map_hash_resize`）。扩大用的是 `js_realloc`，它失败时会抛出内存不足的错误，可 Map 带着原来的表接着用，`set` 和 `add` 照常返回，于是错误挂在一个成功了的调用下面，下一次调用就带着它失败，尽管 Map 是完整的。`map_add_record` 刚放进表里的记录还没有值，而造错误可能触发一次垃圾回收，回收会去看各条记录的值。上游 QuickJS 也是同样的代码。
+
+现在 `unicode_normalize` 失败时释放缓冲区，`js_string_normalize1` 为它抛出内存不足的错误，`map_hash_resize` 用不抛异常的 `js_realloc_rt` 扩大表，失败时留着原来的表，`map_add_record` 在把记录放进表之前先把它的值设成 `undefined`。
+
+没扩大的表就是 Map 原来那张完整的表，查找要走更长的链，直到后面某次添加把表扩大。代价是 Map 或 Set 每条新记录多一次写入。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench tifa-ssr`，取 12 次和 2 次渲染之差，只算 `internal/cengine` 的函数），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 265,226,497 条，改动后 265,227,872 条，+0.00%：`map_add_record` 多 110 条。tifa 的每个页面渲染出的 HTML 都不变。
+
+测试：`engine/test/unit-oom.c` 里的 `test_normalize_oom` 在从零到 16 KiB 的每个剩余空间下，以及堆满时的每个空间下，扫 `normalize`，要求得到结果或无法捕获的内存不足错误，内存回来后再得到结果，最后不剩一块内存。`test_map_grow_oom` 从 C 调用一个函数，给有 255 条记录的 Map 加第 256 条，这会把表从 1 KiB 扩大到 2 KiB，剩余空间取从零到 2 KiB 的每个值，以及堆满时的每个空间。它要求得到大小或无法捕获的错误，调用成功时没有挂着的异常，内存回来后每条记录都在，最后不剩一块内存，还要求某个放不下扩大的空间（不到 1 KiB，或者堆满后没有还回 2 KiB 的块）能让调用成功。改动前的引擎两项都失败：没有一个放不下扩大的空间能让第 256 次 `set` 成功。
 
 ## 异常关闭迭代器时，迭代器 return 方法里的内存不足
 

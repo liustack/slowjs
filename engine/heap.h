@@ -50,6 +50,8 @@ typedef struct JSHeap {
     size_t release_target;     /* the release in progress */
     size_t release_offered;
     void *release_prev;
+    const volatile int *stop;  /* the interrupt flag while the runtime lets a move stop (the resize of an ArrayBuffer), read while a large block moves (heap_realloc), else NULL */
+    int stopped;               /* the last heap_realloc failed because *stop was set */
     uint32_t vm;
 } JSHeap;
 
@@ -76,7 +78,15 @@ void heap_set_remap(JSHeap *h, int on);
    it, and for a size over the maximum. A failed heap_realloc leaves the block,
    its content and the count as they were. A block is 8 byte aligned. A block
    too big to share a chunk gets a dedicated chunk, and the chunk goes back to the
-   host at once when the block is freed or moved by heap_realloc. */
+   host at once when the block is freed or moved by heap_realloc.
+
+   A block that heap_realloc moves is copied HEAP_COPY_STEP bytes at a time,
+   with a read of *stop (when stop is set) before each step, so that a block of
+   a GiB does not hold up a stop for the time of its copy. When it is set, the
+   new block is given back, the call fails as above, and stopped is set until
+   the next heap_realloc: the caller tells a stop from running out of memory
+   by it. */
+#define HEAP_COPY_STEP ((size_t)1 << 20)
 void *heap_alloc(JSHeap *h, size_t size);
 void heap_free(JSHeap *h, void *ptr);
 void *heap_realloc(JSHeap *h, void *ptr, size_t size);

@@ -418,7 +418,7 @@ func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func close_var_refs(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func code_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func compact_properties(a0 uintptr, a1 uintptr, a2 uintptr)
-func compute_pc2line_info(a0 uintptr, a1 uintptr)
+func compute_pc2line_info(a0 uintptr, a1 uintptr) uintptr
 func compute_stack_size(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func convert_fast_array_to_array(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func copy_str16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
@@ -513,6 +513,8 @@ func get_date_field(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, 
 func get_date_fields(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func get_date_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func get_exported_names(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func get_line_col(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func get_line_col_cached(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func get_lvalue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr) uintptr
 func get_set_record(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func get_var_ref(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -533,6 +535,7 @@ func heap_release_start(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_remap_dedicated(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func heap_set_remap(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_take(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func heap_untake(a0 uintptr, a1 uintptr, a2 uintptr)
 func heap_usable_size(a0 uintptr, a1 uintptr) uintptr
 func hypot(a0 uintptr, a1 float64, a2 float64) float64
 func i32toa(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -576,6 +579,7 @@ func js_alloc_string_rt(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_allocate_fast_array(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_arguments_define_own_property_block(a0 uintptr, a1 uintptr) uintptr
 func js_array_at(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_array_buffer_clear(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_array_buffer_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_array_buffer_constructor0(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_constructor3_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -586,6 +590,7 @@ func js_array_buffer_get_detached(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr
 func js_array_buffer_get_maxByteLength(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_array_buffer_get_resizable(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_array_buffer_isView(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_array_buffer_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_array_buffer_resize(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_slice(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_array_buffer_transfer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
@@ -648,8 +653,10 @@ func js_async_generator_resolve_or_reject(a0 uintptr, a1 uintptr, a2 uintptr, a3
 func js_async_generator_resume_next(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_async_module_execution_fulfilled(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
 func js_async_module_execution_rejected(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
-func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) float64
-func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_atod(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64
+func js_atod_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) float64
+func js_atof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
+func js_atof_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_atom_concat_num(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atom_concat_str(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_atomics_get_buf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
@@ -674,6 +681,7 @@ func js_bigint_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_bigint_divrem(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_extend(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_float64_cmp(a0 uintptr, a1 uintptr, a2 float64) uintptr
+func js_bigint_from_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_bigint_mul(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_bigint_neg(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_bigint_new(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -902,7 +910,7 @@ func js_module_ns_autoinit(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_module_ns_has(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func js_new_function_def(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr
 func js_new_host_function(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
-func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func js_new_long_string_atom(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_new_module_def(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_new_promise_capability(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_new_proto_shape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
@@ -910,6 +918,7 @@ func js_new_shape2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) u
 func js_new_string16_len(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_new_string8(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_new_string_char(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
+func js_new_string_len_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_new_string_rope(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_not_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_number_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -977,6 +986,7 @@ func js_parse_destructuring_var(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_directives(a0 uintptr, a1 uintptr) uintptr
 func js_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_parse_error_pos(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func js_parse_error_v(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_parse_expect(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_parse_expect_semi(a0 uintptr, a1 uintptr) uintptr
 func js_parse_expr(a0 uintptr, a1 uintptr) uintptr
@@ -1069,6 +1079,7 @@ func js_regexp_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_regexp_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_regexp_exec(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_regexp_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func js_regexp_flags(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_regexp_get_flag(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_regexp_get_flags(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_regexp_get_source(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
@@ -1082,6 +1093,7 @@ func js_resize_prop(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) 
 func js_resolve_export(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_resolve_export1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func js_resolve_module(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func js_resolve_module_top(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_rope_child_free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_set_difference(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_set_fast_array_element_out_of_line(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
@@ -1106,6 +1118,7 @@ func js_string_charAt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr
 func js_string_charCodeAt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_codePointAt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_codePointRange(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
+func js_string_compare_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_string_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_define_own_property_block(a0 uintptr, a1 uintptr) uintptr
@@ -1145,10 +1158,11 @@ func js_string_toLowerCase(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 ui
 func js_string_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_toWellFormed(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_to_cstring(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
-func js_string_to_cstring_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
+func js_string_to_cstring_json(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_string_to_number(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_string_trim(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
 func js_strndup(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func js_strndup_source(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_sub_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_sub_string_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func js_symbol_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -1202,6 +1216,7 @@ func json_free_parse_record(a0 uintptr, a1 uintptr, a2 uintptr)
 func json_next_token(a0 uintptr, a1 uintptr) uintptr
 func json_parse_expect(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func json_parse_record_add(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
+func json_parse_string(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func json_parse_value(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func link_var_scopes(a0 uintptr, a1 uintptr)
 func log(a0 uintptr, a1 float64) float64
@@ -1231,6 +1246,7 @@ func lre_is_id_continue(a0 uintptr, a1 uintptr) uintptr
 func lre_is_id_start(a0 uintptr, a1 uintptr) uintptr
 func lre_is_space_non_ascii(a0 uintptr, a1 uintptr) uintptr
 func lre_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func lre_parse_escape_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lre_realloc_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr
@@ -1293,7 +1309,7 @@ func re_parse_captures(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintpt
 func re_parse_class_set_operand(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_disjunction(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func re_parse_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func re_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func re_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func re_parse_group_name(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_parse_nested_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func re_string_find2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -1325,7 +1341,7 @@ func set_eval_ret_undefined(a0 uintptr, a1 uintptr)
 func set_object_name(a0 uintptr, a1 uintptr, a2 uintptr)
 func set_object_name_computed(a0 uintptr, a1 uintptr)
 func share_local_slots(a0 uintptr, a1 uintptr, a2 uintptr)
-func simple_next_token(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func simple_next_token(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func sin(a0 uintptr, a1 float64) float64
 func sinh(a0 uintptr, a1 float64) float64
 func skip_dead_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
@@ -1342,6 +1358,7 @@ func string_buffer_concat(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uin
 func string_buffer_concat_rope(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat_rope_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_concat_value(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_concat_value_free(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_end(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func string_buffer_fill(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_buffer_free(a0 uintptr, a1 uintptr)
@@ -1354,10 +1371,12 @@ func string_buffer_realloc2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 u
 func string_buffer_set_error(a0 uintptr, a1 uintptr)
 func string_buffer_widen(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func string_buffer_write16(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_write16_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_buffer_write8(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func string_buffer_write8_wide_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func string_buffer_write8_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func string_get_milliseconds(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func string_indexof_char(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func string_indexof_char_long(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func string_rope_get(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func strlen(a0 uintptr, a1 uintptr) uintptr
 func strrchr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr

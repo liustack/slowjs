@@ -1317,6 +1317,8 @@ int unicode_normalize(uint32_t **pdst, const uint32_t *src, int src_len,
     }
     if (dbuf_error(dbuf)) {
     fail:
+        /* a failed growth leaves the buffer it had */
+        dbuf_free(dbuf);
         *pdst = NULL;
         return -1;
     }

@@ -113,6 +113,12 @@ read_when:
 | Intl 读不了的字符串参数会结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用) |
 | Intl 在长列表的循环里读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
 | fmt 的函数在输出放不下时结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用) |
+| BigInt 的长运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#bigint-的长运算读中断标志) |
+| 把长字符串转成数字时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#把长字符串转成数字时读中断标志) |
+| 解析很长的源码时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#解析很长的源码时读中断标志) |
+| 比较和复制很长的字符串时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#比较和复制很长的字符串时读中断标志) |
+| 改变很大的 ArrayBuffer 的大小时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#改变很大的-arraybuffer-的大小时读中断标志) |
+| normalize 和 Map 变大时的内存不足 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
 
 ## 错误和调用栈
 

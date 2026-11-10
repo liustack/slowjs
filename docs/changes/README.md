@@ -113,6 +113,12 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A string argument Intl cannot read ends the call | Unreleased | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
 | Intl reads the interrupt flag in loops over a long list | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
 | The functions of fmt end the call when their output does not fit | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
+| Long operations on BigInts read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#long-operations-on-bigints-read-the-interrupt-flag) |
+| Turning a long string into a number reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#turning-a-long-string-into-a-number-reads-the-interrupt-flag) |
+| Parsing a long source reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
+| Comparing and copying long strings reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#comparing-and-copying-long-strings-reads-the-interrupt-flag) |
+| Resizing a large ArrayBuffer reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#resizing-a-large-arraybuffer-reads-the-interrupt-flag) |
+| Out of memory in normalize and in the growth of a Map | Unreleased | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
 
 ## Errors and stacks
 

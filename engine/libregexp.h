@@ -55,6 +55,11 @@ int lre_exec(uint8_t **capture,
              int cbuf_type, void *opaque);
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
+/* lre_parse_escape that reads *flag (poll_flag) every LRE_SCAN_STEP digits of
+   \u{...}, which leading zeros make as long as a script wants, and returns -3
+   when it is set */
+int lre_parse_escape_poll(const uint8_t **pp, int allow_utf16,
+                          const volatile int *flag);
 
 /* must be provided by the user: count one level of the nesting of the
    pattern, return non zero past the limit of the user, and then count

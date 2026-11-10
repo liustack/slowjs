@@ -3925,6 +3925,525 @@ static void test_long_ops_polls(void)
     host_free_runtime(rt);
 }
 
+/* The loops of BigInt whose work grows as the square of the length (a
+   product, a division, a power, a conversion to or from a string in a radix
+   that is not a power of two) and the loops over each digit of a string in
+   a radix that is a power of two read the interrupt flag every 32768 limbs
+   of 32 bits or digits (JS_BIGINT_MAX_SIZE). Each call reads the flag at least as often as it says, and a
+   flag set in the middle stops it with the error "interrupted": a
+   comparison of a BigInt with a string too, which converts the string. The
+   runtime is freed with no block left, so a call stopped in the middle frees
+   what it made, and so does a power whose product is too large. */
+static void test_bigint_polls(void)
+{
+    static const char setup[] =
+        "var x = 10n ** 100000n, nx = -x, xs = '1' + '0'.repeat(100000)\n"
+        "var a = 2n ** 170000n - 1n, b = 2n ** 169999n + 12345n\n"
+        "var w = 2n ** 340000n - 1n, h = 2n ** 170000n + 12345n\n"
+        "var s = '9'.repeat(100000), sb = '0b' + '1'.repeat(1 << 19); 0\n";
+    static const struct {
+        const char *call;
+        long reads;
+    } cases[] = {
+        { "String(x)", 500 },
+        { "String(nx)", 500 },
+        { "x.toString(7)", 500 },
+        { "x.toString(2)", 8 },
+        { "x.toString(16)", 2 },
+        { "a * b", 300 },
+        { "(-a) * b", 300 },
+        { "w / h", 300 },
+        { "w % h", 300 },
+        { "10n ** 100000n", 300 },
+        { "BigInt(s)", 500 },
+        { "BigInt(sb)", 25 },
+        { "x == xs", 500 },
+        { "x < xs", 500 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i].call;
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= cases[i].reads, "%s: %ld readings of the flag, want at least %ld", call, reads, cases[i].reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* what they make is what they made */
+    CHECK(eval_is(ctx, "[String(x) === xs, String(nx) === '-' + xs, x.toString(2).length, BigInt('0b' + x.toString(2)) === x, "
+                  "BigInt('0x' + x.toString(16)) === x, x.toString(7).length, x.toString(7).slice(0, 12), x.toString(7).slice(-12)].join()",
+                  "true,true,332193,true,true,118330,232254152365,203562641334"), "the strings");
+    CHECK(eval_is(ctx, "var p = a * b; [p / b === a, p % b, ((-a) * b) / b === -a, w / h * h + w % h === w, (-w) % h === -(w % h), "
+                  "10n ** 100000n === x, BigInt(s) === x - 1n, BigInt(sb) === 2n ** 524288n - 1n, x == xs, x < xs, x - 1n < xs].join()",
+                  "true,0,true,true,true,true,true,true,true,false,true"), "the numbers");
+    /* the square of 634,000 bits is too large, and the power frees its last product */
+    CHECK(eval_is(ctx, "try { (3n ** 400000n) ** 3n } catch (e) { e instanceof RangeError }", "true"),
+          "a power too large");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Turning a string of a million characters into a number or a BigInt reads
+   the interrupt flag every 65536 characters in each loop over them: the
+   conversion to UTF-8, the spaces around the number, the scan of its digits
+   and their copy in js_atof, the digits js_atod reads, the leading zeros of
+   a BigInt, and the digits and spaces of a JSON text, spaces of three bytes
+   of UTF-8 and \r\n among them. Each call reads it at least 12 times, and stopped in the middle it throws "interrupted" and
+   leaves the context good. The strings are flat (a rope is made flat in
+   steps that read the flag on their own). */
+static void test_number_polls(void)
+{
+    static const char setup[] =
+        "function flat(...a) { return a.join('') }\n"
+        "var n = 1 << 20, ones = '1'.repeat(n), zeros = '0'.repeat(n), sp = flat(' '.repeat(n), '1')\n"
+        "var fr = flat('0.', ones), ex = flat('1e', zeros), hx = flat('0x', zeros, '1')\n"
+        "var oc = flat('0', '7'.repeat(n)), bx = flat('0x', zeros, '1n')\n"
+        "var ws = flat('\\u3000'.repeat(n >> 1), '1'), crlf = flat('\\r\\n'.repeat(n >> 1), '1'); 0\n";
+    static const char *const cases[] = {
+        "+ones", "Number(zeros)", "Number(sp)", "Number(fr)", "Number(ex)", "Number(hx)",
+        "isNaN(ones)", "parseInt(ones)", "parseInt(sp, 16)", "parseFloat(fr)",
+        "BigInt(zeros)", "BigInt(sp)", "BigInt(hx)", "1n == zeros", "1n < sp",
+        "JSON.parse(ones)", "JSON.parse(fr)", "JSON.parse(sp)",
+        "(0, eval)(ones)", "(0, eval)(bx)", "(0, eval)(oc)", "Number(ws)", "JSON.parse(crlf)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        host_poll_stop_after(reads / 2 + 1);
+        CHECK(interrupted(ctx, call), "%s was not stopped in the middle", call);
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    CHECK(eval_is(ctx, "[+ones, Number(zeros), Number(sp), Number(fr), Number(ex), Number(hx), parseInt(sp, 16), "
+                  "String(BigInt(zeros)), String(BigInt(sp)), String(BigInt(hx)), 1n == zeros, 1n < sp, "
+                  "JSON.parse(sp), (0, eval)(bx) === 1n, (0, eval)(oc) === Infinity, Number(ws), JSON.parse(crlf)].join()",
+                  "Infinity,0,1,0.1111111111111111,1,1,1,0,1,1,false,false,1,true,true,1,1"), "the results");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A name or the source of a function of 65536 bytes or more is decoded in
+   steps that read the interrupt flag, and gives the string the whole decode
+   gives (JS_NewStringLen) for every text: a run of continuation bytes, an
+   overlong form, a sequence cut short, a form of five bytes, a surrogate and
+   a valid character of four bytes, each placed across a step, and the byte
+   that the decode of an error swallows after a run. */
+static void test_long_utf8_decode(void)
+{
+    static const struct {
+        const char *name;
+        const char *bytes;
+        int len;
+    } pats[] = {
+        { "valid 4", "\xf0\x9f\x98\x80", 4 },
+        { "overlong 2", "\xc0\x80", 2 },
+        { "overlong 3", "\xe0\x80\x80", 3 },
+        { "overlong 4", "\xf0\x80\x80\x80", 4 },
+        { "cut 3", "\xe2\x82" "a", 3 },
+        { "cut 4", "\xf0\x9f\x98" "a", 4 },
+        { "form of 5", "\xf8\x88\x80\x80\x80", 5 },
+        { "surrogate", "\xed\xa0\x80", 3 },
+        { "lead and 6 continuations", "\xe2\x80\x80\x80\x80\x80\x80", 7 },
+        { "continuation and ASCII", "\x80" "a", 2 },
+        { "continuations and a lead", "\x80\x80\x80\xe2\x82\xac", 6 },
+        { "above 10ffff", "\xf4\x90\x80\x80", 4 },
+    };
+    static const int runs[] = { 0, 3, 5, 65536, 65541 };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t total = 3 << 16, i, j, r, off;
+    char *buf = malloc(total + 64);
+    int d, bad = 0, cases = 0;
+
+    for(i = 0; i < sizeof(pats) / sizeof(pats[0]); i++) {
+        for(r = 0; r < sizeof(runs) / sizeof(runs[0]); r++) {
+            for(d = -8; d <= 8; d++) {
+                JSValue whole, part;
+                JSAtom atom;
+                size_t len;
+
+                /* the pattern, then a run of 0x80 of runs[r] bytes, from
+                   d bytes before the end of the first step */
+                memset(buf, 'a', total);
+                off = (1 << 16) + d - pats[i].len / 2;
+                memcpy(buf + off, pats[i].bytes, pats[i].len);
+                len = off + pats[i].len;
+                for(j = 0; j < (size_t)runs[r] && len < total - 8; j++)
+                    buf[len++] = (char)0x80;
+                len = total;
+                whole = JS_NewStringLen(ctx, buf, len);
+                atom = JS_NewAtomLen(ctx, buf, len);
+                part = atom == JS_ATOM_NULL ? JS_EXCEPTION : JS_AtomToString(ctx, atom);
+                cases++;
+                if (JS_IsException(whole) || JS_IsException(part) || !JS_StrictEq(ctx, whole, part)) {
+                    if (bad++ < 8)
+                        printf("long decode of %s with a run of %d at %d differs from the whole\n",
+                               pats[i].name, runs[r], d);
+                }
+                JS_FreeValue(ctx, whole);
+                JS_FreeValue(ctx, part);
+                if (atom != JS_ATOM_NULL)
+                    JS_FreeAtom(ctx, atom);
+            }
+        }
+    }
+    CHECK(bad == 0, "%d of %d long decodes differ from the whole", bad, cases);
+    /* the source a function keeps, as Function.prototype.toString decodes
+       it, with a run of continuation bytes across a step in a comment */
+    {
+        static const char head[] = "(function f() {/*", tail[] = "*/})";
+        size_t n = 3 << 16, hl = sizeof(head) - 1, tl = sizeof(tail) - 1, len = hl + n + tl;
+        char *src = malloc(len + 1);
+        JSValue f, s, want;
+
+        memcpy(src, head, hl);
+        memset(src + hl, 'a', n);
+        memset(src + (1 << 16) - 100, 0x80, 200 + (1 << 16));
+        memcpy(src + hl + n, tail, tl);
+        src[len] = '\0';
+        f = JS_Eval(ctx, src, len, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(f), "the function of a comment of continuation bytes threw");
+        s = JS_ToString(ctx, f);
+        want = JS_NewStringLen(ctx, src + 1, len - 2);
+        CHECK(!JS_IsException(s) && JS_StrictEq(ctx, s, want), "toString of a source with a run of continuation bytes differs from the whole decode");
+        JS_FreeValue(ctx, f);
+        JS_FreeValue(ctx, s);
+        JS_FreeValue(ctx, want);
+        free(src);
+    }
+    /* a run of 4 MiB of continuation bytes is one character, and its decode
+       reads the flag every 65536 bytes of it: each of the first 64 readings
+       stops it with "interrupted" */
+    {
+        size_t n = 4 << 20;
+        char *run = malloc(n);
+        long before, reads, k;
+        JSAtom atom;
+
+        memset(run, 0x80, n);
+        before = host_poll_reads;
+        atom = JS_NewAtomLen(ctx, run, n);
+        reads = host_poll_reads - before;
+        CHECK(atom != JS_ATOM_NULL, "the name of a run of continuation bytes threw");
+        JS_FreeAtom(ctx, atom);
+        CHECK(reads >= 64, "a run of continuation bytes: %ld readings of the flag, want at least 64", reads);
+        for(k = 1; k <= 64; k++) {
+            JSValue e;
+            const char *m;
+
+            host_poll_stop_after(k);
+            atom = JS_NewAtomLen(ctx, run, n);
+            *JS_GetInterruptFlag(rt) = 0;
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(atom == JS_ATOM_NULL && m && strstr(m, "interrupted"),
+                  "a run of continuation bytes was not stopped at reading %ld", k);
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (atom != JS_ATOM_NULL)
+                JS_FreeAtom(ctx, atom);
+        }
+        host_poll_stop_after(0);
+        free(run);
+    }
+    free(buf);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Parsing a script or a JSON text of a million spaces, newlines, comment
+   characters or identifier characters reads the interrupt flag every 65536
+   bytes of them, and so does the look at the token after the current one
+   (simple_next_token). Each call reads it at least 12 times, and stopped in
+   the middle it throws "interrupted" and leaves the context good. The calls
+   catch the SyntaxError or ReferenceError of the parse that is not stopped. */
+static void test_parse_polls(void)
+{
+    static const char setup[] =
+        "function flat(...a) { return a.join('') }\n"
+        "function run(f, s) { try { return f(s) } catch (e) { if (!(e instanceof SyntaxError || e instanceof ReferenceError)) throw e } }\n"
+        "var n = 1 << 20, ev = s => (0, eval)(s)\n"
+        "var sp = flat(' '.repeat(n), '1'), nl = flat('\\r\\n'.repeat(n >> 1), '1'), ws = flat('\\u3000'.repeat(n >> 1), '1')\n"
+        "var bc = flat('/*', '\\u00e9'.repeat(n), '*/1'), lc = flat('//', 'a'.repeat(n)), id = 'a'.repeat(n)\n"
+        "var as = flat('async', ' '.repeat(n), 'function f() {}'), ac = flat('async /*', 'a'.repeat(n), '*/ function f() {}')\n"
+        "var st = flat('\"', 'a\\u00e9'.repeat(n >> 1), '\"'), tp = flat('`', 'a'.repeat(n), '`'), rx = flat('/', 'a'.repeat(n), '/')\n"
+        "var pn = flat('class A { #', 'a'.repeat(n), ' }'), fs = flat('(function () { /*', 'a'.repeat(n), '*/ })')\n"
+        "var se = flat('a'.repeat(n), ' +'), jw = flat('t', 'r'.repeat(n)), id4 = 'b'.repeat(n << 2); 0\n";
+    static const char *const cases[] = {
+        "run(ev, sp)", "run(ev, nl)", "run(ev, ws)", "run(ev, bc)", "run(ev, lc)", "run(ev, id)",
+        "run(ev, as)", "run(ev, ac)", "run(ev, st)", "run(ev, tp)", "run(ev, rx)", "run(ev, pn)",
+        "String(ev(fs))", "run(ev, se)", "run(JSON.parse, jw)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    /* Each parse of a source of a million bytes reads the flag at least 12
+       times, and is stopped at its readings, every one of them or 64 spread
+       over them: the scans, the atom of an identifier, the source a function
+       keeps, the lines and columns of the code and of the error. The context
+       goes on after each, and the runtime keeps no block of them. */
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+        }
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    /* the buffer of an identifier of 4 MiB is copied in steps that read the
+       flag each time it grows past a MiB: each of the first 96 readings,
+       those of the scan and of the copies among them, stops it */
+    {
+        long before = host_poll_reads, reads, k;
+
+        CHECK(eval(ctx, "run(ev, id4)"), "run(ev, id4): the script threw");
+        reads = host_poll_reads - before;
+        CHECK(reads >= 96, "run(ev, id4): %ld readings of the flag, want at least 96", reads);
+        for(k = 1; k <= 96; k++) {
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, "run(ev, id4)"), "run(ev, id4) was not stopped at reading %ld", k);
+        }
+        host_poll_stop_after(0);
+    }
+    CHECK(eval_is(ctx, "[ev(sp), ev(nl), ev(ws), ev(bc), run(ev, lc), typeof ev(as + '; f'), typeof ev(ac + '; f')].join()",
+                  "1,1,1,1,,function,function"), "the results");
+    CHECK(eval_is(ctx, "[ev(st) === 'a\\u00e9'.repeat(n >> 1), ev(tp).length, ev(rx).source.length, String(ev(fs)) === fs.slice(1, -1), "
+                       "typeof ev(pn + '; A')].join()",
+                  "true,1048576,1048576,true,function"), "the results of strings and functions");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Comparing two strings of a million characters and copying one into a
+   string buffer read the interrupt flag every 65536 characters, or every MiB
+   of a copy of bytes, and so do the hash of the key of Symbol.for and its
+   compare with the key of a symbol there is. Each call reads it at least 12
+   times, and stopped at its readings (every one, or 64 spread over them) it
+   throws "interrupted" and leaves the context good. A sort is left to
+   TestStringCompareCopyStops of the root package: this host sets the flag it
+   reads, and a sort reads its own stop too. */
+static void test_string_copy_polls(void)
+{
+    static const char setup[] =
+        "var n = 1 << 20, s = 'a'.repeat(n), s2 = 'a'.repeat(n), w = '\\u3000'.repeat(n), w2 = '\\u3000'.repeat(n)\n"
+        "var b = 'b'.repeat(n << 4), k = 'k'.repeat(n), ks = Symbol.for(k.slice(1)); 0\n";
+    static const char *const cases[] = {
+        "s < s2", "w < w2", "Symbol.for(k.slice(1))",
+        "[b, 'x'].join('')", "[w, 'x'].join('')", "[b].join()", "b.padEnd((n << 4) + 1)",
+        "b.replace('b', 'c')", "w.replace('\\u3000', 'c')", "String.raw({raw: [b, b]}, 1)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        CHECK(reads >= 12, "%s: %ld readings of the flag, want at least 12", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+        }
+        host_poll_stop_after(0);
+        CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after %s", call);
+    }
+    CHECK(eval_is(ctx, "[s < s2, s + 'a' < s2 + 'b', w2 + 'b' < w + 'a', [w + 'b', w + 'a'].sort()[0] === w + 'a', "
+                       "Symbol.keyFor(ks) === k.slice(1), Symbol.for(k.slice(1)) === ks, "
+                       "[b, 'x'].join('') === b + 'x', [w, 'x'].join('') === w + 'x', b.padEnd((n << 4) + 1, 'z').slice(-2), "
+                       "b.replace('b', 'c').slice(0, 2), w.replace('\\u3000', 'c').length, "
+                       "String.raw({raw: [b, b]}, 1) === b + '1' + b].join()",
+                  "false,true,false,true,true,true,true,true,bz,cb,1048576,true"), "the results");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The export names of a module are sorted by a compare that reads the
+   interrupt flag (exported_names_cmp, with rqsort_stop): two names of a
+   million characters that differ in the last one and 3,000 short names in a
+   shuffled order come out of a namespace import in the order of the strings.
+   The stops are left to the Go test (TestModuleExportNamesStop), as for the
+   sort of an array: the native host sets the flag it reads, and the sort
+   reads its own stop too. */
+static void test_module_export_order(void)
+{
+    static const char gen[] =
+        "var p = 'a'.repeat(1 << 20), names = [p + 'b', p + 'a'];\n"
+        "for (var i = 0; i < 3000; i++) names.push('n' + (i * 7919) % 3000);\n"
+        "'const x = 1; export {' + names.map(k => 'x as ' + JSON.stringify(k)).join(', ') + '}'\n";
+    static const char importer[] =
+        "import * as ns from 'long.mjs'\n"
+        "var k = Object.keys(ns)\n"
+        "globalThis.r = [k.length, k[0].length, k[0].slice(-1), k[1].slice(-1), k[2], k[3001],\n"
+        "    k.every((x, i) => i == 0 || k[i - 1] < x), ns[k[1]]].join()\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue src, v;
+    const char *s;
+    size_t len;
+
+    src = JS_Eval(ctx, gen, strlen(gen), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(src), "the generator threw");
+    s = JS_ToCStringLen(ctx, &len, src);
+    CHECK(s, "the source of the module");
+    v = JS_Eval(ctx, s, len, "long.mjs", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(v), "the exporting module threw");
+    JS_FreeValue(ctx, v);
+    JS_FreeCString(ctx, s);
+    JS_FreeValue(ctx, src);
+    v = JS_Eval(ctx, importer, strlen(importer), "main.mjs", JS_EVAL_TYPE_MODULE);
+    CHECK(!JS_IsException(v), "the importing module threw");
+    JS_FreeValue(ctx, v);
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval_is(ctx, "r", "3002,1048577,a,b,n0,n999,true,1"), "the order of the export names");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A block that the heap moves is copied a MiB at a time with a read of the
+   interrupt flag before each step (heap_copy), and the bytes an ArrayBuffer
+   gains are cleared a MiB at a time the same way (js_array_buffer_clear).
+   resize and transfer of a buffer of 32 MiB to a quarter and back, which
+   moves the block out of its chunk, are stopped at each of their readings,
+   every one or 64 spread over them: the call ends with "interrupted", not
+   with the out of memory error of a failed resize, the buffer keeps one of
+   its two lengths and its bytes, and it is set back to its full length
+   before the next stop. A fixed-length view, a length-tracking view and a
+   DataView made before each stop follow the block when the buffer is kept,
+   with its lengths and maxByteLength, and read and write its bytes, or have
+   nothing when a transfer detached the buffer. The bytes a buffer left short
+   gains at the reset are zero. The runtime is freed with no block left. */
+static void test_heap_move_polls(void)
+{
+    static const char setup[] =
+        "var n = 1 << 25, b = new ArrayBuffer(n, {maxByteLength: n}); new Uint8Array(b).fill(7); 0\n";
+    static const char after[] =
+        "[b.byteLength === n || b.byteLength === n >> 2, new Uint8Array(b)[0], "
+        "new Uint8Array(b)[(n >> 2) - 1], b.detached].join()";
+    static const char views[] =
+        "var vb = b, fv = new Uint8Array(b, 0, 16), tv = new Uint8Array(b), dv = new DataView(b); 0";
+    static const char views_after[] =
+        "String(vb === b ? tv.length === b.byteLength && dv.byteLength === b.byteLength && "
+        "fv.length === 16 && fv[0] === 7 && tv[(n >> 2) - 1] === 7 && dv.getUint8(2) === 7 && "
+        "(tv[1] = 9, new Uint8Array(b)[1] === 9) && (dv.setUint8(1, 7), fv[1] === 7) && "
+        "b.maxByteLength === n : vb.detached && tv.length === 0 && fv.length === 0)";
+    static const char reset[] =
+        "var was = b.byteLength; b.byteLength === n || (b = b.transfer(n)); "
+        "String(was === n || [n >> 2, n >> 1, n - 1].every(i => new Uint8Array(b)[i] === 0))";
+    static const char *const cases[] = {
+        "(b.resize(n >> 2), b.resize(n))",
+        "(b = b.transfer(n >> 2), b = b.transfer(n))",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t i;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const char *call = cases[i];
+        long before = host_poll_reads, reads, j, k, stops;
+
+        CHECK(eval(ctx, call), "%s: the script threw", call);
+        reads = host_poll_reads - before;
+        /* the copy of 8 MiB and the clear of 24 MiB */
+        CHECK(reads >= 32, "%s: %ld readings of the flag, want at least 32", call, reads);
+        stops = reads < 64 ? reads : 64;
+        for(j = 0; j < stops; j++) {
+            k = 1 + j * reads / stops;
+            CHECK(eval(ctx, views), "%s: the views before reading %ld", call, k);
+            host_poll_stop_after(k);
+            CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
+            host_poll_stop_after(0);
+            CHECK(eval_is(ctx, after, "true,7,7,false"), "the buffer after %s was stopped at reading %ld", call, k);
+            CHECK(eval_is(ctx, views_after, "true"), "the views after %s was stopped at reading %ld", call, k);
+            /* the next stop starts from the full length, so that it reads as often */
+            CHECK(eval_is(ctx, reset, "true"), "%s: the reset after reading %ld", call, k);
+        }
+        CHECK(eval(ctx, call), "%s after the stops: the script threw", call);
+        CHECK(eval_is(ctx, "b.byteLength === n && new Uint8Array(b)[n - 1] === 0", "true"), "the buffer after %s", call);
+    }
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* readings of the flag while js_make_error made its error */
+static long error_reads;
+
+/* makeError() throws a TypeError made with the interrupt flag set at the
+   first reading, as when a stop is asked for while an error is made. */
+static JSValue js_make_error(JSContext *ctx, JSValueConst this_val, int argc,
+                             JSValueConst *argv)
+{
+    long before = host_poll_reads;
+
+    host_poll_stop_after(1);
+    JS_ThrowTypeError(ctx, "made");
+    error_reads = host_poll_reads - before;
+    host_poll_stop_after(0);
+    *JS_GetInterruptFlag(JS_GetRuntime(ctx)) = 0;
+    return JS_EXCEPTION;
+}
+
+/* Making an error reads no interrupt flag (JS_ThrowError2), and the heap,
+   which reads it while it moves a block of a MiB or more only for the resize
+   of an ArrayBuffer (js_array_buffer_realloc), reads none while an error and
+   its backtrace are made. A function named with 4 Mi characters makes a
+   stack of more than 4 MiB, which grows its buffer past a MiB, and the error
+   it throws is made with no reading of the flag and with its whole stack,
+   though the flag would be set at the first. */
+static void test_error_reads_no_flag(void)
+{
+    static const char src[] =
+        "var name = 'a'.repeat(1 << 22), r;\n"
+        "function f() { return makeError(); }\n"
+        "Object.defineProperty(f, 'name', {value: name});\n"
+        "try { f() } catch (e) { r = [e.message, e.stack.includes(name)].join() }\n"
+        "r\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue g = JS_GetGlobalObject(ctx);
+
+    JS_SetPropertyStr(ctx, g, "makeError",
+                      JS_NewCFunction(ctx, js_make_error, "makeError", 0));
+    JS_FreeValue(ctx, g);
+    CHECK(eval_is(ctx, src, "made,true"), "the error and its stack");
+    CHECK(error_reads == 0, "%ld readings of the flag while an error was made, want 0", error_reads);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* Hashing the key of a Map or Set walks every character of a string or rope,
    and reads the interrupt flag each time 65536 of them have been hashed since
    the last reading (a string of a rope counts one more than its length, and
@@ -4166,6 +4685,14 @@ int main(void)
     test_map_key_polls();
     test_long_key_polls();
     test_long_ops_polls();
+    test_bigint_polls();
+    test_number_polls();
+    test_parse_polls();
+    test_long_utf8_decode();
+    test_string_copy_polls();
+    test_module_export_order();
+    test_heap_move_polls();
+    test_error_reads_no_flag();
     test_tag_polls();
     test_rope_flat_polls();
     test_regexp_compile_polls();
