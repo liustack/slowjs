@@ -5,7 +5,10 @@
 
 package quickjs // import "github.com/liustack/quickjs"
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // A built-in that only records an error (an async function that fails before
 // its first await, or in a job) returns as if it had not failed, while the
@@ -109,5 +112,73 @@ func TestOutOfMemoryPendingAfterSuccess(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A built-in that records an uncatchable error and returns, such as a promise
+// resolve function whose thenable's then getter runs out of memory, leaves
+// the error pending while the script goes on. A loop with no call in it then
+// ends at its next backward jump with that error, with no timeout set: the
+// memory limit holds, and a Go function that panicked ends the call.
+func TestUncatchablePendingEndsLoop(t *testing.T) {
+	const bound = 5 * time.Second
+	cases := []struct{ name, js string }{
+		{"resolve with a thenable getter", `let res; new Promise(r => { res = r }); res({ get then() { fail() } }); for (;;) {}`},
+		{"async first step", `(async () => { fail() })(); for (;;) {}`},
+		{"async generator", `(async function* () { fail() })().next(); for (;;) {}`},
+		{"dynamic import", `import({ toString() { fail() } }); for (;;) {}`},
+	}
+	for _, c := range cases {
+		for _, cause := range []string{"out of memory", "Go panic"} {
+			t.Run(c.name+"/"+cause, func(t *testing.T) {
+				m := newTestVM(t)
+				fail := growForever
+				if cause == "Go panic" {
+					mustHost(t, m, "boom", func([]any) (any, error) { panic("boom") })
+					fail = `globalThis.fail = () => boom()`
+				}
+				if _, err := m.Eval(fail, EvalGlobal); err != nil {
+					t.Fatal(err)
+				}
+
+				// The watchdog has returned before the VM is used again, so its
+				// Interrupt cannot land in a later call.
+				done, stopped := make(chan struct{}), make(chan bool, 1)
+				go func() {
+					select {
+					case <-done:
+						stopped <- false
+					case <-time.After(bound):
+						m.Interrupt()
+						stopped <- true
+					}
+				}()
+				var err error
+				var p any
+				if cause == "Go panic" {
+					p = evalRecover(m, c.js)
+				} else {
+					m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 1<<20)
+					_, err = m.Eval(c.js, EvalGlobal)
+					m.SetMemoryLimit(^uintptr(0))
+				}
+				close(done)
+				if <-stopped {
+					t.Fatalf("the loop ran on for %v, until Interrupt", bound)
+				}
+				if cause == "Go panic" {
+					if p != "boom" {
+						t.Fatalf("got panic %v, want boom", p)
+					}
+				} else {
+					wantError(t, err, "InternalError", "out of memory")
+					wantKind(t, err, outOfMemory)
+				}
+				wantNoPendingException(t, m)
+				if v, err := m.Eval(`let n = 0; for (let k = 0; k < 1000; k++) n += k; String(n)`, EvalGlobal); err != nil || v != "499500" {
+					t.Fatalf("a loop after the error: %v, %v", v, err)
+				}
+			})
+		}
 	}
 }

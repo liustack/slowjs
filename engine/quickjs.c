@@ -10468,6 +10468,28 @@ static BOOL js_uncatchable_pending(JSRuntime *rt)
         !JS_IsUninitialized(rt->current_exception);
 }
 
+/* The bit of the interrupt flag the engine keeps set while an uncatchable
+   exception is pending. A built-in can record such an exception (in a
+   promise it rejects) and return as if it had not failed, and the script
+   goes on: every read of the flag then stops it, the backward jump of a loop
+   with no call in it too, and the exception ends the call. The host's stop
+   is 1 (see JS_GetInterruptFlag and docs/changes/uncatchable.md). */
+#define JS_INTERRUPT_UNCATCHABLE 2
+
+/* sets or clears JS_INTERRUPT_UNCATCHABLE to say whether an uncatchable
+   exception is pending, after a change of the exception or of its flag. Out
+   of line: it runs only when an exception is made uncatchable or catchable,
+   and inlined into the paths that restore an exception it made the frames
+   of JS_GetPropertyInternal and JS_GetOwnPropertyInternal 48 bytes larger.
+   JS_GetException clears the bit itself. */
+static no_inline void js_uncatchable_mark(JSRuntime *rt)
+{
+    if (js_uncatchable_pending(rt))
+        rt->interrupt_flag |= JS_INTERRUPT_UNCATCHABLE;
+    else if (rt->interrupt_flag & JS_INTERRUPT_UNCATCHABLE)
+        rt->interrupt_flag &= ~JS_INTERRUPT_UNCATCHABLE;
+}
+
 /* WARNING: obj is freed */
 JSValue JS_Throw(JSContext *ctx, JSValue obj)
 {
@@ -10490,6 +10512,10 @@ JSValue JS_GetException(JSContext *ctx)
     JSRuntime *rt = ctx->rt;
     val = rt->current_exception;
     rt->current_exception = JS_UNINITIALIZED;
+    /* nothing is pending now: the clear of js_uncatchable_mark, inline, so
+       that this stays a leaf with no frame */
+    if (unlikely(rt->interrupt_flag & JS_INTERRUPT_UNCATCHABLE))
+        rt->interrupt_flag &= ~JS_INTERRUPT_UNCATCHABLE;
     return val;
 }
 
@@ -11589,6 +11615,11 @@ static JSValue JS_ThrowTypeErrorInvalidClass(JSContext *ctx, int class_id)
 
 static void JS_ThrowInterrupted(JSContext *ctx)
 {
+    /* the flag stops while an uncatchable exception is pending
+       (JS_INTERRUPT_UNCATCHABLE): that exception ends the call, and no
+       error is made in vain, with no memory left for it */
+    if (js_uncatchable_pending(ctx->rt))
+        return;
     JS_ThrowInternalError(ctx, "interrupted");
     JS_SetUncatchableException(ctx, TRUE);
 }
@@ -15219,6 +15250,7 @@ BOOL JS_IsError(JSContext *ctx, JSValueConst val)
 void JS_SetUncatchableException(JSContext *ctx, BOOL flag)
 {
     ctx->rt->current_exception_is_uncatchable = flag;
+    js_uncatchable_mark(ctx->rt);
 }
 
 void JS_SetOpaque(JSValue obj, void *opaque)
