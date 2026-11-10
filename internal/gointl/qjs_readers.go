@@ -17,8 +17,8 @@ import (
 )
 
 // The packs only some loaders read. Each is referenced from one function,
-// which those loaders call before they open anything (qjs.patch adds the
-// calls), so the linker keeps a pack only in a binary that links one of its
+// which those loaders call before they open anything, so the
+// linker keeps a pack only in a binary that links one of its
 // readers: a program whose DateTimeFormat is not go-intl's leaves out the
 // 2.8 MB of dates and zone names. Embedded serves a pack from the first
 // call of its function on. TestQJSReadersUsePacks checks that every

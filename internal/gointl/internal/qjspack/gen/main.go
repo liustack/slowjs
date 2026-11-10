@@ -6,7 +6,7 @@
 // Command gen writes internal/gointl/qjsdata, the packs of go-intl's data that
 // liustack/quickjs embeds in place of go-intl's data.pack, from go-intl's data
 // directory. Run it from the root of the module, with the build tag that lets
-// it see which pool parts a locale reads (qjs-sync.sh pack does this):
+// it see which pool parts a locale reads (data.sh pack does this):
 //
 //	go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen -data <go-intl>/data
 //
@@ -38,7 +38,7 @@
 // segmenter, which a build tag can leave out, tz.bin, the time zones and
 // calendar tables the temporal package reads, which a binary that uses only
 // Temporal links alone, with tzversion.bin, the tz release of its zones,
-// which qjs-sync.sh writes into the data directory with them, dates.bin,
+// which data.sh writes into the data directory with them, dates.bin,
 // zonenames.bin and hostzones.bin, the files only DateTimeFormat, the zone
 // names and the guess at the host's zone read, which a binary links only
 // with those readers (see qjs_readers.go), and core.bin, the rest. Within a
@@ -269,7 +269,7 @@ func run() error {
 	if v, ok := out["tzversion.bin"]; ok {
 		fmt.Printf("time zones: tz %s\n", v)
 	} else {
-		return errors.New("the data has no tzversion.bin: qjs-sync.sh writes it with the time zones")
+		return errors.New("the data has no tzversion.bin: data.sh writes it with the time zones")
 	}
 	if langs != nil && len(langs.added) > 0 {
 		sort.Strings(langs.added)
@@ -356,7 +356,7 @@ func chromiumLanguages(file string, available []byte) (*languages, error) {
 		return nil, fmt.Errorf("available.bin: %v", err)
 	}
 	if !slices.Equal(tags, c.Tags) {
-		return nil, fmt.Errorf("%s was recorded for other tags than available.bin has: run qjs-sync.sh chromium", file)
+		return nil, fmt.Errorf("%s was recorded for other tags than available.bin has: run data.sh chromium", file)
 	}
 	langs := &languages{
 		data: map[string]bool{}, plural: map[string]bool{},

@@ -14,6 +14,7 @@ read_when:
 
 - **引擎**是 [QuickJS](https://bellard.org/quickjs)，Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎，取 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`。`engine/` 是这份 C 加上 liustack/quickjs 的改动。`internal/goasm/gen` 把它编译成 Go 汇编，提交进仓库。生成的文件从不手改，和生成器的结果不一致时 `make check-gen` 会失败。test262 有 33 个已知失败，列在 `engine/test/test262_errors.txt`。
 - **Go API**（模块根目录的 `VM`、`Value`、`Eval`、`Call` 等）起步于 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0（2026-10-01），也就是本仓库历史里的提交 `ea7b851`，之后重写并扩充过。其中一些名字、注释和测试还在。v0.28 之前，它下面的引擎是 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)，ccgo 把 QuickJS 转译成的 Go。那个引擎已经删掉，它的 Go 也不在了。
+- **`Intl` 和 `Temporal` 的 Go 部分**（`internal/gointl`）是从 [go-intl](https://github.com/go-quickjs/go-intl) v0.6.1（提交 `59e7b7a9f80bb90458f314e7d99efa4fb592dc3b`）复制过来的，只复制了一次，之后在这里随便改：不再吸收 go-intl 后来的代码。只吸收它的数据：数据包取自 `internal/gointl/UPSTREAM` 里那个 go-intl 版本的 `data/` 目录，裁到 Chromium 的语言，时区用 `internal/gointl/qjstz` 的（见 [upgrading.md](upgrading.zh-CN.md#更新-intl-的数据internalgointl)）。
 - **其余部分**是为 liustack/quickjs 写的，或者来自 [NOTICE.md](../NOTICE.md) 里列出的项目：分配器（TLSF）、引擎自带的小 libc（musl）、语言数据，以及 `Intl` 和 `Temporal` 的 Go 部分（go-intl、ICU、Chromium）。
 
 liustack/quickjs 的作者列在 [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK)。modernc.org/quickjs 的 `AUTHORS` 文件按它原样保留为 [AUTHORS](../AUTHORS)。

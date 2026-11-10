@@ -111,13 +111,13 @@ vm.SetClock(nil)
 
 发布版本：v0.27.0。
 
-`intl` 包加上了 `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，它们建立在 go-intl 上（`internal/gointl`，见 [Updating go-intl](../upgrading.zh-CN.md#更新-go-intlinternalgointl)），和其他构造函数共用同一座桥和同一个注册表。`localeCompare` 按 locale 的排序规则排序，`toLocaleUpperCase` 和 `toLocaleLowerCase` 像 V8 一样遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则，而 QuickJS 按码点排序，各种语言的大小写映射也一样。`Intl.Locale` 在任何构造函数接收 locale 的地方都代表它的标签。其余的构造函数现在使用同样的数据包，见下文。
+`intl` 包加上了 `Intl.Collator`、`Intl.Segmenter`、`Intl.RelativeTimeFormat`、`Intl.ListFormat`、`Intl.DisplayNames`、`Intl.DurationFormat`、`Intl.Locale` 和 `Intl.supportedValuesOf`，它们建立在 go-intl 上（`internal/gointl`，见 [Updating go-intl](../upgrading.zh-CN.md#更新-intl-的数据internalgointl)），和其他构造函数共用同一座桥和同一个注册表。`localeCompare` 按 locale 的排序规则排序，`toLocaleUpperCase` 和 `toLocaleLowerCase` 像 V8 一样遵循土耳其语、阿塞拜疆语、立陶宛语和希腊语的规则，而 QuickJS 按码点排序，各种语言的大小写映射也一样。`Intl.Locale` 在任何构造函数接收 locale 的地方都代表它的标签。其余的构造函数现在使用同样的数据包，见下文。
 
 每个构造函数接受 Chromium 156 有的 locale，并提供 Chromium 为它们提供的数据：Chromium 的 ICU 数据里缺少某种语言的相对时间、列表或单位的地方（az、bs、kk、kok、pa、sd、uz 以及它们的一些文字和地区就是这样），输出是 root 的或英语的，和 Chromium 一样（`intl/gointl.go` 里的 `chromiumData`，由 `TestChromiumData` 推导出来）。输出与 Chromium 的在这些语言的 14,269 个表达式上做了对比（`intl/golden_gointl_test.go`，用 `record.cjs golden <set>` 记录）。现在有 13,671 个完全一致。另外 598 个不同，原因在包文档里列出，每个都对应 `intl/golden_test.go` 里 `goldenDifferences` 的一条规则：`Segmenter` 的 2,901 个里有 104 个（Chromium 自己的断词规则以及老挝语和高棉语的词典），`DisplayNames` 的 1,635 个里有 475 个（Chromium 的 ICU 数据名称更少，另有几个它自己的名称），`DurationFormat` 的 1,042 个里有 6 个（V8 在超过 2\*\*63 纳秒时按机器的规则溢出），`supportedValuesOf` 的 23 个里有 1 个（更多的货币），`Locale` 的 1,415 个里有 12 个（001 的五个时区、`baseName` 里的 `-u-va-posix`、未知地区）。`Collator`（1,372）、`RelativeTimeFormat`（1,247）、`ListFormat`（1,298）和大小写映射（3,336）完全一致。test262 对 ECMA-402 的理解与 V8 不同时，答案以 V8 为准：值为 `yes` 的 `-u-` 关键字、没有已知书写方向的文字的 `getTextInfo`、只检查第一个 locale 的 `toLocaleUpperCase`，以及两个 `DurationFormat` 的用例。这些函数有内置函数的 shape，并且和其他的一样忽略页面对内置对象的改动：`shape.json` 和 `tamper.json` 是在 Chromium 里记录的。在 Temporal 和其余格式化器迁到 go-intl 之前，test262 的 Intl402 测试在 6764 个运行中通过 2282 个。当前完整的对比见下文。
 
 这第一批构造函数的代价，在 AMD EPYC 7B13 的一个核上，不开 PGO，对比之前的版本：
 
-- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags quickjs_intl_nonames,quickjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.zh-CN.md#更新-go-intlinternalgointl)）：带上它们，商店大 12.6 MB。
+- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags quickjs_intl_nonames,quickjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.zh-CN.md#更新-intl-的数据internalgointl)）：带上它们，商店大 12.6 MB。
 - 内存和启动：`Register` 多用 0.01 ms 和 4 KB。VM 里第一次使用用 0.49 ms（以前 0.24 ms），用过 `Intl` 的 VM 比 `Register` 之后多占 151 KB（以前 77 KB）。它安装的 JavaScript 从 17 KB 的源码变成了 36 KB。进程里第一次排序用 4.7 ms，第一次分词用 2.7 ms，用来读取它们的数据。
 - 调用：`new Intl.Collator('de')` 用 2.8 µs，`compare` 用 2.4 µs，`new Intl.Segmenter('en', {granularity: 'word'})` 用 4.0 µs，遍历 60 个字符的词用 78 µs（它的字素用 185 µs），`RelativeTimeFormat.format` 用 2.4 µs，三项的 `ListFormat.format` 用 6.5 µs，`DisplayNames.of` 用 1.6 µs，`DurationFormat.format` 用 11 到 16 µs，`new Intl.Locale` 用 19 µs，`maximize` 用 18 µs，`getWeekInfo` 用 105 µs，`supportedValuesOf('timeZone')` 用 61 µs，60 个字符的 `toLocaleUpperCase('tr')` 用 4.8 µs（不带 locale 时 1.4 µs）。
 - 创建 `NumberFormat` 或 `PluralRules` 多用 0.1 µs，创建 `DateTimeFormat` 多用 0.3 µs。格式化用时不变。
@@ -178,7 +178,7 @@ Intl 和 Temporal 共用内嵌的 ICU tz 2026e 数据包。伪造的 `ZONEINFO` 
 
 在 GCP linux/amd64 上，test262 `2e0a5676` 用同样的新建 VM 运行器，注册 Intl 和 Temporal，两种模式运行每个 Intl402 文件。对比 main `641e996`，通过数从 6764 个运行中的 6276 个升到 6618 个。新增通过 366 个，新增失败 24 个。Chromium 156 在这 24 个断言上也全部失败：伊斯兰历的回退、旧的 ACT 时区别名，以及 Temporal 的纪元和小时周期规则。其余 146 个失败包括 NumberFormat 的范围、运行器承载不了的第二个 realm 的测试，以及已有的 V8 差异。没有哪个新增失败的用例在 Chromium 里是通过的。引擎单独的 58 个错误的测试集没有重跑。
 
-数字数据包记录了它的 ICU 资源已经解析好。go-intl 的原始源保留各自独立的数字和货币别名规则。`qjs-sync.sh test` 拿原始的完整数据对照上游语料检查，`test-chromium` 则拿发布的数据包对照 liustack/quickjs 的浏览器语料检查。
+数字数据包记录了它的 ICU 资源已经解析好。go-intl 的原始源保留各自独立的数字和货币别名规则。`data.sh test` 拿原始的完整数据对照上游语料检查，`test-chromium` 则拿发布的数据包对照 liustack/quickjs 的浏览器语料检查。
 
 六个链接进来的数据包共 9,352,287 字节。猜测主机时区的数据包仍然不链接。在 GCP linux/amd64、Go 1.27.2 上，tifa 商店 `fb31f616` 用 `go tool tifa build` 加 `-ldflags=-w` 和同一份应用 PGO profile 构建，是 31,967,614 字节，main `641e996` 上是 32,078,049。小了 110,435 字节，约 0.34%。profile 的 SHA256 是 `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`。
 
@@ -227,7 +227,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 | NumberFormat/en-US | 1109.000 (1109.000 to 1109.000) | 1395.000 (1375.000 to 1405.000) |
 | NumberFormat/zh-CN | 1109.000 (1109.000 to 1109.000) | 1405.000 (1390.000 to 1410.000) |
 
-测试：`TestGoIntlMigration`、`TestEmbeddedZonePack`、每个 Intl golden 集合、Temporal 格式化语料、构造函数的形状、篡改、注册表的共享和淘汰，以及链接测试。`qjs-sync.sh pack -check` 检查可复现性，数据包测试检查共享池的引用。go-intl 或 Chromium 更新之后，重新记录 ICU 清单，重建数据包，并复查每个有变化的表达式。见 [upgrading.md](../upgrading.zh-CN.md#更新-intl-语言数据)。
+测试：`TestGoIntlMigration`、`TestEmbeddedZonePack`、每个 Intl golden 集合、Temporal 格式化语料、构造函数的形状、篡改、注册表的共享和淘汰，以及链接测试。`data.sh pack -check` 检查可复现性，数据包测试检查共享池的引用。go-intl 或 Chromium 更新之后，重新记录 ICU 清单，重建数据包，并复查每个有变化的表达式。见 [upgrading.md](../upgrading.zh-CN.md#更新-intl-语言数据)。
 
 ## 编译好的 Intl 格式化计划
 
@@ -241,7 +241,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 
 最终的 profile 把数字剩下的分配挪到了取决于值的分组和组装上。日期分配的是它的输出、空格替换和数字字段。这些共享的舍入和字段例程仍然同时服务字符串和 parts。[页面测量](../history.zh-CN.md#intl-格式化) 并不能证明整页变快了。
 
-测试：`TestFormatStringMatchesParts`、`TestQJSCachedSource`、`TestQJSDataCacheBound`、现有的 Chromium 语料、并发注册表测试、篡改和链接测试。`BenchmarkFormat` 用上面的输入覆盖构造、格式化和不带缓存的 resolve。上游的改动保留在 `qjs.patch` 里。更新 go-intl 之后，从那个补丁重建它，检查源的隔离和并发使用，对比每个记录下来的答案，并重复针对性的测量。
+测试：`TestFormatStringMatchesParts`、`TestQJSCachedSource`、`TestQJSDataCacheBound`、现有的 Chromium 语料、并发注册表测试、篡改和链接测试。`BenchmarkFormat` 用上面的输入覆盖构造、格式化和不带缓存的 resolve。改动它之后，检查源的隔离和并发使用，对比每个记录下来的答案，并重复针对性的测量。
 
 ## Intl.Segmenter 边读边找分段
 
@@ -249,7 +249,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 
 Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。这些内存不算在 VM 的内存上限里，VM 留着的每个迭代器带着的文本（见下文）也不算，而且前面很远处的一个断点（比如一长段要用词典切分的文本之后的断点）是在不检查 VM 的情况下找出来的。
 
-第一批是 64 个断点，之后每批和前面所有批加起来一样长，最多 65,536 个，所以读完所有分段只要很少几次调用。每批的活每 256 个断点检查一次 VM（见 [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。go-intl 的 `breaker.go` 通过 `qjs.patch` 改成一次找一个边界，`qjs_segments.go` 把它们作为 `Segmenter.Iter` 提供出来。
+第一批是 64 个断点，之后每批和前面所有批加起来一样长，最多 65,536 个，所以读完所有分段只要很少几次调用。每批的活每 256 个断点检查一次 VM（见 [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。go-intl 的 `breaker.go` 改成一次找一个边界，`qjs_segments.go` 把它们作为 `Segmenter.Iter` 提供出来。
 
 每一批从上一批停下的地方接着找，用的是同一个断点迭代器。go-intl 找到的断点取决于它的迭代器之前看到过什么（词典切分的那些片段，它找到的断词引擎），所以只有一个迭代器从头找到尾，结果才和整段走一遍相同。因此 VM 保留最近读过的 4 个 Segments 对象的迭代器，每个带着它的 UTF-16 文本，直到 VM 关闭。迭代器被丢掉的 Segments 对象会从文本开头重新建一个，并走过它已经有的断点：出来的断点一样，只是多花些时间。每个分段都和原来一样，不管是通过迭代器，还是在任何位置调用 `containing`。
 
@@ -281,6 +281,6 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 
 Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标签长度成正比的时间解析一个长的 locale 标签。ECMA-402 的 BestAvailableLocale 每次从标签末尾去掉一个子标签，直到某个服务支持剩下的部分，而 go-intl 对去掉后的每一段都查一次，每次都把它复制进查找用的键里，所用时间随标签长度的平方增长。合法的标签可以很长，因为私用部分可以带任意多个子标签：`new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")` 是一个 1 MiB 的标签，在 M 系列 Mac 上要 6.8 秒，4 MiB 的要 58 秒，都在 Go 里，而且不检查中断标志。
 
-现在 go-intl 的 `negotiate.go` 通过 `qjs.patch` 记下每个服务列表里最长标签的长度，比它长的部分不再查找，因为没有服务支持这么长的标签。去掉子标签的方式和原来一样，所以每个答案都不变。上面两个标签现在分别要 33 和 55 ms，也就是把它们变成规范形式的时间。页面传的那种标签比每个上限都短，查找方式和原来一样。
+现在 go-intl 的 `negotiate.go` 记下每个服务列表里最长标签的长度，比它长的部分不再查找，因为没有服务支持这么长的标签。去掉子标签的方式和原来一样，所以每个答案都不变。上面两个标签现在分别要 33 和 55 ms，也就是把它们变成规范形式的时间。页面传的那种标签比每个上限都短，查找方式和原来一样。
 
 测试：`intl/limits_test.go` 里的 `TestLongTagResolves`（在一个带 64Ki 个子标签的私用标签上测构造函数和 `supportedLocalesOf`，原来每个都要一秒以上）。

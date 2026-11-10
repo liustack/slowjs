@@ -61,7 +61,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `intl/testdata/chromium/` | Chromium 的答案，给 golden 测试用，以及记录它们的 `record.cjs` |
 | `temporal/` | 包 `github.com/liustack/quickjs/temporal`，给 VM 用的 `Temporal` |
 | `temporal/testdata/` | 和 Chromium 对照的表达式及它的答案，以及链接测试构建的程序 |
-| `internal/gointl/` | go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-go-intlinternalgointl)） |
+| `internal/gointl/` | 我们自己的纯 Go ECMA-402 和 Temporal，从 go-intl 复制过来一次，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-intl-的数据internalgointl)） |
 | `internal/intlhook/` | 包 `temporal` 从包 `intl` 拿的东西：它的 `toLocaleString` 的格式化，以及 VM 的默认时区 |
 | `internal/vmhook/` | `intl`、`temporal` 和 `fmt` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `quickjs` 设置（`vmhook.go`） |
 | `fmt/` | 包 `github.com/liustack/quickjs/fmt` |
@@ -109,7 +109,7 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 
 - **`intl/`**：所有 `Intl` 构造函数、`toLocale*` 和 `localeCompare`，给调用了 `Register(vm)` 的 VM 用。QuickJS 没有 `Intl`，所以没调用 `Register` 就去用它的页面会得到 `ReferenceError`。javascript 一侧是 `intl.js` 和 `stub.js`，决定在 Go 里做，建在 `internal/gointl` 上，`bridge.go` 顶部的注释说明怎么加一个构造函数。改过格式化器之后，`intl/golden_test.go` 是最要紧的检查：数据知道规范不知道的细节。它怎么工作，输出怎么和 Chromium 对照：见 [time-and-intl.md](changes/time-and-intl.zh-CN.md)。
 - **`temporal/`**：`Temporal`，给调用了 `Register(vm)` 的 VM 用，和 `intl/` 的构造方式一样。go-intl 的 temporal 包做所有计算，通过 `bridge.go` 里的一个 Builtin，它的第一个参数写明操作名（`opNames` 列表）。见 [temporal.md](changes/temporal.zh-CN.md)。
-- **`internal/gointl/`**：go-intl（纯 Go 的 ECMA-402 和 Temporal）的副本，停在 `internal/gointl/UPSTREAM` 里的提交，`intl` 和 `temporal` 使用它。只有 `qjs*` 文件和 `UPSTREAM` 是我们的。go-intl 的文件只能通过 `qjs.patch` 和 `qjs-sync.sh` 改（见[更新 go-intl](upgrading.zh-CN.md#更新-go-intlinternalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
+- **`internal/gointl/`**：我们自己的纯 Go ECMA-402 和 Temporal，从 go-intl v0.6.1 复制过来一次，之后随便改，`intl` 和 `temporal` 使用它。`qjsdata/` 里的数据包由 `data.sh` 从 `internal/gointl/UPSTREAM` 里那个 go-intl 版本的数据生成（见[更新 Intl 的数据](upgrading.zh-CN.md#更新-intl-的数据internalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
 - **`fmt/`**：包 `github.com/liustack/quickjs/fmt`，是这个模块的一部分。它用 `Register(obj Value)` 给 VM 提供 Go 的 `fmt.Printf`、`Println`、`Sprintf` 和 `Sprint`，在 javascript 里用小写名字（`fmt.println`）。每个函数先从格式和参数算出输出字节数的上界（`fmt/bound.go`），输出可能让 Go 的 fmt 分配的内存（上界的 16 倍再加造输出的 printer 的几 KiB）超过 VM 在内存上限下还剩的空间时，以内存不足的错误结束调用（Go 运行时为它的池做的准备不算在内）。Go 造输出时不检查 VM，所以 `Interrupt` 和 eval 超时都停不下它。
 - **`compare/`**：一个独立的模块（`github.com/liustack/quickjs/compare`），在这个引擎、goja 和 `github.com/fastschema/qjs` 上运行 `compare/testdata/` 里的 QuickJS 微基准。`make benchmark` 在那里运行。它独立成模块，是为了让它的依赖不进库的 `go.mod`。`compare/go.mod` 把 `github.com/liustack/quickjs` 替换成 `../`，所以基准构建的是工作树，而 `go mod tidy`（`benchmark` 目标先运行它）从根 `go.mod` 取其他版本：不要手工复制它们。
 

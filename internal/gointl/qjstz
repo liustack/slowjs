@@ -5,7 +5,7 @@
 
 # The time zones the packs carry: ICU's time zone update TZ_VERSION, from
 # the icu-data repository (tzdata/icunew/<version>/44), in place of the one
-# go-intl's data was made from. qjs-sync.sh reads this file: "checkout"
+# go-intl's data was made from. data.sh reads this file: "checkout"
 # fetches the files, checks their sha256 and runs go-intl's own tzgen on
 # them, and "pack" packs its output. To move to a new update, set the
 # version and the four checksums, then run checkout and pack.

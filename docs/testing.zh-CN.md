@@ -114,7 +114,7 @@ go test -p 2 ./intl -run 'GoIntlMigration|EmbeddedZonePack|FormatStringMatchesPa
 go test -p 2 ./internal/intlhook                        # private state across GC and Close
 go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
-internal/gointl/qjs-sync.sh pack -check                  # shared Intl data is what the generator makes
+internal/gointl/data.sh pack -check                  # shared Intl data is what the generator makes
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 go test -run '^$' -bench CopyProps .                    # the cost of createElement and cloneElement with React's loop and with the function of RegisterCopyProps, on configs of a page

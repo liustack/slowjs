@@ -16,7 +16,7 @@ import (
 
 // TestQJSResolveMatchesChromium asks every service for each of go-intl's
 // available locales and holds the locale it resolves to against the one the
-// Chromium build of qjsdata/chromium.json answered (qjs-sync.sh chromium
+// Chromium build of qjsdata/chromium.json answered (data.sh chromium
 // records it).
 func TestQJSResolveMatchesChromium(t *testing.T) {
 	b, err := os.ReadFile("qjsdata/chromium.json")
