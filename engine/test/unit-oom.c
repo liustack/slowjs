@@ -1571,6 +1571,88 @@ static void test_key_names_oom(void)
           want, 65536);
 }
 
+/* The decomposition of normalize grows its buffer (to_nfd), and out of
+   memory there fails the call and frees the buffer. */
+static void test_normalize_oom(void)
+{
+    static const char *const want[] = { "900", NULL };
+
+    sweep("normalize", "normalize.js", NULL,
+          "String('\\ufb03'.repeat(300).normalize('NFKD').length)", want, 16384);
+}
+
+/* A Map or Set whose table cannot grow keeps the table it has and goes on,
+   with no exception left behind, and a record it adds has its value from the
+   start, as a collection may run while the table grows. The 256th set
+   doubles the table from 1 KiB to 2 KiB. f, called from here so that nothing
+   is compiled, adds that record and returns the size, which needs no more
+   memory: a room with no space for the growth (fewer than 1 KiB, or a full
+   heap with no block of 2 KiB given back) still lets it work. */
+#define MAP_GROW_BYTE_ROOMS (2048 / 8 + 1)
+static void test_map_grow_oom(void)
+{
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), k;
+    int failed = 0, small_worked = 0;
+
+    for (k = 0; k < nfill + MAP_GROW_BYTE_ROOMS; k++) {
+        VM v = vm_new();
+        JSValue g, f, r;
+        int fail, unc, small;
+        char *t;
+
+        if (!eval_ok(v.ctx, "var m = new Map(); for (var i = 0; i < 255; i++) m.set(i, i);"
+                            "function f() { m.set(255, 255); return m.size }")) {
+            CHECK(0, "Map grow: the setup failed");
+            vm_free(&v);
+            return;
+        }
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        if (k < nfill) {
+            fill_memory(&v);
+            free_blocks(&v, rm[k].min, rm[k].max, rm[k].n);
+            small = rm[k].n == 0 || rm[k].max < 2048;
+        } else {
+            room(&v, (k - nfill) * 8);
+            small = (k - nfill) * 8 < 1024;
+        }
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        fail = JS_IsException(r);
+        unc = JS_IsUncatchableException(v.ctx);
+        if (k < nfill)
+            release_blocks(&v);
+        else
+            unlimit(&v);
+        if (fail) {
+            failed++;
+            t = exception_text(v.ctx);
+            CHECK(unc, "Map grow: room %zu: a catchable exception: %s", k, t ? t : "?");
+            free(t);
+        } else {
+            CHECK(!JS_HasException(v.ctx), "Map grow: room %zu: it worked with an exception pending", k);
+            free(exception_text(v.ctx));
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 256,
+                  "Map grow: room %zu: f gave no 256", k);
+            if (small)
+                small_worked++;
+        }
+        JS_FreeValue(v.ctx, r);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        JS_FreeValue(v.ctx, r);
+        t = eval_text(v.ctx, "var ok = m.size === 256;"
+                             "for (var i = 0; i < 256; i++) ok = ok && m.get(i) === i; ok");
+        CHECK(t && strcmp(t, "true") == 0, "Map grow: room %zu: with the memory back: %s", k, t ? t : "(exception)");
+        free(t);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "Map grow: no room made it fail");
+    CHECK(small_worked > 0, "Map grow: no room without space for the growth let it work");
+}
+
 /* Appending to a variable grows its string in place or copies it with room
    to grow (JS_ConcatStringAppend). Out of memory at any copy fails the
    append and leaves the variable with the whole string it had: the closure
@@ -1702,6 +1784,8 @@ int main(void)
     test_split_paths_oom();
     test_compile_names_oom();
     test_key_names_oom();
+    test_normalize_oom();
+    test_map_grow_oom();
     test_string_append_oom();
     test_copy_props_oom();
     test_tags_oom();

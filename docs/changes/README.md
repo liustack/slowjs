@@ -118,6 +118,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Parsing a long source reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
 | Comparing and copying long strings reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#comparing-and-copying-long-strings-reads-the-interrupt-flag) |
 | Resizing a large ArrayBuffer reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#resizing-a-large-arraybuffer-reads-the-interrupt-flag) |
+| Out of memory in normalize and in the growth of a Map | Unreleased | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
 
 ## Errors and stacks
 

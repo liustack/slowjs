@@ -55540,6 +55540,8 @@ static int js_string_normalize1(JSContext *ctx, uint32_t **pout_buf,
     js_free(ctx, buf);
     if (out_len == -2)
         __js_poll_interrupts(ctx);
+    else if (out_len == -1)
+        JS_ThrowOutOfMemory(ctx); /* the growth of the buffer failed */
     if (out_len < 0)
         return -1;
     *pout_buf = out_buf;
@@ -64062,11 +64064,13 @@ static void map_hash_resize(JSContext *ctx, JSMapState *s)
     struct list_head *el;
     JSMapRecord *mr, **new_hash_table;
 
-    /* XXX: no reporting of memory allocation failure */
+    /* A table that cannot grow stays as it is, which is still a whole
+       table, so the failure throws nothing: js_realloc would leave the out
+       of memory error pending under a call that goes on and succeeds. */
     new_hash_bits = min_int(s->hash_bits + 1, 31);
     new_hash_size = 1U << new_hash_bits;
-    new_hash_table = js_realloc(ctx, s->hash_table,
-                                sizeof(new_hash_table[0]) * new_hash_size);
+    new_hash_table = js_realloc_rt(ctx->rt, s->hash_table,
+                                   sizeof(new_hash_table[0]) * new_hash_size);
     if (!new_hash_table)
         return;
 
@@ -64100,6 +64104,9 @@ static JSMapRecord *map_add_record(JSContext *ctx, JSMapState *s,
         return NULL;
     mr->ref_count = 1;
     mr->empty = FALSE;
+    /* set before the record is in the table: the caller sets the value
+       after the table grows, and a collection may look at it before */
+    mr->value = JS_UNDEFINED;
     if (s->is_weak) {
         mr->key = js_weakref_new(ctx, key);
     } else {

@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -384,6 +384,20 @@ eval 超时依次设成一次调用用时的每个六分之一时，把 256 MiB 
 - `JS_DetectModule` 在源码开头找 `import` 和 `export`，不读标志，因为它没有运行时。Go API 不调用它。
 
 测试：`TestArrayBufferMoveStops`（根包）给把 256 MiB 的 `ArrayBuffer` `resize` 和 `transfer` 到四分之一再改回来计时，再在这段时间的每个六分之一处停下这个调用的循环，每次都在新的 VM 里，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`），缓冲区是两个长度之一、字节还在、没有被分离，之后还能再做一次这个调用。改动前的引擎每种的 5 次停止里有 4 次失败。`engine/test/unit.c` 里的 `test_heap_move_polls` 要求把 32 MiB 的缓冲区 `resize` 和 `transfer` 到四分之一再改回来至少读 32 次标志，在每次读取处停下，检查调用以 `interrupted` 结束而不是以内存不足的错误结束，检查之后的缓冲区，最后释放运行时，不剩一块内存。`engine/test/heap-test.c` 里的 `scenario_move_stop` 在每次读标志处停下一个要搬动的专用块的变大和缩小，要求失败、`stopped` 已设置，堆、它的 chunk 和这块都和原来一样（见 [allocator.md](../allocator.zh-CN.md#测试)）。`test_error_reads_no_flag` 在一个 C 函数里造错误，标志在第一次读取时就会被置上，栈超过 4 MiB，要求一次也不读、栈完整。
+
+## normalize 和 Map 变大时的内存不足
+
+发布版本：Unreleased。
+
+`String.prototype.normalize` 把字符串分解进一个会变大的缓冲区（`to_nfd`）。变大失败时，`unicode_normalize` 返回失败却不释放这个缓冲区，`js_string_normalize1` 把失败返回出去，也不抛异常：调用失败了，却没有挂着的异常，Go API 没法把它报告成内存不足，运行时也永远留着这块内存。对 `'ﬃ'.repeat(300).normalize('NFKD')` 在从零到 16 KiB 的每个剩余空间下扫一遍，有 40 个空间失败时抛出的异常不是无法捕获的，158 个运行时释放时还有内存块在用。上游 QuickJS 是同样的代码（commit `092277ac`）。
+
+Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一倍（`map_hash_resize`）。扩大用的是 `js_realloc`，它失败时会抛出内存不足的错误，可 Map 带着原来的表接着用，`set` 和 `add` 照常返回，于是错误挂在一个成功了的调用下面，下一次调用就带着它失败，尽管 Map 是完整的。`map_add_record` 刚放进表里的记录还没有值，而造错误可能触发一次垃圾回收，回收会去看各条记录的值。上游 QuickJS 也是同样的代码。
+
+现在 `unicode_normalize` 失败时释放缓冲区，`js_string_normalize1` 为它抛出内存不足的错误，`map_hash_resize` 用不抛异常的 `js_realloc_rt` 扩大表，失败时留着原来的表，`map_add_record` 在把记录放进表之前先把它的值设成 `undefined`。
+
+没扩大的表就是 Map 原来那张完整的表，查找要走更长的链，直到后面某次添加把表扩大。代价是 Map 或 Set 每条新记录多一次写入。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench tifa-ssr`，取 12 次和 2 次渲染之差，只算 `internal/cengine` 的函数），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 265,226,497 条，改动后 265,227,872 条，+0.00%：`map_add_record` 多 110 条。tifa 的每个页面渲染出的 HTML 都不变。
+
+测试：`engine/test/unit-oom.c` 里的 `test_normalize_oom` 在从零到 16 KiB 的每个剩余空间下，以及堆满时的每个空间下，扫 `normalize`，要求得到结果或无法捕获的内存不足错误，内存回来后再得到结果，最后不剩一块内存。`test_map_grow_oom` 从 C 调用一个函数，给有 255 条记录的 Map 加第 256 条，这会把表从 1 KiB 扩大到 2 KiB，剩余空间取从零到 2 KiB 的每个值，以及堆满时的每个空间。它要求得到大小或无法捕获的错误，调用成功时没有挂着的异常，内存回来后每条记录都在，最后不剩一块内存，还要求某个放不下扩大的空间（不到 1 KiB，或者堆满后没有还回 2 KiB 的块）能让调用成功。改动前的引擎两项都失败：没有一个放不下扩大的空间能让第 256 次 `set` 成功。
 
 ## 异常关闭迭代器时，迭代器 return 方法里的内存不足
 
