@@ -67,6 +67,10 @@ So a VM that a pool uses for many renders keeps no target from one call to the n
 
 A program that read `deref` in a later job sees the same as before. A test of the engine that made a `WeakRef` and dropped its target without the job ending now ends the job first (`test_free_order` in `engine/test/unit.c`, `test_young_leaves_no_zero_count` in `engine/test/unit-white.c`).
 
+### What it costs
+
+Under callgrind on linux/amd64, against main `32307c7e`, both built with `-pgo=off`, counting 10 renders after 2: a render of tifa's bench page runs 265,495,178 instructions where main runs 265,470,587 (+0.01%), 263,961,491 of them in the engine where main runs 263,960,294. A render of the React page runs 51,089,722 where main runs 51,091,721 (0.00%), 50,726,736 of them in the engine where main runs 50,730,514. With no `WeakRef` made, the end of a call or a job is one call into the engine that finds no set. The HTML of the shop (20 pages), MUI (3 pages) and bench (2 pages) is the same byte for byte. While a job runs, the set takes 32 to 64 bytes for each target on 64-bit targets (16 a slot, at most half full), and the end of the job gives it all back.
+
 ### Tests
 
 - `TestWeakRefKeptDuringJob` (`weakref_test.go`): the target of a new `WeakRef` and of `deref` is there in its call, in a Go function the call runs, in the javascript that function evaluates and after Go code ran the jobs inside the call (a Go function, or the `MarshalJSON` of an argument of `Call`), and gone in the next call. Each promise job of `ExecutePendingJobs` is a job of its own. `TestWeakRefKeptReleasedAfterTimeout`: a call the eval timeout stopped lets its targets go too.

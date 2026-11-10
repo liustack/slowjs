@@ -67,6 +67,10 @@ Symbol 有引用计数，但不是 GC 对象列表上的节点。弱集合有 sy
 
 在后面的任务里读 `deref` 的程序看到的和以前一样。引擎里那些创建 `WeakRef`、丢掉目标却没让任务结束的测试，现在先结束任务（`engine/test/unit.c` 的 `test_free_order`，`engine/test/unit-white.c` 的 `test_young_leaves_no_zero_count`）。
 
+### 代价
+
+在 linux/amd64 上用 callgrind 对比 main `32307c7e`，两边都用 `-pgo=off` 构建，计 2 次渲染之后的 10 次：tifa 的 bench 页面渲染一次执行 265,495,178 条指令，main 是 265,470,587（+0.01%），其中引擎里 263,961,491 条，main 是 263,960,294 条。React 页面渲染一次执行 51,089,722 条，main 是 51,091,721（0.00%），其中引擎里 50,726,736 条，main 是 50,730,514 条。没有创建 `WeakRef` 时，一次调用或一个任务结束只是一次进入引擎的调用，发现没有集合就返回。商店（20 个页面）、MUI（3 个页面）和 bench（2 个页面）的 HTML 逐字节相同。任务运行期间，在 64 位目标上集合每个目标占 32 到 64 字节（每个槽 16 字节，最多半满），任务结束时全部还回去。
+
 ### 测试
 
 - `TestWeakRefKeptDuringJob`（`weakref_test.go`）：新 `WeakRef` 的目标和 `deref` 的目标在它所在的调用里、在这次调用运行的 Go 函数里、在这个函数求值的 javascript 里、在 Go 代码于调用之中运行过任务之后（Go 函数，或者 `Call` 参数的 `MarshalJSON`）都在，下一次调用里就没了。`ExecutePendingJobs` 的每个 promise 任务各是一个任务。`TestWeakRefKeptReleasedAfterTimeout`：被 eval 超时停下的调用也会放掉它的目标。
