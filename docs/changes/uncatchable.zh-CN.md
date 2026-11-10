@@ -411,7 +411,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 这一位在状态变化的地方置上，因为只有引擎知道异常什么时候挂起并变成无法捕获，而这个状态只在这两个函数里变：别处对挂起异常的写入（解释器的 `catch`、迭代器的关闭）只会取走可以捕获的异常。解释器本来就在每次向后跳转时读标志，所以那里什么也没加，循环在下一次跳转就停下，不用等宿主下一次轮询，那可能要再过 10,000 次计数。改成让这些内置函数各自返回异常，要改上游代码里大约 20 处，上游以后每个加了这种地方的 commit 也都要再改，而在 Go 的轮询里检查，原生宿主和 C 的其他宿主就都没有这个保护。
 
-代价是 `JS_GetException` 和 `JS_SetUncatchableException` 里多几条指令，它们只在取走异常或把异常设成无法捕获时运行，不在不抛异常的路径上。解释器和它的栈帧都不变（amd64 上 $496，arm64 上 $520），脚本能递归的深度也不变。
+代价是 `JS_GetException` 和 `JS_SetUncatchableException` 里多几条指令，它们只在取走异常或把异常设成无法捕获时运行，不在不抛异常的路径上。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench`，取 12 次和 2 次渲染之差，只算 `internal/cengine` 的函数），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 263,959,744 条，改动后 263,959,698 条，React 渲染一次是 50,730,450 条和 50,730,514 条，都是 +0.00%。tifa 的每个页面渲染出的 HTML 都不变。解释器和它的栈帧都不变（amd64 上 $496，arm64 上 $520），脚本能递归的深度也不变。
 
 测试：`engine/test/unit-oom.c` 里的 `test_uncatchable_then_loop` 让以下几处内存不足：交给 resolve 函数的 thenable 的 `then` getter，第一个 `await` 之前的 async 函数，异步生成器，`import()` 说明符的转换，以及从任务里调用的 async 函数，每处之后都跟着 `for (;;) {}`。它要求宿主停下循环之前（`host_poll_stop_after`，读 4Mi 次标志）就得到无法捕获的内存不足错误，取走异常后标志为 0，之后还能跑一个循环。`test_uncatchable_flag_bit` 要求标志里的 2 恰好在有无法捕获的异常挂起时存在：由 `JS_SetUncatchableException` 置上，由 `JS_GetException` 和把异常改成可以捕获时清掉，可以捕获的异常或没有异常挂起时从不置上，而宿主的 1 在每一步都保留。`TestUncatchablePendingEndsLoop`（`uncatchable_return_test.go`）在不设超时时做前四种，分别用内存不足错误和一个会 panic 的 Go 函数，要求得到这个错误或 panic，没有挂起的异常，之后还能跑一个循环。改动之前，两个测试的每一种都一直运行，直到宿主把它停下。
 
