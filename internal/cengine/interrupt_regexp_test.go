@@ -91,3 +91,54 @@ func TestInterruptStopsRegExpCompile(t *testing.T) {
 		})
 	}
 }
+
+// TestInterruptStopsRegExpFlags makes regexps with flags of 16 Mi
+// characters, in the constructor and in a literal, and interrupts each at
+// places spread evenly over it (InterruptAtPoll). Each stop must come within
+// regexpStopPolls, also where the call would end with the SyntaxError of
+// the flags. The compile converted the flags to UTF-8 to check them, which
+// counted the non-ASCII characters of the string with no reading of the
+// flag, about 140 polls for these.
+func TestInterruptStopsRegExpFlags(t *testing.T) {
+	needPolls(t)
+	const caught = `try { %s } catch (e) { if (!(e instanceof SyntaxError)) throw e }`
+	for _, c := range []struct{ name, call string }{
+		{"the constructor", `new RegExp('a' + n++, F)`},
+		{"a literal", `(0, eval)('/a' + n++ + '/' + F)`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			v := newVM(t, Options{Seed: 1})
+			defer closeVM(t, v)
+			h := v.Host()
+			if _, err := v.Eval(`var F = 'g'.repeat(1 << 24), n = 0; F.length`, "setup.js"); err != nil {
+				t.Fatal(err)
+			}
+			v.SetGCThreshold(^uintptr(0))
+			v.RunGC()
+			before := h.Polls()
+			if _, err := v.Eval(fmt.Sprintf(caught, c.call)+`; 0`, "call.js"); err != nil {
+				t.Fatal(err)
+			}
+			span := h.Polls() - before
+			t.Logf("one call took %d polls", span)
+			const trials = 100
+			for trial := range int64(trials) {
+				at := (2*trial + 1) * span / (2 * trials)
+				v.RunGC()
+				h.InterruptAtPoll(h.Polls() + at)
+				// the loop reads the flag after a call that ended with the
+				// SyntaxError of the flags without reading it
+				_, err := v.Eval(`for (;;) `+fmt.Sprintf(caught, c.call), "call.js")
+				h.InterruptAtPoll(0)
+				what := fmt.Sprintf("the stop at poll %d of %d", at, span)
+				var je *JSError
+				if !errors.As(err, &je) || je.Message != "InternalError: interrupted" || !je.Uncatchable {
+					t.Fatalf("%s: Eval gave %v, want the error interrupted", what, err)
+				}
+				if n := h.StopPolls(); n > regexpStopPolls {
+					t.Errorf("%s: %d polls saw the request, want at most %d", what, n, regexpStopPolls)
+				}
+			}
+		})
+	}
+}

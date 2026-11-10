@@ -93,6 +93,7 @@ go test -run 'HostPanic|Handover|Clock' .                # a panic or Goexit in 
 go test -run 'Interrupt|Killed' .                        # Interrupt, and the kill of a script that does not stop
 go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpCompile ./internal/cengine # the compile of a class of many characters or strings stops within a few polls
+go test -tags testhooks -run TestInterruptStopsRegExpFlags ./internal/cengine # a regexp with flags of 16 Mi characters stops within a few polls
 go test -run 'Regex(Scan|Match)Stops' .                  # a timeout stops a regexp on a long string
 go test -run 'RegExpCacheStops|BuiltinWorkStops|StringSearchStops' . # a timeout stops loops of regexp compiles, parsing, string building and searches within a few polls
 go test -run BigIntWorkStops .                         # a timeout stops a product, a division, a power and the conversions of BigInts of a million bits within a few polls

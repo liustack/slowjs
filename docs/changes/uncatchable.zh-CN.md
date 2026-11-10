@@ -415,6 +415,16 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 测试：`engine/test/unit-oom.c` 里的 `test_uncatchable_then_loop` 让以下几处内存不足：交给 resolve 函数的 thenable 的 `then` getter，第一个 `await` 之前的 async 函数，异步生成器，`import()` 说明符的转换，以及从任务里调用的 async 函数，每处之后都跟着 `for (;;) {}`。它要求宿主停下循环之前（`host_poll_stop_after`，读 4Mi 次标志）就得到无法捕获的内存不足错误，取走异常后标志为 0，之后还能跑一个循环。`test_uncatchable_flag_bit` 要求标志里的 2 恰好在有无法捕获的异常挂起时存在：由 `JS_SetUncatchableException` 置上，由 `JS_GetException` 和把异常改成可以捕获时清掉，可以捕获的异常或没有异常挂起时从不置上，而宿主的 1 在每一步都保留。`TestUncatchablePendingEndsLoop`（`uncatchable_return_test.go`）在不设超时时做前四种，分别用内存不足错误和一个会 panic 的 Go 函数，要求得到这个错误或 panic，没有挂起的异常，之后还能跑一个循环。改动之前，两个测试的每一种都一直运行，直到宿主把它停下。
 
+## 检查正则的 flags 时不再遍历长字符串
+
+发布版本：未发布。
+
+编译正则时，flags 是在一份 UTF-8 副本上检查的（`js_compile_regexp` 里的 `JS_ToCStringLen`），而转换先要数整个字符串里的非 ASCII 字符，中途不读中断标志。所以 `new RegExp('a', 'g'.repeat(1 << 24))`，或者在 `eval` 里写 `/a/` 后面跟 16 Mi 个 flags 字符，在停下请求之后还要跑 amd64 上 140 次、arm64 上 55 次轮询，才抛出 `SyntaxError`，更长的字符串会一路跑向 1,000 次轮询，过了这个数轮询就会杀掉脚本。`TestParseStops` 在 GitHub 的 Intel macOS 运行器上碰到了它：在调用六分之五处的停下请求正好落在这次计数里。
+
+现在检查直接读字符串本身的字符，超过 8 个字符的字符串立即拒绝：flags 一共 8 个，每个最多出现一次，更长的字符串一定有重复的 flag 或别的字符，原来的扫描到第 9 个字符时也一定已经发现了。错误还是同一个 `SyntaxError: invalid regular expression flags`。每个合法正则的 flags 仍然和以前一样检查，其他都不变。
+
+测试：`TestInterruptStopsRegExpFlags`（`internal/cengine`，`-tags testhooks`）用 16 Mi 个字符的 flags 创建正则，分别走构造函数和字面量，并在调用中均匀分布的 100 个位置停下，位置按轮询计数（`InterruptAtPoll`），所以在每台机器上都一样。每次停下都必须在 `regexpStopPolls`（9）次轮询之内。改动之前，在 darwin/arm64 上靠近调用末尾的停下最多有 45 次轮询看到请求。
+
 ## 异常关闭迭代器时，迭代器 return 方法里的内存不足
 
 发布版本：v0.29.11。

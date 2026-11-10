@@ -414,6 +414,16 @@ The cost is a few instructions in `JS_GetException` and in `JS_SetUncatchableExc
 
 Tests: `test_uncatchable_then_loop` in `engine/test/unit-oom.c` runs out of memory in the `then` getter of a thenable given to a resolve function, in an async function before its first `await`, in an async generator, in the conversion of the specifier of `import()` and in an async function called from a job, each followed by `for (;;) {}`, and requires the uncatchable out of memory error before the host stops the loop (`host_poll_stop_after`, 4Mi readings of the flag), the flag at 0 once the exception is taken, and a loop that runs after it. `test_uncatchable_flag_bit` requires 2 in the flag exactly while an uncatchable exception is pending, set by `JS_SetUncatchableException` and cleared by `JS_GetException` and by making it catchable, never for a catchable exception or with nothing pending, with the host's 1 kept through each step. `TestUncatchablePendingEndsLoop` (`uncatchable_return_test.go`) does the first four with no timeout, with the out of memory error and with a Go function that panics, and requires the error or the panic, no exception pending and a loop after it. Before the change every case of both ran on until the host stopped it.
 
+## The flags of a regexp are checked without a pass over a long string
+
+Release: Unreleased.
+
+The compile of a regexp checked its flags on a copy in UTF-8 (`JS_ToCStringLen` in `js_compile_regexp`), which first counts the non-ASCII characters of the whole string with no reading of the interrupt flag. So `new RegExp('a', 'g'.repeat(1 << 24))`, or a literal `/a/` followed by 16 Mi flags in `eval`, ran 140 polls on amd64 and 55 on arm64 past a stop before it threw its `SyntaxError`, and a longer string ran on toward the 1,000 polls after which a poll kills the script. `TestParseStops` met it on the macOS runner of GitHub with Intel CPUs, where a stop at five sixths of the call came in that count.
+
+Now the check reads the characters of the string itself, and a string of more than 8 characters is refused at once: there are 8 flags and each may come once, so a longer one has a flag twice or another character, and the scan found that by its 9th character anyway. The error is the same `SyntaxError: invalid regular expression flags`. The flags of every valid regexp are checked as before, and nothing else changes.
+
+Tests: `TestInterruptStopsRegExpFlags` (`internal/cengine`, `-tags testhooks`) makes a regexp with flags of 16 Mi characters, in the constructor and in a literal, and stops it at 100 places spread over the call, counted in polls (`InterruptAtPoll`), so that the places are the same on every machine. Each stop must come within `regexpStopPolls`, 9. Before the change the stops near the end of the call saw up to 45 polls on darwin/arm64.
+
 ## Out of memory in the return method of an iterator that an exception closes
 
 Release: v0.29.11.

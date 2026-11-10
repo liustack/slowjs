@@ -121,6 +121,7 @@ read_when:
 | 改变很大的 ArrayBuffer 的大小时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#改变很大的-arraybuffer-的大小时读中断标志) |
 | normalize 和 Map 变大时的内存不足 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
 | 没有调用的循环也会在挂起的无法捕获的异常处结束 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束) |
+| 检查正则的 flags 时不再遍历长字符串 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#检查正则的-flags-时不再遍历长字符串) |
 
 ## 错误和调用栈
 
