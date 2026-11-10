@@ -227,6 +227,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | WeakMap 的 ephemeron 回收 | v0.27.2 | [weak-collections.md](weak-collections.zh-CN.md) |
+| WeakRef 把目标留到任务结束，调用回到 Go 时宿主结束任务 | 未发布 | [weak-collections.md](weak-collections.zh-CN.md#weakref-把目标留到任务结束) |
 
 ## 引擎里去掉的东西
 

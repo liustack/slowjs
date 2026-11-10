@@ -1971,6 +1971,9 @@ static void test_young_leaves_no_zero_count(void)
                  "globalThis.wm = new WeakMap(); globalThis.wr = null; globalThis.fr = new FinalizationRegistry(() => {});\n"
                  "globalThis.old = {inner: {deep: [1, 2, 3]}}; %s void 0", observe[i]);
         eval_ok(v.ctx, src);
+        /* the job of the setup ends, and with it the hold of the target of
+           a new WeakRef (docs/changes/weak-collections.md) */
+        JS_ClearKeptObjects(v.rt);
         JS_RunGC(v.rt);
         eval_ok(v.ctx, "(() => { const a = {old}, b = {a}; a.b = b; old = null })(); void 0");
         JS_RunYoungGC(v.rt);

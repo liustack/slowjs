@@ -1157,6 +1157,14 @@ int JS_EnqueueJob(JSContext *ctx, JSJobFunc *job_func, int argc, JSValueConst *a
 
 JS_BOOL JS_IsJobPending(JSRuntime *rt);
 int JS_ExecutePendingJob(JSRuntime *rt, JSContext **pctx);
+/* Lets go of the targets the WeakRef constructor and deref kept alive to the
+   end of the job (ClearKeptObjects in the specification). The host calls it
+   where its job ends, when control comes back to it from javascript: after
+   a script it ran, and before and after each job it runs with
+   JS_ExecutePendingJob, which does not call it, since only the host knows
+   whether javascript is still running below (a function of the host may
+   run jobs). JS_FreeRuntime calls it. It runs no javascript. */
+void JS_ClearKeptObjects(JSRuntime *rt);
 
 /* Object Writer/Reader (currently only used to handle precompiled code) */
 #define JS_WRITE_OBJ_BYTECODE  (1 << 0) /* allow function/module */

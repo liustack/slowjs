@@ -40,9 +40,11 @@
    zone kept (JS_SetFusedOps).
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
-   GetAsyncContext and SetAsyncContext of the Go API, as globals, and six
+   GetAsyncContext and SetAsyncContext of the Go API, as globals, and seven
    functions for the scripts that look at the collector: gc() and youngGC()
-   run JS_RunGC and JS_RunYoungGC, memorySize() gives JS_GetMemorySize,
+   run JS_RunGC and JS_RunYoungGC, clearKeptObjects() ends the hold of the
+   targets of WeakRef as the end of a job does (JS_ClearKeptObjects, the
+   $262.clearKeptObjects of test262), memorySize() gives JS_GetMemorySize,
    memoryBlocks() the blocks of the heap in use, heapChange(bytes, blocks)
    tells whether the heap holds the same blocks as when those two were read,
    and setGCThreshold(n) sets JS_SetGCThreshold, to its largest value when n is
@@ -123,6 +125,13 @@ static JSValue js_gc(JSContext *ctx, JSValueConst this_val,
                      int argc, JSValueConst *argv)
 {
     JS_RunGC(JS_GetRuntime(ctx));
+    return JS_UNDEFINED;
+}
+
+static JSValue js_clear_kept_objects(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv)
+{
+    JS_ClearKeptObjects(JS_GetRuntime(ctx));
     return JS_UNDEFINED;
 }
 
@@ -234,6 +243,7 @@ static int define_globals(JSContext *ctx)
                           JS_NewCFunction(ctx, set_async_context, "setAsyncContext", 1)) < 0 ||
         JS_SetPropertyStr(ctx, global, "gc", JS_NewCFunction(ctx, js_gc, "gc", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "youngGC", JS_NewCFunction(ctx, js_young_gc, "youngGC", 0)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "clearKeptObjects", JS_NewCFunction(ctx, js_clear_kept_objects, "clearKeptObjects", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "memorySize", JS_NewCFunction(ctx, js_memory_size, "memorySize", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "memoryBlocks", JS_NewCFunction(ctx, js_memory_blocks, "memoryBlocks", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "heapChange", JS_NewCFunction(ctx, js_heap_change, "heapChange", 2)) < 0 ||
@@ -359,6 +369,8 @@ static int run(const char *path)
         goto done;
     }
     for (;;) {
+        /* the script, or the job before, has ended */
+        JS_ClearKeptObjects(rt);
         r = JS_ExecutePendingJob(rt, &job_ctx);
         if (r == 0)
             break;

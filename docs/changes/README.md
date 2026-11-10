@@ -227,6 +227,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | WeakMap ephemeron collection | v0.27.2 | [weak-collections.md](weak-collections.md) |
+| A WeakRef keeps its target to the end of the job, and the host ends the job when a call returns to Go | Unreleased | [weak-collections.md](weak-collections.md#a-weakref-keeps-its-target-to-the-end-of-the-job) |
 
 ## Left out of the engine
 

@@ -1,7 +1,8 @@
 ---
-summary: 'How full GC collects WeakMap ephemerons, including back references and symbol keys, without keeping their values through an unreachable key'
+summary: 'How full GC collects WeakMap ephemerons without keeping their values through an unreachable key, and how a WeakRef keeps its target to the end of the job'
 read_when:
   - WeakMap values survive after their keys become unreachable
+  - WeakRef.prototype.deref gives undefined or an object you did not expect, or a host ends a job
 ---
 
 # Weak collections
@@ -50,3 +51,25 @@ On linux/amd64 without PGO (AMD EPYC 7B13, one core), against main `453def5` (th
 
 The focused and full test262 results and render measurements must be checked when changing these paths.
 
+## A WeakRef keeps its target to the end of the job
+
+Release: Unreleased.
+
+The specification keeps the target of a `WeakRef` alive to the end of the job that made the `WeakRef` or called its `deref` (AddToKeptObjects, and ClearKeptObjects when the job ends), so that a script reads the same answer from `deref` for the rest of the job. QuickJS never had that list, and neither have upstream QuickJS and quickjs-ng at their latest commits: reference counting frees a target as soon as its last other reference goes. So `new WeakRef({}).deref()` and `const w = new WeakRef(o); o = null; w.deref()` gave `undefined` in the same job, where Node 24 gives the object. test262 does not see it: its tests of `WeakRef` hold the target in a variable, and none of the 33 known errors is about `WeakRef`.
+
+Now the runtime keeps the targets of a job in a set by address (`rt->kept`), so a target read many times is kept once. The constructor and `deref` add theirs (`js_keep_target`). The set is counted under the memory limit: when it cannot grow, the call fails with the out of memory error. `JS_ClearKeptObjects`, new in `engine/quickjs.h`, frees the targets and the set. Only the host knows where its job ends, so the host calls it:
+
+- The Go API calls it when the outermost call into javascript returns to Go (`leave` in `entry.go`), after `Eval`, `Call`, `ExecutePendingJobs` and every other entry, and before each job that `ExecutePendingJobs` or an `Eval` that awaits runs in the outermost call. It runs inside the entry of the call, under its eval timeout, as the conversion of the result does. A Go function that javascript calls, or that `Call` runs to convert an argument, is inside the job of the call, so the targets stay there for it and for the javascript it evaluates, also when it runs the jobs: those jobs run inside the job of the call.
+- `JS_ExecutePendingJob` does not call it, since it cannot tell whether javascript of the host's job is still running below it. The test hosts of `engine/test` (`jsrun`, `render`, `run-test262`, the unit programs) call it after the script and before each job, as the Go API does. `run-test262` also gives `$262.clearKeptObjects`.
+- `JS_FreeRuntime` calls it first.
+
+So a VM that a pool uses for many renders keeps no target from one call to the next, and nothing is kept when a call ends with an error. A VM that a kill left good only for Close lets them go at Close. A target the host still holds, through a `Value`, stays as any other object does.
+
+A program that read `deref` in a later job sees the same as before. A test of the engine that made a `WeakRef` and dropped its target without the job ending now ends the job first (`test_free_order` in `engine/test/unit.c`, `test_young_leaves_no_zero_count` in `engine/test/unit-white.c`).
+
+### Tests
+
+- `TestWeakRefKeptDuringJob` (`weakref_test.go`): the target of a new `WeakRef` and of `deref` is there in its call, in a Go function the call runs, in the javascript that function evaluates and after Go code ran the jobs inside the call (a Go function, or the `MarshalJSON` of an argument of `Call`), and gone in the next call. Each promise job of `ExecutePendingJobs` is a job of its own. `TestWeakRefKeptReleasedAfterTimeout`: a call the eval timeout stopped lets its targets go too.
+- `TestWeakRefKeptReleasedAfterCall`: 200 calls on one VM, each making a `WeakRef` to an array of 65,536 numbers, leave no more memory after a GC than the first call did.
+- `test_weakref_kept` (`engine/test/unit-api.c`) checks the same in the C tree, with a host that ends the job as the Go API does, a symbol target, a function of the host that runs the jobs inside javascript, a full and a young collection in the job, 10,000 targets read 100 times each in one job, and a runtime freed while it keeps targets. `test_weakref_kept_oom` (`engine/test/unit-oom.c`) makes and reads 200 `WeakRef`s, or reads 200 made in an earlier job, with every room up to 64 KiB: each run gives the sum or the out of memory error and leaves no block behind.
+- `test_weak_ref` of the upstream `test_builtin.js` (`engine/test/compare/upstream/`) reads the target after it dropped it, ends the job with `clearKeptObjects()` of `jsrun`, then reads `undefined`. `gc_ephemeron.js` and `young_gc.js` end the job before each collection they ask for.

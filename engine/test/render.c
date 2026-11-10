@@ -43,9 +43,12 @@ static JSRuntime *old_runtime(void)
 }
 #define NEW_RUNTIME() old_runtime()
 #define FREE_RUNTIME(rt) JS_FreeRuntime(rt)
+#define END_JOB(rt) ((void)(rt)) /* it kept no target of WeakRef */
 #else
 #define NEW_RUNTIME() host_new_runtime()
 #define FREE_RUNTIME(rt) host_free_runtime(rt)
+/* the end of a script or a job, as the Go API ends it */
+#define END_JOB(rt) JS_ClearKeptObjects(rt)
 #endif
 
 static const char *arg(int argc, char **argv, const char *name, const char *def)
@@ -171,6 +174,7 @@ static void run_script(JSContext *ctx, const char *path)
         die(ctx, path);
     JS_FreeValue(ctx, v);
     free(src);
+    END_JOB(JS_GetRuntime(ctx));
 }
 
 static void run_jobs(JSRuntime *rt)
@@ -178,7 +182,11 @@ static void run_jobs(JSRuntime *rt)
     JSContext *c;
     int r;
 
-    while ((r = JS_ExecutePendingJob(rt, &c)) != 0) {
+    for (;;) {
+        END_JOB(rt);
+        r = JS_ExecutePendingJob(rt, &c);
+        if (r == 0)
+            break;
         if (r < 0)
             die(c, "a job");
     }

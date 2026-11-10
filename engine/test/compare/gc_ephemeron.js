@@ -16,6 +16,13 @@
 // value of a weak map entry holds, and ask memorySize() how much one
 // collection left.
 setGCThreshold(-1)
+// A collection here stands for one the host makes after a job has ended: the
+// targets that the WeakRefs of the job kept alive to its end go first.
+{
+	const full = gc, young = youngGC
+	globalThis.gc = () => { clearKeptObjects(); full() }
+	globalThis.youngGC = () => { clearKeptObjects(); young() }
+}
 const out = []
 const line = (name, ok, detail) => out.push(name + ": " + (ok ? "ok" : "FAIL " + detail))
 const ev = (src) => (0, eval)(src)

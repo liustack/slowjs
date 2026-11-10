@@ -62,6 +62,7 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 
 	const maxJobs = 1 << 20 // bound a self-feeding microtask loop so it cannot hang the host
 	for n < maxJobs {
+		m.endJob()
 		r := m.jsExecutePendingJob()
 		if r == 0 {
 			return n, err // queue drained
@@ -298,6 +299,7 @@ func (m *VM) await(v jsValue) (jsValue, error) {
 			m.jsThrow(m.jsPromiseResult(v))
 			return exception, m.errFromException()
 		case promisePending:
+			m.endJob()
 			r := m.jsExecutePendingJob()
 			if r == 0 {
 				if jobErr != nil {

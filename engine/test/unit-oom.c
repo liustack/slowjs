@@ -1243,6 +1243,60 @@ static void test_uncatchable_flag_bit(void)
     vm_free(&v);
 }
 
+/* The targets the WeakRef constructor and deref keep to the end of the job
+   are in a set counted under the memory limit: making 200 WeakRefs and
+   reading each, or reading 200 made in an earlier job, with every room up to
+   64 KiB, gives the sum or the uncatchable out of memory error, and leaves
+   no block behind once the job has ended and the runtime is freed. */
+static void test_weakref_kept_oom(void)
+{
+    /* the first makes the WeakRefs in the job, so the constructor grows the
+       set. The second reads WeakRefs made in a job before, so deref does */
+    static const char *const js[] = {
+        "const ws = objs.map(o => new WeakRef(o)); let k = 0;"
+        "for (const w of ws) k += w.deref().i; String(k)",
+        "let k = 0; for (const w of refs) k += w.deref().i; String(k)",
+    };
+    size_t n;
+    int ok, oom, which;
+
+    for (which = 0; which < 2; which++) {
+        ok = oom = 0;
+        for (n = 0; n <= 64 << 10; n += 256) {
+            VM v = vm_new();
+            JSValue r;
+            char *t;
+
+            eval_ok(v.ctx, "globalThis.objs = []; for (let i = 0; i < 200; i++) objs.push({ i });"
+                    "globalThis.refs = objs.map(o => new WeakRef(o))");
+            JS_ClearKeptObjects(v.rt);
+            room(&v, n);
+            r = JS_Eval(v.ctx, js[which], strlen(js[which]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            unlimit(&v);
+            if (JS_IsException(r)) {
+                int unc = JS_IsUncatchableException(v.ctx);
+
+                t = exception_text(v.ctx);
+                CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                      "script %d, room %zu: failed with %s, want the out of memory error", which, n, t ? t : "nothing");
+                oom++;
+                free(t);
+            } else {
+                const char *s = JS_ToCString(v.ctx, r);
+
+                CHECK(s && strcmp(s, "19900") == 0, "script %d, room %zu: got %s, want 19900", which, n, s ? s : "?");
+                JS_FreeCString(v.ctx, s);
+                ok++;
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_ClearKeptObjects(v.rt);
+            vm_free(&v);
+        }
+        CHECK(ok > 0 && oom > 0, "script %d: %d rooms worked and %d ran out of memory, want some of each",
+              which, ok, oom);
+    }
+}
+
 /* The regexp engine running out of memory, compiling a pattern or running it,
    is the out of memory error. */
 static void test_regexp_oom(void)
@@ -1873,6 +1927,7 @@ int main(void)
     test_field_chain_uncatchable();
     test_uncatchable_then_loop();
     test_uncatchable_flag_bit();
+    test_weakref_kept_oom();
     test_regexp_oom();
     test_regexp_script_oom();
     test_thrown_is_not_uncatchable();

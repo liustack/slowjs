@@ -431,6 +431,12 @@ struct JSRuntime {
     JSGCPhaseEnum gc_phase : 8;
     size_t malloc_gc_threshold;
     struct list_head weakref_list; /* list of JSWeakRefHeader.link */
+    /* the targets of WeakRef kept alive to the end of the job
+       (AddToKeptObjects): a set by address, JS_UNDEFINED in a free slot,
+       NULL when empty (see js_keep_target and JS_ClearKeptObjects) */
+    JSValue *kept;
+    uint32_t kept_count;
+    uint32_t kept_size; /* 0 or a power of 2 */
 #ifdef DUMP_LEAKS
     struct list_head string_list; /* list of JSString.link */
 #endif
@@ -3143,6 +3149,7 @@ size_t JS_FreeRuntime(JSRuntime *rt)
     if (JS_VALUE_GET_TAG(rt->async_context) == JS_TAG_OBJECT)
         JS_FreeValueRT(rt, rt->async_context);
     rt->async_context = JS_UNDEFINED;
+    JS_ClearKeptObjects(rt);
     js_regexp_cache_off(rt);
     js_shape_cache_off(rt);
     JS_FreeValueRT(rt, rt->current_exception);
@@ -73399,6 +73406,77 @@ static void weakref_delete_weakref(JSRuntime *rt, JSWeakRefHeader *wh)
     }
 }
 
+static uint32_t js_kept_slot(const void *p, uint32_t mask)
+{
+    uintptr_t h = (uintptr_t)p >> 4;
+
+    return (uint32_t)((h ^ (h >> 16)) * 0x9e3779b1u) & mask;
+}
+
+/* AddToKeptObjects: keeps target, an object or a symbol, alive to the end of
+   the job, once however often it is asked, in a set counted under the memory
+   limit. JS_ClearKeptObjects lets them go when the job ends. Returns -1 with
+   the out of memory error thrown. See docs/changes/weak-collections.md. */
+static int js_keep_target(JSContext *ctx, JSValueConst target)
+{
+    JSRuntime *rt = ctx->rt;
+    const void *p = JS_VALUE_GET_PTR(target);
+    JSValue *tab;
+    uint32_t i, j, mask, size;
+
+    if (rt->kept) {
+        mask = rt->kept_size - 1;
+        for (i = js_kept_slot(p, mask); !JS_IsUndefined(rt->kept[i]); i = (i + 1) & mask) {
+            if (JS_VALUE_GET_PTR(rt->kept[i]) == p)
+                return 0;
+        }
+    }
+    /* at most half full */
+    if (2 * (rt->kept_count + 1) > rt->kept_size) {
+        size = rt->kept_size ? 2 * rt->kept_size : 16;
+        tab = js_malloc(ctx, sizeof(tab[0]) * size);
+        if (!tab)
+            return -1;
+        for (i = 0; i < size; i++)
+            tab[i] = JS_UNDEFINED;
+        mask = size - 1;
+        for (i = 0; i < rt->kept_size; i++) {
+            if (JS_IsUndefined(rt->kept[i]))
+                continue;
+            for (j = js_kept_slot(JS_VALUE_GET_PTR(rt->kept[i]), mask); !JS_IsUndefined(tab[j]); j = (j + 1) & mask)
+                ;
+            tab[j] = rt->kept[i];
+        }
+        js_free(ctx, rt->kept);
+        rt->kept = tab;
+        rt->kept_size = size;
+    }
+    mask = rt->kept_size - 1;
+    for (i = js_kept_slot(p, mask); !JS_IsUndefined(rt->kept[i]); i = (i + 1) & mask)
+        ;
+    rt->kept[i] = JS_DupValue(ctx, target);
+    rt->kept_count++;
+    return 0;
+}
+
+/* ClearKeptObjects: lets the targets js_keep_target kept go, and the memory
+   of the set, at the end of a job. Freeing them runs no javascript. */
+void JS_ClearKeptObjects(JSRuntime *rt)
+{
+    JSValue *tab = rt->kept;
+    uint32_t i, size = rt->kept_size;
+
+    if (!tab)
+        return;
+    /* the set is out of the runtime's sight before anything is freed */
+    rt->kept = NULL;
+    rt->kept_count = 0;
+    rt->kept_size = 0;
+    for (i = 0; i < size; i++)
+        JS_FreeValueRT(rt, tab[i]);
+    js_free_rt(rt, tab);
+}
+
 static JSValue js_weakref_constructor(JSContext *ctx, JSValueConst new_target,
                                       int argc, JSValueConst *argv)
 {
@@ -73413,6 +73491,10 @@ static JSValue js_weakref_constructor(JSContext *ctx, JSValueConst new_target,
     obj = js_create_from_ctor(ctx, new_target, JS_CLASS_WEAK_REF);
     if (JS_IsException(obj))
         return JS_EXCEPTION;
+    if (js_keep_target(ctx, arg)) {
+        JS_FreeValue(ctx, obj);
+        return JS_EXCEPTION;
+    }
     JSWeakRefData *wrd = js_mallocz(ctx, sizeof(*wrd));
     if (!wrd) {
         JS_FreeValue(ctx, obj);
@@ -73430,10 +73512,13 @@ static JSValue js_weakref_deref(JSContext *ctx, JSValueConst this_val, int argc,
     JSWeakRefData *wrd = JS_GetOpaque2(ctx, this_val, JS_CLASS_WEAK_REF);
     if (!wrd)
         return JS_EXCEPTION;
-    if (js_weakref_is_live(wrd->target)) 
-        return JS_DupValue(ctx, wrd->target);
-    else
+    /* an emptied WeakRef holds undefined, which js_weakref_is_live calls
+       live */
+    if (!js_weakref_is_live(wrd->target) || JS_IsUndefined(wrd->target))
         return JS_UNDEFINED;
+    if (js_keep_target(ctx, wrd->target))
+        return JS_EXCEPTION;
+    return JS_DupValue(ctx, wrd->target);
 }
 
 static const JSCFunctionListEntry js_weakref_proto_funcs[] = {

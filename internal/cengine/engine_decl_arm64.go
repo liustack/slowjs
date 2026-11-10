@@ -74,6 +74,7 @@ func JS_CallConstructorInternal_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CallFree_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CallInternal_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CheckBrand(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
+func JS_ClearKeptObjects(a0 uintptr, a1 uintptr)
 func JS_CompactBigInt(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func JS_ComputeMemoryUsage(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_ConcatString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) (r0, r1 uintptr)
@@ -864,6 +865,7 @@ func js_json_parse(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintpt
 func js_json_rawJSON(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_json_stringify(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_json_to_str_block(a0 uintptr, a1 uintptr) uintptr
+func js_keep_target(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func js_large_give(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_linearize_string_rope(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func js_load_module_fulfilled_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
