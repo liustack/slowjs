@@ -4340,7 +4340,11 @@ static void test_module_export_order(void)
    every one or 64 spread over them: the call ends with "interrupted", not
    with the out of memory error of a failed resize, the buffer keeps one of
    its two lengths and its bytes, and it is set back to its full length
-   before the next stop. The runtime is freed with no block left. */
+   before the next stop. A fixed-length view, a length-tracking view and a
+   DataView made before each stop follow the block when the buffer is kept,
+   with its lengths and maxByteLength, and read and write its bytes, or have
+   nothing when a transfer detached the buffer. The bytes a buffer left short
+   gains at the reset are zero. The runtime is freed with no block left. */
 static void test_heap_move_polls(void)
 {
     static const char setup[] =
@@ -4348,7 +4352,16 @@ static void test_heap_move_polls(void)
     static const char after[] =
         "[b.byteLength === n || b.byteLength === n >> 2, new Uint8Array(b)[0], "
         "new Uint8Array(b)[(n >> 2) - 1], b.detached].join()";
-    static const char reset[] = "b.byteLength === n || (b = b.transfer(n)), 0";
+    static const char views[] =
+        "var vb = b, fv = new Uint8Array(b, 0, 16), tv = new Uint8Array(b), dv = new DataView(b); 0";
+    static const char views_after[] =
+        "String(vb === b ? tv.length === b.byteLength && dv.byteLength === b.byteLength && "
+        "fv.length === 16 && fv[0] === 7 && tv[(n >> 2) - 1] === 7 && dv.getUint8(2) === 7 && "
+        "(tv[1] = 9, new Uint8Array(b)[1] === 9) && (dv.setUint8(1, 7), fv[1] === 7) && "
+        "b.maxByteLength === n : vb.detached && tv.length === 0 && fv.length === 0)";
+    static const char reset[] =
+        "var was = b.byteLength; b.byteLength === n || (b = b.transfer(n)); "
+        "String(was === n || [n >> 2, n >> 1, n - 1].every(i => new Uint8Array(b)[i] === 0))";
     static const char *const cases[] = {
         "(b.resize(n >> 2), b.resize(n))",
         "(b = b.transfer(n >> 2), b = b.transfer(n))",
@@ -4369,12 +4382,14 @@ static void test_heap_move_polls(void)
         stops = reads < 64 ? reads : 64;
         for(j = 0; j < stops; j++) {
             k = 1 + j * reads / stops;
+            CHECK(eval(ctx, views), "%s: the views before reading %ld", call, k);
             host_poll_stop_after(k);
             CHECK(interrupted(ctx, call), "%s was not stopped at reading %ld of %ld", call, k, reads);
             host_poll_stop_after(0);
             CHECK(eval_is(ctx, after, "true,7,7,false"), "the buffer after %s was stopped at reading %ld", call, k);
+            CHECK(eval_is(ctx, views_after, "true"), "the views after %s was stopped at reading %ld", call, k);
             /* the next stop starts from the full length, so that it reads as often */
-            CHECK(eval(ctx, reset), "%s: the reset after reading %ld threw", call, k);
+            CHECK(eval_is(ctx, reset, "true"), "%s: the reset after reading %ld", call, k);
         }
         CHECK(eval(ctx, call), "%s after the stops: the script threw", call);
         CHECK(eval_is(ctx, "b.byteLength === n && new Uint8Array(b)[n - 1] === 0", "true"), "the buffer after %s", call);

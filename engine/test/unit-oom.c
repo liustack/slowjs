@@ -1263,7 +1263,8 @@ static void sweep(const char *what, const char *file, const char *setup,
         if (fail) {
             failed++;
             t = exception_text(v.ctx);
-            CHECK(unc, "%s: room %zu: a catchable exception: %s", what, k, t ? t : "?");
+            CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                  "%s: room %zu: not the uncatchable out of memory error: %s", what, k, t ? t : "?");
         } else {
             t = value_text(v.ctx, r);
             for (i = 0; want[i] && !(t && strcmp(t, want[i]) == 0); i++)
@@ -1628,7 +1629,8 @@ static void test_map_grow_oom(void)
         if (fail) {
             failed++;
             t = exception_text(v.ctx);
-            CHECK(unc, "Map grow: room %zu: a catchable exception: %s", k, t ? t : "?");
+            CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                  "Map grow: room %zu: not the uncatchable out of memory error: %s", k, t ? t : "?");
             free(t);
         } else {
             CHECK(!JS_HasException(v.ctx), "Map grow: room %zu: it worked with an exception pending", k);

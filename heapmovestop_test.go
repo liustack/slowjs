@@ -15,17 +15,25 @@ import (
 // heap copies a block that moves a MiB at a time with a read of the
 // interrupt flag before each step, and a stop leaves the old block where it
 // was, with its content, and ends the call with the interrupt, not with the
-// out of memory error of a failed resize. The bytes an ArrayBuffer gains are
+// out of memory error of a failed resize, and the views made before the call
+// follow the block of a buffer that is kept. The bytes an ArrayBuffer gains are
 // cleared a MiB at a time the same way. A resize to a quarter moves the block
 // out of its chunk on every system, and a resize back moves it again where
 // the host cannot remap a chunk (darwin, windows). Before, the copy of 64 MiB
 // and the clear of 192 MiB ran in one go, for hundreds of polls past the
 // request.
 func TestArrayBufferMoveStops(t *testing.T) {
-	const setup = `var n = 1 << 28, b = new ArrayBuffer(n, {maxByteLength: n}); new Uint8Array(b).fill(7)`
+	const setup = `var n = 1 << 28, b = new ArrayBuffer(n, {maxByteLength: n}); new Uint8Array(b).fill(7); ` +
+		`var vb = b, fv = new Uint8Array(b, 0, 16), tv = new Uint8Array(b), dv = new DataView(b)`
 	// what each stop must leave: the buffer at one of its two lengths, with
-	// the bytes it keeps through both
-	const after = `[b.byteLength === n || b.byteLength === n >> 2, new Uint8Array(b)[0], new Uint8Array(b)[(n >> 2) - 1], b.detached].join()`
+	// the bytes it keeps through both, and the views made before: they follow
+	// the block of a buffer that is kept, or have nothing when a transfer
+	// detached it
+	const after = `[b.byteLength === n || b.byteLength === n >> 2, new Uint8Array(b)[0], new Uint8Array(b)[(n >> 2) - 1], b.detached, ` +
+		`vb === b ? tv.length === b.byteLength && dv.byteLength === b.byteLength && fv.length === 16 && fv[0] === 7 && ` +
+		`tv[(n >> 2) - 1] === 7 && dv.getUint8(2) === 7 && (tv[1] = 9, new Uint8Array(b)[1] === 9) && b.maxByteLength === n : ` +
+		`vb.detached && tv.length === 0 && fv.length === 0].join()`
+	const want = "true,7,7,false,true"
 	for _, c := range []struct{ name, call string }{
 		{"resize", `(b.resize(n >> 2), b.resize(n))`},
 		{"transfer", `(b = b.transfer(n >> 2), b = b.transfer(n))`},
@@ -50,8 +58,8 @@ func TestArrayBufferMoveStops(t *testing.T) {
 			if err == nil {
 				var v any
 				v, err = m.Eval(after, EvalGlobal)
-				if err == nil && v != "true,7,7,false" {
-					t.Fatalf("after one call: got %v, want true,7,7,false", v)
+				if err == nil && v != want {
+					t.Fatalf("after one call: got %v, want %s", v, want)
 				}
 			}
 			m.Close()
@@ -83,9 +91,9 @@ func TestArrayBufferMoveStops(t *testing.T) {
 				if err := m.SetEvalTimeout(0); err != nil {
 					t.Fatal(err)
 				}
-				if v, err := m.Eval(after, EvalGlobal); err != nil || v != "true,7,7,false" {
+				if v, err := m.Eval(after, EvalGlobal); err != nil || v != want {
 					m.Close()
-					t.Fatalf("the buffer after the stop: got %v, %v, want true,7,7,false", v, err)
+					t.Fatalf("the buffer after the stop: got %v, %v, want %s", v, err, want)
 				}
 				if _, err := m.Eval(c.call+`; 0`, EvalGlobal); err != nil {
 					m.Close()

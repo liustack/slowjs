@@ -364,7 +364,7 @@ eval 超时依次设成一次调用用时的每个六分之一时，这些对 64
 
 现在：
 
-- `resize` 和 `transfer` 用 `js_array_buffer_realloc` 改这块内存的大小，它只在这一次调用期间把中断标志的地址交给堆（`JSHeap.stop`）。这时 `heap_realloc` 搬动一块内存时每次复制 1 MiB（`heap_copy`，`HEAP_COPY_STEP`），复制量在 1 MiB 以上时，每步之前读一次标志。标志被设置时，堆把新块还回去，专用 chunk 立刻还给宿主，然后像拒绝一次改大小那样失败：旧块留在原处，内容、大小和计数都不变。它设置 `JSHeap.stopped`，于是 `js_heap_realloc` 不再把前端缓存还回去再试一次，`js_array_buffer_realloc` 像别处读到标志时一样抛出无法捕获的中断，不抛内存不足的错误。
+- 对内存归引擎管的缓冲区，`resize` 和 `transfer` 用 `js_array_buffer_realloc` 改这块内存的大小，它只在这一次调用期间把中断标志的地址交给堆（`JSHeap.stop`）。这时 `heap_realloc` 搬动一块内存时每次复制 1 MiB（`heap_copy`，`HEAP_COPY_STEP`），复制量在 1 MiB 以上时，每步之前读一次标志。标志被设置时，堆把新块还回去，专用 chunk 立刻还给宿主，然后像拒绝一次改大小那样失败：旧块留在原处，内容、大小和计数都不变。它设置 `JSHeap.stopped`，于是 `js_heap_realloc` 不再把前端缓存还回去再试一次，`js_array_buffer_realloc` 像别处读到标志时一样抛出无法捕获的中断，不抛内存不足的错误。
 - 它们清零缓冲区多出来的字节时每次清 1 MiB，每步之前读一次标志（`js_array_buffer_clear`）。在这里停下时，缓冲区保持原来的长度，不会被分离，用的是它的块（这块可能已经搬过、变大了），它的视图跟着这块走。
 
 为什么只有这两处：停止就是一次失败的改大小，`resize` 和 `transfer` 会处理。`resize` 留着它的块和长度，`transfer` 释放它造出的缓冲区，旧的保持原样。`js_realloc` 的其他调用方只在内存用完时才见到失败，每次搬动都能停的话，这种失败在只在内存上限附近测过的路径上就会常见，调用方在失败后自己造错误的地方，还会把有的中断变成内存不足的错误。所以堆对别的块都不读标志，`js_array_buffer_realloc` 的调用之外 `JSHeap.stop` 是 NULL。造错误和原来一样不读标志（`engine/test/cycles.sh`），而堆里的读取是一次读内存，cycles.sh 看不到，所以 `test_error_reads_no_flag` 检查造一个栈有 4 MiB 的错误时读标志 0 次。不到 1 MiB 的复制还是原来的 `memcpy`。原生测试的 `asan` 构建用的分配器（`engine/test/heap-system.c`）以同样的步子搬动 1 MiB 以上、要变大的块，因为系统的 `realloc` 停不下来，缩小则交给这个 `realloc`。
@@ -382,8 +382,10 @@ eval 超时依次设成一次调用用时的每个六分之一时，把 256 MiB 
 - `TypedArray.prototype.set`，一次 `memmove`，512 MiB 要 35 ms，它一直做到结束，没有被杀，
 - 别的大块内存的搬动，比如长数组的元素、大 Map 的表、长字符串在末尾的缩小，一次 `memcpy`，最多是这块内存的大小，
 - `JS_DetectModule` 在源码开头找 `import` 和 `export`，不读标志，因为它没有运行时。Go API 不调用它。
+- 内存由宿主给出、带自己的释放函数（`JS_NewArrayBuffer`）的缓冲区 `transfer` 到新长度时，造一个整块清零的新缓冲区，再用一次 `memcpy` 把旧的复制进去。`resize` 不接受这种缓冲区，Go API 也不造这种缓冲区，
+- `resize` 或 `transfer` 之后更新缓冲区的视图，每个视图一步，受这些视图占的内存限制。
 
-测试：`TestArrayBufferMoveStops`（根包）给把 256 MiB 的 `ArrayBuffer` `resize` 和 `transfer` 到四分之一再改回来计时，再在这段时间的每个六分之一处停下这个调用的循环，每次都在新的 VM 里，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`），缓冲区是两个长度之一、字节还在、没有被分离，之后还能再做一次这个调用。改动前的引擎每种的 5 次停止里有 4 次失败。`engine/test/unit.c` 里的 `test_heap_move_polls` 要求把 32 MiB 的缓冲区 `resize` 和 `transfer` 到四分之一再改回来至少读 32 次标志，在每次读取处停下，检查调用以 `interrupted` 结束而不是以内存不足的错误结束，检查之后的缓冲区，最后释放运行时，不剩一块内存。`engine/test/heap-test.c` 里的 `scenario_move_stop` 在每次读标志处停下一个要搬动的专用块的变大和缩小，要求失败、`stopped` 已设置，堆、它的 chunk 和这块都和原来一样（见 [allocator.md](../allocator.zh-CN.md#测试)）。`test_error_reads_no_flag` 在一个 C 函数里造错误，标志在第一次读取时就会被置上，栈超过 4 MiB，要求一次也不读、栈完整。
+测试：`TestArrayBufferMoveStops`（根包）给把 256 MiB 的 `ArrayBuffer` `resize` 和 `transfer` 到四分之一再改回来计时，再在这段时间的每个六分之一处停下这个调用的循环，每次都在新的 VM 里，要求 16 次轮询之内得到无法捕获的中断而不是被杀（`copyStopPolls`），缓冲区是两个长度之一、字节还在、没有被分离，调用前造的视图（一个定长的和一个跟随长度的 `Uint8Array`，一个 `DataView`）跟着它的块走，长度和 `maxByteLength` 都对，`transfer` 分离了缓冲区时视图为空，之后还能再做一次这个调用。改动前的引擎每种的 5 次停止里有 4 次失败。`engine/test/unit.c` 里的 `test_heap_move_polls` 要求把 32 MiB 的缓冲区 `resize` 和 `transfer` 到四分之一再改回来至少读 32 次标志，在每次读取处停下，检查调用以 `interrupted` 结束而不是以内存不足的错误结束，检查之后的缓冲区和这些视图，检查停在短长度的缓冲区长回来的字节是零，最后释放运行时，不剩一块内存。`engine/test/heap-test.c` 里的 `scenario_move_stop` 在每次读标志处停下一个要搬动的专用块的变大和缩小，要求失败、`stopped` 已设置，堆、它的 chunk 和这块都和原来一样（见 [allocator.md](../allocator.zh-CN.md#测试)）。`test_error_reads_no_flag` 在一个 C 函数里造错误，标志在第一次读取时就会被置上，栈超过 4 MiB，要求一次也不读、栈完整。
 
 ## normalize 和 Map 变大时的内存不足
 
