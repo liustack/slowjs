@@ -12039,7 +12039,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $256-56
 	QUAD $0x0040be41000000d0
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+10047(SB), R15
+	LEAQ ·engine_rodata+10062(SB), R15
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	QUAD $0x20247c894818247c
@@ -12202,7 +12202,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $256-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+10054(SB), R15
+	LEAQ ·engine_rodata+10069(SB), R15
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	QUAD $0x20247c894818247c
@@ -18784,7 +18784,7 @@ TEXT ·JS_AtomIsNumericIndex1(SB), $176-40
 	BYTE $0x1e
 	BYTE $0x89
 	BYTE $0xf0
-	LEAQ ·engine_rodata+51568(SB), CX
+	LEAQ ·engine_rodata+51584(SB), CX
 	QUAD $0x000008bfc1348b48
 	QUAD $0xffffffe68138eb00
 	QUAD $0xc189482eebff317f

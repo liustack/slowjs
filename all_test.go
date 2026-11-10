@@ -743,8 +743,12 @@ func TestBytecode(t *testing.T) {
 	// local and the get_field after it, the case of a switch on a string, and
 	// a typeof test of any type name, into opcodes added at the end of the
 	// table. The code of this script is the same.
+	//
+	// 2026-11-10, version 8: the case of a switch on a string also takes the
+	// cases that end with if_true8, if_false and if_true. The code of this
+	// script is the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "07000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "08000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

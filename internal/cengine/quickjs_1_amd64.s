@@ -8517,7 +8517,7 @@ TEXT ·js_array_iterator_next(SB), $144-80
 	QUAD $0x0fd73920798b1263
 	QUAD $0x608d4d0000011186
 	BYTE $0x70
-	LEAQ ·engine_rodata+45606(SB), R14
+	LEAQ ·engine_rodata+45622(SB), R14
 	QUAD $0xffffff38e9c7894d
 	QUAD $0x2464894c70608d4d
 	QUAD $0xbfd78949f6894970

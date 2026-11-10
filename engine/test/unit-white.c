@@ -101,7 +101,7 @@ int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
 int white_every_block_is_a_request(void);
-int white_fused_ops(const uint8_t *code, int len, int *count);
+int white_fused_ops(const uint8_t *code, int len, int *count, size_t cap);
 int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
@@ -3063,14 +3063,31 @@ static void test_fused_ops(void)
         "  var s = a.k4 + e.k3 + (b, c, d, ''); switch (s) { case 'aa': return 1; case 'bb': return 2 } return 3 }\n"
         "  return f({ k1: { k4: 'a' } }, { k2: 0, k3: 'a' }) + 10 * f({ k1: { k4: 'b' } }, { k3: 'b' }) +\n"
         "    100 * f({ k1: {} }, { k3: 'x' }) })";
-    static const char *names[5] = { "get_arg0 get_field", "get_arg1 get_field", "get_loc0 get_field",
-                                    "get_loc8 get_field", "dup push_atom_value strict_eq if_false8" };
+    static const char *names[8] = { "get_arg0 get_field", "get_arg1 get_field", "get_loc0 get_field",
+                                    "get_loc8 get_field", "dup push_atom_value strict_eq if_false8",
+                                    "dup push_atom_value strict_eq if_true8",
+                                    "dup push_atom_value strict_eq if_false",
+                                    "dup push_atom_value strict_eq if_true" };
+    /* the four forms of a case: a body each (if_false8), cases that share a
+       body (if_true8), a body too long for a jump of one byte after its case
+       (if_false), and the first of 16 cases that share a body, which jumps
+       over the 15 others (if_true) */
+#define W_CASES16 "case 'd': case 'd2': case 'd3': case 'd4': case 'd5': case 'd6': case 'd7': case 'd8':\n" \
+        "  case 'd9': case 'd10': case 'd11': case 'd12': case 'd13': case 'd14': case 'd15': case 'e':\n"
+#define W_LONG_BODY "    n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1;\n" \
+        "    n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1;\n" \
+        "    n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1;\n" \
+        "    n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1; n = n * 3 + 1;\n" \
+        "    n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n; n = +n;\n"
+    static const char cases[] =
+        "function f(s) { var n = 0; switch (s) { case 'a': return 1; case 'b': case 'c': return 2;\n"
+        W_CASES16 W_LONG_BODY "    return n % 7; case 'f': return 3 } return 4 }";
     VM v = vm_new();
     JSValue top;
     const uint8_t *code;
     uint8_t *buf, *at;
     size_t size;
-    int len, count[5], n, on, k;
+    int len, count[8], n, on, k;
     char got[256];
     Code c;
 
@@ -3084,20 +3101,35 @@ static void test_fused_ops(void)
         /* a case for each of the two strings */
         JS_SetFusedOps(v.ctx, on);
         CHECK(code_of(v.ctx, inner, &top, &code, &len) == 0, "compile f");
-        n = code ? white_fused_ops(code, len, count) : -1;
-        for (k = 0; k < 5; k++)
-            CHECK(count[k] == (on ? (k == 4 ? 2 : 1) : 0), "on %d: %s: %d", on, names[k], count[k]);
+        n = code ? white_fused_ops(code, len, count, countof(count)) : -1;
+        for (k = 0; k < 8; k++)
+            CHECK(count[k] == (on ? (k == 4 ? 2 : k < 4) : 0), "on %d: %s: %d", on, names[k], count[k]);
+        JS_FreeValue(v.ctx, top);
+        CHECK(code_of(v.ctx, cases, &top, &code, &len) == 0, "compile the cases");
+        n = code ? white_fused_ops(code, len, count, countof(count)) : -1;
+        CHECK(n == (on ? 20 : 0), "cases, on %d: %d fused opcodes, want 20", on, n);
+        for (k = 0; k < 8; k++)
+            CHECK(on ? (k < 4 ? count[k] == 0 : count[k] > 0) : count[k] == 0,
+                  "cases, on %d: %s: %d", on, names[k], count[k]);
         JS_FreeValue(v.ctx, top);
     }
+    CHECK(eval_is(v.ctx, "(function () { var r = ''; "
+                  "for (var s of ['a', 'b', 'c', 'd', 'd9', 'e', 'f', 'g', 'a' + 'b'.repeat(0), 'd1', 1]) {\n"
+                  "  r += (function f(s) { var n = 0; switch (s) { case 'a': return 1; case 'b': case 'c': return 2;\n"
+                  W_CASES16 W_LONG_BODY "    return n % 11; case 'f': return 3 } return 4 })(s) } return r })()",
+                  "12277734144"),
+          "the four forms of a case run");
+#undef W_CASES16
+#undef W_LONG_BODY
     JS_SetFusedOps(v.ctx, 1);
 
     /* a jump to the get_field of a pair: the pair stays apart */
     CHECK(code_of(v.ctx, "function f(o, c) { return (c ? o : o).x }", &top, &code, &len) == 0, "compile");
-    n = code ? white_fused_ops(code, len, count) : -1;
+    n = code ? white_fused_ops(code, len, count, countof(count)) : -1;
     CHECK(n == 0, "a jump into the pair: %d fused opcodes", n);
     JS_FreeValue(v.ctx, top);
     CHECK(code_of(v.ctx, "function f(o, c) { return o.x }", &top, &code, &len) == 0, "compile");
-    n = code ? white_fused_ops(code, len, count) : -1;
+    n = code ? white_fused_ops(code, len, count, countof(count)) : -1;
     CHECK(n == 1 && count[0] == 1, "no jump: %d fused opcodes", n);
     JS_FreeValue(v.ctx, top);
     CHECK(eval_is(v.ctx, "(function f(o, c) { return (c ? o : o).x })({ x: 'jumped' }, 1)", "jumped"), "a jump into the pair runs");
@@ -3145,23 +3177,28 @@ static void test_fused_ops(void)
     CHECK(scan_ok(&c), "get_loc8 get_field");
     c.b[2] = white_op(W_DROP);
     CHECK(scan_fails(&c, "a fused opcode without"), "get_loc8 then something else");
-    for (k = 0; k < 3; k++) {
-        int iff;
-        c = (Code){{0}, 0};
-        op_n(&c, W_PUSH_0, 1);
-        op_n(&c, W_DUP_CASE_ATOM, 1);
-        jump(&c, W_GOTO);
-        c.b[c.n - 5] = white_op(W_PUSH_ATOM_VALUE);
-        op_n(&c, W_STRICT_EQ, 1);
-        iff = jump(&c, W_IF_FALSE8);
-        op_n(&c, W_DROP, 1);
-        set_target(&c, iff, c.n);
-        op_n(&c, W_RETURN_UNDEF, 1);
-        if (k == 0) {
-            CHECK(scan_ok(&c), "dup push_atom_value strict_eq if_false8");
-        } else {
-            c.b[k == 1 ? 7 : 8] = white_op(k == 1 ? W_DROP : W_GOTO8);
-            CHECK(scan_fails(&c, "a fused opcode without"), "the case with instruction %d changed", k + 1);
+    for (int w = 0; w < 4; w++) {
+        static const int jumps[4] = { W_IF_FALSE8, W_IF_TRUE8, W_IF_FALSE, W_IF_TRUE };
+        for (k = 0; k < 4; k++) {
+            int iff;
+            c = (Code){{0}, 0};
+            op_n(&c, W_PUSH_0, 1);
+            op_n(&c, W_DUP_CASE_ATOM, 1);
+            jump(&c, W_GOTO);
+            c.b[c.n - 5] = white_op(W_PUSH_ATOM_VALUE);
+            op_n(&c, W_STRICT_EQ, 1);
+            iff = jump(&c, jumps[w]);
+            op_n(&c, W_DROP, 1);
+            set_target(&c, iff, c.n);
+            op_n(&c, W_RETURN_UNDEF, 1);
+            if (k == 0) {
+                CHECK(scan_ok(&c), "dup push_atom_value strict_eq %s", names[4 + w] + 30);
+            } else {
+                /* the push_atom_value, the strict_eq or the jump changed */
+                c.b[k == 1 ? 2 : k == 2 ? 7 : 8] = white_op(k == 1 ? W_GET_FIELD : k == 2 ? W_DROP :
+                                                             w < 2 ? W_GOTO8 : W_GOTO);
+                CHECK(scan_fails(&c, "a fused opcode without"), "the case %d with instruction %d changed", w, k + 1);
+            }
         }
     }
     vm_free(&v);
@@ -3529,7 +3566,7 @@ static void test_share_local_slots(void)
 
 /* fused_count: the fused opcodes of the first function of src, by kind
    into count, and in all; -1 when it does not compile. */
-static int fused_count(JSContext *ctx, const char *src, int *count)
+static int fused_count(JSContext *ctx, const char *src, int *count, size_t cap)
 {
     const uint8_t *code;
     JSValue top;
@@ -3537,7 +3574,7 @@ static int fused_count(JSContext *ctx, const char *src, int *count)
 
     if (code_of(ctx, src, &top, &code, &len) != 0)
         return -1;
-    n = white_fused_ops(code, len, count);
+    n = white_fused_ops(code, len, count, cap);
     JS_FreeValue(ctx, top);
     return n;
 }
@@ -3578,7 +3615,7 @@ static void test_fused_edges(void)
     VM v = vm_new();
     JSValue g, dda, mod, ns, r;
     JSModuleDef *m;
-    int on, count[5], n;
+    int on, count[8], n;
     size_t i;
     char src[512];
 
@@ -3622,14 +3659,14 @@ static void test_fused_edges(void)
 
         /* the exports of a namespace are read through their references:
            the read after bump() sees the new value */
-        n = fused_count(v.ctx, ns_read, count);
+        n = fused_count(v.ctx, ns_read, count, countof(count));
         CHECK(on ? n == 4 && count[0] == 4 : n == 0, "on %d: %d fused reads of the namespace", on, n);
         snprintf(src, sizeof(src), "(%s)(ns)", ns_read);
         CHECK(eval_is(v.ctx, src, on ? "7,8,y,undefined" : "8,9,y,undefined"), "on %d: the namespace", on);
 
         /* a direct eval or a with block sets the binding, then the fused read */
         for (i = 0; i < countof(bound); i++) {
-            n = fused_count(v.ctx, bound[i].src, count);
+            n = fused_count(v.ctx, bound[i].src, count, countof(count));
             CHECK(on ? n == bound[i].n && count[bound[i].kind] == 1 : n == 0,
                   "on %d: %s: %d fused", on, bound[i].src, n);
             snprintf(src, sizeof(src), "(%s)%s", bound[i].src, bound[i].call);

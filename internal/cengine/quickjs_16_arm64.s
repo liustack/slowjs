@@ -614,7 +614,7 @@ TEXT ·JS_WriteObject2_block(SB), $216-24
 	WORD $0xf9400a69
 	WORD $0x9100050a
 	WORD $0xf9000e6a
-	WORD $0x528000ea
+	WORD $0x5280010a
 	WORD $0x3828692a
 	WORD $0xb9406276
 	WORD $0x53077ecc
@@ -1172,7 +1172,7 @@ TEXT ·JS_WriteObject2_block(SB), $216-24
 	WORD $0x17fffda1
 	WORD $0xf94063f5
 	WORD $0x91028274
-	WORD $0x528000f6
+	WORD $0x52800116
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
@@ -1336,9 +1336,9 @@ TEXT ·JS_GetTypedArrayBuffer_block(SB), $72-32
 	WORD $0xb940214c
 	WORD $0x6b0e019f
 	WORD $0x54000209
-	MOVD $·engine_rodata+45246(SB), R22
+	MOVD $·engine_rodata+45262(SB), R22
 	WORD $0x14000003
-	MOVD $·engine_rodata+45229(SB), R22
+	MOVD $·engine_rodata+45245(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
