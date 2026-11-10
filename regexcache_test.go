@@ -110,8 +110,12 @@ func TestRegExpCacheStops(t *testing.T) {
 		{`new RegExp(p.replaceAll('(', '(?:').repeat(6000))`, stopPolls},
 		// strings of one hash and one length in a class: a string was
 		// compared with the ones before it in one pass of memcmp, a byte
-		// at a time, up to 31 times 128 KiB with no reading of the flag
-		{`new RegExp('[\\q{' + q + '}]', 'v')`, stopPolls},
+		// at a time, up to 31 times 128 KiB with no reading of the flag.
+		// The pattern is a string of 16 bits, which the compile converts
+		// to UTF-8 in steps of 65,536 characters, about a tick each: up to
+		// 7 polls (see regexpStopPolls in internal/cengine), so a stop that
+		// comes in the conversion is held to stepStopPolls
+		{`new RegExp('[\\q{' + q + '}]', 'v')`, stepStopPolls},
 	} {
 		js := r.js
 		for _, c := range []struct {
