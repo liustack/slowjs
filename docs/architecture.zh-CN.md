@@ -125,7 +125,7 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 2. 引擎跑在 goroutine 的栈上，从不像 cgo、wazero 和 purego 那样用一个自己的栈，这样 C 里的一次故障只结束一个 VM，不结束整个进程。
 3. [measuring.md](measuring.zh-CN.md) 的计时分不出它和代码位置噪声（一次渲染 2% 到 3%）的收益，不管改动多干净都不要。
 4. 每个平台上的位都一样：引擎用 `-ffp-contract=off` 构建，生成器拒绝融合乘加（[c-engine.md](changes/c-engine.zh-CN.md#小-libc)）。
-5. 引擎给出的东西不变：tifa 页面的 HTML，test262 的 33 个已知错误，以及调用深度。
+5. 引擎给出的东西不变：tifa 页面的 HTML，test262 的 33 个已知错误。调用深度不能变浅：脚本至少能递归到原来那么深，可以更深。
 6. 提速需要时可以重写 C，比如重写解释器的循环、换一种对象布局，前提是第 1 到 5 条都守住。机械的改动能拿到同样的收益时，先用机械的改动。重写和 C 的其他改动过同样的检查（test262、带 sanitizer 的原生测试宿主、tifa 的页面），并写进 [docs/changes](changes/README.zh-CN.md)：替换了什么，以后接上游 QuickJS 的提交时会难在哪（[upgrading.md](upgrading.zh-CN.md)）。这一条和 liustack/sqlite 不同：它从不改发布出来的 C，而这里的 C 树是 QuickJS 加上 docs/changes 里的改动。
 
 试过又放弃的，以及原因：见 [performance.md](performance.zh-CN.md#试过但没做的)，v0.28 之前的引擎见 [history.md](history.zh-CN.md#在旧引擎上试过但没做的)。
