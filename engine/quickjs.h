@@ -1096,7 +1096,12 @@ int JS_SetShapeCache(JSContext *ctx, int n);
    interpreter (at calls and backward jumps), in regexps, in long string
    searches, in the long loops of typed arrays, repeat and JSON, and throws
    the error "interrupted", which no try catches. The engine never clears
-   it: the host does, before it runs code in rt again. */
+   the host's stop: the host does, before it runs code in rt again. The
+   engine itself sets the flag (to a value with 2 in it) while an
+   uncatchable exception is pending, so that the script stops at the next
+   read, and takes that back when the exception is taken (JS_GetException)
+   or made catchable (JS_SetUncatchableException). So the host writes 1 to
+   stop, and 0 only when no exception is pending. */
 volatile int *JS_GetInterruptFlag(JSRuntime *rt);
 /* select which debug info is stripped from the compiled code */
 #define JS_STRIP_SOURCE (1 << 0) /* strip source code */

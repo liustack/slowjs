@@ -467,8 +467,9 @@ func (v *VM) Leave() {
 // SetInterruptFlag gives the address of the engine's interrupt flag, an
 // int32 in its memory that the engine reads where it can throw (see
 // JS_GetInterruptFlag in engine/quickjs.h): Poll sets it to 1 once Interrupt
-// asked to stop, and the outermost Enter clears it. The engine keeps the
-// flag where it is for as long as it lives.
+// asked to stop, and the outermost Enter clears it, when no exception is
+// pending. The engine itself keeps 2 in it while an uncatchable exception is
+// pending. The engine keeps the flag where it is for as long as it lives.
 func (v *VM) SetInterruptFlag(a uintptr) {
 	if a == 0 || a%4 != 0 {
 		panic(fmt.Sprintf("gohost: an interrupt flag at %#x", a))

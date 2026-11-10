@@ -1148,6 +1148,101 @@ static void test_field_chain_uncatchable(void)
     }
 }
 
+/* A built-in that meets the out of memory error can record it, in a promise
+   it rejects, and return as if it had not failed: the error stays pending
+   and the script goes on. A loop with no call in it must still end at its
+   next backward jump with the out of memory error, without a host asking for
+   a stop. LOOP_BOUND readings of the flag are far more than a run that ends
+   there needs: past them the host stops the loop, and the case fails. */
+#define LOOP_BOUND (1L << 22)
+
+static void test_uncatchable_then_loop(void)
+{
+    static const struct { const char *name, *js; } cases[] = {
+        { "resolve with a thenable getter",
+          "let res; new Promise(r => { res = r }); res({ get then() { fail() } }); for (;;) {}" },
+        { "async first step", "(async () => { fail() })(); for (;;) {}" },
+        { "async generator", "(async function* () { fail() })().next(); for (;;) {}" },
+        { "dynamic import", "import({ toString() { fail() } }); for (;;) {}" },
+        { "in a job",
+          "Promise.resolve().then(() => { (async () => { fail() })(); for (;;) {} })" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        VM v = vm_new();
+        JSValue r;
+        JSContext *jc;
+        char *text = NULL;
+        long before;
+        int ret, unc = 0;
+
+        eval_ok(v.ctx, fail_js[END_OOM]);
+        room(&v, 1 << 20);
+        before = host_poll_reads;
+        host_poll_stop_after(LOOP_BOUND);
+        r = JS_Eval(v.ctx, cases[i].js, strlen(cases[i].js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        if (JS_IsException(r)) {
+            unc = JS_IsUncatchableException(v.ctx);
+            text = exception_text(v.ctx);
+        }
+        JS_FreeValue(v.ctx, r);
+        while (!text && (ret = JS_ExecutePendingJob(v.rt, &jc)) != 0) {
+            if (ret < 0) {
+                unc = JS_IsUncatchableException(v.ctx);
+                text = exception_text(v.ctx);
+            }
+        }
+        before = host_poll_reads - before;
+        host_poll_stop_after(0);
+        unlimit(&v);
+        CHECK(before < LOOP_BOUND, "%s: the loop ran on until the host stopped it", cases[i].name);
+        CHECK(unc, "%s: the error that ended the run is catchable (%s)", cases[i].name, text ? text : "no error");
+        CHECK(text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+              "%s: ended with %s, want the out of memory error", cases[i].name, text ? text : "no error");
+        /* the engine takes its stop back with the exception */
+        CHECK(*JS_GetInterruptFlag(v.rt) == 0, "%s: the interrupt flag is %d after the exception was taken",
+              cases[i].name, *JS_GetInterruptFlag(v.rt));
+        CHECK(eval_is(v.ctx, "let n = 0; for (let k = 0; k < 1000; k++) n += k; n", "499500"),
+              "%s: a loop after the error", cases[i].name);
+        free(text);
+        vm_free(&v);
+    }
+}
+
+/* The engine's 2 in the interrupt flag follows the uncatchable exception
+   alone: set when an exception is made uncatchable, cleared when it is taken
+   or made catchable, never set for a catchable one or with nothing pending,
+   and the host's stop (1) stays through all of it. */
+static void test_uncatchable_flag_bit(void)
+{
+    VM v = vm_new();
+    volatile int *flag = JS_GetInterruptFlag(v.rt);
+    int host;
+
+    for (host = 0; host <= 1; host++) {
+        *flag = host;
+        JS_ThrowInternalError(v.ctx, "catchable");
+        CHECK(*flag == host, "host %d: a catchable exception set the flag to %d", host, *flag);
+        JS_SetUncatchableException(v.ctx, TRUE);
+        CHECK(*flag == (host | 2), "host %d: uncatchable, the flag is %d", host, *flag);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        CHECK(*flag == host, "host %d: the exception taken, the flag is %d", host, *flag);
+        /* the uncatchable mark outlives the exception it was set for */
+        JS_SetUncatchableException(v.ctx, TRUE);
+        CHECK(*flag == host, "host %d: nothing pending, the flag is %d", host, *flag);
+        JS_ThrowInternalError(v.ctx, "again");
+        CHECK(*flag == host, "host %d: a new exception after the mark set the flag to %d", host, *flag);
+        JS_SetUncatchableException(v.ctx, TRUE);
+        CHECK(*flag == (host | 2), "host %d: uncatchable again, the flag is %d", host, *flag);
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(*flag == host, "host %d: made catchable, the flag is %d", host, *flag);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+    }
+    *flag = 0;
+    vm_free(&v);
+}
+
 /* The regexp engine running out of memory, compiling a pattern or running it,
    is the out of memory error. */
 static void test_regexp_oom(void)
@@ -1776,6 +1871,8 @@ int main(void)
     test_interrupt_uncatchable();
     test_oom_uncatchable();
     test_field_chain_uncatchable();
+    test_uncatchable_then_loop();
+    test_uncatchable_flag_bit();
     test_regexp_oom();
     test_regexp_script_oom();
     test_thrown_is_not_uncatchable();

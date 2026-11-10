@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，以及内置函数留下挂起的无法捕获的异常后没有调用的循环'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -22,7 +22,7 @@ VM 在 `JSON.parse` 里，或者在任何把含非 ASCII 字符的字符串转�
 
 发布版本：v0.26.6。
 
-页面代码不能再通过 promise 或迭代器捕获中断（`VM.Interrupt` 或 eval 超时）。引擎本来已经为中断跳过每个 `catch` 和 `finally` 块，但它自己对异常的处理函数仍然带着它继续往下走：async 函数和 promise 任务把它变成 rejection，随后被 `await`、`.catch` 或 `.then` 处理函数接住，`Promise` 构造函数、`Promise.try`、`Promise.all` 和其他组合函数、异步生成器和模块也一样。出错时运行迭代器 `return` 方法的内置函数（`Array.from` 等），运行了它，然后把中断作为 `catch` 能接住的错误再抛一次，而之后的任何错误会取代它。现在无法捕获的异常一直挂起，直到运行脚本的那个 Go 调用取走它，而它挂起期间，每个进入 javascript 的调用都立刻失败。所以没有 `catch`、`finally`、迭代器的 `return`、生成器的 `finally` 或 rejection 处理函数会运行，调用返回中断，和没有 promise 的脚本一样。内置函数只是记录错误的地方，比如读取 `then` 抛错时让 promise 被拒绝的 resolve 函数，它之后的代码会一直运行到下一次函数调用，那次调用失败。`ExecutePendingJobs` 在因中断而失败的那个任务处停下，其余任务留在队列里，它过去会把它们全部运行完。
+页面代码不能再通过 promise 或迭代器捕获中断（`VM.Interrupt` 或 eval 超时）。引擎本来已经为中断跳过每个 `catch` 和 `finally` 块，但它自己对异常的处理函数仍然带着它继续往下走：async 函数和 promise 任务把它变成 rejection，随后被 `await`、`.catch` 或 `.then` 处理函数接住，`Promise` 构造函数、`Promise.try`、`Promise.all` 和其他组合函数、异步生成器和模块也一样。出错时运行迭代器 `return` 方法的内置函数（`Array.from` 等），运行了它，然后把中断作为 `catch` 能接住的错误再抛一次，而之后的任何错误会取代它。现在无法捕获的异常一直挂起，直到运行脚本的那个 Go 调用取走它，而它挂起期间，每个进入 javascript 的调用都立刻失败。所以没有 `catch`、`finally`、迭代器的 `return`、生成器的 `finally` 或 rejection 处理函数会运行，调用返回中断，和没有 promise 的脚本一样。内置函数只是记录错误的地方，比如读取 `then` 抛错时让 promise 被拒绝的 resolve 函数，它之后的代码会一直运行到下一次函数调用或向后跳转，在那里失败（[没有调用的循环也会在挂起的无法捕获的异常处结束](#没有调用的循环也会在挂起的无法捕获的异常处结束)）。`ExecutePendingJobs` 在因中断而失败的那个任务处停下，其余任务留在队列里，它过去会把它们全部运行完。
 
 ## 内存不足无法捕获
 
@@ -400,6 +400,20 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 没扩大的表就是 Map 原来那张完整的表，查找要走更长的链，直到后面某次添加把表扩大。代价是 Map 或 Set 每条新记录多一次写入。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench tifa-ssr`，取 12 次和 2 次渲染之差，只算 `internal/cengine` 的函数），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 265,226,497 条，改动后 265,227,872 条，+0.00%：`map_add_record` 多 110 条。tifa 的每个页面渲染出的 HTML 都不变。
 
 测试：`engine/test/unit-oom.c` 里的 `test_normalize_oom` 在从零到 16 KiB 的每个剩余空间下，以及堆满时的每个空间下，扫 `normalize`，要求得到结果或无法捕获的内存不足错误，内存回来后再得到结果，最后不剩一块内存。`test_map_grow_oom` 从 C 调用一个函数，给有 255 条记录的 Map 加第 256 条，这会把表从 1 KiB 扩大到 2 KiB，剩余空间取从零到 2 KiB 的每个值，以及堆满时的每个空间。它要求得到大小或无法捕获的错误，调用成功时没有挂着的异常，内存回来后每条记录都在，最后不剩一块内存，还要求某个放不下扩大的空间（不到 1 KiB，或者堆满后没有还回 2 KiB 的块）能让调用成功。改动前的引擎两项都失败：没有一个放不下扩大的空间能让第 256 次 `set` 成功。
+
+## 没有调用的循环也会在挂起的无法捕获的异常处结束
+
+发布版本：Unreleased。
+
+内置函数遇到无法捕获的异常时，可以只把它记下来，然后像没出错一样返回。promise 的 resolve 函数拿到一个 thenable，它的 `then` getter 内存不足，resolve 函数就让 promise 被拒绝，然后返回 `undefined`（`js_promise_resolve_function_call`）。在第一个 `await` 之前失败的 async 函数返回它的 promise，异步生成器的 `next`、说明符转换失败的 `import()`、由同步迭代器造出的异步迭代器的 `next` 也一样。它们都用 `js_get_exception` 拿异常的一份副本，这个函数让无法捕获的异常继续挂起，然后它们要么不经调用就拒绝 promise，要么像上游那样不管调用拒绝函数失败了没有。脚本带着挂起的异常接着运行。它的下一次调用会失败（`js_call_checks`），可是没有调用的循环只读中断标志，而没有谁置过这个标志。所以没设超时的时候，`res({ get then() { /* 内存不足 */ } }); for (;;) {}` 会一直运行下去，getter 里调用的 Go 函数 panic 之后，同样的循环也一样。设了超时，`Interrupt` 和杀死前的宽限期也要到截止时间才起作用。
+
+现在只要有无法捕获的异常挂起，引擎就在中断标志里保持 2（`quickjs.c` 里的 `JS_INTERRUPT_UNCATCHABLE`）。`JS_SetUncatchableException` 按它留下的状态置上或清掉它，`JS_GetException` 取走异常时清掉它。这样每个读标志的地方都会停下：循环的向后跳转立刻失败，调用以挂起的那个异常结束，也就是内存不足的错误或 Go 函数的 panic。有异常挂起时，`JS_ThrowInterrupted` 不再造 `interrupted` 错误，因为结束调用的是挂起的那个。宿主的停止仍然是 1，它整个写进标志，宿主仍然在没有异常挂起、从 Go 进入引擎时清掉标志，所以 `gohost` 不用改。`engine/quickjs.h` 里 `JS_GetInterruptFlag` 的说明写了宿主可以写什么。
+
+这一位在状态变化的地方置上，因为只有引擎知道异常什么时候挂起并变成无法捕获，而这个状态只在这两个函数里变：别处对挂起异常的写入（解释器的 `catch`、迭代器的关闭）只会取走可以捕获的异常。解释器本来就在每次向后跳转时读标志，所以那里什么也没加，循环在下一次跳转就停下，不用等宿主下一次轮询，那可能要再过 10,000 次计数。改成让这些内置函数各自返回异常，要改上游代码里大约 20 处，上游以后每个加了这种地方的 commit 也都要再改，而在 Go 的轮询里检查，原生宿主和 C 的其他宿主就都没有这个保护。
+
+代价是 `JS_GetException` 和 `JS_SetUncatchableException` 里多几条指令，它们只在取走异常或把异常设成无法捕获时运行，不在不抛异常的路径上。在 linux/amd64 上用 callgrind 计数（`compare/engines` 的 `jsbench`，取 12 次和 2 次渲染之差，只算 `internal/cengine` 的函数），tifa 的两个 bench 页面渲染一次，引擎的指令改动前 263,959,744 条，改动后 263,959,698 条，React 渲染一次是 50,730,450 条和 50,730,514 条，都是 +0.00%。tifa 的每个页面渲染出的 HTML 都不变。解释器和它的栈帧都不变（amd64 上 $496，arm64 上 $520），脚本能递归的深度也不变。
+
+测试：`engine/test/unit-oom.c` 里的 `test_uncatchable_then_loop` 让以下几处内存不足：交给 resolve 函数的 thenable 的 `then` getter，第一个 `await` 之前的 async 函数，异步生成器，`import()` 说明符的转换，以及从任务里调用的 async 函数，每处之后都跟着 `for (;;) {}`。它要求宿主停下循环之前（`host_poll_stop_after`，读 4Mi 次标志）就得到无法捕获的内存不足错误，取走异常后标志为 0，之后还能跑一个循环。`test_uncatchable_flag_bit` 要求标志里的 2 恰好在有无法捕获的异常挂起时存在：由 `JS_SetUncatchableException` 置上，由 `JS_GetException` 和把异常改成可以捕获时清掉，可以捕获的异常或没有异常挂起时从不置上，而宿主的 1 在每一步都保留。`TestUncatchablePendingEndsLoop`（`uncatchable_return_test.go`）在不设超时时做前四种，分别用内存不足错误和一个会 panic 的 Go 函数，要求得到这个错误或 panic，没有挂起的异常，之后还能跑一个循环。改动之前，两个测试的每一种都一直运行，直到宿主把它停下。
 
 ## 异常关闭迭代器时，迭代器 return 方法里的内存不足
 
