@@ -90,7 +90,7 @@ step docs fast - "scripts/docs-list.sh --check"
 step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 QUICKJS_LLVM=$llvm QUICKJS_SHADOW_PASS=$root/.build/shadow.so QUICKJS_LLD=$lld go test -count=1 -v -p 2 -timeout 60m ./internal/goasm/..."
 step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
-step compare-plain fast last "engine/test/compare.sh plain"
+step compare-plain fast last "engine/test/compare.sh plain && engine/test/render-test.sh plain"
 step cycles fast last "engine/test/cycles.sh"
 step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && engine/test/test262-test.sh"
 # Full: the end of a batch.

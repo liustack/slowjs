@@ -2019,6 +2019,27 @@ static void test_regvm_convert_oom(void)
     sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 16384);
 }
 
+/* The conversion of a function with a switch of 31 string cases, whose
+   CASES gets a table (rv_cases_table in engine/regvm-ops-cmp.h): the table
+   is made in the code of the pass, which goes into the register code in one
+   block at the end, so a conversion that runs out of memory leaves no part
+   of a table behind, and the call that converts it later answers as the
+   chain does. The call takes about 22.1 KiB at its peak, so the rooms go up
+   to 32 KiB. */
+static void test_regvm_cases_oom(void)
+{
+    static const char *const want[] = { "16", NULL };
+    char setup[2048];
+    size_t n;
+    int i;
+
+    n = snprintf(setup, sizeof(setup), "var f = Function('s', \"'use strict'; switch (s) {");
+    for (i = 0; i < 31; i++)
+        n += snprintf(setup + n, sizeof(setup) - n, " case 'c%d': return %d;", i, i);
+    snprintf(setup + n, sizeof(setup) - n, " } return -1;\");");
+    sweep("conversion of a case table", "<cases>", setup, "f('c17') + f('zz')", want, 32768);
+}
+
 /* A function whose stack is too deep for the temps folds it into Arrays at
    run time (engine/regvm-fold.h), where QuickJS's interpreter allocates
    nothing: in two levels (calls of 32 arguments nested 40 deep), under the
@@ -2208,6 +2229,7 @@ int main(void)
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();
+    test_regvm_cases_oom();
     test_regvm_fold_oom();
     test_regvm_stack_oom();
     test_regvm_scratch();

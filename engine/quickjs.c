@@ -22688,6 +22688,46 @@ static force_inline int goasm_case_atom(JSRuntime *rt, JSValueConst v, JSAtom at
     }
 }
 
+/* the stop of a CASES with a table (rv_cases_table in regvm-ops-cmp.h) for
+   v: the slot of its string, found by its hash, when it is a string atom,
+   and the stop of no case equal for one of the tags goasm_case_atom says
+   are never equal to a string atom. -1 for the rest, which the chain
+   compares: a string that is not an atom of the type string, a rope, any
+   other tag. tab is the table: k, the stop of no case, 2^k pointers, 2^k
+   stops. */
+static force_inline int goasm_case_table(JSValueConst v, const uint8_t *tab)
+{
+    JSString *p, *q;
+    uint32_t h, m;
+
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING:
+        p = JS_VALUE_GET_STRING(v);
+        if (p->atom_type != JS_ATOM_TYPE_STRING)
+            return -1;
+        m = (1u << tab[0]) - 1;
+        for (h = p->hash & m;; h = (h + 1) & m) {
+            memcpy(&q, tab + 2 + sizeof(q) * h, sizeof(q));
+            if (q == p)
+                return tab[2 + (sizeof(q) << tab[0]) + h];
+            if (!q)
+                return tab[1];
+        }
+    case JS_TAG_OBJECT:
+    case JS_TAG_INT:
+    case JS_TAG_BOOL:
+    case JS_TAG_NULL:
+    case JS_TAG_UNDEFINED:
+    case JS_TAG_FLOAT64:
+    case JS_TAG_SYMBOL:
+    case JS_TAG_BIG_INT:
+    case JS_TAG_SHORT_BIG_INT:
+        return tab[1];
+    default:
+        return -1;
+    }
+}
+
 static inline BOOL goasm_eq_simple_tag(int tag)
 {
     return tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED || tag == JS_TAG_BOOL ||
@@ -46058,6 +46098,44 @@ static JSValue js_object_valueOf(JSContext *ctx, JSValueConst this_val,
     return JS_ToObject(ctx, this_val);
 }
 
+/* Symbol.toStringTag of the String object ToObject would make for a
+   string, read along the chain from proto, String.prototype, without the
+   object: TRUE with *ptag set to a reference to the value of the data
+   property found, or to JS_UNDEFINED when no object of the chain has the
+   key. The String object has no such key of its own. FALSE when the Get
+   could run code or show the String object, its receiver: an accessor or
+   any property that is not a plain value, an exotic object other than a
+   String (whose exotic keys are indexes only), or a proto that is not an
+   object. Then the caller makes the object, as js_object_toString did
+   before. */
+static BOOL js_string_to_string_tag(JSContext *ctx, JSValueConst proto,
+                                    JSValue *ptag)
+{
+    JSObject *p;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+
+    if (JS_VALUE_GET_TAG(proto) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(proto);
+    for(;;) {
+        prs = find_own_property(&pr, p, JS_ATOM_Symbol_toStringTag);
+        if (prs) {
+            if (prs->flags & JS_PROP_TMASK)
+                return FALSE;
+            *ptag = JS_DupValue(ctx, pr->u.value);
+            return TRUE;
+        }
+        if (p->is_exotic && p->class_id != JS_CLASS_STRING)
+            return FALSE;
+        p = p->shape->proto;
+        if (!p) {
+            *ptag = JS_UNDEFINED;
+            return TRUE;
+        }
+    }
+}
+
 static JSValue js_object_toString(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv)
 {
@@ -46070,6 +46148,13 @@ static JSValue js_object_toString(JSContext *ctx, JSValueConst this_val,
         tag = js_new_string8(ctx, "Null");
     } else if (JS_IsUndefined(this_val)) {
         tag = js_new_string8(ctx, "Undefined");
+    } else if (JS_IsString(this_val) &&
+               js_string_to_string_tag(ctx, ctx->class_proto[JS_CLASS_STRING], &tag)) {
+        /* a string: the tag of its String object, read without making it */
+        if (!JS_IsString(tag)) {
+            JS_FreeValue(ctx, tag);
+            tag = JS_AtomToString(ctx, JS_ATOM_String);
+        }
     } else {
         obj = JS_ToObject(ctx, this_val);
         if (JS_IsException(obj))

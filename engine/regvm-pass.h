@@ -896,7 +896,7 @@ static void rv_store(RVPass *s, int slot)
         if (s->last >= 0 && s->last_dst == e.slot) {
             /* fold into the instruction that made it, which marked its d
                (rv_mark_dst): its d, the first operand byte, names the
-               local, and add, sub, MOV and the LOADKs take their L forms */
+               local, and add, sub, MOV, the LOADKs, GETF and GETVR take their L forms */
             uint8_t *c = s->code.buf + s->last;
             switch (c[0]) {
             case RV_ADD: c[0] = RV_ADDL; break;
@@ -906,6 +906,8 @@ static void rv_store(RVPass *s, int slot)
             case RV_MOV: c[0] = RV_MOVL; break;
             case RV_LOADK: c[0] = RV_LOADKL; break;
             case RV_LOADKR: c[0] = RV_LOADKRL; break;
+            case RV_GETF: c[0] = RV_GETFL; break;
+            case RV_GETVR: c[0] = RV_GETVRL; break;
             }
             c[1] = slot;
             s->last_dst = -1;

@@ -487,7 +487,9 @@ func runPart(src string) (string, bool) {
 // dispatch without a tick: the function counts at its entry
 // (poll_count_entry before it calls anything or sets pc), and between two
 // counts pc only goes forward. pc moves by a constant step forward (the
-// size of the instruction, *pc++), by a jump of a signed offset off that
+// size of the instruction, *pc++, also as a macro parameter every
+// invocation gives as a literal, regvmMacroStep), to the end of the case
+// list of rv_CASES (regvmCasesEnd), by a jump of a signed offset off that
 // counts first when off goes back (if (off < 0) poll_count(POLL_WEIGHT)),
 // or at one of the places regvmMoves lists: a call, which RV_CALLOP and
 // NEW count before they move pc, a return, an unwinding to a catch, which
@@ -510,6 +512,7 @@ func regvmJumps(body string) []string {
 		}
 	}
 	forward := regexp.MustCompile(`^pc \+= (?:\d+|\(len\)|ip\[0\]|2 \+ 7 \* ip\[1\]);$`)
+	macroStep := regexp.MustCompile(`^pc \+= \d+ \+ \((\w+)\);$`)
 	jump := regexp.MustCompile(`^pc (?:\+= (?:2 \+ )?off|= (?:ip \+ 3|c \+ 7) \+ off);$`)
 	counted := regexp.MustCompile(`if \(off < 0\) poll_count\(POLL_WEIGHT\);`)
 	// the handler around a move: from the label or macro before it to the
@@ -529,6 +532,14 @@ func regvmJumps(body string) []string {
 		st := space.ReplaceAllString(strings.TrimSpace(body[m[2]:m[3]]), " ")
 		switch {
 		case forward.MatchString(st), regvmMoves[st] == "set":
+		case macroStep.MatchString(st):
+			if why := regvmMacroStep(body, m[2], macroStep.FindStringSubmatch(st)[1]); why != "" {
+				bad = append(bad, why+": "+st)
+			}
+		case st == "pc = c + 7 * n;":
+			if why := regvmCasesEnd(body[:m[2]]); why != "" {
+				bad = append(bad, why+": "+st)
+			}
 		case jump.MatchString(st):
 			if !counted.MatchString(handler(m[2])) {
 				bad = append(bad, "a jump that does not count when it goes back: "+st)
@@ -549,6 +560,117 @@ func regvmJumps(body string) []string {
 		bad = append(bad, "pc moves outside the rule: "+strings.TrimSpace(m))
 	}
 	return bad
+}
+
+// regvmMacroStep says what is wrong, or "", with a step pc += N + (p) at at in
+// body: it is a constant step forward when p is a parameter of the #define
+// the line is in and every invocation of that macro passes a decimal
+// literal for it (RV_JCMP's w, the width of its b operand).
+func regvmMacroStep(body string, at int, p string) string {
+	d := strings.LastIndex(body[:at], "#define ")
+	if d < 0 || strings.LastIndex(body[:at], "\n rv_") > d {
+		return "a step by a macro parameter outside a #define"
+	}
+	lines := strings.Split(body[d:at], "\n")
+	for _, l := range lines[:len(lines)-1] {
+		if !strings.HasSuffix(strings.TrimRight(l, " \t"), "\\") {
+			return "a step by a macro parameter outside its #define"
+		}
+	}
+	def := regexp.MustCompile(`^#define (\w+)\(([^)]*)\)`).FindStringSubmatch(body[d:])
+	if def == nil {
+		return "a step by a macro parameter in a #define with no parameters"
+	}
+	idx := -1
+	for i, q := range strings.Split(def[2], ",") {
+		if strings.TrimSpace(q) == p {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return "a step by (" + p + "), not a parameter of " + def[1]
+	}
+	literal := regexp.MustCompile(`^\d+$`)
+	uses := 0
+	for _, loc := range regexp.MustCompile(`\b`+def[1]+`\(`).FindAllStringIndex(body, -1) {
+		if loc[0] == d+len("#define ") {
+			continue
+		}
+		args, ok := macroArgs(body[loc[1]:])
+		if !ok || idx >= len(args) {
+			return "an invocation of " + def[1] + " whose arguments cannot be read"
+		}
+		if a := strings.TrimSpace(args[idx]); !literal.MatchString(a) {
+			return "a step by (" + p + "), which an invocation of " + def[1] + " gives as " + a + ", not a decimal literal"
+		}
+		uses++
+	}
+	if uses == 0 {
+		return "a step by (" + p + ") in " + def[1] + ", which nothing invokes"
+	}
+	return ""
+}
+
+// macroArgs splits the arguments of a macro invocation, s starting after its
+// opening parenthesis, at the commas outside parentheses and brackets.
+func macroArgs(s string) ([]string, bool) {
+	var args []string
+	depth, from := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[':
+			depth++
+		case ']':
+			depth--
+		case ')':
+			if depth == 0 {
+				return append(args, s[from:i]), true
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				args = append(args, s[from:i])
+				from = i + 1
+			}
+		}
+	}
+	return nil, false
+}
+
+// regvmCasesEnd says what is wrong, or "", with pc = c + 7 * n, the end of
+// the case list of rv_CASES, where before is body up to that line: it is a
+// step forward when, in the handler, n is the byte ip[1] and is only masked
+// after, and c is declared as ip + 2 with c += tsize its only write before
+// the line. tsize, the size of the table, is trusted here.
+func regvmCasesEnd(before string) string {
+	from := strings.LastIndex(before, "\n rv_")
+	if from < 0 {
+		return "the end of the cases outside a handler"
+	}
+	h := before[from:]
+	if !regexp.MustCompile(`[^\w.>]n = ip\[1\][,;]`).MatchString(h) {
+		return "the end of the cases with n not the byte ip[1]"
+	}
+	if regexp.MustCompile(`[^\w.>]n\s*(?:\+\+|--)|(?:\+\+|--)\s*n\b`).MatchString(h) {
+		return "the end of the cases with n stepped"
+	}
+	for _, w := range regexp.MustCompile(`[^\w.>*]n\s*((?:[-+*/%&|^]|<<|>>)?=[^=][^,;]*)[,;]`).FindAllStringSubmatch(h, -1) {
+		if w[1] != "= ip[1]" && !regexp.MustCompile(`^&= 0x[0-9a-fA-F]+$`).MatchString(w[1]) {
+			return "the end of the cases with n written as n " + w[1]
+		}
+	}
+	if !regexp.MustCompile(`const uint8_t \*c = ip \+ 2[,;]`).MatchString(h) {
+		return "the end of the cases with c not declared as ip + 2"
+	}
+	if regexp.MustCompile(`[^\w.>]c\s*(?:\+\+|--)|(?:\+\+|--)\s*c\b`).MatchString(h) {
+		return "the end of the cases with c stepped"
+	}
+	for _, w := range regexp.MustCompile(`[^\w.>*]c\s*((?:[-+*/%&|^]|<<|>>)?=[^=][^,;]*)[,;]`).FindAllStringSubmatch(h, -1) {
+		if w[1] != "+= tsize" {
+			return "the end of the cases with c written as c " + w[1]
+		}
+	}
+	return ""
 }
 
 // regvmMoves are the moves of pc in JS_RegvmRun that are not a step forward
@@ -572,8 +694,9 @@ var regvmMoves = map[string]string{
 
 // TestRegvmJumpsCount holds JS_RegvmRun to regvmJumps, and checks that
 // copies of it with one count taken out are caught: a jump back that does
-// not count, a step back by hand, a call that does not count, and no entry
-// count.
+// not count, a step back by hand, a call that does not count, no entry
+// count, a step by a macro parameter that one invocation gives as no
+// literal, and an end of the cases of rv_CASES after n or c was moved.
 func TestRegvmJumpsCount(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "engine")
 	files := map[string]string{}
@@ -599,6 +722,9 @@ func TestRegvmJumpsCount(t *testing.T) {
 		{"regvm-ops-basic.h", "    poll_count(POLL_WEIGHT);                                            \\\n    ip = pc + (len) - 2;", "    ip = pc + (len) - 2;", "RV_CALLOP( does not count"},
 		{"regvm-run.h", "\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
 		{"regvm-run.h", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            goto rv_exception;", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            RV_NEXT();", "not followed by goto rv_exception"},
+		{"regvm-ops-cmp.h", "->pvalue, 4, 1, 0, 2)", "->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
+		{"regvm-ops-cmp.h", "        int res, off, n = ip[1], st = -1;", "        int res, off, n = ip[1], st = -1;\n        n -= 3;", "with n written as n -= 3"},
+		{"regvm-ops-cmp.h", "        const uint8_t *c = ip + 2, *c0;", "        const uint8_t *c = ip + 2, *c0;\n        c -= 9;", "with c written as c -= 9"},
 	} {
 		src, err := read(c.file)
 		if err != nil {

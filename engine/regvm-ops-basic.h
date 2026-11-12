@@ -28,8 +28,10 @@ RV_OP(KADD) RV_OP(KSUB)                               /* d k b: the constant on 
 RV_OP(JF) RV_OP(JT)                                   /* s off */
 RV_OP(GOTO)                                           /* off */
 RV_OP(GETF) RV_OP(GETFT)                              /* d o atom */
+RV_OP(GETFL)                                          /* d o atom: GETF into the local d */
 RV_OP(PUTF)                                           /* o v flags atom */
 RV_OP(GETVR)                                          /* d idx16 */
+RV_OP(GETVRL)                                         /* d idx16: GETVR into the local d */
 RV_OP(CALL)     /* w argc: func and arguments at w, this undefined */
 RV_OP(CALLM)    /* w argc: the same, this the temp at w - 1 */
 RV_OP(CALLML)   /* t w argc: the same, this the local t */
@@ -516,9 +518,10 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         break;
 #elif RV_PART == RV_PART_RUN_FN
 /* the slow side of add, sub and the compares, ip at the operands: d a b,
-   or d a k when k has 1, d k b when it has 2 (KADD, KSUB). Stores the
-   result for arith, returns 0 or 1 for a compare, -1 on an exception. For
-   a compare and branch, d is absent. */
+   or d a k when k has 1, d k b when it has 2 (KADD, KSUB), a idx16 of a
+   var ref when it has 4 (JSEQVF). Stores the result for arith, returns 0
+   or 1 for a compare, -1 on an exception. For a compare and branch, d is
+   absent. */
 static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                    int op, int k, BOOL has_d)
 {
@@ -530,7 +533,9 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         ops[0] = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[0]]);
     else
         ops[0] = rv_take(ctx, F, (int8_t)ip[0]);
-    if (k & 1)
+    if (k & 4)
+        ops[1] = JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue);
+    else if (k & 1)
         ops[1] = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]);
     else
         ops[1] = rv_take(ctx, F, (int8_t)ip[1]);
@@ -839,8 +844,10 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     RV_NEXT();
 
     /* get_field: a data property found with nothing run, as
-       GET_LOCAL_FIELD of JS_CallInternal, else rv_getf_slow */
-#define RV_GETFIELD(label, temp)                                        \
+       GET_LOCAL_FIELD of JS_CallInternal, else rv_getf_slow. GETF writes a
+       temp, which holds nothing to free (the pass gives each result a
+       temp no entry owns), GETFL a local (rv_store) and GETFT either. */
+#define RV_GETFIELD(label, temp, tdst)                                  \
  label:                                                                 \
     ip = pc; pc += 6;                                                   \
     {                                                                   \
@@ -873,7 +880,10 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                     break;                                              \
                 }                                                       \
             }                                                           \
-            RV_PUTD(ip[0], val);                                        \
+            if (tdst)                                                   \
+                RV_R(ip[0]) = val;                                      \
+            else                                                        \
+                RV_PUTD(ip[0], val);                                    \
             if (temp)                                                   \
                 JS_FreeValue(ctx, obj);                                 \
             RV_NEXT();                                                  \
@@ -895,8 +905,9 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     }                                                                   \
     RV_NEXT();
 
-    RV_GETFIELD(rv_GETF, FALSE)
-    RV_GETFIELD(rv_GETFT, TRUE)
+    RV_GETFIELD(rv_GETF, FALSE, TRUE)
+    RV_GETFIELD(rv_GETFL, FALSE, FALSE)
+    RV_GETFIELD(rv_GETFT, TRUE, FALSE)
 
  rv_PUTF:
     ip = pc; pc += 7;
@@ -929,7 +940,12 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     }
     RV_NEXT();
 
+    /* GETVR writes a temp, which holds nothing to free, GETVRL a local */
  rv_GETVR:
+    ip = pc; pc += 3;
+    RV_R(ip[0]) = JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue);
+    RV_NEXT();
+ rv_GETVRL:
     ip = pc; pc += 3;
     RV_PUTD(ip[0], JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue));
     RV_NEXT();

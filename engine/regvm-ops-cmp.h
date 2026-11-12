@@ -24,6 +24,8 @@ RV_OP(JGTF) RV_OP(JGTT) RV_OP(JGTKF) RV_OP(JGTKT)
 RV_OP(JGTEF) RV_OP(JGTET) RV_OP(JGTEKF) RV_OP(JGTEKT)
 RV_OP(JEQF) RV_OP(JEQT) RV_OP(JEQKF) RV_OP(JEQKT)
 RV_OP(JSEQF) RV_OP(JSEQT) RV_OP(JSEQKF) RV_OP(JSEQKT)
+RV_OP(JSEQVF)              /* a idx16 off: JSEQF with b the value of the var ref
+                               idx, read in place (a GETVR the pass took into it) */
 RV_OP(ISX)                  /* d s kind: s is null (0), undefined (1), either (2) */
 RV_OP(JISF) RV_OP(JIST)     /* s kind off */
 RV_OP(TYPEIS)               /* d s atom: typeof s is the atom */
@@ -34,7 +36,9 @@ RV_OP(JFND) RV_OP(JTND)     /* t off: as JFN and JTN, and t freed when the jump 
                                taken (a dup, a branch, then a drop: a && b, a || b) */
 RV_OP(CASES)                /* s n, then n times atom flag off, then off: jump at the
                                first case whose string is s, if flag is 1, or is not,
-                               if 0, and by the last off when none holds */
+                               if 0, and by the last off when none holds. With bit 7
+                               of n set, a table of the cases comes before them
+                               (rv_cases_table) */
 #elif RV_PART == RV_PART_INFO
     case OP_lt: case OP_lte: case OP_gt: case OP_gte:
     case OP_eq: case OP_neq: case OP_strict_eq: case OP_strict_neq:
@@ -90,6 +94,19 @@ static void rv_cmp_info(int op, int *bop, int *jbase, int *neg, int *mirror)
     }
 }
 
+/* whether the last instruction emitted is a GETVR into the temp t, with
+   nothing after it: what it reads can be read by the next instruction
+   instead, as nothing runs between. A GETVR cannot throw and has no pcmap
+   entry, and a block that starts at it starts at what replaces it. */
+static BOOL rv_last_getvr(RVPass *s, int t)
+{
+    const uint8_t *c;
+    if (s->last < 0 || s->last + 4 != (int)s->code.size)
+        return FALSE;
+    c = s->code.buf + s->last;
+    return c[0] == RV_GETVR && (int8_t)c[1] == t;
+}
+
 /* compare and branch: the two operands are on the stack, the branch, which
    is at q, jumps to target when the compare is jump_true */
 static void rv_cmp_branch(RVPass *s, int op_base, int op_kbase, int jump_true,
@@ -101,7 +118,15 @@ static void rv_cmp_branch(RVPass *s, int op_base, int op_kbase, int jump_true,
     eb = &s->st[s->sp - 1];
     /* the stack under the operands: canonical at the block end */
     rv_block_end(s, s->sp - 2);
-    if (eb->kind == RV_E_K) {
+    if (op_base == RV_JSEQF && !jump_true && eb->kind == RV_E_TEMP &&
+        rv_last_getvr(s, eb->slot)) {
+        /* b is the GETVR just emitted: the jump reads its var ref */
+        int idx = get_u16(s->code.buf + s->last + 2);
+        s->code.size = s->last;
+        rv_emit(s, RV_JSEQVF);
+        rv_byte(s, a);
+        rv_u16(s, idx);
+    } else if (eb->kind == RV_E_K) {
         rv_emit(s, op_kbase + jump_true);
         rv_byte(s, a);
         rv_byte(s, eb->k);
@@ -164,6 +189,67 @@ static void rv_branch_top(RVPass *s, int jt, int target, int q)
 }
 
 #define RV_CASES_MAX 64
+/* the fewest cases that get a table: below, the chain costs less than the
+   look up (about 23 instructions a case against about 45) */
+#define RV_CASES_TABLE 4
+
+/* whether the CASES of the n cases of atom gets a table: enough cases, and
+   all of them string atoms, which goasm_case_atom tells apart by their
+   pointer alone */
+static BOOL rv_cases_tabled(RVPass *s, const JSAtom *atom, int n)
+{
+    int i;
+    if (n < RV_CASES_TABLE)
+        return FALSE;
+    for (i = 0; i < n; i++) {
+        if (__JS_AtomIsTaggedInt(atom[i]) ||
+            s->rt->atom_array[atom[i]]->atom_type != JS_ATOM_TYPE_STRING)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+/* The table of a CASES, after its s and n: k, the stop when no case is
+   equal, 2^k pointers to the strings of the atoms (NULL in a free slot)
+   and 2^k stops, the string of an atom at its hash (JSString.hash) or in
+   the next free slot after it, 2^k at least twice the cases. A stop is the
+   case where the chain ends for that value, worked out by the chain's own
+   rule: a case holds when its compare gives its flag, and the compare gives
+   1 for the case's own atom only, so a case given twice stops at its first,
+   and a case of flag 0 stops every other value. The strings live as long
+   as the code: the bytecode holds a reference to each atom it names, and a
+   resize of the atom table moves its array of pointers, not the strings.
+   Returns the bytes it adds. */
+static int rv_cases_table(RVPass *s, const JSAtom *atom, const int *jt, int n)
+{
+    JSString *key[2 * RV_CASES_MAX];
+    uint8_t stop[2 * RV_CASES_MAX];
+    int k = 3, size, i, j, h, miss;
+    while ((1 << k) < 2 * n)
+        k++;
+    size = 1 << k;
+    memset(key, 0, sizeof(key[0]) * size);
+    memset(stop, 0, size);
+    for (miss = 0; miss < n && jt[miss]; miss++)
+        ;
+    for (i = 0; i < n; i++) {
+        JSString *p = s->rt->atom_array[atom[i]];
+        for (h = p->hash & (size - 1); key[h] && key[h] != p; h = (h + 1) & (size - 1))
+            ;
+        if (key[h])
+            continue;
+        key[h] = p;
+        for (j = 0; j < n && (atom[j] == atom[i]) != jt[j]; j++)
+            ;
+        stop[h] = j;
+    }
+    rv_byte(s, k);
+    rv_byte(s, miss);
+    if (dbuf_put(&s->code, (const uint8_t *)key, sizeof(key[0]) * size) ||
+        dbuf_put(&s->code, stop, size))
+        s->failed = TRUE;
+    return 2 + (int)(sizeof(key[0]) + 1) * size;
+}
 
 /* dup_case_atom at pos and the cases that the same dispatch can take after
    it, as QuickJS's dup_case_atom takes them: dup_case_atom
@@ -181,7 +267,7 @@ static void rv_cases(RVPass *s, int pos)
     JSAtom atom[RV_CASES_MAX];
     int jt[RV_CASES_MAX], target[RV_CASES_MAX], n = 0, q = pos, i, slot;
     int follow = !(s->leader[pos] & RV_LEAD_CASE), contig = TRUE, skip = pos;
-    int at[RV_CASES_MAX], other0 = 0;
+    int at[RV_CASES_MAX], other0 = 0, tab, tsize = 0;
     RVMask mask;
     uint32_t start, end;
     while (n < RV_CASES_MAX && q + 8 < s->len && s->bc[q] == OP_dup_case_atom &&
@@ -236,9 +322,12 @@ static void rv_cases(RVPass *s, int pos)
     }
     rv_block_end(s, s->sp);
     slot = s->st[s->sp - 1].slot;
+    tab = rv_cases_tabled(s, atom, n);
     rv_emit(s, RV_CASES);
     rv_byte(s, slot);
-    rv_byte(s, n);
+    rv_byte(s, n | (tab ? 0x80 : 0));
+    if (tab)
+        tsize = rv_cases_table(s, atom, jt, n);
     for (i = 0; i < n; i++) {
         rv_u32(s, atom[i]);
         rv_byte(s, jt[i]);
@@ -259,11 +348,12 @@ static void rv_cases(RVPass *s, int pos)
        (rv_jump_throws): its end less two when the first case jumped, named
        before its target, less one when it did not, named where QuickJS's
        interpreter goes then: in its branch, or before the case at its
-       target. */
+       target. The value the table answers for stops where the chain would
+       have, at the same places. */
     mask = rv_owned(s, 0);
     start = s->last;
     for (i = 0; i < n; i++)
-        rv_pcmap_put(s, start + 3 + 7 * i + 4, at[i] + 6, mask);
+        rv_pcmap_put(s, start + 3 + tsize + 7 * i + 4, at[i] + 6, mask);
     rv_pcmap_put(s, end - 2, target[0] - 1, mask);
     rv_pcmap_put(s, end - 1, other0 - 1, mask);
     rv_throws(s, mask);
@@ -373,6 +463,14 @@ static void rv_cases(RVPass *s, int pos)
         rv_cases(s, pos);
         break;
 #elif RV_PART == RV_PART_RUN_FN
+/* the stop of a CASES with a table for v (goasm_case_table), out of the
+   loop: inline, the look up took registers of the loop, and on amd64 the
+   calls spilled two more of them */
+static no_inline int rv_case_table(JSValueConst v, const uint8_t *tab)
+{
+    return goasm_case_table(v, tab);
+}
+
 /* a case whose string the atom does not tell apart from s by its pointer
    and length */
 static no_inline int rv_case_slow(JSContext *ctx, JSValueConst v, JSAtom atom)
@@ -479,10 +577,11 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
     RV_CMPB(rv_SNEK, OP_strict_neq, !=, RV_K(ip[2]), TRUE, 1, 1)
 #undef RV_CMPB
 
-    /* compare and branch, as a compare then if_false or if_true */
-#define RV_JCMP(label, opc, cop, bexpr, isk, eqk, jt)                   \
+    /* compare and branch, as a compare then if_false or if_true. w: the
+       bytes of b, 2 for the index of a var ref (isk 4, rv_binop_slow) */
+#define RV_JCMP(label, opc, cop, bexpr, isk, eqk, jt, w)                \
  label:                                                                 \
-    ip = pc; pc += 4;                                                   \
+    ip = pc; pc += 3 + (w);                                             \
     {                                                                   \
         JSValue a = RV_R(ip[0]), bv = (bexpr);                          \
         int res;                                                        \
@@ -501,11 +600,12 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
             res = rv_binop_slow(ctx, F, ip, opc, isk, FALSE);           \
             if (res < 0)                                                \
                 goto rv_exception;                                      \
-            RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 2), 1);     \
+            RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1 + (w)),   \
+                         1);                                            \
         }                                                               \
         RV_JUMP_POLL(res == (jt), 1);                                   \
         if (res == (jt)) {                                              \
-            int off = (int16_t)get_u16(ip + 2);                         \
+            int off = (int16_t)get_u16(ip + 1 + (w));                   \
             if (off < 0)                                                \
                 poll_count(POLL_WEIGHT);                                \
             pc += off;                                                  \
@@ -514,10 +614,10 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
     RV_NEXT();
 
 #define RV_JCMP4(name, opc, cop, eqk)                                   \
-    RV_JCMP(rv_J##name##F, opc, cop, RV_R(ip[1]), FALSE, eqk, 0)        \
-    RV_JCMP(rv_J##name##T, opc, cop, RV_R(ip[1]), FALSE, eqk, 1)        \
-    RV_JCMP(rv_J##name##KF, opc, cop, RV_K(ip[1]), TRUE, eqk, 0)        \
-    RV_JCMP(rv_J##name##KT, opc, cop, RV_K(ip[1]), TRUE, eqk, 1)
+    RV_JCMP(rv_J##name##F, opc, cop, RV_R(ip[1]), FALSE, eqk, 0, 1)     \
+    RV_JCMP(rv_J##name##T, opc, cop, RV_R(ip[1]), FALSE, eqk, 1, 1)     \
+    RV_JCMP(rv_J##name##KF, opc, cop, RV_K(ip[1]), TRUE, eqk, 0, 1)     \
+    RV_JCMP(rv_J##name##KT, opc, cop, RV_K(ip[1]), TRUE, eqk, 1, 1)
     RV_JCMP4(LT, OP_lt, <, -1)
     RV_JCMP4(LTE, OP_lte, <=, -1)
     RV_JCMP4(GT, OP_gt, >, -1)
@@ -525,6 +625,8 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
     RV_JCMP4(EQ, OP_eq, ==, 0)
     RV_JCMP4(SEQ, OP_strict_eq, ==, 1)
 #undef RV_JCMP4
+    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,
+            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, 2)
 #undef RV_JCMP
 
     /* the rest of the relational compares, shared by the eight into a bool
@@ -668,25 +770,39 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
        last offset */
  rv_CASES:
     ip = pc;
-    pc += 2 + 7 * ip[1];
     {
         JSValue v = RV_R(ip[0]);
-        const uint8_t *c = ip + 2;
-        int res, off;
-        for (; c < pc; c += 7) {
-            res = RV_INJ_ARMED ? -1 : goasm_case_atom(rt, v, get_u32(c));
-            if (unlikely(res < 0)) {
-                RV_SYNC_TOP();
-                res = rv_case_slow(ctx, v, get_u32(c));
-                if (res < 0) {
-                    pc = c + 4; /* rv_cases */
-                    goto rv_exception;
-                }
-            }
-            if (res == c[4])
-                break;
+        const uint8_t *c = ip + 2, *c0;
+        int res, off, n = ip[1], st = -1;
+        if (n & 0x80) {
+            /* a table first (rv_cases_table): the stop of v, when it
+               tells it, in place of the compares */
+            int tsize = 2 + (int)((sizeof(JSString *) + 1) << c[0]);
+            n &= 0x7f;
+            if (!RV_INJ_ARMED)
+                st = rv_case_table(v, c);
+            c += tsize;
         }
-        RV_JUMP_POLL(c == ip + 2, 1);
+        c0 = c;
+        pc = c + 7 * n;
+        if (st >= 0) {
+            c += 7 * st;
+        } else {
+            for (; c < pc; c += 7) {
+                res = RV_INJ_ARMED ? -1 : goasm_case_atom(rt, v, get_u32(c));
+                if (unlikely(res < 0)) {
+                    RV_SYNC_TOP();
+                    res = rv_case_slow(ctx, v, get_u32(c));
+                    if (res < 0) {
+                        pc = c + 4; /* rv_cases */
+                        goto rv_exception;
+                    }
+                }
+                if (res == c[4])
+                    break;
+            }
+        }
+        RV_JUMP_POLL(c == c0, 1);
         if (c < pc) {
             off = (int16_t)get_u16(c + 5);
             pc = c + 7 + off;
