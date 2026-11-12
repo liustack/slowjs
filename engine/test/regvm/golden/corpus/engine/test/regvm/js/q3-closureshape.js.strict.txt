@@ -1,0 +1,15 @@
+result first: length=2c name=namedc prototype=objectw
+result many: 3:length=2c name=namedc prototype=objectw | 10:length=2c name=namedc prototype=objectw | 17:length=2c name=namedc prototype=objectw | false | true | true
+result arrow: 10:length=1c name=c | 11:length=1c name=c | 12:length=1c name=c | 13:length=1c name=c | 14:length=1c name=c | TypeError
+result async: length=3c name=c | length=3c name=c | length=3c name=c | length=3c name=c
+result generator: 0:length=1c name=genc prototype=objectw:false | 1:length=1c name=genc prototype=objectw:false | 2:length=1c name=genc prototype=objectw:false | 3:length=1c name=genc prototype=objectw:false
+result method: length=1c name=methodc
+result new: true true | true true | true true | true true
+result changed: length=9c prototype=5w extra=1wec / length=2c name=namedc prototype=objectw / named
+result frozen: true false length=2c name=namedc prototype=objectw false
+result proto key: length=2c name=namedc prototype=objectw fp undefined
+result names: 1,k2,[Symbol.iterator] length=0c name=1c prototype=objectw
+result realm: length=1c name=fc prototype=objectw false false true
+mem-end obj=417 atom=550 shape=270 prop=1980 jsfunc=3 cfunc=255 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=197 atom=543 shape=132 prop=974 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

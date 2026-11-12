@@ -10,11 +10,12 @@
    each input one render whose HTML can be written out, warm renders, and n
    timed renders. A render is startRender(json) followed by the jobs it
    queued. It prints one JSON line with the time of each page. The context
-   keeps 2048 shapes, as a VM of the Go API does.
+   keeps 2048 shapes, as a VM of the Go API does: shapes=N keeps N, and
+   shapes=0 turns the shape cache off.
 
      render bundle=B.js inputs=a.json,b.json [prelude=p1.js,p2.js] [warm=50]
             [n=200] [html=DIR] [tag=T] [front=N] [limit=BYTES]
-            [footprint=BYTES] [tifa=1 [murmur=0]] [young=1]
+            [footprint=BYTES] [tifa=1 [murmur=0]] [young=1] [shapes=N]
 
    A timed render ends when the HTML is one flat string of the engine: tifa
    makes its UTF-8 in Go, and here it is made after the clock stops. startRender
@@ -652,7 +653,7 @@ int main(int argc, char **argv)
     char *copy, *p, *tok;
 
     if (!bundle || !inputs) {
-        fprintf(stderr, "usage: render bundle=B inputs=A,B [prelude=P,Q] [warm=N] [n=N] [html=DIR] [tag=T] [soak=N every=N release=KEEP young=0|1] [front=N] [limit=B] [footprint=B]\n");
+        fprintf(stderr, "usage: render bundle=B inputs=A,B [prelude=P,Q] [warm=N] [n=N] [html=DIR] [tag=T] [soak=N every=N release=KEEP young=0|1] [front=N] [limit=B] [footprint=B] [shapes=N]\n");
         return 2;
     }
     /* a soak or a timing run takes longer than a test: no time limit unless asked */
@@ -682,8 +683,9 @@ int main(int argc, char **argv)
     }
 #ifndef RENDER_OLD_API
     /* the shapes a context keeps, as NewVM of the Go API keeps them
-       (DefaultShapeCache of vm.go) */
-    if (JS_SetShapeCache(ctx, 2048) < 0) {
+       (DefaultShapeCache of vm.go) unless shapes= says otherwise: 0 turns
+       the cache off, as the strict soak of docs/testing.md runs */
+    if (JS_SetShapeCache(ctx, atoi(arg(argc, argv, "shapes", "2048"))) < 0) {
         fprintf(stderr, "render: no shape cache\n");
         return 1;
     }

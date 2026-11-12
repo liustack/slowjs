@@ -776,8 +776,10 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
         int res, off, n = ip[1], st = -1;
         if (n & 0x80) {
             /* a table first (rv_cases_table): the stop of v, when it
-               tells it, in place of the compares */
-            int tsize = 2 + (int)((sizeof(JSString *) + 1) << c[0]);
+               tells it, in place of the compares. The mask leaves the k of
+               rv_cases_table (3 to 7) as it is, and shows that the end
+               of the cases comes after ip (TestRegvmJumpsCount). */
+            int tsize = 2 + (int)((sizeof(JSString *) + 1) << (c[0] & 15));
             n &= 0x7f;
             if (!RV_INJ_ARMED)
                 st = rv_case_table(v, c);

@@ -1239,6 +1239,47 @@ static void test_read_truncated_bigint(void)
     }
 }
 
+/* A script with regexp literals, written as bytecode and read back, gives
+   what it gives compiled: a regexp keeps the plan of lre_skip after its
+   bytecode and its group names after the plan, and the bytecode of a
+   regexp is a string of the constants of the function. Bytecode of another
+   version, as of the version before the plan, is refused with an
+   exception, not read. */
+static void test_regexp_bytecode_read(void)
+{
+    static const char src[] =
+        "var m = /(?<a>x)(?<b>[\"&<>])/.exec('yx<'), r = /(?:a|c)b/g;"
+        "[m.index, m.groups.a, m.groups.b, 'acbab'.replace(r, '$&!'),"
+        " /\\u4e2d+$/.test('a\\u4e2d\\u4e2d'), 'x\\xe9y'.search(/[\\xe0-\\xff]/),"
+        " 'k1-2'.split(/[+\\-]?\\d/).length, 'a<b'.replace(/[<>]/g, '$<a>')].join()";
+    static const char want[] = "1,x,<,acb!ab!,true,1,3,a$<a>b";
+    VM v = vm_new();
+    JSValue f = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSValue r;
+    const char *s;
+    uint8_t *buf;
+    size_t size;
+
+    CHECK(!JS_IsException(f), "compiled");
+    buf = JS_WriteObject(v.ctx, &size, f, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, f);
+    CHECK(buf != NULL && size > 1, "written");
+    if (buf) {
+        r = JS_EvalFunction(v.ctx, JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE));
+        s = JS_IsException(r) ? NULL : JS_ToCString(v.ctx, r);
+        CHECK(s && !strcmp(s, want), "read back: %s, want %s", s ? s : "(exception)", want);
+        JS_FreeCString(v.ctx, s);
+        JS_FreeValue(v.ctx, r);
+        buf[0]--;
+        r = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        CHECK(JS_IsException(r), "bytecode of the version before is read");
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
 /* where(n) is JS_GetScriptOrModuleName(ctx, n) as a string, "(none)" when
    there is none: n counts the frames from the one of where itself. */
 static JSValue js_where(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
@@ -1938,6 +1979,7 @@ int main(void)
     test_throw_error_kind();
     test_escape_text();
     test_read_truncated_bigint();
+    test_regexp_bytecode_read();
     test_script_name_frames();
     test_weakref_kept();
     test_rv_far_locals();

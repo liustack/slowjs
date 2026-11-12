@@ -192,7 +192,7 @@ go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 engine/test/tlsf-edges.sh                        # the edge cases of TLSF, on the pinned file and on engine/tlsf.c
 engine/test/build.sh plain && engine/test/heap.sh    # scenarios and random sequences, on the heap and on the runtime
 engine/test/build.sh fuzz && engine/test/heap.sh -f 300   # the same sequences as a libFuzzer target, for 300 seconds
-engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.json,C.json soak=3000
+engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.json,C.json soak=3000 shapes=0   # 再不带 shapes=0 跑一遍
 ```
 
 ### 生成引擎的 Go 宿主
@@ -238,7 +238,10 @@ go run ./internal/cengine/cmd/gcpause -secs 10      # how long the Go GC waits t
 CENGINE_HAMMER_N=3000 go test -tags cenginehammer -run Hammer ./internal/cengine
 ```
 
-[allocator.md](allocator.zh-CN.md) 说明了测什么、怎么测。`heap.sh` 接受 `-m MODE`，取 `asan-heap`、`asan-heap-iter` 和 `ubsan`。`asan-heap-iter` 是带 `JS_MALLOC_USE_ITER` 的 `asan-heap`，这是一个引擎不用的、列出所有已分配块的清单：它让这个宏保持能够构建，场景、随机序列和 `poison-test` 都通过。对 `engine/heap.c`、`engine/tlsf.c` 或 `engine/quickjs.c` 里分配器部分的改动，要把这些全部运行一遍：test262 在 `plain` 和 `asan-heap` 下，针对系统 malloc 的 `asan` 跑 test262，以及 tifa 页面的 3000 次渲染的浸泡测试（`render.c`），它的计数、块数和占用在最初的一百次之后不得增长。
+[allocator.md](allocator.zh-CN.md) 说明了测什么、怎么测。`heap.sh` 接受 `-m MODE`，取 `asan-heap`、`asan-heap-iter` 和 `ubsan`。`asan-heap-iter` 是带 `JS_MALLOC_USE_ITER` 的 `asan-heap`，这是一个引擎不用的、列出所有已分配块的清单：它让这个宏保持能够构建，场景、随机序列和 `poison-test` 都通过。对 `engine/heap.c`、`engine/tlsf.c` 或 `engine/quickjs.c` 里分配器部分的改动，要把这些全部运行一遍：test262 在 `plain` 和 `asan-heap` 下，针对系统 malloc 的 `asan` 跑 test262，以及 tifa 页面 3000 次渲染的浸泡测试（`render.c`），每个应用跑两遍：
+
+- **严格**，用 `shapes=0` 关掉形状缓存：每一行 `full-gc` 和它所在相位的第一行比，大小、块数和占用都不得超过那一行，一点都不行。页面是轮流渲染的，所以这些行随输入循环。K 个输入、每 100 次渲染一行时，周期是 K / gcd(K, 100) 行，所以各相位的第一行就是开头那几行：第 100、200、300 次，依此类推。周期由输入的个数算出来，换一个长度不同的页面列表，不需要新规则。没有任何东西是有意留着的，所以泄漏一个块也能抓到。
+- **带宽**，用 Go API 的 VM 默认的 `shapes=2048`：从第 300 次起，大小落在 1% 的带里，后三分之一的平均大小和平均块数比中间三分之一高出不超过 0.1%，占用不超过第 300 次的值。它说明在用户拿到的设置下，缓存有上界。缓存是一个 2048 格的环，装最后一个对象已经死掉的普通对象形状，MUI 页面一轮死掉的比这还多，所以环一直在转，大小在一个窄带里变，而不是一条平线。在 MUI 页面上量过：关掉缓存是平的，2048 是 0.21% 的带，4096 装得下所有这样的形状，又是平的。
 
 ## 竞态检测器
 

@@ -131,6 +131,11 @@ static const REOpCode reopcode_info[REOP_COUNT] = {
 
 #define RE_HEADER_LEN 8
 
+/* the plan of lre_skip after the bytecode (see lre_plan) */
+#define LRE_PLAN_LEN 36
+
+static void lre_plan(uint8_t *bc);
+
 static inline int is_digit(int c) {
     return c >= '0' && c <= '9';
 }
@@ -717,12 +722,12 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
 
     re_flags = lre_get_flags(buf);
     bc_len = get_u32(buf + RE_HEADER_BYTECODE_LEN);
-    assert(bc_len + RE_HEADER_LEN <= buf_len);
+    assert(bc_len + RE_HEADER_LEN + LRE_PLAN_LEN <= buf_len);
     printf("flags: 0x%x capture_count=%d reg_count=%d\n",
            re_flags, buf[RE_HEADER_CAPTURE_COUNT], buf[RE_HEADER_REGISTER_COUNT]);
     if (re_flags & LRE_FLAG_NAMED_GROUPS) {
         const char *p;
-        p = (char *)buf + RE_HEADER_LEN + bc_len;
+        p = (char *)buf + RE_HEADER_LEN + bc_len + LRE_PLAN_LEN;
         printf("named groups: ");
         for(i = 1; i < buf[RE_HEADER_CAPTURE_COUNT]; i++) {
             if (i != 1)
@@ -3211,6 +3216,16 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
     put_u32(s->byte_code.buf + RE_HEADER_BYTECODE_LEN,
             s->byte_code.size - RE_HEADER_LEN);
 
+    /* the plan of lre_skip */
+    {
+        static const uint8_t zero[LRE_PLAN_LEN];
+        if (dbuf_put(re_code(s, LRE_PLAN_LEN), zero, LRE_PLAN_LEN)) {
+            re_parse_out_of_memory(s);
+            goto error;
+        }
+        lre_plan(s->byte_code.buf);
+    }
+
     /* add the named groups if needed */
     if (s->group_names.size > (s->capture_count - 1) * LRE_GROUP_NAME_TRAILER_LEN) {
         if (dbuf_put(re_code(s, s->group_names.size), s->group_names.buf, s->group_names.size)) {
@@ -4143,14 +4158,44 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
    and so on. When the first op is ^ outside multiline mode, a match can
    only start at position 0. Every other regexp starts from cindex with the
    loop, as do the unicode ones, whose loop steps over surrogate pairs, and
-   the sticky ones, which have no loop. */
+   the sticky ones, which have no loop.
+
+   Which of these a regexp takes, and its set of first units, depend on its
+   bytecode only, so lre_compile works them out once (lre_plan) and keeps
+   them in the LRE_PLAN_LEN bytes right after the bytecode, before the group
+   names: the kind (LRE_PLAN_LOOP, ...), whether every unit from 256 up can
+   start a match, for LRE_PLAN_CHAR how many char ops follow the first one
+   (at most LRE_PREFIX_MAX), a byte of 0, and a table of 256 bits, bit c of byte
+   c / 8 for unit c, of the units below 256 that can start a match. The
+   table is exact for LRE_PLAN_RANGE and LRE_PLAN_SET and unused for the
+   other kinds. */
 #define LRE_SKIP_LOOP (5 + 1 + 5)
 #define LRE_SKIP_MATCH (RE_HEADER_LEN + LRE_SKIP_LOOP)
 #define LRE_SKIP_BODY (LRE_SKIP_MATCH + 2)
 
+/* the kinds of plan lre_plan writes */
+enum {
+    LRE_PLAN_LOOP, /* run the bytecode from its start, with the loop */
+    LRE_PLAN_LINE_START, /* ^ outside multiline mode: a match starts at 0 only */
+    LRE_PLAN_CHAR, /* the first op is one character */
+    LRE_PLAN_RANGE, /* the first op is one class */
+    LRE_PLAN_SET, /* the first units are those of the table and high */
+};
+#define LRE_PLAN_HIGH 1
+#define LRE_PLAN_PREFIX 2
+#define LRE_PLAN_TABLE 4
+
+/* the most characters of a literal prefix after the first one that a plan
+   keeps (its byte LRE_PLAN_PREFIX) */
+#define LRE_PREFIX_MAX 255
+
 /* how many units of the string lre_skip looks at between two checks for an
-   interrupt */
+   interrupt, and a quarter of that for a class in a string of 16 bits,
+   which a binary search of the class looks for: up to about 4 times the
+   work for each unit of a class with a wide span, as the class of
+   seroval's escape [\x00-\x07...\ud800-\udfff] */
 #define LRE_SKIP_CHUNK (1 << 16)
+#define LRE_RANGE_CHUNK (LRE_SKIP_CHUNK / 4)
 
 /* how many ops lre_first_set reads at most before it gives up: a regexp of
    148 alternatives, each starting with a character, takes about 300 */
@@ -4161,7 +4206,7 @@ enum {
     LRE_RUN_ONCE, /* run once, from pc */
     LRE_RUN_CHAR, /* match at each position that holds the char at op */
     LRE_RUN_RANGE, /* match at each position that holds a character of the range at op */
-    LRE_RUN_SET, /* match at each position that holds a unit of set */
+    LRE_RUN_SET, /* match at each position that holds a unit of the table, or of 256 up when high */
 };
 
 /* a set of the units a match can start with: the units below 256 exactly,
@@ -4176,7 +4221,9 @@ typedef struct {
     int pc; /* the offset in the bytecode of the first op to run, or 0: run nothing, return index */
     int kind; /* LRE_RUN_ONCE, ... */
     const uint8_t *op; /* the first op of the regexp, for LRE_RUN_CHAR and LRE_RUN_RANGE */
-    LRESet set; /* for LRE_RUN_SET */
+    const uint8_t *table; /* the table of the plan, for LRE_RUN_SET */
+    BOOL high; /* every unit from 256 up starts a match, for LRE_RUN_SET */
+    int prefix; /* how many char ops follow the one at op, for LRE_RUN_CHAR */
 } LRESkip;
 
 static void lre_set_add(LRESet *set, uint32_t c)
@@ -4185,13 +4232,6 @@ static void lre_set_add(LRESet *set, uint32_t c)
         set->bits[c >> 6] |= (uint64_t)1 << (c & 63);
     else
         set->high = TRUE;
-}
-
-static BOOL lre_set_has(const LRESet *set, uint32_t c)
-{
-    if (c < 256)
-        return (set->bits[c >> 6] >> (c & 63)) & 1;
-    return set->high;
 }
 
 /* lre_set_add_range adds the units from low to high, both included. */
@@ -4374,20 +4414,24 @@ static BOOL lre_find_range(const uint8_t *op, const uint8_t *cbuf, int *pi,
 }
 
 /* lre_find_set gives in *pi the first position from *pi to end that holds
-   a unit of set, or end, and returns whether it found one. */
-static BOOL lre_find_set(const LRESet *set, const uint8_t *cbuf, int *pi,
-                         int end, int cbuf_type)
+   a unit of the table of 256 bits at table, or a unit from 256 up when high,
+   or end, and returns whether it found one. */
+static BOOL lre_find_set(const uint8_t *table, BOOL high, const uint8_t *cbuf,
+                         int *pi, int end, int cbuf_type)
 {
     int i = *pi;
+    uint32_t c;
 
     if (cbuf_type == 0) {
         for (; i < end; i++) {
-            if ((set->bits[cbuf[i] >> 6] >> (cbuf[i] & 63)) & 1)
+            c = cbuf[i];
+            if ((table[c >> 3] >> (c & 7)) & 1)
                 goto found;
         }
     } else {
         for (; i < end; i++) {
-            if (lre_set_has(set, ((const uint16_t *)cbuf)[i]))
+            c = ((const uint16_t *)cbuf)[i];
+            if (c < 256 ? (table[c >> 3] >> (c & 7)) & 1 : high)
                 goto found;
         }
     }
@@ -4401,15 +4445,16 @@ static BOOL lre_find_set(const LRESet *set, const uint8_t *cbuf, int *pi,
 /* lre_find gives in *pi the first position from i to clen that can start
    a match as st says, and returns 1, or 0 when there is none, or
    LRE_RET_TIMEOUT when an interrupt comes first. It checks for one after
-   every LRE_SKIP_CHUNK units it looks at. */
+   every LRE_SKIP_CHUNK units it looks at, LRE_RANGE_CHUNK for
+   LRE_RUN_RANGE. */
 static int lre_find(const LRESkip *st, const uint8_t *cbuf, int i, int clen,
                     int cbuf_type, void *opaque, int *pi)
 {
-    int end;
+    int end, chunk = st->kind == LRE_RUN_RANGE ? LRE_RANGE_CHUNK : LRE_SKIP_CHUNK;
     BOOL found;
 
     while (i < clen) {
-        end = clen - i > LRE_SKIP_CHUNK ? i + LRE_SKIP_CHUNK : clen;
+        end = clen - i > chunk ? i + chunk : clen;
         switch (st->kind) {
         case LRE_RUN_CHAR:
             found = lre_find_char(st->op, cbuf, &i, end, cbuf_type);
@@ -4418,7 +4463,7 @@ static int lre_find(const LRESkip *st, const uint8_t *cbuf, int i, int clen,
             found = lre_find_range(st->op, cbuf, &i, end, cbuf_type);
             break;
         default:
-            found = lre_find_set(&st->set, cbuf, &i, end, cbuf_type);
+            found = lre_find_set(st->table, st->high, cbuf, &i, end, cbuf_type);
             break;
         }
         if (found) {
@@ -4440,24 +4485,17 @@ static void lre_clear(uint8_t **capture, int n)
         capture[i] = NULL;
 }
 
-/* lre_skip fills st with where lre_exec starts to look for a match of the
-   regexp of bytecode bc in the string cbuf of clen units (8-bit when
-   cbuf_type is 0, 16-bit when it is 1) from cindex, and how lre_run goes on
-   from there. When st->pc is 0, lre_exec runs nothing and returns
-   st->index: 0 for no match, or LRE_RET_TIMEOUT when an interrupt came
-   first, with the captures cleared. */
-static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
-                     const uint8_t *cbuf, int cindex, int clen, int cbuf_type,
-                     void *opaque)
+/* lre_plan writes the plan of the regexp of bytecode bc into the
+   LRE_PLAN_LEN bytes after its bytecode, which hold 0: how lre_skip starts
+   (see "Skip to where a regexp can match" above). */
+static void lre_plan(uint8_t *bc)
 {
-    const uint8_t *loop = bc + RE_HEADER_LEN;
-    int flags = get_u16(bc + RE_HEADER_FLAGS), ret;
+    const uint8_t *loop = bc + RE_HEADER_LEN, *op = bc + LRE_SKIP_BODY;
+    uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
+    int flags = get_u16(bc + RE_HEADER_FLAGS), c, kind;
+    LRESet set;
 
-    st->index = cindex;
-    st->pc = RE_HEADER_LEN;
-    st->kind = LRE_RUN_ONCE;
-    if ((flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS | LRE_FLAG_STICKY)) ||
-        (cbuf_type != 0 && cbuf_type != 1))
+    if (flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS | LRE_FLAG_STICKY))
         return;
     /* The bytecode holds at least the loop, save_start 0 and the op after
        it: an empty regexp is followed by save_end 0, then match. */
@@ -4468,28 +4506,77 @@ static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
         (int)get_u32(loop + 7) != -LRE_SKIP_LOOP ||
         loop[LRE_SKIP_LOOP] != REOP_save_start || loop[LRE_SKIP_LOOP + 1] != 0)
         return;
+    switch (*op) {
+    case REOP_line_start:
+        plan[0] = LRE_PLAN_LINE_START;
+        return;
+    case REOP_char:
+        plan[0] = LRE_PLAN_CHAR;
+        for (c = 0; c < LRE_PREFIX_MAX && op[3 * (c + 1)] == REOP_char; c++)
+            continue;
+        plan[LRE_PLAN_PREFIX] = c;
+        return;
+    case REOP_range:
+        kind = LRE_PLAN_RANGE;
+        break;
+    default:
+        kind = LRE_PLAN_SET;
+        break;
+    }
+    if (!lre_first_set(&set, op))
+        return;
+    plan[0] = kind;
+    plan[LRE_PLAN_HIGH] = set.high;
+    for (c = 0; c < 256; c++) {
+        if ((set.bits[c >> 6] >> (c & 63)) & 1)
+            plan[LRE_PLAN_TABLE + (c >> 3)] |= 1 << (c & 7);
+    }
+}
+
+/* lre_skip fills st with where lre_exec starts to look for a match of the
+   regexp of bytecode bc in the string cbuf of clen units (8-bit when
+   cbuf_type is 0, 16-bit when it is 1) from cindex, and how lre_run goes on
+   from there, as the plan lre_plan wrote says. When st->pc is 0, lre_exec
+   runs nothing and returns st->index: 0 for no match, or LRE_RET_TIMEOUT
+   when an interrupt came first, with the captures cleared. */
+static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
+                     const uint8_t *cbuf, int cindex, int clen, int cbuf_type,
+                     void *opaque)
+{
+    const uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
+    int ret;
+
+    st->index = cindex;
+    st->pc = RE_HEADER_LEN;
+    st->kind = LRE_RUN_ONCE;
+    if (plan[0] == LRE_PLAN_LOOP || (cbuf_type != 0 && cbuf_type != 1))
+        return;
     st->pc = LRE_SKIP_MATCH;
     st->op = bc + LRE_SKIP_BODY;
-    switch (*st->op) {
-    case REOP_line_start:
+    switch (plan[0]) {
+    case LRE_PLAN_LINE_START:
         if (cindex == 0) {
             st->index = 0;
             return;
         }
         ret = 0;
         goto none;
-    case REOP_char:
+    case LRE_PLAN_CHAR:
         st->kind = LRE_RUN_CHAR;
+        st->prefix = plan[LRE_PLAN_PREFIX];
         break;
-    case REOP_range:
-        st->kind = LRE_RUN_RANGE;
-        break;
-    default:
-        if (!lre_first_set(&st->set, st->op)) {
-            st->pc = RE_HEADER_LEN;
-            return;
+    case LRE_PLAN_RANGE:
+        /* the binary search of the class for units of 16 bits, the table
+           for the others */
+        if (cbuf_type == 1) {
+            st->kind = LRE_RUN_RANGE;
+            break;
         }
+        /* fall through */
+    default:
         st->kind = LRE_RUN_SET;
+        st->table = plan + LRE_PLAN_TABLE;
+        st->high = plan[LRE_PLAN_HIGH];
         break;
     }
     ret = lre_find(st, cbuf, cindex, clen, cbuf_type, opaque, &st->index);
@@ -4501,6 +4588,28 @@ static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
     st->pc = 0;
 }
 
+/* lre_prefix says whether the string cbuf of clen units holds, after its
+   unit i (the char of the op at st->op), the characters of the st->prefix
+   char ops that follow that op: a regexp that starts with a literal can
+   only match where the string holds all of it. */
+static BOOL lre_prefix(const LRESkip *st, const uint8_t *cbuf, int i,
+                       int clen, int cbuf_type)
+{
+    const uint8_t *op = st->op;
+    int k, n = st->prefix;
+    uint32_t c;
+
+    if (clen - i - 1 < n)
+        return FALSE;
+    for (k = 1; k <= n; k++) {
+        op += 3;
+        c = cbuf_type == 0 ? cbuf[i + k] : ((const uint16_t *)cbuf)[i + k];
+        if (c != get_u16(op + 1))
+            return FALSE;
+    }
+    return TRUE;
+}
+
 /* lre_run runs the backtracking machine with its context s from the
    position cptr of the string as st says, and returns what
    lre_exec_backtrack returns. For LRE_RUN_ONCE it runs the machine once
@@ -4509,7 +4618,10 @@ static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
    start a match, with the captures cleared as the loop has them. Like the
    loop, it polls the interrupt counter of the machine after each failed
    match. When no position is left the captures are cleared, as they are
-   when the loop runs out of the string. */
+   when the loop runs out of the string. For LRE_RUN_CHAR it runs the
+   machine only at a position that holds the whole literal prefix
+   (lre_prefix): the machine would fail at once anywhere else, after saves
+   it undoes, and the captures stay cleared. */
 static intptr_t lre_run(REExecContext *s, uint8_t **capture, const uint8_t *bc,
                         const uint8_t *cptr, const LRESkip *st)
 {
@@ -4522,11 +4634,13 @@ static intptr_t lre_run(REExecContext *s, uint8_t **capture, const uint8_t *bc,
     clen = (s->cbuf_end - s->cbuf) >> cbuf_type;
     i = st->index;
     for (;;) {
-        r = lre_exec_backtrack(s, capture, bc + LRE_SKIP_MATCH,
-                               s->cbuf + ((size_t)i << cbuf_type));
-        if (r != 0)
-            return r;
-        lre_clear(capture, 2 * s->capture_count);
+        if (st->kind != LRE_RUN_CHAR || lre_prefix(st, s->cbuf, i, clen, cbuf_type)) {
+            r = lre_exec_backtrack(s, capture, bc + LRE_SKIP_MATCH,
+                                   s->cbuf + ((size_t)i << cbuf_type));
+            if (r != 0)
+                return r;
+            lre_clear(capture, 2 * s->capture_count);
+        }
         if (lre_poll_timeout(s))
             return LRE_RET_TIMEOUT;
         ret = lre_find(st, s->cbuf, i + 1, clen, cbuf_type, s->opaque, &i);
@@ -4607,5 +4721,5 @@ const char *lre_get_groupnames(const uint8_t *bc_buf)
     if ((lre_get_flags(bc_buf) & LRE_FLAG_NAMED_GROUPS) == 0)
         return NULL;
     re_bytecode_len = get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
-    return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len);
+    return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len + LRE_PLAN_LEN);
 }

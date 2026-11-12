@@ -443,7 +443,7 @@ What the opcodes do:
 
 Why borrowing is safe: on the fast path nothing runs between the read of the local and the push of the property, so nothing can change or free the local in between. Whatever can run (a getter, a proxy trap, a collection inside them) runs on the slow path, which takes the reference first, as the two instructions did. `fuse_code` runs on finished code, so the `arguments` object, closure variables and the checks of `let` and `const` before their declaration compile as before: a local in its temporal dead zone is read with `get_loc_check`, which is not fused.
 
-The bytecode version went from 6 to 7 with these opcodes, and from 7 to 8 when `dup_case_atom` took the three other jumps. `JS_ReadObject` checks code it reads with `poll_scan`, which now also rejects a fused opcode not followed by the rest of its run (`invalid bytecode: a fused opcode without the instructions it reads`), so bytecode written by a host cannot make the interpreter step over an instruction it did not check.
+The bytecode version went from 6 to 7 with these opcodes, and from 7 to 8 when `dup_case_atom` took the three other jumps. It is 9 since [regexps keep where they start to look](regexp.md#where-a-regexp-starts-is-worked-out-once) in their bytecode. `JS_ReadObject` checks code it reads with `poll_scan`, which now also rejects a fused opcode not followed by the rest of its run (`invalid bytecode: a fused opcode without the instructions it reads`), so bytecode written by a host cannot make the interpreter step over an instruction it did not check.
 
 `JS_SetFusedOps(ctx, 0)` makes a runtime compile the runs apart again, for tests.
 

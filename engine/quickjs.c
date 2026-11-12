@@ -22297,16 +22297,92 @@ static const uint16_t func_kind_to_class_id[] = {
     [JS_FUNC_ASYNC_GENERATOR] = JS_CLASS_ASYNC_GENERATOR_FUNCTION,
 };
 
+/* The slot of func_shapes for a function of kind func_kind: 0 for a
+   function, 1 for an async function, -1 for a generator (its prototype is an
+   object of its own, made for each). */
+static int js_closure_shape_slot(int func_kind)
+{
+    if (func_kind == JS_FUNC_NORMAL)
+        return 0;
+    if (func_kind == JS_FUNC_ASYNC)
+        return 1;
+    return -1;
+}
+
+/* The function object of a closure of b, before js_closure2. A new closure
+   starts with the empty shape of its prototype, js_function_shape puts it on
+   the shape with length and name (func_shapes), and js_closure adds
+   prototype when b has one, which add_property finds in the shape hash
+   table. When the closure starts where the context knows the steps go (the
+   empty shape is func_shapes[i][0]) and the shape they end at is there
+   (func_shapes[i][1], or with a prototype the shape add_property would find
+   after it, when one is in the table), the object is made at that shape at
+   once, with its property array at its size: length, name (the string comes
+   after js_closure2, as before, and the slot is undefined until then) and
+   the prototype to make on the first read, with the realm of ctx. The shape
+   cache gets the credit of each shape the steps would have found
+   (js_shape_found), so what it keeps is the same. The context keeps no
+   shape for this: what it holds, and the memory a script sees, is the
+   same. *made says whether it was so made. */
+static JSValue js_closure_object(JSContext *ctx, JSFunctionBytecode *b, BOOL *made)
+{
+    JSClassID class_id = func_kind_to_class_id[b->func_kind];
+    int i = js_closure_shape_slot(b->func_kind);
+    JSShape *sh, *sh0;
+    JSObject *p, *proto;
+    JSValue obj;
+
+    *made = FALSE;
+    proto = get_proto_obj(ctx->class_proto[class_id]);
+    sh0 = find_hashed_shape_proto(ctx->rt, proto);
+    sh = NULL;
+    if (i >= 0 && sh0 && sh0 == ctx->func_shapes[i][0]) {
+        sh = ctx->func_shapes[i][1];
+        if (b->has_prototype)
+            sh = sh->is_hashed ?
+                find_hashed_shape_prop(ctx->rt, sh, JS_ATOM_prototype,
+                                       JS_PROP_WRITABLE | JS_PROP_AUTOINIT) :
+                NULL;
+    }
+    if (!sh) {
+        /* as JS_NewObjectClass */
+        if (sh0) {
+            sh0 = js_dup_shape(sh0);
+        } else {
+            sh0 = js_new_proto_shape(ctx, proto, class_id);
+            if (!sh0)
+                return JS_EXCEPTION;
+        }
+        return JS_NewObjectFromShape(ctx, sh0, class_id, NULL);
+    }
+    obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), class_id, NULL);
+    if (JS_IsException(obj))
+        return obj;
+    p = JS_VALUE_GET_OBJ(obj);
+    js_shape_found(ctx);
+    p->prop[0].u.value = JS_NewInt32(ctx, b->defined_arg_count);
+    p->prop[1].u.value = JS_UNDEFINED;
+    if (b->has_prototype) {
+        js_shape_found(ctx);
+        p->is_constructor = TRUE;
+        p->prop[2].u.init.realm_and_id = (uintptr_t)JS_DupContext(ctx) | JS_AUTOINIT_ID_PROTOTYPE;
+        p->prop[2].u.init.opaque = NULL;
+    }
+    *made = TRUE;
+    return obj;
+}
+
 static JSValue js_closure(JSContext *ctx, JSValue bfunc,
                           JSVarRef **cur_var_refs,
                           JSStackFrame *sf, BOOL is_eval)
 {
     JSFunctionBytecode *b;
-    JSValue func_obj;
+    JSValue func_obj, name_val;
     JSAtom name_atom;
+    BOOL made;
 
     b = JS_VALUE_GET_PTR(bfunc);
-    func_obj = JS_NewObjectClass(ctx, func_kind_to_class_id[b->func_kind]);
+    func_obj = js_closure_object(ctx, b, &made);
     if (JS_IsException(func_obj)) {
         JS_FreeValue(ctx, bfunc);
         return JS_EXCEPTION;
@@ -22319,6 +22395,13 @@ static JSValue js_closure(JSContext *ctx, JSValue bfunc,
     name_atom = b->func_name;
     if (name_atom == JS_ATOM_NULL)
         name_atom = JS_ATOM_empty_string;
+    if (made) {
+        name_val = JS_AtomToString(ctx, name_atom);
+        if (JS_IsException(name_val))
+            goto fail;
+        JS_VALUE_GET_OBJ(func_obj)->prop[1].u.value = name_val;
+        return func_obj;
+    }
     if (js_function_set_properties(ctx, func_obj, name_atom,
                                    b->defined_arg_count) < 0)
         goto fail;
@@ -42803,7 +42886,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 8
+#define BC_VERSION 9
 
 typedef struct BCWriterState {
     JSContext *ctx;

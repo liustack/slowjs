@@ -169,6 +169,7 @@ read_when:
 | --- | --- | --- |
 | 跳到正则可能匹配的位置 | v0.26.15 | [regexp.md](regexp.zh-CN.md#跳到正则可能匹配的位置) |
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
+| 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | Unreleased | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 

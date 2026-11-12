@@ -192,7 +192,7 @@ It builds and runs on Linux and on macOS (Apple clang 15 and later).
 engine/test/tlsf-edges.sh                        # the edge cases of TLSF, on the pinned file and on engine/tlsf.c
 engine/test/build.sh plain && engine/test/heap.sh    # scenarios and random sequences, on the heap and on the runtime
 engine/test/build.sh fuzz && engine/test/heap.sh -f 300   # the same sequences as a libFuzzer target, for 300 seconds
-engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.json,C.json soak=3000
+engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.json,C.json soak=3000 shapes=0   # and again without shapes=0
 ```
 
 ### The Go host of the generated engine
@@ -238,7 +238,10 @@ Two more runs of the same tests guard the calling convention between Go and the 
 CENGINE_HAMMER_N=3000 go test -tags cenginehammer -run Hammer ./internal/cengine
 ```
 
-[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap`, `asan-heap-iter` and `ubsan`. `asan-heap-iter` is `asan-heap` with `JS_MALLOC_USE_ITER`, the list of every allocated block that the engine does not use: it keeps the macro building, with the scenarios, the random sequences and `poison-test` passing. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), whose count, blocks and footprint must not grow after the first hundred.
+[allocator.md](allocator.md) says what is tested and how. `heap.sh` takes `-m MODE` for `asan-heap`, `asan-heap-iter` and `ubsan`. `asan-heap-iter` is `asan-heap` with `JS_MALLOC_USE_ITER`, the list of every allocated block that the engine does not use: it keeps the macro building, with the scenarios, the random sequences and `poison-test` passing. A change to `engine/heap.c`, `engine/tlsf.c` or the allocator part of `engine/quickjs.c` runs all of them, test262 in `plain` and `asan-heap`, `asan` over test262 for the system malloc, and a soak of 3000 renders of tifa's pages (`render.c`), run twice for each app:
+
+- **Strict**, with `shapes=0`, the shape cache off: each `full-gc` line after the first of its phase is not above that first line in size, blocks or footprint, exactly. The lines cycle with the inputs, because the pages render in turn. With K inputs and a line every 100 renders the period is K / gcd(K, 100) lines, so the first lines of the phases are the first lines of the run, at 100, 200, 300 and on. The period comes from the number of inputs, so a list of pages of another length needs no new rule. With nothing kept on purpose, it catches a leak down to one block.
+- **Band**, with the default `shapes=2048` that a VM of the Go API keeps: from render 300 on, the size stays in a band of 1%, the mean size and the mean blocks of the last third are not above those of the middle third by more than 0.1%, and the footprint is not above its value at 300. It shows that the cache stays bounded at the setting users get. The cache is a ring of 2048 shapes of plain objects whose last object died, and a round of the MUI pages kills more than that, so the ring keeps turning and the size moves in a narrow band rather than staying flat. Measured on the MUI pages: flat with the cache off, a band of 0.21% with 2048, flat again with 4096, which holds every such shape.
 
 ## The race detector
 

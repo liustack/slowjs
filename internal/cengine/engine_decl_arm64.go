@@ -85,6 +85,7 @@ func JS_ConcatStringInPlace(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) 
 func JS_CopyDataProperties_block(a0 uintptr, a1 uintptr) uintptr
 func JS_CopySubArray_block(a0 uintptr, a1 uintptr) uintptr
 func JS_CreateProperty_block(a0 uintptr, a1 uintptr) uintptr
+func JS_DefineAutoInitProperty(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_DefineObjectName(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) uintptr
 func JS_DefineObjectNameComputed(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_DefineProperty_block(a0 uintptr, a1 uintptr) uintptr
@@ -1259,6 +1260,7 @@ func lre_is_space_non_ascii(a0 uintptr, a1 uintptr) uintptr
 func lre_js_is_ident_next(a0 uintptr, a1 uintptr) uintptr
 func lre_parse_escape(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func lre_parse_escape_poll(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
+func lre_plan(a0 uintptr, a1 uintptr)
 func lre_realloc(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lre_realloc_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func lrint(a0 uintptr, a1 float64) uintptr

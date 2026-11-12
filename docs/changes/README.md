@@ -169,6 +169,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Skip to where a regexp can match | v0.26.15 | [regexp.md](regexp.md#skip-to-where-a-regexp-can-match) |
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
+| Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | Unreleased | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 

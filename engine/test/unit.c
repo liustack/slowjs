@@ -2998,7 +2998,7 @@ static void test_regexp_stops(void)
 }
 
 /* lre_skip reads the interrupt flag after each LRE_SKIP_CHUNK (65536) units
-   it looks at and then answers as the backtracking machine does: lre_exec
+   it looks at, 16384 for a class in a string of 16 bits, and then answers as the backtracking machine does: lre_exec
    returns LRE_RET_TIMEOUT. It reads nothing at the end of the string. The
    readings are counted by the host (host_poll_reads). */
 static void test_regexp_skip_polls(void)
@@ -3016,6 +3016,15 @@ static void test_regexp_skip_polls(void)
         { "a|b", "x", 3 * CHUNK + 1, 0, 0, 3 },
         { "a", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
         { "a", "x", 2 * CHUNK, 0, 0, 1 },
+        /* the table of the plan, for a class and for a set, and the class
+           itself in a string of 16 bits, which reads the flag after every
+           quarter of a chunk */
+        { "[ab]", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "[\\x00-\\x07<\\u2028\\ud800-\\udfff]", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "[\\x00-\\x07<\\u2028\\ud800-\\udfff]", "x", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "[ab]", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 12 },
+        { "[ab]", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "(?:a|c)b", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 3 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
