@@ -1453,9 +1453,17 @@ static void sweep(const char *what, const char *file, const char *setup,
                   const char *src, const char *const *want, size_t max)
 {
     FillRoom rm[FILL_ROOMS];
-    size_t nfill = fill_rooms(rm), nbytes = max / sweep_step + 1, k;
+    size_t nfill = fill_rooms(rm), nbytes, k;
     int failed = 0, worked = 0;
 
+#ifdef RV_FOLD_TEST
+    /* the test builds fold every function, which then takes more memory
+       to convert and to run (a frame of all 127 slots, the stack model of
+       the pass): up to 11 KiB more for the sweeps here, so that some room
+       lets each work */
+    max += 16384;
+#endif
+    nbytes = max / sweep_step + 1;
     for (k = 0; k < nbytes + nfill; k++) {
         VM v = vm_new();
         JSValue r;
@@ -2036,6 +2044,18 @@ static void test_regvm_fold_oom(void)
         /* once before the sweep: the call that converts it */
         "f();\n";
     static const char *const want[] = { "898,q,601,32323232323232323232323232323232323232323232323232323232323232323232323232323232q", NULL };
+    /* the conversion of a function that folds, at its first call in the
+       sweep: each allocation of the pass failing ends in the out of memory
+       error, and a later call converts it (in the test builds, where every
+       function folds, the stack model of a small one fails too: scripts 6
+       and 11 of test_compile_oom) */
+    static const char conv[] =
+        "var a = [], i;\n"
+        "for (i = 0; i < 130; i++) a.push(i % 7);\n"
+        "var h = Function('a', \"'use strict'; return \" +\n"
+        "  Array.from({ length: 130 }, function (_, i) { return 'a[' + i + '] + ('; }).join('') +\n"
+        "  '1' + ')'.repeat(130) + ';');\n";
+    static const char *const conv_want[] = { "385", NULL };
 
 #ifdef RV_FOLD_TEST
     /* the test build folds into Arrays of 2 or 3 entries, many more of
@@ -2046,6 +2066,10 @@ static void test_regvm_fold_oom(void)
 #else
     sweep("fold", "<fold>", setup, "f()", want, 32768);
 #endif
+    /* the conversion takes more than the run: every 32 bytes up to 128 KiB */
+    sweep_step = 32;
+    sweep("fold conversion", "<fold>", conv, "h(a)", conv_want, 131072);
+    sweep_step = 8;
 }
 
 /* the state of the function the script src returns in the register loop
@@ -2064,7 +2088,7 @@ static int regvm_state_of(JSContext *ctx, const char *src)
     return st;
 }
 
-/* JS_NewRuntime makes the first segment of register stack (32 KiB,
+/* JS_NewRuntime makes the first segment of register stack (about 32 KiB,
    RV_SEG_FIRST of engine/regvm.h), so that it counts under a memory limit
    from the start: a function converted under a tight limit later needs room
    for its code only, and runs in the register loop. */

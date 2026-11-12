@@ -32,6 +32,18 @@ typedef struct JSMemRange {
 /* The largest request the heap serves: TLSF's. */
 #define JS_HEAP_MAX_REQUEST ((((size_t)1) << 32) - 8)
 
+/* The largest request a new shared chunk of chunk bytes takes: a larger one
+   gets a dedicated chunk. It is the test of heap_grow_block (need + need / 32
+   + 64 at most half of the chunk past its header and the words of TLSF,
+   HEAP_SHARED_OVERHEAD bytes) solved for need. A block that should stay in
+   the shared chunks is sized with it (the segments of the register stack,
+   engine/regvm.h). */
+#define HEAP_SHARED_OVERHEAD 48
+#define HEAP_SHARED_LINE(chunk) (((chunk) - HEAP_SHARED_OVERHEAD) / 2 - 64)
+#define HEAP_SHARED_MAX(chunk)                       \
+    (HEAP_SHARED_LINE(chunk) / 33 * 32 +             \
+     (HEAP_SHARED_LINE(chunk) % 33 < 31 ? HEAP_SHARED_LINE(chunk) % 33 : 31))
+
 typedef struct JSHeapChunk JSHeapChunk;
 
 typedef struct JSHeap {

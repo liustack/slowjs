@@ -314,7 +314,9 @@ func (m *VM) SetStrip(s Strip) {
 // Close releases the resources held by m. Close of a VM that is closed does
 // nothing and returns nil, so a deferred Close may follow an explicit one.
 // When the OS refuses to give some of the memory back, Close returns the error
-// and Close again tries what is left.
+// and Close again tries what is left. The error tells only of memory still
+// held when Close returns: a part the OS refused at first and Close then gave
+// back is no error.
 //
 // A step of Close that panics does not keep the others from running: if a
 // function of OnClose panics, the rest still run. Close then panics with the

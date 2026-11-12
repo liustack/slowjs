@@ -118,7 +118,7 @@ JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
-int white_regvm_stack(JSContext *ctx, long out[4]);
+int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
@@ -5070,11 +5070,11 @@ static void test_regvm_operands(void)
 }
 
 /* The register stack settles (engine/regvm-entry.h): its first segment is
-   32 KiB, a deeper run steps onto next segments of twice the size, and when
-   the outermost run returns the first segment becomes one that holds what
-   the run needed, up to 256 KiB, so that the same run again steps onto no
-   next segment. The stack counts in the memory size but not toward the
-   threshold of the collector. */
+   about 32 KiB, a deeper run steps onto next segments of about twice the
+   size, and when the outermost run returns the first segment becomes one
+   that holds what the run needed, up to about 256 KiB, so that the same
+   run again steps onto no next segment. The stack counts in the memory
+   size but not toward the threshold of the collector. */
 static const char regvm_stack_setup[] =
     "globalThis.rec = function rec(n) { 'use strict';\n"
     "  var a = n + 1, b = n + 2, c = n + 3, d = n + 4, e = n + 5, f = n + 6, g = n + 7, h = n + 8;\n"
@@ -5113,7 +5113,7 @@ static int regvm_stack_edge(long *settled)
 {
     VM v;
     JSValue rec = regvm_stack_vm(&v);
-    long st[4];
+    long st[7];
     int n, made;
 
     for (n = 1; n < 4000; n++) {
@@ -5133,37 +5133,40 @@ static void test_regvm_stack(void)
 {
     VM v;
     JSValue rec;
-    long st[4], settled;
+    long st[7], settled;
     int mode, edge, made;
     size_t th, n;
 
-    /* a new VM: a first segment of 32 KiB, counted in the memory size
-       and not toward the threshold of the collector */
+    /* a new VM: a first segment of about 32 KiB, counted in the memory
+       size and not toward the threshold of the collector. It is in the
+       shared chunks: a chunk of its own would be one more chunk the host
+       maps and unmaps for each VM. */
     rec = regvm_stack_vm(&v);
-    CHECK(white_regvm_stack(v.ctx, st) == 0 && st[0] == 2048 && st[1] == 1 && st[3] == 0,
+    CHECK(white_regvm_stack(v.ctx, st) == 0 && st[0] == st[5] && st[1] == 1 && st[3] == 0,
           "a new VM has a stack of %ld slots in %ld segments", st[0], st[1]);
-    CHECK(st[2] >= 32768 && JS_GetMemorySize(v.rt) > (size_t)st[2],
+    CHECK(st[4] <= 0, "the first segment of %ld slots asks the heap for %ld bytes past what a new shared chunk takes", st[0], st[4]);
+    CHECK(st[2] >= st[5] * 16 && JS_GetMemorySize(v.rt) > (size_t)st[2],
           "the stack takes %ld bytes of the %zu counted", st[2], JS_GetMemorySize(v.rt));
     th = JS_GetGCThreshold(v.rt);
-    /* grow and settle: a run that needs more than 32 KiB steps onto a
-       next segment once, then the first segment holds it */
+    /* grow and settle: a run that needs more than the first segment steps
+       onto a next segment once, then the first segment holds it */
     regvm_stack_rec(&v, rec, 300);
     white_regvm_stack(v.ctx, st);
-    CHECK(st[0] > 2048 && st[0] <= 16384 && st[1] == 1 && st[3] == 0,
+    CHECK(st[0] > st[5] && st[0] <= st[6] && st[1] == 1 && st[3] == 0,
           "after rec(300) the stack is %ld slots in %ld segments, hw %ld", st[0], st[1], st[3]);
     made = JS_RegvmStat(v.ctx, 7);
     regvm_stack_rec(&v, rec, 300);
     CHECK(JS_RegvmStat(v.ctx, 7) == made, "rec(300) again steps onto a next segment");
-    /* past 256 KiB: next segments on the way and freed on the way back,
-       the first one settled at 256 KiB, one spare at most */
+    /* past RV_SEG_MAX: next segments on the way and freed on the way
+       back, the first one settled at RV_SEG_MAX, one spare at most */
     regvm_stack_rec(&v, rec, 4000);
     white_regvm_stack(v.ctx, st);
-    CHECK(st[0] == 16384 && st[1] <= 2 && st[3] == 0,
+    CHECK(st[0] == st[6] && st[1] <= 2 && st[3] == 0,
           "after rec(4000) the stack is %ld slots in %ld segments, hw %ld", st[0], st[1], st[3]);
     regvm_stack_rec(&v, rec, 4000);
     white_regvm_stack(v.ctx, st);
-    CHECK(st[0] == 16384 && st[1] <= 2, "rec(4000) again leaves %ld slots in %ld segments", st[0], st[1]);
-    /* the stack of 256 KiB and more ran no collection of its own */
+    CHECK(st[0] == st[6] && st[1] <= 2, "rec(4000) again leaves %ld slots in %ld segments", st[0], st[1]);
+    /* the stack of RV_SEG_MAX and more ran no collection of its own */
     CHECK(JS_GetGCThreshold(v.rt) == th, "the stack moved the threshold of the collector from %zu to %zu",
           th, JS_GetGCThreshold(v.rt));
     JS_RunGC(v.rt);
@@ -5203,7 +5206,7 @@ static void test_regvm_stack(void)
             free(t);
         }
         JS_FreeValue(v.ctx, r);
-        CHECK(white_regvm_stack(v.ctx, st) == 0 && st[1] >= 1 && (st[0] == 2048 || st[3] == 0),
+        CHECK(white_regvm_stack(v.ctx, st) == 0 && st[1] >= 1 && (st[0] == st[5] || st[3] == 0),
               "rec(%d), call %d failing: the stack is %ld slots in %ld segments, hw %ld", edge, mode, st[0], st[1], st[3]);
         regvm_stack_rec(&v, rec, edge);
         white_regvm_stack(v.ctx, st);

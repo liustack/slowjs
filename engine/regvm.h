@@ -95,10 +95,19 @@
                                         to the caller's (engine/regvm-entry.h) */
 #define RV_DST_SLOT(d) ((int16_t)(d))
 #define RV_DST_FAST(d) ((uint32_t)((d) - RV_HDR) < 128 - RV_HDR)
-/* the slots of the first segment of register stack (32 KiB), and the most
-   of a next one (256 KiB), unless a call needs more (engine/regvm-entry.h) */
-#define RV_SEG_FIRST (2 * 1024)
-#define RV_SEG_MAX (16 * 1024)
+/* The slots of a segment of register stack of about r bytes: the most that a
+   new shared chunk of 2 * r bytes takes (HEAP_SHARED_MAX of engine/heap.h),
+   less the header of the block and of the segment. One slot more and the
+   segment would get a chunk of its own, which the host maps and unmaps with
+   it. The first segment is of 32 KiB (RV_SEG_FIRST), a next one of twice
+   the one below, up to 256 KiB (RV_SEG_MAX), unless a call needs more
+   (engine/regvm-entry.h). */
+#define RV_SEG_SLOTS(r) \
+    ((HEAP_SHARED_MAX(2 * (r)) - sizeof(JSMallocLargeBlockHeader) - sizeof(RVSeg)) / sizeof(JSValue))
+#define RV_SEG_FIRST_BYTES (32 * 1024)
+#define RV_SEG_MAX_BYTES (256 * 1024)
+#define RV_SEG_FIRST RV_SEG_SLOTS(RV_SEG_FIRST_BYTES)
+#define RV_SEG_MAX RV_SEG_SLOTS(RV_SEG_MAX_BYTES)
 
 typedef struct RVHeader {
     JSValue *caller;      /* F of the caller, NULL for an entry frame */

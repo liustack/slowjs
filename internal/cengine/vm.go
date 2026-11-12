@@ -601,7 +601,10 @@ func (v *VM) Interrupt() { v.h.Interrupt() }
 // 0 when nothing leaked. A broken VM is not freed by the engine, whose state
 // is halfway: its memory is unmapped all the same. The engine is freed once:
 // when the OS refuses some memory, Close returns the error and Close again
-// only tries what is left.
+// only tries what is left. A chunk the engine gave back while it was freed
+// that the OS refused stays counted, and the host's Close unmaps it with the
+// rest: the error tells only of what is still held, and the refusal is in
+// the counts and LastError of the host.
 func (v *VM) Close() (leaked uintptr, err error) {
 	if !v.freed {
 		v.freed = true

@@ -90,8 +90,13 @@ func TestGCThreshold(t *testing.T) {
 	}
 
 	// Each GC the engine runs leaves about live bytes besides the register
-	// stack, so it sets the threshold to about 1.5 live, below set.
+	// stack, so it sets the threshold to about 1.5 live, below set. live is
+	// taken after a GC: before one, MemorySize also counts the blocks a
+	// script freed into the allocator's front cache, which every GC gives
+	// back (8.8 KB after "1 + 1"), so that a GC may leave less than it.
+	m.RunGC()
 	live = collectable(m)
+	m.SetGCThreshold(set)
 	if _, err := m.Eval("garbage(100000)", EvalGlobal); err != nil {
 		t.Fatal(err)
 	}

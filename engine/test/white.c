@@ -1472,9 +1472,12 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f)
 
 /* the register stack of ctx's runtime (engine/regvm-entry.h): out[0] the
    slots of its first segment, out[1] its segments, out[2] the bytes they
-   take, out[3] the most slots it needed since it last settled. -1 when it
+   take, out[3] the most slots it needed since it last settled, out[4] the
+   bytes the heap is asked for the first segment past the most a new shared
+   chunk of 64 KiB takes (HEAP_SHARED_MAX of engine/heap.h, the test of
+   heap_grow_block), out[5] RV_SEG_FIRST and out[6] RV_SEG_MAX. -1 when it
    has none. */
-int white_regvm_stack(JSContext *ctx, long out[4])
+int white_regvm_stack(JSContext *ctx, long out[7])
 {
     JSRuntime *rt = ctx->rt;
     RVSeg *s = rt->rv_seg;
@@ -1487,6 +1490,10 @@ int white_regvm_stack(JSContext *ctx, long out[4])
     out[1] = rv_stack_segments(rt);
     out[2] = rt->rv_stack_bytes;
     out[3] = rt->rv_hw;
+    out[4] = (long)(sizeof(JSMallocLargeBlockHeader) + sizeof(RVSeg) + s->size * sizeof(JSValue)) -
+             (long)HEAP_SHARED_MAX(65536);
+    out[5] = RV_SEG_FIRST;
+    out[6] = RV_SEG_MAX;
     return 0;
 }
 

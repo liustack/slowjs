@@ -10,8 +10,9 @@
 
    The register stack in segments. A frame never moves (var_refs and the
    argv of a call point into it), so a full stack is not grown by a
-   realloc: another segment is linked above it, twice the size of the one
-   below up to RV_SEG_MAX slots, or more for a call that needs more (a
+   realloc: another segment is linked above it, of the next size of the
+   segments (RV_SEG_SLOTS of regvm.h: about twice the one below) up to
+   RV_SEG_MAX slots, or more for a call that needs more (a
    function that reads its arguments, called with thousands of them). A
    call whose frame does not fit at the top of the segment in use starts
    the next one:
@@ -39,8 +40,8 @@
    (rt->rv_hw), those in use below it and all of its own: the depth reached
    inside a segment is not followed, only this slow path sets the mark.
    When the outermost run of the loop returns with no frame left, the first
-   segment is replaced by one of the power of two that holds them, up to
-   RV_SEG_MAX, and the others are freed (rv_settle). No frame moves, as
+   segment is replaced by one of the smallest size of the segments that
+   holds them, up to RV_SEG_MAX, and the others are freed (rv_settle). No frame moves, as
    none is alive then. The same run again then steps onto no next segment:
    a VM that renders the same pages steps onto one for its first render
    only, and its first segment may be larger than the stack needed, never
@@ -68,6 +69,17 @@ static RVSeg *rv_seg_alloc(JSRuntime *rt, uintptr_t size)
     rt->rv_seg_made++;
     rt->rv_stack_bytes += js_malloc_usable_size_rt(rt, s);
     return s;
+}
+
+/* the slots of the segment after one of size slots: the next size of the
+   segments (RV_SEG_SLOTS) above it, up to RV_SEG_MAX */
+static uintptr_t rv_seg_grow(uintptr_t size)
+{
+    uintptr_t r = RV_SEG_FIRST_BYTES;
+
+    while (r < RV_SEG_MAX_BYTES && RV_SEG_SLOTS(r) <= size)
+        r *= 2;
+    return RV_SEG_SLOTS(r);
 }
 
 static void rv_seg_free(JSRuntime *rt, RVSeg *s)
@@ -141,7 +153,7 @@ static JSValue *rv_seg_next(JSRuntime *rt, uintptr_t need)
         s->next = n = NULL;
     }
     if (!n) {
-        size = s->size < RV_SEG_MAX / 2 ? s->size * 2 : RV_SEG_MAX;
+        size = rv_seg_grow(s->size);
         n = rv_seg_alloc(rt, need > size ? need : size);
         if (!n)
             return NULL;
@@ -177,8 +189,8 @@ static no_inline void rv_seg_back(JSRuntime *rt, JSValue *top)
 
 /* the stack settles (see above): called with rt->rv_hw set when the run of
    the loop that started at the bottom of the first segment returned, with
-   no frame left. The first segment becomes one of the power of two that
-   holds rt->rv_hw slots, up to RV_SEG_MAX, and the others are freed. When
+   no frame left. The first segment becomes one of the smallest size of the
+   segments that holds rt->rv_hw slots, up to RV_SEG_MAX, and the others are freed. When
    it is that large already, the spare above it stays. When the new one
    cannot be allocated, nothing changes and rt->rv_hw stays for the next
    try. */
@@ -190,7 +202,7 @@ static no_inline void rv_settle(JSRuntime *rt)
     if (s->prev || rt->rv_top != s->slots)
         return;
     while (size < rt->rv_hw && size < RV_SEG_MAX)
-        size *= 2;
+        size = rv_seg_grow(size);
     if (size > s->size) {
         f = rv_seg_alloc(rt, size);
         if (!f)
