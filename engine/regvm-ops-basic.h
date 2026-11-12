@@ -36,6 +36,8 @@ RV_OP(CALL)     /* w argc: func and arguments at w, this undefined */
 RV_OP(CALLM)    /* w argc: the same, this the temp at w - 1 */
 RV_OP(CALLML)   /* t w argc: the same, this the local t */
 RV_OP(CALLD) RV_OP(CALLMD) RV_OP(CALLMLD) /* as CALL, CALLM and CALLML, the result dropped */
+RV_OP(CALLS)    /* w argc k s..: CALL whose last k arguments it copies into the window from s */
+RV_OP(CALLSD)   /* w argc k s..: the same, the result dropped */
 RV_OP(RET) RV_OP(RETL) RV_OP(RETK) RV_OP(RETU)        /* t | s | k | -, any fofs, run in regvm-run.h */
 RV_OP(FREE)                                           /* t */
 RV_OP(POLL)
@@ -144,16 +146,44 @@ static void rv_binop(RVPass *s, int op_rr, int op_rk, int op_kr)
     rv_mark_dst(s, d);
 }
 
+/* CALLS and CALLSD: the last arguments of a call that the call copies into
+   its window itself, k of them, at most RV_CALL_COPY_MAX. Each is an entry
+   read lazily, a local, an argument or this (RV_E_SLOT): the MOV the call
+   stands for would be made right before it, with nothing between, and the
+   entry still holds the value of its slot then (rv_before_store copies it
+   before a store to the slot, and a slot a closure can write is never read
+   lazily, rv_push). The arguments local is copied as rv_materialize copies
+   it (lazy_redo). A constant is not taken: telling a slot from a constant
+   at each copy costs more than its LOADK saves. */
+#define RV_CALL_COPY_MAX 4
+static int rv_call_copies(RVPass *s, int first)
+{
+    int k, i;
+    if (unlikely(s->fold))
+        return 0;
+    for (k = 0, i = s->sp - 1; i >= first && k < RV_CALL_COPY_MAX; i--, k++) {
+        const RVEnt *e = &s->st[i];
+        if (e->kind != RV_E_SLOT ||
+            (unlikely(s->lazy_args) && e->slot == s->lazy_args))
+            break;
+        if (e->slot >= 0)
+            rv_overflow(s); /* a slot of F, below the header */
+    }
+    return k;
+}
+
 /* a call: func and the arguments go into their temps, the window, so that
    the callee's frame starts there. A temp is there already, a local or a
-   constant is put there by a MOV or a LOADK. The this of a method call is
-   the entry below func: a temp is moved, a local copied, by the call.
-   When a drop or a return_undef that no jump reaches follows, the result
-   is dropped by the call (CALLD, CALLMD, CALLMLD), and the drop only pops
-   it (drop_at). */
+   constant is put there by a MOV or a LOADK, or, when it is among the last
+   arguments of a call that is not a method call, a local by the call
+   (CALLS, see rv_call_copies). The this of a method call is the entry below func: a
+   temp is moved, a local copied, by the call. When a drop or a
+   return_undef that no jump reaches follows, the result is dropped by the
+   call (CALLD, CALLSD, CALLMD, CALLMLD), and the drop only pops it
+   (drop_at). */
 static void rv_call(RVPass *s, int argc, int method, int tail)
 {
-    int i, n = argc + (method ? 2 : 1), base = s->sp - n, d, w;
+    int i, n = argc + (method ? 2 : 1), base = s->sp - n, d, w, k;
     int f = method ? base + 1 : base;
     int q = s->pos + short_opcode_info(s->bc[s->pos]).size;
     int drop = !tail && q < s->len && !s->leader[q] &&
@@ -163,11 +193,19 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_crafted(s);
         return;
     }
-    for (i = f; i < s->sp; i++)
+    k = method ? 0 : rv_call_copies(s, base + 1);
+    for (i = f; i < s->sp - k; i++)
         rv_materialize(s, i);
     w = rv_tslot(s, f);
     d = rv_tslot(s, base);
-    if (!method) {
+    if (k) {
+        rv_emit(s, drop ? RV_CALLSD : RV_CALLS);
+        rv_byte(s, w);
+        rv_byte(s, argc);
+        rv_byte(s, k);
+        for (i = s->sp - 1; i >= s->sp - k; i--)
+            rv_byte(s, s->st[i].slot); /* the last argument first */
+    } else if (!method) {
         rv_emit(s, drop ? RV_CALLD : RV_CALL);
         rv_byte(s, w);
         rv_byte(s, argc);
@@ -714,6 +752,27 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
     return JS_UNINITIALIZED;
 }
 
+/* CALLS w argc k s1 .. sk: the last k arguments of the call copied with a
+   reference from the slots s1 .. sk of F, s1 into the last one, w + argc,
+   s2 into the one before it, and so on. Unrolled, not a loop, and one test
+   for the most common call, k = 1: each copy is the work of a MOV without
+   its dispatch. */
+static force_inline void rv_call_copy(JSContext *ctx, JSValue *F,
+                                      const uint8_t *ip)
+{
+    JSValue *E = F + (int8_t)ip[0] + ip[1];
+    int k = ip[2];
+    E[0] = JS_DupValue(ctx, F[(int8_t)ip[3]]);
+    if (k >= 2) {
+        E[-1] = JS_DupValue(ctx, F[(int8_t)ip[4]]);
+        if (k >= 3) {
+            E[-2] = JS_DupValue(ctx, F[(int8_t)ip[5]]);
+            if (k >= 4)
+                E[-3] = JS_DupValue(ctx, F[(int8_t)ip[6]]);
+        }
+    }
+}
+
 /* TRUE when a call of f from the loop is one rv_unwrap_call takes apart:
    a bound function, or Function.prototype.call of this realm */
 static inline BOOL rv_unwrap_kind(JSContext *ctx, JSValueConst f)
@@ -1154,12 +1213,16 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
        of every call. A call out of the loop counts it again in
        JS_CallInternal, which only polls sooner. The first call of a
        function not yet converted converts it and runs the instruction
-       again. */
+       again (CALLS goes on after its copies). */
 #define RV_CALLOP(label, len, dstexpr, thisexpr, args, seg, out)             \
  label:                                                                 \
     poll_count(POLL_WEIGHT);                                            \
     ip = pc + (len) - 2;                                                \
     pc += (len);                                                        \
+    RV_CALL_BODY(label, dstexpr, args, seg, out,                        \
+                 pc -= (len) + 1; RV_NEXT(), thisexpr)
+/* thisexpr last, as JS_UNDEFINED has commas */
+#define RV_CALL_BODY(label, dstexpr, args, seg, out, again, ...)        \
     {                                                                   \
         int argc1 = ip[1];                                              \
         JSValue fv, *Wc = F + (int8_t)ip[0];                            \
@@ -1179,7 +1242,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                parameters, or a function that reads its arguments */    \
             if (unlikely(argc1 > crf->argmax)) {                        \
                 if (crf->arg_count >= 0) {                              \
-                    this_v = (thisexpr);                                \
+                    this_v = (__VA_ARGS__);                             \
                     W = Wc;                                             \
                     n = argc1;                                          \
                     goto args;                                          \
@@ -1191,8 +1254,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                 /* call out (JS_CallInternal) */                        \
                 if (rv_convert(ctx, cb) == RV_UNCONVERTED)              \
                     goto label ## _out;                                 \
-                pc -= (len) + 1;                                        \
-                RV_NEXT();                                              \
+                again;                                                  \
             }                                                           \
             if (unlikely(cb->realm != ctx))                             \
                 goto label ## _out;                                     \
@@ -1208,7 +1270,7 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             rt->call_depth++;                                           \
             if (unlikely(argc1 != crf->arg_count))                      \
                 rv_undefined(Wc + 1 + argc1, crf->arg_count - argc1);   \
-            *(JSValue *)((uint8_t *)Wc + crf->this_b) = (thisexpr);     \
+            *(JSValue *)((uint8_t *)Wc + crf->this_b) = (__VA_ARGS__);  \
             if (crf->var_count)                                         \
                 rv_undefined(Fn - crf->var_count, crf->var_count);      \
             h = (RVHeader *)Fn;                                         \
@@ -1225,12 +1287,12 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             RV_NEXT();                                                  \
         }                                                               \
     label ## _out:                                                      \
-        this_v = (thisexpr);                                            \
+        this_v = (__VA_ARGS__);                                         \
         W = Wc;                                                         \
         n = argc1;                                                      \
         goto out;                                                       \
     label ## _seg:                                                      \
-        this_v = (thisexpr);                                            \
+        this_v = (__VA_ARGS__);                                         \
         W = Wc;                                                         \
         n = argc1;                                                      \
         goto seg;                                                       \
@@ -1246,7 +1308,27 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     RV_CALLOP(rv_CALLMD, 2, RV_DST_DROP, F[(int8_t)ip[0] - 1], rv_call_args_d, rv_call_seg_d, rv_call_out_d)
     RV_CALLOP(rv_CALLMLD, 3, RV_DST_DROP, JS_DupValue(ctx, RV_R(ip[-1])),
               rv_call_args_d, rv_call_seg_d, rv_call_out_d)
+
+    /* CALLS w argc k s1 .. sk: CALL, the last k arguments copied into the
+       window first (rv_call_copy), before any check that can leave the
+       instruction, so that every way out finds the window full and the
+       call's own, as after the MOVs it stands for. The first call of a
+       function not yet converted goes on after the copies. */
+#define RV_CALLSOP(label, dstexpr, args, seg, out)                      \
+ label:                                                                 \
+    poll_count(POLL_WEIGHT);                                            \
+    ip = pc;                                                            \
+    pc += 3 + ip[2];                                                    \
+    rv_call_copy(ctx, F, ip);                                           \
+ label ## _go:                                                          \
+    RV_CALL_BODY(label, dstexpr, args, seg, out, goto label ## _go,     \
+                 JS_UNDEFINED)
+
+    RV_CALLSOP(rv_CALLS, (int8_t)ip[0], rv_call_args, rv_call_seg, rv_call_out)
+    RV_CALLSOP(rv_CALLSD, RV_DST_DROP, rv_call_args_d, rv_call_seg_d, rv_call_out_d)
 #undef RV_CALLOP
+#undef RV_CALLSOP
+#undef RV_CALL_BODY
 
     /* a converted function called with more arguments than parameters,
        or one that reads its arguments: the checks of the fast entry, then
