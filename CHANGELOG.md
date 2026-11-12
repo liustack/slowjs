@@ -55,6 +55,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 - A call that a script makes of `f.call(t, ...)`, of `call.bind(f)` (as core-js makes it), or of a bound function with no bound arguments is now made as the call it stands for. The stack of an `Error` made in `f` has no `at call (native)` line for it, as in Node 24, a recursion through `f.call` goes about twice as deep before `RangeError`, and a chain of 100,000 bound functions works where it threw `RangeError` ([errors-and-stacks.md](docs/changes/errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack)).
 - A `for-of` over an array that is not changed in ways that matter for iteration no longer calls the array iterator's `next` for each element. So at the call depth limit such a loop reads on where the call to `next` threw `RangeError` before. Scripts never stop sooner than before.
 - When a loop that does nothing but call `charCodeAt` on a string is stopped (a timeout or `Interrupt`), the stop is reported at the jump back of the loop, not inside the call.
+- A call whose last arguments are local variables, arguments or `this` copies them itself, where each took an instruction of its own. A render of tifa's shop takes 0.9% to 1.3% less time, and React's page 0.8% less, on an Apple M4 ([c-engine.md](docs/changes/c-engine.md#a-call-copies-its-last-locals-into-its-window)).
 
 ## [v0.30.1] - 2026-11-06
 

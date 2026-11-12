@@ -37,6 +37,7 @@ read_when:
 | 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 | 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | Unreleased | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
+| 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
 
 ## 上游 QuickJS 的提交
 
