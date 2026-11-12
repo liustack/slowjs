@@ -77,6 +77,8 @@ typedef struct RVPass {
     DynBuf kbuf;        /* the constants, borrowed from b: its atoms and cpool,
                            or no count */
     JSValue *k;         /* kbuf.buf */
+    uint16_t *kh;       /* the index of k[0] to k[RV_K_NEAR - 1] by value
+                           (rv_k), in the scratch */
     uint64_t kref[4];   /* bit i: k[i] has a reference count, i < 256 */
     int k_count;
     /* the stack model, with a few entries past the most stack_size can be
@@ -85,7 +87,6 @@ typedef struct RVPass {
        st is st_in, or for a function that folds (fold) one of stack_size
        entries and as many more */
     RVEnt *st;
-    RVEnt st_in[RV_TEMPS_MAX + 8];
     /* a stack deeper than the temps, folded (engine/regvm-fold.h): chain
        is the innermost catch offset (catchpos), base the depth and bslot
        the temp where the part above it starts, lev[k] the Arrays of level
@@ -95,8 +96,6 @@ typedef struct RVPass {
     BOOL fold, trans, fold_full;
     int R, chain, base, bslot, tcap;
     int fold_m;         /* the entries of the top part whose layout lev is */
-    int lev[RV_FOLD_LMAX + 1];
-    uint8_t fold_k[RV_FOLD_KMAX]; /* the constants 0 to RV_FOLD_KMAX - 1 */
     int sp;
     int var_count;      /* the locals of the frame: b->var_count, one more with
                            the slot of new.target (rf->nt, regvm-ops-ctor.h) */
@@ -124,6 +123,12 @@ typedef struct RVPass {
     size_t fixed;
     int st_n;
     BOOL sc_short;
+    /* not cleared at the start of a conversion (rv_build): an entry of
+       the stack model is written before it is read, and rv_fold_init sets
+       lev and fold_k */
+    RVEnt st_in[RV_TEMPS_MAX + 8];
+    int lev[RV_FOLD_LMAX + 1];
+    uint8_t fold_k[RV_FOLD_KMAX]; /* the constants 0 to RV_FOLD_KMAX - 1 */
 } RVPass;
 
 /* The pass refuses only code that no compiler makes, which only
@@ -640,23 +645,36 @@ static void rv_jump_throws_p(RVPass *s, const RVMask *mask, int q, BOOL own)
    named by a byte and shared by every use of the same value. A constant
    past them gets an index of its own at each use, read only by LOADKW
    (rv_push), so that a function of thousands of constants converts in a
-   time linear in its size. */
+   time linear in its size. The near ones are found by their value in kh,
+   a table of RV_KH_N slots that holds 1 + the index of each, or 0, filled
+   in the order they come: a constant gets the index it would get from a
+   search of k[0] to k[RV_K_NEAR - 1], in a few reads in place of up to
+   RV_K_NEAR. */
 #define RV_K_NEAR 256
+#define RV_KH_BITS 9
+#define RV_KH_N (1 << RV_KH_BITS) /* twice RV_K_NEAR: a free slot is near */
 static int rv_k(RVPass *s, JSValue v)
 {
-    int i, n = min_int(s->k_count, RV_K_NEAR);
-    for (i = 0; i < n; i++) {
+    uint64_t key = v.u.uint64 ^ ((uint64_t)(uint32_t)JS_VALUE_GET_TAG(v) << 32);
+    uint32_t h = (uint32_t)((key * 0x9e3779b97f4a7c15ull) >> (64 - RV_KH_BITS));
+    int i;
+    while ((i = s->kh[h]) != 0) {
+        i--;
         if (JS_VALUE_GET_TAG(s->k[i]) == JS_VALUE_GET_TAG(v) &&
             s->k[i].u.uint64 == v.u.uint64)
             return i;
+        h = (h + 1) & (RV_KH_N - 1);
     }
     if (dbuf_put(&s->kbuf, (uint8_t *)&v, sizeof(v))) {
         s->failed = TRUE;
         return 0;
     }
     s->k = (JSValue *)s->kbuf.buf;
-    if (s->k_count < RV_K_NEAR && JS_VALUE_HAS_REF_COUNT(v))
-        s->kref[s->k_count >> 6] |= (uint64_t)1 << (s->k_count & 63);
+    if (s->k_count < RV_K_NEAR) {
+        s->kh[h] = s->k_count + 1;
+        if (JS_VALUE_HAS_REF_COUNT(v))
+            s->kref[s->k_count >> 6] |= (uint64_t)1 << (s->k_count & 63);
+    }
     return s->k_count++;
 }
 
@@ -999,6 +1017,14 @@ static void rv_one(RVPass *s, int pos)
     (void)i;
 }
 
+/* whether newpc has the old offset pos: a leader that is reached, which a
+   whole round of rv_code gave its new offset. Nothing else of newpc is
+   written in the round (it holds the work list of rv_depths). */
+static BOOL rv_emitted(RVPass *s, int pos)
+{
+    return s->leader[pos] && s->depth[pos] >= 0;
+}
+
 /* the jumps, once the code is done: 1 when one is too far for its off16
    and has no island, its old instruction then marked in farj for the next
    round */
@@ -1008,11 +1034,12 @@ static int rv_patch(RVPass *s)
     int again = 0;
     for (i = 0; i < s->fix.size / sizeof(RVFix); i++) {
         RVFix *f = (RVFix *)s->fix.buf + i;
-        int to = s->newpc[f->target], off;
-        if (to < 0) {
+        int to, off;
+        if (!rv_emitted(s, f->target)) {
             s->crafted = TRUE; /* a jump to code not emitted */
             return -1;
         }
+        to = s->newpc[f->target];
         off = to - (f->pos + 2);
         if (off != (int16_t)off) {
             if (f->island < 0) {
@@ -1034,12 +1061,11 @@ static int rv_patch(RVPass *s)
     }
     for (i = 0; i < s->fixw.size / 8; i++) {
         int32_t *f = (int32_t *)s->fixw.buf + 2 * i;
-        int to = s->newpc[f[1]];
-        if (to < 0) {
+        if (!rv_emitted(s, f[1])) {
             s->crafted = TRUE;
             return -1;
         }
-        put_u32(s->code.buf + f[0], to - (f[0] + 4));
+        put_u32(s->code.buf + f[0], s->newpc[f[1]] - (f[0] + 4));
     }
     return again;
 }
@@ -1144,18 +1170,18 @@ static int rv_code(RVPass *s)
    conversion to the next (rt->rv_scratch), so that a conversion allocates
    its register code and nothing else, and makes no short lived blocks
    between the ones that stay. It holds the arrays of the old instructions
-   (depth, catchpos, leader, newpc, farj) and the st of a function that
-   folds, then the buffers of rv_code, each of cap bytes. A buffer that
-   needs more ends its round (rv_scratch_short), and the round is made
-   again with that buffer twice as large, the block grown to fit, which
-   leaves the code the same. The block is made at the first conversion.
-   One larger than RV_SCRATCH_KEEP goes back at the end of its conversion,
-   and any goes back at a collection (JS_RunGC), when the heap fails a
-   request (js_heap_drain of quickjs.c, as the front cache does), at
-   JS_ReleaseStart and with the runtime (rv_scratch_free). A conversion
-   runs no script and makes no object, so none starts while another runs:
-   rt->rv_in_pass holds the scratch while one works in it, and the test
-   builds abort on a second. */
+   (depth, catchpos, leader, newpc, farj), the st of a function that
+   folds and the index of its constants (rv_k), then the buffers of
+   rv_code, each of cap bytes. A buffer that needs more ends its round
+   (rv_scratch_short), and the round is made again with that buffer twice
+   as large, the block grown to fit, which leaves the code the same. The
+   block is made at the first conversion. One larger than RV_SCRATCH_KEEP
+   goes back at the end of its conversion, and any goes back at a
+   collection (JS_RunGC), when the heap fails a request (js_heap_drain of
+   quickjs.c, as the front cache does), at JS_ReleaseStart and with the
+   runtime (rv_scratch_free). A conversion runs no script and makes no
+   object, so none starts while another runs: rt->rv_in_pass holds the
+   scratch while one works in it, and the test builds abort on a second. */
 #define RV_SCRATCH_KEEP (64 * 1024)
 #define RV_SC_ALIGN(n) (((size_t)(n) + 15) & ~(size_t)15)
 
@@ -1188,7 +1214,7 @@ static size_t rv_scratch_fixed(int len, int st_n)
 {
     return RV_SC_ALIGN(sizeof(int16_t) * len) + RV_SC_ALIGN(sizeof(int32_t) * len) +
         RV_SC_ALIGN(len) + RV_SC_ALIGN(sizeof(int32_t) * (len + 1)) + RV_SC_ALIGN(len) +
-        RV_SC_ALIGN(sizeof(RVEnt) * st_n);
+        RV_SC_ALIGN(sizeof(RVEnt) * st_n) + RV_SC_ALIGN(sizeof(uint16_t) * RV_KH_N);
 }
 
 /* the first bytes of each buffer, from the length of the code: enough for
@@ -1262,6 +1288,8 @@ static int rv_scratch_fit(RVPass *s, BOOL keep)
     if (s->st != s->st_in)
         s->st = s->st_at;
     p += RV_SC_ALIGN(sizeof(RVEnt) * s->st_n);
+    s->kh = (uint16_t *)p;
+    p += RV_SC_ALIGN(sizeof(uint16_t) * RV_KH_N);
     for (i = 0; i < RV_SC_N; i++) {
         DynBuf *d = i == RV_SC_CODE ? &s->code : i == RV_SC_FIX ? &s->fix :
             i == RV_SC_FIXW ? &s->fixw : i == RV_SC_PCMAP ? &s->pcmap :
@@ -1294,12 +1322,13 @@ static int rv_scratch_grow(RVPass *s)
 /* the state of a round of rv_code, kept: depth, catchpos, leader, farj */
 static void rv_round_init(RVPass *s)
 {
-    int i;
     s->code.size = s->fix.size = s->fixw.size = s->pcmap.size = 0;
     s->pcmap_hi.size = s->rets.size = s->kbuf.size = 0;
     s->hi = FALSE;
     s->k = NULL;
-    memset(s->kref, 0, sizeof(s->kref));
+    /* the words of kref the round before used */
+    memset(s->kref, 0, sizeof(uint64_t) * ((min_int(s->k_count, RV_K_NEAR) + 63) >> 6));
+    memset(s->kh, 0, sizeof(uint16_t) * RV_KH_N);
     s->k_count = 0;
     s->sp = 0;
     s->last = -1;
@@ -1311,8 +1340,6 @@ static void rv_round_init(RVPass *s)
 #ifdef RV_INJECT
     s->iprev = -1;
 #endif
-    for (i = 0; i < s->len; i++)
-        s->newpc[i] = -1;
 }
 
 /* the register code of b, or NULL: the pass refused it, or with *oom set
@@ -1323,8 +1350,13 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     RVFunc *rf = NULL;
     int i, size, round, r, first_temp, wide, fsize, vr_heap, deep, fold;
     int first_temp0, fsize0, vr_heap0;
-    int nt = rv_reads_new_target(b);
+    /* the parser and the reader set new_target_read (quickjs.c) */
+    int nt = b->func_kind == JS_FUNC_NORMAL && b->new_target_read;
 
+#ifdef RV_SELF_CHECK
+    if (nt != rv_reads_new_target(b))
+        abort(); /* the flag says other than the code */
+#endif
     if (oom)
         *oom = FALSE;
     /* captured locals: the closure state goes under the temps, and CLINIT
@@ -1351,9 +1383,9 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
 #else
     fold = deep;
 #endif
-    /* A generator or async function has no slot of new.target (nt is 0,
-       rv_reads_new_target): new.target is undefined in it. One with vr_heap
-       has its table of var_refs only while it runs (regvm-ops-gen.h). */
+    /* A generator or async function has no slot of new.target (nt is 0):
+       new.target is undefined in it. One with vr_heap has its table of
+       var_refs only while it runs (regvm-ops-gen.h). */
     /* MOVW, SETLW and CHKLW name a local, argument, this or func with 16
        bits: the farthest, func, is slot -(arg_count + 2 + var_count + nt),
        which the parser keeps within RV_FAR_MAX (JS_FRAME_FULL of quickjs.c) */
@@ -1362,7 +1394,11 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         rt->rv_stat[4] = 0;
         return NULL;
     }
-    memset(s, 0, sizeof(*s));
+    memset(s, 0, offsetof(RVPass, st_in));
+#ifdef RV_SELF_CHECK
+    /* what was not cleared is not read before it is written */
+    memset(s->st_in, 0xff, sizeof(*s) - offsetof(RVPass, st_in));
+#endif
     s->st = s->st_in;
     s->rt = rt;
     s->b = b;

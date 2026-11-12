@@ -10,7 +10,8 @@
    returns. Read once for each part, see regvm-areas.h.
 
    new.target. A function that reads it (special_object NEW_TARGET,
-   check_ctor, init_ctor: rv_reads_new_target) has a slot for it, the first
+   check_ctor, init_ctor: the flag new_target_read that the parser and
+   the reader set, quickjs.c) has a slot for it, the first
    local F[-var_count], below the locals of its bytecode (rf->nt). An
    ordinary call writes undefined there with the other locals, so it costs
    nothing; a construct call writes new.target. A function that does not
@@ -63,8 +64,10 @@ RV_OP(THISC)    /* d: the this of a sloppy function, coerced, to d */
     case OP_check_ctor_return:
         return 0;
 #elif RV_PART == RV_PART_PASS_FN
+#ifdef RV_SELF_CHECK
 /* 1 when the code of b, a function that can be constructed, reads
-   new.target: it then gets a slot for it */
+   new.target: what new_target_read must say, which the test build checks
+   at each conversion (rv_build) */
 static int rv_reads_new_target(JSFunctionBytecode *b)
 {
     const uint8_t *bc = b->byte_code_buf;
@@ -79,6 +82,7 @@ static int rv_reads_new_target(JSFunctionBytecode *b)
     }
     return 0;
 }
+#endif
 
 /* new: func, new.target and the arguments go into their temps, the window,
    as the old stack has them, and the result into the temp of func. NEW

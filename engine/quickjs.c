@@ -894,7 +894,12 @@ typedef struct JSFunctionBytecode {
     /* debug.source and debug.pc2line_buf point into a buffer shared
        with other runtimes (JS_READ_OBJ_SHARED_DEBUG) */
     uint8_t shared_debug : 1;
-    /* XXX: 9 bits available */
+    /* its code reads new.target (special_object NEW_TARGET, check_ctor,
+       init_ctor): set by resolve_labels and JS_ReadFunctionBytecode, and
+       read by the register pass, which gives the function a slot for it
+       (regvm-ops-ctor.h) */
+    uint8_t new_target_read : 1;
+    /* XXX: 8 bits available */
     uint8_t *byte_code_buf; /* (self pointer) */
     int byte_code_len;
     JSAtom func_name;
@@ -24353,6 +24358,7 @@ typedef struct JSFunctionDef {
     int eval_ret_idx; /* variable containing the return value of the eval, -1 if none */
     int this_var_idx; /* variable containg the 'this' value, -1 if none */
     int new_target_var_idx; /* variable containg the 'new.target' value, -1 if none */
+    BOOL new_target_read; /* the code resolve_labels wrote reads new.target */
     int this_active_func_var_idx; /* variable containg the 'this.active_func' value, -1 if none */
     int home_object_var_idx;
     BOOL need_home_object;
@@ -39603,6 +39609,7 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
     }
     /* initialize the 'new.target' variable if needed */
     if (s->new_target_var_idx >= 0) {
+        s->new_target_read = TRUE;
         dbuf_putc(&bc_out, OP_special_object);
         dbuf_putc(&bc_out, OP_SPECIAL_OBJECT_NEW_TARGET);
         put_short_code(&bc_out, OP_put_loc, s->new_target_var_idx);
@@ -40383,6 +40390,9 @@ static __exception int resolve_labels(JSContext *ctx, JSFunctionDef *s)
 
         default:
         no_change:
+            if (op == OP_check_ctor || op == OP_init_ctor ||
+                (op == OP_special_object && bc_buf[pos + 1] == OP_SPECIAL_OBJECT_NEW_TARGET))
+                s->new_target_read = TRUE;
             add_pc2line_info(s, bc_out.size, line_num);
             dbuf_put(&bc_out, bc_buf + pos, len);
             break;
@@ -41190,6 +41200,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     b->need_home_object = (fd->home_object_var_idx >= 0 ||
                            fd->need_home_object);
     b->new_target_allowed = fd->new_target_allowed;
+    b->new_target_read = fd->new_target_read;
     b->super_call_allowed = fd->super_call_allowed;
     b->super_allowed = fd->super_allowed;
     b->arguments_allowed = fd->arguments_allowed;
@@ -43700,6 +43711,13 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
     while (pos < bc_len) {
         op = bc_buf[pos];
         len = short_opcode_info(op).size;
+        /* the flag of the register pass, as resolve_labels sets it for
+           the compiler's code (each instruction is whole, as the loop
+           below already counts on) */
+        if (op == OP_check_ctor || op == OP_init_ctor ||
+            (op == OP_special_object &&
+             bc_buf[pos + 1] == OP_SPECIAL_OBJECT_NEW_TARGET))
+            b->new_target_read = 1;
         switch(short_opcode_info(op).fmt) {
         case OP_FMT_atom:
         case OP_FMT_atom_u8:

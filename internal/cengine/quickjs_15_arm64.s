@@ -1914,7 +1914,7 @@ TEXT ·__JS_EvalInternal_block(SB), $216-32
 	BL ·push_scope(SB)
 	WORD $0xf9405bea
 	WORD $0xf9406fe9
-	WORD $0xb940dd48
+	WORD $0xb940e148
 	WORD $0xf9405929
 	WORD $0xb9011948
 	WORD $0xf9406fe8
@@ -27347,7 +27347,7 @@ TEXT ·js_new_function_def_block(SB), $136-24
 	WORD $0x3941a969
 	WORD $0xf900054b
 	WORD $0xf900016a
-	WORD $0xb940c56b
+	WORD $0xb940c96b
 	WORD $0x39016949
 	WORD $0xb81ec14b
 	WORD $0xf94009c9
@@ -27408,7 +27408,7 @@ TEXT ·js_new_function_def_block(SB), $136-24
 	WORD $0xfc0f8d40
 	WORD $0x3c9b8140
 	WORD $0x3c9c8140
-	WORD $0xfc1d8140
+	WORD $0xfc1dc140
 	WORD $0x3dc00120
 	WORD $0xf2400ac9
 	WORD $0xb900019f
@@ -27416,7 +27416,7 @@ TEXT ·js_new_function_def_block(SB), $136-24
 	WORD $0xb9016008
 	WORD $0xb818c15f
 	WORD $0xf81f814a
-	WORD $0x3c9e4140
+	WORD $0x3c9e8140
 	WORD $0xb9002148
 	WORD $0x54000560
 	WORD $0x394002c8
