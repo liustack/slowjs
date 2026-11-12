@@ -112,3 +112,30 @@ func TestGCStopsLoopWithoutCalls(t *testing.T) {
 		})
 	}
 }
+
+// TestLoopWithoutCallsPolls is the companion of TestGCStopsLoopWithoutCalls,
+// which fails only when a loop stops polling altogether. A loop that polls
+// too rarely holds a GC, and a stop, as long as it runs between two polls,
+// and that test would pass. Here each loop runs a million times and must poll
+// at least once every 10,000 iterations, that is spend at least a tick of the
+// poll's count on each: about 32 now, so the bound has room for a faster loop
+// but not for one that runs without counting. It counts polls, not time, so
+// a loaded machine does not change it.
+func TestLoopWithoutCallsPolls(t *testing.T) {
+	for _, c := range []struct{ name, js string }{
+		{"goto", `let i = 0, k = 0; for (;;) { i = (i + 1) & 0xffff; if (++k === 1e6) break }`},
+		{"if_true", `let i = 0, k = 0; do { i = (i + 1) & 0xffff } while (++k < 1e6)`},
+		{"if_false", `let i = 0, k = 0; while (k < 1e6) { i = (i + 1) & 0xffff; k++ }`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newTestVM(t)
+			before := m.h.Polls()
+			if _, err := m.Eval(c.js, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			if n := m.h.Polls() - before; n < 100 {
+				t.Errorf("a million iterations polled %d times, want at least 100", n)
+			}
+		})
+	}
+}
