@@ -626,7 +626,7 @@ static force_inline BOOL rv_rel(int rel, double d1, double d2)
     RV_JCMP4(SEQ, OP_strict_eq, ==, 1)
 #undef RV_JCMP4
     RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,
-            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, 2)
+            *RV_VREF(F, get_u16(ip + 1))->pvalue, 4, 1, 0, 2)
 #undef RV_JCMP
 
     /* the rest of the relational compares, shared by the eight into a bool

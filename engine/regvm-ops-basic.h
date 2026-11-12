@@ -543,7 +543,7 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
     else
         ops[0] = rv_take(ctx, F, (int8_t)ip[0]);
     if (k & 4)
-        ops[1] = JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue);
+        ops[1] = JS_DupValue(ctx, *RV_VREF(F, get_u16(ip + 1))->pvalue);
     else if (k & 1)
         ops[1] = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]);
     else
@@ -1123,11 +1123,11 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     /* GETVR writes a temp, which holds nothing to free, GETVRL a local */
  rv_GETVR:
     ip = pc; pc += 3;
-    RV_R(ip[0]) = JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue);
+    RV_R(ip[0]) = JS_DupValue(ctx, *RV_VREF(F, get_u16(ip + 1))->pvalue);
     RV_NEXT();
  rv_GETVRL:
     ip = pc; pc += 3;
-    RV_PUTD(ip[0], JS_DupValue(ctx, *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue));
+    RV_PUTD(ip[0], JS_DupValue(ctx, *RV_VREF(F, get_u16(ip + 1))->pvalue));
     RV_NEXT();
 
  rv_FREE:

@@ -37,7 +37,7 @@ read_when:
 | 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 | 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | Unreleased | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
-| 编译器标出没有闭包能看到其变化的被捕获变量，后面的改动以这个分析为基础。程序看到的一切不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
+| 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
 
 ## 上游 QuickJS 的提交
 

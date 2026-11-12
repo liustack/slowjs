@@ -631,6 +631,19 @@ typedef struct JSVarRef {
     };
 } JSVarRef;
 
+/* a closure variable that holds its value (capture_by_value): a closed
+   JSVarRef after the var_refs of the closure, in their block, which only
+   that closure frees and marks and whose reference count is never read.
+   The register loop reads it through pvalue as any other. */
+typedef struct JSValueRef {
+    JSVarRef ref;
+#ifdef RV_CBV_CHECK
+    /* the JSVarRef the closure would hold, which every read compares with
+       (engine/regvm.h) */
+    JSVarRef *real;
+#endif
+} JSValueRef;
+
 /* bigint */
 
 #if JS_LIMB_BITS == 32
@@ -923,6 +936,8 @@ typedef struct JSFunctionBytecode {
     uint16_t stack_size; /* maximum stack size */
     uint16_t var_ref_count; /* number of local variable references */
     uint16_t object_lit_count; /* the entries of object_lits */
+    uint16_t by_value_count; /* closure variables marked by_value: the
+                                JSValueRef of a closure (capture_by_value) */
     JSContext *realm; /* function realm */
     JSValue *cpool; /* constant pool (self pointer) */
     int cpool_count;
@@ -8893,6 +8908,20 @@ static void set_cycle_flag(JSContext *ctx, JSValueConst obj)
 {
 }
 
+#ifdef RV_CBV_CHECK
+/* the check build: a closure variable that holds its value must hold what
+   the JSVarRef the closure would have holds, at every read and at its free.
+   Anything else is a write capture_by_value missed: stop. */
+static void js_value_ref_check(JSVarRef *var_ref)
+{
+    JSValueRef *vr = container_of(var_ref, JSValueRef, ref);
+    JSValue a = var_ref->value, b = *vr->real->pvalue;
+    if (JS_VALUE_GET_TAG(a) != JS_VALUE_GET_TAG(b) || memcmp(&a, &b, sizeof(a)) != 0) {
+        abort();
+    }
+}
+#endif
+
 static void free_var_ref(JSRuntime *rt, JSVarRef *var_ref)
 {
     if (var_ref) {
@@ -8970,6 +8999,18 @@ static void js_c_function_mark(JSRuntime *rt, JSValueConst val,
         mark_func(rt, &p->u.cfunc.realm->header);
 }
 
+/* frees the closure variable var_ref of a closure, which holds its value
+   (JSValueRef) */
+static void js_value_ref_free(JSRuntime *rt, JSVarRef *var_ref)
+{
+#ifdef RV_CBV_CHECK
+    JSValueRef *vr = container_of(var_ref, JSValueRef, ref);
+    js_value_ref_check(var_ref);
+    free_var_ref(rt, vr->real);
+#endif
+    JS_FreeValueRT(rt, var_ref->value);
+}
+
 static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
 {
     JSObject *p1, *p = JS_VALUE_GET_OBJ(val);
@@ -8985,8 +9026,12 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
     if (b) {
         var_refs = p->u.func.var_refs;
         if (var_refs) {
-            for(i = 0; i < b->closure_var_count; i++)
-                free_var_ref(rt, var_refs[i]);
+            for(i = 0; i < b->closure_var_count; i++) {
+                if (!b->closure_var[i].by_value)
+                    free_var_ref(rt, var_refs[i]);
+                else if (var_refs[i])
+                    js_value_ref_free(rt, var_refs[i]);
+            }
             js_free_rt(rt, var_refs);
         }
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b));
@@ -9009,7 +9054,14 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
         if (var_refs) {
             for(i = 0; i < b->closure_var_count; i++) {
                 JSVarRef *var_ref = var_refs[i];
-                if (var_ref) {
+                if (!var_ref)
+                    continue;
+                if (b->closure_var[i].by_value) {
+                    JS_MarkValue(rt, var_ref->value, mark_func);
+#ifdef RV_CBV_CHECK
+                    mark_func(rt, &container_of(var_ref, JSValueRef, ref)->real->header);
+#endif
+                } else {
                     mark_func(rt, &var_ref->header);
                 }
             }
@@ -10325,9 +10377,12 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                 /* home_object: object will be accounted for in list scan */
                 if (var_refs) {
                     s->memory_used_count++;
-                    s->js_func_size += b->closure_var_count * sizeof(*var_refs);
+                    s->js_func_size += b->closure_var_count * sizeof(*var_refs) +
+                        b->by_value_count * sizeof(JSValueRef);
                     for (i = 0; i < b->closure_var_count; i++) {
-                        if (var_refs[i]) {
+                        if (var_refs[i] && b->closure_var[i].by_value) {
+                            compute_value_size(var_refs[i]->value, hp);
+                        } else if (var_refs[i]) {
                             double ref_count = js_rc(var_refs[i])->ref_count;
                             s->memory_used_count += 1 / ref_count;
                             s->js_func_size += sizeof(*var_refs[i]) / ref_count;
@@ -22197,6 +22252,37 @@ static JSVarRef *js_closure_global_var(JSContext *ctx, JSClosureVar *cv)
     return js_global_object_get_uninitialized_var(ctx, p, cv->var_name);
 }
 
+/* the closure variable cv of a closure that holds its value, made in vr:
+   the local or argument of the frame sf, or the closure variable of the
+   function around (cur_var_refs), which holds its value too */
+static JSVarRef *js_value_ref(JSContext *ctx, JSValueRef *vr, JSClosureVar *cv,
+                              JSVarRef **cur_var_refs, JSStackFrame *sf)
+{
+    JSValue v;
+
+    if (cv->closure_type == JS_CLOSURE_LOCAL)
+        v = sf->var_buf[cv->var_idx];
+    else if (cv->closure_type == JS_CLOSURE_ARG)
+        v = sf->arg_buf[cv->var_idx];
+    else
+        v = *cur_var_refs[cv->var_idx]->pvalue;
+#ifdef RV_CBV_CHECK
+    if (cv->closure_type == JS_CLOSURE_REF) {
+        js_value_ref_check(cur_var_refs[cv->var_idx]);
+        vr->real = container_of(cur_var_refs[cv->var_idx], JSValueRef, ref)->real;
+        js_rc(vr->real)->ref_count++;
+    } else {
+        vr->real = get_var_ref(ctx, sf, cv->var_idx, cv->closure_type == JS_CLOSURE_ARG);
+        if (!vr->real)
+            return NULL;
+    }
+#endif
+    vr->ref.is_detached = TRUE;
+    vr->ref.value = JS_DupValue(ctx, v);
+    vr->ref.pvalue = &vr->ref.value;
+    return &vr->ref;
+}
+
 static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                            JSFunctionBytecode *b,
                            JSVarRef **cur_var_refs,
@@ -22212,10 +22298,15 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
     p->u.func.home_object = NULL;
     p->u.func.var_refs = NULL;
     if (b->closure_var_count) {
-        var_refs = js_mallocz(ctx, sizeof(var_refs[0]) * b->closure_var_count);
+        JSValueRef *vr;
+        /* the JSValueRef of the closure variables marked by_value after
+           the var_refs */
+        var_refs = js_mallocz(ctx, sizeof(var_refs[0]) * b->closure_var_count +
+                              sizeof(JSValueRef) * b->by_value_count);
         if (!var_refs)
             goto fail;
         p->u.func.var_refs = var_refs;
+        vr = (JSValueRef *)(var_refs + b->closure_var_count);
         if (is_eval) {
             /* first pass to check the global variable definitions */
             for(i = 0; i < b->closure_var_count; i++) {
@@ -22235,6 +22326,13 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
         for(i = 0; i < b->closure_var_count; i++) {
             JSClosureVar *cv = &b->closure_var[i];
             JSVarRef *var_ref;
+            if (cv->by_value) {
+                var_ref = js_value_ref(ctx, vr++, cv, cur_var_refs, sf);
+                if (!var_ref)
+                    goto fail;
+                var_refs[i] = var_ref;
+                continue;
+            }
             switch(cv->closure_type) {
             case JS_CLOSURE_MODULE_IMPORT:
                 /* imported from other modules */
@@ -41474,8 +41572,10 @@ static BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
     } st[CBV_DEPTH];
     int d = 0, k;
 
-    if (mark)
+    if (mark && !c->closure_var[j].by_value) {
         c->closure_var[j].by_value = 1;
+        c->by_value_count++;
+    }
     st[0].f = c;
     st[0].j = j;
     st[0].i = st[0].k = 0;
@@ -41502,8 +41602,10 @@ static BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
             continue;
         if (d + 1 == CBV_DEPTH)
             return FALSE;
-        if (mark)
+        if (mark && !g->closure_var[k].by_value) {
             g->closure_var[k].by_value = 1;
+            g->by_value_count++;
+        }
         d++;
         st[d].f = g;
         st[d].j = k;
