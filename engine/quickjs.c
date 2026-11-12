@@ -631,18 +631,35 @@ typedef struct JSVarRef {
     };
 } JSVarRef;
 
-/* a closure variable that holds its value (capture_by_value): a closed
-   JSVarRef after the var_refs of the closure, in their block, which only
-   that closure frees and marks and whose reference count is never read.
-   The register loop reads it through pvalue as any other. */
-typedef struct JSValueRef {
-    JSVarRef ref;
+/* a closure variable that holds its value (capture_by_value): a cell of the
+   block of the var_refs of the closure, after them, which only that closure
+   frees and marks. Its entry in var_refs is no JSVarRef: it points
+   offsetof(JSVarRef, pvalue) before ref_pvalue (js_value_cell_ref), so that
+   the register loop and a closure below read the value through pvalue as
+   they read any other, and ref_pvalue is written and read only as that
+   pvalue. Nothing reads another field of the JSVarRef of such an entry. */
+typedef struct JSValueCell {
+    JSValue value;
+    JSValue *ref_pvalue;
 #ifdef RV_CBV_CHECK
     /* the JSVarRef the closure would hold, which every read compares with
        (engine/regvm.h) */
     JSVarRef *real;
 #endif
-} JSValueRef;
+} JSValueCell;
+
+/* the entry of var_refs for the cell c, and the cell of such an entry */
+#define JS_CELL_REF_OFS ((int)offsetof(JSVarRef, pvalue) - (int)offsetof(JSValueCell, ref_pvalue))
+
+static inline JSVarRef *js_value_cell_ref(JSValueCell *c)
+{
+    return (JSVarRef *)((uint8_t *)c - JS_CELL_REF_OFS);
+}
+
+static inline JSValueCell *js_ref_value_cell(JSVarRef *var_ref)
+{
+    return (JSValueCell *)((uint8_t *)var_ref + JS_CELL_REF_OFS);
+}
 
 /* bigint */
 
@@ -937,7 +954,7 @@ typedef struct JSFunctionBytecode {
     uint16_t var_ref_count; /* number of local variable references */
     uint16_t object_lit_count; /* the entries of object_lits */
     uint16_t by_value_count; /* closure variables marked by_value: the
-                                JSValueRef of a closure (capture_by_value) */
+                                JSValueCell of a closure (capture_by_value) */
     JSContext *realm; /* function realm */
     JSValue *cpool; /* constant pool (self pointer) */
     int cpool_count;
@@ -8914,8 +8931,8 @@ static void set_cycle_flag(JSContext *ctx, JSValueConst obj)
    Anything else is a write capture_by_value missed: stop. */
 static void js_value_ref_check(JSVarRef *var_ref)
 {
-    JSValueRef *vr = container_of(var_ref, JSValueRef, ref);
-    JSValue a = var_ref->value, b = *vr->real->pvalue;
+    JSValueCell *c = js_ref_value_cell(var_ref);
+    JSValue a = c->value, b = *c->real->pvalue;
     if (JS_VALUE_GET_TAG(a) != JS_VALUE_GET_TAG(b) || memcmp(&a, &b, sizeof(a)) != 0) {
         abort();
     }
@@ -8999,16 +9016,20 @@ static void js_c_function_mark(JSRuntime *rt, JSValueConst val,
         mark_func(rt, &p->u.cfunc.realm->header);
 }
 
-/* frees the closure variable var_ref of a closure, which holds its value
-   (JSValueRef) */
-static void js_value_ref_free(JSRuntime *rt, JSVarRef *var_ref)
+/* the cells of the closure variables of a closure that hold their values,
+   after its var_refs (JSValueCell) */
+static inline JSValueCell *js_value_cells(JSFunctionBytecode *b, JSVarRef **var_refs)
 {
-#ifdef RV_CBV_CHECK
-    JSValueRef *vr = container_of(var_ref, JSValueRef, ref);
-    js_value_ref_check(var_ref);
-    free_var_ref(rt, vr->real);
-#endif
-    JS_FreeValueRT(rt, var_ref->value);
+    return (JSValueCell *)(var_refs + b->closure_var_count);
+}
+
+/* whether the entry var_ref of var_refs is a cell of cells, which holds n:
+   one compare, with no read of the closure variable. On the integers of
+   the addresses, as the entry may be NULL. */
+static inline BOOL js_is_value_cell(JSVarRef *var_ref, JSValueCell *cells, int n)
+{
+    return (uintptr_t)var_ref + JS_CELL_REF_OFS - (uintptr_t)cells <
+        (uintptr_t)n * sizeof(JSValueCell);
 }
 
 static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
@@ -9016,7 +9037,8 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
     JSObject *p1, *p = JS_VALUE_GET_OBJ(val);
     JSFunctionBytecode *b;
     JSVarRef **var_refs;
-    int i;
+    JSValueCell *cells;
+    int i, n;
 
     p1 = p->u.func.home_object;
     if (p1) {
@@ -9026,11 +9048,27 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
     if (b) {
         var_refs = p->u.func.var_refs;
         if (var_refs) {
-            for(i = 0; i < b->closure_var_count; i++) {
-                if (!b->closure_var[i].by_value)
+            n = b->by_value_count;
+            if (n == 0) {
+                for(i = 0; i < b->closure_var_count; i++)
                     free_var_ref(rt, var_refs[i]);
-                else if (var_refs[i])
-                    js_value_ref_free(rt, var_refs[i]);
+            } else {
+                /* every cell holds a value, undefined for those
+                   js_closure2 did not reach */
+                cells = js_value_cells(b, var_refs);
+                for(i = 0; i < n; i++) {
+#ifdef RV_CBV_CHECK
+                    if (cells[i].real) {
+                        js_value_ref_check(js_value_cell_ref(&cells[i]));
+                        free_var_ref(rt, cells[i].real);
+                    }
+#endif
+                    JS_FreeValueRT(rt, cells[i].value);
+                }
+                for(i = 0; i < b->closure_var_count; i++) {
+                    if (!js_is_value_cell(var_refs[i], cells, n))
+                        free_var_ref(rt, var_refs[i]);
+                }
             }
             js_free_rt(rt, var_refs);
         }
@@ -9044,7 +9082,8 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
     JSObject *p = JS_VALUE_GET_OBJ(val);
     JSVarRef **var_refs = p->u.func.var_refs;
     JSFunctionBytecode *b = p->u.func.function_bytecode;
-    int i;
+    JSValueCell *cells;
+    int i, n;
 
     if (p->u.func.home_object) {
         JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, p->u.func.home_object),
@@ -9052,18 +9091,19 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
     }
     if (b) {
         if (var_refs) {
+            n = b->by_value_count;
+            cells = js_value_cells(b, var_refs);
+            for(i = 0; i < n; i++) {
+                JS_MarkValue(rt, cells[i].value, mark_func);
+#ifdef RV_CBV_CHECK
+                if (cells[i].real)
+                    mark_func(rt, &cells[i].real->header);
+#endif
+            }
             for(i = 0; i < b->closure_var_count; i++) {
                 JSVarRef *var_ref = var_refs[i];
-                if (!var_ref)
-                    continue;
-                if (b->closure_var[i].by_value) {
-                    JS_MarkValue(rt, var_ref->value, mark_func);
-#ifdef RV_CBV_CHECK
-                    mark_func(rt, &container_of(var_ref, JSValueRef, ref)->real->header);
-#endif
-                } else {
+                if (var_ref && !js_is_value_cell(var_ref, cells, n))
                     mark_func(rt, &var_ref->header);
-                }
             }
         }
         /* must mark the function bytecode because template objects may be
@@ -10378,10 +10418,10 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                 if (var_refs) {
                     s->memory_used_count++;
                     s->js_func_size += b->closure_var_count * sizeof(*var_refs) +
-                        b->by_value_count * sizeof(JSValueRef);
+                        b->by_value_count * sizeof(JSValueCell);
                     for (i = 0; i < b->closure_var_count; i++) {
                         if (var_refs[i] && b->closure_var[i].by_value) {
-                            compute_value_size(var_refs[i]->value, hp);
+                            compute_value_size(*var_refs[i]->pvalue, hp);
                         } else if (var_refs[i]) {
                             double ref_count = js_rc(var_refs[i])->ref_count;
                             s->memory_used_count += 1 / ref_count;
@@ -19016,7 +19056,9 @@ static void js_print_object(JSPrintValueState *s, JSObject *p)
             for(i = 0; i < b->closure_var_count; i++) {
                 if (i != 0)
                     js_printf(s, ", ");
-                js_print_value(s, var_refs[i]->value);
+                /* a cell (JSValueCell) has its value through pvalue only */
+                js_print_value(s, b->closure_var[i].by_value ?
+                               *var_refs[i]->pvalue : var_refs[i]->value);
             }
             js_printf(s, " ]");
         }
@@ -22252,12 +22294,15 @@ static JSVarRef *js_closure_global_var(JSContext *ctx, JSClosureVar *cv)
     return js_global_object_get_uninitialized_var(ctx, p, cv->var_name);
 }
 
-/* the closure variable cv of a closure that holds its value, made in vr:
-   the local or argument of the frame sf, or the closure variable of the
-   function around (cur_var_refs), which holds its value too */
-static JSVarRef *js_value_ref(JSContext *ctx, JSValueRef *vr, JSClosureVar *cv,
-                              JSVarRef **cur_var_refs, JSStackFrame *sf)
+/* the closure variable cv of a closure that holds its value, made in the
+   cell c: the local or argument of the frame sf, or the closure variable of
+   the function around (cur_var_refs), which holds its value too. The entry
+   of var_refs for it, or NULL (only in the check build) with c holding
+   undefined. */
+static JSVarRef *js_value_cell_init(JSContext *ctx, JSValueCell *c, JSClosureVar *cv,
+                                    JSVarRef **cur_var_refs, JSStackFrame *sf)
 {
+    JSVarRef *var_ref = js_value_cell_ref(c);
     JSValue v;
 
     if (cv->closure_type == JS_CLOSURE_LOCAL)
@@ -22269,18 +22314,19 @@ static JSVarRef *js_value_ref(JSContext *ctx, JSValueRef *vr, JSClosureVar *cv,
 #ifdef RV_CBV_CHECK
     if (cv->closure_type == JS_CLOSURE_REF) {
         js_value_ref_check(cur_var_refs[cv->var_idx]);
-        vr->real = container_of(cur_var_refs[cv->var_idx], JSValueRef, ref)->real;
-        js_rc(vr->real)->ref_count++;
+        c->real = js_ref_value_cell(cur_var_refs[cv->var_idx])->real;
+        js_rc(c->real)->ref_count++;
     } else {
-        vr->real = get_var_ref(ctx, sf, cv->var_idx, cv->closure_type == JS_CLOSURE_ARG);
-        if (!vr->real)
+        c->real = get_var_ref(ctx, sf, cv->var_idx, cv->closure_type == JS_CLOSURE_ARG);
+        if (!c->real) {
+            c->value = JS_UNDEFINED;
             return NULL;
+        }
     }
 #endif
-    vr->ref.is_detached = TRUE;
-    vr->ref.value = JS_DupValue(ctx, v);
-    vr->ref.pvalue = &vr->ref.value;
-    return &vr->ref;
+    c->value = JS_DupValue(ctx, v);
+    var_ref->pvalue = &c->value;
+    return var_ref;
 }
 
 static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
@@ -22290,23 +22336,25 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                            BOOL is_eval, JSModuleDef *m)
 {
     JSObject *p;
-    JSVarRef **var_refs;
-    int i;
+    JSVarRef **var_refs = NULL;
+    JSValueCell *c = NULL;
+    int i = 0;
 
     p = JS_VALUE_GET_OBJ(func_obj);
     p->u.func.function_bytecode = b;
     p->u.func.home_object = NULL;
     p->u.func.var_refs = NULL;
     if (b->closure_var_count) {
-        JSValueRef *vr;
-        /* the JSValueRef of the closure variables marked by_value after
-           the var_refs */
-        var_refs = js_mallocz(ctx, sizeof(var_refs[0]) * b->closure_var_count +
-                              sizeof(JSValueRef) * b->by_value_count);
+        /* the cells of the closure variables marked by_value after the
+           var_refs. Not zeroed: the loop below writes every entry and
+           every cell, and fail_refs those it does not reach. The function
+           gets the block only then, as a collection can run in the loop
+           (an error made, a global variable defined) and would read it. */
+        var_refs = js_malloc(ctx, sizeof(var_refs[0]) * b->closure_var_count +
+                             sizeof(JSValueCell) * b->by_value_count);
         if (!var_refs)
             goto fail;
-        p->u.func.var_refs = var_refs;
-        vr = (JSValueRef *)(var_refs + b->closure_var_count);
+        c = js_value_cells(b, var_refs);
         if (is_eval) {
             /* first pass to check the global variable definitions */
             for(i = 0; i < b->closure_var_count; i++) {
@@ -22318,8 +22366,10 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                         flags |= DEFINE_GLOBAL_LEX_VAR;
                     if (cv->var_kind == JS_VAR_GLOBAL_FUNCTION_DECL)
                         flags |= DEFINE_GLOBAL_FUNC_VAR;
-                    if (JS_CheckDefineGlobalVar(ctx, cv->var_name, flags))
-                        goto fail;
+                    if (JS_CheckDefineGlobalVar(ctx, cv->var_name, flags)) {
+                        i = 0;
+                        goto fail_refs;
+                    }
                 }
             }
         }
@@ -22327,15 +22377,16 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
             JSClosureVar *cv = &b->closure_var[i];
             JSVarRef *var_ref;
             if (cv->by_value) {
-                var_ref = js_value_ref(ctx, vr++, cv, cur_var_refs, sf);
+                var_ref = js_value_cell_init(ctx, c++, cv, cur_var_refs, sf);
                 if (!var_ref)
-                    goto fail;
+                    goto fail_refs;
                 var_refs[i] = var_ref;
                 continue;
             }
             switch(cv->closure_type) {
             case JS_CLOSURE_MODULE_IMPORT:
                 /* imported from other modules */
+                var_refs[i] = NULL;
                 continue;
             case JS_CLOSURE_MODULE_DECL:
                 var_ref = js_create_var_ref(ctx, cv->is_lexical);
@@ -22363,11 +22414,24 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                 abort();
             }
             if (!var_ref)
-                goto fail;
+                goto fail_refs;
             var_refs[i] = var_ref;
         }
+        p->u.func.var_refs = var_refs;
     }
     return func_obj;
+ fail_refs:
+    /* the entries from i on and the cells from c on, which the loop did not
+       reach, hold nothing to free */
+    for(; i < b->closure_var_count; i++)
+        var_refs[i] = NULL;
+    for(; c < js_value_cells(b, var_refs) + b->by_value_count; c++) {
+        c->value = JS_UNDEFINED;
+#ifdef RV_CBV_CHECK
+        c->real = NULL;
+#endif
+    }
+    p->u.func.var_refs = var_refs;
  fail:
     /* bfunc is freed when func_obj is freed */
     JS_FreeValue(ctx, func_obj);
@@ -45177,6 +45241,13 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
     if (local_count != bc.arg_count + bc.var_count) {
         JS_ThrowSyntaxError(ctx, "invalid bytecode: %d variable definitions for %d arguments and locals",
                             local_count, bc.arg_count + bc.var_count);
+        JS_FreeAtom(ctx, bc.func_name);
+        goto fail;
+    }
+    /* the compiler makes at most JS_MAX_LOCAL_VARS, so that by_value_count
+       holds the count of the cells of a closure */
+    if (bc.closure_var_count < 0 || bc.closure_var_count > JS_MAX_LOCAL_VARS) {
+        JS_ThrowSyntaxError(ctx, "invalid bytecode: %d closure variables", bc.closure_var_count);
         JS_FreeAtom(ctx, bc.func_name);
         goto fail;
     }

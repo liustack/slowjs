@@ -1083,6 +1083,12 @@ size_t white_heap_limit(JSContext *ctx)
     return ctx->rt->malloc_ctx.heap.limit;
 }
 
+/* The count the threshold of a collection is held to (js_trigger_gc). */
+size_t white_gc_count(JSRuntime *rt)
+{
+    return rt->malloc_ctx.heap.count - rt->rv_stack_bytes;
+}
+
 /* ---- the keys and plain strings of JSON.parse ---- */
 
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end)
@@ -1809,6 +1815,42 @@ static int white_by_value_run(JSContext *ctx, const char *src, const char *name,
 int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap)
 {
     return white_by_value_run(ctx, src, name, read, 0, out, cap);
+}
+
+/* with on, the function name below f gets n closure variables (n at least
+   its count): its own, then copies of its first. Without, it gets back
+   its own. 0, or -1. */
+int white_wide_closure_vars(JSContext *ctx, JSValueConst f, const char *name, int n, int on)
+{
+    static JSClosureVar *saved;
+    static int saved_count;
+    JSFunctionBytecode *b;
+    JSClosureVar *cv;
+    int k;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = white_find_function(ctx, JS_VALUE_GET_PTR(f), name);
+    if (!b)
+        return -1;
+    if (!on) {
+        js_free(ctx, b->closure_var);
+        b->closure_var = saved;
+        b->closure_var_count = saved_count;
+        return 0;
+    }
+    if (b->closure_var_count < 1 || n < b->closure_var_count)
+        return -1;
+    cv = js_malloc(ctx, sizeof(cv[0]) * n);
+    if (!cv)
+        return -1;
+    for (k = 0; k < n; k++)
+        cv[k] = b->closure_var[k < b->closure_var_count ? k : 0];
+    saved = b->closure_var;
+    saved_count = b->closure_var_count;
+    b->closure_var = cv;
+    b->closure_var_count = n;
+    return 0;
 }
 
 /* white_by_value on the function name of src compiled and then changed as

@@ -99,6 +99,7 @@ const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
 int white_child_var_count(JSValueConst fun, int i);
 int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap);
 int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap);
+int white_wide_closure_vars(JSContext *ctx, JSValueConst f, const char *name, int n, int on);
 int white_class_after_nop(JSContext *ctx, const char *src, const char *name);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
@@ -141,6 +142,7 @@ void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
+size_t white_gc_count(JSRuntime *rt);
 
 /* ---- texts of every kind of character ---- */
 
@@ -3560,6 +3562,94 @@ static void test_capture_by_value(void)
     vm_free(&v);
 }
 
+/* JS_ReadObject reads a function of as many closure variables as the
+   compiler makes, 65534, and refuses more: by_value_count, 16 bits, counts
+   the cells of a closure, one for each closure variable that holds its
+   value. The function g has three, a and b that hold their values and w
+   that the frame writes, and the copies of a hold theirs too: 65538 of
+   them would give 65537 cells. */
+static void test_closure_var_limit(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const int counts[] = { 65534, 65535, 65538 };
+    VM v = vm_new(), w;
+    JSValue c, obj, r;
+    uint8_t *buf;
+    size_t len;
+    char *t, want[64];
+    int i, n;
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    for (i = 0; i < (int)countof(counts); i++) {
+        n = counts[i];
+        CHECK(white_wide_closure_vars(v.ctx, c, "g", n, 1) == 0, "%d closure variables: not made", n);
+        buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+        white_wide_closure_vars(v.ctx, c, "g", n, 0);
+        CHECK(buf != NULL, "%d closure variables: cannot be written", n);
+        if (!buf)
+            continue;
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        if (n == 65534) {
+            CHECK(!JS_IsException(obj), "%d closure variables: the read threw", n);
+            r = JS_EvalFunction(w.ctx, obj);
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 8,
+                  "%d closure variables: the script did not give 8", n);
+            JS_FreeValue(w.ctx, r);
+        } else {
+            snprintf(want, sizeof(want), "SyntaxError: invalid bytecode: %d closure variables", n);
+            t = exception_text(w.ctx);
+            CHECK(JS_IsException(obj) && t && strstr(t, want), "%d closure variables: read (%s)",
+                  n, t ? t : "no exception");
+            free(t);
+            JS_FreeValue(w.ctx, obj);
+        }
+        vm_free(&w);
+        js_free(v.ctx, buf);
+    }
+    JS_FreeValue(v.ctx, c);
+    vm_free(&v);
+}
+
+/* js_closure2 gives a function its block of closure variables once every
+   entry is written, as it does not zero the block: a collection in the
+   middle reads none of it. A script of 17 global definitions, the last of
+   which a global let already holds, throws in the first pass of
+   js_closure2, and the error it makes may run a collection. The threshold
+   goes over the bytes around the count, 8 at a time, so that some round
+   puts the collection there and not at the making of the function just
+   before (a collection sets the threshold far above the count). Before
+   each round, an array of the size of the block (136 bytes) leaves its
+   bytes in the allocator. */
+static void test_closure_gc_in_build(void)
+{
+    static const char src[] =
+        "var a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, x;";
+    VM v = vm_new();
+    JSValue c, r;
+    char *t;
+    long d;
+
+    CHECK(eval_ok(v.ctx, "let x = 1"), "the global let threw");
+    for (d = -512; d <= 4096; d += 8) {
+        c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(c), "the script threw");
+        CHECK(eval_ok(v.ctx, "new Uint8Array(136).fill(165), 0"), "the array threw");
+        JS_SetGCThreshold(v.rt, white_gc_count(v.rt) + d);
+        r = JS_EvalFunction(v.ctx, c);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && t && strstr(t, "SyntaxError"), "at %ld: %s", d, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+    }
+    vm_free(&v);
+}
+
 /* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
    read or a write of a let, a const or a class known to come after its
    declaration has none, and a variable left with no check, no capture and
@@ -5978,6 +6068,8 @@ int main(int argc, char **argv)
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();
+    test_closure_var_limit();
+    test_closure_gc_in_build();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();
