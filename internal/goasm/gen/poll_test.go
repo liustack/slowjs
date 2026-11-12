@@ -776,7 +776,7 @@ func TestRegvmJumpsCount(t *testing.T) {
 		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            ( n ) = -1024;", "with n written as n = -1024"},
 		{"regvm-ops-cmp.h", "            c += tsize;", "            (tsize) = -1024;\n            c += tsize;", "with tsize written after it is declared"},
 		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            (void)\"//\"; n = -1024;", "with n written as n = -1024"},
-		{"regvm-ops-cmp.h", "    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, 2)", "    RV_JCMP (rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
+		{"regvm-ops-cmp.h", "    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,\n            *RV_VREF(F, get_u16(ip + 1))->pvalue, 4, 1, 0, 2)", "    RV_JCMP (rv_JSEQVF, OP_strict_eq, ==,\n            *RV_VREF(F, get_u16(ip + 1))->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
 	} {
 		src, err := read(c.file)
 		if err != nil {
