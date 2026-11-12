@@ -849,6 +849,8 @@ typedef struct JSClosureVar {
     uint8_t var_kind : 4; /* see JSVarKindEnum */
     uint8_t written : 1; /* written by the function or below it (capture_by_value) */
     uint8_t by_value : 1; /* the value never changes once captured (capture_by_value) */
+    uint8_t file_by_value : 1; /* by_value as a file gave it, until JS_ReadFunctionTag
+                                  holds it to the analysis (cbv_check_file) */
     uint16_t var_idx; /* is_local = TRUE: index to a normal variable of the
                     parent function. otherwise: index to a closure
                     variable of the parent function */
@@ -41457,7 +41459,9 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
    the frame (docs/changes/c-engine.md). It runs on the final code, after
    share_local_slots, when the functions of the constant pool are made
    (their closure variables are what it reads and marks), in the compiler
-   and again in JS_ReadObject, which never reads the marks from the file.
+   and again in JS_ReadObject, which holds the marks the file gives to
+   it (cbv_check_file). A read with JS_READ_OBJ_POLLS_CHECKED, of code read
+   before with the checks, takes the marks of the file and does not run it.
 
    It sets, for b:
    - closure_var[i].written: the closure variable i of b can be written by b
@@ -41486,9 +41490,10 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
    between). Code it does not know (a jump that does not land on an
    instruction, an index out of range, a push_const of a function with no
    define_class after it, a define_class with no such push_const before it
-   or with a jump to it), a failure to get
-   memory and a flow past its budget leave every slot of b with a JSVarRef
-   and every closure variable of b written.
+   or with a jump to it) and a flow past its budget leave every slot of b
+   with a JSVarRef and every closure variable of b written. With no memory
+   it throws and returns -1, and the compile or the read fails: the marks
+   depend on the code alone, as cbv_check_file needs.
 
    It trusts that an exception lands only on a catch of b, as the catch
    offsets b makes with OP_catch say: true of all code the compiler makes.
@@ -41689,7 +41694,7 @@ typedef struct {
     int nsite;
 } CBVGraph;
 
-static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
+static int capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
 {
     JSRuntime *rt = ctx->rt;
     const uint8_t *buf = b->byte_code_buf;
@@ -41697,7 +41702,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     int nlocal = b->arg_count + b->var_count;
     int pos, prev, op, sz, i, j, k, r, s, t, kind, space, idx, base, changed, ngosub;
     int64_t t64;
-    BOOL eval = FALSE, mapped = FALSE, bad = FALSE, need_flow = FALSE;
+    BOOL eval = FALSE, mapped = FALSE, bad = FALSE, need_flow = FALSE, oom = FALSE;
     uint8_t *starts = NULL, *ok = NULL, *site = NULL, *writes = NULL;
     int *ref_of = NULL, *slot_of = NULL, *gosub_after = NULL, *catch_blk = NULL, ncatch;
     uint8_t *lead = NULL;
@@ -41711,7 +41716,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     /* one walk: the instructions, eval, the mapped arguments, the opcodes */
     starts = js_mallocz_rt(rt, len + 1);
     if (!starts)
-        goto bad;
+        goto no_mem;
     for (pos = 0, prev = -1; pos < len; pos += sz) {
         op = buf[pos];
         if (op == OP_invalid || op >= OP_COUNT)
@@ -41784,7 +41789,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     site = js_mallocz_rt(rt, n);
     writes = js_mallocz_rt(rt, n);
     if (!ref_of || !slot_of || !ok || !site || !writes)
-        goto bad;
+        goto no_mem;
     for (r = 0; r < n; r++)
         slot_of[r] = -1;
     for (i = 0; i < nlocal; i++) {
@@ -41882,7 +41887,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         int nsucc = 0, nhand = 0, nev = 0, ns = 0, vret, vexc;
         lead = js_mallocz_rt(rt, len + 1);
         if (!lead)
-            goto bad;
+            goto no_mem;
         lead[0] = 1;
         ngosub = ncatch = 0;
         for (pos = 0; pos < len; pos += sz) {
@@ -41907,7 +41912,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         gosub_after = js_malloc_rt(rt, sizeof(int) * (ngosub + 1));
         catch_blk = js_malloc_rt(rt, sizeof(int) * (ncatch + 1));
         if (!g.blk || !g.start || !gosub_after || !catch_blk)
-            goto bad;
+            goto no_mem;
         g.nb = 0;
         for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
             if (lead[pos])
@@ -41944,7 +41949,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
                 g.site_child = js_malloc_rt(rt, sizeof(int) * (ns + 1));
                 if (!g.succ || !g.succ_at || !g.hand || !g.hand_at || !g.ev ||
                     !g.ev_at || !g.site_blk || !g.site_ev || !g.site_child)
-                    goto bad;
+                    goto no_mem;
             }
             nsucc = nhand = nev = ns = 0;
             for (i = 0; i < g.nb; i++) {
@@ -42041,7 +42046,7 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     gen = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
     kill = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
     if (!in || !gen || !kill)
-        goto bad;
+        goto no_mem;
     budget = ((int64_t)1 << 22) + (int64_t)64 * len;
     for (base = 0; base < n; base += 64) {
         uint64_t want = 0, seen, out, fail;
@@ -42154,6 +42159,8 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
         }
     }
     goto done;
+ no_mem:
+    oom = TRUE;
  bad:
     bad = TRUE;
  done:
@@ -42186,6 +42193,54 @@ static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
     js_free_rt(rt, g.site_blk);
     js_free_rt(rt, g.site_ev);
     js_free_rt(rt, g.site_child);
+    if (oom) {
+        JS_ThrowOutOfMemory(ctx);
+        return -1;
+    }
+    return 0;
+}
+
+/* JS_ReadFunctionTag on b, which no constant pool holds, once
+   capture_by_value has run on it and on every function below it: the
+   marks it made on their closure variables are final, as nothing above b
+   can add one. The compiler writes them with the code (JS_WriteFunctionTag),
+   and a read with JS_READ_OBJ_POLLS_CHECKED takes them from the file, so
+   a mark of the file that is not the analysis's is code no compiler makes:
+   a variable left a JSVarRef down a chain whose top holds the value would
+   count a reference on a cell (js_closure2). -1 with an exception when one
+   differs or on no memory. A loop over a stack of its own: functions nest
+   as deep as the reader goes. */
+static int cbv_check_file(JSContext *ctx, JSFunctionBytecode *b)
+{
+    JSFunctionBytecode **st = NULL, *f = b;
+    int n = 0, size = 0, i, k, ret = 0;
+
+    for (;;) {
+        for (k = 0; k < f->closure_var_count; k++) {
+            if (f->closure_var[k].file_by_value != f->closure_var[k].by_value) {
+                JS_ThrowSyntaxError(ctx, "invalid bytecode: code no compiler makes, a closure variable marked %d",
+                                    f->closure_var[k].file_by_value);
+                ret = -1;
+                goto done;
+            }
+            f->closure_var[k].file_by_value = 0;
+        }
+        for (i = 0; i < f->cpool_count; i++) {
+            if (JS_VALUE_GET_TAG(f->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+                continue;
+            if (js_resize_array(ctx, (void **)&st, sizeof(st[0]), &size, n + 1)) {
+                ret = -1;
+                goto done;
+            }
+            st[n++] = JS_VALUE_GET_PTR(f->cpool[i]);
+        }
+        if (n == 0)
+            break;
+        f = st[--n];
+    }
+ done:
+    js_free(ctx, st);
+    return ret;
 }
 
 static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd);
@@ -42456,10 +42511,12 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
         memcpy(b->closure_var, fd->closure_var, b->closure_var_count * sizeof(*b->closure_var));
         {
             int i;
-            /* the compiler leaves these two unset: capture_by_value sets them */
+            /* the compiler leaves these unset: capture_by_value sets the
+               first two, and only a read uses the third */
             for(i = 0; i < b->closure_var_count; i++) {
                 b->closure_var[i].written = 0;
                 b->closure_var[i].by_value = 0;
+                b->closure_var[i].file_by_value = 0;
             }
         }
     }
@@ -42483,7 +42540,14 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     b->realm = JS_DupContext(ctx);
 
     add_gc_object(ctx->rt, &b->header, JS_GC_OBJ_TYPE_FUNCTION_BYTECODE);
-    capture_by_value(ctx, b);
+    if (capture_by_value(ctx, b)) {
+        /* b holds all fd held but fd itself */
+        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b));
+        if (fd->parent)
+            list_del(&fd->link);
+        js_free(ctx, fd);
+        return JS_EXCEPTION;
+    }
 
 #if defined(DUMP_BYTECODE) && (DUMP_BYTECODE & 1)
     if (!fd->strip_debug) {
@@ -43805,7 +43869,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 10
+#define BC_VERSION 11
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -44190,6 +44254,7 @@ static int JS_WriteFunctionTag(BCWriterState *s, JSValueConst obj)
         bc_set_flags(&flags, &idx, cv->is_const, 1);
         bc_set_flags(&flags, &idx, cv->is_lexical, 1);
         bc_set_flags(&flags, &idx, cv->var_kind, 4);
+        bc_set_flags(&flags, &idx, cv->by_value, 1);
         assert(idx <= 16);
         bc_put_u16(s, flags);
     }
@@ -44706,6 +44771,9 @@ typedef struct BCReaderState {
     BOOL allow_reference : 8;
     BOOL shared_debug : 8;
     BOOL polls_checked : 8;
+    /* the next value JS_ReadObjectRec reads is an entry of the constant
+       pool of a function (JS_ReadFunctionTag) */
+    BOOL cpool_entry : 8;
     /* object references */
     JSObject **objects;
     int objects_count;
@@ -45183,7 +45251,7 @@ static int bc_read_object_lits(BCReaderState *s, JSFunctionBytecode *b)
     return 0;
 }
 
-static JSValue JS_ReadFunctionTag(BCReaderState *s)
+static JSValue JS_ReadFunctionTag(BCReaderState *s, BOOL cpool_entry)
 {
     JSContext *ctx = s->ctx;
     JSFunctionBytecode bc, *b;
@@ -45344,6 +45412,15 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
             cv->is_const = bc_get_flags(v16, &idx, 1);
             cv->is_lexical = bc_get_flags(v16, &idx, 1);
             cv->var_kind = bc_get_flags(v16, &idx, 4);
+            /* code read before with the checks keeps the marks of the
+               file, other code gets those of capture_by_value, which must
+               be the same (cbv_check_file) */
+            if (s->polls_checked) {
+                cv->by_value = bc_get_flags(v16, &idx, 1);
+                b->by_value_count += cv->by_value;
+            } else {
+                cv->file_by_value = bc_get_flags(v16, &idx, 1);
+            }
 #ifdef DUMP_READ_OBJECT
             bc_read_trace(s, "name: "); print_atom(s->ctx, cv->var_name); printf("\n");
 #endif
@@ -45385,6 +45462,7 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
         bc_read_trace(s, "cpool {\n");
         for(i = 0; i < b->cpool_count; i++) {
             JSValue val;
+            s->cpool_entry = TRUE;
             val = JS_ReadObjectRec(s);
             if (JS_IsException(val))
                 goto fail;
@@ -45392,11 +45470,18 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
         }
         bc_read_trace(s, "}\n");
     }
-    /* code no compiler makes, which the register loop cannot run
-       (engine/regvm-entry.h) */
-    if (!s->polls_checked && rv_read_check(ctx, b))
-        goto fail;
-    capture_by_value(ctx, b);
+    if (!s->polls_checked) {
+        /* code no compiler makes, which the register loop cannot run
+           (engine/regvm-entry.h) */
+        if (rv_read_check(ctx, b))
+            goto fail;
+        if (capture_by_value(ctx, b))
+            goto fail;
+        /* the marks of the functions below a function no constant pool
+           holds are all made now */
+        if (!cpool_entry && cbv_check_file(ctx, b))
+            goto fail;
+    }
     b->realm = JS_DupContext(ctx);
     return obj;
  fail:
@@ -45776,7 +45861,9 @@ static JSValue JS_ReadObjectRec1(BCReaderState *s)
     JSContext *ctx = s->ctx;
     uint8_t tag;
     JSValue obj = JS_UNDEFINED;
+    BOOL cpool_entry = s->cpool_entry;
 
+    s->cpool_entry = FALSE;
     if (bc_get_u8(s, &tag))
         return JS_EXCEPTION;
 
@@ -45823,7 +45910,7 @@ static JSValue JS_ReadObjectRec1(BCReaderState *s)
     case BC_TAG_FUNCTION_BYTECODE:
         if (!s->allow_bytecode)
             goto invalid_tag;
-        obj = JS_ReadFunctionTag(s);
+        obj = JS_ReadFunctionTag(s, cpool_entry);
         break;
     case BC_TAG_MODULE:
         if (!s->allow_bytecode)

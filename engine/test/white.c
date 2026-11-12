@@ -895,6 +895,24 @@ JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode
     return v;
 }
 
+/* Read buf as JS_ReadObject does for bytecode, without
+   JS_READ_OBJ_POLLS_CHECKED, with call number fail of js_malloc_rt and
+   js_realloc_rt failing (0 for none), the others working. *nallocs is how
+   many calls it made. Returns what JS_ReadObject returns. */
+JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_ReadObject(ctx, buf, len, JS_READ_OBJ_BYTECODE);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return v;
+}
+
 /* Whether every block of the engine is a request to the heap of its own (the
    builds that take each block from the system malloc), and not only the
    arenas of small blocks and the large blocks: such a block has no room past
@@ -1815,6 +1833,61 @@ static int white_by_value_run(JSContext *ctx, const char *src, const char *name,
 int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap)
 {
     return white_by_value_run(ctx, src, name, read, 0, out, cap);
+}
+
+static size_t white_marks_rec(JSContext *ctx, JSFunctionBytecode *b, char *out, size_t cap, size_t n)
+{
+    char buf[ATOM_GET_STR_BUF_SIZE];
+    int i, k;
+
+    n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s:", n ? " " : "",
+                  JS_AtomGetStr(ctx, buf, sizeof(buf), b->func_name));
+    for (k = 0; k < b->closure_var_count; k++)
+        n += snprintf(out + n, n < cap ? cap - n : 0, "%d", b->closure_var[k].by_value);
+    n += snprintf(out + n, n < cap ? cap - n : 0, "/%d", b->by_value_count);
+    for (i = 0; i < b->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(b->cpool[i]) == JS_TAG_FUNCTION_BYTECODE)
+            n = white_marks_rec(ctx, JS_VALUE_GET_PTR(b->cpool[i]), out, cap, n);
+    }
+    return n;
+}
+
+/* the marks of the closure variables of the function f and of those below
+   it, each function with its count: "f:/0 g:110/2" */
+void white_marks(JSContext *ctx, JSValueConst f, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (JS_VALUE_GET_TAG(f) == JS_TAG_FUNCTION_BYTECODE)
+        white_marks_rec(ctx, JS_VALUE_GET_PTR(f), out, cap, 0);
+}
+
+/* the mark of the closure variable at of the function name below f, or
+   with at -1 of its first closure variable whose mark is was, turned the
+   other way: its index, or -1 when there is none. by_value_count stays as
+   it was: JS_WriteObject reads the marks only. */
+int white_flip_by_value(JSContext *ctx, JSValueConst f, const char *name, int was, int at)
+{
+    JSFunctionBytecode *b;
+    int k;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = white_find_function(ctx, JS_VALUE_GET_PTR(f), name);
+    if (!b)
+        return -1;
+    if (at >= 0) {
+        if (at >= b->closure_var_count)
+            return -1;
+        b->closure_var[at].by_value = !b->closure_var[at].by_value;
+        return at;
+    }
+    for (k = 0; k < b->closure_var_count; k++) {
+        if (b->closure_var[k].by_value == was) {
+            b->closure_var[k].by_value = !was;
+            return k;
+        }
+    }
+    return -1;
 }
 
 /* with on, the function name below f gets n closure variables (n at least

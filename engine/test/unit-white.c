@@ -88,6 +88,7 @@ int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
+JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -100,6 +101,8 @@ int white_child_var_count(JSValueConst fun, int i);
 int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap);
 int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap);
 int white_wide_closure_vars(JSContext *ctx, JSValueConst f, const char *name, int n, int on);
+void white_marks(JSContext *ctx, JSValueConst f, char *out, size_t cap);
+int white_flip_by_value(JSContext *ctx, JSValueConst f, const char *name, int was, int at);
 int white_class_after_nop(JSContext *ctx, const char *src, const char *name);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
@@ -3650,6 +3653,131 @@ static void test_closure_gc_in_build(void)
     vm_free(&v);
 }
 
+/* The marks of capture_by_value go into the file with the code. A read
+   without JS_READ_OBJ_POLLS_CHECKED makes them again and refuses a file
+   whose marks are not those, with a mark turned either way. A read with
+   the flag takes them as they are, and runs the same. */
+static void test_by_value_file(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const char marks[] = "<eval>:0/0 f:/0 g:110/2 h:11/2";
+    static const struct {
+        const char *what, *name;
+        int was;
+    } flips[] = {
+        { "a closure variable that holds its value made a JSVarRef", "h", 1 },
+        { "a closure variable the frame writes made to hold its value", "g", 0 },
+    };
+    VM v = vm_new(), w;
+    JSValue c, obj, r;
+    char got[256];
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int checked, i, k;
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    white_marks(v.ctx, c, got, sizeof(got));
+    CHECK(!strcmp(got, marks), "compiled: \"%s\", want \"%s\"", got, marks);
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "the script cannot be written");
+    for (checked = 0; buf && checked < 2; checked++) {
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE | (checked ? JS_READ_OBJ_POLLS_CHECKED : 0));
+        CHECK(!JS_IsException(obj), "read%s: threw", checked ? " with the flag" : "");
+        white_marks(w.ctx, obj, got, sizeof(got));
+        CHECK(!strcmp(got, marks), "read%s: \"%s\", want \"%s\"", checked ? " with the flag" : "", got, marks);
+        r = JS_EvalFunction(w.ctx, obj);
+        CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 8, "read%s: the script did not give 8",
+              checked ? " with the flag" : "");
+        JS_FreeValue(w.ctx, r);
+        vm_free(&w);
+    }
+    js_free(v.ctx, buf);
+
+    for (i = 0; i < (int)countof(flips); i++) {
+        k = white_flip_by_value(v.ctx, c, flips[i].name, flips[i].was, -1);
+        CHECK(k >= 0, "%s: no such closure variable", flips[i].what);
+        buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+        if (k >= 0)
+            white_flip_by_value(v.ctx, c, flips[i].name, 0, k);
+        CHECK(buf != NULL, "%s: cannot be written", flips[i].what);
+        if (!buf)
+            continue;
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        t = exception_text(w.ctx);
+        CHECK(JS_IsException(obj) && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+              "%s: read (%s)", flips[i].what, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(w.ctx, obj);
+        vm_free(&w);
+        js_free(v.ctx, buf);
+    }
+    white_marks(v.ctx, c, got, sizeof(got));
+    CHECK(!strcmp(got, marks), "the marks put back: \"%s\"", got);
+    JS_FreeValue(v.ctx, c);
+    vm_free(&v);
+}
+
+/* capture_by_value gets no memory: the compile, or the read without
+   JS_READ_OBJ_POLLS_CHECKED, fails with out of memory, and never gives
+   other marks (which a read would refuse as code no compiler makes). Each
+   call of js_malloc_rt and js_realloc_rt fails in turn, for the script of
+   test_by_value_file, whose analysis follows the flow. */
+static void test_by_value_oom(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const char marks[] = "<eval>:0/0 f:/0 g:110/2 h:11/2";
+    VM v = vm_new(), w;
+    JSValue c, obj;
+    char got[256];
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int fail, n, read, failed[2] = { 0, 0 };
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "the script cannot be written");
+    JS_FreeValue(v.ctx, c);
+    for (read = 0; buf && read < 2; read++) {
+        for (fail = 1;; fail++) {
+            w = vm_new();
+            if (read)
+                obj = white_read_failing(w.ctx, buf, len, fail, &n);
+            else
+                obj = white_compile_failing(w.ctx, src, fail, 1, &n);
+            if (JS_IsException(obj)) {
+                t = exception_text(w.ctx);
+                CHECK(t && strstr(t, "out of memory"), "%s, call %d failing: %s",
+                      read ? "read" : "compile", fail, t ? t : "no exception");
+                free(t);
+                failed[read]++;
+            } else {
+                white_marks(w.ctx, obj, got, sizeof(got));
+                CHECK(!strcmp(got, marks), "%s, call %d failing: \"%s\"", read ? "read" : "compile", fail, got);
+                JS_FreeValue(w.ctx, obj);
+            }
+            vm_free(&w);
+            if (fail > n)
+                break;
+        }
+        CHECK(failed[read] > 0, "%s: no call failed", read ? "read" : "compile");
+    }
+    js_free(v.ctx, buf);
+    printf("unit-white: test_by_value_oom: %d compiles and %d reads failed\n", failed[0], failed[1]);
+    vm_free(&v);
+}
+
 /* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
    read or a write of a let, a const or a class known to come after its
    declaration has none, and a variable left with no check, no capture and
@@ -6070,6 +6198,8 @@ int main(int argc, char **argv)
     test_capture_by_value();
     test_closure_var_limit();
     test_closure_gc_in_build();
+    test_by_value_file();
+    test_by_value_oom();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();
