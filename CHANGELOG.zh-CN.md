@@ -57,6 +57,7 @@
 - 脚本里对 `f.call(t, ...)`、`call.bind(f)`（core-js 这样造）或没有绑定参数的绑定函数的调用，现在直接做成它所代表的那次调用。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在 `RangeError` 之前能深约一倍，100,000 个绑定函数的链能跑，原来抛 `RangeError`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。
 - 对数组的 `for-of`（迭代相关的部分没被改过）不再为每个元素调用数组迭代器的 `next`。所以在调用深度的上限处，这样的循环会接着往下读，原来调 `next` 会在这里抛 `RangeError`。脚本不会比原来停得更早。
 - 只调用字符串 `charCodeAt` 的循环被停下时（超时或 `Interrupt`），报出的停止位置在循环往回跳的地方，不再在调用里面。
+- 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
 
 ## [v0.30.1] - 2026-11-06
 

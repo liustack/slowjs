@@ -418,6 +418,29 @@ Against the commit before it, with the same counts as above:
 
 None is over the 2% for which the rule of code positions asks for a timing. `TestLocalsFreedInFewTurns` now holds a call of a function with 200 locals to 60 turns of the two loops, 53 at this commit.
 
+## A call copies its last locals into its window
+
+Release: Unreleased.
+
+The register loop passes the arguments of a call in its window, the temps where the frame of the callee starts. An argument that is a local, an argument of the caller or `this` was put there by a `MOV` right before the call, one dispatch for each. `CALLS` and `CALLSD`, a `CALL` and a `CALLD` that copy their last arguments themselves, now take up to four such copies into the call: the converter writes the slots after the operands of the call, and the call copies each, with a reference, from the last argument back. `return f(a, b)` with two locals runs one instruction where it ran three. A method call, an argument that is a constant or a temp, and the arguments before it keep their `MOV` or `LOADK`.
+
+Why it gives the same values: the converter folds only an entry it still reads lazily, a slot that no instruction has copied yet, so nothing it emitted is taken back. Such an entry is read right before the call, with nothing between, and holds the value of its slot then: a store to the slot copies the entry first (`rv_before_store`), and a slot a closure can write is never read lazily. The arguments object read lazily is not folded, since its first read makes it. The call makes its copies before any check that can leave the instruction: the call depth and the stack, a call out of the loop through `JS_CallInternal`, the unwrap of `call` and bound functions, more arguments than parameters, a new segment of the register stack, a throw at any of them. Each way out finds the window as the `MOV`s left it, with the same references in it. The first call of a function not converted yet converts it and goes on after the copies, where `CALL` runs the instruction again: running `CALLS` again would copy twice.
+
+A first form also took constants, and tested the count from four down. Telling a slot from a constant at each copy, with the tests of the count, made a call with one copy cost more instructions than the `MOV` it saved, and most calls that copy copy one. So a constant keeps its `LOADK`, and a call with one copy tests the count once. In llc's output of the generated engine, a call with 1, 2, 3 and 4 copies runs 0, 6, 12 and 20 instructions fewer than a `CALL` and its `MOV`s on arm64, and -1, 6, 13 and 22 on amd64.
+
+Per render, 40% to 54% of the calls copy, and the loop runs 4.5% to 7.6% fewer instructions of its own (dispatches). Instructions retired per warm render, generated engine on darwin/arm64 (the median of eight rounds, each the mean over the pages), against `167dd40c`:
+
+| Pages | Before | After | |
+| --- | ---: | ---: | ---: |
+| React's page | 34.23 M | 34.05 M | -0.53% |
+| tifa's shop, fourteen store pages (mean) | 264.85 M | 264.19 M | -0.25% |
+| tifa's shop, six workbench pages (mean) | 109.19 M | 108.92 M | -0.24% |
+| tifa's MUI test app, three pages (mean) | 145.53 M | 145.24 M | -0.20% |
+
+On amd64 the cost of each count times how often it comes gives about -0.44% on React's page and -0.15% to -0.19% on the shop and MUI pages. The same estimate for arm64 comes out 0.02 to 0.09 points below what was measured. The HTML of every page is the same. Two opcodes are added, and 16 of the 256 are left. The frames do not change: `JS_RegvmRun` takes 176 bytes of the shadow stack on arm64 and 256 on amd64, its Go frame is $328 and $256, and the seven depths of `TestRegvmDepth` are what they were, on both architectures. The time is in [performance.md](../performance.md#calls-that-copy-their-last-locals).
+
+Tests: `engine/test/regvm/js/s-callfold.js` calls with locals, arguments, `this` and constants as the last arguments in the forms the call folds: the same slot twice, a slot that takes the result, a string constant, more and fewer arguments than parameters, a generator, C functions, `call` and `bind`, a callee that throws, and the stack of an error. `s-callfold-stop.js` stops a loop of such calls. Their corpus and inject goldens were written from the build before the change. `test_regvm_call_copies` of `unit-white` reads the code of a function and checks which arguments its call copies, in which order, and that a method call, a local before a constant, a local before a temp and a captured argument are not folded. `TestRegvmJumpsCount` of the generator checks that `CALLS` counts towards the next poll as `CALL` does.
+
 ## Opcodes that do a few instructions at once
 
 Two kinds of instruction sequence that tifa's pages run often now take one dispatch of the interpreter: a read of an argument or a local and the property read by name after it, and a `typeof` test.

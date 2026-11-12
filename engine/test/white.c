@@ -1475,6 +1475,22 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
     return h;
 }
 
+/* the register code of f, its length in *code_len, or NULL when f has
+   none */
+const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
+{
+    const RVFunc *rf;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return NULL;
+    rf = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return NULL;
+    *code_len = rf->code_len;
+    return rf->code;
+}
+
 /* Code no compiler makes, made from the function f of bytecode for the
    check of JS_ReadObject (rv_read_check of engine/regvm-entry.h), one kind
    at a time: 0 an instruction that pops more than the stack holds (its

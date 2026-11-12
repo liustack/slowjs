@@ -126,6 +126,7 @@ unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
 uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
+const uint8_t *white_regvm_code(JSValueConst f, int *code_len);
 long white_regvm_shorts(void);
 int white_regvm_scratch_drain(JSContext *ctx, int in_pass);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
@@ -6140,6 +6141,75 @@ static char *call_text(JSContext *ctx, JSValueConst f)
 
      gosub L; push_i16 7; return; L: drop; push_i16 val; ret
      gosub L; push_i16 7; return; L: return */
+/* the call of the register code that copies its last arguments itself
+   (CALLS, CALLSD, rv_call_copies of engine/regvm-ops-basic.h): which
+   arguments it copies, read from the code of f. A pattern byte of -1 takes
+   any byte (the window, a constant's index), and a case with no pattern
+   wants neither op in the code. The slots of f(a, b): a is -3, b is -2. */
+static void test_regvm_call_copies(void)
+{
+    static const struct { const char *what, *src; int op, pat[8], n; } cases[] = {
+        { "two arguments, the last first", "return h(a, b);", 0, { -1, 2, 2, 0xfe, 0xfd }, 5 },
+        { "the result dropped", "h(a, b); return 0;", 1, { -1, 2, 2, 0xfe, 0xfd }, 5 },
+        { "a local before a constant", "return h(a, 's');", -1, { 0 }, 0 },
+        { "a constant before a local", "return h('s', a);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "the same slot twice", "return h(b, b);", 0, { -1, 2, 2, 0xfe, 0xfe }, 5 },
+        { "five arguments, the last four", "return h(a, b, a, b, a);", 0, { -1, 5, 4, 0xfd, 0xfe, 0xfd, 0xfe }, 7 },
+        { "after a temp", "return h(h(), a);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "an argument set by the one after it", "return h(a, a = b);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "before a temp", "return h(a, h());", -1, { 0 }, 0 },
+        { "a method call", "return b.m(a);", -1, { 0 }, 0 },
+        { "a captured argument", "var g = function () { return a; }; return h(a);", -1, { 0 }, 0 },
+    };
+    int k, i, j, op[2] = { -1, -1 }, len, found, other;
+    const uint8_t *code;
+    char src[256];
+    VM v;
+    JSValue g, f;
+
+    for (i = 0; i < 256; i++) {
+        const char *name = JS_RegvmOpName(i);
+        if (name && !strcmp(name, "CALLS"))
+            op[0] = i;
+        if (name && !strcmp(name, "CALLSD"))
+            op[1] = i;
+    }
+    CHECK(op[0] >= 0 && op[1] >= 0, "the names of CALLS and CALLSD");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        snprintf(src, sizeof(src), "function h() { return 1; } globalThis.f = function (a, b) { 'use strict'; %s }; 0", cases[k].src);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[k].what);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_ok(v.ctx, "f(1, { m() { return 2; } }); 0"), "%s: the call threw", cases[k].what);
+        code = white_regvm_code(f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        found = other = 0;
+        for (i = 0; code && i < len; i++) {
+            if (code[i] != op[0] && code[i] != op[1])
+                continue;
+            if (cases[k].op < 0 || code[i] != op[cases[k].op] || i + cases[k].n >= len) {
+                other = 1;
+                continue;
+            }
+            for (j = 0; j < cases[k].n; j++)
+                if (cases[k].pat[j] >= 0 && code[i + 1 + j] != cases[k].pat[j])
+                    break;
+            if (j == cases[k].n)
+                found = 1;
+            else
+                other = 1;
+        }
+        if (cases[k].op < 0)
+            CHECK(!other, "%s: a CALLS or CALLSD in the code", cases[k].what);
+        else
+            CHECK(found, "%s: no %s with the copies wanted", cases[k].what, cases[k].op ? "CALLSD" : "CALLS");
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -6298,6 +6368,7 @@ int main(int argc, char **argv)
     test_regvm_run_alloc();
     test_regvm_bad_ret();
     test_regvm_ret_value();
+    test_regvm_call_copies();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

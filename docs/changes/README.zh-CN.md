@@ -39,6 +39,7 @@ read_when:
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
 | 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
 | 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
+| 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
 
 ## 上游 QuickJS 的提交
 
