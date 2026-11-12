@@ -36,7 +36,7 @@ RV_OP(WITH)     /* w op is_with atom32 off16: the with_* op on the temps under w
 #elif RV_PART == RV_PART_INFO
     case OP_with_get_var: case OP_with_put_var: case OP_with_delete_var:
     case OP_with_make_ref: case OP_with_get_ref:
-        *target = pos + 5 + (int32_t)get_u32(bc + pos + 5);
+        *target = rv_old_target(pos, 5 + (int64_t)(int32_t)get_u32(bc + pos + 5));
         return 0;
 #elif RV_PART == RV_PART_PASS_FN
 /* with_* at pos: the stack into its temps, as the target wants it, then

@@ -41497,9 +41497,10 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
 
    It trusts that an exception lands only on a catch of b, as the catch
    offsets b makes with OP_catch say: true of all code the compiler makes.
-   A file can hand a function a catch offset of another function, which
-   the register loop takes as one of b (EvalBytecode in eval.go: bytecode
-   from a file is not checked). */
+   The register pass refuses code in which a catch offset could leave its
+   place, to be stored, returned or passed to another function
+   (rv_catch_reads_ok of engine/regvm-pass.h), and JS_ReadObject runs it on
+   each function it reads (rv_read_check). */
 
 enum { CBV_NONE, CBV_READ, CBV_WRITE, CBV_CLOSE, CBV_REF, CBV_BAD };
 

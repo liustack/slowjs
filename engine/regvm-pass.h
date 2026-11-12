@@ -71,7 +71,8 @@ typedef struct RVPass {
     uint8_t *farj_at;
     RVEnt *st_at;       /* the st of a function that folds, in the scratch */
     DynBuf pcmap;
-    DynBuf rets;        /* (old return address, end of its GOSUB) */
+    DynBuf rets;        /* (old return address, end of its GOSUB, depth and
+                           catchpos at the return address) */
     DynBuf pcmap_hi;    /* an RVPcHi for each entry of pcmap */
     BOOL hi;            /* an entry owns a temp past T[31] */
     DynBuf kbuf;        /* the constants, borrowed from b: its atoms and cpool,
@@ -141,7 +142,9 @@ typedef struct RVPass {
    has an opcode the pass does not take (OP_invalid or past the last), depths
    of the stack or of the catches that do not agree, an instruction that
    pops more than the stack holds, code that runs off its end or jumps where
-   nothing was emitted, a ret with no gosub, an operand out of the tables of
+   nothing was emitted or out of its code (rv_old_target), a catch offset
+   read by an instruction that does not drop it or read around it
+   (rv_catch_reads_ok), a ret with no gosub, an operand out of the tables of
    the function (rv_operands_ok), a special_object of no kind, mapped
    arguments or a make_loc_ref with no closure state, an init_ctor with
    parameters, a call of more than 255 arguments (the parser passes those
@@ -166,6 +169,15 @@ static int rv_old_argc(const uint8_t *p, int op)
     default:
         return get_u16(p + 1);
     }
+}
+
+/* the target of a jump at pos with the offset off from pos: INT32_MAX, which
+   is past the end of any code, for one before its start or past INT32_MAX,
+   so that rv_depths refuses it (RV_CRAFTED) with a target past the end */
+static inline int rv_old_target(int pos, int64_t off)
+{
+    int64_t t = pos + off;
+    return t < 0 || t > INT32_MAX ? INT32_MAX : (int)t;
 }
 
 /* pops and pushes of an old instruction this pass takes, or -1 for one it
@@ -248,6 +260,68 @@ static BOOL rv_operands_ok(RVPass *s, int pos, int op)
     }
 }
 
+/* whether the instruction op at pos, at the depth d with the catch c
+   innermost on the stack, reads no catch offset but the one it may: the
+   one drop, nip or nip1 drops (rv_depths then takes it off), the one of
+   the three iterator_close drops, and the one under the values that
+   for_of_next, for_await_of_next and the iterator ops of yield* read
+   around and leave in place. An instruction reads the entries it pops, but
+   for_of_next reads its iterator and next method p[1] entries below the
+   top three, and nip_catch reads the top entry only. A catch offset that
+   any other instruction read could be stored, returned or passed to
+   another function, whose unwinding would take it for one of its own
+   (rv_unwind): the parser emits no such code. iterator_get_value_done
+   writes the catch offset it reads again, so it needs that of an iterator
+   there. A ret goes back to its gosub only with the same depth and the
+   same catches (rv_ret_target, engine/regvm-ops-except.h). */
+static BOOL rv_catch_reads_ok(RVPass *s, int pos, int op, int d, int c, int npop)
+{
+    int lo = d - npop, may = -1, l;
+
+    switch (op) {
+    case OP_drop:
+        may = d - 1;
+        break;
+    case OP_nip:
+        may = d - 2;
+        break;
+    case OP_nip1:
+        may = d - 3;
+        break;
+    case OP_iterator_close: case OP_for_await_of_next:
+        may = d - 1;
+        break;
+    case OP_iterator_get_value_done:
+        /* it writes the catch offset 0 of an iterator again where it reads
+           one: there must be one, that of a for_of_start or a
+           for_await_of_start, or it would make a catch offset the pass
+           does not know of */
+        if (c < 0 || s->bc[c] == OP_catch || rv_catch_level(s, c) != d - 2)
+            return FALSE;
+        may = d - 2;
+        break;
+    case OP_iterator_next: case OP_iterator_call:
+        may = d - 2;
+        break;
+    case OP_for_of_next:
+        lo = d - 3 - s->bc[pos + 1];
+        may = d - 1 - s->bc[pos + 1];
+        break;
+    case OP_nip_catch:
+        lo = d - 1;
+        break;
+    }
+    /* the catch offsets on the stack, from the innermost down */
+    for (; c >= 0; c = s->catchpos[c]) {
+        l = rv_catch_level(s, c);
+        if (l < lo)
+            break;
+        if (l != may)
+            return FALSE;
+    }
+    return TRUE;
+}
+
 /* the depth before each instruction, the catch or for_of_start whose
    catch offset is the innermost on the stack there (catchpos, -1 for none)
    and the leaders, as compute_stack_size finds them for the instructions
@@ -271,6 +345,8 @@ static int rv_depths(RVPass *s)
             if (!rv_operands_ok(s, pos, op))
                 goto fail;
             if (d < npop)
+                goto fail;
+            if (!rv_catch_reads_ok(s, pos, op, d, c, npop))
                 goto fail;
             d = d - npop + npush;
             if (d > s->b->stack_size)
@@ -1517,8 +1593,8 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         const uint32_t *r = (const uint32_t *)s->rets.buf;
         for (i = 0; i < (s->len + 31) / 32; i++)
             n += __builtin_popcount(b->ret_bits[i]);
-        for (i = 0; i < (int)(s->rets.size / 8); i++)
-            n -= r[2 * i] < (uint32_t)s->len;
+        for (i = 0; i < (int)(s->rets.size / 16); i++)
+            n -= r[4 * i] < (uint32_t)s->len;
         if (n != 0) {
             s->crafted = TRUE;
             goto done;
@@ -1567,7 +1643,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         }
         /* the return addresses of the GOSUBs, past them */
         rf->rets = (uint32_t *)((uint8_t *)(rf->pcmap + rf->pcmap_count) + hi);
-        rf->ret_count = s->rets.size / 8;
+        rf->ret_count = s->rets.size / 16;
         memcpy(rf->rets, s->rets.buf, s->rets.size);
     }
  done:

@@ -129,6 +129,7 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
 long white_regvm_shorts(void);
 int white_regvm_scratch_drain(JSContext *ctx, int in_pass);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
+int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
@@ -5856,6 +5857,70 @@ static void test_regvm_stack(void)
     printf("unit-white: test_regvm_stack: rec steps onto a next segment at %d, %d allocations swept\n", edge, made);
 }
 
+/* Code that no compiler makes, which makes a catch offset the pass does not
+   know of (white_crafted_code): an iterator_get_value_done with no
+   iterator under it, which the read refuses, and a finally that changes the
+   catches under its return address, whose ret throws "invalid ret value"
+   (which its own catch returns) where the code after the gosub would have
+   returned the catch offset. A finally that leaves them as they were
+   returns as before. */
+static void test_regvm_crafted_code(void)
+{
+    static const char gen_src[] =
+        "globalThis.f = async function (a) { 'use strict'; return [a, a, a, a, a, a]; }; 0";
+    static const char fin_src[] =
+        "globalThis.f = function (a) { 'use strict'; try { a.b; } finally { a.c; a.d; } return 1; }; 0";
+    VM v;
+    JSValue g, f, r;
+    char *t;
+    int kind, rc;
+
+    for (kind = 0; kind < 3; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, kind ? fin_src : gen_src), "kind %d: the setup threw", kind);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        if (white_crafted_code(v.ctx, f, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, f);
+        t = exception_text(v.ctx);
+        if (kind == 0) {
+            CHECK(rc == -1 && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+                  "an iterator_get_value_done with no iterator: the read lets it through (%d, %s)",
+                  rc, t ? t : "no exception");
+        } else {
+            CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        }
+        free(t);
+        if (kind > 0 && rc == 0) {
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            t = exception_text(v.ctx);
+            if (kind == 1) {
+                /* the ret throws inside the catch the finally made, whose
+                   handler returns the error */
+                const char *s = JS_IsObject(r) ? JS_ToCString(v.ctx, r) : NULL;
+                CHECK(s && strstr(s, "InternalError: invalid ret value"),
+                      "a finally that makes a catch under its return address: the call gives tag %d (%s)",
+                      (int)JS_VALUE_GET_TAG(r), s ? s : t ? t : "no exception");
+                JS_FreeCString(v.ctx, s);
+            } else
+                CHECK(JS_IsUndefined(r), "a finally that returns at once: the call gives tag %d (%s)",
+                      (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+            free(t);
+            if (!JS_IsException(r) && JS_VALUE_GET_TAG(r) != JS_TAG_CATCH_OFFSET)
+                JS_FreeValue(v.ctx, r);
+        }
+        white_crafted_code(v.ctx, f, kind, 1);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 /* Code that no compiler makes, read by JS_ReadObject (rv_read_check of
    engine/regvm-entry.h): the read rejects it with a SyntaxError, one kind
    at a time (white_crafted), and lets the code the compiler made through.
@@ -5869,6 +5934,13 @@ static void test_regvm_crafted(void)
         { "globalThis.f = function (x) { 'use strict'; return x ? 1 : 2; }; 0", "paths that meet with different depths" },
         { "globalThis.f = function (x, y) { 'use strict'; return x + y; }; 0", "nip_catch with no catch" },
         { "globalThis.f = function (a) { return arguments[0] + a; }; 0", "mapped arguments with no closure state" },
+        { "globalThis.f = function (a) { 'use strict'; try { a.b; } catch (e) { return 2; } return 1; }; 0",
+          "a catch offset returned" },
+        { "globalThis.f = function (x) { 'use strict'; return x ? 1 : 2; }; 0", "a jump before the start of the code" },
+        { "globalThis.f = function (a) { 'use strict'; try { a.b; } catch (e) { return 2; } return 1; }; 0",
+          "a catch before the start of the code" },
+        { "globalThis.f = function (a) { 'use strict'; try { for (const v of a) {} } catch (e) {} return 1; }; 0",
+          "a for_of_next that takes a catch offset for its iterator" },
     };
     static const char script[] = "'use strict'; var x = 3; x ? 1 : 2;";
     int k, r;
@@ -6220,6 +6292,7 @@ int main(int argc, char **argv)
     test_regvm_convert_oom_entries();
     test_regvm_scratch_drain();
     test_regvm_crafted();
+    test_regvm_crafted_code();
     test_regvm_stack();
     test_regvm_operands();
     test_regvm_run_alloc();
