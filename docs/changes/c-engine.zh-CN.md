@@ -354,6 +354,32 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 `JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，因此会把 `JS_RegvmRun`、`js_call_c_function` 和直接调用所跳过的帧的测量的栈指针往下调，这时经过 `JS_CallInternal` 的一层比直接的一层多用约 16 字节：在这种构建里 unit-api 允许每种调用直接时最多深 2%，经过 `js_call_c_hop` 的调用也可以浅同样多，普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
 
+### 寄存器循环直接回答 charCodeAt
+
+发布版本：Unreleased。
+
+用 `s.charCodeAt(i)` 扫一遍字符串的循环，每个字符都要调用一次 C 函数，而在生成的引擎里每次这样的调用要几百条指令：调用的检查、一层调用深度、`js_call_c_function` 的帧，以及 `this` 和下标的转换。解析器、哈希函数和普通构建的 emotion（它在 JavaScript 里给每段样式算哈希）的时间大多花在这里。现在寄存器循环自己回答 `String.prototype.charCodeAt`（`rv_fast_call`，在 `RV_CALL_OUT` 里调用），条件是 `this` 是字符串，或者是之前某次调用已经拼平的 rope，并且下标是 int：它给出下标处的码元，越界时给出 `NaN`。其他调用都和以前一样照常调用。
+
+为什么结果不变：对这些值，`charCodeAt` 不运行脚本，不抛错，也不分配内存。第一次读 rope 的调用把它拼平，并把拼好的字符串留在 rope 里（`js_linearize_string_rope`），所以之后的调用看到的就是拼平的 rope，走新路径。循环靠 `JS_NewCFunction3` 在创建 `charCodeAt` 时给对象打的标记认出它，任何 realm 里都一样（`JSObject.rv_fast`，用的是原来空着的位，所以对象不变大）。被脚本替换掉、包进 proxy 或者绑定过的 `charCodeAt` 是另一个对象，没有标记，照常调用。`this` 是 String 对象、数字或 `null`，下标是 double、字符串、对象、Symbol 或 BigInt，或者没给下标，也都照常调用。有无法捕获的异常挂起时，调用照常进行并失败，和以前一样。直接回答不占一层调用深度，所以经过它的递归只会更深，也不计入下一次轮询：循环在往回跳的地方计数，所以只做 `charCodeAt` 调用的循环遇到中断照样会停，停在往回跳的地方，以前是停在其中某次调用里。
+
+`Function.prototype.call` 也有同样的标记，[hasOwnProperty.call](objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答) 在同一个地方回答。两者共用一处调用，循环的代码保持原样。在调用需要的帧写入之前再加一处调用，会让 LLVM 在 arm64 上多把一个值放在栈上，循环的每条指令多跑约 0.8% 的指令。
+
+每次热渲染执行的指令数，生成的引擎，darwin/arm64（`/usr/bin/time -l`，同一个 VM 里两种渲染次数之差，三次取中位数）：
+
+| 页面 | 之前 | 之后 | |
+| --- | ---: | ---: | ---: |
+| tifa 的 MUI 测试应用，三个页面，emotion 的哈希在 JavaScript 里算 | 876.3 M | 778.5 M | -11.2% |
+| 同样的页面，哈希不在渲染里算，和 tifa 在 Go 里算一样 | 473.1 M | 472.7 M | -0.1% |
+| React 的页面 | 39.30 M | 39.33 M | +0.1% |
+| tifa 商店，六个工作台页面 | 746.5 M | 745.5 M | -0.1% |
+| tifa 商店，十四个 store 页面 | 4,336.0 M | 4,319.3 M | -0.4% |
+| 对 10,000 个字符的字符串算哈希，100 次 | 1,068.0 M | 877.7 M | -17.8% |
+| 同样的计算，字符串是 rope | 1,117.0 M | 889.8 M | -20.3% |
+
+每个页面的 HTML 都不变。帧不变：`JS_RegvmRun` 在 arm64 上占影子栈 176 字节，amd64 上 256 字节，它的 Go 帧是 $312 和 $256，`TestRegvmDepth`、`TestCCallDepth` 和 `TestHasOwnCallDepth` 在两种架构上都在同样的深度结束。
+
+测试：`engine/test/regvm/js/q3-charcode.js` 在两种宽度的字符串、一个长字符串和拼平前后的 rope 上调用 `charCodeAt`，下标覆盖各种情况（范围内、越界、负数、`-0`、double、字符串、`null`、会转换的对象、Symbol、BigInt、转换时抛错的、没有下标、多给参数），`this` 覆盖各种类型，还有另一个 realm 的 `charCodeAt`，以及被替换、包进 proxy 和绑定过的，还有递归到深度上限。它的输出就是改动之前那个构建的输出。`e-charcode-interrupt.js` 在原生宿主上用中断停住只做 `charCodeAt` 调用的循环，`TestRegvmCharCodeAtLoopStops` 在生成的引擎上用 eval 超时和 Interrupt 停住它，要求在 `stopPolls` 次轮询之内停下，并且停在循环里不是调用的地方，而改动之前的构建停在某次调用里面。改动之前的构建跑这个脚本，输出和它的 golden 只差停下的位置。`unit-oom` 的 `test_uncatchable_fast_call` 检查有无法捕获的异常挂起时，`charCodeAt` 之后的代码不运行。
+
 ## 调用结束时跳过没有引用计数的值
 
 字节码函数的一次调用结束时，会释放它的局部变量和留在栈上的操作数（见[上面](#一次调用如何设置和释放它的值)）。它们多数没有引用计数可还：没有代码设置过的局部变量是 `undefined`，其余的，数字、布尔值和 `null` 与字符串、对象一样多。这个循环仍然一对一对地看它们，每对 15 条指令。它在循环体里调用一个函数，所以 LLVM 把指针、计数和轮询计数器在调用前后保存在栈上，每圈开头都读回来，没有释放任何东西的圈也一样。一个有 200 个局部变量、一个也没设置的函数，调用时比没有局部变量的函数多 2,314 条指令：每个局部变量 11.6 条，其中约 7.5 条是释放。

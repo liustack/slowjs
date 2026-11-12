@@ -77,7 +77,10 @@ static void rv_getel(RVPass *s, BOOL el2)
 }
 #elif RV_PART == RV_PART_PASS
     case OP_get_array_el:
-        rv_getel(s, FALSE);
+        if (rv_is_lazy_args(s, s->sp - 2))
+            rv_argget(s);
+        else
+            rv_getel(s, FALSE);
         break;
     case OP_get_array_el2:
         rv_getel(s, TRUE);

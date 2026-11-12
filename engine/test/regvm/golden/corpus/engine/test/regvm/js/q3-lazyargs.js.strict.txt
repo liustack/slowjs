@@ -1,0 +1,31 @@
+result keys 0: 0 undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined 0 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 0
+result keys 1: 1 string:x undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined string:x undefined:undefined string:x undefined:undefined 1 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 1
+result keys 2: 2 string:x 2 undefined:undefined undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 2 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 2
+result keys 3: 3 string:x 2 null undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 3 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 3
+result keys 5: 5 1 2 3 undefined:undefined undefined:undefined undefined:undefined 2 1 undefined:undefined 1 2 5 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 5
+result key toString: string:p seen 2 len 2
+result getter for a missing index: string:got object [object Arguments] string:written string:b 42 string:five
+result kept: 1 42 written b five [object Arguments]
+result length redefined: 3 string:nine getter length string:getter 0
+result sum none: 0/0/undefined:undefined
+result sum fewer: 1/1/1
+result sum more: 10/4/4
+result sum apply: 4498500/3000/2999
+result sum spread: 44850/300/299
+result children 0: div undefined
+result children 1: div "a"
+result children 3: div ["a",1,[2]]
+result twice: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:2:string:t:undefined:undefined
+result twice extra: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:3:string:t:string:e
+result throwing getter: caught first object 1 string:only string:second
+result escapes: 1,2,3
+result writes: orig 2
+result arrow: v 2
+result keeps: k 2
+result defaults: undefined:undefined 0 | string:given 1
+result method: this object
+result compare: 2 undefined:undefined 2
+result loop: 0 undefined:undefined 3 | 2 undefined:undefined 3 | 4 undefined:undefined 3 | 6 undefined:undefined 3 | 8 undefined:undefined 3
+mem-end obj=197 atom=550 shape=128 prop=969 jsfunc=2 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=542 shape=127 prop=963 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

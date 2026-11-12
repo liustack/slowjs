@@ -1218,6 +1218,14 @@ struct JSShape {
        this shape then get a block of their own for the properties, so that the
        room in the block of the object is not wasted. Fits in the padding. */
     uint8_t inline_grew;
+    /* while the shape is in the shape hash table, what build_for_in_iterator
+       found for it: 0 not asked yet, JS_FOR_IN_KEYS_SHAPE when a for in loop
+       lists the string keys of an ordinary object of this shape from the
+       shape, JS_FOR_IN_KEYS_LIST when it makes a list. Set to 0 when the
+       shape goes into the table or leaves it: the keys and flags of a shape
+       in the table do not change (see js_own_key_kinds). Fits in the
+       padding. */
+    uint8_t for_in_keys;
     uint32_t hash; /* current hash value */
     uint32_t prop_hash_mask; /* >= 2 */
     int prop_size; /* allocated properties */
@@ -1233,6 +1241,13 @@ struct JSShape {
     JSObject *proto;
     uint32_t hash_table[]; /* prop_hash_mask + 1 elements */
     /* followed by JSShapeProperty prop[prop_size]; */
+};
+
+/* JSObject.rv_fast */
+enum {
+    RV_FAST_NONE,
+    RV_FAST_CALL, /* Function.prototype.call, for hasOwnProperty.call */
+    RV_FAST_CHAR_CODE_AT, /* String.prototype.charCodeAt */
 };
 
 struct JSObject {
@@ -1253,6 +1268,10 @@ struct JSObject {
     uint8_t has_immutable_prototype : 1; /* cannot modify the prototype */
     uint8_t tmp_mark : 1; /* used in JS_WriteObjectRec() */
     uint8_t is_HTMLDDA : 1; /* specific annex B IsHtmlDDA behavior */
+    /* RV_FAST_x: a C function the register loop answers itself when its
+       arguments allow (rv_fast_call in regvm-ops-basic.h), set only by
+       JS_NewCFunction3 */
+    uint8_t rv_fast : 7;
     uint16_t class_id; /* see JS_CLASS_x */
     /* count the number of weak references to this object. The object
        structure is freed only if header.ref_count = 0 and
@@ -7233,6 +7252,7 @@ static int resize_shape_hash(JSRuntime *rt, int new_shape_hash_bits)
 static void js_shape_hash_link(JSRuntime *rt, JSShape *sh)
 {
     uint32_t h;
+    sh->for_in_keys = 0;
     h = get_shape_hash(sh->hash, rt->shape_hash_bits);
     sh->shape_hash_next = rt->shape_hash[h];
     rt->shape_hash[h] = sh;
@@ -7252,6 +7272,7 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
     JSShape **psh;
     JSOwnKeyEntry *e;
 
+    sh->for_in_keys = 0;
     /* the shape leaves the shape hash table: the key cache drops it */
     e = js_own_key_slot(rt, sh);
     if (e->sh == sh)
@@ -7332,6 +7353,7 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     sh->parent_id = 0;
     sh->is_hashed = FALSE;
     sh->inline_grew = FALSE;
+    sh->for_in_keys = 0;
     return sh;
 }
 
@@ -7926,6 +7948,7 @@ static JSValue JS_NewObjectFromShape(JSContext *ctx, JSShape *sh, JSClassID clas
     p->has_immutable_prototype = 0;
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
+    p->rv_fast = 0;
     p->weakref_count = 0;
     if (class_id != JS_CLASS_OBJECT) /* the block of an ordinary object ends before u */
         p->u.opaque = NULL;
@@ -8070,6 +8093,7 @@ static force_inline JSValue js_new_object_inline(JSContext *ctx, JSShape *sh)
     p->has_immutable_prototype = 0;
     p->tmp_mark = 0;
     p->is_HTMLDDA = 0;
+    p->rv_fast = 0;
     p->weakref_count = 0;
     p->shape = sh;
     p->prop = JS_OBJ_INLINE_PROPS(p);
@@ -8113,8 +8137,13 @@ static JSShape *find_hashed_shape_keys(JSRuntime *rt, JSObject *proto,
    first run, and keep it in lit: the shape in the shape hash table with
    exactly the keys of lit, in their order, as properties made by
    OP_define_field, and the Object.prototype of ctx, or else a new one that
-   has room for exactly those keys. A shape found may have room for more
-   properties than lit has keys. Return NULL when there is no memory. */
+   has room for those keys and at least JS_PROP_INITIAL_SIZE, as an empty
+   object has. A shape found may have room for more properties than lit has
+   keys. The shapes in the table are also the next shapes of objects that get
+   keys one at a time (add_property), which move their properties to the room
+   of the shape they take: an empty object (room 2) that takes the shape of a
+   literal of one key with room 1, and then a second key, would move them
+   twice. Return NULL when there is no memory. */
 static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
                                                const JSAtom *atoms)
 {
@@ -8130,7 +8159,8 @@ static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
         hash_size = JS_PROP_INITIAL_HASH_SIZE;
         while (hash_size < lit->count)
             hash_size *= 2;
-        sh = js_new_shape2(ctx, proto, hash_size, lit->count);
+        sh = js_new_shape2(ctx, proto, hash_size,
+                           max_int(lit->count, JS_PROP_INITIAL_SIZE));
         if (!sh)
             return NULL;
         for(i = 0; i < lit->count; i++) {
@@ -8571,6 +8601,11 @@ static int js_method_set_properties(JSContext *ctx, JSValueConst func_obj,
 }
 
 /* Note: at least 'length' arguments will be readable in 'argv' */
+static JSValue js_string_charCodeAt(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv);
+static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+
 static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                                 const char *name,
                                 int length, JSCFunctionEnum cproto, int magic,
@@ -8593,6 +8628,8 @@ static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
     p->u.cfunc.length = length;
     p->u.cfunc.cproto = cproto;
     p->u.cfunc.magic = magic;
+    p->rv_fast = func == (JSCFunction *)js_string_charCodeAt ? RV_FAST_CHAR_CODE_AT :
+        func == (JSCFunction *)js_function_call ? RV_FAST_CALL : RV_FAST_NONE;
     p->is_constructor = (cproto == JS_CFUNC_constructor ||
                          cproto == JS_CFUNC_constructor_magic ||
                          cproto == JS_CFUNC_constructor_or_func ||
@@ -20906,6 +20943,29 @@ static inline BOOL js_for_in_shape_key(JSRuntime *rt, const JSShapeProperty *prs
         rt->atom_array[prs->atom]->atom_type == JS_ATOM_TYPE_STRING;
 }
 
+#define JS_FOR_IN_KEYS_SHAPE 1
+#define JS_FOR_IN_KEYS_LIST 2
+
+/* whether a for in loop over p, whose shape is in the shape hash table,
+   lists its string keys from the shape: p is not exotic, and no string key
+   of the shape is an array index or a binding (js_own_keys_scan). For an
+   object that is not exotic the answer depends on the shape alone, so the
+   shape keeps it (for_in_keys) and the next loop over an object of that
+   shape does not look at its keys again. */
+static inline BOOL js_for_in_keys_of_shape(JSContext *ctx, JSObject *p)
+{
+    JSShape *sh = p->shape;
+    JSOwnKeyList l;
+
+    if (p->is_exotic)
+        return FALSE;
+    if (unlikely(sh->for_in_keys == 0)) {
+        sh->for_in_keys = js_own_keys_scan(ctx, &l, p, JS_GPN_STRING_MASK | JS_GPN_SET_ENUM) &&
+            l.nums == 0 ? JS_FOR_IN_KEYS_SHAPE : JS_FOR_IN_KEYS_LIST;
+    }
+    return sh->for_in_keys == JS_FOR_IN_KEYS_SHAPE;
+}
+
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
    register loop calls it too (engine/regvm-ops-window.h): inlined in both,
    the code of JS_CallInternal stays the same. */
@@ -20961,7 +21021,6 @@ static force_inline JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
         it->is_array = TRUE;
         it->atom_count = p->u.array.count;
     } else {
-        JSOwnKeyList l;
     normal_case:
         /* An ordinary object whose shape is in the hash table and has no
            array index or binding among its string keys lists them in the
@@ -20971,9 +21030,7 @@ static force_inline JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
            reference the object gets a copy to change instead
            (add_property, js_shape_prepare_update). So no list is made, and
            while the object still has that shape no key was deleted. */
-        if (p->shape->is_hashed &&
-            js_own_keys_scan(ctx, &l, p, JS_GPN_STRING_MASK | JS_GPN_SET_ENUM) &&
-            l.nums == 0) {
+        if (p->shape->is_hashed && js_for_in_keys_of_shape(ctx, p)) {
             it->sh = js_dup_shape(p->shape);
             it->atom_count = it->sh->prop_count;
             return enum_obj;
@@ -22923,7 +22980,7 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
 /* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
    one of Function.prototype.call and the one of hasOwnProperty: fn is what
    Function.prototype.call calls (the this of the call), call_argv its
-   arguments. The register loop calls it (RV_CALL_OUT).
+   arguments. The register loop calls it (rv_fast_call).
    React and the libraries around it test each key of a for in loop this
    way. Only what cannot run script or throw takes this path:
    hasOwnProperty itself, an ordinary object (not exotic, so no proxy or

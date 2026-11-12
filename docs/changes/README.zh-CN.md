@@ -36,6 +36,7 @@ read_when:
 | 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | Unreleased | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
 | 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 | 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | Unreleased | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
+| 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
 
 ## 上游 QuickJS 的提交
 
@@ -215,6 +216,8 @@ read_when:
 | 通过 shape 由哪个 shape 长出来来找到它 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#通过-shape-由哪个-shape-长出来来找到它) |
 | 单独死去的对象立刻释放 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#单独死去的对象立刻释放) |
 | defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
+| 对象字面量的 shape 至少有空对象的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
+| for in 循环对一个 shape 只问一次能不能从它列出键 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 
 ## 内存
 

@@ -36,6 +36,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A call of more than 32 arguments and a tagged template of more than 30 substitutions pass the arguments past the first 32 in an array, as a call with a spread does | Unreleased | [c-engine.md](c-engine.md#calls-of-more-than-32-arguments-pass-them-in-an-array) |
 | The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | Unreleased | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
 | A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | Unreleased | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
+| The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | Unreleased | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
 
 ## Commits of upstream QuickJS
 
@@ -215,6 +216,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A shape is found by the shape it grew from | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
 | An object that dies alone is freed at once | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
 | A proxy whose defineProperty trap refuses a store throws in strict code | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
+| Object literals have the room of an empty object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
+| A for in loop asks a shape once whether it lists its keys | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 
 ## Memory
 

@@ -21,6 +21,11 @@
 RV_OP(ARGS)     /* d kind first16: d = the arguments object (kind 0), the
                    mapped one (1), or the array of the arguments from first
                    (2, rest) */
+RV_OP(ARGLEN)   /* d a: arguments.length, a the arguments local of
+                   rv_lazy_args */
+RV_OP(ARGGET)   /* d a key: arguments[key], the same a */
+RV_OP(ARGMAT)   /* d a: d = the object in a, built there first if a is
+                   undefined: any other read of the same a */
 #elif RV_PART == RV_PART_INFO
     case OP_rest:
         return 0;
@@ -34,6 +39,14 @@ RV_OP(ARGS)     /* d kind first16: d = the arguments object (kind 0), the
 static void rv_args_pass(RVPass *s, int kind, int first)
 {
     int d = rv_tslot(s, s->sp);
+    if (kind == RV_ARGS_PLAIN && s->lazy_args) {
+        /* nothing at entry: the put_loc of the local after it is read with
+           it, and the local stays undefined until ARGGET builds the
+           object (rv_lazy_args) */
+        s->skip_to = s->pos + 2 + short_opcode_info(s->bc[s->pos + 2]).size;
+        s->args = TRUE;
+        return;
+    }
     /* the mapped arguments are var refs into the frame's closure state:
        the compiler marks every argument of the function captured, so a
        function with arguments has one */
@@ -49,6 +62,199 @@ static void rv_args_pass(RVPass *s, int kind, int first)
     rv_push(s, RV_E_TEMP, d, 0);
     rv_mark_dst(s, d);
     s->args = TRUE;
+}
+
+/* the local an old instruction names, -1 none, -2 an instruction with a
+   local this file does not know. *get: it only pushes the value. */
+static int rv_named_local(const uint8_t *p, int op, BOOL *get)
+{
+    *get = FALSE;
+    switch (op) {
+    case OP_get_loc:
+        *get = TRUE;
+        /* fall through */
+    case OP_put_loc: case OP_set_loc: case OP_set_loc_uninitialized:
+    case OP_get_loc_check: case OP_put_loc_check: case OP_set_loc_check:
+    case OP_put_loc_check_init: case OP_get_loc_checkthis: case OP_close_loc:
+        return get_u16(p + 1);
+    case OP_get_loc8:
+        *get = TRUE;
+        /* fall through */
+    case OP_put_loc8: case OP_set_loc8: case OP_inc_loc: case OP_dec_loc:
+    case OP_add_loc: case OP_get_loc8_get_field:
+        return p[1];
+    case OP_get_loc0: case OP_get_loc1: case OP_get_loc2: case OP_get_loc3:
+        *get = TRUE;
+        return op - OP_get_loc0;
+    case OP_put_loc0: case OP_put_loc1: case OP_put_loc2: case OP_put_loc3:
+        return op - OP_put_loc0;
+    case OP_set_loc0: case OP_set_loc1: case OP_set_loc2: case OP_set_loc3:
+        return op - OP_set_loc0;
+    case OP_get_loc0_get_field:
+        return 0;
+    case OP_make_loc_ref:
+        return get_u16(p + 5);
+    default:
+        switch (short_opcode_info(op).fmt) {
+        case OP_FMT_loc: case OP_FMT_loc8: case OP_FMT_none_loc:
+            return -2;
+        }
+        return -1;
+    }
+}
+
+/* the get of a local at pos goes straight to the object operand of a
+   get_length or a get_array_el, with no jump and no block start on the
+   way, so that the entry is still the lazy read of the local there: the
+   first instruction after it that pops it, through the depths of
+   rv_depths */
+static BOOL rv_lazy_fast(RVPass *s, int pos)
+{
+    const uint8_t *bc = s->bc;
+    int d = s->depth[pos], q, npop, npush, term, target;
+
+    if (d < 0)
+        return FALSE; /* not reached: nothing is emitted for it */
+    for (q = pos + short_opcode_info(bc[pos]).size;; q += short_opcode_info(bc[q]).size) {
+        if (q >= s->len || s->leader[q] || s->depth[q] < 0)
+            return FALSE;
+        if (rv_old_info(bc, q, &npop, &npush, &term, &target) < 0)
+            return FALSE;
+        if (s->depth[q] - npop <= d)
+            break;
+        if (term || target >= 0)
+            return FALSE;
+    }
+    return (bc[q] == OP_get_length && s->depth[q] == d + 1) ||
+           (bc[q] == OP_get_array_el && s->depth[q] == d + 2);
+}
+
+/* The arguments object of a strict function made only when a read needs
+   it: the slot of its local, or 0 when the function makes it at entry.
+   A normal function (no generator, no async function) qualifies when the
+   object has the values of entry whenever it is built: no instruction
+   writes an argument and no closure captures one, nor the local. Every
+   read of the local, but the put_loc of the prologue (special_object
+   ARGUMENTS then put_loc), is a get, and at least one goes straight to
+   the object operand of a get_length or a get_array_el (rv_lazy_fast):
+   ARGLEN and ARGGET read the frame there while the local is undefined.
+   Any other get, an escape, is ARGMAT, which builds the object into the
+   local if it is not there and copies it: from then on every read of the
+   call sees that object, as it would the one made at entry. A direct eval or an arrow function that reads arguments
+   captures the local, strict code cannot assign it, and Error.stack and
+   the backtrace show no argument. Not for a function that folds or names
+   slots past -128 (the pass reads those differently). One walk for the
+   prologue and the writes, one for the reads. */
+static int rv_lazy_args(RVPass *s)
+{
+    JSFunctionBytecode *b = s->b;
+    const uint8_t *bc = s->bc;
+    int pos, op, size, a = -1, init = -1, idx, i;
+    BOOL get, fast = FALSE;
+
+    if (b->func_kind != JS_FUNC_NORMAL || !(b->js_mode & JS_MODE_STRICT) ||
+        s->fold || s->wide)
+        return 0;
+    for (pos = 0; pos < s->len; pos += size) {
+        op = bc[pos];
+        size = short_opcode_info(op).size;
+        switch (op) {
+        case OP_special_object:
+            if (bc[pos + 1] == OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS)
+                return 0;
+            if (bc[pos + 1] != OP_SPECIAL_OBJECT_ARGUMENTS)
+                break;
+            if (a >= 0 || pos + 2 >= s->len)
+                return 0;
+            switch (bc[pos + 2]) {
+            case OP_put_loc: case OP_put_loc8:
+            case OP_put_loc0: case OP_put_loc1: case OP_put_loc2: case OP_put_loc3:
+                break;
+            default:
+                return 0;
+            }
+            a = rv_named_local(bc + pos + 2, bc[pos + 2], &get);
+            init = pos + 2;
+            break;
+        case OP_put_arg: case OP_set_arg: case OP_make_arg_ref:
+        case OP_put_arg0: case OP_put_arg1: case OP_put_arg2: case OP_put_arg3:
+        case OP_set_arg0: case OP_set_arg1: case OP_set_arg2: case OP_set_arg3:
+            return 0;
+        }
+    }
+    if (a < 0 || a >= b->var_count)
+        return 0;
+    if (b->var_ref_count) {
+        for (i = 0; i < b->arg_count; i++) {
+            if (b->vardefs[i].is_captured)
+                return 0;
+        }
+        if (b->vardefs[b->arg_count + a].is_captured)
+            return 0;
+    }
+    for (pos = 0; pos < s->len; pos += size) {
+        op = bc[pos];
+        size = short_opcode_info(op).size;
+        idx = rv_named_local(bc + pos, op, &get);
+        if (idx == -2)
+            return 0;
+        if (idx != a || pos == init)
+            continue;
+        if (!get)
+            return 0;
+        if (!fast && rv_lazy_fast(s, pos))
+            fast = TRUE;
+    }
+    if (!fast)
+        return 0; /* every read is an escape: nothing to gain */
+    i = rv_loc(s, a);
+    return rv_far_slot(i) ? 0 : i;
+}
+
+/* get_length of the arguments local of rv_lazy_args, the entry on top */
+static void rv_arglen(RVPass *s)
+{
+    int d = rv_tslot(s, s->sp - 1);
+    rv_emit(s, RV_ARGLEN);
+    rv_byte(s, d);
+    rv_byte(s, s->lazy_args);
+    rv_throws(s, rv_owned(s, 1));
+    s->sp--;
+    rv_push(s, RV_E_TEMP, d, 0);
+    rv_mark_dst(s, d);
+}
+
+/* get_array_el of it: the local, then the key */
+static void rv_argget(RVPass *s)
+{
+    int k = rv_slot_of(s, s->sp - 1), d = rv_tslot(s, s->sp - 2);
+    rv_emit(s, RV_ARGGET);
+    rv_byte(s, d);
+    rv_byte(s, s->lazy_args);
+    rv_byte(s, k);
+    rv_throws(s, rv_owned(s, 2));
+    s->sp -= 2;
+    rv_push(s, RV_E_TEMP, d, 0);
+    rv_mark_dst(s, d);
+}
+
+/* a get of the arguments local of rv_lazy_args that rv_lazy_fast does not
+   take: the object in a temp */
+static void rv_argmat(RVPass *s)
+{
+    int d = rv_tslot(s, s->sp);
+    rv_emit(s, RV_ARGMAT);
+    rv_byte(s, d);
+    rv_byte(s, s->lazy_args);
+    rv_throws(s, rv_owned(s, 0));
+    rv_push(s, RV_E_TEMP, d, 0);
+    rv_mark_dst(s, d);
+}
+
+/* the entry i is the read of the arguments local of rv_lazy_args */
+static BOOL rv_is_lazy_args(RVPass *s, int i)
+{
+    return s->lazy_args && s->st[i].kind == RV_E_SLOT && s->st[i].slot == s->lazy_args;
 }
 #elif RV_PART == RV_PART_PASS
     case OP_rest:
@@ -177,6 +383,79 @@ static JSValue rv_build_rest(JSContext *ctx, JSValue *F, const RVFunc *rf, int a
     return obj;
 }
 
+/* the slow side of ARGLEN, ip at d a: the length of the object built in
+   the local, which a script may have redefined, else the count */
+static no_inline int rv_arglen_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue v;
+    if (RV_INJ_HIT(ctx))
+        return -1;
+    if (JS_IsUndefined(F[(int8_t)ip[1]])) {
+        v = JS_NewInt32(ctx, ((RVHeader *)F)->argc);
+    } else {
+        v = JS_GetProperty(ctx, F[(int8_t)ip[1]], JS_ATOM_length);
+        if (JS_IsException(v))
+            return -1;
+    }
+    rv_put(ctx, F, (int8_t)ip[0], v);
+    return 0;
+}
+
+/* the slow side of ARGGET, ip at d a key, the key taken: an argument read
+   from the frame, or the get of the key on the object, which is built into
+   the local first if it is not there. It is built once in a call, with the
+   values of entry (rv_lazy_args), and stored only whole: a getter the get
+   runs may keep it and change it, and every later read of the call sees
+   that. */
+static no_inline int rv_argget_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    RVHeader *h = (RVHeader *)F;
+    JSValue *pa = &F[(int8_t)ip[1]], key, v;
+    key = rv_take(ctx, F, (int8_t)ip[2]);
+    if (RV_INJ_HIT(ctx)) {
+        JS_FreeValue(ctx, key);
+        return -1;
+    }
+    if (JS_IsUndefined(*pa)) {
+        if (JS_VALUE_GET_TAG(key) == JS_TAG_INT &&
+            (uint32_t)JS_VALUE_GET_INT(key) < (uint32_t)h->argc) {
+            rv_put(ctx, F, (int8_t)ip[0],
+                   JS_DupValue(ctx, rv_arg_at(F, h->rf, h->argc, JS_VALUE_GET_INT(key))));
+            return 0;
+        }
+        v = rv_build_arguments(ctx, F, h->rf, h->argc);
+        if (JS_IsException(v)) {
+            JS_FreeValue(ctx, key);
+            return -1;
+        }
+        *pa = v;
+    }
+    v = JS_GetPropertyValue(ctx, *pa, key);
+    if (JS_IsException(v))
+        return -1;
+    rv_put(ctx, F, (int8_t)ip[0], v);
+    return 0;
+}
+
+/* ARGMAT, ip at d a: the object of the local, built there first if it is
+   not there, with the values of entry (rv_lazy_args). Nothing here runs
+   JS. */
+static no_inline int rv_argmat_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    RVHeader *h = (RVHeader *)F;
+    JSValue *pa = &F[(int8_t)ip[1]], v;
+    if (RV_INJ_HIT(ctx))
+        return -1;
+    if (JS_IsUndefined(*pa)) {
+        v = rv_build_arguments(ctx, F, h->rf, h->argc);
+        if (JS_IsException(v))
+            return -1;
+        *pa = v;
+    }
+    rv_put(ctx, F, (int8_t)ip[0], JS_DupValue(ctx, *pa));
+    return 0;
+}
+
 /* ARGS, ip at d kind first16. Nothing here runs JS. */
 static no_inline int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
@@ -205,6 +484,43 @@ static no_inline int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
  rv_ARGS:
     ip = pc; pc += 4;
     if (rv_args(ctx, F, ip))
+        goto rv_exception;
+    RV_NEXT();
+
+    /* the arguments local of rv_lazy_args: the count and the arguments of
+       the frame while it is undefined, the rest in the slow sides */
+ rv_ARGLEN:
+    ip = pc; pc += 2;
+    if (likely(JS_IsUndefined(RV_R(ip[1]))) && !RV_INJ_ARMED) {
+        RV_PUTD(ip[0], JS_NewInt32(ctx, ((RVHeader *)F)->argc));
+        RV_NEXT();
+    }
+    RV_SYNC_TOP();
+    if (rv_arglen_slow(ctx, F, ip))
+        goto rv_exception;
+    RV_NEXT();
+
+ rv_ARGGET:
+    ip = pc; pc += 3;
+    {
+        JSValue key = RV_R(ip[2]);
+        RVHeader *h = (RVHeader *)F;
+        if (likely(JS_IsUndefined(RV_R(ip[1])) && JS_VALUE_GET_TAG(key) == JS_TAG_INT &&
+                   (uint32_t)JS_VALUE_GET_INT(key) < (uint32_t)h->argc) && !RV_INJ_ARMED) {
+            RV_PUTD(ip[0], JS_DupValue(ctx, rv_arg_at(F, h->rf, h->argc,
+                                                      JS_VALUE_GET_INT(key))));
+            RV_NEXT();
+        }
+    }
+    RV_SYNC_TOP();
+    if (rv_argget_slow(ctx, F, ip))
+        goto rv_exception;
+    RV_NEXT();
+
+ rv_ARGMAT:
+    ip = pc; pc += 2;
+    RV_SYNC_TOP();
+    if (rv_argmat_slow(ctx, F, ip))
         goto rv_exception;
     RV_NEXT();
 #endif

@@ -1232,6 +1232,41 @@ static void test_uncatchable_then_loop(void)
     }
 }
 
+/* A call the register loop answers itself, without the call (rv_fast_call,
+   here charCodeAt of a string), fails while an uncatchable exception is
+   pending, as the call does: the code after it does not run. */
+static void test_uncatchable_fast_call(void)
+{
+    VM v = vm_new();
+    JSValue r, g, f;
+    char *text = NULL;
+    int st, unc = 0;
+
+    eval_ok(v.ctx, fail_js[END_OOM]);
+    eval_ok(v.ctx, "var after = 0; function cc(s, k) { var n = s.charCodeAt(0);"
+            " if (k) { (async () => { fail() })(); n += s.charCodeAt(1); after = n; } return n; }"
+            " cc('ab', 0); cc('ab', 0);");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "cc");
+    st = JS_RegvmFuncStat(v.ctx, f, 0);
+    CHECK(st == 1, "fast call: cc is not in the register loop (state %d)", st);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    room(&v, 1 << 20);
+    r = JS_Eval(v.ctx, "cc('ab', 1)", strlen("cc('ab', 1)"), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r)) {
+        unc = JS_IsUncatchableException(v.ctx);
+        text = exception_text(v.ctx);
+    }
+    JS_FreeValue(v.ctx, r);
+    unlimit(&v);
+    CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+          "fast call: ended with %s, want the uncatchable out of memory error", text ? text : "no error");
+    CHECK(eval_is(v.ctx, "after", "0"), "fast call: the code after charCodeAt ran with the exception pending");
+    free(text);
+    vm_free(&v);
+}
+
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
    alone: set when an exception is made uncatchable, cleared when it is taken
    or made catchable, never set for a catchable one or with nothing pending,
@@ -2040,6 +2075,41 @@ static void test_regvm_cases_oom(void)
     sweep("conversion of a case table", "<cases>", setup, "f('c17') + f('zz')", want, 32768);
 }
 
+/* The arguments object of a function that reads only arguments.length and
+   arguments[key] is built at the first key that is not an index of an
+   argument (ARGGET, engine/regvm-ops-args.h), into its local: each
+   allocation of the build failing in turn ends in the out of memory error
+   with nothing lost (the local is written only with the whole object), and
+   the reads after the build in the same call see the object. The same for
+   a function that also lets the object go, where it is built at that read
+   (ARGMAT). */
+static void test_regvm_args_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () { 'use strict';\n"
+        "  function g(a, b) {\n"
+        "    var r = arguments.length + ':' + arguments[0] + ':' + arguments[3];\n"
+        "    return r + ':' + arguments['1'] + ':' + arguments.length + ':' + arguments[2];\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want[] = { "3:x:undefined:y:3:z|1:w:undefined:undefined:1:undefined", NULL };
+
+    static const char setup_escape[] =
+        "var h = (function () { 'use strict';\n"
+        "  function g(a) {\n"
+        "    var n = arguments.length;\n"
+        "    var s = n > 1 ? Array.prototype.join.call(arguments, '-') : '';\n"
+        "    return n + ':' + s + ':' + arguments[0] + ':' + arguments[n - 1];\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want_escape[] = { "3:x-y-z:x:z|1::w:w", NULL };
+
+    sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
+    sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+}
+
 /* A function whose stack is too deep for the temps folds it into Arrays at
    run time (engine/regvm-fold.h), where QuickJS's interpreter allocates
    nothing: in two levels (calls of 32 arguments nested 40 deep), under the
@@ -2209,6 +2279,7 @@ int main(void)
     test_oom_uncatchable();
     test_field_chain_uncatchable();
     test_uncatchable_then_loop();
+    test_uncatchable_fast_call();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
@@ -2230,6 +2301,7 @@ int main(void)
     test_tags_register_oom();
     test_regvm_convert_oom();
     test_regvm_cases_oom();
+    test_regvm_args_oom();
     test_regvm_fold_oom();
     test_regvm_stack_oom();
     test_regvm_scratch();

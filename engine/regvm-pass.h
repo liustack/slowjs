@@ -113,6 +113,10 @@ typedef struct RVPass {
                            (regvm-ops-wide.h) */
     int drop_at;        /* the drop a JFND or JTND ran, or -1 */
     BOOL args;          /* the code reads its arguments (regvm-ops-args.h) */
+    int lazy_args;      /* the slot of the arguments local read by ARGLEN and
+                           ARGGET (rv_lazy_args), 0 none */
+    BOOL lazy_redo;     /* an entry read that local otherwise: the round is
+                           made again without them */
     BOOL failed;
     BOOL oom;           /* an allocation of the pass failed */
     BOOL crafted;       /* it stops at code no compiler makes (RV_CRAFTED) */
@@ -778,6 +782,11 @@ static void rv_materialize(RVPass *s, int i)
     t = rv_tslot(s, i);
     switch (e->kind) {
     case RV_E_SLOT:
+        /* the arguments local holds undefined until ARGGET builds the
+           object: rv_lazy_args sees every read of it go to ARGLEN or
+           ARGGET, and a copy would not see the object */
+        if (unlikely(s->lazy_args) && e->slot == s->lazy_args)
+            s->lazy_redo = TRUE;
         rv_emit(s, RV_MOV);
         rv_byte(s, t);
         rv_byte(s, e->slot);
@@ -1165,6 +1174,12 @@ static int rv_code(RVPass *s)
         s->crafted = TRUE;
     if (s->failed || s->sp >= 0)
         return -1; /* the code must not run off its end */
+    if (unlikely(s->lazy_redo)) {
+        /* the arguments object at entry, as before (rv_lazy_args) */
+        s->lazy_args = 0;
+        s->lazy_redo = FALSE;
+        return 1;
+    }
     return rv_patch(s);
 }
 
@@ -1437,6 +1452,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         s->fold = TRUE;
         s->R = RV_FOLD_R;
     }
+    s->lazy_args = rv_lazy_args(s);
     /* a function whose code is too long for the off16 of a jump is made
        again with an island (rv_islands) after each jump that was too far,
        until none is. The islands push other jumps farther: after a few

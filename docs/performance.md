@@ -674,6 +674,32 @@ The interpreter's own instructions do not change (within 0.04%, the spread of tw
 
 Time is the sum of the pages, as [measuring.md](measuring.md) says: 16 layouts, 2 rounds, delta 1%, 95% intervals, cpu 0 with its sibling idle. The mean of the layouts is slower by less than delta on the shop, slower on MUI, and shows no regression beyond delta on the store and the bench pages. No app is shown to be past 1%.
 
+### Object literals with the room of an empty object
+
+[Object literals have the room of an empty object](changes/objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object). Against the change before it, on the native C tree with the pool of tifa's settings (`render tifa=1 young=1`), with the same HTML on the 23 pages of the shop and MUI. Instructions per render are from callgrind on linux/arm64 (the timed renders only), moves of a property array from a count of `js_resize_prop`.
+
+| Page | Moves of a property array | Instructions |
+| --- | ---: | ---: |
+| the shop's English home page | 33,000 to 12,800 | -0.24% |
+| the shop's Chinese products page | 55,100 to 22,000 | -0.28% |
+| the workbench studio page | 24,200 to 15,600 | -0.20% |
+| MUI's orders page | 30,700 to 25,000 | -0.09% |
+| `r_react_ssr` | | 0 |
+
+The time on darwin/arm64 moved by -0.7% to +1.3% on these four pages, within the noise of that machine. It was not timed by the protocol.
+
+### for in loops that ask a shape once
+
+[A for in loop asks a shape once whether it lists its keys](changes/objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys). Against the change before it, measured as the entry above.
+
+| Page | Instructions | Time on darwin/arm64 |
+| --- | ---: | ---: |
+| MUI's orders page | -1.08% | -1.4% |
+| MUI's home page | -1.04% | |
+| MUI's order page | -0.82% | |
+| the shop's pages | -0.12% to -0.28% | -0.6% to +0.7%, noise |
+| `r_react_ssr` | -0.29% | |
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.

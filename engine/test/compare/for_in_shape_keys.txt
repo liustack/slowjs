@@ -1,0 +1,22 @@
+same a,b
+same a,b
+same a,b
+base a,b
+index 1,a,b
+symbol a,b
+hidden a,b
+a hidden b then a,b
+getter a,b,g
+deleted b then a,b
+with index 0,a 0,a
+during a after a,c
+shared a,b q 2,a,b,z p a,b
+proto a,inherited
+plain proto a
+proto later a,later
+array 0,1
+args 0,1
+string 0,1
+typed 0,1
+global true
+wide 149 149
