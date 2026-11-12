@@ -36,4 +36,23 @@ var (
 	// engine does when an allocation passes the limit, and the call ends
 	// with it whatever the Go function returns.
 	OutOfMemory func(vm any)
+
+	// StringLen returns the length in UTF-16 units of argument i of a Go function
+	// that javascript called, args being its quickjs.Args, when the argument is a
+	// string, and false otherwise. It reads the length where the engine keeps it,
+	// for a string left in pieces by concatenation (a rope) too, and converts and
+	// flattens nothing, so a function can refuse a string by its length before it
+	// does any work in proportion to it. The any the Args is put in allocates
+	// them, once for each call made with a new one.
+	StringLen func(args any, i int) (int, bool)
+
+	// Chars returns the characters of argument i of args, a quickjs.Args, when
+	// it is a string, as the engine holds them: in latin1, one byte each, when
+	// all are below U+0100, or in utf16 otherwise, lone surrogates as they are.
+	// Nothing is copied: they must not be changed, and are valid until release
+	// is called, which the Go function does before it returns. A rope is joined
+	// first, by the engine, under the memory limit of the VM: ok is false when
+	// that fails, with the error that ends the call pending, as for an argument
+	// that is not a string.
+	Chars func(args any, i int) (latin1 []byte, utf16 []uint16, release func(), ok bool)
 )
