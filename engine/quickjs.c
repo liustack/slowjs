@@ -817,6 +817,8 @@ typedef struct JSClosureVar {
     uint8_t is_lexical : 1; /* lexical variable */
     uint8_t is_const : 1; /* const variable (is_lexical = 1 if is_const = 1 */
     uint8_t var_kind : 4; /* see JSVarKindEnum */
+    uint8_t written : 1; /* written by the function or below it (capture_by_value) */
+    uint8_t by_value : 1; /* the value never changes once captured (capture_by_value) */
     uint16_t var_idx; /* is_local = TRUE: index to a normal variable of the
                     parent function. otherwise: index to a closure
                     variable of the parent function */
@@ -853,6 +855,7 @@ typedef struct JSBytecodeVarDef {
     uint8_t is_captured : 1; /* XXX: could remove and use a var_ref_idx value */
     uint8_t has_scope: 1; /* true if JSVarDef.scope_level != 0 */
     uint8_t var_kind : 4; /* see JSVarKindEnum */
+    uint8_t by_value : 1; /* captured, and no closure sees it change (capture_by_value) */
     /* If is_captured = TRUE, provides, the index of the corresponding
        JSVarRef on stack. It would be more compact to have a separate
        table with the corresponding inverted table but it requires
@@ -41282,6 +41285,743 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
     return 0;
 }
 
+/* ---- captures that never change ----
+
+   capture_by_value marks the captured arguments and locals of a function
+   whose value no closure can see change: once a closure has captured one,
+   no write of it can run in the frame (until a close_loc of it ends that
+   capture), and no function that reaches it writes it. Such a closure
+   variable can hold the value itself rather than a JSVarRef shared with
+   the frame (docs/changes/c-engine.md). It runs on the final code, after
+   share_local_slots, when the functions of the constant pool are made
+   (their closure variables are what it reads and marks), in the compiler
+   and again in JS_ReadObject, which never reads the marks from the file.
+
+   It sets, for b:
+   - closure_var[i].written: the closure variable i of b can be written by b
+     or by a function that reaches it through b (a REF of b's closure
+     variable), or b has a direct eval, which can write any of them;
+   - vardefs[i].by_value for each captured argument or local that passes:
+     no direct eval in b, not an argument b maps into an arguments object,
+     no reference made to it (make_loc_ref, make_arg_ref), each function of
+     the constant pool that captures it is held by b alone and does not
+     write it (written), at least one does, and no path of the code goes
+     from an instruction that makes such a function (fclosure, or push_const
+     for a class, which define_class makes after) to a write of it
+     (put, set, inc, dec, add and set_loc_uninitialized) without a
+     close_loc of it on the way;
+   - closure_var[j].by_value for the closure variable of each function of
+     the constant pool that captures such a slot, and down the REFs to it
+     (a chain of REFs more than CBV_DEPTH functions deep keeps the slot a
+     JSVarRef).
+
+   A path follows the jumps, falls through any instruction that does not
+   end it, goes from OP_ret to the instruction after each OP_gosub (as
+   check_polls takes it), and from every instruction to the target of every
+   OP_catch of b: an exception goes to one of them, whatever code put on
+   the stack. A class is made by the define_class right after the
+   push_const of its constructor (an OP_nop of insert_polls may come
+   between). Code it does not know (a jump that does not land on an
+   instruction, an index out of range, a push_const of a function with no
+   define_class after it, a define_class with no such push_const before it
+   or with a jump to it), a failure to get
+   memory and a flow past its budget leave every slot of b with a JSVarRef
+   and every closure variable of b written.
+
+   It trusts that an exception lands only on a catch of b, as the catch
+   offsets b makes with OP_catch say: true of all code the compiler makes.
+   A file can hand a function a catch offset of another function, which
+   the register loop takes as one of b (EvalBytecode in eval.go: bytecode
+   from a file is not checked). */
+
+enum { CBV_NONE, CBV_READ, CBV_WRITE, CBV_CLOSE, CBV_REF, CBV_BAD };
+
+/* the slot the instruction at p names: *space is 0 for a local, 1 for an
+   argument and 2 for a closure variable */
+static int cbv_slot(const uint8_t *p, int *space, int *idx)
+{
+    int op = p[0];
+    switch (op) {
+    case OP_put_loc: case OP_set_loc: case OP_put_loc_check: case OP_set_loc_check:
+    case OP_put_loc_check_init: case OP_set_loc_uninitialized:
+        *space = 0; *idx = get_u16(p + 1); return CBV_WRITE;
+    case OP_get_loc: case OP_get_loc_check: case OP_get_loc_checkthis:
+        *space = 0; *idx = get_u16(p + 1); return CBV_READ;
+    case OP_close_loc:
+        *space = 0; *idx = get_u16(p + 1); return CBV_CLOSE;
+    case OP_put_loc8: case OP_set_loc8: case OP_dec_loc: case OP_inc_loc: case OP_add_loc:
+        *space = 0; *idx = p[1]; return CBV_WRITE;
+    case OP_get_loc8: case OP_get_loc8_get_field:
+        *space = 0; *idx = p[1]; return CBV_READ;
+    case OP_put_loc0: case OP_put_loc1: case OP_put_loc2: case OP_put_loc3:
+        *space = 0; *idx = op - OP_put_loc0; return CBV_WRITE;
+    case OP_set_loc0: case OP_set_loc1: case OP_set_loc2: case OP_set_loc3:
+        *space = 0; *idx = op - OP_set_loc0; return CBV_WRITE;
+    case OP_get_loc0: case OP_get_loc1: case OP_get_loc2: case OP_get_loc3:
+        *space = 0; *idx = op - OP_get_loc0; return CBV_READ;
+    case OP_get_loc0_get_field:
+        *space = 0; *idx = 0; return CBV_READ;
+    case OP_make_loc_ref:
+        *space = 0; *idx = get_u16(p + 5); return CBV_REF;
+    case OP_put_arg: case OP_set_arg:
+        *space = 1; *idx = get_u16(p + 1); return CBV_WRITE;
+    case OP_get_arg:
+        *space = 1; *idx = get_u16(p + 1); return CBV_READ;
+    case OP_put_arg0: case OP_put_arg1: case OP_put_arg2: case OP_put_arg3:
+        *space = 1; *idx = op - OP_put_arg0; return CBV_WRITE;
+    case OP_set_arg0: case OP_set_arg1: case OP_set_arg2: case OP_set_arg3:
+        *space = 1; *idx = op - OP_set_arg0; return CBV_WRITE;
+    case OP_get_arg0: case OP_get_arg1: case OP_get_arg2: case OP_get_arg3:
+        *space = 1; *idx = op - OP_get_arg0; return CBV_READ;
+    case OP_get_arg0_get_field:
+        *space = 1; *idx = 0; return CBV_READ;
+    case OP_get_arg1_get_field:
+        *space = 1; *idx = 1; return CBV_READ;
+    case OP_make_arg_ref:
+        *space = 1; *idx = get_u16(p + 5); return CBV_REF;
+    case OP_put_var: case OP_put_var_init: case OP_put_var_ref: case OP_set_var_ref:
+    case OP_put_var_ref_check: case OP_put_var_ref_check_init:
+        *space = 2; *idx = get_u16(p + 1); return CBV_WRITE;
+    case OP_get_var_undef: case OP_get_var: case OP_get_var_ref: case OP_get_var_ref_check:
+        *space = 2; *idx = get_u16(p + 1); return CBV_READ;
+    case OP_put_var_ref0: case OP_put_var_ref1: case OP_put_var_ref2: case OP_put_var_ref3:
+        *space = 2; *idx = op - OP_put_var_ref0; return CBV_WRITE;
+    case OP_set_var_ref0: case OP_set_var_ref1: case OP_set_var_ref2: case OP_set_var_ref3:
+        *space = 2; *idx = op - OP_set_var_ref0; return CBV_WRITE;
+    case OP_get_var_ref0: case OP_get_var_ref1: case OP_get_var_ref2: case OP_get_var_ref3:
+        *space = 2; *idx = op - OP_get_var_ref0; return CBV_READ;
+    case OP_make_var_ref_ref:
+        *space = 2; *idx = get_u16(p + 5); return CBV_REF;
+    default:
+        switch (short_opcode_info(op).fmt) {
+        case OP_FMT_loc: case OP_FMT_loc8: case OP_FMT_none_loc: case OP_FMT_arg:
+        case OP_FMT_none_arg: case OP_FMT_var_ref: case OP_FMT_none_var_ref:
+            /* an opcode that names a slot and is not in the list above */
+            return CBV_BAD;
+        }
+        return CBV_NONE;
+    }
+}
+
+/* whether the instruction at pos is a jump, and where it goes as it is
+   written, in *t: INT64_MIN for a form of jump final code does not have */
+static BOOL cbv_jump(const uint8_t *buf, int pos, int64_t *t)
+{
+    switch (short_opcode_info(buf[pos]).fmt) {
+    case OP_FMT_label8: *t = pos + 1 + (int64_t)(int8_t)buf[pos + 1]; return TRUE;
+    case OP_FMT_label16: *t = pos + 1 + (int64_t)(int16_t)get_u16(buf + pos + 1); return TRUE;
+    case OP_FMT_label: *t = pos + 1 + (int64_t)(int32_t)get_u32(buf + pos + 1); return TRUE;
+    case OP_FMT_atom_label_u8: *t = pos + 5 + (int64_t)(int32_t)get_u32(buf + pos + 5); return TRUE;
+    case OP_FMT_atom_label_u16: case OP_FMT_label_u16: *t = INT64_MIN; return TRUE;
+    default: return FALSE;
+    }
+}
+
+/* the target of the jump at pos, or -1 when it has none, -2 when it is
+   not the start of an instruction (starts marks them) */
+static int cbv_target(const uint8_t *buf, int len, const uint8_t *starts, int pos)
+{
+    int64_t t;
+    if (!cbv_jump(buf, pos, &t))
+        return -1;
+    if (t < 0 || t >= len || !starts[t])
+        return -2;
+    return (int)t;
+}
+
+/* whether the code at pos, 0 or more, is a define_class, or the one OP_nop
+   insert_polls may put before it (it puts no two in a row) and the
+   define_class */
+static BOOL cbv_class_at(const uint8_t *buf, int len, int64_t pos)
+{
+    if (pos < len && buf[pos] == OP_nop)
+        pos++;
+    return pos < len && (buf[pos] == OP_define_class || buf[pos] == OP_define_class_computed);
+}
+
+static BOOL cbv_ends(int op)
+{
+    switch (op) {
+    case OP_return: case OP_return_undef: case OP_return_async: case OP_throw:
+    case OP_throw_error: case OP_tail_call: case OP_tail_call_method: case OP_ret:
+    case OP_goto: case OP_goto8: case OP_goto16:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+/* the function i of the constant pool of b, or NULL */
+static JSFunctionBytecode *cbv_child(JSFunctionBytecode *b, int i)
+{
+    if (i < 0 || i >= b->cpool_count ||
+        JS_VALUE_GET_TAG(b->cpool[i]) != JS_TAG_FUNCTION_BYTECODE)
+        return NULL;
+    return JS_VALUE_GET_PTR(b->cpool[i]);
+}
+
+#define CBV_DEPTH 32
+
+/* the closure variable j of c and the REFs to it below c hold the value:
+   with mark, set them, without, tell whether the chain of REFs is at most
+   CBV_DEPTH functions deep. A loop over a stack of its own, not a
+   recursion, so that it needs no count (engine/test/cycles.sh). */
+static BOOL cbv_mark(JSFunctionBytecode *c, int j, BOOL mark)
+{
+    struct {
+        JSFunctionBytecode *f;
+        int j, i, k;
+    } st[CBV_DEPTH];
+    int d = 0, k;
+
+    if (mark)
+        c->closure_var[j].by_value = 1;
+    st[0].f = c;
+    st[0].j = j;
+    st[0].i = st[0].k = 0;
+    while (d >= 0) {
+        JSFunctionBytecode *f = st[d].f, *g;
+        if (st[d].i >= f->cpool_count) {
+            d--;
+            continue;
+        }
+        g = cbv_child(f, st[d].i);
+        if (!g || js_rc(g)->ref_count != 1 || st[d].k >= g->closure_var_count) {
+            st[d].i++;
+            st[d].k = 0;
+            continue;
+        }
+        k = st[d].k++;
+        if (g->closure_var[k].var_idx != st[d].j)
+            continue;
+        /* a GLOBAL_REF reads a variable of the script: no compiler makes
+           one to a captured local */
+        if (g->closure_var[k].closure_type == JS_CLOSURE_GLOBAL_REF)
+            return FALSE;
+        if (g->closure_var[k].closure_type != JS_CLOSURE_REF)
+            continue;
+        if (d + 1 == CBV_DEPTH)
+            return FALSE;
+        if (mark)
+            g->closure_var[k].by_value = 1;
+        d++;
+        st[d].f = g;
+        st[d].j = k;
+        st[d].i = st[d].k = 0;
+    }
+    return TRUE;
+}
+
+typedef struct {
+    int nb;            /* blocks */
+    int *start;        /* nb + 1 starts */
+    int *blk;          /* the block of each instruction */
+    int *succ, *succ_at;   /* normal successors, by block */
+    int *hand, *hand_at;   /* the handlers of the try bodies a block is in */
+    int *ev, *ev_at;       /* events: var_ref_idx << 1 | close, in order */
+    int *site_blk, *site_ev, *site_child; /* the places closures are made */
+    int nsite;
+} CBVGraph;
+
+static void capture_by_value(JSContext *ctx, JSFunctionBytecode *b)
+{
+    JSRuntime *rt = ctx->rt;
+    const uint8_t *buf = b->byte_code_buf;
+    int len = b->byte_code_len, n = b->var_ref_count;
+    int nlocal = b->arg_count + b->var_count;
+    int pos, prev, op, sz, i, j, k, r, s, t, kind, space, idx, base, changed, ngosub;
+    int64_t t64;
+    BOOL eval = FALSE, mapped = FALSE, bad = FALSE, need_flow = FALSE;
+    uint8_t *starts = NULL, *ok = NULL, *site = NULL, *writes = NULL;
+    int *ref_of = NULL, *slot_of = NULL, *gosub_after = NULL, *catch_blk = NULL, ncatch;
+    uint8_t *lead = NULL;
+    int64_t budget;
+    uint64_t *in = NULL, *gen = NULL, *kill = NULL;
+    CBVGraph g;
+
+    memset(&g, 0, sizeof(g));
+    if (len < 0 || len > INT32_MAX / 8)
+        goto bad;
+    /* one walk: the instructions, eval, the mapped arguments, the opcodes */
+    starts = js_mallocz_rt(rt, len + 1);
+    if (!starts)
+        goto bad;
+    for (pos = 0, prev = -1; pos < len; pos += sz) {
+        op = buf[pos];
+        if (op == OP_invalid || op >= OP_COUNT)
+            goto bad;
+        sz = short_opcode_info(op).size;
+        if (sz > len - pos)
+            goto bad;
+        starts[pos] = 1;
+        /* define_class makes a closure of the function on top of the
+           stack, which must be the one the push_const before it left there,
+           with nothing between but the one OP_nop insert_polls may put
+           there: a file can put a function of the constant pool inside an
+           object, where cbv_child does not see it, and get it with
+           get_field. So prev, the last instruction that is not OP_nop, is
+           that push_const at most one byte before, and no jump lands on the
+           define_class or on that OP_nop (on any byte that reads so, before
+           this walk knows where the instructions start). A jump out of the
+           code is code it does not know either. */
+        if (op == OP_define_class || op == OP_define_class_computed) {
+            if (prev < 0 || pos - prev - short_opcode_info(buf[prev]).size > 1 ||
+                (buf[prev] != OP_push_const && buf[prev] != OP_push_const8) ||
+                !cbv_child(b, buf[prev] == OP_push_const ? (int)get_u32(buf + prev + 1) : buf[prev + 1]))
+                goto bad;
+        }
+        if (cbv_jump(buf, pos, &t64) &&
+            (t64 < 0 || t64 >= len || cbv_class_at(buf, len, t64)))
+            goto bad;
+        if (op != OP_nop)
+            prev = pos;
+        if (op == OP_eval || op == OP_apply_eval)
+            eval = TRUE;
+        else if (op == OP_special_object && buf[pos + 1] == OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS)
+            mapped = TRUE;
+        if (cbv_slot(buf + pos, &space, &idx) == CBV_BAD)
+            goto bad;
+    }
+
+    /* the closure variables of b that b or a function below it writes */
+    for (i = 0; i < b->closure_var_count; i++)
+        b->closure_var[i].written = eval;
+    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        kind = cbv_slot(buf + pos, &space, &idx);
+        if ((kind == CBV_WRITE || kind == CBV_REF) && space == 2) {
+            if (idx >= b->closure_var_count)
+                goto bad;
+            b->closure_var[idx].written = 1;
+        }
+    }
+    for (i = 0; i < b->cpool_count; i++) {
+        JSFunctionBytecode *c = cbv_child(b, i);
+        if (!c)
+            continue;
+        for (k = 0; k < c->closure_var_count; k++) {
+            JSClosureVar *cv = &c->closure_var[k];
+            if (cv->closure_type != JS_CLOSURE_REF && cv->closure_type != JS_CLOSURE_GLOBAL_REF)
+                continue;
+            if (cv->var_idx >= b->closure_var_count)
+                goto bad;
+            if (cv->written || js_rc(c)->ref_count != 1)
+                b->closure_var[cv->var_idx].written = 1;
+        }
+    }
+
+    if (n == 0 || eval)
+        goto done;
+    /* the captured slots by their var_ref_idx */
+    ref_of = js_malloc_rt(rt, sizeof(int) * (nlocal + 1));
+    slot_of = js_malloc_rt(rt, sizeof(int) * n);
+    ok = js_mallocz_rt(rt, n);
+    site = js_mallocz_rt(rt, n);
+    writes = js_mallocz_rt(rt, n);
+    if (!ref_of || !slot_of || !ok || !site || !writes)
+        goto bad;
+    for (r = 0; r < n; r++)
+        slot_of[r] = -1;
+    for (i = 0; i < nlocal; i++) {
+        JSBytecodeVarDef *vd = &b->vardefs[i];
+        ref_of[i] = -1;
+        if (!vd->is_captured)
+            continue;
+        r = vd->var_ref_idx;
+        if (r >= n || slot_of[r] >= 0)
+            goto bad;
+        slot_of[r] = i;
+        ref_of[i] = r;
+        ok[r] = !(mapped && i < b->arg_count);
+    }
+    /* the functions that capture them */
+    for (i = 0; i < b->cpool_count; i++) {
+        JSFunctionBytecode *c = cbv_child(b, i);
+        if (!c)
+            continue;
+        for (k = 0; k < c->closure_var_count; k++) {
+            JSClosureVar *cv = &c->closure_var[k];
+            if (cv->closure_type == JS_CLOSURE_LOCAL)
+                j = cv->var_idx + b->arg_count;
+            else if (cv->closure_type == JS_CLOSURE_ARG)
+                j = cv->var_idx;
+            else
+                continue;
+            if ((cv->closure_type == JS_CLOSURE_LOCAL && cv->var_idx >= b->var_count) ||
+                (cv->closure_type == JS_CLOSURE_ARG && cv->var_idx >= b->arg_count) ||
+                ref_of[j] < 0)
+                goto bad;
+            r = ref_of[j];
+            if (cv->written || js_rc(c)->ref_count != 1)
+                ok[r] = 0;
+        }
+    }
+    /* references, the places closures are made, the writes */
+    for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+        op = buf[pos];
+        kind = cbv_slot(buf + pos, &space, &idx);
+        if (kind != CBV_NONE && kind != CBV_READ && space != 2) {
+            j = space ? idx : idx + b->arg_count;
+            if ((space && idx >= b->arg_count) || (!space && idx >= b->var_count))
+                goto bad;
+            r = ref_of[j];
+            if (r >= 0) {
+                if (kind == CBV_REF)
+                    ok[r] = 0;
+                else if (kind == CBV_WRITE)
+                    writes[r] = 1;
+            }
+        }
+        if (op == OP_fclosure || op == OP_push_const)
+            idx = get_u32(buf + pos + 1);
+        else if (op == OP_fclosure8 || op == OP_push_const8)
+            idx = buf[pos + 1];
+        else
+            continue;
+        {
+            JSFunctionBytecode *c = cbv_child(b, idx);
+            if (!c)
+                continue;
+            /* define_class makes the constructor a push_const leaves on
+               the stack: the compiler puts it right after, so that nothing
+               runs between the two but an OP_nop of insert_polls */
+            if ((op == OP_push_const || op == OP_push_const8) &&
+                !cbv_class_at(buf, len, pos + short_opcode_info(op).size))
+                goto bad;
+            for (k = 0; k < c->closure_var_count; k++) {
+                JSClosureVar *cv = &c->closure_var[k];
+                if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
+                    r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
+                    site[r] = 1;
+                    if (ok[r] && writes[r])
+                        need_flow = TRUE;
+                }
+            }
+        }
+    }
+    /* a slot no closure of b captures stays a JSVarRef (something else made it) */
+    for (r = 0; r < n; r++) {
+        if (!site[r])
+            ok[r] = 0;
+        if (ok[r] && writes[r])
+            need_flow = TRUE;
+    }
+    if (!need_flow)
+        goto mark;
+
+    /* the blocks, block vret for where OP_ret goes (the instruction after
+       each OP_gosub) and block vexc for where an exception goes (the
+       target of each OP_catch: whatever the stack holds, a handler is one
+       of them) */
+    {
+        int nsucc = 0, nhand = 0, nev = 0, ns = 0, vret, vexc;
+        lead = js_mallocz_rt(rt, len + 1);
+        if (!lead)
+            goto bad;
+        lead[0] = 1;
+        ngosub = ncatch = 0;
+        for (pos = 0; pos < len; pos += sz) {
+            op = buf[pos];
+            sz = short_opcode_info(op).size;
+            t = cbv_target(buf, len, starts, pos);
+            if (t == -2)
+                goto bad;
+            if (t >= 0) {
+                lead[t] = 1;
+                lead[pos + sz] = 1;
+            }
+            if (cbv_ends(op) || op == OP_gosub)
+                lead[pos + sz] = 1;
+            if (op == OP_gosub)
+                ngosub++;
+            if (op == OP_catch)
+                ncatch++;
+        }
+        g.blk = js_malloc_rt(rt, sizeof(int) * (len + 1));
+        g.start = js_malloc_rt(rt, sizeof(int) * (len + 2));
+        gosub_after = js_malloc_rt(rt, sizeof(int) * (ngosub + 1));
+        catch_blk = js_malloc_rt(rt, sizeof(int) * (ncatch + 1));
+        if (!g.blk || !g.start || !gosub_after || !catch_blk)
+            goto bad;
+        g.nb = 0;
+        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+            if (lead[pos])
+                g.start[g.nb++] = pos;
+            g.blk[pos] = g.nb - 1;
+        }
+        g.start[g.nb] = len;
+        g.blk[len] = g.nb;
+        ngosub = ncatch = 0;
+        for (pos = 0; pos < len; pos += short_opcode_info(buf[pos]).size) {
+            if (buf[pos] == OP_gosub && pos + 5 < len)
+                gosub_after[ngosub++] = g.blk[pos + 5];
+            if (buf[pos] == OP_catch) {
+                t = cbv_target(buf, len, starts, pos);
+                if (t < 0)
+                    goto bad;
+                catch_blk[ncatch++] = g.blk[t];
+            }
+        }
+        vret = g.nb;
+        vexc = g.nb + 1;
+        /* count, then fill: normal successors, handlers, events, sites.
+           Each count is at most one an instruction, or a few a block. */
+        for (s = 0; s < 2; s++) {
+            if (s == 1) {
+                g.succ = js_malloc_rt(rt, sizeof(int) * (nsucc + 1));
+                g.succ_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
+                g.hand = js_malloc_rt(rt, sizeof(int) * (nhand + 1));
+                g.hand_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
+                g.ev = js_malloc_rt(rt, sizeof(int) * (nev + 1));
+                g.ev_at = js_malloc_rt(rt, sizeof(int) * (g.nb + 3));
+                g.site_blk = js_malloc_rt(rt, sizeof(int) * (ns + 1));
+                g.site_ev = js_malloc_rt(rt, sizeof(int) * (ns + 1));
+                g.site_child = js_malloc_rt(rt, sizeof(int) * (ns + 1));
+                if (!g.succ || !g.succ_at || !g.hand || !g.hand_at || !g.ev ||
+                    !g.ev_at || !g.site_blk || !g.site_ev || !g.site_child)
+                    goto bad;
+            }
+            nsucc = nhand = nev = ns = 0;
+            for (i = 0; i < g.nb; i++) {
+                int last = -1;
+                if (s == 1) {
+                    g.succ_at[i] = nsucc;
+                    g.hand_at[i] = nhand;
+                    g.ev_at[i] = nev;
+                }
+                for (pos = g.start[i]; pos < g.start[i + 1]; pos += short_opcode_info(buf[pos]).size) {
+                    last = pos;
+                    op = buf[pos];
+                    kind = cbv_slot(buf + pos, &space, &idx);
+                    if ((kind == CBV_WRITE || kind == CBV_CLOSE) && space != 2) {
+                        r = ref_of[space ? idx : idx + b->arg_count];
+                        if (r >= 0 && ok[r] && writes[r]) {
+                            if (s == 1)
+                                g.ev[nev] = r << 1 | (kind == CBV_CLOSE);
+                            nev++;
+                        }
+                    }
+                    if (op == OP_fclosure || op == OP_push_const)
+                        idx = get_u32(buf + pos + 1);
+                    else if (op == OP_fclosure8 || op == OP_push_const8)
+                        idx = buf[pos + 1];
+                    else
+                        idx = -1;
+                    if (idx >= 0 && cbv_child(b, idx)) {
+                        if (s == 1) {
+                            g.site_blk[ns] = i;
+                            g.site_ev[ns] = nev;
+                            g.site_child[ns] = idx;
+                        }
+                        ns++;
+                    }
+                }
+                if (ncatch) {
+                    if (s == 1)
+                        g.hand[nhand] = vexc;
+                    nhand++;
+                }
+                op = buf[last];
+                if (!cbv_ends(op) && i + 1 < g.nb) {
+                    if (s == 1)
+                        g.succ[nsucc] = i + 1;
+                    nsucc++;
+                }
+                t = cbv_target(buf, len, starts, last);
+                if (t >= 0) {
+                    if (s == 1)
+                        g.succ[nsucc] = g.blk[t];
+                    nsucc++;
+                }
+                if (op == OP_ret) {
+                    if (s == 1)
+                        g.succ[nsucc] = vret;
+                    nsucc++;
+                }
+            }
+            if (s == 1) {
+                g.succ_at[vret] = nsucc;
+                g.hand_at[vret] = nhand;
+                g.ev_at[vret] = nev;
+            }
+            for (k = 0; k < ngosub; k++) {
+                if (s == 1)
+                    g.succ[nsucc] = gosub_after[k];
+                nsucc++;
+            }
+            if (s == 1) {
+                g.succ_at[vexc] = nsucc;
+                g.hand_at[vexc] = nhand;
+                g.ev_at[vexc] = nev;
+            }
+            for (k = 0; k < ncatch; k++) {
+                if (s == 1)
+                    g.succ[nsucc] = catch_blk[k];
+                nsucc++;
+            }
+            if (s == 1) {
+                g.succ_at[vexc + 1] = nsucc;
+                g.hand_at[vexc + 1] = nhand;
+                g.ev_at[vexc + 1] = nev;
+                g.nsite = ns;
+            }
+        }
+    }
+
+    /* 64 slots at a time: in[b] has the slots a write of which a path from
+       the start of block b reaches, with no close_loc of it before: the
+       blocks, vret (g.nb) and vexc (g.nb + 1). The passes have a budget,
+       past which every slot keeps its JSVarRef. */
+    in = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
+    gen = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
+    kill = js_malloc_rt(rt, sizeof(uint64_t) * (g.nb + 2));
+    if (!in || !gen || !kill)
+        goto bad;
+    budget = ((int64_t)1 << 22) + (int64_t)64 * len;
+    for (base = 0; base < n; base += 64) {
+        uint64_t want = 0, seen, out, fail;
+        for (r = base; r < n && r < base + 64; r++) {
+            if (ok[r] && writes[r])
+                want |= (uint64_t)1 << (r - base);
+        }
+        if (!want)
+            continue;
+        for (i = 0; i <= g.nb + 1; i++) {
+            gen[i] = kill[i] = seen = 0;
+            for (k = g.ev_at[i]; k < g.ev_at[i + 1]; k++) {
+                r = g.ev[k] >> 1;
+                if (r < base || r >= base + 64)
+                    continue;
+                if (!(seen & ((uint64_t)1 << (r - base)))) {
+                    seen |= (uint64_t)1 << (r - base);
+                    if (g.ev[k] & 1)
+                        kill[i] |= (uint64_t)1 << (r - base);
+                    else
+                        gen[i] |= (uint64_t)1 << (r - base);
+                }
+            }
+            in[i] = gen[i];
+        }
+        do {
+            changed = 0;
+            for (i = g.nb + 1; i >= 0; i--) {
+                uint64_t v;
+                budget -= 1 + (g.succ_at[i + 1] - g.succ_at[i]) + (g.hand_at[i + 1] - g.hand_at[i]);
+                if (budget < 0)
+                    goto bad;
+                out = 0;
+                for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
+                    out |= in[g.succ[k]];
+                v = gen[i] | (out & ~kill[i]);
+                for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
+                    v |= in[g.hand[k]];
+                if (v != in[i]) {
+                    in[i] = v;
+                    changed = 1;
+                }
+            }
+        } while (changed);
+        /* each place a closure is made: a write its slots can reach after it */
+        for (j = 0; j < g.nsite; j++) {
+            JSFunctionBytecode *c = cbv_child(b, g.site_child[j]);
+            uint64_t alias = 0;
+            i = g.site_blk[j];
+            for (k = 0; k < c->closure_var_count; k++) {
+                JSClosureVar *cv = &c->closure_var[k];
+                if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
+                    r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
+                    if (r >= base && r < base + 64)
+                        alias |= (uint64_t)1 << (r - base);
+                }
+            }
+            alias &= want;
+            if (!alias)
+                continue;
+            out = 0;
+            for (k = g.succ_at[i]; k < g.succ_at[i + 1]; k++)
+                out |= in[g.succ[k]];
+            seen = fail = 0;
+            for (k = g.site_ev[j]; k < g.ev_at[i + 1]; k++) {
+                uint64_t bit;
+                r = g.ev[k] >> 1;
+                if (r < base || r >= base + 64)
+                    continue;
+                bit = (uint64_t)1 << (r - base);
+                if (!(seen & bit)) {
+                    seen |= bit;
+                    if (!(g.ev[k] & 1))
+                        fail |= bit;
+                }
+            }
+            fail |= out & ~seen;
+            for (k = g.hand_at[i]; k < g.hand_at[i + 1]; k++)
+                fail |= in[g.hand[k]];
+            fail &= alias;
+            for (r = base; r < n && r < base + 64; r++) {
+                if (fail & ((uint64_t)1 << (r - base)))
+                    ok[r] = 0;
+            }
+        }
+    }
+
+ mark:
+    /* a chain of REFs too deep leaves its slot with a JSVarRef; then the
+       marks, the slot and all its captures together */
+    for (s = 0; s < 2; s++) {
+        for (i = 0; i < b->cpool_count; i++) {
+            JSFunctionBytecode *c = cbv_child(b, i);
+            if (!c)
+                continue;
+            for (k = 0; k < c->closure_var_count; k++) {
+                JSClosureVar *cv = &c->closure_var[k];
+                if (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG) {
+                    r = ref_of[cv->closure_type == JS_CLOSURE_LOCAL ? cv->var_idx + b->arg_count : cv->var_idx];
+                    if (ok[r] && !cbv_mark(c, k, s))
+                        ok[r] = 0;
+                }
+            }
+        }
+        if (s == 0) {
+            for (r = 0; r < n; r++) {
+                if (ok[r])
+                    b->vardefs[slot_of[r]].by_value = 1;
+            }
+        }
+    }
+    goto done;
+ bad:
+    bad = TRUE;
+ done:
+    if (bad) {
+        for (i = 0; i < b->closure_var_count; i++)
+            b->closure_var[i].written = 1;
+        for (i = 0; i < nlocal; i++)
+            b->vardefs[i].by_value = 0;
+    }
+    js_free_rt(rt, starts);
+    js_free_rt(rt, ok);
+    js_free_rt(rt, site);
+    js_free_rt(rt, writes);
+    js_free_rt(rt, ref_of);
+    js_free_rt(rt, slot_of);
+    js_free_rt(rt, gosub_after);
+    js_free_rt(rt, lead);
+    js_free_rt(rt, catch_blk);
+    js_free_rt(rt, in);
+    js_free_rt(rt, gen);
+    js_free_rt(rt, kill);
+    js_free_rt(rt, g.blk);
+    js_free_rt(rt, g.start);
+    js_free_rt(rt, g.succ);
+    js_free_rt(rt, g.succ_at);
+    js_free_rt(rt, g.hand);
+    js_free_rt(rt, g.hand_at);
+    js_free_rt(rt, g.ev);
+    js_free_rt(rt, g.ev_at);
+    js_free_rt(rt, g.site_blk);
+    js_free_rt(rt, g.site_ev);
+    js_free_rt(rt, g.site_child);
+}
+
 static JSValue js_create_function(JSContext *ctx, JSFunctionDef *fd);
 
 /* create a function object from a function definition. The function
@@ -41548,6 +42288,14 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
         }
         b->closure_var = (void *)((uint8_t*)b + closure_var_offset);
         memcpy(b->closure_var, fd->closure_var, b->closure_var_count * sizeof(*b->closure_var));
+        {
+            int i;
+            /* the compiler leaves these two unset: capture_by_value sets them */
+            for(i = 0; i < b->closure_var_count; i++) {
+                b->closure_var[i].written = 0;
+                b->closure_var[i].by_value = 0;
+            }
+        }
     }
     js_free(ctx, fd->closure_var);
     fd->closure_var = NULL;
@@ -41569,6 +42317,7 @@ static JSValue js_create_function1(JSContext *ctx, JSFunctionDef *fd)
     b->realm = JS_DupContext(ctx);
 
     add_gc_object(ctx->rt, &b->header, JS_GC_OBJ_TYPE_FUNCTION_BYTECODE);
+    capture_by_value(ctx, b);
 
 #if defined(DUMP_BYTECODE) && (DUMP_BYTECODE & 1)
     if (!fd->strip_debug) {
@@ -44474,6 +45223,7 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
        (engine/regvm-entry.h) */
     if (!s->polls_checked && rv_read_check(ctx, b))
         goto fail;
+    capture_by_value(ctx, b);
     b->realm = JS_DupContext(ctx);
     return obj;
  fail:

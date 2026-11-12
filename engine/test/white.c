@@ -1647,3 +1647,209 @@ int white_regvm_scratch_drain(JSContext *ctx, int in_pass)
     rt->rv_in_pass = was;
     return (int)rt->rv_scratch_size;
 }
+
+/* ---- captures that never change (capture_by_value) ---- */
+
+static JSFunctionBytecode *white_find_function(JSContext *ctx, JSFunctionBytecode *b, const char *name)
+{
+    char buf[ATOM_GET_STR_BUF_SIZE];
+    int i;
+
+    if (!strcmp(JS_AtomGetStr(ctx, buf, sizeof(buf), b->func_name), name))
+        return b;
+    for (i = 0; i < b->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(b->cpool[i]) == JS_TAG_FUNCTION_BYTECODE) {
+            JSFunctionBytecode *f = white_find_function(ctx, JS_VALUE_GET_PTR(b->cpool[i]), name);
+            if (f)
+                return f;
+        }
+    }
+    return NULL;
+}
+
+/* whether the closure variables of the functions below b that reach the
+   slots of b are marked as those slots are: 0, or -1 */
+/* the marks of the closure variables of c, a function below b whose
+   constant pool up holds it, agree with the slots of b and the closure
+   variables of up */
+static int white_by_value_marks(JSFunctionBytecode *b, JSFunctionBytecode *up, JSFunctionBytecode *c, int depth)
+{
+    int i, k;
+
+    for (k = 0; k < c->closure_var_count; k++) {
+        JSClosureVar *cv = &c->closure_var[k];
+        int want;
+        if (cv->closure_type == JS_CLOSURE_REF) {
+            if (cv->var_idx >= up->closure_var_count)
+                return -1;
+            want = up->closure_var[cv->var_idx].by_value;
+        } else if (depth > 0 && (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG))
+            continue; /* the slots of the function above it */
+        else if (cv->closure_type == JS_CLOSURE_LOCAL)
+            want = b->vardefs[b->arg_count + cv->var_idx].by_value;
+        else if (cv->closure_type == JS_CLOSURE_ARG)
+            want = b->vardefs[cv->var_idx].by_value;
+        else
+            want = 0;
+        if (cv->by_value != want)
+            return -1;
+    }
+    for (i = 0; i < c->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(c->cpool[i]) == JS_TAG_FUNCTION_BYTECODE &&
+            white_by_value_marks(b, c, JS_VALUE_GET_PTR(c->cpool[i]), depth + 1))
+            return -1;
+    }
+    return 0;
+}
+
+/* code no compiler makes, for white_by_value_crafted: 1 the push_const
+   before the first define_class of f names no function of the pool, 2 the
+   first jump of 8 bits of f lands on its first define_class. 0, or -1
+   when f has no such place. */
+static int white_by_value_craft(JSFunctionBytecode *f, int craft)
+{
+    uint8_t *buf = f->byte_code_buf;
+    int pos, prev = -1, dc = -1, op;
+
+    for (pos = 0; pos < f->byte_code_len; prev = pos, pos += short_opcode_info(buf[pos]).size) {
+        op = buf[pos];
+        if (op == OP_define_class || op == OP_define_class_computed) {
+            dc = pos;
+            break;
+        }
+    }
+    if (dc < 0)
+        return -1;
+    if (craft == 1) {
+        if (prev < 0 || buf[prev] != OP_push_const8)
+            return -1;
+        buf[prev + 1] = 255;
+        return 0;
+    }
+    for (pos = 0; pos < f->byte_code_len; pos += short_opcode_info(buf[pos]).size) {
+        if (short_opcode_info(buf[pos]).fmt == OP_FMT_label8 &&
+            dc - (pos + 1) >= -128 && dc - (pos + 1) <= 127) {
+            buf[pos + 1] = (uint8_t)(int8_t)(dc - (pos + 1));
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* The verdict of capture_by_value on the captured arguments and locals of
+   the function named name in the script src, compiled, or with read set
+   written with JS_WriteObject and read back: "a=1 b=0", the arguments then
+   the locals. Returns 0, -1 when the script does not compile or has no such
+   function, -2 when the marks of the closure variables below it do not
+   match its slots. */
+static int white_by_value_run(JSContext *ctx, const char *src, const char *name, int read, int craft, char *out, size_t cap)
+{
+    JSValue v;
+    JSFunctionBytecode *b, *f;
+    size_t n = 0;
+    int i, ret = 0;
+
+    out[0] = 0;
+    v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return -1;
+    if (read) {
+        size_t len;
+        uint8_t *buf = JS_WriteObject(ctx, &len, v, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(ctx, v);
+        if (!buf)
+            return -1;
+        v = JS_ReadObject(ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        js_free(ctx, buf);
+        if (JS_IsException(v))
+            return -1;
+    }
+    b = JS_VALUE_GET_PTR(v);
+    f = white_find_function(ctx, b, name);
+    if (!f) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    if (craft) {
+        if (white_by_value_craft(f, craft)) {
+            JS_FreeValue(ctx, v);
+            return -3;
+        }
+        /* the run again on the changed code, from no marks: the functions
+           of the cases have no function below a function below f */
+        for (i = 0; i < f->arg_count + f->var_count; i++)
+            f->vardefs[i].by_value = 0;
+        for (i = 0; i < f->cpool_count; i++) {
+            if (JS_VALUE_GET_TAG(f->cpool[i]) == JS_TAG_FUNCTION_BYTECODE) {
+                JSFunctionBytecode *c = JS_VALUE_GET_PTR(f->cpool[i]);
+                int k;
+                for (k = 0; k < c->closure_var_count; k++)
+                    c->closure_var[k].by_value = 0;
+            }
+        }
+        capture_by_value(ctx, f);
+    }
+    for (i = 0; i < f->arg_count + f->var_count; i++) {
+        char buf[ATOM_GET_STR_BUF_SIZE];
+        JSBytecodeVarDef *vd = &f->vardefs[i];
+        if (!vd->is_captured)
+            continue;
+        n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s=%d", n ? " " : "",
+                      JS_AtomGetStr(ctx, buf, sizeof(buf), vd->var_name), vd->by_value);
+    }
+    for (i = 0; i < f->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(f->cpool[i]) == JS_TAG_FUNCTION_BYTECODE &&
+            white_by_value_marks(f, f, JS_VALUE_GET_PTR(f->cpool[i]), 0))
+            ret = -2;
+    }
+    JS_FreeValue(ctx, v);
+    return ret;
+}
+
+int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap)
+{
+    return white_by_value_run(ctx, src, name, read, 0, out, cap);
+}
+
+/* white_by_value on the function name of src compiled and then changed as
+   white_by_value_craft does with craft, the verdict made again: -3 when
+   the change has no place in it */
+int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap)
+{
+    return white_by_value_run(ctx, src, name, 0, craft, out, cap);
+}
+
+/* 1 when the compiled function name of src has an OP_nop between the
+   push_const of a class constructor and its define_class, 0 when not, -1
+   when the script does not compile or has no such function */
+int white_class_after_nop(JSContext *ctx, const char *src, const char *name)
+{
+    JSValue v;
+    JSFunctionBytecode *f;
+    const uint8_t *buf;
+    int pos, ret = 0;
+
+    v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return -1;
+    f = white_find_function(ctx, JS_VALUE_GET_PTR(v), name);
+    if (!f) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    buf = f->byte_code_buf;
+    for (pos = 0; pos < f->byte_code_len; pos += short_opcode_info(buf[pos]).size) {
+        if ((buf[pos] == OP_push_const || buf[pos] == OP_push_const8)) {
+            int next = pos + short_opcode_info(buf[pos]).size, n = 0;
+            while (next < f->byte_code_len && buf[next] == OP_nop) {
+                next++;
+                n++;
+            }
+            if (n > 0 && next < f->byte_code_len &&
+                (buf[next] == OP_define_class || buf[next] == OP_define_class_computed))
+                ret = 1;
+        }
+    }
+    JS_FreeValue(ctx, v);
+    return ret;
+}

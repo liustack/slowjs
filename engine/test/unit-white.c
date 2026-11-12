@@ -97,6 +97,9 @@ int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out
 int white_code_shape(const uint8_t *code, int len, int *shape, int max);
 const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
 int white_child_var_count(JSValueConst fun, int i);
+int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap);
+int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap);
+int white_class_after_nop(JSContext *ctx, const char *src, const char *name);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
@@ -3348,6 +3351,215 @@ static void test_iterator_close_oom(void)
     vm_free(&v);
 }
 
+/* The captures that never change (capture_by_value): for each captured
+   argument or local of the function f, whether no closure can see it
+   change. A write that a path from the place a closure is made reaches
+   keeps a JSVarRef: in either arm of an if, in a switch, around a loop,
+   through a catch or a finally, after a yield or an await, in a function
+   below that captures it, by a direct eval or through a mapped arguments
+   object. A close_loc on the way (the per-round binding of a for-let) ends
+   the capture. The verdict is the same on code read back with
+   JS_ReadObject, which works it out again. */
+static void test_capture_by_value(void)
+{
+    static const struct {
+        const char *src, *want;
+    } cases[] = {
+        /* destructuring: the initializer runs after the pattern's code */
+        { "function f(g) { const [a, b] = g(() => a); return () => b }", "a=0 b=1" },
+        { "function f(g) { const { a, b } = g(); return () => a + b }", "a=1 b=1" },
+        /* the arms of an if */
+        { "function f(c) { let x; const h = () => x; if (c) x = 1; else x = 2; return h }", "x=0" },
+        { "function f(c) { let x; if (c) x = 1; else x = 2; return () => x }", "x=1" },
+        { "function f(c) { let x = 0; if (c) return () => x; x = 1; return null }", "x=1" },
+        /* switch */
+        { "function f(v) { let x = 0; switch (v) { case 0: x = 1; break; case 1: return () => x } return null }", "x=1" },
+        { "function f(v) { let x = 0, g; switch (v) { case 0: g = () => x; case 1: x = 2 } return g }", "x=0" },
+        /* loops, break and continue to labels */
+        { "function f() { let x = 0; const fs = []; while (x < 3) { fs.push(() => x); x++ } return fs }", "x=0" },
+        { "function f() { var fs = []; for (var i = 0; i < 3; i++) fs.push(() => i); return fs }", "i=0" },
+        { "function f(a) { const r = []; outer: for (let i = 0; i < 3; i++) { let y = i * 2; for (;;) { r.push(() => y); if (a) continue outer; break outer } } return r }", "y=1" },
+        { "function f(a) { const r = []; let y = 0; outer: for (let i = 0; i < 3; i++) { for (;;) { r.push(() => y); if (a) continue outer; break outer } } y = 1; return r }", "y=0" },
+        { "function f() { let x = 0, g; lab: { g = () => x; if (g.length) break lab; x = 1 } return g }", "x=0" },
+        { "function f() { let x = 0, g; lab: { x = 1; break lab } g = () => x; return g }", "x=1" },
+        /* try, catch and finally */
+        { "function f(h) { let x = 0; const g = () => x; try { h() } catch (e) { x = 1 } return g }", "x=0" },
+        /* a write in a catch counts wherever the closure is made, after the
+           try too: an exception can only go to some catch of the function,
+           but which one the stack holds is not looked at */
+        { "function f(h) { let x = 0; try { h() } catch (e) { x = 1 } return () => x }", "x=0" },
+        { "function f() { let x = 0, g; try { g = () => x } finally { x = 2 } return g }", "x=0" },
+        { "function f(h) { let x = 0, g; try { x = 1 } finally { g = () => x } return g }", "x=1" },
+        { "function f(h) { let x = 0, g; try { try { g = () => x } finally { h() } } catch (e) { x = 3 } return g }", "x=0" },
+        /* a write that only the handler reaches */
+        { "function f(h) { let x = 0, g; try { g = () => x; h() } catch (e) { x = 1 } return g }", "x=0" },
+        { "function f(h) { let x = 0, g; try { h() } catch (e) { g = () => x; return g } x = 1; return g }", "x=1" },
+        /* a capture in a finally and a write after it */
+        { "function f() { let x = 0, g; try {} finally { g = () => x } x = 1; return g }", "x=0" },
+        /* the binding of each round of a for-let is closed before the next */
+        { "function f() { const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i); return fs }", "i=1" },
+        { "function f() { const fs = []; for (let i = 0; i < 3; i++) { fs.push(() => i); i += 0 } return fs }", "i=0" },
+        { "function f(a) { const fs = []; for (const x of a) fs.push(() => x); return fs }", "x=1" },
+        /* default parameters: in QuickJS the body writes a binding of its own
+           when the parameters have expressions, which the closure never sees
+           (it gives 1 where Node gives 2) */
+        { "function f(a, g = () => a) { a = 2; return g }", "a=1" },
+        { "function f(a, g = () => a, h = () => { a = 3 }) { return g }", "a=0" },
+        { "function f(a, g = () => a) { return g }", "a=1" },
+        /* the name of a function expression, a catch parameter */
+        { "var h = function f() { return () => f }", "f=1" },
+        /* the catch writes e as it starts: a closure of e keeps a JSVarRef
+           (above) */
+        { "function f(h) { try { h() } catch (e) { return () => e } }", "e=0" },
+        { "function f(h) { try { h() } catch (e) { const g = () => e; e = 1; return g } }", "e=0" },
+        /* this and new.target in an arrow */
+        { "function f() { return () => this }", "this=1" },
+        /* function declarations that call each other */
+        { "function f() { function a() { return b } function b() { return a } return a }", "a=1 b=0" },
+        /* class fields and static blocks */
+        { "function f() { let x = 1; class A { y = x; static { x = 2 } } return A }", "x=0 <class_fields_init>=0" },
+        { "function f() { const x = 1; class A { y = () => x; static z = x } return A }", "x=1 <class_fields_init>=0" },
+        /* a generator and an async function go on after a yield and an await */
+        { "function* f() { let x = 1; const g = () => x; yield 0; x = 2; yield g }", "x=0" },
+        { "function* f() { let x = 1; yield 0; x = 2; yield () => x }", "x=1" },
+        { "async function f(h) { let x = 1; const g = () => x; await 0; x = 2; return g }", "x=0" },
+        { "async function f(h) { let x = await h(); return () => x }", "x=1" },
+        /* with: an assignment inside it takes a reference to the slot
+           (make_loc_ref), which keeps it a JSVarRef */
+        { "function f(o) { let x = 1; with (o) { x = 2 } return () => x }", "x=0" },
+        { "function f(o) { let x = 1; const g = () => x; with (o) { x = 2 } return g }", "x=0" },
+        { "function f(o) { let x = 1; with (o) { return () => x } }", "x=1 <with>=1" },
+        /* eval: a direct one can write any of them, an indirect one none */
+        { "function f() { let x = 1; const g = () => x; eval('x = 2'); return g }", "x=0 g=0 <var>=0 this=0 new.target=0 arguments=0" },
+        { "function f() { let x = 1; const g = () => x; (0, eval)('x = 2'); return g }", "x=1" },
+        { "function f() { let x = 1; const g = () => () => eval(''); return g }", "x=0 g=0 this=0 new.target=0 arguments=0" },
+        /* arguments: mapped in sloppy code with simple parameters */
+        { "function f(a) { const g = () => a; arguments[0] = 2; return g }", "a=0" },
+        { "function f(a) { 'use strict'; const g = () => a; arguments[0] = 2; return g }", "a=1" },
+        { "function f(a, b = 1) { const g = () => a; arguments[0] = 2; return g }", "a=1" },
+        /* a function two levels down */
+        { "function f() { let x = 1; return () => () => { x = 2 } }", "x=0" },
+        { "function f() { let x = 1; return () => () => x }", "x=1" },
+        { "function f() { let x = 1; return () => () => () => x++ }", "x=0" },
+        /* the dead zone: a capture before the declaration, and one no write follows */
+        { "function f() { const g = () => x; let x = 1; return g }", "x=0" },
+        { "function f(v) { switch (v) { case 0: let x = 1; break; case 1: return () => x } }", "x=1" },
+    };
+    VM v = vm_new();
+    size_t i;
+    int read, r;
+    char got[256];
+
+    for (i = 0; i < countof(cases); i++) {
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, cases[i].src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, cases[i].want), "%s%s: %d \"%s\", want \"%s\"",
+                  cases[i].src, read ? " (read back)" : "", r, got, cases[i].want);
+        }
+    }
+    /* 257 captured locals read two functions down, one written after the
+       capture: past 256 closure variables and over five chunks of 64 */
+    {
+        char *src = malloc(16384), *want = malloc(16384);
+        size_t at = 0, wt = 0, k;
+        char *got2 = malloc(16384);
+        at += snprintf(src + at, 16384 - at, "function f() { let ");
+        for (k = 0; k < 257; k++)
+            at += snprintf(src + at, 16384 - at, "%sa%zu = %zu", k ? ", " : "", k, k);
+        at += snprintf(src + at, 16384 - at, "; const g = () => () => a0");
+        for (k = 1; k < 257; k++)
+            at += snprintf(src + at, 16384 - at, " + a%zu", k);
+        snprintf(src + at, 16384 - at, "; a200 = 0; return g }");
+        for (k = 0; k < 257; k++)
+            wt += snprintf(want + wt, 16384 - wt, "%sa%zu=%d", k ? " " : "", k, k != 200);
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got2, 16384);
+            CHECK(r == 0 && !strcmp(got2, want), "257 locals%s: %d", read ? " (read back)" : "", r);
+        }
+        free(src);
+        free(want);
+        free(got2);
+    }
+    /* 2000 try and finally blocks: OP_ret goes to after each of the 4000
+       OP_gosub through one node, not by an edge for each pair */
+    {
+        size_t cap2 = 64 * 2000 + 256, at = 0, k;
+        char *src = malloc(cap2);
+        at += snprintf(src + at, cap2 - at, "function f(h) { let x = 1, y = 0;\n");
+        for (k = 0; k < 2000; k++)
+            at += snprintf(src + at, cap2 - at, "try { h() } finally { h(y) }\n");
+        snprintf(src + at, cap2 - at, "const g = () => x + y; y = 1; return g }");
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, "x=1 y=0"), "2000 finally blocks%s: %d \"%s\"",
+                  read ? " (read back)" : "", r, got);
+        }
+        free(src);
+    }
+    /* a chain of REFs through 32 functions holds the value, one through 33
+       keeps the JSVarRef (CBV_DEPTH) */
+    for (i = 32; i <= 33; i++) {
+        char src[512];
+        size_t at = 0, k;
+        at += snprintf(src + at, sizeof(src) - at, "function f() { let x = 1; return ");
+        for (k = 0; k < i; k++)
+            at += snprintf(src + at, sizeof(src) - at, "() => ");
+        snprintf(src + at, sizeof(src) - at, "x }");
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, i == 32 ? "x=1" : "x=0"), "%zu functions deep%s: %d \"%s\"",
+                  i, read ? " (read back)" : "", r, got);
+        }
+    }
+    /* code a file can hold and no compiler makes: a define_class whose
+       constructor is not the function of the push_const right before it
+       (1), or that a jump lands on (2), keeps every slot a JSVarRef. The
+       same function as compiled holds x by value. */
+    {
+        static const char src[] =
+            "function f(a) { let x = 0; const g = () => x; if (a) a(); class C {} return g }";
+        int craft;
+
+        r = white_by_value(v.ctx, src, "f", 0, got, sizeof(got));
+        CHECK(r == 0 && !strcmp(got, "x=1 <class_fields_init>=0"), "a class: %d \"%s\"", r, got);
+        for (craft = 1; craft <= 2; craft++) {
+            r = white_by_value_crafted(v.ctx, src, "f", craft, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, "x=0 <class_fields_init>=0"), "a class, changed %d: %d \"%s\"", craft, r, got);
+        }
+    }
+    /* insert_polls puts an OP_nop after a run of POLL_RUN - 1 instructions
+       with no count, which can fall between the push_const of a class and
+       its define_class: the class is still one the pass knows. Runs of
+       straight code of each length find the one. */
+    {
+        int a, m, found = 0;
+        char src[4096];
+
+        for (a = 0; a < 150 && !found; a++) {
+            for (m = 0; m < 2 && !found; m++) {
+                size_t at = 0;
+                int k;
+                at += snprintf(src + at, sizeof(src) - at, "function f(q) { let x = 0, p; const g = () => x; ");
+                for (k = 0; k < a; k++)
+                    at += snprintf(src + at, sizeof(src) - at, "p = q; ");
+                for (k = 0; k < m; k++)
+                    at += snprintf(src + at, sizeof(src) - at, "p = -q; ");
+                snprintf(src + at, sizeof(src) - at, "class C {} return g }");
+                if (white_class_after_nop(v.ctx, src, "f") != 1)
+                    continue;
+                found = 1;
+                for (read = 0; read < 2; read++) {
+                    r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+                    CHECK(r == 0 && !strcmp(got, "x=1 <class_fields_init>=0"), "a class after an OP_nop%s: %d \"%s\"",
+                          read ? " (read back)" : "", r, got);
+                }
+            }
+        }
+        CHECK(found, "no run of code puts an OP_nop between the push_const of a class and its define_class");
+    }
+    vm_free(&v);
+}
+
 /* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
    read or a write of a let, a const or a class known to come after its
    declaration has none, and a variable left with no check, no capture and
@@ -5765,6 +5977,7 @@ int main(int argc, char **argv)
     test_share_local_slots();
     test_iterator_close_oom();
     test_tdz_checks();
+    test_capture_by_value();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();
