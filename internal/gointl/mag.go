@@ -251,34 +251,39 @@ func parseDecimal(s string, round bool) Decimal {
 		return Decimal{kind: decimalInfinite, neg: neg}
 	}
 	mantissa, exp := body, 0
+	// qjs: the exponent is checked as StrDecimalLiteral writes it, one sign at
+	// most and then digits, and the mantissa is read before an exponent too
+	// large to write out decides anything, as Number reads the string: "1e+-5"
+	// and "1xe1073741825" are NaN, and "0e1073741825" is zero.
+	huge := false
 	if i := strings.IndexAny(body, "eE"); i >= 0 {
 		round = true
 		mantissa = body[:i]
 		e := body[i+1:]
-		if e == "" || e == "+" || e == "-" {
+		digits := e
+		if digits != "" && (digits[0] == '+' || digits[0] == '-') {
+			digits = digits[1:]
+		}
+		if digits == "" || !allDigits(digits) {
 			return Decimal{kind: decimalNaN}
 		}
 		n, err := strconv.Atoi(e)
-		if err != nil {
-			if !allDigits(strings.TrimLeft(e, "+-")) {
-				return Decimal{kind: decimalNaN}
+		switch {
+		case err != nil:
+			// Too large for an int.
+			huge = true
+			exp = 1
+			if e[0] == '-' {
+				exp = -1
 			}
-			// An exponent too large for an int: the number is an infinity
-			// or zero, as far as any formatter could write it.
-			if strings.HasPrefix(e, "-") {
-				return Decimal{neg: neg, m: zeroMag}
-			}
-			return Decimal{kind: decimalInfinite, neg: neg}
+		case n < -maxDecimalExponent || n > maxDecimalExponent:
+			// Too large to write out, which also keeps the arithmetic on it
+			// from overflowing.
+			huge = true
+			exp = n
+		default:
+			exp = n
 		}
-		exp = n
-	}
-	// And one too large to write out, likewise; which also keeps the
-	// arithmetic on it from overflowing.
-	switch {
-	case exp < -maxDecimalExponent:
-		return Decimal{neg: neg, m: zeroMag}
-	case exp > maxDecimalExponent:
-		return Decimal{kind: decimalInfinite, neg: neg}
 	}
 	integer, fraction, _ := strings.Cut(mantissa, ".")
 	if integer == "" && fraction == "" || !allDigits(integer) || !allDigits(fraction) ||
@@ -286,6 +291,14 @@ func parseDecimal(s string, round bool) Decimal {
 		return Decimal{kind: decimalNaN}
 	}
 	m := makeMag(integer, fraction)
+	if huge {
+		// The number is an infinity or zero, as far as any formatter could
+		// write it.
+		if exp < 0 || m.isZero() {
+			return Decimal{neg: neg, m: zeroMag}
+		}
+		return Decimal{kind: decimalInfinite, neg: neg}
+	}
 	if round && !m.isZero() {
 		// RoundMVResult: what the number would be as a float decides
 		// whether it is an infinity.
