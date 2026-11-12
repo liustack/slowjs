@@ -1,0 +1,40 @@
+strict field 0: throws TypeError
+sloppy field 0: ok
+strict element 0: throws TypeError
+sloppy element 0: ok
+strict computed key 0: throws TypeError
+strict ordinary 0: ok
+strict field 1: throws TypeError
+sloppy field 1: ok
+strict element 1: throws TypeError
+sloppy element 1: ok
+strict computed key 1: throws TypeError
+strict ordinary 1: ok
+strict field 2: throws TypeError
+sloppy field 2: ok
+strict element 2: throws TypeError
+sloppy element 2: ok
+strict computed key 2: throws TypeError
+strict ordinary 2: ok
+strict store under a proxy prototype: true
+Reflect.set: false
+Reflect.set with receiver: false
+strict compound: throws TypeError
+target left alone: false
+strict array push: throws TypeError
+strict field, existing 0: throws TypeError
+sloppy field, existing 0: ok
+strict element, existing 0: throws TypeError
+sloppy element, existing 0: ok
+strict field, existing 1: throws TypeError
+sloppy field, existing 1: ok
+strict element, existing 1: throws TypeError
+sloppy element, existing 1: ok
+Reflect.set, existing: false
+Reflect.set with receiver, existing: false
+Object.assign, existing: throws TypeError
+array fill, existing: throws TypeError
+strict array push, length: throws TypeError
+strict super store, existing: throws TypeError
+sloppy super store, existing: ok
+strict store in with, existing: throws TypeError

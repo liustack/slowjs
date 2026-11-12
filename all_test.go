@@ -6,6 +6,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -619,6 +620,39 @@ func TestSetProperty(t *testing.T) {
 
 	if g, e := v, "bar"; g != e {
 		t.Fatal(g, e)
+	}
+}
+
+// SetProperty and SetPropertyValue on a proxy whose defineProperty trap
+// refuses the store return its TypeError, for a property the target already
+// has as for a new one, and the target keeps its value.
+func TestSetPropertyRefused(t *testing.T) {
+	m := newTestVM(t)
+	p, err := m.EvalValue(`var t = { x: 0 }; new Proxy(t, { defineProperty() { return false } })`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Free()
+	one, err := m.EvalValue(`1`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer one.Free()
+	for _, name := range []string{"x", "y"} {
+		atom, err := m.NewAtom(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var e *Error
+		if err := m.SetProperty(p, atom, 1); !errors.As(err, &e) || e.Name != "TypeError" {
+			t.Errorf("SetProperty %s: got %v, want a TypeError", name, err)
+		}
+		if err := m.SetPropertyValue(p, atom, one); !errors.As(err, &e) || e.Name != "TypeError" {
+			t.Errorf("SetPropertyValue %s: got %v, want a TypeError", name, err)
+		}
+	}
+	if v, err := m.Eval(`JSON.stringify(t)`, EvalGlobal); err != nil || v != `{"x":0}` {
+		t.Errorf("target: %v, %v", v, err)
 	}
 }
 

@@ -691,6 +691,14 @@ static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree
   };
   std::vector<Loop *> chosen;
   std::function<void(Loop *)> weigh = [&](Loop *L) {
+    // The loop through the dispatch of an interpreter that counts its
+    // bytecode keeps the count in memory: each of its marks must come right
+    // after its tick (tickBefore), with no phi of a local count in front.
+    if (L->getHeader()->getTerminator()->getMetadata(CountedMD)) {
+      for (Loop *Sub : *L)
+        weigh(Sub);
+      return;
+    }
     double entries = 0, exits = 0, ticks = 0, calls = 0, hottest = 0;
     bool chunkOnly = true;
     unsigned nticks = 0, need = 0;
@@ -1098,10 +1106,12 @@ static bool expiredTest(Value *Cond, Instruction *Tick) {
 // tickBefore tells whether a mark at the start of its block B comes right
 // after a tick of at least weight: one predecessor of B ticks and branches
 // to B or to a block of its own that polls and goes on to B, and B has no
-// other predecessor.
+// other predecessor. Only phis may come before the mark: in a loop that
+// keeps the count in a register, mem2reg joins there the count the tick left
+// with the one host_poll set, and a phi runs no code.
 static bool tickBefore(Instruction *Mark, uint64_t weight) {
   BasicBlock *B = Mark->getParent();
-  if (&B->front() != Mark)
+  if (&*B->getFirstNonPHIIt() != Mark)
     return false;
   BasicBlock *H = nullptr;
   for (BasicBlock *P : predecessors(B)) {

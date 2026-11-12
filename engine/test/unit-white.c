@@ -115,6 +115,15 @@ int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
+int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
+int white_regvm_oom_fallback(void);
+int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
+int white_regvm_read_check(JSContext *ctx, JSValueConst f);
+int white_regvm_stack(JSContext *ctx, long out[4]);
+int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
+int white_drop_vardefs(JSValueConst f, int on);
+int white_opcode(int which);
+int white_regvm_oom_pending(JSContext *ctx);
 void white_work_reset(void);
 int white_jsstring_header(void);
 int white_sb_write8(struct StringBuffer *b, const uint8_t *p, int len);
@@ -2406,6 +2415,7 @@ enum {
     W_GET_LOC8_GET_FIELD, W_DUP_CASE_ATOM,
     W_TYPEOF, W_TYPEOF_IS_UNDEFINED, W_TYPEOF_IS_FUNCTION, W_TYPEOF_IS, W_LNOT,
     W_GET_LOC_CHECK, W_PUT_LOC_CHECK, W_SET_LOC_CHECK, W_SET_LOC_UNINITIALIZED,
+    W_RETURN,
 };
 
 /* Code written for a test, one instruction at a time. A jump is written
@@ -4531,6 +4541,1005 @@ static void test_compile_one_failure(int calls)
     printf("unit-white: test_compile_one_failure (%s): %ld cases, %ld bad\n", calls ? "every call" : "heap requests", cases_run, bad);
 }
 
+/* ---- the register loop ---- */
+
+/* Functions the pass of the register loop converts (engine/regvm-pass.h),
+   with what f(3) gives: runs of instructions that can throw of every length,
+   so that each buffer of the pass grows at the first byte of one of them
+   somewhere, a catch and a finally (the pcmap entries of CATCH and GOSUB), a
+   closure, a loop, a for-of and a switch on strings. */
+static const struct {
+    const char *src, *want;
+} regvm_scripts[] = {
+    { "globalThis.f = function (x) { 'use strict'; return x + 1 + 2; }; 0", "6" },
+    { "globalThis.f = function (x) { 'use strict'; return x.a; }; 0", "undefined" },
+    { "globalThis.f = function (x) { 'use strict'; var o = { a: x }; return o.a + o.a + o.a + o.a + o.a + o.a + o.a; }; 0", "21" },
+    { "globalThis.f = function (x) { 'use strict'; var r = 0;\n"
+      "  try { try { r = x + 1; if (r > 2) throw r; } catch (e) { r = e + 10; } finally { r = r + 100; } } catch (e2) { r = -1; }\n"
+      "  return r; }; 0", "114" },
+    { "globalThis.f = function (x) { 'use strict'; var a = x + 1; var g = function () { return a + x; }; a = a + 1; return g() + 1; }; 0", "9" },
+    { "globalThis.f = function (x) { 'use strict'; var s = 0, i; for (i = 0; i < x; i++) { if (i == 1) continue; s = s + i * 2; } return s; }; 0", "4" },
+    { "globalThis.f = function (x) { 'use strict'; var s = 0, o = { a: 1, b: [x, 2] }, v;\n"
+      "  for (v of o.b) s = s + v;\n"
+      "  switch (typeof x) { case 'number': s = s + 1; break; case 'string': s = s + 2; break; default: s = s - 1; }\n"
+      "  return s + o.a; }; 0", "7" },
+};
+
+/* regvm_convert_case converts f of src with call number fail of the
+   allocator failing, 0 for none. A conversion that could not get a block
+   never ends the process, and the function is not converted in part: with
+   the out of memory fallback the old loop runs it (RV_FAILED), without it
+   the function stays unconverted and the next call converts it. Returns the
+   calls of the allocator the conversion made. */
+static int regvm_convert_case(const char *src, const char *want, int fail)
+{
+    VM v = vm_new();
+    JSValue g, f, arg, r;
+    char *t;
+    int made = 0, conv;
+
+    JS_SetRegvm(v.ctx, 1);
+    CHECK(eval_ok(v.ctx, src), "the setup threw: %s", src);
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "f");
+    JS_FreeValue(v.ctx, g);
+    conv = white_regvm_convert_failing(v.ctx, f, fail, 1, &made);
+    if (fail == 0)
+        CHECK(conv == 1, "the pass does not convert it (%d), so the case tests nothing: %s", conv, src);
+    else if (white_regvm_oom_fallback())
+        CHECK(conv == 0 && JS_RegvmFuncStat(v.ctx, f, 0) == -1, "call %d of %d failing: the conversion gives %d, not a function left to the old loop: %s", fail, made, conv, src);
+    else
+        CHECK(conv == 0 && JS_RegvmFuncStat(v.ctx, f, 0) == 0, "call %d of %d failing: the conversion gives %d, not a function left unconverted for a later call: %s", fail, made, conv, src);
+    CHECK(!JS_HasException(v.ctx), "call %d failing: the conversion leaves an exception", fail);
+    arg = JS_NewInt32(v.ctx, 3);
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+    t = value_text(v.ctx, r);
+    CHECK(t && strcmp(t, want) == 0, "call %d failing: f(3) gives %s, not %s: %s", fail, t ? t : "(exception)", want, src);
+    free(t);
+    free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+    return made;
+}
+
+/* The scripts of the sweep by number: those of regvm_scripts, then the
+   chains, for each lead a sum of 1 to 60 terms (a function has 64 constants
+   at most), each term an instruction
+   that can throw. 0 when there is no script i. */
+static int regvm_convert_script(int i, char *src, size_t cap, char *want, size_t want_cap)
+{
+    static const char *const lead[] = { "", "x = x + 0;", "var o = { a: x };", "try { x = x + 0; } finally { x = x - 0; }" };
+    static const int terms[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 19, 26, 33, 40, 47, 54, 60 };
+    int fixed = sizeof(regvm_scripts) / sizeof(regvm_scripts[0]), nterms = sizeof(terms) / sizeof(terms[0]), n, k;
+    size_t len;
+
+    if (i < fixed) {
+        snprintf(src, cap, "%s", regvm_scripts[i].src);
+        snprintf(want, want_cap, "%s", regvm_scripts[i].want);
+        return 1;
+    }
+    i -= fixed;
+    if (i >= (int)(sizeof(lead) / sizeof(lead[0])) * nterms)
+        return 0;
+    n = terms[i % nterms];
+    len = snprintf(src, cap, "globalThis.f = function (x) { 'use strict'; %s return x", lead[i / nterms]);
+    for (k = 1; k <= n; k++)
+        len += snprintf(src + len, cap - len, " + %d", k);
+    snprintf(src + len, cap - len, "; }; 0");
+    snprintf(want, want_cap, "%d", 3 + n * (n + 1) / 2);
+    return 1;
+}
+
+/* regvm_convert_one is the sweep of script i in a process of its own
+   (run_self), so that a conversion that ends the process is one failed case:
+   every call of the allocator failing in turn, or with fail not negative
+   that call alone */
+static void regvm_convert_one(int i, int fail)
+{
+    char src[2048], want[32];
+    int n;
+
+    failures = 0;
+    if (!regvm_convert_script(i, src, sizeof(src), want, sizeof(want))) {
+        CHECK(0, "the sweep has no script %d", i);
+    } else if (fail >= 0) {
+        regvm_convert_case(src, want, fail);
+    } else {
+        n = regvm_convert_case(src, want, 0);
+        CHECK(n >= 6, "script %d: only %d calls of the allocator", i, n);
+        for (fail = 1; fail <= n; fail++)
+            regvm_convert_case(src, want, fail);
+    }
+    fflush(stdout);
+    host_leave(failures ? 1 : 0);
+}
+
+static int regvm_convert_alone(int i, int fail)
+{
+    char i_arg[16], fail_arg[16];
+    char *args[5];
+
+    snprintf(i_arg, sizeof(i_arg), "%d", i);
+    snprintf(fail_arg, sizeof(fail_arg), "%d", fail);
+    args[1] = "regvm-convert";
+    args[2] = i_arg;
+    args[3] = fail_arg;
+    args[4] = NULL;
+    return run_self(args);
+}
+
+static void test_regvm_convert_alloc(void)
+{
+    char src[2048], want[32];
+    int i, st, fail, bad = 0;
+
+    for (i = 0; regvm_convert_script(i, src, sizeof(src), want, sizeof(want)); i++) {
+        st = regvm_convert_alone(i, -1);
+        if (WIFEXITED(st) && WEXITSTATUS(st) == 0)
+            continue;
+        bad++;
+        if (!WIFSIGNALED(st)) {
+            CHECK(0, "script %d: the sweep failed", i);
+            continue;
+        }
+        /* which call it was */
+        for (fail = 0; fail < 1000; fail++) {
+            st = regvm_convert_alone(i, fail);
+            if (WIFSIGNALED(st))
+                break;
+        }
+        CHECK(0, "script %d, call %d of the allocator failing: the conversion ends the process (the engine aborted): %s", i, fail, src);
+    }
+    printf("unit-white: test_regvm_convert_alloc: %d scripts, %d bad\n", i, bad);
+}
+
+/* A first call whose conversion runs out of memory, where that is an error
+   (JS_SetRegvm 3, or a build with RV_OOM_FALLBACK 0 such as the one without
+   the old loop): the call ends with the uncatchable out of memory error,
+   on every entry, with no second try in that call, and the function stays
+   unconverted, so that the next call converts it. Each allocation of the
+   conversion fails in turn, for a call from C, a call of the register loop,
+   one through Function.prototype.call and, without the fallback, one from
+   the old loop. */
+static const char regvm_entry_setup[] =
+    "globalThis.f = function (x) { 'use strict'; return x + 39; };\n"
+    "globalThis.inLoop = function (t) { 'use strict'; return t ? f(3) : 0; };\n"
+    "globalThis.viaCall = function (t) { 'use strict'; return t ? f.call(null, 3) : 0; };\n"
+    "globalThis.viaOld = function (t) { with ({}) { return t ? f(3) : 0; } };\n"
+    "0";
+
+static void regvm_entry_vm(VM *v, const char *entry, int mode, JSValue *f, JSValue *e)
+{
+    JSValue g, arg = JS_FALSE;
+
+    *v = vm_new();
+    JS_SetRegvm(v->ctx, 1);
+    CHECK(eval_ok(v->ctx, regvm_entry_setup), "the setup of the entries threw");
+    g = JS_GetGlobalObject(v->ctx);
+    *f = JS_GetPropertyStr(v->ctx, g, "f");
+    *e = JS_GetPropertyStr(v->ctx, g, entry);
+    JS_FreeValue(v->ctx, g);
+    if (strcmp(entry, "f") != 0)
+        JS_FreeValue(v->ctx, JS_Call(v->ctx, *e, JS_UNDEFINED, 1, &arg));
+    JS_SetRegvm(v->ctx, mode);
+}
+
+static void test_regvm_convert_oom_entries(void)
+{
+    static const char *const entries[] = { "f", "inLoop", "viaCall", "viaOld" };
+    int nofb = !white_regvm_oom_fallback(), mode = nofb ? 1 : 3, i, k, conv, n, cases = 0;
+    VM v;
+    JSValue f, e, r, arg;
+    char *t;
+
+    /* the allocations of the conversion of f */
+    regvm_entry_vm(&v, "f", 1, &f, &e);
+    white_regvm_convert_failing(v.ctx, f, 0, 1, &conv);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, e);
+    vm_free(&v);
+    CHECK(conv >= 6, "the conversion of f makes only %d calls of the allocator", conv);
+    for (i = 0; i < (int)(sizeof(entries) / sizeof(entries[0])); i++) {
+        /* the old loop runs viaOld (with is refused): only without the
+           fallback, in mode 1, where mode 3 would stop viaOld itself */
+        if (!nofb && strcmp(entries[i], "viaOld") == 0)
+            continue;
+        for (k = 1; k <= conv; k++) {
+            regvm_entry_vm(&v, entries[i], mode, &f, &e);
+            arg = strcmp(entries[i], "f") == 0 ? JS_NewInt32(v.ctx, 3) : JS_TRUE;
+            r = white_call_failing(v.ctx, e, JS_UNDEFINED, 1, &arg, k, &n);
+            CHECK(JS_IsException(r) && JS_IsUncatchableException(v.ctx),
+                  "%s, call %d of the conversion failing: the call does not end with the uncatchable error", entries[i], k);
+            t = exception_text(v.ctx);
+            CHECK(t && strstr(t, "out of memory"), "%s, call %d failing: it throws %s, not out of memory", entries[i], k, t ? t : "nothing");
+            free(t);
+            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 0, "%s, call %d failing: f is not left unconverted (%d)", entries[i], k, JS_RegvmFuncStat(v.ctx, f, 0));
+            r = JS_Call(v.ctx, e, JS_UNDEFINED, 1, &arg);
+            t = value_text(v.ctx, r);
+            CHECK(t && strcmp(t, "42") == 0, "%s, call %d failing: the next call gives %s, not 42", entries[i], k, t ? t : "(exception)");
+            free(t);
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%s, call %d failing: the next call does not convert f", entries[i], k);
+            JS_FreeValue(v.ctx, f);
+            JS_FreeValue(v.ctx, e);
+            vm_free(&v);
+            cases++;
+        }
+    }
+    /* the call of f ends before the old loop hook (its depth is over the
+       limit) after its conversion ran out of memory: the next call of f
+       converts it, with no stale out of memory error */
+    /* the depth where inLoop runs and the call of f is one too deep: f is
+       converted there before the depth stops it */
+    arg = JS_TRUE;
+    for (k = 1; k < 16; k++) {
+        regvm_entry_vm(&v, "inLoop", mode, &f, &e);
+        JS_SetMaxCallDepth(v.rt, k);
+        r = JS_Call(v.ctx, e, JS_UNDEFINED, 1, &arg);
+        free(exception_text(v.ctx));
+        JS_FreeValue(v.ctx, r);
+        conv = JS_RegvmFuncStat(v.ctx, f, 0);
+        JS_FreeValue(v.ctx, f);
+        JS_FreeValue(v.ctx, e);
+        vm_free(&v);
+        if (!JS_IsException(r))
+            break;
+        if (conv == 1)
+            break;
+    }
+    CHECK(k < 16 && JS_IsException(r), "no depth where f is converted and its call is too deep (%d)", k);
+    regvm_entry_vm(&v, "inLoop", mode, &f, &e);
+    CHECK(JS_SetMaxCallDepth(v.rt, k) == 0, "the call depth cannot be set");
+    r = white_call_failing(v.ctx, e, JS_UNDEFINED, 1, &arg, 1, &n);
+    t = exception_text(v.ctx);
+    CHECK(JS_IsException(r) && t && strstr(t, "RangeError"), "inLoop over the depth: it throws %s, not a RangeError", t ? t : "nothing");
+    free(t);
+    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 0, "f is not left unconverted after the RangeError");
+    JS_SetMaxCallDepth(v.rt, JS_DEFAULT_MAX_CALL_DEPTH);
+    r = JS_Call(v.ctx, e, JS_UNDEFINED, 1, &arg);
+    t = value_text(v.ctx, r);
+    CHECK(t && strcmp(t, "42") == 0, "after the RangeError inLoop(true) gives %s, not 42", t ? t : "(exception)");
+    free(t);
+    free(exception_text(v.ctx));
+    JS_FreeValue(v.ctx, r);
+    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "after the RangeError the next call does not convert f");
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, e);
+    vm_free(&v);
+    /* the first resume of a generator converts its body (rv_gen_ok of
+       engine/regvm-ops-gen.h), and a call of a generator function resumes
+       it up to its first yield (js_generator_function_call): out of memory
+       there ends the call with the error, as at the entry of a call, and
+       does not run the body in the old loop. Each allocation of g(3) fails
+       in turn. */
+    {
+        int all = 0, gcases = 0, d;
+        for (k = 0; k == 0 || k <= all; k++) {
+            JSValue g, three = JS_NewInt32(NULL, 3);
+            v = vm_new();
+            JS_SetRegvm(v.ctx, 1);
+            CHECK(eval_ok(v.ctx, "globalThis.g = function* (x) { 'use strict'; yield x + 39; }; 0"),
+                  "the setup of the generator threw");
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, "g");
+            JS_FreeValue(v.ctx, g);
+            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 0, "g is converted before its first call");
+            JS_SetRegvm(v.ctx, mode);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 1, &three, k, &n);
+            if (k == 0)
+                all = n;
+            conv = JS_RegvmFuncStat(v.ctx, f, 0);
+            if (!JS_IsException(r)) {
+                /* the allocation that failed was not the conversion's */
+                CHECK(conv == 1, "g, allocation %d failing: g(3) runs with g not converted", k);
+                JS_FreeValue(v.ctx, r);
+            } else {
+                CHECK(JS_IsUncatchableException(v.ctx),
+                      "g, allocation %d failing: g(3) does not end with the uncatchable error", k);
+                t = exception_text(v.ctx);
+                CHECK(t && strstr(t, "out of memory"), "g, allocation %d failing: g(3) throws %s, not out of memory", k, t ? t : "nothing");
+                free(t);
+            }
+            if (conv == 0) {
+                /* a new generator runs and converts g, with no stale error */
+                r = JS_Eval(v.ctx, "g(3).next().value", 17, "<gen>", JS_EVAL_TYPE_GLOBAL);
+                t = value_text(v.ctx, r);
+                CHECK(t && strcmp(t, "42") == 0, "g, allocation %d failing: a new generator gives %s, not 42", k, t ? t : "(exception)");
+                free(t);
+                free(exception_text(v.ctx));
+                JS_FreeValue(v.ctx, r);
+                CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "g, allocation %d failing: the next generator does not convert g", k);
+                gcases++;
+            }
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        CHECK(gcases >= 6, "g: only %d of the %d allocations of g(3) leave g unconverted", gcases, all);
+        cases += gcases;
+        /* the resume of g(3) one call too deep: its conversion runs, then
+           the depth stops it before the old loop hook. When the conversion
+           ran out of memory, no error is left waiting for a later call */
+        for (d = 1; d < 16; d++) {
+            JSValue g, three = JS_NewInt32(NULL, 3);
+            v = vm_new();
+            JS_SetRegvm(v.ctx, 1);
+            CHECK(eval_ok(v.ctx, "globalThis.g = function* (x) { 'use strict'; yield x + 39; }; 0"),
+                  "the setup of the generator threw");
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, "g");
+            JS_FreeValue(v.ctx, g);
+            JS_SetRegvm(v.ctx, mode);
+            JS_SetMaxCallDepth(v.rt, d);
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &three);
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            conv = JS_RegvmFuncStat(v.ctx, f, 0);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+            if (!JS_IsException(r) || conv == 1)
+                break;
+        }
+        CHECK(d < 16 && JS_IsException(r) && conv == 1, "no depth where g is converted and its resume is too deep (%d)", d);
+        for (k = 1; k <= all; k++) {
+            JSValue g, three = JS_NewInt32(NULL, 3);
+            v = vm_new();
+            JS_SetRegvm(v.ctx, 1);
+            CHECK(eval_ok(v.ctx, "globalThis.g = function* (x) { 'use strict'; yield x + 39; }; 0"),
+                  "the setup of the generator threw");
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, "g");
+            JS_FreeValue(v.ctx, g);
+            JS_SetRegvm(v.ctx, mode);
+            JS_SetMaxCallDepth(v.rt, d);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 1, &three, k, &n);
+            CHECK(JS_IsException(r), "g(3) at depth %d, allocation %d failing: it does not throw", d, k);
+            free(exception_text(v.ctx));
+            CHECK(!white_regvm_oom_pending(v.ctx),
+                  "g(3) at depth %d, allocation %d failing: an out of memory error is left for a later call", d, k);
+            JS_SetMaxCallDepth(v.rt, JS_DEFAULT_MAX_CALL_DEPTH);
+            r = JS_Eval(v.ctx, "g(3).next().value", 17, "<gen>", JS_EVAL_TYPE_GLOBAL);
+            t = value_text(v.ctx, r);
+            CHECK(t && strcmp(t, "42") == 0, "g(3) at depth %d, allocation %d failing: the next generator gives %s, not 42", d, k, t ? t : "(exception)");
+            free(t);
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+    }
+    printf("unit-white: test_regvm_convert_oom_entries: %d cases\n", cases);
+}
+
+/* A function made with the register loop off (RV_OFF) and called after
+   JS_SetRegvm 2 or 3: 2 lists it, 3 makes its run an error. Without the old
+   loop (JS_NO_OLD_LOOP) there is no RV_OFF: it converts at its first call. */
+static int regvm_off_seen(void *opaque, const JSRegvmFallback *f)
+{
+    if (strcmp(f->name, "g") == 0 && strcmp(f->reason, "made with the register loop off") == 0)
+        *(int *)opaque += 1;
+    return 0;
+}
+
+static void test_regvm_made_off(void)
+{
+    VM v;
+    JSValue g, fn, r;
+    char *t;
+    int mode, seen;
+
+    for (mode = 2; mode <= 3; mode++) {
+        v = vm_new();
+        JS_SetRegvm(v.ctx, 0);
+        CHECK(eval_ok(v.ctx, "globalThis.g = function g() { return 1; }; 0"), "the setup threw");
+        g = JS_GetGlobalObject(v.ctx);
+        fn = JS_GetPropertyStr(v.ctx, g, "g");
+        JS_FreeValue(v.ctx, g);
+        JS_SetRegvm(v.ctx, mode);
+        r = JS_Call(v.ctx, fn, JS_UNDEFINED, 0, NULL);
+        t = JS_IsException(r) ? exception_text(v.ctx) : value_text(v.ctx, r);
+        seen = 0;
+        JS_RegvmFallbacks(v.rt, regvm_off_seen, &seen);
+        if (!white_regvm_oom_fallback()) {
+            CHECK(t && strcmp(t, "1") == 0 && JS_RegvmFuncStat(v.ctx, fn, 0) == 1,
+                  "mode %d, without the old loop: g made with the loop off gives %s, not 1 in register code", mode, t ? t : "nothing");
+        } else if (mode == 2) {
+            CHECK(t && strcmp(t, "1") == 0, "mode 2: g gives %s, not 1", t ? t : "nothing");
+            CHECK(seen == 1, "mode 2: g made with the loop off is not listed (%d)", seen);
+        } else {
+            CHECK(JS_IsException(r) && t && strstr(t, "regvm: g runs in the old loop: made with the register loop off"),
+                  "mode 3: g made with the loop off gives %s, not the error", t ? t : "nothing");
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, fn);
+        vm_free(&v);
+    }
+}
+
+/* With the out of memory fallback (the build with the old loop, modes 1
+   and 2), a function whose conversion ran out of memory runs in the old
+   loop, and a call after the next full collection converts it again. */
+static void test_regvm_failed_retry(void)
+{
+    VM v;
+    JSValue f, e, r, arg;
+    int conv;
+    char *t;
+
+    if (!white_regvm_oom_fallback())
+        return;
+    regvm_entry_vm(&v, "f", 1, &f, &e);
+    conv = white_regvm_convert_failing(v.ctx, f, 1, 1, &conv);
+    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == -1, "f is not left to the old loop after its conversion failed");
+    arg = JS_NewInt32(v.ctx, 3);
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+    t = value_text(v.ctx, r);
+    CHECK(t && strcmp(t, "42") == 0, "f(3) in the old loop gives %s", t ? t : "(exception)");
+    free(t);
+    JS_FreeValue(v.ctx, r);
+    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == -1, "f is converted again before a collection");
+    JS_RunGC(v.rt);
+    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+    t = value_text(v.ctx, r);
+    CHECK(t && strcmp(t, "42") == 0, "f(3) after the collection gives %s", t ? t : "(exception)");
+    free(t);
+    JS_FreeValue(v.ctx, r);
+    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "f is not converted again at a call after a collection");
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, e);
+    vm_free(&v);
+}
+
+/* Operands of code no compiler makes that index the tables of the function
+   out of their bounds, or a stack deeper than stack_size after a gosub: the
+   read check (rv_read_check) rejects each without reading out of a table,
+   and a read whose variable definitions do not match the arguments and
+   locals fails in every mode. */
+static void test_regvm_operands(void)
+{
+    enum { GOSUB, RET_UNDEF, DROP, SET_LOC_UNINIT, PUSH_CONST8, RET, FCLOSURE8, NOP, PUSH_ATOM };
+    struct { const char *what, *src; uint8_t code[16]; int len, stack_size; } cases[] = {
+        { "gosub past stack_size", "globalThis.f = function (x) { 'use strict'; return x + x + x + x + x + x + x + x; }; 0",
+          { 0, 5, 0, 0, 0, 0, 0, 0 }, 8, 0 },
+        { "a local past var_count", "globalThis.f = function (x) { 'use strict'; return x + 1; }; 0",
+          { 0, 127, 0, 0 }, 4, 1 },
+        { "a constant past cpool_count", "globalThis.f = function (x) { 'use strict'; return x + 1; }; 0",
+          { 0, 0, 0, 0 }, 4, 1 },
+        { "fclosure of a constant that is no function", "globalThis.f = function () { 'use strict'; return 1.5; }; 0",
+          { 0, 0, 0 }, 3, 1 },
+        { "push_atom_value of an index atom", "globalThis.f = function (x) { 'use strict'; return x + x + x + x; }; 0",
+          { 0, 0, 0, 0, 0, 0 }, 6, 1 },
+    };
+    static const char vsrc[] = "(function (a) { 'use strict'; return () => a; })";
+    int k, r;
+    VM v, w;
+    JSValue g, f, obj;
+    JSAtom atom;
+    uint8_t *buf;
+    size_t len;
+    char *t;
+
+    /* the code of each case, by the opcodes of the build */
+    cases[0].code[0] = white_opcode(GOSUB);
+    cases[0].code[5] = white_opcode(RET_UNDEF);
+    cases[0].code[6] = white_opcode(DROP);
+    cases[0].code[7] = white_opcode(RET_UNDEF);
+    cases[1].code[0] = white_opcode(SET_LOC_UNINIT);
+    cases[1].code[3] = white_opcode(RET_UNDEF);
+    cases[2].code[0] = white_opcode(PUSH_CONST8);
+    cases[2].code[2] = white_opcode(RET);
+    cases[2].code[3] = white_opcode(NOP);
+    cases[3].code[0] = white_opcode(FCLOSURE8);
+    cases[3].code[2] = white_opcode(RET);
+    cases[4].code[0] = white_opcode(PUSH_ATOM);
+    cases[4].code[5] = white_opcode(RET);
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        JS_SetRegvm(v.ctx, 1);
+        CHECK(eval_ok(v.ctx, cases[k].src), "%s: the setup threw", cases[k].what);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        if (k == 4) {
+            atom = JS_NewAtomUInt32(v.ctx, 5);
+            memcpy(cases[k].code + 1, &atom, 4);
+        }
+        JS_SetRegvm(v.ctx, 3);
+        if (white_set_code(v.ctx, f, cases[k].code, cases[k].len, cases[k].stack_size, 0) != 0) {
+            CHECK(0, "%s: the function is too short for the code", cases[k].what);
+        } else {
+            r = white_regvm_read_check(v.ctx, f);
+            t = exception_text(v.ctx);
+            CHECK(r == -1 && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+                  "%s: the read lets it through (%d, %s)", cases[k].what, r, t ? t : "no exception");
+            free(t);
+            white_set_code(v.ctx, f, NULL, 0, 0, 1);
+        }
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+
+    /* variable definitions that do not match: none for an argument that a
+       closure captures */
+    v = vm_new();
+    JS_SetRegvm(v.ctx, 1);
+    f = JS_Eval(v.ctx, vsrc, strlen(vsrc), "<vardefs>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(f), "the script of the variable definitions threw");
+    CHECK(white_drop_vardefs(f, 1) == 0, "the script of the variable definitions has no function");
+    buf = JS_WriteObject(v.ctx, &len, f, JS_WRITE_OBJ_BYTECODE);
+    white_drop_vardefs(f, 0);
+    CHECK(buf != NULL, "the function cannot be written");
+    JS_FreeValue(v.ctx, f);
+    if (buf) {
+        for (k = 1; k <= 3; k += 2) {
+            w = vm_new();
+            JS_SetRegvm(w.ctx, k);
+            obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+            t = exception_text(w.ctx);
+            CHECK(JS_IsException(obj) && t && strstr(t, "invalid bytecode: 0 variable definitions for 1 arguments and locals"),
+                  "mode %d: JS_ReadObject reads a function with no variable definitions (%s)", k, t ? t : "no exception");
+            free(t);
+            JS_FreeValue(w.ctx, obj);
+            vm_free(&w);
+        }
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
+/* The register stack settles (engine/regvm-entry.h): its first segment is
+   32 KiB, a deeper run steps onto next segments of twice the size, and when
+   the outermost run returns the first segment becomes one that holds what
+   the run needed, up to 256 KiB, so that the same run again steps onto no
+   next segment. The stack counts in the memory size but not toward the
+   threshold of the collector. In modes 1 and 3. */
+static const char regvm_stack_setup[] =
+    "globalThis.rec = function rec(n) { 'use strict';\n"
+    "  var a = n + 1, b = n + 2, c = n + 3, d = n + 4, e = n + 5, f = n + 6, g = n + 7, h = n + 8;\n"
+    "  if (n === 0) return a + b + c + d + e + f + g + h;\n"
+    "  return rec(n - 1) + 1;\n"
+    "}; 0";
+
+/* rec(n) of the VM v, and its answer checked */
+static void regvm_stack_rec(VM *v, JSValueConst rec, int n)
+{
+    JSValue arg = JS_NewInt32(v->ctx, n), r = JS_Call(v->ctx, rec, JS_UNDEFINED, 1, &arg);
+    char *t = value_text(v->ctx, r), want[32];
+
+    snprintf(want, sizeof(want), "%d", 36 + n);
+    CHECK(t && strcmp(t, want) == 0, "rec(%d) gives %s, not %s", n, t ? t : "(exception)", want);
+    free(t);
+    free(exception_text(v->ctx));
+    JS_FreeValue(v->ctx, r);
+}
+
+static JSValue regvm_stack_vm(VM *v, int mode)
+{
+    JSValue g, rec;
+
+    *v = vm_new();
+    JS_SetRegvm(v->ctx, mode);
+    CHECK(eval_ok(v->ctx, regvm_stack_setup), "the setup of rec threw");
+    g = JS_GetGlobalObject(v->ctx);
+    rec = JS_GetPropertyStr(v->ctx, g, "rec");
+    JS_FreeValue(v->ctx, g);
+    return rec;
+}
+
+/* the depth of rec whose frames first need a next segment, and the slots
+   of the first segment that run settles at */
+static int regvm_stack_edge(int mode, long *settled)
+{
+    VM v;
+    JSValue rec = regvm_stack_vm(&v, mode);
+    long st[4];
+    int n, made;
+
+    for (n = 1; n < 4000; n++) {
+        made = JS_RegvmStat(v.ctx, 7);
+        regvm_stack_rec(&v, rec, n);
+        if (JS_RegvmStat(v.ctx, 7) != made)
+            break;
+    }
+    white_regvm_stack(v.ctx, st);
+    *settled = st[0];
+    JS_FreeValue(v.ctx, rec);
+    vm_free(&v);
+    return n;
+}
+
+static void test_regvm_stack(void)
+{
+    VM v;
+    JSValue rec;
+    long st[4], settled;
+    int mode, edge, made;
+    size_t th, n;
+
+    for (mode = 1; mode <= 3; mode += 2) {
+        /* a new VM: a first segment of 32 KiB, counted in the memory size
+           and not toward the threshold of the collector */
+        rec = regvm_stack_vm(&v, mode);
+        CHECK(white_regvm_stack(v.ctx, st) == 0 && st[0] == 2048 && st[1] == 1 && st[3] == 0,
+              "mode %d: a new VM has a stack of %ld slots in %ld segments", mode, st[0], st[1]);
+        CHECK(st[2] >= 32768 && JS_GetMemorySize(v.rt) > (size_t)st[2],
+              "mode %d: the stack takes %ld bytes of the %zu counted", mode, st[2], JS_GetMemorySize(v.rt));
+        th = JS_GetGCThreshold(v.rt);
+        /* grow and settle: a run that needs more than 32 KiB steps onto a
+           next segment once, then the first segment holds it */
+        regvm_stack_rec(&v, rec, 300);
+        white_regvm_stack(v.ctx, st);
+        CHECK(st[0] > 2048 && st[0] <= 16384 && st[1] == 1 && st[3] == 0,
+              "mode %d: after rec(300) the stack is %ld slots in %ld segments, hw %ld", mode, st[0], st[1], st[3]);
+        made = JS_RegvmStat(v.ctx, 7);
+        regvm_stack_rec(&v, rec, 300);
+        CHECK(JS_RegvmStat(v.ctx, 7) == made, "mode %d: rec(300) again steps onto a next segment", mode);
+        /* past 256 KiB: next segments on the way and freed on the way back,
+           the first one settled at 256 KiB, one spare at most */
+        regvm_stack_rec(&v, rec, 4000);
+        white_regvm_stack(v.ctx, st);
+        CHECK(st[0] == 16384 && st[1] <= 2 && st[3] == 0,
+              "mode %d: after rec(4000) the stack is %ld slots in %ld segments, hw %ld", mode, st[0], st[1], st[3]);
+        regvm_stack_rec(&v, rec, 4000);
+        white_regvm_stack(v.ctx, st);
+        CHECK(st[0] == 16384 && st[1] <= 2, "mode %d: rec(4000) again leaves %ld slots in %ld segments", mode, st[0], st[1]);
+        /* the stack of 256 KiB and more ran no collection of its own */
+        CHECK(JS_GetGCThreshold(v.rt) == th, "mode %d: the stack moved the threshold of the collector from %zu to %zu",
+              mode, th, JS_GetGCThreshold(v.rt));
+        JS_RunGC(v.rt);
+        white_regvm_stack(v.ctx, st);
+        n = JS_GetMemorySize(v.rt) - st[2];
+        CHECK(JS_GetGCThreshold(v.rt) == n + (n >> 1), "mode %d: after a collection the threshold is %zu, not 1.5 times the %zu that is not the stack",
+              mode, JS_GetGCThreshold(v.rt), n);
+        JS_FreeValue(v.ctx, rec);
+        vm_free(&v);
+    }
+
+    /* a settle whose segment cannot be allocated: each allocation of a run
+       that steps onto a next segment fails in turn. The run gives its
+       answer or the uncatchable out of memory error, the stack stays
+       whole, and the next run settles it. */
+    edge = regvm_stack_edge(1, &settled);
+    CHECK(edge > 10 && edge < 4000, "rec never steps onto a next segment (%d)", edge);
+    rec = regvm_stack_vm(&v, 1);
+    regvm_stack_rec(&v, rec, 1);
+    {
+        JSValue arg = JS_NewInt32(v.ctx, edge), r;
+        r = white_call_failing(v.ctx, rec, JS_UNDEFINED, 1, &arg, 0, &made);
+        JS_FreeValue(v.ctx, r);
+    }
+    JS_FreeValue(v.ctx, rec);
+    vm_free(&v);
+    CHECK(made >= 2, "rec(%d) makes %d calls of the allocator", edge, made);
+    for (mode = 1; mode <= made; mode++) {
+        JSValue arg, r;
+        int k;
+        rec = regvm_stack_vm(&v, 1);
+        regvm_stack_rec(&v, rec, 1); /* converted, so that only the run fails */
+        arg = JS_NewInt32(v.ctx, edge);
+        r = white_call_failing(v.ctx, rec, JS_UNDEFINED, 1, &arg, mode, &k);
+        if (JS_IsException(r)) {
+            char *t = exception_text(v.ctx);
+            CHECK(t && strstr(t, "out of memory"), "rec(%d), call %d failing: it throws %s", edge, mode, t ? t : "nothing");
+            free(t);
+        }
+        JS_FreeValue(v.ctx, r);
+        CHECK(white_regvm_stack(v.ctx, st) == 0 && st[1] >= 1 && (st[0] == 2048 || st[3] == 0),
+              "rec(%d), call %d failing: the stack is %ld slots in %ld segments, hw %ld", edge, mode, st[0], st[1], st[3]);
+        regvm_stack_rec(&v, rec, edge);
+        white_regvm_stack(v.ctx, st);
+        CHECK(st[0] == settled && st[1] == 1 && st[3] == 0,
+              "rec(%d), call %d failing: the next run leaves %ld slots in %ld segments, hw %ld, not %ld slots", edge, mode, st[0], st[1], st[3], settled);
+        JS_FreeValue(v.ctx, rec);
+        vm_free(&v);
+    }
+    printf("unit-white: test_regvm_stack: rec steps onto a next segment at %d, %d allocations swept\n", edge, made);
+}
+
+/* Code that no compiler makes, read by JS_ReadObject (rv_read_check of
+   engine/regvm-entry.h): with no fallback (JS_SetRegvm 3, and the build
+   without the old loop) the read rejects it with a SyntaxError, one kind
+   at a time (white_crafted), and lets the code the compiler made through.
+   With the fallback the old loop could run it and the read lets it be.
+   Then the whole way: the bytes written and read back in another VM, the
+   check skipped with JS_READ_OBJ_POLLS_CHECKED. */
+static void test_regvm_crafted(void)
+{
+    static const struct { const char *src; const char *what; } kinds[] = {
+        { "globalThis.f = function () { 'use strict'; return 1; }; 0", "pops more than the stack holds" },
+        { "globalThis.f = function () { 'use strict'; return 1; }; 0", "a stack over stack_size" },
+        { "globalThis.f = function (x) { 'use strict'; return x ? 1 : 2; }; 0", "paths that meet with different depths" },
+        { "globalThis.f = function (x, y) { 'use strict'; return x + y; }; 0", "nip_catch with no catch" },
+        { "globalThis.f = function (a) { return arguments[0] + a; }; 0", "mapped arguments with no closure state" },
+    };
+    static const char script[] = "'use strict'; var x = 3; x ? 1 : 2;";
+    int k, r, fb = white_regvm_oom_fallback();
+    VM v, w;
+    JSValue g, f, obj;
+    uint8_t *buf;
+    size_t len;
+    char *t;
+
+    for (k = 0; k < (int)(sizeof(kinds) / sizeof(kinds[0])); k++) {
+        v = vm_new();
+        JS_SetRegvm(v.ctx, 1);
+        CHECK(eval_ok(v.ctx, kinds[k].src), "kind %d: the setup threw", k);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        JS_SetRegvm(v.ctx, 3);
+        CHECK(white_regvm_read_check(v.ctx, f) == 0, "%s: the code the compiler made does not pass", kinds[k].what);
+        free(exception_text(v.ctx));
+        if (white_crafted(v.ctx, f, k, 0) != 0) {
+            CHECK(0, "%s: the function has no place for it", kinds[k].what);
+        } else {
+            r = white_regvm_read_check(v.ctx, f);
+            t = exception_text(v.ctx);
+            CHECK(r == -1 && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+                  "%s: the read lets it through (%d, %s)", kinds[k].what, r, t ? t : "no exception");
+            free(t);
+            if (fb) {
+                JS_SetRegvm(v.ctx, 1);
+                CHECK(white_regvm_read_check(v.ctx, f) == 0, "%s: with the old loop to run it, the read rejects it", kinds[k].what);
+                free(exception_text(v.ctx));
+            }
+            white_crafted(v.ctx, f, k, 1);
+        }
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+
+    /* the whole way: written, then read in another VM */
+    v = vm_new();
+    JS_SetRegvm(v.ctx, 1);
+    obj = JS_Eval(v.ctx, script, strlen(script), "<crafted>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(obj), "the crafted script does not compile");
+    CHECK(white_crafted(v.ctx, obj, 2, 0) == 0, "the crafted script has no push_2");
+    buf = JS_WriteObject(v.ctx, &len, obj, JS_WRITE_OBJ_BYTECODE);
+    white_crafted(v.ctx, obj, 2, 1);
+    CHECK(buf != NULL, "the crafted script cannot be written");
+    JS_FreeValue(v.ctx, obj);
+    if (buf) {
+        w = vm_new();
+        JS_SetRegvm(w.ctx, 3);
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        t = exception_text(w.ctx);
+        CHECK(JS_IsException(obj) && t && strstr(t, "invalid bytecode: code no compiler makes"),
+              "JS_ReadObject in mode 3 reads the crafted script (%s)", t ? t : "no exception");
+        free(t);
+        JS_FreeValue(w.ctx, obj);
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE | JS_READ_OBJ_POLLS_CHECKED);
+        CHECK(!JS_IsException(obj), "JS_ReadObject with JS_READ_OBJ_POLLS_CHECKED checks the code again");
+        free(exception_text(w.ctx));
+        JS_FreeValue(w.ctx, obj);
+        if (fb) {
+            JS_SetRegvm(w.ctx, 1);
+            obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+            CHECK(!JS_IsException(obj), "JS_ReadObject in mode 1 rejects the crafted script");
+            free(exception_text(w.ctx));
+            JS_FreeValue(w.ctx, obj);
+        }
+        vm_free(&w);
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
+/* The functions of fns run in the register loop, with a pcmap entry at
+   every instruction that can fail for want of memory: run() is called with
+   each call of the allocator failing in turn, and gives its answer or the
+   out of memory error. An instruction that failed with no entry would end
+   the process in the unwinding (rv_unwind). */
+static void test_regvm_run_alloc(void)
+{
+    static const char setup[] =
+        "(function () { 'use strict';\n"
+        "  function mk(i) { return { a: i, b: [i, i + 1], s: 'k' + i }; }\n"
+        "  function sum(o) { var t = 0, v; for (v of o.b) t = t + v; return t + o.a; }\n"
+        "  function clos(i) { var c = i * 2; return function () { return c + i; }; }\n"
+        "  function thr(i) { try { if (i > 1) throw new Error('e' + i); return i; } catch (e) { return e.message.length; } finally { i = i + 1; } }\n"
+        "  function keys(o) { var n = 0, k; for (k in o) n = n + k.length; return n; }\n"
+        "  function num(i) { return (i / 2 + 0.25) * 3 - i % 2 + (i << 2) + -i + 10000000000 * i; }\n"
+        "  function str(o, i) { return (o.s + i + typeof i).length + (o.s === 'k1' ? 1 : 0); }\n"
+        "  function run() { var out = 0, i, o; for (i = 0; i < 4; i++) { o = mk(i); out = out + sum(o) + clos(i)() + thr(i) + keys(o) + num(i) + str(o, i); } return out; }\n"
+        "  globalThis.run = run;\n"
+        "  globalThis.fns = [mk, sum, clos, thr, keys, num, str, run];\n"
+        "})(); 0";
+    VM v = vm_new();
+    int fail, n = 0, ooms = 0, i;
+    JSValue f, g, fns;
+    char *want = NULL;
+
+    JS_SetRegvm(v.ctx, 1);
+    CHECK(eval_ok(v.ctx, setup), "the setup threw");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "run");
+    fns = JS_GetPropertyStr(v.ctx, g, "fns");
+    JS_FreeValue(v.ctx, g);
+    /* the first call converts them, the second runs them in the register loop */
+    for (i = 0; i < 2; i++)
+        JS_FreeValue(v.ctx, JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL));
+    for (i = 0; i < 8; i++) {
+        JSValue fn = JS_GetPropertyUint32(v.ctx, fns, i);
+
+        CHECK(JS_RegvmFuncStat(v.ctx, fn, 0) == 1, "function %d of fns has no register code (%d, op %d at %d), so the sweep does not test it",
+              i, JS_RegvmFuncStat(v.ctx, fn, 0), JS_RegvmFuncStat(v.ctx, fn, 2), JS_RegvmFuncStat(v.ctx, fn, 3));
+        JS_FreeValue(v.ctx, fn);
+    }
+    JS_FreeValue(v.ctx, fns);
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        int made;
+        JSValue r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+
+        if (fail == 0) {
+            n = made;
+            want = value_text(v.ctx, r);
+            CHECK(want != NULL, "run() threw");
+        } else if (JS_IsException(r)) {
+            CHECK(JS_IsUncatchableException(v.ctx), "call %d failing: an exception that is not out of memory", fail);
+            free(exception_text(v.ctx));
+            ooms++;
+        } else {
+            char *t = value_text(v.ctx, r);
+
+            CHECK(t && want && strcmp(t, want) == 0, "call %d failing: %s, not %s", fail, t ? t : "(no text)", want ? want : "?");
+            free(t);
+        }
+        JS_FreeValue(v.ctx, r);
+    }
+    CHECK(n > 40 && ooms > 40, "only %d of %d calls failed the run", ooms, n);
+    free(want);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
+/* An OP_ret whose value is no return address (code read with JS_ReadObject
+   can have one anywhere) throws and leaves the value where it is, on the
+   stack of the old loop or in its temp of the register loop, for the
+   unwinding to free. The function here makes an object and ends with OP_ret
+   in place of its OP_return: every call throws, in the old loop (the first
+   call, which converts the function) and in the register loop (the others),
+   and none keeps the object. */
+static void test_regvm_bad_ret(void)
+{
+    static const char src[] = "(function (x) { 'use strict'; var a = x + 1; a = a + 2; a = a + 3; return {}; })";
+    VM v = vm_new();
+    JSValue top, fun = JS_UNDEFINED, r;
+    JSMemoryUsage mu;
+    const uint8_t *code, *at;
+    uint8_t *buf;
+    size_t size;
+    int64_t objs[4];
+    char *t;
+    int len, i;
+
+    JS_SetRegvm(v.ctx, 1);
+    CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile the function");
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    at = buf ? memmem(buf, size, code, len) : NULL;
+    CHECK(at != NULL, "the code of the function in what JS_WriteObject wrote");
+    JS_FreeValue(v.ctx, top);
+    if (at) {
+        buf[at - buf + len - 1] = white_op(W_RET);
+        top = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        CHECK(!JS_IsException(top), "read the function with OP_ret");
+        fun = JS_EvalFunction(v.ctx, top);
+        CHECK(JS_IsFunction(v.ctx, fun), "the script gives the function");
+        for (i = 0; i < 4; i++) {
+            r = JS_Call(v.ctx, fun, JS_UNDEFINED, 0, NULL);
+            CHECK(JS_IsException(r), "call %d: no exception", i);
+            JS_FreeValue(v.ctx, r);
+            t = exception_text(v.ctx);
+            CHECK(t && strstr(t, "InternalError: invalid ret value"), "call %d: %s", i, t ? t : "(none)");
+            free(t);
+            JS_RunGC(v.rt);
+            JS_ComputeMemoryUsage(v.rt, &mu);
+            objs[i] = mu.obj_count;
+            if (i == 0)
+                CHECK(JS_RegvmFuncStat(v.ctx, fun, 0) == 1, "the function has no register code (%d), so the calls after test nothing",
+                      JS_RegvmFuncStat(v.ctx, fun, 0));
+            else
+                CHECK(objs[i] == objs[0], "call %d, in the register loop: %lld objects, %lld after the first call: the object of the OP_ret was kept",
+                      i, (long long)objs[i], (long long)objs[0]);
+        }
+    }
+    js_free(v.ctx, buf);
+    JS_FreeValue(v.ctx, fun);
+    /* a leak ends the process when the runtime is freed: the checks first */
+    fflush(stdout);
+    vm_free(&v);
+}
+
+/* the result of a call as text: the value, or the exception */
+static char *call_text(JSContext *ctx, JSValueConst f)
+{
+    JSValue r = JS_Call(ctx, f, JS_UNDEFINED, 0, NULL);
+    char *t = JS_IsException(r) ? exception_text(ctx) : value_text(ctx, r);
+
+    JS_FreeValue(ctx, r);
+    return t;
+}
+
+/* A return address is an int that code read with JS_ReadObject can make
+   and read as any other: OP_ret takes the ints the old loop takes (the end
+   of an old gosub) and refuses the others, and a return address read as a
+   value is the one the old loop makes, in the register loop too. Each
+   function is the code of src with nops in front of one of the codes
+   below: the first call runs in the old loop and converts it, the next ones
+   run in the register loop, and each must give what the first gave.
+
+     gosub L; push_i16 7; return; L: drop; push_i16 val; ret
+     gosub L; push_i16 7; return; L: return */
+static void test_regvm_ret_value(void)
+{
+    static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
+    VM v = vm_new();
+    JSValue top, fun;
+    const uint8_t *code, *at;
+    uint8_t *buf;
+    size_t size;
+    int len, val, i, g, tail, taken = 0;
+    int16_t v16;
+    Code c;
+    char *first, *t;
+
+    JS_SetRegvm(v.ctx, 1);
+    CHECK(code_of(v.ctx, src, &top, &code, &len) == 0, "compile the function");
+    buf = JS_WriteObject(v.ctx, &size, top, JS_WRITE_OBJ_BYTECODE);
+    at = buf ? memmem(buf, size, code, len) : NULL;
+    CHECK(at != NULL && len >= 14, "the code of the function in what JS_WriteObject wrote (%d bytes)", len);
+    JS_FreeValue(v.ctx, top);
+    for (val = -2; at && val <= len + 12; val++) {
+        /* val len + 12 is the second code */
+        tail = val == len + 12 ? 10 : 14;
+        c = (Code){{0}, 0};
+        op_n(&c, W_NOP, len - tail);
+        g = jump(&c, W_GOSUB);
+        c.b[c.n++] = white_op(W_PUSH_I16);
+        v16 = 7;
+        memcpy(c.b + c.n, &v16, 2);
+        c.n += 2;
+        op_n(&c, W_RETURN, 1);
+        set_target(&c, g, c.n);
+        if (tail == 14) {
+            op_n(&c, W_DROP, 1);
+            c.b[c.n++] = white_op(W_PUSH_I16);
+            v16 = val;
+            memcpy(c.b + c.n, &v16, 2);
+            c.n += 2;
+            op_n(&c, W_RET, 1);
+        } else {
+            op_n(&c, W_RETURN, 1);
+        }
+        CHECK(c.n == len, "the code of val %d has %d bytes, not %d", val, c.n, len);
+        memcpy(buf + (at - buf), c.b, len);
+        top = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        CHECK(!JS_IsException(top), "val %d: read the function", val);
+        fun = JS_EvalFunction(v.ctx, top);
+        CHECK(JS_IsFunction(v.ctx, fun), "val %d: the script gives the function", val);
+        first = call_text(v.ctx, fun);
+        CHECK(JS_RegvmFuncStat(v.ctx, fun, 0) == 1, "val %d: the function has no register code (%d), so the calls after test nothing",
+              val, JS_RegvmFuncStat(v.ctx, fun, 0));
+        if (first && strcmp(first, "7") == 0)
+            taken++;
+        for (i = 0; i < 2; i++) {
+            t = call_text(v.ctx, fun);
+            CHECK(t && first && strcmp(t, first) == 0, "val %d, call %d in the register loop: %s, the old loop %s",
+                  val, i, t ? t : "(none)", first ? first : "(none)");
+            free(t);
+        }
+        free(first);
+        JS_FreeValue(v.ctx, fun);
+    }
+    /* the one val of the old return address, and no other */
+    CHECK(taken == 1, "the old loop took %d values", taken);
+    js_free(v.ctx, buf);
+    fflush(stdout);
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -4543,6 +5552,10 @@ int main(int argc, char **argv)
     /* one case of test_compile_one_failure, in a process of its own */
     if (argc == 6 && strcmp(argv[1], "compile-one") == 0)
         compile_one(atoi(argv[2]), (size_t)strtoul(argv[3], NULL, 10), atoi(argv[4]), argv[5]);
+    /* the sweep of one script of test_regvm_convert_alloc, in a process of
+       its own */
+    if (argc == 4 && strcmp(argv[1], "regvm-convert") == 0)
+        regvm_convert_one(atoi(argv[2]), atoi(argv[3]));
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
@@ -4601,6 +5614,16 @@ int main(int argc, char **argv)
     test_compile_one_failure(1);
     test_emit_tables();
     test_emit_buffer();
+    test_regvm_convert_alloc();
+    test_regvm_convert_oom_entries();
+    test_regvm_failed_retry();
+    test_regvm_made_off();
+    test_regvm_crafted();
+    test_regvm_stack();
+    test_regvm_operands();
+    test_regvm_run_alloc();
+    test_regvm_bad_ret();
+    test_regvm_ret_value();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

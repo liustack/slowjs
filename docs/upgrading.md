@@ -39,6 +39,8 @@ For each commit:
 5. At the end of a batch, run `make check-full`. The known test262 errors (33) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
 6. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [changes/upstream-commits.md](changes/upstream-commits.md), and a line to both changelogs when users can see it.
 
+The register loop (`engine/regvm.h`) runs the old handlers of the window ops from the same source: in `JS_CallInternal` the body of each is the macro `OP_BODY_<op>` defined at its `CASE`, so a change upstream makes to that body reaches both loops. A few functions those bodies call have a copy in `engine/regvm-ops-window.h`, each naming its original, because a second caller would change the machine code of `JS_CallInternal`. When a commit changes one of those functions, change its copy the same way.
+
 To move test262 to a newer revision, change the commit and the SHA-256 at the top of `engine/test/test262.sh`, check that `engine/test/test262.diff` (upstream QuickJS's patch to test262) still applies, run `engine/test/test262.sh`, and replace `engine/test/test262_errors.txt` with the errors it reports after reading each new one.
 
 ## Moving to a newer Go

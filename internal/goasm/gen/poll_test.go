@@ -66,7 +66,9 @@ func TestCheckDispatchCopies(t *testing.T) {
 // around one that runs in chunks. interp is an interpreter that counts its
 // bytecode as JS_CallInternal does: marks at its entry and in the handler of
 // a jump back, and a dispatch, a computed goto through ops. One of its
-// handlers calls a function that ticks. plain has a computed goto too, with no
+// handlers calls a function that ticks. unwind has a mark outside an
+// interpreter, in a loop that keeps the count in a register, as the catch of
+// rv_unwind (engine/regvm-run.h) has. plain has a computed goto too, with no
 // marks.
 const pollIR = `declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @goasm_poll_entry(i32)
@@ -225,6 +227,26 @@ done:
   ret i64 %n
 }
 
+define void @unwind(i64 %n) {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
+  call void @ext(i64 %i)
+  %z = icmp eq i64 %i, 3
+  br i1 %z, label %catch, label %next
+catch:
+  call void @goasm_poll_count(i32 32)
+  call void @ext(i64 %n)
+  br label %next
+next:
+  %i1 = add i64 %i, 1
+  %c = icmp ult i64 %i1, %n
+  br i1 %c, label %loop, label %exit
+exit:
+  ret void
+}
+
 define i64 @plain(ptr %pc) {
 entry:
   br label %dispatch
@@ -303,7 +325,7 @@ func TestPassPolls(t *testing.T) {
 	}
 	for name, want := range map[string]bool{"ext": false, "sum": true, "short": false, "calls": true, "forever": true,
 		"hot": true, "cold": true, "nest": true, "copy": false, "copysmall": false, "goasm_chunked_memcpy": true, "interp": true,
-		"plain": true} {
+		"plain": true, "unwind": true} {
 		if got := polls(name); got != want {
 			t.Errorf("%s calls host_poll: %v, want %v", name, got, want)
 		}
@@ -324,7 +346,7 @@ func TestPassPolls(t *testing.T) {
 		t.Errorf("interp ticks 32 %d times, want 2 (its entry and its jump back):\n%s", n, funcs["interp"])
 	}
 	for name, want := range map[string][2]int{"sum": {0, 1}, "calls": {1, 0}, "hot": {0, 1}, "cold": {1, 0}, "nest": {2, 0},
-		"interp": {0, 2}, "plain": {1, 0}} {
+		"interp": {0, 2}, "plain": {1, 0}, "unwind": {2, 0}} {
 		if reg, mem := tickPlaces(funcs[name]); reg != want[0] || mem != want[1] {
 			t.Errorf("%s ticks %d times in a register and %d in memory, want %d and %d:\n%s", name, reg, mem, want[0], want[1], funcs[name])
 		}

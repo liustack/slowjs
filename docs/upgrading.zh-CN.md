@@ -39,6 +39,8 @@ git fetch quickjs
 5. 一批改动做完时，运行 `make check-full`。test262 的已知错误（33 个）必须逐行保持不变，除非这个提交修好了其中一些。那就更新 `engine/test/test262_errors.txt` 并说明。
 6. 按 [performance.md](performance.zh-CN.md#数字是怎么测的) 所说测量它，在 [changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 里加一行，用户能看到时在两份更新记录里各加一行。
 
+寄存器循环（`engine/regvm.h`）里的窗口操作和旧处理函数共用一份源码：在 `JS_CallInternal` 里，这些处理函数的主体是在各自 `CASE` 处定义的宏 `OP_BODY_<op>`，上游对主体的修改两个循环都会用到。这些主体调用的几个函数在 `engine/regvm-ops-window.h` 里有一份副本，每份都写明了原函数，因为多一个调用者会改变 `JS_CallInternal` 的机器码。提交改动了其中某个函数时，用同样的方式改它的副本。
+
 要把 test262 换到更新的修订，改 `engine/test/test262.sh` 开头的提交和 SHA-256，检查 `engine/test/test262.diff`（上游 QuickJS 给 test262 打的补丁）还能打上，运行 `engine/test/test262.sh`，读过每个新错误之后，用它报告的错误替换 `engine/test/test262_errors.txt`。
 
 ## 换用更新的 Go

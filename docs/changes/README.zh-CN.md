@@ -33,6 +33,8 @@ read_when:
 | 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
 | `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
 | 以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完。字节码版本 8 | Unreleased | [c-engine.md](c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case) |
+| 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | Unreleased | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
+| 不带旧循环构建（`JS_NO_OLD_LOOP`）时，寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#去掉旧循环后一个函数的上限) |
 
 ## 上游 QuickJS 的提交
 
@@ -129,6 +131,7 @@ read_when:
 | --- | --- | --- |
 | 错误的 stack 在第一次读取时才格式化 | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) |
 | 无限递归抛出 RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#无限递归抛出-rangeerror) |
+| 带展开参数的 new 会说出被调用的不是构造函数 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数) |
 
 ## 时间和 Intl
 
@@ -172,6 +175,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | 搜索直接跳到字符串所在的位置 | v0.27.3 | [strings.md](strings.zh-CN.md#搜索直接跳到字符串所在的位置) |
+| symbol 有自己的字符串 | Unreleased | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
 
 ## JSON
 
@@ -209,6 +213,7 @@ read_when:
 | 内置类的对象找到它们原型的空 shape | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内置类的对象找到它们原型的空-shape) |
 | 通过 shape 由哪个 shape 长出来来找到它 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#通过-shape-由哪个-shape-长出来来找到它) |
 | 单独死去的对象立刻释放 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#单独死去的对象立刻释放) |
+| defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
 
 ## 内存
 

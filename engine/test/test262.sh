@@ -6,7 +6,7 @@
 #
 # Run test262 on the C tree with the native test host.
 #
-#   engine/test/test262.sh [-m MODE] [-T THREADS] [-w WORKDIR] [-z ARCHIVE]
+#   engine/test/test262.sh [-m MODE] [-T THREADS] [-w WORKDIR] [-z ARCHIVE] [-p PATH]...
 #
 # MODE is a mode of build.sh (default plain), and the host must be built
 # already: engine/test/build.sh MODE. THREADS is the number of runner threads
@@ -14,6 +14,9 @@
 # test262 with test262.diff applied, the configuration and the results:
 # run.log, and test262_errors.txt, the errors this run found. ARCHIVE is a copy
 # of the pinned test262 archive, which is downloaded when it is not given.
+# PATH, a folder or file under test262/test such as built-ins/Array, runs
+# only the tests there (-p again adds another), and the errors found are then
+# compared with the known errors under those paths only.
 #
 # The errors found are compared, line by line, with the 33 known errors in
 # engine/test/test262_errors.txt and the script exits 0 only when they are the
@@ -30,13 +33,15 @@ mode=plain
 threads=2
 work=
 archive=
-while getopts m:T:w:z: opt; do
+paths=
+while getopts m:T:w:z:p: opt; do
 	case $opt in
 	m) mode=$OPTARG ;;
 	T) threads=$OPTARG ;;
 	w) work=$OPTARG ;;
 	z) archive=$OPTARG ;;
-	*) echo "usage: test262.sh [-m MODE] [-T THREADS] [-w WORKDIR] [-z ARCHIVE]" >&2; exit 2 ;;
+	p) paths="$paths ${OPTARG%/}" ;;
+	*) echo "usage: test262.sh [-m MODE] [-T THREADS] [-w WORKDIR] [-z ARCHIVE] [-p PATH]..." >&2; exit 2 ;;
 	esac
 done
 [ -n "$work" ] || work=$here/out/test262-$mode
@@ -77,7 +82,13 @@ ASAN_OPTIONS=exitcode=86${ASAN_OPTIONS:+:$ASAN_OPTIONS}
 UBSAN_OPTIONS=exitcode=86${UBSAN_OPTIONS:+:$UBSAN_OPTIONS}
 export ASAN_OPTIONS UBSAN_OPTIONS
 status=0
-"$bin" -v -T "$threads" -c test262.conf -a -u > "$work/run.log" 2>&1 || status=$?
+dirs=
+for p in $paths; do
+	[ -e "test262/test/$p" ] || { echo "test262.sh: no test262/test/$p" >&2; exit 2; }
+	dirs="$dirs -d test262/test/$p"
+done
+# shellcheck disable=SC2086 # dirs is a list of options
+"$bin" -v -T "$threads" -c test262.conf -a -u $dirs > "$work/run.log" 2>&1 || status=$?
 cp "$run/test262_errors.txt" "$work/test262_errors.txt"
 
 grep '^Result: ' "$work/run.log" || { echo "test262.sh: no result line, see $work/run.log (exit status $status)" >&2; exit 1; }
@@ -87,7 +98,17 @@ case $status in
 0|1) ;;
 *) echo "test262.sh: the runner exited with status $status, see $work/run.log" >&2; exit 1 ;;
 esac
-sort "$here/test262_errors.txt" > "$work/known.sorted"
+# with -p, the known errors under the paths run only
+awk -v paths="$paths" '
+	BEGIN { n = split(paths, p, " ") }
+	n == 0 { print; next }
+	{
+		for (i = 1; i <= n; i++) {
+			s = "test262/test/" p[i]
+			c = substr($0, length(s) + 1, 1)
+			if (index($0, s) == 1 && (c == "/" || c == ":")) { print; next }
+		}
+	}' "$here/test262_errors.txt" | sort > "$work/known.sorted"
 sort "$work/test262_errors.txt" > "$work/found.sorted"
 if diff "$work/known.sorted" "$work/found.sorted" > "$work/errors.diff"; then
 	echo "errors: the $(wc -l < "$work/found.sorted" | tr -d ' ') errors found are the known errors of engine/test/test262_errors.txt"

@@ -30,3 +30,13 @@ read_when:
 发布版本：v0.26.6。
 
 无限递归会抛出 `RangeError: Maximum call stack size exceeded`，措辞和 V8 一样，默认设置下脚本可以捕获它。`SetMaxStackSize` 设置调用最多嵌套多深：默认 5000，最大 10000（tifa 示例商店一个页面的 React 渲染需要约 470）。解析器和 `JSON.parse` 对嵌套过深也报同样的 `RangeError`，和 V8 的解析器一样，嵌套过深的正则表达式则编译失败，报 `SyntaxError: stack overflow`。深度怎么计算、每种形式能嵌套多深，见 [c-engine.md](c-engine.zh-CN.md#调用深度与-c-递归)。
+
+## 带展开参数的 new 会说出被调用的不是构造函数
+
+发布版本：Unreleased。
+
+对不是函数的对象做 `new C(...args)`，比如 `{}`、数组或对象的 proxy，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 24 说的一致。原来它抛 `TypeError: not a function`。不是构造函数的函数，比如箭头函数或方法，带展开参数时本来就抛 `not a constructor`，原始值不管带不带展开参数都抛 `not a function`，和原来一样。
+
+为什么安全：带展开参数的 `new` 和 `super(...args)` 走 `OP_apply`，它以 magic 1 调用 `js_function_apply`。这个函数原来先检查被调用的是不是函数，这是调用才做的检查，然后才调用 `JS_CallConstructorInternal`。现在它把检查留给 `JS_CallConstructorInternal`，不带展开参数的 `new` 调的也是它：不是构造函数的对象抛 `not a constructor`，原始值抛 `not a function`。`Function.prototype.apply`（magic 0）和 `Reflect.apply`（magic 2）保留这个检查。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_function_apply`）。`engine/test/compare/new_spread_not_ctor.js` 对不是构造函数的对象、函数和原始值做带和不带展开参数的 `new`，还对不是构造函数的父类做 `super()`，它的结果文件就是 Node 24 打印的内容。在改动之前的引擎上，它有三行不一样。

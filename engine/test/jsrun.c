@@ -8,7 +8,7 @@
 /* jsrun runs scripts on the C tree, so that compare.sh can compare what they
    print with the files kept in the repository.
 
-     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] FILE...
+     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] [-regvm|-regvm-why|-regvm-strict] FILE...
 
    Each file runs as a global script in a runtime and a context of its own,
    then the jobs it queued run. jsrun prints "== " and the name of the file,
@@ -39,6 +39,19 @@
    joins into one opcode left apart, and every check of the temporal dead
    zone kept (JS_SetFusedOps).
 
+   -regvm runs the calls JS_Call makes with the register loop on
+   (JS_SetRegvm, engine/regvm.h), and calls a completion value that is a
+   function with JS_Call itself. It prints on stderr a line "regvm: after
+   the call" with the functions converted and refused and the last refusal
+   (JS_RegvmStat 3 and 4: the opcode, or -1 and a mask of why the whole
+   function was, at the offset) once that call returns, and a line "regvm:"
+   with the same at the end, when the formatting script has run too.
+
+   -regvm-why is -regvm that also prints on stderr, at the end, a line
+   "fallback ..." for each function that ran in the old loop, with why
+   (JS_SetRegvm 2, engine/test/regvm/rvfallback.h), and -regvm-strict is
+   -regvm where such a run throws an InternalError (JS_SetRegvm 3).
+
    The scripts find getAsyncContext and setAsyncContext, the Builtins
    GetAsyncContext and SetAsyncContext of the Go API, as globals, and seven
    functions for the scripts that look at the collector: gc() and youngGC()
@@ -50,13 +63,20 @@
    and setGCThreshold(n) sets JS_SetGCThreshold, to its largest value when n is
    negative (the engine then never collects by itself). copyProps, startTag and
    endTag are the functions of JS_NewCopyPropsFunction, JS_NewStartTagFunction
-   and JS_NewEndTagFunction. Like a VM of the Go API, the context keeps
+   and JS_NewEndTagFunction. rvExpect does nothing: it is the check of rvdiff
+   (regvm/rvdiff.c) that a test runs in the register loop. stopAfterPolls(n)
+   sets the interrupt flag at the n-th reading of it from now, a stop as by a
+   timeout at a point that does not depend on time. rvStat(what) gives
+   JS_RegvmStat, and newRealm(src) runs src in a new realm of the runtime
+   and gives its completion value. Like a VM of the Go API,
+   the context keeps
    SHAPE_CACHE shapes (see JS_SetShapeCache). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "host.h"
+#include "regvm/rvfallback.h"
 
 /* DefaultShapeCache of the Go API */
 #define SHAPE_CACHE 2048
@@ -217,6 +237,20 @@ static JSValue js_set_gc_threshold(JSContext *ctx, JSValueConst this_val,
     return JS_UNDEFINED;
 }
 
+/* stopAfterPolls(n): the interrupt flag is set at the n-th reading of it
+   from now (host_poll_stop_after), so that a script can be stopped as by a
+   timeout at a point that does not depend on time */
+static JSValue js_stop_after_polls(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv)
+{
+    double n = 0;
+
+    if (argc > 0 && JS_ToFloat64(ctx, &n, argv[0]) < 0)
+        return JS_EXCEPTION;
+    host_poll_stop_after((long)n);
+    return JS_UNDEFINED;
+}
+
 static JSValue get_async_context(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
 {
@@ -228,6 +262,59 @@ static JSValue set_async_context(JSContext *ctx, JSValueConst this_val,
 {
     JS_SetAsyncContext(ctx, argc > 0 ? argv[0] : JS_UNDEFINED);
     return JS_UNDEFINED;
+}
+
+/* rvExpect(f, ...) does nothing here: rvdiff (regvm/rvdiff.c) checks with it
+   that the functions a test is for run in the register loop */
+static JSValue js_rv_expect_none(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    return JS_UNDEFINED;
+}
+
+/* rvStat(what): JS_RegvmStat of the runtime, for the tests of the register
+   loop (engine/test/regvm) */
+static JSValue js_rv_stat(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    int what = 0;
+
+    if (argc > 0 && JS_ToInt32(ctx, &what, argv[0]) < 0)
+        return JS_EXCEPTION;
+    return JS_NewInt32(ctx, JS_RegvmStat(ctx, what));
+}
+
+static int define_globals(JSContext *ctx);
+
+/* newRealm(src): src run as a script in a new realm of the same runtime,
+   with the globals of this file, and its completion value */
+static JSValue js_new_realm(JSContext *ctx, JSValueConst this_val,
+                            int argc, JSValueConst *argv)
+{
+    JSContext *ctx1;
+    const char *src;
+    size_t len;
+    JSValue v;
+
+    src = argc > 0 ? JS_ToCStringLen(ctx, &len, argv[0]) : NULL;
+    if (!src)
+        return JS_EXCEPTION;
+    ctx1 = JS_NewContext(JS_GetRuntime(ctx));
+    if (!ctx1 || define_globals(ctx1) < 0) {
+        JS_FreeCString(ctx, src);
+        if (ctx1)
+            JS_FreeContext(ctx1);
+        return JS_ThrowInternalError(ctx, "newRealm: no context");
+    }
+    v = JS_Eval(ctx1, src, len, "<realm>", JS_EVAL_TYPE_GLOBAL);
+    JS_FreeCString(ctx, src);
+    if (JS_IsException(v)) {
+        JSValue e = JS_GetException(ctx1);
+        v = JS_Throw(ctx, e);
+    }
+    JS_FreeContext(ctx1);
+    return v;
 }
 
 /* define_globals gives the global object of ctx what the Go runner gives
@@ -248,9 +335,13 @@ static int define_globals(JSContext *ctx)
         JS_SetPropertyStr(ctx, global, "memoryBlocks", JS_NewCFunction(ctx, js_memory_blocks, "memoryBlocks", 0)) < 0 ||
         JS_SetPropertyStr(ctx, global, "heapChange", JS_NewCFunction(ctx, js_heap_change, "heapChange", 2)) < 0 ||
         JS_SetPropertyStr(ctx, global, "setGCThreshold", JS_NewCFunction(ctx, js_set_gc_threshold, "setGCThreshold", 1)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "stopAfterPolls", JS_NewCFunction(ctx, js_stop_after_polls, "stopAfterPolls", 1)) < 0 ||
         JS_SetPropertyStr(ctx, global, "copyProps", JS_NewCopyPropsFunction(ctx, "copyProps", 9)) < 0 ||
         JS_SetPropertyStr(ctx, global, "startTag", JS_NewStartTagFunction(ctx, "startTag", 8)) < 0 ||
-        JS_SetPropertyStr(ctx, global, "endTag", JS_NewEndTagFunction(ctx, "endTag", 6)) < 0)
+        JS_SetPropertyStr(ctx, global, "endTag", JS_NewEndTagFunction(ctx, "endTag", 6)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "rvExpect", JS_NewCFunction(ctx, js_rv_expect_none, "rvExpect", 1)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "rvStat", JS_NewCFunction(ctx, js_rv_stat, "rvStat", 1)) < 0 ||
+        JS_SetPropertyStr(ctx, global, "newRealm", JS_NewCFunction(ctx, js_new_realm, "newRealm", 1)) < 0)
         ret = -1;
     JS_FreeValue(ctx, global);
     return ret;
@@ -262,6 +353,7 @@ static int opt_result;
 static int opt_call;
 static int opt_regexp_cache = -1;   /* -1 keeps the default of the runtime */
 static int opt_no_fused_ops;
+static int opt_regvm;
 static size_t opt_regexp_cache_bytes;
 
 /* The folder of the module that runs: imports are read from it. */
@@ -324,6 +416,8 @@ static int run(const char *path)
         JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
     if (opt_no_fused_ops)
         JS_SetFusedOps(ctx, 0);
+    if (opt_regvm)
+        JS_SetRegvm(ctx, opt_regvm);
     if (module) {
         /* The file is the module "NAME", read from its folder, and a module
            of "<eval>" imports it, as a host does with its main module. So
@@ -402,6 +496,21 @@ static int run(const char *path)
             goto done;
         }
     }
+    if (opt_regvm && JS_IsFunction(ctx, v)) {
+        /* the function is called from here, through JS_Call, and not by
+           the formatting script, so that it enters the register loop */
+        JSValue r = JS_Call(ctx, v, JS_UNDEFINED, 0, NULL);
+        /* the refusal of the call itself, before the formatting script
+           converts and refuses its own functions */
+        fprintf(stderr, "regvm: after the call converted %d refused %d last refusal op %d at %d\n",
+                JS_RegvmStat(ctx, 0), JS_RegvmStat(ctx, 1), JS_RegvmStat(ctx, 3), JS_RegvmStat(ctx, 4));
+        JS_FreeValue(ctx, v);
+        v = r;
+        if (JS_IsException(v)) {
+            print_exception(ctx, "exception");
+            goto done;
+        }
+    }
     if (module || opt_result || opt_call) {
         JSValue global = JS_GetGlobalObject(ctx);
 
@@ -435,6 +544,16 @@ static int run(const char *path)
         JS_FreeValue(ctx, s);
     }
  done:
+    if (opt_regvm)
+        fprintf(stderr, "regvm: converted %d refused %d entries %d last refusal op %d at %d\n",
+                JS_RegvmStat(ctx, 0), JS_RegvmStat(ctx, 1), JS_RegvmStat(ctx, 2),
+                JS_RegvmStat(ctx, 3), JS_RegvmStat(ctx, 4));
+    if (opt_regvm && getenv("RV_STATS"))
+        fprintf(stderr, "regvm: dispatches new %d old %d, calls old>new %d C>new %d new>old %d new>C %d\n",
+                JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 11), JS_RegvmStat(ctx, 12),
+                JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
+    if (opt_regvm == 2)
+        JS_RegvmFallbacks(rt, rvfb_print, stderr);
     /* as VM.Close does: the kept shapes and the async context can hold the
        context */
     JS_SetShapeCache(ctx, 0);
@@ -482,6 +601,12 @@ int main(int argc, char **argv)
             opt_call = 1;
         } else if (strcmp(argv[i], "-no-fused-ops") == 0) {
             opt_no_fused_ops = 1;
+        } else if (strcmp(argv[i], "-regvm") == 0) {
+            opt_regvm = 1;
+        } else if (strcmp(argv[i], "-regvm-why") == 0) {
+            opt_regvm = 2;
+        } else if (strcmp(argv[i], "-regvm-strict") == 0) {
+            opt_regvm = 3;
         } else if (strncmp(argv[i], "-regexp-cache=", 14) == 0) {
             char *end;
             long n = strtol(argv[i] + 14, &end, 10);

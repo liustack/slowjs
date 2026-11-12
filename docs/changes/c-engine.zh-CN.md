@@ -19,6 +19,7 @@ read_when:
   - 修改 JS_CallInternal 如何设置和释放一次调用的局部变量、操作数和参数
   - 修改编译器读写 let、const 和 class 局部变量的方式，或者它们的暂时性死区检查（tdz_checks）
   - 修改一个函数的哪些局部变量共用帧里的一个槽位（share_local_slots、js_frame_plain）
+  - 修改编译器生成调用或带标签模板的方式，或者想知道为什么参数很多的调用走 OP_apply（JS_CALL_ARGS_ON_STACK）
 ---
 
 # C 引擎
@@ -574,3 +575,30 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 ### 测试
 
 `engine/test/compare/json_keys.js` 打印 Node 24 对这些情形打印的内容：是下标或看起来像数字的键，重复的键，`__proto__`，转义的键和孤立代理项，键和冒号周围的空白，reviver，`JSON.rawJSON`，各行键相同的表，键顺序不同、键更少或更多的表，一种形状嵌套 400 层，以及超过 65536 个字节的 ASCII、Latin-1 和 16 位文本的字符串。`engine/test/compare/recorded/json_key_errors.js` 保存 36 个会抛错的文本的消息、位置和栈，以及能解析的最深嵌套，都是这次改动之前的引擎打印的内容。在 `engine/test/unit-white.c` 里，`test_json_plain_run` 对照字节循环检查 `json_plain_run`，覆盖直到 40 的每个长度、一段可能结束的每个位置、随机文本，以及它 65535 字节的上限。`test_json_key_cache` 检查，缓存持有的每个键 atom，在一次正常返回的解析、一次抛错的解析、一次带 reviver 的解析，以及每次分配依次失败的解析之后，都已归还，`test_poll_work_gaps` 则检查 8 位、Latin-1 和 16 位表上两次读中断标志之间的工作单位。
+
+## 超过 32 个参数的调用用数组传参
+
+发布版本：Unreleased。
+
+超过 32 个参数的调用，比如 `f(a1, ..., a40)`，以及超过 30 个替换的带标签模板，现在把前 32 个之后的参数放进数组传，和带展开参数的调用一样：编译器对前 32 个发出 `array_from`，之后每个参数发出 `define_array_el`，再用 `OP_apply` 调用，直接 `eval` 则用 `OP_apply_eval`。数组字面量本来就这样构建第 32 个之后的元素。这样一个函数的操作数栈上最多放一次调用的 32 个参数，原来要放全部参数，于是每个函数的帧都放得进寄存器循环用一个字节能指到的 124 个临时槽（`engine/regvm-pass.h`）。这个上限是 `engine/quickjs.c` 里的 `JS_CALL_ARGS_ON_STACK`。
+
+为什么安全：参数按原来的顺序读，都在调用之前，`OP_apply` 把它们交给被调用的函数，和 `OP_call`、`OP_call_method`、`OP_call_constructor` 一样，`this` 和 `new.target` 也一样。数组是引擎自己的，元素是定义进去的，所以 `Array.prototype` 上的 setter 不会运行。第一个展开参数之前超过 65535 个参数的调用照旧编译失败，报 `SyntaxError: Too many call arguments`。超过 65535 个替换的带标签模板原来编译失败，报 `InternalError: stack overflow`，现在在调用时抛 `RangeError`，和展开这么多参数的调用一样。
+
+代价：这样的调用要建一个数组，再把参数从里面复制出来。一个循环调用一百万次、每次 40 个参数、被调用的函数读 `arguments.length`，寄存器循环关时原来用 0.20 秒，现在用 0.47 秒，开时原来用 0.16 秒，现在用 0.49 秒（Mac 上本地宿主的用户时间，三次取最好），每次调用多大约 0.3 微秒。32 个及以下参数的调用不变。记分板上的页面（React、tifa 的 table 和 spiral、shop 和 MUI 两个应用，`engine/test/regvm/score.sh`）在改动前后两种方式下跑的分发数都一样：它们没有超过 32 个参数的调用。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_parse_postfix_expr1` 和 `js_parse_template`）。`engine/test/compare/call_many_args.js` 做 31 到 300 个参数的各种调用：函数、方法、可选调用、`new`、`super`、直接 `eval`、带标签模板、中间夹着展开参数的调用，还有被调用者和参数的读取顺序、限制之后的某个参数抛错、`Array.prototype` 上的 setter。它的结果文件就是 Node 24 打印的内容，改动之前的引擎打印的也是它。`engine/test/regvm/js/l-args.js` 在寄存器循环关和开两种情况下跑同样的各种调用。
+
+## 去掉旧循环后一个函数的上限
+
+发布版本：Unreleased。
+
+寄存器循环把比临时槽深的栈折进数组，需要几层就折几层，最深到 `JS_STACK_SIZE_MAX`（`engine/regvm-fold.h`）。catch 偏移（`try` 占一个，`for-of` 连同迭代器和 next 方法占三个）单独占临时槽，它下面那段栈冻结成一个数组，也单独占一个。用 `-DJS_NO_OLD_LOOP` 构建时，函数没法退回旧循环，于是寄存器循环跑不了的函数，解析器在编译时就拒绝，报它自己的上限本来就报的错：
+
+- 参数和局部变量加起来超过 32,765 个（加上 `this`、函数本身和 `new.target`，就是 MOVW、SETLW、CHKLW 用 16 位能指到的 32,768 个槽）：报 `InternalError: too many local variables` 或 `InternalError: too many arguments`，看最后加的是哪种。解析器自己的上限是各 65,534 个。
+- 栈深超过 118 个值、catch 偏移又要占超过 48 个临时槽（`RV_FOLD_PINS_MAX`，`engine/regvm-func.h`）：报 `InternalError: stack overflow`。包着 `r += a` 时，是 118 层嵌套的 `try`（什么都不包时 119 层）或 39 层嵌套的 `for-of`，这时光 catch 偏移就让栈太深了。包着一个 130 层深的表达式时，是 49 层 `try` 或 17 层 `for-of`。`for-in` 里的 `try` 还要为下面的枚举器多占一个临时槽。
+
+宽松模式、严格模式、生成器和 async 函数里的数字都一样。带旧循环的构建照样编译这些函数，寄存器循环拒绝的就在旧循环里跑。
+
+为什么安全：检查在 `add_var`、`add_arg` 和 `compute_stack_size` 里（`engine/quickjs.c`），用的计数和寄存器 pass 一样（`engine/regvm-pass.h` 的 `rv_build`，`engine/regvm-fold.h` 的 `rv_chain_bslot`），而且只在 `JS_NO_OLD_LOOP` 下生效。最里层 catch 偏移之上的那段栈，不管多深最多占 70 个临时槽（`RV_FOLD_TOP_MAX`），118 个里剩下 48 个给 catch 偏移。
+
+`engine/test/unit-api.c` 的 `test_rv_frame_limits` 和 `test_rv_nesting_limits` 在宽松模式、严格模式和生成器里，寄存器循环关和开两种情况下，编译每个上限和比它少一的情况，检查少一的能跑，普通函数还要转成寄存器代码。`engine/test/regvm/js/f3-fold.js` 跑折了好几层的栈，`engine/test/unit-oom.c` 的 `test_regvm_fold_oom` 让折叠的每次分配轮流失败。

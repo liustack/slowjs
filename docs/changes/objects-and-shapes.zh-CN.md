@@ -247,3 +247,13 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 它在内存上没有代价。在 tifa 里用 callgrind 测得（`measure bench cg`，对比它之前的那项改动），一次渲染少执行的指令，商店页面是 0.65%，store 页面是 0.71%，MUI 页面是 0.64%，bench 页面是 0.45%，解释器自己的指令不变。
 
 改动在 C 里（`engine/quickjs.c`）：`__JS_FreeValueRT` 调用 `free_zero_refcount_first`，`internal/goasm/cmd/cycles` 检查它到达不了 `JS_RunGC` 和 `JS_RunYoungGC`。`engine/test/unit.c` 里的 `test_free_order` 给出一个类的对象，其 finalizer 写下它们的编号，并丢弃一棵通过属性、数组、闭包、`Map`、`Set`、`WeakRef`、`FinalizationRegistry` 以及会释放更多对象的 finalizer 持有的对象树，然后是由回收释放的环和由年轻代回收释放的环，并把它们被释放的顺序和改动之前的引擎上记录的顺序对比，检查 `WeakRef` 在丢弃之后发现它的目标已经没有了，以及 `FinalizationRegistry` 的回调在一次回收之后得到它的值。`test_finalizer_memory_usage` 释放一个对象（先年轻的，再旧的），它的 finalizer 调用 `JS_ComputeMemoryUsage`：这项改动的第一个版本，在对象被释放期间把它留在回收器的列表上，在那里崩溃了。`engine/test/compare.sh` 和 `unit`（一百万个嵌套对象一次释放，以及各种对象由它们的 finalizer 和回收释放）在 AddressSanitizer 构建（`engine/test/build.sh asan`）下运行，没有任何报告。
+
+## 拒绝写入的 proxy 在严格模式代码里抛错
+
+发布版本：Unreleased。
+
+严格模式代码里的 `o.x = 1` 或 `o[k] = 1` 这类写入，如果对象是没有 `set` trap、`defineProperty` trap 返回 false 的 proxy，现在会抛 `TypeError`，和 Node 24 一样，也和规范一致：trap 返回 false 让 proxy 的 `[[Set]]` 返回 false，而严格模式代码的写入在 `[[Set]]` 返回 false 时要抛错。不管目标上已经有这个属性还是没有，都是这样，接收者是这种 proxy 的 `super.x = 1` 和经过 `with` 的写入也一样。在任何代码里都必须抛错的写入，比如 `Object.assign`、`Array.prototype.fill` 和 `push` 里的写入，以及 Go API 的 `SetProperty` 和 `SetPropertyValue`，在目标已有该属性时原来会继续往下走，现在也会抛错。原来引擎不报错继续往下走，上游 QuickJS 和 quickjs-ng 现在也还是这样。非严格模式代码的写入照旧继续，`Reflect.set` 照旧返回 false。
+
+为什么安全：有两处丢掉了表示「写入被拒绝要抛错」的标志。`js_proxy_define_own_property1` 检查 trap 结果时只看 `JS_PROP_THROW`，而其他所有拒绝写入的地方（只读属性、缺少 setter、proxy 的 `set` trap 返回 false）在严格模式代码里遇到 `JS_PROP_THROW_STRICT` 也会抛错，走的是 `JS_ThrowTypeErrorOrFalse`。现在它也调用 `JS_ThrowTypeErrorOrFalse`。另外，属性已经存在时，`JS_SetPropertyInternal` 在接收者上重新定义它的值，完全不带抛错标志，所以接收者返回 false 时，任何代码都会继续往下走。现在它传入这次写入的 `JS_PROP_THROW` 和 `JS_PROP_THROW_STRICT`，和新属性的做法一样。`engine/quickjs.c` 里另外五处对 `JS_PROP_THROW` 的检查本来就考虑了 `JS_PROP_THROW_STRICT`。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_proxy_define_own_property1` 和 `JS_SetPropertyInternal`）。`engine/test/compare/proxy_define_false.js` 在严格和非严格模式代码里通过这样的 proxy 写入，用名字、下标和计算出来的键，写目标已有的属性和没有的属性，还有复合赋值、接收者继承自该 proxy 的写入、`super` 和 `with`、以该 proxy 为目标和为接收者的 `Reflect.set`、`Object.assign`、`Array.prototype.fill` 和 `push`，它的结果文件就是 Node 24 打印的内容。`TestSetPropertyRefused` 检查 `SetProperty` 和 `SetPropertyValue`。test262 里没有对应的用例。

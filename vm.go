@@ -214,10 +214,11 @@ func (m *VM) SetGCThreshold(threshold uintptr) {
 }
 
 // GCThreshold returns the memory threshold at which a GC will be performed, in
-// bytes. The engine checks it when it makes an object: when [VM.MemorySize]
-// would pass it, the engine runs a GC. After a full GC, the engine's own or
-// [VM.RunGC], the threshold is 1.5 times what the GC left, unless it is
-// ^uintptr(0), which stays. So a threshold other than the one
+// bytes. It counts the memory a GC can free from: [VM.MemorySize] without the
+// stack of the engine's register loop. The engine checks it when it makes an
+// object: when that memory would pass it, the engine runs a GC. After a full
+// GC, the engine's own or [VM.RunGC], the threshold is 1.5 times that memory,
+// unless it is ^uintptr(0), which stays. So a threshold other than the one
 // [VM.SetGCThreshold] set last means a full GC ran since.
 //
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
@@ -265,10 +266,11 @@ func (m *VM) RunYoungGC() {
 	m.jsRunYoungGC()
 }
 
-// MemorySize returns the memory m takes, in bytes, as [VM.SetMemoryLimit] and
-// [VM.SetGCThreshold] count it. After [VM.RunGC] it is what the objects that
-// javascript can still reach take, with the arenas they are in, plus the
-// runtime's own structures and the object shapes it keeps for reuse.
+// MemorySize returns the memory m takes, in bytes, as [VM.SetMemoryLimit]
+// counts it. [VM.SetGCThreshold] counts it without the stack of the engine's
+// register loop. After [VM.RunGC] it is what the objects that javascript can
+// still reach take, with the arenas they are in, plus the runtime's own
+// structures and the object shapes it keeps for reuse.
 //
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
 // and a call after Close panics.

@@ -1,0 +1,32 @@
+new an object: throws TypeError constructor
+new an object with a spread: throws TypeError constructor
+new an array: throws TypeError constructor
+new an array with a spread: throws TypeError constructor
+new an arrow function: throws TypeError constructor
+new an arrow function with a spread: throws TypeError constructor
+new a method: throws TypeError constructor
+new a method with a spread: throws TypeError constructor
+new a built-in function: throws TypeError constructor
+new a built-in function with a spread: throws TypeError constructor
+new a bound arrow function: throws TypeError constructor
+new a bound arrow function with a spread: throws TypeError constructor
+new a proxy of an object: throws TypeError constructor
+new a proxy of an object with a spread: throws TypeError constructor
+new a proxy of an arrow function: throws TypeError constructor
+new a proxy of an arrow function with a spread: throws TypeError constructor
+new number: throws TypeError
+new number with a spread: throws TypeError
+new string: throws TypeError
+new string with a spread: throws TypeError
+new object: throws TypeError
+new object with a spread: throws TypeError
+new undefined: throws TypeError
+new undefined with a spread: throws TypeError
+new boolean: throws TypeError
+new boolean with a spread: throws TypeError
+new symbol: throws TypeError
+new symbol with a spread: throws TypeError
+super of a built-in function: throws TypeError constructor
+super of a built-in function with a spread: throws TypeError constructor
+super of a constructor with a spread: true
+new of a constructor with a spread: 3

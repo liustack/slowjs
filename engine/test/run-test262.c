@@ -1767,16 +1767,32 @@ int run_test_buf(ThreadLocalStorage *tls,
        test262 runs with the shape cache on */
     JS_SetShapeCache(ctx, 2048);
 
+    ret = -1;
     for (i = 0; i < ip->count; i++) {
         if (eval_file(ctx, harness, ip->array[i],
                       JS_EVAL_TYPE_GLOBAL)) {
+#ifdef JS_NO_OLD_LOOP
+            /* the engine built without the old loop: a harness file it
+               cannot run fails the test, with what it could not run */
+            const char *m;
+            int k, n;
+            for (k = 0; (m = JS_RegvmNoOldLoop(ctx, k, &n)) != NULL; k++)
+                fprintf(error_out, "%s:0: %sharness %s: no old loop: %s\n", filename,
+                        (eval_flags & JS_EVAL_FLAG_STRICT) ? "strict mode: " : "",
+                        ip->array[i], m);
+            ret = 1;
+            break;
+#else
             fatal(1, "error including %s for %s", ip->array[i], filename);
+#endif
         }
     }
 
-    ret = eval_buf(ctx, buf, buf_len, filename, TRUE, is_negative,
-                   error_type, outfile, eval_flags, is_async);
-    ret = (ret != 0);
+    if (ret < 0) {
+        ret = eval_buf(ctx, buf, buf_len, filename, TRUE, is_negative,
+                       error_type, outfile, eval_flags, is_async);
+        ret = (ret != 0);
+    }
 
     if (dump_memory) {
         update_stats(rt, filename);

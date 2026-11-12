@@ -33,7 +33,8 @@
 # compare.sh), unit, unit-oom, unit-api and unit-white (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
 # host-test.sh), heap-test and, in asan-heap mode, poison-test (see heap.sh), and
 # the object files: those of the engine here, and those of its
-# libc in libc/ (heap-fuzz for fuzz). CC picks another compiler. A sanitizer
+# libc in libc/ (heap-fuzz for fuzz), and engine.stamp, what they were built
+# from (see stamp.sh). CC picks another compiler. A sanitizer
 # reports a finding and goes on, so that a run over test262 lists them all: run
 # with ASAN_OPTIONS=halt_on_error=0 to keep AddressSanitizer going too. compare.sh and
 # heap.sh set halt_on_error=1 for UndefinedBehaviorSanitizer, so a finding fails
@@ -65,15 +66,27 @@ tsan) san='-fsanitize=thread -fno-omit-frame-pointer' ;;
 fuzz) san='-fsanitize=address,undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; heapsan='-fsanitize=undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; defs=-DJS_HEAP_POISON; fuzzflags='-fsanitize=fuzzer' ;;
 *) echo "build.sh: unknown mode $mode (plain, asan, asan-heap, asan-heap-iter, ubsan, asan-ubsan, tsan or fuzz)" >&2; exit 2 ;;
 esac
+defs="$defs ${EXTRA_DEFS:-}"
 [ -n "$heapsan" ] || heapsan=$san
 
 # The flags of the engine files and engine/libc are in flags.sh, which
 # check-symbols.sh reads too.
 . "$here/flags.sh"
+# engine.stamp names the sources as they are now, and is written only when the
+# build is done (see stamp.sh)
+. "$here/stamp.sh"
+mkdir -p "$out"
+rm -f "$out/engine.stamp"
+stamp=$(stamp_engine_lines "$engine" "$mode" "$cc")
+write_stamp() { echo "$stamp" > "$out/engine.stamp"; }
 common="-O2 -g -Wall -Wno-array-bounds $san"
 # JS_HOST_POLL: the engine calls host_poll at each read of a flag that stops
 # it (poll_flag in cutils.h), since no generator adds polls here.
-free="$engine_flags $(engine_target_flags native) -DJS_HOST_POLL"
+# RV_SELF_CHECK: a self check of the register loop that finds a fault of the
+# engine (a broken OLD, a value the pass narrows into a field too small for
+# it) stops the process here, where the shipped engine throws or gives the
+# conversion up.
+free="$engine_flags $(engine_target_flags native) -DJS_HOST_POLL -DRV_SELF_CHECK"
 version=$engine_version
 libc=$engine/libc
 
@@ -115,6 +128,7 @@ build_host_test() {
 }
 if [ "$mode" = tsan ]; then
 	build_host_test
+	write_stamp
 	exit 0
 fi
 
@@ -153,6 +167,7 @@ build_heap_test() { # PROGRAM EXTRA-FLAGS EXTRA-LINK-FLAGS
 
 if [ "$mode" = fuzz ]; then
 	build_heap_test heap-fuzz -DHEAP_FUZZ "$fuzzflags"
+	write_stamp
 	exit 0
 fi
 
@@ -190,3 +205,4 @@ $cc $hostflags -fno-builtin -c "$here/libmath.c" -o "$out/libmath.o"
 $cc $san "$out/libmath.o" "$out"/libc/math_*.o "$out/libc/math.o" -o "$out/libmath"
 echo "$out/run-test262"
 [ $system = 1 ] || build_heap_test heap-test "" ""
+write_stamp

@@ -13,14 +13,22 @@
 
      render bundle=B.js inputs=a.json,b.json [prelude=p1.js,p2.js] [warm=50]
             [n=200] [html=DIR] [tag=T] [front=N] [limit=BYTES]
-            [footprint=BYTES]
+            [footprint=BYTES] [regvm=1]
 
    With soak=N it renders the inputs in turn N times in all, with a young
    collection after each render (and the collections the engine starts by its
    threshold), and every `every` renders (default 100) it runs a full
    collection and prints the memory of the runtime: the bytes in use
    (MemorySize), the blocks, the footprint, the chunks. With release=KEEP it
-   then gives memory back as the pool of tifa will, keeping KEEP bytes. */
+   then gives memory back as the pool of tifa will, keeping KEEP bytes.
+
+   regvm=1 turns the register loop on (JS_SetRegvm), regvm=2 too and prints
+   at the end the functions that ran in the old loop all the same, one line
+   "fallback ..." each (engine/test/regvm/rvfallback.h), and regvm=3 makes
+   such a run an error. With RV_STATS set in the
+   environment, a build with -DRV_STATS prints the dispatches of each loop
+   and the calls between them, a timed render, and with RV_OPS also set the
+   dispatches of each register op. */
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,6 +37,21 @@
 #include <time.h>
 
 #include "host.h"
+#include "regvm/rvfallback.h"
+
+#ifdef JS_REGVM_COUNT
+/* the counting build of the register bytecode estimate (engine/regvm-count.h) */
+void JS_RegvmCount(JSRuntime *rt, int on);
+void JS_RegvmDump(JSRuntime *rt);
+static FILE *rv_out;
+void *js_rv_alloc(size_t size) { void *p = calloc(1, size); if (!p) abort(); return p; }
+void js_rv_emit(const char *s, size_t len) { if (rv_out) fwrite(s, 1, len, rv_out); }
+#define RV_START(rt) do { if (!rv_out) { const char *o = getenv("RV_OUT"); rv_out = fopen(o ? o : "rv.txt", "w"); } JS_RegvmCount(rt, 1); } while (0)
+#define RV_STOP(rt) JS_RegvmCount(rt, 0)
+#else
+#define RV_START(rt) ((void)0)
+#define RV_STOP(rt) ((void)0)
+#endif
 
 #ifdef RENDER_OLD_API
 /* the C tree before the allocator, for the comparison of timings: the stack
@@ -317,6 +340,19 @@ int main(int argc, char **argv)
         return 1;
     }
     add_globals(ctx);
+    /* regvm=1: the register loop of engine/regvm.h, for the functions made
+       from here on */
+    if (atoi(arg(argc, argv, "regvm", "0")))
+        JS_SetRegvm(ctx, atoi(arg(argc, argv, "regvm", "0")));
+    if (atoi(arg(argc, argv, "tifa", "0"))) {
+        /* the engine functions tifa defines on each VM of its pool */
+        JSValue g = JS_GetGlobalObject(ctx);
+        JS_SetPropertyStr(ctx, g, "__tifa_escape", JS_NewEscapeTextFunction(ctx, "__tifa_escape", 13));
+        JS_SetPropertyStr(ctx, g, "__tifa_start_tag", JS_NewStartTagFunction(ctx, "__tifa_start_tag", 16));
+        JS_SetPropertyStr(ctx, g, "__tifa_end_tag", JS_NewEndTagFunction(ctx, "__tifa_end_tag", 14));
+        JS_SetPropertyStr(ctx, g, "__tifa_copy_props", JS_NewCopyPropsFunction(ctx, "__tifa_copy_props", 17));
+        JS_FreeValue(ctx, g);
+    }
     JS_SetHostPromiseRejectionTracker(rt, js_unhandled, NULL);
     copy = strdup(prelude);
     p = copy;
@@ -366,6 +402,8 @@ int main(int argc, char **argv)
         for (int k = 0; k < in.n; k++) {
             size_t len, hl;
             char *html = render(ctx, start, in.json[k], in.len[k], &len);
+            long rv_before[6];
+            static long rv_ops_before[256];
             double *d = malloc(sizeof(double) * (n > 0 ? n : 1)), sum = 0;
 
             hl = len;
@@ -385,9 +423,15 @@ int main(int argc, char **argv)
                 html = render(ctx, start, in.json[k], in.len[k], &len);
                 free(html);
             }
+            for (int c = 0; c < 6; c++)
+                rv_before[c] = JS_RegvmStat(ctx, 10 + c);
+            for (int c = 0; c < 256; c++)
+                rv_ops_before[c] = JS_RegvmStat(ctx, 1000 + c);
             for (int i = 0; i < n; i++) {
                 double t = now_ns();
+                RV_START(rt);
                 html = render(ctx, start, in.json[k], in.len[k], &len);
+                RV_STOP(rt);
                 d[i] = now_ns() - t;
                 sum += d[i];
                 if (len != hl) {
@@ -396,6 +440,26 @@ int main(int argc, char **argv)
                 }
                 free(html);
             }
+            if (n > 0 && getenv("RV_STATS"))
+                /* the counts of a native build with -DRV_STATS, a render */
+                fprintf(stderr, "render: %s a render: dispatches new %.0f old %.0f, calls old>new %.1f C>new %.1f new>old %.1f new>C %.1f\n",
+                        base_name(in.path[k]),
+                        (double)(JS_RegvmStat(ctx, 10) - rv_before[0]) / n, (double)(JS_RegvmStat(ctx, 11) - rv_before[1]) / n,
+                        (double)(JS_RegvmStat(ctx, 12) - rv_before[2]) / n, (double)(JS_RegvmStat(ctx, 13) - rv_before[3]) / n,
+                        (double)(JS_RegvmStat(ctx, 14) - rv_before[4]) / n, (double)(JS_RegvmStat(ctx, 15) - rv_before[5]) / n);
+            if (getenv("RV_STATS"))
+                /* the most of a segment of register stack in use so far, and
+                   the segments made so far */
+                fprintf(stderr, "render: %s register stack peak %d bytes, segments made %d\n",
+                        base_name(in.path[k]), JS_RegvmStat(ctx, 16), JS_RegvmStat(ctx, 7));
+            if (n > 0 && getenv("RV_STATS") && getenv("RV_OPS")) {
+                /* and with RV_OPS, the dispatches of each register op, a render */
+                for (int c = 0; c < 256 && JS_RegvmOpName(c); c++) {
+                    long v = JS_RegvmStat(ctx, 1000 + c) - rv_ops_before[c];
+                    if (v)
+                        fprintf(stderr, "render: %s op %s %.1f\n", base_name(in.path[k]), JS_RegvmOpName(c), (double)v / n);
+                }
+            }
             qsort(d, n, sizeof(double), cmp_double);
             printf("%s{\"input\":\"%s\",\"html_bytes\":%zu,\"n\":%d,\"mean_ns\":%.0f,\"median_ns\":%.0f,\"min_ns\":%.0f,\"max_ns\":%.0f}",
                    k ? "," : "", base_name(in.path[k]), hl, n, n ? sum / n : 0.0, n ? d[n / 2] : 0.0, n ? d[0] : 0.0, n ? d[n - 1] : 0.0);
@@ -403,6 +467,12 @@ int main(int argc, char **argv)
         }
         printf("]}\n");
     }
+    if (atoi(arg(argc, argv, "regvm", "0")) == 2)
+        JS_RegvmFallbacks(rt, rvfb_print, stderr);
+#ifdef JS_REGVM_COUNT
+    JS_RegvmDump(rt);
+    if (rv_out) fclose(rv_out);
+#endif
     JS_FreeValue(ctx, start);
     JS_FreeContext(ctx);
     FREE_RUNTIME(rt);

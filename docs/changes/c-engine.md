@@ -19,6 +19,7 @@ read_when:
   - Changing how JS_CallInternal sets up or frees the locals, operands and arguments of a call
   - Changing how the compiler reads and writes let, const and class locals, or the checks of their temporal dead zone (tdz_checks)
   - Changing which locals of a function share a slot of the frame (share_local_slots, js_frame_plain)
+  - Changing how the compiler emits a call or a tagged template, or asking why a call of many arguments runs OP_apply (JS_CALL_ARGS_ON_STACK)
 ---
 
 # The C engine
@@ -574,3 +575,30 @@ Now, without the JSON superset (`JSON.parse` and `JS_ParseJSON`):
 ### Tests
 
 `engine/test/compare/json_keys.js` prints what Node 24 prints for keys that are indexes or look like numbers, repeated keys, `__proto__`, escaped keys and lone surrogates, whitespace around keys and colons, a reviver, `JSON.rawJSON`, tables whose rows have the same keys, keys in another order, fewer or more keys, 400 levels of one shape, and strings over 65536 bytes of ASCII, Latin-1 and 16-bit text. `engine/test/compare/recorded/json_key_errors.js` holds the messages, positions and stacks of 36 texts that throw, and the deepest nesting that parses, as the engine before this change printed them. In `engine/test/unit-white.c`, `test_json_plain_run` checks `json_plain_run` against a byte loop at every length up to 40, at every place a run can end and on random texts, and its limit of 65535 bytes. `test_json_key_cache` checks that every key atom the cache held is given back after a parse that returns, one that throws, one with a reviver, and one where each allocation in turn fails, and `test_poll_work_gaps` the units of work between two readings of the interrupt flag on 8-bit, Latin-1 and 16-bit tables.
+
+## Calls of more than 32 arguments pass them in an array
+
+Release: Unreleased.
+
+A call with more than 32 arguments, such as `f(a1, ..., a40)`, and a tagged template with more than 30 substitutions now pass the arguments past the first 32 in an array, as a call with a spread does: the compiler emits `array_from` for the first 32, then `define_array_el` for each one after them, and makes the call with `OP_apply`, or `OP_apply_eval` for a direct `eval`. An array literal already builds its elements past the first 32 this way. The operand stack of a function then holds at most 32 arguments of one call, where it held all of them, so that the frame of every function fits the 124 temps the register loop names with a byte (`engine/regvm-pass.h`). `JS_CALL_ARGS_ON_STACK` in `engine/quickjs.c` is the limit.
+
+Why this is safe: the arguments are read in the same order, before the callee is called, and `OP_apply` passes them to it as `OP_call`, `OP_call_method` and `OP_call_constructor` do, with the same `this` and `new.target`. The array is the engine's own and defines its elements, so a setter on `Array.prototype` does not run. A call with more than 65535 arguments before its first spread still fails to compile with `SyntaxError: Too many call arguments`. A tagged template with more than 65535 substitutions failed to compile with `InternalError: stack overflow`, and now throws `RangeError` at the call, as a call with a spread of that many arguments does.
+
+What it costs: such a call makes an array and copies the arguments out of it again. A loop of a million calls of 40 arguments to a function that reads `arguments.length` takes 0.47 seconds where it took 0.20 with the register loop off, and 0.49 where it took 0.16 with it on (user time of the native host on the Mac, best of three), about 0.3 microseconds more a call. A call of 32 arguments or fewer is unchanged. The pages of the scoreboard (React, tifa's table and spiral, the shop and MUI apps, `engine/test/regvm/score.sh`) run the same dispatches both ways before and after: none of their calls has more than 32 arguments.
+
+The change is in C (`engine/quickjs.c`, `js_parse_postfix_expr1` and `js_parse_template`). `engine/test/compare/call_many_args.js` makes calls of 31 to 300 arguments of every kind: a function, a method, an optional call, `new`, `super`, a direct `eval`, a tagged template and a spread among them, the order in which the callee and the arguments are read, a throw in an argument past the limit, and a setter on `Array.prototype`. Its file is what Node 24 prints, and the engine before the change prints it too. `engine/test/regvm/js/l-args.js` runs the same kinds with the register loop off and on.
+
+## The limits of a function without the old loop
+
+Release: Unreleased.
+
+The register loop folds a stack deeper than its temps into Arrays, in as many levels as the stack needs, up to `JS_STACK_SIZE_MAX` (`engine/regvm-fold.h`). A catch offset (one for a `try`, three for a `for-of` with its iterator and next method) stays in a temp of its own, and so does the part of the stack under it, frozen into one Array. Built with `-DJS_NO_OLD_LOOP`, where no function can go back to the old loop, the parser refuses at compile time each function the register loop could not run, with the error it already gives for its own limits:
+
+- Parameters and locals together past 32,765 (with `this`, the function and `new.target`, the 32,768 slots that MOVW, SETLW and CHKLW name with 16 bits): `InternalError: too many local variables` or `InternalError: too many arguments`, whichever is added last. The parser's own limit is 65,534 of each.
+- A stack deeper than 118 values whose catch offsets take more than 48 temps (`RV_FOLD_PINS_MAX`, `engine/regvm-func.h`): `InternalError: stack overflow`. Around `r += a` that is 118 nested `try` (119 around nothing) or 39 nested `for-of`, where the catch offsets themselves make the stack too deep, and around an expression 130 deep, 49 nested `try` or 17 nested `for-of`. A `try` under a `for-in` takes one temp more for the enumerator under it.
+
+The numbers are the same in sloppy and strict code, in a generator and in an async function. A build with the old loop compiles every one of these functions, and runs in the old loop the ones the register loop refuses.
+
+Why this is safe: the check is in `add_var`, `add_arg` and `compute_stack_size` (`engine/quickjs.c`), with the same counts that the register pass uses (`rv_build` and `rv_chain_bslot`, `engine/regvm-pass.h` and `engine/regvm-fold.h`), and only under `JS_NO_OLD_LOOP`. The part of the stack above the innermost catch offset takes at most 70 temps at any depth (`RV_FOLD_TOP_MAX`), which leaves 48 of the 118 for the catch offsets.
+
+`test_rv_frame_limits` and `test_rv_nesting_limits` of `engine/test/unit-api.c` compile each limit and one under it in sloppy and strict code and in a generator, with the register loop off and on, and check that the one under it runs, in register code for a plain function. `engine/test/regvm/js/f3-fold.js` runs stacks folded in several levels, and `test_regvm_fold_oom` of `engine/test/unit-oom.c` fails each allocation of a fold in turn.
