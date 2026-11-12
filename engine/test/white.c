@@ -55,6 +55,15 @@ static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 }
 #define JS_ALLOC_FAILS(rt, ptr, size) white_call_fails(rt, ptr, size)
 
+/* RV_SC_CAP gives each buffer of the pass (engine/regvm-pass.h) 16 bytes
+   at first while white_sc_small is set (white_regvm_convert_failing mode
+   2): every buffer runs short and its round is made again. RV_SC_SHORT
+   counts those rounds (white_regvm_shorts). */
+static int white_sc_small;
+static long white_sc_shorts;
+#define RV_SC_CAP(n) (white_sc_small ? 16 : (n))
+#define RV_SC_SHORT() (white_sc_shorts++)
+
 /* JS_WORK counts the units of work of the loops that read the interrupt flag
    (white_work), and each reading of the flag (cutils.h calls host_poll) closes
    a stretch: white_work_max is the longest stretch since white_work_reset,
@@ -1365,10 +1374,12 @@ int white_emit_buf(JSContext *ctx, int op)
 
 /* converts the function f to register code (rv_convert) with the request
    fail of the conversion failing, as white_compile_failing does: mode 1
-   counts every call of the allocator. *nallocs gets the requests the
-   conversion made. 1 when f has register code, 0 when it has none, -1 when
-   f is no function of bytecode (a generator or an async function is one)
-   that has not converted yet. */
+   counts every call of the allocator, mode 2 starts each buffer of the
+   pass at 16 bytes (RV_SC_CAP). A collection first gives the scratch of
+   the pass back, so that the conversion makes it. *nallocs gets the
+   requests the conversion made. 1 when f has register code, 0 when it has
+   none, -1 when f is no function of bytecode (a generator or an async
+   function is one) that has not converted yet. */
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs)
 {
     JSFunctionBytecode *b;
@@ -1380,6 +1391,9 @@ int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mo
     b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
     if (b->rv != RV_UNCONVERTED)
         return -1;
+    JS_RunGC(ctx->rt);
+    white_sc_small = (mode & 2) != 0;
+    white_sc_shorts = 0;
     white_alloc_calls = mode & 1;
     white_alloc_count = 0;
     white_alloc_fail_at = fail;
@@ -1389,7 +1403,52 @@ int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mo
     ctx->rt->rv_oom_b = NULL;
     white_alloc_fail_at = 0;
     white_alloc_calls = 0;
+    white_sc_small = 0;
     return rf->arg_count >= 0;
+}
+
+/* the rounds of the pass made again with a larger scratch in the last
+   conversion of white_regvm_convert_failing */
+long white_regvm_shorts(void)
+{
+    return white_sc_shorts;
+}
+
+/* an FNV-1a hash of the register code of f: its code, pcmap and the temps
+   past T[31] of it, the return addresses of its GOSUBs, the slots of its
+   frame, its first temp and the tags of its constants, and in *code_len
+   the bytes of its code. 0 when f has none. */
+uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    uint32_t h = 2166136261u;
+    int i;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return 0;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return 0;
+    *code_len = rf->code_len;
+#define WHITE_FNV(p, n) do { const uint8_t *p_ = (const uint8_t *)(p); size_t n_;    \
+        for (n_ = 0; n_ < (size_t)(n); n_++) h = (h ^ p_[n_]) * 16777619u; } while (0)
+    WHITE_FNV(rf->code, rf->code_len);
+    WHITE_FNV(rf->pcmap, sizeof(RVPcMask) * rf->pcmap_count);
+    if (rf->pcmap_hi)
+        WHITE_FNV(rf->pcmap_hi, sizeof(RVPcHi) * rf->pcmap_count);
+    WHITE_FNV(rf->rets, 8 * rf->ret_count);
+    WHITE_FNV(&rf->fsize, sizeof(rf->fsize));
+    WHITE_FNV(&rf->temp0, sizeof(rf->temp0));
+    WHITE_FNV(&rf->k_count, sizeof(rf->k_count));
+    for (i = 0; i < rf->k_count; i++) {
+        int tag = JS_VALUE_GET_TAG(rf->k[i]);
+        WHITE_FNV(&tag, sizeof(tag));
+    }
+#undef WHITE_FNV
+    return h;
 }
 
 /* Code no compiler makes, made from the function f of bytecode for the
@@ -1573,4 +1632,18 @@ int white_opcode(int which)
 int white_regvm_oom_pending(JSContext *ctx)
 {
     return ctx->rt->rv_oom_b != NULL;
+}
+
+/* js_heap_drain, as when the heap fails a request, with rt->rv_in_pass set
+   as while a conversion works in the scratch (in_pass) or not: the bytes of
+   scratch kept after it. */
+int white_regvm_scratch_drain(JSContext *ctx, int in_pass)
+{
+    JSRuntime *rt = ctx->rt;
+    BOOL was = rt->rv_in_pass;
+
+    rt->rv_in_pass = in_pass;
+    js_heap_drain(&rt->malloc_ctx);
+    rt->rv_in_pass = was;
+    return (int)rt->rv_scratch_size;
 }

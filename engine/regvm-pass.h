@@ -46,6 +46,13 @@ typedef struct RVEnt {
 #define RV_FOLD_LMAX 16
 #define RV_FOLD_KMAX 128
 
+/* the buffers of the pass in its scratch, in this order after the arrays
+   of the old instructions */
+enum {
+    RV_SC_CODE, RV_SC_FIX, RV_SC_FIXW, RV_SC_PCMAP, RV_SC_HI, RV_SC_RETS, RV_SC_K,
+    RV_SC_N
+};
+
 typedef struct RVPass {
     JSRuntime *rt;
     JSFunctionBytecode *b;
@@ -54,12 +61,15 @@ typedef struct RVPass {
     int16_t *depth;     /* stack depth before each instruction, -1 unreached */
     int32_t *catchpos;  /* the innermost catch there (rv_depths), -1 none */
     uint8_t *leader;    /* RV_LEAD_ of each instruction that starts a block */
-    int32_t *newpc;     /* new offset of each leader */
+    int32_t *newpc;     /* new offset of each leader, and before it the work
+                           list of rv_depths (len + 1 entries) */
     DynBuf code;
     DynBuf fix;         /* the RVFix of each off16 */
     DynBuf fixw;        /* (int32 pos of an off32, int32 old target): JMPW */
     uint8_t *farj;      /* the old instructions whose jumps get an island, or
-                           NULL: rv_islands */
+                           NULL: rv_islands. In the scratch at farj_at */
+    uint8_t *farj_at;
+    RVEnt *st_at;       /* the st of a function that folds, in the scratch */
     DynBuf pcmap;
     DynBuf rets;        /* (old return address, end of its GOSUB) */
     DynBuf pcmap_hi;    /* an RVPcHi for each entry of pcmap */
@@ -107,6 +117,13 @@ typedef struct RVPass {
     BOOL failed;
     BOOL oom;           /* an allocation of the pass failed */
     BOOL crafted;       /* it stops at code no compiler makes (RV_CRAFTED) */
+    /* the scratch (rv_scratch_fit): the bytes of each buffer, the bytes
+       before the first, the entries of st there, and the round ran out of
+       one buffer (rv_scratch_short) */
+    size_t cap[RV_SC_N];
+    size_t fixed;
+    int st_n;
+    BOOL sc_short;
 } RVPass;
 
 /* The pass refuses only code that no compiler makes, which only
@@ -228,12 +245,8 @@ static BOOL rv_operands_ok(RVPass *s, int pos, int op)
    above, with its rules for the catch offsets */
 static int rv_depths(RVPass *s)
 {
-    int *work, nwork = 0, pos, npop, npush, term, target, d, c, tc, td, op;
-    work = js_malloc_rt(s->rt, sizeof(int) * (s->len + 1));
-    if (!work) {
-        s->oom = TRUE;
-        return -1;
-    }
+    int32_t *work = s->newpc; /* not yet filled in */
+    int nwork = 0, pos, npop, npush, term, target, d, c, tc, td, op;
     s->depth[0] = 0;
     s->catchpos[0] = -1;
     s->leader[0] = RV_LEAD_JUMP;
@@ -327,7 +340,6 @@ static int rv_depths(RVPass *s)
             s->catchpos[pos] = c;
         }
     }
-    js_free_rt(s->rt, work);
     return 0;
  fail_op:
     /* the pass takes every opcode of final code (engine/test/regvm/opcodes.txt):
@@ -335,13 +347,11 @@ static int rv_depths(RVPass *s)
     s->crafted = TRUE;
     s->rt->rv_stat[3] = s->bc[pos];
     s->rt->rv_stat[4] = pos;
-    js_free_rt(s->rt, work);
     return -1;
  fail:
     s->crafted = TRUE;
     s->rt->rv_stat[3] = -2;
     s->rt->rv_stat[4] = pos;
-    js_free_rt(s->rt, work);
     return -1;
 }
 
@@ -1007,11 +1017,8 @@ static int rv_patch(RVPass *s)
         if (off != (int16_t)off) {
             if (f->island < 0) {
                 if (!s->farj) {
-                    s->farj = js_mallocz_rt(s->rt, s->len);
-                    if (!s->farj) {
-                        s->oom = TRUE;
-                        return -1;
-                    }
+                    s->farj = s->farj_at;
+                    memset(s->farj, 0, s->len);
                 }
                 s->farj[f->at] = 1;
                 again = 1;
@@ -1133,26 +1140,164 @@ static int rv_code(RVPass *s)
     return rv_patch(s);
 }
 
+/* The scratch of the pass: one block that the runtime keeps from one
+   conversion to the next (rt->rv_scratch), so that a conversion allocates
+   its register code and nothing else, and makes no short lived blocks
+   between the ones that stay. It holds the arrays of the old instructions
+   (depth, catchpos, leader, newpc, farj) and the st of a function that
+   folds, then the buffers of rv_code, each of cap bytes. A buffer that
+   needs more ends its round (rv_scratch_short), and the round is made
+   again with that buffer twice as large, the block grown to fit, which
+   leaves the code the same. The block is made at the first conversion.
+   One larger than RV_SCRATCH_KEEP goes back at the end of its conversion,
+   and any goes back at a collection (JS_RunGC), when the heap fails a
+   request (js_heap_drain of quickjs.c, as the front cache does), at
+   JS_ReleaseStart and with the runtime (rv_scratch_free). A conversion
+   runs no script and makes no object, so none starts while another runs:
+   rt->rv_in_pass holds the scratch while one works in it, and the test
+   builds abort on a second. */
+#define RV_SCRATCH_KEEP (64 * 1024)
+#define RV_SC_ALIGN(n) (((size_t)(n) + 15) & ~(size_t)15)
+
+/* RV_SC_CAP(n) is the first bytes n of a buffer of the pass: white.c sets
+   it small, so that its tests see every buffer run short and its round made
+   again, and RV_SC_SHORT() counts those rounds. They are n and nothing
+   otherwise, and the engine is the same. */
+#ifndef RV_SC_CAP
+#define RV_SC_CAP(n) (n)
+#endif
+#ifndef RV_SC_SHORT
+#define RV_SC_SHORT() ((void)0)
+#endif
+
+/* a buffer of the pass ran out of its bytes: the round ends, to be made
+   again (rv_build) */
+static void *rv_scratch_short(void *opaque, void *ptr, size_t size)
+{
+    RVPass *s = opaque;
+    (void)ptr;
+    (void)size;
+    if (!s->sc_short)
+        RV_SC_SHORT();
+    s->sc_short = TRUE;
+    return NULL;
+}
+
+/* the bytes of the scratch before the buffers */
+static size_t rv_scratch_fixed(int len, int st_n)
+{
+    return RV_SC_ALIGN(sizeof(int16_t) * len) + RV_SC_ALIGN(sizeof(int32_t) * len) +
+        RV_SC_ALIGN(len) + RV_SC_ALIGN(sizeof(int32_t) * (len + 1)) + RV_SC_ALIGN(len) +
+        RV_SC_ALIGN(sizeof(RVEnt) * st_n);
+}
+
+/* the first bytes of each buffer, from the length of the code: enough for
+   nearly every function a compiler makes (rv_scratch_grow for the rest) */
+static void rv_scratch_caps(RVPass *s, BOOL fold)
+{
+    size_t n = s->len;
+    s->cap[RV_SC_CODE] = RV_SC_ALIGN(RV_SC_CAP((fold ? 6 : 2) * n + 64));
+    s->cap[RV_SC_FIX] = RV_SC_ALIGN(RV_SC_CAP(sizeof(RVFix) * (n / 8 + 4)));
+    s->cap[RV_SC_FIXW] = RV_SC_ALIGN(RV_SC_CAP(8 * 4));
+    s->cap[RV_SC_PCMAP] = RV_SC_ALIGN(RV_SC_CAP(sizeof(RVPcMask) * ((fold ? n : n / 3) + 4)));
+    s->cap[RV_SC_HI] = RV_SC_ALIGN(RV_SC_CAP(sizeof(RVPcHi) * ((fold ? n : n / 3) + 4)));
+    s->cap[RV_SC_RETS] = RV_SC_ALIGN(RV_SC_CAP(8 * (n / 64 + 4)));
+    s->cap[RV_SC_K] = RV_SC_ALIGN(RV_SC_CAP(sizeof(JSValue) * (n / 8 + 8 + (fold ? RV_FOLD_KMAX : 0))));
+}
+
+static void rv_scratch_drop(JSRuntime *rt)
+{
+    js_free_rt(rt, rt->rv_scratch);
+    rt->rv_scratch = NULL;
+    rt->rv_scratch_size = 0;
+}
+
+/* the scratch back, from outside a conversion */
+static void rv_scratch_free(JSRuntime *rt)
+{
+#ifdef RV_SELF_CHECK
+    if (rt->rv_in_pass)
+        abort(); /* a conversion runs */
+#endif
+    rv_scratch_drop(rt);
+}
+
+/* the arrays and buffers of s in the scratch, which holds s->fixed and
+   the caps. With keep, the arrays keep what they hold when the block
+   grows, since their place depends on the length of the code only.
+   Without, a block too small goes back before the larger one is made, so
+   that the two never count at once under the memory limit. */
+static int rv_scratch_fit(RVPass *s, BOOL keep)
+{
+    JSRuntime *rt = s->rt;
+    size_t need = s->fixed;
+    uint8_t *p;
+    int i;
+
+    for (i = 0; i < RV_SC_N; i++)
+        need += s->cap[i];
+    if (need > rt->rv_scratch_size) {
+        if (!keep)
+            rv_scratch_drop(rt);
+        p = js_realloc_rt(rt, rt->rv_scratch, need);
+        if (!p)
+            return -1;
+        rt->rv_scratch = p;
+        rt->rv_scratch_size = js_malloc_usable_size_rt(rt, p);
+    }
+    p = rt->rv_scratch;
+    s->depth = (int16_t *)p;
+    p += RV_SC_ALIGN(sizeof(int16_t) * s->len);
+    s->catchpos = (int32_t *)p;
+    p += RV_SC_ALIGN(sizeof(int32_t) * s->len);
+    s->leader = p;
+    p += RV_SC_ALIGN(s->len);
+    s->newpc = (int32_t *)p;
+    p += RV_SC_ALIGN(sizeof(int32_t) * (s->len + 1));
+    s->farj_at = p;
+    if (s->farj)
+        s->farj = p;
+    p += RV_SC_ALIGN(s->len);
+    s->st_at = (RVEnt *)p;
+    if (s->st != s->st_in)
+        s->st = s->st_at;
+    p += RV_SC_ALIGN(sizeof(RVEnt) * s->st_n);
+    for (i = 0; i < RV_SC_N; i++) {
+        DynBuf *d = i == RV_SC_CODE ? &s->code : i == RV_SC_FIX ? &s->fix :
+            i == RV_SC_FIXW ? &s->fixw : i == RV_SC_PCMAP ? &s->pcmap :
+            i == RV_SC_HI ? &s->pcmap_hi : i == RV_SC_RETS ? &s->rets : &s->kbuf;
+        d->buf = p;
+        d->size = 0;
+        d->allocated_size = s->cap[i];
+        d->error = FALSE;
+        d->realloc_func = rv_scratch_short;
+        d->opaque = s;
+        p += s->cap[i];
+    }
+    return 0;
+}
+
+/* after a round that ran out of a buffer: that buffer twice as large */
+static int rv_scratch_grow(RVPass *s)
+{
+    const DynBuf *d[RV_SC_N] = { &s->code, &s->fix, &s->fixw, &s->pcmap, &s->pcmap_hi,
+                                 &s->rets, &s->kbuf };
+    int i;
+
+    for (i = 0; i < RV_SC_N; i++)
+        if (d[i]->error)
+            s->cap[i] *= 2;
+    s->sc_short = FALSE;
+    return rv_scratch_fit(s, TRUE);
+}
+
 /* the state of a round of rv_code, kept: depth, catchpos, leader, farj */
 static void rv_round_init(RVPass *s)
 {
-    JSRuntime *rt = s->rt;
     int i;
-    dbuf_free(&s->code);
-    dbuf_free(&s->fix);
-    dbuf_free(&s->fixw);
-    dbuf_free(&s->pcmap);
-    dbuf_free(&s->pcmap_hi);
-    dbuf_free(&s->rets);
-    dbuf_free(&s->kbuf);
-    dbuf_init2(&s->code, rt, js_dbuf_realloc_rt);
-    dbuf_init2(&s->rets, rt, js_dbuf_realloc_rt);
-    dbuf_init2(&s->fix, rt, js_dbuf_realloc_rt);
-    dbuf_init2(&s->fixw, rt, js_dbuf_realloc_rt);
-    dbuf_init2(&s->pcmap, rt, js_dbuf_realloc_rt);
-    dbuf_init2(&s->pcmap_hi, rt, js_dbuf_realloc_rt);
+    s->code.size = s->fix.size = s->fixw.size = s->pcmap.size = 0;
+    s->pcmap_hi.size = s->rets.size = s->kbuf.size = 0;
     s->hi = FALSE;
-    dbuf_init2(&s->kbuf, rt, js_dbuf_realloc_rt);
     s->k = NULL;
     memset(s->kref, 0, sizeof(s->kref));
     s->k_count = 0;
@@ -1227,14 +1372,19 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     s->first_temp = first_temp;
     s->wide = wide;
     s->vr_heap = vr_heap;
-    s->depth = js_malloc_rt(rt, sizeof(s->depth[0]) * s->len);
-    s->catchpos = js_malloc_rt(rt, sizeof(s->catchpos[0]) * s->len);
-    s->leader = js_mallocz_rt(rt, s->len);
-    s->newpc = js_malloc_rt(rt, sizeof(s->newpc[0]) * s->len);
-    if (!s->depth || !s->catchpos || !s->leader || !s->newpc) {
+#ifdef RV_SELF_CHECK
+    if (rt->rv_in_pass)
+        abort(); /* a conversion inside another */
+#endif
+    rt->rv_in_pass = TRUE;
+    s->st_n = fold ? b->stack_size + 8 : 0;
+    s->fixed = rv_scratch_fixed(s->len, s->st_n);
+    rv_scratch_caps(s, fold);
+    if (rv_scratch_fit(s, FALSE) < 0) {
         s->oom = TRUE;
         goto done;
     }
+    memset(s->leader, 0, s->len);
     for (i = 0; i < s->len; i++) {
         s->depth[i] = -1;
         s->catchpos[i] = -1;
@@ -1245,12 +1395,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     first_temp0 = first_temp;
     fsize0 = fsize;
     if (fold) {
-        s->st = js_malloc_rt(rt, sizeof(s->st[0]) * (b->stack_size + 8));
-        if (!s->st) {
-            s->st = s->st_in;
-            s->oom = TRUE;
-            goto done;
-        }
+        s->st = s->st_at;
         s->fold = TRUE;
         s->R = RV_FOLD_R;
     }
@@ -1271,13 +1416,26 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
             s->tcap = min_int(RV_TEMPS_MAX - 1, 127 - first_temp - wide);
             fsize = first_temp + s->tcap + wide;
         }
-        for (round = 0;; round++) {
+        for (round = 0;;) {
+            int st3 = rt->rv_stat[3], st4 = rt->rv_stat[4];
             rv_round_init(s);
             r = rv_code(s);
+            if (unlikely(s->sc_short)) {
+                /* the round again, with more room: what it set is undone */
+                rt->rv_stat[3] = st3;
+                rt->rv_stat[4] = st4;
+                s->crafted = FALSE;
+                if (rv_scratch_grow(s) < 0) {
+                    s->oom = TRUE;
+                    goto done;
+                }
+                continue;
+            }
             if (r <= 0)
                 break;
             if (round == 4)
                 memset(s->farj, 1, s->len);
+            round++;
         }
         if (r >= 0 || !s->fold || !s->fold_full)
             break;
@@ -1362,23 +1520,10 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     if (!rf && s->crafted)
         rt->rv_stat[3] = RV_CRAFTED;
     if (oom)
-        *oom = !rf && (s->oom || s->code.error || s->fix.error || s->fixw.error ||
-                       s->pcmap.error || s->pcmap_hi.error || s->rets.error ||
-                       s->kbuf.error);
-    dbuf_free(&s->code);
-    dbuf_free(&s->fix);
-    dbuf_free(&s->fixw);
-    dbuf_free(&s->pcmap);
-    dbuf_free(&s->rets);
-    dbuf_free(&s->pcmap_hi);
-    dbuf_free(&s->kbuf);
-    js_free_rt(rt, s->depth);
-    js_free_rt(rt, s->catchpos);
-    js_free_rt(rt, s->leader);
-    js_free_rt(rt, s->newpc);
-    js_free_rt(rt, s->farj);
-    if (s->st != s->st_in)
-        js_free_rt(rt, s->st);
+        *oom = !rf && s->oom;
+    rt->rv_in_pass = FALSE;
+    if (rt->rv_scratch_size > RV_SCRATCH_KEEP)
+        rv_scratch_free(rt);
     return rf;
 }
 

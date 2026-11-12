@@ -526,6 +526,11 @@ struct JSRuntime {
        ran out of memory: its call throws out of memory (JS_CallInternal)
        instead of a second try */
     struct JSFunctionBytecode *rv_oom_b;
+    /* the scratch of the pass, kept from one conversion to the next, and
+       its bytes (engine/regvm-pass.h): NULL before the first */
+    uint8_t *rv_scratch;
+    size_t rv_scratch_size;
+    BOOL rv_in_pass; /* a conversion runs (rv_build) */
     /* JS_RegvmStat: functions converted, refused, entries of the loop, and
        the opcode and offset of the last refusal */
     int rv_stat[5];
@@ -1386,6 +1391,8 @@ static void free_function_bytecode(JSRuntime *rt, JSFunctionBytecode *b);
 #include "regvm-func.h"
 static void rv_free_func(JSRuntime *rt, RVFunc *rf);
 static void rv_free_runtime(JSRuntime *rt);
+static void rv_scratch_free(JSRuntime *rt);
+static void rv_scratch_drop(JSRuntime *rt);
 static int rv_stack_make(JSRuntime *rt);
 static no_inline RVFunc *rv_convert(JSContext *ctx, struct JSFunctionBytecode *b);
 static int rv_read_check(JSContext *ctx, struct JSFunctionBytecode *b);
@@ -2038,10 +2045,31 @@ static BOOL js_front_drain(JSMallocContext *s)
 #define js_poll_cross_short(p, q) \
     unlikely(((uintptr_t)(p) ^ (uintptr_t)(q)) >= JS_POLL_SHORT_STEP)
 
-/* The heap, and when it fails, once more after the front cache is given
-   back: it may hold the memory the request needs, or the count the limit
-   would pass. A move the interrupt flag stopped (heap.stopped) is not tried
-   again. */
+/* the scratch of the register pass back, before the front cache, so that
+   the cache of large blocks does not keep it: not while a conversion works
+   in it (engine/regvm-pass.h). Whether there was one. */
+static BOOL js_scratch_drain(JSMallocContext *s)
+{
+    JSRuntime *rt = (JSRuntime *)s; /* JS_NewRuntime: the first field */
+
+    if (!rt->rv_scratch || rt->rv_in_pass)
+        return FALSE;
+    rv_scratch_drop(rt);
+    return TRUE;
+}
+
+/* the scratch of the register pass and the front cache back, and whether
+   anything went back */
+static BOOL js_heap_drain(JSMallocContext *s)
+{
+    BOOL any = js_scratch_drain(s);
+    return js_front_drain(s) || any;
+}
+
+/* The heap, and when it fails, once more after the scratch of the register
+   pass and the front cache are given back: they may hold the memory the
+   request needs, or the count the limit would pass. A move the interrupt
+   flag stopped (heap.stopped) is not tried again. */
 static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
 {
     void *p;
@@ -2049,7 +2077,7 @@ static no_inline void *js_heap_alloc(JSMallocContext *s, size_t size)
     if (unlikely(JS_HEAP_FAILS(s, size)))
         return NULL;
     p = heap_alloc(&s->heap, size);
-    if (unlikely(!p) && js_front_drain(s))
+    if (unlikely(!p) && js_heap_drain(s))
         p = heap_alloc(&s->heap, size);
     return p;
 }
@@ -2061,7 +2089,7 @@ static no_inline void *js_heap_realloc(JSMallocContext *s, void *ptr, size_t siz
     if (unlikely(JS_HEAP_FAILS(s, size)))
         return NULL;
     p = heap_realloc(&s->heap, ptr, size);
-    if (unlikely(!p) && !s->heap.stopped && js_front_drain(s))
+    if (unlikely(!p) && !s->heap.stopped && js_heap_drain(s))
         p = heap_realloc(&s->heap, ptr, size);
     return p;
 }
@@ -3003,12 +3031,14 @@ void JS_SetFrontCache(JSRuntime *rt, int max)
     s->front_max = max < 0 ? 0 : max > JS_MALLOC_FRONT_MAX ? JS_MALLOC_FRONT_MAX : max;
 }
 
-/* Give memory back to the host: the front cache first, then the free memory
-   but keep bytes of it (see heap_release_start). The host unmaps the chunks
+/* Give memory back to the host: the scratch of the register pass and the
+   front cache first, then the free memory but keep bytes of it (see
+   heap_release_start). The host unmaps the chunks
    JS_ReleaseNextChunk returns and drops the pages of the ranges of
    JS_ReleaseNextRange. The runtime may not be used in between. */
 void JS_ReleaseStart(JSRuntime *rt, size_t keep)
 {
+    rv_scratch_free(rt);
     js_front_drain(&rt->malloc_ctx);
     heap_release_start(&rt->malloc_ctx.heap, keep);
 }
@@ -9797,6 +9827,8 @@ void JS_RunGC(JSRuntime *rt)
         return;
     JS_GC_RUN(0);
     JS_RunGCInternal(rt, TRUE);
+    /* the scratch of the pass goes back with what the front keeps */
+    rv_scratch_free(rt);
     js_front_drain(&rt->malloc_ctx);
     /* the register stack is not garbage: the threshold is over the rest */
     if (rt->malloc_gc_threshold != (size_t)-1) {

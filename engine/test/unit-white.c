@@ -116,6 +116,9 @@ int white_shape_hashed(JSValueConst obj);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
+uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
+long white_regvm_shorts(void);
+int white_regvm_scratch_drain(JSContext *ctx, int in_pass);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_stack(JSContext *ctx, long out[7]);
@@ -4629,13 +4632,20 @@ static int regvm_convert_shape(int i, char *src, size_t cap, char *want, size_t 
     }
 }
 
+/* the rounds of the pass made again in the last conversion of
+   regvm_convert_case with fail 0 and the bytes of the code it made */
+static long case_shorts;
+static int case_code_len;
+
 /* regvm_convert_case converts g of src, or f when src sets no g, with call
-   number fail of the allocator failing, 0 for none. A conversion that could
-   not get a block never ends the process, and the function is not converted
-   in part: it stays unconverted and the next call converts it. f(3) then
-   gives want, or globalThis.out does once the jobs have run, when src sets
-   it. Returns the calls of the allocator the conversion made. */
-static int regvm_convert_case(const char *src, const char *want, int fail)
+   number fail of the allocator failing, 0 for none, and with small set each
+   buffer of the pass starting at 16 bytes. A conversion that could not get
+   a block never ends the process, and the function is not converted in
+   part: it stays unconverted and the next call converts it. f(3) then gives
+   want, or globalThis.out does once the jobs have run, when src sets it.
+   Returns the calls of the allocator the conversion made, and in *hash
+   (fail 0) the hash of the register code it made. */
+static int regvm_convert_case(const char *src, const char *want, int fail, int small, uint32_t *hash)
 {
     VM v = vm_new();
     JSValue g, f, c, arg, r, out;
@@ -4649,11 +4659,14 @@ static int regvm_convert_case(const char *src, const char *want, int fail)
     c = JS_GetPropertyStr(v.ctx, g, "g");
     if (JS_IsUndefined(c))
         c = JS_DupValue(v.ctx, f);
-    conv = white_regvm_convert_failing(v.ctx, c, fail, 1, &made);
-    if (fail == 0)
+    conv = white_regvm_convert_failing(v.ctx, c, fail, small ? 3 : 1, &made);
+    if (fail == 0) {
         CHECK(conv == 1, "the pass does not convert it (%d), so the case tests nothing: %s", conv, src);
-    else
+        *hash = white_regvm_code_hash(c, &case_code_len);
+        case_shorts = white_regvm_shorts();
+    } else {
         CHECK(conv == 0 && JS_RegvmFuncStat(v.ctx, c, 0) == 0, "call %d of %d failing: the conversion gives %d, not a function left unconverted for a later call: %s", fail, made, conv, src);
+    }
     CHECK(!JS_HasException(v.ctx), "call %d failing: the conversion leaves an exception", fail);
     arg = JS_NewInt32(v.ctx, 3);
     r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
@@ -4716,47 +4729,57 @@ static int regvm_convert_script(int i, char *src, size_t cap, char *want, size_t
    (run_self), so that a conversion that ends the process is one failed case:
    every call of the allocator failing in turn, or with fail not negative
    that call alone */
-static void regvm_convert_one(int i, int fail)
+static void regvm_convert_one(int i, int fail, int small)
 {
     char src[8192], want[32];
-    int n;
+    int n, n_small;
+    uint32_t h, h_small;
 
     failures = 0;
     if (!regvm_convert_script(i, src, sizeof(src), want, sizeof(want))) {
         CHECK(0, "the sweep has no script %d", i);
     } else if (fail >= 0) {
-        regvm_convert_case(src, want, fail);
+        regvm_convert_case(src, want, fail, small, &h);
     } else {
-        n = regvm_convert_case(src, want, 0);
-        CHECK(n >= 6, "script %d: only %d calls of the allocator", i, n);
+        /* the scratch of the pass, then the register code */
+        n = regvm_convert_case(src, want, 0, 0, &h);
+        CHECK(n >= 2, "script %d: only %d calls of the allocator", i, n);
         for (fail = 1; fail <= n; fail++)
-            regvm_convert_case(src, want, fail);
+            regvm_convert_case(src, want, fail, 0, &h_small);
+        /* with buffers that run short, made again in a larger scratch: the
+           same code, and each growth of the scratch failing in turn */
+        n_small = regvm_convert_case(src, want, 0, 1, &h_small);
+        CHECK(h_small == h, "script %d: buffers that run short make other code (%08x, not %08x)", i, h_small, h);
+        CHECK(case_shorts > 0 || case_code_len <= 16, "script %d: with buffers of 16 bytes no round was made again", i);
+        for (fail = 1; fail <= n_small; fail++)
+            regvm_convert_case(src, want, fail, 1, &h);
     }
     fflush(stdout);
     host_leave(failures ? 1 : 0);
 }
 
-static int regvm_convert_alone(int i, int fail)
+static int regvm_convert_alone(int i, int fail, int small)
 {
     char i_arg[16], fail_arg[16];
-    char *args[5];
+    char *args[6];
 
     snprintf(i_arg, sizeof(i_arg), "%d", i);
     snprintf(fail_arg, sizeof(fail_arg), "%d", fail);
     args[1] = "regvm-convert";
     args[2] = i_arg;
     args[3] = fail_arg;
-    args[4] = NULL;
+    args[4] = small ? "small" : "plain";
+    args[5] = NULL;
     return run_self(args);
 }
 
 static void test_regvm_convert_alloc(void)
 {
     char src[8192], want[32];
-    int i, st, fail, bad = 0;
+    int i, st, fail, small, bad = 0;
 
     for (i = 0; regvm_convert_script(i, src, sizeof(src), want, sizeof(want)); i++) {
-        st = regvm_convert_alone(i, -1);
+        st = regvm_convert_alone(i, -1, 0);
         if (WIFEXITED(st) && WEXITSTATUS(st) == 0)
             continue;
         bad++;
@@ -4765,14 +4788,37 @@ static void test_regvm_convert_alloc(void)
             continue;
         }
         /* which call it was */
-        for (fail = 0; fail < 1000; fail++) {
-            st = regvm_convert_alone(i, fail);
-            if (WIFSIGNALED(st))
+        for (small = 0; small < 2; small++) {
+            for (fail = 0; fail < 1000; fail++) {
+                st = regvm_convert_alone(i, fail, small);
+                if (WIFSIGNALED(st))
+                    break;
+            }
+            if (fail < 1000)
                 break;
         }
-        CHECK(0, "script %d, call %d of the allocator failing: the conversion ends the process (the engine aborted): %s", i, fail, src);
+        CHECK(0, "script %d, call %d of the allocator failing%s: the conversion ends the process (the engine aborted): %s", i, fail, small ? " (buffers of 16 bytes)" : "", src);
     }
     printf("unit-white: test_regvm_convert_alloc: %d scripts, %d bad\n", i, bad);
+}
+
+/* The heap that fails a request gives the scratch of the pass back, as it
+   gives the front cache, but not while a conversion works in it
+   (rt->rv_in_pass): the pass would go on in a block given back. A
+   conversion runs no script and makes no object (rv_build has the runtime
+   and no context), so no other conversion and no collection starts in one,
+   and the test builds abort if one does (rv_build, rv_scratch_free). */
+static void test_regvm_scratch_drain(void)
+{
+    VM v = vm_new();
+    int kept;
+
+    CHECK(eval_is(v.ctx, "var f = function (x) { 'use strict'; return x + 1; }; f(1)", "2"), "f(1)");
+    kept = JS_RegvmStat(v.ctx, 11);
+    CHECK(kept > 0, "a conversion keeps no scratch");
+    CHECK(white_regvm_scratch_drain(v.ctx, 1) == kept, "the heap gave the scratch back while a conversion works in it");
+    CHECK(white_regvm_scratch_drain(v.ctx, 0) == 0, "the heap that failed a request kept %d bytes of scratch", JS_RegvmStat(v.ctx, 11));
+    vm_free(&v);
 }
 
 /* A first call whose conversion runs out of memory: the call ends with the uncatchable out of memory error,
@@ -4800,6 +4846,8 @@ static void regvm_entry_vm(VM *v, const char *entry, JSValue *f, JSValue *e)
     JS_FreeValue(v->ctx, g);
     if (strcmp(entry, "f") != 0)
         JS_FreeValue(v->ctx, JS_Call(v->ctx, *e, JS_UNDEFINED, 1, &arg));
+    /* the scratch of the pass back, for the conversion of f to make */
+    JS_RunGC(v->rt);
 }
 
 static void test_regvm_convert_oom_entries(void)
@@ -4816,7 +4864,7 @@ static void test_regvm_convert_oom_entries(void)
     JS_FreeValue(v.ctx, f);
     JS_FreeValue(v.ctx, e);
     vm_free(&v);
-    CHECK(conv >= 6, "the conversion of f makes only %d calls of the allocator", conv);
+    CHECK(conv >= 2, "the conversion of f makes only %d calls of the allocator", conv);
     for (i = 0; i < (int)(sizeof(entries) / sizeof(entries[0])); i++) {
         for (k = 1; k <= conv; k++) {
             regvm_entry_vm(&v, entries[i], &f, &e);
@@ -4897,6 +4945,8 @@ static void test_regvm_convert_oom_entries(void)
             f = JS_GetPropertyStr(v.ctx, g, "g");
             JS_FreeValue(v.ctx, g);
             CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 0, "g is converted before its first call");
+            /* the scratch of the pass back, for the conversion of g to make */
+            JS_RunGC(v.rt);
             r = white_call_failing(v.ctx, f, JS_UNDEFINED, 1, &three, k, &n);
             if (k == 0)
                 all = n;
@@ -4926,7 +4976,7 @@ static void test_regvm_convert_oom_entries(void)
             JS_FreeValue(v.ctx, f);
             vm_free(&v);
         }
-        CHECK(gcases >= 6, "g: only %d of the %d allocations of g(3) leave g unconverted", gcases, all);
+        CHECK(gcases >= 2, "g: only %d of the %d allocations of g(3) leave g unconverted", gcases, all);
         cases += gcases;
         /* the resume of g(3) one call too deep: its conversion runs, then
            the depth stops it before it runs. When the conversion
@@ -5511,8 +5561,8 @@ int main(int argc, char **argv)
         compile_one(atoi(argv[2]), (size_t)strtoul(argv[3], NULL, 10), atoi(argv[4]), argv[5]);
     /* the sweep of one script of test_regvm_convert_alloc, in a process of
        its own */
-    if (argc == 4 && strcmp(argv[1], "regvm-convert") == 0)
-        regvm_convert_one(atoi(argv[2]), atoi(argv[3]));
+    if (argc == 5 && strcmp(argv[1], "regvm-convert") == 0)
+        regvm_convert_one(atoi(argv[2]), atoi(argv[3]), strcmp(argv[4], "small") == 0);
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
@@ -5573,6 +5623,7 @@ int main(int argc, char **argv)
     test_emit_buffer();
     test_regvm_convert_alloc();
     test_regvm_convert_oom_entries();
+    test_regvm_scratch_drain();
     test_regvm_crafted();
     test_regvm_stack();
     test_regvm_operands();

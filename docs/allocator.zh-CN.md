@@ -28,6 +28,7 @@ host_memory_grow, host_call (memory release, remap)            the host
 
 - 小块这一层是上游的：31 个大小类，每块 8 字节的头，以及每个块的用户数据之前 4 个字节处的引用计数（`quickjs.h` 里的 `JS_BLOCK_REF_COUNT_OFFSET`，对照 `JSMallocBlockHeader` 检查）。堆内存按 8 字节对齐。
 - 前端缓存把释放的小块放在它所属大小类的链表上，这样下一个同类的块就不需要占用 arena。`JS_RunGC`、`JS_RunYoungGC`、`JS_ReleaseStart` 和 `JS_FreeRuntime` 会把它还给 arena，堆分配失败的那次请求也会：缓存回到 arena，再向堆问一次。在到达堆之前就被拒绝的请求（大小为 0，大小超过最大值）不这样做。`JS_SetFrontCache(rt, max)` 把缓存还回去，并设置每条链表的长度（0 到 256，0 表示没有缓存）。大块缓存（见下）在同样的时刻归还，`JS_SetFrontCache(rt, 0)` 也会把它关掉。
+- 把函数转换成寄存器码的那一遍，在运行时从一次转换留到下一次的一个暂存块里干活（`rt->rv_scratch`，`engine/regvm-pass.h`），这样一次转换只分配它的寄存器码，别的什么都不分配。这个块在第一次转换时建立，函数需要更多时变大，和任何块一样计入，也受内存限制约束。大于 64 KiB 的块在它那次转换结束时归还。`JS_RunGC`、`JS_ReleaseStart` 和 `JS_FreeRuntime` 不管大小都会把它还回去，堆分配失败的那次请求也会，在前端缓存之前：留着的暂存块不会让脚本内存不足。暂存块长不大的转换会内存不足，和分配不到寄存器码的转换一样。
 - 大块是前面带 8 字节头的 TLSF 块。下一个块空闲时，TLSF 可以原地扩大它。
 - 所有状态都在运行时里。运行时放在第一个内存块里，所以没有全局变量，没有锁，也没有系统调用。堆向宿主要 `host_memory_grow(vm, size)`：`size` 个字节，64 KiB 的倍数，可读写，按页对齐，不清零，系统没有内存时返回 0。对于专用内存块（见"内存块"），它还用两种 `host_call`（`engine/host.h`），它们不运行用户代码，也不回调引擎：`HOST_CALL_MEMORY_RELEASE`（地址，大小）归还一个内存块，`HOST_CALL_MEMORY_REMAP`（地址，旧大小，新大小）把它变大。两者传的都是宿主所持内存块的确切地址和大小。
 

@@ -449,7 +449,9 @@ void JS_SetFusedOps(JSContext *ctx, int on);
    and 6 those of JS_CallInternal, the entry of a call from C, which a call
    of a C function the loop makes directly counts as taken, 7 the segments of register stack
    allocated so far, 8 those it has now and 9 the bytes they take (in the
-   memory size, not toward the threshold of the collector). In a build with
+   memory size, not toward the threshold of the collector), 11 the bytes of
+   the scratch the pass keeps between conversions (0 when it has none, after
+   a collection). In a build with
    -DRV_STATS (engine/quickjs.c): 10 the dispatches of the register loop, 13
    the calls into it from C, 14 the calls out of it to a function of
    bytecode, 15 those to a C function, 16 the most bytes of a segment of

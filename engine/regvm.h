@@ -197,6 +197,8 @@ int JS_RegvmStat(JSContext *ctx, int what)
         return rv_stack_segments(ctx->rt);
     if (what == 9)
         return (int)ctx->rt->rv_stack_bytes;
+    if (what == 11)
+        return (int)ctx->rt->rv_scratch_size;
     if (what == 10)
         return ctx->rt->rv_count[0];
     if (what >= 13 && what < 16)
@@ -218,12 +220,14 @@ static void rv_free_func(JSRuntime *rt, RVFunc *rf)
         js_free_rt(rt, rf);
 }
 
+#include "regvm-pass.h"
+
 static void rv_free_runtime(JSRuntime *rt)
 {
     rv_stack_free(rt);
+    rv_scratch_free(rt);
 }
 
-#include "regvm-pass.h"
 #include "regvm-entry.h"
 #include "regvm-run.h"
 

@@ -1996,8 +1996,9 @@ static void test_finrec_job_full_heap(void)
 /* A function converts to register code at its first call, with the memory
    the call has: under a memory limit with no room for the register code
    the call fails with the out of memory error, and gives its answer at a
-   limit with room. f(3) converts f and g, which takes about 13.4 KiB at its
-   peak (5.3 KiB kept), so the rooms go up to 16 KiB. The register stack is
+   limit with room. f(3) converts f and g, which takes about 12.3 KiB at its
+   peak, with the scratch of the pass (engine/regvm-pass.h), so the rooms go
+   up to 16 KiB. The register stack is
    made by JS_NewRuntime, before the limit (test_regvm_stack_oom).
    Each allocation of the pass failing in turn is test_regvm_convert_alloc
    of unit-white.c. */
@@ -2108,6 +2109,64 @@ static void test_regvm_stack_oom(void)
     vm_free(&v);
 }
 
+/* The pass keeps its scratch between conversions (engine/regvm-pass.h):
+   up to 64 KiB, given back by a collection, at the end of a conversion
+   that needed more, and when the heap fails a request, as the front cache
+   is. So a kept scratch never makes a script run out of memory: a request
+   that the limit leaves no room for gets the room of the scratch. A
+   function that folds takes the larger buffers of a fold, so the test
+   builds that fold every function (RV_FOLD_TEST) use one of 100 lines where
+   the others use 300, to keep its scratch between 16 and 64 KiB. */
+#ifdef RV_FOLD_TEST
+#define SCRATCH_LINES 100
+#else
+#define SCRATCH_LINES 300
+#endif
+static void test_regvm_scratch(void)
+{
+    char src[16384], want[32];
+    size_t n, kept, size;
+    int i, big;
+    VM v = vm_new();
+
+    n = snprintf(src, sizeof(src), "var f = function (x) { 'use strict'; var s = 0;");
+    for (i = 0; i < SCRATCH_LINES; i++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s + x * %d;", i);
+    snprintf(src + n, sizeof(src) - n, " return s; }; f(1)");
+    snprintf(want, sizeof(want), "%d", SCRATCH_LINES * (SCRATCH_LINES - 1) / 2);
+    CHECK(eval_is(v.ctx, src, want), "the function of %d lines does not give %s", SCRATCH_LINES, want);
+    kept = JS_RegvmStat(v.ctx, 11);
+    CHECK(kept >= 16384 && kept <= 64 * 1024, "the scratch kept after a function of %d lines is %zu bytes", SCRATCH_LINES, kept);
+    JS_RunGC(v.rt);
+    CHECK(JS_RegvmStat(v.ctx, 11) == 0, "a collection leaves %d bytes of scratch", JS_RegvmStat(v.ctx, 11));
+    /* a request the limit has room for only with the scratch given back */
+    n = snprintf(src, sizeof(src), "var h = function (x) { 'use strict'; var s = 0;");
+    for (i = 0; i < SCRATCH_LINES; i++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s - x * %d;", i);
+    snprintf(src + n, sizeof(src) - n, " return s; }; h(1)");
+    snprintf(want, sizeof(want), "-%d", SCRATCH_LINES * (SCRATCH_LINES - 1) / 2);
+    CHECK(eval_is(v.ctx, src, want), "the second function of %d lines does not give %s", SCRATCH_LINES, want);
+    kept = JS_RegvmStat(v.ctx, 11);
+    CHECK(kept >= 16384, "the scratch kept is %zu bytes", kept);
+    size = JS_GetMemorySize(v.rt);
+    JS_SetMemoryLimit(v.rt, size + 8192);
+    snprintf(src, sizeof(src), "new ArrayBuffer(%zu).byteLength", kept - 8192);
+    n = kept - 8192;
+    snprintf(want, sizeof(want), "%zu", n);
+    CHECK(eval_is(v.ctx, src, want), "an ArrayBuffer of the bytes of the scratch less 8 KiB, 8 KiB under the limit, does not get them");
+    /* the conversion of the script may have made a small one again */
+    CHECK((size_t)JS_RegvmStat(v.ctx, 11) < kept, "the heap failed a request and the scratch kept %d bytes", JS_RegvmStat(v.ctx, 11));
+    unlimit(&v);
+    /* a function whose scratch is over 64 KiB gives it back at once */
+    n = snprintf(src, sizeof(src), "var k = function (x) { 'use strict'; var s = 0;");
+    for (big = 0; n + 64 < sizeof(src); big++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s + x * %d;", big);
+    snprintf(src + n, sizeof(src) - n, " return s; }; k(1) > 0");
+    CHECK(eval_is(v.ctx, src, "true"), "the function of %d lines does not run", big);
+    CHECK(JS_RegvmStat(v.ctx, 11) == 0, "a conversion that needed more than 64 KiB keeps %d bytes of scratch", JS_RegvmStat(v.ctx, 11));
+    vm_free(&v);
+}
+
 int main(void)
 {
     nested_scopes();
@@ -2151,6 +2210,7 @@ int main(void)
     test_regvm_convert_oom();
     test_regvm_fold_oom();
     test_regvm_stack_oom();
+    test_regvm_scratch();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;
