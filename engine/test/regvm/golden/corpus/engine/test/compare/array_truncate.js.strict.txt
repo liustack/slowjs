@@ -1,0 +1,11 @@
+result empty:  0
+result refill: 11 ,,,,,,,,,,2
+result truncate false: true 3 0,extra 42 43
+result other: 118 41
+result grow: 121 new false
+result truncate true: false 31 0,3,6,9,12,15,18,21,24,27,30,extra 42 43
+result other: 118 41
+result grow: 121 new false
+mem-end obj=194 atom=541 shape=124 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=541 shape=124 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

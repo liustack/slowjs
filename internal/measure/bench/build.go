@@ -45,7 +45,7 @@ func (o *BuildOptions) Defaults() {
 		o.PGO = "off"
 	}
 	if o.Front == "" {
-		o.Front = "JS_CallInternal"
+		o.Front = "JS_RegvmRun"
 	}
 	if len(o.Positions) == 0 {
 		o.Positions = Protocol()
@@ -372,12 +372,7 @@ func Sorted(dir string) ([]string, error) {
 }
 
 func readLayout(tree, bin, front string) (Layout, error) {
-	h, err := os.Open(filepath.Join(tree, "engine", "quickjs-opcode.h"))
-	if err != nil {
-		return Layout{}, err
-	}
-	defer h.Close()
-	names, err := OpcodeNames(h)
+	names, err := OpcodeNames(filepath.Join(tree, "engine"))
 	if err != nil {
 		return Layout{}, err
 	}

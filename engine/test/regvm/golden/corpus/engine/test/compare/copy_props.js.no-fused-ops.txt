@@ -1,0 +1,5 @@
+result 8550 runs: all as React; copyProps took 911 of the listed ones and 2014 of the random ones
+result ok
+mem-end obj=13138 atom=1191 shape=4582 prop=29221 jsfunc=278 cfunc=179 array=6 fast_array=6 elements=171 binary=0
+mem-gc obj=585 atom=932 shape=2238 prop=2052 jsfunc=277 cfunc=179 array=6 fast_array=6 elements=171 binary=0
+--- status exit 0

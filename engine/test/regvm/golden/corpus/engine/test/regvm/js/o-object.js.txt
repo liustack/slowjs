@@ -1,0 +1,118 @@
+result number:1
+result TypeError:'c' is read-only
+result number:0
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result string:function
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result string:1:2
+result string:1:2
+result TypeError:bad key
+result RangeError:a2
+result TypeError:cannot convert to object
+result TypeError:cannot convert symbol to string
+result [number:1,number:2]
+result [number:7,number:1,number:2]
+result RangeError:a2
+result SyntaxError:set1 2
+result TypeError:'0' is read-only
+result TypeError:cannot set property '0' of null
+result [string:P,string:Q]
+result [number:1,number:1,number:2]
+result SyntaxError:set1 Q
+result TypeError:'0' is read-only
+result TypeError:cannot convert to object
+result string:1/2
+result string:7/8
+result string:2147483647/2147483648
+result string:10/9
+result string:NaN/NaN
+result TypeError:no setter for property
+result TypeError:'0' is read-only
+result EvalError:vo
+result TypeError:cannot read property of null
+result number:2.5
+result TypeError:cannot convert symbol to number
+result number:1
+result TypeError:'c' is read-only
+result number:0
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result string:function
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result string:1:2
+result string:1:2
+result TypeError:bad key
+result RangeError:a2
+result TypeError:cannot convert to object
+result TypeError:cannot convert symbol to string
+result [number:1,number:2]
+result [number:7,number:1,number:2]
+result RangeError:a2
+result SyntaxError:set1 2
+result TypeError:'0' is read-only
+result TypeError:cannot set property '0' of null
+result [string:P,string:Q]
+result [number:1,number:1,number:2]
+result SyntaxError:set1 Q
+result TypeError:'0' is read-only
+result TypeError:cannot convert to object
+result string:1/2
+result string:7/8
+result string:2147483647/2147483648
+result string:10/9
+result string:NaN/NaN
+result TypeError:no setter for property
+result TypeError:'0' is read-only
+result EvalError:vo
+result TypeError:cannot read property of null
+result number:2.5
+result TypeError:cannot convert symbol to number
+result number:1
+result TypeError:'c' is read-only
+result number:0
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result TypeError:'c' is read-only
+result string:function
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result TypeError:'g' is read-only
+result string:1:2
+result string:1:2
+result TypeError:bad key
+result RangeError:a2
+result TypeError:cannot convert to object
+result TypeError:cannot convert symbol to string
+result [number:1,number:2]
+result [number:7,number:1,number:2]
+result RangeError:a2
+result SyntaxError:set1 2
+result TypeError:'0' is read-only
+result TypeError:cannot set property '0' of null
+result [string:P,string:Q]
+result [number:1,number:1,number:2]
+result SyntaxError:set1 Q
+result TypeError:'0' is read-only
+result TypeError:cannot convert to object
+result string:1/2
+result string:7/8
+result string:2147483647/2147483648
+result string:10/9
+result string:NaN/NaN
+result TypeError:no setter for property
+result TypeError:'0' is read-only
+result EvalError:vo
+result TypeError:cannot read property of null
+result number:2.5
+result TypeError:cannot convert symbol to number
+result key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a,key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a,key,key,get a,key,key,get a,set0 1,get q,set0 P,key,key,get a
+mem-end obj=193 atom=556 shape=131 prop=954 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=192 atom=546 shape=130 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

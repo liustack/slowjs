@@ -39,15 +39,19 @@ import (
 )
 
 // counts: js_json_enter is js_internal_enter with the error of JSON, it counts
-// the same level.
-var counts = []string{"js_call_enter", "js_internal_enter", "js_internal_enter_rt",
-	"lre_depth_enter", "js_nest_enter", "js_json_enter"}
+// the same level. js_call_enter_in (the entry of JS_CallInternal) and
+// js_call_hop_enter (js_call_c_hop) count the level of js_call_enter, inlined
+// where the build optimizes and calls at -O0 (count_inline in quickjs.c).
+var counts = []string{"js_call_enter", "js_call_enter_in", "js_call_hop_enter",
+	"js_internal_enter", "js_internal_enter_rt", "lre_depth_enter", "js_nest_enter",
+	"js_json_enter"}
 
 // pair is (F, G): F must not reach G by any path of calls, counted or not.
 type pair struct{ from, to string }
 
 var noReach = []pair{
 	{"JS_ThrowError2", "JS_CallInternal"},
+	{"JS_ThrowError2", "JS_RegvmRun"},
 	{"JS_ThrowError2", "JS_ThrowInterrupted"},
 	// Nor does it read the interrupt flag: these are the functions that do
 	// (poll_flag), or that the flag is handed to.

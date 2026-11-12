@@ -33,6 +33,10 @@ read_when:
 | 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
 | `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
 | 以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完。字节码版本 8 | Unreleased | [c-engine.md](c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case) |
+| 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | Unreleased | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
+| 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
+| 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | Unreleased | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
+| 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
 
 ## 上游 QuickJS 的提交
 
@@ -129,6 +133,8 @@ read_when:
 | --- | --- | --- |
 | 错误的 stack 在第一次读取时才格式化 | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) |
 | 无限递归抛出 RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#无限递归抛出-rangeerror) |
+| 带展开参数的 new 会说出被调用的不是构造函数 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数) |
+| 通过 call 和绑定函数的调用不在调用栈里多出一行 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行) |
 
 ## 时间和 Intl
 
@@ -164,6 +170,8 @@ read_when:
 | --- | --- | --- |
 | 跳到正则可能匹配的位置 | v0.26.15 | [regexp.md](regexp.zh-CN.md#跳到正则可能匹配的位置) |
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
+| 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | Unreleased | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
+| 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | Unreleased | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 
@@ -172,6 +180,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | 搜索直接跳到字符串所在的位置 | v0.27.3 | [strings.md](strings.zh-CN.md#搜索直接跳到字符串所在的位置) |
+| symbol 有自己的字符串 | Unreleased | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
 
 ## JSON
 
@@ -209,6 +218,9 @@ read_when:
 | 内置类的对象找到它们原型的空 shape | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内置类的对象找到它们原型的空-shape) |
 | 通过 shape 由哪个 shape 长出来来找到它 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#通过-shape-由哪个-shape-长出来来找到它) |
 | 单独死去的对象立刻释放 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#单独死去的对象立刻释放) |
+| defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
+| 对象字面量的 shape 至少有空对象的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
+| for in 循环对一个 shape 只问一次能不能从它列出键 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 
 ## 内存
 

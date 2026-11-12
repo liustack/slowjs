@@ -1,0 +1,78 @@
+result plain: global global | undefined global
+result undefined call: global / global / undefined
+result null call: global / global / null
+result number call: object:number / Number / number
+result number method: ok Number number / ok Number number
+result string call: object:string / String / string
+result string method: ok String string / ok String string
+result boolean call: object:boolean / Boolean / boolean
+result boolean method: ok Boolean boolean / ok Boolean boolean
+result symbol call: object:symbol / Symbol / symbol
+result symbol method: ok Symbol symbol / ok Symbol symbol
+result object call: object:object / object / object
+result strict calls sloppy 0: ok 0
+result sloppy calls strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict, sloppy, strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict calls sloppy 1: ok 1
+result sloppy calls strict 1: TypeError: 'x' is read-only
+result strict, sloppy, strict 1: TypeError: 'x' is read-only
+result strict calls sloppy 2: ok 1
+result sloppy calls strict 2: TypeError: 'x' is read-only
+result strict, sloppy, strict 2: TypeError: 'x' is read-only
+result strict calls sloppy 3: ok 1
+result sloppy calls strict 3: TypeError: '0' is read-only
+result strict, sloppy, strict 3: TypeError: '0' is read-only
+result delete: ok false / TypeError: could not delete property / ok true / ok true
+result plain: global global | undefined global
+result undefined call: global / global / undefined
+result null call: global / global / null
+result number call: object:number / Number / number
+result number method: ok Number number / ok Number number
+result string call: object:string / String / string
+result string method: ok String string / ok String string
+result boolean call: object:boolean / Boolean / boolean
+result boolean method: ok Boolean boolean / ok Boolean boolean
+result symbol call: object:symbol / Symbol / symbol
+result symbol method: ok Symbol symbol / ok Symbol symbol
+result object call: object:object / object / object
+result strict calls sloppy 0: ok 1
+result sloppy calls strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict, sloppy, strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict calls sloppy 1: ok 1
+result sloppy calls strict 1: TypeError: 'x' is read-only
+result strict, sloppy, strict 1: TypeError: 'x' is read-only
+result strict calls sloppy 2: ok 1
+result sloppy calls strict 2: TypeError: 'x' is read-only
+result strict, sloppy, strict 2: TypeError: 'x' is read-only
+result strict calls sloppy 3: ok 1
+result sloppy calls strict 3: TypeError: '0' is read-only
+result strict, sloppy, strict 3: TypeError: '0' is read-only
+result delete: ok false / TypeError: could not delete property / ok true / ok true
+result plain: global global | undefined global
+result undefined call: global / global / undefined
+result null call: global / global / null
+result number call: object:number / Number / number
+result number method: ok Number number / ok Number number
+result string call: object:string / String / string
+result string method: ok String string / ok String string
+result boolean call: object:boolean / Boolean / boolean
+result boolean method: ok Boolean boolean / ok Boolean boolean
+result symbol call: object:symbol / Symbol / symbol
+result symbol method: ok Symbol symbol / ok Symbol symbol
+result object call: object:object / object / object
+result strict calls sloppy 0: ok 2
+result sloppy calls strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict, sloppy, strict 0: ReferenceError: 'undeclaredW1' is not defined
+result strict calls sloppy 1: ok 1
+result sloppy calls strict 1: TypeError: 'x' is read-only
+result strict, sloppy, strict 1: TypeError: 'x' is read-only
+result strict calls sloppy 2: ok 1
+result sloppy calls strict 2: TypeError: 'x' is read-only
+result strict, sloppy, strict 2: TypeError: 'x' is read-only
+result strict calls sloppy 3: ok 1
+result sloppy calls strict 3: TypeError: '0' is read-only
+result strict, sloppy, strict 3: TypeError: '0' is read-only
+result delete: ok false / TypeError: could not delete property / ok true / ok true
+mem-end obj=197 atom=549 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=549 shape=127 prop=978 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

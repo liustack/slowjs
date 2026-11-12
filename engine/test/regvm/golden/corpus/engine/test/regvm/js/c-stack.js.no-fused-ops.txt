@@ -1,0 +1,33 @@
+result new     at S1 (<eval>:18:27) |     at S2 (<eval>:20:37) |     at viaNew (<eval>:29:35) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) |  #     at S2 (<eval>:20:70) |     at viaNew (<eval>:29:67) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) | 
+result class     at A (<eval>:24:64) |     at B (<eval>:25:43) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) |  #     at B (<eval>:25:77) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) | 
+result catch 2
+result top3 3
+result derived 0
+result uninit caughtu ReferenceError     at Bu (<eval>:27:51) |     at derivedUninit (<eval>:43:22) |     at <anonymous> (<eval>:54:30) |     at <eval> (<eval>:63:3) | 
+result bound     at S1 (<eval>:18:27) |     at viaBound (<eval>:46:37) |     at <anonymous> (<eval>:55:24) |     at <eval> (<eval>:63:3) | 
+result reflect     at S1 (<eval>:18:27) |     at construct (native) |     at <anonymous> (<eval>:56:35) |     at <eval> (<eval>:63:3) | 
+result reflect class     at B (<eval>:25:77) |     at construct (native) |     at <anonymous> (<eval>:57:41) |     at <eval> (<eval>:63:3) | 
+result map     at S1 (<eval>:18:27) |     at cb (<eval>:58:52) |     at map (native) |     at <anonymous> (<eval>:58:21) |     at <eval> (<eval>:63:3) | 
+result new     at S1 (<eval>:18:27) |     at S2 (<eval>:20:37) |     at viaNew (<eval>:29:35) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) |  #     at S2 (<eval>:20:70) |     at viaNew (<eval>:29:67) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) | 
+result class     at A (<eval>:24:64) |     at B (<eval>:25:43) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) |  #     at B (<eval>:25:77) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) | 
+result catch caught t1 1     at T1 (<eval>:21:40) |     at T2 (<eval>:22:37) |     at T3 (<eval>:23:40) |     at catchHere (<eval>:32:28) |     at <anonymous> (<eval>:51:25) |     at <eval> (<eval>:63:3)
+result top3 caught3 t1 1     at T1 (<eval>:21:40) |     at T2 (<eval>:22:37) |     at T3 (<eval>:23:40) |     at thrower (<eval>:34:42) |     at mid (<eval>:35:39) |     at top3 (<eval>:37:19)
+result derived caughtd bt 1     at Bt (<eval>:26:67) |     at derivedThrow (<eval>:40:22) |     at <anonymous> (<eval>:53:30) |     at <eval> (<eval>:63:3) | 
+result uninit caughtu ReferenceError     at Bu (<eval>:27:51) |     at derivedUninit (<eval>:43:22) |     at <anonymous> (<eval>:54:30) |     at <eval> (<eval>:63:3) | 
+result bound     at S1 (<eval>:18:27) |     at viaBound (<eval>:46:37) |     at <anonymous> (<eval>:55:24) |     at <eval> (<eval>:63:3) | 
+result reflect     at S1 (<eval>:18:27) |     at construct (native) |     at <anonymous> (<eval>:56:35) |     at <eval> (<eval>:63:3) | 
+result reflect class     at B (<eval>:25:77) |     at construct (native) |     at <anonymous> (<eval>:57:41) |     at <eval> (<eval>:63:3) | 
+result map     at S1 (<eval>:18:27) |     at cb (<eval>:58:52) |     at map (native) |     at <anonymous> (<eval>:58:21) |     at <eval> (<eval>:63:3) | 
+result new     at S1 (<eval>:18:27) |     at S2 (<eval>:20:37) |     at viaNew (<eval>:29:35) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) |  #     at S2 (<eval>:20:70) |     at viaNew (<eval>:29:67) |     at <anonymous> (<eval>:49:20) |     at <eval> (<eval>:63:3) | 
+result class     at A (<eval>:24:64) |     at B (<eval>:25:43) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) |  #     at B (<eval>:25:77) |     at viaClass (<eval>:30:37) |     at <anonymous> (<eval>:50:24) |     at <eval> (<eval>:63:3) | 
+result catch caught t1 2     at T1 (<eval>:21:40) |     at T2 (<eval>:22:37) |     at T3 (<eval>:23:40) |     at catchHere (<eval>:32:28) |     at <anonymous> (<eval>:51:25) |     at <eval> (<eval>:63:3)
+result top3 caught3 t1 2     at T1 (<eval>:21:40) |     at T2 (<eval>:22:37) |     at T3 (<eval>:23:40) |     at thrower (<eval>:34:42) |     at mid (<eval>:35:39) |     at top3 (<eval>:37:19)
+result derived caughtd bt 2     at Bt (<eval>:26:67) |     at derivedThrow (<eval>:40:22) |     at <anonymous> (<eval>:53:30) |     at <eval> (<eval>:63:3) | 
+result uninit caughtu ReferenceError     at Bu (<eval>:27:51) |     at derivedUninit (<eval>:43:22) |     at <anonymous> (<eval>:54:30) |     at <eval> (<eval>:63:3) | 
+result bound     at S1 (<eval>:18:27) |     at viaBound (<eval>:46:37) |     at <anonymous> (<eval>:55:24) |     at <eval> (<eval>:63:3) | 
+result reflect     at S1 (<eval>:18:27) |     at construct (native) |     at <anonymous> (<eval>:56:35) |     at <eval> (<eval>:63:3) | 
+result reflect class     at B (<eval>:25:77) |     at construct (native) |     at <anonymous> (<eval>:57:41) |     at <eval> (<eval>:63:3) | 
+result map     at S1 (<eval>:18:27) |     at cb (<eval>:58:52) |     at map (native) |     at <anonymous> (<eval>:58:21) |     at <eval> (<eval>:63:3) | 
+mem-end obj=212 atom=564 shape=131 prop=1004 jsfunc=10 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=541 shape=121 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -230,23 +230,35 @@ func TestHasOwnCallDepth(t *testing.T) {
 // it gave when every call of a C function went through JS_CallInternal
 // (docs/changes/c-engine.md). The tail ones return the call of the C
 // function, a tail call (test_tail_c_calls of engine/test/unit-white.c),
-// and abs calls one with no receiver on each level before going down.
+// and abs calls one with no receiver on each level before going down. The
+// getter and the Proxy trap put a call of JavaScript from C between two
+// direct calls. call_call, apply_apply and bound_call have a C function call
+// another C function (js_call_fwd, js_call_c_hop), directly too: all three
+// start in Reflect.apply, so that the loop never makes the call of call or
+// of the bound function itself.
 var cCallKinds = map[string]string{
-	"call":       "return f.call(null) + v0",
-	"apply":      "return f.apply(null, []) + v0",
-	"map":        "return [1].map(f)[0] + v0",
-	"sort":       "[2, 1].sort(f); return v0",
-	"max":        "return Math.max(f(), v0)",
-	"abs":        "v0 = abs(-v0); return f() + v0",
-	"tail_map":   "return [1].map(f)",
-	"tail_apply": "return apply(f, null, [])",
+	"call":        "return f.call(null) + v0",
+	"apply":       "return f.apply(null, []) + v0",
+	"map":         "return [1].map(f)[0] + v0",
+	"sort":        "[2, 1].sort(f); return v0",
+	"max":         "return Math.max(f(), v0)",
+	"abs":         "v0 = abs(-v0); return f() + v0",
+	"tail_map":    "return [1].map(f)",
+	"tail_apply":  "return apply(f, null, [])",
+	"reflect":     "return Reflect.apply(f, null, []) + v0",
+	"getter":      "return o.x + v0",
+	"proxy_get":   "return p.x + v0",
+	"call_call":   "return apply(call, f, [null]) + v0",
+	"apply_apply": "return apply(apply, null, [f, null, []]) + v0",
+	"bound_call":  "return apply(ucall, null, [f, null]) + v0",
 }
 
 // cCallRun runs the recursion of kind with locals in m, at its depth limit,
 // and gives the depth it reached and the stack of the RangeError.
 func cCallRun(t *testing.T, m *VM, kind string, locals int) string {
 	t.Helper()
-	out, err := m.Eval(`(() => { const abs = Math.abs, apply = Reflect.apply; let reached = 0;
+	out, err := m.Eval(`(() => { const abs = Math.abs, apply = Reflect.apply, call = Function.prototype.call, ucall = call.bind(call); let reached = 0;
+		const o = { get x() { return apply(f, null, []) } }, p = new Proxy({}, { get() { return [1].map(f)[0] } });
 		function f() { `+frameOf(locals+1)+` reached++; `+cCallKinds[kind]+` }
 		let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError ' + e.stack : String(e) }
 		return reached + ' ' + at })()`, EvalGlobal)
@@ -269,7 +281,8 @@ func directCCalls(t *testing.T, m *VM, on bool) {
 // TestCCallDepth runs each recursion of cCallKinds at the depth limits of 5000
 // and 10000, with frames from none to 300 locals, which end at the limit or
 // on the shadow stack, with the direct calls of C functions on and off, and
-// requires both to reach the same depth and give the same stack.
+// requires each to end in a RangeError, not past the end of the stack, and
+// both to reach the same depth and give the same stack.
 func TestCCallDepth(t *testing.T) {
 	for _, limit := range []uintptr{5000, 10000} {
 		for kind := range cCallKinds {
@@ -284,6 +297,9 @@ func TestCCallDepth(t *testing.T) {
 					directCCalls(t, m, on)
 					got[i] = cCallRun(t, m, kind, locals)
 					m.Close()
+				}
+				if !strings.Contains(got[0], " RangeError ") {
+					t.Errorf("limit %d, %s_%d: no RangeError: %.200q", limit, kind, locals, got[0])
 				}
 				if got[0] != got[1] {
 					t.Errorf("limit %d, %s_%d: direct %.200q, through JS_CallInternal %.200q", limit, kind, locals, got[0], got[1])

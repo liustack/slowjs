@@ -1,0 +1,228 @@
+result gen 0 0 2:ab:ab,7:deepes:eepest,260:ababab:bababZ fin
+result gen 0 1 2:ab:ab,1:c:c caught t/fin
+result gen 0 2 2:ab:ab,1:r:r fin
+result gen 0 3 2:ab:ab 
+result gen 1 0 2:ab:ab,261:ababab:ababab,undefined 
+result gen 1 1 2:ab:ab,threw t 
+result gen 1 2 2:ab:ab,1:r:r 
+result gen 1 3 2:ab:ab 
+result gen 2 0 2:ab:ab,7:deepes:eepest,600:ababab:bababZ fin
+result gen 2 1 2:ab:ab,1:c:c caught t/fin
+result gen 2 2 2:ab:ab,1:r:r fin
+result gen 2 3 2:ab:ab 
+result gen 3 0 2:ab:ab,601:ababab:ababab,undefined 
+result gen 3 1 2:ab:ab,threw t 
+result gen 3 2 2:ab:ab,1:r:r 
+result gen 3 3 2:ab:ab 
+result af 0 0 266:ababab:eepest fin
+result af 0 1 1:c:c caught rej/fin
+result af 1 0 261:ababab:ababab 
+result af 1 1 rejected rej 
+result af 2 0 606:ababab:eepest fin
+result af 2 1 1:c:c caught rej/fin
+result af 3 0 601:ababab:ababab 
+result af 3 1 rejected rej 
+result ag 0 0 1:Q:Q,2:ab:ab,260:ababab:bababZ fin
+result ag 0 1 1:c:c caught rej/fin
+result ag 0 2 1:Q:Q,1:r:r fin
+result ag 0 3 1:Q:Q,1:c:c caught t/fin
+result ag 1 0 1:Q:Q,2:ab:ab,600:ababab:bababZ fin
+result ag 1 1 1:c:c caught rej/fin
+result ag 1 2 1:Q:Q,1:r:r fin
+result ag 1 3 1:Q:Q,1:c:c caught t/fin
+result sweep 28 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 29 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 30 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 31 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 32 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 33 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 34 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 35 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 36 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 37 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 38 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 39 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 40 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 41 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 42 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 43 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 44 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 45 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 46 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 47 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 48 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 49 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 50 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 51 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 52 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 53 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 54 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 55 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 56 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 57 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 58 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 59 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 60 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 61 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 62 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 63 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 64 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 65 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 66 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 67 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 68 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 69 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 70 2:ab:ab,261:ababab:ababab,undefined 
+result gen 0 0 2:ab:ab,7:deepes:eepest,260:ababab:bababZ fin
+result gen 0 1 2:ab:ab,1:c:c caught t/fin
+result gen 0 2 2:ab:ab,1:r:r fin
+result gen 0 3 2:ab:ab 
+result gen 1 0 2:ab:ab,261:ababab:ababab,undefined 
+result gen 1 1 2:ab:ab,threw t 
+result gen 1 2 2:ab:ab,1:r:r 
+result gen 1 3 2:ab:ab 
+result gen 2 0 2:ab:ab,7:deepes:eepest,600:ababab:bababZ fin
+result gen 2 1 2:ab:ab,1:c:c caught t/fin
+result gen 2 2 2:ab:ab,1:r:r fin
+result gen 2 3 2:ab:ab 
+result gen 3 0 2:ab:ab,601:ababab:ababab,undefined 
+result gen 3 1 2:ab:ab,threw t 
+result gen 3 2 2:ab:ab,1:r:r 
+result gen 3 3 2:ab:ab 
+result af 0 0 266:ababab:eepest fin
+result af 0 1 1:c:c caught rej/fin
+result af 1 0 261:ababab:ababab 
+result af 1 1 rejected rej 
+result af 2 0 606:ababab:eepest fin
+result af 2 1 1:c:c caught rej/fin
+result af 3 0 601:ababab:ababab 
+result af 3 1 rejected rej 
+result ag 0 0 1:Q:Q,2:ab:ab,260:ababab:bababZ fin
+result ag 0 1 1:c:c caught rej/fin
+result ag 0 2 1:Q:Q,1:r:r fin
+result ag 0 3 1:Q:Q,1:c:c caught t/fin
+result ag 1 0 1:Q:Q,2:ab:ab,600:ababab:bababZ fin
+result ag 1 1 1:c:c caught rej/fin
+result ag 1 2 1:Q:Q,1:r:r fin
+result ag 1 3 1:Q:Q,1:c:c caught t/fin
+result sweep 28 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 29 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 30 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 31 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 32 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 33 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 34 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 35 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 36 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 37 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 38 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 39 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 40 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 41 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 42 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 43 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 44 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 45 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 46 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 47 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 48 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 49 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 50 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 51 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 52 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 53 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 54 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 55 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 56 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 57 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 58 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 59 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 60 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 61 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 62 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 63 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 64 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 65 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 66 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 67 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 68 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 69 2:ab:ab,261:ababab:ababab,undefined 
+result sweep 70 2:ab:ab,261:ababab:ababab,undefined 
+result gen 0 0 2:ab:ab,7:deepes:eepest,260:ababab:bababZ fin
+result gen 0 1 2:ab:ab,1:c:c caught t/fin
+result gen 0 2 2:ab:ab,1:r:r fin
+result gen 0 3 2:ab:ab 
+result gen 1 0 2:ab:ab,261:ababab:ababab,undefined 
+result gen 1 1 2:ab:ab,threw t 
+result gen 1 2 2:ab:ab,1:r:r 
+result gen 1 3 2:ab:ab 
+result gen 2 0 2:ab:ab,7:deepes:eepest,600:ababab:bababZ fin
+result gen 2 1 2:ab:ab,1:c:c caught t/fin
+result gen 2 2 2:ab:ab,1:r:r fin
+result gen 2 3 2:ab:ab 
+result gen 3 0 2:ab:ab,601:ababab:ababab,undefined 
+result gen 3 1 2:ab:ab,threw t 
+result gen 3 2 2:ab:ab,1:r:r 
+result gen 3 3 2:ab:ab 
+result af 0 0 266:ababab:eepest fin
+result af 0 1 1:c:c caught rej/fin
+result af 1 0 261:ababab:ababab 
+result af 1 1 rejected rej 
+result af 2 0 606:ababab:eepest fin
+result af 2 1 1:c:c caught rej/fin
+result af 3 0 601:ababab:ababab 
+result af 3 1 rejected rej 
+result ag 0 0 1:Q:Q,2:ab:ab,260:ababab:bababZ fin
+result ag 0 1 1:c:c caught rej/fin
+result ag 0 2 1:Q:Q,1:r:r fin
+result ag 0 3 1:Q:Q,1:c:c caught t/fin
+result ag 1 0 1:Q:Q,2:ab:ab,600:ababab:bababZ fin
+result ag 1 1 1:c:c caught rej/fin
+result ag 1 2 1:Q:Q,1:r:r fin
+result ag 1 3 1:Q:Q,1:c:c caught t/fin
+result sweep 28 2:ab:ab,threw t 
+result sweep 29 2:ab:ab,threw t 
+result sweep 30 2:ab:ab,threw t 
+result sweep 31 2:ab:ab,threw t 
+result sweep 32 2:ab:ab,threw t 
+result sweep 33 2:ab:ab,threw t 
+result sweep 34 2:ab:ab,threw t 
+result sweep 35 2:ab:ab,threw t 
+result sweep 36 2:ab:ab,threw t 
+result sweep 37 2:ab:ab,threw t 
+result sweep 38 2:ab:ab,threw t 
+result sweep 39 2:ab:ab,threw t 
+result sweep 40 2:ab:ab,threw t 
+result sweep 41 2:ab:ab,threw t 
+result sweep 42 2:ab:ab,threw t 
+result sweep 43 2:ab:ab,threw t 
+result sweep 44 2:ab:ab,threw t 
+result sweep 45 2:ab:ab,threw t 
+result sweep 46 2:ab:ab,threw t 
+result sweep 47 2:ab:ab,threw t 
+result sweep 48 2:ab:ab,threw t 
+result sweep 49 2:ab:ab,threw t 
+result sweep 50 2:ab:ab,threw t 
+result sweep 51 2:ab:ab,threw t 
+result sweep 52 2:ab:ab,threw t 
+result sweep 53 2:ab:ab,threw t 
+result sweep 54 2:ab:ab,threw t 
+result sweep 55 2:ab:ab,threw t 
+result sweep 56 2:ab:ab,threw t 
+result sweep 57 2:ab:ab,threw t 
+result sweep 58 2:ab:ab,threw t 
+result sweep 59 2:ab:ab,threw t 
+result sweep 60 2:ab:ab,threw t 
+result sweep 61 2:ab:ab,threw t 
+result sweep 62 2:ab:ab,threw t 
+result sweep 63 2:ab:ab,threw t 
+result sweep 64 2:ab:ab,threw t 
+result sweep 65 2:ab:ab,threw t 
+result sweep 66 2:ab:ab,threw t 
+result sweep 67 2:ab:ab,threw t 
+result sweep 68 2:ab:ab,threw t 
+result sweep 69 2:ab:ab,threw t 
+result sweep 70 2:ab:ab,threw t 
+mem-end obj=201 atom=541 shape=127 prop=970 jsfunc=0 cfunc=139 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=201 atom=541 shape=127 prop=970 jsfunc=0 cfunc=139 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -43,17 +43,17 @@ func TestParsePositions(t *testing.T) {
 	if BinName("base", Position{0, 16, 0}) != "base@0.16" {
 		t.Error("BinName")
 	}
-	ops := Position{32, 16, 0}.XformOps("JS_CallInternal", "")
-	if !slices.Equal(ops, []string{"shift:32", "front:JS_CallInternal:16"}) {
+	ops := Position{32, 16, 0}.XformOps("JS_RegvmRun", "")
+	if !slices.Equal(ops, []string{"shift:32", "front:JS_RegvmRun:16"}) {
 		t.Errorf("ops = %v", ops)
 	}
 	// The second shift goes after the regexp matcher, between the first shift and the front.
-	ops = Position{64, 8, 2208}.XformOps("JS_CallInternal_block", "dbuf_init2")
-	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_CallInternal_block:8"}) {
+	ops = Position{64, 8, 2208}.XformOps("JS_RegvmRun_block", "dbuf_init2")
+	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_RegvmRun_block:8"}) {
 		t.Errorf("ops = %v", ops)
 	}
-	ops = Position{0, 0, 32}.XformOps("JS_CallInternal_block", "")
-	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_CallInternal_block:0"}) {
+	ops = Position{0, 0, 32}.XformOps("JS_RegvmRun_block", "")
+	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_RegvmRun_block:0"}) {
 		t.Errorf("ops = %v", ops)
 	}
 	for _, c := range []struct {
@@ -81,7 +81,7 @@ func fakeTree(t *testing.T) string {
 	dir := filepath.Join(tree, "internal", "cengine")
 	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "cutils_amd64.s"), []byte("TEXT a\n\tRET\nTEXT b\n"), 0o644)
-	os.WriteFile(filepath.Join(dir, "quickjs_amd64.s"), []byte("TEXT ·JS_CallInternal(SB)\n\tPCALIGN $64\n\tRET\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "quickjs_amd64.s"), []byte("TEXT ·JS_RegvmRun(SB)\n\tPCALIGN $64\n\tRET\n"), 0o644)
 	os.WriteFile(filepath.Join(dir, "engine_decl_amd64.go"), []byte("package cengine\n"), 0o644)
 	os.WriteFile(filepath.Join(tree, "go.mod"), []byte("module m\n\ngo 1.27.0\n"), 0o644)
 	return tree
@@ -113,14 +113,14 @@ func fakeXform(ctx context.Context, dir string, ops []string) error {
 
 func TestResolveFront(t *testing.T) {
 	tree := fakeTree(t)
-	got, err := ResolveFront(tree, "JS_CallInternal")
-	if err != nil || got != "JS_CallInternal" {
+	got, err := ResolveFront(tree, "JS_RegvmRun")
+	if err != nil || got != "JS_RegvmRun" {
 		t.Fatalf("ResolveFront = %q, %v", got, err)
 	}
 	// A packed function: only NAME_block has a body.
 	p := filepath.Join(tree, "internal/cengine/quickjs_amd64.s")
-	os.WriteFile(p, []byte("TEXT ·JS_CallInternal_block(SB), $496-32\n\tPCALIGN $64\n\tRET\n"), 0o644)
-	if got, err = ResolveFront(tree, "JS_CallInternal"); err != nil || got != "JS_CallInternal_block" {
+	os.WriteFile(p, []byte("TEXT ·JS_RegvmRun_block(SB), $496-32\n\tPCALIGN $64\n\tRET\n"), 0o644)
+	if got, err = ResolveFront(tree, "JS_RegvmRun"); err != nil || got != "JS_RegvmRun_block" {
 		t.Fatalf("ResolveFront = %q, %v", got, err)
 	}
 	if _, err = ResolveFront(tree, "nope"); err == nil {
@@ -131,7 +131,7 @@ func TestResolveFront(t *testing.T) {
 func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	tree := fakeTree(t)
 	before, _ := os.ReadFile(filepath.Join(tree, "internal/cengine/cutils_amd64.s"))
-	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16, 0}, "JS_CallInternal", "", fakeXform)
+	ov, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 16, 0}, "JS_RegvmRun", "", fakeXform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,13 +149,13 @@ func TestMakeOverlayLeavesTheTreeAlone(t *testing.T) {
 	}
 
 	// Position 0.0 changes nothing, and that is not an error.
-	ov, err = MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{}, "JS_CallInternal", "", fakeXform)
+	ov, err = MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{}, "JS_RegvmRun", "", fakeXform)
 	if err != nil || len(ov.Replace) != 0 {
 		t.Errorf("0.0: %v, %v", ov, err)
 	}
 	// A position that moves nothing is an error: the xform did not find its place.
 	nop := func(context.Context, string, []string) error { return nil }
-	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0, 0}, "JS_CallInternal", "", nop); err == nil {
+	if _, err := MakeOverlay(context.Background(), tree, filepath.Join(t.TempDir(), "w"), Position{32, 0, 0}, "JS_RegvmRun", "", nop); err == nil {
 		t.Error("a position that changed no file was accepted")
 	}
 	// No generated engine is an error.

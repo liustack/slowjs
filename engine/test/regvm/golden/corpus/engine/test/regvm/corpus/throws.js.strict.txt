@@ -1,0 +1,30 @@
+result Error: boom 0
+result Error: boom 1
+result Error: boom 1
+result Error: boom 1
+result Error: boom 2
+result Error: boom 2
+result Error: boom 2
+result Error: boom 3
+result Error: boom 3
+result Error: boom 3
+result Error: boom 4
+result Error: boom 4
+result Error: boom 4
+result Error: boom 5
+result Error: boom 5
+result TypeError: cannot read property 'x' of undefined
+result TypeError: cannot read property 'x' of null
+result TypeError: cannot read property 'y' of undefined
+result ok 5
+result TypeError: cannot read property 'y' of null
+result TypeError: object is not extensible
+result undefined
+result TypeError: cannot read property 'y' of undefined
+result TypeError: getter
+result Error: boom v
+result Error: boom 11 1
+result     at boom /    at d1 /    at d2 /    at d3 /    at names /    at <anonymous> /    at <eval> /
+mem-end obj=195 atom=547 shape=126 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=547 shape=126 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,54 @@
+result 1
+result 
+result 1
+result 5
+result 5
+result 6
+result alive1
+result gone
+result alive1
+result gone
+result c1:t1
+result c1:ty
+result c3:t1
+result c3:tz
+result 3000
+result 3000
+result 4
+result 4
+result 6,7
+result 4
+result 1
+result 6
+result 4
+result 1
+result 6
+result --
+result 1
+result 
+result 1
+result 5
+result 5
+result 6
+result alive1
+result gone
+result alive1
+result gone
+result c1:t1
+result c1:ty
+result c3:t1
+result c3:tz
+result 3000
+result 3000
+result 4
+result 4
+result 6,7
+result 4
+result 1
+result 6
+result 4
+result 1
+result 6
+mem-end obj=195 atom=547 shape=125 prop=971 jsfunc=2 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=543 shape=124 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

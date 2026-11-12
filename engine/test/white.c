@@ -55,6 +55,15 @@ static int white_call_fails(JSRuntime *rt, void *ptr, size_t size)
 }
 #define JS_ALLOC_FAILS(rt, ptr, size) white_call_fails(rt, ptr, size)
 
+/* RV_SC_CAP gives each buffer of the pass (engine/regvm-pass.h) 16 bytes
+   at first while white_sc_small is set (white_regvm_convert_failing mode
+   2): every buffer runs short and its round is made again. RV_SC_SHORT
+   counts those rounds (white_regvm_shorts). */
+static int white_sc_small;
+static long white_sc_shorts;
+#define RV_SC_CAP(n) (white_sc_small ? 16 : (n))
+#define RV_SC_SHORT() (white_sc_shorts++)
+
 /* JS_WORK counts the units of work of the loops that read the interrupt flag
    (white_work), and each reading of the flag (cutils.h calls host_poll) closes
    a stretch: white_work_max is the longest stretch since white_work_reset,
@@ -379,6 +388,7 @@ static const uint8_t white_ops[] = {
     OP_get_loc8_get_field, OP_dup_case_atom,
     OP_typeof, OP_typeof_is_undefined, OP_typeof_is_function, OP_typeof_is, OP_lnot,
     OP_get_loc_check, OP_put_loc_check, OP_set_loc_check, OP_set_loc_uninitialized,
+    OP_return,
 };
 
 int white_op(int i)
@@ -1358,4 +1368,282 @@ int white_emit_buf(JSContext *ctx, int op)
     if (op == 2)
         js_emit_buf_end(ctx, ec, &white_emit_held, FALSE);
     return ec->buf ? ec->buf_size : 0;
+}
+
+/* ---- the register loop ---- */
+
+/* converts the function f to register code (rv_convert) with the request
+   fail of the conversion failing, as white_compile_failing does: mode 1
+   counts every call of the allocator, mode 2 starts each buffer of the
+   pass at 16 bytes (RV_SC_CAP). A collection first gives the scratch of
+   the pass back, so that the conversion makes it. *nallocs gets the
+   requests the conversion made. 1 when f has register code, 0 when it has
+   none, -1 when f is no function of bytecode (a generator or an async
+   function is one) that has not converted yet. */
+int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs)
+{
+    JSFunctionBytecode *b;
+    RVFunc *rf;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    if (b->rv != RV_UNCONVERTED)
+        return -1;
+    JS_RunGC(ctx->rt);
+    white_sc_small = (mode & 2) != 0;
+    white_sc_shorts = 0;
+    white_alloc_calls = mode & 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    rf = rv_convert(ctx, b);
+    *nallocs = white_alloc_count;
+    /* a conversion of its own, not that of a call */
+    ctx->rt->rv_oom_b = NULL;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    white_sc_small = 0;
+    return rf->arg_count >= 0;
+}
+
+/* the rounds of the pass made again with a larger scratch in the last
+   conversion of white_regvm_convert_failing */
+long white_regvm_shorts(void)
+{
+    return white_sc_shorts;
+}
+
+/* an FNV-1a hash of the register code of f: its code, pcmap and the temps
+   past T[31] of it, the return addresses of its GOSUBs, the slots of its
+   frame, its first temp and the tags of its constants, and in *code_len
+   the bytes of its code. 0 when f has none. */
+uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    uint32_t h = 2166136261u;
+    int i;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return 0;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return 0;
+    *code_len = rf->code_len;
+#define WHITE_FNV(p, n) do { const uint8_t *p_ = (const uint8_t *)(p); size_t n_;    \
+        for (n_ = 0; n_ < (size_t)(n); n_++) h = (h ^ p_[n_]) * 16777619u; } while (0)
+    WHITE_FNV(rf->code, rf->code_len);
+    WHITE_FNV(rf->pcmap, sizeof(RVPcMask) * rf->pcmap_count);
+    if (rf->pcmap_hi)
+        WHITE_FNV(rf->pcmap_hi, sizeof(RVPcHi) * rf->pcmap_count);
+    WHITE_FNV(rf->rets, 8 * rf->ret_count);
+    WHITE_FNV(&rf->fsize, sizeof(rf->fsize));
+    WHITE_FNV(&rf->temp0, sizeof(rf->temp0));
+    WHITE_FNV(&rf->k_count, sizeof(rf->k_count));
+    for (i = 0; i < rf->k_count; i++) {
+        int tag = JS_VALUE_GET_TAG(rf->k[i]);
+        WHITE_FNV(&tag, sizeof(tag));
+    }
+#undef WHITE_FNV
+    return h;
+}
+
+/* Code no compiler makes, made from the function f of bytecode for the
+   check of JS_ReadObject (rv_read_check of engine/regvm-entry.h), one kind
+   at a time: 0 an instruction that pops more than the stack holds (its
+   first push_1 made a drop), 1 a stack larger than stack_size (stack_size
+   0), 2 two paths that meet with different depths (its first push_2 made a
+   nop), 3 nip_catch with no catch (its first add made a nip_catch), 4
+   mapped arguments with no closure state (var_ref_count 0). With undo, f
+   gets back what the last call changed. -1 when f has no place for the
+   kind. Such code must never run. */
+static struct {
+    JSFunctionBytecode *b;
+    int pos, byte, stack_size, var_ref_count;
+} white_crafted_saved;
+
+int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
+{
+    JSFunctionBytecode *b;
+    int pos, op, want = -1, to = -1;
+
+    (void)ctx;
+    if (undo) {
+        b = white_crafted_saved.b;
+        if (!b)
+            return -1;
+        if (white_crafted_saved.pos >= 0)
+            b->byte_code_buf[white_crafted_saved.pos] = white_crafted_saved.byte;
+        b->stack_size = white_crafted_saved.stack_size;
+        b->var_ref_count = white_crafted_saved.var_ref_count;
+        white_crafted_saved.b = NULL;
+        return 0;
+    }
+    if (JS_VALUE_GET_TAG(f) == JS_TAG_FUNCTION_BYTECODE)
+        b = JS_VALUE_GET_PTR(f);
+    else if (JS_VALUE_GET_TAG(f) == JS_TAG_OBJECT &&
+             JS_VALUE_GET_OBJ(f)->class_id == JS_CLASS_BYTECODE_FUNCTION)
+        b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    else
+        return -1;
+    white_crafted_saved.b = b;
+    white_crafted_saved.pos = -1;
+    white_crafted_saved.stack_size = b->stack_size;
+    white_crafted_saved.var_ref_count = b->var_ref_count;
+    switch (kind) {
+    case 0: want = OP_push_1; to = OP_drop; break;
+    case 1: b->stack_size = 0; return 0;
+    case 2: want = OP_push_2; to = OP_nop; break;
+    case 3: want = OP_add; to = OP_nip_catch; break;
+    case 4:
+        if (!b->var_ref_count)
+            return -1;
+        b->var_ref_count = 0;
+        return 0;
+    default:
+        return -1;
+    }
+    for (pos = 0; pos < b->byte_code_len; pos += short_opcode_info(op).size) {
+        op = b->byte_code_buf[pos];
+        if (op == want) {
+            white_crafted_saved.pos = pos;
+            white_crafted_saved.byte = op;
+            b->byte_code_buf[pos] = to;
+            return 0;
+        }
+    }
+    white_crafted_saved.b = NULL;
+    return -1;
+}
+
+/* the check of JS_ReadObject on the function f (rv_read_check): 0 when it
+   lets f through, -1 with the exception pending */
+int white_regvm_read_check(JSContext *ctx, JSValueConst f)
+{
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -2;
+    return rv_read_check(ctx, JS_VALUE_GET_OBJ(f)->u.func.function_bytecode);
+}
+
+/* the register stack of ctx's runtime (engine/regvm-entry.h): out[0] the
+   slots of its first segment, out[1] its segments, out[2] the bytes they
+   take, out[3] the most slots it needed since it last settled, out[4] the
+   bytes the heap is asked for the first segment past the most a new shared
+   chunk of 64 KiB takes (HEAP_SHARED_MAX of engine/heap.h, the test of
+   heap_grow_block), out[5] RV_SEG_FIRST and out[6] RV_SEG_MAX. -1 when it
+   has none. */
+int white_regvm_stack(JSContext *ctx, long out[7])
+{
+    JSRuntime *rt = ctx->rt;
+    RVSeg *s = rt->rv_seg;
+
+    if (!s)
+        return -1;
+    while (s->prev)
+        s = s->prev;
+    out[0] = s->size;
+    out[1] = rv_stack_segments(rt);
+    out[2] = rt->rv_stack_bytes;
+    out[3] = rt->rv_hw;
+    out[4] = (long)(sizeof(JSMallocLargeBlockHeader) + sizeof(RVSeg) + s->size * sizeof(JSValue)) -
+             (long)HEAP_SHARED_MAX(65536);
+    out[5] = RV_SEG_FIRST;
+    out[6] = RV_SEG_MAX;
+    return 0;
+}
+
+/* Code no compiler makes for the operand checks of the pass
+   (rv_operands_ok of engine/regvm-pass.h): the start of the code of the
+   function f replaced by the len bytes of code, its stack_size by
+   stack_size, or with undo both put back. -1 when f's code is shorter. */
+static struct {
+    JSFunctionBytecode *b;
+    uint8_t code[64];
+    int len, stack_size;
+} white_code_saved;
+
+int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len,
+                   int stack_size, int undo)
+{
+    JSFunctionBytecode *b;
+
+    (void)ctx;
+    if (undo) {
+        b = white_code_saved.b;
+        if (!b)
+            return -1;
+        memcpy(b->byte_code_buf, white_code_saved.code, white_code_saved.len);
+        b->stack_size = white_code_saved.stack_size;
+        white_code_saved.b = NULL;
+        return 0;
+    }
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    if (len > b->byte_code_len || len > (int)sizeof(white_code_saved.code))
+        return -1;
+    white_code_saved.b = b;
+    white_code_saved.len = len;
+    white_code_saved.stack_size = b->stack_size;
+    memcpy(white_code_saved.code, b->byte_code_buf, len);
+    memcpy(b->byte_code_buf, code, len);
+    b->stack_size = stack_size;
+    return 0;
+}
+
+/* the variable definitions of the first function of the compiled script
+   f taken away (on), or put back (off), so that JS_WriteObject writes none
+   for its arguments and locals. -1 when f has no function. */
+int white_drop_vardefs(JSValueConst f, int on)
+{
+    static JSBytecodeVarDef *saved;
+    JSFunctionBytecode *b;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = JS_VALUE_GET_PTR(f);
+    if (b->cpool_count < 1 || JS_VALUE_GET_TAG(b->cpool[0]) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = JS_VALUE_GET_PTR(b->cpool[0]);
+    if (on) {
+        saved = b->vardefs;
+        b->vardefs = NULL;
+    } else {
+        b->vardefs = saved;
+    }
+    return 0;
+}
+
+/* the opcodes the tests of the operand checks write */
+int white_opcode(int which)
+{
+    static const int ops[] = { OP_gosub, OP_return_undef, OP_drop, OP_set_loc_uninitialized,
+                               OP_push_const8, OP_return, OP_fclosure8, OP_nop, OP_push_atom_value };
+    return which >= 0 && which < (int)countof(ops) ? ops[which] : -1;
+}
+
+/* whether a conversion that ran out of memory waits for the call out of
+   the register loop that throws its error (rt->rv_oom_b) */
+int white_regvm_oom_pending(JSContext *ctx)
+{
+    return ctx->rt->rv_oom_b != NULL;
+}
+
+/* js_heap_drain, as when the heap fails a request, with rt->rv_in_pass set
+   as while a conversion works in the scratch (in_pass) or not: the bytes of
+   scratch kept after it. */
+int white_regvm_scratch_drain(JSContext *ctx, int in_pass)
+{
+    JSRuntime *rt = ctx->rt;
+    BOOL was = rt->rv_in_pass;
+
+    rt->rv_in_pass = in_pass;
+    js_heap_drain(&rt->malloc_ctx);
+    rt->rv_in_pass = was;
+    return (int)rt->rv_scratch_size;
 }

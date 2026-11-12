@@ -1,0 +1,43 @@
+result strict field 0: throws TypeError
+result sloppy field 0: ok
+result strict element 0: throws TypeError
+result sloppy element 0: ok
+result strict computed key 0: throws TypeError
+result strict ordinary 0: ok
+result strict field 1: throws TypeError
+result sloppy field 1: ok
+result strict element 1: throws TypeError
+result sloppy element 1: ok
+result strict computed key 1: throws TypeError
+result strict ordinary 1: ok
+result strict field 2: throws TypeError
+result sloppy field 2: ok
+result strict element 2: throws TypeError
+result sloppy element 2: ok
+result strict computed key 2: throws TypeError
+result strict ordinary 2: ok
+result strict store under a proxy prototype: true
+result Reflect.set: false
+result Reflect.set with receiver: false
+result strict compound: throws TypeError
+result target left alone: false
+result strict array push: throws TypeError
+result strict field, existing 0: throws TypeError
+result sloppy field, existing 0: ok
+result strict element, existing 0: throws TypeError
+result sloppy element, existing 0: ok
+result strict field, existing 1: throws TypeError
+result sloppy field, existing 1: ok
+result strict element, existing 1: throws TypeError
+result sloppy element, existing 1: ok
+result Reflect.set, existing: false
+result Reflect.set with receiver, existing: false
+result Object.assign, existing: throws TypeError
+result array fill, existing: throws TypeError
+result strict array push, length: throws TypeError
+result strict super store, existing: throws TypeError
+result sloppy super store, existing: ok
+result strict store in with, existing: throws TypeError
+mem-end obj=208 atom=563 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
+mem-gc obj=208 atom=563 shape=128 prop=1013 jsfunc=16 cfunc=131 array=2 fast_array=2 elements=40 binary=0
+--- status exit 0

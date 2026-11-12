@@ -1,0 +1,51 @@
+result plain => a:number=1:wec,b:string=x1:wec,c:object=null:wec,d:undefined=undefined:wec
+result dup keys => a:number=3:wec,b:number=2:wec
+result numeric keys => 0:string=zero:wec,1:string=one:wec,2:string=two:wec,b:number=1:wec,-1:string=neg:wec
+result proto literal => a:number=1:wec inh=1
+result proto null => a:number=1:wec,b:number=2:wec proto=null
+result computed => z:number=1:wec,a:number=2:wec,zz:number=3:wec
+result getter in literal => a:number=1:wec,b:get/set:ec,c:number=3:wec
+result method => a:number=1:wec,m:function=m() { return this.a; }:wec m=1
+result spread getters => a:number=1:wec,b:number=2:wec,c:number=3:wec n=1
+result spread over existing => a:number=2:wec,b:number=4:wec
+result setter on proto not called => zz:number=1:wec called=0
+result readonly on proto ignored => ro:number=1:wec
+result class fields => x:number=1:wec,y:string=x1:wec | length:number=0:c,name:string=A:c,z:number=3:wec
+result class field on non-extensible !! TypeError: object is not extensible
+result class field on frozen base !! TypeError: object is not extensible
+result class field redefines => f:number=1:wec
+result class field on non-configurable !! TypeError: property is not configurable
+result class field on array => 0:number=5:wec,length:number=1:w,f:number=1:wec
+result class field index on array => 0:string=z:wec,length:number=1:w len=1
+result class field on proxy this => f:number=1:wec,g:number=2:wec trap=fg
+result class field on typed array => 0:number=0:wec,1:number=0:wec,f:number=1:wec
+result class field on string object => 0:string=a:e,1:string=b:e,2:string=q:wec,length:number=2:,f:number=1:wec | TypeError: property is not configurable
+result class field on global => v:number=7:wec
+result class field private => q:number=2:wec p=1
+result json => 0:number=0:wec,a:number=3:wec,b:string=s:wec,__proto__:number=5:wec
+result json reviver => b:number=2:wec
+result fromEntries => a:number=3:wec,b:number=2:wec
+result iterator result => value:number=1:wec,done:boolean=false:wec
+result function props => length:number=2:c,name:string=f:c,prototype:object=[obj]:w | length:number=1:c,name:string=h:c
+result bound => length:number=1:c,name:string=bound named:c
+result regexp exec => 0:string=a:wec,1:string=a:wec,length:number=2:w,index:number=0:wec,groups:object=[obj]:wec
+result groupBy => odd:object=[obj]:wec,even:object=[obj]:wec
+result promise withResolvers => promise,resolve,reject
+result error => cause,message,stack
+result literal stack key => stack:number=1:wec,message:number=2:wec
+result arguments => 0:number=1:wec,1:number=2:wec,length:number=2:wc,callee:get/set:,Symbol(Symbol.iterator):function=function values() {
+result     [native code]
+result }:wc
+result getOwnPropertyDescriptors => value:number=1:wec,writable:boolean=true:wec,enumerable:boolean=true:wec,configurable:boolean=true:wec
+result many keys => 40 39
+result literal 20 keys => a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19
+result for-in order after literal => 1,b,a
+result symbols => a:number=2:wec,Symbol(s):number=1:wec
+result shape sharing => y:number=2:wec | x:number=3:wec,y:number=4:wec,z:number=5:wec
+result object freeze after literal => a:number=1:e ext=false
+result template object => 0:string=a:e,1:string=b:e,length:number=2:,raw:object=[obj]:
+result defineProperties => a:number=1:e,b:get/set:
+result structured via assign => a:number=1:wec,b:number=2:wec
+mem-end obj=275 atom=638 shape=237 prop=1141 jsfunc=39 cfunc=149 array=3 fast_array=3 elements=48 binary=0
+mem-gc obj=216 atom=628 shape=212 prop=1022 jsfunc=2 cfunc=149 array=2 fast_array=2 elements=46 binary=0
+--- status exit 0

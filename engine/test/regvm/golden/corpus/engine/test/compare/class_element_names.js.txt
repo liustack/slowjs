@@ -1,0 +1,117 @@
+result "get" => static [] proto [constructor] inst [get]
+result "set" => static [] proto [constructor] inst [set]
+result "static" => static [] proto [constructor] inst [static]
+result "get;" => static [] proto [constructor] inst [get]
+result "set;" => static [] proto [constructor] inst [set]
+result "static;" => static [] proto [constructor] inst [static]
+result "get = 1" => static [] proto [constructor] inst [get]
+result "set = 2" => static [] proto [constructor] inst [set]
+result "static = 3" => static [] proto [constructor] inst [static]
+result "static static" => static [static] proto [constructor] inst []
+result "static get" => static [get] proto [constructor] inst []
+result "static set" => static [set] proto [constructor] inst []
+result "get\nx" => SyntaxError
+result "get\nx() {}" => static [] proto [constructor,x] inst []
+result "get\nx;" => SyntaxError
+result "set\nx" => SyntaxError
+result "set\nx(v) {}" => static [] proto [constructor,x] inst []
+result "static\nx" => static [x] proto [constructor] inst []
+result "static\nx() {}" => static [x] proto [constructor] inst []
+result "static\nx = 1" => static [x] proto [constructor] inst []
+result "static\nget" => static [get] proto [constructor] inst []
+result "static\nstatic" => static [static] proto [constructor] inst []
+result "static\n*g() {}" => static [g] proto [constructor] inst []
+result "get x() { return 1 }" => static [] proto [constructor,x] inst []
+result "set x(v) {}" => static [] proto [constructor,x] inst []
+result "get x() { return 1 } set x(v) {}" => static [] proto [constructor,x] inst []
+result "static get x() { return 1 }" => static [x] proto [constructor] inst []
+result "static set x(v) {}" => static [x] proto [constructor] inst []
+result "static get\nx() { return 1 }" => static [x] proto [constructor] inst []
+result "get *g() {}" => SyntaxError
+result "set *g() {}" => SyntaxError
+result "get\n*g() {}" => static [] proto [constructor,g] inst [get]
+result "set\n*g() {}" => static [] proto [constructor,g] inst [set]
+result "get;*g() {}" => static [] proto [constructor,g] inst [get]
+result "set;*g() {}" => static [] proto [constructor,g] inst [set]
+result "get *\ng() {}" => SyntaxError
+result "static *g() {}" => static [g] proto [constructor] inst []
+result "static\n*g() {}" => static [g] proto [constructor] inst []
+result "get() {}" => static [] proto [constructor,get] inst []
+result "set() {}" => static [] proto [constructor,set] inst []
+result "static() {}" => static [] proto [constructor,static] inst []
+result "get(a) { return a }" => static [] proto [constructor,get] inst []
+result "static get() {}" => static [get] proto [constructor] inst []
+result "static set() {}" => static [set] proto [constructor] inst []
+result "static static() {}" => static [static] proto [constructor] inst []
+result "static static = 1" => static [static] proto [constructor] inst []
+result "get = 1; set = 2" => static [] proto [constructor] inst [get,set]
+result "get = 1\nset = 2" => static [] proto [constructor] inst [get,set]
+result "get\nset" => SyntaxError
+result "get\nset\nstatic" => SyntaxError
+result "static\nget\nset" => SyntaxError
+result "static get\nset" => SyntaxError
+result "static get;set" => static [get] proto [constructor] inst [set]
+result "get\n;set" => static [] proto [constructor] inst [get,set]
+result "get\n\"x\"() {}" => static [] proto [constructor,x] inst []
+result "get\n[k]() {}" => static [] proto [constructor,k] inst []
+result "get\n1() {}" => static [] proto [1,constructor] inst []
+result "get\n#p() {}" => static [] proto [constructor] inst []
+result "static\n#p() {}" => static [] proto [constructor] inst []
+result "static\n#p = 1" => static [] proto [constructor] inst []
+result "set\n#p(v) {}" => static [] proto [constructor] inst []
+result "get #p() { return 1 }" => static [] proto [constructor] inst []
+result "get\nasync x() {}" => SyntaxError
+result "async\nx() {}" => static [] proto [constructor,x] inst [async]
+result "async x() {}" => static [] proto [constructor,x] inst []
+result "async *g() {}" => static [] proto [constructor,g] inst []
+result "async\n*g() {}" => static [] proto [constructor,g] inst [async]
+result "async" => static [] proto [constructor] inst [async]
+result "async = 1" => static [] proto [constructor] inst [async]
+result "async\nasync" => static [] proto [constructor] inst [async]
+result "static async x() {}" => static [x] proto [constructor] inst []
+result "static async *g() {}" => static [g] proto [constructor] inst []
+result "static\nasync x() {}" => static [x] proto [constructor] inst []
+result "static async\nx() {}" => static [async] proto [constructor,x] inst []
+result "accessor" => static [] proto [constructor] inst [accessor]
+result "accessor x" => SyntaxError
+result "accessor\nx" => static [] proto [constructor] inst [accessor,x]
+result "static { }" => static [] proto [constructor] inst []
+result "static\n{ }" => static [] proto [constructor] inst []
+result "static;{ }" => SyntaxError
+result "static {\n}\nget" => static [] proto [constructor] inst [get]
+result "get\nstatic { }" => SyntaxError
+result "static static { }" => SyntaxError
+result "get x" => SyntaxError
+result "set x" => SyntaxError
+result "static get x" => SyntaxError
+result "get x = 1" => SyntaxError
+result "static x" => static [x] proto [constructor] inst []
+result "static x;" => static [x] proto [constructor] inst []
+result "static\nx;" => static [x] proto [constructor] inst []
+result "get static" => SyntaxError
+result "get\nstatic" => SyntaxError
+result "set static" => SyntaxError
+result "set\nstatic\n" => SyntaxError
+result "get\n}" => SyntaxError
+result "static\n}" => SyntaxError
+result "constructor() {}" => static [] proto [constructor] inst []
+result "get constructor() {}" => SyntaxError
+result "static constructor() {}" => static [constructor] proto [constructor] inst []
+result "static\nconstructor() {}" => static [constructor] proto [constructor] inst []
+result "get\nconstructor() {}" => SyntaxError
+result "constructor\n() {}" => static [] proto [constructor] inst []
+result "static prototype() {}" => SyntaxError
+result "static\nprototype() {}" => SyntaxError
+result "static name = 1" => static [] proto [constructor] inst []
+result "static\nname = 1" => static [] proto [constructor] inst []
+result "static length() {}" => static [] proto [constructor] inst []
+result "\"get\" = 1" => static [] proto [constructor] inst [get]
+result "\"get\"\nx" => static [] proto [constructor] inst [get,x]
+result "'static'\n*g() {}" => static [] proto [constructor,g] inst [static]
+result "0\nget" => static [] proto [constructor] inst [0,get]
+result "get 1" => SyntaxError
+result "get \"x\"() { return 1 }" => static [] proto [constructor,x] inst []
+result "get [k]() { return 1 }" => static [] proto [constructor,k] inst []
+mem-end obj=450 atom=667 shape=160 prop=1530 jsfunc=159 cfunc=131 array=3 fast_array=3 elements=228 binary=0
+mem-gc obj=198 atom=657 shape=128 prop=979 jsfunc=2 cfunc=131 array=3 fast_array=3 elements=228 binary=0
+--- status exit 0

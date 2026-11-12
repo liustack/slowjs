@@ -1,0 +1,61 @@
+result object 0: ["2","10","a","b","c"]
+result object 1: ["2","10","a","b","c"]
+result empty 0: []
+result empty 1: []
+result array 0: ["0","1","2"]
+result array 1: ["0","1","2"]
+result array holes 0: ["0","2"]
+result array holes 1: ["0","2"]
+result array extra 0: ["0","1","x"]
+result array extra 1: ["0","1","x"]
+result string 0: ["0","1","2"]
+result string 1: ["0","1","2"]
+result number 0: []
+result number 1: []
+result null 0: [[],[]]
+result null 1: [[],[]]
+result prototype 0: ["oa","pa","pb"]
+result prototype 1: ["oa","pa","pb"]
+result symbol keys 0: ["a"]
+result symbol keys 1: ["a"]
+result delete later key 0: ["a","c"]
+result delete later key 1: ["a","c"]
+result delete own key 0: ["a","b","c"]
+result delete own key 1: ["a","b","c"]
+result add keys 0: ["a","b"]
+result add keys 1: ["a","b"]
+result delete from prototype 0: ["oa","pa"]
+result delete from prototype 1: ["oa","pa"]
+result change prototype 0: ["oa","pa","z"]
+result change prototype 1: ["oa","pa","z"]
+result array grows 0: ["0","1"]
+result array grows 1: ["0","1"]
+result array shrinks 0: ["0"]
+result array shrinks 1: ["0"]
+result pairs 0: ["a0","a1","b0","b1"]
+result pairs 1: ["a0","a1","b0","b1"]
+result break 0: ["a","b"]
+result break 1: ["a","b"]
+result ownKeys
+result gopd a
+result gopd b
+result gopd a
+result gopd b
+result proxy 0: ["a","b"]
+result ownKeys
+result gopd a
+result gopd b
+result gopd a
+result gopd b
+result proxy 1: ["a","b"]
+result proxy throws 0 threw RangeError: no keys
+result proxy throws 1 threw RangeError: no keys
+result getPrototypeOf
+result proxy prototype 0: ["own","pa"]
+result getPrototypeOf
+result proxy prototype 1: ["own","pa"]
+result body throws 0 threw Error: in body
+result body throws 1 threw Error: in body
+mem-end obj=196 atom=550 shape=143 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=550 shape=143 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,91 @@
+result after: 3
+result after if: 6
+result after else: 7
+result after loop: 6
+result in loop: 50
+result after ternary: xx
+result after and: 2
+result nested blocks: 3
+result assign after: 5
+result declared without value: 4,true
+result read before: ReferenceError
+result write before: ReferenceError
+result typeof before: ReferenceError
+result read in own initializer: ReferenceError
+result const in own initializer: ReferenceError
+result class before: ReferenceError
+result class in extends: ReferenceError
+result read after throw in initializer: caught 1
+result switch 0: a0
+result switch 1: ReferenceError
+result switch 2: ReferenceError
+result switch 3: b3
+result switch default: ReferenceError
+result switch fall through: x,x
+result switch jump past: ReferenceError
+result switch default first: d
+result switch default skipped: ReferenceError
+result switch in loop: z0o1dz3o4dz6
+result closure before: ReferenceError
+result closure after: 1
+result hoisted function before: ReferenceError
+result hoisted function after: 2
+result closure sets before: ReferenceError 1
+result closure sets after: 5
+result closures in a for loop: 0,1,2
+result closures in a while loop: 0,2,4
+result closure reads the next binding: number,number
+result loop body redeclares: 0,ReferenceError,1,ReferenceError,2
+result for head: 8
+result for head reads itself: ReferenceError
+result for of head: ab
+result for of reads itself: ReferenceError
+result for in head: pq
+result for in reads itself: ReferenceError
+result for with continue: 12
+result labeled break: 1
+result do while: 4
+result try: 2
+result try throws: 5
+result catch reads try block: 1
+result declared in catch: 8
+result finally: 2
+result finally reads: 32
+result return in try of block: k
+result throw before in try: ReferenceError
+result finally after throw in initializer: f,x
+result generator: 1,2,20
+result generator before: ReferenceError
+result generator loop: 0,2,4,6
+result eval reads after: 6
+result eval reads before: ReferenceError
+result eval sets: 4
+result eval in block before: ReferenceError
+result with after: 3
+result with shadows: 1
+result with before: ReferenceError
+result switch const: c0
+result switch class: function
+result switch const skipped: ReferenceError
+result switch class skipped: ReferenceError
+result case reads a later declaration: ReferenceError
+result labeled continue through finally: 0,f0,f1,2,f2
+result generator throw through finally: fin,x
+result generator return through finally: f0,f1
+result this before super: ReferenceError
+result this after super: 2
+result super twice: ReferenceError
+result field initializer throws: f
+result parameter reads a later one: ReferenceError
+result parameter reads an earlier one: 2
+result destructuring in with: 2,3
+result destructuring before: ReferenceError
+result many: 54
+result many and a loop: 913
+result many before: ReferenceError
+result async before: ReferenceError
+result async catch: no
+result async: 4
+mem-end obj=224 atom=581 shape=141 prop=1032 jsfunc=19 cfunc=135 array=2 fast_array=2 elements=88 binary=0
+mem-gc obj=207 atom=578 shape=133 prop=998 jsfunc=10 cfunc=135 array=2 fast_array=2 elements=88 binary=0
+--- status exit 0

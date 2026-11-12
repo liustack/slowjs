@@ -6,6 +6,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -622,6 +623,39 @@ func TestSetProperty(t *testing.T) {
 	}
 }
 
+// SetProperty and SetPropertyValue on a proxy whose defineProperty trap
+// refuses the store return its TypeError, for a property the target already
+// has as for a new one, and the target keeps its value.
+func TestSetPropertyRefused(t *testing.T) {
+	m := newTestVM(t)
+	p, err := m.EvalValue(`var t = { x: 0 }; new Proxy(t, { defineProperty() { return false } })`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Free()
+	one, err := m.EvalValue(`1`, EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer one.Free()
+	for _, name := range []string{"x", "y"} {
+		atom, err := m.NewAtom(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var e *Error
+		if err := m.SetProperty(p, atom, 1); !errors.As(err, &e) || e.Name != "TypeError" {
+			t.Errorf("SetProperty %s: got %v, want a TypeError", name, err)
+		}
+		if err := m.SetPropertyValue(p, atom, one); !errors.As(err, &e) || e.Name != "TypeError" {
+			t.Errorf("SetPropertyValue %s: got %v, want a TypeError", name, err)
+		}
+	}
+	if v, err := m.Eval(`JSON.stringify(t)`, EvalGlobal); err != nil || v != `{"x":0}` {
+		t.Errorf("target: %v, %v", v, err)
+	}
+}
+
 func TestGetPropertyValue(t *testing.T) {
 	m, err := NewVM()
 	if err != nil {
@@ -747,8 +781,16 @@ func TestBytecode(t *testing.T) {
 	// 2026-11-10, version 8: the case of a switch on a string also takes the
 	// cases that end with if_true8, if_false and if_true. The code of this
 	// script is the same.
+	//
+	// 2026-11-12, version 9: a regexp keeps where it starts to look in 36 bytes
+	// after its bytecode, which the bytecode of a function holds for its
+	// regexp literals. The code of this script is the same.
+	//
+	// 2026-11-12, version 10: a regexp keeps, after its plan, a table of the
+	// first characters of each long run of literal alternatives. The code of
+	// this script is the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "08000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "0a000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

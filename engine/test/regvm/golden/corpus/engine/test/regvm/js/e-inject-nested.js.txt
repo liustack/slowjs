@@ -1,0 +1,10 @@
+out object
+out less
+out object
+out less
+out object
+out less
+result undefined
+mem-end obj=188 atom=541 shape=121 prop=944 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=541 shape=121 prop=944 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

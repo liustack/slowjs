@@ -62,14 +62,13 @@ var (
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
 
-// engineAlign64 places the loops of the engine that run longest, the
-// interpreter and the regexp matcher, at a fixed place in a line of 64 bytes,
-// so that a change elsewhere in the program no longer moves them within their
-// lines. The offsets are the fastest of those measured (docs/performance.md,
-// "Code positions"): the matcher at 16 rather than 0, the interpreter at 40,
-// which is where it ran fastest once a JSValue is copied in two moves of 8
-// bytes (EngineValueFlags), against 0 before.
-const engineAlign64 = "JS_CallInternal:40,lre_exec_backtrack:16"
+// engineAlign64 places the regexp matcher at a fixed place in a line of 64
+// bytes, so that a change elsewhere in the program no longer moves it within
+// its lines. It is at 16 rather than 0, the fastest of the places measured
+// (docs/performance.md, "Code positions"). The interpreter, the register loop
+// JS_RegvmRun, has no fixed place: the 40 measured for JS_CallInternal was the
+// place of the old loop, and the register loop's has not been measured.
+const engineAlign64 = "lre_exec_backtrack:16"
 
 // parseAlign64 reads -align64: name:offset pairs, the offset a multiple of 8
 // below 64.

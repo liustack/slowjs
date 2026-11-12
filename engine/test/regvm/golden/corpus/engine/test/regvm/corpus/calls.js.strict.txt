@@ -1,0 +1,30 @@
+result 1,undefined
+result undefined,undefined
+result 1,2
+result none
+result 5
+result undefined
+result 16
+result true
+result true
+result 8,9
+result B,c B,undefined
+result 500500
+result 3 8
+result 42 5,5
+result 6,2,4
+result 1,3,5,9
+result 10
+result 6
+result TypeError: not a function
+result TypeError: not a function
+result TypeError: not a function
+result TypeError: cannot read property 'nope' of null
+result 9
+result 9 1 undefined
+result 5 2 x ABC
+result 36 NaN 36
+result 2,2,2
+mem-end obj=195 atom=548 shape=127 prop=958 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=546 shape=126 prop=955 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

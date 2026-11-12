@@ -1,0 +1,4 @@
+result script job a\u{d800}b 😀 1,2
+mem-end obj=196 atom=543 shape=120 prop=959 jsfunc=0 cfunc=133 array=2 fast_array=2 elements=2 binary=0
+mem-gc obj=196 atom=543 shape=120 prop=959 jsfunc=0 cfunc=133 array=2 fast_array=2 elements=2 binary=0
+--- status exit 0

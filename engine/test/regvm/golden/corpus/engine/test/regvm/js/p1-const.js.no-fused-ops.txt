@@ -1,0 +1,4 @@
+result abc,y,str,3.75,12345678901234567890,1,1,2,true,ab,no,0-z,-0.5,2.5,abc,y,str,3.75,12345678901234567890,1,1,2,true,ab,yes,1-z,-0.5,2.5,abc,y,str,3.75,12345678901234567890,1,1,2,true,ab,yes,2-z,-0.5,2.5
+mem-end obj=187 atom=543 shape=121 prop=941 jsfunc=0 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=187 atom=543 shape=121 prop=941 jsfunc=0 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

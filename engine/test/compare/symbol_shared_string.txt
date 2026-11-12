@@ -1,0 +1,9 @@
+held by an array: true
+held by a variable: true
+a literal of digits: true true
+the string after: string 123 string 456
+description: 123 true 1234
+Symbol.for: true 78 string 789
+held by its description: true 90 901
+a description read twice: true 2 Symbol(55)
+a long description: true 1572867 3145728 1572875

@@ -1,0 +1,90 @@
+result case 0: 6
+result case 1: 14
+result case 2: undefined,undefined,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,null,10
+result case 7: 1,2,1,1,6,1,1,1
+result case 8: truefunction4
+result case 9: true,true,true
+result case 10: 151
+result case 11: 40
+result case 12: 14
+result case 13: true,true
+result case 14: true,5
+result case 15: 1425
+result case 16: 0  1 4 3 7 0 2 4
+result case 17: true 4
+result throwing 0: Error: boom 1
+result throwing 1: Error: boom 1
+result throwing 2: Error: boom 1
+result throwing 3: TypeError: class constructors must be invoked with 'new'
+result throwing 4: TypeError: class constructors must be invoked with 'new'
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result throwing 6: Error: boom 1
+result throwing 7: TypeError: cannot read property 'nope' of undefined
+result case 0: 6
+result case 1: 14
+result case 2: undefined,undefined,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,null,10
+result case 7: 1,2,1,1,6,1,1,1
+result case 8: truefunction4
+result case 9: true,true,true
+result case 10: 151
+result case 11: 40
+result case 12: 14
+result case 13: true,true
+result case 14: true,5
+result case 15: 1425
+result case 16: 0  1 4 3 7 0 2 4
+result case 17: true 4
+result throwing 0: Error: boom 2
+result throwing 1: Error: boom 2
+result throwing 2: Error: boom 2
+result throwing 3: TypeError: class constructors must be invoked with 'new'
+result throwing 4: TypeError: class constructors must be invoked with 'new'
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result throwing 6: Error: boom 2
+result throwing 7: TypeError: cannot read property 'nope' of undefined
+result case 0: 6
+result case 1: 14
+result case 2: undefined,undefined,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,null,10
+result case 7: 1,2,1,1,6,1,1,1
+result case 8: truefunction4
+result case 9: true,true,true
+result case 10: 151
+result case 11: 40
+result case 12: 14
+result case 13: true,true
+result case 14: true,5
+result case 15: 1425
+result case 16: 0  1 4 3 7 0 2 4
+result case 17: true 4
+result throwing 0: Error: boom 3
+result throwing 1: Error: boom 3
+result throwing 2: Error: boom 3
+result throwing 3: TypeError: class constructors must be invoked with 'new'
+result throwing 4: TypeError: class constructors must be invoked with 'new'
+result throwing 5: TypeError: cannot read property 'nope' of undefined
+result throwing 6: Error: boom 3
+result throwing 7: TypeError: cannot read property 'nope' of undefined
+result reflect true undefined
+result reflect nt false function true
+result reflect class true 0
+result reflect true undefined
+result reflect nt false function true
+result reflect class true 1
+result reflect true undefined
+result reflect nt false function true
+result reflect class true 2
+mem-end obj=227 atom=595 shape=144 prop=1038 jsfunc=20 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=545 shape=127 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

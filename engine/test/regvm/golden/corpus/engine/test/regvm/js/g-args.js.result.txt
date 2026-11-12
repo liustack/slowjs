@@ -1,0 +1,4 @@
+result m:4,n3,4 | m:1,nundefined,undefined | m:2,nundefined,undefined | 3,1:3:7 | 0,undefined:undefined:7 | 3,12-3-4 | 0,1 | m:4,n3,4 | m:1,nundefined,undefined | m:2,nundefined,undefined | 3,1:3:7 | 0,undefined:undefined:7 | 3,12-3-4 | 0,1 | m:4,n3,4 | m:1,nundefined,undefined | m:2,nundefined,undefined | 3,1:3:7 | 0,undefined:undefined:7 | 3,12-3-4 | 0,1 | 12+3+33 undefined0undefined 111 3,yx
+mem-end obj=197 atom=546 shape=131 prop=958 jsfunc=1 cfunc=131 array=2 fast_array=2 elements=2 binary=0
+mem-gc obj=193 atom=541 shape=128 prop=954 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

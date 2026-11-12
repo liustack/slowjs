@@ -441,7 +441,9 @@ static void test_compile_oom_fine(void)
         char what[32];
 
         snprintf(what, sizeof(what), "fine script %zu", i);
-        for (n = 0; ran < 512; n += 4) {
+        /* a script that fails for another reason never runs: the room
+           stops growing at 1 MiB */
+        for (n = 0; ran < 512 && n <= 1 << 20; n += 4) {
             if (compile_with_room(what, compile_fine_scripts[i], n)) {
                 failed++;
                 ran = 0;
@@ -449,6 +451,7 @@ static void test_compile_oom_fine(void)
                 ran++;
             }
         }
+        CHECK(ran >= 512, "fine script %zu did not run with 1 MiB of room", i);
         CHECK(failed > 0, "fine script %zu never ran out of memory", i);
     }
 }
@@ -1153,8 +1156,12 @@ static void test_field_chain_uncatchable(void)
    and the script goes on. A loop with no call in it must still end at its
    next backward jump with the out of memory error, without a host asking for
    a stop. LOOP_BOUND readings of the flag are far more than a run that ends
-   there needs: past them the host stops the loop, and the case fails. */
+   there needs: past them the host stops the loop, and the case fails. The
+   cases with "spin" run the loop in a function called twice before, so that
+   it runs in the register code of that function, and the case checks that
+   spin has it. */
 #define LOOP_BOUND (1L << 22)
+#define SPIN "function spin(n) { for (;;) if (n-- === 0) return; } spin(1); spin(1); "
 
 static void test_uncatchable_then_loop(void)
 {
@@ -1166,6 +1173,13 @@ static void test_uncatchable_then_loop(void)
         { "dynamic import", "import({ toString() { fail() } }); for (;;) {}" },
         { "in a job",
           "Promise.resolve().then(() => { (async () => { fail() })(); for (;;) {} })" },
+        { "resolve with a thenable getter, spin",
+          SPIN "let res; new Promise(r => { res = r }); res({ get then() { fail() } }); spin(-1)" },
+        { "async first step, spin", SPIN "(async () => { fail() })(); spin(-1)" },
+        { "async generator, spin", SPIN "(async function* () { fail() })().next(); spin(-1)" },
+        { "dynamic import, spin", SPIN "import({ toString() { fail() } }); spin(-1)" },
+        { "in a job, spin",
+          SPIN "Promise.resolve().then(() => { (async () => { fail() })(); spin(-1) })" },
     };
     size_t i;
 
@@ -1203,11 +1217,54 @@ static void test_uncatchable_then_loop(void)
         /* the engine takes its stop back with the exception */
         CHECK(*JS_GetInterruptFlag(v.rt) == 0, "%s: the interrupt flag is %d after the exception was taken",
               cases[i].name, *JS_GetInterruptFlag(v.rt));
+        if (strstr(cases[i].js, "spin(-1)")) {
+            /* 1: register code */
+            JSValue g = JS_GetGlobalObject(v.ctx), f = JS_GetPropertyStr(v.ctx, g, "spin");
+            int st = JS_RegvmFuncStat(v.ctx, f, 0);
+            CHECK(st == 1, "%s: spin is not in the register loop (state %d)", cases[i].name, st);
+            JS_FreeValue(v.ctx, f);
+            JS_FreeValue(v.ctx, g);
+        }
         CHECK(eval_is(v.ctx, "let n = 0; for (let k = 0; k < 1000; k++) n += k; n", "499500"),
               "%s: a loop after the error", cases[i].name);
         free(text);
         vm_free(&v);
     }
+}
+
+/* A call the register loop answers itself, without the call (rv_fast_call,
+   here charCodeAt of a string), fails while an uncatchable exception is
+   pending, as the call does: the code after it does not run. */
+static void test_uncatchable_fast_call(void)
+{
+    VM v = vm_new();
+    JSValue r, g, f;
+    char *text = NULL;
+    int st, unc = 0;
+
+    eval_ok(v.ctx, fail_js[END_OOM]);
+    eval_ok(v.ctx, "var after = 0; function cc(s, k) { var n = s.charCodeAt(0);"
+            " if (k) { (async () => { fail() })(); n += s.charCodeAt(1); after = n; } return n; }"
+            " cc('ab', 0); cc('ab', 0);");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "cc");
+    st = JS_RegvmFuncStat(v.ctx, f, 0);
+    CHECK(st == 1, "fast call: cc is not in the register loop (state %d)", st);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    room(&v, 1 << 20);
+    r = JS_Eval(v.ctx, "cc('ab', 1)", strlen("cc('ab', 1)"), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r)) {
+        unc = JS_IsUncatchableException(v.ctx);
+        text = exception_text(v.ctx);
+    }
+    JS_FreeValue(v.ctx, r);
+    unlimit(&v);
+    CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+          "fast call: ended with %s, want the uncatchable out of memory error", text ? text : "no error");
+    CHECK(eval_is(v.ctx, "after", "0"), "fast call: the code after charCodeAt ran with the exception pending");
+    free(text);
+    vm_free(&v);
 }
 
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
@@ -1297,6 +1354,55 @@ static void test_weakref_kept_oom(void)
     }
 }
 
+/* A symbol gets a copy of a string that something else holds, and its
+   description is a copy too: either copy running out of memory is the out of
+   memory error, with nothing left behind. The first script makes symbols of
+   held strings, the second reads the descriptions of symbols made before. */
+static void test_symbol_copy_oom(void)
+{
+    static const char *const js[] = {
+        "const ys = held.map(s => Symbol(s)); let k = 0;"
+        "for (const y of ys) k += y.description.length; String(k)",
+        "let k = 0; for (const y of syms) k += y.description.length; String(k)",
+    };
+    size_t n;
+    int ok, oom, which;
+
+    for (which = 0; which < 2; which++) {
+        ok = oom = 0;
+        for (n = 0; n <= 64 << 10; n += 256) {
+            VM v = vm_new();
+            JSValue r;
+            char *t;
+
+            eval_ok(v.ctx, "globalThis.held = []; for (let i = 0; i < 200; i++) held.push(String(i) + (i & 1 ? 'abcdefgh' : '\\u20acbcdefgh'));"
+                    "globalThis.syms = held.map(s => Symbol(s))");
+            room(&v, n);
+            r = JS_Eval(v.ctx, js[which], strlen(js[which]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            unlimit(&v);
+            if (JS_IsException(r)) {
+                int unc = JS_IsUncatchableException(v.ctx);
+
+                t = exception_text(v.ctx);
+                CHECK(unc && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0),
+                      "script %d, room %zu: failed with %s, want the out of memory error", which, n, t ? t : "nothing");
+                oom++;
+                free(t);
+            } else {
+                const char *s = JS_ToCString(v.ctx, r);
+
+                CHECK(s && strcmp(s, "2090") == 0, "script %d, room %zu: got %s, want 2090", which, n, s ? s : "?");
+                JS_FreeCString(v.ctx, s);
+                ok++;
+            }
+            JS_FreeValue(v.ctx, r);
+            vm_free(&v);
+        }
+        CHECK(ok > 0 && oom > 0, "script %d: %d rooms worked and %d ran out of memory, want some of each",
+              which, ok, oom);
+    }
+}
+
 /* The regexp engine running out of memory, compiling a pattern or running it,
    is the out of memory error. */
 static void test_regexp_oom(void)
@@ -1366,8 +1472,9 @@ static void test_thrown_is_not_uncatchable(void)
 /* ---- the paths that no longer recurse ---- */
 
 /* sweep runs setup and then src, both global scripts of the file name file, in
-   a new runtime for each room: every 8 bytes from nothing to max bytes past
-   what the runtime holds, and every room of a full heap (fill_rooms). The text
+   a new runtime for each room: every sweep_step bytes (8) from nothing to
+   max bytes past what the runtime holds, and every room of a full heap
+   (fill_rooms). The text
    of the value of src must be one of want (a list that ends with NULL), or
    src must fail uncatchable, as running out of memory does. Then, with the
    memory back, src must give want[0] in the same runtime, and the runtime
@@ -1375,14 +1482,23 @@ static void test_thrown_is_not_uncatchable(void)
 /* sweep_register, when set, runs on the context of each runtime sweep makes,
    before the setup: it gives the scripts a function of the host. */
 static void (*sweep_register)(JSContext *ctx);
+static size_t sweep_step = 8;
 
 static void sweep(const char *what, const char *file, const char *setup,
                   const char *src, const char *const *want, size_t max)
 {
     FillRoom rm[FILL_ROOMS];
-    size_t nfill = fill_rooms(rm), nbytes = max / 8 + 1, k;
+    size_t nfill = fill_rooms(rm), nbytes, k;
     int failed = 0, worked = 0;
 
+#ifdef RV_FOLD_TEST
+    /* the test builds fold every function, which then takes more memory
+       to convert and to run (a frame of all 127 slots, the stack model of
+       the pass): up to 11 KiB more for the sweeps here, so that some room
+       lets each work */
+    max += 16384;
+#endif
+    nbytes = max / sweep_step + 1;
     for (k = 0; k < nbytes + nfill; k++) {
         VM v = vm_new();
         JSValue r;
@@ -1397,7 +1513,7 @@ static void sweep(const char *what, const char *file, const char *setup,
             return;
         }
         if (k < nbytes) {
-            room(&v, k * 8);
+            room(&v, k * sweep_step);
         } else {
             fill_memory(&v);
             free_blocks(&v, rm[k - nbytes].min, rm[k - nbytes].max, rm[k - nbytes].n);
@@ -1465,7 +1581,10 @@ static void test_copy_props_oom(void)
         "    out.push(Object.keys(p).join('+'), Object.keys(q).join('+'));\n"
         "  }\n"
         "  return out.join(' ');\n"
-        "}\n";
+        "}\n"
+        /* once before the sweep: with the register loop on, its register
+           code is made at the first call, which would need more room */
+        "run();\n";
     static const char *const want[] = {
         "a+b+c a+m+b+c a+b a+m+b x+y+z a+m+x+y+z a+b+c a+m+b+c a+b a+m+b x+y+z a+m+x+y+z", NULL
     };
@@ -1736,8 +1855,10 @@ static void test_normalize_oom(void)
    start, as a collection may run while the table grows. The 256th set
    doubles the table from 1 KiB to 2 KiB. f, called from here so that nothing
    is compiled, adds that record and returns the size, which needs no more
-   memory: a room with no space for the growth (fewer than 1 KiB, or a full
-   heap with no block of 2 KiB given back) still lets it work. */
+   memory. The setup calls f once with a key the map has, so that f is in
+   register code before the limit: its first call converts it, which takes
+   about 4 KiB. A room with no space for the growth (fewer than 1 KiB, or a
+   full heap with no block of 2 KiB given back) still lets it work. */
 #define MAP_GROW_BYTE_ROOMS (2048 / 8 + 1)
 static void test_map_grow_oom(void)
 {
@@ -1747,12 +1868,12 @@ static void test_map_grow_oom(void)
 
     for (k = 0; k < nfill + MAP_GROW_BYTE_ROOMS; k++) {
         VM v = vm_new();
-        JSValue g, f, r;
+        JSValue g, f, r, key = JS_MKVAL(JS_TAG_INT, 255);
         int fail, unc, small;
         char *t;
 
         if (!eval_ok(v.ctx, "var m = new Map(); for (var i = 0; i < 255; i++) m.set(i, i);"
-                            "function f() { m.set(255, 255); return m.size }")) {
+                            "function f(k) { m.set(k, k); return m.size } f(254);")) {
             CHECK(0, "Map grow: the setup failed");
             vm_free(&v);
             return;
@@ -1768,7 +1889,7 @@ static void test_map_grow_oom(void)
             room(&v, (k - nfill) * 8);
             small = (k - nfill) * 8 < 1024;
         }
-        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &key);
         fail = JS_IsException(r);
         unc = JS_IsUncatchableException(v.ctx);
         if (k < nfill)
@@ -1790,7 +1911,7 @@ static void test_map_grow_oom(void)
                 small_worked++;
         }
         JS_FreeValue(v.ctx, r);
-        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &key);
         JS_FreeValue(v.ctx, r);
         t = eval_text(v.ctx, "var ok = m.size === 256;"
                              "for (var i = 0; i < 256; i++) ok = ok && m.get(i) === i; ok");
@@ -1905,6 +2026,238 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* ---- the register loop ---- */
+
+/* A function converts to register code at its first call, with the memory
+   the call has: under a memory limit with no room for the register code
+   the call fails with the out of memory error, and gives its answer at a
+   limit with room. f(3) converts f and g, which takes about 12.3 KiB at its
+   peak, with the scratch of the pass (engine/regvm-pass.h), so the rooms go
+   up to 16 KiB. The register stack is
+   made by JS_NewRuntime, before the limit (test_regvm_stack_oom).
+   Each allocation of the pass failing in turn is test_regvm_convert_alloc
+   of unit-white.c. */
+static void test_regvm_convert_oom(void)
+{
+    static const char *const want[] = { "5493", NULL };
+    char setup[1024];
+    size_t n;
+    int i;
+
+    n = snprintf(setup, sizeof(setup), "var f = (function () { \"use strict\";\n"
+                 "function g(x) { return x");
+    for (i = 1; i <= 60; i++)
+        n += snprintf(setup + n, sizeof(setup) - n, " + %d", i);
+    snprintf(setup + n, sizeof(setup) - n, "; }\n"
+             "return function (k) { var s = 0, i; for (i = 0; i < k; i++) s = s + g(i); return s; };\n"
+             "})();");
+    sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 16384);
+}
+
+/* The conversion of a function with a switch of 31 string cases, whose
+   CASES gets a table (rv_cases_table in engine/regvm-ops-cmp.h): the table
+   is made in the code of the pass, which goes into the register code in one
+   block at the end, so a conversion that runs out of memory leaves no part
+   of a table behind, and the call that converts it later answers as the
+   chain does. The call takes about 22.1 KiB at its peak, so the rooms go up
+   to 32 KiB. */
+static void test_regvm_cases_oom(void)
+{
+    static const char *const want[] = { "16", NULL };
+    char setup[2048];
+    size_t n;
+    int i;
+
+    n = snprintf(setup, sizeof(setup), "var f = Function('s', \"'use strict'; switch (s) {");
+    for (i = 0; i < 31; i++)
+        n += snprintf(setup + n, sizeof(setup) - n, " case 'c%d': return %d;", i, i);
+    snprintf(setup + n, sizeof(setup) - n, " } return -1;\");");
+    sweep("conversion of a case table", "<cases>", setup, "f('c17') + f('zz')", want, 32768);
+}
+
+/* The arguments object of a function that reads only arguments.length and
+   arguments[key] is built at the first key that is not an index of an
+   argument (ARGGET, engine/regvm-ops-args.h), into its local: each
+   allocation of the build failing in turn ends in the out of memory error
+   with nothing lost (the local is written only with the whole object), and
+   the reads after the build in the same call see the object. The same for
+   a function that also lets the object go, where it is built at that read
+   (ARGMAT). */
+static void test_regvm_args_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () { 'use strict';\n"
+        "  function g(a, b) {\n"
+        "    var r = arguments.length + ':' + arguments[0] + ':' + arguments[3];\n"
+        "    return r + ':' + arguments['1'] + ':' + arguments.length + ':' + arguments[2];\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want[] = { "3:x:undefined:y:3:z|1:w:undefined:undefined:1:undefined", NULL };
+
+    static const char setup_escape[] =
+        "var h = (function () { 'use strict';\n"
+        "  function g(a) {\n"
+        "    var n = arguments.length;\n"
+        "    var s = n > 1 ? Array.prototype.join.call(arguments, '-') : '';\n"
+        "    return n + ':' + s + ':' + arguments[0] + ':' + arguments[n - 1];\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want_escape[] = { "3:x-y-z:x:z|1::w:w", NULL };
+
+    sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
+    sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+}
+
+/* A function whose stack is too deep for the temps folds it into Arrays at
+   run time (engine/regvm-fold.h), where QuickJS's interpreter allocates
+   nothing: in two levels (calls of 32 arguments nested 40 deep), under the
+   catch offset of a try in a for-in (the enumerator frozen into an Array of
+   its own) and under that of an array destructuring. Each allocation of a
+   fold, an unfold, a freeze or a thaw failing in turn ends in the out of
+   memory error with nothing lost. */
+static void test_regvm_fold_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () {\n"
+        "  function plus(n, inner) { var s = '', i; for (i = 0; i < n; i++) s += 'a[' + i + '] + (';\n"
+        "    s += inner; for (i = 0; i < n; i++) s += ')'; return s; }\n"
+        "  function calls(n, last) { var s = '', i, j; for (i = 0; i < n; i++) { s += 'g('; for (j = 0; j < 31; j++) s += j + ', '; }\n"
+        "    s += last; for (i = 0; i < n; i++) s += ')'; return s; }\n"
+        "  var a = [], i, g = function () { return arguments.length + arguments[arguments.length - 1]; };\n"
+        "  for (i = 0; i < 300; i++) a.push(i % 7);\n"
+        "  var h = Function('a, g, o, b', \"'use strict'; var r = [], k, x, y;\\n\" +\n"
+        "    'for (k in o) {\\n  try { r.push(' + plus(300, 'o[k]()') + '); } catch (e) { r.push(e.message); }\\n}\\n' +\n"
+        "    'r.push(' + plus(200, '([x, y] = b, x + y)') + ', ' + calls(40, 'k') + ');\\nreturn r.join();');\n"
+        "  var o = { p: function () { return 1; }, q: function () { throw new RangeError('q'); } }, b = [3, 4];\n"
+        "  return function () { return h(a, g, o, b); };\n"
+        "})();\n"
+        /* once before the sweep: the call that converts it */
+        "f();\n";
+    static const char *const want[] = { "898,q,601,32323232323232323232323232323232323232323232323232323232323232323232323232323232q", NULL };
+    /* the conversion of a function that folds, at its first call in the
+       sweep: each allocation of the pass failing ends in the out of memory
+       error, and a later call converts it (in the test builds, where every
+       function folds, the stack model of a small one fails too: scripts 6
+       and 11 of test_compile_oom) */
+    static const char conv[] =
+        "var a = [], i;\n"
+        "for (i = 0; i < 130; i++) a.push(i % 7);\n"
+        "var h = Function('a', \"'use strict'; return \" +\n"
+        "  Array.from({ length: 130 }, function (_, i) { return 'a[' + i + '] + ('; }).join('') +\n"
+        "  '1' + ')'.repeat(130) + ';');\n";
+    static const char *const conv_want[] = { "385", NULL };
+
+#ifdef RV_FOLD_TEST
+    /* the test build folds into Arrays of 2 or 3 entries, many more of
+       them: every 64 bytes up to 256 KiB */
+    sweep_step = 64;
+    sweep("fold", "<fold>", setup, "f()", want, 262144);
+    sweep_step = 8;
+#else
+    sweep("fold", "<fold>", setup, "f()", want, 32768);
+#endif
+    /* the conversion takes more than the run: every 32 bytes up to 128 KiB */
+    sweep_step = 32;
+    sweep("fold conversion", "<fold>", conv, "h(a)", conv_want, 131072);
+    sweep_step = 8;
+}
+
+/* the state of the function the script src returns in the register loop
+   (JS_RegvmFuncStat 0), or -9 when src threw */
+static int regvm_state_of(JSContext *ctx, const char *src)
+{
+    JSValue f = JS_Eval(ctx, src, strlen(src), "<regvm>", JS_EVAL_TYPE_GLOBAL);
+    int st;
+
+    if (JS_IsException(f)) {
+        free(exception_text(ctx));
+        return -9;
+    }
+    st = JS_RegvmFuncStat(ctx, f, 0);
+    JS_FreeValue(ctx, f);
+    return st;
+}
+
+/* JS_NewRuntime makes the first segment of register stack (about 32 KiB,
+   RV_SEG_FIRST of engine/regvm.h), so that it counts under a memory limit
+   from the start: a function converted under a tight limit later needs room
+   for its code only, and runs in the register loop. */
+static void test_regvm_stack_oom(void)
+{
+    static const char g[] =
+        "var g = function (x) { 'use strict'; return x + 1; }; g(1); g(2); g";
+    VM v = vm_new();
+    int st;
+
+    CHECK(JS_RegvmStat(v.ctx, 8) == 1, "a new runtime has %d segments of register stack, want 1", JS_RegvmStat(v.ctx, 8));
+    room(&v, 24 * 1024);
+    st = regvm_state_of(v.ctx, g);
+    CHECK(st == 1, "a function converted under a tight limit: state %d, want 1", st);
+    CHECK(eval_is(v.ctx, "g(41)", "42"), "the function converted under a tight limit gives its answer");
+    unlimit(&v);
+    vm_free(&v);
+}
+
+/* The pass keeps its scratch between conversions (engine/regvm-pass.h):
+   up to 64 KiB, given back by a collection, at the end of a conversion
+   that needed more, and when the heap fails a request, as the front cache
+   is. So a kept scratch never makes a script run out of memory: a request
+   that the limit leaves no room for gets the room of the scratch. A
+   function that folds takes the larger buffers of a fold, so the test
+   builds that fold every function (RV_FOLD_TEST) use one of 100 lines where
+   the others use 300, to keep its scratch between 16 and 64 KiB. */
+#ifdef RV_FOLD_TEST
+#define SCRATCH_LINES 100
+#else
+#define SCRATCH_LINES 300
+#endif
+static void test_regvm_scratch(void)
+{
+    char src[16384], want[32];
+    size_t n, kept, size;
+    int i, big;
+    VM v = vm_new();
+
+    n = snprintf(src, sizeof(src), "var f = function (x) { 'use strict'; var s = 0;");
+    for (i = 0; i < SCRATCH_LINES; i++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s + x * %d;", i);
+    snprintf(src + n, sizeof(src) - n, " return s; }; f(1)");
+    snprintf(want, sizeof(want), "%d", SCRATCH_LINES * (SCRATCH_LINES - 1) / 2);
+    CHECK(eval_is(v.ctx, src, want), "the function of %d lines does not give %s", SCRATCH_LINES, want);
+    kept = JS_RegvmStat(v.ctx, 11);
+    CHECK(kept >= 16384 && kept <= 64 * 1024, "the scratch kept after a function of %d lines is %zu bytes", SCRATCH_LINES, kept);
+    JS_RunGC(v.rt);
+    CHECK(JS_RegvmStat(v.ctx, 11) == 0, "a collection leaves %d bytes of scratch", JS_RegvmStat(v.ctx, 11));
+    /* a request the limit has room for only with the scratch given back */
+    n = snprintf(src, sizeof(src), "var h = function (x) { 'use strict'; var s = 0;");
+    for (i = 0; i < SCRATCH_LINES; i++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s - x * %d;", i);
+    snprintf(src + n, sizeof(src) - n, " return s; }; h(1)");
+    snprintf(want, sizeof(want), "-%d", SCRATCH_LINES * (SCRATCH_LINES - 1) / 2);
+    CHECK(eval_is(v.ctx, src, want), "the second function of %d lines does not give %s", SCRATCH_LINES, want);
+    kept = JS_RegvmStat(v.ctx, 11);
+    CHECK(kept >= 16384, "the scratch kept is %zu bytes", kept);
+    size = JS_GetMemorySize(v.rt);
+    JS_SetMemoryLimit(v.rt, size + 8192);
+    snprintf(src, sizeof(src), "new ArrayBuffer(%zu).byteLength", kept - 8192);
+    n = kept - 8192;
+    snprintf(want, sizeof(want), "%zu", n);
+    CHECK(eval_is(v.ctx, src, want), "an ArrayBuffer of the bytes of the scratch less 8 KiB, 8 KiB under the limit, does not get them");
+    /* the conversion of the script may have made a small one again */
+    CHECK((size_t)JS_RegvmStat(v.ctx, 11) < kept, "the heap failed a request and the scratch kept %d bytes", JS_RegvmStat(v.ctx, 11));
+    unlimit(&v);
+    /* a function whose scratch is over 64 KiB gives it back at once */
+    n = snprintf(src, sizeof(src), "var k = function (x) { 'use strict'; var s = 0;");
+    for (big = 0; n + 64 < sizeof(src); big++)
+        n += snprintf(src + n, sizeof(src) - n, " s = s + x * %d;", big);
+    snprintf(src + n, sizeof(src) - n, " return s; }; k(1) > 0");
+    CHECK(eval_is(v.ctx, src, "true"), "the function of %d lines does not run", big);
+    CHECK(JS_RegvmStat(v.ctx, 11) == 0, "a conversion that needed more than 64 KiB keeps %d bytes of scratch", JS_RegvmStat(v.ctx, 11));
+    vm_free(&v);
+}
+
 int main(void)
 {
     nested_scopes();
@@ -1926,8 +2279,10 @@ int main(void)
     test_oom_uncatchable();
     test_field_chain_uncatchable();
     test_uncatchable_then_loop();
+    test_uncatchable_fast_call();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
+    test_symbol_copy_oom();
     test_regexp_oom();
     test_regexp_script_oom();
     test_thrown_is_not_uncatchable();
@@ -1944,6 +2299,12 @@ int main(void)
     test_copy_props_oom();
     test_tags_oom();
     test_tags_register_oom();
+    test_regvm_convert_oom();
+    test_regvm_cases_oom();
+    test_regvm_args_oom();
+    test_regvm_fold_oom();
+    test_regvm_stack_oom();
+    test_regvm_scratch();
     if (failures) {
         printf("unit-oom: %d of %ld checks failed\n", failures, checks);
         return 1;

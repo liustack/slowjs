@@ -25,9 +25,10 @@ const PollCounterOffset = 384
 // (before, the phis of the dispatch hold it back): the interpreter counts
 // its bytecode in its handlers (pass/poll.cpp), so its dispatch has no tick
 // and is 4 instructions there, with polls or without.
-// JS_CallInternal has 204 on amd64 and 208 on arm64, and its least number is
-// about a seventh below.
-var DispatchCopies = map[string]int{"JS_CallInternal": 175}
+// JS_RegvmRun, the register loop of engine/regvm.h and the interpreter, has
+// 59 on amd64 and 54 on arm64, and its least number is a seventh below the
+// 49 it had when it came in, so that its new handlers need no new number.
+var DispatchCopies = map[string]int{"JS_RegvmRun": 42}
 
 // CheckPollOffset checks -poll-offset: a word inside the region.
 func CheckPollOffset(offset, sizeLog2 int) error {

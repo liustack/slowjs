@@ -1,0 +1,404 @@
+result 0 0 2:ab 7:pest 260:babZ true fin 1770
+result 1 0 2:ab 1:c undefined true caught t/fin 1770
+result 2 0 2:ab 1:r undefined true fin 1770
+result 3 0 2:ab 7:pest 260:babZ true fin 1770
+result 4 0 2:ab 1:c undefined true caught t/fin 1770
+result 5 0 2:ab 1:r undefined true fin 1770
+result 6 0 2:ab 7:pest 260:babZ true fin 1770
+result 7 0 2:ab 1:c undefined true caught t/fin 1770
+result 8 0 2:ab 1:r undefined true fin 1770
+result 9 0 2:ab 7:pest 260:babZ true fin 1770
+result 10 0 2:ab 1:c undefined true caught t/fin 1770
+result 11 0 2:ab 1:r undefined true fin 1770
+result 12 0 2:ab 7:pest 260:babZ true fin 1770
+result 13 0 2:ab 1:c undefined true caught t/fin 1770
+result 14 0 2:ab 1:r undefined true fin 1770
+result 15 0 2:ab 7:pest 260:babZ true fin 1770
+result 16 0 2:ab 1:c undefined true caught t/fin 1770
+result 17 0 2:ab 1:r undefined true fin 1770
+result 18 0 2:ab 7:pest 260:babZ true fin 1770
+result 19 0 2:ab 1:c undefined true caught t/fin 1770
+result 20 0 2:ab 1:r undefined true fin 1770
+result 21 0 2:ab 7:pest 260:babZ true fin 1770
+result 22 0 2:ab 1:c undefined true caught t/fin 1770
+result 23 0 2:ab 1:r undefined true fin 1770
+result 24 0 2:ab 7:pest 260:babZ true fin 1770
+result 25 0 2:ab 1:c undefined true caught t/fin 1770
+result 26 0 2:ab 1:r undefined true fin 1770
+result 27 0 2:ab 7:pest 260:babZ true fin 1770
+result 28 0 2:ab 1:c undefined true caught t/fin 1770
+result 29 0 2:ab 1:r undefined true fin 1770
+result 30 0 2:ab 7:pest 260:babZ true fin 1770
+result 31 0 2:ab 1:c undefined true caught t/fin 1770
+result 32 0 2:ab 1:r undefined true fin 1770
+result 33 0 2:ab 7:pest 260:babZ true fin 1770
+result 34 0 2:ab 1:c undefined true caught t/fin 1770
+result 35 0 2:ab 1:r undefined true fin 1770
+result 36 0 2:ab 7:pest 260:babZ true fin 1770
+result 37 0 2:ab 1:c undefined true caught t/fin 1770
+result 38 0 2:ab 1:r undefined true fin 1770
+result 39 0 2:ab 7:pest 260:babZ true fin 1770
+result 40 0 2:ab 1:c undefined true caught t/fin 1770
+result 41 0 2:ab 1:r undefined true fin 1770
+result 42 0 2:ab 7:pest 260:babZ true fin 1770
+result 43 0 2:ab 1:c undefined true caught t/fin 1770
+result 44 0 2:ab 1:r undefined true fin 1770
+result 45 0 2:ab 7:pest 260:babZ true fin 1770
+result 46 0 2:ab 1:c undefined true caught t/fin 1770
+result 47 0 2:ab 1:r undefined true fin 1770
+result 48 0 2:ab 7:pest 260:babZ true fin 1770
+result 49 0 2:ab 1:c undefined true caught t/fin 1770
+result 50 0 2:ab 1:r undefined true fin 1770
+result 51 0 2:ab 7:pest 260:babZ true fin 1770
+result 52 0 2:ab 1:c undefined true caught t/fin 1770
+result 53 0 2:ab 1:r undefined true fin 1770
+result 54 0 2:ab 7:pest 260:babZ true fin 1770
+result 55 0 2:ab 1:c undefined true caught t/fin 1770
+result 56 0 2:ab 1:r undefined true fin 1770
+result 57 0 2:ab 7:pest 260:babZ true fin 1770
+result 58 0 2:ab 1:c undefined true caught t/fin 1770
+result 59 0 2:ab 1:r undefined true fin 1770
+result 60 0 2:ab 7:pest 260:babZ true fin 1770
+result 61 0 2:ab 1:c undefined true caught t/fin 1770
+result 62 0 2:ab 1:r undefined true fin 1770
+result 63 0 2:ab 7:pest 260:babZ true fin 1770
+result 64 0 2:ab 1:c undefined true caught t/fin 1770
+result 65 0 2:ab 1:r undefined true fin 1770
+result 66 0 2:ab 7:pest 260:babZ true fin 1770
+result 67 0 2:ab 1:c undefined true caught t/fin 1770
+result 68 0 2:ab 1:r undefined true fin 1770
+result 69 0 2:ab 7:pest 260:babZ true fin 1770
+result 70 0 2:ab 1:c undefined true caught t/fin 1770
+result 71 0 2:ab 1:r undefined true fin 1770
+result 72 0 2:ab 7:pest 260:babZ true fin 1770
+result 73 0 2:ab 1:c undefined true caught t/fin 1770
+result 74 0 2:ab 1:r undefined true fin 1770
+result 75 0 2:ab 7:pest 260:babZ true fin 1770
+result 76 0 2:ab 1:c undefined true caught t/fin 1770
+result 77 0 2:ab 1:r undefined true fin 1770
+result 78 0 2:ab 7:pest 260:babZ true fin 1770
+result 79 0 2:ab 1:c undefined true caught t/fin 1770
+result 80 0 2:ab 1:r undefined true fin 1770
+result 81 0 2:ab 7:pest 260:babZ true fin 1770
+result 82 0 2:ab 1:c undefined true caught t/fin 1770
+result 83 0 2:ab 1:r undefined true fin 1770
+result 84 0 2:ab 7:pest 260:babZ true fin 1770
+result 85 0 2:ab 1:c undefined true caught t/fin 1770
+result 86 0 2:ab 1:r undefined true fin 1770
+result 87 0 2:ab 7:pest 260:babZ true fin 1770
+result 88 0 2:ab 1:c undefined true caught t/fin 1770
+result 89 0 2:ab 1:r undefined true fin 1770
+result 90 0 2:ab 7:pest 260:babZ true fin 1770
+result 91 0 2:ab 1:c undefined true caught t/fin 1770
+result 92 0 2:ab 1:r undefined true fin 1770
+result 93 0 2:ab 7:pest 260:babZ true fin 1770
+result 94 0 2:ab 1:c undefined true caught t/fin 1770
+result 95 0 2:ab 1:r undefined true fin 1770
+result 96 0 2:ab 7:pest 260:babZ true fin 1770
+result 97 0 2:ab 1:c undefined true caught t/fin 1770
+result 98 0 2:ab 1:r undefined true fin 1770
+result 99 0 2:ab 7:pest 260:babZ true fin 1770
+result 100 0 2:ab 1:c undefined true caught t/fin 1770
+result 101 0 2:ab 1:r undefined true fin 1770
+result 102 0 2:ab 7:pest 260:babZ true fin 1770
+result 103 0 2:ab 1:c undefined true caught t/fin 1770
+result 104 0 2:ab 1:r undefined true fin 1770
+result 105 0 2:ab 7:pest 260:babZ true fin 1770
+result 106 0 2:ab 1:c undefined true caught t/fin 1770
+result 107 0 2:ab 1:r undefined true fin 1770
+result 108 0 2:ab 7:pest 260:babZ true fin 1770
+result 109 0 2:ab 1:c undefined true caught t/fin 1770
+result 110 0 2:ab 1:r undefined true fin 1770
+result 111 0 2:ab 7:pest 260:babZ true fin 1770
+result 112 0 2:ab 1:c undefined true caught t/fin 1770
+result 113 0 2:ab 1:r undefined true fin 1770
+result 114 0 2:ab 7:pest 260:babZ true fin 1770
+result 115 0 2:ab 1:c undefined true caught t/fin 1770
+result 116 0 2:ab 1:r undefined true fin 1770
+result 117 0 2:ab 7:pest 260:babZ true fin 1770
+result 118 0 2:ab 1:c undefined true caught t/fin 1770
+result 119 0 2:ab 1:r undefined true fin 1770
+result 120 0 2:ab 7:pest 260:babZ true fin 1770
+result 121 0 2:ab 1:c undefined true caught t/fin 1770
+result 122 0 2:ab 1:r undefined true fin 1770
+result 123 0 2:ab 7:pest 260:babZ true fin 1770
+result 124 0 2:ab 1:c undefined true caught t/fin 1770
+result 125 0 2:ab 1:r undefined true fin 1770
+result 126 0 2:ab 7:pest 260:babZ true fin 1770
+result 127 0 2:ab 1:c undefined true caught t/fin 1770
+result 128 0 2:ab 1:r undefined true fin 1770
+result 129 0 2:ab 7:pest 260:babZ true fin 1770
+result 130 0 2:ab 1:c undefined true caught t/fin 1770
+result 131 0 2:ab 1:r undefined true fin 1770
+result 132 0 2:ab 7:pest 260:babZ true fin 1770
+result 133 0 2:ab 1:c undefined true caught t/fin 1770
+result 134 0 2:ab 1:r undefined true fin 1770
+result 135 0 2:ab 7:pest 260:babZ true fin 1770
+result 136 0 2:ab 1:c undefined true caught t/fin 1770
+result 137 0 2:ab 1:r undefined true fin 1770
+result 138 0 2:ab 7:pest 260:babZ true fin 1770
+result 139 0 2:ab 1:c undefined true caught t/fin 1770
+result 140 0 2:ab 1:r undefined true fin 1770
+result 141 0 2:ab 7:pest 260:babZ true fin 1770
+result 142 0 2:ab 1:c undefined true caught t/fin 1770
+result 143 0 2:ab 1:r undefined true fin 1770
+result 144 0 2:ab 7:pest 260:babZ true fin 1770
+result 145 0 2:ab 1:c undefined true caught t/fin 1770
+result 146 0 2:ab 1:r undefined true fin 1770
+result 147 0 2:ab 7:pest 260:babZ true fin 1770
+result 148 0 2:ab 1:c undefined true caught t/fin 1770
+result 149 0 2:ab 1:r undefined true fin 1770
+result 150 0 2:ab 7:pest 260:babZ true fin 1770
+result 151 0 2:ab 1:c undefined true caught t/fin 1770
+result 152 0 2:ab 1:r undefined true fin 1770
+result 153 0 2:ab 7:pest 260:babZ true fin 1770
+result 154 0 2:ab 1:c undefined true caught t/fin 1770
+result 155 0 2:ab 1:r undefined true fin 1770
+result 156 0 2:ab 7:pest 260:babZ true fin 1770
+result 157 0 2:ab 1:c undefined true caught t/fin 1770
+result 158 0 2:ab 1:r undefined true fin 1770
+result 159 0 2:ab 7:pest 260:babZ true fin 1770
+result 160 0 2:ab 1:c undefined true caught t/fin 1770
+result 161 0 2:ab 1:r undefined true fin 1770
+result 162 0 2:ab 7:pest 260:babZ true fin 1770
+result 163 0 2:ab 1:c undefined true caught t/fin 1770
+result 164 0 2:ab 1:r undefined true fin 1770
+result 165 0 2:ab 7:pest 260:babZ true fin 1770
+result 166 0 2:ab 1:c undefined true caught t/fin 1770
+result 167 0 2:ab 1:r undefined true fin 1770
+result 168 0 2:ab 7:pest 260:babZ true fin 1770
+result 169 0 2:ab 1:c undefined true caught t/fin 1770
+result 170 0 2:ab 1:r undefined true fin 1770
+result 171 0 2:ab 7:pest 260:babZ true fin 1770
+result 172 0 2:ab 1:c undefined true caught t/fin 1770
+result 173 0 2:ab 1:r undefined true fin 1770
+result 174 0 2:ab 7:pest 260:babZ true fin 1770
+result 175 0 2:ab 1:c undefined true caught t/fin 1770
+result 176 0 2:ab 1:r undefined true fin 1770
+result 177 0 2:ab 7:pest 260:babZ true fin 1770
+result 178 0 2:ab 1:c undefined true caught t/fin 1770
+result 179 0 2:ab 1:r undefined true fin 1770
+result 180 0 2:ab 7:pest 260:babZ true fin 1770
+result 181 0 2:ab 1:c undefined true caught t/fin 1770
+result 182 0 2:ab 1:r undefined true fin 1770
+result 183 0 2:ab 7:pest 260:babZ true fin 1770
+result 184 0 2:ab 1:c undefined true caught t/fin 1770
+result 185 0 2:ab 1:r undefined true fin 1770
+result 186 0 2:ab 7:pest 260:babZ true fin 1770
+result 187 0 2:ab 1:c undefined true caught t/fin 1770
+result 188 0 2:ab 1:r undefined true fin 1770
+result 189 0 2:ab 7:pest 260:babZ true fin 1770
+result 190 0 2:ab 1:c undefined true caught t/fin 1770
+result 191 0 2:ab 1:r undefined true fin 1770
+result 192 0 2:ab 7:pest 260:babZ true fin 1770
+result 193 0 2:ab 1:c undefined true caught t/fin 1770
+result 194 0 2:ab 1:r undefined true fin 1770
+result 195 0 2:ab 7:pest 260:babZ true fin 1770
+result 196 0 2:ab 1:c undefined true caught t/fin 1770
+result 197 0 2:ab 1:r undefined true fin 1770
+result 198 0 2:ab 7:pest 260:babZ true fin 1770
+result 199 0 2:ab 1:c undefined true caught t/fin 1770
+result 200 0 2:ab 1:r undefined true fin 1770
+result 201 0 2:ab 7:pest 260:babZ true fin 1770
+result 202 0 2:ab 1:c undefined true caught t/fin 1770
+result 203 0 2:ab 1:r undefined true fin 1770
+result 204 0 2:ab 7:pest 260:babZ true fin 1770
+result 205 0 2:ab 1:c undefined true caught t/fin 1770
+result 206 0 2:ab 1:r undefined true fin 1770
+result 207 0 2:ab 7:pest 260:babZ true fin 1770
+result 208 0 2:ab 1:c undefined true caught t/fin 1770
+result 209 0 2:ab 1:r undefined true fin 1770
+result 210 0 2:ab 7:pest 260:babZ true fin 1770
+result 211 0 2:ab 1:c undefined true caught t/fin 1770
+result 212 0 2:ab 1:r undefined true fin 1770
+result 213 0 2:ab 7:pest 260:babZ true fin 1770
+result 214 0 2:ab 1:c undefined true caught t/fin 1770
+result 215 0 2:ab 1:r undefined true fin 1770
+result 216 0 2:ab 7:pest 260:babZ true fin 1770
+result 217 0 2:ab 1:c undefined true caught t/fin 1770
+result 218 0 2:ab 1:r undefined true fin 1770
+result 219 0 2:ab 7:pest 260:babZ true fin 1770
+result 220 0 2:ab 1:c undefined true caught t/fin 1770
+result 221 0 2:ab 1:r undefined true fin 1770
+result 222 0 2:ab 7:pest 260:babZ true fin 1770
+result 223 0 2:ab 1:c undefined true caught t/fin 1770
+result 224 0 2:ab 1:r undefined true fin 1770
+result 225 0 2:ab 7:pest 260:babZ true fin 1770
+result 226 0 2:ab 1:c undefined true caught t/fin 1770
+result 227 0 2:ab 1:r undefined true fin 1770
+result 228 0 2:ab 7:pest 260:babZ true fin 1770
+result 229 0 2:ab 1:c undefined true caught t/fin 1770
+result 230 0 2:ab 1:r undefined true fin 1770
+result 231 0 2:ab 7:pest 260:babZ true fin 1770
+result 232 0 2:ab 1:c undefined true caught t/fin 1770
+result 233 0 2:ab 1:r undefined true fin 1770
+result 234 0 2:ab 7:pest 260:babZ true fin 1770
+result 235 0 2:ab 1:c undefined true caught t/fin 1770
+result 236 0 2:ab 1:r undefined true fin 1770
+result 237 0 2:ab 7:pest 260:babZ true fin 1770
+result 238 0 2:ab 1:c undefined true caught t/fin 1770
+result 239 0 2:ab 1:r undefined true fin 1770
+result 240 0 2:ab 7:pest 260:babZ true fin 1770
+result 241 0 2:ab 1:c undefined true caught t/fin 1770
+result 242 0 2:ab 1:r undefined true fin 1770
+result 243 0 2:ab 7:pest 260:babZ true fin 1770
+result 244 0 2:ab 1:c undefined true caught t/fin 1770
+result 245 0 2:ab 1:r undefined true fin 1770
+result 246 0 2:ab 7:pest 260:babZ true fin 1770
+result 247 0 2:ab 1:c undefined true caught t/fin 1770
+result 248 0 2:ab 1:r undefined true fin 1770
+result 249 0 2:ab 7:pest 260:babZ true fin 1770
+result 250 0 2:ab 1:c undefined true caught t/fin 1770
+result 251 0 2:ab 1:r undefined true fin 1770
+result 252 0 2:ab 7:pest 260:babZ true fin 1770
+result 253 0 2:ab 1:c undefined true caught t/fin 1770
+result 254 0 2:ab 1:r undefined true fin 1770
+result 255 0 2:ab 7:pest 260:babZ true fin 1770
+result 256 0 2:ab 1:c undefined true caught t/fin 1770
+result 257 0 2:ab 1:r undefined true fin 1770
+result 258 0 2:ab 7:pest 260:babZ true fin 1770
+result 259 0 2:ab 1:c undefined true caught t/fin 1770
+result 260 0 2:ab 1:r undefined true fin 1770
+result 261 0 2:ab 7:pest 260:babZ true fin 1770
+result 262 0 2:ab 1:c undefined true caught t/fin 1770
+result 263 0 2:ab 1:r undefined true fin 1770
+result 264 0 2:ab 7:pest 260:babZ true fin 1770
+result 265 0 2:ab 1:c undefined true caught t/fin 1770
+result 266 0 2:ab 1:r undefined true fin 1770
+result 267 0 2:ab 7:pest 260:babZ true fin 1770
+result 268 0 2:ab 1:c undefined true caught t/fin 1770
+result 269 0 2:ab 1:r undefined true fin 1770
+result 270 0 2:ab 7:pest 260:babZ true fin 1770
+result 271 0 2:ab 1:c undefined true caught t/fin 1770
+result 272 0 2:ab 1:r undefined true fin 1770
+result 273 0 2:ab 7:pest 260:babZ true fin 1770
+result 274 0 2:ab 1:c undefined true caught t/fin 1770
+result 275 0 2:ab 1:r undefined true fin 1770
+result 276 0 2:ab 7:pest 260:babZ true fin 1770
+result 277 0 2:ab 1:c undefined true caught t/fin 1770
+result 278 0 2:ab 1:r undefined true fin 1770
+result 279 0 2:ab 7:pest 260:babZ true fin 1770
+result 280 0 2:ab 1:c undefined true caught t/fin 1770
+result 281 0 2:ab 1:r undefined true fin 1770
+result 282 0 2:ab 7:pest 260:babZ true fin 1770
+result 283 0 2:ab 1:c undefined true caught t/fin 1770
+result 284 0 2:ab 1:r undefined true fin 1770
+result 285 0 2:ab 7:pest 260:babZ true fin 1770
+result 286 0 2:ab 1:c undefined true caught t/fin 1770
+result 287 0 2:ab 1:r undefined true fin 1770
+result 288 0 2:ab 7:pest 260:babZ true fin 1770
+result 289 0 2:ab 1:c undefined true caught t/fin 1770
+result 290 0 2:ab 1:r undefined true fin 1770
+result 291 0 2:ab 7:pest 260:babZ true fin 1770
+result 292 0 2:ab 1:c undefined true caught t/fin 1770
+result 293 0 2:ab 1:r undefined true fin 1770
+result 294 0 2:ab 7:pest 260:babZ true fin 1770
+result 295 0 2:ab 1:c undefined true caught t/fin 1770
+result 296 0 2:ab 1:r undefined true fin 1770
+result 297 0 2:ab 7:pest 260:babZ true fin 1770
+result 298 0 2:ab 1:c undefined true caught t/fin 1770
+result 299 0 2:ab 1:r undefined true fin 1770
+result 300 0 2:ab 7:pest 260:babZ true fin 1770
+result 301 0 2:ab 1:c undefined true caught t/fin 1770
+result 302 0 2:ab 1:r undefined true fin 1770
+result 303 0 2:ab 7:pest 260:babZ true fin 1770
+result 304 0 2:ab 1:c undefined true caught t/fin 1770
+result 305 0 2:ab 1:r undefined true fin 1770
+result 306 0 2:ab 7:pest 260:babZ true fin 1770
+result 307 0 2:ab 1:c undefined true caught t/fin 1770
+result 308 0 2:ab 1:r undefined true fin 1770
+result 309 0 2:ab 7:pest 260:babZ true fin 1770
+result 310 0 2:ab 1:c undefined true caught t/fin 1770
+result 311 0 2:ab 1:r undefined true fin 1770
+result 312 0 2:ab 7:pest 260:babZ true fin 1770
+result 313 0 2:ab 1:c undefined true caught t/fin 1770
+result 314 0 2:ab 1:r undefined true fin 1770
+result 315 0 2:ab 7:pest 260:babZ true fin 1770
+result 316 0 2:ab 1:c undefined true caught t/fin 1770
+result 317 0 2:ab 1:r undefined true fin 1770
+result 318 0 2:ab 7:pest 260:babZ true fin 1770
+result 319 0 2:ab 1:c undefined true caught t/fin 1770
+result 320 0 2:ab 1:r undefined true fin 1770
+result 321 0 2:ab 7:pest 260:babZ true fin 1770
+result 322 0 2:ab 1:c undefined true caught t/fin 1770
+result 323 0 2:ab 1:r undefined true fin 1770
+result 324 0 2:ab 7:pest 260:babZ true fin 1770
+result 325 0 2:ab 1:c undefined true caught t/fin 1770
+result 326 0 2:ab 1:r undefined true fin 1770
+result 327 0 2:ab 7:pest 260:babZ true fin 1770
+result 328 0 2:ab 1:c undefined true caught t/fin 1770
+result 329 0 2:ab 1:r undefined true fin 1770
+result 330 0 2:ab 7:pest 260:babZ true fin 1770
+result 331 0 2:ab 1:c undefined true caught t/fin 1770
+result 332 0 2:ab 1:r undefined true fin 1770
+result 333 0 2:ab 7:pest 260:babZ true fin 1770
+result 334 0 2:ab 1:c undefined true caught t/fin 1770
+result 335 0 2:ab 1:r undefined true fin 1770
+result 336 0 2:ab 7:pest 260:babZ true fin 1770
+result 337 0 2:ab 1:c undefined true caught t/fin 1770
+result 338 0 2:ab 1:r undefined true fin 1770
+result 339 0 2:ab 7:pest 260:babZ true fin 1770
+result 340 0 2:ab 1:c undefined true caught t/fin 1770
+result 341 0 2:ab 1:r undefined true fin 1770
+result 342 0 2:ab 7:pest 260:babZ true fin 1770
+result 343 0 2:ab 1:c undefined true caught t/fin 1770
+result 344 0 2:ab 1:r undefined true fin 1770
+result 345 0 2:ab 7:pest 260:babZ true fin 1770
+result 346 0 2:ab 1:c undefined true caught t/fin 1770
+result 347 0 2:ab 1:r undefined true fin 1770
+result 348 0 2:ab 7:pest 260:babZ true fin 1770
+result 349 0 2:ab 1:c undefined true caught t/fin 1770
+result 350 0 2:ab 1:r undefined true fin 1770
+result 351 0 2:ab 7:pest 260:babZ true fin 1770
+result 352 0 2:ab 1:c undefined true caught t/fin 1770
+result 353 0 2:ab 1:r undefined true fin 1770
+result 354 0 2:ab 7:pest 260:babZ true fin 1770
+result 355 0 2:ab 1:c undefined true caught t/fin 1770
+result 356 0 2:ab 1:r undefined true fin 1770
+result 357 0 2:ab 7:pest 260:babZ true fin 1770
+result 358 0 2:ab 1:c undefined true caught t/fin 1770
+result 359 0 2:ab 1:r undefined true fin 1770
+result 360 0 2:ab 7:pest 260:babZ true fin 1770
+result 361 0 2:ab 1:c undefined true caught t/fin 1770
+result 362 0 2:ab 1:r undefined true fin 1770
+result 363 0 2:ab 7:pest 260:babZ true fin 1770
+result 364 0 2:ab 1:c undefined true caught t/fin 1770
+result 365 0 2:ab 1:r undefined true fin 1770
+result 366 0 2:ab 7:pest 260:babZ true fin 1770
+result 367 0 2:ab 1:c undefined true caught t/fin 1770
+result 368 0 2:ab 1:r undefined true fin 1770
+result 369 0 2:ab 7:pest 260:babZ true fin 1770
+result 370 0 2:ab 1:c undefined true caught t/fin 1770
+result 371 0 2:ab 1:r undefined true fin 1770
+result 372 0 2:ab 7:pest 260:babZ true fin 1770
+result 373 0 2:ab 1:c undefined true caught t/fin 1770
+result 374 0 2:ab 1:r undefined true fin 1770
+result 375 0 2:ab 7:pest 260:babZ true fin 1770
+result 376 0 2:ab 1:c undefined true caught t/fin 1770
+result 377 0 2:ab 1:r undefined true fin 1770
+result 378 0 2:ab 7:pest 260:babZ true fin 1770
+result 379 0 2:ab 1:c undefined true caught t/fin 1770
+result 380 0 2:ab 1:r undefined true fin 1770
+result 381 0 2:ab 7:pest 260:babZ true fin 1770
+result 382 0 2:ab 1:c undefined true caught t/fin 1770
+result 383 0 2:ab 1:r undefined true fin 1770
+result 384 0 2:ab 7:pest 260:babZ true fin 1770
+result 385 0 2:ab 1:c undefined true caught t/fin 1770
+result 386 0 2:ab 1:r undefined true fin 1770
+result 387 0 2:ab 7:pest 260:babZ true fin 1770
+result 388 0 2:ab 1:c undefined true caught t/fin 1770
+result 389 0 2:ab 1:r undefined true fin 1770
+result 390 0 2:ab 7:pest 260:babZ true fin 1770
+result 391 0 2:ab 1:c undefined true caught t/fin 1770
+result 392 0 2:ab 1:r undefined true fin 1770
+result 393 0 2:ab 7:pest 260:babZ true fin 1770
+result 394 0 2:ab 1:c undefined true caught t/fin 1770
+result 395 0 2:ab 1:r undefined true fin 1770
+result 396 0 2:ab 7:pest 260:babZ true fin 1770
+result 397 0 2:ab 1:c undefined true caught t/fin 1770
+result 398 0 2:ab 1:r undefined true fin 1770
+result 399 0 2:ab 7:pest 260:babZ true fin 1770
+result 400 0 2:ab 1:c undefined true caught t/fin 1770
+mem-end obj=195 atom=592 shape=124 prop=959 jsfunc=2 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=540 shape=123 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

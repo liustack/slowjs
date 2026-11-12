@@ -1,0 +1,4 @@
+result TypeError: cannot read property 'x' of undefined,0;TypeError: cannot read property 'x' of undefined,0;45150
+mem-end obj=189 atom=559 shape=121 prop=949 jsfunc=6 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=187 atom=548 shape=121 prop=943 jsfunc=1 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

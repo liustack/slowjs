@@ -1,0 +1,42 @@
+result proxy nt 1 function get prototype,P
+result proxy throws no prototype 
+result not an object true 0 P
+result derived proxy nt 0 false get prototype,C
+result trap 100 trap,P
+result plain proxy 3 function P
+result plain proxy class 0 false
+result bound 3 function true
+result bound class 3 true
+result bound nt TypeError: not a function
+result noproto 1
+result spread 5 NaN
+result cb 0,2
+result proxy nt 2 function get prototype,P
+result proxy throws no prototype 
+result not an object true 1 P
+result derived proxy nt 1 false get prototype,C
+result trap 101 trap,P
+result plain proxy 4 function P
+result plain proxy class 1 false
+result bound 3 function true
+result bound class 3 true
+result bound nt TypeError: not a function
+result noproto 1
+result spread 6 NaN
+result cb 2,4
+result proxy nt 3 function get prototype,P
+result proxy throws no prototype 
+result not an object true 2 P
+result derived proxy nt 2 false get prototype,C
+result trap 102 trap,P
+result plain proxy 5 function P
+result plain proxy class 2 false
+result bound 3 function true
+result bound class 3 true
+result bound nt TypeError: not a function
+result noproto 1
+result spread 7 NaN
+result cb 4,6
+mem-end obj=206 atom=553 shape=135 prop=992 jsfunc=6 cfunc=131 array=2 fast_array=2 elements=9 binary=0
+mem-gc obj=194 atom=544 shape=127 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

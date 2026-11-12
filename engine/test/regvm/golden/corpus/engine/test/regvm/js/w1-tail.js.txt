@@ -1,0 +1,48 @@
+result s1 noscript: {"m":2,"v":null,"s":7,"t":null}
+result s1 select: {"m":2,"v":0,"s":7,"t":null}
+result s1 svg: {"m":4,"v":null,"s":7,"t":null}
+result s1 thead: {"m":7,"v":null,"s":7,"t":null}
+result s1 tbody: {"m":7,"v":null,"s":7,"t":null}
+result s1 head: {"m":3,"v":null,"s":7,"t":null}
+result s1 html: {"m":3,"v":null,"s":7,"t":null}
+result s1 div: {"m":3,"v":null,"s":7,"t":null}
+result s1 head small: {"m":3,"v":null,"s":0,"t":null}
+result s2: 2 3 1
+result s3: 4 6 5
+result s4: 2 7 0
+result s5: 0
+result s5: 1
+result s5 threw TypeError: boom 2
+result s1 noscript: {"m":2,"v":null,"s":7,"t":null}
+result s1 select: {"m":2,"v":1,"s":7,"t":null}
+result s1 svg: {"m":4,"v":null,"s":7,"t":null}
+result s1 thead: {"m":7,"v":null,"s":7,"t":null}
+result s1 tbody: {"m":7,"v":null,"s":7,"t":null}
+result s1 head: {"m":3,"v":null,"s":7,"t":null}
+result s1 html: {"m":3,"v":null,"s":7,"t":null}
+result s1 div: {"m":3,"v":null,"s":7,"t":null}
+result s1 head small: {"m":3,"v":null,"s":0,"t":null}
+result s2: 2 3 1
+result s3: 4 6 5
+result s4: 3 7 0
+result s5: 0
+result s5: 1
+result s5 threw TypeError: boom 2
+result s1 noscript: {"m":2,"v":null,"s":7,"t":null}
+result s1 select: {"m":2,"v":2,"s":7,"t":null}
+result s1 svg: {"m":4,"v":null,"s":7,"t":null}
+result s1 thead: {"m":7,"v":null,"s":7,"t":null}
+result s1 tbody: {"m":7,"v":null,"s":7,"t":null}
+result s1 head: {"m":3,"v":null,"s":7,"t":null}
+result s1 html: {"m":3,"v":null,"s":7,"t":null}
+result s1 div: {"m":3,"v":null,"s":7,"t":null}
+result s1 head small: {"m":3,"v":null,"s":0,"t":null}
+result s2: 2 3 1
+result s3: 4 6 5
+result s4: 4 7 0
+result s5: 0
+result s5: 1
+result s5 threw TypeError: boom 2
+mem-end obj=191 atom=594 shape=126 prop=996 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=594 shape=126 prop=996 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

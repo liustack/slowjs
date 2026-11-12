@@ -1,7 +1,8 @@
 ---
-summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变'
+summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变，以及 symbol 和它的描述为什么不和脚本共用字符串'
 read_when:
   - String.prototype.includes、indexOf 或 lastIndexOf 给出的结果和以前不一样，或者在长字符串上很慢
+  - 用字符串做出的 symbol，或者描述被拿着的 symbol，WeakRef 或 FinalizationRegistry 一直放不掉它
 ---
 
 # 字符串
@@ -21,3 +22,15 @@ read_when:
 在不含该字符串的 100 KB HTML 里查找，用时 81 µs，以前是 320 µs，HTML 含 16 位字符时是 87 µs，以前是 271 µs。在约 20 个字符的字符串里未命中，`indexOf` 用 108 ns，以前是 164，`includes` 是 102，以前是 119，1 KB 里的 `lastIndexOf` 是 1.6 µs，以前是 3.1，`startsWith` 是 102 ns，以前是 107（linux/amd64，AMD EPYC 7B13，单核，不开 PGO，每项都是用 JavaScript 循环调用同一个函数）。在 tifa 商店六个工作台页面的 Go CPU profile 里，`String.prototype.includes` 从占采样的 1.06% 降到 0.27%：它自己的搜索从约 0.75% 降到 0.13%，剩下的主要是把 HTML 的 rope（几段字符串连成的树，读的时候才拼成一段） 合成一个字符串，渲染之后本来也要读它。在 tifa 测试应用的 MUI 页面上，从 0.63% 降到 0.11%。商店六个页面的一次渲染用时是原来的 0.995（6 种代码布局跑 6 轮，0.975 到 1.032），MUI 页面是 1.003（0.970 到 1.024），都不开 PGO：收益比代码布局之间的波动小，光是代码布局就能让一次渲染变化约 2%。没有哪个页面或微基准变慢。
 
 改动在 C 里（`engine/quickjs.c`），带有自己的搜索：`js_string_indexOf` 和 `js_string_includes` 调用 `js_string_find`，它只会返回已经比较过整个被查找字符串的下标，所以这个下标不用再比较一次。找一个字符时用 `memchr`，16 位字符的字符串里和向前找时用循环。最多 8 个字符的字符串，先用同样的办法找它的第一个字符，再在那里比较其余字符，每个下标最多 8 个单位的工作，这省掉了 Two-Way 搜索先要在被查找字符串上做的工作（每次搜索约 20 ns）。更长的字符串用 musl 的 `memmem` 里的 Two-Way 搜索，写成支持 8 位和 16 位字符、被查找字符串宽度不同的情况和两个方向。它的用时与两个字符串的长度成线性关系，不管内容是什么，几乎处处都匹配的被查找字符串也一样：在 linux/amd64（AMD EPYC 7B13）上，在第一个字符所在的每个下标处比较被查找字符串，`'a'.repeat(131072).indexOf('a'.repeat(65536) + 'b')` 要 2.5 s，Two-Way 搜索只要 0.5 ms。只有一个下标要看的搜索，例如 `startsWith` 和 `endsWith` 的，以及两个长度相同的字符串的，就在那里比较被查找字符串，不检查中断计数器：它的耗时与被查找字符串的长度成线性关系，`===`、拼接和其他与字符串长度成线性关系的操作也是这样，它们都不检查。`engine/test/compare/stringsearch.js`（由 `engine/test/compare.sh` 运行）用只有几个字母反复出现的长被查找字符串来搜索。`engine/test/unit.c` 检查这些事：在长字符串里搜索会运行中断处理函数，一次长搜索会调用它很多次（不管有没有匹配、字符串是哪种宽度、两种宽度混用都一样），处理函数要求停止时以错误 `interrupted` 结束，`try` 和 `catch` 无法捕获它，处理函数去掉之后上下文可以再次运行脚本和搜索，只有一个下标要看的搜索不调用它，以及几乎处处都匹配的被查找字符串，向前和向后搜索，在各种宽度的字符串和两种宽度混用时，都只要不到一秒的一小部分。
+
+## symbol 有自己的字符串
+
+版本：Unreleased。
+
+`Symbol(s)` 以前把字符串 `s` 本身改成 symbol，哪怕数组、变量还拿着它，或者它是函数里的数字字符串字面量（`Symbol("12")`，函数每次运行共用同一个字符串）。`description` 也把 symbol 本身当作字符串返回。不管哪种，脚本拿着的字符串都让 symbol 一直活着：只要字符串还在，指向它的 `WeakRef` 永远不变空，`FinalizationRegistry` 永远不回调。Node 在下一次回收时就释放这样的 symbol。
+
+现在 symbol 和脚本看到的字符串不再共用字符。`JS_NewSymbol`（`engine/quickjs.c`）在别处还拿着 `s` 或者 `s` 是 atom 时，给 `Symbol(s)` 一份 `s` 的副本，`description`（`js_symbol_get_description`）返回的也是副本。symbol 字符串的其他用处，比如消息里的名字、`String(symbol)` 和方法名 `[desc]`，本来就另做一个新字符串，或者只在这次调用里用，照旧共用。超过一百万个字符的副本分步复制，每步之间读中断标志（`js_string_copy`，经过 `js_sub_string_long`）。不会死的东西照旧共用：注册过的 symbol（`Symbol.for`）不能被弱引用，以及运行时自带的 symbol（比如 `Symbol.iterator`）。字符串变成字符串 atom 时，不管谁拿着它都照旧原地变：字符串 atom 对每个持有者都还是同一个字符串。
+
+代价：`Symbol` 运行时，它的参数还拿着传进来的字符串，所以用字符串做的 symbol 总是副本，按描述长度分配一次。不全是数字的字面量，比如 `Symbol('react.element')`，本来就是 atom，以前也要复制。每次读 `description` 都分配一份副本，原来是共用字符串。上游 QuickJS 两个方向都共用字符串。
+
+`engine/test/compare/symbol_shared_string.js`（由 `engine/test/compare.sh` 运行）检查数组、变量和数字字面量拿着的字符串做出的 symbol，以及描述被拿着的 symbol，在做出各个 `WeakRef` 的任务结束后（`clearKeptObjects()`）会被释放，字符串仍是字符串，它们的 description 和 `Symbol.for`，还有几百万个字符的 8 位和 16 位描述。对照文件是 Node 24 的输出。`engine/test/unit-oom.c` 里的 `test_symbol_copy_oom` 在用被拿着的字符串做 symbol、读它们描述的每一处让内存耗尽，检查得到的是内存不足错误，而且什么都没留下。

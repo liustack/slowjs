@@ -1,0 +1,193 @@
+result arg0 own data: 1
+result arg1 own data: 1
+result loc0 own data: 1
+result loc8 own data: 1
+result arg0 own undefined: undefined
+result arg1 own undefined: undefined
+result loc0 own undefined: undefined
+result loc8 own undefined: NaN
+result arg0 missing: undefined
+result arg1 missing: undefined
+result loc0 missing: undefined
+result loc8 missing: NaN
+result arg0 null prototype: undefined
+result arg1 null prototype: undefined
+result loc0 null prototype: undefined
+result loc8 null prototype: NaN
+result arg0 inherited: from the prototype
+result arg1 inherited: from the prototype
+result loc0 inherited: from the prototype
+result loc8 inherited: from the prototype0
+result arg0 inherited twice: from the prototype
+result arg1 inherited twice: from the prototype
+result loc0 inherited twice: from the prototype
+result loc8 inherited twice: from the prototype0
+result arg0 getter: getter
+result arg1 getter: getter
+result loc0 getter: getter
+result loc8 getter: getter0
+result arg0 inherited getter: getter
+result arg1 inherited getter: getter
+result loc0 inherited getter: getter
+result loc8 inherited getter: getter0
+result arg0 setter only: undefined
+result arg1 setter only: undefined
+result loc0 setter only: undefined
+result loc8 setter only: NaN
+result arg0 proxy: trap x
+result arg1 proxy: trap x
+result loc0 proxy: trap x
+result loc8 proxy: trap x0
+result arg0 proxy as prototype: proto trap x
+result arg1 proxy as prototype: proto trap x
+result loc0 proxy as prototype: proto trap x
+result loc8 proxy as prototype: proto trap x0
+result arg0 frozen: frozen
+result arg1 frozen: frozen
+result loc0 frozen: frozen
+result loc8 frozen: frozen0
+result arg0 deleted: undefined
+result arg1 deleted: undefined
+result loc0 deleted: undefined
+result loc8 deleted: NaN
+result arg0 array: array key
+result arg1 array: array key
+result loc0 array: array key
+result loc8 array: array key0
+result arg0 array without key: undefined
+result arg1 array without key: undefined
+result loc0 array without key: undefined
+result loc8 array without key: NaN
+result arg0 typed array: undefined
+result arg1 typed array: undefined
+result loc0 typed array: undefined
+result loc8 typed array: NaN
+result arg0 String object: undefined
+result arg1 String object: undefined
+result loc0 String object: undefined
+result loc8 String object: NaN
+result arg0 arguments: undefined
+result arg1 arguments: undefined
+result loc0 arguments: undefined
+result loc8 arguments: NaN
+result arg0 function: undefined
+result arg1 function: undefined
+result loc0 function: undefined
+result loc8 function: NaN
+result arg0 class instance: field
+result arg1 class instance: field
+result loc0 class instance: field
+result loc8 class instance: field0
+result arg0 private field class: 1
+result arg1 private field class: 1
+result loc0 private field class: 1
+result loc8 private field class: 1
+result arg0 Error stack: undefined
+result arg1 Error stack: undefined
+result loc0 Error stack: undefined
+result loc8 Error stack: NaN
+result arg0 string: undefined
+result arg1 string: undefined
+result loc0 string: undefined
+result loc8 string: NaN
+result arg0 empty string: undefined
+result arg1 empty string: undefined
+result loc0 empty string: undefined
+result loc8 empty string: NaN
+result arg0 string with x on String.prototype: on String.prototype
+result arg1 string with x on String.prototype: on String.prototype
+result loc0 string with x on String.prototype: on String.prototype
+result loc8 string with x on String.prototype: on String.prototype0
+result arg0 number: undefined
+result arg1 number: undefined
+result loc0 number: undefined
+result loc8 number: NaN
+result arg0 float: undefined
+result arg1 float: undefined
+result loc0 float: undefined
+result loc8 float: NaN
+result arg0 boolean: undefined
+result arg1 boolean: undefined
+result loc0 boolean: undefined
+result loc8 boolean: NaN
+result arg0 symbol: undefined
+result arg1 symbol: undefined
+result loc0 symbol: undefined
+result loc8 symbol: NaN
+result arg0 bigint: undefined
+result arg1 bigint: undefined
+result loc0 bigint: undefined
+result loc8 bigint: NaN
+result arg0 undefined: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result arg1 undefined: TypeError: cannot read property 'x' of undefined @ at arg1 (<eval>:24:31) / at arg1 (<eval>:27:38) / at <anonymous> (<eval>:74:36)
+result loc0 undefined: TypeError: cannot read property 'x' of undefined @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result loc8 undefined: TypeError: cannot read property 'x' of undefined @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result arg0 null: TypeError: cannot read property 'x' of null @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result arg1 null: TypeError: cannot read property 'x' of null @ at arg1 (<eval>:24:31) / at arg1 (<eval>:27:38) / at <anonymous> (<eval>:74:36)
+result loc0 null: TypeError: cannot read property 'x' of null @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result loc8 null: TypeError: cannot read property 'x' of null @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:74:36) / at t (<eval>:18:19)
+result length of a string: 4
+result length of an array: 2
+result toUpperCase of a string: true
+result toFixed of a number: true
+result toFixed of a float: true
+result name of a function: named
+result name of a class: K
+result stack of an error: string
+result index of an array: zero
+result description of a symbol: d
+result getter that sets the local to null: rewritten null
+result getter that drops the argument: dropped undefined undefined
+result getter that frees the object of the argument: still here
+result proxy trap that rewrites the local: proxy x 0 v
+result mapped arguments: first
+result unmapped arguments: first
+result mapped back: first parameter
+result missing argument: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:133:33) / at t (<eval>:18:19)
+result closure before let: ReferenceError: o is not initialized @ at f (<eval>:136:34) / at tdz (<eval>:136:53) / at <anonymous> (<eval>:138:34)
+result read before let: ReferenceError: o is not initialized @ at tdzDirect (<eval>:137:31) / at <anonymous> (<eval>:139:37) / at t (<eval>:18:19)
+result closure writes the local: first second
+result loop: abcundefined
+result generator: [1,2]
+result error arg0: TypeError: cannot read property 'x' of undefined @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:162:27) / at t (<eval>:18:19)
+result error arg1: TypeError: cannot read property 'x' of null @ at arg1 (<eval>:24:31) / at <anonymous> (<eval>:163:27) / at t (<eval>:18:19)
+result error loc0: TypeError: cannot read property 'x' of undefined @ at loc0 (<eval>:25:39) / at <anonymous> (<eval>:164:27) / at t (<eval>:18:19)
+result error loc8: TypeError: cannot read property 'x' of null @ at loc8 (<eval>:26:67) / at <anonymous> (<eval>:165:27) / at t (<eval>:18:19)
+result error in a nested call: TypeError: cannot read property 'x' of null @ at arg0 (<eval>:23:28) / at <anonymous> (<eval>:166:53) / at map (native)
+result switch alpha string: A
+result switch beta string: B
+result switch  string: empty
+result switch 1 string: one as a string
+result switch 1 number: none
+result switch üñí string: wide
+result switch __proto__ string: proto
+result switch gamma string: G or D
+result switch delta string: G or D
+result switch epsilon string: none
+result switch alph string: none
+result switch alphaa string: none
+result switch alpha string: A
+result switch beta string: B
+result switch alpha string: A
+result switch alpha string: A
+result switch object object: none
+result switch object object: none
+result switch null object: none
+result switch undefined undefined: none
+result switch true boolean: none
+result switch 1.5 number: none
+result switch 0 number: none
+result switch -0 number: none
+result switch 10n bigint: none
+result switch Symbol(alpha) symbol: none
+result switch Symbol(alpha) symbol: none
+result switch on a rope: other
+result switch on a rope equal: ab
+result switch on a long string: other
+result switch in a loop: 2
+result switch on a symbol description: A
+result switch with a getter case: k after 1
+result async: async
+mem-end obj=333 atom=670 shape=148 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
+mem-gc obj=333 atom=670 shape=148 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
+--- status exit 0

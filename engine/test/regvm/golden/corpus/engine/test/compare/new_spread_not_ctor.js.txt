@@ -1,0 +1,35 @@
+result new an object: throws TypeError constructor
+result new an object with a spread: throws TypeError constructor
+result new an array: throws TypeError constructor
+result new an array with a spread: throws TypeError constructor
+result new an arrow function: throws TypeError constructor
+result new an arrow function with a spread: throws TypeError constructor
+result new a method: throws TypeError constructor
+result new a method with a spread: throws TypeError constructor
+result new a built-in function: throws TypeError constructor
+result new a built-in function with a spread: throws TypeError constructor
+result new a bound arrow function: throws TypeError constructor
+result new a bound arrow function with a spread: throws TypeError constructor
+result new a proxy of an object: throws TypeError constructor
+result new a proxy of an object with a spread: throws TypeError constructor
+result new a proxy of an arrow function: throws TypeError constructor
+result new a proxy of an arrow function with a spread: throws TypeError constructor
+result new number: throws TypeError
+result new number with a spread: throws TypeError
+result new string: throws TypeError
+result new string with a spread: throws TypeError
+result new object: throws TypeError
+result new object with a spread: throws TypeError
+result new undefined: throws TypeError
+result new undefined with a spread: throws TypeError
+result new boolean: throws TypeError
+result new boolean with a spread: throws TypeError
+result new symbol: throws TypeError
+result new symbol with a spread: throws TypeError
+result super of a built-in function: throws TypeError constructor
+result super of a built-in function with a spread: throws TypeError constructor
+result super of a constructor with a spread: true
+result new of a constructor with a spread: 3
+mem-end obj=218 atom=609 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
+mem-gc obj=218 atom=609 shape=128 prop=1046 jsfunc=8 cfunc=133 array=4 fast_array=4 elements=34 binary=0
+--- status exit 0

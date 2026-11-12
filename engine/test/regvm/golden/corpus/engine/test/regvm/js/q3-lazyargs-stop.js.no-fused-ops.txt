@@ -1,0 +1,7 @@
+exception InternalError: interrupted
+stack     at get (<eval>:30:30)
+stack     at g (<eval>:18:27)
+stack     at <anonymous> (<eval>:34:17)
+mem-end obj=188 atom=541 shape=120 prop=945 jsfunc=1 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=541 shape=120 prop=945 jsfunc=1 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

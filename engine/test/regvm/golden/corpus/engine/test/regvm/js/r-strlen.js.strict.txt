@@ -1,0 +1,16 @@
+result len 0/0 1/1 3/3 1/1 2/2 890/890 894/894 1780/1780 3/3 7/7 3/3 2/2 undefined/undefined undefined/undefined undefined/undefined TypeError/TypeError TypeError/TypeError undefined/undefined undefined/undefined
+result temp 0 1 3 1 2 890 k 3
+result other function big() {
+result     [native code]
+result }|function at() {
+result     [native code]
+result }|function function big() {
+result     [native code]
+result }|function at() {
+result     [native code]
+result }|function
+result proto getter 4 890 2
+result sum 446000
+mem-end obj=194 atom=540 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=540 shape=122 prop=956 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

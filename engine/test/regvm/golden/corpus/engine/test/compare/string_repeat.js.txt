@@ -1,0 +1,56 @@
+result repeat(0): 
+result repeat(1): ab
+result repeat(2): abab
+result repeat(3): ababab
+result repeat(2.7): abab
+result repeat(0): 
+result repeat(-0.9): 
+result repeat(NaN): 
+result repeat("x"): 
+result repeat("2"): abab
+result repeat(object): 
+result repeat(undefined): 
+result repeat(true): ab
+result repeat(false): 
+result repeat(object): 
+result repeat(object): ababab
+result repeat(object): abab
+result repeat(-1): throws RangeError
+result empty repeat(-1): throws RangeError
+result one char repeat(-1): throws RangeError
+result repeat(-Infinity): throws RangeError
+result empty repeat(-Infinity): throws RangeError
+result one char repeat(-Infinity): throws RangeError
+result repeat(Infinity): throws RangeError
+result empty repeat(Infinity): throws RangeError
+result one char repeat(Infinity): throws RangeError
+result repeat(2147483647): throws RangeError
+result empty repeat(2147483647): 0
+result one char repeat(2147483647): throws RangeError
+result repeat(2147483648): throws RangeError
+result empty repeat(2147483648): 0
+result one char repeat(2147483648): throws RangeError
+result repeat(4294967296): throws RangeError
+result empty repeat(4294967296): 0
+result one char repeat(4294967296): throws RangeError
+result repeat(9007199254740992): throws RangeError
+result empty repeat(9007199254740992): 0
+result one char repeat(9007199254740992): throws RangeError
+result repeat(1e+300): throws RangeError
+result empty repeat(1e+300): 0
+result one char repeat(1e+300): throws RangeError
+result repeat(-1e+300): throws RangeError
+result empty repeat(-1e+300): throws RangeError
+result one char repeat(-1e+300): throws RangeError
+result too long: throws RangeError
+result too long wide: throws RangeError
+result just fits: 1048576
+result one: true
+result symbol count: throws TypeError
+result bigint count: throws TypeError
+result symbol this: throws TypeError
+result null this: throws TypeError
+result order: this,count,RangeError
+mem-end obj=195 atom=551 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
+mem-gc obj=195 atom=551 shape=124 prop=963 jsfunc=2 cfunc=129 array=2 fast_array=2 elements=53 binary=0
+--- status exit 0

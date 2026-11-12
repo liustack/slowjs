@@ -1,0 +1,11 @@
+result new 4994 RangeError: Maximum call stack size exceeded
+result new big 4994 RangeError: Maximum call stack size exceeded
+result new class 4994 RangeError: Maximum call stack size exceeded
+result super 2496 RangeError: Maximum call stack size exceeded
+result mixed 4994 RangeError: Maximum call stack size exceeded
+result new again 4994 RangeError: Maximum call stack size exceeded
+result super again 2496 RangeError: Maximum call stack size exceeded
+result mixed again 4994 RangeError: Maximum call stack size exceeded
+mem-end obj=201 atom=591 shape=127 prop=969 jsfunc=7 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=187 atom=540 shape=118 prop=941 jsfunc=0 cfunc=125 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

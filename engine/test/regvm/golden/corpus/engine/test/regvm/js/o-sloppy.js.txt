@@ -1,0 +1,4 @@
+result true,undefined,false,number,true,7,undefined,true,undefined,true,undefined,false,number,true,7,undefined,true,undefined,true,undefined,false,number,true,7,undefined,true,undefined
+mem-end obj=196 atom=554 shape=120 prop=994 jsfunc=7 cfunc=126 array=2 fast_array=2 elements=27 binary=0
+mem-gc obj=196 atom=554 shape=120 prop=994 jsfunc=7 cfunc=126 array=2 fast_array=2 elements=27 binary=0
+--- status exit 0

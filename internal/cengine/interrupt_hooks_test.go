@@ -94,8 +94,9 @@ const builtinTrials = 6
 func TestInterruptStopsLongBuiltins(t *testing.T) {
 	needPolls(t)
 	// What the iterators below walk: the iterator of an array, a Set or a
-	// Map is a built-in one, which JS_IteratorNext2 calls without
-	// JS_CallInternal, and these built-ins call nothing else for each item.
+	// Map is a built-in one, which JS_IteratorNext2 calls without running
+	// JavaScript (the register loop), and these built-ins call nothing else
+	// for each item.
 	const (
 		bigArray     = `var a = new Array(1 << 24).fill(1)`
 		setOfNumbers = `var s = new Set(); for (var i = 0; i < 1 << 21; i++) s.add(i)`

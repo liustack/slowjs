@@ -1,0 +1,25 @@
+result same a,b
+result same a,b
+result same a,b
+result base a,b
+result index 1,a,b
+result symbol a,b
+result hidden a,b
+result a hidden b then a,b
+result getter a,b,g
+result deleted b then a,b
+result with index 0,a 0,a
+result during a after a,c
+result shared a,b q 2,a,b,z p a,b
+result proto a,inherited
+result plain proto a
+result proto later a,later
+result array 0,1
+result args 0,1
+result string 0,1
+result typed 0,1
+result global true
+result wide 149 149
+mem-end obj=204 atom=593 shape=170 prop=991 jsfunc=4 cfunc=129 array=3 fast_array=3 elements=24 binary=0
+mem-gc obj=204 atom=593 shape=170 prop=991 jsfunc=4 cfunc=129 array=3 fast_array=3 elements=24 binary=0
+--- status exit 0

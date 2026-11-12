@@ -12,7 +12,6 @@ import (
 	"debug/elf"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -21,9 +20,11 @@ import (
 	"strings"
 )
 
-// HotOps are the opcodes whose handlers Addrs reports: the ones that take the
-// most instructions in tifa's pages.
-var HotOps = []string{"get_loc0", "call", "call_method", "return_undef", "get_field", "get_field2", "strict_eq", "put_field", "if_true", "if_false8"}
+// HotOps are the instructions of the register loop whose handlers Addrs
+// reports: those that took the place of the opcodes of the old loop that took
+// the most instructions in tifa's pages (get_loc0 is a register, get_field2
+// is GETF too, if_false8 is JF), not measured again in the register loop.
+var HotOps = []string{"MOV", "CALL", "CALLM", "RETU", "GETF", "SEQ", "PUTF", "JT", "JF"}
 
 // Layout is where the code of the interpreter landed in one binary.
 type Layout struct {
@@ -35,18 +36,41 @@ type Layout struct {
 	Funcs    map[string]uint64 // the start of each assembly function of the engine whose name is not used twice
 }
 
-// OpcodeNames reads the names of the opcodes, in the order of their numbers,
-// from engine/quickjs-opcode.h.
-func OpcodeNames(r io.Reader) ([]string, error) {
-	re := regexp.MustCompile(`^DEF\(\s*([a-z0-9_]+)\s*,`)
+// OpcodeNames reads the names of the instructions of the register loop, in
+// the order of their numbers, from the engine folder dir: the RV_OP(NAME) of
+// the RV_PART_LIST part of each op file, in the order regvm-areas.h includes
+// them (the enum of engine/regvm.h).
+func OpcodeNames(dir string) ([]string, error) {
+	areas, err := os.ReadFile(filepath.Join(dir, "regvm-areas.h"))
+	if err != nil {
+		return nil, err
+	}
+	op := regexp.MustCompile(`RV_OP\((\w+)\)`)
 	var names []string
-	sc := bufio.NewScanner(r)
-	for sc.Scan() {
-		if m := re.FindStringSubmatch(sc.Text()); m != nil {
-			names = append(names, m[1])
+	for _, m := range regexp.MustCompile(`(?m)^#include "(regvm-ops-\w+\.h)"`).FindAllSubmatch(areas, -1) {
+		src, err := os.ReadFile(filepath.Join(dir, string(m[1])))
+		if err != nil {
+			return nil, err
+		}
+		in := false
+		sc := bufio.NewScanner(bytes.NewReader(src))
+		for sc.Scan() {
+			l := strings.TrimSpace(sc.Text())
+			if strings.HasPrefix(l, "#if RV_PART == ") || strings.HasPrefix(l, "#elif RV_PART == ") {
+				in = strings.HasSuffix(l, " RV_PART_LIST")
+				continue
+			}
+			if in && strings.HasPrefix(l, "RV_OP(") {
+				for _, n := range op.FindAllStringSubmatch(l, -1) {
+					names = append(names, n[1])
+				}
+			}
 		}
 	}
-	return names, sc.Err()
+	if len(names) == 0 {
+		return nil, fmt.Errorf("%s: no instruction of the register loop", dir)
+	}
+	return names, nil
 }
 
 // skipNops returns how many bytes of no-ops code starts with, in the encodings
@@ -81,7 +105,7 @@ var nops = [][]byte{
 	8: {0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0},
 }
 
-// ReadLayout finds the interpreter fn (such as JS_CallInternal_block) in the
+// ReadLayout finds the interpreter fn (such as JS_RegvmRun_block) in the
 // amd64 ELF binary, the first instruction of its body, and, with the opcode
 // names, the handler of each of HotOps from its jump table (see jumpTable).
 func ReadLayout(bin, fn string, names []string) (Layout, error) {

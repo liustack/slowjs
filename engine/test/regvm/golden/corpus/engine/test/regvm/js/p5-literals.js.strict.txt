@@ -1,0 +1,75 @@
+result lit 0: "{\"a\":1,\"b\":2,\"c\":1,\"d\":2,\"e\":2,\"f\":3,\"g\":null,\"i\":2.5}{\"a\":\"a\",\"b\":\"b\",\"c\":1,\"d\":\"b\",\"e\":\"a1\",\"f\":\"ab\",\"g\":null,\"i\":2.5}"
+result lit 1: "{\"a\":1,\"b\":2,\"c\":1,\"d\":2,\"e\":2,\"f\":3,\"g\":null,\"i\":2.5}{\"a\":\"a\",\"b\":\"b\",\"c\":1,\"d\":\"b\",\"e\":\"a1\",\"f\":\"ab\",\"g\":null,\"i\":2.5}"
+result lit objects 0: "{\"k\":{\"v\":[1]},\"n\":{\"m\":[1]}}"
+result lit objects 1: "{\"k\":{\"v\":[1]},\"n\":{\"m\":[1]}}"
+result big 0: "{\"p0\":7,\"p1\":7,\"p2\":7,\"p3\":7,\"p4\":7,\"p5\":7,\"p6\":7,\"p7\":7,\"p8\":7,\"p9\":7,\"q0\":0,\"q1\":1,\"q2\":2,\"q3\":3,\"q4\":4,\"q5\":5,\"q6\":6,\"q7\":7,\"q8\":8,\"q9\":9}"
+result big 1: "{\"p0\":7,\"p1\":7,\"p2\":7,\"p3\":7,\"p4\":7,\"p5\":7,\"p6\":7,\"p7\":7,\"p8\":7,\"p9\":7,\"q0\":0,\"q1\":1,\"q2\":2,\"q3\":3,\"q4\":4,\"q5\":5,\"q6\":6,\"q7\":7,\"q8\":8,\"q9\":9}"
+result same shape 0: true
+result same shape 1: true
+result arr 0: "[1,2,1,2,3,null,null,2.5,[1],{}][\"x\",\"y\",1,\"y\",\"xy\",null,null,2.5,[\"x\"],{}]"
+result arr 1: "[1,2,1,2,3,null,null,2.5,[1],{}][\"x\",\"y\",1,\"y\",\"xy\",null,null,2.5,[\"x\"],{}]"
+result none 0: "[]0"
+result none 1: "[]0"
+result partial 0 threw RangeError: value 1
+result partial 1 threw RangeError: value 1
+result partial obj 0 threw RangeError: value 1
+result partial obj 1 threw RangeError: value 1
+result partial ok 0: "[1,2,{\"v\":1},10,1]"
+result partial ok 1: "[1,2,{\"v\":1},10,1]"
+result spread array 0: "[1,2,null,4]"
+result spread array 1: "[1,2,null,4]"
+result spread string 0: "[\"a\",\"😀\",\"b\"]"
+result spread string 1: "[\"a\",\"😀\",\"b\"]"
+result spread set 0: "[1,2]"
+result spread set 1: "[1,2]"
+result spread generator 0: "[1,2]"
+result spread generator 1: "[1,2]"
+result spread map 0: "[0,[1,2],1,\"x\",\"y\",2]"
+result spread map 1: "[0,[1,2],1,\"x\",\"y\",2]"
+result spread bad 0 threw Error: no iterator
+result spread bad 1 threw Error: no iterator
+result spread bad next 0 threw Error: next
+result spread bad next 1 threw Error: next
+result spread number 0 threw TypeError: value is not iterable
+result spread number 1 threw TypeError: value is not iterable
+result ospread 0: "{\"z\":9,\"a\":1,\"y\":1}"
+result ospread 1: "{\"z\":9,\"a\":1,\"y\":1}"
+result ospread string 0: "{\"z\":0,\"y\":1}"
+result ospread string 1: "{\"z\":0,\"y\":1}"
+result ospread null 0: "{\"z\":0,\"y\":1}"
+result ospread null 1: "{\"z\":0,\"y\":1}"
+result getter
+result ospread getter 0: "{\"z\":0,\"a\":5,\"y\":1}"
+result getter
+result ospread getter 1: "{\"z\":0,\"a\":5,\"y\":1}"
+result ospread getter throws 0 threw Error: getter
+result ospread getter throws 1 threw Error: getter
+result rest 0: [{"b":2,"c":3},1]
+result rest 1: [{"b":2,"c":3},1]
+result rest null 0 threw TypeError: cannot convert to object
+result rest null 1 threw TypeError: cannot convert to object
+result computed 0: "{\"3\":1,\"k\":3,\"g\":\"k\"}k33,k,g,s,m"
+result computed 1: "{\"3\":1,\"k\":3,\"g\":\"k\"}k33,k,g,s,m"
+result computed symbol 0: 1
+result computed symbol 1: 1
+result call 0: 6
+result call 1: 6
+result call string 0: 4
+result call string 1: 4
+result call method 0: 8
+result call method 1: 8
+result call throws 0 threw RangeError: value 4
+result call throws 1 threw RangeError: value 4
+result call not function 0 threw TypeError: not a function
+result call not function 1 threw TypeError: not a function
+result call bad spread 0 threw Error: no iterator
+result call bad spread 1 threw Error: no iterator
+result construct 0: "[null,null,null]0"
+result construct 1: "[null,null,null]0"
+result construct class 0: 3
+result construct class 1: 3
+result construct not constructor 0 threw TypeError:  is not a constructor
+result construct not constructor 1 threw TypeError:  is not a constructor
+mem-end obj=204 atom=580 shape=155 prop=978 jsfunc=1 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=200 atom=579 shape=153 prop=970 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

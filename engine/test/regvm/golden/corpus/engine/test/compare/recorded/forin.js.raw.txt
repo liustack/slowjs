@@ -1,0 +1,45 @@
+result plain: 3,a,b,c
+result empty: 
+result null proto: x
+result proto enumerable: own,p,q
+result proto shadowed: b,c,a
+result proto not enumerable: own
+result proto enumerable symbol: own
+result proto integer key: 1,own,2,7
+result proto getter: own,g
+result proto hidden getter: own
+result class: x,y
+result function prototype: own,shared
+result deep: mid,deep
+result deep quiet: 
+result array: 0,1,2
+result array extra: 0,2,extra
+result proto array: 0,1
+result proto empty array: own
+result string: 0,1,2
+result string object: 0,1
+result proto string object: own,0,1
+result typed array: 0,1,2
+result arguments: 0,1
+result number: 
+result null: 
+result undefined: 
+result function: 
+result date: 
+result regexp: 
+result map: 
+result frozen: a,b
+result error: 
+result proxy proto: own,t
+result proxy log: ownKeys,gopd t,ownKeys,gopd t,gopd t,getPrototypeOf
+result proxy: a,b
+result proxy log: ownKeys,gopd a,gopd b,gopd a,gopd b
+result proto grows: a,b,c,late
+result proto shrinks: a,b
+result object changes: a,c
+result prototype swapped: a,two
+result Object.prototype polluted: a,polluted,a
+result again: 3,3,3
+mem-end obj=224 atom=582 shape=170 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
+mem-gc obj=224 atom=582 shape=170 prop=1047 jsfunc=11 cfunc=134 array=6 fast_array=5 elements=53 binary=0
+--- status exit 0

@@ -1,0 +1,7 @@
+exception TypeError: cannot read property 'w' of null
+stack     at inLoop (<eval>:48:37)
+stack     at <anonymous> (<eval>:80:25)
+stack     at <eval> (<eval>:99:3)
+mem-end obj=190 atom=552 shape=127 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=552 shape=127 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

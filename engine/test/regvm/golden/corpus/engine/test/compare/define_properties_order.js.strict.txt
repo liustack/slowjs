@@ -1,0 +1,36 @@
+result order of the traps: ownKeys,gopd a,get a,gopd b,get b,gopd c,get c,define a,define b,define c
+result order with Object.create: ownKeys,gopd a,get a,gopd b,get b
+result not enumerable is skipped: ownKeys,gopd a,get a,gopd h a
+result symbols: ownKeys,gopd a,get a,gopd S,get S 2
+result a later descriptor is not an object: TypeError []
+result a later getter changes an earlier descriptor: 1,3
+result order of the fields of descriptors and of the keys: a.value,b,b.value
+result a field of a descriptor throws, nothing is defined: RangeError []
+result a field of the first descriptor throws, the next is not read: a.enumerable,RangeError []
+result invalid getter in a later descriptor, nothing is defined: TypeError []
+result getter and value in a later descriptor, nothing is defined: TypeError []
+result accessor descriptors are kept as read: 7
+result a later getter throws: RangeError []
+result a later definition throws: TypeError b,a
+result getter changes a later key: a
+result getter makes a later key not enumerable: a,c
+result getter adds a key: a
+result key order: 1,2,b,a
+result inherited keys are not used: own
+result primitive properties: throws TypeError
+result number properties: 
+result undefined properties: throws TypeError
+result null properties: throws TypeError
+result non-object target: throws TypeError
+result array target: 3x
+result frozen target: throws TypeError
+result empty properties on frozen: 
+result descriptor with accessor and value: throws TypeError
+result result is the target: true
+result many keys: 599
+result proxy ownKeys throws: throws RangeError
+result proxy gopd throws: throws RangeError
+result memory after: 0
+mem-end obj=206 atom=592 shape=233 prop=995 jsfunc=5 cfunc=140 array=2 fast_array=2 elements=33 binary=0
+mem-gc obj=206 atom=592 shape=233 prop=995 jsfunc=5 cfunc=140 array=2 fast_array=2 elements=33 binary=0
+--- status exit 0

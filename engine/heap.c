@@ -36,6 +36,8 @@ struct JSHeapChunk {
 
 _Static_assert(sizeof(JSHeapChunk) == HEAP_CHUNK_HEADER, "chunk header size");
 _Static_assert(sizeof(size_t) == 8, "the heap is for 64 bit targets");
+/* the header of a shared chunk and the two words tlsf_pool_overhead gives */
+_Static_assert(HEAP_CHUNK_HEADER + 2 * sizeof(size_t) == HEAP_SHARED_OVERHEAD, "shared chunk overhead");
 
 static size_t heap_round_unit(size_t n)
 {
@@ -257,7 +259,9 @@ static void *heap_grow_block(JSHeap *h, size_t need, size_t room)
         chunk = HEAP_UNIT;
     if (chunk > HEAP_CHUNK_MAX)
         chunk = HEAP_CHUNK_MAX;
-    if (need + need / 32 + 64 > (chunk - overhead) / 2)
+    /* need + need / 32 + 64 > (chunk - overhead) / 2, see heap.h */
+    assert(overhead == HEAP_SHARED_OVERHEAD);
+    if (need > HEAP_SHARED_MAX(chunk))
         return heap_new_dedicated(h, need, room);
     if (h->footprint_limit) {
         if (h->footprint > h->footprint_limit)

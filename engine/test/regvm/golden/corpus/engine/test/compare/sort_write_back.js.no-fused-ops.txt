@@ -1,0 +1,30 @@
+result frozen sorted: throws TypeError
+result frozen unsorted: throws TypeError
+result frozen empty: []
+result frozen with undefined: throws TypeError
+result frozen strings: throws TypeError
+result string this: throws TypeError
+result string this empty: ""
+result number this: 5
+result sealed sorted: [1,2,3]
+result non-writable element: throws TypeError
+result non-writable element unsorted: throws TypeError
+result typed array sorted: {}
+result non-extensible sorted: [1,2,3]
+result log of sets, sorted: 0=1,1=2,2=3
+result log of sets, unsorted: 0=1,1=2,2=3
+result log of sets, with undefined and holes: 0=1,1=2,2=3,3=undefined,delete 4
+result log of sets, comparator: 0=4,1=3,2=2,3=1
+result array-like with setters: 0=1,1=2,2=3
+result comparator throws, nothing written: RangeError
+result write throws on the second: 0=1,1=2,RangeError
+result write returns false: throws TypeError
+result result is this: true
+result plain sort still sorts: 1,3,3,5,9
+result numeric strings: 1,10,9
+result comparator: 1,3,5,9
+result toSorted keeps the array: 1,2
+result memory after: 0
+mem-end obj=204 atom=549 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
+mem-gc obj=204 atom=549 shape=136 prop=992 jsfunc=1 cfunc=138 array=2 fast_array=2 elements=27 binary=0
+--- status exit 0

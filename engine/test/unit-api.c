@@ -12,6 +12,8 @@
    error stacks, shared debug information).
 
      unit-api */
+#include <pthread.h>
+
 #include "cutils.h"
 #include "testutil.h"
 
@@ -877,7 +879,8 @@ static void test_for_in_keeps_shape(void)
 
 /* JS_RunGC sets the threshold of the next collection to 1.5 times what it left,
    as the collection the runtime starts by itself does, so the first object
-   after it does not start another. A threshold of -1 turns the collections of
+   after it does not start another. The register stack (JS_RegvmStat 9)
+   counts in the memory size but not in what the collection left. A threshold of -1 turns the collections of
    the runtime off, and JS_RunGC leaves it so. */
 static void test_run_gc_threshold(void)
 {
@@ -888,7 +891,7 @@ static void test_run_gc_threshold(void)
     for (i = 0; i < countof(before); i++) {
         JS_SetGCThreshold(v.rt, before[i]);
         JS_RunGC(v.rt);
-        live = JS_GetMemorySize(v.rt);
+        live = JS_GetMemorySize(v.rt) - JS_RegvmStat(v.ctx, 9);
         CHECK(JS_GetGCThreshold(v.rt) == live + (live >> 1), "after JS_RunGC with the threshold at %zu: %zu, want 1.5 times the %zu bytes left",
               before[i], JS_GetGCThreshold(v.rt), live);
     }
@@ -1236,6 +1239,118 @@ static void test_read_truncated_bigint(void)
     }
 }
 
+/* A script with regexp literals, written as bytecode and read back, gives
+   what it gives compiled: a regexp keeps the plan of lre_skip after its
+   bytecode and its group names after the plan, and the bytecode of a
+   regexp is a string of the constants of the function. Bytecode of another
+   version, as of the version before the plan, is refused with an
+   exception, not read. */
+static void test_regexp_bytecode_read(void)
+{
+    static const char src[] =
+        "var m = /(?<a>x)(?<b>[\"&<>])/.exec('yx<'), r = /(?:a|c)b/g;"
+        "[m.index, m.groups.a, m.groups.b, 'acbab'.replace(r, '$&!'),"
+        " /\\u4e2d+$/.test('a\\u4e2d\\u4e2d'), 'x\\xe9y'.search(/[\\xe0-\\xff]/),"
+        " 'k1-2'.split(/[+\\-]?\\d/).length, 'a<b'.replace(/[<>]/g, '$<a>')].join()";
+    static const char want[] = "1,x,<,acb!ab!,true,1,3,a$<a>b";
+    VM v = vm_new();
+    JSValue f = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    JSValue r;
+    const char *s;
+    uint8_t *buf;
+    size_t size;
+
+    CHECK(!JS_IsException(f), "compiled");
+    buf = JS_WriteObject(v.ctx, &size, f, JS_WRITE_OBJ_BYTECODE);
+    JS_FreeValue(v.ctx, f);
+    CHECK(buf != NULL && size > 1, "written");
+    if (buf) {
+        r = JS_EvalFunction(v.ctx, JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE));
+        s = JS_IsException(r) ? NULL : JS_ToCString(v.ctx, r);
+        CHECK(s && !strcmp(s, want), "read back: %s, want %s", s ? s : "(exception)", want);
+        JS_FreeCString(v.ctx, s);
+        JS_FreeValue(v.ctx, r);
+        buf[0]--;
+        r = JS_ReadObject(v.ctx, buf, size, JS_READ_OBJ_BYTECODE);
+        CHECK(JS_IsException(r), "bytecode of the version before is read");
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+        js_free(v.ctx, buf);
+    }
+    vm_free(&v);
+}
+
+/* where(n) is JS_GetScriptOrModuleName(ctx, n) as a string, "(none)" when
+   there is none: n counts the frames from the one of where itself. */
+static JSValue js_where(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+    int32_t n = 0;
+    JSAtom name;
+    JSValue r;
+
+    (void)this_val;
+    if (argc > 0 && JS_ToInt32(ctx, &n, argv[0]) < 0)
+        return JS_EXCEPTION;
+    name = JS_GetScriptOrModuleName(ctx, n);
+    if (name == JS_ATOM_NULL)
+        return JS_NewString(ctx, "(none)");
+    r = JS_AtomToString(ctx, name);
+    JS_FreeAtom(ctx, name);
+    return r;
+}
+
+/* JS_GetScriptOrModuleName counts the frames of the functions that run in
+   the register loop one by one: one C entry of the register loop holds many
+   of them (engine/regvm.h). outer of a.js calls mid of b.js, which calls
+   inner of c.js, which calls where: frame 1 is inner, 2 mid, 3 outer, and
+   there is no frame 4. The first call converts the functions, the calls
+   after it run in the register loop. */
+static void test_script_name_frames(void)
+{
+    static const char *const srcs[][2] = {
+        { "a.js", "function outer(n) { 'use strict'; var r = mid(n); return r + ''; }" },
+        { "b.js", "function mid(n) { 'use strict'; var r = inner(n); return r + ''; }" },
+        { "c.js", "function inner(n) { 'use strict'; var r = where(n); return r + ''; }" },
+    };
+    static const char *const want[] = { "(none)", "c.js", "b.js", "a.js", "(none)" };
+    VM v = vm_new();
+    JSValue g, f, arg, r;
+    char *t;
+    int i, k;
+
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "where", JS_NewCFunction(v.ctx, js_where, "where", 1));
+    for (i = 0; i < 3; i++) {
+        r = JS_Eval(v.ctx, srcs[i][1], strlen(srcs[i][1]), srcs[i][0], JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "%s does not run", srcs[i][0]);
+        JS_FreeValue(v.ctx, r);
+    }
+    f = JS_GetPropertyStr(v.ctx, g, "outer");
+    for (k = 0; k < 3; k++) {
+        for (i = 0; i < 5; i++) {
+            arg = JS_NewInt32(v.ctx, i);
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+            t = value_text(v.ctx, r);
+            CHECK(t && strcmp(t, want[i]) == 0, "call %d: frame %d is of %s, want %s",
+                  k, i, t ? t : "(exception)", want[i]);
+            free(t);
+            free(exception_text(v.ctx));
+            JS_FreeValue(v.ctx, r);
+        }
+    }
+    /* the code of each script runs once and may convert too: each of the
+       three functions is asked */
+    for (i = 0; i < 3; i++) {
+        static const char *const names[] = { "outer", "mid", "inner" };
+        JSValue h = JS_GetPropertyStr(v.ctx, g, names[i]);
+        CHECK(JS_RegvmFuncStat(v.ctx, h, 0) == 1, "%s has no register code", names[i]);
+        JS_FreeValue(v.ctx, h);
+    }
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
+}
+
 /* job_ends ends the job that ran (JS_ClearKeptObjects), as a host does when
    control comes back to it, and runs the jobs that are queued, ending each. */
 static void job_ends(VM *v)
@@ -1324,6 +1439,577 @@ static void test_weakref_kept(void)
     vm_free(&v);
 }
 
+/* MOVW, SETLW and CHKLW name a local, argument, this or func with an
+   int16_t: a function of 32700 locals is converted and reads its farthest
+   local and this, in a build with RV_SELF_CHECK too. The parser refuses one
+   of 40000 with its InternalError "too many local variables", as the
+   frame fits RV_FAR_MAX (engine/regvm-func.h, test_rv_frame_limits). */
+static void test_rv_far_locals(void)
+{
+    static const int counts[] = { 32700, 40000 };
+    int c, i;
+
+    for (c = 0; c < 2; c++) {
+        int n = counts[c];
+        size_t cap = (size_t)n * 9 + 256, len;
+        char *src = malloc(cap);
+
+        CHECK(src != NULL, "the source of %d locals", n);
+        len = snprintf(src, cap, "(function () { 'use strict'; var v0 = 1");
+        for (i = 1; i < n; i++)
+            len += snprintf(src + len, cap - len, ", v%d", i);
+        len += snprintf(src + len, cap - len,
+                        "; v%d = 2; return (this === undefined) + ':' + (v0 + v%d) + ':' + v%d; })",
+                        n - 1, n - 1, n / 2);
+        {
+            VM v = vm_new();
+            JSValue f, r;
+            char *t;
+            int k;
+
+            f = JS_Eval(v.ctx, src, len, "far.js", JS_EVAL_TYPE_GLOBAL);
+            if (c == 1) {
+                char *e = exception_text(v.ctx);
+                CHECK(e && strcmp(e, "InternalError: too many local variables") == 0,
+                      "%d locals: %s, want the parser's error", n, e ? e : "compiled");
+                free(e);
+                vm_free(&v);
+                free(src);
+                continue;
+            }
+            CHECK(!JS_IsException(f), "the function of %d locals does not compile", n);
+            for (k = 0; k < 2; k++) {
+                r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+                t = value_text(v.ctx, r);
+                CHECK(t && strcmp(t, "true:3:undefined") == 0, "%d locals, call %d: %s",
+                      n, k, t ? t : "(exception)");
+                free(t);
+                free(exception_text(v.ctx));
+                JS_FreeValue(v.ctx, r);
+            }
+            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%d locals: no register code (%d, op %d at %d)", n,
+                  JS_RegvmFuncStat(v.ctx, f, 0), JS_RegvmFuncStat(v.ctx, f, 2), JS_RegvmFuncStat(v.ctx, f, 3));
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        free(src);
+    }
+}
+
+/* C_CALL_ASAN and C_CALL_SAN: built with AddressSanitizer, and with any
+   sanitizer that changes the frames (AddressSanitizer or UBSan) */
+#if defined(__SANITIZE_ADDRESS__)
+#define C_CALL_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define C_CALL_ASAN 1
+#endif
+#endif
+#ifndef C_CALL_ASAN
+#define C_CALL_ASAN 0
+#endif
+#if C_CALL_ASAN
+#define C_CALL_SAN 1
+#elif defined(__has_feature)
+#if __has_feature(undefined_behavior_sanitizer)
+#define C_CALL_SAN 1
+#endif
+#endif
+#ifndef C_CALL_SAN
+#define C_CALL_SAN 0
+#endif
+
+/* the bytes a frame that AddressSanitizer sets down to 32 may add (see
+   test_c_call_recursions) */
+#if C_CALL_ASAN
+#define C_CALL_SET_DOWN 16
+#else
+#define C_CALL_SET_DOWN 0
+#endif
+
+/* JS_RegvmStat 5 and 6, the bytes of stack a frame of JS_RegvmRun and of
+   JS_CallInternal take before their checks, are measured: neither is 0, which
+   is what a measure gives when the compiler inlines the call it measures. A
+   call of a C function the register loop makes without JS_CallInternal
+   counts 6 as taken. 12, the part of 6 that js_call_c_hop counts, is
+   0 or more and less than 6 while the direct calls are on, or -1 when the
+   engine found the frame of js_call_c_hop larger than that of
+   JS_CallInternal (Linux's UBSan build) and calls C functions from C
+   through JS_CallInternal. The same measure gives the same answer each
+   time the direct calls are turned on, up to a frame AddressSanitizer
+   sets down (C_CALL_SET_DOWN): it measures from where it is called. */
+static void test_call_frames_measured(void)
+{
+    VM v = vm_new();
+    int rv = JS_RegvmStat(v.ctx, 5), entry = JS_RegvmStat(v.ctx, 6);
+    int hop = JS_RegvmStat(v.ctx, 12);
+
+    CHECK(rv > 0, "a frame of JS_RegvmRun takes %d bytes", rv);
+    CHECK(entry > 0, "a frame of JS_CallInternal takes %d bytes", entry);
+    /* 12: what js_call_c_hop counts as taken of that frame, -1 with the
+       direct calls off, when every call goes through JS_CallInternal */
+    CHECK(hop == -1 || (hop >= 0 && hop < entry),
+          "js_call_c_hop counts %d bytes of %d", hop, entry);
+    /* a build without a sanitizer always has the room */
+    CHECK(C_CALL_SAN || hop >= 0, "no sanitizer, and js_call_c_hop is off");
+    CHECK(JS_SetDirectCCalls(v.ctx, 0) == 0 && JS_RegvmStat(v.ctx, 12) == -1,
+          "direct calls off: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
+    CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 &&
+          abs(JS_RegvmStat(v.ctx, 12) - hop) <= C_CALL_SET_DOWN,
+          "direct calls on again: js_call_c_hop counts %d bytes, %d before",
+          JS_RegvmStat(v.ctx, 12), hop);
+    vm_free(&v);
+}
+
+/* Recursions that go through a C function the register loop calls itself
+   (js_call_c_direct), alone or under a getter or a Proxy trap, or that a C
+   function calls (js_call_fwd: call_call, apply_apply, bound_call, which
+   start in Reflect.apply so that the loop never makes the call of call or
+   of the bound function itself), with frames of 1 to 300 locals.
+
+   A kind with HOP_DEEPER has its C function called from a bound function
+   (js_call_bound_function), whose alloca makes a native build push, at each
+   call, the arguments that do not fit in registers below it: 16 bytes more
+   for the ten words of JS_CallInternal than for the seven of the call that
+   stands for it (js_call_c_hop). There a native build may go deeper when
+   the calls are direct, by a few levels in a hundred, never less deep. The
+   generated engine passes arguments in the frame of the callee, which
+   js_measure_call_frame measures, and TestCCallDepth requires the same
+   depth for these too.
+
+   Under AddressSanitizer, which aligns its stack objects to 32 bytes,
+   JS_RegvmRun, js_call_c_function and js_measure_call_frame set their stack
+   pointer down to a multiple of 32 bytes, so each of their frames is 16
+   bytes larger or not by where the frame above it ends. One measure of the
+   frame a direct call skips then cannot match what each level takes, and
+   a level through JS_CallInternal may take up to 16 bytes more for each of
+   the three than a direct one with its debt: on macOS with UBSan too,
+   JS_CallInternal takes 192 bytes and the measure finds 208. So a direct
+   run may end deeper, never less deep, by no more than these bytes explain
+   against the frames each level takes at the least (c_call_same). Without
+   a sanitizer no frame is set down so, and the depths are the same.
+
+   With the hop off (JS_RegvmStat 12 is -1: Linux's UBSan build, whose
+   frame of js_call_c_hop is the larger) a C function calls a C function
+   through JS_CallInternal, as before the hop, and the kinds with a hop end
+   at the same depth both ways, HOP_DEEPER too. */
+enum { HOP = 1, HOP_DEEPER = 2 };
+
+static const struct { const char *name, *body; int hop; } c_call_kinds[] = {
+    { "call", "return f.call(null) + v0" },
+    { "apply", "return f.apply(null, []) + v0" },
+    { "reflect_apply", "return Reflect.apply(f, null, []) + v0" },
+    { "map", "return [1].map(f)[0] + v0" },
+    { "map_tail", "return [0].map(f)" },
+    { "sort", "[2, 1].sort(f); return v0" },
+    { "getter", "return o.x + v0" },
+    { "proxy_get", "return p.x + v0" },
+    { "tail_apply", "return apply(f, null, [])" },
+    { "call_call", "return apply(call, f, [null]) + v0", HOP },
+    { "apply_apply", "return apply(apply, null, [f, null, []]) + v0", HOP },
+    { "bound_call", "return apply(ucall, null, [f, null]) + v0", HOP_DEEPER },
+};
+
+typedef struct {
+    int kind, locals, direct;
+    int hop; /* the run had js_call_c_hop on (JS_RegvmStat 12) */
+    int rv, entry; /* the frames of JS_RegvmRun and JS_CallInternal (5, 6) */
+    char *out;
+} CCallRun;
+
+/* Runs one recursion of c_call_kinds at the most call depth a runtime
+   allows, with the direct calls of C functions on or off, and keeps
+   "REACHED ERROR" in r->out. */
+static int c_call_run(void *arg)
+{
+    CCallRun *r = arg;
+    VM v = vm_new();
+    char vars[8192], src[16384];
+    int n = 0;
+
+    n += snprintf(vars + n, sizeof(vars) - n, "var v0 = 0");
+    for (int i = 1; i < r->locals; i++)
+        n += snprintf(vars + n, sizeof(vars) - n, ", v%d = %d", i, i);
+    snprintf(src, sizeof(src),
+             "(() => { const apply = Reflect.apply, call = Function.prototype.call;\n"
+             "  const ucall = call.bind(call); let reached = 0;\n"
+             "  const o = { get x() { return apply(f, null, []) } };\n"
+             "  const p = new Proxy({}, { get() { return [1].map(f)[0] } });\n"
+             "  function f() { %s; reached++; %s }\n"
+             "  let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError' : String(e) }\n"
+             "  return reached + ' ' + at })()",
+             vars, c_call_kinds[r->kind].body);
+    CHECK(JS_SetMaxCallDepth(v.rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "the call depth cannot be set");
+    CHECK(JS_SetDirectCCalls(v.ctx, r->direct) == 0, "JS_SetDirectCCalls refused");
+    r->hop = JS_RegvmStat(v.ctx, 12) >= 0;
+    r->rv = JS_RegvmStat(v.ctx, 5);
+    r->entry = JS_RegvmStat(v.ctx, 6);
+    r->out = eval_text(v.ctx, src);
+    free(exception_text(v.ctx));
+    vm_free(&v);
+    return 0;
+}
+
+static void *c_call_thread(void *arg)
+{
+    c_call_run(arg);
+    return NULL;
+}
+
+/* c_call_slack: the bytes a level of kind k may take through
+   JS_CallInternal beyond what a direct level takes with its debt, which no
+   measure sees (c_call_kinds): 16 for each of the three frames that
+   AddressSanitizer sets down, and with the hop on, 16 for the arguments
+   pushed below a bound function of a kind with HOP_DEEPER */
+static int c_call_slack(int k, int hop)
+{
+    return 3 * C_CALL_SET_DOWN + (hop && c_call_kinds[k].hop == HOP_DEEPER ? 16 : 0);
+}
+
+/* c_call_same: TRUE when the run d directly ended as the run t through
+   JS_CallInternal, with the same error, never less deep, and deeper by no
+   more than the slack explains: each level takes at least the frames of
+   JS_RegvmRun and of JS_CallInternal that the engine measured (JS_RegvmStat
+   5 and 6, of the direct run), so with s bytes of slack a level, the m
+   levels of d take no more stack than the n levels of t when
+   m * (rv + entry - s) <= n * (rv + entry) */
+static int c_call_same(int k, const CCallRun *t, const CCallRun *d)
+{
+    const char *a, *b;
+    long n, m, s, least;
+
+    if (!t->out || !d->out)
+        return 0;
+    if (strcmp(t->out, d->out) == 0)
+        return 1;
+    a = strchr(t->out, ' ');
+    b = strchr(d->out, ' ');
+    n = atol(t->out);
+    m = atol(d->out);
+    if (!a || !b || strcmp(a, b) != 0 || m < n)
+        return 0;
+    s = c_call_slack(k, d->hop);
+    least = (long)d->rv + d->entry;
+    return s > 0 && least > s && m * (least - s) <= n * least;
+}
+
+/* Every recursion of c_call_kinds ends in a RangeError, never past the end
+   of the stack, on the main thread (8 MiB, the smallest stack the tests run
+   the engine on) and on a thread of 1 MiB, where the stack ends it before
+   the call depth. And it ends at the same depth whether the register loop
+   calls the C functions itself or through JS_CallInternal: a direct call
+   counts the frame of JS_CallInternal it skips as taken (stack_debt), so a
+   measure of that frame of 0 would let it go deeper. Under a sanitizer, or
+   for a kind with HOP_DEEPER, a direct run may end a little deeper, as
+   c_call_kinds says. */
+static void test_c_call_recursions(void)
+{
+    static const int locals[] = { 1, 100, 300 };
+
+    for (int stack = 0; stack < 2; stack++) {
+        for (int k = 0; k < (int)countof(c_call_kinds); k++) {
+            for (int l = 0; l < (int)countof(locals); l++) {
+                CCallRun r[2];
+
+                for (int d = 0; d < 2; d++) {
+                    r[d] = (CCallRun){ .kind = k, .locals = locals[l], .direct = d };
+                    if (stack == 0) {
+                        c_call_run(&r[d]);
+                    } else {
+                        pthread_attr_t attr;
+                        pthread_t tid;
+
+                        pthread_attr_init(&attr);
+                        pthread_attr_setstacksize(&attr, (size_t)1 << 20);
+                        CHECK(pthread_create(&tid, &attr, c_call_thread, &r[d]) == 0, "no thread");
+                        pthread_attr_destroy(&attr);
+                        pthread_join(tid, NULL);
+                    }
+                    CHECK(r[d].out && strstr(r[d].out, " RangeError"), "%s, %s, %d locals, direct %d: %s",
+                          stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l], d,
+                          r[d].out ? r[d].out : "(exception)");
+                }
+                CHECK(c_call_same(k, &r[0], &r[1]),
+                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s (slack %d, frames %d and %d, hop %d)",
+                      stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l],
+                      r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?",
+                      c_call_slack(k, r[1].hop), r[1].rv, r[1].entry, r[1].hop);
+                free(r[0].out);
+                free(r[1].out);
+            }
+        }
+    }
+}
+
+/* hop_reads returns how many times a call of fn from C (JS_Call) reads the
+   flag that stops the engine, and its result in *ok (FALSE on an exception,
+   which it takes). */
+static long hop_reads(JSContext *ctx, JSValueConst fn, JSValueConst this_obj,
+                      int argc, JSValueConst *argv, BOOL *ok)
+{
+    long before = host_poll_reads;
+    JSValue r = JS_Call(ctx, fn, this_obj, argc, argv);
+
+    before = host_poll_reads - before;
+    *ok = !JS_IsException(r);
+    if (!*ok)
+        free(exception_text(ctx));
+    JS_FreeValue(ctx, r);
+    return before;
+}
+
+/* hold_uncatchable leaves an uncatchable exception pending and returns, as
+   a host function should not: the next call must not run. */
+static JSValue hold_uncatchable(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    JS_ThrowInternalError(ctx, "held");
+    JS_SetUncatchableException(ctx, TRUE);
+    return JS_UNDEFINED;
+}
+
+/* A call of a plain C function from C (JS_Call here, through
+   JS_CallInternal, then Reflect.apply's own call of push, in js_call_c_hop
+   when the calls are direct and the hop is on) reads the interrupt flag once and stops on an
+   interrupt or a pending uncatchable exception before the function runs:
+   one read for one hop, two for two, and push runs only when nothing stops
+   it. */
+static void test_c_call_hop_checks(void)
+{
+    for (int d = 0; d < 2; d++) {
+        VM v = vm_new();
+        JSValue push, apply, a, argv[3];
+        BOOL ok;
+        long n;
+
+        CHECK(JS_SetDirectCCalls(v.ctx, d) == 0, "JS_SetDirectCCalls refused");
+        /* the hop is off with the direct calls off, and on with them unless
+           the engine found its frame larger (test_call_frames_measured):
+           the reads below are the same either way */
+        CHECK(d || JS_RegvmStat(v.ctx, 12) == -1, "direct 0: the hop is on");
+        eval_ok(v.ctx, "var a = [], push = Array.prototype.push, apply = Reflect.apply, one = [1]");
+        push = global_prop(v.ctx, "push");
+        apply = global_prop(v.ctx, "apply");
+        a = global_prop(v.ctx, "a");
+        argv[0] = push;
+        argv[1] = a;
+        argv[2] = global_prop(v.ctx, "one");
+
+        n = hop_reads(v.ctx, push, a, 1, (JSValueConst *)&argv[2], &ok);
+        CHECK(ok && n == 1, "direct %d: one hop reads the flag %ld times (ok %d), want 1", d, n, ok);
+        n = hop_reads(v.ctx, apply, JS_UNDEFINED, 3, (JSValueConst *)argv, &ok);
+        CHECK(ok && n == 2, "direct %d: two hops read the flag %ld times (ok %d), want 2", d, n, ok);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push did not run twice", d);
+
+        /* stopped at the first hop, then at the second: push does not run */
+        *JS_GetInterruptFlag(v.rt) = 1;
+        hop_reads(v.ctx, push, a, 1, (JSValueConst *)&argv[2], &ok);
+        *JS_GetInterruptFlag(v.rt) = 0;
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(!ok, "direct %d: an interrupt did not stop the hop", d);
+        host_poll_stop_after(2);
+        hop_reads(v.ctx, apply, JS_UNDEFINED, 3, (JSValueConst *)argv, &ok);
+        host_poll_stop_after(0);
+        *JS_GetInterruptFlag(v.rt) = 0;
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(!ok, "direct %d: an interrupt at the second hop did not stop it", d);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran after an interrupt", d);
+
+        /* an uncatchable exception pending stops the hop too */
+        JS_ThrowInternalError(v.ctx, "held");
+        JS_SetUncatchableException(v.ctx, TRUE);
+        n = host_poll_reads;
+        {
+            JSValue r = JS_Call(v.ctx, push, a, 1, (JSValueConst *)&argv[2]);
+            CHECK(JS_IsException(r), "direct %d: a hop ran with an uncatchable exception pending", d);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(host_poll_reads - n == 1, "direct %d: %ld reads with an uncatchable exception pending, want 1",
+              d, host_poll_reads - n);
+        free(exception_text(v.ctx));
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran with an uncatchable exception pending", d);
+
+        /* and at the second hop: the getter of the list Reflect.apply reads
+           leaves one pending, before Reflect.apply calls push */
+        {
+            JSValue g = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, g, "hold", JS_NewCFunction(v.ctx, hold_uncatchable, "hold", 0));
+            JS_FreeValue(v.ctx, g);
+        }
+        {
+            char *t = eval_text(v.ctx, "apply(push, a, { length: 1, get 0() { hold(); return 3 } })");
+            CHECK(!t, "direct %d: the second hop ran with an uncatchable exception pending", d);
+            free(t);
+        }
+        free(exception_text(v.ctx));
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran after the getter left an uncatchable exception", d);
+
+        JS_FreeValue(v.ctx, push);
+        JS_FreeValue(v.ctx, apply);
+        JS_FreeValue(v.ctx, a);
+        JS_FreeValue(v.ctx, argv[2]);
+        vm_free(&v);
+    }
+}
+
+/* The parameters and locals of a function, with this, the function and
+   new.target, fit RV_FAR_MAX (32768, engine/regvm-func.h): 32765 of them
+   together compile and run, one more fails to compile with the parser's
+   InternalError "too many local variables" or "too many arguments",
+   whichever it adds last, and so do 40000 parameters. */
+static void test_rv_frame_limits(void)
+{
+    static const struct { int params, locals; const char *err; } cases[] = {
+        { 0, 32765, NULL }, { 0, 32766, "InternalError: too many local variables" },
+        { 32764, 1, NULL }, { 32765, 1, "InternalError: too many local variables" },
+        { 32766, 1, "InternalError: too many arguments" },
+        { 16383, 16382, NULL }, { 16383, 16383, "InternalError: too many local variables" },
+        { 40000, 1, "InternalError: too many arguments" },
+    };
+    int c, i;
+
+    for (c = 0; c < (int)countof(cases); c++) {
+        int np = cases[c].params, nl = cases[c].locals;
+        size_t cap = (size_t)(np + nl) * 9 + 256, len;
+        char *src = malloc(cap);
+        const char *want;
+
+        CHECK(src != NULL, "the source of %d parameters", np);
+        /* the locals are r and v1 up */
+        len = snprintf(src, cap, "(function (");
+        for (i = 0; i < np; i++)
+            len += snprintf(src + len, cap - len, "%sp%d", i ? ", " : "", i);
+        len += snprintf(src + len, cap - len, ") { 'use strict'; var r = 5");
+        for (i = 1; i < nl; i++)
+            len += snprintf(src + len, cap - len, ", v%d", i);
+        if (nl > 1)
+            len += snprintf(src + len, cap - len, "; return r + ':' + (v%d === undefined); })", nl - 1);
+        else
+            len += snprintf(src + len, cap - len, "; return r + ':' + (r === undefined); })");
+        want = cases[c].err;
+        {
+            VM v = vm_new();
+            JSValue f, r, arg;
+            char *t, *e;
+
+            f = JS_Eval(v.ctx, src, len, "frame.js", JS_EVAL_TYPE_GLOBAL);
+            e = exception_text(v.ctx);
+            if (want) {
+                CHECK(e && strcmp(e, want) == 0, "%d parameters, %d locals: %s, want %s", np, nl,
+                      e ? e : "compiled", want);
+            } else {
+                CHECK(!e, "%d parameters, %d locals: %s", np, nl, e);
+                arg = JS_NewInt32(v.ctx, 5);
+                for (i = 0; i < 2 && !e; i++) {
+                    r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+                    t = value_text(v.ctx, r);
+                    CHECK(t && strcmp(t, nl > 1 ? "5:true" : "5:false") == 0, "%d parameters, %d locals, call %d: %s",
+                          np, nl, i, t ? t : "(exception)");
+                    free(t);
+                    free(exception_text(v.ctx));
+                    JS_FreeValue(v.ctx, r);
+                }
+                if (!cases[c].err)
+                    CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%d parameters, %d locals: no register code (%d)",
+                          np, nl, JS_RegvmFuncStat(v.ctx, f, 0));
+            }
+            free(e);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        free(src);
+    }
+}
+
+/* A function whose stack is deeper than RV_STACK_FIT (118) folds it into a
+   frame that keeps RV_FOLD_PINS_MAX (48) temps for its catch offsets
+   (engine/regvm-func.h): a try takes one, a for-of three. The parser
+   refuses a function that needs more with its InternalError "stack
+   overflow", at compile time: 118 nested try or 39 nested for-of around
+   r += a (their own catch offsets make the stack too deep), 49 nested try
+   or 17 nested for-of around an expression 130 deep. One fewer compiles
+   and runs, in sloppy and strict code and in a generator, and a plain
+   function of it converts to register code. */
+static const char nest_js[] =
+    "function rep(s, n) { var r = '', i; for (i = 0; i < n; i++) r += s; return r; }\n"
+    "function tries(n, body) { return rep('try { ', n) + body + rep(' } catch (e) { r = -1; }', n); }\n"
+    "function forofs(n, body) { var r = '', i; for (i = 0; i < n; i++) r += 'for (const x' + i + ' of A) ';\n"
+    "  return r + '{ ' + body + ' }'; }\n"
+    "function deep(n) { return 'r += ' + rep('a + (', n) + 'a' + rep(')', n) + ';'; }\n"
+    "var wrap = {\n"
+    "  sloppy: function (s) { return 'var r = 0; ' + s + ' return r;'; },\n"
+    "  strict: function (s) { return \"'use strict'; var r = 0; \" + s + ' return r;'; },\n"
+    "  generator: function (s) { return 'var g = function* () { var r = 0; ' + s + ' yield r; };\\n' +\n"
+    "    'return g().next().value;'; }\n"
+    "};\n"
+    "function make(kind, what, n, d) {\n"
+    "  var body = d ? deep(d) : 'r += a;';\n"
+    "  return Function('A, a', wrap[kind](what === 'try' ? tries(n, body) : forofs(n, body)));\n"
+    "}\n";
+
+static void test_rv_nesting_limits(void)
+{
+    static const char *const kinds[] = { "sloppy", "strict", "generator" };
+    static const struct { const char *what; int deep, limit; } cases[] = {
+        { "try", 0, 118 }, { "for-of", 0, 39 }, { "try", 130, 49 }, { "for-of", 130, 17 },
+    };
+    char src[256], *t, *e;
+    int k, c, over;
+
+    for (k = 0; k < 3; k++) {
+        for (c = 0; c < 4; c++) {
+            for (over = 0; over < 2; over++) {
+                int n = cases[c].limit - 1 + over;
+                {
+                    VM v = vm_new();
+                    JSValue g, f, r, args[2];
+                    int i, refused;
+
+                    CHECK(eval_ok(v.ctx, nest_js), "the setup");
+                    snprintf(src, sizeof(src), "make('%s', '%s', %d, %d)", kinds[k], cases[c].what, n,
+                             cases[c].deep);
+                    f = JS_Eval(v.ctx, src, strlen(src), "nest.js", JS_EVAL_TYPE_GLOBAL);
+                    t = exception_text(v.ctx);
+                    refused = over;
+                    if (refused)
+                        CHECK(t && strncmp(t, "InternalError: stack overflow", 29) == 0,
+                              "%s, %d %s around %d: %s, want the parser's error", kinds[k], n, cases[c].what,
+                              cases[c].deep, t ? t : "compiled");
+                    else
+                        CHECK(!t, "%s, %d %s around %d: %s", kinds[k], n, cases[c].what, cases[c].deep, t);
+                    free(t);
+                    if (!refused && !JS_IsException(f)) {
+                        g = JS_GetGlobalObject(v.ctx);
+                        args[0] = JS_NewArray(v.ctx);
+                        JS_SetPropertyUint32(v.ctx, args[0], 0, JS_NewInt32(v.ctx, 1));
+                        args[1] = JS_NewInt32(v.ctx, 1);
+                        for (i = 0; i < 2; i++) {
+                            r = JS_Call(v.ctx, f, JS_UNDEFINED, 2, args);
+                            t = value_text(v.ctx, r);
+                            e = t ? NULL : exception_text(v.ctx);
+                            CHECK(t && atoi(t) == cases[c].deep + 1, "%s, %d %s around %d, call %d: %s", kinds[k], n,
+                                  cases[c].what, cases[c].deep, i, t ? t : e ? e : "(exception)");
+                            free(t);
+                            free(e);
+                            JS_FreeValue(v.ctx, r);
+                        }
+                        if (k < 2 && !over)
+                            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%s, %d %s around %d: no register code (%d, %d)",
+                                  kinds[k], n, cases[c].what, cases[c].deep, JS_RegvmFuncStat(v.ctx, f, 0),
+                                  JS_RegvmFuncStat(v.ctx, f, 3));
+                        JS_FreeValue(v.ctx, args[0]);
+                        JS_FreeValue(v.ctx, g);
+                    }
+                    JS_FreeValue(v.ctx, f);
+                    vm_free(&v);
+                }
+            }
+        }
+    }
+}
+
 int main(void)
 {
     test_for_in_keeps_shape();
@@ -1344,7 +2030,15 @@ int main(void)
     test_throw_error_kind();
     test_escape_text();
     test_read_truncated_bigint();
+    test_regexp_bytecode_read();
+    test_script_name_frames();
     test_weakref_kept();
+    test_rv_far_locals();
+    test_call_frames_measured();
+    test_c_call_recursions();
+    test_c_call_hop_checks();
+    test_rv_frame_limits();
+    test_rv_nesting_limits();
     if (failures) {
         printf("unit-api: %d of %ld checks failed\n", failures, checks);
         return 1;

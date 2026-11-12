@@ -1,0 +1,15 @@
+result call1: 1,1
+result callArg: 7,5,6
+result call3: 4,0ab1
+result call2: 5,5
+result fewer: 1,1
+result method0: 10,own
+result method1: 11
+result method2: 16,16
+result method2 fewer: 13
+result throws: Error: in callee | TypeError: in method | TypeError: not a function | TypeError: not a function
+result chains: 0,2000
+result loop: 740000 heap 0
+mem-end obj=211 atom=577 shape=126 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=211 atom=577 shape=126 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
+--- status exit 0

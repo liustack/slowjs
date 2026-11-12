@@ -1,0 +1,4 @@
+result 2 6 8 1,2,4,x,1 33 ce r2 10 base1234 | 2 6 8 1,2,4,x,1 33 ce r2 10 base1234 | 2 6 8 1,2,4,x,1 33 ce r2 10 base1234 | caughte caughte caughte fine fine fine fin2e fin2e fin2e
+mem-end obj=193 atom=545 shape=122 prop=954 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=192 atom=541 shape=122 prop=952 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

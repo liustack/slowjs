@@ -13,31 +13,51 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/liustack/quickjs/internal/gohost"
 )
 
 // killedVM returns a VM a kill left good only for Close, with the error of
 // the call that was killed: a host function runs javascript that never reads
 // the interrupt flag, lastIndexOf over an array-like object of 2^31-1 indices,
-// which takes a minute or more, and a poll kills it past the deadline of the
-// outer call and the grace.
+// which takes a minute or more, and a poll kills it past the grace after
+// Interrupt.
+//
+// The stop is asked only once the javascript is about to enter lastIndexOf:
+// loop calls arm, which calls Interrupt and fills the count of the poll
+// again, so that the poll that sets the interrupt flag comes inside
+// lastIndexOf, which never reads it. A stop asked earlier, by a deadline
+// that passes while the host function or the engine is still on its way
+// there (the Go collector, a busy machine), would be read on the way and end
+// the script with an interrupt, not a kill: what TestNoKillAfterLongHostCall
+// requires, and no test of the kill.
 func killedVM(t *testing.T, nested func(m *VM) error) (*VM, error) {
 	t.Helper()
-	return killedVMWith(t, newTestVM(t), nested)
+	return killedVMAfter(t, newTestVM(t), 0, nested)
 }
 
 func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 	t.Helper()
-	const timeout = 20 * time.Millisecond
-	if err := m.SetEvalTimeout(timeout); err != nil {
-		t.Fatal(err)
-	}
+	return killedVMAfter(t, m, 0, nested)
+}
+
+// killedVMAfter is killedVMWith with the host function stalled for stall
+// before it runs the nested javascript.
+func killedVMAfter(t *testing.T, m *VM, stall time.Duration, nested func(m *VM) error) (*VM, error) {
+	t.Helper()
+	mustHost(t, m, "arm", func([]any) (any, error) {
+		m.Interrupt()
+		m.h.SetPollInterval(gohost.DefaultPollInterval)
+		return nil, nil
+	})
 	returned := false
 	mustHost(t, m, "nested", func([]any) (any, error) {
+		time.Sleep(stall)
 		nested(m)
 		returned = true
 		return nil, nil
 	})
-	if _, err := m.Eval(`globalThis.a = { length: 2 ** 31 - 1 }; globalThis.loop = function() { Array.prototype.lastIndexOf.call(a, -1) }`+hookJS, EvalGlobal); err != nil {
+	if _, err := m.Eval(`globalThis.a = { length: 2 ** 31 - 1 }; globalThis.loop = function() { arm(); Array.prototype.lastIndexOf.call(a, -1) }`+hookJS, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	_, err := m.Eval(`nested(); loop(); 'done'`, EvalGlobal)
@@ -47,26 +67,32 @@ func killedVMWith(t *testing.T, m *VM, nested func(m *VM) error) (*VM, error) {
 	return m, err
 }
 
-// TestNestedEvalPastGrace runs javascript from a host function past the
-// deadline of the outer call and the grace after it, without stopping: the
-// kill goes up through the nested call and the host function, and the outer
-// call returns it.
+// TestNestedEvalPastGrace runs javascript from a host function past an
+// Interrupt and the grace after it, without stopping: the kill goes up
+// through the nested call and the host function, and the outer call returns
+// it. With the host function stalled first for 30 ms, longer than a deadline
+// of 20 ms would be, the kill is the same.
 func TestNestedEvalPastGrace(t *testing.T) {
-	for name, nested := range nestedEntries {
-		t.Run(name, func(t *testing.T) {
-			m, err := killedVM(t, nested)
-			var e *Error
-			if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || !errors.Is(err, ErrKilled) {
-				t.Fatalf("the outer call got %#v, want an interrupted error that matches ErrKilled", err)
+	for _, stall := range []time.Duration{0, 30 * time.Millisecond} {
+		for name, nested := range nestedEntries {
+			if stall != 0 {
+				name += " after a stall"
 			}
-			if err.Error() != "InternalError: interrupted" {
-				t.Fatalf("the outer call got %q, want the text of an interrupted error", err)
-			}
-			// The VM is good only for Close: a call returns the error of the kill.
-			if _, err := m.Eval(`1`, EvalGlobal); !errors.Is(err, ErrKilled) {
-				t.Fatalf("the next call got %v, want an error that matches ErrKilled", err)
-			}
-		})
+			t.Run(name, func(t *testing.T) {
+				m, err := killedVMAfter(t, newTestVM(t), stall, nested)
+				var e *Error
+				if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || !errors.Is(err, ErrKilled) {
+					t.Fatalf("the outer call got %#v, want an interrupted error that matches ErrKilled", err)
+				}
+				if err.Error() != "InternalError: interrupted" {
+					t.Fatalf("the outer call got %q, want the text of an interrupted error", err)
+				}
+				// The VM is good only for Close: a call returns the error of the kill.
+				if _, err := m.Eval(`1`, EvalGlobal); !errors.Is(err, ErrKilled) {
+					t.Fatalf("the next call got %v, want an error that matches ErrKilled", err)
+				}
+			})
+		}
 	}
 }
 

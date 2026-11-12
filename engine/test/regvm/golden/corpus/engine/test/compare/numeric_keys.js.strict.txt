@@ -1,0 +1,41 @@
+result "0": 0 true true true ok 1
+result "1": 1 true true true ok 1
+result "-0": 0 true false false TypeError undefined
+result "0.5": 0.5 true false false TypeError undefined
+result "1.0": 1 true true true ok 1
+result "01": 1 true true true ok 1
+result "+1": 1 true true true ok 1
+result " 1": 1 true true true ok 1
+result "1 ": 1 true true true ok 1
+result "-1": -1 true false false TypeError undefined
+result "1e3": 1000 true true true ok 1
+result "1000": 1000 true false false TypeError undefined
+result "1e21": 1e+21 true true true ok 1
+result "1e+21": 1e+21 true false false TypeError undefined
+result "0.000001": 0.000001 true false false TypeError undefined
+result "1e-7": 1e-7 true false false TypeError undefined
+result "0.0000001": 1e-7 true true true ok 1
+result "Infinity": Infinity true false false TypeError undefined
+result "-Infinity": -Infinity true false false TypeError undefined
+result "NaN": NaN true false false TypeError undefined
+result "0x10": 16 true true true ok 1
+result "0b1": 1 true true true ok 1
+result "0o7": 7 true true true ok 1
+result "4294967295": 4294967295 true false false TypeError undefined
+result "4294967296": 4294967296 true false false TypeError undefined
+result "9007199254740993": 9007199254740992 true true true ok 1
+result "1.5e300": 1.5e+300 true true true ok 1
+result "": 0 true true true ok 1
+result "a": NaN true true true ok 1
+result "-": NaN true true true ok 1
+result "-a": NaN true true true ok 1
+result 6002: 42 42 42
+result 6004: 31 31 31
+result 3042: 1099511627775 1099511627775 1099511627775
+result 3402: Infinity Infinity Infinity
+result 3009: -Infinity -Infinity Infinity
+result 6002: NaN NaN NaN
+result 3008: 0.007 0.007 0.007
+mem-end obj=201 atom=613 shape=126 prop=1030 jsfunc=0 cfunc=133 array=4 fast_array=4 elements=76 binary=0
+mem-gc obj=201 atom=613 shape=126 prop=1030 jsfunc=0 cfunc=133 array=4 fast_array=4 elements=76 binary=0
+--- status exit 0

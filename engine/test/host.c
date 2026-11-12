@@ -367,6 +367,37 @@ static void host_vm_free(HostVM *vm)
     free(vm);
 }
 
+#ifdef RV_INJECT
+void JS_RegvmInject(long n, unsigned site, long j);
+const char *JS_RegvmInjectResult(void);
+
+/* the throw-injection test (engine/regvm-inject.h, engine/test/regvm/inject.sh):
+   RV_INJECT=N throws at the N-th place where an instruction of the register
+   loop can throw, RV_INJECT_SITE="S J" at the J-th place run at its S-th
+   site, and RV_INJECT_OUT names the file that gets what happened */
+static void host_inject_start(void)
+{
+    const char *n = getenv("RV_INJECT"), *st = getenv("RV_INJECT_SITE");
+    unsigned site = 0;
+    long j = 0;
+
+    if (st && sscanf(st, "%u %ld", &site, &j) != 2)
+        site = 0;
+    JS_RegvmInject(n ? atol(n) : 0, site, j);
+}
+
+static void host_inject_end(void)
+{
+    const char *out = getenv("RV_INJECT_OUT");
+    FILE *f;
+
+    if (out && (f = fopen(out, "a"))) {
+        fprintf(f, "%s\n", JS_RegvmInjectResult());
+        fclose(f);
+    }
+}
+#endif
+
 /* The VM is in the list from the start: the heap asks for its first chunk
    from inside JS_NewRuntime, by the id. It gets its runtime in the list
    under the lock the readers of the list take, once the engine has made it.
@@ -402,6 +433,9 @@ JSRuntime *host_new_runtime_seed(uint64_t seed)
 #ifdef __linux__
     JS_SetHostRemap(rt, !host_no_remap);
 #endif
+#ifdef RV_INJECT
+    host_inject_start();
+#endif
     return rt;
 }
 
@@ -431,6 +465,9 @@ void host_free_runtime(JSRuntime *rt)
         fprintf(stderr, "host: a runtime the host did not make\n");
         _exit(87);
     }
+#ifdef RV_INJECT
+    host_inject_end();
+#endif
     leaked = JS_FreeRuntime(rt);
     pthread_mutex_lock(&host_lock);
     host_vm_unlink(vm);

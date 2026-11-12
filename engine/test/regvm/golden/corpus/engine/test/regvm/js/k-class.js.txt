@@ -1,0 +1,117 @@
+result plain 0: ["B","m","s"]
+result plain 1: ["B","m","s"]
+result plain 2: ["B","m","s"]
+result expr 0: ["","gBase",1]
+result expr 1: ["","gBase",1]
+result expr 2: ["","gBase",1]
+result expr object 0: "gObject"
+result expr object 1: "gObject"
+result expr object 2: "gObject"
+result anon 0: "C,Named"
+result anon 1: "C,Named"
+result anon 2: "C,Named"
+result heritage null 0: null
+result heritage null 1: null
+result heritage null 2: null
+result heritage ok 0: ["k",1,1]
+result heritage ok 1: ["k",1,1]
+result heritage ok 2: ["k",1,1]
+result heritage 5 0 threw TypeError: parent class must be constructor
+result heritage 5 1 threw TypeError: parent class must be constructor
+result heritage 5 2 threw TypeError: parent class must be constructor
+result heritage arrow 0 threw TypeError: parent class must be constructor
+result heritage arrow 1 threw TypeError: parent class must be constructor
+result heritage arrow 2 threw TypeError: parent class must be constructor
+result heritage bad proto 0 threw TypeError: parent prototype must be an object or null
+result heritage bad proto 1 threw TypeError: parent prototype must be an object or null
+result heritage bad proto 2 threw TypeError: parent prototype must be an object or null
+result heritage plain function 0: true
+result heritage plain function 1: true
+result heritage plain function 2: true
+result computed 0: ["x","xf","xa","method x","static","getter",9,"1,2","two",0]
+result computed 1: ["x","xf","xa","method x","static","getter",9,"1,2","two",0]
+result computed 2: ["x","xf","xa","method x","static","getter",9,"1,2","two",0]
+result computed number 0: ["3","3f","3a","method 3","static","getter",9,"1,2","two",0]
+result computed number 1: ["3","3f","3a","method 3","static","getter",9,"1,2","two",0]
+result computed number 2: ["3","3f","3a","method 3","static","getter",9,"1,2","two",0]
+result toString
+result key object 0: ["kk"]
+result toString
+result key object 1: ["kk"]
+result toString
+result key object 2: ["kk"]
+result key throws 0 threw Error: key
+result key throws 1 threw Error: key
+result key throws 2 threw Error: key
+result key throws class 0 threw TypeError: ckey
+result key throws class 1 threw TypeError: ckey
+result key throws class 2 threw TypeError: ckey
+result key symbol 0: true
+result key symbol 1: true
+result key symbol 2: true
+result literal 0: ["proto","proto!","hi own","proto",true,"set"]
+result literal 1: ["proto","proto!","hi own","proto",true,"set"]
+result literal 2: ["proto","proto!","hi own","proto",true,"set"]
+result setter set
+result literal proto getter 0: ["getter of own","getter of own!","h","getter of own",false,"getter of own"]
+result setter set
+result literal proto getter 1: ["getter of own","getter of own!","h","getter of own",false,"getter of own"]
+result setter set
+result literal proto getter 2: ["getter of own","getter of own!","h","getter of own",false,"getter of own"]
+result proto kinds 0: [null,true,true]
+result proto kinds 1: [null,true,true]
+result proto kinds 2: [null,true,true]
+result super who 0: "base 1"
+result super who 1: "base 1"
+result super who 2: "base 1"
+result super hello 0: "derived hello 1"
+result super hello 1: "derived hello 1"
+result super hello 2: "derived hello 1"
+result super keyed 0: undefined
+result super keyed 1: undefined
+result super keyed 2: undefined
+result super put 0: [7,true]
+result super put 1: [7,true]
+result super put 2: [7,true]
+result super put this primitive 0 threw TypeError: not an object
+result super put this primitive 1 threw TypeError: not an object
+result super put this primitive 2 threw TypeError: not an object
+result super call keyed 0: "hello 1"
+result super call keyed 1: "hello 1"
+result super call keyed 2: "hello 1"
+result super static 0: "derived base static"
+result super static 1: "derived base static"
+result super static 2: "derived base static"
+result super arrow 0: "hello 1"
+result super arrow 1: "hello 1"
+result super arrow 2: "hello 1"
+result super null home 0 threw TypeError: cannot read property 'x' of null
+result super null home 1 threw TypeError: cannot read property 'x' of null
+result super null home 2 threw TypeError: cannot read property 'x' of null
+result super getter throws 0 threw Error: getter tk
+result super getter throws 1 threw Error: getter tk
+result super getter throws 2 threw Error: getter tk
+result super frozen 0 threw TypeError: 'x' is read-only
+result super frozen 1 threw TypeError: 'x' is read-only
+result super frozen 2 threw TypeError: 'x' is read-only
+result super setter missing 0 threw TypeError: no setter for property
+result super setter missing 1 threw TypeError: no setter for property
+result super setter missing 2 threw TypeError: no setter for property
+result ArrowBase 4
+result super in arrow 0: 4
+result ArrowBase 4
+result super in arrow 1: 4
+result ArrowBase 4
+result super in arrow 2: 4
+result ArrowBase 5
+result ArrowBase 6
+result super in arrow twice 0 threw ReferenceError: this is not initialized
+result ArrowBase 5
+result ArrowBase 6
+result super in arrow twice 1 threw ReferenceError: this is not initialized
+result ArrowBase 5
+result ArrowBase 6
+result super in arrow twice 2 threw ReferenceError: this is not initialized
+mem-end obj=412 atom=603 shape=181 prop=1475 jsfunc=49 cfunc=134 array=2 fast_array=2 elements=114 binary=0
+mem-gc obj=197 atom=552 shape=143 prop=964 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

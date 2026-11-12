@@ -1,0 +1,45 @@
+result ephemeron prepass-cascade: ok
+result ephemeron prepass-cascade-reverse: ok
+result ephemeron cycle: ok
+result ephemeron plain-key: ok
+result ephemeron no-backref: ok
+result ephemeron chain: ok
+result ephemeron live-key-chain: ok
+result ephemeron weakset: ok
+result ephemeron weakset-live: ok
+result ephemeron symbol-cycle: ok
+result ephemeron symbol-property-cycle: ok
+result ephemeron symbol: ok
+result ephemeron dead-map: ok
+result young ephemeron prepass-cascade: ok
+result young ephemeron prepass-cascade-reverse: ok
+result young ephemeron cycle: ok
+result young ephemeron plain-key: ok
+result young ephemeron no-backref: ok
+result young ephemeron chain: ok
+result young ephemeron live-key-chain: ok
+result young ephemeron weakset: ok
+result young ephemeron weakset-live: ok
+result young ephemeron symbol-cycle: ok
+result young ephemeron symbol-property-cycle: ok
+result young ephemeron symbol: ok
+result young ephemeron dead-map: ok
+result run gc no-back-reference: ok
+result run gc back-reference: ok
+result run gc key-cycle: ok
+result run gc chain: ok
+result run gc dead-map: ok
+result weak observers: ok
+result young weak observers: ok
+result live symbols globalThis.key=s: ok
+result live symbols globalThis.key={[s]:true}: ok
+result live symbols globalThis.key=Object(s): ok
+result live symbols globalThis.key=new Map([[s,42]]): ok
+result live symbols globalThis.key=[s]: ok
+result mutation after a collection: ok
+result registry unregister: ok
+result mixed graphs, 20 seeds: ok
+result young mixed graphs, 20 seeds: ok
+mem-end obj=314 atom=772 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
+mem-gc obj=314 atom=772 shape=283 prop=1240 jsfunc=26 cfunc=146 array=5 fast_array=5 elements=123 binary=0
+--- status exit 0

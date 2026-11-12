@@ -1,0 +1,4 @@
+result xsxsxyyy;1,s1,undefineds1,2,undefined2,2,undefined;11k555z;qq1kqqqz;[a|m][m|c]V;[b|obj][b|undefined];[7|V];f,undefined,undefinedf,f,undefined;pq4:p/q/c/p;NaNl;23;8;2:t/t;ok;tboom;1one;aa;2:z/z?;c1c2c2c1changed;rnewnewr;wwwn;1275;xsxsxyyy;1,s1,undefineds1,2,undefined2,2,undefined;11k555z;qq1kqqqz;[a|m][m|c]V;[b|obj][b|undefined];[7|V];f,undefined,undefinedf,f,undefined;pq4:p/q/c/p;NaNl;23;8;2:t/t;ok;tboom;1one;aa;2:z/z?;c1c2c2c1changed;rnewnewr;wwwn;1275;2:0/s02:s0/i2:i/i;2:1/s12:s1/i2:i/i;2:2/s22:s2/i2:i/i;TypeErrortboom;TypeError;TypeError;TypeErrortboom;TypeError
+mem-end obj=191 atom=590 shape=122 prop=994 jsfunc=1 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=587 shape=121 prop=991 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

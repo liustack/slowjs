@@ -1,0 +1,33 @@
+result a=againwec;b=swec;c=nullwec;d=undefinedwec;e=truewec;f=2.5wec;g=7nwec;h=-1wec;x=0wec
+result a=3wec;b=0wec
+result 0
+result o=[object Object]wec;list=1,twowec;k=zerowec
+result f=1wec;g=gwec
+result TypeError:object is not extensible
+result x=1wec;y=ywec;z=nullwec;w=undefinedwec
+result 110000,100000,011110,100000,001000,011110
+result a,0,length,1,Symbol(Symbol.iterator),
+result TypeError,TypeError,TypeError,TypeError,TypeError,TypeError
+result a=againwec;b=swec;c=nullwec;d=undefinedwec;e=truewec;f=2.5wec;g=7nwec;h=-1wec;x=1wec
+result a=3wec;b=1wec
+result 0
+result o=[object Object]wec;list=1,twowec;k=otherwec
+result f=1wec;g=gwec
+result TypeError:object is not extensible
+result x=1wec;y=ywec;z=nullwec;w=undefinedwec
+result 110000,100000,011110,100000,001000,011110
+result a,0,length,1,Symbol(Symbol.iterator),
+result TypeError,TypeError,TypeError,TypeError,TypeError,TypeError
+result a=againwec;b=swec;c=nullwec;d=undefinedwec;e=truewec;f=2.5wec;g=7nwec;h=-1wec;x=2wec
+result a=3wec;b=2wec
+result 0
+result o=[object Object]wec;list=1,twowec;k=otherwec
+result f=1wec;g=gwec
+result TypeError:object is not extensible
+result x=1wec;y=ywec;z=nullwec;w=undefinedwec
+result 110000,100000,011110,100000,001000,011110
+result a,0,length,1,Symbol(Symbol.iterator),
+result TypeError,TypeError,TypeError,TypeError,TypeError,TypeError
+mem-end obj=201 atom=561 shape=133 prop=969 jsfunc=5 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=554 shape=129 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

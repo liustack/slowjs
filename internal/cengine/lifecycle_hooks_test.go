@@ -141,9 +141,23 @@ func TestCloseLeavesNothing(t *testing.T) {
 	}
 }
 
+// refuseUnmapOf makes the OS refuse the first unmap of the chunk that holds
+// the address p, and counts the refusals in *refused.
+func refuseUnmapOf(p uintptr, refused *int) {
+	hostmem.SetFault(func(call string, addr, size uintptr) error {
+		if call == "unmap" && addr <= p && p-addr < size && *refused == 0 {
+			*refused++
+			return errStop
+		}
+		return nil
+	})
+}
+
 // TestCloseRetry: when the OS refuses to unmap a chunk, Close returns the
 // error and keeps the chunk, and Close again unmaps it without freeing the
-// engine a second time.
+// engine a second time. The chunk refused is the one that holds the runtime,
+// which only the host's Close unmaps: the engine gives some chunks back
+// itself while it frees the runtime (TestCloseEngineFreeRefused).
 func TestCloseRetry(t *testing.T) {
 	inChild(t, func(t *testing.T) {
 		v := newVM(t, Options{})
@@ -152,13 +166,7 @@ func TestCloseRetry(t *testing.T) {
 		}
 		h := v.Host()
 		refused := 0
-		hostmem.SetFault(func(call string, addr, size uintptr) error {
-			if call == "unmap" && refused == 0 {
-				refused++
-				return errStop
-			}
-			return nil
-		})
+		refuseUnmapOf(v.rt, &refused)
 		leaked, err := v.Close()
 		hostmem.SetFault(nil)
 		if !errors.Is(err, errStop) || leaked != 0 || refused != 1 {
@@ -177,6 +185,43 @@ func TestCloseRetry(t *testing.T) {
 			t.Errorf("the engine was freed %d times", teardowns(v))
 		}
 		gone(t, h, "after Close again")
+	})
+}
+
+// TestCloseEngineFreeRefused: a chunk the engine gives back itself while it
+// frees the runtime, here the dedicated chunk of a string of 16 MiB, that the
+// OS refuses to unmap stays counted, and the host's Close unmaps it with the
+// rest. Close then holds nothing and returns nil: its error tells only of
+// memory still held. The refusal stays in the counts and in LastError.
+func TestCloseEngineFreeRefused(t *testing.T) {
+	inChild(t, func(t *testing.T) {
+		v := newVM(t, Options{})
+		if _, err := v.Eval(`globalThis.big = "x".repeat(1 << 24); 0`, "big.js"); err != nil {
+			t.Fatal(err)
+		}
+		h := v.Host()
+		refused := 0
+		// The chunk of the string is the only one of 16 to 32 MiB: the
+		// shared ones are smaller, the shadow stack is larger.
+		hostmem.SetFault(func(call string, addr, size uintptr) error {
+			if call == "unmap" && size >= 1<<24 && size < 1<<25 && refused == 0 {
+				refused++
+				return errStop
+			}
+			return nil
+		})
+		leaked, err := v.Close()
+		hostmem.SetFault(nil)
+		if err != nil || leaked != 0 || refused != 1 {
+			t.Fatalf("Close with the engine's unmap refused: %d blocks, %v, refused %d times", leaked, err, refused)
+		}
+		if c := h.Counts(); c.FreeFailures != 1 || !errors.Is(h.LastError(), errStop) {
+			t.Fatalf("the refusal was not the engine's: %d failed frees, last error %v", c.FreeFailures, h.LastError())
+		}
+		gone(t, h, "after Close")
+		if teardowns(v) != 1 {
+			t.Errorf("the engine was freed %d times", teardowns(v))
+		}
 	})
 }
 

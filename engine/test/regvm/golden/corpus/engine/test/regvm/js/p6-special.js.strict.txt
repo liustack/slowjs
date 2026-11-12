@@ -1,0 +1,21 @@
+result count 10 0 1000
+result self true true true
+result selfUse 11 10s
+result nt undefined undefined undefined undefined true
+result nt2 2 3 3 5 6 6
+result both true true object true
+result count 10 0 1000
+result self true true true
+result selfUse 11 10s
+result nt undefined undefined undefined undefined true
+result nt2 2 3 3 5 6 6
+result both true true object true
+result count 10 0 1000
+result self true true true
+result selfUse 11 10s
+result nt undefined undefined undefined undefined true
+result nt2 2 3 3 5 6 6
+result both true true object true
+mem-end obj=199 atom=550 shape=124 prop=977 jsfunc=3 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=544 shape=120 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,242 @@
+result 0: 3
+result 1: 4
+result 2: 9
+result 3: 7
+result 4: undefined
+result 5: 4
+result 6: TypeError: 'c' is read-only
+result 7: 2
+result 8: 6
+result 9: Error: boom 2
+result note 11
+result 10: 5
+result note 11
+result 11: 6
+result note 7
+result 12: 7
+result note 7
+result 13: 1
+result 14: 9 101
+result note 9
+result note 9
+result 15: 9 5
+result 16: 1010
+result 17: 1011
+result 18: 12
+result 19: 13 15
+result note 15
+result note 1
+result 20: 15 14
+result 21: 404
+result 22: 1
+result 23: 15 15
+result 24: 21
+result 25: TypeError: getter 33 2
+result 26: TypeError: cannot read property 'x' of null
+result 27: TypeError: cannot read property 'y' of undefined
+result 28:     at boom (<eval>:16:31)
+result     at sup0 (<eval>:111:31)
+result     at sup1 (<eval>:112:31)
+result     at sup2 (<eval>:113:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:158:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 29:     at boom (<eval>:16:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:159:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 30:     at throwRO (<eval>:29:43)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:160:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 31:     at deep (<eval>:122:30)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:161:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 32:     at deep (<eval>:122:28)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:162:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 33: no throw
+result note 4
+result 34:     at boom (<eval>:16:31)
+result     at finThrow (<eval>:48:10)
+result     at <anonymous> (<eval>:164:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:164:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 35:     at boom (<eval>:16:31)
+result     at rethrow (<eval>:65:10)
+result     at <anonymous> (<eval>:165:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:165:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 0: 3
+result 1: 4
+result 2: 9
+result 3: 7
+result 4: undefined
+result 5: 4
+result 6: TypeError: 'c' is read-only
+result 7: 2
+result 8: 6
+result 9: Error: boom 2
+result note 11
+result 10: 5
+result note 11
+result 11: 6
+result note 7
+result 12: 7
+result note 7
+result 13: 1
+result 14: 9 101
+result note 9
+result note 9
+result 15: 9 5
+result 16: 1010
+result 17: 1011
+result 18: 12
+result 19: 13 15
+result note 15
+result note 1
+result 20: 15 14
+result 21: 404
+result 22: 1
+result 23: 15 15
+result 24: 21
+result 25: TypeError: getter 78 2
+result 26: TypeError: cannot read property 'x' of null
+result 27: TypeError: cannot read property 'y' of undefined
+result 28:     at boom (<eval>:16:31)
+result     at sup0 (<eval>:111:31)
+result     at sup1 (<eval>:112:31)
+result     at sup2 (<eval>:113:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:158:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 29:     at boom (<eval>:16:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:159:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 30:     at throwRO (<eval>:29:43)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:160:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 31:     at deep (<eval>:122:30)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:161:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 32:     at deep (<eval>:122:28)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:162:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 33: no throw
+result note 4
+result 34:     at boom (<eval>:16:31)
+result     at finThrow (<eval>:48:10)
+result     at <anonymous> (<eval>:164:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:164:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 35:     at boom (<eval>:16:31)
+result     at rethrow (<eval>:65:10)
+result     at <anonymous> (<eval>:165:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:165:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 0: 3
+result 1: 4
+result 2: 9
+result 3: 7
+result 4: undefined
+result 5: 4
+result 6: TypeError: 'c' is read-only
+result 7: 2
+result 8: 6
+result 9: Error: boom 2
+result note 11
+result 10: 5
+result note 11
+result 11: 6
+result note 7
+result 12: 7
+result note 7
+result 13: 1
+result 14: 9 101
+result note 9
+result note 9
+result 15: 9 5
+result 16: 1010
+result 17: 1011
+result 18: 12
+result 19: 13 15
+result note 15
+result note 1
+result 20: 15 14
+result 21: 404
+result 22: 1
+result 23: 15 15
+result 24: 21
+result 25: TypeError: getter 123 2
+result 26: TypeError: cannot read property 'x' of null
+result 27: TypeError: cannot read property 'y' of undefined
+result 28:     at boom (<eval>:16:31)
+result     at sup0 (<eval>:111:31)
+result     at sup1 (<eval>:112:31)
+result     at sup2 (<eval>:113:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:158:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 29:     at boom (<eval>:16:31)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:159:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 30:     at throwRO (<eval>:29:43)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:160:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 31:     at deep (<eval>:122:30)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:161:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 32:     at deep (<eval>:122:28)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:162:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 33: no throw
+result note 4
+result 34:     at boom (<eval>:16:31)
+result     at finThrow (<eval>:48:10)
+result     at <anonymous> (<eval>:164:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:164:17)
+result     at <anonymous> (<eval>:171:28)
+result 
+result 35:     at boom (<eval>:16:31)
+result     at rethrow (<eval>:65:10)
+result     at <anonymous> (<eval>:165:45)
+result     at stack (<eval>:125:10)
+result     at <anonymous> (<eval>:165:17)
+result     at <anonymous> (<eval>:171:28)
+mem-end obj=188 atom=546 shape=123 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=546 shape=123 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

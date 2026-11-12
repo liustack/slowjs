@@ -1,0 +1,78 @@
+result call 31: 31:30
+result method 31: true:31:30
+result optional 31: true:31:30,
+result new 31: true:31:30
+result eval 31: 12
+result tag 31: 32:30:true:31:x
+result spread 31: 34:end
+result super 31: 31:30
+result order 31: 31
+result order 31 log: 32 28 29 30
+result throw 31: throws RangeError arg
+result not a function 31: throws TypeError
+result call 32: 32:31
+result method 32: true:32:31
+result optional 32: true:32:31,
+result new 32: true:32:31
+result eval 32: 12
+result tag 32: 33:31:true:32:31
+result spread 32: 35:end
+result super 32: 32:31
+result order 32: 32
+result order 32 log: 33 29 30 31
+result throw 32: throws RangeError arg
+result not a function 32: throws TypeError
+result call 33: 33:32
+result method 33: true:33:32
+result optional 33: true:33:32,
+result new 33: true:33:32
+result eval 33: 12
+result tag 33: 34:32:true:33:32
+result spread 33: 36:end
+result super 33: 33:32
+result order 33: 33
+result order 33 log: 34 30 31 32
+result throw 33: throws RangeError arg
+result not a function 33: throws TypeError
+result call 40: 40:39
+result method 40: true:40:39
+result optional 40: true:40:39,
+result new 40: true:40:39
+result eval 40: 12
+result tag 40: 41:39:true:40:x
+result spread 40: 43:end
+result super 40: 40:39
+result order 40: 40
+result order 40 log: 41 37 38 39
+result throw 40: throws RangeError arg
+result not a function 40: throws TypeError
+result call 128: 128:127
+result method 128: true:128:127
+result optional 128: true:128:127,
+result new 128: true:128:127
+result eval 128: 12
+result tag 128: 129:127:true:128:127
+result spread 128: 131:end
+result super 128: 128:127
+result order 128: 128
+result order 128 log: 129 125 126 127
+result throw 128: throws RangeError arg
+result not a function 128: throws TypeError
+result call 300: 300:299
+result method 300: true:300:299
+result optional 300: true:300:299,
+result new 300: true:300:299
+result eval 300: 12
+result tag 300: 301:299:true:300:299
+result spread 300: 303:end
+result super 300: 300:299
+result order 300: 300
+result order 300 log: 301 297 298 299
+result throw 300: throws RangeError arg
+result not a function 300: throws TypeError
+result concat 128: x01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567
+result call 40 under a setter: 40:39
+result tag 40 under a setter: 41::true:40:39
+mem-end obj=226 atom=566 shape=130 prop=1120 jsfunc=18 cfunc=131 array=5 fast_array=2 elements=376 binary=0
+mem-gc obj=214 atom=565 shape=128 prop=1096 jsfunc=12 cfunc=131 array=5 fast_array=2 elements=376 binary=0
+--- status exit 0

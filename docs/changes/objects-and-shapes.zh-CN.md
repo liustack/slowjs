@@ -247,3 +247,39 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 它在内存上没有代价。在 tifa 里用 callgrind 测得（`measure bench cg`，对比它之前的那项改动），一次渲染少执行的指令，商店页面是 0.65%，store 页面是 0.71%，MUI 页面是 0.64%，bench 页面是 0.45%，解释器自己的指令不变。
 
 改动在 C 里（`engine/quickjs.c`）：`__JS_FreeValueRT` 调用 `free_zero_refcount_first`，`internal/goasm/cmd/cycles` 检查它到达不了 `JS_RunGC` 和 `JS_RunYoungGC`。`engine/test/unit.c` 里的 `test_free_order` 给出一个类的对象，其 finalizer 写下它们的编号，并丢弃一棵通过属性、数组、闭包、`Map`、`Set`、`WeakRef`、`FinalizationRegistry` 以及会释放更多对象的 finalizer 持有的对象树，然后是由回收释放的环和由年轻代回收释放的环，并把它们被释放的顺序和改动之前的引擎上记录的顺序对比，检查 `WeakRef` 在丢弃之后发现它的目标已经没有了，以及 `FinalizationRegistry` 的回调在一次回收之后得到它的值。`test_finalizer_memory_usage` 释放一个对象（先年轻的，再旧的），它的 finalizer 调用 `JS_ComputeMemoryUsage`：这项改动的第一个版本，在对象被释放期间把它留在回收器的列表上，在那里崩溃了。`engine/test/compare.sh` 和 `unit`（一百万个嵌套对象一次释放，以及各种对象由它们的 finalizer 和回收释放）在 AddressSanitizer 构建（`engine/test/build.sh asan`）下运行，没有任何报告。
+
+## 拒绝写入的 proxy 在严格模式代码里抛错
+
+发布版本：Unreleased。
+
+严格模式代码里的 `o.x = 1` 或 `o[k] = 1` 这类写入，如果对象是没有 `set` trap、`defineProperty` trap 返回 false 的 proxy，现在会抛 `TypeError`，和 Node 24 一样，也和规范一致：trap 返回 false 让 proxy 的 `[[Set]]` 返回 false，而严格模式代码的写入在 `[[Set]]` 返回 false 时要抛错。不管目标上已经有这个属性还是没有，都是这样，接收者是这种 proxy 的 `super.x = 1` 和经过 `with` 的写入也一样。在任何代码里都必须抛错的写入，比如 `Object.assign`、`Array.prototype.fill` 和 `push` 里的写入，以及 Go API 的 `SetProperty` 和 `SetPropertyValue`，在目标已有该属性时原来会继续往下走，现在也会抛错。原来引擎不报错继续往下走，上游 QuickJS 和 quickjs-ng 现在也还是这样。非严格模式代码的写入照旧继续，`Reflect.set` 照旧返回 false。
+
+为什么安全：有两处丢掉了表示「写入被拒绝要抛错」的标志。`js_proxy_define_own_property1` 检查 trap 结果时只看 `JS_PROP_THROW`，而其他所有拒绝写入的地方（只读属性、缺少 setter、proxy 的 `set` trap 返回 false）在严格模式代码里遇到 `JS_PROP_THROW_STRICT` 也会抛错，走的是 `JS_ThrowTypeErrorOrFalse`。现在它也调用 `JS_ThrowTypeErrorOrFalse`。另外，属性已经存在时，`JS_SetPropertyInternal` 在接收者上重新定义它的值，完全不带抛错标志，所以接收者返回 false 时，任何代码都会继续往下走。现在它传入这次写入的 `JS_PROP_THROW` 和 `JS_PROP_THROW_STRICT`，和新属性的做法一样。`engine/quickjs.c` 里另外五处对 `JS_PROP_THROW` 的检查本来就考虑了 `JS_PROP_THROW_STRICT`。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_proxy_define_own_property1` 和 `JS_SetPropertyInternal`）。`engine/test/compare/proxy_define_false.js` 在严格和非严格模式代码里通过这样的 proxy 写入，用名字、下标和计算出来的键，写目标已有的属性和没有的属性，还有复合赋值、接收者继承自该 proxy 的写入、`super` 和 `with`、以该 proxy 为目标和为接收者的 `Reflect.set`、`Object.assign`、`Array.prototype.fill` 和 `push`，它的结果文件就是 Node 24 打印的内容。`TestSetPropertyRefused` 检查 `SetProperty` 和 `SetPropertyValue`。test262 里没有对应的用例。
+
+## 对象字面量的 shape 至少有空对象的空间
+
+发布：Unreleased。
+
+对象字面量第一次运行时建的 shape，至少能放两个属性，和空对象的 shape 一样（`JS_PROP_INITIAL_SIZE`），以前是刚好放下它的键。shape 哈希表里的 shape 也是一个个加键的对象的下一个 shape：`add_property` 在表里找到下一个 shape，把对象的属性数组挪到这个 shape 的空间。空对象能放 2 个。如果它的第一个键正好是包里某个单键字面量的键，找到的 shape 只能放 1 个，数组就缩到一格，加第二个键时又涨回两格。引擎的迭代器结果（`js_create_iterator_result` 先建空对象，再加 `value` 和 `done`）在包里有 `{ value: ... }` 这种字面量时，每个结果都这样挪：商店英文首页每次渲染 9,020 个结果，每个挪两次，占了一次渲染里属性数组 33,000 次挪动中的 18,040 次。现在这种字面量的 shape 能放 2 个，正好合空对象，不再挪动。
+
+一次渲染里属性数组的挪动次数，在原生 C 树上按 tifa 池子的设置（保留 shape）数：英文首页 33,000 降到 12,800，中文商品页 55,100 降到 22,000，工作台 studio 页 24,200 降到 15,600，MUI 的 orders 页 30,700 降到 25,000。保留 shape 不影响这些挪动：关掉时分别是 33,200、57,100、25,900 和 34,500。
+
+为什么安全：读属性数组的地方都只读 shape 的前 `prop_count` 格，多出来的格是留给以后的键的，和 `js_new_shape` 或 `JS_NewObjectProtoClassAlloc` 建的 shape 一样，后者本来就至少给 `JS_PROP_INITIAL_SIZE`。属性放在对象自己块里的单键字面量（`js_new_object_inline`），块里多留出第二格。shape 还是原来在表里找到或放进表里的那个，键和标志都一样，所以对象得到的 shape 一样，键和顺序也一样。
+
+代价是每个刚好一个键的字面量对象多 16 字节。在原生 C 树上用 callgrind 量（linux/arm64，只算计时的渲染，按 tifa 池子的设置），商店的页面每次渲染少 0.20% 到 0.28% 的指令，MUI 的页面少 0.09% 到 0.12%，React 的 `r_react_ssr` 不变，HTML 相同。在 darwin/arm64 上计时（轮流跑 3 轮，每次取 40 次渲染的中位数），四个页面变化在 -0.7% 到 +1.3% 之间，没有超出这台机器的噪声。渲染 200 次并做一次完整回收后，VM 持有的内存在英文首页多 0.15%（13.52 MB 到 13.54 MB），在 MUI 的 orders 页多 0.1%。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_object_lit_shape`）。`engine/test/compare.sh`、`unit-white` 和商店与 MUI 的 23 个页面的 HTML（SHA-256 和 main 相同）覆盖它。
+
+## for in 循环对一个 shape 只问一次能不能从它列出键
+
+发布：Unreleased。
+
+`for in` 循环遍历的对象，如果它的 shape 在 shape 哈希表里，而且 shape 的字符串键里没有数组下标也没有绑定，就[从 shape 列出键](#for-in-循环持有它的对象的-shape)。为了知道这一点，以前每次循环都要把 shape 的键过一遍（`js_own_keys_scan`）。MUI 的页面每次渲染要对样式和 props 对象跑大约 10,000 次循环，1% 的指令花在这上面。现在 shape 把答案存在它填充位里的一个字节（`for_in_keys`）：第一次遍历这个 shape 的对象时看一遍键，之后的循环直接读这个字节。
+
+为什么安全：对不是 exotic 的对象，答案只取决于 shape，也就是它的键和键的标志，对象自己的 `is_exotic` 标志每次循环仍然会读。只有 shape 在 shape 哈希表里时才读这个字节，而表里的 shape 不会原地改变：加键之前它先离开表（`add_shape_property`），删键或改键的标志之前它永久离开表或者被复制（`js_shape_prepare_update`），释放之前也先离开表，这和键种类缓存依赖的规则相同（`js_own_key_kinds`）。shape 每次进表或出表时这个字节都清回 0（`js_shape_hash_link`、`js_shape_hash_unlink`），所以复制出来的、长大的、重新放回的 shape 都从没有答案开始。
+
+内存上没有代价：`JSShape` 大小不变。在原生 C 树上用 callgrind 量（linux/arm64，只算计时的渲染，按 tifa 池子的设置），MUI 的页面每次渲染少 0.82% 到 1.08% 的指令，商店的页面少 0.12% 到 0.28%，React 的 `r_react_ssr` 少 0.29%，HTML 相同。在 darwin/arm64 上计时（轮流跑 3 轮，每次取 40 次渲染的中位数），MUI 的 orders 页时间少 1.4%，商店的页面变化在 -0.6% 到 +0.7% 之间，没有超出这台机器的噪声。渲染 200 次后 VM 持有的内存一个字节都不差。
+
+改动在 C 里（`engine/quickjs.c`）：`JSShape` 有了 `for_in_keys`，由 `js_for_in_keys_of_shape` 为 `build_for_in_iterator` 读和设。`engine/test/compare/for_in_shape_keys.js` 对同一个 shape 的对象循环多次，然后遍历这个 shape 的对象在加了数组下标、symbol、不可枚举的键、被改成不可枚举的键、getter 或删了键之后的样子，遍历先有下标的 shape，遍历在循环中加键和删键的对象，遍历同一个 shape 的两个对象之一而另一个在变，遍历原型上有键的对象和后来才加键的原型，还有数组、`arguments`、`String` 对象、类型化数组、全局对象和 40 个键的对象。它的文件由改动前的引擎写出，和 Node 24 打印的相同。

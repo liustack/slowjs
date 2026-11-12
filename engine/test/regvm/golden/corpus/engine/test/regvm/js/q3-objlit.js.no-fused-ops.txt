@@ -1,0 +1,13 @@
+result empty {}  true
+result pair {"a":0,"b":"v0"} a,b
+result pair {"a":1,"b":"v1"} a,b
+result pair {"a":2,"b":"v2"} a,b
+result kinds {"i":3,"f":3.5,"s":"q","t":6,"n":null,"b":true,"o":{"x":3},"arr":[3,6],"k":7,"str":"lit"} i,f,s,t,n,u,b,o,arr,k,str {"i":-1.5,"f":-1,"s":"","t":-3,"n":null,"b":true,"o":{"x":-1.5},"arr":[-1.5,-3],"k":7,"str":"lit"} i,f,s,t,n,u,b,o,arr,k,str
+result grow {"g1":1,"g2":2,"g3":3,"g4":4} g1,g2,g3,g4 {"g1":10,"g2":11,"g5":5} g1,g2,g5 {"g1":20,"g2":21} g1,g2
+result wide 40 ww 40
+result chain 36296992
+result area 9900
+result swap {"a":1,"b":2} a,b
+mem-end obj=190 atom=596 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=596 shape=131 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

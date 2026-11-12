@@ -47,15 +47,22 @@ func TestRunGC(t *testing.T) {
 	}
 }
 
+// collectable is the memory a GC sets the threshold from: MemorySize without
+// the register stack (JS_RegvmStat 9), which counts under the limit but
+// which no GC can free.
+func collectable(m *VM) uintptr {
+	return m.MemorySize() - uintptr(regvmStat(m, 9))
+}
+
 // TestRunGCSetsTheThreshold pins that RunGC sets the GC threshold to 1.5 times
-// what it left, as the GC the engine runs by itself does, whatever the
-// threshold was.
+// what it left, without the register stack, as the GC the engine runs by
+// itself does, whatever the threshold was.
 func TestRunGCSetsTheThreshold(t *testing.T) {
 	m := newGCVM(t)
 	for _, before := range []uintptr{1, 1 << 20, 1 << 40} {
 		m.SetGCThreshold(before)
 		m.RunGC()
-		live := m.MemorySize()
+		live := collectable(m)
 		if got, want := m.GCThreshold(), live+live/2; got != want {
 			t.Fatalf("after RunGC with the threshold at %d: GCThreshold %d, want %d, 1.5 times the %d bytes left", before, got, want, live)
 		}
@@ -64,7 +71,7 @@ func TestRunGCSetsTheThreshold(t *testing.T) {
 
 // TestGCThreshold pins that GCThreshold returns what SetGCThreshold set until
 // the engine runs a GC by itself, which sets the threshold to 1.5 times what
-// the GC left.
+// the GC left, without the register stack.
 func TestGCThreshold(t *testing.T) {
 	m := newGCVM(t)
 	m.RunGC()
@@ -82,8 +89,14 @@ func TestGCThreshold(t *testing.T) {
 		t.Fatalf("GCThreshold %d after a script that made no object, SetGCThreshold set %d", got, set)
 	}
 
-	// Each GC the engine runs leaves about live bytes, so it sets the
-	// threshold to about 1.5 live, below set.
+	// Each GC the engine runs leaves about live bytes besides the register
+	// stack, so it sets the threshold to about 1.5 live, below set. live is
+	// taken after a GC: before one, MemorySize also counts the blocks a
+	// script freed into the allocator's front cache, which every GC gives
+	// back (8.8 KB after "1 + 1"), so that a GC may leave less than it.
+	m.RunGC()
+	live = collectable(m)
+	m.SetGCThreshold(set)
 	if _, err := m.Eval("garbage(100000)", EvalGlobal); err != nil {
 		t.Fatal(err)
 	}

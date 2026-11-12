@@ -1,0 +1,29 @@
+result stair k0:wec k1:wec k2:wec k3:wec k4:wec k5:wec k6:wec k7:wec {"k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5,"k6":6,"k7":7}
+result delete k0:wec k2:wec k3:wec k1:wec k4:wec {"k0":0,"k2":2,"k3":3,"k1":"again","k4":4}
+result after delete k0:wec k1:wec k2:wec k3:wec k4:wec {"k0":0,"k1":1,"k2":2,"k3":3,"k4":4}
+result delete last q0:wec q1:wec q2:wec q3:wec {"q0":0,"q1":1,"q2":2,"q3":3}
+result after delete last q0:wec q1:wec q2:wec q3:wec {"q0":0,"q1":1,"q2":2,"q3":3}
+result flags k0:wec k1:wc k2:wec k3:wec {"k0":0,"k2":2,"k3":3}
+result frozen k0:e k1:e k2:e {"k0":0,"k1":1,"k2":2}
+result sealed k0:we k1:we k2:we k3:we {"k0":0,"k1":1,"k2":2,"k3":3}
+result after flags k0:wec k1:wec k2:wec k3:wec {"k0":0,"k1":1,"k2":2,"k3":3}
+result getter k0:eca k1:wec k2:wec k3:wec {"k0":"got","k1":1,"k2":2,"k3":3}
+result getter back k0:wec k1:wec k2:wec k3:wec k4:wec {"k0":"v","k1":1,"k2":2,"k3":3,"k4":4}
+result after getter k0:wec k1:wec k2:wec k3:wec k4:wec {"k0":0,"k1":1,"k2":2,"k3":3,"k4":4}
+result prototype k0:wec k1:wec k2:wec k3:wec {"k0":0,"k1":1,"k2":2,"k3":3}
+result prototype inherited 1 false
+result null prototype k0:wec k1:wec k2:wec {"k0":0,"k1":1,"k2":2}
+result after prototype k0:wec k1:wec k2:wec k3:wec {"k0":0,"k1":1,"k2":2,"k3":3}
+result array 1:wec 2:wec 10:wec length:w x:wec y:wec [null,20,30,null,null,null,null,null,null,null,40]
+result dense array 0:wec 1:wec 2:wec length:w x:wec y:wec [10,20,30]
+result arguments 0:wec 2:wec length:wc callee:wc x:wec y:wec Symbol(Symbol.iterator):wc {"0":1,"2":3,"x":1,"y":2}
+result shared a s0:wec s1:wec s2:wec s3:wec t:wec {"s0":0,"s1":1,"s2":2,"s3":"a","t":"t"}
+result shared b s0:wec s1:wec s2:wec s3:wec s4:wec t:wec {"s0":0,"s1":1,"s2":2,"s3":"b","s4":"b","t":"t"}
+result shared c s0:wec s1:wec s2:wec s3:wec s4:wec t:wec {"s0":0,"s1":1,"s2":2,"s3":"c","s4":"c","t":"c"}
+result global function 2 4 gf:wec gh:wec gz:wec
+result after global k0:wec k1:wec k2:wec k3:wec k4:wec k5:wec {"k0":0,"k1":1,"k2":2,"k3":3,"k4":4,"k5":5}
+result mixed 5:wec k1:wec z:wec k0:wec Symbol(s):wec {"5":5,"k1":1,"z":"z","k0":0}
+result mixed again k0:wec k1:wec z:wec Symbol(s):wec {"k0":0,"k1":1,"z":"z"}
+mem-end obj=231 atom=605 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
+mem-gc obj=231 atom=605 shape=165 prop=1140 jsfunc=8 cfunc=133 array=5 fast_array=4 elements=37 binary=0
+--- status exit 0

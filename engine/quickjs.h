@@ -442,6 +442,30 @@ int JS_SetDirectCCalls(JSContext *ctx, int on);
    check, from then on, and with 1 it joins and drops them again. Code
    compiled before, or read by JS_ReadObject, stays as it is. */
 void JS_SetFusedOps(JSContext *ctx, int on);
+/* counts of the register loop for tests: 0 functions converted, 1 refused,
+   2 entries of the loop from C, 3 and 4 the opcode and offset of the last
+   instruction the pass refused (-1 for a refusal of the whole function),
+   5 the bytes of stack a frame of the register loop takes before its check
+   and 6 those of JS_CallInternal, the entry of a call from C, which a call
+   of a C function the loop makes directly counts as taken, 7 the segments of register stack
+   allocated so far, 8 those it has now and 9 the bytes they take (in the
+   memory size, not toward the threshold of the collector), 11 the bytes of
+   the scratch the pass keeps between conversions (0 when it has none, after
+   a collection), 12 the bytes of the frame of JS_CallInternal that a call of
+   a C function from call, apply or a bound function counts as taken when it
+   skips it (js_call_c_hop), -1 when those go through JS_CallInternal. In a build with
+   -DRV_STATS (engine/quickjs.c): 10 the dispatches of the register loop, 13
+   the calls into it from C, 14 the calls out of it to a function of
+   bytecode, 15 those to a C function, 16 the most bytes of a segment of
+   register stack in use so far, 1000 + op the dispatches of register op
+   op. In any build, 2000 + op whether the pass takes old opcode op (1), not
+   (0), or op is none (-1) */
+int JS_RegvmStat(JSContext *ctx, int what);
+/* the state of one function in the register loop, for tests: see
+   engine/regvm.h */
+int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what);
+/* the name of register op op (JS_RegvmStat 1000 + op), NULL past the last */
+const char *JS_RegvmOpName(int op);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. An
    object a reference is still held to, such as one the host never freed,

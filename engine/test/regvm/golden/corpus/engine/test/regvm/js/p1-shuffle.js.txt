@@ -1,0 +1,4 @@
+result str;str;5;{"x":"str","a":{"b":5},"n":1,"s":"s"};c;2;st;undefined;undefined;undefined;2;undefined;undefined;called;1;u;0;;v;k;0;w;9;false;z;p,q;1,2;str;str;5;{"x":"str","a":{"b":5},"n":1,"s":"s"};c;2;st;undefined;undefined;undefined;2;undefined;undefined;called;1;u;0;;v;k;0;w;9;false;z;p,q;1,2;second;2;b;false;x;second;3;b;false;x;TypeError;TypeError
+mem-end obj=190 atom=549 shape=126 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=549 shape=126 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

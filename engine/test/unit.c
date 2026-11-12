@@ -1340,6 +1340,46 @@ static int test_call_depth(void *unused)
     return 0;
 }
 
+/* A generator suspended in the register loop resumes with its frame on the
+   register stack (engine/regvm-ops-gen.h). A recursion that ends with the
+   resume at depths from 1 to 3000 puts the top of the stack at every place
+   of a segment, also where the frame of big does not fit: the resume then
+   runs on the next segment (engine/regvm-entry.h), as a call does, and goes
+   on: the yield gives 2, and the next resume ends the generator. */
+static int test_regvm_gen_full(void *unused)
+{
+    static const char src[] =
+        "'use strict';\n"
+        "function* big() {\n"
+        "  var a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9,\n"
+        "    c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, d0, d1, d2, d3, d4, d5, d6, d7, d8, d9,\n"
+        "    e0, e1, e2, e3, e4, e5, e6, e7, e8, e9, f0, f1, f2, f3, f4, f5, f6, f7, f8, f9,\n"
+        "    g0, g1, g2, g3, g4, g5, g6, g7, g8, g9, h0, h1, h2, h3, h4, h5, h6, h7, h8, h9;\n"
+        "  yield 1; yield 2;\n"
+        "}\n"
+        "function fill(n, it) {\n"
+        "  var x0, x1, x2, x3, x4, x5;\n"
+        "  if (n === 0) return it.next().value;\n"
+        "  var r = fill(n - 1, it); return r;\n"
+        "}\n"
+        "var bad = 0, first = '';\n"
+        "for (var n = 1; n <= 3000; n++) {\n"
+        "  var it = big(), got;\n"
+        "  it.next();\n"
+        "  try { got = fill(n, it); } catch (e) { got = String(e); }\n"
+        "  got = got + ' ' + it.next().done;\n"
+        "  if (got !== '2 true') { bad++; if (!first) first = n + ': ' + got; }\n"
+        "}\n"
+        "bad + ' ' + first";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, src, "0 "), "resumes after recursions of every depth to 3000");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+    return 0;
+}
+
 /* The first context of a runtime measures the frame of JS_CallInternal for
    the direct calls of C functions. Making it runs no code, so it works with
    the call depth at the limit and with an interrupt asked, and leaves both as
@@ -2957,8 +2997,11 @@ static void test_regexp_stops(void)
     host_free_runtime(rt);
 }
 
+/* z|z|...|z, 4098 alternatives, made by test_regexp_skip_polls */
+static char zs[2 * 4098];
+
 /* lre_skip reads the interrupt flag after each LRE_SKIP_CHUNK (65536) units
-   it looks at and then answers as the backtracking machine does: lre_exec
+   it looks at, 16384 for a class in a string of 16 bits, and then answers as the backtracking machine does: lre_exec
    returns LRE_RET_TIMEOUT. It reads nothing at the end of the string. The
    readings are counted by the host (host_poll_reads). */
 static void test_regexp_skip_polls(void)
@@ -2976,16 +3019,44 @@ static void test_regexp_skip_polls(void)
         { "a|b", "x", 3 * CHUNK + 1, 0, 0, 3 },
         { "a", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
         { "a", "x", 2 * CHUNK, 0, 0, 1 },
+        /* the table of the plan, for a class and for a set, and the class
+           itself in a string of 16 bits, which reads the flag after every
+           quarter of a chunk */
+        { "[ab]", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "[\\x00-\\x07<\\u2028\\ud800-\\udfff]", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "[\\x00-\\x07<\\u2028\\ud800-\\udfff]", "x", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "[ab]", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 12 },
+        { "[ab]", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "(?:a|c)b", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 3 },
+        /* a chain of 20 alternatives (see lre_split) polls as the walk
+           over its split ops did, measured before the chains: 2 reads a
+           position where one alternative starts with the unit, 20 where
+           all of them do */
+        { "az|bz|cz|dz|ez|fz|gz|hz|iz|jz|kz|lz|mz|nz|oz|pz|qz|rz|sz|tz", "a", CHUNK, 0, 0, 2 * CHUNK },
+        { "az|bz|cz|dz|ez|fz|gz|hz|iz|jz|kz|lz|mz|nz|oz|pz|qz|rz|sz|tz", "a", CHUNK, 1, LRE_RET_TIMEOUT, 1 },
+        { "ab|ac|ad|ae|af|ag|ah|ai|aj|ak|al|am|an|ao|ap|aq|ar|as|at|au", "a", CHUNK, 0, 0, 20 * CHUNK },
+        { "ab|ac|ad|ae|af|ag|ah|ai|aj|ak|al|am|an|ao|ap|aq|ar|as|at|au", "a", CHUNK, 1, LRE_RET_TIMEOUT, 1 },
+        /* a way of a chain pushed, after which the walk found none of the
+           split ops after it could start, and the machine polled (a loop
+           of them over the string), and 4098 alternatives, past the steps
+           of one call of lre_split, measured before the chains too */
+        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
+        { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
+        { zs, "z", 4096, 0, 1, 4097 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
     size_t i;
 
+    for(i = 0; i < 4098; i++) {
+        zs[2 * i] = 'z';
+        zs[2 * i + 1] = i < 4097 ? '|' : 0;
+    }
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int wide = cases[i].unit[1] != 0;
         size_t unit_bytes = wide ? 2 : 1;
         uint8_t *buf = malloc((size_t)cases[i].units * unit_bytes);
-        uint8_t *capture[2];
+        uint8_t *capture[8]; /* the captures and the registers of a loop */
         char msg[64];
         uint8_t *bc;
         int len, k, ret;
@@ -2995,18 +3066,20 @@ static void test_regexp_skip_polls(void)
             if (wide) {
                 ((uint16_t *)buf)[k] = 0x4e2d;
             } else {
-                buf[k] = 'x';
+                buf[k] = cases[i].unit[0];
             }
         }
         *JS_GetInterruptFlag(rt) = 0;
         bc = lre_compile(&len, msg, sizeof(msg), cases[i].re, strlen(cases[i].re), 0, ctx);
         CHECK(bc != NULL, "/%s/: %s", cases[i].re, msg);
-        if (bc) {
+        if (bc)
+            CHECK(lre_get_alloc_count(bc) <= (int)countof(capture), "/%.40s/: %d captures", cases[i].re, lre_get_alloc_count(bc));
+        if (bc && lre_get_alloc_count(bc) <= (int)countof(capture)) {
             *JS_GetInterruptFlag(rt) = cases[i].stop;
             before = host_poll_reads;
             ret = lre_exec(capture, bc, buf, 0, cases[i].units, wide, ctx);
             CHECK(ret == cases[i].result && host_poll_reads - before == cases[i].reads,
-                  "/%s/ on %d units%s, flag %d: result %d, %ld reads, want %d, %d",
+                  "/%.40s/ on %d units%s, flag %d: result %d, %ld reads, want %d, %d",
                   cases[i].re, cases[i].units, wide ? " of 16 bits" : "", cases[i].stop,
                   ret, host_poll_reads - before, cases[i].result, cases[i].reads);
             *JS_GetInterruptFlag(rt) = 0;
@@ -4325,11 +4398,17 @@ static void test_module_export_order(void)
     CHECK(!JS_IsException(src), "the generator threw");
     s = JS_ToCStringLen(ctx, &len, src);
     CHECK(s, "the source of the module");
+    JS_FreeValue(ctx, src);
+    if (!s) {
+        /* the generator threw: there is no module to import */
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+        return;
+    }
     v = JS_Eval(ctx, s, len, "long.mjs", JS_EVAL_TYPE_MODULE);
     CHECK(!JS_IsException(v), "the exporting module threw");
     JS_FreeValue(ctx, v);
     JS_FreeCString(ctx, s);
-    JS_FreeValue(ctx, src);
     v = JS_Eval(ctx, importer, strlen(importer), "main.mjs", JS_EVAL_TYPE_MODULE);
     CHECK(!JS_IsException(v), "the importing module threw");
     JS_FreeValue(ctx, v);
@@ -4640,6 +4719,7 @@ int main(void)
 {
     /* the deep recursions run on a thread with a stack large enough for them */
     host_run_thread(test_call_depth, NULL);
+    host_run_thread(test_regvm_gen_full, NULL);
     host_run_thread(test_first_context_any_state, NULL);
     host_run_thread(test_call_depth_reentry, NULL);
     host_run_thread(test_call_depth_access, NULL);

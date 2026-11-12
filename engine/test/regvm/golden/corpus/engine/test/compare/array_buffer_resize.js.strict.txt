@@ -1,0 +1,45 @@
+result resize(0): 0
+result resize(1): 1
+result resize(8): 8
+result resize(15): 15
+result resize(16): 16
+result resize(17): throws RangeError
+result resize(2.9): 2
+result resize(0): 0
+result resize(-0.5): 0
+result resize(-1): throws RangeError
+result resize(NaN): 0
+result resize(Infinity): throws RangeError
+result resize(-Infinity): throws RangeError
+result resize(2147483648): throws RangeError
+result resize(4294967296): throws RangeError
+result resize(4294967304): throws RangeError
+result resize(9007199254740991): throws RangeError
+result resize(9007199254740992): throws RangeError
+result resize(9223372036854776000): throws RangeError
+result resize(18446744073709552000): throws RangeError
+result resize(18446744073709556000): throws RangeError
+result resize(36893488147419103000): throws RangeError
+result resize(1.1805916207174113e+21): throws RangeError
+result resize(1e+300): throws RangeError
+result resize("8"): 8
+result resize(""): 0
+result resize("x"): 0
+result resize(null): 0
+result resize(undefined): 0
+result resize(true): 1
+result resize([]): 0
+result resize([4]): 4
+result resize(object): 12
+result resize(3n): throws TypeError
+result resize(Symbol): throws TypeError
+result resize(): 0
+result max bigger: throws RangeError
+result max equal: 1048576
+result not resizable: throws TypeError
+result detached: throws TypeError
+result length tracking: 12
+result order: valueOf,TypeError
+mem-end obj=202 atom=557 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
+mem-gc obj=202 atom=557 shape=126 prop=974 jsfunc=3 cfunc=131 array=5 fast_array=5 elements=78 binary=0
+--- status exit 0

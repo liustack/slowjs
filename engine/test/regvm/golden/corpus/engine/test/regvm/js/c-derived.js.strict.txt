@@ -1,0 +1,78 @@
+result case 0: 8,1,B,16
+result case 1: undefined,Bd,true
+result case 2: 10,11,Bb
+result case 3: true,Bdd
+result case 4: 5,Bf,2
+result case 5: undefined,Bfd
+result case 6: 3,1,Bret
+result case 7: 4,4
+result case 8: true,Bnt
+result case 9: 2,true
+result case 10: 1,true
+result case 11: 9,1,Bbound
+result case 12: 4,4,4
+result throwing 0: TypeError: derived class constructor must return an object or undefined
+result throwing 1: TypeError: derived class constructor must return an object or undefined
+result throwing 2: ReferenceError: this is not initialized
+result throwing 3: ReferenceError: 'this' can be initialized only once
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: Error: after 1
+result throwing 6: Error: parent
+result throwing 7: TypeError: class constructors must be invoked with 'new'
+result throwing 8: TypeError: class constructors must be invoked with 'new'
+result throwing 9: ReferenceError: this is not initialized
+result case 0: 8,1,B,16
+result case 1: undefined,Bd,true
+result case 2: 10,11,Bb
+result case 3: true,Bdd
+result case 4: 5,Bf,2
+result case 5: undefined,Bfd
+result case 6: 3,1,Bret
+result case 7: 4,4
+result case 8: true,Bnt
+result case 9: 2,true
+result case 10: 1,true
+result case 11: 9,1,Bbound
+result case 12: 4,4,4
+result throwing 0: TypeError: derived class constructor must return an object or undefined
+result throwing 1: TypeError: derived class constructor must return an object or undefined
+result throwing 2: ReferenceError: this is not initialized
+result throwing 3: ReferenceError: 'this' can be initialized only once
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: Error: before 2
+result throwing 6: Error: parent
+result throwing 7: TypeError: class constructors must be invoked with 'new'
+result throwing 8: TypeError: class constructors must be invoked with 'new'
+result throwing 9: ReferenceError: this is not initialized
+result case 0: 8,1,B,16
+result case 1: undefined,Bd,true
+result case 2: 10,11,Bb
+result case 3: true,Bdd
+result case 4: 5,Bf,2
+result case 5: undefined,Bfd
+result case 6: 3,1,Bret
+result case 7: 4,4
+result case 8: true,Bnt
+result case 9: 2,true
+result case 10: 1,true
+result case 11: 9,1,Bbound
+result case 12: 4,4,4
+result throwing 0: TypeError: derived class constructor must return an object or undefined
+result throwing 1: TypeError: derived class constructor must return an object or undefined
+result throwing 2: ReferenceError: this is not initialized
+result throwing 3: ReferenceError: 'this' can be initialized only once
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: Error: before 3
+result throwing 6: Error: parent
+result throwing 7: TypeError: class constructors must be invoked with 'new'
+result throwing 8: TypeError: class constructors must be invoked with 'new'
+result throwing 9: ReferenceError: this is not initialized
+result reflect true Bnt 0
+result reflect default true 0
+result reflect true Bnt 2
+result reflect default true 1
+result reflect true Bnt 4
+result reflect default true 2
+mem-end obj=237 atom=581 shape=143 prop=1055 jsfunc=21 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=541 shape=121 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

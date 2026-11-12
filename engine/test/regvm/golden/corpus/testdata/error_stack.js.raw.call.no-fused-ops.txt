@@ -1,0 +1,562 @@
+result == nested
+result     at c (<eval>:10:32)
+result     at b (<eval>:9:16)
+result     at a (<eval>:8:16)
+result     at run (<eval>:11:19)
+result 
+result == Error() call
+result     at f (<eval>:12:40)
+result     at run (<eval>:12:64)
+result 
+result == native map
+result     at cb (<eval>:13:62)
+result     at map (native)
+result     at run (<eval>:13:29)
+result 
+result == native sort
+result     at cmp (<eval>:14:87)
+result     at sort (native)
+result     at <anonymous> (<eval>:14:56)
+result     at run (<eval>:14:120)
+result 
+result == eval
+result     at inEval (<input>:1:38)
+result     at <eval> (<input>:1:46)
+result     at run (<eval>:15:20)
+result 
+result == indirect eval
+result     at <eval> (<input>:1:10)
+result     at eval (native)
+result     at run (<eval>:16:34)
+result 
+result == new Function
+result     at anonymous (<input>:3:17)
+result     at run (<eval>:17:62)
+result 
+result == arrow
+result     at <anonymous> (<eval>:18:33)
+result     at run (<eval>:18:43)
+result 
+result == method
+result     at meth (<eval>:19:45)
+result     at run (<eval>:19:63)
+result 
+result == computed name
+result     at comp1 (<eval>:20:60)
+result     at run (<eval>:20:76)
+result 
+result == class ctor
+result     at K (<eval>:21:71)
+result     at run (<eval>:21:82)
+result 
+result == subclass
+result     at MyErr (<eval>:22:28)
+result     at run (<eval>:23:29)
+result 
+result == aggregate
+result     at run (<eval>:24:39)
+result 
+result == bound
+result     at bnd (<eval>:25:51)
+result     at run (<eval>:25:75)
+result 
+result == getter
+result     at getg (<eval>:26:90)
+result     at run (<eval>:26:101)
+result 
+result == proxy
+result     at trap (<eval>:27:72)
+result     at run (<eval>:27:83)
+result 
+result == tail
+result     at t2 (<eval>:28:73)
+result     at t1 (<eval>:28:33)
+result     at run (<eval>:28:88)
+result 
+result == json reviver
+result     at rev (<eval>:29:106)
+result     at parse (native)
+result     at <anonymous> (<eval>:29:56)
+result     at run (<eval>:29:139)
+result 
+result == replace cb
+result     at rcb (<eval>:30:91)
+result     at [Symbol.replace] (native)
+result     at replace (native)
+result     at <anonymous> (<eval>:30:55)
+result     at run (<eval>:30:125)
+result 
+result == TypeError engine
+result     at run (<eval>:31:11)
+result 
+result == TypeError msg
+result cannot read property 'x' of null
+result == ReferenceError
+result     at run (<eval>:32:7)
+result 
+result == thrown
+result     at thr (<eval>:33:45)
+result     at run (<eval>:33:59)
+result 
+result == SyntaxError eval
+result     at <input>:1:3
+result     at run (<eval>:34:11)
+result 
+result == SyntaxError props
+result ["<input>",1,3]
+result == SyntaxError Function
+result     at <input>:4:2
+result     at Function (native)
+result     at run (<eval>:35:19)
+result 
+result == deep
+result     at rec (<eval>:36:68)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at rec (<eval>:36:49)
+result     at run (<eval>:36:80)
+result 
+result == native TypeError
+result     at reduce (native)
+result     at run (<eval>:37:16)
+result 
+result == JSON SyntaxError
+result     at <input>:1:2
+result     at parse (native)
+result     at run (<eval>:38:17)
+result 
+result == RangeError native
+result     at Array (native)
+result     at run (<eval>:39:16)
+result 
+result == Symbol TypeError
+result     at run (<eval>:40:16)
+result 
+result == renamed after
+result     at renamed (<eval>:43:38)
+result     at run (<eval>:44:17)
+result 
+result == renamed before
+result     at changed (<eval>:43:38)
+result     at run (<eval>:47:33)
+result 
+result == deleted name
+result     at <anonymous> (<eval>:48:37)
+result     at run (<eval>:50:30)
+result 
+result == symbol name
+result     at <anonymous> (<eval>:51:38)
+result     at run (<eval>:53:30)
+result 
+result == number name
+result     at <anonymous> (<eval>:54:38)
+result     at run (<eval>:56:30)
+result 
+result == getter name
+result     at <anonymous> (<eval>:57:38)
+result     at run (<eval>:59:30)
+result 
+result == long name
+result     at xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy (<eval>:60:39)
+result     at run (<eval>:62:29)
+result 
+result == empty name
+result     at <anonymous> (<eval>:63:40)
+result     at run (<eval>:65:31)
+result 
+result == desc
+result {"value":"    at run (<eval>:68:18)\n","writable":true,"enumerable":false,"configurable":true}
+result == keys
+result []
+result == ownKeys
+result ["message","stack"]
+result == names
+result ["message","stack"]
+result == json
+result {}
+result == spread
+result []
+result == hasOwn
+result [true,true,true]
+result == forin
+result []
+result == assigned
+result custom
+result == defined
+result [7,"{\"stack\":7}",["stack"]]
+result == deleted
+result [null,false]
+result == frozen
+result [true,"    at run (<eval>:80:19)\n",{"value":"    at run (<eval>:80:19)\n","writable":false,"enumerable":false,"configurable":false}]
+result == isFrozen before
+result [false,false]
+result == sealed
+result {"value":"    at run (<eval>:81:19)\n","writable":true,"enumerable":false,"configurable":false}
+result == twice
+result true
+result == getter stack
+result g
+result == nonwritable
+result     at run (<eval>:84:19)
+result 
+result == assign returns
+result 5
+result == assign value
+result 5
+result == prevent
+result [true,"    at run (<eval>:86:20)\n"]
+result == entries
+result []
+result == values
+result {"message":{"value":"entries","writable":true,"enumerable":false,"configurable":true},"stack":{"value":"    at run (<eval>:87:20)\n","writable":true,"enumerable":false,"configurable":true}}
+result == inherited
+result [false,"    at run (<eval>:88:34)\n"]
+result == toString
+result Error: ts
+result == gone
+result     at gone (<input>:1:36)
+result     at <eval> (<input>:1:47)
+result     at run (<eval>:92:15)
+result 
+result == gone fn
+result     at inner (<input>:3:44)
+result     at anonymous (<input>:3:1)
+result     at run (<eval>:94:81)
+result 
+result == generator
+result     at gen (<eval>:99:43)
+result     at next (native)
+result     at run (<eval>:100:52)
+result 
+result == cycle
+result     at cyc (<eval>:113:40)
+result     at run (<eval>:113:116)
+result 
+result == many
+result 27
+result == limit
+result     at c (<eval>:10:32)
+result     at b (<eval>:9:16)
+result     at a (<eval>:8:16)
+result     at run (<eval>:126:18)
+result 
+result == rejected
+result     at run (<eval>:104:25)
+result 
+result == executor
+result     at exec (<eval>:105:52)
+result     at Promise (native)
+result     at run (<eval>:105:12)
+result 
+result == await rej
+result     at aw (<eval>:108:60)
+result     at run (<eval>:108:115)
+result 
+result == then throw
+result     at th (<eval>:106:59)
+result 
+result == then engine
+result     at th2 (<eval>:107:45)
+result 
+result == async
+result     at af (<eval>:101:51)
+mem-end obj=226 atom=714 shape=148 prop=1037 jsfunc=54 cfunc=156 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=221 atom=714 shape=143 prop=1029 jsfunc=54 cfunc=156 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1767,16 +1767,20 @@ int run_test_buf(ThreadLocalStorage *tls,
        test262 runs with the shape cache on */
     JS_SetShapeCache(ctx, 2048);
 
+    ret = -1;
     for (i = 0; i < ip->count; i++) {
         if (eval_file(ctx, harness, ip->array[i],
                       JS_EVAL_TYPE_GLOBAL)) {
-            fatal(1, "error including %s for %s", ip->array[i], filename);
+            ret = 1;
+            break;
         }
     }
 
-    ret = eval_buf(ctx, buf, buf_len, filename, TRUE, is_negative,
-                   error_type, outfile, eval_flags, is_async);
-    ret = (ret != 0);
+    if (ret < 0) {
+        ret = eval_buf(ctx, buf, buf_len, filename, TRUE, is_negative,
+                       error_type, outfile, eval_flags, is_async);
+        ret = (ret != 0);
+    }
 
     if (dump_memory) {
         update_stats(rt, filename);

@@ -30,3 +30,25 @@ Making an error no longer formats its `stack`. The engine records the frames (fu
 Release: v0.26.6.
 
 Recursing without end throws `RangeError: Maximum call stack size exceeded`, worded as in V8, which a script can catch, with the default settings. `SetMaxStackSize` sets how deep calls may nest: 5000 by default and 10000 at most (a React render of a page of tifa's example shop needs about 470). The parser and `JSON.parse` report nesting that is too deep with the same `RangeError`, as V8's parser does, and a regular expression nested too deep fails to compile with `SyntaxError: stack overflow`. How the depths are counted, and how deep each form nests, is in [c-engine.md](c-engine.md#depth-of-calls-and-of-c-recursion).
+
+## new with a spread says when its callee is not a constructor
+
+Release: Unreleased.
+
+`new C(...args)` on an object that is not a function, such as `{}`, an array or a proxy of an object, now throws `TypeError: not a constructor`, as `new C(a, b)` does and as Node 24 says. It threw `TypeError: not a function`. A function that is not a constructor, such as an arrow function or a method, already threw `not a constructor` with a spread, and a primitive throws `not a function` with a spread and without, as before.
+
+Why this is safe: `new` with a spread and `super(...args)` run `OP_apply`, which calls `js_function_apply` with magic 1. That first checked that the callee is a function, the check of a call, and then called `JS_CallConstructorInternal`. It now leaves the check to `JS_CallConstructorInternal`, which `new` without a spread calls too: it throws `not a constructor` for an object that is not one and `not a function` for a primitive. `Function.prototype.apply` (magic 0) and `Reflect.apply` (magic 2) keep the check.
+
+The change is in C (`engine/quickjs.c`, `js_function_apply`). `engine/test/compare/new_spread_not_ctor.js` makes `new` with and without a spread of objects, functions and primitives that are not constructors, and `super()` of a parent that is not one, and its file is what Node 24 prints. Three of its lines differ on the engine before the change.
+
+## Calls through call and bound functions leave no line in the stack
+
+Release: Unreleased.
+
+When a function of the register loop calls `f.call(t, a, b)`, `call.call(f, t, a)`, `Function.prototype.call` bound to a function (`call.bind(f)`, as core-js uses it) or a bound function with no bound arguments, the loop now makes the call that it stands for: it calls `f` with that `this` and those arguments. The stack of an `Error` made in `f` has no `at call (native)` line for it, as in Node 24, and a recursion through `f.call` goes about twice as deep before it throws `RangeError` (4995 calls where it was 2497, with the default `SetMaxStackSize`). A chain of bound functions is taken apart in a loop with no recursion, so a chain of 100,000 works where it threw `RangeError`. `f.apply` and `Reflect.apply` keep their `at apply (native)` line, as before.
+
+These calls are made as before: a bound function with bound arguments, a proxy, a target that is not callable (the same `TypeError`), a target of another realm, `new`, and the calls that a built-in makes, such as `Array.prototype.map` calling its callback.
+
+Why this is safe: `Function.prototype.call` calls its `this` with its first argument as `this` and the rest as arguments, and a bound function with no bound arguments calls its target with its bound `this` and the arguments it gets. The loop does the same, after the same checks: that `call` is the `Function.prototype.call` of the realm, and that the target is a function of bytecode of the same realm, a plain C function or another such call. The `new.target` of the call stays `undefined`. The loop reads the interrupt flag at each step of a chain, so `Interrupt` and the eval timeout stop a long one.
+
+The change is in C (`engine/regvm-ops-basic.h`, `rv_unwrap_call` and the call opcodes). `engine/test/regvm/js/c-unwrap.js` makes each of these calls, and each that is left as it was, with their results, `new.target` and stacks, `engine/test/regvm/js/e-unwrap-interrupt.js` stops a chain of 100,000 bound functions while it is taken apart, and the golden of `engine/test/regvm/corpus/depth.js` has the new depth. How deep each form of call nests is in [c-engine.md](c-engine.md#depth-of-calls-and-of-c-recursion).

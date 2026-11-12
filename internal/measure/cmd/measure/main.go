@@ -113,7 +113,7 @@ func benchBuild(ctx context.Context, args []string) error {
 	fs.BoolVar(&o.Test, "test", false, "build the test binary of the package (go test -c)")
 	fs.StringVar(&o.Tags, "tags", "", "build tags, if any")
 	fs.StringVar(&o.PGO, "pgo", "off", "the -pgo flag")
-	fs.StringVar(&o.Front, "front", "JS_CallInternal", "the function whose body moves")
+	fs.StringVar(&o.Front, "front", "JS_RegvmRun", "the function whose body moves")
 	fs.StringVar(&o.Out, "out", "", "folder of the binaries (side@shift.front or side@shift.front.shift2)")
 	xformBin := fs.String("xform", "", "a built internal/goasm/cmd/xform to use (default: build the one of -tree)")
 	if err := fs.Parse(args); err != nil {
@@ -213,7 +213,7 @@ func benchCG(ctx context.Context, args []string) error {
 	fs.StringVar(&o.Toggle, "toggle", "", "collect only inside this function (with -small 0, one run per binary that counts -big renders there). Callgrind loses part of the count when Go code inside moves to another stack or thread, so a Go program marks its window with -dumps")
 	fs.BoolVar(&o.Sim, "sim", false, "simulate the branch predictor and the caches")
 	fs.BoolVar(&o.Dumps, "dumps", false, "with -small 0: the program zeroes the counts and dumps them around the window itself (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)")
-	fs.StringVar(&o.Interp, "interp", "JS_CallInternal_block", "the interpreter, reported on its own")
+	fs.StringVar(&o.Interp, "interp", "JS_RegvmRun_block", "the interpreter, reported on its own")
 	fs.StringVar(&o.ValgrindRoot, "valgrind-root", "", "folder with usr/bin/valgrind, when it is not installed")
 	fs.StringVar(&o.Out, "out", "", "folder for the callgrind files")
 	if err := fs.Parse(args); err != nil {
@@ -313,17 +313,12 @@ func benchJudge(args []string) error {
 
 func benchAddrs(args []string) error {
 	fs := newFlags("bench addrs")
-	fn := fs.String("front", "JS_CallInternal_block", "the interpreter function")
-	opcodes := fs.String("opcodes", "engine/quickjs-opcode.h", "the opcode list, to name the handlers")
+	fn := fs.String("front", "JS_RegvmRun_block", "the interpreter function")
+	engine := fs.String("engine", "engine", "the C engine folder, whose instruction list names the handlers")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	h, err := os.Open(*opcodes)
-	if err != nil {
-		return err
-	}
-	defer h.Close()
-	names, err := bench.OpcodeNames(h)
+	names, err := bench.OpcodeNames(*engine)
 	if err != nil {
 		return err
 	}

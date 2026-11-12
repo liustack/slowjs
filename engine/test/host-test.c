@@ -72,6 +72,11 @@ volatile int *JS_GetInterruptFlag(JSRuntime *rt)
 void JS_ReleaseStart(JSRuntime *rt, size_t keep) { (void)rt; (void)keep; }
 JSMemRange JS_ReleaseNextChunk(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)rt; return r; }
 JSMemRange JS_ReleaseNextRange(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)rt; return r; }
+#ifdef RV_INJECT
+/* the throw-injection test of the register loop (engine/regvm-inject.h) */
+void JS_RegvmInject(long n, unsigned site, long j) { (void)n; (void)site; (void)j; }
+const char *JS_RegvmInjectResult(void) { return "none 0 0"; }
+#endif
 
 /* host.c also holds the helpers of test262's runner, which use the engine's
    values: they are not called here. */

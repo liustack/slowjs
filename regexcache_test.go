@@ -65,27 +65,36 @@ func TestRegExpCache(t *testing.T) {
 
 // What the cache keeps counts against the memory limit: a VM that runs out
 // of memory with the cache full reports it as out of memory, uncatchable,
-// and is usable after the call, with the cache in use.
+// and is usable after the call, with the cache in use. The limit is lifted
+// before the array is let go: the VM is full to within one allocation, and
+// small blocks come in arenas of 4 KiB (docs/allocator.md), so even
+// `a = null` needs room the loop may not have left, by how its last
+// allocations fell. Each limit makes the loop run out at another
+// allocation, with 2.8 to 12 KiB left.
 func TestRegExpCacheMemoryLimit(t *testing.T) {
-	m := newTestVM(t)
-	if _, err := m.Eval(makeRegExps, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := m.Call("make", 300); err != nil {
-		t.Fatal(err)
-	}
-	m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + 256<<10)
-	_, err := m.Eval(`var a = []; for (;;) { try { a.push(new RegExp('z' + a.length + '+', 'g'), 'x'.repeat(64) + a.length) } catch (e) { a.push(e) } }`, EvalGlobal)
-	var e *Error
-	if !errors.As(err, &e) || !e.OutOfMemory || !e.Uncatchable {
-		t.Fatalf("got %v, want an uncatchable out of memory error", err)
-	}
-	if _, err := m.Eval(`a = null`, EvalGlobal); err != nil {
-		t.Fatal(err)
-	}
-	m.SetMemoryLimit(^uintptr(0))
-	if v, err := m.Call("make", 300); err != nil || fmt.Sprint(v) != "1200" {
-		t.Errorf("after: %v, %v", v, err)
+	for _, room := range []uintptr{200 << 10, 256 << 10, 260 << 10, 300 << 10} {
+		t.Run(fmt.Sprint(room>>10, "KiB"), func(t *testing.T) {
+			m := newTestVM(t)
+			if _, err := m.Eval(makeRegExps, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Call("make", 300); err != nil {
+				t.Fatal(err)
+			}
+			m.SetMemoryLimit(uintptr(vmMemory(m).Fmalloc_size) + room)
+			_, err := m.Eval(`var a = []; for (;;) { try { a.push(new RegExp('z' + a.length + '+', 'g'), 'x'.repeat(64) + a.length) } catch (e) { a.push(e) } }`, EvalGlobal)
+			var e *Error
+			if !errors.As(err, &e) || !e.OutOfMemory || !e.Uncatchable {
+				t.Fatalf("got %v, want an uncatchable out of memory error", err)
+			}
+			m.SetMemoryLimit(^uintptr(0))
+			if _, err := m.Eval(`a = null`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			if v, err := m.Call("make", 300); err != nil || fmt.Sprint(v) != "1200" {
+				t.Errorf("after: %v, %v", v, err)
+			}
+		})
 	}
 }
 

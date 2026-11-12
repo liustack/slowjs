@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -64,9 +65,11 @@ func TestCheckDispatchCopies(t *testing.T) {
 // each place a loop keeps the count. hot calls a function that ticks on every
 // run of its loop, cold only on a run that seldom comes, and nest has a loop
 // around one that runs in chunks. interp is an interpreter that counts its
-// bytecode as JS_CallInternal does: marks at its entry and in the handler of
+// bytecode as JS_RegvmRun does: marks at its entry and in the handler of
 // a jump back, and a dispatch, a computed goto through ops. One of its
-// handlers calls a function that ticks. plain has a computed goto too, with no
+// handlers calls a function that ticks. unwind has a mark outside an
+// interpreter, in a loop that keeps the count in a register, as the catch of
+// rv_unwind (engine/regvm-run.h) has. plain has a computed goto too, with no
 // marks.
 const pollIR = `declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)
 declare void @goasm_poll_entry(i32)
@@ -225,6 +228,26 @@ done:
   ret i64 %n
 }
 
+define void @unwind(i64 %n) {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
+  call void @ext(i64 %i)
+  %z = icmp eq i64 %i, 3
+  br i1 %z, label %catch, label %next
+catch:
+  call void @goasm_poll_count(i32 32)
+  call void @ext(i64 %n)
+  br label %next
+next:
+  %i1 = add i64 %i, 1
+  %c = icmp ult i64 %i1, %n
+  br i1 %c, label %loop, label %exit
+exit:
+  ret void
+}
+
 define i64 @plain(ptr %pc) {
 entry:
   br label %dispatch
@@ -303,7 +326,7 @@ func TestPassPolls(t *testing.T) {
 	}
 	for name, want := range map[string]bool{"ext": false, "sum": true, "short": false, "calls": true, "forever": true,
 		"hot": true, "cold": true, "nest": true, "copy": false, "copysmall": false, "goasm_chunked_memcpy": true, "interp": true,
-		"plain": true} {
+		"plain": true, "unwind": true} {
 		if got := polls(name); got != want {
 			t.Errorf("%s calls host_poll: %v, want %v", name, got, want)
 		}
@@ -324,7 +347,7 @@ func TestPassPolls(t *testing.T) {
 		t.Errorf("interp ticks 32 %d times, want 2 (its entry and its jump back):\n%s", n, funcs["interp"])
 	}
 	for name, want := range map[string][2]int{"sum": {0, 1}, "calls": {1, 0}, "hot": {0, 1}, "cold": {1, 0}, "nest": {2, 0},
-		"interp": {0, 2}, "plain": {1, 0}} {
+		"interp": {0, 2}, "plain": {1, 0}, "unwind": {2, 0}} {
 		if reg, mem := tickPlaces(funcs[name]); reg != want[0] || mem != want[1] {
 			t.Errorf("%s ticks %d times in a register and %d in memory, want %d and %d:\n%s", name, reg, mem, want[0], want[1], funcs[name])
 		}
@@ -386,91 +409,394 @@ func syncedAround(f, call string) bool {
 	return false
 }
 
-// interpreterJumps lists what breaks, in src (engine/quickjs.c), the rule of
-// JS_CallInternal that the poll pass relies on when it leaves the edges into
-// the interpreter's dispatch without a tick: the function counts at its
-// entry (poll_count_entry before it calls anything or sets pc, the checks
-// of js_call_checks included), and pc moves
-// only by a constant step forward (pc += N, *pc++), through JUMP_TO, which
-// counts a move that does not go forward, or through JUMP_COUNTED, which
-// always counts. pc is set from elsewhere only at the entry, to the start of
-// the bytecode or to where a generator stopped, and OP_nop counts.
-// check_polls (quickjs.c) bounds the instructions between two counts.
-func interpreterJumps(src string) []string {
-	start := strings.Index(src, "\nstatic JSValue JS_CallInternal(JSContext *caller_ctx,")
+// regvmRunText is the C of JS_RegvmRun: its body in engine/regvm-run.h, with
+// the handlers of each op file it includes (the RV_PART_RUN part of each
+// file regvm-areas.h names), comments, strings and line continuations out.
+func regvmRunText(read func(string) (string, error)) (string, error) {
+	run, err := read("regvm-run.h")
+	if err != nil {
+		return "", err
+	}
+	start := strings.Index(run, "\nstatic no_inline JSValue JS_RegvmRun(")
 	if start < 0 {
-		return []string{"no JS_CallInternal"}
+		return "", fmt.Errorf("no JS_RegvmRun in regvm-run.h")
 	}
-	end := strings.Index(src[start:], "\n}\n")
+	end := strings.Index(run[start:], "\n}\n")
 	if end < 0 {
-		return []string{"no end of JS_CallInternal"}
+		return "", fmt.Errorf("no end of JS_RegvmRun")
 	}
-	body := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(src[start:start+end], "")
-	body = regexp.MustCompile(`//[^\n]*`).ReplaceAllString(body, "")
-	body = regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`).ReplaceAllString(body, `""`)
-	body = strings.ReplaceAll(body, "\\\n", " ")
-	space := regexp.MustCompile(`\s+`)
-	var bad []string
-	macro := func(name, want string) {
-		m := regexp.MustCompile(`(?m)^#define ` + name + `\(to\)(.*)$`).FindStringSubmatch(body)
-		if m == nil || space.ReplaceAllString(strings.TrimSpace(m[1]), " ") != want {
-			bad = append(bad, name+" is not "+want)
+	body := run[start : start+end]
+	areas, err := read("regvm-areas.h")
+	if err != nil {
+		return "", err
+	}
+	var parts []string
+	for _, m := range regexp.MustCompile(`(?m)^#include "(regvm-ops-\w+\.h)"`).FindAllStringSubmatch(areas, -1) {
+		src, err := read(m[1])
+		if err != nil {
+			return "", err
+		}
+		part, ok := runPart(src)
+		if !ok {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	const at = "#define RV_PART RV_PART_RUN\n#include \"regvm-areas.h\"\n"
+	if !strings.Contains(body, at) {
+		return "", fmt.Errorf("JS_RegvmRun does not include the handlers of regvm-areas.h")
+	}
+	body = strings.Replace(body, at, strings.Join(parts, "\n"), 1)
+	// strings, characters and comments in one pass, so that a // or /* in a
+	// string does not start a comment
+	body = regexp.MustCompile(`(?s)"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|/\*.*?\*/|//[^\n]*`).ReplaceAllStringFunc(body, func(t string) string {
+		switch t[0] {
+		case '"':
+			return `""`
+		case '\'':
+			return t
+		}
+		return ""
+	})
+	return strings.ReplaceAll(body, "\\\n", " "), nil
+}
+
+// runPart is the RV_PART_RUN part of an op file: from its #elif to the
+// #elif or #endif of the same #if.
+func runPart(src string) (string, bool) {
+	ls := strings.Split(src, "\n")
+	in, depth := false, 0
+	var out []string
+	for _, l := range ls {
+		d := strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(d, "#if"):
+			depth++
+		case strings.HasPrefix(d, "#endif"):
+			depth--
+			if in && depth == 0 {
+				return strings.Join(out, "\n"), true
+			}
+		case depth == 1 && strings.HasPrefix(d, "#elif"):
+			if in {
+				return strings.Join(out, "\n"), true
+			}
+			in = d == "#elif RV_PART == RV_PART_RUN"
+			continue
+		}
+		if in {
+			out = append(out, l)
 		}
 	}
-	macro("JUMP_TO", "do { const uint8_t *to_ = (to); if (unlikely(to_ <= pc)) poll_count(POLL_WEIGHT); pc = to_; } while (0)")
-	macro("JUMP_COUNTED", "do { pc = (to); poll_count(POLL_WEIGHT); } while (0)")
+	return "", false
+}
+
+// regvmJumps lists what breaks, in body (regvmRunText), the rule of
+// JS_RegvmRun that the poll pass relies on when it leaves the edges into the
+// dispatch without a tick: the function counts at its entry
+// (poll_count_entry before it calls anything or sets pc), and between two
+// counts pc only goes forward. pc moves by a constant step forward (the
+// size of the instruction, *pc++, also as a macro parameter every
+// invocation gives as a literal, regvmMacroStep), to the end of the case
+// list of rv_CASES (regvmCasesEnd), by a jump of a signed offset off that
+// counts first when off goes back (if (off < 0) poll_count(POLL_WEIGHT)),
+// or at one of the places regvmMoves lists: a call, which RV_CALLOP and
+// NEW count before they move pc, a return, an unwinding to a catch, which
+// rv_unwind counts, a step back to name an instruction for the pcmap,
+// followed at once by goto rv_exception, and the step of RV_CALLOP back to
+// its own start once it has converted the callee, which counts again.
+func regvmJumps(body string) []string {
+	space := regexp.MustCompile(`\s+`)
+	var bad []string
 	entry := strings.Index(body, "\n    poll_count_entry(POLL_WEIGHT);\n")
-	for _, after := range []string{"js_call_checks(", "pc = b->byte_code_buf;", "pc = sf->cur_pc;"} {
+	for _, after := range []string{"js_call_checks(", "pc = rf->code;", "pc = rv_gen_enter("} {
 		if i := strings.Index(body, after); entry < 0 || i < 0 || i < entry {
 			bad = append(bad, "poll_count_entry does not come before "+after)
 		}
 	}
-	if m := regexp.MustCompile(`(?s)CASE\(OP_nop\):(.*?)BREAK;`).FindStringSubmatch(body); m == nil || !strings.Contains(m[1], "poll_count(POLL_WEIGHT);") {
-		bad = append(bad, "OP_nop does not count")
+	for _, label := range []string{"#define RV_CALLOP(", " rv_NEW:"} {
+		i := strings.Index(body, label)
+		if i < 0 || !strings.Contains(body[i:min(i+300, len(body))], "poll_count(POLL_WEIGHT);") {
+			bad = append(bad, label+" does not count before it moves pc")
+		}
 	}
-	allowed := map[string]bool{"pc = b->byte_code_buf;": true, "pc = sf->cur_pc;": true, "pc = to_;": true, "pc = (to);": true}
-	step := regexp.MustCompile(`^pc \+= \d+;$`)
-	for _, l := range strings.Split(body, "\n") {
-		for _, m := range regexp.MustCompile(`(?:^|[^\w.>])(pc\s*(?:[-+*/%&|^]|<<|>>)?=[^=][^;]*;?)`).FindAllStringSubmatch(l, -1) {
-			st := space.ReplaceAllString(strings.TrimSpace(m[1]), " ")
-			if !allowed[st] && !step.MatchString(st) {
-				bad = append(bad, "pc moves outside JUMP_TO and JUMP_COUNTED: "+strings.TrimSpace(l))
+	forward := regexp.MustCompile(`^pc \+= (?:\d+|\(len\)|ip\[0\]|2 \+ 7 \* ip\[1\]);$`)
+	macroStep := regexp.MustCompile(`^pc \+= \d+ \+ \((\w+)\);$`)
+	jump := regexp.MustCompile(`^pc (?:\+= (?:2 \+ )?off|= (?:ip \+ 3|c \+ 7) \+ off);$`)
+	counted := regexp.MustCompile(`if \(off < 0\) poll_count\(POLL_WEIGHT\);`)
+	// the handler around a move: from the label or macro before it to the
+	// RV_NEXT() after it
+	handler := func(at int) string {
+		from := strings.LastIndex(body[:at], "\n rv_")
+		if d := strings.LastIndex(body[:at], "#define "); d > from {
+			from = d
+		}
+		to := strings.Index(body[at:], "RV_NEXT()")
+		if from < 0 || to < 0 {
+			return ""
+		}
+		return space.ReplaceAllString(body[from:at+to], " ")
+	}
+	for _, m := range regexp.MustCompile(`(?:^|[^\w.>])(pc\s*(?:[-+*/%&|^]|<<|>>)?=[^=][^;]*;)`).FindAllStringSubmatchIndex(body, -1) {
+		st := space.ReplaceAllString(strings.TrimSpace(body[m[2]:m[3]]), " ")
+		switch {
+		case forward.MatchString(st), regvmMoves[st] == "set":
+		case macroStep.MatchString(st):
+			if why := regvmMacroStep(body, m[2], macroStep.FindStringSubmatch(st)[1]); why != "" {
+				bad = append(bad, why+": "+st)
 			}
+		case st == "pc = c + 7 * n;":
+			if why := regvmCasesEnd(body[:m[2]]); why != "" {
+				bad = append(bad, why+": "+st)
+			}
+		case jump.MatchString(st):
+			if !counted.MatchString(handler(m[2])) {
+				bad = append(bad, "a jump that does not count when it goes back: "+st)
+			}
+		case st == "pc -= (len) + 1;":
+			if !strings.Contains(handler(m[2]), "#define RV_CALLOP(") {
+				bad = append(bad, "a step back to the start of an instruction outside RV_CALLOP: "+st)
+			}
+		case regvmMoves[st] == "throw":
+			if rest := strings.TrimSpace(body[m[3]:]); !strings.HasPrefix(rest, "goto rv_exception;") {
+				bad = append(bad, "a step back of pc not followed by goto rv_exception: "+st)
+			}
+		default:
+			bad = append(bad, "pc moves outside the rule: "+st)
 		}
-		if regexp.MustCompile(`(?:^|[^\w.>*])pc\s*(?:\+\+|--)|(?:\+\+|--)\s*pc\b|&pc\b|\*pc--`).MatchString(l) {
-			bad = append(bad, "pc moves outside JUMP_TO and JUMP_COUNTED: "+strings.TrimSpace(l))
-		}
+	}
+	for _, m := range regexp.MustCompile(`(?:^|[^\w.>*])pc\s*(?:\+\+|--)|(?:\+\+|--)\s*pc\b|&pc\b|\*pc--`).FindAllString(body, -1) {
+		bad = append(bad, "pc moves outside the rule: "+strings.TrimSpace(m))
 	}
 	return bad
 }
 
-// TestInterpreterJumpsCount holds JS_CallInternal to interpreterJumps, and
-// checks that copies of it with one count taken out are caught: a jump by
-// hand, no entry mark, a JUMP_TO that does not count a jump to itself, and
-// an OP_nop that does not count.
-func TestInterpreterJumpsCount(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "engine", "quickjs.c"))
+// regvmMacroStep says what is wrong, or "", with a step pc += N + (p) at at in
+// body: it is a constant step forward when p is a parameter of the #define
+// the line is in and every invocation of that macro passes a decimal
+// literal for it (RV_JCMP's w, the width of its b operand).
+func regvmMacroStep(body string, at int, p string) string {
+	d := strings.LastIndex(body[:at], "#define ")
+	if d < 0 || strings.LastIndex(body[:at], "\n rv_") > d {
+		return "a step by a macro parameter outside a #define"
+	}
+	lines := strings.Split(body[d:at], "\n")
+	for _, l := range lines[:len(lines)-1] {
+		if !strings.HasSuffix(strings.TrimRight(l, " \t"), "\\") {
+			return "a step by a macro parameter outside its #define"
+		}
+	}
+	def := regexp.MustCompile(`^#define (\w+)\(([^)]*)\)`).FindStringSubmatch(body[d:])
+	if def == nil {
+		return "a step by a macro parameter in a #define with no parameters"
+	}
+	idx := -1
+	for i, q := range strings.Split(def[2], ",") {
+		if strings.TrimSpace(q) == p {
+			idx = i
+		}
+	}
+	if idx < 0 {
+		return "a step by (" + p + "), not a parameter of " + def[1]
+	}
+	literal := regexp.MustCompile(`^\d+$`)
+	uses := 0
+	for _, loc := range regexp.MustCompile(`\b`+def[1]+`\s*\(`).FindAllStringIndex(body, -1) {
+		if loc[0] == d+len("#define ") {
+			continue
+		}
+		args, ok := macroArgs(body[loc[1]:])
+		if !ok || idx >= len(args) {
+			return "an invocation of " + def[1] + " whose arguments cannot be read"
+		}
+		if a := strings.TrimSpace(args[idx]); !literal.MatchString(a) {
+			return "a step by (" + p + "), which an invocation of " + def[1] + " gives as " + a + ", not a decimal literal"
+		}
+		uses++
+	}
+	if uses == 0 {
+		return "a step by (" + p + ") in " + def[1] + ", which nothing invokes"
+	}
+	// another name given to the macro could invoke it with anything
+	named := len(regexp.MustCompile(`\b`+def[1]+`\b`).FindAllString(body, -1))
+	undef := len(regexp.MustCompile(`#undef `+def[1]+`\b`).FindAllString(body, -1))
+	if named != 1+uses+undef {
+		return def[1] + " named where it is not invoked"
+	}
+	return ""
+}
+
+// macroArgs splits the arguments of a macro invocation, s starting after its
+// opening parenthesis, at the commas outside parentheses and brackets.
+func macroArgs(s string) ([]string, bool) {
+	var args []string
+	depth, from := 0, 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(', '[':
+			depth++
+		case ']':
+			depth--
+		case ')':
+			if depth == 0 {
+				return append(args, s[from:i]), true
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				args = append(args, s[from:i])
+				from = i + 1
+			}
+		}
+	}
+	return nil, false
+}
+
+// regvmCasesEnd says what is wrong, or "", with pc = c + 7 * n, the end of
+// the case list of rv_CASES, where before is body up to that line: it is a
+// step forward when, in the handler, n is the byte ip[1] and is only masked
+// after, and c is declared once, as ip + 2, with c += tsize its only write
+// before the line, where tsize, the size of the table, is written only where
+// it is declared, as a constant of at most 255 plus sizeof(JSString *) and a
+// constant of at most 255 shifted by c[0] masked to at most 15, which stays
+// far from the top of an int. Writes through (name) count too.
+func regvmCasesEnd(before string) string {
+	from := strings.LastIndex(before, "\n rv_")
+	if from < 0 {
+		return "the end of the cases outside a handler"
+	}
+	h := before[from:]
+	// the writes of a name in h, with what follows the name, (name) too
+	writes := func(name string) (steps bool, ws []string) {
+		open, shut := `(?:\(\s*)*`, `(?:\s*\))*`
+		steps = regexp.MustCompile(`[^\w.>]` + open + name + shut + `\s*(?:\+\+|--)|(?:\+\+|--)\s*` + open + name + `\b`).MatchString(h)
+		for _, w := range regexp.MustCompile(`[^\w.>*]`+open+name+shut+`\s*((?:[-+*/%&|^]|<<|>>)?=[^=][^,;]*)[,;]`).FindAllStringSubmatch(h, -1) {
+			ws = append(ws, w[1])
+		}
+		return steps, ws
+	}
+	if len(regexp.MustCompile(`[^\w.>]n = ip\[1\][,;]`).FindAllString(h, -1)) != 1 {
+		return "the end of the cases with n not read once from the byte ip[1]"
+	}
+	steps, ws := writes("n")
+	if steps {
+		return "the end of the cases with n stepped"
+	}
+	for _, w := range ws {
+		if w != "= ip[1]" && !regexp.MustCompile(`^&= 0x[0-9a-fA-F]+$`).MatchString(w) {
+			return "the end of the cases with n written as n " + w
+		}
+	}
+	if !regexp.MustCompile(`const uint8_t \*c = ip \+ 2[,;]`).MatchString(h) ||
+		len(regexp.MustCompile(`[^\w.>]\*\s*\(*c\b`).FindAllString(h, -1)) != 1 {
+		return "the end of the cases with c not declared once, as ip + 2"
+	}
+	steps, ws = writes("c")
+	if steps {
+		return "the end of the cases with c stepped"
+	}
+	for _, w := range ws {
+		if w != "+= tsize" {
+			return "the end of the cases with c written as c " + w
+		}
+	}
+	steps, ws = writes("tsize")
+	if steps || len(ws) != 1 {
+		return "the end of the cases with tsize written after it is declared"
+	}
+	size := regexp.MustCompile(`[^\w.>*]int tsize = (\d+) \+ \(int\)\(\(sizeof\(JSString \*\) \+ (\d+)\) << \(c\[0\] & (\d+)\)\);`).FindStringSubmatch(h)
+	if size == nil {
+		return "the end of the cases with tsize not a constant shifted by c[0] masked"
+	}
+	for i, most := range []int{255, 255, 15} {
+		if v, err := strconv.Atoi(size[i+1]); err != nil || v > most {
+			return "the end of the cases with tsize made of " + size[i+1] + ", more than " + strconv.Itoa(most)
+		}
+	}
+	return ""
+}
+
+// regvmMoves are the moves of pc in JS_RegvmRun that are not a step forward
+// or a counted jump: set, a call into a function (counted by RV_CALLOP or
+// NEW before), a return to the caller's pc, a catch (counted by rv_unwind)
+// or the return of a finally block (counted by GORET), and throw, a step
+// back to name the instruction that throws, just before goto rv_exception.
+var regvmMoves = map[string]string{
+	"pc = rf->code;":                    "set",
+	"pc = ((RVHeader *)F)->rf->code;":   "set",
+	"pc = crf->code;":                   "set",
+	"pc = rv_gen_enter(ctx, gs, F, n);": "set",
+	"pc = h->retpc;":                    "set",
+	"pc = to;":                          "set",
+	"pc -= (own) + ((taken) ? 1 : 0);":  "throw",
+	"pc = c + 4;":                       "throw",
+	"pc = ip + 8;":                      "throw",
+	"pc = ip + 3;":                      "throw",
+	"pc = to - 1;":                      "throw",
+}
+
+// TestRegvmJumpsCount holds JS_RegvmRun to regvmJumps, and checks that
+// copies of it with one count taken out are caught: a jump back that does
+// not count, a step back by hand, a call that does not count, no entry
+// count, a step by a macro parameter that one invocation gives as no
+// literal, and an end of the cases of rv_CASES after n or c was moved or
+// with the size of its table unbounded.
+func TestRegvmJumpsCount(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "engine")
+	files := map[string]string{}
+	read := func(name string) (string, error) {
+		if s, ok := files[name]; ok {
+			return s, nil
+		}
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		files[name] = string(b)
+		return string(b), err
+	}
+	body, err := regvmRunText(read)
 	if err != nil {
 		t.Fatal(err)
 	}
-	src := string(b)
-	if bad := interpreterJumps(src); len(bad) > 0 {
-		t.Fatalf("JS_CallInternal:\n%s", strings.Join(bad, "\n"))
+	if bad := regvmJumps(body); len(bad) > 0 {
+		t.Fatalf("JS_RegvmRun:\n%s", strings.Join(bad, "\n"))
 	}
-	for _, c := range []struct{ from, to, want string }{
-		{"JUMP_TO(pc + (int32_t)get_u32(pc));", "pc += (int32_t)get_u32(pc);", "pc moves outside"},
-		{"JUMP_TO(pc + (int8_t)pc[0]);", "pc = pc + (int8_t)pc[0];", "pc moves outside"},
-		{"                JUMP_COUNTED(b->byte_code_buf + pos);", "                pc = b->byte_code_buf + pos;", "pc moves outside"},
-		{"\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
-		{"if (unlikely(to_ <= pc))", "if (unlikely(to_ < pc))", "JUMP_TO is not"},
-		{"            /* a poll the compiler put into a long run (insert_polls) */\n            poll_count(POLL_WEIGHT);", "", "OP_nop does not count"},
+	for _, c := range []struct{ file, from, to, want string }{
+		{"regvm-ops-basic.h", "        if (off < 0)\n            poll_count(POLL_WEIGHT);\n        pc += off;\n    }\n    RV_NEXT();", "        pc += off;\n    }\n    RV_NEXT();", "a jump that does not count"},
+		{"regvm-ops-wide.h", "        pc += off;", "        pc = pc + off;", "pc moves outside the rule"},
+		{"regvm-ops-ctor.h", " rv_NEW:\n    poll_count(POLL_WEIGHT);\n", " rv_NEW:\n", "rv_NEW: does not count"},
+		{"regvm-ops-basic.h", "    poll_count(POLL_WEIGHT);                                            \\\n    ip = pc + (len) - 2;", "    ip = pc + (len) - 2;", "RV_CALLOP( does not count"},
+		{"regvm-run.h", "\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
+		{"regvm-run.h", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            goto rv_exception;", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            RV_NEXT();", "not followed by goto rv_exception"},
+		{"regvm-ops-cmp.h", "->pvalue, 4, 1, 0, 2)", "->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
+		{"regvm-ops-cmp.h", "        int res, off, n = ip[1], st = -1;", "        int res, off, n = ip[1], st = -1;\n        n -= 3;", "with n written as n -= 3"},
+		{"regvm-ops-cmp.h", "        const uint8_t *c = ip + 2, *c0;", "        const uint8_t *c = ip + 2, *c0;\n        c -= 9;", "with c written as c -= 9"},
+		{"regvm-ops-cmp.h", "<< (c[0] & 15));", "<< c[0]);", "with tsize not a constant shifted by c[0] masked"},
+		{"regvm-ops-cmp.h", "        pc = c + 7 * n;", "        { const uint8_t *c = ip - 1024; pc = c + 7 * n; }", "with c not declared once"},
+		{"regvm-ops-cmp.h", "#undef RV_JCMP4\n", "#undef RV_JCMP4\n#define RV_ALIAS RV_JCMP\n", "RV_JCMP named where it is not invoked"},
+		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            ( n ) = -1024;", "with n written as n = -1024"},
+		{"regvm-ops-cmp.h", "            c += tsize;", "            (tsize) = -1024;\n            c += tsize;", "with tsize written after it is declared"},
+		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            (void)\"//\"; n = -1024;", "with n written as n = -1024"},
+		{"regvm-ops-cmp.h", "    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, 2)", "    RV_JCMP (rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
 	} {
-		if !strings.Contains(src, c.from) {
-			t.Fatalf("no %q in quickjs.c", c.from)
+		src, err := read(c.file)
+		if err != nil {
+			t.Fatal(err)
 		}
-		bad := interpreterJumps(strings.Replace(src, c.from, c.to, 1))
-		if !strings.Contains(strings.Join(bad, "\n"), c.want) {
-			t.Errorf("%q for %q: %v, want %q", c.to, c.from, bad, c.want)
+		if !strings.Contains(src, c.from) {
+			t.Fatalf("no %q in %s", c.from, c.file)
+		}
+		broken := func(name string) (string, error) {
+			s, err := read(name)
+			if name == c.file {
+				s = strings.Replace(s, c.from, c.to, 1)
+			}
+			return s, err
+		}
+		b, err := regvmRunText(broken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bad := regvmJumps(b); !strings.Contains(strings.Join(bad, "\n"), c.want) {
+			t.Errorf("%s, %q for %q: %v, want %q", c.file, c.to, c.from, bad, c.want)
 		}
 	}
 }

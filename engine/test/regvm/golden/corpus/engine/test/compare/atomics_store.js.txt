@@ -1,0 +1,16 @@
+result resized to 0 false: throws
+result detached false: throws
+result shrunk false: throws
+result ok false: 7 7
+result resized to 0 true: throws
+result detached true: throws
+result shrunk true: throws
+result ok true: 1267650600228229401496703205381 5
+result index too large: throws
+result index too large int: throws
+result bad value: throws
+result wide result: 1267650600228229401496703205379
+result memory after: 0
+mem-end obj=198 atom=563 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
+mem-gc obj=198 atom=563 shape=126 prop=985 jsfunc=9 cfunc=129 array=2 fast_array=2 elements=13 binary=0
+--- status exit 0

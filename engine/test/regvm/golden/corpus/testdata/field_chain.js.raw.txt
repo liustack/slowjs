@@ -1,0 +1,109 @@
+result string method: 101
+result string method get_field: "HELLO"
+result string length: 5
+result string missing: undefined
+result rope method: 98
+result rope slice: "aabb"
+result rope missing: undefined
+result int method: "101001"
+result float method: "1.3"
+result NaN method: "NaN"
+result minus zero: "0"
+result int missing: undefined
+result float missing: undefined
+result number constructor: true
+result string constructor: true
+result string __proto__: true
+result number __proto__: true
+result string valueOf: "hello"
+result string hasOwnProperty: "true,false"
+result number toString radix: "ff"
+result string NaN key: undefined
+result string Infinity key: undefined
+result bool method: "true"
+result bigint method: "101"
+result symbol description: "d"
+result null read: throws TypeError
+result undefined read: throws TypeError
+result null call: throws TypeError
+result string from Object.prototype: "op"
+result number from Object.prototype: "op"
+result array from Object.prototype: "op"
+result sloppy method this: "object"
+result strict method this: "string:hello"
+result rope strict method this: 607
+result sloppy getter: "object"
+result strict getter: "string:hello"
+result number strict getter: "number:41"
+result float strict getter: "number:1.25"
+result string getter on Object.prototype: "string"
+result number getter on Object.prototype: "number"
+result array getter on Object.prototype: "object"
+result string getter throws: throws RangeError
+result string getter throws on call: throws RangeError
+result string not a function: throws TypeError
+result shadowed method: "mine"
+result restored method: "h"
+result deleted method: "undefined"
+result method copied: "1.250"
+result method deleted: "undefined"
+result read-only read: "ro"
+result read-only sloppy write: "ro"
+result read-only strict write: throws TypeError
+result primitive strict write: throws TypeError
+result string through proxy: "proxied:hello"
+result rope through proxy: 608
+result string method through proxy: 104
+result string Object.prototype through proxy: "op"
+result proxy receivers: "string,string"
+result string through frozen prototype: "fk"
+result string past frozen prototype: "op"
+result string prototype back: "undefined,op"
+result array method: [2,4,6]
+result array method get_field: "function"
+result array length: 3
+result array missing: undefined
+result array symbol: true
+result array method added later: 3
+result array getter added later: 1
+result array Infinity: undefined
+result array Infinity on Object.prototype: "infinity"
+result array NaN on Object.prototype: "nan"
+result typed array Infinity: undefined
+result typed array NaN: undefined
+result typed array method: "1-2"
+result typed array missing: undefined
+result typed array from Object.prototype: "op"
+result string Infinity on Object.prototype: "infinity"
+result number NaN on Object.prototype: "nan"
+result frozen array method: "4+5"
+result frozen array missing: undefined
+result sealed array method: 1
+result sparse array method: [1,2,3]
+result sparse array length: 101
+result array with element accessor: "g0,2"
+result array own method: "own join"
+result array subclass method: 3
+result array with other prototype: "custom,undefined"
+result array through proxy: "array proxy:true,2"
+result arguments: "0,op,function"
+result strict arguments callee: throws TypeError
+result mapped arguments: "op,undefined"
+result String object method: "b"
+result String object length: 3
+result String object missing: undefined
+result String object getter: "object:obj"
+result function method: "function"
+result function name: "named"
+result number symbol key: "number symbol"
+result string iterator: "2,true"
+result string toStringTag: undefined
+result with String object: "y2"
+result with array: "1-22"
+result eval: "ABC7.0"
+result indirect eval: "c9"
+result new Function: "abab2"
+result after clean up: "undefined,undefined,undefined,undefined"
+mem-end obj=225 atom=552 shape=139 prop=1063 jsfunc=2 cfunc=157 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=222 atom=545 shape=137 prop=1057 jsfunc=0 cfunc=157 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

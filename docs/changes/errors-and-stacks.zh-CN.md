@@ -30,3 +30,25 @@ read_when:
 发布版本：v0.26.6。
 
 无限递归会抛出 `RangeError: Maximum call stack size exceeded`，措辞和 V8 一样，默认设置下脚本可以捕获它。`SetMaxStackSize` 设置调用最多嵌套多深：默认 5000，最大 10000（tifa 示例商店一个页面的 React 渲染需要约 470）。解析器和 `JSON.parse` 对嵌套过深也报同样的 `RangeError`，和 V8 的解析器一样，嵌套过深的正则表达式则编译失败，报 `SyntaxError: stack overflow`。深度怎么计算、每种形式能嵌套多深，见 [c-engine.md](c-engine.zh-CN.md#调用深度与-c-递归)。
+
+## 带展开参数的 new 会说出被调用的不是构造函数
+
+发布版本：Unreleased。
+
+对不是函数的对象做 `new C(...args)`，比如 `{}`、数组或对象的 proxy，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 24 说的一致。原来它抛 `TypeError: not a function`。不是构造函数的函数，比如箭头函数或方法，带展开参数时本来就抛 `not a constructor`，原始值不管带不带展开参数都抛 `not a function`，和原来一样。
+
+为什么安全：带展开参数的 `new` 和 `super(...args)` 走 `OP_apply`，它以 magic 1 调用 `js_function_apply`。这个函数原来先检查被调用的是不是函数，这是调用才做的检查，然后才调用 `JS_CallConstructorInternal`。现在它把检查留给 `JS_CallConstructorInternal`，不带展开参数的 `new` 调的也是它：不是构造函数的对象抛 `not a constructor`，原始值抛 `not a function`。`Function.prototype.apply`（magic 0）和 `Reflect.apply`（magic 2）保留这个检查。
+
+改动在 C 里（`engine/quickjs.c` 的 `js_function_apply`）。`engine/test/compare/new_spread_not_ctor.js` 对不是构造函数的对象、函数和原始值做带和不带展开参数的 `new`，还对不是构造函数的父类做 `super()`，它的结果文件就是 Node 24 打印的内容。在改动之前的引擎上，它有三行不一样。
+
+## 通过 call 和绑定函数的调用不在调用栈里多出一行
+
+版本：Unreleased。
+
+寄存器循环里的函数调用 `f.call(t, a, b)`、`call.call(f, t, a)`、绑定到某个函数的 `Function.prototype.call`（`call.bind(f)`，core-js 就这样用）或没有绑定参数的绑定函数时，循环现在直接做它所代表的那次调用：用那个 `this` 和那些参数调用 `f`。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在抛出 `RangeError` 之前能深约一倍（默认 `SetMaxStackSize` 下 4995 层，原来 2497 层）。一串绑定函数在循环里逐个拆开，不递归，所以 100,000 个的链能跑，原来抛 `RangeError`。`f.apply` 和 `Reflect.apply` 照旧保留 `at apply (native)` 一行。
+
+这些调用和原来一样做：带绑定参数的绑定函数、proxy、不能调用的目标（同样的 `TypeError`）、别的 realm 的目标、`new`，以及内置函数发出的调用，比如 `Array.prototype.map` 调用它的回调。
+
+为什么安全：`Function.prototype.call` 以第一个参数为 `this`、其余为参数调用它的 `this`，没有绑定参数的绑定函数以绑定的 `this` 和收到的参数调用它的目标。循环做的是同一件事，检查也一样：`call` 是本 realm 的 `Function.prototype.call`，目标是同一 realm 的字节码函数、普通 C 函数或又一个这样的调用。这次调用的 `new.target` 仍是 `undefined`。拆链时循环每一步都读中断标志，所以 `Interrupt` 和 eval 超时能停下很长的链。
+
+改动在 C 里（`engine/regvm-ops-basic.h` 的 `rv_unwrap_call` 和调用操作码）。`engine/test/regvm/js/c-unwrap.js` 做上面每一种调用，以及每一种保持原样的调用，记下结果、`new.target` 和调用栈。`engine/test/regvm/js/e-unwrap-interrupt.js` 在拆 100,000 个绑定函数的链时让它停下。`engine/test/regvm/corpus/depth.js` 的结果文件记着新的深度。每种调用能嵌套多深，见 [c-engine.md](c-engine.zh-CN.md#调用深度与-c-递归)。

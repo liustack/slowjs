@@ -33,6 +33,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The generated code reads its arguments and writes its results by name through FP, as Go promises, and no longer at an offset from SP that depends on how the assembler lays out a frame. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#arguments-and-results-by-name) |
 | `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
 | The string cases of a `switch` that end with any conditional jump take one opcode, and a chain of them runs in one dispatch. Bytecode version 8 | Unreleased | [c-engine.md](c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) |
+| A call of more than 32 arguments and a tagged template of more than 30 substitutions pass the arguments past the first 32 in an array, as a call with a spread does | Unreleased | [c-engine.md](c-engine.md#calls-of-more-than-32-arguments-pass-them-in-an-array) |
+| The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | Unreleased | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
+| A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | Unreleased | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
+| The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | Unreleased | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
 
 ## Commits of upstream QuickJS
 
@@ -129,6 +133,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Error stacks formatted when first read | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.md#error-stacks-formatted-when-first-read) |
 | Endless recursion throws RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.md#endless-recursion-throws-rangeerror) |
+| new with a spread says when its callee is not a constructor | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor) |
+| Calls through call and bound functions leave no line in the stack | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack) |
 
 ## Time and Intl
 
@@ -164,6 +170,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Skip to where a regexp can match | v0.26.15 | [regexp.md](regexp.md#skip-to-where-a-regexp-can-match) |
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
+| Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | Unreleased | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
+| A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | Unreleased | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 
@@ -172,6 +180,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | Searches skip to where the string is | v0.27.3 | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
+| A symbol has a string of its own | Unreleased | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
 
 ## JSON
 
@@ -209,6 +218,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Objects of the built-in classes find the empty shape of their prototype | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
 | A shape is found by the shape it grew from | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
 | An object that dies alone is freed at once | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
+| A proxy whose defineProperty trap refuses a store throws in strict code | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
+| Object literals have the room of an empty object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
+| A for in loop asks a shape once whether it lists its keys | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 
 ## Memory
 

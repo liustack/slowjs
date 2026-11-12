@@ -1,0 +1,51 @@
+result call 7:0:1
+result ucall 7:0:2
+result callcall 7:0:3
+result chain 7:0:4
+result deep 7:0:5
+result noargs u:undefined:undefined u true 0:
+result onearg 7:undefined:undefined 0:
+result more 7:0:2 5:0,2,3,4,5 1:0
+result cfun 9 -1
+result gen 7
+result newtarget uuu object true
+result stacks 0     at st (<eval>:25:46) |     at stacks (<eval>:60:18) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 0     at st (<eval>:25:46) |     at stacks (<eval>:60:34) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 0     at st (<eval>:25:46) |     at stacks (<eval>:60:52) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 0     at st (<eval>:25:46) |     at stacks (<eval>:60:61) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 0     at st (<eval>:25:46) |     at stacks (<eval>:60:75) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) | 
+result kept 7:1:0 # 7:0:5 # 7:0:6 # 3     at st (<eval>:25:46) |     at call (native) |     at kept (<eval>:63:81) |     at <anonymous> (<eval>:99:19) |     at <eval> (<eval>:107:3) # 7:0:8
+result thrown     at thr (<eval>:26:30) |     at thrown (<eval>:68:17) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  #     at thr (<eval>:26:30) |     at thrown (<eval>:69:14) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  # SyntaxError     at <input>:1:2 |     at parse (native) |     at thrown (<eval>:70:18) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3)
+result notcallable TypeError: not a function # TypeError: not a function # TypeError: not a function # TypeError: class constructors must be invoked with 'new' # TypeError: class constructors must be invoked with 'new'
+result realms 0,true # 0,true # 7:0:1 # 0,true #     at st (<realm>:1:164) |     at call (native) |     at realms (<eval>:84:47) |     at <anonymous> (<eval>:102:23)
+result call 7:1:2
+result ucall 7:1:3
+result callcall 7:1:3
+result chain 7:1:4
+result deep 7:1:5
+result noargs u:undefined:undefined u true 0:
+result onearg 7:undefined:undefined 0:
+result more 7:1:2 5:1,2,3,4,5 1:1
+result cfun 9 -1
+result gen 8
+result newtarget uuu object true
+result stacks 1     at st (<eval>:25:46) |     at stacks (<eval>:60:18) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 1     at st (<eval>:25:46) |     at stacks (<eval>:60:34) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 1     at st (<eval>:25:46) |     at stacks (<eval>:60:52) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 1     at st (<eval>:25:46) |     at stacks (<eval>:60:61) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 1     at st (<eval>:25:46) |     at stacks (<eval>:60:75) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) | 
+result kept 7:1:1 # 7:1:5 # 7:1:6 # 3     at st (<eval>:25:46) |     at call (native) |     at kept (<eval>:63:81) |     at <anonymous> (<eval>:99:19) |     at <eval> (<eval>:107:3) # 7:1:8
+result thrown     at thr (<eval>:26:30) |     at thrown (<eval>:68:17) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  #     at thr (<eval>:26:30) |     at thrown (<eval>:69:14) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  # SyntaxError     at <input>:1:2 |     at parse (native) |     at thrown (<eval>:70:18) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3)
+result notcallable TypeError: not a function # TypeError: not a function # TypeError: not a function # TypeError: class constructors must be invoked with 'new' # TypeError: class constructors must be invoked with 'new'
+result realms 1,true # 1,true # 7:1:1 # 1,true #     at st (<realm>:1:164) |     at call (native) |     at realms (<eval>:84:47) |     at <anonymous> (<eval>:102:23)
+result call 7:2:3
+result ucall 7:2:4
+result callcall 7:2:3
+result chain 7:2:4
+result deep 7:2:5
+result noargs u:undefined:undefined u true 0:
+result onearg 7:undefined:undefined 0:
+result more 7:2:2 5:2,2,3,4,5 1:2
+result cfun 9 -1
+result gen 9
+result newtarget uuu object true
+result stacks 2     at st (<eval>:25:46) |     at stacks (<eval>:60:18) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 2     at st (<eval>:25:46) |     at stacks (<eval>:60:34) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 2     at st (<eval>:25:46) |     at stacks (<eval>:60:52) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 2     at st (<eval>:25:46) |     at stacks (<eval>:60:61) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) |  # 2     at st (<eval>:25:46) |     at stacks (<eval>:60:75) |     at <anonymous> (<eval>:98:23) |     at <eval> (<eval>:107:3) | 
+result kept 7:1:2 # 7:2:5 # 7:2:6 # 3     at st (<eval>:25:46) |     at call (native) |     at kept (<eval>:63:81) |     at <anonymous> (<eval>:99:19) |     at <eval> (<eval>:107:3) # 7:2:8
+result thrown     at thr (<eval>:26:30) |     at thrown (<eval>:68:17) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  #     at thr (<eval>:26:30) |     at thrown (<eval>:69:14) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  # SyntaxError     at <input>:1:2 |     at parse (native) |     at thrown (<eval>:70:18) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3)
+result notcallable TypeError: not a function # TypeError: not a function # TypeError: not a function # TypeError: class constructors must be invoked with 'new' # TypeError: class constructors must be invoked with 'new'
+result realms 2,true # 2,true # 7:2:1 # 2,true #     at st (<realm>:1:164) |     at call (native) |     at realms (<eval>:84:47) |     at <anonymous> (<eval>:102:23)
+mem-end obj=389 atom=592 shape=246 prop=1957 jsfunc=2 cfunc=260 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=198 atom=588 shape=126 prop=1010 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

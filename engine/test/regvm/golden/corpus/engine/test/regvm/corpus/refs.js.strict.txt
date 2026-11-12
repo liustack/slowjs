@@ -1,0 +1,16 @@
+result pass alive 0 held 0
+result drop alive 0 held 0
+result twice alive 0 held 0
+result field alive 0 held 0
+result keep alive 4 held 4
+result chain alive 0 held 0
+result extra alive 0 held 0
+result missing alive 0 held 0
+result method alive 0 held 0
+result throw alive 0 held 0
+result callback alive 0 held 0
+result late gone,gone,gone,gone
+result abc1 4
+mem-end obj=189 atom=544 shape=124 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=189 atom=544 shape=124 prop=945 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

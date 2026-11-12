@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -39,23 +40,47 @@ func TestBodyStartSkipsTheFrameSetUpAndTheNOPs(t *testing.T) {
 	}
 }
 
+// TestOpcodeNames reads the instructions of the register loop in the order of
+// their enum, from a small engine folder and from engine/, which has each of
+// HotOps.
 func TestOpcodeNames(t *testing.T) {
-	h := "FMT(none)\nDEF(invalid, 1, 0, 0, none)\nDEF(       push_i32, 5, 0, 1, i32)\n#if SHORT_OPCODES\nDEF(get_loc0, 1, 0, 1, none_loc)\ndef(temp, 1, 0, 0, none)\n"
-	names, err := OpcodeNames(strings.NewReader(h))
-	if err != nil || fmt.Sprint(names) != "[invalid push_i32 get_loc0]" {
+	dir := t.TempDir()
+	for name, src := range map[string]string{
+		"regvm-areas.h": "/* #include \"regvm-ops-x.h\" */\n#include \"regvm-ops-b.h\"\n#include \"regvm-ops-a.h\"\n",
+		"regvm-ops-b.h": "#if RV_PART == RV_PART_LIST\nRV_OP(MOV)     /* d s */\nRV_OP(GOTO) RV_OP(JT)\n#elif RV_PART == RV_PART_RUN\n RV_OP(NOT)\nRV_OP(NOTE)\n#endif\n",
+		"regvm-ops-a.h": "#if RV_PART == RV_PART_INFO\nRV_OP(INFO)\n#elif RV_PART == RV_PART_LIST\nRV_OP(CALL)\n#endif\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names, err := OpcodeNames(dir)
+	if err != nil || fmt.Sprint(names) != "[MOV GOTO JT CALL]" {
 		t.Errorf("%v %v", names, err)
+	}
+	names, err = OpcodeNames(filepath.Join("..", "..", "..", "engine"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names[0] != "MOV" || len(names) > 256 {
+		t.Errorf("%d instructions, the first %s", len(names), names[0])
+	}
+	for _, op := range HotOps {
+		if !slices.Contains(names, op) {
+			t.Errorf("%s of HotOps is no instruction of the register loop", op)
+		}
 	}
 }
 
 // formalLayout is the formal binary of all2.tsv, with the regexp matcher, the
 // engine functions between it and the interpreter, and one on each side.
 var formalLayout = Layout{
-	Func: 0x6f7e00, Body: 0x6f7e68, Size: 9000, Handlers: map[string]uint64{"get_loc0": 0x6f804d, "call": 0x6f8129},
+	Func: 0x6f7e00, Body: 0x6f7e68, Size: 9000, Handlers: map[string]uint64{"MOV": 0x6f804d, "CALL": 0x6f8129},
 	Matcher: 0x6f0000,
 	Funcs: map[string]uint64{
 		"first": 0x600000, "heap_alloc": 0x640020, "re_parse_error": 0x6ea0c0, "lre_exec_backtrack": 0x6f0000,
 		"js_malloc_rt": 0x6f4b20, "js_free_rt": 0x6f4e60, "JS_NewObjectFromShape": 0x6f6c80,
-		"JS_CallInternal_block": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
+		"JS_RegvmRun_block": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
 	},
 }
 
@@ -125,8 +150,8 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 		"short of shift":      {moved(p, 1600, 1600), p},
 		"interpreter lags":    {moved(p, 1664, 1600), p},
 		"front not there":     {moved(Position{1664, 0, 0}, 1664, 1664), p},
-		"handler moved":       {withHandler(moved(p, 1664, 1664), "call", 64), p},
-		"handler missing":     {withoutHandler(moved(p, 1664, 1664), "call"), p},
+		"handler moved":       {withHandler(moved(p, 1664, 1664), "CALL", 64), p},
+		"handler missing":     {withoutHandler(moved(p, 1664, 1664), "CALL"), p},
 		"before the matcher lagged": {func() Layout {
 			l := moved(Position{1376, 8, 0}, 1344, 1344)
 			l.Funcs["heap_alloc"] = formalLayout.Funcs["heap_alloc"] + 1344
@@ -167,7 +192,7 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 	}
 	// Nothing between the matcher and the interpreter to check is an error too.
 	empty := formalLayout
-	empty.Funcs = map[string]uint64{"first": formalLayout.Funcs["first"], "lre_exec_backtrack": formalLayout.Matcher, "JS_CallInternal_block": formalLayout.Func}
+	empty.Funcs = map[string]uint64{"first": formalLayout.Funcs["first"], "lre_exec_backtrack": formalLayout.Matcher, "JS_RegvmRun_block": formalLayout.Func}
 	if err := CheckLayout(empty, empty, Position{}, ""); err == nil || !strings.Contains(err.Error(), "between") {
 		t.Errorf("no function between: %v", err)
 	}

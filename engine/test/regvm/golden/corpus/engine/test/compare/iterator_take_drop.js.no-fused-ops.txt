@@ -1,0 +1,74 @@
+result take(0): 
+result drop(0): 1,2,3,4
+result take(1): 1
+result drop(1): 2,3,4
+result take(2): 1,2
+result drop(2): 3,4
+result take(5): 1,2,3,4
+result drop(5): 
+result take(2.5): 1,2
+result drop(2.5): 3,4
+result take(0): 
+result drop(0): 1,2,3,4
+result take(-0.5): 
+result drop(-0.5): 1,2,3,4
+result take(0.9): 
+result drop(0.9): 1,2,3,4
+result take(-1): throws RangeError
+result drop(-1): throws RangeError
+result take(-1.5): throws RangeError
+result drop(-1.5): throws RangeError
+result take(NaN): throws RangeError
+result drop(NaN): throws RangeError
+result take(Infinity): 1,2,3,4
+result drop(Infinity): 
+result take(-Infinity): throws RangeError
+result drop(-Infinity): throws RangeError
+result take(2147483648): 1,2,3,4
+result drop(2147483648): 
+result take(4294967296): 1,2,3,4
+result drop(4294967296): 
+result take(9007199254740991): 1,2,3,4
+result drop(9007199254740991): 
+result take("3"): 1,2,3
+result drop("3"): 4
+result take(" 2 "): 1,2
+result drop(" 2 "): 3,4
+result take(""): 
+result drop(""): 1,2,3,4
+result take("x"): throws RangeError
+result drop("x"): throws RangeError
+result take(null): 
+result drop(null): 1,2,3,4
+result take(undefined): throws RangeError
+result drop(undefined): throws RangeError
+result take(true): 1
+result drop(true): 2,3,4
+result take(false): 
+result drop(false): 1,2,3,4
+result take(10n): throws TypeError
+result drop(10n): throws TypeError
+result take(object): throws RangeError
+result drop(object): throws RangeError
+result take([]): 
+result drop([]): 1,2,3,4
+result take([2]): 1,2
+result drop([2]): 3,4
+result take(object): 1,2
+result drop(object): 3,4
+result take(Symbol): throws TypeError
+result drop(Symbol): throws TypeError
+result take closes on a bad limit: 2
+result ES2026 closes for a limit past 2**53-1: 66
+result ES2026 take(9007199254740992): throws RangeError
+result ES2026 drop(9007199254740992): throws RangeError
+result ES2026 take(9007199254740994): throws RangeError
+result ES2026 drop(9007199254740994): throws RangeError
+result ES2026 take(100000000000000000000): throws RangeError
+result ES2026 drop(100000000000000000000): throws RangeError
+result ES2026 take(1.1805916207174113e+21): throws RangeError
+result ES2026 drop(1.1805916207174113e+21): throws RangeError
+result limit conversion order: valueOf,return,RangeError
+mem-end obj=206 atom=558 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
+mem-gc obj=206 atom=558 shape=125 prop=980 jsfunc=3 cfunc=134 array=5 fast_array=5 elements=102 binary=0
+--- status exit 0

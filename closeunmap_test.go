@@ -34,9 +34,13 @@ func TestCloseUnmapRefusedThenRetried(t *testing.T) {
 	}
 	before := len(gohost.Leftovers())
 
-	refused := 0
+	// The chunk refused is the one that holds the runtime, which only the
+	// host unmaps after the engine is freed: the engine gives some chunks
+	// back itself while it frees the runtime, and a refusal of one of those
+	// is tried again by the same Close.
+	refused, rt := 0, m.rt
 	hostmem.SetFault(func(call string, addr, size uintptr) error {
-		if call == "unmap" && refused == 0 {
+		if call == "unmap" && addr <= rt && rt-addr < size && refused == 0 {
 			refused++
 			return errRefused
 		}
