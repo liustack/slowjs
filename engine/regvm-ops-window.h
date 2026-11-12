@@ -288,7 +288,7 @@ static no_inline int rv_w_apply(JSContext *ctx, JSValue *F, const uint8_t *ip)
     JSValue ret_val;
     RV_W_BEGIN
 #define js_function_apply(ctx, f, n, argv, magic)                       \
-    (RV_INJ_HIT(ctx) ? JS_EXCEPTION : js_function_apply(ctx, f, n, argv, magic))
+    (RV_INJ_HIT(ctx) ? JS_EXCEPTION : js_function_apply_in(ctx, f, n, argv, magic))
     OP_BODY_apply(ctx, sp, pc, ret_val, (void)0, exception)
 #undef js_function_apply
     RV_W_END

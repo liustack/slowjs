@@ -788,6 +788,16 @@ func TestRegvmFrame(t *testing.T) {
 	if rv <= 0 || entry <= 0 {
 		t.Errorf("JS_RegvmRun %d bytes, JS_CallInternal %d", rv, entry)
 	}
+	// 12, what a call of a C function from call, apply or a bound function
+	// counts as taken of the frame of JS_CallInternal it skips
+	// (js_call_c_hop): -1 would send those calls through JS_CallInternal
+	if hop := regvmStat(m, 12); hop < 0 || hop >= entry {
+		t.Errorf("js_call_c_hop counts %d bytes of the %d of JS_CallInternal", hop, entry)
+	}
+	directCCalls(t, m, false)
+	if hop := regvmStat(m, 12); hop != -1 {
+		t.Errorf("direct calls off: js_call_c_hop counts %d bytes, want -1", hop)
+	}
 }
 
 // regvmReact is TestRegvmRun's react: the React page of compare/engines

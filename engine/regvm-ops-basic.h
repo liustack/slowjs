@@ -600,6 +600,16 @@ static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
     return JS_ToBoolFree(ctx, rv_take(ctx, F, slot));
 }
 
+/* the length of a string or a rope, or -1 for any other value */
+static inline int rv_str_length(JSValueConst v)
+{
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING)
+        return JS_VALUE_GET_STRING(v)->len;
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE)
+        return JS_VALUE_GET_STRING_ROPE(v)->len;
+    return -1;
+}
+
 /* the slow side of get_field: an object operand that is a temp is freed */
 static no_inline int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   BOOL temp)
@@ -867,6 +877,16 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
             if (temp)                                                   \
                 JS_FreeValue(ctx, obj);                                 \
             RV_NEXT();                                                  \
+        }                                                               \
+        /* the length of a string, which has no shape to look in */     \
+        if (atom == JS_ATOM_length && !RV_INJ_ARMED) {                  \
+            int n_ = rv_str_length(obj);                                \
+            if (n_ >= 0) {                                              \
+                RV_PUTD(ip[0], JS_NewInt32(ctx, n_));                   \
+                if (temp)                                               \
+                    JS_FreeValue(ctx, obj);                             \
+                RV_NEXT();                                              \
+            }                                                           \
         }                                                               \
     label ## _slow:                                                     \
         RV_SYNC_TOP();                                                  \

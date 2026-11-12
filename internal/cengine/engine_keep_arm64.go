@@ -676,6 +676,7 @@ var goasmKeep = []any{
 	js_call_block,
 	js_call_bound_function_block,
 	js_call_c_function_block,
+	js_call_c_hop_block,
 	js_call_enter,
 	js_closure_block,
 	js_closure2_block,

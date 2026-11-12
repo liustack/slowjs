@@ -404,6 +404,32 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
     default: return tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED;
     }
 }
+
+/* two numbers (an int or a float each) as doubles, for a relational
+   compare, which then gives what js_relational_slow gives them: an int is
+   exact as a double, and a compare with NaN is false */
+static force_inline BOOL rv_num_pair(JSValueConst a, JSValueConst b,
+                                     double *d1, double *d2)
+{
+    uint32_t ta = JS_VALUE_GET_TAG(a), tb = JS_VALUE_GET_TAG(b);
+    if (!((ta == JS_TAG_INT || JS_TAG_IS_FLOAT64(ta)) &&
+          (tb == JS_TAG_INT || JS_TAG_IS_FLOAT64(tb))))
+        return FALSE;
+    *d1 = ta == JS_TAG_INT ? JS_VALUE_GET_INT(a) : JS_VALUE_GET_FLOAT64(a);
+    *d2 = tb == JS_TAG_INT ? JS_VALUE_GET_INT(b) : JS_VALUE_GET_FLOAT64(b);
+    return TRUE;
+}
+
+/* the relational compare rel (0 <, 1 <=, 2 >, 3 >=, as OP_lt to OP_gte) */
+static force_inline BOOL rv_rel(int rel, double d1, double d2)
+{
+    switch (rel) {
+    case 0: return d1 < d2;
+    case 1: return d1 <= d2;
+    case 2: return d1 > d2;
+    default: return d1 >= d2;
+    }
+}
 #elif RV_PART == RV_PART_RUN
     /* a compare into a bool: two ints here, the equalities that need no
        conversion (goasm_eq_fast, as QuickJS's interpreter), the rest in
@@ -418,6 +444,8 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
             RV_PUTD(ip[0], JS_NewBool(ctx, JS_VALUE_GET_INT(a) cop JS_VALUE_GET_INT(bv))); \
             RV_NEXT();                                                  \
         }                                                               \
+        if ((eqk) < 0)                                                  \
+            goto rv_cmp_other;                                          \
         if ((eqk) >= 0 && !RV_INJ_ARMED &&                              \
             (res = goasm_eq_fast(a, bv, (eqk) > 0)) >= 0) {             \
             if (rv_is_temp(F, (int8_t)ip[1]))                           \
@@ -460,6 +488,8 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
         int res;                                                        \
         if (likely(JS_VALUE_IS_BOTH_INT(a, bv)) && !RV_INJ_ARMED) {     \
             res = JS_VALUE_GET_INT(a) cop JS_VALUE_GET_INT(bv);         \
+        } else if ((eqk) < 0) {                                         \
+            goto rv_jcmp_other;                                         \
         } else if ((eqk) >= 0 && !RV_INJ_ARMED &&                       \
                    (res = goasm_eq_fast(a, bv, (eqk) > 0)) >= 0) {      \
             if (rv_is_temp(F, (int8_t)ip[0]))                           \
@@ -496,6 +526,49 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
     RV_JCMP4(SEQ, OP_strict_eq, ==, 1)
 #undef RV_JCMP4
 #undef RV_JCMP
+
+    /* the rest of the relational compares, shared by the eight into a bool
+       and by the sixteen jumps: two numbers here, as doubles, else
+       rv_binop_slow. Which one it is comes from the opcode byte again, as in
+       rv_arith_other */
+ rv_cmp_other:
+    n = ip[-1] - RV_LT;
+    {
+        JSValue a = RV_R(ip[1]), bv = (n & 1) ? RV_K(ip[2]) : RV_R(ip[2]);
+        double d1, d2;
+        if (!RV_INJ_ARMED && rv_num_pair(a, bv, &d1, &d2)) {
+            RV_PUTD(ip[0], JS_NewBool(ctx, rv_rel(n >> 1, d1, d2)));
+            RV_NEXT();
+        }
+        RV_SYNC_TOP();
+        if (rv_binop_slow(ctx, F, ip, OP_lt + (n >> 1), n & 1, TRUE) < 0)
+            goto rv_exception;
+    }
+    RV_NEXT();
+ rv_jcmp_other:
+    n = ip[-1] - RV_JLTF;
+    {
+        JSValue a = RV_R(ip[0]), bv = (n & 2) ? RV_K(ip[1]) : RV_R(ip[1]);
+        double d1, d2;
+        int res, jt = n & 1;
+        if (!RV_INJ_ARMED && rv_num_pair(a, bv, &d1, &d2)) {
+            res = rv_rel(n >> 2, d1, d2);
+        } else {
+            RV_SYNC_TOP();
+            res = rv_binop_slow(ctx, F, ip, OP_lt + (n >> 2), (n >> 1) & 1, FALSE);
+            if (res < 0)
+                goto rv_exception;
+            RV_JUMP_SLOW(res == jt, (int16_t)get_u16(ip + 2), 1);
+        }
+        RV_JUMP_POLL(res == jt, 1);
+        if (res == jt) {
+            int off = (int16_t)get_u16(ip + 2);
+            if (off < 0)
+                poll_count(POLL_WEIGHT);
+            pc += off;
+        }
+    }
+    RV_NEXT();
 
     /* the tests of one value: a temp operand is freed */
  rv_ISX:

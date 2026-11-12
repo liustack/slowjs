@@ -713,6 +713,7 @@ func js_c_function_mark(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func js_call_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_call_bound_function_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_call_c_function_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
+func js_call_c_hop_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_call_enter(a0 uintptr, a1 uintptr) uintptr
 func js_closure_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_closure2_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -3168,6 +3169,22 @@ func js_call_c_function(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, 
 	*(*uintptr)(packedSlot(a0 + 48)) = a7
 	*(*uintptr)(packedSlot(a0 + 56)) = a8
 	return js_call_c_function_block(a0+64, a0)
+}
+
+// js_call_c_hop stores its arguments in a block at the shadow pointer for
+// js_call_c_hop_block (gen.PackedGo).
+func js_call_c_hop(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr) {
+	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
+		panic("cengine: the block of js_call_c_hop ends past the shadow-stack region")
+	}
+	*(*uintptr)(packedSlot(a0 + 0)) = a1
+	*(*uintptr)(packedSlot(a0 + 8)) = a2
+	*(*uintptr)(packedSlot(a0 + 16)) = a3
+	*(*uintptr)(packedSlot(a0 + 24)) = a4
+	*(*uintptr)(packedSlot(a0 + 32)) = a5
+	*(*uintptr)(packedSlot(a0 + 40)) = a6
+	*(*uintptr)(packedSlot(a0 + 48)) = a7
+	return js_call_c_hop_block(a0+64, a0)
 }
 
 // js_closure stores its arguments in a block at the shadow pointer for

@@ -1458,7 +1458,8 @@ static void test_rv_far_locals(void)
    JS_CallInternal take before their checks, are measured: neither is 0, which
    is what a measure gives when the compiler inlines the call it measures. A
    call of a C function the register loop makes without JS_CallInternal
-   counts 6 as taken. */
+   counts 6 as taken. 12, the part of 6 that js_call_c_hop counts, is
+   0 or more and less than 6 while the direct calls are on. */
 static void test_call_frames_measured(void)
 {
     VM v = vm_new();
@@ -1466,13 +1467,61 @@ static void test_call_frames_measured(void)
 
     CHECK(rv > 0, "a frame of JS_RegvmRun takes %d bytes", rv);
     CHECK(entry > 0, "a frame of JS_CallInternal takes %d bytes", entry);
+    /* 12: what js_call_c_hop counts as taken of that frame, -1 with the
+       direct calls off, when every call goes through JS_CallInternal */
+    CHECK(JS_RegvmStat(v.ctx, 12) >= 0 && JS_RegvmStat(v.ctx, 12) < entry,
+          "js_call_c_hop counts %d bytes of %d", JS_RegvmStat(v.ctx, 12), entry);
+    CHECK(JS_SetDirectCCalls(v.ctx, 0) == 0 && JS_RegvmStat(v.ctx, 12) == -1,
+          "direct calls off: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
+    CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 && JS_RegvmStat(v.ctx, 12) >= 0,
+          "direct calls on again: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
     vm_free(&v);
 }
 
 /* Recursions that go through a C function the register loop calls itself
-   (js_call_c_direct), alone or under a getter or a Proxy trap, with frames
-   of 1 to 300 locals. */
-static const struct { const char *name, *body; } c_call_kinds[] = {
+   (js_call_c_direct), alone or under a getter or a Proxy trap, or that a C
+   function calls (js_call_fwd: call_call, apply_apply, bound_call, which
+   start in Reflect.apply so that the loop never makes the call of call or
+   of the bound function itself), with frames of 1 to 300 locals.
+
+   A kind with HOP_DEEPER has its C function called from a bound function
+   (js_call_bound_function), whose alloca makes a native build push, at each
+   call, the arguments that do not fit in registers below it: 16 bytes more
+   for the ten words of JS_CallInternal than for the seven of the call that
+   stands for it (js_call_c_hop). There a native build may go deeper when
+   the calls are direct, by a few levels in a hundred, never less deep. The
+   generated engine passes arguments in the frame of the callee, which
+   js_measure_call_frame measures, and TestCCallDepth requires the same
+   depth for these too.
+
+   Under AddressSanitizer, which aligns its stack objects to 32 bytes,
+   JS_RegvmRun, js_call_c_function and js_measure_call_frame set their stack
+   pointer down to a multiple of 32 bytes, so each of their frames is 16
+   bytes larger or not by where the frame above it ends, and a call made
+   below such a frame pushes the arguments of JS_CallInternal that do not
+   fit in registers. One measure of the frame a direct call skips then
+   cannot match what each level takes: with UBSan too, JS_CallInternal
+   takes 192 bytes, the measure finds 208, and a level through it takes
+   about 16 more than a direct one with its debt. So under AddressSanitizer
+   every kind may end a few levels in a hundred deeper directly, and a kind
+   with a hop (HOP or HOP_DEEPER), whose frame above js_call_c_function is
+   js_call_c_hop, may also end that much less deep. Which way a build goes
+   depends on its frames, and changes with them. Without a sanitizer no
+   frame is set down so, and the depths are the same. */
+enum { HOP = 1, HOP_DEEPER = 2 };
+
+#if defined(__SANITIZE_ADDRESS__)
+#define C_CALL_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define C_CALL_ASAN 1
+#endif
+#endif
+#ifndef C_CALL_ASAN
+#define C_CALL_ASAN 0
+#endif
+
+static const struct { const char *name, *body; int hop; } c_call_kinds[] = {
     { "call", "return f.call(null) + v0" },
     { "apply", "return f.apply(null, []) + v0" },
     { "reflect_apply", "return Reflect.apply(f, null, []) + v0" },
@@ -1482,6 +1531,9 @@ static const struct { const char *name, *body; } c_call_kinds[] = {
     { "getter", "return o.x + v0" },
     { "proxy_get", "return p.x + v0" },
     { "tail_apply", "return apply(f, null, [])" },
+    { "call_call", "return apply(call, f, [null]) + v0", HOP },
+    { "apply_apply", "return apply(apply, null, [f, null, []]) + v0", HOP },
+    { "bound_call", "return apply(ucall, null, [f, null]) + v0", HOP_DEEPER },
 };
 
 typedef struct {
@@ -1503,7 +1555,8 @@ static int c_call_run(void *arg)
     for (int i = 1; i < r->locals; i++)
         n += snprintf(vars + n, sizeof(vars) - n, ", v%d = %d", i, i);
     snprintf(src, sizeof(src),
-             "(() => { const apply = Reflect.apply; let reached = 0;\n"
+             "(() => { const apply = Reflect.apply, call = Function.prototype.call;\n"
+             "  const ucall = call.bind(call); let reached = 0;\n"
              "  const o = { get x() { return apply(f, null, []) } };\n"
              "  const p = new Proxy({}, { get() { return [1].map(f)[0] } });\n"
              "  function f() { %s; reached++; %s }\n"
@@ -1524,13 +1577,42 @@ static void *c_call_thread(void *arg)
     return NULL;
 }
 
+/* c_call_same: TRUE when the run directly ended as the run through
+   JS_CallInternal, or, with the same error, at most 2 in 100 levels deeper
+   for a kind with HOP_DEEPER, and under AddressSanitizer for every kind,
+   or that much less deep for a kind with a hop under AddressSanitizer
+   (c_call_kinds) */
+static int c_call_same(int k, const char *through, const char *direct)
+{
+    const char *a, *b;
+    int n, m;
+
+    if (!through || !direct)
+        return 0;
+    if (strcmp(through, direct) == 0)
+        return 1;
+    a = strchr(through, ' ');
+    b = strchr(direct, ' ');
+    n = atoi(through);
+    m = atoi(direct);
+    if (!a || !b || strcmp(a, b) != 0)
+        return 0;
+#if C_CALL_ASAN
+    if (m > n)
+        return m - n <= n / 50;
+    return c_call_kinds[k].hop && n - m <= n / 50;
+#endif
+    return c_call_kinds[k].hop == HOP_DEEPER && m > n && m - n <= n / 50;
+}
+
 /* Every recursion of c_call_kinds ends in a RangeError, never past the end
    of the stack, on the main thread (8 MiB, the smallest stack the tests run
    the engine on) and on a thread of 1 MiB, where the stack ends it before
    the call depth. And it ends at the same depth whether the register loop
    calls the C functions itself or through JS_CallInternal: a direct call
    counts the frame of JS_CallInternal it skips as taken (stack_debt), so a
-   measure of that frame of 0 would let it go deeper. */
+   measure of that frame of 0 would let it go deeper. A kind with a hop may
+   end a little apart directly, as c_call_kinds says. */
 static void test_c_call_recursions(void)
 {
     static const int locals[] = { 1, 100, 300 };
@@ -1558,7 +1640,7 @@ static void test_c_call_recursions(void)
                           stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l], d,
                           r[d].out ? r[d].out : "(exception)");
                 }
-                CHECK(r[0].out && r[1].out && strcmp(r[0].out, r[1].out) == 0,
+                CHECK(c_call_same(k, r[0].out, r[1].out),
                       "%s, %s, %d locals: through JS_CallInternal %s, direct %s",
                       stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l],
                       r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?");
@@ -1566,6 +1648,117 @@ static void test_c_call_recursions(void)
                 free(r[1].out);
             }
         }
+    }
+}
+
+/* hop_reads returns how many times a call of fn from C (JS_Call) reads the
+   flag that stops the engine, and its result in *ok (FALSE on an exception,
+   which it takes). */
+static long hop_reads(JSContext *ctx, JSValueConst fn, JSValueConst this_obj,
+                      int argc, JSValueConst *argv, BOOL *ok)
+{
+    long before = host_poll_reads;
+    JSValue r = JS_Call(ctx, fn, this_obj, argc, argv);
+
+    before = host_poll_reads - before;
+    *ok = !JS_IsException(r);
+    if (!*ok)
+        free(exception_text(ctx));
+    JS_FreeValue(ctx, r);
+    return before;
+}
+
+/* hold_uncatchable leaves an uncatchable exception pending and returns, as
+   a host function should not: the next call must not run. */
+static JSValue hold_uncatchable(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    JS_ThrowInternalError(ctx, "held");
+    JS_SetUncatchableException(ctx, TRUE);
+    return JS_UNDEFINED;
+}
+
+/* A call of a plain C function from C (JS_Call here, through
+   JS_CallInternal, then Reflect.apply's own call of push, in js_call_c_hop
+   when the calls are direct) reads the interrupt flag once and stops on an
+   interrupt or a pending uncatchable exception before the function runs:
+   one read for one hop, two for two, and push runs only when nothing stops
+   it. */
+static void test_c_call_hop_checks(void)
+{
+    for (int d = 0; d < 2; d++) {
+        VM v = vm_new();
+        JSValue push, apply, a, argv[3];
+        BOOL ok;
+        long n;
+
+        CHECK(JS_SetDirectCCalls(v.ctx, d) == 0, "JS_SetDirectCCalls refused");
+        CHECK((JS_RegvmStat(v.ctx, 12) >= 0) == d, "direct %d: the hop is %s", d,
+              d ? "off" : "on");
+        eval_ok(v.ctx, "var a = [], push = Array.prototype.push, apply = Reflect.apply, one = [1]");
+        push = global_prop(v.ctx, "push");
+        apply = global_prop(v.ctx, "apply");
+        a = global_prop(v.ctx, "a");
+        argv[0] = push;
+        argv[1] = a;
+        argv[2] = global_prop(v.ctx, "one");
+
+        n = hop_reads(v.ctx, push, a, 1, (JSValueConst *)&argv[2], &ok);
+        CHECK(ok && n == 1, "direct %d: one hop reads the flag %ld times (ok %d), want 1", d, n, ok);
+        n = hop_reads(v.ctx, apply, JS_UNDEFINED, 3, (JSValueConst *)argv, &ok);
+        CHECK(ok && n == 2, "direct %d: two hops read the flag %ld times (ok %d), want 2", d, n, ok);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push did not run twice", d);
+
+        /* stopped at the first hop, then at the second: push does not run */
+        *JS_GetInterruptFlag(v.rt) = 1;
+        hop_reads(v.ctx, push, a, 1, (JSValueConst *)&argv[2], &ok);
+        *JS_GetInterruptFlag(v.rt) = 0;
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(!ok, "direct %d: an interrupt did not stop the hop", d);
+        host_poll_stop_after(2);
+        hop_reads(v.ctx, apply, JS_UNDEFINED, 3, (JSValueConst *)argv, &ok);
+        host_poll_stop_after(0);
+        *JS_GetInterruptFlag(v.rt) = 0;
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(!ok, "direct %d: an interrupt at the second hop did not stop it", d);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran after an interrupt", d);
+
+        /* an uncatchable exception pending stops the hop too */
+        JS_ThrowInternalError(v.ctx, "held");
+        JS_SetUncatchableException(v.ctx, TRUE);
+        n = host_poll_reads;
+        {
+            JSValue r = JS_Call(v.ctx, push, a, 1, (JSValueConst *)&argv[2]);
+            CHECK(JS_IsException(r), "direct %d: a hop ran with an uncatchable exception pending", d);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(host_poll_reads - n == 1, "direct %d: %ld reads with an uncatchable exception pending, want 1",
+              d, host_poll_reads - n);
+        free(exception_text(v.ctx));
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran with an uncatchable exception pending", d);
+
+        /* and at the second hop: the getter of the list Reflect.apply reads
+           leaves one pending, before Reflect.apply calls push */
+        {
+            JSValue g = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, g, "hold", JS_NewCFunction(v.ctx, hold_uncatchable, "hold", 0));
+            JS_FreeValue(v.ctx, g);
+        }
+        {
+            char *t = eval_text(v.ctx, "apply(push, a, { length: 1, get 0() { hold(); return 3 } })");
+            CHECK(!t, "direct %d: the second hop ran with an uncatchable exception pending", d);
+            free(t);
+        }
+        free(exception_text(v.ctx));
+        JS_SetUncatchableException(v.ctx, FALSE);
+        CHECK(eval_is(v.ctx, "a.length", "2"), "direct %d: push ran after the getter left an uncatchable exception", d);
+
+        JS_FreeValue(v.ctx, push);
+        JS_FreeValue(v.ctx, apply);
+        JS_FreeValue(v.ctx, a);
+        JS_FreeValue(v.ctx, argv[2]);
+        vm_free(&v);
     }
 }
 
@@ -1750,6 +1943,7 @@ int main(void)
     test_rv_far_locals();
     test_call_frames_measured();
     test_c_call_recursions();
+    test_c_call_hop_checks();
     test_rv_frame_limits();
     test_rv_nesting_limits();
     if (failures) {

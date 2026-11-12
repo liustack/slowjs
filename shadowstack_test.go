@@ -232,26 +232,32 @@ func TestHasOwnCallDepth(t *testing.T) {
 // function, a tail call (test_tail_c_calls of engine/test/unit-white.c),
 // and abs calls one with no receiver on each level before going down. The
 // getter and the Proxy trap put a call of JavaScript from C between two
-// direct calls.
+// direct calls. call_call, apply_apply and bound_call have a C function call
+// another C function (js_call_fwd, js_call_c_hop), directly too: all three
+// start in Reflect.apply, so that the loop never makes the call of call or
+// of the bound function itself.
 var cCallKinds = map[string]string{
-	"call":       "return f.call(null) + v0",
-	"apply":      "return f.apply(null, []) + v0",
-	"map":        "return [1].map(f)[0] + v0",
-	"sort":       "[2, 1].sort(f); return v0",
-	"max":        "return Math.max(f(), v0)",
-	"abs":        "v0 = abs(-v0); return f() + v0",
-	"tail_map":   "return [1].map(f)",
-	"tail_apply": "return apply(f, null, [])",
-	"reflect":    "return Reflect.apply(f, null, []) + v0",
-	"getter":     "return o.x + v0",
-	"proxy_get":  "return p.x + v0",
+	"call":        "return f.call(null) + v0",
+	"apply":       "return f.apply(null, []) + v0",
+	"map":         "return [1].map(f)[0] + v0",
+	"sort":        "[2, 1].sort(f); return v0",
+	"max":         "return Math.max(f(), v0)",
+	"abs":         "v0 = abs(-v0); return f() + v0",
+	"tail_map":    "return [1].map(f)",
+	"tail_apply":  "return apply(f, null, [])",
+	"reflect":     "return Reflect.apply(f, null, []) + v0",
+	"getter":      "return o.x + v0",
+	"proxy_get":   "return p.x + v0",
+	"call_call":   "return apply(call, f, [null]) + v0",
+	"apply_apply": "return apply(apply, null, [f, null, []]) + v0",
+	"bound_call":  "return apply(ucall, null, [f, null]) + v0",
 }
 
 // cCallRun runs the recursion of kind with locals in m, at its depth limit,
 // and gives the depth it reached and the stack of the RangeError.
 func cCallRun(t *testing.T, m *VM, kind string, locals int) string {
 	t.Helper()
-	out, err := m.Eval(`(() => { const abs = Math.abs, apply = Reflect.apply; let reached = 0;
+	out, err := m.Eval(`(() => { const abs = Math.abs, apply = Reflect.apply, call = Function.prototype.call, ucall = call.bind(call); let reached = 0;
 		const o = { get x() { return apply(f, null, []) } }, p = new Proxy({}, { get() { return [1].map(f)[0] } });
 		function f() { `+frameOf(locals+1)+` reached++; `+cCallKinds[kind]+` }
 		let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError ' + e.stack : String(e) }

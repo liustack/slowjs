@@ -344,6 +344,16 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 检查：`TestCCallDepth`、`TestCCallDepthAfterExits`、`TestShadowStackAtDepth`、`TestHasOwnCallDepth`、`Interrupt` 和错误栈的测试，带 `unit` 和 `unit-white` 的 `compare.sh`，以及 58 个已知错误的 test262。
 
+### 由 call、apply 或绑定函数调用的 C 函数
+
+`Function.prototype.call` 和 `apply`、`Reflect.apply` 以及绑定函数在 C 里调用交给它们的函数。这个函数是普通 C 函数时，调用不再经过 `JS_CallInternal`，而是经过 `js_call_c_hop`：它按同样的顺序做同样的检查（轮询计数、中断标志、挂起的无法捕获的异常、一层调用深度），然后调用 `js_call_c_function`。它的帧比 `JS_CallInternal` 的小，函数运行期间它把那个帧剩下的部分算作已用（`rt->c_hop_debt`，由 `js_measure_call_frame` 和另一个帧一起量出），所以经过这类调用的递归在同样的深度结束。入口处就会抛错的调用交给 `JS_CallInternal`，抛出它原来抛的错误。core-js 调用它保存的方法就是这样做的（`call.bind(fn)`）：每调用一次 `fn`，就有两次从 C 调用 C 函数。每次渲染（在原生 C 树上计数，linux/arm64），tifa 商店的 store 页面进入 `JS_CallInternal` 36,456 次，原来是 118,718 次（其中 82,263 次调用走了新路径），工作台页面 9,273 次，原来 22,640 次，MUI 页面 1,925 次，原来 2,536 次，React 页面和以前一样 274 次。页面的 HTML 不变。
+
+只有这几个 C 函数经 `js_call_fwd` 调用，新路径在它里面。引擎其他地方用的 `js_call` 保持原样：它被内联进一百多个调用者，`js_call` 变大会改变 clang 往这些调用者里内联的东西（amd64 上 `JS_CallFree` 在 34 处改成了外部调用，arm64 上是 `js_invoke`），有些递归会更早结束。出于同样的原因，带展开的调用窗口（`rv_w_apply`）内联 `js_function_apply` 的函数体（`js_function_apply_in`）。llc 给出的其他每个函数的帧，在两个架构上都和原来一样。
+
+`JS_CallInternal` 为 C 函数、绑定函数或 proxy 进入时，`js_call_enter` 的检查改为内联（`js_call_checks_in`，计数在 `js_call_enter_in` 里），只有 `RangeError` 留在外面：每次这样进入少约 20 条指令，它的帧在 arm64 上仍是 96 字节，amd64 上仍是 112 字节。
+
+`JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，因此会把 `JS_RegvmRun`、`js_call_c_function` 和直接调用所跳过的帧的测量的栈指针往下调，这时经过 `JS_CallInternal` 的一层比直接的一层多用约 16 字节：在这种构建里 unit-api 允许每种调用直接时最多深 2%，经过 `js_call_c_hop` 的调用也可以浅同样多，普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
+
 ## 调用结束时跳过没有引用计数的值
 
 字节码函数的一次调用结束时，会释放它的局部变量和留在栈上的操作数（见[上面](#一次调用如何设置和释放它的值)）。它们多数没有引用计数可还：没有代码设置过的局部变量是 `undefined`，其余的，数字、布尔值和 `null` 与字符串、对象一样多。这个循环仍然一对一对地看它们，每对 15 条指令。它在循环体里调用一个函数，所以 LLVM 把指针、计数和轮询计数器在调用前后保存在栈上，每圈开头都读回来，没有释放任何东西的圈也一样。一个有 200 个局部变量、一个也没设置的函数，调用时比没有局部变量的函数多 2,314 条指令：每个局部变量 11.6 条，其中约 7.5 条是释放。

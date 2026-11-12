@@ -445,6 +445,11 @@ struct JSRuntime {
        stack ends where it did */
     long call_frame;
     long stack_debt;
+    /* what js_call_c_hop counts as taken of the frame of JS_CallInternal
+       it stands for, the rest of that frame after its own
+       (js_measure_call_frame), or -1 to call C functions from C through
+       JS_CallInternal (direct calls off, or a frame of its own larger) */
+    long c_hop_debt;
     /* TRUE: the compiler leaves the pairs of fuse_code apart, joins a
        typeof test only as it did before typeof_is, and keeps every check of
        the temporal dead zone (JS_SetFusedOps, for tests) */
@@ -1436,6 +1441,12 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
 static no_inline JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
                                          JSValueConst this_obj, JSValueConst new_target,
                                          int argc, JSValue *argv, int flags);
+/* not_tail_called: a tail call of it would leave the frame of its caller
+   before it runs, which JS_CallInternal's ten arguments never let a native
+   build do, and the stack would end deeper than through JS_CallInternal */
+static no_inline __attribute__((not_tail_called)) JSValue
+js_call_c_hop(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
+              int argc, JSValueConst *argv);
 static JSValue JS_CallConstructorInternal(JSContext *ctx,
                                           JSValueConst func_obj,
                                           JSValueConst new_target,
@@ -1447,6 +1458,9 @@ static JSValue JS_CallFree(JSContext *ctx, JSValue func_obj, JSValueConst this_o
    level (see js_api_enter) */
 static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
                        int argc, JSValueConst *argv);
+static force_inline JSValue js_call_fwd(JSContext *ctx, JSValueConst func_obj,
+                                        JSValueConst this_obj,
+                                        int argc, JSValueConst *argv);
 static JSValue js_call_constructor(JSContext *ctx, JSValueConst func_obj,
                                    int argc, JSValueConst *argv);
 static JSValue js_call_constructor2(JSContext *ctx, JSValueConst func_obj,
@@ -1466,6 +1480,10 @@ static JSValue JS_EvalObject(JSContext *ctx, JSValueConst this_obj,
 JSValue __attribute__((format(printf, 2, 3))) JS_ThrowInternalError(JSContext *ctx, const char *fmt, ...);
 static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int magic);
+static force_inline JSValue js_function_apply_in(JSContext *ctx, JSValueConst this_val,
+                                                 int argc, JSValueConst *argv, int magic);
+static force_inline JSValue js_function_apply_in(JSContext *ctx, JSValueConst this_val,
+                                                 int argc, JSValueConst *argv, int magic);
 static void js_array_finalizer(JSRuntime *rt, JSValue val);
 static void js_array_mark(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func);
 static void js_mapped_arguments_finalizer(JSRuntime *rt, JSValue val);
@@ -2858,6 +2876,43 @@ static inline void js_call_leave(JSRuntime *rt)
     rt->call_depth--;
 }
 
+/* A count written into a hot caller: inlined where the build optimizes, and
+   a call of its own at -O0, where engine/test/cycles.sh reads the call graph
+   and cuts a cycle only at a call of a count. */
+#ifdef __OPTIMIZE__
+#define count_inline static force_inline
+#else
+#define count_inline static inline
+#endif
+
+/* js_call_enter inlined, for the entry of JS_CallInternal
+   (js_call_checks_in): the same check and count, with only the RangeError
+   out of line. A count of cmd/cycles. */
+count_inline int js_call_enter_in(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+
+    if (unlikely(rt->call_depth >= rt->max_call_depth) || js_stack_short(rt, 0)) {
+        JS_ThrowStackOverflow(ctx);
+        return -1;
+    }
+    rt->call_depth++;
+    return 0;
+}
+
+/* The count of js_call_c_hop: a level of call depth, with the frame it
+   skips (debt) counted as taken in the check of the stack. FALSE, and
+   nothing counted, when the call would go past the depth or the stack: the
+   caller then sends it to JS_CallInternal, which throws. A count of
+   cmd/cycles. */
+count_inline BOOL js_call_hop_enter(JSRuntime *rt, long debt)
+{
+    if (unlikely(rt->call_depth >= rt->max_call_depth || js_stack_short(rt, debt)))
+        return FALSE;
+    rt->call_depth++;
+    return TRUE;
+}
+
 /* The internal depth bounds the recursions of C that make no call: the
    parser, JSON.parse and JSON.stringify, the parser of regexps, modules,
    reading and writing bytecode, Array.prototype.flat, the methods of a proxy
@@ -2974,6 +3029,7 @@ JSRuntime *JS_NewRuntime(uint32_t vm, uint64_t seed)
         goto fail;
 
     rt->max_call_depth = JS_DEFAULT_MAX_CALL_DEPTH;
+    rt->c_hop_debt = -1;
 
     rt->current_exception = JS_UNINITIALIZED;
     rt->class_id_alloc = JS_CLASS_INIT_COUNT;
@@ -3459,16 +3515,22 @@ size_t JS_FreeRuntime(JSRuntime *rt)
    with the arguments here only its test of the tag is left, small enough to
    inline, and inlined it would measure 0. The flags are read from memory, so
    that the compiler cannot make a copy of JS_CallInternal for them with a
-   frame of its own either. */
+   frame of its own either. Then rt->c_hop_debt, from the frame of
+   js_call_c_hop measured the same way (an argc below 0, read from memory
+   too). */
 static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     long left = __shadow_remaining();
-    volatile int flags = JS_CALL_FLAG_FRAME;
+    volatile int flags = JS_CALL_FLAG_FRAME, argc = -1;
 
     JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
                     0, NULL, flags);
     rt->call_frame = left - rt->call_frame;
+    js_call_c_hop(ctx, JS_UNDEFINED, JS_UNDEFINED, argc, NULL);
+    rt->c_hop_debt = rt->call_frame - (left - rt->c_hop_debt);
+    if (rt->c_hop_debt < 0)
+        rt->c_hop_debt = -1;
 }
 
 int JS_SetDirectCCalls(JSContext *ctx, int on)
@@ -3479,8 +3541,10 @@ int JS_SetDirectCCalls(JSContext *ctx, int on)
         return -1;
     if (on)
         js_measure_call_frame(ctx);
-    else
+    else {
         rt->call_frame = (long)1 << 60; /* never room for it */
+        rt->c_hop_debt = -1;
+    }
     return 0;
 }
 
@@ -22532,8 +22596,8 @@ static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
         return js_call_constructor2(ctx, bf->func_obj, new_target,
                                    arg_count, arg_buf);
     } else {
-        return js_call(ctx, bf->func_obj, bf->this_val,
-                       arg_count, arg_buf);
+        return js_call_fwd(ctx, bf->func_obj, bf->this_val,
+                           arg_count, arg_buf);
     }
 }
 
@@ -22894,6 +22958,20 @@ static force_inline int js_call_checks(JSContext *caller_ctx)
     return js_call_enter(caller_ctx);
 }
 
+/* js_call_checks with js_call_enter inlined and its throw left out of line
+   (JS_ThrowRangeError), for JS_CallInternal, where each call of a C
+   function, a bound function or a proxy makes them: about 20 instructions
+   fewer for each such call, and the frame of JS_CallInternal stays the same
+   (96 bytes on arm64, 112 on amd64). JS_RegvmRun keeps the call. */
+static force_inline int js_call_checks_in(JSContext *caller_ctx)
+{
+    if (js_poll_interrupts(caller_ctx))
+        return -1;
+    if (unlikely(js_uncatchable_pending(caller_ctx->rt)))
+        return -1;
+    return js_call_enter_in(caller_ctx);
+}
+
 /* The end of a call frees its values by their tags: a value has a reference
    count only if its tag is negative, so a tag that is not negative says there
    is nothing to free. */
@@ -22931,7 +23009,7 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
             rt->call_frame = __shadow_remaining();
             return JS_UNDEFINED;
         }
-        if (js_call_checks(caller_ctx))
+        if (js_call_checks_in(caller_ctx))
             return JS_EXCEPTION;
         goto not_a_function;
     }
@@ -22946,7 +23024,7 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
                that error, not with the one of its conversion, and converts
                nothing. JS_RegvmRun makes them again, so the level is left
                here */
-            if (js_call_checks(caller_ctx)) {
+            if (js_call_checks_in(caller_ctx)) {
                 rt->rv_oom_b = NULL;
                 return JS_EXCEPTION;
             }
@@ -22973,7 +23051,7 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
                            rv_ctor_new_target(caller_ctx, func_obj, new_target) :
                            JS_UNDEFINED, argc, (JSValueConst *)argv);
     }
-    if (js_call_checks(caller_ctx))
+    if (js_call_checks_in(caller_ctx))
         return JS_EXCEPTION;
     {
         JSClassCall *call_func;
@@ -22991,6 +23069,45 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
 }
 
 
+/* A call of a plain C function from C (js_call_fwd), in place of
+   JS_CallInternal: what JS_CallInternal does for it, from a frame of its own
+   that is smaller. The rest of the frame of JS_CallInternal (rt->c_hop_debt)
+   counts as taken while the function runs (stack_debt), and the check of
+   the stack counts it too, so that a recursion ends on the stack at the
+   same depth as through JS_CallInternal. A call that would throw on its way
+   in (the call depth, the stack) goes to JS_CallInternal, which throws what
+   it threw. With an argc below 0 it only writes the stack left into
+   rt->c_hop_debt (js_measure_call_frame). Never inlined: its frame is
+   measured, and inlined into each caller of js_call_fwd it would make their
+   frames larger. */
+static no_inline __attribute__((not_tail_called)) JSValue
+js_call_c_hop(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
+              int argc, JSValueConst *argv)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue ret;
+    long debt;
+
+    if (unlikely(argc < 0)) {
+        rt->c_hop_debt = __shadow_remaining();
+        return JS_UNDEFINED;
+    }
+    debt = rt->c_hop_debt;
+    if (!js_call_hop_enter(rt, debt))
+        return JS_CallInternal(ctx, func_obj, this_obj, JS_UNDEFINED,
+                               argc, (JSValue *)argv, JS_CALL_FLAG_COPY_ARGV);
+    poll_count(POLL_WEIGHT);
+    if (js_poll_interrupts(ctx) || unlikely(js_uncatchable_pending(rt))) {
+        js_call_leave(rt);
+        return JS_EXCEPTION;
+    }
+    rt->stack_debt += debt;
+    ret = js_call_c_function(ctx, func_obj, this_obj, argc, argv, 0);
+    rt->stack_debt -= debt;
+    js_call_leave(rt);
+    return ret;
+}
+
 /* a call from C: a function that has register code (rv_entry_fast) runs in
    the register loop, any other in JS_CallInternal */
 static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
@@ -23000,6 +23117,30 @@ static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_
         RV_COUNT(ctx->rt, 1);
         return JS_RegvmRun(ctx, func_obj, this_obj, JS_UNDEFINED, argc, argv);
     }
+    return JS_CallInternal(ctx, func_obj, this_obj, JS_UNDEFINED,
+                           argc, (JSValue *)argv, JS_CALL_FLAG_COPY_ARGV);
+}
+
+/* js_call for the C functions that call the function they are given, with
+   its arguments: Function.prototype.call and apply, Reflect.apply and bound
+   functions. A plain C function they call runs in js_call_c_hop, without
+   the frame of JS_CallInternal: call.bind(f), the way core-js calls the
+   methods it keeps, makes two such calls for each call of f. js_call itself
+   stays as it is: inlined in more than a hundred callers, a larger js_call
+   changes what the compiler inlines into them, and some of their frames
+   grow. */
+static force_inline JSValue js_call_fwd(JSContext *ctx, JSValueConst func_obj,
+                                        JSValueConst this_obj,
+                                        int argc, JSValueConst *argv)
+{
+    if (rv_entry_fast(ctx->rt, func_obj)) {
+        RV_COUNT(ctx->rt, 1);
+        return JS_RegvmRun(ctx, func_obj, this_obj, JS_UNDEFINED, argc, argv);
+    }
+    if (JS_VALUE_GET_TAG(func_obj) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_OBJ(func_obj)->class_id == JS_CLASS_C_FUNCTION &&
+        ctx->rt->c_hop_debt >= 0)
+        return js_call_c_hop(ctx, func_obj, this_obj, argc, argv);
     return JS_CallInternal(ctx, func_obj, this_obj, JS_UNDEFINED,
                            argc, (JSValue *)argv, JS_CALL_FLAG_COPY_ARGV);
 }
@@ -46557,9 +46698,11 @@ static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
 }
 
 /* magic value: 0 = normal apply, 1 = apply for constructor, 2 =
-   Reflect.apply */
-static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
-                                 int argc, JSValueConst *argv, int magic)
+   Reflect.apply. The body of js_function_apply, inlined in the window of
+   OP_apply of the register loop (rv_w_apply) as it was before js_call_fwd
+   made it larger, so that a call with a spread takes no frame more. */
+static force_inline JSValue js_function_apply_in(JSContext *ctx, JSValueConst this_val,
+                                                 int argc, JSValueConst *argv, int magic)
 {
     JSValueConst this_arg, array_arg;
     uint32_t len;
@@ -46581,19 +46724,25 @@ static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
     if (magic & 1) {
         ret = js_call_constructor2(ctx, this_val, this_arg, len, (JSValueConst *)tab);
     } else {
-        ret = js_call(ctx, this_val, this_arg, len, (JSValueConst *)tab);
+        ret = js_call_fwd(ctx, this_val, this_arg, len, (JSValueConst *)tab);
     }
     free_arg_list(ctx, tab, len);
     return ret;
+}
+
+static JSValue js_function_apply(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv, int magic)
+{
+    return js_function_apply_in(ctx, this_val, argc, argv, magic);
 }
 
 static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
     if (argc <= 0) {
-        return js_call(ctx, this_val, JS_UNDEFINED, 0, NULL);
+        return js_call_fwd(ctx, this_val, JS_UNDEFINED, 0, NULL);
     } else {
-        return js_call(ctx, this_val, argv[0], argc - 1, argv + 1);
+        return js_call_fwd(ctx, this_val, argv[0], argc - 1, argv + 1);
     }
 }
 
