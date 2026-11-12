@@ -95,3 +95,35 @@ func TestFormatCachesAfterClose(t *testing.T) {
 		})
 	}
 }
+
+// The strings Temporal writes are bounded whatever the value: a year of
+// at most six digits, nine decimals of a second, the fields of a valid
+// duration, of at most 2**32 years, months or weeks and 2**53 seconds,
+// and a time zone and a calendar of the table or an offset, the longest
+// of 32 characters. So the door needs no count for them.
+const toStringLength = 256
+
+func TestToStringBounded(t *testing.T) {
+	vm := newVM(t)
+	for _, js := range []string{
+		`Temporal.Duration.from({seconds: 9007199254740991, nanoseconds: 999999999}).toString()`,
+		`Temporal.Duration.from({years: -4294967295, months: -4294967295, weeks: -4294967295, days: -104249991374, hours: -1, milliseconds: -1}).toString({fractionalSecondDigits: 9})`,
+		`Temporal.Duration.from({milliseconds: 9007199254740991, microseconds: 9007199254740991, nanoseconds: 9007199254740991}).toString()`,
+		`Temporal.Duration.from({seconds: 9007199254740991}).toLocaleString('hi-u-nu-adlm', {style: 'long'})`,
+		`Temporal.PlainDateTime.from('-271821-04-20T00:00:00.123456789[u-ca=islamic-umalqura]').toString({fractionalSecondDigits: 9, calendarName: 'critical'})`,
+		`new Temporal.ZonedDateTime(-8640000000000000000000n, 'America/Argentina/ComodRivadavia', 'islamic-umalqura').toString({fractionalSecondDigits: 9, calendarName: 'critical', timeZoneName: 'critical', offset: 'auto'})`,
+		`Temporal.Instant.fromEpochNanoseconds(8640000000000000000000n).toString({timeZone: '-23:59', fractionalSecondDigits: 9})`,
+		`Temporal.PlainMonthDay.from({monthCode: 'M05L', day: 30, calendar: 'chinese'}).toString({calendarName: 'critical'})`,
+		`Temporal.PlainYearMonth.from({year: 275700, month: 13, calendar: 'ethiopic'}).toString({calendarName: 'critical'})`,
+		`Temporal.PlainDate.from('+275760-09-13').toLocaleString('hi-u-nu-adlm', {era: 'long', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', calendar: 'ethiopic'})`,
+	} {
+		got, err := vm.Eval(js, quickjs.EvalGlobal)
+		if err != nil {
+			t.Errorf("%s: %v", js, err)
+			continue
+		}
+		if s, _ := got.(string); s == "" || len(s) > toStringLength {
+			t.Errorf("%s = %q, longer than %d", js, got, toStringLength)
+		}
+	}
+}

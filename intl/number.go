@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 type numberFormat struct {
@@ -208,6 +209,43 @@ func numberDigits(o map[string]any, opts *gointl.NumberFormatOptions) error {
 // magnitude stays exact even beyond the range allowed for numeric strings.
 type bigintDecimal string
 
+// admit returns v, a numeric string or the digits of a BigInt, as the
+// Decimal f formats, and a number as it is. It refuses a Decimal that f
+// would write with more than intlhook.MaxDigits digits, before f writes
+// any: "1e-1073741000" to three significant digits is a thousand million
+// zeros however short the string. Then it checks the room for what Go takes
+// to write the digits, as a string or as the parts of formatToParts.
+func (f *numberFormat) admit(door *intlhook.Door, v any, parts bool) any {
+	var d gointl.Decimal
+	switch v := v.(type) {
+	case string:
+		d = gointl.ParseDecimal(v)
+	case bigintDecimal:
+		d = gointl.ParseExactDecimal(string(v))
+	default:
+		return v
+	}
+	n := f.f.Output(d)
+	if n > intlhook.MaxDigits {
+		intlhook.RefuseDigits()
+	}
+	if parts {
+		door.Reserve(n * partDigitBytes)
+	} else {
+		door.Reserve(n * digitBytes)
+	}
+	return d
+}
+
+// digitBytes is what Go may take for each digit format writes: the digit,
+// of up to four bytes in UTF-8, a separator after it, and the copies of the
+// text as it is built. partDigitBytes is the same for formatToParts, which
+// makes a part for each group of digits and each separator, and Hindi
+// groups them by two. Go took 78 and 249 bytes for each digit of
+// 10n ** 315000n (TestDigitsRoomCoversGo).
+const digitBytes, partDigitBytes = 96, 320
+
+// format returns the parts of v, a number or a Decimal admit returned.
 func (f *numberFormat) format(v any) []part {
 	var pieces []gointl.Part
 	switch v := v.(type) {
@@ -215,26 +253,23 @@ func (f *numberFormat) format(v any) []part {
 		pieces = f.f.FormatToParts(v)
 	case int64:
 		pieces = f.f.FormatDecimalToParts(gointl.ParseExactDecimal(strconv.FormatInt(v, 10)))
-	case string:
-		pieces = f.f.FormatDecimalToParts(gointl.ParseDecimal(v))
-	case bigintDecimal:
-		pieces = f.f.FormatDecimalToParts(gointl.ParseExactDecimal(string(v)))
+	case gointl.Decimal:
+		pieces = f.f.FormatDecimalToParts(v)
 	default:
 		panic("intl: unexpected number bridge value")
 	}
 	return numberParts(pieces)
 }
 
+// formatString is format, joined.
 func (f *numberFormat) formatString(v any) string {
 	switch v := v.(type) {
 	case float64:
 		return f.f.Format(v)
 	case int64:
 		return f.f.FormatDecimal(gointl.ParseExactDecimal(strconv.FormatInt(v, 10)))
-	case string:
-		return f.f.FormatDecimal(gointl.ParseDecimal(v))
-	case bigintDecimal:
-		return f.f.FormatDecimal(gointl.ParseExactDecimal(string(v)))
+	case gointl.Decimal:
+		return f.f.FormatDecimal(v)
 	default:
 		panic("intl: unexpected number bridge value")
 	}

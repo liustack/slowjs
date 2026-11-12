@@ -53,7 +53,7 @@ const (
 	MaxNumber = 512 << 10
 	// MaxDigits is the most digits a number may be written with once it is
 	// rounded, the zeros a format writes out included.
-	MaxDigits = 512 << 10
+	MaxDigits = MaxNumber + 1<<10
 )
 
 // A Kind is the kind of a short argument, which sets its cap.

@@ -848,6 +848,7 @@ func numberFormatted(a quickjs.Args, wantParts bool) (quickjs.Value, error) {
 	if isBigInt, _ := a.Bool(2); isBigInt {
 		v = bigintDecimal(v.(string))
 	}
+	v = f.admit(&door, v, wantParts)
 	if !wantParts {
 		return intlhook.Emit(a.VM(), f.formatString(v))
 	}
