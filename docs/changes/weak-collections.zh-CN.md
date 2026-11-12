@@ -63,7 +63,7 @@ Symbol 有引用计数，但不是 GC 对象列表上的节点。弱集合有 sy
 - `JS_ExecutePendingJob` 不调用它，因为它看不出宿主任务里的 javascript 是否还在下面运行。`engine/test` 的测试宿主（`jsrun`、`render`、`run-test262` 和各个 unit 程序）像 Go API 一样，在脚本之后、每个任务之前调用它。`run-test262` 还提供 `$262.clearKeptObjects`。
 - `JS_FreeRuntime` 最先调用它。
 
-所以一个池子拿来做很多次渲染的 VM，不会把目标从一次调用留到下一次，调用以错误结束时也什么都不留。被 kill 之后只能 Close 的 VM 在 Close 时放掉它们。宿主仍通过 `Value` 持有的目标，和其他对象一样留着。
+所以一个池子拿来做很多次渲染的 VM，不会把目标从一次调用留到下一次，调用以错误结束时也什么都不留。被 kill 之后只能 Close 的 VM 在 Close 时放掉它们。宿主仍通过 `Value` 持有的目标，和其他对象一样留着。脚本不能再做的一件事：在一次调用里用循环等 `deref` 变成 `undefined`。这样的循环不会结束，因为不管中间跑了几次回收，目标都留到调用结束。调用回到 Go 或任务结束时目标才放掉，所以要等它的程序在两次调用之间请求一次回收（`RunGC`），在下一次调用里读 `deref`。
 
 在后面的任务里读 `deref` 的程序看到的和以前一样。引擎里那些创建 `WeakRef`、丢掉目标却没让任务结束的测试，现在先结束任务（`engine/test/unit.c` 的 `test_free_order`，`engine/test/unit-white.c` 的 `test_young_leaves_no_zero_count`）。
 
@@ -74,6 +74,6 @@ Symbol 有引用计数，但不是 GC 对象列表上的节点。弱集合有 sy
 ### 测试
 
 - `TestWeakRefKeptDuringJob`（`weakref_test.go`）：新 `WeakRef` 的目标和 `deref` 的目标在它所在的调用里、在这次调用运行的 Go 函数里、在这个函数求值的 javascript 里、在 Go 代码于调用之中运行过任务之后（Go 函数，或者 `Call` 参数的 `MarshalJSON`）都在，下一次调用里就没了。`ExecutePendingJobs` 的每个 promise 任务各是一个任务。`TestWeakRefKeptReleasedAfterTimeout`：被 eval 超时停下的调用也会放掉它的目标。
-- `TestWeakRefKeptReleasedAfterCall`：在一个 VM 上调用 200 次，每次创建一个指向 65,536 个数字的数组的 `WeakRef`，GC 之后留下的内存不比第一次调用之后多。
+- `TestWeakRefKeptReleasedAfterCall`：在一个 VM 上调用 200 次，每次创建一个指向 65,536 个数字的数组的 `WeakRef`，GC 之后留下的内存不比第一次调用之后多。`TestWeakRefKeptThroughLoop`：在一次调用里一边分配 300,000 个对象、一边读一个已死循环引用的 `deref`，循环结束时仍读到目标，调用结束并 `RunGC` 之后，下一次调用读到 `undefined`。
 - `test_weakref_kept`（`engine/test/unit-api.c`）在 C 树里用一个像 Go API 那样结束任务的宿主检查同样的事，还有 symbol 目标、从 javascript 里面运行任务的宿主函数、任务之中的完整回收和年轻代回收、一个任务里 10,000 个目标各读 100 次，以及在保留着目标时释放运行时。`test_weakref_kept_oom`（`engine/test/unit-oom.c`）在 64 KiB 以内的每种余量下创建并读取 200 个 `WeakRef`，或者读取之前一个任务里创建的 200 个：每次运行要么得到总和，要么得到内存不足错误，并且不留下任何块。
 - 上游 `test_builtin.js`（`engine/test/compare/upstream/`）的 `test_weak_ref` 在丢掉目标之后还能读到它，用 `jsrun` 的 `clearKeptObjects()` 结束任务，然后读到 `undefined`。`gc_ephemeron.js` 和 `young_gc.js` 在每次要求回收之前先结束任务。
