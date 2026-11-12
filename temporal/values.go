@@ -90,7 +90,13 @@ func (c *args) calendar() (*temporal.Calendar, error) {
 	if err != nil {
 		return nil, err
 	}
-	return d.Calendar(c.str())
+	cal, err := d.Calendar(c.str())
+	if err != nil || cal.ID() == "iso8601" {
+		return cal, err
+	}
+	// The arithmetic of the other calendars runs loops over months and
+	// years, which check the call (temporal.Calendar.WithCheck).
+	return cal.WithCheck(func() { intlhook.Check(c.a.VM()) }), nil
 }
 
 func (c *args) timeZone() (temporal.TimeZone, error) { return zoneOf(c.str()) }
