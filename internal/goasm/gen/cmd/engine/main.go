@@ -353,6 +353,16 @@ func main() {
 		// the assembler refuses. Half the reach leaves the lowering room to
 		// double a function.
 		llcArgs = append(llcArgs, "-aarch64-tbz-offset-bits=13")
+		// A jump table llc may write with 1 or 2 bytes an entry, each the
+		// distance in steps of 4 bytes from its lowest target, picked by the
+		// sizes of the code it writes. The lowering then adds code, and a
+		// table that fit can end past its width: a switch of js_start_tag
+		// did, 272 steps for a byte. No room left by half a width would hold
+		// for every switch, so every table takes 4 bytes an entry (the
+		// default of llc is true). The dispatch is as long either way (adr,
+		// a load, an add, br), and the lowering checks every table it writes
+		// (a64CheckJumpTables).
+		llcArgs = append(llcArgs, "-aarch64-enable-compress-jump-tables=false")
 	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")

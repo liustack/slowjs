@@ -39,6 +39,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | Unreleased | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
 | A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
+| Every jump table of arm64 takes 4 bytes an entry, and the generator refuses a table its lowering made too narrow | Unreleased | [c-engine.md](c-engine.md#jump-tables-on-arm64-take-4-bytes-an-entry) |
 | A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
 
 ## Commits of upstream QuickJS

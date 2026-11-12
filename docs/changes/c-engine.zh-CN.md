@@ -705,3 +705,15 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 编译器不会生成这样的代码：test262、语料、23 个页面和 rvgen 的种子都照旧通过，而 pass 拒绝的函数在第一次调用时就会抛错。有了它，[捕获后不再改变的变量](#捕获后不再改变的变量)才能确信异常只落在本函数的 `catch` 上。
 
 测试：`engine/test/unit-white.c` 的 `test_regvm_crafted` 对每一类改动编译器生成的代码的一个字节（`engine/test/white.c` 的 `white_crafted_jump`），检查读取时会拒绝它：丢掉 catch 偏移的 `drop` 改成 `return`，一个跳转和一个 `catch` 改成跳到代码开头之前，以及 `for_of_next` 的偏移改成指向外面 `try` 的 catch 偏移。`test_regvm_crafted_code` 把自己的代码放进一个函数（`white_crafted_code`）：下面没有迭代器的 `iterator_get_value_done`，读取时被拒绝，在返回地址下面留了自己的 catch 偏移的 `finally`，它的 `ret` 会抛错，以及立刻返回的 `finally`，照旧运行。
+
+## arm64 的跳转表每项占 4 字节
+
+版本：未发布。
+
+llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（每项存从最低目标算起、以 4 字节为一步的步数，用 `ldrb` 或 `ldrh` 读），否则用 4 字节（存到分发处 `adr` 的字节距离，用 `ldrsw` 读）。它按自己写出的代码大小来选。之后 lowering 又在函数里加代码，所以在 llc 的代码里放得下的表，到了 lowering 后的代码里可能就太窄：`js_start_tag` 里的一个 switch 到了 272 步，超过一个字节能存的 255，llvm-mc 因此拒绝了整个引擎。这样的表不会跳错地方：一项超出宽度 llvm-mc 就拒绝，而且 lowering 不改变块的顺序，一项永远不会落在它的基准之前。但下一次哪段 C 的改动会让生成器停下，全凭运气。
+
+现在生成器让 llc 把每张表都写成每项 4 字节（`-aarch64-enable-compress-jump-tables=false`，LLVM 22.1.8 对两种窄形式只有这一个开关）。2 字节的形式能覆盖 256 KiB，是最大函数（JS_RegvmRun，79 KiB）的三倍多，所以只有 1 字节的形式有风险，但没法单独关掉它。各种形式的分发一样长（`adr`、一次加载、一次 `add`、`br`）：引擎的指令、栈帧和 SHADOW 都和以前一样，跳转表多占 10,060 字节（1,830 个 1 字节的项和 2,285 个 2 字节的项都变成 4 字节）。amd64 不变。
+
+生成器不依赖这个标志。lowering 自己计算代码大小（每条指令 4 字节，标签不占地方，对齐从函数所在的位置算起，即 16 字节的倍数或它在 64 字节上的位置，超过 max-skip 的填充不算），遇到跳转表某一项的距离超出它的宽度，或者窄形式的某一项要往回跳，就拒绝这个函数，并报出表、这一项和算出的步数（`internal/goasm/gen/arm64_jumptable.go` 的 `a64CheckJumpTables`）。把窄形式重新打开时，它在 llvm-mc 算出的同样 272 步上拒绝 `js_start_tag`。
+
+测试：`TestA64CheckJumpTables` 让每种宽度取它能存的最远距离，再多一步就拒绝，中间隔着对齐时也一样，并拒绝往回的项、不在代码里的标签和它算不出大小的代码。`TestLowerARM64EngineJumpTable` lower 一个函数，它的 1 字节表在 llc 的代码里放得下（250 步），一旦跨度里的 5 个调用让 lowering 后的代码变长，就被拒绝。
