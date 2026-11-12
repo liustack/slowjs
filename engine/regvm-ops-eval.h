@@ -178,7 +178,7 @@ static void rv_eval_leave(JSContext *ctx, JSValue *F, JSStackFrame *esf)
             if (off < 0)
                 poll_count(POLL_WEIGHT);
             pc += off;
-            if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx))) {
+            if (RV_INTERRUPTED()) {
                 pc = ip + 8;
                 goto rv_exception;
             }

@@ -203,6 +203,16 @@ static void rv_getel(RVPass *s, BOOL el2)
     RV_SHUFFLE(OP_rot5l, 5, 5, 1, 2, 3, 4, 0)     /* x a b c d -> a b c d x */
 #undef RV_SHUFFLE
 #elif RV_PART == RV_PART_RUN_FN
+/* a typed array whose elements are numbers (not BigInt): reading one
+   allocates nothing, and writing one an int or a float64 calls no
+   JavaScript and cannot fail (js_set_fast_array_element) */
+static inline BOOL rv_ta_num(int class_id)
+{
+    return (unsigned)(class_id - JS_CLASS_UINT8C_ARRAY) <=
+        (unsigned)(JS_CLASS_FLOAT64_ARRAY - JS_CLASS_UINT8C_ARRAY) &&
+        class_id != JS_CLASS_BIG_INT64_ARRAY && class_id != JS_CLASS_BIG_UINT64_ARRAY;
+}
+
 /* the slow side of GETEL, ip at d o key|k, as the slow path of
    QuickJS's get_array_el: the key is freed, o too for the T forms */
 static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
@@ -501,6 +511,15 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                     JS_FreeValue(ctx, obj);                             \
                 RV_NEXT();                                              \
             }                                                           \
+            if (rv_ta_num(p->class_id)) {                               \
+                JSValue v_ = rv_ta_get(ctx, p, idx);                    \
+                if (JS_VALUE_GET_TAG(v_) != JS_TAG_UNINITIALIZED) {     \
+                    RV_PUTD(ip[0], v_);                                 \
+                    if (temp)                                           \
+                        JS_FreeValue(ctx, obj);                         \
+                    RV_NEXT();                                          \
+                }                                                       \
+            }                                                           \
         }                                                               \
         RV_SYNC_TOP();                                                  \
         if (rv_getel_slow(ctx, F, ip, isk, temp))                       \
@@ -526,6 +545,9 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                 RV_R(ip[0]) = JS_DupValue(ctx, p->u.array.u.values[idx]);
                 RV_NEXT();
             }
+            if (rv_ta_num(p->class_id) &&
+                js_get_fast_array_element_out_of_line(ctx, p, idx, &RV_R(ip[0])))
+                RV_NEXT();
         }
         RV_SYNC_TOP();
         if (rv_getel3_slow(ctx, F, ip))
@@ -548,6 +570,14 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                        idx < p->u.array.count &&
                        !JS_VALUE_HAS_REF_COUNT(p->u.array.u.values[idx]))) {
                 p->u.array.u.values[idx] = rv_take(ctx, F, (int8_t)ip[2]);
+                if (rv_is_temp(F, (int8_t)ip[0]))
+                    JS_FreeValue(ctx, obj);
+                RV_NEXT();
+            }
+            if (rv_ta_num(p->class_id) && idx < p->u.array.count &&
+                (JS_VALUE_GET_TAG(RV_R(ip[2])) == JS_TAG_INT ||
+                 JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(RV_R(ip[2]))))) {
+                js_set_fast_array_element_out_of_line(ctx, p, idx, rv_take(ctx, F, (int8_t)ip[2]), 0);
                 if (rv_is_temp(F, (int8_t)ip[0]))
                     JS_FreeValue(ctx, obj);
                 RV_NEXT();

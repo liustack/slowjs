@@ -801,6 +801,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
         } else {                                                        \
             RV_SYNC_TOP();                                              \
             res = rv_tobool_slow(ctx, F, (int8_t)ip[0]);                \
+            RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1), 0);     \
         }                                                               \
         RV_JUMP_POLL(res == (jt), 0);                                   \
         if (res == (jt)) {                                              \
@@ -819,7 +820,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     ip = pc; pc += 2;
     {
         int off = (int16_t)get_u16(ip);
-        if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx)))
+        if (RV_INTERRUPTED())
             goto rv_exception;
         if (off < 0)
             poll_count(POLL_WEIGHT);
@@ -920,7 +921,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 
  rv_POLL:
     poll_count(POLL_WEIGHT);
-    if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx)))
+    if (RV_INTERRUPTED())
         goto rv_exception;
     RV_NEXT();
 

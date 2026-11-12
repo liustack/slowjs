@@ -311,7 +311,8 @@ static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     goto rv_bin_other;
 
  rv_bin_other:
-    /* mul of two numbers as QuickJS's OP_mul, the rest in rv_bin_slow */
+    /* mul of two numbers as QuickJS's OP_mul, the bit ops of two numbers,
+       the rest in rv_bin_slow */
     n = ip[-1] - RV_MUL;
     if (n < 2 && !RV_INJ_ARMED) {
         JSValue a = RV_R(ip[1]), bv = n ? RV_K(ip[2]) : RV_R(ip[2]);
@@ -321,6 +322,28 @@ static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *i
             double d1 = ta == JS_TAG_INT ? JS_VALUE_GET_INT(a) : JS_VALUE_GET_FLOAT64(a);
             double d2 = tb == JS_TAG_INT ? JS_VALUE_GET_INT(bv) : JS_VALUE_GET_FLOAT64(bv);
             RV_PUTD(ip[0], __JS_NewFloat64(ctx, d1 * d2));
+            RV_NEXT();
+        }
+    }
+    /* the bit ops of two numbers that are not both ints, such as a float of
+       a uint32 (x >>> 0 makes one): converted as goasm_bitwise_numbers
+       converts them, with no call of rv_bin_slow */
+    if (n >= RV_AND - RV_MUL && n <= RV_SHRK - RV_MUL && !RV_INJ_ARMED) {
+        int32_t x, y;
+        if (goasm_number_to_int32(RV_R(ip[1]), &x) &&
+            goasm_number_to_int32((n & 1) ? RV_K(ip[2]) : RV_R(ip[2]), &y)) {
+            uint32_t r;
+            switch (n >> 1) {
+            case 3: r = x & y; break;
+            case 4: r = x | y; break;
+            case 5: r = x ^ y; break;
+            case 6: r = (uint32_t)x << (y & 0x1f); break;
+            case 7: r = x >> (y & 0x1f); break;
+            default:
+                RV_PUTD(ip[0], JS_NewUint32(ctx, (uint32_t)x >> (y & 0x1f)));
+                RV_NEXT();
+            }
+            RV_PUTD(ip[0], JS_MKVAL(JS_TAG_INT, (int32_t)r));
             RV_NEXT();
         }
     }

@@ -1,0 +1,9 @@
+result plain ,1,2,3,4,5 |  | ,1,undefined,3,undefined,undefined | 7 | 12 | ,1,2,3,10,20,30 | ,1,2 | ,1,2,3,undefined,5 | ,1,2 | ,1,2,3,undefined,undefined,undefined | 1,2,4,5+6+7 | 1,,, | a,dq,0 | a,b,2 | ,0,1,2 | ,0:5,1:6 | ,3,4 | ,x,y,z | ,o | ,4,5,6
+result proto-getter ,1,2,3,4,5 |  | ,1,undefined,3,undefined,proto4 | 7 | 12 | TypeError:no setter for property | ,1,2 | ,1,2,3,undefined,5 | ,1,2 | ,1,2,3,undefined,proto4,undefined | 1,2,4,5+6+7 | 1,,, | a,dq,0 | a,b,2 | ,0,1,2 | ,0:5,1:6 | ,3,4 | ,x,y,z | ,o | ,4,5,6
+result next-replaced ,n1,n2,n3,n4,n5 |  | ,n1,nundefined,n3,nundefined,nundefined | n7 | n1n2n3n4 | ,n1,n2,n3,nNaN,nNaN,nNaN | ,n1,n2 | ,n1,n2,n3,nundefined,n5 | ,n1,n2 | ,n1,n2,n3,nundefined,nundefined,nundefined | n1,n2,n4,n5+n6+n7 | n1,,, | na,dq,0 | na,nb,2 | ,n0,n1,n2 | TypeError:not a function | ,n0,n0 | ,x,y,z | ,no | ,n4,n5,n6
+result iterator-replaced ,g1,g2,g3,g4,g5 |  | ,g1,gundefined,g3,gundefined,gundefined | g7 | g1g2g3g4 | ,g1,g2,g3,gNaN,gNaN,gNaN | ,g1,g2 | ,g1,g2,g3,gundefined,g5 | ,g1,g2 | ,g1,g2,g3,gundefined,gundefined,gundefined | g1,g2,g4,g5+g6+g7 | g1,,, | ga,dq,0 | ga,gb,2 | ,0,1,2 | ,0:5,1:6 | ,0,0 | ,x,y,z | ,go | ,4,5,6
+result restored ,1,2,3,4,5 |  | ,1,undefined,3,undefined,undefined | 7 | 12 | ,1,2,3,10,20,30 | ,1,2 | ,1,2,3,undefined,5 | ,1,2 | ,1,2,3,undefined,undefined,undefined | 1,2,4,5+6+7 | 1,,, | a,dq,0 | a,b,2 | ,0,1,2 | ,0:5,1:6 | ,3,4 | ,x,y,z | ,o | ,4,5,6
+result calls 102
+mem-end obj=199 atom=542 shape=129 prop=966 jsfunc=0 cfunc=137 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=199 atom=542 shape=129 prop=966 jsfunc=0 cfunc=137 array=1 fast_array=0 elements=0 binary=0
+--- status exit 0

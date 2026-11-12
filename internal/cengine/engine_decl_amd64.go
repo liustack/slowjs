@@ -1154,6 +1154,7 @@ func js_string_isWellFormed(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 u
 func js_string_iterator_next(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
 func js_string_localeCompare(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
+func js_string_memcmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_string_normalize(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_string_normalize1(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func js_string_pad(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) (r0, r1 uintptr)
@@ -1453,6 +1454,7 @@ func rv_shuffle(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func rv_slot_of(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func rv_store(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_suspend(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func rv_ta_get(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func rv_thisc(a0 uintptr, a1 uintptr)
 func rv_thisc_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_throw_error(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

@@ -414,7 +414,38 @@ static no_inline int rv_w_copy_data_properties(JSContext *ctx, JSValue *F, const
         goto rv_exception;                                              \
     RV_NEXT();
 
-    RV_WINDOW(rv_W_OBJECT_LIT, rv_w_object_lit, 5)
+    /* an object literal whose shape is made and whose properties fit in
+       the block of the object, as js_new_object_lit makes it, here: the
+       values move from the n temps below the old sp into the object, which
+       goes into the first of them. The rest in rv_w_object_lit */
+ rv_W_OBJECT_LIT:
+    ip = pc;
+    pc += 5;
+    RV_SYNC_TOP();
+    if (!RV_INJ_ARMED) {
+        JSObjectLit *lit = &((RVHeader *)F)->rf->b->object_lits[get_u16(ip + 3)];
+        JSShape *sh = lit->shape;
+        if (likely(sh && !sh->inline_grew &&
+                   offsetof(JSObject, u) + sizeof(JSProperty) * (size_t)sh->prop_size <=
+                   JS_OBJ_INLINE_MAX_SIZE)) {
+            JSValue *tab = F + (int8_t)ip[0] - get_u16(ip + 1);
+            JSValue obj = js_new_object_inline(ctx, js_dup_shape(sh));
+            JSObject *p;
+            if (unlikely(JS_IsException(obj))) {
+                for (i = 0; i < lit->count; i++)
+                    JS_FreeValue(ctx, tab[i]);
+                goto rv_exception;
+            }
+            p = JS_VALUE_GET_OBJ(obj);
+            for (i = 0; i < lit->count; i++)
+                p->prop[i].u.value = tab[i];
+            tab[0] = obj;
+            RV_NEXT();
+        }
+    }
+    if (rv_w_object_lit(ctx, F, ip))
+        goto rv_exception;
+    RV_NEXT();
     RV_WINDOW(rv_W_ARRAY_FROM, rv_w_array_from, 3)
     RV_WINDOW(rv_W_APPLY, rv_w_apply, 3)
     RV_WINDOW(rv_W_FOR_IN_START, rv_w_for_in_start, 1)

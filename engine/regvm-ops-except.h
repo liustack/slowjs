@@ -247,7 +247,7 @@ static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
        before pc moves, so that pc names the instruction for the pcmap */
  rv_GOSUB:
     ip = pc; pc += 7;
-    if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx)))
+    if (RV_INTERRUPTED())
         goto rv_exception;
     RV_R(ip[0]) = JS_NewInt32(ctx, get_u32(ip + 3));
     {
@@ -264,7 +264,7 @@ static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
         if (unlikely(!to))
             goto rv_exception;
         poll_count(POLL_WEIGHT);
-        if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx))) {
+        if (RV_INTERRUPTED()) {
             pc = to - 1; /* rv_gosub_entries */
             goto rv_exception;
         }

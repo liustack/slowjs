@@ -471,6 +471,7 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
             res = rv_binop_slow(ctx, F, ip, opc, isk, FALSE);           \
             if (res < 0)                                                \
                 goto rv_exception;                                      \
+            RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 2), 1);     \
         }                                                               \
         RV_JUMP_POLL(res == (jt), 1);                                   \
         if (res == (jt)) {                                              \
@@ -566,6 +567,11 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
         } else {                                                        \
             RV_SYNC_TOP();                                              \
             res = rv_tobool_keep(ctx, v);                               \
+            if (!(drop) || res == (jt))                                 \
+                RV_JUMP_SLOW(res == (jt), (int16_t)get_u16(ip + 1), 0); \
+            RV_JUMP_POLL(0, 0);                                         \
+            JS_FreeValue(ctx, v);                                       \
+            RV_NEXT();                                                  \
         }                                                               \
         RV_JUMP_POLL(res == (jt), 0);                                   \
         if (res == (jt)) {                                              \

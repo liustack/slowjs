@@ -1719,6 +1719,7 @@ static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSOb
 static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObject *p,
                                                            uint32_t idx, JSValue val,
                                                            int flags);
+static no_inline JSValue rv_ta_get(JSContext *ctx, JSObject *p, uint32_t idx);
 static JSValue js_regexp_toString(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv);
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
@@ -13328,6 +13329,18 @@ static no_inline BOOL js_get_fast_array_element_out_of_line(JSContext *ctx, JSOb
     return js_get_fast_array_element(ctx, p, idx, pval);
 }
 
+/* the element of a typed array of numbers for GETEL of the register loop,
+   or JS_UNINITIALIZED when the index is out of its range: given back as
+   the result, not through a pointer, so that the loop keeps no slot of its
+   frame for it (engine/regvm-ops-object.h) */
+static no_inline JSValue rv_ta_get(JSContext *ctx, JSObject *p, uint32_t idx)
+{
+    JSValue v;
+    if (!js_get_fast_array_element(ctx, p, idx, &v))
+        return JS_UNINITIALIZED;
+    return v;
+}
+
 static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                    JSValue prop)
 {
@@ -13340,6 +13353,17 @@ static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         js_get_fast_array_element(ctx, JS_VALUE_GET_OBJ(this_obj),
                                   JS_VALUE_GET_INT(prop), &ret))
         return ret;
+    /* a key that is the string of an index, as for in gives them: the
+       element of a fast array without making an atom of the string */
+    if (JS_VALUE_GET_TAG(this_obj) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_TAG(prop) == JS_TAG_STRING) {
+        uint32_t idx;
+        if (is_num_string(&idx, JS_VALUE_GET_STRING(prop)) &&
+            js_get_fast_array_element_out_of_line(ctx, JS_VALUE_GET_OBJ(this_obj), idx, &ret)) {
+            JS_FreeValue(ctx, prop);
+            return ret;
+        }
+    }
     /* ToObject() must be done before ToPropertyKey() */
     if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
         JS_FreeValue(ctx, prop);
@@ -21318,13 +21342,18 @@ static __exception int js_for_of_start(JSContext *ctx, JSValue *sp,
    objs. If 'done' is true or in case of exception, 'enum_rec' is set
    to undefined. If 'done' is true, 'value' is always set to
    undefined. */
+static int js_for_of_array_next(JSContext *ctx, JSValueConst iter,
+                                 JSValueConst next, JSValue *pval);
+
 static __exception int js_for_of_next(JSContext *ctx, JSValue *sp, int offset)
 {
     JSValue value = JS_UNDEFINED;
     int done = 1;
 
     if (likely(!JS_IsUndefined(sp[offset]))) {
-        value = JS_IteratorNext(ctx, sp[offset], sp[offset + 1], 0, NULL, &done);
+        done = js_for_of_array_next(ctx, sp[offset], sp[offset + 1], &value);
+        if (done < 0)
+            value = JS_IteratorNext(ctx, sp[offset], sp[offset + 1], 0, NULL, &done);
         if (JS_IsException(value))
             done = -1;
         if (done) {
@@ -22632,7 +22661,13 @@ static force_inline int goasm_eq_fast(JSValueConst a, JSValueConst b, BOOL stric
             if (pa->len != pb->len ||
                 (pa->atom_type == JS_ATOM_TYPE_STRING && pb->atom_type == JS_ATOM_TYPE_STRING))
                 return 0;
-            return -1;
+            /* one compare without a read of the interrupt flag, as
+               js_strict_eq_poll makes it for two strings shorter than a
+               step. A longer pair goes there, to be compared a step at a
+               time (js_string_eq_polls) */
+            if (pa->len >= JS_ROPE_STEP)
+                return -1;
+            return js_string_memcmp(pa, 0, pb, 0, pa->len) == 0;
         }
         default:
             return -1;
@@ -49030,6 +49065,51 @@ typedef struct JSArrayIteratorData {
     JSIteratorKindEnum kind;
     uint32_t idx;
 } JSArrayIteratorData;
+
+static JSValue js_array_iterator_next(JSContext *ctx, JSValueConst this_val,
+                                      int argc, JSValueConst *argv,
+                                      BOOL *pdone, int magic);
+
+/* the next value of a for of loop over a fast Array with its own iterator
+   (iter made by values() or [Symbol.iterator], next the built-in next): the
+   element itself, read as js_array_iterator_next reads it, without the call
+   of JS_IteratorNext, the read of the length and the generic read of the
+   element. An element below the count of a fast array is a plain value, and
+   the count is at most the length. The interrupt flag is read as
+   JS_IteratorNext2 reads it. No call is made, so none is counted against
+   the depth (js_call_enter): at the limit of depth the loop reads on where
+   the call of next threw, as a script may recurse deeper than before but
+   never less deep. 0 with *pval set, 1 with *pval the exception
+   of an interrupt, -1 when the case is another one, for JS_IteratorNext. */
+static int js_for_of_array_next(JSContext *ctx, JSValueConst iter,
+                                JSValueConst next, JSValue *pval)
+{
+    JSObject *p;
+    JSArrayIteratorData *it;
+
+    if (JS_VALUE_GET_TAG(iter) != JS_TAG_OBJECT || JS_VALUE_GET_TAG(next) != JS_TAG_OBJECT)
+        return -1;
+    p = JS_VALUE_GET_OBJ(next);
+    if (p->class_id != JS_CLASS_C_FUNCTION ||
+        p->u.cfunc.cproto != JS_CFUNC_iterator_next ||
+        p->u.cfunc.c_function.iterator_next != js_array_iterator_next)
+        return -1;
+    p = JS_VALUE_GET_OBJ(iter);
+    if (p->class_id != JS_CLASS_ARRAY_ITERATOR)
+        return -1;
+    it = p->u.array_iterator_data;
+    if (it->kind != JS_ITERATOR_KIND_VALUE || JS_VALUE_GET_TAG(it->obj) != JS_TAG_OBJECT)
+        return -1;
+    p = JS_VALUE_GET_OBJ(it->obj);
+    if (p->class_id != JS_CLASS_ARRAY || !p->fast_array || it->idx >= p->u.array.count)
+        return -1;
+    if (js_poll_interrupts(ctx)) {
+        *pval = JS_EXCEPTION;
+        return 1;
+    }
+    *pval = JS_DupValue(ctx, p->u.array.u.values[it->idx++]);
+    return 0;
+}
 
 static void js_array_iterator_finalizer(JSRuntime *rt, JSValue val)
 {

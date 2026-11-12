@@ -1,0 +1,28 @@
+result 8/16 same 6,6: 1010TF11
+result 8/16 same long 13,13: 1010TF11
+result k true,false,true,false,false,false
+result 8/16 last 4,4: 0101FT00
+result 8/16 first 4,4: 0101FT00
+result 16/16 same 4,4: 1010TF11
+result 16/16 last 4,4: 0101FT00
+result 8/8 same 4,4: 1010TF11
+result 8/8 first 4,4: 0101FT00
+result 8/8 last 4,4: 0101FT00
+result empty 0,0: 1010TF11
+result rope/flat 1280,1280: 1010TF11
+result rope/rope 1280,1280: 1010TF11
+result rope/flat differ 1280,1280: 0101FT00
+result atom/atom 3,3: 0101FT00
+result atom/atom same 3,3: 1010TF11
+result atom/str 3,3: 1010TF11
+result atom/str differ 3,3: 0101FT00
+result step-1 same 65535,65535: 1010TF11
+result step-1 last 65535,65535: 0101FT00
+result step same 65536,65536: 1010TF11
+result step last 65536,65536: 0101FT00
+result step 16 same 65536,65536: 1010TF11
+result step 8/16 differ 65536,65536: 0101FT00
+result loop 11100
+mem-end obj=193 atom=543 shape=120 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=543 shape=120 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

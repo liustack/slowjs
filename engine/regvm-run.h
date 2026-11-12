@@ -467,6 +467,16 @@ static no_inline void rv_inj_new(JSContext *ctx, JSValue *F, const uint8_t *pc)
 #endif
 
 
+/* js_poll_interrupts of the loop: the flag read through the runtime the
+   loop holds, rt, which is ctx->rt, so that the check loads no ctx->rt
+   and leaves the register of rt as it is */
+static inline __exception int rv_poll_interrupts(JSRuntime *rt, JSContext *ctx)
+{
+    if (unlikely(poll_flag(&rt->interrupt_flag)))
+        return __js_poll_interrupts(ctx);
+    return 0;
+}
+
 /* the table entries of RV_RETN: a frame has two slots at least, func and
    this */
 #define RV_RETN_ENTRY(k, n) [RV_RETN + (k) * (RV_RETN_MAX + 1) + (n)] = &&rv_RETN_##k##_##n,
@@ -531,11 +541,23 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
    once it has jumped or not (rv_jump_throws in regvm-pass.h). taken: it jumps.
    own: the instruction can throw by itself, at its end. Nothing of it runs
    while no interrupt is pending. */
+#define RV_INTERRUPTED() (RV_INJ_HIT(ctx) || unlikely(rv_poll_interrupts(rt, ctx)))
 #define RV_JUMP_POLL(taken, own) do {                                   \
-        if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx))) {     \
+        if (RV_INTERRUPTED()) {                                         \
             pc -= (own) + ((taken) ? 1 : 0);                            \
             goto rv_exception;                                          \
         }                                                               \
+    } while (0)
+/* the end of a conditional jump whose value came from a call out of the loop:
+   the jump is taken (n), its offset (i) and whether the instruction can
+   throw by itself (dst), then rv_jump_slow, so that the registers the call
+   took are loaded again there, and not on the way of the jumps that made
+   no call */
+#define RV_JUMP_SLOW(taken, off, own) do {                              \
+        n = (taken);                                                    \
+        i = (off);                                                      \
+        dst = (own);                                                    \
+        goto rv_jump_slow;                                              \
     } while (0)
 
     poll_count_entry(POLL_WEIGHT);
@@ -699,6 +721,17 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
  rv_bad:
     abort();
 
+ rv_jump_slow:
+    /* RV_JUMP_SLOW: as RV_JUMP_POLL and the jump of the handler */
+    RV_JUMP_POLL(n, dst);
+    if (n) {
+        int off = i;
+        if (off < 0)
+            poll_count(POLL_WEIGHT);
+        pc += off;
+    }
+    RV_NEXT();
+
  rv_exception:
     /* pc is at the end of the instruction that threw (each handler moves
        it there first) */
@@ -730,6 +763,8 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
 #undef RV_PUTD
 #undef RV_K
 #undef RV_JUMP_POLL
+#undef RV_JUMP_SLOW
+#undef RV_INTERRUPTED
 }
 
 /* rt->rv_frame: the stack left here less what JS_RegvmRun finds left at
