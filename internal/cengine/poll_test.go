@@ -73,15 +73,52 @@ func TestPollEveryCycle(t *testing.T) {
 	}
 }
 
+// gcTightSetup is the part of a script of tight that comes before its C
+// loop, run first and not counted, so that the polls of the script are
+// those of the loop: a setup of an interpreter loop, or of a buffer whose
+// zeroing polls, would make more polls than the C loop on one architecture
+// (the Int32Array of typed makes 52 of its 66 on amd64), and a floor under
+// them would not see the C loop stop polling.
+var gcTightSetup = map[string]string{
+	"typed":  `var a = new Int32Array(1 << 22); a[a.length - 1] = 1; `,
+	"fill":   `var a = new Uint8Array(1 << 23); `,
+	"search": `var s = 'a'.repeat(1 << 22); `,
+	"sort":   `var a = []; for (var i = 0; i < 1 << 17; i++) a.push((i * 7919) % 1000003); `,
+	"tasort": `var a = new Float64Array(1 << 18); for (var i = 0; i < a.length; i++) a[i] = (i * 7919) % 1000003; `,
+	"json":   `var j = JSON.stringify(Array.from({length: 1 << 17}, (_, i) => ({i: i}))); `,
+}
+
+// gcTightPolls is, for each script of tight, the least number of polls it
+// makes after its setup at the default interval: about half of the fewest it
+// made on arm64 and amd64. Measured on 2026-11-13, in the order of tight:
+// 9585, 183, 1330, 200, 53, 72, 1560, 423, 629, 8149, 413 and 178, the same
+// on both and from run to run but for straight (200 or 201), sort (8149 to
+// 8212) and json (178 to 196). A collection waits for the engine's
+// goroutine at a poll or a function prologue, so a C loop that stopped
+// polling would hold it until the loop ends, and its script would make
+// fewer polls than its floor. The floors of loop, fib,
+// forms and straight are those of the interpreter, and so is most of sort's,
+// whose comparator is a function of the script: tasort holds the C sort.
+// Most of regexp's polls are those of the backtracking of /(a+)+b/, few
+// those of the replace. fill is the one floor above half: its fill and its
+// two copyWithin make 24 polls each (one per chunk of the memset or
+// memmove), 72 on both and in every run, so half would not see one of them
+// stop, and 60 does.
+var gcTightPolls = map[string]int64{
+	"loop": 4790, "fib": 90, "forms": 665, "straight": 100, "typed": 26, "fill": 60,
+	"regexp": 780, "search": 211, "repeat": 314, "sort": 4074, "tasort": 206, "json": 89,
+}
+
 // TestGCInTightLoops runs the tight loops while another goroutine keeps
-// starting collections. Each collection waits for the engine's goroutine to
-// reach a poll or a function prologue: no wait comes near what one of these
-// loops takes without polls, and the results do not change.
+// starting collections: the results do not change, and each script makes at
+// least the polls of its floor in gcTightPolls. It does not time the
+// collections: with one P (GOMAXPROCS=1, as under taskset on one core) a
+// collection takes the spans left to sweep times the 10 ms a loop keeps the
+// P, which measures the heap and the load, not the polls (docs/testing.md).
 func TestGCInTightLoops(t *testing.T) {
 	needPolls(t)
 	stop := make(chan struct{})
 	done := make(chan struct{})
-	var longest time.Duration
 	go func() {
 		defer close(done)
 		for {
@@ -89,25 +126,39 @@ func TestGCInTightLoops(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				t0 := time.Now()
 				runtime.GC()
-				longest = max(longest, time.Since(t0))
 			}
 		}
 	}()
 	for _, c := range tight {
+		floor, ok := gcTightPolls[c.name]
+		if !ok {
+			t.Errorf("%s: no floor of polls in gcTightPolls", c.name)
+		}
+		setup := gcTightSetup[c.name]
+		if !strings.HasPrefix(c.src, setup) {
+			t.Fatalf("%s: the setup in gcTightSetup is not the start of the script", c.name)
+		}
 		v := newVM(t, Options{Seed: 1})
-		got, err := v.Eval(c.src, c.name+".js")
+		if setup != "" {
+			if _, err := v.Eval(setup+"0", c.name+"-setup.js"); err != nil {
+				t.Fatalf("%s: setup: %v", c.name, err)
+			}
+		}
+		before := v.Host().Polls()
+		got, err := v.Eval(c.src[len(setup):], c.name+".js")
+		polls := v.Host().Polls() - before
 		if err != nil || got != c.want {
 			t.Errorf("%s with collections going on: %q, %v, want %q", c.name, got, err, c.want)
 		}
+		if polls < floor {
+			t.Errorf("%s with collections going on: %d polls, want at least %d", c.name, polls, floor)
+		}
+		t.Logf("%s: %d polls, floor %d", c.name, polls, floor)
 		closeVM(t, v)
 	}
 	close(stop)
 	<-done
-	if longest > 500*time.Millisecond {
-		t.Errorf("a collection took %v", longest)
-	}
 }
 
 // interruptRunning runs src in v and calls Interrupt from another goroutine
