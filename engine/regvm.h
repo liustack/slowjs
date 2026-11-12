@@ -131,6 +131,22 @@ _Static_assert(sizeof(RVHeader) == RV_HDR * sizeof(JSValue),
                "the header is three slots");
 _Static_assert(sizeof(JSValue) == 16, "a slot is a JSValue of 16 bytes");
 
+/* the closure variable i of the frame F. The check build compares one
+   that holds its value with its variable at each use (quickjs.c,
+   js_value_ref_check). */
+#ifdef RV_CBV_CHECK
+static inline JSVarRef *rv_vref_check(JSValue *F, int i)
+{
+    JSVarRef *v = ((RVHeader *)F)->var_refs[i];
+    if (((RVHeader *)F)->rf->b->closure_var[i].by_value)
+        js_value_ref_check(v);
+    return v;
+}
+#define RV_VREF(F, i) rv_vref_check(F, i)
+#else
+#define RV_VREF(F, i) (((RVHeader *)(F))->var_refs[i])
+#endif
+
 /* the closure state of a frame with captured locals: a JSStackFrame at F[3],
    its var_refs right after it */
 #define RV_SF(F) ((JSStackFrame *)((F) + RV_HDR))

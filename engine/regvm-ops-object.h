@@ -451,7 +451,7 @@ static no_inline int rv_putvar_slow(JSContext *ctx, JSValue *F, const uint8_t *i
                                     BOOL init)
 {
     int idx = get_u16(ip + 1), ret;
-    JSVarRef *var_ref = ((RVHeader *)F)->var_refs[idx];
+    JSVarRef *var_ref = RV_VREF(F, idx);
     JSClosureVar *cv = &((RVHeader *)F)->rf->b->closure_var[idx];
     JSValue v = rv_take(ctx, F, (int8_t)ip[0]);
     if (RV_INJ_HIT(ctx))
@@ -646,7 +646,7 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
     {                                                                   \
-        JSValue v = *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue; \
+        JSValue v = *RV_VREF(F, get_u16(ip + 1))->pvalue; \
         if (likely(!JS_IsUninitialized(v)) && !RV_INJ_ARMED) {          \
             RV_PUTD(ip[0], JS_DupValue(ctx, v));                        \
             RV_NEXT();                                                  \
@@ -664,7 +664,7 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
     {                                                                   \
-        JSVarRef *var_ref = ((RVHeader *)F)->var_refs[get_u16(ip + 1)]; \
+        JSVarRef *var_ref = RV_VREF(F, get_u16(ip + 1)); \
         if (likely(!JS_IsUninitialized(*var_ref->pvalue) &&             \
                    !var_ref->is_const) && !RV_INJ_ARMED) {              \
             set_value(ctx, var_ref->pvalue, rv_take(ctx, F, (int8_t)ip[0])); \

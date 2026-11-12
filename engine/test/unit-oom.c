@@ -2060,8 +2060,10 @@ static void test_finrec_job_full_heap(void)
    the call has: under a memory limit with no room for the register code
    the call fails with the out of memory error, and gives its answer at a
    limit with room. f(3) converts f and g, which takes about 12.3 KiB at its
-   peak, with the scratch of the pass (engine/regvm-pass.h), so the rooms go
-   up to 16 KiB. The register stack is
+   peak, with the scratch of the pass (engine/regvm-pass.h), and 4 KiB more
+   for an arena of small blocks of a size the setup asked for none of: f
+   holds g itself, not a JSVarRef (capture_by_value), so the setup made no
+   block of that size. So the rooms go up to 20 KiB. The register stack is
    made by JS_NewRuntime, before the limit (test_regvm_stack_oom).
    Each allocation of the pass failing in turn is test_regvm_convert_alloc
    of unit-white.c. */
@@ -2079,7 +2081,7 @@ static void test_regvm_convert_oom(void)
     snprintf(setup + n, sizeof(setup) - n, "; }\n"
              "return function (k) { var s = 0, i; for (i = 0; i < k; i++) s = s + g(i); return s; };\n"
              "})();");
-    sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 16384);
+    sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 20480);
 }
 
 /* The conversion of a function with a switch of 31 string cases, whose
@@ -2136,6 +2138,28 @@ static void test_regvm_args_oom(void)
 
     sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+}
+
+/* Closures that hold the values of the variables they capture, which no
+   code changes once they are captured (capture_by_value, engine/quickjs.c):
+   the values go into the block of the closure, so each allocation of
+   making such a closure, in a plain function, two functions down and in a
+   generator that goes on after it made one, failing in turn ends in the
+   out of memory error with nothing lost, and the call after it answers as
+   one with room does. */
+static void test_capture_value_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () { 'use strict';\n"
+        "  function mk(a, b) { const c = a + ':' + b, o = { a }; let d = [a]; d.push(b); return () => c + o.a + d.length + a + b; }\n"
+        "  function* gen(n) { const k = 's' + n; const g = () => k; yield g(); yield g; }\n"
+        "  function deep(x) { return () => () => x + '!'; }\n"
+        "  return function () { var r = [], i, it; for (i = 0; i < 3; i++) r.push(mk(i, 'v' + i)());\n"
+        "    it = gen(4); r.push(it.next().value, it.next().value()); r.push(deep('q')()()); return r.join(','); };\n"
+        "})();\n";
+    static const char *const want[] = { "0:v0020v0,1:v1121v1,2:v2222v2,s4,s4,q!", NULL };
+
+    sweep("closures that hold values", "<capture>", setup, "f()", want, 16384);
 }
 
 /* A function whose stack is too deep for the temps folds it into Arrays at
@@ -2331,6 +2355,7 @@ int main(void)
     test_regvm_convert_oom();
     test_regvm_cases_oom();
     test_regvm_args_oom();
+    test_capture_value_oom();
     test_regvm_fold_oom();
     test_regvm_stack_oom();
     test_regvm_scratch();
