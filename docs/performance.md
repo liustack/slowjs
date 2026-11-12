@@ -713,6 +713,19 @@ The time on darwin/arm64 moved by -0.7% to +1.3% on these four pages, within the
 | MUI's orders page | 12,651 | -0.05% |
 | `r_react_ssr` | 2,129 | -0.06% |
 
+### A key in a local without a reference
+
+[A key in a local is read without a reference](changes/c-engine.md#a-key-in-a-local-is-read-without-a-reference). Against the change before it, measured as above, with the same HTML on the 23 pages of the shop and MUI.
+
+| Page | Instructions |
+| --- | ---: |
+| the shop's English home page | -0.06% |
+| the shop's Chinese products page | -0.08% |
+| the same two with a stand-in for `URL` | -0.09% and -0.13% |
+| the workbench studio page | -0.13% |
+| MUI's orders page | -0.52% |
+| `r_react_ssr` | -0.10% |
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.

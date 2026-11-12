@@ -1,0 +1,18 @@
+result strings one,two:key2,
+result numbers three,b,c,,a
+result symbol symbol
+result null key ,
+result null object threw TypeError: cannot read property of null
+result key throws threw Error: key
+result key collects one,one
+result key changes object 2
+result key in a closure two gone
+result key through arguments one key1
+result valueOf a toString,valueOf
+result getter got null
+result proxy trap,trap,trap string p string 1 symbol Symbol(s)
+result string object b,y,3
+result loop 600
+mem-end obj=196 atom=566 shape=130 prop=969 jsfunc=3 cfunc=128 array=3 fast_array=3 elements=18 binary=0
+mem-gc obj=196 atom=566 shape=130 prop=969 jsfunc=3 cfunc=128 array=3 fast_array=3 elements=18 binary=0
+--- status exit 0

@@ -13560,8 +13560,10 @@ static no_inline JSValue rv_ta_get(JSContext *ctx, JSObject *p, uint32_t idx)
     return v;
 }
 
-static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
-                                   JSValue prop)
+/* this_obj[prop]: take says whether it frees prop, which it then does
+   before the property is read, as QuickJS does */
+static force_inline JSValue js_get_property_value(JSContext *ctx, JSValueConst this_obj,
+                                                  JSValue prop, BOOL take)
 {
     JSAtom atom;
     JSValue ret;
@@ -13579,22 +13581,39 @@ static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         uint32_t idx;
         if (is_num_string(&idx, JS_VALUE_GET_STRING(prop)) &&
             js_get_fast_array_element_out_of_line(ctx, JS_VALUE_GET_OBJ(this_obj), idx, &ret)) {
-            JS_FreeValue(ctx, prop);
+            if (take)
+                JS_FreeValue(ctx, prop);
             return ret;
         }
     }
     /* ToObject() must be done before ToPropertyKey() */
     if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
-        JS_FreeValue(ctx, prop);
+        if (take)
+            JS_FreeValue(ctx, prop);
         return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
     }
     atom = JS_ValueToAtom(ctx, prop);
-    JS_FreeValue(ctx, prop);
+    if (take)
+        JS_FreeValue(ctx, prop);
     if (unlikely(atom == JS_ATOM_NULL))
         return JS_EXCEPTION;
     ret = JS_GetProperty(ctx, this_obj, atom);
     JS_FreeAtom(ctx, atom);
     return ret;
+}
+
+static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
+                                   JSValue prop)
+{
+    return js_get_property_value(ctx, this_obj, prop, TRUE);
+}
+
+/* JS_GetPropertyValue with a key it does not free: the caller keeps prop
+   alive for the whole call, also while its toString or valueOf runs */
+static JSValue JS_GetPropertyValueConst(JSContext *ctx, JSValueConst this_obj,
+                                        JSValueConst prop)
+{
+    return js_get_property_value(ctx, this_obj, prop, FALSE);
 }
 
 JSValue JS_GetPropertyUint32(JSContext *ctx, JSValueConst this_obj,

@@ -40,6 +40,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
 | A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
+| `o[k]` with the key in a local or an argument reads the key without a reference | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-read-without-a-reference) |
 
 ## Commits of upstream QuickJS
 

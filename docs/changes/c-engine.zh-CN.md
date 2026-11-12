@@ -705,3 +705,15 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 编译器不会生成这样的代码：test262、语料、23 个页面和 rvgen 的种子都照旧通过，而 pass 拒绝的函数在第一次调用时就会抛错。有了它，[捕获后不再改变的变量](#捕获后不再改变的变量)才能确信异常只落在本函数的 `catch` 上。
 
 测试：`engine/test/unit-white.c` 的 `test_regvm_crafted` 对每一类改动编译器生成的代码的一个字节（`engine/test/white.c` 的 `white_crafted_jump`），检查读取时会拒绝它：丢掉 catch 偏移的 `drop` 改成 `return`，一个跳转和一个 `catch` 改成跳到代码开头之前，以及 `for_of_next` 的偏移改成指向外面 `try` 的 catch 偏移。`test_regvm_crafted_code` 把自己的代码放进一个函数（`white_crafted_code`）：下面没有迭代器的 `iterator_get_value_done`，读取时被拒绝，在返回地址下面留了自己的 catch 偏移的 `finally`，它的 `ret` 会抛错，以及立刻返回的 `finally`，照旧运行。
+
+## 局部变量里的键不加引用就读
+
+版本：Unreleased。
+
+键在局部变量或参数里的 `o[k]`（寄存器循环的 GETEL 和 GETELT，数组和类型化数组的快路径答不上时）以前先给键加一个引用，`JS_GetPropertyValue` 把键变成 atom 之后再放掉。现在循环像读 `o` 一样就地读这个键，`JS_GetPropertyValueConst` 读完不动它。键在临时槽里时照旧拿走再释放。
+
+为什么安全：键的 `toString` 或 `valueOf`、getter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽。被闭包捕获的局部变量，寄存器 pass 会在任何代码运行之前把它复制到临时槽（`rv_push`），函数有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。所以这个槽在调用返回之前一直握着它的引用，结果在调用之后才存（`rv_put`），存回键自己的槽也一样。`JS_GetPropertyValue` 还是原来的函数（带 `take` 的 `js_get_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选。
+
+收益：MUI 的 orders 页每次渲染少 0.52% 的指令，其他页面少 0.06% 到 0.13%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。

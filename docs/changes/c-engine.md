@@ -705,3 +705,15 @@ A `ret` goes back to the end of its `gosub` only when the depth and the innermos
 The compiler makes none of this code: test262, the corpus, the 23 pages and the rvgen seeds run as before, and a function the pass refused would throw at its first call. It is what lets [captures that never change](#captures-that-never-change) trust that an exception lands only on a `catch` of its function.
 
 Tests: `test_regvm_crafted` of `engine/test/unit-white.c` changes one byte of code the compiler made for each kind (`white_crafted_jump`, `engine/test/white.c`) and checks that the read refuses it: the `drop` of a catch offset made a `return`, a jump and a `catch` made to go before the start of the code, and the offset of a `for_of_next` made to name the catch offset of a `try` around it. `test_regvm_crafted_code` puts code of its own in a function (`white_crafted_code`): an `iterator_get_value_done` with no iterator under it, which the read refuses, a `finally` that leaves a catch offset of its own under its return address, whose `ret` throws, and one that returns at once, which runs as before.
+
+## A key in a local is read without a reference
+
+Release: Unreleased.
+
+`o[k]` with the key in a local or an argument (GETEL and GETELT of the register loop, when the fast paths of an array or a typed array do not answer) took a reference to the key, and `JS_GetPropertyValue` let it go once the key was made an atom. The loop now reads such a key where it is, as it already reads `o`, and `JS_GetPropertyValueConst` leaves it as it found it. A key in a temp is still taken and freed.
+
+Why this is safe: the key's `toString` or `valueOf`, a getter and a Proxy trap do run during the call, but none of them can write the slot the key is in. The register pass copies a local that a closure captures into a temp before anything can run (`rv_push`), and the compiler marks every argument captured when a function has a mapped `arguments` object or a direct `eval`. So the slot keeps its reference until the call returns, and the result is stored after it (`rv_put`), also when it goes to the key's own slot. `JS_GetPropertyValue` is the same function as before (`js_get_property_value` with `take`), and frees its key at the same place. There is no new branch on the path: the test of a temp chose between two reads of the slot before.
+
+What it gains: MUI's orders page runs 0.52% fewer instructions a render, the other pages 0.06% to 0.13%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#a-key-in-a-local-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/test/compare/getel_local_key.js` reads keys that are strings, numbers, symbols, `null` and objects whose `toString` or `valueOf` throws, collects, changes the object or writes the key through a closure or a mapped `arguments` object, through a getter and a Proxy trap that write the key and collect, and in a loop. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps keys made at run time with too little memory (`test_getel_local_key_oom`).

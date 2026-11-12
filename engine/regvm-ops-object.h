@@ -217,15 +217,27 @@ static inline BOOL rv_ta_num(int class_id)
 }
 
 /* the slow side of GETEL, ip at d o key|k, as the slow path of
-   QuickJS's get_array_el: the key is freed, o too for the T forms */
+   QuickJS's get_array_el: a key in a temp is freed, o too for the T
+   forms */
 static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                    BOOL k, BOOL t)
 {
     JSValue obj = F[(int8_t)ip[1]], key, val;
-    if (k)
+    if (k) {
         key = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[2]]);
-    else
-        key = rv_take(ctx, F, (int8_t)ip[2]);
+    } else if (!rv_is_temp(F, (int8_t)ip[2])) {
+        /* a local or an argument is read without a reference, as obj is:
+           no other code can write it while the key is made and the
+           property read (a captured one is never an operand, rv_push),
+           so it keeps the key alive for the whole call */
+        if (RV_INJ_HIT(ctx))
+            val = JS_EXCEPTION;
+        else
+            val = JS_GetPropertyValueConst(ctx, obj, F[(int8_t)ip[2]]);
+        goto done;
+    } else {
+        key = F[(int8_t)ip[2]];
+    }
     if (RV_INJ_HIT(ctx)) {
         /* JS_GetPropertyValue takes the key when it fails too */
         JS_FreeValue(ctx, key);
@@ -233,6 +245,7 @@ static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
     } else {
         val = JS_GetPropertyValue(ctx, obj, key);
     }
+ done:
     if (t)
         JS_FreeValue(ctx, obj);
     if (unlikely(JS_IsException(val)))

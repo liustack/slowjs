@@ -1628,6 +1628,30 @@ static void test_has_property_oom(void)
     sweep("has property", "hasprop.js", setup, "run()", want, 16384);
 }
 
+/* o[k] with the key in a local: with too little memory (the atom of a key
+   made at run time, the string a key object gives, the result) it fails
+   with the out of memory error and frees each key once. */
+static void test_getel_local_key_oom(void)
+{
+    static const char setup[] =
+        "var o = { k0: 'a', k1: 'b', k2: 'c', 5: 'five' }, arr = [1, 2, 3];\n"
+        "function get(obj, key) { return obj[key] }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'k' + (i % 3) } };\n"
+        "    out.push(get(o, k), get(o, ko), get(arr, i % 4), get(arr, '' + (i % 3)), get(o, 5));\n"
+        "  }\n"
+        "  return out.join('');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "aa11fivebb22fivecc33fivea1fiveab12fivebc23five", NULL };
+
+    sweep("local key", "getel.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2385,6 +2409,7 @@ int main(void)
     test_string_append_oom();
     test_copy_props_oom();
     test_has_property_oom();
+    test_getel_local_key_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();
