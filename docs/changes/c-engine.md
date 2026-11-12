@@ -717,3 +717,15 @@ Why this is safe: the key's `toString` or `valueOf`, a getter and a Proxy trap d
 What it gains: MUI's orders page runs 0.52% fewer instructions a render, the other pages 0.06% to 0.13%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#a-key-in-a-local-without-a-reference).
 
 The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/test/compare/getel_local_key.js` reads keys that are strings, numbers, symbols, `null` and objects whose `toString` or `valueOf` throws, collects, changes the object or writes the key through a closure or a mapped `arguments` object, through a getter and a Proxy trap that write the key and collect, and in a loop. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps keys made at run time with too little memory (`test_getel_local_key_oom`).
+
+## The truth of a value is read without a reference
+
+Release: Unreleased.
+
+`JS_ToBool` took a reference to its value and let it go once it knew whether the value was true. It now reads the value where it is (`js_to_bool` with `take` FALSE), and `JS_ToBoolFree` is the same function as before. The branches of the register loop (`if`, `while`, `!`, `&&`, `||`, the conditional operator) ask the truth of a local or an argument through `JS_ToBool` and of a temp through `JS_ToBoolFree`, where both went through a reference before (`rv_take`), and `&&` and `||`, which keep their operand, ask it through `JS_ToBool` too. `Boolean`, the tags of RegisterStartTag, the jobs of promises and a few more built-ins call `JS_ToBool` and gain the same.
+
+Why this is safe: the truth of a value runs no code, allocates nothing and reads no interrupt. It reads the length of a string or a rope, the sign and digits of a BigInt, the `is_HTMLDDA` mark of an object, or the tag. Nothing can free the value while it does, so the reference held nothing alive. There is no new branch in the loop: the test of a temp chose between two reads of the slot before (`rv_take`).
+
+What it gains: the workbench studio page runs 0.21% fewer instructions a render, MUI's orders page 0.12%, the shop's pages 0.05% to 0.09% and React's 0.02%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#the-truth-of-a-value-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-basic.h`). `engine/test/compare/truth_of_locals.js` asks the truth of strings, ropes, objects, functions, symbols, BigInts and numbers in locals, arguments and temps in every kind of branch and in the built-ins that ask it, and of a string and an object whose last other reference goes, after a collection, while they are in a local. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps branches on strings and objects made at run time with too little memory (`test_truth_oom`).

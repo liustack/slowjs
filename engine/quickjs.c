@@ -15808,7 +15808,8 @@ static inline BOOL JS_IsHTMLDDA(JSContext *ctx, JSValueConst obj)
     return p->is_HTMLDDA;
 }
 
-static int JS_ToBoolFree(JSContext *ctx, JSValue val)
+/* the truth of val, which runs no code: take says whether val is freed */
+static force_inline int js_to_bool(JSContext *ctx, JSValue val, BOOL take)
 {
     uint32_t tag = JS_VALUE_GET_TAG(val);
     switch(tag) {
@@ -15823,13 +15824,15 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
     case JS_TAG_STRING:
         {
             BOOL ret = JS_VALUE_GET_STRING(val)->len != 0;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_STRING_ROPE:
         {
             BOOL ret = JS_VALUE_GET_STRING_ROPE(val)->len != 0;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_SHORT_BIG_INT:
@@ -15850,7 +15853,8 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
                     break;
                 }
             }
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_OBJECT:
@@ -15858,7 +15862,8 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
             JSObject *p = JS_VALUE_GET_OBJ(val);
             BOOL ret;
             ret = !p->is_HTMLDDA;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
         break;
@@ -15867,15 +15872,21 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
             double d = JS_VALUE_GET_FLOAT64(val);
             return !isnan(d) && d != 0;
         } else {
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return TRUE;
         }
     }
 }
 
+static int JS_ToBoolFree(JSContext *ctx, JSValue val)
+{
+    return js_to_bool(ctx, val, TRUE);
+}
+
 int JS_ToBool(JSContext *ctx, JSValueConst val)
 {
-    return JS_ToBoolFree(ctx, JS_DupValue(ctx, val));
+    return js_to_bool(ctx, val, FALSE);
 }
 
 /* The length of the spaces at the start of pc, or -1 with "interrupted"

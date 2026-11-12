@@ -717,3 +717,15 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 收益：MUI 的 orders 页每次渲染少 0.52% 的指令，其他页面少 0.06% 到 0.13%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用)。
 
 改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。
+
+## 值的真假不加引用就判断
+
+版本：Unreleased。
+
+`JS_ToBool` 以前先给值加一个引用，知道它是真是假之后再放掉。现在它就地读这个值（`take` 为 FALSE 的 `js_to_bool`），`JS_ToBoolFree` 还是原来的函数。寄存器循环的分支（`if`、`while`、`!`、`&&`、`||`、条件运算符）对局部变量或参数经 `JS_ToBool` 判断，对临时槽经 `JS_ToBoolFree` 判断，以前两者都先拿一个引用（`rv_take`）。保留操作数的 `&&` 和 `||` 也经 `JS_ToBool` 判断。`Boolean`、RegisterStartTag 的标签、promise 的任务和另外几个内建函数调用 `JS_ToBool`，得到同样的收益。
+
+为什么安全：判断一个值的真假不运行代码，不分配内存，也不读中断标志。它读字符串或 rope 的长度、BigInt 的符号和数位、对象的 `is_HTMLDDA` 标记，或者标签本身。这期间没有什么能释放这个值，所以那个引用什么也没保住。循环里没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：workbench studio 页每次渲染少 0.21% 的指令，MUI 的 orders 页少 0.12%，商店的页面少 0.05% 到 0.09%，React 的少 0.02%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#不加引用判断值的真假)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-basic.h`）。`engine/test/compare/truth_of_locals.js` 在各种分支和会问真假的内建函数里，判断局部变量、参数和临时槽里的字符串、rope、对象、函数、symbol、BigInt 和数字，还判断局部变量里最后一个其他引用已经没了、又经过一次回收的字符串和对象。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把对运行时造出的字符串和对象的分支扫一遍（`test_truth_oom`）。

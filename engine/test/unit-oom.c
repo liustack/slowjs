@@ -1652,6 +1652,32 @@ static void test_getel_local_key_oom(void)
     sweep("local key", "getel.js", setup, "run()", want, 16384);
 }
 
+/* The truth of strings, ropes and objects in locals and temps: with too
+   little memory (the strings and objects made, the result) it fails with
+   the out of memory error and frees each value once. */
+static void test_truth_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var n = 0, s = '';\n"
+        "  for (var i = 0; i < 40; i++) {\n"
+        "    var t = i % 3 ? 'v' + i : '', o = i % 4 ? {} : null;\n"
+        "    s += 'abcdefghijabcdefghij';\n"
+        "    if (t) n++;\n"
+        "    if (!o) n += 100;\n"
+        "    if (s && t) n += 10000;\n"
+        "    var r = t + s;\n"
+        "    if (r || o) n += 1000000;\n"
+        "  }\n"
+        "  return String(n);\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "40261026", NULL };
+
+    sweep("truth", "truth.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2410,6 +2436,7 @@ int main(void)
     test_copy_props_oom();
     test_has_property_oom();
     test_getel_local_key_oom();
+    test_truth_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();
