@@ -255,6 +255,29 @@ multiply-adds (`fmadd`, `fmla` and the rest), with a test for each
 (`TestLowerARM64EngineRejects`, `TestLowerARM64EngineFacts`,
 `TestLowerARM64EngineTiny`).
 
+llc keeps LR (x30) like a callee-saved register: a function that calls saves
+it in its frame and loads it back before each `ret`. The lowering turns `ret`
+into a branch to Go's epilogue, which loads LR from 0(RSP) where Go's
+prologue saved it, so it drops llc's save and load of x30 (`arm64_lr.go`). A
+`str` or `ldr` of x30 goes, an `stp` or `ldp` that pairs it with another
+register keeps that register as a `str` or `ldr`, and the frame keeps its size
+with the 8 bytes of the slot in it. The lowering then proves the drop on its
+own output (`a64ProveLR`): no instruction left names x30, and none reads,
+writes or takes the address of a byte of a dropped slot, so the slot is
+written only from x30 and read only into x30 on every path, and both are
+gone. The address of a tuple spill counts with every byte a tuple through it
+reaches, up to where its register is written again, a call or a return, and
+must not live past a label or a branch. A function the proof refuses stops
+the build. Any other use of LR (a w
+register, LR twice in a pair, writeback forms other than the frame's own)
+stops it too. `GEN_DROP_LR_PAIRS=1` is the negative build that drops the
+other register of a pair with x30, which the proof must refuse:
+`GEN_DROP_LR_PAIRS=unchecked` skips the proof and writes a package marked as
+a negative build, which the engine's tests must fail on. Tests:
+`TestLowerARM64EngineLR`, `TestLowerARM64EngineLRRefused`,
+`TestLowerARM64EngineLRNegative`, `TestLowerARM64EngineLRLabel`,
+`TestLowerARM64EngineLRTuple`.
+
 A function whose arguments need more integer registers than a unified entry
 has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
 block of them instead (`f(sp, blk)`). Its generated entry is named

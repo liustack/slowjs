@@ -58,6 +58,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 - A `for-of` over an array that is not changed in ways that matter for iteration no longer calls the array iterator's `next` for each element. So at the call depth limit such a loop reads on where the call to `next` threw `RangeError` before. Scripts never stop sooner than before.
 - When a loop that does nothing but call `charCodeAt` on a string is stopped (a timeout or `Interrupt`), the stop is reported at the jump back of the loop, not inside the call.
 - A call whose last arguments are local variables, arguments or `this` copies them itself, where each took an instruction of its own. A render of tifa's shop takes 0.9% to 1.3% less time, and React's page 0.8% less, on an Apple M4 ([c-engine.md](docs/changes/c-engine.md#a-call-copies-its-last-locals-into-its-window)).
+- On arm64 a generated function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do. A render runs 0.75% to 1.14% fewer instructions and takes 0.4% to 1.2% less time on an Apple M4, inside the spread of the rounds. Frames and the call depth are the same, and amd64 does not change ([c-engine.md](docs/changes/c-engine.md#lr-is-saved-once-on-arm64)).
 
 ## [v0.30.1] - 2026-11-06
 

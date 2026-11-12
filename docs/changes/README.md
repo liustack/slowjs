@@ -40,6 +40,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
 | A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
+| On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | Unreleased | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
 
 ## Commits of upstream QuickJS
 

@@ -267,6 +267,18 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 测试：`TestEngineAsmDecl`（`internal/goasm/gen`）在 amd64 的 linux、darwin、windows 和 arm64 的 linux、darwin 上对 `internal/cengine` 运行 `go vet -asmdecl`，要求一条报告也没有。`TestRoomCheck` 检查没有栈帧、有栈帧和有调用的叶子函数的 TEXT，并检查 `goasm_room` 的文件只在 windows/amd64 上构建。
 
+## arm64 只保存一次 LR
+
+在 arm64 上，生成的代码不再在每个有调用的函数里自己保存和读回 LR（x30）：Go 的序言和尾声已经做了这件事。llc 把 x30 当作被调用者保存的寄存器，所以有调用的函数把它存进自己的栈帧，每次返回之前再读回来。生成器把每次返回改成跳到函数末尾，Go 汇编器在那里写它的尾声，有调用的函数的尾声从 0(RSP) 读回 LR，那是 Go 的序言保存它的地方（`cmd/internal/obj/arm64/obj7.go`，`preprocess` 里的 `ARET` 分支）。llc 对 x30 的存和读都是没用的，每次调用大约两条指令。lowering 把它们删掉（`internal/goasm/gen/arm64_lr.go`）：x30 的 `str` 或 `ldr` 整条删掉，把 x30 和另一个寄存器配对的 `stp` 或 `ldp` 只留下那个寄存器的 `str` 或 `ldr`，偏移不变。amd64 的代码没有 LR，一个字节都不变。
+
+为什么安全：lowering 在自己的输出上证明这一点，证明不过就让构建停下。剩下的指令没有一条提到 x30，也没有一条读、写或取地址到被删槽的任何一个字节，所以在每条路径上这个槽只从 x30 写入、只读回 x30，而这两者都已删掉。x30 本身只被 Go 的 `RET` 读，那时尾声已经把它读回来了。不调用任何函数的函数在 Go 看来是叶子函数，它的尾声不读回 LR，这时函数里没有任何指令写 x30，从入口到返回它一直是 LR。Go 运行时也不读 llc 的这个槽：栈复制、信号的回溯和回调进 Go 都要经过 unwinder，它从每个栈帧的 0(RSP) 取这个栈帧的返回地址（`runtime/traceback.go`，`unwinder.resolveInternal`），而 `morestack` 在函数自己的栈帧建立之前运行，调用者的 LR 放在 R3 里传过去（`runtime/asm_arm64.s`）。槽的 8 个字节还留在栈帧里，所以每个栈帧的大小都和原来一样，调用深度和影子栈都不变（`TestRegvmDepth` 的深度下限和 `TestCCallDepth` 得到同样的深度，`JS_RegvmRun` 的影子栈帧仍是 176 字节），llc 的文本、pass 的报告和寄存器 facts 都和以前是同样的文件。
+
+它改变的是 arm64 生成的文件，和同样的 C 以前生成的相比：1,570 个函数里有 1,364 个少了指令，一共少了 2,485 条，再没有一条提到 x30，每个 TEXT 的栈帧都一样，`.s` 文件小了 0.40%（11,059,028 字节到 11,014,478 字节）。它带来的收益见 [performance.md](../performance.zh-CN.md#arm64-只保存一次-lr)。
+
+一个反向构建说明这个证明管用：`GEN_DROP_LR_PAIRS=1` 把和 x30 配对的另一个寄存器也一起删掉，构建在第一个把那个寄存器读回来的函数上停下。`GEN_DROP_LR_PAIRS=unchecked` 跳过证明，写出一个标明是反向构建的包，要加 `-tags goasmnegative` 才能编译，引擎的测试在它上面失败。`-release` 两个都拒绝。
+
+测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及活过一个标签、或放在寄存器入口叶子函数跨调用保留的寄存器里的元组地址。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
+
 ## 释放对象时被要求回收
 
 引擎在释放对象期间，也就是 `gc_phase` 不是 `JS_GC_PHASE_NONE` 时，`JS_RunGC` 和 `JS_RunYoungGC` 立刻返回，什么也不做：在释放引用计数降到零的对象的 `free_zero_refcount` 里，在立即释放引用计数降到零的普通对象的 `free_zero_refcount_first` 里（见 [objects-and-shapes.zh-CN.md](objects-and-shapes.zh-CN.md)），在释放一次回收找到的环的 `gc_free_cycles` 里，以及释放运行时的这两处。创建对象时阈值要求的回收也经过 `JS_RunGC`，所以这时创建的对象同样不会开始回收。阈值不动，在释放之后创建下一个对象时会再检查。
