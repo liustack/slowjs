@@ -225,6 +225,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Object literals have the room of an empty object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
 | A for in loop asks a shape once whether it lists its keys | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 | An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
+| The `in` operator walks a prototype chain without references | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
 
 ## Memory
 

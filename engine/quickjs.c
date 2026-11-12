@@ -13395,11 +13395,22 @@ int JS_HasProperty(JSContext *ctx, JSValueConst obj, JSAtom prop)
                 JS_FreeValue(ctx, obj1);
                 return ret;
             }
+            if (!p->fast_array) {
+                /* the get_own_property of the class can free the
+                   prototype */
+                JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+                ret = JS_GetOwnPropertyInternal(ctx, NULL, p, prop);
+                JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+                goto own_done;
+            }
         }
-        /* JS_GetOwnPropertyInternal can free the prototype */
-        JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+        /* Without a descriptor, JS_GetOwnPropertyInternal runs no code for
+           an object that is not exotic or is a fast array, and reads no
+           interrupt (its error for a binding not yet initialized runs none
+           either): p, which obj or the object before it in the chain holds,
+           stays alive with no reference of its own. */
         ret = JS_GetOwnPropertyInternal(ctx, NULL, p, prop);
-        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+    own_done:
         if (ret != 0)
             return ret;
         if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&

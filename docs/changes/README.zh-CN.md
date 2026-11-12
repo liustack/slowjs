@@ -225,6 +225,7 @@ read_when:
 | 对象字面量的 shape 至少有空对象的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
 | for in 循环对一个 shape 只问一次能不能从它列出键 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
+| `in` 运算符遍历原型链时不加引用 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 
 ## 内存
 

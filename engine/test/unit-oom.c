@@ -1594,6 +1594,40 @@ static void test_copy_props_oom(void)
     sweep_register = NULL;
 }
 
+/* JS_HasProperty walks a prototype chain, through `in` with keys made at run
+   time, the fields of property descriptors and the holes that every and
+   concat look up: with too little memory (a key, the number a typed array
+   reads from a key, a descriptor, a result) it fails with the out of memory
+   error and frees each object of the chains once. */
+static void test_has_property_oom(void)
+{
+    static const char setup[] =
+        "var base = { a: 1 }, mid = Object.create(base), arr = [1, 2];\n"
+        "mid.b = 2;\n"
+        "var top = Object.create(mid), onArr = Object.create(arr);\n"
+        "var onTa = Object.create(new Uint8Array(4));\n"
+        "function run() {\n"
+        "  var n = 0, out = [];\n"
+        "  for (var i = 0; i < 8; i++) {\n"
+        "    if (('a' + (i % 2 ? '' : 'x')) in top) n++;\n"
+        "    if (i in onArr) n++;\n"
+        "    if ((i + '.5') in onTa || ('' + i) in onTa) n++;\n"
+        "    var d = Object.create({ enumerable: true, configurable: i % 2 == 0 });\n"
+        "    d.value = i;\n"
+        "    var o = Object.defineProperty({}, 'p' + i, d);\n"
+        "    out.push(Object.keys(o).length);\n"
+        "  }\n"
+        "  var h = [1, , 3, , 5], seen = 0;\n"
+        "  h.every(function () { seen++; return true });\n"
+        "  return n + ' ' + out.join('') + ' ' + seen + ' ' + [0].concat(h).length;\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "10 11111111 3 6", NULL };
+
+    sweep("has property", "hasprop.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2350,6 +2384,7 @@ int main(void)
     test_array_room_oom();
     test_string_append_oom();
     test_copy_props_oom();
+    test_has_property_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();
