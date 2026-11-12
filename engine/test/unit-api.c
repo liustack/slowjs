@@ -1496,27 +1496,68 @@ static void test_rv_far_locals(void)
     }
 }
 
+/* C_CALL_ASAN and C_CALL_SAN: built with AddressSanitizer, and with any
+   sanitizer that changes the frames (AddressSanitizer or UBSan) */
+#if defined(__SANITIZE_ADDRESS__)
+#define C_CALL_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define C_CALL_ASAN 1
+#endif
+#endif
+#ifndef C_CALL_ASAN
+#define C_CALL_ASAN 0
+#endif
+#if C_CALL_ASAN
+#define C_CALL_SAN 1
+#elif defined(__has_feature)
+#if __has_feature(undefined_behavior_sanitizer)
+#define C_CALL_SAN 1
+#endif
+#endif
+#ifndef C_CALL_SAN
+#define C_CALL_SAN 0
+#endif
+
+/* the bytes a frame that AddressSanitizer sets down to 32 may add (see
+   test_c_call_recursions) */
+#if C_CALL_ASAN
+#define C_CALL_SET_DOWN 16
+#else
+#define C_CALL_SET_DOWN 0
+#endif
+
 /* JS_RegvmStat 5 and 6, the bytes of stack a frame of JS_RegvmRun and of
    JS_CallInternal take before their checks, are measured: neither is 0, which
    is what a measure gives when the compiler inlines the call it measures. A
    call of a C function the register loop makes without JS_CallInternal
    counts 6 as taken. 12, the part of 6 that js_call_c_hop counts, is
-   0 or more and less than 6 while the direct calls are on. */
+   0 or more and less than 6 while the direct calls are on, or -1 when the
+   engine found the frame of js_call_c_hop larger than that of
+   JS_CallInternal (Linux's UBSan build) and calls C functions from C
+   through JS_CallInternal. The same measure gives the same answer each
+   time the direct calls are turned on, up to a frame AddressSanitizer
+   sets down (C_CALL_SET_DOWN): it measures from where it is called. */
 static void test_call_frames_measured(void)
 {
     VM v = vm_new();
     int rv = JS_RegvmStat(v.ctx, 5), entry = JS_RegvmStat(v.ctx, 6);
+    int hop = JS_RegvmStat(v.ctx, 12);
 
     CHECK(rv > 0, "a frame of JS_RegvmRun takes %d bytes", rv);
     CHECK(entry > 0, "a frame of JS_CallInternal takes %d bytes", entry);
     /* 12: what js_call_c_hop counts as taken of that frame, -1 with the
        direct calls off, when every call goes through JS_CallInternal */
-    CHECK(JS_RegvmStat(v.ctx, 12) >= 0 && JS_RegvmStat(v.ctx, 12) < entry,
-          "js_call_c_hop counts %d bytes of %d", JS_RegvmStat(v.ctx, 12), entry);
+    CHECK(hop == -1 || (hop >= 0 && hop < entry),
+          "js_call_c_hop counts %d bytes of %d", hop, entry);
+    /* a build without a sanitizer always has the room */
+    CHECK(C_CALL_SAN || hop >= 0, "no sanitizer, and js_call_c_hop is off");
     CHECK(JS_SetDirectCCalls(v.ctx, 0) == 0 && JS_RegvmStat(v.ctx, 12) == -1,
           "direct calls off: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
-    CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 && JS_RegvmStat(v.ctx, 12) >= 0,
-          "direct calls on again: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
+    CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 &&
+          abs(JS_RegvmStat(v.ctx, 12) - hop) <= C_CALL_SET_DOWN,
+          "direct calls on again: js_call_c_hop counts %d bytes, %d before",
+          JS_RegvmStat(v.ctx, 12), hop);
     vm_free(&v);
 }
 
@@ -1539,29 +1580,20 @@ static void test_call_frames_measured(void)
    Under AddressSanitizer, which aligns its stack objects to 32 bytes,
    JS_RegvmRun, js_call_c_function and js_measure_call_frame set their stack
    pointer down to a multiple of 32 bytes, so each of their frames is 16
-   bytes larger or not by where the frame above it ends, and a call made
-   below such a frame pushes the arguments of JS_CallInternal that do not
-   fit in registers. One measure of the frame a direct call skips then
-   cannot match what each level takes: with UBSan too, JS_CallInternal
-   takes 192 bytes, the measure finds 208, and a level through it takes
-   about 16 more than a direct one with its debt. So under AddressSanitizer
-   every kind may end a few levels in a hundred deeper directly, and a kind
-   with a hop (HOP or HOP_DEEPER), whose frame above js_call_c_function is
-   js_call_c_hop, may also end that much less deep. Which way a build goes
-   depends on its frames, and changes with them. Without a sanitizer no
-   frame is set down so, and the depths are the same. */
-enum { HOP = 1, HOP_DEEPER = 2 };
+   bytes larger or not by where the frame above it ends. One measure of the
+   frame a direct call skips then cannot match what each level takes, and
+   a level through JS_CallInternal may take up to 16 bytes more for each of
+   the three than a direct one with its debt: on macOS with UBSan too,
+   JS_CallInternal takes 192 bytes and the measure finds 208. So a direct
+   run may end deeper, never less deep, by no more than these bytes explain
+   against the frames each level takes at the least (c_call_same). Without
+   a sanitizer no frame is set down so, and the depths are the same.
 
-#if defined(__SANITIZE_ADDRESS__)
-#define C_CALL_ASAN 1
-#elif defined(__has_feature)
-#if __has_feature(address_sanitizer)
-#define C_CALL_ASAN 1
-#endif
-#endif
-#ifndef C_CALL_ASAN
-#define C_CALL_ASAN 0
-#endif
+   With the hop off (JS_RegvmStat 12 is -1: Linux's UBSan build, whose
+   frame of js_call_c_hop is the larger) a C function calls a C function
+   through JS_CallInternal, as before the hop, and the kinds with a hop end
+   at the same depth both ways, HOP_DEEPER too. */
+enum { HOP = 1, HOP_DEEPER = 2 };
 
 static const struct { const char *name, *body; int hop; } c_call_kinds[] = {
     { "call", "return f.call(null) + v0" },
@@ -1580,6 +1612,8 @@ static const struct { const char *name, *body; int hop; } c_call_kinds[] = {
 
 typedef struct {
     int kind, locals, direct;
+    int hop; /* the run had js_call_c_hop on (JS_RegvmStat 12) */
+    int rv, entry; /* the frames of JS_RegvmRun and JS_CallInternal (5, 6) */
     char *out;
 } CCallRun;
 
@@ -1607,6 +1641,9 @@ static int c_call_run(void *arg)
              vars, c_call_kinds[r->kind].body);
     CHECK(JS_SetMaxCallDepth(v.rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "the call depth cannot be set");
     CHECK(JS_SetDirectCCalls(v.ctx, r->direct) == 0, "JS_SetDirectCCalls refused");
+    r->hop = JS_RegvmStat(v.ctx, 12) >= 0;
+    r->rv = JS_RegvmStat(v.ctx, 5);
+    r->entry = JS_RegvmStat(v.ctx, 6);
     r->out = eval_text(v.ctx, src);
     free(exception_text(v.ctx));
     vm_free(&v);
@@ -1619,32 +1656,41 @@ static void *c_call_thread(void *arg)
     return NULL;
 }
 
-/* c_call_same: TRUE when the run directly ended as the run through
-   JS_CallInternal, or, with the same error, at most 2 in 100 levels deeper
-   for a kind with HOP_DEEPER, and under AddressSanitizer for every kind,
-   or that much less deep for a kind with a hop under AddressSanitizer
-   (c_call_kinds) */
-static int c_call_same(int k, const char *through, const char *direct)
+/* c_call_slack: the bytes a level of kind k may take through
+   JS_CallInternal beyond what a direct level takes with its debt, which no
+   measure sees (c_call_kinds): 16 for each of the three frames that
+   AddressSanitizer sets down, and with the hop on, 16 for the arguments
+   pushed below a bound function of a kind with HOP_DEEPER */
+static int c_call_slack(int k, int hop)
+{
+    return 3 * C_CALL_SET_DOWN + (hop && c_call_kinds[k].hop == HOP_DEEPER ? 16 : 0);
+}
+
+/* c_call_same: TRUE when the run d directly ended as the run t through
+   JS_CallInternal, with the same error, never less deep, and deeper by no
+   more than the slack explains: each level takes at least the frames of
+   JS_RegvmRun and of JS_CallInternal that the engine measured (JS_RegvmStat
+   5 and 6, of the direct run), so with s bytes of slack a level, the m
+   levels of d take no more stack than the n levels of t when
+   m * (rv + entry - s) <= n * (rv + entry) */
+static int c_call_same(int k, const CCallRun *t, const CCallRun *d)
 {
     const char *a, *b;
-    int n, m;
+    long n, m, s, least;
 
-    if (!through || !direct)
+    if (!t->out || !d->out)
         return 0;
-    if (strcmp(through, direct) == 0)
+    if (strcmp(t->out, d->out) == 0)
         return 1;
-    a = strchr(through, ' ');
-    b = strchr(direct, ' ');
-    n = atoi(through);
-    m = atoi(direct);
-    if (!a || !b || strcmp(a, b) != 0)
+    a = strchr(t->out, ' ');
+    b = strchr(d->out, ' ');
+    n = atol(t->out);
+    m = atol(d->out);
+    if (!a || !b || strcmp(a, b) != 0 || m < n)
         return 0;
-#if C_CALL_ASAN
-    if (m > n)
-        return m - n <= n / 50;
-    return c_call_kinds[k].hop && n - m <= n / 50;
-#endif
-    return c_call_kinds[k].hop == HOP_DEEPER && m > n && m - n <= n / 50;
+    s = c_call_slack(k, d->hop);
+    least = (long)d->rv + d->entry;
+    return s > 0 && least > s && m * (least - s) <= n * least;
 }
 
 /* Every recursion of c_call_kinds ends in a RangeError, never past the end
@@ -1653,8 +1699,9 @@ static int c_call_same(int k, const char *through, const char *direct)
    the call depth. And it ends at the same depth whether the register loop
    calls the C functions itself or through JS_CallInternal: a direct call
    counts the frame of JS_CallInternal it skips as taken (stack_debt), so a
-   measure of that frame of 0 would let it go deeper. A kind with a hop may
-   end a little apart directly, as c_call_kinds says. */
+   measure of that frame of 0 would let it go deeper. Under a sanitizer, or
+   for a kind with HOP_DEEPER, a direct run may end a little deeper, as
+   c_call_kinds says. */
 static void test_c_call_recursions(void)
 {
     static const int locals[] = { 1, 100, 300 };
@@ -1665,7 +1712,7 @@ static void test_c_call_recursions(void)
                 CCallRun r[2];
 
                 for (int d = 0; d < 2; d++) {
-                    r[d] = (CCallRun){ k, locals[l], d, NULL };
+                    r[d] = (CCallRun){ .kind = k, .locals = locals[l], .direct = d };
                     if (stack == 0) {
                         c_call_run(&r[d]);
                     } else {
@@ -1682,10 +1729,11 @@ static void test_c_call_recursions(void)
                           stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l], d,
                           r[d].out ? r[d].out : "(exception)");
                 }
-                CHECK(c_call_same(k, r[0].out, r[1].out),
-                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s",
+                CHECK(c_call_same(k, &r[0], &r[1]),
+                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s (slack %d, frames %d and %d, hop %d)",
                       stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l],
-                      r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?");
+                      r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?",
+                      c_call_slack(k, r[1].hop), r[1].rv, r[1].entry, r[1].hop);
                 free(r[0].out);
                 free(r[1].out);
             }
@@ -1722,7 +1770,7 @@ static JSValue hold_uncatchable(JSContext *ctx, JSValueConst this_val,
 
 /* A call of a plain C function from C (JS_Call here, through
    JS_CallInternal, then Reflect.apply's own call of push, in js_call_c_hop
-   when the calls are direct) reads the interrupt flag once and stops on an
+   when the calls are direct and the hop is on) reads the interrupt flag once and stops on an
    interrupt or a pending uncatchable exception before the function runs:
    one read for one hop, two for two, and push runs only when nothing stops
    it. */
@@ -1735,8 +1783,10 @@ static void test_c_call_hop_checks(void)
         long n;
 
         CHECK(JS_SetDirectCCalls(v.ctx, d) == 0, "JS_SetDirectCCalls refused");
-        CHECK((JS_RegvmStat(v.ctx, 12) >= 0) == d, "direct %d: the hop is %s", d,
-              d ? "off" : "on");
+        /* the hop is off with the direct calls off, and on with them unless
+           the engine found its frame larger (test_call_frames_measured):
+           the reads below are the same either way */
+        CHECK(d || JS_RegvmStat(v.ctx, 12) == -1, "direct 0: the hop is on");
         eval_ok(v.ctx, "var a = [], push = Array.prototype.push, apply = Reflect.apply, one = [1]");
         push = global_prop(v.ctx, "push");
         apply = global_prop(v.ctx, "apply");
