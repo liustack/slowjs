@@ -98,6 +98,43 @@ func shiftDigits(integer, fraction string, exponent int) (string, string) {
 	return integer, fraction
 }
 
+// shiftedOperands is operandsFor of the digits shiftDigits makes of integer
+// and fraction moved by exponent, without the zeros the move adds written
+// out when there are many: the exponent of a number given as a string can
+// be a thousand million, which shiftDigits writes as as many zeros. A few
+// zeros are written out as before. Further from the point, the operands are
+// found from the digits and their place alone: the float of the digits
+// times the power of ten, which ParseFloat reads to the same float as the
+// digits with the zeros written out, the fraction's length and the digits
+// of it after its leading zeros, or an integer whose last 18 digits, the
+// most i keeps, are all zeros.
+func shiftedOperands(integer, fraction string, exponent int) operands {
+	digits := integer + fraction
+	point := len(integer) + exponent
+	if point > -shiftedZeros && point < len(digits)+shiftedZeros {
+		integer, fraction = shiftDigits(integer, fraction, exponent)
+		return operandsFor(integer, fraction, exponent)
+	}
+	o := operands{c: exponent}
+	o.n, _ = strconv.ParseFloat(digits+"e"+strconv.Itoa(point-len(digits)), 64)
+	if point > 0 {
+		// The digits and more than 18 zeros make the integer, and the
+		// fraction is empty.
+		return o
+	}
+	// The integer is 0, and the fraction -point zeros and the digits.
+	o.v = -point + len(digits)
+	o.f, _ = strconv.ParseInt(digits, 10, 64)
+	if trimmed := strings.TrimRight(digits, "0"); trimmed != "" {
+		o.w = -point + len(trimmed)
+		o.t, _ = strconv.ParseInt(trimmed, 10, 64)
+	}
+	return o
+}
+
+// shiftedZeros is how many zeros shiftedOperands writes out at most.
+const shiftedZeros = 64
+
 // pluralOperands are what plural rules see of a number as this formatter
 // writes it: the digits after rounding, and in compact or scientific
 // notation the power of ten written apart, which French and others count.
@@ -112,12 +149,10 @@ func (f *NumberFormat) operandsOf(magnitude mag, negative bool) operands {
 	case NotationCompact:
 		form := f.compactForm(magnitude, negative)
 		integer, fraction := f.round(magnitude.shift(-form.exponent), negative)
-		integer, fraction = shiftDigits(integer, fraction, form.exponent)
-		return operandsFor(integer, fraction, form.exponent)
+		return shiftedOperands(integer, fraction, form.exponent)
 	case NotationScientific, NotationEngineering:
 		exponent, integer, fraction := f.scientificDigits(magnitude, negative)
-		integer, fraction = shiftDigits(integer, fraction, exponent)
-		return operandsFor(integer, fraction, exponent)
+		return shiftedOperands(integer, fraction, exponent)
 	}
 	integer, fraction := f.round(magnitude, negative)
 	return operandsFor(padInteger(integer, f.minInt), fraction, 0)
