@@ -91,6 +91,24 @@ func TestWeakRefKeptReleasedAfterCall(t *testing.T) {
 	wantEval(t, m, `String(big.deref())`, "undefined")
 }
 
+// A loop that waits within one call for deref to give undefined does not end:
+// each deref keeps the target to the end of the call, whatever collections run
+// in it. Here the target is a cycle, which only a collection frees, and the
+// loop allocates enough for collections to run. The target goes when the call
+// returns, and a collection asked for between two calls takes it.
+func TestWeakRefKeptThroughLoop(t *testing.T) {
+	m := newTestVM(t)
+	wantEval(t, m, `globalThis.gone = (() => { const cycle = {}; cycle.self = cycle; return new WeakRef(cycle) })();
+		(() => {
+			const kept = []
+			let n = 0
+			while (gone.deref() !== undefined && n < 300000) { kept.push({}); n++ }
+			return String(n)
+		})()`, "300000")
+	m.RunGC()
+	wantEval(t, m, `String(gone.deref())`, "undefined")
+}
+
 // A call that ends with an error lets its targets go too: here the eval
 // timeout stops it.
 func TestWeakRefKeptReleasedAfterTimeout(t *testing.T) {
