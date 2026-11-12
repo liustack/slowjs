@@ -1,0 +1,49 @@
+result s,ss/s/s
+result 1,11/1/1
+result b,a|b,a,b
+result str,qq,stq//long string constantq,q,k,k
+result 0,undefinedundefined/0/o/true/1.5
+result 11,b1,b,3,11,b,3,1,b,31/b/3/1/b/3/7
+result r,ww,zzw
+result c,gg
+result a,1a/a
+result m,undefinedm,nn,,,m
+result 1+22+1
+result y:4
+result 8512
+result w,1w,11,w
+result pq,qd
+result 1,t
+result 9,t,,3
+result Vo2
+result V,ho/h
+result boom t     at boom (<eval>:20:58)     at throwsIn (<eval>:40:41)
+result TypeError     at <anonymous> (<eval>:50:17)
+result     at stackIn (<eval>:42:42)     at stackAt (<eval>:43:23)     at <anonymous> (<eval>:50:29)
+result deep0
+result s,ss/s/s
+result 1,11/1/1
+result b,a|b,a,b
+result str,qq,stq//long string constantq,q,k,k
+result 0,undefinedundefined/0/o/true/1.5
+result 11,b1,b,3,11,b,3,1,b,31/b/3/1/b/3/7
+result r,ww,zzw
+result c,gg
+result a,1a/a
+result m,undefinedm,nn,,,m
+result 1+22+1
+result y:4
+result 8512
+result w,1w,11,w
+result pq,qd
+result 1,t
+result 9,t,,3
+result Vo2
+result V,ho/h
+result boom t     at boom (<eval>:20:58)     at throwsIn (<eval>:40:41)
+result TypeError     at <anonymous> (<eval>:50:17)
+result     at stackIn (<eval>:42:42)     at stackAt (<eval>:43:23)     at <anonymous> (<eval>:50:29)
+result deep1
+mem-end obj=196 atom=591 shape=124 prop=1004 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=587 shape=123 prop=1001 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
