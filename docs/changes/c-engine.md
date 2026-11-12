@@ -729,3 +729,15 @@ Why this is safe: the truth of a value runs no code, allocates nothing and reads
 What it gains: the workbench studio page runs 0.21% fewer instructions a render, MUI's orders page 0.12%, the shop's pages 0.05% to 0.09% and React's 0.02%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#the-truth-of-a-value-without-a-reference).
 
 The change is in C (`engine/quickjs.c`, `engine/regvm-ops-basic.h`). `engine/test/compare/truth_of_locals.js` asks the truth of strings, ropes, objects, functions, symbols, BigInts and numbers in locals, arguments and temps in every kind of branch and in the built-ins that ask it, and of a string and an object whose last other reference goes, after a collection, while they are in a local. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps branches on strings and objects made at run time with too little memory (`test_truth_oom`).
+
+## An array literal takes the references of its elements
+
+Release: Unreleased.
+
+An array literal such as `[a, b, c]` (OP_array_from, in the window of the register loop and in a folded stack) made its array with `js_create_array`, which took a new reference to each element, and then let go of the reference each element had on the stack. It now moves the references of the stack into the array (`js_create_array_free`, as upstream QuickJS's interpreter had it), and frees them when the array cannot be made. `js_create_array` is the same function as before (`js_create_array_in` with `take` FALSE) for its other callers.
+
+Why this is safe: between the two, the array is made (`JS_NewArray`, `expand_fast_array`), which runs no code and reads no interrupt. A collection that one of its allocations starts frees nothing the stack holds. The elements are moved after the last allocation, so the array never holds a reference it does not own. When an allocation fails, each element is freed once, as `rv_create_array_free` freed them before, and the throw injection of the tests (`rv_inj_take`) frees them the same way. The slots the elements were in are above the top of the stack after the op, and nothing reads or frees them again. There is no new branch: `take` is a constant in each copy.
+
+What it gains: the pages run 0.17% to 0.34% fewer instructions a render, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#array-literals-that-take-their-elements).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-window.h`). `engine/test/compare/array_literal_temps.js` makes literals of objects, strings, ropes, symbols, BigInts and functions whose only reference is the element, literals whose elements collect or drop what an earlier element holds, literals of 0 to 40 elements, nested ones, ones that throw halfway, with spreads, in a loop and on a stack deep enough to be folded. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps literals of objects and strings made at run time with too little memory (`test_array_literal_oom`).

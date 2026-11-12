@@ -1678,6 +1678,30 @@ static void test_truth_oom(void)
     sweep("truth", "truth.js", setup, "run()", want, 16384);
 }
 
+/* An array literal takes the references of its elements (OP_array_from,
+   js_create_array_free): with too little memory for the array or its
+   elements it fails with the out of memory error and frees each element
+   once, objects and strings made for it too. */
+static void test_array_literal_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var keep = [], s = '';\n"
+        "  for (var i = 0; i < 24; i++) {\n"
+        "    var o = { i: i };\n"
+        "    s += 'abcdefghij';\n"
+        "    var a = [o, 'k' + i, s + i, [i, o], { o: o }, i];\n"
+        "    if (i % 6 === 0) keep.push(a);\n"
+        "  }\n"
+        "  return keep.map(function (a) { return a[0].i + a[1] + a[2].length + a[3][1].i + a[4].o.i + a[5]; }).join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "0k011000,6k671666,12k12132121212,18k18192181818", NULL };
+
+    sweep("array literal", "array_literal.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2437,6 +2461,7 @@ int main(void)
     test_has_property_oom();
     test_getel_local_key_oom();
     test_truth_oom();
+    test_array_literal_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();

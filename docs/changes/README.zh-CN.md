@@ -42,6 +42,7 @@ read_when:
 | 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
 | 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
 | `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
+| 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 
 ## 上游 QuickJS 的提交
 

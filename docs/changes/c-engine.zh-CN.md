@@ -729,3 +729,15 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 收益：workbench studio 页每次渲染少 0.21% 的指令，MUI 的 orders 页少 0.12%，商店的页面少 0.05% 到 0.09%，React 的少 0.02%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#不加引用判断值的真假)。
 
 改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-basic.h`）。`engine/test/compare/truth_of_locals.js` 在各种分支和会问真假的内建函数里，判断局部变量、参数和临时槽里的字符串、rope、对象、函数、symbol、BigInt 和数字，还判断局部变量里最后一个其他引用已经没了、又经过一次回收的字符串和对象。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把对运行时造出的字符串和对象的分支扫一遍（`test_truth_oom`）。
+
+## 数组字面量直接接过元素的引用
+
+版本：Unreleased。
+
+`[a, b, c]` 这样的数组字面量（OP_array_from，在寄存器循环的窗口里和折叠的栈里）以前用 `js_create_array` 造数组，它给每个元素加一个新引用，然后再放掉每个元素在栈上的那个引用。现在它把栈上的引用直接搬进数组（`js_create_array_free`，上游 QuickJS 的解释器原来就有它），数组造不出来时释放这些元素。对其他调用方，`js_create_array` 还是原来的函数（`take` 为 FALSE 的 `js_create_array_in`）。
+
+为什么安全：在这两步之间只是造数组（`JS_NewArray`，`expand_fast_array`），不运行代码，也不读中断标志。其中某次分配触发的回收不会释放栈上握着的东西。元素在最后一次分配之后才搬进去，所以数组从不握着不属于它的引用。分配失败时每个元素释放一次，和以前的 `rv_create_array_free` 一样，测试用的抛错注入（`rv_inj_take`）也这样释放。这个操作之后，元素原来所在的槽在栈顶之上，再也没有谁读或释放它们。没有新分支：每份拷贝里 `take` 都是常量。
+
+收益：各页面每次渲染少 0.17% 到 0.34% 的指令，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#接过元素引用的数组字面量)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-window.h`）。`engine/test/compare/array_literal_temps.js` 造各种字面量：元素是只有这一个引用的对象、字符串、rope、symbol、BigInt 和函数，元素的代码触发回收或丢掉前一个元素握着的东西，0 到 40 个元素，嵌套的，半路抛错的，带展开的，在循环里的，以及在深到要折叠的栈上的。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的对象和字符串组成的字面量扫一遍（`test_array_literal_oom`）。

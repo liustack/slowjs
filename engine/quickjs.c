@@ -14190,7 +14190,10 @@ static JSValue js_allocate_fast_array(JSContext *ctx, int64_t len)
     return arr;
 }
 
-static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
+/* the array of the len values of tab: take TRUE moves their references
+   into it, and frees them when it fails, take FALSE copies them */
+static force_inline JSValue js_create_array_in(JSContext *ctx, int len,
+                                               JSValue *tab, BOOL take)
 {
     JSValue obj;
     JSObject *p;
@@ -14198,20 +14201,36 @@ static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
 
     obj = JS_NewArray(ctx);
     if (JS_IsException(obj))
-        return JS_EXCEPTION;
+        goto fail;
     if (len > 0) {
         p = JS_VALUE_GET_OBJ(obj);
         if (expand_fast_array(ctx, p, len) < 0) {
             JS_FreeValue(ctx, obj);
+        fail:
+            if (take) {
+                for(i = 0; i < len; i++)
+                    JS_FreeValue(ctx, tab[i]);
+            }
             return JS_EXCEPTION;
         }
         p->u.array.count = len;
-        for(i = 0; i < len; i++) 
-            p->u.array.u.values[i] = JS_DupValue(ctx, tab[i]);
+        for(i = 0; i < len; i++)
+            p->u.array.u.values[i] = take ? tab[i] : JS_DupValue(ctx, tab[i]);
         /* update the 'length' field */
         set_value(ctx, &p->prop[0].u.value, JS_NewInt32(ctx, len));
     }
     return obj;
+}
+
+static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
+{
+    return js_create_array_in(ctx, len, (JSValue *)tab, FALSE);
+}
+
+/* js_create_array that takes the values of tab, also when it fails */
+static JSValue js_create_array_free(JSContext *ctx, int len, JSValue *tab)
+{
+    return js_create_array_in(ctx, len, tab, TRUE);
 }
 
 static void js_free_desc(JSContext *ctx, JSPropertyDescriptor *desc)
