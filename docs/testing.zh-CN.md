@@ -260,6 +260,10 @@ go test -race -tags testhooks ./internal/hostmem         # VMs mapping memory on
 
 竞态检测器会忽略对 Go 堆之外的内存（比如 C 内存里的中断标志）的原子操作。所以 `Interrupt` 和 `Close` 要在 Go 堆上的一个互斥锁处会合（见 [architecture.md](architecture.zh-CN.md#eval-超时和-interrupt)）。
 
+## 测试里的时间
+
+测试不用时钟去限定 `runtime.GC` 或其他任何等 Go 调度器的地方。`runtime.GC` 返回前要清扫堆，每清扫一个 span 就让出一次（`Gosched`）。只有一个 P 时（`GOMAXPROCS=1`，比如用 `taskset` 绑在一个核上），一直占着 CPU 的 goroutine（比如在循环里的脚本）每次都会拿回 P，直到 10 ms 后调度器抢占它才交出来。所以这次 GC 要花剩下的 span 数乘以 10 ms：在整个根包里约一秒，旁边有 200,000 个小对象的垃圾时是 28 秒，旁边换成纯 Go 的循环也一样。给这种 GC 设 1 秒的上限，在一些 Go 版本上失败、另一些不失败，取决于前面的测试留下的堆有多大。这样的测试要按引擎做了多少工作来判断，用 poll 次数（见 `stoppolls_test.go` 和 `TestLoopWithoutCallsPolls`），卡死交给父进程去发现（`TestGCStopsLoopWithoutCalls`）。
+
 ## 每个目标平台
 
 ```sh

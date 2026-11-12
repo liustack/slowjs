@@ -260,6 +260,10 @@ The whole of `./intl` under `-race` takes about 25 minutes on one core of an EPY
 
 The race detector ignores atomic operations on memory outside Go's heap, such as the interrupt flag in C memory. `Interrupt` and `Close` meet at a mutex on Go's heap for that reason (see [architecture.md](architecture.md#the-eval-timeout-and-interrupt)).
 
+## Time in a test
+
+A test does not bound `runtime.GC`, or any other wait for the Go scheduler, by the clock. Before `runtime.GC` returns it sweeps the heap and yields (`Gosched`) after each span. With one P (`GOMAXPROCS=1`, as under `taskset` on one core) a goroutine that keeps the CPU, such as a script in a loop, gets the P back each time and keeps it until the scheduler preempts it, 10 ms later. So the GC takes the number of spans left times 10 ms: about a second in the whole root package, 28 s beside 200,000 small objects of garbage, and the same beside a loop of pure Go. A bound of 1 s on such a GC failed on some Go versions and not others, by the size of the heap the earlier tests left. Judge such a test by the work the engine did, in polls (see `stoppolls_test.go` and `TestLoopWithoutCallsPolls`), and leave a hang to a parent process (`TestGCStopsLoopWithoutCalls`).
+
 ## Every target
 
 ```sh
