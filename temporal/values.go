@@ -46,7 +46,10 @@ var zones sync.Map // string -> temporal.TimeZone
 // args reads the arguments of a Builtin in turn.
 type args struct {
 	a quickjs.Args
-	i int
+	// door reads its strings, each a string of Temporal: an ISO string, an
+	// id, an offset, a field or an option.
+	door intlhook.Door
+	i    int
 }
 
 func (c *args) next() int { c.i++; return c.i - 1 }
@@ -73,12 +76,12 @@ func (c *args) optInt() *int {
 
 // str is the next argument, a string.
 func (c *args) str() string {
-	s, _ := intlhook.String(c.a, c.next())
+	s, _ := c.door.Short(c.next(), intlhook.KindTemporal)
 	return s
 }
 
 // optStr is the next argument, a string or undefined.
-func (c *args) optStr() (string, bool) { return intlhook.String(c.a, c.next()) }
+func (c *args) optStr() (string, bool) { return c.door.Short(c.next(), intlhook.KindTemporal) }
 
 func (c *args) bool() bool {
 	b, _ := c.a.Bool(c.next())
@@ -264,7 +267,7 @@ func (r *results) str(s string) *results {
 	if r.err != nil {
 		return r
 	}
-	v, err := r.vm.NewString(s)
+	v, err := intlhook.Emit(r.vm, s)
 	if err != nil {
 		r.err = err
 		return r
@@ -312,7 +315,7 @@ func (r *results) array() (quickjs.Value, error) {
 	if r.err != nil {
 		return quickjs.Value{}, r.err
 	}
-	return r.vm.NewArray(r.vals...)
+	return intlhook.EmitValues(r.vm, r.vals)
 }
 
 // jsBytes is the bytes V8 hands temporal_rs for a string to parse

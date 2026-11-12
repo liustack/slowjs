@@ -9,16 +9,18 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/intl"
 )
 
-// A string argument the VM has no memory to read ends the call with the out
-// of memory error: the bridge does not parse it as the empty string. The
-// string is a rope of 32 MiB, which reading has to join, in a VM limited to
-// 16 MiB.
+// A string argument longer than the cap of a string of Temporal is refused
+// with a RangeError before it is read: the rope of 32 MiB is not joined, in
+// a VM limited to 16 MiB. And one under the cap, in a VM with less room than
+// the door counts for the call, ends the call with the out of memory error:
+// the bridge does not parse it as the empty string.
 func TestStringArgumentOutOfMemory(t *testing.T) {
 	for _, js := range []string{
 		`Temporal.PlainDate.from(s)`,
@@ -29,7 +31,7 @@ func TestStringArgumentOutOfMemory(t *testing.T) {
 			vm := newVM(t)
 			eval(t, vm, `Temporal.PlainDate.from('2024-01-05').toLocaleString('en'); JSON`)
 			vm.SetMemoryLimit(16 << 20)
-			_, err := vm.Eval(`
+			got, err := vm.Eval(`
 				var r = "ok";
 				try {
 					let s = "1".repeat(1024);
@@ -37,6 +39,11 @@ func TestStringArgumentOutOfMemory(t *testing.T) {
 					`+js+`;
 				} catch (e) { r = "caught " + e; }
 				r`, quickjs.EvalGlobal)
+			if r, _ := got.(string); err != nil || !strings.HasPrefix(r, "caught RangeError") {
+				t.Fatalf("got %v, %v, want a RangeError", got, err)
+			}
+			vm.SetMemoryLimit(vm.MemorySize() + 16<<10)
+			_, err = vm.Eval(`var s = "1".repeat(100); try { `+js+` } catch (e) { "caught " + e }`, quickjs.EvalGlobal)
 			var e *quickjs.Error
 			if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 				t.Fatalf("got %v, want the uncatchable out of memory error", err)

@@ -99,14 +99,11 @@ var longWork = []struct{ name, setup, call string }{
 // check, each until the change that cuts its work into pieces. A test
 // skips them, and that change takes its call out.
 var waiting = map[string]bool{
-	"localeCompare after a shared run of accents":  true,
-	"Collator.compare of two long strings":         true,
-	"Segmenter, the word containing 0 in Thai":     true,
-	"toLocaleUpperCase in Turkish":                 true,
-	"toLocaleLowerCase in Turkish of I and marks":  true,
-	"getCanonicalLocales of one long tag":          true,
-	"DurationFormat of a duration string of zeros": true,
-	"NumberFormat.format of a long numeric string": true,
+	"localeCompare after a shared run of accents": true,
+	"Collator.compare of two long strings":        true,
+	"Segmenter, the word containing 0 in Thai":    true,
+	"toLocaleUpperCase in Turkish":                true,
+	"toLocaleLowerCase in Turkish of I and marks": true,
 }
 
 // skipWaiting skips the call name of longWork while it waits for its change.

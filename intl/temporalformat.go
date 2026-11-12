@@ -58,7 +58,8 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.UndefinedValue, err
 	}
 	f := r.f
-	cal, _ := intlhook.String(a, 2)
+	door := intlhook.Open(a)
+	cal, _ := door.Short(2, intlhook.KindTemporal)
 	if err := f.checkCalendar(cal); err != nil {
 		return quickjs.Value{}, jsErr(err)
 	}
@@ -68,7 +69,7 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 		return quickjs.Value{}, jsErr(err)
 	}
 	if isRange {
-		cal, _ = intlhook.String(a, 4)
+		cal, _ = door.Short(4, intlhook.KindTemporal)
 		if err := f.checkCalendar(cal); err != nil {
 			return quickjs.Value{}, jsErr(err)
 		}
@@ -86,17 +87,17 @@ func temporalDateFormatted(a quickjs.Args, wantParts, isRange bool) (quickjs.Val
 			text.WriteString(value)
 		}
 		if !wantParts {
-			return a.VM().NewString(text.String())
+			return intlhook.Emit(a.VM(), text.String())
 		}
-		return stringArray(a.VM(), list)
+		return intlhook.EmitStrings(a.VM(), list)
 	}
 	if !wantParts {
-		return a.VM().NewString(plainSpaces.Replace(f.f.Format(start)))
+		return intlhook.Emit(a.VM(), plainSpaces.Replace(f.f.Format(start)))
 	}
 	parts := f.f.FormatToParts(start)
 	list := make([]string, 0, 2*len(parts))
 	for _, p := range parts {
 		list = append(list, string(p.Kind), plainSpaces.Replace(p.Value))
 	}
-	return stringArray(a.VM(), list)
+	return intlhook.EmitStrings(a.VM(), list)
 }

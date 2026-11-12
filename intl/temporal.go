@@ -206,14 +206,15 @@ const (
 )
 
 var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quickjs.Args) (quickjs.Value, error) {
-	kindName, _ := intlhook.String(a, tfKind)
+	door := intlhook.Open(a)
+	kindName, _ := door.Short(tfKind, intlhook.KindOption)
 	k := temporalKinds[kindName]
 	if k == nil {
 		return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: no Temporal kind " + kindName}
 	}
-	cal, _ := intlhook.String(a, tfCalendar)
+	cal, _ := door.Short(tfCalendar, intlhook.KindTemporal)
 	ms, _ := a.Number(tfTime)
-	zone, _ := intlhook.String(a, tfZone)
+	zone, _ := door.Short(tfZone, intlhook.KindTemporal)
 	defaultZone := defaultZoneOf(a.VM())
 
 	key := []byte(kindName)
@@ -226,7 +227,7 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 	for i := tfLocales; i < tfOptions+len(opts); i++ {
 		switch {
 		case !a.Value(i).IsUndefined():
-			if s, ok := intlhook.String(a, i); ok {
+			if s, ok := temporalFormatArg(&door, i); ok {
 				key = append(key, 's')
 				key = strconv.AppendInt(key, int64(len(s)), 10)
 				key = append(key, ':')
@@ -255,9 +256,9 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 	}
 	if tf == nil {
 		req := request{Options: map[string]any{}, vm: a.VM()}
-		if s, ok := intlhook.String(a, tfLocales); ok {
+		if s, ok := door.Short(tfLocales, intlhook.KindTag); ok {
 			req.Locales = []string{s}
-		} else if s, ok := intlhook.String(a, tfLocales+1); ok {
+		} else if s, ok := door.Long(tfLocales + 1); ok {
 			l, ok := splitLocales(a.VM(), s)
 			if !ok {
 				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
@@ -268,7 +269,7 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 			j := tfOptions + i
 			switch o.kind {
 			case 's':
-				if s, ok := intlhook.String(a, j); ok {
+				if s, ok := door.Short(j, intlhook.KindOption); ok {
 					req.Options[o.name] = s
 				}
 			case 'n':
@@ -302,7 +303,20 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 	}
 	if k.name == "ZonedDateTime" {
 		offset, _ := a.Number(tfOffset)
-		return a.VM().NewString(plainSpaces.Replace(tf.f.FormatTemporalZoned(t, int(offset/1e9))))
+		return intlhook.Emit(a.VM(), plainSpaces.Replace(tf.f.FormatTemporalZoned(t, int(offset/1e9))))
 	}
-	return a.VM().NewString(plainSpaces.Replace(tf.f.Format(t)))
+	return intlhook.Emit(a.VM(), plainSpaces.Replace(tf.f.Format(t)))
 })
+
+// temporalFormatArg reads argument i of toLocaleString from tfLocales on
+// through door: the locale argument a tag, the list after it long content,
+// and the options options.
+func temporalFormatArg(door *intlhook.Door, i int) (string, bool) {
+	switch i {
+	case tfLocales:
+		return door.Short(i, intlhook.KindTag)
+	case tfLocales + 1:
+		return door.Long(i)
+	}
+	return door.Short(i, intlhook.KindOption)
+}

@@ -11,8 +11,9 @@ import (
 )
 
 // The Builtins of the Intl and Temporal shims are made with NewBuiltin and
-// read their string arguments with String and WTF8, which stop the Builtin
-// when the string cannot be read.
+// read their string arguments through a Door (door.go), which reads them
+// with String and WTF8, which stop the Builtin when the string cannot be
+// read.
 //
 // Reading a string can fail: a rope, a string kept as the pieces it was
 // joined from, has to be joined first, which takes memory under the VM's
@@ -46,6 +47,9 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 			case stopped:
 				// The error is pending (see Args.String).
 				v, err = quickjs.UndefinedValue, nil
+			case tooLong:
+				// The door refused an argument longer than its cap.
+				v, err = quickjs.Value{}, p.(tooLong).error()
 			default:
 				panic(p)
 			}

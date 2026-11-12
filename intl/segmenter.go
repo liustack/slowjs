@@ -148,7 +148,8 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 			return quickjs.UndefinedValue, err
 		}
 
-		text, _ := intlhook.WTF8(a, 1)
+		door := intlhook.Open(a)
+		text, _ := door.LongWTF8(1)
 		c = &cursor{id: vc.next, it: s.s.Iter(utf16Of(text)), word: s.Granularity == "word"}
 		vc.next++
 		vc.add(c)
@@ -181,7 +182,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 		r = append(r, b)
 		c.n++
 	}
-	return intArray(vm, r)
+	return intlhook.EmitInts(vm, r)
 })
 
 // utf16Of is the javascript string s, in WTF-8 as Args.WTF8 reads it, in
