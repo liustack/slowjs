@@ -648,7 +648,8 @@ typedef struct JSValueCell {
 #endif
 } JSValueCell;
 
-/* the entry of var_refs for the cell c, and the cell of such an entry */
+/* the entry of var_refs for the cell c, and (only the check build reads
+   it) the cell of such an entry */
 #define JS_CELL_REF_OFS ((int)offsetof(JSVarRef, pvalue) - (int)offsetof(JSValueCell, ref_pvalue))
 
 static inline JSVarRef *js_value_cell_ref(JSValueCell *c)
@@ -656,10 +657,12 @@ static inline JSVarRef *js_value_cell_ref(JSValueCell *c)
     return (JSVarRef *)((uint8_t *)c - JS_CELL_REF_OFS);
 }
 
+#ifdef RV_CBV_CHECK
 static inline JSValueCell *js_ref_value_cell(JSVarRef *var_ref)
 {
     return (JSValueCell *)((uint8_t *)var_ref + JS_CELL_REF_OFS);
 }
+#endif
 
 /* bigint */
 
