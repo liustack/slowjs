@@ -53,7 +53,7 @@ The focused and full test262 results and render measurements must be checked whe
 
 ## A WeakRef keeps its target to the end of the job
 
-Release: Unreleased.
+Release: v0.30.2.
 
 The specification keeps the target of a `WeakRef` alive to the end of the job that made the `WeakRef` or called its `deref` (AddToKeptObjects, and ClearKeptObjects when the job ends), so that a script reads the same answer from `deref` for the rest of the job. QuickJS never had that list, and neither have upstream QuickJS and quickjs-ng at their latest commits: reference counting frees a target as soon as its last other reference goes. So `new WeakRef({}).deref()` and `const w = new WeakRef(o); o = null; w.deref()` gave `undefined` in the same job, where Node 24 gives the object. test262 does not see it: its tests of `WeakRef` hold the target in a variable, and none of the 33 known errors is about `WeakRef`.
 

@@ -33,7 +33,7 @@ Recursing without end throws `RangeError: Maximum call stack size exceeded`, wor
 
 ## new with a spread says when its callee is not a constructor
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `new C(...args)` on an object that is not a function, such as `{}`, an array or a proxy of an object, now throws `TypeError: not a constructor`, as `new C(a, b)` does and as Node 24 says. It threw `TypeError: not a function`. A function that is not a constructor, such as an arrow function or a method, already threw `not a constructor` with a spread, and a primitive throws `not a function` with a spread and without, as before.
 
@@ -43,7 +43,7 @@ The change is in C (`engine/quickjs.c`, `js_function_apply`). `engine/test/compa
 
 ## Calls through call and bound functions leave no line in the stack
 
-Release: Unreleased.
+Release: v0.30.2.
 
 When a function of the register loop calls `f.call(t, a, b)`, `call.call(f, t, a)`, `Function.prototype.call` bound to a function (`call.bind(f)`, as core-js uses it) or a bound function with no bound arguments, the loop now makes the call that it stands for: it calls `f` with that `this` and those arguments. The stack of an `Error` made in `f` has no `at call (native)` line for it, as in Node 24, and a recursion through `f.call` goes about twice as deep before it throws `RangeError` (4995 calls where it was 2497, with the default `SetMaxStackSize`). A chain of bound functions is taken apart in a loop with no recursion, so a chain of 100,000 works where it threw `RangeError`. `f.apply` and `Reflect.apply` keep their `at apply (native)` line, as before.
 

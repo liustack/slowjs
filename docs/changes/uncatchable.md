@@ -254,7 +254,7 @@ Tests: `TestInterruptStopsRegExpCompile` (`internal/cengine`, `-tags testhooks`)
 
 ## Long operations on BigInts read the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A BigInt holds up to 1,048,576 bits, 32,768 limbs of 32 bits (the engine is built without 128-bit integers, so a limb is 32 bits on every target). The product, the division, the power and the conversion to and from a string in a radix that is not a power of two take a time of n * n in the number of limbs, and none of their loops read the interrupt flag: `String(10n ** 300000n)` runs about 52,000 polls of the engine (each 10,000 ticks), 1.9 s on an Apple M, and a product or a quotient of half a million bits about 12,000. The generated code still polls in them, so the Go host saw the request to stop and, 50 ms and 1000 polls later, killed the script: with a 20 ms timeout, each of those calls ended 70 ms after it started with `ErrKilled`, and the VM was good only for `Close`.
 
@@ -275,7 +275,7 @@ Tests: `TestBigIntWorkStops` (root package) runs a loop of each of these calls (
 
 ## Turning a long string into a number reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A string can hold a billion characters, and the conversion of one to a number or a BigInt goes over them several times: to UTF-8, past the spaces around the number, through a scan of its digits in `js_atof`, a copy of them, and the digits that `js_atod` or `js_bigint_from_string` read. None of these loops read the interrupt flag. `+'1'.repeat(1 << 27)` took 250 to 600 ms in one go on linux/amd64, `BigInt` of 128 Mi zeros 285 ms, and with a 20 ms timeout each of `Number`, unary `+`, `isNaN`, `parseInt`, `parseFloat`, `BigInt`, `==` and `<` of a BigInt and a string, `JSON.parse` of a number or of spaces and `eval` of a number literal was killed 70 ms after it started, with `ErrKilled`.
 
@@ -298,7 +298,7 @@ Tests: `TestNumberConversionStops` (root package) runs each of these conversions
 
 ## Parsing a long source reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A script can give `eval`, `Function` or `JSON.parse` a source of a billion characters. `js_parse_init` counts the source toward the interrupt check ([above](#parsing-and-building-strings-count-toward-the-interrupt-check)), but the handler is called at the next poll of the interpreter, and the parser and the compiler read no flag in the loops that go over a long token or a long stretch of the source: the hashbang line, the spaces and newlines between two tokens, a comment, an identifier, a string, a template or a regexp, the digits of an escape `\u{...}` in them, the copies and the atom of a long name, the line and column of the code after a long token, and the message of the error that names it. One `eval` of an identifier of 64 Mi characters took 436 ms on linux/amd64 and one of a comment 225 ms. With a 20 ms timeout, `eval` of 64 Mi spaces, newlines, comment or identifier characters was killed 70 ms after it started, with `ErrKilled`, and a stop that came after the scan of a long identifier, string or regexp ran on for thousands of polls.
 
@@ -330,7 +330,7 @@ Tests: `TestParseStops` (root package) makes a flat source of 16 Mi bytes of spa
 
 ## Comparing and copying long strings reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A script can hold strings of a billion characters, and compare or copy them in one call. `<`, `<=`, `>` and `>=` of two flat strings and the sort of an array without a comparator went over the strings in `js_string_compare` without reading the interrupt flag, `Symbol.for` hashed its key and compared it with the keys of the registry the same way, and the copy of a string into a string buffer (`string_buffer_write8` and `string_buffer_write16`), which `join`, `padEnd`, `replace`, `String.raw`, `Function` and many others use, copied a long string in one go, but for a string of one byte a character written into a buffer of two. On linux/amd64, `s < s2` of two equal strings of 64 Mi characters took 40 ms, and a stop asked during it came up to 34 ms after the deadline, 5,610 polls after the request. A stop during `Symbol.for` of such a key came up to 65 ms late, and one during a copy 31 to 45 ms late, 40 to 52 polls after the request.
 
@@ -357,7 +357,7 @@ Tests: `TestStringCompareCopyStops` (root package) runs `<` of two strings of 64
 
 ## Resizing a large ArrayBuffer reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `ArrayBuffer.prototype.resize` and `transfer` change the size of the block of a buffer with `js_realloc`. The heap moves a block when `heap_realloc` cannot resize it where it is: a block of a dedicated chunk that shrinks under half of its chunk, on every system, one that outgrows its chunk where the host does not remap a chunk (darwin and windows), and a block of the shared chunks with no room after it. It copied the block with one `memcpy`, and `resize` and `transfer` then cleared the bytes a buffer gains with one `memset`. Neither read the interrupt flag. `resize` of an `ArrayBuffer` of 256 MiB to a quarter and back, about 150 ms on linux/amd64, copies 64 MiB and clears 192 MiB: with the eval timeout set to each sixth of the call, 4 of the 5 stops came at about 143 ms, after the clear, 136 to 767 polls after the request, and so did 4 of the 5 of `transfer`.
 
@@ -388,7 +388,7 @@ Tests: `TestArrayBufferMoveStops` (root package) times `resize` and `transfer` o
 
 ## Out of memory in normalize and in the growth of a Map
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `String.prototype.normalize` decomposes the string into a buffer that grows (`to_nfd`). When a growth failed, `unicode_normalize` returned the failure without freeing the buffer, and `js_string_normalize1` returned it with no exception thrown: the call failed with nothing pending, which the Go API cannot report as running out of memory, and the runtime kept the block for good. A sweep of `'ﬃ'.repeat(300).normalize('NFKD')` with every room from nothing to 16 KiB failed 40 rooms with an exception that was not uncatchable, and left blocks in use in 158 runtimes. Upstream QuickJS has the same code (commit `092277ac`).
 
@@ -402,7 +402,7 @@ Tests: `test_normalize_oom` in `engine/test/unit-oom.c` sweeps `normalize` with 
 
 ## A loop with no call ends at an uncatchable exception left pending
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A built-in that meets an uncatchable exception can record it and return as if it had not failed. The resolve function of a promise, given a thenable whose `then` getter runs out of memory, rejects the promise and returns `undefined` (`js_promise_resolve_function_call`). An async function that fails before its first `await` returns its promise, and so do `next` of an async generator, `import()` of a specifier that fails to convert and the `next` of the async iterator made from a sync one. Each takes a copy of the exception with `js_get_exception`, which leaves an uncatchable exception pending, and either rejects without a call or ignores the failure of the call to the reject function, as upstream does. The script goes on with the exception pending. Its next call fails (`js_call_checks`), but a loop with no call in it read only the interrupt flag, and nothing had set it. So `res({ get then() { /* runs out of memory */ } }); for (;;) {}` ran for good when no timeout was set, and so did the same loop after a Go function called from the getter panicked. With a timeout, `Interrupt` and the kill grace only came into it at the deadline.
 
@@ -416,7 +416,7 @@ Tests: `test_uncatchable_then_loop` in `engine/test/unit-oom.c` runs out of memo
 
 ## The flags of a regexp are checked without a pass over a long string
 
-Release: Unreleased.
+Release: v0.30.2.
 
 The compile of a regexp checked its flags on a copy in UTF-8 (`JS_ToCStringLen` in `js_compile_regexp`), which first counts the non-ASCII characters of the whole string with no reading of the interrupt flag. So `new RegExp('a', 'g'.repeat(1 << 24))`, or a literal `/a/` followed by 16 Mi flags in `eval`, ran 140 polls on amd64 and 55 on arm64 past a stop before it threw its `SyntaxError`, and a longer string ran on toward the 1,000 polls after which a poll kills the script. `TestParseStops` met it on the macOS runner of GitHub with Intel CPUs, where a stop at five sixths of the call came in that count.
 
@@ -438,7 +438,7 @@ Test: `test_iterator_close_oom` in `engine/test/unit-white.c` leaves a loop and 
 
 ## The bytecode calls convert their result inside the eval timeout
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `EvalBytecode` and `EvalSharedBytecode` ran the bytecode inside the eval timeout, but converted its result to a Go value after the call had ended, with no timeout and no kill. That conversion runs javascript: `toJSON` and the getters of an object, which becomes JSON, and `BigInt.prototype.toString` for a BigInt. So bytecode of `({ toJSON() { for (;;) {} } })` hung the call forever under any timeout, and `Interrupt` could not stop it. The read of the bytecode was outside the call too.
 
@@ -450,7 +450,7 @@ Test: `TestAPIEntriesHaveTheEvalTimeout` (`apitimeout_test.go`) runs `EvalByteco
 
 ## An uncatchable exception met while an exception is read ends the call
 
-Release: Unreleased.
+Release: v0.30.2.
 
 To report an exception the script threw, the VM reads it: its string form through its `toString`, and its `name`, `message`, `stack`, `lineNumber`, `columnNumber` and `fileName`, which can be getters. That runs javascript, and the VM dropped whatever that javascript threw and left the field empty, so that a value that throws again on every read could still be reported. It dropped an interrupt, the eval timeout and running out of memory the same way. So `throw { toString() { for (;;) {} } }` under a timeout came back as an `*Error` with every field empty and neither `Uncatchable` nor `Interrupted` set. In a Go function it was worse: when the conversion of an argument met an exception (a `toJSON` that throws) and reading that exception ran out of memory, the out of memory error was dropped, the conversion threw a catchable `TypeError`, and the script caught it and ran on to its end.
 
@@ -464,7 +464,7 @@ Tests: `TestUncatchableReadingAnException` (`hostuncatchable_test.go`) stops the
 
 ## A string argument Intl cannot read ends the call
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `format` and `formatToParts` of `Intl.NumberFormat`, given a string the VM has no memory to read, now end the call with the out of memory error, where they panicked in Go. A string made by `+` (a rope) is joined before Go reads it, and the join takes memory under the VM's limit. When it failed, `Args.String` said the argument was not a string, the formatter found neither a number nor a string and panicked with `intl: unexpected number bridge value`, and the panic went on in the Go code that called `Eval`. The other Builtins of `intl` and `temporal` took such an argument for the empty string the same way and went on, doing work for nothing before the call ended with the out of memory error.
 
@@ -474,7 +474,7 @@ Tests: `TestStringArgumentOutOfMemory` in `intl/limits_test.go` (NumberFormat, i
 
 ## Intl reads the interrupt flag in loops over a long list
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `Intl.getCanonicalLocales`, `supportedLocalesOf`, every Intl constructor and `toLocaleString` given a list of locales, and `format` and `formatToParts` of `Intl.ListFormat` now stop at `Interrupt` and the eval timeout however long the list is. Their work in Go read no interrupt flag, so a long list held off the stop until Go was done with it. `getCanonicalLocales` also found duplicates by comparing each tag with all those before it: on 100,000 distinct tags that is about 5 billion comparisons, 8.5 seconds on GCP, which no timeout could cut short.
 
@@ -486,7 +486,7 @@ Tests: `TestLongListTimeout` in `intl/limits_test.go` (`getCanonicalLocales`, `s
 
 ## The functions of fmt end the call when their output does not fit
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `fmt.sprintf`, `fmt.printf`, `fmt.sprint` and `fmt.println` of package `fmt` now end the call with the uncatchable out of memory error, before Go makes the output, when the output may not fit in what the VM has left under its memory limit. Go's fmt makes the whole output of a call before it returns it or writes it, and a short format can ask for a long one: `fmt.sprintf("%1000000[1]s".repeat(256), "")`, a format of 3 KiB, asked for 256 MB. In a VM limited to 16 MiB, Go allocated 1,210 MiB and took 1.4 seconds on GCP before the VM refused the string, and `printf` wrote it all to stdout.
 

@@ -250,7 +250,7 @@ The change is in C (`engine/quickjs.c`): `__JS_FreeValueRT` calls `free_zero_ref
 
 ## A proxy that refuses a store throws in strict code
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A store such as `o.x = 1` or `o[k] = 1` in strict code, on a proxy with no `set` trap whose `defineProperty` trap returns false, now throws a `TypeError`, as Node 24 does and as the specification says: the trap's false makes the `[[Set]]` of the proxy return false, and a store in strict code throws when `[[Set]]` returns false. This holds whether the target has the property already or not, and for a `super.x = 1` or a store through `with` whose receiver is such a proxy. A store that must throw in any code, as those of `Object.assign`, `Array.prototype.fill` and `push`, and `SetProperty` and `SetPropertyValue` of the Go API, now throws too when the target already has the property, where it went on. The engine went on with no error, as upstream QuickJS and quickjs-ng still do. A store in sloppy code goes on as before, and `Reflect.set` returns false as before.
 
@@ -260,7 +260,7 @@ The change is in C (`engine/quickjs.c`, `js_proxy_define_own_property1` and `JS_
 
 ## Object literals have the room of an empty object
 
-Release: Unreleased.
+Release: v0.30.2.
 
 The shape an object literal makes, the first time it runs, has room for at least two properties, as the shape of an empty object has (`JS_PROP_INITIAL_SIZE`), where it had room for exactly its keys. The shapes in the shape hash table are also the next shapes of objects that get their keys one at a time: `add_property` finds the next shape there and moves the property array of the object to the room of the shape it finds. An empty object has room for 2. When its first key was the key of a literal of one key somewhere in the bundle, the shape it found had room for 1, so its array moved down to one slot, and with a second key back up to two. The iterator results of the engine (`js_create_iterator_result` makes an empty object and gives it `value` and then `done`) did that for each result once the bundle had a literal `{ value: ... }`: on the shop's English home page, 9,020 results a render, two moves each, 18,040 of the 33,000 moves of a property array in a render. With room for 2 the shape of such a literal fits an empty object and nothing moves.
 
@@ -274,7 +274,7 @@ The change is in C (`engine/quickjs.c`, `js_object_lit_shape`). `engine/test/com
 
 ## A for in loop asks a shape once whether it lists its keys
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A `for in` loop over an object whose shape is in the shape hash table [lists the keys from the shape](#a-for-in-loop-holds-the-shape-of-its-object) when no string key of the shape is an array index or a binding. To find that out, each loop went over every key of the shape (`js_own_keys_scan`), and MUI's pages, which run about 10,000 loops a render over objects of style and props, spent 1% of their instructions there. The shape now keeps the answer in a byte of its padding (`for_in_keys`): the first loop over an object of the shape looks at its keys, and the next ones read the byte.
 

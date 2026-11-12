@@ -250,7 +250,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 拒绝写入的 proxy 在严格模式代码里抛错
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 严格模式代码里的 `o.x = 1` 或 `o[k] = 1` 这类写入，如果对象是没有 `set` trap、`defineProperty` trap 返回 false 的 proxy，现在会抛 `TypeError`，和 Node 24 一样，也和规范一致：trap 返回 false 让 proxy 的 `[[Set]]` 返回 false，而严格模式代码的写入在 `[[Set]]` 返回 false 时要抛错。不管目标上已经有这个属性还是没有，都是这样，接收者是这种 proxy 的 `super.x = 1` 和经过 `with` 的写入也一样。在任何代码里都必须抛错的写入，比如 `Object.assign`、`Array.prototype.fill` 和 `push` 里的写入，以及 Go API 的 `SetProperty` 和 `SetPropertyValue`，在目标已有该属性时原来会继续往下走，现在也会抛错。原来引擎不报错继续往下走，上游 QuickJS 和 quickjs-ng 现在也还是这样。非严格模式代码的写入照旧继续，`Reflect.set` 照旧返回 false。
 
@@ -260,7 +260,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 对象字面量的 shape 至少有空对象的空间
 
-发布：Unreleased。
+发布：v0.30.2。
 
 对象字面量第一次运行时建的 shape，至少能放两个属性，和空对象的 shape 一样（`JS_PROP_INITIAL_SIZE`），以前是刚好放下它的键。shape 哈希表里的 shape 也是一个个加键的对象的下一个 shape：`add_property` 在表里找到下一个 shape，把对象的属性数组挪到这个 shape 的空间。空对象能放 2 个。如果它的第一个键正好是包里某个单键字面量的键，找到的 shape 只能放 1 个，数组就缩到一格，加第二个键时又涨回两格。引擎的迭代器结果（`js_create_iterator_result` 先建空对象，再加 `value` 和 `done`）在包里有 `{ value: ... }` 这种字面量时，每个结果都这样挪：商店英文首页每次渲染 9,020 个结果，每个挪两次，占了一次渲染里属性数组 33,000 次挪动中的 18,040 次。现在这种字面量的 shape 能放 2 个，正好合空对象，不再挪动。
 
@@ -274,7 +274,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## for in 循环对一个 shape 只问一次能不能从它列出键
 
-发布：Unreleased。
+发布：v0.30.2。
 
 `for in` 循环遍历的对象，如果它的 shape 在 shape 哈希表里，而且 shape 的字符串键里没有数组下标也没有绑定，就[从 shape 列出键](#for-in-循环持有它的对象的-shape)。为了知道这一点，以前每次循环都要把 shape 的键过一遍（`js_own_keys_scan`）。MUI 的页面每次渲染要对样式和 props 对象跑大约 10,000 次循环，1% 的指令花在这上面。现在 shape 把答案存在它填充位里的一个字节（`for_in_keys`）：第一次遍历这个 shape 的对象时看一遍键，之后的循环直接读这个字节。
 

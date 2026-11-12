@@ -33,7 +33,7 @@ read_when:
 
 ## 带展开参数的 new 会说出被调用的不是构造函数
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 对不是函数的对象做 `new C(...args)`，比如 `{}`、数组或对象的 proxy，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 24 说的一致。原来它抛 `TypeError: not a function`。不是构造函数的函数，比如箭头函数或方法，带展开参数时本来就抛 `not a constructor`，原始值不管带不带展开参数都抛 `not a function`，和原来一样。
 
@@ -43,7 +43,7 @@ read_when:
 
 ## 通过 call 和绑定函数的调用不在调用栈里多出一行
 
-版本：Unreleased。
+版本：v0.30.2。
 
 寄存器循环里的函数调用 `f.call(t, a, b)`、`call.call(f, t, a)`、绑定到某个函数的 `Function.prototype.call`（`call.bind(f)`，core-js 就这样用）或没有绑定参数的绑定函数时，循环现在直接做它所代表的那次调用：用那个 `this` 和那些参数调用 `f`。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在抛出 `RangeError` 之前能深约一倍（默认 `SetMaxStackSize` 下 4995 层，原来 2497 层）。一串绑定函数在循环里逐个拆开，不递归，所以 100,000 个的链能跑，原来抛 `RangeError`。`f.apply` 和 `Reflect.apply` 照旧保留 `at apply (native)` 一行。
 

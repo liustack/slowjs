@@ -356,7 +356,7 @@ The entry of `JS_CallInternal` for a C function, a bound function or a proxy mak
 
 ### charCodeAt answered in the register loop
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A loop that scans a string with `s.charCodeAt(i)` calls a C function for each character, and in the generated engine each such call costs several hundred instructions: the checks of a call, a level of call depth, the frame of `js_call_c_function` and the conversions of `this` and of the index. Parsers, hashes and the plain build of emotion (which hashes every style in JavaScript) spend most of their time there. The register loop now answers `String.prototype.charCodeAt` itself (`rv_fast_call`, from `RV_CALL_OUT`) when `this` is a string, or a rope that an earlier call made flat, and the index is an int: it gives the code unit at the index, or `NaN` out of range. Every other call is made as before.
 
@@ -614,7 +614,7 @@ Now, without the JSON superset (`JSON.parse` and `JS_ParseJSON`):
 
 ## Calls of more than 32 arguments pass them in an array
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A call with more than 32 arguments, such as `f(a1, ..., a40)`, and a tagged template with more than 30 substitutions now pass the arguments past the first 32 in an array, as a call with a spread does: the compiler emits `array_from` for the first 32, then `define_array_el` for each one after them, and makes the call with `OP_apply`, or `OP_apply_eval` for a direct `eval`. An array literal already builds its elements past the first 32 this way. The operand stack of a function then holds at most 32 arguments of one call, where it held all of them, so that the frame of every function fits the 124 temps the register loop names with a byte (`engine/regvm-pass.h`). `JS_CALL_ARGS_ON_STACK` in `engine/quickjs.c` is the limit.
 
@@ -626,7 +626,7 @@ The change is in C (`engine/quickjs.c`, `js_parse_postfix_expr1` and `js_parse_t
 
 ## The limits of a function in the register loop
 
-Release: Unreleased.
+Release: v0.30.2.
 
 The register loop folds a stack deeper than its temps into Arrays, in as many levels as the stack needs, up to `JS_STACK_SIZE_MAX` (`engine/regvm-fold.h`). A catch offset (one for a `try`, three for a `for-of` with its iterator and next method) stays in a temp of its own, and so does the part of the stack under it, frozen into one Array. The register loop is the only interpreter, so the parser refuses at compile time each function it could not run, with the error it already gives for its own limits:
 

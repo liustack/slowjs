@@ -38,7 +38,7 @@ The change is in C (`engine/libregexp.c`): the split ops of `lre_exec_backtrack`
 
 ## Where a regexp starts is worked out once
 
-Release: Unreleased.
+Release: v0.30.2.
 
 What [the skip](#skip-to-where-a-regexp-can-match) needs to know of a regexp, which way it looks for a start and the set of characters a match can start with, depends on its bytecode only, yet `lre_exec` worked it out again on every call: `lre_first_set` walked the bytecode for each `test`, `exec` and match of a `replace`. Now `lre_compile` works it out once, in `lre_plan`, and keeps it in 36 bytes right after the bytecode. The scan then uses it in two new ways:
 
@@ -84,7 +84,7 @@ The change is in C (`engine/libregexp.c`): `lre_plan`, called by `lre_compile`, 
 
 ## Long lists of alternatives that start with a literal
 
-Release: Unreleased.
+Release: v0.30.2.
 
 An alternation such as react-spring's 148 color names, `(aliceblue|antiquewhite|...|yellowgreen)`, compiles to one split op for each alternative but the first, one after the other. At each position the machine came to, `lre_split` stepped over all of them to find which alternatives can start there, 147 steps whatever the character. Now `lre_compile` finds each run of at least 15 such split ops (16 alternatives) whose alternatives all start with a literal character, and keeps for it, after the plan, which is the first alternative that starts with each character and, for each alternative, the next one that starts with the same. `lre_split` reads the character once and goes straight to the first alternative that can start with it, or past the run when none can. After it pushed an alternative, the machine comes back to the next split op, and `lre_split` goes on from the next alternative with the same character.
 
