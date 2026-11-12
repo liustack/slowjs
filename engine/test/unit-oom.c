@@ -1652,6 +1652,30 @@ static void test_getel_local_key_oom(void)
     sweep("local key", "getel.js", setup, "run()", want, 16384);
 }
 
+/* o[k] = v with the key in a local: with too little memory (the atom of a
+   key made at run time, the string a key object gives, the property and
+   the room of the object or the array) it fails with the out of memory
+   error and frees each key and value once. */
+static void test_putel_local_key_oom(void)
+{
+    static const char setup[] =
+        "function put(obj, key, v) { obj[key] = v }\n"
+        "function run() {\n"
+        "  var o = {}, arr = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'p' + (i % 3) } };\n"
+        "    put(o, k, 'v' + i); put(o, ko, i); put(arr, i, 'a' + i); put(arr, '' + (i + 6), i);\n"
+        "  }\n"
+        "  return Object.keys(o).map(function (k) { return k + o[k] }).join() + '|' + arr.join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "k0v4,p03,k1v5,p14,k2v2,p25,k3v3|a0,a1,a2,a3,a4,a5,0,1,2,3,4,5", NULL };
+
+    sweep("local key put", "putel.js", setup, "run()", want, 16384);
+}
+
 /* The truth of strings, ropes and objects in locals and temps: with too
    little memory (the strings and objects made, the result) it fails with
    the out of memory error and frees each value once. */
@@ -2460,6 +2484,7 @@ int main(void)
     test_copy_props_oom();
     test_has_property_oom();
     test_getel_local_key_oom();
+    test_putel_local_key_oom();
     test_truth_oom();
     test_array_literal_oom();
     test_tags_oom();

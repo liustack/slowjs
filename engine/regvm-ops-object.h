@@ -287,8 +287,8 @@ static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 }
 
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
-   QuickJS's put_array_el, else JS_SetPropertyValue. key and v are taken,
-   a temp o freed. */
+   QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
+   are taken, a temp o freed. */
 static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
@@ -330,8 +330,15 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         goto done;
     }
  slow_path:
-    ret = JS_SetPropertyValue(ctx, obj, rv_take(ctx, F, (int8_t)ip[1]),
-                              rv_take(ctx, F, (int8_t)ip[2]), rv_throw_flags(F));
+    if (rv_is_temp(F, (int8_t)ip[1]))
+        ret = JS_SetPropertyValue(ctx, obj, key, rv_take(ctx, F, (int8_t)ip[2]),
+                                  rv_throw_flags(F));
+    else
+        /* a key in a local or an argument is read without a reference, as
+           obj is: no other code can write it while the key is made and the
+           property set (a captured one is never an operand, rv_push) */
+        ret = JS_SetPropertyValueConst(ctx, obj, key, rv_take(ctx, F, (int8_t)ip[2]),
+                                       rv_throw_flags(F));
  done:
     if (rv_is_temp(F, (int8_t)ip[0]))
         JS_FreeValue(ctx, obj);

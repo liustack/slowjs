@@ -14664,8 +14664,11 @@ static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObj
 }
 
 /* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
-static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
-                               JSValue prop, JSValue val, int flags)
+/* this_obj[prop] = val, which takes val: take says whether it frees prop,
+   which it then does before the property is set, as QuickJS does */
+static force_inline int js_set_property_value(JSContext *ctx, JSValueConst this_obj,
+                                              JSValue prop, JSValue val, int flags,
+                                              BOOL take)
 {
     JSAtom atom;
     int ret;
@@ -14679,7 +14682,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
             return ret;
     }
     atom = JS_ValueToAtom(ctx, prop);
-    JS_FreeValue(ctx, prop);
+    if (take)
+        JS_FreeValue(ctx, prop);
     if (unlikely(atom == JS_ATOM_NULL)) {
         JS_FreeValue(ctx, val);
         return -1;
@@ -14687,6 +14691,20 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
     ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
     JS_FreeAtom(ctx, atom);
     return ret;
+}
+
+static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
+                               JSValue prop, JSValue val, int flags)
+{
+    return js_set_property_value(ctx, this_obj, prop, val, flags, TRUE);
+}
+
+/* JS_SetPropertyValue with a key it does not free: the caller keeps prop
+   alive for the whole call, also while its toString or valueOf runs */
+static int JS_SetPropertyValueConst(JSContext *ctx, JSValueConst this_obj,
+                                    JSValueConst prop, JSValue val, int flags)
+{
+    return js_set_property_value(ctx, this_obj, prop, val, flags, FALSE);
 }
 
 int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,

@@ -1,0 +1,25 @@
+result strings a:1,b:two key3=three
+result numbers zero,B,C half 7:seven
+result symbol symbol
+result null key null:1,undefined:2
+result null object threw TypeError: cannot set property 'k' of null
+result key is the value self:self
+result object is the value true
+result key throws threw Error: key
+result key collects c:[object Object] 1
+result key changes object a:3,z:4
+result key in a closure kc:v gone
+result key through arguments ka:1 other
+result key through a direct eval ke:1 changed
+result key is the object [object Object]:1
+result object key is the value kv true
+result valueOf 0,one,0 toString,valueOf
+result setter set null
+result proxy string p=a string 1=b symbol Symbol(s)=c 1:b,p:a
+result frozen threw TypeError: 'f' is read-only
+result frozen sloppy 1
+result string object 1 3
+result loop a:14850,b:14950,c:15050
+mem-end obj=199 atom=570 shape=143 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
+mem-gc obj=199 atom=570 shape=143 prop=975 jsfunc=5 cfunc=132 array=2 fast_array=2 elements=22 binary=0
+--- status exit 0

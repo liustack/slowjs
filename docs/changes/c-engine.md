@@ -741,3 +741,15 @@ Why this is safe: between the two, the array is made (`JS_NewArray`, `expand_fas
 What it gains: the pages run 0.17% to 0.34% fewer instructions a render, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#array-literals-that-take-their-elements).
 
 The change is in C (`engine/quickjs.c`, `engine/regvm-ops-window.h`). `engine/test/compare/array_literal_temps.js` makes literals of objects, strings, ropes, symbols, BigInts and functions whose only reference is the element, literals whose elements collect or drop what an earlier element holds, literals of 0 to 40 elements, nested ones, ones that throw halfway, with spreads, in a loop and on a stack deep enough to be folded. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps literals of objects and strings made at run time with too little memory (`test_array_literal_oom`).
+
+## A key in a local is set without a reference
+
+Release: Unreleased.
+
+`o[k] = v` with the key in a local or an argument (PUTEL of the register loop, when the fast paths of an array do not answer) took a reference to the key, and `JS_SetPropertyValue` let it go once the key was made an atom. The loop now passes such a key where it is, as [a read of `o[k]`](#a-key-in-a-local-is-read-without-a-reference) does, through `JS_SetPropertyValueConst`, which leaves it as it found it. A key in a temp and the value are still taken.
+
+Why this is safe: the key's `toString` or `valueOf`, a setter and a Proxy trap run during the call, but none of them can write the slot the key is in, for the reasons given for the read: a local that a closure captures is copied into a temp before anything can run (`rv_push`), and the compiler marks every argument captured under a mapped `arguments` object or a direct `eval`. `JS_SetPropertyValue` is the same function as before (`js_set_property_value` with `take`), and frees its key at the same place. There is no new branch on the path: the test of a temp chose between two reads of the slot before (`rv_take`).
+
+What it gains: MUI's orders page runs 0.34% fewer instructions a render, the shop's pages 0.03% to 0.09%, React's the same, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#a-key-in-a-local-set-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/test/compare/putel_local_key.js` sets keys that are strings, numbers, symbols, `null` and objects whose `toString` or `valueOf` throws, collects, changes the object or writes the key through a closure, a mapped `arguments` object or a function a direct `eval` made, through a setter and a Proxy trap that write the key and collect, on frozen objects in strict and sloppy code, with the key as the value, the object as the value and the object as the key, and in a loop. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps keys made at run time with too little memory (`test_putel_local_key_oom`).

@@ -741,3 +741,15 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 收益：各页面每次渲染少 0.17% 到 0.34% 的指令，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#接过元素引用的数组字面量)。
 
 改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-window.h`）。`engine/test/compare/array_literal_temps.js` 造各种字面量：元素是只有这一个引用的对象、字符串、rope、symbol、BigInt 和函数，元素的代码触发回收或丢掉前一个元素握着的东西，0 到 40 个元素，嵌套的，半路抛错的，带展开的，在循环里的，以及在深到要折叠的栈上的。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的对象和字符串组成的字面量扫一遍（`test_array_literal_oom`）。
+
+## 局部变量里的键不加引用就写
+
+版本：Unreleased。
+
+键在局部变量或参数里的 `o[k] = v`（寄存器循环的 PUTEL，数组的快路径答不上时）以前先给键加一个引用，`JS_SetPropertyValue` 把键变成 atom 之后再放掉。现在循环像[读 `o[k]`](#局部变量里的键不加引用就读) 一样就地传这个键，经过 `JS_SetPropertyValueConst`，它写完不动这个键。键在临时槽里时和值一样照旧拿走。
+
+为什么安全：键的 `toString` 或 `valueOf`、setter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽，理由和读的时候一样：被闭包捕获的局部变量，在任何代码运行之前就被复制到临时槽（`rv_push`），有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。`JS_SetPropertyValue` 还是原来的函数（带 `take` 的 `js_set_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：MUI 的 orders 页每次渲染少 0.34% 的指令，商店的页面少 0.03% 到 0.09%，React 的不变，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用就写入)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/putel_local_key.js` 写各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包、映射的 `arguments` 对象或直接 `eval` 造的函数改写键的对象，还经过会改写键并触发回收的 setter 和 Proxy trap 写，在严格模式和宽松模式下写冻结的对象，键本身做值、对象本身做值、对象本身做键，并在循环里写。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_putel_local_key_oom`）。
