@@ -54,6 +54,7 @@ func opts(fs *flag.FlagSet) *rvgen.Options {
 	o := &rvgen.Options{}
 	fs.BoolVar(&o.Core, "core", false, "only what the register pass took first")
 	fs.BoolVar(&o.Wide, "wide", false, "also new, classes, ++ in expressions, unary operators, in, instanceof, element writes, delete, spread, regular expressions and getters that throw")
+	fs.BoolVar(&o.Captures, "captures", false, "also closures kept and called when the run of their function is over, over variables written before and after the capture")
 	fs.BoolVar(&o.Portable, "portable", false, "write the name of a caught error, not its message, so that the output is the same under Node")
 	fs.IntVar(&o.Funcs, "funcs", 8, "functions in a program")
 	fs.IntVar(&o.Stmts, "stmts", 6, "statements in a function, at most")
