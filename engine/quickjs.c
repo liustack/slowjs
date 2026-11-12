@@ -13981,6 +13981,21 @@ static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
     return 0;
 }
 
+/* The room an array that is appended to takes at its first allocation, in
+   slots: an array that is pushed to ends with a few elements, and growing one
+   slot at a time takes an allocation for each. */
+#ifndef JS_ARRAY_MIN_ROOM
+#define JS_ARRAY_MIN_ROOM 8
+#endif
+
+/* expand_fast_array for an array that new_len elements are appended to */
+static int expand_fast_array_append(JSContext *ctx, JSObject *p, uint32_t new_len)
+{
+    if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
+        new_len = JS_ARRAY_MIN_ROOM;
+    return expand_fast_array(ctx, p, new_len);
+}
+
 /* Preconditions: 'p' must be of class JS_CLASS_ARRAY, p->fast_array =
    TRUE and p->extensible = TRUE */
 static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
@@ -14003,7 +14018,7 @@ static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
         }
     }
     if (unlikely(new_len > p->u.array.u1.size)) {
-        if (expand_fast_array(ctx, p, new_len)) {
+        if (expand_fast_array_append(ctx, p, new_len)) {
             JS_FreeValue(ctx, val);
             return -1;
         }
@@ -48636,7 +48651,7 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
             new_len = p->u.array.count + argc;
             if (likely(new_len <= INT32_MAX)) {
                 if (unlikely(new_len > p->u.array.u1.size)) {
-                    if (expand_fast_array(ctx, p, new_len))
+                    if (expand_fast_array_append(ctx, p, new_len))
                         return JS_EXCEPTION;
                 }
                 for(i = 0; i < argc; i++)
@@ -48923,7 +48938,7 @@ static JSValue js_array_splice(JSContext *ctx, JSValueConst this_val,
                         (count32 - final) * sizeof(arrp[0]));
             } else {
                 if (unlikely(new_count32 > p->u.array.u1.size)) {
-                    if (expand_fast_array(ctx, p, new_count32))
+                    if (expand_fast_array_append(ctx, p, new_count32))
                         goto exception;
                     arrp = p->u.array.u.values;
                 }

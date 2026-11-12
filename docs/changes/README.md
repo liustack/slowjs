@@ -221,6 +221,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A proxy whose defineProperty trap refuses a store throws in strict code | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
 | Object literals have the room of an empty object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
 | A for in loop asks a shape once whether it lists its keys | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
+| An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
 
 ## Memory
 
