@@ -133,6 +133,48 @@ static const REOpCode reopcode_info[REOP_COUNT] = {
 
 /* the plan of lre_skip after the bytecode (see lre_plan) */
 #define LRE_PLAN_LEN 36
+/* its byte that holds how many chains of literal alternatives follow it
+   (see "Chains of literal alternatives" at lre_split) */
+#define LRE_PLAN_CHAINS 3
+
+/* A chain, after the plan: the offset of its first split op from the start
+   of the code (u32), its number of split ops (u16), its kind (one byte,
+   LRE_CHAIN_CASE or LRE_CHAIN_FOLD) and a byte of 0, then for each key
+   (LRE_CHAIN_KEYS, the units below 256 and one for all others) the index
+   of the first split op whose way starts with it, and for each split op
+   the index of the next one whose way starts with the same key, each a u16,
+   LRE_CHAIN_NONE for none. */
+#define LRE_CHAIN_HEAD 8
+#define LRE_CHAIN_KEYS 257
+#define LRE_CHAIN_NONE 0xffff
+/* the fewest split ops of a chain (16 alternatives), the most (below
+   LRE_CHAIN_NONE), and the most chains of a regexp */
+#define LRE_CHAIN_MIN 15
+#define LRE_CHAIN_LEN_MAX 0xfffe
+#define LRE_CHAIN_MAX 4
+enum {
+    LRE_CHAIN_CASE, /* the ways start with char or char32 */
+    LRE_CHAIN_FOLD, /* the ways start with char_i or char32_i */
+};
+
+/* lre_chain_size gives the bytes of the chain at p. */
+static inline size_t lre_chain_size(const uint8_t *p)
+{
+    return LRE_CHAIN_HEAD + 2 * (LRE_CHAIN_KEYS + (size_t)get_u16(p + 4));
+}
+
+/* lre_plan_size gives the bytes of the plan of the regexp of bytecode bc and
+   of its chains. */
+static size_t lre_plan_size(const uint8_t *bc)
+{
+    const uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
+    const uint8_t *p = plan + LRE_PLAN_LEN;
+    int k;
+
+    for (k = 0; k < plan[LRE_PLAN_CHAINS]; k++)
+        p += lre_chain_size(p);
+    return p - plan;
+}
 
 static void lre_plan(uint8_t *bc);
 
@@ -722,12 +764,12 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
 
     re_flags = lre_get_flags(buf);
     bc_len = get_u32(buf + RE_HEADER_BYTECODE_LEN);
-    assert(bc_len + RE_HEADER_LEN + LRE_PLAN_LEN <= buf_len);
+    assert(bc_len + RE_HEADER_LEN + lre_plan_size(buf) <= buf_len);
     printf("flags: 0x%x capture_count=%d reg_count=%d\n",
            re_flags, buf[RE_HEADER_CAPTURE_COUNT], buf[RE_HEADER_REGISTER_COUNT]);
     if (re_flags & LRE_FLAG_NAMED_GROUPS) {
         const char *p;
-        p = (char *)buf + RE_HEADER_LEN + bc_len + LRE_PLAN_LEN;
+        p = (char *)buf + RE_HEADER_LEN + bc_len + lre_plan_size(buf);
         printf("named groups: ");
         for(i = 1; i < buf[RE_HEADER_CAPTURE_COUNT]; i++) {
             if (i != 1)
@@ -3117,6 +3159,143 @@ static int compute_register_count(REParseState *s, uint8_t *bc_buf, int bc_buf_l
     return stack_size_max;
 }
 
+/* lre_way_key gives the unit the way at q starts with, after the saves of
+   captures lre_split steps over, and its kind in *kind, or -1 when the way
+   does not start with one character. */
+static int64_t lre_way_key(const uint8_t *q, int *kind)
+{
+    for (;;) {
+        switch (*q) {
+        case REOP_save_start:
+        case REOP_save_end:
+            q += 2;
+            continue;
+        case REOP_save_reset:
+            q += 3;
+            continue;
+        case REOP_char:
+            *kind = LRE_CHAIN_CASE;
+            return get_u16(q + 1);
+        case REOP_char32:
+            *kind = LRE_CHAIN_CASE;
+            return get_u32(q + 1);
+        case REOP_char_i:
+            *kind = LRE_CHAIN_FOLD;
+            return get_u16(q + 1);
+        case REOP_char32_i:
+            *kind = LRE_CHAIN_FOLD;
+            return get_u32(q + 1);
+        default:
+            return -1;
+        }
+    }
+}
+
+/* lre_chains finds the chains of literal alternatives of the code (see
+   "Chains of literal alternatives" at lre_split), at most LRE_CHAIN_MAX,
+   writes them after the plan and their number into it. It reads the
+   interrupt flag as compute_register_count does. -1 with the error set when
+   it runs out of memory or is interrupted. */
+static int lre_chains(REParseState *s)
+{
+    uint32_t start[LRE_CHAIN_MAX], len[LRE_CHAIN_MAX];
+    uint8_t kinds[LRE_CHAIN_MAX];
+    uint8_t *code, *p;
+    int count = 0, k, kind = 0, run_kind = 0, op, oplen;
+    uint32_t pos, limit, step, bc_len, run_start = 0, run_n = 0, j, idx, key;
+    int64_t key64;
+    size_t size, at;
+
+    bc_len = get_u32(s->byte_code.buf + RE_HEADER_BYTECODE_LEN);
+    pos = 0;
+    while (pos < bc_len && count < LRE_CHAIN_MAX) {
+        step = pos;
+        limit = bc_len - pos > LRE_SCAN_STEP ? pos + LRE_SCAN_STEP : bc_len;
+        code = s->byte_code.buf + RE_HEADER_LEN;
+        while (pos < limit && count < LRE_CHAIN_MAX) {
+            op = code[pos];
+            oplen = reopcode_info[op].size;
+            switch (op) {
+            case REOP_range:
+            case REOP_range_i:
+                oplen += get_u16(code + pos + 1) * 4;
+                break;
+            case REOP_range32:
+            case REOP_range32_i:
+                oplen += get_u16(code + pos + 1) * 8;
+                break;
+            case REOP_back_reference:
+            case REOP_back_reference_i:
+            case REOP_backward_back_reference:
+            case REOP_backward_back_reference_i:
+                oplen += code[pos + 1];
+                break;
+            }
+            key64 = -1;
+            if (op == REOP_split_next_first)
+                key64 = lre_way_key(code + pos + 5 + (int)get_u32(code + pos + 1), &kind);
+            if (key64 >= 0 && run_n > 0 && run_n < LRE_CHAIN_LEN_MAX &&
+                pos == run_start + 5 * run_n && kind == run_kind) {
+                run_n++;
+            } else {
+                if (run_n >= LRE_CHAIN_MIN) {
+                    start[count] = run_start;
+                    len[count] = run_n;
+                    kinds[count] = run_kind;
+                    count++;
+                }
+                run_n = 0;
+                if (key64 >= 0) {
+                    run_start = pos;
+                    run_n = 1;
+                    run_kind = kind;
+                }
+            }
+            pos += oplen;
+        }
+        if (bc_len >= LRE_SCAN_STEP) {
+            LRE_WORK(pos - step);
+            if (re_poll_interrupts(s))
+                return -1;
+        }
+    }
+    /* the code ends with match, which closes the last run */
+    for (k = 0; k < count; k++) {
+        size = LRE_CHAIN_HEAD + 2 * (LRE_CHAIN_KEYS + (size_t)len[k]);
+        at = s->byte_code.size;
+        if (re_dbuf_claim(&s->byte_code, size, LRE_CODE_MAX)) {
+            re_parse_out_of_memory(s);
+            return -1;
+        }
+        s->byte_code.size += size;
+        p = s->byte_code.buf + at;
+        code = s->byte_code.buf + RE_HEADER_LEN;
+        put_u32(p, start[k]);
+        put_u16(p + 4, len[k]);
+        p[6] = kinds[k];
+        p[7] = 0;
+        for (j = 0; j < LRE_CHAIN_KEYS; j++)
+            put_u16(p + LRE_CHAIN_HEAD + 2 * j, LRE_CHAIN_NONE);
+        /* from the last split op to the first, so that each key keeps the
+           first one and each link the next one */
+        for (j = len[k]; j-- > 0;) {
+            pos = start[k] + 5 * j;
+            key = lre_way_key(code + pos + 5 + (int)get_u32(code + pos + 1), &kind);
+            idx = key < 256 ? key : 256;
+            put_u16(p + LRE_CHAIN_HEAD + 2 * (LRE_CHAIN_KEYS + j),
+                    get_u16(p + LRE_CHAIN_HEAD + 2 * idx));
+            put_u16(p + LRE_CHAIN_HEAD + 2 * idx, j);
+            if (j % LRE_SCAN_STEP == 0 && len[k] >= LRE_SCAN_STEP) {
+                LRE_WORK(LRE_SCAN_STEP);
+                if (re_poll_interrupts(s))
+                    return -1;
+            }
+        }
+    }
+    s->byte_code.buf[RE_HEADER_LEN + bc_len + LRE_PLAN_CHAINS] = count;
+    return 0;
+}
+
 static void *lre_bytecode_realloc(void *opaque, void *ptr, size_t size)
 {
     if (size > (INT32_MAX / 2)) {
@@ -3225,6 +3404,8 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         }
         lre_plan(s->byte_code.buf);
     }
+    if (lre_chains(s))
+        goto error;
 
     /* add the named groups if needed */
     if (s->group_names.size > (s->capture_count - 1) * LRE_GROUP_NAME_TRAILER_LEN) {
@@ -3364,6 +3545,9 @@ typedef struct {
     BOOL is_unicode;
     const volatile int *interrupt_flag; /* lre_interrupt_flag */
     void *opaque; /* used for stack overflow check */
+    const uint8_t *code; /* the code, after the header */
+    const uint8_t *chains; /* the chains of literal alternatives */
+    int chain_count;
 
     StackElem *stack_buf;
     size_t stack_size;
@@ -3439,6 +3623,98 @@ static no_inline int stack_realloc(REExecContext *s, size_t n)
 /* every op fits in the bit masks above */
 typedef char lre_ops_fit_in_64_bits[REOP_COUNT <= 64 ? 1 : -1];
 
+/* Chains of literal alternatives.
+
+   An alternation a|b|c compiles to split ops one after the other, each 5
+   bytes, then the first alternative: the first split op pushes the last
+   alternative and goes on with the next split op, which pushes the one
+   before, and so on, and the last split op pushes the second alternative
+   and goes on with the first. So at each position lre_split steps over all
+   of them, one at a time, to find which ways can start there: 147 for the
+   148 color names of react-spring, whatever the character.
+
+   lre_chains (in lre_compile) finds each run of at least LRE_CHAIN_MIN such
+   split ops that are next to one another and whose ways all start, after
+   saves, with one character of the same kind: char or char32, or char_i or
+   char32_i (a group of other modifiers can mix them). Its key is that
+   character, or LRE_CHAIN_KEYS - 1 for one from 256 up. A way that starts
+   with anything else (a class, a dot, an escape, an empty alternative, a
+   lookbehind, which reads backward) ends the run, and the next run starts
+   after it. For each run, the chain keeps the first split op for each key
+   and, for each split op, the next one with the same key.
+
+   lre_split then reads the key at the position once (canonicalized as the
+   ops of a chain that ignores case do), and at a split op of a chain finds
+   the first one from there on whose way can start with it: at the first
+   split op of the chain from the table of first ones, and at another from
+   the next one of the split op before it when the way of that one starts
+   with the key, as it does when the machine comes there after it pushed
+   that way. Else it tests the split op it is at, as before. It steps over
+   the split ops before the one it found, or past the chain when there is
+   none, at once. Their ways cannot start here, so they push nothing, as
+   the walk one at a time found. It counts each toward LRE_SPLIT_BUDGET and
+   stops where that walk ran out of steps, so each call gives the machine
+   what it gave before: the same ways pushed in the same order, so the
+   order of the pattern holds among the alternatives that start alike, and
+   the same calls that push nothing, after which the machine polls. A key
+   from 256 up finds the split ops of such keys, whose ways lre_split then
+   tests one at a time. */
+
+/* lre_chain_at gives the chain whose split ops hold the one at sp, with
+   its index in *pj, or NULL. */
+static const uint8_t *lre_chain_at(const REExecContext *s, const uint8_t *sp,
+                                   uint32_t *pj)
+{
+    const uint8_t *p = s->chains;
+    uintptr_t off;
+    int k;
+
+    for (k = 0; k < s->chain_count; k++) {
+        off = (uintptr_t)(sp - (s->code + get_u32(p)));
+        if (off < 5 * (uintptr_t)get_u16(p + 4) && off % 5 == 0) {
+            *pj = off / 5;
+            return p;
+        }
+        p += lre_chain_size(p);
+    }
+    return NULL;
+}
+
+/* lre_chain_op gives the split op of index j of the chain ch, or the op
+   after its last one for the number of its split ops. */
+static const uint8_t *lre_chain_op(const REExecContext *s, const uint8_t *ch,
+                                   uint32_t j)
+{
+    return s->code + get_u32(ch) + 5 * j;
+}
+
+/* lre_chain_next gives the index of a split op of the chain ch, from index j
+   on, such that no way before it, from j on, can start with a unit of key
+   key: the first one whose way can, or the number of its split ops when none
+   can, when it knows them from its tables, else j itself. With key -1, at
+   the end of the string, none can. */
+static uint32_t lre_chain_next(const REExecContext *s, const uint8_t *ch,
+                               uint32_t j, int key)
+{
+    const uint8_t *op;
+    int64_t k;
+    uint32_t t;
+    int kind;
+
+    if (key < 0)
+        return get_u16(ch + 4);
+    if (j == 0) {
+        t = get_u16(ch + LRE_CHAIN_HEAD + 2 * key);
+    } else {
+        op = lre_chain_op(s, ch, j - 1);
+        k = lre_way_key(op + 5 + (int)get_u32(op + 1), &kind);
+        if ((k < 256 ? k : 256) != key)
+            return j;
+        t = get_u16(ch + LRE_CHAIN_HEAD + 2 * (LRE_CHAIN_KEYS + j - 1));
+    }
+    return t == LRE_CHAIN_NONE ? get_u16(ch + 4) : t;
+}
+
 /* lre_get_char returns the character at cptr, before cbuf_end, as GET_CHAR
    reads it. */
 static uint32_t lre_get_char(const uint8_t *cptr, const uint8_t *cbuf_end,
@@ -3507,17 +3783,68 @@ static BOOL lre_in_range32(const uint8_t *op, uint32_t c)
     return FALSE;
 }
 
-static void lre_split(REExecContext *s, const uint8_t **ppc,
+/* lre_split gives the ways of the split op at sp, which goes on with *ppc
+   and pushes *ppc1 (see above). */
+static void lre_split(REExecContext *s, const uint8_t *sp, const uint8_t **ppc,
                       const uint8_t **ppc1, const uint8_t *cptr)
 {
-    const uint8_t *pc = *ppc, *pc1 = *ppc1, *q, *next, *far;
+    const uint8_t *pc = *ppc, *pc1 = *ppc1, *q, *next, *far, *ch;
     BOOL end = cptr >= s->cbuf_end, canonical = FALSE, can;
-    uint32_t c = 0, folded = 0, k;
-    int op, n;
+    uint32_t c = 0, folded = 0, k, j, t, len;
+    int op, n, key;
 
     if (!end)
         c = lre_get_char(cptr, s->cbuf_end, s->cbuf_type);
     for (n = 0; n < LRE_SPLIT_BUDGET; n++) {
+        if (s->chain_count != 0 && (ch = lre_chain_at(s, sp, &j)) != NULL) {
+            key = -1;
+            if (!end) {
+                k = c;
+                if (ch[6] == LRE_CHAIN_FOLD) {
+                    if (!canonical) {
+                        canonical = TRUE;
+                        folded = lre_canonicalize(c, s->is_unicode);
+                    }
+                    k = folded;
+                }
+                key = k < 256 ? k : 256;
+            }
+            t = lre_chain_next(s, ch, j, key);
+            if (t > j) {
+                /* the split ops from j to t - 1 push nothing: the walk one
+                   at a time tests the one of index t at step n + t - j, or
+                   goes past the chain at the end of the step before */
+                len = get_u16(ch + 4);
+                if (n + (t - j) > LRE_SPLIT_BUDGET ||
+                    (n + (t - j) == LRE_SPLIT_BUDGET && t < len)) {
+                    /* it runs out of steps on the split op of index
+                       j + LRE_SPLIT_BUDGET - n, its way untested */
+                    sp = lre_chain_op(s, ch, j + LRE_SPLIT_BUDGET - n);
+                    pc = sp + 5;
+                    pc1 = pc + (int)get_u32(sp + 1);
+                    break;
+                }
+                n += t - j;
+                sp = lre_chain_op(s, ch, t);
+                op = *sp;
+                if (op != REOP_split_goto_first && op != REOP_split_next_first) {
+                    pc = sp;
+                    pc1 = NULL;
+                    break;
+                }
+                next = sp + 5;
+                far = next + (int)get_u32(sp + 1);
+                if (op == REOP_split_next_first) {
+                    pc = next;
+                    pc1 = far;
+                } else {
+                    pc = far;
+                    pc1 = next;
+                }
+                if (n == LRE_SPLIT_BUDGET)
+                    break;
+            }
+        }
         q = pc1;
         op = *q;
         while (op == REOP_save_start || op == REOP_save_end ||
@@ -3563,6 +3890,7 @@ static void lre_split(REExecContext *s, const uint8_t **ppc,
             pc1 = NULL;
             break;
         }
+        sp = pc;
         next = pc + 5;
         far = next + (int)get_u32(pc + 1);
         if (op == REOP_split_next_first) {
@@ -3752,7 +4080,7 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
         case REOP_split_goto_first:
         case REOP_split_next_first:
             {
-                const uint8_t *pc1;
+                const uint8_t *pc1, *split = pc - 1;
 
                 val = get_u32(pc);
                 pc += 4;
@@ -3764,7 +4092,7 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                 }
                 /* a way that cannot start here is not pushed */
                 if ((LRE_PEEK_OPS >> pc1[0]) & 1) {
-                    lre_split(s, &pc, &pc1, cptr);
+                    lre_split(s, split, &pc, &pc1, cptr);
                     if (!pc1) {
                         if (lre_poll_timeout(s))
                             return LRE_RET_TIMEOUT;
@@ -4165,7 +4493,8 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
    them in the LRE_PLAN_LEN bytes right after the bytecode, before the group
    names: the kind (LRE_PLAN_LOOP, ...), whether every unit from 256 up can
    start a match, for LRE_PLAN_CHAR how many char ops follow the first one
-   (at most LRE_PREFIX_MAX), a byte of 0, and a table of 256 bits, bit c of byte
+   (at most LRE_PREFIX_MAX), how many chains follow the plan (LRE_PLAN_CHAINS,
+   see lre_chains), and a table of 256 bits, bit c of byte
    c / 8 for unit c, of the units below 256 that can start a match. The
    table is exact for LRE_PLAN_RANGE and LRE_PLAN_SET and unused for the
    other kinds. */
@@ -4658,7 +4987,7 @@ int lre_exec(uint8_t **capture,
 {
     REExecContext s_s, *s = &s_s;
     int re_flags, i, ret;
-    const uint8_t *cptr;
+    const uint8_t *cptr, *plan;
     LRESkip skip;
 
     lre_skip(&skip, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque);
@@ -4675,6 +5004,10 @@ int lre_exec(uint8_t **capture,
         s->cbuf_type = 2;
     s->interrupt_flag = lre_interrupt_flag(opaque);
     s->opaque = opaque;
+    s->code = bc_buf + RE_HEADER_LEN;
+    plan = s->code + get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
+    s->chains = plan + LRE_PLAN_LEN;
+    s->chain_count = plan[LRE_PLAN_CHAINS];
 
     s->stack_buf = s->static_stack_buf;
     s->stack_size = countof(s->static_stack_buf);
@@ -4721,5 +5054,5 @@ const char *lre_get_groupnames(const uint8_t *bc_buf)
     if ((lre_get_flags(bc_buf) & LRE_FLAG_NAMED_GROUPS) == 0)
         return NULL;
     re_bytecode_len = get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
-    return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len + LRE_PLAN_LEN);
+    return (const char *)(bc_buf + RE_HEADER_LEN + re_bytecode_len + lre_plan_size(bc_buf));
 }

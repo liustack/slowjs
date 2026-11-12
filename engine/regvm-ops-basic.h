@@ -713,6 +713,127 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
     }
     return JS_UNINITIALIZED;
 }
+
+/* TRUE when a call of f from the loop is one rv_unwrap_call takes apart:
+   a bound function, or Function.prototype.call of this realm */
+static inline BOOL rv_unwrap_kind(JSContext *ctx, JSValueConst f)
+{
+    JSObject *p;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(f);
+    if (p->class_id == JS_CLASS_BOUND_FUNCTION)
+        return p->u.bound_function->argc == 0;
+    return p->class_id == JS_CLASS_C_FUNCTION &&
+        p->u.cfunc.cproto == JS_CFUNC_generic &&
+        p->u.cfunc.c_function.generic == js_function_call &&
+        p->u.cfunc.realm == ctx;
+}
+
+/* rv_unwrap_kind in RV_CALL_OUT, where is_call already tells whether f is
+   Function.prototype.call (its rv_fast): a plain C function, most of
+   the calls out of the loop, then pays one test of its class, not the
+   tests of rv_unwrap_kind again (about 12 instructions a call, 0.8% of a
+   render of tifa's MUI pages, whose calls out are mostly charCodeAt) */
+static inline BOOL rv_unwrap_first(JSContext *ctx, JSValueConst f, int is_call)
+{
+    JSObject *p;
+
+    if (is_call)
+        return JS_VALUE_GET_OBJ(f)->u.cfunc.realm == ctx;
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(f);
+    return p->class_id == JS_CLASS_BOUND_FUNCTION &&
+        p->u.bound_function->argc == 0;
+}
+
+/* TRUE when f, what a call that was taken apart now calls, is one the loop
+   calls as it would have been called: a function of bytecode of this realm,
+   a plain C function, or one to take apart again. A proxy, a function of
+   another realm, a C function with data and a value that is not a function
+   stay behind the call, which calls or refuses them as before. */
+static inline BOOL rv_unwrap_to(JSContext *ctx, JSValueConst f)
+{
+    JSObject *p;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(f);
+    if (p->class_id == JS_CLASS_BYTECODE_FUNCTION)
+        return p->u.func.function_bytecode->realm == ctx;
+    return p->class_id == JS_CLASS_C_FUNCTION || rv_unwrap_kind(ctx, f);
+}
+
+/* A call of the loop of a bound function with no bound arguments, or of
+   Function.prototype.call, made as the call it stands for, in a loop over
+   both, with no recursion: the window W (the function, then n arguments)
+   and this_v become those of the function they call, the values moved
+   with their references. Returns the new n, and the new this in
+   rt->rv_unwrap_this, or -1 when there was nothing to take apart. Such a
+   call then does not count a level of call depth or poll for the wrappers,
+   and leaves no frame of Function.prototype.call ("at call (native)") in a
+   stack trace, as in V8. new.target is not involved: NEW does not come
+   here. */
+static no_inline int rv_unwrap_call(JSContext *ctx, JSValue *W, int n, JSValue this_v)
+{
+    int done = 0;
+
+    for (;;) {
+        JSValue f = W[0], t;
+        JSObject *p;
+
+        /* a stop asked while a long chain is taken apart leaves the rest to
+           the call out of the loop, which polls and throws it */
+        if (!rv_unwrap_kind(ctx, f) || unlikely(poll_flag(&ctx->rt->interrupt_flag)))
+            break;
+        p = JS_VALUE_GET_OBJ(f);
+        if (p->class_id == JS_CLASS_BOUND_FUNCTION) {
+            JSBoundFunction *bf = p->u.bound_function;
+            if (!rv_unwrap_to(ctx, bf->func_obj))
+                break;
+            W[0] = JS_DupValue(ctx, bf->func_obj);
+            t = this_v;
+            this_v = JS_DupValue(ctx, bf->this_val);
+            JS_FreeValue(ctx, f);
+            JS_FreeValue(ctx, t);
+        } else {
+            /* f is call: what it calls is the this of the call */
+            if (!rv_unwrap_to(ctx, this_v))
+                break;
+            W[0] = this_v;
+            if (n == 0) {
+                this_v = JS_UNDEFINED;
+            } else {
+                this_v = W[1];
+                memmove(W + 1, W + 2, sizeof(W[0]) * (n - 1));
+                W[n] = JS_UNDEFINED;
+                n--;
+            }
+            JS_FreeValue(ctx, f);
+        }
+        done = 1;
+    }
+    if (!done)
+        return -1;
+    ctx->rt->rv_unwrap_this = this_v;
+    return n;
+}
+
+/* TRUE when f, what rv_unwrap_call left to call, is a converted function
+   (of this realm, as rv_unwrap_to took it): the loop calls it in a frame
+   of its own (rv_call_args), as the call of it from the loop would */
+static inline BOOL rv_unwrap_in_loop(JSValueConst f)
+{
+    JSObject *p;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(f);
+    return p->class_id == JS_CLASS_BYTECODE_FUNCTION &&
+        p->u.func.function_bytecode->rv->arg_count >= 0;
+}
 #elif RV_PART == RV_PART_RUN
     /* moves */
  rv_MOV:
@@ -1173,22 +1294,30 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
 
     /* a call out of the loop: JS_CallInternal throws what the entry
        refused. The result goes to the slot dst, or is freed (store). */
-#define RV_CALL_OUT(label, store)                                       \
+#define RV_CALL_OUT(label, store, args)                                 \
  label:                                                                 \
     RV_COUNT(rt, JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT &&             \
              JS_VALUE_GET_OBJ(W[0])->class_id == JS_CLASS_BYTECODE_FUNCTION ? 2 : 3); \
     rt->rv_top = W + 1 + n;                                             \
     sf->cur_pc = pc;                                                    \
     sf->cur_sp = F;                                                     \
-    if (unlikely(JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT &&              \
-                 JS_VALUE_GET_OBJ(W[0])->rv_fast) && !RV_INJ_ARMED &&      \
+    if (unlikely((i = JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT ?         \
+                      JS_VALUE_GET_OBJ(W[0])->rv_fast : RV_FAST_NONE) !=  \
+                 RV_FAST_NONE) && !RV_INJ_ARMED &&                       \
         !JS_IsUninitialized(ret_val = rv_fast_call(ctx, W, n, this_v)))  \
         ; /* answered without the call: hasOwnProperty.call(o, k), as   \
              QuickJS's OP_call_method, and charCodeAt (rv_fast_call).   \
              One call site for both keeps the loop's registers as they  \
-             were (a second one spilled on arm64) */                    \
+             were (a second one spilled on arm64). i keeps the kind     \
+             for rv_unwrap_first */                                     \
     else if (RV_INJ_HIT(ctx))                                           \
         ret_val = JS_EXCEPTION;                                         \
+    else if (unlikely(rv_unwrap_first(ctx, W[0], i == RV_FAST_CALL)) && \
+             !RV_INJ_ARMED &&                                           \
+             (i = rv_unwrap_call(ctx, W, n, this_v)) >= 0 &&            \
+             (n = i, this_v = rt->rv_unwrap_this,                       \
+              rv_unwrap_in_loop(W[0])))                                 \
+        goto args; /* bound or call taken apart: a call in the loop */  \
     else if (js_call_c_direct_ok(rt, W[0]))                             \
         ret_val = js_call_c_direct(ctx, W[0], this_v, n, W + 1);        \
     else if (rv_entry_fast(rt, W[0]))                                   \
@@ -1210,8 +1339,8 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
     RV_CALL_ARGS(rv_call_args_d, rv_call_seg_d, rv_call_out_d)
     RV_CALL_SEG(rv_call_seg, rv_call_out)
     RV_CALL_SEG(rv_call_seg_d, rv_call_out_d)
-    RV_CALL_OUT(rv_call_out, F[dst] = ret_val)
-    RV_CALL_OUT(rv_call_out_d, JS_FreeValue(ctx, ret_val))
+    RV_CALL_OUT(rv_call_out, F[dst] = ret_val, rv_call_args)
+    RV_CALL_OUT(rv_call_out_d, JS_FreeValue(ctx, ret_val), rv_call_args_d)
 #undef RV_CALL_ARGS
 #undef RV_CALL_SEG
 #undef RV_CALL_OUT

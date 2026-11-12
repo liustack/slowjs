@@ -1,6 +1,6 @@
 result rec 4995 RangeError: Maximum call stack size exceeded
 result big 4995 RangeError: Maximum call stack size exceeded
-result call 2497 RangeError: Maximum call stack size exceeded
+result call 4995 RangeError: Maximum call stack size exceeded
 result map 2498 RangeError: Maximum call stack size exceeded
 result getter 2497 RangeError: Maximum call stack size exceeded
 result alternate 4995 RangeError: Maximum call stack size exceeded

@@ -2997,6 +2997,9 @@ static void test_regexp_stops(void)
     host_free_runtime(rt);
 }
 
+/* z|z|...|z, 4098 alternatives, made by test_regexp_skip_polls */
+static char zs[2 * 4098];
+
 /* lre_skip reads the interrupt flag after each LRE_SKIP_CHUNK (65536) units
    it looks at, 16384 for a class in a string of 16 bits, and then answers as the backtracking machine does: lre_exec
    returns LRE_RET_TIMEOUT. It reads nothing at the end of the string. The
@@ -3025,16 +3028,35 @@ static void test_regexp_skip_polls(void)
         { "[ab]", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 12 },
         { "[ab]", "\xe4\xb8\xad", 2 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
         { "(?:a|c)b", "\xe4\xb8\xad", 3 * CHUNK + 1, 0, 0, 3 },
+        /* a chain of 20 alternatives (see lre_split) polls as the walk
+           over its split ops did, measured before the chains: 2 reads a
+           position where one alternative starts with the unit, 20 where
+           all of them do */
+        { "az|bz|cz|dz|ez|fz|gz|hz|iz|jz|kz|lz|mz|nz|oz|pz|qz|rz|sz|tz", "a", CHUNK, 0, 0, 2 * CHUNK },
+        { "az|bz|cz|dz|ez|fz|gz|hz|iz|jz|kz|lz|mz|nz|oz|pz|qz|rz|sz|tz", "a", CHUNK, 1, LRE_RET_TIMEOUT, 1 },
+        { "ab|ac|ad|ae|af|ag|ah|ai|aj|ak|al|am|an|ao|ap|aq|ar|as|at|au", "a", CHUNK, 0, 0, 20 * CHUNK },
+        { "ab|ac|ad|ae|af|ag|ah|ai|aj|ak|al|am|an|ao|ap|aq|ar|as|at|au", "a", CHUNK, 1, LRE_RET_TIMEOUT, 1 },
+        /* a way of a chain pushed, after which the walk found none of the
+           split ops after it could start, and the machine polled (a loop
+           of them over the string), and 4098 alternatives, past the steps
+           of one call of lre_split, measured before the chains too */
+        { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
+        { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
+        { zs, "z", 4096, 0, 1, 4097 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
     size_t i;
 
+    for(i = 0; i < 4098; i++) {
+        zs[2 * i] = 'z';
+        zs[2 * i + 1] = i < 4097 ? '|' : 0;
+    }
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int wide = cases[i].unit[1] != 0;
         size_t unit_bytes = wide ? 2 : 1;
         uint8_t *buf = malloc((size_t)cases[i].units * unit_bytes);
-        uint8_t *capture[2];
+        uint8_t *capture[8]; /* the captures and the registers of a loop */
         char msg[64];
         uint8_t *bc;
         int len, k, ret;
@@ -3044,18 +3066,20 @@ static void test_regexp_skip_polls(void)
             if (wide) {
                 ((uint16_t *)buf)[k] = 0x4e2d;
             } else {
-                buf[k] = 'x';
+                buf[k] = cases[i].unit[0];
             }
         }
         *JS_GetInterruptFlag(rt) = 0;
         bc = lre_compile(&len, msg, sizeof(msg), cases[i].re, strlen(cases[i].re), 0, ctx);
         CHECK(bc != NULL, "/%s/: %s", cases[i].re, msg);
-        if (bc) {
+        if (bc)
+            CHECK(lre_get_alloc_count(bc) <= (int)countof(capture), "/%.40s/: %d captures", cases[i].re, lre_get_alloc_count(bc));
+        if (bc && lre_get_alloc_count(bc) <= (int)countof(capture)) {
             *JS_GetInterruptFlag(rt) = cases[i].stop;
             before = host_poll_reads;
             ret = lre_exec(capture, bc, buf, 0, cases[i].units, wide, ctx);
             CHECK(ret == cases[i].result && host_poll_reads - before == cases[i].reads,
-                  "/%s/ on %d units%s, flag %d: result %d, %ld reads, want %d, %d",
+                  "/%.40s/ on %d units%s, flag %d: result %d, %ld reads, want %d, %d",
                   cases[i].re, cases[i].units, wide ? " of 16 bits" : "", cases[i].stop,
                   ret, host_poll_reads - before, cases[i].result, cases[i].reads);
             *JS_GetInterruptFlag(rt) = 0;

@@ -85,6 +85,8 @@ int white_own_keys(JSContext *ctx, JSValueConst obj, int flags, int got, char *o
 int white_function_debug(JSValueConst script, int i, const uint8_t **source, size_t *source_len, const uint8_t **pc2line, int *shared);
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
+int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
+int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
@@ -4107,6 +4109,162 @@ static void test_regexp_split_budget(void)
     CHECK(ok, "lre_split gave other than the split at 0 and its char at 5");
 }
 
+/* alts writes n alternatives of two letters at p, between bars, each first
+   written as pre (a string of UTF-8), and returns where it ended. Several of
+   them share a first letter. */
+static char *alts(char *p, int n, const char *pre)
+{
+    for (int k = 0; k < n; k++)
+        p += sprintf(p, "%s%s%c%c", k ? "|" : "", pre, 'a' + k % 9, 'a' + k % 26);
+    return p;
+}
+
+/* lre_chains keeps a chain for a run of at least LRE_CHAIN_MIN split ops in
+   a row whose ways start with a literal of one kind, 16 alternatives and up.
+   A way that starts with anything else, or with a literal of the other kind,
+   ends the run, the ways of a lookbehind start with REOP_prev and make none,
+   and it keeps at most LRE_CHAIN_MAX chains, the first in the code. */
+static void test_regexp_chains(void)
+{
+    static const struct {
+        int n1;            /* alternatives, then */
+        const char *mid;   /* this alternative when not NULL, then */
+        int n2;            /* these many more */
+        const char *pre;   /* the start of each, (?:...) around all of them */
+        int flags, groups; /* LRE_FLAG_ bits, and how many groups of these */
+        int count;
+        const char *want;
+    } cases[] = {
+        {15, NULL, 0, "", 0, 1, 0, "-"},
+        {16, NULL, 0, "", 0, 1, 1, "15c"},
+        {17, NULL, 0, "", 0, 1, 1, "16c"},
+        {149, NULL, 0, "", 0, 1, 1, "148c"},
+        {16, NULL, 0, "", 2, 1, 1, "15f"},        /* i */
+        {16, NULL, 0, "", 2 | 16, 1, 1, "15f"},   /* i and u */
+        {16, NULL, 0, "", 16, 1, 1, "15c"},       /* u */
+        {16, NULL, 0, "\xc4\x80", 0, 1, 1, "15c"},
+        {16, NULL, 0, "\xf0\x9f\x98\x80", 16, 1, 1, "15c"},
+        {10, "[x]", 10, "", 0, 1, 0, "-"},
+        {16, "[x]", 16, "", 0, 1, 2, "16c 15c"},
+        {16, "", 16, "", 0, 1, 2, "16c 15c"},
+        {16, ".", 16, "", 0, 1, 2, "16c 15c"},
+        {16, "\\b", 16, "", 0, 1, 2, "16c 15c"},
+        {16, "(ab)", 16, "", 0, 1, 1, "32c"},
+        {16, NULL, 0, "", 0, 5, 4, "15c 15c 15c 15c"},
+        {16, NULL, 0, "(?<=", 0, 1, 0, "-"},
+    };
+    VM v = vm_new();
+    char re[2048], out[64];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        char *p = re;
+        int lookbehind = !strcmp(cases[i].pre, "(?<=");
+        for (int g = 0; g < cases[i].groups; g++) {
+            p += sprintf(p, lookbehind ? "(?<=" : "(?:");
+            p = alts(p, cases[i].n1, lookbehind ? "" : cases[i].pre);
+            if (cases[i].mid) {
+                p += sprintf(p, "|%s|", cases[i].mid);
+                p = alts(p, cases[i].n2, cases[i].pre);
+            }
+            p += sprintf(p, ")");
+        }
+        int n = white_lre_chains(re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n == cases[i].count && !strcmp(out, cases[i].want),
+              "/%.40s.../ flags %d: %d chains \"%s\", want %d \"%s\"", re, cases[i].flags, n, out,
+              cases[i].count, cases[i].want);
+    }
+    vm_free(&v);
+}
+
+/* lre_split with the chains gives the machine what the walk over the split
+   ops one at a time gives it (white_lre_split_same), at every split op it can
+   be called at, on each character of a list and at the end of the string:
+   chains of each kind under the flags i, u, iu and v, first characters that
+   fold to one another and from 256 up, a chain in a loop, runs that a way of
+   another kind ends, more chains than are kept, and chains of 4095 to 4097
+   split ops followed by a split op or not, past the steps of one call. */
+static void test_regexp_split_same(void)
+{
+    static const uint32_t units[] = {
+        'a', 'b', 'k', 'K', 's', 'S', 'z', 'Z', 'x', 'p', 0xb5, 0xff, 0x100,
+        0x178, 0x17f, 0x39c, 0x212a, 0x4e2d, 0x1f600,
+    }, few[] = { 'a', 'z' };
+    static const char fold[] = "(?:k1|K2|\xe2\x84\xaa" "3|\xc5\xbf" "4|s5|S6|\xc3\xbf" "7|\xc5\xb8" "8|"
+        "\xc2\xb5" "9|\xce\x9c" "0|ka|kb|sa|sb|\xc4\x80" "c|zz)";
+    /* the same with one more, above U+FFFF, which a pattern of UTF-8 holds only under u and v */
+    static const char fold_u[] = "(?:k1|K2|\xe2\x84\xaa" "3|\xc5\xbf" "4|s5|S6|\xc3\xbf" "7|\xc5\xb8" "8|"
+        "\xc2\xb5" "9|\xce\x9c" "0|\xf0\x9f\x98\x80" "a|ka|kb|sa|sb|\xc4\x80" "c|zz)";
+    static const int flags[] = { 0, 2, 16, 2 | 16, 256 };
+    static char re[10000];
+    VM v = vm_new();
+    long calls = 0;
+    int bad = 0, d;
+    char *p;
+
+    for (size_t f = 0; f < countof(flags); f++) {
+        const char *pre[] = { "", "\xc4\x80" };
+        for (size_t k = 0; k < countof(pre); k++) {
+            for (int n = 15; n <= 17; n++) {
+                p = re + sprintf(re, "(?:");
+                p = alts(p, n, pre[k]);
+                sprintf(p, ")");
+                d = white_lre_split_same(re, flags[f], v.ctx, units, countof(units), &calls);
+                CHECK(d == 0, "/%.40s/ flags %d: %d calls differ", re, flags[f], d);
+                bad += d != 0;
+            }
+        }
+        d = white_lre_split_same(flags[f] & (16 | 256) ? fold_u : fold, flags[f], v.ctx, units, countof(units), &calls);
+        CHECK(d == 0, "/%s/ flags %d: %d calls differ", flags[f] & (16 | 256) ? fold_u : fold, flags[f], d);
+        bad += d != 0;
+    }
+    {
+        static const struct {
+            int n1;
+            const char *mid;
+            int n2, groups, flags;
+        } shapes[] = {
+            {149, NULL, 0, 1, 0},
+            {149, NULL, 0, 1, 2},
+            {16, "[x]", 16, 1, 0},
+            {16, "", 16, 1, 0},
+            {16, "(?i:ka|kb|kc|kd|ke|kf|kg|kh|ki|kj|kk|kl|km|kn|ko|kp)", 16, 1, 0},
+            {16, NULL, 0, 5, 0},
+        };
+        for (size_t i = 0; i < countof(shapes); i++) {
+            p = re;
+            for (int g = 0; g < shapes[i].groups; g++) {
+                p += sprintf(p, "(?:");
+                p = alts(p, shapes[i].n1, "");
+                if (shapes[i].mid) {
+                    p += sprintf(p, "|%s|", shapes[i].mid);
+                    p = alts(p, shapes[i].n2, "");
+                }
+                p += sprintf(p, ")");
+            }
+            d = white_lre_split_same(re, shapes[i].flags, v.ctx, units, countof(units), &calls);
+            CHECK(d == 0, "/%.40s/ flags %d: %d calls differ", re, shapes[i].flags, d);
+            bad += d != 0;
+        }
+    }
+    d = white_lre_split_same("(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", 0, v.ctx, units, countof(units), &calls);
+    CHECK(d == 0, "the loop of a chain: %d calls differ", d);
+    bad += d != 0;
+    /* (?:(?:z|[q])|z|...|z): its split ops are a chain, and past it is the
+       split op of z|[q], whose way does not start with a literal; then
+       z|...|z, past which is a char */
+    for (int n = 4094; n <= 4097; n++) {
+        p = re + sprintf(re, n < 4097 ? "(?:(?:z|[q])" : "(?:z");
+        for (int k = 0; k <= n; k++)
+            p += sprintf(p, "|z");
+        sprintf(p, ")");
+        d = white_lre_split_same(re, 0, v.ctx, few, countof(few), &calls);
+        CHECK(d == 0, "%d z: %d calls differ", n, d);
+        bad += d != 0;
+    }
+    printf("unit-white: test_regexp_split_same: %ld calls, %d patterns differ\n", calls, bad);
+    vm_free(&v);
+}
+
 /* ---- compiling with one request to the heap failing ---- */
 
 /* The bits of the mode of a compile: any call of js_malloc_rt or js_realloc_rt
@@ -5617,6 +5775,8 @@ int main(int argc, char **argv)
     test_regexp_cache_keeps();
     test_regexp_cache_memory();
     test_regexp_split_budget();
+    test_regexp_chains();
+    test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
     test_emit_tables();

@@ -21,7 +21,10 @@ import (
 // binary search costs more for each unit: a scan that read it only at the end
 // of the string would let hundreds of polls see the request. Before the table,
 // the binary search of a class of a wide span such as seroval's escape in a
-// string of 8 bits let 11 to 14 polls see it.
+// string of 8 bits let 11 to 14 polls see it. An alternation of 20 literals
+// runs the machine at each position that holds a first letter, through the
+// chain of its split ops (lre_split in engine/libregexp.c), and polls there
+// as the walk over them did.
 func TestRegexLongScanStops(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -39,6 +42,8 @@ func TestRegexLongScanStops(t *testing.T) {
 			{"table/escape", `'a'.repeat(1 << 25)`, `/[\x00-\x07\x0b\x0e-\x1f<\u2028\u2029\ud800-\udfff]/`},
 			{"memchr", `'x'.repeat(1 << 25)`, `/ab/`},
 			{"prefix", `'lab'.repeat(1 << 23)`, `/label:/`},
+			{"chain", `'a'.repeat(1 << 25)`, `/az|bz|cz|dz|ez|fz|gz|hz|iz|jz|kz|lz|mz|nz|oz|pz|qz|rz|sz|tz/`},
+			{"chain/alike", `'a'.repeat(1 << 25)`, `/ab|ac|ad|ae|af|ag|ah|ai|aj|ak|al|am|an|ao|ap|aq|ar|as|at|au/`},
 			{"16bit/class", `'\u4e2d'.repeat(1 << 24)`, `/["&<>]/`},
 			{"16bit/set", `'\u4e2d'.repeat(1 << 24)`, `/(?:a|c)b/`},
 			{"16bit/escape", `'\u4e2d'.repeat(1 << 24)`, `/[\x00-\x07\x0b\x0e-\x1f<\u2028\u2029\ud800-\udfff]/`},

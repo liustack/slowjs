@@ -134,6 +134,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Error stacks formatted when first read | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.md#error-stacks-formatted-when-first-read) |
 | Endless recursion throws RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.md#endless-recursion-throws-rangeerror) |
 | new with a spread says when its callee is not a constructor | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor) |
+| Calls through call and bound functions leave no line in the stack | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack) |
 
 ## Time and Intl
 
@@ -170,6 +171,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Skip to where a regexp can match | v0.26.15 | [regexp.md](regexp.md#skip-to-where-a-regexp-can-match) |
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
 | Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | Unreleased | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
+| A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | Unreleased | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 

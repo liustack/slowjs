@@ -82,6 +82,28 @@ The last three moved by less than the spread of their rounds.
 
 The change is in C (`engine/libregexp.c`): `lre_plan`, called by `lre_compile`, `lre_find_set` and `lre_prefix`, and `lre_skip` and `lre_run`, which read the plan. `lre_get_groupnames` and `lre_dump_bytecode` step over it, and `BC_VERSION` in `engine/quickjs.c` is 9. `engine/test/unit.c` checks how often each way of the scan polls, `engine/test/unit-api.c` that bytecode with regexps is written and read back and that an older version is refused, and the scripts `q3-regexp-skip.js` and `q3-regexp-prefix.js` of `engine/test/regvm/js` give the results of regexps of each kind, as Node gives them. `TestRegexLongScanStops` stops one long scan of each way, and `BenchmarkRegexShapes` times the shapes above.
 
+## Long lists of alternatives that start with a literal
+
+Release: Unreleased.
+
+An alternation such as react-spring's 148 color names, `(aliceblue|antiquewhite|...|yellowgreen)`, compiles to one split op for each alternative but the first, one after the other. At each position the machine came to, `lre_split` stepped over all of them to find which alternatives can start there, 147 steps whatever the character. Now `lre_compile` finds each run of at least 15 such split ops (16 alternatives) whose alternatives all start with a literal character, and keeps for it, after the plan, which is the first alternative that starts with each character and, for each alternative, the next one that starts with the same. `lre_split` reads the character once and goes straight to the first alternative that can start with it, or past the run when none can. After it pushed an alternative, the machine comes back to the next split op, and `lre_split` goes on from the next alternative with the same character.
+
+- A run ends at an alternative that does not start with a literal: a class, a dot, an escape such as `\d` or `\b`, an empty alternative, a group of other modifiers that changes `i`. The alternatives after it make a run of their own. At most 4 runs a regexp are kept, the first in the code.
+- With `i`, the alternatives start with folded characters (`char_i`), and `lre_split` folds the character of the string as the machine does, so `K` and `k` find the same alternatives, and under `iu` the Kelvin sign too. A run does not mix alternatives that ignore case with ones that do not. With `u` and `v` a character above U+FFFF is read whole, as the machine reads it.
+- Characters from 256 up share one entry. `lre_split` then tests those alternatives one at a time, as before.
+- An alternation inside a lookbehind is read backward, and its alternatives start with a step back, so it makes no run. A lookbehind before an alternation does not change the alternation.
+
+Why this is safe: an alternative is skipped only when its first character is not the one in the string, where `lre_split` would have tested it and pushed nothing. So every call of `lre_split` gives the machine what the walk over the split ops one at a time gave: the same alternatives pushed in the same order, so among those that start with the same character the order of the pattern holds (`a|ab` still prefers `a`), and the same calls that push nothing, after which the machine reads the interrupt flag. It also counts each split op it skips toward the 4096 steps of one call and stops where the walk would have stopped. Matches, captures, `lastIndex`, the errors and how often the flag is read are the same.
+
+A run takes 8 bytes and 2 more for each of 257 entries and for each of its split ops, 816 bytes for the color names, in the bytecode string: they count against the memory limit and the bytes of the cache. The bytecode of a function holds the bytecode of its regexp literals, so the bytecode version goes from 9 to 10: bytecode written by `Compile` of an earlier release no longer loads (`SyntaxError: invalid version`).
+
+Callgrind on linux/arm64, the instructions of the engine in a render, against `641f7dc7` with the same HTML: the shop's workbench page, where react-spring tests its color names, 1.36% fewer (172.32M to 169.98M), and in the matcher 4,877K to 2,601K. On the other pages no regexp has such a list, and the matcher runs up to 69K more instructions a render, for the test of whether a regexp has a run: the English storefront home +0.02%, the Chinese product list +0.01%, the MUI orders page +0.02% and `r_react_ssr` +0.01%.
+
+`BenchmarkRegexColors` on darwin/arm64 (Apple M, with other work on the machine), the medians of 6 rounds that ran both builds in turn: a value with a name 3,971 ns to 1,921 ns (0.48), a shadow with no name 3,132 ns to 878 ns (0.28). The shapes of `BenchmarkRegexShapes`, which have no such list, moved by less than the spread of their rounds.
+
+
+The change is in C (`engine/libregexp.c`): `lre_chains`, called by `lre_compile`, and `lre_chain_next` and `lre_split`, which read the chains. `lre_get_groupnames` and `lre_dump_bytecode` step over them, and `BC_VERSION` in `engine/quickjs.c` is 10. `engine/test/unit-white.c` checks which runs are kept (`test_regexp_chains`) and that `lre_split` gives what the walk one at a time gives at every split op of each kind of run, on characters that fold to one another, from 256 up and above U+FFFF and at the end of the string, and for runs of 4095 to 4097 split ops (`test_regexp_split_same`). `engine/test/unit.c` checks that the flag is read as often as before. `q3-regexp-alt.js` of `engine/test/regvm/js` gives the matches and captures of such regexps under every builtin, as Node gives them, and `TestRegexLongScanStops` stops a long run of them.
+
 ## Compiled regexps kept per VM
 
 Release: v0.27.0.

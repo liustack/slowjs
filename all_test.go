@@ -785,8 +785,12 @@ func TestBytecode(t *testing.T) {
 	// 2026-11-12, version 9: a regexp keeps where it starts to look in 36 bytes
 	// after its bytecode, which the bytecode of a function holds for its
 	// regexp literals. The code of this script is the same.
+	//
+	// 2026-11-12, version 10: a regexp keeps, after its plan, a table of the
+	// first characters of each long run of literal alternatives. The code of
+	// this script is the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "09000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "0a000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

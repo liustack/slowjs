@@ -443,7 +443,7 @@ tifa 的页面经常运行的两种指令序列，现在各只用解释器的一
 
 为什么借用是安全的：在快速路径上，读局部变量和压入属性之间不运行任何东西，所以没有东西能改变或释放这个局部变量。任何可能运行代码的情况（getter、proxy 陷阱、其中的回收）都走慢速路径，它像那两条指令一样先取引用。`fuse_code` 作用在已完成的代码上，所以 `arguments` 对象、闭包变量和 `let`、`const` 声明之前的检查，编译方式和以前一样：处于暂时性死区的局部变量用 `get_loc_check` 读，它不被融合。
 
-加这些操作码时字节码版本从 6 升到 7，`dup_case_atom` 接上另外三种跳转时从 7 升到 8。[正则把从哪里开始找存进字节码](regexp.zh-CN.md#正则从哪里开始找编译时算一次) 以后是 9。`JS_ReadObject` 用 `poll_scan` 检查它读入的代码，现在它还拒绝后面没有跟着其序列其余部分的融合操作码（`invalid bytecode: a fused opcode without the instructions it reads`），所以宿主写入的字节码不能让解释器跨过一条它没检查过的指令。
+加这些操作码时字节码版本从 6 升到 7，`dup_case_atom` 接上另外三种跳转时从 7 升到 8。[正则把从哪里开始找存进字节码](regexp.zh-CN.md#正则从哪里开始找编译时算一次) 以后是 9，[以字面量开头的一长串分支](regexp.zh-CN.md#以字面量开头的一长串分支)把它们的表也存进去以后是 10。`JS_ReadObject` 用 `poll_scan` 检查它读入的代码，现在它还拒绝后面没有跟着其序列其余部分的融合操作码（`invalid bytecode: a fused opcode without the instructions it reads`），所以宿主写入的字节码不能让解释器跨过一条它没检查过的指令。
 
 `JS_SetFusedOps(ctx, 0)` 让运行时把这些序列重新分开编译，供测试使用。
 

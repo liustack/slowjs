@@ -531,6 +531,10 @@ struct JSRuntime {
        ran out of memory: its call throws out of memory (JS_CallInternal)
        instead of a second try */
     struct JSFunctionBytecode *rv_oom_b;
+    /* the this of the call rv_unwrap_call took apart, handed back to the
+       loop here rather than through a pointer to its this_v, which would
+       keep this_v in the frame of JS_RegvmRun and make it larger */
+    JSValue rv_unwrap_this;
     /* the scratch of the pass, kept from one conversion to the next, and
        its bytes (engine/regvm-pass.h): NULL before the first */
     uint8_t *rv_scratch;
@@ -42886,7 +42890,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 9
+#define BC_VERSION 10
 
 typedef struct BCWriterState {
     JSContext *ctx;

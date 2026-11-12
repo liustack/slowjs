@@ -3,9 +3,11 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 // rvdiff: the depth at which a recursion ends with a RangeError, on each path:
-// pure JavaScript, a frame too large for the register stack, through a C
-// function (call, map), through a getter, alternating with a function the
-// pass refuses, and the same once the recursion is caught and run again.
+// pure JavaScript, a frame too large for the register stack, through
+// Function.prototype.call (which the loop takes apart, so that call counts
+// no level of its own), through a C function (map), through a getter,
+// alternating with a function the pass refuses, and the same once the
+// recursion is caught and run again.
 (function () { "use strict";
 var out = [];
 var d = { n: 0 };

@@ -134,6 +134,7 @@ read_when:
 | 错误的 stack 在第一次读取时才格式化 | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) |
 | 无限递归抛出 RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#无限递归抛出-rangeerror) |
 | 带展开参数的 new 会说出被调用的不是构造函数 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数) |
+| 通过 call 和绑定函数的调用不在调用栈里多出一行 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行) |
 
 ## 时间和 Intl
 
@@ -170,6 +171,7 @@ read_when:
 | 跳到正则可能匹配的位置 | v0.26.15 | [regexp.md](regexp.zh-CN.md#跳到正则可能匹配的位置) |
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
 | 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | Unreleased | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
+| 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | Unreleased | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 

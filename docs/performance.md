@@ -781,6 +781,20 @@ The prefix gains on the MUI page only, where emotion looks for `label:` in every
 
 The time of the pages was not measured. One run of each shape, from `BenchmarkRegexShapes` and `BenchmarkRegexColors` on an Apple M with other work on the machine, takes 0.19 of the time for seroval's escape test, 0.55 for core-js's trailing spaces of a URL, 0.70 for emotion's labels and 0.84 for the color names on a value with a name ([the table](changes/regexp.md#where-a-regexp-starts-is-worked-out-once)).
 
+### Long lists of alternatives that start with a literal
+
+A regexp with a list of 16 alternatives or more that start with a literal [goes straight to the ones that start with the character](changes/regexp.md#long-lists-of-alternatives-that-start-with-a-literal), where it walked over all of them at each position. Callgrind on linux/arm64 (Docker on an Apple M), on the native test host, the instructions of the engine in one render (the mean of 4 after 2 to warm up), with the same HTML, against `641f7dc7`:
+
+| Page | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| tifa's shop, workbench | 172.32M | 169.98M | -1.36% |
+| tifa's shop, English storefront home | 256.75M | 256.80M | +0.02% |
+| tifa's shop, Chinese product list | 410.99M | 411.05M | +0.01% |
+| tifa's MUI app, orders | 205.87M | 205.91M | +0.02% |
+| `r_react_ssr` | 31.25M | 31.26M | +0.01% |
+
+The workbench gains from react-spring's 148 color names: the matcher runs 2,601K instructions a render there, where it ran 4,877K. The other pages have no such list, and their matcher runs up to 69K more instructions a render. The time of the pages was not measured. `BenchmarkRegexColors` on an Apple M with other work on the machine takes 0.48 of the time on a value with a name and 0.28 on a shadow with none.
+
 ### Stability under load
 
 Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the ccgo engine (`lib`, [history.md](history.md)), built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.

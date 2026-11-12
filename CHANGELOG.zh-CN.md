@@ -46,9 +46,10 @@
 
 ### 变更
 
-- 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 9，一是为了这些操作码，二是函数的字节码现在为它的每个正则带上从哪里开始找匹配的信息，这在编译时算一次，tifa 的页面一次渲染因此少 0.27% 到 0.97% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#正则从哪里开始找编译时算一次)）：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+- 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 10，一是为了这些操作码，二是函数的字节码现在为它的每个正则带上从哪里开始找匹配的信息，这在编译时算一次，tifa 的页面一次渲染因此少 0.27% 到 0.97% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#正则从哪里开始找编译时算一次)），三是以字面量开头的一长串分支的正则还带上以每个字符开头的是哪些分支，商店工作台一次渲染因此少 1.36% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#以字面量开头的一长串分支)）：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 超过 65,535 个替换的带标签模板，现在在调用时抛出 `RangeError`，原来编译时就以 `InternalError: stack overflow` 失败。一次调用里前 32 个之后的参数，现在和带展开参数的调用一样放进数组传（[c-engine.md](docs/changes/c-engine.zh-CN.md#超过-32-个参数的调用用数组传参)）。
 - 参数和局部变量加起来超过 32,765 个的函数编译失败（报 `InternalError: too many local variables` 或 `too many arguments`，原来的上限是各 65,534 个），栈深超过 118 个值、外面又套了太多层 `try` 和 `for-of` 的函数也编译失败（报 `InternalError: stack overflow`：包着 `r += a` 时是 118 层嵌套的 `try` 或 39 层嵌套的 `for-of`，包着 130 层深的表达式时是 49 层和 17 层）。寄存器循环现在是唯一的解释器，这些就是它跑不了的函数（[c-engine.md](docs/changes/c-engine.zh-CN.md#寄存器循环里一个函数的上限)）。
+- 脚本里对 `f.call(t, ...)`、`call.bind(f)`（core-js 这样造）或没有绑定参数的绑定函数的调用，现在直接做成它所代表的那次调用。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在 `RangeError` 之前能深约一倍，100,000 个绑定函数的链能跑，原来抛 `RangeError`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。
 
 ## [v0.30.1] - 2026-11-06
 

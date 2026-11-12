@@ -82,6 +82,28 @@ read_when:
 
 改动在 C 里（`engine/libregexp.c`）：`lre_compile` 调用的 `lre_plan`，`lre_find_set` 和 `lre_prefix`，以及读取这份信息的 `lre_skip` 和 `lre_run`。`lre_get_groupnames` 和 `lre_dump_bytecode` 会跳过它，`engine/quickjs.c` 的 `BC_VERSION` 是 9。`engine/test/unit.c` 检查每种扫描方式多久轮询一次，`engine/test/unit-api.c` 检查含正则的字节码能写出再读回、旧版本会被拒绝，`engine/test/regvm/js` 里的 `q3-regexp-skip.js` 和 `q3-regexp-prefix.js` 给出每类正则的结果，和 Node 一致。`TestRegexLongScanStops` 让每种方式的一次长扫描停下，`BenchmarkRegexShapes` 给上面这些形状计时。
 
+## 以字面量开头的一长串分支
+
+发布：Unreleased。
+
+像 react-spring 的 148 个颜色名 `(aliceblue|antiquewhite|...|yellowgreen)` 这样的分支，除第一个分支外，每个分支编译成一个 split 操作，一个接一个排着。机器每到一个位置，`lre_split` 都要把它们挨个走一遍，看哪些分支能从这里开始，不管是什么字符都走 147 步。现在 `lre_compile` 找出每一段至少 15 个这样的 split 操作（16 个分支）、分支全都以一个字面量字符开头的连续片段，在 plan 后面为它记下：以每个字符开头的第一个分支是哪个，以及每个分支之后下一个以同一字符开头的分支是哪个。`lre_split` 只读一次字符，直接跳到第一个能以它开头的分支，没有就跳过整段。机器压入一个分支后回到下一个 split 操作，`lre_split` 从同一字符的下一个分支接着找。
+
+- 遇到不以字面量开头的分支，这一段就结束：字符类、点、`\d` 或 `\b` 这样的转义、空分支、改变 `i` 的修饰符分组。它后面的分支另成一段。每个正则最多保留 4 段，取代码里靠前的。
+- 带 `i` 时，分支以折叠后的字符开头（`char_i`），`lre_split` 像机器那样折叠字符串里的字符，所以 `K` 和 `k` 找到同样的分支，带 `iu` 时开尔文符号也一样。忽略大小写的分支和不忽略的不会混在一段里。带 `u` 和 `v` 时，U+FFFF 以上的字符像机器那样整个读。
+- 256 及以上的字符共用一项。`lre_split` 再像以前那样逐个测试这些分支。
+- lookbehind 里的分支是倒着读的，分支以退一步开头，所以不成段。分支前面有 lookbehind 不影响这个分支。
+
+为什么安全：只有当一个分支的第一个字符不是字符串里那个字符时才跳过它，这时 `lre_split` 本来也会测它并且什么都不压入。所以每次调用 `lre_split` 交给机器的，和逐个走 split 操作时一样：压入同样的分支、顺序相同，所以同一字符开头的分支之间仍保持模式里的顺序（`a|ab` 仍然先选 `a`），什么都不压入的调用也一样多，机器在这样的调用后读中断标志。它还把跳过的每个 split 操作计入一次调用的 4096 步，在逐个走会停下的地方停下。匹配、捕获、`lastIndex`、错误以及读标志的次数都不变。
+
+每段占 8 字节，再加 257 项和它的每个 split 操作各 2 字节，颜色名是 816 字节，放在字节码字符串里：计入内存上限和缓存的字节数。函数的字节码带着它的正则字面量的字节码，所以字节码版本从 9 升到 10：旧版本 `Compile` 写出的字节码不能再读入（`SyntaxError: invalid version`）。
+
+在 linux/arm64 上用 callgrind 数一次渲染里引擎的指令，和 `641f7dc7` 比，HTML 相同：商店的工作台页面（react-spring 在这里测它的颜色名）少 1.36%（172.32M 到 169.98M），匹配器里从 4,877K 降到 2,601K。别的页面上没有正则带这样的一串分支，匹配器一次渲染最多多跑 69K 条指令，用在测一个正则有没有段上：英文店面首页 +0.02%，中文商品列表 +0.01%，MUI 订单页 +0.02%，`r_react_ssr` +0.01%。
+
+在 darwin/arm64（Apple M，机器上同时有别的工作）上跑 `BenchmarkRegexColors`，6 轮、每轮两个构建轮流跑，取中位数：带颜色名的值 3,971 ns 到 1,921 ns（0.48），不带颜色名的阴影 3,132 ns 到 878 ns（0.28）。`BenchmarkRegexShapes` 里的形状没有这样的一串分支，变化小于各轮之间的波动。
+
+
+改动在 C 里（`engine/libregexp.c`）：`lre_compile` 调用的 `lre_chains`，以及读这些段的 `lre_chain_next` 和 `lre_split`。`lre_get_groupnames` 和 `lre_dump_bytecode` 跳过它们，`engine/quickjs.c` 的 `BC_VERSION` 是 10。`engine/test/unit-white.c` 检查保留了哪些段（`test_regexp_chains`），以及在每种段的每个 split 操作上、对互相折叠的字符、256 及以上和 U+FFFF 以上的字符、在字符串末尾、对 4095 到 4097 个 split 操作的段，`lre_split` 给出的都和逐个走一样（`test_regexp_split_same`）。`engine/test/unit.c` 检查读标志的次数和以前一样。`engine/test/regvm/js` 的 `q3-regexp-alt.js` 给出这类正则在每个内置函数下的匹配和捕获，和 Node 一样，`TestRegexLongScanStops` 停下一次这样的长扫描。
+
 ## 按 VM 保存编译好的正则
 
 发布版本：v0.27.0。
