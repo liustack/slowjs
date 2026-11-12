@@ -1956,6 +1956,34 @@ static void test_string_append_oom(void)
         sweep(calls[i], "append.js", setup, calls[i], want, 32768);
 }
 
+/* An array that is appended to takes its first room in one allocation (push,
+   an index at the length, spread, splice and the arrays of the engine's own
+   builtins), and out of memory there fails the call with the out of memory
+   error and loses nothing. Each sweep runs the script for every room of
+   memory from nothing up and in a full heap. */
+static void test_array_room_oom(void)
+{
+    static const struct { const char *name, *src, *want; } cases[] = {
+        { "push", "var a = []; for (var i = 0; i < 10; i++) a.push(i); a.length + ':' + a.join(',')", "10:0,1,2,3,4,5,6,7,8,9" },
+        { "push many", "var a = []; a.push(1, 2, 3, 4, 5, 6); a.length + ':' + a.join(',')", "6:1,2,3,4,5,6" },
+        { "index", "var a = []; for (var i = 0; i < 9; i++) a[i] = i * 2; a.length + ':' + a.join(',')", "9:0,2,4,6,8,10,12,14,16" },
+        { "spread", "var s = [1, 2, 3, 4, 5], a = [...s, ...s]; a.length + ':' + a.join(',')", "10:1,2,3,4,5,1,2,3,4,5" },
+        { "splice", "var a = []; for (var i = 0; i < 6; i++) a.splice(a.length, 0, i); a.length + ':' + a.join(',')", "6:0,1,2,3,4,5" },
+        { "entries", "var o = { a: 1, b: 2, c: 3 }; Object.entries(o).join(';')", "a,1;b,2;c,3" },
+        { "string split", "'a,b,c,d,e'.split(',').join('')", "abcde" },
+        { "JSON.parse", "JSON.stringify(JSON.parse('[1,[2,3],[4]]'))", "[1,[2,3],[4]]" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        const char *want[2];
+
+        want[0] = cases[i].want;
+        want[1] = NULL;
+        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 16384);
+    }
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -2295,6 +2323,7 @@ int main(void)
     test_key_names_oom();
     test_normalize_oom();
     test_map_grow_oom();
+    test_array_room_oom();
     test_string_append_oom();
     test_copy_props_oom();
     test_tags_oom();
