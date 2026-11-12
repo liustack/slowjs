@@ -64,7 +64,7 @@ func TestCheckDispatchCopies(t *testing.T) {
 // each place a loop keeps the count. hot calls a function that ticks on every
 // run of its loop, cold only on a run that seldom comes, and nest has a loop
 // around one that runs in chunks. interp is an interpreter that counts its
-// bytecode as JS_CallInternal does: marks at its entry and in the handler of
+// bytecode as JS_RegvmRun does: marks at its entry and in the handler of
 // a jump back, and a dispatch, a computed goto through ops. One of its
 // handlers calls a function that ticks. unwind has a mark outside an
 // interpreter, in a loop that keeps the count in a register, as the catch of
@@ -406,93 +406,4 @@ func syncedAround(f, call string) bool {
 		}
 	}
 	return false
-}
-
-// interpreterJumps lists what breaks, in src (engine/quickjs.c), the rule of
-// JS_CallInternal that the poll pass relies on when it leaves the edges into
-// the interpreter's dispatch without a tick: the function counts at its
-// entry (poll_count_entry before it calls anything or sets pc, the checks
-// of js_call_checks included), and pc moves
-// only by a constant step forward (pc += N, *pc++), through JUMP_TO, which
-// counts a move that does not go forward, or through JUMP_COUNTED, which
-// always counts. pc is set from elsewhere only at the entry, to the start of
-// the bytecode or to where a generator stopped, and OP_nop counts.
-// check_polls (quickjs.c) bounds the instructions between two counts.
-func interpreterJumps(src string) []string {
-	start := strings.Index(src, "\nstatic JSValue JS_CallInternal(JSContext *caller_ctx,")
-	if start < 0 {
-		return []string{"no JS_CallInternal"}
-	}
-	end := strings.Index(src[start:], "\n}\n")
-	if end < 0 {
-		return []string{"no end of JS_CallInternal"}
-	}
-	body := regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(src[start:start+end], "")
-	body = regexp.MustCompile(`//[^\n]*`).ReplaceAllString(body, "")
-	body = regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`).ReplaceAllString(body, `""`)
-	body = strings.ReplaceAll(body, "\\\n", " ")
-	space := regexp.MustCompile(`\s+`)
-	var bad []string
-	macro := func(name, want string) {
-		m := regexp.MustCompile(`(?m)^#define ` + name + `\(to\)(.*)$`).FindStringSubmatch(body)
-		if m == nil || space.ReplaceAllString(strings.TrimSpace(m[1]), " ") != want {
-			bad = append(bad, name+" is not "+want)
-		}
-	}
-	macro("JUMP_TO", "do { const uint8_t *to_ = (to); if (unlikely(to_ <= pc)) poll_count(POLL_WEIGHT); pc = to_; } while (0)")
-	macro("JUMP_COUNTED", "do { pc = (to); poll_count(POLL_WEIGHT); } while (0)")
-	entry := strings.Index(body, "\n    poll_count_entry(POLL_WEIGHT);\n")
-	for _, after := range []string{"js_call_checks(", "pc = b->byte_code_buf;", "pc = sf->cur_pc;"} {
-		if i := strings.Index(body, after); entry < 0 || i < 0 || i < entry {
-			bad = append(bad, "poll_count_entry does not come before "+after)
-		}
-	}
-	if m := regexp.MustCompile(`(?s)CASE\(OP_nop\):(.*?)BREAK;`).FindStringSubmatch(body); m == nil || !strings.Contains(m[1], "poll_count(POLL_WEIGHT);") {
-		bad = append(bad, "OP_nop does not count")
-	}
-	allowed := map[string]bool{"pc = b->byte_code_buf;": true, "pc = sf->cur_pc;": true, "pc = to_;": true, "pc = (to);": true}
-	step := regexp.MustCompile(`^pc \+= \d+;$`)
-	for _, l := range strings.Split(body, "\n") {
-		for _, m := range regexp.MustCompile(`(?:^|[^\w.>])(pc\s*(?:[-+*/%&|^]|<<|>>)?=[^=][^;]*;?)`).FindAllStringSubmatch(l, -1) {
-			st := space.ReplaceAllString(strings.TrimSpace(m[1]), " ")
-			if !allowed[st] && !step.MatchString(st) {
-				bad = append(bad, "pc moves outside JUMP_TO and JUMP_COUNTED: "+strings.TrimSpace(l))
-			}
-		}
-		if regexp.MustCompile(`(?:^|[^\w.>*])pc\s*(?:\+\+|--)|(?:\+\+|--)\s*pc\b|&pc\b|\*pc--`).MatchString(l) {
-			bad = append(bad, "pc moves outside JUMP_TO and JUMP_COUNTED: "+strings.TrimSpace(l))
-		}
-	}
-	return bad
-}
-
-// TestInterpreterJumpsCount holds JS_CallInternal to interpreterJumps, and
-// checks that copies of it with one count taken out are caught: a jump by
-// hand, no entry mark, a JUMP_TO that does not count a jump to itself, and
-// an OP_nop that does not count.
-func TestInterpreterJumpsCount(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "engine", "quickjs.c"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := string(b)
-	if bad := interpreterJumps(src); len(bad) > 0 {
-		t.Fatalf("JS_CallInternal:\n%s", strings.Join(bad, "\n"))
-	}
-	for _, c := range []struct{ from, to, want string }{
-		{"JUMP_TO(pc + (int32_t)get_u32(pc));", "pc += (int32_t)get_u32(pc);", "pc moves outside"},
-		{"JUMP_TO(pc + (int8_t)pc[0]);", "pc = pc + (int8_t)pc[0];", "pc moves outside"},
-		{"                JUMP_COUNTED(b->byte_code_buf + pos);", "                pc = b->byte_code_buf + pos;", "pc moves outside"},
-		{"\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
-		{"if (unlikely(to_ <= pc))", "if (unlikely(to_ < pc))", "JUMP_TO is not"},
-		{"            /* a poll the compiler put into a long run (insert_polls) */\n            poll_count(POLL_WEIGHT);", "", "OP_nop does not count"},
-	} {
-		if !strings.Contains(src, c.from) {
-			t.Fatalf("no %q in quickjs.c", c.from)
-		}
-		bad := interpreterJumps(strings.Replace(src, c.from, c.to, 1))
-		if !strings.Contains(strings.Join(bad, "\n"), c.want) {
-			t.Errorf("%q for %q: %v, want %q", c.to, c.from, bad, c.want)
-		}
-	}
 }

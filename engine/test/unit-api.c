@@ -1257,11 +1257,11 @@ static JSValue js_where(JSContext *ctx, JSValueConst this_val, int argc, JSValue
 }
 
 /* JS_GetScriptOrModuleName counts the frames of the functions that run in
-   the register loop as it counts the frames of the old loop: one C entry of
-   the register loop holds many of them (JS_SetRegvm, engine/regvm.h). outer
-   of a.js calls mid of b.js, which calls inner of c.js, which calls where:
-   frame 1 is inner, 2 mid, 3 outer, and there is no frame 4. The first call
-   converts the functions, the calls after it run in the register loop. */
+   the register loop one by one: one C entry of the register loop holds many
+   of them (engine/regvm.h). outer of a.js calls mid of b.js, which calls
+   inner of c.js, which calls where: frame 1 is inner, 2 mid, 3 outer, and
+   there is no frame 4. The first call converts the functions, the calls
+   after it run in the register loop. */
 static void test_script_name_frames(void)
 {
     static const char *const srcs[][2] = {
@@ -1270,49 +1270,42 @@ static void test_script_name_frames(void)
         { "c.js", "function inner(n) { 'use strict'; var r = where(n); return r + ''; }" },
     };
     static const char *const want[] = { "(none)", "c.js", "b.js", "a.js", "(none)" };
-    int on, i, k;
+    VM v = vm_new();
+    JSValue g, f, arg, r;
+    char *t;
+    int i, k;
 
-    for (on = 0; on < 2; on++) {
-        VM v = vm_new();
-        JSValue g, f, arg, r;
-        char *t;
-
-        JS_SetRegvm(v.ctx, on);
-        g = JS_GetGlobalObject(v.ctx);
-        JS_SetPropertyStr(v.ctx, g, "where", JS_NewCFunction(v.ctx, js_where, "where", 1));
-        for (i = 0; i < 3; i++) {
-            r = JS_Eval(v.ctx, srcs[i][1], strlen(srcs[i][1]), srcs[i][0], JS_EVAL_TYPE_GLOBAL);
-            CHECK(!JS_IsException(r), "%s does not run", srcs[i][0]);
+    g = JS_GetGlobalObject(v.ctx);
+    JS_SetPropertyStr(v.ctx, g, "where", JS_NewCFunction(v.ctx, js_where, "where", 1));
+    for (i = 0; i < 3; i++) {
+        r = JS_Eval(v.ctx, srcs[i][1], strlen(srcs[i][1]), srcs[i][0], JS_EVAL_TYPE_GLOBAL);
+        CHECK(!JS_IsException(r), "%s does not run", srcs[i][0]);
+        JS_FreeValue(v.ctx, r);
+    }
+    f = JS_GetPropertyStr(v.ctx, g, "outer");
+    for (k = 0; k < 3; k++) {
+        for (i = 0; i < 5; i++) {
+            arg = JS_NewInt32(v.ctx, i);
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+            t = value_text(v.ctx, r);
+            CHECK(t && strcmp(t, want[i]) == 0, "call %d: frame %d is of %s, want %s",
+                  k, i, t ? t : "(exception)", want[i]);
+            free(t);
+            free(exception_text(v.ctx));
             JS_FreeValue(v.ctx, r);
         }
-        f = JS_GetPropertyStr(v.ctx, g, "outer");
-        for (k = 0; k < 3; k++) {
-            for (i = 0; i < 5; i++) {
-                arg = JS_NewInt32(v.ctx, i);
-                r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
-                t = value_text(v.ctx, r);
-                CHECK(t && strcmp(t, want[i]) == 0, "register loop %s, call %d: frame %d is of %s, want %s",
-                      on ? "on" : "off", k, i, t ? t : "(exception)", want[i]);
-                free(t);
-                free(exception_text(v.ctx));
-                JS_FreeValue(v.ctx, r);
-            }
-        }
-        if (on) {
-            /* the code of each script runs once and may convert too: each of
-               the three functions is asked */
-            for (i = 0; i < 3; i++) {
-                static const char *const names[] = { "outer", "mid", "inner" };
-                JSValue h = JS_GetPropertyStr(v.ctx, g, names[i]);
-                CHECK(JS_RegvmFuncStat(v.ctx, h, 0) == 1,
-                      "%s has no register code, so the test ran in the old loop", names[i]);
-                JS_FreeValue(v.ctx, h);
-            }
-        }
-        JS_FreeValue(v.ctx, g);
-        JS_FreeValue(v.ctx, f);
-        vm_free(&v);
     }
+    /* the code of each script runs once and may convert too: each of the
+       three functions is asked */
+    for (i = 0; i < 3; i++) {
+        static const char *const names[] = { "outer", "mid", "inner" };
+        JSValue h = JS_GetPropertyStr(v.ctx, g, names[i]);
+        CHECK(JS_RegvmFuncStat(v.ctx, h, 0) == 1, "%s has no register code", names[i]);
+        JS_FreeValue(v.ctx, h);
+    }
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, f);
+    vm_free(&v);
 }
 
 /* job_ends ends the job that ran (JS_ClearKeptObjects), as a host does when
@@ -1405,15 +1398,13 @@ static void test_weakref_kept(void)
 
 /* MOVW, SETLW and CHKLW name a local, argument, this or func with an
    int16_t: a function of 32700 locals is converted and reads its farthest
-   local and this, one of 40000 is refused as a whole (RV_FAR_MAX,
-   engine/regvm-func.h), in a build with RV_SELF_CHECK too, and both give
-   what the old loop gives. Without the old loop (JS_NO_OLD_LOOP) the parser
-   refuses the one of 40000 with its InternalError "too many local
-   variables" (test_rv_frame_limits) */
+   local and this, in a build with RV_SELF_CHECK too. The parser refuses one
+   of 40000 with its InternalError "too many local variables", as the
+   frame fits RV_FAR_MAX (engine/regvm-func.h, test_rv_frame_limits). */
 static void test_rv_far_locals(void)
 {
     static const int counts[] = { 32700, 40000 };
-    int on, c, i;
+    int c, i;
 
     for (c = 0; c < 2; c++) {
         int n = counts[c];
@@ -1427,15 +1418,13 @@ static void test_rv_far_locals(void)
         len += snprintf(src + len, cap - len,
                         "; v%d = 2; return (this === undefined) + ':' + (v0 + v%d) + ':' + v%d; })",
                         n - 1, n - 1, n / 2);
-        for (on = 0; on < 2; on++) {
+        {
             VM v = vm_new();
             JSValue f, r;
             char *t;
             int k;
 
-            JS_SetRegvm(v.ctx, on);
             f = JS_Eval(v.ctx, src, len, "far.js", JS_EVAL_TYPE_GLOBAL);
-#ifdef JS_NO_OLD_LOOP
             if (c == 1) {
                 char *e = exception_text(v.ctx);
                 CHECK(e && strcmp(e, "InternalError: too many local variables") == 0,
@@ -1444,25 +1433,18 @@ static void test_rv_far_locals(void)
                 vm_free(&v);
                 continue;
             }
-#endif
             CHECK(!JS_IsException(f), "the function of %d locals does not compile", n);
             for (k = 0; k < 2; k++) {
                 r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
                 t = value_text(v.ctx, r);
-                CHECK(t && strcmp(t, "true:3:undefined") == 0, "register loop %s, %d locals, call %d: %s",
-                      on ? "on" : "off", n, k, t ? t : "(exception)");
+                CHECK(t && strcmp(t, "true:3:undefined") == 0, "%d locals, call %d: %s",
+                      n, k, t ? t : "(exception)");
                 free(t);
                 free(exception_text(v.ctx));
                 JS_FreeValue(v.ctx, r);
             }
-            if (on && c == 0)
-                CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%d locals: no register code (%d, op %d at %d)", n,
-                      JS_RegvmFuncStat(v.ctx, f, 0), JS_RegvmFuncStat(v.ctx, f, 2), JS_RegvmFuncStat(v.ctx, f, 3));
-            if (on && c == 1)
-                CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == -1 && JS_RegvmFuncStat(v.ctx, f, 2) == -1 &&
-                      JS_RegvmFuncStat(v.ctx, f, 3) == 32,
-                      "%d locals: state %d, refused at %d mask %d, want refused as a whole for its locals", n,
-                      JS_RegvmFuncStat(v.ctx, f, 0), JS_RegvmFuncStat(v.ctx, f, 2), JS_RegvmFuncStat(v.ctx, f, 3));
+            CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%d locals: no register code (%d, op %d at %d)", n,
+                  JS_RegvmFuncStat(v.ctx, f, 0), JS_RegvmFuncStat(v.ctx, f, 2), JS_RegvmFuncStat(v.ctx, f, 3));
             JS_FreeValue(v.ctx, f);
             vm_free(&v);
         }
@@ -1470,12 +1452,11 @@ static void test_rv_far_locals(void)
     }
 }
 
-/* Without the old loop (JS_NO_OLD_LOOP) the parameters and locals of a
-   function, with this, the function and new.target, fit RV_FAR_MAX (32768,
-   engine/regvm-func.h): 32765 of them together compile and run, one more
-   fails to compile with the parser's InternalError "too many local
-   variables" or "too many arguments", whichever it adds last, and so do
-   40000 parameters. With the old loop each of them compiles and runs. */
+/* The parameters and locals of a function, with this, the function and
+   new.target, fit RV_FAR_MAX (32768, engine/regvm-func.h): 32765 of them
+   together compile and run, one more fails to compile with the parser's
+   InternalError "too many local variables" or "too many arguments",
+   whichever it adds last, and so do 40000 parameters. */
 static void test_rv_frame_limits(void)
 {
     static const struct { int params, locals; const char *err; } cases[] = {
@@ -1485,7 +1466,7 @@ static void test_rv_frame_limits(void)
         { 16383, 16382, NULL }, { 16383, 16383, "InternalError: too many local variables" },
         { 40000, 1, "InternalError: too many arguments" },
     };
-    int c, i, on;
+    int c, i;
 
     for (c = 0; c < (int)countof(cases); c++) {
         int np = cases[c].params, nl = cases[c].locals;
@@ -1505,17 +1486,12 @@ static void test_rv_frame_limits(void)
             len += snprintf(src + len, cap - len, "; return r + ':' + (v%d === undefined); })", nl - 1);
         else
             len += snprintf(src + len, cap - len, "; return r + ':' + (r === undefined); })");
-#ifdef JS_NO_OLD_LOOP
         want = cases[c].err;
-#else
-        want = NULL;
-#endif
-        for (on = 0; on < 2; on++) {
+        {
             VM v = vm_new();
             JSValue f, r, arg;
             char *t, *e;
 
-            JS_SetRegvm(v.ctx, on);
             f = JS_Eval(v.ctx, src, len, "frame.js", JS_EVAL_TYPE_GLOBAL);
             e = exception_text(v.ctx);
             if (want) {
@@ -1533,7 +1509,7 @@ static void test_rv_frame_limits(void)
                     free(exception_text(v.ctx));
                     JS_FreeValue(v.ctx, r);
                 }
-                if (on && !cases[c].err)
+                if (!cases[c].err)
                     CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%d parameters, %d locals: no register code (%d)",
                           np, nl, JS_RegvmFuncStat(v.ctx, f, 0));
             }
@@ -1545,16 +1521,15 @@ static void test_rv_frame_limits(void)
     }
 }
 
-/* Without the old loop (JS_NO_OLD_LOOP) a function whose stack is deeper
-   than RV_STACK_FIT (118) folds it into a frame that keeps RV_FOLD_PINS_MAX
-   (48) temps for its catch offsets (engine/regvm-func.h): a try takes one, a
-   for-of three. The parser refuses a function that needs more with its
-   InternalError "stack overflow", at compile time: 118 nested try or 39
-   nested for-of around r += a (their own catch offsets make the stack too
-   deep), 49 nested try or 17 nested for-of around an expression 130
-   deep. One fewer compiles and runs, in sloppy and strict code and in a
-   generator, and a plain function of it converts to register code. With
-   the old loop every one of them compiles and runs. */
+/* A function whose stack is deeper than RV_STACK_FIT (118) folds it into a
+   frame that keeps RV_FOLD_PINS_MAX (48) temps for its catch offsets
+   (engine/regvm-func.h): a try takes one, a for-of three. The parser
+   refuses a function that needs more with its InternalError "stack
+   overflow", at compile time: 118 nested try or 39 nested for-of around
+   r += a (their own catch offsets make the stack too deep), 49 nested try
+   or 17 nested for-of around an expression 130 deep. One fewer compiles
+   and runs, in sloppy and strict code and in a generator, and a plain
+   function of it converts to register code. */
 static const char nest_js[] =
     "function rep(s, n) { var r = '', i; for (i = 0; i < n; i++) r += s; return r; }\n"
     "function tries(n, body) { return rep('try { ', n) + body + rep(' } catch (e) { r = -1; }', n); }\n"
@@ -1579,28 +1554,23 @@ static void test_rv_nesting_limits(void)
         { "try", 0, 118 }, { "for-of", 0, 39 }, { "try", 130, 49 }, { "for-of", 130, 17 },
     };
     char src[256], *t, *e;
-    int k, c, over, on;
+    int k, c, over;
 
     for (k = 0; k < 3; k++) {
         for (c = 0; c < 4; c++) {
             for (over = 0; over < 2; over++) {
                 int n = cases[c].limit - 1 + over;
-                for (on = 0; on < 2; on++) {
+                {
                     VM v = vm_new();
                     JSValue g, f, r, args[2];
                     int i, refused;
 
-                    JS_SetRegvm(v.ctx, on);
                     CHECK(eval_ok(v.ctx, nest_js), "the setup");
                     snprintf(src, sizeof(src), "make('%s', '%s', %d, %d)", kinds[k], cases[c].what, n,
                              cases[c].deep);
                     f = JS_Eval(v.ctx, src, strlen(src), "nest.js", JS_EVAL_TYPE_GLOBAL);
                     t = exception_text(v.ctx);
-#ifdef JS_NO_OLD_LOOP
                     refused = over;
-#else
-                    refused = 0;
-#endif
                     if (refused)
                         CHECK(t && strncmp(t, "InternalError: stack overflow", 29) == 0,
                               "%s, %d %s around %d: %s, want the parser's error", kinds[k], n, cases[c].what,
@@ -1623,7 +1593,7 @@ static void test_rv_nesting_limits(void)
                             free(e);
                             JS_FreeValue(v.ctx, r);
                         }
-                        if (on && k < 2 && !over)
+                        if (k < 2 && !over)
                             CHECK(JS_RegvmFuncStat(v.ctx, f, 0) == 1, "%s, %d %s around %d: no register code (%d, %d)",
                                   kinds[k], n, cases[c].what, cases[c].deep, JS_RegvmFuncStat(v.ctx, f, 0),
                                   JS_RegvmFuncStat(v.ctx, f, 3));

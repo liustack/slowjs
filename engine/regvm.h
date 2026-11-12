@@ -5,18 +5,17 @@
  * root of this repository.
  */
 
-/* The register loop, stage 1: included by quickjs.c after
-   free_function_bytecode. A function made with JS_SetRegvm on and only of
-   the old instructions this file knows is converted to register code at its
-   first call (in JS_CallInternal, or in JS_Call from the host), and its next
-   calls run in JS_RegvmRun: from the call ops of the old loop, from C
-   (js_call) and from the register loop itself (rv_entry_fast). Calls between
-   converted functions stay in that loop, with the arguments where the caller
-   put them. The body of a generator or an async function converts at its
-   first resume and runs as the entry frame of a run of its own, moved
-   between its heap frame and the register stack at each suspension and
-   resume (regvm-ops-gen.h). Every other function runs on JS_CallInternal
-   as before.
+/* The register loop, the interpreter of the engine: included by quickjs.c
+   after free_function_bytecode. A function is converted from its bytecode
+   to register code at its first call (in JS_CallInternal, or in JS_Call
+   from the host), and every call runs in JS_RegvmRun: from C (js_call) and
+   from the register loop itself (rv_entry_fast). Calls between functions
+   stay in that loop, with the arguments where the caller put them. The
+   body of a generator or an async function converts at its first resume
+   and runs as the entry frame of a run of its own, moved between its heap
+   frame and the register stack at each suspension and resume
+   (regvm-ops-gen.h). A function the pass refuses cannot run
+   (rv_cannot_run).
 
    A frame on the register stack, from the pointer F:
 
@@ -76,7 +75,7 @@
 
    The files: regvm-func.h has RVFunc and rv_entry_fast, read by quickjs.c
    before its call ops. This file has the frame, the instruction enum, the
-   parts of an area and JS_SetRegvm. regvm-pass.h is the pass, regvm-run.h
+   parts of an area. regvm-pass.h is the pass, regvm-run.h
    the loop. Each op lives in one area file, regvm-ops-*.h, listed in
    regvm-areas.h. */
 
@@ -170,24 +169,6 @@ static int rv_stack_make(JSRuntime *rt);
 static void rv_stack_free(JSRuntime *rt);
 static int rv_stack_segments(JSRuntime *rt);
 
-/* on: 0 off, 1 on, 2 on with the record of what runs in the old loop, 3 on
-   with such a run an error (engine/regvm-entry.h). Turned on, it makes the
-   register stack (rv_stack_make), so that it counts under the memory limit
-   from the start and no script sees it appear (a collection of its own, a
-   jump of the memory size). If it cannot be made then, the first conversion
-   tries again. */
-void JS_SetRegvm(JSContext *ctx, int on)
-{
-#ifdef JS_NO_OLD_LOOP
-    /* there is no other loop to turn to */
-    if (on < 1)
-        on = 1;
-#endif
-    ctx->rt->regvm_on = on < 0 ? 0 : on > 3 ? 3 : on;
-    if (on > 0)
-        rv_stack_make(ctx->rt);
-}
-
 static void rv_measure_frame(JSContext *ctx);
 static int rv_takes_opcode(int op);
 
@@ -220,18 +201,6 @@ int JS_RegvmStat(JSContext *ctx, int what)
     return ctx->rt->rv_stat[what];
 }
 
-/* without the old loop there is no RV_OFF: every function converts at its
-   first call */
-static RVFunc *rv_unconverted(JSContext *ctx)
-{
-#ifdef JS_NO_OLD_LOOP
-    (void)ctx;
-    return RV_UNCONVERTED;
-#else
-    return ctx->rt->regvm_on ? RV_UNCONVERTED : RV_OFF;
-#endif
-}
-
 static void rv_free_func(JSRuntime *rt, RVFunc *rf)
 {
     int i;
@@ -244,19 +213,15 @@ static void rv_free_func(JSRuntime *rt, RVFunc *rf)
     }
 }
 
-static void rv_fb_free(JSRuntime *rt);
-
 static void rv_free_runtime(JSRuntime *rt)
 {
     rv_stack_free(rt);
-    rv_fb_free(rt);
 }
 
 #include "regvm-pass.h"
 #include "regvm-entry.h"
 #include "regvm-run.h"
 
-#ifdef JS_NO_OLD_LOOP
 static const char *const rv_old_op_names[] = {
 #define FMT(f)
 #define DEF(id, size, n_pop, n_push, f) #id,
@@ -267,11 +232,10 @@ static const char *const rv_old_op_names[] = {
 #undef FMT
 };
 
-/* a function that the engine built without the old loop cannot run: an
-   InternalError "no old loop: WHY in NAME (FILE)". WHY is what the pass
-   refused it for (it runs the pass again for that), a call as a
+/* a function the register loop cannot run: an InternalError "cannot run:
+   WHY in NAME (FILE)". WHY is what the pass refused it for (it runs the pass again for that), a call as a
    constructor, or a register stack with no room for its frame. */
-static no_inline JSValue rv_no_old_loop(JSContext *ctx, JSFunctionBytecode *b, int why)
+static no_inline JSValue rv_cannot_run(JSContext *ctx, JSFunctionBytecode *b, int why)
 {
     JSRuntime *rt = ctx->rt;
     char name[ATOM_GET_STR_BUF_SIZE], file[ATOM_GET_STR_BUF_SIZE], what[96], msg[160];
@@ -321,31 +285,30 @@ static no_inline JSValue rv_no_old_loop(JSContext *ctx, JSFunctionBytecode *b, i
     snprintf(msg, sizeof(msg), "%s in %s (%s)", what,
              JS_AtomGetStr(ctx, name, sizeof(name), b->func_name),
              JS_AtomGetStr(ctx, file, sizeof(file), b->debug.filename));
-    for (i = 0; i < (int)countof(rt->rv_noold); i++) {
-        if (!rt->rv_noold_n[i]) {
-            snprintf(rt->rv_noold[i], sizeof(rt->rv_noold[i]), "%s", msg);
-            rt->rv_noold_n[i] = 1;
+    for (i = 0; i < (int)countof(rt->rv_cannot); i++) {
+        if (!rt->rv_cannot_n[i]) {
+            snprintf(rt->rv_cannot[i], sizeof(rt->rv_cannot[i]), "%s", msg);
+            rt->rv_cannot_n[i] = 1;
             break;
         }
-        if (!memcmp(rt->rv_noold[i], what, strlen(what)) &&
-            !memcmp(rt->rv_noold[i] + strlen(what), " in ", 4)) {
-            rt->rv_noold_n[i]++;
+        if (!memcmp(rt->rv_cannot[i], what, strlen(what)) &&
+            !memcmp(rt->rv_cannot[i] + strlen(what), " in ", 4)) {
+            rt->rv_cannot_n[i]++;
             break;
         }
     }
-    return JS_ThrowInternalError(ctx, "no old loop: %s", msg);
+    return JS_ThrowInternalError(ctx, "cannot run: %s", msg);
 }
 
-const char *JS_RegvmNoOldLoop(JSContext *ctx, int i, int *count)
+const char *JS_RegvmCannotRun(JSContext *ctx, int i, int *count)
 {
     JSRuntime *rt = ctx->rt;
 
-    if (i < 0 || i >= (int)countof(rt->rv_noold) || !rt->rv_noold_n[i])
+    if (i < 0 || i >= (int)countof(rt->rv_cannot) || !rt->rv_cannot_n[i])
         return NULL;
-    *count = rt->rv_noold_n[i];
-    return rt->rv_noold[i];
+    *count = rt->rv_cannot_n[i];
+    return rt->rv_cannot[i];
 }
-#endif
 
 /* JS_RegvmStat 2000 + op, for the test of the opcode table
    (engine/test/regvm/rvops.c): 1 when the pass takes the old opcode op
@@ -365,14 +328,13 @@ static int rv_takes_opcode(int op)
 
 /* JS_RegvmFuncStat, for tests: what 0 the state of func in the register
    loop, 1 it has register code, 0 not converted yet (not called yet), -1
-   refused, -2 made while the register loop was off, -3 not a function of
-   bytecode. 1 the frames set up for it (counted with -DRV_STATS only). 2
-   and 3 for a refused function, what the pass stops at: the opcode and its
-   offset, or -1 and the mask of why the whole function is refused (as
-   JS_RegvmStat 3 and 4), -3 and its offset for code no compiler makes
-   (RV_CRAFTED of regvm-pass.h), -99 when it stops at its jumps, its frame
-   or its memory, -98 when its conversion ran out of memory. The pass runs
-   again for 2 and 3, with the counts of JS_RegvmStat kept as they were. */
+   refused, -3 not a function of bytecode. 1 the frames set up for it
+   (counted with -DRV_STATS only). 2 and 3 for a refused function, what the
+   pass stops at: the opcode and its offset, or -1 and the mask of why the
+   whole function is refused (as JS_RegvmStat 3 and 4), -3 and its offset
+   for code no compiler makes (RV_CRAFTED of regvm-pass.h), -99 when it
+   stops at its jumps, its frame or its memory. The pass runs again for 2
+   and 3, with the counts of JS_RegvmStat kept as they were. */
 int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what)
 {
     JSRuntime *rt = ctx->rt;
@@ -386,17 +348,13 @@ int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what)
     b = JS_VALUE_GET_OBJ(func)->u.func.function_bytecode;
     switch (what) {
     case 0:
-        if (b->rv == RV_OFF)
-            return -2;
         if (b->rv == RV_UNCONVERTED)
             return 0;
-        return b->rv == RV_REFUSED || b->rv == RV_FAILED ? -1 : 1;
+        return b->rv == RV_REFUSED ? -1 : 1;
     case 1:
         return b->rv->arg_count >= 0 ? (int)b->rv->runs : 0;
     case 2:
     case 3:
-        if (b->rv == RV_FAILED)
-            return what == 2 ? -98 : 0;
         if (b->rv != RV_REFUSED)
             return 0;
         memcpy(st, rt->rv_stat, sizeof(st));

@@ -1469,13 +1469,6 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f)
     return rv_read_check(ctx, JS_VALUE_GET_OBJ(f)->u.func.function_bytecode);
 }
 
-/* RV_OOM_FALLBACK of the build (engine/regvm-pass.h): 0 when a conversion
-   out of memory is an error in every mode, not only with JS_SetRegvm 3 */
-int white_regvm_oom_fallback(void)
-{
-    return RV_OOM_FALLBACK;
-}
-
 /* the register stack of ctx's runtime (engine/regvm-entry.h): out[0] the
    slots of its first segment, out[1] its segments, out[2] the bytes they
    take, out[3] the most slots it needed since it last settled. -1 when it

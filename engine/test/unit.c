@@ -1375,7 +1375,6 @@ static int test_regvm_gen_full(void *unused)
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
 
-    JS_SetRegvm(ctx, 1);
     CHECK(eval_is(ctx, src, "0 "), "resumes after recursions of every depth to 3000");
     JS_FreeContext(ctx);
     host_free_runtime(rt);

@@ -1985,19 +1985,12 @@ static void test_finrec_job_full_heap(void)
 
 /* ---- the register loop ---- */
 
-static void register_regvm(JSContext *ctx)
-{
-    JS_SetRegvm(ctx, 1);
-}
-
 /* A function converts to register code at its first call, with the memory
-   the call has: under a memory limit with no room for the register code,
-   the function stays in the old loop and gives the same answer, or the call
-   fails with the out of memory error. Without the old loop it gives its
-   answer only at a limit with room: f(3) converts f and g, which takes
-   about 13.4 KiB at its peak (5.3 KiB kept), so the rooms go up to 16 KiB.
-   The register stack is made by JS_SetRegvm before the limit
-   (test_regvm_stack_oom has no room for it).
+   the call has: under a memory limit with no room for the register code
+   the call fails with the out of memory error, and gives its answer at a
+   limit with room. f(3) converts f and g, which takes about 13.4 KiB at its
+   peak (5.3 KiB kept), so the rooms go up to 16 KiB. The register stack is
+   made by JS_NewRuntime, before the limit (test_regvm_stack_oom).
    Each allocation of the pass failing in turn is test_regvm_convert_alloc
    of unit-white.c. */
 static void test_regvm_convert_oom(void)
@@ -2014,9 +2007,7 @@ static void test_regvm_convert_oom(void)
     snprintf(setup + n, sizeof(setup) - n, "; }\n"
              "return function (k) { var s = 0, i; for (i = 0; i < k; i++) s = s + g(i); return s; };\n"
              "})();");
-    sweep_register = register_regvm;
     sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 16384);
-    sweep_register = NULL;
 }
 
 /* A function whose stack is too deep for the temps folds it into Arrays at
@@ -2046,7 +2037,6 @@ static void test_regvm_fold_oom(void)
         "f();\n";
     static const char *const want[] = { "898,q,601,32323232323232323232323232323232323232323232323232323232323232323232323232323232q", NULL };
 
-    sweep_register = register_regvm;
 #ifdef RV_FOLD_TEST
     /* the test build folds into Arrays of 2 or 3 entries, many more of
        them: every 64 bytes up to 256 KiB */
@@ -2056,7 +2046,6 @@ static void test_regvm_fold_oom(void)
 #else
     sweep("fold", "<fold>", setup, "f()", want, 32768);
 #endif
-    sweep_register = NULL;
 }
 
 /* the state of the function the script src returns in the register loop
@@ -2075,66 +2064,23 @@ static int regvm_state_of(JSContext *ctx, const char *src)
     return st;
 }
 
-/* a VM whose context leaves the register loop off whatever RV_REGVM says:
-   the hook of the -rv programs (engine/test/regvm/rvhook.h) turns the loop
-   on in every context, and so makes the register stack before the test can
-   set a limit */
-static VM vm_new_off(void)
-{
-    VM v;
-
-    v.rt = host_new_runtime();
-#ifdef RVHOOK_H
-#undef JS_NewContext
-    v.ctx = v.rt ? JS_NewContext(v.rt) : NULL;
-#define JS_NewContext rvhook_new_context
-#else
-    v.ctx = v.rt ? JS_NewContext(v.rt) : NULL;
-#endif
-    if (!v.ctx) {
-        fprintf(stderr, "no runtime\n");
-        exit(2);
-    }
-    return v;
-}
-
-/* JS_SetRegvm makes the first segment of register stack (32 KiB, RV_SEG_FIRST
-   of engine/regvm.h), so a conversion under a tight limit later needs room
-   for its code only. Under a limit with no room for the stack the loop is on
-   without it: a function that converts then stays in the old loop and gives
-   its answer, and once there is room the next conversion makes the stack and
-   its function runs in the register loop. */
+/* JS_NewRuntime makes the first segment of register stack (32 KiB,
+   RV_SEG_FIRST of engine/regvm.h), so that it counts under a memory limit
+   from the start: a function converted under a tight limit later needs room
+   for its code only, and runs in the register loop. */
 static void test_regvm_stack_oom(void)
 {
     static const char g[] =
         "var g = function (x) { 'use strict'; return x + 1; }; g(1); g(2); g";
-    static const char h[] =
-        "var h = function (x) { 'use strict'; return x * 2; }; h(1); h(2); h";
-    VM v = vm_new_off();
-    size_t before;
+    VM v = vm_new();
     int st;
 
-    before = JS_GetMemorySize(v.rt);
-    JS_SetRegvm(v.ctx, 1);
-    CHECK(JS_GetMemorySize(v.rt) >= before + 32 * 1024,
-          "JS_SetRegvm made no register stack: the memory went from %zu to %zu",
-          before, JS_GetMemorySize(v.rt));
-    room(&v, 64 * 1024);
-    st = regvm_state_of(v.ctx, g);
-    CHECK(st == 1, "a function converted under a tight limit after JS_SetRegvm: state %d, want 1", st);
-    unlimit(&v);
-    vm_free(&v);
-
-    v = vm_new_off();
+    CHECK(JS_RegvmStat(v.ctx, 8) == 1, "a new runtime has %d segments of register stack, want 1", JS_RegvmStat(v.ctx, 8));
     room(&v, 24 * 1024);
-    JS_SetRegvm(v.ctx, 1);
     st = regvm_state_of(v.ctx, g);
-    CHECK(st == -1, "a function converted with no room for the register stack: state %d, want -1 (refused)", st);
-    CHECK(eval_is(v.ctx, "g(41)", "42"), "the function refused for the stack gives its answer");
+    CHECK(st == 1, "a function converted under a tight limit: state %d, want 1", st);
+    CHECK(eval_is(v.ctx, "g(41)", "42"), "the function converted under a tight limit gives its answer");
     unlimit(&v);
-    st = regvm_state_of(v.ctx, h);
-    CHECK(st == 1, "a function converted once there is room: state %d, want 1", st);
-    CHECK(eval_is(v.ctx, "h(21)", "42"), "the function converted with room gives its answer");
     vm_free(&v);
 }
 

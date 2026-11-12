@@ -281,7 +281,9 @@ for sc in $scripts; do
 	if [ -n "$record" ]; then
 		mkdir -p "$record"
 		find "$work" -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$record/$base.txt"
-		rm -f "$work/$base"-*.gline
+		# by find, not a glob: a script with thousands of places passes
+		# the limit of a command line (1 MiB on macOS)
+		find "$work" -name "$base-*.gline" -exec rm -f {} +
 		echo "inject: $sc: $(wc -l < "$record/$base.txt" | tr -d ' ') places recorded in $record/$base.txt"
 	fi
 	[ "$bad" = 0 ] || status=1

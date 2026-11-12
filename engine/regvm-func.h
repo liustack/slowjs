@@ -134,28 +134,21 @@ typedef struct RVFunc {
     uint8_t code[0];
 } RVFunc;
 
-/* b->rv of a function not yet converted, of one the pass refused, of one
-   whose conversion ran out of memory (RV_OOM_FALLBACK of regvm-pass.h), and
-   of one made while the register loop was off, which is never converted: an
-   arg_count of -1 sends every call of it out of the register loop and past
-   the entry test of the old loop. The entry tests convert an RV_UNCONVERTED
-   one at its first call. */
+/* b->rv of a function not yet converted and of one the pass refused: an
+   arg_count of -1 sends every call of it out of the register loop to
+   JS_CallInternal, which converts an RV_UNCONVERTED one. */
 static const RVFunc rv_unconverted_s = { .arg_count = -1, .argmax = -1 };
 static const RVFunc rv_refused_s = { .arg_count = -1, .argmax = -1 };
-static const RVFunc rv_off_s = { .arg_count = -1, .argmax = -1 };
-static const RVFunc rv_failed_s = { .arg_count = -1, .argmax = -1 };
 #define RV_UNCONVERTED ((RVFunc *)&rv_unconverted_s)
 #define RV_REFUSED ((RVFunc *)&rv_refused_s)
-#define RV_OFF ((RVFunc *)&rv_off_s)
-#define RV_FAILED ((RVFunc *)&rv_failed_s)
 
 static no_inline BOOL rv_first_call(JSRuntime *rt, struct JSFunctionBytecode *b);
 
-/* whether a call of the old loop or of C (js_call) of func_obj runs in
-   JS_RegvmRun: a function with register code, converted here at its first
-   call (rv_first_call, engine/regvm-entry.h), so that its first run is in
-   the register loop too. Room on the register stack is the entry's job:
-   JS_RegvmRun takes another segment of it when the frame does not fit. */
+/* whether a call from C (js_call) of func_obj runs in JS_RegvmRun: a
+   function with register code, converted here at its first call
+   (rv_first_call, engine/regvm-entry.h). Room on the register stack is
+   the entry's job: JS_RegvmRun takes another segment of it when the frame
+   does not fit. */
 static inline BOOL rv_entry_fast(JSRuntime *rt, JSValueConst func_obj)
 {
     JSObject *p;
@@ -171,8 +164,7 @@ static inline BOOL rv_entry_fast(JSRuntime *rt, JSValueConst func_obj)
         return TRUE;
     /* not when its conversion just ran out of memory in this call
        (rv_oom_b): the call ends with that error, a later one tries again */
-    return ((rf == RV_UNCONVERTED && rt->rv_oom_b != p->u.func.function_bytecode) ||
-            (rf == RV_FAILED && rt->rv_gc_runs != rt->rv_failed_gc)) &&
+    return rf == RV_UNCONVERTED && rt->rv_oom_b != p->u.func.function_bytecode &&
            rv_first_call(rt, p->u.func.function_bytecode);
 }
 

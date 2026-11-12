@@ -77,8 +77,8 @@ static void rv_seg_free(JSRuntime *rt, RVSeg *s)
     js_free_rt(rt, s);
 }
 
-/* the first segment, made by JS_SetRegvm or at the first conversion: 0,
-   or -1 when it could not be allocated */
+/* the first segment, made by JS_NewRuntime, or at the first conversion
+   when it could not be made then: 0, or -1 when it could not be allocated */
 static int rv_stack_make(JSRuntime *rt)
 {
     RVSeg *s;
@@ -271,286 +271,25 @@ static no_inline JSValue rv_run_seg(JSContext *ctx, RVFunc *rf, JSValueConst fun
     return ret;
 }
 
-/* The first call. A function made with the register loop on is converted
-   at its first call, before it runs, by the entry test of the caller
-   (rv_entry_fast for the old loop and C, RV_CALLOP in the loop), so that
-   its first run is in the register loop too: script code that runs once
-   (top-level code, eval code, a module body, a test body) runs there. The
-   conversion is the same at any call, so the test only moves it. */
+/* The first call. A function is converted at its first call, before it
+   runs, by the entry test of the caller (rv_entry_fast for C, RV_CALLOP in
+   the loop), so that its first run is in the register loop too: script
+   code that runs once (top-level code, eval code, a module body, a test
+   body) runs there. The conversion is the same at any call, so the test
+   only moves it. */
 static no_inline BOOL rv_first_call(JSRuntime *rt, JSFunctionBytecode *b)
 {
     return rv_convert_rt(rt, b)->arg_count >= 0;
 }
 
-/* The functions that still run in the old loop, and why: the gate for
-   removing it. JS_SetRegvm(ctx, 2) keeps a record of each one, with the
-   count of its runs there, which JS_RegvmFallbacks gives to the host;
-   JS_SetRegvm(ctx, 3) makes each such run an error (an InternalError that
-   names the function and the reason), so that a test sees it. Both read
-   at the entries of JS_CallInternal only (rv_old_entry). */
-
-enum {
-    RV_FB_REFUSED, /* the pass refused it */
-    RV_FB_OOM,     /* its conversion ran out of memory */
-    RV_FB_CTOR,    /* called as a constructor */
-    RV_FB_GEN,     /* the body of a generator or of an async function */
-    RV_FB_OFF,     /* made with the register loop off */
-    RV_FB_OTHER,   /* converted, and run in the old loop all the same */
-};
-
-typedef struct RVFallback {
-    const JSFunctionBytecode *b; /* NULL once b is freed */
-    int reason, op, pos, line, col;
-    int64_t calls;
-    char name[64], file[128];
-} RVFallback;
-
-typedef struct RVFallbacks {
-    RVFallback *v;
-    int count, size;
-    int *index;        /* open addressing on b, -1 for none, index_size a power of 2 */
-    int index_size;
-} RVFallbacks;
-
-static uint32_t rv_fb_hash(const void *b, int size)
-{
-    uintptr_t h = (uintptr_t)b;
-    h ^= h >> 17;
-    h *= 0x9E3779B1u;
-    return (uint32_t)(h >> 7) & (size - 1);
-}
-
-static int rv_fb_find(RVFallbacks *t, const JSFunctionBytecode *b)
-{
-    uint32_t i;
-
-    if (!t->index_size)
-        return -1;
-    for (i = rv_fb_hash(b, t->index_size);; i = (i + 1) & (t->index_size - 1)) {
-        if (t->index[i] < 0)
-            return -1;
-        if (t->v[t->index[i]].b == b)
-            return t->index[i];
-    }
-}
-
-/* the index of the records, made again twice as large when it is half
-   full: a record whose function was freed (b NULL) keeps its place in it
-   and matches nothing */
-static int rv_fb_reindex(JSRuntime *rt, RVFallbacks *t, int size)
-{
-    int *index = js_malloc_rt(rt, sizeof(int) * size), i;
-    uint32_t j;
-
-    if (!index)
-        return -1;
-    for (i = 0; i < size; i++)
-        index[i] = -1;
-    for (i = 0; i < t->count; i++) {
-        if (!t->v[i].b)
-            continue;
-        for (j = rv_fb_hash(t->v[i].b, size); index[j] >= 0; j = (j + 1) & (size - 1))
-            ;
-        index[j] = i;
-    }
-    js_free_rt(rt, t->index);
-    t->index = index;
-    t->index_size = size;
-    return 0;
-}
-
-/* b is freed: its record stays, with no b, so that a new function at the
-   same address gets one of its own */
-static void rv_fb_forget(JSRuntime *rt, JSFunctionBytecode *b)
-{
-    RVFallbacks *t = rt->rv_fb;
-    int i = rv_fb_find(t, b);
-
-    if (i < 0)
-        return;
-    t->v[i].b = NULL;
-}
-
-static const char *const rv_fb_reasons[] = {
-    "refused", "out of memory", "constructor", "generator or async",
-    "made with the register loop off", "other",
-};
-
-/* the record of b, made at its first run in the old loop, NULL when there
-   is no memory for it (the run is then not counted) */
-static RVFallback *rv_fb_record(JSContext *ctx, JSFunctionBytecode *b, int reason)
-{
-    JSRuntime *rt = ctx->rt;
-    RVFallbacks *t = rt->rv_fb;
-    RVFallback *f;
-    char buf[ATOM_GET_STR_BUF_SIZE];
-    uint32_t j;
-    int i;
-
-    if (!t) {
-        t = js_mallocz_rt(rt, sizeof(*t));
-        if (!t)
-            return NULL;
-        rt->rv_fb = t;
-    }
-    i = rv_fb_find(t, b);
-    if (i >= 0 && t->v[i].reason == reason)
-        return &t->v[i];
-    if (t->count == t->size) {
-        int size = t->size ? 2 * t->size : 64;
-        RVFallback *v = js_realloc_rt(rt, t->v, sizeof(*v) * size);
-        if (!v)
-            return NULL;
-        t->v = v;
-        t->size = size;
-    }
-    if (2 * (t->count + 1) > t->index_size &&
-        rv_fb_reindex(rt, t, t->index_size ? 2 * t->index_size : 128) < 0)
-        return NULL;
-    if (i >= 0)
-        t->v[i].b = NULL; /* the same function, another reason: a record of its own */
-    f = &t->v[t->count++];
-    memset(f, 0, sizeof(*f));
-    f->b = b;
-    f->reason = reason;
-    f->op = f->pos = 0;
-    if (reason == RV_FB_REFUSED) {
-        /* what the pass stops at, from a run of it again, with the counts
-           of JS_RegvmStat kept as they were (as JS_RegvmFuncStat does) */
-        int st[5];
-        RVFunc *rf;
-        memcpy(st, rt->rv_stat, sizeof(st));
-        rt->rv_stat[3] = -99;
-        rt->rv_stat[4] = 0;
-        rf = rv_build(rt, b, NULL);
-        if (rf)
-            rv_free_func(rt, rf);
-        f->op = rt->rv_stat[3];
-        f->pos = rt->rv_stat[4];
-        memcpy(rt->rv_stat, st, sizeof(st));
-    }
-    if (b->func_name != JS_ATOM_NULL)
-        snprintf(f->name, sizeof(f->name), "%s", JS_AtomGetStrRT(rt, buf, sizeof(buf), b->func_name));
-    if (b->has_debug) {
-        snprintf(f->file, sizeof(f->file), "%s", JS_AtomGetStrRT(rt, buf, sizeof(buf), b->debug.filename));
-        f->line = find_line_num(ctx, b, -1, &f->col);
-    }
-    for (j = rv_fb_hash(b, t->index_size); t->index[j] >= 0; j = (j + 1) & (t->index_size - 1))
-        ;
-    t->index[j] = f - t->v;
-    return f;
-}
-
-static void rv_fb_free(JSRuntime *rt)
-{
-    RVFallbacks *t = rt->rv_fb;
-
-    if (!t)
-        return;
-    js_free_rt(rt, t->v);
-    js_free_rt(rt, t->index);
-    js_free_rt(rt, t);
-    rt->rv_fb = NULL;
-}
-
-/* why b runs in the old loop, called with flags of JS_CallInternal */
-static int rv_fb_reason(JSFunctionBytecode *b, int flags)
-{
-    if (b->rv == RV_OFF)
-        return RV_FB_OFF;
-    if (flags & JS_CALL_FLAG_GENERATOR)
-        return RV_FB_GEN;
-    if (b->rv == RV_REFUSED)
-        return RV_FB_REFUSED;
-    if (b->rv == RV_FAILED)
-        return RV_FB_OOM;
-    if (flags & JS_CALL_FLAG_CONSTRUCTOR)
-        return RV_FB_CTOR;
-    return RV_FB_OTHER;
-}
-
-/* JS_CallInternal is about to run b in the old loop (flags its own): the
-   conversion of a function not converted yet, which a call that came here
-   straight (a constructor, a resumed generator) has not had, the record
-   of JS_SetRegvm 2 and the error of 3. -1 with an exception: the
-   conversion ran out of memory and RV_OOM_FALLBACK is 0, or mode 3. */
-static no_inline int rv_old_entry(JSContext *ctx, JSFunctionBytecode *b, int flags)
-{
-    JSRuntime *rt = ctx->rt;
-    int reason;
-    RVFallback *f;
-
-    /* the conversion at the entry test of this call, or at the resume of
-       its generator (rv_gen_ok), ran out of memory */
-    if (unlikely(rt->rv_oom_b == b)) {
-        rt->rv_oom_b = NULL;
-        JS_ThrowOutOfMemory(ctx);
-        return -1;
-    }
-    if (b->rv == RV_UNCONVERTED && !(flags & JS_CALL_FLAG_GENERATOR)) {
-        rv_convert(ctx, b);
-        if (b->rv == RV_UNCONVERTED) {
-            /* out of memory, with the fallback off (rv_convert): tried
-               again at the next call */
-            rt->rv_oom_b = NULL;
-            JS_ThrowOutOfMemory(ctx);
-            return -1;
-        }
-    }
-    if (rt->regvm_on < 2)
-        return 0;
-    reason = rv_fb_reason(b, flags);
-    f = rv_fb_record(ctx, b, reason);
-    if (f)
-        f->calls++;
-    if (rt->regvm_on == 3) {
-        char buf[ATOM_GET_STR_BUF_SIZE];
-        JS_ThrowInternalError(ctx, "regvm: %s runs in the old loop: %s",
-                              b->func_name == JS_ATOM_NULL ? "<anonymous>" :
-                              JS_AtomGetStrRT(rt, buf, sizeof(buf), b->func_name),
-                              rv_fb_reasons[reason]);
-        return -1;
-    }
-    return 0;
-}
-
-int JS_RegvmFallbacks(JSRuntime *rt,
-                      int (*fn)(void *opaque, const JSRegvmFallback *f),
-                      void *opaque)
-{
-    RVFallbacks *t = rt->rv_fb;
-    JSRegvmFallback e;
-    int i, r;
-
-    if (!t)
-        return 0;
-    for (i = 0; i < t->count; i++) {
-        RVFallback *f = &t->v[i];
-        e.reason = rv_fb_reasons[f->reason];
-        e.op = f->op;
-        e.pos = f->pos;
-        e.name = f->name;
-        e.file = f->file;
-        e.line = f->line;
-        e.col = f->col;
-        e.calls = f->calls;
-        r = fn(opaque, &e);
-        if (r)
-            return r;
-    }
-    return 0;
-}
-
-/* Code that JS_ReadObject read, before it can run: without the old loop
-   (JS_NO_OLD_LOOP), and in the test mode with no fallback (JS_SetRegvm 3),
-   a function the pass refuses for code no compiler makes (RV_CRAFTED of
-   regvm-pass.h) is a SyntaxError of the read, so that no script stops at
-   it at a first call later. The pass runs on each function read and its
-   code is dropped: the conversion stays at the first call. A read with
-   JS_READ_OBJ_POLLS_CHECKED skips it with the rule of the polls (the same
-   bytes were read with the checks before), so a SharedBytecode pays it at
-   its first load only. -1 with an exception: the SyntaxError, or out of
-   memory. */
+/* Code that JS_ReadObject read, before it can run: a function the pass
+   refuses for code no compiler makes (RV_CRAFTED of regvm-pass.h) is a
+   SyntaxError of the read, so that no script stops at it at a first call
+   later. The pass runs on each function read and its code is dropped: the
+   conversion stays at the first call. A read with JS_READ_OBJ_POLLS_CHECKED
+   skips it with the rule of the polls (the same bytes were read with the
+   checks before), so a SharedBytecode pays it at its first load only. -1
+   with an exception: the SyntaxError, or out of memory. */
 static int rv_read_check(JSContext *ctx, JSFunctionBytecode *b)
 {
     JSRuntime *rt = ctx->rt;
@@ -558,10 +297,6 @@ static int rv_read_check(JSContext *ctx, JSFunctionBytecode *b)
     BOOL oom;
     RVFunc *rf;
 
-#ifndef JS_NO_OLD_LOOP
-    if (rt->regvm_on != 3)
-        return 0;
-#endif
     if (b->rv != RV_UNCONVERTED)
         return 0;
     memcpy(st, rt->rv_stat, sizeof(st));

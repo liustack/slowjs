@@ -5,9 +5,9 @@
  * root of this repository.
  */
 
-/* rvdiff runs each script with the register loop off and on (JS_SetRegvm,
-   engine/regvm.h), each in a process and a runtime of its own, and compares
-   what the two runs show:
+/* rvdiff runs each script in a process and a runtime of its own and
+   compares what the run shows with the golden of the script (-golden,
+   below: the two runs, off and on, read the old loop, which is gone):
 
      out        what the script printed (print, console.log)
      result     the completion value, or what it returns when it is a
@@ -103,14 +103,11 @@
    RV_TREE_STAMP when a script has computed them already (stamp_check of
    stamp.sh), else from stamp.sh run once at the start.
 
-   The engine built without the old loop (EXTRA_DEFS=-DJS_NO_OLD_LOOP of
-   engine/test/build.sh and engine/test/regvm/build.sh, into an OUTDIR of
-   its own) has the register loop only: it runs against goldens (-golden,
-   corpus.sh -golden with BIN_DIR), and a function it cannot run throws
-   "InternalError: no old loop: WHY in NAME (FILE)". The info of the run
-   lists each WHY with how often it was thrown and the first function it
-   named ("noold COUNT WHY in NAME (FILE)"). run-test262 of that build fails
-   a test whose harness it cannot run with the same lines. */
+   A function the register loop cannot run throws "InternalError: cannot
+   run: WHY in NAME (FILE)". The info of the run lists each WHY with how
+   often it was thrown and the first function it named ("cannot COUNT WHY
+   in NAME (FILE)"). run-test262 fails a test whose harness it cannot run
+   with the same lines. */
 
 #include <ctype.h>
 #include <dirent.h>
@@ -435,8 +432,6 @@ static int child_run(void *p)
     else if (gc_mode >= 0)
         JS_SetGCThreshold(rt, (size_t)gc_mode);
     child_regvm = job->regvm;
-    if (job->regvm)
-        JS_SetRegvm(ctx, 1);
     if (module) {
         static char stub[4200];
 
@@ -575,15 +570,13 @@ static int child_run(void *p)
     fprintf(tr, "dispatches new %d old %d calls old>new %d C>new %d new>old %d new>C %d\n",
             JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 11), JS_RegvmStat(ctx, 12),
             JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
-#ifdef JS_NO_OLD_LOOP
-    /* the engine built without the old loop: what it could not run */
+    /* what the register loop could not run */
     {
         const char *m;
         int i, n;
-        for (i = 0; (m = JS_RegvmNoOldLoop(ctx, i, &n)) != NULL; i++)
-            fprintf(tr, "noold %d %s\n", n, m);
+        for (i = 0; (m = JS_RegvmCannotRun(ctx, i, &n)) != NULL; i++)
+            fprintf(tr, "cannot %d %s\n", n, m);
     }
-#endif
     fflush(tr);
     JS_SetShapeCache(ctx, 0);
     JS_SetAsyncContext(ctx, JS_UNDEFINED);
@@ -1421,6 +1414,12 @@ int main(int argc, char **argv)
     }
     if (!stamp_fresh())
         return 2;
+    if (!golden_dir) {
+        /* the two runs compared and -record read the old loop, which is
+           gone: only the run against the goldens is left */
+        fprintf(stderr, "rvdiff: one loop only: give -golden DIR\n");
+        return 2;
+    }
     /* the time limit of the host, so that a script that runs too long ends
        with "interrupted" where the engine polls, before the alarm */
     if (!getenv("HOST_TIMEOUT_SEC")) {

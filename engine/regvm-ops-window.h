@@ -169,13 +169,12 @@ static void rv_window_end(RVPass *s, int npop, int npush)
  exception:                                                             \
     return -1;
 
-/* Copies. A function the body of an old handler calls, and that LLVM
-   inlines into JS_CallInternal only because JS_CallInternal is its one
-   caller, changes the code of JS_CallInternal when the register loop calls
-   it too, even when made force_inline. The bodies run here call these in
-   its place (a #define around the body), so that JS_CallInternal stays the
-   same. Each is a copy of its original in quickjs.c and must change with
-   it: docs/upgrading.md. */
+/* Copies. The bodies run here call these in place of a function of the
+   engine (a #define around the body), each with the hook of the throw
+   injection. They were copies so that the old loop, the one caller of the
+   originals, kept its code: js_for_in_start and js_create_array_free went
+   with it, and rv_define_object_name is still a copy of JS_DefineObjectName
+   and must change with it: docs/upgrading.md. */
 
 /* The throw-injection test (engine/regvm-inject.h) in a body: where the
    body calls the function of the engine that can fail, the hook fails in
@@ -201,8 +200,8 @@ static int rv_inj_for_of_next(JSContext *ctx, JSValue *sp, int offset)
     return -1;
 }
 
-/* a copy of js_for_in_start (quickjs.c:20872), which calls
-   build_for_in_iterator, shared */
+/* js_for_in_start of upstream's interpreter, with the hook of the throw
+   injection: it calls build_for_in_iterator */
 static int rv_for_in_start(JSContext *ctx, JSValue *sp)
 {
     if (RV_INJ_HIT(ctx)) {
@@ -247,8 +246,8 @@ static int rv_define_object_name(JSContext *ctx, JSValueConst obj,
     return 0;
 }
 
-/* js_create_array_free (quickjs.c:13800) made of js_create_array, which
-   is shared: the array of the len values of tab, which it takes */
+/* js_create_array_free of upstream's interpreter, with the hook of the
+   throw injection: the array of the len values of tab, which it takes */
 static JSValue rv_create_array_free(JSContext *ctx, int len, JSValue *tab)
 {
     JSValue obj;

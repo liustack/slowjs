@@ -13,7 +13,7 @@
 
      render bundle=B.js inputs=a.json,b.json [prelude=p1.js,p2.js] [warm=50]
             [n=200] [html=DIR] [tag=T] [front=N] [limit=BYTES]
-            [footprint=BYTES] [regvm=1]
+            [footprint=BYTES]
 
    With soak=N it renders the inputs in turn N times in all, with a young
    collection after each render (and the collections the engine starts by its
@@ -22,12 +22,8 @@
    (MemorySize), the blocks, the footprint, the chunks. With release=KEEP it
    then gives memory back as the pool of tifa will, keeping KEEP bytes.
 
-   regvm=1 turns the register loop on (JS_SetRegvm), regvm=2 too and prints
-   at the end the functions that ran in the old loop all the same, one line
-   "fallback ..." each (engine/test/regvm/rvfallback.h), and regvm=3 makes
-   such a run an error. With RV_STATS set in the
-   environment, a build with -DRV_STATS prints the dispatches of each loop
-   and the calls between them, a timed render, and with RV_OPS also set the
+   With RV_STATS set in the environment, a build with -DRV_STATS prints the
+   dispatches of each loop and the calls between them, a timed render, and with RV_OPS also set the
    dispatches of each register op. */
 #include <inttypes.h>
 #include <stdint.h>
@@ -37,21 +33,9 @@
 #include <time.h>
 
 #include "host.h"
-#include "regvm/rvfallback.h"
 
-#ifdef JS_REGVM_COUNT
-/* the counting build of the register bytecode estimate (engine/regvm-count.h) */
-void JS_RegvmCount(JSRuntime *rt, int on);
-void JS_RegvmDump(JSRuntime *rt);
-static FILE *rv_out;
-void *js_rv_alloc(size_t size) { void *p = calloc(1, size); if (!p) abort(); return p; }
-void js_rv_emit(const char *s, size_t len) { if (rv_out) fwrite(s, 1, len, rv_out); }
-#define RV_START(rt) do { if (!rv_out) { const char *o = getenv("RV_OUT"); rv_out = fopen(o ? o : "rv.txt", "w"); } JS_RegvmCount(rt, 1); } while (0)
-#define RV_STOP(rt) JS_RegvmCount(rt, 0)
-#else
 #define RV_START(rt) ((void)0)
 #define RV_STOP(rt) ((void)0)
-#endif
 
 #ifdef RENDER_OLD_API
 /* the C tree before the allocator, for the comparison of timings: the stack
@@ -340,10 +324,6 @@ int main(int argc, char **argv)
         return 1;
     }
     add_globals(ctx);
-    /* regvm=1: the register loop of engine/regvm.h, for the functions made
-       from here on */
-    if (atoi(arg(argc, argv, "regvm", "0")))
-        JS_SetRegvm(ctx, atoi(arg(argc, argv, "regvm", "0")));
     if (atoi(arg(argc, argv, "tifa", "0"))) {
         /* the engine functions tifa defines on each VM of its pool */
         JSValue g = JS_GetGlobalObject(ctx);
@@ -467,12 +447,6 @@ int main(int argc, char **argv)
         }
         printf("]}\n");
     }
-    if (atoi(arg(argc, argv, "regvm", "0")) == 2)
-        JS_RegvmFallbacks(rt, rvfb_print, stderr);
-#ifdef JS_REGVM_COUNT
-    JS_RegvmDump(rt);
-    if (rv_out) fclose(rv_out);
-#endif
     JS_FreeValue(ctx, start);
     JS_FreeContext(ctx);
     FREE_RUNTIME(rt);

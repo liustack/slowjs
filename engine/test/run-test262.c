@@ -1771,20 +1771,16 @@ int run_test_buf(ThreadLocalStorage *tls,
     for (i = 0; i < ip->count; i++) {
         if (eval_file(ctx, harness, ip->array[i],
                       JS_EVAL_TYPE_GLOBAL)) {
-#ifdef JS_NO_OLD_LOOP
-            /* the engine built without the old loop: a harness file it
-               cannot run fails the test, with what it could not run */
+            /* a harness file the register loop cannot run fails the test,
+               with what it could not run */
             const char *m;
             int k, n;
-            for (k = 0; (m = JS_RegvmNoOldLoop(ctx, k, &n)) != NULL; k++)
-                fprintf(error_out, "%s:0: %sharness %s: no old loop: %s\n", filename,
+            for (k = 0; (m = JS_RegvmCannotRun(ctx, k, &n)) != NULL; k++)
+                fprintf(error_out, "%s:0: %sharness %s: cannot run: %s\n", filename,
                         (eval_flags & JS_EVAL_FLAG_STRICT) ? "strict mode: " : "",
                         ip->array[i], m);
             ret = 1;
             break;
-#else
-            fatal(1, "error including %s for %s", ip->array[i], filename);
-#endif
         }
     }
 

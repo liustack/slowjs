@@ -36,7 +36,7 @@
 // helpers that do at most LeafChunk bytes at a time (chunkLeafCalls).
 //
 // The interpreter counts its bytecode itself: the C marks where it counts
-// (poll_count in engine/cutils.h), at the entry of JS_CallInternal and where
+// (poll_count in engine/cutils.h), at the entry of JS_RegvmRun and where
 // pc does not go forward, and the compiler of the C holds the bytecode to a
 // bound of instructions between two of them (check_polls in quickjs.c). Each
 // mark becomes a tick of its weight (takePollMarks), and the edges into the
@@ -142,7 +142,7 @@ static bool pollMark(const Instruction &I, uint64_t *weight = nullptr, bool *ent
 
 // takePollMarks runs first. The C marks where the interpreter counts its
 // bytecode with calls of goasm_poll_count(n) and, at the entry of
-// JS_CallInternal, goasm_poll_entry(n) (poll_count in engine/cutils.h). Each
+// JS_RegvmRun, goasm_poll_entry(n) (poll_count in engine/cutils.h). Each
 // becomes a mark, a call of llvm.donothing with MarkMD, where insertPolls
 // puts a tick of n. The function with an entry mark must have one indirect
 // branch, its dispatch, which gets CountedMD: the bytecode counts on the

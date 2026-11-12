@@ -104,9 +104,6 @@ typedef struct RVPass {
     BOOL vr_heap;       /* the var_refs of the closure state are on the heap
                            (regvm-ops-wide.h) */
     int drop_at;        /* the drop a JFND or JTND ran, or -1 */
-#ifdef JS_REGVM_COUNT
-    int trace_pos;      /* pos, or a leader | 1 << 30, for the trace of regvm-count.h */
-#endif
     BOOL args;          /* the code reads its arguments (regvm-ops-args.h) */
     BOOL failed;
     BOOL oom;           /* an allocation of the pass failed */
@@ -334,10 +331,6 @@ static int rv_depths(RVPass *s)
 
 static void rv_emit(RVPass *s, int op)
 {
-#ifdef JS_REGVM_COUNT
-    if (rv_trace_on)
-        rv_trace(s->code.size, s->trace_pos);
-#endif
     s->last = s->code.size;
     s->last_dst = -1;
     if (dbuf_putc(&s->code, op))
@@ -661,7 +654,7 @@ static int rv_k_index(RVPass *s, JSAtom atom)
         }
     }
     if (s->k_count >= RV_K_NEAR) {
-        s->rt->rv_stat[3] = -4; /* past the near constants (rv_no_old_loop) */
+        s->rt->rv_stat[3] = -4; /* past the near constants (rv_cannot_run) */
         s->failed = TRUE;
         return 0;
     }
@@ -1104,11 +1097,6 @@ static int rv_code(RVPass *s)
                 s->sp = -1;
                 continue;
             }
-#ifdef JS_REGVM_COUNT
-            s->trace_pos = pos | 1 << 30;
-            if (rv_trace_on && pos < 30001)
-                rv_trace_leader[pos] = 1;
-#endif
             i = s->sp >= 0;
             if (i)
                 rv_block_end(s, s->sp);
@@ -1136,9 +1124,6 @@ static int rv_code(RVPass *s)
         if (pos < s->skip_to)
             continue;
         s->pos = pos;
-#ifdef JS_REGVM_COUNT
-        s->trace_pos = pos;
-#endif
 #ifdef RV_INJECT
         /* the old loop runs a get_field after a fused head (get_arg0_get_field
            and the like) in the dispatch of the head */
@@ -1434,29 +1419,11 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     return rf;
 }
 
-/* What a conversion that runs out of memory does: with 1 the function is
-   left to the old loop (RV_FAILED), as a refusal is, with 0 it stays
-   RV_UNCONVERTED and its call throws out of memory (rv_old_entry of
-   engine/regvm-entry.h), as any allocation that fails. JS_SetRegvm 3 makes
-   it 0 too. 1 until the old loop is removed, 0 in the build without it
-   (JS_NO_OLD_LOOP). */
-#ifndef RV_OOM_FALLBACK
-#ifdef JS_NO_OLD_LOOP
-#define RV_OOM_FALLBACK 0
-#else
-#define RV_OOM_FALLBACK 1
-#endif
-#endif
-#if defined(JS_NO_OLD_LOOP) && RV_OOM_FALLBACK
-#error "RV_OOM_FALLBACK 1 leaves a function to the old loop, which JS_NO_OLD_LOOP has not"
-#endif
-
 /* the register code of b, made at its first call, or RV_REFUSED. When it
-   ran out of memory: RV_FAILED, which a call after the next full collection
-   converts again (a VM of a pool lives for days), or b->rv left
-   RV_UNCONVERTED when RV_OOM_FALLBACK is 0. The register stack is made by
-   JS_SetRegvm (by JS_NewRuntime without the old loop), or here when it
-   could not be made then. */
+   ran out of memory b->rv stays RV_UNCONVERTED, and rv_oom_b names it: its
+   call throws out of memory (JS_CallInternal), a later call tries again.
+   The first conversion makes the register stack when JS_NewRuntime could
+   not. */
 static no_inline RVFunc *rv_convert_rt(JSRuntime *rt, JSFunctionBytecode *b)
 {
     BOOL oom;
@@ -1467,14 +1434,7 @@ static no_inline RVFunc *rv_convert_rt(JSRuntime *rt, JSFunctionBytecode *b)
         oom = TRUE;
     }
     if (!rf && oom) {
-        if (!RV_OOM_FALLBACK || rt->regvm_on == 3) {
-            rt->rv_oom_b = b;
-            return b->rv;
-        }
-        rt->rv_failed_gc = rt->rv_gc_runs;
-        if (b->rv != RV_FAILED)
-            rt->rv_stat[1]++;
-        b->rv = RV_FAILED;
+        rt->rv_oom_b = b;
         return b->rv;
     }
     rt->rv_stat[rf ? 0 : 1]++;

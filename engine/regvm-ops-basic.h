@@ -970,7 +970,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                     goto label ## _out;                                 \
                 RV_SYNC_TOP();                                          \
                 /* left unconverted: out of memory, thrown by the  */   \
-                /* call out (rv_old_entry, regvm-entry.h) */            \
+                /* call out (JS_CallInternal) */                        \
                 if (rv_convert(ctx, cb) == RV_UNCONVERTED)              \
                     goto label ## _out;                                 \
                 pc -= (len) + 1;                                        \

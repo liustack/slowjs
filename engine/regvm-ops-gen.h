@@ -37,12 +37,7 @@
    its heap frame keeps the temps as they are at the suspension, each
    folded range one Array, and SUSP gives their count (rv_suspend). The
    top entry is never folded, so the value a resume sends goes where the
-   code reads it. Only the register loop reads that stack: a state keeps
-   the loop it started in.
-
-   Until the old loop is gone (full-coverage.md part 4), a state keeps the
-   loop it started in: async_func_resume takes the register loop for one
-   that never ran or that stopped in register code (rv_gen_ok). */
+   code reads it. */
 
 #if RV_PART == RV_PART_LIST
 RV_OP(SUSP)     /* kind n: suspend with FUNC_RET_<kind>, the stack in T[0 .. n) */
@@ -391,32 +386,9 @@ static no_inline int rv_w_gen(JSContext *ctx, JSValue *F, const uint8_t *ip)
     }
 }
 
-#ifndef JS_NO_OLD_LOOP
-/* whether async_func_resume runs s in the register loop: a state that never
-   ran when the function has register code, or one that stopped in
-   register code. The body is converted at its first
-   resume. */
-static BOOL rv_gen_ok(JSContext *ctx, JSAsyncFunctionState *s)
-{
-    JSFunctionBytecode *b = JS_VALUE_GET_OBJ(s->frame.cur_func)->u.func.function_bytecode;
-    const uint8_t *pc = s->frame.cur_pc;
-    RVFunc *rf = b->rv;
 
-    if (unlikely(rf == RV_UNCONVERTED))
-        rf = rv_convert(ctx, b);
-    if (rf->arg_count < 0)
-        return FALSE;
-    /* a frame with no room in the segment in use runs on the next one
-       (rv_gen_resume) */
-    if (pc == b->byte_code_buf)
-        return TRUE;
-    return pc > rf->code && pc < rf->code + rf->code_len;
-}
-#endif
-
-/* the end of a state the register loop could not run, as async_func_resume
-   ends it after JS_CallInternal failed: its var_refs closed, its frame
-   freed */
+/* the end of a state the register loop could not run: its var_refs
+   closed, its frame freed */
 static void rv_gen_fail(JSRuntime *rt, JSAsyncFunctionState *s)
 {
     s->is_completed = TRUE;
@@ -425,9 +397,8 @@ static void rv_gen_fail(JSRuntime *rt, JSAsyncFunctionState *s)
     async_func_free_frame(rt, s);
 }
 
-/* async_func_resume for a state that rv_gen_ok gave to the register loop:
-   FUNC_RET_* at a suspension, or the value of the completion, or an
-   exception (the state is then completed) */
+/* async_func_resume: FUNC_RET_* at a suspension, or the value of the
+   completion, or an exception (the state is then completed) */
 static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
 {
     JSRuntime *rt = ctx->rt;
@@ -438,14 +409,12 @@ static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
     uintptr_t need;
     int i;
 
-#ifdef JS_NO_OLD_LOOP
-    /* the body converts at its first resume, as rv_gen_ok does */
+    /* the body converts at its first resume */
     if (unlikely(rf == RV_UNCONVERTED)) {
         rf = rv_convert(ctx, b);
         if (rf == RV_UNCONVERTED) {
-            /* out of memory (RV_OOM_FALLBACK is 0 here): the state ends
-               with the error, and another call of the function tries the
-               conversion again, as rv_old_entry has it */
+            /* out of memory: the state ends with the error, and another
+               call of the function tries the conversion again */
             rt->rv_oom_b = NULL;
             JS_ThrowOutOfMemory(ctx);
             rv_gen_fail(rt, s);
@@ -453,11 +422,10 @@ static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
         }
     }
     if (unlikely(rf->arg_count < 0)) {
-        rv_no_old_loop(ctx, b, RV_NO_REFUSED);
+        rv_cannot_run(ctx, b, RV_NO_REFUSED);
         rv_gen_fail(rt, s);
         return JS_EXCEPTION;
     }
-#endif
     need = rv_gen_need(s, b, rf);
     if (unlikely(rt->rv_top + need > rt->rv_end)) {
         /* no room in the segment in use: a run on the next one, as

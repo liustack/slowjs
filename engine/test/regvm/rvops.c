@@ -122,7 +122,6 @@ static int check(void *p)
         fprintf(stderr, "rvops: the engine has not %d opcodes: quickjs-opcode.h read otherwise\n", nop);
         return 2;
     }
-    JS_SetRegvm(ctx, 1);
     while (fgets(line, sizeof(line), f)) {
         lineno++;
         if (line[0] == '#' || line[0] == '\n')

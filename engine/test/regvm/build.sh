@@ -20,8 +20,8 @@
 #   rvops             the check of the table of opcodes (rvops.c): rvops
 #                     engine/test/regvm/opcodes.txt
 #   run-test262-rv    run-test262, unit-rv, unit-oom-rv and unit-api-rv: the
-#   unit-rv ...       programs of engine/test with every context they make
-#                     turning the register loop on when RV_REGVM=1
+#   unit-rv ...       programs of engine/test that add up the counts of
+#                     the register loop with RV_REGVM=1 RV_REGVM_STATS=1
 #                     (rvhook.h), the same programs otherwise
 #   regvm.stamp       what all of OUTDIR was built from: the scripts that run
 #                     these tools refuse a folder whose stamp is not of the

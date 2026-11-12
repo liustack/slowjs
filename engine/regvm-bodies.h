@@ -1,5 +1,5 @@
 /*
- * QuickJS Javascript Engine: the bodies of handlers both loops run
+ * QuickJS Javascript Engine: the bodies of handlers the register loop runs
  *
  * Copyright (c) 2017-2025 Fabrice Bellard
  * Copyright (c) 2017-2025 Charlie Gordon
@@ -26,11 +26,9 @@
 /* The handlers of old instructions that the register loop runs as window
    ops (engine/regvm-ops-window.h) or through OLD (engine/regvm-ops-old.h),
    as macros OP_BODY_<op>, and the operand values of throw_error and
-   define_method that the compiler and both loops read. Included by
-   quickjs.c before JS_CallInternal, whose handlers use the same macros,
-   so that the engine built without the old loop (-DJS_NO_OLD_LOOP) has
-   them too. When the old loop is deleted they are the register loop's own
-   and can take whatever shape suits it. */
+   define_method that the compiler and the register loop read, as the
+   handlers of QuickJS's interpreter had them. They can take whatever shape
+   suits the register loop. */
 
 #define OP_BODY_object_lit(ctx, b, sp, pc, ret_val, exception)              \
             {                                                               \

@@ -85,9 +85,6 @@ static long rv_inj_n, rv_inj_seen; /* the register loop: the n-th, and so far */
 static uint32_t rv_inj_site, rv_inj_sites; /* or at this site, and the sites so far */
 static long rv_inj_site_j;      /* its j-th place */
 static uint32_t rv_inj_funcs;   /* the functions made so far */
-static uint32_t rv_inj_at_func; /* the old loop: the function */
-static int rv_inj_at_pos;       /* and the old instruction */
-static long rv_inj_k, rv_inj_k_seen; /* the k-th run of it, and so far */
 static int rv_inj_fired;
 /* the register loop: the instruction being run is to throw at the hook it
    comes to after this many (1: the first one), 0 when none is */
@@ -179,51 +176,18 @@ static RVInjCount *rv_inj_count(uint32_t func, int pos)
     }
 }
 
-/* the old loop at the dispatch of pc in b: with the register loop on it
-   counts the run, with it off it throws at the k-th run of the old
-   instruction asked for, and returns the pc the exception is then at (as
-   the old loop has it after the instruction: for a goto past its jump,
-   rv_old_pc_at), else NULL */
-static no_inline const uint8_t *rv_inj_old(JSContext *ctx, JSFunctionBytecode *b,
-                                           const uint8_t *pc)
-{
-    int pos = pc - b->byte_code_buf;
-    if (rv_inj_fired)
-        return NULL;
-    if (ctx->rt->regvm_on) {
-        rv_inj_count(b->rv_inj_id, pos)->n++;
-        return NULL;
-    }
-    if (!rv_inj_k || pos != rv_inj_at_pos || b->rv_inj_id != rv_inj_at_func ||
-        ++rv_inj_k_seen != rv_inj_k)
-        return NULL;
-    rv_inj_fired = 1;
-    JS_ThrowInternalError(ctx, "rv inject");
-    /* the register loop names the get_field a fused head runs, where an
-       error of the field is (the sizes of quickjs-opcode.h) */
-    switch (*pc) {
-    case OP_get_arg0_get_field: case OP_get_arg1_get_field:
-    case OP_get_loc0_get_field:
-        return pc + 1 + 1;
-    case OP_get_loc8_get_field:
-        return pc + 2 + 1;
-    default:
-        return b->byte_code_buf + rv_old_pc_at(b->byte_code_buf, pos) + 1;
-    }
-}
-
-/* asks for an injection: for the register loop the n-th place, or the
-   j-th place of the site number site, 0 for none, and func, pos and k for
-   the old loop, k 0 for none */
+/* asks for an injection: the n-th place, or the j-th place of the
+   site number site, 0 for none. func, pos and k asked the old loop to
+   throw the same: it is gone, and they are not read. */
 void JS_RegvmInject(long n, unsigned site, long j, unsigned func, int pos, long k)
 {
     rv_inj_n = site ? 0 : n;
     rv_inj_site = site;
     rv_inj_site_j = j;
-    rv_inj_at_func = func;
-    rv_inj_at_pos = pos;
-    rv_inj_k = k;
-    rv_inj_any = n > 0 || site > 0 || k > 0;
+    (void)func;
+    (void)pos;
+    (void)k;
+    rv_inj_any = n > 0 || site > 0;
 }
 
 /* what happened: "at FUNC POS K" when the register loop threw where
@@ -247,7 +211,6 @@ const char *JS_RegvmInjectResult(void)
     return rv_inj_result;
 }
 
-#define RV_INJ_OLD(pc) (unlikely(rv_inj_any) && (rv_inj_pc = rv_inj_old(ctx, b, pc)) != NULL)
 /* a function was made: its number */
 #define RV_INJ_FUNC(b) ((b)->rv_inj_id = ++rv_inj_funcs)
 

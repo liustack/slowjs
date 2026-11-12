@@ -8,7 +8,7 @@
 /* jsrun runs scripts on the C tree, so that compare.sh can compare what they
    print with the files kept in the repository.
 
-     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] [-regvm|-regvm-why|-regvm-strict] FILE...
+     jsrun [-raw] [-result] [-call] [-regexp-cache=N,BYTES] [-no-fused-ops] [-regvm] FILE...
 
    Each file runs as a global script in a runtime and a context of its own,
    then the jobs it queued run. jsrun prints "== " and the name of the file,
@@ -39,18 +39,11 @@
    joins into one opcode left apart, and every check of the temporal dead
    zone kept (JS_SetFusedOps).
 
-   -regvm runs the calls JS_Call makes with the register loop on
-   (JS_SetRegvm, engine/regvm.h), and calls a completion value that is a
-   function with JS_Call itself. It prints on stderr a line "regvm: after
-   the call" with the functions converted and refused and the last refusal
+   -regvm calls a completion value that is a function with JS_Call itself.
+   It prints on stderr a line "regvm: after the call" with the functions converted and refused and the last refusal
    (JS_RegvmStat 3 and 4: the opcode, or -1 and a mask of why the whole
    function was, at the offset) once that call returns, and a line "regvm:"
    with the same at the end, when the formatting script has run too.
-
-   -regvm-why is -regvm that also prints on stderr, at the end, a line
-   "fallback ..." for each function that ran in the old loop, with why
-   (JS_SetRegvm 2, engine/test/regvm/rvfallback.h), and -regvm-strict is
-   -regvm where such a run throws an InternalError (JS_SetRegvm 3).
 
    The scripts find getAsyncContext and setAsyncContext, the Builtins
    GetAsyncContext and SetAsyncContext of the Go API, as globals, and seven
@@ -76,7 +69,6 @@
 #include <string.h>
 
 #include "host.h"
-#include "regvm/rvfallback.h"
 
 /* DefaultShapeCache of the Go API */
 #define SHAPE_CACHE 2048
@@ -416,8 +408,6 @@ static int run(const char *path)
         JS_SetRegExpCache(rt, opt_regexp_cache, opt_regexp_cache_bytes);
     if (opt_no_fused_ops)
         JS_SetFusedOps(ctx, 0);
-    if (opt_regvm)
-        JS_SetRegvm(ctx, opt_regvm);
     if (module) {
         /* The file is the module "NAME", read from its folder, and a module
            of "<eval>" imports it, as a host does with its main module. So
@@ -552,8 +542,6 @@ static int run(const char *path)
         fprintf(stderr, "regvm: dispatches new %d old %d, calls old>new %d C>new %d new>old %d new>C %d\n",
                 JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 11), JS_RegvmStat(ctx, 12),
                 JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
-    if (opt_regvm == 2)
-        JS_RegvmFallbacks(rt, rvfb_print, stderr);
     /* as VM.Close does: the kept shapes and the async context can hold the
        context */
     JS_SetShapeCache(ctx, 0);
@@ -603,10 +591,6 @@ int main(int argc, char **argv)
             opt_no_fused_ops = 1;
         } else if (strcmp(argv[i], "-regvm") == 0) {
             opt_regvm = 1;
-        } else if (strcmp(argv[i], "-regvm-why") == 0) {
-            opt_regvm = 2;
-        } else if (strcmp(argv[i], "-regvm-strict") == 0) {
-            opt_regvm = 3;
         } else if (strncmp(argv[i], "-regexp-cache=", 14) == 0) {
             char *end;
             long n = strtol(argv[i] + 14, &end, 10);
