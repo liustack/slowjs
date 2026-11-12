@@ -1463,7 +1463,7 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
     WHITE_FNV(rf->pcmap, sizeof(RVPcMask) * rf->pcmap_count);
     if (rf->pcmap_hi)
         WHITE_FNV(rf->pcmap_hi, sizeof(RVPcHi) * rf->pcmap_count);
-    WHITE_FNV(rf->rets, 8 * rf->ret_count);
+    WHITE_FNV(rf->rets, 16 * rf->ret_count);
     WHITE_FNV(&rf->fsize, sizeof(rf->fsize));
     WHITE_FNV(&rf->temp0, sizeof(rf->temp0));
     WHITE_FNV(&rf->k_count, sizeof(rf->k_count));
@@ -1481,13 +1481,79 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
    first push_1 made a drop), 1 a stack larger than stack_size (stack_size
    0), 2 two paths that meet with different depths (its first push_2 made a
    nop), 3 nip_catch with no catch (its first add made a nip_catch), 4
-   mapped arguments with no closure state (var_ref_count 0). With undo, f
-   gets back what the last call changed. -1 when f has no place for the
-   kind. Such code must never run. */
+   mapped arguments with no closure state (var_ref_count 0), 5 to 8 a
+   catch offset or a jump that leaves its place (white_crafted_jump). With
+   undo, f gets back what the last call changed. -1 when f has no place
+   for the kind. Such code must never run. */
 static struct {
     JSFunctionBytecode *b;
     int pos, byte, stack_size, var_ref_count;
 } white_crafted_saved;
+
+/* the byte of b that white_crafted changes for the kinds 5 to 8, and *to
+   its new value: 5 the drop of the catch offset of the first OP_catch made
+   a return (the catch offset leaves the function), 6 the first jump made
+   to go before the start of the code, 7 the first OP_catch made to go
+   there, 8 the offset of the first for_of_next made 1, so that it takes
+   the entry under its own three for its iterator. -1 when b has none. */
+static int white_crafted_jump(JSFunctionBytecode *b, int kind, int *to)
+{
+    const uint8_t *bc = b->byte_code_buf;
+    int pos, op, d = -1;
+
+    for (pos = 0; pos < b->byte_code_len; pos += short_opcode_info(op).size) {
+        op = bc[pos];
+        switch (kind) {
+        case 5:
+            if (op == OP_catch) {
+                d = 1;
+                continue;
+            }
+            if (d < 0)
+                continue;
+            if (op == OP_drop && d == 1) {
+                *to = OP_return;
+                return pos;
+            }
+            /* the code of the try: straight, of the formats with their
+               pops in the table */
+            if (short_opcode_info(op).fmt == OP_FMT_npop ||
+                short_opcode_info(op).fmt == OP_FMT_npop_u16 ||
+                short_opcode_info(op).fmt == OP_FMT_npopx ||
+                short_opcode_info(op).fmt == OP_FMT_label ||
+                short_opcode_info(op).fmt == OP_FMT_label8 ||
+                short_opcode_info(op).fmt == OP_FMT_label16)
+                return -1;
+            d += short_opcode_info(op).n_push - short_opcode_info(op).n_pop;
+            break;
+        case 6:
+            if (op == OP_if_false8 || op == OP_if_true8 || op == OP_goto8) {
+                if (pos + 1 >= 128)
+                    return -1;
+                *to = 0x80; /* -128 */
+                return pos + 1;
+            }
+            if (op == OP_if_false || op == OP_if_true || op == OP_goto) {
+                *to = 0x80; /* the top byte of the offset */
+                return pos + 4;
+            }
+            break;
+        case 7:
+            if (op == OP_catch) {
+                *to = 0x80;
+                return pos + 4;
+            }
+            break;
+        case 8:
+            if (op == OP_for_of_next && bc[pos + 1] == 0) {
+                *to = 1;
+                return pos + 1;
+            }
+            break;
+        }
+    }
+    return -1;
+}
 
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
 {
@@ -1527,7 +1593,19 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
             return -1;
         b->var_ref_count = 0;
         return 0;
+    case 5: case 6: case 7: case 8:
+        pos = white_crafted_jump(b, kind, &to);
+        if (pos < 0)
+            break;
+        white_crafted_saved.pos = pos;
+        white_crafted_saved.byte = b->byte_code_buf[pos];
+        b->byte_code_buf[pos] = to;
+        return 0;
     default:
+        return -1;
+    }
+    if (kind >= 5) {
+        white_crafted_saved.b = NULL;
         return -1;
     }
     for (pos = 0; pos < b->byte_code_len; pos += short_opcode_info(op).size) {
@@ -1545,12 +1623,127 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
 
 /* the check of JS_ReadObject on the function f (rv_read_check): 0 when it
    lets f through, -1 with the exception pending */
+/* whether f is a function of bytecode: plain, async, a generator or an
+   async generator */
+static BOOL white_is_bytecode_function(JSValueConst f)
+{
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    switch (JS_VALUE_GET_OBJ(f)->class_id) {
+    case JS_CLASS_BYTECODE_FUNCTION: case JS_CLASS_ASYNC_FUNCTION:
+    case JS_CLASS_GENERATOR_FUNCTION: case JS_CLASS_ASYNC_GENERATOR_FUNCTION:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 int white_regvm_read_check(JSContext *ctx, JSValueConst f)
 {
-    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+    if (!white_is_bytecode_function(f))
         return -2;
     return rv_read_check(ctx, JS_VALUE_GET_OBJ(f)->u.func.function_bytecode);
+}
+
+/* The code of the function f replaced from its start by the code of kind,
+   the rest made OP_nop, with its ret_bits only where that code returns:
+   code only a file could hold. 0: iterator_get_value_done with no
+   iterator under it (undefined undefined undefined object
+   iterator_get_value_done drop drop return_async), 1: a gosub whose
+   finally drops what the gosub had and returns with a catch offset of its
+   own under the return address (undefined gosub, return, then drop drop
+   catch push_i32 ret, and return at the catch), 2: a gosub whose finally
+   returns at once (undefined gosub, return, then ret). With undo, f gets
+   back its code and its ret_bits, as it must before it is freed, which
+   frees the atoms its code names. -1 when f has too little code, or no
+   ret_bits for a gosub. */
+static struct {
+    JSFunctionBytecode *b;
+    uint8_t *code;
+    uint32_t *bits;
+} white_ccode_saved;
+
+int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo)
+{
+    JSFunctionBytecode *b;
+    uint8_t code[32];
+    int words, len = 0, ret = -1;
+
+    if (undo) {
+        b = white_ccode_saved.b;
+        if (!b)
+            return -1;
+        words = (b->byte_code_len + 31) / 32;
+        memcpy(b->byte_code_buf, white_ccode_saved.code, b->byte_code_len);
+        if (b->ret_bits)
+            memcpy(b->ret_bits, white_ccode_saved.bits, sizeof(uint32_t) * words);
+        js_free_rt(ctx->rt, white_ccode_saved.code);
+        js_free_rt(ctx->rt, white_ccode_saved.bits);
+        white_ccode_saved.b = NULL;
+        return 0;
+    }
+    if (!white_is_bytecode_function(f))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    switch (kind) {
+    case 0:
+        code[len++] = OP_undefined;
+        code[len++] = OP_undefined;
+        code[len++] = OP_undefined;
+        code[len++] = OP_object;
+        code[len++] = OP_iterator_get_value_done;
+        code[len++] = OP_drop;
+        code[len++] = OP_drop;
+        code[len++] = OP_return_async;
+        break;
+    case 1: case 2:
+        /* 0 undefined, 1 gosub 7, 6 return, 7 the finally */
+        code[len++] = OP_undefined;
+        code[len++] = OP_gosub;
+        put_u32(code + len, 7 - 2);
+        len += 4;
+        ret = len;
+        code[len++] = OP_return;
+        if (kind == 2) {
+            code[len++] = OP_ret;
+            break;
+        }
+        /* 7 drop, 8 drop, 9 catch 20, 14 push_i32 6, 19 ret, 20 return */
+        code[len++] = OP_drop;
+        code[len++] = OP_drop;
+        code[len++] = OP_catch;
+        put_u32(code + len, 20 - 10);
+        len += 4;
+        code[len++] = OP_push_i32;
+        put_u32(code + len, ret);
+        len += 4;
+        code[len++] = OP_ret;
+        code[len++] = OP_return;
+        break;
+    default:
+        return -1;
+    }
+    if (len > b->byte_code_len || (ret >= 0 && (!b->ret_bits || ret >= b->byte_code_len)))
+        return -1;
+    words = (b->byte_code_len + 31) / 32;
+    white_ccode_saved.code = js_malloc_rt(ctx->rt, b->byte_code_len);
+    white_ccode_saved.bits = js_malloc_rt(ctx->rt, sizeof(uint32_t) * words);
+    if (!white_ccode_saved.code || !white_ccode_saved.bits) {
+        js_free_rt(ctx->rt, white_ccode_saved.code);
+        js_free_rt(ctx->rt, white_ccode_saved.bits);
+        return -1;
+    }
+    white_ccode_saved.b = b;
+    memcpy(white_ccode_saved.code, b->byte_code_buf, b->byte_code_len);
+    if (b->ret_bits) {
+        memcpy(white_ccode_saved.bits, b->ret_bits, sizeof(uint32_t) * words);
+        memset(b->ret_bits, 0, sizeof(uint32_t) * words);
+        if (ret >= 0)
+            b->ret_bits[ret >> 5] |= (uint32_t)1 << (ret & 31);
+    }
+    memcpy(b->byte_code_buf, code, len);
+    memset(b->byte_code_buf + len, OP_nop, b->byte_code_len - len);
+    return 0;
 }
 
 /* the register stack of ctx's runtime (engine/regvm-entry.h): out[0] the

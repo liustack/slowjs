@@ -69,21 +69,21 @@ RV_OP(SWAP)                                           /* a b: the values of temp
     case OP_push_this: case OP_drop: case OP_nop:
         return 0;
     case OP_if_false: case OP_if_true:
-        *target = pos + 1 + (int32_t)get_u32(bc + pos + 1);
+        *target = rv_old_target(pos, 1 + (int64_t)(int32_t)get_u32(bc + pos + 1));
         return 0;
     case OP_if_false8: case OP_if_true8:
-        *target = pos + 1 + (int8_t)bc[pos + 1];
+        *target = rv_old_target(pos, 1 + (int8_t)bc[pos + 1]);
         return 0;
     case OP_goto:
-        *target = pos + 1 + (int32_t)get_u32(bc + pos + 1);
+        *target = rv_old_target(pos, 1 + (int64_t)(int32_t)get_u32(bc + pos + 1));
         *term = 1;
         return 0;
     case OP_goto8:
-        *target = pos + 1 + (int8_t)bc[pos + 1];
+        *target = rv_old_target(pos, 1 + (int8_t)bc[pos + 1]);
         *term = 1;
         return 0;
     case OP_goto16:
-        *target = pos + 1 + (int16_t)get_u16(bc + pos + 1);
+        *target = rv_old_target(pos, 1 + (int16_t)get_u16(bc + pos + 1));
         *term = 1;
         return 0;
     case OP_call0: case OP_call1: case OP_call2: case OP_call3: case OP_call:

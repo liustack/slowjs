@@ -648,7 +648,8 @@ typedef struct JSValueCell {
 #endif
 } JSValueCell;
 
-/* the entry of var_refs for the cell c, and the cell of such an entry */
+/* the entry of var_refs for the cell c, and (only the check build reads
+   it) the cell of such an entry */
 #define JS_CELL_REF_OFS ((int)offsetof(JSVarRef, pvalue) - (int)offsetof(JSValueCell, ref_pvalue))
 
 static inline JSVarRef *js_value_cell_ref(JSValueCell *c)
@@ -656,10 +657,12 @@ static inline JSVarRef *js_value_cell_ref(JSValueCell *c)
     return (JSVarRef *)((uint8_t *)c - JS_CELL_REF_OFS);
 }
 
+#ifdef RV_CBV_CHECK
 static inline JSValueCell *js_ref_value_cell(JSVarRef *var_ref)
 {
     return (JSValueCell *)((uint8_t *)var_ref + JS_CELL_REF_OFS);
 }
+#endif
 
 /* bigint */
 
@@ -41512,9 +41515,10 @@ static int add_global_variables(JSContext *ctx, JSFunctionDef *fd)
 
    It trusts that an exception lands only on a catch of b, as the catch
    offsets b makes with OP_catch say: true of all code the compiler makes.
-   A file can hand a function a catch offset of another function, which
-   the register loop takes as one of b (EvalBytecode in eval.go: bytecode
-   from a file is not checked). */
+   The register pass refuses code in which a catch offset could leave its
+   place, to be stored, returned or passed to another function
+   (rv_catch_reads_ok of engine/regvm-pass.h), and JS_ReadObject runs it on
+   each function it reads (rv_read_check). */
 
 enum { CBV_NONE, CBV_READ, CBV_WRITE, CBV_CLOSE, CBV_REF, CBV_BAD };
 

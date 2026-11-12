@@ -536,7 +536,7 @@ tifa 商店的六个工作台页面，每次渲染少 0.61% 的指令，店面�
 
 闭包变量的链超过 32 层函数时，变量保持 `JSVarRef`。这个分析不认识的代码（类构造函数的 `push_const` 后面没有紧跟 `define_class`，或者 `define_class` 前面没有紧挨着这样的 `push_const`，或者有跳转落在它上面，两者之间只允许有轮询插入的 `nop`），以及工作量超过预算，都让所有变量保持原样。分析申请不到内存时，编译或读取以内存不足失败，所以标记只取决于代码：读取时会拿它们和文件里的标记比较。
 
-分析相信异常只会落到本函数的 `catch` 上，编译器生成的代码都是这样。字节码文件可以把另一个函数的 catch offset 交给一个函数，寄存器循环会把它当成这个函数自己的：从文件读入的字节码不做检查（见 `EvalBytecode`）。
+分析相信异常只会落到本函数的 `catch` 上，编译器生成的代码都是这样。读取时会拒绝 catch 偏移可能离开原处（被存起来、返回或传给另一个函数）的代码（[catch 偏移和跳转不离开所在的函数](#catch-偏移和跳转不离开所在的函数)）。
 
 标记随代码写进字节码文件，每个闭包变量的标志里占一位，`BC_VERSION` 为 11。不带 `JS_READ_OBJ_POLLS_CHECKED` 的读取（`EvalBytecode`，以及 `SharedBytecode` 的第一次读取）会重新算出标记，文件里的标记只要有一个和算出的不同，不论哪个方向，就以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝这个文件（`cbv_check_file`）：一个按值存的闭包变量下面，如果有个闭包变量还留着 `JSVarRef`，就会对单元做引用计数。`SharedBytecode` 第一次之后的读取（tifa 的池里每个 VM 一次）直接取文件里的标记，不再跑这个分析。这样读入时，商店包的字节码（6.3 MB）执行 38.9 M 条指令，原来是 151.3 M，MUI 18.5 M，原来 72.3 M，React 2.1 M，原来 6.4 M：商店的一个 VM 加载时为这个分析付出的约等于 0.8 次渲染。第一次读取检查标记，比原来多 0.25%，商店包上是 0.9 M。
 
@@ -666,3 +666,19 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 为什么安全：检查在 `add_var`、`add_arg` 和 `compute_stack_size` 里（`engine/quickjs.c`），用的计数和寄存器 pass 一样（`engine/regvm-pass.h` 的 `rv_build`，`engine/regvm-fold.h` 的 `rv_chain_bslot`）。最里层 catch 偏移之上的那段栈，不管多深最多占 70 个临时槽（`RV_FOLD_TOP_MAX`），118 个里剩下 48 个给 catch 偏移。
 
 `engine/test/unit-api.c` 的 `test_rv_frame_limits` 和 `test_rv_nesting_limits` 在宽松模式、严格模式和生成器里编译每个上限和比它少一的情况，检查少一的能跑，普通函数还要转成寄存器代码。`engine/test/regvm/js/f3-fold.js` 跑折了好几层的栈，`engine/test/unit-oom.c` 的 `test_regvm_fold_oom` 让折叠的每次分配轮流失败。
+
+## catch 偏移和跳转不离开所在的函数
+
+版本：未发布。
+
+`JS_ReadObject` 对读到的每个函数跑一遍寄存器 pass，pass 接不了的代码以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝（`engine/regvm-entry.h` 的 `rv_read_check`）。现在又多拒绝三类这样的代码（`engine/regvm-pass.h`）：
+
+- catch 偏移被一条指令读到，而这条指令既不是丢掉它的那几条（`drop`、`nip`、`nip1`、`nip_catch`、`iterator_close`），也不是读它周围的值、把它留在原处的那几条（`for_of_next`、`for_await_of_next` 和 `yield*` 的迭代器指令）（`rv_catch_reads_ok`）。catch 偏移和别的值一样在栈上，所以函数可以把它返回、存进局部变量或者传给一次调用，异常经过它时寄存器循环会把它当成自己的（`engine/regvm-run.h` 的 `rv_unwind`）：跳到这个数在异常所在函数的代码里指的位置。`for_of_next` 指向迭代器的偏移也守这条规则，所以它不能把 catch 偏移当成迭代器，再作为 `this` 传给 `next` 方法。
+- 下面没有迭代器的 `iterator_get_value_done`。它会在读到 catch 偏移的地方重新写入迭代器的 catch 偏移，所以能把任何值变成 catch 偏移：读取时要求那里是 `for_of_start` 或 `for_await_of_start` 放的偏移，和编译器生成的一样。
+- 跳转目标在代码开头之前（`rv_old_target`）。pass 检查了超过末尾的目标，却把开头之前的目标当成根本没有跳转。同一个检查管 pass 读的每一种跳转：`goto`、`if_true`、`if_false` 和它们的短形式，`catch`、`gosub` 和 `with_` 系列指令。`ret` 回到某个 `gosub` 之后的指令，由 `ret_bits` 列出，迭代器指令的偏移指的是栈，不是代码。
+
+`ret` 只有在返回地址下面的深度和最内层 catch 与 pass 在 `gosub` 之后看到的相同时，才回到这个 `gosub` 之后，不同时抛 `InternalError: invalid ret value`（`engine/regvm-ops-except.h` 的 `rv_ret_target`）。返回地址是任何代码都能做出的整数，`finally` 如果改了它下面的东西，`gosub` 之后的代码就会把 catch 偏移当成一个值。编译器生成的 `finally` 不改返回地址下面的栈。GORET 多带这两个数（8 字节），多做两次比较。
+
+编译器不会生成这样的代码：test262、语料、23 个页面和 rvgen 的种子都照旧通过，而 pass 拒绝的函数在第一次调用时就会抛错。有了它，[捕获后不再改变的变量](#捕获后不再改变的变量)才能确信异常只落在本函数的 `catch` 上。
+
+测试：`engine/test/unit-white.c` 的 `test_regvm_crafted` 对每一类改动编译器生成的代码的一个字节（`engine/test/white.c` 的 `white_crafted_jump`），检查读取时会拒绝它：丢掉 catch 偏移的 `drop` 改成 `return`，一个跳转和一个 `catch` 改成跳到代码开头之前，以及 `for_of_next` 的偏移改成指向外面 `try` 的 catch 偏移。`test_regvm_crafted_code` 把自己的代码放进一个函数（`white_crafted_code`）：下面没有迭代器的 `iterator_get_value_done`，读取时被拒绝，在返回地址下面留了自己的 catch 偏移的 `finally`，它的 `ret` 会抛错，以及立刻返回的 `finally`，照旧运行。
