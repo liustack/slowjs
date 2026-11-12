@@ -1,0 +1,39 @@
+result case 0: 6,false,true
+result case 1: 7,false
+result case 2: function,true,4
+result case 3: 1,2,1
+result case 4: undefined,true
+result case 5: object,4
+result case 6: 9
+result strict frozen: TypeError: object is not extensible
+result sloppy frozen: ok undefined
+result reflect true 0 false
+result reflect nt function false true
+result reflect frozen TypeError: object is not extensible ok undefined
+result case 0: 7,false,true
+result case 1: 8,false
+result case 2: function,true,5
+result case 3: 1,2,1
+result case 4: undefined,true
+result case 5: object,5
+result case 6: 11
+result strict frozen: TypeError: object is not extensible
+result sloppy frozen: ok undefined
+result reflect true 1 false
+result reflect nt function false true
+result reflect frozen TypeError: object is not extensible ok undefined
+result case 0: 8,false,true
+result case 1: 9,false
+result case 2: function,true,6
+result case 3: 1,2,1
+result case 4: undefined,true
+result case 5: object,6
+result case 6: 13
+result strict frozen: TypeError: object is not extensible
+result sloppy frozen: ok undefined
+result reflect true 2 false
+result reflect nt function false true
+result reflect frozen TypeError: object is not extensible ok undefined
+mem-end obj=204 atom=556 shape=128 prop=992 jsfunc=6 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=541 shape=120 prop=968 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

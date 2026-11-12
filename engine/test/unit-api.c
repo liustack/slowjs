@@ -12,6 +12,8 @@
    error stacks, shared debug information).
 
      unit-api */
+#include <pthread.h>
+
 #include "cutils.h"
 #include "testutil.h"
 
@@ -1452,6 +1454,121 @@ static void test_rv_far_locals(void)
     }
 }
 
+/* JS_RegvmStat 5 and 6, the bytes of stack a frame of JS_RegvmRun and of
+   JS_CallInternal take before their checks, are measured: neither is 0, which
+   is what a measure gives when the compiler inlines the call it measures. A
+   call of a C function the register loop makes without JS_CallInternal
+   counts 6 as taken. */
+static void test_call_frames_measured(void)
+{
+    VM v = vm_new();
+    int rv = JS_RegvmStat(v.ctx, 5), entry = JS_RegvmStat(v.ctx, 6);
+
+    CHECK(rv > 0, "a frame of JS_RegvmRun takes %d bytes", rv);
+    CHECK(entry > 0, "a frame of JS_CallInternal takes %d bytes", entry);
+    vm_free(&v);
+}
+
+/* Recursions that go through a C function the register loop calls itself
+   (js_call_c_direct), alone or under a getter or a Proxy trap, with frames
+   of 1 to 300 locals. */
+static const struct { const char *name, *body; } c_call_kinds[] = {
+    { "call", "return f.call(null) + v0" },
+    { "apply", "return f.apply(null, []) + v0" },
+    { "reflect_apply", "return Reflect.apply(f, null, []) + v0" },
+    { "map", "return [1].map(f)[0] + v0" },
+    { "map_tail", "return [0].map(f)" },
+    { "sort", "[2, 1].sort(f); return v0" },
+    { "getter", "return o.x + v0" },
+    { "proxy_get", "return p.x + v0" },
+    { "tail_apply", "return apply(f, null, [])" },
+};
+
+typedef struct {
+    int kind, locals, direct;
+    char *out;
+} CCallRun;
+
+/* Runs one recursion of c_call_kinds at the most call depth a runtime
+   allows, with the direct calls of C functions on or off, and keeps
+   "REACHED ERROR" in r->out. */
+static int c_call_run(void *arg)
+{
+    CCallRun *r = arg;
+    VM v = vm_new();
+    char vars[8192], src[16384];
+    int n = 0;
+
+    n += snprintf(vars + n, sizeof(vars) - n, "var v0 = 0");
+    for (int i = 1; i < r->locals; i++)
+        n += snprintf(vars + n, sizeof(vars) - n, ", v%d = %d", i, i);
+    snprintf(src, sizeof(src),
+             "(() => { const apply = Reflect.apply; let reached = 0;\n"
+             "  const o = { get x() { return apply(f, null, []) } };\n"
+             "  const p = new Proxy({}, { get() { return [1].map(f)[0] } });\n"
+             "  function f() { %s; reached++; %s }\n"
+             "  let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError' : String(e) }\n"
+             "  return reached + ' ' + at })()",
+             vars, c_call_kinds[r->kind].body);
+    CHECK(JS_SetMaxCallDepth(v.rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "the call depth cannot be set");
+    CHECK(JS_SetDirectCCalls(v.ctx, r->direct) == 0, "JS_SetDirectCCalls refused");
+    r->out = eval_text(v.ctx, src);
+    free(exception_text(v.ctx));
+    vm_free(&v);
+    return 0;
+}
+
+static void *c_call_thread(void *arg)
+{
+    c_call_run(arg);
+    return NULL;
+}
+
+/* Every recursion of c_call_kinds ends in a RangeError, never past the end
+   of the stack, on the main thread (8 MiB, the smallest stack the tests run
+   the engine on) and on a thread of 1 MiB, where the stack ends it before
+   the call depth. And it ends at the same depth whether the register loop
+   calls the C functions itself or through JS_CallInternal: a direct call
+   counts the frame of JS_CallInternal it skips as taken (stack_debt), so a
+   measure of that frame of 0 would let it go deeper. */
+static void test_c_call_recursions(void)
+{
+    static const int locals[] = { 1, 100, 300 };
+
+    for (int stack = 0; stack < 2; stack++) {
+        for (int k = 0; k < (int)countof(c_call_kinds); k++) {
+            for (int l = 0; l < (int)countof(locals); l++) {
+                CCallRun r[2];
+
+                for (int d = 0; d < 2; d++) {
+                    r[d] = (CCallRun){ k, locals[l], d, NULL };
+                    if (stack == 0) {
+                        c_call_run(&r[d]);
+                    } else {
+                        pthread_attr_t attr;
+                        pthread_t tid;
+
+                        pthread_attr_init(&attr);
+                        pthread_attr_setstacksize(&attr, (size_t)1 << 20);
+                        CHECK(pthread_create(&tid, &attr, c_call_thread, &r[d]) == 0, "no thread");
+                        pthread_attr_destroy(&attr);
+                        pthread_join(tid, NULL);
+                    }
+                    CHECK(r[d].out && strstr(r[d].out, " RangeError"), "%s, %s, %d locals, direct %d: %s",
+                          stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l], d,
+                          r[d].out ? r[d].out : "(exception)");
+                }
+                CHECK(r[0].out && r[1].out && strcmp(r[0].out, r[1].out) == 0,
+                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s",
+                      stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l],
+                      r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?");
+                free(r[0].out);
+                free(r[1].out);
+            }
+        }
+    }
+}
+
 /* The parameters and locals of a function, with this, the function and
    new.target, fit RV_FAR_MAX (32768, engine/regvm-func.h): 32765 of them
    together compile and run, one more fails to compile with the parser's
@@ -1631,6 +1748,8 @@ int main(void)
     test_script_name_frames();
     test_weakref_kept();
     test_rv_far_locals();
+    test_call_frames_measured();
+    test_c_call_recursions();
     test_rv_frame_limits();
     test_rv_nesting_limits();
     if (failures) {

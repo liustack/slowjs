@@ -10,7 +10,7 @@
    once for each part, see regvm-areas.h.
 
    A frame with captured locals keeps a JSStackFrame and its var_refs in its
-   closure state (RV_SF, regvm.h), so the old loop's get_var_ref, js_closure,
+   closure state (RV_SF, regvm.h), so QuickJS's get_var_ref, js_closure,
    close_lexical_var and close_var_refs run on it unchanged: a JSVarRef
    points at the slot of the local until the frame closes it. Its returns
    (RETCT to RETCU) and the unwinding (RV_CLOSE_VAR_REFS) close the var_refs
@@ -75,11 +75,11 @@ static void rv_put_var_ref(RVPass *s, int idx, BOOL keep)
    to the store: put_var_ref, or dup then put_var_ref, or set_var_ref (a +=
    b on a closure variable, as React's renderToString builds its page with
    `u !== null && (a += u)`). ADDVR adds into the closure variable, so that
-   a string there can grow in place as the old loop's js_add_string_store
+   a string there can grow in place as QuickJS's js_add_string_store
    lets it, and when the value stays on the stack GETVR reads it back. The
    store is not read then (skip_to). put_var_ref_check (a let a closure
-   writes) makes ADDVRC, which checks the variable after the add as the
-   old loop does: a failed check is named at the old pc of the store, by
+   writes) makes ADDVRC, which checks the variable after the add as QuickJS's
+   interpreter does: a failed check is named at the old pc of the store, by
    the pcmap entry one before the end of ADDVRC. */
 static BOOL rv_add_var_ref(RVPass *s)
 {
@@ -207,8 +207,8 @@ static void rv_put_loc_check(RVPass *s, int op, int slot)
         rv_put_loc_check(s, RV_PUTLCI, rv_loc(s, get_u16(p + 1)));
         break;
     case OP_set_loc_check:
-        /* the check of the local (CHKLW, the error of the old loop), then
-           set_loc: the value stays on the stack, owned there across the
+        /* the check of the local (CHKLW, the error of QuickJS's interpreter),
+           then set_loc: the value stays on the stack, owned there across the
            check, and no entry is added to it, as the old instruction adds
            none to stack_size. A function has it where tdz_checks of
            quickjs.c keeps the check of an assignment whose value is read
@@ -288,10 +288,10 @@ static no_inline int rv_fclosure(JSContext *ctx, JSValue *F, const uint8_t *ip)
 }
 
 /* the error of a check that failed, ip at the operands of PUTVRC, GETVRC,
-   GETLC, GETLCT, PUTLC or PUTLCI: the ReferenceError of the old loop's handler,
+   GETLC, GETLCT, PUTLC or PUTLCI: the ReferenceError of QuickJS's handler,
    and the value a put took freed. The this of a derived constructor
-   (GETLCT) is thrown in the context of its caller, as the old loop throws
-   it (rv_caller_ctx). */
+   (GETLCT) is thrown in the context of its caller, as QuickJS's interpreter
+   throws it (rv_caller_ctx). */
 static no_inline void rv_check_throw(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVFunc *rf = ((RVHeader *)F)->rf;
@@ -342,8 +342,8 @@ static no_inline void rv_close_loc(JSContext *ctx, JSValue *F, int idx)
         }                                                               \
     } while (0)
 
-/* the slow side of ADDVR and ADDVRC, ip at a b idx16: a + b as the old
-   loop's OP_add, then into the closure variable idx as put_var_ref, or
+/* the slow side of ADDVR and ADDVRC, ip at a b idx16: a + b as
+   QuickJS's OP_add, then into the closure variable idx as put_var_ref, or
    put_var_ref_check for ADDVRC: -2 when that check fails, the sum freed.
    Two strings go through js_add_string_into, which grows the variable's
    string when it is the left operand. */

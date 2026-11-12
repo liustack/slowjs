@@ -1,0 +1,8 @@
+exception TypeError: object is not extensible
+stack     at SF (<eval>:27:48)
+stack     at s4 (<eval>:35:34)
+stack     at <anonymous> (<eval>:42:36)
+stack     at <eval> (<eval>:54:3)
+mem-end obj=198 atom=555 shape=127 prop=977 jsfunc=5 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=189 atom=541 shape=120 prop=957 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,149 @@
+result array 0: [1,2.5,"s",null,null,{},[3,4]]
+result array 1: [1,2.5,"s",null,null,{},[3,4]]
+result empty 0: "0"
+result empty 1: "0"
+result holes 0: [1,null,3]
+result holes 1: [1,null,3]
+result sum 0: 6.5
+result sum 1: 6.5
+result string 0: ["a","b","😀","c"]
+result string 1: ["a","b","😀","c"]
+result map 0: [["a",1],["b",2]]
+result map 1: [["a",1],["b",2]]
+result map keys 0: "a,b1,2"
+result map keys 1: "a,b1,2"
+result set 0: [1,2,3.5,"x",null,null]
+result set 1: [1,2,3.5,"x",null,null]
+result gen finally
+result generator 0: ["g0","g1","g2"]
+result gen finally
+result generator 1: ["g0","g1","g2"]
+result nested 0: ["1x","1y","2x","2y"]
+result nested 1: ["1x","1y","2x","2y"]
+result break array 0: [1,2,2]
+result break array 1: [1,2,2]
+result gen finally
+result break generator 0: ["g0","g1",2]
+result gen finally
+result break generator 1: ["g0","g1",2]
+result next0
+result next1
+result return2
+result break by hand 0: ["v1",1]
+result next0
+result next1
+result return2
+result break by hand 1: ["v1",1]
+result next0
+result next1
+result break no return 0: ["v1",1]
+result next0
+result next1
+result break no return 1: ["v1",1]
+result next0
+result next1
+result return2
+result break return throws 0 threw Error: return 2
+result next0
+result next1
+result return2
+result break return throws 1 threw Error: return 2
+result next0
+result next1
+result return2
+result break return not object 0 threw TypeError: not an object
+result next0
+result next1
+result return2
+result break return not object 1 threw TypeError: not an object
+result next0
+result next1
+result next2
+result to the end 0: ["v1","v2",2]
+result next0
+result next1
+result next2
+result to the end 1: ["v1","v2",2]
+result body throws 0 threw TypeError: at 2
+result body throws 1 threw TypeError: at 2
+result gen finally
+result body throws generator 0 threw TypeError: at g1
+result gen finally
+result body throws generator 1 threw TypeError: at g1
+result next0
+result next1
+result return2
+result body throws by hand 0 threw TypeError: at v2
+result next0
+result next1
+result return2
+result body throws by hand 1 threw TypeError: at v2
+result next0
+result next1
+result return2
+result body throws return throws 0 threw TypeError: at v2
+result next0
+result next1
+result return2
+result body throws return throws 1 threw TypeError: at v2
+result next0
+result next1
+result next throws 0 threw Error: next 1
+result next0
+result next1
+result next throws 1 threw Error: next 1
+result under 0 threw TypeError: at 2
+result under 1 threw TypeError: at 2
+result not iterable 0 threw TypeError: value is not iterable
+result not iterable 1 threw TypeError: value is not iterable
+result null 0 threw TypeError: cannot read property 'Symbol.iterator' of null
+result null 1 threw TypeError: cannot read property 'Symbol.iterator' of null
+result no next 0 threw TypeError: not a function
+result no next 1 threw TypeError: not a function
+result next not object 0 threw TypeError: iterator must return an object
+result next not object 1 threw TypeError: iterator must return an object
+result get iterator
+result getter iterator 0: [7,8]
+result get iterator
+result getter iterator 1: [7,8]
+result return in loop 0: [[2],null]
+result return in loop 1: [[2],null]
+result gen finally
+result return in loop generator 0: ["g1"]
+result gen finally
+result return in loop generator 1: ["g1"]
+result next0
+result next1
+result return2
+result return in loop by hand 0: ["v2"]
+result next0
+result next1
+result return2
+result return in loop by hand 1: ["v2"]
+result next0
+result next1
+result return2
+result return in loop return throws 0 threw Error: return 2
+result next0
+result next1
+result return2
+result return in loop return throws 1 threw Error: return 2
+result next0
+result next1
+result return2
+result return in loop return not object 0 threw TypeError: not an object
+result next0
+result next1
+result return2
+result return in loop return not object 1 threw TypeError: not an object
+result next0
+result gen finally
+result return1
+result return in two loops 0: ["v1","g2"]
+result next0
+result gen finally
+result return1
+result return in two loops 1: ["v1","g2"]
+mem-end obj=202 atom=547 shape=141 prop=974 jsfunc=0 cfunc=139 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=202 atom=547 shape=141 prop=974 jsfunc=0 cfunc=139 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

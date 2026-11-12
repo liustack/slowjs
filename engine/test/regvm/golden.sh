@@ -4,21 +4,26 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# The goldens of the old loop, for when there is one loop only: what each
-# test gave with the old loop, recorded while both loops exist, and a run of
-# the register loop against it.
+# The register loop against the goldens of the old loop: what each test gave
+# with the old loop, recorded at the last commit that had it (deb70815,
+# before the deletion of faa571ce), where the two loops agreed.
 #
-#   engine/test/regvm/golden.sh [-record | -update] [-inject] [-j N] [-dir G] [MODE]
+#   engine/test/regvm/golden.sh [-update] [-inject] [-j N] [-dir G] [MODE]
 #
-# Without -record it checks: corpus.sh -golden G/corpus (every case of the
-# corpus and the unit programs), rvgen check of G/seeds/MODE.txt (1,000 fixed
-# seeds of each mode of the generator, frozen in internal/rvgen/v1) and, with
-# -inject, inject.sh -max 200 -golden G/inject on engine/test/regvm/js and
-# corpus.
-# -record writes G again from the old loop, where the two loops agree (a case
-# where they differ is listed as NORECORD and left out). -update writes a
-# golden that differs from the run again from the run (corpus only): read
-# the diff before it goes into a commit.
+# It checks: corpus.sh -golden G/corpus (every case of the corpus and the
+# unit programs), rvgen check of G/seeds/MODE.txt (1,000 fixed seeds of each
+# mode of the generator, frozen in internal/rvgen/v1) and, with -inject,
+# inject.sh -max 200 -golden G/inject on engine/test/regvm/js and corpus (the
+# places of the throws injected there, the old loop's run with each).
+# -update writes a golden that differs from the run, or is missing, again
+# from the run (corpus, units and, with -inject, the places of a script):
+# read the diff before it goes into a commit.
+#
+# A case with no golden is a difference, so that a script added later
+# cannot pass with nothing to be compared with. Its golden comes from Node
+# 24 (rvgen node, or the output of the script under Node written by hand)
+# or from -update once its output is read and found right. Then it says how
+# many cases have none.
 #
 # G is engine/test/regvm/golden by default. MODE is a mode of build.sh
 # (default plain), built already: engine/test/regvm/build.sh MODE. -inject
@@ -31,60 +36,51 @@ here=$(cd "$(dirname "$0")" && pwd)
 test=$(dirname "$here")
 root=$(dirname "$(dirname "$test")")
 g=$here/golden
-record=
 update=
 inject=
 jobs=2
-seeds=1000
 while [ $# -gt 0 ]; do
 	case $1 in
-	-record) record=1; shift ;;
 	-update) update=1; shift ;;
 	-inject) inject=1; shift ;;
 	-j) jobs=$2; shift 2 ;;
 	-dir) g=$2; shift 2 ;;
+	-*) echo "usage: golden.sh [-update] [-inject] [-j N] [-dir G] [MODE]" >&2; exit 2 ;;
 	*) break ;;
 	esac
 done
 mode=${1:-plain}
-if [ -n "$record" ] && [ -n "$update" ]; then
-	echo "usage: golden.sh [-record | -update] [-inject] [-j N] [-dir G] [MODE]" >&2
-	exit 2
-fi
 bin=$test/out/$mode/rvdiff
 [ -x "$bin" ] || { echo "golden.sh: $bin is missing: run engine/test/regvm/build.sh $mode" >&2; exit 2; }
 # a build of the tree now (see engine/test/stamp.sh): inject.sh checks its own
 . "$test/stamp.sh"
 stamp_check "$(dirname "$test")" "$test/out/$mode" || exit 2
+[ -d "$g" ] || { echo "golden.sh: no goldens in $g" >&2; exit 2; }
+g=$(cd "$g" && pwd)
 # a built rvgen when RVGEN names one
 rvgen=${RVGEN:-$test/out/rvgen}
 [ -n "${RVGEN:-}" ] || (cd "$root" && go build -o "$rvgen" ./internal/rvgen/cmd/rvgen)
-mkdir -p "$g"
-g=$(cd "$g" && pwd)
 
+# the output of every check, live and in $log, which is read below for the
+# cases that have no golden
+log=$test/out/golden-$mode.log
+: > "$log"
 status=0
-if [ -n "$record" ]; then
-	rm -rf "$g/corpus" "$g/seeds"
-	"$here/corpus.sh" -j "$jobs" -record "$g/corpus" "$mode" || status=1
-	mkdir -p "$g/seeds"
-	for m in core full wide; do
-		f=
-		[ $m = core ] && f=-core
-		[ $m = wide ] && f=-wide
-		"$rvgen" record -rvdiff "$bin" $f -seed 1 -n $seeds -j "$jobs" "$g/seeds/$m.txt" || status=1
-	done
-	if [ -n "$inject" ]; then
-		rm -rf "$g/inject"
-		"$here/inject.sh" -j "$jobs" -max 200 -record "$g/inject" "$test/out/inject-$mode" "$here/js" "$here/corpus" || status=1
-	fi
-	exit $status
-fi
-
-"$here/corpus.sh" -j "$jobs" -golden "$g/corpus" ${update:+-update} "$mode" || status=1
+check() {
+	{ "$@" 2>&1 && echo 0 > "$log.rc" || echo $? > "$log.rc"; } | tee -a "$log"
+	[ "$(cat "$log.rc")" = 0 ] || status=1
+	rm -f "$log.rc"
+}
+check "$here/corpus.sh" -j "$jobs" -golden "$g/corpus" ${update:+-update} "$mode"
 for m in core full wide; do
-	"$rvgen" check -rvdiff "$bin" -j "$jobs" "$g/seeds/$m.txt" || status=1
+	check "$rvgen" check -rvdiff "$bin" -j "$jobs" "$g/seeds/$m.txt"
 done
 if [ -n "$inject" ]; then
-	"$here/inject.sh" -j "$jobs" -max 200 -golden "$g/inject" "$test/out/inject-$mode" "$here/js" "$here/corpus" || status=1
+	check "$here/inject.sh" -j "$jobs" -max 200 -golden "$g/inject" ${update:+-update} "$test/out/inject-$mode" "$here/js" "$here/corpus"
+fi
+missing=$(grep -c ": no golden" "$log" || true)
+if [ "$missing" -gt 0 ]; then
+	echo "golden.sh: $missing cases have no golden (see $log): each takes its golden from Node 24 or from -update once its output is read" >&2
+	status=1
 fi
 exit $status

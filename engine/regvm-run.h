@@ -114,13 +114,13 @@ static force_inline void rv_put(JSContext *ctx, JSValue *F, int d, JSValue v)
     }
 }
 
-/* the throw flags of a store made by the frame F, for what the old loop
-   passes as JS_PROP_THROW_STRICT. That flag asks is_strict_mode, which reads
-   the mode of rt->current_stack_frame, and a frame of the register loop has
-   no JSStackFrame of its own: the sf of the entry stands for every frame
-   above it, strict or sloppy. So a store throws by the mode of the function
-   that makes it, read here in the slow side, and nothing is stored on a
-   call or a return. No handler passes JS_PROP_THROW_STRICT. */
+/* the throw flags of a store made by the frame F, for what QuickJS's
+   interpreter passes as JS_PROP_THROW_STRICT. That flag asks is_strict_mode,
+   which reads the mode of rt->current_stack_frame, and a frame of the register
+   loop has no JSStackFrame of its own: the sf of the entry stands for every
+   frame above it, strict or sloppy. So a store throws by the mode of the
+   function that makes it, read here in the slow side, and nothing is stored on
+   a call or a return. No handler passes JS_PROP_THROW_STRICT. */
 static force_inline int rv_throw_flags(JSValue *F)
 {
     return (((RVHeader *)F)->rf->b->js_mode & JS_MODE_STRICT) ? JS_PROP_THROW : 0;
@@ -208,7 +208,7 @@ static no_inline JSValue *rv_entry_extra(JSContext *ctx, RVFunc *rf, JSValue *W,
 
 /* frees the extra arguments below func of the frame F, whose dst has
    RV_DST_EXTRA, then the reference to func below them (regvm.h): after the
-   frame's own slots, as the old loop's caller frees its argv after the
+   frame's own slots, as QuickJS's caller frees its argv after the
    call. That reference keeps rf alive while its count and place are read,
    when the frame's own func slot held the last other one. */
 static no_inline void rv_free_extra(JSContext *ctx, JSValue *F)
@@ -275,7 +275,7 @@ static inline const uint8_t *rv_catch_target(const uint8_t *end)
 }
 
 /* the stack of the current exception, if it needs one, with the frame F
-   at pc on top: what the old loop does at its exception label */
+   at pc on top: what QuickJS's interpreter does at its exception label */
 static void rv_backtrace(JSContext *ctx, JSStackFrame *sf, JSValue *F,
                          const uint8_t *pc)
 {
@@ -344,7 +344,7 @@ static no_inline const uint8_t *rv_unwind(JSContext *ctx, JSStackFrame *sf,
                 continue;
             }
             /* the jump to the catch counts a poll and reads the interrupt
-               flag, as the old loop's. An interrupt here replaces the
+               flag, as QuickJS's. An interrupt here replaces the
                exception and goes on with the walk, named where the pcmap
                entry at the end of the CATCH says (regvm-ops-except.h). */
             poll_count(POLL_WEIGHT);
@@ -455,7 +455,8 @@ static no_inline void rv_inj_new(JSContext *ctx, JSValue *F, const uint8_t *pc)
     rv_inj_place = rv_inj_armed;
     rv_inj_frame = ctx->rt->current_stack_frame;
     rv_inj_op = rf->code[off];
-    /* the old loop can throw the same when it is the instruction itself */
+    /* QuickJS's interpreter can throw the same when it is the instruction
+       itself */
     own = m->hooks == RV_HOOK_OWN || (m->hooks == RV_HOOK_OWN_POLL && rv_inj_armed == 1);
     if (first && own)
         snprintf(rv_inj_key, sizeof(rv_inj_key), "at %u %u %u",
@@ -526,8 +527,8 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
 #define RV_K(i) (((RVHeader *)F)->k[(i)])
 /* the reading of the interrupt flag of a conditional jump, with pc at the
    end of its instruction and before it moves: an interrupt leaves pc where
-   the pcmap names what the jump did, as the old loop reads the flag once
-   it has jumped or not (rv_jump_throws in regvm-pass.h). taken: it jumps.
+   the pcmap names what the jump did, as QuickJS's interpreter reads the flag
+   once it has jumped or not (rv_jump_throws in regvm-pass.h). taken: it jumps.
    own: the instruction can throw by itself, at its end. Nothing of it runs
    while no interrupt is pending. */
 #define RV_JUMP_POLL(taken, own) do {                                   \

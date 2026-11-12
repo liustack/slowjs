@@ -1,0 +1,19 @@
+result once 12
+result 10,21,32
+result got 5
+result set 8
+result B12
+result call C1
+result apply A12
+result reflect r
+result trap target p
+result 3,2,1
+result [2,{"a":3}]
+result a<b1>c
+result cross 90 back 7!
+result realm false true
+result TypeError false
+result job j
+mem-end obj=387 atom=549 shape=246 prop=1921 jsfunc=0 cfunc=262 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=205 atom=549 shape=130 prop=992 jsfunc=0 cfunc=141 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

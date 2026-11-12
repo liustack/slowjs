@@ -1,0 +1,4 @@
+result 1,0,d,none,-1,2,0,d,none,-1,3,0,d,none,-1,4,0,d,none,-1,2,0,d,none,-1,3,0,d,none,-1,0,3,d,ex,-1,0,2,d,none,-1,0,10,d,none,-1,0,0,P,none,-1,0,0,Q,none,-1,0,0,d,one,-1,0,0,d,two,-1,0,0,d,none,-1,0,0,d,none,-1,0,0,d,none,-1,0,0,d,none,-1,0,0,d,none,-1,0,0,d,none,0,0,0,d,none,0,0,0,d,none,1,0,0,d,none,2,0,0,d,none,-1
+mem-end obj=188 atom=540 shape=119 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=540 shape=119 prop=943 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

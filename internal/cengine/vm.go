@@ -191,7 +191,6 @@ func New(o Options) (_ *VM, err error) {
 		})
 		return nil, fmt.Errorf("cengine: no memory for a shape cache of %d shapes (%d blocks left)", DefaultShapeCache, leaked)
 	}
-	regvmFromEnv(v)
 	handed = true
 	return v, nil
 }

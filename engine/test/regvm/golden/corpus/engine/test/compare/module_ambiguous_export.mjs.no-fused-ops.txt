@@ -1,0 +1,14 @@
+result same binding: bar,foo,inc 1
+result same binding, two names: foo,other 11
+result spec: same namespace: ns true
+result two foo: bar,inc
+result two foo, one imported: 
+result own export wins: ns 1
+result two namespaces: 
+result live binding: 222
+result amb_import_bad SyntaxError
+result amb_two_foo loads bar,inc
+result amb_same_binding loads bar,foo,inc
+mem-end obj=234 atom=608 shape=128 prop=993 jsfunc=22 cfunc=130 array=3 fast_array=3 elements=11 binary=0
+mem-gc obj=234 atom=608 shape=128 prop=993 jsfunc=22 cfunc=130 array=3 fast_array=3 elements=11 binary=0
+--- status exit 0

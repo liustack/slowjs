@@ -50,20 +50,18 @@
    than a test has time for is sampled by site, so that an instruction run
    a few times is not lost among the runs of a hot loop.
 
-   It records where that was: the function (its number among the functions
-   the run made, in the order they were made, which is the same with the
-   register loop off: the place where a function is defined does not tell
-   two functions apart, every class field initializer is defined at 1:1),
-   the old instruction of the register instruction, and how many times that
-   old instruction ran so far in either loop. With the register
-   loop off, the old loop throws the same error at the dispatch of the same
-   old instruction that many runs in, so that the two runs can be compared
-   in full. That is defined when the register instruction is the first one
-   of its old instruction (an old instruction may give more than one) and
-   the place is the instruction itself, not the interrupt of a conditional
-   jump, which the old loop reads after it has jumped, and not a case of a
-   switch on strings, which the old loop runs in the dispatch of the case
-   before it; for the others only the first run is made ("nokey"). */
+   It records where that was, as "at FUNC POS K": the function (its number
+   among the functions the run made, in the order they were made: the place
+   where a function is defined does not tell two functions apart, every
+   class field initializer is defined at 1:1), the old instruction of the
+   register instruction, and how many times that old instruction ran so
+   far. The key names the same place in every run of the script, and the
+   goldens of inject.sh hold it. It is given when the register instruction
+   is the first one of its old instruction (an old instruction may give
+   more than one) and the place is the instruction itself, not the
+   interrupt of a conditional jump, which QuickJS's interpreter read after
+   it had jumped, and not a case of a switch on strings, which it ran in
+   the dispatch of the case before it. For the others the key is "nokey". */
 
 #ifdef RV_INJECT
 
@@ -177,27 +175,25 @@ static RVInjCount *rv_inj_count(uint32_t func, int pos)
 }
 
 /* asks for an injection: the n-th place, or the j-th place of the
-   site number site, 0 for none. func, pos and k asked the old loop to
-   throw the same: it is gone, and they are not read. */
-void JS_RegvmInject(long n, unsigned site, long j, unsigned func, int pos, long k)
+   site number site, 0 for none */
+void JS_RegvmInject(long n, unsigned site, long j)
 {
     rv_inj_n = site ? 0 : n;
     rv_inj_site = site;
     rv_inj_site_j = j;
-    (void)func;
-    (void)pos;
-    (void)k;
     rv_inj_any = n > 0 || site > 0;
 }
 
-/* what happened: "at FUNC POS K" when the register loop threw where
-   the old loop can throw too, "nokey" when it threw where it cannot, "old"
-   when the old loop threw, "none SEEN SITES" when nothing threw, SEEN the
+/* what happened: "at FUNC POS K" when the register loop threw at a place
+   that has a key, "nokey" when it threw at one that has none, "none SEEN
+   SITES" when nothing threw, SEEN the
    places where an instruction could throw that ran and SITES the old
    instructions they are at, "real" when the instruction
    threw by itself first, "skip" when it had no place to fail, and "miss
    NAME" when the instruction NAME ran to its end with no hook taken,
-   "outside NAME" when a hook of JS it ran was taken for it */
+   "outside NAME" when a hook of JS it ran was taken for it. "old" was
+   the result when QuickJS's interpreter threw: every throw of the test
+   now writes its own result, so it is not given. */
 const char *JS_RegvmInjectResult(void)
 {
     if (rv_inj_armed) {

@@ -4,13 +4,13 @@
 // root of this repository.
 
 // Package v1 is rvgen frozen as it was when the goldens of the fuzz seeds
-// were recorded from the old loop (engine/test/regvm/golden/fuzz): the same
-// seed must make the same program for good, so this copy is never changed.
-// New shapes go into package rvgen.
+// were recorded from the old loop (engine/test/regvm/golden/seeds, see
+// rvgen check): the same seed must make the same program for good, so this
+// copy is never changed. New shapes go into package rvgen.
 //
-// Package rvgen makes small random JavaScript programs for comparing the two
-// interpreter loops of the engine (the old loop and the register loop of
-// engine/regvm.h): the same program must give the same output with the
+// Package rvgen made small random JavaScript programs for comparing the two
+// interpreter loops the engine had (the old loop and the register loop of
+// engine/regvm.h): the same program had to give the same output with the
 // register loop off and on.
 //
 // A program is one strict function expression called at once, so that its

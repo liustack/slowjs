@@ -21,7 +21,7 @@
      add_loc, the checks of let and const, set_loc_uninitialized) are read
      here when the local is far (rv_wide_one): the value goes through the
      scratch slot of the frame, the one past its stack, and CHKLW makes the
-     check of the TDZ with the message of the old loop;
+     check of the TDZ with the message of QuickJS's interpreter;
    - a jump of a function whose code is too long for its off16 goes through
      an island after it, a JMPW with an off32 (rv_islands);
    - a frame with so many captured locals that their var_refs would push

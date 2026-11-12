@@ -34,7 +34,7 @@ read_when:
 | `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
 | 以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完。字节码版本 8 | Unreleased | [c-engine.md](c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case) |
 | 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | Unreleased | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
-| 不带旧循环构建（`JS_NO_OLD_LOOP`）时，寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#去掉旧循环后一个函数的上限) |
+| 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 
 ## 上游 QuickJS 的提交
 

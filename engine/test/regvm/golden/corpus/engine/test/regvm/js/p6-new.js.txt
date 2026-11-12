@@ -1,0 +1,138 @@
+result case 0: 6
+result case 1: 14
+result case 2: ,,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,,10,43
+result case 7: 1,2,1,1,6
+result case 8: 19
+result case 9: 3
+result case 10: Sub,Base
+result case 11: bound4
+result case 12: true
+result case 13: 11
+result case 14: 4
+result case 15: m,TypeError,4
+result case 16: 10
+result case 17: 12
+result case 18: true,1,5,2
+result case 19: 4
+result case 20: undefined
+result case 21: 5
+result case 22: 5
+result case 23: 1
+result case 24: 5350
+result throwing 0: Error: boom 1
+result throwing 1: Error: boom 1
+result throwing 2: Error: boom 1
+result throwing 3: TypeError: derived class constructor must return an object or undefined
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: TypeError: arrow is not a constructor
+result throwing 6: TypeError: arrow is not a constructor
+result throwing 7: TypeError: not a function
+result throwing 8: TypeError: not a function
+result throwing 9: TypeError: max is not a constructor
+result throwing 10: TypeError: BigInt is not a constructor
+result throwing 11: TypeError: Symbol is not a constructor
+result throwing 12: TypeError: gen is not a constructor
+result throwing 13: TypeError: af is not a constructor
+result throwing 14: TypeError: not a function
+result throwing 15: TypeError: not a constructor
+result throwing 16: TypeError: parse is not a constructor
+result throwing 17: TypeError: class constructors must be invoked with 'new'
+result throwing 18: TypeError: class constructors must be invoked with 'new'
+result throwing 19: TypeError: cannot read property 'nope' of undefined
+result case 0: 6
+result case 1: 14
+result case 2: ,,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,,10,43
+result case 7: 1,2,1,1,6
+result case 8: 19
+result case 9: 3
+result case 10: Sub,Base
+result case 11: bound4
+result case 12: true
+result case 13: 11
+result case 14: 4
+result case 15: m,TypeError,4
+result case 16: 10
+result case 17: 12
+result case 18: true,1,5,2
+result case 19: 4
+result case 20: undefined
+result case 21: 5
+result case 22: 5
+result case 23: 1
+result case 24: 5350
+result throwing 0: Error: boom 2
+result throwing 1: Error: boom 2
+result throwing 2: Error: boom 2
+result throwing 3: TypeError: derived class constructor must return an object or undefined
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: TypeError: arrow is not a constructor
+result throwing 6: TypeError: arrow is not a constructor
+result throwing 7: TypeError: not a function
+result throwing 8: TypeError: not a function
+result throwing 9: TypeError: max is not a constructor
+result throwing 10: TypeError: BigInt is not a constructor
+result throwing 11: TypeError: Symbol is not a constructor
+result throwing 12: TypeError: gen is not a constructor
+result throwing 13: TypeError: af is not a constructor
+result throwing 14: TypeError: not a function
+result throwing 15: TypeError: not a constructor
+result throwing 16: TypeError: parse is not a constructor
+result throwing 17: TypeError: class constructors must be invoked with 'new'
+result throwing 18: TypeError: class constructors must be invoked with 'new'
+result throwing 19: TypeError: cannot read property 'nope' of undefined
+result case 0: 6
+result case 1: 14
+result case 2: ,,3
+result case 3: undefined
+result case 4: 24
+result case 5: 11
+result case 6: 1.5str,,10,43
+result case 7: 1,2,1,1,6
+result case 8: 19
+result case 9: 3
+result case 10: Sub,Base
+result case 11: bound4
+result case 12: true
+result case 13: 11
+result case 14: 4
+result case 15: m,TypeError,4
+result case 16: 10
+result case 17: 12
+result case 18: true,1,5,2
+result case 19: 4
+result case 20: undefined
+result case 21: 5
+result case 22: 5
+result case 23: 1
+result case 24: 5350
+result throwing 0: Error: boom 3
+result throwing 1: Error: boom 3
+result throwing 2: Error: boom 3
+result throwing 3: TypeError: derived class constructor must return an object or undefined
+result throwing 4: ReferenceError: this is not initialized
+result throwing 5: TypeError: arrow is not a constructor
+result throwing 6: TypeError: arrow is not a constructor
+result throwing 7: TypeError: not a function
+result throwing 8: TypeError: not a function
+result throwing 9: TypeError: max is not a constructor
+result throwing 10: TypeError: BigInt is not a constructor
+result throwing 11: TypeError: Symbol is not a constructor
+result throwing 12: TypeError: gen is not a constructor
+result throwing 13: TypeError: af is not a constructor
+result throwing 14: TypeError: not a function
+result throwing 15: TypeError: not a constructor
+result throwing 16: TypeError: parse is not a constructor
+result throwing 17: TypeError: class constructors must be invoked with 'new'
+result throwing 18: TypeError: class constructors must be invoked with 'new'
+result throwing 19: TypeError: cannot read property 'nope' of undefined
+mem-end obj=229 atom=619 shape=154 prop=1076 jsfunc=16 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=200 atom=593 shape=138 prop=1014 jsfunc=0 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

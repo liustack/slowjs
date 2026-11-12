@@ -526,18 +526,14 @@ struct JSRuntime {
        ran out of memory: its call throws out of memory (JS_CallInternal)
        instead of a second try */
     struct JSFunctionBytecode *rv_oom_b;
-    /* the reasons of rv_cannot_run, each with the first function it
-       named, and how often each was thrown (JS_RegvmCannotRun) */
-    char rv_cannot[32][160];
-    int rv_cannot_n[32];
     /* JS_RegvmStat: functions converted, refused, entries of the loop, and
        the opcode and offset of the last refusal */
     int rv_stat[5];
     /* the bytes of stack a frame of JS_RegvmRun takes before its check, as
        call_frame has them for JS_CallInternal (rv_measure_frame) */
     long rv_frame;
-    /* the counts of RV_STATS (JS_RegvmStat 10 to 15) */
-    int64_t rv_count[6];
+    /* the counts of RV_STATS (JS_RegvmStat 10 and 13 to 15) */
+    int64_t rv_count[4];
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -1397,13 +1393,12 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
                                      JSValueConst this_obj, JSValue new_target,
                                      int argc, JSValueConst *argv);
 static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s);
-/* why the register loop cannot run a function (rv_cannot_run, regvm.h) */
-enum { RV_NO_REFUSED, RV_NO_CONSTRUCTOR, RV_NO_ROOM };
-static no_inline JSValue rv_cannot_run(JSContext *ctx, struct JSFunctionBytecode *b, int why);
+/* the call of a function the pass refused (regvm.h) */
+static no_inline JSValue rv_refused(JSContext *ctx, struct JSFunctionBytecode *b);
 /* counts for the measurements of design 6.2, in a native build with
-   -DRV_STATS: 0 dispatches of the register loop, 1 of the old loop, 2 calls
-   from the old loop into the register loop, 3 from C (JS_Call), 4 calls out
-   of the register loop to a function of the old loop, 5 to a C function. Also
+   -DRV_STATS: 0 dispatches of the register loop, 1 calls into it from C
+   (JS_Call), 2 calls out of it to a function of bytecode (through
+   JS_CallInternal, not run in the same loop), 3 to a C function. Also
    the frames set up for each function (RVFunc.runs, JS_RegvmFuncStat) and the
    dispatches of each register op (JS_RegvmStat 1000 + op, JS_RegvmOpName) */
 #ifdef RV_STATS
@@ -1424,9 +1419,11 @@ static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_ob
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst this_obj,
                                       int argc, JSValueConst *argv, int flags);
-static JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
-                               JSValueConst this_obj, JSValueConst new_target,
-                               int argc, JSValue *argv, int flags);
+/* never inlined: js_measure_call_frame measures its frame (call_frame) by a
+   call, and inlined there it would measure 0 */
+static no_inline JSValue JS_CallInternal(JSContext *ctx, JSValueConst func_obj,
+                                         JSValueConst this_obj, JSValueConst new_target,
+                                         int argc, JSValue *argv, int flags);
 static JSValue JS_CallConstructorInternal(JSContext *ctx,
                                           JSValueConst func_obj,
                                           JSValueConst new_target,
@@ -3422,9 +3419,11 @@ size_t JS_FreeRuntime(JSRuntime *rt)
 
 /* rt->call_frame: the stack left here less what JS_CallInternal finds left
    at its check, called from here. Never inlined, so that the call starts
-   from a frame of its own. It cannot fail. The flags are read from memory,
-   so that the compiler cannot see that the call only measures and inline
-   JS_CallInternal here, which would measure nothing. */
+   from a frame of its own. It cannot fail. JS_CallInternal is no_inline:
+   with the arguments here only its test of the tag is left, small enough to
+   inline, and inlined it would measure 0. The flags are read from memory, so
+   that the compiler cannot make a copy of JS_CallInternal for them with a
+   frame of its own either. */
 static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
@@ -7043,9 +7042,9 @@ static no_inline JSValue JS_ConcatStringAppend(JSContext *ctx, JSValue op1, JSVa
    after, with nothing run between, op1 and op2 strings or ropes: when op1
    is the string of x, at least JS_STRING_APPEND_MIN characters long, with
    a reference count of 2 (x's and the caller's), JS_ConcatStringAppend
-   grows it, else JS_ConcatString. Takes op1 and op2. The old loop calls it
-   from js_add_string_store once it found x, the register loop with the
-   local, argument or closure variable it writes (regvm-ops-basic.h). */
+   grows it, else JS_ConcatString. Takes op1 and op2. The register loop
+   calls it with the local, argument or closure variable it writes
+   (regvm-ops-basic.h). */
 static JSValue js_add_string_into(JSContext *ctx, JSValue op1, JSValue op2,
                                   const JSValue *pv)
 {
@@ -20644,10 +20643,10 @@ static __exception int js_operator_typeof(JSContext *ctx, JSValueConst op1)
     return atom;
 }
 
-/* flags: JS_PROP_THROW_STRICT in the old loop, which asks is_strict_mode,
-   the mode of rt->current_stack_frame. The register loop passes the mode of
-   its own frame instead (JS_PROP_THROW or 0), since its frames have no
-   JSStackFrame of their own (rv_throw_flags, engine/regvm-run.h). */
+/* flags: the register loop passes the mode of its own frame (JS_PROP_THROW
+   or 0), not JS_PROP_THROW_STRICT, whose is_strict_mode asks the mode of
+   rt->current_stack_frame: its frames have no JSStackFrame of their own
+   (rv_throw_flags, engine/regvm-run.h). */
 static __exception int js_operator_delete(JSContext *ctx, JSValue *sp, int flags)
 {
     JSValue op1, op2;
@@ -22748,7 +22747,7 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
 /* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
    one of Function.prototype.call and the one of hasOwnProperty: fn is what
    Function.prototype.call calls (the this of the call), call_argv its
-   arguments. The old loop and the register loop (RV_CALL_OUT) call it.
+   arguments. The register loop calls it (RV_CALL_OUT).
    React and the libraries around it test each key of a for in loop this
    way. Only what cannot run script or throw takes this path:
    hasOwnProperty itself, an ordinary object (not exotic, so no proxy or
@@ -22837,14 +22836,14 @@ _Static_assert(JS_TAG_FIRST < 0 && JS_TAG_OBJECT < 0 && JS_TAG_INT >= 0 &&
 #include "regvm-bodies.h"
 
 /* A call of a function of bytecode runs in the register loop (JS_RegvmRun),
-   and a function it cannot run throws an error that names why
-   (rv_cannot_run). The rest is the class dispatch of C functions, bound
+   and one the pass refused, only code no compiler makes, throws
+   (rv_refused). The rest is the class dispatch of C functions, bound
    functions and proxies, and the measure of js_measure_call_frame. A
    generator or async function is resumed by async_func_resume
    (rv_gen_resume). */
-static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
-                               JSValueConst this_obj, JSValueConst new_target,
-                               int argc, JSValue *argv, int flags)
+static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
+                                         JSValueConst this_obj, JSValueConst new_target,
+                                         int argc, JSValue *argv, int flags)
 {
     JSRuntime *rt = caller_ctx->rt;
     JSObject *p;
@@ -22892,7 +22891,7 @@ static JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst func_obj,
             }
         }
         if (unlikely(rf->arg_count < 0))
-            return rv_cannot_run(caller_ctx, b, RV_NO_REFUSED);
+            return rv_refused(caller_ctx, b);
         /* a frame that does not fit in the segment of the register stack
            in use runs on the next one (JS_RegvmRun, rv_run_seg) */
         /* a construct call: new.target in its slot, as
@@ -22926,7 +22925,7 @@ static JSValue js_call(JSContext *ctx, JSValueConst func_obj, JSValueConst this_
                        int argc, JSValueConst *argv)
 {
     if (rv_entry_fast(ctx->rt, func_obj)) {
-        RV_COUNT(ctx->rt, 3);
+        RV_COUNT(ctx->rt, 1);
         return JS_RegvmRun(ctx, func_obj, this_obj, JS_UNDEFINED, argc, argv);
     }
     return JS_CallInternal(ctx, func_obj, this_obj, JS_UNDEFINED,
@@ -23089,7 +23088,7 @@ static JSValue JS_CallConstructorInternal(JSContext *ctx,
        in its slot (engine/regvm-ops-ctor.h) */
     if (b->is_derived_class_constructor) {
         if (rv_entry_fast(ctx->rt, func_obj)) {
-            RV_COUNT(ctx->rt, 3);
+            RV_COUNT(ctx->rt, 1);
             return JS_RegvmRun(ctx, func_obj, JS_UNDEFINED,
                                rv_ctor_new_target(ctx, func_obj, new_target),
                                argc, argv);
@@ -23102,7 +23101,7 @@ static JSValue JS_CallConstructorInternal(JSContext *ctx,
         if (JS_IsException(obj))
             return JS_EXCEPTION;
         if (rv_entry_fast(ctx->rt, func_obj)) {
-            RV_COUNT(ctx->rt, 3);
+            RV_COUNT(ctx->rt, 1);
             ret = JS_RegvmRun(ctx, func_obj, obj,
                               rv_ctor_new_target(ctx, func_obj, new_target),
                               argc, argv);
@@ -26818,11 +26817,11 @@ static void close_scopes(JSParseState *s, int scope, int scope_stop)
     }
 }
 
-/* Without the old loop (JS_NO_OLD_LOOP) every function runs in the
-   register loop, which names a local, an argument, this and the function
-   below its frame with 16 bits signed (RV_FAR_MAX, regvm-func.h): the
-   locals and arguments together, with this, the function and the slot of
-   new.target, are at most RV_FAR_MAX, the one being added counted. */
+/* Every function runs in the register loop, which names a local, an
+   argument, this and the function below its frame with 16 bits signed
+   (RV_FAR_MAX, regvm-func.h): the locals and arguments together, with this,
+   the function and the slot of new.target, are at most RV_FAR_MAX, the one
+   being added counted. */
 #define JS_FRAME_FULL(fd) ((fd)->arg_count + (fd)->var_count + 1 + 3 > RV_FAR_MAX)
 
 /* return the variable index or -1 if error */
@@ -40758,9 +40757,9 @@ static __exception int compute_stack_size(JSContext *ctx,
             goto fail;
     done_insn: ;
     }
-    /* without the old loop a function runs in the register loop, which
-       folds a stack deeper than RV_STACK_FIT into a frame where its catch
-       offsets have RV_FOLD_PINS_MAX temps (regvm-func.h) */
+    /* a function runs in the register loop, which folds a stack deeper than
+       RV_STACK_FIT into a frame where its catch offsets have
+       RV_FOLD_PINS_MAX temps (regvm-func.h) */
     if (s->stack_len_max > RV_STACK_FIT && s->pins_max > RV_FOLD_PINS_MAX) {
         JS_ThrowInternalError(ctx, "stack overflow (op=%d, pc=%d)",
                               bc_buf[s->pins_pos], s->pins_pos);
@@ -43912,8 +43911,8 @@ static JSValue JS_ReadFunctionTag(BCReaderState *s)
     if (bc_get_leb128_int(s, &local_count))
         goto fail;
     /* the compiler writes a variable definition for each argument and
-       local, or none when there are none: the old loop and the register
-       loop read them by those counts */
+       local, or none when there are none: the register loop reads them by
+       those counts */
     if (local_count != bc.arg_count + bc.var_count) {
         JS_ThrowSyntaxError(ctx, "invalid bytecode: %d variable definitions for %d arguments and locals",
                             local_count, bc.arg_count + bc.var_count);

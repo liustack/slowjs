@@ -368,28 +368,22 @@ static void host_vm_free(HostVM *vm)
 }
 
 #ifdef RV_INJECT
-void JS_RegvmInject(long n, unsigned site, long j, unsigned func, int pos, long k);
+void JS_RegvmInject(long n, unsigned site, long j);
 const char *JS_RegvmInjectResult(void);
 
 /* the throw-injection test (engine/regvm-inject.h, engine/test/regvm/inject.sh):
    RV_INJECT=N throws at the N-th place where an instruction of the register
    loop can throw, RV_INJECT_SITE="S J" at the J-th place run at its S-th
-   site, RV_INJECT_AT="at FUNC POS K" at that old instruction of the old
-   loop (of the FUNC-th function the run makes), and RV_INJECT_OUT names the
-   file that gets what happened */
+   site, and RV_INJECT_OUT names the file that gets what happened */
 static void host_inject_start(void)
 {
-    const char *n = getenv("RV_INJECT"), *at = getenv("RV_INJECT_AT");
-    const char *st = getenv("RV_INJECT_SITE");
-    unsigned func = 0, site = 0;
-    int pos = 0;
-    long k = 0, j = 0;
+    const char *n = getenv("RV_INJECT"), *st = getenv("RV_INJECT_SITE");
+    unsigned site = 0;
+    long j = 0;
 
-    if (at && sscanf(at, "at %u %d %ld", &func, &pos, &k) != 3)
-        k = 0;
     if (st && sscanf(st, "%u %ld", &site, &j) != 2)
         site = 0;
-    JS_RegvmInject(n ? atol(n) : 0, site, j, func, pos, k);
+    JS_RegvmInject(n ? atol(n) : 0, site, j);
 }
 
 static void host_inject_end(void)

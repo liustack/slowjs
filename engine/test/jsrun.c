@@ -539,9 +539,8 @@ static int run(const char *path)
                 JS_RegvmStat(ctx, 0), JS_RegvmStat(ctx, 1), JS_RegvmStat(ctx, 2),
                 JS_RegvmStat(ctx, 3), JS_RegvmStat(ctx, 4));
     if (opt_regvm && getenv("RV_STATS"))
-        fprintf(stderr, "regvm: dispatches new %d old %d, calls old>new %d C>new %d new>old %d new>C %d\n",
-                JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 11), JS_RegvmStat(ctx, 12),
-                JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
+        fprintf(stderr, "regvm: dispatches %d, calls C>rv %d rv>bytecode %d rv>C %d\n",
+                JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
     /* as VM.Close does: the kept shapes and the async context can hold the
        context */
     JS_SetShapeCache(ctx, 0);

@@ -149,8 +149,7 @@
                     goto exception;                                         \
             }
 
-/* flags: JS_PROP_THROW_STRICT in the old loop, rv_throw_flags(F) in the
-   register loop (js_operator_delete) */
+/* flags: rv_throw_flags(F) of the register loop (js_operator_delete) */
 #define OP_BODY_delete(ctx, sp, flags, save_pc, exception)                  \
             save_pc;                                                        \
             if (js_operator_delete(ctx, sp, flags))                         \

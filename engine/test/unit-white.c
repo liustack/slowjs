@@ -4562,46 +4562,127 @@ static const struct {
       "  for (v of o.b) s = s + v;\n"
       "  switch (typeof x) { case 'number': s = s + 1; break; case 'string': s = s + 2; break; default: s = s - 1; }\n"
       "  return s + o.a; }; 0", "7" },
+    /* the shapes the pass has tables for: a generator, an async function
+       and an async generator (g, converted, and f, which runs it), new.target
+       and the mapped arguments, constructors (check_ctor, and init_ctor of
+       the default constructor of a derived class), with and a direct eval */
+    { "globalThis.g = function* (x) { 'use strict'; var y = yield x + 1; return x + y; };\n"
+      "globalThis.f = function (x) { var it = g(x); it.next(); return it.next(10).value; }; 0", "13" },
+    { "globalThis.g = async function (x) { 'use strict'; var y = await x; return y + 1; };\n"
+      "globalThis.f = function (x) { g(x).then(function (v) { globalThis.out = v; }); return 0; }; 0", "4" },
+    { "globalThis.g = async function* (x) { 'use strict'; var y = await x; yield y + 1; };\n"
+      "globalThis.f = function (x) { g(x).next().then(function (r) { globalThis.out = r.value; }); return 0; }; 0", "4" },
+    { "globalThis.f = function (x) { arguments[0] = x + 1; return new.target === undefined ? x + arguments.length : 0; }; 0", "5" },
+    { "globalThis.g = class { constructor(x) { this.a = x; } };\n"
+      "globalThis.f = function (x) { return new g(x).a + 1; }; 0", "4" },
+    { "globalThis.g = class extends class { constructor(x) { this.a = x; } } {};\n"
+      "globalThis.f = function (x) { return new g(x).a + 1; }; 0", "4" },
+    { "globalThis.f = function (x) { var o = { y: 1 }; with (o) { x = x + y; } return eval('x + 1'); }; 0", "5" },
 };
 
-/* regvm_convert_case converts f of src with call number fail of the
-   allocator failing, 0 for none. A conversion that could not get a block
-   never ends the process, and the function is not converted in part: it
-   stays unconverted and the next call converts it. Returns the
-   calls of the allocator the conversion made. */
+/* the shapes too long to write out: a stack of 130 entries, which folds
+   (engine/regvm-fold.h), in a function and in a generator that suspends in
+   it, 130 captured locals, which leave no room for the temps (their
+   var_refs on the heap, regvm-ops-wide.h), and 140 locals, whose slots are
+   past -128 (MOVW). 0 when there is no shape i. */
+static int regvm_convert_shape(int i, char *src, size_t cap, char *want, size_t want_cap)
+{
+    size_t len;
+    int k;
+
+    switch (i) {
+    case 0:
+    case 1:
+        if (i == 0)
+            len = snprintf(src, cap, "globalThis.f = function (x) { 'use strict'; return ");
+        else
+            len = snprintf(src, cap, "globalThis.g = function* (x) { 'use strict'; return ");
+        for (k = 0; k < 129; k++)
+            len += snprintf(src + len, cap - len, k == 64 && i == 1 ? "(yield x) + (" : "x + (");
+        len += snprintf(src + len, cap - len, "x");
+        for (k = 0; k < 129; k++)
+            len += snprintf(src + len, cap - len, ")");
+        if (i == 0)
+            snprintf(src + len, cap - len, "; }; 0");
+        else
+            snprintf(src + len, cap - len, "; };\nglobalThis.f = function (x) { var it = g(x); it.next(); return it.next(x).value; }; 0");
+        snprintf(want, want_cap, "390");
+        return 1;
+    case 2:
+    case 3:
+        len = snprintf(src, cap, "globalThis.f = function (x) { 'use strict'; var v0 = x");
+        for (k = 1; k < (i == 2 ? 130 : 140); k++)
+            len += snprintf(src + len, cap - len, ", v%d = x", k);
+        if (i == 2) {
+            len += snprintf(src + len, cap - len, "; return (function () { return v0");
+            for (k = 1; k < 130; k++)
+                len += snprintf(src + len, cap - len, " + v%d", k);
+            snprintf(src + len, cap - len, "; })(); }; 0");
+            snprintf(want, want_cap, "390");
+        } else {
+            snprintf(src + len, cap - len, "; return v0 + v139; }; 0");
+            snprintf(want, want_cap, "6");
+        }
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* regvm_convert_case converts g of src, or f when src sets no g, with call
+   number fail of the allocator failing, 0 for none. A conversion that could
+   not get a block never ends the process, and the function is not converted
+   in part: it stays unconverted and the next call converts it. f(3) then
+   gives want, or globalThis.out does once the jobs have run, when src sets
+   it. Returns the calls of the allocator the conversion made. */
 static int regvm_convert_case(const char *src, const char *want, int fail)
 {
     VM v = vm_new();
-    JSValue g, f, arg, r;
+    JSValue g, f, c, arg, r, out;
+    JSContext *jctx;
     char *t;
     int made = 0, conv;
 
     CHECK(eval_ok(v.ctx, src), "the setup threw: %s", src);
     g = JS_GetGlobalObject(v.ctx);
     f = JS_GetPropertyStr(v.ctx, g, "f");
-    JS_FreeValue(v.ctx, g);
-    conv = white_regvm_convert_failing(v.ctx, f, fail, 1, &made);
+    c = JS_GetPropertyStr(v.ctx, g, "g");
+    if (JS_IsUndefined(c))
+        c = JS_DupValue(v.ctx, f);
+    conv = white_regvm_convert_failing(v.ctx, c, fail, 1, &made);
     if (fail == 0)
         CHECK(conv == 1, "the pass does not convert it (%d), so the case tests nothing: %s", conv, src);
     else
-        CHECK(conv == 0 && JS_RegvmFuncStat(v.ctx, f, 0) == 0, "call %d of %d failing: the conversion gives %d, not a function left unconverted for a later call: %s", fail, made, conv, src);
+        CHECK(conv == 0 && JS_RegvmFuncStat(v.ctx, c, 0) == 0, "call %d of %d failing: the conversion gives %d, not a function left unconverted for a later call: %s", fail, made, conv, src);
     CHECK(!JS_HasException(v.ctx), "call %d failing: the conversion leaves an exception", fail);
     arg = JS_NewInt32(v.ctx, 3);
     r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &arg);
+    while (JS_ExecutePendingJob(v.rt, &jctx) > 0)
+        ;
+    out = JS_GetPropertyStr(v.ctx, g, "out");
+    if (!JS_IsUndefined(out) && !JS_IsException(r)) {
+        JS_FreeValue(v.ctx, r);
+        r = out;
+    } else {
+        JS_FreeValue(v.ctx, out);
+    }
     t = value_text(v.ctx, r);
     CHECK(t && strcmp(t, want) == 0, "call %d failing: f(3) gives %s, not %s: %s", fail, t ? t : "(exception)", want, src);
+    CHECK(JS_RegvmFuncStat(v.ctx, c, 0) == 1, "call %d failing: the function has no register code after it ran (%d): %s", fail, JS_RegvmFuncStat(v.ctx, c, 0), src);
     free(t);
     free(exception_text(v.ctx));
     JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, c);
     JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
     vm_free(&v);
     return made;
 }
 
-/* The scripts of the sweep by number: those of regvm_scripts, then the
-   chains, for each lead a sum of 1 to 60 terms (a function has 64 constants
-   at most), each term an instruction
-   that can throw. 0 when there is no script i. */
+/* The scripts of the sweep by number: those of regvm_scripts, the shapes
+   of regvm_convert_shape, then the chains, for each lead a sum of 1 to 60
+   terms, each term an instruction that can throw. 0 when there is no
+   script i. */
 static int regvm_convert_script(int i, char *src, size_t cap, char *want, size_t want_cap)
 {
     static const char *const lead[] = { "", "x = x + 0;", "var o = { a: x };", "try { x = x + 0; } finally { x = x - 0; }" };
@@ -4615,6 +4696,11 @@ static int regvm_convert_script(int i, char *src, size_t cap, char *want, size_t
         return 1;
     }
     i -= fixed;
+    if (regvm_convert_shape(i, src, cap, want, want_cap))
+        return 1;
+    for (n = 0; regvm_convert_shape(n, src, cap, want, want_cap); n++)
+        ;
+    i -= n;
     if (i >= (int)(sizeof(lead) / sizeof(lead[0])) * nterms)
         return 0;
     n = terms[i % nterms];
@@ -4632,7 +4718,7 @@ static int regvm_convert_script(int i, char *src, size_t cap, char *want, size_t
    that call alone */
 static void regvm_convert_one(int i, int fail)
 {
-    char src[2048], want[32];
+    char src[8192], want[32];
     int n;
 
     failures = 0;
@@ -4666,7 +4752,7 @@ static int regvm_convert_alone(int i, int fail)
 
 static void test_regvm_convert_alloc(void)
 {
-    char src[2048], want[32];
+    char src[8192], want[32];
     int i, st, fail, bad = 0;
 
     for (i = 0; regvm_convert_script(i, src, sizeof(src), want, sizeof(want)); i++) {
@@ -4755,8 +4841,8 @@ static void test_regvm_convert_oom_entries(void)
             cases++;
         }
     }
-    /* the call of f ends before the old loop hook (its depth is over the
-       limit) after its conversion ran out of memory: the next call of f
+    /* the call of f ends before it runs (its depth is over the limit)
+       after its conversion ran out of memory: the next call of f
        converts it, with no stale out of memory error */
     /* the depth where inLoop runs and the call of f is one too deep: f is
        converted there before the depth stops it */
@@ -4799,8 +4885,7 @@ static void test_regvm_convert_oom_entries(void)
        engine/regvm-ops-gen.h), and a call of a generator function resumes
        it up to its first yield (js_generator_function_call): out of memory
        there ends the call with the error, as at the entry of a call, and
-       does not run the body in the old loop. Each allocation of g(3) fails
-       in turn. */
+       does not run the body. Each allocation of g(3) fails in turn. */
     {
         int all = 0, gcases = 0, d;
         for (k = 0; k == 0 || k <= all; k++) {
@@ -4844,7 +4929,7 @@ static void test_regvm_convert_oom_entries(void)
         CHECK(gcases >= 6, "g: only %d of the %d allocations of g(3) leave g unconverted", gcases, all);
         cases += gcases;
         /* the resume of g(3) one call too deep: its conversion runs, then
-           the depth stops it before the old loop hook. When the conversion
+           the depth stops it before it runs. When the conversion
            ran out of memory, no error is left waiting for a later call */
         for (d = 1; d < 16; d++) {
             JSValue g, three = JS_NewInt32(NULL, 3);
@@ -5269,12 +5354,11 @@ static void test_regvm_run_alloc(void)
 }
 
 /* An OP_ret whose value is no return address (code read with JS_ReadObject
-   can have one anywhere) throws and leaves the value where it is, on the
-   stack of the old loop or in its temp of the register loop, for the
-   unwinding to free. The function here makes an object and ends with OP_ret
-   in place of its OP_return: every call throws, in the old loop (the first
-   call, which converts the function) and in the register loop (the others),
-   and none keeps the object. */
+   can have one anywhere) throws and leaves the value where it is, in its
+   temp of the register loop, for the unwinding to free. The function here
+   makes an object and ends with OP_ret in place of its OP_return: every call
+   throws, the first, which converts the function, and the others, and none
+   keeps the object. */
 static void test_regvm_bad_ret(void)
 {
     static const char src[] = "(function (x) { 'use strict'; var a = x + 1; a = a + 2; a = a + 3; return {}; })";
@@ -5335,12 +5419,11 @@ static char *call_text(JSContext *ctx, JSValueConst f)
 }
 
 /* A return address is an int that code read with JS_ReadObject can make
-   and read as any other: OP_ret takes the ints the old loop takes (the end
-   of an old gosub) and refuses the others, and a return address read as a
-   value is the one the old loop makes, in the register loop too. Each
-   function is the code of src with nops in front of one of the codes
-   below: the first call runs in the old loop and converts it, the next ones
-   run in the register loop, and each must give what the first gave.
+   and read as any other: OP_ret takes the ints QuickJS's interpreter takes
+   (the end of an old gosub) and refuses the others, and a return address
+   read as a value is the one QuickJS's interpreter makes. Each function is
+   the code of src with nops in front of one of the codes below: the first
+   call converts it, and each call after it must give what the first gave.
 
      gosub L; push_i16 7; return; L: drop; push_i16 val; ret
      gosub L; push_i16 7; return; L: return */
@@ -5397,7 +5480,7 @@ static void test_regvm_ret_value(void)
             taken++;
         for (i = 0; i < 2; i++) {
             t = call_text(v.ctx, fun);
-            CHECK(t && first && strcmp(t, first) == 0, "val %d, call %d in the register loop: %s, the old loop %s",
+            CHECK(t && first && strcmp(t, first) == 0, "val %d, call %d after the first: %s, the first %s",
                   val, i, t ? t : "(none)", first ? first : "(none)");
             free(t);
         }
@@ -5405,7 +5488,7 @@ static void test_regvm_ret_value(void)
         JS_FreeValue(v.ctx, fun);
     }
     /* the one val of the old return address, and no other */
-    CHECK(taken == 1, "the old loop took %d values", taken);
+    CHECK(taken == 1, "OP_ret took %d values", taken);
     js_free(v.ctx, buf);
     fflush(stdout);
     vm_free(&v);

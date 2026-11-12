@@ -1,0 +1,4 @@
+result [object Promise]
+mem-end obj=1264 atom=614 shape=160 prop=3156 jsfunc=19 cfunc=157 array=4 fast_array=4 elements=1075 binary=0
+mem-gc obj=1262 atom=613 shape=158 prop=3152 jsfunc=18 cfunc=157 array=4 fast_array=4 elements=1075 binary=0
+--- status exit 0

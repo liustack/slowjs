@@ -407,3 +407,219 @@ func syncedAround(f, call string) bool {
 	}
 	return false
 }
+
+// regvmRunText is the C of JS_RegvmRun: its body in engine/regvm-run.h, with
+// the handlers of each op file it includes (the RV_PART_RUN part of each
+// file regvm-areas.h names), comments, strings and line continuations out.
+func regvmRunText(read func(string) (string, error)) (string, error) {
+	run, err := read("regvm-run.h")
+	if err != nil {
+		return "", err
+	}
+	start := strings.Index(run, "\nstatic no_inline JSValue JS_RegvmRun(")
+	if start < 0 {
+		return "", fmt.Errorf("no JS_RegvmRun in regvm-run.h")
+	}
+	end := strings.Index(run[start:], "\n}\n")
+	if end < 0 {
+		return "", fmt.Errorf("no end of JS_RegvmRun")
+	}
+	body := run[start : start+end]
+	areas, err := read("regvm-areas.h")
+	if err != nil {
+		return "", err
+	}
+	var parts []string
+	for _, m := range regexp.MustCompile(`(?m)^#include "(regvm-ops-\w+\.h)"`).FindAllStringSubmatch(areas, -1) {
+		src, err := read(m[1])
+		if err != nil {
+			return "", err
+		}
+		part, ok := runPart(src)
+		if !ok {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	const at = "#define RV_PART RV_PART_RUN\n#include \"regvm-areas.h\"\n"
+	if !strings.Contains(body, at) {
+		return "", fmt.Errorf("JS_RegvmRun does not include the handlers of regvm-areas.h")
+	}
+	body = strings.Replace(body, at, strings.Join(parts, "\n"), 1)
+	body = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(body, "")
+	body = regexp.MustCompile(`//[^\n]*`).ReplaceAllString(body, "")
+	body = regexp.MustCompile(`"(?:[^"\\\n]|\\.)*"`).ReplaceAllString(body, `""`)
+	return strings.ReplaceAll(body, "\\\n", " "), nil
+}
+
+// runPart is the RV_PART_RUN part of an op file: from its #elif to the
+// #elif or #endif of the same #if.
+func runPart(src string) (string, bool) {
+	ls := strings.Split(src, "\n")
+	in, depth := false, 0
+	var out []string
+	for _, l := range ls {
+		d := strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(d, "#if"):
+			depth++
+		case strings.HasPrefix(d, "#endif"):
+			depth--
+			if in && depth == 0 {
+				return strings.Join(out, "\n"), true
+			}
+		case depth == 1 && strings.HasPrefix(d, "#elif"):
+			if in {
+				return strings.Join(out, "\n"), true
+			}
+			in = d == "#elif RV_PART == RV_PART_RUN"
+			continue
+		}
+		if in {
+			out = append(out, l)
+		}
+	}
+	return "", false
+}
+
+// regvmJumps lists what breaks, in body (regvmRunText), the rule of
+// JS_RegvmRun that the poll pass relies on when it leaves the edges into the
+// dispatch without a tick: the function counts at its entry
+// (poll_count_entry before it calls anything or sets pc), and between two
+// counts pc only goes forward. pc moves by a constant step forward (the
+// size of the instruction, *pc++), by a jump of a signed offset off that
+// counts first when off goes back (if (off < 0) poll_count(POLL_WEIGHT)),
+// or at one of the places regvmMoves lists: a call, which RV_CALLOP and
+// NEW count before they move pc, a return, an unwinding to a catch, which
+// rv_unwind counts, a step back to name an instruction for the pcmap,
+// followed at once by goto rv_exception, and the step of RV_CALLOP back to
+// its own start once it has converted the callee, which counts again.
+func regvmJumps(body string) []string {
+	space := regexp.MustCompile(`\s+`)
+	var bad []string
+	entry := strings.Index(body, "\n    poll_count_entry(POLL_WEIGHT);\n")
+	for _, after := range []string{"js_call_checks(", "pc = rf->code;", "pc = rv_gen_enter("} {
+		if i := strings.Index(body, after); entry < 0 || i < 0 || i < entry {
+			bad = append(bad, "poll_count_entry does not come before "+after)
+		}
+	}
+	for _, label := range []string{"#define RV_CALLOP(", " rv_NEW:"} {
+		i := strings.Index(body, label)
+		if i < 0 || !strings.Contains(body[i:min(i+300, len(body))], "poll_count(POLL_WEIGHT);") {
+			bad = append(bad, label+" does not count before it moves pc")
+		}
+	}
+	forward := regexp.MustCompile(`^pc \+= (?:\d+|\(len\)|ip\[0\]|2 \+ 7 \* ip\[1\]);$`)
+	jump := regexp.MustCompile(`^pc (?:\+= (?:2 \+ )?off|= (?:ip \+ 3|c \+ 7) \+ off);$`)
+	counted := regexp.MustCompile(`if \(off < 0\) poll_count\(POLL_WEIGHT\);`)
+	// the handler around a move: from the label or macro before it to the
+	// RV_NEXT() after it
+	handler := func(at int) string {
+		from := strings.LastIndex(body[:at], "\n rv_")
+		if d := strings.LastIndex(body[:at], "#define "); d > from {
+			from = d
+		}
+		to := strings.Index(body[at:], "RV_NEXT()")
+		if from < 0 || to < 0 {
+			return ""
+		}
+		return space.ReplaceAllString(body[from:at+to], " ")
+	}
+	for _, m := range regexp.MustCompile(`(?:^|[^\w.>])(pc\s*(?:[-+*/%&|^]|<<|>>)?=[^=][^;]*;)`).FindAllStringSubmatchIndex(body, -1) {
+		st := space.ReplaceAllString(strings.TrimSpace(body[m[2]:m[3]]), " ")
+		switch {
+		case forward.MatchString(st), regvmMoves[st] == "set":
+		case jump.MatchString(st):
+			if !counted.MatchString(handler(m[2])) {
+				bad = append(bad, "a jump that does not count when it goes back: "+st)
+			}
+		case st == "pc -= (len) + 1;":
+			if !strings.Contains(handler(m[2]), "#define RV_CALLOP(") {
+				bad = append(bad, "a step back to the start of an instruction outside RV_CALLOP: "+st)
+			}
+		case regvmMoves[st] == "throw":
+			if rest := strings.TrimSpace(body[m[3]:]); !strings.HasPrefix(rest, "goto rv_exception;") {
+				bad = append(bad, "a step back of pc not followed by goto rv_exception: "+st)
+			}
+		default:
+			bad = append(bad, "pc moves outside the rule: "+st)
+		}
+	}
+	for _, m := range regexp.MustCompile(`(?:^|[^\w.>*])pc\s*(?:\+\+|--)|(?:\+\+|--)\s*pc\b|&pc\b|\*pc--`).FindAllString(body, -1) {
+		bad = append(bad, "pc moves outside the rule: "+strings.TrimSpace(m))
+	}
+	return bad
+}
+
+// regvmMoves are the moves of pc in JS_RegvmRun that are not a step forward
+// or a counted jump: set, a call into a function (counted by RV_CALLOP or
+// NEW before), a return to the caller's pc, a catch (counted by rv_unwind)
+// or the return of a finally block (counted by GORET), and throw, a step
+// back to name the instruction that throws, just before goto rv_exception.
+var regvmMoves = map[string]string{
+	"pc = rf->code;":                    "set",
+	"pc = ((RVHeader *)F)->rf->code;":   "set",
+	"pc = crf->code;":                   "set",
+	"pc = rv_gen_enter(ctx, gs, F, n);": "set",
+	"pc = h->retpc;":                    "set",
+	"pc = to;":                          "set",
+	"pc -= (own) + ((taken) ? 1 : 0);":  "throw",
+	"pc = c + 4;":                       "throw",
+	"pc = ip + 8;":                      "throw",
+	"pc = ip + 3;":                      "throw",
+	"pc = to - 1;":                      "throw",
+}
+
+// TestRegvmJumpsCount holds JS_RegvmRun to regvmJumps, and checks that
+// copies of it with one count taken out are caught: a jump back that does
+// not count, a step back by hand, a call that does not count, and no entry
+// count.
+func TestRegvmJumpsCount(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "engine")
+	files := map[string]string{}
+	read := func(name string) (string, error) {
+		if s, ok := files[name]; ok {
+			return s, nil
+		}
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		files[name] = string(b)
+		return string(b), err
+	}
+	body, err := regvmRunText(read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bad := regvmJumps(body); len(bad) > 0 {
+		t.Fatalf("JS_RegvmRun:\n%s", strings.Join(bad, "\n"))
+	}
+	for _, c := range []struct{ file, from, to, want string }{
+		{"regvm-ops-basic.h", "        if (off < 0)\n            poll_count(POLL_WEIGHT);\n        pc += off;\n    }\n    RV_NEXT();", "        pc += off;\n    }\n    RV_NEXT();", "a jump that does not count"},
+		{"regvm-ops-wide.h", "        pc += off;", "        pc = pc + off;", "pc moves outside the rule"},
+		{"regvm-ops-ctor.h", " rv_NEW:\n    poll_count(POLL_WEIGHT);\n", " rv_NEW:\n", "rv_NEW: does not count"},
+		{"regvm-ops-basic.h", "    poll_count(POLL_WEIGHT);                                            \\\n    ip = pc + (len) - 2;", "    ip = pc + (len) - 2;", "RV_CALLOP( does not count"},
+		{"regvm-run.h", "\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
+		{"regvm-run.h", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            goto rv_exception;", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            RV_NEXT();", "not followed by goto rv_exception"},
+	} {
+		src, err := read(c.file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(src, c.from) {
+			t.Fatalf("no %q in %s", c.from, c.file)
+		}
+		broken := func(name string) (string, error) {
+			s, err := read(name)
+			if name == c.file {
+				s = strings.Replace(s, c.from, c.to, 1)
+			}
+			return s, err
+		}
+		b, err := regvmRunText(broken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bad := regvmJumps(b); !strings.Contains(strings.Join(bad, "\n"), c.want) {
+			t.Errorf("%s, %q for %q: %v, want %q", c.file, c.to, c.from, bad, c.want)
+		}
+	}
+}

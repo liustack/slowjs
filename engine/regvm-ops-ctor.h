@@ -32,7 +32,7 @@
    in the caller's unwinding. Ordinary calls and returns are unchanged: the
    construct is the caller's business, not the frame's.
 
-   Everything else goes out of the loop as the old loop calls it
+   Everything else goes out of the loop as QuickJS's interpreter calls it
    (rv_new_slow, JS_CallConstructorInternal): a constructor without register
    code, a C constructor, a bound function, a proxy, another realm, more
    arguments than the constructor has, no room or no depth left. From C
@@ -42,7 +42,7 @@
    regvm-func.h).
 
    The this of a function: a sloppy one coerces it at its push_this
-   (THISC), as the old loop does: undefined and null become the global
+   (THISC), as QuickJS's interpreter does: undefined and null become the global
    object of its realm, a primitive its wrapper object. */
 
 #if RV_PART == RV_PART_LIST
@@ -88,7 +88,7 @@ static void rv_new(RVPass *s, int argc)
     int i, n = argc + 2, base = s->sp - n, w;
     if (argc > 255) {
         /* argc is a byte of NEW */
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     for (i = base; i < s->sp; i++)
@@ -97,8 +97,6 @@ static void rv_new(RVPass *s, int argc)
     rv_emit(s, RV_NEW);
     rv_byte(s, w);
     rv_byte(s, argc);
-    if (argc > 255)
-        s->failed = TRUE;
     {
         /* the object under construction at w is owned across it too */
         RVMask m = rv_owned(s, n);
@@ -147,8 +145,7 @@ static void rv_thisc(RVPass *s)
             break;
         default:
             /* the home object, import.meta and the var object of a
-               sloppy direct eval go through OLD (regvm-ops-old.h), the
-               others are refused */
+               sloppy direct eval go through OLD (regvm-ops-old.h) */
             rv_old_special(s, p);
             break;
         }
@@ -163,7 +160,7 @@ static void rv_thisc(RVPass *s)
            no parameters: it passes on all its arguments, which are past
            arg_count, so it reads its arguments (rf->args, regvm-ops-args.h) */
         if (s->b->arg_count != 0) {
-            s->failed = TRUE;
+            rv_crafted(s);
             break;
         }
         s->args = TRUE;
@@ -186,8 +183,8 @@ static void rv_thisc(RVPass *s)
         break;
 #elif RV_PART == RV_PART_RUN_FN
 /* new out of the loop, pc at the end of NEW w argc: as OP_call_constructor
-   of the old loop, the window is its stack. The window is freed on every
-   path, the result goes to w, undefined on an exception (NEW owns w). */
+   of QuickJS's interpreter, the window is its stack. The window is freed on
+   every path, the result goes to w, undefined on an exception (NEW owns w). */
 static no_inline int rv_new_slow(JSContext *ctx, JSValue *F, const uint8_t *pc)
 {
     JSRuntime *rt = ctx->rt;
@@ -196,7 +193,7 @@ static no_inline int rv_new_slow(JSContext *ctx, JSValue *F, const uint8_t *pc)
     int i, n = ip[1];
 
     RV_COUNT(rt, JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT &&
-             JS_VALUE_GET_OBJ(W[0])->class_id == JS_CLASS_BYTECODE_FUNCTION ? 4 : 5);
+             JS_VALUE_GET_OBJ(W[0])->class_id == JS_CLASS_BYTECODE_FUNCTION ? 2 : 3);
     /* a call into the register loop from the constructor starts above the
        window */
     rt->rv_top = W + 2 + n;
@@ -221,9 +218,9 @@ static no_inline int rv_new_slow(JSContext *ctx, JSValue *F, const uint8_t *pc)
    with new.target in its slot and the object made in its this, or
    RV_NEW_OUT for a call the loop leaves to rv_new_slow (nothing done
    then), or NULL on an exception (the window freed, w undefined). The
-   checks before the object is made are those of the in-loop call; the old
-   loop makes the checks of the entry of JS_CallInternal after the object,
-   whose prototype may run JS, so the interrupt is read again then. */
+   checks before the object is made are those of the in-loop call; QuickJS's
+   interpreter makes the checks of the entry of JS_CallInternal after the
+   object, whose prototype may run JS, so the interrupt is read again then. */
 static no_inline JSValue *rv_new_frame(JSContext *ctx, JSValue *F, const uint8_t *pc)
 {
     JSRuntime *rt = ctx->rt;
@@ -329,8 +326,8 @@ static no_inline void rv_chkret_throw(JSContext *ctx, JSValue *F)
                       "derived class constructor must return an object or undefined");
 }
 
-/* THISC, ip at d: as OP_push_this of the old loop for a sloppy function,
-   whose this is not an object (the handler copies an object) */
+/* THISC, ip at d: as OP_push_this of QuickJS's interpreter for a sloppy
+   function, whose this is not an object (the handler copies an object) */
 static no_inline int rv_thisc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     RVFunc *rf = ((RVHeader *)F)->rf;

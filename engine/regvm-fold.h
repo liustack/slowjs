@@ -50,13 +50,12 @@
    it needs are bounded: per catch offset its temps and one for the part
    frozen under it, and for the top part at most RV_FOLD_LMAX R + R + 1 +
    the most an instruction reads and pushes. RV_FOLD_PINS_MAX in regvm-func.h
-   is what is left for the catch offsets, which the parser holds to when
-   the old loop is gone (JS_NO_OLD_LOOP).
+   is what is left for the catch offsets, which the parser holds to.
 
-   Same as the old loop: the values and the order of everything the code
-   does. Folding allocates Arrays the old loop does not: under a memory
-   limit such a function can run out of memory at a fold where the old loop
-   ran on. Only functions whose stack does not fit the temps fold. No new
+   Same as QuickJS's interpreter: the values and the order of everything
+   the code does. Folding allocates Arrays that QuickJS's interpreter does
+   not: under a memory limit such a function can run out of memory at a
+   fold where QuickJS's interpreter runs on. Only functions whose stack does not fit the temps fold. No new
    op. */
 
 /* how deep the old instruction at pos reads below the top of the stack:
@@ -327,19 +326,11 @@ static void rv_fold_read(RVPass *s, int a, int m, int base, const int *first, co
     }
 }
 
-/* the last Array of level k + 1 of the top part read back into its R
-   elements, after the one of level k + 2 that holds it */
-static void rv_fold_unfold(RVPass *s, int k)
+/* the last Array of level k + 1 of the top part, in no other, read back
+   into its R elements */
+static void rv_fold_unfold_one(RVPass *s, int k)
 {
     int R = s->R, a = s->lev[k] - 1, t, e, span, first[RV_FOLD_KMAX], spans[RV_FOLD_KMAX];
-    if (k + 1 >= RV_FOLD_LMAX) {
-        rv_overflow(s);
-        return;
-    }
-    if (a < R * s->lev[k + 1])
-        rv_fold_unfold(s, k + 1);
-    if (s->failed)
-        return;
     t = rv_fold_at(s, k) + s->lev[k] - R * s->lev[k + 1] - 1;
     rv_fold_move(s, s->base, t, R - 1);
     span = k ? rv_fold_span(s, k - 1) : 1;
@@ -349,6 +340,28 @@ static void rv_fold_unfold(RVPass *s, int k)
     }
     s->lev[k]--;
     rv_fold_read(s, rv_fold_cap(s, t), R, s->base, first, spans);
+}
+
+/* the last Array of level k + 1 of the top part read back into its R
+   elements, after the one of level k + 2 that holds it, and so on up: a
+   loop, not a call of itself, as the engine has no recursion the stack
+   analysis cannot bound (engine/test/cycles.sh). Whether a level is held
+   by the one above depends on the counts of these two levels only, which
+   reading back the levels above it does not change, so all are known
+   before the first is read back. */
+static void rv_fold_unfold(RVPass *s, int k)
+{
+    int j;
+    for (j = k;; j++) {
+        if (j + 1 >= RV_FOLD_LMAX) {
+            rv_overflow(s);
+            return;
+        }
+        if (s->lev[j] - 1 >= s->R * s->lev[j + 1])
+            break;
+    }
+    for (; j >= k && !s->failed; j--)
+        rv_fold_unfold_one(s, j);
 }
 
 /* the first R of what is in no Array at level k (the entries for k = 0)

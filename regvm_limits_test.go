@@ -37,7 +37,6 @@ var regvmSpins = []struct{ name, js string }{
 func regvmRun(t *testing.T, js string, stop func(m *VM)) error {
 	t.Helper()
 	m := newTestVM(t)
-	regvm(m, true)
 	mustHost(t, m, "back", func([]any) (any, error) { return m.Call("spin") })
 	if _, err := m.Eval(js, EvalGlobal); err != nil {
 		t.Fatal(err)
@@ -114,7 +113,6 @@ func TestRegvmLimitsMemory(t *testing.T) {
 // up through the frames of the register loop to the caller of Call.
 func TestRegvmGoPanic(t *testing.T) {
 	m := newTestVM(t)
-	regvm(m, true)
 	mustHost(t, m, "boom", func([]any) (any, error) { panic("boom") })
 	if _, err := m.Eval(`function inner(n) { if (n === 0) boom(); return inner(n - 1) + 1; }
 		function go() { var s = 0; for (var i = 0; i < 10; i++) s += i; try { return inner(50); } finally { s = 0; } }`, EvalGlobal); err != nil {
@@ -146,7 +144,6 @@ func TestRegvmPooledRenders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	regvm(m, true)
 	if err := m.RegisterHostFunc("upper", func(a []any) (any, error) { return strings.ToUpper(a[0].(string)), nil }); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +197,6 @@ func TestRegvmSharedBytecodeVMs(t *testing.T) {
 				return
 			}
 			defer m.Close()
-			regvm(m, true)
 			if g%2 == 0 {
 				_, err = m.EvalSharedBytecode(shared)
 			} else {

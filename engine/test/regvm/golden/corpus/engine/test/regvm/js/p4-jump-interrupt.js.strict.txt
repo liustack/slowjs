@@ -1,0 +1,121 @@
+job InternalError: interrupted
+job-stack     at ifTruthy (<eval>:16:7)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifTruthy (<eval>:17:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifTruthy (<eval>:16:7)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifTruthy (<eval>:17:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNot (<eval>:24:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNot (<eval>:23:8)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifObject (<eval>:30:8)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifObject (<eval>:31:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLess (<eval>:37:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLess (<eval>:38:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLess (<eval>:37:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLess (<eval>:38:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLessK (<eval>:44:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLessK (<eval>:45:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifLessK (<eval>:45:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifStrict (<eval>:51:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifStrict (<eval>:52:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifStrict (<eval>:52:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNotEq (<eval>:58:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNotEq (<eval>:59:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNotEq (<eval>:59:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNull (<eval>:65:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifNull (<eval>:66:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifUndefined (<eval>:72:9)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifUndefined (<eval>:73:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifType (<eval>:79:16)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at ifType (<eval>:80:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at andAlso (<eval>:86:12)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at andAlso (<eval>:87:6)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at orElse (<eval>:93:6)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at orElse (<eval>:92:12)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at cases (<eval>:98:11)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at cases (<eval>:100:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at cases (<eval>:100:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at cases (<eval>:100:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at cases (<eval>:100:5)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at loopHead (<eval>:112:12)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at loopHead (<eval>:114:11)
+job-stack     at <anonymous> (<eval>:168:51)
+job InternalError: interrupted
+job-stack     at loopTail (<eval>:119:9)
+job-stack     at <anonymous> (<eval>:168:51)
+result 10 20 10 20 20 10 10 20 10 20 10 20 10 20 20 10 20 20 10 20 20 10 20 10 20 10 20 2 0 1 0 1 2 3 0 0 6 0 6 1     at cmpThrows (<eval>:130:20) 10 20 10 20 20 10 10 20 10 20 10 20 10 20 20 10 20 20 10 20 20 10 20 10 20 10 20 2 0 1 0 1 2 3 0 0 6 0 6 1     at cmpThrows (<eval>:130:20)
+mem-end obj=191 atom=542 shape=122 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=542 shape=122 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

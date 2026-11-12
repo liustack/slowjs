@@ -446,12 +446,15 @@ void JS_SetFusedOps(JSContext *ctx, int on);
    2 entries of the loop from C, 3 and 4 the opcode and offset of the last
    instruction the pass refused (-1 for a refusal of the whole function),
    5 the bytes of stack a frame of the register loop takes before its check
-   and 6 those of a frame of the old loop, 7 the segments of register stack
+   and 6 those of JS_CallInternal, the entry of a call from C, which a call
+   of a C function the loop makes directly counts as taken, 7 the segments of register stack
    allocated so far, 8 those it has now and 9 the bytes they take (in the
-   memory size, not toward the threshold of the collector), 10 to 15 the counts of a build with
-   -DRV_STATS (engine/quickjs.c), 16 in such a build the most bytes of a
-   segment of register stack in use so far, 1000 + op the dispatches of register op op
-   in such a build, 2000 + op whether the pass takes old opcode op (1), not
+   memory size, not toward the threshold of the collector). In a build with
+   -DRV_STATS (engine/quickjs.c): 10 the dispatches of the register loop, 13
+   the calls into it from C, 14 the calls out of it to a function of
+   bytecode, 15 those to a C function, 16 the most bytes of a segment of
+   register stack in use so far, 1000 + op the dispatches of register op
+   op. In any build, 2000 + op whether the pass takes old opcode op (1), not
    (0), or op is none (-1) */
 int JS_RegvmStat(JSContext *ctx, int what);
 /* the state of one function in the register loop, for tests: see
@@ -459,9 +462,6 @@ int JS_RegvmStat(JSContext *ctx, int what);
 int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what);
 /* the name of register op op (JS_RegvmStat 1000 + op), NULL past the last */
 const char *JS_RegvmOpName(int op);
-/* the i-th reason a function could not run in the register loop, "WHY in NAME (FILE)" with the first function it named, and in
-   *count how often it was thrown: NULL past the last */
-const char *JS_RegvmCannotRun(JSContext *ctx, int i, int *count);
 /* Returns the number of blocks of the allocator still in use, which is 0 when
    nothing leaked. The host takes the chunks of memory back after it. An
    object a reference is still held to, such as one the host never freed,

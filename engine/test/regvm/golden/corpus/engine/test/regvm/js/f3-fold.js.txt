@@ -1,0 +1,21 @@
+result calls 40 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:last
+result destructure 130 944
+result destructure throw 130 caught second 7
+result for-in 130 one:1910,913,bad caught bad,913,three:1912,915
+result for-of 130 0,1,2,0,1,2 1911
+result finally 31 912
+result finally 32 912
+result try 48  90
+result for-of 16 1 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2
+result calls 40 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:last
+result destructure 130 944
+result destructure throw 130 caught second 7
+result for-in 130 one:1910,913,bad caught bad,913,three:1912,915
+result for-of 130 0,1,2,0,1,2 1911
+result finally 31 912
+result finally 32 912
+result try 48  90
+result for-of 16 1 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2 32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:32:2
+mem-end obj=193 atom=551 shape=125 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=551 shape=125 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

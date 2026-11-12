@@ -1,0 +1,7 @@
+exception TypeError: bigint operands are forbidden for >>>
+stack     at bin (<eval>:43:11)
+stack     at <anonymous> (<eval>:238:15)
+stack     at <eval> (<eval>:276:3)
+mem-end obj=190 atom=588 shape=121 prop=995 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=588 shape=121 prop=995 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

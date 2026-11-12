@@ -21,9 +21,8 @@ import (
 // and APP/in/PAGE.json), with tifa's four functions, in one VM. A render is
 // one of each page, in the order of their names, as tifa makes it:
 // startRender(json), the jobs, renderResult. One warm render, then n. It
-// prints the bytes and a sum of the HTML of all the pages, which the old and
-// the register loop must give the same.
-func regvmApp(t *testing.T, on bool, n int, app string) {
+// prints the bytes and a sum of the HTML of all the pages.
+func regvmApp(t *testing.T, n int, app string) {
 	dir := os.Getenv("REGVM_APPS")
 	if dir == "" {
 		t.Skip("REGVM_APPS not set")
@@ -36,7 +35,6 @@ func regvmApp(t *testing.T, on bool, n int, app string) {
 		return string(b)
 	}
 	m := newTestVM(t)
-	regvm(m, on)
 	for _, err := range []error{m.RegisterEscapeText("__tifa_escape"), m.RegisterStartTag("__tifa_start_tag"),
 		m.RegisterEndTag("__tifa_end_tag"), m.RegisterCopyProps("__tifa_copy_props")} {
 		if err != nil {
@@ -103,7 +101,7 @@ func regvmApp(t *testing.T, on bool, n int, app string) {
 		}
 		times[i] = time.Since(t0)
 	}
-	fmt.Printf("regvm %s on=%v n=%d pages=%d result=%d sum=%x converted=%d refused=%d entries=%d ns=", app, on, n, len(inputs), len(html), sha256.Sum256([]byte(html)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
+	fmt.Printf("regvm %s n=%d pages=%d result=%d sum=%x converted=%d refused=%d entries=%d ns=", app, n, len(inputs), len(html), sha256.Sum256([]byte(html)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
 	for _, d := range times {
 		fmt.Printf("%d ", d.Nanoseconds())
 	}

@@ -1,0 +1,25 @@
+result absent: {"done":true} {"done":true} {"done":true} 0,0,0
+result undefined: {"done":true} {"done":true} {"done":true} 1,0,0
+result null: {"done":true} {"done":true} {"done":true} 1,0,0
+result number: TypeError {"done":true} {"done":true} 1,0,0
+result primitive: TypeError {"done":true} {"done":true} 1,1,0
+result object: {"done":true} {"done":true} {"done":true} 1,1,0
+result get-throws: RangeError {"done":true} {"done":true} 1,0,0
+result call-throws: RangeError {"done":true} {"done":true} 1,1,0
+result reenter: TypeError TypeError
+result reenter: {"done":true} {"done":true} {"done":true} 1,1,0
+result open: RangeError {"done":true} {"done":true} 1,0,0,0
+result open-non-object: TypeError {"done":true} {"done":true} 1,0,0,0
+result next-get: RangeError {"done":true} {"done":true} 1,0,0,0
+result next-undefined: TypeError {"done":true} {"done":true} 1,0,0,0
+result next-call: RangeError {"done":true} {"done":true} 1,1,0,0
+result non-object: TypeError {"done":true} {"done":true} 1,1,0,0
+result done: RangeError {"done":true} {"done":true} 1,1,0,0
+result value: RangeError {"done":true} {"done":true} 1,1,0,0
+result fresh: true,true,true,true
+result early: {"done":true} {"done":true} 0
+result sequence: [1,2,3]
+result exhausted: {"done":true} {"done":true}
+mem-end obj=238 atom=560 shape=134 prop=1029 jsfunc=6 cfunc=133 array=2 fast_array=2 elements=22 binary=0
+mem-gc obj=196 atom=543 shape=131 prop=962 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,82 @@
+result plain: a,b,c
+result literal again: a,b,c
+result empty: 
+result null proto: x,y
+result indexes first: 1,2,10,4294967294,b,a,-1,01,4294967295
+result symbols left out: a,b
+result not enumerable: a,b,c
+result getter: a,g,b
+result frozen: a,b
+result sealed: a,b
+result 40 keys: k0,k1,k2,k3,k4,k5,k6,k7,k8,k9,k10,k11,k12,k13,k14,k15,k16,k17,k18,k19,k20,k21,k22,k23,k24,k25,k26,k27,k28,k29,k30,k31,k32,k33,k34,k35,k36,k37,k38,k39
+result add during: a,b,c,d
+result after add: a,b,c,d,e
+result delete later key: a,b,d
+result delete and add back: a,b,c,d
+result delete current: a,b,c left {}
+result made not enumerable: a,b,c
+result made enumerable: a,b,c
+result prototype keys: a,b,p^
+result prototype not enumerable: a,b,p^
+result prototype set during: a,b,p^
+result prototype gets a key during: a,b,late^
+result Object.prototype enumerable: a,inherited^
+result hasOwnProperty.call inherited: false
+result Object.prototype again: a
+result array: 0,1,2,x
+result array holes: 0,2
+result array has: true,true,true,false,true,true,true
+result string object: 0,1
+result arguments: 0,1
+result proxy: a,b traps ownKeys;gopd a;gopd b;gopd a;gopd a;gopd b;gopd b
+result proto ownKeys
+result proto ownKeys
+result proxy prototype: a,p^
+result instance: x
+result function: k
+result primitive: |0,1||
+result keys: true,false,true,true,true,false,false,false,true,true,true,true,true,false,false,false,false,true
+result toString ran
+result key object: true
+result key throws: Error: boom
+result no key: true,false
+result extra arguments: true
+result this undefined: TypeError
+result this null: TypeError
+result this primitives: true,true,false,false,false,false
+result this function: true,true,false
+result this array: true,false,true
+result this getter: true
+result this deleted: false,true
+result this proxy: true,false traps a;b
+result this global: true,false,false
+result Object.hasOwn: true,false
+result method form: true,false
+result Reflect.apply: true
+result bound: true,true
+result apply: true,true
+result call replaced a
+result call replaced: mine
+result call back: true
+result hasOwnProperty replaced a
+result hasOwnProperty replaced a
+result hasOwnProperty replaced: mine,mine,true
+result call of another object: TypeError
+result call of another function: other a true
+result strict this: true
+result React loop: a,c of 3
+result shapes in turn: ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a,ab,ba,abc,a
+result isObjectEmpty: true,false,false,true,true,false
+result nested: aa,ab,ba,bb,bc
+result thrown out: a,stop
+result frozen during: a,b,c,d left {"a":1,"b":2,"c":3,"d":4} true
+result sealed during: a,b,c,d left {"a":1,"b":2,"c":3,"d":8}
+result many deleted during: k0,k36,k37,k38,k39 left k0,k36,k37,k38,k39,k5
+result every other deleted during: k0,k2,k4,k6,k8,k10,k12,k14,k16,k18
+result break: a,b,a,bb,bc,cb,cc,db
+result generator suspended: a,b,d,p^
+result generator holds the object: x,y,z
+result generator ended: {"value":"r","done":true} Error: boom {"done":true}
+mem-end obj=223 atom=617 shape=212 prop=1044 jsfunc=6 cfunc=149 array=3 fast_array=3 elements=97 binary=0
+mem-gc obj=220 atom=615 shape=210 prop=1037 jsfunc=4 cfunc=149 array=3 fast_array=3 elements=97 binary=0
+--- status exit 0

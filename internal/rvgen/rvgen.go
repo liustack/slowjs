@@ -3,10 +3,9 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Package rvgen makes small random JavaScript programs for comparing the two
-// interpreter loops of the engine (the old loop and the register loop of
-// engine/regvm.h): the same program must give the same output with the
-// register loop off and on.
+// Package rvgen makes small random JavaScript programs for testing the
+// register loop of the engine (engine/regvm.h): against Node (rvgen node)
+// and in the tests of the Go package.
 //
 // A program is one strict function expression called at once, so that its
 // inner functions are what the register pass converts: functions of locals and
@@ -21,8 +20,7 @@
 // Every program ends: a function calls only functions made before it, and
 // itself only with a smaller depth, and every loop counts to a small bound.
 // The same seed gives the same program. Each statement is on a line of its
-// own, and a block's lines between the line that opens it and the line that
-// closes it, so that a shrinker can take lines out (see Lines).
+// own.
 package rvgen
 
 import (
@@ -50,7 +48,7 @@ type Options struct {
 	// Portable writes the name of an error where the program would write
 	// its message, so that the output does not depend on how an engine
 	// words its errors: the programs run the same under Node (rvgen
-	// referee).
+	// node).
 	Portable bool
 }
 
@@ -117,7 +115,7 @@ func (g *gen) program(seed uint64) {
 	g.line(`(function () { "use strict";`)
 	g.ind++
 	// the log and its helpers: refused by the pass or not, they are not
-	// what is tested, but they are called the same way both ways
+	// what is tested
 	g.line(`var L = [];`)
 	// a budget of calls for each run, so that the fan-out of the recursion
 	// stays small: past it a function throws
@@ -521,30 +519,4 @@ func (g *gen) call(name string, depth int) string {
 func (g *gen) callSelf(depth int) string {
 	a := append([]string{"d - 1"}, g.args(depth)...)
 	return fmt.Sprintf("f%d(%s)", g.fn, strings.Join(a, ", "))
-}
-
-// Lines splits a program into its lines, for a shrinker: Blocks gives, for
-// each line that opens a block, the line that closes it.
-func Lines(prog string) []string {
-	return strings.Split(strings.TrimSuffix(prog, "\n"), "\n")
-}
-
-// Blocks returns, for each line index that ends with an open brace, the
-// index of the line where its block closes (at the same indentation).
-func Blocks(lines []string) map[int]int {
-	out := map[int]int{}
-	var stack []int
-	for i, l := range lines {
-		t := strings.TrimSpace(l)
-		closes := strings.HasPrefix(t, "}")
-		opens := strings.HasSuffix(t, "{")
-		if closes && len(stack) > 0 && !opens {
-			out[stack[len(stack)-1]] = i
-			stack = stack[:len(stack)-1]
-		}
-		if opens && !closes {
-			stack = append(stack, i)
-		}
-	}
-	return out
 }

@@ -203,8 +203,8 @@ static void rv_getel(RVPass *s, BOOL el2)
     RV_SHUFFLE(OP_rot5l, 5, 5, 1, 2, 3, 4, 0)     /* x a b c d -> a b c d x */
 #undef RV_SHUFFLE
 #elif RV_PART == RV_PART_RUN_FN
-/* the slow side of GETEL, ip at d o key|k, as the slow path of the old
-   loop's get_array_el: the key is freed, o too for the T forms */
+/* the slow side of GETEL, ip at d o key|k, as the slow path of
+   QuickJS's get_array_el: the key is freed, o too for the T forms */
 static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                    BOOL k, BOOL t)
 {
@@ -228,7 +228,7 @@ static no_inline int rv_getel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
     return 0;
 }
 
-/* the slow side of GETEL3, ip at d o t, as the old loop's get_array_el3 */
+/* the slow side of GETEL3, ip at d o t, as QuickJS's get_array_el3 */
 static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue *pk = &F[(int8_t)ip[2]], val;
@@ -260,8 +260,8 @@ static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     return 0;
 }
 
-/* the slow side of PUTEL, ip at o key v: the end of a fast array, as the
-   old loop's put_array_el, else JS_SetPropertyValue. key and v are taken,
+/* the slow side of PUTEL, ip at o key v: the end of a fast array, as
+   QuickJS's put_array_el, else JS_SetPropertyValue. key and v are taken,
    a temp o freed. */
 static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
@@ -340,7 +340,7 @@ static no_inline int rv_deff(JSContext *ctx, JSValue *F, const uint8_t *ip, BOOL
                                   JS_PROP_C_W_E | JS_PROP_THROW) < 0 ? -1 : 0;
 }
 
-/* define_method, ip at o v flags atom, as the old loop's OP_define_method */
+/* define_method, ip at o v flags atom, as QuickJS's OP_define_method */
 static no_inline int rv_defm(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue getter, setter, value, v = rv_take(ctx, F, (int8_t)ip[1]);
@@ -412,7 +412,7 @@ static no_inline int rv_obj2_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
 }
 
 /* the slow side of GETVAR, ip at d idx16: the variable is not initialized,
-   as the old loop's OP_get_var */
+   as QuickJS's OP_get_var */
 static no_inline int rv_getvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL throw_ref_error)
 {
@@ -433,7 +433,7 @@ static no_inline int rv_getvar_slow(JSContext *ctx, JSValue *F, const uint8_t *i
 }
 
 /* the slow side of PUTVAR, ip at v idx16: the variable is not initialized
-   or is a constant, as the old loop's OP_put_var. v is taken. */
+   or is a constant, as QuickJS's OP_put_var. v is taken. */
 static no_inline int rv_putvar_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL init)
 {
@@ -483,7 +483,7 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     return 0;
 }
 #elif RV_PART == RV_PART_RUN
-    /* get_array_el: an element of a fast array here, as the old loop's
+    /* get_array_el: an element of a fast array here, as QuickJS's
        GET_ARRAY_EL_INLINE, the rest in rv_getel_slow */
 #define RV_GETEL(label, kexpr, isk, temp)                               \
  label:                                                                 \

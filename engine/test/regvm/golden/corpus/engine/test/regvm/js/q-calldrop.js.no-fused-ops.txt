@@ -1,0 +1,26 @@
+result 6
+result 6
+result no,TypeError,TypeError
+result undefined
+result undefined
+result undefined
+result {"n":5}
+result 19
+result 14
+result no,TypeError,TypeError
+result undefined
+result undefined
+result undefined
+result {"n":6}
+result 33
+result 22
+result t2,t2,TypeError,TypeError
+result undefined
+result undefined
+result undefined
+result {"n":7}
+result 42
+result 24
+mem-end obj=199 atom=598 shape=129 prop=1014 jsfunc=2 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=591 shape=125 prop=1008 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

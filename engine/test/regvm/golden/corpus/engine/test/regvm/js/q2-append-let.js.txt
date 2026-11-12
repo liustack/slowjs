@@ -1,0 +1,45 @@
+result 5571
+result éababababababéababab
+result éababababababéababab
+result 2147483660
+result 1000:1000
+result 6s3
+result 1
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|xz
+result 0
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|vz
+result 2
+result ReferenceError:at early2 (<eval>:64:14)
+result ReferenceError:at early2 (<eval>:64:14)
+result 3
+result 5571
+result éababababababéababab
+result éababababababéababab
+result 2147483660
+result 1000:1000
+result 6s3
+result 4
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|xz
+result 0
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|vz
+result 2
+result ReferenceError:at early2 (<eval>:64:14)
+result ReferenceError:at early2 (<eval>:64:14)
+result 3
+result 5571
+result éababababababéababab
+result éababababababéababab
+result 2147483660
+result 1000:1000
+result 6s3
+result 4
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|xz
+result 0
+result ReferenceError:t is not initialized:at early (<eval>:53:14)|ReferenceError:t is not initialized|vz
+result 2
+result ReferenceError:at early2 (<eval>:64:14)
+result ReferenceError:at early2 (<eval>:64:14)
+result 3
+mem-end obj=190 atom=547 shape=126 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=547 shape=126 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

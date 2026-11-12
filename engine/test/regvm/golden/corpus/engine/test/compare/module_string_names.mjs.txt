@@ -1,0 +1,13 @@
+result values: 1,2,3,1,1
+result a keys: a-b|default|normal|plain|with space|😀
+result b keys: a-b|c-d|default|plain2|the namespace
+result b values: 1,2,1,1,true,1
+result has: true,true,true,false
+result descriptor: {"value":1,"writable":true,"enumerable":true,"configurable":false}
+result str_bad1 SyntaxError
+result str_bad2 SyntaxError
+result str_bad3 SyntaxError
+result str_bad4 SyntaxError
+mem-end obj=211 atom=589 shape=128 prop=982 jsfunc=8 cfunc=133 array=3 fast_array=3 elements=10 binary=0
+mem-gc obj=211 atom=589 shape=128 prop=982 jsfunc=8 cfunc=133 array=3 fast_array=3 elements=10 binary=0
+--- status exit 0

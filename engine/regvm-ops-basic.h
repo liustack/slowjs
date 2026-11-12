@@ -158,7 +158,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         (s->bc[q] == OP_drop || s->bc[q] == OP_return_undef);
     if (argc > 255) {
         /* argc is a byte of the call */
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     for (i = f; i < s->sp; i++)
@@ -184,7 +184,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
     s->sp = base;
     if (tail) {
         /* what a switch or a loop left under the call: freed after it, as
-           the old loop frees it with the frame once the call returns */
+           QuickJS's interpreter frees it with the frame once the call
+           returns */
         for (i = 0; i < s->sp; i++) {
             if (s->st[i].kind == RV_E_TEMP) {
                 rv_emit(s, RV_FREE);
@@ -261,10 +262,10 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         {
             JSAtom atom = get_u32(p + 1);
             JSAtomStruct *as;
-            /* an index ("0") has no string: one is made here, which the
-               register code owns (rv_k_index) */
+            /* an index ("0") has no string: the parser puts it in the
+               constants, and rv_operands_ok refused one here */
             if (__JS_AtomIsTaggedInt(atom)) {
-                rv_push(s, RV_E_K, 0, rv_k_index(s, atom));
+                rv_overflow(s);
                 break;
             }
             as = s->rt->atom_array[atom];
@@ -455,8 +456,8 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
     case OP_return_async: /* the end of a generator or async function
                              (regvm-ops-gen.h): a return of its entry frame */
     case OP_return:
-        /* what a switch or a loop left under the value: the old loop frees
-           it with the frame, here each temp is freed */
+        /* what a switch or a loop left under the value: QuickJS's interpreter
+           frees it with the frame, here each temp is freed */
         for (i = 0; i < s->sp - 1; i++) {
             if (s->st[i].kind == RV_E_TEMP) {
                 rv_emit(s, RV_FREE);
@@ -548,7 +549,7 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
                 if (RV_INJ_HIT(ctx))
                     goto fail;
                 if (JS_IsString(ops[0]) && JS_IsString(ops[1])) {
-                    /* as the old loop's OP_add: into a local or an
+                    /* as QuickJS's OP_add: into a local or an
                        argument (d below 0, ADDL and ADDKL), the string of
                        d grows in place when it is the left operand */
                     if (has_d && !rv_is_temp(F, d))
@@ -755,7 +756,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     RV_KARITH(rv_KSUB, -, OP_sub)
 #undef RV_KARITH
 
-    /* the rest of add and sub, as the old loop's OP_add and OP_sub: a float
+    /* the rest of add and sub, as QuickJS's OP_add and OP_sub: a float
        of two ints that overflow, or of an int or a float with a float, else
        rv_binop_slow. Which of the eight it is comes from the opcode byte
        again (arith: 1 a local destination, 2 a constant operand, 4 sub),
@@ -928,8 +929,8 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
        the local t of CALLML t w argc, copied with a reference. The result
        goes to the first slot of the call: w, or w - 1 with a this. A
        converted function of the same realm with no more arguments than
-       parameters gets its frame from w, anything else is called as the old
-       loop calls it.
+       parameters gets its frame from w, anything else is called as QuickJS's
+       interpreter calls it.
 
        The poll comes first, while only F and pc are live: values live
        across its call to the host would be kept on the stack, on the way
@@ -1079,7 +1080,7 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 #define RV_CALL_OUT(label, store)                                       \
  label:                                                                 \
     RV_COUNT(rt, JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT &&             \
-             JS_VALUE_GET_OBJ(W[0])->class_id == JS_CLASS_BYTECODE_FUNCTION ? 4 : 5); \
+             JS_VALUE_GET_OBJ(W[0])->class_id == JS_CLASS_BYTECODE_FUNCTION ? 2 : 3); \
     rt->rv_top = W + 1 + n;                                             \
     sf->cur_pc = pc;                                                    \
     sf->cur_sp = F;                                                     \
@@ -1087,15 +1088,15 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
         !RV_INJ_ARMED &&                                                \
         !JS_IsUninitialized(ret_val = js_has_own_call(ctx, this_v, W + 1, n))) \
         ; /* hasOwnProperty.call(o, k) answered without its two calls,  \
-             as the old loop's OP_call_method */                        \
+             as QuickJS's OP_call_method */                        \
     else if (RV_INJ_HIT(ctx))                                           \
         ret_val = JS_EXCEPTION;                                         \
     else if (js_call_c_direct_ok(rt, W[0]))                             \
         ret_val = js_call_c_direct(ctx, W[0], this_v, n, W + 1);        \
     else if (rv_entry_fast(rt, W[0]))                                   \
         /* register code called with more arguments than it has, or     \
-           from another realm: a run of its own, as the old loop calls  \
-           it */                                                        \
+           from another realm: a run of its own, as QuickJS's           \
+           interpreter calls it */                                      \
         ret_val = JS_RegvmRun(ctx, W[0], this_v, JS_UNDEFINED, n, W + 1); \
     else                                                                \
         ret_val = JS_CallInternal(ctx, W[0], this_v, JS_UNDEFINED, n, W + 1, 0); \

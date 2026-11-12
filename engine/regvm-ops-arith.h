@@ -121,7 +121,7 @@ static const uint8_t rv_un_ops[] = {
 };
 
 /* the slow side of the ops of rv_bin_ops, ip at d a b, d a k when k has
-   1, d k b when it has 2 (KSHL): as the old loop's binary_arith_slow and the
+   1, d k b when it has 2 (KSHL): as QuickJS's binary_arith_slow and the
    slow side of its bit ops */
 static no_inline int rv_bin_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                  int op, int k)
@@ -202,7 +202,7 @@ static no_inline void rv_typeof(JSContext *ctx, JSValue *F, const uint8_t *ip)
     rv_put(ctx, F, (int8_t)ip[0], JS_AtomToString(ctx, atom));
 }
 
-/* the strings and the slow side of add_loc, ip at d v|k, as the old loop's
+/* the strings and the slow side of add_loc, ip at d v|k, as QuickJS's
    OP_add_loc */
 static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k)
@@ -304,14 +304,14 @@ static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     }
     RV_NEXT();
 
-    /* pow: always the slow side, as the old loop's OP_pow */
+    /* pow: always the slow side, as QuickJS's OP_pow */
  rv_POW:
  rv_POWK:
     ip = pc; pc += 3;
     goto rv_bin_other;
 
  rv_bin_other:
-    /* mul of two numbers as the old loop's OP_mul, the rest in rv_bin_slow */
+    /* mul of two numbers as QuickJS's OP_mul, the rest in rv_bin_slow */
     n = ip[-1] - RV_MUL;
     if (n < 2 && !RV_INJ_ARMED) {
         JSValue a = RV_R(ip[1]), bv = n ? RV_K(ip[2]) : RV_R(ip[2]);
@@ -414,7 +414,7 @@ static no_inline int rv_addloc_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     rv_typeof(ctx, F, ip);
     RV_NEXT();
 
-    /* add_loc: ints and floats here, as the old loop's OP_add_loc, strings
+    /* add_loc: ints and floats here, as QuickJS's OP_add_loc, strings
        and the rest in rv_addloc_slow */
 #define RV_ADDLOC(label, bexpr, isk)                                    \
  label:                                                                 \

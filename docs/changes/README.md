@@ -34,7 +34,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
 | The string cases of a `switch` that end with any conditional jump take one opcode, and a chain of them runs in one dispatch. Bytecode version 8 | Unreleased | [c-engine.md](c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) |
 | A call of more than 32 arguments and a tagged template of more than 30 substitutions pass the arguments past the first 32 in an array, as a call with a spread does | Unreleased | [c-engine.md](c-engine.md#calls-of-more-than-32-arguments-pass-them-in-an-array) |
-| Built without the old loop (`JS_NO_OLD_LOOP`), the parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | Unreleased | [c-engine.md](c-engine.md#the-limits-of-a-function-without-the-old-loop) |
+| The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | Unreleased | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
 
 ## Commits of upstream QuickJS
 

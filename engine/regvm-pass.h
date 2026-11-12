@@ -68,7 +68,6 @@ typedef struct RVPass {
                            or no count */
     JSValue *k;         /* kbuf.buf */
     uint64_t kref[4];   /* bit i: k[i] has a reference count, i < 256 */
-    uint64_t kown[4];   /* bit i: k[i] is owned by the register code (rv_k_index) */
     int k_count;
     /* the stack model, with a few entries past the most stack_size can be
        that nothing fills: an instruction that writes past stack_size is
@@ -96,7 +95,7 @@ typedef struct RVPass {
     int last_dst;       /* its d, when it wrote a temp the pass may retarget */
     int pos;            /* offset of the old instruction rv_one reads */
 #ifdef RV_INJECT
-    int ipos, iprev;    /* the old loop's dispatch of it, the one before */
+    int ipos, iprev;    /* QuickJS's dispatch of it, the one before */
 #endif
     int skip_to;        /* the old instructions before it were read with the last one */
     BOOL wide;          /* slots below F past -128: rv_wide_one reads first, and
@@ -110,14 +109,28 @@ typedef struct RVPass {
     BOOL crafted;       /* it stops at code no compiler makes (RV_CRAFTED) */
 } RVPass;
 
-/* the refusal (JS_RegvmStat 3) of code that no compiler makes, only
-   JS_ReadObject can give it: the depths of the stack or of the catches do
-   not agree, the code runs off its end or jumps where nothing was emitted,
-   a ret with no gosub, an operand out of the tables of the function
-   (rv_operands_ok), mapped arguments with no closure state. The build
-   without the old loop rejects such code when it is read (rv_read_check,
-   regvm-entry.h). */
+/* The pass refuses only code that no compiler makes, which only
+   JS_ReadObject can give, and rejects it when it is read (rv_read_check,
+   regvm-entry.h): its refusal (JS_RegvmStat 3) is RV_CRAFTED. Such code
+   has an opcode the pass does not take (OP_invalid or past the last), depths
+   of the stack or of the catches that do not agree, an instruction that
+   pops more than the stack holds, code that runs off its end or jumps where
+   nothing was emitted, a ret with no gosub, an operand out of the tables of
+   the function (rv_operands_ok), a special_object of no kind, mapped
+   arguments or a make_loc_ref with no closure state, an init_ctor with
+   parameters, a call of more than 255 arguments (the parser passes those
+   past JS_CALL_ARGS_ON_STACK in an array), more locals and arguments than
+   MOVW names (the parser stops at RV_FAR_MAX, JS_FRAME_FULL of quickjs.c),
+   or a stack whose catch offsets need more temps than a folded frame has
+   (the parser stops at RV_FOLD_PINS_MAX, regvm-func.h). Anything else that
+   stops the pass is a mistake of the pass (rv_overflow), or out of memory. */
 #define RV_CRAFTED (-3)
+
+static void rv_crafted(RVPass *s)
+{
+    s->failed = TRUE;
+    s->crafted = TRUE;
+}
 
 static int rv_old_argc(const uint8_t *p, int op)
 {
@@ -317,6 +330,9 @@ static int rv_depths(RVPass *s)
     js_free_rt(s->rt, work);
     return 0;
  fail_op:
+    /* the pass takes every opcode of final code (engine/test/regvm/opcodes.txt):
+       one it does not is OP_invalid or past the last */
+    s->crafted = TRUE;
     s->rt->rv_stat[3] = s->bc[pos];
     s->rt->rv_stat[4] = pos;
     js_free_rt(s->rt, work);
@@ -361,10 +377,11 @@ static void rv_emit_ret(RVPass *s, int kind)
 
 /* a value written into a field too narrow for it (a constant index or a
    slot into a byte, a slot into int8_t, a temp into a mask, an entry past
-   the stack of the old code): a mistake of the pass. The native test host
-   (engine/test/build.sh defines RV_SELF_CHECK) stops at once, so that its corpus
-   and test262 find it. Any other build gives the conversion up, and the
-   function runs in the old loop. */
+   the stack of the old code), or any other state the pass cannot be in for
+   code a compiler made: a mistake of the pass. The native test host
+   (engine/test/build.sh defines RV_SELF_CHECK) stops at once, so that its
+   corpus and test262 find it. Any other build gives the conversion up, and
+   a call of the function throws (rv_refused, regvm.h). */
 static void rv_overflow(RVPass *s)
 {
 #ifdef RV_SELF_CHECK
@@ -433,7 +450,8 @@ static void rv_jmpw(RVPass *s, int old_target)
    (rv_build): after the instruction, a JMPW to the old target for each jump,
    which the off16 names when its target is too far, and a JMPW over them
    for the code that falls through. JMPW does not poll the interrupt flag,
-   so that a jump through an island polls it once, as the old loop does. */
+   so that a jump through an island polls it once, as QuickJS's interpreter
+   does. */
 static void rv_islands(RVPass *s, size_t fstart, int op)
 {
     int last = s->last == -2 ? -2 : -1, over = -1;
@@ -525,9 +543,9 @@ static void rv_owned_p(RVPass *s, int below_top, RVMask *out)
 }
 
 /* an entry of the pcmap: the instruction just emitted leaves pc at end when
-   it throws there, the old loop names that at its pc old, and the temps of
-   mask are owned across it. The entries are sorted by end as the code is
-   emitted in order. The temps T[32] up go into pcmap_hi, which rv_build
+   it throws there, QuickJS's interpreter names that at its pc old, and the
+   temps of mask are owned across it. The entries are sorted by end as the code
+   is emitted in order. The temps T[32] up go into pcmap_hi, which rv_build
    keeps when an entry has one. */
 static void rv_pcmap_put_p(RVPass *s, uint32_t end, int32_t old, const RVMask *mask)
 {
@@ -578,10 +596,10 @@ static void rv_throws_p(RVPass *s, const RVMask *mask)
 }
 
 /* the conditional jump just emitted, for the old branch at q (if_false,
-   if_true and their short forms), can stop at an interrupt. The old loop
-   reads the flag once it has jumped or not, and names the pc before its
-   target or the one inside the branch. The register jump reads it before
-   it moves pc, and says which of the two it was by the pc it leaves
+   if_true and their short forms), can stop at an interrupt. QuickJS's
+   interpreter reads the flag once it has jumped or not, and names the pc
+   before its target or the one inside the branch. The register jump reads it
+   before it moves pc, and says which of the two it was by the pc it leaves
    (RV_JUMP_POLL in regvm-run.h): one before its end when it jumps, its end
    when it does not. With own set the instruction can also throw by itself
    (a compare), at its end and named at rv_one's instruction, and the two of
@@ -630,62 +648,6 @@ static int rv_k(RVPass *s, JSValue v)
     if (s->k_count < RV_K_NEAR && JS_VALUE_HAS_REF_COUNT(v))
         s->kref[s->k_count >> 6] |= (uint64_t)1 << (s->k_count & 63);
     return s->k_count++;
-}
-
-/* the string of the index atom atom ("12"), which has no string of its
-   own: a constant made for the register code, which owns it (kown), freed
-   with it (rv_free_func) or when the pass fails. The same index twice is
-   one constant. It is one of the RV_K_NEAR constants a byte names: past
-   them the pass fails (kown has a bit for those only). Out of memory fails
-   the pass, with no exception. */
-static int rv_k_index(RVPass *s, JSAtom atom)
-{
-    char buf[ATOM_GET_STR_BUF_SIZE];
-    size_t len = u32toa(buf, __JS_AtomToUInt32(atom));
-    JSString *p;
-    JSValue v;
-    int i;
-
-    for (i = 0; i < s->k_count && i < RV_K_NEAR; i++) {
-        if ((s->kown[i >> 6] >> (i & 63)) & 1) {
-            p = JS_VALUE_GET_STRING(s->k[i]);
-            if (p->len == len && !memcmp(p->u.str8, buf, len))
-                return i;
-        }
-    }
-    if (s->k_count >= RV_K_NEAR) {
-        s->rt->rv_stat[3] = -4; /* past the near constants (rv_cannot_run) */
-        s->failed = TRUE;
-        return 0;
-    }
-    p = js_alloc_string_rt(s->rt, len, 0);
-    if (!p) {
-        s->failed = TRUE;
-        return 0;
-    }
-    memcpy(p->u.str8, buf, len);
-    p->u.str8[len] = '\0';
-    v = JS_MKPTR(JS_TAG_STRING, p);
-    if (dbuf_put(&s->kbuf, (uint8_t *)&v, sizeof(v))) {
-        js_free_rt(s->rt, p);
-        s->failed = TRUE;
-        return 0;
-    }
-    s->k = (JSValue *)s->kbuf.buf;
-    s->kref[s->k_count >> 6] |= (uint64_t)1 << (s->k_count & 63);
-    s->kown[s->k_count >> 6] |= (uint64_t)1 << (s->k_count & 63);
-    return s->k_count++;
-}
-
-/* the constants rv_k_index made that the pass still owns, freed */
-static void rv_k_free_owned(RVPass *s)
-{
-    int i;
-    for (i = 0; i < s->k_count && i < RV_K_NEAR; i++) {
-        if ((s->kown[i >> 6] >> (i & 63)) & 1)
-            JS_FreeValueRT(s->rt, s->k[i]);
-    }
-    memset(s->kown, 0, sizeof(s->kown));
 }
 
 /* whether a closure captures the local or argument of the slot: a closure
@@ -800,7 +762,7 @@ static void rv_materialize(RVPass *s, int i)
     case RV_E_TEMP:
         /* temps are made at the slot of their depth and do not move */
         if (e->slot != t)
-            s->failed = TRUE;
+            rv_overflow(s);
         return;
     }
     /* a store of it right after makes it MOVL, LOADKL or LOADKRL */
@@ -1020,7 +982,8 @@ static void rv_one(RVPass *s, int pos)
 #include "regvm-areas.h"
 #undef RV_PART
     default:
-        s->failed = TRUE;
+        /* rv_old_info took it: an area has no case of it */
+        rv_overflow(s);
         break;
     }
     (void)i;
@@ -1055,8 +1018,10 @@ static int rv_patch(RVPass *s)
                 continue;
             }
             off = f->island - (f->pos + 2);
-            if (off != (int16_t)off)
+            if (off != (int16_t)off) {
+                rv_overflow(s); /* the island is right after the jump */
                 return -1;
+            }
         }
         put_u16(s->code.buf + f->pos, off);
     }
@@ -1125,8 +1090,8 @@ static int rv_code(RVPass *s)
             continue;
         s->pos = pos;
 #ifdef RV_INJECT
-        /* the old loop runs a get_field after a fused head (get_arg0_get_field
-           and the like) in the dispatch of the head */
+        /* QuickJS's interpreter runs a get_field after a fused head
+           (get_arg0_get_field and the like) in the dispatch of the head */
         s->ipos = pos;
         if (s->iprev >= 0 && s->iprev + short_opcode_info(s->bc[s->iprev]).size == pos) {
             switch (s->bc[s->iprev]) {
@@ -1173,7 +1138,6 @@ static void rv_round_init(RVPass *s)
 {
     JSRuntime *rt = s->rt;
     int i;
-    rv_k_free_owned(s);
     dbuf_free(&s->code);
     dbuf_free(&s->fix);
     dbuf_free(&s->fixw);
@@ -1212,7 +1176,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
 {
     RVPass s_s, *s = &s_s;
     RVFunc *rf = NULL;
-    int i, size, round, r, first_temp, wide, fsize, vr_heap, far, deep, fold;
+    int i, size, round, r, first_temp, wide, fsize, vr_heap, deep, fold;
     int first_temp0, fsize0, vr_heap0;
     int nt = rv_reads_new_target(b);
 
@@ -1233,9 +1197,6 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         first_temp = RV_HDR + RV_SF_SLOTS(0);
         fsize = first_temp + b->stack_size + wide;
     }
-    /* MOVW, SETLW and CHKLW name a local, argument, this or func with 16
-       bits: the farthest, func, is slot -(arg_count + 2 + var_count + nt) */
-    far = b->arg_count + 2 + b->var_count + nt > RV_FAR_MAX;
     /* a stack too deep for the temps folds (regvm-fold.h), in a generator
        or async function too, whose heap frame keeps the folded temps while
        it is suspended (regvm-ops-gen.h) */
@@ -1248,9 +1209,12 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     /* A generator or async function has no slot of new.target (nt is 0,
        rv_reads_new_target): new.target is undefined in it. One with vr_heap
        has its table of var_refs only while it runs (regvm-ops-gen.h). */
-    if (far) {
-        rt->rv_stat[3] = -1;
-        rt->rv_stat[4] = far << 5;
+    /* MOVW, SETLW and CHKLW name a local, argument, this or func with 16
+       bits: the farthest, func, is slot -(arg_count + 2 + var_count + nt),
+       which the parser keeps within RV_FAR_MAX (JS_FRAME_FULL of quickjs.c) */
+    if (b->arg_count + 2 + b->var_count + nt > RV_FAR_MAX) {
+        rt->rv_stat[3] = RV_CRAFTED;
+        rt->rv_stat[4] = 0;
         return NULL;
     }
     memset(s, 0, sizeof(*s));
@@ -1284,6 +1248,7 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         s->st = js_malloc_rt(rt, sizeof(s->st[0]) * (b->stack_size + 8));
         if (!s->st) {
             s->st = s->st_in;
+            s->oom = TRUE;
             goto done;
         }
         s->fold = TRUE;
@@ -1324,16 +1289,17 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
             s->first_temp = first_temp = first_temp0;
             fsize = fsize0;
         } else {
-            rt->rv_stat[3] = -1;
-            rt->rv_stat[4] = 64 | (b->stack_size > RV_TEMPS_MAX) << 3 | (fsize0 > 127) << 4;
+            /* the parser keeps the temps the catch offsets need within
+               RV_FOLD_PINS_MAX (regvm-func.h), which fit at RV_FOLD_RMIN */
+            s->crafted = TRUE;
             goto done;
         }
     }
     if (r < 0)
         goto done;
-    /* every place a ret goes to in the old loop (ret_bits) has its GOSUB: a
-       gosub the pass never reached, which only code read by JS_ReadObject
-       has, has none, and the function stays in the old loop */
+    /* every place a ret goes to in QuickJS's interpreter (ret_bits) has its
+       GOSUB: a gosub the pass never reached, which only code read by
+       JS_ReadObject has, has none, and the function is refused */
     if (b->ret_bits) {
         int n = 0;
         const uint32_t *r = (const uint32_t *)s->rets.buf;
@@ -1372,8 +1338,6 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         rf->args = s->args;
         rf->argmax = s->args ? -1 : b->arg_count;
         rf->k_count = s->k_count;
-        memcpy(rf->kown, s->kown, sizeof(rf->kown));
-        memset(s->kown, 0, sizeof(s->kown)); /* the register code owns them now */
         rf->runs = 0;
         rf->code_len = s->code.size;
         rf->k = (JSValue *)((uint8_t *)rf + size);
@@ -1401,7 +1365,6 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         *oom = !rf && (s->oom || s->code.error || s->fix.error || s->fixw.error ||
                        s->pcmap.error || s->pcmap_hi.error || s->rets.error ||
                        s->kbuf.error);
-    rv_k_free_owned(s);
     dbuf_free(&s->code);
     dbuf_free(&s->fix);
     dbuf_free(&s->fixw);

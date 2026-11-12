@@ -8,6 +8,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -81,10 +82,10 @@ func TestHeadMatchesEveryGeneratedFunctionOnce(t *testing.T) {
 
 func TestFrontOnGeneratedHead(t *testing.T) {
 	d := copyEngine(t)
-	file, before := engineFile(t, d, "JS_CallInternal_block")
-	run(t, d, "front:JS_CallInternal_block:8")
+	file, before := engineFile(t, d, "JS_RegvmRun_block")
+	run(t, d, "front:JS_RegvmRun_block:8")
 	after := read(t, d, file)
-	i := strings.Index(before, "TEXT ·JS_CallInternal_block(SB)")
+	i := strings.Index(before, "TEXT ·JS_RegvmRun_block(SB)")
 	j := strings.Index(before[i:], "\tPCALIGN $")
 	k := i + j + strings.Index(before[i+j:], "\n") + 1 // the line after the PCALIGN
 	want := before[:k] + nopBytes(8) + before[k:]
@@ -99,18 +100,25 @@ func TestFrontOnGeneratedHead(t *testing.T) {
 
 func TestBodyOnGeneratedHead(t *testing.T) {
 	d := copyEngine(t)
-	file, before := engineFile(t, d, "JS_CallInternal_block")
-	run(t, d, "body:128:JS_CallInternal_block")
+	file, before := engineFile(t, d, "JS_RegvmRun_block")
+	run(t, d, "body:128:JS_RegvmRun_block")
 	after := read(t, d, file)
 	if strings.Count(after, "PCALIGN $128") != 1 {
 		t.Fatalf("want one PCALIGN $128, got %d", strings.Count(after, "PCALIGN $128"))
 	}
-	i := strings.Index(after, "TEXT ·JS_CallInternal_block(SB)")
+	i := strings.Index(after, "TEXT ·JS_RegvmRun_block(SB)")
 	if !strings.Contains(after[i:i+400], "#endif\n\tPCALIGN $128\n") {
 		t.Fatal("the PCALIGN of the body was not replaced in place")
 	}
-	if strings.Replace(after, "PCALIGN $128", "PCALIGN $64", 1) != before {
-		t.Fatal("body changed more than the alignment of the body (the function had PCALIGN $64)")
+	// the PCALIGN of the body as the generator wrote it: $64 with -align64,
+	// $16 without
+	j := strings.Index(before, "TEXT ·JS_RegvmRun_block(SB)")
+	was := regexp.MustCompile(`#endif\n\tPCALIGN (\$\d+)\n`).FindStringSubmatch(before[j : j+400])
+	if was == nil {
+		t.Fatal("no PCALIGN of the body after the room check")
+	}
+	if strings.Replace(after, "PCALIGN $128", "PCALIGN "+was[1], 1) != before {
+		t.Fatalf("body changed more than the alignment of the body (the function had PCALIGN %s)", was[1])
 	}
 }
 

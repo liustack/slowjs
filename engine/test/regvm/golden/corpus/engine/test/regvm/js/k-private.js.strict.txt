@@ -1,0 +1,72 @@
+result make 0: ["P",true,"function"]
+result make 1: ["P",true,"function"]
+result make 2: ["P",true,"function"]
+result get 0: [5,5]
+result get 1: [5,5]
+result get 2: [5,5]
+result set 0: ["k",8,1]
+result set 1: ["k",8,1]
+result set 2: ["k",8,1]
+result method 0: "m5"
+result method 1: "m5"
+result method 2: "m5"
+result accessor 0: [16,8]
+result accessor 1: [8,8]
+result accessor 2: [8,8]
+result field undefined 0: 1
+result field undefined 1: 2
+result field undefined 2: 3
+result update 0: 6
+result update 1: 8
+result update 2: 10
+result in 0: [true,false,true,false]
+result in 1: [true,false,true,false]
+result in 2: [true,false,true,false]
+result in not object 0 threw TypeError: invalid 'in' operand
+result in not object 1 threw TypeError: invalid 'in' operand
+result in not object 2 threw TypeError: invalid 'in' operand
+result static 0: [0,"sm",10]
+result static 1: [1,"sm",10]
+result static 2: [2,"sm",10]
+result read other 0 threw TypeError: private class field '#x' does not exist
+result read other 1 threw TypeError: private class field '#x' does not exist
+result read other 2 threw TypeError: private class field '#x' does not exist
+result read other ok 0: ["k",5,1]
+result read other ok 1: ["k",5,1]
+result read other ok 2: ["k",5,1]
+result write other 0 threw TypeError: private class field '#x' does not exist
+result write other 1 threw TypeError: private class field '#x' does not exist
+result write other 2 threw TypeError: private class field '#x' does not exist
+result call other 0 threw TypeError: invalid brand on object
+result call other 1 threw TypeError: invalid brand on object
+result call other 2 threw TypeError: invalid brand on object
+result call other ok 0: ["k","m10",1]
+result call other ok 1: ["k","m10",1]
+result call other ok 2: ["k","m10",1]
+result accessor other 0 threw TypeError: not an object
+result accessor other 1 threw TypeError: not an object
+result accessor other 2 threw TypeError: not an object
+result get on null 0 threw TypeError: not an object
+result get on null 1 threw TypeError: not an object
+result get on null 2 threw TypeError: not an object
+result set on proxy 0 threw TypeError: private class field '#x' does not exist
+result set on proxy 1 threw TypeError: private class field '#x' does not exist
+result set on proxy 2 threw TypeError: private class field '#x' does not exist
+result other class 0 threw TypeError: private class field '#x' does not exist
+result other class 1 threw TypeError: private class field '#x' does not exist
+result other class 2 threw TypeError: private class field '#x' does not exist
+result fields 0: ["",2,1,2]
+result fields 1: ["",2,1,2]
+result fields 2: ["",2,1,2]
+result field throws 0 threw RangeError: field init
+result field throws 1 threw RangeError: field init
+result field throws 2 threw RangeError: field init
+result get 1
+result field twice 0 threw TypeError: private class field '#t' already exists
+result get 1
+result field twice 1 threw TypeError: private class field '#t' already exists
+result get 1
+result field twice 2 threw TypeError: private class field '#t' already exists
+mem-end obj=367 atom=625 shape=141 prop=1434 jsfunc=30 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=549 shape=128 prop=950 jsfunc=0 cfunc=127 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

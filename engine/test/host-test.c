@@ -74,7 +74,7 @@ JSMemRange JS_ReleaseNextChunk(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)r
 JSMemRange JS_ReleaseNextRange(JSRuntime *rt) { JSMemRange r = { 0, 0 }; (void)rt; return r; }
 #ifdef RV_INJECT
 /* the throw-injection test of the register loop (engine/regvm-inject.h) */
-void JS_RegvmInject(long n, unsigned site, long j, unsigned func, int pos, long k) { (void)n; (void)site; (void)j; (void)func; (void)pos; (void)k; }
+void JS_RegvmInject(long n, unsigned site, long j) { (void)n; (void)site; (void)j; }
 const char *JS_RegvmInjectResult(void) { return "none 0 0"; }
 #endif
 

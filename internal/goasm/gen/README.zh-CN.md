@@ -45,7 +45,7 @@ clang 从命令行取的参数，以函数属性的形式随 IR 一起传递（`
 
 - 被内联进它所有调用者的静态函数没有了（pass 会报告，Go 声明和 `engine_keep` 列表里是模块里有的东西）。被内联的外部函数仍然被定义和声明，因为 Go 一侧可能调用它。
 - 它会为一次调用的常量参数克隆一个函数（`mark_children.specialized.2`）。克隆是和其他函数一样的统一函数，Go 名字是 `mark_children_specialized_2`（`GoNames`），它的代码跟着它所来自的函数的文件走（`cloneGroups`、`cloneOf`，它们也处理 llvm-link 加的编号）。寄存器入口的叶子函数（`-leaves`、`-shadow-leaf`）只是那些名字的函数，没有别的：`memcpy` 的克隆会是一个统一函数。
-- `-align64`（`JS_CallInternal`、`lre_exec_backtrack`）、`DispatchCopies`、宿主回调、链接后检查的 `host_poll` 和 `js_host_layout`，指名的是外部函数和数据，优化器会按它们的名字保留。
+- `-align64`（`lre_exec_backtrack`）、`DispatchCopies`、宿主回调、链接后检查的 `host_poll` 和 `js_host_layout`，指名的是外部函数和数据，优化器会按它们的名字保留。
 
 `-postlink-opt=on` 或 `off` 强制这次运行，`-postlink-opt-args` 改变它的选项，供测试和勘察使用（`-release` 两者都拒绝）。`TestPostLinkOpt`（amd64 和 arm64，对为每种架构交叉构建的模块做链接后检查）和 `TestSampleRuns` 的 `postlink.c` 样本（它运行代码，只在 linux/amd64 上）涵盖了这一切。
 
@@ -61,7 +61,7 @@ clang 从命令行取的参数，以函数属性的形式随 IR 一起传递（`
 
 windows 上给故障留的空间：windows 把故障时 CPU 的状态写在栈指针下面，也就是 goroutine 的栈上，而 Go 在每个栈下面只给它留了 4 KiB（golang/go#81238），比带 AMX 的 CPU 需要的少。所以只在 windows 的汇编里（`#ifdef GOOS_windows`），每个统一函数在 Go 的序言之后检查它的栈指针减去 `RoomBelow`（12 KiB，`emit.go`）是否还在 g 里的 guard 之上，不在就调用 `goasm_room`：这个函数什么也不做，栈帧是 `RoomFrame` 字节，它自己的栈检查让运行时把栈加大。NOSPLIT 列表上的函数先载入 g，没有栈帧的函数还写上 NOFRAME，这样这次调用不改变它的栈帧。跳过这次调用的分支落在一个单字节的空操作上，而不是函数体的 `PCALIGN` 上：Go 1.26.11 和 1.27.4 之前，遇到跳向 `PCALIGN` 的前向分支会无限循环（golang/go#81792）。寄存器入口的叶子函数没有这个检查，它的调用者给它留了空间。宿主的回调在返回引擎之前再留一次空间（`internal/cengine/host.go`）。linux 和 darwin 上的代码和原来一样。对 windows 二进制的链接后检查要求每个统一函数都有这个检查、它对 `goasm_room` 的调用和跳到这次调用之后的分支，并要求 `goasm_room` 的栈检查在它自己的栈指针下面至少要 `RoomBelow` - 8 字节，这样它的调用者就有 `RoomBelow`。`TestPostLinkFormats` 在一个 windows 二进制里逐一改掉这些，检查必须拒绝每一处。具体数字见 docs/changes/c-engine.zh-CN.md（引擎出错时）。
 
-函数体从哪里开始：在 Go 的序言之后，每个函数都有一个 `PCALIGN $16`，所以函数体从 16 字节处开始，当它前面的代码增长时，会在它那 64 字节的行内移动。`-align64 name:offset,...` 把每个被指名函数的函数体，放在 64 的倍数之后 `offset` 个字节处（一个 `PCALIGN $64`，它也把函数放在 64 字节处，然后是 `offset` 个字节的 8 字节空操作，每次调用运行一次）。amd64 引擎的默认值是 `JS_CallInternal:40,lre_exec_backtrack:16`，是测得最快的位置（见 [performance.md](../../../docs/performance.zh-CN.md#代码位置)）。arm64 和 `-src` 构建没有，除非给了这个参数。链接后的检查让每个函数体在它的位置上，它前面的填充都是空操作。
+函数体从哪里开始：在 Go 的序言之后，每个函数都有一个 `PCALIGN $16`，所以函数体从 16 字节处开始，当它前面的代码增长时，会在它那 64 字节的行内移动。`-align64 name:offset,...` 把每个被指名函数的函数体，放在 64 的倍数之后 `offset` 个字节处（一个 `PCALIGN $64`，它也把函数放在 64 字节处，然后是 `offset` 个字节的 8 字节空操作，每次调用运行一次）。amd64 引擎的默认值是 `lre_exec_backtrack:16`：匹配器放在测得最快的位置（见 [performance.md](../../../docs/performance.zh-CN.md#代码位置)）。解释器也就是寄存器循环 `JS_RegvmRun` 没有固定位置，它的位置还没有测。arm64 和 `-src` 构建没有，除非给了这个参数。链接后的检查让每个函数体在它的位置上，它前面的填充都是空操作。
 
 有两种反向构建用来测试这些测试。`-poison` 在每个入口加载参数之前、每个统一调用之后读结果之前、以及每次返回时，往每个寄存器里写垃圾：引擎的测试必须仍然通过，所以没有代码读取 lowering 没有设置过的寄存器。毒化构建从 Go 栈上读回每个结果，因为它的返回会覆盖结果寄存器。`GEN_KEEP_NARROW=1` 让窄整数保持生成器曾经处理它们的样子：链接后的检查必须拒绝结果（`TestNarrowArgs`）。只有值 1 才会打开它，除了空字符串之外的任何其他值都是错误。这样一次构建的包有标记：`engine_negative_<arch>.go` 不带 `-tags goasmnegative` 就不能编译，`engine_decl_<arch>.go` 也这样说。之后往同一个目录里的构建会删除这个文件。
 

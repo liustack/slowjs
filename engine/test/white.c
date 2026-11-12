@@ -1366,15 +1366,16 @@ int white_emit_buf(JSContext *ctx, int op)
 /* converts the function f to register code (rv_convert) with the request
    fail of the conversion failing, as white_compile_failing does: mode 1
    counts every call of the allocator. *nallocs gets the requests the
-   conversion made. 1 when f has register code, 0 when it stays in the old
-   loop, -1 when f is no function that has not converted yet. */
+   conversion made. 1 when f has register code, 0 when it has none, -1 when
+   f is no function of bytecode (a generator or an async function is one)
+   that has not converted yet. */
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs)
 {
     JSFunctionBytecode *b;
     RVFunc *rf;
 
     if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
         return -1;
     b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
     if (b->rv != RV_UNCONVERTED)

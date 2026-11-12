@@ -1,0 +1,19 @@
+result function: a
+result arrow: b
+result class: c
+result generator: d
+result async arrow: e
+result named function: g
+result class with a static name: N
+result a paren: j
+result a comma: 
+result loop variable: k,j
+result not a function: 5
+result not a function with keys: z
+result function name with keys: z
+result var in a function: function
+result initializer throws: throws RangeError
+result the initializer runs once: 1
+mem-end obj=193 atom=554 shape=129 prop=955 jsfunc=3 cfunc=125 array=2 fast_array=2 elements=16 binary=0
+mem-gc obj=189 atom=553 shape=126 prop=947 jsfunc=1 cfunc=125 array=2 fast_array=2 elements=16 binary=0
+--- status exit 0

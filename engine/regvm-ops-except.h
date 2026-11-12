@@ -9,18 +9,18 @@
    gosub and ret. Read once for each part, see regvm-areas.h. The unwinding
    is rv_unwind in regvm-run.h.
 
-   A catch offset is a value of its own in the temp of its depth, as the old
-   loop has it on its stack: CATCH puts it there, with the offset of its own
-   end in the register code, where its jump to the catch is read
+   A catch offset is a value of its own in the temp of its depth, as QuickJS's
+   interpreter has it on its stack: CATCH puts it there, with the offset of its
+   own end in the register code, where its jump to the catch is read
    (rv_catch_target), and where a pcmap entry names the old pc before the
-   catch, as the old loop names an interrupt it reads after the jump to a
-   catch. It is owned like any temp (rv_owned), so the
+   catch, as QuickJS's interpreter names an interrupt it reads after the jump
+   to a catch. It is owned like any temp (rv_owned), so the
    pcmap of each instruction in the try names it, and the unwinding stops
    there. The return address of a finally (gosub) is an int in the temp of
-   its depth: the one the old loop makes, the offset of the end of the old
-   gosub, which code read by JS_ReadObject can make or read as any int. ret
-   checks it against ret_bits as the old loop does, and finds the end of its
-   GOSUB in the register code in rf->rets. */
+   its depth: the one QuickJS's interpreter makes, the offset of the end of the
+   old gosub, which code read by JS_ReadObject can make or read as any int. ret
+   checks it against ret_bits as QuickJS's interpreter does, and finds the end
+   of its GOSUB in the register code in rf->rets. */
 
 #if RV_PART == RV_PART_LIST
 RV_OP(THROW)    /* s: throws the value of s, a temp is moved */
@@ -52,9 +52,9 @@ static void rv_except_drop(RVPass *s, int i)
 
 /* the pcmap entry rv_throws just made for a GOSUB gets an entry before
    it, at its end less one, for an interrupt that a GORET reads after it
-   took the return address: the stack is that of the GOSUB, and the old
-   loop names the end of its gosub less one there (OP_ret jumps, then reads
-   it) */
+   took the return address: the stack is that of the GOSUB, and QuickJS's
+   interpreter names the end of its gosub less one there (OP_ret jumps, then
+   reads it) */
 static void rv_gosub_entries(RVPass *s)
 {
     RVPcMask *g = (RVPcMask *)(s->pcmap.buf + s->pcmap.size) - 1;
@@ -81,8 +81,8 @@ static void rv_ret_put(RVPass *s, uint32_t old)
 }
 
 /* the pcmap entry at the end of a CATCH, for an interrupt read at the jump
-   to its catch (rv_unwind): old is the old target less one, as the old loop
-   has pc at the target then. CATCH itself does not throw. */
+   to its catch (rv_unwind): old is the old target less one, as QuickJS's
+   interpreter has pc at the target then. CATCH itself does not throw. */
 static void rv_catch_entry(RVPass *s, int old)
 {
     rv_pcmap_put(s, s->code.size, old, rv_owned(s, 0));
@@ -153,8 +153,8 @@ static void rv_catch_entry(RVPass *s, int old)
     case OP_ret:
         /* a return address is an int as any other: code that JS_ReadObject
            read may make one with push_i32 or compute it, so a constant
-           goes to its temp, and GORET checks the value as the old loop
-           does */
+           goes to its temp, and GORET checks the value as QuickJS's
+           interpreter does */
         if (s->st[s->sp - 1].kind != RV_E_TEMP)
             rv_materialize(s, s->sp - 1);
         e = s->st[s->sp - 1];
@@ -162,7 +162,7 @@ static void rv_catch_entry(RVPass *s, int old)
         rv_emit(s, RV_GORET);
         rv_byte(s, e.slot);
         /* a value that is no return address stays in its temp when GORET
-           throws, as the old loop's OP_ret leaves it on its stack: the
+           throws, as QuickJS's OP_ret leaves it on its stack: the
            unwinding frees it. (An interrupt read after the jump is at the
            entry of the GOSUB, rv_gosub_entries.) */
         rv_throws(s, rv_owned(s, 0));
@@ -170,7 +170,7 @@ static void rv_catch_entry(RVPass *s, int old)
         s->sp = -1;
         break;
 #elif RV_PART == RV_PART_RUN_FN
-/* the error of throw_error, as the old loop's OP_throw_error */
+/* the error of throw_error, as QuickJS's OP_throw_error */
 static no_inline void rv_throw_error(JSContext *ctx, JSAtom atom, int type)
 {
     if (type == JS_THROW_VAR_RO)
@@ -191,7 +191,7 @@ static no_inline void rv_throw_error(JSContext *ctx, JSAtom atom, int type)
 
 /* where GORET at ip goes: the end of the GOSUB whose old gosub ends at the
    value, or NULL with an exception. The value is checked against ret_bits
-   as the old loop's OP_ret checks it, so the same ints are taken. Every
+   as QuickJS's OP_ret checks it, so the same ints are taken. Every
    gosub of ret_bits has its GOSUB in rf->rets (rv_build refuses a function
    with a gosub it did not convert), sorted by old. */
 static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
@@ -243,7 +243,7 @@ static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
     ip = pc; pc += 2;
     RV_R(ip[0]) = RV_R(ip[1]);
     RV_NEXT();
-    /* gosub and ret: as the old loop's, but the interrupt flag is read
+    /* gosub and ret: as QuickJS's, but the interrupt flag is read
        before pc moves, so that pc names the instruction for the pcmap */
  rv_GOSUB:
     ip = pc; pc += 7;

@@ -7,8 +7,10 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"crypto/sha256"
+	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,12 +18,6 @@ import (
 
 	"github.com/liustack/quickjs/internal/cengine"
 )
-
-// regvm turns the register loop of engine/regvm.h on or off for the calls
-// m makes through JS_Call.
-func regvm(m *VM, on bool) {
-	m.outer(func() { cengine.JS_SetRegvm(m.sp, m.ctx, uintptr(map[bool]int{false: 0, true: 1}[on])) })
-}
 
 // regvmStat is JS_RegvmStat: 0 converted, 1 refused, 2 entries, 3 and 4 the
 // opcode and offset of the last refusal.
@@ -495,8 +491,17 @@ var hasOwnBench = (function () {
 })();
 `
 
-// The same answers with the register loop on as off, and the micro
-// functions run in it.
+// regvmMicroGolden is what each call of TestRegvmMicro gave, a line each:
+// the old loop and the register loop gave the same until the old loop was
+// removed (the test compared the two then), and the register loop has
+// given these since. -update-regvm-micro writes it again: read the diff
+// before it goes into a commit.
+const regvmMicroGolden = "testdata/regvm_micro.golden"
+
+var updateRegvmMicro = flag.Bool("update-regvm-micro", false, "rewrite "+regvmMicroGolden)
+
+// The micro functions give the answers of regvmMicroGolden and run in the
+// register loop.
 func TestRegvmMicro(t *testing.T) {
 	type call struct {
 		fn   string
@@ -577,38 +582,44 @@ func TestRegvmMicro(t *testing.T) {
 	for i := 0; i <= 2; i++ {
 		calls = append(calls, call{"hasOwnBench", []any{i, 1000}})
 	}
-	run := func(on bool) []string {
-		m := newTestVM(t)
-		regvm(m, on)
-		if _, err := m.Eval(regvmMicro, EvalGlobal); err != nil {
+	m := newTestVM(t)
+	if _, err := m.Eval(regvmMicro, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	for _, c := range calls {
+		r, err := m.Call(c.fn, c.args...)
+		fmt.Fprintf(&out, "%s%v: %v %v\n", c.fn, c.args, r, err)
+	}
+	t.Logf("converted %d, refused %d, entries %d, last refusal op %d at %d",
+		regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2), regvmStat(m, 3), regvmStat(m, 4))
+	if regvmStat(m, 0) < 10 || regvmStat(m, 2) < entries {
+		t.Errorf("the micro functions did not run in the register loop")
+	}
+	if *updateRegvmMicro {
+		if err := os.WriteFile(regvmMicroGolden, []byte(out.String()), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		var out []string
-		for _, c := range calls {
-			r, err := m.Call(c.fn, c.args...)
-			out = append(out, fmt.Sprintf("%v %v", r, err))
-		}
-		if on {
-			t.Logf("converted %d, refused %d, entries %d, last refusal op %d at %d",
-				regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2), regvmStat(m, 3), regvmStat(m, 4))
-			if regvmStat(m, 0) < 10 || regvmStat(m, 2) < entries {
-				t.Errorf("the micro functions did not run in the register loop")
-			}
-		}
-		return out
+		return
 	}
-	old, reg := run(false), run(true)
-	for i := range old {
-		if old[i] != reg[i] {
-			t.Errorf("%s%v: old loop %q, register loop %q", calls[i].fn, calls[i].args, old[i], reg[i])
+	want, err := os.ReadFile(regvmMicroGolden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, wl := strings.Split(out.String(), "\n"), strings.Split(string(want), "\n")
+	if len(got) != len(wl) {
+		t.Fatalf("%d calls, %s has %d lines", len(got)-1, regvmMicroGolden, len(wl)-1)
+	}
+	for i := range got {
+		if got[i] != wl[i] {
+			t.Errorf("call %d: got %q, want %q", i+1, got[i], wl[i])
 		}
 	}
 }
 
 // TestRegvmRun runs one micro function for the measurements of stage 0,
 // when REGVM_BENCH names it (fib, call, field or an x bench, or a page: react,
-// table and spiral, see regvmPage, shop and mui, see regvmApp): REGVM_ON=1 for the
-// register loop, REGVM_N runs of REGVM_ARG (default 25 for fib, 1000000 for
+// table and spiral, see regvmPage, shop and mui, see regvmApp): REGVM_N runs of REGVM_ARG (default 25 for fib, 1000000 for
 // the loops), one warm run first. It prints the answer and the time of each
 // run.
 func TestRegvmRun(t *testing.T) {
@@ -616,7 +627,6 @@ func TestRegvmRun(t *testing.T) {
 	if name == "" {
 		t.Skip("REGVM_BENCH not set")
 	}
-	on := os.Getenv("REGVM_ON") == "1"
 	n, _ := strconv.Atoi(os.Getenv("REGVM_N"))
 	arg, _ := strconv.Atoi(os.Getenv("REGVM_ARG"))
 	if arg == 0 {
@@ -626,19 +636,18 @@ func TestRegvmRun(t *testing.T) {
 		}
 	}
 	if name == "react" {
-		regvmReact(t, on, n)
+		regvmReact(t, n)
 		return
 	}
 	if name == "table" || name == "spiral" {
-		regvmPage(t, on, n, name)
+		regvmPage(t, n, name)
 		return
 	}
 	if name == "shop" || name == "mui" {
-		regvmApp(t, on, n, name)
+		regvmApp(t, n, name)
 		return
 	}
 	m := newTestVM(t)
-	regvm(m, on)
 	if _, err := m.Eval(regvmMicro, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -657,7 +666,7 @@ func TestRegvmRun(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fmt.Printf("regvm %s on=%v arg=%d n=%d result=%v entries=%d ns=", name, on, arg, n, r, regvmStat(m, 2))
+	fmt.Printf("regvm %s arg=%d n=%d result=%v entries=%d ns=", name, arg, n, r, regvmStat(m, 2))
 	for _, d := range times {
 		fmt.Printf("%d ", d.Nanoseconds())
 	}
@@ -665,23 +674,12 @@ func TestRegvmRun(t *testing.T) {
 }
 
 // The scripts of TestRegvmDepth: each recursion writes the depth it reached
-// into depthO.d until the call depth ends it with a RangeError. big has 60
-// locals, so that the register stack is full long before the depth and the
-// calls past it go out of the loop, and calls itself through
-// Function.prototype.call, a C function, and back: JS_Call.
-//
-// regvmDepthOld is evaluated first, with the register loop off: its
-// functions are the old of the depthAlt cases, made while the loop was off,
-// so that they run in the old loop whatever the pass converts, and the
-// recursion alternates between the two loops.
-const regvmDepthOld = `"use strict";
-var depthO = { d: 0 };
-var depthOld = {}, depthSmall = {};
-depthOld.depthAlt = function old(n) { depthO.d = n; return depthSmall.depthAlt(n + 1) * 1; };
-depthOld.depthAltBig = function old(n) { BIGVARS; depthO.d = n; return depthSmall.depthAltBig(n + 1) * 1 + v1 + v2000; };
-`
-
+// into depthO.d until the call depth or the stack ends it with a RangeError.
+// big has 60 locals, and calls itself through Function.prototype.call, a C
+// function, and back: JS_Call. depthNew and depthNewBig recurse through new
+// X(...), a constructor call, the second with a frame of 2000 locals.
 const regvmDepth = `"use strict";
+var depthO = { d: 0 };
 var depthJS = (function () {
   var o = depthO;
   function rec(n) { o.d = n; return rec(n + 1); }
@@ -707,27 +705,13 @@ var depthMap = (function () {
   function rec(x) { o.d = o.d + 1; return a.map(rec); }
   return function () { return rec(0); };
 })();
-var depthAlt = (function () {
-  var o = depthO, old = depthOld.depthAlt;
-  function small(n) { o.d = n; return old(n + 1); }
-  depthSmall.depthAlt = small;
-  return function () { return small(0); };
-})();
-var depthAltBig = (function () {
-  var o = depthO, old = depthOld.depthAltBig;
-  function small(n) { o.d = n; return old(n + 1); }
-  depthSmall.depthAltBig = small;
-  return function () { return small(0); };
-})();
-// through new X(...) of a function of the register loop, a call out of it:
-// the constructor runs in the old loop, small and with a large frame
-var depthAltNew = (function () {
+var depthNew = (function () {
   var o = depthO;
   function g(n) { o.d = n; return new X(n + 1); }
   function X(n) { this.v = g(n + 1); }
   return function () { return g(0); };
 })();
-var depthAltNewBig = (function () {
+var depthNewBig = (function () {
   var o = depthO;
   function g(n) { o.d = n; return new X(n + 1); }
   function X(n) { BIGVARS; this.v = g(n + 1) + v1 + v2000; }
@@ -735,23 +719,41 @@ var depthAltNewBig = (function () {
 })();
 `
 
-// No path recurses less deep with the register loop on than off (design
-// 5.4): pure JavaScript, the same once the register stack is full and the
-// calls go out of the loop, JavaScript to C to JavaScript, and callbacks.
+// regvmDepthFloor is, for each recursion of TestRegvmDepth and each
+// architecture, the depth the register loop reaches on the generated engine.
+// A script recurses at least as deep as before, and may recurse deeper
+// (AGENTS.md), so the table only goes up: when a change makes a case deeper,
+// raise its floor to the new depth, and never lower a floor without the
+// owner's word. Every case ends on the count of levels, so its floor is that
+// count: 4997 under the default of 5000 levels and 9996 under
+// maxCallDepthLimit, and about half of 4997 where each level of the script
+// is also a level of a C function (Function.prototype.call, Array.prototype.map).
+// depthNewBig reached 9996 with the register loop, where the old loop's large
+// frames ran out of stack bytes at 1982 levels on arm64 and 1928 on amd64.
+//
+// Where the numbers come from: arm64 and amd64 both natively at d38031dd, the
+// head before the old loop was deleted, until a native run at a later head
+// replaces them.
+var regvmDepthFloor = map[string]map[string]int{
+	"arm64": {"depthJS": 4997, "depthBig": 4997, "depthC": 2498, "depthBigC": 2498, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
+	"amd64": {"depthJS": 4997, "depthBig": 4997, "depthC": 2498, "depthBigC": 2498, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
+}
+
+// No path recurses less deep than it did before: pure JavaScript, with small
+// and large frames, JavaScript to C to JavaScript, callbacks, and
+// constructor calls.
 func TestRegvmDepth(t *testing.T) {
-	depth := func(fn string, on bool) (int, int) {
+	floor, ok := regvmDepthFloor[runtime.GOARCH]
+	if !ok {
+		t.Fatalf("no depth floors for %s", runtime.GOARCH)
+	}
+	for _, fn := range []string{"depthJS", "depthBig", "depthC", "depthBigC", "depthMap", "depthNew", "depthNewBig"} {
 		m := newTestVM(t)
-		regvm(m, on)
-		if strings.HasPrefix(fn, "depthAlt") {
-			// the most levels, so that the bytes of stack, not the
-			// count, end depthAltBig, whose old frames are large
+		if strings.HasPrefix(fn, "depthNew") {
+			// the most levels, so that a frame of depthNewBig that
+			// takes more stack than now ends it before the count
 			m.SetMaxStackSize(maxCallDepthLimit)
 		}
-		regvm(m, false)
-		if _, err := m.Eval(regvmDepthOldScript(), EvalGlobal); err != nil {
-			t.Fatal(err)
-		}
-		regvm(m, on)
 		if _, err := m.Eval(regvmDepthScript(), EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
@@ -759,46 +761,39 @@ func TestRegvmDepth(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "RangeError") {
 			t.Fatalf("%s: %v, want a RangeError", fn, err)
 		}
-		d, err := m.Eval("depthO.d", EvalGlobal)
+		v, err := m.Eval("depthO.d", EvalGlobal)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if on && strings.HasPrefix(fn, "depthAlt") && !strings.HasPrefix(fn, "depthAltNew") {
-			if st := regvmFuncState(t, m, "depthOld."+fn); st != -2 {
-				t.Errorf("%s: old has state %d (JS_RegvmFuncStat 0), want -2, made with the loop off: the recursion does not alternate the two loops", fn, st)
-			}
-		}
-		return d.(int), regvmStat(m, 0)
-	}
-	for _, fn := range []string{"depthJS", "depthBig", "depthC", "depthBigC", "depthMap", "depthAlt", "depthAltBig", "depthAltNew", "depthAltNewBig"} {
-		off, _ := depth(fn, false)
-		on, conv := depth(fn, true)
-		t.Logf("%s: depth %d off, %d on (%d converted)", fn, off, on, conv)
+		d, conv := v.(int), regvmStat(m, 0)
+		t.Logf("%s: depth %d, floor %d (%d converted)", fn, d, floor[fn], conv)
 		if conv < 2 {
 			t.Errorf("%s: the recursion did not run in the register loop", fn)
 		}
-		if on < off {
-			t.Errorf("%s: %d levels with the register loop on, %d off", fn, on, off)
+		if d < floor[fn] {
+			t.Errorf("%s: %d levels, less than its floor of %d", fn, d, floor[fn])
 		}
 	}
 }
 
-// The register loop's frame takes no more stack before its check than the
-// old loop's, so that a recursion through C functions reaches no less deep
-// (design 5.4).
+// JS_RegvmStat 5 and 6 measure the two frames a recursion pays the stack
+// for: a frame of JS_RegvmRun, and one of JS_CallInternal, the entry of a
+// call from C, which a call of a C function the loop makes directly counts
+// as taken. Both are measured. How deep the recursions go through them is
+// TestRegvmDepth's floors.
 func TestRegvmFrame(t *testing.T) {
 	m := newTestVM(t)
-	rv, old := regvmStat(m, 5), regvmStat(m, 6)
-	t.Logf("a frame of JS_RegvmRun takes %d bytes of stack, of JS_CallInternal %d", rv, old)
-	if rv <= 0 || old <= 0 || rv > old {
-		t.Errorf("JS_RegvmRun %d bytes, JS_CallInternal %d", rv, old)
+	rv, entry := regvmStat(m, 5), regvmStat(m, 6)
+	t.Logf("a frame of JS_RegvmRun takes %d bytes of stack, the entry JS_CallInternal %d", rv, entry)
+	if rv <= 0 || entry <= 0 {
+		t.Errorf("JS_RegvmRun %d bytes, JS_CallInternal %d", rv, entry)
 	}
 }
 
 // regvmReact is TestRegvmRun's react: the React page of compare/engines
 // (react-ssr.js, render()), checked against its HTML, one warm render, then
 // n renders.
-func regvmReact(t *testing.T, on bool, n int) {
+func regvmReact(t *testing.T, n int) {
 	src, err := os.ReadFile("compare/engines/react/react-ssr.js")
 	if err != nil {
 		t.Fatal(err)
@@ -808,7 +803,6 @@ func regvmReact(t *testing.T, on bool, n int) {
 		t.Fatal(err)
 	}
 	m := newTestVM(t)
-	regvm(m, on)
 	if _, err := m.Eval(string(src), EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
@@ -828,18 +822,15 @@ func regvmReact(t *testing.T, on bool, n int) {
 			t.Fatal(err)
 		}
 	}
-	fmt.Printf("regvm react on=%v n=%d result=%d converted=%d refused=%d entries=%d ns=", on, n, len(html.(string)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
+	fmt.Printf("regvm react n=%d result=%d converted=%d refused=%d entries=%d ns=", n, len(html.(string)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
 	for _, d := range times {
 		fmt.Printf("%d ", d.Nanoseconds())
 	}
 	fmt.Println()
 }
 
-// regvmDepthScript and regvmDepthOldScript are regvmDepth and regvmDepthOld
-// with the 2000 locals of the big cases.
+// regvmDepthScript is regvmDepth with the 2000 locals of depthNewBig.
 func regvmDepthScript() string { return regvmBigVars.Replace(regvmDepth) }
-
-func regvmDepthOldScript() string { return regvmBigVars.Replace(regvmDepthOld) }
 
 var regvmBigVars = func() *strings.Replacer {
 	var b strings.Builder
@@ -859,7 +850,7 @@ var regvmBigVars = func() *strings.Replacer {
 // render as tifa makes it: startRender(json), the jobs, renderResult. One
 // warm render, then n. It prints the length and a sum of the HTML, which
 // the old and the register loop must give the same.
-func regvmPage(t *testing.T, on bool, n int, page string) {
+func regvmPage(t *testing.T, n int, page string) {
 	dir := os.Getenv("REGVM_PAGES")
 	if dir == "" {
 		t.Skip("REGVM_PAGES not set")
@@ -872,7 +863,6 @@ func regvmPage(t *testing.T, on bool, n int, page string) {
 		return string(b)
 	}
 	m := newTestVM(t)
-	regvm(m, on)
 	for _, err := range []error{m.RegisterEscapeText("__tifa_escape"), m.RegisterStartTag("__tifa_start_tag"),
 		m.RegisterEndTag("__tifa_end_tag"), m.RegisterCopyProps("__tifa_copy_props")} {
 		if err != nil {
@@ -927,21 +917,9 @@ func regvmPage(t *testing.T, on bool, n int, page string) {
 		}
 		times[i] = time.Since(t0)
 	}
-	fmt.Printf("regvm %s on=%v n=%d result=%d sum=%x converted=%d refused=%d entries=%d ns=", page, on, n, len(html), sha256.Sum256([]byte(html)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
+	fmt.Printf("regvm %s n=%d result=%d sum=%x converted=%d refused=%d entries=%d ns=", page, n, len(html), sha256.Sum256([]byte(html)), regvmStat(m, 0), regvmStat(m, 1), regvmStat(m, 2))
 	for _, d := range times {
 		fmt.Printf("%d ", d.Nanoseconds())
 	}
 	fmt.Println()
-}
-
-// regvmFuncState is JS_RegvmFuncStat 0 of the function expr evaluates to.
-func regvmFuncState(t *testing.T, m *VM, expr string) (st int) {
-	t.Helper()
-	v, err := m.EvalValue(expr, EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer v.Free()
-	m.outer(func() { st = int(int32(cengine.JS_RegvmFuncStat(m.sp, m.ctx, v.v.u, v.v.tag, 0))) })
-	return st
 }

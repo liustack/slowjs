@@ -332,7 +332,7 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 现在解释器自己调用普通的 C 函数（`js_call_c_direct`）：类为 `JS_CLASS_C_FUNCTION` 的函数，调用深度低于上限，且剩下的栈够 `JS_CallInternal` 为它检查的量。绑定函数、带数据的函数（`JS_CLASS_C_FUNCTION_DATA`）、proxy、构造调用，以及靠近任一上限的调用，仍和以前一样经过 `JS_CallInternal`，所有来自 C 的调用（`JS_Call`、`js_call`）也一样。直接调用按同样的顺序做 `JS_CallInternal` 的入口对 C 函数做的事：向下一次轮询计入 `POLL_WEIGHT`（`poll_count`，所以一次调用仍只计一次），读中断标志，有无法捕获的异常挂起时立即返回，计入一层调用深度，不带标志调用 `js_call_c_function`，然后退出这一层。两条路径之前都设置 `sf->cur_pc`，而 `js_call_c_function` 建出错误栈所显示的那个帧并切换 realm，和以前一样。`js_call_c_function` 从不内联，这样它的栈帧不会并入解释器的栈帧。
 
-需要小心的是栈。`JS_CallInternal` 在检查之前就把它的帧放在影子栈上，所以旧的调用是在占了这个帧之后检查的，C 函数以及它调用的所有东西，都是在少了这么多栈的情况下运行的：amd64 上 1472 字节。没有它的话，一个经 C 函数、带大栈帧的递归在栈用完之前能走得更深（经 `f.call`、有 300 个局部变量的递归能到 4999 层，原来在 4168 层结束），这违反了脚本递归深度和以前一样的规矩。所以运行时在创建它的第一个上下文时测出这个帧（`js_measure_call_frame` 带 `JS_CALL_FLAG_FRAME` 调用 `JS_CallInternal`，它只写它发现剩下的栈），`rt->stack_debt` 保存正在运行的直接调用的这个量之和。栈的每一次检查（`js_stack_short`）都把这个和当作已占用的。测量放在入口的计数之后、检查之前，所以宿主可以在调用深度已到上限、已请求中断或栈剩得很少时，像以前一样创建第一个上下文。它位于对象不是函数的那个分支里，那里先测类型再做检查（`js_call_checks`，两个分支里相同），所以函数调用不为此付任何代价。用 callgrind 数（amd64，tifa d90d1fe），`JS_CallInternal` 本身在一次 `r_react_ssr` 的渲染里比测量被挪走之前少执行 86 万条指令，在商店工作台的一次渲染里少 30 万条，而在入口顶部测试标志的那个版本，让它多执行 350 万条。`TestShadowStackAtDepth` 的每个递归，以及 98 个经 `call`、`apply`、`map`、`sort` 和 `Math.max`、带 1 到 300 个局部变量、上限为 5000 和 10000 的递归，都在和以前相同的深度结束，错误也出在相同的位置，在 linux/amd64 和 darwin/arm64 上都是。这笔债务在每次检查时多花一条指令。
+需要小心的是栈。`JS_CallInternal` 在检查之前就把它的帧放在影子栈上，所以旧的调用是在占了这个帧之后检查的，C 函数以及它调用的所有东西，都是在少了这么多栈的情况下运行的：amd64 上 1472 字节。没有它的话，一个经 C 函数、带大栈帧的递归在栈用完之前能走得更深（经 `f.call`、有 300 个局部变量的递归能到 4999 层，原来在 4168 层结束），这违反了脚本递归深度和以前一样的规矩。所以运行时在创建它的第一个上下文时测出这个帧（`js_measure_call_frame` 带 `JS_CALL_FLAG_FRAME` 调用 `JS_CallInternal`，它只写它发现剩下的栈），`rt->stack_debt` 保存正在运行的直接调用的这个量之和。栈的每一次检查（`js_stack_short`）都把这个和当作已占用的。测量放在入口的计数之后、检查之前，所以宿主可以在调用深度已到上限、已请求中断或栈剩得很少时，像以前一样创建第一个上下文。它位于对象不是函数的那个分支里，那里先测类型再做检查（`js_call_checks`，两个分支里相同），所以函数调用不为此付任何代价。用 callgrind 数（amd64，tifa d90d1fe），`JS_CallInternal` 本身在一次 `r_react_ssr` 的渲染里比测量被挪走之前少执行 86 万条指令，在商店工作台的一次渲染里少 30 万条，而在入口顶部测试标志的那个版本，让它多执行 350 万条。`TestShadowStackAtDepth` 的每个递归，以及 98 个经 `call`、`apply`、`map`、`sort` 和 `Math.max`、带 1 到 300 个局部变量、上限为 5000 和 10000 的递归，都在和以前相同的深度结束，错误也出在相同的位置，在 linux/amd64 和 darwin/arm64 上都是。这笔债务在每次检查时多花一条指令。`JS_CallInternal` 是 `no_inline`：删掉旧循环后它很小，带着测量用的常量参数时只剩对类型的测试，于是 clang 把它内联进了 `js_measure_call_frame`，测出来是 0，让经 C 函数的递归在栈短时走得更深（在 1 MiB 的原生线程上，经 `f.call` 到 1568 层，经 `JS_CallInternal` 在 1284 层停下）。别的调用者本来就不内联它。unit-api 的 `test_c_call_recursions` 要求两种方式在主线程和 1 MiB 的线程上到同样的深度，`test_call_frames_measured` 要求两个测量都大于 0。
 
 债务属于一个运行时。原生 C 宿主在同一个线程上从一个运行时调用另一个运行时时，会交接调用深度（`JS_SetCallDepth`）但不交接债务，所以每个运行时只把自己的直接调用对着线程的栈来算，在两者之间来回跳的递归，在栈检查把它停下之前，可能比以前走得稍深一些。Go 宿主没有这种情况：每个 VM 都跑在自己的影子栈上。
 
@@ -588,17 +588,17 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 改动在 C 里（`engine/quickjs.c` 的 `js_parse_postfix_expr1` 和 `js_parse_template`）。`engine/test/compare/call_many_args.js` 做 31 到 300 个参数的各种调用：函数、方法、可选调用、`new`、`super`、直接 `eval`、带标签模板、中间夹着展开参数的调用，还有被调用者和参数的读取顺序、限制之后的某个参数抛错、`Array.prototype` 上的 setter。它的结果文件就是 Node 24 打印的内容，改动之前的引擎打印的也是它。`engine/test/regvm/js/l-args.js` 在寄存器循环关和开两种情况下跑同样的各种调用。
 
-## 去掉旧循环后一个函数的上限
+## 寄存器循环里一个函数的上限
 
 发布版本：Unreleased。
 
-寄存器循环把比临时槽深的栈折进数组，需要几层就折几层，最深到 `JS_STACK_SIZE_MAX`（`engine/regvm-fold.h`）。catch 偏移（`try` 占一个，`for-of` 连同迭代器和 next 方法占三个）单独占临时槽，它下面那段栈冻结成一个数组，也单独占一个。用 `-DJS_NO_OLD_LOOP` 构建时，函数没法退回旧循环，于是寄存器循环跑不了的函数，解析器在编译时就拒绝，报它自己的上限本来就报的错：
+寄存器循环把比临时槽深的栈折进数组，需要几层就折几层，最深到 `JS_STACK_SIZE_MAX`（`engine/regvm-fold.h`）。catch 偏移（`try` 占一个，`for-of` 连同迭代器和 next 方法占三个）单独占临时槽，它下面那段栈冻结成一个数组，也单独占一个。寄存器循环是唯一的解释器，所以它跑不了的函数，解析器在编译时就拒绝，报它自己的上限本来就报的错：
 
 - 参数和局部变量加起来超过 32,765 个（加上 `this`、函数本身和 `new.target`，就是 MOVW、SETLW、CHKLW 用 16 位能指到的 32,768 个槽）：报 `InternalError: too many local variables` 或 `InternalError: too many arguments`，看最后加的是哪种。解析器自己的上限是各 65,534 个。
 - 栈深超过 118 个值、catch 偏移又要占超过 48 个临时槽（`RV_FOLD_PINS_MAX`，`engine/regvm-func.h`）：报 `InternalError: stack overflow`。包着 `r += a` 时，是 118 层嵌套的 `try`（什么都不包时 119 层）或 39 层嵌套的 `for-of`，这时光 catch 偏移就让栈太深了。包着一个 130 层深的表达式时，是 49 层 `try` 或 17 层 `for-of`。`for-in` 里的 `try` 还要为下面的枚举器多占一个临时槽。
 
-宽松模式、严格模式、生成器和 async 函数里的数字都一样。带旧循环的构建照样编译这些函数，寄存器循环拒绝的就在旧循环里跑。
+宽松模式、严格模式、生成器和 async 函数里的数字都一样。旧解释器循环去掉之前，这些函数都能编译，寄存器循环拒绝的就在旧循环里跑。
 
-为什么安全：检查在 `add_var`、`add_arg` 和 `compute_stack_size` 里（`engine/quickjs.c`），用的计数和寄存器 pass 一样（`engine/regvm-pass.h` 的 `rv_build`，`engine/regvm-fold.h` 的 `rv_chain_bslot`），而且只在 `JS_NO_OLD_LOOP` 下生效。最里层 catch 偏移之上的那段栈，不管多深最多占 70 个临时槽（`RV_FOLD_TOP_MAX`），118 个里剩下 48 个给 catch 偏移。
+为什么安全：检查在 `add_var`、`add_arg` 和 `compute_stack_size` 里（`engine/quickjs.c`），用的计数和寄存器 pass 一样（`engine/regvm-pass.h` 的 `rv_build`，`engine/regvm-fold.h` 的 `rv_chain_bslot`）。最里层 catch 偏移之上的那段栈，不管多深最多占 70 个临时槽（`RV_FOLD_TOP_MAX`），118 个里剩下 48 个给 catch 偏移。
 
-`engine/test/unit-api.c` 的 `test_rv_frame_limits` 和 `test_rv_nesting_limits` 在宽松模式、严格模式和生成器里，寄存器循环关和开两种情况下，编译每个上限和比它少一的情况，检查少一的能跑，普通函数还要转成寄存器代码。`engine/test/regvm/js/f3-fold.js` 跑折了好几层的栈，`engine/test/unit-oom.c` 的 `test_regvm_fold_oom` 让折叠的每次分配轮流失败。
+`engine/test/unit-api.c` 的 `test_rv_frame_limits` 和 `test_rv_nesting_limits` 在宽松模式、严格模式和生成器里编译每个上限和比它少一的情况，检查少一的能跑，普通函数还要转成寄存器代码。`engine/test/regvm/js/f3-fold.js` 跑折了好几层的栈，`engine/test/unit-oom.c` 的 `test_regvm_fold_oom` 让折叠的每次分配轮流失败。

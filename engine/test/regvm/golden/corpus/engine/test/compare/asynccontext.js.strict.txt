@@ -1,0 +1,14 @@
+result two async functions: topundefined a1 b2 a1 b2
+result then not resolve: then later
+result outside any context: undefined set after then
+result throwing handler: run undefined undefined
+result set inside a job: inside undefined
+result thenable: topundefined thenresolve thenawait afterresolve awaitawait
+result all, finally, generators: finally all 1 gen
+result an object or none: undefined object undefined
+result handler keeps this and arguments: undefined 7 1 args
+result a handler registered with no context: first set by a job second set by a job
+result at the end: left
+mem-end obj=221 atom=564 shape=141 prop=1009 jsfunc=3 cfunc=137 array=12 fast_array=12 elements=10029 binary=0
+mem-gc obj=221 atom=564 shape=141 prop=1009 jsfunc=3 cfunc=137 array=12 fast_array=12 elements=10029 binary=0
+--- status exit 0

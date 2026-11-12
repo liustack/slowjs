@@ -6,51 +6,47 @@
  */
 
 /* rvdiff runs each script in a process and a runtime of its own and
-   compares what the run shows with the golden of the script (-golden,
-   below: the two runs, off and on, read the old loop, which is gone):
+   compares what the run shows with the golden of the script, recorded from
+   the old loop while it existed (see golden.sh):
 
      out        what the script printed (print, console.log)
      result     the completion value, or what it returns when it is a
-                function (called from C with JS_Call, both ways), as jsrun
-                gives it
+                function (called from C with JS_Call), as jsrun gives it
      exception  the exception of the script, its message, and the lines of
      stack      its stack
      job        the exceptions of its jobs, with their stacks
      mem        the objects, atoms, shapes, properties, functions and arrays
                 the runtime still holds once the script and its jobs ended
                 (mem-end) and after a full collection (mem-gc)
-     expect     a function given to rvExpect that has no register code in the
-                run with the register loop on (see below)
+     expect     a function given to rvExpect that has no register code
+                (see below)
      status     how the process ended: 0, a leak found when the runtime was
                 freed (87), a sanitizer (86 or its report on stderr), a
                 signal, or the time limit
 
-     rvdiff [-o DIR] [-v] [-q] [-t SECONDS] [-j N] [-ignore KIND,...]
-            [-gc off|auto|BYTES] [-cases FILE] [OPTIONS of jsrun] PATH...
+     rvdiff -golden DIR [-update] [-full] [-root ROOT] [-o DIR] [-v] [-q]
+            [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES]
+            [-cases FILE] [OPTIONS of jsrun] PATH...
 
    A PATH is a script (.js, or .mjs for a module) or a folder, read for
    scripts with no recursion into its subfolders. A script names options of
    jsrun on a line "// jsrun: OPTIONS" (-raw, -result, -call, -no-fused-ops,
    -regexp-cache=N,BYTES), and -strict, which puts "use strict" before the
-   script, for both runs: the pass converts only strict functions). Options
-   given before the paths apply to every script. -cases FILE reads lines "SCRIPT [OPTIONS]" as compare.sh does.
+   script (the pass converts only strict functions). Options given before
+   the paths apply to every script. -cases FILE reads lines "SCRIPT
+   [OPTIONS]" as compare.sh does.
 
-   -o DIR writes NAME.off and NAME.on, the two transcripts, for every script
-   that differs (and for every script with -v). -ignore leaves kinds out of
-   the comparison (stack, for one). -t is the time a run may take (default
-   60 s): past it the run is killed and its status says so. -j runs N scripts
-   at a time. -gc off (the default) sets the threshold of the collector so
-   that the engine never collects by itself, and both ways collect only where
-   the script asks (the memory the register loop takes would move the points
-   of an automatic collection, and the mem-end counts with them). auto keeps
-   the threshold of the engine, BYTES sets one, a small one to collect often.
-
-   A run that the time limit ended stopped at a point that depends on how
-   busy the machine was, so it is not compared: when both runs ran out, or
-   the other run took at least half the limit, rvdiff prints a line "SLOW
-   PATH: ..." (also with -q) and counts the script as too slow, not as a
-   difference. When only one ran out and the other ended in less than half
-   the limit, the two are compared as usual: one loop may hang.
+   -o DIR writes NAME.gold and NAME.on, the golden and the transcript of the
+   run, for every script that differs (and for every script with -v).
+   -ignore leaves kinds out of the comparison (stack, for one). -t is the
+   time a run may take (default 60 s): past it the run is killed, its status
+   says so, and it is a difference (rvdiff prints a line "SLOW PATH: ...",
+   also with -q). -j runs N scripts at a time. -gc off (the default) sets
+   the threshold of the collector so that the engine never collects by
+   itself and collects only where the script asks (the memory the engine
+   takes would move the points of an automatic collection, and the mem-end
+   counts with them). auto keeps the threshold of the engine, BYTES sets
+   one, a small one to collect often.
 
    It prints one line per script that differs, with the kinds that differ
    and the first lines that differ, then a summary, and exits with 1 when any
@@ -59,38 +55,33 @@
    The scripts see the globals jsrun gives them (gc, memorySize, heapChange
    and the rest, see jsrun.c), and print and console.log, which write a line
    to the transcript. In a build with -DRV_STATS the transcript of each run
-   ends with the dispatches of each loop (not compared).
+   ends with the dispatches of the register loop and its calls (not
+   compared).
 
    rvExpect(f, g, ...) says which functions the test is for: called after
-   the script has called them, it checks with the register loop on that each
-   has register code (and says why the pass refused one), so that a test of
-   a new op of the register loop cannot pass by running in the old loop. A
-   function converts at its first call and runs in the register loop from
-   its second. It reads the state of each with JS_RegvmFuncStat, and in a
+   the script has called them, it checks that each has register code (and
+   says why the pass refused one), so that a test of a new op of the
+   register loop cannot pass with its function unconverted. A function
+   converts at its first call and runs in the register loop from its
+   second. It reads the state of each with JS_RegvmFuncStat, and in a
    build with -DRV_STATS also fails a function that converted but never ran
    in the register loop. rvFusedOps is false in a run with -no-fused-ops,
    for a test whose function the pass takes only with the fused ops.
 
-   Goldens, for when there is one loop only: -record DIR runs both loops as
-   above and, for each script where they agree, writes the compared lines
-   of the old loop and its status to a file of DIR (one that differs, ran
-   out of time or has a report is listed as NORECORD and not written).
-   -golden DIR runs each script once, with the register loop on, and
-   compares it with its file by the same kinds. A missing file and a run
-   the limit ended are differences. -update with -golden writes the file of
-   a run that differs from it (read the diff before it goes into a commit).
-   The file is DIR/PATH.OPTIONS.txt: PATH under -root ROOT (a script that
-   corpus.sh makes into engine/test/out/.../gen/ is gen/NAME), and the
-   options of the command line, of the script's "// jsrun:" line and of the
-   cases file, each without its dashes. The lines of a kind longer than 32
-   KiB in all are kept as one line "hash KIND COUNT FNV", their count and
-   the FNV-1a hash of each line with its newline: a difference there says
-   the kind, not the line. -full writes every line (a transcript to read,
-   as rvgen node needs).
+   The golden of a script is DIR/PATH.OPTIONS.txt: PATH under -root ROOT (a
+   script that corpus.sh makes into engine/test/out/.../gen/ is gen/NAME),
+   and the options of the command line, of the script's "// jsrun:" line and
+   of the cases file, each without its dashes. A missing golden is a
+   difference. -update writes the golden of a run that differs from it or
+   has none (read the diff before it goes into a commit). The lines of a
+   kind longer than 32 KiB in all are kept as one line "hash KIND COUNT
+   FNV", their count and the FNV-1a hash of each line with its newline: a
+   difference there says the kind, not the line. -full writes every line (a
+   transcript to read, as rvgen node needs).
 
    A line "// rv-expect-op: NAME ..." names register ops (JS_RegvmOpName)
    the script is for: in a build with -DRV_STATS (BIN_DIR of corpus.sh, an
-   OUTDIR built with EXTRA_DEFS=-DRV_STATS) the run with the loop on writes
+   OUTDIR built with EXTRA_DEFS=-DRV_STATS) the run writes
    "expect op NAME ran 0 times" for each that did not run. A build without
    the counts does not check it, and says so in the info of the run.
 
@@ -103,11 +94,9 @@
    RV_TREE_STAMP when a script has computed them already (stamp_check of
    stamp.sh), else from stamp.sh run once at the start.
 
-   A function the register loop cannot run throws "InternalError: cannot
-   run: WHY in NAME (FILE)". The info of the run lists each WHY with how
-   often it was thrown and the first function it named ("cannot COUNT WHY
-   in NAME (FILE)"). run-test262 fails a test whose harness it cannot run
-   with the same lines. */
+   The pass refuses only code no compiler makes (engine/regvm-pass.h): a
+   call of a function it refused throws "InternalError: invalid bytecode",
+   which shows in the output a script gives. */
 
 #include <ctype.h>
 #include <dirent.h>
@@ -166,8 +155,8 @@ static int stamp_fresh(void)
 
 static FILE *tr; /* the transcript of the run */
 /* -gc: -1 off (the default: no collection but the ones the script asks for,
-   so that both ways collect at the same points), -2 auto (the threshold of
-   the engine, which the memory of the register loop moves), or a threshold
+   so that the run collects at the points of its golden), -2 auto (the
+   threshold of the engine, which the memory the engine takes moves), or a threshold
    in bytes */
 static long gc_mode = -1;
 /* -strict: the script runs as strict code, so that more of it converts */
@@ -286,7 +275,6 @@ static void tr_mem(JSRuntime *rt, const char *kind)
 
 typedef struct Job {
     const char *path;
-    int regvm;
 } Job;
 
 /* the opcodes of the old loop, for the reason of a refusal */
@@ -319,15 +307,8 @@ static int rvexpect_state(JSContext *ctx, JSValueConst f, char *why, int why_siz
         return st;
     op = JS_RegvmFuncStat(ctx, f, 2);
     pos = JS_RegvmFuncStat(ctx, f, 3);
-    if (op == -1)
-        snprintf(why, why_size, "the whole function:%s%s%s%s",
-                 pos & 8 ? " stack over 124" : "", pos & 16 ? " frame over 127 slots" : "",
-                 pos & 32 ? " over 32 K locals and arguments" : "",
-                 pos & 64 ? " stack too deep to fold" : "");
-    else if (op == -4)
-        snprintf(why, why_size, "an index string past the near constants");
-    else if (op == -99)
-        snprintf(why, why_size, "its jumps, its frame or the memory of the pass");
+    if (op == -99)
+        snprintf(why, why_size, "its jumps");
     else if (op == -3)
         snprintf(why, why_size, "code no compiler makes, at %d", pos);
     else if (op >= 0 && op < (int)(sizeof(rvexpect_names) / sizeof(rvexpect_names[0])))
@@ -337,21 +318,15 @@ static int rvexpect_state(JSContext *ctx, JSValueConst f, char *why, int why_siz
     return -1;
 }
 
-/* whether the run has the register loop on, for rvExpect */
-static int child_regvm;
-
-/* rvExpect(f, ...): with the register loop on, each f must have register
-   code by now (the pass converted it), or the run writes a line "expect
-   NAME ..." that the other run does not have. With the loop off it does
-   nothing. It returns undefined. */
+/* rvExpect(f, ...): each f must have register code by now (the pass
+   converted it), or the run writes a line "expect NAME ..." that its golden
+   does not have. It returns undefined. */
 static JSValue js_rv_expect(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
     static const char *const state[] = { "never entered", "not a function of bytecode", "made with the register loop off", "refused", "not converted yet: called only once or not at all" };
     int i;
 
     (void)this_val;
-    if (!child_regvm)
-        return JS_UNDEFINED;
     for (i = 0; i < argc; i++) {
         char why[160];
         int st = rvexpect_state(ctx, argv[i], why, sizeof(why));
@@ -431,7 +406,6 @@ static int child_run(void *p)
         JS_SetGCThreshold(rt, (size_t)-1);
     else if (gc_mode >= 0)
         JS_SetGCThreshold(rt, (size_t)gc_mode);
-    child_regvm = job->regvm;
     if (module) {
         static char stub[4200];
 
@@ -500,8 +474,7 @@ static int child_run(void *p)
         }
     }
     if (JS_IsFunction(ctx, v)) {
-        /* called from C both ways, so that the paths into the function
-           are the same */
+        /* called from C, as when the golden was recorded */
         JSValue rv = JS_Call(ctx, v, JS_UNDEFINED, 0, NULL);
         JS_ClearKeptObjects(rt);
         JS_FreeValue(ctx, v);
@@ -567,16 +540,8 @@ static int child_run(void *p)
     fprintf(tr, "regvm converted %d refused %d entries %d last-refusal op %d at %d\n",
             JS_RegvmStat(ctx, 0), JS_RegvmStat(ctx, 1), JS_RegvmStat(ctx, 2),
             JS_RegvmStat(ctx, 3), JS_RegvmStat(ctx, 4));
-    fprintf(tr, "dispatches new %d old %d calls old>new %d C>new %d new>old %d new>C %d\n",
-            JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 11), JS_RegvmStat(ctx, 12),
-            JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
-    /* what the register loop could not run */
-    {
-        const char *m;
-        int i, n;
-        for (i = 0; (m = JS_RegvmCannotRun(ctx, i, &n)) != NULL; i++)
-            fprintf(tr, "cannot %d %s\n", n, m);
-    }
+    fprintf(tr, "dispatches %d calls C>rv %d rv>bytecode %d rv>C %d\n",
+            JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
     fflush(tr);
     JS_SetShapeCache(ctx, 0);
     JS_SetAsyncContext(ctx, JS_UNDEFINED);
@@ -598,14 +563,13 @@ static const char *out_dir;
 static int verbose, quiet, timeout_sec = 60, jobs = 1;
 static char ignore[256];
 static char global_opts[1024];
-/* -record DIR: the goldens of the old loop are written to DIR. -golden DIR:
-   one run with the register loop on, compared with DIR. -update: with
-   -golden, a golden that differs or is missing is written from the run.
+/* -golden DIR: each script runs once and is compared with its golden in
+   DIR. -update: a golden that differs or is missing is written from the run.
    -root ROOT: the names of the goldens are the paths under ROOT. */
-static const char *record_dir, *golden_dir, *golden_root;
+static const char *golden_dir, *golden_root;
 static int golden_update;
 static int golden_full; /* -full: no kind is kept as its hash */
-static int stat_norecord, stat_recorded, stat_nogolden, stat_updated;
+static int stat_nogolden, stat_updated;
 
 static void add_script(const char *path, const char *opts)
 {
@@ -761,8 +725,7 @@ static void script_opts(const char *path, char *buf, size_t size)
     script_line(path, "// jsrun: ", buf, size);
 }
 
-/* "// rv-expect-op: NAME ...": with the register loop on, in a build with
-   -DRV_STATS, each register op named (JS_RegvmOpName) must have run, or the
+/* "// rv-expect-op: NAME ...": in a build with -DRV_STATS, each register op named (JS_RegvmOpName) must have run, or the
    run writes a line "expect op NAME ...". It returns 0 when the build does
    not count the ops, so the line was not checked. */
 static int tr_expect_ops(JSContext *ctx, const char *path)
@@ -770,10 +733,11 @@ static int tr_expect_ops(JSContext *ctx, const char *path)
     char want[1024], *p, *tok;
 
     script_line(path, "// rv-expect-op: ", want, sizeof(want));
-    if (!*want || !child_regvm)
+    if (!*want)
         return 1;
-    /* a counting build counts the dispatches of the old loop of every run */
-    if (JS_RegvmStat(ctx, 11) == 0)
+    /* a counting build counts the dispatches of the register loop, and a
+       script that names ops ran some */
+    if (JS_RegvmStat(ctx, 10) == 0)
         return 0;
     for (p = want; (tok = strsep(&p, " \t,")) != NULL;) {
         int op;
@@ -814,7 +778,7 @@ static int ran_out(const Run *r)
         (limit_ms > 0 && r->ms >= limit_ms);
 }
 
-static int start_run(Run *r, Script *sc, int regvm)
+static int start_run(Run *r, Script *sc)
 {
     fflush(stdout);
     fflush(stderr);
@@ -828,7 +792,7 @@ static int start_run(Run *r, Script *sc, int regvm)
         return -1;
     if (r->pid == 0) {
         char fopts[1024];
-        Job job = { sc->path, regvm };
+        Job job = { sc->path };
         int st;
 
         dup2(fileno(r->err), 2);
@@ -1152,72 +1116,43 @@ static int load_golden(const char *path, Side *s)
     return 0;
 }
 
-static int stat_mismatch, stat_kind[16], stat_status, stat_lines, stat_slow;
-static long long stat_new, stat_old; /* dispatches of the runs with the register loop on */
+static int stat_mismatch, stat_kind[16], stat_status, stat_lines;
+static long long stat_dispatches; /* of all the runs, in a build with -DRV_STATS */
 
-/* compares the two sides of a script and reports it: 1 when they differ.
-   With -golden, off is NULL and the first side is the golden. With -record,
-   the side of the old loop is written as the golden when the two agree. */
-static int compare(Script *sc, Run *off, Run *on, int index)
+/* compares the run of a script with its golden and reports it: 1 when they
+   differ. */
+static int compare(Script *sc, Run *on, int index)
 {
     Side a, b;
     char diffk[256] = "";
     int differ = 0, i, k, slow = 0;
     char name[512], gname[4096];
-    const char *an = golden_dir ? "gold" : "off";
-    long long off_ms = off ? off->ms : 0;
+    const char *an = "gold";
 
-    if (golden_dir || record_dir)
-        golden_name(sc, golden_dir ? golden_dir : record_dir, gname, sizeof(gname));
+    golden_name(sc, golden_dir, gname, sizeof(gname));
     finish_side(&b, on);
-    if (golden_dir) {
-        if (load_golden(gname, &a) < 0) {
-            stat_nogolden++;
-            stat_mismatch++;
-            printf("DIFF %s%s%s: no golden %s\n", sc->path, sc->opts && *sc->opts ? " " : "",
-                   sc->opts ? sc->opts : "", gname);
-            if (golden_update && !ran_out(on) && !has_report(b.err) && write_golden(gname, &b) == 0) {
-                stat_updated++;
-                printf("UPDATE %s\n", gname);
-            } else if (golden_update) {
-                printf("NOUPDATE %s: %s%s\n", gname, b.status, ran_out(on) ? " (time limit)" : "");
-            }
-            fflush(stdout);
-            free(b.tr);
-            free(b.err);
-            free(b.line);
-            return 1;
+    if (load_golden(gname, &a) < 0) {
+        stat_nogolden++;
+        stat_mismatch++;
+        printf("DIFF %s%s%s: no golden %s\n", sc->path, sc->opts && *sc->opts ? " " : "",
+               sc->opts ? sc->opts : "", gname);
+        if (golden_update && !ran_out(on) && !has_report(b.err) && write_golden(gname, &b) == 0) {
+            stat_updated++;
+            printf("UPDATE %s\n", gname);
+        } else if (golden_update) {
+            printf("NOUPDATE %s: %s%s\n", gname, b.status, ran_out(on) ? " (time limit)" : "");
         }
-    } else {
-        finish_side(&a, off);
+        fflush(stdout);
+        free(b.tr);
+        free(b.err);
+        free(b.line);
+        return 1;
     }
-    if (golden_dir && ran_out(on)) {
+    if (ran_out(on)) {
         /* no second run to blame: a run the limit ended is a difference */
-        printf("SLOW %s%s%s: the time limit ended the run (%lld ms), a difference with no second run\n",
+        printf("SLOW %s%s%s: the time limit ended the run (%lld ms), a difference\n",
                sc->path, sc->opts && *sc->opts ? " " : "", sc->opts ? sc->opts : "", on->ms);
         slow = 1;
-    } else if (!golden_dir && (ran_out(off) || ran_out(on))) {
-        const Run *other = ran_out(off) ? on : off;
-
-        if ((ran_out(off) && ran_out(on)) || other->ms * 2 >= limit_ms) {
-            stat_slow++;
-            printf("SLOW %s%s%s: the time limit ended the run %s (off %lld ms, on %lld ms), not compared\n",
-                   sc->path, sc->opts && *sc->opts ? " " : "", sc->opts ? sc->opts : "",
-                   ran_out(off) && ran_out(on) ? "both ways" : ran_out(off) ? "with the loop off" : "with the loop on",
-                   off->ms, on->ms);
-            if (record_dir) {
-                stat_norecord++;
-                printf("NORECORD %s: too slow\n", gname);
-            }
-            fflush(stdout);
-            free(a.tr);
-            free(a.err);
-            free(a.line);
-            free(b.tr);
-            free(b.err);
-            free(b.line);
-            return 0;
-        }
     }
     for (k = 0; k < (int)countof(kinds); k++) {
         char **la, **lb;
@@ -1225,7 +1160,7 @@ static int compare(Script *sc, Run *off, Run *on, int index)
 
         if (ignored(kinds[k]))
             continue;
-        if (golden_dir && golden_hash_line(&a, kinds[k])) {
+        if (golden_hash_line(&a, kinds[k])) {
             /* a kind the golden keeps as its count and hash */
             int ga, cb;
             unsigned long long ha;
@@ -1278,14 +1213,12 @@ static int compare(Script *sc, Run *off, Run *on, int index)
         stat_status++;
         snprintf(diffk + strlen(diffk), sizeof(diffk) - strlen(diffk), "%sstatus", *diffk ? "," : "");
         if (!quiet) {
-            printf("  status: %s %s, on %s (%s %lld ms, on %lld ms)\n", an, a.status, b.status, an, off_ms, on->ms);
+            printf("  status: %s %s, on %s (on %lld ms)\n", an, a.status, b.status, on->ms);
             if (b.err_len)
                 printf("    on stderr| %.600s\n", b.err);
-            if (a.err_len)
-                printf("    off stderr| %.600s\n", a.err);
         }
-    } else if (!quiet && (has_report(a.err) || has_report(b.err))) {
-        printf("NOTE %s: both runs %s\n", sc->path, a.status);
+    } else if (!quiet && has_report(b.err)) {
+        printf("NOTE %s: the run and its golden %s\n", sc->path, a.status);
     }
     if (differ) {
         stat_mismatch++;
@@ -1300,18 +1233,7 @@ static int compare(Script *sc, Run *off, Run *on, int index)
         }
         printf("\n");
     }
-    if (record_dir) {
-        if (differ || has_report(a.err) || has_report(b.err)) {
-            stat_norecord++;
-            printf("NORECORD %s: %s\n", gname, differ ? "the loops differ" : "a sanitizer or host report");
-        } else if (write_golden(gname, &a) < 0) {
-            stat_norecord++;
-            printf("NORECORD %s: cannot write it: %s\n", gname, strerror(errno));
-        } else {
-            stat_recorded++;
-        }
-    }
-    if (golden_dir && golden_update && differ && !slow && !has_report(b.err)) {
+    if (golden_update && differ && !slow && !has_report(b.err)) {
         if (write_golden(gname, &b) == 0) {
             stat_updated++;
             printf("UPDATE %s\n", gname);
@@ -1331,12 +1253,10 @@ static int compare(Script *sc, Run *off, Run *on, int index)
     }
     stat_lines += a.nline;
     if (b.info) {
-        const char *dsp = strstr(b.info, "dispatches new ");
-        long long nn, oo;
-        if (dsp && sscanf(dsp, "dispatches new %lld old %lld", &nn, &oo) == 2) {
-            stat_new += nn;
-            stat_old += oo;
-        }
+        const char *dsp = strstr(b.info, "dispatches ");
+        long long nn;
+        if (dsp && sscanf(dsp, "dispatches %lld", &nn) == 1)
+            stat_dispatches += nn;
     }
     fflush(stdout);
     free(a.tr);
@@ -1350,8 +1270,7 @@ static int compare(Script *sc, Run *off, Run *on, int index)
 
 typedef struct Slot {
     int script;
-    Run run[2];
-    int left; /* runs not yet waited for */
+    Run run;
 } Slot;
 
 int main(int argc, char **argv)
@@ -1382,8 +1301,6 @@ int main(int argc, char **argv)
         } else if (!strcmp(a, "-cases") && i + 1 < argc) {
             if (read_cases(argv[++i]) < 0)
                 return 2;
-        } else if (!strcmp(a, "-record") && i + 1 < argc) {
-            record_dir = argv[++i];
         } else if (!strcmp(a, "-golden") && i + 1 < argc) {
             golden_dir = argv[++i];
         } else if (!strcmp(a, "-update")) {
@@ -1408,18 +1325,12 @@ int main(int argc, char **argv)
     for (; i < argc; i++)
         if (add_path(argv[i]) < 0)
             return 2;
-    if (nscripts == 0 || (record_dir && golden_dir) || (golden_update && !golden_dir)) {
-        fprintf(stderr, "usage: rvdiff [-o DIR] [-v] [-q] [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES] [-cases FILE] [-record DIR | -golden DIR [-update]] [-full] [-root ROOT] [OPTIONS of jsrun] PATH...\n");
+    if (nscripts == 0 || !golden_dir) {
+        fprintf(stderr, "usage: rvdiff -golden DIR [-update] [-full] [-root ROOT] [-o DIR] [-v] [-q] [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES] [-cases FILE] [OPTIONS of jsrun] PATH...\n");
         return 2;
     }
     if (!stamp_fresh())
         return 2;
-    if (!golden_dir) {
-        /* the two runs compared and -record read the old loop, which is
-           gone: only the run against the goldens is left */
-        fprintf(stderr, "rvdiff: one loop only: give -golden DIR\n");
-        return 2;
-    }
     /* the time limit of the host, so that a script that runs too long ends
        with "interrupted" where the engine polls, before the alarm */
     if (!getenv("HOST_TIMEOUT_SEC")) {
@@ -1442,11 +1353,7 @@ int main(int argc, char **argv)
             if (slots[i].script >= 0)
                 continue;
             slots[i].script = next++;
-            /* with -golden only the run with the register loop on */
-            slots[i].left = golden_dir ? 1 : 2;
-            slots[i].run[0].pid = 0;
-            if ((!golden_dir && start_run(&slots[i].run[0], &scripts[slots[i].script], 0) < 0) ||
-                start_run(&slots[i].run[1], &scripts[slots[i].script], 1) < 0) {
+            if (start_run(&slots[i].run, &scripts[slots[i].script]) < 0) {
                 fprintf(stderr, "rvdiff: cannot start a run: %s\n", strerror(errno));
                 free(slots);
                 return 2;
@@ -1459,48 +1366,36 @@ int main(int argc, char **argv)
             return 2;
         }
         for (i = 0; i < nslots; i++) {
-            int m;
-            if (slots[i].script < 0)
+            if (slots[i].script < 0 || slots[i].run.pid != pid)
                 continue;
-            for (m = 0; m < 2; m++)
-                if (slots[i].run[m].pid == pid && pid > 0) {
-                    slots[i].run[m].status = status;
-                    slots[i].run[m].ms = now_ms() - slots[i].run[m].t0;
-                    slots[i].run[m].pid = 0;
-                    slots[i].left--;
-                }
-            if (slots[i].left == 0) {
-                compare(&scripts[slots[i].script], golden_dir ? NULL : &slots[i].run[0], &slots[i].run[1],
-                        slots[i].script);
-                slots[i].script = -1;
-                done++;
-            }
+            slots[i].run.status = status;
+            slots[i].run.ms = now_ms() - slots[i].run.t0;
+            slots[i].run.pid = 0;
+            compare(&scripts[slots[i].script], &slots[i].run, slots[i].script);
+            slots[i].script = -1;
+            done++;
         }
     }
     printf("rvdiff: engine %s\n", RV_ENGINE_STAMP);
     printf("rvdiff: %d scripts, %d differ", nscripts, stat_mismatch);
-    if (stat_mismatch) {
+    {
+        /* the kinds that differ, if any: a missing golden has none */
         int k, first = 1;
-        printf(" (");
         for (k = 0; k < (int)countof(kinds); k++)
             if (stat_kind[k]) {
-                printf("%s%s %d", first ? "" : ", ", kinds[k], stat_kind[k]);
+                printf("%s%s %d", first ? " (" : ", ", kinds[k], stat_kind[k]);
                 first = 0;
             }
-        if (stat_status)
-            printf("%sstatus %d", first ? "" : ", ", stat_status);
-        printf(")");
+        if (stat_status) {
+            printf("%sstatus %d", first ? " (" : ", ", stat_status);
+            first = 0;
+        }
+        if (!first)
+            printf(")");
     }
-    if (stat_slow)
-        printf(", %d too slow to compare", stat_slow);
-    if (golden_dir)
-        printf(", against the goldens of %s (%d missing, %d written)", golden_dir, stat_nogolden, stat_updated);
-    if (record_dir)
-        printf(", %d goldens recorded in %s, %d not recorded", stat_recorded, record_dir, stat_norecord);
-    printf("\n");
-    if (stat_new + stat_old > 0)
-        printf("rvdiff: with the register loop on, %lld dispatches ran in the register loop and %lld in the old loop (%.2f%% in the register loop)\n",
-               stat_new, stat_old, 100.0 * stat_new / (stat_new + stat_old));
+    printf(", against the goldens of %s (%d missing, %d written)\n", golden_dir, stat_nogolden, stat_updated);
+    if (stat_dispatches > 0)
+        printf("rvdiff: %lld dispatches of the register loop\n", stat_dispatches);
     free(slots);
     return stat_mismatch ? 1 : 0;
 }

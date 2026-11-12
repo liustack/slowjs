@@ -6,9 +6,9 @@
  */
 
 /* The register code of a function (engine/regvm.h), and the test of a call
-   of the old loop that enters the register loop with it: included by
-   quickjs.c before JS_CallInternal, which makes that test inline in its call
-   ops. */
+   that enters the register loop with it (rv_entry_fast): included by
+   quickjs.c before JS_CallInternal and the call ops of the register loop,
+   which make that test inline. */
 
 /* the temps a frame can have: 128 less the header, so that each is named by
    a byte operand */
@@ -37,8 +37,8 @@
    up to 2 at each in the same room).
    The catch offsets and what goes with them (1 for a catch, 3 for a
    for_of_start) and one temp for each part frozen under one take the rest,
-   RV_FOLD_PINS_MAX: without the old loop the parser refuses a function
-   deeper than RV_STACK_FIT that needs more (compute_stack_size, quickjs.c). */
+   RV_FOLD_PINS_MAX: the parser refuses a function deeper than
+   RV_STACK_FIT that needs more (compute_stack_size, quickjs.c). */
 #define RV_STACK_FIT (127 - RV_FUNC_HDR - RV_SF0_SLOTS - 1)
 #define RV_FOLD_TCAP (RV_TEMPS_MAX - 1 < RV_STACK_FIT ? RV_TEMPS_MAX - 1 : RV_STACK_FIT)
 #define RV_FOLD_TOP_MAX 70
@@ -74,24 +74,26 @@ typedef struct RVPcHi {
    throw, sorted by end (engine/regvm-run.h rv_pc_find) */
 typedef struct RVPcMask {
     uint32_t end;  /* offset of the end of an instruction that can throw */
-    int32_t old;   /* the pc of the old bytecode that the old loop names for
-                      an exception there (find_line_num): -1, the place the
-                      function is defined at, for a jump back to offset 0 */
+    int32_t old;   /* the pc of the old bytecode named for an exception
+                      there (find_line_num), as QuickJS's interpreter names
+                      it: -1, the place the function is defined at, for a
+                      jump back to offset 0 */
     uint32_t mask; /* the temps owned across it, bit i for T[i], i < 32: the
                       others are in RVFunc.pcmap_hi */
 #ifdef RV_INJECT
     /* the throw-injection test (engine/regvm-inject.h): where the
        instruction starts, its old instruction, and in the entry at the end
        of the instruction the places where the test makes it throw:
-       RV_HOOK_NONE none. RV_HOOK_OWN one, the instruction itself, where the
-       old loop can be made to throw the same, at the dispatch of the old
-       instruction. RV_HOOK_OWN_POLL two, that one and then the reading of
-       the interrupt flag. RV_HOOK_APART one and RV_HOOK_APART2 two that the
-       old loop cannot throw the same at: the reading of the flag of a
-       conditional jump (the old loop reads it after it jumped), the cases
-       of CASES (the old loop runs a case in the dispatch of the one before
-       it), for_of_next and iterator_close (they fail with the iterator
-       given up, where a throw at their dispatch leaves it to be closed) */
+       RV_HOOK_NONE none. RV_HOOK_OWN one, the instruction itself, where
+       QuickJS's interpreter can be made to throw the same, at the dispatch of
+       the old instruction. RV_HOOK_OWN_POLL two, that one and then the reading
+       of the interrupt flag. RV_HOOK_APART one and RV_HOOK_APART2 two that
+       QuickJS's interpreter cannot throw the same at: the reading of the flag
+       of a conditional jump (QuickJS's interpreter reads it after it jumped),
+       the cases of CASES (QuickJS's interpreter runs a case in the dispatch of
+       the one before it), for_of_next and iterator_close (they fail with the
+       iterator given up, where a throw at their dispatch leaves it to be
+       closed) */
     uint32_t start, pos;
     uint32_t hooks;
 #endif
@@ -122,7 +124,6 @@ typedef struct RVFunc {
        the end of the frame, for the call */
     intptr_t fofs_b, this_b, room_b;
     int k_count, pcmap_count, code_len;
-    uint64_t kown[4]; /* bit i: k[i] is owned, freed with the register code, i < 256 */
     uint32_t runs;  /* the frames set up for it, counted with -DRV_STATS only */
     JSValue *k;
     RVPcMask *pcmap;
@@ -177,10 +178,10 @@ static inline JSValue rv_ctor_new_target(JSContext *ctx, JSValueConst func_obj,
     return rf->nt ? JS_DupValue(ctx, new_target) : JS_UNDEFINED;
 }
 
-/* the pc that the old loop names for an exception at the old instruction
-   at pos of bc (the value find_line_num takes): one inside it, but for a
-   goto and a gosub, which read the interrupt flag once they moved pc, the
-   one before their target */
+/* the pc named for an exception at the old instruction at pos of bc, as
+   QuickJS's interpreter names it (the value find_line_num takes): one inside
+   it, but for a goto and a gosub, which read the interrupt flag once they
+   moved pc, the one before their target */
 static inline int32_t rv_old_pc_at(const uint8_t *bc, int pos)
 {
     const uint8_t *p = bc + pos;

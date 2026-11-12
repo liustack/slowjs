@@ -6,8 +6,8 @@
  */
 
 /* Forced on a program of engine/test (-include rvhook.h, see build.sh of this
-   folder), it leaves the program as it is unless RV_REGVM=1 and
-   RV_REGVM_STATS=1 are in the environment: then it adds up the counts of
+   folder), it leaves the program as it is unless RV_REGVM_STATS=1 is in the
+   environment: then it adds up the counts of
    JS_RegvmStat of every runtime (read when the first context of a runtime
    is freed) and prints them on stderr at exit: functions converted and
    refused, and, in a build with -DRV_STATS, the dispatches. */
@@ -19,16 +19,15 @@
 #include <stdlib.h>
 #include "quickjs.h"
 
-static int rvhook_on = -1, rvhook_stats;
+static int rvhook_init, rvhook_stats;
 static pthread_mutex_t rvhook_lock = PTHREAD_MUTEX_INITIALIZER;
-static long long rvhook_sum[4]; /* converted, refused, dispatches new, old */
+static long long rvhook_sum[3]; /* converted, refused, dispatches */
 static struct { JSRuntime *rt; JSContext *ctx; } rvhook_first[256];
 
 static void rvhook_report(void)
 {
-    fprintf(stderr, "rvhook: converted %lld refused %lld, dispatches new %lld old %lld (%.2f%% in the register loop)\n",
-            rvhook_sum[0], rvhook_sum[1], rvhook_sum[2], rvhook_sum[3],
-            rvhook_sum[2] + rvhook_sum[3] ? 100.0 * rvhook_sum[2] / (rvhook_sum[2] + rvhook_sum[3]) : 0.0);
+    fprintf(stderr, "rvhook: converted %lld refused %lld, dispatches %lld\n",
+            rvhook_sum[0], rvhook_sum[1], rvhook_sum[2]);
 }
 
 static inline JSContext *rvhook_new_context(JSRuntime *rt)
@@ -37,10 +36,10 @@ static inline JSContext *rvhook_new_context(JSRuntime *rt)
     int i, seen = 0, free_slot = -1;
 
     pthread_mutex_lock(&rvhook_lock);
-    if (rvhook_on < 0) {
-        const char *e = getenv("RV_REGVM"), *s = getenv("RV_REGVM_STATS");
-        rvhook_on = e && *e == '1';
-        rvhook_stats = rvhook_on && s && *s == '1';
+    if (!rvhook_init) {
+        const char *s = getenv("RV_REGVM_STATS");
+        rvhook_init = 1;
+        rvhook_stats = s && *s == '1';
         if (rvhook_stats)
             atexit(rvhook_report);
     }
@@ -71,7 +70,6 @@ static inline void rvhook_free_context(JSContext *ctx)
                 rvhook_sum[0] += JS_RegvmStat(ctx, 0);
                 rvhook_sum[1] += JS_RegvmStat(ctx, 1);
                 rvhook_sum[2] += JS_RegvmStat(ctx, 10);
-                rvhook_sum[3] += JS_RegvmStat(ctx, 11);
                 rvhook_first[i].rt = NULL;
                 rvhook_first[i].ctx = NULL;
             }

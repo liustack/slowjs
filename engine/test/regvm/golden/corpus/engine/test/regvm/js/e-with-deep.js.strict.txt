@@ -1,0 +1,5 @@
+exception SyntaxError: invalid keyword: with
+stack     at <eval>:9:17
+mem-end obj=186 atom=540 shape=118 prop=939 jsfunc=0 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=186 atom=540 shape=118 prop=939 jsfunc=0 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

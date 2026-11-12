@@ -1,0 +1,4 @@
+result t0,0.5,null,undefined,1,1,ch,ch,0;0:11:10.5;2/2;outer,outer;49,48;3;1.75;TypeError: cannot read property 'x' of null;0|t1,1.5,null,undefined,2,2,ch,ch,1;1:13:11.5;3/8;outer,outer;49,48;3;1.75;TypeError: cannot read property 'x' of null;1|t2,2.5,null,undefined,3,3,ch,ch,2;2:15:12.5;4/14;outer,outer;49,48;3;1.75;TypeError: cannot read property 'x' of null;2|
+mem-end obj=187 atom=557 shape=125 prop=943 jsfunc=1 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=187 atom=557 shape=125 prop=943 jsfunc=1 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

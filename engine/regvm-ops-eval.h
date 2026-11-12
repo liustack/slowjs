@@ -43,8 +43,8 @@ RV_OP(WITH)     /* w op is_with atom32 off16: the with_* op on the temps under w
    WITH with the slot of the old sp, the old opcode, is_with, the atom and
    the jump. It can throw at its end, with its operands freed by the slow
    side, and when it jumps it reads the interrupt flag at the target, as
-   the old loop does: one before its end, with the stack of the target,
-   each entry a temp, named at the pc before the target. */
+   QuickJS's interpreter does: one before its end, with the stack of the
+   target, each entry a temp, named at the pc before the target. */
 static void rv_with_op(RVPass *s, const uint8_t *p, int pos)
 {
     const JSOpCode *oi = &short_opcode_info(p[0]);
@@ -53,7 +53,7 @@ static void rv_with_op(RVPass *s, const uint8_t *p, int pos)
     RVMask tmask = { { 0, 0, 0, 0 } };
 
     if (npop > s->sp) {
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     /* the depth at the target, as rv_depths has it */
@@ -160,8 +160,9 @@ static void rv_eval_leave(JSContext *ctx, JSValue *F, JSStackFrame *esf)
 }
 #elif RV_PART == RV_PART_RUN
     /* it may run JS (a getter, a proxy), so the register stack is given
-       to it above this frame. It reads the interrupt flag after it
-       jumps, as the old loop does, and names it one before its end
+       to it above this frame. A jump back counts, as every jump back
+       of the loop does, and it reads the interrupt flag after it jumps,
+       as QuickJS's interpreter does, and names it one before its end
        (rv_with_op). */
  rv_WITH:
     ip = pc;
@@ -170,9 +171,13 @@ static void rv_eval_leave(JSContext *ctx, JSValue *F, JSStackFrame *esf)
     {
         int r = rv_with_slow(ctx, F, ip);
         if (r) {
+            int off;
             if (r < 0)
                 goto rv_exception;
-            pc += (int16_t)get_u16(pc - 2);
+            off = (int16_t)get_u16(pc - 2);
+            if (off < 0)
+                poll_count(POLL_WEIGHT);
+            pc += off;
             if (RV_INJ_HIT(ctx) || unlikely(js_poll_interrupts(ctx))) {
                 pc = ip + 8;
                 goto rv_exception;

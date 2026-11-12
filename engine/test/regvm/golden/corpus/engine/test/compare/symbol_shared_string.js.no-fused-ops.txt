@@ -1,0 +1,12 @@
+result held by an array: true
+result held by a variable: true
+result a literal of digits: true true
+result the string after: string 123 string 456
+result description: 123 true 1234
+result Symbol.for: true 78 string 789
+result held by its description: true 90 901
+result a description read twice: true 2 Symbol(55)
+result a long description: true 1572867 3145728 1572875
+mem-end obj=196 atom=558 shape=120 prop=970 jsfunc=2 cfunc=129 array=4 fast_array=4 elements=11 binary=0
+mem-gc obj=196 atom=558 shape=120 prop=970 jsfunc=2 cfunc=129 array=4 fast_array=4 elements=11 binary=0
+--- status exit 0

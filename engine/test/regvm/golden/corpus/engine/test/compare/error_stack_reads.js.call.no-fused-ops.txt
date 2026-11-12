@@ -1,0 +1,51 @@
+result read get: true
+result read index: true
+result read typeof: true
+result read length: true
+result read optional: true
+result read orAssign: true
+result read nullishAssign: true
+result read andAssign: true
+result read orAssignInherited: true
+result read orAssignIndex: true
+result read plusAssign: true
+result read minusAssign: true
+result read orBitsAssign: true
+result read postIncrement: true
+result read preDecrement: true
+result read subclass: true
+result read destructure: true
+result read with: true
+result read super: true
+result read reflect: true
+result read template: true
+result read stringCall: true
+result read methodOnStack: true
+result read descriptor: true
+result read descriptors: true
+result read proxy: true
+result read proxyOrAssign: true
+result compound assignment gives string
+result never the marker, get: string
+result never the marker, index: string
+result never the marker, descriptorValue: string
+result never the marker, descriptorsValue: string
+result never the marker, reflectGet: string
+result never the marker, reflectOwn: string
+result never the marker, proxyGet: string
+result never the marker, proxyOwn: string
+result never the marker, values: string
+result never the marker, entries: string
+result never the marker, assign: string
+result never the marker, spread: string
+result never the marker, json: string
+result redefine with the same text: true,true,false,true
+result errors that cannot take a stack:
+result freeze: message true true
+result seal: message false true
+result preventExtensions: message false false
+result open: message,stack string
+result proxy checks: true,true,true,true,true,true,true,true,0,{},false,string getOwnPropertyDescriptor,ownKeys,getOwnPropertyDescriptor,getOwnPropertyDescriptor message,stack,message,stack,stack,stack true
+mem-end obj=225 atom=627 shape=142 prop=1036 jsfunc=49 cfunc=154 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=219 atom=627 shape=138 prop=1024 jsfunc=49 cfunc=154 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

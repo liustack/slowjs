@@ -1,0 +1,552 @@
+result set plain 0: [true,3,3]
+result define plain 0: [true,3,3]
+result assign plain 0: [3,3]
+result strict assign plain 0: [3,3]
+result Object.defineProperty plain 0: [3,3]
+result set plain 2: [true,3,3]
+result define plain 2: [true,3,3]
+result assign plain 2: [3,3]
+result strict assign plain 2: [3,3]
+result Object.defineProperty plain 2: [3,3]
+result set plain 3: [true,4,4]
+result define plain 3: [true,4,4]
+result assign plain 3: [4,4]
+result strict assign plain 3: [4,4]
+result Object.defineProperty plain 3: [4,3]
+result set plain 4: [true,5,4]
+result define plain 4: [true,5,4]
+result assign plain 4: [5,4]
+result strict assign plain 4: [5,4]
+result Object.defineProperty plain 4: [5,3]
+result set plain 7: [true,8,4]
+result define plain 7: [true,8,4]
+result assign plain 7: [8,4]
+result strict assign plain 7: [8,4]
+result Object.defineProperty plain 7: [8,3]
+result set plain 100: [true,101,4]
+result define plain 100: [true,101,4]
+result assign plain 100: [101,4]
+result strict assign plain 100: [101,4]
+result Object.defineProperty plain 100: [101,3]
+result set plain 4294967294: [true,4294967295,4]
+result define plain 4294967294: [true,4294967295,4]
+result assign plain 4294967294: [4294967295,4]
+result strict assign plain 4294967294: [4294967295,4]
+result Object.defineProperty plain 4294967294: [4294967295,3]
+result set plain 4294967295: [true,3,4]
+result define plain 4294967295: [true,3,4]
+result assign plain 4294967295: [3,4]
+result strict assign plain 4294967295: [3,4]
+result Object.defineProperty plain 4294967295: [3,3]
+result set plain 5: [true,6,4]
+result define plain 5: [true,6,4]
+result assign plain 5: [6,4]
+result strict assign plain 5: [6,4]
+result Object.defineProperty plain 5: [6,3]
+result set plain 1.5: [true,3,4]
+result define plain 1.5: [true,3,4]
+result assign plain 1.5: [3,4]
+result strict assign plain 1.5: [3,4]
+result Object.defineProperty plain 1.5: [3,3]
+result set plain -1: [true,3,4]
+result define plain -1: [true,3,4]
+result assign plain -1: [3,4]
+result strict assign plain -1: [3,4]
+result Object.defineProperty plain -1: [3,3]
+result push plain: [4]
+result unshift plain: [4]
+result length set plain: [10]
+result splice grow plain: [4]
+result fill plain: [3,0]
+result copyWithin plain: [3,2]
+result set prevented 0: [true,3,3]
+result define prevented 0: [true,3,3]
+result assign prevented 0: [3,3]
+result strict assign prevented 0: [3,3]
+result Object.defineProperty prevented 0: [3,3]
+result set prevented 2: [true,3,3]
+result define prevented 2: [true,3,3]
+result assign prevented 2: [3,3]
+result strict assign prevented 2: [3,3]
+result Object.defineProperty prevented 2: [3,3]
+result set prevented 3: [false,3,3]
+result define prevented 3: [false,3,3]
+result assign prevented 3: throws TypeError
+result strict assign prevented 3: throws TypeError
+result Object.defineProperty prevented 3: throws TypeError
+result set prevented 4: [false,3,3]
+result define prevented 4: [false,3,3]
+result assign prevented 4: throws TypeError
+result strict assign prevented 4: throws TypeError
+result Object.defineProperty prevented 4: throws TypeError
+result set prevented 7: [false,3,3]
+result define prevented 7: [false,3,3]
+result assign prevented 7: throws TypeError
+result strict assign prevented 7: throws TypeError
+result Object.defineProperty prevented 7: throws TypeError
+result set prevented 100: [false,3,3]
+result define prevented 100: [false,3,3]
+result assign prevented 100: throws TypeError
+result strict assign prevented 100: throws TypeError
+result Object.defineProperty prevented 100: throws TypeError
+result set prevented 4294967294: [false,3,3]
+result define prevented 4294967294: [false,3,3]
+result assign prevented 4294967294: throws TypeError
+result strict assign prevented 4294967294: throws TypeError
+result Object.defineProperty prevented 4294967294: throws TypeError
+result set prevented 4294967295: [false,3,3]
+result define prevented 4294967295: [false,3,3]
+result assign prevented 4294967295: throws TypeError
+result strict assign prevented 4294967295: throws TypeError
+result Object.defineProperty prevented 4294967295: throws TypeError
+result set prevented 5: [false,3,3]
+result define prevented 5: [false,3,3]
+result assign prevented 5: throws TypeError
+result strict assign prevented 5: throws TypeError
+result Object.defineProperty prevented 5: throws TypeError
+result set prevented 1.5: [false,3,3]
+result define prevented 1.5: [false,3,3]
+result assign prevented 1.5: throws TypeError
+result strict assign prevented 1.5: throws TypeError
+result Object.defineProperty prevented 1.5: throws TypeError
+result set prevented -1: [false,3,3]
+result define prevented -1: [false,3,3]
+result assign prevented -1: throws TypeError
+result strict assign prevented -1: throws TypeError
+result Object.defineProperty prevented -1: throws TypeError
+result push prevented: ["TypeError",3]
+result unshift prevented: ["TypeError",3]
+result length set prevented: [10]
+result splice grow prevented: ["TypeError",3]
+result fill prevented: [3,0]
+result copyWithin prevented: [3,2]
+result set sealed 0: [true,3,3]
+result define sealed 0: [false,3,3]
+result assign sealed 0: [3,3]
+result strict assign sealed 0: [3,3]
+result Object.defineProperty sealed 0: [3,3]
+result set sealed 2: [true,3,3]
+result define sealed 2: [false,3,3]
+result assign sealed 2: [3,3]
+result strict assign sealed 2: [3,3]
+result Object.defineProperty sealed 2: [3,3]
+result set sealed 3: [false,3,3]
+result define sealed 3: [false,3,3]
+result assign sealed 3: throws TypeError
+result strict assign sealed 3: throws TypeError
+result Object.defineProperty sealed 3: throws TypeError
+result set sealed 4: [false,3,3]
+result define sealed 4: [false,3,3]
+result assign sealed 4: throws TypeError
+result strict assign sealed 4: throws TypeError
+result Object.defineProperty sealed 4: throws TypeError
+result set sealed 7: [false,3,3]
+result define sealed 7: [false,3,3]
+result assign sealed 7: throws TypeError
+result strict assign sealed 7: throws TypeError
+result Object.defineProperty sealed 7: throws TypeError
+result set sealed 100: [false,3,3]
+result define sealed 100: [false,3,3]
+result assign sealed 100: throws TypeError
+result strict assign sealed 100: throws TypeError
+result Object.defineProperty sealed 100: throws TypeError
+result set sealed 4294967294: [false,3,3]
+result define sealed 4294967294: [false,3,3]
+result assign sealed 4294967294: throws TypeError
+result strict assign sealed 4294967294: throws TypeError
+result Object.defineProperty sealed 4294967294: throws TypeError
+result set sealed 4294967295: [false,3,3]
+result define sealed 4294967295: [false,3,3]
+result assign sealed 4294967295: throws TypeError
+result strict assign sealed 4294967295: throws TypeError
+result Object.defineProperty sealed 4294967295: throws TypeError
+result set sealed 5: [false,3,3]
+result define sealed 5: [false,3,3]
+result assign sealed 5: throws TypeError
+result strict assign sealed 5: throws TypeError
+result Object.defineProperty sealed 5: throws TypeError
+result set sealed 1.5: [false,3,3]
+result define sealed 1.5: [false,3,3]
+result assign sealed 1.5: throws TypeError
+result strict assign sealed 1.5: throws TypeError
+result Object.defineProperty sealed 1.5: throws TypeError
+result set sealed -1: [false,3,3]
+result define sealed -1: [false,3,3]
+result assign sealed -1: throws TypeError
+result strict assign sealed -1: throws TypeError
+result Object.defineProperty sealed -1: throws TypeError
+result push sealed: ["TypeError",3]
+result unshift sealed: ["TypeError",3]
+result length set sealed: [10]
+result splice grow sealed: ["TypeError",3]
+result fill sealed: [3,0]
+result copyWithin sealed: [3,2]
+result set frozen 0: [false,3,3]
+result define frozen 0: [false,3,3]
+result assign frozen 0: throws TypeError
+result strict assign frozen 0: throws TypeError
+result Object.defineProperty frozen 0: throws TypeError
+result set frozen 2: [false,3,3]
+result define frozen 2: [false,3,3]
+result assign frozen 2: throws TypeError
+result strict assign frozen 2: throws TypeError
+result Object.defineProperty frozen 2: throws TypeError
+result set frozen 3: [false,3,3]
+result define frozen 3: [false,3,3]
+result assign frozen 3: throws TypeError
+result strict assign frozen 3: throws TypeError
+result Object.defineProperty frozen 3: throws TypeError
+result set frozen 4: [false,3,3]
+result define frozen 4: [false,3,3]
+result assign frozen 4: throws TypeError
+result strict assign frozen 4: throws TypeError
+result Object.defineProperty frozen 4: throws TypeError
+result set frozen 7: [false,3,3]
+result define frozen 7: [false,3,3]
+result assign frozen 7: throws TypeError
+result strict assign frozen 7: throws TypeError
+result Object.defineProperty frozen 7: throws TypeError
+result set frozen 100: [false,3,3]
+result define frozen 100: [false,3,3]
+result assign frozen 100: throws TypeError
+result strict assign frozen 100: throws TypeError
+result Object.defineProperty frozen 100: throws TypeError
+result set frozen 4294967294: [false,3,3]
+result define frozen 4294967294: [false,3,3]
+result assign frozen 4294967294: throws TypeError
+result strict assign frozen 4294967294: throws TypeError
+result Object.defineProperty frozen 4294967294: throws TypeError
+result set frozen 4294967295: [false,3,3]
+result define frozen 4294967295: [false,3,3]
+result assign frozen 4294967295: throws TypeError
+result strict assign frozen 4294967295: throws TypeError
+result Object.defineProperty frozen 4294967295: throws TypeError
+result set frozen 5: [false,3,3]
+result define frozen 5: [false,3,3]
+result assign frozen 5: throws TypeError
+result strict assign frozen 5: throws TypeError
+result Object.defineProperty frozen 5: throws TypeError
+result set frozen 1.5: [false,3,3]
+result define frozen 1.5: [false,3,3]
+result assign frozen 1.5: throws TypeError
+result strict assign frozen 1.5: throws TypeError
+result Object.defineProperty frozen 1.5: throws TypeError
+result set frozen -1: [false,3,3]
+result define frozen -1: [false,3,3]
+result assign frozen -1: throws TypeError
+result strict assign frozen -1: throws TypeError
+result Object.defineProperty frozen -1: throws TypeError
+result push frozen: ["TypeError",3]
+result unshift frozen: ["TypeError",3]
+result length set frozen: ["TypeError",3]
+result splice grow frozen: ["TypeError",3]
+result fill frozen: ["TypeError",3]
+result copyWithin frozen: ["TypeError",3]
+result set holes 0: [true,3,2]
+result define holes 0: [true,3,2]
+result assign holes 0: [3,2]
+result strict assign holes 0: [3,2]
+result Object.defineProperty holes 0: [3,2]
+result set holes 2: [true,3,2]
+result define holes 2: [true,3,2]
+result assign holes 2: [3,2]
+result strict assign holes 2: [3,2]
+result Object.defineProperty holes 2: [3,2]
+result set holes 3: [false,3,2]
+result define holes 3: [false,3,2]
+result assign holes 3: throws TypeError
+result strict assign holes 3: throws TypeError
+result Object.defineProperty holes 3: throws TypeError
+result set holes 4: [false,3,2]
+result define holes 4: [false,3,2]
+result assign holes 4: throws TypeError
+result strict assign holes 4: throws TypeError
+result Object.defineProperty holes 4: throws TypeError
+result set holes 7: [false,3,2]
+result define holes 7: [false,3,2]
+result assign holes 7: throws TypeError
+result strict assign holes 7: throws TypeError
+result Object.defineProperty holes 7: throws TypeError
+result set holes 100: [false,3,2]
+result define holes 100: [false,3,2]
+result assign holes 100: throws TypeError
+result strict assign holes 100: throws TypeError
+result Object.defineProperty holes 100: throws TypeError
+result set holes 4294967294: [false,3,2]
+result define holes 4294967294: [false,3,2]
+result assign holes 4294967294: throws TypeError
+result strict assign holes 4294967294: throws TypeError
+result Object.defineProperty holes 4294967294: throws TypeError
+result set holes 4294967295: [false,3,2]
+result define holes 4294967295: [false,3,2]
+result assign holes 4294967295: throws TypeError
+result strict assign holes 4294967295: throws TypeError
+result Object.defineProperty holes 4294967295: throws TypeError
+result set holes 5: [false,3,2]
+result define holes 5: [false,3,2]
+result assign holes 5: throws TypeError
+result strict assign holes 5: throws TypeError
+result Object.defineProperty holes 5: throws TypeError
+result set holes 1.5: [false,3,2]
+result define holes 1.5: [false,3,2]
+result assign holes 1.5: throws TypeError
+result strict assign holes 1.5: throws TypeError
+result Object.defineProperty holes 1.5: throws TypeError
+result set holes -1: [false,3,2]
+result define holes -1: [false,3,2]
+result assign holes -1: throws TypeError
+result strict assign holes -1: throws TypeError
+result Object.defineProperty holes -1: throws TypeError
+result push holes: ["TypeError",3]
+result unshift holes: ["TypeError",3]
+result length set holes: [10]
+result splice grow holes: ["TypeError",3]
+result fill holes: ["TypeError",3]
+result copyWithin holes: ["TypeError",3]
+result set empty 0: [false,0,0]
+result define empty 0: [false,0,0]
+result assign empty 0: throws TypeError
+result strict assign empty 0: throws TypeError
+result Object.defineProperty empty 0: throws TypeError
+result set empty 2: [false,0,0]
+result define empty 2: [false,0,0]
+result assign empty 2: throws TypeError
+result strict assign empty 2: throws TypeError
+result Object.defineProperty empty 2: throws TypeError
+result set empty 3: [false,0,0]
+result define empty 3: [false,0,0]
+result assign empty 3: throws TypeError
+result strict assign empty 3: throws TypeError
+result Object.defineProperty empty 3: throws TypeError
+result set empty 4: [false,0,0]
+result define empty 4: [false,0,0]
+result assign empty 4: throws TypeError
+result strict assign empty 4: throws TypeError
+result Object.defineProperty empty 4: throws TypeError
+result set empty 7: [false,0,0]
+result define empty 7: [false,0,0]
+result assign empty 7: throws TypeError
+result strict assign empty 7: throws TypeError
+result Object.defineProperty empty 7: throws TypeError
+result set empty 100: [false,0,0]
+result define empty 100: [false,0,0]
+result assign empty 100: throws TypeError
+result strict assign empty 100: throws TypeError
+result Object.defineProperty empty 100: throws TypeError
+result set empty 4294967294: [false,0,0]
+result define empty 4294967294: [false,0,0]
+result assign empty 4294967294: throws TypeError
+result strict assign empty 4294967294: throws TypeError
+result Object.defineProperty empty 4294967294: throws TypeError
+result set empty 4294967295: [false,0,0]
+result define empty 4294967295: [false,0,0]
+result assign empty 4294967295: throws TypeError
+result strict assign empty 4294967295: throws TypeError
+result Object.defineProperty empty 4294967295: throws TypeError
+result set empty 5: [false,0,0]
+result define empty 5: [false,0,0]
+result assign empty 5: throws TypeError
+result strict assign empty 5: throws TypeError
+result Object.defineProperty empty 5: throws TypeError
+result set empty 1.5: [false,0,0]
+result define empty 1.5: [false,0,0]
+result assign empty 1.5: throws TypeError
+result strict assign empty 1.5: throws TypeError
+result Object.defineProperty empty 1.5: throws TypeError
+result set empty -1: [false,0,0]
+result define empty -1: [false,0,0]
+result assign empty -1: throws TypeError
+result strict assign empty -1: throws TypeError
+result Object.defineProperty empty -1: throws TypeError
+result push empty: ["TypeError",0]
+result unshift empty: ["TypeError",0]
+result length set empty: [10]
+result splice grow empty: ["TypeError",0]
+result fill empty: [0,null]
+result copyWithin empty: [0,null]
+result set sparse 0: [true,101,4]
+result define sparse 0: [true,101,4]
+result assign sparse 0: [101,4]
+result strict assign sparse 0: [101,4]
+result Object.defineProperty sparse 0: [101,4]
+result set sparse 2: [true,101,4]
+result define sparse 2: [true,101,4]
+result assign sparse 2: [101,4]
+result strict assign sparse 2: [101,4]
+result Object.defineProperty sparse 2: [101,4]
+result set sparse 3: [false,101,4]
+result define sparse 3: [false,101,4]
+result assign sparse 3: throws TypeError
+result strict assign sparse 3: throws TypeError
+result Object.defineProperty sparse 3: throws TypeError
+result set sparse 4: [false,101,4]
+result define sparse 4: [false,101,4]
+result assign sparse 4: throws TypeError
+result strict assign sparse 4: throws TypeError
+result Object.defineProperty sparse 4: throws TypeError
+result set sparse 7: [false,101,4]
+result define sparse 7: [false,101,4]
+result assign sparse 7: throws TypeError
+result strict assign sparse 7: throws TypeError
+result Object.defineProperty sparse 7: throws TypeError
+result set sparse 100: [true,101,4]
+result define sparse 100: [true,101,4]
+result assign sparse 100: [101,4]
+result strict assign sparse 100: [101,4]
+result Object.defineProperty sparse 100: [101,4]
+result set sparse 4294967294: [false,101,4]
+result define sparse 4294967294: [false,101,4]
+result assign sparse 4294967294: throws TypeError
+result strict assign sparse 4294967294: throws TypeError
+result Object.defineProperty sparse 4294967294: throws TypeError
+result set sparse 4294967295: [false,101,4]
+result define sparse 4294967295: [false,101,4]
+result assign sparse 4294967295: throws TypeError
+result strict assign sparse 4294967295: throws TypeError
+result Object.defineProperty sparse 4294967295: throws TypeError
+result set sparse 5: [false,101,4]
+result define sparse 5: [false,101,4]
+result assign sparse 5: throws TypeError
+result strict assign sparse 5: throws TypeError
+result Object.defineProperty sparse 5: throws TypeError
+result set sparse 1.5: [false,101,4]
+result define sparse 1.5: [false,101,4]
+result assign sparse 1.5: throws TypeError
+result strict assign sparse 1.5: throws TypeError
+result Object.defineProperty sparse 1.5: throws TypeError
+result set sparse -1: [false,101,4]
+result define sparse -1: [false,101,4]
+result assign sparse -1: throws TypeError
+result strict assign sparse -1: throws TypeError
+result Object.defineProperty sparse -1: throws TypeError
+result push sparse: ["TypeError",101]
+result unshift sparse: ["TypeError",101]
+result length set sparse: [10]
+result splice grow sparse: ["TypeError",101]
+result fill sparse: ["TypeError",101]
+result copyWithin sparse: ["TypeError",101]
+result set fixedLength 0: [true,3,3]
+result define fixedLength 0: [true,3,3]
+result assign fixedLength 0: [3,3]
+result strict assign fixedLength 0: [3,3]
+result Object.defineProperty fixedLength 0: [3,3]
+result set fixedLength 2: [true,3,3]
+result define fixedLength 2: [true,3,3]
+result assign fixedLength 2: [3,3]
+result strict assign fixedLength 2: [3,3]
+result Object.defineProperty fixedLength 2: [3,3]
+result set fixedLength 3: [false,3,3]
+result define fixedLength 3: [false,3,3]
+result assign fixedLength 3: throws TypeError
+result strict assign fixedLength 3: throws TypeError
+result Object.defineProperty fixedLength 3: throws TypeError
+result set fixedLength 4: [false,3,3]
+result define fixedLength 4: [false,3,3]
+result assign fixedLength 4: throws TypeError
+result strict assign fixedLength 4: throws TypeError
+result Object.defineProperty fixedLength 4: throws TypeError
+result set fixedLength 7: [false,3,3]
+result define fixedLength 7: [false,3,3]
+result assign fixedLength 7: throws TypeError
+result strict assign fixedLength 7: throws TypeError
+result Object.defineProperty fixedLength 7: throws TypeError
+result set fixedLength 100: [false,3,3]
+result define fixedLength 100: [false,3,3]
+result assign fixedLength 100: throws TypeError
+result strict assign fixedLength 100: throws TypeError
+result Object.defineProperty fixedLength 100: throws TypeError
+result set fixedLength 4294967294: [false,3,3]
+result define fixedLength 4294967294: [false,3,3]
+result assign fixedLength 4294967294: throws TypeError
+result strict assign fixedLength 4294967294: throws TypeError
+result Object.defineProperty fixedLength 4294967294: throws TypeError
+result set fixedLength 4294967295: [true,3,4]
+result define fixedLength 4294967295: [true,3,4]
+result assign fixedLength 4294967295: [3,4]
+result strict assign fixedLength 4294967295: [3,4]
+result Object.defineProperty fixedLength 4294967295: [3,3]
+result set fixedLength 5: [false,3,3]
+result define fixedLength 5: [false,3,3]
+result assign fixedLength 5: throws TypeError
+result strict assign fixedLength 5: throws TypeError
+result Object.defineProperty fixedLength 5: throws TypeError
+result set fixedLength 1.5: [true,3,4]
+result define fixedLength 1.5: [true,3,4]
+result assign fixedLength 1.5: [3,4]
+result strict assign fixedLength 1.5: [3,4]
+result Object.defineProperty fixedLength 1.5: [3,3]
+result set fixedLength -1: [true,3,4]
+result define fixedLength -1: [true,3,4]
+result assign fixedLength -1: [3,4]
+result strict assign fixedLength -1: [3,4]
+result Object.defineProperty fixedLength -1: [3,3]
+result push fixedLength: ["TypeError",3]
+result unshift fixedLength: ["TypeError",3]
+result length set fixedLength: ["TypeError",3]
+result splice grow fixedLength: ["TypeError",3]
+result fill fixedLength: [3,0]
+result copyWithin fixedLength: [3,2]
+result set preventedFixedLength 0: [true,3,3]
+result define preventedFixedLength 0: [true,3,3]
+result assign preventedFixedLength 0: [3,3]
+result strict assign preventedFixedLength 0: [3,3]
+result Object.defineProperty preventedFixedLength 0: [3,3]
+result set preventedFixedLength 2: [true,3,3]
+result define preventedFixedLength 2: [true,3,3]
+result assign preventedFixedLength 2: [3,3]
+result strict assign preventedFixedLength 2: [3,3]
+result Object.defineProperty preventedFixedLength 2: [3,3]
+result set preventedFixedLength 3: [false,3,3]
+result define preventedFixedLength 3: [false,3,3]
+result assign preventedFixedLength 3: throws TypeError
+result strict assign preventedFixedLength 3: throws TypeError
+result Object.defineProperty preventedFixedLength 3: throws TypeError
+result set preventedFixedLength 4: [false,3,3]
+result define preventedFixedLength 4: [false,3,3]
+result assign preventedFixedLength 4: throws TypeError
+result strict assign preventedFixedLength 4: throws TypeError
+result Object.defineProperty preventedFixedLength 4: throws TypeError
+result set preventedFixedLength 7: [false,3,3]
+result define preventedFixedLength 7: [false,3,3]
+result assign preventedFixedLength 7: throws TypeError
+result strict assign preventedFixedLength 7: throws TypeError
+result Object.defineProperty preventedFixedLength 7: throws TypeError
+result set preventedFixedLength 100: [false,3,3]
+result define preventedFixedLength 100: [false,3,3]
+result assign preventedFixedLength 100: throws TypeError
+result strict assign preventedFixedLength 100: throws TypeError
+result Object.defineProperty preventedFixedLength 100: throws TypeError
+result set preventedFixedLength 4294967294: [false,3,3]
+result define preventedFixedLength 4294967294: [false,3,3]
+result assign preventedFixedLength 4294967294: throws TypeError
+result strict assign preventedFixedLength 4294967294: throws TypeError
+result Object.defineProperty preventedFixedLength 4294967294: throws TypeError
+result set preventedFixedLength 4294967295: [false,3,3]
+result define preventedFixedLength 4294967295: [false,3,3]
+result assign preventedFixedLength 4294967295: throws TypeError
+result strict assign preventedFixedLength 4294967295: throws TypeError
+result Object.defineProperty preventedFixedLength 4294967295: throws TypeError
+result set preventedFixedLength 5: [false,3,3]
+result define preventedFixedLength 5: [false,3,3]
+result assign preventedFixedLength 5: throws TypeError
+result strict assign preventedFixedLength 5: throws TypeError
+result Object.defineProperty preventedFixedLength 5: throws TypeError
+result set preventedFixedLength 1.5: [false,3,3]
+result define preventedFixedLength 1.5: [false,3,3]
+result assign preventedFixedLength 1.5: throws TypeError
+result strict assign preventedFixedLength 1.5: throws TypeError
+result Object.defineProperty preventedFixedLength 1.5: throws TypeError
+result set preventedFixedLength -1: [false,3,3]
+result define preventedFixedLength -1: [false,3,3]
+result assign preventedFixedLength -1: throws TypeError
+result strict assign preventedFixedLength -1: throws TypeError
+result Object.defineProperty preventedFixedLength -1: throws TypeError
+result push preventedFixedLength: ["TypeError",3]
+result unshift preventedFixedLength: ["TypeError",3]
+result length set preventedFixedLength: ["TypeError",3]
+result splice grow preventedFixedLength: ["TypeError",3]
+result fill preventedFixedLength: [3,0]
+result copyWithin preventedFixedLength: [3,2]
+mem-end obj=216 atom=561 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
+mem-gc obj=216 atom=561 shape=127 prop=1024 jsfunc=10 cfunc=139 array=3 fast_array=3 elements=560 binary=0
+--- status exit 0

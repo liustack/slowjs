@@ -29,7 +29,7 @@
 //	                       of function NAME, right after its PCALIGN, which
 //	                       run at each call. They move the code of that
 //	                       function only. Use a multiple of 8 from 0 to 56 on
-//	                       the interpreter (JS_CallInternal_block).
+//	                       the interpreter (JS_RegvmRun_block).
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
 //	                       functions, or only the named): the linker then
 //	                       starts the function on a multiple of A.
@@ -39,7 +39,7 @@
 // Example, the position "moved 32 bytes, 16 NOP bytes in front of the
 // interpreter":
 //
-//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_CallInternal_block:16
+//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_RegvmRun_block:16
 package main
 
 import (

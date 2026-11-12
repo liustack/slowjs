@@ -38,8 +38,7 @@ static void rv_args_pass(RVPass *s, int kind, int first)
        the compiler marks every argument of the function captured, so a
        function with arguments has one */
     if (kind == RV_ARGS_MAPPED && s->b->arg_count && !s->b->var_ref_count) {
-        s->failed = TRUE;
-        s->crafted = TRUE;
+        rv_crafted(s);
         return;
     }
     rv_emit(s, RV_ARGS);

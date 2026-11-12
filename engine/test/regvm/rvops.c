@@ -18,20 +18,19 @@
      pass    the abstract stack of the pass, a move or a free at most
      window  a window op (regvm-ops-window.h, or W_GEN of regvm-ops-gen.h)
      old     OLD (regvm-ops-old.h)
-     wait X  refused until package X takes it
      never   in the code of no function that runs: a temporary opcode of
              the compiler, or OP_invalid
 
    The pass must take (JS_RegvmStat 2000 + op) every opcode of the first
-   four and refuse every one that waits, so the table changes when a
-   package lands.
+   four: it refuses none of final code.
 
    A line that starts with ">" is a form: a script whose value is a
    function, which rvops calls once with the register loop on (the call
    converts it) and which must then have register code. A form is written
    under the opcode it takes in a way the pass once refused, or under no
-   opcode for a refusal of a whole function. ">wait X" starts a form that
-   must stay refused until package X takes it.
+   opcode for a function the pass once refused whole. A line '!"ERROR"
+   SOURCE' is a limit of the parser: a script that must throw an error
+   whose text starts with ERROR.
 
    It prints each line that is wrong and exits with 1, 0 when none is, 2
    when it cannot run. */
@@ -67,11 +66,37 @@ static const Op ops[] = {
 static int seen[NOPS];
 static int nforms;
 
-/* the form at src (after its ">" or ">wait X"): 0 when it converts and
-   wait is NULL, or when it stays refused and wait names its owner, else 1
-   with what is wrong printed */
+/* the limit of the parser at src (after its '!"ERROR" '): 0 when the
+   script throws an error whose text starts with err, else 1 with what is
+   wrong printed */
+static int check_limit(JSContext *ctx, const char *path, int lineno,
+                       const char *src, const char *err)
+{
+    JSValue r, e;
+    const char *t;
+    int bad;
+
+    nforms++;
+    r = JS_Eval(ctx, src, strlen(src), "<limit>", JS_EVAL_TYPE_GLOBAL);
+    if (!JS_IsException(r)) {
+        printf("%s:%d: the script does not throw, want %s\n", path, lineno, err);
+        JS_FreeValue(ctx, r);
+        return 1;
+    }
+    e = JS_GetException(ctx);
+    t = JS_ToCString(ctx, e);
+    bad = !t || strncmp(t, err, strlen(err)) != 0;
+    if (bad)
+        printf("%s:%d: the script throws %s, want %s\n", path, lineno, t ? t : "(no text)", err);
+    JS_FreeCString(ctx, t);
+    JS_FreeValue(ctx, e);
+    return bad;
+}
+
+/* the form at src (after its ">"): 0 when it converts, else 1 with what is
+   wrong printed */
 static int check_form(JSContext *ctx, const char *path, int lineno,
-                      const char *src, const char *wait)
+                      const char *src)
 {
     JSValue f, r;
     int st, bad = 0;
@@ -89,12 +114,9 @@ static int check_form(JSContext *ctx, const char *path, int lineno,
         JS_FreeValue(ctx, JS_GetException(ctx));
     JS_FreeValue(ctx, r);
     st = JS_RegvmFuncStat(ctx, f, 0);
-    if (!wait && st != 1) {
+    if (st != 1) {
         printf("%s:%d: the form is refused (opcode %d at %d)\n", path, lineno,
                JS_RegvmFuncStat(ctx, f, 2), JS_RegvmFuncStat(ctx, f, 3));
-        bad = 1;
-    } else if (wait && st == 1) {
-        printf("%s:%d: the form that waits for %s converts now: drop its wait\n", path, lineno, wait);
         bad = 1;
     }
     JS_FreeValue(ctx, f);
@@ -108,7 +130,7 @@ static int check(void *p)
     JSContext *ctx = JS_NewContext(rt);
     FILE *f = fopen(path, "r");
     static char line[8192];
-    char name[64], path_kind[16], owner[16], *src;
+    char name[64], path_kind[16], rest[16], *src;
     int i, op, nop = 0, bad = 0, lineno = 0, taken, n;
 
     if (!f) {
@@ -128,25 +150,25 @@ static int check(void *p)
             continue;
         if (line[0] == '>') {
             line[strcspn(line, "\n")] = '\0';
-            if (!strncmp(line, ">wait ", 6)) {
-                src = line + 6;
-                n = 0;
-                sscanf(src, "%15s %n", owner, &n);
-                if (!n) {
-                    printf("%s:%d: >wait names no package\n", path, lineno);
-                    bad++;
-                    continue;
-                }
-                bad += check_form(ctx, path, lineno, src + n, owner);
-            } else {
-                bad += check_form(ctx, path, lineno, line + 1, NULL);
-            }
+            bad += check_form(ctx, path, lineno, line + 1);
             continue;
         }
-        owner[0] = '\0';
-        n = sscanf(line, "%63s %15s %15s", name, path_kind, owner);
-        if (n < 2 || (owner[0] && owner[0] != '#' && strcmp(path_kind, "wait"))) {
-            printf("%s:%d: not NAME PATH [OWNER]\n", path, lineno);
+        if (line[0] == '!') {
+            line[strcspn(line, "\n")] = '\0';
+            src = line[1] == '"' ? strchr(line + 2, '"') : NULL;
+            if (!src || src[1] != ' ') {
+                printf("%s:%d: not !\"ERROR\" SOURCE\n", path, lineno);
+                bad++;
+                continue;
+            }
+            *src = '\0';
+            bad += check_limit(ctx, path, lineno, src + 2, line + 2);
+            continue;
+        }
+        rest[0] = '\0';
+        n = sscanf(line, "%63s %15s %15s", name, path_kind, rest);
+        if (n < 2 || (rest[0] && rest[0] != '#')) {
+            printf("%s:%d: not NAME PATH [# note]\n", path, lineno);
             bad++;
             continue;
         }
@@ -179,16 +201,8 @@ static int check(void *p)
             continue;
         }
         taken = JS_RegvmStat(ctx, 2000 + op);
-        if (!strcmp(path_kind, "wait")) {
-            if (owner[0] == '\0' || owner[0] == '#') {
-                printf("%s:%d: %s waits for no package\n", path, lineno, name);
-                bad++;
-            } else if (taken) {
-                printf("%s:%d: %s is taken now: give it its path\n", path, lineno, name);
-                bad++;
-            }
-        } else if (!strcmp(path_kind, "reg") || !strcmp(path_kind, "pass") ||
-                   !strcmp(path_kind, "window") || !strcmp(path_kind, "old")) {
+        if (!strcmp(path_kind, "reg") || !strcmp(path_kind, "pass") ||
+            !strcmp(path_kind, "window") || !strcmp(path_kind, "old")) {
             if (taken != 1) {
                 printf("%s:%d: %s has no path into the register loop\n", path, lineno, name);
                 bad++;

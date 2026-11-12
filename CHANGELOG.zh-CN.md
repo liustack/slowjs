@@ -48,7 +48,7 @@
 
 - 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 8：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 超过 65,535 个替换的带标签模板，现在在调用时抛出 `RangeError`，原来编译时就以 `InternalError: stack overflow` 失败。一次调用里前 32 个之后的参数，现在和带展开参数的调用一样放进数组传（[c-engine.md](docs/changes/c-engine.zh-CN.md#超过-32-个参数的调用用数组传参)）。
-- 不带旧解释器循环构建的引擎（`JS_NO_OLD_LOOP`）里，参数和局部变量加起来超过 32,765 个的函数编译失败（报 `InternalError: too many local variables` 或 `too many arguments`，原来的上限是各 65,534 个），栈深超过 118 个值、外面又套了太多层 `try` 和 `for-of` 的函数也编译失败（报 `InternalError: stack overflow`：包着 `r += a` 时是 118 层嵌套的 `try` 或 39 层嵌套的 `for-of`，包着 130 层深的表达式时是 49 层和 17 层）。目前还没有哪个发布版这样构建（[c-engine.md](docs/changes/c-engine.zh-CN.md#去掉旧循环后一个函数的上限)）。
+- 参数和局部变量加起来超过 32,765 个的函数编译失败（报 `InternalError: too many local variables` 或 `too many arguments`，原来的上限是各 65,534 个），栈深超过 118 个值、外面又套了太多层 `try` 和 `for-of` 的函数也编译失败（报 `InternalError: stack overflow`：包着 `r += a` 时是 118 层嵌套的 `try` 或 39 层嵌套的 `for-of`，包着 130 层深的表达式时是 49 层和 17 层）。寄存器循环现在是唯一的解释器，这些就是它跑不了的函数（[c-engine.md](docs/changes/c-engine.zh-CN.md#寄存器循环里一个函数的上限)）。
 
 ## [v0.30.1] - 2026-11-06
 

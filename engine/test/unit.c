@@ -1345,8 +1345,7 @@ static int test_call_depth(void *unused)
    resume at depths from 1 to 3000 puts the top of the stack at every place
    of a segment, also where the frame of big does not fit: the resume then
    runs on the next segment (engine/regvm-entry.h), as a call does, and goes
-   on as in the old loop: the yield gives 2, and the next resume ends the
-   generator. */
+   on: the yield gives 2, and the next resume ends the generator. */
 static int test_regvm_gen_full(void *unused)
 {
     static const char src[] =

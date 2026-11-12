@@ -1,0 +1,10 @@
+exception TypeError: 'x' is read-only
+stack     at boxed (<eval>:16:14)
+stack     at next (native)
+stack     at drain (<eval>:36:15)
+stack     at run (<eval>:46:17)
+stack     at <anonymous> (<eval>:52:14)
+stack     at <eval> (<eval>:58:3)
+mem-end obj=188 atom=543 shape=125 prop=945 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=188 atom=543 shape=125 prop=945 jsfunc=0 cfunc=126 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

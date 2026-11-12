@@ -1,0 +1,50 @@
+result plain at(0): 1
+result plain at(1): 2
+result plain at(3): 4
+result plain at(4): undefined
+result plain at(-1): 4
+result plain at(-2): 3
+result plain at(-4): 1
+result plain at(-5): undefined
+result plain at(1.9): 2
+result plain at(-1.9): 4
+result plain at(NaN): 1
+result plain at(Infinity): undefined
+result plain at(-Infinity): undefined
+result plain at(2): 3
+result plain at(null): 1
+result plain at(undefined): 1
+result resize 4 to 2 at(0): 1
+result resize 4 to 2 at(1): 2
+result resize 4 to 2 at(3): undefined
+result resize 4 to 2 at(-1): undefined
+result resize 4 to 2 at(-2): undefined
+result resize 4 to 2 at(-4): 1
+result resize 4 to 0 at(0): undefined
+result resize 4 to 0 at(1): undefined
+result resize 4 to 0 at(3): undefined
+result resize 4 to 0 at(-1): undefined
+result resize 4 to 0 at(-2): undefined
+result resize 4 to 0 at(-4): undefined
+result resize 4 to 8 at(0): 1
+result resize 4 to 8 at(1): 2
+result resize 4 to 8 at(3): 4
+result resize 4 to 8 at(-1): 4
+result resize 4 to 8 at(-2): 3
+result resize 4 to 8 at(-4): 1
+result resize 2 to 8 at(0): 1
+result resize 2 to 8 at(1): 2
+result resize 2 to 8 at(3): undefined
+result resize 2 to 8 at(-1): 2
+result resize 2 to 8 at(-2): 1
+result resize 2 to 8 at(-4): undefined
+result fixed length shrunk: undefined
+result detached by the argument: undefined
+result detached before: throws TypeError
+result Uint8Array resized: undefined
+result Int16Array resized: undefined
+result Float64Array resized: undefined
+result Float32Array resized: undefined
+mem-end obj=195 atom=553 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
+mem-gc obj=195 atom=553 shape=128 prop=961 jsfunc=2 cfunc=130 array=2 fast_array=2 elements=47 binary=0
+--- status exit 0

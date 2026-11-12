@@ -4,8 +4,8 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# Build the tools that run the native test host with the register loop off
-# and on, against the objects engine/test/build.sh made:
+# Build the tools that run the native test host on the register loop,
+# against the objects engine/test/build.sh made:
 #
 #   engine/test/regvm/build.sh [MODE] [OUTDIR]
 #
@@ -14,14 +14,14 @@
 # no engine, or one of other sources than the tree has now, another mode,
 # other EXTRA_DEFS or another CC (its engine.stamp, see engine/test/stamp.sh),
 # engine/test/build.sh MODE OUTDIR builds it again first (EXTRA_DEFS passes
-# on, -DRV_STATS for the counts of each loop). It adds to OUTDIR:
+# on, -DRV_STATS for the counts of the register loop). It adds to OUTDIR:
 #
 #   rvdiff            the differential runner (rvdiff.c)
 #   rvops             the check of the table of opcodes (rvops.c): rvops
 #                     engine/test/regvm/opcodes.txt
 #   run-test262-rv    run-test262, unit-rv, unit-oom-rv and unit-api-rv: the
 #   unit-rv ...       programs of engine/test that add up the counts of
-#                     the register loop with RV_REGVM=1 RV_REGVM_STATS=1
+#                     the register loop with RV_REGVM_STATS=1
 #                     (rvhook.h), the same programs otherwise
 #   regvm.stamp       what all of OUTDIR was built from: the scripts that run
 #                     these tools refuse a folder whose stamp is not of the

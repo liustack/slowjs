@@ -1,0 +1,4 @@
+result 79800,7,7,{"value":79805,"done":true},79807;79800,7,caught t,{"value":80803,"done":true},80805;79800,7,boom,out 2,79807;79800,7,7,{"value":"early","done":true},79807 | 79802:79804/79806;79800,409,79810;79802:79804/79806;79800,409,79810;rejected af 2/79804;79800,409,79810
+mem-end obj=213 atom=954 shape=139 prop=1004 jsfunc=3 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=199 atom=546 shape=136 prop=969 jsfunc=0 cfunc=136 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

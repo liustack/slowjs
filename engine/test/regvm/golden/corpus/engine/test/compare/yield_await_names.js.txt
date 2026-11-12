@@ -1,0 +1,107 @@
+result "var yield = 1" => ok / SyntaxError
+result "var await = 1" => ok / ok
+result "yield: 1" => ok / SyntaxError
+result "await: 1" => ok / ok
+result "({ yield })" => ok / SyntaxError
+result "({ await })" => ok / ok
+result "({ yield: 1, await: 2 })" => ok / ok
+result "function yield() {}" => ok / SyntaxError
+result "function await() {}" => ok / ok
+result "function* yield() {}" => ok / SyntaxError
+result "async function await() {}" => ok / ok
+result "async function* await() {}" => ok / ok
+result "(function yield() {})" => ok / SyntaxError
+result "(function await() {})" => ok / ok
+result "(function* yield() {})" => SyntaxError / SyntaxError
+result "(async function await() {})" => SyntaxError / SyntaxError
+result "(async function* yield() {})" => SyntaxError / SyntaxError
+result "(function* await() {})" => ok / ok
+result "(async function yield() {})" => ok / SyntaxError
+result "(function* () { function yield() {} })" => SyntaxError / SyntaxError
+result "(function* () { function* yield() {} })" => SyntaxError / SyntaxError
+result "function* g() { var yield }" => SyntaxError / SyntaxError
+result "function* g() { var await }" => ok / ok
+result "function* g(yield) {}" => SyntaxError / SyntaxError
+result "function* g(await) {}" => ok / ok
+result "function* g(a = yield) {}" => SyntaxError / SyntaxError
+result "async function f() { var await }" => SyntaxError / SyntaxError
+result "async function f() { var yield }" => ok / SyntaxError
+result "async function f(await) {}" => SyntaxError / SyntaxError
+result "async function f(a = await 1) {}" => SyntaxError / SyntaxError
+result "function* g() { (yield) => 1 }" => SyntaxError / SyntaxError
+result "function* g() { (a = yield) => 1 }" => SyntaxError / SyntaxError
+result "function* g() { yield => 1 }" => SyntaxError / SyntaxError
+result "function* g() { (a = yield 1) => a }" => SyntaxError / SyntaxError
+result "function* g() { async (yield) => 1 }" => SyntaxError / SyntaxError
+result "function* g() { () => yield }" => ok / SyntaxError
+result "function* g() { () => { var yield } }" => ok / SyntaxError
+result "function* g() { (a = () => yield) => a }" => ok / SyntaxError
+result "async function f() { (await) => 1 }" => SyntaxError / SyntaxError
+result "async function f() { await => 1 }" => SyntaxError / SyntaxError
+result "async function f() { (a = await 1) => a }" => SyntaxError / SyntaxError
+result "async function f() { async (await) => 1 }" => SyntaxError / SyntaxError
+result "async function f() { () => await }" => ok / ok
+result "async function f() { () => { var await } }" => ok / ok
+result "async function f() { (a = () => await) => a }" => ok / ok
+result "async function f() { async function g() { (await) => 1 } }" => SyntaxError / SyntaxError
+result "async (await) => 1" => SyntaxError / SyntaxError
+result "async await => 1" => SyntaxError / SyntaxError
+result "async (a = await) => 1" => SyntaxError / SyntaxError
+result "(await) => 1" => ok / ok
+result "await => 1" => ok / ok
+result "(yield) => 1" => ok / SyntaxError
+result "yield => 1" => ok / SyntaxError
+result "async (yield) => 1" => ok / SyntaxError
+result "function* g() { function f() { var yield } }" => ok / SyntaxError
+result "async function f() { function g() { var await } }" => ok / ok
+result "function* g() { function f(yield) {} }" => ok / SyntaxError
+result "async function f() { function g(await) {} }" => ok / ok
+result "function* g() { ({ yield }) }" => SyntaxError / SyntaxError
+result "async function f() { ({ await }) }" => SyntaxError / SyntaxError
+result "function* g() { ({ yield: 1 }) }" => ok / ok
+result "async function f() { ({ await: 1 }) }" => ok / ok
+result "function* g() { x.yield }" => ok / ok
+result "async function f() { x.await }" => ok / ok
+result "function* g() { yield: 1 }" => SyntaxError / SyntaxError
+result "async function f() { await: 1 }" => SyntaxError / SyntaxError
+result "function* g() { var yi\\u0065ld }" => SyntaxError / SyntaxError
+result "async function f() { var aw\\u0061it }" => SyntaxError / SyntaxError
+result "var yi\\u0065ld" => ok / SyntaxError
+result "var aw\\u0061it" => ok / ok
+result "function* g() { yi\\u0065ld 1 }" => SyntaxError / SyntaxError
+result "async function f() { aw\\u0061it 1 }" => SyntaxError / SyntaxError
+result "class C { static { await } }" => SyntaxError / SyntaxError
+result "class C { static { var await } }" => SyntaxError / SyntaxError
+result "class C { static { (await) => 1 } }" => SyntaxError / SyntaxError
+result "class C { static { function await() {} } }" => SyntaxError / SyntaxError
+result "class C { static { () => await } }" => ok / ok
+result "class C { static { ({ await }) } }" => SyntaxError / SyntaxError
+result "class C { static { x.await } }" => ok / ok
+result "class C { static { await: 1 } }" => SyntaxError / SyntaxError
+result "class C { static { function f() { var await } } }" => ok / ok
+result "class C { static { (function await() {}) } }" => ok / ok
+result "class C { static { class await {} } }" => SyntaxError / SyntaxError
+result "class C { static { (function () { await }) } }" => ok / ok
+result "class C { static { async function f() { await 1 } } }" => ok / ok
+result "class C { static { (a = await) => 1 } }" => SyntaxError / SyntaxError
+result "function* g() { yield\n/1/ }" => ok / ok
+result "function* g() { yield /1/ }" => ok / ok
+result "async function f() { await /1/ }" => ok / ok
+result "function* g(yield = 1) {}" => SyntaxError / SyntaxError
+result "var f = function* (yield) {}" => SyntaxError / SyntaxError
+result "var f = async function (await) {}" => SyntaxError / SyntaxError
+result "({ *yield() {} })" => ok / ok
+result "({ async await() {} })" => ok / ok
+result "({ *g() { var yield } })" => SyntaxError / SyntaxError
+result "({ async f() { var await } })" => SyntaxError / SyntaxError
+result "class C { *yield() {} }" => ok / ok
+result "class C { async await() {} }" => ok / ok
+result "class C { *g() { var yield } }" => SyntaxError / SyntaxError
+result "(function* () { yield })" => ok / ok
+result "(async function () { await 1 })" => ok / ok
+result "(function* () { yield\n })" => ok / ok
+result "function* g() { var x = { yield } }" => SyntaxError / SyntaxError
+result "async function f() { var x = { await } }" => SyntaxError / SyntaxError
+mem-end obj=192 atom=649 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
+mem-gc obj=192 atom=649 shape=121 prop=957 jsfunc=0 cfunc=127 array=3 fast_array=3 elements=208 binary=0
+--- status exit 0

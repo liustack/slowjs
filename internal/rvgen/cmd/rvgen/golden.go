@@ -5,22 +5,23 @@
 
 package main
 
-// The goldens of the fuzz seeds, for when the engine has one loop only:
+// The goldens of the fuzz seeds, recorded from the old loop at the last
+// commit that had it (engine/test/regvm/golden/seeds, see golden.sh):
 //
-//	rvgen record -rvdiff BIN [-core|-wide] [-seed S] [-n N] [-j J] [-t T] FILE
-//		makes the programs of N seeds with the frozen generator
-//		(internal/rvgen/v1), runs each both ways (rvdiff -record) and
-//		writes FILE: a line per seed with the hash of its program and,
-//		when the two loops agree, the status and the hash and line count
-//		of each kind of the old loop's transcript
 //	rvgen check -rvdiff BIN [-j J] [-t T] FILE
-//		makes the programs again, checks their hash, runs each once with
-//		the register loop on (rvdiff -golden into an empty folder, which
-//		writes the run) and compares each kind with FILE. It exits with 1
-//		when any differs
+//		makes the programs of the seeds of FILE with the frozen generator
+//		(internal/rvgen/v1), checks their hash, runs each once (rvdiff
+//		-golden into an empty folder, which writes the run) and compares
+//		each kind with FILE. It exits with 1 when any differs
+//	rvgen record -rvdiff BIN [-core|-wide] [-seed S] [-n N] [-j J] [-t T] FILE
+//		writes FILE from a run of each of N seeds: a line per seed with
+//		the hash of its program, the status and the hash and line count
+//		of each kind of its transcript. The run takes the place of the old
+//		loop as the witness, so it is only for a change of output that is
+//		meant: read the diff of FILE before it goes into a commit
 //
 // Only seeds and hashes are kept: a difference names its kinds and shows
-// the lines of the run, not the lines of the old loop.
+// the lines of the run, not the lines of the golden.
 
 import (
 	"bufio"
@@ -49,7 +50,7 @@ func hash16(s string) string {
 }
 
 // summary is the golden line of a transcript file written by rvdiff
-// (-record or -golden -update): the status, then KIND=HASH/LINES for each
+// (-golden -update): the status, then KIND=HASH/LINES for each
 // kind it has
 func summary(file string) (string, map[string][]string, error) {
 	b, err := os.ReadFile(file)
@@ -117,7 +118,6 @@ func parseHead(l string) (goldenHead, error) {
 var (
 	updLine    = regexp.MustCompile(`^UPDATE (\S+)$`)
 	noupdLine  = regexp.MustCompile(`^NOUPDATE (\S+): (.*)$`)
-	norecLine  = regexp.MustCompile(`^NORECORD (\S+): (.*)$`)
 	seedOfFile = regexp.MustCompile(`p-(\d+)\.js`)
 )
 
@@ -188,14 +188,14 @@ func recordCmd(args []string) {
 		for i := start; i < *n && i < start+*batch; i++ {
 			seeds = append(seeds, *seed+uint64(i))
 		}
-		bd, td, out, err := runBatch(*bin, *jobs, seeds, gen, "-record", "DIR")
+		bd, td, out, err := runBatch(*bin, *jobs, seeds, gen, "-golden", "DIR", "-update")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "rvgen: rvdiff: %v\n%s", err, out)
 			os.Exit(2)
 		}
 		why := map[uint64]string{}
 		for _, l := range strings.Split(out, "\n") {
-			if m := norecLine.FindStringSubmatch(l); m != nil {
+			if m := noupdLine.FindStringSubmatch(l); m != nil {
 				if sm := seedOfFile.FindStringSubmatch(m[1]); sm != nil {
 					s, _ := strconv.ParseUint(sm[1], 10, 64)
 					why[s] = m[2]

@@ -6,20 +6,19 @@
  */
 
 /* The ops that run on a window of the old stack in the register
-   loop, with the source of the old loop. Read once for each part, see
-   regvm-areas.h.
+   loop, with the source of QuickJS's handlers. Read once for each part,
+   see regvm-areas.h.
 
    A window op is an old instruction with no register form: the register
-   loop runs the body of its old handler, the macro OP_BODY_<op> defined at
-   the handler in JS_CallInternal (quickjs.c), so that both loops run one
-   source. The body runs with sp at the temp of the depth the old stack has
-   there, and the pass first puts every entry the body reads into its temp,
-   so that the temps from the first one up to sp are the old stack. sp is
-   computed from F at each op and is not live across a dispatch. The
-   instruction is the opcode, the slot of sp, then the operands of the old
-   instruction as it has them: the body reads them through pc as the old
-   loop does, so after the opcode the instruction has as many bytes as the
-   old one. */
+   loop runs the body of its old handler, the macro OP_BODY_<op> of
+   regvm-bodies.h, which keeps the source of QuickJS's handler. The body
+   runs with sp at the temp of the depth the old stack has there, and the
+   pass first puts every entry the body reads into its temp, so that the
+   temps from the first one up to sp are the old stack. sp is computed from
+   F at each op and is not live across a dispatch. The instruction is the
+   opcode, the slot of sp, then the operands of the old instruction as it
+   has them: the body reads them through pc as QuickJS's interpreter does,
+   so after the opcode the instruction has as many bytes as the old one. */
 
 #if RV_PART == RV_PART_LIST
 /* w: the slot of the old sp, then the operands of the old instruction */
@@ -52,7 +51,7 @@ static void rv_window(RVPass *s, const uint8_t *p, int rvop, int nread)
 {
     int i, len = short_opcode_info(p[0]).size;
     if (nread > s->sp) {
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     for (i = s->sp - nread; i < s->sp; i++)
@@ -155,8 +154,9 @@ static void rv_window_end(RVPass *s, int npop, int npush)
 #elif RV_PART == RV_PART_RUN_FN
 /* The slow sides: each runs the body of the old handler on the window of
    the frame F whose sp is the slot ip[0], with pc at the old operands, and
-   returns -1 where the body goes to the exception path. The old loop also
-   stores its pc in sf->cur_pc there, for a backtrace: these store nothing,
+   returns -1 where the body goes to the exception path. QuickJS's
+   interpreter also stores its pc in sf->cur_pc there, for a backtrace:
+   these store nothing,
    as RV_SYNC_TOP stored the end of the instruction, which the pcmap names
    (rv_frame_pc). */
 #define RV_W_BEGIN                                                      \
@@ -171,10 +171,9 @@ static void rv_window_end(RVPass *s, int npop, int npush)
 
 /* Copies. The bodies run here call these in place of a function of the
    engine (a #define around the body), each with the hook of the throw
-   injection. They were copies so that the old loop, the one caller of the
-   originals, kept its code: js_for_in_start and js_create_array_free went
-   with it, and rv_define_object_name is still a copy of JS_DefineObjectName
-   and must change with it: docs/upgrading.md. */
+   injection. js_for_in_start and js_create_array_free are here only, and
+   rv_define_object_name is a copy of JS_DefineObjectName and must change
+   with it: docs/upgrading.md. */
 
 /* The throw-injection test (engine/regvm-inject.h) in a body: where the
    body calls the function of the engine that can fail, the hook fails in

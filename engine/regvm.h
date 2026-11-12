@@ -14,8 +14,8 @@
    body of a generator or an async function converts at its first resume
    and runs as the entry frame of a run of its own, moved between its heap
    frame and the register stack at each suspension and resume
-   (regvm-ops-gen.h). A function the pass refuses cannot run
-   (rv_cannot_run).
+   (regvm-ops-gen.h). The pass refuses only code no compiler makes
+   (rv_refused).
 
    A frame on the register stack, from the pointer F:
 
@@ -105,8 +105,8 @@ typedef struct RVHeader {
     union {
         const uint8_t *retpc;  /* where the caller goes on */
         JSContext *caller_ctx; /* of an entry frame: the caller_ctx of
-                                  JS_RegvmRun, where the old loop throws
-                                  the errors of a derived constructor */
+                                  JS_RegvmRun, where the errors of a
+                                  derived constructor are thrown */
     };
     RVFunc *rf;
     JSValue *k;           /* rf->k */
@@ -188,8 +188,10 @@ int JS_RegvmStat(JSContext *ctx, int what)
         return rv_stack_segments(ctx->rt);
     if (what == 9)
         return (int)ctx->rt->rv_stack_bytes;
-    if (what >= 10 && what < 16)
-        return ctx->rt->rv_count[what - 10];
+    if (what == 10)
+        return ctx->rt->rv_count[0];
+    if (what >= 13 && what < 16)
+        return ctx->rt->rv_count[what - 12];
 #ifdef RV_STATS
     if (what >= 1000 && what < 1256)
         return ctx->rt->rv_opcount[what - 1000];
@@ -203,14 +205,8 @@ int JS_RegvmStat(JSContext *ctx, int what)
 
 static void rv_free_func(JSRuntime *rt, RVFunc *rf)
 {
-    int i;
-    if (rf->arg_count >= 0) {
-        for (i = 0; i < rf->k_count && i < 256; i++) {
-            if ((rf->kown[i >> 6] >> (i & 63)) & 1)
-                JS_FreeValueRT(rt, rf->k[i]);
-        }
+    if (rf->arg_count >= 0)
         js_free_rt(rt, rf);
-    }
 }
 
 static void rv_free_runtime(JSRuntime *rt)
@@ -222,92 +218,16 @@ static void rv_free_runtime(JSRuntime *rt)
 #include "regvm-entry.h"
 #include "regvm-run.h"
 
-static const char *const rv_old_op_names[] = {
-#define FMT(f)
-#define DEF(id, size, n_pop, n_push, f) #id,
-#define def(id, size, n_pop, n_push, f)
-#include "quickjs-opcode.h"
-#undef def
-#undef DEF
-#undef FMT
-};
-
-/* a function the register loop cannot run: an InternalError "cannot run:
-   WHY in NAME (FILE)". WHY is what the pass refused it for (it runs the pass again for that), a call as a
-   constructor, or a register stack with no room for its frame. */
-static no_inline JSValue rv_cannot_run(JSContext *ctx, JSFunctionBytecode *b, int why)
+/* a function the pass refused: code no compiler makes that JS_ReadObject
+   read with JS_READ_OBJ_POLLS_CHECKED, which skips rv_read_check
+   (regvm-entry.h), or a mistake of the pass (rv_overflow, regvm-pass.h) in a
+   build without RV_SELF_CHECK. Every call of it throws. */
+static no_inline JSValue rv_refused(JSContext *ctx, JSFunctionBytecode *b)
 {
-    JSRuntime *rt = ctx->rt;
-    char name[ATOM_GET_STR_BUF_SIZE], file[ATOM_GET_STR_BUF_SIZE], what[96], msg[160];
-    int st[5], op, arg, i;
-    BOOL oom;
-    RVFunc *rf;
+    char name[ATOM_GET_STR_BUF_SIZE];
 
-    switch (why) {
-    case RV_NO_REFUSED:
-        memcpy(st, rt->rv_stat, sizeof(st));
-        rt->rv_stat[3] = -99;
-        rt->rv_stat[4] = 0;
-        rf = rv_build(rt, b, &oom);
-        if (rf)
-            rv_free_func(rt, rf);
-        op = rt->rv_stat[3];
-        arg = rt->rv_stat[4];
-        memcpy(rt->rv_stat, st, sizeof(st));
-        if (rf || oom)
-            snprintf(what, sizeof(what), "out of memory in its conversion");
-        else if (op >= 0 && op < (int)countof(rv_old_op_names))
-            snprintf(what, sizeof(what), "refused at %s", rv_old_op_names[op]);
-        else if (op == -4)
-            snprintf(what, sizeof(what), "refused for an index string past the near constants");
-        else if (op == RV_CRAFTED)
-            snprintf(what, sizeof(what), "refused for code no compiler makes");
-        else if (op == -1 && (arg & 32))
-            snprintf(what, sizeof(what), "refused for over 32 K locals and arguments");
-        else if (op == -1 && (arg & 64))
-            snprintf(what, sizeof(what), "refused for a stack too deep to fold");
-        else if (op == -1 && (arg & 8))
-            snprintf(what, sizeof(what), "refused for a stack over %d", RV_TEMPS_MAX);
-        else if (op == -1)
-            snprintf(what, sizeof(what), "refused for a frame over 127 slots or code over 30000 bytes");
-        else if (op == -2)
-            snprintf(what, sizeof(what), "refused for depths that differ");
-        else
-            snprintf(what, sizeof(what), "refused for its jumps, its frame or memory");
-        break;
-    case RV_NO_CONSTRUCTOR:
-        snprintf(what, sizeof(what), "called as a constructor");
-        break;
-    default:
-        snprintf(what, sizeof(what), "no room on the register stack");
-        break;
-    }
-    snprintf(msg, sizeof(msg), "%s in %s (%s)", what,
-             JS_AtomGetStr(ctx, name, sizeof(name), b->func_name),
-             JS_AtomGetStr(ctx, file, sizeof(file), b->debug.filename));
-    for (i = 0; i < (int)countof(rt->rv_cannot); i++) {
-        if (!rt->rv_cannot_n[i]) {
-            snprintf(rt->rv_cannot[i], sizeof(rt->rv_cannot[i]), "%s", msg);
-            rt->rv_cannot_n[i] = 1;
-            break;
-        }
-        if (!memcmp(rt->rv_cannot[i], what, strlen(what)) &&
-            !memcmp(rt->rv_cannot[i] + strlen(what), " in ", 4)) {
-            rt->rv_cannot_n[i]++;
-            break;
-        }
-    }
-    return JS_ThrowInternalError(ctx, "cannot run: %s", msg);
-}
-
-const char *JS_RegvmCannotRun(JSContext *ctx, int i, int *count)
-{
-    JSRuntime *rt = ctx->rt;
-
-    if (i < 0 || i >= (int)countof(rt->rv_cannot) || !rt->rv_cannot_n[i])
-        return NULL;
-    *count = rt->rv_cannot_n[i];
-    return rt->rv_cannot[i];
+    return JS_ThrowInternalError(ctx, "invalid bytecode: the register loop refuses %s",
+                                 JS_AtomGetStr(ctx, name, sizeof(name), b->func_name));
 }
 
 /* JS_RegvmStat 2000 + op, for the test of the opcode table
@@ -330,10 +250,10 @@ static int rv_takes_opcode(int op)
    loop, 1 it has register code, 0 not converted yet (not called yet), -1
    refused, -3 not a function of bytecode. 1 the frames set up for it
    (counted with -DRV_STATS only). 2 and 3 for a refused function, what the
-   pass stops at: the opcode and its offset, or -1 and the mask of why the
-   whole function is refused (as JS_RegvmStat 3 and 4), -3 and its offset
-   for code no compiler makes (RV_CRAFTED of regvm-pass.h), -99 when it
-   stops at its jumps, its frame or its memory. The pass runs again for 2
+   pass stops at (as JS_RegvmStat 3 and 4): -3 and its offset for code no
+   compiler makes (RV_CRAFTED of regvm-pass.h), or in a build without
+   RV_SELF_CHECK the opcode and its offset of a mistake of the pass
+   (rv_overflow), -99 when it stops at its jumps. The pass runs again for 2
    and 3, with the counts of JS_RegvmStat kept as they were. */
 int JS_RegvmFuncStat(JSContext *ctx, JSValueConst func, int what)
 {

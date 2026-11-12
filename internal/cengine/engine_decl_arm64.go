@@ -41,9 +41,8 @@ const (
 // noSplitList names the functions whose TEXT says NOSPLIT, which have no
 // stack check at their entry (gen.MarkNoSplit), for the tests. A constant
 // takes no room in a binary that does not use it.
-const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_RegvmOpName JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo __cos __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos add_pc2line_info asin atan atan2 atanh cbrt ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 goasm_number_to_int32 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk_block js_string_delete_property js_uncatchable_mark log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf re_interval_cmp rint round rv_next_branch rv_old_info_block scalbn specialcase specialcase_552 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
+const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_RegvmOpName JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo __cos __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos add_pc2line_info asin atan atan2 atanh cbrt ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk_block js_string_delete_property js_uncatchable_mark log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_get_groupnames lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf re_interval_cmp rint round rv_next_branch rv_old_info_block scalbn specialcase specialcase_580 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
 
-func JS_AddBrand(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_AddIntrinsicBaseObjects(a0 uintptr, a1 uintptr) uintptr
 func JS_AddIntrinsicBigInt(a0 uintptr, a1 uintptr) uintptr
 func JS_AddIntrinsicDate(a0 uintptr, a1 uintptr) uintptr
@@ -72,7 +71,6 @@ func JS_Call_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CallConstructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_CallConstructor2_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CallConstructorInternal_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
-func JS_CallFree_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CallInternal_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_CheckBrand(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_ClearKeptObjects(a0 uintptr, a1 uintptr)
@@ -88,7 +86,7 @@ func JS_CopyDataProperties_block(a0 uintptr, a1 uintptr) uintptr
 func JS_CopySubArray_block(a0 uintptr, a1 uintptr) uintptr
 func JS_CreateProperty_block(a0 uintptr, a1 uintptr) uintptr
 func JS_DefineObjectName(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) uintptr
-func JS_DefinePrivateField_block(a0 uintptr, a1 uintptr) uintptr
+func JS_DefineObjectNameComputed(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_DefineProperty_block(a0 uintptr, a1 uintptr) uintptr
 func JS_DefinePropertyGetSet_block(a0 uintptr, a1 uintptr) uintptr
 func JS_DefinePropertyValue_block(a0 uintptr, a1 uintptr) uintptr
@@ -130,7 +128,6 @@ func JS_GetException(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_GetFunctionRealm(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func JS_GetGCThreshold(a0 uintptr, a1 uintptr) uintptr
 func JS_GetGlobalObject(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
-func JS_GetGlobalVarRef(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func JS_GetImportMeta(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func JS_GetInternalDepth(a0 uintptr, a1 uintptr) uintptr
 func JS_GetInterruptFlag(a0 uintptr, a1 uintptr) uintptr
@@ -148,7 +145,6 @@ func JS_GetOwnPropertyInternal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a
 func JS_GetOwnPropertyNames_block(a0 uintptr, a1 uintptr) uintptr
 func JS_GetOwnPropertyNames2(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func JS_GetOwnPropertyNamesInternal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
-func JS_GetPrivateField(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) (r0, r1 uintptr)
 func JS_GetPropertyInt64(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func JS_GetPropertyInternal_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_GetPropertyStr(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
@@ -242,7 +238,6 @@ func JS_ReadObjectRec(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_ReadSharedArrayBuffer(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func JS_ReadString(a0 uintptr, a1 uintptr) uintptr
 func JS_RegExpExec(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) (r0, r1 uintptr)
-func JS_RegvmFallbacks(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func JS_RegvmFuncStat(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr) uintptr
 func JS_RegvmOpName(a0 uintptr, a1 uintptr) uintptr
 func JS_RegvmRun_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -282,7 +277,6 @@ func JS_SetModuleLoaderFunc2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 
 func JS_SetModulePrivateValue(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr) uintptr
 func JS_SetObjectData(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_SetOpaque(a0 uintptr, a1, a2 uintptr, a3 uintptr)
-func JS_SetPrivateField_block(a0 uintptr, a1 uintptr) uintptr
 func JS_SetPropertyFunctionList(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) uintptr
 func JS_SetPropertyInt64_block(a0 uintptr, a1 uintptr) uintptr
 func JS_SetPropertyInternal_block(a0 uintptr, a1 uintptr) uintptr
@@ -292,7 +286,6 @@ func JS_SetPropertyValue_block(a0 uintptr, a1 uintptr) uintptr
 func JS_SetPrototype(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) uintptr
 func JS_SetPrototypeInternal_block(a0 uintptr, a1 uintptr) uintptr
 func JS_SetRegExpCache(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func JS_SetRegvm(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_SetRuntimeInfo(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_SetRuntimeOpaque(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_SetShapeCache(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -313,9 +306,8 @@ func JS_ThrowRangeError(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 
 func JS_ThrowReferenceError(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func JS_ThrowReferenceErrorNotDefined(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_ThrowReferenceErrorUninitialized(a0 uintptr, a1 uintptr, a2 uintptr)
-func JS_ThrowReferenceErrorUninitialized2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
+func JS_ThrowReferenceErrorUninitialized2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func JS_ThrowSyntaxError(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func JS_ThrowSyntaxErrorVarRedeclaration(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_ThrowTypeError(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func JS_ThrowTypeErrorInvalidClass(a0 uintptr, a1 uintptr, a2 uintptr)
 func JS_ThrowTypeErrorNotAConstructor(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
@@ -430,7 +422,6 @@ func check_polls_block(a0 uintptr, a1 uintptr) uintptr
 func check_regexp_g_flag(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func check_regexp_getter(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func close_scopes(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func close_var_refs(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func code_match(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func compact_properties(a0 uintptr, a1 uintptr, a2 uintptr)
 func compute_pc2line_info(a0 uintptr, a1 uintptr) uintptr
@@ -535,7 +526,6 @@ func get_var_ref(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uin
 func goasm_chunked_memcpy(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func goasm_chunked_memmove(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func goasm_chunked_memset(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
-func goasm_number_to_int32(a0 uintptr, a1, a2 uintptr, a3 uintptr) uintptr
 func has_suffix(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func heap_alloc(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func heap_create(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -588,7 +578,6 @@ func js_TA_get_uint64(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_TA_get_uint8(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
 func js_add_slow(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_add_string_into_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
-func js_add_string_store_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_aggregate_error_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func js_alloc_string_rt(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_allocate_fast_array(a0 uintptr, a1 uintptr, a2 uintptr) (r0, r1 uintptr)
@@ -714,8 +703,6 @@ func js_boolean_toString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 
 func js_boolean_valueOf(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_bound_function_finalizer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func js_bound_function_mark(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
-func js_build_arguments(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
-func js_build_mapped_arguments(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_bytecode_function_finalizer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func js_bytecode_function_mark(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func js_c_function_data_call_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -764,7 +751,6 @@ func js_define_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_dtoa(a0 uintptr, a1 uintptr, a2 float64, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr) uintptr
 func js_dtoa2(a0 uintptr, a1 uintptr, a2 float64, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_dtoa_max_len(a0 uintptr, a1 float64, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
-func js_dynamic_import(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr) (r0, r1 uintptr)
 func js_dynamic_import_job(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) (r0, r1 uintptr)
 func js_emit_binary_op(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_emit_buf_end(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
@@ -970,7 +956,6 @@ func js_object_get___proto__(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uin
 func js_object_groupBy_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_object_hasOwn(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_object_hasOwnProperty(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
-func js_object_has_name(a0 uintptr, a1, a2 uintptr) uintptr
 func js_object_is(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_object_isExtensible_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
 func js_object_isPrototypeOf(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
@@ -988,8 +973,6 @@ func js_object_set___proto__(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uint
 func js_object_toLocaleString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_object_toString(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
 func js_object_valueOf(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr) (r0, r1 uintptr)
-func js_op_define_class_block(a0 uintptr, a1 uintptr) uintptr
-func js_operator_private_in(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func js_own_key_kinds(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_own_keys_next(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func js_own_keys_scan(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
@@ -1396,7 +1379,6 @@ func rv_emit_ret(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_enter_args_block(a0 uintptr, a1 uintptr) uintptr
 func rv_entry_extra_block(a0 uintptr, a1 uintptr) uintptr
 func rv_entry_fast(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
-func rv_fb_forget(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_fclosure(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_first_call(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func rv_fold_after(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -1408,9 +1390,7 @@ func rv_fold_read_block(a0 uintptr, a1 uintptr)
 func rv_fold_thaw(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func rv_fold_throws(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func rv_fold_tslot(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
-func rv_fold_unfold(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_free_extra(a0 uintptr, a1 uintptr, a2 uintptr)
-func rv_free_func(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_gen_enter(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func rv_gen_fail(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_gen_suspend(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
@@ -1424,7 +1404,6 @@ func rv_init_ctor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_jump_throws_p(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func rv_jump_to(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_k(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
-func rv_k_index(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func rv_local_slot(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_materialize(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_measure_frame(a0 uintptr, a1 uintptr)
@@ -1436,7 +1415,6 @@ func rv_not_ctor_call(a0 uintptr, a1 uintptr)
 func rv_obj2_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func rv_obj_op(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func rv_old(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
-func rv_old_entry(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_old_info_block(a0 uintptr, a1 uintptr) uintptr
 func rv_old_op(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_one(a0 uintptr, a1 uintptr, a2 uintptr)
@@ -1448,6 +1426,7 @@ func rv_putel_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_putf_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_putvar_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func rv_read_check(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
+func rv_refused(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_ret_put(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_ret_target(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr) uintptr
 func rv_run_seg_block(a0 uintptr, a1 uintptr) (r0, r1 uintptr)
@@ -1511,7 +1490,7 @@ func skip_dead_code(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, 
 func slice_memcpy(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func snprintf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) uintptr
 func specialcase(a0 uintptr, a1 float64, a2 uintptr, a3 uintptr) float64
-func specialcase_552(a0 uintptr, a1 float64, a2 uintptr, a3 uintptr) float64
+func specialcase_580(a0 uintptr, a1 float64, a2 uintptr, a3 uintptr) float64
 func sqrt(a0 uintptr, a1 float64) float64
 func stack_realloc(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
 func strchr(a0 uintptr, a1 uintptr, a2 uintptr) uintptr
@@ -1664,22 +1643,6 @@ func JS_CallConstructorInternal(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 u
 	return JS_CallConstructorInternal_block(a0+64, a0)
 }
 
-// JS_CallFree stores its arguments in a block at the shadow pointer for
-// JS_CallFree_block (gen.PackedGo).
-func JS_CallFree(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr) {
-	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
-		panic("cengine: the block of JS_CallFree ends past the shadow-stack region")
-	}
-	*(*uintptr)(packedSlot(a0 + 0)) = a1
-	*(*uintptr)(packedSlot(a0 + 8)) = a2
-	*(*uintptr)(packedSlot(a0 + 16)) = a3
-	*(*uintptr)(packedSlot(a0 + 24)) = a4
-	*(*uintptr)(packedSlot(a0 + 32)) = a5
-	*(*uintptr)(packedSlot(a0 + 40)) = a6
-	*(*uintptr)(packedSlot(a0 + 48)) = a7
-	return JS_CallFree_block(a0+64, a0)
-}
-
 // JS_CallInternal stores its arguments in a block at the shadow pointer for
 // JS_CallInternal_block (gen.PackedGo).
 func JS_CallInternal(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6, a7 uintptr, a8 uintptr, a9 uintptr, a10 uintptr) (r0, r1 uintptr) {
@@ -1764,22 +1727,6 @@ func JS_CreateProperty(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4, a5 ui
 	*(*uintptr)(packedSlot(a0 + 64)) = a9
 	*(*uintptr)(packedSlot(a0 + 72)) = a10
 	return JS_CreateProperty_block(a0+80, a0)
-}
-
-// JS_DefinePrivateField stores its arguments in a block at the shadow pointer for
-// JS_DefinePrivateField_block (gen.PackedGo).
-func JS_DefinePrivateField(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6, a7 uintptr) uintptr {
-	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
-		panic("cengine: the block of JS_DefinePrivateField ends past the shadow-stack region")
-	}
-	*(*uintptr)(packedSlot(a0 + 0)) = a1
-	*(*uintptr)(packedSlot(a0 + 8)) = a2
-	*(*uintptr)(packedSlot(a0 + 16)) = a3
-	*(*uintptr)(packedSlot(a0 + 24)) = a4
-	*(*uintptr)(packedSlot(a0 + 32)) = a5
-	*(*uintptr)(packedSlot(a0 + 40)) = a6
-	*(*uintptr)(packedSlot(a0 + 48)) = a7
-	return JS_DefinePrivateField_block(a0+64, a0)
 }
 
 // JS_DefineProperty stores its arguments in a block at the shadow pointer for
@@ -2244,22 +2191,6 @@ func JS_SetConstructor2(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, 
 	return JS_SetConstructor2_block(a0+64, a0)
 }
 
-// JS_SetPrivateField stores its arguments in a block at the shadow pointer for
-// JS_SetPrivateField_block (gen.PackedGo).
-func JS_SetPrivateField(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6, a7 uintptr) uintptr {
-	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
-		panic("cengine: the block of JS_SetPrivateField ends past the shadow-stack region")
-	}
-	*(*uintptr)(packedSlot(a0 + 0)) = a1
-	*(*uintptr)(packedSlot(a0 + 8)) = a2
-	*(*uintptr)(packedSlot(a0 + 16)) = a3
-	*(*uintptr)(packedSlot(a0 + 24)) = a4
-	*(*uintptr)(packedSlot(a0 + 32)) = a5
-	*(*uintptr)(packedSlot(a0 + 40)) = a6
-	*(*uintptr)(packedSlot(a0 + 48)) = a7
-	return JS_SetPrivateField_block(a0+64, a0)
-}
-
 // JS_SetPropertyInt64 stores its arguments in a block at the shadow pointer for
 // JS_SetPropertyInt64_block (gen.PackedGo).
 func JS_SetPropertyInt64(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5, a6 uintptr) uintptr {
@@ -2657,24 +2588,6 @@ func js_add_string_into(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, 
 	*(*uintptr)(packedSlot(a0 + 32)) = a5
 	*(*uintptr)(packedSlot(a0 + 40)) = a6
 	return js_add_string_into_block(a0+48, a0)
-}
-
-// js_add_string_store stores its arguments in a block at the shadow pointer for
-// js_add_string_store_block (gen.PackedGo).
-func js_add_string_store(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr, a6 uintptr, a7 uintptr, a8 uintptr, a9 uintptr) (r0, r1 uintptr) {
-	if (a0+80)&(1<<shadowSizeLog2-1) < 80 {
-		panic("cengine: the block of js_add_string_store ends past the shadow-stack region")
-	}
-	*(*uintptr)(packedSlot(a0 + 0)) = a1
-	*(*uintptr)(packedSlot(a0 + 8)) = a2
-	*(*uintptr)(packedSlot(a0 + 16)) = a3
-	*(*uintptr)(packedSlot(a0 + 24)) = a4
-	*(*uintptr)(packedSlot(a0 + 32)) = a5
-	*(*uintptr)(packedSlot(a0 + 40)) = a6
-	*(*uintptr)(packedSlot(a0 + 48)) = a7
-	*(*uintptr)(packedSlot(a0 + 56)) = a8
-	*(*uintptr)(packedSlot(a0 + 64)) = a9
-	return js_add_string_store_block(a0+80, a0)
 }
 
 // js_arguments_define_own_property stores its arguments in a block at the shadow pointer for
@@ -4010,22 +3923,6 @@ func js_object_seal(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintp
 	*(*uintptr)(packedSlot(a0 + 32)) = a5
 	*(*uintptr)(packedSlot(a0 + 40)) = a6
 	return js_object_seal_block(a0+48, a0)
-}
-
-// js_op_define_class stores its arguments in a block at the shadow pointer for
-// js_op_define_class_block (gen.PackedGo).
-func js_op_define_class(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) uintptr {
-	if (a0+64)&(1<<shadowSizeLog2-1) < 64 {
-		panic("cengine: the block of js_op_define_class ends past the shadow-stack region")
-	}
-	*(*uintptr)(packedSlot(a0 + 0)) = a1
-	*(*uintptr)(packedSlot(a0 + 8)) = a2
-	*(*uintptr)(packedSlot(a0 + 16)) = a3
-	*(*uintptr)(packedSlot(a0 + 24)) = a4
-	*(*uintptr)(packedSlot(a0 + 32)) = a5
-	*(*uintptr)(packedSlot(a0 + 40)) = a6
-	*(*uintptr)(packedSlot(a0 + 48)) = a7
-	return js_op_define_class_block(a0+64, a0)
 }
 
 // js_parse_destructuring_element1 stores its arguments in a block at the shadow pointer for

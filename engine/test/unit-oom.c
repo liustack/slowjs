@@ -1158,8 +1158,8 @@ static void test_field_chain_uncatchable(void)
    a stop. LOOP_BOUND readings of the flag are far more than a run that ends
    there needs: past them the host stops the loop, and the case fails. The
    cases with "spin" run the loop in a function called twice before, so that
-   with the register loop on (unit-oom-rv, RV_REGVM=1) the loop runs there,
-   and the case checks that spin has register code. */
+   it runs in the register code of that function, and the case checks that
+   spin has it. */
 #define LOOP_BOUND (1L << 22)
 #define SPIN "function spin(n) { for (;;) if (n-- === 0) return; } spin(1); spin(1); "
 
@@ -1218,10 +1218,10 @@ static void test_uncatchable_then_loop(void)
         CHECK(*JS_GetInterruptFlag(v.rt) == 0, "%s: the interrupt flag is %d after the exception was taken",
               cases[i].name, *JS_GetInterruptFlag(v.rt));
         if (strstr(cases[i].js, "spin(-1)")) {
-            /* 1: register code, -2: made with the register loop off */
+            /* 1: register code */
             JSValue g = JS_GetGlobalObject(v.ctx), f = JS_GetPropertyStr(v.ctx, g, "spin");
             int st = JS_RegvmFuncStat(v.ctx, f, 0);
-            CHECK(st == 1 || st == -2, "%s: spin is not in the register loop (state %d)", cases[i].name, st);
+            CHECK(st == 1, "%s: spin is not in the register loop (state %d)", cases[i].name, st);
             JS_FreeValue(v.ctx, f);
             JS_FreeValue(v.ctx, g);
         }
@@ -2011,12 +2011,12 @@ static void test_regvm_convert_oom(void)
 }
 
 /* A function whose stack is too deep for the temps folds it into Arrays at
-   run time (engine/regvm-fold.h), where the old loop allocates nothing: in
-   two levels (calls of 32 arguments nested 40 deep), under the catch offset
-   of a try in a for-in (the enumerator frozen into an Array of its own) and
-   under that of an array destructuring. Each allocation of a fold, an
-   unfold, a freeze or a thaw failing in turn ends in the out of memory error
-   with nothing lost. */
+   run time (engine/regvm-fold.h), where QuickJS's interpreter allocates
+   nothing: in two levels (calls of 32 arguments nested 40 deep), under the
+   catch offset of a try in a for-in (the enumerator frozen into an Array of
+   its own) and under that of an array destructuring. Each allocation of a
+   fold, an unfold, a freeze or a thaw failing in turn ends in the out of
+   memory error with nothing lost. */
 static void test_regvm_fold_oom(void)
 {
     static const char setup[] =

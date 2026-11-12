@@ -1,0 +1,37 @@
+result Map: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result Set: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result WeakMap: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result Promise: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result array iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result map iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result string iterator: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result RegExp: ["lastIndex","a","hidden","Symbol(s)"] ["lastIndex"] ["lastIndex"] ["lastIndex","z","y"] true
+result Date: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result Error: ["message","stack","a","hidden","Symbol(s)"] ["message","stack"] ["message","stack"] ["message","stack","z","y"] true
+result ArrayBuffer: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result Uint8Array: ["0","1","a","hidden","Symbol(s)"] ["0","1"] ["0","1"] ["0","1","z","y"] true
+result Boolean: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result Number: ["a","hidden","Symbol(s)"] [] [] ["z","y"] true
+result String: ["0","1","length","a","hidden","Symbol(s)"] ["0","1","length"] ["0","1","length"] ["0","1","length","z","y"] true
+result Map x50: 21121121121121121121121121121121121121121121121121 []
+result Set x50: 21121121121121121121121121121121121121121121121121 []
+result WeakMap x50: 21121121121121121121121121121121121121121121121121 []
+result Promise x50: 21121121121121121121121121121121121121121121121121 []
+result array iterator x50: 21121121121121121121121121121121121121121121121121 []
+result Array: ["length","x"] ["length"] 0 true {"value":0,"writable":true,"enumerable":false,"configurable":false}
+result Array: ["length","x"] ["length"] 3 true {"value":3,"writable":true,"enumerable":false,"configurable":false}
+result Array: ["0","1","length","x"] ["0","1","length"] 2 true {"value":2,"writable":true,"enumerable":false,"configurable":false}
+result Array: ["length","x"] ["length"] 2 true {"value":2,"writable":true,"enumerable":false,"configurable":false}
+result Array: ["length","x"] ["length"] 4 true {"value":4,"writable":true,"enumerable":false,"configurable":false}
+result MyArray: ["length","q"] ["length"] true [object Array]
+result MyMap: ["own","q"] ["own"] true [object Map]
+result Reflect.construct(Map, [], F): ["q"] [] true [object Map]
+result Reflect.construct(Array, [1], F): ["length","q"] ["length"] true [object Map]
+result Object.create(Map.prototype): ["q"] [] true [object Map]
+result Map with its prototype set: [] 1 ["k"] [] true 1
+result Array with the prototype of Map: ["length","x"] ["length"] 3 true [] true
+result Array after its prototype changed: ["length"] ["length"] 1 {"value":2,"writable":true,"enumerable":false,"configurable":false} true
+result changed Map.prototype: ["own"] [] 1
+mem-end obj=252 atom=570 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
+mem-gc obj=252 atom=570 shape=155 prop=1079 jsfunc=21 cfunc=140 array=22 fast_array=21 elements=79 binary=0
+--- status exit 0

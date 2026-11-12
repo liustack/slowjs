@@ -48,6 +48,7 @@ type pair struct{ from, to string }
 
 var noReach = []pair{
 	{"JS_ThrowError2", "JS_CallInternal"},
+	{"JS_ThrowError2", "JS_RegvmRun"},
 	{"JS_ThrowError2", "JS_ThrowInterrupted"},
 	// Nor does it read the interrupt flag: these are the functions that do
 	// (poll_flag), or that the flag is handed to.

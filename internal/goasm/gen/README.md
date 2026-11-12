@@ -213,7 +213,7 @@ reads the module as it stands after it:
   `cloneOf`, which also take the numbers llvm-link adds). The register-entry
   leaves (`-leaves`, `-shadow-leaf`) are the functions of those names and
   nothing else: a clone of `memcpy` would be a unified function.
-- `-align64` (`JS_CallInternal`, `lre_exec_backtrack`), `DispatchCopies`, the
+- `-align64` (`lre_exec_backtrack`), `DispatchCopies`, the
   host callbacks, `host_poll` of the post-link check and `js_host_layout` name
   external functions and data, which the optimizer keeps under their names.
 
@@ -353,9 +353,10 @@ code before it grows. `-align64 name:offset,...` puts the body of each named
 function `offset` bytes past a multiple of 64 instead (a `PCALIGN $64`, which
 also puts the function on 64 bytes, then `offset` bytes of 8-byte no-ops,
 which run once per call). The default of the amd64 engine is
-`JS_CallInternal:40,lre_exec_backtrack:16`, the fastest places measured (see
-[performance.md](../../../docs/performance.md#code-positions)). arm64 and a
-`-src` build have none unless the flag is given. The post-link check holds each body
+`lre_exec_backtrack:16`: the matcher at the fastest place measured
+(see [performance.md](../../../docs/performance.md#code-positions)). The
+interpreter, the register loop `JS_RegvmRun`, has no fixed place: its place
+is not measured yet. arm64 and a `-src` build have none unless the flag is given. The post-link check holds each body
 to its place and the padding before it to no-ops.
 
 Two negative builds test the tests. `-poison` writes garbage into every

@@ -1,0 +1,65 @@
+result delete own 0: [true,false,"{\"b\":2}"]
+result delete own 1: [true,false,"{\"b\":2}"]
+result delete missing 0: true
+result delete missing 1: true
+result delete inherited 0: true
+result delete inherited 1: true
+result delete element 0: "true[1,null,3]3"
+result delete element 1: "true[1,null,3]3"
+result delete number key 0: true
+result delete number key 1: true
+result delete symbol 0: true
+result delete symbol 1: true
+result delete field 0: [true,null]
+result delete field 1: [true,null]
+result delete frozen 0 threw TypeError: could not delete property
+result delete frozen 1 threw TypeError: could not delete property
+result delete length 0 threw TypeError: could not delete property
+result delete length 1 threw TypeError: could not delete property
+result delete non-configurable 0 threw TypeError: could not delete property
+result delete non-configurable 1 threw TypeError: could not delete property
+result toString
+result delete key object 0: true
+result toString
+result delete key object 1: true
+result delete key throws 0 threw Error: key
+result delete key throws 1 threw Error: key
+result delete of null 0 threw TypeError: cannot convert to object
+result delete of null 1 threw TypeError: cannot convert to object
+result delete of string 0 threw TypeError: could not delete property
+result delete of string 1 threw TypeError: could not delete property
+result trap a
+result delete proxy 0: true
+result trap a
+result delete proxy 1: true
+result delete proxy false 0 threw TypeError: could not delete property
+result delete proxy false 1 threw TypeError: could not delete property
+result delete proxy throws 0 threw Error: trap
+result delete proxy throws 1 threw Error: trap
+result delete under 0: [1,true,null]
+result delete under 1: [1,true,null]
+result pick string 0: [3,null]
+result pick string 1: [3,null]
+result pick number 0: [null,null]
+result pick number 1: [null,null]
+result pick object 0: [2,3]
+result pick object 1: [2,3]
+result get x
+result pick getter 0: [null,9]
+result get x
+result pick getter 1: [null,9]
+result pick null 0 threw TypeError: cannot convert to object
+result pick null 1 threw TypeError: cannot convert to object
+result pick undefined 0 threw TypeError: cannot convert to object
+result pick undefined 1 threw TypeError: cannot convert to object
+result pick array 0: "1,2x,y"
+result pick array 1: "1,2x,y"
+result pick array null 0 threw TypeError: cannot read property 'Symbol.iterator' of null
+result pick array null 1 threw TypeError: cannot read property 'Symbol.iterator' of null
+result names 0: "f,g,h,2,|"
+result names 1: "f,g,h,2,|"
+result class name 0: "C"
+result class name 1: "C"
+mem-end obj=200 atom=550 shape=138 prop=970 jsfunc=1 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=549 shape=136 prop=962 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

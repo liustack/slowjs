@@ -4,26 +4,25 @@
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
 #
-# Run every script the native test host knows with the register loop off and
-# on, and compare (rvdiff, see rvdiff.c): the scripts of compare.sh (those of
+# Run every script the native test host knows and compare each run with its
+# golden (rvdiff -golden, see rvdiff.c): the scripts of compare.sh (those of
 # engine/test/compare, its recorded and upstream folders and testdata), the
 # scripts of engine/test/regvm/corpus and engine/test/regvm/js (the tests of
 # each package of the register loop), and any PATH given. Each runs three
 # ways: as compare.sh runs it, with -no-fused-ops, and with -strict (as strict
 # code, so that the pass converts more of it). Then unit, unit-oom and
-# unit-api run with the register loop off and on, and must end the same:
-# the same status and output, but for the count of "N checks passed" (the
-# out of memory sweep of unit-oom has a step for each allocation, and the
-# register loop makes more of them).
+# unit-api run and must end as their goldens: the same status and output,
+# but for the count of "N checks passed" (the out of memory sweep of
+# unit-oom has a step for each allocation, and their number moves with the
+# engine).
 #
-#   engine/test/regvm/corpus.sh [-j N] [-t SECONDS] [-ignore KINDS] [-record DIR | -golden DIR [-update]] [MODE] [PATH...]
+#   engine/test/regvm/corpus.sh [-j N] [-t SECONDS] [-ignore KINDS] [-golden DIR] [-update] [MODE] [PATH...]
 #
-# -record DIR writes the goldens of the old loop to DIR (rvdiff -record, and
-# DIR/units/UNIT.txt: the output of each unit program with the loop off and
-# its status) for every case where the two loops agree. -golden DIR runs each
-# case and unit once, with the register loop on, against DIR (rvdiff
-# -golden), for when there is one loop only. -update writes the golden of a
-# case that differs from the run: read the diff before it goes into a commit.
+# The goldens are those of engine/test/regvm/golden/corpus, recorded from the
+# old loop while it existed (see golden.sh), or those of -golden DIR
+# (DIR/units/UNIT.txt for the unit programs). -update writes the golden of a
+# case that differs from the run or has none: read the diff before it goes
+# into a commit.
 #
 # -j is the number of scripts run at once (default 2). -t is the time each run
 # may take (default 60 s, 240 s in the sanitizer modes, which run 4 to 8
@@ -42,15 +41,13 @@ root=$(dirname "$(dirname "$test")")
 jobs=2
 ign=
 tmo=
-record=
-golden=
+golden=$here/golden/corpus
 update=
 while [ $# -gt 0 ]; do
 	case $1 in
 	-j) jobs=$2; shift 2 ;;
 	-t) tmo=$2; shift 2 ;;
 	-ignore) ign=$2; shift 2 ;;
-	-record) record=$2; shift 2 ;;
 	-golden) golden=$2; shift 2 ;;
 	-update) update=1; shift ;;
 	*) break ;;
@@ -69,6 +66,8 @@ bin=$bindir/rvdiff
 # a build of the tree now (see engine/test/stamp.sh)
 . "$test/stamp.sh"
 stamp_check "$(dirname "$test")" "$bindir" || exit 2
+[ -d "$golden" ] || [ -n "$update" ] || { echo "corpus.sh: no goldens in $golden (-golden DIR names others, -update writes them)" >&2; exit 2; }
+mkdir -p "$golden/units"
 rm -rf "$out"
 mkdir -p "$out/gen" "$out/diffs"
 
@@ -136,48 +135,33 @@ norm() {
 }
 
 status=0
-"$bin" -q -j "$jobs" -t "$tmo" -o "$out/diffs" ${ign:+-ignore "$ign"} ${record:+-record "$record" -root "$root"} ${golden:+-golden "$golden" -root "$root"} ${update:+-update} -cases "$cases" > "$out/rvdiff.log" 2>&1 || status=$?
-grep '^DIFF\|^NOTE\|^SLOW\|^NORECORD\|^UPDATE' "$out/rvdiff.log" || true
+"$bin" -q -j "$jobs" -t "$tmo" -o "$out/diffs" ${ign:+-ignore "$ign"} -golden "$golden" -root "$root" ${update:+-update} -cases "$cases" > "$out/rvdiff.log" 2>&1 || status=$?
+grep '^DIFF\|^NOTE\|^SLOW\|^NOUPDATE\|^UPDATE' "$out/rvdiff.log" || true
 grep "^rvdiff: engine \\|^rvdiff: [0-9]* scripts" "$out/rvdiff.log" || true
 [ $status -le 1 ] || { echo "corpus.sh: rvdiff failed with status $status, see $out/rvdiff.log" >&2; exit 1; }
 
-# the unit programs: each way, or with -golden once against the goldens
+# the unit programs, each once against its golden
 : > "$out/units.log"
 for u in unit-rv unit-oom-rv unit-api-rv; do
 	[ -x "$bindir/$u" ] || continue
-	s0=0
-	s1=0
-	if [ -n "$golden" ]; then
-		g=$golden/units/$u.txt
-		RV_REGVM=1 "$bindir/$u" > "$out/$u.on.raw" 2>&1 || s1=$?
-		norm "$out/$u.on"
-		echo "--- status $s1" >> "$out/$u.on"
-		if [ ! -f "$g" ] || ! cmp -s "$g" "$out/$u.on"; then
-			echo "DIFF $u: not as its golden $g, see $out/$u.on" | tee -a "$out/units.log"
-			status=1
-			if [ -n "$update" ]; then
-				cp "$out/$u.on" "$g"
-				echo "UPDATE $g"
-			fi
+	s=0
+	g=$golden/units/$u.txt
+	"$bindir/$u" > "$out/$u.raw" 2>&1 || s=$?
+	norm "$out/$u"
+	echo "--- status $s" >> "$out/$u"
+	if [ ! -f "$g" ] || ! cmp -s "$g" "$out/$u"; then
+		if [ -f "$g" ]; then
+			echo "DIFF $u: not as its golden $g, see $out/$u"
 		else
-			echo "ok $u (status $s1)" >> "$out/units.log"
-		fi
-		continue
-	fi
-	RV_REGVM=0 "$bindir/$u" > "$out/$u.off.raw" 2>&1 || s0=$?
-	RV_REGVM=1 "$bindir/$u" > "$out/$u.on.raw" 2>&1 || s1=$?
-	norm "$out/$u.off"
-	norm "$out/$u.on"
-	if [ $s0 -ne $s1 ] || ! cmp -s "$out/$u.off" "$out/$u.on"; then
-		echo "DIFF $u: status off $s0, on $s1, see $out/$u.off and $out/$u.on" | tee -a "$out/units.log"
+			echo "DIFF $u: no golden $g, see $out/$u"
+		fi | tee -a "$out/units.log"
 		status=1
-		[ -n "$record" ] && echo "NORECORD units/$u.txt: the loops differ"
-	else
-		echo "ok $u (status $s0)" >> "$out/units.log"
-		if [ -n "$record" ]; then
-			mkdir -p "$record/units"
-			{ cat "$out/$u.off"; echo "--- status $s0"; } > "$record/units/$u.txt"
+		if [ -n "$update" ]; then
+			cp "$out/$u" "$g"
+			echo "UPDATE $g"
 		fi
+	else
+		echo "ok $u (status $s)" >> "$out/units.log"
 	fi
 done
 echo "units: $(grep -c '^ok' "$out/units.log") the same, $(grep -c '^DIFF' "$out/units.log" || true) differ"

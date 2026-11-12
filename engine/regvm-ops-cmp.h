@@ -166,7 +166,7 @@ static void rv_branch_top(RVPass *s, int jt, int target, int q)
 #define RV_CASES_MAX 64
 
 /* dup_case_atom at pos and the cases that the same dispatch can take after
-   it, as the old loop's dup_case_atom takes them: dup_case_atom
+   it, as QuickJS's dup_case_atom takes them: dup_case_atom
    push_atom_value strict_eq and a conditional jump, the value at the top of
    the stack all along. The next case is the instruction after the jump
    (if_true: the case's body is elsewhere), when no jump lands on it, or the
@@ -222,8 +222,8 @@ static void rv_cases(RVPass *s, int pos)
             target[n] = t;
             q += 7 + len;
         }
-        /* where the old loop goes when the first case does not do what
-           its register jump does (the interrupt below) */
+        /* where QuickJS's interpreter goes when the first case does not do
+           what its register jump does (the interrupt below) */
         if (n == 0)
             other0 = q;
         n++;
@@ -253,12 +253,13 @@ static void rv_cases(RVPass *s, int pos)
     /* Where CASES can throw, each with the pc it leaves. A compare of case
        i that needs the characters and is stopped (rv_case_slow): the end of
        the atom of the case, named at its strict_eq, the seventh byte of the
-       old case. An interrupt: the old loop reads the flag after each case,
-       so it stops at the first one, CASES reads it once after the chain and
-       says what the first case did, as a conditional jump does
+       old case. An interrupt: QuickJS's interpreter reads the flag after each
+       case, so it stops at the first one, CASES reads it once after the chain
+       and says what the first case did, as a conditional jump does
        (rv_jump_throws): its end less two when the first case jumped, named
-       before its target, less one when it did not, named where the old
-       loop goes then: in its branch, or before the case at its target. */
+       before its target, less one when it did not, named where QuickJS's
+       interpreter goes then: in its branch, or before the case at its
+       target. */
     mask = rv_owned(s, 0);
     start = s->last;
     for (i = 0; i < n; i++)
@@ -405,7 +406,7 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
 }
 #elif RV_PART == RV_PART_RUN
     /* a compare into a bool: two ints here, the equalities that need no
-       conversion (goasm_eq_fast, as the old loop), the rest in
+       conversion (goasm_eq_fast, as QuickJS's interpreter), the rest in
        rv_binop_slow. eqk: -1 a relational compare, 0 eq, 1 strict. */
 #define RV_CMPB(label, opc, cop, bexpr, isk, eqk, neg)                  \
  label:                                                                 \
@@ -583,8 +584,8 @@ static force_inline BOOL rv_isx(JSValueConst v, int kind)
     RV_JBOOLN(rv_JTND, 1, 1)
 #undef RV_JBOOLN
 
-    /* a chain of string cases in one dispatch, as dup_case_atom of the
-       old loop: the first case that holds jumps, and when none does, the
+    /* a chain of string cases in one dispatch, as dup_case_atom of QuickJS's
+       interpreter: the first case that holds jumps, and when none does, the
        last offset */
  rv_CASES:
     ip = pc;

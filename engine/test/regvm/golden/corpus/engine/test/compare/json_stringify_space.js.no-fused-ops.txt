@@ -1,0 +1,15 @@
+result flat: --"x": 1
+result flat of 12: abcdefghij"x": 1
+result rope of 8 bits: aaaaaaaaaa"x": 1
+result rope of 16 bits: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+result rope, short piece first: xyzzzzzzzz"x": 1
+result rope, 16 bits after 8: pq\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}\u{4e2d}"x": 1
+result rope of ropes: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+result String object of a rope: aaaaaaaaaa"x": 1
+result String object of a 16-bit rope: \u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}\u{e9}"x": 1
+result number:     "x": 1
+result Number object:    "x": 1
+result nested: {\u{a}abcccccccc"x": 1,\u{a}abcccccccc"y": [\u{a}abccccccccabcccccccc2,\u{a}abccccccccabcccccccc{\u{a}abccccccccabccccccccabcccccccc"z": 3\u{a}abccccccccabcccccccc}\u{a}abcccccccc]\u{a}}
+mem-end obj=200 atom=562 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=200 atom=562 shape=127 prop=976 jsfunc=2 cfunc=134 array=2 fast_array=2 elements=12 binary=0
+--- status exit 0

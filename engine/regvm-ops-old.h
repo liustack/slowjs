@@ -11,9 +11,8 @@
    The instruction OLD is followed by its length, the slot w of the old sp,
    and the old instruction itself, opcode and operands as the old bytecode
    has them. rv_old runs the body of the old handler, the macro
-   OP_BODY_<op> defined at the handler in JS_CallInternal (quickjs.c), on
-   the temps under w laid out as the old stack, as the window ops of
-   regvm-ops-window.h do: both loops run one source, and one dispatch slot
+   OP_BODY_<op> of regvm-bodies.h, on the temps under w laid out as the old
+   stack, as the window ops of regvm-ops-window.h do: one dispatch slot
    serves every opcode of the list.
 
    Nothing in the pass is written for one opcode: what an opcode takes and
@@ -24,7 +23,7 @@
    its captured locals, which rv_old gives the body from F.
 
    An exception: the body goes to its exception label with its own sp, as
-   in the old loop, and the old loop then frees the stack from there down.
+   in QuickJS's interpreter, which then frees the stack from there down.
    rv_old frees the values from that sp down to the first of the n_pop
    operands, and the pcmap entry names the temps below them, which the
    unwinding frees. So each body is right on each of its paths however it
@@ -78,7 +77,7 @@ static void rv_old_op(RVPass *s, const uint8_t *p)
     int npush = oi->n_push, i;
 
     if (npop > s->sp) {
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     for (i = s->sp - npop; i < s->sp; i++)
@@ -100,7 +99,7 @@ static void rv_old_op(RVPass *s, const uint8_t *p)
 
 /* special_object: the kinds OLD runs (regvm-ops-ctor.h sends the others
    here), among them the var object of a function with a sloppy direct
-   eval. The arguments and the others are refused. */
+   eval. A byte of no kind is code no compiler makes. */
 static void rv_old_special(RVPass *s, const uint8_t *p)
 {
     switch (p[1]) {
@@ -110,7 +109,7 @@ static void rv_old_special(RVPass *s, const uint8_t *p)
         rv_old_op(s, p);
         break;
     default:
-        s->failed = TRUE;
+        rv_crafted(s); /* no kind */
         break;
     }
 }
@@ -125,7 +124,7 @@ static void rv_old_special(RVPass *s, const uint8_t *p)
         /* a reference to a local or an argument is a var_ref of the
            closure state, which a function without captured locals has not */
         if (!s->b->var_ref_count) {
-            s->failed = TRUE;
+            rv_crafted(s);
             break;
         }
         rv_old_op(s, p);

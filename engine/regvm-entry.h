@@ -5,9 +5,8 @@
  * root of this repository.
  */
 
-/* The entries of the register loop: what lets a call run in it where it
-   would have gone to the old loop. Included by regvm.h after regvm-pass.h,
-   before regvm-run.h.
+/* The entries of the register loop: what lets a call run in it. Included
+   by regvm.h after regvm-pass.h, before regvm-run.h.
 
    The register stack in segments. A frame never moves (var_refs and the
    argv of a call point into it), so a full stack is not grown by a

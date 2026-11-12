@@ -1,0 +1,5 @@
+result operations: all 22 true
+result stacks: 45 equal, 43 lines
+mem-end obj=207 atom=569 shape=132 prop=1000 jsfunc=20 cfunc=141 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=206 atom=569 shape=132 prop=997 jsfunc=20 cfunc=141 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

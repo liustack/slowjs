@@ -1,0 +1,4 @@
+result 1,13,undefined,4,102,5,xx,!a!a,1;TypeError: cannot read property 'c' of undefined,1225,8;st,1s;7,4,undefined,6;210,0|2,13,undefined,8,104,6,xx,!a!a,2;TypeError: cannot read property 'c' of undefined,1225,8;st,1s;7,4,undefined,6;210,0|3,13,undefined,12,106,7,xx,!a!a,3;TypeError: cannot read property 'c' of undefined,1225,8;st,1s;7,4,undefined,6;210,0|
+mem-end obj=189 atom=553 shape=123 prop=949 jsfunc=6 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=187 atom=549 shape=123 prop=943 jsfunc=1 cfunc=124 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

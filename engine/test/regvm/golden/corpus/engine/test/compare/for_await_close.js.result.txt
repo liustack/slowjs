@@ -1,0 +1,33 @@
+result break: next 0 | body 0 | return called | return resolved | after
+result break after two: next 0 | body 0 | next 1 | body 1 | return called | return resolved | after
+result no break: next 0 | body 0 | next 1 | body 1 | next 2 | after
+result no return method: next 0 | after
+result return is null: next 0 | after
+result return is undefined: next 0 | after
+result return is not a function: next 0 | threw TypeError
+result return returns null: next 0 | return called | threw TypeError
+result return returns a primitive: next 0 | return called | threw TypeError
+result return returns a promise of a primitive: next 0 | return called | threw TypeError
+result return throws: next 0 | return called | threw RangeError
+result return rejects: next 0 | return called | return rejects | threw RangeError
+result body throws, return rejects: next 0 | return called | return rejects | threw TypeError
+result body throws, return throws: next 0 | return called | threw TypeError
+result return statement: next 0 | return called | return resolved | r0 | after
+result return statement in an async generator: next 0 | return called | return resolved | {"value":"r0","done":true} | after
+result return statement in try finally: next 0 | return called | return resolved | finally | r0
+result labelled break: next 0 | body 10 | return called | return resolved | after
+result continue outer: next 0 | body 10 | return called | return resolved | next 0 | body 20 | return called | return resolved | after
+result nested for await, break inner: next 0 | next 0 | body 00 | return called | return resolved | mid | next 1 | next 0 | body 10 | return called | return resolved | mid | next 2 | after
+result nested for await, break both: next 0 | next 0 | body 00 | return called | return resolved | return called | return resolved | after
+result sync iterable: sync next | body | sync return | after
+result sync iterable no return: after
+result array: body 1 | after
+result async generator: body 1 | generator finally | generator finally done | after
+result async generator runs to the end: body 1 | generator finally | after
+result destructuring throws: next 0 | return called | return resolved | after
+result for await with let and closure: next 0 | next 1 | return called | return resolved | 0,1
+result for of is not awaited: sync return | after
+result order of microtasks: next 0 | body 0 at 2 | return called | return resolved | after at 7
+mem-end obj=419 atom=614 shape=144 prop=1369 jsfunc=56 cfunc=135 array=57 fast_array=57 elements=234 binary=0
+mem-gc obj=263 atom=614 shape=143 prop=1071 jsfunc=56 cfunc=135 array=33 fast_array=33 elements=120 binary=0
+--- status exit 0

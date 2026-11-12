@@ -1,0 +1,40 @@
+result value: pending
+result no args: pending
+result args: pending
+result this is undefined: pending
+result throw: pending
+result throw error: pending
+result returns a thenable: pending
+result returns a rejected promise: pending
+result callback is not a function: pending
+result callback is missing: pending
+result callback runs now: true
+result result is a promise: true
+result this is not an object: throws TypeError
+result this is a number: throws TypeError
+result this is not a constructor: throws TypeError
+result this is a function that is not a constructor: throws TypeError
+result ES2026 the callback runs before this is checked as a constructor: true
+result subclass: true
+result subclass of a throw: false
+result subclass constructor: Q
+result subclass constructor on a throw: Q,Q
+result ES2026 a promise comes back as it is: true
+result ES2026 a rejected promise comes back as it is: true
+result ES2026 constructor read once: 1
+result not a promise but thenable: pending
+result capability executor: C,res 3,C,rej 4
+result args fulfilled 1|x|
+result missing rejected [object Error]
+result no args fulfilled 0
+result not function rejected [object Error]
+result plain object fulfilled [object Object]
+result rejected promise rejected no
+result thenable fulfilled t
+result this fulfilled true
+result throw error fulfilled RangeError
+result throw rejected boom
+result value fulfilled 5
+mem-end obj=212 atom=565 shape=127 prop=1002 jsfunc=12 cfunc=134 array=5 fast_array=5 elements=43 binary=0
+mem-gc obj=208 atom=561 shape=125 prop=992 jsfunc=8 cfunc=134 array=4 fast_array=4 elements=39 binary=0
+--- status exit 0

@@ -1,0 +1,285 @@
+result fn-box strict ret 0 = number:7
+result fn-box strict ret 1 = number:7
+result fn-box strict ret 2 = number:7
+result fn-box-args strict ret 0 = number:7
+result fn-box-args strict ret 1 = number:7
+result fn-box-args strict ret 2 = number:7
+result fn-box-noargs strict ret 0 = number:7
+result fn-box-noargs strict ret 1 = number:7
+result fn-box-noargs strict ret 2 = number:7
+result fn-prop strict ret 0 = number:7
+result fn-prop strict ret 1 = number:7
+result fn-prop strict ret 2 = number:7
+result fn-delete-self strict ret 0 = number:7
+result fn-delete-self strict ret 1 = number:7
+result fn-delete-self strict ret 2 = number:7
+result fn-self-overwrite strict ret 0 = number:7
+result fn-self-overwrite strict ret 1 = number:7
+result fn-self-overwrite strict ret 2 = number:7
+result fn-box strict retArgs 0 = number:1
+result fn-box strict retArgs 1 = number:1
+result fn-box strict retArgs 2 = number:1
+result fn-box-args strict retArgs 0 = number:15
+result fn-box-args strict retArgs 1 = number:15
+result fn-box-args strict retArgs 2 = number:15
+result fn-box-noargs strict retArgs 0 = number:0
+result fn-box-noargs strict retArgs 1 = number:0
+result fn-box-noargs strict retArgs 2 = number:0
+result fn-prop strict retArgs 0 = number:1
+result fn-prop strict retArgs 1 = number:1
+result fn-prop strict retArgs 2 = number:1
+result fn-delete-self strict retArgs 0 = number:1
+result fn-delete-self strict retArgs 1 = number:1
+result fn-delete-self strict retArgs 2 = number:1
+result fn-self-overwrite strict retArgs 0 = number:0
+result fn-self-overwrite strict retArgs 1 = number:0
+result fn-self-overwrite strict retArgs 2 = number:0
+result fn-box strict thr 0 ! RangeError: lastref
+result fn-box strict thr 1 ! RangeError: lastref
+result fn-box strict thr 2 ! RangeError: lastref
+result fn-box-args strict thr 0 ! RangeError: lastref
+result fn-box-args strict thr 1 ! RangeError: lastref
+result fn-box-args strict thr 2 ! RangeError: lastref
+result fn-box-noargs strict thr 0 ! RangeError: lastref
+result fn-box-noargs strict thr 1 ! RangeError: lastref
+result fn-box-noargs strict thr 2 ! RangeError: lastref
+result fn-prop strict thr 0 ! RangeError: lastref
+result fn-prop strict thr 1 ! RangeError: lastref
+result fn-prop strict thr 2 ! RangeError: lastref
+result fn-delete-self strict thr 0 ! RangeError: lastref
+result fn-delete-self strict thr 1 ! RangeError: lastref
+result fn-delete-self strict thr 2 ! RangeError: lastref
+result fn-self-overwrite strict thr 0 ! RangeError: lastref
+result fn-self-overwrite strict thr 1 ! RangeError: lastref
+result fn-self-overwrite strict thr 2 ! RangeError: lastref
+result fn-box strict fin 0 = number:1
+result fn-box strict fin 1 = number:1
+result fn-box strict fin 2 = number:1
+result fn-box-args strict fin 0 = number:1
+result fn-box-args strict fin 1 = number:1
+result fn-box-args strict fin 2 = number:1
+result fn-box-noargs strict fin 0 = number:1
+result fn-box-noargs strict fin 1 = number:1
+result fn-box-noargs strict fin 2 = number:1
+result fn-prop strict fin 0 = number:1
+result fn-prop strict fin 1 = number:1
+result fn-prop strict fin 2 = number:1
+result fn-delete-self strict fin 0 = number:1
+result fn-delete-self strict fin 1 = number:1
+result fn-delete-self strict fin 2 = number:1
+result fn-self-overwrite strict fin 0 = number:1
+result fn-self-overwrite strict fin 1 = number:1
+result fn-self-overwrite strict fin 2 = number:1
+result fn-box strict finThrow 0 = string:from finally
+result fn-box strict finThrow 1 = string:from finally
+result fn-box strict finThrow 2 = string:from finally
+result fn-box-args strict finThrow 0 = string:from finally
+result fn-box-args strict finThrow 1 = string:from finally
+result fn-box-args strict finThrow 2 = string:from finally
+result fn-box-noargs strict finThrow 0 = string:from finally
+result fn-box-noargs strict finThrow 1 = string:from finally
+result fn-box-noargs strict finThrow 2 = string:from finally
+result fn-prop strict finThrow 0 = string:from finally
+result fn-prop strict finThrow 1 = string:from finally
+result fn-prop strict finThrow 2 = string:from finally
+result fn-delete-self strict finThrow 0 = string:from finally
+result fn-delete-self strict finThrow 1 = string:from finally
+result fn-delete-self strict finThrow 2 = string:from finally
+result fn-self-overwrite strict finThrow 0 = string:from finally
+result fn-self-overwrite strict finThrow 1 = string:from finally
+result fn-self-overwrite strict finThrow 2 = string:from finally
+result fn-box strict loop 0 = number:190
+result fn-box strict loop 1 = number:190
+result fn-box strict loop 2 = number:190
+result fn-box-args strict loop 0 = number:190
+result fn-box-args strict loop 1 = number:190
+result fn-box-args strict loop 2 = number:190
+result fn-box-noargs strict loop 0 = number:190
+result fn-box-noargs strict loop 1 = number:190
+result fn-box-noargs strict loop 2 = number:190
+result fn-prop strict loop 0 = number:190
+result fn-prop strict loop 1 = number:190
+result fn-prop strict loop 2 = number:190
+result fn-delete-self strict loop 0 = number:190
+result fn-delete-self strict loop 1 = number:190
+result fn-delete-self strict loop 2 = number:190
+result fn-self-overwrite strict loop 0 = number:190
+result fn-self-overwrite strict loop 1 = number:190
+result fn-self-overwrite strict loop 2 = number:190
+result fn-box sloppy ret 0 = number:7
+result fn-box sloppy ret 1 = number:7
+result fn-box sloppy ret 2 = number:7
+result fn-box-args sloppy ret 0 = number:7
+result fn-box-args sloppy ret 1 = number:7
+result fn-box-args sloppy ret 2 = number:7
+result fn-box-noargs sloppy ret 0 = number:7
+result fn-box-noargs sloppy ret 1 = number:7
+result fn-box-noargs sloppy ret 2 = number:7
+result fn-prop sloppy ret 0 = number:7
+result fn-prop sloppy ret 1 = number:7
+result fn-prop sloppy ret 2 = number:7
+result fn-delete-self sloppy ret 0 = number:7
+result fn-delete-self sloppy ret 1 = number:7
+result fn-delete-self sloppy ret 2 = number:7
+result fn-self-overwrite sloppy ret 0 = number:7
+result fn-self-overwrite sloppy ret 1 = number:7
+result fn-self-overwrite sloppy ret 2 = number:7
+result fn-box sloppy retArgs 0 = number:1
+result fn-box sloppy retArgs 1 = number:1
+result fn-box sloppy retArgs 2 = number:1
+result fn-box-args sloppy retArgs 0 = number:15
+result fn-box-args sloppy retArgs 1 = number:15
+result fn-box-args sloppy retArgs 2 = number:15
+result fn-box-noargs sloppy retArgs 0 = number:0
+result fn-box-noargs sloppy retArgs 1 = number:0
+result fn-box-noargs sloppy retArgs 2 = number:0
+result fn-prop sloppy retArgs 0 = number:1
+result fn-prop sloppy retArgs 1 = number:1
+result fn-prop sloppy retArgs 2 = number:1
+result fn-delete-self sloppy retArgs 0 = number:1
+result fn-delete-self sloppy retArgs 1 = number:1
+result fn-delete-self sloppy retArgs 2 = number:1
+result fn-self-overwrite sloppy retArgs 0 = number:0
+result fn-self-overwrite sloppy retArgs 1 = number:0
+result fn-self-overwrite sloppy retArgs 2 = number:0
+result fn-box sloppy thr 0 ! RangeError: lastref
+result fn-box sloppy thr 1 ! RangeError: lastref
+result fn-box sloppy thr 2 ! RangeError: lastref
+result fn-box-args sloppy thr 0 ! RangeError: lastref
+result fn-box-args sloppy thr 1 ! RangeError: lastref
+result fn-box-args sloppy thr 2 ! RangeError: lastref
+result fn-box-noargs sloppy thr 0 ! RangeError: lastref
+result fn-box-noargs sloppy thr 1 ! RangeError: lastref
+result fn-box-noargs sloppy thr 2 ! RangeError: lastref
+result fn-prop sloppy thr 0 ! RangeError: lastref
+result fn-prop sloppy thr 1 ! RangeError: lastref
+result fn-prop sloppy thr 2 ! RangeError: lastref
+result fn-delete-self sloppy thr 0 ! RangeError: lastref
+result fn-delete-self sloppy thr 1 ! RangeError: lastref
+result fn-delete-self sloppy thr 2 ! RangeError: lastref
+result fn-self-overwrite sloppy thr 0 ! RangeError: lastref
+result fn-self-overwrite sloppy thr 1 ! RangeError: lastref
+result fn-self-overwrite sloppy thr 2 ! RangeError: lastref
+result fn-box sloppy fin 0 = number:1
+result fn-box sloppy fin 1 = number:1
+result fn-box sloppy fin 2 = number:1
+result fn-box-args sloppy fin 0 = number:1
+result fn-box-args sloppy fin 1 = number:1
+result fn-box-args sloppy fin 2 = number:1
+result fn-box-noargs sloppy fin 0 = number:1
+result fn-box-noargs sloppy fin 1 = number:1
+result fn-box-noargs sloppy fin 2 = number:1
+result fn-prop sloppy fin 0 = number:1
+result fn-prop sloppy fin 1 = number:1
+result fn-prop sloppy fin 2 = number:1
+result fn-delete-self sloppy fin 0 = number:1
+result fn-delete-self sloppy fin 1 = number:1
+result fn-delete-self sloppy fin 2 = number:1
+result fn-self-overwrite sloppy fin 0 = number:1
+result fn-self-overwrite sloppy fin 1 = number:1
+result fn-self-overwrite sloppy fin 2 = number:1
+result fn-box sloppy finThrow 0 = string:from finally
+result fn-box sloppy finThrow 1 = string:from finally
+result fn-box sloppy finThrow 2 = string:from finally
+result fn-box-args sloppy finThrow 0 = string:from finally
+result fn-box-args sloppy finThrow 1 = string:from finally
+result fn-box-args sloppy finThrow 2 = string:from finally
+result fn-box-noargs sloppy finThrow 0 = string:from finally
+result fn-box-noargs sloppy finThrow 1 = string:from finally
+result fn-box-noargs sloppy finThrow 2 = string:from finally
+result fn-prop sloppy finThrow 0 = string:from finally
+result fn-prop sloppy finThrow 1 = string:from finally
+result fn-prop sloppy finThrow 2 = string:from finally
+result fn-delete-self sloppy finThrow 0 = string:from finally
+result fn-delete-self sloppy finThrow 1 = string:from finally
+result fn-delete-self sloppy finThrow 2 = string:from finally
+result fn-self-overwrite sloppy finThrow 0 = string:from finally
+result fn-self-overwrite sloppy finThrow 1 = string:from finally
+result fn-self-overwrite sloppy finThrow 2 = string:from finally
+result fn-box sloppy loop 0 = number:190
+result fn-box sloppy loop 1 = number:190
+result fn-box sloppy loop 2 = number:190
+result fn-box-args sloppy loop 0 = number:190
+result fn-box-args sloppy loop 1 = number:190
+result fn-box-args sloppy loop 2 = number:190
+result fn-box-noargs sloppy loop 0 = number:190
+result fn-box-noargs sloppy loop 1 = number:190
+result fn-box-noargs sloppy loop 2 = number:190
+result fn-prop sloppy loop 0 = number:190
+result fn-prop sloppy loop 1 = number:190
+result fn-prop sloppy loop 2 = number:190
+result fn-delete-self sloppy loop 0 = number:190
+result fn-delete-self sloppy loop 1 = number:190
+result fn-delete-self sloppy loop 2 = number:190
+result fn-self-overwrite sloppy loop 0 = number:190
+result fn-self-overwrite sloppy loop 1 = number:190
+result fn-self-overwrite sloppy loop 2 = number:190
+result iife 0 = number:1
+result iife 1 = number:2
+result iife 2 = number:3
+result iife-throw 0 ! Error: iife 0
+result iife-throw 1 ! Error: iife 1
+result iife-throw 2 ! Error: iife 2
+result iife-finally 0 = number:0
+result iife-finally 1 = number:1
+result iife-finally 2 = number:2
+result iife-args 0 = number:6
+result iife-args 1 = number:7
+result iife-args 2 = number:8
+result box-pop 0 = number:0
+result box-pop 1 = number:2
+result box-pop 2 = number:4
+result box-pop-throw 0 ! TypeError: pop 0
+result box-pop-throw 1 ! TypeError: pop 1
+result box-pop-throw 2 ! TypeError: pop 2
+result box-pop-finally 0 = number:1
+result box-pop-finally 1 = number:2
+result box-pop-finally 2 = number:3
+result arrow-once 0 = number:1
+result arrow-once 1 = number:2
+result arrow-once 2 = number:3
+result method-delete-self 0 = number:1
+result method-delete-self 1 = number:2
+result method-delete-self 2 = number:3
+result method-delete-self-throw 0 ! RangeError: m 0
+result method-delete-self-throw 1 ! RangeError: m 1
+result method-delete-self-throw 2 ! RangeError: m 2
+result method-delete-self-finally 0 = number:1
+result method-delete-self-finally 1 = number:2
+result method-delete-self-finally 2 = number:3
+result var-overwrite-self 0 = number:3
+result var-overwrite-self 1 = number:4
+result var-overwrite-self 2 = number:5
+result var-overwrite-self-throw 0 ! Error: g 0
+result var-overwrite-self-throw 1 ! Error: g 1
+result var-overwrite-self-throw 2 ! Error: g 2
+result global-overwrite-self 0 = number:0
+result global-overwrite-self 1 = number:1
+result global-overwrite-self 2 = number:2
+result call-apply 0 = number:5
+result call-apply 1 = number:6
+result call-apply 2 = number:7
+result new-once 0 = {x}
+result new-once 1 = {x}
+result new-once 2 = {x}
+result gen-once 0 = number:1
+result gen-once 1 = number:3
+result gen-once 2 = number:5
+result gen-fn-box 0 = number:3
+result gen-fn-box 1 = number:3
+result gen-fn-box 2 = number:3
+result async-once 0 = string:object
+result async-once 1 = string:object
+result async-once 2 = string:object
+result async-throw-once 0 = string:object
+result async-throw-once 1 = string:object
+result async-throw-once 2 = string:object
+result async-once then 0
+result async-once then 1
+result async-once then 2
+result async-throw-once catch a 0
+result async-throw-once catch a 1
+result async-throw-once catch a 2
+mem-end obj=200 atom=555 shape=135 prop=969 jsfunc=1 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=554 shape=131 prop=957 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

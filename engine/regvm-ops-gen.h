@@ -9,7 +9,7 @@
    part, see regvm-areas.h.
 
    A suspended generator or async function lives in its JSAsyncFunctionState
-   (quickjs.c), the heap frame async_func_init makes, in the old loop's
+   (quickjs.c), the heap frame async_func_init makes, in QuickJS's
    layout: arg_buf, var_buf, stack_buf up to cur_sp, var_refs. A resume of a
    function with register code (rv_gen_resume, from async_func_resume) moves
    that state onto the register stack as the entry frame of a run of
@@ -17,8 +17,8 @@
    throw_flag is set. A suspension (SUSP) moves the frame back and leaves
    the run. The callers (js_generator_next, the async resolve functions, the
    async generator queue), the GC and the finalizers read the heap frame as
-   they do for the old loop: the yielded value at cur_sp[-1], FUNC_RET_* as
-   the result.
+   they do for QuickJS's interpreter: the yielded value at cur_sp[-1],
+   FUNC_RET_* as the result.
 
    A generator frame is always the entry frame of its run: its body is only
    reached through async_func_resume, as the call ops enter register code
@@ -93,7 +93,7 @@ static void rv_w_gen_emit(RVPass *s, int sub, int flags, int nread, int npop, in
 {
     int i;
     if (nread > s->sp) {
-        s->failed = TRUE;
+        rv_crafted(s);
         return;
     }
     for (i = s->sp - nread; i < s->sp; i++)
@@ -264,7 +264,7 @@ static no_inline const uint8_t *rv_gen_enter(JSContext *ctx, JSAsyncFunctionStat
         }
     }
  done:
-    hs->cur_sp = NULL; /* running, as the old loop marks it */
+    hs->cur_sp = NULL; /* running, as QuickJS's interpreter marks it */
     /* a state that never ran starts at the code's start */
     return first ? rf->code : hs->cur_pc;
 }
@@ -422,7 +422,7 @@ static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
         }
     }
     if (unlikely(rf->arg_count < 0)) {
-        rv_cannot_run(ctx, b, RV_NO_REFUSED);
+        rv_refused(ctx, b);
         rv_gen_fail(rt, s);
         return JS_EXCEPTION;
     }
@@ -464,7 +464,7 @@ static JSValue rv_gen_resume(JSContext *ctx, JSAsyncFunctionState *s)
 }
 #elif RV_PART == RV_PART_RUN
     /* a suspension: the frame goes to the heap frame of the state, the run
-       ends with FUNC_RET_<kind>, as the old loop's done_generator */
+       ends with FUNC_RET_<kind>, as QuickJS's done_generator */
  rv_SUSP:
     ip = pc;
     pc += 2;

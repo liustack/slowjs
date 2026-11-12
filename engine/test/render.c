@@ -23,8 +23,9 @@
    then gives memory back as the pool of tifa will, keeping KEEP bytes.
 
    With RV_STATS set in the environment, a build with -DRV_STATS prints the
-   dispatches of each loop and the calls between them, a timed render, and with RV_OPS also set the
-   dispatches of each register op. */
+   dispatches of the register loop and the calls into it from C and out of
+   it, a timed render, and with RV_OPS also set the dispatches of each
+   register op. */
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -382,7 +383,7 @@ int main(int argc, char **argv)
         for (int k = 0; k < in.n; k++) {
             size_t len, hl;
             char *html = render(ctx, start, in.json[k], in.len[k], &len);
-            long rv_before[6];
+            long rv_before[4];
             static long rv_ops_before[256];
             double *d = malloc(sizeof(double) * (n > 0 ? n : 1)), sum = 0;
 
@@ -403,8 +404,8 @@ int main(int argc, char **argv)
                 html = render(ctx, start, in.json[k], in.len[k], &len);
                 free(html);
             }
-            for (int c = 0; c < 6; c++)
-                rv_before[c] = JS_RegvmStat(ctx, 10 + c);
+            for (int c = 0; c < 4; c++)
+                rv_before[c] = JS_RegvmStat(ctx, c ? 12 + c : 10);
             for (int c = 0; c < 256; c++)
                 rv_ops_before[c] = JS_RegvmStat(ctx, 1000 + c);
             for (int i = 0; i < n; i++) {
@@ -422,11 +423,11 @@ int main(int argc, char **argv)
             }
             if (n > 0 && getenv("RV_STATS"))
                 /* the counts of a native build with -DRV_STATS, a render */
-                fprintf(stderr, "render: %s a render: dispatches new %.0f old %.0f, calls old>new %.1f C>new %.1f new>old %.1f new>C %.1f\n",
-                        base_name(in.path[k]),
-                        (double)(JS_RegvmStat(ctx, 10) - rv_before[0]) / n, (double)(JS_RegvmStat(ctx, 11) - rv_before[1]) / n,
-                        (double)(JS_RegvmStat(ctx, 12) - rv_before[2]) / n, (double)(JS_RegvmStat(ctx, 13) - rv_before[3]) / n,
-                        (double)(JS_RegvmStat(ctx, 14) - rv_before[4]) / n, (double)(JS_RegvmStat(ctx, 15) - rv_before[5]) / n);
+                fprintf(stderr, "render: %s a render: dispatches %.0f, calls C>rv %.1f rv>bytecode %.1f rv>C %.1f\n",
+                        base_name(in.path[k]), (double)(JS_RegvmStat(ctx, 10) - rv_before[0]) / n,
+                        (double)(JS_RegvmStat(ctx, 13) - rv_before[1]) / n,
+                        (double)(JS_RegvmStat(ctx, 14) - rv_before[2]) / n,
+                        (double)(JS_RegvmStat(ctx, 15) - rv_before[3]) / n);
             if (getenv("RV_STATS"))
                 /* the most of a segment of register stack in use so far, and
                    the segments made so far */

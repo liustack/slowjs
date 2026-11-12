@@ -1,0 +1,4 @@
+result undefined
+mem-end obj=303 atom=886 shape=166 prop=1302 jsfunc=61 cfunc=201 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=303 atom=886 shape=166 prop=1302 jsfunc=61 cfunc=201 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

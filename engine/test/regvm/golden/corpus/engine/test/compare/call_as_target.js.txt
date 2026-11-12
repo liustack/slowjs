@@ -1,0 +1,64 @@
+result "f() = 1" => compiles
+result "f() += 1" => compiles
+result "f() -= 1" => compiles
+result "f() **= 2" => compiles
+result "f() <<= 1" => compiles
+result "f() &&= 1" => SyntaxError
+result "f() ||= 1" => SyntaxError
+result "f() ??= 1" => SyntaxError
+result "f()++" => compiles
+result "f()--" => compiles
+result "++f()" => compiles
+result "--f()" => compiles
+result "f(1, 2) = 3" => compiles
+result "o.m() = 1" => compiles
+result "o.m()++" => compiles
+result "o[0]() = 1" => compiles
+result "f()() = 1" => compiles
+result "new f() = 1" => SyntaxError
+result "new f = 1" => SyntaxError
+result "(f()) = 1" => compiles
+result "((f())) = 1" => compiles
+result "(f())++" => compiles
+result "f`x` = 1" => SyntaxError
+result "f`x`++" => SyntaxError
+result "o.m`x` = 1" => SyntaxError
+result "for (f() in o) ;" => compiles
+result "for (f() of [1]) ;" => compiles
+result "for (o.m() in o) ;" => compiles
+result "for (o.m() of [1]) ;" => compiles
+result "[f()] = [1]" => SyntaxError
+result "({ a: f() } = { a: 1 })" => SyntaxError
+result "[...f()] = [1]" => SyntaxError
+result "({ ...f() } = {})" => SyntaxError
+result "[(f())] = [1]" => SyntaxError
+result "async () => {}; f() = 1" => compiles
+result "x = f() = 1" => compiles
+result "f() = g() = 1" => compiles
+result "import.meta = 1" => SyntaxError
+result "super() = 1" => SyntaxError
+result "f?.() = 1" => SyntaxError
+result "f?.x = 1" => SyntaxError
+result "o?.m() = 1" => SyntaxError
+result "(a, f()) = 1" => SyntaxError
+result "delete f()" => compiles
+result "typeof f() = 1" => SyntaxError
+result "f() = 1 + 2" => compiles
+result "f() = g()" => f,ReferenceError
+result "f() += g()" => f,ReferenceError
+result "f()++" => f,ReferenceError
+result "++f()" => f,ReferenceError
+result "o.m() = g()" => m,ReferenceError
+result "o.m().x = g()" => m,g
+result "f(g()) = 1" => g,f,ReferenceError
+result "for (f() in { a: 1 }) log.push(\"body\")" => f,ReferenceError
+result "for (f() of [1]) log.push(\"body\")" => f,ReferenceError
+result "for (f() of []) log.push(\"body\")" => 
+result "try { f() = 1 } catch (e) { log.push(\"caught \" + e.name) }" => f,caught ReferenceError
+result "var r = function () { f() = 1 }; r()" => f,ReferenceError
+result "if (false) f() = 1; log.push(\"skipped\")" => skipped
+result "f() = 1; log.push(\"after\")" => f,ReferenceError
+result "x = () => { f() = 1 }; log.push(\"defined\")" => defined
+mem-end obj=197 atom=604 shape=125 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
+mem-gc obj=197 atom=604 shape=125 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
+--- status exit 0

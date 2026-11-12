@@ -1,0 +1,26 @@
+result plain function: true
+result arrow function: true
+result async function: true
+result generator function: true
+result async generator: true
+result builtin: true
+result class: true
+result derived class: true,S
+result derived class of a derived class: S
+result null prototype: null
+result set prototype: true,1
+result prototype set after bind: false,
+result bound of a bound: true
+result proxy trap: true,trap
+result proxy trap throws: throws RangeError
+result proxy trap returns a bad value: throws TypeError
+result proxy of a class: S
+result name and length: bound foo2
+result instanceof: true
+result call and construct: 3
+result not callable: throws TypeError
+result prototype of Function.prototype bind: false
+result hasOwn prototype: false
+mem-end obj=221 atom=600 shape=143 prop=1059 jsfunc=15 cfunc=132 array=2 fast_array=2 elements=23 binary=0
+mem-gc obj=198 atom=594 shape=131 prop=1010 jsfunc=2 cfunc=132 array=2 fast_array=2 elements=23 binary=0
+--- status exit 0

@@ -1,0 +1,198 @@
+result Object.keys undefined: throws TypeError
+result Object.keys null: throws TypeError
+result Object.keys number: throws TypeError
+result Object.keys string: throws TypeError
+result Object.keys empty string: throws TypeError
+result Object.keys true: throws TypeError
+result Object.keys symbol: throws TypeError
+result Object.keys bigint: throws TypeError
+result Object.keys array: []
+result Object.keys empty array: []
+result Object.keys array-like: []
+result Object.keys empty array-like: []
+result Object.keys object without length: []
+result Object.keys array with a number: throws TypeError
+result Object.keys array with duplicates: throws TypeError
+result Object.keys function: []
+result Object.keys string object: []
+result Object.keys array with a symbol: []
+result Object.keys length string: []
+result Object.getOwnPropertyNames undefined: throws TypeError
+result Object.getOwnPropertyNames null: throws TypeError
+result Object.getOwnPropertyNames number: throws TypeError
+result Object.getOwnPropertyNames string: throws TypeError
+result Object.getOwnPropertyNames empty string: throws TypeError
+result Object.getOwnPropertyNames true: throws TypeError
+result Object.getOwnPropertyNames symbol: throws TypeError
+result Object.getOwnPropertyNames bigint: throws TypeError
+result Object.getOwnPropertyNames array: ["a","b"]
+result Object.getOwnPropertyNames empty array: []
+result Object.getOwnPropertyNames array-like: ["a","b"]
+result Object.getOwnPropertyNames empty array-like: []
+result Object.getOwnPropertyNames object without length: []
+result Object.getOwnPropertyNames array with a number: throws TypeError
+result Object.getOwnPropertyNames array with duplicates: throws TypeError
+result Object.getOwnPropertyNames function: []
+result Object.getOwnPropertyNames string object: ["a","b"]
+result Object.getOwnPropertyNames array with a symbol: ["a"]
+result Object.getOwnPropertyNames length string: ["k"]
+result Reflect.ownKeys undefined: throws TypeError
+result Reflect.ownKeys null: throws TypeError
+result Reflect.ownKeys number: throws TypeError
+result Reflect.ownKeys string: throws TypeError
+result Reflect.ownKeys empty string: throws TypeError
+result Reflect.ownKeys true: throws TypeError
+result Reflect.ownKeys symbol: throws TypeError
+result Reflect.ownKeys bigint: throws TypeError
+result Reflect.ownKeys array: ["a","b"]
+result Reflect.ownKeys empty array: []
+result Reflect.ownKeys array-like: ["a","b"]
+result Reflect.ownKeys empty array-like: []
+result Reflect.ownKeys object without length: []
+result Reflect.ownKeys array with a number: throws TypeError
+result Reflect.ownKeys array with duplicates: throws TypeError
+result Reflect.ownKeys function: []
+result Reflect.ownKeys string object: ["a","b"]
+result Reflect.ownKeys array with a symbol: ["a","Symbol(Symbol.iterator)"]
+result Reflect.ownKeys length string: ["k"]
+result Object.entries undefined: throws TypeError
+result Object.entries null: throws TypeError
+result Object.entries number: throws TypeError
+result Object.entries string: throws TypeError
+result Object.entries empty string: throws TypeError
+result Object.entries true: throws TypeError
+result Object.entries symbol: throws TypeError
+result Object.entries bigint: throws TypeError
+result Object.entries array: []
+result Object.entries empty array: []
+result Object.entries array-like: []
+result Object.entries empty array-like: []
+result Object.entries object without length: []
+result Object.entries array with a number: throws TypeError
+result Object.entries array with duplicates: throws TypeError
+result Object.entries function: []
+result Object.entries string object: []
+result Object.entries array with a symbol: []
+result Object.entries length string: []
+result for in undefined: throws TypeError
+result for in null: throws TypeError
+result for in number: throws TypeError
+result for in string: throws TypeError
+result for in empty string: throws TypeError
+result for in true: throws TypeError
+result for in symbol: throws TypeError
+result for in bigint: throws TypeError
+result for in array: []
+result for in empty array: []
+result for in array-like: []
+result for in empty array-like: []
+result for in object without length: []
+result for in array with a number: throws TypeError
+result for in array with duplicates: throws TypeError
+result for in function: []
+result for in string object: []
+result for in array with a symbol: []
+result for in length string: []
+result spread undefined: throws TypeError
+result spread null: throws TypeError
+result spread number: throws TypeError
+result spread string: throws TypeError
+result spread empty string: throws TypeError
+result spread true: throws TypeError
+result spread symbol: throws TypeError
+result spread bigint: throws TypeError
+result spread array: {}
+result spread empty array: {}
+result spread array-like: {}
+result spread empty array-like: {}
+result spread object without length: {}
+result spread array with a number: throws TypeError
+result spread array with duplicates: throws TypeError
+result spread function: {}
+result spread string object: {}
+result spread array with a symbol: {}
+result spread length string: {}
+result assign undefined: throws TypeError
+result assign null: throws TypeError
+result assign number: throws TypeError
+result assign string: throws TypeError
+result assign empty string: throws TypeError
+result assign true: throws TypeError
+result assign symbol: throws TypeError
+result assign bigint: throws TypeError
+result assign array: {}
+result assign empty array: {}
+result assign array-like: {}
+result assign empty array-like: {}
+result assign object without length: {}
+result assign array with a number: throws TypeError
+result assign array with duplicates: throws TypeError
+result assign function: {}
+result assign string object: {}
+result assign array with a symbol: {}
+result assign length string: {}
+result JSON.stringify undefined: throws TypeError
+result JSON.stringify null: throws TypeError
+result JSON.stringify number: throws TypeError
+result JSON.stringify string: throws TypeError
+result JSON.stringify empty string: throws TypeError
+result JSON.stringify true: throws TypeError
+result JSON.stringify symbol: throws TypeError
+result JSON.stringify bigint: throws TypeError
+result JSON.stringify array: {}
+result JSON.stringify empty array: {}
+result JSON.stringify array-like: {}
+result JSON.stringify empty array-like: {}
+result JSON.stringify object without length: {}
+result JSON.stringify array with a number: throws TypeError
+result JSON.stringify array with duplicates: throws TypeError
+result JSON.stringify function: {}
+result JSON.stringify string object: {}
+result JSON.stringify array with a symbol: {}
+result JSON.stringify length string: {}
+result Object.getOwnPropertySymbols undefined: throws TypeError
+result Object.getOwnPropertySymbols null: throws TypeError
+result Object.getOwnPropertySymbols number: throws TypeError
+result Object.getOwnPropertySymbols string: throws TypeError
+result Object.getOwnPropertySymbols empty string: throws TypeError
+result Object.getOwnPropertySymbols true: throws TypeError
+result Object.getOwnPropertySymbols symbol: throws TypeError
+result Object.getOwnPropertySymbols bigint: throws TypeError
+result Object.getOwnPropertySymbols array: []
+result Object.getOwnPropertySymbols empty array: []
+result Object.getOwnPropertySymbols array-like: []
+result Object.getOwnPropertySymbols empty array-like: []
+result Object.getOwnPropertySymbols object without length: []
+result Object.getOwnPropertySymbols array with a number: throws TypeError
+result Object.getOwnPropertySymbols array with duplicates: throws TypeError
+result Object.getOwnPropertySymbols function: []
+result Object.getOwnPropertySymbols string object: []
+result Object.getOwnPropertySymbols array with a symbol: ["Symbol(Symbol.iterator)"]
+result Object.getOwnPropertySymbols length string: []
+result Object.keys of a nested proxy undefined: throws TypeError
+result Object.keys of a nested proxy null: throws TypeError
+result Object.keys of a nested proxy number: throws TypeError
+result Object.keys of a nested proxy string: throws TypeError
+result Object.keys of a nested proxy empty string: throws TypeError
+result Object.keys of a nested proxy true: throws TypeError
+result Object.keys of a nested proxy symbol: throws TypeError
+result Object.keys of a nested proxy bigint: throws TypeError
+result Object.keys of a nested proxy array: []
+result Object.keys of a nested proxy empty array: []
+result Object.keys of a nested proxy array-like: []
+result Object.keys of a nested proxy empty array-like: []
+result Object.keys of a nested proxy object without length: []
+result Object.keys of a nested proxy array with a number: throws TypeError
+result Object.keys of a nested proxy array with duplicates: throws TypeError
+result Object.keys of a nested proxy function: []
+result Object.keys of a nested proxy string object: []
+result Object.keys of a nested proxy array with a symbol: []
+result Object.keys of a nested proxy length string: []
+result trap with a target that has keys: throws TypeError
+result trap not a function: throws TypeError
+result trap is undefined: ["a"]
+result ownKeys of a function proxy: throws TypeError
+result memory after: 0
+mem-end obj=224 atom=577 shape=132 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
+mem-gc obj=224 atom=577 shape=132 prop=1052 jsfunc=12 cfunc=135 array=7 fast_array=7 elements=203 binary=0
+--- status exit 0
