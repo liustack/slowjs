@@ -6,9 +6,7 @@
 
 ### 修复
 
-- 用 `Symbol(s)` 或 `Symbol.for(s)` 从字符串做出的 symbol，在字符串还被数组、变量或函数里的数字字符串字面量拿着时，现在只剩 `WeakRef` 指向它就会被释放，和 Node 一致。原来字符串本身变成了 symbol，持有字符串的地方让 symbol 一直活着，`WeakRef` 永远不变空（[strings.md](docs/changes/strings.zh-CN.md#别处还拿着的字符串用它的副本做-symbol)）。
 - 对不是函数的对象做 `new C(...args)`，比如 `{}`，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 一致。原来它抛 `TypeError: not a function`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数)）。
-- 严格模式代码对没有 `set` trap、`defineProperty` trap 返回 false 的 proxy 写入，比如 `p.x = 1`，现在抛 `TypeError`，和规范以及 Node 一致。原来它不报错继续往下走。非严格模式代码和 `Reflect.set` 不变（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错)）。
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个用 `+` 拼成、VM 没有内存拼接的字符串时，现在以无法捕获的内存不足错误结束调用。原来它们以 `intl: unexpected number bridge value` panic，panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 遇到这种参数也会停下，原来它们把它当成空字符串接着做，直到调用结束（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用)）。
 - `Interrupt` 和 eval 超时现在能让 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 停下，不管列表有多少项。单独一个很长的标签或项，Go 处理它时仍然不检查。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完。`getCanonicalLocales` 找重复时还要把每个标签和它前面的所有标签比一遍，10 万个互不相同的标签要 8.5 秒，现在只要 0.32 秒。超时设为 20 ms 时，这些调用在大约一百万个标签或项的列表上现在都在 60 ms 内停下，原来 Go 的活要跑 0.2 到 3.5 秒。每个答案都和原来一样（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。
 - `Intl.Segmenter` 的 `containing` 和迭代器现在在 javascript 读的时候才找分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段，不算在 VM 的内存上限里，也不检查中断标志。在 8 MiB 的文本上，`containing(0)` 原来在 Go 里分配 1,260 MiB，最多要 1.5 秒，现在只要 24 MiB 和 17 到 36 ms。每个分段都和原来一样，读完一段文本的所有分段用的时间也和原来一样（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#intlsegmenter-边读边找分段)）。
@@ -46,10 +44,17 @@
 
 ### 变更
 
+- JavaScript 现在跑在寄存器解释器里。每个函数第一次被调用时从字节码转换过来，QuickJS 原来的栈式解释器去掉了。在 linux/amd64 上的初步读数：tifa 页面一次渲染的时间和栈式解释器相比，React 页是原来的 0.70，商店前台 0.86，工作台 0.89，MUI 0.86（一台 4 核的 AMD EPYC 7B13 服务器，一个 VM 在一个核上做预热后的渲染，量三轮）。在 darwin/arm64 上，一台 Apple M4 用同样的方法量同样的页面是 0.77、0.80、0.83 和 0.83。
 - 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 10，一是为了这些操作码，二是函数的字节码现在为它的每个正则带上从哪里开始找匹配的信息，这在编译时算一次，tifa 的页面一次渲染因此少 0.27% 到 0.97% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#正则从哪里开始找编译时算一次)），三是以字面量开头的一长串分支的正则还带上以每个字符开头的是哪些分支，商店工作台一次渲染因此少 1.36% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#以字面量开头的一长串分支)）：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 超过 65,535 个替换的带标签模板，现在在调用时抛出 `RangeError`，原来编译时就以 `InternalError: stack overflow` 失败。一次调用里前 32 个之后的参数，现在和带展开参数的调用一样放进数组传（[c-engine.md](docs/changes/c-engine.zh-CN.md#超过-32-个参数的调用用数组传参)）。
 - 参数和局部变量加起来超过 32,765 个的函数编译失败（报 `InternalError: too many local variables` 或 `too many arguments`，原来的上限是各 65,534 个），栈深超过 118 个值、外面又套了太多层 `try` 和 `for-of` 的函数也编译失败（报 `InternalError: stack overflow`：包着 `r += a` 时是 118 层嵌套的 `try` 或 39 层嵌套的 `for-of`，包着 130 层深的表达式时是 49 层和 17 层）。寄存器循环现在是唯一的解释器，这些就是它跑不了的函数（[c-engine.md](docs/changes/c-engine.zh-CN.md#寄存器循环里一个函数的上限)）。
+- `EvalBytecode`、`EvalBytecodeValue` 和 `SharedBytecode` 的第一次加载，现在拒绝本版本编译器做不出来的字节码（包括超过上面那些上限的函数），报 `SyntaxError: invalid bytecode: code no compiler makes, at N`，原来这样的代码会照跑。本版本写出的字节码照常读取。
+- 一个 VM 占的内存变多了：每个跑过的函数多一份寄存器代码，平均 748 字节，最多约 33.8 KB，另有一块 31.7 KB 的寄存器栈，不够时按段加。渲染完 tifa 商店页的 VM 占 15.86 MB，原来是 13.34 MB，React 页占 932 KB，原来是 776 KB（一个 VM 把每页渲染一次、做一次完整 GC 之后的 `MemorySize`，linux/amd64）。
+- 递归不再因为每层的帧大而提前停下，都能走到调用深度的上限：经过一个有 2,000 个局部变量的构造函数的递归，现在能走到 9,996 层，原来栈在 arm64 上到 1,982 层、amd64 上到 1,928 层就用完了。没有哪种递归比原来停得更早。
+- `GCThreshold` 和引擎自己跑的 GC，现在按 GC 能回收的那部分内存算：`MemorySize` 减去寄存器栈。一次完整 GC 之后，阈值是这部分内存的 1.5 倍。`MemorySize` 和内存上限仍然把栈算在里面。
 - 脚本里对 `f.call(t, ...)`、`call.bind(f)`（core-js 这样造）或没有绑定参数的绑定函数的调用，现在直接做成它所代表的那次调用。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在 `RangeError` 之前能深约一倍，100,000 个绑定函数的链能跑，原来抛 `RangeError`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。
+- 对数组的 `for-of`（迭代相关的部分没被改过）不再为每个元素调用数组迭代器的 `next`。所以在调用深度的上限处，这样的循环会接着往下读，原来调 `next` 会在这里抛 `RangeError`。脚本不会比原来停得更早。
+- 只调用字符串 `charCodeAt` 的循环被停下时（超时或 `Interrupt`），报出的停止位置在循环往回跳的地方，不再在调用里面。
 
 ## [v0.30.1] - 2026-11-06
 
