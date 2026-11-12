@@ -76,6 +76,11 @@ type goFunc struct {
 // hold a Value, the call takes no snapshot, and the results are read when
 // they convert.
 //
+// A long string argument or result, and a result of many elements or
+// properties, stop converting at Interrupt, the eval timeout or an
+// uncatchable error of the call, which the call then ends with, as a loop
+// of the engine does.
+//
 // There is a limit on the number of Go functions registered at once: about a
 // billion for each VM.
 //

@@ -42,9 +42,176 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 		return "", true
 	}
 	if !wide {
-		return latin1String(unsafe.Slice((*byte)(addr(p)), n)), true
+		return latin1String(m, unsafe.Slice((*byte)(addr(p)), n))
 	}
-	return utf16String(unsafe.Slice((*uint16)(addr(p)), n), wtf8), true
+	return utf16String(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8)
+}
+
+// stringStep is how many characters, or bytes of UTF-8, a conversion of a
+// string between Go and the engine takes between two reads of whether the
+// call is to stop (convStop). No poll runs while Go converts, so a string a
+// script made long, up to stringLenMax characters, would hold off Interrupt
+// and the eval timeout until it is done (a string of 16 Mi CJK characters
+// took 55 ms to read and 145 ms to make on an M-series Mac). A piece takes
+// at most 1.6 ms on an amd64 server (EPYC, t2d) and 2.7 ms on an Apple M4,
+// far below the grace of 50 ms after which a VM is killed
+// (gohost.DefaultKillGrace). The allocation of the Go string a read returns
+// cannot be cut: Go zeroes it and may have the goroutine help the GC, up to
+// 14 ms (amd64) and 2.7 ms (M4) for 16 Mi characters, 52 and 55 ms for 64
+// Mi (docs/changes/go-api.md). A string of at most stringStep is converted
+// as before, with no read. Tests make it small.
+var stringStep = 1 << 18
+
+// stringStepHook, when a test sets it, runs before each read of convStop.
+var stringStepHook func()
+
+// stringLenLimit is the most characters newString makes a string of:
+// stringLenMax, the most the engine holds. Tests make it small. Only a
+// string longer than stringStep, far fewer characters, can be too long, so
+// only newStringSteps checks it.
+var stringLenLimit = stringLenMax
+
+// stringTooLong throws the error JS_NewStringLen throws for a string of more
+// characters than the engine holds, and returns the exception.
+func (m *VM) stringTooLong() jsValue {
+	return m.jsThrowError(errorKindInternal, "string too long")
+}
+
+// atomOf returns the atom of the Go string s, as JS_NewAtomLen makes it of
+// validUTF8(s), or atomNull and the error. Go would read a long s whole
+// before the engine got it, so a long s is made a string first, a piece at
+// a time (newStringFast), and is then an atom.
+func (m *VM) atomOf(s string) (uint32, error) {
+	if len(s) <= stringStep {
+		a, err := m.jsNewAtom(validUTF8(s))
+		if err == nil && a == atomNull {
+			err = m.errFromException()
+		}
+		return a, err
+	}
+	v := m.newStringFast(s)
+	if isException(v) {
+		return atomNull, m.errFromException()
+	}
+	a := m.jsValueToAtom(v)
+	m.jsFreeValue(v)
+	if a == atomNull {
+		return atomNull, m.errFromException()
+	}
+	return a, nil
+}
+
+// convStop reports whether a conversion of a long string is to stop, and
+// then leaves the uncatchable "interrupted" pending, as NewArray does
+// (goStop): only in a Go function that javascript called, at Interrupt,
+// the eval timeout or an uncatchable error of the call. m is nil for a
+// conversion that never stops.
+func (m *VM) convStop() bool {
+	if stringStepHook != nil {
+		stringStepHook()
+	}
+	return m != nil && m.host > 0 && m.goStop()
+}
+
+// elemStop counts an element or a property that the conversion of a result
+// of a Go function makes, and reads whether the call is to stop every
+// newArrayStep of them, as NewArray does, however the values nest: each
+// takes a call into the engine, about 50 ns or more, that reads no interrupt
+// flag, and how many there are is up to what the Go function got from the
+// script. The count goes on from one conversion to the next. (An argument of
+// Call that is not a string or a number goes through JSON, which the engine
+// parses with its own reads.)
+func (m *VM) elemStop() bool {
+	m.elems++
+	return m.elems&(newArrayStep-1) == 0 && m.convStop()
+}
+
+// cut16 returns where the piece of u from lo ends: lo + stringStep, or one
+// more when a surrogate pair would be cut there, or len(u).
+func cut16(u []uint16, lo int) int {
+	hi := lo + stringStep
+	if hi >= len(u) {
+		return len(u)
+	}
+	if u[hi-1]&0xFC00 == 0xD800 && u[hi]&0xFC00 == 0xDC00 {
+		hi++
+	}
+	return hi
+}
+
+// cutUTF8 returns where the piece of b from lo ends, about stringStep bytes
+// on, at a place no character of b crosses as Go decodes it (for range,
+// utf8.Valid), the nearest at or before lo + stringStep, or else the next
+// after it. Or len(b).
+func cutUTF8(b []byte, lo int) int {
+	hi := lo + stringStep
+	if hi >= len(b) {
+		return len(b)
+	}
+	for e := hi; e > lo; e-- {
+		if utf8Cut(b, e) {
+			return e
+		}
+	}
+	for e := hi + 1; e < len(b); e++ {
+		if utf8Cut(b, e) {
+			return e
+		}
+	}
+	return len(b)
+}
+
+// utf8Cut reports whether no character of b crosses e: b[e] is not a
+// continuation byte, or the three bytes before it are, so that none of them
+// starts a character that could reach e. One of any four places in a row is
+// such a place.
+func utf8Cut(b []byte, e int) bool {
+	if b[e]&0xC0 != 0x80 {
+		return true
+	}
+	for k := e - 1; k >= e-3 && k >= 0; k-- {
+		if b[k]&0xC0 != 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// copySteps copies src into a new string, a piece at a time for a long one.
+// ok is false when m stopped it (convStop).
+func copySteps(m *VM, src []byte) (string, bool) {
+	if len(src) <= stringStep {
+		return string(src), true
+	}
+	if m.convStop() {
+		return "", false
+	}
+	out := make([]byte, len(src))
+	for lo := 0; lo < len(src); lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		copy(out[lo:], src[lo:min(lo+stringStep, len(src))])
+	}
+	return unsafe.String(unsafe.SliceData(out), len(out)), true
+}
+
+// asciiSteps is asciiLen a piece at a time for a long b. It is -1 when m
+// stopped it.
+func asciiSteps(m *VM, b []byte) int {
+	if len(b) <= stringStep {
+		return asciiLen(b)
+	}
+	for lo := 0; lo < len(b); lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return -1
+		}
+		hi := min(lo+stringStep, len(b))
+		if n := asciiLen(b[lo:hi]); n < hi-lo {
+			return lo + n
+		}
+	}
+	return len(b)
 }
 
 // asciiLen returns the length of the run of ASCII bytes b starts with.
@@ -67,25 +234,75 @@ func stringBytes(s string) []byte {
 }
 
 // latin1String returns the UTF-8 form of the 8-bit characters b, each a code
-// point below U+0100, as JS_ToCStringLen2 writes them.
-func latin1String(b []byte) string {
+// point below U+0100, as JS_ToCStringLen2 writes them. ok is false when m
+// stopped it (convStop), for a long b.
+func latin1String(m *VM, b []byte) (string, bool) {
+	if len(b) > stringStep {
+		return latin1Steps(m, b)
+	}
 	i := asciiLen(b)
 	if i == len(b) {
-		return string(b)
+		return string(b), true
+	}
+	src := b[i:]
+	n := len(b) + latin1Extra(src)
+	out := make([]byte, n)
+	copy(out, b[:i])
+	latin1Write(out, i, src)
+	return unsafe.String(unsafe.SliceData(out), n), true
+}
+
+// latin1Steps is latin1String for a b longer than stringStep, a piece at a
+// time, with a read of whether to stop between two (convStop). ok is false
+// when m stopped it.
+func latin1Steps(m *VM, b []byte) (string, bool) {
+	i := asciiSteps(m, b)
+	if i < 0 {
+		return "", false
+	}
+	if i == len(b) {
+		return copySteps(m, b)
 	}
 	src := b[i:]
 	n := len(b)
-	k := 0
-	for ; k+8 <= len(src); k += 8 {
-		n += bits.OnesCount64(binary.LittleEndian.Uint64(src[k:]) & 0x8080808080808080)
+	for lo := 0; lo < len(src); lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		n += latin1Extra(src[lo:min(lo+stringStep, len(src))])
 	}
-	for _, c := range src[k:] {
-		n += int(c >> 7)
+	if len(src) > stringStep && m.convStop() {
+		return "", false
 	}
 	out := make([]byte, n)
 	copy(out, b[:i])
 	j := i
-	for _, c := range src {
+	for lo := 0; lo < len(src); lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		j = latin1Write(out, j, src[lo:min(lo+stringStep, len(src))])
+	}
+	return unsafe.String(unsafe.SliceData(out), n), true
+}
+
+// latin1Extra returns how many more bytes than characters the UTF-8 of the
+// 8-bit characters b takes: one for each from U+0080.
+func latin1Extra(b []byte) int {
+	n, k := 0, 0
+	for ; k+8 <= len(b); k += 8 {
+		n += bits.OnesCount64(binary.LittleEndian.Uint64(b[k:]) & 0x8080808080808080)
+	}
+	for _, c := range b[k:] {
+		n += int(c >> 7)
+	}
+	return n
+}
+
+// latin1Write writes the UTF-8 of the 8-bit characters b to out from j, and
+// returns where it ended.
+func latin1Write(out []byte, j int, b []byte) int {
+	for _, c := range b {
 		if c < utf8.RuneSelf {
 			out[j] = c
 			j++
@@ -95,14 +312,14 @@ func latin1String(b []byte) string {
 		out[j+1] = 0x80 | c&0x3F
 		j += 2
 	}
-	return unsafe.String(unsafe.SliceData(out), n)
+	return j
 }
 
 // utf16String returns the UTF-8 form of the 16-bit units u, a surrogate pair
 // as its one character. A lone surrogate is U+FFFD, as wellFormed makes it,
 // or with wtf8 the three bytes of its code point, as JS_ToCStringLen2 writes
-// it.
-func utf16String(u []uint16, wtf8 bool) string {
+// it. ok is false when m stopped it (convStop), for a long u.
+func utf16String(m *VM, u []uint16, wtf8 bool) (string, bool) {
 	// Each unit takes at most 3 bytes, a pair 4. The UTF-8 is written once,
 	// into memory on the stack for a short string and kept for the next ones
 	// otherwise, and copied into a string of its size, as JS_ToCStringLen2
@@ -110,7 +327,10 @@ func utf16String(u []uint16, wtf8 bool) string {
 	// second pass over u.
 	if len(u) <= utf16Short {
 		var b [3 * utf16Short]byte
-		return string(b[:utf16Write(b[:], u, wtf8)])
+		return string(b[:utf16Write(b[:], u, wtf8)]), true
+	}
+	if len(u) > stringStep {
+		return utf16Steps(m, u, wtf8)
 	}
 	p := utf16Scratch.Get().(*[]byte)
 	if cap(*p) < 3*len(u) {
@@ -118,7 +338,67 @@ func utf16String(u []uint16, wtf8 bool) string {
 	}
 	s := string((*p)[:utf16Write((*p)[:3*len(u)], u, wtf8)])
 	utf16Scratch.Put(p)
-	return s
+	return s, true
+}
+
+// utf16Steps is utf16String for a u longer than stringStep, a piece at a
+// time, with a read of whether to stop between two (convStop): it counts the
+// bytes of the UTF-8, makes the string of that size, and writes each piece
+// into the scratch memory of one piece and copies it from there. ok is
+// false when m stopped it.
+func utf16Steps(m *VM, u []uint16, wtf8 bool) (string, bool) {
+	n := 0
+	for lo := 0; lo < len(u); {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		hi := cut16(u, lo)
+		n += utf16Len(u[lo:hi])
+		lo = hi
+	}
+	if m.convStop() {
+		return "", false
+	}
+	out := make([]byte, n)
+	p := utf16Scratch.Get().(*[]byte)
+	defer utf16Scratch.Put(p)
+	if cap(*p) < 3*(stringStep+1) {
+		*p = make([]byte, 3*(stringStep+1))
+	}
+	j := 0
+	for lo := 0; lo < len(u); {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		hi := cut16(u, lo)
+		j += copy(out[j:], (*p)[:utf16Write((*p)[:3*(hi-lo)], u[lo:hi], wtf8)])
+		lo = hi
+	}
+	if j != n {
+		panic("quickjs: the UTF-8 of the units is not the length counted")
+	}
+	return unsafe.String(unsafe.SliceData(out), n), true
+}
+
+// utf16Len returns how many bytes utf16Write writes for u: 1, 2 or 3 for a
+// unit, as its value is below 0x80, below 0x800 or not, and 4 for a
+// surrogate pair. A lone surrogate is 3 bytes, of U+FFFD or of itself.
+func utf16Len(u []uint16) int {
+	n := 0
+	for i := 0; i < len(u); i++ {
+		switch c := u[i]; {
+		case c < 0x80:
+			n++
+		case c < 0x800:
+			n += 2
+		case c&0xFC00 == 0xD800 && i+1 < len(u) && u[i+1]&0xFC00 == 0xDC00:
+			n += 4
+			i++
+		default:
+			n += 3
+		}
+	}
+	return n
 }
 
 // utf16Short is the length of the strings utf16String converts on the stack.
@@ -220,12 +500,13 @@ func unitsAt(u []uint16, i int) uint64 {
 // sequence becomes U+FFFD, a character above U+FFFF a surrogate pair, and
 // the string has 8-bit characters when all are below U+0100 and 16-bit
 // units otherwise. It writes the characters straight into the new string,
-// where newString copied s to C memory and the engine decoded it there. ok
-// is false for a string longer than the engine holds, which goes the way of
-// the engine to fail as it does.
-func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
-	if len(s) > stringLenMax {
-		return v, false
+// where newString copied s to C memory and the engine decoded it there. A
+// string of more characters than the engine holds throws the error the
+// engine throws for it. A long s is read and written a piece at a time, and
+// v is the exception when m stopped it there (convStop, newStringSteps).
+func (m *VM) newStringFast(s string) (v jsValue) {
+	if len(s) > stringStep {
+		return m.newStringSteps(s)
 	}
 	b := stringBytes(s)
 	i := asciiLen(b)
@@ -234,11 +515,11 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 		if p != 0 {
 			copy(unsafe.Slice((*byte)(addr(p)), len(b)), b)
 		}
-		return v, true
+		return v
 	}
 	units, latin1, valid := utf8Units(b[i:])
 	if !valid {
-		return m.newStringInvalid(s), true
+		return m.newStringInvalid(s)
 	}
 	units += i
 	if latin1 {
@@ -257,7 +538,7 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 				i += 2
 			}
 		}
-		return v, true
+		return v
 	}
 	v, p := m.newStringChars(units, true)
 	if p != 0 {
@@ -288,7 +569,131 @@ func (m *VM) newStringFast(s string) (v jsValue, ok bool) {
 			}
 		}
 	}
-	return v, true
+	return v
+}
+
+// newStringSteps is newStringFast for an s longer than stringStep, which it
+// reads and writes a piece at a time, with a read of whether to stop between
+// two (convStop). The pieces end where no character crosses (cutUTF8), so
+// they make what the whole makes. It is the exception when m stopped it.
+func (m *VM) newStringSteps(s string) (v jsValue) {
+	b := stringBytes(s)
+	i := asciiSteps(m, b)
+	if i < 0 {
+		return exception
+	}
+	if i == len(b) {
+		if len(b) > stringLenLimit {
+			return m.stringTooLong()
+		}
+		v, p := m.newStringChars(len(b), false)
+		if p != 0 {
+			out := unsafe.Slice((*byte)(addr(p)), len(b))
+			for lo := 0; lo < len(b); lo += stringStep {
+				if lo > 0 && m.convStop() {
+					m.jsFreeValue(v)
+					return exception
+				}
+				copy(out[lo:], b[lo:min(lo+stringStep, len(b))])
+			}
+		}
+		return v
+	}
+	units, latin1, valid := 0, true, true
+	for lo := i; lo < len(b) && valid; {
+		if lo > i && m.convStop() {
+			return exception
+		}
+		hi := cutUTF8(b, lo)
+		n, l, ok := utf8Units(b[lo:hi])
+		units, latin1, valid = units+n, latin1 && l, ok
+		lo = hi
+	}
+	if !valid {
+		return m.newStringInvalid(s)
+	}
+	units += i
+	if units > stringLenLimit {
+		return m.stringTooLong()
+	}
+	if latin1 {
+		v, p := m.newStringChars(units, false)
+		if p != 0 {
+			out := unsafe.Slice((*byte)(addr(p)), units)
+			copy(out, b[:i])
+			for j, lo := i, i; lo < len(b); {
+				if lo > i && m.convStop() {
+					m.jsFreeValue(v)
+					return exception
+				}
+				hi := cutUTF8(b, lo)
+				j = utf8Latin1Write(out, j, b[lo:hi])
+				lo = hi
+			}
+		}
+		return v
+	}
+	v, p := m.newStringChars(units, true)
+	if p != 0 {
+		out := unsafe.Slice((*uint16)(addr(p)), units)
+		for j := range i {
+			out[j] = uint16(b[j])
+		}
+		for j, lo := i, i; lo < len(b); {
+			if lo > i && m.convStop() {
+				m.jsFreeValue(v)
+				return exception
+			}
+			hi := cutUTF8(b, lo)
+			j = utf8UnitsWrite(out, j, b[lo:hi])
+			lo = hi
+		}
+	}
+	return v
+}
+
+// utf8Latin1Write writes the characters of the valid UTF-8 b, all below
+// U+0100, to out from j, one byte each, and returns where it ended.
+func utf8Latin1Write(out []byte, j int, b []byte) int {
+	for i := 0; i < len(b); j++ {
+		c := b[i]
+		if c < utf8.RuneSelf {
+			out[j] = c
+			i++
+			continue
+		}
+		out[j] = c<<6 | b[i+1]&0x3F
+		i += 2
+	}
+	return j
+}
+
+// utf8UnitsWrite writes the UTF-16 units of the valid UTF-8 b to out from
+// j, and returns where it ended.
+func utf8UnitsWrite(out []uint16, j int, b []byte) int {
+	for i := 0; i < len(b); {
+		switch c := uint32(b[i]); {
+		case c < 0x80:
+			out[j] = uint16(c)
+			i++
+			j++
+		case c < 0xE0:
+			out[j] = uint16(c&0x1F<<6 | uint32(b[i+1])&0x3F)
+			i += 2
+			j++
+		case c < 0xF0:
+			out[j] = uint16(c&0x0F<<12 | uint32(b[i+1])&0x3F<<6 | uint32(b[i+2])&0x3F)
+			i += 3
+			j++
+		default:
+			r := (c&0x07<<18 | uint32(b[i+1])&0x3F<<12 | uint32(b[i+2])&0x3F<<6 | uint32(b[i+3])&0x3F) - 0x10000
+			out[j] = uint16(0xD800 + r>>10)
+			out[j+1] = uint16(0xDC00 + r&0x3FF)
+			i += 4
+			j += 2
+		}
+	}
+	return j
 }
 
 // utf8Units returns the number of UTF-16 units of b, whether all its
@@ -322,28 +727,57 @@ func utf8Units(b []byte) (units int, latin1, valid bool) {
 // it.
 func (m *VM) newStringInvalid(s string) jsValue {
 	units, max := 0, rune(0)
-	for _, r := range s {
-		units++
-		if r > 0xFFFF {
-			units++
+	for lo := 0; lo < len(s); {
+		if lo > 0 && m.convStop() {
+			return exception
 		}
-		max = maxRune(max, r)
+		hi := cutUTF8(stringBytes(s), lo)
+		for _, r := range s[lo:hi] {
+			units++
+			if r > 0xFFFF {
+				units++
+			}
+			max = maxRune(max, r)
+		}
+		lo = hi
+	}
+	if units > stringLenLimit {
+		return m.stringTooLong()
 	}
 	v, p := m.newStringChars(units, max >= 0x100)
 	if p == 0 {
 		return v
 	}
-	if max < 0x100 {
-		out := unsafe.Slice((*byte)(addr(p)), units)
-		j := 0
-		for _, r := range s {
-			out[j] = byte(r)
-			j++
-		}
-		return v
-	}
-	out := unsafe.Slice((*uint16)(addr(p)), units)
 	j := 0
+	for lo := 0; lo < len(s); {
+		if lo > 0 && m.convStop() {
+			m.jsFreeValue(v)
+			return exception
+		}
+		hi := cutUTF8(stringBytes(s), lo)
+		if max < 0x100 {
+			j = runesLatin1Write(unsafe.Slice((*byte)(addr(p)), units), j, s[lo:hi])
+		} else {
+			j = runesUnitsWrite(unsafe.Slice((*uint16)(addr(p)), units), j, s[lo:hi])
+		}
+		lo = hi
+	}
+	return v
+}
+
+// runesLatin1Write writes the characters of s as for range reads them, all
+// below U+0100, to out from j, one byte each, and returns where it ended.
+func runesLatin1Write(out []byte, j int, s string) int {
+	for _, r := range s {
+		out[j] = byte(r)
+		j++
+	}
+	return j
+}
+
+// runesUnitsWrite writes the UTF-16 units of the characters of s as for
+// range reads them to out from j, and returns where it ended.
+func runesUnitsWrite(out []uint16, j int, s string) int {
 	for _, r := range s {
 		if r > 0xFFFF {
 			r -= 0x10000
@@ -355,7 +789,7 @@ func (m *VM) newStringInvalid(s string) jsValue {
 		out[j] = uint16(r)
 		j++
 	}
-	return v
+	return j
 }
 
 func maxRune(a, b rune) rune {
@@ -368,7 +802,8 @@ func maxRune(a, b rune) rune {
 // NewStringLatin1 returns a new string of the characters b, one byte each:
 // a byte is the character of its value, U+0000 to U+00FF. Unlike
 // [VM.NewString] it decodes no UTF-8, so a [Builtin] that read its argument
-// with [Args.Latin1] returns what it made of it this way, as one copy.
+// with [Args.Latin1] returns what it made of it this way, as one copy. It
+// ends at the limits of the call as NewString does.
 func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 	if err := m.usable(); err != nil {
 		return Value{}, err
@@ -381,14 +816,22 @@ func (m *VM) NewStringLatin1(b []byte) (Value, error) {
 		return Value{}, m.errFromException()
 	}
 	if p != 0 {
-		copy(unsafe.Slice((*byte)(addr(p)), len(b)), b)
+		out := unsafe.Slice((*byte)(addr(p)), len(b))
+		for lo := 0; lo < len(b); lo += stringStep {
+			if lo > 0 && m.convStop() {
+				m.jsFreeValue(v)
+				return Value{}, m.errFromException()
+			}
+			copy(out[lo:], b[lo:min(lo+stringStep, len(b))])
+		}
 	}
 	return Value{vm: m, v: v}, nil
 }
 
 // NewStringUTF16 returns a new string of the 16-bit units u, lone
 // surrogates as they are. A [Builtin] that read its argument with
-// [Args.UTF16] returns what it made of it this way, as one copy.
+// [Args.UTF16] returns what it made of it this way, as one copy. It ends at
+// the limits of the call as NewString does.
 func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 	if err := m.usable(); err != nil {
 		return Value{}, err
@@ -399,10 +842,15 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 	// The engine holds a string whose characters are all below U+0100 one
 	// byte each, as JS_NewStringLen and the string buffers make it.
 	wide := false
-	for _, c := range u {
-		if c >= 0x100 {
-			wide = true
-			break
+	for lo := 0; lo < len(u) && !wide; lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return Value{}, m.errFromException()
+		}
+		for _, c := range u[lo:min(lo+stringStep, len(u))] {
+			if c >= 0x100 {
+				wide = true
+				break
+			}
 		}
 	}
 	v, p := m.newStringChars(len(u), wide)
@@ -412,12 +860,19 @@ func (m *VM) NewStringUTF16(u []uint16) (Value, error) {
 	if p == 0 {
 		return Value{vm: m, v: v}, nil
 	}
-	if wide {
-		copy(unsafe.Slice((*uint16)(addr(p)), len(u)), u)
-	} else {
+	for lo := 0; lo < len(u); lo += stringStep {
+		if lo > 0 && m.convStop() {
+			m.jsFreeValue(v)
+			return Value{}, m.errFromException()
+		}
+		hi := min(lo+stringStep, len(u))
+		if wide {
+			copy(unsafe.Slice((*uint16)(addr(p)), len(u))[lo:], u[lo:hi])
+			continue
+		}
 		out := unsafe.Slice((*byte)(addr(p)), len(u))
-		for i, c := range u {
-			out[i] = byte(c)
+		for i, c := range u[lo:hi] {
+			out[lo+i] = byte(c)
 		}
 	}
 	return Value{vm: m, v: v}, nil

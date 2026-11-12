@@ -71,6 +71,9 @@ type vmState struct {
 	depth int
 	// host counts the calls of Go functions from javascript in progress.
 	host int
+	// elems counts the elements and properties that conversions of Go
+	// values make, for elemStop.
+	elems uint
 	// snap is the snapshot of the results of a Go function (result.go), kept
 	// from one call to the next. A call takes it while it converts results,
 	// so a call inside makes its own.

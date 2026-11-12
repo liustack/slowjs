@@ -36,16 +36,7 @@ func (m *VM) NewAtom(s string) (r Atom, err error) {
 	if err := m.usable(); err != nil {
 		return atomNull, err
 	}
-	r, err = m.jsNewAtom(validUTF8(s))
-	if err != nil {
-		return atomNull, err
-	}
-
-	if r == atomNull {
-		err = m.errFromException()
-	}
-
-	return r, err
+	return m.atomOf(s)
 }
 
 // SetPropertyValue sets this.prop = val. A setter, or the set trap of a proxy,

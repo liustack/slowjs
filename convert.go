@@ -37,7 +37,10 @@ func (m *VM) NewFloat64(n float64) Value {
 	return Value{vm: m, v: newFloat(n)}
 }
 
-// NewString returns a new Value from 's'.
+// NewString returns a new Value from 's'. In a Go function that javascript
+// called, a long string ends at Interrupt, the eval timeout or an
+// uncatchable error of the call, with that error, as a loop of the engine
+// does.
 //
 // Note: See the [Value] documentation for details about manual memory
 // management of Value objects.
@@ -70,22 +73,11 @@ func (m *VM) newString(s string) (r jsValue, err error) {
 	if err := m.usable(); err != nil {
 		return r, err
 	}
-	r, ok := m.newStringFast(s)
-	if !ok {
-		if r, err = m.newStringEngine(s); err != nil {
-			return r, err
-		}
-	}
+	r = m.newStringFast(s)
 	if isException(r) {
 		return r, m.errFromException()
 	}
 	return r, nil
-}
-
-// newStringEngine is newString through JS_NewStringLen, for a string longer
-// than newStringFast makes.
-func (m *VM) newStringEngine(s string) (r jsValue, err error) {
-	return m.jsNewStringLen(validUTF8(s))
 }
 
 func jsInt(n int64) jsValue {
@@ -447,6 +439,9 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 	}()
 
 	for _, kv := range a {
+		if m.elemStop() {
+			return out, m.errFromException()
+		}
 		jv, err := m.jsValue(kv.val)
 		if err != nil {
 			return out, err
@@ -455,10 +450,7 @@ func (m *VM) jsMap(in reflect.Value) (out jsValue, err error) {
 		// The key is an atom of all its bytes, NULs too, and an own data
 		// property as in an object literal: no setter runs, and __proto__ is
 		// a key. JS_DefinePropertyValue takes jv, also when it fails.
-		atom, err := m.jsNewAtom(validUTF8(kv.key))
-		if err == nil && atom == atomNull {
-			err = m.errFromException()
-		}
+		atom, err := m.atomOf(kv.key)
 		if err != nil {
 			m.jsFreeValue(jv)
 			return out, err
@@ -485,6 +477,9 @@ func (m *VM) jsArray(a []reflect.Value) (out jsValue, err error) {
 		}
 	}()
 	for _, v := range a {
+		if m.elemStop() {
+			return out, m.errFromException()
+		}
 		jv, err := m.jsValue(v)
 		if err != nil {
 			return out, err
