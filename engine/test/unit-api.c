@@ -1474,6 +1474,7 @@ static void test_rv_far_locals(void)
                       "%d locals: %s, want the parser's error", n, e ? e : "compiled");
                 free(e);
                 vm_free(&v);
+                free(src);
                 continue;
             }
             CHECK(!JS_IsException(f), "the function of %d locals does not compile", n);
