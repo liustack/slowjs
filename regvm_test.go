@@ -726,17 +726,19 @@ var depthNewBig = (function () {
 // raise its floor to the new depth, and never lower a floor without the
 // owner's word. Every case ends on the count of levels, so its floor is that
 // count: 4997 under the default of 5000 levels and 9996 under
-// maxCallDepthLimit, and about half of 4997 where each level of the script
-// is also a level of a C function (Function.prototype.call, Array.prototype.map).
+// maxCallDepthLimit, and about half of 4997 for depthMap, where each level of
+// the script is also a level of Array.prototype.map. A call through
+// Function.prototype.call is made as the call it stands for, so depthC and
+// depthBigC take one level a call and reach 4997 too.
 // depthNewBig reached 9996 with the register loop, where the old loop's large
 // frames ran out of stack bytes at 1982 levels on arm64 and 1928 on amd64.
 //
-// Where the numbers come from: arm64 and amd64 both natively at d38031dd, the
-// head before the old loop was deleted, until a native run at a later head
-// replaces them.
+// Where the numbers come from: the generated engine at 167dd40c, natively on
+// darwin/arm64 and linux/amd64 and on darwin/amd64 under Rosetta, all the
+// same.
 var regvmDepthFloor = map[string]map[string]int{
-	"arm64": {"depthJS": 4997, "depthBig": 4997, "depthC": 2498, "depthBigC": 2498, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
-	"amd64": {"depthJS": 4997, "depthBig": 4997, "depthC": 2498, "depthBigC": 2498, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
+	"arm64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
+	"amd64": {"depthJS": 4997, "depthBig": 4997, "depthC": 4997, "depthBigC": 4997, "depthMap": 2499, "depthNew": 9996, "depthNewBig": 9996},
 }
 
 // No path recurses less deep than it did before: pure JavaScript, with small
@@ -772,6 +774,70 @@ func TestRegvmDepth(t *testing.T) {
 		}
 		if d < floor[fn] {
 			t.Errorf("%s: %d levels, less than its floor of %d", fn, d, floor[fn])
+		}
+	}
+}
+
+// regexpNestFloor is the deepest nesting of groups, lookarounds and classes a
+// regexp still compiles and runs with. The parser counts a level of the
+// internal depth for each group and class it enters (re_parse_disjunction,
+// re_parse_nested_class), and the whole pattern is one more, so the count of
+// JS_MAX_INTERNAL_DEPTH (2000) ends it at 1999, one level past it with a
+// SyntaxError. The match itself does not recurse: lre_exec_backtrack keeps
+// what it backtracks to on a stack in the heap, so a lookahead in a repeated
+// group runs on a subject as long as memory allows. Like regvmDepthFloor, it
+// only goes up. Measured at 167dd40c, the same on every architecture.
+const regexpNestFloor = 1999
+
+// No regexp nests less deep than it did before, or stops on a long subject:
+// nested lookaheads, negative lookaheads, lookbehinds, groups and classes, and
+// lookarounds in a repeated group on 4 million characters.
+func TestRegexpDepth(t *testing.T) {
+	m := newTestVM(t)
+	for _, c := range []struct{ name, js string }{
+		{"lookahead", `(n) => new RegExp("(?=".repeat(n) + "a" + ")".repeat(n)).test("a")`},
+		{"negative_lookahead", `(n) => new RegExp("(?!" + "(?=".repeat(n - 1) + "b" + ")".repeat(n)).test("a")`},
+		{"lookbehind", `(n) => new RegExp("a" + "(?<=".repeat(n) + "a" + ")".repeat(n)).test("a")`},
+		{"group", `(n) => new RegExp("(?:".repeat(n) + "a" + ")".repeat(n)).test("a")`},
+		{"class", `(n) => new RegExp("[".repeat(n) + "a" + "]".repeat(n), "v").test("a")`},
+	} {
+		if _, err := m.Eval("var nest = "+c.js, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		runs := func(n int) (bool, error) {
+			v, err := m.Eval(fmt.Sprintf("nest(%d)", n), EvalGlobal)
+			if err == nil && v != true {
+				t.Fatalf("%s: nesting %d gave %v, want true", c.name, n, v)
+			}
+			return err == nil, err
+		}
+		lo, hi := 1, 2
+		for ok, _ := runs(hi); ok; ok, _ = runs(hi) {
+			if hi >= 1<<20 {
+				t.Fatalf("%s: nesting %d still runs", c.name, hi)
+			}
+			lo, hi = hi, hi*2
+		}
+		for hi-lo > 1 {
+			mid := (lo + hi) / 2
+			if ok, _ := runs(mid); ok {
+				lo = mid
+			} else {
+				hi = mid
+			}
+		}
+		_, err := runs(lo + 1)
+		t.Logf("%s: deepest %d, floor %d, at %d: %v", c.name, lo, regexpNestFloor, lo+1, firstLine(err))
+		if lo < regexpNestFloor {
+			t.Errorf("%s: nests %d deep, less than its floor of %d", c.name, lo, regexpNestFloor)
+		}
+		if !strings.Contains(err.Error(), "SyntaxError") {
+			t.Errorf("%s: at %d: %v, want a SyntaxError", c.name, lo+1, err)
+		}
+	}
+	for _, re := range []string{`/^(?:(?=a)a)*$/`, `/^(?:(?=(a))a)*$/`, `/^(?:(?!b)a)*$/`, `/^(?:(?<=a|^)a)*$/`} {
+		if v, err := m.Eval(re+".test('a'.repeat(1 << 22))", EvalGlobal); err != nil || v != true {
+			t.Errorf("%s on 4194304 characters: %v %v, want true", re, v, err)
 		}
 	}
 }
