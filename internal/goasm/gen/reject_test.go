@@ -30,13 +30,22 @@ func TestRejectSamples(t *testing.T) {
 		"inline_asm.c":             "inline assembly",
 		"alloca_aligned_fixed.c":   "local aligned beyond 16",
 		"alloca_aligned_dynamic.c": "local aligned beyond 16",
+		"heap_aligned.c":           "an access aligned to 16 bytes to memory that is not a local or a global",
+		"merged_aligned.c":         "an access aligned to 16 bytes to memory that is not a local or a global",
 		"rodata_table.c":           "unsupported read-only reference",
 		"format_float.c":           "format string",
 		"format_variable.c":        "format string",
 	}
+	// Files compiled with the flags of quickjs.c, as the engine compiles it:
+	// with no SLP vectorizer, llc and not the optimizer merges the reads.
+	valueFlags := map[string]bool{"merged_aligned.c": true}
 	for file, want := range cases {
 		t.Run(file, func(t *testing.T) {
-			err := pipeline(llvm, pass, filepath.Join("testdata", "reject", file), t.TempDir())
+			cflags := EngineCFlags
+			if valueFlags[file] {
+				cflags = append(append([]string{}, EngineCFlags...), EngineValueFlags...)
+			}
+			err := pipeline(llvm, pass, filepath.Join("testdata", "reject", file), t.TempDir(), cflags)
 			if err == nil {
 				t.Fatalf("accepted, want rejection by %q", want)
 			}
@@ -48,8 +57,8 @@ func TestRejectSamples(t *testing.T) {
 	}
 }
 
-func pipeline(llvm, pass, cfile, work string) error {
-	u, err := CompileUnit(UnitConfig{LLVM: llvm, Pass: pass, Work: work, CFlags: EngineCFlags}, cfile)
+func pipeline(llvm, pass, cfile, work string, cflags []string) error {
+	u, err := CompileUnit(UnitConfig{LLVM: llvm, Pass: pass, Work: work, CFlags: cflags}, cfile)
 	if err != nil {
 		return err
 	}

@@ -1527,6 +1527,69 @@ static void writeProbes(Module &M, const std::set<std::string> &leaves) {
   P.print(OS, nullptr);
 }
 
+// On amd64 llc may read or write 16 bytes with an SSE instruction that
+// faults when its operand is not on 16 bytes (movaps, movdqa, a packed
+// operation with a memory operand), whenever the IR says the access is
+// aligned to 16. That is true of a local, which the pass puts at a multiple
+// of 16 from a shadow pointer the host keeps on 16 (cengine.AlignSP), and of
+// a global or a constant, whose place in the binary the post-link check
+// holds. It is not promised of anything else: the heap gives 8 bytes
+// (js_malloc), and so does memory Go hands in. alignedRoot reports whether
+// every pointer V can be is one of the two, through casts, offsets, phis and
+// selects.
+static bool alignedRoot(Value *V, SmallPtrSetImpl<Value *> &seen) {
+  V = V->stripPointerCasts();
+  if (!seen.insert(V).second)
+    return true;
+  if (isa<AllocaInst>(V) || isa<GlobalVariable>(V))
+    return true;
+  if (auto *G = dyn_cast<GEPOperator>(V))
+    return alignedRoot(G->getPointerOperand(), seen);
+  if (auto *Phi = dyn_cast<PHINode>(V)) {
+    for (Value *In : Phi->incoming_values())
+      if (!alignedRoot(In, seen))
+        return false;
+    return true;
+  }
+  if (auto *S = dyn_cast<SelectInst>(V))
+    return alignedRoot(S->getTrueValue(), seen) && alignedRoot(S->getFalseValue(), seen);
+  return false;
+}
+
+// heapAligned gives the first access of F that the IR says is aligned to 16
+// or more, to memory that is not a local or a global (alignedRoot), or null.
+// It goes by the alignment, not by the width: llc merges two reads of 8 bytes
+// into one movapd when the first is on 16, so a narrow access counts too.
+static Instruction *heapAligned(Function &F) {
+  auto bad = [&](Value *Ptr, MaybeAlign A) {
+    SmallPtrSet<Value *, 8> seen;
+    return A && A->value() >= 16 && !alignedRoot(Ptr, seen);
+  };
+  for (BasicBlock &B : F)
+    for (Instruction &I : B) {
+      if (auto *L = dyn_cast<LoadInst>(&I)) {
+        if (bad(L->getPointerOperand(), L->getAlign()))
+          return &I;
+      } else if (auto *S = dyn_cast<StoreInst>(&I)) {
+        if (bad(S->getPointerOperand(), S->getAlign()))
+          return &I;
+      } else if (auto *X = dyn_cast<AtomicCmpXchgInst>(&I)) {
+        if (bad(X->getPointerOperand(), X->getAlign()))
+          return &I;
+      } else if (auto *R = dyn_cast<AtomicRMWInst>(&I)) {
+        if (bad(R->getPointerOperand(), R->getAlign()))
+          return &I;
+      } else if (auto *MI = dyn_cast<AnyMemIntrinsic>(&I)) {
+        if (bad(MI->getRawDest(), MI->getDestAlign()))
+          return &I;
+        if (auto *MT = dyn_cast<AnyMemTransferInst>(MI))
+          if (bad(MT->getRawSource(), MT->getSourceAlign()))
+            return &I;
+      }
+    }
+  return nullptr;
+}
+
 struct ShadowStack : PassInfoMixin<ShadowStack> {
   PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
     std::set<std::string> leaves(Leaves.begin(), Leaves.end());
@@ -1539,6 +1602,7 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
                             " to " + Twine(MaxSizeLog2) + ")");
     const uint64_t S = 1ull << SizeLog2;
     checkPollOptions(SizeLog2);
+    const bool x86 = Triple(M.getTargetTriple()).getArch() == Triple::x86_64;
     takePollMarks(M);
     chunkLeafCalls(M);
     relativeGotoTables(M);
@@ -1555,6 +1619,14 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
     for (Function &F : M) {
       if (F.isDeclaration())
         continue;
+      if (x86)
+        if (Instruction *I = heapAligned(F)) {
+          std::string s;
+          raw_string_ostream os(s);
+          I->print(os);
+          if (reject(F, Twine("an access aligned to 16 bytes to memory that is not a local or a global (an SSE instruction may fault on it): ") + StringRef(s).trim()))
+            continue;
+        }
       if (leaves.count(F.getName().str())) {
         // A register-entry leaf takes no shadow pointer and may own no
         // memory: it must not have a local whose address is taken. It may
