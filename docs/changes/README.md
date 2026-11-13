@@ -38,16 +38,16 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | v0.30.2 | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
 | A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | v0.30.2 | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
 | The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | v0.30.2 | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
-| A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
-| A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
-| Every jump table of arm64 takes 4 bytes an entry, and the generator refuses a table its lowering made too narrow | Unreleased | [c-engine.md](c-engine.md#jump-tables-on-arm64-take-4-bytes-an-entry) |
-| A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
-| `o[k]` with the key in a local or an argument reads the key without a reference | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-read-without-a-reference) |
-| `o[k] = v` with the key in a local or an argument sets it without a reference to the key | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-set-without-a-reference) |
-| `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | Unreleased | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
-| An array literal moves the references of its elements into the array | Unreleased | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
-| On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | Unreleased | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
-| The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | Unreleased | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
+| A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | v0.30.3 | [c-engine.md](c-engine.md#captures-that-never-change) |
+| A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | v0.30.3 | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
+| Every jump table of arm64 takes 4 bytes an entry, and the generator refuses a table its lowering made too narrow | v0.30.3 | [c-engine.md](c-engine.md#jump-tables-on-arm64-take-4-bytes-an-entry) |
+| A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | v0.30.3 | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
+| `o[k]` with the key in a local or an argument reads the key without a reference | v0.30.3 | [c-engine.md](c-engine.md#a-key-in-a-local-is-read-without-a-reference) |
+| `o[k] = v` with the key in a local or an argument sets it without a reference to the key | v0.30.3 | [c-engine.md](c-engine.md#a-key-in-a-local-is-set-without-a-reference) |
+| `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | v0.30.3 | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
+| An array literal moves the references of its elements into the array | v0.30.3 | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
+| On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | v0.30.3 | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
+| The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | v0.30.3 | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
 
 ## Commits of upstream QuickJS
 
@@ -100,8 +100,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A result that contains itself is an error | v0.30.2 | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
 | The references of a result are taken before code of the program runs | v0.30.2 | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
 | NewArray stops at the limits of the call | v0.30.2 | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
-| Long strings and results stop converting at the limits of the call | Unreleased | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
-| Args.StringLen reads the length of a string in place | Unreleased | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
+| Long strings and results stop converting at the limits of the call | v0.30.3 | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
+| Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
 
 ## Limits that hold
 
@@ -139,10 +139,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Out of memory in normalize and in the growth of a Map | v0.30.2 | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
 | A loop with no call ends at an uncatchable exception left pending | v0.30.2 | [uncatchable.md](uncatchable.md#a-loop-with-no-call-ends-at-an-uncatchable-exception-left-pending) |
 | The flags of a regexp are checked without a pass over a long string | v0.30.2 | [uncatchable.md](uncatchable.md#the-flags-of-a-regexp-are-checked-without-a-pass-over-a-long-string) |
-| A short argument of Intl and Temporal is measured before it is read | Unreleased | [uncatchable.md](uncatchable.md#a-short-argument-of-intl-and-temporal-is-measured-before-it-is-read) |
-| The arithmetic of a calendar reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-arithmetic-of-a-calendar-reads-the-interrupt-flag) |
-| fmt bounds a call with no memory limit, and writes in pieces | Unreleased | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
-| A run no Builtin can cut reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag) |
+| A short argument of Intl and Temporal is measured before it is read | v0.30.3 | [uncatchable.md](uncatchable.md#a-short-argument-of-intl-and-temporal-is-measured-before-it-is-read) |
+| The arithmetic of a calendar reads the interrupt flag | v0.30.3 | [uncatchable.md](uncatchable.md#the-arithmetic-of-a-calendar-reads-the-interrupt-flag) |
+| fmt bounds a call with no memory limit, and writes in pieces | v0.30.3 | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
+| A run no Builtin can cut reads the interrupt flag | v0.30.3 | [uncatchable.md](uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 
@@ -174,7 +174,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The caches of Temporal formats keep short requests only | v0.30.2 | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
 | Number options are checked before they are rounded down | v0.30.2 | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
 | A long locale tag resolves in time linear in its length | v0.30.2 | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
-| A numeric string is read as Number reads it | Unreleased | [time-and-intl.md](time-and-intl.md#a-numeric-string-is-read-as-number-reads-it) |
+| A numeric string is read as Number reads it | v0.30.3 | [time-and-intl.md](time-and-intl.md#a-numeric-string-is-read-as-number-reads-it) |
 
 ## Temporal
 
@@ -186,7 +186,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| URL and URLSearchParams on a Go parser, with the limits of the VM | Unreleased | [url.md](url.md#url-and-urlsearchparams-on-a-go-parser) |
+| URL and URLSearchParams on a Go parser, with the limits of the VM | v0.30.3 | [url.md](url.md#url-and-urlsearchparams-on-a-go-parser) |
 
 ## Regular expressions
 
@@ -245,8 +245,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A proxy whose defineProperty trap refuses a store throws in strict code | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
 | Object literals have the room of an empty object | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
 | A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
-| An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
-| The `in` operator walks a prototype chain without references | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
+| An array that is appended to takes room for 8 elements at first | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
+| The `in` operator walks a prototype chain without references | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
 
 ## Memory
 

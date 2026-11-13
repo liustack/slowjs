@@ -38,16 +38,16 @@ read_when:
 | 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 | 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
-| 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
-| 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
-| arm64 的每张跳转表每项占 4 字节，生成器拒绝被 lowering 撑得太窄的表 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-的跳转表每项占-4-字节) |
-| 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
-| 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
-| 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |
-| `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
-| 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
-| 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
-| 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | Unreleased | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
+| 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
+| 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
+| arm64 的每张跳转表每项占 4 字节，生成器拒绝被 lowering 撑得太窄的表 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#arm64-的跳转表每项占-4-字节) |
+| 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
+| 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
+| 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |
+| `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
+| 数组字面量把元素的引用直接搬进数组 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
+| 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
+| 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
 
 ## 上游 QuickJS 的提交
 
@@ -100,8 +100,8 @@ read_when:
 | 包含自身的结果是一个错误 | v0.30.2 | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
 | 结果的引用在程序代码运行之前取下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
 | NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
-| 长字符串和结果的转换在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
-| Args.StringLen 就地读字符串的长度 | Unreleased | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
+| 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
+| Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 
 ## 守得住的限额
 
@@ -139,10 +139,10 @@ read_when:
 | normalize 和 Map 变大时的内存不足 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
 | 没有调用的循环也会在挂起的无法捕获的异常处结束 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束) |
 | 检查正则的 flags 时不再遍历长字符串 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#检查正则的-flags-时不再遍历长字符串) |
-| Intl 和 Temporal 的短参数在读之前先量长度 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度) |
-| 日历的运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#日历的运算读中断标志) |
-| 没有内存上限时 fmt 也限制调用并分段写出 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
-| Builtin 切不开的一段文字读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
+| Intl 和 Temporal 的短参数在读之前先量长度 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度) |
+| 日历的运算读中断标志 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#日历的运算读中断标志) |
+| 没有内存上限时 fmt 也限制调用并分段写出 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
+| Builtin 切不开的一段文字读中断标志 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
 
 ## 错误和调用栈
 
@@ -174,7 +174,7 @@ read_when:
 | Temporal 格式的缓存只保留短请求 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
 | 数字选项先检查范围再向下取整 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
 | 长的 locale 标签按长度的线性时间解析 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
-| 数字字符串按 Number 的方式读 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#数字字符串按-number-的方式读) |
+| 数字字符串按 Number 的方式读 | v0.30.3 | [time-and-intl.md](time-and-intl.zh-CN.md#数字字符串按-number-的方式读) |
 
 ## Temporal
 
@@ -186,7 +186,7 @@ read_when:
 
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
-| 解析在 Go 里的 URL 和 URLSearchParams，守 VM 的限额 | Unreleased | [url.md](url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams) |
+| 解析在 Go 里的 URL 和 URLSearchParams，守 VM 的限额 | v0.30.3 | [url.md](url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams) |
 
 ## 正则表达式
 
@@ -245,8 +245,8 @@ read_when:
 | defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
 | 对象字面量的 shape 至少有空对象的空间 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
-| 往数组里追加元素时，第一次就留 8 个元素的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
-| `in` 运算符遍历原型链时不加引用 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
+| 往数组里追加元素时，第一次就留 8 个元素的空间 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
+| `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 
 ## 内存
 

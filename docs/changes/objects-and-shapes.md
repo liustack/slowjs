@@ -286,7 +286,7 @@ The change is in C (`engine/quickjs.c`): `JSShape` has `for_in_keys`, which `js_
 
 ## An array that is appended to takes room for 8 elements at first
 
-Release: Unreleased.
+Release: v0.30.3.
 
 An array that `push`, an index at its length, a spread, `splice` or the builtins that fill an array one element at a time (`Object.entries`, `split`, `JSON.parse`, `concat`, `map`) add to took one slot at its first element, then 2, 3, 4, 6 and 9: an allocation for each, and a copy of what it held. Most arrays that are built this way end with a few elements (the shop's pages make 1.7K to 3K of them a render that outgrow their first allocation, MUI's orders page 3K). `expand_fast_array_append` in `engine/quickjs.c` now gives an array that holds no room yet room for `JS_ARRAY_MIN_ROOM` (8) slots when its first element is appended, and the usual 1.5 times after that. Only the three places that append call it (`add_fast_array_element`, the fast case of `push`, and `splice` growing an array). Arrays made at the size they will keep (literals, `slice`, rest parameters, `arguments`, the array of own keys) still ask for exactly that.
 
@@ -298,7 +298,7 @@ Tests: `engine/test/compare/array_room.js` builds arrays of 0 to 9 elements by p
 
 ## The `in` operator walks a prototype chain without references
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `JS_HasProperty`, which `in`, `Reflect.has`, the fields of a property descriptor (`Object.defineProperty`) and the holes that `every` and `concat` look up all go through, took a reference to each object of the prototype chain and let it go after asking whether the object has the key (`JS_GetOwnPropertyInternal`). It now does that only for an exotic object that is not a fast array: a `String` object, or an object of a class with its own `get_own_property`. An object that is not exotic, an array, `arguments` and a typed array are asked without the reference.
 

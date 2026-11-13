@@ -287,7 +287,7 @@ Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标
 
 ## 数字字符串按 Number 的方式读
 
-版本：Unreleased。
+版本：v0.30.3。
 
 `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 StrDecimalLiteral 的规定读数字字符串的指数和尾数，和 `Number` 一样。原来指数不是整数时，它们会读出带两个符号的指数：`"1e+-5"` 读成 Infinity，`"1e--5"` 读成零，而这两个都应该是 NaN。它们还在读尾数之前，就把大到写不出来的指数当成无穷或零：`"1xe1073741825"` 是 Infinity，应该是 NaN，`"0e1073741825"` 是 Infinity，应该是 0。现在先检查指数最多一个符号、其余都是数字，并且先读尾数。
 

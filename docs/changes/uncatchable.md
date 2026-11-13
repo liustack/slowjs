@@ -510,7 +510,7 @@ Tests: `TestOutputLimit` in `fmt/limits_test.go` (widths, `*` widths, precisions
 
 ## A short argument of Intl and Temporal is measured before it is read
 
-Release: Unreleased.
+Release: v0.30.3.
 
 Every string of a script that Intl or Temporal reads as one short value, a locale tag given alone, an option, a code or a unit, a numeric string and a string of Temporal, is now measured before Go reads it, and refused with a `RangeError` when it is longer than the cap of its kind: 16,384 characters for a tag, an option and a string of Temporal, and 524,288 for a numeric string. Go read each whole, joining a string made by `+` first, and worked on it with no check of the interrupt flag and outside the memory limit of the VM: `new Intl.NumberFormat(tag)` on a private use tag of 16 MiB took 0.2 seconds and 289 MiB of Go. The length is read from the string in place ([`Args.StringLen`](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place)), so a string of 32 Mi characters made by `+` is refused without being joined, and Go allocates a few KiB for the call. Every Builtin of `intl` and `temporal` reads its arguments through one type, `intlhook.Door` (`internal/intlhook/door.go`).
 
@@ -541,7 +541,7 @@ Tests: `TestDoorIsTheOnlyWayIn` (no Builtin reads a string another way), `TestSh
 
 ## The arithmetic of a calendar reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `add`, `subtract`, `until`, `since`, `round` and `total` of Temporal in a calendar other than ISO 8601 go a month or a year at a time, so a long duration or two dates far apart make millions of turns, and the loops read no interrupt flag: a date of the Chinese calendar plus 190 million days ran 64 ms past an eval timeout of 20 ms. The loops now ask `vmhook.Stop` every 4,096 turns (`Calendar.WithCheck` in `internal/gointl`), which the Builtins of `temporal` set on each calendar they read. Every answer is the same.
 
@@ -549,7 +549,7 @@ Tests: `TestCalendarArithmeticStops` in `temporal/stops_test.go` counts the chec
 
 ## fmt bounds a call with no memory limit, and writes in pieces
 
-Release: Unreleased.
+Release: v0.30.3.
 
 In a VM with no memory limit, `fmt.sprintf`, `printf`, `sprint` and `println` now check their budget as a VM with room for an output of 16 MiB does, and end the call with the uncatchable out of memory error when it does not fit (`room` and `maxOutput` in `fmt/fmt.go`). They ran every call, and Go made the whole output with no check of the VM: `fmt.sprintf('%[1]q'.repeat(64), s)` of 1 MiB of control characters made 256 MiB and ran 636 ms past an eval timeout of 20 ms. 16 MiB of quoted or hex bytes take Go about 25 ms on an Apple M4, with 121 MiB of allocations. The bound can be far above the output, so a call that writes less than 16 MiB can be refused: `"%[x"` a million times writes 13 MB with a bound of 67 MB, and runs in a VM with a memory limit of 2 GiB.
 
@@ -559,7 +559,7 @@ Tests: `TestSprintfNoLimitStops`, `TestPrintlnWritesInPieces` and `TestWriterInt
 
 ## A run no Builtin can cut reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.3.
 
 Some work of Intl is on one piece of a text that cannot be cut into smaller ones: a run of Thai, Lao, Khmer or Burmese with no space, which the dictionary divides a few words ahead at a time, a run of Chinese or Japanese, which the dictionary divides by the cheapest way to cut the whole run, and a run of accents, which a compare puts in order by combining class. Such a run can be as long as the string, and this work read no interrupt flag: with a timeout of 100 ms, `containing(0)` of a Segmenter on 8 Mi characters of Thai ran 0.5 s, of Chinese 6.6 s and of halfwidth katakana 14.5 s, and `compare` of two strings of 2 Mi accents 1.7 s, on an Apple M4, and each ended with no error.
 
