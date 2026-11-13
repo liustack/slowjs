@@ -24,6 +24,8 @@ There is no cgo and no shared library: the module cross-compiles as ordinary Go,
 3. **The Go host**: `internal/gohost` answers the callbacks of a VM, `internal/hostmem` maps its memory outside Go's heap (chunks, a shadow stack with a guard page), and `internal/idtable` holds the ids that the engine passes back to Go.
 4. **The Go API** (`quickjs.go` and the files next to it): what users import.
 
+JavaScript runs in a register interpreter. The C engine converts each function from its bytecode to register code at its first call and runs it in one loop, `JS_RegvmRun`, on a register stack of its own, and a call from one JavaScript function to another stays in that loop. [The register interpreter](changes/c-engine.md#the-register-interpreter) says how it works and what it costs.
+
 ## The engine layer
 
 The Go API calls the engine only through the files below. The rest of the package names no `cengine.*`.

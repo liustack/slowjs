@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the optimizer pass, the cost of the generated code against native C, stability under load), with what was tried and not done'
+summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of liustack/quickjs on tifa's pages before a release
@@ -893,6 +893,32 @@ The instructions fall by about two for each call into a function that saves LR. 
 ### Array destructuring with no iterator
 
 [Array destructuring with no iterator](changes/c-engine.md#array-destructuring-with-no-iterator). Counted on 2026-11-13 on the native C tree at 62df0bc8 against 4922b91a (linux/arm64 callgrind, three timed renders of each page after two warm ones, a young collection after each): 0.71% fewer instructions on the workbench pages (0.48% to 0.85% a page), 0.33% on the storefront (0.14% to 0.51%), 0.27% on MUI (0.21% to 0.29%) and 0.31% on React, and with the URL stand-in (`urlmemo.js`) 0.84%, 0.53% and 0.26%. No page runs more. Timed in tifa's `test/ssr` on linux/amd64 (one core, 60 renders of each page, the P50, 5 alternating rounds), the pages took 0.988 of the time on MUI, 0.996 on the storefront and 1.001 on the workbench, where the engine against a copy of itself took 0.982, 0.994 and 1.001: below what the timing can show, and no page took more than 1.007.
+
+### The register interpreter
+
+[The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
+
+The move alone: main at `712263a0`, which has the other changes of v0.30.2 already, against `69f12f87`, the same with the register interpreter. One VM warm, one core, 3 rounds that alternate the two builds, the geometric mean of the medians of the pages of each app. The rounds differ by 1% to 3%. Each number is the time with the register interpreter over the time with the stack interpreter.
+
+| Pages | linux/amd64 (AMD EPYC 7B13, 4 cores) | darwin/arm64 (Apple M4, `GOMAXPROCS=1`) |
+| --- | ---: | ---: |
+| React's page | 0.701 | 0.767 |
+| tifa's shop, storefront pages | 0.858 | 0.800 |
+| tifa's shop, workbench pages | 0.888 | 0.834 |
+| tifa's MUI test app | 0.864 | 0.825 |
+
+The release against v0.30.1, in tifa's `test/ssr` on linux/amd64 (the same server, one core, built without PGO, 60 renders of each page, 3 rounds in turning order, sums of the medians of the pages): the six workbench pages of the shop take 0.893 of the time (0.892 to 0.899 over the rounds), its three storefront pages 0.864 (0.859 to 0.869) and the three MUI pages 0.891 (0.890 to 0.896). Each of the 12 pages is faster, by 0.857 to 0.908. Only the engine changed between the two builds, so this holds all the engine changes of v0.30.2 and not the move alone. The comparison over the code positions of [measuring.md](measuring.md) is not made yet, and a build of this reading against itself was not timed (the one made for the preview stayed within 1%).
+
+What it costs in memory, as `MemorySize` of one VM after it rendered each page once and ran a full GC (linux/amd64, tifa's `internal/ssr`, the shop's 20 pages and the React page, two runs gave the same):
+
+| | stack interpreter | register interpreter | |
+| --- | ---: | ---: | ---: |
+| tifa's shop, 20 pages | 13,335,360 | 15,858,232 | +18.9% |
+| React's page | 775,608 | 932,080 | +20.2% |
+
+The extra memory is the register code of the functions that ran and a register stack of 31,680 bytes at first. Counted on the native C tree on darwin/arm64 (one render of each, then a full GC): the shop's 2,341 converted functions take 1,751,456 bytes, 748 on average and 33,736 at most, and React's 90 take 152,192, 1,691 on average and 33,808 at most.
+
+The changes made to the register loop since are measured in their own sections: [Calls that copy their last locals](#calls-that-copy-their-last-locals), [A key in a local without a reference](#a-key-in-a-local-without-a-reference), [The truth of a value without a reference](#the-truth-of-a-value-without-a-reference), [Array literals that take their elements](#array-literals-that-take-their-elements), [A key in a local set without a reference](#a-key-in-a-local-set-without-a-reference) and [Array destructuring with no iterator](#array-destructuring-with-no-iterator).
 
 ### Stability under load
 
