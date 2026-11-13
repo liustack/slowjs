@@ -61,6 +61,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.29.10 | [RegisterStartTag and RegisterEndTag](#react-doms-start-and-end-tags-in-c) | The workbench pages of the shop take 7.3% less time, the storefront pages 7.0%, the MUI pages 3.8% and the bench pages 33%. A VM holds about 26 KB more |
 | v0.29.11 | [A stack check in every function that calls](#every-function-that-calls-has-a-stack-check) | A cost, for a safe fault: up to 0.6% more time (0.27% to 0.36% more instructions) |
 | v0.30.0, v0.30.1 | Interrupt reaches the tag functions, long ropes, `repeat` and regexp compiles | Fixes. No speed claim |
+| Unreleased | [Package `url`: URL and URLSearchParams parsed in Go](changes/url.md#cost-and-gain) | tifa's storefront pages take 0.669 of the time (19.88 ms to 13.30 ms, 107 `new URL` per render), the workbench pages 0.860, the MUI pages 0.998. The HTML of all 23 pages is the same. It is not a change of the engine: a host registers the package, and core-js leaves a native URL alone |
 
 ## Measuring in tifa
 

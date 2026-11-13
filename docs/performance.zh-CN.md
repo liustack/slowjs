@@ -61,6 +61,7 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 | v0.29.10 | [RegisterStartTag 和 RegisterEndTag](#c-里的-react-dom-开始和结束标签) | 商店的工作台页时间少 7.3%，店面页少 7.0%，MUI 页少 3.8%，bench 页少 33%。一个 VM 多占约 26 KB |
 | v0.29.11 | [每个会调用的函数都有栈检查](#每个会调用的函数都有栈检查) | 是代价，换来一次安全的出错：时间最多多 0.6%（指令多 0.27% 到 0.36%） |
 | v0.30.0, v0.30.1 | Interrupt 能到达标签函数、长 rope（几段字符串连成的树，读的时候才拼成一段）、`repeat` 和正则编译 | 是修复。不声称速度变化 |
+| Unreleased | [包 `url`：URL 和 URLSearchParams 在 Go 里解析](changes/url.zh-CN.md#代价和收益) | tifa 的商店页只用 0.669 的时间（19.88 ms 到 13.30 ms，每次渲染 107 次 `new URL`），工作台页 0.860，MUI 页 0.998。23 个页面的 HTML 相同。这不是引擎的改动：由宿主注册这个包，core-js 见到原生 URL 就不动它 |
 
 ## 在 tifa 里测量
 

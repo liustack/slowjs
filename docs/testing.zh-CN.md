@@ -36,6 +36,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `internal/gointl`，还要运行 `go test ./internal/gointl/...` 和 `make gointl`。
 - 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（落后很远的列表，页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
+- 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
 - 改了引擎，还要运行它所涉及部分的[重点检查](#重点检查)，以及 [test262](#test262)。
 - `-p 1` 一次只跑一个包：根包的测试会启动很多 VM，每个 VM 都映射自己的内存。
 

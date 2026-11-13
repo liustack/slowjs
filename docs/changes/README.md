@@ -171,6 +171,12 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Temporal on go-intl | v0.27.0 | [temporal.md](temporal.md#temporal-on-go-intl) |
 
+## URL
+
+| Change | Release | Doc |
+| --- | --- | --- |
+| URL and URLSearchParams on a Go parser, with the limits of the VM | Unreleased | [url.md](url.md#url-and-urlsearchparams-on-a-go-parser) |
+
 ## Regular expressions
 
 | Change | Release | Doc |

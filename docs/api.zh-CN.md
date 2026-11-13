@@ -39,6 +39,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 - **`VM.SetStrip(s)`** 和 `type Strip`（v0.26.17）：`StripSource` 编译函数时不留源码，函数的 `toString` 显示 `[native code]`，`StripDebug` 不留行号和列号。[详情](changes/go-api.zh-CN.md#setstrip)
 - **`VM.SetClock(now)` 和 `VM.Now()`**（v0.28.2）：设置和读取一个 VM 的墙上时钟，Date、Intl 和 Temporal 都读它。传 nil 恢复真实时钟。[详情](changes/time-and-intl.zh-CN.md#每个-vm-一个墙上时钟)
 - **`temporal` 包**（v0.27.0）：`temporal.Register(vm)` 加上 `Temporal`，V8 提供的每个类型和方法都有，由 go-intl 在 Go 里计算，内置 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 读 VM 的时钟，`temporal.Clock` 只给 `Temporal.Now` 换一个时钟。它让二进制变大多少，见链接的文档。[详情](changes/temporal.zh-CN.md)
+- **`url` 包**（Unreleased）：`url.Register(vm)` 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做。core-js 见到过得了它自己检查的原生 URL 就什么也不装，所以带着它的 bundle 不用改。它接受的字符串最多 65,536 个 UTF-16 单位，所以一次 Go 的调用只要几毫秒：超过的输入不是 URL，查询串里超过的名或值是 `RangeError`。一个 URL 是 VM 里的对象，受内存上限管，eval 超时和 `Interrupt` 在下一次调用或下一次轮询时结束脚本。Node 24（ada）和标准不同的地方，这里按标准：检查域名的 Bidi 规则，只含 ASCII 的 `xn--` 标签照写保留，带 `#` 的输入对有 opaque path 的 base 解析会失败，把没有主机的 URL 的 `host` 设成空值时给它一个空主机。[详情](changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)
 
 ## 让 React 渲染更快
 

@@ -5,7 +5,7 @@ read_when:
   - Changing the Go API in the root package, calling the engine from it, or adding a method that runs javascript
   - Looking for where a piece of the engine, a change to it or a tool lives
   - Touching how a value is encoded, or reading a JSValue by hand
-  - Changing the intl, temporal, fmt or compare packages, or internal/gointl or internal/intlhook
+  - Changing the intl, temporal, fmt, url or compare packages, or internal/gointl, internal/intlhook or internal/whatwgurl
   - Serving short requests next to long calls, or choosing GOMAXPROCS for a number of VMs
 ---
 
@@ -63,8 +63,11 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `temporal/testdata/` | The expressions compared with Chromium and its answers, and the program the link test builds |
 | `internal/gointl/` | Our ECMA-402 and Temporal in pure Go, copied once from go-intl, behind every `intl` constructor and behind `temporal` (see [upgrading.md](upgrading.md#updating-the-data-of-intl-internalgointl)) |
 | `internal/intlhook/` | What package `temporal` takes from package `intl`: the formatting of its `toLocaleString` and a VM's default zone |
-| `internal/vmhook/` | How the Go functions of `intl`, `temporal` and `fmt` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `quickjs` sets (`vmhook.go`) |
+| `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `quickjs` sets (`vmhook.go`) |
 | `fmt/` | Package `github.com/liustack/quickjs/fmt` |
+| `url/` | Package `github.com/liustack/quickjs/url`, `URL` and `URLSearchParams` for a VM |
+| `url/testdata/` | The web-platform-tests files of `url/` that `TestWPT` runs in a VM, the testharness shell, the code of core-js that detects a native URL, and the answers of the tamper and shape tests |
+| `internal/whatwgurl/` | The URL parser behind package `url` (see [url.md](changes/url.md)): the state machine, the host parser, the setters and the serializer, with `idna/` and `bidi/`, the part of golang.org/x/net and x/text it needs, with its Unicode 17 tables. `testdata/` has the web-platform-tests URL data and `known-failures.txt` |
 | `compare/` | A module of its own, kept from upstream, that runs QuickJS's micro benchmarks on this engine, goja and fastschema/qjs |
 | `internal/arewefastyet/` | The V8 benchmark suite (v8-v7) that compare/engines runs |
 | `scripts/docs-list.sh` | The index of `docs/` |
@@ -100,6 +103,7 @@ No poll runs while a Go function that javascript called works in Go, so neither 
 - the arithmetic of a calendar other than ISO in `Temporal`, which checks every 4,096 months or years.
 - the work of Intl on one run of a text that no Builtin can cut, a run of a script a dictionary divides or a run of accents put in order, which checks every 4,096 words, code points or accents, and first checks the room for a run of Chinese or Japanese ([uncatchable.md](changes/uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag)).
 - the functions of `fmt`, which check a bound on their output against `vmhook.Room` before Go makes it, against room for 16 MiB in a VM with no memory limit, and `printf` and `println`, which write 64 KiB at a time and check between two writes.
+- the Builtins of `url`, which read the length of each string argument with `Args.StringLen` (a rope too, without joining it), refuse one longer than 65,536 UTF-16 units, and check the room for what Go may take before they read a string. Their work is short, so they ask `vmhook.Stop` once, as each call starts and not inside it: the engine counts toward a poll the bytecode it runs and not the time of a Go function, so a loop of such calls would otherwise make dozens between two polls.
 
 Work in Go that a script can make long and that makes none of these calls still runs to its end, and what it allocates is outside the memory limit: `Intl.Collator` and `localeCompare` but for a run of accents, the case mapping of `toLocaleUpperCase` and `toLocaleLowerCase`, the read of one long locale tag in a list or of one long list item, and the read of the text of `Intl.Segmenter` and its copy in UTF-16. Go makes the output of `fmt` with no check of the call either, in a time that grows with its bound, but what the output may make it allocate is checked against the room of the VM before it starts ([uncatchable.md](changes/uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit)).
 
@@ -113,6 +117,7 @@ A call into the engine keeps its P (the processor of the Go scheduler that runs 
 - **`temporal/`**: `Temporal`, for a VM that calls `Register(vm)`, built as `intl/` is. go-intl's temporal package does every computation, through one Builtin in `bridge.go` whose first argument names the operation (the `opNames` list). See [temporal.md](changes/temporal.md).
 - **`internal/gointl/`**: our ECMA-402 and Temporal in pure Go, copied once from go-intl v0.6.1 and changed freely since, used by `intl` and `temporal`. Its packs in `qjsdata/` are made from the data of the go-intl release in `internal/gointl/UPSTREAM` by `data.sh` (see [Updating the data of Intl](upgrading.md#updating-the-data-of-intl-internalgointl)). `make gointl` runs the checks that need build tags, and checks that the packs in `qjsdata/` are current.
 - **`fmt/`**: package `github.com/liustack/quickjs/fmt`, part of this module. It gives a VM Go's `fmt.Printf`, `Println`, `Sprintf` and `Sprint` with `Register(obj Value, opts ...Option)`, with lower-case names in javascript (`fmt.println`). Each first bounds the bytes of its output from the format and the arguments (`fmt/bound.go`), and ends the call with the out of memory error when what the output may make Go's fmt allocate, 16 times the bound and a few KiB for the printer that makes it, is more than the VM has left under its memory limit (what Go's runtime sets up for its pools is not counted). A VM with no memory limit has room for an output of 16 MiB. Go makes the output with no check of the VM, so neither `Interrupt` nor the eval timeout ends it, but `printf` and `println` write it to `os.Stdout`, or to the writer of the option `Writer`, 64 KiB at a time, and stop between two writes.
+- **`url/`**: `URL` and `URLSearchParams`, for a VM that calls `Register(vm)`, built as `intl/` is, but installed at once. Go parses (`internal/whatwgurl`) and keeps nothing: a URL is the array of its record (the parts its getters show and four bits) that `url.js` keeps in a private field, and a setter hands Go the record, the part and the new value. See [url.md](changes/url.md).
 - **`compare/`**: a module of its own (`github.com/liustack/quickjs/compare`) that runs the micro benchmarks of QuickJS in `compare/testdata/` on this engine, on goja and on `github.com/fastschema/qjs`. `make benchmark` runs there. It is a module of its own so that its dependencies stay out of the library's `go.mod`. `compare/go.mod` replaces `github.com/liustack/quickjs` with `../`, so the benchmarks build the work tree and `go mod tidy` (which the `benchmark` target runs first) takes the other versions from the root `go.mod`: never copy them by hand.
 
 ## Platforms
