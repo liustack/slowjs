@@ -977,3 +977,22 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `test_regvm_dst_oom`（`engine/test/unit-oom.c`）：解构在空洞、慢数组、默认值改过 `%ArrayIteratorPrototype%.next` 之后、带 `return` 的关闭，以及异常经过还没读完的解构时造 Array Iterator，每一次分配依次失败都以内存不足结束。
 - `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
 - `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。
+
+## 热调用少传参数字
+
+发布：Unreleased。
+
+在生成代码里，一次调用的每个参数字都要经过 Go 的栈区：调用方存一次，被调方读一次。在 arm64 上，一个函数除了影子栈指针还要收五个以上的字时，参数放在影子栈上的一个块里传，多出一次存和一次读，而且后者要等前者。现在有两个热调用少传了字：
+
+- 解释器直接调 C 函数（`js_call_c_direct`）和 `js_call_c_hop` 改调 `js_call_c_plain(p, this_obj, argc, argv)`：传函数的对象而不是它的值，不传上下文（这次调用本来就把函数的 realm 设为上下文），也不传 flags（这两条路都不做构造调用）。一共 5 个字，`js_call_c_function` 要 8 个，所以 arm64 用寄存器传。`js_call_c_function` 仍是 `JS_CLASS_C_FUNCTION` 这个类的调用入口，`JS_CallInternal` 和构造调用都走它。两者是同一个函数体 `js_call_c_body`，各自内联一份。
+- 引擎自己用的 `JS_GetProperty`（`quickjs.h` 的这个宏把对象也当作 `this` 传）改调 `JS_GetPropertyObj(ctx, obj, prop, throw_ref_error)`：5 个字，`JS_GetPropertyInternal` 要 7 个。导出的 `JS_GetPropertyInternal` 不变，两者是同一个函数体 `js_get_property`。`js_invoke` 仍调 `JS_GetPropertyInternal`：换成更短的调用后，amd64 上的 clang 把它内联进调用方，调用方在影子栈上的栈帧大了 112 字节。
+
+为什么结果不变：每个新入口跑的都是旧入口原来跑的函数体，值也一样。旧的 `js_call_c_function` 收到的上下文只用来找运行时，函数体在用到上下文之前就已经把它换成了函数的 realm。`js_call_c_plain` 从这个 realm 取运行时，它属于同一个运行时。
+
+需要小心的是递归的深度。直接调用在 C 函数运行期间把它跳过的 `JS_CallInternal` 栈帧算作已占用，这样经过 C 函数的递归两条路停在同一深度（[解释器如何调用 C 函数](#解释器如何调用-c-函数)）。这件事的前提是两条路跑的是同一个 `js_call_c_function`。现在一条路跑 `js_call_c_plain`，另一条跑 `js_call_c_function`，编译器不一定给两者同样大的栈帧：本机 clang 在 arm64 上给 `js_call_c_plain` 192 字节，给 `js_call_c_function` 160 字节，于是在本机测试宿主上经过直接调用的递归浅了约 1.4%（unit-api 的 `c_call_same` 有 36 项检查失败）。现在 `js_measure_call_frame` 也量这两个栈帧，量的位置是共用函数体的开头（`argc` 小于 0，用 `Function.prototype`，每个上下文都有这个 C 函数），直接调用和 `js_call_c_hop` 把差值加进它们算作已占用的量（`rt->c_direct_debt`、`rt->c_hop_plain_debt`）。这类调用之前的栈检查不变。欠账小于 0 会让调用越过栈底，所以这时关掉那条路，和 `js_call_c_hop` 栈帧大于 `JS_CallInternal` 时的做法一样：`JS_RegvmStat` 17 和 18 给出这两笔欠账，那条路关掉时是 -1，直接调用开着而任一条路被关掉时，unit-api 的 `test_call_frames_measured` 和 `TestRegvmFrame` 都会失败。生成的引擎里两个栈帧一样大，所以欠账和以前一样：amd64 上直接调用 112 字节、经过 `js_call_c_hop` 16 字节，arm64 上 96 和 16。在 AddressSanitizer 下，这两笔欠账和 `JS_CallInternal` 的栈帧在同样两个位置上量，各取两处之和里较小的那个，再向下取整到 32 的倍数，和其他欠账一样。
+
+栈帧：两种架构上都没有函数多占影子栈，`JS_RegvmRun` 的 SHADOW 仍是 arm64 上 176 字节、amd64 上 256 字节。在 arm64 上有 42 个函数少占了，一共 2448 字节，因为它们调的函数不再收参数块（`JS_GetPropertyValue` 从 96 字节降到 32）。
+
+收益（在 linux/amd64 上按 16 种代码布局计时）：tifa 商店的 14 个店面页面用时少 0.67%，工作台、MUI 和 React 页面在各自的误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。数字在 [performance.md](../performance.zh-CN.md#热调用少传参数字)。
+
+改动在 C 里（`engine/quickjs.c`、`engine/quickjs.h`、`engine/regvm.h`）。测试：unit-api 的 `test_c_call_recursions` 和 `test_call_frames_measured`，`TestCCallDepth`、`TestCCallDepthAfterExits`、`TestRegvmFrame`，带 `unit-api` 和 `unit-white` 的 `compare.sh`，以及商店、MUI 和 React 页面的 HTML。

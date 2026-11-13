@@ -13,6 +13,7 @@
 - 对象的 rest（如 `const {a, ...rest} = props`）和对象字面量里的展开（如 `{type: x, ...props}`），源对象的属性布局以前见过时，现在照着记下的布局直接复制，不再一个属性一个属性地查。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），tifa 的工作台页面用时少 3.1%，MUI 页面少 2.5%，商店页面少 1.3%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建)）。
 - 字节码版本升到 12，因为对象的 rest 用一张列表记下它排除的键（`OP_copy_rest`）：v0.30.4 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 有内存上限的 VM 现在也留下 Intl 或 `fmt` 长调用的最后一块，前提是这块和 VM 的内存加起来放得进上限，上限也把它算进去：引擎的分配需要这块空间时，先把它还给系统，所以留着的块不会让脚本内存不足。在 GitHub 的 macos-15 机器上，上限 1 GiB 的 VM 在 8 Mi 字符的文本里找第一个词，每次调用 3.9 到 4.9 ms，v0.30.4 是 28 到 35 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块)）。
+- 解释器直接调 C 函数，以及 `call`、`apply` 和绑定函数对 C 函数的调用，参数从 8 个字减到 5 个，引擎自己读属性的调用从 7 个减到 5 个，所以在 arm64 上这两个调用都不再在影子栈上传参数块。在 linux/amd64 上按 16 种代码布局计时，tifa 商店的店面页面用时少 0.67%，其他页面在误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。结果、栈帧和调用深度都不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#热调用少传参数字)）。
 
 ### 修复
 
