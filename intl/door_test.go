@@ -292,3 +292,28 @@ func TestRoomCoversGo(t *testing.T) {
 		})
 	}
 }
+
+// The arrays the Emit functions make leave nothing behind: the strings made
+// for their elements are freed once the array holds them, so calls whose
+// answers the script drops take no memory of the VM.
+func TestEmittedArraysFreeTheirElements(t *testing.T) {
+	for _, js := range []string{
+		`Intl.getCanonicalLocales(['en-US', 'fr', 'de'])`, // EmitStrings
+		`'İ\ud800x'.toLocaleLowerCase('tr')`,              // EmitMixed: a lone surrogate cuts the pieces
+		`new Intl.Locale('en-US').getCalendars()`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			vm := newVM(t)
+			run := `for (let i = 0; i < 2000; i++) ` + js + `; 0`
+			eval(t, vm, run)
+			vm.RunGC()
+			before := vm.MemoryUsage()
+			eval(t, vm, run)
+			vm.RunGC()
+			after := vm.MemoryUsage()
+			if d := after.MallocCount - before.MallocCount; d > 0 {
+				t.Errorf("%d blocks more after 2,000 calls", d)
+			}
+		})
+	}
+}

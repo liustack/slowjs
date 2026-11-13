@@ -26,7 +26,7 @@ func Emit(vm *quickjs.VM, s string) (quickjs.Value, error) { return vm.NewString
 // EmitStrings is a javascript array of the strings of l.
 func EmitStrings(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 	vals := make([]quickjs.Value, 0, len(l))
-	defer freeAll(vals)
+	defer func() { freeAll(vals) }()
 	for i, s := range l {
 		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
 			return quickjs.UndefinedValue, nil
@@ -43,7 +43,7 @@ func EmitStrings(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 // EmitMixed is a javascript array of l, strings and ints.
 func EmitMixed(vm *quickjs.VM, l []any) (quickjs.Value, error) {
 	vals := make([]quickjs.Value, 0, len(l))
-	defer freeAll(vals)
+	defer func() { freeAll(vals) }()
 	for i, x := range l {
 		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
 			return quickjs.UndefinedValue, nil
@@ -80,12 +80,11 @@ func EmitValues(vm *quickjs.VM, vals []quickjs.Value) (quickjs.Value, error) {
 	return vm.NewArray(vals...)
 }
 
-// freeAll frees each value of vals, as far as it has been filled.
+// freeAll frees each value of vals. A caller defers it in a closure, so
+// that it sees vals as far as it has been filled when the caller returns:
+// NewArray borrows the values, and the array holds its own references.
 func freeAll(vals []quickjs.Value) {
-	for i := range vals[:cap(vals)] {
-		if i >= len(vals) {
-			break
-		}
+	for i := range vals {
 		vals[i].Free()
 	}
 }
