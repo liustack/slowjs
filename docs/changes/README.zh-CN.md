@@ -268,6 +268,7 @@ read_when:
 | --- | --- | --- |
 | 每个 VM 共用一份源码文本和行表，SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#所有-vm-共用一份源码文本和行表) |
 | 共享字节码只在第一次加载时扫描轮询点 | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#共享字节码只在第一次加载时扫描轮询点) |
+| 内置函数要的大块内存会超过内存上限时先回收 | Unreleased | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#大块内存在会超过内存上限时先回收) |
 
 ## 年轻代回收
 

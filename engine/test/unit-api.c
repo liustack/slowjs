@@ -910,6 +910,125 @@ static void test_run_gc_threshold(void)
     vm_free(&v);
 }
 
+/* One large block made by a built-in with no object made before it, of about
+   size bytes: setup runs before the collection that measures what is live,
+   op after it (see test_gc_block_line). */
+typedef struct {
+    const char *name, *setup, *op;
+    size_t div; /* size / div is the count the scripts take */
+} GCBlockKind;
+
+static const GCBlockKind gc_block_kinds[] = {
+    { "repeat", NULL, "globalThis.r = 'x'.repeat(%zu); 0", 1 },
+    { "padEnd", NULL, "globalThis.r = 'ab'.padEnd(%zu, 'x'); 0", 1 },
+    { "ArrayBuffer", NULL, "globalThis.r = new ArrayBuffer(%zu); 0", 1 },
+    { "Float64Array", NULL, "globalThis.r = new Float64Array(%zu); 0", 8 },
+    { "resize", "globalThis.rb = new ArrayBuffer(16, { maxByteLength: 1 << 30 }); 0", "rb.resize(%zu); 0", 1 },
+    { "transfer", "globalThis.tb = new ArrayBuffer(1024); 0", "globalThis.r = tb.transfer(%zu); 0", 1 },
+    { "push", NULL, "{ const a = []; for (let i = 0; i < %zu; i++) a.push(i * 0.5); globalThis.r = a } 0", 16 },
+    { "a[i] = v", NULL, "{ const a = []; for (let i = 0; i < %zu; i++) a[i] = i * 0.5; globalThis.r = a } 0", 16 },
+    { "rope made flat", "{ let p = 'y'.repeat(65536), t = ''; for (let i = 0; i < %zu; i++) t += p; globalThis.t = t } 0",
+      "t.indexOf('z')", 65536 },
+    { "join", "{ const p = 'j'.repeat(1000); globalThis.ja = []; for (let i = 0; i < %zu; i++) ja.push(p + i) } 0",
+      "globalThis.r = ja.join(''); 0", 1004 },
+    { "toSorted", "{ globalThis.sa = []; for (let i = 0; i < %zu; i++) sa.push(i) } 0", "globalThis.r = sa.toSorted((a, b) => a - b); 0", 16 },
+    { "slice", "{ globalThis.sa = []; for (let i = 0; i < %zu; i++) sa.push(i) } 0", "globalThis.r = sa.slice(); 0", 16 },
+};
+
+static int gc_block_run(JSContext *ctx, const char *fmt, size_t n)
+{
+    char src[512];
+    JSValue r;
+    int ok;
+
+    snprintf(src, sizeof src, fmt, n);
+    r = JS_Eval(ctx, src, strlen(src), "<block>", JS_EVAL_TYPE_GLOBAL);
+    ok = !JS_IsException(r);
+    JS_FreeValue(ctx, r);
+    if (!ok) {
+        char *t = exception_text(ctx);
+        CHECK(t && (strstr(t, "out of memory") || strcmp(t, "null") == 0), "%s: not out of memory: %s", fmt, t ? t : "(none)");
+        free(t);
+    }
+    return ok;
+}
+
+/* Does op of k with size bytes work in a new runtime under limit, with live
+   bytes in objects and, with garbage, cyclic garbage made up to just under
+   the threshold of the collection that measured them? */
+static int gc_block_try(const GCBlockKind *k, size_t limit, size_t live, int garbage, size_t size)
+{
+    VM v = vm_new();
+    int ok = 1;
+
+    JS_SetMemoryLimit(v.rt, limit);
+    eval_ok(v.ctx, "globalThis.live = []; globalThis.mk = (n) => { for (let i = 0; i < n; i++) live.push({ a: i, b: [i, i + 1], c: 'k' + i }) }; 0");
+    if (k->setup)
+        ok = gc_block_run(v.ctx, k->setup, size / k->div);
+    while (ok && JS_GetMemorySize(v.rt) < live)
+        ok = eval_ok(v.ctx, "mk(1000)");
+    if (ok) {
+        JS_RunGC(v.rt);
+        if (garbage) {
+            size_t t = JS_GetGCThreshold(v.rt), top = t < limit ? t : limit;
+            static const char g[] = "for (let i = 0; i < 500; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+
+            while (JS_GetMemorySize(v.rt) + (256 << 10) < top && JS_GetGCThreshold(v.rt) == t) {
+                JSValue r = JS_Eval(v.ctx, g, strlen(g), "<garbage>", JS_EVAL_TYPE_GLOBAL);
+
+                if (JS_IsException(r)) {
+                    free(exception_text(v.ctx));
+                    break;
+                }
+                JS_FreeValue(v.ctx, r);
+            }
+        }
+        ok = gc_block_run(v.ctx, k->op, size / k->div);
+    }
+    unlimit(&v);
+    vm_free(&v);
+    return ok;
+}
+
+/* the largest size, to 64 KiB, that works */
+static size_t gc_block_line(const GCBlockKind *k, size_t limit, size_t live, int garbage)
+{
+    size_t lo = 0, hi = limit;
+
+    while (hi - lo > (64 << 10)) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (gc_block_try(k, limit, live, garbage, mid))
+            lo = mid;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+/* Garbage in cycles waits for a collection, and only an object made over the
+   threshold starts one. A built-in that makes one large block with no object
+   before it (js_trigger_gc_block) collects first when the block would pass
+   the memory limit, so the garbage left under the threshold does not move
+   the size at which the block runs out of memory: the line with the garbage
+   is the line without it. Before, it was lower by about the garbage (the
+   threshold less what is live), at any factor of the threshold. */
+static void test_gc_block_line(void)
+{
+    size_t i, j, limits[][2] = { { 16 << 20, 4 << 20 }, { 32 << 20, 12 << 20 } };
+
+    for (i = 0; i < countof(gc_block_kinds); i++) {
+        for (j = 0; j < countof(limits); j++) {
+            const GCBlockKind *k = &gc_block_kinds[i];
+            size_t none = gc_block_line(k, limits[j][0], limits[j][1], 0);
+            size_t parked = gc_block_line(k, limits[j][0], limits[j][1], 1);
+            CHECK(none > (1 << 20), "%s under %zu MiB: works at no size", k->name, limits[j][0] >> 20);
+            CHECK(parked + (128 << 10) >= none,
+                  "%s under %zu MiB with %zu MiB live: out of memory at %zu KiB with the garbage, %zu KiB without",
+                  k->name, limits[j][0] >> 20, limits[j][1] >> 20, parked >> 10, none >> 10);
+        }
+    }
+}
+
 /* The function of JS_NewEscapeTextFunction gives what React DOM's
    escapeTextForBrowser gives, for the strings of every width, length and
    place of the characters it escapes, and for everything that is not a
@@ -2025,6 +2144,7 @@ int main(void)
     test_for_in_keeps_shape();
     test_plain_objects();
     test_run_gc_threshold();
+    test_gc_block_line();
     test_backtrace_shares_shape();
     test_backtrace_old_prototype();
     test_backtrace_native_read_caches();

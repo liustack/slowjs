@@ -16,6 +16,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 ### Fixed
 
 - The spread of a string into an object literal gives its characters, as Node does: `{..."ab"}` is `{0: "a", 1: "b"}`, where it was `{}`. A number, a boolean, a symbol or a bigint still gives no key. This is upstream QuickJS's fix b19b2ec ([upstream-commits.md](docs/changes/upstream-commits.md)). The copy of a spread, a rest or `Object.assign` now reads the interrupt flag every 4,096 keys, so a timeout or `Interrupt` stops the copy of a long string or of an object of many keys before it ends ([uncatchable.md](docs/changes/uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag)).
+- Under a memory limit, an operation that asks for one large block (`repeat`, `padStart`, `ArrayBuffer` and the typed arrays, `push`, `join` and others) now runs a full GC first when the block would pass the limit. It ran out of memory with garbage in reference cycles still there: `'x'.repeat(n)` under a limit of 64 MiB with 16 MiB live failed at 39.9 MiB and now works up to 47.8 MiB, where it works with no garbage. A page that fits under its limit runs the same GCs as before. The full list is in [memory-and-allocation.md](docs/changes/memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit).
 
 ## [v0.30.4] - 2026-11-14
 
