@@ -1028,9 +1028,49 @@ The instructions of a render on the M4 (retired instructions, the median of a pa
 
 ### A profile of tifa's pages
 
-[A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes. The numbers are from the study of 2026-11-13: the profile trained on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home), against the same C generated without it, and the same HTML on every page. The release build trains on all of the pages and pins only size optimization off, so its own numbers can differ a little from these.
+[A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.
 
-Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
+The release was timed on 2026-11-14 on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, timed on core 0 with the whole machine quiet). Three sides, each built at the 16 layouts of [measuring.md](measuring.md#the-protocol): v0.30.4, the commit of the release (0510dd43) generated without the profile (`GEN_PGO=0`), and the same commit with it (trained on that commit, on every training page, with only size optimization pinned off). `go tool measure bench`, 2 rounds, the formal layout 3 times a round, 18 units of every kind, judged with a delta of 1% and 95% intervals. The pages render in a Go test that keeps one VM as tifa's pool does, with a memory limit of 128 MiB: each page is warmed 8 times and timed 20 times (React's page 20 and 40), and a kind sums the P50 of its pages. The long Markdown page (react-markdown) renders with no pool and no limit, warmed once and timed 3 times, at 100 and 400 sections. All three sides give the same HTML on every page. The mean of the layouts:
+
+| Pages | The profile (the release with it against without it) | The release without the profile against v0.30.4 | The release against v0.30.4 |
+| --- | ---: | ---: | ---: |
+| tifa's shop, six workbench pages | -7.31% (-7.84% to -6.77%) | -6.04% (-6.52% to -5.55%) | -12.90% (-13.33% to -12.47%) |
+| tifa's shop, fourteen store pages | -8.38% (-9.02% to -7.74%) | -4.60% (-5.17% to -4.03%) | -12.60% (-13.02% to -12.17%) |
+| tifa's MUI test app, three pages | -5.41% (-5.99% to -4.82%) | -6.13% (-6.62% to -5.63%) | -11.20% (-11.96% to -10.44%) |
+| React's page | -6.84% (-7.44% to -6.24%) | -5.29% (-5.99% to -4.59%) | -11.77% (-12.28% to -11.26%) |
+| The long Markdown page, 100 and 400 sections | -5.49% (-5.93% to -5.04%) | +2.18% (+1.57% to +2.79%) | -3.43% (-4.15% to -2.70%) |
+
+The formal layout, the binary that ships:
+
+| Pages | The profile | Without the profile against v0.30.4 | The release against v0.30.4 |
+| --- | ---: | ---: | ---: |
+| tifa's shop, six workbench pages | -6.22% (-7.13% to -5.31%) | -8.27% (-9.18% to -7.35%) | -13.98% (-14.71% to -13.23%) |
+| tifa's shop, fourteen store pages | -7.65% (-8.57% to -6.73%) | -5.89% (-6.50% to -5.27%) | -13.09% (-13.84% to -12.33%) |
+| tifa's MUI test app, three pages | -5.06% (-5.94% to -4.18%) | -6.64% (-7.58% to -5.69%) | -11.37% (-11.92% to -10.81%) |
+| React's page | -6.75% (-7.98% to -5.50%) | -4.44% (-5.51% to -3.36%) | -10.90% (-11.81% to -9.97%) |
+| The long Markdown page, 100 and 400 sections | -5.12% (-6.21% to -4.00%) | +2.34% (+0.64% to +4.07%) | -2.90% (-4.38% to -1.39%) |
+
+The profile makes every kind faster, at the mean of the layouts and at the formal layout. Without it, the release is slower than v0.30.4 on the long Markdown page ([below](#long-markdown-without-the-profile)). One block of the 180 ran again for disturbance (React).
+
+Loading a bundle, timed the same way on the same day: `jsrun` with a new VM for each run, only the evaluation of the bundle timed, 2 warm runs and 20 timed in a process, the median. The mean of the layouts, then the formal layout:
+
+| Bundle | The profile | Without the profile against v0.30.4 | The release against v0.30.4 |
+| --- | ---: | ---: | ---: |
+| React's page (`react-ssr.js`) | -0.74% (-1.48% to +0.01%), formal +0.33% (-0.31% to +0.98%) | -1.57% (-1.98% to -1.16%), formal -1.21% | -2.30% (-2.88% to -1.71%), formal -0.88% (-1.49% to -0.27%) |
+| tifa's bench app (`bench.js`) | -0.50% (-1.43% to +0.44%), formal +0.32% (-0.29% to +0.93%) | -1.82% (-2.04% to -1.61%), formal -1.40% | -2.31% (-3.15% to -1.48%), formal -1.09% (-1.65% to -0.52%) |
+| tifa's MUI test app (`mui.js`) | -1.09% (-2.70% to +0.53%), formal +1.51% (+1.00% to +2.03%) | -2.19% (-2.47% to -1.91%), formal -2.04% | -3.26% (-4.90% to -1.59%), formal -0.56% (-0.97% to -0.14%) |
+
+The release loads every bundle faster than v0.30.4. The profile alone leaves a load where it was: no regression beyond the delta at the mean of the layouts, and at the formal layout of MUI's bundle 1.51% slower, with a layout SD of 3.0% (the place of the code moves this load more than the profile does).
+
+What it costs: `make gen` takes longer (on one core of the build server, 4 minutes 27 seconds for amd64 instead of 1 minute 52), and a few cold functions have a larger frame ([generator.md](changes/generator.md#why-it-is-safe)). The pages train none of the micro benchmarks: of the 64 of `compare/testdata`, 18 run more than 0.5% more instructions than without the profile (`typed_array_read` the most, +7.5%), 39 run fewer, and all 64 together run 1.9% fewer ([generator.md](changes/generator.md#limits)). `array_slice` and `array_prop_create`, which ran more in the study, now run fewer (-0.5% and -2.6%).
+
+#### Long Markdown without the profile
+
+Without the profile, the release renders the long Markdown page with no pool and no limit 2.18% slower than v0.30.4 (+1.57% to +2.79% at the mean of the layouts, judged slower, and +2.34% at the formal layout): 2.96% at 100 sections and 2.00% at 400. The cause is not found. It is in the changes since v0.30.4, not in the profile, which makes the page 5.49% faster and the release 3.43% faster than v0.30.4. Finding the change that costs it is a follow-up.
+
+#### The study of 2026-11-13
+
+The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
 
 | Pages | Mean of the layouts | Formal layout | Trained pages | Pages the training did not see |
 | --- | ---: | ---: | --- | --- |
@@ -1053,8 +1093,6 @@ Instructions, counted with callgrind in tifa's `test/ssr` on linux/amd64, per re
 The time falls about twice as much as the instructions. What goes is misses of the instruction cache (20% to 41% fewer) and spills on the hot paths, which cost more than an instruction. The gain is spread: the register loop gives about 0.9 points of the 4.3% on the workbench, and the rest is in the helpers, the collector and the finalizers (`JS_GetPropertyInternal` 12% fewer instructions, `__JS_FreeValueRT`, `js_bytecode_function_finalizer`, `JS_RunYoungGC`, `free_object`, `js_escape_text`). A few functions run more (`JS_SetPropertyInternal` +21%, `rv_clinit`). Loading a bundle runs -0.2% to +1.6% instructions.
 
 On an Apple M4 (darwin/arm64, one layout, the machine not idle, 10 rounds in turning order) the time of a page is 0.964 to 0.971 of the time without the profile in the median round (React 0.964, the store 0.969, the workbench 0.971, MUI 0.968) and the instructions fall by 2.7% to 3.6%. The gain is about 3%, under half the server's for the same instruction gain: the M4's instruction cache is 6 times the EPYC's (192 KB against 32 KB), so the misses the profile removes cost less. This is a reading, not a verdict.
-
-What it costs: `make gen` takes longer (on one core of the build server, 4 minutes 27 seconds for amd64 instead of 1 minute 52), and a few cold functions have a larger frame ([generator.md](changes/generator.md#why-it-is-safe)). The pages train none of the micro benchmarks: of the 64 of `compare/testdata`, 18 run more than 0.5% more instructions than without the profile (`typed_array_read` the most, +7.5%), 39 run fewer, and all 64 together run 1.9% fewer ([generator.md](changes/generator.md#limits)). `array_slice` and `array_prop_create`, which ran more in the study, now run fewer (-0.5% and -2.6%).
 
 A profile one small branch old kept all of the gain (the workbench -7.54%, the store -9.18%, MUI -6.33%, React -7.63%, each against the same branch generated without the profile), and clang dropped the profile of 1 function of 2,264.
 
