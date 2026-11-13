@@ -39,6 +39,7 @@ read_when:
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
 | 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
 | 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
+| 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | Unreleased | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
 
 ## 上游 QuickJS 的提交
 

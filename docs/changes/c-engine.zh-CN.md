@@ -682,3 +682,37 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 编译器不会生成这样的代码：test262、语料、23 个页面和 rvgen 的种子都照旧通过，而 pass 拒绝的函数在第一次调用时就会抛错。有了它，[捕获后不再改变的变量](#捕获后不再改变的变量)才能确信异常只落在本函数的 `catch` 上。
 
 测试：`engine/test/unit-white.c` 的 `test_regvm_crafted` 对每一类改动编译器生成的代码的一个字节（`engine/test/white.c` 的 `white_crafted_jump`），检查读取时会拒绝它：丢掉 catch 偏移的 `drop` 改成 `return`，一个跳转和一个 `catch` 改成跳到代码开头之前，以及 `for_of_next` 的偏移改成指向外面 `try` 的 catch 偏移。`test_regvm_crafted_code` 把自己的代码放进一个函数（`white_crafted_code`）：下面没有迭代器的 `iterator_get_value_done`，读取时被拒绝，在返回地址下面留了自己的 catch 偏移的 `finally`，它的 `ret` 会抛错，以及立刻返回的 `finally`，照旧运行。
+
+## 不造迭代器的数组解构
+
+发布：未发布。
+
+`const [a, b] = arr` 要取 `arr` 的迭代器，通过它的 `next` 读两个元素，再关掉它。解析器把它编成 `for_of_start`，每个元素一组 `for_of_next` 和 `drop`，最后 `iterator_close`。这几步要调用 `values`、造一个 Array Iterator 对象、查 `Symbol.iterator`、`next` 和 `return`，每个元素还要调一次窗口操作：两个元素大约 1,350 条指令，而直接读 `arr[0]` 和 `arr[1]` 只要 100 条左右。商城、MUI 和 React 的页面每次渲染解构数组 135 到 2,261 次，解构的都是页面自己造的数组，上面什么也没改过。
+
+寄存器循环现在不造迭代器就把这样的数组拆开（`engine/regvm-ops-dst.h`）。`DSTART` 是解构的 `for_of_start`。当值是函数所在 realm 的快数组，形状和新数组一样（除 `length` 外没有自有属性，原型是 `Array.prototype`），`Array.prototype[Symbol.iterator]` 是内置的 `values` 数据属性，`%ArrayIteratorPrototype%.next` 是内置的 `next` 数据属性（引擎还没造它时先造出来，和读 `next` 时一样，见 `engine/quickjs.c` 的 `js_dst_ok`），它就在迭代器的位置放数组，`next` 方法的位置照旧放内置的 `next`，和原来的记录一样，在迭代器的 catch 偏移 0 的位置放下一个元素的下标，写成小于 0 的 catch 偏移（`JS_DST_REC`）。`DNEXT` 是 `for_of_next` 加 `drop`：数组还是快数组且有这个元素时，先 poll 一次（Array Iterator 读元素时也 poll 一次），再取出元素。读到数组末尾（下标不小于长度）时放掉数组，之后的读取都给 `undefined`，和迭代器一样。其他情况（长度被改长后的空洞，不再是快数组的数组）就在原地造出 Array Iterator，带上数组和下标（`js_dst_iter`），之后交给真正迭代器的代码。`iterator_close` 和异常的展开（`engine/regvm-run.h` 的 `rv_unwind`）先看 `%ArrayIteratorPrototype%` 和它的原型链上有没有 `return`：没有，而且链上也没有特异对象时，关闭只是放掉数组。否则就造出 Array Iterator，照原来的方式关闭。
+
+`for-of` 循环和 `yield*` 不变：pass 只在下一条指令不是 `goto` 也不是 `drop` 时把 `for_of_start` 换成 `DSTART`。默认值里有 `yield` 的解构也不变，它的 `return` 在关闭记录之前用 `nip_catch` 拿掉了 catch 偏移。
+
+### 为什么结果一样
+
+检查的就是 GetIterator 做的事：数组的形状没有自己的 `Symbol.iterator`，所以 `Get(arr, @@iterator)` 在 `Array.prototype` 上找到 `values`。调用 `values` 不做任何脚本看得见的事（对象的 ToObject，再 CreateArrayIterator）。新的 Array Iterator 没有自有属性，所以 `Get(iterator, "next")` 找到内置的 `next`。`Array.prototype` 和 `%ArrayIteratorPrototype%` 上的这两个属性按上次所在的下标去找，再核对键、种类和值，因为 QuickJS 会原地修改没人共用的形状。记录一旦造好，规范就把那个 `next` 存在记录里，所以默认值之后再改 `Array.prototype` 或 `%ArrayIteratorPrototype%`，不影响这次解构。能影响它的是数组本身（每次读取时按它当时的样子判断），以及关闭时读的 `return`（关闭时才读）。读取时造出的 Array Iterator 就是真正迭代器在那一刻的样子：同一个数组，同一个下标，同一个 `next`。
+
+迭代器位置上的数组没有脚本读得到。pass 只在只有这条记录自己的 `for_of_next` 和 `iterator_close` 读它的地方才这样做（`engine/regvm-pass.h` 的 `rv_dst_scan`）：`JS_ReadObject` 读进来的代码如果丢掉记录的 catch 偏移，或用 `nip_catch` 拿掉它，那条记录就还用原来的 `W_FOR_OF_START`。小于 0 的 catch 偏移 没有别的来源：其他记录的都是 0，`catch` 的是它在函数里的位置，读字节码时会检查。下标只是个数，释放它和回收器标记它都什么也不做，记录持有 `next` 的时间也和原来一样长，这一点对它的 `WeakRef` 看得见。下标超过 2^31 - 2 时没有这种写法，那么长的数组交给它的 Array Iterator 读。
+
+变了但脚本看不见的：一次解构少 poll 一次（调用 `values` 时会 poll），也不占调用深度的一层，所以经过它的递归只会更深。没有调用的循环里的空模式，靠循环往回跳时的 poll 响应中断。不造的 Array Iterator 少一次分配，所以有内存上限时，内存不足的错误可能晚一点、在造迭代器的地方才出现。解构数组但别处不造迭代器的脚本少持有一个形状，就是 Array Iterator 的形状。
+
+### 收益
+
+在 linux/arm64 的原生 C 树上用 callgrind 和改动前的引擎（4922b91a）比，每页先暖两次再计三次渲染，每次之后做一次新生代回收，一次渲染少跑的指令占比：workbench 页面 0.71%（单页 0.48% 到 0.85%），storefront 0.33%（0.14% 到 0.51%），MUI 0.27%（0.21% 到 0.29%），React 0.31%。带上测量用的 URL 替身（`urlmemo.js`，商城页面用它代替 tifa 将来不再需要的 URL polyfill）时，workbench 少 0.84%，storefront 0.53%，MUI 0.26%。没有页面多跑指令，渲染后占用的字节数也一样。
+
+在 tifa 的 `test/ssr` 上于 linux/amd64 计时（AMD EPYC 7B13 服务器，单核，每页 60 次渲染取 P50，两个构建交替先后跑 5 轮），收益低于计时能分辨的程度：MUI 用时是原来的 0.988，storefront 0.996，workbench 1.001（各页之和，取各轮中位数），而改动前的引擎对它自己的副本是 0.982、0.994 和 1.001。没有一页超过原来的 1.007。
+
+### 测试
+
+- `engine/test/regvm/js/q3-arrdst.js`，金标准在改动前生成：解析器生成解构的每种写法（声明、赋值、参数、箭头函数默认值、`for-of` 头、`catch`），空洞，rest，嵌套模式，默认值里改数组、`Array.prototype`、`Symbol.iterator`、`next` 或 `return`，两个元素的数组把长度改成 5 并在 `Array.prototype[3]` 放 getter，数组读完后默认值抛错（`[a, b, c = f()] = [1]`），以及停在默认值里 `yield` 的生成器，之后恢复、return 和 throw。
+- `engine/test/regvm/js/q3-arrdst-weak.js`，金标准在改动前生成：默认值删掉或换掉 `%ArrayIteratorPrototype%.next` 再回收，`WeakRef` 看到记录里的 `next` 一直活到解构结束。
+- `test_regvm_dst`（`engine/test/unit-white.c`）：pass 给普通解构 `DSTART`，不给默认值里有 `yield` 的解构，也不给 `JS_ReadObject` 读进来、丢掉记录的 catch 偏移 或用 `nip_catch` 拿掉它再返回迭代器的字节码：这些拿到的都是 Array Iterator，生成器的 return 照旧关闭记录。用 `JS_UNINITIALIZED` 当 `next`、`undefined` 当 catch 偏移、`null` 或数组当迭代器的记录，抛出 `next` 不是函数的 TypeError，关闭时调用数组的 `return`。自己写的代码（`engine/test/white.c` 的 `white_crafted_code`）把小于 0 的 catch 偏移 钉在 `DSTART` 上：`gosub` 跑的 `finally` 返回地址下面压着这条记录时不动它，`ret` 照旧返回。会把 catch 偏移 0 写回去的 `iterator_get_value_done` 拿到原来的 `W_FOR_OF_START`。读字节码时拒掉想把 catch 偏移 搬到别处的 `swap`。
+- `test_regvm_dst_alloc`（`engine/test/unit-white.c`）：`%ArrayIteratorPrototype%` 上有 `return` 时，关闭、异常展开和空洞处读取的每一次分配依次失败（包括造 Array Iterator 的两次），每次都以内存不足或正常结果结束，不留下引用。
+- `test_regvm_dst_oom`（`engine/test/unit-oom.c`）：解构在空洞、慢数组、默认值改过 `%ArrayIteratorPrototype%.next` 之后、带 `return` 的关闭，以及异常经过还没读完的解构时造 Array Iterator，每一次分配依次失败都以内存不足结束。
+- `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
+- `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。

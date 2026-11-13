@@ -39,6 +39,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | Unreleased | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
 | A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
+| The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | Unreleased | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
 
 ## Commits of upstream QuickJS
 

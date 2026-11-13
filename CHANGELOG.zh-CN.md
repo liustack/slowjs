@@ -57,6 +57,7 @@
 - 脚本里对 `f.call(t, ...)`、`call.bind(f)`（core-js 这样造）或没有绑定参数的绑定函数的调用，现在直接做成它所代表的那次调用。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在 `RangeError` 之前能深约一倍，100,000 个绑定函数的链能跑，原来抛 `RangeError`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。
 - 对数组的 `for-of`（迭代相关的部分没被改过）不再为每个元素调用数组迭代器的 `next`。所以在调用深度的上限处，这样的循环会接着往下读，原来调 `next` 会在这里抛 `RangeError`。脚本不会比原来停得更早。
 - 只调用字符串 `charCodeAt` 的循环被停下时（超时或 `Interrupt`），报出的停止位置在循环往回跳的地方，不再在调用里面。
+- 解构普通数组（比如 `const [a, b] = arr`）不再造 Array Iterator：不再在调用 `values` 时 poll，也不占一层调用深度，别处不造迭代器的脚本少持有一个形状。有内存上限时，内存不足可能晚一点，在造迭代器的地方才出现。tifa 页面的一次渲染少跑 0.26%（MUI）到 0.84%（workbench）的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#不造迭代器的数组解构)）。
 
 ## [v0.30.1] - 2026-11-06
 
