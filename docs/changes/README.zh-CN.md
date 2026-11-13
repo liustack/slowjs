@@ -61,6 +61,7 @@ read_when:
 | Iterator.concat 遵循 IteratorClose，并在一步失败后结束 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#iterator-拼接) |
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
+| 展开字符串得到它的各个字符 | Unreleased | [upstream-commits.md](upstream-commits.zh-CN.md) |
 
 ## Go API
 
@@ -151,6 +152,7 @@ read_when:
 | fmt 的函数分段造出长输出并检查调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数分段造出长输出并检查调用) |
 | Go 函数的长数组直接向系统要内存 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
 | VM 留下最后一块内存给下一次调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
+| 展开、rest 和 Object.assign 的复制读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
 
 ## 错误和调用栈
 
@@ -257,6 +259,8 @@ read_when:
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
+| 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
+| 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
 
 ## 内存
 

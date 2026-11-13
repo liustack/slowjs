@@ -793,8 +793,13 @@ func TestBytecode(t *testing.T) {
 	// 2026-11-13, version 11: the flags of each closure variable carry a bit
 	// (9) that says the closure holds its value, not a reference to it. The
 	// code of this script is the same.
+	//
+	// 2026-11-13, version 12: OP_copy_rest, the rest of an object
+	// destructuring with the keys it leaves out in a list, comes after
+	// OP_copy_data_properties, and the opcodes after it moved by one: bd 2a be
+	// 3a 01 9a cd 29.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "0b000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "0c000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

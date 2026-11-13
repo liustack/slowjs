@@ -970,6 +970,23 @@ The instructions fall on every group on both architectures: this takes back a sm
 
 Timed on 2026-11-13 on the Go engine, the same change against 3ae98161, on server B (linux/amd64, AMD EPYC 7B13, GOMAXPROCS=1 on one core), with the 16 layouts and 4 rounds of `measure bench` and its judge, 36 units for each group. React's page: -2.15% [-2.51%, -1.78%] as the mean of the layouts and -2.52% [-3.25%, -1.80%] on the layout that ships, faster. MUI's three pages: -0.67% [-1.27%, -0.07%] as the mean of the layouts, faster, and +0.63% [-0.59%, +1.88%] on the layout that ships, inconclusive. The store and workbench pages were not timed: their counts moved by less than 0.3%.
 
+### Object rest and spread from a cache of shapes
+
+[An object rest is made at its final shape](changes/objects-and-shapes.md#an-object-rest-is-made-at-its-final-shape) (the rest), and on top of it [a spread copies from a cache of the shapes of its target and source](changes/objects-and-shapes.md#a-spread-copies-from-a-cache-of-the-shapes-of-its-target-and-source) (the spread), against main at `3ae98161`. Time in tifa's `test/ssr` on linux/amd64 (AMD EPYC 7B13, core 0, the other cores held), one session of the three builds by the protocol of [measuring.md](measuring.md): 16 layouts, 2 rounds, 18 units a kind, the P50 of a page summed over the pages of a kind, delta 1%, 95% intervals, no block disturbed. Instructions are from callgrind on the same machine: the generated engine in a pool of tifa's settings, the whole process over two renders of each page after a warm one (the store row counts four of its pages). The HTML of every page is the same.
+
+| Pages | Builds | Instructions | Mean of the 16 layouts | Formal layout |
+| --- | --- | ---: | --- | --- |
+| tifa's shop, six workbench pages | the rest | -2.01% | -2.42% [-3.12%, -1.71%] | -3.28% [-4.32%, -2.22%] |
+| | the rest and the spread | -2.70% | -3.11% [-4.07%, -2.14%] | -6.07% [-7.12%, -5.02%] |
+| the shop's fourteen store pages | the rest | -0.90% | -1.22% [-1.65%, -0.79%] | -2.05% [-2.91%, -1.18%] |
+| | the rest and the spread | -1.37% | -1.28% [-1.94%, -0.62%] | -2.36% [-3.39%, -1.32%] |
+| tifa's MUI test app, three pages | the rest | -1.38% | -1.28% [-1.94%, -0.61%] | -1.25% [-2.56%, +0.08%] |
+| | the rest and the spread | -2.31% | -2.51% [-3.07%, -1.94%] | -3.56% [-5.21%, -1.87%] |
+
+Both together are faster by the rule on every kind, and on each page of the workbench and MUI. No store page is slower: the least gain is the English post page, -0.21% [-1.10%, +0.68%]. The spread alone, against the rest: MUI -1.24% [-1.93%, -0.56%], faster, the workbench -0.71% [-1.54%, +0.13%] and the store -0.06% [-0.72%, +0.60%], no regression beyond delta.
+
+On an Apple M4 (darwin/arm64), tifa's `test/ssr` with the product counters, 10 rounds that alternate the three builds, the median of the round ratios of retired instructions a render: the rest runs 2.4% fewer on the workbench and MUI pages, 0.8% fewer on the store pages and the same on React's page, which has no rest. Both run 3.2%, 3.9%, 1.2% and the same. The time of those rounds is no reading: other jobs ran on the machine, and a round's ratio went from 0.76 to 1.57.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -994,7 +1011,7 @@ What it costs in memory, as `MemorySize` of one VM after it rendered each page o
 
 The extra memory is the register code of the functions that ran and a register stack of 31,680 bytes at first. Counted on the native C tree on darwin/arm64 (one render of each, then a full GC): the shop's 2,341 converted functions take 1,751,456 bytes, 748 on average and 33,736 at most, and React's 90 take 152,192, 1,691 on average and 33,808 at most.
 
-The changes made to the register loop since are measured in their own sections: [Calls that copy their last locals](#calls-that-copy-their-last-locals), [A key in a local without a reference](#a-key-in-a-local-without-a-reference), [The truth of a value without a reference](#the-truth-of-a-value-without-a-reference), [Array literals that take their elements](#array-literals-that-take-their-elements), [A key in a local set without a reference](#a-key-in-a-local-set-without-a-reference) and [Array destructuring with no iterator](#array-destructuring-with-no-iterator).
+The changes made to the register loop since are measured in their own sections: [Calls that copy their last locals](#calls-that-copy-their-last-locals), [A key in a local without a reference](#a-key-in-a-local-without-a-reference), [The truth of a value without a reference](#the-truth-of-a-value-without-a-reference), [Array literals that take their elements](#array-literals-that-take-their-elements), [A key in a local set without a reference](#a-key-in-a-local-set-without-a-reference), [Array destructuring with no iterator](#array-destructuring-with-no-iterator) and [Object rest and spread from a cache of shapes](#object-rest-and-spread-from-a-cache-of-shapes).
 
 ### The hash table of atoms holds one atom for two buckets
 

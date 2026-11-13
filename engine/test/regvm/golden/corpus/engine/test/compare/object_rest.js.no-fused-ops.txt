@@ -1,0 +1,78 @@
+result plain: {c:3/ewc,d:4/ewc} a=1 b=2 || {a:1/ewc,b:2/ewc,c:3/ewc,d:4/ewc} || {a:1/ewc,b:2/ewc,c:3/ewc,d:4/ewc}
+result plain, other order: {d:4/ewc,c:3/ewc} a=1 b=2 || {d:4/ewc,c:3/ewc,b:2/ewc,a:1/ewc} || {d:4/ewc,c:3/ewc,b:2/ewc,a:1/ewc}
+result only excluded keys: {} a=1 b=2 || {a:1/ewc,b:2/ewc} || {a:1/ewc,b:2/ewc}
+result empty: {} a=undefined b=undefined || {} || {}
+result one key: {c:3/ewc} a=undefined b=undefined || {c:3/ewc} || {c:3/ewc}
+result frozen: {c:3/ewc,e:5/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc,e:5/ewc} || {a:1/ewc,c:3/ewc,e:5/ewc}
+result sealed: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result not extensible: {c:3/ewc} a=1 b=undefined || {c:3/ewc,a:1/ewc} || {c:3/ewc,a:1/ewc}
+result null prototype: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result other prototype: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result class with a private field: {c:2/ewc} a=1 b=undefined || {a:1/ewc,c:2/ewc} || {a:1/ewc,c:2/ewc}
+result key not enumerable: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result key not writable: {c:3/ewc,nw:nw/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc,nw:nw/ewc} || {a:1/ewc,c:3/ewc,nw:nw/ewc}
+result deleted key: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result deleted excluded key: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result index keys: {0:zero/ewc,1:one/ewc,c:3/ewc} a=1 b=undefined || {0:zero/ewc,1:one/ewc,c:3/ewc,a:1/ewc} || {0:zero/ewc,1:one/ewc,c:3/ewc,a:1/ewc}
+result index-like string key: {4294967294:big/ewc,c:3/ewc} a=1 b=undefined || {4294967294:big/ewc,c:3/ewc,a:1/ewc} || {4294967294:big/ewc,c:3/ewc,a:1/ewc}
+result not an index: {c:3/ewc,4294967295:max/ewc,01:lead/ewc,-1:neg/ewc} a=1 b=undefined || {c:3/ewc,4294967295:max/ewc,01:lead/ewc,-1:neg/ewc,a:1/ewc} || {c:3/ewc,4294967295:max/ewc,01:lead/ewc,-1:neg/ewc,a:1/ewc}
+result enumerable symbol: {c:3/ewc,Symbol(s):sym/ewc} a=1 b=undefined || {c:3/ewc,a:1/ewc,Symbol(s):sym/ewc} || {c:3/ewc,a:1/ewc,Symbol(s):sym/ewc}
+result symbol not enumerable: {c:3/ewc} a=1 b=undefined || {c:3/ewc,a:1/ewc} || {c:3/ewc,a:1/ewc}
+result getter on a kept key: {c:got/ewc} a=1 b=undefined || {a:1/ewc,c:got/ewc} || {a:1/ewc,c:got/ewc}
+result getter on an excluded key: {c:3/ewc} a=ga b=undefined || {a:ga/ewc,c:3/ewc} || {a:ga/ewc,c:3/ewc}
+result setter only: {c:undefined/ewc} a=1 b=undefined || {a:1/ewc,c:undefined/ewc} || {a:1/ewc,c:undefined/ewc}
+result getter that deletes a later key: {c:c/ewc,e:5/ewc} a=1 b=undefined || {a:1/ewc,c:c/ewc,e:5/ewc} || {a:1/ewc,c:c/ewc,e:5/ewc}
+result getter of an excluded key that adds one: {c:3/ewc,added:yes/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result stack key: {stack:st/ewc,c:3/ewc} a=1 b=undefined || {a:1/ewc,stack:st/ewc,c:3/ewc} || {a:1/ewc,stack:st/ewc,c:3/ewc}
+result own __proto__: {__proto__:p/ewc,c:3/ewc} a=1 b=undefined || {a:1/ewc,__proto__:p/ewc,c:3/ewc} || {a:1/ewc,__proto__:p/ewc,c:3/ewc}
+result error: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result array: {0:7/ewc,1:8/ewc,c:3/ewc} a=1 b=undefined || {0:7/ewc,1:8/ewc,a:1/ewc,c:3/ewc} || {0:7/ewc,1:8/ewc,a:1/ewc,c:3/ewc}
+result string: {0:s/ewc,1:t/ewc,2:r/ewc} a=undefined b=undefined || {0:s/ewc,1:t/ewc,2:r/ewc} || {0:s/ewc,1:t/ewc,2:r/ewc}
+result number: {} a=undefined b=undefined || {} || {}
+result boolean: {} a=undefined b=undefined || {} || {}
+result arguments: {0:1/ewc,1:2/ewc} a=undefined b=undefined || {0:1/ewc,1:2/ewc} || {0:1/ewc,1:2/ewc}
+result proxy: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result function: {c:3/ewc} a=1 b=undefined || {a:1/ewc,c:3/ewc} || {a:1/ewc,c:3/ewc}
+result map: {c:3/ewc} a=undefined b=undefined || {c:3/ewc} || {c:3/ewc}
+result date: {c:3/ewc} a=undefined b=undefined || {c:3/ewc} || {c:3/ewc}
+result 33 keys: {k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc} a=undefined b=undefined || {k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc} || {k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc}
+result 70 keys: {k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc,k33:33/ewc,k34:34/ewc,k35:35/ewc,k36:36/ewc,k37:37/ewc,k38:38/ewc,k39:39/ewc,k40:40/ewc,k41:41/ewc,k42:42/ewc,k43:43/ewc,k44:44/ewc,k45:45/ewc,k46:46/ewc,k47:47/ewc,k48:48/ewc,k49:49/ewc,k50:50/ewc,k51:51/ewc,k52:52/ewc,k53:53/ewc,k54:54/ewc,k55:55/ewc,k56:56/ewc,k57:57/ewc,k58:58/ewc,k59:59/ewc,k60:60/ewc,k61:61/ewc,k62:62/ewc,k63:63/ewc,k64:64/ewc,k65:65/ewc,k66:66/ewc,k67:67/ewc,k68:68/ewc,k69:69/ewc} a=1 b=undefined || {a:1/ewc,k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc,k33:33/ewc,k34:34/ewc,k35:35/ewc,k36:36/ewc,k37:37/ewc,k38:38/ewc,k39:39/ewc,k40:40/ewc,k41:41/ewc,k42:42/ewc,k43:43/ewc,k44:44/ewc,k45:45/ewc,k46:46/ewc,k47:47/ewc,k48:48/ewc,k49:49/ewc,k50:50/ewc,k51:51/ewc,k52:52/ewc,k53:53/ewc,k54:54/ewc,k55:55/ewc,k56:56/ewc,k57:57/ewc,k58:58/ewc,k59:59/ewc,k60:60/ewc,k61:61/ewc,k62:62/ewc,k63:63/ewc,k64:64/ewc,k65:65/ewc,k66:66/ewc,k67:67/ewc,k68:68/ewc,k69:69/ewc} || {a:1/ewc,k0:0/ewc,k1:1/ewc,k2:2/ewc,k3:3/ewc,k4:4/ewc,k5:5/ewc,k6:6/ewc,k7:7/ewc,k8:8/ewc,k9:9/ewc,k10:10/ewc,k11:11/ewc,k12:12/ewc,k13:13/ewc,k14:14/ewc,k15:15/ewc,k16:16/ewc,k17:17/ewc,k18:18/ewc,k19:19/ewc,k20:20/ewc,k21:21/ewc,k22:22/ewc,k23:23/ewc,k24:24/ewc,k25:25/ewc,k26:26/ewc,k27:27/ewc,k28:28/ewc,k29:29/ewc,k30:30/ewc,k31:31/ewc,k32:32/ewc,k33:33/ewc,k34:34/ewc,k35:35/ewc,k36:36/ewc,k37:37/ewc,k38:38/ewc,k39:39/ewc,k40:40/ewc,k41:41/ewc,k42:42/ewc,k43:43/ewc,k44:44/ewc,k45:45/ewc,k46:46/ewc,k47:47/ewc,k48:48/ewc,k49:49/ewc,k50:50/ewc,k51:51/ewc,k52:52/ewc,k53:53/ewc,k54:54/ewc,k55:55/ewc,k56:56/ewc,k57:57/ewc,k58:58/ewc,k59:59/ewc,k60:60/ewc,k61:61/ewc,k62:62/ewc,k63:63/ewc,k64:64/ewc,k65:65/ewc,k66:66/ewc,k67:67/ewc,k68:68/ewc,k69:69/ewc}
+result null: TypeError
+result undefined: TypeError
+result poly: {};{"k2":0,"k0":1};{"k3":0,"k8":2};{"k4":0,"k2":1,"k0":2,"k7":3};{"k5":0,"k3":1,"k8":3,"k6":4};{"k6":0,"k4":1,"k2":2,"k0":3,"k7":4,"k5":5};{"k7":0,"k5":1,"k3":2,"k8":4,"k6":5,"k4":6};{"k8":0,"k6":1,"k4":2,"k2":3,"k0":4,"k7":5,"k5":6,"k3":7};{"k0":0,"k7":1,"k5":2,"k3":3,"k8":5,"k6":6,"k4":7,"k2":8};
+result kept: {b:2/ewc,c:3/ewc} {b:2/ewc,c:3/ewc}
+result kept, key added: {b:2/ewc,c:3/ewc,d:4/ewc} {b:2/ewc,c:3/ewc}
+result kept, key deleted: {b:2/ewc,c:3/ewc,d:4/ewc} {c:3/ewc}
+result kept, made not enumerable: {b:2/ewc,d:4/ewc}
+result kept, made a getter: {b:getter/ewc,d:4/ewc}
+result kept, frozen: {b:getter/ewc,d:4/ewc}
+result kept, new object of the first shape: {b:2/ewc,c:3/ewc}
+result results: {b:2/ewc,c:3/ewc,z:z/ewc} {c:3/ewc} true
+result key c
+result computed: {d:4/ewc} c=3
+result key c
+result computed again: {d:4/ewc} c=3 n=2
+result only computed: {b:2/ewc} v=1 {a:1/ewc,b:2/ewc} v=undefined
+result computed symbol: {a:1/ewc} v=2
+result computed object key: {a:1/ewc} v=2 n=3
+result twice: {b:2/ewc} 11
+result number keys: {c:3/ewc} zf
+result __proto__: {a:1/ewc} true
+result default b
+result defaults: {c:3/ewc} defdb {c:3/ewc} 12
+result 40 keys: {"left":"left"} {"left":"left"}
+result nested: [1,{"c":2},{"d":3}][1,{"c":2},{"d":3}]
+result for of: {"x":1} {"x":2,"y":2} {}
+result assignment: 1 {"b":2,"c":3}
+result catch: 1 {"msg":"m","extra":"e"}
+result arrow: div{"id":"x","className":"c"}span{}
+result generator: [{"b":2,"c":3},{"c":3}]
+result array pattern: [1,{"b":2},[3]]
+result inner only: {"p":1}
+result ellipsis not a rest: [1,[2,3]]
+result shared: true
+result setter: {trap:t/ewc}
+result loop: 4004000
+mem-end obj=341 atom=805 shape=372 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
+mem-gc obj=341 atom=805 shape=372 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
+--- status exit 0

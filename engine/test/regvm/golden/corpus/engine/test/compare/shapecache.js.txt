@@ -22,6 +22,6 @@ result delAdd 2 0 176810 983b78c5
 result delAdd 2 1 180664 78b1db33
 result delAdd 3 0 180664 78b1db33
 result delAdd 3 1 177075 9488d3bc
-mem-end obj=209 atom=4895 shape=2171 prop=1046 jsfunc=13 cfunc=137 array=2 fast_array=2 elements=24 binary=0
-mem-gc obj=209 atom=4895 shape=2171 prop=1046 jsfunc=13 cfunc=137 array=2 fast_array=2 elements=24 binary=0
+mem-end obj=209 atom=4897 shape=2174 prop=1046 jsfunc=13 cfunc=137 array=2 fast_array=2 elements=24 binary=0
+mem-gc obj=209 atom=4897 shape=2174 prop=1046 jsfunc=13 cfunc=137 array=2 fast_array=2 elements=24 binary=0
 --- status exit 0

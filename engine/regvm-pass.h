@@ -133,6 +133,7 @@ typedef struct RVPass {
     size_t fixed;
     int st_n;
     BOOL sc_short;
+    int copy_n;         /* the sites of COPYR so far (regvm-ops-copy.h) */
     /* not cleared at the start of a conversion (rv_build): an entry of
        the stack model is written before it is read, and rv_fold_init sets
        lev and fold_k */
@@ -311,6 +312,10 @@ static BOOL rv_catch_reads_ok(RVPass *s, int pos, int op, int d, int c, int npop
     case OP_for_of_next:
         lo = d - 3 - s->bc[pos + 1];
         may = d - 1 - s->bc[pos + 1];
+        break;
+    case OP_copy_rest:
+        /* it pops nothing and reads two entries below the top */
+        lo = d - max_int((s->bc[pos + 1] >> 2) & 7, (s->bc[pos + 1] >> 5) & 7);
         break;
     case OP_nip_catch:
         lo = d - 1;
@@ -1491,6 +1496,7 @@ static void rv_round_init(RVPass *s)
     s->drop_at = -1;
     s->failed = FALSE;
     s->args = FALSE;
+    s->copy_n = 0;
 #ifdef RV_INJECT
     s->iprev = -1;
 #endif
@@ -1663,10 +1669,12 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
     }
     {
         size_t hi = s->hi ? s->pcmap_hi.size : 0;
+        size_t csz;
         size = sizeof(RVFunc) + s->code.size;
         size = (size + 15) & ~15;
-        rf = js_malloc_rt(rt, size + sizeof(JSValue) * s->k_count + s->pcmap.size + hi +
-                        s->rets.size);
+        csz = sizeof(RVCopySite) * s->copy_n;
+        rf = js_malloc_rt(rt, size + csz + sizeof(JSValue) * s->k_count +
+                        s->pcmap.size + hi + s->rets.size);
         if (!rf) {
             s->oom = TRUE;
             goto done;
@@ -1689,7 +1697,11 @@ static RVFunc *rv_build(JSRuntime *rt, JSFunctionBytecode *b, BOOL *oom)
         rf->k_count = s->k_count;
         rf->runs = 0;
         rf->code_len = s->code.size;
-        rf->k = (JSValue *)((uint8_t *)rf + size);
+        /* the caches of COPYR, empty, then the constants */
+        rf->copy_count = s->copy_n;
+        rf->copy = (RVCopySite *)((uint8_t *)rf + size);
+        memset(rf->copy, 0, csz);
+        rf->k = (JSValue *)((uint8_t *)rf + size + csz);
         rf->pcmap = (RVPcMask *)(rf->k + s->k_count);
         rf->pcmap_count = s->pcmap.size / sizeof(RVPcMask);
         memcpy(rf->code, s->code.buf, s->code.size);

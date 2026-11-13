@@ -61,6 +61,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Iterator.concat follows IteratorClose and finishes after a failed step | v0.29.8 | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
+| The spread of a string gives its characters | Unreleased | [upstream-commits.md](upstream-commits.md) |
 
 ## Go API
 
@@ -151,6 +152,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The functions of fmt make a long output in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
 | A Go function takes the long arrays of a call from the OS | Unreleased | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
 | A VM keeps its last block for the next call | Unreleased | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
+| The copy of a spread, a rest and Object.assign reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 
@@ -257,6 +259,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 | An array that is appended to takes room for 8 elements at first | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
 | The `in` operator walks a prototype chain without references | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
+| An object rest leaves out the keys of its pattern by a list the parser makes, and is made at its final shape from a cache of the shapes of its sources | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-object-rest-is-made-at-its-final-shape) |
+| The spread of an object literal copies a source of a shape it has seen into its target from a cache of the shapes of both | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-spread-copies-from-a-cache-of-the-shapes-of-its-target-and-source) |
 
 ## Memory
 

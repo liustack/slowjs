@@ -1,0 +1,10 @@
+result one: a=0,x=0,z=Z|x=0;a=2,x=1,z=Z|x=1;a=4,x=2,z=Z|x=2;a=6,x=3,z=Z|x=3;a=8,x=4,z=Z|x=4;
+result poly: a=A,x=0,z=Z;a=1,x=1,z=Z;a=A,y=2,z=Z;a=A,z=Z;a=A,d=4,e=[object Object],g=g,z=Z;a=A,k=5,z=Z;a=A,x=6,z=Z;a=7,x=1,z=Z;a=A,y=2,z=Z;a=A,z=Z;a=A,d=10,e=[object Object],g=g,z=Z;a=A,k=11,z=Z;a=A,x=12,z=Z;a=13,x=1,z=Z;a=A,y=2,z=Z;a=A,z=Z;a=A,d=16,e=[object Object],g=g,z=Z;a=A,k=17,z=Z;a=A,x=18,z=Z;a=19,x=1,z=Z;a=A,y=2,z=Z;a=A,z=Z;a=A,d=22,e=[object Object],g=g,z=Z;a=A,k=23,z=Z;a=A,x=24,z=Z;a=25,x=1,z=Z;a=A,y=2,z=Z;a=A,z=Z;a=A,d=28,e=[object Object],g=g,z=Z;a=A,k=29,z=Z;
+result kinds: a=A,x=1,z=Z;a=A,x=0,z=Z,Symbol(s)=sym;a=A,x=got,z=Z;0=7,1=8,a=A,z=Z;0=s,1=t,a=A,z=Z;a=A,z=Z;a=A,z=Z
+result getter throws: throws Error from y
+result ownKeys throws: throws Error from ownKeys
+result target getter: a=0;a=1;a=2;
+result frozen: a=2,x=1,z=Z false a=2,x=1,z=Z,w=3
+mem-end obj=196 atom=551 shape=145 prop=971 jsfunc=1 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=550 shape=143 prop=967 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

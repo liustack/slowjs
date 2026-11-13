@@ -97,6 +97,7 @@ go test -run 'CallDepth|ShadowStack|StackGrowth|CallAllocs' .  # depth limits, s
 go test -run 'HostPanic|Handover|Clock' .                # a panic or Goexit in a Go function or a clock, a VM handed to another goroutine
 go test -run 'Interrupt|Killed' .                        # Interrupt, and the kill of a script that does not stop
 go test -tags testhooks -run ArrayDestructuringRestStop . # 长数组的 rest 在循环的 5 次 poll 之内停下，回收和释放里的 poll 不算在内
+go test -tags testhooks -run SpreadCopyStops . # 65,536 个键的展开、rest 和 Object.assign 在复制的 16 次 poll 之内停下，释放里的 poll 不算在内
 go test -tags testhooks -run TestInterruptStopsLongKeys ./internal/cengine # the first use of a string of tens of millions of characters as a key, and a JSON text with one, stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpCompile ./internal/cengine # the compile of a class of many characters or strings stops within a few polls
 go test -tags testhooks -run TestInterruptStopsRegExpFlags ./internal/cengine # a regexp with flags of 16 Mi characters stops within a few polls
