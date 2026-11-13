@@ -50,6 +50,7 @@ read_when:
 | 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
 | amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | Unreleased | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
 | 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | Unreleased | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
+| `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | Unreleased | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
 
 ## 上游 QuickJS 的提交
 

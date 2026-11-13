@@ -880,6 +880,20 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。
 
+## 自身就是原子的字符串键按具名属性读取
+
+发布版本：Unreleased。
+
+`o[k]` 里 `o` 是对象、`k` 是原子字符串时（寄存器循环的 GETEL、GETELT、GETELK 和 GETELKT，数组和类型化数组的快路不回答时），原来要走 `rv_getel_slow`、`JS_GetPropertyValue`、`JS_ValueToAtom`（给原子加一个引用）、通用的 `JS_GetPropertyInternal`，最后 `JS_FreeAtom`。这类键大多来自 `for in`、`Object.keys` 和字面量，本来就是原子。现在循环对它们调用 `rv_getel_atom`：键是类型为字符串的原子，非空，首字符不是数字（也就是 `JS_ValueToAtom` 当作自身原子的那些字符串，所以一定不是下标）时，直接从字符串拿到原子的编号，按 GETF 读 `o.name` 的方式在 `o` 和它的原型上找：找到纯数据属性就给出它的值，走到原型链尽头就给出 `undefined`。路上碰到别的情况（访问器、全局对象的闭包变量、首次使用时才建立的属性、错误对象的 `stack`、数组和 `arguments` 以外的特殊对象，比如类型化数组、Proxy、String 对象、模块命名空间），就回到 `rv_getel_slow`，从头按原来的方式读。
+
+这不是内联缓存。两次读之间什么也不保留，也不持有形状：每次读都像 GETF 那样查一遍键。试过又放弃的三次缓存（[performance.md](../performance.zh-CN.md#试过但没做的)）为每个读具名属性的位置保存形状和槽位，想省掉一次查找，而那次查找和检查缓存项的开销差不多。这个改动不省查找，省的是只有按键读取才付的那部分：调用通用路径，给原子加引用再放掉，还有对“什么都可能是”的键做的检查。
+
+为什么安全：对它回答的情况，这条路径和 `JS_GetPropertyInternal` 自己的查找是同一套走法，所以对同一个原子给出同样的答案，对它不回答的每种情况都停下来交回原路径。哪些字符串算自身原子，用的是 `JS_ValueToAtom` 和 `hasOwnProperty.call` 共用的判断（[hasOwnProperty.call 在解释器里直接回答](objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答)）：`"0"`、`"10"`、`"01"`、`"4294967295"` 以数字开头，走原路径。`"-0"`、`"1e3"`、`"Infinity"`、`"NaN"` 在普通对象上是名字，在类型化数组上是规范数字，而查找不会越过类型化数组。符号不是字符串，走原路径。取到值之前不运行任何代码，键所在的槽（指令的临时槽、读取期间没有代码能写的局部变量（见上节）或函数的常量）让键活着，键又让原子活着，所以不需要给原子加引用。临时槽里的键在读完之后才释放，不像 `JS_GetPropertyValue` 那样在读之前释放，这一点没有代码能看到。测试的抛错注入要在哪条指令抛错，那条指令就走原路径，和别的快路一样。`rv_getel_atom` 是单独的函数，所以 getter 或 Proxy 陷阱运行时压在下面的 `rv_getel_slow` 的帧大小不变（amd64 和 arm64 上改动前后都是 192 和 200 字节），寄存器循环的帧也不变（SHADOW 在 amd64 上 256，arm64 上 176）。数组下标、类型化数组元素和其他所有键都走原来的路径。循环在自己的快路之后调用 `rv_getel_atom`，只传指令的操作数，对象和键的类型标记由 `rv_getel_atom` 自己检查。把这两个检查放在循环里时，对象和键在数组元素那条路上也得一直活着，LLVM 因此给那条路换了寄存器：amd64 上每次 `arr[i]` 多 6 条生成的指令（callgrind，一个每次渲染做 20 万次这种读取的包），原生构建看不出来。检查挪进这个函数之后，在没有字符串按键读取的页面上，循环跑的指令和改动前一样。
+
+收益：在自有数据属性上用原子键做一次按键读取，原生指令从 210 条降到 115 条（amd64，callgrind），`o.c` 是 25 条。每次渲染里这样的读取，React 有 2.8K 次，MUI 有 31K 次（订单页 55K 次）。其中 77%（MUI）到 100%（React）找到自有数据属性，最多 16% 在原型上找到（店面），最多 22% 什么也没找到（MUI）。在产品上（Apple M4），MUI 少 3.4% 的指令，React 少 0.9%，工作台少 0.7%，店面少 0.5%，24 个页面的 HTML 都一样。数字见 [performance.md](../performance.zh-CN.md#用原子键按键读取)。
+
+改动在 C 里（`engine/regvm-ops-object.h`）。`engine/test/regvm/js/o-getel-atom.js` 在 30 种对象和原始值上读 20 个键（名字、空字符串、下标和像数字的字符串、`length`、`stack`、`__proto__`），键分别放在局部变量、临时槽和常量里，每次读取都和 `Reflect.get`、以及把同一个键重新做成非原子字符串后的读取比较，并统计运行了多少次 getter 和 Proxy 陷阱。它的 golden 由改动前的引擎写出（普通、严格模式、不融合操作码三种）。`unit` 检查键是其原子的最后一个引用、或是许多被保留的键之一时，没有原子遗留，也没有原子被提前释放（`test_getel_atom_refs`）。
+
 ## 值的真假不加引用就判断
 
 发布版本：v0.30.3。
