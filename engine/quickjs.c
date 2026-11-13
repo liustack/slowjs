@@ -38986,8 +38986,8 @@ static BOOL fused_run_at(const uint8_t *bc_buf, int bc_len, int pos,
 /* The rule of the polls on the final code of a function, which check_polls
    and insert_polls share. The interpreter counts at the entry of each call,
    at each jump that does not go forward, at each return from a finally
-   block (OP_ret), at each catch of an exception and at OP_nop
-   (JS_CallInternal). Between two counts pc only goes forward, so the
+   block (OP_ret), at each catch of an exception and at OP_nop (a POLL of
+   JS_RegvmRun). Between two counts pc only goes forward, so the
    instructions run from one count to the next are a path of steps and jumps
    forward, which poll_scan follows in one walk in order: run[pos] is the
    longest such path that reaches the instruction at pos, and with the

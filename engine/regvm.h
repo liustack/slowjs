@@ -67,11 +67,11 @@
    reference, kept by its slot) or a temp (owned, moved out by the
    instruction that reads it), and picks the instruction for it.
 
-   What stage 0 leaves out: try and catch,
-   arguments, sloppy functions, constants with a reference count, calls with
-   more arguments than the function has parameters (they go through
-   JS_CallInternal), and stack traces of the frames inside the loop (a
-   backtrace sees the function JS_RegvmRun was entered with).
+   Every function the compiler makes runs here: one past the limits of the
+   loop fails to compile (add_var, add_arg, compute_stack_size), and a stack
+   trace walks the frames of the loop too (JSFrameWalk, rv_frame_func). The
+   whole design is in docs/changes/c-engine.md, under "The register
+   interpreter".
 
    The files: regvm-func.h has RVFunc and rv_entry_fast, read by quickjs.c
    before its call ops. This file has the frame, the instruction enum, the

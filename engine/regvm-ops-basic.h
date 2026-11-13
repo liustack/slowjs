@@ -1085,10 +1085,10 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     }
     RV_NEXT();
 
-    /* get_field: a data property found with nothing run, as
-       GET_LOCAL_FIELD of JS_CallInternal, else rv_getf_slow. GETF writes a
-       temp, which holds nothing to free (the pass gives each result a
-       temp no entry owns), GETFL a local (rv_store) and GETFT either. */
+    /* get_field: a data property found with nothing run, as the fast
+       path of get_field in upstream's interpreter, else rv_getf_slow. GETF
+       writes a temp, which holds nothing to free (the pass gives each result
+       a temp no entry owns), GETFL a local (rv_store) and GETFT either. */
 #define RV_GETFIELD(label, temp, tdst)                                  \
  label:                                                                 \
     ip = pc; pc += 6;                                                   \
