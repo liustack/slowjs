@@ -8,7 +8,10 @@
 # end (make check-fast, make check-full). The list is below. A change to it
 # goes together with docs/testing.md.
 #
-# Needs the engine generated (make gen) and LLVM 22.1.8 for the generator tests.
+# Needs the engine generated (make gen) and LLVM 22.1.8 for the generator tests,
+# on Linux or on macOS: scripts/llvm-bin.sh finds it. With LLVM found, its folder
+# goes first in PATH, so the native steps use its clang. On macOS the clang of
+# Homebrew gets -isysroot of the SDK xcrun names, through CC (docs/testing.md).
 #
 # Environment:
 #   CHECK_ONLY   space separated step names: run only these
@@ -18,8 +21,6 @@
 #   LLVM_BIN     bin folder of LLVM 22.1.8 (default: the first that exists of
 #                /usr/lib/llvm-22/bin and the Homebrew llvm@22 folders, see llvm-bin.sh)
 #   LLD          linker of the generator tests (default: ld.lld or ld, first found)
-#   CC           compiler of the native host (default: clang of LLVM_BIN, on
-#                macOS Apple clang, /usr/bin/clang)
 #   CHECK_LIST   1: print the steps and stop
 #   CHECK_TAGS   build tags added to every go command of the checks, such as
 #                quickjs_anygo to run them with a Go newer than internal/goversion
@@ -41,13 +42,11 @@ fi
 # The scripts of engine/test call clang by its name.
 [ -z "$llvm" ] || PATH=$llvm:$PATH
 export PATH
-# On macOS the native host builds with Apple clang (docs/testing.md), through
-# /usr/bin/clang, which finds the SDK of the system: the clang of LLVM put
-# first above looks for the SDK its configuration names, which may not be
-# installed, and then finds no header of the system.
-if [ "$(uname -s)" = Darwin ] && [ -z "${CC:-}" ]; then
-	CC=/usr/bin/clang
-	export CC
+# The clang of Homebrew picks its SDK folder by the macOS version, and that
+# folder may not be there (the Command Line Tools keep MacOSX.sdk): give it
+# the one xcrun names. The scripts of engine/test and cgo (the race step) read CC.
+if [ -n "$llvm" ] && [ -z "${CC:-}" ] && [ "$(uname -s)" = Darwin ]; then
+	sdk=$(xcrun --show-sdk-path 2>/dev/null) && { CC="clang -isysroot $sdk"; export CC; }
 fi
 logs=${CHECK_LOGS:-.build/check-logs}
 mkdir -p "$logs"

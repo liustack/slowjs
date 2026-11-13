@@ -74,13 +74,13 @@ To run one test or one subtest: `go test -run TestEval -v .` or `go test -run 'T
 The tests of the generator in `internal/goasm/gen` need LLVM and skip (and still pass) when it is not given, so `go test ./internal/goasm/gen` on its own checks only the rules. Set these three variables to run all of them:
 
 ```sh
-export QUICKJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
+export QUICKJS_LLVM=$(scripts/llvm-bin.sh)                        # LLVM 22.1.8 bin directory (clang, opt, llc), see [LLVM on Linux and on macOS](#llvm-on-linux-and-on-macos)
 export QUICKJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
-export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux)
+export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux). llvm@22 of Homebrew has no ld.lld, see below
 go test -p 2 -timeout 30m ./internal/goasm/gen/...
 ```
 
-With only `QUICKJS_LLVM` and `QUICKJS_SHADOW_PASS`, the tests that need `ld.lld` (`TestVarargsNative`, `TestSampleRuns`, `TestNarrowArgs`) still skip. A skipped test prints `--- SKIP` with the names of the variables it wants: run with `-v` and look for it before you trust a green run. `QUICKJS_QEMU_AARCH64` (optional) names an emulator that lets the arm64 cases run on an amd64 host.
+With only `QUICKJS_LLVM` and `QUICKJS_SHADOW_PASS`, the tests that need `ld.lld` (`TestVarargsNative`, `TestSampleRuns`, `TestNarrowArgs`) still skip. A skipped test prints `--- SKIP` with the names of the variables it wants: run with `-v` and look for it before you trust a green run. `QUICKJS_QEMU_AARCH64` (optional) names an emulator that lets the arm64 cases run on an amd64 host. On a Mac seven more tests skip, because they run linux/amd64 code natively ([below](#llvm-on-linux-and-on-macos)).
 
 The tests of `internal/measure/bench` that drop the cached pages of a file (`TestDropPages`, `TestDropPagesFailsWhenAPageStays`) skip on linux when `TMPDIR` is on tmpfs or ramfs, where no page can be dropped, as on a machine whose `/tmp` is tmpfs. Run them with `TMPDIR` set to a folder on a disk: `TMPDIR=$HOME/tmp go test ./internal/measure/...`. `make check-full` does not run them, CI runs them on runners whose `/tmp` is on a disk.
 
@@ -165,7 +165,7 @@ engine/libc/vendor.sh --verify         # the files taken from musl are the ones 
 go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 ```
 
-It builds and runs on Linux and on macOS (Apple clang 15 and later). On macOS `scripts/check.sh` builds it with Apple clang (`/usr/bin/clang`) when `CC` is not set: the clang of LLVM it puts first for the generator may look for an SDK that is not installed and then finds no header of the system.
+It builds and runs on Linux and on macOS (Apple clang 15 and later). `scripts/check.sh` builds it with the clang of LLVM 22.1.8, on macOS with the SDK that xcrun names ([LLVM on Linux and on macOS](#llvm-on-linux-and-on-macos)).
 
 - The engine and `engine/libc` are built freestanding, with `-nostdinc` and only `engine/libc` for headers (the flags are in `flags.sh`, which `build.sh`, `check-symbols.sh`, `cycles.sh`, `libc-test.sh` and the generator of `internal/goasm/gen` all read, so that what is built and what is checked cannot differ). The host, the test runner and the test programs use the system's headers and libc. The engine does not link the system's libm: `Math.*` is musl's, so its results are the same on every machine.
 - `run-test262.c` is upstream's runner with a few changes (see its header): it includes `host.h`, makes its runtimes with `host_new_runtime()` and frees them with `host_free_runtime()`, prints the memory report through a buffer, keeps 2048 shapes in each test as a VM of the Go API does, and no longer calls `JS_SetCanBlock`. `host.c` copies the three functions the runner takes from `quickjs-libc.c`, interrupts a test that runs over 120 seconds, which the runner cannot do (a thread of the host asks such a runtime to stop, and the engine's thread sets its interrupt flag at its next `host_poll`, see [c-engine.md](changes/c-engine.md#polls-and-interrupts)), and implements the callbacks of `engine/host.h`. It also defines `__shadow_remaining`, the bytes of stack left, from the stack of its thread: the engine counts its recursion and asks for that only to bound an alloca and keep a margin (see [c-engine.md](changes/c-engine.md#depth-of-calls-and-of-c-recursion)). The runner's threads, and those of `jsrun` and of the depth tests of `unit`, have stacks of 512 MiB (`HOST_THREAD_STACK`, only reserved until used), so that a recursion to the deepest limits never runs off one.
@@ -321,7 +321,7 @@ While a `go.work` exists it must keep listing `./compare`. A workspace is found 
 
 ## Developer tools: generate, check, time
 
-Make targets run the work on the machine you are on. Linux with LLVM 22.1.8 (`/usr/lib/llvm-22/bin`, `LLVM_BIN` changes it) is all that `make gen` and the generator tests of `make check-*` need. `make remote` runs the same targets on another machine over ssh, for a Mac or a laptop without LLVM.
+Make targets run the work on the machine you are on. `make gen` and the generator tests of `make check-*` need LLVM 22.1.8 on that machine, on Linux or on macOS ([below](#llvm-on-linux-and-on-macos)). `make remote` runs the same targets on another machine over ssh, for a machine that has cores to spare or Linux.
 
 ### Generate and check
 
@@ -340,7 +340,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_decl_<arch>.go` and `engine_keep_<arch>.go` files of amd64 and arm64 (about 18 MiB, 3 MiB compressed), because a user of the module has no LLVM. A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` goes in with the files made again by `make gen` and `make gen ARCH=arm64`, in the same commit, and `make check-gen` fails when they are not. It compares the bytes in the git index, so run `git add internal/cengine` after `make gen` and before `make check-gen`. The generator gives the same bytes whatever `GEN_JOBS` and whichever folder it runs in.
 
-`scripts/gen-engine.sh` checks the LLVM version, rebuilds the pass when its sources changed, builds the generator and runs it with the flags of a formal build (`GEN_RELEASE=0` allows the survey and test switches and says so). `scripts/check.sh` runs its steps one after another, writes a log for each under `.build/check-logs/` (`CHECK_LOGS` changes it), goes on after a failure and ends with one table. Skips inside `go test` are counted and named in the table, because a skipped test checked nothing: the one expected skip is `TestVarargsNative/aarch64`, which wants `ld.lld` and an aarch64 emulator. The steps that need the engine use the one checked in, so run `make gen` first only after a change that needs new files.
+`scripts/gen-engine.sh` checks the LLVM version, rebuilds the pass when its sources changed, builds the generator and runs it with the flags of a formal build (`GEN_RELEASE=0` allows the survey and test switches and says so). `scripts/check.sh` runs its steps one after another, writes a log for each under `.build/check-logs/` (`CHECK_LOGS` changes it), goes on after a failure and ends with one table. Skips inside `go test` are counted and named in the table, because a skipped test checked nothing: the one expected skip on Linux is `TestVarargsNative/aarch64`, which wants an aarch64 emulator (on a Mac, see [below](#llvm-on-linux-and-on-macos)). The steps that need the engine use the one checked in, so run `make gen` first only after a change that needs new files.
 
 | Step | Tier | What it runs |
 | --- | --- | --- |
@@ -363,6 +363,19 @@ The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_d
 | `gointl` | full | `make gointl`, last as the step that needs the cache of go-intl ([below](#the-tests-of-every-language)) |
 
 The list is in `scripts/check.sh`. A new check goes there and into the table above.
+
+### LLVM on Linux and on macOS
+
+`scripts/llvm-bin.sh` is the one place that finds LLVM 22.1.8. `check.sh`, `gen-engine.sh`, `go-versions.sh` and `engine/test/cycles.sh` call it, so no variable has to be set when LLVM is installed in the usual place. It takes `LLVM_BIN` when that is set, and otherwise the first of `/usr/lib/llvm-22/bin`, `/opt/homebrew/opt/llvm@22/bin` and `/usr/local/opt/llvm@22/bin` that has a clang. Then it runs that clang: any version but 22.1.8 stops the script and names the version it found. With no folder at all it stops and says what to install. `scripts/llvm-bin-test.sh` tests the lookup (the `scripts` step).
+
+- Linux: the packages `clang-22`, `llvm-22-dev` and `lld-22` from apt.llvm.org, which carries 22.1.8 (see `llvm-steps.yml`).
+- macOS: `brew install llvm@22`. Homebrew has no way to ask for 22.1.8, so check that `/opt/homebrew/opt/llvm@22/bin/clang --version` says 22.1.8 and run `brew pin llvm@22`, which keeps `brew upgrade` from moving it to another 22.x. When Homebrew has moved already, the check fails with the version it found: install that version some other way and set `LLVM_BIN`.
+
+Steps that run on a Mac (Apple silicon, checked on an M4) with nothing set: `build`, `gofmt`, `docs`, `goasm`, `cengine`, `host-plain`, `compare-plain`, `cycles`, `scripts`, `inject-goldens`, `gen`, `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` and the rest of the table but `gointl`, which needs go-intl's data (see below). The `gen` step makes the arm64 and the amd64 engine on the Mac, byte for byte the checked-in files. Seven tests of `goasm` skip on a Mac and say so themselves: they run linux/amd64 code natively (`TestArgBlockShared`, `TestICallSymbols`, `TestNarrowArgs`, `TestSampleRuns` and three subtests of `TestVarargsNative`). Run them on Linux (`make remote` or CI, where `llvm-steps.yml` runs `goasm`).
+
+The native steps (`host-*`, `compare-*`, `inject`, `test262`, and cgo in `race`) use the clang of LLVM 22.1.8 on both systems: `check.sh` puts its folder first in PATH. The clang of Homebrew picks its SDK folder by the macOS version (here `MacOSX15.sdk`) and that folder is not there when the Command Line Tools keep only `MacOSX.sdk`, so it finds no `errno.h`. On macOS `check.sh` therefore sets `CC="clang -isysroot $(xcrun --show-sdk-path)"` unless `CC` is set. With no LLVM found, the steps use the compiler the system has (Apple clang 15 or later on a Mac). A script of `engine/test` run by hand uses `$CC`, or the clang first in PATH.
+
+CI does not run `make gointl`: none of the workflows in `.github/workflows` has the step, so a change to `internal/gointl` or its data is checked only when someone runs it ([below](#the-tests-of-every-language)).
 
 ### The tests of every language
 

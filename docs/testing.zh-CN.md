@@ -74,13 +74,13 @@ go test -count=1 -p 1 .                # about a minute
 `internal/goasm/gen` 里生成器的测试需要 LLVM，没给就跳过（并且仍算通过），所以单独运行 `go test ./internal/goasm/gen` 只检查规则。设置这三个变量就能全部运行：
 
 ```sh
-export QUICKJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
+export QUICKJS_LLVM=$(scripts/llvm-bin.sh)                        # LLVM 22.1.8 bin directory (clang, opt, llc), see [Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)
 export QUICKJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
-export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux)
+export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux). llvm@22 of Homebrew has no ld.lld, see below
 go test -p 2 -timeout 30m ./internal/goasm/gen/...
 ```
 
-只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。
+只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。在 Mac 上还有七个测试会跳过，因为它们要在本机运行 linux/amd64 的代码（[见下](#linux-和-macos-上的-llvm)）。
 
 `internal/measure/bench` 里丢弃文件缓存页的测试（`TestDropPages`、`TestDropPagesFailsWhenAPageStays`），在 linux 上 `TMPDIR` 位于 tmpfs 或 ramfs 时会跳过，因为那里的页丢不掉，`/tmp` 是 tmpfs 的机器就是这样。要跑它们，把 `TMPDIR` 设成磁盘上的目录：`TMPDIR=$HOME/tmp go test ./internal/measure/...`。`make check-full` 不跑它们，CI 在 `/tmp` 位于磁盘的机器上跑。
 
@@ -165,7 +165,7 @@ engine/libc/vendor.sh --verify         # the files taken from musl are the ones 
 go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 ```
 
-它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。在 macOS 上，没有设 `CC` 时 `scripts/check.sh` 用 Apple clang（`/usr/bin/clang`）构建它：它为生成器放在最前面的 LLVM 的 clang 可能去找一个没装的 SDK，这时找不到系统的头文件。
+它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。`scripts/check.sh` 用 LLVM 22.1.8 的 clang 构建它，在 macOS 上配 xcrun 给出的 SDK（[Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)）。
 
 - 引擎和 `engine/libc` 以独立（freestanding）方式构建，带 `-nostdinc`，头文件只用 `engine/libc` 的（参数写在 `flags.sh` 里，`build.sh`、`check-symbols.sh`、`cycles.sh`、`libc-test.sh` 和 `internal/goasm/gen` 的生成器都读它，所以构建的内容和检查的内容不会不一致）。宿主、测试运行器和测试程序用系统的头文件和 libc。引擎不链接系统的 libm：`Math.*` 用的是 musl 的，所以结果在每台机器上都一样。
 - `run-test262.c` 是上游的运行器加了几处改动（见它开头的注释）：它包含 `host.h`，用 `host_new_runtime()` 创建运行时、用 `host_free_runtime()` 释放，通过缓冲区打印内存报告，像 Go API 的 VM 那样在每个测试里保留 2048 个 shape（引擎记录一个对象有哪些键、按什么顺序的结构），并且不再调用 `JS_SetCanBlock`。`host.c` 从 `quickjs-libc.c` 抄来运行器要的三个函数，中断运行超过 120 秒的测试（运行器自己做不到：宿主的一个线程请这样的运行时停下，引擎的线程在下一次 `host_poll` 时设上它的中断标志，见 [c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)），并实现 `engine/host.h` 的回调。它还根据线程的栈定义 `__shadow_remaining`，即剩余的栈字节数：引擎自己数递归深度，只在限制 alloca 和留出余量时才问这个值（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)）。运行器的线程，以及 `jsrun` 和 `unit` 的深度测试的线程，栈都是 512 MiB（`HOST_THREAD_STACK`，用到才真正占用），这样递归到最深的限制也不会跑出栈外。
@@ -321,7 +321,7 @@ done
 
 ## 开发者工具：生成、检查、计时
 
-make 目标在你所在的机器上干活。`make gen` 和 `make check-*` 的生成器测试只需要装了 LLVM 22.1.8（`/usr/lib/llvm-22/bin`，可用 `LLVM_BIN` 改）的 Linux。`make remote` 通过 ssh 在另一台机器上运行同样的目标，供没有 LLVM 的 Mac 或笔记本使用。
+make 目标在你所在的机器上干活。`make gen` 和 `make check-*` 的生成器测试要求这台机器装了 LLVM 22.1.8，Linux 或 macOS 都行（[见下](#linux-和-macos-上的-llvm)）。`make remote` 通过 ssh 在另一台机器上运行同样的目标，供有空闲核心或装了 Linux 的机器使用。
 
 ### 生成并检查
 
@@ -340,7 +340,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 生成的引擎是提交进仓库的：`internal/cengine` 里有 amd64 和 arm64 的 `.s`、`engine_decl_<arch>.go` 和 `engine_keep_<arch>.go` 文件（约 18 MiB，压缩后 3 MiB），因为模块的使用者没有 LLVM。对 `engine/` 的 C、生成器或 `scripts/gen-engine.sh` 的参数的改动，要连同 `make gen` 和 `make gen ARCH=arm64` 重新生成的文件放在同一个提交里，没有的话 `make check-gen` 会失败。它比较的是 git 暂存区里的字节，所以在 `make gen` 之后、`make check-gen` 之前要运行 `git add internal/cengine`。不管 `GEN_JOBS` 取什么、在哪个目录里运行，生成器给出的字节都一样。
 
-`scripts/gen-engine.sh` 检查 LLVM 版本，pass 的源码变了就重新构建它，构建生成器，并以正式构建的参数运行它（`GEN_RELEASE=0` 允许勘察和测试用的开关，并且会说明）。`scripts/check.sh` 一个接一个地运行它的步骤，为每一步在 `.build/check-logs/` 下写一份日志（可用 `CHECK_LOGS` 改），失败后继续，最后给出一张表。`go test` 里的跳过会被计数并在表里点名，因为被跳过的测试什么也没检查：预期的跳过只有一个，`TestVarargsNative/aarch64`，它要 `ld.lld` 和一个 aarch64 模拟器。需要引擎的步骤用的是提交进仓库的那个，所以只有在改动需要新文件之后才先运行 `make gen`。
+`scripts/gen-engine.sh` 检查 LLVM 版本，pass 的源码变了就重新构建它，构建生成器，并以正式构建的参数运行它（`GEN_RELEASE=0` 允许勘察和测试用的开关，并且会说明）。`scripts/check.sh` 一个接一个地运行它的步骤，为每一步在 `.build/check-logs/` 下写一份日志（可用 `CHECK_LOGS` 改），失败后继续，最后给出一张表。`go test` 里的跳过会被计数并在表里点名，因为被跳过的测试什么也没检查：在 Linux 上预期的跳过只有一个，`TestVarargsNative/aarch64`，它要一个 aarch64 模拟器（Mac 上见[下文](#linux-和-macos-上的-llvm)）。需要引擎的步骤用的是提交进仓库的那个，所以只有在改动需要新文件之后才先运行 `make gen`。
 
 | 步骤 | 档 | 运行什么 |
 | --- | --- | --- |
@@ -363,6 +363,19 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `gointl` | 全档 | `make gointl`，放在最后，因为它要用 go-intl 的缓存（见[下文](#每种语言的测试)） |
 
 这份列表在 `scripts/check.sh` 里。新的检查要加到那里，也要加到上面的表里。
+
+### Linux 和 macOS 上的 LLVM
+
+`scripts/llvm-bin.sh` 是找 LLVM 22.1.8 的唯一地方。`check.sh`、`gen-engine.sh`、`go-versions.sh` 和 `engine/test/cycles.sh` 都调用它，所以 LLVM 装在常见位置时，不用设任何变量。设了 `LLVM_BIN` 就用它，没设就取 `/usr/lib/llvm-22/bin`、`/opt/homebrew/opt/llvm@22/bin`、`/usr/local/opt/llvm@22/bin` 里第一个有 clang 的。然后它会运行那个 clang：版本不是 22.1.8 就停下，并说出找到的版本。一个文件夹都没有时，它停下并说明该装什么。`scripts/llvm-bin-test.sh` 测这套查找（属于 `scripts` 步）。
+
+- Linux：从 apt.llvm.org 装 `clang-22`、`llvm-22-dev` 和 `lld-22`，那里有 22.1.8（见 `llvm-steps.yml`）。
+- macOS：`brew install llvm@22`。Homebrew 不能指定装 22.1.8，所以要确认 `/opt/homebrew/opt/llvm@22/bin/clang --version` 说的是 22.1.8，再运行 `brew pin llvm@22`，免得 `brew upgrade` 把它换成别的 22.x。如果 Homebrew 已经换了，检查会失败并说出它找到的版本：用别的办法装上那个版本，再设 `LLVM_BIN`。
+
+在 Mac（Apple 芯片，在 M4 上验证过）上什么都不设就能跑的步骤：`build`、`gofmt`、`docs`、`goasm`、`cengine`、`host-plain`、`compare-plain`、`cycles`、`scripts`、`inject-goldens`、`gen`、`host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan`，以及表里除 `gointl` 以外的其余步骤。`gointl` 要 go-intl 的数据（见下）。`gen` 一步在 Mac 上生成 arm64 和 amd64 两份引擎，和已提交的文件逐字节相同。Homebrew 的 llvm@22 没有 `ld.lld`，`check.sh` 改给 `/usr/bin/ld`，`goasm` 里有七个测试在 Mac 上跳过，并且自己会说明：它们要在本机运行 linux/amd64 的代码（`TestArgBlockShared`、`TestICallSymbols`、`TestNarrowArgs`、`TestSampleRuns`，以及 `TestVarargsNative` 的三个子测试）。要在 Linux 上跑它们（`make remote`，或 CI，`llvm-steps.yml` 会跑 `goasm`）。
+
+原生步骤（`host-*`、`compare-*`、`inject`、`test262`，以及 `race` 里的 cgo）在两个系统上都用 LLVM 22.1.8 的 clang：`check.sh` 把它的文件夹放在 PATH 最前面。Homebrew 的 clang 按 macOS 版本选 SDK 文件夹（这里是 `MacOSX15.sdk`），而命令行工具只有 `MacOSX.sdk` 时那个文件夹不存在，于是它找不到 `errno.h`。所以在 macOS 上，`check.sh` 会设 `CC="clang -isysroot $(xcrun --show-sdk-path)"`，除非已经设了 `CC`。没找到 LLVM 时，这些步骤用系统自带的编译器（Mac 上是 Apple clang 15 及以后）。手动运行 `engine/test` 里的脚本，用的是 `$CC`，或 PATH 里排第一的 clang。
+
+CI 不运行 `make gointl`：`.github/workflows` 里没有一个工作流有这一步，所以改了 `internal/gointl` 或它的数据，只有人手动运行时才会被检查（[见下](#每种语言的测试)）。
 
 ### 每种语言的测试
 
