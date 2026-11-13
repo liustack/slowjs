@@ -241,9 +241,11 @@ func (f *numberFormat) admit(door *intlhook.Door, v any, parts bool) any {
 // of up to four bytes in UTF-8, a separator after it, and the copies of the
 // text as it is built. partDigitBytes is the same for formatToParts, which
 // makes a part for each group of digits and each separator, and Hindi
-// groups them by two. Go took 78 and 249 bytes for each digit of
-// 10n ** 315000n (TestDigitsRoomCoversGo).
-const digitBytes, partDigitBytes = 96, 320
+// groups them by two. The most Go took for each digit of 10n ** 60000n
+// was 112 and 323 bytes, in Hindi with the digits of Adlam and the name of
+// a unit or a currency, which copies the parts once more
+// (TestDigitsRoomCoversGo).
+const digitBytes, partDigitBytes = 144, 400
 
 // format returns the parts of v, a number or a Decimal admit returned.
 func (f *numberFormat) format(v any) []part {

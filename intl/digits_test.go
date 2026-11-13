@@ -81,14 +81,19 @@ func TestWrittenDigitsUnderCap(t *testing.T) {
 // writes many digits covers what Go takes for it: with the room one byte
 // short of what Go took, the door refuses the call. The calls are those
 // that make Go take the most for each digit: the parts of formatToParts,
-// a separator after every two digits as Hindi groups them, and digits of
-// four bytes in UTF-8.
+// a separator after every two digits as Hindi groups them, digits of four
+// bytes in UTF-8, and the name of a unit or a currency, which copies the
+// parts once more.
 func TestDigitsRoomCoversGo(t *testing.T) {
 	for _, c := range []struct{ locale, opts, call string }{
 		{`en`, `{}`, `formatToParts(10n ** 60000n)`},
 		{`hi`, `{}`, `formatToParts(10n ** 60000n)`},
 		{`hi`, `{numberingSystem: 'adlm'}`, `formatToParts(10n ** 60000n)`},
 		{`hi`, `{numberingSystem: 'adlm'}`, `format(10n ** 60000n)`},
+		{`hi`, `{numberingSystem: 'adlm', style: 'unit', unit: 'meter', unitDisplay: 'long'}`, `format(10n ** 60000n)`},
+		{`hi`, `{numberingSystem: 'adlm', style: 'unit', unit: 'meter', unitDisplay: 'long'}`, `formatToParts(10n ** 60000n)`},
+		{`hi`, `{numberingSystem: 'adlm', style: 'currency', currency: 'EUR', currencyDisplay: 'name'}`, `format(10n ** 60000n)`},
+		{`hi`, `{numberingSystem: 'adlm', notation: 'compact', compactDisplay: 'long'}`, `format(10n ** 60000n)`},
 		{`en-IN`, `{style: 'percent', minimumFractionDigits: 20}`, `formatToParts(10n ** 60000n)`},
 		{`en`, `{numberingSystem: 'adlm', minimumSignificantDigits: 21}`, `formatToParts('1e-523000')`},
 		{`en`, `{notation: 'compact'}`, `format('1e-523000')`},
