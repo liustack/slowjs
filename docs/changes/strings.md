@@ -1,9 +1,10 @@
 ---
-summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, why a symbol and its description never share a string with the script, and why the hash table of atoms holds one atom for two buckets'
+summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, why a symbol and its description never share a string with the script, why the hash table of atoms holds one atom for two buckets, and why an empty string on the left of + gives back the string on the right'
 read_when:
   - String.prototype.includes, indexOf or lastIndexOf gives another result than before, or is slow on a long string
   - A WeakRef or FinalizationRegistry of a symbol made from a string, or whose description is held, does not let go of it
   - A VM holds more memory for its atoms than before, or a script near its memory limit runs out of memory where it did not
+  - A sum with an empty string on the left, such as '' + x or a template literal that starts with a substitution, gives a string that is shared with its operand
 ---
 
 # Strings
@@ -50,3 +51,15 @@ What it costs: the table takes four times the room. After 20 renders and a full 
 What it gains: the instructions of a render do not move by more than the noise of the rounds (tifa's `test/ssr` on an Apple M4, three rounds, within 0.3% on each group). Fewer steps along the chains are fewer loads, each a likely cache miss, so any gain shows in time, not in instructions.
 
 Tests: `test_key_names_oom` in `engine/test/unit-oom.c` sweeps a script that makes 600 names from no room to 80 KiB, so that some room lets it work with the larger table, and every other check of `unit`, `unit-api`, `unit-white` and `unit-oom` passes as before.
+
+## An empty string on the left of `+` gives the string on the right
+
+Release: Unreleased.
+
+`'' + x` is how React and much other code make a string of a value, and a template literal that starts with a substitution (`` `${x}px` ``) compiles to the same `+` after an empty string. QuickJS gave back the left string when the right one was empty, and the right one when the left was empty and the right a rope. An empty left and a flat right went to `JS_ConcatString2`, which grows the left string in place when it can. The empty string is almost always the atom's, which never grows in place, so it allocated a new string and copied the right one into it. `JS_ConcatString` (`engine/quickjs.c`) now frees the empty left string and gives back the right one when the right is a flat string of at most 512 characters. A longer right side still makes a rope, as before: it is rare on the pages.
+
+Why it is safe: a string has no identity a script can see, and the result has the same characters and the same width. The right string now has one more holder, so the appends that grow a string in place, which ask for no holder but the ones they know of (`js_concat_string_in_place`), copy it rather than change it. An atom's string can now be the result, and those appends refuse an atom already. What keeps the result now keeps the right string itself: `new RegExp(p, f + 'g')` with an empty `f` puts the atom's `'g'` in the regexp cache rather than a copy, so three scripts of the corpus (`q3-regexp-prefix.js`, `q3-regexp-skip.js` and `shikire.js`) end with one more atom and the same objects, and their goldens were written again.
+
+What it gains, counted on the native C tree at 3ae98161 (linux/amd64 callgrind, the whole process, the difference of three and one timed renders after one warm render): React's page renders 2,151 such sums a render and runs 1.28% fewer instructions, MUI's three pages 4,306 and 0.49%, the fourteen store pages 2,426 and 0.17%, the six workbench pages 1,018 and 0.21%, about 150 to 210 instructions a sum. The table is in [performance.md](../performance.md#an-empty-string-on-the-left-of-a-sum).
+
+Tests: `test_string_empty_left` in `engine/test/unit-white.c` checks that `'' + s`, `e + s` and `t = t + s` with an empty local, `''.concat(s)` and `` `${s}` `` give back the string `s` itself, and that an append to the result in place (`add_loc`, and an add into a local) leaves `s` as it was (`s` has 76 characters, past the 64 below which nothing is appended in place). With the check of `js_concat_string_in_place` loosened by one holder, the add into a local changes `s` and the test fails.

@@ -4296,6 +4296,57 @@ static void test_string_append_atom(void)
     }
 }
 
+/* An empty string on the left of + gives the string on the right, not a copy
+   of it, whichever way the add is made. The string is then shared, so an
+   append to the result must leave the operand as it was. */
+static void test_string_empty_left(void)
+{
+    static const struct {
+        const char *what, *src;
+    } ways[] = {
+        { "add", "s => '' + s" },
+        { "add of a local", "s => { let e = ''; return e + s }" },
+        { "add into a local", "s => { let t = ''; t = t + s; return t }" },
+        { "concat", "s => ''.concat(s)" },
+        { "template", "s => `${s}`" },
+    };
+    static const char *appends[] = {
+        /* add_loc, in place when the local holds the only reference */
+        "(s => { let t = '' + s; t += '!'; return [s, t] })",
+        /* an add into a local, in place when the string has two references */
+        "(s => { let t = '' + s; for (let i = 0; i < 3; i++) t = t + '!'; return [s, t] })",
+    };
+    /* longer than JS_STRING_APPEND_MIN and in a block with room */
+    static const char text[] = "a string of more than sixty-four characters, kept in a variable of the test ";
+    size_t i;
+
+    /* JS_STRING_APPEND_MIN of quickjs.c */
+    CHECK(strlen(text) >= 64, "the text is too short to be appended to in place");
+    for (i = 0; i < countof(ways); i++) {
+        VM v = vm_new();
+        JSValue f = JS_Eval(v.ctx, ways[i].src, strlen(ways[i].src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue s = JS_NewString(v.ctx, text), r;
+
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+        CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_STRING, "%s: gave no string", ways[i].what);
+        if (JS_VALUE_GET_TAG(r) == JS_TAG_STRING)
+            CHECK(JS_VALUE_GET_PTR(r) == JS_VALUE_GET_PTR(s), "%s: copied the string", ways[i].what);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+    for (i = 0; i < countof(appends); i++) {
+        VM v = vm_new();
+        char src[512], want[256];
+
+        snprintf(src, sizeof src, "var r = %s(['%s'].join('')); r[0] + '|' + r[1]", appends[i], text);
+        snprintf(want, sizeof want, "%s|%s%s", text, text, i == 0 ? "!" : "!!!");
+        CHECK(eval_is(v.ctx, src, want), "append %zu: the operand changed", i);
+        vm_free(&v);
+    }
+}
+
 /* ---- the own keys of an object ---- */
 
 /* objects of every kind of key, with the shapes the listing handles itself,
@@ -6617,6 +6668,7 @@ int main(int argc, char **argv)
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
+    test_string_empty_left();
     test_own_keys_flags();
     test_shared_debug_read();
     test_regexp_cache_keeps();

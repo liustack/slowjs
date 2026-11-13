@@ -911,6 +911,19 @@ The instructions fall on every group on both architectures: this takes back a sm
 
 [Array destructuring with no iterator](changes/c-engine.md#array-destructuring-with-no-iterator). Counted on 2026-11-13 on the native C tree at 62df0bc8 against 4922b91a (linux/arm64 callgrind, three timed renders of each page after two warm ones, a young collection after each): 0.71% fewer instructions on the workbench pages (0.48% to 0.85% a page), 0.33% on the storefront (0.14% to 0.51%), 0.27% on MUI (0.21% to 0.29%) and 0.31% on React, and with the URL stand-in (`urlmemo.js`) 0.84%, 0.53% and 0.26%. No page runs more. Timed in tifa's `test/ssr` on linux/amd64 (one core, 60 renders of each page, the P50, 5 alternating rounds), the pages took 0.988 of the time on MUI, 0.996 on the storefront and 1.001 on the workbench, where the engine against a copy of itself took 0.982, 0.994 and 1.001: below what the timing can show, and no page took more than 1.007.
 
+### An empty string on the left of a sum
+
+[An empty string on the left of `+` gives the string on the right](changes/strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right). Counted on 2026-11-13 on the native C tree at 3ae98161 against it (linux/amd64 callgrind on an AMD EPYC 7B13, the whole process, the difference of three and one timed renders after one warm render, tifa's pool, one run each). Every one of these sums had the atom's empty string on the left, so each was an allocation and a copy of the right string. The HTML of the 24 pages is the same.
+
+| Pages | Sums a render | Instructions before | After | Change |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, fourteen store pages (mean) | 2,426 | 256.78 M | 256.35 M | -0.17% |
+| tifa's shop, six workbench pages (mean) | 1,018 | 103.04 M | 102.82 M | -0.21% |
+| tifa's MUI test app, three pages (mean) | 4,306 | 134.54 M | 133.88 M | -0.49% |
+| React's page | 2,151 | 34.85 M | 34.40 M | -1.28% |
+
+Timed on 2026-11-13 on the Go engine, the same change against 3ae98161, on server B (linux/amd64, AMD EPYC 7B13, GOMAXPROCS=1 on one core), with the 16 layouts and 4 rounds of `measure bench` and its judge, 36 units for each group. React's page: -2.15% [-2.51%, -1.78%] as the mean of the layouts and -2.52% [-3.25%, -1.80%] on the layout that ships, faster. MUI's three pages: -0.67% [-1.27%, -0.07%] as the mean of the layouts, faster, and +0.63% [-0.59%, +1.88%] on the layout that ships, inconclusive. The store and workbench pages were not timed: their counts moved by less than 0.3%.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
