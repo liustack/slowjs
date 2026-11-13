@@ -67,6 +67,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ProfDataUtils.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -673,6 +674,41 @@ static Liveness liveness(Function &F) {
 static constexpr double PollEntry = 3, PollExit = 2, PollSync = 4, PollRegTick = 3, PollMemTick = 5;
 static constexpr unsigned PollRegs = 20;
 
+// StaticWeights takes the weights of a profile (-fprofile-instr-use) off the
+// branches of F while it lives, so that chooseLocals weighs F as the build
+// without a profile does. The turns of a loop over data (an array, a
+// string) are the data's, which the training cannot know, and the two costs
+// are not alike: a register costs a few instructions each time the loop is
+// entered, memory two each turn. A loop the training ran three times on
+// average would count in memory, and an array of a thousand elements pays
+// for it a thousand times (docs/changes). The weights of __builtin_expect,
+// which the build without a profile has too, stay, and so do those of the
+// branches this pass adds (createUnlikelyBranchWeights).
+struct StaticWeights {
+  std::vector<std::pair<Instruction *, MDNode *>> saved;
+  explicit StaticWeights(Function &F) {
+    // The shadow-stack pass gives most functions a new signature, and the
+    // new function has no entry count: the module's profile summary says
+    // whether the build has a profile.
+    if (!F.getParent()->getProfileSummary(/*IsCS=*/false))
+      return;
+    MDNode *ours = MDBuilder(F.getContext()).createUnlikelyBranchWeights();
+    for (BasicBlock &B : F)
+      for (Instruction &I : B)
+        if (MDNode *MD = I.getMetadata(LLVMContext::MD_prof);
+            MD && MD != ours && isBranchWeightMD(MD) && !hasBranchWeightOrigin(MD)) {
+          saved.push_back({&I, MD});
+          I.setMetadata(LLVMContext::MD_prof, nullptr);
+        }
+  }
+  ~StaticWeights() {
+    for (auto [I, MD] : saved)
+      I->setMetadata(LLVMContext::MD_prof, MD);
+  }
+  StaticWeights(const StaticWeights &) = delete;
+  StaticWeights &operator=(const StaticWeights &) = delete;
+};
+
 static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree &DT, const std::vector<Edge> &sites,
                                         const std::vector<BasicBlock *> &marks,
                                         const std::map<BasicBlock *, uint64_t> &chunks,
@@ -680,6 +716,7 @@ static std::vector<Loop *> chooseLocals(Function &F, LoopInfo &LI, DominatorTree
   Triple T(F.getParent()->getTargetTriple());
   TargetLibraryInfoImpl TLII(T);
   TargetLibraryInfo TLI(TLII, &F);
+  StaticWeights unprofiled(F);
   PostDominatorTree PDT(F);
   BranchProbabilityInfo BPI(F, LI, &TLI, &DT, &PDT);
   BlockFrequencyInfo BFI(F, BPI, LI);
