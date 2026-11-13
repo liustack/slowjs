@@ -38,6 +38,14 @@ func TestBodyStartSkipsTheFrameSetUpAndTheNOPs(t *testing.T) {
 	if got := bodyStart(0x1000, append(append([]byte{}, nops[3]...), 0x55)); got != 3 {
 		t.Errorf("body at %d, want 3", got)
 	}
+	// the register loop: Go's prologue, its SUBQ of SP, then the NOPs of a
+	// PCALIGN $16 and of a front of 8
+	prologue := []byte{0x64, 0x4c, 0x8b, 0x34, 0x25, 0xf8, 0xff, 0xff, 0xff, 0x4c, 0x8d, 0x64, 0x24, 0x80, 0x4d, 0x3b, 0x66, 0x10,
+		0x0f, 0x86, 0, 0, 0, 0, 0x55, 0x48, 0x89, 0xe5, 0x48, 0x81, 0xec, 0, 1, 0, 0}
+	reg := append(append(append(append(append([]byte{}, prologue...), nop9...), nops[1]...), nops[8]...), 0x4c, 0x8b)
+	if got, want := bodyStart(0x1020, reg), uint64(len(prologue)+18); got != want {
+		t.Errorf("body of the register loop at %d, want %d", got, want)
+	}
 }
 
 // TestOpcodeNames reads the instructions of the register loop in the order of
@@ -133,6 +141,50 @@ func TestCheckLayoutTakesWhatTheBinariesShowed(t *testing.T) {
 		if err := CheckLayout(formalLayout, moved(c.p, c.dm, c.d), c.p, "first"); err != nil {
 			t.Errorf("%s (matcher %d, interpreter %d): %v", c.p, c.dm, c.d, err)
 		}
+	}
+}
+
+// TestCheckLayoutInterpreterOn32: the register loop has no PCALIGN $64, so the
+// linker puts it on 32 bytes, and it moves with the functions before it by the
+// shifts exactly, an odd multiple of 32 too.
+func TestCheckLayoutInterpreterOn32(t *testing.T) {
+	formal := formalLayout
+	formal.Funcs = maps.Clone(formalLayout.Funcs)
+	off := uint64(32)
+	formal.Func += off
+	formal.Body += off
+	formal.Handlers = map[string]uint64{}
+	for op, a := range formalLayout.Handlers {
+		formal.Handlers[op] = a + off
+	}
+	for _, f := range []string{"JS_RegvmRun_block"} {
+		if _, ok := formal.Funcs[f]; ok {
+			formal.Funcs[f] += off
+		}
+	}
+	shifted := func(p Position, dm, d uint64) Layout {
+		l := moved(p, dm, d)
+		l.Func += off
+		l.Body += off
+		for op := range l.Handlers {
+			l.Handlers[op] += off
+		}
+		return l
+	}
+	p := Position{1376, 8, 1120}
+	if err := CheckLayout(formal, shifted(p, 1344, 2464), p, "first"); err != nil {
+		t.Errorf("moved with the functions before it: %v", err)
+	}
+	if err := CheckLayout(formal, shifted(p, 1344, 2496), p, "first"); err == nil {
+		t.Error("an interpreter on 32 bytes that moved to the next 64 is taken")
+	}
+	q := Position{1376, 8, 0}
+	if err := CheckLayout(formal, shifted(q, 1344, 1344), q, "first"); err != nil {
+		t.Errorf("no second shift: %v", err)
+	}
+	// on 32 bytes but on a multiple of 64 in the formal binary, by chance
+	if err := CheckLayout(formalLayout, moved(p, 1344, 2464), p, "first"); err != nil {
+		t.Errorf("on 32 bytes, formal on 64: %v", err)
 	}
 }
 
