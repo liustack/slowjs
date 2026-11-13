@@ -795,7 +795,9 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         ret = JS_NewInt32(ctx, idx == 0 ? 32 : clz32(idx));
         goto answer;
     case RV_FAST_MAP_HAS:
-        ret = js_map_has_fast(ctx, this_v, n, W + 1, f->u.cfunc.magic);
+    case RV_FAST_MAP_GET:
+        ret = js_map_has_fast(ctx, this_v, n, W + 1, f->u.cfunc.magic,
+                              f->rv_fast == RV_FAST_MAP_GET);
         if (JS_IsUninitialized(ret))
             break;
         goto answer;

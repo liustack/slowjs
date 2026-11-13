@@ -1321,6 +1321,7 @@ enum {
     RV_FAST_CHAR_CODE_AT, /* String.prototype.charCodeAt */
     RV_FAST_CLZ32, /* Math.clz32 */
     RV_FAST_MAP_HAS, /* Map.prototype.has and Set.prototype.has */
+    RV_FAST_MAP_GET, /* Map.prototype.get */
 };
 
 struct JSObject {
@@ -8912,8 +8913,11 @@ static JSValue js_math_clz32(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv);
 static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
                           int argc, JSValueConst *argv, int magic);
+static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv, int magic);
 static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv, int magic);
+                               int argc, JSValueConst *argv, int magic,
+                               BOOL get);
 #define MAGIC_SET (1 << 0)
 #define MAGIC_WEAK (1 << 1)
 
@@ -8931,6 +8935,8 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_CLZ32;
     if (func == (JSCFunction *)js_map_has && (magic == 0 || magic == MAGIC_SET))
         return RV_FAST_MAP_HAS;
+    if (func == (JSCFunction *)js_map_get && magic == 0)
+        return RV_FAST_MAP_GET;
     return RV_FAST_NONE;
 }
 
@@ -63898,12 +63904,14 @@ static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
     return TRUE;
 }
 
-/* Map.prototype.has and Set.prototype.has (magic) answered in the register
-   loop (rv_fast_call): what js_map_has returns, for a this of the class and
-   a key whose search reads no interrupt flag (map_find_record_quiet). Else
+/* Map.prototype.has and Set.prototype.has (magic 0 and MAGIC_SET), and
+   Map.prototype.get (get), answered in the register loop (rv_fast_call):
+   what js_map_has or js_map_get returns, for a this of the class and a key
+   whose search reads no interrupt flag (map_find_record_quiet). Else
    JS_UNINITIALIZED, and the call is made: it throws for another this. */
 static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
-                               int argc, JSValueConst *argv, int magic)
+                               int argc, JSValueConst *argv, int magic,
+                               BOOL get)
 {
     JSObject *p;
     JSMapRecord *mr;
@@ -63915,6 +63923,8 @@ static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
         !map_find_record_quiet(ctx, p->u.map_state,
                                map_normalize_key_const(ctx, argv[0]), &mr))
         return JS_UNINITIALIZED;
+    if (get)
+        return mr ? JS_DupValue(ctx, mr->value) : JS_UNDEFINED;
     return JS_NewBool(ctx, mr != NULL);
 }
 
