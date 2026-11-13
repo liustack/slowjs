@@ -7181,6 +7181,14 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
             if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
                 p1 = JS_VALUE_GET_STRING(op1);
                 if (p1->len <= JS_STRING_ROPE_SHORT2_LEN) {
+                    /* '' + x, as React writes to make a string of a
+                       value: the right string is the result. The empty
+                       string is mostly the atom's, which cannot grow in
+                       place, so JS_ConcatString2 would copy it. */
+                    if (p1->len == 0) {
+                        JS_FreeValue(ctx, op1);
+                        return op2;
+                    }
                     return JS_ConcatString2(ctx, op1, op2);
                 } else {
                     return js_new_string_rope(ctx, op1, op2);
