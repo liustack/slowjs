@@ -1331,6 +1331,7 @@ enum {
     RV_FAST_HAS_OWN, /* Object.hasOwn */
     RV_FAST_HAS_OWN_PROPERTY, /* Object.prototype.hasOwnProperty */
     RV_FAST_STRING, /* String called as a function */
+    RV_FAST_COUNT,
 };
 
 struct JSObject {

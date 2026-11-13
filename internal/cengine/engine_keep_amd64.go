@@ -1404,6 +1404,7 @@ var goasmKeep = []any{
 	rv_enter_args,
 	rv_entry_extra,
 	rv_entry_fast,
+	rv_fast_builtin,
 	rv_fast_call,
 	rv_fclosure,
 	rv_first_call,

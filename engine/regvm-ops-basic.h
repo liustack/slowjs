@@ -727,22 +727,8 @@ static force_inline int rv_fast_enter(JSContext *ctx)
     return 0;
 }
 
-/* A call out of the loop of a C function that JS_NewCFunction3 marked
-   (JSObject.rv_fast), answered here with what the C function returns, when
-   its this and arguments are of the kinds for which it runs no script,
-   throws nothing and allocates nothing. Returns the result, or
-   JS_UNINITIALIZED to make the call, which gives the same result in the
-   other cases.
-   Function.prototype.call: hasOwnProperty.call(o, k), js_has_own_call.
-   String.prototype.charCodeAt of a string, or of a rope that a call before
-   made flat (js_linearize_string_rope keeps the flat string in it), at an
-   index that is an int: the code unit at the index, NaN out of range. It
-   needs none of what a call does: no level of call depth (a recursion
-   through it only goes deeper), no count of a poll (the instructions of
-   the loop around it are counted, see check_polls). Of the checks of a
-   call only the one of an uncatchable exception pending stays, which makes
-   the call fail.
-   The other built-ins (rv_fast_kind) are answered as the call is made by
+/* The built-ins of rv_fast_kind other than call and charCodeAt, for
+   rv_fast_call. Each is answered as the call is made by
    js_call_c_direct, with the C function's work done here: first the answer
    is found, which reads no flag, runs no script, throws nothing and changes
    nothing that can be seen, and gives up (JS_UNINITIALIZED) where the C
@@ -752,40 +738,15 @@ static force_inline int rv_fast_enter(JSContext *ctx)
    through JS_CallInternal. So a stop ends a loop of such calls where it ended
    it before, an exception comes only from the call that is made, with its
    stack and message, and the depth a recursion reaches is the same. */
-static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
-                                      JSValueConst this_v)
+static no_inline JSValue rv_fast_builtin(JSContext *ctx, JSValueConst *W,
+                                         int n, JSValueConst this_v)
 {
     JSObject *f = JS_VALUE_GET_OBJ(W[0]);
     JSValue ret;
-    JSString *p;
     uint32_t idx;
     int r;
 
     switch (f->rv_fast) {
-    case RV_FAST_CALL:
-        return js_has_own_call(ctx, this_v, W + 1, n);
-    case RV_FAST_CHAR_CODE_AT:
-        /* the call fails while an uncatchable exception is pending
-           (js_call_checks), so the code after it does not run */
-        if (n < 1 || JS_VALUE_GET_TAG(W[1]) != JS_TAG_INT ||
-            unlikely(js_uncatchable_pending(ctx->rt)))
-            break;
-        if (JS_VALUE_GET_TAG(this_v) == JS_TAG_STRING) {
-            p = JS_VALUE_GET_STRING(this_v);
-        } else if (JS_VALUE_GET_TAG(this_v) == JS_TAG_STRING_ROPE) {
-            JSStringRope *r = JS_VALUE_GET_STRING_ROPE(this_v);
-            if (JS_VALUE_GET_TAG(r->right) != JS_TAG_STRING ||
-                JS_VALUE_GET_STRING(r->right)->len != 0 ||
-                JS_VALUE_GET_TAG(r->left) != JS_TAG_STRING)
-                break;
-            p = JS_VALUE_GET_STRING(r->left);
-        } else {
-            break;
-        }
-        idx = JS_VALUE_GET_INT(W[1]);
-        if (idx >= p->len)
-            return JS_NAN;
-        return JS_NewInt32(ctx, string_get(p, idx));
     case RV_FAST_CLZ32:
         /* a number, or a value ToUint32 takes without a script */
         if (n < 1 || !(JS_VALUE_GET_TAG(W[1]) == JS_TAG_INT ||
@@ -881,6 +842,70 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
     JS_FreeValue(ctx, ret);
     return r > 0 ? JS_UNINITIALIZED : JS_EXCEPTION;
 }
+
+/* A call out of the loop of a C function that JS_NewCFunction3 marked
+   (JSObject.rv_fast), answered here with what the C function returns, when
+   its this and arguments are of the kinds for which it runs no script,
+   throws nothing and allocates nothing. Returns the result, or
+   JS_UNINITIALIZED to make the call, which gives the same result in the
+   other cases.
+   Function.prototype.call: hasOwnProperty.call(o, k), js_has_own_call.
+   String.prototype.charCodeAt of a string, or of a rope that a call before
+   made flat (js_linearize_string_rope keeps the flat string in it), at an
+   index that is an int: the code unit at the index, NaN out of range. It
+   needs none of what a call does: no level of call depth (a recursion
+   through it only goes deeper), no count of a poll (the instructions of
+   the loop around it are counted, see check_polls). Of the checks of a
+   call only the one of an uncatchable exception pending stays, which makes
+   the call fail.
+   The other built-ins are answered in a function of their own,
+   rv_fast_builtin, which the loop calls through rv_fast_fns: in one
+   function, charCodeAt took 12 instructions more a call on arm64, and a
+   call from one to the other cost the built-ins about 35. */
+static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
+                                      JSValueConst this_v)
+{
+    JSString *p;
+    uint32_t idx;
+
+    switch (JS_VALUE_GET_OBJ(W[0])->rv_fast) {
+    case RV_FAST_CALL:
+        return js_has_own_call(ctx, this_v, W + 1, n);
+    case RV_FAST_CHAR_CODE_AT:
+        /* the call fails while an uncatchable exception is pending
+           (js_call_checks), so the code after it does not run */
+        if (n < 1 || JS_VALUE_GET_TAG(W[1]) != JS_TAG_INT ||
+            unlikely(js_uncatchable_pending(ctx->rt)))
+            break;
+        if (JS_VALUE_GET_TAG(this_v) == JS_TAG_STRING) {
+            p = JS_VALUE_GET_STRING(this_v);
+        } else if (JS_VALUE_GET_TAG(this_v) == JS_TAG_STRING_ROPE) {
+            JSStringRope *r = JS_VALUE_GET_STRING_ROPE(this_v);
+            if (JS_VALUE_GET_TAG(r->right) != JS_TAG_STRING ||
+                JS_VALUE_GET_STRING(r->right)->len != 0 ||
+                JS_VALUE_GET_TAG(r->left) != JS_TAG_STRING)
+                break;
+            p = JS_VALUE_GET_STRING(r->left);
+        } else {
+            break;
+        }
+        idx = JS_VALUE_GET_INT(W[1]);
+        if (idx >= p->len)
+            return JS_NAN;
+        return JS_NewInt32(ctx, string_get(p, idx));
+    }
+    return JS_UNINITIALIZED;
+}
+
+/* The function that answers each kind of JSObject.rv_fast, called from the
+   one call site of RV_CALL_OUT. RV_FAST_NONE never comes here. */
+static JSValue (*const rv_fast_fns[RV_FAST_COUNT])(JSContext *ctx,
+                                                   JSValueConst *W, int n,
+                                                   JSValueConst this_v) = {
+    [RV_FAST_CALL] = rv_fast_call,
+    [RV_FAST_CHAR_CODE_AT] = rv_fast_call,
+    [RV_FAST_CLZ32 ... RV_FAST_COUNT - 1] = rv_fast_builtin,
+};
 
 /* CALLS w argc k s1 .. sk: the last k arguments of the call copied with a
    reference from the slots s1 .. sk of F, s1 into the last one, w + argc,
@@ -1516,10 +1541,10 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     if (unlikely((i = JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT ?         \
                       JS_VALUE_GET_OBJ(W[0])->rv_fast : RV_FAST_NONE) !=  \
                  RV_FAST_NONE) && !RV_INJ_ARMED &&                       \
-        !JS_IsUninitialized(ret_val = rv_fast_call(ctx, W, n, this_v)))  \
+        !JS_IsUninitialized(ret_val = rv_fast_fns[i](ctx, W, n, this_v))) \
         ; /* answered without the call: hasOwnProperty.call(o, k), as   \
              QuickJS's OP_call_method, and the built-ins of             \
-             rv_fast_kind (rv_fast_call).                               \
+             rv_fast_kind (rv_fast_call, rv_fast_builtin).              \
              One call site for both keeps the loop's registers as they  \
              were (a second one spilled on arm64). i keeps the kind     \
              for rv_unwrap_first */                                     \
