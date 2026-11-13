@@ -458,7 +458,12 @@ void JS_SetFusedOps(JSContext *ctx, int on);
    the scratch the pass keeps between conversions (0 when it has none, after
    a collection), 12 the bytes of the frame of JS_CallInternal that a call of
    a C function from call, apply or a bound function counts as taken when it
-   skips it (js_call_c_hop), -1 when those go through JS_CallInternal. In a build with
+   skips it (js_call_c_hop), -1 when those go through JS_CallInternal, 17
+   the bytes a direct call of a C function counts as taken while it runs
+   (the frame of JS_CallInternal and that of js_call_c_function less that of
+   js_call_c_plain), -1 when the direct calls are off, 18 the same for a call
+   through js_call_c_hop (12 and the same difference), -1 when those go
+   through JS_CallInternal. In a build with
    -DRV_STATS (engine/quickjs.c): 10 the dispatches of the register loop, 13
    the calls into it from C, 14 the calls out of it to a function of
    bytecode, 15 those to a C function, 16 the most bytes of a segment of
