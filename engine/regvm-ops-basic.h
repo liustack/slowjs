@@ -851,13 +851,18 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         goto answer;
     case RV_FAST_PUSH:
         {
-            /* the room is made first, the elements added after the checks */
+            /* the elements are added after the checks, when they fit in
+               the room of the array. Else the checks are made, and the
+               call after them as js_call_c_direct makes it: push grows the
+               array, or throws, as before */
             JSObject *a = js_array_push_room(ctx, this_v, n);
             if (!a)
                 break;
             r = rv_fast_enter(ctx);
             if (unlikely(r != 0))
                 return r > 0 ? JS_UNINITIALIZED : JS_EXCEPTION;
+            if (unlikely(a->u.array.count + n > a->u.array.u1.size))
+                return js_call_c_counted(ctx, W[0], this_v, n, W + 1);
             return js_array_push_add(ctx, a, n, W + 1);
         }
     }

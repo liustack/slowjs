@@ -125,6 +125,7 @@ int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
 uint32_t white_key_atom(JSValueConst v);
+long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
@@ -2041,6 +2042,32 @@ static uint32_t key_atom_of_atom(VM *v, JSAtom a)
 
     JS_FreeValue(v->ctx, s);
     return k;
+}
+
+/* A call of a C function that js_call_c_counted makes (the answer of push
+   in the register loop, when the push must grow its array, after the
+   checks it made itself) counts what a direct call counts while the
+   function runs: one level of call depth and the debt rt->c_direct_debt
+   (JS_RegvmStat 17), the frame of JS_CallInternal it skips less what
+   js_call_c_plain takes beyond js_call_c_function. Both are given back
+   after the call. A counted call that kept the debt of before the plain
+   calls (rt->call_frame) would count JS_RegvmStat 6 where 17 differs. */
+static void test_counted_call_debt(void)
+{
+    VM v = vm_new();
+    long want = JS_RegvmStat(v.ctx, 17), counted, direct;
+    int depth = 0, direct_depth = 0;
+
+    CHECK(want >= 0, "the direct calls are off: their debt is %ld", want);
+    counted = white_call_debt(v.ctx, 0, &depth);
+    direct = white_call_debt(v.ctx, 1, &direct_depth);
+    CHECK(counted == want, "js_call_c_counted counts %ld bytes as taken, a direct call %ld",
+          counted, want);
+    CHECK(direct == want, "js_call_c_direct counts %ld bytes as taken, JS_RegvmStat 17 %ld",
+          direct, want);
+    CHECK(depth == 1 && direct_depth == 1,
+          "a counted call takes %d levels of call depth, a direct call %d", depth, direct_depth);
+    vm_free(&v);
 }
 
 static void test_key_atom(void)
@@ -7229,6 +7256,7 @@ int main(int argc, char **argv)
     test_object_spread_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
+    test_counted_call_debt();
     test_key_atom();
     test_young_lists();
     test_young_leaves_no_zero_count();

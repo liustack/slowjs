@@ -23815,6 +23815,26 @@ static inline BOOL js_call_c_direct_ok(JSRuntime *rt, JSValueConst func)
         !js_stack_short(rt, rt->call_frame);
 }
 
+/* js_call_c_direct after its checks: the level of call depth, the frame it
+   skips counted as taken (rt->c_direct_debt), and the C function through
+   js_call_c_plain. The answer of push in the register loop makes a call
+   this way after the checks it made itself, so that it counts what a
+   direct call counts (regvm-ops-basic.h). */
+static force_inline JSValue js_call_c_counted(JSContext *ctx, JSValueConst func,
+                                              JSValueConst this_obj, int argc,
+                                              JSValueConst *argv)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue ret;
+
+    rt->call_depth++;
+    rt->stack_debt += rt->c_direct_debt;
+    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func), this_obj, argc, argv);
+    rt->stack_debt -= rt->c_direct_debt;
+    js_call_leave(rt);
+    return ret;
+}
+
 /* What JS_CallInternal does for a C function, without its entry: count and
    read the interrupt flag, nothing while an uncatchable exception is pending,
    a level of call depth (js_call_c_direct_ok checked the limit and the
@@ -23828,20 +23848,13 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
                                              JSValue *argv)
 {
     JSRuntime *rt = ctx->rt;
-    JSValue ret;
 
     poll_count(POLL_WEIGHT);
     if (js_poll_interrupts(ctx))
         return JS_EXCEPTION;
     if (unlikely(js_uncatchable_pending(rt)))
         return JS_EXCEPTION;
-    rt->call_depth++;
-    rt->stack_debt += rt->c_direct_debt;
-    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func), this_obj, argc,
-                          (JSValueConst *)argv);
-    rt->stack_debt -= rt->c_direct_debt;
-    js_call_leave(rt);
-    return ret;
+    return js_call_c_counted(ctx, func, this_obj, argc, (JSValueConst *)argv);
 }
 
 /* Whether obj has an own property key, found as hasOwnProperty and
@@ -50457,17 +50470,13 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
    steps around the checks of the call. js_array_push_room: the array of
    this_val when push takes the fast case of js_array_push (a fast array
    that can grow, its length its count and writable, not past INT32_MAX),
-   with the room for argc more elements made: the room grows as
-   js_array_push grows it, but a failed allocation throws nothing (the call
-   is then made, and throws as before). NULL when the call must be made.
-   Room that the call then does not use is not seen. */
+   else NULL and the call is made. It changes nothing: when the elements do
+   not fit in the room the array has, rv_fast_call makes the call after the
+   checks, and js_array_push grows the array as before. */
 static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
                                     int argc)
 {
     JSObject *p;
-    uint32_t new_len, new_size;
-    size_t bytes;
-    JSValue *values;
 
     if (JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
         return NULL;
@@ -50478,23 +50487,8 @@ static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
           JS_VALUE_GET_INT(p->prop[0].u.value) == p->u.array.count &&
           (get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE) != 0))
         return NULL;
-    new_len = p->u.array.count + argc;
-    if (new_len > INT32_MAX)
+    if (p->u.array.count + (uint32_t)argc > INT32_MAX)
         return NULL;
-    if (new_len > p->u.array.u1.size) {
-        /* expand_fast_array_append without the throw */
-        if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
-            new_len = JS_ARRAY_MIN_ROOM;
-        new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
-        bytes = sizeof(JSValue) * new_size;
-        values = js_realloc_rt(ctx->rt, p->u.array.u.values, bytes);
-        if (!values)
-            return NULL;
-        if (js_malloc_usable_size_rt(ctx->rt, values) > bytes)
-            new_size += (js_malloc_usable_size_rt(ctx->rt, values) - bytes) / sizeof(JSValue);
-        p->u.array.u.values = values;
-        p->u.array.u1.size = new_size;
-    }
     return p;
 }
 
