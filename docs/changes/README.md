@@ -146,6 +146,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Long text and lists of locales are worked on in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#long-text-and-lists-of-locales-are-worked-on-in-checked-pieces) |
 | The functions of fmt make a long output in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
 | A Go function takes the long arrays of a call from the OS | Unreleased | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
+| A VM keeps its last block for the next call | Unreleased | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 
 ## Errors and stacks
 

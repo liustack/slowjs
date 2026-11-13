@@ -640,3 +640,23 @@ Not covered yet, measured as the longest time between two reads of the interrupt
 A list whose elements hold pointers cannot be a block: the garbage collector does not look in a block. They are next, in lists made of pieces of a fixed size.
 
 Tests: `TestTake`, `TestTakeTakesNoPage` and `TestTakePanics` in `internal/hostmem/block_test.go`. `TestLongCallsUseBlocks` in `intl/blocks_test.go` holds the long calls of a Segmenter, a compare (with lone surrogates and with long runs of accents), a ListFormat and case mappings to Go allocations of less than a quarter of their text, and to no block held after the call but the text of a cursor, and none after the VM is closed. `TestStoppedCallsGiveBlocks` stops each at five places and checks every block is given back. `TestLatin1PrefixSteps` in `stringstop_test.go`, `TestSizePrintfStops` in `fmt/limits_test.go`, `TestLongVerbsStop` in `fmt/stops_test.go` and `TestCursorDropClears` in `intl/runs_test.go`. A try of the sweep that stays late now says, in the error, what it took, the CPU time, page faults and GC pauses of the process during it, and the stack of the call at its timeout and grace (`internal/stopsweep`).
+
+## A VM keeps its last block for the next call
+
+Release: Unreleased.
+
+A block of the [section above](#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) is new memory at every call, and the OS hands over each of its pages as the call writes it, where Go's allocation often reused memory it held: a call on a text of 512 Ki units or more paid for that at each call. On GitHub's macos-15 runner, 40 calls in a row of the first word of a text of 8 Mi units took 31 to 34 ms each in the middle, where they took 5.2 to 8.9 ms with Go's allocation.
+
+Now a VM keeps the last block given back, of at most 32 MiB, for the next call that takes one (`hostmem.Keep` in `internal/hostmem/keep.go`, `goTake` in `vmhook.go`). A call that takes a block no larger than the one kept gets the kept one, whose pages are in memory, and clears what it asks of it a MiB at a time, with a read of whether to stop between two: a MiB of memory already in place clears in well under a millisecond, so no stretch with no check comes back. A stop while it clears ends the call and leaves the block kept. When a VM holds a block already, it keeps the larger of the two and gives the other back to the OS. The block kept counts against the memory limit in the room a Go function checks (`vmhook.Room`), and a VM keeps a block only when it is at most a quarter of the room left, so a VM close to its limit keeps none. It goes back to the OS after 16 calls of the VM that took no block, at the end of the 16th, and at `Close`.
+
+The middle time of each of 40 calls in a row of the first word of a text of 8 Mi units, the first 5 left out:
+
+| Machine | Go's allocation (v0.30.3) | A new block at each call | The kept block |
+| --- | --- | --- | --- |
+| GitHub's macos-15 runner, Go 1.26.6 and the Go of `go.mod`, three rounds each | 5.2 to 8.9 ms | 31.4 to 34.0 ms | 3.7 to 6.1 ms |
+| Apple M4 | 3.6 ms | 4.1 ms | 2.3 ms |
+| Apple M4, amd64 under Rosetta | 3.9 ms | 7.6 ms | 2.6 ms |
+
+What it costs: up to 32 MiB a VM holds between calls while it has a block kept, counted against its limit. A text of a Segmenter is held by its cursor, so the kept block of a VM that reads many Segments objects is the one of the cursor it dropped last. Giving the kept block back after 16 idle calls takes about 3 ms for 32 MiB on one core of an AMD EPYC (1.5 ms was measured for 16 MiB), at the end of a call, after its script.
+
+Tests: `TestKeepReuses`, `TestKeepShort`, `TestKeepChooses`, `TestKeepIdle` and `TestKeepStops` in `internal/hostmem/keep_test.go`, `TestKeepCountsAgainstRoom` in `keep_test.go`, and `TestLongCallsUseBlocks` and `TestStoppedCallsGiveBlocks` in `intl/blocks_test.go`, which now allow one block more held while the VM runs and none after `Close`.

@@ -641,3 +641,23 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 元素里有指针的列表不能放进这样的数组：垃圾回收不看那里面。下一步把它们改成定长分块的列表。
 
 测试：`internal/hostmem/block_test.go` 的 `TestTake`、`TestTakeTakesNoPage` 和 `TestTakePanics`。`intl/blocks_test.go` 的 `TestLongCallsUseBlocks` 要求 Segmenter、比较（含孤立代理项和长串重音符号）、ListFormat 和大小写转换的长调用，Go 分配的内存不到文本的四分之一，调用之后除了游标的文本不拿着任何数组，VM 关闭后一个也不拿。`TestStoppedCallsGiveBlocks` 在五个位置停下每个调用，检查每个数组都还了。还有 `stringstop_test.go` 的 `TestLatin1PrefixSteps`、`fmt/limits_test.go` 的 `TestSizePrintfStops`、`fmt/stops_test.go` 的 `TestLongVerbsStop` 和 `intl/runs_test.go` 的 `TestCursorDropClears`。扫描里一直晚的尝试，现在在错误里写出它花的时间、这期间进程的 CPU 时间、缺页数和 GC 停顿，以及调用在超时加宽限期那一刻的栈（`internal/stopsweep`）。
+
+## VM 留下最后一块内存给下一次调用
+
+版本：Unreleased。
+
+[上一节](#go-函数的长数组直接向系统要内存)说的这种内存块，每次调用都是新的，调用写到哪一页，系统才把那一页交出来，而原来 Go 的分配常常能用它手里已有的内存：在 512 Ki 个单位以上的文本上，每次调用都要付这笔代价。在 GitHub 的 macos-15 机器上，在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，每次的中位数是 31 到 34 ms，原来用 Go 的分配是 5.2 到 8.9 ms。
+
+现在 VM 把最后还回来的一块（最大 32 MiB）留着，给下一次要内存块的调用（`internal/hostmem/keep.go` 的 `hostmem.Keep`，`vmhook.go` 的 `goTake`）。调用要的块不比留着的大，就拿留着的那块，它的页已经在内存里，调用要用的部分一次清零 1 MiB，两次之间检查是否要停：已在内存里的 1 MiB 清零远不到一毫秒，所以不会再出现不检查的一段。清零时被停下，调用结束，那块继续留着。VM 已经留着一块时，留下两块里大的那块，另一块还给系统。留着的块算在 Go 函数检查的空间（`vmhook.Room`）里，计入内存上限，只有不超过剩余空间四分之一时才留，所以快到上限的 VM 不留。连续 16 次调用都没要内存块时，在第 16 次结束时还给系统，`Close` 时也还。
+
+在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，去掉前 5 次，每次时间的中位数：
+
+| 机器 | Go 的分配（v0.30.3） | 每次调用一块新的 | 留下的那块 |
+| --- | --- | --- | --- |
+| GitHub 的 macos-15 机器，Go 1.26.6 和 `go.mod` 的 Go，各三轮 | 5.2 到 8.9 ms | 31.4 到 34.0 ms | 3.7 到 6.1 ms |
+| Apple M4 | 3.6 ms | 4.1 ms | 2.3 ms |
+| Apple M4，Rosetta 下的 amd64 | 3.9 ms | 7.6 ms | 2.6 ms |
+
+代价：留着一块时，VM 在两次调用之间最多多占 32 MiB，计入它的上限。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
+
+测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle` 和 `TestKeepStops`，`keep_test.go` 的 `TestKeepCountsAgainstRoom`，以及 `intl/blocks_test.go` 的 `TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，它们现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
