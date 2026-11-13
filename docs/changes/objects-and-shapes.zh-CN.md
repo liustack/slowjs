@@ -286,7 +286,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 往数组里追加元素时，第一次就留 8 个元素的空间
 
-发布：Unreleased。
+发布版本：Unreleased。
 
 用 `push`、在长度处按下标写、展开、`splice`，或者一个一个往数组里填元素的内置函数（`Object.entries`、`split`、`JSON.parse`、`concat`、`map`）追加元素时，数组第一个元素只分到 1 个槽，之后依次是 2、3、4、6、9，每一步都是一次分配，加上一次复制已有的元素。这样建出来的数组大多只有几个元素（商店页每次渲染有 1.7K 到 3K 个数组超出了第一次分配，MUI 订单页 3K 个）。现在 `engine/quickjs.c` 里的 `expand_fast_array_append`，在一个还没有空间的数组追加第一个元素时，给它 `JS_ARRAY_MIN_ROOM`（8）个槽，之后照常 1.5 倍增长。只有追加的三个地方调用它（`add_fast_array_element`、`push` 的快速路径、`splice` 让数组变长的地方）。一开始就知道大小的数组（字面量、`slice`、剩余参数、`arguments`、自身键的数组）仍然只要刚好的大小。
 
@@ -298,7 +298,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## `in` 运算符遍历原型链时不加引用
 
-版本：Unreleased。
+发布版本：Unreleased。
 
 `in`、`Reflect.has`、属性描述符的各个字段（`Object.defineProperty`）、`every` 和 `concat` 查找的空位，都要经过 `JS_HasProperty`。它以前对原型链上的每个对象先加一个引用，问完这个对象有没有这个键（`JS_GetOwnPropertyInternal`）再放掉。现在只有不是快速数组的 exotic 对象才这样做：`String` 对象，或者类自带 `get_own_property` 的对象。不是 exotic 的对象、数组、`arguments` 和类型化数组都不加引用直接问。
 

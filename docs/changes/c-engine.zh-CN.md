@@ -270,6 +270,8 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 ## arm64 只保存一次 LR
 
+发布版本：Unreleased。
+
 在 arm64 上，生成的代码不再在每个有调用的函数里自己保存和读回 LR（x30）：Go 的序言和尾声已经做了这件事。llc 把 x30 当作被调用者保存的寄存器，所以有调用的函数把它存进自己的栈帧，每次返回之前再读回来。生成器把每次返回改成跳到函数末尾，Go 汇编器在那里写它的尾声，有调用的函数的尾声从 0(RSP) 读回 LR，那是 Go 的序言保存它的地方（`cmd/internal/obj/arm64/obj7.go`，`preprocess` 里的 `ARET` 分支）。llc 对 x30 的存和读都是没用的，每次调用大约两条指令。lowering 把它们删掉（`internal/goasm/gen/arm64_lr.go`）：x30 的 `str` 或 `ldr` 整条删掉，把 x30 和另一个寄存器配对的 `stp` 或 `ldp` 只留下那个寄存器的 `str` 或 `ldr`，偏移不变。amd64 的代码没有 LR，一个字节都不变。
 
 为什么安全：lowering 在自己的输出上证明这一点，证明不过就让构建停下。剩下的指令没有一条提到 x30，也没有一条读、写或取地址到被删槽的任何一个字节，所以在每条路径上这个槽只从 x30 写入、只读回 x30，而这两者都已删掉。x30 本身只被 Go 的 `RET` 读，那时尾声已经把它读回来了。不调用任何函数的函数在 Go 看来是叶子函数，它的尾声不读回 LR，这时函数里没有任何指令写 x30，从入口到返回它一直是 LR。Go 运行时也不读 llc 的这个槽：栈复制、信号的回溯和回调进 Go 都要经过 unwinder，它从每个栈帧的 0(RSP) 取这个栈帧的返回地址（`runtime/traceback.go`，`unwinder.resolveInternal`），而 `morestack` 在函数自己的栈帧建立之前运行，调用者的 LR 放在 R3 里传过去（`runtime/asm_arm64.s`）。槽的 8 个字节还留在栈帧里，所以每个栈帧的大小都和原来一样，调用深度和影子栈都不变（`TestRegvmDepth` 的深度下限和 `TestCCallDepth` 得到同样的深度，`JS_RegvmRun` 的影子栈帧仍是 176 字节），llc 的文本、pass 的报告和寄存器 facts 都和以前是同样的文件。
@@ -433,7 +435,7 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 ## 一次调用自己把最后几个局部变量复制进窗口
 
-发布：Unreleased。
+发布版本：Unreleased。
 
 寄存器循环把一次调用的参数放在它的窗口里，也就是被调函数的帧开始的那些临时槽。参数是局部变量、调用者的参数或 `this` 时，原来由调用前紧挨着的一条 `MOV` 放进去，每个参数一次分发。`CALLS` 和 `CALLSD` 是自己复制最后几个参数的 `CALL` 和 `CALLD`，现在把最多四个这样的复制并进调用里：转换器把这些槽写在调用的操作数后面，调用从最后一个参数往前，带引用地逐个复制。两个局部变量的 `return f(a, b)` 原来跑三条指令，现在跑一条。方法调用、常量或临时槽的参数，以及它们前面的参数，仍然保留各自的 `MOV` 或 `LOADK`。
 
@@ -564,7 +566,7 @@ tifa 商店的六个工作台页面，每次渲染少 0.61% 的指令，店面�
 
 ## 捕获后不再改变的变量
 
-发布：Unreleased。
+发布版本：Unreleased。
 
 闭包通过 `JSVarRef` 读外层函数的变量，栈帧和这个变量的每个闭包共用它，所以哪一边写了，另一边都看得到。大多数被捕获的变量在闭包拿到之后就不再写了：参数、`const`、函数声明、在闭包创建之前赋值一次的 `let`。`capture_by_value` 找出它们。它在每个函数的最终代码上运行，在 `share_local_slots` 之后，编译器创建函数时跑一次，`JS_ReadObject` 读入之前没有经过检查读过的代码时再跑一次。一个函数被捕获的参数或局部变量，以及捕获它的每个函数里对应的闭包变量，在满足下面几条时标记为 `by_value`：
 
@@ -707,7 +709,7 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 ## catch 偏移和跳转不离开所在的函数
 
-发布：Unreleased。
+发布版本：Unreleased。
 
 `JS_ReadObject` 对读到的每个函数跑一遍寄存器 pass，pass 接不了的代码以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝（`engine/regvm-entry.h` 的 `rv_read_check`）。现在又多拒绝三类这样的代码（`engine/regvm-pass.h`）：
 
@@ -723,7 +725,7 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 ## arm64 的跳转表每项占 4 字节
 
-版本：未发布。
+发布版本：Unreleased。
 
 llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（每项存从最低目标算起、以 4 字节为一步的步数，用 `ldrb` 或 `ldrh` 读），否则用 4 字节（存到分发处 `adr` 的字节距离，用 `ldrsw` 读）。它按自己写出的代码大小来选。之后 lowering 又在函数里加代码，所以在 llc 的代码里放得下的表，到了 lowering 后的代码里可能就太窄：`js_start_tag` 里的一个 switch 到了 272 步，超过一个字节能存的 255，llvm-mc 因此拒绝了整个引擎。只有在读到这一项时就知道距离，llvm-mc 才会拒绝它。两个标签之间隔着代码里的一处对齐时，它要到后面才算出距离，然后不声不响地只写下低位（LLVM 22.1.8），所以超出宽度的表本来可能跳错地方。实际上没有：在 v0.30.2 的 arm64 引擎上打开窄形式跑下面的检查，每一项都在宽度之内。但下一次哪段 C 的改动会把哪张表撑破，全凭运气。
 
@@ -735,7 +737,7 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 ## 局部变量里的键不加引用就读
 
-版本：Unreleased。
+发布版本：Unreleased。
 
 键在局部变量或参数里的 `o[k]`（寄存器循环的 GETEL 和 GETELT，数组和类型化数组的快路径答不上时）以前先给键加一个引用，`JS_GetPropertyValue` 把键变成 atom 之后再放掉。现在循环像读 `o` 一样就地读这个键，`JS_GetPropertyValueConst` 读完不动它。键在临时槽里时照旧拿走再释放。
 
@@ -747,7 +749,7 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 ## 值的真假不加引用就判断
 
-版本：Unreleased。
+发布版本：Unreleased。
 
 `JS_ToBool` 以前先给值加一个引用，知道它是真是假之后再放掉。现在它就地读这个值（`take` 为 FALSE 的 `js_to_bool`），`JS_ToBoolFree` 还是原来的函数。寄存器循环的分支（`if`、`while`、`!`、`&&`、`||`、条件运算符）对局部变量或参数经 `JS_ToBool` 判断，对临时槽经 `JS_ToBoolFree` 判断，以前两者都先拿一个引用（`rv_take`）。保留操作数的 `&&` 和 `||` 也经 `JS_ToBool` 判断。`Boolean`、RegisterStartTag 的标签、promise 的任务和另外几个内建函数调用 `JS_ToBool`，得到同样的收益。
 
@@ -759,7 +761,7 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 ## 数组字面量直接接过元素的引用
 
-版本：Unreleased。
+发布版本：Unreleased。
 
 `[a, b, c]` 这样的数组字面量（OP_array_from，在寄存器循环的窗口里和折叠的栈里）以前用 `js_create_array` 造数组，它给每个元素加一个新引用，然后再放掉每个元素在栈上的那个引用。现在它把栈上的引用直接搬进数组（`js_create_array_free`，上游 QuickJS 的解释器原来就有它），数组造不出来时释放这些元素。对其他调用方，`js_create_array` 还是原来的函数（`take` 为 FALSE 的 `js_create_array_in`）。
 
@@ -771,7 +773,7 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 ## 局部变量里的键不加引用就写
 
-版本：Unreleased。
+发布版本：Unreleased。
 
 键在局部变量或参数里的 `o[k] = v`（寄存器循环的 PUTEL，数组的快路径答不上时）以前先给键加一个引用，`JS_SetPropertyValue` 把键变成 atom 之后再放掉。现在循环像[读 `o[k]`](#局部变量里的键不加引用就读) 一样就地传这个键，经过 `JS_SetPropertyValueConst`，它写完不动这个键。键在临时槽里时和值一样照旧拿走。
 
@@ -783,7 +785,7 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 ## 不造迭代器的数组解构
 
-发布：未发布。
+发布版本：Unreleased。
 
 `const [a, b] = arr` 要取 `arr` 的迭代器，通过它的 `next` 读两个元素，再关掉它。解析器把它编成 `for_of_start`，每个元素一组 `for_of_next` 和 `drop`，最后 `iterator_close`。这几步要调用 `values`、造一个 Array Iterator 对象、查 `Symbol.iterator`、`next` 和 `return`，每个元素还要调一次窗口操作：两个元素大约 1,350 条指令，而直接读 `arr[0]` 和 `arr[1]` 只要 100 条左右。商城、MUI 和 React 的页面每次渲染解构数组 135 到 2,261 次，解构的都是页面自己造的数组，上面什么也没改过。
 
