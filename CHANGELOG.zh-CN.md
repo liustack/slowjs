@@ -12,13 +12,21 @@
 - 字符串记住自己作为属性名的编号，键来自 `for in` 或 `Object.keys` 时，`o[k]` 和 `hasOwnProperty.call` 读一次就能拿到。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），渲染时间比只有上一条的按键读取时再少 0.8%（工作台页面）到 2.0%（MUI 页面）。每个字符串多占 4 字节：全是短字符串的堆，`MemorySize` 最多多算 10%。
 - 对象的 rest（如 `const {a, ...rest} = props`）和对象字面量里的展开（如 `{type: x, ...props}`），源对象的属性布局以前见过时，现在照着记下的布局直接复制，不再一个属性一个属性地查。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），tifa 的工作台页面用时少 3.1%，MUI 页面少 2.5%，商店页面少 1.3%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建)）。
 - 字节码版本升到 12，因为对象的 rest 用一张列表记下它排除的键（`OP_copy_rest`）：v0.30.4 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+
+### 修复
+
+- 在对象字面量里展开字符串，现在得到它的各个字符，和 Node 一样：`{..."ab"}` 是 `{0: "a", 1: "b"}`，以前是 `{}`。数字、布尔值、symbol 和 bigint 仍然不给出键。这是上游 QuickJS 的修正 b19b2ec（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md)）。展开、rest 和 `Object.assign` 的复制现在每 4,096 个键读一次中断标志，超时或 `Interrupt` 能在长字符串或键很多的对象复制完之前停下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)）。
+
+## [v0.30.4] - 2026-11-14
+
+### 变更
+
 - locale 列表里超过 16,384 个字符的 tag 现在是 `RangeError`，和 v0.30.3 起单独给的 tag 一样。Chrome 和 Node 接受它。原来 Go 把列表里的每个 tag 整个转成规范形式，中间不检查调用：在 Apple M4 上，16 个 256 Ki 字符的 tag 在 eval 超时后还跑了 60 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用)）。
 - `fmt.sprint` 或 `fmt.sprintf` 的输出比引擎最长的字符串还长时，现在用不可捕获的内存不足错误结束调用，原来是 `TypeError`。只有内存上限超过 16 GiB 的 VM 才要得出这样的输出（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存)）。
 - 没有内存上限的 VM 里，Intl 或 `fmt` 在长文本上的调用现在重用上一次调用的内存，不必每次调用都要新的页：VM 留着最后还回来的一块（最大 32 MiB），一个进程里的 VM 加起来最多留 64 MiB，每块在连续 16 次调用都没用时、`SetMemoryLimit` 给 VM 设上限时和 `Close` 时还回去。在 GitHub 的 macos-15 机器上，在 8 Mi 字符的文本里找第一个词，每次调用 3.7 到 6.1 ms，v0.30.3 是 5.2 到 8.9 ms。有内存上限的 VM 不留块，好守住上限：同样的调用在那台机器上要 31 到 34 ms，在 Apple M4 上要 4.1 ms，v0.30.3 是 3.6 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用)）。
 
 ### 修复
 
-- 在对象字面量里展开字符串，现在得到它的各个字符，和 Node 一样：`{..."ab"}` 是 `{0: "a", 1: "b"}`，以前是 `{}`。数字、布尔值、symbol 和 bigint 仍然不给出键。这是上游 QuickJS 的修正 b19b2ec（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md)）。展开、rest 和 `Object.assign` 的复制现在每 4,096 个键读一次中断标志，超时或 `Interrupt` 能在长字符串或键很多的对象复制完之前停下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)）。
 - `Interrupt` 和 eval 超时现在能在长文本上停下 `Intl.Segmenter`、`Intl.ListFormat`、土耳其语、阿塞拜疆语、立陶宛语和希腊语的 `toLocaleUpperCase` 与 `toLocaleLowerCase`，以及 `Intl.Collator` 和 `localeCompare`：文本一段一段地处理，两段之间检查调用，Go 要留下的部分先按内存上限算好空间再分配。原来已检查的那几段之外的工作不读中断标志。在 Apple M4 上，8 Mi 字符的 Segmenter 在超时后还跑 19 到 40 ms，一项 8 Mi 字符的 ListFormat 约 50 ms，8 Mi 字符的希腊语转大写最长 0.75 秒，两个 4 Mi 字符的字符串比较 18 到 36 ms。在 CI 的 Intel Mac 上，超时设为 100 ms 的 Segmenter 要 215 到 310 ms 才停。结果都不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用)）。
 - `fmt.sprintf`、`printf`、`sprint` 和 `println` 的输出可能超过 64 KiB 时，现在一段一段地造，`Interrupt` 和 eval 超时能在两段之间结束调用。原来是 Go 的 fmt 一口气造完，中间不检查：在 Apple M4 上，3.2 MiB 的 `%q` 要跑 22 ms，超时到了也停不下来。输出逐字节不变。还剩一处停不下来：很长的 BigInt 转十进制的第一步除法，最长的在 Apple M4 上 5 到 7 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#fmt-的函数分段造出长输出并检查调用)）。
 - Intl 或 `fmt` 的调用复制长文本或造长输出、系统正在交出内存时，`Interrupt` 和 eval 超时现在能停下它。原来 Go 把和输入一样长的数组一口气清零，中间不检查，如果 Go 之前把这些页还给了系统，清零时系统要一页一页地重新交回来：在 GitHub 的 macos-15 机器上（Rosetta 下的虚拟 Apple M1），16 MiB 约 30 ms。在那台机器上，在 8 Mi 字符的文本里找第一个词，整个调用 6.4 ms，超时设为 4.8 ms 时晚了 27.1 ms 才停。现在这样 1 MiB 及以上的数组直接向系统映射，页在填它的循环里才交过来，那个循环检查调用：在同一台机器上，这个调用在每个超时下的扫描跑了 148 次，全部通过，整个调用要 27 到 106 ms，一半在 32 ms 以下，多出来的是每次调用都要系统交出页的代价。这是有内存上限的 VM 的代价，没有上限的 VM 留着最后一块，见「变更」。`fmt` 在很长的格式和很长的格式动词里现在也检查调用，在 Apple M4 上它们原来不检查地跑到 79 ms 和 260 ms。还有三段停不下来，是下一步要做的：8 Mi 项的 ListFormat 的 `format`，最长 574 ms，8 Mi 个孤立代理项的 `toLocaleUpperCase('tr')`，最长 751 ms，会让 VM 被杀掉，以及 Segmenter 在 11 Mi 字符的一段中文上，最长 235 ms，都是在 AMD EPYC 的一个核上量的（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存)）。
@@ -663,7 +671,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1

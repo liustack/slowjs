@@ -151,6 +151,25 @@ test)
 	(cd "$here" && tar cf - --exclude=qjsdata .) | (cd "$mod" && tar xf -)
 	mkdir -p "$mod/qjsdata"
 	cp "$here"/qjsdata/NOTICE-* "$mod/qjsdata/"
+	# The packages of the module outside internal/gointl that its tests build
+	# with (internal/hostmem, for the blocks of qjs_blocks.go) come as they
+	# are, and so do the module's requirements and their sums, so the copy
+	# builds what the module builds.
+	deps=$(cd "$root" && go list -deps -test -tags gointl_all \
+		-f '{{if .Module}}{{if eq .Module.Path "github.com/liustack/quickjs"}}{{.Dir}}{{end}}{{end}}' ./internal/gointl/...)
+	while read -r dir; do
+		case $dir in
+		"" | "$here" | "$here"/*) continue ;;
+		"$root"/*) ;;
+		*) die "a package of the module outside it: $dir" ;;
+		esac
+		mkdir -p "$tmp/${dir#"$root"/}"
+		cp "$dir"/*.go "$tmp/${dir#"$root"/}/"
+	done <<EOF
+$deps
+EOF
+	sed '/^tool /d' "$root/go.mod" >"$tmp/go.mod"
+	cp "$root/go.sum" "$tmp/go.sum"
 	# Their corpora are data of the release, as its data/ is: Node's answers
 	# on that data. Both are read from the commit, after a check of every
 	# object of the checkout, so a file changed in the checkout, or an object
@@ -174,7 +193,6 @@ test)
 	(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
 		-data "$data" -out "$mod/qjsdata" -locales all >/dev/null)
 	skip='TestGeneratedTablesAreWellFormed|TestQJSAvailable|TestQJSResolveMatchesChromium|TestQJSTZVersion'
-	printf 'module github.com/liustack/quickjs\n\ngo %s\n' "$(sed -n 's/^go //p' "$root/go.mod")" >"$tmp/go.mod"
 	(cd "$tmp" && go test -tags gointl_all -skip "^($skip)\$" "$@" ./internal/gointl/...)
 	;;
 test-chromium)

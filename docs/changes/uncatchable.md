@@ -577,7 +577,7 @@ Tests: `TestUncuttableRunsCheck`, `TestUncuttableRunsTimeout`, `TestSegmenterAft
 
 ## Long text and lists of locales are worked on in checked pieces
 
-Release: Unreleased.
+Release: v0.30.4.
 
 The long content of Intl, the text of a Segmenter, of a case mapping, of a compare and of a ListFormat, and a list of locales, is now worked on a piece at a time, with a check of the call between pieces, and the room under the memory limit is checked for what Go keeps of it before Go allocates it. The runs of the [section above](#a-run-no-builtin-can-cut-reads-the-interrupt-flag) were checked, but the work around them read no interrupt flag, and on a slow machine that work alone was longer than the grace: `TestUncuttableRunsTimeout` failed on the Intel Mac of CI, where a Segmenter with a timeout of 100 ms stopped after 215 to 310 ms. Each call below ran whole past the eval timeout on an Apple M4 before, and stops within the grace of the sweep now (see [testing.md](../testing.md#time-in-a-test)):
 
@@ -601,7 +601,7 @@ Tests: `TestLongReadStops`, `TestLongReadInterrupt` and `TestLongCallsStopAtEver
 
 ## The functions of fmt make a long output in checked pieces
 
-Release: Unreleased.
+Release: v0.30.4.
 
 `fmt.sprintf`, `printf`, `sprint` and `println` made their whole output with Go's fmt before the call could stop, and a BigInt in decimal with math/big at once. On an Apple M4, `%q` of 3.2 MiB of control characters, 16 MiB of output, ran 22 ms with no check, `%v` of an array of 2 Mi numbers copied 15 MiB of json at once, which ran 8 ms past an eval timeout under Rosetta, and `%d` of the longest BigInt converted 1,040,000 bits in 17 ms.
 
@@ -615,7 +615,7 @@ Tests: `TestPrintfAsGo` in `fmt/printf_test.go` compares the output with Go's fm
 
 ## A Go function takes the long arrays of a call from the OS
 
-Release: Unreleased.
+Release: v0.30.4.
 
 When a Go function that javascript called made an array the length of its input, to hold a copy of a long text or a long output for the call, Go allocated it and cleared it in one go, with no read of the interrupt flag. When Go had given those pages back to the OS before, the OS hands them over again one page at a time while Go clears them. On GitHub's macos-15 runner, a virtual Apple M1 that runs amd64 under Rosetta with pages of 4 KiB, that takes about 6 µs a page, 25 to 40 ms for 16 MiB, at every call that meets it. `TestLongCallsStopAtEveryTimeout` failed there: the first word of a text of 8 Mi units, a call of 6.4 ms, stopped 27.1 ms after a timeout of 4.8 ms, past a grace of 5.2 ms, at all three tries. The stack of the late call was in the copy of the text ten times out of ten, and the page faults of the process during it were the pages of its 16 MiB. The time grows with the input: with no memory limit a text of 512 Mi units is an array of 1 GiB.
 
@@ -643,7 +643,7 @@ Tests: `TestTake`, `TestTakeTakesNoPage` and `TestTakePanics` in `internal/hostm
 
 ## A VM keeps its last block for the next call
 
-Release: Unreleased.
+Release: v0.30.4.
 
 A block of the [section above](#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) is new memory at every call, and the OS hands over each of its pages as the call writes it, where Go's allocation often reused memory it held: a call on a text of 512 Ki units or more paid for that at each call. On GitHub's macos-15 runner, 40 calls in a row of the first word of a text of 8 Mi units took 31 to 34 ms each in the middle, where they took 5.2 to 8.9 ms with Go's allocation.
 
