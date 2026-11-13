@@ -363,7 +363,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 ### 每种语言的测试
 
-`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
+`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。只有 `make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它：CI 不跑 `make gointl`，所以改了 `internal/gointl` 或它引入的包，合并前要自己跑一遍。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
 
 这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
 
