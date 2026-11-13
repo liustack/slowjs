@@ -8,7 +8,6 @@ package intl // import "github.com/liustack/quickjs/intl"
 import (
 	"errors"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -213,33 +212,3 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 	}
 	return intlhook.EmitInts(vm, r)
 })
-
-// utf16Of is the javascript string s, in WTF-8 as Args.WTF8 reads it, in
-// UTF-16 again: a lone surrogate, the three bytes of its code point, is that
-// code unit.
-func utf16Of(s string) []uint16 {
-	r := make([]uint16, 0, len(s))
-	for i := 0; i < len(s); {
-		if c := s[i]; c < 0x80 {
-			r = append(r, uint16(c))
-			i++
-			continue
-		}
-
-		if s[i] == 0xED && i+2 < len(s) && s[i+1] >= 0xA0 {
-			r = append(r, 0xD000|uint16(s[i+1]&0x3F)<<6|uint16(s[i+2]&0x3F))
-			i += 3
-			continue
-		}
-
-		c, n := utf8.DecodeRuneInString(s[i:])
-		if c >= 0x10000 {
-			c -= 0x10000
-			r = append(r, 0xD800+uint16(c>>10), 0xDC00+uint16(c&0x3FF))
-		} else {
-			r = append(r, uint16(c))
-		}
-		i += n
-	}
-	return r
-}

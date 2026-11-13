@@ -152,8 +152,15 @@ func TestCJKRunRoom(t *testing.T) {
 
 // longRead are calls whose work on a long text, after reading it, is short:
 // a Segments object reads its whole text before the first segment, and
-// finds the first ones in the first piece.
+// finds the first ones in the first piece, and a ListFormat reads its items
+// and only the first characters of each.
 var longRead = []struct{ name, setup, call string }{
+	{"a list of one long item",
+		`var l = ['x'.repeat(N), 'y'], f = new Intl.ListFormat('en')`,
+		`f.format(l).length`},
+	{"the parts of a list of one long item in Thai, with characters past the BMP",
+		`var l = ['สวัสดี😀'.repeat(N / 8), 'y'], f = new Intl.ListFormat('th')`,
+		`f.formatToParts(l).length`},
 	{"the first word of a long text",
 		`var s = 'hello world '.repeat(N / 12), g = new Intl.Segmenter('en', {granularity: 'word'})`,
 		`g.segment(s).containing(0).segment`},
