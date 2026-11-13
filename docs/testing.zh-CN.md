@@ -288,6 +288,8 @@ go test -race -tags testhooks ./internal/hostmem         # VMs mapping memory on
 
 测试不用时钟去限定 `runtime.GC` 或其他任何等 Go 调度器的地方。`runtime.GC` 返回前要清扫堆，每清扫一个 span 就让出一次（`Gosched`）。只有一个 P 时（`GOMAXPROCS=1`，比如用 `taskset` 绑在一个核上），一直占着 CPU 的 goroutine（比如在循环里的脚本）每次都会拿回 P，直到 10 ms 后调度器抢占它才交出来。所以这次 GC 要花剩下的 span 数乘以 10 ms：在整个根包里约一秒，旁边有 200,000 个小对象的垃圾时是 28 秒，旁边换成纯 Go 的循环也一样。给这种 GC 设 1 秒的上限，在一些 Go 版本上失败、另一些不失败，取决于前面的测试留下的堆有多大。这样的测试要按引擎做了多少工作来判断，用 poll 次数（见 `stoppolls_test.go`、`TestLoopWithoutCallsPolls` 和 `internal/cengine` 的 `TestGCInTightLoops`），卡死交给父进程去发现（`TestGCStopsLoopWithoutCalls`）。给别的东西设时钟上限可以留着：必须停下一次调用的超时，或者另一个 goroutine 发出的 `Interrupt`（引擎在轮询时读这两样，那个 goroutine 等 P 最多等一次抢占，也就是 10 ms），杀进程规则定下的下限，以及防卡死的几秒或几分钟的守卫。
 
+`intl`、`temporal`、`fmt` 里 Go 函数的长调用要在很多个超时下检查，不只一个：`stopsweep.Sweep`（`internal/stopsweep`）先给整个调用计时，再用 2 ms 的求值超时重跑，每次乘 1.2，一直到整个调用的时间，任何一次停下的时间比超时晚出宽限期就失败。只用一个超时，只有超时正好落在没有检查的那段里才发现得了，而一段在这台机器上短，换到慢的机器上就长。宽限期按工作量定，不按某台机器定：调用至少每处理一块输入就读一次 `vmhook.Stop`，所以在处理 n 个单位要用 T 的机器上，两次读最多隔 2·块·T/n，宽限期取它的两倍，再加 5 ms 给不属于输入的工作，只有一个 P 时再加 10 ms。晚停的那次会再试两次才算数。扫这些调用的测试是 `intl` 和 `fmt` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal` 的 `TestCalendarArithmeticStopsAtEveryTimeout`，`-short` 会跳过它们。还有一段没有检查的调用，在测试里列出来，写明是什么给这段定了上限，并跳过，直到把它切开的那次改动。
+
 ## 每个目标平台
 
 ```sh
