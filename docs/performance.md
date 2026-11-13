@@ -937,6 +937,18 @@ The extra memory is the register code of the functions that ran and a register s
 
 The changes made to the register loop since are measured in their own sections: [Calls that copy their last locals](#calls-that-copy-their-last-locals), [A key in a local without a reference](#a-key-in-a-local-without-a-reference), [The truth of a value without a reference](#the-truth-of-a-value-without-a-reference), [Array literals that take their elements](#array-literals-that-take-their-elements), [A key in a local set without a reference](#a-key-in-a-local-set-without-a-reference) and [Array destructuring with no iterator](#array-destructuring-with-no-iterator).
 
+### The hash table of atoms holds one atom for two buckets
+
+[The hash table of atoms holds one atom for two buckets](changes/strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets). Timed on 2026-11-13 in tifa's `test/ssr` (the real compile, load and render of tifa, a young collection after each render, one Go thread), the generated engine at 1e2e9227 against the same engine with the change, 10 rounds that alternate the two builds and turn their order, 8 warm renders and then the P50 of 30 (MUI), 20 (the shop's store pages) or 40 (the workbench) renders of each page. The ratio is the median over the rounds of the sum of the pages' P50s with the change against the base in the same round, after it the lowest and highest round, then the rounds under 1. Every page gives the same HTML.
+
+| Pages | Before | linux/amd64 (AMD EPYC, one core, the machine quiet) | Before | Apple M4 (darwin/arm64, no other job) |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's MUI test app, three pages | 104.24 ms | 0.990 (0.944 to 1.018), 9 of 10 | 35.51 ms | 0.984 (0.961 to 1.003), 9 of 10 |
+| tifa's shop, fourteen store pages | 765.91 ms | 0.989 (0.979 to 1.011), 8 of 10 | 260.32 ms | 0.999 (0.989 to 1.019), 6 of 10 |
+| tifa's shop, six workbench pages | 155.56 ms | 1.004 (0.968 to 1.026), 3 of 10 | 50.87 ms | 0.996 (0.978 to 1.079), 6 of 10 |
+
+The instructions of a render on the M4 (retired instructions, the median of a page's renders, summed over the pages) are 0.26% fewer on MUI and 0.02% more on the store and workbench pages: the gain shows in time, not in instructions, as fewer loads along the chains of the table, each a likely cache miss, would. The workbench took 0.4% more time on linux/amd64 and 0.4% less on the M4 with the same instructions, which is no change. The native C tree on linux/amd64 (`render`, tifa's pool, one session of 10 rounds) showed more on MUI than tifa does: 0.977 (0.950 to 0.997), 10 of 10 rounds under 1, where the generated engine in tifa gives 0.990.
+
 ### Stability under load
 
 Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the ccgo engine (`lib`, [history.md](history.md)), built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.

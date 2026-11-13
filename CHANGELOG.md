@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+### Changed
+
+- The hash table of atoms, the numbers the engine gives property names and the strings it keeps once, now doubles when it holds one atom for two buckets, where it doubled at two atoms a bucket. Making a key from a string walks a shorter chain: in our measurement on linux/amd64 tifa's MUI pages took 1.0% less time and the shop's pages 1.1% less, and the workbench's pages did not change. A VM holds 50 KB to 200 KB more, and a script near its memory limit can run out of memory a little sooner ([strings.md](docs/changes/strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets)).
+
 ## [v0.30.3] - 2026-11-13
 
 ### Added
