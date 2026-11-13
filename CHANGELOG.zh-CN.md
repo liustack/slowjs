@@ -7,6 +7,21 @@
 ### 新增
 
 - `Args.StringLen(i)` 返回 Builtin 字符串参数的长度，以 UTF-16 码元计，不转换字符串，也不拼接 `+` 拼成的字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存（[Go API](docs/changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)）。
+- `fmt.Register` 接收选项，`fmt.Writer(w)` 让 `printf` 和 `println` 写到 `w` 而不是 `os.Stdout`（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+
+### 变更
+
+- `Intl` 和 `Temporal` 现在用 `RangeError` 拒绝一些 Chrome 和 Node 接受的输入：超过 16,384 个字符的单独给出的 locale 标签和 `calendar`、`numberingSystem`、`collation` 选项，超过 524,288 个字符的数字字符串，以及 `Intl.NumberFormat` 要写超过 525,312 位数字的数。其他超过 16,384 个字符的选项、代码和 Temporal 字符串也被拒绝。原来 Go 把这些整个读进来，不算在 VM 的内存上限里，也不检查中断标志：16 MiB 的私有用途标签要 0.2 秒，Go 分配 289 MiB，`'1e-1073741000'` 保留三位有效数字让 Go 写出十亿个零。在上限以内，Go 可能为参数用掉的内存计入内存上限，放不下时用内存不足的错误结束调用。Chrome 接受的每种输入都列在 [uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)。
+- 在没有内存上限的 VM 上，`fmt.sprintf`、`printf`、`sprint` 和 `println` 的输出可能让 Go 分配的内存超过能放下 16 MiB 输出的空间时，现在用无法捕获的内存不足错误结束调用。原来 Go 先造出整个输出，不检查 VM：对 1 MiB 的控制字符调用 `fmt.sprintf('%[1]q'.repeat(64), s)` 造出 256 MiB，超过 20 ms 的 eval 超时后又跑了 636 ms。上界可能远高于输出，所以写不到 16 MiB 的调用也可能被拒绝：`"%[x"` 重复一百万次写出 13 MB，上界是 67 MB（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+- `fmt.printf` 和 `fmt.println` 现在每次写 64 KiB，`Interrupt` 和 eval 超时可以在两次写入之间结束调用。原来写 1 MiB 到管道时，调用一直卡到管道被读走。单独一次会阻塞的写入仍然卡住调用，直到写完（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+
+### 修复
+
+- `Intl.NumberFormat` 在 `roundingPriority: 'lessPrecision'` 时，现在把远小于小数位数的数直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- 科学计数法或工程计数法下，长格式单位或货币名称的 `format` 找名称的复数形式时，不再把指数移动的每个零都写出来：米的 `format('1e-1073741000')` 原来在 Go 里花 4.3 秒、3.2 GB，而且不检查调用。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- 去掉空项的 `Intl.ListFormat` 现在一趟拼完空项之间的字面文字，原来每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表在 Go 里分配 434 MB，现在最多 5 MB。长数字的 `formatToParts` 用的 Go 内存不到原来的一半：`10n ** 315000n` 在 en 下 52 MB，原来是 112 MB。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 `Number` 的方式读数字字符串：`"1e+-5"` 和 `"1xe1073741825"` 是 NaN，原来是 Infinity，`"1e--5"` 是 NaN，原来是零，`"0e1073741825"` 是 0，原来是 Infinity（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#数字字符串按-number-的方式读)）。
+- `Interrupt` 和 eval 超时现在能停下 Temporal 在 ISO 8601 以外日历里的 `add`、`subtract`、`until`、`since`、`round` 和 `total`，它们一次走一个月或一年，原来不做检查：农历日期加 1.9 亿天，超过 20 ms 的 eval 超时后又跑了 64 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#日历的运算读中断标志)）。
 
 ## [v0.30.2] - 2026-11-13
 

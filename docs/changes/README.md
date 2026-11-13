@@ -127,6 +127,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Out of memory in normalize and in the growth of a Map | v0.30.2 | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
 | A loop with no call ends at an uncatchable exception left pending | v0.30.2 | [uncatchable.md](uncatchable.md#a-loop-with-no-call-ends-at-an-uncatchable-exception-left-pending) |
 | The flags of a regexp are checked without a pass over a long string | v0.30.2 | [uncatchable.md](uncatchable.md#the-flags-of-a-regexp-are-checked-without-a-pass-over-a-long-string) |
+| A short argument of Intl and Temporal is measured before it is read | Unreleased | [uncatchable.md](uncatchable.md#a-short-argument-of-intl-and-temporal-is-measured-before-it-is-read) |
+| The arithmetic of a calendar reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-arithmetic-of-a-calendar-reads-the-interrupt-flag) |
+| fmt bounds a call with no memory limit, and writes in pieces | Unreleased | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
 
 ## Errors and stacks
 
@@ -158,6 +161,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The caches of Temporal formats keep short requests only | v0.30.2 | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
 | Number options are checked before they are rounded down | v0.30.2 | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
 | A long locale tag resolves in time linear in its length | v0.30.2 | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
+| A numeric string is read as Number reads it | Unreleased | [time-and-intl.md](time-and-intl.md#a-numeric-string-is-read-as-number-reads-it) |
 
 ## Temporal
 

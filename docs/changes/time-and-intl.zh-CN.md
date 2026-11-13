@@ -284,3 +284,11 @@ Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标
 现在 go-intl 的 `negotiate.go` 记下每个服务列表里最长标签的长度，比它长的部分不再查找，因为没有服务支持这么长的标签。去掉子标签的方式和原来一样，所以每个答案都不变。上面两个标签现在分别要 33 和 55 ms，也就是把它们变成规范形式的时间。页面传的那种标签比每个上限都短，查找方式和原来一样。
 
 测试：`intl/limits_test.go` 里的 `TestLongTagResolves`（在一个带 64Ki 个子标签的私用标签上测构造函数和 `supportedLocalesOf`，原来每个都要一秒以上）。
+
+## 数字字符串按 Number 的方式读
+
+版本：Unreleased。
+
+`Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 StrDecimalLiteral 的规定读数字字符串的指数和尾数，和 `Number` 一样。原来指数不是整数时，它们会读出带两个符号的指数：`"1e+-5"` 读成 Infinity，`"1e--5"` 读成零，而这两个都应该是 NaN。它们还在读尾数之前，就把大到写不出来的指数当成无穷或零：`"1xe1073741825"` 是 Infinity，应该是 NaN，`"0e1073741825"` 是 Infinity，应该是 0。现在先检查指数最多一个符号、其余都是数字，并且先读尾数。
+
+测试：`internal/gointl/qjs_parse_test.go` 的 `TestParseDecimalExponent`（36 个字符串，原来有 19 个读错）。
