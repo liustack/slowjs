@@ -77,14 +77,16 @@ shorttest:
 
 # The checks of internal/gointl that go test ./... does not run: the pack
 # tool's tests, which need its build tag, the build without the optional
-# packs, there and in intl, and that qjsdata/ is what go-intl's data gives
-# (which clones go-intl).
+# packs, there and in intl, that qjsdata/ is what go-intl's data gives, and
+# the tests of every language against Node's answers that came with
+# go-intl (which clones go-intl once, and reads it from the cache after).
 gointl:
 	go test -count=1 -tags gointl_walk ./internal/gointl/internal/...
 	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict ./internal/gointl/...
 	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict -run WithoutNames ./intl/
 	internal/gointl/data.sh checkout
 	internal/gointl/data.sh pack -check
+	internal/gointl/data.sh test -count=1 -p 2
 
 work:
 	rm -f go.work*

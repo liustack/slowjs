@@ -63,7 +63,7 @@ step() {
 	t=$(( $(date +%s) - t0 ))
 	note=
 	case $show in
-	last) note=$(grep -v '^[[:space:]]*$' "$logs/$name.log" | tail -n 1 | cut -c1-100) ;;
+	last) note=$(grep -v -e '^[[:space:]]*$' -e '^make\(\[[0-9]*\]\)\{0,1\}: \*\*\*' "$logs/$name.log" | tail -n 1 | cut -c1-100) ;;
 	tests)
 		p=$(grep -c '^[[:space:]]*--- PASS' "$logs/$name.log"); s=$(grep -c '^[[:space:]]*--- SKIP' "$logs/$name.log")
 		f=$(grep -c '^[[:space:]]*--- FAIL' "$logs/$name.log")
@@ -106,6 +106,7 @@ step compare-asan full last "engine/test/compare.sh asan"
 step host-ubsan full - "engine/test/build.sh ubsan"
 step compare-ubsan full last "engine/test/compare.sh ubsan"
 step test262 full last "engine/test/test262.sh -m plain -T 2"
+step gointl full last "make gointl"
 
 [ "${CHECK_LIST:-}" = 1 ] && exit 0
 echo

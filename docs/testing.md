@@ -57,7 +57,7 @@ New behavior and bugs with a known cause: write the test first, see it fail, the
 | `make check-gen` | That the checked-in engine is what `make gen` makes now, for both architectures (part of `check-full`) |
 | `make bench ARGS="..."` | `go tool measure bench`: code-position timing and callgrind (see [Time one build against another](#time-one-build-against-another)) |
 | `make remote RUN="..."` | Another make target on another machine (see [On another machine](#on-another-machine)) |
-| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, and that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names (this clones go-intl and downloads that update and ICU's sources) |
+| `make gointl` | The checks of `internal/gointl` that `go test ./...` does not run: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs (`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`), there and for `Intl.DisplayNames` in `intl`, that `qjsdata/` is what go-intl's data gives with the time zones of the tz update `internal/gointl/qjstz` names, and the tests of every language against Node's answers that came with go-intl (`data.sh test`, see [below](#the-tests-of-every-language)). The first run clones go-intl and downloads that update and ICU's sources, and a run after it needs no network |
 | `make benchmark` | `make -C compare benchmark`: the 64 micro benchmarks of QuickJS in `compare/testdata/` (goja or fastschema/qjs fails 6 of them, so the three engines share the other 58), each run on this engine, on goja and on fastschema/qjs (QuickJS on wazero), QuickJS's own suite |
 | `make compare-engines` | `go run ./cmd/compare $(ARGS)` in `compare/engines`: the comparison with the other pure Go JavaScript engines in [benchmarks.md](benchmarks.md) (support, speed, memory, limits, tifa pages), each engine in a binary of its own |
 | `make cpu`, `make mem` | `make -C compare cpu` and `make -C compare mem`: the CPU and memory profiles of the comparison benchmarks |
@@ -354,8 +354,21 @@ The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_d
 | `race` | full | `go test -race -short -p 1` of the root package and the three above |
 | `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` | full | `engine/test/build.sh` and `compare.sh` under the sanitizers |
 | `test262` | full | `engine/test/test262.sh -m plain -T 2` |
+| `gointl` | full | `make gointl`, last as the step that needs the cache of go-intl ([below](#the-tests-of-every-language)) |
 
 The list is in `scripts/check.sh`. A new check goes there and into the table above.
+
+### The tests of every language
+
+`internal/gointl` is ours: its code was copied from go-intl v0.6.1 once, and nothing syncs it with go-intl again. The tests that came with that code, under the build tag `gointl_all`, are what keeps its answers equal to Node's in every language ICU has: they replay the corpora of Node's answers in go-intl's `testdata/` on packs of every language of go-intl's data. That data and those corpora are not kept in this repository (15 MB of corpora, and packs of every language), so `internal/gointl/data.sh test` runs the tests in a scratch copy of the module that has them, and `make gointl`, the `gointl` step of `make check-full`, runs it. Run in place, `go test -tags gointl_all` fails at once with a sentence that says so (`TestMain` in `qjs_all_test.go`).
+
+The step reads go-intl from its cache, `$GOINTL_UPSTREAM` (default `~/.cache/quickjs-gointl/go-intl`), and the network only when the cache does not have what it needs:
+
+- `data.sh checkout` clones go-intl the first time, and fetches only when the checkout does not have the commit `internal/gointl/UPSTREAM` names. It then checks that commit out, even over files changed in the checkout, so a cache at another commit is moved to it, offline when it has the commit.
+- `data.sh test` stops unless the checkout is at that commit, runs `git fsck` on it, and reads `data/` and `testdata/` from the commit with `git archive`. A file changed or removed in the checkout does not reach the tests, and an object changed under it fails the step.
+- With no network and no cache, the step fails with one line: `data.sh: cannot clone ... the first checkout needs the network`. It never skips.
+
+`make gointl` takes about 1.5 minutes on an Apple M4 with the cache (86 to 107 s, `data.sh test` about 45 s of it), and 26 s more the first time, for the clone of go-intl, ICU's sources and the time zones.
 
 ### Time one build against another
 

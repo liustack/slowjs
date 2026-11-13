@@ -57,7 +57,7 @@ go test -count=1 -p 1 .                # about a minute
 | `make check-gen` | 检查提交进仓库的引擎就是现在 `make gen` 的结果，两种架构都查（`check-full` 的一部分） |
 | `make bench ARGS="..."` | `go tool measure bench`：代码位置计时和 callgrind（见[给两个构建计时对比](#给两个构建计时对比)） |
 | `make remote RUN="..."` | 在另一台机器上运行别的 make 目标（见[在另一台机器上](#在另一台机器上)） |
-| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），以及 `qjsdata/` 就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的结果（这会克隆 go-intl，并下载那个更新和 ICU 的源码） |
+| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的结果，以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
 | `make benchmark` | `make -C compare benchmark`：`compare/testdata/` 里 QuickJS 的 64 个微基准（goja 或 fastschema/qjs 有 6 个跑不过，所以三个引擎共有的是另外 58 个），每个都在这个引擎、goja 和 fastschema/qjs（wazero 上的 QuickJS）上跑，也就是 QuickJS 自己的测试集 |
 | `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他纯 Go JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.md)（支持度，速度，内存，限额，tifa 页面），每个引擎在自己的二进制里 |
 | `make cpu`、`make mem` | `make -C compare cpu` 和 `make -C compare mem`：对比基准的 CPU 和内存剖析 |
@@ -354,8 +354,21 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `race` | 全档 | 根包和上面三个包的 `go test -race -short -p 1` |
 | `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh` |
 | `test262` | 全档 | `engine/test/test262.sh -m plain -T 2` |
+| `gointl` | 全档 | `make gointl`，放在最后，因为它要用 go-intl 的缓存（见[下文](#每种语言的测试)） |
 
 这份列表在 `scripts/check.sh` 里。新的检查要加到那里，也要加到上面的表里。
+
+### 每种语言的测试
+
+`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
+
+这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
+
+- `data.sh checkout` 第一次克隆 go-intl，只在检出里没有 `internal/gointl/UPSTREAM` 所写的提交时才去 fetch。然后检出那个提交，检出里改过的文件也会被覆盖，所以停在别的提交上的缓存会被移到这个提交，缓存里有这个提交时不需要网络。
+- `data.sh test` 在检出不在那个提交上时停下，对它运行 `git fsck`，再用 `git archive` 从提交里读 `data/` 和 `testdata/`。检出里改过或删掉的文件到不了测试，检出底下被改过的对象会让这一步失败。
+- 没有网络也没有缓存时，这一步失败，只输出一行：`data.sh: cannot clone ... the first checkout needs the network`。它从不跳过。
+
+有缓存时，`make gointl` 在 Apple M4 上约 1.5 分钟（86 到 107 秒，其中 `data.sh test` 约 45 秒），第一次多 26 秒，用来克隆 go-intl、下载 ICU 的源码和生成时区。
 
 ### 给两个构建计时对比
 
