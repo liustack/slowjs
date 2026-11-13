@@ -2149,22 +2149,24 @@ static void test_regvm_args_oom(void)
    destructuring makes the built-in next, which the engine makes at its
    first use. Each allocation of making them failing in turn
    ends in the out of memory error with nothing lost, and the call after it
-   answers as one with room does. */
+   answers as one with room does. Running out of memory skips the finally
+   blocks that put back the return and the next of %ArrayIteratorPrototype%,
+   so each call puts them back first. */
 static void test_regvm_dst_oom(void)
 {
     static const char setup[] =
         "var f = (function () { 'use strict';\n"
-        "  var AIP = Object.getPrototypeOf([][Symbol.iterator]()), log = [];\n"
+        "  var AIP = Object.getPrototypeOf([][Symbol.iterator]()), next0, log = [];\n"
         "  function holes() { var a = [1, 2]; a.length = 4; const [x, y, z = 'z', w] = a; return [x, y, z, w].join(); }\n"
         "  function slow(a) { const [x = (a[50] = 5, 'd'), y, ...r] = a; return x + y + r.length; }\n"
-        "  function swap() { var a = [undefined, 2], old = AIP.next; a.length = 3;\n"
+        "  function swap() { var a = [undefined, 2], old = next0 = AIP.next; a.length = 3;\n"
         "    try { const [x = (AIP.next = function () { log.push('n'); return { done: true }; }, 'x'), y, z = 'z'] = a;\n"
         "      return [x, y, z].join(); } finally { AIP.next = old; } }\n"
         "  function close() { AIP.return = function () { log.push('r'); return {}; };\n"
         "    try { const [x] = [1, 2, 3]; return x; } finally { delete AIP.return; } }\n"
         "  function unwind() { AIP.return = function () { log.push('u'); return {}; };\n"
         "    try { const [x, y = (() => { throw 'e'; })()] = [1, undefined]; } catch (e) { return e; } finally { delete AIP.return; } }\n"
-        "  return function () { log.length = 0;\n"
+        "  return function () { log.length = 0; delete AIP.return; if (next0) AIP.next = next0;\n"
         "    return [holes(), slow([undefined, 2, 3]), swap(), close(), unwind(), log.join('')].join('|'); };\n"
         "})();\n";
     static const char *const want[] = { "1,2,z,|d249|x,2,z|1|e|ru", NULL };
