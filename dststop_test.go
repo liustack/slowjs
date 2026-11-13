@@ -14,18 +14,15 @@ import (
 // register loop takes such an array apart with no iterator
 // (engine/regvm-ops-dst.h): no call of values, whose call polled, so an empty
 // pattern reads no flag of its own and stops by the poll of the loop's jump
-// back, a single element by the poll of its read, and a rest of a long array
-// by the poll of each element it reads. The long array has 10,000 elements:
-// a rest of 100,000 makes and frees an array that long each time, which
-// reads no flag, and lets 25 to 50 polls see the request, before this
-// change as after it.
+// back, and a single element by the poll of its read. The rest of a long
+// array is in dststop_hooks_test.go: it makes and frees an array that long
+// each time, and the collection and the freeing poll as long as they take,
+// which StopPolls counts too.
 var dstLoops = []struct{ name, setup, loop string }{
 	{"empty pattern", `var a = [1, 2];`,
 		`function go() { for (;;) { const [] = a; } }`},
 	{"single element", `var a = [1, 2];`,
 		`function go() { var n = 0; for (;;) { const [x] = a; n = (n + x) & 0xffff; } }`},
-	{"long rest", `var big = Array.from({length: 1e4}, (_, i) => i & 7);`,
-		`function go() { var n = 0; for (;;) { const [x, ...r] = big; n = (n + r.length) & 0xffff; } }`},
 }
 
 // TestInterruptArrayDestructuring: each loop of dstLoops stops at the eval
