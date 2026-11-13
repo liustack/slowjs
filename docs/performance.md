@@ -1028,7 +1028,7 @@ The instructions of a render on the M4 (retired instructions, the median of a pa
 
 ### A profile of tifa's pages
 
-[A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes. The numbers are from the study of 2026-11-13: the profile trained on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home), against the same C generated without it, and the same HTML on every page. PGO2-FILL: the numbers of the release build (the final profile, with the fixes that are in) replace these or stand next to them, with their date and commit.
+[A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes. The numbers are from the study of 2026-11-13: the profile trained on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home), against the same C generated without it, and the same HTML on every page. The release build trains on all of the pages and pins only size optimization off, so its own numbers can differ a little from these.
 
 Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
 
@@ -1054,7 +1054,7 @@ The time falls about twice as much as the instructions. What goes is misses of t
 
 On an Apple M4 (darwin/arm64, one layout, the machine not idle, 10 rounds in turning order) the time of a page is 0.964 to 0.971 of the time without the profile in the median round (React 0.964, the store 0.969, the workbench 0.971, MUI 0.968) and the instructions fall by 2.7% to 3.6%. The gain is about 3%, under half the server's for the same instruction gain: the M4's instruction cache is 6 times the EPYC's (192 KB against 32 KB), so the misses the profile removes cost less. This is a reading, not a verdict.
 
-What it costs: `make gen` takes longer (PGO2-FILL: how much), and a few cold functions have a larger frame ([generator.md](changes/generator.md#why-it-is-safe)). Four micro benchmarks run more instructions than without the profile: `array_slice` +12.5%, `typed_array_read` +5.7%, `prop_create` +3.9%, `array_prop_create` +1.9%, counted before the fixes of the study. PGO2-FILL: final counts and times of these four.
+What it costs: `make gen` takes longer (on one core of the build server, 4 minutes 27 seconds for amd64 instead of 1 minute 52), and a few cold functions have a larger frame ([generator.md](changes/generator.md#why-it-is-safe)). The pages train none of the micro benchmarks: of the 64 of `compare/testdata`, 18 run more than 0.5% more instructions than without the profile (`typed_array_read` the most, +7.5%), 39 run fewer, and all 64 together run 1.9% fewer ([generator.md](changes/generator.md#limits)). `array_slice` and `array_prop_create`, which ran more in the study, now run fewer (-0.5% and -2.6%).
 
 A profile one small branch old kept all of the gain (the workbench -7.54%, the store -9.18%, MUI -6.33%, React -7.63%, each against the same branch generated without the profile), and clang dropped the profile of 1 function of 2,264.
 

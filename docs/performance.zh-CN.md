@@ -1028,7 +1028,7 @@ M4 上一次渲染的指令（退休指令，每页取各次渲染的中位数�
 
 ### tifa 页面的性能画像
 
-[tifa 页面的性能画像](changes/generator.zh-CN.md#tifa-页面的性能画像)：`make gen` 用页面渲染的性能画像编译引擎，内联仍是不带画像的构建所做的结果。数字来自 2026-11-13 的研究：画像用一半页面训练（工作台 studio、14 个 en-US 商店页里的 7 个、MUI 首页），对比同样的 C 不用画像生成的引擎，每个页面的 HTML 相同。PGO2-FILL: the numbers of the release build (the final profile, with the fixes that are in) replace these or stand next to them, with their date and commit。
+[tifa 页面的性能画像](changes/generator.zh-CN.md#tifa-页面的性能画像)：`make gen` 用页面渲染的性能画像编译引擎，内联仍是不带画像的构建所做的结果。数字来自 2026-11-13 的研究：画像用一半页面训练（工作台 studio、14 个 en-US 商店页里的 7 个、MUI 首页），对比同样的 C 不用画像生成的引擎，每个页面的 HTML 相同。发布的构建用全部页面训练，只钉住不做体积优化这一项，所以它自己的数字可能和这里略有不同。
 
 linux/amd64 上的时间（AMD EPYC 7B13 服务器，4 核，用一个核，整台机器安静），`go tool measure bench`，16 种代码布局，每种 2 轮，3 次正式重复，每组页面一个 VM，预热 3 次，计时 7 次渲染，取 P50，`GOMAXPROCS=1`。每种的 18 个单元全部跑完，没有重跑的块。按 1% 的 delta 判断，95% 区间：
 
@@ -1054,7 +1054,7 @@ linux/amd64 上的时间（AMD EPYC 7B13 服务器，4 核，用一个核，整�
 
 在 Apple M4 上（darwin/arm64，一种布局，机器不空闲，10 轮轮换顺序），页面的时间在中位轮里是不用画像时的 0.964 到 0.971（React 0.964，商店 0.969，工作台 0.971，MUI 0.968），指令少 2.7% 到 3.6%。收益约 3%，同样的指令收益下不到服务器的一半：M4 的指令缓存是 EPYC 的 6 倍（192 KB 对 32 KB），画像去掉的缺失在那里代价更小。这是一次读数，不是结论。
 
-代价：`make gen` 变慢（PGO2-FILL: how much），少数冷函数的栈帧变大（[generator.md](changes/generator.zh-CN.md#为什么安全)）。四个微基准比不用画像多跑指令：`array_slice` +12.5%，`typed_array_read` +5.7%，`prop_create` +3.9%，`array_prop_create` +1.9%，是研究里修复之前数的。PGO2-FILL: final counts and times of these four。
+代价：`make gen` 变慢（构建服务器的一个核上，amd64 从 1 分 52 秒变成 4 分 27 秒），少数冷函数的栈帧变大（[generator.md](changes/generator.zh-CN.md#为什么安全)）。页面不训练任何微基准：`compare/testdata` 的 64 个里，18 个比不用画像多跑超过 0.5% 的指令（最多的是 `typed_array_read`，+7.5%），39 个少跑，64 个合起来少跑 1.9%（[generator.md](changes/generator.zh-CN.md#限制)）。研究里多跑的 `array_slice` 和 `array_prop_create` 现在少跑（-0.5% 和 -2.6%）。
 
 早一个小分支训练的画像保住了全部收益（工作台 -7.54%，商店 -9.18%，MUI -6.33%，React -7.63%，各自对比同一分支不用画像生成的引擎），clang 丢掉了 2,264 个函数中 1 个函数的画像。
 
