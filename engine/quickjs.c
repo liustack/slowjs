@@ -1717,7 +1717,6 @@ static BOOL js_string_eq(JSContext *ctx,
                          const JSString *p1, const JSString *p2);
 static int js_string_compare(JSContext *ctx,
                              const JSString *p1, const JSString *p2);
-static JSValue JS_ToNumber(JSContext *ctx, JSValueConst val);
 static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                JSValue prop, JSValue val, int flags);
 static int JS_NumberIsInteger(JSContext *ctx, JSValueConst val);
@@ -17838,12 +17837,7 @@ int JS_ToFloat64(JSContext *ctx, double *pres, JSValueConst val)
     return JS_ToFloat64Free(ctx, pres, JS_DupValue(ctx, val));
 }
 
-static JSValue JS_ToNumber(JSContext *ctx, JSValueConst val)
-{
-    return JS_ToNumberFree(ctx, JS_DupValue(ctx, val));
-}
-
-/* same as JS_ToNumber() but return 0 in case of NaN/Undefined */
+/* same as JS_ToNumberFree() but return 0 in case of NaN/Undefined */
 static __maybe_unused JSValue JS_ToIntegerFree(JSContext *ctx, JSValue val)
 {
     uint32_t tag;
