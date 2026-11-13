@@ -1,0 +1,10 @@
+# Cases of the web-platform-tests URL data that this parser does not pass.
+# One line per case: the quoted case id, two spaces, "# ", the reason.
+# A case that passes while listed here fails the test, so the list only shrinks.
+"IdnaTestV2.json ⴍ\U0003f8cdꡨ֮.ⴞ"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json Ⴍ\U0003f8cdꡨ֮.Ⴞ"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json Ⴍ\U0003f8cdꡨ֮.ⴞ"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json \U0003e8ac。ܩ。쯙5"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json \U0003e8ac。ܩ。쯙5"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json \U0003e8ac.ܩ.쯙5"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
+"IdnaTestV2.json \U0003e8ac.ܩ.쯙5"  # IdnaTestV2 of WPT is newer than Unicode 17: U+3E8AC and U+3F8CD are valid in it and disallowed in the Unicode 17 tables of x/net v0.62
