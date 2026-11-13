@@ -1,0 +1,54 @@
+URL [length name prototype canParse parse]
+  URL.length: data --C number
+  URL.name: data --C string URL
+  URL.prototype: data --- object
+  URL.canParse: data WEC fn 1 "canParse"
+  URL.parse: data WEC fn 1 "parse"
+URL.prototype [constructor href origin protocol username password host hostname port pathname search searchParams hash toString toJSON Symbol(Symbol.toStringTag)]
+  URL.prototype.constructor: data W-C fn 1 "URL"
+  URL.prototype.href: accessor EC get 0 "get href" set 1 "set href"
+  URL.prototype.origin: accessor EC get 0 "get origin"
+  URL.prototype.protocol: accessor EC get 0 "get protocol" set 1 "set protocol"
+  URL.prototype.username: accessor EC get 0 "get username" set 1 "set username"
+  URL.prototype.password: accessor EC get 0 "get password" set 1 "set password"
+  URL.prototype.host: accessor EC get 0 "get host" set 1 "set host"
+  URL.prototype.hostname: accessor EC get 0 "get hostname" set 1 "set hostname"
+  URL.prototype.port: accessor EC get 0 "get port" set 1 "set port"
+  URL.prototype.pathname: accessor EC get 0 "get pathname" set 1 "set pathname"
+  URL.prototype.search: accessor EC get 0 "get search" set 1 "set search"
+  URL.prototype.searchParams: accessor EC get 0 "get searchParams"
+  URL.prototype.hash: accessor EC get 0 "get hash" set 1 "set hash"
+  URL.prototype.toString: data WEC fn 0 "toString"
+  URL.prototype.toJSON: data WEC fn 0 "toJSON"
+  URL.prototype.Symbol(Symbol.toStringTag): data --C string URL
+URLSearchParams [length name prototype]
+  URLSearchParams.length: data --C number
+  URLSearchParams.name: data --C string URLSearchParams
+  URLSearchParams.prototype: data --- object
+URLSearchParams.prototype [constructor size append delete get getAll has set sort forEach keys values entries toString Symbol(Symbol.toStringTag) Symbol(Symbol.iterator)]
+  URLSearchParams.prototype.constructor: data W-C fn 0 "URLSearchParams"
+  URLSearchParams.prototype.size: accessor EC get 0 "get size"
+  URLSearchParams.prototype.append: data WEC fn 2 "append"
+  URLSearchParams.prototype.delete: data WEC fn 1 "delete"
+  URLSearchParams.prototype.get: data WEC fn 1 "get"
+  URLSearchParams.prototype.getAll: data WEC fn 1 "getAll"
+  URLSearchParams.prototype.has: data WEC fn 1 "has"
+  URLSearchParams.prototype.set: data WEC fn 2 "set"
+  URLSearchParams.prototype.sort: data WEC fn 0 "sort"
+  URLSearchParams.prototype.forEach: data WEC fn 1 "forEach"
+  URLSearchParams.prototype.keys: data WEC fn 0 "keys"
+  URLSearchParams.prototype.values: data WEC fn 0 "values"
+  URLSearchParams.prototype.entries: data WEC fn 0 "entries"
+  URLSearchParams.prototype.toString: data WEC fn 0 "toString"
+  URLSearchParams.prototype.Symbol(Symbol.toStringTag): data --C string URLSearchParams
+  URLSearchParams.prototype.Symbol(Symbol.iterator): data W-C fn 0 "entries"
+Iterator.prototype [next Symbol(Symbol.toStringTag)]
+  Iterator.prototype.next: data WEC fn 0 "next"
+  Iterator.prototype.Symbol(Symbol.toStringTag): data --C string URLSearchParams Iterator
+iteratorProto true
+iterator is entries true
+global URL W-C
+global URLSearchParams W-C
+own keys of a URL [0] of a URLSearchParams [0]
+keys 14
+frozen false

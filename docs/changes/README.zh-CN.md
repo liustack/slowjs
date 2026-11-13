@@ -182,6 +182,12 @@ read_when:
 | --- | --- | --- |
 | 基于 go-intl 的 Temporal | v0.27.0 | [temporal.md](temporal.zh-CN.md#基于-go-intl-的-temporal) |
 
+## URL
+
+| 改动 | 版本 | 文档 |
+| --- | --- | --- |
+| 解析在 Go 里的 URL 和 URLSearchParams，守 VM 的限额 | Unreleased | [url.md](url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams) |
+
 ## 正则表达式
 
 | 改动 | 版本 | 文档 |

@@ -4,7 +4,7 @@
 // root of this repository.
 
 // Package vmhook lets the packages of this module that give a VM functions
-// written in Go (intl, temporal and fmt) hold the work those functions do in
+// written in Go (intl, temporal, fmt and url) hold the work those functions do in
 // Go to the limits of the VM: its eval timeout, Interrupt and its memory
 // limit, which the engine's polls and allocator see only for the work done
 // in the engine. Package quickjs sets the functions at initialization. They

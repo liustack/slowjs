@@ -5,7 +5,7 @@ read_when:
   - 改根包的 Go API，从它调用引擎，或者加一个运行 javascript 的方法
   - 找引擎的某一块、对它的某项改动或某个工具放在哪
   - 动值的编码方式，或者手工读一个 JSValue
-  - 改 intl、temporal、fmt 或 compare 包，或者 internal/gointl、internal/intlhook
+  - 改 intl、temporal、fmt、url 或 compare 包，或者 internal/gointl、internal/intlhook、internal/whatwgurl
   - 在长调用旁边服务短请求，或者按 VM 数定 GOMAXPROCS
 ---
 
@@ -65,8 +65,11 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `temporal/testdata/` | 和 Chromium 对照的表达式及它的答案，以及链接测试构建的程序 |
 | `internal/gointl/` | 我们自己的纯 Go ECMA-402 和 Temporal，从 go-intl 复制过来一次，在每个 `intl` 构造函数和 `temporal` 后面（见 [upgrading.md](upgrading.zh-CN.md#更新-intl-的数据internalgointl)） |
 | `internal/intlhook/` | 包 `temporal` 从包 `intl` 拿的东西：它的 `toLocaleString` 的格式化，以及 VM 的默认时区 |
-| `internal/vmhook/` | `intl`、`temporal` 和 `fmt` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `quickjs` 设置（`vmhook.go`） |
+| `internal/vmhook/` | `intl`、`temporal`、`fmt` 和 `url` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `quickjs` 设置（`vmhook.go`） |
 | `fmt/` | 包 `github.com/liustack/quickjs/fmt` |
+| `url/` | 包 `github.com/liustack/quickjs/url`，给 VM 用的 `URL` 和 `URLSearchParams` |
+| `url/testdata/` | `TestWPT` 在 VM 里跑的 web-platform-tests `url/` 里的文件、testharness 的外壳、core-js 判断原生 URL 的那段代码，以及篡改测试和形状测试的答案 |
+| `internal/whatwgurl/` | 包 `url` 背后的 URL 解析器（见 [url.md](changes/url.zh-CN.md)）：状态机、主机解析、setter 和序列化，加上 `idna/` 和 `bidi/`，那是 golang.org/x/net 和 x/text 里它要用的部分，带 Unicode 17 的表。`testdata/` 里是 web-platform-tests 的 URL 数据和 `known-failures.txt` |
 | `compare/` | 一个独立的模块，从上游保留下来，在这个引擎、goja 和 fastschema/qjs 上跑 QuickJS 的微基准 |
 | `internal/arewefastyet/` | compare/engines 运行的 V8 基准套件（v8-v7） |
 | `scripts/docs-list.sh` | `docs/` 的索引 |
@@ -102,6 +105,7 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 - `Temporal` 里 ISO 以外日历的运算，每 4,096 个月或年检查一次。
 - Intl 在文本里 Builtin 切不开的一段文字上做的活儿，也就是词典切分的一段文字或要排序的一串重音符号，每 4,096 个词、码点或重音符号检查一次，一段中文或日文开始前先检查空间（[uncatchable.md](changes/uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志)）。
 - `fmt` 的各个函数，在 Go 造出输出之前拿输出的上界和 `vmhook.Room` 比较，没有内存上限的 VM 按能放下 16 MiB 来算。`printf` 和 `println` 每次写 64 KiB，两次写入之间检查。
+- `url` 的各个 Builtin，用 `Args.StringLen` 读每个字符串参数的长度（rope 也不用拼起来），拒绝长过 65,536 个 UTF-16 单位的，并在把字符串读进 Go 之前检查 Go 可能占用的空间。它们的工作很短，所以只在每次调用开始时问一次 `vmhook.Stop`，不在调用里面问：引擎为轮询计的是它运行的字节码，不是 Go 函数的时间，不这样的话，这种调用的循环在两次轮询之间会做几十次调用。
 
 脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.Collator` 和 `localeCompare`（一串重音符号除外），`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，读列表里一个很长的 locale 标签或一个很长的列表项，以及读 `Intl.Segmenter` 的文本并复制成 UTF-16。Go 造出 `fmt` 的输出时同样不检查调用，用时随输出的上界增长，不过输出可能让它分配的内存在开始之前已经和 VM 剩下的空间比过（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
 
@@ -115,6 +119,7 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 - **`temporal/`**：`Temporal`，给调用了 `Register(vm)` 的 VM 用，和 `intl/` 的构造方式一样。go-intl 的 temporal 包做所有计算，通过 `bridge.go` 里的一个 Builtin，它的第一个参数写明操作名（`opNames` 列表）。见 [temporal.md](changes/temporal.zh-CN.md)。
 - **`internal/gointl/`**：我们自己的纯 Go ECMA-402 和 Temporal，从 go-intl v0.6.1 复制过来一次，之后随便改，`intl` 和 `temporal` 使用它。`qjsdata/` 里的数据包由 `data.sh` 从 `internal/gointl/UPSTREAM` 里那个 go-intl 版本的数据生成（见[更新 Intl 的数据](upgrading.zh-CN.md#更新-intl-的数据internalgointl)）。`make gointl` 运行需要构建标签的检查，并检查 `qjsdata/` 里的数据包是最新的。
 - **`fmt/`**：包 `github.com/liustack/quickjs/fmt`，是这个模块的一部分。它用 `Register(obj Value, opts ...Option)` 给 VM 提供 Go 的 `fmt.Printf`、`Println`、`Sprintf` 和 `Sprint`，在 javascript 里用小写名字（`fmt.println`）。每个函数先从格式和参数算出输出字节数的上界（`fmt/bound.go`），输出可能让 Go 的 fmt 分配的内存（上界的 16 倍再加造输出的 printer 的几 KiB）超过 VM 在内存上限下还剩的空间时，以内存不足的错误结束调用（Go 运行时为它的池做的准备不算在内）。没有内存上限的 VM 按能放下 16 MiB 的输出来算。Go 造输出时不检查 VM，所以 `Interrupt` 和 eval 超时都停不下它，不过 `printf` 和 `println` 把输出每次 64 KiB 写到 `os.Stdout`，或写到选项 `Writer` 给的 writer，两次写入之间会停下。
+- **`url/`**：`URL` 和 `URLSearchParams`，给调用了 `Register(vm)` 的 VM 用，和 `intl/` 的构造方式一样，只是一次装好。Go 负责解析（`internal/whatwgurl`），什么也不留：一个 URL 就是 `url.js` 放在私有字段里的那个记录的数组（getter 给出的各部分和四个位），setter 把记录、部分名和新值交给 Go。见 [url.md](changes/url.zh-CN.md)。
 - **`compare/`**：一个独立的模块（`github.com/liustack/quickjs/compare`），在这个引擎、goja 和 `github.com/fastschema/qjs` 上运行 `compare/testdata/` 里的 QuickJS 微基准。`make benchmark` 在那里运行。它独立成模块，是为了让它的依赖不进库的 `go.mod`。`compare/go.mod` 把 `github.com/liustack/quickjs` 替换成 `../`，所以基准构建的是工作树，而 `go mod tidy`（`benchmark` 目标先运行它）从根 `go.mod` 取其他版本：不要手工复制它们。
 
 ## 平台

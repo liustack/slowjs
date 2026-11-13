@@ -8,6 +8,7 @@
 
 - `Args.StringLen(i)` 返回 Builtin 字符串参数的长度，以 UTF-16 码元计，不转换字符串，也不拼接 `+` 拼成的字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存（[Go API](docs/changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)）。
 - `fmt.Register` 接收选项，`fmt.Writer(w)` 让 `printf` 和 `println` 写到 `w` 而不是 `os.Stdout`（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+- 包 `url`：`url.Register(vm)` 给 VM 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做（`internal/whatwgurl`，过了 web-platform-tests 的 URL 数据，只有 IdnaTestV2 里 7 个要比 Unicode 17 更新的用例没过）。脚本像 TanStack Router 那样给每个链接调一次 `new URL(path, base)`，现在约 4.7 µs（含一次 `pathname` 的写入和 7 个 getter 的读取），core-js 的 polyfill 要 42 到 87 µs。在 tifa 的页面上，商店页的一次渲染少用 33% 的时间，工作台页少 14%，MUI 页不变，HTML 逐字节相同。core-js 见到过得了它自己检查的原生 URL 就不装自己的，所以宿主在 bundle 之前注册这个包就行，别处一行不用改。脚本交给它的字符串最多 65,536 个 UTF-16 单位：更长的输入、base 或 href 不是 URL（所以超过 64 KiB 的 `data:` URL 也不是，浏览器接受它），`http:` 这类特殊协议的主机不是 ASCII 时，按原样或 IDNA 映射之后超过 1,024 个单位就不是主机（别的协议的主机不过 IDNA，除了 href 的限额没有别的限额），查询串里超过限额的名或值，或者它的编码，是 `RangeError`。在这之内，一次 Go 的调用只要几毫秒，eval 超时、`Interrupt` 和内存上限都守得住：一个 URL 是 VM 里的对象，Go 在读字符串之前先检查它要占的空间（[url.md](docs/changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)）。
 
 ### 变更
 
