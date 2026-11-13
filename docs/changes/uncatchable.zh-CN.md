@@ -519,7 +519,7 @@ Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给�
 
 几个字符的数字字符串仍然可能要求很长的输出：`'1e-1073741000'` 保留三位有效数字就是十亿个零。`Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在写任何数字之前先算出要写的数字个数的上界（`internal/gointl/qjs_output.go` 的 `Output`），超过 525,312 位就抛 `RangeError` 拒绝，并按 `format` 每位 144 字节、`formatToParts` 每位 400 字节计入空间。BigInt 都不会被拒绝：引擎能造出的最长的 BigInt 有 315,653 位。`roundingPriority: 'lessPrecision'` 时，远小于小数位数的数现在直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。其他由值决定长度的输出，包括 Number、`RelativeTimeFormat`、`PluralRules`、`DurationFormat`、`DateTimeFormat` 和 Temporal 的 `toString`，无论值是什么都有上界，每个都有测试检查。
 
-有三处活儿比脚本给的输入增长得快得多，现在不会了。科学计数法和工程计数法下，单位或货币名称的复数形式取决于按指数移回去的数字，Go 原来把移动中的每个零都写出来：长格式米的 NumberFormat 调用 `format('1e-1073741000')` 在 Go 里花 4.3 秒、3.2 GB。现在复数形式由数字和它们的位置直接算出（`shiftedOperands`），答案不变。`Intl.ListFormat` 去掉空项时，把空项之间的字面文字拼起来，每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表分配 434 MB，时间随列表长度的平方增长。现在一趟拼完，最多 5 MB。长数字的 `formatToParts` 现在一次定好各部分和分组分隔符位置的大小：`10n ** 315000n` 在 en 下 Go 用 52 MB，原来是 112 MB。
+有四处活儿比脚本给的输入增长得快得多，现在不会了。二、八、十六进制的数字字符串原来一位一位地转成十进制，每一位都要过一遍已经造出的所有十进制位：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 在 Go 里花 9.6 秒，上限允许的最长数字字符串要大约十分钟。超过 1024 位的值和原来一样是无穷，现在转换之前就认出来：那个最长的字符串只要 4 ms。科学计数法和工程计数法下，单位或货币名称的复数形式取决于按指数移回去的数字，Go 原来把移动中的每个零都写出来：长格式米的 NumberFormat 调用 `format('1e-1073741000')` 在 Go 里花 4.3 秒、3.2 GB。现在复数形式由数字和它们的位置直接算出（`shiftedOperands`），答案不变。`Intl.ListFormat` 去掉空项时，把空项之间的字面文字拼起来，每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表分配 434 MB，时间随列表长度的平方增长。现在一趟拼完，最多 5 MB。长数字的 `formatToParts` 现在一次定好各部分和分组分隔符位置的大小：`10n ** 315000n` 在 en 下 Go 用 52 MB，原来是 112 MB。
 
 属于长内容的字符串，包括 `compare`、`Segmenter`、大小写函数和 `ListFormat` 的文本，以及 locale 列表，仍然和原来一样整个读入。
 
@@ -538,7 +538,7 @@ Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给�
 
 其他超过上限的选项、代码和 Temporal 字符串在 Chrome 里本来也是 `RangeError`，只是消息不同。
 
-测试：`intl/door_test.go` 的 `TestDoorIsTheOnlyWayIn`（没有 Builtin 用别的办法读字符串）、`TestShortArgumentRefused`、`TestShortArgumentNoRoom` 和 `TestRoomCoversGo`，`intl/digits_test.go` 的 `TestWrittenDigitsRefused`、`TestWrittenDigitsUnderCap`、`TestDigitsRoomCoversGo` 和 `TestValueDrivenOutputBounded`，`temporal/limits_test.go` 的 `TestRoomCoversGo` 和 `TestToStringBounded`，`internal/gointl/qjs_output_test.go` 的 `TestOutputBound` 和 `TestOutputFar`，`internal/gointl/qjs_operands_test.go` 的 `TestShiftedOperands` 和 `TestShiftedOperandsFormat`，以及 `internal/gointl/qjs_list_test.go` 的 `TestDropEmptyItemsLinear`。
+测试：`intl/door_test.go` 的 `TestDoorIsTheOnlyWayIn`（没有 Builtin 用别的办法读字符串）、`TestShortArgumentRefused`、`TestShortArgumentNoRoom` 和 `TestRoomCoversGo`，`intl/digits_test.go` 的 `TestWrittenDigitsRefused`、`TestWrittenDigitsUnderCap`、`TestDigitsRoomCoversGo` 和 `TestValueDrivenOutputBounded`，`temporal/limits_test.go` 的 `TestRoomCoversGo` 和 `TestToStringBounded`，`internal/gointl/qjs_output_test.go` 的 `TestOutputBound` 和 `TestOutputFar`，`internal/gointl/qjs_operands_test.go` 的 `TestShiftedOperands` 和 `TestShiftedOperandsFormat`，`internal/gointl/qjs_list_test.go` 的 `TestDropEmptyItemsLinear`，以及 `internal/gointl/qjs_parse_test.go` 的 `TestParseDecimalBaseLinear`。
 
 ## 日历的运算读中断标志
 

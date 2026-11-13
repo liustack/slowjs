@@ -2,6 +2,7 @@ package intl
 
 import (
 	"math"
+	"math/bits"
 	"strconv"
 	"strings"
 )
@@ -229,10 +230,17 @@ func parseDecimal(s string, round bool) Decimal {
 			base = 2
 		}
 		if base != 0 {
-			integer, ok := baseToDecimal(s[2:], base)
+			n, ok := baseBits(s[2:], base)
 			if !ok {
 				return Decimal{kind: decimalNaN}
 			}
+			if n > 1024 {
+				// 2**1024 and up are past the largest float, as ParseFloat
+				// finds below of the decimal digits, which take time of the
+				// square of the length to make.
+				return Decimal{kind: decimalInfinite}
+			}
+			integer, _ := baseToDecimal(s[2:], base)
 			if _, err := strconv.ParseFloat(integer, 64); err != nil {
 				return Decimal{kind: decimalInfinite}
 			}
@@ -322,7 +330,32 @@ func allDigits(s string) bool {
 	return true
 }
 
-// baseToDecimal converts digits in base 2, 8 or 16 to decimal digits.
+// baseBits is the number of bits of the value of s, digits in base 2, 8 or
+// 16 that may start with zeros, or false when s is empty or has a character
+// that is no such digit.
+func baseBits(s string, base int) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		d, err := strconv.ParseUint(s[i:i+1], base, 8)
+		if err != nil {
+			return 0, false
+		}
+		switch {
+		case n > 0:
+			n += bits.Len(uint(base - 1))
+		case d > 0:
+			n = bits.Len64(d)
+		}
+	}
+	return n, true
+}
+
+// baseToDecimal converts digits in base 2, 8 or 16 to decimal digits, in
+// time of the square of their length: parseDecimal calls it for a value of
+// at most 1024 bits.
 func baseToDecimal(s string, base int) (string, bool) {
 	if s == "" {
 		return "", false

@@ -6,6 +6,7 @@
 package intl
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,50 @@ func TestParseDecimalExponent(t *testing.T) {
 		}
 		if d.IsNaN() || d.IsInf() || got != c[1] {
 			t.Errorf("%q: %v, want %s", c[0], d, c[1])
+		}
+	}
+}
+
+// A string of digits in base 2, 8 or 16 is read in time linear in its
+// length: one past the range of a float, 2**1024 and up, is an infinity
+// before any of it is turned into decimal digits, and leading zeros cost
+// nothing more. The answers are those of the conversion: the largest
+// number under 2**1024 that is not an infinity, and the smallest that is.
+func TestParseDecimalBaseLinear(t *testing.T) {
+	f := strings.Repeat
+	for _, c := range []struct {
+		s, want string // want is "inf", "nan" or the integer
+	}{
+		{"0x" + f("f", 30000), "inf"},
+		{"0x" + f("f", 524286), "inf"},
+		{"0o" + f("7", 524286), "inf"},
+		{"0b" + f("1", 524286), "inf"},
+		{"0b1" + f("0", 1024), "inf"},
+		{"0x" + f("f", 524285) + "g", "nan"},
+		{"0b" + f("1", 524285) + "2", "nan"},
+		{"0x" + f("0", 524285) + "1f", "31"},
+		{"0b" + f("1", 1024), "inf"},
+		{"0x" + f("f", 13) + "8" + f("0", 242), "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368"},
+		{"0x" + f("f", 13) + "c" + f("0", 242), "inf"},
+	} {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		d := ParseDecimal(c.s)
+		runtime.ReadMemStats(&after)
+		var got string
+		switch {
+		case d.IsNaN():
+			got = "nan"
+		case d.IsInf():
+			got = "inf"
+		default:
+			got = d.m.integer
+		}
+		if got != c.want {
+			t.Errorf("%.20q (%d bytes): %s, want %s", c.s, len(c.s), got, c.want)
+		}
+		if n := after.TotalAlloc - before.TotalAlloc; n > 16<<10 {
+			t.Errorf("%.20q (%d bytes): Go allocated %d bytes", c.s, len(c.s), n)
 		}
 	}
 }

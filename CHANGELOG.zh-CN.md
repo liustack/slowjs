@@ -19,6 +19,7 @@
 
 - `Intl.NumberFormat` 在 `roundingPriority: 'lessPrecision'` 时，现在把远小于小数位数的数直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - 科学计数法或工程计数法下，长格式单位或货币名称的 `format` 找名称的复数形式时，不再把指数移动的每个零都写出来：米的 `format('1e-1073741000')` 原来在 Go 里花 4.3 秒、3.2 GB，而且不检查调用。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在先认出超过 1024 位的二、八、十六进制数字字符串是无穷，不再先把它转成十进制，转换的时间随长度的平方增长：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 原来在 Go 里花 9.6 秒，而且不检查调用，现在 512 Ki 字符的字符串只要 4 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - 去掉空项的 `Intl.ListFormat` 现在一趟拼完空项之间的字面文字，原来每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表在 Go 里分配 434 MB，现在最多 5 MB。长数字的 `formatToParts` 用的 Go 内存不到原来的一半：`10n ** 315000n` 在 en 下 52 MB，原来是 112 MB。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 `Number` 的方式读数字字符串：`"1e+-5"` 和 `"1xe1073741825"` 是 NaN，原来是 Infinity，`"1e--5"` 是 NaN，原来是零，`"0e1073741825"` 是 0，原来是 Infinity（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#数字字符串按-number-的方式读)）。
 - `Interrupt` 和 eval 超时现在能停下 Temporal 在 ISO 8601 以外日历里的 `add`、`subtract`、`until`、`since`、`round` 和 `total`，它们一次走一个月或一年，原来不做检查：农历日期加 1.9 亿天，超过 20 ms 的 eval 超时后又跑了 64 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#日历的运算读中断标志)）。
