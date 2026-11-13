@@ -415,10 +415,10 @@ same folder removes the file.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
-L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass
+L=$(scripts/llvm-bin.sh) P=internal/goasm/gen/pass
 $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/poll.cpp $P/icall.cpp $P/facts.cpp \
     -o internal/goasm/gen/internal/_shadow.so
-/tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
+/tmp/engine-gen -engine engine -llvm $L -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
 

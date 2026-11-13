@@ -83,10 +83,11 @@ if [ "${GO_VERSIONS_LIST:-}" = 1 ]; then
 	exit 0
 fi
 
-llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
+# -f only finds the folder. gen-engine.sh checks the version and says what to install.
+llvm=$(scripts/llvm-bin.sh -f) || llvm=
 use_llvm=${GO_VERSIONS_LLVM:-auto}
 case $use_llvm in
-auto) if [ -x "$llvm/clang" ]; then use_llvm=1; else use_llvm=0; fi ;;
+auto) if [ -n "$llvm" ] && [ -x "$llvm/clang" ]; then use_llvm=1; else use_llvm=0; fi ;;
 0 | 1) ;;
 *) echo "go-versions.sh: GO_VERSIONS_LLVM: want 0, 1 or unset" >&2; exit 2 ;;
 esac

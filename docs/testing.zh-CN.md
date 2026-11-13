@@ -74,13 +74,13 @@ go test -count=1 -p 1 .                # about a minute
 `internal/goasm/gen` 里生成器的测试需要 LLVM，没给就跳过（并且仍算通过），所以单独运行 `go test ./internal/goasm/gen` 只检查规则。设置这三个变量就能全部运行：
 
 ```sh
-export QUICKJS_LLVM=/usr/lib/llvm-22/bin                          # LLVM 22.1.8 bin directory (clang, opt, llc)
+export QUICKJS_LLVM=$(scripts/llvm-bin.sh)                        # LLVM 22.1.8 bin directory (clang, opt, llc), see [Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)
 export QUICKJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
-export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux)
+export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux). llvm@22 of Homebrew has no ld.lld, see below
 go test -p 2 -timeout 30m ./internal/goasm/gen/...
 ```
 
-只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。
+只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。在 Mac 上还有七个测试会跳过，因为它们要在本机运行 linux/amd64 的代码（[见下](#linux-和-macos-上的-llvm)）。
 
 `internal/measure/bench` 里丢弃文件缓存页的测试（`TestDropPages`、`TestDropPagesFailsWhenAPageStays`），在 linux 上 `TMPDIR` 位于 tmpfs 或 ramfs 时会跳过，因为那里的页丢不掉，`/tmp` 是 tmpfs 的机器就是这样。要跑它们，把 `TMPDIR` 设成磁盘上的目录：`TMPDIR=$HOME/tmp go test ./internal/measure/...`。`make check-full` 不跑它们，CI 在 `/tmp` 位于磁盘的机器上跑。
 
@@ -165,7 +165,7 @@ engine/libc/vendor.sh --verify         # the files taken from musl are the ones 
 go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 ```
 
-它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。在 macOS 上，没有设 `CC` 时 `scripts/check.sh` 用 Apple clang（`/usr/bin/clang`）构建它：它为生成器放在最前面的 LLVM 的 clang 可能去找一个没装的 SDK，这时找不到系统的头文件。
+它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。`scripts/check.sh` 用 LLVM 22.1.8 的 clang 构建它，在 macOS 上配 xcrun 给出的 SDK（[Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)）。
 
 - 引擎和 `engine/libc` 以独立（freestanding）方式构建，带 `-nostdinc`，头文件只用 `engine/libc` 的（参数写在 `flags.sh` 里，`build.sh`、`check-symbols.sh`、`cycles.sh`、`libc-test.sh` 和 `internal/goasm/gen` 的生成器都读它，所以构建的内容和检查的内容不会不一致）。宿主、测试运行器和测试程序用系统的头文件和 libc。引擎不链接系统的 libm：`Math.*` 用的是 musl 的，所以结果在每台机器上都一样。
 - `run-test262.c` 是上游的运行器加了几处改动（见它开头的注释）：它包含 `host.h`，用 `host_new_runtime()` 创建运行时、用 `host_free_runtime()` 释放，通过缓冲区打印内存报告，像 Go API 的 VM 那样在每个测试里保留 2048 个 shape（引擎记录一个对象有哪些键、按什么顺序的结构），并且不再调用 `JS_SetCanBlock`。`host.c` 从 `quickjs-libc.c` 抄来运行器要的三个函数，中断运行超过 120 秒的测试（运行器自己做不到：宿主的一个线程请这样的运行时停下，引擎的线程在下一次 `host_poll` 时设上它的中断标志，见 [c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)），并实现 `engine/host.h` 的回调。它还根据线程的栈定义 `__shadow_remaining`，即剩余的栈字节数：引擎自己数递归深度，只在限制 alloca 和留出余量时才问这个值（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)）。运行器的线程，以及 `jsrun` 和 `unit` 的深度测试的线程，栈都是 512 MiB（`HOST_THREAD_STACK`，用到才真正占用），这样递归到最深的限制也不会跑出栈外。
@@ -185,7 +185,7 @@ go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
   - libc 函数本身（`math/libc.hashes`）：`libmath` 调用引擎用到的 `engine/libc` 的 33 个函数（包括 `round`、`modf` 和 `lrint`）。NaN 原样取用，它的符号由机器决定，所以只在 x86-64 上检查这一项。
   - 哈希是在 linux/amd64 上记录的，C 树给出同样的位。`MATH_UPDATE=1 engine/test/math.sh` 在 x86-64 上从 C 树重新写出它们，提交前要先看一遍。
 - `check-symbols.sh` 以几种优化级别、带和不带 `NDEBUG`，用独立方式构建引擎文件和 `engine/libc`，如果它们用了 `engine/libc/symbols.txt` 不允许的符号就失败：只允许 libc 函数、`engine/host.h` 的回调和 `host_memory_grow`。分配器就在引擎文件里（`heap.c`、`tlsf.c`），所以列表里没有 malloc。给它目标三元组就能检查其他平台（`CC=clang NM=llvm-nm engine/test/check-symbols.sh x86_64-linux-gnu aarch64-linux-gnu`）：对象只编译，所以不需要交叉工具链。对一个对象运行 `nm` 失败会让脚本结束，它开头还会检查自己会拒绝一个不在列表里的符号和一个读不了的对象。它只证明符号这一层。它不能证明机器码里没有线程局部存储，没有系统调用指令，没有固定地址。那些检查随生成器一起提供，在那之前没有。
-- `cycles.sh` 检查带计数的深度限制了引擎的每一处递归（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)）。它用生成器的参数，在 -O0 下把引擎文件编译成一个 LLVM IR 模块（这样源码里的每个函数都在，每个计数都是一次独立的调用），并带 `-fsanitize=kcfi`，然后 `internal/goasm/cmd/cycles` 构建调用图：直接调用，以及把每个间接调用连到它的 kcfi 类型相同且地址被取过的每个函数（生成器也这样连）。数一次深度的函数（`js_call_enter`、`js_call_enter_in`、`js_call_hop_enter`、`js_internal_enter`、`js_internal_enter_rt`、`js_json_enter`、`lre_depth_enter`、`js_nest_enter`）会切断经过它的环。构建时内联的计数写成 `count_inline`，这样在 -O0 下它仍是一次调用，工具看得到。剩下的环必须和 `cycles.txt` 逐行一致，而它是空的：每一处递归都经过一次计数。这个工具还检查一些函数对，其中第一个无论走计数的路还是不走计数的路都不许到达第二个（`noReach`），对到得了的就打印一条最短路径：生成错误（`JS_ThrowError2`）到不了 `JS_CallInternal` 和 `JS_RegvmRun`，也到不了 `JS_ThrowInterrupted`，更到不了读中断标志的函数（`js_poll_interrupts`、`lre_check_timeout`、`lre_poll_timeout`、`rqsort_stop`），一次回收（`JS_RunGC`、`JS_RunYoungGC`）到不了 `JS_ThrowError2`，`free_zero_refcount` 和 `free_zero_refcount_first` 也不会启动回收。错误嵌套和释放嵌套的深度就靠这几条来限定。一对函数里如果有模块没定义的，就是错误，所以改名不会让某条检查失效。值打印器只在带 `CONFIG_PRINT_VALUE` 时才构建，`build.sh` 为宿主定义了它，`cycles.sh` 没有，生成器也没有。出现新的环会让检查失败，一个环消失了而没删它的那一行也会失败。它需要 LLVM 22（参数是 `clang` 和 `llvm-link` 所在的目录，默认 `/usr/lib/llvm-22/bin`）。`internal/goasm/cmd/cycles` 的测试（`check.sh` 的 `goasm` 步骤会运行它们）检查这个工具能找到经过直接调用和带类型的间接调用的环，一次计数能切断它，也能找到经过直接调用、带类型的间接调用和计数，从一个函数到另一个函数的路径，这正是 `noReach` 需要的。
+- `cycles.sh` 检查带计数的深度限制了引擎的每一处递归（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)）。它用生成器的参数，在 -O0 下把引擎文件编译成一个 LLVM IR 模块（这样源码里的每个函数都在，每个计数都是一次独立的调用），并带 `-fsanitize=kcfi`，然后 `internal/goasm/cmd/cycles` 构建调用图：直接调用，以及把每个间接调用连到它的 kcfi 类型相同且地址被取过的每个函数（生成器也这样连）。数一次深度的函数（`js_call_enter`、`js_call_enter_in`、`js_call_hop_enter`、`js_internal_enter`、`js_internal_enter_rt`、`js_json_enter`、`lre_depth_enter`、`js_nest_enter`）会切断经过它的环。构建时内联的计数写成 `count_inline`，这样在 -O0 下它仍是一次调用，工具看得到。剩下的环必须和 `cycles.txt` 逐行一致，而它是空的：每一处递归都经过一次计数。这个工具还检查一些函数对，其中第一个无论走计数的路还是不走计数的路都不许到达第二个（`noReach`），对到得了的就打印一条最短路径：生成错误（`JS_ThrowError2`）到不了 `JS_CallInternal` 和 `JS_RegvmRun`，也到不了 `JS_ThrowInterrupted`，更到不了读中断标志的函数（`js_poll_interrupts`、`lre_check_timeout`、`lre_poll_timeout`、`rqsort_stop`），一次回收（`JS_RunGC`、`JS_RunYoungGC`）到不了 `JS_ThrowError2`，`free_zero_refcount` 和 `free_zero_refcount_first` 也不会启动回收。错误嵌套和释放嵌套的深度就靠这几条来限定。一对函数里如果有模块没定义的，就是错误，所以改名不会让某条检查失效。值打印器只在带 `CONFIG_PRINT_VALUE` 时才构建，`build.sh` 为宿主定义了它，`cycles.sh` 没有，生成器也没有。出现新的环会让检查失败，一个环消失了而没删它的那一行也会失败。它需要 LLVM 22.1.8（参数是 `clang` 和 `llvm-link` 所在的目录，不给时用 `scripts/llvm-bin.sh` 找到的那个）。`internal/goasm/cmd/cycles` 的测试（`check.sh` 的 `goasm` 步骤会运行它们）检查这个工具能找到经过直接调用和带类型的间接调用的环，一次计数能切断它，也能找到经过直接调用、带类型的间接调用和计数，从一个函数到另一个函数的路径，这正是 `noReach` 需要的。
 - `vendor.sh --verify` 检查 `engine/libc` 里取自 musl 的文件就是 `MUSL.sha256` 列出的那些，没有缺的也没有多的，补丁就是记录下来的那个。给它一份 musl 的检出（`vendor.sh --verify MUSL_DIR`），它还会检查每个文件在 musl 里记录的哈希，并把补丁重新打到原文件上。
 - `engine/test/compare.sh [MODE]` 把 C 树和仓库里保存的文件比较：`engine/test/compare/recorded` 和 `engine/test/compare/upstream` 的输出记录（`NAME.js` 旁边的 `NAME.txt`）和 `testdata` 的输出记录（`NAME.golden`），它们是 Node 24 或改动之前的引擎打印的内容，还有 `engine/test/compare/` 里的用例（`NAME.js` 旁边的 `NAME.txt`）。宿主的 `jsrun` 在全新的运行时里运行每个脚本，然后运行它的任务，在脚本之后和每个任务之后结束任务（`JS_ClearKeptObjects`），打印它的完成值（如果脚本是函数，则打印它的返回值）。输出必须和文件逐字节一致，对 C 里做的保持引擎结果不变的改动，这是成立的。`regexcache.js` 运行三次，正则缓存分别取默认值、4 项和关闭，每次打印的内容相同。`recorded`、`upstream` 和 `testdata` 的文件里，孤立代理项按引擎转换的样子保存（`jsrun -raw`），`engine/test/compare/` 的文件把它写成 `\u{...}`。以 `.mjs` 结尾的文件作为模块运行（它给出 `globalThis.result`，它的 import 从它所在的目录读取），`-result` 给出以一个任务结束的脚本的 `globalThis.result`，`-call` 把文件当作宿主调用的函数体，它下面的栈上什么也没有。脚本里有 `gc()`、`youngGC()`、`memorySize()`、`memoryBlocks()`、`heapChange(bytes, blocks)`、`setGCThreshold(n)`（`n` 为负表示引擎从不自己回收）和 `clearKeptObjects()`，分别运行 `JS_RunGC` 和 `JS_RunYoungGC`，给出 `JS_GetMemorySize` 和在用的堆块数，把堆和之前读到的两个数比较，设置 `JS_SetGCThreshold`，以及为 `WeakRef` 留到任务结束的目标结束任务（`JS_ClearKeptObjects`，和 test262 的 `$262.clearKeptObjects` 一样）。`engine/test/compare/upstream` 里的脚本（`test_bigint.js`、`test_closure.js`、`test_language.js`、`test_loop.js` 和 `test_builtin.js`，最后这个的前面有几行提供 `std.gc` 和 `os.setTimeout`）也会运行，断言失败时它们打印异常，而不是 `undefined`。`testdata/error_stack.js` 运行两次，一次作为脚本，一次作为从 C 调用的函数体，对照 golden 文件里栈之前的那一部分，栈之后的内容只有 Go 宿主能读。`engine/test/compare` 里的脚本在一行 `// jsrun: OPTIONS` 里写它需要的选项。`fast_get.js`、`fast_set.js`、`numeric_keys.js`、`array_length.js`、`rope_concat.js` 和 `to_string.js` 运行属性层的各项精简所改动的路径（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)），它们的文件就是 Node 24 打印的内容。`array_slice_splice.js`、`strict_equal.js`、`number_compare.js`、`string_concat.js` 和 `template_literal.js` 打印的也是 Node 24 打印的内容，对应从上游取来的提交（见 [upstream-commits.md](changes/upstream-commits.zh-CN.md)）。那张表里提到的其他脚本（`bigint_as_n.js`、`iterator_take_drop.js`、`string_repeat.js`、`atomics_store.js`、`array_buffer_resize.js`、`typed_array_at.js`、`completion_values.js`、`iterator_helpers_return.js`、`yield_await_names.js`、`call_as_target.js`、`promise_try.js`、`module_ambiguous_export.mjs`、`module_string_names.mjs`、`set_non_extensible.js`、`array_add_index.js`、`for_in_initializer.js`、`bind_prototype.js`、`proxy_own_descriptor.js`、`define_properties_order.js`、`class_element_names.js`、`sort_write_back.js`、`proxy_own_keys_result.js` 和 `for_await_close.js`）打印的也是 Node 24 打印的内容，只有它们标着 `ES2026` 或 `spec:` 的那几行例外，那里现行规范和 Node 24 不同，并且脚本开头有说明。其中两个带模块的，从 `engine/test/compare/modules` import 它们。会生成新值并在之后检查堆的脚本（`atomics_store.js`、`proxy_own_descriptor.js`、`define_properties_order.js`、`sort_write_back.js`、`proxy_own_keys_result.js`）像 `strict_equal.js` 那样 require 它。`unit-api` 有 `test_read_truncated_bigint`，它读取一个在每种长度处被截断的 BigInt，让 `vm_free` 的泄漏检查去发现多出来的块。`array_slice_splice.js` 把它的用例运行两遍，先开启稠密数组的快速路径，再关闭，用索引碰一下 `Array.prototype` 就会永久关闭它们。`strict_equal.js`、`string_concat.js` 和 `template_literal.js` 还要求，每次用新生成的值运行之后，堆保持原样：在用的块相同（用 TLSF 时是 arena 和大块，用系统 malloc 时是每个块），字节数也相同，TLSF 下每个块允许差 56 字节上下，因为同一个请求可能得到一个最多大 24 字节的块，或者来自大块缓存、最多大 56 字节的块。`call_full_stack.js` 从没有局部变量的函数里做尾调用和尾方法调用，这些函数在栈满时释放它们的值，偶数个和奇数个各做一次，并要求做了 20000 个之后堆保持原样。`to_well_formed.js` 打印 Node 24 对含孤立代理项的字符串做 `toWellFormed` 的结果，孤立代理项放在它的循环读中断标志的位置附近（每 4096 个字符一次），也包括很长的一串代理项对。`copy_data.js` 打印 Node 24 对展开、剩余和 `Object.assign` 的结果，来源对象的 getter 会删除一个键、让它不可枚举或添加一个键（见 [objects-and-shapes.md](changes/objects-and-shapes.zh-CN.md#展开rest-和-objectassign-在轮到每个键时才查找它)）。`object_literal.js` 打印 Node 24 对对象字面量的结果，一连串普通的键会一次做好（见 [objects-and-shapes.md](changes/objects-and-shapes.zh-CN.md#对象字面量直接按最终的-shape-创建)），并要求创建又丢弃函数字面量之后同样如此。`fused_ops.js` 和 `typeof_is.js` 运行两次，分别开启和关闭一次做几条指令的操作码（`jsrun -no-fused-ops`），它们的文件是引擎在有这些操作码之前打印的内容（见 [c-engine.md](changes/c-engine.zh-CN.md#一次分发做几条指令的操作码)）。`share_slots.js` 同样运行两次，它的文件就是 Node 24 打印的内容（见 [c-engine.md](changes/c-engine.zh-CN.md#共用槽位的局部变量)）。还没有文件的脚本会让这次运行失败：`COMPARE_UPDATE=native engine/test/compare.sh` 根据 C 树打印的内容写出缺的文件，提交之前要先看一遍。先构建宿主。输出在 `engine/test/out/compare-MODE/` 里。`jsrun` 以非 0 状态退出时，即使输出和文件一致，这个用例也算失败（释放运行时时发现的泄漏，会在所有输出写完之后以 87 结束运行）。`engine/test/compare-test.sh` 用一个代替 `jsrun` 的程序测试这一点。`jsrun` 和 `unit` 用 `host_free_runtime` 结束每个运行时，所以释放后的运行时里还留着块时，进程以状态 87 结束，`jsrun` 还要求这批脚本运行完后宿主不再认识任何运行时。`compare.sh` 设了 `UBSAN_OPTIONS=halt_on_error=1:exitcode=86`，放在调用者已有的选项之后，调用者的选项关不掉这个停止，所以 `ubsan` 模式下 UndefinedBehaviorSanitizer 的报告会让运行结束，而不是被打印出来后放过。然后它运行 `unit`（`engine/test/unit.c`），通过公开 API 检查脚本看不到的东西，比如缓存留下和放掉什么，以及递归的限制：普通函数递归到调用深度（5000，可调高到 10000，可调低到 100，超过限制或代码正在运行时被拒绝），回调进来的宿主函数会数它的进入，嵌套在 JSON、解析器、正则、`flat` 和 proxy 里停在内部深度，从 C 递归到 C 的链（`instanceof` 和 `Reflect.construct` 下的 300000 个绑定函数，`Promise.prototype.finally` 链，迭代器辅助方法）以 `RangeError` 结束，模块链也是（import，从字节码读取或通过加载器读取，`export * from`，`export { x } from`）。改写成循环的递归保持结果不变：两端都建过并重新平衡的 rope（几段字符串连成的树，读的时候才拼成一段），释放一百万个嵌套对象和每种对象的一层深度，大小写转换和每个码点的四种规范形式以及 emoji 序列（对照递归代码的哈希），正则里 `\q{...}` 的字符串，带 reviver 的 `JSON.parse` 的解析记录，每层 3 个的括号，以及嵌套到解析器能到的最深处的函数。一条模块链，如果它的解析或函数在超过内部深度之后失败了，就在同一个上下文里从中间重新运行。创建惰性属性（`Reflect`、`JSON.parse`、函数的原型），以及在 String 对象和两种 arguments 对象上定义属性或添加元素，在内部深度处抛 `RangeError`，低一层则正常工作。对五段使用外层函数变量的代码片段，编译在每一次计数处依次失败（宿主的 `host_stack_fail_at` 让栈在第 n 次计数时看起来不够），要么抛 `RangeError`，要么运行得到结果。每次之后，运行时都还能运行代码，递归到和之前一样深，并且释放后不留任何块。宿主函数看到的深度（`JS_GetCallDepth`、`JS_GetInternalDepth`）是当前打开的层数，写入会移动限制开始计数的位置（在限制处什么也不运行，低三层时可以放进一次调用，超过限制的值会被保留但拒绝运行，范围之外的值什么也不改变），两个互相调用直到 `RangeError` 的运行时，在彼此把自己的深度交给对方时，形成一条长度为一个限制的链，不交时则是两倍。内部深度的限制是构建时的常量，用数字写下来：JSON、括号和 proxy 链分别是 2000、665 和 2000 层，下一层就抛错。每个读中断标志的地方都单独测试：脚本从工作中间设上标志（通过参数的 `toString` 或 `valueOf`，或者脚本调用的函数），解释器、正则的执行和编译、字符串搜索、`repeat`、类型化数组的搜索、`fill` 和 `copyWithin`，以及 `JSON.parse` 和 `JSON.stringify`，都必须抛 `interrupted`，外面包的 `try` 无法捕获它，而同样的工作在没设标志时要运行到结果。正则在工作的过程中读中断标志，而不是工作结束时才读：6 个在 4Mi 个字符的字符串里什么也找不到的正则（8 位和 16 位，有的能找出匹配可以从哪里开始，有的匹配在每个位置都失败），7 个在一次匹配里运行很久的正则（在 128Ki 个字符上的贪婪 `x+`），以及其中 6 个粘性（sticky）的（匹配只试一次，所以只有不压入任何东西的拆分操作才读标志），如果标志在字符串被转换时就已设上，就抛 `interrupted`，宿主在第 50 次读取时设上标志（`host_poll_stop_after`）也一样。`lre_skip` 每看过 65536 个字符读一次标志，而不是在字符串末尾才读，次数按 `host_poll` 的读取数（`host_poll_reads`）计，用的是手工编译的正则和字符串。`lre_canonicalize` 在非 unicode 模式下，对每个码元，对 128 以上的字符都不给出 ASCII 字符。`Date.now`、`new Date()` 和 `Date()` 给出由 `host_set_wall` 设定的墙上时钟的整毫秒，从 2023 年和从 1970 年起都是如此（1970 年以前不是整毫秒的时间向零舍入）。一个线程在对 4Mi 个元素的类型化数组排序到第 20 ms 时请宿主停止运行时，必须在 0.2 秒内停下，元素保持不变，而 `Array.prototype.sort` 必须在某个元素的转换设上标志之后的下一次比较处停下，不写回。`rqsort_stop` 在设上停止的那次比较之后最多再做 14 次比较，对 2 到 64 个元素的排序在每次比较处停止，对 100 到 5000 个元素的排序在分布其中的若干点停止（上限在 `cutils.h` 里）。由普通键组成的对象字面量，得到的属性数组大小恰好是它的大小。在 `systemd-run -p MemoryMax=4G` 或类似的限制下运行它：出了错的链会很快吃掉内存。
 
@@ -210,7 +210,7 @@ engine/test/out/MODE/rvops engine/test/regvm/opcodes.txt # 操作码表
 - 黄金文件（`engine/test/regvm/golden`）是在最后一个还有栈式解释器的提交（`deb70815`）上，从栈式解释器记下来的，记的是两个解释器结果一致的用例。没有黄金文件的用例算作不一致，这样后来加的脚本不会在没有东西可比的情况下通过。它的黄金文件来自 Node 24，或者来自读过输出、确认正确之后的 `-update`。
 - `rvgen`（`internal/rvgen`）为 pass 写小的随机程序：算术、比较、实参缺少和多余的调用、方法、递归、循环、字符串 `switch`、对象和数组、会回调的 getter，范围更宽的模式里还有闭包、`try`、类等等。`golden.sh` 对每种模式（`core`、`full`、`wide`，固定在 `internal/rvgen/v1`）的 1,000 个固定种子，对着 `golden/seeds` 检查，`rvgen node` 让新程序经 `rvdiff` 和 Node 24 各跑一遍，并显示每处差别。
 - `inject.sh`（引擎和工具用 `EXTRA_DEFS=-DRV_INJECT` 构建，见它的开头注释）让寄存器指令可能抛错的第 n 个位置抛一个 `InternalError`，n 取 1、2、3 等等。处理函数照常运行，走它的慢速一侧，在它调进引擎的地方失败，所以它释放什么、它的 pcmap 项让展开释放什么，是分开写的两件事：一个临时槽被释放两次或一次也没释放，会在 AddressSanitizer 下或运行时的计数里显现。每次运行都和栈式解释器在同一位置抛同一个错的那次运行比较，那些记录在 `golden/inject` 里。
-- 完整的注入集，`inject.sh DIR engine/test/regvm/corpus engine/test/regvm/js`，在一个改了 `engine/` 的分支合进 main 之前运行。它在一个核上要约 10 小时（多数脚本 2 到 7 分钟，最大的约 25 分钟），所以分成每次几个脚本的任务来跑。`check-full` 每类脚本用 `-max 1` 跑一个（`inject` 步骤，在一个核上连构建约 10 分钟，脚本列在 `engine/test/regvm/inject-check.txt`），`inject.sh -goldens`（`inject-goldens` 步骤）在注入集里有脚本既没有黄金文件、`golden/inject/skip` 里也没有它那一行时失败。栈式解释器已经没了，一个改动让某个黄金文件变了，就用 `inject.sh -update` 跑一次重新写：只取这个改动解释得了的那些行，其余位置保持栈式解释器当初记下的样子。
+- 完整的注入集，`inject.sh DIR engine/test/regvm/corpus engine/test/regvm/js`，在一个改了 `engine/` 的分支合进 main 之前运行。它在一个核上要约 10 小时（多数脚本 2 到 7 分钟，最大的约 25 分钟），所以分成每次几个脚本的任务来跑。跑不同脚本的几个 `inject.sh` 可以同时共用一个构建目录：每个只动它自己那些脚本的目录。`check-full` 每类脚本用 `-max 1` 跑一个（`inject` 步骤，在一个核上连构建约 10 分钟，脚本列在 `engine/test/regvm/inject-check.txt`），`inject.sh -goldens`（`inject-goldens` 步骤）在注入集里有脚本既没有黄金文件、`golden/inject/skip` 里也没有它那一行时失败。栈式解释器已经没了，一个改动让某个黄金文件变了，就用 `inject.sh -update` 跑一次重新写：只取这个改动解释得了的那些行，其余位置保持栈式解释器当初记下的样子。
 - `rvops` 把表 `engine/test/regvm/opcodes.txt` 和引擎的操作码对照：每个操作码一行，说明寄存器循环怎样接它（自己的操作，只靠 pass 的模型，窗口操作，`OLD`，或者没有），而且 pass 必须接受函数可能有的每个操作码。以 `>` 开头的一行是 pass 曾经拒绝过的函数，现在必须有寄存器码。
 - `unit-white`、`unit-oom` 和 `unit-api` 里是需要 pass 和入口内部才能做的检查（`test_regvm_*` 和 `test_rv_*`）：转换和它的暂存块，折叠和寄存器栈的新段在每次分配时依次失败，没有编译器会做出来的代码，帧的上限。`compare.sh` 会运行它们。
 - 在生成的引擎上，`go test .` 运行 `TestRegvmScripts`（语料和 `rvgen` 程序的一个固定部分，其中不许有函数没有寄存器码）、`TestRegvmMicro`、`TestRegvmDepth`（没有哪条路径比测试里记的下限递归得更浅，两种架构各一份）、`TestRegvmFrame` 和 `TestRegvmLimits*`（超时、`Interrupt` 和内存上限能结束寄存器循环里每种形状的循环）。`internal/goasm/gen` 的 `TestRegvmJumpsCount` 见[下面](#生成引擎的-go-宿主)。
@@ -321,7 +321,7 @@ done
 
 ## 开发者工具：生成、检查、计时
 
-make 目标在你所在的机器上干活。`make gen` 和 `make check-*` 的生成器测试只需要装了 LLVM 22.1.8（`/usr/lib/llvm-22/bin`，可用 `LLVM_BIN` 改）的 Linux。`make remote` 通过 ssh 在另一台机器上运行同样的目标，供没有 LLVM 的 Mac 或笔记本使用。
+make 目标在你所在的机器上干活。`make gen` 和 `make check-*` 的生成器测试要求这台机器装了 LLVM 22.1.8，Linux 或 macOS 都行（[见下](#linux-和-macos-上的-llvm)）。`make remote` 通过 ssh 在另一台机器上运行同样的目标，供有空闲核心或装了 Linux 的机器使用。
 
 ### 生成并检查
 
@@ -340,7 +340,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 生成的引擎是提交进仓库的：`internal/cengine` 里有 amd64 和 arm64 的 `.s`、`engine_decl_<arch>.go` 和 `engine_keep_<arch>.go` 文件（约 18 MiB，压缩后 3 MiB），因为模块的使用者没有 LLVM。对 `engine/` 的 C、生成器或 `scripts/gen-engine.sh` 的参数的改动，要连同 `make gen` 和 `make gen ARCH=arm64` 重新生成的文件放在同一个提交里，没有的话 `make check-gen` 会失败。它比较的是 git 暂存区里的字节，所以在 `make gen` 之后、`make check-gen` 之前要运行 `git add internal/cengine`。不管 `GEN_JOBS` 取什么、在哪个目录里运行，生成器给出的字节都一样。
 
-`scripts/gen-engine.sh` 检查 LLVM 版本，pass 的源码变了就重新构建它，构建生成器，并以正式构建的参数运行它（`GEN_RELEASE=0` 允许勘察和测试用的开关，并且会说明）。`scripts/check.sh` 一个接一个地运行它的步骤，为每一步在 `.build/check-logs/` 下写一份日志（可用 `CHECK_LOGS` 改），失败后继续，最后给出一张表。`go test` 里的跳过会被计数并在表里点名，因为被跳过的测试什么也没检查：预期的跳过只有一个，`TestVarargsNative/aarch64`，它要 `ld.lld` 和一个 aarch64 模拟器。需要引擎的步骤用的是提交进仓库的那个，所以只有在改动需要新文件之后才先运行 `make gen`。
+`scripts/gen-engine.sh` 检查 LLVM 版本，pass 的源码变了就重新构建它，构建生成器，并以正式构建的参数运行它（`GEN_RELEASE=0` 允许勘察和测试用的开关，并且会说明）。`scripts/check.sh` 一个接一个地运行它的步骤，为每一步在 `.build/check-logs/` 下写一份日志（可用 `CHECK_LOGS` 改），失败后继续，最后给出一张表。`go test` 里的跳过会被计数并在表里点名，因为被跳过的测试什么也没检查：在 Linux 上预期的跳过只有一个，`TestVarargsNative/aarch64`，它要一个 aarch64 模拟器（Mac 上见[下文](#linux-和-macos-上的-llvm)）。需要引擎的步骤用的是提交进仓库的那个，所以只有在改动需要新文件之后才先运行 `make gen`。
 
 | 步骤 | 档 | 运行什么 |
 | --- | --- | --- |
@@ -348,7 +348,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `goasm` | 快档 | `internal/goasm/...` 的测试，设了 `QUICKJS_LLVM`、`QUICKJS_SHADOW_PASS` 和 `QUICKJS_LLD`，这样它们不会跳过 |
 | `cengine` | 快档 | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain` 和 `render-test.sh plain`、`cycles.sh` |
-| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
+| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`scripts/llvm-bin-test.sh`（LLVM 的查找）、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
 | `inject-goldens` | 快档 | 对 `engine/test/regvm/corpus` 和 `engine/test/regvm/js` 运行 `engine/test/regvm/inject.sh -goldens`：注入抛错的每个脚本都有黄金文件，或者在 `golden/inject/skip` 里有一行 |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
@@ -358,15 +358,30 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `root` | 全档 | `go test -p 1 .` |
 | `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |
 | `race` | 全档 | 根包和上面三个包的 `go test -race -short -p 1` |
-| `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh` |
+| `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh`。在 Apple M4 上这四步大约用 1.5、31、2.5 和 5 分钟：`compare-asan`（1846 秒，AddressSanitizer 下跑 test262）不是短任务，要单独安排 |
 | `test262` | 全档 | `engine/test/test262.sh -m plain -T 2` |
 | `gointl` | 全档 | `make gointl`，放在最后，因为它要用 go-intl 的缓存（见[下文](#每种语言的测试)） |
 
 这份列表在 `scripts/check.sh` 里。新的检查要加到那里，也要加到上面的表里。
 
+### Linux 和 macOS 上的 LLVM
+
+`scripts/llvm-bin.sh` 是找 LLVM 22.1.8 的唯一地方。`check.sh`、`gen-engine.sh`、`go-versions.sh` 和 `engine/test/cycles.sh` 都调用它，所以 LLVM 装在常见位置时，不用设任何变量。设了 `LLVM_BIN` 就用它，没设就取 `/usr/lib/llvm-22/bin`、`/opt/homebrew/opt/llvm@22/bin`、`/usr/local/opt/llvm@22/bin` 里第一个有 clang 的。然后它会运行那个 clang：版本不是 22.1.8 就停下，并说出找到的版本。一个文件夹都没有时，它停下并说明该装什么。`scripts/llvm-bin-test.sh` 测这套查找（属于 `scripts` 步）。
+
+- Linux：从 apt.llvm.org 装 `clang-22`、`llvm-22-dev` 和 `lld-22`，那里有 22.1.8（见 `llvm-steps.yml`）。
+- macOS：`brew install llvm@22`。Homebrew 不能指定装 22.1.8，所以要确认 `/opt/homebrew/opt/llvm@22/bin/clang --version` 说的是 22.1.8，再运行 `brew pin llvm@22`，免得 `brew upgrade` 把它换成别的 22.x。如果 Homebrew 已经换了，检查会失败并说出它找到的版本：用别的办法装上那个版本，再设 `LLVM_BIN`。
+
+在 Mac（Apple 芯片，在 M4 上验证过）上什么都不设就能跑的步骤：`build`、`gofmt`、`docs`、`goasm`、`cengine`、`host-plain`、`compare-plain`、`cycles`、`scripts`、`inject-goldens`、`gen`、`host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan`，以及表里其余的步骤（`gointl` 第一次要下载 go-intl 的数据，见下）。`gen` 一步在 Mac 上生成 arm64 和 amd64 两份引擎，和已提交的文件逐字节相同。Homebrew 的 llvm@22 没有 `ld.lld`，`check.sh` 改给 `/usr/bin/ld`，`goasm` 里有七个测试在 Mac 上跳过，并且自己会说明：它们要在本机运行 linux/amd64 的代码（`TestArgBlockShared`、`TestICallSymbols`、`TestNarrowArgs`、`TestSampleRuns`，以及 `TestVarargsNative` 的三个子测试）。要在 Linux 上跑它们（`make remote`，或 CI，`llvm-steps.yml` 会跑 `goasm`）。
+
+原生步骤（`host-*`、`compare-*`、`inject`、`test262`，以及 `race` 里的 cgo）在两个系统上都用 LLVM 22.1.8 的 clang：`check.sh` 把它的文件夹放在 PATH 最前面。Homebrew 的 clang 按 macOS 版本选 SDK 文件夹（这里是 `MacOSX15.sdk`），而命令行工具只有 `MacOSX.sdk` 时那个文件夹不存在，于是它找不到 `errno.h`。所以在 macOS 上，`check.sh` 会设 `CC="clang -isysroot $(xcrun --show-sdk-path)"`，除非已经设了 `CC`。没找到 LLVM 时，这些步骤用系统自带的编译器（Mac 上是 Apple clang 15 及以后）。手动运行 `engine/test` 里的脚本，用的是 `$CC`，或 PATH 里排第一的 clang。
+
+检查还会调用的工具：`git`、`make`、`curl`（第一次 `make gointl`）和 `unzip`（`engine/test/test262-test.sh` 和 test262 的解包。缺它时解包会停下并说 `unzip not found: install unzip`：Linux 上 `apt install unzip`，macOS 自带）。
+
+CI 也运行 `make gointl`，在 `llvm-steps.yml` 里（[见下](#ci)）。
+
 ### 每种语言的测试
 
-`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。只有 `make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它：CI 不跑 `make gointl`，所以改了 `internal/gointl` 或它引入的包，合并前要自己跑一遍。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
+`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它，CI 的 `llvm-steps.yml` 每次推送也运行它（[CI](#ci)）。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
 
 这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
 
@@ -442,12 +457,13 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 | Test, root package with the test hooks | `root-hooks` 步骤（`go test -tags testhooks -p 1 .`） |
 | Native C engine | `host-plain` 和 `compare-plain` 步骤：`engine/test/build.sh plain` 和 `compare.sh plain`，用运行器上有的 C 编译器构建（每个上面都是 clang，所以不用安装任何东西） |
 
-`llvm-steps.yml` 是第二个工作流，只有一个任务，只在 linux/amd64 上，它从 apt.llvm.org 安装 LLVM 22.1.8（15 到 25 秒，这是 `scripts/gen-engine.sh` 坚持要求的版本）并运行这些步骤。它会拦下一个让提交进仓库的生成引擎与生成器从 `engine/` 生成的结果不一样的提交：
+`llvm-steps.yml` 是第二个工作流，只有一个任务，只在 linux/amd64 上，它从 apt.llvm.org 安装 LLVM 22.1.8（15 到 25 秒，这是 `scripts/gen-engine.sh` 坚持要求的版本）并运行这些步骤。前两步拦下一个让提交进仓库的生成引擎与生成器从 `engine/` 生成的结果不一样，或者弄坏了生成器的提交。第三步检查 `internal/gointl` 在每种语言里的答案，它不需要 LLVM：
 
 | 步骤 | 运行什么 |
 | --- | --- |
 | Generated engine | `make check-gen`（`GEN_JOBS=4`）：把 amd64 和 arm64 的 `.s` 和 `engine_*` 文件，和一次全新的 `make gen` 对比 |
 | Generator and cycles | `CHECK_ONLY="goasm cycles" scripts/check.sh fast`：`internal/goasm`（生成器）的测试，以及检查 C 引擎的每一处递归都有计数 |
+| Tests of every language | `make gointl`，前面有一步缓存 `~/.cache/quickjs-gointl`（go-intl 的数据和时区文件，约 240 MB，键由 `internal/gointl/UPSTREAM` 和 `internal/gointl/qjstz` 算出）。它不需要 LLVM，冷缓存时约 5 分钟（在一台 4 核 Linux 机器上实测 4 分 45 秒） |
 
 `scripts/check.sh` 的步骤用 `CHECK_ONLY` 选择，它们的日志作为 artifact 保留 7 天。其中的跳过是预期的：`TestStackResidency` 要 `HOSTMEM_RESIDENCY=1`，重新映射的测试和 `TestStackWithoutHugePages` 只在 linux 上。
 
@@ -456,9 +472,9 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 有意不做的：
 
 - **test262、竞态检测器和 sanitizer 构建。** 它们耗时太长。用 `make check-full` 运行它们。
-- **计时和内存测量**、`make gointl`（它会克隆 go-intl）和 `make build_all_targets`。
+- **计时和内存测量**和 `make build_all_targets`。
 
-这个任务在 `ubuntu-24.04` 上约需 4 分钟：安装 15 秒，`make check-gen` 2.3 分钟，另外两步合计 1.1 分钟。`clang --version` 必须打印 22.1.8：如果 apt.llvm.org 换成了更新的 22.1.x，就把包的版本钉住。
+这个任务在 `ubuntu-24.04` 上约需 4 分钟：安装 15 秒，`make check-gen` 2.3 分钟，另外两步合计 1.1 分钟。`make gointl` 冷缓存时再加约 5 分钟（还没在运行器上实测，在一台 4 核 Linux 机器上是 4 分 45 秒），有缓存时更少。`clang --version` 必须打印 22.1.8：如果 apt.llvm.org 换成了更新的 22.1.x，就把包的版本钉住。
 
 ## 速度
 
