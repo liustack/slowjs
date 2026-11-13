@@ -81,6 +81,8 @@ go test -p 2 -timeout 30m ./internal/goasm/gen/...
 
 只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。
 
+`internal/measure/bench` 里丢弃文件缓存页的测试（`TestDropPages`、`TestDropPagesFailsWhenAPageStays`），在 linux 上 `TMPDIR` 位于 tmpfs 或 ramfs 时会跳过，因为那里的页丢不掉，`/tmp` 是 tmpfs 的机器就是这样。要跑它们，把 `TMPDIR` 设成磁盘上的目录：`TMPDIR=$HOME/tmp go test ./internal/measure/...`。`make check-full` 不跑它们，CI 在 `/tmp` 位于磁盘的机器上跑。
+
 `go test -race` 需要 `CGO_ENABLED=1` 和 C 编译器，因为竞态运行时是通过 cgo 链接的。这个仓库用 `CGO_ENABLED=0` 构建，所以只对这条命令设置：`CGO_ENABLED=1 go test -race ...`。本文档里每条 `-race` 命令都是这个意思。
 
 ## 重点检查

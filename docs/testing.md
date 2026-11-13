@@ -81,6 +81,8 @@ go test -p 2 -timeout 30m ./internal/goasm/gen/...
 
 With only `QUICKJS_LLVM` and `QUICKJS_SHADOW_PASS`, the tests that need `ld.lld` (`TestVarargsNative`, `TestSampleRuns`, `TestNarrowArgs`) still skip. A skipped test prints `--- SKIP` with the names of the variables it wants: run with `-v` and look for it before you trust a green run. `QUICKJS_QEMU_AARCH64` (optional) names an emulator that lets the arm64 cases run on an amd64 host.
 
+The tests of `internal/measure/bench` that drop the cached pages of a file (`TestDropPages`, `TestDropPagesFailsWhenAPageStays`) skip on linux when `TMPDIR` is on tmpfs or ramfs, where no page can be dropped, as on a machine whose `/tmp` is tmpfs. Run them with `TMPDIR` set to a folder on a disk: `TMPDIR=$HOME/tmp go test ./internal/measure/...`. `make check-full` does not run them, CI runs them on runners whose `/tmp` is on a disk.
+
 `go test -race` needs `CGO_ENABLED=1` and a C compiler, as the race runtime is linked through cgo. This repository builds with `CGO_ENABLED=0`, so set it for the command only: `CGO_ENABLED=1 go test -race ...`. Every `-race` command in this doc is meant this way.
 
 ## Focused checks
