@@ -50,9 +50,9 @@ func refused(err error) bool {
 // In a VM with no memory limit, the output of sprintf is bounded by nothing
 // but what the script asks: "%[1]q" 64 times of 1 MiB of control characters
 // made 256 MiB in Go, and ran 636 ms past an eval timeout of 20 ms. sprintf
-// reads vmhook.Stop as it makes a long output, or refuses one past a cap.
+// refuses an output whose bound is past 16 MiB, as a VM with that much room
+// left under its memory limit does.
 func TestSprintfNoLimitStops(t *testing.T) {
-	t.Skip("waits for the owner: whether fmt caps its output in a VM with no memory limit")
 	const n = 256 << 10
 	const out = 16 * 4 * n
 	vm := newVM(t)
@@ -75,7 +75,7 @@ func TestSprintfNoLimitStops(t *testing.T) {
 // pipe in one write, which held the call 2 s past Interrupt, until the pipe
 // was read.
 func TestPrintlnWritesInPieces(t *testing.T) {
-	t.Skip("waits for the owner: whether Register takes the writer fmt prints to")
+	t.Skip("println writes in pieces with the Writer option of Register")
 	const n = 4 << 20
 	r, w, err := os.Pipe()
 	if err != nil {
