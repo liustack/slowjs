@@ -108,7 +108,7 @@ The shared pools of strings, the collation root and the break dictionaries are k
 
 The bytes a formatter reads are never to be written: an uncompressed chunk is the binary's read-only data, where a write faults, and an inflated one is shared by every formatter and VM in the process. Code that hands such bytes to JS, as an `ArrayBuffer` or the like, copies them first.
 
-`make gointl` runs the checks `go test ./...` does not: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs, and that `qjsdata/` is what go-intl's data gives with the time zones below.
+`make gointl` runs the checks `go test ./...` does not: the pack tool's tests, which need the `gointl_walk` build tag, the build without the optional packs, and that `qjsdata/` holds what go-intl's data gives with the time zones below. The check compares the files and their bytes once inflated, not the compressed bytes, which depend on the Go release that compressed them: `data.sh pack` may write other bytes under another Go, and the check passes on all of them.
 
 ### Time zones
 

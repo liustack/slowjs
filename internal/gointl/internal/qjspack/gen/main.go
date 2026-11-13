@@ -58,14 +58,14 @@
 // binary's, which the kernel can drop and read again. The locales' own files
 // are read whole and compress four to eight times, and stay compressed.
 //
-// -check writes nothing and fails if qjsdata is not what the data gives.
+// -check writes nothing and fails if qjsdata does not hold what the data
+// gives (the same files and bytes, whatever the Go release compressed them with).
 // -tags prints the tags of go-intl's available locales, which
 // qjs-chromium.cjs asks Chromium about. -cut-corpus takes the languages left
 // out of go-intl's test corpora for comparisons with partial data.
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -254,7 +254,12 @@ func run() error {
 		}
 		fmt.Printf("%s: %d files, %d bytes, packed into %d\n", file, len(byPack[p]), raw, len(b))
 		if *check {
-			if old, err := os.ReadFile(file); err != nil || !bytes.Equal(old, b) {
+			// The data is compared, not the compressed bytes: the DEFLATE
+			// encoder of the standard library differs between Go releases.
+			if old, err := os.ReadFile(file); err != nil {
+				bad = append(bad, file)
+			} else if err := qjspack.Same(old, b); err != nil {
+				fmt.Printf("%s: %v\n", file, err)
 				bad = append(bad, file)
 			}
 			continue
