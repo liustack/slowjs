@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -532,7 +532,7 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 ## 长字符串和结果的转换在调用的限制处停下
 
-发布版本：Unreleased。
+发布版本：v0.30.3。
 
 在 javascript 调用的 Go 函数里，Go 字符串和引擎字符串之间的转换现在每 256 Ki 个字符（UTF-8 则是字节）看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和 [NewArray](#newarray-在调用的限制处停下) 一样。这时 `Args.String` 和 `Args.WTF8` 返回 ok 为 false，`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 返回这个错误，不返回字符串，不管 Go 函数返回什么，调用都以这个错误结束。`RegisterFunc` 的 Go 函数的字符串参数和字符串结果、它返回的 map 的键，以及 `VM.NewAtom`，也一样。这种函数的结果在转换时还每 16,384 个元素或属性看一次，跨嵌套的切片和 map 一起计数，因为每个元素都要调用一次引擎，每次 50 ns 以上。
 
@@ -557,3 +557,13 @@ Go 转换期间不会轮询。在 amd64 服务器上，读一个 16 Mi 个孤立
 - 给结果拍快照的遍历（[结果的引用在程序代码运行之前取下](#结果的引用在程序代码运行之前取下)）只有 Go，每个元素几 ns，和 Go 函数造这个结果所花的时间差不多，而且它必须走完，才能释放结果交出的引用。
 
 测试：`stringstop_test.go` 里的 `TestArgStringStops`、`TestNewStringStops` 和 `TestNewStringCharsStops`（每种转换方式，在 `Interrupt` 之后和 eval 超时时：不返回字符串，调用以中断结束而不是被杀，之后 VM 仍能运行脚本；在调用之外得到整个字符串），`TestConversionStopsMidway`（另一个 goroutine 在第一次查看时调用 `Interrupt`，转换就停在那里），`TestArgStringStopsBeforeAllocation`（在分配之前那次查看时停下，什么也不分配），`TestConversionPieces`（每段 1 到 7 个字符或字节，结果和整体转换一样）。`resultstop_test.go` 里的 `TestResultConversionStops` 和 `TestResultConversionStopsMidway`（65,536 个元素的切片、切片的切片、map、`[]any` 和 `map[string]any`），`TestRegisterFuncStringStops`（字符串参数，此时 Go 函数不运行，以及字符串结果），`TestResultLongKeys`（分段造出的键和整体造出的是同一个属性，长键会停下）和 `TestNewStringTooLong`。改动之前，每个关于停止的测试都失败：不看停止，ok 为 true，得到整个字符串。
+
+## Args.StringLen 就地读字符串的长度
+
+版本：v0.30.3。
+
+`Args.StringLen(i)` 在第 `i` 个参数是字符串时返回它的长度，按 JavaScript 的算法以 UTF-16 码元计，不是字符串时返回 false。它从引擎存放长度的地方，也就是字符串的头部读，什么都不转换。rope（引擎把 `+` 拼起来的几段原样留着的字符串）也不拼接，因为它的头部同样存着长度。所以 Builtin 能在读字符串之前就拒绝对它来说太长的字符串：对一个 32 Mi 字符的 rope，`Args.String` 先在 VM 的内存上限下把它拼起来，再复制进 Go，`StringLen` 只读一个字。
+
+字符串多长，它都花一样的时间，也不分配内存。`intl` 和 `temporal` 的 Builtin 读每个短参数之前先用它量长度。
+
+测试：`vmhook_test.go` 里的 `TestStringLenRope`（JavaScript 能造的最长的 rope，2^30-1 个码元：长度对，VM 不增长，调用 1,000 次 Go 里不分配内存），以及 `TestVMHookChars`（数字、没有参数、每字符一字节和两字节的普通字符串，以及 rope）。

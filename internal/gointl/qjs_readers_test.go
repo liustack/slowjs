@@ -30,8 +30,8 @@ var qjsReaderHooks = []struct{ pack, data, hook string }{
 
 // Every function of go-intl that opens a data set of one of the readers'
 // packs calls the function that puts that pack in Embedded, so that it never
-// finds the data missing. A new release of go-intl that reads those data sets
-// from somewhere else fails here: add the call to qjs.patch.
+// finds the data missing. A function changed to read those data sets
+// from somewhere else fails here: add the call to it.
 func TestQJSReadersUsePacks(t *testing.T) {
 	// The data sets of each pack: the first part of its files' names.
 	hookOf := map[string]string{}

@@ -44,7 +44,7 @@ QuickJS 没有 Temporal。`temporal` 包为调用了 `temporal.Register(vm)` 的
 
 时区和日历的表是 go-intl 的，编进了二进制：ICU 的 `zoneinfo64`（来自 ICU 针对 tz 2026e 的时区更新），以及中国、韩国和 Umm al-Qura 日历的表。它们是 92 KB 的数据包 `internal/gointl/qjsdata/tz.bin`，Temporal 通过 `gointl.EmbeddedTemporalSource` 读取它。`intl` 包读的 `gointl.Embedded` 提供同一个数据包和其余部分，通过任一方读取的块只解压一次。因为 Temporal 为 `toLocaleString` 导入了 `intl`，所以用它的程序也会链接 `intl` 链接的那些数据包（`temporal/link_test.go` 里的 `TestLinksOnlyReadData`）。从不读主机的 zoneinfo，所以 Temporal 在每台机器上给出相同的答案。
 
-go-intl v0.6.1 带的是 tz 2026c。数据包改为从 `internal/gointl/qjstz` 指明的更新取时区，由 go-intl 自己的 `tzgen` 生成（见 [upgrading.md](../upgrading.zh-CN.md#更新-go-intlinternalgointl)）：相对 2026c，2026d 让西北地区从 2026-08-21 起保持在 -06，2026e 让曼尼托巴从 2026-10-31 起保持在 -05。`tz.bin` 里带有 `tzversion.bin`，即它的时区所属的版本，`TestQJSTZVersion` 会检查它。
+go-intl v0.6.1 带的是 tz 2026c。数据包改为从 `internal/gointl/qjstz` 指明的更新取时区，由 go-intl 自己的 `tzgen` 生成（见 [upgrading.md](../upgrading.zh-CN.md#更新-intl-的数据internalgointl)）：相对 2026c，2026d 让西北地区从 2026-08-21 起保持在 -06，2026e 让曼尼托巴从 2026-10-31 起保持在 -05。`tz.bin` 里带有 `tzversion.bin`，即它的时区所属的版本，`TestQJSTZVersion` 会检查它。
 
 ### 结果
 

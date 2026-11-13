@@ -2,6 +2,7 @@ package intl
 
 import (
 	"math"
+	"math/bits"
 	"strconv"
 	"strings"
 )
@@ -229,10 +230,17 @@ func parseDecimal(s string, round bool) Decimal {
 			base = 2
 		}
 		if base != 0 {
-			integer, ok := baseToDecimal(s[2:], base)
+			n, ok := baseBits(s[2:], base)
 			if !ok {
 				return Decimal{kind: decimalNaN}
 			}
+			if n > 1024 {
+				// 2**1024 and up are past the largest float, as ParseFloat
+				// finds below of the decimal digits, which take time of the
+				// square of the length to make.
+				return Decimal{kind: decimalInfinite}
+			}
+			integer, _ := baseToDecimal(s[2:], base)
 			if _, err := strconv.ParseFloat(integer, 64); err != nil {
 				return Decimal{kind: decimalInfinite}
 			}
@@ -251,34 +259,39 @@ func parseDecimal(s string, round bool) Decimal {
 		return Decimal{kind: decimalInfinite, neg: neg}
 	}
 	mantissa, exp := body, 0
+	// qjs: the exponent is checked as StrDecimalLiteral writes it, one sign at
+	// most and then digits, and the mantissa is read before an exponent too
+	// large to write out decides anything, as Number reads the string: "1e+-5"
+	// and "1xe1073741825" are NaN, and "0e1073741825" is zero.
+	huge := false
 	if i := strings.IndexAny(body, "eE"); i >= 0 {
 		round = true
 		mantissa = body[:i]
 		e := body[i+1:]
-		if e == "" || e == "+" || e == "-" {
+		digits := e
+		if digits != "" && (digits[0] == '+' || digits[0] == '-') {
+			digits = digits[1:]
+		}
+		if digits == "" || !allDigits(digits) {
 			return Decimal{kind: decimalNaN}
 		}
 		n, err := strconv.Atoi(e)
-		if err != nil {
-			if !allDigits(strings.TrimLeft(e, "+-")) {
-				return Decimal{kind: decimalNaN}
+		switch {
+		case err != nil:
+			// Too large for an int.
+			huge = true
+			exp = 1
+			if e[0] == '-' {
+				exp = -1
 			}
-			// An exponent too large for an int: the number is an infinity
-			// or zero, as far as any formatter could write it.
-			if strings.HasPrefix(e, "-") {
-				return Decimal{neg: neg, m: zeroMag}
-			}
-			return Decimal{kind: decimalInfinite, neg: neg}
+		case n < -maxDecimalExponent || n > maxDecimalExponent:
+			// Too large to write out, which also keeps the arithmetic on it
+			// from overflowing.
+			huge = true
+			exp = n
+		default:
+			exp = n
 		}
-		exp = n
-	}
-	// And one too large to write out, likewise; which also keeps the
-	// arithmetic on it from overflowing.
-	switch {
-	case exp < -maxDecimalExponent:
-		return Decimal{neg: neg, m: zeroMag}
-	case exp > maxDecimalExponent:
-		return Decimal{kind: decimalInfinite, neg: neg}
 	}
 	integer, fraction, _ := strings.Cut(mantissa, ".")
 	if integer == "" && fraction == "" || !allDigits(integer) || !allDigits(fraction) ||
@@ -286,6 +299,14 @@ func parseDecimal(s string, round bool) Decimal {
 		return Decimal{kind: decimalNaN}
 	}
 	m := makeMag(integer, fraction)
+	if huge {
+		// The number is an infinity or zero, as far as any formatter could
+		// write it.
+		if exp < 0 || m.isZero() {
+			return Decimal{neg: neg, m: zeroMag}
+		}
+		return Decimal{kind: decimalInfinite, neg: neg}
+	}
 	if round && !m.isZero() {
 		// RoundMVResult: what the number would be as a float decides
 		// whether it is an infinity.
@@ -309,7 +330,32 @@ func allDigits(s string) bool {
 	return true
 }
 
-// baseToDecimal converts digits in base 2, 8 or 16 to decimal digits.
+// baseBits is the number of bits of the value of s, digits in base 2, 8 or
+// 16 that may start with zeros, or false when s is empty or has a character
+// that is no such digit.
+func baseBits(s string, base int) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		d, err := strconv.ParseUint(s[i:i+1], base, 8)
+		if err != nil {
+			return 0, false
+		}
+		switch {
+		case n > 0:
+			n += bits.Len(uint(base - 1))
+		case d > 0:
+			n = bits.Len64(d)
+		}
+	}
+	return n, true
+}
+
+// baseToDecimal converts digits in base 2, 8 or 16 to decimal digits, in
+// time of the square of their length: parseDecimal calls it for a value of
+// at most 1024 bits.
 func baseToDecimal(s string, base int) (string, bool) {
 	if s == "" {
 		return "", false

@@ -13,6 +13,7 @@ import (
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // Intl.Locale is not a formatter: an object holds its tag and what its
@@ -295,9 +296,9 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 	var list []string
 	switch what {
 	case "maximize":
-		return vm.NewString(info.Maximize(l).String())
+		return intlhook.Emit(vm, info.Maximize(l).String())
 	case "minimize":
-		return vm.NewString(info.Minimize(l).String())
+		return intlhook.Emit(vm, info.Minimize(l).String())
 	case "calendars":
 		list = info.Calendars(l)
 	case "collations":
@@ -323,7 +324,7 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 			return quickjs.UndefinedValue, err
 		}
 
-		return vm.NewString(d)
+		return intlhook.Emit(vm, d)
 	case "firstDay":
 		first, _, err := info.WeekInfo(l)
 		if err != nil {
@@ -345,7 +346,7 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 			return quickjs.Value{}, err
 		}
 
-		return intArray(vm, weekend)
+		return intlhook.EmitInts(vm, weekend)
 	default:
 		return quickjs.Value{}, errors.New("intl: internal error: no Intl.Locale method " + what)
 	}
@@ -353,5 +354,5 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 		return quickjs.Value{}, err
 	}
 
-	return stringArray(vm, list)
+	return intlhook.EmitStrings(vm, list)
 }

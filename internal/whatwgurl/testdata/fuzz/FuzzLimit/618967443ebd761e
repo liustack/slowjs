@@ -1,0 +1,5 @@
+go test fuzz v1
+string("http://h/")
+string("\xc3\xc0")
+string("")
+uint8(0)

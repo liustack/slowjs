@@ -48,6 +48,9 @@ func ISODateFromEpochDays(days int64) ISODate { return isoFromRataDie(days + rdE
 type Calendar struct {
 	id string
 	r  rules
+	// qjs: check is the check of the call this calendar reckons for, or
+	// nil (WithCheck, in qjs_check.go).
+	check func()
 }
 
 // Calendars are the calendars Temporal reckons in, as Node's Temporal takes

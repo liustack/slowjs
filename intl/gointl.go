@@ -281,6 +281,15 @@ func checkTurn(vm *quickjs.VM, i int) {
 	}
 }
 
+// limitsOf are the checks of a call on vm, for the work of gointl that is
+// one piece no Builtin can cut (gointl.Limits).
+func limitsOf(vm *quickjs.VM) *gointl.Limits {
+	return &gointl.Limits{
+		Check: func() { intlhook.Check(vm) },
+		Room:  func(n int64) { intlhook.Room(vm, n) },
+	}
+}
+
 // stopTurn is checkTurn for a loop that has made javascript values, which
 // it frees before it returns when stopTurn is true: then the call is to
 // end, with its error pending, and the Builtin returns at once.

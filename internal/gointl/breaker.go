@@ -102,6 +102,10 @@ type breaker struct {
 	// the scripts it has found none for.
 	stack     []breakEngine
 	unhandled map[string]bool
+
+	// limits are the checks of the call the iterator breaks for, which the
+	// dictionary engines make in a long run (qjs).
+	limits *Limits
 }
 
 // dictionaryCache is RuleBasedBreakIterator::DictionaryCache.
@@ -215,7 +219,11 @@ func (b *breaker) handleNext(from int) (int, bool) {
 		category = 2
 		mode = modeStart
 	}
+	// qjs: a run of characters no rule breaks, as a run a dictionary
+	// divides, is scanned whole, and the scan checks the limits.
+	turns := 0
 	for {
+		b.limits.every(&turns)
 		if c < 0 {
 			if mode == modeEnd {
 				break
@@ -290,7 +298,7 @@ func (b *breaker) populateDictionary(start, end, firstStatus, otherStatus int) {
 			break
 		}
 		if e := b.engineFor(c); e != nil {
-			found += e.findBreaks(t, current, end, &b.dict.breaks)
+			found += e.findBreaks(t, current, end, &b.dict.breaks, b.limits)
 		}
 		if t.index() <= current {
 			// An engine reading a corrupt dictionary, which did not move:
@@ -348,10 +356,12 @@ type unhandledEngine struct{ b *breaker }
 
 func (u unhandledEngine) handles(c rune) bool { return u.b.unhandled[u.b.engines.script(c)] }
 
-func (u unhandledEngine) findBreaks(t *utext, start, end int, breaks *[]int) int {
+func (u unhandledEngine) findBreaks(t *utext, start, end int, breaks *[]int, l *Limits) int {
 	t.setIndex(start)
 	c := t.current32()
+	turns := 0
 	for t.index() < end && u.handles(c) {
+		l.every(&turns)
 		t.next32()
 		c = t.current32()
 	}

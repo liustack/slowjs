@@ -9,6 +9,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	gointl "github.com/liustack/quickjs/internal/gointl"
 )
 
 // Format and formatToParts share the same text contract, even though only
@@ -32,7 +34,7 @@ func TestFormatStringMatchesParts(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, v := range []any{math.Inf(1), math.Inf(-1), math.NaN(), math.Copysign(0, -1), 0.0, -0.00001, 1.0, -1234567.891, 1234567.891, "123456789012345678901234567890.12345", int64(-9007199254740993)} {
+			for _, v := range []any{math.Inf(1), math.Inf(-1), math.NaN(), math.Copysign(0, -1), 0.0, -0.00001, 1.0, -1234567.891, 1234567.891, gointl.ParseDecimal("123456789012345678901234567890.12345"), int64(-9007199254740993)} {
 				if got, want := f.formatString(v), join(f.format(v)); got != want {
 					t.Errorf("%s %v %v: %q != %q", locale, options, v, got, want)
 				}

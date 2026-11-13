@@ -103,7 +103,7 @@ func groupPositions(digits int, primary, secondary, minGrouping int) []int {
 	if secondary <= 0 {
 		secondary = primary
 	}
-	var at []int
+	at := make([]int, 0, (digits-primary+secondary-1)/secondary)
 	for pos := digits - primary; pos > 0; pos -= secondary {
 		at = append(at, pos)
 	}

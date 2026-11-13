@@ -1,10 +1,10 @@
 ---
-summary: '怎么吸收上游的改动：远端，把上游 QuickJS 的提交一个一个搬进 engine/（连同它的测试和生成的文件），test262 和它钉住的版本，换用更新的 Go，给 intl 换新的 CLDR、tzdb 或 Chromium 数据，internal/gointl 里 go-intl 的新版本，以及给它的数据包换新的 tz 更新'
+summary: '怎么吸收上游的改动：远端，把上游 QuickJS 的提交一个一个搬进 engine/（连同它的测试和生成的文件），test262 和它钉住的版本，换用更新的 Go，给 intl 换新的 CLDR、tzdb 或 Chromium 数据，internal/gointl 换用 go-intl 新版本的数据，以及给它的数据包换新的 tz 更新'
 read_when:
   - 配置一个要跟进上游 QuickJS 的新克隆
   - 把上游 QuickJS 的某个提交或某个版本搬进 engine/
   - 把 intl 换到新的 CLDR、tzdb 或 Chromium 版本
-  - 把 internal/gointl 换到新的 go-intl 版本，或者改 qjs.patch、qjs-sync.sh 或 qjsdata/ 里的数据包
+  - 换用 go-intl 新版本的数据，或者改 data.sh 或 qjsdata/ 里的数据包
   - 把 Temporal 的时区换到新的 tz 版本（internal/gointl/qjstz）
   - 用比 1.27.2 更新的 Go 构建或测试，或者把提交进仓库的 C 引擎汇编移到更新的 Go 上
 ---
@@ -73,8 +73,8 @@ Go 改了其中任何一项，生成器的某个检查或某个测试就会失�
 ```sh
 node intl/testdata/chromium/record.cjs icudtl
 go run -p 2 -tags gointl_walk ./internal/gointl/internal/qjspack/gen -icudtl /path/to/icudtl.dat
-internal/gointl/qjs-sync.sh chromium
-internal/gointl/qjs-sync.sh pack
+internal/gointl/data.sh chromium
+internal/gointl/data.sh pack
 node intl/testdata/chromium/record.cjs golden
 node intl/testdata/chromium/record.cjs probes migration
 go test -short -p 2 ./intl/... ./temporal/...
@@ -84,11 +84,13 @@ go test -short -p 2 ./intl/... ./temporal/...
 
 保留浏览器的原始回答。更新预期值之前，要解释每一个变了的表达式。`TestGoIntlMigration` 里的三个 Winnipeg 用例写的是 tz 2026e 的确切答案，因为参考浏览器的时区数据更旧。
 
-## 更新 go-intl（`internal/gointl`）
+## 更新 Intl 的数据（`internal/gointl`）
 
-`internal/gointl` 是 [go-intl](https://github.com/go-quickjs/go-intl) 的副本，go-intl 是一个纯 Go 的 ECMA-402 和 Temporal 库，版本和提交在 `internal/gointl/UPSTREAM` 里（v0.6.1）。包 `intl` 用它实现每个构造函数、Date 和 Temporal 的格式化以及日期范围。包 `temporal` 用它的 temporal 包做计算，并读取它的时区和日历。它放在 internal 里，是因为它的 API 是 go-intl 的，在版本之间会变，放在模块根目录，是为了让 `intl/` 和 `temporal/` 能 import 它。
+`internal/gointl` 是从 [go-intl](https://github.com/go-quickjs/go-intl) v0.6.1 复制过来的一次性副本，go-intl 是一个纯 Go 的 ECMA-402 和 Temporal 库。现在它是我们自己的代码：在这里像别的包一样改，不再把 go-intl 的代码复制进来。包 `intl` 用它实现每个构造函数、Date 和 Temporal 的格式化以及日期范围。包 `temporal` 用它的 temporal 包做计算，并读取它的时区和日历。它放在 internal 里，是为了让它的 API 可以随便改，放在模块根目录，是为了让 `intl/` 和 `temporal/` 能 import 它。它的文件保留 go-intl 的许可证（`internal/gointl/LICENSE`，以及 [NOTICE.md](../NOTICE.md) 里的那一行）。
 
-名字带 `qjs*` 的文件和目录，以及 `UPSTREAM`，是我们的。`qjs_temporalformat.go` 像 Chromium 156 那样保持 Temporal 的模式不变，为注册表的键提供实际的日期模式，并遵从 Temporal 给出的偏移。更新它之后要重新运行重点的格式化语料。其余都是 go-intl 的，import 路径已改写，只通过 `internal/gointl/qjs.patch` 修改，补丁涵盖数据加载、Chromium 样式的构造和版权声明：`source.go` 提供我们的数据包，而不是 go-intl 18.9 MB 的 `data.pack`，`internal/blob` 告诉打包工具一个语言读了池里的哪些部分，`dictbe.go` 把缺失的断词词典当作没有词典，`breaker.go` 一次找一个边界，`qjs_segments.go` 把它作为 `Segmenter.Iter` 提供出来，`list.go` 对每一项调用调用方给的检查（`FormatToPartsCheck`），`negotiate.go` 不再查找比服务里最长的标签还长的部分，这样长标签按线性时间解析，下面"读取者的数据包"里的数据的加载函数会调用链接它们的数据包的函数，`temporal/solar.go` 和 `temporal/zoneinfo.go` 开头有一段说明，写明其中一部分移植自 calendrical_calculations 并有改动，这是它的 Apache-2.0 许可证对改动过的文件的要求。go-intl 新版本里如果有文件移植自 Apache-2.0 的项目，就通过 `qjs.patch` 加上同样的头。
+还从 go-intl 来的只有数据：`internal/gointl/UPSTREAM` 写着数据包取自哪个版本的 `data/` 目录。跟着 go-intl 代码一起来的测试也在包里，放在构建标签 `gointl_all` 下，因为它们拿 ICU 的每种语言对照 Node，而内置的数据包只有 Chromium 的语言：`data.sh test` 在包含每种语言的数据包上运行它们，用的是检出里 `testdata/` 下随这份数据一起的 Node 答案语料。
+
+名字带 `qjs*` 的文件是在这里写的，其余的来自 go-intl。`qjs_temporalformat.go` 像 Chromium 156 那样保持 Temporal 的模式不变，为注册表的键提供实际的日期模式，并遵从 Temporal 给出的偏移。更新它之后要重新运行重点的格式化语料。`temporal/solar.go` 和 `temporal/zoneinfo.go` 开头有一段说明，写明其中一部分移植自 calendrical_calculations 并有改动，这是它的 Apache-2.0 许可证对改动过的文件的要求：移植自 Apache-2.0 项目的文件都加上同样的头。
 
 数据在 `internal/gointl/qjsdata/` 里，由 `internal/gointl/internal/qjspack/gen` 从 go-intl 的 `data/` 目录生成：
 
@@ -96,7 +98,7 @@ go test -short -p 2 ./intl/... ./temporal/...
 - `names.bin`（1.9 MB），显示名称。用 `-tags quickjs_intl_nonames` 构建可以把它去掉：这样 `Intl.DisplayNames` 没有名称，`of` 对每个代码都返回回退值，即代码本身，在 `fallback: 'none'` 时返回 `undefined`。
 - `cjdict.bin`（2.0 MB），中文和日文的分词词典。用 `-tags quickjs_intl_nocjdict` 构建可以把它去掉：这样一串中文或日文就是一个词，和没有这个词典的 ICU 一样。
 - `tz.bin`（92 KB），包 `temporal` 读的东西：ICU 的时区，Temporal 用的时区名称，中国农历、韩国历和 Umm al-Qura 历的表，以及 `tzversion.bin`，即这些时区的 tz 版本。`Embedded` 把它和其余的一起提供，`EmbeddedTemporalSource` 单独提供它。两者共用一份：通过任何一个读到的块只解压一次。
-- 读取者的数据包，每个只链接进链接了读它的函数的二进制（`qjs_readers.go`）：`dates.bin`（677 KB），go-intl 的 `DateTimeFormat` 读的东西，`zonenames.bin`（1.27 MB），时区名称，以及 `hostzones.bin`（6 KB），猜测宿主时区用的表。包 `intl` 对 Date 和 Temporal 的值与范围使用这些数据包。它链接日期和时区名称这两个包，但不链接宿主时区包（`TestLinksOnlyReadData`）。读它们的数据的每个加载函数，都会通过 `qjs.patch` 先调用 `qjsUseDates`、`qjsUseZoneNames` 或 `qjsUseHostZones`，如果 go-intl 新版本里的某个函数读了它们的某个数据集而没有这个调用，`TestQJSReadersUsePacks` 就会失败：把它加进补丁。新版本为新的读取者添加的数据集，同样得到自己的数据包，做法是在打包工具的 `packOf` 里、`qjs_readers.go` 的一个变量里，以及它的加载函数里的调用里加上。
+- 读取者的数据包，每个只链接进链接了读它的函数的二进制（`qjs_readers.go`）：`dates.bin`（677 KB），go-intl 的 `DateTimeFormat` 读的东西，`zonenames.bin`（1.27 MB），时区名称，以及 `hostzones.bin`（6 KB），猜测宿主时区用的表。包 `intl` 对 Date 和 Temporal 的值与范围使用这些数据包。它链接日期和时区名称这两个包，但不链接宿主时区包（`TestLinksOnlyReadData`）。读它们的数据的每个加载函数，都会先调用 `qjsUseDates`、`qjsUseZoneNames` 或 `qjsUseHostZones`，如果某个函数读了它们的某个数据集而没有这个调用，`TestQJSReadersUsePacks` 就会失败：把调用加上。为新的读取者添加的数据集，同样得到自己的数据包，做法是在打包工具的 `packOf` 里、`qjs_readers.go` 的一个变量里，以及它的加载函数里的调用里加上。
 
 语言就是 Chromium 156 的那些。`qjsdata/chromium.json` 记录了对每个 `Intl` 构造函数，Chromium 把 go-intl 的每个可用语言解析成哪个语言，而这里每个服务都有 Chromium 解析到它们自己的那些语言：`TestQJSResolveMatchesChromium` 检查每个服务对这些标签的每一个的解析都和 Chromium 一样。一个服务在 Chromium 有裸语言时，这个语言的数据就保留，连同它继承的语言，`PluralRules` 在 Chromium 有它时，也保留它的复数规则。Chromium 有一些语言，它没有对应裸语言的数据，比如没有 `ha` 的 `ha-GH`：它们在那里和在这里，都用根的数据格式化。打包工具会打印它丢掉的语言，以及只保留了复数规则的语言。
 
@@ -110,29 +112,30 @@ go test -short -p 2 ./intl/... ./temporal/...
 
 ### 时区
 
-go-intl v0.6.1 用 tz 2026c 生成它的时区。数据包带的是更晚的一次更新，也就是 `internal/gointl/qjstz` 所指的那个（现在是 2026e），这样一个此后改了规则的时区，给出的是用更新数据的浏览器给出的结果。`qjs-sync.sh checkout` 从 icu-data 仓库下载 ICU 对应那个版本的更新（`tzdata/icunew/<version>/44`：`zoneinfo64.txt`、`timezoneTypes.txt`、`windowsZones.txt`、`metaZones.txt`）和 ICU 的源码，按 `qjstz` 核对它们的 sha256，并在检出的一份副本 `$GOINTL_UPSTREAM-tz<version>` 里，对它们运行 go-intl 自己的 `tzgen`。只有 `data/tz/`、`data/windowszones.bin` 和 `data/abbreviationzones.bin` 会变，副本里还会得到 `data/tzversion.bin`，它会进入 `tz.bin`。`pack` 读那份副本的 `data/`。`test` 用 go-intl 的数据原样制作它的数据包，时区也包括在内，因为 go-intl 的语料保存的是 Node 在 go-intl 的 tz 版本下的答案。`test-chromium` 对着随发布的数据包和记录下来的浏览器答案运行分叉的测试。在 2026c 和 2026e 之间，这些测试在 Bogota（1992）、Tehran（1979）、Dublin（1925）、Inuvik、Winnipeg 和 Rainy_River，以及 EST5EDT、CST6CDT、MST7MDT 和 PST8PDT（2026d 把它们做成了独立的时区）上不同：都是 tz NEWS 文件列出的改动。时区名称和 metazone 用 go-intl 的模型加上 Chromium 对资源的选择。`TestQJSTZVersion` 检查 `tz.bin` 里放的是哪个版本。
+go-intl v0.6.1 用 tz 2026c 生成它的时区。数据包带的是更晚的一次更新，也就是 `internal/gointl/qjstz` 所指的那个（现在是 2026e），这样一个此后改了规则的时区，给出的是用更新数据的浏览器给出的结果。`data.sh checkout` 从 icu-data 仓库下载 ICU 对应那个版本的更新（`tzdata/icunew/<version>/44`：`zoneinfo64.txt`、`timezoneTypes.txt`、`windowsZones.txt`、`metaZones.txt`）和 ICU 的源码，按 `qjstz` 核对它们的 sha256，并在检出的一份副本 `$GOINTL_UPSTREAM-tz<version>` 里，对它们运行 go-intl 自己的 `tzgen`。只有 `data/tz/`、`data/windowszones.bin` 和 `data/abbreviationzones.bin` 会变，副本里还会得到 `data/tzversion.bin`，它会进入 `tz.bin`。`pack` 读那份副本的 `data/`。`test` 用 go-intl 的数据原样制作它的数据包，时区也包括在内，因为 go-intl 的语料保存的是 Node 在 go-intl 的 tz 版本下的答案。`test-chromium` 对着随发布的数据包和记录下来的浏览器答案运行我们的测试。在 2026c 和 2026e 之间，这些测试在 Bogota（1992）、Tehran（1979）、Dublin（1925）、Inuvik、Winnipeg 和 Rainy_River，以及 EST5EDT、CST6CDT、MST7MDT 和 PST8PDT（2026d 把它们做成了独立的时区）上不同：都是 tz NEWS 文件列出的改动。时区名称和 metazone 用 go-intl 的模型加上 Chromium 对资源的选择。`TestQJSTZVersion` 检查 `tz.bin` 里放的是哪个版本。
 
 要换到更新的版本，等 ICU 发布之后：
 
 1. 在 `qjstz` 里设置 `TZ_VERSION` 和四个校验和，校验和取自 `tzdata/icunew/<version>/44` 下四个文件的 `sha256sum`。
-2. 运行 `qjs-sync.sh checkout`，然后运行 `qjs-sync.sh pack`。
+2. 运行 `data.sh checkout`，然后运行 `data.sh pack`。
 3. 修改 `TestQJSTZVersion` 里、[temporal.md](changes/temporal.zh-CN.md#时区数据) 里和 `temporal` 的包文档里的版本，并在 `temporal/all_test.go` 的 `TestZoneData` 里为更新改过的一个时区加一个用例。
-4. 运行 `qjs-sync.sh test -p 2`、`qjs-sync.sh test-chromium -p 2`、`go test ./internal/gointl/... ./temporal` 和 `make gointl`。
+4. 运行 `data.sh test -p 2`、`data.sh test-chromium -p 2`、`go test ./internal/gointl/... ./temporal` 和 `make gointl`。
 
 当 go-intl 自己换到那次更新或更晚的更新时，`checkout` 写出的仍是 `qjstz` 的时区。那时要把 `qjstz` 设成 go-intl 的版本或更晚的，绝不能更早。
 
-要换到新的 go-intl 版本，在 `internal/gointl/UPSTREAM` 里设置 `VERSION` 和 `COMMIT`，然后：
+要换用 go-intl 新版本的数据，在 `internal/gointl/UPSTREAM` 里设置 `VERSION` 和 `COMMIT`，然后：
 
 ```sh
-internal/gointl/qjs-sync.sh checkout       # clones go-intl into $GOINTL_UPSTREAM (default ~/.cache/quickjs-gointl/go-intl)
-internal/gointl/qjs-sync.sh update         # copies its runtime sources here and applies qjs.patch
-internal/gointl/qjs-sync.sh chromium       # records what Chromium resolves the new tags to
-internal/gointl/qjs-sync.sh pack           # writes qjsdata/ again
-internal/gointl/qjs-sync.sh test -p 2      # go-intl's own tests, on packs of every language
-internal/gointl/qjs-sync.sh test-chromium -p 2  # the Chromium corpora of liustack/quickjs on the shipped packs
+internal/gointl/data.sh checkout       # clones go-intl into $GOINTL_UPSTREAM (default ~/.cache/quickjs-gointl/go-intl)
+internal/gointl/data.sh chromium       # records what Chromium resolves the new tags to
+internal/gointl/data.sh pack           # writes qjsdata/ again
+internal/gointl/data.sh test -p 2      # the tests of every language, on packs of every language
+internal/gointl/data.sh test-chromium -p 2  # the Chromium corpora of liustack/quickjs on the shipped packs
 go test ./internal/gointl/... && make gointl
 ```
 
-`qjsdata/NOTICE-ICU` 放着数据包里的 ICU 数据和断词词典的 ICU 版权声明：ICU 的 `LICENSE` 在标签 `release-78.3` 处的第 1 到 401 行，前面加我们的一小段说明。`update` 会复制 go-intl 的 `LICENSE`，但不复制这个文件。当 go-intl 的数据取自新的 ICU 版本时（它的 `SOURCES.md` 里写明了），要用 `gh api 'repos/unicode-org/icu/contents/LICENSE?ref=release-<version>'`，从那个版本标签处 ICU 的 `LICENSE` 重新写这个文件：同样的几节，内容不变，说明里的版本和行号更新，并为数据包新取的、以前没有的词典或数据加上它的声明。其他 `qjsdata/NOTICE-*` 文件放着 go-intl 从 V8（`NOTICE-V8`）和 Temporal 的 crate（boa-dev 的是 `NOTICE-TEMPORAL`，ICU4X 的是 `NOTICE-ICU4X`）移植的东西的声明，版本是它的 `SOURCES.md` 里写的。go-intl 的某个版本改了其中一个版本，或者从没列在那里的项目移植东西时，就复制那个项目在新版本处的许可证，以及它的 `NOTICE` 文件（如果有的话）（crate 的取自 `https://static.crates.io/crates/<name>/<name>-<version>.crate`，V8 的取自 Node 那个版本的 `deps/v8/LICENSE`），更新开头的说明和 [NOTICE.md](../NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) 里的表。
+只读 go-intl 的 `data/`。这些数据的解码器（`internal/gointl/internal/*data`）是我们的，所以某个版本改了某部分数据的格式时，要照着 go-intl 对它自己解码器的改动，手工改这里的解码器：`pack` 读不了某部分时会失败。某个版本为新东西加了数据，这里也要写对应的代码。如果 go-intl 不再发布，可以把它的生成器（`internal/regen` 和各个 `*gen` 工具，许可证相同）作为工具复制进来，直接从 CLDR 和 ICU 生成数据。
 
-`chromium` 需要 Node 和 Playwright 驱动的 Chromium，设置方法同[更新 intl 语言数据](#更新-intl-语言数据)里 intl 的 golden 测试（`PLAYWRIGHT`，另一个浏览器用 `CHROMIUM`）。有更新的 Chromium 时也要再运行它。`qjs.patch` 打不上的地方，手工改，然后运行 `qjs-sync.sh patch` 重新写出补丁。当 `pack` 失败，报某个池里有任何语言都够不到的部分时，说明某个数据包开始读它的 `qjs_walk.go` 没有读的东西：让那个遍历去读它。`test` 不含 `pack_test.go` 和 `TestGeneratedTablesAreWellFormed`，它们读的是 go-intl 的 `data.pack` 和 `data/`。`test-chromium` 运行提交进仓库的 go-intl、Intl 和 Temporal 测试。Chromium 除了去掉语言，还会去掉单个资源，所以从 Node 的语料里过滤掉一些语言，并不能把它们变成浏览器的预期值。在 `test` 里保留完整的 Node 检查，对随发布的数据包用记录下来的 Chromium 语料。`test-chromium` 不需要上游的检出，也不需要安装浏览器。
+`qjsdata/NOTICE-ICU` 放着数据包里的 ICU 数据和断词词典的 ICU 版权声明：ICU 的 `LICENSE` 在标签 `release-78.3` 处的第 1 到 401 行，前面加我们的一小段说明。当 go-intl 的数据取自新的 ICU 版本时（它的 `SOURCES.md` 里写明了，我们的照着更新），要用 `gh api 'repos/unicode-org/icu/contents/LICENSE?ref=release-<version>'`，从那个版本标签处 ICU 的 `LICENSE` 重新写这个文件：同样的几节，内容不变，说明里的版本和行号更新，并为数据包新取的、以前没有的词典或数据加上它的声明。其他 `qjsdata/NOTICE-*` 文件放着 go-intl 从 V8（`NOTICE-V8`）和 Temporal 的 crate（boa-dev 的是 `NOTICE-TEMPORAL`，ICU4X 的是 `NOTICE-ICU4X`）移植的东西的声明，版本是 `SOURCES.md` 里写的。从其中某个项目的另一个版本移植代码，或者从没列在那里的项目移植时，就复制那个项目在那个版本处的许可证，以及它的 `NOTICE` 文件（如果有的话）（crate 的取自 `https://static.crates.io/crates/<name>/<name>-<version>.crate`，V8 的取自 Node 那个版本的 `deps/v8/LICENSE`），更新开头的说明和 [NOTICE.md](../NOTICE.md#code-and-data-that-go-intl-took-from-other-projects) 里的表。
+
+`chromium` 需要 Node 和 Playwright 驱动的 Chromium，设置方法同[更新 intl 语言数据](#更新-intl-语言数据)里 intl 的 golden 测试（`PLAYWRIGHT`，另一个浏览器用 `CHROMIUM`）。有更新的 Chromium 时也要再运行它。当 `pack` 失败，报某个池里有任何语言都够不到的部分时，说明某个数据包开始读它的 `qjs_walk.go` 没有读的东西：让那个遍历去读它。`test` 不含 `TestGeneratedTablesAreWellFormed`，它读的是 go-intl 的 `data/`。`test-chromium` 在随发布的数据包上运行 Intl 和 Temporal 的测试。Chromium 除了去掉语言，还会去掉单个资源，所以从 Node 的语料里过滤掉一些语言，并不能把它们变成浏览器的预期值。在 `test` 里保留完整的 Node 检查，对随发布的数据包用记录下来的 Chromium 语料。`test-chromium` 不需要 go-intl 的检出，也不需要安装浏览器。

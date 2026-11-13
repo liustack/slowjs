@@ -11,6 +11,7 @@ import (
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
 )
 
 // listFormat is a resolved Intl.ListFormat.
@@ -121,7 +122,7 @@ func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs
 			}
 		}
 
-		v, err := vm.NewString(p.Value)
+		v, err := intlhook.Emit(vm, p.Value)
 		if err != nil {
 			free()
 			return quickjs.Value{}, err
@@ -129,7 +130,7 @@ func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs
 
 		vals = append(vals, v)
 	}
-	a, err := vm.NewArray(vals...)
+	a, err := intlhook.EmitValues(vm, vals)
 	free()
 	return a, err
 }

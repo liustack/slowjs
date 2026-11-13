@@ -37,6 +37,7 @@ go test -count=1 -p 1 .                # about a minute
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
 - A change to `compare/engines` also runs `go test ./cmd/... ./internal/... ./tifa` there. It is a module of its own, so the commands above do not reach it and CI does not run it. The tests cover the helper tools (the far-behind list, the page tables and archive, the module-to-script tool, the notices generator) and the shell scripts of `tifa/` with stand-ins.
 - A change to `temporal/` also runs `go test ./temporal` without `-short` (the Chromium comparison and the link test are part of it), and the Temporal lines of the focused checks and the race detector section.
+- A change to `url/` or `internal/whatwgurl` also runs `go test ./url ./internal/whatwgurl/...` (the web-platform-tests data, the limits and the tamper tests are part of it) and `go test -race` of the two. A change to the parser also runs each fuzz target for a few minutes: `go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`, and the same for `FuzzSetters` and `FuzzLimit` there, and `FuzzRoom` in `./url`.
 - A change to the engine also runs the [focused checks](#focused-checks) of what it touches, and [test262](#test262).
 - `-p 1` runs one package at a time: the tests of the root package start many VMs, and each VM maps its own memory.
 
@@ -117,7 +118,7 @@ go test -p 2 ./intl -run 'GoIntlMigration|EmbeddedZonePack|FormatStringMatchesPa
 go test -p 2 ./internal/intlhook                        # private state across GC and Close
 go test -run LinksOnlyReadData ./temporal               # the packs a program with Temporal links
 go test -run QJSTZVersion ./internal/gointl              # tz.bin holds the zones of the update qjstz names
-internal/gointl/qjs-sync.sh pack -check                  # shared Intl data is what the generator makes
+internal/gointl/data.sh pack -check                  # shared Intl data is what the generator makes
 go test -run '^$' -bench Call .                          # the cost of each kind of call
 go test -run '^$' -bench RegexColors .                   # the cost of a replace with react-spring's color names
 go test -run '^$' -bench CopyProps .                    # the cost of createElement and cloneElement with React's loop and with the function of RegisterCopyProps, on configs of a page

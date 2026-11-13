@@ -4,10 +4,13 @@
 
 ## [Unreleased]
 
-### 修复
+## [v0.30.3] - 2026-11-13
 
-- `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
-- Go 函数在转换很长的字符串或很大的结果时，超时和 `Interrupt` 现在能让这次调用结束，VM 不再因此被杀掉。`Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1`、`VM.NewStringUTF16`、`VM.NewAtom` 以及 `RegisterFunc` 函数的参数和结果，每 256 Ki 个字符或 16,384 个元素查一次停止：`String` 和 `WTF8` 返回 ok 为 false，其余返回中断错误。原来 16 Mi 个字符的转换在 amd64 上要 129 到 151 ms，中间不查，超过了 VM 被杀掉之前的 50 ms。仍是一整步的只有 Go 为读出的字符串分配内存，64 Mi 个字符时最多 52 ms（[go-api.md](docs/changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)）。
+### 新增
+
+- `Args.StringLen(i)` 返回 Builtin 字符串参数的长度，以 UTF-16 码元计，不转换字符串，也不拼接 `+` 拼成的字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存（[Go API](docs/changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)）。
+- `fmt.Register` 接收选项，`fmt.Writer(w)` 让 `printf` 和 `println` 写到 `w` 而不是 `os.Stdout`（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+- 包 `url`：`url.Register(vm)` 给 VM 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做（`internal/whatwgurl`，过了 web-platform-tests 的 URL 数据，只有 IdnaTestV2 里 7 个要比 Unicode 17 更新的用例没过）。脚本像 TanStack Router 那样给每个链接调一次 `new URL(path, base)`，现在约 4.7 µs（含一次 `pathname` 的写入和 7 个 getter 的读取），core-js 的 polyfill 要 42 到 87 µs。在 tifa 的页面上，商店页的一次渲染少用 33% 的时间，工作台页少 14%，MUI 页不变，HTML 逐字节相同。core-js 见到过得了它自己检查的原生 URL 就不装自己的，所以宿主在 bundle 之前注册这个包就行，别处一行不用改。脚本交给它的字符串最多 65,536 个 UTF-16 单位：更长的输入、base 或 href 不是 URL（所以超过 64 KiB 的 `data:` URL 也不是，浏览器接受它），`http:` 这类特殊协议的主机不是 ASCII 时，按原样或 IDNA 映射之后超过 1,024 个单位就不是主机（别的协议的主机不过 IDNA，除了 href 的限额没有别的限额），查询串里超过限额的名或值，或者它的编码，是 `RangeError`。在这之内，一次 Go 的调用只要几毫秒，eval 超时、`Interrupt` 和内存上限都守得住：一个 URL 是 VM 里的对象，Go 在读字符串之前先检查它要占的空间（[url.md](docs/changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)）。
 
 ### 变更
 
@@ -16,6 +19,21 @@
 - 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
 - 在 arm64 上，有调用的生成函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事。在 Apple M4 上，一次渲染少跑 0.75% 到 1.14% 的指令，少用 0.4% 到 1.2% 的时间，在各轮的波动之内。栈帧和调用深度不变，amd64 不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#arm64-只保存一次-lr)）。
 - 解构普通数组（比如 `const [a, b] = arr`）不再造 Array Iterator：不再在调用 `values` 时 poll，也不占一层调用深度，别处不造迭代器的脚本少持有一个形状。有内存上限时，内存不足可能晚一点，在造迭代器的地方才出现。tifa 页面的一次渲染少跑 0.26%（MUI）到 0.84%（workbench）的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#不造迭代器的数组解构)）。
+- `Intl` 和 `Temporal` 现在用 `RangeError` 拒绝一些 Chrome 和 Node 接受的输入：超过 16,384 个字符的单独给出的 locale 标签和 `calendar`、`numberingSystem`、`collation` 选项，超过 524,288 个字符的数字字符串，以及 `Intl.NumberFormat` 要写超过 525,312 位数字的数。其他超过 16,384 个字符的选项、代码和 Temporal 字符串也被拒绝。原来 Go 把这些整个读进来，不算在 VM 的内存上限里，也不检查中断标志：16 MiB 的私有用途标签要 0.2 秒，Go 分配 289 MiB，`'1e-1073741000'` 保留三位有效数字让 Go 写出十亿个零。在上限以内，Go 可能为参数用掉的内存计入内存上限，放不下时用内存不足的错误结束调用。Chrome 接受的每种输入都列在 [uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)。
+- 在没有内存上限的 VM 上，`fmt.sprintf`、`printf`、`sprint` 和 `println` 的输出可能让 Go 分配的内存超过能放下 16 MiB 输出的空间时，现在用无法捕获的内存不足错误结束调用。原来 Go 先造出整个输出，不检查 VM：对 1 MiB 的控制字符调用 `fmt.sprintf('%[1]q'.repeat(64), s)` 造出 256 MiB，超过 20 ms 的 eval 超时后又跑了 636 ms。上界可能远高于输出，所以写不到 16 MiB 的调用也可能被拒绝：`"%[x"` 重复一百万次写出 13 MB，上界是 67 MB（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+- `fmt.printf` 和 `fmt.println` 现在每次写 64 KiB，`Interrupt` 和 eval 超时可以在两次写入之间结束调用。原来写 1 MiB 到管道时，调用一直卡到管道被读走。单独一次会阻塞的写入仍然卡住调用，直到写完（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
+
+### 修复
+
+- `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
+- Go 函数在转换很长的字符串或很大的结果时，超时和 `Interrupt` 现在能让这次调用结束，VM 不再因此被杀掉。`Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1`、`VM.NewStringUTF16`、`VM.NewAtom` 以及 `RegisterFunc` 函数的参数和结果，每 256 Ki 个字符或 16,384 个元素查一次停止：`String` 和 `WTF8` 返回 ok 为 false，其余返回中断错误。原来 16 Mi 个字符的转换在 amd64 上要 129 到 151 ms，中间不查，超过了 VM 被杀掉之前的 50 ms。仍是一整步的只有 Go 为读出的字符串分配内存，64 Mi 个字符时最多 52 ms（[go-api.md](docs/changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)）。
+- `Intl.NumberFormat` 在 `roundingPriority: 'lessPrecision'` 时，现在把远小于小数位数的数直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- 科学计数法或工程计数法下，长格式单位或货币名称的 `format` 找名称的复数形式时，不再把指数移动的每个零都写出来：米的 `format('1e-1073741000')` 原来在 Go 里花 4.3 秒、3.2 GB，而且不检查调用。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在先认出超过 1024 位的二、八、十六进制数字字符串是无穷，不再先把它转成十进制，转换的时间随长度的平方增长：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 原来在 Go 里花 9.6 秒，而且不检查调用，现在 512 Ki 字符的字符串只要 4 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- 去掉空项的 `Intl.ListFormat` 现在一趟拼完空项之间的字面文字，原来每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表在 Go 里分配 434 MB，现在最多 5 MB。长数字的 `formatToParts` 用的 Go 内存不到原来的一半：`10n ** 315000n` 在 en 下 52 MB，原来是 112 MB。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
+- `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 `Number` 的方式读数字字符串：`"1e+-5"` 和 `"1xe1073741825"` 是 NaN，原来是 Infinity，`"1e--5"` 是 NaN，原来是零，`"0e1073741825"` 是 0，原来是 Infinity（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#数字字符串按-number-的方式读)）。
+- `Interrupt` 和 eval 超时现在能停下 Temporal 在 ISO 8601 以外日历里的 `add`、`subtract`、`until`、`since`、`round` 和 `total`，它们一次走一个月或一年，原来不做检查：农历日期加 1.9 亿天，超过 20 ms 的 eval 超时后又跑了 64 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#日历的运算读中断标志)）。
+- `Interrupt` 和 eval 超时现在能停下 `Intl.Segmenter` 在没有空格的一长段泰文、老挝文、高棉文、缅甸文、中文或日文上的工作，以及 `Intl.Collator` 和 `localeCompare` 在一长串重音符号上的工作，这些对词典或重音符号的排序来说都是一整块：在 Apple M4 上，超时设为 100 ms 时，在 8 Mi 字符的中文上调用 `containing(0)` 原来要跑 6.6 秒，而且没有报错就结束了，现在在超时后半毫秒内停下。一段中文或日文在 VM 没有空间给 NFKC 拆出的每个字符 288 字节时，现在用内存不足的错误结束调用。分段和顺序都不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志)）。
 
 ## [v0.30.2] - 2026-11-13
 
@@ -624,7 +642,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
