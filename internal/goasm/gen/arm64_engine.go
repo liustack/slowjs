@@ -553,6 +553,10 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		if !reA64B.MatchString(last) && !reA64BR.MatchString(last) {
 			out = append(out, "b "+goret)
 		}
+		start, align := a64FuncStart(env.Align64, fn.Name)
+		if err := a64CheckJumpTables(out, data, start, align); err != nil {
+			return fail("%v", err)
+		}
 		out = append(out, ".p2align 4", fn.Name+".const:", data)
 	}
 	_, _, argBytes := layout(fn.Sig)
