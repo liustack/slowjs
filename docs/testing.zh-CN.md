@@ -348,7 +348,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `goasm` | 快档 | `internal/goasm/...` 的测试，设了 `QUICKJS_LLVM`、`QUICKJS_SHADOW_PASS` 和 `QUICKJS_LLD`，这样它们不会跳过 |
 | `cengine` | 快档 | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain` 和 `render-test.sh plain`、`cycles.sh` |
-| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`scripts/llvm-bin-test.sh`（LLVM 的查找）、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
+| `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`scripts/llvm-bin-test.sh`（LLVM 的查找）、`scripts/check-gen-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
 | `inject-goldens` | 快档 | 对 `engine/test/regvm/corpus` 和 `engine/test/regvm/js` 运行 `engine/test/regvm/inject.sh -goldens`：注入抛错的每个脚本都有黄金文件，或者在 `golden/inject/skip` 里有一行 |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
