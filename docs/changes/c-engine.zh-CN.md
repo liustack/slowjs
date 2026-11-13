@@ -38,6 +38,7 @@ read_when:
 | `Atomics.wait` 抛错，`Atomics.notify` 不唤醒任何人 | `Atomics.wait` 像浏览器主线程一样抛 `TypeError`。引擎里没有线程 | test262，用 `engine/test/test262.conf` |
 | `Atomics.pause` 不向 CPU 发提示 | 它检查参数并返回 `undefined`。规范只要求平台能发提示时引擎才发，而引擎里没有内联汇编 | test262 的 `built-ins/Atomics/pause`，生成器（没有桩函数） |
 | 格式串要么是字符串常量，要么是某个 `printf` 类函数的格式串，并且和参数一致 | 对程序没有变化。`snprintf` 会 abort 的新格式串造不出来 | 构建（`-Werror=format-nonliteral`），生成器，`libc-test.c` |
+| 标了 `__exception` 的函数（例如轮询 `js_poll_interrupts`）的返回值不会被丢掉 | 对程序没有变化。丢掉返回值的轮询会看到停止请求却继续干活，这样的代码构建不过 | 构建（`-Werror=unused-result`） |
 | `JS_NewClassID(rt, &id)` 按运行时计数 | Go 一侧按 VM 保存自己的类 ID | `api-test.c` |
 | `JS_DumpMemoryUsage(buf, size, ...)` 写进缓冲区 | 没有 `FILE`。Go 一侧拿到一个字符串 | `api-test.c` |
 | 打印用的工具没有了：`JS_Dump*`、`dump_token` 之类 | C 里的 `DUMP_*` 选项构建不了 | 构建 |

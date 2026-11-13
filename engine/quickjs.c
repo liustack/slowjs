@@ -54163,8 +54163,11 @@ static int js_string_normalize1(JSContext *ctx, uint32_t **pout_buf,
                                 ctx->rt, js_dbuf_realloc_rt,
                                 &ctx->rt->interrupt_flag);
     js_free(ctx, buf);
+    /* -2: unicode_normalize read the interrupt flag set and stopped, having
+       freed its buffer. The stop is thrown here, and the return of -1 below
+       ends the call. */
     if (out_len == -2)
-        __js_poll_interrupts(ctx);
+        JS_ThrowInterrupted(ctx);
     else if (out_len == -1)
         JS_ThrowOutOfMemory(ctx); /* the growth of the buffer failed */
     if (out_len < 0)
