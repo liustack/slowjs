@@ -114,6 +114,7 @@ var goasmKeep = []any{
 	JS_GetOwnPropertyNamesInternal,
 	JS_GetPropertyInt64,
 	JS_GetPropertyInternal,
+	JS_GetPropertyObj,
 	JS_GetPropertyStr,
 	JS_GetPropertyUint32,
 	JS_GetPropertyValue,

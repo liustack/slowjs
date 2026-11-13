@@ -1525,6 +1525,12 @@ static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_ob
                                             int argc, JSValueConst *argv, int flags);
 static no_inline JSValue js_call_c_plain(JSObject *p, JSValueConst this_obj,
                                          int argc, JSValueConst *argv);
+static no_inline JSValue JS_GetPropertyObj(JSContext *ctx, JSValueConst obj,
+                                           JSAtom prop, BOOL throw_ref_error);
+/* the engine's own JS_GetProperty (quickjs.h) passes 2 words less: obj is
+   this */
+#define JS_GetProperty(ctx, this_obj, prop) \
+    JS_GetPropertyObj(ctx, this_obj, prop, FALSE)
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst this_obj,
                                       int argc, JSValueConst *argv, int flags);
@@ -12615,9 +12621,10 @@ static int JS_AutoInitProperty(JSContext *ctx, JSObject *p, JSAtom prop,
     return 0;
 }
 
-JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
-                               JSAtom prop, JSValueConst this_obj,
-                               BOOL throw_ref_error)
+/* the body of JS_GetPropertyInternal and JS_GetPropertyObj */
+static force_inline JSValue js_get_property(JSContext *ctx, JSValueConst obj,
+                                            JSAtom prop, JSValueConst this_obj,
+                                            BOOL throw_ref_error)
 {
     JSObject *p;
     JSProperty *pr;
@@ -12771,6 +12778,23 @@ JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
     } else {
         return JS_UNDEFINED;
     }
+}
+
+JSValue JS_GetPropertyInternal(JSContext *ctx, JSValueConst obj,
+                               JSAtom prop, JSValueConst this_obj,
+                               BOOL throw_ref_error)
+{
+    return js_get_property(ctx, obj, prop, this_obj, throw_ref_error);
+}
+
+/* JS_GetPropertyInternal with obj as this, as JS_GetProperty asks: 5 words
+   of arguments, which fit the registers of an arm64 entry, where the 7 of
+   JS_GetPropertyInternal take a block. Never inlined: inlined into its
+   callers its frame would make theirs larger. */
+static no_inline JSValue JS_GetPropertyObj(JSContext *ctx, JSValueConst obj,
+                                           JSAtom prop, BOOL throw_ref_error)
+{
+    return js_get_property(ctx, obj, prop, obj, throw_ref_error);
 }
 
 static JSValue JS_ThrowTypeErrorPrivateNotFound(JSContext *ctx, JSAtom atom)
@@ -24207,11 +24231,18 @@ static JSValue js_call_constructor(JSContext *ctx, JSValueConst func_obj,
                                       JS_CALL_FLAG_COPY_ARGV);
 }
 
+/* It calls JS_GetPropertyInternal, not the shorter JS_GetPropertyObj: with
+   that call it is small enough that clang inlines it into JS_Invoke,
+   Array.prototype.join, the methods of promises and others on amd64, where
+   it was called out of line before, and their frames then take its own
+   (112 bytes of shadow stack) on every path, also on the paths of a
+   recursion that never invoke. Marked never inlined, arm64, where it was
+   inlined, took an extra frame on the paths that invoke. */
 static JSValue js_invoke(JSContext *ctx, JSValueConst this_val, JSAtom atom,
                          int argc, JSValueConst *argv)
 {
     JSValue func_obj;
-    func_obj = JS_GetProperty(ctx, this_val, atom);
+    func_obj = JS_GetPropertyInternal(ctx, this_val, atom, this_val, FALSE);
     if (JS_IsException(func_obj))
         return func_obj;
     return JS_CallFree(ctx, func_obj, this_val, argc, argv);

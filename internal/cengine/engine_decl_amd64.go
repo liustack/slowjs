@@ -151,6 +151,7 @@ func JS_GetOwnPropertyNames2(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 
 func JS_GetOwnPropertyNamesInternal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func JS_GetPropertyInt64(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_GetPropertyInternal(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr, a7 uintptr) (r0, r1 uintptr)
+func JS_GetPropertyObj(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_GetPropertyStr(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr) (r0, r1 uintptr)
 func JS_GetPropertyUint32(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func JS_GetPropertyValue(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
