@@ -22107,6 +22107,11 @@ static int js_copy_excluded(JSContext *ctx, JSObject *pexcl,
     return js_get_own_property_flags(ctx, NULL, pexcl, atom);
 }
 
+/* The copy of the keys of a source reads the interrupt flag every
+   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
+   source may have millions (docs/changes/uncatchable.md) */
+#define JS_COPY_POLL_KEYS 4096
+
 /* Copy the own properties of source into target as JS_CopyDataProperties
    does for a spread in an object literal or the rest of a destructuring,
    which define them on target, a new object, with the result in *pret, and
@@ -22127,6 +22132,7 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     JSOwnKeyList l;
     JSOwnKeyIter it = { 0 };
     int i, ret;
+    uint32_t done = 0;
 
     if (setprop || JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT)
@@ -22144,6 +22150,12 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     prs = get_shape_prop(l.sh);
     *pret = 0;
     while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
+        if (unlikely((++done & (JS_COPY_POLL_KEYS - 1)) == 0) &&
+            js_poll_interrupts(ctx)) {
+            *pret = -1;
+            break;
+        }
+        JS_WORK(1);
         if (pexcl || excl_n) {
             ret = js_copy_excluded(ctx, pexcl, excl, excl_n, prs[i].atom);
             if (ret < 0) {
@@ -22180,12 +22192,28 @@ static int js_copy_data_properties(JSContext *ctx, JSValueConst target,
     BOOL is_enumerable;
     JSProperty *pr;
     JSShapeProperty *prs;
+    JSValue obj = JS_UNDEFINED;
 
+    /* a source that is not an object is made one (ToObject), as
+       CopyDataProperties says (upstream b19b2ec): a string gives its
+       characters, as the String object of it has them, and a number, a
+       boolean, a symbol or a bigint no key. null and undefined give none.
+       The copy goes on here with that object as its source, freed on every
+       way out, rather than in a call of this function: engine/test/cycles.sh
+       wants no function to call itself without a count */
+    if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT) {
+        if (JS_IsNull(source) || JS_IsUndefined(source))
+            return 0;
+        obj = JS_ToObject(ctx, source);
+        if (JS_IsException(obj))
+            return -1;
+        source = obj;
+    }
     if (js_copy_data(ctx, target, source, excluded, excl, excl_n, setprop,
-                     &ret))
+                     &ret)) {
+        JS_FreeValue(ctx, obj);
         return ret;
-    if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
-        return 0;
+    }
 
     if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
         pexcl = JS_VALUE_GET_OBJ(excluded);
@@ -22204,10 +22232,16 @@ static int js_copy_data_properties(JSContext *ctx, JSValueConst target,
     if (p->class_id == JS_CLASS_MODULE_NS)
         gpn_flags |= JS_GPN_ENUM_ONLY;
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
-                                       gpn_flags))
+                                       gpn_flags)) {
+        JS_FreeValue(ctx, obj);
         return -1;
+    }
 
     for (i = 0; i < tab_atom_count; i++) {
+        if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+            js_poll_interrupts(ctx))
+            goto exception;
+        JS_WORK(1);
         if (pexcl || excl_n) {
             ret = js_copy_excluded(ctx, pexcl, excl, excl_n, tab_atom[i].atom);
             if (ret) {
@@ -22251,9 +22285,11 @@ static int js_copy_data_properties(JSContext *ctx, JSValueConst target,
             goto exception;
     }
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, obj);
     return 0;
  exception:
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, obj);
     return -1;
 }
 
@@ -47732,27 +47768,19 @@ static JSValue js_object_assign(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
     // Object.assign(obj, source1)
-    JSValue obj, s;
+    JSValue obj;
     int i;
 
-    s = JS_UNDEFINED;
     obj = JS_ToObject(ctx, argv[0]);
     if (JS_IsException(obj))
         goto exception;
     for (i = 1; i < argc; i++) {
-        if (!JS_IsNull(argv[i]) && !JS_IsUndefined(argv[i])) {
-            s = JS_ToObject(ctx, argv[i]);
-            if (JS_IsException(s))
-                goto exception;
-            if (JS_CopyDataProperties(ctx, obj, s, JS_UNDEFINED, TRUE))
-                goto exception;
-            JS_FreeValue(ctx, s);
-        }
+        if (JS_CopyDataProperties(ctx, obj, argv[i], JS_UNDEFINED, TRUE))
+            goto exception;
     }
     return obj;
 exception:
     JS_FreeValue(ctx, obj);
-    JS_FreeValue(ctx, s);
     return JS_EXCEPTION;
 }
 

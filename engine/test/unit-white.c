@@ -1313,6 +1313,37 @@ static void test_buffer_copy_work(void)
     vm_free(&v);
 }
 
+/* The copy of a spread, a rest and Object.assign reads the interrupt flag
+   every 4096 keys (JS_COPY_POLL_KEYS), a unit of work a key, in both of its
+   loops: js_copy_data, of a plain object, and js_copy_data_properties, of a
+   String object or into Object.assign. */
+static void test_copy_poll_work(void)
+{
+    static const char *const calls[] = {
+        "({...s}), 0",
+        "({a: 1, ...s}), 0",
+        "Object.assign({}, s), 0",
+        "({a: 1, ...big}), 0",
+        "(({k0, ...r}) => r)(big), 0",
+        "Object.assign({}, big), 0",
+    };
+    VM v = vm_new();
+    size_t i;
+
+    CHECK(eval_ok(v.ctx, "var s = 'x'.repeat(100000), big = {};\n"
+                         "for (var i = 0; i < 100000; i++) big['k' + i] = i; void 0"),
+          "the sources");
+    for (i = 0; i < sizeof(calls) / sizeof(calls[0]); i++) {
+        white_work_reset();
+        CHECK(eval_is(v.ctx, calls[i], "0"), "%s threw", calls[i]);
+        CHECK(white_work_sum() >= 100000 && white_work_sum() < 101000,
+              "%s: %lu units of work, want a key each", calls[i], white_work_sum());
+        CHECK(white_work_longest() <= 4096, "%s: %lu keys between two readings of the flag",
+              calls[i], white_work_longest());
+    }
+    vm_free(&v);
+}
+
 /* The loops that read the interrupt flag after so many units of work say how
    much they did (JS_WORK in quickjs.c), and white.c adds it up between two
    readings of the flag. A call below does a known amount of work in all (the
@@ -6808,6 +6839,7 @@ int main(int argc, char **argv)
     test_poll_work_gaps();
     test_tag_work_gaps();
     test_buffer_copy_work();
+    test_copy_poll_work();
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();

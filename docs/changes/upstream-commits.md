@@ -12,7 +12,7 @@ read_when:
 
 English · [简体中文](upstream-commits.zh-CN.md)
 
-`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
+`engine/` starts from QuickJS `3d5e064` (2026-06-04) and changes on its own ([c-engine.md](c-engine.md)). The initial survey covered 81 upstream commits through `19d6bd8` (2026-10-26). The table also includes the selected fixes pushed on 2026-10-31, and `b19b2ec` of 2026-11-10. This page lists the ones taken in, each as a commit of its own that names the upstream commit, the ones tried and taken back, and the ones left out. It is not a promise to follow upstream. A commit that fixes a wrong answer, a leak or a crash is taken whether or not a page can reach it, and so is one that makes tifa's renders faster. A new feature or a change for speed is taken when tifa has a use for it. Every one comes with a test that prints what Node 24 prints (the lines that follow the current specification instead are marked in the file), or, for a leak, a sweep of the memory left.
 
 Where an upstream commit meets a change of liustack/quickjs, that change stays and the upstream text is merged around it. To see whether a commit still applies, run `git apply --directory=engine --check` on its diff.
 
@@ -49,6 +49,7 @@ Where an upstream commit meets a change of liustack/quickjs, that change stays a
 | `3c4c6ed` fixed slow Array truncation | sparse truncation deletes every eligible index before compacting the property table | all of it, retaining the shape handling of liustack/quickjs | `compare/array_truncate.js`, `TestUpstreamArrayTruncate` |
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | an empty iterator without an initial accumulator throws without reading or calling `return` | all of it | `compare/iterator_reduce.js`, `TestUpstreamIteratorReduce` |
 | `aac9bc5` fixed Iterator.concat logic | close through IteratorClose and finish the helper after any failed step | merged into the separate next and return functions, with a fresh completed result from return | `compare/iterator_concat.js`, `TestUpstreamIteratorConcat` |
+| `b19b2ec` fixed object spread with strings | `{..."ab"}` gives `{0: "a", 1: "b"}`: a spread makes an object of a source that is not null or undefined, as `Object.assign` and a rest did | all of it, in `js_copy_data_properties`, the general path of a rest and a spread, and the copy reads the interrupt flag every 4,096 keys ([uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag)) | `compare/spread_string.js`, `TestSpreadCopyStops`, `TestSpreadStringOutOfMemory` |
 
 ## Iterator concatenation
 
@@ -147,6 +148,7 @@ Each file under `engine/test/compare` is what Node 24 prints, except for the lin
 - `yield` and `await` are names or keywords as the context of the function says, `f() = 1` compiles in sloppy code and throws when it runs, a class element after `get`, `set` or `static` and a line break is read as the specification reads it, and `export { x as "a-b" }` is accepted.
 - `Promise.try` gives back a promise its callback returns. `Function.prototype.bind` keeps the prototype of the function it binds. `Object.defineProperties` reads everything before it defines. A proxy cannot report another value or other accessors for a property that is not configurable, nor a primitive from `ownKeys`. `Array.prototype.sort` writes every element back. `super.x = v` sets a property that a non-extensible receiver has.
 - A sealed or frozen array keeps its length when an index past its end is set or defined, which `Reflect.defineProperty` did not.
+- The spread of a string into an object literal gives its characters, as Node does: `{..."ab"}` is `{0: "a", 1: "b"}`, where it was `{}`. A number, a boolean, a symbol or a bigint gives no key.
 
 ## Left out
 

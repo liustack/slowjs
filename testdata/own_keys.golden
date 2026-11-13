@@ -644,7 +644,7 @@ copy then freeze: [{"p"/ecw:3,"q"/ecw:2},{"p"/e:1,"q"/e:2},false,true]
 copy keeps values: [["n","s","b","u","nl","big","sym","f"],"bigint",true,true,true,1]
 spread then add: ["a,b,k0","a,b,k1","a,b,k0","a,b,k1","a,b,k0"]
 spread into setter literal: [{"trap"/ecw:1,"other"/ecw:2},0]
-spread nullish and primitives: [{},{},{},{},{"0"/ecw:1,"1"/ecw:2}]
+spread nullish and primitives: [{},{},{"0"/ecw:"a","1"/ecw:"b"},{},{"0"/ecw:1,"1"/ecw:2}]
 rest keys: [2,1,{"1"/ecw:4,"c"/ecw:3,Symbol(s1)/ecw:5}]
 assign setters: [["a 1"],["a","b"]]
 assign many sources: {"0"/ecw:9,"1"/ecw:"y","a"/ecw:3,"b"/ecw:2}

@@ -1,0 +1,26 @@
+result string: 0=97,1=98
+result empty string: 
+result surrogate pair: 0=97,1=55357,2=56832,3=98
+result lone surrogate: 0=55296,1=120
+result keys around: 0=97,1=98,x=1,y=2
+result overwrite: 0=97,1=98,2=119
+result two strings: 0=100,1=101,2=99
+result String object: 0=97,1=98
+result String object with a key: 0=97,1=98,extra=1
+result number: 
+result boolean: 
+result symbol: 
+result bigint: 
+result null: a=1
+result undefined: a=1
+result Object.assign: 0=99,1=98
+result rest of a string: a 1=98,2=99
+result rest of a number: 
+result rest of null: throws TypeError
+result rest of undefined: throws TypeError
+result a site of strings and objects: {0=97,1=98,k=0} {k=1,a=1} {k=2} {0=120,1=121,2=122,k=3} {k=4} {0=111,k=5} {k=6} {0=97,1=98,k=7} {k=8,a=1} {k=9} {0=120,1=121,2=122,k=10} {k=11} {0=111,k=12} {k=13}
+result String.prototype getter: 0=97,1=98 0
+result long: 1000 x
+mem-end obj=200 atom=563 shape=177 prop=984 jsfunc=4 cfunc=134 array=2 fast_array=2 elements=23 binary=0
+mem-gc obj=200 atom=563 shape=177 prop=984 jsfunc=4 cfunc=134 array=2 fast_array=2 elements=23 binary=0
+--- status exit 0

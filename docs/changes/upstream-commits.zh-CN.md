@@ -12,7 +12,7 @@ read_when:
 
 [English](upstream-commits.md) · 简体中文
 
-`engine/` 起步于 QuickJS `3d5e064`（2026-06-04），之后自己演变（[c-engine.md](c-engine.zh-CN.md)）。最初的调研覆盖了到 `19d6bd8`（2026-10-26）为止的 81 个上游提交。表里还包括 2026-10-31 推送的那批挑选出来的修复。本页列出并入的提交（每个都是单独的一个提交，并写明它对应的上游提交）、试过又撤回的，以及没有并入的。这不是跟随上游的承诺。修正确答案、泄漏或崩溃的提交，不管页面碰不碰得到，都会并入，让 tifa 的渲染更快的也是。新功能或者为速度做的改动，在 tifa 用得上时才并入。每一个都带一个测试，输出和 Node 24 的输出一致（按当前规范而不同的行，在文件里有标记），泄漏则用一次对剩余内存的扫描来检查。
+`engine/` 起步于 QuickJS `3d5e064`（2026-06-04），之后自己演变（[c-engine.md](c-engine.zh-CN.md)）。最初的调研覆盖了到 `19d6bd8`（2026-10-26）为止的 81 个上游提交。表里还包括 2026-10-31 推送的那批挑选出来的修复，以及 2026-11-10 的 `b19b2ec`。本页列出并入的提交（每个都是单独的一个提交，并写明它对应的上游提交）、试过又撤回的，以及没有并入的。这不是跟随上游的承诺。修正确答案、泄漏或崩溃的提交，不管页面碰不碰得到，都会并入，让 tifa 的渲染更快的也是。新功能或者为速度做的改动，在 tifa 用得上时才并入。每一个都带一个测试，输出和 Node 24 的输出一致（按当前规范而不同的行，在文件里有标记），泄漏则用一次对剩余内存的扫描来检查。
 
 上游的某个提交和 liustack/quickjs 的某项改动碰在一起时，保留我们的改动，把上游的文本合并在它周围。想知道某个提交是否仍然适用，对它的 diff 运行 `git apply --directory=engine --check`。
 
@@ -49,6 +49,7 @@ read_when:
 | `3c4c6ed` fixed slow Array truncation | 稀疏数组截断先删除所有符合条件的下标，再压实属性表 | 全部，保留 liustack/quickjs 对 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 的处理 | `compare/array_truncate.js`、`TestUpstreamArrayTruncate` |
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | 没有初始累加值的空迭代器抛错，不读取也不调用 `return` | 全部 | `compare/iterator_reduce.js`、`TestUpstreamIteratorReduce` |
 | `aac9bc5` fixed Iterator.concat logic | 通过 IteratorClose 关闭，并在任何一步失败后结束 helper | 合并进单独的 next 和 return 函数，return 返回一个新的已完成结果 | `compare/iterator_concat.js`、`TestUpstreamIteratorConcat` |
+| `b19b2ec` fixed object spread with strings | `{..."ab"}` 得到 `{0: "a", 1: "b"}`：展开先把不是 null 或 undefined 的源转成对象，和 `Object.assign` 及 rest 原来的做法一样 | 全部，放在 rest 和展开的通用路径 `js_copy_data_properties` 里，复制每 4,096 个键读一次中断标志（[uncatchable.zh-CN.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)） | `compare/spread_string.js`、`TestSpreadCopyStops`、`TestSpreadStringOutOfMemory` |
 
 ## Iterator 拼接
 
@@ -147,6 +148,7 @@ read_when:
 - `yield` 和 `await` 按函数的上下文是名字还是关键字，`f() = 1` 在非严格代码里能编译、运行时抛错，`get`、`set` 或 `static` 加换行之后的类元素按规范的读法来读，`export { x as "a-b" }` 被接受。
 - `Promise.try` 把回调返回的 promise 原样给出。`Function.prototype.bind` 保留所绑定函数的原型。`Object.defineProperties` 在定义之前先读完所有东西。proxy 不能对不可配置的属性报告别的值或别的访问器，也不能让 `ownKeys` 返回原始值。`Array.prototype.sort` 把每个元素写回。`super.x = v` 会设置不可扩展的接收者已有的属性。
 - 在密封或冻结的数组上，设置或定义超出末尾的下标时，数组保持原来的长度，`Reflect.defineProperty` 以前做不到这一点。
+- 在对象字面量里展开字符串会得到它的各个字符，和 Node 一样：`{..."ab"}` 是 `{0: "a", 1: "b"}`，以前是 `{}`。数字、布尔值、symbol 和 bigint 不给出键。
 
 ## 没有并入的
 

@@ -1,0 +1,23 @@
+string: 0=97,1=98
+empty string: 
+surrogate pair: 0=97,1=55357,2=56832,3=98
+lone surrogate: 0=55296,1=120
+keys around: 0=97,1=98,x=1,y=2
+overwrite: 0=97,1=98,2=119
+two strings: 0=100,1=101,2=99
+String object: 0=97,1=98
+String object with a key: 0=97,1=98,extra=1
+number: 
+boolean: 
+symbol: 
+bigint: 
+null: a=1
+undefined: a=1
+Object.assign: 0=99,1=98
+rest of a string: a 1=98,2=99
+rest of a number: 
+rest of null: throws TypeError
+rest of undefined: throws TypeError
+a site of strings and objects: {0=97,1=98,k=0} {k=1,a=1} {k=2} {0=120,1=121,2=122,k=3} {k=4} {0=111,k=5} {k=6} {0=97,1=98,k=7} {k=8,a=1} {k=9} {0=120,1=121,2=122,k=10} {k=11} {0=111,k=12} {k=13}
+String.prototype getter: 0=97,1=98 0
+long: 1000 x

@@ -61,6 +61,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Iterator.concat follows IteratorClose and finishes after a failed step | v0.29.8 | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
+| The spread of a string gives its characters | Unreleased | [upstream-commits.md](upstream-commits.md) |
 
 ## Go API
 
@@ -151,6 +152,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The functions of fmt make a long output in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
 | A Go function takes the long arrays of a call from the OS | Unreleased | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
 | A VM keeps its last block for the next call | Unreleased | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
+| The copy of a spread, a rest and Object.assign reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 

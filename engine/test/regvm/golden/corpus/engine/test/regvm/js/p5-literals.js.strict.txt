@@ -34,8 +34,8 @@ result spread number 0 threw TypeError: value is not iterable
 result spread number 1 threw TypeError: value is not iterable
 result ospread 0: "{\"z\":9,\"a\":1,\"y\":1}"
 result ospread 1: "{\"z\":9,\"a\":1,\"y\":1}"
-result ospread string 0: "{\"z\":0,\"y\":1}"
-result ospread string 1: "{\"z\":0,\"y\":1}"
+result ospread string 0: "{\"0\":\"a\",\"1\":\"b\",\"z\":0,\"y\":1}"
+result ospread string 1: "{\"0\":\"a\",\"1\":\"b\",\"z\":0,\"y\":1}"
 result ospread null 0: "{\"z\":0,\"y\":1}"
 result ospread null 1: "{\"z\":0,\"y\":1}"
 result getter
@@ -70,6 +70,6 @@ result construct class 0: 3
 result construct class 1: 3
 result construct not constructor 0 threw TypeError:  is not a constructor
 result construct not constructor 1 threw TypeError:  is not a constructor
-mem-end obj=204 atom=580 shape=153 prop=978 jsfunc=1 cfunc=137 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=200 atom=579 shape=151 prop=970 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=204 atom=580 shape=157 prop=978 jsfunc=1 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=200 atom=579 shape=155 prop=970 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

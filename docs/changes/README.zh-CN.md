@@ -61,6 +61,7 @@ read_when:
 | Iterator.concat 遵循 IteratorClose，并在一步失败后结束 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#iterator-拼接) |
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
+| 展开字符串得到它的各个字符 | Unreleased | [upstream-commits.md](upstream-commits.zh-CN.md) |
 
 ## Go API
 
@@ -151,6 +152,7 @@ read_when:
 | fmt 的函数分段造出长输出并检查调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数分段造出长输出并检查调用) |
 | Go 函数的长数组直接向系统要内存 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
 | VM 留下最后一块内存给下一次调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
+| 展开、rest 和 Object.assign 的复制读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
 
 ## 错误和调用栈
 
