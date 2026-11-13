@@ -84,6 +84,13 @@
 #include <vector>
 using namespace llvm;
 
+// pollUnlikely weighs a branch this pass adds as rare, with the weights
+// createUnlikelyBranchWeights gives, marked "expected" as __builtin_expect's
+// are: StaticWeights keeps it by that mark. A node with the same numbers
+// from a profile is the same node to LLVM, so the numbers cannot tell them
+// apart.
+static MDNode *pollUnlikely(MDBuilder &MDB) { return MDB.createBranchWeights(1, (1U << 20) - 1, /*IsExpected=*/true); }
+
 static cl::opt<bool> PollOn("shadow-poll", cl::init(false),
                             cl::desc("tick on every cycle and call host_poll when the count runs out"));
 static cl::opt<unsigned> PollOffset("shadow-poll-offset", cl::init(0),
@@ -335,7 +342,7 @@ void chunkLeafCalls(Module &M) {
     Instruction *ThenT, *ElseT;
     IRBuilder<> B(st.CB);
     SplitBlockAndInsertIfThenElse(B.CreateICmpUGT(len, B.getInt64(LeafChunk)), st.CB, &ThenT, &ElseT,
-                                  MDB.createUnlikelyBranchWeights());
+                                  pollUnlikely(MDB));
     IRBuilder<> TB(ThenT);
     if (st.op == "memset")
       src = src->getType()->isIntegerTy(32) ? src : TB.CreateZExt(src, I32);
@@ -554,7 +561,7 @@ static std::map<BasicBlock *, uint64_t> stripLoops(Function &F, unsigned &n) {
     PHINode *K = PHINode::Create(I64, 2, "poll.chunk.left", H->begin());
     IRBuilder<> YB(Y->getTerminator());
     Value *K1 = YB.CreateNUWSub(K, YB.getInt64(1));
-    BranchInst *Br = YB.CreateCondBr(YB.CreateICmpEQ(K1, YB.getInt64(0)), X, H, MDB.createUnlikelyBranchWeights());
+    BranchInst *Br = YB.CreateCondBr(YB.CreateICmpEQ(K1, YB.getInt64(0)), X, H, pollUnlikely(MDB));
     Y->getTerminator()->eraseFromParent();
     (void)Br;
     K->addIncoming(ConstantInt::get(I64, chunk), O);
@@ -681,9 +688,9 @@ static constexpr unsigned PollRegs = 20;
 // are not alike: a register costs a few instructions each time the loop is
 // entered, memory two each turn. A loop the training ran three times on
 // average would count in memory, and an array of a thousand elements pays
-// for it a thousand times (docs/changes). The weights of __builtin_expect,
+// for it a thousand times (docs/changes/generator.md). The weights of __builtin_expect,
 // which the build without a profile has too, stay, and so do those of the
-// branches this pass adds (createUnlikelyBranchWeights).
+// branches this pass adds (pollUnlikely): both carry the "expected" mark.
 struct StaticWeights {
   std::vector<std::pair<Instruction *, MDNode *>> saved;
   explicit StaticWeights(Function &F) {
@@ -692,11 +699,10 @@ struct StaticWeights {
     // whether the build has a profile.
     if (!F.getParent()->getProfileSummary(/*IsCS=*/false))
       return;
-    MDNode *ours = MDBuilder(F.getContext()).createUnlikelyBranchWeights();
     for (BasicBlock &B : F)
       for (Instruction &I : B)
         if (MDNode *MD = I.getMetadata(LLVMContext::MD_prof);
-            MD && MD != ours && isBranchWeightMD(MD) && !hasBranchWeightOrigin(MD)) {
+            MD && isBranchWeightMD(MD) && !hasBranchWeightOrigin(MD)) {
           saved.push_back({&I, MD});
           I.setMetadata(LLVMContext::MD_prof, nullptr);
         }
@@ -977,7 +983,7 @@ void insertPolls(Module &M, const std::set<std::string> &leaves, unsigned sizeLo
       Value *c1 = tick(B, A, weight);
       // -shadow-poll-fault=cond: c1 < INT64_MIN, which never holds.
       Value *expired = B.CreateICmpSLT(c1, B.getInt64(PollFault == "cond" ? 1ull << 63 : 1));
-      Instruction *T = SplitBlockAndInsertIfThen(expired, t, false, MDB.createUnlikelyBranchWeights());
+      Instruction *T = SplitBlockAndInsertIfThen(expired, t, false, pollUnlikely(MDB));
       IRBuilder<> TB(T);
       TB.CreateCall(poll, {sp});
       reload(TB, A);

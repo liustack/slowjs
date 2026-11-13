@@ -867,6 +867,9 @@ func TestPassPollsProfile(t *testing.T) {
 	for _, c := range []struct{ name, ir string }{
 		{"with the profile", pollProfileIR},
 		{"without it", regexp.MustCompile(`(?m)^!llvm\.module\.flags = .*\n|, !prof !1\n| !prof !30`).ReplaceAllString(pollProfileIR, "\n")},
+		// The numbers of the weights the pass gives its own rare branches: the
+		// same node to LLVM, which only the "expected" mark tells apart.
+		{"with the pass's numbers", strings.Replace(pollProfileIR, "i32 1000, i32 1000}", "i32 1, i32 1048575}", 1)},
 	} {
 		ir, outIR := filepath.Join(dir, "f.ll"), filepath.Join(dir, "out.ll")
 		if err := os.WriteFile(ir, []byte(c.ir), 0o644); err != nil {
@@ -888,8 +891,8 @@ func TestPassPollsProfile(t *testing.T) {
 		if reg, mem := tickPlaces(f); reg != 1 || mem != 0 {
 			t.Errorf("%s: few ticks %d times in a register and %d in memory, want 1 and 0:\n%s", c.name, reg, mem, f)
 		}
-		if c.name == "with the profile" && !strings.Contains(string(text), `!{!"branch_weights", i32 1000, i32 1000}`) {
-			t.Errorf("the pass took the weights of the profile off few:\n%s", text)
+		if want := map[string]string{"with the profile": `!{!"branch_weights", i32 1000, i32 1000}`, "with the pass's numbers": `!{!"branch_weights", i32 1, i32 1048575}`}[c.name]; want != "" && !strings.Contains(string(text), want) {
+			t.Errorf("%s: the pass took the weights of the profile off few:\n%s", c.name, text)
 		}
 	}
 }
