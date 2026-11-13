@@ -278,6 +278,54 @@ func TestTrap(t *testing.T) {
 	}
 }
 
+// CallMemoryPressure asks the function of SetPressure for what the host
+// holds and returns what it still holds. Hold writes held and the limit the
+// heap checks, from the limit set, and nothing once the VM is closed. A request with no function set, or with
+// other arguments, is a bug of the engine.
+func TestCallPressure(t *testing.T) {
+	v := newVM(t, small)
+	sp, _ := v.Stack()
+	args := argv(t, v, 12345)
+	mustPanic(t, "pressure with no function", func() { Call(sp, v.ID(), 0, 1, args, CallMemoryPressure) })
+	var asked uintptr
+	v.SetPressure(func(request uintptr) uintptr { asked = request; return 7 })
+	if r := Call(sp, v.ID(), 0, 1, args, CallMemoryPressure); r != Word(7) || asked != 12345 {
+		t.Fatalf("pressure returned %+v and asked %d, want 7 and 12345", r, asked)
+	}
+	mustPanic(t, "pressure with two arguments", func() { Call(sp, v.ID(), 0, 2, args, CallMemoryPressure) })
+
+	mustPanic(t, "Hold before SetLimit", func() { v.Hold(1) })
+	word := MemoryGrow(v.ID(), hostmem.Unit)
+	mustPanic(t, "words that are not aligned", func() { v.SetLimit(word + 4) })
+	v.SetLimit(word)
+	w := (*[3]uintptr)(addr(word))
+	for _, c := range []struct{ set, n, limit uintptr }{
+		{^uintptr(0), 4096, ^uintptr(0)}, // no limit set: held is not counted
+		{10000, 4096, 10000 - 4096},
+		{10000, 0, 10000},
+		{10000, 9999, 1},
+		{10000, 10000, 0},
+		{10000, 1 << 40, 0},
+	} {
+		w[0], w[1] = 12345, c.set
+		v.Hold(c.n)
+		if *w != [3]uintptr{c.limit, c.set, c.n} {
+			t.Fatalf("Hold(%d) with the limit set at %d wrote %d, want %d", c.n, c.set, *w, [3]uintptr{c.limit, c.set, c.n})
+		}
+	}
+	// A broken VM's engine is not entered again: Hold reads and writes nothing.
+	*w = [3]uintptr{7, 8, 9}
+	v.MarkBroken()
+	v.Hold(1)
+	if *w != [3]uintptr{7, 8, 9} {
+		t.Fatalf("Hold on a broken VM wrote %d", *w)
+	}
+	if err := v.Close(); err != nil {
+		t.Fatal(err)
+	}
+	v.Hold(1) // the memory is gone: nothing is written
+}
+
 func TestCallUnknown(t *testing.T) {
 	v := newVM(t, small)
 	sp, _ := v.Stack()
@@ -293,7 +341,7 @@ func TestCallEngineRequestHasNoThis(t *testing.T) {
 	v := newVM(t, small)
 	sp, _ := v.Stack()
 	args := sp + 64
-	for _, magic := range []int32{CallAbort, CallMemoryRelease, CallMemoryRemap, -99} {
+	for _, magic := range []int32{CallAbort, CallMemoryRelease, CallMemoryRemap, CallMemoryPressure, -99} {
 		got := mustPanic(t, "a request with a this value", func() { Call(sp, v.ID(), args, 2, args, magic) })
 		if s, ok := got.(string); !ok || !strings.Contains(s, "this value") {
 			t.Errorf("request %d panicked with %v, want the this value named", magic, got)

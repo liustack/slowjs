@@ -662,6 +662,8 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
         return host_memory_release(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]));
     if (magic == HOST_CALL_MEMORY_REMAP && argc == 3)
         return host_memory_remap(vm, HOST_WORD_VALUE(argv[0]), HOST_WORD_VALUE(argv[1]), HOST_WORD_VALUE(argv[2]));
+    if (magic == HOST_CALL_MEMORY_PRESSURE && argc == 1 && host_pressure_call)
+        return HOST_WORD(host_pressure_call(vm, HOST_WORD_VALUE(argv[0])));
     if (magic == HOST_CALL_ABORT)
         fputs("engine abort\n", stderr);
     else
@@ -673,6 +675,7 @@ JSValue host_call(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *
 }
 
 void (*host_release_call)(uint32_t vm, uint32_t handle);
+size_t (*host_pressure_call)(uint32_t vm, size_t request);
 
 /* The engine let go of a function of JS_NewHostFunctionRelease. The test host
    holds no handle of its own: a test that makes such functions sets

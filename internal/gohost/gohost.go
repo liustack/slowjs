@@ -72,6 +72,9 @@ const (
 	CallAbort         = -1 // the engine cannot go on, and does not return
 	CallMemoryRelease = -2 // (address, size): unmap a dedicated chunk
 	CallMemoryRemap   = -3 // (address, old size, new size): resize a dedicated chunk, linux only
+	// (size of the request): give back what the host holds for the VM, which
+	// the limit counts (SetLimit), and return what it still holds
+	CallMemoryPressure = -4
 )
 
 // ErrAbort is what Call panics with when the engine aborts.
@@ -152,6 +155,8 @@ type VM struct {
 	polls     atomic.Int64
 	counter   uintptr // the poll counter, or 0
 	flag      uintptr // the engine's interrupt flag (SetInterruptFlag), or 0
+	limit     uintptr // the engine's three words of the memory limit (SetLimit), or 0
+	pressure  func(request uintptr) uintptr
 	interval  int64
 	grace     time.Duration
 	// script: the outermost entry runs a script (EnterScript), which a
@@ -524,6 +529,51 @@ func (v *VM) StopPolls() int64 { return v.seen }
 // Killed reports whether a poll killed the script.
 func (v *VM) Killed() bool { return v.killed }
 
+// SetLimit gives v the address of the engine's three words of the memory
+// limit (JS_GetHostLimit): the limit the heap checks, the limit set, and the
+// bytes the host holds for the VM outside the engine's heap. Hold writes the
+// first and the third.
+func (v *VM) SetLimit(a uintptr) {
+	if a == 0 || a%8 != 0 {
+		panic(fmt.Sprintf("gohost: the words of the memory limit at %#x", a))
+	}
+	v.limit = a
+}
+
+// Hold tells the engine that the host holds n bytes for the VM outside its
+// heap, which its memory limit counts with its own. It writes n as held, and
+// the limit the heap checks as heap_limit_update in engine/heap.h makes it:
+// none with no limit set, else the limit set less n, or 0 when n reaches it.
+// The heap then checks one word on each allocation. It reads and writes
+// nothing once v is closed, when the engine is gone, or broken, when the
+// engine is never entered again and its memory is not to be trusted.
+func (v *VM) Hold(n uintptr) {
+	if v.limit == 0 {
+		panic("gohost: Hold before SetLimit")
+	}
+	if v.closed || v.broken {
+		return
+	}
+	w := (*[3]uintptr)(addr(v.limit))
+	w[2] = n
+	switch set := w[1]; {
+	case set == ^uintptr(0):
+		w[0] = set
+	case set > n:
+		w[0] = set - n
+	default:
+		w[0] = 0
+	}
+}
+
+// SetPressure sets what answers the engine's CallMemoryPressure: f gives
+// back what the host holds for the VM, as much as it can, and returns what it
+// still holds. f runs inside an allocation of the engine: it must not enter
+// the engine, nor panic.
+func (v *VM) SetPressure(f func(request uintptr) uintptr) {
+	v.pressure = f
+}
+
 // AllowRemap tells whether the engine may ask to remap a dedicated chunk,
 // which only linux can. When it says yes, the host must tell the engine with
 // JS_SetHostRemap, right after JS_NewRuntime.
@@ -719,6 +769,13 @@ func Call(sp uintptr, vm uint32, this uintptr, argc int32, argv uintptr, magic i
 		v.counts.Remaps++
 		v.counts.RemapBytes += newSize - size
 		return Word(p)
+	case CallMemoryPressure:
+		v := mustLookup(vm, "memory held to give back")
+		mustArgs(argc, 1, "pressure")
+		if v.pressure == nil {
+			panic("gohost: the engine asks the host to give back memory, and the host holds none")
+		}
+		return Word(v.pressure(word(argv, 0)))
 	}
 	if magic >= 0 {
 		panic(fmt.Sprintf("gohost: host_call of function %d: the host registers no function yet", magic))

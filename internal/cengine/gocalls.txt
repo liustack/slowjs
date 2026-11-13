@@ -20,6 +20,7 @@ JS_GetCallDepth
 JS_GetException
 JS_GetGCThreshold
 JS_GetGlobalObject
+JS_GetHostLimit
 JS_GetImportMeta
 JS_GetInterruptFlag
 JS_GetMemorySize

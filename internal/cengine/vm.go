@@ -175,6 +175,11 @@ func New(o Options) (_ *VM, err error) {
 	var flag uintptr
 	v.enter(func() { flag = JS_GetInterruptFlag(v.sp, v.rt) })
 	h.SetInterruptFlag(flag)
+	// The words of the memory limit, where the host writes the bytes it
+	// holds for the VM (gohost.VM.Hold).
+	var limit uintptr
+	v.enter(func() { limit = JS_GetHostLimit(v.sp, v.rt) })
+	h.SetLimit(limit)
 	v.enter(func() { v.ctx = JS_NewContext(v.sp, v.rt) })
 	if v.ctx == 0 {
 		var leaked uintptr
