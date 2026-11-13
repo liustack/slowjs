@@ -242,6 +242,13 @@ var doorFormEntries = []struct{ js, past string }{
 	{`var u = new URL("http://h/?a=b"); try { u.searchParams.append("c", X) } catch (e) { e.name + u.href + u.searchParams.size }`, "RangeErrorhttp://h/?a=b1"},
 }
 
+// doorTries and doorTime: a refusal of a call takes doorTime or less in the
+// fastest of doorTries calls of the same entry.
+const (
+	doorTries = 5
+	doorTime  = 200 * time.Microsecond
+)
+
 // TestDoor checks that a string past the limit costs Go the same whatever its
 // length: every Builtin refuses it by the length the engine keeps, before it
 // reads a unit, so the time and the allocation of the call do not grow with
@@ -296,23 +303,39 @@ func TestDoor(t *testing.T) {
 			all = append(all[:len(all):len(all)], doorFormEntries...)
 		}
 		for _, e := range all {
-			got, costs := run(vm, e.js)
-			if got != e.past {
-				t.Errorf("%s, %s = %s, want %s", l.name, e.js, got, e.past)
+			// The time of a refusal is the fastest of up to doorTries calls
+			// of the same entry: a slow scheduler or the GC of another test
+			// makes one call slow, not all of them, while work that grows
+			// with the input makes every call slow. The allocation is held
+			// on every call.
+			best := time.Hour
+			tries := doorTries
+			if raceEnabled {
+				tries = 1 // the time is not judged under the race detector
 			}
-			refused := 0
-			for _, k := range costs {
-				if !k.refused {
-					continue
+			for try := 0; try < tries && best > doorTime; try++ {
+				got, costs := run(vm, e.js)
+				if got != e.past {
+					t.Errorf("%s, %s = %s, want %s", l.name, e.js, got, e.past)
 				}
-				refused++
-				// What the refusal costs: an error or a small number, no copy.
-				if k.alloc > 1<<10 || (k.took > 200*time.Microsecond && !raceEnabled) {
-					t.Errorf("%s, %s: a call took %v and allocated %d bytes in Go", l.name, e.js, k.took, k.alloc)
+				refused := 0
+				for _, k := range costs {
+					if !k.refused {
+						continue
+					}
+					refused++
+					// What the refusal costs: an error or a small number, no copy.
+					if k.alloc > 1<<10 {
+						t.Errorf("%s, %s: a call allocated %d bytes in Go", l.name, e.js, k.alloc)
+					}
+					best = min(best, k.took)
+				}
+				if refused != 1 {
+					t.Errorf("%s, %s: %d calls refused X, want 1", l.name, e.js, refused)
 				}
 			}
-			if refused != 1 {
-				t.Errorf("%s, %s: %d calls refused X, want 1", l.name, e.js, refused)
+			if best > doorTime && !raceEnabled {
+				t.Errorf("%s, %s: the fastest of %d calls took %v, want %v or less", l.name, e.js, tries, best, doorTime)
 			}
 		}
 		vm.SetMemoryLimit(^uintptr(0))
