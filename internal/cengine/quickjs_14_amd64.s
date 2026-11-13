@@ -4062,7 +4062,7 @@ TEXT ·js_parse_destructuring_element1(SB), $288-64
 	BYTE $0x48
 	BYTE $0x89
 	BYTE $0x01
-	LEAQ ·engine_rodata+12404(SB), R14
+	LEAQ ·engine_rodata+12420(SB), R14
 	QUAD $0x0000011824a48b4c
 	QUAD $0x0000011024ac8b4c
 	QUAD $0x0000010824bc8b4c
@@ -20831,7 +20831,7 @@ TEXT ·js_date_toJSON(SB), $144-48
 	BYTE $0xfb
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+12472(SB), CX
+	LEAQ ·engine_rodata+12488(SB), CX
 	QUAD $0xb48b481774c83948
 	QUAD $0x548b480000008824
 	QUAD $0xe96824448b4c4824

@@ -18213,7 +18213,7 @@ TEXT ·js_date_toJSON(SB), $136-48
 	WORD $0xf9403bf6
 	WORD $0xf94033e1
 	WORD $0x17ffff94
-	MOVD $·engine_rodata+12424(SB), R9
+	MOVD $·engine_rodata+12440(SB), R9
 	WORD $0xeb09011f
 	WORD $0x540000a0
 	WORD $0xa946a7e8
@@ -22989,7 +22989,7 @@ TEXT ·js_bigint_constructor(SB), $104-48
 	WORD $0xf9402ff5
 	WORD $0xeb09011f
 	WORD $0x54fffb03
-	MOVD $·engine_rodata+12338(SB), R22
+	MOVD $·engine_rodata+12354(SB), R22
 	WORD $0x910082f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -27524,7 +27524,7 @@ TEXT ·js_string_split(SB), $200-48
 	WORD $0x9e660009
 	WORD $0x17ffff0c
 	WORD $0xaa1403e8
-	MOVD $·engine_rodata+13950(SB), R22
+	MOVD $·engine_rodata+13966(SB), R22
 	WORD $0x91020294
 	WORD $0x91014117
 	WORD $0xf90007f4
@@ -27553,7 +27553,7 @@ TEXT ·js_string_split(SB), $200-48
 	WORD $0x1100056b
 	WORD $0xf90057eb
 	WORD $0x17ffff5b
-	MOVD $·engine_rodata+12424(SB), R9
+	MOVD $·engine_rodata+12440(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54ffe701
 	WORD $0xf9400955

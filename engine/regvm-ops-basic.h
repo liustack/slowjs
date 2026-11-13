@@ -801,6 +801,28 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         if (JS_IsUninitialized(ret))
             break;
         goto answer;
+    case RV_FAST_IS_ARRAY:
+        /* JS_IsArray, but a proxy, which can be revoked, takes the call */
+        if (n < 1 || JS_VALUE_GET_TAG(W[1]) != JS_TAG_OBJECT) {
+            ret = JS_FALSE;
+        } else {
+            idx = JS_VALUE_GET_OBJ(W[1])->class_id;
+            if (idx == JS_CLASS_PROXY)
+                break;
+            ret = JS_NewBool(ctx, idx == JS_CLASS_ARRAY);
+        }
+        goto answer;
+    case RV_FAST_PUSH:
+        {
+            /* the room is made first, the elements added after the checks */
+            JSObject *a = js_array_push_room(ctx, this_v, n);
+            if (!a)
+                break;
+            r = rv_fast_enter(ctx);
+            if (unlikely(r != 0))
+                return r > 0 ? JS_UNINITIALIZED : JS_EXCEPTION;
+            return js_array_push_add(ctx, a, n, W + 1);
+        }
     }
     return JS_UNINITIALIZED;
  answer:

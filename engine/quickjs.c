@@ -1322,6 +1322,8 @@ enum {
     RV_FAST_CLZ32, /* Math.clz32 */
     RV_FAST_MAP_HAS, /* Map.prototype.has and Set.prototype.has */
     RV_FAST_MAP_GET, /* Map.prototype.get */
+    RV_FAST_IS_ARRAY, /* Array.isArray */
+    RV_FAST_PUSH, /* Array.prototype.push */
 };
 
 struct JSObject {
@@ -8918,6 +8920,14 @@ static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
 static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv, int magic,
                                BOOL get);
+static JSValue js_array_isArray(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv, int unshift);
+static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
+                                    int argc);
+static JSValue js_array_push_add(JSContext *ctx, JSObject *p, int argc,
+                                 JSValueConst *argv);
 #define MAGIC_SET (1 << 0)
 #define MAGIC_WEAK (1 << 1)
 
@@ -8937,6 +8947,10 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_MAP_HAS;
     if (func == (JSCFunction *)js_map_get && magic == 0)
         return RV_FAST_MAP_GET;
+    if (func == (JSCFunction *)js_array_isArray)
+        return RV_FAST_IS_ARRAY;
+    if (func == (JSCFunction *)js_array_push && magic == 0)
+        return RV_FAST_PUSH;
     return RV_FAST_NONE;
 }
 
@@ -50320,6 +50334,66 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
                         (size_t)(max_int(new_len, size * 3 / 2) - size));
     return expand_fast_array_append(ctx, p, new_len);
+}
+
+/* Array.prototype.push answered in the register loop (rv_fast_call), in two
+   steps around the checks of the call. js_array_push_room: the array of
+   this_val when push takes the fast case of js_array_push (a fast array
+   that can grow, its length its count and writable, not past INT32_MAX),
+   with the room for argc more elements made: the room grows as
+   js_array_push grows it, but a failed allocation throws nothing (the call
+   is then made, and throws as before). NULL when the call must be made.
+   Room that the call then does not use is not seen. */
+static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
+                                    int argc)
+{
+    JSObject *p;
+    uint32_t new_len, new_size;
+    size_t bytes;
+    JSValue *values;
+
+    if (JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return NULL;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (!(p->class_id == JS_CLASS_ARRAY && p->fast_array &&
+          can_extend_fast_array(p) &&
+          JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+          JS_VALUE_GET_INT(p->prop[0].u.value) == p->u.array.count &&
+          (get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE) != 0))
+        return NULL;
+    new_len = p->u.array.count + argc;
+    if (new_len > INT32_MAX)
+        return NULL;
+    if (new_len > p->u.array.u1.size) {
+        /* expand_fast_array_append without the throw */
+        if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
+            new_len = JS_ARRAY_MIN_ROOM;
+        new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
+        bytes = sizeof(JSValue) * new_size;
+        values = js_realloc_rt(ctx->rt, p->u.array.u.values, bytes);
+        if (!values)
+            return NULL;
+        if (js_malloc_usable_size_rt(ctx->rt, values) > bytes)
+            new_size += (js_malloc_usable_size_rt(ctx->rt, values) - bytes) / sizeof(JSValue);
+        p->u.array.u.values = values;
+        p->u.array.u1.size = new_size;
+    }
+    return p;
+}
+
+/* The second step: the elements added, as the fast case of js_array_push
+   adds them. Returns the new length. */
+static JSValue js_array_push_add(JSContext *ctx, JSObject *p, int argc,
+                                 JSValueConst *argv)
+{
+    uint32_t new_len = p->u.array.count + argc;
+    int i;
+
+    for(i = 0; i < argc; i++)
+        p->u.array.u.values[p->u.array.count + i] = JS_DupValue(ctx, argv[i]);
+    p->prop[0].u.value = JS_NewInt32(ctx, new_len);
+    p->u.array.count = new_len;
+    return JS_NewInt32(ctx, new_len);
 }
 
 static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,

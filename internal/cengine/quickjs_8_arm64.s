@@ -11428,7 +11428,7 @@ TEXT ·JS_RegExpExec(SB), $136-48
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x17ffffe8
-	MOVD $·engine_rodata+12424(SB), R9
+	MOVD $·engine_rodata+12440(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000060
 	WORD $0xaa0a03e0
@@ -11809,7 +11809,7 @@ TEXT ·js_regexp_exec(SB), $264-48
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf9407fe8
 	WORD $0xf94087f5
-	MOVD $·engine_rodata+12166(SB), R22
+	MOVD $·engine_rodata+12182(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91038114
 	WORD $0xf8050ee0
@@ -13454,7 +13454,7 @@ TEXT ·js_regexp_get_source(SB), $136-32
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf94047e8
 	WORD $0xf9403ff5
-	MOVD $·engine_rodata+12166(SB), R22
+	MOVD $·engine_rodata+12182(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8030ee0
@@ -13639,7 +13639,7 @@ TEXT ·js_regexp_get_flag(SB), $88-40
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf94027e8
 	WORD $0xf9402ff5
-	MOVD $·engine_rodata+12166(SB), R22
+	MOVD $·engine_rodata+12182(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91020114
 	WORD $0xf8030ee0
@@ -13738,7 +13738,7 @@ TEXT ·js_regexp_compile(SB), $152-48
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf9404fe8
 	WORD $0xf94047f5
-	MOVD $·engine_rodata+12166(SB), R22
+	MOVD $·engine_rodata+12182(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8050ee0
@@ -22246,7 +22246,7 @@ TEXT ·js_string_normalize(SB), $120-48
 	WORD $0x7100011f
 	WORD $0xb81ec008
 	WORD $0x54000d0d
-	MOVD $·engine_rodata+14064(SB), R22
+	MOVD $·engine_rodata+14080(SB), R22
 	WORD $0x910102f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
