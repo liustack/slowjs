@@ -36,24 +36,14 @@ var PGORequired = []string{"JS_RegvmRun"}
 // remarks, with the line and column of each call site, which the replay names.
 var RemarksFlags = []string{"-gline-tables-only", "-Rpass=inline"}
 
-// PGOPinned are the options of LLVM that keep decisions from the profile
-// whose cost depends on the data: each would save a little where the training
-// ran and cost something every turn of a loop, or every time a block runs, where
-// other data runs it more (docs/changes/generator.md, what the profile decides).
+// PGOPinned are the options of LLVM that keep a decision from the profile
+// whose cost depends on the data (docs/changes/generator.md, what the profile
+// decides).
 var PGOPinned = []string{
 	// No size optimization of code the training ran little or never: code
 	// cold in tifa's pages but hot elsewhere (loading a bundle: +6% to +8%
 	// instructions, test262: +2.7%) would get slower.
 	"-pgso=false",
-	// The unroller keeps unrolling a loop the training ran fewer than five
-	// turns an entry (a string a few characters long), as it does without a
-	// profile.
-	"-flat-loop-tripcount-threshold=0",
-	// The vectorizer does not read the turns of a loop from the profile.
-	"-loop-vectorize-with-block-frequency=false",
-	// LoopSink does not move work out of the block before a loop into the
-	// blocks of the loop the training ran little.
-	"-sink-freq-percent-threshold=0",
 }
 
 // ProfileFlags are the flags of the second compile besides the replay. The
