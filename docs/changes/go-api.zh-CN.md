@@ -390,7 +390,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## 每个入口都拒绝别的 VM 的 Value
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `Value` 持有它所在 VM 内存里的一个引用。交给别的 VM 后，那个 VM 会留着一个指向不归它管的内存的指针：`SetPropertyValue` 把它存进对象，另一个 VM 关闭后，这个对象就指向已经解除映射的内存，两个 VM 都开着时，它也可能被错误的分配器释放。`Call`、`Value.Call`、`NewArray` 和 `Builtin` 的结果检查了这一点。`SetPropertyValue`（它的值和接收者）、`SetProperty`、`GetPropertyValue` 和 `GetProperty` 的接收者、`EvalThis` 和 `EvalThisValue` 的 `this`，以及 `RegisterFunc` 的 Go 函数返回的 `Value`（单独返回、在多个结果里、在切片或 map 里），都没有检查。
 
@@ -404,7 +404,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## 值的构造函数会报告内存不足
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `NewString`、`NewStringLatin1`、`NewStringUTF16` 和 `NewObjectValue` 不看引擎返回了什么。内存不足时，它们把引擎的异常标记包成 `Value` 返回，错误为 nil，并把内存不足的错误留在上下文里挂起，等下一个调用去发现。
 
@@ -416,7 +416,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## 转换失败的结果不留下任何东西
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `RegisterFunc` 或 `RegisterHostFunc` 的 Go 函数把它的结果持有的、指向本 VM 的 `Value` 的引用交给这次调用。结果转换到一半失败时（比如遇到一个 channel），它前面那些结果造出的值永远不会被释放，它后面的 `Value` 也一样：channel 前面的一个 4 KiB 字符串会一直留在 VM 里，脚本每接住一次就多 4 KiB 左右，GC 也收不回来。转换拒绝的结果里的 `Value` 同样留下：数组、指向指针的指针、以 `Value` 为键或键的类型 javascript 用不了的 map（有条目时才拒绝，空 map 和以前一样是 `{}`）。宿主函数连同错误一起返回的值里的 `Value` 也留下，转换 panic 时（比如某个 `Error` 方法 panic）则全部留下。
 
@@ -430,7 +430,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## UndefinedValue 作为参数和属性值
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `UndefinedValue` 不属于任何 VM，`Value.Call` 的文档就让人把它当作 `this` 传。把它作为 `Call` 和其他调用方法的参数，或作为 `SetPropertyValue` 的值传入时，会因空指针 panic：这些地方用 `Value.Dup` 复制它，而 `Value.Dup` 需要值所在的 VM。现在它们直接复制值本身，这个值没有引用计数，不需要 VM，所以 `UndefinedValue` 和零值 `Value` 在这些地方都是 `undefined`，和 `NewArray` 以及 `Builtin` 的结果一样。`RegisterFunc` 的 Go 函数返回的 `Value`（单独返回或在切片、map 里）也这样读，所以零值 `Value` 在那里同样是 `undefined`，原来是数字 0。它作为 `Value.Call` 和 `EvalThis` 的 `this`、作为属性方法的接收者时也是这样。
 
@@ -442,7 +442,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## 拒绝在对 VM 的调用进行中 Close
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 在这个 VM 上的 javascript 调用的 Go 函数里对 VM 调用 `Close`，会释放运行时、解除内存映射、清空 VM 的状态，而引擎此时还在 Go 函数下面运行，用的正是 `Close` 刚交还的栈帧和内存。Go 函数返回后，调用外围的代码读到被清空的状态，以空指针 panic，从运行脚本的 `Eval` 里冒出来。
 
@@ -454,7 +454,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## Then 返回 then getter 抛出的异常
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `Value.Then` 读取 promise 的 `then` 后，不看读取的结果就去调用。`then` 的 getter 抛出异常时，它调用的是异常标记，返回 `TypeError: not a function`，而不是 getter 抛出的东西。现在它返回读取时的异常，和 `GetPropertyValue` 一样。
 
@@ -464,7 +464,7 @@ asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26
 
 ## Go map 变成只有自有数据属性的对象
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来每个键用 `JS_SetPropertyStr` 设置，它接收 C 字符串，像 `obj[key] = value` 那样赋值。所以键在第一个 NUL 字节处被截断，`"a"` 和 `"a\x00b"` 变成同一个键，丢掉一个值。键 `"__proto__"` 会运行 `Object.prototype` 的 setter，改掉对象的原型，而它本该只是一个键。页面在 `Object.prototype` 上以某个键的名字放的 setter，会拿到 map 的值运行，这个键也就不在对象上。
 
@@ -476,7 +476,7 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 
 ## 作为 any 返回的 Value 按 Value 接管
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 结果类型为 `any` 的 `RegisterFunc` 的 Go 函数，或者 `RegisterHostFunc` 的函数，都可以返回 `Value`。原来只有类型就是 `Value` 的结果，以及切片或 map 里的 `Value` 会被当作 `Value` 读。放在 `any` 里的 `Value` 走 `Value.MarshalJSON` 的 JSON：别的 VM 的 `Value` 会经由那个 VM 读出，`UndefinedValue` 和零值 `Value` 会因空指针 panic，本 VM 的 `Value` 被复制成一个新值，它持有的引用却永远留在 VM 里，每次返回 4 KiB 字符串的调用多留 4 KiB 左右。
 
@@ -488,7 +488,7 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 
 ## 结果两次到达的同一个位置只算一个引用
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `Value` 里没有任何东西能区分副本和 `Dup`：两者是同样的两个字。所以一个引用就是一个装着本 VM 的 `Value` 的位置：一个结果，切片或数组的一个元素，map 的一个键或值，指针的目标，以及装着它们之一的 `any`。不经 `Dup` 复制到两个位置的 `Value`，是函数并不拥有的两个引用，`Value` 的文档也这样说。转换每遇到一次 `Value` 就接管一个引用，所以结果两次到达的同一个位置，比如以 `[]any{s, s}` 返回的 `Value` 切片 `s`、返回两次的同一个 map，或者同一个数组上互相重叠的两个切片，会在函数只有一个引用的地方交给引擎两个：对象在脚本还在用的时候就被释放了。
 
@@ -500,7 +500,7 @@ Go 函数返回的 Go map 会变成一个对象，键就是 map 的键。原来�
 
 ## 包含自身的结果是一个错误
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的切片 `s`，转换会一直递归，直到 Go 在 1 GB 的栈上限处以 `fatal error: stack overflow` 停下，任何 `recover` 都接不住：进程直接退出。包含自身的类型（比如 `type loop []loop`）也一样。
 
@@ -512,7 +512,7 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 ## 结果的引用在程序代码运行之前取下
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 结果的转换会运行程序的代码：错误的 `Error` 方法、结构体的 `MarshalJSON`，以及结构体里 `Value` 的 `toJSON`，它还能再调用 Go。这些代码可以在转换进行中改动结果。切片变得包含自身时，比如某个 `Error` 执行了 `s[1] = s`，转换会一直递归到进程因栈溢出退出。放进去的别的 VM 的 `Value`，会在不拥有它的 VM 里被改动计数。被拿走的 `Value` 则永远不会被释放。
 
@@ -524,7 +524,7 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 ## NewArray 在调用的限制处停下
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 在 javascript 调用的 Go 函数里，`VM.NewArray` 现在每 16,384 个元素看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，由 Builtin 返回出去。引擎加一个元素约 50 ns，每个元素都是从 Go 发起的一次调用，期间不读中断标志：4 Mi 个元素的数组在 M 系列 Mac 上要 0.14 到 0.2 秒。造数组期间来的停止要等到造完才生效，还可能超过脚本被杀掉之前的宽限期（[ErrKilled](go-api.zh-CN.md#error-说明调用为什么结束)）：对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')` 会造这样的数组，造数组期间来的超时会让它的 VM 被杀掉。少于 16,384 个元素的数组什么也不读，用时和原来一样：在 M 系列 Mac 上，返回 3 个元素数组的 Builtin 改动前后每次调用都是 155 ns。在调用 javascript 之外造的数组，以及在停止之前造完的数组，和原来一样。
 

@@ -255,7 +255,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 ## BigInt 的长运算读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 一个 BigInt 最多 1,048,576 位，也就是 32,768 个 32 位的 limb（引擎编译时不用 128 位整数，所以每个目标上 limb 都是 32 位）。乘法、除法、乘方，以及在不是 2 的幂的进制下和字符串互转，耗时是 limb 数的平方，而且它们的循环都不读中断标志：`String(10n ** 300000n)` 要跑约 52,000 次引擎轮询（每次 10,000 个计数），在 Apple M 上要 1.9 s，五十万位的乘法或除法约 12,000 次。生成的代码在这些循环里照样轮询，所以 Go 宿主看到了停止请求，50 ms 和 1000 次轮询之后就杀掉了脚本：超时设 20 ms 时，这些调用都在开始后 70 ms 以 `ErrKilled` 结束，VM 只能 `Close`。
 
@@ -276,7 +276,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 ## 把长字符串转成数字时读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 一个字符串最多十亿个字符，把它转成数字或 BigInt 要把这些字符走好几遍：转成 UTF-8，跳过数字前后的空白，在 `js_atof` 里扫描数字，复制一遍，再由 `js_atod` 或 `js_bigint_from_string` 读这些数字。这些循环都不读中断标志。在 linux/amd64 上 `+'1'.repeat(1 << 27)` 一次要 250 到 600 ms，对 128 Mi 个零调用 `BigInt` 要 285 ms。超时设 20 ms 时，`Number`、一元 `+`、`isNaN`、`parseInt`、`parseFloat`、`BigInt`、BigInt 和字符串的 `==` 与 `<`、对数字或空白做 `JSON.parse`、对数字字面量做 `eval`，每一种都在开始后 70 ms 以 `ErrKilled` 被杀掉。
 
@@ -299,7 +299,7 @@ eval 超时和 `Interrupt` 在几毫秒内停住一个编译正则的循环，�
 
 ## 解析很长的源码时读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 脚本可以把十亿个字符的源码交给 `eval`、`Function` 或 `JSON.parse`。`js_parse_init` 会把源码计入中断检查（[见上文](#解析和构建字符串计入中断检查)），但处理函数要到解释器下一次轮询才被调用，而解析器和编译器走过一个很长的记号或很长一段源码的循环都不读标志：开头的 hashbang 行，两个记号之间的空白和换行，注释、标识符、字符串、模板或正则，其中转义 `\u{...}` 的数字，长名字的复制和它的 atom，长记号之后代码的行号和列号，以及点出这个名字的错误消息。在 linux/amd64 上，对 64 Mi 个字符的标识符做一次 `eval` 要 436 ms，对同样长的注释要 225 ms。超时设 20 ms 时，对 64 Mi 个空白、换行、注释字符或标识符字符做 `eval`，都在开始后 70 ms 以 `ErrKilled` 被杀掉，而在扫完很长的标识符、字符串或正则之后才来的停止请求，要再过几千次轮询才停下。
 
@@ -331,7 +331,7 @@ eval 超时依次设成一次调用用时的每个六分之一时，这些对 16
 
 ## 比较和复制很长的字符串时读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 脚本可以持有十亿个字符的字符串，在一次调用里比较或复制它们。两个扁平字符串的 `<`、`<=`、`>` 和 `>=`，以及不带比较函数的数组排序，在 `js_string_compare` 里走过这两个字符串，不读中断标志。`Symbol.for` 对它的键做哈希、和注册表里的键比较，也是这样。把字符串复制进字符串缓冲区（`string_buffer_write8` 和 `string_buffer_write16`）时，`join`、`padEnd`、`replace`、`String.raw`、`Function` 和许多别的函数都用它，它把很长的字符串一口气复制完，只有每字符一字节的字符串写进每字符两字节的缓冲区时除外。在 linux/amd64 上，对两个相同的 64 Mi 个字符的字符串做 `s < s2` 要 40 ms，中途请求停止，要到截止后最多 34 ms、见到请求后 5,610 次轮询才停下。对这样的键做 `Symbol.for` 时请求停止，最多晚 65 ms，复制时晚 31 到 45 ms，见到请求后过了 40 到 52 次轮询。
 
@@ -358,7 +358,7 @@ eval 超时依次设成一次调用用时的每个六分之一时，这些对 64
 
 ## 改变很大的 ArrayBuffer 的大小时读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `ArrayBuffer.prototype.resize` 和 `transfer` 用 `js_realloc` 改缓冲区那块内存的大小。`heap_realloc` 没法在原地改一块内存的大小时，堆就搬动这块内存：专用 chunk 里的块缩到不足 chunk 的一半时，在每个系统上都要搬，块长得超出 chunk、而宿主不能重映射 chunk 时（darwin 和 windows）要搬，共享 chunk 里后面没有空位的块也要搬。它用一次 `memcpy` 复制整块，`resize` 和 `transfer` 接着用一次 `memset` 清零缓冲区多出来的字节。两处都不读中断标志。把 256 MiB 的 `ArrayBuffer` 先 `resize` 到四分之一再改回来，在 linux/amd64 上约 150 ms，要复制 64 MiB、清零 192 MiB：eval 超时依次设成这次调用的每个六分之一时，5 次停止里有 4 次在约 143 ms、清零做完之后才停下，见到请求后过了 136 到 767 次轮询，`transfer` 的 5 次里也有 4 次这样。
 
@@ -389,7 +389,7 @@ eval 超时依次设成一次调用用时的每个六分之一时，把 256 MiB 
 
 ## normalize 和 Map 变大时的内存不足
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `String.prototype.normalize` 把字符串分解进一个会变大的缓冲区（`to_nfd`）。变大失败时，`unicode_normalize` 返回失败却不释放这个缓冲区，`js_string_normalize1` 把失败返回出去，也不抛异常：调用失败了，却没有挂着的异常，Go API 没法把它报告成内存不足，运行时也永远留着这块内存。对 `'ﬃ'.repeat(300).normalize('NFKD')` 在从零到 16 KiB 的每个剩余空间下扫一遍，有 40 个空间失败时抛出的异常不是无法捕获的，158 个运行时释放时还有内存块在用。上游 QuickJS 是同样的代码（commit `092277ac`）。
 
@@ -403,7 +403,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## 没有调用的循环也会在挂起的无法捕获的异常处结束
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 内置函数遇到无法捕获的异常时，可以只把它记下来，然后像没出错一样返回。promise 的 resolve 函数拿到一个 thenable，它的 `then` getter 内存不足，resolve 函数就让 promise 被拒绝，然后返回 `undefined`（`js_promise_resolve_function_call`）。在第一个 `await` 之前失败的 async 函数返回它的 promise，异步生成器的 `next`、说明符转换失败的 `import()`、由同步迭代器造出的异步迭代器的 `next` 也一样。它们都用 `js_get_exception` 拿异常的一份副本，这个函数让无法捕获的异常继续挂起，然后它们要么不经调用就拒绝 promise，要么像上游那样不管调用拒绝函数失败了没有。脚本带着挂起的异常接着运行。它的下一次调用会失败（`js_call_checks`），可是没有调用的循环只读中断标志，而没有谁置过这个标志。所以没设超时的时候，`res({ get then() { /* 内存不足 */ } }); for (;;) {}` 会一直运行下去，getter 里调用的 Go 函数 panic 之后，同样的循环也一样。设了超时，`Interrupt` 和杀死前的宽限期也要到截止时间才起作用。
 
@@ -417,7 +417,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## 检查正则的 flags 时不再遍历长字符串
 
-发布版本：未发布。
+发布版本：v0.30.2。
 
 编译正则时，flags 是在一份 UTF-8 副本上检查的（`js_compile_regexp` 里的 `JS_ToCStringLen`），而转换先要数整个字符串里的非 ASCII 字符，中途不读中断标志。所以 `new RegExp('a', 'g'.repeat(1 << 24))`，或者在 `eval` 里写 `/a/` 后面跟 16 Mi 个 flags 字符，在停下请求之后还要跑 amd64 上 140 次、arm64 上 55 次轮询，才抛出 `SyntaxError`，更长的字符串会一路跑向 1,000 次轮询，过了这个数轮询就会杀掉脚本。`TestParseStops` 在 GitHub 的 Intel macOS 运行器上碰到了它：在调用六分之五处的停下请求正好落在这次计数里。
 
@@ -439,7 +439,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## 字节码调用在 eval 超时内转换结果
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `EvalBytecode` 和 `EvalSharedBytecode` 在 eval 超时内运行字节码，却在调用结束之后才把结果转成 Go 值，这时既没有超时，也不会被杀死。这次转换会运行 javascript：对象要转成 JSON，会运行它的 `toJSON` 和 getter，BigInt 会运行 `BigInt.prototype.toString`。所以 `({ toJSON() { for (;;) {} } })` 的字节码不管超时设成多少，都会让调用永远挂住，`Interrupt` 也停不下它。字节码的读取同样在调用之外。
 
@@ -451,7 +451,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## 读取异常时遇到的无法捕获的异常结束调用
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 为了报告脚本抛出的异常，VM 要读取它：通过它的 `toString` 得到字符串形式，再读 `name`、`message`、`stack`、`lineNumber`、`columnNumber` 和 `fileName`，这些都可以是 getter。这会运行 javascript，VM 过去把这段 javascript 抛出的任何东西都丢掉，把这个字段留空，这样每次读都会再抛的值也能被报告。中断、eval 超时和内存不足也被这样丢掉。所以在超时下，`throw { toString() { for (;;) {} } }` 返回的 `*Error` 所有字段都为空，`Uncatchable` 和 `Interrupted` 都没有设置。在 Go 函数里更糟：参数转换遇到异常（一个会抛的 `toJSON`），读这个异常时内存不足，内存不足的错误被丢掉，转换改抛一个可以捕获的 `TypeError`，脚本接住它，一直运行到结束。
 
@@ -465,7 +465,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## Intl 读不了的字符串参数会结束调用
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个 VM 没有内存去读的字符串时，现在以内存不足的错误结束调用，原来是在 Go 里 panic。用 `+` 拼出来的字符串（rope）在 Go 读它之前要先拼接成一整段，拼接用的内存算在 VM 的上限里。拼接失败时，`Args.String` 说这个参数不是字符串，格式化器既没拿到数字也没拿到字符串，于是以 `intl: unexpected number bridge value` panic，这个 panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 也一样把这种参数当成空字符串接着干，白做一遍活，最后调用才以内存不足的错误结束。
 
@@ -475,7 +475,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## Intl 在长列表的循环里读中断标志
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的每个 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 的 `format` 和 `formatToParts`，现在不管列表多长都会在 `Interrupt` 和 eval 超时时停下。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完为止。`getCanonicalLocales` 找重复还要把每个标签和它前面的所有标签比一遍：10 万个互不相同的标签大约要比较 50 亿次，在 GCP 上要 8.5 秒，什么超时都打断不了。
 
@@ -487,7 +487,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 ## fmt 的函数在输出放不下时结束调用
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 包 `fmt` 的 `fmt.sprintf`、`fmt.printf`、`fmt.sprint` 和 `fmt.println`，在输出可能放不进 VM 在内存上限下还剩的空间时，现在会在 Go 造出输出之前以无法捕获的内存不足错误结束调用。Go 的 fmt 先造出一次调用的全部输出，再返回或写出去，而很短的格式就能要很长的输出：`fmt.sprintf("%1000000[1]s".repeat(256), "")` 的格式只有 3 KiB，要的却是 256 MB。在限额 16 MiB 的 VM 里，Go 先分配了 1,210 MiB，在 GCP 上花了 1.4 秒，VM 才拒绝这个字符串，而 `printf` 会把它全部写到 stdout。
 

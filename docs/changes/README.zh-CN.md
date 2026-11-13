@@ -29,14 +29,14 @@ read_when:
 | 引擎在释放对象时被请求的回收什么也不做 | v0.29.10 | [c-engine.md](c-engine.zh-CN.md#释放对象时被要求回收) |
 | 离开进入引擎的调用时发生到一半的 panic 会让 VM 报废，不论是什么 panic，包括低于 0x1000 的地址错误，之后不会再进入那个引擎，连释放一个值也不行 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#哪些-panic-会让-vm-报废) |
 | 每个调用了别的函数的生成函数都有 Go 的栈检查，所以地址错误不再取决于生成器在一串没有栈检查的函数下面留出的空间 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#没有栈检查的函数) |
-| 在 windows 上每个生成函数在栈指针下面多留出 12 KiB 空间，这样在带 AMX 的 CPU 上，系统在出错时写下的 CPU 状态仍在栈内 | Unreleased | [c-engine.md](c-engine.zh-CN.md#windows-上给故障留的空间) |
-| 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
-| `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
-| 以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完。字节码版本 8 | Unreleased | [c-engine.md](c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case) |
-| 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | Unreleased | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
-| 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
-| 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | Unreleased | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
-| 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
+| 在 windows 上每个生成函数在栈指针下面多留出 12 KiB 空间，这样在带 AMX 的 CPU 上，系统在出错时写下的 CPU 状态仍在栈内 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#windows-上给故障留的空间) |
+| 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
+| `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
+| 以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完。字节码版本 8 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case) |
+| 超过 32 个参数的调用和超过 30 个替换的带标签模板，把前 32 个之后的参数放进数组传，和带展开参数的调用一样 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#超过-32-个参数的调用用数组传参) |
+| 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
+| 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
+| 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
 | 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
 | 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
 | 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
@@ -80,18 +80,18 @@ read_when:
 | RegisterStartTag 和 RegisterEndTag，用 C 写的 React DOM 为元素写出的开始标签和结束标签 | v0.29.10 | [go-api.md](go-api.zh-CN.md#registerstarttag-和-registerendtag) |
 | 比引擎检查时用的版本更新的 Go 会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#比检查过引擎的-go-更新的-go-会让构建停下) |
 | 改变汇编器编码引擎方式的构建选项会让构建停止 | v0.29.11 | [go-api.md](go-api.zh-CN.md#会改变汇编器对引擎编码方式的构建选项会让构建停下) |
-| 每个接收 Value 的入口都拒绝别的 VM 的 Value | Unreleased | [go-api.md](go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value) |
-| 值的构造函数会报告内存不足 | Unreleased | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
-| 转换失败的结果不留下任何东西 | Unreleased | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
-| UndefinedValue 作为参数和属性值 | Unreleased | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
-| 拒绝在对 VM 的调用进行中 Close | Unreleased | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
-| Then 返回 then getter 抛出的异常 | Unreleased | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
-| Go map 变成只有自有数据属性的对象 | Unreleased | [go-api.md](go-api.zh-CN.md#go-map-变成只有自有数据属性的对象) |
-| 作为 any 返回的 Value 按 Value 接管 | Unreleased | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
-| 结果两次到达的同一个位置只算一个引用 | Unreleased | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
-| 包含自身的结果是一个错误 | Unreleased | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
-| 结果的引用在程序代码运行之前取下 | Unreleased | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
-| NewArray 在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
+| 每个接收 Value 的入口都拒绝别的 VM 的 Value | v0.30.2 | [go-api.md](go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value) |
+| 值的构造函数会报告内存不足 | v0.30.2 | [go-api.md](go-api.zh-CN.md#值的构造函数会报告内存不足) |
+| 转换失败的结果不留下任何东西 | v0.30.2 | [go-api.md](go-api.zh-CN.md#转换失败的结果不留下任何东西) |
+| UndefinedValue 作为参数和属性值 | v0.30.2 | [go-api.md](go-api.zh-CN.md#undefinedvalue-作为参数和属性值) |
+| 拒绝在对 VM 的调用进行中 Close | v0.30.2 | [go-api.md](go-api.zh-CN.md#拒绝在对-vm-的调用进行中-close) |
+| Then 返回 then getter 抛出的异常 | v0.30.2 | [go-api.md](go-api.zh-CN.md#then-返回-then-getter-抛出的异常) |
+| Go map 变成只有自有数据属性的对象 | v0.30.2 | [go-api.md](go-api.zh-CN.md#go-map-变成只有自有数据属性的对象) |
+| 作为 any 返回的 Value 按 Value 接管 | v0.30.2 | [go-api.md](go-api.zh-CN.md#作为-any-返回的-value-按-value-接管) |
+| 结果两次到达的同一个位置只算一个引用 | v0.30.2 | [go-api.md](go-api.zh-CN.md#结果两次到达的同一个位置只算一个引用) |
+| 包含自身的结果是一个错误 | v0.30.2 | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
+| 结果的引用在程序代码运行之前取下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
+| NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 
 ## 守得住的限额
 
@@ -116,19 +116,19 @@ read_when:
 | repeat 每 65,536 个字符读取一次中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#repeat-每-65536-个字符读一次中断标志) |
 | 编译一个很长的正则时，每个长循环都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#编译一个长正则时在每个长循环里读中断标志) |
 | 正则的类不管有多少字符或字符串，都读取中断标志 | v0.30.1 | [uncatchable.md](uncatchable.zh-CN.md#无论正则的类有多少字符或字符串都读中断标志) |
-| 字节码调用在 eval 超时内转换结果 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果) |
-| 读取异常时遇到的无法捕获的异常结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用) |
-| Intl 读不了的字符串参数会结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用) |
-| Intl 在长列表的循环里读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
-| fmt 的函数在输出放不下时结束调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用) |
-| BigInt 的长运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#bigint-的长运算读中断标志) |
-| 把长字符串转成数字时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#把长字符串转成数字时读中断标志) |
-| 解析很长的源码时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#解析很长的源码时读中断标志) |
-| 比较和复制很长的字符串时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#比较和复制很长的字符串时读中断标志) |
-| 改变很大的 ArrayBuffer 的大小时读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#改变很大的-arraybuffer-的大小时读中断标志) |
-| normalize 和 Map 变大时的内存不足 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
-| 没有调用的循环也会在挂起的无法捕获的异常处结束 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束) |
-| 检查正则的 flags 时不再遍历长字符串 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#检查正则的-flags-时不再遍历长字符串) |
+| 字节码调用在 eval 超时内转换结果 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果) |
+| 读取异常时遇到的无法捕获的异常结束调用 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用) |
+| Intl 读不了的字符串参数会结束调用 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用) |
+| Intl 在长列表的循环里读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志) |
+| fmt 的函数在输出放不下时结束调用 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用) |
+| BigInt 的长运算读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#bigint-的长运算读中断标志) |
+| 把长字符串转成数字时读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#把长字符串转成数字时读中断标志) |
+| 解析很长的源码时读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#解析很长的源码时读中断标志) |
+| 比较和复制很长的字符串时读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#比较和复制很长的字符串时读中断标志) |
+| 改变很大的 ArrayBuffer 的大小时读中断标志 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#改变很大的-arraybuffer-的大小时读中断标志) |
+| normalize 和 Map 变大时的内存不足 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
+| 没有调用的循环也会在挂起的无法捕获的异常处结束 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束) |
+| 检查正则的 flags 时不再遍历长字符串 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#检查正则的-flags-时不再遍历长字符串) |
 
 ## 错误和调用栈
 
@@ -136,8 +136,8 @@ read_when:
 | --- | --- | --- |
 | 错误的 stack 在第一次读取时才格式化 | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#错误的-stack-在第一次读取时才格式化) |
 | 无限递归抛出 RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#无限递归抛出-rangeerror) |
-| 带展开参数的 new 会说出被调用的不是构造函数 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数) |
-| 通过 call 和绑定函数的调用不在调用栈里多出一行 | Unreleased | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行) |
+| 带展开参数的 new 会说出被调用的不是构造函数 | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数) |
+| 通过 call 和绑定函数的调用不在调用栈里多出一行 | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行) |
 
 ## 时间和 Intl
 
@@ -156,10 +156,10 @@ read_when:
 | Temporal 的 duration 使用 DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-的-duration-使用-durationformat) |
 | 引擎读 Go 的时钟 | v0.27.0 | [time-and-intl.md](time-and-intl.zh-CN.md#引擎读-go-的时钟) |
 | Date、Intl 和 Temporal 每个 VM 共用一个墙上时钟，用 `VM.SetClock` 设置 | v0.28.2 | [time-and-intl.md](time-and-intl.zh-CN.md#每个-vm-一个墙上时钟) |
-| Intl.Segmenter 边读边找分段 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#intlsegmenter-边读边找分段) |
-| Temporal 格式的缓存只保留短请求 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
-| 数字选项先检查范围再向下取整 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
-| 长的 locale 标签按长度的线性时间解析 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
+| Intl.Segmenter 边读边找分段 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#intlsegmenter-边读边找分段) |
+| Temporal 格式的缓存只保留短请求 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
+| 数字选项先检查范围再向下取整 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
+| 长的 locale 标签按长度的线性时间解析 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
 
 ## Temporal
 
@@ -173,8 +173,8 @@ read_when:
 | --- | --- | --- |
 | 跳到正则可能匹配的位置 | v0.26.15 | [regexp.md](regexp.zh-CN.md#跳到正则可能匹配的位置) |
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
-| 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | Unreleased | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
-| 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | Unreleased | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
+| 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | v0.30.2 | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
+| 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | v0.30.2 | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 
@@ -183,7 +183,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | 搜索直接跳到字符串所在的位置 | v0.27.3 | [strings.md](strings.zh-CN.md#搜索直接跳到字符串所在的位置) |
-| symbol 有自己的字符串 | Unreleased | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
+| symbol 有自己的字符串 | v0.30.2 | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
 
 ## JSON
 
@@ -221,9 +221,9 @@ read_when:
 | 内置类的对象找到它们原型的空 shape | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内置类的对象找到它们原型的空-shape) |
 | 通过 shape 由哪个 shape 长出来来找到它 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#通过-shape-由哪个-shape-长出来来找到它) |
 | 单独死去的对象立刻释放 | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#单独死去的对象立刻释放) |
-| defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
-| 对象字面量的 shape 至少有空对象的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
-| for in 循环对一个 shape 只问一次能不能从它列出键 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
+| defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
+| 对象字面量的 shape 至少有空对象的空间 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
+| for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
 
 ## 内存
@@ -244,7 +244,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | WeakMap 的 ephemeron 回收 | v0.27.2 | [weak-collections.md](weak-collections.zh-CN.md) |
-| WeakRef 把目标留到任务结束，调用回到 Go 时宿主结束任务 | 未发布 | [weak-collections.md](weak-collections.zh-CN.md#weakref-把目标留到任务结束) |
+| WeakRef 把目标留到任务结束，调用回到 Go 时宿主结束任务 | v0.30.2 | [weak-collections.md](weak-collections.zh-CN.md#weakref-把目标留到任务结束) |
 
 ## 引擎里去掉的东西
 

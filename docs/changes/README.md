@@ -29,14 +29,14 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A collection asked for while the engine frees objects does nothing | v0.29.10 | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
 | A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | v0.29.11 | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
 | Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | v0.29.11 | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
-| On windows every generated function makes room for 12 KiB more below its stack pointer, so that the state of the CPU the system writes at a fault stays inside the stack on CPUs with AMX | Unreleased | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
-| The generated code reads its arguments and writes its results by name through FP, as Go promises, and no longer at an offset from SP that depends on how the assembler lays out a frame. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#arguments-and-results-by-name) |
-| `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | Unreleased | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
-| The string cases of a `switch` that end with any conditional jump take one opcode, and a chain of them runs in one dispatch. Bytecode version 8 | Unreleased | [c-engine.md](c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) |
-| A call of more than 32 arguments and a tagged template of more than 30 substitutions pass the arguments past the first 32 in an array, as a call with a spread does | Unreleased | [c-engine.md](c-engine.md#calls-of-more-than-32-arguments-pass-them-in-an-array) |
-| The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | Unreleased | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
-| A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | Unreleased | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
-| The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | Unreleased | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
+| On windows every generated function makes room for 12 KiB more below its stack pointer, so that the state of the CPU the system writes at a fault stays inside the stack on CPUs with AMX | v0.30.2 | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
+| The generated code reads its arguments and writes its results by name through FP, as Go promises, and no longer at an offset from SP that depends on how the assembler lays out a frame. The machine code is the same | v0.30.2 | [c-engine.md](c-engine.md#arguments-and-results-by-name) |
+| `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | v0.30.2 | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
+| The string cases of a `switch` that end with any conditional jump take one opcode, and a chain of them runs in one dispatch. Bytecode version 8 | v0.30.2 | [c-engine.md](c-engine.md#a-read-of-a-local-and-its-get_field-and-the-case-of-a-switch-on-a-string) |
+| A call of more than 32 arguments and a tagged template of more than 30 substitutions pass the arguments past the first 32 in an array, as a call with a spread does | v0.30.2 | [c-engine.md](c-engine.md#calls-of-more-than-32-arguments-pass-them-in-an-array) |
+| The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | v0.30.2 | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
+| A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | v0.30.2 | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
+| The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | v0.30.2 | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
 | A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
 | A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
@@ -80,18 +80,18 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | RegisterStartTag and RegisterEndTag, the start and end tags React DOM writes for an element written in C | v0.29.10 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 | A Go newer than the one the engine was checked with stops the build | v0.29.11 | [go-api.md](go-api.md#a-go-newer-than-the-one-the-engine-was-checked-with-stops-the-build) |
 | A build option that changes how the assembler encodes the engine stops the build | v0.29.11 | [go-api.md](go-api.md#a-build-option-that-changes-how-the-assembler-encodes-the-engine-stops-the-build) |
-| A Value of another VM is refused at every entry that takes one | Unreleased | [go-api.md](go-api.md#a-value-of-another-vm-is-refused-at-every-entry) |
-| The constructors of values report running out of memory | Unreleased | [go-api.md](go-api.md#the-constructors-of-values-report-running-out-of-memory) |
-| A result that fails to convert leaves nothing behind | Unreleased | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
-| UndefinedValue as an argument and a property value | Unreleased | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
-| Close inside a call into the VM is refused | Unreleased | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
-| Then returns the exception of a then getter | Unreleased | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
-| A Go map becomes an object of its own data properties | Unreleased | [go-api.md](go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties) |
-| A Value returned as an any is taken as a Value | Unreleased | [go-api.md](go-api.md#a-value-returned-as-an-any-is-taken-as-a-value) |
-| A place a result reaches twice is one reference | Unreleased | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
-| A result that contains itself is an error | Unreleased | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
-| The references of a result are taken before code of the program runs | Unreleased | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
-| NewArray stops at the limits of the call | Unreleased | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
+| A Value of another VM is refused at every entry that takes one | v0.30.2 | [go-api.md](go-api.md#a-value-of-another-vm-is-refused-at-every-entry) |
+| The constructors of values report running out of memory | v0.30.2 | [go-api.md](go-api.md#the-constructors-of-values-report-running-out-of-memory) |
+| A result that fails to convert leaves nothing behind | v0.30.2 | [go-api.md](go-api.md#a-result-that-fails-to-convert-leaves-nothing-behind) |
+| UndefinedValue as an argument and a property value | v0.30.2 | [go-api.md](go-api.md#undefinedvalue-as-an-argument-and-a-property-value) |
+| Close inside a call into the VM is refused | v0.30.2 | [go-api.md](go-api.md#close-inside-a-call-into-the-vm-is-refused) |
+| Then returns the exception of a then getter | v0.30.2 | [go-api.md](go-api.md#then-returns-the-exception-of-a-then-getter) |
+| A Go map becomes an object of its own data properties | v0.30.2 | [go-api.md](go-api.md#a-go-map-becomes-an-object-of-its-own-data-properties) |
+| A Value returned as an any is taken as a Value | v0.30.2 | [go-api.md](go-api.md#a-value-returned-as-an-any-is-taken-as-a-value) |
+| A place a result reaches twice is one reference | v0.30.2 | [go-api.md](go-api.md#a-place-a-result-reaches-twice-is-one-reference) |
+| A result that contains itself is an error | v0.30.2 | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
+| The references of a result are taken before code of the program runs | v0.30.2 | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
+| NewArray stops at the limits of the call | v0.30.2 | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
 
 ## Limits that hold
 
@@ -116,19 +116,19 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | repeat reads the interrupt flag every 65,536 characters | v0.30.1 | [uncatchable.md](uncatchable.md#repeat-reads-the-interrupt-flag-every-65536-characters) |
 | Compiling one long regexp reads the interrupt flag in every long loop | v0.30.1 | [uncatchable.md](uncatchable.md#compiling-one-long-regexp-reads-the-interrupt-flag-in-every-long-loop) |
 | A class of a regexp reads the interrupt flag however many characters or strings it has | v0.30.1 | [uncatchable.md](uncatchable.md#a-class-of-a-regexp-reads-the-interrupt-flag-however-many-characters-or-strings-it-has) |
-| The bytecode calls convert their result inside the eval timeout | Unreleased | [uncatchable.md](uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout) |
-| An uncatchable exception met while an exception is read ends the call | Unreleased | [uncatchable.md](uncatchable.md#an-uncatchable-exception-met-while-an-exception-is-read-ends-the-call) |
-| A string argument Intl cannot read ends the call | Unreleased | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
-| Intl reads the interrupt flag in loops over a long list | Unreleased | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
-| The functions of fmt end the call when their output does not fit | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
-| Long operations on BigInts read the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#long-operations-on-bigints-read-the-interrupt-flag) |
-| Turning a long string into a number reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#turning-a-long-string-into-a-number-reads-the-interrupt-flag) |
-| Parsing a long source reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
-| Comparing and copying long strings reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#comparing-and-copying-long-strings-reads-the-interrupt-flag) |
-| Resizing a large ArrayBuffer reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#resizing-a-large-arraybuffer-reads-the-interrupt-flag) |
-| Out of memory in normalize and in the growth of a Map | Unreleased | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
-| A loop with no call ends at an uncatchable exception left pending | Unreleased | [uncatchable.md](uncatchable.md#a-loop-with-no-call-ends-at-an-uncatchable-exception-left-pending) |
-| The flags of a regexp are checked without a pass over a long string | Unreleased | [uncatchable.md](uncatchable.md#the-flags-of-a-regexp-are-checked-without-a-pass-over-a-long-string) |
+| The bytecode calls convert their result inside the eval timeout | v0.30.2 | [uncatchable.md](uncatchable.md#the-bytecode-calls-convert-their-result-inside-the-eval-timeout) |
+| An uncatchable exception met while an exception is read ends the call | v0.30.2 | [uncatchable.md](uncatchable.md#an-uncatchable-exception-met-while-an-exception-is-read-ends-the-call) |
+| A string argument Intl cannot read ends the call | v0.30.2 | [uncatchable.md](uncatchable.md#a-string-argument-intl-cannot-read-ends-the-call) |
+| Intl reads the interrupt flag in loops over a long list | v0.30.2 | [uncatchable.md](uncatchable.md#intl-reads-the-interrupt-flag-in-loops-over-a-long-list) |
+| The functions of fmt end the call when their output does not fit | v0.30.2 | [uncatchable.md](uncatchable.md#the-functions-of-fmt-end-the-call-when-their-output-does-not-fit) |
+| Long operations on BigInts read the interrupt flag | v0.30.2 | [uncatchable.md](uncatchable.md#long-operations-on-bigints-read-the-interrupt-flag) |
+| Turning a long string into a number reads the interrupt flag | v0.30.2 | [uncatchable.md](uncatchable.md#turning-a-long-string-into-a-number-reads-the-interrupt-flag) |
+| Parsing a long source reads the interrupt flag | v0.30.2 | [uncatchable.md](uncatchable.md#parsing-a-long-source-reads-the-interrupt-flag) |
+| Comparing and copying long strings reads the interrupt flag | v0.30.2 | [uncatchable.md](uncatchable.md#comparing-and-copying-long-strings-reads-the-interrupt-flag) |
+| Resizing a large ArrayBuffer reads the interrupt flag | v0.30.2 | [uncatchable.md](uncatchable.md#resizing-a-large-arraybuffer-reads-the-interrupt-flag) |
+| Out of memory in normalize and in the growth of a Map | v0.30.2 | [uncatchable.md](uncatchable.md#out-of-memory-in-normalize-and-in-the-growth-of-a-map) |
+| A loop with no call ends at an uncatchable exception left pending | v0.30.2 | [uncatchable.md](uncatchable.md#a-loop-with-no-call-ends-at-an-uncatchable-exception-left-pending) |
+| The flags of a regexp are checked without a pass over a long string | v0.30.2 | [uncatchable.md](uncatchable.md#the-flags-of-a-regexp-are-checked-without-a-pass-over-a-long-string) |
 
 ## Errors and stacks
 
@@ -136,8 +136,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Error stacks formatted when first read | v0.26.1 | [errors-and-stacks.md](errors-and-stacks.md#error-stacks-formatted-when-first-read) |
 | Endless recursion throws RangeError | v0.26.6 | [errors-and-stacks.md](errors-and-stacks.md#endless-recursion-throws-rangeerror) |
-| new with a spread says when its callee is not a constructor | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor) |
-| Calls through call and bound functions leave no line in the stack | Unreleased | [errors-and-stacks.md](errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack) |
+| new with a spread says when its callee is not a constructor | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor) |
+| Calls through call and bound functions leave no line in the stack | v0.30.2 | [errors-and-stacks.md](errors-and-stacks.md#calls-through-call-and-bound-functions-leave-no-line-in-the-stack) |
 
 ## Time and Intl
 
@@ -156,10 +156,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Temporal durations use DurationFormat | v0.27.0 | [time-and-intl.md](time-and-intl.md#temporal-durations-use-durationformat) |
 | The engine reads Go's clocks | v0.27.0 | [time-and-intl.md](time-and-intl.md#the-engine-reads-gos-clocks) |
 | One wall clock per VM for Date, Intl and Temporal, set with `VM.SetClock` | v0.28.2 | [time-and-intl.md](time-and-intl.md#one-wall-clock-per-vm) |
-| Intl.Segmenter finds segments as they are read | Unreleased | [time-and-intl.md](time-and-intl.md#intlsegmenter-finds-segments-as-they-are-read) |
-| The caches of Temporal formats keep short requests only | Unreleased | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
-| Number options are checked before they are rounded down | Unreleased | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
-| A long locale tag resolves in time linear in its length | Unreleased | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
+| Intl.Segmenter finds segments as they are read | v0.30.2 | [time-and-intl.md](time-and-intl.md#intlsegmenter-finds-segments-as-they-are-read) |
+| The caches of Temporal formats keep short requests only | v0.30.2 | [time-and-intl.md](time-and-intl.md#the-caches-of-temporal-formats-keep-short-requests-only) |
+| Number options are checked before they are rounded down | v0.30.2 | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
+| A long locale tag resolves in time linear in its length | v0.30.2 | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
 
 ## Temporal
 
@@ -173,8 +173,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Skip to where a regexp can match | v0.26.15 | [regexp.md](regexp.md#skip-to-where-a-regexp-can-match) |
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
-| Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | Unreleased | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
-| A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | Unreleased | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
+| Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | v0.30.2 | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
+| A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | v0.30.2 | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 
@@ -183,7 +183,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | Searches skip to where the string is | v0.27.3 | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
-| A symbol has a string of its own | Unreleased | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
+| A symbol has a string of its own | v0.30.2 | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
 
 ## JSON
 
@@ -221,9 +221,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Objects of the built-in classes find the empty shape of their prototype | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype) |
 | A shape is found by the shape it grew from | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-is-found-by-the-shape-it-grew-from) |
 | An object that dies alone is freed at once | v0.29.10 | [objects-and-shapes.md](objects-and-shapes.md#an-object-that-dies-alone-is-freed-at-once) |
-| A proxy whose defineProperty trap refuses a store throws in strict code | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
-| Object literals have the room of an empty object | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
-| A for in loop asks a shape once whether it lists its keys | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
+| A proxy whose defineProperty trap refuses a store throws in strict code | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
+| Object literals have the room of an empty object | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
+| A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 | An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
 
 ## Memory
@@ -244,7 +244,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | WeakMap ephemeron collection | v0.27.2 | [weak-collections.md](weak-collections.md) |
-| A WeakRef keeps its target to the end of the job, and the host ends the job when a call returns to Go | Unreleased | [weak-collections.md](weak-collections.md#a-weakref-keeps-its-target-to-the-end-of-the-job) |
+| A WeakRef keeps its target to the end of the job, and the host ends the job when a call returns to Go | v0.30.2 | [weak-collections.md](weak-collections.md#a-weakref-keeps-its-target-to-the-end-of-the-job) |
 
 ## Left out of the engine
 

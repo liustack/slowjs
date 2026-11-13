@@ -6,6 +6,18 @@
 
 ### 修复
 
+- `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
+
+### 变更
+
+- 闭包捕获的变量如果在闭包拿到之后再没有代码改它，比如参数、`const` 或函数声明，闭包现在直接存它的值，原来存的是和函数帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着，所以只被它的帧拿着的对象可能更早释放：指向它的 `WeakRef` 可能更早变空，它的 `FinalizationRegistry` 回调也可能更早运行（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）。
+- 字节码版本升到 11，因为它给直接存值的闭包变量带上标记，读取时检查过一次之后就照文件里的用（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）：v0.30.2 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+- 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
+
+## [v0.30.2] - 2026-11-13
+
+### 修复
+
 - 对不是函数的对象做 `new C(...args)`，比如 `{}`，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 一致。原来它抛 `TypeError: not a function`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数)）。
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 拿到一个用 `+` 拼成、VM 没有内存拼接的字符串时，现在以无法捕获的内存不足错误结束调用。原来它们以 `intl: unexpected number bridge value` panic，panic 一直传到调用 `Eval` 的 Go 代码里。`intl` 和 `temporal` 的其他 Builtin 遇到这种参数也会停下，原来它们把它当成空字符串接着做，直到调用结束（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-读不了的字符串参数会结束调用)）。
 - `Interrupt` 和 eval 超时现在能让 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 停下，不管列表有多少项。单独一个很长的标签或项，Go 处理它时仍然不检查。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完。`getCanonicalLocales` 找重复时还要把每个标签和它前面的所有标签比一遍，10 万个互不相同的标签要 8.5 秒，现在只要 0.32 秒。超时设为 20 ms 时，这些调用在大约一百万个标签或项的列表上现在都在 60 ms 内停下，原来 Go 的活要跑 0.2 到 3.5 秒。每个答案都和原来一样（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-在长列表的循环里读中断标志)）。
@@ -28,7 +40,6 @@
 - 严格模式代码对没有 `set` trap、`defineProperty` trap 返回 false 的 proxy 写入，比如 `p.x = 1`，现在抛 `TypeError`，和规范以及 Node 一致，不管目标上已经有这个属性还是没有。原来它不报错继续往下走。在任何代码里都会抛错的写入，比如 `Object.assign` 和 `Array.prototype.fill` 里的写入，以及 `SetProperty` 和 `SetPropertyValue`，在目标已有该属性时原来会继续往下走，现在也会抛错或返回这个错误。非严格模式代码和 `Reflect.set` 不变（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错)）。
 - 在 windows/amd64 上，引擎里的内存错误（只有引擎自身的 bug 才会引起）在每种 CPU 上都直接变成它的 panic，不再先踩坏进程的内存。windows 在出错时把 CPU 的状态写在栈指针下面，带 AMX 的 Intel 上是 12.8 KiB，而 Go 只在 goroutine 的栈下面留 4 KiB（golang/go#81238），所以这次写入可能越过栈写进堆里。现在每个生成函数都确保栈指针下面再多 12 KiB，一共至少 16.9 KiB。只有 windows 的代码变了：在 linux 上用这份代码测量，那里的渲染慢 0 到 2.4%，运行一个很小脚本的 goroutine 占 32 KiB 栈，原来是 8 KiB。Go 代码里的错误，不管是宿主的还是程序的，在 Go 修好之前仍然只有 Go 的 4 KiB（[c-engine.md](docs/changes/c-engine.zh-CN.md#windows-上给故障留的空间)）。
 - `EvalBytecode`、`EvalBytecodeValue`、`EvalSharedBytecode` 和 `EvalSharedBytecodeValue` 现在从读取字节码到把结果转换完，都是一次进入 javascript 的调用，在 eval 超时之内。结果的转换原来在调用结束之后才进行，所以字节码最后得到的对象的 `toJSON` 或 getter，或被替换的 `BigInt.prototype.toString`，运行时没有超时，`Interrupt` 也停不下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#字节码调用在-eval-超时内转换结果)）。
-- `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
 - 读取脚本抛出的异常时（它的 `toString`，或者它的 `name`、`message`、`stack` 的 getter），如果被中断、eval 超时或内存不足停住，调用现在以这个错误结束，`Uncatchable` 已设置。过去读取把它和脚本抛出的东西一起丢掉，所以调用返回一个字段为空、也不是无法捕获的 `*Error`。Go 函数的参数转换遇到这样的异常时，脚本接住一个 `TypeError`，一直运行到结束。这种情况下 `ErrorFromValue` 返回被中断或内存不足的错误，过去它把被超时截断的字段留空（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#读取异常时遇到的无法捕获的异常结束调用)）。
 - 每个接收 `Value` 的方法现在都在进入引擎之前拒绝别的 VM 的 `Value`：`SetPropertyValue`（它的值和接收者），`SetProperty`、`GetPropertyValue` 和 `GetProperty` 的接收者，`EvalThis` 和 `EvalThisValue` 的 `this`，以及 `RegisterFunc` 的 Go 函数返回的 `Value`（单独返回、在多个结果里、在切片或 map 里），后者会抛出 `TypeError`。`SetPropertyValue` 原来会把这样的值存进对象，对象于是指向另一个 VM 的内存，那个 VM 关闭后这块内存就被解除映射。被拒绝的 `Value` 不会被释放。`Call` 和 `Value.Call` 现在也拒绝别的 VM 的数字，和 `NewArray` 以及 `Builtin` 一样（[Go API](docs/changes/go-api.zh-CN.md#每个入口都拒绝别的-vm-的-value)）。
 - `NewString`、`NewStringLatin1`、`NewStringUTF16` 和 `NewObjectValue` 在 VM 内存不足时现在返回内存不足的错误。它们原来把引擎的异常标记当作 `Value` 返回，错误为 nil，并把错误留着挂起，等下一个调用发现（[Go API](docs/changes/go-api.zh-CN.md#值的构造函数会报告内存不足)）。
@@ -46,8 +57,7 @@
 ### 变更
 
 - JavaScript 现在跑在寄存器解释器里。每个函数第一次被调用时从字节码转换过来，QuickJS 原来的栈式解释器去掉了。在 linux/amd64 上的初步读数：tifa 页面一次渲染的时间和栈式解释器相比，React 页是原来的 0.70，商店前台 0.86，工作台 0.89，MUI 0.86（一台 4 核的 AMD EPYC 7B13 服务器，一个 VM 在一个核上做预热后的渲染，量三轮）。在 darwin/arm64 上，一台 Apple M4 用同样的方法量同样的页面是 0.77、0.80、0.83 和 0.83。
-- 闭包捕获的变量如果在闭包拿到之后再没有代码改它，比如参数、`const` 或函数声明，闭包现在直接存它的值，原来存的是和函数帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着，所以只被它的帧拿着的对象可能更早释放：指向它的 `WeakRef` 可能更早变空，它的 `FinalizationRegistry` 回调也可能更早运行（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）。
-- 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 11，一是为了这些操作码，二是函数的字节码现在为它的每个正则带上从哪里开始找匹配的信息，这在编译时算一次，tifa 的页面一次渲染因此少 0.27% 到 0.97% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#正则从哪里开始找编译时算一次)），三是以字面量开头的一长串分支的正则还带上以每个字符开头的是哪些分支，商店工作台一次渲染因此少 1.36% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#以字面量开头的一长串分支)），四是它给直接存值的闭包变量带上标记，读取时检查过一次之后就照文件里的用（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+- 没经过 tifa 构建改写的 React DOM 包，一次渲染少用约 9.5% 的时间：以任何条件跳转结尾的 `switch` 字符串 case 都是一个操作码，一串这样的 case 在一次分发里跑完（[c-engine.md](docs/changes/c-engine.zh-CN.md#读局部变量加-get_field以及字符串-switch-的-case)）。字节码版本升到 10，一是为了这些操作码，二是函数的字节码现在为它的每个正则带上从哪里开始找匹配的信息，这在编译时算一次，tifa 的页面一次渲染因此少 0.27% 到 0.97% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#正则从哪里开始找编译时算一次)），三是以字面量开头的一长串分支的正则还带上以每个字符开头的是哪些分支，商店工作台一次渲染因此少 1.36% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#以字面量开头的一长串分支)）：旧版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 超过 65,535 个替换的带标签模板，现在在调用时抛出 `RangeError`，原来编译时就以 `InternalError: stack overflow` 失败。一次调用里前 32 个之后的参数，现在和带展开参数的调用一样放进数组传（[c-engine.md](docs/changes/c-engine.zh-CN.md#超过-32-个参数的调用用数组传参)）。
 - 参数和局部变量加起来超过 32,765 个的函数编译失败（报 `InternalError: too many local variables` 或 `too many arguments`，原来的上限是各 65,534 个），栈深超过 118 个值、外面又套了太多层 `try` 和 `for-of` 的函数也编译失败（报 `InternalError: stack overflow`：包着 `r += a` 时是 118 层嵌套的 `try` 或 39 层嵌套的 `for-of`，包着 130 层深的表达式时是 49 层和 17 层）。寄存器循环现在是唯一的解释器，这些就是它跑不了的函数（[c-engine.md](docs/changes/c-engine.zh-CN.md#寄存器循环里一个函数的上限)）。
 - `EvalBytecode`、`EvalBytecodeValue` 和 `SharedBytecode` 的第一次加载，现在拒绝本版本编译器做不出来的字节码（包括超过上面那些上限的函数），报 `SyntaxError: invalid bytecode: code no compiler makes, at N`，原来这样的代码会照跑。本版本写出的字节码照常读取。
@@ -57,7 +67,6 @@
 - 脚本里对 `f.call(t, ...)`、`call.bind(f)`（core-js 这样造）或没有绑定参数的绑定函数的调用，现在直接做成它所代表的那次调用。在 `f` 里造出的 `Error`，调用栈里不再有对应的 `at call (native)` 一行，和 Node 24 一样。通过 `f.call` 的递归在 `RangeError` 之前能深约一倍，100,000 个绑定函数的链能跑，原来抛 `RangeError`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。
 - 对数组的 `for-of`（迭代相关的部分没被改过）不再为每个元素调用数组迭代器的 `next`。所以在调用深度的上限处，这样的循环会接着往下读，原来调 `next` 会在这里抛 `RangeError`。脚本不会比原来停得更早。
 - 只调用字符串 `charCodeAt` 的循环被停下时（超时或 `Interrupt`），报出的停止位置在循环往回跳的地方，不再在调用里面。
-- 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
 
 ## [v0.30.1] - 2026-11-06
 
@@ -612,7 +621,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11

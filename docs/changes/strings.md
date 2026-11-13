@@ -26,7 +26,7 @@ The change is in C (`engine/quickjs.c`), with a search of its own: `js_string_in
 
 ## A symbol has a string of its own
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `Symbol(s)` turned the string `s` itself into the symbol, even while an array, a variable or the function that holds a string literal of digits (`Symbol("12")`, which every run of the function shares) still held it. And `description` gave the symbol itself back as a string. Either way a string held by the script kept the symbol alive: a `WeakRef` to it never emptied and a `FinalizationRegistry` never called back, for as long as the string lived. Node frees such a symbol at the next collection.
 

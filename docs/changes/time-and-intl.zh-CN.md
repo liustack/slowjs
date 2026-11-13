@@ -245,7 +245,7 @@ NumberFormat 使用 USD 货币和 `1234567.891`。DateTimeFormat 使用 medium �
 
 ## Intl.Segmenter 边读边找分段
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才找文本的分段，一次一批，原来第一次调用就在 Go 里找出整段文本的每个分段。在 8 MiB 的文本上，`containing(0)` 让 go-intl 列出全部 8,388,608 个字素：Go 里分配 1,260 MiB，不算在 VM 的内存上限里，还要 0.8 到 1.5 秒，期间不检查中断标志。现在只要 24 MiB（UTF-16 的文本，以及 Go 读进来的那份拷贝），在 GCP 上 17 到 36 ms。这些内存不算在 VM 的内存上限里，VM 留着的每个迭代器带着的文本（见下文）也不算，而且前面很远处的一个断点（比如一长段要用词典切分的文本之后的断点）是在不检查 VM 的情况下找出来的。
 
@@ -259,7 +259,7 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 
 ## Temporal 格式的缓存只保留短请求
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `toLocaleString` 和 `DateTimeFormat.prototype.format` 为 Temporal 值造的格式由进程里所有 VM 共用，它们会把页面要求的东西不管多长都留下来，VM 关闭之后也还在。`toLocaleString` 的缓存最多存 512 个格式，但每个都带着页面给的原样请求，失败的也一样：一个 1 MiB 长、根本不是历法的历法选项，会和它的错误一起留下。格式化器的注册表最多留 1,024 个格式化器，每个都带着它的解析后选项，而 Temporal 日期格式的解析后选项里装着整个请求。在 GCP 上，做过这类调用后关闭的 40 个 VM，失败的历法留下了 81 MiB，用 10,000 个 locale 的列表对 Temporal 值调用 `DateTimeFormat.format` 留下了 11 MiB。
 
@@ -269,7 +269,7 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 
 ## 数字选项先检查范围再向下取整
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 `fractionalSecondDigits`、`minimumIntegerDigits`、`maximumFractionDigits`、`roundingIncrement` 这类数字选项，现在像 ECMA-402 的 DefaultNumberOption 那样，先检查是否在范围内再向下取整，所以刚超出范围上端的值是 RangeError，和 Chromium 一样。原来 `fractionalSecondDigits: 3.9` 和 `minimumIntegerDigits: 21.9` 先被向下取整成 3 和 21，然后被接受。范围内的值照旧向下取整：`fractionalSecondDigits: 1.5` 是 1。
 
@@ -277,7 +277,7 @@ Segments 对象的 `containing` 和迭代器现在在 javascript 读的时候才
 
 ## 长的 locale 标签按长度的线性时间解析
 
-Release: Unreleased.
+发布版本：v0.30.2。
 
 Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标签长度成正比的时间解析一个长的 locale 标签。ECMA-402 的 BestAvailableLocale 每次从标签末尾去掉一个子标签，直到某个服务支持剩下的部分，而 go-intl 对去掉后的每一段都查一次，每次都把它复制进查找用的键里，所用时间随标签长度的平方增长。合法的标签可以很长，因为私用部分可以带任意多个子标签：`new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")` 是一个 1 MiB 的标签，在 M 系列 Mac 上要 6.8 秒，4 MiB 的要 58 秒，都在 Go 里，而且不检查中断标志。
 
