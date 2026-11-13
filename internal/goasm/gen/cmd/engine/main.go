@@ -517,8 +517,10 @@ func main() {
 		}
 	}
 	env.RegResult = regResult
+	env.ICallRegResult = !*poisonF
 	if a64env != nil {
 		a64env.RegResult = regResult
+		a64env.ICallRegResult = !*poisonF
 	}
 	type lowering struct {
 		text string

@@ -310,9 +310,23 @@ func TestCheckCases(t *testing.T) {
 		{name: "preserve_none: a result load the record says is not there", pn: true, loads: true, metas: func(ms []Meta) {
 			meta(ms, "pg").Rec.Calls[0].RegResult = true
 		}, want: "generated"},
-		{name: "a call through a pointer that takes the result from registers", metas: func(ms []Meta) {
+		// A call through a pointer takes its result from the registers a
+		// lowered unified function of its result type returns it in: every
+		// function a pointer can hold is one.
+		{name: "a call through a pointer with a result load the record says is not there", loads: true, metas: func(ms []Meta) {
 			meta(ms, "ic").Rec.Calls[0].RegResult = true
-		}, want: "that takes the result from registers"},
+		}, want: "is not the restore of r14"},
+		{name: "a call through a pointer with no result load the record says is there", metas: func(ms []Meta) {
+			meta(ms, "ic").Rec.Calls[0].RegResult = false
+		}, want: "is not the load of the result into RAX"},
+		{name: "llc takes the result of a call through a pointer from another register",
+			facts: func(_, f RegFacts) { f["ic"].Calls[0].Defs = []string{"rdx"} },
+			want:  "a lowered function returns a result of its type in [RAX]"},
+		{name: "preserve_none: llc takes the result of a call through a pointer from another register", pn: true,
+			input: llcSub("pg", "\tcallq\tph\n", "\tmovq\t%r12, %rax\n"+ckLabel("pg", 0, "ii>i")+"\tcallq\t*%rax\n", 1),
+			llc:   llcSub("pg", "\tcallq\tph\n", "\tmovq\t%r12, %rax\n"+ckLabel("pg", 0, "ii>i")+"\tcallq\t*%rax\n", 1),
+			facts: func(_, f RegFacts) { f["pg"].Calls[0].Defs = []string{"rdx"} },
+			want:  "a lowered function returns a result of its type in [RAX]"},
 		{name: "a call to a leaf that takes the result from registers", metas: func(ms []Meta) {
 			meta(ms, "g").Rec.Calls[1].RegResult = true
 		}, want: "that takes the result from registers"},
@@ -580,6 +594,7 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	for _, n := range unit.FuncOrder {
 		env.RegResult[n] = !leaves[n] && !c.loads
 	}
+	env.ICallRegResult = !c.loads
 	var metas []Meta
 	lowered := ".text\n"
 	for _, n := range unit.FuncOrder {

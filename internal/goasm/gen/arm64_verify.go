@@ -466,6 +466,12 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			return nil
 		}
 		if c.RegResult {
+			// A call through a pointer reaches only a lowered unified
+			// function (pointerTarget holds every pointer to one), and each
+			// of them stores its result from the registers of its type.
+			if c.Kind == CallReg {
+				return nil
+			}
 			if c.Kind != CallUnified || !unified[c.Target] {
 				return fmt.Errorf("the call at %#x takes the result of %s from its registers, which is no lowered unified function", pc-r[0], c.Target)
 			}

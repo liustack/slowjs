@@ -208,6 +208,10 @@ type LowerEnv struct {
 	// never a Go callback, a stub or a register-entry leaf. A poison build
 	// takes none, since it writes over every register at a return.
 	RegResult map[string]bool
+	// ICallRegResult says a call through a pointer takes its result from the
+	// registers as well: every function a pointer can hold is a lowered
+	// unified function (CheckPointerTargets). A poison build takes none.
+	ICallRegResult bool
 }
 
 // LowerUnified transforms one function's GNU assembly. It returns the rewritten
@@ -512,8 +516,12 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			if err != nil {
 				return "", Meta{}, err
 			}
-			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase, false)...)
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
+			// Every function a pointer can hold is a lowered unified function
+			// (CheckPointerTargets), so the call takes the result from the
+			// registers it returns it in, as a direct call does.
+			regResult := env != nil && env.ICallRegResult && sig.Ret != Void && !a.Poison
+			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase, regResult)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig, RegResult: regResult})
 			continue
 		}
 		if m := reCall.FindStringSubmatch(n); m != nil && env != nil && env.Variadic[m[1]] && !env.LooseVarargs {

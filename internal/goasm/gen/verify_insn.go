@@ -220,6 +220,8 @@ type checker struct {
 	roomOK   bool // goasm_room was checked (roomFunc)
 	// ptrOK holds the addresses a function pointer may hold (pointerTarget).
 	ptrOK map[uint64]bool
+	// retRegs holds the registers of a result by its type (retRegsOf).
+	retRegs map[Type][]x86asm.Reg
 }
 
 func (k *checker) skip(why, fn string) { k.rep.Skipped[why] = append(k.rep.Skipped[why], fn) }
@@ -2055,9 +2057,6 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
 		}
-		if c.RegResult {
-			return fmt.Errorf("a call through %v that takes the result from registers", a)
-		}
 		bound, err := m.boundSig(x)
 		if err != nil {
 			return err
@@ -2068,8 +2067,13 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if want := fmt.Sprintf("*%d", k.llc.icall[x.at].id); cf.Target != want {
 			return fmt.Errorf("llc's facts give this call to %s, its signature symbol has type id %s", cf.Target, want)
 		}
+		if c.RegResult {
+			if err := m.icallRegResult(c.Sig, cf); err != nil {
+				return err
+			}
+		}
 		m.icalls++
-		return m.marshal(c.Sig, cf, false, func(b insn) error {
+		return m.marshal(c.Sig, cf, c.RegResult, func(b insn) error {
 			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
 			}
@@ -2754,6 +2758,62 @@ func readInt(b []byte, n int) int64 {
 		return int64(int32(binary.LittleEndian.Uint32(b)))
 	}
 	return int64(binary.LittleEndian.Uint64(b))
+}
+
+// icallRegResult holds a call through a pointer that takes its result from
+// registers (CallRecord.RegResult) to the registers every lowered unified
+// function returning that type returns it in. Any function a pointer can
+// hold is one of them (pointerTarget), which ret holds to storing its
+// result from those registers and then jumping to Go's epilogue. Which one
+// the pointer holds is not known here, so the registers are the ones of the
+// result's type: those of every probe of that type, which must agree. A call
+// through a pointer of another type than its target's is undefined in C,
+// and the native host's -fsanitize=undefined (function) stops on one.
+func (m *matcher) icallRegResult(sig Sig, cf CallFacts) error {
+	want, err := m.k.retRegsOf(sig.Ret)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
+	defs, err := x86Regs(cf.Defs)
+	if err != nil {
+		return err
+	}
+	if fmt.Sprint(defs) != fmt.Sprint(want) {
+		return fmt.Errorf("call: llc takes the result of a call through a pointer from %v, a lowered function returns a result of its type in %v", defs, want)
+	}
+	return nil
+}
+
+// retRegsOf gives the registers the lowered unified functions return a
+// result of type t in, from their probes, and fails when two of them differ
+// or none returns one.
+func (k *checker) retRegsOf(t Type) ([]x86asm.Reg, error) {
+	if k.retRegs == nil {
+		k.retRegs = map[Type][]x86asm.Reg{}
+		from := map[Type]string{}
+		for _, f := range k.c.Metas {
+			if f.Kind != Unified || f.RetType == Void {
+				continue
+			}
+			p, ok := k.c.Probes[ProbePrefix+f.Name]
+			if !ok || len(p.Rets) != 1 {
+				continue
+			}
+			r, err := x86Regs(p.Rets[0])
+			if err != nil {
+				return nil, err
+			}
+			if prev, ok := k.retRegs[f.RetType]; ok && fmt.Sprint(prev) != fmt.Sprint(r) {
+				return nil, fmt.Errorf("%s returns its result in %v, %s in %v", from[f.RetType], prev, f.Name, r)
+			}
+			k.retRegs[f.RetType], from[f.RetType] = r, f.Name
+		}
+	}
+	r, ok := k.retRegs[t]
+	if !ok {
+		return nil, fmt.Errorf("no lowered unified function returns a result of type %v", t)
+	}
+	return r, nil
 }
 
 // regResult holds a call that takes the result of name from registers

@@ -542,3 +542,31 @@ func TestCheckARM64FunctionPointer(t *testing.T) {
 	}
 }
 
+// TestCheckARM64ICallRegResult: a call through a pointer takes its result
+// from x0, x1 or d0 where the record says so (every function a pointer can
+// hold is a lowered unified function, which stores its result from them),
+// and loads it back where the record says it does.
+func TestCheckARM64ICallRegResult(t *testing.T) {
+	for name, c := range map[string]struct {
+		regResult, load bool
+		want            string
+	}{
+		"load":                   {false, true, ""},
+		"from registers":         {true, false, ""},
+		"no load, none declared": {false, false, "no load of the result"},
+	} {
+		k, m, w := a64CallCase(c.regResult, c.load)
+		// blr x9 instead of bl go_g: the record has a call through x9.
+		m.Rec.Calls[0].Kind, m.Rec.Calls[0].Target = CallReg, "x9"
+		binary.LittleEndian.PutUint32(k.o.code[4:], a64BLRX9)
+		delete(k.o.relocs, 4)
+		w[9] = a64BLRX9
+		err := k.function(m, 0x1000, a64Bytes(w))
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
