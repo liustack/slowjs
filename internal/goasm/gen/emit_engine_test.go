@@ -5,6 +5,7 @@ package gen
 import (
 	"context"
 	"fmt"
+	"go/format"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -183,6 +184,65 @@ func TestRoomCheck(t *testing.T) {
 	}
 	if want := fmt.Sprintf("TEXT ·Room(SB), $%d-0\n", RoomFrame); !strings.Contains(string(b), want) {
 		t.Fatalf("internal/faulttest/room_windows_amd64.s has no %q", want)
+	}
+}
+
+// TestLeafDecl: a register-entry leaf that saved registers or calls keeps a
+// frame, so its TEXT is not NOFRAME and it gets a Go declaration without
+// arguments, and go vet -asmdecl takes the two together. A leaf with neither
+// says NOFRAME and gets no declaration (pl_sum of TestPostLinkOpt). Before,
+// a framed leaf had no declaration, and vet failed on memmove of the engine
+// once PGO made it save RBX.
+func TestLeafDecl(t *testing.T) {
+	framed := Meta{Kind: Register, NoSplit: true, Frame: 8}
+	calls := Meta{Kind: Register, NoSplit: true, Rec: &FuncRecord{Calls: []CallRecord{{Kind: CallLeaf, Target: "g"}}}}
+	bare := Meta{Kind: Register, NoSplit: true, Rec: &FuncRecord{}}
+	for _, c := range []struct {
+		name string
+		m    Meta
+		decl string
+	}{
+		{"framed", framed, "func framed() // a register-entry leaf with a frame, declared for go vet only\n"},
+		{"calls", calls, "func calls() // a register-entry leaf with a frame, declared for go vet only\n"},
+		{"bare", bare, ""},
+	} {
+		if got := LeafDecl(c.name, c.m); got != c.decl {
+			t.Errorf("LeafDecl of %s: %q, want %q", c.name, got, c.decl)
+		}
+		if nf := strings.Contains(funcHeader(c.name, c.m), "NOFRAME"); nf != (c.decl == "") {
+			t.Errorf("%s: the TEXT says NOFRAME %v, but the leaf has a declaration %q", c.name, nf, c.decl)
+		}
+		// Between other declarations, as engine_decl_<arch>.go has it, the
+		// declaration is what gofmt -s writes.
+		src := "package p\n\nfunc a()\n" + c.decl + "func z()\n"
+		if f, err := format.Source([]byte(src)); err != nil || string(f) != src {
+			t.Errorf("%s: gofmt changes %q to %q (%v)", c.name, src, f, err)
+		}
+	}
+	dir := t.TempDir()
+	write := func(name, s string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module x\n\ngo 1.26\n")
+	var s, d strings.Builder
+	s.WriteString("#include \"textflag.h\"\n\n")
+	d.WriteString("package x\n\n")
+	for _, c := range []struct {
+		name string
+		m    Meta
+	}{{"framed", framed}, {"calls", calls}, {"bare", bare}} {
+		s.WriteString(funcHeader(c.name, c.m) + "\tRET\n\n")
+		d.WriteString(LeafDecl(c.name, c.m))
+	}
+	write("x_amd64.s", s.String())
+	write("x.go", d.String())
+	cmd := exec.Command("go", "vet", "-asmdecl", ".")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64", "CGO_ENABLED=0", "GOFLAGS=", "GOWORK=off")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go vet -asmdecl: %v\n%s", err, out)
 	}
 }
 

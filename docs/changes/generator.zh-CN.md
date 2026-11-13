@@ -1,18 +1,19 @@
 ---
-summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，它的限制和检查）'
+summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，它的限制和检查），以及有栈帧的寄存器入口叶子函数的 Go 声明'
 read_when:
   - 想知道 make gen 为什么编译两遍，或 engine/pgo/profile.txt 有什么用
   - make gen 打印了以 "warning: profile:" 或 "profile:" 开头的行，或者改了一处没碰到某个生成函数的 C 之后，那个函数变了
   - 改生成器给 clang、opt 或 llc 的参数，或改生成引擎的内联
   - 想知道画像带来什么、花掉什么，哪些脚本可能因它变慢
   - 重新训练画像，或取入一个改了寄存器循环的 QuickJS 提交
+  - go vet 对某个生成的 .s 文件报 `function memmove missing Go declaration` 之类的错
 ---
 
 # 生成器
 
 [English](generator.md) · 简体中文
 
-`make gen` 怎样把 `engine/` 的 C 变成 `internal/cengine` 里的 Go 汇编。生成器的其余部分见[它的 README](../../internal/goasm/gen/README.md)。这里是会改变生成代码速度的改动。
+`make gen` 怎样把 `engine/` 的 C 变成 `internal/cengine` 里的 Go 汇编。生成器的其余部分见[它的 README](../../internal/goasm/gen/README.md)。这里是生成方式的改动。
 
 ## tifa 页面的性能画像
 
@@ -106,3 +107,15 @@ read_when:
 - `TestLowerARM64EngineLRTuplePaths`（`internal/goasm/gen`）检查 arm64 上扩展后的证明。
 - `scripts/check-gen-test.sh` 检查 `scripts/check-gen.sh` 总会显示画像的行。它在 `scripts/check.sh` 的 `scripts` 步骤里运行。
 - `compare/engines` 里的 `go run ./cmd/notices` 为训练用 bundle 里的包做声明文件（`TestGeneratePages`）。
+
+## 有栈帧的寄存器入口叶子函数有 Go 声明
+
+版本：Unreleased。
+
+寄存器入口叶子函数（`memcpy`、`memmove`、`memset`）从寄存器取参数，只有生成的代码调用它。它不存寄存器、也不调用别的函数时，TEXT 写 `NOFRAME`。两样做了其中一样，TEXT 就保留栈帧（`NOSPLIT, $8-0`），而 `go vet -asmdecl` 要求每个不是 `NOFRAME` 的 TEXT 都有 Go 声明。现在生成器给这样的叶子函数在 `engine_decl_<arch>.go` 里写一个声明：`func memmove()`，和它的 TEXT 一样没有参数也没有返回值。`.s` 文件不变。
+
+这是画像带出来的：在 amd64 上画像让 `memmove` 保存 RBX，`go vet ./...` 在 linux/amd64 上失败（`memmove: function memmove missing Go declaration`）。Mac 上的 `go vet` 只查 arm64，所以没看到。
+
+为什么安全：声明只是给函数一个名字，代码和栈帧都没变。Go 代码不能调用叶子函数，所以 `internal/cengine/gocalls.txt` 里出现叶子函数时生成器会停下。
+
+测试：`TestLeafDecl`（`internal/goasm/gen`）检查存了寄存器的叶子函数和有调用的叶子函数都有声明，并且 `go vet -asmdecl` 接受，两样都没有的叶子函数写 `NOFRAME`，没有声明。`TestEngineAsmDecl` 在五个目标上对引擎跑 `go vet -asmdecl`。

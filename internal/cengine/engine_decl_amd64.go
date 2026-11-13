@@ -1307,6 +1307,7 @@ func mark_children_specialized_4(a0 uintptr, a1 uintptr, a2 uintptr)
 func mark_children_specialized_5(a0 uintptr, a1 uintptr, a2 uintptr)
 func memchr(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func memcmp(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func memmove() // a register-entry leaf with a frame, declared for go vet only
 func modf(a0 uintptr, a1 float64, a2 uintptr)
 func mp_div1norm(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr, a6 uintptr)
 func mpb_shr_round(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

@@ -759,7 +759,7 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 		var fb strings.Builder
 		gn := e.Names[m.Name]
 		switch {
-		case m.Kind == Register && m.Frame == 0:
+		case m.Kind == Register && !LeafHasFrame(m):
 			fmt.Fprintf(&fb, "TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-0\n", gn)
 		case m.Kind == Register:
 			fmt.Fprintf(&fb, "TEXT ·%s(SB), NOSPLIT, $%d-0\n", gn, m.Frame)

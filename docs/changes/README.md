@@ -58,6 +58,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | Unreleased | [generator.md](generator.md#a-profile-of-tifas-pages) |
+| A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | Unreleased | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
 
 ## Commits of upstream QuickJS
 

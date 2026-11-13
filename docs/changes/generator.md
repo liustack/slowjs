@@ -1,18 +1,19 @@
 ---
-summary: 'Changes to how the engine is generated from the C: the profile of tifa pages that make gen compiles with (what it is, how it was found, what it may decide and what is pinned off, why it is safe, what a stale one costs, its limits and checks)'
+summary: 'Changes to how the engine is generated from the C: the profile of tifa pages that make gen compiles with (what it is, how it was found, what it may decide and what is pinned off, why it is safe, what a stale one costs, its limits and checks), and the Go declaration of a register-entry leaf that has a frame'
 read_when:
   - Asking why make gen compiles twice, or what engine/pgo/profile.txt is for
   - make gen prints a line that starts with "warning: profile:" or "profile:", or a generated function changed after a change of the C that did not touch it
   - Changing the flags the generator gives clang, opt or llc, or the inlining of the generated engine
   - Asking what the profile gains, what it costs, and which scripts it can make slower
   - Training the profile again, or taking a commit of QuickJS that changes the register loop
+  - go vet says `function memmove missing Go declaration` or the like for a generated .s file
 ---
 
 # The generator
 
 English · [简体中文](generator.zh-CN.md)
 
-How `make gen` turns the C of `engine/` into the Go assembly in `internal/cengine`. The rest of the generator is in [its README](../../internal/goasm/gen/README.md). Here are the changes that move the speed of the generated code.
+How `make gen` turns the C of `engine/` into the Go assembly in `internal/cengine`. The rest of the generator is in [its README](../../internal/goasm/gen/README.md). Here are the changes to how it is generated.
 
 ## A profile of tifa's pages
 
@@ -106,3 +107,15 @@ Known and open in this release. Each is a follow-up.
 - `TestLowerARM64EngineLRTuplePaths` (`internal/goasm/gen`) checks the extended proof on arm64.
 - `scripts/check-gen-test.sh` checks that `scripts/check-gen.sh` always shows the profile lines. It runs in the `scripts` step of `scripts/check.sh`.
 - `go run ./cmd/notices` in `compare/engines` makes the notices of the packages in the bundles of the training (`TestGeneratePages`).
+
+## A register-entry leaf with a frame has a Go declaration
+
+Release: Unreleased.
+
+A register-entry leaf (`memcpy`, `memmove`, `memset`) takes its arguments in registers, and only the generated code calls it. Its TEXT says `NOFRAME` when it saves no register and calls nothing. When it does either, the TEXT keeps a frame (`NOSPLIT, $8-0`), and `go vet -asmdecl` asks a Go declaration of every TEXT that is not `NOFRAME`. The generator now writes one for such a leaf into `engine_decl_<arch>.go`: `func memmove()`, with no arguments and no result, as its TEXT has. The `.s` files stay the same.
+
+It came up with the profile: on amd64 the profile makes `memmove` save RBX, and `go vet ./...` failed for linux/amd64 (`memmove: function memmove missing Go declaration`). A Mac runs `go vet` for arm64 only, so it did not see it.
+
+Why it is safe: the declaration only names the function, and the code and the frame are what they were. Go code must not call a leaf, so the generator stops when `internal/cengine/gocalls.txt` names one.
+
+Tests: `TestLeafDecl` (`internal/goasm/gen`) checks that a leaf that saved registers and a leaf that calls get a declaration that `go vet -asmdecl` takes, and that a leaf with neither says `NOFRAME` and gets none. `TestEngineAsmDecl` runs `go vet -asmdecl` on the engine for the five targets.

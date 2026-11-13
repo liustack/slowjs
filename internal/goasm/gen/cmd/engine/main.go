@@ -583,6 +583,14 @@ func main() {
 	if err != nil {
 		die(err)
 	}
+	// A register-entry leaf with a frame has a Go declaration only for go
+	// vet (gen.LeafDecl). It takes its arguments in registers, so a Go call
+	// of it would run on whatever the registers hold.
+	for _, name := range unit.FuncOrder {
+		if goCalled[name] && leafSet[name] {
+			die(fmt.Errorf("%s names the register-entry leaf %s, which Go code must not call", *goCallsF, name))
+		}
+	}
 	noResult := map[string]bool{}
 	if goCalled != nil && !*poisonF {
 		for _, name := range unit.FuncOrder {
@@ -1176,6 +1184,7 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	for _, m := range all {
 		if m.Kind == gen.Register {
+			b.WriteString(gen.LeafDecl(names[m.Name], m))
 			continue
 		}
 		decl(m)

@@ -99,8 +99,9 @@ func readObject(path string) (*object, error) {
 // NOFRAME, which changes nothing in its code (Go writes no prologue for a
 // NOSPLIT function with neither) and is what go vet -asmdecl asks of a
 // function with no Go declaration. With a call, Go saves BP, which NOFRAME
-// would stop, so such a leaf, like one with a frame, would need a Go
-// declaration for that check (TestEngineAsmDecl).
+// would stop, so such a leaf, like one with a frame, keeps the frame and
+// gets a Go declaration for that check instead (LeafHasFrame, LeafDecl,
+// TestEngineAsmDecl).
 //
 // A NOSPLIT unified function without a frame says NOFRAME as well, which the
 // Go assembler gives a frameless leaf by itself: on windows its room check
@@ -108,7 +109,7 @@ func readObject(path string) (*object, error) {
 // and move the arguments the body reads. Every unified function is followed
 // by its room check (roomCheck).
 func funcHeader(goName string, m Meta) string {
-	if m.Kind == Register && m.Frame == 0 && len(m.Rec.Calls) == 0 {
+	if m.Kind == Register && !LeafHasFrame(m) {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-0\n", goName)
 	}
 	if m.Kind == Register {
@@ -121,6 +122,27 @@ func funcHeader(goName string, m Meta) string {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
 	}
 	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
+}
+
+// LeafHasFrame says whether the TEXT of the register-entry leaf m gives it
+// a Go frame: it saved registers (Meta.Frame > 0) or it calls. On arm64 a
+// call also means a frame, since the leaf saves LR in it. Such a TEXT is
+// not NOFRAME, and go vet -asmdecl asks a Go declaration of every TEXT that
+// is not NOFRAME, so the generator writes one for it (LeafDecl).
+func LeafHasFrame(m Meta) bool {
+	return m.Frame > 0 || len(m.Rec.Calls) > 0
+}
+
+// LeafDecl is the Go declaration of the register-entry leaf m, and empty
+// for a leaf without a frame, whose TEXT says NOFRAME (LeafHasFrame). It
+// declares neither arguments nor result, as the TEXT does ($N-0): the leaf
+// takes them in registers, so Go code must never call it, and the generator
+// fails when gocalls.txt names one.
+func LeafDecl(goName string, m Meta) string {
+	if !LeafHasFrame(m) {
+		return ""
+	}
+	return strings.TrimSuffix(GoDecl(goName, Sig{Ret: Void}), "\n") + " // a register-entry leaf with a frame, declared for go vet only\n"
 }
 
 // RoomBelow is how many bytes past Go's stack guard every unified function

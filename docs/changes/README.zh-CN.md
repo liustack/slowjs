@@ -58,6 +58,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | Unreleased | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
+| 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | Unreleased | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 
 ## 上游 QuickJS 的提交
 
