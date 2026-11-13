@@ -17,6 +17,8 @@
 #   CHECK_STOP   1: stop at the first failed step (default: go on)
 #   LLVM_BIN     bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
 #   LLD          linker of the generator tests (default: ld.lld or ld, first found)
+#   CC           compiler of the native host (default: clang of LLVM_BIN, on
+#                macOS Apple clang, /usr/bin/clang)
 #   CHECK_LIST   1: print the steps and stop
 #   CHECK_TAGS   build tags added to every go command of the checks, such as
 #                quickjs_anygo to run them with a Go newer than internal/goversion
@@ -36,6 +38,14 @@ fi
 # The scripts of engine/test call clang by its name.
 PATH=$llvm:$PATH
 export PATH
+# On macOS the native host builds with Apple clang (docs/testing.md), through
+# /usr/bin/clang, which finds the SDK of the system: the clang of LLVM put
+# first above looks for the SDK its configuration names, which may not be
+# installed, and then finds no header of the system.
+if [ "$(uname -s)" = Darwin ] && [ -z "${CC:-}" ]; then
+	CC=/usr/bin/clang
+	export CC
+fi
 logs=${CHECK_LOGS:-.build/check-logs}
 mkdir -p "$logs"
 : > "$logs/summary.tmp"

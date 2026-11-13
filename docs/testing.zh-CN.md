@@ -161,7 +161,7 @@ engine/libc/vendor.sh --verify         # the files taken from musl are the ones 
 go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 ```
 
-它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。
+它能在 Linux 和 macOS（Apple clang 15 及以后）上构建和运行。在 macOS 上，没有设 `CC` 时 `scripts/check.sh` 用 Apple clang（`/usr/bin/clang`）构建它：它为生成器放在最前面的 LLVM 的 clang 可能去找一个没装的 SDK，这时找不到系统的头文件。
 
 - 引擎和 `engine/libc` 以独立（freestanding）方式构建，带 `-nostdinc`，头文件只用 `engine/libc` 的（参数写在 `flags.sh` 里，`build.sh`、`check-symbols.sh`、`cycles.sh`、`libc-test.sh` 和 `internal/goasm/gen` 的生成器都读它，所以构建的内容和检查的内容不会不一致）。宿主、测试运行器和测试程序用系统的头文件和 libc。引擎不链接系统的 libm：`Math.*` 用的是 musl 的，所以结果在每台机器上都一样。
 - `run-test262.c` 是上游的运行器加了几处改动（见它开头的注释）：它包含 `host.h`，用 `host_new_runtime()` 创建运行时、用 `host_free_runtime()` 释放，通过缓冲区打印内存报告，像 Go API 的 VM 那样在每个测试里保留 2048 个 shape（引擎记录一个对象有哪些键、按什么顺序的结构），并且不再调用 `JS_SetCanBlock`。`host.c` 从 `quickjs-libc.c` 抄来运行器要的三个函数，中断运行超过 120 秒的测试（运行器自己做不到：宿主的一个线程请这样的运行时停下，引擎的线程在下一次 `host_poll` 时设上它的中断标志，见 [c-engine.md](changes/c-engine.zh-CN.md#轮询与中断)），并实现 `engine/host.h` 的回调。它还根据线程的栈定义 `__shadow_remaining`，即剩余的栈字节数：引擎自己数递归深度，只在限制 alloca 和留出余量时才问这个值（见 [c-engine.md](changes/c-engine.zh-CN.md#调用深度与-c-递归)）。运行器的线程，以及 `jsrun` 和 `unit` 的深度测试的线程，栈都是 512 MiB（`HOST_THREAD_STACK`，用到才真正占用），这样递归到最深的限制也不会跑出栈外。
