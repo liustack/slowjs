@@ -25,7 +25,11 @@ type Position struct {
 	// the shift (see docs/measuring.md).
 	Shift int
 	// Front is the bytes of NOP at the start of the interpreter body, a multiple
-	// of 8 from 0 to 56: the place of the body within its 64-byte block.
+	// of 16 from 0 to 48: the place of the body within its 64-byte block. The
+	// NOPs move the constant pools after the code of the interpreter with it,
+	// and JS_RegvmRun reads a pool with XORPD, which faults when the pool is
+	// not on 16 bytes: a front of 8, 24, 40 or 56 would make a binary the
+	// product never is, which crashes when a script negates a double.
 	Front int
 	// Shift2 moves the code after the regexp matcher by this many bytes more, a
 	// multiple of 32 below MaxShift: NOPs after the last RET of the matcher
@@ -65,17 +69,9 @@ func Quick() []Position {
 	return []Position{{0, 0, 0}, {0, 16, 0}, {32, 0, 0}, {32, 16, 0}}
 }
 
-// All is the older set of 8: shift 0 or 32 and front 0 to 24. It covers only
-// half of the 64-byte block of the interpreter.
-func All() []Position {
-	var ps []Position
-	for _, s := range []int{0, 32} {
-		for _, f := range []int{0, 8, 16, 24} {
-			ps = append(ps, Position{s, f, 0})
-		}
-	}
-	return ps
-}
+// All was the older set of 8, shift 0 or 32 and front 0 to 24. Fronts of 8
+// and 24 are refused now, and All is Full.
+func All() []Position { return Full() }
 
 // protocolShifts and protocolShifts2 are the shifts and second shifts of the 16
 // layouts of Protocol, in its order: the 8 fronts of the first half, then the 8
@@ -91,14 +87,17 @@ func All() []Position {
 //   - from the matcher to the interpreter (the allocator, object creation)
 //     moves by what the matcher moved plus the second shift. The matcher moved
 //     by a multiple of 64, so its place modulo 64 is that of the second shift.
-//   - the interpreter and the code after it move by a multiple of 64 and then
-//     take their place modulo 64 from the front.
+//   - the interpreter and the code after it take their place modulo 64 from
+//     the front: an interpreter on 64 bytes moves by a multiple of 64, and
+//     the register loop, on 32 bytes, moves with the code before it, so its
+//     place is the front plus the half block of the second shift.
 //
-// In each half, the shift and the second shift are each 32 bytes into a block
-// in 4 layouts, and with the 3 bits of the front the 5 choices are independent
-// of each other (any two both set in 2 layouts): the shift follows x0^x1 and
-// the second shift x0^x2 of the number x of the front in the first half, x1^x2
-// and x0^x1^x2 in the second. The shifts sit in 16 different places of the
+// The front is 16 times the number of the layout over 4 (protocolFront), so
+// each group of 4 layouts has one front, and in each group the shift and the
+// second shift are 32 bytes into a block in the 4 ways they can be: the 2 bits
+// of the front and the 2 of the shifts are the 16 layouts, each once. The
+// register loop's body takes each of the 4 places of the front twice with
+// each half block of the second shift. The shifts sit in 16 different places of the
 // page, one in each 256 bytes, and so do the sums of the two shifts (the
 // matcher may take 32 bytes of that off or add 32 to it). Only the formal
 // layout has no shift, and no shift is 32, which the matcher may take up
@@ -113,22 +112,25 @@ var protocolShifts2 = []int{
 	4032, 1760, 2336, 1600, 1824, 1600, 1728, 3552,
 }
 
+// protocolFront is the front of layout i of Protocol.
+func protocolFront(i int) int { return 16 * (i / 4) }
+
 // Protocol is the set of 16 layouts of docs/measuring.md: every front from 0
-// to 56 twice, with the shifts and second shifts above. The first is the formal
-// layout.
+// to 48 four times, with the shifts and second shifts above. The first is the
+// formal layout.
 func Protocol() []Position {
 	var ps []Position
 	for i := range 16 {
-		ps = append(ps, Position{protocolShifts[i], 8 * (i % 8), protocolShifts2[i]})
+		ps = append(ps, Position{protocolShifts[i], protocolFront(i), protocolShifts2[i]})
 	}
 	return ps
 }
 
-// Full is front 0 to 56 at shift 0 and at shift 32.
+// Full is every front at shift 0 and at shift 32.
 func Full() []Position {
 	var ps []Position
 	for _, s := range []int{0, 32} {
-		for f := 0; f < 64; f += 8 {
+		for f := 0; f < 64; f += 16 {
 			ps = append(ps, Position{s, f, 0})
 		}
 	}
@@ -139,13 +141,13 @@ func Full() []Position {
 func ParsePosition(s string) (Position, error) {
 	f := strings.Split(s, ".")
 	if len(f) != 2 && len(f) != 3 {
-		return Position{}, fmt.Errorf("position %q: want W.B or W.B.S, such as 32.16 or 64.8.2208", s)
+		return Position{}, fmt.Errorf("position %q: want W.B or W.B.S, such as 32.16 or 64.16.2208", s)
 	}
 	n := make([]int, len(f))
 	for i, x := range f {
 		var err error
 		if n[i], err = strconv.Atoi(x); err != nil {
-			return Position{}, fmt.Errorf("position %q: want W.B or W.B.S, such as 32.16 or 64.8.2208", s)
+			return Position{}, fmt.Errorf("position %q: want W.B or W.B.S, such as 32.16 or 64.16.2208", s)
 		}
 	}
 	shift, front, shift2 := n[0], n[1], 0
@@ -157,8 +159,8 @@ func ParsePosition(s string) (Position, error) {
 	if shift < 0 || shift >= MaxShift || shift%32 != 0 {
 		return Position{}, fmt.Errorf("position %q: the whole program moves by a multiple of 32 bytes below %d (Go puts functions on 32, and a shift that is not a multiple of 64 may be taken up by the alignment)", s, MaxShift)
 	}
-	if front < 0 || front > 56 || front%8 != 0 {
-		return Position{}, fmt.Errorf("position %q: the interpreter body moves by a multiple of 8 bytes from 0 to 56", s)
+	if front < 0 || front > 48 || front%16 != 0 {
+		return Position{}, fmt.Errorf("position %q: the interpreter body moves by a multiple of 16 bytes from 0 to 48 (its constant pools move with it, and an SSE read of a pool needs it on 16 bytes)", s)
 	}
 	if shift2 < 0 || shift2 >= MaxShift || shift2%32 != 0 {
 		return Position{}, fmt.Errorf("position %q: the code after the regexp matcher moves by a multiple of 32 bytes below %d more", s, MaxShift)

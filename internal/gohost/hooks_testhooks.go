@@ -10,7 +10,8 @@ package gohost
 // hookState is what the hooks of a test keep in a VM. It exists only in a
 // build with the tag testhooks (hooks.go has the normal one).
 type hookState struct {
-	interruptAt int64 // Polls at which Poll calls Interrupt, or 0
+	interruptAt int64  // Polls at which Poll calls Interrupt, or 0
+	stopTrace   func() // runs at each poll that saw the request to stop, or nil
 }
 
 // pollHook runs at the start of each Poll, on the goroutine that runs the
@@ -29,3 +30,18 @@ func pollHook(v *VM) {
 // engine has got to by then. 0 turns it off. Call it from the goroutine that
 // uses the VM, before the call into the engine.
 func (v *VM) InterruptAtPoll(n int64) { v.hooks.interruptAt = n }
+
+// stopHook runs at each Poll that saw the request to stop, after it counted
+// the poll in StopPolls, on the goroutine that runs the engine.
+func stopHook(v *VM) {
+	if v.hooks.stopTrace != nil {
+		v.hooks.stopTrace()
+	}
+}
+
+// SetStopTrace makes f run at each poll that saw the request to stop, after
+// the poll is counted in StopPolls and before it may kill the script. f runs
+// on the goroutine that runs the engine, with the engine's frames on its
+// stack, so it can tell where the engine polled. It must not call into the
+// engine. nil turns it off.
+func (v *VM) SetStopTrace(f func()) { v.hooks.stopTrace = f }

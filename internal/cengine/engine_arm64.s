@@ -13,7 +13,6 @@ TEXT ·goasm_chunked_memcpy(SB), $56-32
 	PCALIGN $16
 	WORD $0x52a00098
 	WORD $0xaa1703f9
-	WORD $0xf9001bfe
 	WORD $0x92679a88
 	WORD $0xf940c113
 	WORD $0xf141033f
@@ -38,7 +37,6 @@ TEXT ·goasm_chunked_memcpy(SB), $56-32
 	WORD $0xf9401ff4
 	WORD $0x17ffffea
 	WORD $0x92679a88
-	WORD $0xf9401bfe
 	WORD $0xf900c113
 	WORD $0x14000001
 	RET
@@ -52,7 +50,6 @@ TEXT ·goasm_chunked_memmove(SB), $56-32
 	PCALIGN $16
 	WORD $0x92679a88
 	WORD $0xeb1602bf
-	WORD $0xf9001bfe
 	WORD $0xf940c113
 	WORD $0x54000369
 	WORD $0x8b1702c8
@@ -106,7 +103,6 @@ TEXT ·goasm_chunked_memmove(SB), $56-32
 	WORD $0xf940c113
 	WORD $0x17ffffea
 	WORD $0x92679a88
-	WORD $0xf9401bfe
 	WORD $0xf900c113
 	WORD $0x14000001
 	RET
@@ -120,7 +116,6 @@ TEXT ·goasm_chunked_memset(SB), $56-32
 	PCALIGN $16
 	WORD $0x52a00098
 	WORD $0xaa1703f9
-	WORD $0xf9001bfe
 	WORD $0x92679a88
 	WORD $0xf940c113
 	WORD $0xf141033f
@@ -147,7 +142,6 @@ TEXT ·goasm_chunked_memset(SB), $56-32
 	WORD $0xf94017f7
 	WORD $0x17ffffe8
 	WORD $0x92679a88
-	WORD $0xf9401bfe
 	WORD $0xf900c113
 	WORD $0x14000001
 	RET

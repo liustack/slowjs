@@ -1,0 +1,12 @@
+kinds 11:o1,s3,symbol,bigint,function,number,number,null,undefined,boolean,s1560 true true 7 -Infinity xyz
+only reference 5:o1,s3,a3,s1300,symbol 1 3 Symbol(t)
+arguments 4:o1,s3,a1,number 1 two 3
+drop halfway 4:o1,s2080,s5,null first 2080
+the same value twice 2 true
+lengths 0 8/8 16/16 24/24 32/32 40/40 40=780
+nested [["x",["x1",[{"x":"x"}]]],[],[[]]]
+throws halfway third 2 1,2
+a getter in an element 3:o1,s3,o1 true got
+spread among them 6:o1,s1,s1,s1,s1,s1
+loop 0s00,50s5050,100s100100,150s150150,200s200200,250s250250 299
+folded 130 1 true

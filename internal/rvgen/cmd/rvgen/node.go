@@ -8,7 +8,7 @@ package main
 // New programs against Node, for the differences two correct engines may
 // have:
 //
-//	rvgen node -rvdiff BIN [-node NODE] [-portable] [-core|-wide] [-seed S] [-n N] [-j J] [-t T] [-keep DIR]
+//	rvgen node -rvdiff BIN [-node NODE] [-portable] [-core|-wide] [-captures] [-seed S] [-n N] [-j J] [-t T] [-keep DIR]
 //
 // It runs each program once on the engine (rvdiff -golden -full into an
 // empty folder, which writes the run) and once under Node 24, with a small

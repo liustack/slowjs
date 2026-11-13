@@ -1,0 +1,23 @@
+0 else/not/string/string/0
+1 if/yes/string/string/2
+2 if/yes/string/string/2
+3 if/yes/string/string/2
+4 if/yes/string/object/2
+5 if/yes/string/object/2
+6 if/yes/string/function/2
+7 if/yes/string/symbol/2
+8 else/not/bigint/string/0
+9 if/yes/string/bigint/2
+10 if/yes/string/bigint/2
+11 else/not/number/string/0
+12 else/not/number/string/0
+13 else/not/number/string/0
+14 if/yes/string/number/2
+15 else/not/object/string/0
+16 else/not/undefined/string/0
+17 if/yes/string/boolean/2
+18 else/not/boolean/string/0
+arguments -btruefalse a-falsetrue a-falsetrue
+dropped 3
+builtins false,true,false,true,false,true,false,true 4 1 true false
+loop 1000

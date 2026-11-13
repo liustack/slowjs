@@ -1,0 +1,136 @@
+result plain len0 [undefined,undefined] | [undefined] | ok | [undefined,undefined,undefined] | [undefined,undefined] | [undefined,[]] | [] | [dx,dy,dz] | [1,2,3,4] | [undefined,undefined,undefined,undefined] | [undefined,undefined,undefined] | [undefined,undefined,9] | [undefined,undefined] | [undefined=undefined,undefined=undefined] | [undefined,undefined] | [undefined,undefined] | [undefined,undefined] | [undefined,undefined,undefined] | [undefined,true] | [undefined,undefined]
+result plain len1 [a,undefined] | [a] | ok | [a,undefined,undefined] | [undefined,undefined] | [a,[]] | [a] | [a,dy,dz] | [1,undefined,nz,4] | [a,undefined,undefined,undefined] | [a,undefined,a] | [a,undefined,9] | [undefined,a] | [a=undefined,a=undefined] | [undefined,undefined] | [a,undefined] | [undefined,a] | [a,undefined,a] | [a,true] | [a,undefined]
+result plain len2 [a,b] | [a] | ok | [a,b,undefined] | [b,undefined] | [a,[b]] | [a,b] | [a,b,dz] | [1,2,undefined,4] | [a,b,undefined,undefined] | [a,b,a] | [a,b,9] | [b,a] | [a=b,a=b] | [b,b] | [a,b] | [b,a] | [a,b,a] | [a,true] | [a,b]
+result plain len5 [a,b] | [a] | ok | [a,b,c] | [b,d] | [a,[b,c,d,e]] | [a,b,c,d,e] | [a,b,c] | [1,2,3,4] | [a,b,c,d] | [a,b,a] | [a,b,9] | [b,a] | [a=b,a=b] | [b,b] | [a,b] | [b,a] | [a,b,a] | [a,true] | [a,b]
+result plain undef [undefined,null] | [undefined] | ok | [undefined,null,undefined] | [null,undefined] | [undefined,[null,undefined]] | [undefined,null,undefined] | [dx,null,dz] | [undefined,undefined,undefined,undefined] | [undefined,null,undefined,undefined] | [undefined,null,undefined] | [undefined,null,9] | [null,undefined] | [undefined=null,undefined=null] | [null,null] | [undefined,null] | [null,undefined] | [undefined,null,undefined] | [undefined,true] | [undefined,null]
+result plain holes [h0,undefined] | [h0] | ok | [h0,undefined,h2] | [undefined,undefined] | [h0,[undefined,h2]] | [h0,undefined,h2] | [h0,dy,h2] | [undefined,2,3,4] | [h0,undefined,h2,undefined] | [h0,undefined,h0] | [h0,undefined,9] | [undefined,h0] | [h0=undefined,h0=undefined] | [undefined,undefined] | [h0,undefined] | [undefined,h0] | [h0,undefined,h0] | [h0,true] | [h0,undefined]
+result plain longer [a,b] | [a] | ok | [a,b,undefined] | [b,undefined] | [a,[b,undefined,undefined,undefined]] | [a,b,undefined,undefined,undefined] | [a,b,dz] | [a,b,a,5] | [a,b,undefined,undefined] | [a,b,a] | [a,b,9] | [b,a] | [a=b,a=b] | [b,b] | [a,b] | [b,a] | [a,b,a] | [a,true] | [a,b]
+result plain string [x,y] | [x] | ok | [x,y,z] | [y,undefined] | [x,[y,z]] | [x,y,z] | [x,y,z] | [a,b,c,s] | [x,y,z,undefined] | [x,y,x] | [x,y,9] | [y,x] | [x=y,x=y] | [y,y] | [x,y] | [y,x] | [x,y,x] | [x,true] | [x,y]
+result plain typed [7,8] | [7] | ok | [7,8,9] | [8,undefined] | [7,[8,9]] | [7,8,9] | [7,8,9] | [1,2,3,4] | [7,8,9,undefined] | [7,8,7] | [7,8,9] | [8,7] | [7=8,7=8] | [8,8] | [7,8] | [8,7] | [7,8,7] | [7,true] | [7,8]
+result plain args [5,6] | [5] | ok | [5,6,7] | [6,undefined] | [5,[6,7]] | [5,6,7] | [5,6,7] | [1,2,3,4] | [5,6,7,undefined] | [5,6,5] | [5,6,9] | [6,5] | [5=6,5=6] | [6,6] | [5,6] | [6,5] | [5,6,5] | [5,true] | [5,6]
+result plain set [1,2] | [1] | ok | [1,2,3] | [2,undefined] | [1,[2,3]] | [1,2,3] | [1,2,3] | [4,5,6,4] | [1,2,3,undefined] | [1,2,1] | [1,2,9] | [2,1] | [1=2,1=2] | [2,2] | [1,2] | [undefined,undefined] | [1,2,1] | [1,true] | [1,2]
+result plain map [[1,2],[3,4]] | [[1,2]] | ok | [[1,2],[3,4],undefined] | [[3,4],undefined] | [[1,2],[[3,4]]] | [[1,2],[3,4]] | [[1,2],[3,4],dz] | [[5,6],undefined,3,4] | [[1,2],[3,4],undefined,undefined] | [[1,2],[3,4],[1,2]] | [[1,2],[3,4],9] | [[3,4],[1,2]] | [1,2=3,4,1,2=3,4] | [[3,4],[3,4]] | [[1,2],[3,4]] | [undefined,undefined] | [[1,2],[3,4],[1,2]] | [[1,2],true] | [[1,2],[3,4]]
+result plain re [ab,a] | [ab] | ok | [ab,a,b] | [a,undefined] | [ab,[a,b]] | [ab,a,b] | [ab,a,b] | [c,c,3,4] | [ab,a,b,undefined] | [ab,a,ab] | [ab,a,9] | [a,ab] | [ab=a,ab=a] | [a,a] | [ab,a] | [a,ab] | [ab,a,ab] | [ab,true] | [ab,a]
+result plain frozen [f1,f2] | [f1] | ok | [f1,f2,undefined] | [f2,undefined] | [f1,[f2]] | [f1,f2] | [f1,f2,dz] | [1,2,3,4] | [f1,f2,undefined,undefined] | [f1,f2,f1] | [f1,f2,9] | [f2,f1] | [f1=f2,f1=f2] | [f2,f2] | [f1,f2] | [f2,f1] | [f1,f2,f1] | [f1,true] | [f1,f2]
+result plain extra [e1,e2] | [e1] | ok | [e1,e2,undefined] | [e2,undefined] | [e1,[e2]] | [e1,e2] | [e1,e2,dz] | [1,2,3,4] | [e1,e2,undefined,undefined] | [e1,e2,e1] | [e1,e2,9] | [e2,e1] | [e1=e2,e1=e2] | [e2,e2] | [e1,e2] | [e2,e1] | [e1,e2,e1] | [e1,true] | [e1,e2]
+result plain null TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null | TypeError:cannot read property 'Symbol.iterator' of null
+result plain number TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable | [undefined,undefined] | TypeError:value is not iterable | TypeError:value is not iterable | TypeError:value is not iterable
+result get 3 of 5
+result five [1,2,undefined,p3,undefined]
+result get 2
+result get 1
+result five holes [1,2,p2,undefined,undefined] [0,p1,2,undefined,undefined]
+result return of AIP object
+result return of AIP object
+result return of AIP object
+result return of AIP object
+result return AIP value [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result return AIP getter [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result late get return of AIP
+result late AIP [d,2] [d,undefined]
+result return of IP object
+result return of IP object
+result return of IP object
+result return of IP object
+result return IP value [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result get return of IP
+result return called
+result get return of IP
+result return called
+result get return of IP
+result return called
+result get return of IP
+result return called
+result return IP getter [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result late get return of IP
+result late IP [d,2] [d,undefined]
+result return of OP object
+result return of OP object
+result return of OP object
+result return of OP object
+result return OP value [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result get return of OP
+result return called
+result get return of OP
+result return called
+result get return of OP
+result return called
+result get return of OP
+result return called
+result return OP getter [1,2] [1,undefined] [1,[2]] [1,2,3] [1,2,3] ok
+result late get return of OP
+result late OP [d,2] [d,undefined]
+result next called
+result next called
+result next called
+result next called
+result next called
+result next called
+result next replaced [1,2] [1,[2,3]]
+result get next
+result next getter [1,2]
+result gen iterator
+result gen iterator
+result iterator replaced [g0,g1] [g0,[g1]]
+result get iterator
+result iterator getter [1,2]
+result iterator deleted TypeError:value is not iterable
+result mid next
+result mid next [d,2,3] after [undefined,undefined]
+result mid iterator [d,2] after [no,undefined]
+result restored [1,2] [1,[2,3]]
+result setter 1
+result mutate [3,1,P,3] | [2,1,undefined,2] | [0,undefined,undefined] | [4,1,undefined,undefined] | [far,1,2,101] | [true,undefined,2] | [undefined,2,3] | [undefined,undefined] | [d,1,undefined] | [5,undefined]
+result own iterator
+result sub iterator
+result proxy get Symbol(Symbol.iterator)
+result proxy get length
+result proxy get 0
+result proxy get length
+result proxy get 1
+result others [o1,undefined] | [s,[]] | [sp,sp] | [1,2] | [10,20] | [10,[20,30]]
+result chain get return
+result proxy chain [1,2] [1,undefined] [1,[2]]
+result throw none Error:thrown before Error:thrown after Error:thrown after [1,undefined,undefined] Error:thrown inner Error:thrown inner
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result throw AIP Error:thrown before Error:thrown after Error:thrown after [1,undefined,undefined] Error:thrown inner Error:thrown inner
+result get return of OP
+result return called
+result get return of OP
+result return called
+result get return of OP
+result return called
+result get return of OP
+result return called
+result throw OP Error:thrown before Error:thrown after Error:thrown after [1,undefined,undefined] Error:thrown inner Error:thrown inner
+result gen none y1,y2,[a,b,3]! y1,r! y1,Error:t y1,y2,r2! y1,y2,Error:t2 y2,r3!
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result get return of AIP
+result return called
+result gen AIP y1,y2,[a,b,3]! y1,r! y1,Error:t y1,y2,r2! y1,y2,Error:t2 y2,r3!
+result async plain [1,2]
+result async [aw,2]
+result async rej
+mem-end obj=407 atom=568 shape=270 prop=1965 jsfunc=5 cfunc=275 array=3 fast_array=2 elements=133 binary=0
+mem-gc obj=215 atom=548 shape=147 prop=1015 jsfunc=0 cfunc=153 array=1 fast_array=0 elements=0 binary=0
+--- status exit 0

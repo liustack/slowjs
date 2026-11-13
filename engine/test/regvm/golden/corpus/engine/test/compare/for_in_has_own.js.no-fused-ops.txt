@@ -77,6 +77,6 @@ result break: a,b,a,bb,bc,cb,cc,db
 result generator suspended: a,b,d,p^
 result generator holds the object: x,y,z
 result generator ended: {"value":"r","done":true} Error: boom {"done":true}
-mem-end obj=223 atom=617 shape=212 prop=1044 jsfunc=6 cfunc=149 array=3 fast_array=3 elements=97 binary=0
-mem-gc obj=220 atom=615 shape=210 prop=1037 jsfunc=4 cfunc=149 array=3 fast_array=3 elements=97 binary=0
+mem-end obj=223 atom=617 shape=211 prop=1044 jsfunc=6 cfunc=149 array=3 fast_array=3 elements=97 binary=0
+mem-gc obj=220 atom=615 shape=209 prop=1037 jsfunc=4 cfunc=149 array=3 fast_array=3 elements=97 binary=0
 --- status exit 0

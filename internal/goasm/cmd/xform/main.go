@@ -28,8 +28,11 @@
 //	front:NAME:N           N bytes of multi-byte NOP at the start of the body
 //	                       of function NAME, right after its PCALIGN, which
 //	                       run at each call. They move the code of that
-//	                       function only. Use a multiple of 8 from 0 to 56 on
-//	                       the interpreter (JS_RegvmRun_block).
+//	                       function only, with the data after its code. Use a
+//	                       multiple of 16 from 0 to 48 on the interpreter
+//	                       (JS_RegvmRun_block): its constant pools stay on 16
+//	                       bytes, and a front that is not a multiple of 16 is
+//	                       refused on a function with data after its code.
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
 //	                       functions, or only the named): the linker then
 //	                       starts the function on a multiple of A.
@@ -43,6 +46,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -176,6 +180,16 @@ func apply(dir string, ops []string) error {
 					continue
 				}
 				hit++
+				// The data after the code of the function (its constant pools
+				// and jump tables) moves with the body, and the generator keeps
+				// a pool on 16 bytes for the SSE instructions that read it.
+				fn := s[m[1]:]
+				if k := bytes.Index(fn, []byte("\nTEXT ")); k >= 0 {
+					fn = fn[:k]
+				}
+				if n%16 != 0 && bytes.Contains(fn, []byte("\n\t// data\n")) {
+					return fmt.Errorf("%s: %s keeps data after its code, which the front moves with the body, and %d bytes would take its constant pools off the 16 bytes an SSE read of them needs: use a multiple of 16", op, parts[1], n)
+				}
 				out := string(s[:m[1]]) + nopBytes(n) + string(s[m[1]:])
 				if err := os.WriteFile(p, []byte(out), 0o644); err != nil {
 					return err

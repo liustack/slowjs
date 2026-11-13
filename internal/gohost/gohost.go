@@ -639,6 +639,7 @@ func Poll(sp uintptr) {
 		return
 	}
 	v.seen++
+	stopHook(v)
 	if v.script && v.grace >= 0 && v.seen > KillPolls && time.Since(start)-time.Duration(t-1) >= v.grace {
 		v.killed = true
 		v.MarkBroken()

@@ -83,14 +83,22 @@ func TestHeadMatchesEveryGeneratedFunctionOnce(t *testing.T) {
 func TestFrontOnGeneratedHead(t *testing.T) {
 	d := copyEngine(t)
 	file, before := engineFile(t, d, "JS_RegvmRun_block")
-	run(t, d, "front:JS_RegvmRun_block:8")
+	// The interpreter keeps a pool that XORPD reads after its code: a front
+	// that is not a multiple of 16 would take it off its 16 bytes.
+	if err := apply(d, []string{"front:JS_RegvmRun_block:8"}); err == nil || !strings.Contains(err.Error(), "multiple of 16") {
+		t.Fatalf("a front of 8 on the interpreter: %v", err)
+	}
+	if read(t, d, file) != before {
+		t.Fatal("a refused front changed the file")
+	}
+	run(t, d, "front:JS_RegvmRun_block:16")
 	after := read(t, d, file)
 	i := strings.Index(before, "TEXT ·JS_RegvmRun_block(SB)")
 	j := strings.Index(before[i:], "\tPCALIGN $")
 	k := i + j + strings.Index(before[i+j:], "\n") + 1 // the line after the PCALIGN
-	want := before[:k] + nopBytes(8) + before[k:]
+	want := before[:k] + nopBytes(16) + before[k:]
 	if after != want {
-		t.Fatalf("front changed more or less than 8 bytes of no-ops after the PCALIGN of the body")
+		t.Fatalf("front changed more or less than 16 bytes of no-ops after the PCALIGN of the body")
 	}
 	// The room check stays in front of the PCALIGN, where the generator put it.
 	if !strings.Contains(after, "#endif\n\tPCALIGN $") {

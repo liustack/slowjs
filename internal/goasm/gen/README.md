@@ -255,6 +255,46 @@ multiply-adds (`fmadd`, `fmla` and the rest), with a test for each
 (`TestLowerARM64EngineRejects`, `TestLowerARM64EngineFacts`,
 `TestLowerARM64EngineTiny`).
 
+llc picks the form of a branch or a jump table from the sizes of the code it
+writes, and the lowering then adds code inside the function (the calls, the
+polls, the frame), so what fit in llc's text can be too far in the lowered one.
+Two flags of llc leave the lowering that room. `-aarch64-tbz-offset-bits=13`
+gives `tbz` and `tbnz` half their reach of 32 KiB, so a farther one becomes a
+`tbz` over a `b`. `-aarch64-enable-compress-jump-tables=false` gives every jump
+table 4 bytes an entry, the distance from the `adr` of its dispatch, where llc
+would write 1 or 2 bytes, steps of 4 bytes from the lowest target, when they
+fit its own code: a switch of `js_start_tag` once came to 272 steps after the
+lowering, past the 255 a byte holds. The dispatch is as long either way (`adr`,
+a load, an `add`, `br`), and the tables take about 10 KB more. The lowering does
+not rest on the flag: it sizes its code (4 bytes an instruction, the
+alignments from where the function is placed) and refuses a function with a jump
+table entry whose distance does not fit its width, with the table, the entry
+and the steps it came to (`a64CheckJumpTables` in `arm64_jumptable.go`,
+`TestA64CheckJumpTables`, `TestLowerARM64EngineJumpTable`).
+
+llc keeps LR (x30) like a callee-saved register: a function that calls saves
+it in its frame and loads it back before each `ret`. The lowering turns `ret`
+into a branch to Go's epilogue, which loads LR from 0(RSP) where Go's
+prologue saved it, so it drops llc's save and load of x30 (`arm64_lr.go`). A
+`str` or `ldr` of x30 goes, an `stp` or `ldp` that pairs it with another
+register keeps that register as a `str` or `ldr`, and the frame keeps its size
+with the 8 bytes of the slot in it. The lowering then proves the drop on its
+own output (`a64ProveLR`): no instruction left names x30, and none reads,
+writes or takes the address of a byte of a dropped slot, so the slot is
+written only from x30 and read only into x30 on every path, and both are
+gone. The address of a tuple spill counts with every byte a tuple through it
+reaches, up to where its register is written again, a call or a return, and
+must not live past a label or a branch. A function the proof refuses stops
+the build. Any other use of LR (a w
+register, LR twice in a pair, writeback forms other than the frame's own)
+stops it too. `GEN_DROP_LR_PAIRS=1` is the negative build that drops the
+other register of a pair with x30, which the proof must refuse:
+`GEN_DROP_LR_PAIRS=unchecked` skips the proof and writes a package marked as
+a negative build, which the engine's tests must fail on. Tests:
+`TestLowerARM64EngineLR`, `TestLowerARM64EngineLRRefused`,
+`TestLowerARM64EngineLRNegative`, `TestLowerARM64EngineLRLabel`,
+`TestLowerARM64EngineLRTuple`.
+
 A function whose arguments need more integer registers than a unified entry
 has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
 block of them instead (`f(sp, blk)`). Its generated entry is named

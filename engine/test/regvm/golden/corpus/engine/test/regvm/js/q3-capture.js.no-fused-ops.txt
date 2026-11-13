@@ -1,0 +1,23 @@
+result const: 12000
+result let before: 40
+result let after: 2
+result params: 1,two,,2 ,,3,3
+result for let: 0,1,2,3,4
+result for let written: 1,3,5
+result for of: a,2,null,4.5
+result two down: deep4
+result two down written: 2 2
+result declarations: bafunctionfunction
+result dead zone: 1 ReferenceError
+result object: 7 true
+result many: 3281
+result generator: 9,14,14
+result async: started 2,3
+result after throw: 0,RangeError,2,RangeError v0,v1,v2,v3
+result cycles: 200
+result class: 41,42,43
+result recursion: 1275
+result async then: 2 2,3,102,103
+mem-end obj=191 atom=543 shape=130 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=191 atom=543 shape=130 prop=949 jsfunc=0 cfunc=129 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

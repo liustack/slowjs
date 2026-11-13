@@ -67,11 +67,11 @@
    reference, kept by its slot) or a temp (owned, moved out by the
    instruction that reads it), and picks the instruction for it.
 
-   What stage 0 leaves out: try and catch,
-   arguments, sloppy functions, constants with a reference count, calls with
-   more arguments than the function has parameters (they go through
-   JS_CallInternal), and stack traces of the frames inside the loop (a
-   backtrace sees the function JS_RegvmRun was entered with).
+   Every function the compiler makes runs here: one past the limits of the
+   loop fails to compile (add_var, add_arg, compute_stack_size), and a stack
+   trace walks the frames of the loop too (JSFrameWalk, rv_frame_func). The
+   whole design is in docs/changes/c-engine.md, under "The register
+   interpreter".
 
    The files: regvm-func.h has RVFunc and rv_entry_fast, read by quickjs.c
    before its call ops. This file has the frame, the instruction enum, the
@@ -130,6 +130,22 @@ typedef struct RVHeader {
 _Static_assert(sizeof(RVHeader) == RV_HDR * sizeof(JSValue),
                "the header is three slots");
 _Static_assert(sizeof(JSValue) == 16, "a slot is a JSValue of 16 bytes");
+
+/* the closure variable i of the frame F. The check build compares one
+   that holds its value with its variable at each use (quickjs.c,
+   js_value_ref_check). */
+#ifdef RV_CBV_CHECK
+static inline JSVarRef *rv_vref_check(JSValue *F, int i)
+{
+    JSVarRef *v = ((RVHeader *)F)->var_refs[i];
+    if (((RVHeader *)F)->rf->b->closure_var[i].by_value)
+        js_value_ref_check(v);
+    return v;
+}
+#define RV_VREF(F, i) rv_vref_check(F, i)
+#else
+#define RV_VREF(F, i) (((RVHeader *)(F))->var_refs[i])
+#endif
 
 /* the closure state of a frame with captured locals: a JSStackFrame at F[3],
    its var_refs right after it */

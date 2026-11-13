@@ -24,6 +24,8 @@ read_when:
 3. **Go 宿主**：`internal/gohost` 回答 VM 的回调，`internal/hostmem` 把它的内存映射到 Go 堆之外（内存块，带保护页的影子栈），`internal/idtable` 保存引擎交还给 Go 的 id。
 4. **Go API**（`quickjs.go` 和旁边的文件）：用户 import 的部分。
 
+JavaScript 跑在寄存器解释器里。C 引擎在每个函数第一次被调用时，把它从字节码转换成寄存器码，在一个循环 `JS_RegvmRun` 里运行，它有自己的寄存器栈，一个 JavaScript 函数调用另一个，留在这个循环里。它怎样工作、有什么代价，见[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)。
+
 ## 引擎层
 
 Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `cengine.*`。
