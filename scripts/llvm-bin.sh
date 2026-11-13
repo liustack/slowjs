@@ -5,8 +5,8 @@
 # root of this repository.
 #
 # llvm-bin.sh [-f]: print the bin folder of LLVM 22.1.8, the one place that
-# finds it. check.sh, gen-engine.sh, go-versions.sh and engine/test/cycles.sh
-# call it. The folder is, in this order:
+# finds it. check.sh, gen-engine.sh, go-versions.sh, engine/test/cycles.sh and
+# engine/pgo/train.sh call it. The folder is, in this order:
 #   1. LLVM_BIN, when set
 #   2. the first of these that has a clang: /usr/lib/llvm-22/bin (apt.llvm.org),
 #      /opt/homebrew/opt/llvm@22/bin (Homebrew on Apple silicon) and

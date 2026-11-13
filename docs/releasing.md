@@ -43,7 +43,7 @@ The engine is generated with a profile of page renders (`engine/pgo/profile.txt`
 To train again, on a machine with LLVM 22.1.8:
 
 ```sh
-LLVM_BIN=/usr/lib/llvm-22/bin engine/pgo/train.sh
+engine/pgo/train.sh
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 make check-gen

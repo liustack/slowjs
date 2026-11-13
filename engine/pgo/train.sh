@@ -16,18 +16,13 @@
 # first render.
 #
 # Environment:
-#   LLVM_BIN   bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
+#   LLVM_BIN   bin folder of LLVM 22.1.8 (default: what scripts/llvm-bin.sh finds)
 #   TRAIN_OUT  work folder (default .build/pgo-train)
 set -eu
 
 cd "$(dirname "$0")/../.."
-llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
-want=22.1.8
-got=$("$llvm/clang" --version 2>/dev/null | sed -n 's/.*clang version \([0-9][0-9.]*\).*/\1/p' | head -n 1)
-if [ "$got" != "$want" ]; then
-	echo "train.sh: clang in $llvm is '${got:-missing}': the profile is trained with LLVM $want only (set LLVM_BIN)" >&2
-	exit 1
-fi
+# llvm-bin.sh finds LLVM 22.1.8, checks its version and says what to install.
+llvm=$(scripts/llvm-bin.sh)
 out=${TRAIN_OUT:-.build/pgo-train}
 rm -rf "$out"
 mkdir -p "$out"

@@ -14,15 +14,15 @@ What `make gen` needs to compile the engine with a profile: the profile itself, 
 
 ## Train again
 
-On Linux or macOS with LLVM 22.1.8 (`LLVM_BIN` is its bin folder, `/usr/lib/llvm-22/bin` by default):
+On Linux or macOS with LLVM 22.1.8 (`scripts/llvm-bin.sh` finds it, or `LLVM_BIN` names its bin folder):
 
 ```sh
-LLVM_BIN=/opt/homebrew/opt/llvm@22/bin engine/pgo/train.sh   # about 30 seconds
+engine/pgo/train.sh   # about 30 seconds
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 ```
 
-`train.sh` stops when the clang in `LLVM_BIN` is not 22.1.8. It works in `.build/pgo-train` (`TRAIN_OUT` changes it). It needs nothing outside the repository. The profile and the generated files go in one commit, as `make check-gen` wants. When to train again is in [docs/releasing.md](../../docs/releasing.md#the-profile).
+`train.sh` stops when it finds no LLVM 22.1.8. It works in `.build/pgo-train` (`TRAIN_OUT` changes it). It needs nothing outside the repository. The profile and the generated files go in one commit, as `make check-gen` wants. When to train again is in [docs/releasing.md](../../docs/releasing.md#the-profile).
 
 ## The pages
 

@@ -14,15 +14,15 @@
 
 ## 重新训练
 
-在装有 LLVM 22.1.8 的 Linux 或 macOS 上（`LLVM_BIN` 是它的 bin 目录，默认 `/usr/lib/llvm-22/bin`）：
+在装有 LLVM 22.1.8 的 Linux 或 macOS 上（`scripts/llvm-bin.sh` 会找到它，也可以用 `LLVM_BIN` 指定它的 bin 目录）：
 
 ```sh
-LLVM_BIN=/opt/homebrew/opt/llvm@22/bin engine/pgo/train.sh   # 约 30 秒
+engine/pgo/train.sh   # 约 30 秒
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 ```
 
-`LLVM_BIN` 里的 clang 不是 22.1.8 时 `train.sh` 会停下。它在 `.build/pgo-train` 里工作（`TRAIN_OUT` 可改）。它不需要仓库之外的任何东西。画像和生成的文件放进同一个提交，`make check-gen` 要求如此。什么时候该重新训练，见 [docs/releasing.zh-CN.md](../../docs/releasing.zh-CN.md#性能画像)。
+找不到 LLVM 22.1.8 时 `train.sh` 会停下。它在 `.build/pgo-train` 里工作（`TRAIN_OUT` 可改）。它不需要仓库之外的任何东西。画像和生成的文件放进同一个提交，`make check-gen` 要求如此。什么时候该重新训练，见 [docs/releasing.zh-CN.md](../../docs/releasing.zh-CN.md#性能画像)。
 
 ## 页面
 

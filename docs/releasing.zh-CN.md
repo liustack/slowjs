@@ -43,7 +43,7 @@ read_when:
 重新训练，在装有 LLVM 22.1.8 的机器上：
 
 ```sh
-LLVM_BIN=/usr/lib/llvm-22/bin engine/pgo/train.sh
+engine/pgo/train.sh
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 make check-gen
