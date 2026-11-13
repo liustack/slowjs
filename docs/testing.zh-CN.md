@@ -32,6 +32,7 @@ go test -count=1 -p 1 .                # about a minute
 ```
 
 - `go vet` 也检查生成的汇编（asmdecl），只针对它运行所在的系统。`TestEngineAsmDecl`（`internal/goasm/gen`）在全部五个系统上对 `internal/cengine` 运行这项检查。
+- `go test .` 也检查每个入库的 `.md` 文件都是合法的 UTF-8（`TestDocsUTF8`），把一个字符切成两半的替换会在这里失败。
 - 改了 `engine/` 里的 C、生成器，或者 `scripts/gen-engine.sh` 和 `engine/test/flags.sh` 的参数，还要重新生成引擎，放在同一个提交里（`make gen`、`make gen ARCH=arm64`），并运行 `make check-fast`。一批改动做完时运行 `make check-full`（见[生成并检查](#生成并检查)）。
 - 改了 `intl/`，还要运行 `go test ./intl`（golden 测试在里面）。
 - 改了 `internal/gointl`，还要运行 `go test ./internal/gointl/...` 和 `make gointl`。

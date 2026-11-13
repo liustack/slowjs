@@ -32,6 +32,7 @@ go test -count=1 -p 1 .                # about a minute
 ```
 
 - `go vet` checks the generated assembly too (asmdecl), for the system it runs on. `TestEngineAsmDecl` (`internal/goasm/gen`) runs that check over `internal/cengine` for all five systems.
+- `go test .` also checks that every tracked `.md` file is valid UTF-8 (`TestDocsUTF8`), so a replacement that cuts a character in two fails there.
 - A change to the C of `engine/`, to the generator or to the flags of `scripts/gen-engine.sh` and `engine/test/flags.sh` also makes the generated engine again, in the same commit (`make gen`, `make gen ARCH=arm64`), and runs `make check-fast`. At the end of a batch it runs `make check-full` (see [Generate and check](#generate-and-check)).
 - A change to `intl/` also runs `go test ./intl` (the golden test is part of it).
 - A change to `internal/gointl` also runs `go test ./internal/gointl/...` and `make gointl`.
