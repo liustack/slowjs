@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.30.4] - 2026-11-14
+
 ### 变更
 
 - locale 列表里超过 16,384 个字符的 tag 现在是 `RangeError`，和 v0.30.3 起单独给的 tag 一样。Chrome 和 Node 接受它。原来 Go 把列表里的每个 tag 整个转成规范形式，中间不检查调用：在 Apple M4 上，16 个 256 Ki 字符的 tag 在 eval 超时后还跑了 60 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用)）。
@@ -656,7 +658,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1

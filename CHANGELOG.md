@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.4] - 2026-11-14
+
 ### Changed
 
 - A tag in a list of locales longer than 16,384 characters is now a `RangeError`, as a tag given alone has been since v0.30.3. Chrome and Node accept it. Go put each tag of a list in canonical form whole, with no check of the call: 16 tags of 256 Ki characters ran 60 ms past an eval timeout on an Apple M4 ([uncatchable.md](docs/changes/uncatchable.md#long-text-and-lists-of-locales-are-worked-on-in-checked-pieces)).
@@ -656,7 +658,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
