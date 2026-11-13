@@ -56,7 +56,10 @@ const (
 // vmhook.Stop every piece units of each pass, may run past its timeout.
 func Grace(whole time.Duration, n, piece int) time.Duration {
 	g := fixed + time.Duration(4*float64(piece)/float64(n)*float64(whole))
-	if runtime.GOMAXPROCS(0) == 1 {
+	// With one P, or more Ps than CPUs (GOMAXPROCS set above what taskset
+	// leaves, which Go would not choose itself), the call can wait for the P
+	// or the CPU a goroutine of the runtime has.
+	if p := runtime.GOMAXPROCS(0); p == 1 || p > runtime.NumCPU() {
 		g += preemptMs
 	}
 	return g
