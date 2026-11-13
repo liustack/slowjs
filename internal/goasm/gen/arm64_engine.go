@@ -305,6 +305,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	// adapter is the call-site glue: store the argument registers into the
 	// ABI0 area, call, load the result registers back, unless regResult
 	// (CallRecord.RegResult) leaves the result in them.
+	// leafArgs are the registers the call to a register-entry leaf at out[i]
+	// reads without an instruction of the text naming them (a64ProveLR).
+	leafArgs := map[int][]string{}
 	adapter := func(sig Sig, call string, facts *CallFacts, regResult bool) error {
 		regs, err := a64ArgRegs(sig, true)
 		if err != nil {
@@ -547,6 +550,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if calleeKinds[t] == Register {
 				// A register-entry leaf takes its arguments where llc put
 				// them and keeps the AAPCS callee-saved registers.
+				leafArgs[len(out)] = a64LeafArgs(t, fn, facts)
 				out = append(out, "bl go_"+t)
 				rec.Calls = append(rec.Calls, CallRecord{Kind: CallLeaf, Target: t})
 				continue
@@ -602,7 +606,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		return fail("the frame is half freed at the end")
 	}
 	if !env.NoLRProof {
-		if err := a64ProveLR(out, lr, len(rec.Calls)); err != nil {
+		if err := a64ProveLR(out, lr, len(rec.Calls), leafArgs); err != nil {
 			return fail("%v", err)
 		}
 	}

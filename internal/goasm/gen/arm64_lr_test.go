@@ -124,6 +124,22 @@ func TestLowerARM64EngineLRTuplePaths(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+	// memcpy is a register-entry leaf: it reads x0 to x2 where llc put them,
+	// with no line of the text naming them, and writes 48 bytes over the
+	// slot through the address in x0.
+	for name, mid := range map[string][]string{
+		"in a straight line":  {},
+		"past a branch":       {"b .LBB0_1", ".LBB0_1:"},
+		"where a branch goes": {"cbz w3, .LBB0_1", "mov x0, x20", ".LBB0_1:"},
+	} {
+		fn, env := a64TestEnv()
+		lines := append([]string{"sub sp, sp, #64", "str x30, [sp, #40]", "mov x1, x20", "mov x2, #48", "add x0, sp, #0",
+			"st1 { v0.2d, v1.2d }, [x0]"}, mid...)
+		lines = append(lines, "bl memcpy", "ldr x30, [sp, #40]", "add sp, sp, #64", "ret")
+		if _, _, err := LowerARM64EngineFunc(lines, fn, env); err == nil || !strings.Contains(err.Error(), "is an argument of") {
+			t.Errorf("a tuple address passed to a leaf %s: %v", name, err)
+		}
+	}
 	fn, env := a64TestEnv()
 	over := append(append([]string{}, head...), "cbz w0, .LBB0_1", "mov x8, #0", ".LBB0_1:", "st1 { v0.2d, v1.2d, v2.2d }, [x8]")
 	if _, _, err := LowerARM64EngineFunc(append(over, tail...), fn, env); err == nil || !strings.Contains(err.Error(), "also reached") {

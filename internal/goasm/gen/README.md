@@ -288,7 +288,8 @@ reaches on every path from it, through labels and into the targets of
 branches, up to where its register is written again, a call or a return
 (`a64TupleReach`). It must not be read in any other way, nor reach an
 indirect branch, a label the function does not have, a call while it sits in
-a register a call keeps, or the end of the function. A function the proof refuses stops
+a register a call keeps, a call to a register-entry leaf that takes it as an
+argument, or the end of the function. A function the proof refuses stops
 the build. Any other use of LR (a w
 register, LR twice in a pair, writeback forms other than the frame's own)
 stops it too. `GEN_DROP_LR_PAIRS=1` is the negative build that drops the
