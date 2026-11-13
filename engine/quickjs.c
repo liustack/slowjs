@@ -1324,6 +1324,10 @@ enum {
     RV_FAST_MAP_GET, /* Map and WeakMap get */
     RV_FAST_IS_ARRAY, /* Array.isArray */
     RV_FAST_PUSH, /* Array.prototype.push */
+    RV_FAST_INCLUDES, /* Array.prototype.includes */
+    RV_FAST_INDEX_OF, /* Array.prototype.indexOf */
+    RV_FAST_STR_INDEX_OF, /* String.prototype.indexOf */
+    RV_FAST_STR_INCLUDES, /* String.prototype.includes, startsWith, endsWith */
 };
 
 struct JSObject {
@@ -8928,6 +8932,19 @@ static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
                                     int argc);
 static JSValue js_array_push_add(JSContext *ctx, JSObject *p, int argc,
                                  JSValueConst *argv);
+static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv);
+static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static int64_t js_array_find_quiet(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv,
+                                   BOOL same_value_zero);
+static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv, int lastIndexOf);
+static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv, int magic);
+static int js_string_find_quiet(JSValueConst this_val, int argc,
+                                JSValueConst *argv, int kind);
 #define MAGIC_SET (1 << 0)
 #define MAGIC_WEAK (1 << 1)
 
@@ -8951,6 +8968,14 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_IS_ARRAY;
     if (func == (JSCFunction *)js_array_push && magic == 0)
         return RV_FAST_PUSH;
+    if (func == (JSCFunction *)js_array_includes)
+        return RV_FAST_INCLUDES;
+    if (func == (JSCFunction *)js_array_indexOf)
+        return RV_FAST_INDEX_OF;
+    if (func == (JSCFunction *)js_string_indexOf && magic == 0)
+        return RV_FAST_STR_INDEX_OF;
+    if (func == (JSCFunction *)js_string_includes)
+        return RV_FAST_STR_INCLUDES;
     return RV_FAST_NONE;
 }
 
@@ -49919,6 +49944,76 @@ static int64_t js_fast_array_find(JSContext *ctx, JSValue *arrp,
     }
 }
 
+/* Array.prototype.includes (same_value_zero) and indexOf answered in the
+   register loop (rv_fast_call): the index js_array_includes or
+   js_array_indexOf finds, -1 when there is none, for an Array whose
+   elements are its length (fast, so no hole and no getter is read) and a
+   fromIndex that is missing or an int. Its compares are those of
+   js_fast_array_find, but where they would read the interrupt flag (a
+   rope, strings of a step or more, compares of strings of one length that
+   add up to a step) it gives up: -2, and the call is made. It reads no
+   flag, throws nothing and changes nothing. */
+static int64_t js_array_find_quiet(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv,
+                                   BOOL same_value_zero)
+{
+    JSObject *p;
+    JSValue *arrp;
+    JSValueConst v;
+    uint32_t count, n, work = 0;
+    int64_t from;
+    int r;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return -2;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (p->class_id != JS_CLASS_ARRAY || !p->fast_array ||
+        JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT ||
+        JS_VALUE_GET_INT(p->prop[0].u.value) != p->u.array.count)
+        return -2;
+    count = p->u.array.count;
+    if (count == 0)
+        return -1; /* fromIndex is not read */
+    n = 0;
+    if (argc > 1) {
+        if (JS_VALUE_GET_TAG(argv[1]) != JS_TAG_INT)
+            return -2;
+        /* JS_ToInt64Clamp(ctx, &from, argv[1], 0, count, count) */
+        from = JS_VALUE_GET_INT(argv[1]);
+        if (from < 0)
+            from = max_int64(from + count, 0);
+        else if (from > count)
+            from = count;
+        n = from;
+    }
+    v = argv[0];
+    arrp = p->u.array.u.values;
+    for (; n < count; n++) {
+        r = js_quick_strict_eq(v, arrp[n], same_value_zero);
+        if (r == 0)
+            continue;
+        if (r > 0)
+            return n;
+        if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING &&
+            JS_VALUE_GET_TAG(arrp[n]) == JS_TAG_STRING) {
+            /* two strings of one length, as js_short_eq_budget counts them */
+            const JSString *p1 = JS_VALUE_GET_STRING(v);
+            if (work + p1->len >= JS_ROPE_STEP)
+                return -2;
+            work += p1->len;
+            if (js_string_eq(ctx, p1, JS_VALUE_GET_STRING(arrp[n])))
+                return n;
+        } else if (tag_is_string(JS_VALUE_GET_NORM_TAG(v)) &&
+                   tag_is_string(JS_VALUE_GET_NORM_TAG(arrp[n]))) {
+            return -2; /* a rope */
+        } else if (js_strict_eq2(ctx, v, arrp[n], same_value_zero ?
+                                 JS_EQ_SAME_VALUE_ZERO : JS_EQ_STRICT)) {
+            return n; /* two BigInts */
+        }
+    }
+    return -1;
+}
+
 static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
 {
@@ -53639,6 +53734,10 @@ typedef struct JSStringFind {
 static no_inline int js_string_find_check(JSStringFind *f)
 {
     f->work = 0;
+    /* a search with no context (js_string_find_quiet) reads no flag: it
+       stops, and its caller gives the search up */
+    if (!f->ctx)
+        return -1;
     return js_poll_interrupts(f->ctx);
 }
 
@@ -54019,6 +54118,65 @@ static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
         return string_cmp(p1, p2, i, 0, p2->len) ? -1 : i;
     }
     return js_string_find_range(ctx, p1, p2, i, stop, inc);
+}
+
+/* String.prototype.indexOf (kind 0) and String.prototype.includes,
+   startsWith and endsWith (kind 1, 2 and 3, the magic of js_string_includes
+   plus 1) answered in the register loop (rv_fast_call): what they return,
+   an index or 1 or 0, for a this and a search string that are flat strings
+   and a position that is missing or an int (or undefined, but for indexOf).
+   The search is js_string_find's with no context: where it would read the
+   interrupt flag (a step of work, a search string of a step or more) it
+   gives up. -2 then, and the call is made. It throws nothing and changes
+   nothing. */
+static int js_string_find_quiet(JSValueConst this_val, int argc,
+                                JSValueConst *argv, int kind)
+{
+    JSString *p, *p1;
+    int len, v_len, pos, start, stop, i;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_STRING ||
+        JS_VALUE_GET_TAG(argv[0]) != JS_TAG_STRING)
+        return -2;
+    p = JS_VALUE_GET_STRING(this_val);
+    p1 = JS_VALUE_GET_STRING(argv[0]);
+    len = p->len;
+    v_len = p1->len;
+    if (v_len >= JS_ROPE_STEP)
+        return -2;
+    pos = kind == 3 ? len : 0;
+    if (argc > 1 && (kind == 0 || !JS_IsUndefined(argv[1]))) {
+        /* JS_ToInt32Clamp(ctx, &pos, argv[1], 0, len, 0) of an int */
+        if (JS_VALUE_GET_TAG(argv[1]) != JS_TAG_INT)
+            return -2;
+        pos = JS_VALUE_GET_INT(argv[1]);
+        if (pos < 0)
+            pos = 0;
+        else if (pos > len)
+            pos = len;
+    }
+    if (kind == 0) {
+        /* js_string_indexOf */
+        if (len < v_len || len - v_len < pos)
+            return -1;
+        return js_string_find(NULL, p, p1, pos, len - v_len, 1);
+    }
+    /* js_string_includes */
+    len -= v_len;
+    if (kind == 1) {
+        start = pos;
+        stop = len;
+    } else {
+        if (kind == 3)
+            pos -= v_len;
+        else if (pos > len)
+            return 0;
+        start = stop = pos;
+    }
+    if (start < 0 || start > stop)
+        return 0;
+    i = js_string_find(NULL, p, p1, start, stop, 1);
+    return i == -2 ? -2 : i >= 0;
 }
 
 static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,

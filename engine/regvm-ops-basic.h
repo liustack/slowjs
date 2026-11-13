@@ -812,6 +812,27 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
             ret = JS_NewBool(ctx, idx == JS_CLASS_ARRAY);
         }
         goto answer;
+    case RV_FAST_INCLUDES:
+    case RV_FAST_INDEX_OF:
+        {
+            int64_t k = js_array_find_quiet(ctx, this_v, n, W + 1,
+                                            f->rv_fast == RV_FAST_INCLUDES);
+            if (k == -2)
+                break;
+            ret = f->rv_fast == RV_FAST_INCLUDES ? JS_NewBool(ctx, k >= 0) :
+                JS_NewInt64(ctx, k);
+        }
+        goto answer;
+    case RV_FAST_STR_INDEX_OF:
+    case RV_FAST_STR_INCLUDES:
+        r = js_string_find_quiet(this_v, n, W + 1,
+                                 f->rv_fast == RV_FAST_STR_INDEX_OF ? 0 :
+                                 f->u.cfunc.magic + 1);
+        if (r == -2)
+            break;
+        ret = f->rv_fast == RV_FAST_STR_INDEX_OF ? JS_NewInt32(ctx, r) :
+            JS_NewBool(ctx, r);
+        goto answer;
     case RV_FAST_PUSH:
         {
             /* the room is made first, the elements added after the checks */

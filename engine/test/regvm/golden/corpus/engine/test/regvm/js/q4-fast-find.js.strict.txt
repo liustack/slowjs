@@ -1,0 +1,8 @@
+exception TypeError: no setter for property
+stack     at push (native)
+stack     at odd (<eval>:88:35)
+stack     at <anonymous> (<eval>:134:17)
+stack     at <eval> (<eval>:141:3)
+mem-end obj=383 atom=542 shape=242 prop=1911 jsfunc=1 cfunc=257 array=2 fast_array=1 elements=0 binary=0
+mem-gc obj=197 atom=541 shape=124 prop=974 jsfunc=0 cfunc=134 array=1 fast_array=0 elements=0 binary=0
+--- status exit 0
