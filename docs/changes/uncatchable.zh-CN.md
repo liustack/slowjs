@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，没有内存上限时的 fmt 和它的分段写出，以及 Builtin 切不开的一段文字'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，没有内存上限时的 fmt 和它的分段写出，Builtin 切不开的一段文字，分段检查着处理的 Intl 长文本，以及分段检查着造出的 fmt 长输出'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -596,6 +596,20 @@ locale 列表里超过 16,384 个字符的标签现在是 `RangeError`，和 v0.
 
 每个结果都不变：18 MB 维基百科文本（泰文、老挝文、高棉文、缅甸文、中文、文言文、日文、印地文和希腊文）的词、`containing` 和句子分段，按 `compare` 和 `localeCompare` 排的词序，大小写和列表，都和 v0.30.3 一样。
 
-仍然整个处理的部分：引擎把长参数读成 WTF-8 时每 256 Ki 个字符检查一次，不是每块检查一次。比较和大小写转换在工作期间把整个输入留在 Go 里，算在余量里。DurationFormat 把它的输入整个转成 UTF-16，最多是 Temporal 字符串的 16,384 个单位。`fmt` 的函数整个生成一次调用的输出，整个把 BigInt 写成十进制（见 `fmt/sweep_test.go` 的 `known`）。
+仍然整个处理的部分：引擎把长参数读成 WTF-8 时每 256 Ki 个字符检查一次，不是每块检查一次。比较和大小写转换在工作期间把整个输入留在 Go 里，算在余量里。DurationFormat 把它的输入整个转成 UTF-16，最多是 Temporal 字符串的 16,384 个单位。`fmt` 的函数原来整个造出一次调用的输出，之后长输出也分段造出并检查调用（见[下文](#fmt-的函数分段造出长输出并检查调用)）。
 
 测试：`intl/runs_test.go` 的 `TestLongReadStops`、`TestLongReadInterrupt` 和 `TestLongCallsStopAtEveryTimeout`（用 `internal/stopsweep` 在 2 ms 到整个调用时间之间的各个超时下扫每个长调用），`intl/stops_test.go` 的 `longWork` 里的 locale 列表和大小写转换，`intl/door_test.go` 的 `TestCaseRoomCoversGo`、`TestShortCompareFitsFixedRoom`、`TestListTagRefused` 和 `TestListRoomCoversGo`，`fmt/sweep_test.go` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal/stops_test.go` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。
+
+## fmt 的函数分段造出长输出并检查调用
+
+发布版本：Unreleased。
+
+`fmt.sprintf`、`printf`、`sprint` 和 `println` 原来在调用能停下之前用 Go 的 fmt 整个造出输出，用 math/big 一次把 BigInt 写成十进制。在 Apple M4 上，对 3.2 MiB 控制字符做 `%q`（16 MiB 输出）不检查地跑了 22 ms，对 2 Mi 个数字的数组做 `%v` 一次复制 15 MiB 的 json，在 Rosetta 下超出 eval 超时 8 ms，对最长的 BigInt 做 `%d` 用 17 ms 一次转换 1,040,000 位。
+
+现在上界超过 64 KiB 的调用一个动词一个动词地造输出，至少每 64 KiB 的输出、长参数或格式检查一次调用，每 4,096 个动词也检查一次（`fmt/printf.go`，移植了 Go 的 `fmt/print.go` 里的 `doPrintf`、`doPrint` 和 `doPrintln`）。短参数的每个动词由 Go 的 fmt 用只含这个动词的格式造出。超过 64 KiB 的字符串或对象的 json 由移植过来、改成分段写的 `fmt/format.go` 字符串动词写出：`%s`、`%q`、`%x` 和 `%X`，它们的补齐，以及动词不适用于参数时写的错误文本。`%q` 在字符开始的地方切段，所以转义和整个字符串的一样。超过 65,536 位的 BigInt 转成十进制时，用 10 的幂把它切成两半，两半再同样切，每两步之间检查一次（`decimal`），`%w` 每次写它的几个字。上界不超过 64 KiB 的调用和原来一样由 Go 的 fmt 整个造出，远不到一毫秒。
+
+长 BigInt 转换的第一步仍然是整个做的：math/big 对整个 BigInt 做一次除法，约占转换的三分之一。对引擎能造出的最长 BigInt（1,048,576 位），它在 Apple M4 上用 5 到 7 ms，AMD EPYC 的一个核上 9 ms，Rosetta 下 19 ms。引擎自己的转换会检查调用，但慢 127 倍：`String((1n << 1040000n) - 1n)` 要 2.2 秒，math/big 只要 17 ms。
+
+输出和 Go 的 fmt 逐字节相同。每个输出在一个和它的上界一样大、从不增长的缓冲区里造出，所以调用分配的是它的上界，加上动词另外要的：`TestOutputAllocatedUnderBudget` 的长输出上最多是上界的 8 倍，Go 的 fmt 原来最多分配 10.9 倍。在 Apple M4 上，长参数和 Go 的 fmt 一样快或更快：15 MiB 的 `%v` 用 0.8 到 1.2 ms，Go 用 1.5 ms，1 MiB 的 `% x` 用 1.9 到 2.3 ms，Go 用 2.6 到 3.1 ms，16 MiB 的 `%q` 用 22 ms，Go 用 25 ms。很多短动词会慢一些：一千个 `%d` 的格式要 56 µs，Go 要 17 µs。只有上界超过 64 KiB 的调用才这样造。
+
+测试：`fmt/printf_test.go` 的 `TestPrintfAsGo` 在 VM 给 Go 函数的每种类型的 77 组参数上，对用到各种标志、下标、宽度和精度的 18,043 个格式，把输出和 Go 的 fmt 比较，一次按调用实际的造法，一次让每个字符串、对象和超过 64 位的 BigInt 都按 5 字节一段分段写出。`FuzzPrintfAsGo` 对任意格式、字符串和整数做同样的比较，参数里还有这个字符串的对象和由两者造出的 BigInt（90 秒 330 万个输入没有找到不同）。`fmt/limits_test.go` 的 `TestOutputAllocatedUnderBudget` 量的是现在这种造法的分配，`fmt/sweep_test.go` 的 `TestLongCallsStopAtEveryTimeout` 扫 16 MiB 的 `%q`、8 MiB 对象的 `%v`，以及对 2 Mi 个数字的数组做 `sprintf`、`printf` 和 `sprint`，其中三个在 `-short` 下也跑。最长 BigInt 的 `%d` 因为第一次除法仍留在 `known` 列表里。

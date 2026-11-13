@@ -38,6 +38,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（落后很远的列表，页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
 - 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
+- 改了 `fmt/printf.go` 或 `fmt/bound.go`，还要把 `FuzzPrintfAsGo` 跑几分钟：`go test -run '^$' -fuzz '^FuzzPrintfAsGo$' -fuzztime 3m ./fmt`。它检查一个动词一个动词、分段造出的输出和 Go 的 fmt 逐字节相同，`TestPrintfAsGo` 对固定的格式做同样的检查。
 - 改了引擎，还要运行它所涉及部分的[重点检查](#重点检查)，以及 [test262](#test262)。
 - `-p 1` 一次只跑一个包：根包的测试会启动很多 VM，每个 VM 都映射自己的内存。
 
@@ -288,7 +289,7 @@ go test -race -tags testhooks ./internal/hostmem         # VMs mapping memory on
 
 测试不用时钟去限定 `runtime.GC` 或其他任何等 Go 调度器的地方。`runtime.GC` 返回前要清扫堆，每清扫一个 span 就让出一次（`Gosched`）。只有一个 P 时（`GOMAXPROCS=1`，比如用 `taskset` 绑在一个核上），一直占着 CPU 的 goroutine（比如在循环里的脚本）每次都会拿回 P，直到 10 ms 后调度器抢占它才交出来。所以这次 GC 要花剩下的 span 数乘以 10 ms：在整个根包里约一秒，旁边有 200,000 个小对象的垃圾时是 28 秒，旁边换成纯 Go 的循环也一样。给这种 GC 设 1 秒的上限，在一些 Go 版本上失败、另一些不失败，取决于前面的测试留下的堆有多大。这样的测试要按引擎做了多少工作来判断，用 poll 次数（见 `stoppolls_test.go`、`TestLoopWithoutCallsPolls` 和 `internal/cengine` 的 `TestGCInTightLoops`），卡死交给父进程去发现（`TestGCStopsLoopWithoutCalls`）。给别的东西设时钟上限可以留着：必须停下一次调用的超时，或者另一个 goroutine 发出的 `Interrupt`（引擎在轮询时读这两样，那个 goroutine 等 P 最多等一次抢占，也就是 10 ms），杀进程规则定下的下限，以及防卡死的几秒或几分钟的守卫。
 
-`intl`、`temporal`、`fmt` 里 Go 函数的长调用要在很多个超时下检查，不只一个：`stopsweep.Sweep`（`internal/stopsweep`）先给整个调用计时，再用 2 ms 的求值超时重跑，每次乘 1.2，一直到整个调用的时间，任何一次停下的时间比超时晚出宽限期就失败。只用一个超时，只有超时正好落在没有检查的那段里才发现得了，而一段在这台机器上短，换到慢的机器上就长。宽限期按工作量定，不按某台机器定：调用至少每处理一块输入就读一次 `vmhook.Stop`，所以在处理 n 个单位要用 T 的机器上，两次读最多隔 2·块·T/n，宽限期取它的两倍，再加 5 ms 给不属于输入的工作，只有一个 P 时再加 10 ms。晚停的那次会再试两次才算数。扫这些调用的测试是 `intl` 和 `fmt` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。在 CI 跑的 `-short` 下，扫描只在整个调用时间的四分之一、一半和四分之三处停下每个调用，比调用的四分之一还长的无检查段在哪台机器上都躲不过，并且只取一部分调用，输入也更短：在 Apple M4 上 `intl` 约 2 秒，`temporal` 1 秒，`fmt` 0.2 秒，Rosetta 下是 2.2、1.3 和 0.3 秒。CI 的 Intel Mac 发现的 Segmenter 读文本不检查的问题，在 M4 上也会让它失败。这种读的输入仍然保持很长（8 Mi 个单位），因为无检查段只有比宽限期固定的 5 ms 长才看得出来。还有一段没有检查的调用，在测试里列出来，写明是什么给这段定了上限，并跳过，直到把它切开的那次改动。
+`intl`、`temporal`、`fmt` 里 Go 函数的长调用要在很多个超时下检查，不只一个：`stopsweep.Sweep`（`internal/stopsweep`）先给整个调用计时，再用 2 ms 的求值超时重跑，每次乘 1.2，一直到整个调用的时间，任何一次停下的时间比超时晚出宽限期就失败。只用一个超时，只有超时正好落在没有检查的那段里才发现得了，而一段在这台机器上短，换到慢的机器上就长。宽限期按工作量定，不按某台机器定：调用至少每处理一块输入就读一次 `vmhook.Stop`，所以在处理 n 个单位要用 T 的机器上，两次读最多隔 2·块·T/n，宽限期取它的两倍，再加 5 ms 给不属于输入的工作，只有一个 P 时，或者 P 比 CPU 多时（`GOMAXPROCS` 设得比 `taskset` 留下的核多），再加 10 ms。晚停的那次会再试两次才算数。扫这些调用的测试是 `intl` 和 `fmt` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。在 CI 跑的 `-short` 下，扫描只在整个调用时间的四分之一、一半和四分之三处停下每个调用，比调用的四分之一还长的无检查段在哪台机器上都躲不过，并且只取一部分调用，输入也更短：在 Apple M4 上 `intl` 约 2 秒，`temporal` 1 秒，`fmt` 1.1 秒，Rosetta 下是 2.2、1.3 和 1.6 秒。CI 的 Intel Mac 发现的 Segmenter 读文本不检查的问题，在 M4 上也会让它失败。这种读的输入仍然保持很长（8 Mi 个单位），因为无检查段只有比宽限期固定的 5 ms 长才看得出来。还有一段没有检查的调用，在测试里列出来，写明是什么给这段定了上限，并跳过，直到把它切开的那次改动。
 
 ## 每个目标平台
 

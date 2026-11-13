@@ -144,6 +144,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | fmt bounds a call with no memory limit, and writes in pieces | v0.30.3 | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
 | A run no Builtin can cut reads the interrupt flag | v0.30.3 | [uncatchable.md](uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag) |
 | Long text and lists of locales are worked on in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#long-text-and-lists-of-locales-are-worked-on-in-checked-pieces) |
+| The functions of fmt make a long output in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
 
 ## Errors and stacks
 
