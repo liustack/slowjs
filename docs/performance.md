@@ -61,6 +61,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.29.10 | [RegisterStartTag and RegisterEndTag](#react-doms-start-and-end-tags-in-c) | The workbench pages of the shop take 7.3% less time, the storefront pages 7.0%, the MUI pages 3.8% and the bench pages 33%. A VM holds about 26 KB more |
 | v0.29.11 | [A stack check in every function that calls](#every-function-that-calls-has-a-stack-check) | A cost, for a safe fault: up to 0.6% more time (0.27% to 0.36% more instructions) |
 | v0.30.0, v0.30.1 | Interrupt reaches the tag functions, long ropes, `repeat` and regexp compiles | Fixes. No speed claim |
+| v0.30.2 | JavaScript runs in a register interpreter, and the stack interpreter of QuickJS is gone ([CHANGELOG](../CHANGELOG.md)) | A first reading in tifa, with only the engine changed from v0.30.1 (linux/amd64, an AMD EPYC 7B13 with 4 cores, one core, built without PGO, 60 renders a page, three rounds in turning order, sums of the pages' medians): the six workbench pages of the shop take 0.893 of the time (0.892 to 0.899 over the rounds), its three storefront pages 0.864 (0.859 to 0.869), the three MUI pages 0.891 (0.890 to 0.896). Each of the 12 pages is faster, 0.857 to 0.908. This run has no control of a build against itself (the one made for the preview stayed within 1%), and the comparison over the code positions of [measuring.md](measuring.md) is still to come |
 
 ## Measuring in tifa
 
