@@ -342,7 +342,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 `scripts/gen-engine.sh` 检查 LLVM 版本，pass 的源码变了就重新构建它，构建生成器，并以正式构建的参数运行它（`GEN_RELEASE=0` 允许勘察和测试用的开关，并且会说明）。`scripts/check.sh` 一个接一个地运行它的步骤，为每一步在 `.build/check-logs/` 下写一份日志（可用 `CHECK_LOGS` 改），失败后继续，最后给出一张表。`go test` 里的跳过会被计数并在表里点名，因为被跳过的测试什么也没检查：在 Linux 上预期的跳过只有一个，`TestVarargsNative/aarch64`，它要一个 aarch64 模拟器（Mac 上见[下文](#linux-和-macos-上的-llvm)）。需要引擎的步骤用的是提交进仓库的那个，所以只有在改动需要新文件之后才先运行 `make gen`。
 
-引擎是用页面渲染的性能画像生成的（[generator.md](changes/generator.zh-CN.md#tifa-页面的性能画像)）。`engine/pgo/train.sh` 在装有 LLVM 22.1.8 的机器上用约 30 秒把它训练成 `engine/pgo/profile.txt`，用的是入库在 `engine/pgo/pages` 的页面（[engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md)）。它按生成器编译引擎的方式构建原生宿主，把页面渲染两遍，中间把计数器清零，再跑 `compare/testdata` 的微基准。训练不属于任何检查，因为两次训练有几个计数不同：[releasing.md](releasing.zh-CN.md#性能画像) 说要训练时，发布前重新训练，并把画像和 `make gen` 由它生成的文件一起提交。`make gen` 和 `make check-gen` 会打印生成器的画像行（`warning: profile:`、`profile:` 和 `profile `）：哪些函数因为训练之后 C 改过而没有画像，以及有多少个 `likely()` 提示被训练跑成了反方向（清单在 `.build/w-<arch>/pgo/misexpect.txt`）。`GEN_PGO=0` 不用画像生成，用来对照，不是正式构建。
+引擎是用页面渲染的性能画像生成的（[generator.md](changes/generator.zh-CN.md#tifa-页面的性能画像)）。`engine/pgo/train.sh` 在装有 LLVM 22.1.8 的机器上用约 30 秒把它训练成 `engine/pgo/profile.txt`，用的是入库在 `engine/pgo/pages` 的页面（[engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md)）。它按生成器编译引擎的方式构建原生宿主，把页面渲染两遍，中间把计数器清零。训练不属于任何检查，因为两次训练有几个计数不同：[releasing.md](releasing.zh-CN.md#性能画像) 说要训练时，发布前重新训练，并把画像和 `make gen` 由它生成的文件一起提交。`make gen` 和 `make check-gen` 会打印生成器的画像行（`warning: profile:`、`profile:` 和 `profile `）：哪些函数因为训练之后 C 改过而没有画像，以及有多少个 `likely()` 提示被训练跑成了反方向（清单在 `.build/w-<arch>/pgo/misexpect.txt`）。`GEN_PGO=0` 不用画像生成，用来对照，不是正式构建。
 
 | 步骤 | 档 | 运行什么 |
 | --- | --- | --- |

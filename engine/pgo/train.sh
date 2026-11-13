@@ -7,16 +7,13 @@
 # train.sh: train the profile make gen compiles the engine with, into
 # engine/pgo/profile.txt (see engine/pgo/README.md). Run it from anywhere
 # inside the repository on a machine with LLVM 22.1.8, then make gen and
-# make gen ARCH=arm64. It takes about two minutes.
+# make gen ARCH=arm64. It takes about 30 seconds.
 #
 # The engine and its libc are built as the generator compiles them, with
-# -fprofile-instr-generate (engine/test/build.sh pgo). The profile holds:
-#   - the pages of engine/pgo/pages, each rendered twice, with the counters
-#     set to zero when the second pass starts: warm renders only, no load of
-#     a bundle and no first render;
-#   - the micro benchmarks of compare/testdata at the counts of
-#     engine/pgo/micro.txt, so that a path the pages never take is not left
-#     without a count.
+# -fprofile-instr-generate (engine/test/build.sh pgo). The profile holds the
+# pages of engine/pgo/pages, each rendered twice, with the counters set to zero
+# when the second pass starts: warm renders only, no load of a bundle and no
+# first render.
 #
 # Environment:
 #   LLVM_BIN   bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
@@ -33,7 +30,7 @@ if [ "$got" != "$want" ]; then
 fi
 out=${TRAIN_OUT:-.build/pgo-train}
 rm -rf "$out"
-mkdir -p "$out/micro"
+mkdir -p "$out"
 
 cc=$llvm/clang
 if [ "$(uname -s)" = Darwin ]; then
@@ -42,7 +39,9 @@ fi
 CC=$cc engine/test/build.sh pgo "$out/host" > "$out/build.log"
 
 # render APP PAGE...: the pages of APP twice, the counters set to zero
-# before the second pass (reset=K, engine/test/render.c).
+# before the second pass (reset=K, engine/test/render.c). render stops with an
+# error when a page throws; each page must be in its report and the counters
+# must be written.
 p=engine/pgo/pages
 render() {
 	app=$1
@@ -53,16 +52,20 @@ render() {
 	done
 	LLVM_PROFILE_FILE="$out/$app.profraw" "$out/host/render" tifa=1 young=1 prelude="$p/fakeintl.js" \
 		bundle="$p/$app/$app.js" inputs="${ins#,}" warm=2 n=8 tag="$app" reset=$# > "$out/$app.txt"
+	got=$(grep -o '"input":"[^"]*"' "$out/$app.txt" | wc -l | tr -d ' ')
+	if [ "$got" != $((2 * $#)) ]; then
+		echo "train.sh: $app rendered $got pages, want $((2 * $#)) ($out/$app.txt)" >&2
+		exit 1
+	fi
+	if [ ! -s "$out/$app.profraw" ]; then
+		echo "train.sh: $app wrote no counters ($out/$app.profraw)" >&2
+		exit 1
+	fi
 }
 render shop wb-studio wb-order-studio wb-stats-studio store-en-US-home store-en-US-products \
 	store-en-US-product store-en-US-journal store-en-US-post store-en-US-cart store-en-US-checkout
 render mui home
 
-while read -r name n; do
-	sed "s/\\\$N/$n/" "compare/testdata/$name.js" > "$out/micro/$name.js"
-	LLVM_PROFILE_FILE="$out/micro/$name.profraw" "$out/host/jsrun" "$out/micro/$name.js" > "$out/micro/$name.txt"
-done < engine/pgo/micro.txt
-
-"$llvm/llvm-profdata" merge -o "$out/profile.profdata" "$out"/*.profraw "$out"/micro/*.profraw
+"$llvm/llvm-profdata" merge -o "$out/profile.profdata" "$out/shop.profraw" "$out/mui.profraw"
 "$llvm/llvm-profdata" merge --text -o engine/pgo/profile.txt "$out/profile.profdata"
 echo "engine/pgo/profile.txt: $(grep -c '^# Func Hash:' engine/pgo/profile.txt) functions"

@@ -2,15 +2,14 @@
 
 English · [简体中文](README.zh-CN.md)
 
-What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/changes/c-engine.md](../../docs/changes/generator.md#a-profile-of-tifas-pages).
+What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/changes/generator.md](../../docs/changes/generator.md#a-profile-of-tifas-pages).
 
 ## What is here
 
 | Path | What |
 | --- | --- |
-| `train.sh` | Trains the profile. Builds the engine as the generator compiles it with counters in, renders the pages, runs the micro benchmarks, and writes `profile.txt` |
+| `train.sh` | Trains the profile. Builds the engine as the generator compiles it with counters in, renders the pages and writes `profile.txt` |
 | `profile.txt` | The profile, in the text form of `llvm-profdata`. One file for amd64 and arm64: the hash of a function depends on the C only. Training twice gives files that differ in a few counts, so the file is checked in and `make gen` never trains |
-| `micro.txt` | How many times each micro benchmark of `compare/testdata` runs in the training (`$N` of its script), so that a path the pages never take has counts too |
 | `pages/` | The pages the training renders (below) |
 
 ## Train again
@@ -42,7 +41,7 @@ An input is the JSON text tifa hands to `startRender` for a page: `buildId`, `la
 
 ### Make them again
 
-The bundles and inputs came from tifa at commit `07b6ce0f7e052558d47b8ff649623bebd047ae04`, with the packages of each app's `pnpm-lock.yaml`, Go 1.27.2, Node 24.13.0 and pnpm 10.33.0. A build with the packages of the lockfiles gave the same bytes as the files here, for both bundles.
+The bundles and inputs came from tifa at commit `07b6ce0f7e052558d47b8ff649623bebd047ae04`, with the packages of each app's `pnpm-lock.yaml`, Go 1.27.2, Node 24.13.0 and pnpm 10.33.0. The files here are the reference: the training reads them and the SHA-256 below names them. The steps below are how they were made. Both bundles were built again with the packages of the lockfiles, taken from an existing install, and gave the same bytes. A fresh `pnpm install --frozen-lockfile` has not been run.
 
 ```sh
 # 1. a clean copy of tifa at the commit, with the packages installed

@@ -2,15 +2,14 @@
 
 [English](README.md) · 简体中文
 
-`make gen` 用性能画像（profile）编译引擎所需的东西：画像本身，训练它的程序，以及训练用的页面。画像对生成的代码做了什么，带来多少收益，在哪里止步，见 [docs/changes/c-engine.zh-CN.md](../../docs/changes/generator.zh-CN.md#tifa-页面的性能画像)。
+`make gen` 用性能画像（profile）编译引擎所需的东西：画像本身，训练它的程序，以及训练用的页面。画像对生成的代码做了什么，带来多少收益，在哪里止步，见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#tifa-页面的性能画像)。
 
 ## 这里有什么
 
 | 路径 | 内容 |
 | --- | --- |
-| `train.sh` | 训练画像。按生成器编译引擎的方式构建带计数器的引擎，渲染页面，跑微基准，写出 `profile.txt` |
+| `train.sh` | 训练画像。按生成器编译引擎的方式构建带计数器的引擎，渲染页面，写出 `profile.txt` |
 | `profile.txt` | 画像，用 `llvm-profdata` 的文本格式。amd64 和 arm64 共用一份：函数的哈希只取决于 C 代码。同样的训练跑两次，文件里有几个计数不同，所以文件入库，`make gen` 从不训练 |
-| `micro.txt` | 训练时 `compare/testdata` 的每个微基准跑多少次（它脚本里的 `$N`），让页面从不走的路径也有计数 |
 | `pages/` | 训练渲染的页面（见下） |
 
 ## 重新训练
@@ -42,7 +41,7 @@ git add engine/pgo/profile.txt internal/cengine
 
 ### 重新做出它们
 
-bundle 和输入来自 tifa 的提交 `07b6ce0f7e052558d47b8ff649623bebd047ae04`，包取自每个应用的 `pnpm-lock.yaml`，用 Go 1.27.2、Node 24.13.0 和 pnpm 10.33.0。用锁文件里的包构建，两个 bundle 得到的字节和这里的文件相同。
+bundle 和输入来自 tifa 的提交 `07b6ce0f7e052558d47b8ff649623bebd047ae04`，包取自每个应用的 `pnpm-lock.yaml`，用 Go 1.27.2、Node 24.13.0 和 pnpm 10.33.0。以这里的文件为准：训练读的是它们，下面的 SHA-256 指的也是它们。下面的步骤是它们当初的做法。两个 bundle 用锁文件里的包（取自已有的安装）重新构建过，字节相同。全新的 `pnpm install --frozen-lockfile` 没有跑过。
 
 ```sh
 # 1. 取这个提交的干净 tifa，装好包
