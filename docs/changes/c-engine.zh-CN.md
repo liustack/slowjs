@@ -508,6 +508,35 @@ pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码
 
 测试：`engine/test/regvm/js/q3-charcode.js` 在两种宽度的字符串、一个长字符串和拼平前后的 rope 上调用 `charCodeAt`，下标覆盖各种情况（范围内、越界、负数、`-0`、double、字符串、`null`、会转换的对象、Symbol、BigInt、转换时抛错的、没有下标、多给参数），`this` 覆盖各种类型，还有另一个 realm 的 `charCodeAt`，以及被替换、包进 proxy 和绑定过的，还有递归到深度上限。它的输出就是改动之前那个构建的输出。`e-charcode-interrupt.js` 在原生宿主上用中断停住只做 `charCodeAt` 调用的循环，`TestRegvmCharCodeAtLoopStops` 在生成的引擎上用 eval 超时和 Interrupt 停住它，要求在 `stopPolls` 次轮询之内停下，并且停在循环里不是调用的地方，而改动之前的构建停在某次调用里面。改动之前的构建跑这个脚本，输出和它的 golden 只差停下的位置。`unit-oom` 的 `test_uncatchable_fast_call` 检查有无法捕获的异常挂起时，`charCodeAt` 之后的代码不运行。
 
+### 寄存器循环直接回答的内置函数
+
+版本：Unreleased。
+
+寄存器循环在它回答 `charCodeAt` 的那个调用点（`RV_CALL_OUT`）自己回答更多内置函数：`Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has`，`Map` 和 `WeakMap` 的 `get`，`Array.isArray`，`Array.prototype.push`，数组的 `includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`，`Object.prototype.hasOwnProperty`，以及参数是字符串的 `String`。这些是 tifa 的页面和 React 从 JavaScript 里调用最多的 C 函数。每次调用要比答案本身多花 70 到 250 条指令：调用的检查、一层调用深度、`js_call_c_function` 的帧，以及 `this` 和参数的转换。`JS_NewCFunction3` 在每个 realm 里按函数是什么给它做标记（`rv_fast_kind`，记在 `JSObject.rv_fast` 的几位里）。脚本替换过、绑定过或者包进 proxy 的函数是另一个对象，照常调用。
+
+先找出答案，只对 C 函数不跑脚本、不抛异常、不做任何看得见的改动、也不读中断标志的那些 `this` 和参数：
+
+| 内置函数 | 直接回答 | 其余照常调用，例如 |
+| --- | --- | --- |
+| `Math.clz32` | int 或 double | 需要转换的值 |
+| 四种集合的 `has` 和 `get` | 类对得上的 `this`，查找时不读标志的键 | rope 键，加起来够一步的字符串比较，别的类的 `this` |
+| `Array.isArray` | 除 proxy 以外的任何值 | proxy，它可能已被撤销 |
+| `Array.prototype.push` | 长度等于元素个数且可写的快速数组，元素放得进它的空间时 | 需要扩容的 push，冻结或不可扩展的数组，类数组对象 |
+| 数组的 `includes`、`indexOf` | 长度等于元素个数的快速数组，`fromIndex` 没给或是 int | 空位，原型上的 getter，类数组对象，typed array，proxy，需要转换的 `fromIndex`，rope，超过一步的比较 |
+| 字符串的 `indexOf`、`includes`、`startsWith`、`endsWith` | 拼平的字符串和短于一步的拼平的子串，位置没给或是 int | rope，需要转换的子串或位置，RegExp |
+| `Object.hasOwn`、`hasOwnProperty` | 普通对象，以及 atom 已经存在的键（`js_key_atom_quiet`：字符串自己的 `key_atom`，下标，Symbol，或在 atom 表里找到的不超过 64 个字符的字符串） | exotic 对象（数组、proxy、String 对象、`arguments`），原始值，调用时才会新建 atom 的键 |
+| `String` | 字符串 | 其他任何值，没有参数，`new String` |
+
+然后循环按 `js_call_c_direct` 调用 C 函数之前的顺序做同样的事（`rv_fast_enter`）：深度和栈的检查（不通过时照常调用，像以前一样抛出），计一次 poll，读中断标志，检查有没有待处理的不可捕获错误。需要扩容的 push 做完这些检查，再像 `js_call_c_direct` 那样调用 `push`（`js_call_c_counted`）：占一层调用深度，像直接调用那样把跳过的帧记作已占用（`rt->c_direct_debt`），经 `js_call_c_plain` 调用，由 `push` 扩容或抛出，和以前一样。
+
+为什么结果相同：答案用的是 C 函数自己的比较和查找（`indexOf` 和 `includes` 用 `js_quick_strict_eq` 和 `js_strict_eq2`，集合用 `js_same_value_zero`，字符串用 `js_string_find`，键用 `__JS_NewAtom` 的查找），并且在 C 函数会读中断标志的地方放弃，所以接下来做的调用找到的就是它本来会找到的。异常只来自真正做的那次调用，带着它自己的栈和消息。停下的地方、poll 的计数和递归能到的深度都和调用时一样。`hasOwnProperty.call(o, k)` 还走它自己的路径（[hasOwnProperty.call 在解释器里直接回答](objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答)），现在也用同样的办法找键的 atom。在生成的引擎里，查找中的循环和在 C 函数里一样计入下一次 poll：查找做到一半放弃时，调用会把这一半再做一遍，所以 poll 最多早来一步的工作量。也因为这样，还不是 atom 的键只有不超过 64 个字符时才去 atom 表里查。
+
+代价：调用其他函数什么也不多花，`rv_fast` 的测试本来就在。新的内置函数在单独的函数 `rv_fast_builtin` 里回答，循环在它唯一的调用点按种类从一张表（`rv_fast_fns`）里取函数，所以 `rv_fast_call` 的帧不变，内置函数也不用再多一次调用。经过这张表，`charCodeAt` 在 arm64 上每次多约 8 条指令，而把所有种类放进一个函数时它多 12 条，从一个函数再调用另一个时内置函数多约 33 条。`rv_fast_builtin` 的 Go 帧在 arm64 上是 168 字节，在 amd64 上是 208 字节，`js_key_atom_quiet` 是 168 和 160，`js_has_own_call` 在 amd64 上多 16 字节。它们都在下一次调用之前返回，所以没有递归经过它们。`JS_RegvmRun` 在 arm64 上仍占 176 字节影子栈，在 amd64 上仍占 256，其他帧都不变，`TestRegvmDepth`、`TestCCallDepth` 和 `TestHasOwnCallDepth` 在两种架构上停在同样的深度。
+
+收益：在 Apple M4 上，一次渲染在 React 的页面上少跑 2.1% 的指令，store 页面 1.8%，workbench 页面 1.2%，MUI 页面 0.7%。在 amd64 上用 callgrind 量每组一个页面，分别少 2.5%、2.1%、1.4% 和 0.4%（[performance.zh-CN.md](../performance.zh-CN.md#寄存器循环直接回答的内置函数)）。React 上主要来自 `push`、`Map.get` 和 `Math.clz32`，MUI 上来自 `has`、`Array.isArray` 和 `Math.clz32`，store 上来自 `hasOwn`、`has` 和 `String`。在 linux/amd64 的一个 EPYC 核上，一次渲染在 React 的页面上少花 1.4% 的时间，store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面在计时能分辨的 1% 以内不变。
+
+测试：`engine/test/regvm/js/q4-fast-clz32-has.js`、`q4-fast-get.js`、`q4-fast-weak.js`、`q4-fast-array.js`、`q4-fast-find.js`、`q4-fast-strfind.js`、`q4-fast-hasown.js` 和 `q4-fast-string.js` 在循环里调用每个内置函数，也经 `Reflect.apply` 调用（循环不回答它），覆盖上表列出的每种 `this` 和参数以及各自的边界（NaN、`-0`、空位、长度超过元素个数、原型上的 getter、冻结的数组、rope、两种宽度的字符串、BigInt、Symbol、已回收的弱键、运行时拼出的键、会记录转换过程的对象、另一个 realm 的函数、被替换的函数），并递归到深度上限。它们的 golden 是改动前那个构建的输出。`e-fast-interrupt.js` 用固定次数的 poll 停下一个回答调用的循环，停在和以前相同的地方。`TestRegvmLimitsInterrupt` 用 eval 超时和 `Interrupt` 停下这些内置函数的循环和递归，`TestRegvmLimitsMemory` 用内存上限停下用它们扩数组的循环，`unit-white` 的 `test_counted_call_debt` 检查 `js_call_c_counted` 做的调用和直接调用占同样的深度、记作已占用的栈也一样，`unit-oom` 的 `test_fast_builtins_oom` 在内存不够时运行它们，每个都以调用本身的内存不足错误失败，什么也不丢。
+
 ## 调用结束时跳过没有引用计数的值
 
 字节码函数的一次调用结束时，会释放它的局部变量和留在栈上的操作数（见[上面](#一次调用如何设置和释放它的值)）。它们多数没有引用计数可还：没有代码设置过的局部变量是 `undefined`，其余的，数字、布尔值和 `null` 与字符串、对象一样多。这个循环仍然一对一对地看它们，每对 15 条指令。它在循环体里调用一个函数，所以 LLVM 把指针、计数和轮询计数器在调用前后保存在栈上，每圈开头都读回来，没有释放任何东西的圈也一样。一个有 200 个局部变量、一个也没设置的函数，调用时比没有局部变量的函数多 2,314 条指令：每个局部变量 11.6 条，其中约 7.5 条是释放。

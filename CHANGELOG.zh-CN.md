@@ -14,6 +14,7 @@
 - 字节码版本升到 12，因为对象的 rest 用一张列表记下它排除的键（`OP_copy_rest`）：v0.30.4 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 有内存上限的 VM 现在也留下 Intl 或 `fmt` 长调用的最后一块，前提是这块和 VM 的内存加起来放得进上限，上限也把它算进去：引擎的分配需要这块空间时，先把它还给系统，所以留着的块不会让脚本内存不足。在 GitHub 的 macos-15 机器上，上限 1 GiB 的 VM 在 8 Mi 字符的文本里找第一个词，每次调用 3.9 到 4.9 ms，v0.30.4 是 28 到 35 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块)）。
 - 解释器直接调 C 函数，以及 `call`、`apply` 和绑定函数对 C 函数的调用，参数从 8 个字减到 5 个，引擎自己读属性的调用从 7 个减到 5 个，所以在 arm64 上这两个调用都不再在影子栈上传参数块。在 linux/amd64 上按 16 种代码布局计时，tifa 商店的店面页面用时少 0.67%，其他页面在误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。结果、栈帧和调用深度都不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#热调用少传参数字)）。
+- 寄存器循环自己回答 `Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String`，对调用不跑脚本、不抛异常的那些值不再调用 C 函数。一次渲染少跑 0.4%（MUI）到 2.5%（React）的指令，在 amd64 上 React 的页面少花 1.4% 的时间，tifa 的 store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面时间不变（[c-engine.zh-CN.md](docs/changes/c-engine.zh-CN.md#寄存器循环直接回答的内置函数)）。
 
 ### 修复
 

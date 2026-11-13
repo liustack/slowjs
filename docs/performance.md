@@ -1001,6 +1001,19 @@ Both together are faster by the rule on every kind, and on each page of the work
 
 On an Apple M4 (darwin/arm64), tifa's `test/ssr` with the product counters, 10 rounds that alternate the three builds, the median of the round ratios of retired instructions a render: the rest runs 2.4% fewer on the workbench and MUI pages, 0.8% fewer on the store pages and the same on React's page, which has no rest. Both run 3.2%, 3.9%, 1.2% and the same. The time of those rounds is no reading: other jobs ran on the machine, and a round's ratio went from 0.76 to 1.57.
 
+### Built-ins answered in the register loop
+
+[The register loop answers the most called built-ins itself](changes/c-engine.md#built-ins-answered-in-the-register-loop), against `3ae98161`. Instructions on an Apple M4 (darwin/arm64) are retired instructions per render of the generated engine inside tifa, the lowest of 3 rounds, the mean over the pages of a group. Instructions on amd64 are from callgrind, one page of each group, the difference of 2 renders and none, halved. Time is on one core of an EPYC (linux/amd64) with its sibling idle, `go tool measure bench` over 16 layouts, 4 rounds, the mean of the layouts with its 95% interval, delta 1%. Every page gives the same HTML.
+
+| Pages | Instructions, M4 | Instructions, amd64 | Time, amd64 |
+| --- | ---: | ---: | ---: |
+| React's page | -2.11% | -2.48% | -1.40% [-1.98%, -0.82%] |
+| tifa's shop, fourteen store pages (sum) | -1.79% | -2.10% (home) | -1.00% [-1.59%, -0.40%] |
+| tifa's shop, six workbench pages (sum) | -1.24% | -1.40% (studio) | -0.95% [-1.71%, -0.19%] |
+| tifa's MUI test app, three pages (sum) | -0.67% | -0.41% (orders) | +0.51% [-0.29%, +1.31%] |
+
+A second session timed MUI and React again: -0.10% [-0.74%, +0.54%] and -1.37% [-1.83%, -0.92%]. MUI takes the same time within the 1% delta: its pages call `charCodeAt` most, and that call now goes through the table of `rv_fast_fns`, about 8 instructions more on arm64. The binary at the first position was slower on MUI in one session (+1.61% [+0.54%, +2.69%]), and so was the same change without the table in the other: where the code lands, not the table. A render makes fewer direct C calls: 71,440 to 33,104 on the store's home, 30,030 to 14,315 on MUI's orders, 10,339 to 2,178 on React's page. Most of the gain comes from `push`, `Map.get` and `Math.clz32` on React, from `has`, `Array.isArray` and `Math.clz32` on MUI, and from `hasOwn`, `has` and `String` on the store. Most of the store's `hasOwn` and `String` calls are made while it builds URLs, so where a URL costs less the store gains less.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.

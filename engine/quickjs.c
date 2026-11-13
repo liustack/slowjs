@@ -1319,6 +1319,19 @@ enum {
     RV_FAST_NONE,
     RV_FAST_CALL, /* Function.prototype.call, for hasOwnProperty.call */
     RV_FAST_CHAR_CODE_AT, /* String.prototype.charCodeAt */
+    RV_FAST_CLZ32, /* Math.clz32 */
+    RV_FAST_MAP_HAS, /* Map, Set, WeakMap and WeakSet has */
+    RV_FAST_MAP_GET, /* Map and WeakMap get */
+    RV_FAST_IS_ARRAY, /* Array.isArray */
+    RV_FAST_PUSH, /* Array.prototype.push */
+    RV_FAST_INCLUDES, /* Array.prototype.includes */
+    RV_FAST_INDEX_OF, /* Array.prototype.indexOf */
+    RV_FAST_STR_INDEX_OF, /* String.prototype.indexOf */
+    RV_FAST_STR_INCLUDES, /* String.prototype.includes, startsWith, endsWith */
+    RV_FAST_HAS_OWN, /* Object.hasOwn */
+    RV_FAST_HAS_OWN_PROPERTY, /* Object.prototype.hasOwnProperty */
+    RV_FAST_STRING, /* String called as a function */
+    RV_FAST_COUNT,
 };
 
 struct JSObject {
@@ -8906,6 +8919,81 @@ static JSValue js_string_charCodeAt(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv);
 static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv);
+static JSValue js_math_clz32(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv);
+static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv, int magic);
+static JSValue js_map_get(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv, int magic);
+static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv, int magic,
+                               BOOL get);
+static JSValue js_array_isArray(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv, int unshift);
+static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
+                                    int argc);
+static JSValue js_array_push_add(JSContext *ctx, JSObject *p, int argc,
+                                 JSValueConst *argv);
+static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv);
+static JSValue js_array_indexOf(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static int64_t js_array_find_quiet(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv,
+                                   BOOL same_value_zero);
+static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv, int lastIndexOf);
+static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
+                                  int argc, JSValueConst *argv, int magic);
+static JSValue js_string_constructor(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv);
+static JSValue js_object_hasOwn(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_object_hasOwnProperty(JSContext *ctx, JSValueConst this_val,
+                                        int argc, JSValueConst *argv);
+static int js_string_find_quiet(JSValueConst this_val, int argc,
+                                JSValueConst *argv, int kind);
+#define MAGIC_SET (1 << 0)
+#define MAGIC_WEAK (1 << 1)
+
+/* The kind of JSObject.rv_fast of the C function func with its magic: the
+   built-ins rv_fast_call (regvm-ops-basic.h) answers in the register loop.
+   Every realm's copy gets it, since the answer does not depend on the
+   realm. */
+static int rv_fast_kind(JSCFunction *func, int magic)
+{
+    if (func == (JSCFunction *)js_string_charCodeAt)
+        return RV_FAST_CHAR_CODE_AT;
+    if (func == (JSCFunction *)js_function_call)
+        return RV_FAST_CALL;
+    if (func == (JSCFunction *)js_math_clz32)
+        return RV_FAST_CLZ32;
+    if (func == (JSCFunction *)js_map_has)
+        return RV_FAST_MAP_HAS;
+    if (func == (JSCFunction *)js_map_get)
+        return RV_FAST_MAP_GET;
+    if (func == (JSCFunction *)js_array_isArray)
+        return RV_FAST_IS_ARRAY;
+    if (func == (JSCFunction *)js_array_push && magic == 0)
+        return RV_FAST_PUSH;
+    if (func == (JSCFunction *)js_array_includes)
+        return RV_FAST_INCLUDES;
+    if (func == (JSCFunction *)js_array_indexOf)
+        return RV_FAST_INDEX_OF;
+    if (func == (JSCFunction *)js_string_indexOf && magic == 0)
+        return RV_FAST_STR_INDEX_OF;
+    if (func == (JSCFunction *)js_string_includes)
+        return RV_FAST_STR_INCLUDES;
+    if (func == (JSCFunction *)js_object_hasOwn)
+        return RV_FAST_HAS_OWN;
+    if (func == (JSCFunction *)js_object_hasOwnProperty)
+        return RV_FAST_HAS_OWN_PROPERTY;
+    if (func == (JSCFunction *)js_string_constructor)
+        return RV_FAST_STRING;
+    return RV_FAST_NONE;
+}
 
 static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                                 const char *name,
@@ -8929,8 +9017,7 @@ static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
     p->u.cfunc.length = length;
     p->u.cfunc.cproto = cproto;
     p->u.cfunc.magic = magic;
-    p->rv_fast = func == (JSCFunction *)js_string_charCodeAt ? RV_FAST_CHAR_CODE_AT :
-        func == (JSCFunction *)js_function_call ? RV_FAST_CALL : RV_FAST_NONE;
+    p->rv_fast = rv_fast_kind(func, magic);
     p->is_constructor = (cproto == JS_CFUNC_constructor ||
                          cproto == JS_CFUNC_constructor_magic ||
                          cproto == JS_CFUNC_constructor_or_func ||
@@ -23734,6 +23821,26 @@ static inline BOOL js_call_c_direct_ok(JSRuntime *rt, JSValueConst func)
         !js_stack_short(rt, rt->call_frame);
 }
 
+/* js_call_c_direct after its checks: the level of call depth, the frame it
+   skips counted as taken (rt->c_direct_debt), and the C function through
+   js_call_c_plain. The answer of push in the register loop makes a call
+   this way after the checks it made itself, so that it counts what a
+   direct call counts (regvm-ops-basic.h). */
+static force_inline JSValue js_call_c_counted(JSContext *ctx, JSValueConst func,
+                                              JSValueConst this_obj, int argc,
+                                              JSValueConst *argv)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue ret;
+
+    rt->call_depth++;
+    rt->stack_debt += rt->c_direct_debt;
+    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func), this_obj, argc, argv);
+    rt->stack_debt -= rt->c_direct_debt;
+    js_call_leave(rt);
+    return ret;
+}
+
 /* What JS_CallInternal does for a C function, without its entry: count and
    read the interrupt flag, nothing while an uncatchable exception is pending,
    a level of call depth (js_call_c_direct_ok checked the limit and the
@@ -23747,20 +23854,86 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
                                              JSValue *argv)
 {
     JSRuntime *rt = ctx->rt;
-    JSValue ret;
 
     poll_count(POLL_WEIGHT);
     if (js_poll_interrupts(ctx))
         return JS_EXCEPTION;
     if (unlikely(js_uncatchable_pending(rt)))
         return JS_EXCEPTION;
-    rt->call_depth++;
-    rt->stack_debt += rt->c_direct_debt;
-    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func), this_obj, argc,
-                          (JSValueConst *)argv);
-    rt->stack_debt -= rt->c_direct_debt;
-    js_call_leave(rt);
-    return ret;
+    return js_call_c_counted(ctx, func, this_obj, argc, (JSValueConst *)argv);
+}
+
+/* The atom JS_ValueToAtom takes for key, when that runs no script, throws
+   nothing and makes no atom, else JS_ATOM_NULL: a string that is its own
+   atom (its key_atom), an index (an int, or a string of one), a string of at most 64
+   characters whose atom exists already (JS_NewAtomStr finds it in the
+   table), a Symbol. Where JS_ValueToAtom would make an atom, and for a
+   longer string, it gives up. The atom gets no reference. Reads no flag. */
+static inline JSAtom js_key_atom_quiet(JSRuntime *rt, JSValueConst key)
+{
+    uint32_t tag = JS_VALUE_GET_TAG(key), n, h, i;
+    JSString *s;
+    JSAtomStruct *a;
+
+    if (tag == JS_TAG_INT && (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
+    if (tag == JS_TAG_SYMBOL)
+        return js_get_atom_index(rt, JS_VALUE_GET_PTR(key));
+    if (tag != JS_TAG_STRING)
+        return JS_ATOM_NULL;
+    s = JS_VALUE_GET_STRING(key);
+    if (s->key_atom != JS_ATOM_NULL)
+        return s->key_atom;
+    if (s->len >= JS_ROPE_STEP)
+        return JS_ATOM_NULL;
+    if (is_num_string(&n, s) && n <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(n);
+    if (s->atom_type == JS_ATOM_TYPE_STRING)
+        return js_get_atom_index(rt, s);
+    /* the search of __JS_NewAtom, for a short string only: where it finds
+       nothing, the call searches again, and in the generated engine the
+       loops of both count toward the next poll */
+    if (s->atom_type != 0 || s->len > 64)
+        return JS_ATOM_NULL;
+    h = hash_string(s, JS_ATOM_TYPE_STRING) & JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0; i = a->hash_next) {
+        a = rt->atom_array[i];
+        if (a->hash == h && a->atom_type == JS_ATOM_TYPE_STRING &&
+            a->len == s->len && js_string_memcmp(a, 0, s, 0, s->len) == 0)
+            return i;
+    }
+    return JS_ATOM_NULL;
+}
+
+/* Whether obj has an own property key, found as hasOwnProperty and
+   Object.hasOwn find it, when that runs no script, throws nothing and makes
+   nothing: an ordinary object (not exotic, so no proxy or class method
+   answers), and a key whose atom js_key_atom_quiet finds. A variable
+   binding, which can throw before it is initialized, is not answered.
+   Reads no flag. Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make
+   the call. */
+static force_inline JSValue js_has_own_quiet(JSRuntime *rt, JSValueConst obj,
+                                             JSValueConst key)
+{
+    JSObject *p;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSAtom atom;
+
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return JS_UNINITIALIZED;
+    p = JS_VALUE_GET_OBJ(obj);
+    if (p->is_exotic)
+        return JS_UNINITIALIZED;
+    atom = js_key_atom_quiet(rt, key);
+    if (atom == JS_ATOM_NULL)
+        return JS_UNINITIALIZED;
+    prs = find_own_property(&pr, p, atom);
+    if (!prs)
+        return JS_FALSE;
+    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
+        return JS_UNINITIALIZED;
+    return JS_TRUE;
 }
 
 /* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
@@ -23768,48 +23941,23 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
    Function.prototype.call calls (the this of the call), call_argv its
    arguments. The register loop calls it (rv_fast_call).
    React and the libraries around it test each key of a for in loop this
-   way. Only what cannot run script or throw takes this path:
-   hasOwnProperty itself, an ordinary object (not exotic, so no proxy or
-   class method answers), and a key that is its own atom already, a string
-   atom as JS_ValueToAtom finds it or an integer of an index atom, so that
-   no atom is made. Where the two calls would have thrown on their way in
-   (the call depth, the stack, an interrupt or an uncatchable exception
-   pending) and for a variable binding, which can throw before it is
-   initialized, the calls are made as before.
+   way. Only hasOwnProperty itself and what js_has_own_quiet answers take
+   this path. Where the two calls would have thrown on their way in (the
+   call depth, the stack, an interrupt or an uncatchable exception pending)
+   the calls are made as before.
    Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make the calls. */
 static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
                                          JSValueConst *call_argv, int call_argc)
 {
     JSRuntime *rt = ctx->rt;
-    JSValueConst obj, key;
-    JSObject *p;
-    JSShapeProperty *prs;
-    JSProperty *pr;
-    JSAtom atom;
-    uint32_t tag;
+    JSValue ret;
 
     if (call_argc < 2 ||
         !js_is_cfunction(fn, js_object_hasOwnProperty))
         return JS_UNINITIALIZED;
-    obj = call_argv[0];
-    key = call_argv[1];
-    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
-        return JS_UNINITIALIZED;
-    p = JS_VALUE_GET_OBJ(obj);
-    if (p->is_exotic)
-        return JS_UNINITIALIZED;
-    tag = JS_VALUE_GET_TAG(key);
-    if (tag == JS_TAG_STRING) {
-        /* the string JS_ValueToAtom takes as its own atom */
-        atom = JS_VALUE_GET_STRING(key)->key_atom;
-        if (atom == JS_ATOM_NULL)
-            return JS_UNINITIALIZED;
-    } else if (tag == JS_TAG_INT &&
-               (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
-        atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
-    } else {
-        return JS_UNINITIALIZED;
-    }
+    ret = js_has_own_quiet(rt, call_argv[0], call_argv[1]);
+    if (JS_IsUninitialized(ret))
+        return ret;
     /* what JS_CallInternal checks first, for the two levels the calls
        count. Their frames come before their checks and take much less than
        a margin, so with less than two margins of stack left the calls are
@@ -23818,12 +23966,7 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
         js_stack_short(rt, JS_STACK_MARGIN) ||
         poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt))
         return JS_UNINITIALIZED;
-    prs = find_own_property(&pr, p, atom);
-    if (!prs)
-        return JS_FALSE;
-    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
-        return JS_UNINITIALIZED;
-    return JS_TRUE;
+    return ret;
 }
 
 /* The checks of the entry of JS_CallInternal, after the count of its poll:
@@ -49873,6 +50016,76 @@ static int64_t js_fast_array_find(JSContext *ctx, JSValue *arrp,
     }
 }
 
+/* Array.prototype.includes (same_value_zero) and indexOf answered in the
+   register loop (rv_fast_call): the index js_array_includes or
+   js_array_indexOf finds, -1 when there is none, for an Array whose
+   elements are its length (fast, so no hole and no getter is read) and a
+   fromIndex that is missing or an int. Its compares are those of
+   js_fast_array_find, but where they would read the interrupt flag (a
+   rope, strings of a step or more, compares of strings of one length that
+   add up to a step) it gives up: -2, and the call is made. It reads no
+   flag, throws nothing and changes nothing. */
+static int64_t js_array_find_quiet(JSContext *ctx, JSValueConst this_val,
+                                   int argc, JSValueConst *argv,
+                                   BOOL same_value_zero)
+{
+    JSObject *p;
+    JSValue *arrp;
+    JSValueConst v;
+    uint32_t count, n, work = 0;
+    int64_t from;
+    int r;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return -2;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (p->class_id != JS_CLASS_ARRAY || !p->fast_array ||
+        JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT ||
+        JS_VALUE_GET_INT(p->prop[0].u.value) != p->u.array.count)
+        return -2;
+    count = p->u.array.count;
+    if (count == 0)
+        return -1; /* fromIndex is not read */
+    n = 0;
+    if (argc > 1) {
+        if (JS_VALUE_GET_TAG(argv[1]) != JS_TAG_INT)
+            return -2;
+        /* JS_ToInt64Clamp(ctx, &from, argv[1], 0, count, count) */
+        from = JS_VALUE_GET_INT(argv[1]);
+        if (from < 0)
+            from = max_int64(from + count, 0);
+        else if (from > count)
+            from = count;
+        n = from;
+    }
+    v = argv[0];
+    arrp = p->u.array.u.values;
+    for (; n < count; n++) {
+        r = js_quick_strict_eq(v, arrp[n], same_value_zero);
+        if (r == 0)
+            continue;
+        if (r > 0)
+            return n;
+        if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING &&
+            JS_VALUE_GET_TAG(arrp[n]) == JS_TAG_STRING) {
+            /* two strings of one length, as js_short_eq_budget counts them */
+            const JSString *p1 = JS_VALUE_GET_STRING(v);
+            if (work + p1->len >= JS_ROPE_STEP)
+                return -2;
+            work += p1->len;
+            if (js_string_eq(ctx, p1, JS_VALUE_GET_STRING(arrp[n])))
+                return n;
+        } else if (tag_is_string(JS_VALUE_GET_NORM_TAG(v)) &&
+                   tag_is_string(JS_VALUE_GET_NORM_TAG(arrp[n]))) {
+            return -2; /* a rope */
+        } else if (js_strict_eq2(ctx, v, arrp[n], same_value_zero ?
+                                 JS_EQ_SAME_VALUE_ZERO : JS_EQ_STRICT)) {
+            return n; /* two BigInts */
+        }
+    }
+    return -1;
+}
+
 static JSValue js_array_includes(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv)
 {
@@ -50288,6 +50501,47 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
                         (size_t)(max_int(new_len, size * 3 / 2) - size));
     return expand_fast_array_append(ctx, p, new_len);
+}
+
+/* Array.prototype.push answered in the register loop (rv_fast_call), in two
+   steps around the checks of the call. js_array_push_room: the array of
+   this_val when push takes the fast case of js_array_push (a fast array
+   that can grow, its length its count and writable, not past INT32_MAX),
+   else NULL and the call is made. It changes nothing: when the elements do
+   not fit in the room the array has, rv_fast_call makes the call after the
+   checks, and js_array_push grows the array as before. */
+static JSObject *js_array_push_room(JSContext *ctx, JSValueConst this_val,
+                                    int argc)
+{
+    JSObject *p;
+
+    if (JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return NULL;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (!(p->class_id == JS_CLASS_ARRAY && p->fast_array &&
+          can_extend_fast_array(p) &&
+          JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+          JS_VALUE_GET_INT(p->prop[0].u.value) == p->u.array.count &&
+          (get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE) != 0))
+        return NULL;
+    if (p->u.array.count + (uint32_t)argc > INT32_MAX)
+        return NULL;
+    return p;
+}
+
+/* The second step: the elements added, as the fast case of js_array_push
+   adds them. Returns the new length. */
+static JSValue js_array_push_add(JSContext *ctx, JSObject *p, int argc,
+                                 JSValueConst *argv)
+{
+    uint32_t new_len = p->u.array.count + argc;
+    int i;
+
+    for(i = 0; i < argc; i++)
+        p->u.array.u.values[p->u.array.count + i] = JS_DupValue(ctx, argv[i]);
+    p->prop[0].u.value = JS_NewInt32(ctx, new_len);
+    p->u.array.count = new_len;
+    return JS_NewInt32(ctx, new_len);
 }
 
 static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
@@ -53533,6 +53787,10 @@ typedef struct JSStringFind {
 static no_inline int js_string_find_check(JSStringFind *f)
 {
     f->work = 0;
+    /* a search with no context (js_string_find_quiet) reads no flag: it
+       stops, and its caller gives the search up */
+    if (!f->ctx)
+        return -1;
     return js_poll_interrupts(f->ctx);
 }
 
@@ -53913,6 +54171,65 @@ static inline int js_string_find(JSContext *ctx, JSString *p1, JSString *p2,
         return string_cmp(p1, p2, i, 0, p2->len) ? -1 : i;
     }
     return js_string_find_range(ctx, p1, p2, i, stop, inc);
+}
+
+/* String.prototype.indexOf (kind 0) and String.prototype.includes,
+   startsWith and endsWith (kind 1, 2 and 3, the magic of js_string_includes
+   plus 1) answered in the register loop (rv_fast_call): what they return,
+   an index or 1 or 0, for a this and a search string that are flat strings
+   and a position that is missing or an int (or undefined, but for indexOf).
+   The search is js_string_find's with no context: where it would read the
+   interrupt flag (a step of work, a search string of a step or more) it
+   gives up. -2 then, and the call is made. It throws nothing and changes
+   nothing. */
+static int js_string_find_quiet(JSValueConst this_val, int argc,
+                                JSValueConst *argv, int kind)
+{
+    JSString *p, *p1;
+    int len, v_len, pos, start, stop, i;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_STRING ||
+        JS_VALUE_GET_TAG(argv[0]) != JS_TAG_STRING)
+        return -2;
+    p = JS_VALUE_GET_STRING(this_val);
+    p1 = JS_VALUE_GET_STRING(argv[0]);
+    len = p->len;
+    v_len = p1->len;
+    if (v_len >= JS_ROPE_STEP)
+        return -2;
+    pos = kind == 3 ? len : 0;
+    if (argc > 1 && (kind == 0 || !JS_IsUndefined(argv[1]))) {
+        /* JS_ToInt32Clamp(ctx, &pos, argv[1], 0, len, 0) of an int */
+        if (JS_VALUE_GET_TAG(argv[1]) != JS_TAG_INT)
+            return -2;
+        pos = JS_VALUE_GET_INT(argv[1]);
+        if (pos < 0)
+            pos = 0;
+        else if (pos > len)
+            pos = len;
+    }
+    if (kind == 0) {
+        /* js_string_indexOf */
+        if (len < v_len || len - v_len < pos)
+            return -1;
+        return js_string_find(NULL, p, p1, pos, len - v_len, 1);
+    }
+    /* js_string_includes */
+    len -= v_len;
+    if (kind == 1) {
+        start = pos;
+        stop = len;
+    } else {
+        if (kind == 3)
+            pos -= v_len;
+        else if (pos > len)
+            return 0;
+        start = stop = pos;
+    }
+    if (start < 0 || start > stop)
+        return 0;
+    i = js_string_find(NULL, p, p1, start, stop, 1);
+    return i == -2 ? -2 : i >= 0;
 }
 
 static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
@@ -63144,8 +63461,8 @@ static JSValue js_weakref_new(JSContext *ctx, JSValueConst val)
     return (JSValue)val;
 }
 
-#define MAGIC_SET (1 << 0)
-#define MAGIC_WEAK (1 << 1)
+/* MAGIC_SET and MAGIC_WEAK are defined before JS_NewCFunction3, which reads
+   them (rv_fast_kind) */
 
 static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
                                   int argc, JSValueConst *argv, int magic)
@@ -63818,6 +64135,82 @@ static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
     mr = map_find_record(ctx, s, key);
     if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
+    return JS_NewBool(ctx, mr != NULL);
+}
+
+/* map_find_record for an answer of the register loop: the same search, but
+   where map_find_record would read the interrupt flag (a key that is a rope
+   or a string of a step or more, a record whose key is a rope, compares of
+   strings of the key's length that add up to a step) it gives up. TRUE with
+   the record in *pmr, NULL when the key is not there, or FALSE when it gave
+   up. It reads no flag, throws nothing and changes nothing, so the call made
+   after it gives up finds what it would have found. */
+static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
+                                  JSValueConst key, JSMapRecord **pmr)
+{
+    uint32_t tag = JS_VALUE_GET_TAG(key), h, work = 0;
+    const JSString *p, *q;
+    JSMapRecord *mr;
+
+    if (tag == JS_TAG_STRING_ROPE ||
+        (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(key)->len >= JS_ROPE_STEP))
+        return FALSE;
+    h = map_hash_key(key, s->hash_bits);
+    if (tag != JS_TAG_STRING) {
+        for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+            if (!mr->empty && !(s->is_weak && !js_weakref_is_live(mr->key)) &&
+                js_same_value_zero(ctx, mr->key, key))
+                break;
+        }
+        *pmr = mr;
+        return TRUE;
+    }
+    p = JS_VALUE_GET_STRING(key);
+    for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+        if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key)))
+            continue;
+        tag = JS_VALUE_GET_TAG(mr->key);
+        if (likely(tag == JS_TAG_STRING)) {
+            q = JS_VALUE_GET_STRING(mr->key);
+            if (q == p)
+                break;
+            if (q->len != p->len)
+                continue;
+            if (unlikely(work + p->len >= JS_ROPE_STEP))
+                return FALSE;
+            work += p->len;
+            if (js_string_eq(ctx, q, p))
+                break;
+        } else if (tag == JS_TAG_STRING_ROPE) {
+            return FALSE;
+        }
+    }
+    *pmr = mr;
+    return TRUE;
+}
+
+/* Map.prototype.has, Set.prototype.has, WeakMap.prototype.has and
+   WeakSet.prototype.has (by magic), Map.prototype.get and
+   WeakMap.prototype.get (get), answered in the register loop (rv_fast_call):
+   what js_map_has or js_map_get returns, for a this of the class and a key
+   whose search reads no interrupt flag (map_find_record_quiet). Else
+   JS_UNINITIALIZED, and the call is made: it throws for another this. */
+static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv, int magic,
+                               BOOL get)
+{
+    JSObject *p;
+    JSMapRecord *mr;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return JS_UNINITIALIZED;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (p->class_id != JS_CLASS_MAP + magic || !p->u.map_state ||
+        !map_find_record_quiet(ctx, p->u.map_state,
+                               map_normalize_key_const(ctx, argv[0]), &mr))
+        return JS_UNINITIALIZED;
+    if (get)
+        return mr ? JS_DupValue(ctx, mr->value) : JS_UNDEFINED;
     return JS_NewBool(ctx, mr != NULL);
 }
 

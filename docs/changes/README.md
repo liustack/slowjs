@@ -53,6 +53,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | Unreleased | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
 | A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | Unreleased | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
 | Two hot calls pass fewer argument words: the interpreter's direct call of a C function and `js_call_c_hop` call `js_call_c_plain` (5 words, not 8), and the engine's own `JS_GetProperty` calls `JS_GetPropertyObj` (5, not 7). On arm64 neither passes its arguments in a block on the shadow stack any more | Unreleased | [c-engine.md](c-engine.md#fewer-argument-words-into-hot-calls) |
+| The register loop answers `Math.clz32`, `has` and `get` of Map, Set, WeakMap and WeakSet, `Array.isArray`, `push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty` and `String` of a string without the call | Unreleased | [c-engine.md](c-engine.md#built-ins-answered-in-the-register-loop) |
 
 ## The generator
 

@@ -53,6 +53,7 @@ read_when:
 | `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | Unreleased | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
 | 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | Unreleased | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
 | 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | Unreleased | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
+| 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 
 ## 生成器
 
