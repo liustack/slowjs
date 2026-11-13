@@ -11,8 +11,9 @@ import (
 )
 
 // The Builtins of the Intl and Temporal shims are made with NewBuiltin and
-// read their string arguments with String and WTF8, which stop the Builtin
-// when the string cannot be read.
+// read their string arguments through a Door (door.go), which reads them
+// with String and WTF8, which stop the Builtin when the string cannot be
+// read.
 //
 // Reading a string can fail: a rope, a string kept as the pieces it was
 // joined from, has to be joined first, which takes memory under the VM's
@@ -46,6 +47,9 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 			case stopped:
 				// The error is pending (see Args.String).
 				v, err = quickjs.UndefinedValue, nil
+			case tooLong:
+				// The door refused an argument longer than its cap.
+				v, err = quickjs.Value{}, p.(tooLong).error()
 			default:
 				panic(p)
 			}
@@ -92,6 +96,16 @@ func failed(a quickjs.Args, i int) bool {
 // the call is to end, for a function given to NewBuiltin.
 func Check(vm *quickjs.VM) {
 	if vmhook.Stop(vm) {
+		panic(stopped{})
+	}
+}
+
+// Room stops the Builtin with the out of memory error when the VM has no
+// room for n bytes more under its memory limit, for work in Go that holds
+// n bytes for a while, for a function given to NewBuiltin.
+func Room(vm *quickjs.VM, n int64) {
+	if room := vmhook.Room(vm); room >= 0 && n > room {
+		vmhook.OutOfMemory(vm)
 		panic(stopped{})
 	}
 }

@@ -101,6 +101,7 @@ read_when:
 | 结果的引用在程序代码运行之前取下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
 | NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 | 长字符串和结果的转换在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
+| Args.StringLen 就地读字符串的长度 | Unreleased | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 
 ## 守得住的限额
 
@@ -138,6 +139,10 @@ read_when:
 | normalize 和 Map 变大时的内存不足 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#normalize-和-map-变大时的内存不足) |
 | 没有调用的循环也会在挂起的无法捕获的异常处结束 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束) |
 | 检查正则的 flags 时不再遍历长字符串 | v0.30.2 | [uncatchable.md](uncatchable.zh-CN.md#检查正则的-flags-时不再遍历长字符串) |
+| Intl 和 Temporal 的短参数在读之前先量长度 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度) |
+| 日历的运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#日历的运算读中断标志) |
+| 没有内存上限时 fmt 也限制调用并分段写出 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
+| Builtin 切不开的一段文字读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
 
 ## 错误和调用栈
 
@@ -169,6 +174,7 @@ read_when:
 | Temporal 格式的缓存只保留短请求 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#temporal-格式的缓存只保留短请求) |
 | 数字选项先检查范围再向下取整 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
 | 长的 locale 标签按长度的线性时间解析 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
+| 数字字符串按 Number 的方式读 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#数字字符串按-number-的方式读) |
 
 ## Temporal
 

@@ -7,7 +7,7 @@ package intl
 
 import _ "embed"
 
-// The packs, which internal/qjspack/gen writes (qjs-sync.sh pack). The
+// The packs, which internal/qjspack/gen writes (data.sh pack). The
 // display names and the CJK dictionary are packs of their own, which the
 // build tags quickjs_intl_nonames and quickjs_intl_nocjdict leave out. The
 // time zones and calendar tables the temporal package reads are one too, so

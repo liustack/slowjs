@@ -265,18 +265,33 @@ func (f *ListFormat) FormatToPartsCheck(items []string, check func(int)) []ListP
 // dropEmptyItems leaves out the items that are empty, joining the text
 // either side of each, as ICU's FormattedList has no field for an empty
 // span: ["a", "", "b"] is "a", ", , and ", "b".
+//
+// qjs: a run of literals is joined in a builder, the text of each written
+// once, where adding each to the text so far copied it again for each.
 func dropEmptyItems(parts []ListPart, check func(int)) []ListPart {
 	out := parts[:0:0]
+	var run strings.Builder
+	joined := func() {
+		if run.Len() > 0 {
+			out[len(out)-1].Value = run.String()
+			run = strings.Builder{}
+		}
+	}
 	for i, p := range parts {
 		check(i)
 		switch {
 		case p.Kind == ListElement && p.Value == "":
 		case p.Kind == ListLiteral && len(out) > 0 && out[len(out)-1].Kind == ListLiteral:
-			out[len(out)-1].Value += p.Value
+			if run.Len() == 0 {
+				run.WriteString(out[len(out)-1].Value)
+			}
+			run.WriteString(p.Value)
 		default:
+			joined()
 			out = append(out, p)
 		}
 	}
+	joined()
 	return out
 }
 

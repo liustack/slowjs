@@ -13,6 +13,7 @@ func init() {
 	vmhook.Stop = func(vm any) bool { return hookVM(vm).goStop() }
 	vmhook.Room = func(vm any) int64 { return hookVM(vm).goRoom() }
 	vmhook.OutOfMemory = func(vm any) { hookVM(vm).goOutOfMemory() }
+	vmhook.Chars = func(args any, i int) ([]byte, []uint16, func(), bool) { return hookArgs(args).chars(i) }
 }
 
 // hookVM is the VM a function of vmhook was given, which has to be running a
@@ -54,4 +55,12 @@ func (m *VM) goOutOfMemory() {
 	if !m.uncatchablePending() {
 		m.jsThrowOutOfMemory()
 	}
+}
+
+// hookArgs is the Args a function of vmhook was given, of a Go function that
+// javascript called and that is running.
+func hookArgs(args any) Args {
+	a := args.(Args)
+	hookVM(a.vm)
+	return a
 }

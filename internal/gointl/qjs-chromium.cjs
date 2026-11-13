@@ -7,7 +7,7 @@
 // locales to, for every Intl constructor, into qjsdata/chromium.json. The pack
 // tool keeps the locales Chromium has, and TestQJSResolveMatchesChromium
 // checks the packs answer as Chromium does. It is a maintainer tool, run by
-// qjs-sync.sh chromium: the build and go test only read chromium.json.
+// data.sh chromium: the build and go test only read chromium.json.
 //
 //   node qjs-chromium.cjs <file of tags, one a line>
 //

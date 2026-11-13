@@ -193,6 +193,14 @@ func (p *digitPlan) round(magnitude mag, negative bool) (string, string) {
 		significant = true
 		integer, fraction = roundSignificant(magnitude, p.maxSig, negative, p.mode)
 	case roundMorePrecision, roundLessPrecision:
+		if p.rounding == roundLessPrecision && magnitude.zeros > p.maxFrac {
+			// The first digit is past the decimals, so the significant
+			// digits round below their place, a carry included, and
+			// lessPrecision takes the decimals' result: the significant
+			// one, which writes every zero, is not made.
+			integer, fraction = roundAt(magnitude, p.maxFrac, negative, p.mode)
+			break
+		}
 		// The two ways are compared by where each would round: the smaller
 		// place keeps more. Which of the two is wanted is the priority.
 		// FormatNumericToString: morePrecision takes the significant

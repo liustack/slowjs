@@ -119,6 +119,20 @@ func (v *vmCursors) take(id int) *cursor {
 	return nil
 }
 
+// drop forgets c, and clears the slot it leaves at the end of the list, so
+// that Go can free its text.
+func (v *vmCursors) drop(c *cursor) {
+	for i, x := range v.list {
+		if x == c {
+			n := len(v.list) - 1
+			copy(v.list[i:], v.list[i+1:])
+			v.list[n] = nil
+			v.list = v.list[:n]
+			return
+		}
+	}
+}
+
 // add keeps c as the cursor used last, dropping the one used first when the
 // VM keeps maxCursors.
 func (v *vmCursors) add(c *cursor) {
@@ -142,20 +156,34 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 	have, _ := a.Number(3)
 	vc := cursorsOf(vm)
 	c := vc.take(int(id))
+	// A stop or a lack of room in a long run of a dictionary ends the
+	// call inside Next, and leaves the iterator broken: the VM drops the
+	// cursor, and a next call makes it again.
+	inNext := false
+	defer func() {
+		if inNext {
+			vc.drop(c)
+		}
+	}()
 	if c == nil || c.n != int(have) {
 		s, ok, err := formatterOf[*segmenter](a)
 		if !ok {
 			return quickjs.UndefinedValue, err
 		}
 
-		text, _ := intlhook.WTF8(a, 1)
+		door := intlhook.Open(a)
+		text, _ := door.LongWTF8(1)
 		c = &cursor{id: vc.next, it: s.s.Iter(utf16Of(text)), word: s.Granularity == "word"}
+		c.it.SetLimits(limitsOf(vm))
 		vc.next++
 		vc.add(c)
 		// A cursor made again walks past the breaks javascript has.
 		for i := range int(have) {
 			checkTurn(vm, i)
-			if _, ok := c.it.Next(); !ok {
+			inNext = true
+			_, ok := c.it.Next()
+			inNext = false
+			if !ok {
 				return quickjs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
 			}
 			c.n++
@@ -170,7 +198,9 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 	}
 	for i := range n {
 		checkTurn(vm, i)
+		inNext = true
 		seg, ok := c.it.Next()
+		inNext = false
 		if !ok {
 			break
 		}
@@ -181,7 +211,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 		r = append(r, b)
 		c.n++
 	}
-	return intArray(vm, r)
+	return intlhook.EmitInts(vm, r)
 })
 
 // utf16Of is the javascript string s, in WTF-8 as Args.WTF8 reads it, in

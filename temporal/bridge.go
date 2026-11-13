@@ -58,7 +58,7 @@ var bridge = intlhook.NewBuiltin("temporal", 0, func(a quickjs.Args) (quickjs.Va
 	if float64(i) != n || i < 0 || i >= len(ops) {
 		return quickjs.Value{}, errors.New("temporal: internal error: no such operation")
 	}
-	v, err := ops[i].fn(&args{a: a, i: 1})
+	v, err := ops[i].fn(&args{a: a, door: intlhook.Open(a), i: 1})
 	if err != nil {
 		return quickjs.Value{}, jsErr(err)
 	}
@@ -67,7 +67,7 @@ var bridge = intlhook.NewBuiltin("temporal", 0, func(a quickjs.Args) (quickjs.Va
 
 func ret(c *args) *results { return newResults(c.a.VM()) }
 
-func str(c *args, s string) (quickjs.Value, error) { return c.a.VM().NewString(s) }
+func str(c *args, s string) (quickjs.Value, error) { return intlhook.Emit(c.a.VM(), s) }
 
 func num(c *args, f float64) (quickjs.Value, error) { return ret(c).num(f).single() }
 

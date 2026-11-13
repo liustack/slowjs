@@ -8,6 +8,8 @@ package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"runtime"
 
 	"github.com/liustack/quickjs"
@@ -32,28 +34,34 @@ const pkg = "fmt"
 // A call makes its whole output in Go before it returns it or writes it, as
 // Go's fmt does, and a short format can ask for a long output. So each
 // function first finds a bound on the bytes of its output, from the format
-// and the arguments, and when the VM has a memory limit (see
-// [quickjs.VM.SetMemoryLimit]) and what the output may make Go's fmt
-// allocate, sixteen times its bytes and a few KiB for the printer that
-// makes it, is more than the VM has left under it, the call ends with the
-// uncatchable out of memory error and makes nothing. The bound comes from
-// the format and the arguments, not from the output, and can be far above
-// it: when an argument is longer than what is printed of it, as a string
-// cut by its precision, or when a width or a precision is not used, as by
-// a verb that does not fit its argument or for a zero printed with a
-// precision of 0. Such a call can be refused under a tight memory limit. A
-// call whose bound fits in a small part of what is left runs as before. Go
-// makes the output without a check of the VM, so neither
-// [quickjs.VM.Interrupt] nor the eval timeout ends it, in a time that grows
-// with the bound.
+// and the arguments, and when what the output may make Go's fmt allocate,
+// sixteen times its bytes and a few KiB for the printer that makes it, is
+// more than the VM has left under its memory limit (see
+// [quickjs.VM.SetMemoryLimit]), the call ends with the uncatchable out of
+// memory error and makes nothing. A VM with no memory limit has room for
+// an output of at most 16 MiB. The bound comes from the format
+// and the arguments, not from the output, and can be far above it: when an
+// argument is longer than what is printed of it, as a string cut by its
+// precision, or when a width or a precision is not used, as by a verb that
+// does not fit its argument or for a zero printed with a precision of 0.
+// Such a call can be refused under a tight memory limit. A call whose bound
+// fits in a small part of what is left runs as before. Go makes the output
+// without a check of the VM, so neither [quickjs.VM.Interrupt] nor the eval
+// timeout ends it, in a time that grows with the bound: 16 MiB of quoted or hex
+// bytes take about 25 ms on an Apple M4.
 //
-// printf and println write to os.Stdout, and a write that blocks, as one to
-// a full pipe nobody reads does, holds the call, and the goroutine running
-// the VM, until it is done: neither [quickjs.VM.Interrupt] nor the eval
-// timeout ends it.
-func Register(obj quickjs.Value) (err error) {
+// printf and println write to os.Stdout, or to the writer of [Writer], 64
+// KiB at a time, and end the call between two writes when
+// [quickjs.VM.Interrupt] or the eval timeout asks it to. A write that
+// blocks, as one to a full pipe nobody reads does, holds the call, and the
+// goroutine running the VM, until it is done.
+func Register(obj quickjs.Value, opts ...Option) (err error) {
 	defer obj.Free()
 
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	vm := obj.VM()
 	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), quickjs.EvalGlobal)
 	if err != nil {
@@ -72,16 +80,16 @@ func Register(obj quickjs.Value) (err error) {
 			if !ok {
 				return 0, nil
 			}
-			return fmt.Printf(format, a...)
+			return write(vm, o.writer(), fmt.Sprintf(format, a...))
 		}, false},
 		{"println", func(a ...any) (int, error) {
-			if !fits(vm, vmhook.Room(vm), sizePrint(a), 0) {
+			if !fits(vm, room(vm), sizePrint(a), 0) {
 				return 0, nil
 			}
-			return fmt.Println(a...)
+			return write(vm, o.writer(), fmt.Sprintln(a...))
 		}, false},
 		{"sprint", func(a ...any) string {
-			if !fits(vm, vmhook.Room(vm), sizePrint(a), 0) {
+			if !fits(vm, room(vm), sizePrint(a), 0) {
 				return ""
 			}
 			return fmt.Sprint(a...)
@@ -105,6 +113,61 @@ func Register(obj quickjs.Value) (err error) {
 	}
 
 	return nil
+}
+
+// An Option changes what Register sets up.
+type Option func(*options)
+
+type options struct {
+	w io.Writer
+}
+
+// Writer makes printf and println write to w, where they write to
+// os.Stdout without it.
+func Writer(w io.Writer) Option { return func(o *options) { o.w = w } }
+
+// writer is the writer of o, or os.Stdout as it is when the call writes.
+func (o *options) writer() io.Writer {
+	if o.w != nil {
+		return o.w
+	}
+	return os.Stdout
+}
+
+// writePiece is the most bytes printf and println write at once.
+const writePiece = 64 << 10
+
+// write writes s to w, writePiece bytes at a time, and stops between two
+// writes when the call is to end (vmhook.Stop), which throws the error
+// that ends it. It returns what it wrote.
+func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
+	n := 0
+	for {
+		k, err := io.WriteString(w, s[:min(len(s), writePiece)])
+		n += k
+		if err != nil {
+			return n, err
+		}
+		s = s[k:]
+		if len(s) == 0 || vmhook.Stop(vm) {
+			return n, nil
+		}
+	}
+}
+
+// maxOutput is the most bytes of output a call may make in a VM with no
+// memory limit: the call takes the room for it as the room it has left.
+// Go makes 16 MiB of quoted or hex bytes in about 25 ms on an Apple M4,
+// allocating 121 MiB, and may allocate 16 times the bound (allocated).
+const maxOutput = 16 << 20
+
+// room is the room vm has left under its memory limit (vmhook.Room), or
+// that of an output of maxOutput bytes when it has none.
+func room(vm *quickjs.VM) int64 {
+	if r := vmhook.Room(vm); r >= 0 {
+		return r
+	}
+	return budget(maxOutput, 0)
 }
 
 // allocated is how many times the bound on its output Go's fmt may
@@ -150,7 +213,7 @@ func budget(n, more int64) int64 {
 // output of fmt.Sprintf of it may make Go's fmt allocate fits in what vm
 // has left under its memory limit (fits).
 func fitsPrintf(vm *quickjs.VM, format string, a []any) (string, bool) {
-	room := vmhook.Room(vm)
+	room := room(vm)
 	n, read, ok := sizePrintf(format, a, room)
 	if !ok {
 		vmhook.OutOfMemory(vm)

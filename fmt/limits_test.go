@@ -130,9 +130,11 @@ func TestSizeAtLeastOutput(t *testing.T) {
 
 // A format with many a '[' and no ']' after them makes its output in time
 // linear in its length, where fmt takes time quadratic in it: "%[x" a
-// million times took Go minutes.
+// million times took Go minutes. Its bound is past what a VM with no memory limit
+// has room for, so the VM has a limit of 2 GiB.
 func TestUnclosedIndexes(t *testing.T) {
 	vm := newVM(t)
+	vm.SetMemoryLimit(2 << 30)
 	vm.SetEvalTimeout(10 * time.Second)
 	start := time.Now()
 	got, err := vm.Eval(`fmt.sprintf("%[x".repeat(1000000))`, quickjs.EvalGlobal)

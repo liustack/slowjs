@@ -60,16 +60,13 @@ func wantUncatchable(t *testing.T, err error, interrupted bool) {
 	}
 }
 
-// A string argument that the VM has no memory to read ends the call with the
-// out of memory error, in every Builtin: none takes it for the empty string
-// and goes on, and none panics. The string is a rope of 32 MiB, which reading
-// has to join, in a VM limited to 16 MiB.
+// A long content argument that the VM has no memory to read ends the call
+// with the out of memory error, in every Builtin: none takes it for the empty
+// string and goes on, and none panics. The string is a rope of 32 MiB, which
+// reading has to join, in a VM limited to 16 MiB. (A short argument that
+// long is refused before it is read: TestShortArgumentRefused.)
 func TestStringArgumentOutOfMemory(t *testing.T) {
 	for _, js := range []string{
-		`new Intl.NumberFormat('en').format(s)`,
-		`new Intl.NumberFormat('en').formatToParts(s)`,
-		`new Intl.NumberFormat(s)`,
-		`Intl.getCanonicalLocales(s)`,
 		`new Intl.Collator('en').compare(s, 'a')`,
 		`s.localeCompare('a')`,
 		`new Intl.Segmenter('en').segment(s).containing(0)`,
@@ -130,7 +127,7 @@ func TestLongListTimeout(t *testing.T) {
 			items, _ := listItems(vm, list.String())
 			return listParts(vm, items, lf.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) }))
 		}},
-		"stringArray": {fn: func(vm *quickjs.VM) (quickjs.Value, error) { return stringArray(vm, tags) }},
+		"stringArray": {fn: func(vm *quickjs.VM) (quickjs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			vm := newVM(t)
@@ -191,10 +188,11 @@ func TestLongListTimeout(t *testing.T) {
 // A long tag resolves in time linear in its length: the matcher tries no
 // part of it longer than the longest tag a service is available in. Cutting
 // a private use tag of 64Ki subtags short one subtag at a time, trying each
-// part, took two seconds.
+// part, took two seconds. Such a tag is now refused at the door
+// (TestShortArgumentRefused), and one at the cap of a tag resolves.
 func TestLongTagResolves(t *testing.T) {
 	vm := newVM(t)
-	eval(t, vm, `var tag = 'en-x-' + 'abcdefgh-'.repeat(1 << 16) + 'x'; new Intl.NumberFormat('en'); 1`)
+	eval(t, vm, `var tag = 'en-x-' + 'abcdefgh-'.repeat(1819) + 'x'; new Intl.NumberFormat('en'); 1`)
 	for _, js := range []string{
 		`new Intl.NumberFormat(tag).resolvedOptions().locale`,
 		`Intl.Collator.supportedLocalesOf(tag)[0] === tag`,

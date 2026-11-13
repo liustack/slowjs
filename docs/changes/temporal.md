@@ -44,7 +44,7 @@ Tests: `temporal/formatting_test.go` compares 3,216 date expressions and 219 dur
 
 The zones and calendar tables are go-intl's, built into the binary: ICU's `zoneinfo64` from ICU's time zone update for tz 2026e, and the tables of the Chinese, Korean and Umm al-Qura calendars. They are the 92 KB pack `internal/gointl/qjsdata/tz.bin`, which Temporal reads through `gointl.EmbeddedTemporalSource`. `gointl.Embedded`, which package `intl` reads, serves the same pack with the rest, and a chunk read through either is inflated once. Since Temporal imports `intl` for `toLocaleString`, a program that uses it links the packs `intl` links as well (`TestLinksOnlyReadData` in `temporal/link_test.go`). The host's zoneinfo is never read, so Temporal gives the same answers on every machine.
 
-go-intl v0.6.1 carries tz 2026c. The packs take their zones from the update `internal/gointl/qjstz` names instead, made by go-intl's own `tzgen` (see [upgrading.md](../upgrading.md#updating-go-intl-internalgointl)): since 2026c, 2026d keeps the Northwest Territories on -06 from 2026-08-21 and 2026e keeps Manitoba on -05 from 2026-10-31. `tz.bin` holds `tzversion.bin`, the release of its zones, which `TestQJSTZVersion` checks.
+go-intl v0.6.1 carries tz 2026c. The packs take their zones from the update `internal/gointl/qjstz` names instead, made by go-intl's own `tzgen` (see [upgrading.md](../upgrading.md#updating-the-data-of-intl-internalgointl)): since 2026c, 2026d keeps the Northwest Territories on -06 from 2026-08-21 and 2026e keeps Manitoba on -05 from 2026-10-31. `tz.bin` holds `tzversion.bin`, the release of its zones, which `TestQJSTZVersion` checks.
 
 ### Results
 

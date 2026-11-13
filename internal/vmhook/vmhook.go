@@ -36,4 +36,14 @@ var (
 	// engine does when an allocation passes the limit, and the call ends
 	// with it whatever the Go function returns.
 	OutOfMemory func(vm any)
+
+	// Chars returns the characters of argument i of args, a quickjs.Args, when
+	// it is a string, as the engine holds them: in latin1, one byte each, when
+	// all are below U+0100, or in utf16 otherwise, lone surrogates as they are.
+	// Nothing is copied: they must not be changed, and are valid until release
+	// is called, which the Go function does before it returns. A rope is joined
+	// first, by the engine, under the memory limit of the VM: ok is false when
+	// that fails, with the error that ends the call pending, as for an argument
+	// that is not a string.
+	Chars func(args any, i int) (latin1 []byte, utf16 []uint16, release func(), ok bool)
 )

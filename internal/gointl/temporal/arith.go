@@ -179,16 +179,23 @@ func referenceError(e errReference) error {
 
 // balance is ArithmeticDate::new_balanced, BalanceNonISODate: excess
 // months carried into the year, and excess days into the month.
+//
+// qjs: a duration can carry millions of months, and each loop checks the
+// call every so often (every, in qjs_check.go).
 func (c *Calendar) balance(y calYear, ordinal, day int) arithDate {
+	n := 0
 	for ordinal <= 0 {
+		c.every(&n)
 		y = c.r.year(y.extended - 1)
 		ordinal += y.count
 	}
 	for ordinal > y.count {
+		c.every(&n)
 		ordinal -= y.count
 		y = c.r.year(y.extended + 1)
 	}
 	for day <= 0 {
+		c.every(&n)
 		ordinal--
 		if ordinal == 0 {
 			y = c.r.year(y.extended - 1)
@@ -197,6 +204,7 @@ func (c *Calendar) balance(y calYear, ordinal, day int) arithDate {
 		day += y.monthLength(ordinal)
 	}
 	for day > y.monthLength(ordinal) {
+		c.every(&n)
 		day -= y.monthLength(ordinal)
 		ordinal++
 		if ordinal > y.count {
@@ -277,6 +285,9 @@ func (d arithDate) compare(o arithDate) int {
 }
 
 // until is ArithmeticDate::until, NonISODateUntil.
+//
+// qjs: the months between two dates can be millions, and its loops over
+// the years and the months check the call every so often.
 func (c *Calendar) until(one, two arithDate, largest Unit) icuDuration {
 	if largest == Day || largest == Week {
 		diff := two.rataDie() - one.rataDie()
@@ -304,7 +315,9 @@ func (c *Calendar) until(one, two arithDate, largest Unit) icuDuration {
 		if minYears != 0 {
 			candidate = minYears
 		}
+		n := 0
 		for !s.surpassesYears(candidate) {
+			c.every(&n)
 			years = candidate
 			candidate += sgn
 		}
@@ -316,7 +329,9 @@ func (c *Calendar) until(one, two arithDate, largest Unit) icuDuration {
 		if largest == Month && minYears != 0 {
 			candidate = c.r.minMonthsFrom(one.y, minYears)
 		}
+		n := 0
 		for !s.surpassesMonths(candidate) {
+			c.every(&n)
 			months = candidate
 			candidate += sgn
 		}

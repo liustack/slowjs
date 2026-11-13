@@ -266,7 +266,7 @@ func (f *NumberFormat) rangeParts(parts []Part) []RangePart {
 // left-to-right mark and a hyphen, of which only the hyphen is the sign. The
 // grouping separator is left whole.
 func trimParts(props *unicodeProps, parts []Part) []Part {
-	var out []Part
+	out := make([]Part, 0, len(parts))
 	for _, p := range parts {
 		if p.Kind == PartLiteral || p.Kind == PartGroup {
 			out = append(out, p)
@@ -292,7 +292,7 @@ func trimParts(props *unicodeProps, parts []Part) []Part {
 // mergeParts joins neighbouring literals, as V8 writes the text between two
 // fields as one literal.
 func mergeParts(parts []Part) []Part {
-	var out []Part
+	out := make([]Part, 0, len(parts))
 	for _, p := range parts {
 		if p.Value == "" {
 			continue

@@ -16,6 +16,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 
 - **`NewBuiltin(name, length, fn)` 和 `VM.NewBuiltinFunction(b)`**（v0.26.17）：一个 Go 函数，JavaScript 调它就像调 `Math.max`，不经过反射。`fn` 从 `Args` 读参数（`Number`、`String`、`Bool`、`Value`、`This`、`VM`，以及按引擎内部存法读字符串字符的 `Latin1` 或 `UTF16`），这些都不做转换，返回一个 `Value`。在 Apple M4 上，一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。每个进程只建一次 Builtin：多个 goroutine 上的 VM 会同时调它。它返回的 `*Error` 按 `Name` 指定的构造函数抛出（`Error`、`TypeError`、`RangeError`、`SyntaxError`、`ReferenceError` 或 `InternalError`），其他错误作为 `TypeError` 抛出。[详情](changes/go-api.zh-CN.md#builtin作为内建函数调用的-go-函数)
 - **长字符串上的 `Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16`**（Unreleased）碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和引擎的循环一样：`String` 和 `WTF8` 返回 ok 为 false，`NewString` 这几个函数返回这个错误，不返回字符串，调用以这个错误结束。`RegisterFunc` 函数的字符串参数和结果，以及元素很多的结果，也一样。[详情](changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)
+- **`Args.StringLen(i)`**（Unreleased）：字符串参数的长度，按 JavaScript 的算法以 UTF-16 码元计，读它时不转换也不拼接字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存。[详情](changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)
 - **`VM.NewArray(vals...)`**（v0.26.17）：在 Go 里建一个数组，建法和数组字面量一样，所以页面放在 `Array.prototype` 上的 setter 永远不会被触发。[详情](changes/go-api.zh-CN.md#newarray)
 - **`GetAsyncContext` 和 `SetAsyncContext`**（v0.28.5）：两个 Builtin，读和设 promise 任务携带的一个对象。`then` 或 `await` 运行时用的是注册它那一刻设的那个，所以基于它们写的 `AsyncLocalStorage` 在 `await` 之后也能找到自己的 store，和 Node 一样。从不设它的 VM，promise 的行为和以前一样。[详情](changes/go-api.zh-CN.md#promise-任务的异步上下文)
 

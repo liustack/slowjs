@@ -506,24 +506,28 @@ func (c *Collator) ResolvedOptions() ResolvedCollator {
 }
 
 // Compare returns -1, 0 or 1 as a sorts before, with or after b.
-func (c *Collator) Compare(a, b string) int {
+func (c *Collator) Compare(a, b string) int { return c.CompareLimited(a, b, nil) }
+
+// CompareLimited is Compare with the limits of the call it is done for,
+// which it checks in a long run of accents (qjs).
+func (c *Collator) CompareLimited(a, b string, l *Limits) int {
 	if a == b {
 		return 0
 	}
 	if c.skipPrefix {
 		start := c.comparisonStart(a, b)
-		return c.compareElements(c.sortElementsFrom(a, start), c.sortElementsFrom(b, start))
+		return c.compareElements(c.sortElementsFrom(a, start, l), c.sortElementsFrom(b, start, l))
 	}
-	return c.compareElements(c.sortElements(a), c.sortElements(b))
+	return c.compareElements(c.sortElements(a, l), c.sortElements(b, l))
 }
 
 // normalizedText is a string in NFD, as the characters the collator reads.
 // A lone surrogate, which a JavaScript string may hold and which comes here
 // in WTF-8, stays itself -- the normalizer would make each of its bytes a
 // U+FFFD -- so that it weighs as ICU weighs it, by its code point.
-func (c *Collator) normalizedText(s string) []rune {
+func (c *Collator) normalizedText(s string, l *Limits) []rune {
 	if strings.IndexByte(s, 0xed) < 0 {
-		return []rune(c.normalizer.Normalize(s, NFD))
+		return []rune(c.normalizer.normalize(s, NFD, l))
 	}
 	var out []rune
 	start := 0
@@ -533,28 +537,28 @@ func (c *Collator) normalizedText(s string) []rune {
 		}
 		// A surrogate is a starter, so the text either side of it
 		// normalizes on its own.
-		out = append(out, []rune(c.normalizer.Normalize(s[start:i], NFD))...)
+		out = append(out, []rune(c.normalizer.normalize(s[start:i], NFD, l))...)
 		out = append(out, 0xd000|rune(s[i+1]&0x3f)<<6|rune(s[i+2]&0x3f))
 		i += 2
 		start = i + 1
 	}
-	return append(out, []rune(c.normalizer.Normalize(s[start:], NFD))...)
+	return append(out, []rune(c.normalizer.normalize(s[start:], NFD, l))...)
 }
 
 // sortElements returns what a string is compared by: its collation elements,
 // with the variable ones shifted when punctuation is ignored.
-func (c *Collator) sortElements(s string) []uint64 { return c.sortElementsFrom(s, 0) }
+func (c *Collator) sortElements(s string, l *Limits) []uint64 { return c.sortElementsFrom(s, 0, l) }
 
 // sortElementsFrom is sortElements of the text from a byte offset, which
 // starts a character that no combining mark or contraction joins to what
 // precedes it, so that the text either side decomposes on its own. What
 // precedes it is read only for the prefixes a character's weight depends
 // on.
-func (c *Collator) sortElementsFrom(s string, start int) []uint64 {
-	text := c.normalizedText(s[start:])
+func (c *Collator) sortElementsFrom(s string, start int, l *Limits) []uint64 {
+	text := c.normalizedText(s[start:], l)
 	from := 0
 	if start > 0 {
-		before := c.normalizedText(s[:start])
+		before := c.normalizedText(s[:start], l)
 		from = len(before)
 		text = append(before, text...)
 	}
