@@ -13,11 +13,13 @@ import (
 	"github.com/liustack/quickjs/internal/cengine"
 )
 
-// stringLen is vmhook.StringLen: the length of argument i, in UTF-16 code
-// units as javascript counts it, when it is a string, without reading the
-// string. A rope, a string the engine keeps as the pieces it was joined
-// from, is not joined. It allocates nothing.
-func (a Args) stringLen(i int) (n int, ok bool) {
+// StringLen returns the length of argument i, in UTF-16 code units as
+// javascript counts it, when it is a string, without reading the string: a
+// rope, a string the engine keeps as the pieces it was joined from, is not
+// joined. A Builtin can so refuse a string too long for it before it
+// converts any of it. It takes the same time for a string of any length and
+// allocates nothing.
+func (a Args) StringLen(i int) (n int, ok bool) {
 	// The first uint32 of a string holds its length, under the bit of its
 	// width, and that of a rope its length (JSStringRope.len):
 	// TestVMHookChars checks both.

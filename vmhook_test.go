@@ -153,11 +153,11 @@ func toFloat(v any) (float64, bool) {
 	return 0, false
 }
 
-// charsBuiltin returns how vmhook.StringLen and vmhook.Chars see its argument:
+// charsBuiltin returns how Args.StringLen and vmhook.Chars see its argument:
 // "len,tag,latin1|utf16,chars", tag being "rope" when it is a rope, and the
 // characters of the view decoded, which the test compares with the string.
 var charsBuiltin = NewBuiltin("chars", 1, func(a Args) (Value, error) {
-	n, ok := vmhook.StringLen(a, 0)
+	n, ok := a.StringLen(0)
 	if !ok {
 		return a.VM().NewString("none")
 	}
@@ -186,7 +186,7 @@ var charsBuiltin = NewBuiltin("chars", 1, func(a Args) (Value, error) {
 	return a.VM().NewString(fmt.Sprintf("%d,%d,%s,%s,%s", n, got, kind, view, string(s)))
 })
 
-// vmhook.StringLen reads the length of a string argument, of a rope too,
+// Args.StringLen reads the length of a string argument, of a rope too,
 // without joining it, and vmhook.Chars its characters, joining a rope first,
 // so that a Go function reads a long argument in place.
 func TestVMHookChars(t *testing.T) {
@@ -217,14 +217,14 @@ func TestVMHookChars(t *testing.T) {
 	}
 }
 
-// lenBuiltin returns Args.stringLen of its argument, "rope" or "flat", and
-// what 1,000 calls of stringLen allocated in Go.
+// lenBuiltin returns Args.StringLen of its argument, "rope" or "flat", and
+// what 1,000 calls of StringLen allocated in Go.
 var lenBuiltin = NewBuiltin("strlen", 1, func(a Args) (Value, error) {
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	n, ok := 0, false
 	for range 1000 {
-		n, ok = a.stringLen(0)
+		n, ok = a.StringLen(0)
 	}
 	runtime.ReadMemStats(&after)
 	kind := "flat"
@@ -234,7 +234,7 @@ var lenBuiltin = NewBuiltin("strlen", 1, func(a Args) (Value, error) {
 	return a.VM().NewString(fmt.Sprintf("%d,%v,%s,%d", n, ok, kind, after.TotalAlloc-before.TotalAlloc))
 })
 
-// Args.stringLen, which vmhook.StringLen calls, reads the length of the
+// Args.StringLen reads the length of the
 // longest string javascript makes, a rope of 2^30-1 units, without joining
 // it, and allocates nothing.
 func TestStringLenRope(t *testing.T) {

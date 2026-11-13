@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `Args.StringLen(i)` 返回 Builtin 字符串参数的长度，以 UTF-16 码元计，不转换字符串，也不拼接 `+` 拼成的字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存（[Go API](docs/changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)）。
+
 ## [v0.30.2] - 2026-11-13
 
 ### 修复

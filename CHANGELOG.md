@@ -4,6 +4,10 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+### Added
+
+- `Args.StringLen(i)` returns the length of a string argument of a Builtin, in UTF-16 code units, without converting it or joining a string made by `+`, so a Builtin can refuse a string too long for it before it reads any of it. It takes the same time for a string of any length and allocates nothing ([Go API](docs/changes/go-api.md#argsstringlen-reads-the-length-of-a-string-in-place)).
+
 ## [v0.30.2] - 2026-11-13
 
 ### Fixed

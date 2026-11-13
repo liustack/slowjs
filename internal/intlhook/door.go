@@ -124,11 +124,8 @@ func RefuseDigits() { panic(tooLong{KindDigits}) }
 // NewBuiltin. It counts what Go may take for the arguments it admitted, so
 // that the room is checked for all of them together.
 type Door struct {
-	a quickjs.Args
-	// boxed is a as an any, for vmhook.StringLen, made once for the call
-	// when it first admits an argument: putting a in an any allocates.
-	boxed any
-	need  int64
+	a    quickjs.Args
+	need int64
 }
 
 // Open returns the door of the call whose arguments are a.
@@ -173,10 +170,7 @@ func (d *Door) Reserve(n int64) {
 // room for it and the arguments admitted before. It is false for an
 // argument that is not a string.
 func (d *Door) admit(i int, k Kind) bool {
-	if d.boxed == nil {
-		d.boxed = d.a
-	}
-	n, ok := vmhook.StringLen(d.boxed, i)
+	n, ok := d.a.StringLen(i)
 	if !ok {
 		return false
 	}

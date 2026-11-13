@@ -13,7 +13,6 @@ func init() {
 	vmhook.Stop = func(vm any) bool { return hookVM(vm).goStop() }
 	vmhook.Room = func(vm any) int64 { return hookVM(vm).goRoom() }
 	vmhook.OutOfMemory = func(vm any) { hookVM(vm).goOutOfMemory() }
-	vmhook.StringLen = func(args any, i int) (int, bool) { return hookArgs(args).stringLen(i) }
 	vmhook.Chars = func(args any, i int) ([]byte, []uint16, func(), bool) { return hookArgs(args).chars(i) }
 }
 
