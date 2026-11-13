@@ -57,7 +57,7 @@ go test -count=1 -p 1 .                # about a minute
 | `make check-gen` | 检查提交进仓库的引擎就是现在 `make gen` 的结果，两种架构都查（`check-full` 的一部分） |
 | `make bench ARGS="..."` | `go tool measure bench`：代码位置计时和 callgrind（见[给两个构建计时对比](#给两个构建计时对比)） |
 | `make remote RUN="..."` | 在另一台机器上运行别的 make 目标（见[在另一台机器上](#在另一台机器上)） |
-| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的结果，以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
+| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 里放的就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的内容（文件相同，解压后的字节相同，不比较压缩后的字节：标准库的 DEFLATE 编码器在不同 Go 版本之间有差别，而 `data.sh pack -check` 在模块支持的每个 Go 上都必须通过），以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
 | `make benchmark` | `make -C compare benchmark`：`compare/testdata/` 里 QuickJS 的 64 个微基准（goja 或 fastschema/qjs 有 6 个跑不过，所以三个引擎共有的是另外 58 个），每个都在这个引擎、goja 和 fastschema/qjs（wazero 上的 QuickJS）上跑，也就是 QuickJS 自己的测试集 |
 | `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他纯 Go JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.md)（支持度，速度，内存，限额，tifa 页面），每个引擎在自己的二进制里 |
 | `make cpu`、`make mem` | `make -C compare cpu` 和 `make -C compare mem`：对比基准的 CPU 和内存剖析 |
