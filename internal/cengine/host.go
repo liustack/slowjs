@@ -49,6 +49,7 @@ func host_now(sp, vm, kind uintptr) int64 {
 // are the requests of the engine, which gohost answers, and so is a function
 // of the host when none is registered.
 func host_call(sp, vm, this, argc, argv, magic uintptr) (r0, r1 uintptr) {
+	CheckSP(sp)
 	hook("host_call", vm)
 	if r, ok := callOverride(int32(magic)); ok {
 		r0, r1 = r.U, r.Tag

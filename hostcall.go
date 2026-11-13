@@ -44,7 +44,7 @@ func hostCall(sp uintptr, vmID uint32, this uintptr, argc int32, argv uintptr, i
 		panic(fmt.Sprintf("quickjs: a call of a host function of VM %d, which is not open", vmID))
 	}
 	saved := m.sp
-	m.sp = (sp + 15) &^ 15
+	m.sp = cengine.AlignSP(sp)
 	var r jsValue
 	if id >= builtinFuncs {
 		r = m.callBuiltin(saved, (*builtins.list.Load())[id-builtinFuncs], valueAt(this), argc, argv)

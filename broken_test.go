@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/liustack/quickjs/internal/cengine"
 )
 
 // A panic or a Goexit that goes up through the engine's frames leaves the VM
@@ -70,7 +72,9 @@ func TestNestedClockPanicRecoveredBreaksVM(t *testing.T) {
 
 // The same for a memory fault in the engine under a nested call: the nested
 // call is given a shadow stack with nothing left, so its first call into the
-// engine faults on the guard page.
+// engine faults on the guard page. The pointer stays on 16 bytes, as every
+// shadow pointer must (cengine.AlignSP): the testhooks build refuses one off
+// 16 before the engine is entered.
 func TestNestedFaultRecoveredBreaksVM(t *testing.T) {
 	m := newTestVM(t)
 	defineBuiltin(t, m, "inner", NewBuiltin("inner", 0, func(a Args) (Value, error) {
@@ -78,7 +82,7 @@ func TestNestedFaultRecoveredBreaksVM(t *testing.T) {
 		sp := m.sp
 		func() {
 			defer func() { recover() }()
-			m.sp = m.end - 8
+			m.sp = m.end - cengine.SPAlign
 			m.Eval(`1`, EvalGlobal)
 		}()
 		m.sp = sp
