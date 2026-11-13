@@ -6,13 +6,14 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
-	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/hostmem"
 	"github.com/liustack/quickjs/internal/intlhook"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
@@ -50,7 +51,7 @@ func caseLanguage(tag string) (string, error) {
 // caseRunes is s, a string as the engine holds it in WTF-8, as code points,
 // a lone surrogate as itself.
 func caseRunes(w *walk, s string, units int) []rune {
-	r := make([]rune, 0, units)
+	r := w.runes(units)
 	for i := 0; i < len(s); {
 		w.step()
 		if i+2 < len(s) && s[i] == 0xed && s[i+1] >= 0xa0 {
@@ -79,6 +80,8 @@ type walk struct {
 	vm    *quickjs.VM
 	steps int
 	held  int64
+	// gives gives back the arrays of code points of the call (runes).
+	gives []func()
 	// room is the room of the VM, -1 for no limit, or unknownRoom before it
 	// is asked: what Go takes does not change it, so it is asked once, when
 	// the call first holds more than the door's fixed room, which the door
@@ -129,28 +132,74 @@ func (w *walk) over() {
 	}
 }
 
+// runes is an empty array with room for n code points: from 1 MiB a block
+// (intlhook.Take), which done gives back. Go clears an allocation in one go,
+// with no check of the call, while the OS hands over its pages; the pages of
+// a block come as the walk writes them, a step at a time.
+func (w *walk) runes(n int) []rune {
+	if !hostmem.Mapped[rune](n) {
+		return make([]rune, 0, n)
+	}
+	r, give := intlhook.Take[rune](w.vm, n)
+	w.gives = append(w.gives, give)
+	return r[:0]
+}
+
+// bytes is runes for an array of n bytes.
+func (w *walk) bytes(n int) []byte {
+	if !hostmem.Mapped[byte](n) {
+		return make([]byte, 0, n)
+	}
+	b, give := intlhook.Take[byte](w.vm, n)
+	w.gives = append(w.gives, give)
+	return b[:0]
+}
+
+// done gives back the arrays of the walk: nothing may use them after.
+func (w *walk) done() {
+	for _, give := range w.gives {
+		give()
+	}
+	w.gives = nil
+}
+
+// put appends the code points of from to out, which has room for them, a
+// piece at a time with a check of the call between two.
+func (w *walk) put(out, from []rune) []rune {
+	for lo := 0; lo < len(from); lo += intlhook.Piece {
+		if lo > 0 {
+			w.check()
+		}
+		out = append(out, from[lo:min(lo+intlhook.Piece, len(from))]...)
+	}
+	return out
+}
+
 // begin is the output of a rule that first changes in at i: the code points
 // before i as they are, in an array with room for those of in and extra
 // more, counted first.
 func (w *walk) begin(in []rune, i, extra int) []rune {
 	w.take(4 * int64(len(in)+extra))
-	return append(make([]rune, 0, len(in)+extra), in[:i]...)
+	return w.put(w.runes(len(in)+extra), in[:i])
 }
 
-// add appends c to out, counting first the array append makes when out has
-// no room for it, of at most twice its length.
+// add appends c to out, in an array twice as long when out has no room for
+// it, counted first.
 func (w *walk) add(out []rune, c rune) []rune {
 	if len(out) == cap(out) {
-		w.grow(len(out) + 1)
+		out = w.grow(out)
 	}
 	return append(out, c)
 }
 
-// grow counts the array append makes for n code points, apart so that add
-// inlines.
+// grow is out in an array of twice its length, and one more, apart so that
+// add inlines.
 //
 //go:noinline
-func (w *walk) grow(n int) { w.take(8 * int64(n)) }
+func (w *walk) grow(out []rune) []rune {
+	w.take(8 * int64(len(out)+1))
+	return w.put(w.runes(2*len(out)+1), out)
+}
 
 // pieceBytes is what Go takes for a piece of the result besides its text:
 // its place in the list, which append may double, its value boxed in an
@@ -184,30 +233,41 @@ func premapCase(w *walk, s string, units int, lang string, upper bool) (pieces [
 		return nil, false, err
 	}
 
-	var b strings.Builder
+	// The strings are written in one array of bytes, counted first, and
+	// are over it: they live until the walk is done, after the engine has
+	// its own.
+	size := 0
+	var buf [utf8.UTFMax]byte
+	for _, c := range out {
+		w.step()
+		if !isSurrogate(c) {
+			size += len(utf8.AppendRune(buf[:0], c))
+		}
+	}
+	w.take(int64(size))
+	b := w.bytes(size)
+	at := 0
 	piece := func(p any) {
 		w.take(pieceBytes)
 		pieces = append(pieces, p)
 	}
+	text := func() {
+		piece(unsafe.String(unsafe.SliceData(b[at:]), len(b)-at))
+		at = len(b)
+	}
 	for _, c := range out {
 		w.step()
 		if isSurrogate(c) {
-			if b.Len() > 0 {
-				piece(b.String())
-				b = strings.Builder{}
+			if len(b) > at {
+				text()
 			}
 			piece(int(c))
 			continue
 		}
-
-		if b.Cap()-b.Len() < utf8.UTFMax {
-			// The builder grows to twice what it needs, at most.
-			w.take(2 * int64(b.Len()+utf8.UTFMax))
-		}
-		b.WriteRune(c)
+		b = utf8.AppendRune(b, c)
 	}
-	if b.Len() > 0 || len(pieces) == 0 {
-		piece(b.String())
+	if len(b) > at || len(pieces) == 0 {
+		text()
 	}
 	return pieces, true, nil
 }

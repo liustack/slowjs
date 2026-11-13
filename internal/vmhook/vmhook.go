@@ -46,4 +46,12 @@ var (
 	// that fails, with the error that ends the call pending, as for an argument
 	// that is not a string.
 	Chars func(args any, i int) (latin1 []byte, utf16 []uint16, release func(), ok bool)
+
+	// LongWTF8 is Args.WTF8 for argument i of args, a quickjs.Args, a long
+	// string the Go function uses only until it calls give: a long one is
+	// in memory mapped for the call (hostmem.Take), and nothing may keep the
+	// string, or a part of it, after give. It is not a string Go can keep,
+	// as one the function returns or stores. When ok is false give does
+	// nothing.
+	LongWTF8 func(args any, i int) (s string, give func(), ok bool)
 )

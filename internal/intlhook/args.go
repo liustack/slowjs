@@ -7,6 +7,7 @@ package intlhook
 
 import (
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/hostmem"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
 
@@ -58,6 +59,17 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 	})
 }
 
+// Take is hostmem.Take, for a function given to NewBuiltin: n elements of T
+// in memory that give gives back, a block mapped from the OS from 1 MiB.
+// When the OS refuses it, the Builtin stops with the out of memory error.
+func Take[T hostmem.Elem](vm *quickjs.VM, n int) (s []T, give func()) {
+	s, give, err := hostmem.Take[T](n)
+	if err != nil {
+		OutOfMemory(vm)
+	}
+	return s, give
+}
+
 // String is a.String(i), for a function given to NewBuiltin.
 func String(a quickjs.Args, i int) (string, bool) {
 	s, ok := a.String(i)
@@ -98,6 +110,13 @@ func Check(vm *quickjs.VM) {
 	if vmhook.Stop(vm) {
 		panic(stopped{})
 	}
+}
+
+// OutOfMemory stops the Builtin with the out of memory error, for work in
+// Go the OS refused memory to, for a function given to NewBuiltin.
+func OutOfMemory(vm *quickjs.VM) {
+	vmhook.OutOfMemory(vm)
+	panic(stopped{})
 }
 
 // Room stops the Builtin with the out of memory error when the VM has no
