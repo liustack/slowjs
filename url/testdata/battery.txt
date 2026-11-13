@@ -1,0 +1,24 @@
+basic=http://user:pw@example.com:8080/a%20b/c?x=1&y=2#h
+parts=https:|a.b|/c|?d|#e|https://a.b
+idna=xn--e1aybc.xn--p1ai
+relative=http://a/b/x
+invalid=threw TypeError
+noargs=threw TypeError
+canParse=truefalsefalse
+parse=null
+setters=https://u%20u:p%3Ap@h.com:99/x%20y?q=1%202#h%20h
+port=http://a/
+sp-get=1132truefalse3
+sp-record=x=1&y=2
+sp-seq=x=1&y=2
+sp-seq-bad=threw TypeError
+sp-copy=a=b&c=d
+sp-mutate=a=9&c=x+y
+sp-sort=a=3&b=2&b=1&z=1&%F0%9F%98%80=x&%EF%BF%BF=y
+sp-iter=a1;b2;ab12a1b2
+link=?x=1&y=2|z=31|w=4true|http://b/
+toString=http://a/http://a/http://a/
+brand=threw TypeError
+brand2=threw TypeError
+subclass=http://a/http://a/truetrue0
+tag=[object URL][object URLSearchParams][object URLSearchParams Iterator]

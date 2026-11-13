@@ -8,7 +8,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import "github.com/liustack/quickjs/internal/vmhook"
 
 // The functions of internal/vmhook, with which the Go functions of packages
-// intl, temporal and fmt keep the limits of the VM that called them.
+// intl, temporal, fmt and url keep the limits of the VM that called them.
 func init() {
 	vmhook.Stop = func(vm any) bool { return hookVM(vm).goStop() }
 	vmhook.Room = func(vm any) int64 { return hookVM(vm).goRoom() }
