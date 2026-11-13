@@ -13,6 +13,7 @@
 - 闭包捕获的变量如果在闭包拿到之后再没有代码改它，比如参数、`const` 或函数声明，闭包现在直接存它的值，原来存的是和函数帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着，所以只被它的帧拿着的对象可能更早释放：指向它的 `WeakRef` 可能更早变空，它的 `FinalizationRegistry` 回调也可能更早运行（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）。
 - 字节码版本升到 11，因为它给直接存值的闭包变量带上标记，读取时检查过一次之后就照文件里的用（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）：v0.30.2 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
+- 在 arm64 上，有调用的生成函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事。在 Apple M4 上，一次渲染少跑 0.75% 到 1.14% 的指令，少用 0.4% 到 1.2% 的时间，在各轮的波动之内。栈帧和调用深度不变，amd64 不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#arm64-只保存一次-lr)）。
 
 ## [v0.30.2] - 2026-11-13
 

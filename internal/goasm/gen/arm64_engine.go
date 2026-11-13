@@ -64,6 +64,11 @@ type ARM64Env struct {
 	// RegResult is LowerEnv.RegResult: the functions whose result a direct
 	// call takes from x0, x1 or d0, where they stored it from.
 	RegResult map[string]bool
+	// DropLRPairs is the negative build of GEN_DROP_LR_PAIRS: the lowering
+	// drops a pair that holds x30 whole, the other register's save with it,
+	// which a64ProveLR must refuse. NoLRProof (GEN_DROP_LR_PAIRS=unchecked)
+	// skips that proof, so that the engine's tests can show the same mistake.
+	DropLRPairs, NoLRProof bool
 }
 
 var (
@@ -264,6 +269,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	D := 0 // bytes of the LLVM frame allocated at this point
 	goOff := func(k int) int { return L + (F - D) + k }
 	callIdx := 0
+	lr := &a64LRSlots{stored: map[int]bool{}, loaded: map[int]bool{}, extra: map[int]bool{}}
 	pending := "" // signature of the indirect call on the next line
 	// materialize puts the whole address of sym+add in register x<r>.
 	materialize := func(reg, sym string, add int64) ([]string, error) {
@@ -384,6 +390,39 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		if m := reA64LastOp.FindStringSubmatch(l); m != nil && a64NamesData(env, fn.Name, m[1]) {
 			return fail("unreviewed reference to data %q", l)
 		}
+		if reA64LR.MatchString(l) {
+			// llc's save or load of x30, dead under Go's epilogue
+			// (arm64_lr.go): drop it, keep the other register of a pair.
+			if reA64Reserved.MatchString(l) {
+				return fail("reserved register in %q", l)
+			}
+			a, err := a64ParseLR(l)
+			if err != nil {
+				return fail("%v", err)
+			}
+			if D += a.alloc; D > F {
+				return fail("frame grows past its prologue: %q", l)
+			}
+			if a.lr+8 > D || a.otherAt+8 > D {
+				return fail("access outside the LLVM frame: %q", l)
+			}
+			if a.load {
+				lr.loaded[goOff(a.lr)] = true
+			} else {
+				lr.stored[goOff(a.lr)] = true
+			}
+			if a.other != "" {
+				if env.DropLRPairs {
+					lr.extra[goOff(a.otherAt)] = true
+				} else {
+					out = append(out, fmt.Sprintf("%s %s, [sp, #%d]", a.otherSave, a.other, goOff(a.otherAt)))
+				}
+			}
+			if D -= a.free; D < 0 {
+				return fail("frame freed twice: %q", l)
+			}
+			continue
+		}
 		if m := reA64Pre.FindStringSubmatch(l); m != nil {
 			D += a64Imm(m[3], "")
 			if D > F {
@@ -470,9 +509,6 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		if reA64Reserved.MatchString(l) {
 			return fail("reserved register in %q", l)
 		}
-		if reA64LR.MatchString(l) && !((strings.HasPrefix(op, "st") || strings.HasPrefix(op, "ld")) && strings.Contains(l, "[sp")) {
-			return fail("LR used outside a stack save: %q", l)
-		}
 		if m := reA64B.FindStringSubmatch(l); m != nil && !strings.HasPrefix(m[1], ".L") {
 			return fail("tail jump %q", l)
 		}
@@ -539,6 +575,11 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	}
 	if D != 0 && D != F {
 		return fail("the frame is half freed at the end")
+	}
+	if !env.NoLRProof {
+		if err := a64ProveLR(out, lr, len(rec.Calls)); err != nil {
+			return fail("%v", err)
+		}
 	}
 	// The function's own data (constant pools, jump tables, the computed
 	// goto table, copies) after its code: the code before it must end in an

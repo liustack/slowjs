@@ -45,6 +45,7 @@ read_when:
 | 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |
 | `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
 | 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
+| 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
 
 ## 上游 QuickJS 的提交
 

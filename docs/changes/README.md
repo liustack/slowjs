@@ -45,6 +45,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `o[k] = v` with the key in a local or an argument sets it without a reference to the key | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-set-without-a-reference) |
 | `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | Unreleased | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
 | An array literal moves the references of its elements into the array | Unreleased | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
+| On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | Unreleased | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
 
 ## Commits of upstream QuickJS
 
