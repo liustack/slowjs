@@ -7,6 +7,7 @@
 ### 变更
 
 - atom（引擎给属性名和只存一份的字符串编的号）的哈希表，现在两个桶有一个 atom 时就加倍，以前是每个桶两个 atom 时才加倍。用字符串做键时要走的链变短了：我们在 linux/amd64 上量到，tifa 的 MUI 页面少用 1.0% 的时间，商店页面少用 1.1%，工作台页面没有变化。一个 VM 多占 50 KB 到 200 KB，接近内存上限的脚本会稍早一点内存不足（[strings.md](docs/changes/strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom)）。
+- `'' + x` 里的 `x` 是字符串时（React 用这种写法把值变成字符串），现在直接返回 `x` 本身，不再复制一份新的。以 `${x}` 开头的模板字符串，第一步也不再复制。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），React 页面的渲染时间少 2.2%，MUI 页面少 0.7%。
 - locale 列表里超过 16,384 个字符的 tag 现在是 `RangeError`，和 v0.30.3 起单独给的 tag 一样。Chrome 和 Node 接受它。原来 Go 把列表里的每个 tag 整个转成规范形式，中间不检查调用：在 Apple M4 上，16 个 256 Ki 字符的 tag 在 eval 超时后还跑了 60 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用)）。
 - `fmt.sprint` 或 `fmt.sprintf` 的输出比引擎最长的字符串还长时，现在用不可捕获的内存不足错误结束调用，原来是 `TypeError`。只有内存上限超过 16 GiB 的 VM 才要得出这样的输出（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存)）。
 - 没有内存上限的 VM 里，Intl 或 `fmt` 在长文本上的调用现在重用上一次调用的内存，不必每次调用都要新的页：VM 留着最后还回来的一块（最大 32 MiB），一个进程里的 VM 加起来最多留 64 MiB，每块在连续 16 次调用都没用时、`SetMemoryLimit` 给 VM 设上限时和 `Close` 时还回去。在 GitHub 的 macos-15 机器上，在 8 Mi 字符的文本里找第一个词，每次调用 3.7 到 6.1 ms，v0.30.3 是 5.2 到 8.9 ms。有内存上限的 VM 不留块，好守住上限：同样的调用在那台机器上要 31 到 34 ms，在 Apple M4 上要 4.1 ms，v0.30.3 是 3.6 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用)）。
