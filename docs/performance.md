@@ -767,6 +767,28 @@ The time on darwin/arm64 moved by -0.7% to +1.3% on these four pages, within the
 | MUI's orders page | -0.34% |
 | `r_react_ssr` | 0.00% |
 
+### Keyed reads with an atom key
+
+[A string key that is its own atom is read as a named property](changes/c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property). Counted on 2026-11-13 against `3ae98161`. The generated engine inside tifa's `test/ssr` on an Apple M4 (darwin/arm64), warm renders of one VM, retired instructions per render, the median of a page's renders, the mean over pages, 3 alternating rounds (lowest and highest round in brackets). Every page gives the same HTML.
+
+| Pages | Reads a render (mean) | Instructions |
+| --- | ---: | ---: |
+| tifa's shop, fourteen store pages | 9.7K | -0.51% (-0.24% to -0.84%) |
+| tifa's shop, six workbench pages | 6.9K | -0.71% (-0.64% to -0.84%) |
+| React's page | 2.8K | -0.85% (-0.69% to -0.97%) |
+| tifa's MUI test app, three pages | 31.3K | -3.36% (-3.19% to -3.56%) |
+
+Timed on 2026-11-13 on a linux/amd64 server (AMD EPYC 7B13), base and change in one session: 16 layouts of each binary, 2 rounds in which the sides take turns, one core, the median render, summed over the pages of the group. The change in the mean over the layouts, with its 95% interval:
+
+| Pages | Time |
+| --- | ---: |
+| tifa's shop, fourteen store pages | -0.62% (-1.16% to -0.08%) |
+| tifa's shop, six workbench pages | -1.31% (-2.28% to -0.34%) |
+| React's page | -0.81% (-1.50% to -0.11%) |
+| tifa's MUI test app, three pages | -1.37% (-2.01% to -0.73%) |
+
+A read that finds an own data property costs 115 native instructions instead of 210 (callgrind, linux/amd64, a loop of reads of one key). On the generated amd64 engine the MUI orders page runs 9.85M fewer instructions a render for its 54.6K such reads, about 180 a read. What a hit still pays over GETF's 25: the call of `rv_getel_atom` with its frame (about 20), the frame sync before it (about 5), the operands read again and their tests (about 30), the atom's index from the hash table of atoms (about 10) and the generic store of the result (about 12). The own lookup is the same hash probe GETF makes.
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.
