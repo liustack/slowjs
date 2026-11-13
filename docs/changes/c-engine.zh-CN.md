@@ -1,5 +1,5 @@
 ---
-summary: 'engine/ 里 C 引擎相对上游 QuickJS 和它取代的 ccgo 引擎的改动：小 libc，通过宿主回调取时间和 abort，不阻塞的 Atomics，按运行时计数的类 ID，写进缓冲区的 JS_DumpMemoryUsage 报告，用计数的深度而不是栈来限制递归，C 出错时会怎样，哪些生成的函数不做 Go 的栈检查，生成的代码如何让 Go 把它停下来，Interrupt 如何停住脚本，解释器和正则匹配器落在各自行里的位置，一次调用如何设置和释放它的值，解释器如何不经 JS_CallInternal 调用 C 函数，生成器如何让 LLVM 用两次 8 字节移动复制 JSValue，Go 宿主调用的不带可变参数的 C API，对变量不断追加的字符串如何增长，编译器去掉哪些暂时性死区检查，哪些局部变量共用帧里的一个槽位，JSON.parse 如何直接从文本读键和普通字符串，哪些检查和测试守着这些改动，影子栈有多大，以及系统拒绝给内存时会怎样'
+summary: 'engine/ 里 C 引擎相对上游 QuickJS 和它取代的 ccgo 引擎的改动：小 libc，通过宿主回调取时间和 abort，不阻塞的 Atomics，按运行时计数的类 ID，写进缓冲区的 JS_DumpMemoryUsage 报告，用计数的深度而不是栈来限制递归，C 出错时会怎样，哪些生成的函数不做 Go 的栈检查，生成的代码如何让 Go 把它停下来，Interrupt 如何停住脚本，JavaScript 如何在寄存器解释器里运行（函数在第一次调用时转换，帧，调用的窗口，寄存器栈），解释器和正则匹配器落在各自行里的位置，一次调用如何设置和释放它的值，解释器如何不经 JS_CallInternal 调用 C 函数，生成器如何让 LLVM 用两次 8 字节移动复制 JSValue，Go 宿主调用的不带可变参数的 C API，对变量不断追加的字符串如何增长，编译器去掉哪些暂时性死区检查，哪些局部变量共用帧里的一个槽位，JSON.parse 如何直接从文本读键和普通字符串，哪些检查和测试守着这些改动，影子栈有多大，以及系统拒绝给内存时会怎样'
 read_when:
   - 修改 engine/libc、engine/host.h，或者 C 树向宿主要的东西
   - 修改 C 树数调用深度或内部深度的位置，或者给它加一处递归
@@ -16,6 +16,7 @@ read_when:
   - 修改 C 树里 `+` 和 `+=` 构建字符串的方式，或者想知道为什么字符串末尾后面留有空位
   - 修改生成器放置函数体的位置，或者读到 C 引擎的速度变化可能只是解释器落点不同造成的
   - 修改生成器传给 quickjs.c 的标志，或者想知道为什么 JSValue 用两次 8 字节而不是一次 16 字节来复制
+  - 修改寄存器解释器（`engine/regvm*.h`、`JS_RegvmRun`），或者想知道一个函数怎样转换、调用和返回怎样用帧和寄存器栈、它为什么给出 QuickJS 栈式解释器的结果
   - 修改 JS_CallInternal 如何设置和释放一次调用的局部变量、操作数和参数
   - 修改编译器读写 let、const 和 class 局部变量的方式，或者它们的暂时性死区检查（tdz_checks）
   - 修改一个函数的哪些局部变量共用帧里的一个槽位（share_local_slots、js_frame_plain）
@@ -38,6 +39,7 @@ read_when:
 | `Atomics.wait` 抛错，`Atomics.notify` 不唤醒任何人 | `Atomics.wait` 像浏览器主线程一样抛 `TypeError`。引擎里没有线程 | test262，用 `engine/test/test262.conf` |
 | `Atomics.pause` 不向 CPU 发提示 | 它检查参数并返回 `undefined`。规范只要求平台能发提示时引擎才发，而引擎里没有内联汇编 | test262 的 `built-ins/Atomics/pause`，生成器（没有桩函数） |
 | 格式串要么是字符串常量，要么是某个 `printf` 类函数的格式串，并且和参数一致 | 对程序没有变化。`snprintf` 会 abort 的新格式串造不出来 | 构建（`-Werror=format-nonliteral`），生成器，`libc-test.c` |
+| 标了 `__exception` 的函数（例如轮询 `js_poll_interrupts`）的返回值不会被丢掉 | 对程序没有变化。丢掉返回值的轮询会看到停止请求却继续干活，这样的代码构建不过 | 构建（`-Werror=unused-result`） |
 | `JS_NewClassID(rt, &id)` 按运行时计数 | Go 一侧按 VM 保存自己的类 ID | `api-test.c` |
 | `JS_DumpMemoryUsage(buf, size, ...)` 写进缓冲区 | 没有 `FILE`。Go 一侧拿到一个字符串 | `api-test.c` |
 | 打印用的工具没有了：`JS_Dump*`、`dump_token` 之类 | C 里的 `DUMP_*` 选项构建不了 | 构建 |
@@ -95,7 +97,7 @@ read_when:
 
 引擎从不读栈指针。生成的汇编跑在 Go 栈上，Go 栈会移动和增长，而且引擎把取了地址的局部变量放在自己的影子栈上，所以栈上的一个地址说明不了引擎有多深。它改为计数，运行时里有两个计数，超过任何一个就抛 `RangeError: Maximum call stack size exceeded`。两个计数都从不重置：进入的每一层在每条路径上都会退出，进不去的一层不计数，所以出错路径不会再往下递归。
 
-- **调用深度**数的是正在运行的每次函数调用。`JS_CallInternal` 在把调用交给某个类之前先计数，所以内置函数、绑定函数和 proxy 都像 JavaScript 函数一样占一层。解释器不经 `JS_CallInternal` 直接调用普通 C 函数时，自己数这一层（见[解释器如何调用C函数](#解释器如何调用-c-函数)）。`JS_CallConstructorInternal` 交给某个类的构造函数在那里计数。`JS_IteratorNext2` 的快速路径直接调用内置迭代器的 C 版 `next`，它也占一层：以前一串迭代器辅助函数经它递归，没有其他计数。运行代码的导出函数（`JS_Call`、`JS_CallConstructor`、`JS_CallConstructor2`、`JS_Invoke`、`JS_Eval`、`JS_EvalThis`、`JS_EvalFunction`、`JS_ExecutePendingJob`）为宿主的这次进入占一层，这样，调回引擎的宿主函数即使到下一次调用的路径很长（比如 `JS_Eval` 的解析器里），也会加一层。引擎自己调用的是不计数的版本（`js_call` 之类）。上限默认 5000（`JS_DEFAULT_MAX_CALL_DEPTH`），最多 10000（`JS_MAX_CALL_DEPTH_LIMIT`）。`JS_SetMaxCallDepth(rt, n)` 设置它，`n` 超出这个范围或运行时正在运行代码时返回 -1 且什么也不改。宿主用 `JS_Eval` 启动时，一个普通递归函数离上限差 2 层：一层给这次进入，一层给全局代码。
+- **调用深度**数的是正在运行的每次函数调用。`JS_CallInternal` 在把调用交给某个类之前先计数，所以内置函数、绑定函数和 proxy 都像 JavaScript 函数一样占一层。字节码函数在被进入的地方计这一层：从 C 调用时在 `JS_RegvmRun` 的开头，一个 JavaScript 函数调用另一个时在寄存器循环的调用操作里。解释器不经 `JS_CallInternal` 直接调用普通 C 函数时，自己数这一层（见[解释器如何调用C函数](#解释器如何调用-c-函数)）。`JS_CallConstructorInternal` 交给某个类的构造函数在那里计数。`JS_IteratorNext2` 的快速路径直接调用内置迭代器的 C 版 `next`，它也占一层：以前一串迭代器辅助函数经它递归，没有其他计数。运行代码的导出函数（`JS_Call`、`JS_CallConstructor`、`JS_CallConstructor2`、`JS_Invoke`、`JS_Eval`、`JS_EvalThis`、`JS_EvalFunction`、`JS_ExecutePendingJob`）为宿主的这次进入占一层，这样，调回引擎的宿主函数即使到下一次调用的路径很长（比如 `JS_Eval` 的解析器里），也会加一层。引擎自己调用的是不计数的版本（`js_call` 之类）。上限默认 5000（`JS_DEFAULT_MAX_CALL_DEPTH`），最多 10000（`JS_MAX_CALL_DEPTH_LIMIT`）。`JS_SetMaxCallDepth(rt, n)` 设置它，`n` 超出这个范围或运行时正在运行代码时返回 -1 且什么也不改。宿主用 `JS_Eval` 启动时，一个普通递归函数离上限差 2 层：一层给这次进入，一层给全局代码。
 - **内部深度**数的是不做调用的 C 递归：解析器（`js_parse_unary`、`js_parse_postfix_expr`、`js_parse_assign_expr2`、`js_parse_statement_or_decl`、`js_parse_destructuring_element` 和 `js_parse_function_decl2`，它们切断了解析器的每个环：二元和逻辑运算符是在循环里读的），创建脚本的函数（`js_create_function`，以及读外层函数变量的 `get_closure_var`），`json_parse_value`、`internalize_json_property`、`js_json_to_str`，正则解析器（`re_parse_disjunction` 和 `re_parse_nested_class`，经 `lre_depth_enter`），模块（`js_resolve_module` 处理 import，`js_create_module_function`，命名空间的 `get_exported_names`，导出的 `js_resolve_export1`，链接和求值），`JS_ReadObjectRec` 和 `JS_WriteObjectRec`，`JS_FlattenIntoArray`，proxy 里会继续转到目标对象的方法（除了 call 和 construct，它们按调用计数，以及原型，`JS_GetPrototype` 按名字问 proxy），绑定函数上的 `JS_OrdinaryIsInstanceOf`，`JS_GetFunctionRealm`，创建惰性属性（`JS_AutoInitProperty`，它的值会定义的属性也可能是惰性的：内置对象的表给它设了界，调用图看不出来），以及 String 对象或 arguments 对象的属性定义，它带 `JS_PROP_NO_EXOTIC` 转到普通定义（`js_define_own_property_ordinary`：调用图看不到这个标志）。多数是在原函数外面套一层计数的包装，原函数改名，末尾加 `1`（`js_resolve_export1` 的名字已经带 `1`，它包装的是 `js_resolve_export2`）。上限是 `JS_MAX_INTERNAL_DEPTH`，2000，它是构建时的常量，不像 `JS_SetMaxCallDepth` 那样是个设置：引擎能用多少栈的上界，等于它乘以这些递归里最深的那个所用的栈，而上界需要一个固定的最大值，不管调用深度是多少。宿主不能改它，`JS_SetInternalDepth`（见下）移动的是计数的起点，不是上限。太深的正则抛 `SyntaxError: stack overflow`，和以前一样。
 
 每个运行时各数各的，而一个宿主的几个运行时共用的 Go 栈看得到它们全部。所以在一个运行时的调用里跑另一个运行时的代码的宿主，要把深度交过去，让整条链受同一个上限限制，不是每个运行时各有一个上限。`JS_GetCallDepth(rt)` 和 `JS_SetCallDepth(rt, n)` 读写调用深度，`JS_GetInternalDepth` 和 `JS_SetInternalDepth` 读写内部深度。围绕这次调用，宿主读出发起调用的运行时的两个深度，把另一个运行时的深度设成它们，做调用，再把另一个运行时原来的深度设回去（两个运行时互相调用时，另一个运行时可能已经在链里，它原来的深度就是它自己外层的那些层）。写入接受从 0 到上限（`JS_MAX_CALL_DEPTH_LIMIT`、`JS_MAX_INTERNAL_DEPTH`）的值，其他值返回 -1 且什么也不改。超过该运行时上限的深度（另一个运行时的上限更大）会保留，它里面的下一次调用是 `RangeError`：链比它允许的更深。和 `JS_SetMaxCallDepth` 不同，这些写入在运行时正在运行代码时也能用，宿主正是那时写的，而设过的深度必须在原来运行的代码继续之前设回去，因为每个结束的调用都会从当时的深度上减去一层。内部深度也要交过去：Go 栈上的界把栈上所有东西的内部层数加起来，各数各的运行时会让链里每个运行时都占满一次上限。`unit.c` 让两个互相调用的运行时一直跑到 `RangeError`：交了深度，整条链是一个上限那么长，不交就是两倍。
@@ -116,7 +118,7 @@ JSON 嵌套超过上限（`JSON.parse`、它的 reviver 和 `JSON.stringify`）�
 
 真实代码远低于这个上限。在 79525 个文件里（npm 包、esbuild 编译的 JSX、emscripten、wasm2js、peggy、ajv 之类的输出，还有 JSON），最深的解析到 632 层，是 sql.js 的 asm.js 构建，它把一个大 `switch` 的各个 case 写成 290 个互相嵌套的带标签的块。其他文件都没超过 282 层，千分之一的文件到 100 层，中位数文件是 17 层。一个有超过约 1000 个跳转目标的 `switch` 的 C 程序，如果构建成 asm.js，就解析不了。渲染 tifa 示例商店的页面，解析器最深到 110 层，它的 MUI 页面 99 层，基准页面 62 层（带 Intl polyfill），全部 test262 是 256 层。这些页面上其他东西都很小：正则在编译它们的解析器之上再计 49 层，闭包 15 层（`get_closure_var`），创建函数 8 层，JSON 6 层，`JS_GetFunctionRealm` 2 层。这些渲染的调用深度都在 600 以下。
 
-每次计数也检查剩下的栈。`__shadow_remaining()` 给出剩下的字节数：生成器把它变成影子栈剩下的空间，原生测试宿主则给出它的线程栈剩下的空间。进入任何一种深度，都需要剩下 `JS_STACK_MARGIN`（64 KiB），而一次调用的 `alloca`（`JS_CallInternal` 的局部变量，绑定函数的参数）还要在这之上再有它自己的大小，否则抛同样的 `RangeError`。这样，不管深度允许多少，动态 alloca 都不会越过影子栈的末端。
+每次计数也检查剩下的栈。`__shadow_remaining()` 给出剩下的字节数：生成器把它变成影子栈剩下的空间，原生测试宿主则给出它的线程栈剩下的空间。进入任何一种深度，都需要剩下 `JS_STACK_MARGIN`（64 KiB），而一次调用的 `alloca`（C 函数和绑定函数的实参）还要在这之上再有它自己的大小，否则抛同样的 `RangeError`。这样，不管深度允许多少，动态 alloca 都不会越过影子栈的末端。
 
 有几处递归不能失败，所以会抛错的计数不适合它们，它们各自是循环，或者有证明得出的界。rope 是用循环读取、哈希、拼平和释放的（`string_buffer_concat_rope` 按顺序复制 rope 里的字符串）。一次拼接如果让 rope 深过 `JS_STRING_ROPE_MAX_DEPTH`（60），就按顺序用二分计数从它的字符串重建，不管长度如何最深 30 层（上游按长度重建，可能留下深 53 层的，还会递归）。带 reviver 的 `JSON.parse` 的解析记录和函数定义是用循环释放的。Unicode 表里的大小写转换、分解和 emoji 序列，以及 `v` 正则的类里 `\q{...}` 的字符串，都是循环。值打印器过去也会递归，现在去掉了（见上面的 `CONFIG_PRINT_VALUE`）。释放一个对象可能释放别的对象：`free_zero_refcount` 在自己的循环里释放运行期间计数变成零的每个对象，它调用的东西都不会开始回收，所以它从不会被进入两次。`js_nest_enter(rt, JS_NEST_FREE, 1)` 给它计数，超过 1 就 abort，这不会发生：宿主的终结函数要求回收时得不到回收（见[释放对象时被要求回收](#释放对象时被要求回收)），引擎自己的终结函数也不开始回收（`cycles.sh`）。
 
@@ -267,6 +269,20 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 测试：`TestEngineAsmDecl`（`internal/goasm/gen`）在 amd64 的 linux、darwin、windows 和 arm64 的 linux、darwin 上对 `internal/cengine` 运行 `go vet -asmdecl`，要求一条报告也没有。`TestRoomCheck` 检查没有栈帧、有栈帧和有调用的叶子函数的 TEXT，并检查 `goasm_room` 的文件只在 windows/amd64 上构建。
 
+## arm64 只保存一次 LR
+
+发布版本：Unreleased。
+
+在 arm64 上，生成的代码不再在每个有调用的函数里自己保存和读回 LR（x30）：Go 的序言和尾声已经做了这件事。llc 把 x30 当作被调用者保存的寄存器，所以有调用的函数把它存进自己的栈帧，每次返回之前再读回来。生成器把每次返回改成跳到函数末尾，Go 汇编器在那里写它的尾声，有调用的函数的尾声从 0(RSP) 读回 LR，那是 Go 的序言保存它的地方（`cmd/internal/obj/arm64/obj7.go`，`preprocess` 里的 `ARET` 分支）。llc 对 x30 的存和读都是没用的，每次调用大约两条指令。lowering 把它们删掉（`internal/goasm/gen/arm64_lr.go`）：x30 的 `str` 或 `ldr` 整条删掉，把 x30 和另一个寄存器配对的 `stp` 或 `ldp` 只留下那个寄存器的 `str` 或 `ldr`，偏移不变。amd64 的代码没有 LR，一个字节都不变。
+
+为什么安全：lowering 在自己的输出上证明这一点，证明不过就让构建停下。剩下的指令没有一条提到 x30，也没有一条读、写或取地址到被删槽的任何一个字节，所以在每条路径上这个槽只从 x30 写入、只读回 x30，而这两者都已删掉。x30 本身只被 Go 的 `RET` 读，那时尾声已经把它读回来了。不调用任何函数的函数在 Go 看来是叶子函数，它的尾声不读回 LR，这时函数里没有任何指令写 x30，从入口到返回它一直是 LR。Go 运行时也不读 llc 的这个槽：栈复制、信号的回溯和回调进 Go 都要经过 unwinder，它从每个栈帧的 0(RSP) 取这个栈帧的返回地址（`runtime/traceback.go`，`unwinder.resolveInternal`），而 `morestack` 在函数自己的栈帧建立之前运行，调用者的 LR 放在 R3 里传过去（`runtime/asm_arm64.s`）。槽的 8 个字节还留在栈帧里，所以每个栈帧的大小都和原来一样，调用深度和影子栈都不变（`TestRegvmDepth` 的深度下限和 `TestCCallDepth` 得到同样的深度，`JS_RegvmRun` 的影子栈帧仍是 176 字节），llc 的文本、pass 的报告和寄存器 facts 都和以前是同样的文件。
+
+它改变的是 arm64 生成的文件，和同样的 C 以前生成的相比：1,570 个函数里有 1,364 个少了指令，一共少了 2,485 条，再没有一条提到 x30，每个 TEXT 的栈帧都一样，`.s` 文件小了 0.40%（11,059,028 字节到 11,014,478 字节）。它带来的收益见 [performance.md](../performance.zh-CN.md#arm64-只保存一次-lr)。
+
+一个反向构建说明这个证明管用：`GEN_DROP_LR_PAIRS=1` 把和 x30 配对的另一个寄存器也一起删掉，构建在第一个把那个寄存器读回来的函数上停下。`GEN_DROP_LR_PAIRS=unchecked` 跳过证明，写出一个标明是反向构建的包，要加 `-tags goasmnegative` 才能编译，引擎的测试在它上面失败。`-release` 两个都拒绝。
+
+测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及活过一个标签、或放在寄存器入口叶子函数跨调用保留的寄存器里的元组地址。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
+
 ## 释放对象时被要求回收
 
 引擎在释放对象期间，也就是 `gc_phase` 不是 `JS_GC_PHASE_NONE` 时，`JS_RunGC` 和 `JS_RunYoungGC` 立刻返回，什么也不做：在释放引用计数降到零的对象的 `free_zero_refcount` 里，在立即释放引用计数降到零的普通对象的 `free_zero_refcount_first` 里（见 [objects-and-shapes.zh-CN.md](objects-and-shapes.zh-CN.md)），在释放一次回收找到的环的 `gc_free_cycles` 里，以及释放运行时的这两处。创建对象时阈值要求的回收也经过 `JS_RunGC`，所以这时创建的对象同样不会开始回收。阈值不动，在释放之后创建下一个对象时会再检查。
@@ -287,7 +303,7 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 - 计数器是影子栈区域里的一个字，距起点 384 字节（`gen.PollCounterOffset`），代码把影子指针的低位清零就能找到它。每个循环按 LLVM 对它各个块运行频率的估计，把计数放在指令更少的地方：放在寄存器里，进入循环时读，离开时写回，并且在循环里每个可能轮询的调用前后写回再读，或者放在内存里，每次计数时读写。所以一个大多数次运行都调用可能轮询的函数的循环用内存计数，按块运行的循环（见下）也是，它每个块计一次，热代码已经几乎用完寄存器的循环也是。内层循环如果外层循环有寄存器，就用外层循环的寄存器计数。
 - 循环里每条往回走的边计一次数，但在解释器里除外。
-- 解释器 `JS_CallInternal` 在内存里计 32（`POLL_WEIGHT`）：在它的入口，在每个不向前的跳转处，在每个从 `finally` 块返回处，在每次捕获异常处，以及在每个 `OP_nop` 处。C 标出这些地方（`cutils.h` 里的 `poll_count`），pass 在每个标记处放一次计数，回到分发的路上不放，这样分发保持足够短，llc 能把它复制进每个处理函数的末尾。两次计数之间，解释器在字节码里只往前走。编译器在每条超过 127 条指令的前向路径里放一个 `OP_nop`（`quickjs.c` 里的 `insert_polls`），而每个函数的字节码在能运行之前都要检查，编译器产生的和 `JS_ReadObject` 读入的都一样（`check_polls`）：两次计数之间的路径不长于 128 条指令（`POLL_RUN`），每个操作码都是解释器有的，每个跳转都落在指令的开头，最后一条指令不会跑到末尾之外。`JS_ReadObject` 对其他字节码以 `SyntaxError: invalid bytecode` 失败。`OP_ret` 从栈上取要返回的位置，它只会去 `OP_gosub` 之后的那条指令：`check_polls` 用位图标出每个函数的这些位置，代码的每个字节一位（只对有 `OP_gosub` 的函数做），`OP_ret` 到任何其他数字都抛 `InternalError: invalid ret value`，这样，读入的字节码即使栈上放着它自己编的数字，也不能把解释器带到某条指令中间，或带上检查没走过的路径。所以一次 32 的计数最多代表 4 条字节码指令，也就是和 C 里一样的几百条机器指令，而在默认间隔下，轮询在 40,000 条字节码指令之内到来，分发里每条指令都计数时是在 10,000 之内。在循环里它来得比以前更早：少于 32 条指令的循环，每圈计的数不止一次。一个 Go 测试（`TestInterpreterJumpsCount`）约束 `JS_CallInternal` 做到这一点：`pc` 只能往前走一个固定步长，或经 `JUMP_TO`（它对不向前的移动计数）和 `JUMP_COUNTED`（它总是计数）。
+- 解释器 `JS_RegvmRun` 在内存里计 32（`POLL_WEIGHT`）：在它的入口，在每次调用处，在每个不向前的跳转处，在每个从 `finally` 块返回处（`GORET`），在每次捕获异常处（`rv_unwind`），以及在每个 `POLL` 处，`OP_nop` 在寄存器循环里变成的就是 `POLL`。C 标出这些地方（`cutils.h` 里的 `poll_count`），pass 在每个标记处放一次计数，回到分发的路上不放，这样分发保持足够短，llc 能把它复制进每个处理函数的末尾。两次计数之间，解释器在字节码里只往前走。编译器在每条超过 127 条指令的前向路径里放一个 `OP_nop`（`quickjs.c` 里的 `insert_polls`），而每个函数的字节码在能运行之前都要检查，编译器产生的和 `JS_ReadObject` 读入的都一样（`check_polls`）：两次计数之间的路径不长于 128 条指令（`POLL_RUN`），每个操作码都是解释器有的，每个跳转都落在指令的开头，最后一条指令不会跑到末尾之外。`JS_ReadObject` 对其他字节码以 `SyntaxError: invalid bytecode` 失败。`OP_ret` 从栈上取要返回的位置，它只会去 `OP_gosub` 之后的那条指令：`check_polls` 用位图标出每个函数的这些位置，代码的每个字节一位（只对有 `OP_gosub` 的函数做），`OP_ret` 到任何其他数字都抛 `InternalError: invalid ret value`，这样，读入的字节码即使栈上放着它自己编的数字，也不能把解释器带到某条指令中间，或带上检查没走过的路径。所以一次 32 的计数最多代表 4 条字节码指令，也就是和 C 里一样的几百条机器指令，而在默认间隔下，轮询在 40,000 条字节码指令之内到来，分发里每条指令都计数时是在 10,000 之内。在循环里它来得比以前更早：少于 32 条指令的循环，每圈计的数不止一次。一个 Go 测试（`TestRegvmJumpsCount`，见 [testing.zh-CN.md](../testing.zh-CN.md#生成引擎的-go-宿主)）约束 `JS_RegvmRun` 做到这一点：`pc` 只能往前走一个固定步长，或经一个往回跳时先计数的跳转，或在测试列出的几个地方。
 - 当 LLVM 的标量演化能证明一个循环很短时，它不需要自己的计数：最内层，不调用任何东西，每次进入最多 256 条指令。进入它的东西会计数。其他不调用任何东西的最内层循环按这个大小分块运行，每块结束时对整块计数。所以一次计数最多代表几百条指令，间隔限定了两次轮询之间的时间。
 - 长度可能超过 256 KiB 的 `memcpy`、`memmove` 和 `memset`，走一些每次做 256 KiB 的辅助函数，每一块计一次数。这些函数没有影子指针，也没有计数。
 - pass 自己检查它的输出：每个函数里，去掉计数或轮询的块以及它证明很短的循环的回边之后，不剩任何环。在解释器里，进入它的分发的边也去掉，它的入口必须计数，而每个标记必须紧跟在一次该权重的计数之后。而且每次计数至少取 1，计数为 0 或更小时就轮询：它的分支测试这一点，在走到的那一侧调用 `host_poll`。并且它在每个函数里跟踪计数：每次计数从当前的计数值减，每次写计数器写的是当前的计数值，每个可能轮询的调用和每个返回都在内存里找到它。如果寄存器里的计数被被调用者看不到，或者写掉了被调用者数过的东西，就会让两次轮询之间过去的计数超过间隔。
@@ -308,17 +324,103 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 - 中断，`GOMAXPROCS=1`，脚本运行 100 ms 后：`for` 循环、正则、类型化数组搜索、`fill`、`copyWithin`、react 和解释器的直线代码，在 0.3 ms 内停下（直线代码在 0.15 ms 内），杀死发生在宽限结束后 0.2 ms 内。引擎在不读标志的地方干活时，停得更晚：引擎自己堆的一次回收（分配错误可能触发它，堆里数组的每个元素约 18 ns：两个 1Mi 个数字的数组是 19 ms，所以对 1Mi 个数字排序在 8 到 19 ms 后停下），或者一个长循环，比如 `Array.prototype.slice`（每个元素约 40 ns）。
 - 速度，核心的另一个超线程空闲，取 8 个代码位置上的中位数：react 和渲染脚本慢 5%，fib 慢 4%，`for` 循环慢 14%，对 2Mi 个数字的 `JSON.parse` 慢 17%，先构建文本时慢 12%，类型化数组的排序慢 10%，字符串搜索慢 8%，正则在 2% 以内。类型化数组 `indexOf` 慢 25%，`repeat` 最多慢 9%，`fill` 和 `copyWithin` 在 1% 以内。如果现在按块运行的那些循环每次运行都计数，react 会慢 6%，正则慢 20%。
 
+## 寄存器解释器
+
+发布版本：v0.30.2。
+
+JavaScript 现在跑在寄存器解释器里，QuickJS 的栈式解释器已经去掉。QuickJS 把一条指令要用的值放在一个栈上：每条指令弹出操作数，压入结果，读一次变量就把值复制到栈上。寄存器解释器把这些值放在函数帧里编了号的槽（寄存器）里，指令直接写明它读哪些槽、写哪个槽。所以读变量不需要一条指令，比较和它后面的跳转是一条指令，一个 JavaScript 函数调用另一个也在同一个循环里跑，不经过 C 的调用。编译器、字节码和它的格式都没变：函数仍然编译成 QuickJS 的字节码，`JS_WriteObject` 存的、`SharedBytecode` 共享的也还是它。寄存器码是在函数第一次被调用时，在内存里从字节码做出来的。
+
+它在哪里：
+
+- `engine/regvm.h` 有帧和操作的列表，并引入其余的文件。`engine/regvm-func.h` 有一个函数的寄存器码（`RVFunc`）和调用要做的那项测试 `rv_entry_fast`。
+- `engine/regvm-pass.h` 和 `engine/regvm-fold.h` 负责转换一个函数（下面叫 pass）。`engine/regvm-run.h` 是循环 `JS_RegvmRun`，连同返回和异常的展开（`rv_unwind`）。`engine/regvm-entry.h` 有寄存器栈和进入循环的入口。
+- 操作在 `engine/regvm-ops-*.h` 里，每个领域一个文件，列在 `engine/regvm-areas.h` 中。每个文件按部分各读一遍（名字，pass 的各个 case，处理函数），所以一个操作只在一个文件里写。`engine/regvm-bodies.h` 放着上游解释器的处理函数，没有自己寄存器形式的操作，循环还是跑它们（见下）。
+- `engine/quickjs.c` 里的 `JS_CallInternal` 不再是解释器。它转换还没转换的函数，对字节码函数进入 `JS_RegvmRun`，把 C 函数、绑定函数和 proxy 交给它们的类。
+
+### 一个函数怎样转换
+
+字节码函数第一次被调用时转换（`rv_convert`）。这次调用来自 `JS_CallInternal`，或 C 调用的那项测试（`rv_entry_fast`），或循环里的调用操作，所以一个函数的第一次运行也在循环里，脚本的顶层代码也一样。寄存器码放在它字节码的 `b->rv` 里，随函数一起释放。转换不运行脚本，也不创建对象。它从 VM 的堆里分配，在运行时从一次转换留到下一次的一个暂存块里干活（[allocator.zh-CN.md](../allocator.zh-CN.md#分层)）。内存不够时，这次调用抛内存不足的错，函数的下一次调用再试。pass 只拒绝没有编译器会做出来的代码（见 [catch 偏移和跳转不离开所在的函数](#catch-偏移和跳转不离开所在的函数)），这样的函数每次调用都抛错。
+
+pass 按顺序读函数的最终字节码，带着一个 QuickJS 栈的模型。模型里的每一项是三种之一：临时槽（帧里存着这一项自己拥有的值的槽），原地读的局部变量、参数或 `this`，或原地读的常量。读变量或常量不发出指令，也不取引用，用它的那条指令直接写明槽，需要自己拥有一个值的操作自己取引用。对一个局部变量存储之前，还在惰性读它的每一项都先复制进临时槽，被闭包捕获的局部变量一开始就复制，那是在任何可能写它的代码运行之前。一个基本块结束时，每一项都放在它所在深度的临时槽里，这样进入这个块的所有路径彼此一致。紧挨着产生值的指令之后的存储，会让那条指令直接写局部变量（名字里带 `L` 的操作），结果被丢弃的调用自己丢弃它（名字里带 `D` 的操作）。
+
+### 帧和调用的窗口
+
+```
+F[-fofs]              func
+F[-fofs + 1 ...]      参数
+F[-(var_count + 1)]   this
+F[-var_count ...]     局部变量
+F[0 .. 2]             帧头：调用者、返回的 pc、寄存器码、常量、放结果的槽、argc、闭包变量
+F[3 ...]              闭包状态，只在有局部变量被捕获时才有
+F[temp0 ...]          临时槽
+```
+
+操作数是一个有符号字节，是从 F 算起的槽号，所以每个处理函数都用一个指针就能访问 func、参数、局部变量和临时槽。超过 128 个槽的帧用 16 位槽号的操作（`MOVW`、`SETLW`、`CHKLW`、`LOADKW`、`JMPW` 和 `CLW`，`engine/regvm-ops-wide.h`）。一个帧最多有 124 个临时槽。栈比这更深时折叠成数组，见[寄存器循环里一个函数的上限](#寄存器循环里一个函数的上限)。
+
+调用操作写明一个窗口，也就是调用者的临时槽里旧栈放操作数的那些位置：先是 func，然后是参数。被调函数的帧从窗口开始，所以参数已经在位，什么也不用复制，它的 `this` 和局部变量放在参数之上。被调函数是同一个 realm 里有寄存器码的函数，并且调用的各项检查都通过（中断标志、待处理的不可捕获错误、调用深度、寄存器栈的空间）时，这个操作写好帧头，带着被调函数的 `F` 和 `pc` 在同一个循环里接着跑。被调函数收到的实参比形参多，或者它读自己的实参，就走慢速入口（`rv_enter_args`）：多出来的实参按顺序留在 func 下面。其余情况在循环外调用（`RV_CALL_OUT`）：C 函数直接调用，`call` 和没有绑定参数的绑定函数被拆开，做成它们所代表的那次调用，`hasOwnProperty.call` 和 `charCodeAt` 就地回答（[寄存器循环直接回答 charCodeAt](#寄存器循环直接回答-charcodeat)），其余的经 `JS_CallInternal`。一次调用占一层调用深度，和原来一样。返回时释放 func、参数、`this` 和局部变量，每个槽只有标签说它带引用计数时才释放（`RETN` 对从 func 到最后一个局部变量不超过 8 个槽的帧，用直线代码释放），然后把结果写进调用者指定的槽，回到返回的 pc。尾调用就是一次调用接一次返回。
+
+从 C 发起的调用（`js_call`、`JS_Call`、内置函数的回调）运行 `JS_RegvmRun`，它做一个入口帧：func、实参和 `this` 都带引用复制进来。它返回时回到 C。生成器和 async 函数作为它们自己那一次运行的入口帧来跑，状态在每次挂起和恢复时，在它的堆上帧和寄存器栈之间搬动（`engine/regvm-ops-gen.h`）。
+
+### 寄存器栈
+
+帧放在自己的寄存器栈上，不放在影子栈上：循环里一个函数调用另一个，不占影子栈，也不占 Go 栈。帧从不移动，因为指向它的闭包变量的引用和 C 函数的实参都指进帧里，所以这个栈不是一块会增长的内存，而是 VM 堆里的一串段，第一段 32 KiB，后面每段是前一段的两倍，最大 256 KiB（一次调用需要更多时，段更大）。一次调用的帧放不进当前这段时，就开下一段，它返回时退回来。这些段计入 `MemorySize` 和内存上限，但不计入回收器的阈值，因为回收器释放不了它们。最外层的一次运行返回时，第一段换成一段刚好够这次运行用的大小，这样同样的页面再来一次，就不会再进下一段（`engine/regvm-entry.h`）。这个栈不限制任何东西：递归能走多深由调用深度和内存决定，和原来一样，没有哪种递归比原来停得更早。
+
+### 异常、调用栈和轮询
+
+每条可能抛错的指令，在函数的 pcmap 里有一项：指令在哪里结束，指名它的旧字节码的 pc（所以行号、列号和错误的调用栈都是 QuickJS 给出的那些），以及跨过这条指令时拥有值的那些临时槽的掩码。`rv_unwind` 从栈顶往下走掩码里的临时槽，逐个释放，在遇到 catch 偏移时停下。在 catch 处，异常放进那个偏移的临时槽，循环从 catch 处接着跑。没有 catch 的帧关闭它的闭包变量，释放它的槽，展开在它的调用者里从调用处继续。不可捕获的错误越过每个 catch。调用栈通过帧头一帧一帧往下走。
+
+循环在入口、每次调用、每个不向前的跳转、每次从 `finally` 块返回和每次 catch 时，向下一次轮询计数，编译器仍然把字节码约束在两次计数之间的指令不超过一个上限。它在调用、跳转和它计数的那些地方读中断标志。规则和测试见[轮询与中断](#轮询与中断)。
+
+### 操作
+
+大约有 200 个操作，再加上每种帧大小各一个的返回（`engine/regvm.h` 里的 `RV_OP_COUNT`）。按类分：
+
+- 移动、常量、算术和比较，每种都有常量操作数的形式（`K`）和结果写进局部变量的形式（`L`）。一次比较和它后面的条件跳转是一个操作（`JLTF`、`JEQT`、`JSEQKF` 等），字符串 `switch` 的各个 case（`CASES`）和 `局部变量 += 值`（`ADDLOC`）也各是一个操作。
+- 属性和元素的读写（`GETF`、`PUTF`、`GETEL`、`PUTEL`），对象，全局变量，`in` 和 `instanceof`。
+- 调用和返回：`CALL`，方法调用用 `CALLM` 和 `CALLML`，每种都有丢弃结果的形式，`CALLS` 是自己复制最后几个实参的调用，`NEW` 是构造调用，还有 `RET`、`RETN` 和 `RETCT`，分别是不带闭包变量和带闭包变量的帧的返回。
+- 闭包，`try`、`catch` 和 `finally`，生成器，`arguments`，`with` 和直接 `eval`。
+- 少见或很长的旧指令没有自己的操作。pass 把它的操作数放在旧栈会放的那些临时槽里（这个操作的窗口），循环在它们上面运行上游解释器的处理函数：`W_OBJECT_LIT`、`W_ARRAY_FROM`、`W_FOR_IN_START` 和其他 `W_` 操作，剩下的用 `OLD`。上游 QuickJS 的某个提交改了这样一个处理函数时怎样合进来，见 [upgrading.zh-CN.md](../upgrading.zh-CN.md#把上游-quickjs-搬进-engine)。
+
+`engine/test/regvm/opcodes.txt` 这张表给 QuickJS 的每个操作码写了一行，说明它走哪条路：自己的操作，只靠 pass 的模型，窗口操作，`OLD`，或者没有（没有任何会运行的函数里有这个操作码）。
+
+### 为什么结果一样
+
+pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码的顺序运行。读写属性、调用、转换或比较的操作，用的是栈式解释器用的那些函数，窗口操作和 `OLD` 的处理函数就是上游解释器自己的处理函数。一个值只有在“它的槽在被用到之前不会被任何可能运行的代码写到”时，才原地读取、不取引用（规则在[局部变量里的键不加引用就读](#局部变量里的键不加引用就读)和它旁边的几节里）。每条可能抛错的指令的每条退出路径，都把它的 pcmap 项指明的每个自有临时槽留着，所以展开释放的，就是栈式解释器会释放的。
+
+检查它对照的是栈式解释器给过的结果。`engine/test/regvm/golden` 里的黄金文件，是在最后一个还有栈式解释器的提交（`deb70815`）上，从它那里记下来的，记的是两个循环结果一致的那些用例。语料里的每个脚本，都要逐字节给出它的输出、结果、异常和调用栈、它的任务里的异常，以及它结束时和一次回收后运行时仍持有的对象，用三种方式跑（原样，关掉编译器的融合操作码，严格模式代码）。`rvgen` 每种模式 1,000 个固定种子的程序，以及注入抛错的那些位置（见下）也一样。test262 保持它的 33 个已知错误，tifa 的 shop、MUI 和 bench 应用的页面，HTML 都相同。
+
+程序能看到的东西，除了下面这些，都和原来一样，[CHANGELOG.zh-CN.md](../../CHANGELOG.zh-CN.md) 为用户列出了它们。寄存器循环跑不了的函数，在编译时就被拒绝（见上面，以及[寄存器循环里一个函数的上限](#寄存器循环里一个函数的上限)）。帧很大的递归能走到调用深度允许的那么深。`f.call(...)`、`call.bind(f)` 和绑定函数做成它们所代表的那次调用（[errors-and-stacks.zh-CN.md](errors-and-stacks.zh-CN.md#通过-call-和绑定函数的调用不在调用栈里多出一行)）。对普通数组的 `for-of` 不再为每个元素调用 `next`，只调用 `charCodeAt` 的循环在它往回跳的地方停下。一个 VM 占的内存变多了（见下）。
+
+### 收益和代价
+
+在 tifa 里的渲染时间，一个预热的 VM 用一个核，对栈式解释器，取每个应用各页中位数的几何平均：linux/amd64（4 核的 AMD EPYC 7B13）上，React 页是原来时间的 0.701，商店前台 0.858，工作台 0.888，MUI 0.864。在 Apple M4（darwin/arm64）上是 0.767、0.800、0.834 和 0.825。HTML 处处相同。这些数怎么量的、对 v0.30.1 的读数，以及此后各项改动的数字，见 [performance.zh-CN.md](../performance.zh-CN.md#寄存器解释器)。
+
+一个 VM 占的内存变多了：每个跑过的函数多一份寄存器码，在 shop 的页面上平均 748 字节，最多约 33.8 KB，另有一个起初 31.7 KB 的寄存器栈。一个 VM 把 tifa 的 shop 每页渲染一次、再做一次完整 GC 之后，`MemorySize`（linux/amd64）是 15.86 MB，原来是 13.34 MB，React 页是 932 KB，原来是 776 KB。每个函数在第一次调用时要付一次转换的开销。
+
+### 测试
+
+怎么运行见 [testing.zh-CN.md](../testing.zh-CN.md#寄存器循环)。
+
+- 语料和各个部分的测试（`engine/test/regvm/corpus`、`engine/test/regvm/js`）在 `rvdiff` 下对着栈式解释器的黄金文件跑，每个用三种方式（`corpus.sh`、`golden.sh`）。`unit`、`unit-oom` 和 `unit-api` 必须和它们的黄金文件一样地结束。
+- `rvgen` 写随机程序，它们互相调用，带循环、闭包、`try`、类和会回调的 getter。每种模式 1,000 个种子是固定的（`golden.sh`），新程序和 Node 24 比较。
+- 注入抛错的测试（`inject.sh`，用 `-DRV_INJECT` 构建）让每个指令可能抛错的位置依次抛一次，把这次运行和栈式解释器在同样位置抛同样错的黄金文件比较。一个临时槽被释放两次或一次也没释放，会表现为 sanitizer 报告或泄漏。
+- `rvops` 检查操作码表，以及 pass 接受函数可能有的每个操作码。
+- `unit-white` 和 `unit-oom` 让一次转换、暂存块、一次折叠和寄存器栈的一个新段的每次分配依次失败（`test_regvm_convert_alloc`、`test_regvm_convert_oom`、`test_regvm_fold_oom`、`test_regvm_stack_oom`），`test_regvm_crafted` 和 `test_regvm_crafted_code` 检查没有编译器会做出来的代码被拒绝。
+- `TestRegvmScripts`、`TestRegvmMicro`、`TestRegvmDepth`（没有哪条路径比原来递归得浅，两种架构上都是）、`TestRegvmFrame`（一次递归占用栈的那些帧）、`TestRegvmLimits*`（超时、`Interrupt` 和内存上限能结束寄存器循环里每种形状的循环）和 `TestRegvmJumpsCount`（生成器检查两次计数之间 `pc` 只往前走）在生成的引擎上运行。
+
 ## 解释器和正则匹配器的位置
 
-在 Go 的前导之后，每个生成的函数都有一个 `PCALIGN $16`，所以它的函数体从 16 字节处开始，并且只要它之前链接的代码增长，就在它的 64 字节行里移动。`JS_CallInternal` 的函数体从行内 40 字节处开始，`lre_exec_backtrack` 的从 16 处开始，这是测得最快的位置（解释器在 JSValue 改成两次 8 字节移动复制之前，在 0 处，见[下面](#jsvalue-如何复制)）。空操作每次调用执行一次：解释器 66 字节，匹配器 69 字节。链接后的检查让每个函数体守在它的位置，它前面的填充只能是空操作，还有一个测试构建出偏离位置 8 字节的函数体，看检查拒绝它们。
+在 Go 的前导之后，每个生成的函数都有一个 `PCALIGN $16`，所以它的函数体从 16 字节处开始，并且只要它之前链接的代码增长，就在它的 64 字节行里移动。`lre_exec_backtrack` 的函数体从行内 16 字节处开始，这是测得最快的位置。空操作每次调用执行一次：69 字节。链接后的检查让每个有固定位置的函数体守在它的位置，它前面的填充只能是空操作，还有一个测试构建出偏离位置 8 字节的函数体，看检查拒绝它们。栈式解释器 `JS_CallInternal` 原来也有固定位置，在行内 40 字节处（JSValue 改成两次 8 字节移动复制之前在 0 处，见[下面](#jsvalue-如何复制)），空操作 66 字节。寄存器循环 `JS_RegvmRun` 没有固定位置，它的位置还没有量过（见 [performance.zh-CN.md](../performance.zh-CN.md#接下来)），所以它的函数体在 `PCALIGN $16` 之后从 16 字节处开始，随它前面链接的代码移动。
 
-函数代码之后保留的常量池和跳转表，由 `.p2align` 对齐，它从函数的开头算起。行内 40 字节处开始的函数体，起点比 16 的倍数多 8，所以解释器的常量池过去在它运行的地方偏离 16 有 8 字节。没有指令用需要 16 字节对齐的方式读它（用常量池作内存操作数的 `paddd` 或 `movdqa`，在偏离 16 的池上会出故障），所以什么也没坏。LLVM 会这样做的构建（一个 profile-guided 的构建在解释器里产生了 19 处这样的读取）在让函数体偏 8 字节的那些位置上以 SIGSEGV 死掉。现在生成器把一个函数在它 lowering（把 LLVM 的中间表示换成目标机器的指令） 后的目标文件里，放到它的函数体在二进制里占据的位置（解释器用 `.p2align 6` 和 `.skip 40`，即 `FuncPlace`），这样每个常量池和每张表的对齐在二进制里都成立。对 `JS_CallInternal`，这把它的常量池在函数体里挪了 8 字节：唯一变化的生成文件是装着它的那个，变在跳转表的偏移和 8 字节的填充上。两种架构上链接后的检查，都要求每个常量池和每张表在二进制里位于其对齐的整数倍处，而 `TestSampleRuns` 运行一些函数，它们在行内 8、16 和 40 字节处开始的函数体里，用 `paddd` 和 `pxor` 读自己的常量池（`testdata/run/vecpool.c`）。`xform` 的 `front:` 位置里不是 16 的倍数的那些（8 和 24）会把函数体和常量池一起挪动，所以解释器用这样的指令读常量池的构建，不能在这些位置上运行。要为这两个位置生成，用 `-align64 JS_CallInternal:48` 或 `:0`，这样常量池保持在 16 字节上。
+函数代码之后保留的常量池和跳转表，由 `.p2align` 对齐，它从函数的开头算起。行内 40 字节处开始的函数体，起点比 16 的倍数多 8，所以解释器的常量池过去在它运行的地方偏离 16 有 8 字节。没有指令用需要 16 字节对齐的方式读它（用常量池作内存操作数的 `paddd` 或 `movdqa`，在偏离 16 的池上会出故障），所以什么也没坏。LLVM 会这样做的构建（一个 profile-guided 的构建在解释器里产生了 19 处这样的读取）在让函数体偏 8 字节的那些位置上以 SIGSEGV 死掉。现在生成器把一个函数在它 lowering（把 LLVM 的中间表示换成目标机器的指令） 后的目标文件里，放到它的函数体在二进制里占据的位置（解释器用 `.p2align 6` 和 `.skip 40`，即 `FuncPlace`），这样每个常量池和每张表的对齐在二进制里都成立。对 `JS_CallInternal`，这把它的常量池在函数体里挪了 8 字节：唯一变化的生成文件是装着它的那个，变在跳转表的偏移和 8 字节的填充上。两种架构上链接后的检查，都要求每个常量池和每张表在二进制里位于其对齐的整数倍处，而 `TestSampleRuns` 运行一些函数，它们在行内 8、16 和 40 字节处开始的函数体里，用 `paddd` 和 `pxor` 读自己的常量池（`testdata/run/vecpool.c`）。`xform` 的 `front:` 位置里不是 16 的倍数的那些（8 和 24）会把函数体和常量池一起挪动，所以解释器用这样的指令读常量池的构建，不能在这些位置上运行。要为这两个位置生成，用 `-align64 JS_CallInternal:48` 或 `:0`，这样常量池保持在 16 字节上。（那时的解释器是 `JS_CallInternal`，现在的循环是 `JS_RegvmRun`。）
 
-引擎别处的改动现在只会按整行移动这些函数体。它仍会多少改变它们的速度，因为别的代码和数据在移动：数字，以及测量的代码位置如何配合固定的位置，见 [performance.zh-CN.md](../performance.zh-CN.md#代码位置)。
+引擎别处的改动现在只会按整行移动匹配器的函数体。它仍会多少改变它们的速度，因为别的代码和数据在移动：数字，以及测量的代码位置如何配合固定的位置，见 [performance.zh-CN.md](../performance.zh-CN.md#代码位置)。
 
-解释器用上游的 computed goto 做分发，就是 C 树构建它的方式。ccgo 引擎的一个早期补丁在原生构建里把它关掉了，只关它一项，V8-v7 得分就降到未打补丁 C 的 0.91（gcc 15.3）和 0.88（clang 22.1.8）（[数字](../history.zh-CN.md#原生-c-上的补丁开销)）。要保持开着。
+寄存器循环 `JS_RegvmRun` 和上游的解释器一样用 computed goto 做分发：每个处理函数以 `goto *rv_table[*pc++]` 结尾，llc 把这个很短的块复制进每个处理函数的末尾（`internal/goasm/gen/poll.go` 里的 `DispatchCopies`）。ccgo 引擎的一个早期补丁在原生构建里把它关掉了，只关它一项，V8-v7 得分就降到未打补丁 C 的 0.91（gcc 15.3）和 0.88（clang 22.1.8）（[数字](../history.zh-CN.md#原生-c-上的补丁开销)）。要保持开着。
 
 ## 一次调用如何设置和释放它的值
+
+这一节，[调用结束时跳过没有引用计数的值](#调用结束时跳过没有引用计数的值)和[调用每次设置八个局部变量](#调用每次设置八个局部变量)，讲的是栈式解释器 `JS_CallInternal` 的循环，也就是有过它的那几个版本。寄存器解释器（[见上](#寄存器解释器)）用 `rv_undefined` 把帧的局部变量设为 `undefined`，用 `rv_exit_scan` 释放帧，每个槽按它的标签判断，不超过 8 个槽时用直线代码。
 
 `JS_CallInternal` 在调用开始时把字节码函数的每个局部变量设为 `undefined`，在返回时释放局部变量和留在栈上的操作数。`OP_call` 和 `OP_call_method` 在调用返回后释放函数、`this` 和参数。这些循环每圈处理一个值。在生成的代码里，设置一个局部变量的一圈要 9 条指令：LLVM 在每次存储后都重新读 `b->var_count`，因为存储一个 JSValue 可能改变它，而轮询 pass 会把计数不知道的循环切成带自己计数的块。释放一个值的一圈约 10 条。tifa 示例商店六个工作台页面的一次平均渲染，进入 `JS_CallInternal` 113,866 次，其中 67,076 次运行字节码，设置 520,962 个局部变量，在调用结束时释放 581,838 个值：这两个循环占它指令的约 6.5%。
 
@@ -327,6 +429,8 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 把局部变量的空间向上取整到四个值，这样一圈不需要余数处理，这个做法被放弃了：每个栈帧多 48 字节，会让带大栈帧的深递归在影子栈上更早结束（见[影子栈的大小](#影子栈的大小)）。
 
 ## 解释器如何调用 C 函数
+
+下面的 `OP_call` 和 `OP_call_method` 是栈式解释器的。寄存器循环的调用操作做同样的直接调用（`RV_CALL_OUT` 里的 `js_call_c_direct`），检查相同，栈欠账的做法也和这里写的一样。
 
 `OP_call`、`OP_call_method` 以及它们的尾调用形式，过去把每次调用都交给 `JS_CallInternal`，后者按类找到 C 函数，经类表交给 `js_call_c_function`。对 C 函数来说，这个入口自己什么也没做，却仍然跑完整个前导：amd64 上 105 条指令（`r_react_ssr` 一次运行里有 452,219 次这样的调用，占 `JS_CallInternal` 入口的 28%），包括 Go 的栈检查、它位置的空操作、参数块和共享的返回。
 
@@ -418,7 +522,32 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 没有一项超过代码位置规则要求计时的 2%。`TestLocalsFreedInFewTurns` 现在要求一个有 200 个局部变量的函数的一次调用，这两个循环的圈数不超过 60，这个提交里是 53。
 
+## 一次调用自己把最后几个局部变量复制进窗口
+
+发布版本：Unreleased。
+
+寄存器循环把一次调用的参数放在它的窗口里，也就是被调函数的帧开始的那些临时槽。参数是局部变量、调用者的参数或 `this` 时，原来由调用前紧挨着的一条 `MOV` 放进去，每个参数一次分发。`CALLS` 和 `CALLSD` 是自己复制最后几个参数的 `CALL` 和 `CALLD`，现在把最多四个这样的复制并进调用里：转换器把这些槽写在调用的操作数后面，调用从最后一个参数往前，带引用地逐个复制。两个局部变量的 `return f(a, b)` 原来跑三条指令，现在跑一条。方法调用、常量或临时槽的参数，以及它们前面的参数，仍然保留各自的 `MOV` 或 `LOADK`。
+
+为什么得到的值不变：转换器只合并它仍在惰性读取的项，也就是还没有指令复制过的槽，所以已经发出的指令不会被收回。这样的项紧挨在调用前读取，中间没有别的指令，读到的就是那时槽里的值：对这个槽的存储会先把项复制出来（`rv_before_store`），闭包能写的槽从不惰性读取。惰性读取的 arguments 对象不合并，因为第一次读它时才创建它。调用在任何可能离开这条指令的检查之前做完复制，这些检查包括调用深度和栈、经 `JS_CallInternal` 调出循环、拆开 `call` 和绑定函数、实参多于形参、寄存器栈的新段，以及其中任何一处抛错。每条离开的路都看到和那些 `MOV` 留下的一样的窗口，里面的引用也一样。还没转换的函数第一次被调用时，先转换它，然后从复制之后接着走，而 `CALL` 是把这条指令再跑一遍：`CALLS` 再跑一遍就会复制两次。
+
+最初的写法也接收常量，并从四往下测试数量。每次复制都要分辨槽和常量，再加上对数量的测试，结果只复制一个参数的调用比它省掉的 `MOV` 还多花指令，而会复制的调用大多只复制一个。所以常量保留它的 `LOADK`，只复制一个的调用只测一次数量。在生成引擎的 llc 输出里，复制 1、2、3、4 个的调用，比一条 `CALL` 加上它的 `MOV` 少跑的指令数，arm64 是 0、6、12、20，amd64 是 -1、6、13、22。
+
+每次渲染里有 40% 到 54% 的调用会复制，循环自己的指令（分发）少 4.5% 到 7.6%。每次热渲染退休的指令数，darwin/arm64 上的生成引擎（八轮的中位数，每轮是各页面的平均），对比 `167dd40c`：
+
+| 页面 | 之前 | 之后 | |
+| --- | ---: | ---: | ---: |
+| React 的页面 | 34.23 M | 34.05 M | -0.53% |
+| tifa 的商店，十四个商店页面（平均） | 264.85 M | 264.19 M | -0.25% |
+| tifa 的商店，六个工作台页面（平均） | 109.19 M | 108.92 M | -0.24% |
+| tifa 的 MUI 测试应用，三个页面（平均） | 145.53 M | 145.24 M | -0.20% |
+
+在 amd64 上，用每种复制数量的代价乘以它出现的次数来估算，React 的页面约 -0.44%，商店和 MUI 的页面 -0.15% 到 -0.19%。同样的估算放到 arm64 上，比实测低 0.02 到 0.09 个百分点。每个页面的 HTML 都相同。新增两个操作码，256 个里还剩 16 个。栈帧没有变：`JS_RegvmRun` 在 arm64 上占影子栈 176 字节，amd64 上 256 字节，它的 Go 帧是 $328 和 $256，`TestRegvmDepth` 的七个深度在两种架构上都和以前一样。时间见 [performance.md](../performance.zh-CN.md#复制最后几个局部变量的调用)。
+
+测试：`engine/test/regvm/js/s-callfold.js` 用局部变量、参数、`this` 和常量做最后几个参数，覆盖调用会合并的各种形式：同一个槽用两次、一个接收结果的槽、一个字符串常量、实参多于和少于形参、生成器、C 函数、`call` 和 `bind`、会抛错的被调函数，以及错误的栈。`s-callfold-stop.js` 停下这类调用组成的循环。它们的 corpus 和 inject 金样都在改动之前的构建上录制。`unit-white` 的 `test_regvm_call_copies` 读出一个函数的代码，检查它的调用复制哪些参数、按什么顺序，以及方法调用、常量前面的局部变量、临时槽前面的局部变量和被捕获的参数都不合并。生成器的 `TestRegvmJumpsCount` 检查 `CALLS` 和 `CALL` 一样计入下一次轮询。
+
 ## 一次分发做几条指令的操作码
+
+编译器仍然产生这些操作码。寄存器 pass 把每个读成它所代表的指令，再做成自己的操作（`GETF`、`CASES`、`TYPEIS`），所以下面的分发次数是栈式解释器的。
 
 tifa 的页面经常运行的两种指令序列，现在各只用解释器的一次分发：读一个参数或局部变量，接着按名字读属性，以及一次 `typeof` 测试。
 
@@ -525,6 +654,36 @@ tifa 商店的六个工作台页面，每次渲染少 0.61% 的指令，店面�
 ### 测试
 
 `engine/test/compare/share_slots.js` 打印 Node 24 打印的内容，涵盖：一个接一个的块里 13 种值，分支里和循环每圈里在任何写之前被读的局部变量，没人读的写，`catch` 读 `try` 里写的局部变量的 `try`，读 `return` 拿走的局部变量的 `finally`，循环里的闭包和嵌套的闭包，一个下标变小的局部变量的闭包，栈上有 `switch` 的值而某个 case 返回的情形，一个 yield 的生成器和一个在某个范围中间 await 的 async 函数，一个永远挂起的，宽松模式和严格模式下的 `arguments` 对象，直接 `eval` 和 `with`，递归，紧挨着共用槽位的局部变量的暂时性死区检查，以及一个有 40 个 case、每个 case 有自己 `var` 的 `switch`，并要求这些运行让堆保持原样。`compare.sh` 也在槽位不共用的情况下运行它，`TestFusedOps`（根包）在生成的引擎上运行它。`engine/test/unit-white.c` 的 `test_share_local_slots` 在 pass 开和关时数 18 个函数的槽位，把每个对着 Node 给出的结果运行，检查有 40 个 case 的 switch 占 2 个槽位，暂时性死区检查的错误点的是它自己的局部变量，以及一个闭包读共用槽位之外的局部变量的函数，能用 `JS_ReadObject` 读回并运行。
+
+## 捕获后不再改变的变量
+
+发布版本：Unreleased。
+
+闭包通过 `JSVarRef` 读外层函数的变量，栈帧和这个变量的每个闭包共用它，所以哪一边写了，另一边都看得到。大多数被捕获的变量在闭包拿到之后就不再写了：参数、`const`、函数声明、在闭包创建之前赋值一次的 `let`。`capture_by_value` 找出它们。它在每个函数的最终代码上运行，在 `share_local_slots` 之后，编译器创建函数时跑一次，`JS_ReadObject` 读入之前没有经过检查读过的代码时再跑一次。一个函数被捕获的参数或局部变量，以及捕获它的每个函数里对应的闭包变量，在满足下面几条时标记为 `by_value`：
+
+- 代码里没有一条路径从创建这种闭包的指令（`fclosure`，或类的 `push_const`）走到这个变量的一次写入，中间又没有它的 `close_loc`（带 `let` 的 `for` 每一轮有自己的绑定）。路径沿着跳转走，从 `ret` 走到每个 `gosub` 的下一条指令，从每条指令走到函数里的每个 `catch`，所以 `catch` 里的写入不论闭包在哪里创建都算数。`yield` 和 `await` 在下一条指令继续，所以生成器和异步函数按同样的规则。
+- 下面的函数沿任何一串闭包都不写它（其中有直接 `eval` 就算写），捕获它的每个函数只被这个函数持有。
+- 函数没有直接 `eval`（间接 `eval` 看不到它），不把这个参数映射进映射的 `arguments` 对象，也不取它的引用（`make_loc_ref` 和 `make_arg_ref`，`with` 块里的赋值会生成它们）。
+
+闭包变量的链超过 32 层函数时，变量保持 `JSVarRef`。这个分析不认识的代码（类构造函数的 `push_const` 后面没有紧跟 `define_class`，或者 `define_class` 前面没有紧挨着这样的 `push_const`，或者有跳转落在它上面，两者之间只允许有轮询插入的 `nop`），以及工作量超过预算，都让所有变量保持原样。分析申请不到内存时，编译或读取以内存不足失败，所以标记只取决于代码：读取时会拿它们和文件里的标记比较。
+
+分析相信异常只会落到本函数的 `catch` 上，编译器生成的代码都是这样。读取时会拒绝 catch 偏移可能离开原处（被存起来、返回或传给另一个函数）的代码（[catch 偏移和跳转不离开所在的函数](#catch-偏移和跳转不离开所在的函数)）。
+
+标记随代码写进字节码文件，每个闭包变量的标志里占一位，`BC_VERSION` 为 11。不带 `JS_READ_OBJ_POLLS_CHECKED` 的读取（`EvalBytecode`，以及 `SharedBytecode` 的第一次读取）会重新算出标记，文件里的标记只要有一个和算出的不同，不论哪个方向，就以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝这个文件（`cbv_check_file`）：一个按值存的闭包变量下面，如果有个闭包变量还留着 `JSVarRef`，就会对单元做引用计数。`SharedBytecode` 第一次之后的读取（tifa 的池里每个 VM 一次）直接取文件里的标记，不再跑这个分析。这样读入时，商店包的字节码（6.3 MB）执行 38.9 M 条指令，原来是 151.3 M，MUI 18.5 M，原来 72.3 M，React 2.1 M，原来 6.4 M：商店的一个 VM 加载时为这个分析付出的约等于 0.8 次渲染。第一次读取检查标记，比原来多 0.25%，商店包上是 0.9 M。
+
+在 tifa 的页面上计数，商店页面一次渲染捕获的 14,157 个变量里有 11,298 个满足条件，工作台页面 8,454 个里有 7,639 个，MUI 页面 12,401 个里有 9,897 个。一个在捕获时记下每个变量的值、在释放时和变量比较的构建，没有发现其中任何一个变过。
+
+闭包对每个这样标出的变量直接存值，不再存和帧共享的 `JSVarRef`。值放在一个 24 字节的单元里（`JSValueCell`：值和一个指向它的指针），紧跟在闭包的闭包变量数组后面，在同一个内存块中，只由这个闭包释放和标记。数组里对应的项指向单元之前 8 字节处，于是单元里的指针正好落在 `JSVarRef` 的 `pvalue` 的位置：寄存器循环照旧通过 `pvalue` 读它，终结器和回收器看这一项是否指进这个内存块，来区分单元和 `JSVarRef`。内存块不清零：`js_closure2` 会写每一项和每个单元，失败时把没写到的清掉。函数要到这时才拿到这个内存块，因为写这些项的过程中可能发生一次回收（做出一个错误，定义一个全局变量），它会读到内存块原来的内容。帧不为这样的变量做 `JSVarRef`，不把它放进自己的列表，结束时也不用关闭它，闭包链下层的变量从上一层闭包取值。所以这样的闭包不再让暂停中的 generator 或 async 函数活着：只被它的帧拿着的对象可能更早释放，脚本只能通过 `WeakRef` 和 `FinalizationRegistry` 看到这一点，而它们的时机没有任何保证。语料在每个脚本之后记录的运行时计数（`mem-end` 和 `mem-gc`）在全部 636 次运行里都不变。
+
+每次渲染用 callgrind 计数，带 tifa 的 URL 缓存（括号里是不带的），和之前的引擎（167dd40c）相比：商店少执行 0.87% 的指令（0.55%），工作台 1.05%（0.91%），MUI 0.89%（0.85%），React 0.01%（0.01%）。对每个这样的变量，帧不再做出并释放一个 `JSVarRef`（`get_var_ref` 和 `free_var_ref`，约 170 条指令），闭包做出单元多花约 21 条，释放它多花约 45 条。把值放在一个完整的 48 字节 `JSVarRef` 里、内存块还要清零的做法，只得到约一半：商店 0.45%，工作台 0.55%，MUI 0.50%。
+
+`JS_ReadObject` 拒绝闭包变量超过 65,534 个（编译器最多做出这么多）的函数，这样闭包的单元个数放得进它的 16 位计数。
+
+用 `-DRV_CBV_CHECK` 构建时，还会为每个这样的变量做出 `JSVarRef`，在每次读取和闭包释放时比较两者，不一致就停下（`engine/quickjs.c` 的 `js_value_ref_check`，`engine/regvm.h` 的 `RV_VREF`）。它跑了 test262、三种方式的语料、单元程序、tifa 示例的 23 个页面和 React 页面、3,000 个固定的 rvgen 种子，以及 1,500 个新的、闭包活过其函数的 rvgen 程序，没有发现不一致。
+
+### 测试
+
+`engine/test/regvm/js/q3-capture.js` 对每种直接存值的变量做闭包，旁边再对捕获后被写的变量做闭包，在语料和注入测试里把它们的值和 Node 24 对照。`engine/test/unit-oom.c` 的 `test_capture_value_oom` 让做这些闭包时的每次分配轮流失败。`engine/test/unit-white.c` 的 `test_capture_by_value` 对 52 个小函数的每个被捕获变量给出判定，编译一次，再用 `JS_ReadObject` 读回一次：初始化表达式里有闭包的解构声明，在 `if` 任一分支写入之前创建的闭包，`switch`，带标签 `break` 和 `continue` 的循环，`try`、`catch` 和 `finally` 里的写入，只有异常处理才走到的写入，`finally` 里的捕获和其后的写入，带 `let` 的 `for` 每一轮的绑定，含闭包的默认参数，函数表达式自己的名字，`catch` 参数，箭头函数里的 `this` 和 `new.target`，互相调用的函数声明，类字段和静态块，`yield` 之后和 `await` 之后的写入，`with`，直接和间接 `eval`，映射和不映射的 `arguments`，下面两层函数里的写入，死区里的捕获，在下面两层函数里读取的 257 个被捕获局部变量，2000 个 `try` 和 `finally` 块，以及 32 层和 33 层函数深的闭包链。另有两个用例像只有文件才做得到的那样改动一个类的编译结果，变量都保持 `JSVarRef`：`define_class` 的构造函数不是它前面 `push_const` 放上的函数，以及有跳转落在 `define_class` 上。`push_const` 和 `define_class` 之间隔着轮询 `nop` 的类仍然按值捕获。它还检查闭包变量的标记和它们捕获的槽位的标记一致。`test_by_value_file` 写出一个脚本，再不带和带这个标志各读回一次，标记和结果都相同，标记往任一方向改了一个的文件会被拒绝。`test_by_value_oom` 让这次编译和这次读取的每次内存申请轮流失败：每一次要么以内存不足失败，要么给出相同的标记。`test_closure_var_limit` 读入一个有 65,534 个闭包变量的函数并运行它，拒绝 65,535 个的和 65,538 个的，后者的 65,537 个单元放不进计数。`test_closure_gc_in_build` 在 `js_closure2` 写一个有 17 个全局定义的脚本的各项时运行一次回收，最后一个定义会抛错：如果函数提前拿到内存块，AddressSanitizer 构建会停在 `gc_decref_child`。
 
 ## JSValue 如何复制
 
@@ -638,3 +797,113 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 为什么安全：检查在 `add_var`、`add_arg` 和 `compute_stack_size` 里（`engine/quickjs.c`），用的计数和寄存器 pass 一样（`engine/regvm-pass.h` 的 `rv_build`，`engine/regvm-fold.h` 的 `rv_chain_bslot`）。最里层 catch 偏移之上的那段栈，不管多深最多占 70 个临时槽（`RV_FOLD_TOP_MAX`），118 个里剩下 48 个给 catch 偏移。
 
 `engine/test/unit-api.c` 的 `test_rv_frame_limits` 和 `test_rv_nesting_limits` 在宽松模式、严格模式和生成器里编译每个上限和比它少一的情况，检查少一的能跑，普通函数还要转成寄存器代码。`engine/test/regvm/js/f3-fold.js` 跑折了好几层的栈，`engine/test/unit-oom.c` 的 `test_regvm_fold_oom` 让折叠的每次分配轮流失败。
+
+## catch 偏移和跳转不离开所在的函数
+
+发布版本：Unreleased。
+
+`JS_ReadObject` 对读到的每个函数跑一遍寄存器 pass，pass 接不了的代码以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝（`engine/regvm-entry.h` 的 `rv_read_check`）。现在又多拒绝三类这样的代码（`engine/regvm-pass.h`）：
+
+- catch 偏移被一条指令读到，而这条指令既不是丢掉它的那几条（`drop`、`nip`、`nip1`、`nip_catch`、`iterator_close`），也不是读它周围的值、把它留在原处的那几条（`for_of_next`、`for_await_of_next` 和 `yield*` 的迭代器指令）（`rv_catch_reads_ok`）。catch 偏移和别的值一样在栈上，所以函数可以把它返回、存进局部变量或者传给一次调用，异常经过它时寄存器循环会把它当成自己的（`engine/regvm-run.h` 的 `rv_unwind`）：跳到这个数在异常所在函数的代码里指的位置。`for_of_next` 指向迭代器的偏移也守这条规则，所以它不能把 catch 偏移当成迭代器，再作为 `this` 传给 `next` 方法。
+- 下面没有迭代器的 `iterator_get_value_done`。它会在读到 catch 偏移的地方重新写入迭代器的 catch 偏移，所以能把任何值变成 catch 偏移：读取时要求那里是 `for_of_start` 或 `for_await_of_start` 放的偏移，和编译器生成的一样。
+- 跳转目标在代码开头之前（`rv_old_target`）。pass 检查了超过末尾的目标，却把开头之前的目标当成根本没有跳转。同一个检查管 pass 读的每一种跳转：`goto`、`if_true`、`if_false` 和它们的短形式，`catch`、`gosub` 和 `with_` 系列指令。`ret` 回到某个 `gosub` 之后的指令，由 `ret_bits` 列出，迭代器指令的偏移指的是栈，不是代码。
+
+`ret` 只有在返回地址下面的深度和最内层 catch 与 pass 在 `gosub` 之后看到的相同时，才回到这个 `gosub` 之后，不同时抛 `InternalError: invalid ret value`（`engine/regvm-ops-except.h` 的 `rv_ret_target`）。返回地址是任何代码都能做出的整数，`finally` 如果改了它下面的东西，`gosub` 之后的代码就会把 catch 偏移当成一个值。编译器生成的 `finally` 不改返回地址下面的栈。GORET 多带这两个数（8 字节），多做两次比较。
+
+编译器不会生成这样的代码：test262、语料、23 个页面和 rvgen 的种子都照旧通过，而 pass 拒绝的函数在第一次调用时就会抛错。有了它，[捕获后不再改变的变量](#捕获后不再改变的变量)才能确信异常只落在本函数的 `catch` 上。
+
+测试：`engine/test/unit-white.c` 的 `test_regvm_crafted` 对每一类改动编译器生成的代码的一个字节（`engine/test/white.c` 的 `white_crafted_jump`），检查读取时会拒绝它：丢掉 catch 偏移的 `drop` 改成 `return`，一个跳转和一个 `catch` 改成跳到代码开头之前，以及 `for_of_next` 的偏移改成指向外面 `try` 的 catch 偏移。`test_regvm_crafted_code` 把自己的代码放进一个函数（`white_crafted_code`）：下面没有迭代器的 `iterator_get_value_done`，读取时被拒绝，在返回地址下面留了自己的 catch 偏移的 `finally`，它的 `ret` 会抛错，以及立刻返回的 `finally`，照旧运行。
+
+## arm64 的跳转表每项占 4 字节
+
+发布版本：Unreleased。
+
+llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（每项存从最低目标算起、以 4 字节为一步的步数，用 `ldrb` 或 `ldrh` 读），否则用 4 字节（存到分发处 `adr` 的字节距离，用 `ldrsw` 读）。它按自己写出的代码大小来选。之后 lowering 又在函数里加代码，所以在 llc 的代码里放得下的表，到了 lowering 后的代码里可能就太窄：`js_start_tag` 里的一个 switch 到了 272 步，超过一个字节能存的 255，llvm-mc 因此拒绝了整个引擎。只有在读到这一项时就知道距离，llvm-mc 才会拒绝它。两个标签之间隔着代码里的一处对齐时，它要到后面才算出距离，然后不声不响地只写下低位（LLVM 22.1.8），所以超出宽度的表本来可能跳错地方。实际上没有：在 v0.30.2 的 arm64 引擎上打开窄形式跑下面的检查，每一项都在宽度之内。但下一次哪段 C 的改动会把哪张表撑破，全凭运气。
+
+现在生成器让 llc 把每张表都写成每项 4 字节（`-aarch64-enable-compress-jump-tables=false`，LLVM 22.1.8 对两种窄形式只有这一个开关）。2 字节的形式能覆盖 256 KiB，是最大函数（JS_RegvmRun，79 KiB）的三倍多，所以只有 1 字节的形式有风险，但没法单独关掉它。各种形式的分发一样长（`adr`、一次加载、一次 `add`、`br`）：引擎的指令、栈帧和 SHADOW 都和以前一样，跳转表多占 10,060 字节（1,830 个 1 字节的项和 2,285 个 2 字节的项都变成 4 字节）。amd64 不变。
+
+生成器不依赖这个标志。lowering 自己计算代码大小（每条指令 4 字节，标签不占地方，对齐从函数所在的位置算起，即 16 字节的倍数或它在 64 字节上的位置，超过 max-skip 的填充不算），遇到跳转表某一项的距离超出它的宽度，或者窄形式的某一项要往回跳，就拒绝这个函数，并报出表、这一项和算出的步数（`internal/goasm/gen/arm64_jumptable.go` 的 `a64CheckJumpTables`）。把窄形式重新打开时，它在 llvm-mc 算出的同样 272 步上拒绝 `js_start_tag`。
+
+测试：`TestA64CheckJumpTables` 让每种宽度取它能存的最远距离，再多一步就拒绝，中间隔着对齐时也一样，并拒绝往回的项、不在代码里的标签和它算不出大小的代码。`TestLowerARM64EngineJumpTable` lower 一个函数，它的 1 字节表在 llc 的代码里放得下（250 步），一旦跨度里的 5 个调用让 lowering 后的代码变长，就被拒绝。
+
+## 局部变量里的键不加引用就读
+
+发布版本：Unreleased。
+
+键在局部变量或参数里的 `o[k]`（寄存器循环的 GETEL 和 GETELT，数组和类型化数组的快路径答不上时）以前先给键加一个引用，`JS_GetPropertyValue` 把键变成 atom 之后再放掉。现在循环像读 `o` 一样就地读这个键，`JS_GetPropertyValueConst` 读完不动它。键在临时槽里时照旧拿走再释放。
+
+为什么安全：键的 `toString` 或 `valueOf`、getter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽。被闭包捕获的局部变量，寄存器 pass 会在任何代码运行之前把它复制到临时槽（`rv_push`），函数有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。所以这个槽在调用返回之前一直握着它的引用，结果在调用之后才存（`rv_put`），存回键自己的槽也一样。`JS_GetPropertyValue` 还是原来的函数（带 `take` 的 `js_get_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选。
+
+收益：MUI 的 orders 页每次渲染少 0.52% 的指令，其他页面少 0.06% 到 0.13%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。
+
+## 值的真假不加引用就判断
+
+发布版本：Unreleased。
+
+`JS_ToBool` 以前先给值加一个引用，知道它是真是假之后再放掉。现在它就地读这个值（`take` 为 FALSE 的 `js_to_bool`），`JS_ToBoolFree` 还是原来的函数。寄存器循环的分支（`if`、`while`、`!`、`&&`、`||`、条件运算符）对局部变量或参数经 `JS_ToBool` 判断，对临时槽经 `JS_ToBoolFree` 判断，以前两者都先拿一个引用（`rv_take`）。保留操作数的 `&&` 和 `||` 也经 `JS_ToBool` 判断。`Boolean`、RegisterStartTag 的标签、promise 的任务和另外几个内建函数调用 `JS_ToBool`，得到同样的收益。
+
+为什么安全：判断一个值的真假不运行代码，不分配内存，也不读中断标志。它读字符串或 rope 的长度、BigInt 的符号和数位、对象的 `is_HTMLDDA` 标记，或者标签本身。这期间没有什么能释放这个值，所以那个引用什么也没保住。循环里没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：workbench studio 页每次渲染少 0.21% 的指令，MUI 的 orders 页少 0.12%，商店的页面少 0.05% 到 0.09%，React 的少 0.02%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#不加引用判断值的真假)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-basic.h`）。`engine/test/compare/truth_of_locals.js` 在各种分支和会问真假的内建函数里，判断局部变量、参数和临时槽里的字符串、rope、对象、函数、symbol、BigInt 和数字，还判断局部变量里最后一个其他引用已经没了、又经过一次回收的字符串和对象。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把对运行时造出的字符串和对象的分支扫一遍（`test_truth_oom`）。
+
+## 数组字面量直接接过元素的引用
+
+发布版本：Unreleased。
+
+`[a, b, c]` 这样的数组字面量（OP_array_from，在寄存器循环的窗口里和折叠的栈里）以前用 `js_create_array` 造数组，它给每个元素加一个新引用，然后再放掉每个元素在栈上的那个引用。现在它把栈上的引用直接搬进数组（`js_create_array_free`，上游 QuickJS 的解释器原来就有它），数组造不出来时释放这些元素。对其他调用方，`js_create_array` 还是原来的函数（`take` 为 FALSE 的 `js_create_array_in`）。
+
+为什么安全：在这两步之间只是造数组（`JS_NewArray`，`expand_fast_array`），不运行代码，也不读中断标志。其中某次分配触发的回收不会释放栈上握着的东西。元素在最后一次分配之后才搬进去，所以数组从不握着不属于它的引用。分配失败时每个元素释放一次，和以前的 `rv_create_array_free` 一样，测试用的抛错注入（`rv_inj_take`）也这样释放。这个操作之后，元素原来所在的槽在栈顶之上，再也没有谁读或释放它们。没有新分支：每份拷贝里 `take` 都是常量。
+
+收益：各页面每次渲染少 0.17% 到 0.34% 的指令，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#接过元素引用的数组字面量)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-window.h`）。`engine/test/compare/array_literal_temps.js` 造各种字面量：元素是只有这一个引用的对象、字符串、rope、symbol、BigInt 和函数，元素的代码触发回收或丢掉前一个元素握着的东西，0 到 40 个元素，嵌套的，半路抛错的，带展开的，在循环里的，以及在深到要折叠的栈上的。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的对象和字符串组成的字面量扫一遍（`test_array_literal_oom`）。
+
+## 局部变量里的键不加引用就写
+
+发布版本：Unreleased。
+
+键在局部变量或参数里的 `o[k] = v`（寄存器循环的 PUTEL，数组的快路径答不上时）以前先给键加一个引用，`JS_SetPropertyValue` 把键变成 atom 之后再放掉。现在循环像[读 `o[k]`](#局部变量里的键不加引用就读) 一样就地传这个键，经过 `JS_SetPropertyValueConst`，它写完不动这个键。键在临时槽里时和值一样照旧拿走。
+
+为什么安全：键的 `toString` 或 `valueOf`、setter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽，理由和读的时候一样：被闭包捕获的局部变量，在任何代码运行之前就被复制到临时槽（`rv_push`），有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。`JS_SetPropertyValue` 还是原来的函数（带 `take` 的 `js_set_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：MUI 的 orders 页每次渲染少 0.34% 的指令，商店的页面少 0.03% 到 0.09%，React 的不变，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用就写入)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/putel_local_key.js` 写各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包、映射的 `arguments` 对象或直接 `eval` 造的函数改写键的对象，还经过会改写键并触发回收的 setter 和 Proxy trap 写，在严格模式和宽松模式下写冻结的对象，键本身做值、对象本身做值、对象本身做键，并在循环里写。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_putel_local_key_oom`）。
+
+## 不造迭代器的数组解构
+
+发布版本：Unreleased。
+
+`const [a, b] = arr` 要取 `arr` 的迭代器，通过它的 `next` 读两个元素，再关掉它。解析器把它编成 `for_of_start`，每个元素一组 `for_of_next` 和 `drop`，最后 `iterator_close`。这几步要调用 `values`、造一个 Array Iterator 对象、查 `Symbol.iterator`、`next` 和 `return`，每个元素还要调一次窗口操作：两个元素大约 1,350 条指令，而直接读 `arr[0]` 和 `arr[1]` 只要 100 条左右。商城、MUI 和 React 的页面每次渲染解构数组 135 到 2,261 次，解构的都是页面自己造的数组，上面什么也没改过。
+
+寄存器循环现在不造迭代器就把这样的数组拆开（`engine/regvm-ops-dst.h`）。`DSTART` 是解构的 `for_of_start`。当值是函数所在 realm 的快数组，形状和新数组一样（除 `length` 外没有自有属性，原型是 `Array.prototype`），`Array.prototype[Symbol.iterator]` 是内置的 `values` 数据属性，`%ArrayIteratorPrototype%.next` 是内置的 `next` 数据属性（引擎还没造它时先造出来，和读 `next` 时一样，见 `engine/quickjs.c` 的 `js_dst_ok`），它就在迭代器的位置放数组，`next` 方法的位置照旧放内置的 `next`，和原来的记录一样，在迭代器的 catch 偏移 0 的位置放下一个元素的下标，写成小于 0 的 catch 偏移（`JS_DST_REC`）。`DNEXT` 是 `for_of_next` 加 `drop`：数组还是快数组且有这个元素时，先 poll 一次（Array Iterator 读元素时也 poll 一次），再取出元素。读到数组末尾（下标不小于长度）时放掉数组，之后的读取都给 `undefined`，和迭代器一样。其他情况（长度被改长后的空洞，不再是快数组的数组）就在原地造出 Array Iterator，带上数组和下标（`js_dst_iter`），之后交给真正迭代器的代码。`iterator_close` 和异常的展开（`engine/regvm-run.h` 的 `rv_unwind`）先看 `%ArrayIteratorPrototype%` 和它的原型链上有没有 `return`：没有，而且链上也没有特异对象时，关闭只是放掉数组。否则就造出 Array Iterator，照原来的方式关闭。
+
+`for-of` 循环和 `yield*` 不变：pass 只在下一条指令不是 `goto` 也不是 `drop` 时把 `for_of_start` 换成 `DSTART`。默认值里有 `yield` 的解构也不变，它的 `return` 在关闭记录之前用 `nip_catch` 拿掉了 catch 偏移。
+
+### 为什么结果一样
+
+检查的就是 GetIterator 做的事：数组的形状没有自己的 `Symbol.iterator`，所以 `Get(arr, @@iterator)` 在 `Array.prototype` 上找到 `values`。调用 `values` 不做任何脚本看得见的事（对象的 ToObject，再 CreateArrayIterator）。新的 Array Iterator 没有自有属性，所以 `Get(iterator, "next")` 找到内置的 `next`。`Array.prototype` 和 `%ArrayIteratorPrototype%` 上的这两个属性按上次所在的下标去找，再核对键、种类和值，因为 QuickJS 会原地修改没人共用的形状。记录一旦造好，规范就把那个 `next` 存在记录里，所以默认值之后再改 `Array.prototype` 或 `%ArrayIteratorPrototype%`，不影响这次解构。能影响它的是数组本身（每次读取时按它当时的样子判断），以及关闭时读的 `return`（关闭时才读）。读取时造出的 Array Iterator 就是真正迭代器在那一刻的样子：同一个数组，同一个下标，同一个 `next`。
+
+迭代器位置上的数组没有脚本读得到。pass 只在只有这条记录自己的 `for_of_next` 和 `iterator_close` 读它的地方才这样做（`engine/regvm-pass.h` 的 `rv_dst_scan`）：`JS_ReadObject` 读进来的代码如果丢掉记录的 catch 偏移，或用 `nip_catch` 拿掉它，那条记录就还用原来的 `W_FOR_OF_START`。小于 0 的 catch 偏移 没有别的来源：其他记录的都是 0，`catch` 的是它在函数里的位置，读字节码时会检查。下标只是个数，释放它和回收器标记它都什么也不做，记录持有 `next` 的时间也和原来一样长，这一点对它的 `WeakRef` 看得见。下标超过 2^31 - 2 时没有这种写法，那么长的数组交给它的 Array Iterator 读。
+
+变了但脚本看不见的：一次解构少 poll 一次（调用 `values` 时会 poll），也不占调用深度的一层，所以经过它的递归只会更深。没有调用的循环里的空模式，靠循环往回跳时的 poll 响应中断。不造的 Array Iterator 少一次分配，所以有内存上限时，内存不足的错误可能晚一点、在造迭代器的地方才出现。解构数组但别处不造迭代器的脚本少持有一个形状，就是 Array Iterator 的形状。
+
+### 收益
+
+在 linux/arm64 的原生 C 树上用 callgrind 和改动前的引擎（4922b91a）比，每页先暖两次再计三次渲染，每次之后做一次新生代回收，一次渲染少跑的指令占比：workbench 页面 0.71%（单页 0.48% 到 0.85%），storefront 0.33%（0.14% 到 0.51%），MUI 0.27%（0.21% 到 0.29%），React 0.31%。带上测量用的 URL 替身（`urlmemo.js`，商城页面用它代替 tifa 将来不再需要的 URL polyfill）时，workbench 少 0.84%，storefront 0.53%，MUI 0.26%。没有页面多跑指令，渲染后占用的字节数也一样。
+
+在 tifa 的 `test/ssr` 上于 linux/amd64 计时（AMD EPYC 7B13 服务器，单核，每页 60 次渲染取 P50，两个构建交替先后跑 5 轮），收益低于计时能分辨的程度：MUI 用时是原来的 0.988，storefront 0.996，workbench 1.001（各页之和，取各轮中位数），而改动前的引擎对它自己的副本是 0.982、0.994 和 1.001。没有一页超过原来的 1.007。
+
+### 测试
+
+- `engine/test/regvm/js/q3-arrdst.js`，金标准在改动前生成：解析器生成解构的每种写法（声明、赋值、参数、箭头函数默认值、`for-of` 头、`catch`），空洞，rest，嵌套模式，默认值里改数组、`Array.prototype`、`Symbol.iterator`、`next` 或 `return`，两个元素的数组把长度改成 5 并在 `Array.prototype[3]` 放 getter，数组读完后默认值抛错（`[a, b, c = f()] = [1]`），以及停在默认值里 `yield` 的生成器，之后恢复、return 和 throw。
+- `engine/test/regvm/js/q3-arrdst-weak.js`，金标准在改动前生成：默认值删掉或换掉 `%ArrayIteratorPrototype%.next` 再回收，`WeakRef` 看到记录里的 `next` 一直活到解构结束。
+- `test_regvm_dst`（`engine/test/unit-white.c`）：pass 给普通解构 `DSTART`，不给默认值里有 `yield` 的解构，也不给 `JS_ReadObject` 读进来、丢掉记录的 catch 偏移 或用 `nip_catch` 拿掉它再返回迭代器的字节码：这些拿到的都是 Array Iterator，生成器的 return 照旧关闭记录。用 `JS_UNINITIALIZED` 当 `next`、`undefined` 当 catch 偏移、`null` 或数组当迭代器的记录，抛出 `next` 不是函数的 TypeError，关闭时调用数组的 `return`。自己写的代码（`engine/test/white.c` 的 `white_crafted_code`）把小于 0 的 catch 偏移 钉在 `DSTART` 上：`gosub` 跑的 `finally` 返回地址下面压着这条记录时不动它，`ret` 照旧返回。会把 catch 偏移 0 写回去的 `iterator_get_value_done` 拿到原来的 `W_FOR_OF_START`。读字节码时拒掉想把 catch 偏移 搬到别处的 `swap`。
+- `test_regvm_dst_alloc`（`engine/test/unit-white.c`）：`%ArrayIteratorPrototype%` 上有 `return` 时，关闭、异常展开和空洞处读取的每一次分配依次失败（包括造 Array Iterator 的两次），每次都以内存不足或正常结果结束，不留下引用。
+- `test_regvm_dst_oom`（`engine/test/unit-oom.c`）：解构在空洞、慢数组、默认值改过 `%ArrayIteratorPrototype%.next` 之后、带 `return` 的关闭，以及异常经过还没读完的解构时造 Array Iterator，每一次分配依次失败都以内存不足结束。
+- `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
+- `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。

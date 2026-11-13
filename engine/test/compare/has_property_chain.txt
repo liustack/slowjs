@@ -1,0 +1,14 @@
+plain true,true,false,true
+array true,true,false,true,true
+typed true,false,false,false,false,true
+string true,true,false,true,true
+global true,true,false,true
+proxy has true,false,false
+proxy deep false,false
+descriptor 7,true,false,false
+descriptor getter got,false,false
+key throws threw Error: key
+key changes false,false
+key deletes false
+every 0:1 1:2 2:3 4:5
+concat 6 [0,1,"filled",3,null,9] truefalse

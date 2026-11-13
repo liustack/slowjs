@@ -514,13 +514,13 @@ func regvmJumps(body string) []string {
 			bad = append(bad, "poll_count_entry does not come before "+after)
 		}
 	}
-	for _, label := range []string{"#define RV_CALLOP(", " rv_NEW:"} {
+	for _, label := range []string{"#define RV_CALLOP(", "#define RV_CALLSOP(", " rv_NEW:"} {
 		i := strings.Index(body, label)
 		if i < 0 || !strings.Contains(body[i:min(i+300, len(body))], "poll_count(POLL_WEIGHT);") {
 			bad = append(bad, label+" does not count before it moves pc")
 		}
 	}
-	forward := regexp.MustCompile(`^pc \+= (?:\d+|\(len\)|ip\[0\]|2 \+ 7 \* ip\[1\]);$`)
+	forward := regexp.MustCompile(`^pc \+= (?:\d+|\(len\)|ip\[0\]|2 \+ 7 \* ip\[1\]|3 \+ ip\[2\]);$`)
 	macroStep := regexp.MustCompile(`^pc \+= \d+ \+ \((\w+)\);$`)
 	jump := regexp.MustCompile(`^pc (?:\+= (?:2 \+ )?off|= (?:ip \+ 3|c \+ 7) \+ off);$`)
 	counted := regexp.MustCompile(`if \(off < 0\) poll_count\(POLL_WEIGHT\);`)
@@ -717,8 +717,8 @@ func regvmCasesEnd(before string) string {
 }
 
 // regvmMoves are the moves of pc in JS_RegvmRun that are not a step forward
-// or a counted jump: set, a call into a function (counted by RV_CALLOP or
-// NEW before), a return to the caller's pc, a catch (counted by rv_unwind)
+// or a counted jump: set, a call into a function (counted by RV_CALLOP,
+// RV_CALLSOP or NEW before), a return to the caller's pc, a catch (counted by rv_unwind)
 // or the return of a finally block (counted by GORET), and throw, a step
 // back to name the instruction that throws, just before goto rv_exception.
 var regvmMoves = map[string]string{
@@ -764,6 +764,7 @@ func TestRegvmJumpsCount(t *testing.T) {
 		{"regvm-ops-wide.h", "        pc += off;", "        pc = pc + off;", "pc moves outside the rule"},
 		{"regvm-ops-ctor.h", " rv_NEW:\n    poll_count(POLL_WEIGHT);\n", " rv_NEW:\n", "rv_NEW: does not count"},
 		{"regvm-ops-basic.h", "    poll_count(POLL_WEIGHT);                                            \\\n    ip = pc + (len) - 2;", "    ip = pc + (len) - 2;", "RV_CALLOP( does not count"},
+		{"regvm-ops-basic.h", "    poll_count(POLL_WEIGHT);                                            \\\n    ip = pc;", "    ip = pc;", "RV_CALLSOP( does not count"},
 		{"regvm-run.h", "\n    poll_count_entry(POLL_WEIGHT);\n", "\n", "poll_count_entry does not come before"},
 		{"regvm-run.h", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            goto rv_exception;", "            pc -= (own) + ((taken) ? 1 : 0);                            \\\n            RV_NEXT();", "not followed by goto rv_exception"},
 		{"regvm-ops-cmp.h", "->pvalue, 4, 1, 0, 2)", "->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
@@ -775,7 +776,7 @@ func TestRegvmJumpsCount(t *testing.T) {
 		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            ( n ) = -1024;", "with n written as n = -1024"},
 		{"regvm-ops-cmp.h", "            c += tsize;", "            (tsize) = -1024;\n            c += tsize;", "with tsize written after it is declared"},
 		{"regvm-ops-cmp.h", "            n &= 0x7f;", "            n &= 0x7f;\n            (void)\"//\"; n = -1024;", "with n written as n = -1024"},
-		{"regvm-ops-cmp.h", "    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, 2)", "    RV_JCMP (rv_JSEQVF, OP_strict_eq, ==,\n            *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
+		{"regvm-ops-cmp.h", "    RV_JCMP(rv_JSEQVF, OP_strict_eq, ==,\n            *RV_VREF(F, get_u16(ip + 1))->pvalue, 4, 1, 0, 2)", "    RV_JCMP (rv_JSEQVF, OP_strict_eq, ==,\n            *RV_VREF(F, get_u16(ip + 1))->pvalue, 4, 1, 0, ip[0])", "gives as ip[0], not a decimal literal"},
 	} {
 		src, err := read(c.file)
 		if err != nil {

@@ -43,6 +43,21 @@ func TestKeepNarrowFromEnv(t *testing.T) {
 	}
 }
 
+// TestDropLRPairsFromEnv: 1 and unchecked turn the negative build on, and
+// any other value but an empty one is an error.
+func TestDropLRPairsFromEnv(t *testing.T) {
+	for _, v := range []string{"", "1", "unchecked"} {
+		if got, err := dropLRPairsFromEnv(v); err != nil || got != v {
+			t.Errorf("%q: %q, %v", v, got, err)
+		}
+	}
+	for _, v := range []string{"0", "true", "yes", " 1", "Unchecked", "off"} {
+		if got, err := dropLRPairsFromEnv(v); err == nil || got != "" || !strings.Contains(err.Error(), "GEN_DROP_LR_PAIRS") {
+			t.Errorf("%q: accepted as %q, %v", v, got, err)
+		}
+	}
+}
+
 // TestReleaseError: a release build refuses each switch made for surveys,
 // tests and negative builds, one at a time, and a plain build with an output
 // folder goes on.
@@ -59,6 +74,7 @@ func TestReleaseError(t *testing.T) {
 		"-loose-varargs":              func(d *devSwitches) { d.LooseVarargs = true },
 		"-poison":                     func(d *devSwitches) { d.Poison = true },
 		"GEN_KEEP_NARROW":             func(d *devSwitches) { d.KeepNarrow = true },
+		"GEN_DROP_LR_PAIRS":           func(d *devSwitches) { d.DropLR = true },
 		"GEN_EDIT_LOWERED":            func(d *devSwitches) { d.EditLowered = "1" },
 		"-non-format-variadic":        func(d *devSwitches) { d.NonFormat = "" },
 		"without polls (-poll=false)": func(d *devSwitches) { d.NoPoll = true },

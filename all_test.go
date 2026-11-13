@@ -789,8 +789,12 @@ func TestBytecode(t *testing.T) {
 	// 2026-11-12, version 10: a regexp keeps, after its plan, a table of the
 	// first characters of each long run of literal alternatives. The code of
 	// this script is the same.
+	//
+	// 2026-11-13, version 11: the flags of each closure variable carry a bit
+	// (9) that says the closure holds its value, not a reference to it. The
+	// code of this script is the same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "0a000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
+	if g, e := hex, "0b000c000600a801000100020000000801aa0100000000bc2abd3a0199cc29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

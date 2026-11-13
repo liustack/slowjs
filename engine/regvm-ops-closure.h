@@ -359,7 +359,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
     }
     if (JS_IsString(ops[0]) && JS_IsString(ops[1])) {
         ops[0] = js_add_string_into(ctx, ops[0], ops[1],
-                                    ((RVHeader *)F)->var_refs[get_u16(ip + 2)]->pvalue);
+                                    RV_VREF(F, get_u16(ip + 2))->pvalue);
         if (JS_IsException(ops[0]))
             return -1;
     } else if (js_add_slow(ctx, ops + 2)) {
@@ -367,7 +367,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         return -1;
     }
     /* read after the add, which can run JS */
-    pv = ((RVHeader *)F)->var_refs[get_u16(ip + 2)]->pvalue;
+    pv = RV_VREF(F, get_u16(ip + 2))->pvalue;
     if (ip[-1] == RV_ADDVRC && unlikely(JS_IsUninitialized(*pv))) {
         JS_FreeValue(ctx, ops[0]);
         JS_ThrowReferenceErrorUninitialized2(ctx, ((RVHeader *)F)->rf->b, get_u16(ip + 2), TRUE);
@@ -410,7 +410,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
  rv_PUTVR:
     ip = pc; pc += 3;
     {
-        JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, old = *pv;
+        JSValue *pv = RV_VREF(F, get_u16(ip + 1))->pvalue, old = *pv;
         *pv = RV_R(ip[0]);
         JS_FreeValue(ctx, old);
     }
@@ -418,7 +418,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
  rv_SETVR:
     ip = pc; pc += 3;
     {
-        JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, old = *pv;
+        JSValue *pv = RV_VREF(F, get_u16(ip + 1))->pvalue, old = *pv;
         *pv = JS_DupValue(ctx, RV_R(ip[0]));
         JS_FreeValue(ctx, old);
     }
@@ -426,7 +426,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
  rv_SETVRK:
     ip = pc; pc += 3;
     {
-        JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, old = *pv;
+        JSValue *pv = RV_VREF(F, get_u16(ip + 1))->pvalue, old = *pv;
         *pv = JS_DupValue(ctx, RV_K(ip[0]));
         JS_FreeValue(ctx, old);
     }
@@ -440,7 +440,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         if (likely(JS_VALUE_IS_BOTH_INT(a, bv)) && !RV_INJ_ARMED) {
             int64_t r = (int64_t)JS_VALUE_GET_INT(a) + JS_VALUE_GET_INT(bv);
             if (likely((int)r == r)) {
-                JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 2)]->pvalue, old = *pv;
+                JSValue *pv = RV_VREF(F, get_u16(ip + 2))->pvalue, old = *pv;
                 *pv = JS_MKVAL(JS_TAG_INT, (int)r);
                 JS_FreeValue(ctx, old);
                 RV_NEXT();
@@ -460,7 +460,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         JSValue a = RV_R(ip[0]), bv = RV_R(ip[1]);
         if (likely(JS_VALUE_IS_BOTH_INT(a, bv)) && !RV_INJ_ARMED) {
             int64_t r = (int64_t)JS_VALUE_GET_INT(a) + JS_VALUE_GET_INT(bv);
-            JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 2)]->pvalue, old = *pv;
+            JSValue *pv = RV_VREF(F, get_u16(ip + 2))->pvalue, old = *pv;
             if (likely((int)r == r && !JS_IsUninitialized(old))) {
                 *pv = JS_MKVAL(JS_TAG_INT, (int)r);
                 JS_FreeValue(ctx, old);
@@ -481,7 +481,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
  rv_PUTVRC:
     ip = pc; pc += 3;
     {
-        JSValue *pv = ((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue, v, old;
+        JSValue *pv = RV_VREF(F, get_u16(ip + 1))->pvalue, v, old;
         if (RV_INJ_HIT(ctx) || unlikely(JS_IsUninitialized(*pv)))
             goto rv_check_fail;
         v = rv_take(ctx, F, (int8_t)ip[0]);
@@ -493,7 +493,7 @@ static no_inline int rv_addvr_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
  rv_GETVRC:
     ip = pc; pc += 3;
     {
-        JSValue v = *((RVHeader *)F)->var_refs[get_u16(ip + 1)]->pvalue;
+        JSValue v = *RV_VREF(F, get_u16(ip + 1))->pvalue;
         if (RV_INJ_HIT(ctx) || unlikely(JS_IsUninitialized(v)))
             goto rv_check_fail;
         RV_PUTD(ip[0], JS_DupValue(ctx, v));

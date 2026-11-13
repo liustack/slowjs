@@ -127,9 +127,10 @@ typedef struct RVFunc {
     uint32_t runs;  /* the frames set up for it, counted with -DRV_STATS only */
     JSValue *k;
     RVPcMask *pcmap;
-    int ret_count;  /* the GOSUBs: pairs of rets, the end of the old gosub
-                       (the return address) and the end of the GOSUB, by
-                       the first (regvm-ops-except.h rv_ret_target) */
+    int ret_count;  /* the GOSUBs: four rets each, the end of the old gosub
+                       (the return address), the end of the GOSUB, and the
+                       depth and the catchpos of the pass there, by the
+                       first (regvm-ops-except.h rv_ret_target) */
     uint32_t *rets;
     RVPcHi *pcmap_hi; /* NULL when no entry owns a temp past T[31] */
     uint8_t code[0];

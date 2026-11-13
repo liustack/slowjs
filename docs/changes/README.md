@@ -29,6 +29,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A collection asked for while the engine frees objects does nothing | v0.29.10 | [c-engine.md](c-engine.md#a-collection-asked-for-while-objects-are-freed) |
 | A panic that leaves a call into the engine halfway breaks the VM, whatever the panic is, a fault below 0x1000 too, and nothing enters that engine again, not even to free a value | v0.29.11 | [c-engine.md](c-engine.md#which-panics-break-a-vm) |
 | Every generated function that calls something has Go's stack check, so a fault no longer depends on room the generator kept below a chain of functions without one | v0.29.11 | [c-engine.md](c-engine.md#functions-without-a-stack-check) |
+| JavaScript runs in a register interpreter: a function is converted from its bytecode at its first call, calls between functions stay in one loop on a register stack of segments, and the stack interpreter of QuickJS is gone | v0.30.2 | [c-engine.md](c-engine.md#the-register-interpreter) |
 | On windows every generated function makes room for 12 KiB more below its stack pointer, so that the state of the CPU the system writes at a fault stays inside the stack on CPUs with AMX | v0.30.2 | [c-engine.md](c-engine.md#room-for-a-fault-on-windows) |
 | The generated code reads its arguments and writes its results by name through FP, as Go promises, and no longer at an offset from SP that depends on how the assembler lays out a frame. The machine code is the same | v0.30.2 | [c-engine.md](c-engine.md#arguments-and-results-by-name) |
 | `go vet -asmdecl` finds nothing in the generated engine: the register-entry leaves of amd64 say NOFRAME, and `goasm_room` is in a file of windows/amd64 only, where its Go declaration is. The machine code is the same | v0.30.2 | [c-engine.md](c-engine.md#go-vet-checks-the-generated-assembly) |
@@ -37,6 +38,16 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The parser refuses at compile time a function the register loop cannot run: more than 32,765 parameters and locals, or a deep stack with more than 48 temps of catch offsets | v0.30.2 | [c-engine.md](c-engine.md#the-limits-of-a-function-in-the-register-loop) |
 | A C function that call, apply, Reflect.apply or a bound function calls runs without JS_CallInternal, and JS_CallInternal makes the checks of a call inline | v0.30.2 | [c-engine.md](c-engine.md#a-c-function-that-call-apply-or-a-bound-function-calls) |
 | The register loop answers `String.prototype.charCodeAt` of a string or a flat rope at an int index without the call | v0.30.2 | [c-engine.md](c-engine.md#charcodeat-answered-in-the-register-loop) |
+| A closure holds the value of a captured variable no code can change once the closure has it, not a reference shared with the frame. Such closures no longer keep a suspended generator or async function alive | Unreleased | [c-engine.md](c-engine.md#captures-that-never-change) |
+| A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
+| Every jump table of arm64 takes 4 bytes an entry, and the generator refuses a table its lowering made too narrow | Unreleased | [c-engine.md](c-engine.md#jump-tables-on-arm64-take-4-bytes-an-entry) |
+| A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
+| `o[k]` with the key in a local or an argument reads the key without a reference | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-read-without-a-reference) |
+| `o[k] = v` with the key in a local or an argument sets it without a reference to the key | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-set-without-a-reference) |
+| `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | Unreleased | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
+| An array literal moves the references of its elements into the array | Unreleased | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
+| On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | Unreleased | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
+| The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | Unreleased | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
 
 ## Commits of upstream QuickJS
 
@@ -222,6 +233,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A proxy whose defineProperty trap refuses a store throws in strict code | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-proxy-that-refuses-a-store-throws-in-strict-code) |
 | Object literals have the room of an empty object | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
 | A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
+| An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
+| The `in` operator walks a prototype chain without references | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
 
 ## Memory
 

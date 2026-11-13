@@ -1,0 +1,15 @@
+result kinds 11:o1,s3,symbol,bigint,function,number,number,null,undefined,boolean,s1560 true true 7 -Infinity xyz
+result only reference 5:o1,s3,a3,s1300,symbol 1 3 Symbol(t)
+result arguments 4:o1,s3,a1,number 1 two 3
+result drop halfway 4:o1,s2080,s5,null first 2080
+result the same value twice 2 true
+result lengths 0 8/8 16/16 24/24 32/32 40/40 40=780
+result nested [["x",["x1",[{"x":"x"}]]],[],[[]]]
+result throws halfway third 2 1,2
+result a getter in an element 3:o1,s3,o1 true got
+result spread among them 6:o1,s1,s1,s1,s1,s1
+result loop 0s00,50s5050,100s100100,150s150150,200s200200,250s250250 299
+result folded 130 1 true
+mem-end obj=204 atom=566 shape=134 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=204 atom=566 shape=134 prop=986 jsfunc=4 cfunc=136 array=2 fast_array=2 elements=12 binary=0
+--- status exit 0

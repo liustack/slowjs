@@ -1,0 +1,17 @@
+result plain true,true,false,true
+result array true,true,false,true,true
+result typed true,false,false,false,false,true
+result string true,true,false,true,true
+result global true,true,false,true
+result proxy has true,false,false
+result proxy deep false,false
+result descriptor 7,true,false,false
+result descriptor getter got,false,false
+result key throws threw Error: key
+result key changes false,false
+result key deletes false
+result every 0:1 1:2 2:3 4:5
+result concat 6 [0,1,"filled",3,null,9] truefalse
+mem-end obj=217 atom=571 shape=154 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
+mem-gc obj=217 atom=571 shape=154 prop=1008 jsfunc=3 cfunc=136 array=3 fast_array=3 elements=16 binary=0
+--- status exit 0

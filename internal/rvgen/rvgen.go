@@ -45,11 +45,26 @@ type Options struct {
 	// instanceof, element writes, delete, spread, regular expressions and
 	// getters that throw. Programs of the other modes stay as they were.
 	Wide bool
+	// Captures adds, to the full or wide mode, closures kept to be called when
+	// the run of their function is over: over a variable written before the
+	// capture, after it in a branch or a handler, or never, over a let of
+	// each round of a loop, two functions down, and closures that write the
+	// variable. Programs of the other modes stay as they were.
+	Captures bool
 	// Portable writes the name of an error where the program would write
 	// its message, so that the output does not depend on how an engine
 	// words its errors: the programs run the same under Node (rvgen
 	// node).
 	Portable bool
+	// Dst adds, to the full or wide mode, array destructurings in every
+	// form the parser makes (declarations, assignments, parameters, the
+	// head of for-of, catch parameters, a generator with a yield in a
+	// default) of arrays and other values, with defaults that change the
+	// array or the built-ins its iterator comes from (Array.prototype's
+	// Symbol.iterator, next and return of the iterator prototypes, elements
+	// of Array.prototype for holes). Programs of the other modes stay as
+	// they were.
+	Dst bool
 }
 
 // msg is the field of a caught error the program writes
@@ -61,7 +76,7 @@ func (g *gen) msg() string {
 }
 
 func (o *Options) fill() {
-	if o.Wide {
+	if o.Wide || o.Dst {
 		o.Core = false
 	}
 	if o.Funcs < 2 {
@@ -108,7 +123,7 @@ func (g *gen) line(format string, args ...any) {
 
 func (g *gen) program(seed uint64) {
 	g.line("// rvgen seed %d funcs %d stmts %d depth %d core %v%s%s", seed, g.o.Funcs, g.o.Stmts, g.o.Depth, g.o.Core,
-		map[bool]string{true: " wide"}[g.o.Wide], map[bool]string{true: " portable"}[g.o.Portable])
+		map[bool]string{true: " wide"}[g.o.Wide], map[bool]string{true: " portable"}[g.o.Portable]+map[bool]string{true: " captures"}[g.o.Captures]+map[bool]string{true: " dst"}[g.o.Dst])
 	if g.o.Wide {
 		g.wideTop()
 	}
@@ -120,6 +135,11 @@ func (g *gen) program(seed uint64) {
 	// a budget of calls for each run, so that the fan-out of the recursion
 	// stays small: past it a function throws
 	g.line(`var B = { n: 0 };`)
+	if g.o.Captures {
+		// the closures kept in a run, called when it is over
+		g.line(`var R = [];`)
+		g.line(`function keep(f) { if (R.length < 40) R.push(f); return f; }`)
+	}
 	// show writes a value in at most 300 characters, objects to a depth of 3,
 	// so that a value built up in a loop stays cheap to log
 	g.line(`function show(v, n) {`)
@@ -139,8 +159,19 @@ func (g *gen) program(seed uint64) {
 	g.line(`function rec(v) { L.push(show(v)); return v; }`)
 	g.line(`function thr(x) { throw new RangeError("thr " + show(x)); }`)
 	g.line(`function run(name, f, d, a, b, c) {`)
+	if g.o.Dst {
+		// the built-ins a default of the run before changed (mis)
+		g.line(`  fix();`)
+	}
 	g.line("%s", `  B.n = 0;
   try { L.push(name + " = " + show(f(d, a, b, c))); } catch (e) { L.push(name + " ! " + (e instanceof Error ? `+map[bool]string{false: `e.name + ": " + e.message`, true: `e.name`}[g.o.Portable]+` : show(e))); }`)
+	if g.o.Captures {
+		// what the closures kept in the run see now that it is over
+		g.line(`  for (var q = 0; q < R.length; q++) {`)
+		g.line(`    try { var v = R[q](); if (typeof v === "function") v = v(); L.push(name + " c" + q + " " + show(v)); } catch (e) { L.push(name + " c" + q + " ! " + e.name); }`)
+		g.line(`  }`)
+		g.line(`  R.length = 0;`)
+	}
 	g.line(`}`)
 	// the pool of objects the functions read and write
 	g.line(`var o0 = { a: 1, b: "s", c: 2.5, n: null, m: function (x) { return x + this.a; } };`)
@@ -150,6 +181,9 @@ func (g *gen) program(seed uint64) {
 	g.line(`function leaf(x, y) { return x - y; }`)
 	if g.o.Wide {
 		g.widePrelude()
+	}
+	if g.o.Dst {
+		g.dstPrelude()
 	}
 	g.argc = make([]int, g.o.Funcs)
 	for i := range g.o.Funcs {
@@ -226,6 +260,14 @@ func (g *gen) obj() string { return fmt.Sprintf("o%d", g.n(g.objs)) }
 func (g *gen) stmt(depth int) {
 	if g.o.Wide && depth > 0 && g.chance(0.3) {
 		g.wideStmt(depth)
+		return
+	}
+	if g.o.Captures && depth > 0 && g.chance(0.25) {
+		g.captureStmt()
+		return
+	}
+	if g.o.Dst && depth > 0 && g.chance(0.35) {
+		g.dstStmt()
 		return
 	}
 	if depth <= 0 {
@@ -324,6 +366,81 @@ func (g *gen) stmt(depth int) {
 		g.line("if (%s) return %s;", g.cond(1), g.expr(depth, true))
 	default:
 		g.line("%s = %s;", g.local(), g.expr(depth, true))
+	}
+}
+
+// captureStmt keeps a closure (keep), which run calls when the run of the
+// function is over, so that it sees every write that came after the
+// capture.
+func (g *gen) captureStmt() {
+	c := fmt.Sprintf("c%d", g.uniq)
+	g.uniq++
+	switch g.n(9) {
+	case 0:
+		// a local or a parameter, which the statements after may write
+		g.line("keep(() => %s);", g.anyVar())
+	case 1:
+		// a let written before the capture only
+		g.line("{")
+		g.ind++
+		g.line("let %s = %s;", c, g.expr(1, false))
+		if g.chance(0.5) {
+			g.line("%s = cap(%s + %s);", c, c, g.expr(1, false))
+		}
+		g.line("keep(() => %s);", c)
+		g.ind--
+		g.line("}")
+	case 2:
+		// written after the capture, in one arm or in both
+		g.line("{")
+		g.ind++
+		g.line("let %s = %s;", c, g.expr(1, false))
+		g.line("keep(() => %s);", c)
+		if g.chance(0.5) {
+			g.line("if (%s) %s = %s; else %s = %s;", g.cond(1), c, g.expr(1, false), c, g.expr(1, false))
+		} else {
+			g.line("if (%s) %s = %s;", g.cond(1), c, g.expr(1, false))
+		}
+		g.ind--
+		g.line("}")
+	case 3:
+		// a let of each round of a loop, written in the round or not
+		g.line("for (let %s = 0; %s < %d; %s++) {", c, c, 1+g.n(3), c)
+		g.ind++
+		g.line("keep(() => %s + %s);", c, g.local())
+		if g.chance(0.4) {
+			g.line("if (%s) %s++;", g.cond(1), c)
+		}
+		g.ind--
+		g.line("}")
+	case 4:
+		// two functions down
+		g.line("keep(() => () => %s);", g.anyVar())
+	case 5:
+		// a closure that writes the variable, and one two functions down
+		v := g.local()
+		if g.chance(0.5) {
+			g.line("keep(() => { %s = cap(%s + 1); return %s; });", v, v, v)
+		} else {
+			g.line("keep(() => () => { %s = cap(%s + 1); return %s; });", v, v, v)
+		}
+	case 6:
+		// written in a catch, after the capture in its try
+		g.line("{")
+		g.ind++
+		g.line("let %s = %s;", c, g.expr(1, false))
+		g.line("try { keep(() => %s); if (%s) thr(%s); } catch (e) { %s = e.name; }", c, g.cond(1), c, c)
+		g.ind--
+		g.line("}")
+	case 7:
+		// a const captured in each round of a loop over a list
+		g.line("for (const %s of [%s, %s]) keep(() => %s);", c, g.expr(1, false), g.expr(1, false), c)
+	default:
+		// a closure made before a later write of a local, called at once
+		// too
+		v := g.local()
+		g.line("rec(keep(() => %s)());", v)
+		g.line("%s = %s;", v, g.capped(g.expr(1, false)))
 	}
 }
 

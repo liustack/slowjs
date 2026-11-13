@@ -20,7 +20,13 @@
    its depth: the one QuickJS's interpreter makes, the offset of the end of the
    old gosub, which code read by JS_ReadObject can make or read as any int. ret
    checks it against ret_bits as QuickJS's interpreter does, and finds the end
-   of its GOSUB in the register code in rf->rets. */
+   of its GOSUB in the register code in rf->rets. It goes there only when the
+   pass found the same depth and the same innermost catch under the return
+   address at the ret as at the end of the gosub: the code after the GOSUB
+   takes the temps as they were there, and a finally the compiler makes
+   leaves them so. Code read by JS_ReadObject could change them before its
+   ret, and the code after the GOSUB would take a catch offset for another
+   value. */
 
 #if RV_PART == RV_PART_LIST
 RV_OP(THROW)    /* s: throws the value of s, a temp is moved */
@@ -28,13 +34,13 @@ RV_OP(THROWE)   /* atom type: throws the error of throw_error */
 RV_OP(CATCH)    /* d off: a catch offset into temp d, for the catch at off */
 RV_OP(TMOV)     /* d t: temp d = temp t, moved */
 RV_OP(GOSUB)    /* d off ret: ret (an old offset) into temp d, a jump to off */
-RV_OP(GORET)    /* t: a jump to the return address in temp t */
+RV_OP(GORET)    /* t depth32 catchpos32: a jump to the return address in temp t */
 #elif RV_PART == RV_PART_INFO
     case OP_throw: case OP_throw_error: case OP_ret:
         *term = 1;
         return 0;
     case OP_catch: case OP_gosub:
-        *target = pos + 1 + (int32_t)get_u32(bc + pos + 1);
+        *target = rv_old_target(pos, 1 + (int64_t)(int32_t)get_u32(bc + pos + 1));
         return 0;
     case OP_nip_catch:
         /* its depth after is that of its catch (rv_depths) */
@@ -73,9 +79,11 @@ static void rv_gosub_entries(RVPass *s)
    reads the code in order) */
 static void rv_ret_put(RVPass *s, uint32_t old)
 {
-    uint32_t r[2];
+    uint32_t r[4];
     r[0] = old;
     r[1] = s->code.size;
+    r[2] = old < (uint32_t)s->len ? (uint32_t)s->depth[old] : UINT32_MAX;
+    r[3] = old < (uint32_t)s->len ? (uint32_t)s->catchpos[old] : UINT32_MAX;
     if (!s->failed && dbuf_put(&s->rets, (uint8_t *)r, sizeof(r)))
         s->failed = TRUE;
 }
@@ -161,6 +169,10 @@ static void rv_catch_entry(RVPass *s, int old)
         rv_block_end(s, s->sp - 1);
         rv_emit(s, RV_GORET);
         rv_byte(s, e.slot);
+        /* what the end of its gosub must have (rv_ret_target): the depth
+           under the return address and the innermost catch */
+        rv_u32(s, s->depth[s->pos] - 1);
+        rv_u32(s, s->catchpos[s->pos]);
         /* a value that is no return address stays in its temp when GORET
            throws, as QuickJS's OP_ret leaves it on its stack: the
            unwinding frees it. (An interrupt read after the jump is at the
@@ -212,12 +224,15 @@ static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
         goto fail;
     while (lo <= hi) {
         mid = (lo + hi) >> 1;
-        if (rf->rets[2 * mid] < pos)
+        if (rf->rets[4 * mid] < pos)
             lo = mid + 1;
-        else if (rf->rets[2 * mid] > pos)
+        else if (rf->rets[4 * mid] > pos)
             hi = mid - 1;
+        else if (rf->rets[4 * mid + 2] != get_u32(ip + 1) ||
+                 rf->rets[4 * mid + 3] != get_u32(ip + 5))
+            goto fail; /* another depth or other catches: code no compiler makes */
         else
-            return rf->code + rf->rets[2 * mid + 1];
+            return rf->code + rf->rets[4 * mid + 1];
     }
 #ifdef RV_SELF_CHECK
     abort(); /* a gosub of ret_bits with no GOSUB: a fault of rv_build */
@@ -258,7 +273,7 @@ static no_inline const uint8_t *rv_ret_target(JSContext *ctx, JSValue *F,
     }
     RV_NEXT();
  rv_GORET:
-    ip = pc; pc += 1;
+    ip = pc; pc += 9;
     {
         const uint8_t *to = rv_ret_target(ctx, F, ip);
         if (unlikely(!to))

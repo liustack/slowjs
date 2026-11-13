@@ -79,6 +79,10 @@ func skipNops(code []byte) int {
 	i := 0
 	for i < len(code) {
 		n := 0
+		if bytes.HasPrefix(code[i:], nop9) {
+			i += len(nop9)
+			continue
+		}
 		for k := 8; k >= 1; k-- {
 			if bytes.HasPrefix(code[i:], nops[k]) {
 				n = k
@@ -92,6 +96,10 @@ func skipNops(code []byte) int {
 	}
 	return i
 }
+
+// nop9 is the longest no-op the Go assembler pads a PCALIGN with (fillnop in
+// cmd/internal/obj/x86).
+var nop9 = []byte{0x66, 0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0}
 
 // nops are the multi-byte no-ops of 1 to 8 bytes, as xform writes them.
 var nops = [][]byte{
@@ -311,7 +319,14 @@ func CheckLayout(formal, l Layout, p Position, pad string) error {
 	}
 	d := int64(l.Func) - int64(formal.Func)
 	switch {
-	case p.Shift2 == 0 && d != dm:
+	case d == want:
+		// An interpreter that is not on 64 bytes (the register loop has no
+		// PCALIGN $64 unless the generator's -align64 names it) takes up none of
+		// the shifts: it moves with the functions before it. One on 64 bytes
+		// does that too when the sum is a multiple of 64.
+	case formal.Func%64 != 0:
+		return fmt.Errorf("position %s: the interpreter, on 32 bytes, moved by %d bytes, not the %d the functions before it moved", p, d, want)
+	case p.Shift2 == 0:
 		return fmt.Errorf("position %s: the interpreter moved by %d bytes, the regexp matcher by %d", p, d, dm)
 	case p.Shift2 > 0 && (d%64 != 0 || d < want-32 || d > want+32):
 		return fmt.Errorf("position %s: the interpreter moved by %d bytes, not a multiple of 64 within 32 of the %d the functions before it moved", p, d, want)
@@ -368,10 +383,25 @@ func FirstEngineFunc(bin string) (string, error) {
 }
 
 // bodyStart returns the offset of the body in the code of a function at addr:
-// the first instruction after the NOPs that follow the PCALIGN $64 of its body.
-// The Go assembler puts the frame set-up before that PCALIGN, so when the code
-// does not start with NOPs the body starts after the next multiple of 64.
+// the first instruction after the NOPs that follow the PCALIGN of its body. The
+// Go assembler puts the frame set-up before that PCALIGN: the body starts after
+// its SUBQ of SP and the NOPs after it, whatever the PCALIGN ($16 for the
+// register loop, $64 for a function with a fixed place). Without that SUBQ in
+// its first 32 bytes, the body starts after the NOPs at the start of the code
+// or, when the code does not start with NOPs, after the next multiple of 64.
 func bodyStart(addr uint64, code []byte) uint64 {
+	for i := 0; i+4 <= len(code) && i < 32; i++ {
+		// SUBQ $imm8, SP (48 83 ec ib) or SUBQ $imm32, SP (48 81 ec id)
+		if code[i] == 0x48 && code[i+2] == 0xec && (code[i+1] == 0x83 || code[i+1] == 0x81) {
+			end := i + 4
+			if code[i+1] == 0x81 {
+				end = i + 7
+			}
+			if end <= len(code) {
+				return uint64(end + skipNops(code[end:]))
+			}
+		}
+	}
 	if n := skipNops(code); n > 0 {
 		return uint64(n)
 	}

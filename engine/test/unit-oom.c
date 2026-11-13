@@ -1594,6 +1594,138 @@ static void test_copy_props_oom(void)
     sweep_register = NULL;
 }
 
+/* JS_HasProperty walks a prototype chain, through `in` with keys made at run
+   time, the fields of property descriptors and the holes that every and
+   concat look up: with too little memory (a key, the number a typed array
+   reads from a key, a descriptor, a result) it fails with the out of memory
+   error and frees each object of the chains once. */
+static void test_has_property_oom(void)
+{
+    static const char setup[] =
+        "var base = { a: 1 }, mid = Object.create(base), arr = [1, 2];\n"
+        "mid.b = 2;\n"
+        "var top = Object.create(mid), onArr = Object.create(arr);\n"
+        "var onTa = Object.create(new Uint8Array(4));\n"
+        "function run() {\n"
+        "  var n = 0, out = [];\n"
+        "  for (var i = 0; i < 8; i++) {\n"
+        "    if (('a' + (i % 2 ? '' : 'x')) in top) n++;\n"
+        "    if (i in onArr) n++;\n"
+        "    if ((i + '.5') in onTa || ('' + i) in onTa) n++;\n"
+        "    var d = Object.create({ enumerable: true, configurable: i % 2 == 0 });\n"
+        "    d.value = i;\n"
+        "    var o = Object.defineProperty({}, 'p' + i, d);\n"
+        "    out.push(Object.keys(o).length);\n"
+        "  }\n"
+        "  var h = [1, , 3, , 5], seen = 0;\n"
+        "  h.every(function () { seen++; return true });\n"
+        "  return n + ' ' + out.join('') + ' ' + seen + ' ' + [0].concat(h).length;\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "10 11111111 3 6", NULL };
+
+    sweep("has property", "hasprop.js", setup, "run()", want, 16384);
+}
+
+/* o[k] with the key in a local: with too little memory (the atom of a key
+   made at run time, the string a key object gives, the result) it fails
+   with the out of memory error and frees each key once. */
+static void test_getel_local_key_oom(void)
+{
+    static const char setup[] =
+        "var o = { k0: 'a', k1: 'b', k2: 'c', 5: 'five' }, arr = [1, 2, 3];\n"
+        "function get(obj, key) { return obj[key] }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'k' + (i % 3) } };\n"
+        "    out.push(get(o, k), get(o, ko), get(arr, i % 4), get(arr, '' + (i % 3)), get(o, 5));\n"
+        "  }\n"
+        "  return out.join('');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "aa11fivebb22fivecc33fivea1fiveab12fivebc23five", NULL };
+
+    sweep("local key", "getel.js", setup, "run()", want, 16384);
+}
+
+/* o[k] = v with the key in a local: with too little memory (the atom of a
+   key made at run time, the string a key object gives, the property and
+   the room of the object or the array) it fails with the out of memory
+   error and frees each key and value once. */
+static void test_putel_local_key_oom(void)
+{
+    static const char setup[] =
+        "function put(obj, key, v) { obj[key] = v }\n"
+        "function run() {\n"
+        "  var o = {}, arr = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'p' + (i % 3) } };\n"
+        "    put(o, k, 'v' + i); put(o, ko, i); put(arr, i, 'a' + i); put(arr, '' + (i + 6), i);\n"
+        "  }\n"
+        "  return Object.keys(o).map(function (k) { return k + o[k] }).join() + '|' + arr.join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "k0v4,p03,k1v5,p14,k2v2,p25,k3v3|a0,a1,a2,a3,a4,a5,0,1,2,3,4,5", NULL };
+
+    sweep("local key put", "putel.js", setup, "run()", want, 16384);
+}
+
+/* The truth of strings, ropes and objects in locals and temps: with too
+   little memory (the strings and objects made, the result) it fails with
+   the out of memory error and frees each value once. */
+static void test_truth_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var n = 0, s = '';\n"
+        "  for (var i = 0; i < 40; i++) {\n"
+        "    var t = i % 3 ? 'v' + i : '', o = i % 4 ? {} : null;\n"
+        "    s += 'abcdefghijabcdefghij';\n"
+        "    if (t) n++;\n"
+        "    if (!o) n += 100;\n"
+        "    if (s && t) n += 10000;\n"
+        "    var r = t + s;\n"
+        "    if (r || o) n += 1000000;\n"
+        "  }\n"
+        "  return String(n);\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "40261026", NULL };
+
+    sweep("truth", "truth.js", setup, "run()", want, 16384);
+}
+
+/* An array literal takes the references of its elements (OP_array_from,
+   js_create_array_free): with too little memory for the array or its
+   elements it fails with the out of memory error and frees each element
+   once, objects and strings made for it too. */
+static void test_array_literal_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var keep = [], s = '';\n"
+        "  for (var i = 0; i < 24; i++) {\n"
+        "    var o = { i: i };\n"
+        "    s += 'abcdefghij';\n"
+        "    var a = [o, 'k' + i, s + i, [i, o], { o: o }, i];\n"
+        "    if (i % 6 === 0) keep.push(a);\n"
+        "  }\n"
+        "  return keep.map(function (a) { return a[0].i + a[1] + a[2].length + a[3][1].i + a[4].o.i + a[5]; }).join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "0k011000,6k671666,12k12132121212,18k18192181818", NULL };
+
+    sweep("array literal", "array_literal.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -1956,6 +2088,34 @@ static void test_string_append_oom(void)
         sweep(calls[i], "append.js", setup, calls[i], want, 32768);
 }
 
+/* An array that is appended to takes its first room in one allocation (push,
+   an index at the length, spread, splice and the arrays of the engine's own
+   builtins), and out of memory there fails the call with the out of memory
+   error and loses nothing. Each sweep runs the script for every room of
+   memory from nothing up and in a full heap. */
+static void test_array_room_oom(void)
+{
+    static const struct { const char *name, *src, *want; } cases[] = {
+        { "push", "var a = []; for (var i = 0; i < 10; i++) a.push(i); a.length + ':' + a.join(',')", "10:0,1,2,3,4,5,6,7,8,9" },
+        { "push many", "var a = []; a.push(1, 2, 3, 4, 5, 6); a.length + ':' + a.join(',')", "6:1,2,3,4,5,6" },
+        { "index", "var a = []; for (var i = 0; i < 9; i++) a[i] = i * 2; a.length + ':' + a.join(',')", "9:0,2,4,6,8,10,12,14,16" },
+        { "spread", "var s = [1, 2, 3, 4, 5], a = [...s, ...s]; a.length + ':' + a.join(',')", "10:1,2,3,4,5,1,2,3,4,5" },
+        { "splice", "var a = []; for (var i = 0; i < 6; i++) a.splice(a.length, 0, i); a.length + ':' + a.join(',')", "6:0,1,2,3,4,5" },
+        { "entries", "var o = { a: 1, b: 2, c: 3 }; Object.entries(o).join(';')", "a,1;b,2;c,3" },
+        { "string split", "'a,b,c,d,e'.split(',').join('')", "abcde" },
+        { "JSON.parse", "JSON.stringify(JSON.parse('[1,[2,3],[4]]'))", "[1,[2,3],[4]]" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(cases); i++) {
+        const char *want[2];
+
+        want[0] = cases[i].want;
+        want[1] = NULL;
+        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 16384);
+    }
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -2032,8 +2192,10 @@ static void test_finrec_job_full_heap(void)
    the call has: under a memory limit with no room for the register code
    the call fails with the out of memory error, and gives its answer at a
    limit with room. f(3) converts f and g, which takes about 12.3 KiB at its
-   peak, with the scratch of the pass (engine/regvm-pass.h), so the rooms go
-   up to 16 KiB. The register stack is
+   peak, with the scratch of the pass (engine/regvm-pass.h), and 4 KiB more
+   for an arena of small blocks of a size the setup asked for none of: f
+   holds g itself, not a JSVarRef (capture_by_value), so the setup made no
+   block of that size. So the rooms go up to 20 KiB. The register stack is
    made by JS_NewRuntime, before the limit (test_regvm_stack_oom).
    Each allocation of the pass failing in turn is test_regvm_convert_alloc
    of unit-white.c. */
@@ -2051,7 +2213,7 @@ static void test_regvm_convert_oom(void)
     snprintf(setup + n, sizeof(setup) - n, "; }\n"
              "return function (k) { var s = 0, i; for (i = 0; i < k; i++) s = s + g(i); return s; };\n"
              "})();");
-    sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 16384);
+    sweep("conversion to register code", "<regvm>", setup, "f(3)", want, 20480);
 }
 
 /* The conversion of a function with a switch of 31 string cases, whose
@@ -2108,6 +2270,62 @@ static void test_regvm_args_oom(void)
 
     sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+}
+
+/* Array destructuring with no iterator (engine/regvm-ops-dst.h) makes the
+   Array Iterator only when it needs it: at a read the array cannot give
+   (a hole, an array no longer fast), also after a default changed the next
+   of %ArrayIteratorPrototype%, when the record gets a new built-in next, at
+   a close that would read a return, and in the unwinding when an exception
+   passes the destructuring and there is a return to call. The first
+   destructuring makes the built-in next, which the engine makes at its
+   first use. Each allocation of making them failing in turn
+   ends in the out of memory error with nothing lost, and the call after it
+   answers as one with room does. Running out of memory skips the finally
+   blocks that put back the return and the next of %ArrayIteratorPrototype%,
+   so each call puts them back first. */
+static void test_regvm_dst_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () { 'use strict';\n"
+        "  var AIP = Object.getPrototypeOf([][Symbol.iterator]()), next0, log = [];\n"
+        "  function holes() { var a = [1, 2]; a.length = 4; const [x, y, z = 'z', w] = a; return [x, y, z, w].join(); }\n"
+        "  function slow(a) { const [x = (a[50] = 5, 'd'), y, ...r] = a; return x + y + r.length; }\n"
+        "  function swap() { var a = [undefined, 2], old = next0 = AIP.next; a.length = 3;\n"
+        "    try { const [x = (AIP.next = function () { log.push('n'); return { done: true }; }, 'x'), y, z = 'z'] = a;\n"
+        "      return [x, y, z].join(); } finally { AIP.next = old; } }\n"
+        "  function close() { AIP.return = function () { log.push('r'); return {}; };\n"
+        "    try { const [x] = [1, 2, 3]; return x; } finally { delete AIP.return; } }\n"
+        "  function unwind() { AIP.return = function () { log.push('u'); return {}; };\n"
+        "    try { const [x, y = (() => { throw 'e'; })()] = [1, undefined]; } catch (e) { return e; } finally { delete AIP.return; } }\n"
+        "  return function () { log.length = 0; delete AIP.return; if (next0) AIP.next = next0;\n"
+        "    return [holes(), slow([undefined, 2, 3]), swap(), close(), unwind(), log.join('')].join('|'); };\n"
+        "})();\n";
+    static const char *const want[] = { "1,2,z,|d249|x,2,z|1|e|ru", NULL };
+
+    sweep("array destructuring that makes its iterator", "<dst>", setup, "f()", want, 16384);
+}
+
+/* Closures that hold the values of the variables they capture, which no
+   code changes once they are captured (capture_by_value, engine/quickjs.c):
+   the values go into the block of the closure, so each allocation of
+   making such a closure, in a plain function, two functions down and in a
+   generator that goes on after it made one, failing in turn ends in the
+   out of memory error with nothing lost, and the call after it answers as
+   one with room does. */
+static void test_capture_value_oom(void)
+{
+    static const char setup[] =
+        "var f = (function () { 'use strict';\n"
+        "  function mk(a, b) { const c = a + ':' + b, o = { a }; let d = [a]; d.push(b); return () => c + o.a + d.length + a + b; }\n"
+        "  function* gen(n) { const k = 's' + n; const g = () => k; yield g(); yield g; }\n"
+        "  function deep(x) { return () => () => x + '!'; }\n"
+        "  return function () { var r = [], i, it; for (i = 0; i < 3; i++) r.push(mk(i, 'v' + i)());\n"
+        "    it = gen(4); r.push(it.next().value, it.next().value()); r.push(deep('q')()()); return r.join(','); };\n"
+        "})();\n";
+    static const char *const want[] = { "0:v0020v0,1:v1121v1,2:v2222v2,s4,s4,q!", NULL };
+
+    sweep("closures that hold values", "<capture>", setup, "f()", want, 16384);
 }
 
 /* A function whose stack is too deep for the temps folds it into Arrays at
@@ -2295,13 +2513,21 @@ int main(void)
     test_key_names_oom();
     test_normalize_oom();
     test_map_grow_oom();
+    test_array_room_oom();
     test_string_append_oom();
     test_copy_props_oom();
+    test_has_property_oom();
+    test_getel_local_key_oom();
+    test_putel_local_key_oom();
+    test_truth_oom();
+    test_array_literal_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();
     test_regvm_cases_oom();
     test_regvm_args_oom();
+    test_capture_value_oom();
+    test_regvm_dst_oom();
     test_regvm_fold_oom();
     test_regvm_stack_oom();
     test_regvm_scratch();

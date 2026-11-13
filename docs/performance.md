@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the optimizer pass, the cost of the generated code against native C, stability under load), with what was tried and not done'
+summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of liustack/quickjs on tifa's pages before a release
@@ -61,7 +61,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.29.10 | [RegisterStartTag and RegisterEndTag](#react-doms-start-and-end-tags-in-c) | The workbench pages of the shop take 7.3% less time, the storefront pages 7.0%, the MUI pages 3.8% and the bench pages 33%. A VM holds about 26 KB more |
 | v0.29.11 | [A stack check in every function that calls](#every-function-that-calls-has-a-stack-check) | A cost, for a safe fault: up to 0.6% more time (0.27% to 0.36% more instructions) |
 | v0.30.0, v0.30.1 | Interrupt reaches the tag functions, long ropes, `repeat` and regexp compiles | Fixes. No speed claim |
-| v0.30.2 | JavaScript runs in a register interpreter, and the stack interpreter of QuickJS is gone ([CHANGELOG](../CHANGELOG.md)) | A first reading in tifa, with only the engine changed from v0.30.1 (linux/amd64, an AMD EPYC 7B13 with 4 cores, one core, built without PGO, 60 renders a page, three rounds in turning order, sums of the pages' medians): the six workbench pages of the shop take 0.893 of the time (0.892 to 0.899 over the rounds), its three storefront pages 0.864 (0.859 to 0.869), the three MUI pages 0.891 (0.890 to 0.896). Each of the 12 pages is faster, 0.857 to 0.908. This run has no control of a build against itself (the one made for the preview stayed within 1%), and the comparison over the code positions of [measuring.md](measuring.md) is still to come |
+| v0.30.2 | JavaScript runs in a register interpreter, and the stack interpreter of QuickJS is gone ([the register interpreter](#the-register-interpreter)) | A first reading in tifa, with only the engine changed from v0.30.1 (linux/amd64, an AMD EPYC 7B13 with 4 cores, one core, built without PGO, 60 renders a page, three rounds in turning order, sums of the pages' medians): the six workbench pages of the shop take 0.893 of the time (0.892 to 0.899 over the rounds), its three storefront pages 0.864 (0.859 to 0.869), the three MUI pages 0.891 (0.890 to 0.896). Each of the 12 pages is faster, 0.857 to 0.908. This run has no control of a build against itself (the one made for the preview stayed within 1%), and the comparison over the code positions of [measuring.md](measuring.md) is still to come |
 
 ## Measuring in tifa
 
@@ -98,9 +98,9 @@ Build every position with the same flags (`-pgo=off` or the same profile), and p
 
 Making the positions:
 
-- The tool in [testing.md](testing.md#time-one-build-against-another) makes the positions of the C engine, runs the builds in turn and judges the result (`bench build`, `bench run`, `bench judge`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_CallInternal_block:16` on the copy (use `shift:0` and `front:...:0` for no move, and the name of the first engine function of your binary, which `go tool nm -n` shows), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
+- The tool in [testing.md](testing.md#time-one-build-against-another) makes the positions of the C engine, runs the builds in turn and judges the result (`bench build`, `bench run`, `bench judge`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_RegvmRun_block:16` on the copy (use `shift:0` and `front:...:0` for no move, and the name of the first engine function of your binary, which `go tool nm -n` shows), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
 
-A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions. Make those two places with the generator instead: `-align64 JS_CallInternal:48` and `-align64 JS_CallInternal:0` put the body there with its pool on 16 bytes.
+A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. On amd64 the register loop `JS_RegvmRun` reads a 16-byte mask from its pool with `xorpd` (to flip the sign of a double), and the memory operand of `xorpd` must sit on 16 bytes. In the shipped layout the pool is on 16 bytes. At a front that is not a multiple of 16 it is not. Such a layout faults the first time a script negates a double, so the fronts are only 0, 16, 32 and 48: xform and `ParsePosition` of `bench build` refuse the others. Make the places in between with the generator instead: `-align64 JS_RegvmRun:8` puts the body at 8 with its pool on 16 bytes.
 
 ## The C engine
 
@@ -701,6 +701,71 @@ The time on darwin/arm64 moved by -0.7% to +1.3% on these four pages, within the
 | the shop's pages | -0.12% to -0.28% | -0.6% to +0.7%, noise |
 | `r_react_ssr` | -0.29% | |
 
+### `in` without references on the prototype chain
+
+[The `in` operator walks a prototype chain without references](changes/objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references). Against the change before it, on the native C tree with the pool of tifa's settings (`render young=1 shapes=2048 warm=2 n=4`, tifa=1 but for React), with the same HTML on the 23 pages of the shop and MUI. Instructions per render are from callgrind on linux/amd64 (the timed renders only, `host_poll` left out). The objects asked are counted in `JS_HasProperty`: a pair of reference changes less for each.
+
+| Page | Objects asked a render | Instructions |
+| --- | ---: | ---: |
+| the shop's English home page | 79,709 | -0.29% |
+| the shop's Chinese products page | 128,128 | -0.29% |
+| the same two with a stand-in for `URL` | 8,861 and 18,376 | -0.05% and -0.07% |
+| the workbench studio page | 32,861 | -0.17% |
+| MUI's orders page | 12,651 | -0.05% |
+| `r_react_ssr` | 2,129 | -0.06% |
+
+### A key in a local without a reference
+
+[A key in a local is read without a reference](changes/c-engine.md#a-key-in-a-local-is-read-without-a-reference). Against the change before it, measured as above, with the same HTML on the 23 pages of the shop and MUI.
+
+| Page | Instructions |
+| --- | ---: |
+| the shop's English home page | -0.06% |
+| the shop's Chinese products page | -0.08% |
+| the same two with a stand-in for `URL` | -0.09% and -0.13% |
+| the workbench studio page | -0.13% |
+| MUI's orders page | -0.52% |
+| `r_react_ssr` | -0.10% |
+
+### The truth of a value without a reference
+
+[The truth of a value is read without a reference](changes/c-engine.md#the-truth-of-a-value-is-read-without-a-reference). Against the change before it, measured as above, with the same HTML on the 23 pages of the shop and MUI.
+
+| Page | Instructions |
+| --- | ---: |
+| the shop's English home page | -0.05% |
+| the shop's Chinese products page | -0.05% |
+| the same two with a stand-in for `URL` | -0.09% and -0.06% |
+| the workbench studio page | -0.21% |
+| MUI's orders page | -0.12% |
+| `r_react_ssr` | -0.02% |
+
+### Array literals that take their elements
+
+[An array literal takes the references of its elements](changes/c-engine.md#an-array-literal-takes-the-references-of-its-elements). Against the change before it, measured as above, with the same HTML on the 23 pages of the shop and MUI.
+
+| Page | Instructions |
+| --- | ---: |
+| the shop's English home page | -0.20% |
+| the shop's Chinese products page | -0.21% |
+| the same two with a stand-in for `URL` | -0.31% and -0.34% |
+| the workbench studio page | -0.33% |
+| MUI's orders page | -0.17% |
+| `r_react_ssr` | -0.28% |
+
+### A key in a local set without a reference
+
+[A key in a local is set without a reference](changes/c-engine.md#a-key-in-a-local-is-set-without-a-reference). Against the change before it, measured as above, with the same HTML on the 23 pages of the shop and MUI.
+
+| Page | Instructions |
+| --- | ---: |
+| the shop's English home page | -0.03% |
+| the shop's Chinese products page | -0.05% |
+| the same two with a stand-in for `URL` | -0.05% and -0.08% |
+| the workbench studio page | -0.09% |
+| MUI's orders page | -0.34% |
+| `r_react_ssr` | 0.00% |
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.
@@ -743,6 +808,8 @@ What the generator could still give back is small or already tried. The absolute
 All changes in time are under 3%, so the instructions are the measure. All 4 positions agree on amd64 for every workload. The time on amd64 fell more than the instructions did, by a cause not measured. The generated assembly is 1.9% smaller on amd64 and 2.1% on arm64.
 
 ### Where a render's time goes on the C engine
+
+Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so the shares below no longer describe it.
 
 From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/quickjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
 
@@ -795,6 +862,66 @@ A regexp with a list of 16 alternatives or more that start with a literal [goes 
 | `r_react_ssr` | 31.25M | 31.26M | +0.01% |
 
 The workbench gains from react-spring's 148 color names: the matcher runs 2,601K instructions a render there, where it ran 4,877K. The other pages have no such list, and their matcher runs up to 69K more instructions a render. The time of the pages was not measured. `BenchmarkRegexColors` on an Apple M with other work on the machine takes 0.48 of the time on a value with a name and 0.28 on a shadow with none.
+
+### Arrays that are appended to take room for 8 elements at first
+
+[An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).
+
+### Calls that copy their last locals
+
+[A call copies its last locals into its window itself](changes/c-engine.md#a-call-copies-its-last-locals-into-its-window), where a `MOV` for each came before it. The generated engine inside tifa on an Apple M4 (darwin/arm64), with no other job on the machine, warm renders of one VM, 8 rounds that alternate the two builds and turn their order, against `167dd40c`. Time is the median of the round means, with the lowest and highest round of each build. Instructions are retired instructions per render, the median of the round medians. The HTML of every page is the same.
+
+| Pages | Before | After | Time | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, fourteen store pages (mean) | 19.48 ms (19.33 to 19.53) | 19.23 ms (19.15 to 19.37) | -1.32% | -0.25% |
+| tifa's shop, six workbench pages (mean) | 8.86 ms (8.81 to 8.92) | 8.78 ms (8.71 to 8.89) | -0.89% | -0.24% |
+| React's page | 1.970 ms (1.951 to 1.982) | 1.954 ms (1.938 to 1.968) | -0.81% | -0.53% |
+| tifa's MUI test app, three pages (mean) | 12.18 ms (12.09 to 12.32) | 12.14 ms (11.95 to 12.59) | -0.30% | -0.20% |
+
+The time falls more than the instructions: the calls that copy run 4.5% to 7.6% fewer dispatches, each a jump the CPU predicts on the opcode. On amd64, the cost of each count of copies in llc's output times how often it comes estimates -0.44% of the instructions on React's page and -0.15% to -0.19% on the shop and MUI pages. The time on amd64 was not measured.
+
+### LR saved once on arm64
+
+[LR is saved once on arm64](changes/c-engine.md#lr-is-saved-once-on-arm64): the generated code of arm64 no longer stores and loads LR itself in each function that calls. The generated engine inside tifa on an Apple M4 (darwin/arm64), with no other job on the machine, warm renders of one VM, 16 rounds that alternate the two builds and turn their order, against the same C generated by the generator before the change (`9e939553`). Time is the median of the 16 round ratios, after it the lowest and highest round. Instructions are retired instructions per render, the median of a page's renders, the mean over pages. Every page gives the same HTML.
+
+| Pages | Before | After | Time | Instructions |
+| --- | ---: | ---: | ---: | ---: |
+| tifa's shop, fourteen store pages (mean) | 19.22 ms | 18.99 ms | -1.21% (-4.92% to +1.97%) | -1.14% |
+| tifa's shop, six workbench pages (mean) | 8.77 ms | 8.73 ms | -0.54% (-5.21% to +3.45%) | -1.06% |
+| React's page | 1.963 ms | 1.963 ms | -0.73% (-5.59% to +9.10%) | -0.75% |
+| tifa's MUI test app, three pages (mean) | 11.97 ms | 11.99 ms | -0.39% (-3.56% to +7.14%) | -1.06% |
+
+The instructions fall by about two for each call into a function that saves LR. The time falls by about as much as the instructions, inside the spread of the rounds. The `.s` files of arm64 are 0.40% smaller. amd64 does not change.
+
+### Array destructuring with no iterator
+
+[Array destructuring with no iterator](changes/c-engine.md#array-destructuring-with-no-iterator). Counted on 2026-11-13 on the native C tree at 62df0bc8 against 4922b91a (linux/arm64 callgrind, three timed renders of each page after two warm ones, a young collection after each): 0.71% fewer instructions on the workbench pages (0.48% to 0.85% a page), 0.33% on the storefront (0.14% to 0.51%), 0.27% on MUI (0.21% to 0.29%) and 0.31% on React, and with the URL stand-in (`urlmemo.js`) 0.84%, 0.53% and 0.26%. No page runs more. Timed in tifa's `test/ssr` on linux/amd64 (one core, 60 renders of each page, the P50, 5 alternating rounds), the pages took 0.988 of the time on MUI, 0.996 on the storefront and 1.001 on the workbench, where the engine against a copy of itself took 0.982, 0.994 and 1.001: below what the timing can show, and no page took more than 1.007.
+
+### The register interpreter
+
+[The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
+
+The move alone: main at `712263a0`, which has the other changes of v0.30.2 already, against `69f12f87`, the same with the register interpreter. One VM warm, one core, 3 rounds that alternate the two builds, the geometric mean of the medians of the pages of each app. The rounds differ by 1% to 3%. Each number is the time with the register interpreter over the time with the stack interpreter.
+
+| Pages | linux/amd64 (AMD EPYC 7B13, 4 cores) | darwin/arm64 (Apple M4, `GOMAXPROCS=1`) |
+| --- | ---: | ---: |
+| React's page | 0.701 | 0.767 |
+| tifa's shop, storefront pages | 0.858 | 0.800 |
+| tifa's shop, workbench pages | 0.888 | 0.834 |
+| tifa's MUI test app | 0.864 | 0.825 |
+
+The release against v0.30.1, in tifa's `test/ssr` on linux/amd64 (the same server, one core, built without PGO, 60 renders of each page, 3 rounds in turning order, sums of the medians of the pages): the six workbench pages of the shop take 0.893 of the time (0.892 to 0.899 over the rounds), its three storefront pages 0.864 (0.859 to 0.869) and the three MUI pages 0.891 (0.890 to 0.896). Each of the 12 pages is faster, by 0.857 to 0.908. Only the engine changed between the two builds, so this holds all the engine changes of v0.30.2 and not the move alone. The comparison over the code positions of [measuring.md](measuring.md) is not made yet, and a build of this reading against itself was not timed (the one made for the preview stayed within 1%).
+
+What it costs in memory, as `MemorySize` of one VM after it rendered each page once and ran a full GC (linux/amd64, tifa's `internal/ssr`, the shop's 20 pages and the React page, two runs gave the same):
+
+| | stack interpreter | register interpreter | |
+| --- | ---: | ---: | ---: |
+| tifa's shop, 20 pages | 13,335,360 | 15,858,232 | +18.9% |
+| React's page | 775,608 | 932,080 | +20.2% |
+
+The extra memory is the register code of the functions that ran and a register stack of 31,680 bytes at first. Counted on the native C tree on darwin/arm64 (one render of each, then a full GC): the shop's 2,341 converted functions take 1,751,456 bytes, 748 on average and 33,736 at most, and React's 90 take 152,192, 1,691 on average and 33,808 at most.
+
+The changes made to the register loop since are measured in their own sections: [Calls that copy their last locals](#calls-that-copy-their-last-locals), [A key in a local without a reference](#a-key-in-a-local-without-a-reference), [The truth of a value without a reference](#the-truth-of-a-value-without-a-reference), [Array literals that take their elements](#array-literals-that-take-their-elements), [A key in a local set without a reference](#a-key-in-a-local-set-without-a-reference) and [Array destructuring with no iterator](#array-destructuring-with-no-iterator).
 
 ### Stability under load
 
@@ -924,17 +1051,27 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Reading the interrupt flag in the register loop only at a jump back**, measured on 2026-11-12 in llc's output of the generator's steps. The conditional jumps forward stopped reading the flag, so a loop saw it at its jump back and straight code at its next call. Per 1,000 dispatches it gave 24932 on arm64 and 26608 on amd64, against 25295 and 26972 with the flag read through `rt`, 1.4% fewer. It was not done because a stop lands somewhere else: the flag is seen only at the next jump back or call, not at the next conditional jump as before, and 8 corpus scripts and two injection scripts (24 and 44 runs) end at another place.
 - **The conditional jumps of the register loop as one shape that reads the flag at every jump**, measured the same day: 25241 and 26917 per 1,000 dispatches, 0.2% fewer, inside what llc's count can tell apart, so not taken.
 - **`pc` pointing at the opcode in the register loop** rather than past it, measured the same day: on top of the shape above 25754 and 26948, 2.0% more on arm64, and on top of the flag read only at a jump back 25432 and 26612, more on arm64 as well. Not taken.
+- **A call that also copies constants into its window**, measured on 2026-11-12 in llc's output of the generated engine. The first form of [the calls that copy their last locals](#calls-that-copy-their-last-locals) took a `LOADK` too, told a slot from a constant at each copy and tested the count from four down. A call with one copy, the most common, then ran more instructions than the `CALL` and the `MOV` it stood for, so the form kept takes slots only and tests a single copy first.
 - **Freeing the objects that die with an object by a direct call, to a depth cap**, rather than through `gc_zero_ref_count_list`, counted on 2026-11-12 and not built. Disassembled from the generated engine (5fe8d6f7): freeing an object whose count reaches zero, at phase NONE down to `free_object` and back, is 67 instructions on amd64 and 71 on arm64. Of these, 26 / 27 are the call (the Go prologue with its stack check, the loads of the arguments, the spills, the epilogue), 17 / 14 the dispatch on the tag and the phase, and 24 / 30 the round trip of `free_zero_refcount_first` (the moves between lists, the mark, the nesting count, the phase). An object that dies while another is freed costs `__JS_FreeValueRT` in phase DECREF (40 / 44) and an item of the loop of `free_zero_refcount` (29 / about 19). Per render, 4,171 objects are freed first and 2,003 die with them on React, 49,086 and 16,117 on the shop's store, 23,810 and 12,156 on wb, 29,083 and 14,868 on MUI. A direct call would save at most about 29 instructions for each object that dies with another: 0.19% of React, 0.20% of store, 0.37% of wb and 0.34% of MUI, upper bounds, and the first object of each free keeps its round trip. It changes the order of the finalizers: today an object's finalizer runs before those of its children, which go in reverse order of the properties, depth first, and with a direct call the children finish first. No script can see it (no JavaScript runs during a free, WeakRef, WeakMap and WeakSet read the count when a script runs, and FinalizationRegistry jobs are queued in the order of the registries in a collection, not of the frees). The Go side would get the calls of `host_release` in another order, so a later handle may get another number, which no API shows. Each level would take about 300 bytes of Go stack below the frame that drops the last reference, which lowers the depth floors unless the recursion stops where the stack has no more room than now.
 - **Room reserved by the place that creates an object**, so that an object starts with the room the objects made there before ended with, counted on 2026-11-12 on the native host set up as tifa's pool, with the shape cache on, and not built. Kept shapes take away most copies of shapes (MUI's orders page 10.2k to 3.0k a render, the shop's home 5.1k to 0.8k), but not the times the property array of an object grows after it is made (the shop's home 33.2k to 33.0k, its products page 57.1k to 55.1k). All those moves together are about 0.25% of a render's instructions, and about 0.15% after object literals got the room of an empty object (see [Object literals with the room of an empty object](#object-literals-with-the-room-of-an-empty-object)). The most a table per place could give is about 0.2%, not worth the table and the memory it holds.
 - **The iterator of a `for in` loop in the block of its object**, so that a loop start makes one allocation rather than two, counted on 2026-11-12 and not built. As an upper bound, a probe that kept the last freed iterator and gave it to the next loop, so that nearly no loop allocated one, took 0.04% of the instructions of MUI's orders page (10,376 loops a render), 0.03% of the order page and nothing of the home page: the front cache makes a small block and its free cost about 9 instructions together. The rest of the cost of the iterator object is its object and finalizer, which this would keep.
+- **Room remembered per place for the arrays that are built by appending, and the exact length for the results of `concat` and `map`, `Array(n)` and the array of own keys**, counted and measured on 2026-11-12 on top of [arrays that take room for 8 elements at first](#arrays-that-are-appended-to-take-room-for-8-elements-at-first). The place is the bytecode site of an `[]` literal, remembering the smaller of the last two lengths its arrays ended with, as moejs's allocation sites do: modelled from the length of each array at its death, it saves 0.27% to 0.28% on the shop's pages, 0.23% on a workbench page and 0.06% on MUI's orders page, against 0.23%, 0.23%, 0.19% and 0.39% for the 8 slots, and needs a table and a lookup for each `[]`. One site of 41 makes 41% of the regrows of the shop's products page and one of 19 91% of MUI's orders page. Not built: the saving is the size of the room reserved by the place that creates an object (above), which was dropped. The exact length (the room of `Array(len)` for `map`, the sum of the lengths of the arrays that `concat` spreads, the number of own keys) was built and measured on top of 4 slots: React -0.001%, the shop's home -0.061%, its products page +0.012%, a workbench page +0.025% and MUI's orders page -0.076% of the instructions, under 0.3% on every page. It is kept as the commit `wip(engine): give the result of concat and map, Array(n) and the own keys room at once` of the branch `regvm/s1-reserve`, with its tests.
+- **Returning the receiver from `toLowerCase` and `toUpperCase` when no character changes** (and converting a string of 8 bits with only ASCII in one pass over its bytes when one does), measured on 2026-11-12 on the native C tree at 641f7dc7, kept as the commit `wip(engine): return the receiver when toLowerCase or toUpperCase changes nothing` of the branch `regvm/s1-case` and not handed in. A render of the store pages makes 1,963 (home) and 3,339 (products) conversions that are not of the empty string, of which 1,711 and 2,656 change nothing, and each cost about 555 instructions because a new string was made anyway. The change took 0.268% (home) and 0.297% (products) of a render's instructions (callgrind, `render tifa=1 young=1 shapes=2048`, one timed render after two warm ones, `host_poll` and `__shadow_remaining` left out), 0.121% on wb studio, 0.020% on MUI orders and 0.006% on a React render, under the 0.3% a change needs. Most of those calls come from the URL polyfill of core-js, which lowercases the scheme and host of every link and which a Go URL replaces in tifa. With a stand-in that reuses a URL object after the first render (`urlmemo.js`), the same pages make 295 (home) and 502 (products) conversions, of which 43 and 155 change nothing, so the polyfill makes 1,668 and 2,837 of them, and the change takes 0.054% (home), 0.071% (products), 0.057% (wb studio) and 0.018% (MUI orders), under the 0.2% a page must keep. A scan of 8 bytes at a time was slightly worse than the byte loop (0.290%).
+- **All the closure variables of a frame in one counted block**, counted on 2026-11-12 on top of the closure made at its final shape and not built. A closure variable (`JSVarRef`, 48 bytes) is one `js_malloc` with no zeroing and one free, about 50 instructions for the pair in this allocator, so a block for a frame saves about 48 for each variable and costs about 60 for the block and about 5 for a count kept for each variable. Per render the store makes 14,157 closure variables in at most 4,956 frames, wb 8,454 in 3,684 and MUI 12,401 in 4,325: about 0.22%, 0.18% and 0.22% fewer instructions, under 0.3% on every page. It would also need a pointer from the frame to its block, which every exit, unwind and generator frame must drop, since a variable that dies while its frame runs is made again at the next capture. And a block lives as long as its longest-lived variable, so a closure that outlives the others keeps about 56 bytes for every captured variable of its frame, not just its own.
+- **The array of a closure's variables in the block of the closure**, measured on 2026-11-12 on top of the closure made at its final shape, callgrind per render with tifa's URL cache (without it in brackets): store 0.03% fewer instructions (0.02% more), wb 0.05% fewer (0.00%), MUI 0.02% more (0.28% more), React 0.07% more. The `js_mallocz` of the array went (0.24% of the store's instructions) and its free in the finalizer (0.04%), but the zeroing moved into `js_closure2` (0.08%), and passing the size of the tail through `JS_NewObjectFromShape` made every object made there cost more (0.15% net). With an allocation of its own for closures the best is about 0.2%, under 0.3% on every page.
+- **A callee that does not own an argument that comes from a local of its caller**, so that the pair of count operations around the argument goes, prototyped on 2026-11-13 on d90b4df5 with a mask of the borrowed slots in each frame, and not taken. Callgrind on linux/amd64, the timed render only: React 2.5% more instructions, tifa's pages 1.5% to 1.9% more (the store with the URL stand-in), where the count had estimated 0.4% to 1.7% fewer. The pairs it removes are real (261K fewer count operations a React render), but a pair costs only 6 to 7 instructions here and the mask about 10 a call (its byte, the test at every return, the bits in the frame): the mask alone, with nothing borrowed, is 1.4% to 2.2% more. It also lost 6 levels of a recursion through a bound function in the native ASan build. Only a form in which a frame with no borrowed argument pays nothing could gain, and that needs a new count first.
+- **A method call that copies its last locals into its window**, as [the calls that copy their last locals](#calls-that-copy-their-last-locals) do for the other calls, counted on 2026-11-13 on 9e939553 and not built. The arguments a method call could copy (the last ones that are a local, an argument or `this`, at most 4) are 1.0% to 1.7% of the dispatches of a render, against 4.5% to 8.2% for the calls that copy today: most arguments of a method call are computed in place, and most method calls that could copy any copy one. What a copy saves was measured, not estimated: with the copies of the other calls turned off, a render ran 3.3 to 4.4 more instructions for each copy (callgrind on linux/arm64, the native C tree, the timed render only, `host_poll` and `__shadow_remaining` left out, the same HTML). At that price a method call that copies would save 0.12% of React's instructions, 0.05% of the store pages' (0.08% with the URL stand-in), 0.07% of the workbench pages' and 0.05% of the MUI pages', and at twice that price every group would still be under 0.3%. amd64 was not measured.
 
 ## Where to continue
 
 What the measurements above leave for the C engine, none of it large. A change under about 3% needs the positions of [Code positions](#code-positions), and callgrind below that.
 
+- **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes: its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it. In the build measured on 2026-11-13 it started on a boundary of 32 bytes, not 64. Whether a fixed place gains anything is not measured yet.
+- **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
+
+Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
+
 - **The interpreter function** is 52.7% of the instructions of tifa's pages (15 pages, 4,147 million instructions a render on average) and the next functions are far behind: `add_property` 4.9%, `free_object` 2.8%, `js_call_c_function` 2.2%, `JS_NewObjectFromShape` 1.7%, `JS_GetPropertyInternal` 1.7%, `lre_find` 1.6%.
 - **The entry of a JavaScript call** is about 95 of the 190 native instructions a call takes, and 73,000 calls make a workbench render. The loop that sets the locals to `undefined` is 2.1% of the interpreter's native instructions. Smaller entries have been tried ([Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall), and fewer arguments above).
 - **Adding a property** (`add_property`, 4.9% of the instructions and 8.6% of the last level misses) is the largest piece of property access that is left. Object literals now skip it for plain keys ([Object literals made at their final shape](#object-literals-made-at-their-final-shape)).
 - **The translation** costs 11% to 13% and the polls 2% to 7%. What is left of the causes is the design (locals on the shadow stack) or tried above.
-- **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes is not measured yet. Until it is, its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it.
-- **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
