@@ -1946,6 +1946,7 @@ TEXT ·rqsort_stop(SB), $272-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffeee7ffffeea1
 	QUAD $0xffffeee7ffffee6f

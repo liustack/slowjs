@@ -7036,6 +7036,7 @@ TEXT ·resolve_labels(SB), $272-32
 	BYTE $0x00
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0x8000000080000000
 	QUAD $0x8000000080000000
@@ -8646,6 +8647,7 @@ TEXT ·compute_stack_size(SB), $224-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xffffe8bdffffea5d
 	QUAD $0xffffeabeffffe8bd
@@ -13789,6 +13791,7 @@ TEXT ·capture_by_value(SB), $560-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffff820bffff81a7
 	QUAD $0xffff81cbffff820b
@@ -14000,6 +14003,7 @@ TEXT ·cbv_slot(SB), NOSPLIT|NOFRAME, $0-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffe8bfffffe8b
 	QUAD $0xfffffe38fffffe38
@@ -14155,6 +14159,7 @@ TEXT ·cbv_target(SB), NOSPLIT|NOFRAME, $0-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffe8ffffff9e
 	QUAD $0xffffffabffffffe8
@@ -14458,6 +14463,7 @@ TEXT ·poll_scan(SB), $112-48
 	QUAD $0x0f0000018fe900eb
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffb87fffffb87
 	QUAD $0xfffffbb0fffffb87
@@ -15971,6 +15977,7 @@ TEXT ·tdz_checks(SB), $256-24
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff0ccfffff0cc
 	QUAD $0xfffff2d1fffff2d1
@@ -21140,6 +21147,7 @@ TEXT ·share_local_slots(SB), $560-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffff7937ffff7928
 	QUAD $0xffff7937ffff7928
@@ -21326,6 +21334,7 @@ TEXT ·put_short_code(SB), $64-32
 	BYTE $0x00
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xfffffe2efffffde3
 	QUAD $0xfffffe2efffffe2e

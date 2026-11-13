@@ -6052,6 +6052,7 @@ TEXT ·next_token(SB), $208-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffec0afffff566
 	QUAD $0xffffec0affffec0a
@@ -6241,6 +6242,7 @@ TEXT ·js_parse_directives(SB), $128-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffea6fffffea6
 	QUAD $0xfffffea6fffffea6
@@ -7631,6 +7633,7 @@ TEXT ·js_parse_source_element(SB), $160-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffed55ffffe878
 	QUAD $0xffffed55ffffed55
@@ -14845,6 +14848,7 @@ TEXT ·js_create_function(SB), $304-40
 	QUAD $0x00031ce900000180
 	QUAD $0x00000000841f0f00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000002
 	QUAD $0x0000000000000003
@@ -15102,6 +15106,7 @@ TEXT ·js_resolve_module_top(SB), $128-32
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000000
 	QUAD $0x0000000000000001
@@ -17704,6 +17709,7 @@ TEXT ·resolve_scope_var(SB), $240-88
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff149fffff149
 	QUAD $0xfffff2c8fffff149

@@ -890,6 +890,7 @@ TEXT ·js_iterator_proto_func(SB), $192-72
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffeaffffec5c
 	QUAD $0xffffffeafffff8e0
@@ -2997,6 +2998,7 @@ TEXT ·js_function_bind(SB), $176-64
 	CALL ·abort(SB)
 	BYTE $0xeb
 	BYTE $0x10
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3824,6 +3826,7 @@ TEXT ·js_object_get___proto__(SB), $80-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff0dfffffec0
 	QUAD $0xfffffeccfffffecc
@@ -15411,6 +15414,7 @@ TEXT ·JS_RunYoungGC(SB), $176-16
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffff4456ffff429a
 	QUAD $0xffff4307ffff42f5
@@ -16907,6 +16911,7 @@ TEXT ·JS_ComputeMemoryUsage(SB), $256-24
 	BYTE $0x01
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x3ff0000000000000
 	QUAD $0x4048000000000000
@@ -18431,6 +18436,7 @@ TEXT ·JS_DumpMemoryUsage(SB), $144-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000000000000
 	QUAD $0x8000000000000000
@@ -19575,6 +19581,7 @@ TEXT ·JS_ToBool(SB), $48-40
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffc0ffffff3d
 	QUAD $0xffffffc7ffffffd2
@@ -19655,6 +19662,7 @@ TEXT ·JS_ToInt32Sat(SB), $112-48
 	QUAD $0x00000000602444c7
 	QUAD $0x2e6666661cebafeb
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -19722,6 +19730,7 @@ TEXT ·JS_ToInt64Sat(SB), $112-48
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -21600,6 +21609,7 @@ TEXT ·JS_RegvmStat(SB), $96-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff14fffffe43
 	QUAD $0xfffffe86fffffe7a
@@ -22307,6 +22317,7 @@ TEXT ·JS_ResolveModule(SB), $128-40
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000000
 	QUAD $0x0000000000000001

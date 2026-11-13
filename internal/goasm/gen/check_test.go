@@ -281,8 +281,9 @@ func TestPostLinkCheck(t *testing.T) {
 	// of 16, so the lowered text puts the function at that place in the
 	// object (FuncPlace, a .skip after a .p2align 6) and llc's alignment of
 	// the pool holds where it runs. A lowered text that starts the function
-	// on a plain 16 bytes, as it did before, leaves the pool 8 bytes off, and
-	// the check refuses it.
+	// on a plain 16 bytes, as it did before, leaves the pool 8 bytes off: the
+	// PCALIGN $16 in front of it (emitData) then pads it back onto 16, away
+	// from the displacements in the code, and the check refuses that.
 	if b, err := os.ReadFile(filepath.Join(work, "w-pn", "lowered.s")); err != nil {
 		t.Fatal(err)
 	} else {
@@ -302,7 +303,7 @@ func TestPostLinkCheck(t *testing.T) {
 		}
 		run(mod, "go", "build", "-tags", "goasmkeep", "-o", bin, ".")
 		out, err := gen("pn", env, append(alignArgs, "-verify-bin", bin, "-verify-pkg", "checkmini/mini", "-verify-all")...)
-		if err == nil || !strings.Contains(out, "vecpool: body data .LCPI") || !strings.Contains(out, "is not a multiple of its alignment 16") {
+		if err == nil || !strings.Contains(out, "vecpool: the data after the code would start at") || !strings.Contains(out, "not on 16 bytes") {
 			t.Errorf("-align64: a pool 8 bytes off 16 is not refused: %v\n%s", err, out)
 		} else {
 			t.Logf("-align64, vecpool on a plain 16 bytes: %s", lastLine(out))

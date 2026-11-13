@@ -364,6 +364,7 @@ TEXT ·js_date_constructor(SB), $176-64
 	QUAD $0x6666666666663feb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -8821,6 +8822,7 @@ TEXT ·js_async_generator_resume_next(SB), $192-24
 	BYTE $0x1a
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xfffff11dfffff1bf
 	QUAD $0xfffff1f1fffff11d
@@ -10561,6 +10563,7 @@ TEXT ·js_async_from_sync_iterator_unwrap(SB), $128-80
 	QUAD $0x441f0f664eeb00eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffa0fffffefe
 	QUAD $0xffffffa7ffffffb2
@@ -14760,6 +14763,7 @@ TEXT ·js_promise_all_resolve_element(SB), $208-80
 	QUAD $0x43e9d0490ff6854d
 	QUAD $0x401f0f4cebfffffc
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff44ffffff9b1
 	QUAD $0xfffff9a9fffffa62
@@ -17437,6 +17441,7 @@ TEXT ·js_dataview_constructor(SB), $160-64
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -17848,6 +17853,7 @@ TEXT ·js_atomics_op(SB), $160-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff751fffffc2e
 	QUAD $0xfffffc2bfffffc02
@@ -18281,6 +18287,7 @@ TEXT ·js_atomics_store(SB), $176-64
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -18378,6 +18385,7 @@ TEXT ·js_atomics_isLockFree(SB), $112-64
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -18800,6 +18808,7 @@ TEXT ·js_atomics_get_buf(SB), $144-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -19298,6 +19307,7 @@ TEXT ·js_dataview_getValue(SB), $160-72
 	QUAD $0x666666000000bce9
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -19616,6 +19626,7 @@ TEXT ·js_dataview_setValue(SB), $160-72
 	CALL ·abort(SB)
 	QUAD $0x401f0f000000ace9
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -20030,6 +20041,7 @@ TEXT ·js_uint8array_to_base64(SB), $160-64
 	CALL ·abort(SB)
 	QUAD $0x2e666666666656eb
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xfffffebffffffa60
 	QUAD $0xfffffb15fffffb25
@@ -22972,6 +22984,7 @@ TEXT ·js_typed_array_at(SB), $144-64
 	BYTE $0xeb
 	BYTE $0x35
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -23223,6 +23236,7 @@ TEXT ·js_typed_array_with(SB), $160-64
 	QUAD $0x66666666666643eb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000

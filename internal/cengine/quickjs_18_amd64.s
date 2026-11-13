@@ -12740,6 +12740,7 @@ TEXT ·JS_RegvmRun_block(SB), $256-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000000000000
 	QUAD $0x8000000000000000
@@ -13815,6 +13816,7 @@ TEXT ·rv_enter_args_block(SB), $128-24
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffbd9fffffbe8
 	QUAD $0xfffffbb9fffffbc9
@@ -15165,6 +15167,7 @@ TEXT ·JS_DefineProperty_block(SB), $208-24
 	QUAD $0x11ebfffff13fe900
 	QUAD $0x00000000841f0f66
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x41efffffffe00000
 	RET
@@ -18142,6 +18145,7 @@ TEXT ·JS_SetPropertyValue_block(SB), $160-24
 	CALL ·__JS_FreeValueRT(SB)
 	QUAD $0xfeb8e9ffffffffbb
 	QUAD $0x90000000e1e9ffff
+	PCALIGN $16
 	// data
 	QUAD $0x406fe00000000000
 	QUAD $0xc330000000000000
@@ -19389,6 +19393,7 @@ TEXT ·JS_FlattenIntoArray_block(SB), $272-24
 	QUAD $0xb48b4cf7ff834100
 	QUAD $0x6e830f000000d824
 	QUAD $0x9035ebbeebffffff
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000

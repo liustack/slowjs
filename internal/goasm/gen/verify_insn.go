@@ -1205,6 +1205,19 @@ func (m *matcher) next(what string) (insn, error) {
 
 // bodyOf locates the lowered function in the re-assembled object: its start
 // and size, and where its code ends (its constants follow).
+// dataPlaced refuses a body at body in the binary, with codeLen bytes of code
+// out of size, whose data would not start on 16 bytes. The data has a PCALIGN
+// $16 in front of it (emitData), which adds nothing only where the body sits
+// as the lowered object placed it. Off that, the PCALIGN pads, the data moves
+// away from the displacements the code has in its bytes, and the rest of the
+// function is not where this check looks for it.
+func dataPlaced(body, codeLen, size uint64) error {
+	if codeLen < size && (body+codeLen)%16 != 0 {
+		return fmt.Errorf("the data after the code would start at %#x, not on 16 bytes: the PCALIGN $16 in front of it moved it away from the code that reads it", body+codeLen)
+	}
+	return nil
+}
+
 func (k *checker) bodyOf(name string) (elf.Symbol, uint64, error) {
 	s, ok := k.low.byName[name]
 	if !ok {
@@ -1281,6 +1294,9 @@ func (k *checker) checkUnified(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size
@@ -2259,6 +2275,9 @@ func (k *checker) checkLeaf(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size

@@ -491,6 +491,7 @@ TEXT ·js_typed_array_set(SB), $192-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -961,6 +962,7 @@ TEXT ·js_typed_array_copyWithin(SB), $192-64
 	QUAD $0x45fffffb0ee9db31
 	QUAD $0xebfffffc55e9c931
 	BYTE $0x10
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -1518,6 +1520,7 @@ TEXT ·js_typed_array_fill(SB), $192-64
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x0000441f0f6636eb
+	PCALIGN $16
 	// data
 	QUAD $0x406fe00000000000
 	QUAD $0xc330000000000000
@@ -2023,6 +2026,7 @@ TEXT ·js_typed_array_reverse(SB), $96-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff21fffffcb2
 	QUAD $0xfffffe63fffffda5
@@ -2514,6 +2518,7 @@ TEXT ·js_typed_array_slice(SB), $176-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -2768,6 +2773,7 @@ TEXT ·js_typed_array_subarray(SB), $176-64
 	QUAD $0xfffffbfae9c931ff
 	QUAD $0xebfffffd32e9c031
 	QUAD $0x00000000801f0f17
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3739,6 +3745,7 @@ TEXT ·js_typed_array_sort(SB), $208-64
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000100000000
 	QUAD $0x0000000300000002
@@ -5245,6 +5252,7 @@ TEXT ·js_typed_array_indexOf(SB), $176-72
 	CALL ·__js_poll_interrupts(SB)
 	QUAD $0x00cae9ffffe91de9
 	QUAD $0x0000441f0f660000
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -5725,6 +5733,7 @@ TEXT ·js_TA_cmp_float16(SB), NOSPLIT|NOFRAME, $0-40
 	MOVQ AX, ret+32(FP)
 	QUAD $0x00441f0f0deb00eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	RET
@@ -6112,6 +6121,7 @@ TEXT ·js_TA_get_float16(SB), NOSPLIT|NOFRAME, $0-40
 	BYTE $0xc5
 	BYTE $0xeb
 	BYTE $0x08
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	RET
@@ -6532,6 +6542,7 @@ TEXT ·JS_ToInt32Clamp(SB), $128-72
 	QUAD $0xeba5ebff314505eb
 	BYTE $0x11
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -6639,6 +6650,7 @@ TEXT ·js_get_length64(SB), $144-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -7301,6 +7313,7 @@ TEXT ·js_typed_array_from(SB), $256-64
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -7766,6 +7779,7 @@ TEXT ·js_array_buffer_resize(SB), $128-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -8175,6 +8189,7 @@ TEXT ·js_array_buffer_slice(SB), $192-72
 	BYTE $0x18
 	CALL ·goasm_chunked_memcpy(SB)
 	QUAD $0x00401f0f5cebc0eb
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -8722,6 +8737,7 @@ TEXT ·js_array_buffer_constructor0(SB), $176-72
 	BYTE $0xeb
 	BYTE $0x35
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -9293,6 +9309,7 @@ TEXT ·js_array_buffer_transfer(SB), $144-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -17827,6 +17844,7 @@ TEXT ·get_set_record(SB), $176-64
 	QUAD $0x000000841f0f18eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000

@@ -260,6 +260,7 @@ TEXT ·re_parse_escape(SB), $128-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffa07fffffa07
 	QUAD $0xfffffa07fffffa07
@@ -1283,6 +1284,7 @@ TEXT ·lre_compile(SB), $144-72
 	BYTE $0x5a
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xffffed9bffffed9b
 	QUAD $0xffffede3ffffed9b
@@ -2065,6 +2067,7 @@ TEXT ·lre_chains(SB), $176-24
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff628fffff72a
 	QUAD $0xfffff628fffff628
@@ -2337,6 +2340,7 @@ TEXT ·lre_first_set(SB), $112-32
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffe76fffffec1
 	QUAD $0xffffffdafffffee0
@@ -5995,6 +5999,7 @@ TEXT ·re_parse_alternative(SB), $272-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xffffa379ffffa4f3
 	QUAD $0xffffa379ffffa379
@@ -11398,6 +11403,7 @@ TEXT ·re_emit_string_list(SB), $240-32
 	QUAD $0x000000841f0f6679
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffd772ffffd750
 	QUAD $0xffffd772ffffd747
@@ -11586,6 +11592,7 @@ TEXT ·get_class_atom1(SB), $96-48
 	QUAD $0x00005cb808488949
 	QUAD $0x0000037ce9a6eb00
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xffffff20fffffcd5
 	QUAD $0xffffff20ffffff20
@@ -13615,6 +13622,7 @@ TEXT ·parse_unicode_property(SB), $256-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffee2affffee02
 	QUAD $0xffffee2affffedf9
@@ -15034,6 +15042,7 @@ TEXT ·re_string_list_canonicalize(SB), $240-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffe6aeffffe68c
 	QUAD $0xffffe6aeffffe683
@@ -18616,6 +18625,7 @@ TEXT ·re_string_list_op(SB), $256-40
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x001f0f00000083e9
+	PCALIGN $16
 	// data
 	QUAD $0xffffd891ffffd86f
 	QUAD $0xffffd891ffffd866
@@ -21992,6 +22002,7 @@ TEXT ·lre_exec_backtrack(SB), $240-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffc637ffffc637
 	QUAD $0xffffc654ffffc654

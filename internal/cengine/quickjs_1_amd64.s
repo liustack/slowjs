@@ -717,6 +717,7 @@ TEXT ·rv_fold_leader(SB), $256-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000100000000
 	QUAD $0x0000000100000001
@@ -1282,6 +1283,7 @@ TEXT ·rv_fold_before(SB), $160-24
 	QUAD $0x0000dce9fffffd63
 	QUAD $0x00000000841f0f00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff9fefffffa09
 	QUAD $0xfffff9fefffff9fe
@@ -5572,6 +5574,7 @@ TEXT ·rv_one(SB), $160-24
 	BYTE $0x04
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffb711ffffbdd4
 	QUAD $0xffffb725ffffa9c5
@@ -6258,6 +6261,7 @@ TEXT ·rv_fold_after(SB), $160-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff761fffff790
 	QUAD $0xfffff71dfffff761
@@ -6838,6 +6842,7 @@ TEXT ·rv_fold_thaw(SB), $480-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000100000000
 	QUAD $0x0000000100000001
@@ -7696,6 +7701,7 @@ TEXT ·rv_fold_canonical(SB), $432-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000100000000
 	QUAD $0x0000000100000001
@@ -9379,6 +9385,7 @@ TEXT ·rv_wide_one(SB), $144-40
 	QUAD $0x666666000000e0e9
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffe2c7ffffe74c
 	QUAD $0xfffff33fffffe618
@@ -9525,6 +9532,7 @@ TEXT ·rv_local_slot(SB), $16-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff90ffffff90
 	QUAD $0xffffff71ffffff90
@@ -10320,6 +10328,7 @@ TEXT ·rv_store(SB), $96-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffd61fffffbb8
 	QUAD $0xfffffd48fffffd61
@@ -14152,6 +14161,7 @@ TEXT ·rv_cmp_info(SB), $16-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffc6ffffff48
 	QUAD $0xffffffb0ffffff84
@@ -20394,6 +20404,7 @@ TEXT ·rv_binop_slow(SB), $112-64
 	QUAD $0x000000841f0f58eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000000000000
 	QUAD $0x8000000000000000
@@ -20474,6 +20485,7 @@ TEXT ·rv_tobool_slow(SB), $80-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffbbffffff3a
 	QUAD $0xffffffc5ffffffd2
@@ -21735,6 +21747,7 @@ TEXT ·js_call_c_function(SB), $224-88
 	BYTE $0x4a
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -21937,6 +21950,7 @@ TEXT ·rv_tobool_keep(SB), $48-32
 	BYTE $0x00
 	BYTE $0xeb
 	BYTE $0x48
+	PCALIGN $16
 	// data
 	QUAD $0xffffffccffffff48
 	QUAD $0xffffffd3ffffffdf
@@ -22293,6 +22307,7 @@ TEXT ·rv_ta_get(SB), $64-48
 	QUAD $0xff2ce90000000008
 	QUAD $0x660000008de9ffff
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	QUAD $0xffffff49fffffc55
@@ -22675,6 +22690,7 @@ TEXT ·rv_getel_slow(SB), $192-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	QUAD $0xfffffe8efffff750

@@ -4567,6 +4567,7 @@ TEXT ·JS_WriteObjectRec(SB), $240-40
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffc159ffffa290
 	QUAD $0xffffa997ffffa32c
@@ -8959,6 +8960,7 @@ TEXT ·JS_ReadObjectRec(SB), $192-32
 	QUAD $0xe0c105518d48df89
 	QUAD $0x6ae9c38941f8091c
 	QUAD $0x001f0f4febffffdf
+	PCALIGN $16
 	// data
 	QUAD $0xffffd838ffffd82e
 	QUAD $0xffffd227ffffd227
@@ -12694,6 +12696,7 @@ TEXT ·JS_SetModuleExportList(SB), $192-48
 	CALL ·abort(SB)
 	QUAD $0x2e666666666632eb
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xffffffe7fffff63b
 	QUAD $0xfffff6dbffffffe7
@@ -13781,6 +13784,7 @@ TEXT ·js_escape_text(SB), $192-64
 	QUAD $0x666666000000f4e9
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffbf5fffffbca
 	QUAD $0xfffffbf5fffffbf5
@@ -14962,6 +14966,7 @@ TEXT ·js_copy_props(SB), $208-64
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff496ffffffcc
 	QUAD $0xfffff4d2fffff4ce
@@ -16049,6 +16054,7 @@ TEXT ·js_start_tag(SB), $240-64
 	QUAD $0x000000841f0f0000
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff2bffffff1a3
 	QUAD $0xfffff33ffffff38d
@@ -17240,6 +17246,7 @@ TEXT ·js_emit_plain_keys(SB), $144-40
 	QUAD $0x0000018081894850
 	QUAD $0x2e66666666662eeb
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xfffffc7dffffffbe
 	QUAD $0xfffffcb4fffffcb0
@@ -21128,6 +21135,7 @@ TEXT ·js_emit_name_add(SB), $272-48
 	QUAD $0x6666666666660000
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffd3b3ffffd263
 	QUAD $0xffffd3b3ffffd3b3

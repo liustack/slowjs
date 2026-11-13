@@ -3624,6 +3624,7 @@ TEXT ·JS_NewObjectFromShape(SB), $112-56
 	QUAD $0x6666666666660000
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffd2bfffffbed
 	QUAD $0xfffffbbefffffbce
@@ -3968,6 +3969,7 @@ TEXT ·__JS_FreeValueRT(SB), $112-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffa62fffffd83
 	QUAD $0xfffffa82fffffa55
@@ -6657,6 +6659,7 @@ TEXT ·js_string_to_cstring(SB), $176-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0101010101010101
 	QUAD $0x0101010101010101
@@ -9133,6 +9136,7 @@ TEXT ·free_zero_refcount(SB), $128-16
 	BYTE $0x1e
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xfffffbc2fffffa71
 	QUAD $0xffffffe2ffffffe2
@@ -9359,6 +9363,7 @@ TEXT ·free_gc_object(SB), $96-24
 	QUAD $0x6666666666662beb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffcf9fffffbc6
 	QUAD $0xffffffe6ffffffe6
@@ -16093,6 +16098,7 @@ TEXT ·JS_RunGCInternal(SB), $208-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffb54cffffb198
 	QUAD $0xffffb76dffffde0a
@@ -16767,6 +16773,7 @@ TEXT ·gc_free_cycles(SB), $128-16
 	QUAD $0x000000841f0f24eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffd53fffffe04
 	QUAD $0xffffffdcffffffdc
@@ -17470,6 +17477,7 @@ TEXT ·map_hash_key(SB), $112-40
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x0000441f0f6656eb
+	PCALIGN $16
 	// data
 	QUAD $0x7ff8000000000000
 	QUAD $0xfffff417fffff45f
@@ -20776,6 +20784,7 @@ TEXT ·rv_build(SB), $432-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0101010101010101
 	QUAD $0x0101010101010101
@@ -21185,6 +21194,7 @@ TEXT ·rv_old_info(SB), NOSPLIT|NOFRAME, $0-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffee3fffffee3
 	QUAD $0xfffffee3fffffee3
@@ -21398,6 +21408,7 @@ TEXT ·rv_named_local(SB), NOSPLIT|NOFRAME, $0-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff49ffffff86
 	QUAD $0xffffff8fffffff49

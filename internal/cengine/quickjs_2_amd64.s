@@ -154,6 +154,7 @@ TEXT ·js_get_fast_array_element_out_of_line(SB), $64-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	QUAD $0xfffffe70fffffc54
@@ -753,6 +754,7 @@ TEXT ·js_set_fast_array_element_out_of_line(SB), $144-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x406fe00000000000
 	QUAD $0xc330000000000000
@@ -1496,6 +1498,7 @@ TEXT ·rv_putel_slow(SB), $160-40
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x001f0f000000e3e9
+	PCALIGN $16
 	// data
 	QUAD $0x406fe00000000000
 	QUAD $0xc330000000000000
@@ -2831,6 +2834,7 @@ TEXT ·rv_bin_slow(SB), $96-56
 	BYTE $0x42
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xffffff54ffffff19
 	QUAD $0xffffff1dffffff43
@@ -3073,6 +3077,7 @@ TEXT ·rv_typeof(SB), $80-32
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffe8ffffffe1c
 	QUAD $0xfffffe2efffffe2e
@@ -3768,6 +3773,7 @@ TEXT ·rv_check_throw(SB), $80-32
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f27eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffe4fffffc6f
 	QUAD $0xfffffda1ffffffe4
@@ -3971,6 +3977,7 @@ TEXT ·rv_throw_error(SB), $80-32
 	CALL ·JS_ThrowReferenceError(SB)
 	QUAD $0x00441f0f1deb00eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff1afffffe17
 	QUAD $0xffffff07fffffeb7
@@ -7922,6 +7929,7 @@ TEXT ·rv_new_frame(SB), $192-40
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff91ffffff92e
 	QUAD $0xfffff8fffffff90f
@@ -9165,6 +9173,7 @@ TEXT ·rv_w_gen(SB), $160-40
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f1feb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff723fffff2da
 	QUAD $0xfffff509fffff4f7
@@ -9984,6 +9993,7 @@ TEXT ·rv_with_slow(SB), $176-40
 	QUAD $0x000000841f0f1ceb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffc98fffff8b6
 	QUAD $0xfffffc4ffffffaca
@@ -15124,6 +15134,7 @@ TEXT ·rv_old(SB), $288-40
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffd51affff9b6c
 	QUAD $0xffffd51affff9c00
@@ -16589,6 +16600,7 @@ TEXT ·rv_unwind(SB), $224-48
 	BYTE $0xeb
 	BYTE $0x25
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xfffff56efffff57b
 	QUAD $0xfffff554fffff561
@@ -17819,6 +17831,7 @@ TEXT ·JS_GetPropertyInternal(SB), $176-80
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffce7fffffc45
 	QUAD $0xfffffdb2fffffdb2
@@ -20867,6 +20880,7 @@ TEXT ·js_string_to_cstring_json(SB), $256-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0101010101010101
 	QUAD $0x0101010101010101
@@ -21538,6 +21552,7 @@ TEXT ·js_atof(SB), $208-72
 	BYTE $0x12
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -22250,6 +22265,7 @@ TEXT ·js_atof_poll(SB), $192-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
