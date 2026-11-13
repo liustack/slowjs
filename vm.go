@@ -210,14 +210,15 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 // subject to change without notice.
 func (m *VM) SetMemoryLimit(limit uintptr) {
 	limit = max(limit, 128*1024)
+	if limit != ^uintptr(0) {
+		// A VM with a limit keeps no block (goTake). The block goes back
+		// first, so that the OS refusing it leaves m as it was.
+		m.keep.Release()
+	}
 	m.jsSetMemoryLimit(limit)
 	m.memoryLimit = limit
 	if limit == ^uintptr(0) {
 		m.memoryLimit = 0 // the engine's own value for no limit
-	}
-	if m.memoryLimit != 0 {
-		// A VM with a limit keeps no block (goTake).
-		m.keep.Release()
 	}
 }
 
@@ -347,19 +348,6 @@ func (m *VM) Close() error {
 	if m.entered != 0 {
 		return errCloseInCall
 	}
-	if m.closed {
-		// What the OS refused at the first Close: the block kept, and
-		// the engine's memory.
-		m.keep.Release()
-		return m.closeEngineAgain()
-	}
-	m.closed, m.closing = true, true
-	defer func() { m.closing = false }()
-	m.forgetFuncs()
-
-	id := m.id
-	onClose := m.onClose
-	shared := m.shared
 	var first any
 	step := func(f func()) {
 		defer func() {
@@ -370,6 +358,23 @@ func (m *VM) Close() error {
 		f()
 	}
 	var err error
+	if m.closed {
+		// What the OS refused at the first Close: the block kept, and
+		// the engine's memory, each tried whatever becomes of the other.
+		step(m.keep.Release)
+		step(func() { err = m.closeEngineAgain() })
+		if first != nil {
+			panic(first)
+		}
+		return err
+	}
+	m.closed, m.closing = true, true
+	defer func() { m.closing = false }()
+	m.forgetFuncs()
+
+	id := m.id
+	onClose := m.onClose
+	shared := m.shared
 	step(m.keep.Close)
 	step(func() { err = m.closeEngine() })
 	step(func() { forgetVM(id) })
