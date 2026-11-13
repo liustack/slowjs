@@ -1,5 +1,6 @@
-# The steps that need LLVM 22.1.8: the generated C engine is what the generator
-# makes, and the goasm and cycles checks. linux/amd64 only. See "CI" in
+# The steps that need LLVM 22.1.8 (the generated C engine is what the generator
+# makes, and the goasm and cycles checks) and make gointl, which needs no LLVM.
+# linux/amd64 only. See "CI" in
 # docs/testing.md.
 name: llvm-steps
 
@@ -51,6 +52,16 @@ jobs:
           GEN_JOBS: "4"
       - name: Generator checks and cycles
         run: CHECK_ONLY="goasm cycles" scripts/check.sh fast
+
+      # make gointl reads go-intl and the time zone files from this folder and
+      # downloads only what it lacks (about 240 MB the first time).
+      - name: Cache the data of go-intl
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/quickjs-gointl
+          key: gointl-${{ hashFiles('internal/gointl/UPSTREAM', 'internal/gointl/qjstz') }}
+      - name: Tests of every language
+        run: make gointl
 
       - name: Keep the logs of the checks
         if: always()

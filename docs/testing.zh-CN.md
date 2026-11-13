@@ -358,7 +358,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `root` | 全档 | `go test -p 1 .` |
 | `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |
 | `race` | 全档 | 根包和上面三个包的 `go test -race -short -p 1` |
-| `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh` |
+| `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh`。在 Apple M4 上这四步大约用 1.5、31、2.5 和 5 分钟：`compare-asan`（1846 秒，AddressSanitizer 下跑 test262）不是短任务，要单独安排 |
 | `test262` | 全档 | `engine/test/test262.sh -m plain -T 2` |
 | `gointl` | 全档 | `make gointl`，放在最后，因为它要用 go-intl 的缓存（见[下文](#每种语言的测试)） |
 
@@ -371,15 +371,17 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 - Linux：从 apt.llvm.org 装 `clang-22`、`llvm-22-dev` 和 `lld-22`，那里有 22.1.8（见 `llvm-steps.yml`）。
 - macOS：`brew install llvm@22`。Homebrew 不能指定装 22.1.8，所以要确认 `/opt/homebrew/opt/llvm@22/bin/clang --version` 说的是 22.1.8，再运行 `brew pin llvm@22`，免得 `brew upgrade` 把它换成别的 22.x。如果 Homebrew 已经换了，检查会失败并说出它找到的版本：用别的办法装上那个版本，再设 `LLVM_BIN`。
 
-在 Mac（Apple 芯片，在 M4 上验证过）上什么都不设就能跑的步骤：`build`、`gofmt`、`docs`、`goasm`、`cengine`、`host-plain`、`compare-plain`、`cycles`、`scripts`、`inject-goldens`、`gen`、`host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan`，以及表里除 `gointl` 以外的其余步骤。`gointl` 要 go-intl 的数据（见下）。`gen` 一步在 Mac 上生成 arm64 和 amd64 两份引擎，和已提交的文件逐字节相同。Homebrew 的 llvm@22 没有 `ld.lld`，`check.sh` 改给 `/usr/bin/ld`，`goasm` 里有七个测试在 Mac 上跳过，并且自己会说明：它们要在本机运行 linux/amd64 的代码（`TestArgBlockShared`、`TestICallSymbols`、`TestNarrowArgs`、`TestSampleRuns`，以及 `TestVarargsNative` 的三个子测试）。要在 Linux 上跑它们（`make remote`，或 CI，`llvm-steps.yml` 会跑 `goasm`）。
+在 Mac（Apple 芯片，在 M4 上验证过）上什么都不设就能跑的步骤：`build`、`gofmt`、`docs`、`goasm`、`cengine`、`host-plain`、`compare-plain`、`cycles`、`scripts`、`inject-goldens`、`gen`、`host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan`，以及表里其余的步骤（`gointl` 第一次要下载 go-intl 的数据，见下）。`gen` 一步在 Mac 上生成 arm64 和 amd64 两份引擎，和已提交的文件逐字节相同。Homebrew 的 llvm@22 没有 `ld.lld`，`check.sh` 改给 `/usr/bin/ld`，`goasm` 里有七个测试在 Mac 上跳过，并且自己会说明：它们要在本机运行 linux/amd64 的代码（`TestArgBlockShared`、`TestICallSymbols`、`TestNarrowArgs`、`TestSampleRuns`，以及 `TestVarargsNative` 的三个子测试）。要在 Linux 上跑它们（`make remote`，或 CI，`llvm-steps.yml` 会跑 `goasm`）。
 
 原生步骤（`host-*`、`compare-*`、`inject`、`test262`，以及 `race` 里的 cgo）在两个系统上都用 LLVM 22.1.8 的 clang：`check.sh` 把它的文件夹放在 PATH 最前面。Homebrew 的 clang 按 macOS 版本选 SDK 文件夹（这里是 `MacOSX15.sdk`），而命令行工具只有 `MacOSX.sdk` 时那个文件夹不存在，于是它找不到 `errno.h`。所以在 macOS 上，`check.sh` 会设 `CC="clang -isysroot $(xcrun --show-sdk-path)"`，除非已经设了 `CC`。没找到 LLVM 时，这些步骤用系统自带的编译器（Mac 上是 Apple clang 15 及以后）。手动运行 `engine/test` 里的脚本，用的是 `$CC`，或 PATH 里排第一的 clang。
 
-CI 不运行 `make gointl`：`.github/workflows` 里没有一个工作流有这一步，所以改了 `internal/gointl` 或它的数据，只有人手动运行时才会被检查（[见下](#每种语言的测试)）。
+检查还会调用的工具：`git`、`make`、`curl`（第一次 `make gointl`）和 `unzip`（`engine/test/test262-test.sh` 和 test262 的解包。缺它时解包会停下并说 `unzip not found: install unzip`：Linux 上 `apt install unzip`，macOS 自带）。
+
+CI 也运行 `make gointl`，在 `llvm-steps.yml` 里（[见下](#ci)）。
 
 ### 每种语言的测试
 
-`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。只有 `make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它：CI 不跑 `make gointl`，所以改了 `internal/gointl` 或它引入的包，合并前要自己跑一遍。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
+`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它，CI 的 `llvm-steps.yml` 每次推送也运行它（[CI](#ci)）。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
 
 这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
 
@@ -455,12 +457,13 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 | Test, root package with the test hooks | `root-hooks` 步骤（`go test -tags testhooks -p 1 .`） |
 | Native C engine | `host-plain` 和 `compare-plain` 步骤：`engine/test/build.sh plain` 和 `compare.sh plain`，用运行器上有的 C 编译器构建（每个上面都是 clang，所以不用安装任何东西） |
 
-`llvm-steps.yml` 是第二个工作流，只有一个任务，只在 linux/amd64 上，它从 apt.llvm.org 安装 LLVM 22.1.8（15 到 25 秒，这是 `scripts/gen-engine.sh` 坚持要求的版本）并运行这些步骤。它会拦下一个让提交进仓库的生成引擎与生成器从 `engine/` 生成的结果不一样的提交：
+`llvm-steps.yml` 是第二个工作流，只有一个任务，只在 linux/amd64 上，它从 apt.llvm.org 安装 LLVM 22.1.8（15 到 25 秒，这是 `scripts/gen-engine.sh` 坚持要求的版本）并运行这些步骤。前两步拦下一个让提交进仓库的生成引擎与生成器从 `engine/` 生成的结果不一样，或者弄坏了生成器的提交。第三步检查 `internal/gointl` 在每种语言里的答案，它不需要 LLVM：
 
 | 步骤 | 运行什么 |
 | --- | --- |
 | Generated engine | `make check-gen`（`GEN_JOBS=4`）：把 amd64 和 arm64 的 `.s` 和 `engine_*` 文件，和一次全新的 `make gen` 对比 |
 | Generator and cycles | `CHECK_ONLY="goasm cycles" scripts/check.sh fast`：`internal/goasm`（生成器）的测试，以及检查 C 引擎的每一处递归都有计数 |
+| Tests of every language | `make gointl`，前面有一步缓存 `~/.cache/quickjs-gointl`（go-intl 的数据和时区文件，约 240 MB，键由 `internal/gointl/UPSTREAM` 和 `internal/gointl/qjstz` 算出）。它不需要 LLVM，冷缓存时约 5 分钟（在一台 4 核 Linux 机器上实测 4 分 45 秒） |
 
 `scripts/check.sh` 的步骤用 `CHECK_ONLY` 选择，它们的日志作为 artifact 保留 7 天。其中的跳过是预期的：`TestStackResidency` 要 `HOSTMEM_RESIDENCY=1`，重新映射的测试和 `TestStackWithoutHugePages` 只在 linux 上。
 
@@ -469,9 +472,9 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 有意不做的：
 
 - **test262、竞态检测器和 sanitizer 构建。** 它们耗时太长。用 `make check-full` 运行它们。
-- **计时和内存测量**、`make gointl`（它会克隆 go-intl）和 `make build_all_targets`。
+- **计时和内存测量**和 `make build_all_targets`。
 
-这个任务在 `ubuntu-24.04` 上约需 4 分钟：安装 15 秒，`make check-gen` 2.3 分钟，另外两步合计 1.1 分钟。`clang --version` 必须打印 22.1.8：如果 apt.llvm.org 换成了更新的 22.1.x，就把包的版本钉住。
+这个任务在 `ubuntu-24.04` 上约需 4 分钟：安装 15 秒，`make check-gen` 2.3 分钟，另外两步合计 1.1 分钟。`make gointl` 冷缓存时再加约 5 分钟（还没在运行器上实测，在一台 4 核 Linux 机器上是 4 分 45 秒），有缓存时更少。`clang --version` 必须打印 22.1.8：如果 apt.llvm.org 换成了更新的 22.1.x，就把包的版本钉住。
 
 ## 速度
 

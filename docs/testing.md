@@ -358,7 +358,7 @@ The generated engine is checked in: `internal/cengine` holds the `.s`, `engine_d
 | `root` | full | `go test -p 1 .` |
 | `root-hooks` | full | `go test -tags testhooks -p 1 .`: the root package again with the test hooks, which turn on `memfault_test.go` (the system refusing memory during a render), `closeunmap_test.go` (a second Close after a failed release) and `closepanic_hooks_test.go` (cleanup after a panic when SharedBytecode is released). Without the tag those files are left out of the build, not skipped |
 | `race` | full | `go test -race -short -p 1` of the root package and the three above |
-| `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` | full | `engine/test/build.sh` and `compare.sh` under the sanitizers |
+| `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` | full | `engine/test/build.sh` and `compare.sh` under the sanitizers. On an Apple M4 the four take about 1.5, 31, 2.5 and 5 minutes: `compare-asan` (1846 s, test262 under AddressSanitizer) is not a short job, so plan it as a job of its own |
 | `test262` | full | `engine/test/test262.sh -m plain -T 2` |
 | `gointl` | full | `make gointl`, last as the step that needs the cache of go-intl ([below](#the-tests-of-every-language)) |
 
@@ -371,15 +371,17 @@ The list is in `scripts/check.sh`. A new check goes there and into the table abo
 - Linux: the packages `clang-22`, `llvm-22-dev` and `lld-22` from apt.llvm.org, which carries 22.1.8 (see `llvm-steps.yml`).
 - macOS: `brew install llvm@22`. Homebrew has no way to ask for 22.1.8, so check that `/opt/homebrew/opt/llvm@22/bin/clang --version` says 22.1.8 and run `brew pin llvm@22`, which keeps `brew upgrade` from moving it to another 22.x. When Homebrew has moved already, the check fails with the version it found: install that version some other way and set `LLVM_BIN`.
 
-Steps that run on a Mac (Apple silicon, checked on an M4) with nothing set: `build`, `gofmt`, `docs`, `goasm`, `cengine`, `host-plain`, `compare-plain`, `cycles`, `scripts`, `inject-goldens`, `gen`, `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` and the rest of the table but `gointl`, which needs go-intl's data (see below). The `gen` step makes the arm64 and the amd64 engine on the Mac, byte for byte the checked-in files. Seven tests of `goasm` skip on a Mac and say so themselves: they run linux/amd64 code natively (`TestArgBlockShared`, `TestICallSymbols`, `TestNarrowArgs`, `TestSampleRuns` and three subtests of `TestVarargsNative`). Run them on Linux (`make remote` or CI, where `llvm-steps.yml` runs `goasm`).
+Steps that run on a Mac (Apple silicon, checked on an M4) with nothing set: `build`, `gofmt`, `docs`, `goasm`, `cengine`, `host-plain`, `compare-plain`, `cycles`, `scripts`, `inject-goldens`, `gen`, `host-asan`, `compare-asan`, `host-ubsan`, `compare-ubsan` and the rest of the table (`gointl` downloads go-intl's data the first time, see below). The `gen` step makes the arm64 and the amd64 engine on the Mac, byte for byte the checked-in files. Seven tests of `goasm` skip on a Mac and say so themselves: they run linux/amd64 code natively (`TestArgBlockShared`, `TestICallSymbols`, `TestNarrowArgs`, `TestSampleRuns` and three subtests of `TestVarargsNative`). Run them on Linux (`make remote` or CI, where `llvm-steps.yml` runs `goasm`).
 
 The native steps (`host-*`, `compare-*`, `inject`, `test262`, and cgo in `race`) use the clang of LLVM 22.1.8 on both systems: `check.sh` puts its folder first in PATH. The clang of Homebrew picks its SDK folder by the macOS version (here `MacOSX15.sdk`) and that folder is not there when the Command Line Tools keep only `MacOSX.sdk`, so it finds no `errno.h`. On macOS `check.sh` therefore sets `CC="clang -isysroot $(xcrun --show-sdk-path)"` unless `CC` is set. With no LLVM found, the steps use the compiler the system has (Apple clang 15 or later on a Mac). A script of `engine/test` run by hand uses `$CC`, or the clang first in PATH.
 
-CI does not run `make gointl`: none of the workflows in `.github/workflows` has the step, so a change to `internal/gointl` or its data is checked only when someone runs it ([below](#the-tests-of-every-language)).
+What else the checks call: `git`, `make`, `curl` (the first `make gointl`) and `unzip` (`engine/test/test262-test.sh` and the unpack of test262, which stops with `unzip not found: install unzip` when it is missing: `apt install unzip` on Linux, macOS has it).
+
+CI runs `make gointl` too, in `llvm-steps.yml` ([below](#ci)).
 
 ### The tests of every language
 
-`internal/gointl` is ours: its code was copied from go-intl v0.6.1 once, and nothing syncs it with go-intl again. The tests that came with that code, under the build tag `gointl_all`, are what keeps its answers equal to Node's in every language ICU has: they replay the corpora of Node's answers in go-intl's `testdata/` on packs of every language of go-intl's data. That data and those corpora are not kept in this repository (15 MB of corpora, and packs of every language), so `internal/gointl/data.sh test` runs the tests in a scratch copy of the module that has them, with the packages of the module that `internal/gointl` builds with (`internal/hostmem`) and the module's requirements. `make gointl`, the `gointl` step of `make check-full`, runs it, and nothing else does: CI does not run `make gointl`, so run it before merging a change to `internal/gointl` or to a package it imports. Run in place, `go test -tags gointl_all` fails at once with a sentence that says so (`TestMain` in `qjs_all_test.go`).
+`internal/gointl` is ours: its code was copied from go-intl v0.6.1 once, and nothing syncs it with go-intl again. The tests that came with that code, under the build tag `gointl_all`, are what keeps its answers equal to Node's in every language ICU has: they replay the corpora of Node's answers in go-intl's `testdata/` on packs of every language of go-intl's data. That data and those corpora are not kept in this repository (15 MB of corpora, and packs of every language), so `internal/gointl/data.sh test` runs the tests in a scratch copy of the module that has them, with the packages of the module that `internal/gointl` builds with (`internal/hostmem`) and the module's requirements. `make gointl`, the `gointl` step of `make check-full`, runs it, and so does `llvm-steps.yml` on each push ([CI](#ci)). Run in place, `go test -tags gointl_all` fails at once with a sentence that says so (`TestMain` in `qjs_all_test.go`).
 
 The step reads go-intl from its cache, `$GOINTL_UPSTREAM` (default `~/.cache/quickjs-gointl/go-intl`), and the network only when the cache does not have what it needs:
 
@@ -455,12 +457,13 @@ GitHub Actions (`.github/workflows/`) checks every push, and every pull request 
 | Test, root package with the test hooks | the `root-hooks` step (`go test -tags testhooks -p 1 .`) |
 | Native C engine | the `host-plain` and `compare-plain` steps: `engine/test/build.sh plain` and `compare.sh plain`, built with the C compiler the runner has (clang on each, so nothing is installed) |
 
-`llvm-steps.yml` is a second workflow with one job, on linux/amd64 only, that installs LLVM 22.1.8 from apt.llvm.org (15 to 25 seconds, the version `scripts/gen-engine.sh` insists on) and runs these steps. It stops a commit that leaves the checked-in generated engine different from what the generator makes from `engine/`:
+`llvm-steps.yml` is a second workflow with one job, on linux/amd64 only, that installs LLVM 22.1.8 from apt.llvm.org (15 to 25 seconds, the version `scripts/gen-engine.sh` insists on) and runs these steps. The first two stop a commit that leaves the checked-in generated engine different from what the generator makes from `engine/` or breaks the generator. The third checks the answers of `internal/gointl` in every language, and needs no LLVM:
 
 | Step | What it runs |
 | --- | --- |
 | Generated engine | `make check-gen` (`GEN_JOBS=4`): the `.s` and `engine_*` files of amd64 and arm64 against a fresh `make gen` |
 | Generator and cycles | `CHECK_ONLY="goasm cycles" scripts/check.sh fast`: the tests of `internal/goasm` (the generator) and the check that every recursion of the C engine is counted |
+| Tests of every language | `make gointl`, after a cache of `~/.cache/quickjs-gointl` (go-intl's data and the time zone files, about 240 MB, keyed by `internal/gointl/UPSTREAM` and `internal/gointl/qjstz`). It needs no LLVM and takes about 5 minutes on a cold cache (4 min 45 s measured on a 4-core Linux machine) |
 
 The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are kept as an artifact for 7 days. The skips in them are expected ones: `TestStackResidency` wants `HOSTMEM_RESIDENCY=1`, and the remap tests and `TestStackWithoutHugePages` are linux only.
 
@@ -469,9 +472,9 @@ The steps of `scripts/check.sh` are chosen with `CHECK_ONLY`, and their logs are
 Left out on purpose:
 
 - **test262, the race detector and the sanitizer builds.** They take long. Run them with `make check-full`.
-- **Timing and memory measurements**, `make gointl` (it clones go-intl) and `make build_all_targets`.
+- **Timing and memory measurements** and `make build_all_targets`.
 
-The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make check-gen` 2.3 minutes, the other two steps 1.1 minutes together. `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
+The job takes about 4 minutes on `ubuntu-24.04`: the install 15 seconds, `make check-gen` 2.3 minutes, the other two steps 1.1 minutes together. `make gointl` adds about 5 minutes with a cold cache (not measured on the runner yet, 4 min 45 s on a 4-core Linux machine) and less with the cache. `clang --version` must print 22.1.8: if apt.llvm.org moves to a newer 22.1.x, pin the package versions.
 
 ## Speed
 
