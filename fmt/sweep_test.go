@@ -39,9 +39,14 @@ const sweptSetup = `var K = 16 << 20, s1 = '\x01'.repeat(K / 5), arr = Array.fro
 // a call at once: at most maxOutput bytes in a VM with no memory limit, and
 // a sixteenth of the room under the limit (allocated). math/big writes a
 // BigInt in decimal at once: at most the 1,040,000 bits of the longest
-// BigInt the engine makes.
+// BigInt the engine makes. The json of an array is made by the engine, which
+// polls, and then copied whole by Go's fmt into the output, 15 MiB: under
+// Rosetta that copy ran 8 ms past a timeout once in four sweeps.
 var known = map[string]string{
 	"%q of 3.2 MiB of control characters": "one pass of Go's fmt over 16 MiB of output",
+	"%v of an array of 2 Mi numbers":      "one copy by Go's fmt of 15 MiB of output",
+	"printf of an array of 2 Mi numbers":  "one copy by Go's fmt of 15 MiB of output",
+	"sprint of an array of 2 Mi numbers":  "one copy by Go's fmt of 15 MiB of output",
 	"%d of the longest BigInt":            "one conversion of 1,040,000 bits by math/big",
 }
 
