@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"unsafe"
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/internal/vmhook"
@@ -34,7 +35,7 @@ const pkg = "fmt"
 // A call makes its whole output in Go before it returns it or writes it, as
 // Go's fmt does, and a short format can ask for a long output. So each
 // function first finds a bound on the bytes of its output, from the format
-// and the arguments, and when what the output may make Go's fmt allocate,
+// and the arguments, and when what making the output may make Go allocate,
 // sixteen times its bytes and a few KiB for the printer that makes it, is
 // more than the VM has left under its memory limit (see
 // [quickjs.VM.SetMemoryLimit]), the call ends with the uncatchable out of
@@ -45,10 +46,16 @@ const pkg = "fmt"
 // precision, or when a width or a precision is not used, as by a verb that
 // does not fit its argument or for a zero printed with a precision of 0.
 // Such a call can be refused under a tight memory limit. A call whose bound
-// fits in a small part of what is left runs as before. Go makes the output
-// without a check of the VM, so neither [quickjs.VM.Interrupt] nor the eval
-// timeout ends it, in a time that grows with the bound: 16 MiB of quoted or hex
-// bytes take about 25 ms on an Apple M4.
+// fits in a small part of what is left runs as before.
+//
+// A call whose bound is more than 64 KiB makes its output a verb at a time,
+// and a long string, object or big int a part at a time, in the same bytes
+// as Go's fmt, and ends between two parts when [quickjs.VM.Interrupt] or
+// the eval timeout asks it to. It takes about as long as Go's fmt for a long
+// argument, and about three times as long for many short verbs. The longest
+// part is in the conversion of a big int to decimal: one division by
+// math/big of the whole big int, about 5 ms on an Apple M4 for the
+// 1,048,576 bits of the longest the engine makes.
 //
 // printf and println write to os.Stdout, or to the writer of [Writer], 64
 // KiB at a time, and end the call between two writes when
@@ -76,30 +83,30 @@ func Register(obj quickjs.Value, opts ...Option) (err error) {
 		wantThis bool
 	}{
 		{"printf", func(format string, a ...any) (int, error) {
-			format, ok := fitsPrintf(vm, format, a)
+			s, give, ok := makePrintf(vm, format, a)
+			defer give()
 			if !ok {
 				return 0, nil
 			}
-			return write(vm, o.writer(), fmt.Sprintf(format, a...))
+			return write(vm, o.writer(), s)
 		}, false},
 		{"println", func(a ...any) (int, error) {
-			if !fits(vm, room(vm), sizePrint(a), 0) {
+			s, give, ok := makePrint(vm, a, true)
+			defer give()
+			if !ok {
 				return 0, nil
 			}
-			return write(vm, o.writer(), fmt.Sprintln(a...))
+			return write(vm, o.writer(), s)
 		}, false},
-		{"sprint", func(a ...any) string {
-			if !fits(vm, room(vm), sizePrint(a), 0) {
-				return ""
-			}
-			return fmt.Sprint(a...)
+		{"sprint", func(a ...any) quickjs.Value {
+			s, give, ok := makePrint(vm, a, false)
+			defer give()
+			return result(vm, s, ok)
 		}, false},
-		{"sprintf", func(format string, a ...any) string {
-			format, ok := fitsPrintf(vm, format, a)
-			if !ok {
-				return ""
-			}
-			return fmt.Sprintf(format, a...)
+		{"sprintf", func(format string, a ...any) quickjs.Value {
+			s, give, ok := makePrintf(vm, format, a)
+			defer give()
+			return result(vm, s, ok)
 		}, false},
 	} {
 		longName := fmt.Sprintf("__%s_%s__", pkg, v.nm)
@@ -134,6 +141,25 @@ func (o *options) writer() io.Writer {
 	return os.Stdout
 }
 
+// result is the javascript string of s, an output of sprint or sprintf,
+// made while the memory of s is still held (sprintf): the function returns
+// it, not s, which RegisterFunc would convert once the memory is given
+// back. When ok is false the error that ends the call is pending, and what
+// result returns is dropped. A string the engine cannot make ends the call:
+// at Interrupt or the eval timeout with the interrupt, and otherwise, when
+// it has no memory for it or it is longer than the longest string it
+// makes, with the out of memory error.
+func result(vm *quickjs.VM, s string, ok bool) quickjs.Value {
+	if !ok {
+		return quickjs.UndefinedValue
+	}
+	v, err := vm.NewString(s)
+	if err != nil && !vmhook.Stop(vm) {
+		vmhook.OutOfMemory(vm)
+	}
+	return v
+}
+
 // writePiece is the most bytes printf and println write at once.
 const writePiece = 64 << 10
 
@@ -142,8 +168,11 @@ const writePiece = 64 << 10
 // that ends it. It returns what it wrote.
 func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
 	n := 0
+	// Write, not WriteString: a writer may keep the string WriteString gets,
+	// and s is given back after the call (sprintf). Write must not keep the
+	// bytes.
 	for {
-		k, err := io.WriteString(w, s[:min(len(s), writePiece)])
+		k, err := w.Write(unsafe.Slice(unsafe.StringData(s), min(len(s), writePiece)))
 		n += k
 		if err != nil {
 			return n, err
@@ -157,8 +186,8 @@ func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
 
 // maxOutput is the most bytes of output a call may make in a VM with no
 // memory limit: the call takes the room for it as the room it has left.
-// Go makes 16 MiB of quoted or hex bytes in about 25 ms on an Apple M4,
-// allocating 121 MiB, and may allocate 16 times the bound (allocated).
+// sprintf makes 16 MiB of quoted bytes in about 25 ms on an Apple M4, and
+// may allocate 16 times the bound (allocated).
 const maxOutput = 16 << 20
 
 // room is the room vm has left under its memory limit (vmhook.Room), or
@@ -170,9 +199,10 @@ func room(vm *quickjs.VM) int64 {
 	return budget(maxOutput, 0)
 }
 
-// allocated is how many times the bound on its output Go's fmt may
-// allocate to make it (see fmt/print.go and fmt/format.go), counted whole,
-// as Go may collect none of it before the call returns:
+// allocated is how many times the bound on its output a call may make Go
+// allocate, counted whole, as Go may collect none of it before the call
+// returns. Go's fmt makes the output of a call whose bound is at most
+// shortOutput whole (see fmt/print.go and fmt/format.go):
 //
 //   - its buffer grows by append, to at least 1.25 times what it held
 //     (growslice in runtime/slice.go), and by writePadding, to twice its
@@ -189,8 +219,16 @@ func room(vm *quickjs.VM) int64 {
 //     them, in less than its bound.
 //
 // That is 16 times the bound, with the bytes Go rounds each object up to.
-// On the long outputs of TestOutputAllocatedUnderBudget, Go allocated up to 11
-// times the bound.
+// sprintf makes a longer output in a buffer of the size of the bound, which
+// never grows: once the bound. Each verb Go's fmt makes for it, it makes as
+// a call of that verb alone, which allocates as above but for the copy into
+// a string: at most 15 times what the verb writes. A long string or object
+// sprintf writes into the buffer with no more than the quotes of one piece
+// beside it, and a long big int it converts to decimal in quotients,
+// remainders and powers of ten, which came to 3.9 times its part of the
+// bound for the longest. That is 16 times the bound too. On the long
+// outputs of TestOutputAllocatedUnderBudget, Go allocated up to 8 times the
+// bound.
 const allocated = 16
 
 // budget is what an output of at most n bytes, with more bytes allocated
@@ -209,21 +247,67 @@ func budget(n, more int64) int64 {
 	return allocated*n + more + 1<<10 + 256*int64(runtime.GOMAXPROCS(0))
 }
 
-// fitsPrintf is the format sizePrintf hands fmt, and whether what the
-// output of fmt.Sprintf of it may make Go's fmt allocate fits in what vm
-// has left under its memory limit (fits).
-func fitsPrintf(vm *quickjs.VM, format string, a []any) (string, bool) {
+// shortOutput is the largest bound on its output a call may have for Go's
+// fmt to make it whole: it does so in well under a millisecond, and faster
+// than sprintf does verb by verb.
+const shortOutput = 1 << 16
+
+// makePrintf is the output of fmt.Sprintf(format, a...), when what it may
+// make Go's fmt allocate fits in what vm has left under its memory limit
+// (fits), made whole by Go's fmt when it is short and by sprintf otherwise.
+// It is false when the call is to end, with the error that ends it thrown.
+func makePrintf(vm *quickjs.VM, format string, a []any) (string, func(), bool) {
 	room := room(vm)
-	n, read, ok := sizePrintf(format, a, room)
+	n, read, ok, stopped := sizePrintfStop(format, a, room, func() bool { return vmhook.Stop(vm) })
+	if stopped {
+		return "", func() {}, false
+	}
 	if !ok {
 		vmhook.OutOfMemory(vm)
-		return "", false
+		return "", func() {}, false
 	}
 	var more int64
 	if len(read) != len(format) {
 		more = int64(len(read))
 	}
-	return read, fits(vm, room, n, more)
+	if !fits(vm, room, n, more) {
+		return "", func() {}, false
+	}
+	return printfOf(vm, n, read, a)
+}
+
+// printfOf is the output of fmt.Sprintf(format, a...), whose bound is n,
+// made whole by Go's fmt when it is short and by sprintf otherwise, and the
+// function that gives it back (sprintf).
+func printfOf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), bool) {
+	if n <= shortOutput {
+		return fmt.Sprintf(format, a...), func() {}, true
+	}
+	return sprintf(vm, n, format, a)
+}
+
+// makePrint is makePrintf for fmt.Sprint(a...), or fmt.Sprintln(a...) when
+// ln is true.
+func makePrint(vm *quickjs.VM, a []any, ln bool) (string, func(), bool) {
+	n := sizePrint(a)
+	if !fits(vm, room(vm), n, 0) {
+		return "", func() {}, false
+	}
+	return printOf(vm, n, a, ln)
+}
+
+// printOf is printfOf for fmt.Sprint(a...), or fmt.Sprintln(a...) when ln
+// is true.
+func printOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
+	switch {
+	case n <= shortOutput && ln:
+		return fmt.Sprintln(a...), func() {}, true
+	case n <= shortOutput:
+		return fmt.Sprint(a...), func() {}, true
+	case ln:
+		return sprintln(vm, n, a)
+	}
+	return sprint(vm, n, a)
 }
 
 // fits reports whether an output of at most n bytes, made with more bytes

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // The eval timeout runs on the monotonic clock, which only goes forward. The
@@ -51,6 +53,11 @@ type VM struct {
 	// that first Close runs, so that a Close inside OnClose does nothing.
 	// Like intr they live outside vmState, which Close clears.
 	closed, closing bool
+	// keep is the block of memory m keeps for the next Go function that
+	// takes one (goTake). It too lives outside vmState: Close closes it
+	// before the engine, and a block given back after, by a function of
+	// OnClose, goes back to the OS.
+	keep hostmem.Keep
 	vmState
 }
 
@@ -103,6 +110,7 @@ func NewVM() (*VM, error) {
 		vm.Close()
 		return nil, err
 	}
+	vm.keep.Max, vm.keep.Allow = keepMax, vm.mayKeep
 	return vm, nil
 }
 
@@ -202,6 +210,11 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 // subject to change without notice.
 func (m *VM) SetMemoryLimit(limit uintptr) {
 	limit = max(limit, 128*1024)
+	if limit != ^uintptr(0) {
+		// A VM with a limit keeps no block (goTake). The block goes back
+		// first, so that the OS refusing it leaves m as it was.
+		m.keep.Release()
+	}
 	m.jsSetMemoryLimit(limit)
 	m.memoryLimit = limit
 	if limit == ^uintptr(0) {
@@ -335,16 +348,6 @@ func (m *VM) Close() error {
 	if m.entered != 0 {
 		return errCloseInCall
 	}
-	if m.closed {
-		return m.closeEngineAgain()
-	}
-	m.closed, m.closing = true, true
-	defer func() { m.closing = false }()
-	m.forgetFuncs()
-
-	id := m.id
-	onClose := m.onClose
-	shared := m.shared
 	var first any
 	step := func(f func()) {
 		defer func() {
@@ -355,6 +358,24 @@ func (m *VM) Close() error {
 		f()
 	}
 	var err error
+	if m.closed {
+		// What the OS refused at the first Close: the block kept, and
+		// the engine's memory, each tried whatever becomes of the other.
+		step(m.keep.Release)
+		step(func() { err = m.closeEngineAgain() })
+		if first != nil {
+			panic(first)
+		}
+		return err
+	}
+	m.closed, m.closing = true, true
+	defer func() { m.closing = false }()
+	m.forgetFuncs()
+
+	id := m.id
+	onClose := m.onClose
+	shared := m.shared
+	step(m.keep.Close)
 	step(func() { err = m.closeEngine() })
 	step(func() { forgetVM(id) })
 	for _, b := range shared {

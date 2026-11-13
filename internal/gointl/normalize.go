@@ -3,6 +3,8 @@ package intl
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
+	"unsafe"
 
 	"github.com/liustack/quickjs/internal/gointl/internal/normdata"
 )
@@ -113,6 +115,9 @@ const maxDecomposition = 64
 
 // decompose takes every character apart and puts the accents in order.
 func (n *Normalizer) decompose(s string, compatibility bool, l *Limits) string {
+	if l.blocks() {
+		return n.order(n.decomposeBlocks(s, compatibility, l), l)
+	}
 	var b strings.Builder
 	// asked is how many bytes of the builder the room was asked for (qjs).
 	asked := len(s)
@@ -145,6 +150,41 @@ func (n *Normalizer) decompose(s string, compatibility bool, l *Limits) string {
 		}
 	}
 	return n.order(b.String(), l)
+}
+
+// decomposeBlocks is decompose for Limits that take arrays from the OS
+// (qjs): the text decomposed, but for the order of its accents, written in
+// blocks, the next twice as long as the last when it is full, copied into
+// it in checked pieces. The string is over the last block.
+func (n *Normalizer) decomposeBlocks(s string, compatibility bool, l *Limits) string {
+	asked := len(s)
+	l.room(int64(asked))
+	b := take[byte](l, asked)[:0]
+	turns := 0
+	for _, r := range s {
+		l.every(&turns)
+		if len(b)+maxDecomposition > asked {
+			asked = 2 * (len(b) + maxDecomposition)
+			l.room(int64(asked))
+			b = grown(l, b, asked)
+		}
+		var to string
+		var ok bool
+		switch {
+		case r >= hangulBase && r < hangulBase+hangulSCount:
+			to, ok = decomposeHangul(r), true
+		case compatibility:
+			to, ok = n.tables.DecomposeCompatibility(r)
+		default:
+			to, ok = n.tables.Decompose(r)
+		}
+		if ok {
+			b = append(b, to...)
+		} else {
+			b = utf8.AppendRune(b, r)
+		}
+	}
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 // order puts a run of accents into the order Unicode fixes, which is by
@@ -192,7 +232,7 @@ func (n *Normalizer) sortMarks(run []rune, l *Limits) {
 		return
 	}
 	l.room(int64(len(run)) * 8)
-	classes := make([]uint8, len(run))
+	classes := take[uint8](l, len(run))
 	var at [256]int
 	turns := 0
 	for i, r := range run {
@@ -206,13 +246,18 @@ func (n *Normalizer) sortMarks(run []rune, l *Limits) {
 		at[c] = sum
 		sum += k
 	}
-	sorted := make([]rune, len(run))
+	sorted := take[rune](l, len(run))
 	for i, r := range run {
 		l.every(&turns)
 		sorted[at[classes[i]]] = r
 		at[classes[i]]++
 	}
-	copy(run, sorted)
+	for lo := 0; lo < len(run); lo += copyPiece {
+		if lo > 0 {
+			l.check()
+		}
+		copy(run[lo:], sorted[lo:min(lo+copyPiece, len(run))])
+	}
 }
 
 // compose puts the decomposed text back together, by Unicode's algorithm: each

@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，没有内存上限时的 fmt 和它的分段写出，以及 Builtin 切不开的一段文字'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，没有内存上限时的 fmt 和它的分段写出，Builtin 切不开的一段文字，分段检查着处理的 Intl 长文本，以及分段检查着造出的 fmt 长输出'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -596,6 +596,70 @@ locale 列表里超过 16,384 个字符的标签现在是 `RangeError`，和 v0.
 
 每个结果都不变：18 MB 维基百科文本（泰文、老挝文、高棉文、缅甸文、中文、文言文、日文、印地文和希腊文）的词、`containing` 和句子分段，按 `compare` 和 `localeCompare` 排的词序，大小写和列表，都和 v0.30.3 一样。
 
-仍然整个处理的部分：引擎把长参数读成 WTF-8 时每 256 Ki 个字符检查一次，不是每块检查一次。比较和大小写转换在工作期间把整个输入留在 Go 里，算在余量里。DurationFormat 把它的输入整个转成 UTF-16，最多是 Temporal 字符串的 16,384 个单位。`fmt` 的函数整个生成一次调用的输出，整个把 BigInt 写成十进制（见 `fmt/sweep_test.go` 的 `known`）。
+仍然整个处理的部分：引擎把长参数读成 WTF-8 时每 256 Ki 个字符检查一次，不是每块检查一次。比较和大小写转换在工作期间把整个输入留在 Go 里，算在余量里。DurationFormat 把它的输入整个转成 UTF-16，最多是 Temporal 字符串的 16,384 个单位。`fmt` 的函数原来整个造出一次调用的输出，之后长输出也分段造出并检查调用（见[下文](#fmt-的函数分段造出长输出并检查调用)）。
 
 测试：`intl/runs_test.go` 的 `TestLongReadStops`、`TestLongReadInterrupt` 和 `TestLongCallsStopAtEveryTimeout`（用 `internal/stopsweep` 在 2 ms 到整个调用时间之间的各个超时下扫每个长调用），`intl/stops_test.go` 的 `longWork` 里的 locale 列表和大小写转换，`intl/door_test.go` 的 `TestCaseRoomCoversGo`、`TestShortCompareFitsFixedRoom`、`TestListTagRefused` 和 `TestListRoomCoversGo`，`fmt/sweep_test.go` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal/stops_test.go` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。
+
+## fmt 的函数分段造出长输出并检查调用
+
+发布版本：Unreleased。
+
+`fmt.sprintf`、`printf`、`sprint` 和 `println` 原来在调用能停下之前用 Go 的 fmt 整个造出输出，用 math/big 一次把 BigInt 写成十进制。在 Apple M4 上，对 3.2 MiB 控制字符做 `%q`（16 MiB 输出）不检查地跑了 22 ms，对 2 Mi 个数字的数组做 `%v` 一次复制 15 MiB 的 json，在 Rosetta 下超出 eval 超时 8 ms，对最长的 BigInt 做 `%d` 用 17 ms 一次转换 1,040,000 位。
+
+现在上界超过 64 KiB 的调用一个动词一个动词地造输出，至少每 64 KiB 的输出、长参数或格式检查一次调用，每 4,096 个动词也检查一次（`fmt/printf.go`，移植了 Go 的 `fmt/print.go` 里的 `doPrintf`、`doPrint` 和 `doPrintln`）。短参数的每个动词由 Go 的 fmt 用只含这个动词的格式造出。超过 64 KiB 的字符串或对象的 json 由移植过来、改成分段写的 `fmt/format.go` 字符串动词写出：`%s`、`%q`、`%x` 和 `%X`，它们的补齐，以及动词不适用于参数时写的错误文本。`%q` 在字符开始的地方切段，所以转义和整个字符串的一样。超过 65,536 位的 BigInt 转成十进制时，用 10 的幂把它切成两半，两半再同样切，每两步之间检查一次（`decimal`），`%w` 每次写它的几个字。上界不超过 64 KiB 的调用和原来一样由 Go 的 fmt 整个造出，远不到一毫秒。
+
+长 BigInt 转换的第一步仍然是整个做的：math/big 对整个 BigInt 做一次除法，约占转换的三分之一。对引擎能造出的最长 BigInt（1,048,576 位），它在 Apple M4 上用 5 到 7 ms，AMD EPYC 的一个核上 9 ms，Rosetta 下 19 ms。引擎自己的转换会检查调用，但慢 127 倍：`String((1n << 1040000n) - 1n)` 要 2.2 秒，math/big 只要 17 ms。
+
+输出和 Go 的 fmt 逐字节相同。每个输出在一个和它的上界一样大、从不增长的缓冲区里造出，所以调用分配的是它的上界，加上动词另外要的：`TestOutputAllocatedUnderBudget` 的长输出上最多是上界的 8 倍，Go 的 fmt 原来最多分配 10.9 倍。在 Apple M4 上，长参数和 Go 的 fmt 一样快或更快：15 MiB 的 `%v` 用 0.8 到 1.2 ms，Go 用 1.5 ms，1 MiB 的 `% x` 用 1.9 到 2.3 ms，Go 用 2.6 到 3.1 ms，16 MiB 的 `%q` 用 22 ms，Go 用 25 ms。很多短动词会慢一些：一千个 `%d` 的格式要 56 µs，Go 要 17 µs。只有上界超过 64 KiB 的调用才这样造。
+
+测试：`fmt/printf_test.go` 的 `TestPrintfAsGo` 在 VM 给 Go 函数的每种类型的 77 组参数上，对用到各种标志、下标、宽度和精度的 18,043 个格式，把输出和 Go 的 fmt 比较，一次按调用实际的造法，一次让每个字符串、对象和超过 64 位的 BigInt 都按 5 字节一段分段写出。`FuzzPrintfAsGo` 对任意格式、字符串和整数做同样的比较，参数里还有这个字符串的对象和由两者造出的 BigInt（90 秒 330 万个输入没有找到不同）。`fmt/limits_test.go` 的 `TestOutputAllocatedUnderBudget` 量的是现在这种造法的分配，`fmt/sweep_test.go` 的 `TestLongCallsStopAtEveryTimeout` 扫 16 MiB 的 `%q`、8 MiB 对象的 `%v`，以及对 2 Mi 个数字的数组做 `sprintf`、`printf` 和 `sprint`，其中三个在 `-short` 下也跑。最长 BigInt 的 `%d` 因为第一次除法仍留在 `known` 列表里。
+
+## Go 函数的长数组直接向系统要内存
+
+版本：Unreleased。
+
+javascript 调用的 Go 函数为一次调用复制长文本或造长输出时，原来按输入的长度向 Go 要一个数组，Go 分配它并一口气清零，中间不读中断标志。如果 Go 之前把这些页还给了系统，清零时系统要一页一页地重新交给它。在 GitHub 的 macos-15 机器上（虚拟的 Apple M1，在 Rosetta 下跑 amd64，页是 4 KiB），一页约 6 µs，16 MiB 要 25 到 40 ms，碰上的每次调用都这样。`TestLongCallsStopAtEveryTimeout` 在那里失败了：在 8 Mi 个单位的文本里找第一个词，整个调用 6.4 ms，超时设为 4.8 ms 时三次尝试都晚了 27.1 ms，超过 5.2 ms 的宽限期。晚了的调用十次里十次停在复制文本的地方，这期间进程的缺页数正好是它那 16 MiB 的页数。这个时间随输入增长：没有内存上限时，512 Mi 个单位的文本是 1 GiB 的数组。
+
+现在这样的函数按输入长度要的、1 MiB 及以上的数组，直接从系统映射，不在 Go 的堆上（`internal/hostmem/block.go` 的 `Take`，和 VM 的内存一样是匿名内存，windows 上用 VirtualAlloc）。映射多大都花一样的时间，页是零，第一次写的时候才由系统交过来，也就是在填它的循环里，那个循环每段检查一次调用。调用结束时把它还回去，每条路径都还，停下和 panic 也一样。更短的数组仍由 Go 分配。用这种数组的地方：
+
+- Segmenter 的 UTF-16 文本（`internal/intlhook/door.go` 的 `Door.LongUTF16`），由它的游标拿着，VM 丢掉游标或关闭时还回去。
+- `Door.LongWTF8` 读成 WTF-8 的长字符串，用于比较、大小写转换和 ListFormat 的各项（`jsstring.go` 的 `argBlock`），第一个非 ASCII 字符之前的 ASCII 现在也分步复制。
+- 大小写转换的码点和输出（`intl/casemap.go`），以及 `intl/bridge.go` 里 `formatted` 的输出。
+- 比较的码点、规范形式、排序元素和一串数字（`internal/gointl/qjs_blocks.go`，通过 `Limits.OutOfMemory`），数组满了就换一个两倍大的，一段一段地复制，两段之间检查一次，原来 append 一次复制完。
+- `fmt.sprintf`、`printf`、`sprint` 和 `println` 的输出（`fmt/printf.go` 的 `newPrinter`）。`sprint` 和 `sprintf` 现在在返回之前、内存还在的时候就造好输出的 javascript 字符串，`printf` 和 `println` 交给 writer 的是 `Write`（它不能留着这些字节），不是 `WriteString`。
+
+`fmt` 在求输出上界时，对很长的格式也每 64 KiB 检查一次是否要停（`fmt/bound.go` 的 `sizePrintfStop`）：16 MiB 的格式原来在 Apple M4 上不检查地跑 18 到 79 ms，在 AMD EPYC 的一个核上 26 到 101 ms。一个格式动词可以和整个格式一样长（一长串标志，或数字前的一长串零），造输出时现在也在动词里检查是否要停，再把每个标志只写一次、数字去掉前导零的动词交给 Go 的 fmt：16 MiB 的动词原来在 M4 上不检查地跑 100 到 260 ms，耗在 Go 的 fmt 把动词重读一遍上。`sprint` 或 `sprintf` 的输出比引擎最长的字符串还长、造不成字符串时，现在用内存不足的错误结束调用，原来是转换时的 `TypeError`。这要内存上限超过 16 GiB 才会遇到。
+
+在 macos-15 机器上，第一个词的扫描在 Go 1.26.6 和 `go.mod` 的 Go 下各连跑 74 次，旁边同时跑 `url` 和 `temporal` 的测试，全部通过。代价：每次调用现在都要系统交出它那些数组的页，原来 Go 的分配常常能用它手里已有的内存。在 8 Mi 个单位的文本里找第一个词，整个调用在那台机器上要 27 到 106 ms，一半在 32 ms 以下，最长的是旁边同时跑 `url` 和 `temporal` 测试的时候，原来 Go 的内存还在时约 6.4 ms，不在时 30 ms 以上。Apple M4 上 6.3 到 17 ms，原来 4.5 到 11.8 ms。Rosetta 下 10.3 到 12.8 ms，原来 5.6 到 34.2 ms。还回一个数组是一次调用：16 MiB 在那台机器上 0.35 ms，Apple M4 上 0.23 ms，AMD EPYC 的一个核上 1.5 ms。它随数组变大：没有内存上限的 VM 能要的最大的一个，也就是最长字符串的 Segmenter 文本，UTF-16 下 2 GiB，在 M4 上要 42 ms，在 EPYC 上 167 ms。这时调用已经做完，只剩还内存的时间。
+
+还没覆盖的部分，按 AMD EPYC 一个核上两次读中断标志之间最长的时间量，列在 `intl/runs_test.go` 扫描的 `known` 里：
+
+- 8 Mi 个空项的 ListFormat 的 `format` 和 `formatToParts`：最长 574 ms。项的列表和片段的列表里放的是字符串，Go 用 append 让它们变长，每次整个复制，新建时整个清零。
+- 8 Mi 个孤立代理项的 `toLocaleUpperCase('tr')`：最长 751 ms，在结果的片段列表里（每个孤立代理项一个值），以及由它造出的 javascript 值的列表里。扫描它时，在 Apple M4 和 EPYC 上 VM 都被杀掉了，因为调用在超时之后跑过了 VM 等的 50 ms。
+- Segmenter 在 11 Mi 个单位的一段中文上的 `containing(0)`：最长 235 ms，在词典切分之前造的、和这段一样长的数组里。在 Apple M4 上，8.8 Mi 个单位的一段，在这段开始时中断，调用要 87 到 107 ms 后才结束。这个调用的扫描照样通过，因为扫描的超时每次乘 1.2，跨过了调用开始三秒后那段 0.1 秒。
+
+元素里有指针的列表不能放进这样的数组：垃圾回收不看那里面。下一步把它们改成定长分块的列表。
+
+测试：`internal/hostmem/block_test.go` 的 `TestTake`、`TestTakeTakesNoPage` 和 `TestTakePanics`。`intl/blocks_test.go` 的 `TestLongCallsUseBlocks` 要求 Segmenter、比较（含孤立代理项和长串重音符号）、ListFormat 和大小写转换的长调用，Go 分配的内存不到文本的四分之一，调用之后除了游标的文本不拿着任何数组，VM 关闭后一个也不拿。`TestStoppedCallsGiveBlocks` 在五个位置停下每个调用，检查每个数组都还了。还有 `stringstop_test.go` 的 `TestLatin1PrefixSteps`、`fmt/limits_test.go` 的 `TestSizePrintfStops`、`fmt/stops_test.go` 的 `TestLongVerbsStop` 和 `intl/runs_test.go` 的 `TestCursorDropClears`。扫描里一直晚的尝试，现在在错误里写出它花的时间、这期间进程的 CPU 时间、缺页数和 GC 停顿，以及调用在超时加宽限期那一刻的栈（`internal/stopsweep`）。
+
+## VM 留下最后一块内存给下一次调用
+
+版本：Unreleased。
+
+[上一节](#go-函数的长数组直接向系统要内存)说的这种内存块，每次调用都是新的，调用写到哪一页，系统才把那一页交出来，而原来 Go 的分配常常能用它手里已有的内存：在 512 Ki 个单位以上的文本上，每次调用都要付这笔代价。在 GitHub 的 macos-15 机器上，在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，每次的中位数是 31 到 34 ms，原来用 Go 的分配是 5.2 到 8.9 ms。
+
+现在没有内存上限的 VM 把最后还回来的一块（最大 32 MiB）留着，给下一次要内存块的调用（`internal/hostmem/keep.go` 的 `hostmem.Keep`，`vmhook.go` 的 `goTake`）。调用要的块不比留着的大，就拿留着的那块，它的页已经在内存里，调用要用的部分一次清零 1 MiB，两次之间检查是否要停：已在内存里的 1 MiB 清零远不到一毫秒，所以不会再出现不检查的一段。清零时被停下，调用结束，那块继续留着。VM 已经留着一块时，留下两块里大的那块，另一块还给系统。连续 16 次调用都没要内存块时，在第 16 次结束时还给系统，`SetMemoryLimit` 给 VM 设上限时、`Close` 时也还。一个进程里所有 VM 留着的加起来最多 64 MiB（`hostmem.KeptMax`），两个 VM 同时还块时，这个计数也不会超过它：超过的那块还给系统。系统拒绝收回一块时，还块的调用会 panic，VM 仍拿着这块，清零中途检查停止时 panic 的话，正在清零的那块也照样留着：之后再还、`SetMemoryLimit` 或 `Close` 会再试。这时 `SetMemoryLimit` 让 VM 保持原样，仍然没有上限，再次 `Close` 也照样还回引擎的内存。
+
+有内存上限的 VM 不留块，调用和上一节一样。引擎在 C 里分配时按上限计数，它不知道宿主留着的块：留着一块的 VM 总共可能占到上限再加这一块。先守住上限。
+
+在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，去掉前 5 次，每次时间的中位数：
+
+| 机器 | Go 的分配（v0.30.3） | 有内存上限的 VM：每次调用一块新的 | 没有内存上限的 VM：留下的那块 |
+| --- | --- | --- | --- |
+| GitHub 的 macos-15 机器，Go 1.26.6 和 `go.mod` 的 Go，各三轮 | 5.2 到 8.9 ms | 31.4 到 34.0 ms | 3.7 到 6.1 ms |
+| Apple M4 | 3.6 ms | 4.1 ms | 2.3 ms |
+| Apple M4，Rosetta 下的 amd64 | 3.9 ms | 7.6 ms | 2.6 ms |
+
+代价：没有内存上限的 VM 留着一块时，在两次调用之间最多多占 32 MiB。不再有调用的 VM 一直留着它，直到关闭：很多空闲 VM 组成的池最多占 64 MiB，落在其中两个到几个 VM 上。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
+
+测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops`、`TestKeepStopPanics`、`TestKeepProcessCap` 和 `TestKeepRaceForCap`，`internal/hostmem/keep_fault_test.go` 的 `TestKeepSwapRefused`，`keep_test.go` 的 `TestKeepOnlyWithNoLimit`，`keep_hooks_test.go` 的 `TestSetMemoryLimitKeepRefused` 和 `TestCloseAgainKeepRefused`（带 `testhooks` 标签），以及 `intl/blocks_test.go` 的 `TestLimitedVMKeepsNoBlock`、`TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，后两个现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。

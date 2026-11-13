@@ -146,6 +146,9 @@ read_when:
 | 没有内存上限时 fmt 也限制调用并分段写出 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
 | Builtin 切不开的一段文字读中断标志 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
 | 长文本和 locale 列表分块处理并检查调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用) |
+| fmt 的函数分段造出长输出并检查调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数分段造出长输出并检查调用) |
+| Go 函数的长数组直接向系统要内存 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
+| VM 留下最后一块内存给下一次调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
 
 ## 错误和调用栈
 

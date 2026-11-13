@@ -97,9 +97,6 @@ func TestCalendarArithmeticStops(t *testing.T) {
 // stopsweep at every eval timeout from 2 ms to the time it takes whole, so
 // that a part of it with no check shows wherever it lies.
 func TestCalendarArithmeticStopsAtEveryTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("times each call at many timeouts")
-	}
 	const setup = `
 		var first = Temporal.PlainDate.from({year: -271000, month: 1, day: 1, calendar: 'chinese'});
 		var last = Temporal.PlainDate.from({year: 275000, month: 1, day: 1, calendar: 'chinese'});
@@ -109,21 +106,28 @@ func TestCalendarArithmeticStopsAtEveryTimeout(t *testing.T) {
 		var zlast = Temporal.ZonedDateTime.from('+275000-01-01T00:00[UTC]').withCalendar('chinese');
 		0`
 	const monthsOfDays, yearsOfMonths, yearsBetween = 190_000_000 / 31, 6_700_000 / 13, 546_000
+	// Under -short the sweep stops each call at three places in it (see
+	// stopsweep), and only the calls marked short run: one of each loop, over
+	// months, over years, and between two dates.
 	for _, c := range []struct {
 		call  string
 		turns int
+		short bool
 	}{
-		{`first.add({days: 1.9e8}).year`, monthsOfDays},
-		{`first.add({months: 6.7e6}).year`, yearsOfMonths},
-		{`first.until(last, {largestUnit: 'months'}).months`, yearsBetween},
-		{`hebrew.add({days: 1.9e8}).year`, monthsOfDays},
-		{`islamic.add({days: 1.9e8}).year`, monthsOfDays},
-		{`Temporal.Duration.from({days: 1.9e8}).total({unit: 'months', relativeTo: first})`, monthsOfDays},
-		{`Temporal.Duration.from({days: 1.9e8}).round({largestUnit: 'months', relativeTo: first}).months`, monthsOfDays},
-		{`zfirst.until(zlast, {largestUnit: 'months'}).months`, yearsBetween},
-		{`first.toPlainYearMonth().add({months: 6.7e6}).year`, yearsOfMonths},
+		{`first.add({days: 1.9e8}).year`, monthsOfDays, true},
+		{`first.add({months: 6.7e6}).year`, yearsOfMonths, true},
+		{`first.until(last, {largestUnit: 'months'}).months`, yearsBetween, true},
+		{`hebrew.add({days: 1.9e8}).year`, monthsOfDays, true},
+		{`islamic.add({days: 1.9e8}).year`, monthsOfDays, false},
+		{`Temporal.Duration.from({days: 1.9e8}).total({unit: 'months', relativeTo: first})`, monthsOfDays, false},
+		{`Temporal.Duration.from({days: 1.9e8}).round({largestUnit: 'months', relativeTo: first}).months`, monthsOfDays, false},
+		{`zfirst.until(zlast, {largestUnit: 'months'}).months`, yearsBetween, false},
+		{`first.toPlainYearMonth().add({months: 6.7e6}).year`, yearsOfMonths, false},
 	} {
 		t.Run(c.call, func(t *testing.T) {
+			if testing.Short() && !c.short {
+				t.Skip("not one of the calls the short sweep takes")
+			}
 			vm := newVM(t)
 			eval(t, vm, setup)
 			stopsweep.Sweep(t, vm, c.call, c.turns, turnsPerStop)

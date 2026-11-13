@@ -38,6 +38,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（落后很远的列表，页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
 - 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
+- 改了 `fmt/printf.go` 或 `fmt/bound.go`，还要把 `FuzzPrintfAsGo` 跑几分钟：`go test -run '^$' -fuzz '^FuzzPrintfAsGo$' -fuzztime 3m ./fmt`。它检查一个动词一个动词、分段造出的输出和 Go 的 fmt 逐字节相同，`TestPrintfAsGo` 对固定的格式做同样的检查。
 - 改了引擎，还要运行它所涉及部分的[重点检查](#重点检查)，以及 [test262](#test262)。
 - `-p 1` 一次只跑一个包：根包的测试会启动很多 VM，每个 VM 都映射自己的内存。
 
@@ -56,7 +57,7 @@ go test -count=1 -p 1 .                # about a minute
 | `make check-gen` | 检查提交进仓库的引擎就是现在 `make gen` 的结果，两种架构都查（`check-full` 的一部分） |
 | `make bench ARGS="..."` | `go tool measure bench`：代码位置计时和 callgrind（见[给两个构建计时对比](#给两个构建计时对比)） |
 | `make remote RUN="..."` | 在另一台机器上运行别的 make 目标（见[在另一台机器上](#在另一台机器上)） |
-| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），以及 `qjsdata/` 就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的结果（这会克隆 go-intl，并下载那个更新和 ICU 的源码） |
+| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的结果，以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
 | `make benchmark` | `make -C compare benchmark`：`compare/testdata/` 里 QuickJS 的 64 个微基准（goja 或 fastschema/qjs 有 6 个跑不过，所以三个引擎共有的是另外 58 个），每个都在这个引擎、goja 和 fastschema/qjs（wazero 上的 QuickJS）上跑，也就是 QuickJS 自己的测试集 |
 | `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他纯 Go JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.md)（支持度，速度，内存，限额，tifa 页面），每个引擎在自己的二进制里 |
 | `make cpu`、`make mem` | `make -C compare cpu` 和 `make -C compare mem`：对比基准的 CPU 和内存剖析 |
@@ -194,7 +195,7 @@ go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 
 ### 寄存器循环
 
-在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。它们不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
+在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。除了注入抛错的一部分（`inject-goldens` 和 `inject` 两步），它们不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
 
 ```sh
 engine/test/regvm/build.sh asan                          # rvdiff、rvops 和给寄存器循环计数的 unit 程序，放在 engine/test/out/MODE
@@ -208,6 +209,7 @@ engine/test/out/MODE/rvops engine/test/regvm/opcodes.txt # 操作码表
 - 黄金文件（`engine/test/regvm/golden`）是在最后一个还有栈式解释器的提交（`deb70815`）上，从栈式解释器记下来的，记的是两个解释器结果一致的用例。没有黄金文件的用例算作不一致，这样后来加的脚本不会在没有东西可比的情况下通过。它的黄金文件来自 Node 24，或者来自读过输出、确认正确之后的 `-update`。
 - `rvgen`（`internal/rvgen`）为 pass 写小的随机程序：算术、比较、实参缺少和多余的调用、方法、递归、循环、字符串 `switch`、对象和数组、会回调的 getter，范围更宽的模式里还有闭包、`try`、类等等。`golden.sh` 对每种模式（`core`、`full`、`wide`，固定在 `internal/rvgen/v1`）的 1,000 个固定种子，对着 `golden/seeds` 检查，`rvgen node` 让新程序经 `rvdiff` 和 Node 24 各跑一遍，并显示每处差别。
 - `inject.sh`（引擎和工具用 `EXTRA_DEFS=-DRV_INJECT` 构建，见它的开头注释）让寄存器指令可能抛错的第 n 个位置抛一个 `InternalError`，n 取 1、2、3 等等。处理函数照常运行，走它的慢速一侧，在它调进引擎的地方失败，所以它释放什么、它的 pcmap 项让展开释放什么，是分开写的两件事：一个临时槽被释放两次或一次也没释放，会在 AddressSanitizer 下或运行时的计数里显现。每次运行都和栈式解释器在同一位置抛同一个错的那次运行比较，那些记录在 `golden/inject` 里。
+- 完整的注入集，`inject.sh DIR engine/test/regvm/corpus engine/test/regvm/js`，在一个改了 `engine/` 的分支合进 main 之前运行。它在一个核上要约 10 小时（多数脚本 2 到 7 分钟，最大的约 25 分钟），所以分成每次几个脚本的任务来跑。`check-full` 每类脚本用 `-max 1` 跑一个（`inject` 步骤，在一个核上连构建约 10 分钟，脚本列在 `engine/test/regvm/inject-check.txt`），`inject.sh -goldens`（`inject-goldens` 步骤）在注入集里有脚本既没有黄金文件、`golden/inject/skip` 里也没有它那一行时失败。栈式解释器已经没了，一个改动让某个黄金文件变了，就用 `inject.sh -update` 跑一次重新写：只取这个改动解释得了的那些行，其余位置保持栈式解释器当初记下的样子。
 - `rvops` 把表 `engine/test/regvm/opcodes.txt` 和引擎的操作码对照：每个操作码一行，说明寄存器循环怎样接它（自己的操作，只靠 pass 的模型，窗口操作，`OLD`，或者没有），而且 pass 必须接受函数可能有的每个操作码。以 `>` 开头的一行是 pass 曾经拒绝过的函数，现在必须有寄存器码。
 - `unit-white`、`unit-oom` 和 `unit-api` 里是需要 pass 和入口内部才能做的检查（`test_regvm_*` 和 `test_rv_*`）：转换和它的暂存块，折叠和寄存器栈的新段在每次分配时依次失败，没有编译器会做出来的代码，帧的上限。`compare.sh` 会运行它们。
 - 在生成的引擎上，`go test .` 运行 `TestRegvmScripts`（语料和 `rvgen` 程序的一个固定部分，其中不许有函数没有寄存器码）、`TestRegvmMicro`、`TestRegvmDepth`（没有哪条路径比测试里记的下限递归得更浅，两种架构各一份）、`TestRegvmFrame` 和 `TestRegvmLimits*`（超时、`Interrupt` 和内存上限能结束寄存器循环里每种形状的循环）。`internal/goasm/gen` 的 `TestRegvmJumpsCount` 见[下面](#生成引擎的-go-宿主)。
@@ -290,7 +292,7 @@ go test -race -tags testhooks ./internal/hostmem         # VMs mapping memory on
 
 测试不用时钟去限定 `runtime.GC` 或其他任何等 Go 调度器的地方。`runtime.GC` 返回前要清扫堆，每清扫一个 span 就让出一次（`Gosched`）。只有一个 P 时（`GOMAXPROCS=1`，比如用 `taskset` 绑在一个核上），一直占着 CPU 的 goroutine（比如在循环里的脚本）每次都会拿回 P，直到 10 ms 后调度器抢占它才交出来。所以这次 GC 要花剩下的 span 数乘以 10 ms：在整个根包里约一秒，旁边有 200,000 个小对象的垃圾时是 28 秒，旁边换成纯 Go 的循环也一样。给这种 GC 设 1 秒的上限，在一些 Go 版本上失败、另一些不失败，取决于前面的测试留下的堆有多大。这样的测试要按引擎做了多少工作来判断，用 poll 次数（见 `stoppolls_test.go`、`TestLoopWithoutCallsPolls` 和 `internal/cengine` 的 `TestGCInTightLoops`），卡死交给父进程去发现（`TestGCStopsLoopWithoutCalls`）。给别的东西设时钟上限可以留着：必须停下一次调用的超时，或者另一个 goroutine 发出的 `Interrupt`（引擎在轮询时读这两样，那个 goroutine 等 P 最多等一次抢占，也就是 10 ms），杀进程规则定下的下限，以及防卡死的几秒或几分钟的守卫。
 
-`intl`、`temporal`、`fmt` 里 Go 函数的长调用要在很多个超时下检查，不只一个：`stopsweep.Sweep`（`internal/stopsweep`）先给整个调用计时，再用 2 ms 的求值超时重跑，每次乘 1.2，一直到整个调用的时间，任何一次停下的时间比超时晚出宽限期就失败。只用一个超时，只有超时正好落在没有检查的那段里才发现得了，而一段在这台机器上短，换到慢的机器上就长。宽限期按工作量定，不按某台机器定：调用至少每处理一块输入就读一次 `vmhook.Stop`，所以在处理 n 个单位要用 T 的机器上，两次读最多隔 2·块·T/n，宽限期取它的两倍，再加 5 ms 给不属于输入的工作，只有一个 P 时再加 10 ms。晚停的那次会再试两次才算数。扫这些调用的测试是 `intl` 和 `fmt` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal` 的 `TestCalendarArithmeticStopsAtEveryTimeout`，`-short` 会跳过它们。还有一段没有检查的调用，在测试里列出来，写明是什么给这段定了上限，并跳过，直到把它切开的那次改动。
+`intl`、`temporal`、`fmt` 里 Go 函数的长调用要在很多个超时下检查，不只一个：`stopsweep.Sweep`（`internal/stopsweep`）先给整个调用计时，再用 2 ms 的求值超时重跑，每次乘 1.2，一直到整个调用的时间，任何一次停下的时间比超时晚出宽限期就失败。只用一个超时，只有超时正好落在没有检查的那段里才发现得了，而一段在这台机器上短，换到慢的机器上就长。宽限期按工作量定，不按某台机器定：调用至少每处理一块输入就读一次 `vmhook.Stop`，所以在处理 n 个单位要用 T 的机器上，两次读最多隔 2·块·T/n，宽限期取它的两倍，再加 5 ms 给不属于输入的工作，只有一个 P 时，或者 P 比 CPU 多时（`GOMAXPROCS` 设得比 `taskset` 留下的核多），再加 10 ms。晚停的那次会再试两次才算数，因为原因可能在机器而不在调用：垃圾回收的停顿，或者别的进程占了 CPU。一个超时一直晚时，错误里写出每次尝试：花了多久，这期间进程的 CPU 时间、缺页数和 GC 停顿，以及调用在超时加宽限期那一刻的栈，从栈上能看出没有检查的那段在哪。Go 一口气清零的数组就是这样找到的（[uncatchable.md](changes/uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存)）。扫这些调用的测试是 `intl` 和 `fmt` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。在 CI 跑的 `-short` 下，扫描只在整个调用时间的四分之一、一半和四分之三处停下每个调用，比调用的四分之一还长的无检查段在哪台机器上都躲不过，并且只取一部分调用，输入也更短：在 Apple M4 上 `intl` 约 2 秒，`temporal` 1 秒，`fmt` 1.1 秒，Rosetta 下是 2.2、1.3 和 1.6 秒。CI 的 Intel Mac 发现的 Segmenter 读文本不检查的问题，在 M4 上也会让它失败。这种读的输入仍然保持很长（8 Mi 个单位），因为无检查段只有比宽限期固定的 5 ms 长才看得出来。还有一段没有检查的调用，在测试里列出来，写明是什么给这段定了上限，并跳过，直到把它切开的那次改动。
 
 ## 每个目标平台
 
@@ -346,17 +348,32 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `cengine` | 快档 | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain` 和 `render-test.sh plain`、`cycles.sh` |
 | `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
+| `inject-goldens` | 快档 | 对 `engine/test/regvm/corpus` 和 `engine/test/regvm/js` 运行 `engine/test/regvm/inject.sh -goldens`：注入抛错的每个脚本都有黄金文件，或者在 `golden/inject/skip` 里有一行 |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
 | `heap` | 全档 | `engine/test/heap.sh -s 2 -n 100000`：分配器的各个场景，以及对堆 100000 步、对运行时 300000 步的两个种子的随机序列，用 plain 构建（约 30 秒）。poison 和其他模式见[分配器的检查](#分配器) |
+| `inject` | 全档 | 在用 `-DRV_INJECT` 构建的引擎上，对 `engine/test/regvm/inject-check.txt` 里每类一个的脚本运行注入抛错（`engine/test/regvm/inject.sh -max 1`）：每个黄金文件记下的位置，加上每个 site 一个位置（在一个核上连构建约 10 分钟）。完整的注入集在合进 main 之前运行（[寄存器循环](#寄存器循环)） |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | 全档 | `go test -p 1 .` |
 | `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |
 | `race` | 全档 | 根包和上面三个包的 `go test -race -short -p 1` |
 | `host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan` | 全档 | sanitizer 下的 `engine/test/build.sh` 和 `compare.sh` |
 | `test262` | 全档 | `engine/test/test262.sh -m plain -T 2` |
+| `gointl` | 全档 | `make gointl`，放在最后，因为它要用 go-intl 的缓存（见[下文](#每种语言的测试)） |
 
 这份列表在 `scripts/check.sh` 里。新的检查要加到那里，也要加到上面的表里。
+
+### 每种语言的测试
+
+`internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
+
+这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
+
+- `data.sh checkout` 第一次克隆 go-intl，只在检出里没有 `internal/gointl/UPSTREAM` 所写的提交时才去 fetch。然后检出那个提交，检出里改过的文件也会被覆盖，所以停在别的提交上的缓存会被移到这个提交，缓存里有这个提交时不需要网络。
+- `data.sh test` 在检出不在那个提交上时停下，对它运行 `git fsck`，再用 `git archive` 从提交里读 `data/` 和 `testdata/`。检出里改过或删掉的文件到不了测试，检出底下被改过的对象会让这一步失败。
+- 没有网络也没有缓存时，这一步失败，只输出一行：`data.sh: cannot clone ... the first checkout needs the network`。它从不跳过。
+
+有缓存时，`make gointl` 在 Apple M4 上约 1.5 分钟（86 到 107 秒，其中 `data.sh test` 约 45 秒），第一次多 26 秒，用来克隆 go-intl、下载 ICU 的源码和生成时区。
 
 ### 给两个构建计时对比
 

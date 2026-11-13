@@ -8,6 +8,7 @@ package intl
 import (
 	"strings"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // Limits are the checks a long piece of work makes for the call it is done
@@ -18,9 +19,19 @@ import (
 // recovers. A nil Limits, or a nil func, checks nothing. The work calls them
 // where it has changed nothing it shares with other work, so that a panic
 // leaves only its own state behind.
+//
+// Take, when it is not nil, has the work take each array the length of its
+// text from it: size bytes of zeros outside Go's heap, and the function that
+// gives them back (vmhook.Take, qjs_blocks.go). It ends the work by a panic
+// when the call is to stop or the OS refuses the memory. The owner of such
+// Limits calls Done once nothing the work made is used, and uses them for
+// one piece of work only.
 type Limits struct {
 	Check func()
 	Room  func(n int64)
+	Take  func(size int) (p unsafe.Pointer, give func())
+
+	gives []func()
 }
 
 // limitEvery is how many turns of a loop go between two checks, where a
@@ -64,7 +75,7 @@ func runesOf(s string, l *Limits) []rune {
 		return []rune(s)
 	}
 	l.room(4 * int64(len(s)))
-	r := make([]rune, 0, len(s))
+	r := take[rune](l, len(s))[:0]
 	turns := 0
 	for _, c := range s {
 		l.every(&turns)
@@ -80,6 +91,15 @@ func stringOf(r []rune, l *Limits) string {
 		return string(r)
 	}
 	l.room(utf8.UTFMax * int64(len(r)))
+	if l.blocks() {
+		b := take[byte](l, utf8.UTFMax*len(r))[:0]
+		turns := 0
+		for _, c := range r {
+			l.every(&turns)
+			b = utf8.AppendRune(b, c)
+		}
+		return unsafe.String(unsafe.SliceData(b), len(b))
+	}
 	var b strings.Builder
 	b.Grow(len(r))
 	turns := 0

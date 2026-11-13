@@ -178,8 +178,20 @@ func (d *Door) Locales(i int) (string, bool) {
 	return String(d.a, i)
 }
 
-// LongWTF8 reads argument i, long content, as WTF8 does, whole.
-func (d *Door) LongWTF8(i int) (string, bool) { return WTF8(d.a, i) }
+// LongWTF8 reads argument i, long content, as WTF8 does, whole, into memory
+// the Builtin gives back with give before it returns, deferred: a block for a
+// long string (vmhook.LongWTF8, hostmem.Take). Nothing may keep the string,
+// or a part of it, after give, nor return it in an error, which javascript
+// reads after the Builtin returned: the Builtin makes what it answers from it
+// with Emit and the functions next to it. When the call stops, the block is
+// given back before LongWTF8 panics, and give does nothing.
+func (d *Door) LongWTF8(i int) (s string, give func(), ok bool) {
+	s, give, ok = vmhook.LongWTF8(d.a, i)
+	if !ok && failed(d.a, i) {
+		panic(stopped{})
+	}
+	return s, give, ok
+}
 
 // Len is the length of argument i, long content, in UTF-16 code units, read
 // where the engine keeps it, so that a Builtin can count the room for what
@@ -192,16 +204,22 @@ func (d *Door) Len(i int) (int, bool) { return d.a.StringLen(i) }
 const Piece = 1 << 16
 
 // LongUTF16 reads argument i, long content, as the UTF-16 code units
-// javascript counts, lone surrogates as they are, into memory of Go's that
-// the Builtin may keep after the call. It checks the room for them first, then
-// copies them from where the engine keeps them, Piece units at a time, and
-// checks the call between pieces: read as WTF-8 and turned back into UTF-16,
-// a text of 8 Mi units held the eval timeout 19 to 40 ms on an Apple M4, with
-// no check. ok is false for an argument that is not a string.
-func (d *Door) LongUTF16(i int) ([]uint16, bool) {
+// javascript counts, lone surrogates as they are, into memory the Builtin may
+// keep after the call, and gives back with give once nothing uses it (a
+// block, hostmem.Take, for a long text). It checks the room for them first,
+// then copies them from where the engine keeps them, Piece units at a time,
+// and checks the call between pieces: read as WTF-8 and turned back into
+// UTF-16, a text of 8 Mi units held the eval timeout 19 to 40 ms on an Apple
+// M4, with no check. A Go allocation of the text held it 30 ms on the
+// virtual M1 of GitHub's macos-15 runner under Rosetta, while Go cleared it
+// and the OS handed over its pages: the pages of a block come in the loop
+// that copies, and the call stops there. ok is false, and give does nothing,
+// for an argument that is not a string. When the call stops, LongUTF16 gives
+// the memory back itself.
+func (d *Door) LongUTF16(i int) (u []uint16, give func(), ok bool) {
 	n, ok := d.a.StringLen(i)
 	if !ok {
-		return nil, false
+		return nil, func() {}, false
 	}
 	d.Reserve(2 * int64(n))
 	latin1, wide, release, ok := vmhook.Chars(d.a, i)
@@ -211,7 +229,13 @@ func (d *Door) LongUTF16(i int) ([]uint16, bool) {
 	}
 	defer release()
 	vm := d.a.VM()
-	r := make([]uint16, max(len(latin1), len(wide)))
+	r, give := Take[uint16](vm, max(len(latin1), len(wide)))
+	kept := false
+	defer func() {
+		if !kept {
+			give()
+		}
+	}()
 	for at := 0; at < len(r); at += Piece {
 		Check(vm)
 		end := min(at+Piece, len(r))
@@ -223,7 +247,8 @@ func (d *Door) LongUTF16(i int) ([]uint16, bool) {
 			r[at+j] = uint16(c)
 		}
 	}
-	return r, true
+	kept = true
+	return r, give, true
 }
 
 // Reserve counts n bytes more that Go may take for the call, such as those

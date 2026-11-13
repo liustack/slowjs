@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/liustack/quickjs"
@@ -149,5 +150,34 @@ func TestWriterInterrupted(t *testing.T) {
 	w.writes, w.n = 0, 0
 	if v, err := vm.Eval(`fmt.printf('%d|', 42)`, quickjs.EvalGlobal); err != nil || w.n != 3 {
 		t.Errorf("printf after the interrupt: %v, %v, %d bytes", v, err, w.n)
+	}
+}
+
+// A verb may be as long as the format: a run of flags, or of zeros before a
+// width, a precision or an argument index. sprintf reads vmhook.Stop in it
+// while it finds the bound of the output and again while it makes the
+// output, and hands Go's fmt the verb with each flag once and its numbers
+// without the zeros. A verb of 16 MiB ran 100 to 260 ms with no read on an
+// Apple M4.
+func TestLongVerbsStop(t *testing.T) {
+	const n = 4 << 20
+	vm := newVM(t)
+	for _, c := range []struct{ format, want string }{
+		{`'%' + '0'.repeat(n) + '5d'`, "00001"},
+		{`'%' + '-+'.repeat(n / 2) + '5d'`, "+1   "},
+		{`'%.' + '0'.repeat(n) + '3d'`, "001"},
+		{`'%[' + '0'.repeat(n) + '1]d'`, "1"},
+	} {
+		src := "var n = " + strconv.Itoa(n) + "; globalThis.got = fmt.sprintf(" + c.format + ", 1)"
+		stops, err := countStops(t, vm, src)
+		if err != nil {
+			t.Fatalf("%s: %v", c.format, err)
+		}
+		if got, err := vm.Eval("got", quickjs.EvalGlobal); err != nil || got != c.want {
+			t.Errorf("sprintf(%s) is %v, %v, want %q", c.format, got, err, c.want)
+		}
+		if stops < 2*n/bytesPerStop {
+			t.Errorf("sprintf(%s) read vmhook.Stop %d times, want at least %d", c.format, stops, 2*n/bytesPerStop)
+		}
 	}
 }
