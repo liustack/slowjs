@@ -1328,6 +1328,8 @@ enum {
     RV_FAST_INDEX_OF, /* Array.prototype.indexOf */
     RV_FAST_STR_INDEX_OF, /* String.prototype.indexOf */
     RV_FAST_STR_INCLUDES, /* String.prototype.includes, startsWith, endsWith */
+    RV_FAST_HAS_OWN, /* Object.hasOwn */
+    RV_FAST_HAS_OWN_PROPERTY, /* Object.prototype.hasOwnProperty */
 };
 
 struct JSObject {
@@ -8943,6 +8945,10 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int lastIndexOf);
 static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv, int magic);
+static JSValue js_object_hasOwn(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv);
+static JSValue js_object_hasOwnProperty(JSContext *ctx, JSValueConst this_val,
+                                        int argc, JSValueConst *argv);
 static int js_string_find_quiet(JSValueConst this_val, int argc,
                                 JSValueConst *argv, int kind);
 #define MAGIC_SET (1 << 0)
@@ -8976,6 +8982,10 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_STR_INDEX_OF;
     if (func == (JSCFunction *)js_string_includes)
         return RV_FAST_STR_INCLUDES;
+    if (func == (JSCFunction *)js_object_hasOwn)
+        return RV_FAST_HAS_OWN;
+    if (func == (JSCFunction *)js_object_hasOwnProperty)
+        return RV_FAST_HAS_OWN_PROPERTY;
     return RV_FAST_NONE;
 }
 
@@ -23834,36 +23844,23 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
     return ret;
 }
 
-/* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
-   one of Function.prototype.call and the one of hasOwnProperty: fn is what
-   Function.prototype.call calls (the this of the call), call_argv its
-   arguments. The register loop calls it (rv_fast_call).
-   React and the libraries around it test each key of a for in loop this
-   way. Only what cannot run script or throw takes this path:
-   hasOwnProperty itself, an ordinary object (not exotic, so no proxy or
-   class method answers), and a key that is its own atom already, a string
-   atom as JS_ValueToAtom finds it or an integer of an index atom, so that
-   no atom is made. Where the two calls would have thrown on their way in
-   (the call depth, the stack, an interrupt or an uncatchable exception
-   pending) and for a variable binding, which can throw before it is
-   initialized, the calls are made as before.
-   Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make the calls. */
-static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
-                                         JSValueConst *call_argv, int call_argc)
+/* Whether obj has an own property key, found as hasOwnProperty and
+   Object.hasOwn find it, when that runs no script, throws nothing and makes
+   nothing: an ordinary object (not exotic, so no proxy or class method
+   answers), and a key that is its own atom already, a string atom as
+   JS_ValueToAtom finds it or an integer of an index atom, so that no atom is
+   made. A variable binding, which can throw before it is initialized, is
+   not answered. Reads no flag. Returns JS_TRUE or JS_FALSE, or
+   JS_UNINITIALIZED to make the call. */
+static force_inline JSValue js_has_own_quiet(JSRuntime *rt, JSValueConst obj,
+                                             JSValueConst key)
 {
-    JSRuntime *rt = ctx->rt;
-    JSValueConst obj, key;
     JSObject *p;
     JSShapeProperty *prs;
     JSProperty *pr;
     JSAtom atom;
     uint32_t tag;
 
-    if (call_argc < 2 ||
-        !js_is_cfunction(fn, js_object_hasOwnProperty))
-        return JS_UNINITIALIZED;
-    obj = call_argv[0];
-    key = call_argv[1];
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return JS_UNINITIALIZED;
     p = JS_VALUE_GET_OBJ(obj);
@@ -23881,6 +23878,36 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
     } else {
         return JS_UNINITIALIZED;
     }
+    prs = find_own_property(&pr, p, atom);
+    if (!prs)
+        return JS_FALSE;
+    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
+        return JS_UNINITIALIZED;
+    return JS_TRUE;
+}
+
+/* hasOwnProperty.call(obj, key) answered without the two calls it takes, the
+   one of Function.prototype.call and the one of hasOwnProperty: fn is what
+   Function.prototype.call calls (the this of the call), call_argv its
+   arguments. The register loop calls it (rv_fast_call).
+   React and the libraries around it test each key of a for in loop this
+   way. Only hasOwnProperty itself and what js_has_own_quiet answers take
+   this path. Where the two calls would have thrown on their way in (the
+   call depth, the stack, an interrupt or an uncatchable exception pending)
+   the calls are made as before.
+   Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make the calls. */
+static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
+                                         JSValueConst *call_argv, int call_argc)
+{
+    JSRuntime *rt = ctx->rt;
+    JSValue ret;
+
+    if (call_argc < 2 ||
+        !js_is_cfunction(fn, js_object_hasOwnProperty))
+        return JS_UNINITIALIZED;
+    ret = js_has_own_quiet(rt, call_argv[0], call_argv[1]);
+    if (JS_IsUninitialized(ret))
+        return ret;
     /* what JS_CallInternal checks first, for the two levels the calls
        count. Their frames come before their checks and take much less than
        a margin, so with less than two margins of stack left the calls are
@@ -23889,12 +23916,7 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
         js_stack_short(rt, JS_STACK_MARGIN) ||
         poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt))
         return JS_UNINITIALIZED;
-    prs = find_own_property(&pr, p, atom);
-    if (!prs)
-        return JS_FALSE;
-    if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF)
-        return JS_UNINITIALIZED;
-    return JS_TRUE;
+    return ret;
 }
 
 /* The checks of the entry of JS_CallInternal, after the count of its poll:

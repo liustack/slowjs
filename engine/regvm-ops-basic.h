@@ -833,6 +833,22 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         ret = f->rv_fast == RV_FAST_STR_INDEX_OF ? JS_NewInt32(ctx, r) :
             JS_NewBool(ctx, r);
         goto answer;
+    case RV_FAST_HAS_OWN:
+        /* the object is converted first, then the key: neither runs or
+           throws for what js_has_own_quiet answers */
+        if (n < 2)
+            break;
+        ret = js_has_own_quiet(ctx->rt, W[1], W[2]);
+        if (JS_IsUninitialized(ret))
+            break;
+        goto answer;
+    case RV_FAST_HAS_OWN_PROPERTY:
+        if (n < 1)
+            break;
+        ret = js_has_own_quiet(ctx->rt, this_v, W[1]);
+        if (JS_IsUninitialized(ret))
+            break;
+        goto answer;
     case RV_FAST_PUSH:
         {
             /* the room is made first, the elements added after the checks */

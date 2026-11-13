@@ -32,6 +32,7 @@ var regvmSpins = []struct{ name, js string }{
 	// a poll and reads the flag as the call did
 	{"built-ins", `function go() { var m = new Map([[1, 1]]), s = new Set(['a']), x = 0; for (;;) { x = m.has(1) + s.has('a') + Math.clz32(x); } }`},
 	{"built-ins no loop", `function t(n, m) { return n === 0 ? m.has(n) + Math.clz32(n) : t(n - 1, m) + t(n - 1, m); } function go() { return t(60, new Map()); }`},
+	{"built-ins searches", `function go() { var o = { a: 1 }, a = [1, 2, 3], s = "abcabc", w = new WeakMap([[o, 1]]), x = 0; for (;;) { x = Object.hasOwn(o, "a") + o.hasOwnProperty("b") + a.indexOf(3) + a.includes(x) + s.indexOf("c") + s.includes("ca") + s.startsWith("ab") + s.endsWith("bc") + Array.isArray(a) + w.has(o) + w.get(o); } }`},
 }
 
 // regvmRun runs go() of js on a new VM with the register loop on, with stop
@@ -102,6 +103,7 @@ func TestRegvmLimitsMemory(t *testing.T) {
 		{"catch", `function go() { var a = []; for (;;) { try { a.push('x'.repeat(256) + a.length); } catch (e) {} } }`},
 		{"objects", `function go() { var a = []; for (var i = 0; ; i++) a.push({ i: i, s: [i, i + 1, i + 2] }); }`},
 		{"recursion", `function r(a) { a.push(new Array(64).fill(a.length)); return r(a) + 1; } function go() { for (;;) { try { r([]); } catch (e) {} } }`},
+		{"built-ins", `function go() { var a = [], o = { a: 1 }, s = "abc", m = new Map([[1, 1]]); for (;;) { if (Object.hasOwn(o, "a") && s.startsWith("ab") && m.has(1)) a.push("x".repeat(256) + a.length, s.indexOf("c"), Array.isArray(a)); } }`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			err := regvmRun(t, c.js, func(m *VM) {
