@@ -69,16 +69,23 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 	if k.size >= size {
 		addr, size = k.addr, k.size
 		k.addr, k.size, k.idle = 0, 0, 0
-		// The block stays counted in kept while it is cleared, so that a
-		// stop puts it back within KeptMax.
+		// The block stays counted in kept while it is cleared, and goes
+		// back to k when the clear does not end, by a stop or a panic of
+		// stop, so that it is still k's to give back within KeptMax.
+		cleared := false
+		defer func() {
+			if !cleared {
+				k.addr, k.size = addr, size
+			}
+		}()
 		b := unsafe.Slice((*byte)(pointer(addr)), asked)
 		for lo := uintptr(0); lo < asked; lo += clearPiece {
 			if lo > 0 && stop() {
-				k.addr, k.size = addr, size
 				return nil, nil, true, nil
 			}
 			clear(b[lo:min(asked, lo+clearPiece)])
 		}
+		cleared = true
 		kept.Add(-int64(size))
 	} else {
 		if addr, err = osMapBlock(size); err != nil {
@@ -91,37 +98,47 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 		if given {
 			return
 		}
-		// Once k keeps the block, it is given, whatever becomes of the
-		// one k gives up. A block k does not keep is given once the OS
-		// took it back, so that a give called again after the OS refused
-		// it tries again.
-		free, freeSize := k.put(addr, size)
-		if free != addr {
-			given = true
-		}
-		if freeSize != 0 {
-			unmapBlock(free, freeSize)
+		// The block is given once k keeps it or the OS took it back, so
+		// that a give called again after the OS refused a block tries
+		// again.
+		if !k.put(addr, size) {
+			unmapBlock(addr, size)
 		}
 		given = true
 	}
 	return unsafe.Slice((*T)(pointer(addr)), n), give, false, nil
 }
 
-// put keeps the block at addr when k may and the Keeps of the process stay
-// within KeptMax with it, and returns the block that goes back to the OS: the
-// one at addr, or the one k kept before, or none (size 0).
-func (k *Keep) put(addr, size uintptr) (free, freeSize uintptr) {
-	if !k.closed && size <= k.Max && size > k.size && k.Allow(size) {
-		more := int64(size - k.size)
-		if kept.Add(more) <= KeptMax {
-			addr, k.addr = k.addr, addr
-			size, k.size = k.size, size
-			k.idle = 0
-		} else {
-			kept.Add(-more)
+// put keeps the block at addr, in place of the smaller one k kept, which goes
+// back to the OS, when k may and the Keeps of the process stay within KeptMax
+// with it. It reports whether k keeps the block. When the OS refuses the
+// block k kept, put panics with k as it was, keeping that block, and the
+// block at addr is the caller's still.
+func (k *Keep) put(addr, size uintptr) bool {
+	if k.closed || size > k.Max || size <= k.size || !k.Allow(size) {
+		return false
+	}
+	// kept never counts more than KeptMax, even for a moment: another
+	// Keep reads it to know whether there is room.
+	more := int64(size - k.size)
+	for {
+		n := kept.Load()
+		if n > KeptMax-more {
+			return false
+		}
+		if kept.CompareAndSwap(n, n+more) {
+			break
 		}
 	}
-	return addr, size
+	if k.size != 0 {
+		if err := osUnmap(k.addr, k.size); err != nil {
+			kept.Add(-more)
+			panic(unmapError(k.addr, k.size, err))
+		}
+		blocks.Add(-1)
+	}
+	k.addr, k.size, k.idle = addr, size, 0
+	return true
 }
 
 // Idle counts a call of the VM that ended, and gives the block k keeps back
@@ -156,7 +173,12 @@ func (k *Keep) Close() {
 // unmapBlock gives a block back to the OS.
 func unmapBlock(addr, size uintptr) {
 	if err := osUnmap(addr, size); err != nil {
-		panic(fmt.Errorf("hostmem: giving back the block of %d bytes at %#x: %w", size, addr, err))
+		panic(unmapError(addr, size, err))
 	}
 	blocks.Add(-1)
+}
+
+// unmapError is the error of the OS refusing to take a block back.
+func unmapError(addr, size uintptr, err error) error {
+	return fmt.Errorf("hostmem: giving back the block of %d bytes at %#x: %w", size, addr, err)
 }

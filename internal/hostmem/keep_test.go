@@ -6,6 +6,7 @@
 package hostmem
 
 import (
+	"sync"
 	"testing"
 	"unsafe"
 )
@@ -178,5 +179,82 @@ func TestKeepProcessCap(t *testing.T) {
 	}
 	if Kept() != 0 || Blocks() != held {
 		t.Fatalf("after Close: %d bytes kept, %d blocks held, want 0", Kept(), Blocks()-held)
+	}
+}
+
+// A stop that panics while a kept block is cleared leaves the block kept, and
+// counted, for Close to give back.
+func TestKeepStopPanics(t *testing.T) {
+	held, before := Blocks(), Kept()
+	k := newKeep()
+	const n = 2 * clearPiece
+	_, give, _, _ := TakeKept[byte](k, n, never)
+	give()
+	func() {
+		defer func() {
+			if r := recover(); r != "stop" {
+				t.Fatalf("TakeKept recovered %v, want the panic of stop", r)
+			}
+		}()
+		TakeKept[byte](k, n, func() bool { panic("stop") })
+	}()
+	if k.Size() != n || Kept() != before+n || Blocks() != held+1 {
+		t.Fatalf("after a stop that panics: %d bytes kept, %d in the process, %d blocks held, want %d, %d and 1", k.Size(), Kept()-before, Blocks()-held, n, n)
+	}
+	k.Close()
+	if Kept() != before || Blocks() != held {
+		t.Fatalf("after Close: %d bytes kept, %d blocks held, want 0", Kept()-before, Blocks()-held)
+	}
+}
+
+// Keeps that give blocks back at once never count more than KeptMax, even
+// for a moment, as another Keep reads the count to know whether there is
+// room.
+func TestKeepRaceForCap(t *testing.T) {
+	if before := Kept(); before != 0 {
+		t.Fatalf("the Keeps of the test keep %d bytes before it", before)
+	}
+	held := Blocks()
+	const size, keeps, rounds = KeptMax / 2, 4, 50
+	done := make(chan struct{})
+	over := make(chan int64, 1)
+	go func() {
+		for {
+			select {
+			case <-done:
+				close(over)
+				return
+			default:
+			}
+			if n := Kept(); n > KeptMax {
+				select {
+				case over <- n:
+				default:
+				}
+			}
+		}
+	}()
+	var wg sync.WaitGroup
+	for range keeps {
+		wg.Go(func() {
+			k := &Keep{Max: size, Allow: func(uintptr) bool { return true }}
+			for range rounds {
+				_, give, _, err := TakeKept[byte](k, size, never)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				give()
+				k.Release()
+			}
+		})
+	}
+	wg.Wait()
+	close(done)
+	if n, ok := <-over; ok {
+		t.Fatalf("the Keeps of the process counted %d bytes, more than KeptMax", n)
+	}
+	if Kept() != 0 || Blocks() != held {
+		t.Fatalf("after the race: %d bytes kept, %d blocks held, want 0", Kept(), Blocks()-held)
 	}
 }
