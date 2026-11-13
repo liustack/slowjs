@@ -1320,8 +1320,8 @@ enum {
     RV_FAST_CALL, /* Function.prototype.call, for hasOwnProperty.call */
     RV_FAST_CHAR_CODE_AT, /* String.prototype.charCodeAt */
     RV_FAST_CLZ32, /* Math.clz32 */
-    RV_FAST_MAP_HAS, /* Map.prototype.has and Set.prototype.has */
-    RV_FAST_MAP_GET, /* Map.prototype.get */
+    RV_FAST_MAP_HAS, /* Map, Set, WeakMap and WeakSet has */
+    RV_FAST_MAP_GET, /* Map and WeakMap get */
     RV_FAST_IS_ARRAY, /* Array.isArray */
     RV_FAST_PUSH, /* Array.prototype.push */
 };
@@ -8943,9 +8943,9 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_CALL;
     if (func == (JSCFunction *)js_math_clz32)
         return RV_FAST_CLZ32;
-    if (func == (JSCFunction *)js_map_has && (magic == 0 || magic == MAGIC_SET))
+    if (func == (JSCFunction *)js_map_has)
         return RV_FAST_MAP_HAS;
-    if (func == (JSCFunction *)js_map_get && magic == 0)
+    if (func == (JSCFunction *)js_map_get)
         return RV_FAST_MAP_GET;
     if (func == (JSCFunction *)js_array_isArray)
         return RV_FAST_IS_ARRAY;
@@ -63933,8 +63933,7 @@ static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
    strings of the key's length that add up to a step) it gives up. TRUE with
    the record in *pmr, NULL when the key is not there, or FALSE when it gave
    up. It reads no flag, throws nothing and changes nothing, so the call made
-   after it gives up finds what it would have found. s is of a Map or a Set,
-   not weak. */
+   after it gives up finds what it would have found. */
 static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
                                   JSValueConst key, JSMapRecord **pmr)
 {
@@ -63948,7 +63947,8 @@ static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
     h = map_hash_key(key, s->hash_bits);
     if (tag != JS_TAG_STRING) {
         for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
-            if (!mr->empty && js_same_value_zero(ctx, mr->key, key))
+            if (!mr->empty && !(s->is_weak && !js_weakref_is_live(mr->key)) &&
+                js_same_value_zero(ctx, mr->key, key))
                 break;
         }
         *pmr = mr;
@@ -63956,7 +63956,7 @@ static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
     }
     p = JS_VALUE_GET_STRING(key);
     for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
-        if (mr->empty)
+        if (mr->empty || (s->is_weak && !js_weakref_is_live(mr->key)))
             continue;
         tag = JS_VALUE_GET_TAG(mr->key);
         if (likely(tag == JS_TAG_STRING)) {
@@ -63978,8 +63978,9 @@ static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
     return TRUE;
 }
 
-/* Map.prototype.has and Set.prototype.has (magic 0 and MAGIC_SET), and
-   Map.prototype.get (get), answered in the register loop (rv_fast_call):
+/* Map.prototype.has, Set.prototype.has, WeakMap.prototype.has and
+   WeakSet.prototype.has (by magic), Map.prototype.get and
+   WeakMap.prototype.get (get), answered in the register loop (rv_fast_call):
    what js_map_has or js_map_get returns, for a this of the class and a key
    whose search reads no interrupt flag (map_find_record_quiet). Else
    JS_UNINITIALIZED, and the call is made: it throws for another this. */
