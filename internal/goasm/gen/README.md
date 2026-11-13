@@ -467,7 +467,12 @@ must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the
 one the lowering marshalled; a symbol anywhere else fails. It compares engine_rodata and the data each function
-carries byte by byte, pointers by what they point to. It also holds
+carries byte by byte, pointers by what they point to. A function pointer,
+an address the code takes or a pointer of engine_rodata, may hold only the
+start of a lowered unified function or of a stub: a host callback (Go code),
+a leaf or a place inside a function fails, here and already in the driver
+(`CheckPointerTargets`), so every call through a pointer reaches code that
+returns its result the way a lowered unified function does. It also holds
 each pool and table to its alignment at the address where it sits in the
 binary. `-verify-all` also
 fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the

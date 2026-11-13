@@ -218,6 +218,8 @@ type checker struct {
 	bin      *binFile
 	rep      *CheckReport
 	roomOK   bool // goasm_room was checked (roomFunc)
+	// ptrOK holds the addresses a function pointer may hold (pointerTarget).
+	ptrOK map[uint64]bool
 }
 
 func (k *checker) skip(why, fn string) { k.rep.Skipped[why] = append(k.rep.Skipped[why], fn) }
@@ -371,6 +373,37 @@ func (o *objFile) extent(s elf.Symbol) (int, error) {
 		}
 	}
 	return int(n), nil
+}
+
+// pointerTarget holds a function pointer of the engine, the code's LEA of
+// cname+add or a pointer of engine_rodata, to what a call through a pointer
+// may reach (CheckPointerTargets): the start of a lowered unified function
+// or of a stub. It compares addresses in the binary, so an alias is the
+// function it names, and a host callback, whose name is a Go function, is
+// none of them.
+func (k *checker) pointerTarget(cname string, add int64) error {
+	if k.ptrOK == nil {
+		k.ptrOK = map[uint64]bool{}
+		for _, m := range append(append([]Meta{}, k.c.Metas...), k.c.Stubs...) {
+			if m.Kind != Unified {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.ptrOK[s.Value] = true
+			}
+		}
+	}
+	if add != 0 {
+		return fmt.Errorf("a pointer to %s%+d, inside a function", cname, add)
+	}
+	a, err := k.funcAddr(cname)
+	if err != nil {
+		return err
+	}
+	if !k.ptrOK[a] {
+		return fmt.Errorf("a pointer to %s, which is no lowered unified function: a call through it would not get its result", cname)
+	}
+	return nil
 }
 
 func (k *checker) funcAddr(cname string) (uint64, error) {
@@ -1837,6 +1870,9 @@ func (m *matcher) dataRef(x insn, r *relAt, mem x86asm.Mem) (uint64, error) {
 				return 0, fmt.Errorf("%s is not a function of llc's object", ref.Label)
 			}
 		}
+		if err := k.pointerTarget(ref.Label, ref.Add); err != nil {
+			return 0, err
+		}
 		a, err := k.funcAddr(ref.Label)
 		if err != nil {
 			return 0, err
@@ -2605,6 +2641,9 @@ func (k *checker) blobSlot(blob []byte, base uint64, bo, si int, lo uint64, relo
 		}
 		var want uint64
 		if br.Func {
+			if err := k.pointerTarget(br.Label, br.LabelAdd); err != nil {
+				return 0, err
+			}
 			a, err := k.funcAddr(br.Label)
 			if err != nil {
 				return 0, err

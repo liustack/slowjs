@@ -588,6 +588,12 @@ func main() {
 	if err := gen.CheckBodyDataAlign(plan, metas, align64); err != nil {
 		die(err)
 	}
+	// A call through a pointer reaches only a lowered unified function (or
+	// a stub, which never returns): every pointer the code takes or
+	// engine_rodata holds must name one.
+	if err := gen.CheckPointerTargets(metas, stubs, plan, unit.Sets); err != nil {
+		die(err)
+	}
 	tLower := time.Since(t0)
 	// The functions without Go's stack check (gen.MarkNoSplit): the leaves
 	// that cannot have one, by the frame and the calls the lowering found.

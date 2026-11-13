@@ -455,6 +455,20 @@ func TestCheckCases(t *testing.T) {
 			want: "to a direct call"},
 		{name: "a signature symbol off any call", llc: llcSub("ic", "\taddq\t%r14, %rax\n", ckLabel("ic", 2, "i>i")+"\taddq\t%r14, %rax\n", 1),
 			want: "signature symbols in the function"},
+		// A function pointer holds a lowered unified function (a call
+		// through it takes the result from registers), never Go code such
+		// as a host callback and never a register-entry leaf.
+		{name: "the code takes the address of a unified function",
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tg(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tg(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1)},
+		{name: "the code takes the address of a leaf",
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tlf(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tlf(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			want:  "a pointer to lf, which is no lowered unified function"},
+		{name: "the code takes the address of a host callback", poll: pollSplit,
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\thost_poll(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\thost_poll(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			want:  "a pointer to host_poll, which is no lowered unified function"},
 		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
 			ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
 	}
@@ -527,6 +541,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	for _, n := range unit.FuncOrder {
 		funcs[n] = true
 	}
+	// As the driver has them: the host callbacks are functions too.
+	if c.poll != "" {
+		funcs["host_poll"] = true
+	}
 	plan := PlanData(unit, funcs)
 	for fn, errs := range plan.Errors {
 		t.Fatalf("data plan of %s: %v", fn, errs)
@@ -598,6 +616,9 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	names, err := GoNames(unit.FuncOrder)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if c.poll != "" {
+		names["host_poll"] = "host_poll"
 	}
 	files, err := EmitEngine(low, EngineEmit{Metas: metas, Names: names, MaxBytes: 1 << 20, Plan: plan, Arch: "amd64"})
 	if err != nil {

@@ -123,6 +123,41 @@ type a64Checker struct {
 	bin       *binFile
 	morestack uint64
 	rodata    uint64
+	// ptrOK holds the addresses a function pointer may hold (pointerTarget).
+	ptrOK map[uint64]bool
+}
+
+// pointerTarget is checker.pointerTarget on arm64: a function pointer, the
+// code's adrp and add of sym (go_name) or a pointer of engine_rodata to the
+// C function name, may hold only the start of a lowered unified function or
+// of a stub (CheckPointerTargets).
+func (k *a64Checker) pointerTarget(name string, add int64) error {
+	if k.ptrOK == nil {
+		k.ptrOK = map[uint64]bool{}
+		for _, m := range append(append([]Meta{}, k.c.Metas...), k.c.Stubs...) {
+			if m.Kind != Unified {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.ptrOK[s.Value] = true
+			}
+		}
+	}
+	if add != 0 {
+		return fmt.Errorf("a pointer to %s%+d, inside a function", name, add)
+	}
+	gn := k.c.Names[name]
+	if gn == "" {
+		return fmt.Errorf("a pointer to %s, which is no generated function", name)
+	}
+	s, ok := k.bin.abi0(k.c.Pkg, gn)
+	if !ok {
+		return fmt.Errorf("a pointer to %s, which is not in the binary", name)
+	}
+	if !k.ptrOK[s.Value] {
+		return fmt.Errorf("a pointer to %s, which is no lowered unified function: a call through it would not get its result", name)
+	}
+	return nil
 }
 
 // target is the address the binary must have for a symbol of the object: a
@@ -479,6 +514,11 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			if err != nil {
 				return err
 			}
+			if f, ok := strings.CutPrefix(rl.sym, "go_"); ok {
+				if err := k.pointerTarget(f, rl.add); err != nil {
+					return fmt.Errorf("the address at %#x: %w", pc-r[0], err)
+				}
+			}
 			add, err := next()
 			if err != nil {
 				return err
@@ -644,6 +684,9 @@ func (k *a64Checker) checkRodata() (int, error) {
 		if r, ok := relocs[off]; ok {
 			want := uint64(int64(k.rodata) + int64(r.Add))
 			if r.Func {
+				if err := k.pointerTarget(r.Sym, r.Add); err != nil {
+					return 0, fmt.Errorf("pointer at %d: %w", off, err)
+				}
 				gn := k.c.Names[r.Sym]
 				f, ok := k.bin.abi0(k.c.Pkg, gn)
 				if !ok {

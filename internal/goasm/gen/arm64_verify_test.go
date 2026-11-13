@@ -211,15 +211,27 @@ func TestCheckARM64Rodata(t *testing.T) {
 		binary.LittleEndian.PutUint64(b[16:], gAt)
 		return b
 	}
-	check := func(b []byte) error {
+	g := []Meta{{Name: "g", Kind: Unified}}
+	checkAs := func(b []byte, metas, stubs []Meta) error {
 		bin := &binFile{format: "ELF", secs: []*binSec{{name: "rodata", addr: rodata, size: uint64(len(b)), data: b}},
 			syms: map[string]binSym{"p.g.abi0": {Value: gAt}, "p." + RodataGo: {Value: rodata, Size: uint64(len(b))}}}
-		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan}, bin: bin, rodata: rodata}
+		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan, Metas: metas, Stubs: stubs}, bin: bin, rodata: rodata}
 		_, err := k.checkRodata()
 		return err
 	}
+	check := func(b []byte) error { return checkAs(b, g, nil) }
 	if err := check(made()); err != nil {
 		t.Fatalf("engine_rodata as made: %v", err)
+	}
+	// A function pointer may hold a lowered unified function or a stub,
+	// and nothing else: not Go code (a host callback) and not a leaf.
+	if err := checkAs(made(), nil, g); err != nil {
+		t.Fatalf("a pointer to a stub: %v", err)
+	}
+	for name, metas := range map[string][]Meta{"Go code": nil, "a leaf": {{Name: "g", Kind: Register}}} {
+		if err := checkAs(made(), metas, nil); err == nil || !strings.Contains(err.Error(), "no lowered unified function") {
+			t.Errorf("a pointer to %s: %v", name, err)
+		}
 	}
 	for name, c := range map[string]struct {
 		at   int
@@ -491,3 +503,42 @@ func TestCheckARM64HostPoll(t *testing.T) {
 		t.Errorf("host_poll absent: %v", err)
 	}
 }
+
+// TestCheckARM64FunctionPointer: the code may take the address of a lowered
+// unified function or a stub (a call through the pointer takes its result
+// from registers), and of nothing else: not Go code, a host callback, and
+// not a register-entry leaf.
+func TestCheckARM64FunctionPointer(t *testing.T) {
+	const gAt = 0x8000
+	run := func(metas, stubs []Meta, add int64) error {
+		k, m, w := a64CheckCase()
+		// adrp x8 and add x8 of go_g+add instead of engine_rodata+16.
+		k.o.relocs[8] = a64Reloc{elf.R_AARCH64_ADR_PREL_PG_HI21, "go_g", add}
+		k.o.relocs[12] = a64Reloc{elf.R_AARCH64_ADD_ABS_LO12_NC, "go_g", add}
+		w[10] = a64Adrp(0x1000+4*10, uint64(gAt+add), 8)
+		w[11] = 0x91000108 | uint32((gAt+add)&0xfff)<<10
+		k.c.Metas, k.c.Stubs = append([]Meta{m}, metas...), stubs
+		return k.function(m, 0x1000, a64Bytes(w))
+	}
+	g := []Meta{{Name: "g", Kind: Unified}}
+	if err := run(g, nil, 0); err != nil {
+		t.Fatalf("the address of a lowered unified function: %v", err)
+	}
+	if err := run(nil, g, 0); err != nil {
+		t.Fatalf("the address of a stub: %v", err)
+	}
+	for name, c := range map[string]struct {
+		metas []Meta
+		add   int64
+		want  string
+	}{
+		"Go code":           {nil, 0, "no lowered unified function"},
+		"a leaf":            {[]Meta{{Name: "g", Kind: Register}}, 0, "no lowered unified function"},
+		"inside a function": {g, 8, "inside a function"},
+	} {
+		if err := run(c.metas, nil, c.add); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("the address of %s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
