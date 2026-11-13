@@ -860,9 +860,22 @@ func TestRegvmFrame(t *testing.T) {
 	if hop := regvmStat(m, 12); hop < 0 || hop >= entry {
 		t.Errorf("js_call_c_hop counts %d bytes of the %d of JS_CallInternal", hop, entry)
 	}
+	// 17 and 18, what a direct call and a call through js_call_c_hop count
+	// as taken while the C function runs: with the frame of
+	// js_call_c_function less that of js_call_c_plain, which they call in
+	// its place. Below 0 the engine turns that path off, and every such
+	// call would go through JS_CallInternal with nothing else failing.
+	direct, hopRun := regvmStat(m, 17), regvmStat(m, 18)
+	t.Logf("a direct call of a C function counts %d bytes as taken, one through js_call_c_hop %d", direct, hopRun)
+	if direct < 0 || hopRun < 0 {
+		t.Errorf("a path of C calls is off: a direct call counts %d bytes, js_call_c_hop %d", direct, hopRun)
+	}
 	directCCalls(t, m, false)
 	if hop := regvmStat(m, 12); hop != -1 {
 		t.Errorf("direct calls off: js_call_c_hop counts %d bytes, want -1", hop)
+	}
+	if direct, hopRun := regvmStat(m, 17), regvmStat(m, 18); direct != -1 || hopRun != -1 {
+		t.Errorf("direct calls off: the calls of C functions count %d and %d bytes, want -1", direct, hopRun)
 	}
 }
 

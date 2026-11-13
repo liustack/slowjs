@@ -1648,21 +1648,27 @@ static void test_rv_far_locals(void)
 
 /* JS_RegvmStat 5 and 6, the bytes of stack a frame of JS_RegvmRun and of
    JS_CallInternal take before their checks, are measured: neither is 0, which
-   is what a measure gives when the compiler inlines the call it measures. A
-   call of a C function the register loop makes without JS_CallInternal
-   counts 6 as taken. 12, the part of 6 that js_call_c_hop counts, is
-   0 or more and less than 6 while the direct calls are on, or -1 when the
-   engine found the frame of js_call_c_hop larger than that of
-   JS_CallInternal (Linux's UBSan build) and calls C functions from C
-   through JS_CallInternal. The same measure gives the same answer each
-   time the direct calls are turned on, from wherever it is called: under
-   AddressSanitizer it measures from two places 16 bytes apart and keeps
-   the smaller (see test_c_call_recursions). */
+   is what a measure gives when the compiler inlines the call it measures.
+   12, the part of 6 that js_call_c_hop counts in its check, is 0 or more
+   and less than 6 while the direct calls are on, or -1 when the engine
+   found the frame of js_call_c_hop larger than that of JS_CallInternal
+   (Linux's UBSan build) and calls C functions from C through
+   JS_CallInternal. 17 and 18, what a direct call and a call through
+   js_call_c_hop count as taken while the C function runs (6 and 12 with the
+   frame of js_call_c_function less that of js_call_c_plain), are 0 or more
+   whenever their path is on: a debt below 0 turns its path off, and with
+   17 that would send every call of a C function through JS_CallInternal
+   with no test failing for it. With the direct calls off both are -1. The
+   same measure gives the same answer each time the direct calls are turned
+   on, from wherever it is called: under AddressSanitizer it measures from
+   two places 16 bytes apart and keeps the smaller (see
+   test_c_call_recursions). */
 static void test_call_frames_measured(void)
 {
     VM v = vm_new();
     int rv = JS_RegvmStat(v.ctx, 5), entry = JS_RegvmStat(v.ctx, 6);
     int hop = JS_RegvmStat(v.ctx, 12);
+    int direct = JS_RegvmStat(v.ctx, 17), hop_run = JS_RegvmStat(v.ctx, 18);
 
     CHECK(rv > 0, "a frame of JS_RegvmRun takes %d bytes", rv);
     CHECK(entry > 0, "a frame of JS_CallInternal takes %d bytes", entry);
@@ -1676,12 +1682,26 @@ static void test_call_frames_measured(void)
           "AddressSanitizer: debts of %d and %d bytes, not rounded down to 32", entry, hop);
     /* a build without a sanitizer always has the room */
     CHECK(C_CALL_SAN || hop >= 0, "no sanitizer, and js_call_c_hop is off");
+    /* 17 and 18: neither path is turned off by its debt */
+    CHECK(direct >= 0, "the direct calls are off: their debt is %d", direct);
+    CHECK((hop >= 0) == (hop_run >= 0),
+          "js_call_c_hop counts %d bytes in its check and %d while the function runs",
+          hop, hop_run);
+    CHECK(!C_CALL_ASAN || (direct % 32 == 0 && (hop_run == -1 || hop_run % 32 == 0)),
+          "AddressSanitizer: debts of %d and %d bytes while the function runs, not rounded down to 32",
+          direct, hop_run);
     CHECK(JS_SetDirectCCalls(v.ctx, 0) == 0 && JS_RegvmStat(v.ctx, 12) == -1,
           "direct calls off: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
+    CHECK(JS_RegvmStat(v.ctx, 17) == -1 && JS_RegvmStat(v.ctx, 18) == -1,
+          "direct calls off: the debts are %d and %d",
+          JS_RegvmStat(v.ctx, 17), JS_RegvmStat(v.ctx, 18));
     CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 &&
           JS_RegvmStat(v.ctx, 12) == hop,
           "direct calls on again: js_call_c_hop counts %d bytes, %d before",
           JS_RegvmStat(v.ctx, 12), hop);
+    CHECK(JS_RegvmStat(v.ctx, 17) == direct && JS_RegvmStat(v.ctx, 18) == hop_run,
+          "direct calls on again: a direct call counts %d bytes, %d before, js_call_c_hop %d, %d before",
+          JS_RegvmStat(v.ctx, 17), direct, JS_RegvmStat(v.ctx, 18), hop_run);
     vm_free(&v);
 }
 

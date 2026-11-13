@@ -217,6 +217,11 @@ int JS_RegvmStat(JSContext *ctx, int what)
         return (int)ctx->rt->rv_scratch_size;
     if (what == 12)
         return (int)ctx->rt->c_hop_debt;
+    if (what == 17)
+        return ctx->rt->call_frame < ((long)1 << 60) ?
+            (int)ctx->rt->c_direct_debt : -1;
+    if (what == 18)
+        return ctx->rt->c_hop_debt >= 0 ? (int)ctx->rt->c_hop_plain_debt : -1;
     if (what == 10)
         return ctx->rt->rv_count[0];
     if (what >= 13 && what < 16)

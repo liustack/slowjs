@@ -439,17 +439,27 @@ struct JSRuntime {
     int call_depth;
     int max_call_depth;
     /* the bytes of stack a frame of JS_CallInternal takes before its check
-       (js_measure_call_frame), and the sum of them over the calls of C
-       functions running now that the interpreter made without that frame
-       (js_call_c_direct): js_stack_short counts these as taken, so that the
+       (js_measure_call_frame), and the sum of the debts of the calls of C
+       functions running now that skipped that frame (js_call_c_direct,
+       js_call_c_hop): js_stack_short counts these as taken, so that the
        stack ends where it did */
     long call_frame;
     long stack_debt;
     /* what js_call_c_hop counts as taken of the frame of JS_CallInternal
-       it stands for, the rest of that frame after its own
+       it stands for in its check, the rest of that frame after its own
        (js_measure_call_frame), or -1 to call C functions from C through
        JS_CallInternal (direct calls off, or a frame of its own larger) */
     long c_hop_debt;
+    /* The direct calls and js_call_c_hop call a C function through
+       js_call_c_plain, JS_CallInternal through js_call_c_function, and the
+       frames of the two are not the same size. The debt of a call is what
+       it skipped, less what its own way takes more: call_frame and
+       c_hop_debt plus the frame of js_call_c_function less that of
+       js_call_c_plain (js_measure_call_frame). c_frame_left is the stack
+       left that js_call_c_body writes for that measure. */
+    long c_direct_debt;
+    long c_hop_plain_debt;
+    long c_frame_left;
     /* TRUE: the compiler leaves the pairs of fuse_code apart, joins a
        typeof test only as it did before typeof_is, and keeps every check of
        the temporal dead zone (JS_SetFusedOps, for tests) */
@@ -1513,6 +1523,8 @@ static no_inline JSValue rv_refused(JSContext *ctx, struct JSFunctionBytecode *b
 static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
                                             JSValueConst this_obj,
                                             int argc, JSValueConst *argv, int flags);
+static no_inline JSValue js_call_c_plain(JSObject *p, JSValueConst this_obj,
+                                         int argc, JSValueConst *argv);
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
                                       JSValueConst this_obj,
                                       int argc, JSValueConst *argv, int flags);
@@ -3664,7 +3676,12 @@ size_t JS_FreeRuntime(JSRuntime *rt)
    that the compiler cannot make a copy of JS_CallInternal for them with a
    frame of its own either. Then rt->c_hop_debt, from the frame of
    js_call_c_hop measured the same way (an argc below 0, read from memory
-   too). */
+   too). Then the frame of js_call_c_function less that of js_call_c_plain,
+   each measured where js_call_c_body starts (an argc below 0), on
+   Function.prototype, a C function every context has: the debts of the
+   direct calls and of js_call_c_hop take it in. A debt below 0 would let a
+   call go past the end of the stack, so the direct calls are then off as
+   JS_SetDirectCCalls turns them off, and so is js_call_c_hop for its own. */
 #if defined(__SANITIZE_ADDRESS__)
 #define JS_FRAME_SET_DOWN 32
 #elif defined(__has_feature)
@@ -3676,7 +3693,7 @@ size_t JS_FreeRuntime(JSRuntime *rt)
 static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
-    long left = __shadow_remaining();
+    long left = __shadow_remaining(), in_c, diff;
     volatile int flags = JS_CALL_FLAG_FRAME, argc = -1;
 
     JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
@@ -3684,8 +3701,19 @@ static no_inline void js_measure_call_frame(JSContext *ctx)
     rt->call_frame = left - rt->call_frame;
     js_call_c_hop(ctx, JS_UNDEFINED, JS_UNDEFINED, argc, NULL);
     rt->c_hop_debt = rt->call_frame - (left - rt->c_hop_debt);
-    if (rt->c_hop_debt < 0)
+    js_call_c_function(ctx, ctx->function_proto, JS_UNDEFINED, argc, NULL, 0);
+    in_c = rt->c_frame_left;
+    js_call_c_plain(JS_VALUE_GET_OBJ(ctx->function_proto), JS_UNDEFINED,
+                    argc, NULL);
+    diff = rt->c_frame_left - in_c;
+    rt->c_direct_debt = rt->call_frame + diff;
+    rt->c_hop_plain_debt = rt->c_hop_debt + diff;
+    if (rt->c_direct_debt < 0) {
+        rt->call_frame = (long)1 << 60; /* never room for it */
         rt->c_hop_debt = -1;
+    } else if (rt->c_hop_debt < 0 || rt->c_hop_plain_debt < 0) {
+        rt->c_hop_debt = -1;
+    }
 }
 #else
 /* Under AddressSanitizer (JS_FRAME_SET_DOWN), which aligns its stack
@@ -3711,14 +3739,18 @@ static no_inline void js_measure_call_frame(JSContext *ctx)
      is an odd multiple of 16 and the stack pointer falls the wrong way:
      the debts are rounded down so.
 
+   - The debts that take in the frame of js_call_c_function less that of
+     js_call_c_plain (rt->c_direct_debt, rt->c_hop_plain_debt) are the
+     smaller of their sums at the two places, rounded down the same way.
+
    So a call never counts as taken more than it saves, and a recursion
    with the direct calls on never ends less deep than through
    JS_CallInternal. */
 static no_inline __attribute__((no_sanitize("address"))) void
-js_measure_frames(JSContext *ctx, long *frame, long *hop)
+js_measure_frames(JSContext *ctx, long *frame, long *hop, long *diff)
 {
     JSRuntime *rt = ctx->rt;
-    long left = __shadow_remaining();
+    long left = __shadow_remaining(), in_c;
     volatile int flags = JS_CALL_FLAG_FRAME, argc = -1;
 
     JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
@@ -3726,6 +3758,11 @@ js_measure_frames(JSContext *ctx, long *frame, long *hop)
     *frame = left - rt->call_frame;
     js_call_c_hop(ctx, JS_UNDEFINED, JS_UNDEFINED, argc, NULL);
     *hop = *frame - (left - rt->c_hop_debt);
+    js_call_c_function(ctx, ctx->function_proto, JS_UNDEFINED, argc, NULL, 0);
+    in_c = rt->c_frame_left;
+    js_call_c_plain(JS_VALUE_GET_OBJ(ctx->function_proto), JS_UNDEFINED,
+                    argc, NULL);
+    *diff = rt->c_frame_left - in_c;
 }
 
 static no_inline __attribute__((no_sanitize("address"))) void
@@ -3733,17 +3770,27 @@ js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
     volatile size_t shift = 16;
-    long frame[2], hop[2], f, h;
+    long frame[2], hop[2], diff[2], f, h, d, dh;
     char *p;
 
-    js_measure_frames(ctx, &frame[0], &hop[0]);
+    js_measure_frames(ctx, &frame[0], &hop[0], &diff[0]);
     p = alloca(shift);
     __asm__ volatile("" : : "r"(p) : "memory");
-    js_measure_frames(ctx, &frame[1], &hop[1]);
+    js_measure_frames(ctx, &frame[1], &hop[1], &diff[1]);
     f = min_int64(frame[0], frame[1]);
     h = min_int64(hop[0], hop[1]);
+    d = min_int64(frame[0] + diff[0], frame[1] + diff[1]);
+    dh = min_int64(hop[0] + diff[0], hop[1] + diff[1]);
     rt->call_frame = f - f % JS_FRAME_SET_DOWN;
     rt->c_hop_debt = h < 0 ? -1 : h - h % JS_FRAME_SET_DOWN;
+    rt->c_direct_debt = d < 0 ? -1 : d - d % JS_FRAME_SET_DOWN;
+    rt->c_hop_plain_debt = dh < 0 ? -1 : dh - dh % JS_FRAME_SET_DOWN;
+    if (rt->c_direct_debt < 0) {
+        rt->call_frame = (long)1 << 60; /* never room for it */
+        rt->c_hop_debt = -1;
+    } else if (rt->c_hop_debt < 0 || rt->c_hop_plain_debt < 0) {
+        rt->c_hop_debt = -1;
+    }
 }
 #endif
 
@@ -23176,22 +23223,27 @@ static void close_lexical_var(JSContext *ctx, JSFunctionBytecode *b,
 
 #define JS_CALL_FLAG_COPY_ARGV   (1 << 1)
 
-/* never inlined: the interpreter calls it directly (js_call_c_direct), and
-   its frame inlined there would make every frame of the interpreter larger */
-static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
-                                            JSValueConst this_obj,
-                                            int argc, JSValueConst *argv, int flags)
+/* The call of a C function: p is the object of func_obj, rt its runtime.
+   Inlined into js_call_c_function and js_call_c_plain only. With an argc
+   below 0 it only writes the stack left into rt->c_frame_left
+   (js_measure_call_frame). */
+static force_inline JSValue js_call_c_body(JSRuntime *rt, JSObject *p,
+                                           JSValueConst func_obj,
+                                           JSValueConst this_obj,
+                                           int argc, JSValueConst *argv, int flags)
 {
-    JSRuntime *rt = ctx->rt;
+    JSContext *ctx;
     JSCFunctionType func;
-    JSObject *p;
     JSStackFrame sf_s, *sf = &sf_s, *prev_sf;
     JSValue ret_val;
     JSValueConst *arg_buf;
     int arg_count, i;
     JSCFunctionEnum cproto;
 
-    p = JS_VALUE_GET_OBJ(func_obj);
+    if (unlikely(argc < 0)) {
+        rt->c_frame_left = __shadow_remaining();
+        return JS_UNDEFINED;
+    }
     cproto = p->u.cfunc.cproto;
     arg_count = p->u.cfunc.length;
 
@@ -23309,6 +23361,28 @@ static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_ob
 
     rt->current_stack_frame = sf->prev_frame;
     return ret_val;
+}
+
+/* the call slot of JS_CLASS_C_FUNCTION. Never inlined: inlined into a caller
+   its frame would make the caller's frame larger. */
+static no_inline JSValue js_call_c_function(JSContext *ctx, JSValueConst func_obj,
+                                            JSValueConst this_obj,
+                                            int argc, JSValueConst *argv, int flags)
+{
+    return js_call_c_body(ctx->rt, JS_VALUE_GET_OBJ(func_obj), func_obj,
+                          this_obj, argc, argv, flags);
+}
+
+/* js_call_c_function without flags, given the object of the function, for
+   the interpreter (js_call_c_direct) and js_call_c_hop: its 5 words of
+   arguments fit the registers of a call on arm64, where js_call_c_function
+   takes a block, and it takes 3 words less on amd64. The context is the realm
+   of p, which the call sets anyway. Never inlined, for the same reason. */
+static no_inline JSValue js_call_c_plain(JSObject *p, JSValueConst this_obj,
+                                         int argc, JSValueConst *argv)
+{
+    return js_call_c_body(p->u.cfunc.realm->rt, p, JS_MKPTR(JS_TAG_OBJECT, p),
+                          this_obj, argc, argv, 0);
 }
 
 static JSValue js_call_bound_function(JSContext *ctx, JSValueConst func_obj,
@@ -23639,10 +23713,11 @@ static inline BOOL js_call_c_direct_ok(JSRuntime *rt, JSValueConst func)
 /* What JS_CallInternal does for a C function, without its entry: count and
    read the interrupt flag, nothing while an uncatchable exception is pending,
    a level of call depth (js_call_c_direct_ok checked the limit and the
-   stack), then js_call_c_function. The C function sets its own frame and
-   realm. The frame of JS_CallInternal it skips counts as taken while it runs
-   (stack_debt), so that a recursion through C functions ends on the stack
-   at the same depth as through JS_CallInternal. */
+   stack), then js_call_c_plain. The C function sets its own frame and
+   realm. The frame of JS_CallInternal it skips, less what js_call_c_plain
+   takes beyond js_call_c_function (rt->c_direct_debt), counts as taken while
+   it runs (stack_debt), so that a recursion through C functions ends on the
+   stack at the same depth as through JS_CallInternal. */
 static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
                                              JSValueConst this_obj, int argc,
                                              JSValue *argv)
@@ -23656,9 +23731,10 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
     if (unlikely(js_uncatchable_pending(rt)))
         return JS_EXCEPTION;
     rt->call_depth++;
-    rt->stack_debt += rt->call_frame;
-    ret = js_call_c_function(ctx, func, this_obj, argc, (JSValueConst *)argv, 0);
-    rt->stack_debt -= rt->call_frame;
+    rt->stack_debt += rt->c_direct_debt;
+    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func), this_obj, argc,
+                          (JSValueConst *)argv);
+    rt->stack_debt -= rt->c_direct_debt;
     js_call_leave(rt);
     return ret;
 }
@@ -23852,10 +23928,11 @@ static no_inline JSValue JS_CallInternal(JSContext *caller_ctx, JSValueConst fun
 
 /* A call of a plain C function from C (js_call_fwd), in place of
    JS_CallInternal: what JS_CallInternal does for it, from a frame of its own
-   that is smaller. The rest of the frame of JS_CallInternal (rt->c_hop_debt)
-   counts as taken while the function runs (stack_debt), and the check of
-   the stack counts it too, so that a recursion ends on the stack at the
-   same depth as through JS_CallInternal. A call that would throw on its way
+   that is smaller. The check of the stack counts the rest of the frame of
+   JS_CallInternal as taken (rt->c_hop_debt), and while the function runs
+   that rest less what js_call_c_plain takes beyond js_call_c_function
+   counts as taken (rt->c_hop_plain_debt, stack_debt), so that a recursion
+   ends on the stack at the same depth as through JS_CallInternal. A call that would throw on its way
    in (the call depth, the stack) goes to JS_CallInternal, which throws what
    it threw. With an argc below 0 it only writes the stack left into
    rt->c_hop_debt (js_measure_call_frame). Never inlined: its frame is
@@ -23882,9 +23959,9 @@ js_call_c_hop(JSContext *ctx, JSValueConst func_obj, JSValueConst this_obj,
         js_call_leave(rt);
         return JS_EXCEPTION;
     }
-    rt->stack_debt += debt;
-    ret = js_call_c_function(ctx, func_obj, this_obj, argc, argv, 0);
-    rt->stack_debt -= debt;
+    rt->stack_debt += rt->c_hop_plain_debt;
+    ret = js_call_c_plain(JS_VALUE_GET_OBJ(func_obj), this_obj, argc, argv);
+    rt->stack_debt -= rt->c_hop_plain_debt;
     js_call_leave(rt);
     return ret;
 }
