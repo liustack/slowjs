@@ -16,9 +16,10 @@ import (
 // utf16Scratch for the next string (see docs/changes/url.md): a string of at
 // most utf16Short units takes none, a longer one takes one, and puts back the
 // one it took, as it was when it had room for 3 bytes a unit, or else grown to
-// exactly 3 bytes a unit, and 3 bytes a unit of stringStep+1 units for a
-// string longer than stringStep. So no read of n units puts back a buffer
-// larger than the one it took and 3n bytes. The test hands each call a buffer
+// exactly 3 bytes a unit. A string longer than stringStep takes none: it is
+// written a piece at a time through a buffer of its own (utf16Steps). So no
+// read of n units puts back a buffer larger than the one it took and 3n
+// bytes. The test hands each call a buffer
 // of its choice through New of a pool nothing was put into, which Get calls
 // then, and reads the buffer after the call. What the pool does with what is
 // put back, keep it or drop it, is Go's and not tested.
@@ -38,15 +39,12 @@ func TestScratchPutBack(t *testing.T) {
 	}
 	for _, n := range []int{1, utf16Short, utf16Short + 1, 1000, 1 << 16, stringStep, stringStep + 1, 3*stringStep + 5} {
 		need := 3 * n
-		if n > stringStep {
-			need = 3 * (stringStep + 1)
-		}
 		for _, c := range []int{0, need - 1, need, need + 7, 4 * need} {
 			made, s := read(n, c)
 			if s != strings.Repeat("一", n) {
 				t.Fatalf("%d units: the string is not the one read", n)
 			}
-			if n <= utf16Short {
+			if n <= utf16Short || n > stringStep {
 				if len(made) != 0 {
 					t.Errorf("%d units took %d buffers, want none", n, len(made))
 				}

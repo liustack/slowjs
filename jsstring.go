@@ -441,18 +441,25 @@ func utf16Steps(m *VM, u []uint16, wtf8 bool, mk outFunc) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	p := utf16Scratch.Get().(*[]byte)
-	defer utf16Scratch.Put(p)
-	if cap(*p) < 3*(stringStep+1) {
-		*p = make([]byte, 3*(stringStep+1))
-	}
+	// Each piece is written through a buffer of stepScratch units, which
+	// utf16Write needs room of 3 bytes a unit in: one of a whole piece,
+	// 768 KiB, came from utf16Scratch, which Go empties at a collection and
+	// keeps for each P apart, so a call often made it again.
+	buf := make([]byte, 3*(stepScratch+1))
 	j := 0
 	for lo := 0; lo < len(u); {
 		if lo > 0 && m.convStop() {
 			return "", false
 		}
 		hi := cut16(u, lo)
-		j += copy(out[j:], (*p)[:utf16Write((*p)[:3*(hi-lo)], u[lo:hi], wtf8)])
+		for a := lo; a < hi; {
+			b := min(hi, a+stepScratch)
+			if b < hi && u[b-1]&0xFC00 == 0xD800 && u[b]&0xFC00 == 0xDC00 {
+				b++
+			}
+			j += copy(out[j:], buf[:utf16Write(buf[:3*(b-a)], u[a:b], wtf8)])
+			a = b
+		}
 		lo = hi
 	}
 	if j != n {
@@ -481,6 +488,10 @@ func utf16Len(u []uint16) int {
 	}
 	return n
 }
+
+// stepScratch is how many units utf16Steps writes through its buffer at a
+// time: a buffer of 48 KiB.
+const stepScratch = 1 << 14
 
 // utf16Short is the length of the strings utf16String converts on the stack.
 const utf16Short = 64
