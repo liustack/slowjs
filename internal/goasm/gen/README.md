@@ -475,6 +475,22 @@ lowered text before it is assembled, for the check's own tests
 (`TestPostLinkCheck`, from C through the driver, and `TestCheckCases`, from
 hand-written llc code).
 
+On amd64, an SSE instruction whose memory operand must be on 16 bytes (any
+16-byte operand but those of `movups`, `movupd`, `movdqu` and `lddqu`) reads
+only the data of its own function through RIP, or a local or a global. Each
+part of that is held: the data after the code has a `PCALIGN $16` in front of
+it that must add no byte (`emitData` refuses data off 16 in the lowered object,
+`dataPlaced` a body whose data starts off 16 in the binary), each such RIP read
+must reach an address on 16 in the binary (`checkAlign16`, which names the
+function, the instruction and the address), every shadow stack pointer is made
+by `cengine.AlignSP` and checked by `cengine.CheckSP` in a `testhooks` build,
+and the pass refuses an access of any width aligned to 16 or more whose address
+does not come from a local or a global (`heapAligned` in `pass/shadow.cpp`).
+Tests: `TestCheckAlign16`, `TestPostLinkCheck` (`vecpool`, a pool off 16),
+`TestEmitDataAligned`, `TestDataPlaced`, `TestRejectSamples`
+(`heap_aligned.c`, `merged_aligned.c`), `TestAlignSP` and `TestCheckSP`. arm64 needs none of it:
+its `ldr q` and `str q` take any address.
+
 What the check takes on trust, and where it stops:
 
 - The pass's signatures, for the number of argument and result words only:

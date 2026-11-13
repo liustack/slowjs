@@ -826,6 +826,24 @@ The generator does not rest on the flag. The lowering sizes its own code (4 byte
 
 Tests: `TestA64CheckJumpTables` takes the farthest distance each width holds and refuses one step more, after an alignment too, and refuses a backward entry, a label that is not in the code and code it cannot size. `TestLowerARM64EngineJumpTable` lowers a function whose table of bytes fits llc's code, 250 steps, and is refused once 5 calls in its span grow the lowered code.
 
+## SSE reads that need 16 bytes stay on 16
+
+Release: Unreleased.
+
+An SSE instruction with a 16-byte memory operand faults when the address is not on 16 bytes, except `movups`, `movupd`, `movdqu` and `lddqu`. The amd64 engine has 382 such instructions: 327 read the constant pool of their function through RIP (in 70 functions), and 55 read a local through a register made from the shadow stack pointer. None reads the heap or the Go stack. After linking, every one of them reached an address on 16 on linux, darwin and windows, but nothing said it had to: the pool was on 16 only because each body happened to start on 16 and `.p2align 4` counts from the start of the function, and the shadow stack pointer was rounded in three places by hand.
+
+Now each of the three is held by design and by a check:
+
+- The data of a function. The generator writes a `PCALIGN $16` in front of the data after the code (`emitData`, `internal/goasm/gen/emit.go`). It adds no byte: the generator refuses data that starts off 16 in the lowered object, where the PCALIGN would pad it away from the RIP displacements in the code, and the post-link check refuses a body whose data would start off 16 in the binary (`dataPlaced`). The post-link check also refuses each aligned SSE instruction whose RIP target is not on 16 in the binary, and names the function, the instruction and the address (`checkAlign16`). A `front:` of `xform` that is not a multiple of 16 is refused, as before, since it would now pad the data away from its code.
+- The shadow stack. The base of the region, the space `tmp` takes and the stack pointer a host function gets are rounded by one function, `cengine.AlignSP`, to `cengine.SPAlign` (16). `cengine.CheckSP` panics on a pointer off 16 at each entry and in `host_call`, only in a build with `-tags testhooks`: in the normal build it is an empty function the compiler inlines, so it costs nothing.
+- Everything else. The pass refuses, on amd64, a load, store, atomic or memory intrinsic that the IR marks aligned to 16 or more, of any width, unless its address comes from a local or a global (`heapAligned`, `internal/goasm/gen/pass/shadow.cpp`). The engine has none today. A pointer from the heap can be on 8 bytes only, so such an access could make llc write a `movaps` that faults. The width does not matter: llc merges two reads of 8 bytes into one `movapd` when the IR says the first is on 16. The rule sits in the IR, where the alignment comes from, and not in the machine code, because llc moves the address of a local through other registers: 37 of the 55 reads of locals today are not the register the shadow pointer comes in (r12) plus a constant.
+
+arm64 does not change: its `ldr q` and `str q` need no alignment, and the pass rule is for amd64 only.
+
+Cost: none. The generated amd64 files gain one `PCALIGN $16` line in each of the 323 functions with data, which add no byte: the checks above refuse any layout where they would.
+
+Tests: `TestCheckAlign16` decodes `movaps`, `movdqa`, `xorpd` and `paddd` that read RIP-relative addresses off 16 and must be refused, and `movups`, `movdqu`, `movsd` and `ucomisd` that must pass. `TestPostLinkCheck` builds a pool off 16 (`vecpool`) and the check must refuse it. `TestEmitDataAligned` and `TestDataPlaced` refuse data off 16 in the object and in the binary. `TestRejectSamples` refuses `testdata/reject/heap_aligned.c`, a vector load through a pointer, and `merged_aligned.c`, two reads of a `double` through a pointer said to be on 16, which llc would merge into a `movapd`. `TestAlignSP` checks the rounding, the first stack pointer of a VM and the one a host function gets, and `TestCheckSP` (testhooks) the panic.
+
 ## A key in a local is read without a reference
 
 Release: Unreleased.
