@@ -29,6 +29,7 @@ read_when:
 | 引擎在释放对象时被请求的回收什么也不做 | v0.29.10 | [c-engine.md](c-engine.zh-CN.md#释放对象时被要求回收) |
 | 离开进入引擎的调用时发生到一半的 panic 会让 VM 报废，不论是什么 panic，包括低于 0x1000 的地址错误，之后不会再进入那个引擎，连释放一个值也不行 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#哪些-panic-会让-vm-报废) |
 | 每个调用了别的函数的生成函数都有 Go 的栈检查，所以地址错误不再取决于生成器在一串没有栈检查的函数下面留出的空间 | v0.29.11 | [c-engine.md](c-engine.zh-CN.md#没有栈检查的函数) |
+| JavaScript 跑在寄存器解释器里：函数在第一次调用时从字节码转换，函数之间的调用留在一个循环里，用分段的寄存器栈，QuickJS 的栈式解释器去掉了 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器解释器) |
 | 在 windows 上每个生成函数在栈指针下面多留出 12 KiB 空间，这样在带 AMX 的 CPU 上，系统在出错时写下的 CPU 状态仍在栈内 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#windows-上给故障留的空间) |
 | 生成的代码按 Go 承诺的方式，经过 FP 按名字读参数、写结果，不再依赖离 SP 的偏移，那个偏移取决于汇编器怎样排布栈帧。机器码不变 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#按名字读写参数和结果) |
 | `go vet -asmdecl` 在生成的引擎里什么也不报：amd64 的寄存器入口叶子函数写了 NOFRAME，`goasm_room` 放在只属于 windows/amd64 的文件里，它的 Go 声明也在那里。机器码不变 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#go-vet-检查生成的汇编) |
@@ -37,6 +38,16 @@ read_when:
 | 寄存器循环跑不了的函数在编译时就被解析器拒绝：参数和局部变量超过 32,765 个，或者栈很深、catch 偏移又要占超过 48 个临时槽 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环里一个函数的上限) |
 | 由 call、apply、Reflect.apply 或绑定函数调用的 C 函数不经过 JS_CallInternal 运行，JS_CallInternal 内联做调用的检查 | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#由-callapply-或绑定函数调用的-c-函数) |
 | 寄存器循环不经调用，直接回答字符串或拼平的 rope 在 int 下标处的 `String.prototype.charCodeAt` | v0.30.2 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答-charcodeat) |
+| 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
+| 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
+| arm64 的每张跳转表每项占 4 字节，生成器拒绝被 lowering 撑得太窄的表 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-的跳转表每项占-4-字节) |
+| 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
+| 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
+| 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |
+| `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
+| 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
+| 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
+| 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | Unreleased | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
 
 ## 上游 QuickJS 的提交
 
@@ -228,6 +239,8 @@ read_when:
 | defineProperty trap 拒绝写入的 proxy 在严格模式代码里抛错 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#拒绝写入的-proxy-在严格模式代码里抛错) |
 | 对象字面量的 shape 至少有空对象的空间 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
+| 往数组里追加元素时，第一次就留 8 个元素的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
+| `in` 运算符遍历原型链时不加引用 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 
 ## 内存
 

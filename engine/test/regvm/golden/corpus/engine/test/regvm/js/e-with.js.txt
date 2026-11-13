@@ -2,6 +2,6 @@ exception ReferenceError: 'wGlobalName' is not defined
 stack     at wGlobal (<eval>:69:64)
 stack     at <anonymous> (<eval>:105:32)
 stack     at <eval> (<eval>:115:3)
-mem-end obj=195 atom=552 shape=136 prop=979 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=550 shape=134 prop=974 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=195 atom=552 shape=135 prop=979 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=550 shape=133 prop=974 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

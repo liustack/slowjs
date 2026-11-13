@@ -104,7 +104,7 @@ func cmdBench(ctx context.Context, args []string) error {
 func benchBuild(ctx context.Context, args []string) error {
 	fs := newFlags("bench build")
 	var o bench.BuildOptions
-	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (16), all (8), quick (4) or a list such as 0.0,32.16 or 64.8.2208 (shift.front or shift.front.shift2)")
+	pos := fs.String("positions", "protocol", "protocol (16, see docs/measuring.md), full (8), all (8), quick (4) or a list such as 0.0,32.16 or 64.16.2208 (shift.front or shift.front.shift2)")
 	fs.BoolVar(&o.Layouts, "layouts", true, "write where the interpreter landed in each binary to OUT/layouts.tsv")
 	fs.StringVar(&o.Side, "side", "", "label of this side, such as base or new")
 	fs.StringVar(&o.Tree, "tree", ".", "the liustack/quickjs checkout, with the engine generated")

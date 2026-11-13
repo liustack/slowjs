@@ -895,6 +895,24 @@ JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode
     return v;
 }
 
+/* Read buf as JS_ReadObject does for bytecode, without
+   JS_READ_OBJ_POLLS_CHECKED, with call number fail of js_malloc_rt and
+   js_realloc_rt failing (0 for none), the others working. *nallocs is how
+   many calls it made. Returns what JS_ReadObject returns. */
+JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs)
+{
+    JSValue v;
+
+    white_alloc_calls = 1;
+    white_alloc_count = 0;
+    white_alloc_fail_at = fail;
+    v = JS_ReadObject(ctx, buf, len, JS_READ_OBJ_BYTECODE);
+    *nallocs = white_alloc_count;
+    white_alloc_fail_at = 0;
+    white_alloc_calls = 0;
+    return v;
+}
+
 /* Whether every block of the engine is a request to the heap of its own (the
    builds that take each block from the system malloc), and not only the
    arenas of small blocks and the large blocks: such a block has no room past
@@ -1081,6 +1099,12 @@ void white_front_drain(JSContext *ctx)
 size_t white_heap_limit(JSContext *ctx)
 {
     return ctx->rt->malloc_ctx.heap.limit;
+}
+
+/* The count the threshold of a collection is held to (js_trigger_gc). */
+size_t white_gc_count(JSRuntime *rt)
+{
+    return rt->malloc_ctx.heap.count - rt->rv_stack_bytes;
 }
 
 /* ---- the keys and plain strings of JSON.parse ---- */
@@ -1439,7 +1463,7 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
     WHITE_FNV(rf->pcmap, sizeof(RVPcMask) * rf->pcmap_count);
     if (rf->pcmap_hi)
         WHITE_FNV(rf->pcmap_hi, sizeof(RVPcHi) * rf->pcmap_count);
-    WHITE_FNV(rf->rets, 8 * rf->ret_count);
+    WHITE_FNV(rf->rets, 16 * rf->ret_count);
     WHITE_FNV(&rf->fsize, sizeof(rf->fsize));
     WHITE_FNV(&rf->temp0, sizeof(rf->temp0));
     WHITE_FNV(&rf->k_count, sizeof(rf->k_count));
@@ -1451,19 +1475,132 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
     return h;
 }
 
+/* the register code of f, its length in *code_len, or NULL when f has
+   none */
+const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
+{
+    const RVFunc *rf;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return NULL;
+    rf = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return NULL;
+    *code_len = rf->code_len;
+    return rf->code;
+}
+
+/* the for_of_start of the function f, converted: how many the pass made
+   DSTART (*dst) and how many W_FOR_OF_START (*win), found by their pcmap
+   entries, which name the old for_of_start and end after the two bytes of
+   the instruction (engine/regvm-ops-dst.h). -1 when f has no register code. */
+int white_regvm_dst_sites(JSValueConst f, int *dst, int *win)
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    int i;
+
+    *dst = *win = 0;
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const RVPcMask *m = &rf->pcmap[i];
+        if (m->old < 0 || m->old >= b->byte_code_len ||
+            b->byte_code_buf[m->old] != OP_for_of_start || m->end < 2)
+            continue;
+        if (rf->code[m->end - 2] == RV_DSTART)
+            (*dst)++;
+        else if (rf->code[m->end - 2] == RV_W_FOR_OF_START)
+            (*win)++;
+    }
+    return 0;
+}
+
 /* Code no compiler makes, made from the function f of bytecode for the
    check of JS_ReadObject (rv_read_check of engine/regvm-entry.h), one kind
    at a time: 0 an instruction that pops more than the stack holds (its
    first push_1 made a drop), 1 a stack larger than stack_size (stack_size
    0), 2 two paths that meet with different depths (its first push_2 made a
    nop), 3 nip_catch with no catch (its first add made a nip_catch), 4
-   mapped arguments with no closure state (var_ref_count 0). With undo, f
-   gets back what the last call changed. -1 when f has no place for the
-   kind. Such code must never run. */
+   mapped arguments with no closure state (var_ref_count 0), 5 to 8 a
+   catch offset or a jump that leaves its place (white_crafted_jump). With
+   undo, f gets back what the last call changed. -1 when f has no place
+   for the kind. Such code must never run. */
 static struct {
     JSFunctionBytecode *b;
     int pos, byte, stack_size, var_ref_count;
 } white_crafted_saved;
+
+/* the byte of b that white_crafted changes for the kinds 5 to 8, and *to
+   its new value: 5 the drop of the catch offset of the first OP_catch made
+   a return (the catch offset leaves the function), 6 the first jump made
+   to go before the start of the code, 7 the first OP_catch made to go
+   there, 8 the offset of the first for_of_next made 1, so that it takes
+   the entry under its own three for its iterator. -1 when b has none. */
+static int white_crafted_jump(JSFunctionBytecode *b, int kind, int *to)
+{
+    const uint8_t *bc = b->byte_code_buf;
+    int pos, op, d = -1;
+
+    for (pos = 0; pos < b->byte_code_len; pos += short_opcode_info(op).size) {
+        op = bc[pos];
+        switch (kind) {
+        case 5:
+            if (op == OP_catch) {
+                d = 1;
+                continue;
+            }
+            if (d < 0)
+                continue;
+            if (op == OP_drop && d == 1) {
+                *to = OP_return;
+                return pos;
+            }
+            /* the code of the try: straight, of the formats with their
+               pops in the table */
+            if (short_opcode_info(op).fmt == OP_FMT_npop ||
+                short_opcode_info(op).fmt == OP_FMT_npop_u16 ||
+                short_opcode_info(op).fmt == OP_FMT_npopx ||
+                short_opcode_info(op).fmt == OP_FMT_label ||
+                short_opcode_info(op).fmt == OP_FMT_label8 ||
+                short_opcode_info(op).fmt == OP_FMT_label16)
+                return -1;
+            d += short_opcode_info(op).n_push - short_opcode_info(op).n_pop;
+            break;
+        case 6:
+            if (op == OP_if_false8 || op == OP_if_true8 || op == OP_goto8) {
+                if (pos + 1 >= 128)
+                    return -1;
+                *to = 0x80; /* -128 */
+                return pos + 1;
+            }
+            if (op == OP_if_false || op == OP_if_true || op == OP_goto) {
+                *to = 0x80; /* the top byte of the offset */
+                return pos + 4;
+            }
+            break;
+        case 7:
+            if (op == OP_catch) {
+                *to = 0x80;
+                return pos + 4;
+            }
+            break;
+        case 8:
+            if (op == OP_for_of_next && bc[pos + 1] == 0) {
+                *to = 1;
+                return pos + 1;
+            }
+            break;
+        }
+    }
+    return -1;
+}
 
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
 {
@@ -1503,7 +1640,19 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
             return -1;
         b->var_ref_count = 0;
         return 0;
+    case 5: case 6: case 7: case 8:
+        pos = white_crafted_jump(b, kind, &to);
+        if (pos < 0)
+            break;
+        white_crafted_saved.pos = pos;
+        white_crafted_saved.byte = b->byte_code_buf[pos];
+        b->byte_code_buf[pos] = to;
+        return 0;
     default:
+        return -1;
+    }
+    if (kind >= 5) {
+        white_crafted_saved.b = NULL;
         return -1;
     }
     for (pos = 0; pos < b->byte_code_len; pos += short_opcode_info(op).size) {
@@ -1521,12 +1670,236 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo)
 
 /* the check of JS_ReadObject on the function f (rv_read_check): 0 when it
    lets f through, -1 with the exception pending */
+/* whether f is a function of bytecode: plain, async, a generator or an
+   async generator */
+static BOOL white_is_bytecode_function(JSValueConst f)
+{
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT)
+        return FALSE;
+    switch (JS_VALUE_GET_OBJ(f)->class_id) {
+    case JS_CLASS_BYTECODE_FUNCTION: case JS_CLASS_ASYNC_FUNCTION:
+    case JS_CLASS_GENERATOR_FUNCTION: case JS_CLASS_ASYNC_GENERATOR_FUNCTION:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 int white_regvm_read_check(JSContext *ctx, JSValueConst f)
 {
-    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_OBJ(f)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+    if (!white_is_bytecode_function(f))
         return -2;
     return rv_read_check(ctx, JS_VALUE_GET_OBJ(f)->u.func.function_bytecode);
+}
+
+/* The code of the function f replaced from its start by the code of kind,
+   the rest made OP_nop, with its ret_bits only where that code returns:
+   code only a file could hold. 0: iterator_get_value_done with no
+   iterator under it (undefined undefined undefined object
+   iterator_get_value_done drop drop return_async), 1: a gosub whose
+   finally drops what the gosub had and returns with a catch offset of its
+   own under the return address (undefined gosub, return, then drop drop
+   catch push_i32 ret, and return at the catch), 2: a gosub whose finally
+   returns at once (undefined gosub, return, then ret), 3 to 11: records
+   of an array destructured, read past or through their catch offset, or
+   made by no for_of_start (see the cases). With undo, f gets
+   back its code and its ret_bits, as it must before it is freed, which
+   frees the atoms its code names. -1 when f has too little code, or no
+   ret_bits for a gosub. */
+static struct {
+    JSFunctionBytecode *b;
+    uint8_t *code;
+    uint32_t *bits;
+} white_ccode_saved;
+
+int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo)
+{
+    JSFunctionBytecode *b;
+    uint8_t code[32];
+    int words, len = 0, ret = -1;
+
+    if (undo) {
+        b = white_ccode_saved.b;
+        if (!b)
+            return -1;
+        words = (b->byte_code_len + 31) / 32;
+        memcpy(b->byte_code_buf, white_ccode_saved.code, b->byte_code_len);
+        if (b->ret_bits)
+            memcpy(b->ret_bits, white_ccode_saved.bits, sizeof(uint32_t) * words);
+        js_free_rt(ctx->rt, white_ccode_saved.code);
+        js_free_rt(ctx->rt, white_ccode_saved.bits);
+        white_ccode_saved.b = NULL;
+        return 0;
+    }
+    if (!white_is_bytecode_function(f))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    switch (kind) {
+    case 0:
+        code[len++] = OP_undefined;
+        code[len++] = OP_undefined;
+        code[len++] = OP_undefined;
+        code[len++] = OP_object;
+        code[len++] = OP_iterator_get_value_done;
+        code[len++] = OP_drop;
+        code[len++] = OP_drop;
+        code[len++] = OP_return_async;
+        break;
+    case 1: case 2:
+        /* 0 undefined, 1 gosub 7, 6 return, 7 the finally */
+        code[len++] = OP_undefined;
+        code[len++] = OP_gosub;
+        put_u32(code + len, 7 - 2);
+        len += 4;
+        ret = len;
+        code[len++] = OP_return;
+        if (kind == 2) {
+            code[len++] = OP_ret;
+            break;
+        }
+        /* 7 drop, 8 drop, 9 catch 20, 14 push_i32 6, 19 ret, 20 return */
+        code[len++] = OP_drop;
+        code[len++] = OP_drop;
+        code[len++] = OP_catch;
+        put_u32(code + len, 20 - 10);
+        len += 4;
+        code[len++] = OP_push_i32;
+        put_u32(code + len, ret);
+        len += 4;
+        code[len++] = OP_ret;
+        code[len++] = OP_return;
+        break;
+    case 3: case 4:
+        /* the iterator of the record of the argument, returned: 3 its
+           catch offset dropped (get_arg0 for_of_start drop), 4 taken off by
+           nip_catch with no close after (get_arg0 for_of_start push_1
+           nip_catch drop), then drop put_loc0 get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        if (kind == 3) {
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_push_1;
+            code[len++] = OP_nip_catch;
+            code[len++] = OP_drop;
+        }
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        break;
+    case 5:
+        /* the first element into loc0, then the record closed as the return
+           of a generator from a yield closes it (emit_return): get_arg0
+           for_of_start for_of_next 0 drop put_loc0 push_1 nip_catch rot3r
+           undefined iterator_close drop get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_push_1;
+        code[len++] = OP_nip_catch;
+        code[len++] = OP_rot3r;
+        code[len++] = OP_undefined;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_drop;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        break;
+    case 6: case 7: case 8:
+        /* a record no for_of_start made, whose next method is the
+           JS_UNINITIALIZED of a local in its dead zone, which get_loc0
+           reads with no check: set_loc_uninitialized 0, then 6 null, 7 and
+           8 get_arg0, then get_loc0 undefined, then 6 and 7 for_of_next 0
+           drop return, 8 iterator_close undefined return */
+        code[len++] = OP_set_loc_uninitialized;
+        put_u16(code + len, 0);
+        len += 2;
+        code[len++] = kind == 6 ? OP_null : OP_get_arg0;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_undefined;
+        if (kind < 8) {
+            code[len++] = OP_for_of_next;
+            code[len++] = 0;
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_iterator_close;
+            code[len++] = OP_undefined;
+        }
+        code[len++] = OP_return;
+        break;
+    case 9:
+        /* a finally run with the record of the argument under its return
+           address, which it leaves as it is: 0 get_arg0, 1 for_of_start,
+           2 gosub 14, 7 for_of_next 0, 9 drop, 10 put_loc0,
+           11 iterator_close, 12 get_loc0, 13 return, 14 ret */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        code[len++] = OP_gosub;
+        put_u32(code + len, 14 - 3);
+        len += 4;
+        ret = len;
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        code[len++] = OP_ret;
+        break;
+    case 10: case 11:
+        /* the catch offset of the record of the argument read: 10 by
+           iterator_get_value_done, which writes the catch offset 0 of an
+           iterator back (get_arg0 for_of_start object
+           iterator_get_value_done drop drop), 11 by swap, which a read
+           refuses (get_arg0 for_of_start swap swap), then for_of_next 0
+           drop put_loc0 iterator_close get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        if (kind == 10) {
+            code[len++] = OP_object;
+            code[len++] = OP_iterator_get_value_done;
+            code[len++] = OP_drop;
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_swap;
+            code[len++] = OP_swap;
+        }
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        break;
+    default:
+        return -1;
+    }
+    if (len > b->byte_code_len || (ret >= 0 && (!b->ret_bits || ret >= b->byte_code_len)))
+        return -1;
+    words = (b->byte_code_len + 31) / 32;
+    white_ccode_saved.code = js_malloc_rt(ctx->rt, b->byte_code_len);
+    white_ccode_saved.bits = js_malloc_rt(ctx->rt, sizeof(uint32_t) * words);
+    if (!white_ccode_saved.code || !white_ccode_saved.bits) {
+        js_free_rt(ctx->rt, white_ccode_saved.code);
+        js_free_rt(ctx->rt, white_ccode_saved.bits);
+        return -1;
+    }
+    white_ccode_saved.b = b;
+    memcpy(white_ccode_saved.code, b->byte_code_buf, b->byte_code_len);
+    if (b->ret_bits) {
+        memcpy(white_ccode_saved.bits, b->ret_bits, sizeof(uint32_t) * words);
+        memset(b->ret_bits, 0, sizeof(uint32_t) * words);
+        if (ret >= 0)
+            b->ret_bits[ret >> 5] |= (uint32_t)1 << (ret & 31);
+    }
+    memcpy(b->byte_code_buf, code, len);
+    memset(b->byte_code_buf + len, OP_nop, b->byte_code_len - len);
+    return 0;
 }
 
 /* the register stack of ctx's runtime (engine/regvm-entry.h): out[0] the
@@ -1646,4 +2019,301 @@ int white_regvm_scratch_drain(JSContext *ctx, int in_pass)
     js_heap_drain(&rt->malloc_ctx);
     rt->rv_in_pass = was;
     return (int)rt->rv_scratch_size;
+}
+
+/* ---- captures that never change (capture_by_value) ---- */
+
+static JSFunctionBytecode *white_find_function(JSContext *ctx, JSFunctionBytecode *b, const char *name)
+{
+    char buf[ATOM_GET_STR_BUF_SIZE];
+    int i;
+
+    if (!strcmp(JS_AtomGetStr(ctx, buf, sizeof(buf), b->func_name), name))
+        return b;
+    for (i = 0; i < b->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(b->cpool[i]) == JS_TAG_FUNCTION_BYTECODE) {
+            JSFunctionBytecode *f = white_find_function(ctx, JS_VALUE_GET_PTR(b->cpool[i]), name);
+            if (f)
+                return f;
+        }
+    }
+    return NULL;
+}
+
+/* whether the closure variables of the functions below b that reach the
+   slots of b are marked as those slots are: 0, or -1 */
+/* the marks of the closure variables of c, a function below b whose
+   constant pool up holds it, agree with the slots of b and the closure
+   variables of up */
+static int white_by_value_marks(JSFunctionBytecode *b, JSFunctionBytecode *up, JSFunctionBytecode *c, int depth)
+{
+    int i, k;
+
+    for (k = 0; k < c->closure_var_count; k++) {
+        JSClosureVar *cv = &c->closure_var[k];
+        int want;
+        if (cv->closure_type == JS_CLOSURE_REF) {
+            if (cv->var_idx >= up->closure_var_count)
+                return -1;
+            want = up->closure_var[cv->var_idx].by_value;
+        } else if (depth > 0 && (cv->closure_type == JS_CLOSURE_LOCAL || cv->closure_type == JS_CLOSURE_ARG))
+            continue; /* the slots of the function above it */
+        else if (cv->closure_type == JS_CLOSURE_LOCAL)
+            want = b->vardefs[b->arg_count + cv->var_idx].by_value;
+        else if (cv->closure_type == JS_CLOSURE_ARG)
+            want = b->vardefs[cv->var_idx].by_value;
+        else
+            want = 0;
+        if (cv->by_value != want)
+            return -1;
+    }
+    for (i = 0; i < c->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(c->cpool[i]) == JS_TAG_FUNCTION_BYTECODE &&
+            white_by_value_marks(b, c, JS_VALUE_GET_PTR(c->cpool[i]), depth + 1))
+            return -1;
+    }
+    return 0;
+}
+
+/* code no compiler makes, for white_by_value_crafted: 1 the push_const
+   before the first define_class of f names no function of the pool, 2 the
+   first jump of 8 bits of f lands on its first define_class. 0, or -1
+   when f has no such place. */
+static int white_by_value_craft(JSFunctionBytecode *f, int craft)
+{
+    uint8_t *buf = f->byte_code_buf;
+    int pos, prev = -1, dc = -1, op;
+
+    for (pos = 0; pos < f->byte_code_len; prev = pos, pos += short_opcode_info(buf[pos]).size) {
+        op = buf[pos];
+        if (op == OP_define_class || op == OP_define_class_computed) {
+            dc = pos;
+            break;
+        }
+    }
+    if (dc < 0)
+        return -1;
+    if (craft == 1) {
+        if (prev < 0 || buf[prev] != OP_push_const8)
+            return -1;
+        buf[prev + 1] = 255;
+        return 0;
+    }
+    for (pos = 0; pos < f->byte_code_len; pos += short_opcode_info(buf[pos]).size) {
+        if (short_opcode_info(buf[pos]).fmt == OP_FMT_label8 &&
+            dc - (pos + 1) >= -128 && dc - (pos + 1) <= 127) {
+            buf[pos + 1] = (uint8_t)(int8_t)(dc - (pos + 1));
+            return 0;
+        }
+    }
+    return -1;
+}
+
+/* The verdict of capture_by_value on the captured arguments and locals of
+   the function named name in the script src, compiled, or with read set
+   written with JS_WriteObject and read back: "a=1 b=0", the arguments then
+   the locals. Returns 0, -1 when the script does not compile or has no such
+   function, -2 when the marks of the closure variables below it do not
+   match its slots. */
+static int white_by_value_run(JSContext *ctx, const char *src, const char *name, int read, int craft, char *out, size_t cap)
+{
+    JSValue v;
+    JSFunctionBytecode *b, *f;
+    size_t n = 0;
+    int i, ret = 0;
+
+    out[0] = 0;
+    v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return -1;
+    if (read) {
+        size_t len;
+        uint8_t *buf = JS_WriteObject(ctx, &len, v, JS_WRITE_OBJ_BYTECODE);
+        JS_FreeValue(ctx, v);
+        if (!buf)
+            return -1;
+        v = JS_ReadObject(ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        js_free(ctx, buf);
+        if (JS_IsException(v))
+            return -1;
+    }
+    b = JS_VALUE_GET_PTR(v);
+    f = white_find_function(ctx, b, name);
+    if (!f) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    if (craft) {
+        if (white_by_value_craft(f, craft)) {
+            JS_FreeValue(ctx, v);
+            return -3;
+        }
+        /* the run again on the changed code, from no marks: the functions
+           of the cases have no function below a function below f */
+        for (i = 0; i < f->arg_count + f->var_count; i++)
+            f->vardefs[i].by_value = 0;
+        for (i = 0; i < f->cpool_count; i++) {
+            if (JS_VALUE_GET_TAG(f->cpool[i]) == JS_TAG_FUNCTION_BYTECODE) {
+                JSFunctionBytecode *c = JS_VALUE_GET_PTR(f->cpool[i]);
+                int k;
+                for (k = 0; k < c->closure_var_count; k++)
+                    c->closure_var[k].by_value = 0;
+            }
+        }
+        capture_by_value(ctx, f);
+    }
+    for (i = 0; i < f->arg_count + f->var_count; i++) {
+        char buf[ATOM_GET_STR_BUF_SIZE];
+        JSBytecodeVarDef *vd = &f->vardefs[i];
+        if (!vd->is_captured)
+            continue;
+        n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s=%d", n ? " " : "",
+                      JS_AtomGetStr(ctx, buf, sizeof(buf), vd->var_name), vd->by_value);
+    }
+    for (i = 0; i < f->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(f->cpool[i]) == JS_TAG_FUNCTION_BYTECODE &&
+            white_by_value_marks(f, f, JS_VALUE_GET_PTR(f->cpool[i]), 0))
+            ret = -2;
+    }
+    JS_FreeValue(ctx, v);
+    return ret;
+}
+
+int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap)
+{
+    return white_by_value_run(ctx, src, name, read, 0, out, cap);
+}
+
+static size_t white_marks_rec(JSContext *ctx, JSFunctionBytecode *b, char *out, size_t cap, size_t n)
+{
+    char buf[ATOM_GET_STR_BUF_SIZE];
+    int i, k;
+
+    n += snprintf(out + n, n < cap ? cap - n : 0, "%s%s:", n ? " " : "",
+                  JS_AtomGetStr(ctx, buf, sizeof(buf), b->func_name));
+    for (k = 0; k < b->closure_var_count; k++)
+        n += snprintf(out + n, n < cap ? cap - n : 0, "%d", b->closure_var[k].by_value);
+    n += snprintf(out + n, n < cap ? cap - n : 0, "/%d", b->by_value_count);
+    for (i = 0; i < b->cpool_count; i++) {
+        if (JS_VALUE_GET_TAG(b->cpool[i]) == JS_TAG_FUNCTION_BYTECODE)
+            n = white_marks_rec(ctx, JS_VALUE_GET_PTR(b->cpool[i]), out, cap, n);
+    }
+    return n;
+}
+
+/* the marks of the closure variables of the function f and of those below
+   it, each function with its count: "f:/0 g:110/2" */
+void white_marks(JSContext *ctx, JSValueConst f, char *out, size_t cap)
+{
+    out[0] = 0;
+    if (JS_VALUE_GET_TAG(f) == JS_TAG_FUNCTION_BYTECODE)
+        white_marks_rec(ctx, JS_VALUE_GET_PTR(f), out, cap, 0);
+}
+
+/* the mark of the closure variable at of the function name below f, or
+   with at -1 of its first closure variable whose mark is was, turned the
+   other way: its index, or -1 when there is none. by_value_count stays as
+   it was: JS_WriteObject reads the marks only. */
+int white_flip_by_value(JSContext *ctx, JSValueConst f, const char *name, int was, int at)
+{
+    JSFunctionBytecode *b;
+    int k;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = white_find_function(ctx, JS_VALUE_GET_PTR(f), name);
+    if (!b)
+        return -1;
+    if (at >= 0) {
+        if (at >= b->closure_var_count)
+            return -1;
+        b->closure_var[at].by_value = !b->closure_var[at].by_value;
+        return at;
+    }
+    for (k = 0; k < b->closure_var_count; k++) {
+        if (b->closure_var[k].by_value == was) {
+            b->closure_var[k].by_value = !was;
+            return k;
+        }
+    }
+    return -1;
+}
+
+/* with on, the function name below f gets n closure variables (n at least
+   its count): its own, then copies of its first. Without, it gets back
+   its own. 0, or -1. */
+int white_wide_closure_vars(JSContext *ctx, JSValueConst f, const char *name, int n, int on)
+{
+    static JSClosureVar *saved;
+    static int saved_count;
+    JSFunctionBytecode *b;
+    JSClosureVar *cv;
+    int k;
+
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_FUNCTION_BYTECODE)
+        return -1;
+    b = white_find_function(ctx, JS_VALUE_GET_PTR(f), name);
+    if (!b)
+        return -1;
+    if (!on) {
+        js_free(ctx, b->closure_var);
+        b->closure_var = saved;
+        b->closure_var_count = saved_count;
+        return 0;
+    }
+    if (b->closure_var_count < 1 || n < b->closure_var_count)
+        return -1;
+    cv = js_malloc(ctx, sizeof(cv[0]) * n);
+    if (!cv)
+        return -1;
+    for (k = 0; k < n; k++)
+        cv[k] = b->closure_var[k < b->closure_var_count ? k : 0];
+    saved = b->closure_var;
+    saved_count = b->closure_var_count;
+    b->closure_var = cv;
+    b->closure_var_count = n;
+    return 0;
+}
+
+/* white_by_value on the function name of src compiled and then changed as
+   white_by_value_craft does with craft, the verdict made again: -3 when
+   the change has no place in it */
+int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap)
+{
+    return white_by_value_run(ctx, src, name, 0, craft, out, cap);
+}
+
+/* 1 when the compiled function name of src has an OP_nop between the
+   push_const of a class constructor and its define_class, 0 when not, -1
+   when the script does not compile or has no such function */
+int white_class_after_nop(JSContext *ctx, const char *src, const char *name)
+{
+    JSValue v;
+    JSFunctionBytecode *f;
+    const uint8_t *buf;
+    int pos, ret = 0;
+
+    v = JS_Eval(ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    if (JS_IsException(v))
+        return -1;
+    f = white_find_function(ctx, JS_VALUE_GET_PTR(v), name);
+    if (!f) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    buf = f->byte_code_buf;
+    for (pos = 0; pos < f->byte_code_len; pos += short_opcode_info(buf[pos]).size) {
+        if ((buf[pos] == OP_push_const || buf[pos] == OP_push_const8)) {
+            int next = pos + short_opcode_info(buf[pos]).size, n = 0;
+            while (next < f->byte_code_len && buf[next] == OP_nop) {
+                next++;
+                n++;
+            }
+            if (n > 0 && next < f->byte_code_len &&
+                (buf[next] == OP_define_class || buf[next] == OP_define_class_computed))
+                ret = 1;
+        }
+    }
+    JS_FreeValue(ctx, v);
+    return ret;
 }

@@ -60,6 +60,6 @@ result names 0: "f,g,h,2,|"
 result names 1: "f,g,h,2,|"
 result class name 0: "C"
 result class name 1: "C"
-mem-end obj=200 atom=550 shape=138 prop=970 jsfunc=1 cfunc=133 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=196 atom=549 shape=136 prop=962 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=200 atom=550 shape=137 prop=970 jsfunc=1 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=549 shape=135 prop=962 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

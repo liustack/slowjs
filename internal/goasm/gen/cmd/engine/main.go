@@ -114,10 +114,15 @@ func main() {
 		die(err)
 	}
 	gen.KeepNarrowSigs = keepNarrow
+	dropLR, err := dropLRPairsFromEnv(os.Getenv("GEN_DROP_LR_PAIRS"))
+	if err != nil {
+		die(err)
+	}
 	editLoweredEnv := os.Getenv("GEN_EDIT_LOWERED")
-	negative := keepNarrow
+	negative := keepNarrow || dropLR != ""
+	negativeWhat = negativeName(keepNarrow, dropLR)
 	if *release {
-		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow,
+		if err := releaseError(devSwitches{KeepGoing: *keepGoing, LooseVarargs: *looseVar, Poison: *poisonF, KeepNarrow: keepNarrow, DropLR: dropLR != "",
 			EditLowered: editLoweredEnv, NonFormat: *nonFormat, NoPoll: !*pollOn,
 			PostLink: *postLink, PostArgs: *postArgs}, *out); err != nil {
 			die(err)
@@ -125,6 +130,9 @@ func main() {
 	}
 	if err := archError(*arch, *mode, *poisonF, *looseVar); err != nil {
 		die(err)
+	}
+	if dropLR != "" && *arch != "arm64" {
+		die(fmt.Errorf("GEN_DROP_LR_PAIRS is a negative build of the arm64 lowering"))
 	}
 	postOn, err := postLinkOn(*postLink, *arch)
 	if err != nil {
@@ -353,6 +361,16 @@ func main() {
 		// the assembler refuses. Half the reach leaves the lowering room to
 		// double a function.
 		llcArgs = append(llcArgs, "-aarch64-tbz-offset-bits=13")
+		// A jump table llc may write with 1 or 2 bytes an entry, each the
+		// distance in steps of 4 bytes from its lowest target, picked by the
+		// sizes of the code it writes. The lowering then adds code, and a
+		// table that fit can end past its width: a switch of js_start_tag
+		// did, 272 steps for a byte. No room left by half a width would hold
+		// for every switch, so every table takes 4 bytes an entry (the
+		// default of llc is true). The dispatch is as long either way (adr,
+		// a load, an add, br), and the lowering checks every table it writes
+		// (a64CheckJumpTables).
+		llcArgs = append(llcArgs, "-aarch64-enable-compress-jump-tables=false")
 	}
 	factsPath := filepath.Join(*work, "engine.facts")
 	probeFacts := filepath.Join(*work, "probes.facts")
@@ -470,7 +488,8 @@ func main() {
 		if err != nil {
 			die(err)
 		}
-		a64env = &gen.ARM64Env{Plan: plan, Funcs: funcs, Facts: facts, Probes: probes, Variadic: variadic, Align64: align64}
+		a64env = &gen.ARM64Env{Plan: plan, Funcs: funcs, Facts: facts, Probes: probes, Variadic: variadic, Align64: align64,
+			DropLRPairs: dropLR != "", NoLRProof: dropLR == "unchecked"}
 	}
 	failed := map[string]bool{}
 	for _, r := range rejections {
@@ -775,6 +794,35 @@ func keepNarrowFromEnv(v string) (bool, error) {
 	return false, fmt.Errorf("GEN_KEEP_NARROW=%q: only 1 turns the negative build on (unset it to build the engine)", v)
 }
 
+// dropLRPairsFromEnv reads GEN_DROP_LR_PAIRS, the negative build of the arm64
+// lowering that drops a pair holding x30 whole, the other register's save
+// with it (gen.ARM64Env.DropLRPairs). With 1 the lowering's proof must refuse
+// it and the run stops. With unchecked the proof is skipped and the package
+// is written, for the engine's tests to fail on. Any other value but an empty
+// one is an error.
+func dropLRPairsFromEnv(v string) (string, error) {
+	switch v {
+	case "", "1", "unchecked":
+		return v, nil
+	}
+	return "", fmt.Errorf("GEN_DROP_LR_PAIRS=%q: 1 or unchecked turns the negative build on (unset it to build the engine)", v)
+}
+
+// negativeWhat names the switches of a negative build, for the files that
+// mark it.
+var negativeWhat string
+
+func negativeName(keepNarrow bool, dropLR string) string {
+	var on []string
+	if keepNarrow {
+		on = append(on, "GEN_KEEP_NARROW=1")
+	}
+	if dropLR != "" {
+		on = append(on, "GEN_DROP_LR_PAIRS="+dropLR)
+	}
+	return strings.Join(on, ", ")
+}
+
 // archError says why the driver cannot lower for arch with these switches,
 // or is nil. arm64 lowers the whole engine with -mode pn only (the other
 // modes are the prototype's, proto.sh), and its lowering has no poison and
@@ -798,14 +846,14 @@ func archError(arch, mode string, poison, loose bool) error {
 
 // devSwitches are the switches a release build refuses: the ones for
 // surveys (-keep-going), wrong code on purpose (-loose-varargs),
-// tests of the tests (-poison, GEN_KEEP_NARROW, GEN_EDIT_LOWERED) and a
-// format check made narrower than the default. -src is not among them: a
-// fixture goes through a release build like the engine does, which is how the
-// build is tested.
+// tests of the tests (-poison, GEN_KEEP_NARROW, GEN_DROP_LR_PAIRS,
+// GEN_EDIT_LOWERED) and a format check made narrower than the default. -src
+// is not among them: a fixture goes through a release build like the engine
+// does, which is how the build is tested.
 type devSwitches struct {
-	KeepGoing, LooseVarargs, Poison, KeepNarrow, NoPoll bool
-	EditLowered, NonFormat                              string
-	PostLink, PostArgs                                  string
+	KeepGoing, LooseVarargs, Poison, KeepNarrow, DropLR, NoPoll bool
+	EditLowered, NonFormat                                      string
+	PostLink, PostArgs                                          string
 }
 
 // releaseError says why -release cannot go on with these switches, or is nil.
@@ -821,6 +869,7 @@ func releaseError(d devSwitches, out string) error {
 	add(d.LooseVarargs, "-loose-varargs")
 	add(d.Poison, "-poison")
 	add(d.KeepNarrow, "GEN_KEEP_NARROW")
+	add(d.DropLR, "GEN_DROP_LR_PAIRS")
 	add(d.EditLowered != "", "GEN_EDIT_LOWERED")
 	add(d.NonFormat != defaultNonFormat, "-non-format-variadic")
 	add(d.NoPoll, "an engine without polls (-poll=false)")
@@ -858,12 +907,11 @@ func negativeBuildFile() string {
 %s
 package %s
 
-// This package is a negative build of the generator: with GEN_KEEP_NARROW=1 its
-// narrow integers are passed as the generator once took them, to show that
-// the tests and the post-link check catch the mistake. It is not an engine,
+// This package is a negative build of the generator (%s), made to show
+// that the tests and the checks catch its mistake. It is not an engine,
 // and it does not compile unless the build is given -tags goasmnegative.
 var _ = negative_build_of_the_generator_is_not_an_engine_build_it_with_tag_goasmnegative
-`, goBuildLine("!goasmnegative"), *pkg)
+`, goBuildLine("!goasmnegative"), *pkg, negativeWhat)
 }
 
 // editLowered applies GEN_EDIT_LOWERED to the lowered text: entries
@@ -1003,7 +1051,7 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		b.WriteString(l + "\n")
 	}
 	if negative {
-		b.WriteString("// NEGATIVE BUILD (GEN_KEEP_NARROW): this is not an engine. See engine_negative_<arch>.go.\n\n")
+		fmt.Fprintf(&b, "// NEGATIVE BUILD (%s): this is not an engine. See engine_negative_<arch>.go.\n\n", negativeWhat)
 	}
 	fmt.Fprintf(&b, "package %s\n\n", *pkg)
 	if len(wrappers) > 0 {

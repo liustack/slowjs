@@ -99,13 +99,17 @@ static void rv_window_end(RVPass *s, int npop, int npush)
         break;
     case OP_for_of_start:
         /* iterator, next method and the catch offset 0 that closes the
-           iterator when an exception passes it (rv_unwind) */
-        rv_window(s, p, RV_W_FOR_OF_START, 1);
+           iterator when an exception passes it (rv_unwind). DSTART for an
+           array destructured (regvm-ops-dst.h) */
+        rv_window(s, p, rv_dst_site(s, s->pos) ? RV_DSTART : RV_W_FOR_OF_START, 1);
         rv_throws(s, rv_owned(s, 0));
         rv_window_end(s, 1, 3);
         break;
     case OP_for_of_next:
-        /* the iterator is p[1] entries below the top three */
+        /* the iterator is p[1] entries below the top three. With a drop
+           after it, DNEXT (regvm-ops-dst.h) */
+        if (rv_dst_next(s, p))
+            break;
         rv_window(s, p, RV_W_FOR_OF_NEXT, 3 + p[1]);
         rv_throws(s, rv_owned(s, 0));
         rv_hooks(s, RV_HOOK_APART);
@@ -171,9 +175,8 @@ static void rv_window_end(RVPass *s, int npop, int npush)
 
 /* Copies. The bodies run here call these in place of a function of the
    engine (a #define around the body), each with the hook of the throw
-   injection. js_for_in_start and js_create_array_free are here only, and
-   rv_define_object_name is a copy of JS_DefineObjectName and must change
-   with it: docs/upgrading.md. */
+   injection. js_for_in_start is here only, and rv_define_object_name is a
+   copy of JS_DefineObjectName and must change with it: docs/upgrading.md. */
 
 /* The throw-injection test (engine/regvm-inject.h) in a body: where the
    body calls the function of the engine that can fail, the hook fails in
@@ -245,18 +248,13 @@ static int rv_define_object_name(JSContext *ctx, JSValueConst obj,
     return 0;
 }
 
-/* js_create_array_free of upstream's interpreter, with the hook of the
-   throw injection: the array of the len values of tab, which it takes */
+/* js_create_array_free with the hook of the throw injection: the array of
+   the len values of tab, which it takes */
 static JSValue rv_create_array_free(JSContext *ctx, int len, JSValue *tab)
 {
-    JSValue obj;
-    int i;
     if (RV_INJ_HIT(ctx))
         return rv_inj_take(ctx, tab, len);
-    obj = js_create_array(ctx, len, tab);
-    for (i = 0; i < len; i++)
-        JS_FreeValue(ctx, tab[i]);
-    return obj;
+    return js_create_array_free(ctx, len, tab);
 }
 
 static no_inline int rv_w_object_lit(JSContext *ctx, JSValue *F, const uint8_t *ip)
@@ -341,6 +339,25 @@ static no_inline int rv_w_iterator_close(JSContext *ctx, JSValue *F, const uint8
     /* an iterator that is done is not closed: nothing to fail */
     if (JS_IsUndefined(sp[-3]))
         RV_INJ_NONE("skip");
+    else if (js_dst_is_rec(sp[-1])) {
+        /* the array of DSTART (regvm-ops-dst.h): the close reads no
+           return where none is, and the array and the next method go.
+           Otherwise its Array Iterator is closed, which stays in its
+           place, as the iterator does when the close throws. */
+        if (!RV_INJ_ARMED && !js_dst_has_return(ctx)) {
+            JS_FreeValue(ctx, sp[-2]);
+            JS_FreeValue(ctx, sp[-3]);
+            return 0;
+        }
+        if (js_dst_iter(ctx, sp - 3)) {
+            /* the cleanup of this instruction frees only the iterator
+               slot, as OP_BODY_iterator_close has freed next before it
+               closes: the next method goes here */
+            JS_FreeValue(ctx, sp[-2]);
+            sp[-2] = JS_UNDEFINED;
+            return -1;
+        }
+    }
 #define JS_IteratorClose(ctx, it, is_throw)                             \
     (RV_INJ_HIT(ctx) ? -1 : JS_IteratorClose(ctx, it, is_throw))
     OP_BODY_iterator_close(ctx, sp, (void)0, exception)

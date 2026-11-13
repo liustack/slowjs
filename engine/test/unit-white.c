@@ -88,6 +88,7 @@ int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
+JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
 int white_poll_run(void);
@@ -97,6 +98,12 @@ int white_poll_insert(JSContext *ctx, const uint8_t *code, int len, uint8_t *out
 int white_code_shape(const uint8_t *code, int len, int *shape, int max);
 const uint8_t *white_child_code(JSValueConst fun, int i, int *len);
 int white_child_var_count(JSValueConst fun, int i);
+int white_by_value(JSContext *ctx, const char *src, const char *name, int read, char *out, size_t cap);
+int white_by_value_crafted(JSContext *ctx, const char *src, const char *name, int craft, char *out, size_t cap);
+int white_wide_closure_vars(JSContext *ctx, JSValueConst f, const char *name, int n, int on);
+void white_marks(JSContext *ctx, JSValueConst f, char *out, size_t cap);
+int white_flip_by_value(JSContext *ctx, JSValueConst f, const char *name, int was, int at);
+int white_class_after_nop(JSContext *ctx, const char *src, const char *name);
 int white_nops(const uint8_t *code, int len, int *places, int max);
 int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *pending, int *made);
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
@@ -119,10 +126,13 @@ unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
 uint32_t white_regvm_code_hash(JSValueConst f, int *code_len);
+const uint8_t *white_regvm_code(JSValueConst f, int *code_len);
 long white_regvm_shorts(void);
 int white_regvm_scratch_drain(JSContext *ctx, int in_pass);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
+int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
+int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 int white_drop_vardefs(JSValueConst f, int on);
@@ -138,6 +148,7 @@ void white_work_add(unsigned long n);
 size_t white_sb_block_usable(const struct StringBuffer *b);
 void white_front_drain(JSContext *ctx);
 size_t white_heap_limit(JSContext *ctx);
+size_t white_gc_count(JSRuntime *rt);
 
 /* ---- texts of every kind of character ---- */
 
@@ -3348,6 +3359,428 @@ static void test_iterator_close_oom(void)
     vm_free(&v);
 }
 
+/* The captures that never change (capture_by_value): for each captured
+   argument or local of the function f, whether no closure can see it
+   change. A write that a path from the place a closure is made reaches
+   keeps a JSVarRef: in either arm of an if, in a switch, around a loop,
+   through a catch or a finally, after a yield or an await, in a function
+   below that captures it, by a direct eval or through a mapped arguments
+   object. A close_loc on the way (the per-round binding of a for-let) ends
+   the capture. The verdict is the same on code read back with
+   JS_ReadObject, which works it out again. */
+static void test_capture_by_value(void)
+{
+    static const struct {
+        const char *src, *want;
+    } cases[] = {
+        /* destructuring: the initializer runs after the pattern's code */
+        { "function f(g) { const [a, b] = g(() => a); return () => b }", "a=0 b=1" },
+        { "function f(g) { const { a, b } = g(); return () => a + b }", "a=1 b=1" },
+        /* the arms of an if */
+        { "function f(c) { let x; const h = () => x; if (c) x = 1; else x = 2; return h }", "x=0" },
+        { "function f(c) { let x; if (c) x = 1; else x = 2; return () => x }", "x=1" },
+        { "function f(c) { let x = 0; if (c) return () => x; x = 1; return null }", "x=1" },
+        /* switch */
+        { "function f(v) { let x = 0; switch (v) { case 0: x = 1; break; case 1: return () => x } return null }", "x=1" },
+        { "function f(v) { let x = 0, g; switch (v) { case 0: g = () => x; case 1: x = 2 } return g }", "x=0" },
+        /* loops, break and continue to labels */
+        { "function f() { let x = 0; const fs = []; while (x < 3) { fs.push(() => x); x++ } return fs }", "x=0" },
+        { "function f() { var fs = []; for (var i = 0; i < 3; i++) fs.push(() => i); return fs }", "i=0" },
+        { "function f(a) { const r = []; outer: for (let i = 0; i < 3; i++) { let y = i * 2; for (;;) { r.push(() => y); if (a) continue outer; break outer } } return r }", "y=1" },
+        { "function f(a) { const r = []; let y = 0; outer: for (let i = 0; i < 3; i++) { for (;;) { r.push(() => y); if (a) continue outer; break outer } } y = 1; return r }", "y=0" },
+        { "function f() { let x = 0, g; lab: { g = () => x; if (g.length) break lab; x = 1 } return g }", "x=0" },
+        { "function f() { let x = 0, g; lab: { x = 1; break lab } g = () => x; return g }", "x=1" },
+        /* try, catch and finally */
+        { "function f(h) { let x = 0; const g = () => x; try { h() } catch (e) { x = 1 } return g }", "x=0" },
+        /* a write in a catch counts wherever the closure is made, after the
+           try too: an exception can only go to some catch of the function,
+           but which one the stack holds is not looked at */
+        { "function f(h) { let x = 0; try { h() } catch (e) { x = 1 } return () => x }", "x=0" },
+        { "function f() { let x = 0, g; try { g = () => x } finally { x = 2 } return g }", "x=0" },
+        { "function f(h) { let x = 0, g; try { x = 1 } finally { g = () => x } return g }", "x=1" },
+        { "function f(h) { let x = 0, g; try { try { g = () => x } finally { h() } } catch (e) { x = 3 } return g }", "x=0" },
+        /* a write that only the handler reaches */
+        { "function f(h) { let x = 0, g; try { g = () => x; h() } catch (e) { x = 1 } return g }", "x=0" },
+        { "function f(h) { let x = 0, g; try { h() } catch (e) { g = () => x; return g } x = 1; return g }", "x=1" },
+        /* a capture in a finally and a write after it */
+        { "function f() { let x = 0, g; try {} finally { g = () => x } x = 1; return g }", "x=0" },
+        /* the binding of each round of a for-let is closed before the next */
+        { "function f() { const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i); return fs }", "i=1" },
+        { "function f() { const fs = []; for (let i = 0; i < 3; i++) { fs.push(() => i); i += 0 } return fs }", "i=0" },
+        { "function f(a) { const fs = []; for (const x of a) fs.push(() => x); return fs }", "x=1" },
+        /* default parameters: in QuickJS the body writes a binding of its own
+           when the parameters have expressions, which the closure never sees
+           (it gives 1 where Node gives 2) */
+        { "function f(a, g = () => a) { a = 2; return g }", "a=1" },
+        { "function f(a, g = () => a, h = () => { a = 3 }) { return g }", "a=0" },
+        { "function f(a, g = () => a) { return g }", "a=1" },
+        /* the name of a function expression, a catch parameter */
+        { "var h = function f() { return () => f }", "f=1" },
+        /* the catch writes e as it starts: a closure of e keeps a JSVarRef
+           (above) */
+        { "function f(h) { try { h() } catch (e) { return () => e } }", "e=0" },
+        { "function f(h) { try { h() } catch (e) { const g = () => e; e = 1; return g } }", "e=0" },
+        /* this and new.target in an arrow */
+        { "function f() { return () => this }", "this=1" },
+        /* function declarations that call each other */
+        { "function f() { function a() { return b } function b() { return a } return a }", "a=1 b=0" },
+        /* class fields and static blocks */
+        { "function f() { let x = 1; class A { y = x; static { x = 2 } } return A }", "x=0 <class_fields_init>=0" },
+        { "function f() { const x = 1; class A { y = () => x; static z = x } return A }", "x=1 <class_fields_init>=0" },
+        /* a generator and an async function go on after a yield and an await */
+        { "function* f() { let x = 1; const g = () => x; yield 0; x = 2; yield g }", "x=0" },
+        { "function* f() { let x = 1; yield 0; x = 2; yield () => x }", "x=1" },
+        { "async function f(h) { let x = 1; const g = () => x; await 0; x = 2; return g }", "x=0" },
+        { "async function f(h) { let x = await h(); return () => x }", "x=1" },
+        /* with: an assignment inside it takes a reference to the slot
+           (make_loc_ref), which keeps it a JSVarRef */
+        { "function f(o) { let x = 1; with (o) { x = 2 } return () => x }", "x=0" },
+        { "function f(o) { let x = 1; const g = () => x; with (o) { x = 2 } return g }", "x=0" },
+        { "function f(o) { let x = 1; with (o) { return () => x } }", "x=1 <with>=1" },
+        /* eval: a direct one can write any of them, an indirect one none */
+        { "function f() { let x = 1; const g = () => x; eval('x = 2'); return g }", "x=0 g=0 <var>=0 this=0 new.target=0 arguments=0" },
+        { "function f() { let x = 1; const g = () => x; (0, eval)('x = 2'); return g }", "x=1" },
+        { "function f() { let x = 1; const g = () => () => eval(''); return g }", "x=0 g=0 this=0 new.target=0 arguments=0" },
+        /* arguments: mapped in sloppy code with simple parameters */
+        { "function f(a) { const g = () => a; arguments[0] = 2; return g }", "a=0" },
+        { "function f(a) { 'use strict'; const g = () => a; arguments[0] = 2; return g }", "a=1" },
+        { "function f(a, b = 1) { const g = () => a; arguments[0] = 2; return g }", "a=1" },
+        /* a function two levels down */
+        { "function f() { let x = 1; return () => () => { x = 2 } }", "x=0" },
+        { "function f() { let x = 1; return () => () => x }", "x=1" },
+        { "function f() { let x = 1; return () => () => () => x++ }", "x=0" },
+        /* the dead zone: a capture before the declaration, and one no write follows */
+        { "function f() { const g = () => x; let x = 1; return g }", "x=0" },
+        { "function f(v) { switch (v) { case 0: let x = 1; break; case 1: return () => x } }", "x=1" },
+    };
+    VM v = vm_new();
+    size_t i;
+    int read, r;
+    char got[256];
+
+    for (i = 0; i < countof(cases); i++) {
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, cases[i].src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, cases[i].want), "%s%s: %d \"%s\", want \"%s\"",
+                  cases[i].src, read ? " (read back)" : "", r, got, cases[i].want);
+        }
+    }
+    /* 257 captured locals read two functions down, one written after the
+       capture: past 256 closure variables and over five chunks of 64 */
+    {
+        char *src = malloc(16384), *want = malloc(16384);
+        size_t at = 0, wt = 0, k;
+        char *got2 = malloc(16384);
+        at += snprintf(src + at, 16384 - at, "function f() { let ");
+        for (k = 0; k < 257; k++)
+            at += snprintf(src + at, 16384 - at, "%sa%zu = %zu", k ? ", " : "", k, k);
+        at += snprintf(src + at, 16384 - at, "; const g = () => () => a0");
+        for (k = 1; k < 257; k++)
+            at += snprintf(src + at, 16384 - at, " + a%zu", k);
+        snprintf(src + at, 16384 - at, "; a200 = 0; return g }");
+        for (k = 0; k < 257; k++)
+            wt += snprintf(want + wt, 16384 - wt, "%sa%zu=%d", k ? " " : "", k, k != 200);
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got2, 16384);
+            CHECK(r == 0 && !strcmp(got2, want), "257 locals%s: %d", read ? " (read back)" : "", r);
+        }
+        free(src);
+        free(want);
+        free(got2);
+    }
+    /* 2000 try and finally blocks: OP_ret goes to after each of the 4000
+       OP_gosub through one node, not by an edge for each pair */
+    {
+        size_t cap2 = 64 * 2000 + 256, at = 0, k;
+        char *src = malloc(cap2);
+        at += snprintf(src + at, cap2 - at, "function f(h) { let x = 1, y = 0;\n");
+        for (k = 0; k < 2000; k++)
+            at += snprintf(src + at, cap2 - at, "try { h() } finally { h(y) }\n");
+        snprintf(src + at, cap2 - at, "const g = () => x + y; y = 1; return g }");
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, "x=1 y=0"), "2000 finally blocks%s: %d \"%s\"",
+                  read ? " (read back)" : "", r, got);
+        }
+        free(src);
+    }
+    /* a chain of REFs through 32 functions holds the value, one through 33
+       keeps the JSVarRef (CBV_DEPTH) */
+    for (i = 32; i <= 33; i++) {
+        char src[512];
+        size_t at = 0, k;
+        at += snprintf(src + at, sizeof(src) - at, "function f() { let x = 1; return ");
+        for (k = 0; k < i; k++)
+            at += snprintf(src + at, sizeof(src) - at, "() => ");
+        snprintf(src + at, sizeof(src) - at, "x }");
+        for (read = 0; read < 2; read++) {
+            r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, i == 32 ? "x=1" : "x=0"), "%zu functions deep%s: %d \"%s\"",
+                  i, read ? " (read back)" : "", r, got);
+        }
+    }
+    /* code a file can hold and no compiler makes: a define_class whose
+       constructor is not the function of the push_const right before it
+       (1), or that a jump lands on (2), keeps every slot a JSVarRef. The
+       same function as compiled holds x by value. */
+    {
+        static const char src[] =
+            "function f(a) { let x = 0; const g = () => x; if (a) a(); class C {} return g }";
+        int craft;
+
+        r = white_by_value(v.ctx, src, "f", 0, got, sizeof(got));
+        CHECK(r == 0 && !strcmp(got, "x=1 <class_fields_init>=0"), "a class: %d \"%s\"", r, got);
+        for (craft = 1; craft <= 2; craft++) {
+            r = white_by_value_crafted(v.ctx, src, "f", craft, got, sizeof(got));
+            CHECK(r == 0 && !strcmp(got, "x=0 <class_fields_init>=0"), "a class, changed %d: %d \"%s\"", craft, r, got);
+        }
+    }
+    /* insert_polls puts an OP_nop after a run of POLL_RUN - 1 instructions
+       with no count, which can fall between the push_const of a class and
+       its define_class: the class is still one the pass knows. Runs of
+       straight code of each length find the one. */
+    {
+        int a, m, found = 0;
+        char src[4096];
+
+        for (a = 0; a < 150 && !found; a++) {
+            for (m = 0; m < 2 && !found; m++) {
+                size_t at = 0;
+                int k;
+                at += snprintf(src + at, sizeof(src) - at, "function f(q) { let x = 0, p; const g = () => x; ");
+                for (k = 0; k < a; k++)
+                    at += snprintf(src + at, sizeof(src) - at, "p = q; ");
+                for (k = 0; k < m; k++)
+                    at += snprintf(src + at, sizeof(src) - at, "p = -q; ");
+                snprintf(src + at, sizeof(src) - at, "class C {} return g }");
+                if (white_class_after_nop(v.ctx, src, "f") != 1)
+                    continue;
+                found = 1;
+                for (read = 0; read < 2; read++) {
+                    r = white_by_value(v.ctx, src, "f", read, got, sizeof(got));
+                    CHECK(r == 0 && !strcmp(got, "x=1 <class_fields_init>=0"), "a class after an OP_nop%s: %d \"%s\"",
+                          read ? " (read back)" : "", r, got);
+                }
+            }
+        }
+        CHECK(found, "no run of code puts an OP_nop between the push_const of a class and its define_class");
+    }
+    vm_free(&v);
+}
+
+/* JS_ReadObject reads a function of as many closure variables as the
+   compiler makes, 65534, and refuses more: by_value_count, 16 bits, counts
+   the cells of a closure, one for each closure variable that holds its
+   value. The function g has three, a and b that hold their values and w
+   that the frame writes, and the copies of a hold theirs too: 65538 of
+   them would give 65537 cells. */
+static void test_closure_var_limit(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const int counts[] = { 65534, 65535, 65538 };
+    VM v = vm_new(), w;
+    JSValue c, obj, r;
+    uint8_t *buf;
+    size_t len;
+    char *t, want[64];
+    int i, n;
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    for (i = 0; i < (int)countof(counts); i++) {
+        n = counts[i];
+        CHECK(white_wide_closure_vars(v.ctx, c, "g", n, 1) == 0, "%d closure variables: not made", n);
+        buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+        white_wide_closure_vars(v.ctx, c, "g", n, 0);
+        CHECK(buf != NULL, "%d closure variables: cannot be written", n);
+        if (!buf)
+            continue;
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        if (n == 65534) {
+            CHECK(!JS_IsException(obj), "%d closure variables: the read threw", n);
+            r = JS_EvalFunction(w.ctx, obj);
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 8,
+                  "%d closure variables: the script did not give 8", n);
+            JS_FreeValue(w.ctx, r);
+        } else {
+            snprintf(want, sizeof(want), "SyntaxError: invalid bytecode: %d closure variables", n);
+            t = exception_text(w.ctx);
+            CHECK(JS_IsException(obj) && t && strstr(t, want), "%d closure variables: read (%s)",
+                  n, t ? t : "no exception");
+            free(t);
+            JS_FreeValue(w.ctx, obj);
+        }
+        vm_free(&w);
+        js_free(v.ctx, buf);
+    }
+    JS_FreeValue(v.ctx, c);
+    vm_free(&v);
+}
+
+/* js_closure2 gives a function its block of closure variables once every
+   entry is written, as it does not zero the block: a collection in the
+   middle reads none of it. A script of 17 global definitions, the last of
+   which a global let already holds, throws in the first pass of
+   js_closure2, and the error it makes may run a collection. The threshold
+   goes over the bytes around the count, 8 at a time, so that some round
+   puts the collection there and not at the making of the function just
+   before (a collection sets the threshold far above the count). Before
+   each round, an array of the size of the block (136 bytes) leaves its
+   bytes in the allocator. */
+static void test_closure_gc_in_build(void)
+{
+    static const char src[] =
+        "var a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, x;";
+    VM v = vm_new();
+    JSValue c, r;
+    char *t;
+    long d;
+
+    CHECK(eval_ok(v.ctx, "let x = 1"), "the global let threw");
+    for (d = -512; d <= 4096; d += 8) {
+        c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+        CHECK(!JS_IsException(c), "the script threw");
+        CHECK(eval_ok(v.ctx, "new Uint8Array(136).fill(165), 0"), "the array threw");
+        JS_SetGCThreshold(v.rt, white_gc_count(v.rt) + d);
+        r = JS_EvalFunction(v.ctx, c);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        t = exception_text(v.ctx);
+        CHECK(JS_IsException(r) && t && strstr(t, "SyntaxError"), "at %ld: %s", d, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+    }
+    vm_free(&v);
+}
+
+/* The marks of capture_by_value go into the file with the code. A read
+   without JS_READ_OBJ_POLLS_CHECKED makes them again and refuses a file
+   whose marks are not those, with a mark turned either way. A read with
+   the flag takes them as they are, and runs the same. */
+static void test_by_value_file(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const char marks[] = "<eval>:0/0 f:/0 g:110/2 h:11/2";
+    static const struct {
+        const char *what, *name;
+        int was;
+    } flips[] = {
+        { "a closure variable that holds its value made a JSVarRef", "h", 1 },
+        { "a closure variable the frame writes made to hold its value", "g", 0 },
+    };
+    VM v = vm_new(), w;
+    JSValue c, obj, r;
+    char got[256];
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int checked, i, k;
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    white_marks(v.ctx, c, got, sizeof(got));
+    CHECK(!strcmp(got, marks), "compiled: \"%s\", want \"%s\"", got, marks);
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "the script cannot be written");
+    for (checked = 0; buf && checked < 2; checked++) {
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE | (checked ? JS_READ_OBJ_POLLS_CHECKED : 0));
+        CHECK(!JS_IsException(obj), "read%s: threw", checked ? " with the flag" : "");
+        white_marks(w.ctx, obj, got, sizeof(got));
+        CHECK(!strcmp(got, marks), "read%s: \"%s\", want \"%s\"", checked ? " with the flag" : "", got, marks);
+        r = JS_EvalFunction(w.ctx, obj);
+        CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 8, "read%s: the script did not give 8",
+              checked ? " with the flag" : "");
+        JS_FreeValue(w.ctx, r);
+        vm_free(&w);
+    }
+    js_free(v.ctx, buf);
+
+    for (i = 0; i < (int)countof(flips); i++) {
+        k = white_flip_by_value(v.ctx, c, flips[i].name, flips[i].was, -1);
+        CHECK(k >= 0, "%s: no such closure variable", flips[i].what);
+        buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+        if (k >= 0)
+            white_flip_by_value(v.ctx, c, flips[i].name, 0, k);
+        CHECK(buf != NULL, "%s: cannot be written", flips[i].what);
+        if (!buf)
+            continue;
+        w = vm_new();
+        obj = JS_ReadObject(w.ctx, buf, len, JS_READ_OBJ_BYTECODE);
+        t = exception_text(w.ctx);
+        CHECK(JS_IsException(obj) && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+              "%s: read (%s)", flips[i].what, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(w.ctx, obj);
+        vm_free(&w);
+        js_free(v.ctx, buf);
+    }
+    white_marks(v.ctx, c, got, sizeof(got));
+    CHECK(!strcmp(got, marks), "the marks put back: \"%s\"", got);
+    JS_FreeValue(v.ctx, c);
+    vm_free(&v);
+}
+
+/* capture_by_value gets no memory: the compile, or the read without
+   JS_READ_OBJ_POLLS_CHECKED, fails with out of memory, and never gives
+   other marks (which a read would refuse as code no compiler makes). Each
+   call of js_malloc_rt and js_realloc_rt fails in turn, for the script of
+   test_by_value_file, whose analysis follows the flow. */
+static void test_by_value_oom(void)
+{
+    static const char src[] =
+        "function f(a) { let b = a + 1, w = 0;"
+        " const g = function g() { const h = function h() { return a + b }; return h() + w }; w = 5; return g }\n"
+        "f(1)()";
+    static const char marks[] = "<eval>:0/0 f:/0 g:110/2 h:11/2";
+    VM v = vm_new(), w;
+    JSValue c, obj;
+    char got[256];
+    uint8_t *buf;
+    size_t len;
+    char *t;
+    int fail, n, read, failed[2] = { 0, 0 };
+
+    c = JS_Eval(v.ctx, src, strlen(src), "<unit>", JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+    CHECK(!JS_IsException(c), "the script threw");
+    buf = JS_WriteObject(v.ctx, &len, c, JS_WRITE_OBJ_BYTECODE);
+    CHECK(buf != NULL, "the script cannot be written");
+    JS_FreeValue(v.ctx, c);
+    for (read = 0; buf && read < 2; read++) {
+        for (fail = 1;; fail++) {
+            w = vm_new();
+            if (read)
+                obj = white_read_failing(w.ctx, buf, len, fail, &n);
+            else
+                obj = white_compile_failing(w.ctx, src, fail, 1, &n);
+            if (JS_IsException(obj)) {
+                t = exception_text(w.ctx);
+                CHECK(t && strstr(t, "out of memory"), "%s, call %d failing: %s",
+                      read ? "read" : "compile", fail, t ? t : "no exception");
+                free(t);
+                failed[read]++;
+            } else {
+                white_marks(w.ctx, obj, got, sizeof(got));
+                CHECK(!strcmp(got, marks), "%s, call %d failing: \"%s\"", read ? "read" : "compile", fail, got);
+                JS_FreeValue(w.ctx, obj);
+            }
+            vm_free(&w);
+            if (fail > n)
+                break;
+        }
+        CHECK(failed[read] > 0, "%s: no call failed", read ? "read" : "compile");
+    }
+    js_free(v.ctx, buf);
+    printf("unit-white: test_by_value_oom: %d compiles and %d reads failed\n", failed[0], failed[1]);
+    vm_free(&v);
+}
+
 /* The checks of the temporal dead zone the compiler keeps (tdz_checks): a
    read or a write of a let, a const or a class known to come after its
    declaration has none, and a variable left with no check, no capture and
@@ -5426,6 +5859,70 @@ static void test_regvm_stack(void)
     printf("unit-white: test_regvm_stack: rec steps onto a next segment at %d, %d allocations swept\n", edge, made);
 }
 
+/* Code that no compiler makes, which makes a catch offset the pass does not
+   know of (white_crafted_code): an iterator_get_value_done with no
+   iterator under it, which the read refuses, and a finally that changes the
+   catches under its return address, whose ret throws "invalid ret value"
+   (which its own catch returns) where the code after the gosub would have
+   returned the catch offset. A finally that leaves them as they were
+   returns as before. */
+static void test_regvm_crafted_code(void)
+{
+    static const char gen_src[] =
+        "globalThis.f = async function (a) { 'use strict'; return [a, a, a, a, a, a]; }; 0";
+    static const char fin_src[] =
+        "globalThis.f = function (a) { 'use strict'; try { a.b; } finally { a.c; a.d; } return 1; }; 0";
+    VM v;
+    JSValue g, f, r;
+    char *t;
+    int kind, rc;
+
+    for (kind = 0; kind < 3; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, kind ? fin_src : gen_src), "kind %d: the setup threw", kind);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        if (white_crafted_code(v.ctx, f, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, f);
+        t = exception_text(v.ctx);
+        if (kind == 0) {
+            CHECK(rc == -1 && t && strstr(t, "SyntaxError: invalid bytecode: code no compiler makes"),
+                  "an iterator_get_value_done with no iterator: the read lets it through (%d, %s)",
+                  rc, t ? t : "no exception");
+        } else {
+            CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        }
+        free(t);
+        if (kind > 0 && rc == 0) {
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            t = exception_text(v.ctx);
+            if (kind == 1) {
+                /* the ret throws inside the catch the finally made, whose
+                   handler returns the error */
+                const char *s = JS_IsObject(r) ? JS_ToCString(v.ctx, r) : NULL;
+                CHECK(s && strstr(s, "InternalError: invalid ret value"),
+                      "a finally that makes a catch under its return address: the call gives tag %d (%s)",
+                      (int)JS_VALUE_GET_TAG(r), s ? s : t ? t : "no exception");
+                JS_FreeCString(v.ctx, s);
+            } else
+                CHECK(JS_IsUndefined(r), "a finally that returns at once: the call gives tag %d (%s)",
+                      (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+            free(t);
+            if (!JS_IsException(r) && JS_VALUE_GET_TAG(r) != JS_TAG_CATCH_OFFSET)
+                JS_FreeValue(v.ctx, r);
+        }
+        white_crafted_code(v.ctx, f, kind, 1);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 /* Code that no compiler makes, read by JS_ReadObject (rv_read_check of
    engine/regvm-entry.h): the read rejects it with a SyntaxError, one kind
    at a time (white_crafted), and lets the code the compiler made through.
@@ -5439,6 +5936,13 @@ static void test_regvm_crafted(void)
         { "globalThis.f = function (x) { 'use strict'; return x ? 1 : 2; }; 0", "paths that meet with different depths" },
         { "globalThis.f = function (x, y) { 'use strict'; return x + y; }; 0", "nip_catch with no catch" },
         { "globalThis.f = function (a) { return arguments[0] + a; }; 0", "mapped arguments with no closure state" },
+        { "globalThis.f = function (a) { 'use strict'; try { a.b; } catch (e) { return 2; } return 1; }; 0",
+          "a catch offset returned" },
+        { "globalThis.f = function (x) { 'use strict'; return x ? 1 : 2; }; 0", "a jump before the start of the code" },
+        { "globalThis.f = function (a) { 'use strict'; try { a.b; } catch (e) { return 2; } return 1; }; 0",
+          "a catch before the start of the code" },
+        { "globalThis.f = function (a) { 'use strict'; try { for (const v of a) {} } catch (e) {} return 1; }; 0",
+          "a for_of_next that takes a catch offset for its iterator" },
     };
     static const char script[] = "'use strict'; var x = 3; x ? 1 : 2;";
     int k, r;
@@ -5638,6 +6142,75 @@ static char *call_text(JSContext *ctx, JSValueConst f)
 
      gosub L; push_i16 7; return; L: drop; push_i16 val; ret
      gosub L; push_i16 7; return; L: return */
+/* the call of the register code that copies its last arguments itself
+   (CALLS, CALLSD, rv_call_copies of engine/regvm-ops-basic.h): which
+   arguments it copies, read from the code of f. A pattern byte of -1 takes
+   any byte (the window, a constant's index), and a case with no pattern
+   wants neither op in the code. The slots of f(a, b): a is -3, b is -2. */
+static void test_regvm_call_copies(void)
+{
+    static const struct { const char *what, *src; int op, pat[8], n; } cases[] = {
+        { "two arguments, the last first", "return h(a, b);", 0, { -1, 2, 2, 0xfe, 0xfd }, 5 },
+        { "the result dropped", "h(a, b); return 0;", 1, { -1, 2, 2, 0xfe, 0xfd }, 5 },
+        { "a local before a constant", "return h(a, 's');", -1, { 0 }, 0 },
+        { "a constant before a local", "return h('s', a);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "the same slot twice", "return h(b, b);", 0, { -1, 2, 2, 0xfe, 0xfe }, 5 },
+        { "five arguments, the last four", "return h(a, b, a, b, a);", 0, { -1, 5, 4, 0xfd, 0xfe, 0xfd, 0xfe }, 7 },
+        { "after a temp", "return h(h(), a);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "an argument set by the one after it", "return h(a, a = b);", 0, { -1, 2, 1, 0xfd }, 4 },
+        { "before a temp", "return h(a, h());", -1, { 0 }, 0 },
+        { "a method call", "return b.m(a);", -1, { 0 }, 0 },
+        { "a captured argument", "var g = function () { return a; }; return h(a);", -1, { 0 }, 0 },
+    };
+    int k, i, j, op[2] = { -1, -1 }, len, found, other;
+    const uint8_t *code;
+    char src[256];
+    VM v;
+    JSValue g, f;
+
+    for (i = 0; i < 256; i++) {
+        const char *name = JS_RegvmOpName(i);
+        if (name && !strcmp(name, "CALLS"))
+            op[0] = i;
+        if (name && !strcmp(name, "CALLSD"))
+            op[1] = i;
+    }
+    CHECK(op[0] >= 0 && op[1] >= 0, "the names of CALLS and CALLSD");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        snprintf(src, sizeof(src), "function h() { return 1; } globalThis.f = function (a, b) { 'use strict'; %s }; 0", cases[k].src);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[k].what);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        CHECK(eval_ok(v.ctx, "f(1, { m() { return 2; } }); 0"), "%s: the call threw", cases[k].what);
+        code = white_regvm_code(f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        found = other = 0;
+        for (i = 0; code && i < len; i++) {
+            if (code[i] != op[0] && code[i] != op[1])
+                continue;
+            if (cases[k].op < 0 || code[i] != op[cases[k].op] || i + cases[k].n >= len) {
+                other = 1;
+                continue;
+            }
+            for (j = 0; j < cases[k].n; j++)
+                if (cases[k].pat[j] >= 0 && code[i + 1 + j] != cases[k].pat[j])
+                    break;
+            if (j == cases[k].n)
+                found = 1;
+            else
+                other = 1;
+        }
+        if (cases[k].op < 0)
+            CHECK(!other, "%s: a CALLS or CALLSD in the code", cases[k].what);
+        else
+            CHECK(found, "%s: no %s with the copies wanted", cases[k].what, cases[k].op ? "CALLSD" : "CALLS");
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -5705,6 +6278,275 @@ static void test_regvm_ret_value(void)
     vm_free(&v);
 }
 
+/* the global function name of v.ctx called with the array [7, 8]: its
+   result, the exception thrown, or NULL with *fun the function */
+static JSValue dst_call(VM *v, const char *name, JSValue *fun)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), arr, r;
+
+    *fun = JS_GetPropertyStr(v->ctx, g, name);
+    JS_FreeValue(v->ctx, g);
+    arr = JS_NewArray(v->ctx);
+    JS_SetPropertyUint32(v->ctx, arr, 0, JS_NewInt32(v->ctx, 7));
+    JS_SetPropertyUint32(v->ctx, arr, 1, JS_NewInt32(v->ctx, 8));
+    r = JS_Call(v->ctx, *fun, JS_UNDEFINED, 1, (JSValueConst *)&arr);
+    JS_FreeValue(v->ctx, arr);
+    return r;
+}
+
+/* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
+   makes DSTART for the for_of_start of a destructuring, and not for a
+   for-of loop, yield* or a destructuring with a yield in a default (its
+   return takes the catch offset off with nip_catch). The record of a DSTART
+   holds the array in place of the iterator, which no instruction but
+   for_of_next and iterator_close may read (rv_dst_scan): code read by
+   JS_ReadObject that drops the catch offset of the record, or takes it off
+   with nip_catch, and returns the iterator, gets the Array Iterator, from
+   the old W_FOR_OF_START. So does nip_catch then rot3r, undefined and
+   iterator_close, which closes the record with the return of
+   %ArrayIteratorPrototype% when it has one. */
+/* A record of DSTART keeps the built-in next with a reference, and the
+   close, the unwinding and a read at a hole make the Array Iterator when
+   they need it: each call of js_malloc_rt failing in turn, also the two of
+   making it, ends in the out of memory error or the result, and leaves no
+   reference behind, which vm_free would find as a block left in the
+   runtime (status 87). */
+static void test_regvm_dst_alloc(void)
+{
+    static const char setup[] =
+        "var AIP = Object.getPrototypeOf([][Symbol.iterator]());"
+        "AIP.return = function () { return {}; };"
+        "globalThis.close = function () { 'use strict'; const [x] = [1, 2, 3]; return 'c' + x; };"
+        "globalThis.unwind = function () { 'use strict'; try { const [x, y = (() => { throw 'e'; })()] ="
+        " [1, undefined]; } catch (e) { return 'u' + e; } };"
+        "globalThis.hole = function () { 'use strict'; var a = [1, 2]; a.length = 3;"
+        " const [x, y, z = 'z'] = a; return x + y + z; }; 0";
+    static const char *const names[] = { "close", "unwind", "hole" };
+    static const char *const want[] = { "c1", "ue", "3z" };
+    int c, fail, n, made, ooms;
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r;
+            const char *s;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            JS_FreeValue(v.ctx, g);
+            /* converted, and the built-in next made */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            JS_FreeValue(v.ctx, r);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                s = JS_ToCString(v.ctx, r);
+                CHECK(s && strcmp(s, want[c]) == 0, "%s, call %d failing: %s, not %s", names[c], fail,
+                      s ? s : "?", want[c]);
+                JS_FreeCString(v.ctx, s);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        CHECK(n >= 2 && ooms >= 2, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+}
+
+static void test_regvm_dst(void)
+{
+    static const char src[] =
+        "globalThis.f = function (a) { 'use strict'; const [x, y] = a; let s = 0;"
+        " for (const v of a) s += v; return x + y + s; };"
+        "globalThis.g = function* (a) { 'use strict'; yield* a; const [p = yield 1] = []; return p; };"
+        "globalThis.h = function (a) { 'use strict'; let x = a; const [p, q, r] = [x, x, x];"
+        " return [p, q, r, x, a]; }; 0";
+    static const char ret_src[] =
+        "globalThis.closed = 0; Object.getPrototypeOf([][Symbol.iterator]()).return ="
+        " function () { globalThis.closed++; return {}; }; 0";
+    VM v;
+    JSValue fun, r;
+    char *t;
+    int kind, rc, dst, win;
+
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, src), "the setup threw");
+    r = dst_call(&v, "f", &fun);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 30, "f([7, 8]) is not 30");
+    CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0 && dst == 1 && win == 1,
+          "f: %d DSTART and %d W_FOR_OF_START, not 1 and 1", dst, win);
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, fun);
+    CHECK(eval_is(v.ctx, "var it = g([1]); [it.next().value, it.next().value, it.return(5).value,"
+                  " it.next().done].join()", "1,1,5,true"),
+          "g: the generator gives other values");
+    {
+        JSValue gl = JS_GetGlobalObject(v.ctx);
+        fun = JS_GetPropertyStr(v.ctx, gl, "g");
+        JS_FreeValue(v.ctx, gl);
+        CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0 && dst == 0 && win == 2,
+              "g: %d DSTART and %d W_FOR_OF_START, not 0 and 2", dst, win);
+        JS_FreeValue(v.ctx, fun);
+    }
+    vm_free(&v);
+
+    for (kind = 3; kind <= 5; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "h");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        if (kind == 5)
+            CHECK(eval_ok(v.ctx, ret_src), "kind 5: the return could not be set");
+        r = dst_call(&v, "h", &fun);
+        t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+        CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0, "kind %d: no register code", kind);
+        CHECK(dst == 0 && win == 1, "kind %d: %d DSTART and %d W_FOR_OF_START, not 0 and 1",
+              kind, dst, win);
+        if (kind < 5) {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, gl, "got", JS_DupValue(v.ctx, r));
+            JS_FreeValue(v.ctx, gl);
+            CHECK(eval_is(v.ctx, "Object.prototype.toString.call(got)", "[object Array Iterator]"),
+                  "kind %d: the iterator returned is no Array Iterator (tag %d, %s)",
+                  kind, (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        } else {
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 7,
+                  "kind 5: the first element is not 7 (tag %d, %s)", (int)JS_VALUE_GET_TAG(r),
+                  t ? t : "no exception");
+            CHECK(eval_is(v.ctx, "globalThis.closed", "1"), "kind 5: the return ran other than once");
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+
+    /* a record no for_of_start made, of the JS_UNINITIALIZED that get_loc
+       reads from a local in its dead zone as its next method and undefined
+       as its catch offset, is the record it is: for_of_next calls that
+       next (TypeError) with null (6) or the array (7) as the iterator, and
+       iterator_close calls the return of the array (8). */
+    for (kind = 6; kind <= 8; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        CHECK(eval_ok(v.ctx, "globalThis.closed = 0; Array.prototype.return ="
+                      " function () { globalThis.closed++; return {}; }; 0"),
+              "kind %d: the return could not be set", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "h");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        r = dst_call(&v, "h", &fun);
+        t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+        if (kind < 8)
+            CHECK(t && strstr(t, "TypeError"), "kind %d: not a TypeError but tag %d (%s)",
+                  kind, (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        else
+            CHECK(JS_IsUndefined(r) && eval_is(v.ctx, "globalThis.closed", "1"),
+                  "kind 8: the return of the array ran other than once (tag %d, %s)",
+                  (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+
+    /* the catch offset of a record of DSTART is the index of its next
+       element, below 0, which only for_of_next and iterator_close of the
+       record read: a finally run with the record under its return address
+       leaves it, and the ret goes back by the depth and the catch the pass
+       found (9: DSTART, 7). iterator_get_value_done, which would write the
+       catch offset 0 back, gets the old W_FOR_OF_START (10: 7, where DSTART
+       would leave the array as the iterator, and the built-in next would
+       throw a TypeError on it), and a read refuses swap (11). */
+    for (kind = 9; kind <= 11; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        CHECK(eval_ok(v.ctx, "globalThis.k = function (a) { 'use strict'; let x = a;"
+                      " try { const [p, q, r] = [x, x, x]; return [p, q, r, x, a]; }"
+                      " finally { x = 0; } }; 0"), "kind %d: k could not be made", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "k");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        if (kind == 11) {
+            CHECK(rc != 0, "kind 11: the read lets swap read a catch offset");
+        } else {
+            CHECK(rc == 0, "kind %d: the read refuses it", kind);
+            r = dst_call(&v, "k", &fun);
+            t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+            CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0, "kind %d: no register code", kind);
+            CHECK(kind == 9 ? dst == 1 && win == 0 : dst == 0 && win == 1,
+                  "kind %d: %d DSTART and %d W_FOR_OF_START", kind, dst, win);
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 7,
+                  "kind %d: the first element is not 7 (tag %d, %s)", kind,
+                  (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            white_crafted_code(v.ctx, fun, kind, 1);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "k");
+            JS_FreeValue(v.ctx, gl);
+        }
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -5765,6 +6607,11 @@ int main(int argc, char **argv)
     test_share_local_slots();
     test_iterator_close_oom();
     test_tdz_checks();
+    test_capture_by_value();
+    test_closure_var_limit();
+    test_closure_gc_in_build();
+    test_by_value_file();
+    test_by_value_oom();
     test_short_opcode_index();
     test_fused_edges();
     test_added_vars_oom();
@@ -5785,11 +6632,15 @@ int main(int argc, char **argv)
     test_regvm_convert_oom_entries();
     test_regvm_scratch_drain();
     test_regvm_crafted();
+    test_regvm_crafted_code();
     test_regvm_stack();
     test_regvm_operands();
     test_regvm_run_alloc();
     test_regvm_bad_ret();
     test_regvm_ret_value();
+    test_regvm_call_copies();
+    test_regvm_dst();
+    test_regvm_dst_alloc();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

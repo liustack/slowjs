@@ -283,3 +283,27 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 内存上没有代价：`JSShape` 大小不变。在原生 C 树上用 callgrind 量（linux/arm64，只算计时的渲染，按 tifa 池子的设置），MUI 的页面每次渲染少 0.82% 到 1.08% 的指令，商店的页面少 0.12% 到 0.28%，React 的 `r_react_ssr` 少 0.29%，HTML 相同。在 darwin/arm64 上计时（轮流跑 3 轮，每次取 40 次渲染的中位数），MUI 的 orders 页时间少 1.4%，商店的页面变化在 -0.6% 到 +0.7% 之间，没有超出这台机器的噪声。渲染 200 次后 VM 持有的内存一个字节都不差。
 
 改动在 C 里（`engine/quickjs.c`）：`JSShape` 有了 `for_in_keys`，由 `js_for_in_keys_of_shape` 为 `build_for_in_iterator` 读和设。`engine/test/compare/for_in_shape_keys.js` 对同一个 shape 的对象循环多次，然后遍历这个 shape 的对象在加了数组下标、symbol、不可枚举的键、被改成不可枚举的键、getter 或删了键之后的样子，遍历先有下标的 shape，遍历在循环中加键和删键的对象，遍历同一个 shape 的两个对象之一而另一个在变，遍历原型上有键的对象和后来才加键的原型，还有数组、`arguments`、`String` 对象、类型化数组、全局对象和 40 个键的对象。它的文件由改动前的引擎写出，和 Node 24 打印的相同。
+
+## 往数组里追加元素时，第一次就留 8 个元素的空间
+
+发布版本：Unreleased。
+
+用 `push`、在长度处按下标写、展开、`splice`，或者一个一个往数组里填元素的内置函数（`Object.entries`、`split`、`JSON.parse`、`concat`、`map`）追加元素时，数组第一个元素只分到 1 个槽，之后依次是 2、3、4、6、9，每一步都是一次分配，加上一次复制已有的元素。这样建出来的数组大多只有几个元素（商店页每次渲染有 1.7K 到 3K 个数组超出了第一次分配，MUI 订单页 3K 个）。现在 `engine/quickjs.c` 里的 `expand_fast_array_append`，在一个还没有空间的数组追加第一个元素时，给它 `JS_ARRAY_MIN_ROOM`（8）个槽，之后照常 1.5 倍增长。只有追加的三个地方调用它（`add_fast_array_element`、`push` 的快速路径、`splice` 让数组变长的地方）。一开始就知道大小的数组（字面量、`slice`、剩余参数、`arguments`、自身键的数组）仍然只要刚好的大小。
+
+为什么安全：只有数组的容量变了。长度、元素、空洞和所有属性，都和一个一个槽长出来的数组一样，没有空间时第一次分配也同样以内存不足错误失败。脚本读不到容量。
+
+收益，按一次渲染的指令数的比例（callgrind，linux/arm64 原生 C 树，`render tifa=1 young=1 shapes=2048`，两次预热后一次计时渲染，不算 `host_poll` 和 `__shadow_remaining`）：React 少 0.095%，商店首页 0.227%，商品页 0.231%，一个工作台页面 0.191%，MUI 订单页 0.392%。加上测量用的 URL 替身（`urlmemo.js`，商店页要跑的 URL polyfill 在 tifa 里不会有）后，分别是 0.142%、0.141%、0.192% 和 0.387%。留 4 个槽时同样的页面是 0.091%、0.103%、0.185%、0.199% 和 0.361%，所以留 8。渲染 200 次、每次后做一次年轻代回收之后，一个 VM 占的内存相差不到 0.1%（商品页使用字节 14,063,072 到 14,071,200，MUI 订单页 7,369,312 到 7,385,728，footprint 不变），因为这些数组到那时大多已经死了。一个留下来的小数组（`Object.entries` 的一对）占 8 个 16 字节的槽，比以前最多多 96 字节。
+
+测试：`engine/test/compare/array_room.js` 用 push、按下标和展开建 0 到 9 个元素的数组，带空洞、把长度改小和改大、对稀疏数组和带 `Symbol.isConcatSpreadable` 的类数组做 concat、对回调里改长度的数组和带 `Symbol.species` 的子类做 map、`Array(n)` 从 0 到 2^32-1，以及自身键的数组。它的文件是改动之前的引擎写出来的。`engine/test/unit-oom.c` 里的 `test_array_room_oom` 在 push、一次 push 很多、按下标、展开、splice、`Object.entries`、`split` 和 `JSON.parse` 建数组的第一次分配处耗尽内存。
+
+## `in` 运算符遍历原型链时不加引用
+
+发布版本：Unreleased。
+
+`in`、`Reflect.has`、属性描述符的各个字段（`Object.defineProperty`）、`every` 和 `concat` 查找的空位，都要经过 `JS_HasProperty`。它以前对原型链上的每个对象先加一个引用，问完这个对象有没有这个键（`JS_GetOwnPropertyInternal`）再放掉。现在只有不是快速数组的 exotic 对象才这样做：`String` 对象，或者类自带 `get_own_property` 的对象。不是 exotic 的对象、数组、`arguments` 和类型化数组都不加引用直接问。
+
+为什么安全：这个引用是为了在可能放掉对象的代码运行时让对象活着。不带描述符时，`JS_GetOwnPropertyInternal` 对不是 exotic 的对象和快速数组不运行任何 JavaScript：它在 shape 里找键，遇到全局对象上还没初始化的绑定时生成一个错误，这也不运行 JavaScript。生成错误时的分配可能触发一次回收，回收只释放谁也够不着的东西，而这个对象从 `obj` 经过它前面的原型就能够着，调用方持有 `obj`。Proxy 和模块命名空间照旧带着引用走它们的 `has_property`。生成代码的轮询在这次查找里抛出的 kill（`ErrKilled`）之后不再释放任何东西，所以那里有没有这个引用也一样。
+
+在原生 C 树上用 callgrind 量（linux/amd64，只算计时的渲染，按 tifa 池子的设置，不算 `host_poll`），商店的英文首页和中文商品页每次渲染少 0.29% 的指令，workbench studio 页少 0.17%，MUI 的 orders 页少 0.05%，React 的 `r_react_ssr` 少 0.06%，商店和 MUI 的 23 个页面 HTML 相同。商店页面上的遍历大多来自 URL polyfill：把商店的 URL 对象复用起来（同样的页面，用一个替身代替 `URL`），收益是 0.05% 到 0.07%。它没有加分支：判断 exotic 对象的那次测试本来就有。
+
+改动在 C 里（`engine/quickjs.c`，`JS_HasProperty`）。`engine/test/compare/has_property_chain.js` 遍历普通的链、快速数组、类型化数组、`String` 对象和全局对象，遍历带 Proxy 的链（它的 `has` trap 剪断链并丢掉 target），遍历原型上有 getter 的描述符（getter 删掉后面的字段并剪断链），用 `toString` 会抛错、会剪断链或删掉键的键，以及由原型上的 getter 为 `every` 和 `concat` 填上的空位。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把同样的遍历扫一遍（`test_has_property_oom`）。

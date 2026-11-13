@@ -49,11 +49,10 @@ func TestLowerARM64EngineFunc(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"str x30, [sp, #32]", // the LLVM frame at L=16+16: the call's area is 16 bytes
 		"adrp x8, __goasm_rodata+28\n\tadd x8, x8, :lo12:__goasm_rodata+28", // the whole address of data+12
 		"ldr d0, .LCPI0_0", // the function's own data, PC-relative
 		"str x20, [sp, #8]\n\tbl go_callee\n\tldr x0, [sp, #16]", // the ABI0 call
-		"ldr x30, [sp, #32]\n\tb .Lgoret_f",
+		"ldr x0, [sp, #16]\n\tb .Lgoret_f",                       // llc's load of x30 is gone (arm64_lr.go)
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no %q in\n%s", want, text)

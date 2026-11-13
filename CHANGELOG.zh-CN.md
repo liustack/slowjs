@@ -11,12 +11,18 @@
 
 ### 变更
 
+- 闭包捕获的变量如果在闭包拿到之后再没有代码改它，比如参数、`const` 或函数声明，闭包现在直接存它的值，原来存的是和函数帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着，所以只被它的帧拿着的对象可能更早释放：指向它的 `WeakRef` 可能更早变空，它的 `FinalizationRegistry` 回调也可能更早运行（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）。
+- 字节码版本升到 11，因为它给直接存值的闭包变量带上标记，读取时检查过一次之后就照文件里的用（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）：v0.30.2 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+- 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
+- 在 arm64 上，有调用的生成函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事。在 Apple M4 上，一次渲染少跑 0.75% 到 1.14% 的指令，少用 0.4% 到 1.2% 的时间，在各轮的波动之内。栈帧和调用深度不变，amd64 不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#arm64-只保存一次-lr)）。
+- 解构普通数组（比如 `const [a, b] = arr`）不再造 Array Iterator：不再在调用 `values` 时 poll，也不占一层调用深度，别处不造迭代器的脚本少持有一个形状。有内存上限时，内存不足可能晚一点，在造迭代器的地方才出现。tifa 页面的一次渲染少跑 0.26%（MUI）到 0.84%（workbench）的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#不造迭代器的数组解构)）。
 - `Intl` 和 `Temporal` 现在用 `RangeError` 拒绝一些 Chrome 和 Node 接受的输入：超过 16,384 个字符的单独给出的 locale 标签和 `calendar`、`numberingSystem`、`collation` 选项，超过 524,288 个字符的数字字符串，以及 `Intl.NumberFormat` 要写超过 525,312 位数字的数。其他超过 16,384 个字符的选项、代码和 Temporal 字符串也被拒绝。原来 Go 把这些整个读进来，不算在 VM 的内存上限里，也不检查中断标志：16 MiB 的私有用途标签要 0.2 秒，Go 分配 289 MiB，`'1e-1073741000'` 保留三位有效数字让 Go 写出十亿个零。在上限以内，Go 可能为参数用掉的内存计入内存上限，放不下时用内存不足的错误结束调用。Chrome 接受的每种输入都列在 [uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)。
 - 在没有内存上限的 VM 上，`fmt.sprintf`、`printf`、`sprint` 和 `println` 的输出可能让 Go 分配的内存超过能放下 16 MiB 输出的空间时，现在用无法捕获的内存不足错误结束调用。原来 Go 先造出整个输出，不检查 VM：对 1 MiB 的控制字符调用 `fmt.sprintf('%[1]q'.repeat(64), s)` 造出 256 MiB，超过 20 ms 的 eval 超时后又跑了 636 ms。上界可能远高于输出，所以写不到 16 MiB 的调用也可能被拒绝：`"%[x"` 重复一百万次写出 13 MB，上界是 67 MB（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
 - `fmt.printf` 和 `fmt.println` 现在每次写 64 KiB，`Interrupt` 和 eval 超时可以在两次写入之间结束调用。原来写 1 MiB 到管道时，调用一直卡到管道被读走。单独一次会阻塞的写入仍然卡住调用，直到写完（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出)）。
 
 ### 修复
 
+- `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
 - Go 函数在转换很长的字符串或很大的结果时，超时和 `Interrupt` 现在能让这次调用结束，VM 不再因此被杀掉。`Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1`、`VM.NewStringUTF16`、`VM.NewAtom` 以及 `RegisterFunc` 函数的参数和结果，每 256 Ki 个字符或 16,384 个元素查一次停止：`String` 和 `WTF8` 返回 ok 为 false，其余返回中断错误。原来 16 Mi 个字符的转换在 amd64 上要 129 到 151 ms，中间不查，超过了 VM 被杀掉之前的 50 ms。仍是一整步的只有 Go 为读出的字符串分配内存，64 Mi 个字符时最多 52 ms（[go-api.md](docs/changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)）。
 - `Intl.NumberFormat` 在 `roundingPriority: 'lessPrecision'` 时，现在把远小于小数位数的数直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - 科学计数法或工程计数法下，长格式单位或货币名称的 `format` 找名称的复数形式时，不再把指数移动的每个零都写出来：米的 `format('1e-1073741000')` 原来在 Go 里花 4.3 秒、3.2 GB，而且不检查调用。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
