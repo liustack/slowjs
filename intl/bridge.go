@@ -795,10 +795,16 @@ var bridge = []*quickjs.Builtin{
 	// change nothing.
 	intlhook.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		door := intlhook.Open(a)
-		s, _ := door.LongWTF8(0)
 		lang, _ := door.Short(1, intlhook.KindOption)
 		upper, _ := a.Bool(2)
-		pieces, ok, err := premapCase(s, lang, upper)
+		// The string as WTF-8 takes at most three bytes a unit, counted
+		// before it is read.
+		units, _ := door.Len(0)
+		w := newWalk(a.VM())
+		w.take(3 * int64(units))
+		s, _ := door.LongWTF8(0)
+		w.read()
+		pieces, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
 		case err != nil:
 			return quickjs.Value{}, err

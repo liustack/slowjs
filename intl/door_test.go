@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -313,6 +314,51 @@ func TestEmittedArraysFreeTheirElements(t *testing.T) {
 			after := vm.MemoryUsage()
 			if d := after.MallocCount - before.MallocCount; d > 0 {
 				t.Errorf("%d blocks more after 2,000 calls", d)
+			}
+		})
+	}
+}
+
+// What the door counts for a string the case rules of a language map covers
+// what Go takes for the call, at each of the rules' worst inputs: with the
+// room one byte short of what Go took, the call ends with the out of memory
+// error.
+func TestCaseRoomCoversGo(t *testing.T) {
+	const n = 1 << 20
+	for _, js := range []string{
+		`'i'.repeat(N).toLocaleUpperCase('tr')`,
+		`'İ'.repeat(N).toLocaleLowerCase('tr')`,
+		`('I' + '̣'.repeat(N - 1)).toLocaleLowerCase('tr')`,
+		`'İ'.repeat(N / 2).toLocaleLowerCase('tr')`,
+		`'Ì'.repeat(N).toLocaleLowerCase('lt')`,
+		`'Į́'.repeat(N / 2).toLocaleLowerCase('lt')`,
+		`'i̇'.repeat(N / 2).toLocaleUpperCase('lt')`,
+		`'ᾷ'.repeat(N).toLocaleUpperCase('el')`,
+		`'άι'.repeat(N / 2).toLocaleUpperCase('el')`,
+		`'ή'.repeat(N).toLocaleUpperCase('el')`,
+		`'\ud800i'.repeat(N / 2).toLocaleUpperCase('tr')`,
+		`'\ud800ά'.repeat(N / 2).toLocaleUpperCase('el')`,
+		`'𐐀i'.repeat(N / 3).toLocaleUpperCase('tr')`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			vm := newVM(t)
+			src := `(function () { var N = ` + strconv.Itoa(n) + `; ` + js + `; return 0 })()`
+			eval(t, vm, src)
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			eval(t, vm, src)
+			runtime.ReadMemStats(&after)
+			took := int64(after.TotalAlloc - before.TotalAlloc)
+			t.Logf("Go took %.1f bytes a unit", float64(took)/n)
+
+			room := vmhook.Room
+			vmhook.Room = func(any) int64 { return took - 1 }
+			defer func() { vmhook.Room = room }()
+			_, err := vm.Eval(src, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.OutOfMemory {
+				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}
 		})
 	}

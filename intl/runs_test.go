@@ -236,6 +236,33 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 			stopsweep.Sweep(t, vm, c.call, n, workPerStop)
 		})
 	}
+	for _, c := range swept {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, c.n)
+			stopsweep.Sweep(t, vm, c.call, c.n, workPerStop)
+		})
+	}
+}
+
+// swept are more long calls TestLongCallsStopAtEveryTimeout sweeps, each with
+// an input of n units that keeps the sweep short. With no check, a case
+// mapping of Greek of 8 Mi units ran 0.75 s past a timeout of 25 ms on an
+// Apple M4.
+var swept = []struct {
+	name, setup, call string
+	n                 int
+}{
+	{"toLocaleUpperCase in Turkish",
+		`var s = 'istanbul '.repeat(N / 9)`, `s.toLocaleUpperCase('tr').length`, 8 << 20},
+	{"toLocaleLowerCase in Turkish of I and marks",
+		`var s = 'I' + '̣'.repeat(N - 1)`, `s.toLocaleLowerCase('tr').length`, 2 << 20},
+	{"toLocaleUpperCase in Lithuanian",
+		`var s = 'i̇'.repeat(N / 2)`, `s.toLocaleUpperCase('lt').length`, 8 << 20},
+	{"toLocaleLowerCase in Lithuanian",
+		`var s = 'ÌÍĨ '.repeat(N / 4)`, `s.toLocaleLowerCase('lt').length`, 2 << 20},
+	{"toLocaleUpperCase in Greek",
+		`var s = 'άέή'.repeat(N / 3)`, `s.toLocaleUpperCase('el').length`, 1 << 20},
 }
 
 // A dropped cursor is not kept: no slot of the list holds it after.

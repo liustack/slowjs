@@ -93,9 +93,9 @@ var caps = [kinds]struct {
 	KindDigits:   {MaxDigits, "number written", 0},
 }
 
-// roomFixed is what Go may take for a call whatever its arguments: the
+// RoomFixed is what Go may take for a call whatever its arguments: the
 // formatter or the parse it makes, and the parts of its answer.
-const roomFixed = 64 << 10
+const RoomFixed = 64 << 10
 
 // Max returns the cap of k.
 func (k Kind) Max() int { return caps[k].max }
@@ -129,7 +129,7 @@ type Door struct {
 }
 
 // Open returns the door of the call whose arguments are a.
-func Open(a quickjs.Args) Door { return Door{a: a, need: roomFixed} }
+func Open(a quickjs.Args) Door { return Door{a: a, need: RoomFixed} }
 
 // VM is the VM of the call.
 func (d *Door) VM() *quickjs.VM { return d.a.VM() }
@@ -157,6 +157,12 @@ func (d *Door) Long(i int) (string, bool) { return String(d.a, i) }
 
 // LongWTF8 reads argument i, long content, as WTF8 does, whole.
 func (d *Door) LongWTF8(i int) (string, bool) { return WTF8(d.a, i) }
+
+// Len is the length of argument i, long content, in UTF-16 code units, read
+// where the engine keeps it, so that a Builtin can count the room for what
+// it does with the argument before it reads it. ok is false for an argument
+// that is not a string.
+func (d *Door) Len(i int) (int, bool) { return d.a.StringLen(i) }
 
 // Piece is the most units of long content a Builtin works on between two
 // checks of the call.

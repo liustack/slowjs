@@ -11,7 +11,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/quickjs/internal/vmhook"
 )
 
 // toLocaleUpperCase and toLocaleLowerCase map case as ICU does for the
@@ -46,9 +49,10 @@ func caseLanguage(tag string) (string, error) {
 
 // caseRunes is s, a string as the engine holds it in WTF-8, as code points,
 // a lone surrogate as itself.
-func caseRunes(s string) []rune {
-	r := make([]rune, 0, len(s))
+func caseRunes(w *walk, s string, units int) []rune {
+	r := make([]rune, 0, units)
 	for i := 0; i < len(s); {
+		w.step()
 		if i+2 < len(s) && s[i] == 0xed && s[i+1] >= 0xa0 {
 			r = append(r, rune(s[i]&0x0f)<<12|rune(s[i+1]&0x3f)<<6|rune(s[i+2]&0x3f))
 			i += 3
@@ -64,45 +68,146 @@ func caseRunes(s string) []rune {
 
 func isSurrogate(c rune) bool { return c >= 0xd800 && c <= 0xdfff }
 
+// A walk counts the steps of the passes of one call over a long text, the
+// scans back and forth for a condition of the case rules included, and
+// checks the call every intlhook.Piece steps, so that no pass runs whole
+// with no check: toLocaleUpperCase('el') of 8 Mi units took 0.9 s on an
+// Apple M4 with none. It also counts what Go takes for the call, before
+// each allocation that grows with the text, and ends the call with the out
+// of memory error when the VM has no room for it (TestCaseRoomCoversGo).
+type walk struct {
+	vm    *quickjs.VM
+	steps int
+	held  int64
+	// room is the room of the VM, -1 for no limit, or unknownRoom before it
+	// is asked: what Go takes does not change it, so it is asked once, when
+	// the call first holds more than the door's fixed room, which the door
+	// checked when it read the first argument.
+	room int64
+}
+
+// unknownRoom is the room of a walk that has not asked the VM yet.
+const unknownRoom = -2
+
+// newWalk is the walk of a call on vm.
+func newWalk(vm *quickjs.VM) *walk { return &walk{vm: vm, room: unknownRoom} }
+
+// read tells w that the string was read, which may have joined it in the
+// VM and taken some of the room: the room is asked again.
+func (w *walk) read() { w.room = unknownRoom }
+
+func (w *walk) step() {
+	if w.steps++; w.steps == intlhook.Piece {
+		w.check()
+	}
+}
+
+// check is step's check of the call, apart so that step inlines.
+//
+//go:noinline
+func (w *walk) check() {
+	w.steps = 0
+	intlhook.Check(w.vm)
+}
+
+// take counts n bytes more that Go takes for the call.
+func (w *walk) take(n int64) {
+	if w.held += n; w.held > intlhook.RoomFixed {
+		w.over()
+	}
+}
+
+// over checks the room for what the call holds past the door's fixed room.
+//
+//go:noinline
+func (w *walk) over() {
+	if w.room == unknownRoom {
+		w.room = vmhook.Room(w.vm)
+	}
+	if w.room >= 0 && w.held > w.room {
+		intlhook.Room(w.vm, w.held)
+	}
+}
+
+// begin is the output of a rule that first changes in at i: the code points
+// before i as they are, in an array with room for those of in and extra
+// more, counted first.
+func (w *walk) begin(in []rune, i, extra int) []rune {
+	w.take(4 * int64(len(in)+extra))
+	return append(make([]rune, 0, len(in)+extra), in[:i]...)
+}
+
+// add appends c to out, counting first the array append makes when out has
+// no room for it, of at most twice its length.
+func (w *walk) add(out []rune, c rune) []rune {
+	if len(out) == cap(out) {
+		w.grow(len(out) + 1)
+	}
+	return append(out, c)
+}
+
+// grow counts the array append makes for n code points, apart so that add
+// inlines.
+//
+//go:noinline
+func (w *walk) grow(n int) { w.take(8 * int64(n)) }
+
+// pieceBytes is what Go takes for a piece of the result besides its text:
+// its place in the list, which append may double, its value boxed in an
+// interface, the smallest buffer of a builder, and the javascript value
+// EmitMixed makes of it: about 124 bytes, in a text of lone surrogates and
+// letters in turn.
+const pieceBytes = 160
+
 // premapCase maps in s, as WTF-8, what the case rules of lang, from
 // caseLanguage, change, for the engine to map the rest: ok is false when
 // they change nothing. The result is the text in pieces: strings, and lone
 // surrogates as their code units, which a Go string cannot carry to the
 // engine.
-func premapCase(s, lang string, upper bool) (pieces []any, ok bool, err error) {
-	in := caseRunes(s)
+func premapCase(w *walk, s string, units int, lang string, upper bool) (pieces []any, ok bool, err error) {
+	w.take(4 * int64(units))
+	in := caseRunes(w, s, units)
 	var out []rune
 	switch {
 	case lang == "tr" && upper:
-		out = turkishUpper(in)
+		out = turkishUpper(w, in)
 	case lang == "tr":
-		out, err = turkishLower(in)
+		out, err = turkishLower(w, in)
 	case lang == "lt" && upper:
-		out, err = lithuanianUpper(in)
+		out, err = lithuanianUpper(w, in)
 	case lang == "lt":
-		out, err = lithuanianLower(in)
+		out, err = lithuanianLower(w, in)
 	case lang == "el" && upper:
-		out, err = greekUpper(in)
+		out, err = greekUpper(w, in)
 	}
 	if out == nil || err != nil {
 		return nil, false, err
 	}
 
 	var b strings.Builder
+	piece := func(p any) {
+		w.take(pieceBytes)
+		pieces = append(pieces, p)
+	}
 	for _, c := range out {
+		w.step()
 		if isSurrogate(c) {
 			if b.Len() > 0 {
-				pieces = append(pieces, b.String())
-				b.Reset()
+				piece(b.String())
+				b = strings.Builder{}
 			}
-			pieces = append(pieces, int(c))
+			piece(int(c))
 			continue
 		}
 
+		if b.Cap()-b.Len() < utf8.UTFMax {
+			// The builder grows to twice what it needs, at most.
+			w.take(2 * int64(b.Len()+utf8.UTFMax))
+		}
 		b.WriteRune(c)
 	}
 	if b.Len() > 0 || len(pieces) == 0 {
-		pieces = append(pieces, b.String())
+		piece(b.String())
 	}
 	return pieces, true, nil
 }
@@ -135,17 +240,18 @@ func dotTypeOf(n *gointl.Normalizer, c rune) dotType {
 }
 
 // turkishUpper maps "i" to "İ", or answers nil where there is none.
-func turkishUpper(in []rune) []rune {
+func turkishUpper(w *walk, in []rune) []rune {
 	var out []rune
 	for i, c := range in {
+		w.step()
 		if c == 'i' {
 			if out == nil {
-				out = append(make([]rune, 0, len(in)), in[:i]...)
+				out = w.begin(in, i, 0)
 			}
 			c = 'İ'
 		}
 		if out != nil {
-			out = append(out, c)
+			out = w.add(out, c)
 		}
 	}
 	return out
@@ -153,7 +259,7 @@ func turkishUpper(in []rune) []rune {
 
 // turkishLower maps "İ" to "i", an "I" that no dot above follows to "ı",
 // and drops the dot above after an "I", or answers nil where none is.
-func turkishLower(in []rune) ([]rune, error) {
+func turkishLower(w *walk, in []rune) ([]rune, error) {
 	n, err := caseNormalizer()
 	if err != nil {
 		return nil, err
@@ -161,22 +267,23 @@ func turkishLower(in []rune) ([]rune, error) {
 
 	var out []rune
 	for i, c := range in {
+		w.step()
 		m, drop := c, false
 		switch c {
 		case 'İ':
 			m = 'i'
 		case 'I':
-			if !followedByDotAbove(n, in[i+1:]) {
+			if !followedByDotAbove(w, n, in[i+1:]) {
 				m = 'ı'
 			}
 		case 0x307:
-			drop = precededByI(n, in[:i])
+			drop = precededByI(w, n, in[:i])
 		}
 		if out == nil && (m != c || drop) {
-			out = append(make([]rune, 0, len(in)), in[:i]...)
+			out = w.begin(in, i, 0)
 		}
 		if out != nil && !drop {
-			out = append(out, m)
+			out = w.add(out, m)
 		}
 	}
 	return out, nil
@@ -184,8 +291,9 @@ func turkishLower(in []rune) ([]rune, error) {
 
 // followedByDotAbove is SpecialCasing.txt's Before_Dot for what follows a
 // character.
-func followedByDotAbove(n *gointl.Normalizer, after []rune) bool {
+func followedByDotAbove(w *walk, n *gointl.Normalizer, after []rune) bool {
 	for _, c := range after {
+		w.step()
 		if c == 0x307 {
 			return true
 		}
@@ -197,8 +305,9 @@ func followedByDotAbove(n *gointl.Normalizer, after []rune) bool {
 }
 
 // precededByI is SpecialCasing.txt's After_I for what precedes a character.
-func precededByI(n *gointl.Normalizer, before []rune) bool {
+func precededByI(w *walk, n *gointl.Normalizer, before []rune) bool {
 	for i := len(before) - 1; i >= 0; i-- {
+		w.step()
 		if before[i] == 'I' {
 			return true
 		}
@@ -211,7 +320,7 @@ func precededByI(n *gointl.Normalizer, before []rune) bool {
 
 // lithuanianUpper drops a dot above after a soft dotted letter, which the
 // upper case letter has no dot for, or answers nil where none is.
-func lithuanianUpper(in []rune) ([]rune, error) {
+func lithuanianUpper(w *walk, in []rune) ([]rune, error) {
 	n, err := caseNormalizer()
 	if err != nil {
 		return nil, err
@@ -219,20 +328,22 @@ func lithuanianUpper(in []rune) ([]rune, error) {
 
 	var out []rune
 	for i, c := range in {
-		drop := c == 0x307 && precededBySoftDotted(n, in[:i])
+		w.step()
+		drop := c == 0x307 && precededBySoftDotted(w, n, in[:i])
 		if out == nil && drop {
-			out = append(make([]rune, 0, len(in)), in[:i]...)
+			out = w.begin(in, i, 0)
 		}
 		if out != nil && !drop {
-			out = append(out, c)
+			out = w.add(out, c)
 		}
 	}
 	return out, nil
 }
 
 // precededBySoftDotted is SpecialCasing.txt's After_Soft_Dotted.
-func precededBySoftDotted(n *gointl.Normalizer, before []rune) bool {
+func precededBySoftDotted(w *walk, n *gointl.Normalizer, before []rune) bool {
 	for i := len(before) - 1; i >= 0; i-- {
+		w.step()
 		switch dotTypeOf(n, before[i]) {
 		case softDotted:
 			return true
@@ -247,7 +358,7 @@ func precededBySoftDotted(n *gointl.Normalizer, before []rune) bool {
 // lithuanianLower keeps the dot of "i" and "j" with an accent above: "I",
 // "J" and "Į" with one following, and "Ì", "Í" and "Ĩ", which have one,
 // map with a dot above. It answers nil where none is.
-func lithuanianLower(in []rune) ([]rune, error) {
+func lithuanianLower(w *walk, in []rune) ([]rune, error) {
 	n, err := caseNormalizer()
 	if err != nil {
 		return nil, err
@@ -255,35 +366,40 @@ func lithuanianLower(in []rune) ([]rune, error) {
 
 	var out []rune
 	for i, c := range in {
+		w.step()
+		var mb [3]rune
 		var m []rune
 		switch c {
 		case 'I', 'J', 'Į':
-			if followedByMoreAbove(n, in[i+1:]) {
-				m = []rune{unicode.ToLower(c), 0x307}
+			if followedByMoreAbove(w, n, in[i+1:]) {
+				m = append(mb[:0], unicode.ToLower(c), 0x307)
 			}
 		case 'Ì':
-			m = []rune{'i', 0x307, 0x300}
+			m = append(mb[:0], 'i', 0x307, 0x300)
 		case 'Í':
-			m = []rune{'i', 0x307, 0x301}
+			m = append(mb[:0], 'i', 0x307, 0x301)
 		case 'Ĩ':
-			m = []rune{'i', 0x307, 0x303}
+			m = append(mb[:0], 'i', 0x307, 0x303)
 		}
 		if out == nil && m != nil {
-			out = append(make([]rune, 0, len(in)+2), in[:i]...)
+			out = w.begin(in, i, 2)
 		}
 		switch {
 		case m != nil:
-			out = append(out, m...)
+			for _, r := range m {
+				out = w.add(out, r)
+			}
 		case out != nil:
-			out = append(out, c)
+			out = w.add(out, c)
 		}
 	}
 	return out, nil
 }
 
 // followedByMoreAbove is SpecialCasing.txt's More_Above.
-func followedByMoreAbove(n *gointl.Normalizer, after []rune) bool {
+func followedByMoreAbove(w *walk, n *gointl.Normalizer, after []rune) bool {
 	for _, c := range after {
+		w.step()
 		switch dotTypeOf(n, c) {
 		case above:
 			return true
@@ -402,8 +518,9 @@ func isCaseIgnorable(c rune) bool {
 
 // followedByCased reports whether a cased letter follows, past case
 // ignorable characters.
-func followedByCased(after []rune) bool {
+func followedByCased(w *walk, after []rune) bool {
 	for _, c := range after {
+		w.step()
 		switch {
 		case isCaseIgnorable(c):
 		case isCased(c):
@@ -417,7 +534,7 @@ func followedByCased(after []rune) bool {
 
 // greekUpper maps the Greek letters of in, and the diacritics after them,
 // to their capitals, or answers nil where it has none.
-func greekUpper(in []rune) ([]rune, error) {
+func greekUpper(w *walk, in []rune) ([]rune, error) {
 	letters, err := greekLetters()
 	if err != nil {
 		return nil, err
@@ -426,6 +543,7 @@ func greekUpper(in []rune) ([]rune, error) {
 	var out []rune
 	state := 0
 	for i := 0; i < len(in); {
+		w.step()
 		c := in[i]
 		next := i + 1
 		nextState := 0
@@ -438,14 +556,14 @@ func greekUpper(in []rune) ([]rune, error) {
 		data := letters[c]
 		if data == 0 {
 			if out != nil {
-				out = append(out, c)
+				out = w.add(out, c)
 			}
 			i, state = next, nextState
 			continue
 		}
 
 		if out == nil {
-			out = append(make([]rune, 0, len(in)+4), in[:i]...)
+			out = w.begin(in, i, 4)
 		}
 		up := rune(data & greekUpperMask)
 		if data&greekVowel != 0 && state&greekAfterVowelWithAccent != 0 && (up == 'Ι' || up == 'Υ') {
@@ -462,6 +580,7 @@ func greekUpper(in []rune) ([]rune, error) {
 		}
 		precomposedAccent := data&greekAccent != 0
 		for next < len(in) {
+			w.step()
 			f := greekDiacritic(in[next])
 			if f == 0 {
 				break
@@ -483,7 +602,7 @@ func greekUpper(in []rune) ([]rune, error) {
 		addTonos := false
 		switch {
 		case up == 'Η' && data&greekAccent != 0 && ypogegrammeni == 0 && state&greekAfterCased == 0 &&
-			!followedByCased(in[next:]):
+			!followedByCased(w, in[next:]):
 			// The disjunctive "ή", "or", keeps its accent.
 			if precomposedAccent {
 				up = 'Ή'
@@ -495,15 +614,15 @@ func greekUpper(in []rune) ([]rune, error) {
 		case data&greekDialytika != 0 && up == 'Υ':
 			up, data = 'Ϋ', data&^greekEitherDialytika
 		}
-		out = append(out, up)
+		out = w.add(out, up)
 		if data&greekEitherDialytika != 0 {
-			out = append(out, 0x308)
+			out = w.add(out, 0x308)
 		}
 		if addTonos {
-			out = append(out, 0x301)
+			out = w.add(out, 0x301)
 		}
 		for ; ypogegrammeni > 0; ypogegrammeni-- {
-			out = append(out, 'Ι')
+			out = w.add(out, 'Ι')
 		}
 		i, state = next, nextState
 	}
