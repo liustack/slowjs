@@ -1387,6 +1387,7 @@ var goasmKeep = []any{
 	rv_gen_suspend,
 	rv_getel,
 	rv_getel3_slow,
+	rv_getel_atom,
 	rv_getel_slow,
 	rv_getf_slow,
 	rv_getvar_slow,
