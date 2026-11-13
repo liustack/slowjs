@@ -1511,7 +1511,8 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                  RV_FAST_NONE) && !RV_INJ_ARMED &&                       \
         !JS_IsUninitialized(ret_val = rv_fast_call(ctx, W, n, this_v)))  \
         ; /* answered without the call: hasOwnProperty.call(o, k), as   \
-             QuickJS's OP_call_method, and charCodeAt (rv_fast_call).   \
+             QuickJS's OP_call_method, and the built-ins of             \
+             rv_fast_kind (rv_fast_call).                               \
              One call site for both keeps the loop's registers as they  \
              were (a second one spilled on arm64). i keeps the kind     \
              for rv_unwrap_first */                                     \

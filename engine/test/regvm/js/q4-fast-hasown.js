@@ -14,7 +14,8 @@
 // are logged, the global object, objects of another realm, primitives,
 // null and undefined), keys of every kind (atoms, numeric strings, ints,
 // negative and large numbers, symbols, objects whose conversion is logged,
-// in the order each built-in converts), a replaced built-in, and a
+// in the order each built-in converts, strings made at run time whose atom
+// exists or not), a replaced built-in, and a
 // recursion that ends at the call depth.
 var fastHasOwnGlobal = 1;
 (function () {
@@ -63,7 +64,10 @@ var fastHasOwnGlobal = 1;
   var keys = ["a", "b", "c", "k0", "k3", "k20", "k39", "own", "g", "inherited", "length", "name", "prototype", "message",
     "fastHasOwnGlobal", "hasOwnProperty", "", "0", "1", "2", "7", "-1", "1.5", "4294967294", "4294967295",
     0, 1, 2, 7, -1, 1.5, -0, 4294967294, 2147483647, 2147483648, sym, Symbol("s"),
-    null, undefined, true, 1n, { toString() { convLog.push("k"); return "a"; } }];
+    null, undefined, true, 1n, { toString() { convLog.push("k"); return "a"; } },
+    // strings made at run time: their atom exists, or not (the call makes it)
+    "k" + (1 + 2), "o" + "wn", "len" + "gth", "1" + "0", "0" + "7", "4294967" + "294", "4294967" + "295", "-" + "1",
+    "zz" + "q" + "unseen", "has" + "OwnProperty", "fastHas" + "OwnGlobal"];
   function row(name, o) {
     var r = [];
     keys.forEach(function (k) {

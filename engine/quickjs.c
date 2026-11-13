@@ -23857,14 +23857,55 @@ static force_inline JSValue js_call_c_direct(JSContext *ctx, JSValueConst func,
     return js_call_c_counted(ctx, func, this_obj, argc, (JSValueConst *)argv);
 }
 
+/* The atom JS_ValueToAtom takes for key, when that runs no script, throws
+   nothing and makes no atom, else JS_ATOM_NULL: a string that is its own
+   atom (its key_atom), an index (an int, or a string of one), a string of at most 64
+   characters whose atom exists already (JS_NewAtomStr finds it in the
+   table), a Symbol. Where JS_ValueToAtom would make an atom, and for a
+   longer string, it gives up. The atom gets no reference. Reads no flag. */
+static inline JSAtom js_key_atom_quiet(JSRuntime *rt, JSValueConst key)
+{
+    uint32_t tag = JS_VALUE_GET_TAG(key), n, h, i;
+    JSString *s;
+    JSAtomStruct *a;
+
+    if (tag == JS_TAG_INT && (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
+    if (tag == JS_TAG_SYMBOL)
+        return js_get_atom_index(rt, JS_VALUE_GET_PTR(key));
+    if (tag != JS_TAG_STRING)
+        return JS_ATOM_NULL;
+    s = JS_VALUE_GET_STRING(key);
+    if (s->key_atom != JS_ATOM_NULL)
+        return s->key_atom;
+    if (s->len >= JS_ROPE_STEP)
+        return JS_ATOM_NULL;
+    if (is_num_string(&n, s) && n <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(n);
+    if (s->atom_type == JS_ATOM_TYPE_STRING)
+        return js_get_atom_index(rt, s);
+    /* the search of __JS_NewAtom, for a short string only: where it finds
+       nothing, the call searches again, and in the generated engine the
+       loops of both count toward the next poll */
+    if (s->atom_type != 0 || s->len > 64)
+        return JS_ATOM_NULL;
+    h = hash_string(s, JS_ATOM_TYPE_STRING) & JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0; i = a->hash_next) {
+        a = rt->atom_array[i];
+        if (a->hash == h && a->atom_type == JS_ATOM_TYPE_STRING &&
+            a->len == s->len && js_string_memcmp(a, 0, s, 0, s->len) == 0)
+            return i;
+    }
+    return JS_ATOM_NULL;
+}
+
 /* Whether obj has an own property key, found as hasOwnProperty and
    Object.hasOwn find it, when that runs no script, throws nothing and makes
    nothing: an ordinary object (not exotic, so no proxy or class method
-   answers), and a key that is its own atom already, a string atom as
-   JS_ValueToAtom finds it or an integer of an index atom, so that no atom is
-   made. A variable binding, which can throw before it is initialized, is
-   not answered. Reads no flag. Returns JS_TRUE or JS_FALSE, or
-   JS_UNINITIALIZED to make the call. */
+   answers), and a key whose atom js_key_atom_quiet finds. A variable
+   binding, which can throw before it is initialized, is not answered.
+   Reads no flag. Returns JS_TRUE or JS_FALSE, or JS_UNINITIALIZED to make
+   the call. */
 static force_inline JSValue js_has_own_quiet(JSRuntime *rt, JSValueConst obj,
                                              JSValueConst key)
 {
@@ -23872,25 +23913,15 @@ static force_inline JSValue js_has_own_quiet(JSRuntime *rt, JSValueConst obj,
     JSShapeProperty *prs;
     JSProperty *pr;
     JSAtom atom;
-    uint32_t tag;
 
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return JS_UNINITIALIZED;
     p = JS_VALUE_GET_OBJ(obj);
     if (p->is_exotic)
         return JS_UNINITIALIZED;
-    tag = JS_VALUE_GET_TAG(key);
-    if (tag == JS_TAG_STRING) {
-        /* the string JS_ValueToAtom takes as its own atom */
-        atom = JS_VALUE_GET_STRING(key)->key_atom;
-        if (atom == JS_ATOM_NULL)
-            return JS_UNINITIALIZED;
-    } else if (tag == JS_TAG_INT &&
-               (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
-        atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
-    } else {
+    atom = js_key_atom_quiet(rt, key);
+    if (atom == JS_ATOM_NULL)
         return JS_UNINITIALIZED;
-    }
     prs = find_own_property(&pr, p, atom);
     if (!prs)
         return JS_FALSE;
