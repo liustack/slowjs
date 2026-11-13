@@ -313,7 +313,8 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
                      !p->fast_array ||
                      !can_extend_fast_array(p)))
             goto slow_path;
-        if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
+        /* the length of an array is an int below 2^31 */
+        if (unlikely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
             goto slow_path;
         /* cannot overflow otherwise the length would not be an integer */
         new_len = idx + 1;
