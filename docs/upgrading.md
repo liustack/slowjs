@@ -37,7 +37,8 @@ For each commit:
 3. Write a test that fails without the commit and passes with it, in `engine/test/` (a script of `engine/test/compare/` with its output, or a check in `unit.c`, `unit-oom.c` or `unit-white.c`), as [testing.md](testing.md#the-c-tree-and-its-native-test-host) describes.
 4. Run `make check-fast`, make the generated engine again for both architectures (`make gen`, `make gen ARCH=arm64`, see [testing.md](testing.md#generate-and-check)) and commit the C, the test and the generated files together, with the upstream commit named in the message.
 5. At the end of a batch, run `make check-full`. The known test262 errors (33) must stay the same, line for line, unless the commit fixed some. Then update `engine/test/test262_errors.txt` and say so.
-6. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [changes/upstream-commits.md](changes/upstream-commits.md), and a line to both changelogs when users can see it.
+6. Read the profile lines that `make check-full` prints. When a commit changed `JS_RegvmRun` or more than 30 functions, train the profile again ([releasing.md](releasing.md#the-profile)) and commit it with the generated files.
+7. Measure it as [performance.md](performance.md#how-the-numbers-were-measured) says, add a row to [changes/upstream-commits.md](changes/upstream-commits.md), and a line to both changelogs when users can see it.
 
 The register loop (`engine/regvm.h`) runs the handlers of upstream's interpreter for the window ops: the body of each is the macro `OP_BODY_<op>` in `engine/regvm-bodies.h`, taken from the `CASE` of that op in upstream's `JS_CallInternal`. A commit that changes the `CASE` of such an op changes its `OP_BODY_<op>` the same way. A few functions those bodies call have a copy in `engine/regvm-ops-window.h`, each naming its original. When a commit changes one of those functions, change its copy the same way.
 

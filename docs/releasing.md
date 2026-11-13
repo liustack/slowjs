@@ -26,8 +26,31 @@ On the branch, before it is merged:
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
 4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelogs. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
+5. The profile is not stale where it matters: see [The profile](#the-profile) below.
 
 Then merge it into `main` with a merge commit, `merge: <what the branch does>` (see [commit.md](commit.md#branches-and-merges)).
+
+## The profile
+
+The engine is generated with a profile of page renders (`engine/pgo/profile.txt`, see [engine/pgo/README.md](../engine/pgo/README.md)). A function whose C changed since the training has no usable profile and is compiled as it would be without one. The rest of the engine keeps its gain. So an old profile only loses part of the gain, and nothing else breaks.
+
+`make check-full` prints the list: the lines of the generator that start with `warning: profile:` and `profile:`, for each architecture, in the output of the `gen` step. `scripts/check-gen.sh` prints the same lines by itself. Read them before a release:
+
+- If `JS_RegvmRun` is on the list, train again. It is the register interpreter, and without its profile only 60% to 80% of the gain is left (measured on tifa's pages).
+- If the generator says the C of more than 30 functions changed, train again. The profile is old.
+- A short list of other functions needs nothing. Train again when you want the gain back for them.
+
+To train again, on a machine with LLVM 22.1.8:
+
+```sh
+LLVM_BIN=/usr/lib/llvm-22/bin engine/pgo/train.sh
+make gen && make gen ARCH=arm64
+git add engine/pgo/profile.txt internal/cengine
+make check-gen
+git commit -m "build(pgo): train the profile again"
+```
+
+The new profile and the files it changes go in one commit. Then run `make check-gen` again: no `warning: profile:` line should be left (the `profile:` line about `likely()` is a note, not a warning). Train again also after taking commits of upstream QuickJS ([upgrading.md](upgrading.md)) and after moving to another LLVM, whose profile format differs.
 
 ## Tagging
 
