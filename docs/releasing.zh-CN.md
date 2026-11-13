@@ -34,7 +34,7 @@ read_when:
 
 引擎用一份页面渲染的性能画像（profile）生成（`engine/pgo/profile.txt`，见 [engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md)）。训练之后 C 代码改过的函数没有可用的画像，编译时就像没有画像一样。引擎的其余部分仍保有收益。所以旧画像只会丢掉一部分收益，其他都不会坏。
 
-`make check-full` 会打印这份清单：生成器以 `warning: profile:` 和 `profile:` 开头的行，每个架构各一份，在 `gen` 步骤的输出里。`scripts/check-gen.sh` 单独运行也打印同样的行。发布前读一遍：
+`make check-full` 会打印这份清单：生成器以 `warning: profile:`、`profile:` 和 `profile ` 开头的行，每个架构各一份，在 `gen` 步骤的输出里。`scripts/check-gen.sh` 单独运行也打印同样的行。发布前读一遍：
 
 - 清单里有 `JS_RegvmRun` 就重新训练。它是寄存器解释器，没有它的画像只剩 60% 到 80% 的收益（在 tifa 的页面上测得）。
 - 生成器说超过 30 个函数的 C 改过，就重新训练。画像已经旧了。

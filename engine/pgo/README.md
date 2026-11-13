@@ -2,7 +2,7 @@
 
 English · [简体中文](README.zh-CN.md)
 
-What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/changes/c-engine.md](../../docs/changes/c-engine.md#the-engine-is-generated-with-a-profile).
+What `make gen` needs to compile the engine with a profile: the profile itself, the program that trains it, and the pages it trains on. What the profile does to the generated code, what it gains and where it stops is in [docs/changes/c-engine.md](../../docs/changes/generator.md#a-profile-of-tifas-pages).
 
 ## What is here
 

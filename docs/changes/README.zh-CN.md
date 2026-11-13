@@ -53,6 +53,12 @@ read_when:
 | `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | Unreleased | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
 | 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | Unreleased | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
 
+## 生成器
+
+| 改动 | 版本 | 文档 |
+| --- | --- | --- |
+| `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | Unreleased | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
+
 ## 上游 QuickJS 的提交
 
 | 改动 | 版本 | 文档 |

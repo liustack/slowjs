@@ -34,7 +34,7 @@ Then merge it into `main` with a merge commit, `merge: <what the branch does>` (
 
 The engine is generated with a profile of page renders (`engine/pgo/profile.txt`, see [engine/pgo/README.md](../engine/pgo/README.md)). A function whose C changed since the training has no usable profile and is compiled as it would be without one. The rest of the engine keeps its gain. So an old profile only loses part of the gain, and nothing else breaks.
 
-`make check-full` prints the list: the lines of the generator that start with `warning: profile:` and `profile:`, for each architecture, in the output of the `gen` step. `scripts/check-gen.sh` prints the same lines by itself. Read them before a release:
+`make check-full` prints the list: the lines of the generator that start with `warning: profile:`, `profile:` and `profile `, for each architecture, in the output of the `gen` step. `scripts/check-gen.sh` prints the same lines by itself. Read them before a release:
 
 - If `JS_RegvmRun` is on the list, train again. It is the register interpreter, and without its profile only 60% to 80% of the gain is left (measured on tifa's pages).
 - If the generator says the C of more than 30 functions changed, train again. The profile is old.

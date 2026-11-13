@@ -2,7 +2,7 @@
 
 [English](README.md) · 简体中文
 
-`make gen` 用性能画像（profile）编译引擎所需的东西：画像本身，训练它的程序，以及训练用的页面。画像对生成的代码做了什么，带来多少收益，在哪里止步，见 [docs/changes/c-engine.zh-CN.md](../../docs/changes/c-engine.zh-CN.md#用性能画像生成引擎)。
+`make gen` 用性能画像（profile）编译引擎所需的东西：画像本身，训练它的程序，以及训练用的页面。画像对生成的代码做了什么，带来多少收益，在哪里止步，见 [docs/changes/c-engine.zh-CN.md](../../docs/changes/generator.zh-CN.md#tifa-页面的性能画像)。
 
 ## 这里有什么
 

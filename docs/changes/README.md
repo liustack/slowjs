@@ -53,6 +53,12 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | Unreleased | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
 | A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | Unreleased | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
 
+## The generator
+
+| Change | Release | Doc |
+| --- | --- | --- |
+| `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | Unreleased | [generator.md](generator.md#a-profile-of-tifas-pages) |
+
 ## Commits of upstream QuickJS
 
 | Change | Release | Doc |
