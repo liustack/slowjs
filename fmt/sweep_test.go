@@ -52,11 +52,9 @@ var known = map[string]string{
 
 // Each long call stops within the grace of stopsweep at every eval timeout
 // from 2 ms to the time it takes whole, so that a part of it with no check
-// shows wherever it lies.
+// shows wherever it lies. Under -short, at three places in it (see
+// stopsweep).
 func TestLongCallsStopAtEveryTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("times each call at many timeouts")
-	}
 	for _, c := range swept {
 		t.Run(c.name, func(t *testing.T) {
 			if b, ok := known[c.name]; ok {

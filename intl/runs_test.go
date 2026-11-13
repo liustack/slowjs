@@ -223,11 +223,13 @@ func TestLongReadInterrupt(t *testing.T) {
 
 // Each long call stops within the grace of stopsweep at every eval timeout
 // from 2 ms to the time it takes whole, so that a part of it with no check
-// shows wherever it lies.
+// shows wherever it lies. Under -short the sweep stops each call at a
+// quarter, a half and three quarters of its time (see stopsweep), and the
+// inputs of swept are a quarter as long. Those of longRead are not: the part
+// with no check has to be longer than the fixed part of the grace to show,
+// and a read of 2 Mi units with no check, which TestUncuttableRunsTimeout
+// found on the Intel Mac of CI, took 5 ms on an Apple M4.
 func TestLongCallsStopAtEveryTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("times each call at many timeouts")
-	}
 	const n = 8 << 20
 	for _, c := range longRead {
 		t.Run(c.name, func(t *testing.T) {
@@ -238,9 +240,13 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 	}
 	for _, c := range swept {
 		t.Run(c.name, func(t *testing.T) {
+			n := c.n
+			if testing.Short() {
+				n = max(n/4, 1<<20)
+			}
 			vm := newVM(t)
-			setUp(t, vm, c.setup, c.n)
-			stopsweep.Sweep(t, vm, c.call, c.n, workPerStop)
+			setUp(t, vm, c.setup, n)
+			stopsweep.Sweep(t, vm, c.call, n, workPerStop)
 		})
 	}
 }

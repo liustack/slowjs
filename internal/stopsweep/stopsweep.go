@@ -21,6 +21,10 @@
 // waits up to one preemption of the scheduler, 10 ms, for it
 // (docs/testing.md, Time in a test). A slower machine takes a longer T, and
 // gets a longer grace.
+//
+// Under -short a sweep stops a call at three places in it, a quarter, a half
+// and three quarters of its time, so that it takes a few runs of the call
+// on any machine.
 package stopsweep // import "github.com/liustack/quickjs/internal/stopsweep"
 
 import (
@@ -58,12 +62,34 @@ func Grace(whole time.Duration, n, piece int) time.Duration {
 	return g
 }
 
+// short are the timeouts of a sweep under -short, as parts of the time of
+// the whole call: three places in the call, which a part with no check of
+// more than a quarter of it cannot miss, whatever the speed of the machine.
+var short = []float64{0.25, 0.5, 0.75}
+
+// timeouts are the eval timeouts a sweep of a call that takes whole stops it
+// at: under -short, the parts short of whole, and otherwise every timeout
+// from 2 ms up to whole, each step times longer than the one before.
+func timeouts(whole time.Duration) []time.Duration {
+	var r []time.Duration
+	if testing.Short() {
+		for _, f := range short {
+			r = append(r, time.Duration(f*float64(whole)))
+		}
+		return r
+	}
+	for timeout := first; timeout < whole; timeout = time.Duration(float64(timeout) * step) {
+		r = append(r, timeout)
+	}
+	return r
+}
+
 // Sweep calls call on vm, an expression whose work grows with an input of n
 // units that the test made before, whole first, then with each eval timeout
-// from 2 ms up to the time the whole call took, and fails t for each timeout
-// the call ended later than the grace after (see the package comment), or
-// ended with another error than the interrupt. A function reads vmhook.Stop
-// at least every piece units of each pass.
+// of timeouts, and fails t for each timeout the call ended later than the
+// grace after (see the package comment), or ended with another error than
+// the interrupt. A function reads vmhook.Stop at least every piece units of
+// each pass.
 func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 	t.Helper()
 	// The first call loads what the call needs once, such as the data of a
@@ -81,7 +107,7 @@ func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 	}
 	grace := Grace(whole, n, piece)
 	var late []string
-	for timeout := first; timeout < whole; timeout = time.Duration(float64(timeout) * step) {
+	for _, timeout := range timeouts(whole) {
 		// A late stop is taken again, twice, before it counts: once the
 		// scheduler or the GC of another test may have held it.
 		over := time.Hour
