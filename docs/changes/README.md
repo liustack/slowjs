@@ -208,6 +208,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Searches skip to where the string is | v0.27.3 | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
 | A symbol has a string of its own | v0.30.2 | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
+| The hash table of atoms holds one atom for two buckets | Unreleased | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
 
 ## JSON
 

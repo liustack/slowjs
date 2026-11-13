@@ -208,6 +208,7 @@ read_when:
 | --- | --- | --- |
 | 搜索直接跳到字符串所在的位置 | v0.27.3 | [strings.md](strings.zh-CN.md#搜索直接跳到字符串所在的位置) |
 | symbol 有自己的字符串 | v0.30.2 | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
+| atom 的哈希表两个桶只放一个 atom | Unreleased | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
 
 ## JSON
 

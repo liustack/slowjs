@@ -4023,8 +4023,10 @@ static inline BOOL is_strict_mode(JSContext *ctx)
 #define JS_ATOM_MAX_INT (JS_ATOM_TAG_INT - 1)
 #define JS_ATOM_MAX     ((1U << 30) - 1)
 
-/* return the max count from the hash size */
-#define JS_ATOM_COUNT_RESIZE(n) ((n) * 2)
+/* return the max count from the hash size: at most one atom for two
+   buckets, so that a lookup walks a short chain (upstream allows two atoms
+   a bucket, see docs/changes/strings.md) */
+#define JS_ATOM_COUNT_RESIZE(n) ((n) / 2)
 
 static inline BOOL __JS_AtomIsConst(JSAtom v)
 {

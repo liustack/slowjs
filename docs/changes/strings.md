@@ -1,8 +1,9 @@
 ---
-summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, and why a symbol and its description never share a string with the script'
+summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, why a symbol and its description never share a string with the script, and why the hash table of atoms holds one atom for two buckets'
 read_when:
   - String.prototype.includes, indexOf or lastIndexOf gives another result than before, or is slow on a long string
   - A WeakRef or FinalizationRegistry of a symbol made from a string, or whose description is held, does not let go of it
+  - A VM holds more memory for its atoms than before, or a script near its memory limit runs out of memory where it did not
 ---
 
 # Strings
@@ -35,3 +36,17 @@ Now a symbol and the strings the script sees never share their characters. `JS_N
 The cost: the argument of `Symbol` holds the string passed to it while `Symbol` runs, so a symbol of a string is always a copy, one allocation the length of the description. A literal that is not all digits, such as `Symbol('react.element')`, is an atom and was copied before too. Each read of `description` allocates its copy, where it shared the string. Upstream QuickJS shares the string both ways.
 
 `engine/test/compare/symbol_shared_string.js` (run by `engine/test/compare.sh`) checks that the symbols of strings held by an array, a variable and a literal of digits, and a symbol whose description is held, are freed after the job that made each `WeakRef` ends (`clearKeptObjects()`), that the strings stay strings, the description and `Symbol.for` of them, and descriptions of millions of characters, of 8 and 16 bits. Its file is what Node 24 prints. `test_symbol_copy_oom` in `engine/test/unit-oom.c` runs out of memory at each point of making symbols of held strings and of reading their descriptions, and finds the out of memory error and nothing left behind.
+
+## The hash table of atoms holds one atom for two buckets
+
+Release: Unreleased.
+
+An atom is the number the engine gives a property name or a string it keeps once. Making a key from a string, such as `o['key' + i]`, a JSON key or a name in the parser, looks the string up in the hash table of atoms (`__JS_NewAtom`) and walks the chain of its bucket. Upstream doubles the table when it holds two atoms a bucket, so a lookup walks up to about two atoms on average, each a load from the array of atoms, before it finds its own or none. Now `JS_ATOM_COUNT_RESIZE` in `engine/quickjs.c` doubles it at one atom for two buckets. In a counting build of the native C tree, the steps along the chains fall from 87K to 16K a render on MUI's orders page, 38.5K to 5.4K on MUI's home page, 10.1K to 1.8K on the workbench studio page and 6.7K to 0.9K on the shop's English home page.
+
+Why it is safe: only the size of the table changes, never which atom a string gets, its number or the order of keys. The table grows by the same `JS_ResizeAtomHash` at another count, and when it cannot grow the atom is made in the table it has, as before. The HTML is the same on the 24 pages of the shop, MUI and React, and test262 gives the same 33 known errors.
+
+What it costs: the table takes four times the room. After 20 renders and a full collection, on the native C tree, a VM of the shop holds 196 KB more (13.65 MB rather than 13.45 on its home page) and one of MUI 49 KB to 73 KB more. The footprint does not change. The smallest room in which a new runtime makes 600 names (`test_key_names_oom`) moved from 62,096 to 68,240 bytes.
+
+What it gains: the instructions of a render do not move by more than the noise of the rounds (tifa's `test/ssr` on an Apple M4, three rounds, within 0.3% on each group). Fewer steps along the chains are fewer loads, each a likely cache miss, so any gain shows in time, not in instructions.
+
+Tests: `test_key_names_oom` in `engine/test/unit-oom.c` sweeps a script that makes 600 names from no room to 80 KiB, so that some room lets it work with the larger table, and every other check of `unit`, `unit-api`, `unit-white` and `unit-oom` passes as before.

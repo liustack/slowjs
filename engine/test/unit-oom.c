@@ -1967,9 +1967,12 @@ static void test_key_names_oom(void)
 {
     static const char *const want[] = { "600", NULL };
 
+    /* the script first works with about 68 KiB of room: the hash table of
+       the atoms keeps at most one atom for two buckets (62 KiB when it held
+       two atoms a bucket) */
     sweep("keys made from strings", "keys.js", NULL,
           "var o = {}; for (var i = 0; i < 600; i++) o['key' + i] = i; String(Object.keys(o).length)",
-          want, 65536);
+          want, 81920);
 }
 
 /* The decomposition of normalize grows its buffer (to_nfd), and out of
