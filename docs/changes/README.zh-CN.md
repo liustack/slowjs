@@ -260,6 +260,7 @@ read_when:
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 | 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
+| 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
 
 ## 内存
 

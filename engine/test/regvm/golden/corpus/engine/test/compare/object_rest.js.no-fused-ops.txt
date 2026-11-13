@@ -73,6 +73,6 @@ result ellipsis not a rest: [1,[2,3]]
 result shared: true
 result setter: {trap:t/ewc}
 result loop: 4004000
-mem-end obj=341 atom=768 shape=370 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
-mem-gc obj=341 atom=768 shape=370 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
+mem-end obj=341 atom=805 shape=372 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
+mem-gc obj=341 atom=805 shape=372 prop=1349 jsfunc=75 cfunc=144 array=46 fast_array=46 elements=245 binary=0
 --- status exit 0

@@ -46,10 +46,29 @@
 
 #if RV_PART == RV_PART_LIST
 RV_OP(COPYR)    /* w offs8 lit16 site16: OP_copy_rest, the result in temp w */
+RV_OP(COPYS)    /* w site16: the spread of an object literal, OP_copy_data_properties
+                   of the target, the source and null below the slot w */
 #elif RV_PART == RV_PART_INFO
     case OP_copy_rest:
         return 0;
 #elif RV_PART == RV_PART_PASS_FN
+/* the spread of an object literal, OP_copy_data_properties of the offsets
+   byte 0x06 (regvm-ops-window.h): the window op of it with a site, which
+   takes the three entries and leaves them where they are */
+static void rv_copy_spread_pass(RVPass *s)
+{
+    int i;
+
+    for (i = s->sp - 3; i < s->sp; i++)
+        rv_materialize(s, i);
+    rv_emit(s, RV_COPYS);
+    rv_byte(s, rv_tslot(s, s->sp));
+    rv_u16(s, s->copy_n < 0xffff ? s->copy_n++ : 0xffff);
+    rv_throws(s, rv_owned(s, 0));
+    s->sp -= 3;
+    for (i = 0; i < 3; i++)
+        rv_push(s, RV_E_TEMP, rv_tslot(s, s->sp), 0);
+}
 #elif RV_PART == RV_PART_PASS
     case OP_copy_rest:
         {
@@ -101,6 +120,42 @@ static JSValue rv_copy_make(JSContext *ctx, JSShape *dst, const uint8_t *map,
     return obj;
 }
 
+/* a way of site for a new entry: an empty one, else one a miss replaces
+   while the site has replaced fewer than RV_COPY_SWAPS, else -1 */
+static int rv_copy_way(RVCopySite *site)
+{
+    int i;
+
+    for (i = 0; i < RV_COPY_WAYS && site->e[i]; i++)
+        ;
+    if (i < RV_COPY_WAYS)
+        return i;
+    if (site->swaps >= RV_COPY_SWAPS)
+        return -1;
+    return site->swaps++ % RV_COPY_WAYS;
+}
+
+/* an entry of site for the shapes tgt (NULL for a rest), src and dst and
+   the map of the n slots of src, in the way i: none when there is no
+   memory, which only costs the next run a miss */
+static void rv_copy_keep(JSRuntime *rt, RVCopySite *site, int i, JSShape *tgt,
+                         JSShape *src, JSShape *dst, const uint8_t *map,
+                         uint32_t n)
+{
+    RVCopyEntry *e = js_malloc_rt(rt, sizeof(*e) + n);
+
+    if (!e)
+        return;
+    e->tgt = tgt ? js_dup_shape(tgt) : NULL;
+    e->src = js_dup_shape(src);
+    e->dst = js_dup_shape(dst);
+    e->n = n;
+    memcpy(e->map, map, n);
+    if (site->e[i])
+        rv_copy_entry_free(rt, site->e[i]);
+    site->e[i] = e;
+}
+
 /* the source ps, an ordinary object, had a shape its site had not seen:
    the result made from its shape, the shape kept in the site when it can
    be, or JS_UNDEFINED when the shape does not say the result (a key in
@@ -116,9 +171,9 @@ static no_inline JSValue rv_copy_miss(JSContext *ctx, RVCopySite *site,
     uint32_t i, j, n = sh->prop_count, v;
     JSAtom keys[RV_COPY_KEYS];
     uint8_t map[RV_COPY_KEYS];
-    RVCopyEntry *e;
     JSValue obj;
     BOOL keep;
+    int way;
 
     if (n > RV_COPY_KEYS)
         return JS_UNDEFINED;
@@ -157,30 +212,11 @@ static no_inline JSValue rv_copy_miss(JSContext *ctx, RVCopySite *site,
         keys[j] = atom;
         map[i] = j++;
     }
-    dst = js_shape_of_keys(ctx, keys, j);
+    dst = js_shape_of_keys(ctx, oproto, keys, j);
     if (!dst)
         return JS_EXCEPTION;
-    if (keep) {
-        for (i = 0; i < RV_COPY_WAYS && site->e[i]; i++)
-            ;
-        if (i == RV_COPY_WAYS) {
-            if (site->swaps >= RV_COPY_SWAPS)
-                keep = FALSE;
-            else
-                i = site->swaps++ % RV_COPY_WAYS;
-        }
-        /* no memory for an entry: the result is made all the same */
-        e = keep ? js_malloc_rt(rt, sizeof(*e) + n) : NULL;
-        if (e) {
-            e->src = js_dup_shape(sh);
-            e->dst = js_dup_shape(dst);
-            e->n = n;
-            memcpy(e->map, map, n);
-            if (site->e[i])
-                rv_copy_entry_free(rt, site->e[i]);
-            site->e[i] = e;
-        }
-    }
+    if (keep && (way = rv_copy_way(site)) >= 0)
+        rv_copy_keep(rt, site, way, NULL, sh, dst, map, n);
     obj = rv_copy_make(ctx, dst, map, n, ps);
     js_free_shape(rt, dst);
     return obj;
@@ -237,12 +273,170 @@ static no_inline int rv_copy_rest(JSContext *ctx, JSValue *F, const uint8_t *ip)
     sp[0] = obj;
     return 0;
 }
+/* the spread of ps into pt, an ordinary object of the shape tsh that is
+   extensible, as the entry or the miss found it: pt takes the shape dst,
+   which has the keys of tsh first, and the slot map[i] of pt takes the
+   value of slot i of ps, a key of tsh whose value it replaces or a new
+   one. Returns -1 when there is no memory, with pt as it was. */
+static int rv_copy_into(JSContext *ctx, JSObject *pt, JSShape *dst,
+                        const uint8_t *map, uint32_t n, JSObject *ps)
+{
+    JSShape *tsh = pt->shape;
+    uint32_t i, k, tn = tsh->prop_count;
+    JSValue old;
+
+    if (dst != tsh) {
+        /* what add_property does on the way to dst */
+        if (js_props_inline(pt))
+            tsh->inline_grew = TRUE;
+        if (dst->prop_size != tsh->prop_size) {
+            JSProperty *new_prop = js_resize_prop(ctx, pt, tn, dst->prop_size);
+            if (unlikely(!new_prop))
+                return -1;
+            pt->prop = new_prop;
+        }
+        pt->shape = js_dup_shape(dst);
+        js_free_shape(ctx->rt, tsh);
+        for (k = tn; k < dst->prop_count; k++)
+            pt->prop[k].u.value = JS_UNDEFINED;
+    }
+    for (i = 0; i < n; i++) {
+        k = map[i];
+        if (k == RV_COPY_NONE)
+            continue;
+        old = pt->prop[k].u.value;
+        pt->prop[k].u.value = JS_DupValue(ctx, ps->prop[i].u.value);
+        JS_FreeValue(ctx, old);
+    }
+    return 0;
+}
+
+/* the spread of ps into pt, ordinary objects, whose shapes the site had
+   not seen: done from the shapes and kept in the site when the shapes say
+   all of it (1), not done (0: the general path does it), or no memory
+   (-1). The shapes say it when every key of the target is a string that is
+   not an array index, enumerable, writable and configurable, so that a key
+   of the source defined on it replaces its value and leaves it where it
+   is, and every key the source gives is a string that is not an array
+   index and a plain data property: as for a rest, rv_copy_miss. Only
+   shapes of the shape hash table whose prototype is null or the
+   Object.prototype of the realm and that have no symbol are kept. */
+static no_inline int rv_copy_spread_miss(JSContext *ctx, RVCopySite *site,
+                                         JSObject *pt, JSObject *ps)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShape *tsh = pt->shape, *ssh = ps->shape, *dst;
+    JSShapeProperty *prs, *prt;
+    JSObject *oproto = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
+    uint32_t i, j, n = ssh->prop_count, tn = tsh->prop_count, v;
+    JSAtom keys[RV_COPY_KEYS];
+    uint8_t map[RV_COPY_KEYS];
+    int way, ret;
+
+    if (n > RV_COPY_KEYS || tn > RV_COPY_KEYS ||
+        !tsh->is_hashed || !ssh->is_hashed ||
+        (tsh->proto && tsh->proto != oproto) ||
+        (ssh->proto && ssh->proto != oproto))
+        return 0;
+    prt = get_shape_prop(tsh);
+    for (j = 0; j < tn; j++) {
+        if (prt[j].flags != JS_PROP_C_W_E ||
+            js_own_key_kind(rt, prt[j].atom, &v) != JS_OWN_KIND_STRING)
+            return 0;
+        keys[j] = prt[j].atom;
+    }
+    prs = get_shape_prop(ssh);
+    for (i = 0; i < n; i++) {
+        JSAtom atom = prs[i].atom;
+        int kind = js_own_key_kind(rt, atom, &v);
+        map[i] = RV_COPY_NONE;
+        if (kind == JS_OWN_KIND_NONE)
+            continue;
+        if (kind != JS_OWN_KIND_STRING)
+            return 0;
+        if (!(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        if ((prs[i].flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+            atom == JS_ATOM_stack)
+            return 0;
+        prt = find_own_property1(pt, atom);
+        if (prt) {
+            map[i] = prt - get_shape_prop(tsh);
+        } else {
+            if (j == RV_COPY_KEYS)
+                return 0;
+            keys[j] = atom;
+            map[i] = j++;
+        }
+    }
+    if (j == tn) {
+        dst = js_dup_shape(tsh);
+    } else {
+        dst = js_shape_of_keys(ctx, tsh->proto, keys, j);
+        if (!dst)
+            return -1;
+    }
+    way = site ? rv_copy_way(site) : -1;
+    if (way >= 0)
+        rv_copy_keep(rt, site, way, tsh, ssh, dst, map, n);
+    ret = rv_copy_into(ctx, pt, dst, map, n, ps);
+    js_free_shape(rt, dst);
+    return ret < 0 ? -1 : 1;
+}
+
+/* COPYS: the spread of an object literal, OP_copy_data_properties with
+   the target, the source and excludeList (null) the three entries under
+   the slot ip[0], the site ip[1..2] (0xffff: none) */
+static no_inline int rv_copy_spread(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue *sp = F + (int8_t)ip[0];
+    int site = get_u16(ip + 1), i, ret;
+    JSValueConst target = sp[-3], src = sp[-2], excl = sp[-1];
+    RVFunc *rf = ((RVHeader *)F)->rf;
+    RVCopySite *cs = NULL;
+
+    if (!RV_INJ_ARMED && JS_VALUE_GET_TAG(excl) == JS_TAG_NULL) {
+        /* null and undefined: no key. Another value that is not an
+           object is made one by js_copy_data_properties */
+        if (JS_IsNull(src) || JS_IsUndefined(src))
+            return 0;
+        if (JS_VALUE_GET_TAG(target) == JS_TAG_OBJECT &&
+            JS_VALUE_GET_TAG(src) == JS_TAG_OBJECT &&
+            JS_VALUE_GET_OBJ(target)->class_id == JS_CLASS_OBJECT &&
+            JS_VALUE_GET_OBJ(target)->extensible &&
+            JS_VALUE_GET_OBJ(src)->class_id == JS_CLASS_OBJECT) {
+            JSObject *pt = JS_VALUE_GET_OBJ(target), *ps = JS_VALUE_GET_OBJ(src);
+            if (site != 0xffff) {
+                cs = &rf->copy[site];
+                for (i = 0; i < RV_COPY_WAYS && cs->e[i]; i++) {
+                    RVCopyEntry *e = cs->e[i];
+                    if (e->tgt == pt->shape && e->src == ps->shape)
+                        return rv_copy_into(ctx, pt, e->dst, e->map, e->n, ps);
+                }
+            }
+            ret = rv_copy_spread_miss(ctx, cs, pt, ps);
+            if (ret)
+                return ret < 0 ? -1 : 0;
+        }
+    }
+    if (RV_INJ_HIT(ctx))
+        return -1;
+    return JS_CopyDataProperties(ctx, target, src, excl, FALSE);
+}
 #elif RV_PART == RV_PART_RUN
  rv_COPYR:
     ip = pc;
     pc += 6;
     RV_SYNC_TOP();
     if (rv_copy_rest(ctx, F, ip))
+        goto rv_exception;
+    RV_NEXT();
+
+ rv_COPYS:
+    ip = pc;
+    pc += 3;
+    RV_SYNC_TOP();
+    if (rv_copy_spread(ctx, F, ip))
         goto rv_exception;
     RV_NEXT();
 #endif

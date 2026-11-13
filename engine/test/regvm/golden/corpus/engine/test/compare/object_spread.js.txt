@@ -1,0 +1,224 @@
+result empty / plain: {x=0,y=y0} {x=1,y=y1} {x=2,y=y2}
+result empty / overwrite: {z=0,a=a0,q=1} {z=1,a=a1,q=1} {z=2,a=a2,q=1}
+result empty / empty: {} {} {}
+result empty / null: {} {} {}
+result empty / undefined: {} {} {}
+result empty / number: {} {} {}
+result empty / boolean: {} {} {}
+result empty / array: {0=0,1=b,3=d} {0=1,1=b,3=d} {0=2,1=b,3=d}
+result empty / index keys: {0=zero,2=two,b=1,a=0} {0=zero,2=two,b=1,a=1} {0=zero,2=two,b=1,a=2}
+result empty / symbol: {x=0,Symbol(s)=S} {x=1,Symbol(s)=S} {x=2,Symbol(s)=S}
+result empty / symbol first: {x=0,Symbol(t)=T} {x=1,Symbol(t)=T} {x=2,Symbol(t)=T}
+result empty / not enumerable: {x=0} {x=1} {x=2}
+result empty / read only: {x=0,a=ro} {x=1,a=ro} {x=2,a=ro}
+result empty / getter: {x=0,a=g0,y=2} {x=1,a=g1,y=2} {x=2,a=g2,y=2}
+result empty / getter adds: {x=gx,a=0} {x=gx,a=1} {x=gx,a=2}
+result empty / getter deletes: {x=gx,b=2} {x=gx,b=2} {x=gx,b=2}
+result empty / deleted: {x=0,y=2} {x=1,y=2} {x=2,y=2}
+result empty / frozen: {x=0,a=f} {x=1,a=f} {x=2,a=f}
+result empty / sealed: {a=s,x=0} {a=s,x=1} {a=s,x=2}
+result empty / own __proto__: {x=0,__proto__=[object Object]} {x=1,__proto__=[object Object]} {x=2,__proto__=[object Object]}
+result empty / null prototype: {a=n,x=0} {a=n,x=1} {a=n,x=2}
+result empty / class: {x=0,a=c} {x=1,a=c} {x=2,a=c}
+result empty / arguments: {0=0,1=b} {0=1,1=b} {0=2,1=b}
+result empty / function: {x=0} {x=1} {x=2}
+result empty / error: {x=0} {x=1} {x=2}
+result empty / map: {x=0} {x=1} {x=2}
+result empty / proxy: {a=p,x=0} {a=p,x=1} {a=p,x=2}
+result empty / stack: {stack=s0,x=0} {stack=s1,x=1} {stack=s2,x=2}
+result empty / many: {k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39} {k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40} {k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41}
+result empty / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=0} {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=1} {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=2}
+result before / plain: {a=A,z=Z,x=0,y=y0} {a=A,z=Z,x=1,y=y1} {a=A,z=Z,x=2,y=y2}
+result before / overwrite: {a=a0,z=0,q=1} {a=a1,z=1,q=1} {a=a2,z=2,q=1}
+result before / empty: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result before / null: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result before / undefined: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result before / number: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result before / boolean: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result before / array: {0=0,1=b,3=d,a=A,z=Z} {0=1,1=b,3=d,a=A,z=Z} {0=2,1=b,3=d,a=A,z=Z}
+result before / index keys: {0=zero,2=two,a=0,z=Z,b=1} {0=zero,2=two,a=1,z=Z,b=1} {0=zero,2=two,a=2,z=Z,b=1}
+result before / symbol: {a=A,z=Z,x=0,Symbol(s)=S} {a=A,z=Z,x=1,Symbol(s)=S} {a=A,z=Z,x=2,Symbol(s)=S}
+result before / symbol first: {a=A,z=Z,x=0,Symbol(t)=T} {a=A,z=Z,x=1,Symbol(t)=T} {a=A,z=Z,x=2,Symbol(t)=T}
+result before / not enumerable: {a=A,z=Z,x=0} {a=A,z=Z,x=1} {a=A,z=Z,x=2}
+result before / read only: {a=ro,z=Z,x=0} {a=ro,z=Z,x=1} {a=ro,z=Z,x=2}
+result before / getter: {a=g0,z=Z,x=0,y=2} {a=g1,z=Z,x=1,y=2} {a=g2,z=Z,x=2,y=2}
+result before / getter adds: {a=0,z=Z,x=gx} {a=1,z=Z,x=gx} {a=2,z=Z,x=gx}
+result before / getter deletes: {a=A,z=Z,x=gx,b=2} {a=A,z=Z,x=gx,b=2} {a=A,z=Z,x=gx,b=2}
+result before / deleted: {a=A,z=Z,x=0,y=2} {a=A,z=Z,x=1,y=2} {a=A,z=Z,x=2,y=2}
+result before / frozen: {a=f,z=Z,x=0} {a=f,z=Z,x=1} {a=f,z=Z,x=2}
+result before / sealed: {a=s,z=Z,x=0} {a=s,z=Z,x=1} {a=s,z=Z,x=2}
+result before / own __proto__: {a=A,z=Z,x=0,__proto__=[object Object]} {a=A,z=Z,x=1,__proto__=[object Object]} {a=A,z=Z,x=2,__proto__=[object Object]}
+result before / null prototype: {a=n,z=Z,x=0} {a=n,z=Z,x=1} {a=n,z=Z,x=2}
+result before / class: {a=c,z=Z,x=0} {a=c,z=Z,x=1} {a=c,z=Z,x=2}
+result before / arguments: {0=0,1=b,a=A,z=Z} {0=1,1=b,a=A,z=Z} {0=2,1=b,a=A,z=Z}
+result before / function: {a=A,z=Z,x=0} {a=A,z=Z,x=1} {a=A,z=Z,x=2}
+result before / error: {a=A,z=Z,x=0} {a=A,z=Z,x=1} {a=A,z=Z,x=2}
+result before / map: {a=A,z=Z,x=0} {a=A,z=Z,x=1} {a=A,z=Z,x=2}
+result before / proxy: {a=p,z=Z,x=0} {a=p,z=Z,x=1} {a=p,z=Z,x=2}
+result before / stack: {a=A,z=Z,stack=s0,x=0} {a=A,z=Z,stack=s1,x=1} {a=A,z=Z,stack=s2,x=2}
+result before / many: {a=A,z=Z,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39} {a=A,z=Z,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40} {a=A,z=Z,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41}
+result before / many overwrite: {a=0,z=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69} {a=1,z=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69} {a=2,z=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69}
+result around / plain: {a=A,x=0,y=y0,z=Z} {a=A,x=1,y=y1,z=Z} {a=A,x=2,y=y2,z=Z}
+result around / overwrite: {a=a0,z=Z,q=1} {a=a1,z=Z,q=1} {a=a2,z=Z,q=1}
+result around / empty: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result around / null: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result around / undefined: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result around / number: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result around / boolean: {a=A,z=Z} {a=A,z=Z} {a=A,z=Z}
+result around / array: {0=0,1=b,3=d,a=A,z=Z} {0=1,1=b,3=d,a=A,z=Z} {0=2,1=b,3=d,a=A,z=Z}
+result around / index keys: {0=zero,2=two,a=0,b=1,z=Z} {0=zero,2=two,a=1,b=1,z=Z} {0=zero,2=two,a=2,b=1,z=Z}
+result around / symbol: {a=A,x=0,z=Z,Symbol(s)=S} {a=A,x=1,z=Z,Symbol(s)=S} {a=A,x=2,z=Z,Symbol(s)=S}
+result around / symbol first: {a=A,x=0,z=Z,Symbol(t)=T} {a=A,x=1,z=Z,Symbol(t)=T} {a=A,x=2,z=Z,Symbol(t)=T}
+result around / not enumerable: {a=A,x=0,z=Z} {a=A,x=1,z=Z} {a=A,x=2,z=Z}
+result around / read only: {a=ro,x=0,z=Z} {a=ro,x=1,z=Z} {a=ro,x=2,z=Z}
+result around / getter: {a=g0,x=0,y=2,z=Z} {a=g1,x=1,y=2,z=Z} {a=g2,x=2,y=2,z=Z}
+result around / getter adds: {a=0,x=gx,z=Z} {a=1,x=gx,z=Z} {a=2,x=gx,z=Z}
+result around / getter deletes: {a=A,x=gx,b=2,z=Z} {a=A,x=gx,b=2,z=Z} {a=A,x=gx,b=2,z=Z}
+result around / deleted: {a=A,x=0,y=2,z=Z} {a=A,x=1,y=2,z=Z} {a=A,x=2,y=2,z=Z}
+result around / frozen: {a=f,x=0,z=Z} {a=f,x=1,z=Z} {a=f,x=2,z=Z}
+result around / sealed: {a=s,x=0,z=Z} {a=s,x=1,z=Z} {a=s,x=2,z=Z}
+result around / own __proto__: {a=A,x=0,__proto__=[object Object],z=Z} {a=A,x=1,__proto__=[object Object],z=Z} {a=A,x=2,__proto__=[object Object],z=Z}
+result around / null prototype: {a=n,x=0,z=Z} {a=n,x=1,z=Z} {a=n,x=2,z=Z}
+result around / class: {a=c,x=0,z=Z} {a=c,x=1,z=Z} {a=c,x=2,z=Z}
+result around / arguments: {0=0,1=b,a=A,z=Z} {0=1,1=b,a=A,z=Z} {0=2,1=b,a=A,z=Z}
+result around / function: {a=A,x=0,z=Z} {a=A,x=1,z=Z} {a=A,x=2,z=Z}
+result around / error: {a=A,x=0,z=Z} {a=A,x=1,z=Z} {a=A,x=2,z=Z}
+result around / map: {a=A,x=0,z=Z} {a=A,x=1,z=Z} {a=A,x=2,z=Z}
+result around / proxy: {a=p,x=0,z=Z} {a=p,x=1,z=Z} {a=p,x=2,z=Z}
+result around / stack: {a=A,stack=s0,x=0,z=Z} {a=A,stack=s1,x=1,z=Z} {a=A,stack=s2,x=2,z=Z}
+result around / many: {a=A,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,z=Z} {a=A,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40,z=Z} {a=A,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41,z=Z}
+result around / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=Z} {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=Z} {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=Z}
+result twice / plain: {a=A,x=0,y=y0,m=M} {a=A,x=1,y=y1,m=M} {a=A,x=2,y=y2,m=M}
+result twice / overwrite: {a=a0,z=0,q=1,m=M} {a=a1,z=1,q=1,m=M} {a=a2,z=2,q=1,m=M}
+result twice / empty: {a=A,m=M} {a=A,m=M} {a=A,m=M}
+result twice / null: {a=A,m=M} {a=A,m=M} {a=A,m=M}
+result twice / undefined: {a=A,m=M} {a=A,m=M} {a=A,m=M}
+result twice / number: {a=A,m=M} {a=A,m=M} {a=A,m=M}
+result twice / boolean: {a=A,m=M} {a=A,m=M} {a=A,m=M}
+result twice / array: {0=0,1=b,3=d,a=A,m=M} {0=1,1=b,3=d,a=A,m=M} {0=2,1=b,3=d,a=A,m=M}
+result twice / index keys: {0=zero,2=two,a=0,b=1,m=M} {0=zero,2=two,a=1,b=1,m=M} {0=zero,2=two,a=2,b=1,m=M}
+result twice / symbol: {a=A,x=0,m=M,Symbol(s)=S} {a=A,x=1,m=M,Symbol(s)=S} {a=A,x=2,m=M,Symbol(s)=S}
+result twice / symbol first: {a=A,x=0,m=M,Symbol(t)=T} {a=A,x=1,m=M,Symbol(t)=T} {a=A,x=2,m=M,Symbol(t)=T}
+result twice / not enumerable: {a=A,x=0,m=M} {a=A,x=1,m=M} {a=A,x=2,m=M}
+result twice / read only: {a=ro,x=0,m=M} {a=ro,x=1,m=M} {a=ro,x=2,m=M}
+result twice / getter: {a=g0,x=0,y=2,m=M} {a=g1,x=1,y=2,m=M} {a=g2,x=2,y=2,m=M}
+result twice / getter adds: {a=0,x=gx,late=1,m=M} {a=1,x=gx,late=1,m=M} {a=2,x=gx,late=1,m=M}
+result twice / getter deletes: {a=A,x=gx,b=2,m=M} {a=A,x=gx,b=2,m=M} {a=A,x=gx,b=2,m=M}
+result twice / deleted: {a=A,x=0,y=2,m=M} {a=A,x=1,y=2,m=M} {a=A,x=2,y=2,m=M}
+result twice / frozen: {a=f,x=0,m=M} {a=f,x=1,m=M} {a=f,x=2,m=M}
+result twice / sealed: {a=s,x=0,m=M} {a=s,x=1,m=M} {a=s,x=2,m=M}
+result twice / own __proto__: {a=A,x=0,__proto__=[object Object],m=M} {a=A,x=1,__proto__=[object Object],m=M} {a=A,x=2,__proto__=[object Object],m=M}
+result twice / null prototype: {a=n,x=0,m=M} {a=n,x=1,m=M} {a=n,x=2,m=M}
+result twice / class: {a=c,x=0,m=M} {a=c,x=1,m=M} {a=c,x=2,m=M}
+result twice / arguments: {0=0,1=b,a=A,m=M} {0=1,1=b,a=A,m=M} {0=2,1=b,a=A,m=M}
+result twice / function: {a=A,x=0,m=M} {a=A,x=1,m=M} {a=A,x=2,m=M}
+result twice / error: {a=A,x=0,m=M} {a=A,x=1,m=M} {a=A,x=2,m=M}
+result twice / map: {a=A,x=0,m=M} {a=A,x=1,m=M} {a=A,x=2,m=M}
+result twice / proxy: {a=p,x=0,m=M} {a=p,x=1,m=M} {a=p,x=2,m=M}
+result twice / stack: {a=A,stack=s0,x=0,m=M} {a=A,stack=s1,x=1,m=M} {a=A,stack=s2,x=2,m=M}
+result twice / many: {a=A,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,m=M} {a=A,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40,m=M} {a=A,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41,m=M}
+result twice / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=0,m=M} {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=1,m=M} {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=2,m=M}
+result nullproto / plain: {a=A,x=0,y=y0} null {a=A,x=1,y=y1} null {a=A,x=2,y=y2} null
+result nullproto / overwrite: {a=a0,z=0,q=1} null {a=a1,z=1,q=1} null {a=a2,z=2,q=1} null
+result nullproto / empty: {a=A} null {a=A} null {a=A} null
+result nullproto / null: {a=A} null {a=A} null {a=A} null
+result nullproto / undefined: {a=A} null {a=A} null {a=A} null
+result nullproto / number: {a=A} null {a=A} null {a=A} null
+result nullproto / boolean: {a=A} null {a=A} null {a=A} null
+result nullproto / array: {0=0,1=b,3=d,a=A} null {0=1,1=b,3=d,a=A} null {0=2,1=b,3=d,a=A} null
+result nullproto / index keys: {0=zero,2=two,a=0,b=1} null {0=zero,2=two,a=1,b=1} null {0=zero,2=two,a=2,b=1} null
+result nullproto / symbol: {a=A,x=0,Symbol(s)=S} null {a=A,x=1,Symbol(s)=S} null {a=A,x=2,Symbol(s)=S} null
+result nullproto / symbol first: {a=A,x=0,Symbol(t)=T} null {a=A,x=1,Symbol(t)=T} null {a=A,x=2,Symbol(t)=T} null
+result nullproto / not enumerable: {a=A,x=0} null {a=A,x=1} null {a=A,x=2} null
+result nullproto / read only: {a=ro,x=0} null {a=ro,x=1} null {a=ro,x=2} null
+result nullproto / getter: {a=g0,x=0,y=2} null {a=g1,x=1,y=2} null {a=g2,x=2,y=2} null
+result nullproto / getter adds: {a=0,x=gx} null {a=1,x=gx} null {a=2,x=gx} null
+result nullproto / getter deletes: {a=A,x=gx,b=2} null {a=A,x=gx,b=2} null {a=A,x=gx,b=2} null
+result nullproto / deleted: {a=A,x=0,y=2} null {a=A,x=1,y=2} null {a=A,x=2,y=2} null
+result nullproto / frozen: {a=f,x=0} null {a=f,x=1} null {a=f,x=2} null
+result nullproto / sealed: {a=s,x=0} null {a=s,x=1} null {a=s,x=2} null
+result nullproto / own __proto__: {a=A,x=0,__proto__=[object Object]} null {a=A,x=1,__proto__=[object Object]} null {a=A,x=2,__proto__=[object Object]} null
+result nullproto / null prototype: {a=n,x=0} null {a=n,x=1} null {a=n,x=2} null
+result nullproto / class: {a=c,x=0} null {a=c,x=1} null {a=c,x=2} null
+result nullproto / arguments: {0=0,1=b,a=A} null {0=1,1=b,a=A} null {0=2,1=b,a=A} null
+result nullproto / function: {a=A,x=0} null {a=A,x=1} null {a=A,x=2} null
+result nullproto / error: {a=A,x=0} null {a=A,x=1} null {a=A,x=2} null
+result nullproto / map: {a=A,x=0} null {a=A,x=1} null {a=A,x=2} null
+result nullproto / proxy: {a=p,x=0} null {a=p,x=1} null {a=p,x=2} null
+result nullproto / stack: {a=A,stack=s0,x=0} null {a=A,stack=s1,x=1} null {a=A,stack=s2,x=2} null
+result nullproto / many: {a=A,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39} null {a=A,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40} null {a=A,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41} null
+result nullproto / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=0} null {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=1} null {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=2} null
+result protoset / plain: {a=A,x=0,y=y0} proto {a=A,x=1,y=y1} proto {a=A,x=2,y=y2} proto
+result protoset / overwrite: {a=a0,z=0,q=1} proto {a=a1,z=1,q=1} proto {a=a2,z=2,q=1} proto
+result protoset / empty: {a=A} proto {a=A} proto {a=A} proto
+result protoset / null: {a=A} proto {a=A} proto {a=A} proto
+result protoset / undefined: {a=A} proto {a=A} proto {a=A} proto
+result protoset / number: {a=A} proto {a=A} proto {a=A} proto
+result protoset / boolean: {a=A} proto {a=A} proto {a=A} proto
+result protoset / array: {0=0,1=b,3=d,a=A} proto {0=1,1=b,3=d,a=A} proto {0=2,1=b,3=d,a=A} proto
+result protoset / index keys: {0=zero,2=two,a=0,b=1} proto {0=zero,2=two,a=1,b=1} proto {0=zero,2=two,a=2,b=1} proto
+result protoset / symbol: {a=A,x=0,Symbol(s)=S} proto {a=A,x=1,Symbol(s)=S} proto {a=A,x=2,Symbol(s)=S} proto
+result protoset / symbol first: {a=A,x=0,Symbol(t)=T} proto {a=A,x=1,Symbol(t)=T} proto {a=A,x=2,Symbol(t)=T} proto
+result protoset / not enumerable: {a=A,x=0} proto {a=A,x=1} proto {a=A,x=2} proto
+result protoset / read only: {a=ro,x=0} proto {a=ro,x=1} proto {a=ro,x=2} proto
+result protoset / getter: {a=g0,x=0,y=2} proto {a=g1,x=1,y=2} proto {a=g2,x=2,y=2} proto
+result protoset / getter adds: {a=0,x=gx} proto {a=1,x=gx} proto {a=2,x=gx} proto
+result protoset / getter deletes: {a=A,x=gx,b=2} proto {a=A,x=gx,b=2} proto {a=A,x=gx,b=2} proto
+result protoset / deleted: {a=A,x=0,y=2} proto {a=A,x=1,y=2} proto {a=A,x=2,y=2} proto
+result protoset / frozen: {a=f,x=0} proto {a=f,x=1} proto {a=f,x=2} proto
+result protoset / sealed: {a=s,x=0} proto {a=s,x=1} proto {a=s,x=2} proto
+result protoset / own __proto__: {a=A,x=0,__proto__=[object Object]} proto {a=A,x=1,__proto__=[object Object]} proto {a=A,x=2,__proto__=[object Object]} proto
+result protoset / null prototype: {a=n,x=0} proto {a=n,x=1} proto {a=n,x=2} proto
+result protoset / class: {a=c,x=0} proto {a=c,x=1} proto {a=c,x=2} proto
+result protoset / arguments: {0=0,1=b,a=A} proto {0=1,1=b,a=A} proto {0=2,1=b,a=A} proto
+result protoset / function: {a=A,x=0} proto {a=A,x=1} proto {a=A,x=2} proto
+result protoset / error: {a=A,x=0} proto {a=A,x=1} proto {a=A,x=2} proto
+result protoset / map: {a=A,x=0} proto {a=A,x=1} proto {a=A,x=2} proto
+result protoset / proxy: {a=p,x=0} proto {a=p,x=1} proto {a=p,x=2} proto
+result protoset / stack: {a=A,stack=s0,x=0} proto {a=A,stack=s1,x=1} proto {a=A,stack=s2,x=2} proto
+result protoset / many: {a=A,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39} proto {a=A,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40} proto {a=A,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41} proto
+result protoset / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=0} proto {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=1} proto {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=2} proto
+result getter / plain: {a=/ecg,x=0,y=y0} {a=/ecg,x=1,y=y1} {a=/ecg,x=2,y=y2}
+result getter / overwrite: {a=a0,z=0,q=1} {a=a1,z=1,q=1} {a=a2,z=2,q=1}
+result getter / empty: {a=/ecg} {a=/ecg} {a=/ecg}
+result getter / null: {a=/ecg} {a=/ecg} {a=/ecg}
+result getter / undefined: {a=/ecg} {a=/ecg} {a=/ecg}
+result getter / number: {a=/ecg} {a=/ecg} {a=/ecg}
+result getter / boolean: {a=/ecg} {a=/ecg} {a=/ecg}
+result getter / array: {0=0,1=b,3=d,a=/ecg} {0=1,1=b,3=d,a=/ecg} {0=2,1=b,3=d,a=/ecg}
+result getter / index keys: {0=zero,2=two,a=0,b=1} {0=zero,2=two,a=1,b=1} {0=zero,2=two,a=2,b=1}
+result getter / symbol: {a=/ecg,x=0,Symbol(s)=S} {a=/ecg,x=1,Symbol(s)=S} {a=/ecg,x=2,Symbol(s)=S}
+result getter / symbol first: {a=/ecg,x=0,Symbol(t)=T} {a=/ecg,x=1,Symbol(t)=T} {a=/ecg,x=2,Symbol(t)=T}
+result getter / not enumerable: {a=/ecg,x=0} {a=/ecg,x=1} {a=/ecg,x=2}
+result getter / read only: {a=ro,x=0} {a=ro,x=1} {a=ro,x=2}
+result getter / getter: {a=g0,x=0,y=2} {a=g1,x=1,y=2} {a=g2,x=2,y=2}
+result getter / getter adds: {a=0,x=gx} {a=1,x=gx} {a=2,x=gx}
+result getter / getter deletes: {a=/ecg,x=gx,b=2} {a=/ecg,x=gx,b=2} {a=/ecg,x=gx,b=2}
+result getter / deleted: {a=/ecg,x=0,y=2} {a=/ecg,x=1,y=2} {a=/ecg,x=2,y=2}
+result getter / frozen: {a=f,x=0} {a=f,x=1} {a=f,x=2}
+result getter / sealed: {a=s,x=0} {a=s,x=1} {a=s,x=2}
+result getter / own __proto__: {a=/ecg,x=0,__proto__=[object Object]} {a=/ecg,x=1,__proto__=[object Object]} {a=/ecg,x=2,__proto__=[object Object]}
+result getter / null prototype: {a=n,x=0} {a=n,x=1} {a=n,x=2}
+result getter / class: {a=c,x=0} {a=c,x=1} {a=c,x=2}
+result getter / arguments: {0=0,1=b,a=/ecg} {0=1,1=b,a=/ecg} {0=2,1=b,a=/ecg}
+result getter / function: {a=/ecg,x=0} {a=/ecg,x=1} {a=/ecg,x=2}
+result getter / error: {a=/ecg,x=0} {a=/ecg,x=1} {a=/ecg,x=2}
+result getter / map: {a=/ecg,x=0} {a=/ecg,x=1} {a=/ecg,x=2}
+result getter / proxy: {a=p,x=0} {a=p,x=1} {a=p,x=2}
+result getter / stack: {a=/ecg,stack=s0,x=0} {a=/ecg,stack=s1,x=1} {a=/ecg,stack=s2,x=2}
+result getter / many: {a=/ecg,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39} {a=/ecg,k0=1,k1=2,k2=3,k3=4,k4=5,k5=6,k6=7,k7=8,k8=9,k9=10,k10=11,k11=12,k12=13,k13=14,k14=15,k15=16,k16=17,k17=18,k18=19,k19=20,k20=21,k21=22,k22=23,k23=24,k24=25,k25=26,k26=27,k27=28,k28=29,k29=30,k30=31,k31=32,k32=33,k33=34,k34=35,k35=36,k36=37,k37=38,k38=39,k39=40} {a=/ecg,k0=2,k1=3,k2=4,k3=5,k4=6,k5=7,k6=8,k7=9,k8=10,k9=11,k10=12,k11=13,k12=14,k13=15,k14=16,k15=17,k16=18,k17=19,k18=20,k19=21,k20=22,k21=23,k22=24,k23=25,k24=26,k25=27,k26=28,k27=29,k28=30,k29=31,k30=32,k31=33,k32=34,k33=35,k34=36,k35=37,k36=38,k37=39,k38=40,k39=41}
+result getter / many overwrite: {a=0,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=0} {a=1,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=1} {a=2,k0=0,k1=1,k2=2,k3=3,k4=4,k5=5,k6=6,k7=7,k8=8,k9=9,k10=10,k11=11,k12=12,k13=13,k14=14,k15=15,k16=16,k17=17,k18=18,k19=19,k20=20,k21=21,k22=22,k23=23,k24=24,k25=25,k26=26,k27=27,k28=28,k29=29,k30=30,k31=31,k32=32,k33=33,k34=34,k35=35,k36=36,k37=37,k38=38,k39=39,k40=40,k41=41,k42=42,k43=43,k44=44,k45=45,k46=46,k47=47,k48=48,k49=49,k50=50,k51=51,k52=52,k53=53,k54=54,k55=55,k56=56,k57=57,k58=58,k59=59,k60=60,k61=61,k62=62,k63=63,k64=64,k65=65,k66=66,k67=67,k68=68,k69=69,z=2}
+result computed: {x=0,a=A,y=y0} {x=1,a=A,y=y1} {x=2,a=A,y=y2}
+result computed a: {a=a0,z=0,q=1} {a=a1,z=1,q=1} {a=a2,z=2,q=1}
+result target defined: {a=0,b=0} {a=1,b=1} {a=2,b=2}
+result poly: {a=A,x=0,z=Z} {a=A,y=1,x=1,z=Z} {a=2,z=Z} {a=A,z=Z,b=1} {a=A,c=4,d=2,e=3,z=Z} {a=5,z=Z,k=0} {a=A,m=6,z=Z} ... {a=A,y=43,x=43,z=Z} {a=44,z=Z} {a=A,z=Z,b=1} {a=A,c=46,d=2,e=3,z=Z} {a=47,z=Z,k=0} {a=A,m=48,z=Z} {a=A,x=49,z=Z}
+result targets: {a=A0,x=0} {z=1,a=A1,x=1} {a=A2,x=2} {a=A3,x=3} {z=4,a=A4,x=4} {a=A5,x=5} {a=A6,x=6} {z=7,a=A7,x=7} {a=A8,x=8} {a=A9,x=9} {z=10,a=A10,x=10} {a=A11,x=11}
+result changed: {a=s,z=Z,x=0} {a=s,z=Z,x=1} {a=s,z=Z,x=2} {a=s,z=Z,x=3} {a=s,z=Z,x=4,y=1} {a=s,z=Z} {a=A,z=Z,x=6} {a=s,z=Z,x=g}
+result not extensible: {a=1} {a=1}
+result same values: true true 2
+result result: true {a=A,x=1,y=2,z=Z,w=3} {a=A,y=2,z=Z} {a=A,x=1,y=2,z=Z}
+result setter on prototype: {a=A,x=0,z=Z}{x=0} {a=A,x=1,z=Z}{x=1} {a=A,x=2,z=Z}{x=2} 0
+result hot: 4009000 {k=1999,x=1,y=2,z=1999}
+mem-end obj=394 atom=702 shape=371 prop=1525 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
+mem-gc obj=247 atom=702 shape=347 prop=1168 jsfunc=51 cfunc=139 array=2 fast_array=2 elements=221 binary=0
+--- status exit 0

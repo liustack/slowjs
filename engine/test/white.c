@@ -2352,12 +2352,15 @@ int white_class_after_nop(JSContext *ctx, const char *src, const char *name)
     return ret;
 }
 
-/* The cache of the object rest site of the function fn (a function value):
-   the shapes of the sources it keeps, as white_shape_of numbers them, into
-   src (up to max), and the entries a miss replaced so far into *swaps.
+/* The cache of the object rest or spread site of the function fn (a
+   function value): the shapes of the sources it keeps, as white_shape_of
+   numbers them, into src (up to max), those of the targets of a spread
+   (0 for a rest) into tgt when it is not NULL, and the entries a miss
+   replaced so far into *swaps.
    Return the entries, or -1 when fn has no register code or no such site
    (engine/regvm-ops-copy.h). */
-int white_copy_site(JSValueConst fn, int site, uintptr_t *src, int max, int *swaps)
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, uintptr_t *tgt, int max,
+                    int *swaps)
 {
     JSFunctionBytecode *b;
     RVCopySite *cs;
@@ -2371,8 +2374,11 @@ int white_copy_site(JSValueConst fn, int site, uintptr_t *src, int max, int *swa
         return -1;
     cs = &b->rv->copy[site];
     for (i = 0; i < RV_COPY_WAYS && cs->e[i]; i++) {
-        if (i < max)
+        if (i < max) {
             src[i] = (uintptr_t)cs->e[i]->src;
+            if (tgt)
+                tgt[i] = (uintptr_t)cs->e[i]->tgt;
+        }
     }
     *swaps = cs->swaps;
     return i;

@@ -232,9 +232,11 @@ int JS_RegvmStat(JSContext *ctx, int what)
     return ctx->rt->rv_stat[what];
 }
 
-/* an entry of the cache of an object rest (regvm-ops-copy.h) */
+/* an entry of the cache of an object rest or a spread (regvm-ops-copy.h) */
 static void rv_copy_entry_free(JSRuntime *rt, RVCopyEntry *e)
 {
+    if (e->tgt)
+        js_free_shape(rt, e->tgt);
     js_free_shape(rt, e->src);
     js_free_shape(rt, e->dst);
     js_free_rt(rt, e);

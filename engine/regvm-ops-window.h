@@ -145,8 +145,14 @@ static void rv_window_end(RVPass *s, int npop, int npush)
         break;
     case OP_copy_data_properties:
         {
-            /* three entries named by the bits of the mask, up to 8 deep */
+            /* three entries named by the bits of the mask, up to 8 deep:
+               those of the spread of an object literal, the target, the
+               source and null on top, go to COPYS (regvm-ops-copy.h) */
             int m = p[1], n = 3;
+            if (m == (2 | (1 << 2)) && s->sp >= 3) {
+                rv_copy_spread_pass(s);
+                break;
+            }
             n = max_int(n, 1 + (m & 3));
             n = max_int(n, 1 + ((m >> 2) & 7));
             n = max_int(n, 1 + ((m >> 5) & 7));

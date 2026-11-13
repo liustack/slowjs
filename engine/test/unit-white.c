@@ -115,7 +115,8 @@ int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
-int white_copy_site(JSValueConst fn, int site, uintptr_t *src, int max, int *swaps);
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, uintptr_t *tgt, int max,
+                    int *swaps);
 unsigned long white_shape_id_hits(void);
 uint32_t white_shape_id_next(JSRuntime *rt);
 uint32_t white_shape_id_max(void);
@@ -1721,12 +1722,23 @@ static uintptr_t shape_of(VM *v, const char *expr)
     return r;
 }
 
-/* the cache of the first object rest of the global function fn
-   (engine/regvm-ops-copy.h) */
+/* the cache of the first object rest or spread of the global function fn,
+   with the shapes of the targets of a spread in tgt (engine/regvm-ops-copy.h) */
+static int copy_site2(VM *v, const char *fn, uintptr_t *src, uintptr_t *tgt, int max,
+                      int *swaps)
+{
+    JSValue f = JS_Eval(v->ctx, fn, strlen(fn), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int n = white_copy_site(f, 0, src, tgt, max, swaps);
+
+    JS_FreeValue(v->ctx, f);
+    return n;
+}
+
+/* the same for a rest, which has no target */
 static int copy_site(VM *v, const char *fn, uintptr_t *src, int max, int *swaps)
 {
     JSValue f = JS_Eval(v->ctx, fn, strlen(fn), "<unit>", JS_EVAL_TYPE_GLOBAL);
-    int n = white_copy_site(f, 0, src, max, swaps);
+    int n = white_copy_site(f, 0, src, NULL, max, swaps);
 
     JS_FreeValue(v->ctx, f);
     return n;
@@ -1791,6 +1803,76 @@ static void test_object_rest_cache(void)
         CHECK(eval_is(v.ctx, "JSON.stringify(f({ a: 1, b: 2, c: 3 }))", "{\"b\":2,\"c\":3}"),
               "a kept shape after a collection");
         CHECK(eval_ok(v.ctx, "f = g = null; void 0"), "the script threw");
+        JS_RunGC(v.rt);
+        vm_free(&v);
+    }
+}
+
+/* The spread of an object literal keeps, at its place, the shapes of its
+   target and its source and of the result: a target with keys before the
+   spread, a key of the source that the target has stays in its place with
+   the value of the source, the result takes the shape an object built key
+   by key gets, sources and targets of another prototype, with a symbol or a
+   getter on either side are not kept, a place that sees many
+   shapes in turn keeps four, and the shapes kept go with their function
+   (the leak check of vm_free). */
+static void test_object_spread_cache(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        uintptr_t src[4], tgt[4];
+        int swaps = -1, n;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f(s) { return { a: 0, z: 0, ...s, w: 1 } }\n"
+                             "var o1 = { x: 1, a: 2 }, r1 = f(o1), r2 = f({ x: 3, a: 4 });\n"
+                             "var k = {}; k.a = 0; k.z = 0; k.x = 0; k.w = 0; var tz = { a: 9, z: 9 }; void 0"),
+              "the script threw");
+        n = copy_site2(&v, "f", src, tgt, 4, &swaps);
+        CHECK(n == 1 && src[0] == shape_of(&v, "o1") && tgt[0] == shape_of(&v, "tz"),
+              "cache %d: one entry, the shapes of o1 and of the target: %d", cache, n);
+        CHECK(shape_of(&v, "r1") == shape_of(&v, "r2") && shape_of(&v, "r1") == shape_of(&v, "k"),
+              "cache %d: the result has the shape of an object built key by key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([r1, r2])",
+                      "[{\"a\":2,\"z\":0,\"x\":1,\"w\":1},{\"a\":4,\"z\":0,\"x\":3,\"w\":1}]"),
+              "values of the results");
+
+        /* an empty target takes the shape of a plain source */
+        CHECK(eval_ok(v.ctx, "function e(s) { return { ...s } }\n"
+                             "var o2 = { p: 1, q: 2 }, r3 = e(o2), r4 = e(o2); void 0"), "the script threw");
+        n = copy_site2(&v, "e", src, tgt, 4, &swaps);
+        CHECK(n == 1 && shape_of(&v, "r3") == shape_of(&v, "o2") && shape_of(&v, "r4") == shape_of(&v, "o2"),
+              "cache %d: an empty target: %d entries", cache, n);
+
+        /* not kept: a class instance, a symbol, a getter of the source or
+           of the target */
+        CHECK(eval_ok(v.ctx, "class C { constructor() { this.x = 1 } }\n"
+                             "var y = { x: 1 }; y[Symbol('s')] = 2;\n"
+                             "var g = { get x() { return 5 } };\n"
+                             "function t(s) { return { a: 1, get b() { return 2 }, ...s } }\n"
+                             "var r5 = [f(new C()), f(y), f(g), t({ b: 3 }), t({ b: 3 })].map(x => JSON.stringify(x)).join(); void 0"),
+              "the script threw");
+        n = copy_site2(&v, "f", src, tgt, 4, &swaps);
+        CHECK(n == 1, "cache %d: a class instance, a symbol or a getter kept: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "r5", "{\"a\":0,\"z\":0,\"x\":1,\"w\":1},{\"a\":0,\"z\":0,\"x\":1,\"w\":1},"
+                                   "{\"a\":0,\"z\":0,\"x\":5,\"w\":1},{\"a\":1,\"b\":3},{\"a\":1,\"b\":3}"),
+              "values of the spreads not kept");
+
+        /* seven shapes in turn */
+        CHECK(eval_ok(v.ctx, "function h(s) { return { k0: -1, ...s } }\n"
+                             "var os = []; for (let n = 1; n <= 7; n++) { const o = {}; for (let i = 0; i < n; i++) o['k' + i] = i; os.push(o) }\n"
+                             "var sum = 0; for (let t = 0; t < 30; t++) for (const o of os) { const r = h(o); sum += Object.keys(r).length + r.k0 } void 0"),
+              "the script threw");
+        n = copy_site2(&v, "h", src, tgt, 4, &swaps);
+        CHECK(n == 4 && swaps == 16, "cache %d: seven shapes: %d entries, %d swaps", cache, n, swaps);
+        CHECK(eval_is(v.ctx, "String(sum)", "840"), "the keys of the results of seven shapes");
+
+        JS_RunGC(v.rt);
+        CHECK(eval_is(v.ctx, "JSON.stringify(f({ x: 1, a: 2 }))", "{\"a\":2,\"z\":0,\"x\":1,\"w\":1}"),
+              "a kept shape after a collection");
+        CHECK(eval_ok(v.ctx, "f = e = h = t = null; void 0"), "the script threw");
         JS_RunGC(v.rt);
         vm_free(&v);
     }
@@ -6844,6 +6926,7 @@ int main(int argc, char **argv)
     test_object_inline_limit();
     test_object_lit_shared_shape();
     test_object_rest_cache();
+    test_object_spread_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
     test_key_atom();

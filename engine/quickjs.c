@@ -8266,23 +8266,23 @@ static JSShape *find_hashed_shape_keys(JSRuntime *rt, JSObject *proto,
     return NULL;
 }
 
-/* A reference to the shape of an ordinary object of ctx with the count keys
-   of atoms, as an object literal of those keys (js_object_lit_shape) and an
-   object rest (regvm-ops-copy.h) make it: the shape in the shape hash table
-   with exactly those keys, in their order, as properties made by
-   OP_define_field, and the Object.prototype of ctx, or else a new one that
-   has room for those keys and at least JS_PROP_INITIAL_SIZE, as an empty
-   object has. A shape found may have room for more properties than there are
-   keys. The shapes in the table are also the next shapes of objects that get
-   keys one at a time (add_property), which move their properties to the room
-   of the shape they take: an empty object (room 2) that takes the shape of a
-   literal of one key with room 1, and then a second key, would move them
-   twice. Return NULL when there is no memory. */
-static JSShape *js_shape_of_keys(JSContext *ctx, const JSAtom *atoms,
-                                 uint32_t count)
+/* A reference to the shape of an ordinary object of the prototype proto
+   (NULL for none) with the count keys of atoms, as an object literal of
+   those keys (js_object_lit_shape), an object rest and a spread
+   (regvm-ops-copy.h) make it: the shape in the shape hash table with exactly
+   those keys, in their order, as properties made by OP_define_field, and
+   proto, or else a new one that has room for those keys and at least
+   JS_PROP_INITIAL_SIZE, as an empty object has. A shape found may have room
+   for more properties than there are keys. The shapes in the table are also
+   the next shapes of objects that get keys one at a time (add_property),
+   which move their properties to the room of the shape they take: an empty
+   object (room 2) that takes the shape of a literal of one key with room 1,
+   and then a second key, would move them twice. Return NULL when there is no
+   memory. */
+static JSShape *js_shape_of_keys(JSContext *ctx, JSObject *proto,
+                                 const JSAtom *atoms, uint32_t count)
 {
     JSRuntime *rt = ctx->rt;
-    JSObject *proto = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
     JSShape *sh;
     uint32_t i, hash_size;
 
@@ -8310,7 +8310,9 @@ static JSShape *js_shape_of_keys(JSContext *ctx, const JSAtom *atoms,
 static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
                                                const JSAtom *atoms)
 {
-    JSShape *sh = js_shape_of_keys(ctx, atoms, lit->count);
+    JSShape *sh = js_shape_of_keys(ctx,
+                                   JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]),
+                                   atoms, lit->count);
 
     if (sh)
         lit->shape = sh;
@@ -9663,8 +9665,8 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
                 if (b->object_lits[i].shape)
                     mark_func(rt, &b->object_lits[i].shape->header);
             }
-            /* and so do those the caches of its object rests hold
-               (engine/regvm-ops-copy.h) */
+            /* and so do those the caches of its object rests and spreads
+               hold (engine/regvm-ops-copy.h) */
             if (b->rv && b->rv->arg_count >= 0) {
                 RVFunc *rf = b->rv;
                 int j;
@@ -9673,6 +9675,8 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
                         RVCopyEntry *e = rf->copy[i].e[j];
                         if (!e)
                             break;
+                        if (e->tgt)
+                            mark_func(rt, &e->tgt->header);
                         mark_func(rt, &e->src->header);
                         mark_func(rt, &e->dst->header);
                     }
