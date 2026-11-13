@@ -30,6 +30,7 @@
 # test is written for cannot be lost.
 #
 #   engine/test/regvm/inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH...
+#   engine/test/regvm/inject.sh [-golden G] -goldens PATH...
 #
 # DIR holds rvdiff of a build with -DRV_INJECT:
 #
@@ -52,6 +53,10 @@
 # bytecode of the script is the same. It prints one line per run that
 # differs and a line for each script, and exits with 1 when any run
 # differs. The transcripts of a run that differs are in DIR/inject/SCRIPT-N/.
+#
+# -goldens builds and runs nothing: it names each script of PATH with neither
+# a G/SCRIPT.txt nor a line in G/skip, and exits with 1 when there is one, so
+# that a script added without its golden shows before the injections run.
 set -eu
 
 self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
@@ -59,6 +64,7 @@ jobs=4
 max=2000
 single=
 update=
+goldens=
 golden=$(cd "$(dirname "$0")" && pwd)/golden/inject
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -66,13 +72,31 @@ while [ $# -gt 0 ]; do
 	-max) max=$2; shift 2 ;;
 	-golden) golden=$2; shift 2 ;;
 	-update) update=1; shift ;;
+	-goldens) goldens=1; shift ;;
 	-one) single=1; shift ;; # -one DIR N SCRIPT: one run, for xargs
-	-*) echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..." >&2; exit 2 ;;
+	-*) echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2; exit 2 ;;
 	*) break ;;
 	esac
 done
+if [ -n "$goldens" ]; then
+	n=0 bad=0
+	for p in "$@"; do
+		if [ -d "$p" ]; then list=$(ls "$p"/*.js); else list=$p; fi
+		for sc in $list; do
+			n=$((n + 1))
+			base=$(basename "$sc")
+			[ ! -f "$golden/$base.txt" ] || continue
+			! grep -q "^$base " "$golden/skip" 2>/dev/null || continue
+			echo "DIFF $sc: no golden $golden/$base.txt and no line in $golden/skip (-update writes it from the run, read it first)"
+			bad=$((bad + 1))
+		done
+	done
+	echo "inject: $n scripts, $bad without a golden"
+	[ "$bad" = 0 ] && exit 0
+	exit 1
+fi
 if [ $# -lt 2 ]; then
-	echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..." >&2
+	echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2
 	exit 2
 fi
 dir=$(cd "$1" && pwd)
