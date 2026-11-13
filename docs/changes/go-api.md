@@ -532,7 +532,7 @@ Test: `TestNewArrayInterrupted` in `builtin_test.go` (an array of 4 Mi elements 
 
 ## Long strings and results stop converting at the limits of the call
 
-Release: Unreleased.
+Release: v0.30.3.
 
 In a Go function that javascript called, a conversion between a Go string and a string of the engine now reads whether the call is to end every 256 Ki characters, or bytes of UTF-8, and ends at `Interrupt`, the eval timeout or an uncatchable error of the call, as [NewArray](#newarray-stops-at-the-limits-of-the-call) does. `Args.String` and `Args.WTF8` then return ok false, `VM.NewString`, `VM.NewStringLatin1` and `VM.NewStringUTF16` return the error and no string, and the call ends with that error whatever the Go function returns. The same holds for the string arguments and results of a Go function of `RegisterFunc`, for the keys of a map it returns and for `VM.NewAtom`. The conversion of a result of such a function also reads every 16,384 elements or properties, counted across the slices and maps it nests, as each costs a call into the engine of 50 ns or more.
 
@@ -560,7 +560,7 @@ Tests: in `stringstop_test.go`, `TestArgStringStops`, `TestNewStringStops` and `
 
 ## Args.StringLen reads the length of a string in place
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `Args.StringLen(i)` returns the length of argument `i`, in UTF-16 code units as javascript counts it, when it is a string, and false otherwise. It reads the length where the engine keeps it, in the header of the string, and converts nothing. A rope, a string the engine keeps as the pieces `+` joined, is not joined either, as its header holds its length too. So a Builtin can refuse a string too long for it before it reads any of it: `Args.String` of a rope of 32 Mi characters joins it under the memory limit of the VM and then copies it into Go, where `StringLen` reads one word.
 

@@ -16,7 +16,7 @@ QuickJS 既没有 `URL` 也没有 `URLSearchParams`。包 `url` 给调用了 `ur
 
 ## 解析在 Go 里的 URL 和 URLSearchParams
 
-版本：Unreleased。
+版本：v0.30.3。
 
 一个 bundle 如果用 `new URL(path, base)` 解析链接，不然就得带一个 polyfill，core-js 的在这个引擎上每个 URL 要 42 到 87 µs。tifa 商店页渲染一次，TanStack Router 要调它 100 到 170 次，每次还读 protocol、username、password、origin、pathname、search 和 hash。core-js 会先找一个够好的原生 `URL`，找到了就什么也不装，所以宿主在 bundle 运行之前注册这个包，bundle 一行不用改。
 

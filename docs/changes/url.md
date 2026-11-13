@@ -16,7 +16,7 @@ QuickJS has neither `URL` nor `URLSearchParams`. Package `url` adds them for a V
 
 ## URL and URLSearchParams on a Go parser
 
-Release: Unreleased.
+Release: v0.30.3.
 
 A bundle that resolves links with `new URL(path, base)` otherwise carries a polyfill, and core-js's costs 42 to 87 µs a URL on this engine. TanStack Router calls it 100 to 170 times in one render of tifa's shop pages, and reads protocol, username, password, origin, pathname, search and hash of each. core-js looks for a good native `URL` first and installs nothing when it finds one, so a host registers this package before the bundle runs and the bundle needs no change.
 

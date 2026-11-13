@@ -511,7 +511,7 @@ fmt 读下标时从 `[` 一直读到它后面第一个 `]`，所以一个格式�
 
 ## Intl 和 Temporal 的短参数在读之前先量长度
 
-版本：Unreleased。
+版本：v0.30.3。
 
 Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给出的 locale 标签、选项、代码或单位、数字字符串和 Temporal 的字符串，现在 Go 读之前先量长度，比它那一类的上限长就抛 `RangeError` 拒绝：标签、选项和 Temporal 的字符串上限是 16,384 个字符，数字字符串是 524,288 个。原来 Go 把它们整个读进来（`+` 拼成的字符串先拼接），处理时不检查中断标志，占的内存也不算在 VM 的上限里：对 16 MiB 的私有用途标签调用 `new Intl.NumberFormat(tag)` 要 0.2 秒，Go 分配 289 MiB。长度是就地从字符串读的（[`Args.StringLen`](go-api.zh-CN.md#argsstringlen-就地读字符串的长度)），所以 `+` 拼成的 32 Mi 字符的字符串不用拼接就被拒绝，这次调用 Go 只分配几 KiB。`intl` 和 `temporal` 的每个 Builtin 都通过同一个类型 `intlhook.Door`（`internal/intlhook/door.go`）读参数。
 
@@ -542,7 +542,7 @@ Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给�
 
 ## 日历的运算读中断标志
 
-版本：Unreleased。
+版本：v0.30.3。
 
 Temporal 在 ISO 8601 以外的日历里做 `add`、`subtract`、`until`、`since`、`round` 和 `total` 时，一次走一个月或一年，所以很长的时长或相隔很远的两个日期要转几百万圈，而这些循环不读中断标志：农历日期加 1.9 亿天，超过 20 ms 的 eval 超时后又跑了 64 ms。现在这些循环每 4,096 圈问一次 `vmhook.Stop`（`internal/gointl` 的 `Calendar.WithCheck`），`temporal` 的 Builtin 在读到的每个日历上设好它。答案都不变。
 
@@ -550,7 +550,7 @@ Temporal 在 ISO 8601 以外的日历里做 `add`、`subtract`、`until`、`sinc
 
 ## 没有内存上限时 fmt 也限制调用并分段写出
 
-版本：Unreleased。
+版本：v0.30.3。
 
 在没有内存上限的 VM 上，`fmt.sprintf`、`printf`、`sprint` 和 `println` 现在按一个还能放下 16 MiB 输出的 VM 那样检查预算，放不下就用无法捕获的内存不足错误结束调用（`fmt/fmt.go` 的 `room` 和 `maxOutput`）。原来每次调用都照常运行，Go 造整个输出时不检查 VM：对 1 MiB 的控制字符调用 `fmt.sprintf('%[1]q'.repeat(64), s)` 造出 256 MiB，超过 20 ms 的 eval 超时后又跑了 636 ms。在 Apple M4 上，Go 造 16 MiB 带引号或十六进制的字节约 25 ms，分配 121 MiB。上界可能远高于输出，所以写不到 16 MiB 的调用也可能被拒绝：`"%[x"` 重复一百万次写出 13 MB，上界是 67 MB，要在内存上限为 2 GiB 的 VM 里才能运行。
 
@@ -560,7 +560,7 @@ Temporal 在 ISO 8601 以外的日历里做 `add`、`subtract`、`until`、`sinc
 
 ## Builtin 切不开的一段文字读中断标志
 
-版本：Unreleased。
+版本：v0.30.3。
 
 Intl 有些活儿做在文本里切不成更小块的一段上：没有空格的一段泰文、老挝文、高棉文或缅甸文，由词典每次往前看几个词来切分，一段中文或日文，由词典找出切分整段代价最小的方式，还有一串重音符号，比较时按组合类排好顺序。这样一段可以和整个字符串一样长，而这些活儿不读中断标志：在 Apple M4 上，超时设为 100 ms 时，Segmenter 在 8 Mi 字符的泰文上调用 `containing(0)` 要跑 0.5 秒，中文 6.6 秒，半角片假名 14.5 秒，比较两个 2 Mi 重音符号的字符串的 `compare` 要 1.7 秒，而且都没有报错就结束了。
 

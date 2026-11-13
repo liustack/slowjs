@@ -271,7 +271,7 @@ Tests: `TestEngineAsmDecl` (`internal/goasm/gen`) runs `go vet -asmdecl` over `i
 
 ## LR is saved once on arm64
 
-Release: Unreleased.
+Release: v0.30.3.
 
 On arm64 the generated code no longer saves and loads LR (x30) itself in each function that calls: Go's prologue and epilogue already do it. llc keeps x30 like a callee-saved register, so a function that calls stores it in its frame and loads it back before each return. The generator turns each return into a branch to the end of the function, where the Go assembler writes its epilogue, and the epilogue of a function that calls loads LR from 0(RSP), where Go's prologue saved it (`cmd/internal/obj/arm64/obj7.go`, the `ARET` case of `preprocess`). llc's store and load of x30 were dead, about two instructions for each call. The lowering drops them (`internal/goasm/gen/arm64_lr.go`): a `str` or `ldr` of x30 goes, and an `stp` or `ldp` that pairs x30 with another register keeps that register as a `str` or `ldr` at its offset. The amd64 code has no LR and stays the same, byte for byte.
 
@@ -524,7 +524,7 @@ None is over the 2% for which the rule of code positions asks for a timing. `Tes
 
 ## A call copies its last locals into its window
 
-Release: Unreleased.
+Release: v0.30.3.
 
 The register loop passes the arguments of a call in its window, the temps where the frame of the callee starts. An argument that is a local, an argument of the caller or `this` was put there by a `MOV` right before the call, one dispatch for each. `CALLS` and `CALLSD`, a `CALL` and a `CALLD` that copy their last arguments themselves, now take up to four such copies into the call: the converter writes the slots after the operands of the call, and the call copies each, with a reference, from the last argument back. `return f(a, b)` with two locals runs one instruction where it ran three. A method call, an argument that is a constant or a temp, and the arguments before it keep their `MOV` or `LOADK`.
 
@@ -657,7 +657,7 @@ Instructions of a render, callgrind on the generated build on linux/amd64 at pos
 
 ## Captures that never change
 
-Release: Unreleased.
+Release: v0.30.3.
 
 A closure reads a variable of the function around it through a `JSVarRef`, which the frame and every closure of the variable share, so that a write on either side is seen on the other. Most captured variables are never written once a closure has them: a parameter, a `const`, a function declaration, a `let` set once before the closure is made. `capture_by_value` finds them. It runs on the final code of each function, after `share_local_slots`, when the compiler makes the function and when `JS_ReadObject` reads code it has not read before with the checks. It marks a captured argument or local of a function `by_value`, and the closure variable of each function that captures it, when:
 
@@ -800,7 +800,7 @@ Why this is safe: the check is in `add_var`, `add_arg` and `compute_stack_size` 
 
 ## Catch offsets and jumps stay in their function
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `JS_ReadObject` runs the register pass on each function it reads and refuses with `SyntaxError: invalid bytecode: code no compiler makes` code the pass cannot take (`rv_read_check`, `engine/regvm-entry.h`). Three more kinds of such code are refused now (`engine/regvm-pass.h`):
 
@@ -816,7 +816,7 @@ Tests: `test_regvm_crafted` of `engine/test/unit-white.c` changes one byte of co
 
 ## Jump tables on arm64 take 4 bytes an entry
 
-Release: Unreleased.
+Release: v0.30.3.
 
 llc writes a jump table of arm64 with 1 or 2 bytes an entry when the distances fit (each entry the steps of 4 bytes from the lowest target, read by `ldrb` or `ldrh`), and with 4 bytes otherwise (the distance in bytes from the `adr` of the dispatch, read by `ldrsw`). It picks the form from the sizes of the code it writes. The lowering then adds code inside the function, so a table that fit llc's code can end too narrow for the lowered one: a switch of `js_start_tag` came to 272 steps, past the 255 a byte holds, and llvm-mc refused the engine. llvm-mc refuses such an entry only when it knows the distance as it reads the entry. With an alignment of the code between the two labels it works the distance out later and writes its low bits without a word (LLVM 22.1.8), so a table past its width could have jumped to the wrong place. None did: the check below, run on the arm64 engine of v0.30.2 with the narrow forms on, finds every entry within its width. But which change of C would break a table next was luck.
 
@@ -828,7 +828,7 @@ Tests: `TestA64CheckJumpTables` takes the farthest distance each width holds and
 
 ## A key in a local is read without a reference
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `o[k]` with the key in a local or an argument (GETEL and GETELT of the register loop, when the fast paths of an array or a typed array do not answer) took a reference to the key, and `JS_GetPropertyValue` let it go once the key was made an atom. The loop now reads such a key where it is, as it already reads `o`, and `JS_GetPropertyValueConst` leaves it as it found it. A key in a temp is still taken and freed.
 
@@ -840,7 +840,7 @@ The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/te
 
 ## The truth of a value is read without a reference
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `JS_ToBool` took a reference to its value and let it go once it knew whether the value was true. It now reads the value where it is (`js_to_bool` with `take` FALSE), and `JS_ToBoolFree` is the same function as before. The branches of the register loop (`if`, `while`, `!`, `&&`, `||`, the conditional operator) ask the truth of a local or an argument through `JS_ToBool` and of a temp through `JS_ToBoolFree`, where both went through a reference before (`rv_take`), and `&&` and `||`, which keep their operand, ask it through `JS_ToBool` too. `Boolean`, the tags of RegisterStartTag, the jobs of promises and a few more built-ins call `JS_ToBool` and gain the same.
 
@@ -852,7 +852,7 @@ The change is in C (`engine/quickjs.c`, `engine/regvm-ops-basic.h`). `engine/tes
 
 ## An array literal takes the references of its elements
 
-Release: Unreleased.
+Release: v0.30.3.
 
 An array literal such as `[a, b, c]` (OP_array_from, in the window of the register loop and in a folded stack) made its array with `js_create_array`, which took a new reference to each element, and then let go of the reference each element had on the stack. It now moves the references of the stack into the array (`js_create_array_free`, as upstream QuickJS's interpreter had it), and frees them when the array cannot be made. `js_create_array` is the same function as before (`js_create_array_in` with `take` FALSE) for its other callers.
 
@@ -864,7 +864,7 @@ The change is in C (`engine/quickjs.c`, `engine/regvm-ops-window.h`). `engine/te
 
 ## A key in a local is set without a reference
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `o[k] = v` with the key in a local or an argument (PUTEL of the register loop, when the fast paths of an array do not answer) took a reference to the key, and `JS_SetPropertyValue` let it go once the key was made an atom. The loop now passes such a key where it is, as [a read of `o[k]`](#a-key-in-a-local-is-read-without-a-reference) does, through `JS_SetPropertyValueConst`, which leaves it as it found it. A key in a temp and the value are still taken.
 
@@ -876,7 +876,7 @@ The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/te
 
 ## Array destructuring with no iterator
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `const [a, b] = arr` gets an iterator of `arr`, reads two elements through its `next` and closes it. The parser makes that `for_of_start`, `for_of_next` and `drop` for each element, then `iterator_close`, and each of them cost the call of `values`, an Array Iterator object, a lookup of `Symbol.iterator`, of `next` and of `return`, and a call of the window op for each element: about 1,350 instructions for two elements, where reading `arr[0]` and `arr[1]` takes about 100. The pages of the shop, MUI and React destructure arrays 135 to 2,261 times a render, always arrays made by the page itself with nothing changed on them.
 

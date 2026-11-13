@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.30.3] - 2026-11-13
+
 ### 新增
 
 - `Args.StringLen(i)` 返回 Builtin 字符串参数的长度，以 UTF-16 码元计，不转换字符串，也不拼接 `+` 拼成的字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存（[Go API](docs/changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)）。
@@ -640,7 +642,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0

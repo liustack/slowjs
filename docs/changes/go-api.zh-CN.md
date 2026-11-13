@@ -532,7 +532,7 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 
 ## 长字符串和结果的转换在调用的限制处停下
 
-发布版本：Unreleased。
+发布版本：v0.30.3。
 
 在 javascript 调用的 Go 函数里，Go 字符串和引擎字符串之间的转换现在每 256 Ki 个字符（UTF-8 则是字节）看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和 [NewArray](#newarray-在调用的限制处停下) 一样。这时 `Args.String` 和 `Args.WTF8` 返回 ok 为 false，`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 返回这个错误，不返回字符串，不管 Go 函数返回什么，调用都以这个错误结束。`RegisterFunc` 的 Go 函数的字符串参数和字符串结果、它返回的 map 的键，以及 `VM.NewAtom`，也一样。这种函数的结果在转换时还每 16,384 个元素或属性看一次，跨嵌套的切片和 map 一起计数，因为每个元素都要调用一次引擎，每次 50 ns 以上。
 
@@ -560,7 +560,7 @@ Go 转换期间不会轮询。在 amd64 服务器上，读一个 16 Mi 个孤立
 
 ## Args.StringLen 就地读字符串的长度
 
-版本：Unreleased。
+版本：v0.30.3。
 
 `Args.StringLen(i)` 在第 `i` 个参数是字符串时返回它的长度，按 JavaScript 的算法以 UTF-16 码元计，不是字符串时返回 false。它从引擎存放长度的地方，也就是字符串的头部读，什么都不转换。rope（引擎把 `+` 拼起来的几段原样留着的字符串）也不拼接，因为它的头部同样存着长度。所以 Builtin 能在读字符串之前就拒绝对它来说太长的字符串：对一个 32 Mi 字符的 rope，`Args.String` 先在 VM 的内存上限下把它拼起来，再复制进 Go，`StringLen` 只读一个字。
 

@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.3] - 2026-11-13
+
 ### Added
 
 - `Args.StringLen(i)` returns the length of a string argument of a Builtin, in UTF-16 code units, without converting it or joining a string made by `+`, so a Builtin can refuse a string too long for it before it reads any of it. It takes the same time for a string of any length and allocates nothing ([Go API](docs/changes/go-api.md#argsstringlen-reads-the-length-of-a-string-in-place)).
@@ -640,7 +642,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.3...main
+[v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0

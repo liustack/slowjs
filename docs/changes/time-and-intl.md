@@ -287,7 +287,7 @@ Tests: `TestLongTagResolves` in `intl/limits_test.go` (a constructor and `suppor
 
 ## A numeric string is read as Number reads it
 
-Release: Unreleased.
+Release: v0.30.3.
 
 `format` and `formatToParts` of `Intl.NumberFormat` now read the exponent and the mantissa of a numeric string as StrDecimalLiteral says, as `Number` does. They read an exponent with two signs when it was no int: `"1e+-5"` as Infinity and `"1e--5"` as zero, where both are NaN. And they took an exponent too large to write out for an infinity or a zero before they read the mantissa: `"1xe1073741825"` was Infinity where it is NaN, and `"0e1073741825"` Infinity where it is 0. The exponent is now checked to be one sign at most and digits, and the mantissa is read first.
 

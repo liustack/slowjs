@@ -15,8 +15,8 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 ## 从 JavaScript 调 Go
 
 - **`NewBuiltin(name, length, fn)` 和 `VM.NewBuiltinFunction(b)`**（v0.26.17）：一个 Go 函数，JavaScript 调它就像调 `Math.max`，不经过反射。`fn` 从 `Args` 读参数（`Number`、`String`、`Bool`、`Value`、`This`、`VM`，以及按引擎内部存法读字符串字符的 `Latin1` 或 `UTF16`），这些都不做转换，返回一个 `Value`。在 Apple M4 上，一次把两个数相加的调用约 55 ns，走 `RegisterHostFunc` 约 470 ns。每个进程只建一次 Builtin：多个 goroutine 上的 VM 会同时调它。它返回的 `*Error` 按 `Name` 指定的构造函数抛出（`Error`、`TypeError`、`RangeError`、`SyntaxError`、`ReferenceError` 或 `InternalError`），其他错误作为 `TypeError` 抛出。[详情](changes/go-api.zh-CN.md#builtin作为内建函数调用的-go-函数)
-- **长字符串上的 `Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16`**（Unreleased）碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和引擎的循环一样：`String` 和 `WTF8` 返回 ok 为 false，`NewString` 这几个函数返回这个错误，不返回字符串，调用以这个错误结束。`RegisterFunc` 函数的字符串参数和结果，以及元素很多的结果，也一样。[详情](changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)
-- **`Args.StringLen(i)`**（Unreleased）：字符串参数的长度，按 JavaScript 的算法以 UTF-16 码元计，读它时不转换也不拼接字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存。[详情](changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)
+- **长字符串上的 `Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16`**（v0.30.3）碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和引擎的循环一样：`String` 和 `WTF8` 返回 ok 为 false，`NewString` 这几个函数返回这个错误，不返回字符串，调用以这个错误结束。`RegisterFunc` 函数的字符串参数和结果，以及元素很多的结果，也一样。[详情](changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)
+- **`Args.StringLen(i)`**（v0.30.3）：字符串参数的长度，按 JavaScript 的算法以 UTF-16 码元计，读它时不转换也不拼接字符串，所以 Builtin 能在读之前就拒绝对它来说太长的字符串。字符串多长都花一样的时间，也不分配内存。[详情](changes/go-api.zh-CN.md#argsstringlen-就地读字符串的长度)
 - **`VM.NewArray(vals...)`**（v0.26.17）：在 Go 里建一个数组，建法和数组字面量一样，所以页面放在 `Array.prototype` 上的 setter 永远不会被触发。[详情](changes/go-api.zh-CN.md#newarray)
 - **`GetAsyncContext` 和 `SetAsyncContext`**（v0.28.5）：两个 Builtin，读和设 promise 任务携带的一个对象。`then` 或 `await` 运行时用的是注册它那一刻设的那个，所以基于它们写的 `AsyncLocalStorage` 在 `await` 之后也能找到自己的 store，和 Node 一样。从不设它的 VM，promise 的行为和以前一样。[详情](changes/go-api.zh-CN.md#promise-任务的异步上下文)
 
@@ -39,7 +39,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 - **`VM.SetStrip(s)`** 和 `type Strip`（v0.26.17）：`StripSource` 编译函数时不留源码，函数的 `toString` 显示 `[native code]`，`StripDebug` 不留行号和列号。[详情](changes/go-api.zh-CN.md#setstrip)
 - **`VM.SetClock(now)` 和 `VM.Now()`**（v0.28.2）：设置和读取一个 VM 的墙上时钟，Date、Intl 和 Temporal 都读它。传 nil 恢复真实时钟。[详情](changes/time-and-intl.zh-CN.md#每个-vm-一个墙上时钟)
 - **`temporal` 包**（v0.27.0）：`temporal.Register(vm)` 加上 `Temporal`，V8 提供的每个类型和方法都有，由 go-intl 在 Go 里计算，内置 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 读 VM 的时钟，`temporal.Clock` 只给 `Temporal.Now` 换一个时钟。它让二进制变大多少，见链接的文档。[详情](changes/temporal.zh-CN.md)
-- **`url` 包**（Unreleased）：`url.Register(vm)` 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做。core-js 见到过得了它自己检查的原生 URL 就什么也不装，所以带着它的 bundle 不用改。它接受的字符串最多 65,536 个 UTF-16 单位，所以一次 Go 的调用只要几毫秒：超过的输入不是 URL，查询串里超过的名或值是 `RangeError`。一个 URL 是 VM 里的对象，受内存上限管，eval 超时和 `Interrupt` 在下一次调用或下一次轮询时结束脚本。Node 24（ada）和标准不同的地方，这里按标准：检查域名的 Bidi 规则，只含 ASCII 的 `xn--` 标签照写保留，带 `#` 的输入对有 opaque path 的 base 解析会失败，把没有主机的 URL 的 `host` 设成空值时给它一个空主机。[详情](changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)
+- **`url` 包**（v0.30.3）：`url.Register(vm)` 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做。core-js 见到过得了它自己检查的原生 URL 就什么也不装，所以带着它的 bundle 不用改。它接受的字符串最多 65,536 个 UTF-16 单位，所以一次 Go 的调用只要几毫秒：超过的输入不是 URL，查询串里超过的名或值是 `RangeError`。一个 URL 是 VM 里的对象，受内存上限管，eval 超时和 `Interrupt` 在下一次调用或下一次轮询时结束脚本。Node 24（ada）和标准不同的地方，这里按标准：检查域名的 Bidi 规则，只含 ASCII 的 `xn--` 标签照写保留，带 `#` 的输入对有 opaque path 的 base 解析会失败，把没有主机的 URL 的 `host` 设成空值时给它一个空主机。[详情](changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)
 
 ## 让 React 渲染更快
 
