@@ -332,14 +332,23 @@ static no_inline const uint8_t *rv_unwind(JSContext *ctx, JSStackFrame *sf,
                 continue;
             }
             pos = JS_VALUE_GET_INT(v);
-            if (pos == 0) {
-                /* for_of_start: the next method below it, then the
-                   iterator, closed with a throw and freed by the walk */
+            if (pos <= 0) {
+                /* for_of_start, or DSTART below 0: the next method below
+                   it, then the iterator, closed with a throw and freed by
+                   the walk */
                 JS_FreeValue(ctx, F[rf->temp0 + i - 1]);
                 rv_mask_clear(&mask, i - 1);
                 rt->rv_top = F + rf->fsize;
                 sf->cur_pc = pc;
                 sf->cur_sp = F;
+                if (pos < 0 && JS_IsObject(F[rf->temp0 + i - 2])) {
+                    /* the array of DSTART (regvm-ops-dst.h): its Array
+                       Iterator only when the close would read a return.
+                       With no memory for it, that error goes on in place
+                       of the one thrown. */
+                    if (!js_dst_has_return(ctx) || js_dst_iter(ctx, &F[rf->temp0 + i - 2]))
+                        continue;
+                }
                 JS_IteratorClose(ctx, F[rf->temp0 + i - 2], TRUE);
                 continue;
             }

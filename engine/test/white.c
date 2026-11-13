@@ -1475,6 +1475,37 @@ uint32_t white_regvm_code_hash(JSValueConst f, int *code_len)
     return h;
 }
 
+/* the for_of_start of the function f, converted: how many the pass made
+   DSTART (*dst) and how many W_FOR_OF_START (*win), found by their pcmap
+   entries, which name the old for_of_start and end after the two bytes of
+   the instruction (engine/regvm-ops-dst.h). -1 when f has no register code. */
+int white_regvm_dst_sites(JSValueConst f, int *dst, int *win)
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    int i;
+
+    *dst = *win = 0;
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const RVPcMask *m = &rf->pcmap[i];
+        if (m->old < 0 || m->old >= b->byte_code_len ||
+            b->byte_code_buf[m->old] != OP_for_of_start || m->end < 2)
+            continue;
+        if (rf->code[m->end - 2] == RV_DSTART)
+            (*dst)++;
+        else if (rf->code[m->end - 2] == RV_W_FOR_OF_START)
+            (*win)++;
+    }
+    return 0;
+}
+
 /* Code no compiler makes, made from the function f of bytecode for the
    check of JS_ReadObject (rv_read_check of engine/regvm-entry.h), one kind
    at a time: 0 an instruction that pops more than the stack holds (its
@@ -1653,7 +1684,9 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f)
    finally drops what the gosub had and returns with a catch offset of its
    own under the return address (undefined gosub, return, then drop drop
    catch push_i32 ret, and return at the catch), 2: a gosub whose finally
-   returns at once (undefined gosub, return, then ret). With undo, f gets
+   returns at once (undefined gosub, return, then ret), 3 to 11: records
+   of an array destructured, read past or through their catch offset, or
+   made by no for_of_start (see the cases). With undo, f gets
    back its code and its ret_bits, as it must before it is freed, which
    frees the atoms its code names. -1 when f has too little code, or no
    ret_bits for a gosub. */
@@ -1718,6 +1751,113 @@ int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo)
         put_u32(code + len, ret);
         len += 4;
         code[len++] = OP_ret;
+        code[len++] = OP_return;
+        break;
+    case 3: case 4:
+        /* the iterator of the record of the argument, returned: 3 its
+           catch offset dropped (get_arg0 for_of_start drop), 4 taken off by
+           nip_catch with no close after (get_arg0 for_of_start push_1
+           nip_catch drop), then drop put_loc0 get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        if (kind == 3) {
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_push_1;
+            code[len++] = OP_nip_catch;
+            code[len++] = OP_drop;
+        }
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        break;
+    case 5:
+        /* the first element into loc0, then the record closed as the return
+           of a generator from a yield closes it (emit_return): get_arg0
+           for_of_start for_of_next 0 drop put_loc0 push_1 nip_catch rot3r
+           undefined iterator_close drop get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_push_1;
+        code[len++] = OP_nip_catch;
+        code[len++] = OP_rot3r;
+        code[len++] = OP_undefined;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_drop;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        break;
+    case 6: case 7: case 8:
+        /* a record no for_of_start made, whose next method is the
+           JS_UNINITIALIZED of a local in its dead zone, which get_loc0
+           reads with no check: set_loc_uninitialized 0, then 6 null, 7 and
+           8 get_arg0, then get_loc0 undefined, then 6 and 7 for_of_next 0
+           drop return, 8 iterator_close undefined return */
+        code[len++] = OP_set_loc_uninitialized;
+        put_u16(code + len, 0);
+        len += 2;
+        code[len++] = kind == 6 ? OP_null : OP_get_arg0;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_undefined;
+        if (kind < 8) {
+            code[len++] = OP_for_of_next;
+            code[len++] = 0;
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_iterator_close;
+            code[len++] = OP_undefined;
+        }
+        code[len++] = OP_return;
+        break;
+    case 9:
+        /* a finally run with the record of the argument under its return
+           address, which it leaves as it is: 0 get_arg0, 1 for_of_start,
+           2 gosub 14, 7 for_of_next 0, 9 drop, 10 put_loc0,
+           11 iterator_close, 12 get_loc0, 13 return, 14 ret */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        code[len++] = OP_gosub;
+        put_u32(code + len, 14 - 3);
+        len += 4;
+        ret = len;
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_get_loc0;
+        code[len++] = OP_return;
+        code[len++] = OP_ret;
+        break;
+    case 10: case 11:
+        /* the catch offset of the record of the argument read: 10 by
+           iterator_get_value_done, which writes the catch offset 0 of an
+           iterator back (get_arg0 for_of_start object
+           iterator_get_value_done drop drop), 11 by swap, which a read
+           refuses (get_arg0 for_of_start swap swap), then for_of_next 0
+           drop put_loc0 iterator_close get_loc0 return */
+        code[len++] = OP_get_arg0;
+        code[len++] = OP_for_of_start;
+        if (kind == 10) {
+            code[len++] = OP_object;
+            code[len++] = OP_iterator_get_value_done;
+            code[len++] = OP_drop;
+            code[len++] = OP_drop;
+        } else {
+            code[len++] = OP_swap;
+            code[len++] = OP_swap;
+        }
+        code[len++] = OP_for_of_next;
+        code[len++] = 0;
+        code[len++] = OP_drop;
+        code[len++] = OP_put_loc0;
+        code[len++] = OP_iterator_close;
+        code[len++] = OP_get_loc0;
         code[len++] = OP_return;
         break;
     default:

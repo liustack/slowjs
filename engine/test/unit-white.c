@@ -131,6 +131,7 @@ int white_regvm_scratch_drain(JSContext *ctx, int in_pass);
 int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
+int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 int white_drop_vardefs(JSValueConst f, int on);
@@ -6207,6 +6208,275 @@ static void test_regvm_ret_value(void)
     vm_free(&v);
 }
 
+/* the global function name of v.ctx called with the array [7, 8]: its
+   result, the exception thrown, or NULL with *fun the function */
+static JSValue dst_call(VM *v, const char *name, JSValue *fun)
+{
+    JSValue g = JS_GetGlobalObject(v->ctx), arr, r;
+
+    *fun = JS_GetPropertyStr(v->ctx, g, name);
+    JS_FreeValue(v->ctx, g);
+    arr = JS_NewArray(v->ctx);
+    JS_SetPropertyUint32(v->ctx, arr, 0, JS_NewInt32(v->ctx, 7));
+    JS_SetPropertyUint32(v->ctx, arr, 1, JS_NewInt32(v->ctx, 8));
+    r = JS_Call(v->ctx, *fun, JS_UNDEFINED, 1, (JSValueConst *)&arr);
+    JS_FreeValue(v->ctx, arr);
+    return r;
+}
+
+/* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
+   makes DSTART for the for_of_start of a destructuring, and not for a
+   for-of loop, yield* or a destructuring with a yield in a default (its
+   return takes the catch offset off with nip_catch). The record of a DSTART
+   holds the array in place of the iterator, which no instruction but
+   for_of_next and iterator_close may read (rv_dst_scan): code read by
+   JS_ReadObject that drops the catch offset of the record, or takes it off
+   with nip_catch, and returns the iterator, gets the Array Iterator, from
+   the old W_FOR_OF_START. So does nip_catch then rot3r, undefined and
+   iterator_close, which closes the record with the return of
+   %ArrayIteratorPrototype% when it has one. */
+/* A record of DSTART keeps the built-in next with a reference, and the
+   close, the unwinding and a read at a hole make the Array Iterator when
+   they need it: each call of js_malloc_rt failing in turn, also the two of
+   making it, ends in the out of memory error or the result, and leaves no
+   reference behind, which vm_free would find as a block left in the
+   runtime (status 87). */
+static void test_regvm_dst_alloc(void)
+{
+    static const char setup[] =
+        "var AIP = Object.getPrototypeOf([][Symbol.iterator]());"
+        "AIP.return = function () { return {}; };"
+        "globalThis.close = function () { 'use strict'; const [x] = [1, 2, 3]; return 'c' + x; };"
+        "globalThis.unwind = function () { 'use strict'; try { const [x, y = (() => { throw 'e'; })()] ="
+        " [1, undefined]; } catch (e) { return 'u' + e; } };"
+        "globalThis.hole = function () { 'use strict'; var a = [1, 2]; a.length = 3;"
+        " const [x, y, z = 'z'] = a; return x + y + z; }; 0";
+    static const char *const names[] = { "close", "unwind", "hole" };
+    static const char *const want[] = { "c1", "ue", "3z" };
+    int c, fail, n, made, ooms;
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r;
+            const char *s;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            JS_FreeValue(v.ctx, g);
+            /* converted, and the built-in next made */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            JS_FreeValue(v.ctx, r);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                s = JS_ToCString(v.ctx, r);
+                CHECK(s && strcmp(s, want[c]) == 0, "%s, call %d failing: %s, not %s", names[c], fail,
+                      s ? s : "?", want[c]);
+                JS_FreeCString(v.ctx, s);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        CHECK(n >= 2 && ooms >= 2, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+}
+
+static void test_regvm_dst(void)
+{
+    static const char src[] =
+        "globalThis.f = function (a) { 'use strict'; const [x, y] = a; let s = 0;"
+        " for (const v of a) s += v; return x + y + s; };"
+        "globalThis.g = function* (a) { 'use strict'; yield* a; const [p = yield 1] = []; return p; };"
+        "globalThis.h = function (a) { 'use strict'; let x = a; const [p, q, r] = [x, x, x];"
+        " return [p, q, r, x, a]; }; 0";
+    static const char ret_src[] =
+        "globalThis.closed = 0; Object.getPrototypeOf([][Symbol.iterator]()).return ="
+        " function () { globalThis.closed++; return {}; }; 0";
+    VM v;
+    JSValue fun, r;
+    char *t;
+    int kind, rc, dst, win;
+
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, src), "the setup threw");
+    r = dst_call(&v, "f", &fun);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 30, "f([7, 8]) is not 30");
+    CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0 && dst == 1 && win == 1,
+          "f: %d DSTART and %d W_FOR_OF_START, not 1 and 1", dst, win);
+    JS_FreeValue(v.ctx, r);
+    JS_FreeValue(v.ctx, fun);
+    CHECK(eval_is(v.ctx, "var it = g([1]); [it.next().value, it.next().value, it.return(5).value,"
+                  " it.next().done].join()", "1,1,5,true"),
+          "g: the generator gives other values");
+    {
+        JSValue gl = JS_GetGlobalObject(v.ctx);
+        fun = JS_GetPropertyStr(v.ctx, gl, "g");
+        JS_FreeValue(v.ctx, gl);
+        CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0 && dst == 0 && win == 2,
+              "g: %d DSTART and %d W_FOR_OF_START, not 0 and 2", dst, win);
+        JS_FreeValue(v.ctx, fun);
+    }
+    vm_free(&v);
+
+    for (kind = 3; kind <= 5; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "h");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        if (kind == 5)
+            CHECK(eval_ok(v.ctx, ret_src), "kind 5: the return could not be set");
+        r = dst_call(&v, "h", &fun);
+        t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+        CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0, "kind %d: no register code", kind);
+        CHECK(dst == 0 && win == 1, "kind %d: %d DSTART and %d W_FOR_OF_START, not 0 and 1",
+              kind, dst, win);
+        if (kind < 5) {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, gl, "got", JS_DupValue(v.ctx, r));
+            JS_FreeValue(v.ctx, gl);
+            CHECK(eval_is(v.ctx, "Object.prototype.toString.call(got)", "[object Array Iterator]"),
+                  "kind %d: the iterator returned is no Array Iterator (tag %d, %s)",
+                  kind, (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        } else {
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 7,
+                  "kind 5: the first element is not 7 (tag %d, %s)", (int)JS_VALUE_GET_TAG(r),
+                  t ? t : "no exception");
+            CHECK(eval_is(v.ctx, "globalThis.closed", "1"), "kind 5: the return ran other than once");
+        }
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+
+    /* a record no for_of_start made, of the JS_UNINITIALIZED that get_loc
+       reads from a local in its dead zone as its next method and undefined
+       as its catch offset, is the record it is: for_of_next calls that
+       next (TypeError) with null (6) or the array (7) as the iterator, and
+       iterator_close calls the return of the array (8). */
+    for (kind = 6; kind <= 8; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        CHECK(eval_ok(v.ctx, "globalThis.closed = 0; Array.prototype.return ="
+                      " function () { globalThis.closed++; return {}; }; 0"),
+              "kind %d: the return could not be set", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "h");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        CHECK(rc == 0, "kind %d: the read refuses it (%s)", kind, t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        r = dst_call(&v, "h", &fun);
+        t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+        if (kind < 8)
+            CHECK(t && strstr(t, "TypeError"), "kind %d: not a TypeError but tag %d (%s)",
+                  kind, (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        else
+            CHECK(JS_IsUndefined(r) && eval_is(v.ctx, "globalThis.closed", "1"),
+                  "kind 8: the return of the array ran other than once (tag %d, %s)",
+                  (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+
+    /* the catch offset of a record of DSTART is the index of its next
+       element, below 0, which only for_of_next and iterator_close of the
+       record read: a finally run with the record under its return address
+       leaves it, and the ret goes back by the depth and the catch the pass
+       found (9: DSTART, 7). iterator_get_value_done, which would write the
+       catch offset 0 back, gets the old W_FOR_OF_START (10: 7, where DSTART
+       would leave the array as the iterator, and the built-in next would
+       throw a TypeError on it), and a read refuses swap (11). */
+    for (kind = 9; kind <= 11; kind++) {
+        v = vm_new();
+        CHECK(eval_ok(v.ctx, src), "kind %d: the setup threw", kind);
+        CHECK(eval_ok(v.ctx, "globalThis.k = function (a) { 'use strict'; let x = a;"
+                      " try { const [p, q, r] = [x, x, x]; return [p, q, r, x, a]; }"
+                      " finally { x = 0; } }; 0"), "kind %d: k could not be made", kind);
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "k");
+            JS_FreeValue(v.ctx, gl);
+        }
+        if (white_crafted_code(v.ctx, fun, kind, 0) != 0) {
+            CHECK(0, "kind %d: the function has no room for the code", kind);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        rc = white_regvm_read_check(v.ctx, fun);
+        t = exception_text(v.ctx);
+        free(t);
+        JS_FreeValue(v.ctx, fun);
+        if (kind == 11) {
+            CHECK(rc != 0, "kind 11: the read lets swap read a catch offset");
+        } else {
+            CHECK(rc == 0, "kind %d: the read refuses it", kind);
+            r = dst_call(&v, "k", &fun);
+            t = JS_IsException(r) ? exception_text(v.ctx) : NULL;
+            CHECK(white_regvm_dst_sites(fun, &dst, &win) == 0, "kind %d: no register code", kind);
+            CHECK(kind == 9 ? dst == 1 && win == 0 : dst == 0 && win == 1,
+                  "kind %d: %d DSTART and %d W_FOR_OF_START", kind, dst, win);
+            CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 7,
+                  "kind %d: the first element is not 7 (tag %d, %s)", kind,
+                  (int)JS_VALUE_GET_TAG(r), t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+            white_crafted_code(v.ctx, fun, kind, 1);
+            JS_FreeValue(v.ctx, fun);
+            vm_free(&v);
+            continue;
+        }
+        {
+            JSValue gl = JS_GetGlobalObject(v.ctx);
+            fun = JS_GetPropertyStr(v.ctx, gl, "k");
+            JS_FreeValue(v.ctx, gl);
+        }
+        white_crafted_code(v.ctx, fun, kind, 1);
+        JS_FreeValue(v.ctx, fun);
+        vm_free(&v);
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -6298,6 +6568,8 @@ int main(int argc, char **argv)
     test_regvm_run_alloc();
     test_regvm_bad_ret();
     test_regvm_ret_value();
+    test_regvm_dst();
+    test_regvm_dst_alloc();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
