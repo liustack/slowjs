@@ -99,7 +99,7 @@ TIFA_SSR_SHOP=1 go test -run '^$' -bench ShopParallel -benchtime 15s ./test/ssr
 
 - [testing.md](testing.zh-CN.md#给两个构建计时对比) 里的工具能做出 C 引擎的位置、轮流运行构建并判断结果（`bench build`、`bench run`、`bench judge`），还能数指令（`bench cg`）。手工做：C 引擎（`internal/cengine`）：复制生成的 `*_amd64.s` 文件，在副本上运行 `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_RegvmRun_block:16`（不移动就用 `shift:0` 和 `front:...:0`，用你的二进制里第一个引擎函数的名字，`go tool nm -n` 能看到），然后用这份副本构建。`shift` 的字节在一条 `RET` 之后，从不执行。`front` 的字节在解释器函数体开头的 `PCALIGN` 之后，每次调用执行一次。
 
-不是 16 的倍数的 `front`（8、24、40、56）会把函数体和它代码后面的常量池一起移动，所以常量池离开了它的 16 字节对齐。在 amd64 上，寄存器循环 `JS_RegvmRun` 用 `xorpd` 从常量池读一个 16 字节的掩码（用来翻转 double 的正负号），而 `xorpd` 的内存操作数必须落在 16 字节上。发布的布局里常量池在 16 字节上，`front` 不是 16 的倍数时就不在。
+不是 16 的倍数的 `front`（8、24、40、56）会把函数体和它代码后面的常量池一起移动，所以常量池离开了它的 16 字节对齐。在 amd64 上，寄存器循环 `JS_RegvmRun` 用 `xorpd` 从常量池读一个 16 字节的掩码（用来翻转 double 的正负号），而 `xorpd` 的内存操作数必须落在 16 字节上。发布的布局里常量池在 16 字节上，`front` 不是 16 的倍数时就不在。这样的布局在脚本第一次给 double 取负时就会出错，所以 front 只能是 0、16、32 和 48：xform 和 `bench build` 的 `ParsePosition` 会拒绝其他值。中间的位置要用生成器来做：`-align64 JS_RegvmRun:8` 把函数体放在 8 上，常量池仍在 16 字节对齐上。
 
 ## C 引擎
 

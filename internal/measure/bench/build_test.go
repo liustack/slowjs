@@ -59,7 +59,7 @@ func TestParsePositions(t *testing.T) {
 	for _, c := range []struct {
 		p Position
 		s string
-	}{{Position{0, 0, 0}, "0.0"}, {Position{64, 8, 2208}, "64.8.2208"}, {Position{0, 56, 32}, "0.56.32"}} {
+	}{{Position{0, 0, 0}, "0.0"}, {Position{64, 16, 2208}, "64.16.2208"}, {Position{0, 48, 32}, "0.48.32"}} {
 		if c.p.String() != c.s {
 			t.Errorf("String of %v = %s, want %s", c.p, c.p.String(), c.s)
 		}
@@ -67,7 +67,7 @@ func TestParsePositions(t *testing.T) {
 			t.Errorf("ParsePosition(%s) = %v, %v", c.s, q, err)
 		}
 	}
-	for _, bad := range []string{"0.0.16x", "0.0.8", "0.0.8192", "0.0.-32", "0.0.32.0", "0.0.0"} {
+	for _, bad := range []string{"0.0.16x", "0.0.8", "64.8.2208", "0.0.8192", "0.0.-32", "0.0.32.0", "0.0.0"} {
 		if _, err := ParsePosition(bad); err == nil {
 			t.Errorf("%q accepted", bad)
 		}
@@ -352,16 +352,19 @@ func TestProtocolLayouts(t *testing.T) {
 		offs = append(offs, s%4096)
 	}
 	checkSpread(t, "the shifts", offs)
-	// every front of the 64-byte block twice
-	for f := 0; f < 64; f += 8 {
-		if fronts[f] != 2 {
+	// every front that keeps the interpreter's pools on 16 bytes, 4 times
+	for f := 0; f < 64; f += 16 {
+		if fronts[f] != 4 {
 			t.Errorf("front %d %d times", f, fronts[f])
 		}
 	}
-	if len(Full()) != 16 {
+	if len(fronts) != 4 {
+		t.Errorf("fronts %v", fronts)
+	}
+	if len(Full()) != 8 || len(All()) != 8 {
 		t.Error("full")
 	}
-	for _, bad := range []string{"48.0", "0.60", "8192.0", "-32.0", "0.12"} {
+	for _, bad := range []string{"48.0", "0.60", "8192.0", "-32.0", "0.12", "0.8", "64.24.1120", "0.56"} {
 		if _, err := ParsePosition(bad); err == nil {
 			t.Errorf("%s accepted", bad)
 		}
@@ -385,16 +388,16 @@ func checkSpread(t *testing.T, what string, offs []int) {
 }
 
 // TestProtocolSections: the three sections of the engine have their own place
-// modulo 64, and each is one of two, since Go starts a function on 32. The code
-// from the first engine function to the matcher follows the shift, the code
-// from the matcher to the interpreter the second shift (the matcher and the
-// interpreter take up a multiple of 64 of either, so the sum is no use), and the
-// code after the interpreter the front. In each half of the set, each of the
-// first two is 32 bytes into the block in 4 layouts, and each of the 5 two-way
-// choices (shift, shift2 and the 3 bits of the front) is independent of the
-// others: any two have 2 layouts with both set. The places in the page of the
-// code of the first two sections, taken as the shift and the shift plus the
-// second shift, are 16 different ones about 256 bytes apart.
+// modulo 64. The code from the first engine function to the matcher follows the
+// shift, the code from the matcher to the interpreter the second shift (each
+// one of two places, since Go starts a function on 32), and the interpreter the
+// front, one of the 4 multiples of 16 that keep its constant pools on 16 bytes
+// (plus the half block of the second shift for the register loop, which is on
+// 32 bytes). The 2 bits of the front and whether the shift and the second shift
+// are 32 bytes into a block are the 16 layouts, each once, so no section's
+// place follows another's. The places in the page of the code of the first two
+// sections, taken as the shift and the shift plus the second shift, are 16
+// different ones about 256 bytes apart.
 func TestProtocolSections(t *testing.T) {
 	ps := Protocol()
 	if ps[0].Shift2 != 0 {
@@ -402,46 +405,36 @@ func TestProtocolSections(t *testing.T) {
 	}
 	var between []int
 	var all [2][2]int
-	for h, half := range [2][]Position{ps[:8], ps[8:]} {
-		var col [5][8]bool
-		for i, p := range half {
-			if p.Shift2%32 != 0 || p.Shift2 < 0 || p.Shift2 >= MaxShift {
-				t.Errorf("second shift of %s", p)
-			}
-			if p.Shift2 == 0 && p != Formal {
-				t.Errorf("%s has no second shift", p)
-			}
-			if p.Front != 8*i {
-				t.Errorf("%s: the %dth of a half has front %d", p, i, p.Front)
-			}
-			col[0][i], col[1][i] = p.Shift%64 == 32, p.Shift2%64 == 32
-			for b := range 3 {
-				col[2+b][i] = i>>b&1 == 1
-			}
-			all[b2i(col[0][i])][b2i(col[1][i])]++
-			between = append(between, (p.Shift+p.Shift2)%4096)
+	seen := map[[3]int]bool{}
+	loop := map[int]int{}
+	for i, p := range ps {
+		if p.Shift2%32 != 0 || p.Shift2 < 0 || p.Shift2 >= MaxShift {
+			t.Errorf("second shift of %s", p)
 		}
-		for x := range col {
-			n := 0
-			for _, v := range col[x] {
-				n += b2i(v)
-			}
-			if n != 4 {
-				t.Errorf("half %d: choice %d is set in %d layouts", h, x, n)
-			}
-			for y := x + 1; y < len(col); y++ {
-				n := 0
-				for i := range 8 {
-					n += b2i(col[x][i] && col[y][i])
-				}
-				if n != 2 {
-					t.Errorf("half %d: choices %d and %d are both set in %d layouts", h, x, y, n)
-				}
-			}
+		if p.Shift2 == 0 && p != Formal {
+			t.Errorf("%s has no second shift", p)
 		}
+		if p.Front%16 != 0 || p.Front != protocolFront(i) {
+			t.Errorf("%s: front %d", p, p.Front)
+		}
+		k := [3]int{p.Front, p.Shift % 64, p.Shift2 % 64}
+		if seen[k] {
+			t.Errorf("%s: front %d with the shifts %d and %d into a block twice", p, k[0], k[1], k[2])
+		}
+		seen[k] = true
+		all[b2i(p.Shift%64 == 32)][b2i(p.Shift2%64 == 32)]++
+		loop[(p.Front+p.Shift2)%64]++
+		between = append(between, (p.Shift+p.Shift2)%4096)
+	}
+	if len(seen) != 16 {
+		t.Errorf("%d different sets of places", len(seen))
 	}
 	if all != [2][2]int{{4, 4}, {4, 4}} {
 		t.Errorf("shift and second shift 32 bytes into the block: %v", all)
+	}
+	// the register loop, on 32 bytes, at each multiple of 16 four times
+	if loop[0] != 4 || loop[16] != 4 || loop[32] != 4 || loop[48] != 4 {
+		t.Errorf("places of a body on 32 bytes: %v", loop)
 	}
 	checkSpread(t, "the code between the matcher and the interpreter", between)
 }
