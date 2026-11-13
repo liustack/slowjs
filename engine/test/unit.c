@@ -906,6 +906,46 @@ static void test_atom_keys(void)
     host_free_runtime(rt);
 }
 
+/* o[k] with a key that is its own atom reads the property by the atom of
+   the key, with no reference of its own (engine/regvm-ops-object.h,
+   rv_getel_atom): no atom is left or freed early, whether the key is a
+   local, a temp holding its last reference, or one of many kept keys, and
+   whether the read finds an own property, one on a prototype, or nothing. */
+static void test_getel_atom_refs(void)
+{
+    static const char setup[] =
+        "var bad = 0, n = 0, ks = null;\n"
+        "function rd(o, k) { return o[k] }\n"
+        "function rdt(o, k) { return o[String(k)] }\n"
+        "function rdm(o, i) { return o[Object.keys({ ['gaM' + i]: 1 })[0]] }\n"
+        "var own = { gaOwn: 1 }, under = Object.create({ gaUp: 2 });\n"
+        "for (var i = 0; i < 3; i++) { rd(own, 'gaOwn'); rd(under, 'gaUp'); rdt(own, 'gaNone'); rdm(own, -1) }\n";
+    static const char reads[] =
+        "{ for (let i = 0; i < 200; i++) {\n"
+        "    let k = Object.keys({ ['gaT' + i]: 1 })[0], o = { ['gaT' + i]: i };\n"
+        "    if (rd(o, k) !== i || rd(Object.create(o), k) !== i || rd(own, k) !== undefined) bad++;\n"
+        "    if (rdt(o, Object.keys({ ['gaU' + i]: 1 })[0]) !== undefined || rdm(o, i) !== undefined) bad++;\n"
+        "    n++ }\n"
+        "  ks = []; for (let i = 0; i < 200; i++) ks.push(Object.keys({ ['gaK' + i]: 1 })[0]);\n"
+        "  for (let i = 0; i < 200; i++) if (rd(own, ks[i]) !== undefined || rdt(under, ks[i]) !== undefined) bad++;\n"
+        "  ks = null }\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSMemoryUsage before, after;
+
+    CHECK(eval(ctx, setup), "the script threw");
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &before);
+    CHECK(eval(ctx, reads), "the script threw");
+    JS_RunGC(rt);
+    JS_ComputeMemoryUsage(rt, &after);
+    CHECK(after.atom_count == before.atom_count, "%lld atoms left",
+          (long long)(after.atom_count - before.atom_count));
+    CHECK(eval_is(ctx, "n + ' ' + bad", "200 0"), "the reads");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The key cache across the cycle collector: an object in a cycle whose keys
    were listed is freed by the collector with its shape, and the memory of
    that shape goes to the shapes of new objects with other kinds of keys,
@@ -4754,6 +4794,7 @@ int main(void)
     test_object_lit_size();
     test_object_lit_one_block();
     test_atom_keys();
+    test_getel_atom_refs();
     test_own_keys_collected();
     test_interrupt_points();
     test_search_linear();
