@@ -41,6 +41,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A read refuses bytecode in which a catch offset leaves its place or a jump goes before the start of the code | Unreleased | [c-engine.md](c-engine.md#catch-offsets-and-jumps-stay-in-their-function) |
 | Every jump table of arm64 takes 4 bytes an entry, and the generator refuses a table its lowering made too narrow | Unreleased | [c-engine.md](c-engine.md#jump-tables-on-arm64-take-4-bytes-an-entry) |
 | A call copies its last arguments itself when they are locals, arguments or `this`, where a `MOV` came before it for each (`CALLS`, `CALLSD`) | Unreleased | [c-engine.md](c-engine.md#a-call-copies-its-last-locals-into-its-window) |
+| `o[k]` with the key in a local or an argument reads the key without a reference | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-read-without-a-reference) |
+| `o[k] = v` with the key in a local or an argument sets it without a reference to the key | Unreleased | [c-engine.md](c-engine.md#a-key-in-a-local-is-set-without-a-reference) |
+| `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | Unreleased | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
+| An array literal moves the references of its elements into the array | Unreleased | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
 
 ## Commits of upstream QuickJS
 
@@ -226,6 +230,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Object literals have the room of an empty object | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#object-literals-have-the-room-of-an-empty-object) |
 | A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 | An array that is appended to takes room for 8 elements at first | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
+| The `in` operator walks a prototype chain without references | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
 
 ## Memory
 

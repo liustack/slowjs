@@ -41,6 +41,10 @@ read_when:
 | 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
 | arm64 的每张跳转表每项占 4 字节，生成器拒绝被 lowering 撑得太窄的表 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-的跳转表每项占-4-字节) |
 | 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
+| 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
+| 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |
+| `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
+| 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 
 ## 上游 QuickJS 的提交
 
@@ -226,6 +230,7 @@ read_when:
 | 对象字面量的 shape 至少有空对象的空间 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象字面量的-shape-至少有空对象的空间) |
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
+| `in` 运算符遍历原型链时不加引用 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 
 ## 内存
 

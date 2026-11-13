@@ -1594,6 +1594,138 @@ static void test_copy_props_oom(void)
     sweep_register = NULL;
 }
 
+/* JS_HasProperty walks a prototype chain, through `in` with keys made at run
+   time, the fields of property descriptors and the holes that every and
+   concat look up: with too little memory (a key, the number a typed array
+   reads from a key, a descriptor, a result) it fails with the out of memory
+   error and frees each object of the chains once. */
+static void test_has_property_oom(void)
+{
+    static const char setup[] =
+        "var base = { a: 1 }, mid = Object.create(base), arr = [1, 2];\n"
+        "mid.b = 2;\n"
+        "var top = Object.create(mid), onArr = Object.create(arr);\n"
+        "var onTa = Object.create(new Uint8Array(4));\n"
+        "function run() {\n"
+        "  var n = 0, out = [];\n"
+        "  for (var i = 0; i < 8; i++) {\n"
+        "    if (('a' + (i % 2 ? '' : 'x')) in top) n++;\n"
+        "    if (i in onArr) n++;\n"
+        "    if ((i + '.5') in onTa || ('' + i) in onTa) n++;\n"
+        "    var d = Object.create({ enumerable: true, configurable: i % 2 == 0 });\n"
+        "    d.value = i;\n"
+        "    var o = Object.defineProperty({}, 'p' + i, d);\n"
+        "    out.push(Object.keys(o).length);\n"
+        "  }\n"
+        "  var h = [1, , 3, , 5], seen = 0;\n"
+        "  h.every(function () { seen++; return true });\n"
+        "  return n + ' ' + out.join('') + ' ' + seen + ' ' + [0].concat(h).length;\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "10 11111111 3 6", NULL };
+
+    sweep("has property", "hasprop.js", setup, "run()", want, 16384);
+}
+
+/* o[k] with the key in a local: with too little memory (the atom of a key
+   made at run time, the string a key object gives, the result) it fails
+   with the out of memory error and frees each key once. */
+static void test_getel_local_key_oom(void)
+{
+    static const char setup[] =
+        "var o = { k0: 'a', k1: 'b', k2: 'c', 5: 'five' }, arr = [1, 2, 3];\n"
+        "function get(obj, key) { return obj[key] }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'k' + (i % 3) } };\n"
+        "    out.push(get(o, k), get(o, ko), get(arr, i % 4), get(arr, '' + (i % 3)), get(o, 5));\n"
+        "  }\n"
+        "  return out.join('');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "aa11fivebb22fivecc33fivea1fiveab12fivebc23five", NULL };
+
+    sweep("local key", "getel.js", setup, "run()", want, 16384);
+}
+
+/* o[k] = v with the key in a local: with too little memory (the atom of a
+   key made at run time, the string a key object gives, the property and
+   the room of the object or the array) it fails with the out of memory
+   error and frees each key and value once. */
+static void test_putel_local_key_oom(void)
+{
+    static const char setup[] =
+        "function put(obj, key, v) { obj[key] = v }\n"
+        "function run() {\n"
+        "  var o = {}, arr = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var k = 'k' + (i % 4);\n"
+        "    var ko = { toString: function () { return 'p' + (i % 3) } };\n"
+        "    put(o, k, 'v' + i); put(o, ko, i); put(arr, i, 'a' + i); put(arr, '' + (i + 6), i);\n"
+        "  }\n"
+        "  return Object.keys(o).map(function (k) { return k + o[k] }).join() + '|' + arr.join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "k0v4,p03,k1v5,p14,k2v2,p25,k3v3|a0,a1,a2,a3,a4,a5,0,1,2,3,4,5", NULL };
+
+    sweep("local key put", "putel.js", setup, "run()", want, 16384);
+}
+
+/* The truth of strings, ropes and objects in locals and temps: with too
+   little memory (the strings and objects made, the result) it fails with
+   the out of memory error and frees each value once. */
+static void test_truth_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var n = 0, s = '';\n"
+        "  for (var i = 0; i < 40; i++) {\n"
+        "    var t = i % 3 ? 'v' + i : '', o = i % 4 ? {} : null;\n"
+        "    s += 'abcdefghijabcdefghij';\n"
+        "    if (t) n++;\n"
+        "    if (!o) n += 100;\n"
+        "    if (s && t) n += 10000;\n"
+        "    var r = t + s;\n"
+        "    if (r || o) n += 1000000;\n"
+        "  }\n"
+        "  return String(n);\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "40261026", NULL };
+
+    sweep("truth", "truth.js", setup, "run()", want, 16384);
+}
+
+/* An array literal takes the references of its elements (OP_array_from,
+   js_create_array_free): with too little memory for the array or its
+   elements it fails with the out of memory error and frees each element
+   once, objects and strings made for it too. */
+static void test_array_literal_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var keep = [], s = '';\n"
+        "  for (var i = 0; i < 24; i++) {\n"
+        "    var o = { i: i };\n"
+        "    s += 'abcdefghij';\n"
+        "    var a = [o, 'k' + i, s + i, [i, o], { o: o }, i];\n"
+        "    if (i % 6 === 0) keep.push(a);\n"
+        "  }\n"
+        "  return keep.map(function (a) { return a[0].i + a[1] + a[2].length + a[3][1].i + a[4].o.i + a[5]; }).join();\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "0k011000,6k671666,12k12132121212,18k18192181818", NULL };
+
+    sweep("array literal", "array_literal.js", setup, "run()", want, 16384);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2350,6 +2482,11 @@ int main(void)
     test_array_room_oom();
     test_string_append_oom();
     test_copy_props_oom();
+    test_has_property_oom();
+    test_getel_local_key_oom();
+    test_putel_local_key_oom();
+    test_truth_oom();
+    test_array_literal_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();

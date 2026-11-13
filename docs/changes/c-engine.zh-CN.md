@@ -719,3 +719,51 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 生成器不依赖这个标志。lowering 自己计算代码大小（每条指令 4 字节，标签不占地方，对齐从函数所在的位置算起，即 16 字节的倍数或它在 64 字节上的位置，超过 max-skip 的填充不算），遇到跳转表某一项的距离超出它的宽度，或者窄形式的某一项要往回跳，就拒绝这个函数，并报出表、这一项和算出的步数（`internal/goasm/gen/arm64_jumptable.go` 的 `a64CheckJumpTables`）。把窄形式重新打开时，它在 llvm-mc 算出的同样 272 步上拒绝 `js_start_tag`。
 
 测试：`TestA64CheckJumpTables` 让每种宽度取它能存的最远距离，再多一步就拒绝，中间隔着对齐时也一样，并拒绝往回的项、不在代码里的标签和它算不出大小的代码。`TestLowerARM64EngineJumpTable` lower 一个函数，它的 1 字节表在 llc 的代码里放得下（250 步），一旦跨度里的 5 个调用让 lowering 后的代码变长，就被拒绝。
+
+## 局部变量里的键不加引用就读
+
+版本：Unreleased。
+
+键在局部变量或参数里的 `o[k]`（寄存器循环的 GETEL 和 GETELT，数组和类型化数组的快路径答不上时）以前先给键加一个引用，`JS_GetPropertyValue` 把键变成 atom 之后再放掉。现在循环像读 `o` 一样就地读这个键，`JS_GetPropertyValueConst` 读完不动它。键在临时槽里时照旧拿走再释放。
+
+为什么安全：键的 `toString` 或 `valueOf`、getter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽。被闭包捕获的局部变量，寄存器 pass 会在任何代码运行之前把它复制到临时槽（`rv_push`），函数有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。所以这个槽在调用返回之前一直握着它的引用，结果在调用之后才存（`rv_put`），存回键自己的槽也一样。`JS_GetPropertyValue` 还是原来的函数（带 `take` 的 `js_get_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选。
+
+收益：MUI 的 orders 页每次渲染少 0.52% 的指令，其他页面少 0.06% 到 0.13%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。
+
+## 值的真假不加引用就判断
+
+版本：Unreleased。
+
+`JS_ToBool` 以前先给值加一个引用，知道它是真是假之后再放掉。现在它就地读这个值（`take` 为 FALSE 的 `js_to_bool`），`JS_ToBoolFree` 还是原来的函数。寄存器循环的分支（`if`、`while`、`!`、`&&`、`||`、条件运算符）对局部变量或参数经 `JS_ToBool` 判断，对临时槽经 `JS_ToBoolFree` 判断，以前两者都先拿一个引用（`rv_take`）。保留操作数的 `&&` 和 `||` 也经 `JS_ToBool` 判断。`Boolean`、RegisterStartTag 的标签、promise 的任务和另外几个内建函数调用 `JS_ToBool`，得到同样的收益。
+
+为什么安全：判断一个值的真假不运行代码，不分配内存，也不读中断标志。它读字符串或 rope 的长度、BigInt 的符号和数位、对象的 `is_HTMLDDA` 标记，或者标签本身。这期间没有什么能释放这个值，所以那个引用什么也没保住。循环里没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：workbench studio 页每次渲染少 0.21% 的指令，MUI 的 orders 页少 0.12%，商店的页面少 0.05% 到 0.09%，React 的少 0.02%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#不加引用判断值的真假)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-basic.h`）。`engine/test/compare/truth_of_locals.js` 在各种分支和会问真假的内建函数里，判断局部变量、参数和临时槽里的字符串、rope、对象、函数、symbol、BigInt 和数字，还判断局部变量里最后一个其他引用已经没了、又经过一次回收的字符串和对象。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把对运行时造出的字符串和对象的分支扫一遍（`test_truth_oom`）。
+
+## 数组字面量直接接过元素的引用
+
+版本：Unreleased。
+
+`[a, b, c]` 这样的数组字面量（OP_array_from，在寄存器循环的窗口里和折叠的栈里）以前用 `js_create_array` 造数组，它给每个元素加一个新引用，然后再放掉每个元素在栈上的那个引用。现在它把栈上的引用直接搬进数组（`js_create_array_free`，上游 QuickJS 的解释器原来就有它），数组造不出来时释放这些元素。对其他调用方，`js_create_array` 还是原来的函数（`take` 为 FALSE 的 `js_create_array_in`）。
+
+为什么安全：在这两步之间只是造数组（`JS_NewArray`，`expand_fast_array`），不运行代码，也不读中断标志。其中某次分配触发的回收不会释放栈上握着的东西。元素在最后一次分配之后才搬进去，所以数组从不握着不属于它的引用。分配失败时每个元素释放一次，和以前的 `rv_create_array_free` 一样，测试用的抛错注入（`rv_inj_take`）也这样释放。这个操作之后，元素原来所在的槽在栈顶之上，再也没有谁读或释放它们。没有新分支：每份拷贝里 `take` 都是常量。
+
+收益：各页面每次渲染少 0.17% 到 0.34% 的指令，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#接过元素引用的数组字面量)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-window.h`）。`engine/test/compare/array_literal_temps.js` 造各种字面量：元素是只有这一个引用的对象、字符串、rope、symbol、BigInt 和函数，元素的代码触发回收或丢掉前一个元素握着的东西，0 到 40 个元素，嵌套的，半路抛错的，带展开的，在循环里的，以及在深到要折叠的栈上的。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的对象和字符串组成的字面量扫一遍（`test_array_literal_oom`）。
+
+## 局部变量里的键不加引用就写
+
+版本：Unreleased。
+
+键在局部变量或参数里的 `o[k] = v`（寄存器循环的 PUTEL，数组的快路径答不上时）以前先给键加一个引用，`JS_SetPropertyValue` 把键变成 atom 之后再放掉。现在循环像[读 `o[k]`](#局部变量里的键不加引用就读) 一样就地传这个键，经过 `JS_SetPropertyValueConst`，它写完不动这个键。键在临时槽里时和值一样照旧拿走。
+
+为什么安全：键的 `toString` 或 `valueOf`、setter 和 Proxy trap 都会在这次调用里运行，但它们谁都写不到键所在的槽，理由和读的时候一样：被闭包捕获的局部变量，在任何代码运行之前就被复制到临时槽（`rv_push`），有映射的 `arguments` 对象或直接 `eval` 时，编译器把每个参数都标成被捕获。`JS_SetPropertyValue` 还是原来的函数（带 `take` 的 `js_set_property_value`），在原来的地方释放它的键。路上没有新分支：判断是不是临时槽的那次测试本来就在两种读法之间选（`rv_take`）。
+
+收益：MUI 的 orders 页每次渲染少 0.34% 的指令，商店的页面少 0.03% 到 0.09%，React 的不变，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用就写入)。
+
+改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/putel_local_key.js` 写各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包、映射的 `arguments` 对象或直接 `eval` 造的函数改写键的对象，还经过会改写键并触发回收的 setter 和 Proxy trap 写，在严格模式和宽松模式下写冻结的对象，键本身做值、对象本身做值、对象本身做键，并在循环里写。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_putel_local_key_oom`）。

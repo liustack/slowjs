@@ -1,0 +1,22 @@
+strings a:1,b:two key3=three
+numbers zero,B,C half 7:seven
+symbol symbol
+null key null:1,undefined:2
+null object threw TypeError: cannot set property 'k' of null
+key is the value self:self
+object is the value true
+key throws threw Error: key
+key collects c:[object Object] 1
+key changes object a:3,z:4
+key in a closure kc:v gone
+key through arguments ka:1 other
+key through a direct eval ke:1 changed
+key is the object [object Object]:1
+object key is the value kv true
+valueOf 0,one,0 toString,valueOf
+setter set null
+proxy string p=a string 1=b symbol Symbol(s)=c 1:b,p:a
+frozen threw TypeError: 'f' is read-only
+frozen sloppy 1
+string object 1 3
+loop a:14850,b:14950,c:15050

@@ -719,3 +719,51 @@ The generator now has llc write every table with 4 bytes an entry (`-aarch64-ena
 The generator does not rest on the flag. The lowering sizes its own code (4 bytes an instruction, a label nothing, an alignment counted from where the function is placed, a multiple of 16 bytes or its place on 64, and not made past its max-skip) and refuses a function with a jump table entry whose distance does not fit its width, or that a narrow form would reach backward, naming the table, the entry and the steps it came to (`a64CheckJumpTables`, `internal/goasm/gen/arm64_jumptable.go`). With the narrow forms back on, it refuses `js_start_tag` at the same 272 steps llvm-mc found.
 
 Tests: `TestA64CheckJumpTables` takes the farthest distance each width holds and refuses one step more, after an alignment too, and refuses a backward entry, a label that is not in the code and code it cannot size. `TestLowerARM64EngineJumpTable` lowers a function whose table of bytes fits llc's code, 250 steps, and is refused once 5 calls in its span grow the lowered code.
+
+## A key in a local is read without a reference
+
+Release: Unreleased.
+
+`o[k]` with the key in a local or an argument (GETEL and GETELT of the register loop, when the fast paths of an array or a typed array do not answer) took a reference to the key, and `JS_GetPropertyValue` let it go once the key was made an atom. The loop now reads such a key where it is, as it already reads `o`, and `JS_GetPropertyValueConst` leaves it as it found it. A key in a temp is still taken and freed.
+
+Why this is safe: the key's `toString` or `valueOf`, a getter and a Proxy trap do run during the call, but none of them can write the slot the key is in. The register pass copies a local that a closure captures into a temp before anything can run (`rv_push`), and the compiler marks every argument captured when a function has a mapped `arguments` object or a direct `eval`. So the slot keeps its reference until the call returns, and the result is stored after it (`rv_put`), also when it goes to the key's own slot. `JS_GetPropertyValue` is the same function as before (`js_get_property_value` with `take`), and frees its key at the same place. There is no new branch on the path: the test of a temp chose between two reads of the slot before.
+
+What it gains: MUI's orders page runs 0.52% fewer instructions a render, the other pages 0.06% to 0.13%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#a-key-in-a-local-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/test/compare/getel_local_key.js` reads keys that are strings, numbers, symbols, `null` and objects whose `toString` or `valueOf` throws, collects, changes the object or writes the key through a closure or a mapped `arguments` object, through a getter and a Proxy trap that write the key and collect, and in a loop. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps keys made at run time with too little memory (`test_getel_local_key_oom`).
+
+## The truth of a value is read without a reference
+
+Release: Unreleased.
+
+`JS_ToBool` took a reference to its value and let it go once it knew whether the value was true. It now reads the value where it is (`js_to_bool` with `take` FALSE), and `JS_ToBoolFree` is the same function as before. The branches of the register loop (`if`, `while`, `!`, `&&`, `||`, the conditional operator) ask the truth of a local or an argument through `JS_ToBool` and of a temp through `JS_ToBoolFree`, where both went through a reference before (`rv_take`), and `&&` and `||`, which keep their operand, ask it through `JS_ToBool` too. `Boolean`, the tags of RegisterStartTag, the jobs of promises and a few more built-ins call `JS_ToBool` and gain the same.
+
+Why this is safe: the truth of a value runs no code, allocates nothing and reads no interrupt. It reads the length of a string or a rope, the sign and digits of a BigInt, the `is_HTMLDDA` mark of an object, or the tag. Nothing can free the value while it does, so the reference held nothing alive. There is no new branch in the loop: the test of a temp chose between two reads of the slot before (`rv_take`).
+
+What it gains: the workbench studio page runs 0.21% fewer instructions a render, MUI's orders page 0.12%, the shop's pages 0.05% to 0.09% and React's 0.02%, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#the-truth-of-a-value-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-basic.h`). `engine/test/compare/truth_of_locals.js` asks the truth of strings, ropes, objects, functions, symbols, BigInts and numbers in locals, arguments and temps in every kind of branch and in the built-ins that ask it, and of a string and an object whose last other reference goes, after a collection, while they are in a local. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps branches on strings and objects made at run time with too little memory (`test_truth_oom`).
+
+## An array literal takes the references of its elements
+
+Release: Unreleased.
+
+An array literal such as `[a, b, c]` (OP_array_from, in the window of the register loop and in a folded stack) made its array with `js_create_array`, which took a new reference to each element, and then let go of the reference each element had on the stack. It now moves the references of the stack into the array (`js_create_array_free`, as upstream QuickJS's interpreter had it), and frees them when the array cannot be made. `js_create_array` is the same function as before (`js_create_array_in` with `take` FALSE) for its other callers.
+
+Why this is safe: between the two, the array is made (`JS_NewArray`, `expand_fast_array`), which runs no code and reads no interrupt. A collection that one of its allocations starts frees nothing the stack holds. The elements are moved after the last allocation, so the array never holds a reference it does not own. When an allocation fails, each element is freed once, as `rv_create_array_free` freed them before, and the throw injection of the tests (`rv_inj_take`) frees them the same way. The slots the elements were in are above the top of the stack after the op, and nothing reads or frees them again. There is no new branch: `take` is a constant in each copy.
+
+What it gains: the pages run 0.17% to 0.34% fewer instructions a render, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#array-literals-that-take-their-elements).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-window.h`). `engine/test/compare/array_literal_temps.js` makes literals of objects, strings, ropes, symbols, BigInts and functions whose only reference is the element, literals whose elements collect or drop what an earlier element holds, literals of 0 to 40 elements, nested ones, ones that throw halfway, with spreads, in a loop and on a stack deep enough to be folded. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps literals of objects and strings made at run time with too little memory (`test_array_literal_oom`).
+
+## A key in a local is set without a reference
+
+Release: Unreleased.
+
+`o[k] = v` with the key in a local or an argument (PUTEL of the register loop, when the fast paths of an array do not answer) took a reference to the key, and `JS_SetPropertyValue` let it go once the key was made an atom. The loop now passes such a key where it is, as [a read of `o[k]`](#a-key-in-a-local-is-read-without-a-reference) does, through `JS_SetPropertyValueConst`, which leaves it as it found it. A key in a temp and the value are still taken.
+
+Why this is safe: the key's `toString` or `valueOf`, a setter and a Proxy trap run during the call, but none of them can write the slot the key is in, for the reasons given for the read: a local that a closure captures is copied into a temp before anything can run (`rv_push`), and the compiler marks every argument captured under a mapped `arguments` object or a direct `eval`. `JS_SetPropertyValue` is the same function as before (`js_set_property_value` with `take`), and frees its key at the same place. There is no new branch on the path: the test of a temp chose between two reads of the slot before (`rv_take`).
+
+What it gains: MUI's orders page runs 0.34% fewer instructions a render, the shop's pages 0.03% to 0.09%, React's the same, with the same HTML on the 23 pages of the shop and MUI. The numbers are in [performance.md](../performance.md#a-key-in-a-local-set-without-a-reference).
+
+The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/test/compare/putel_local_key.js` sets keys that are strings, numbers, symbols, `null` and objects whose `toString` or `valueOf` throws, collects, changes the object or writes the key through a closure, a mapped `arguments` object or a function a direct `eval` made, through a setter and a Proxy trap that write the key and collect, on frozen objects in strict and sloppy code, with the key as the value, the object as the value and the object as the key, and in a loop. Its file and its goldens were written by the engine before the change. `unit-oom` sweeps keys made at run time with too little memory (`test_putel_local_key_oom`).

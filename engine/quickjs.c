@@ -13395,11 +13395,22 @@ int JS_HasProperty(JSContext *ctx, JSValueConst obj, JSAtom prop)
                 JS_FreeValue(ctx, obj1);
                 return ret;
             }
+            if (!p->fast_array) {
+                /* the get_own_property of the class can free the
+                   prototype */
+                JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+                ret = JS_GetOwnPropertyInternal(ctx, NULL, p, prop);
+                JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+                goto own_done;
+            }
         }
-        /* JS_GetOwnPropertyInternal can free the prototype */
-        JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+        /* Without a descriptor, JS_GetOwnPropertyInternal runs no code for
+           an object that is not exotic or is a fast array, and reads no
+           interrupt (its error for a binding not yet initialized runs none
+           either): p, which obj or the object before it in the chain holds,
+           stays alive with no reference of its own. */
         ret = JS_GetOwnPropertyInternal(ctx, NULL, p, prop);
-        JS_FreeValue(ctx, JS_MKPTR(JS_TAG_OBJECT, p));
+    own_done:
         if (ret != 0)
             return ret;
         if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
@@ -13549,8 +13560,10 @@ static no_inline JSValue rv_ta_get(JSContext *ctx, JSObject *p, uint32_t idx)
     return v;
 }
 
-static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
-                                   JSValue prop)
+/* this_obj[prop]: take says whether it frees prop, which it then does
+   before the property is read, as QuickJS does */
+static force_inline JSValue js_get_property_value(JSContext *ctx, JSValueConst this_obj,
+                                                  JSValue prop, BOOL take)
 {
     JSAtom atom;
     JSValue ret;
@@ -13568,22 +13581,39 @@ static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
         uint32_t idx;
         if (is_num_string(&idx, JS_VALUE_GET_STRING(prop)) &&
             js_get_fast_array_element_out_of_line(ctx, JS_VALUE_GET_OBJ(this_obj), idx, &ret)) {
-            JS_FreeValue(ctx, prop);
+            if (take)
+                JS_FreeValue(ctx, prop);
             return ret;
         }
     }
     /* ToObject() must be done before ToPropertyKey() */
     if (JS_IsNull(this_obj) || JS_IsUndefined(this_obj)) {
-        JS_FreeValue(ctx, prop);
+        if (take)
+            JS_FreeValue(ctx, prop);
         return JS_ThrowTypeError(ctx, "cannot read property of %s", JS_IsNull(this_obj) ? "null" : "undefined");
     }
     atom = JS_ValueToAtom(ctx, prop);
-    JS_FreeValue(ctx, prop);
+    if (take)
+        JS_FreeValue(ctx, prop);
     if (unlikely(atom == JS_ATOM_NULL))
         return JS_EXCEPTION;
     ret = JS_GetProperty(ctx, this_obj, atom);
     JS_FreeAtom(ctx, atom);
     return ret;
+}
+
+static JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj,
+                                   JSValue prop)
+{
+    return js_get_property_value(ctx, this_obj, prop, TRUE);
+}
+
+/* JS_GetPropertyValue with a key it does not free: the caller keeps prop
+   alive for the whole call, also while its toString or valueOf runs */
+static JSValue JS_GetPropertyValueConst(JSContext *ctx, JSValueConst this_obj,
+                                        JSValueConst prop)
+{
+    return js_get_property_value(ctx, this_obj, prop, FALSE);
 }
 
 JSValue JS_GetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
@@ -14160,7 +14190,10 @@ static JSValue js_allocate_fast_array(JSContext *ctx, int64_t len)
     return arr;
 }
 
-static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
+/* the array of the len values of tab: take TRUE moves their references
+   into it, and frees them when it fails, take FALSE copies them */
+static force_inline JSValue js_create_array_in(JSContext *ctx, int len,
+                                               JSValue *tab, BOOL take)
 {
     JSValue obj;
     JSObject *p;
@@ -14168,20 +14201,36 @@ static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
 
     obj = JS_NewArray(ctx);
     if (JS_IsException(obj))
-        return JS_EXCEPTION;
+        goto fail;
     if (len > 0) {
         p = JS_VALUE_GET_OBJ(obj);
         if (expand_fast_array(ctx, p, len) < 0) {
             JS_FreeValue(ctx, obj);
+        fail:
+            if (take) {
+                for(i = 0; i < len; i++)
+                    JS_FreeValue(ctx, tab[i]);
+            }
             return JS_EXCEPTION;
         }
         p->u.array.count = len;
-        for(i = 0; i < len; i++) 
-            p->u.array.u.values[i] = JS_DupValue(ctx, tab[i]);
+        for(i = 0; i < len; i++)
+            p->u.array.u.values[i] = take ? tab[i] : JS_DupValue(ctx, tab[i]);
         /* update the 'length' field */
         set_value(ctx, &p->prop[0].u.value, JS_NewInt32(ctx, len));
     }
     return obj;
+}
+
+static JSValue js_create_array(JSContext *ctx, int len, JSValueConst *tab)
+{
+    return js_create_array_in(ctx, len, (JSValue *)tab, FALSE);
+}
+
+/* js_create_array that takes the values of tab, also when it fails */
+static JSValue js_create_array_free(JSContext *ctx, int len, JSValue *tab)
+{
+    return js_create_array_in(ctx, len, tab, TRUE);
 }
 
 static void js_free_desc(JSContext *ctx, JSPropertyDescriptor *desc)
@@ -14615,8 +14664,11 @@ static no_inline int js_set_fast_array_element_out_of_line(JSContext *ctx, JSObj
 }
 
 /* flags can be JS_PROP_THROW or JS_PROP_THROW_STRICT */
-static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
-                               JSValue prop, JSValue val, int flags)
+/* this_obj[prop] = val, which takes val: take says whether it frees prop,
+   which it then does before the property is set, as QuickJS does */
+static force_inline int js_set_property_value(JSContext *ctx, JSValueConst this_obj,
+                                              JSValue prop, JSValue val, int flags,
+                                              BOOL take)
 {
     JSAtom atom;
     int ret;
@@ -14630,7 +14682,8 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
             return ret;
     }
     atom = JS_ValueToAtom(ctx, prop);
-    JS_FreeValue(ctx, prop);
+    if (take)
+        JS_FreeValue(ctx, prop);
     if (unlikely(atom == JS_ATOM_NULL)) {
         JS_FreeValue(ctx, val);
         return -1;
@@ -14638,6 +14691,20 @@ static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
     ret = JS_SetPropertyInternal(ctx, this_obj, atom, val, this_obj, flags);
     JS_FreeAtom(ctx, atom);
     return ret;
+}
+
+static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
+                               JSValue prop, JSValue val, int flags)
+{
+    return js_set_property_value(ctx, this_obj, prop, val, flags, TRUE);
+}
+
+/* JS_SetPropertyValue with a key it does not free: the caller keeps prop
+   alive for the whole call, also while its toString or valueOf runs */
+static int JS_SetPropertyValueConst(JSContext *ctx, JSValueConst this_obj,
+                                    JSValueConst prop, JSValue val, int flags)
+{
+    return js_set_property_value(ctx, this_obj, prop, val, flags, FALSE);
 }
 
 int JS_SetPropertyUint32(JSContext *ctx, JSValueConst this_obj,
@@ -15778,7 +15845,8 @@ static inline BOOL JS_IsHTMLDDA(JSContext *ctx, JSValueConst obj)
     return p->is_HTMLDDA;
 }
 
-static int JS_ToBoolFree(JSContext *ctx, JSValue val)
+/* the truth of val, which runs no code: take says whether val is freed */
+static force_inline int js_to_bool(JSContext *ctx, JSValue val, BOOL take)
 {
     uint32_t tag = JS_VALUE_GET_TAG(val);
     switch(tag) {
@@ -15793,13 +15861,15 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
     case JS_TAG_STRING:
         {
             BOOL ret = JS_VALUE_GET_STRING(val)->len != 0;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_STRING_ROPE:
         {
             BOOL ret = JS_VALUE_GET_STRING_ROPE(val)->len != 0;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_SHORT_BIG_INT:
@@ -15820,7 +15890,8 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
                     break;
                 }
             }
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
     case JS_TAG_OBJECT:
@@ -15828,7 +15899,8 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
             JSObject *p = JS_VALUE_GET_OBJ(val);
             BOOL ret;
             ret = !p->is_HTMLDDA;
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return ret;
         }
         break;
@@ -15837,15 +15909,21 @@ static int JS_ToBoolFree(JSContext *ctx, JSValue val)
             double d = JS_VALUE_GET_FLOAT64(val);
             return !isnan(d) && d != 0;
         } else {
-            JS_FreeValue(ctx, val);
+            if (take)
+                JS_FreeValue(ctx, val);
             return TRUE;
         }
     }
 }
 
+static int JS_ToBoolFree(JSContext *ctx, JSValue val)
+{
+    return js_to_bool(ctx, val, TRUE);
+}
+
 int JS_ToBool(JSContext *ctx, JSValueConst val)
 {
-    return JS_ToBoolFree(ctx, JS_DupValue(ctx, val));
+    return js_to_bool(ctx, val, FALSE);
 }
 
 /* The length of the spaces at the start of pc, or -1 with "interrupted"

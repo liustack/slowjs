@@ -1,0 +1,15 @@
+strings one,two:key2,
+numbers three,b,c,,a
+symbol symbol
+null key ,
+null object threw TypeError: cannot read property of null
+key throws threw Error: key
+key collects one,one
+key changes object 2
+key in a closure two gone
+key through arguments one other
+valueOf a toString,valueOf
+getter got null
+proxy trap,trap,trap string p string 1 symbol Symbol(s)
+string object b,y,3
+loop 600

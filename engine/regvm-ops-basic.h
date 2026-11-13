@@ -646,10 +646,13 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
 }
 
 /* the truth of a branch operand that is not an int or a bool: a temp is
-   freed */
+   freed, a local or an argument read where it is (the truth runs no
+   code) */
 static no_inline int rv_tobool_slow(JSContext *ctx, JSValue *F, int slot)
 {
-    return JS_ToBoolFree(ctx, rv_take(ctx, F, slot));
+    if (rv_is_temp(F, slot))
+        return JS_ToBoolFree(ctx, F[slot]);
+    return JS_ToBool(ctx, F[slot]);
 }
 
 /* the length of a string or a rope, or -1 for any other value */
