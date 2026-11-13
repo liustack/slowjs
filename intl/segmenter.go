@@ -172,8 +172,8 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 		}
 
 		door := intlhook.Open(a)
-		text, _ := door.LongWTF8(1)
-		c = &cursor{id: vc.next, it: s.s.Iter(utf16Of(text)), word: s.Granularity == "word"}
+		text, _ := door.LongUTF16(1)
+		c = &cursor{id: vc.next, it: s.s.Iter(text), word: s.Granularity == "word"}
 		c.it.SetLimits(limitsOf(vm))
 		vc.next++
 		vc.add(c)

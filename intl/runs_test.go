@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/stopsweep"
+	"github.com/liustack/quickjs/internal/vmhook"
 )
 
 // uncuttable are calls whose input has one piece no Builtin can cut into
@@ -145,6 +147,87 @@ func TestCJKRunRoom(t *testing.T) {
 	}
 	if got := eval(t, vm, `g.segment('我们今天去北京').containing(0).segment`); got != "我们" {
 		t.Errorf("after the error: %v", got)
+	}
+}
+
+// longRead are calls whose work on a long text, after reading it, is short:
+// a Segments object reads its whole text before the first segment, and
+// finds the first ones in the first piece.
+var longRead = []struct{ name, setup, call string }{
+	{"the first word of a long text",
+		`var s = 'hello world '.repeat(N / 12), g = new Intl.Segmenter('en', {granularity: 'word'})`,
+		`g.segment(s).containing(0).segment`},
+	{"the first grapheme of a long text in Thai",
+		`var s = 'สวัสดี ครับ '.repeat(N / 11), g = new Intl.Segmenter('th')`,
+		`g.segment(s)[Symbol.iterator]().next().value.segment`},
+}
+
+// Reading the text of a Segments object reads vmhook.Stop at least once per
+// workPerStop units of it, as the work on it does. Before, it was read as
+// WTF-8 and turned back into UTF-16 in one pass, with no check, which held
+// the eval timeout 19 to 40 ms on an Apple M4 for a text of 8 Mi units, and
+// three to five times that on the Intel Macs of GitHub.
+func TestLongReadStops(t *testing.T) {
+	const n = 2 << 20
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			s, err := measureStops(t, vm, c.call)
+			if err != nil {
+				t.Fatalf("%s: %v", c.call, err)
+			}
+			if s.stops < n/workPerStop {
+				t.Errorf("%s read vmhook.Stop %d times for %d units, want at least %d", c.call, s.stops, n, n/workPerStop)
+			}
+		})
+	}
+}
+
+// An Interrupt that comes while the text is read ends the call with the
+// interrupt at the next read of vmhook.Stop, and the call returns at once.
+func TestLongReadInterrupt(t *testing.T) {
+	const n = 2 << 20
+	const at = n / workPerStop / 2
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			stops := 0
+			stop := vmhook.Stop
+			vmhook.Stop = func(v any) bool {
+				if stops++; stops == at {
+					vm.Interrupt()
+				}
+				return stop(v)
+			}
+			defer func() { vmhook.Stop = stop }()
+			_, err := vm.Eval(c.call, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.Interrupted {
+				t.Fatalf("%s, interrupted at read %d of vmhook.Stop: got %v after %d reads, want the interrupt", c.call, at, err, stops)
+			}
+			if stops != at {
+				t.Errorf("%s read vmhook.Stop %d times, and the interrupt came at read %d", c.call, stops, at)
+			}
+		})
+	}
+}
+
+// Each long call stops within the grace of stopsweep at every eval timeout
+// from 2 ms to the time it takes whole, so that a part of it with no check
+// shows wherever it lies.
+func TestLongCallsStopAtEveryTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("times each call at many timeouts")
+	}
+	const n = 8 << 20
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			stopsweep.Sweep(t, vm, c.call, n, workPerStop)
+		})
 	}
 }
 

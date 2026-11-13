@@ -158,6 +158,45 @@ func (d *Door) Long(i int) (string, bool) { return String(d.a, i) }
 // LongWTF8 reads argument i, long content, as WTF8 does, whole.
 func (d *Door) LongWTF8(i int) (string, bool) { return WTF8(d.a, i) }
 
+// Piece is the most units of long content a Builtin works on between two
+// checks of the call.
+const Piece = 1 << 16
+
+// LongUTF16 reads argument i, long content, as the UTF-16 code units
+// javascript counts, lone surrogates as they are, into memory of Go's that
+// the Builtin may keep after the call. It checks the room for them first, then
+// copies them from where the engine keeps them, Piece units at a time, and
+// checks the call between pieces: read as WTF-8 and turned back into UTF-16,
+// a text of 8 Mi units held the eval timeout 19 to 40 ms on an Apple M4, with
+// no check. ok is false for an argument that is not a string.
+func (d *Door) LongUTF16(i int) ([]uint16, bool) {
+	n, ok := d.a.StringLen(i)
+	if !ok {
+		return nil, false
+	}
+	d.Reserve(2 * int64(n))
+	latin1, wide, release, ok := vmhook.Chars(d.a, i)
+	if !ok {
+		// A rope the engine could not join: the error is pending.
+		panic(stopped{})
+	}
+	defer release()
+	vm := d.a.VM()
+	r := make([]uint16, max(len(latin1), len(wide)))
+	for at := 0; at < len(r); at += Piece {
+		Check(vm)
+		end := min(at+Piece, len(r))
+		if wide != nil {
+			copy(r[at:end], wide[at:end])
+			continue
+		}
+		for j, c := range latin1[at:end] {
+			r[at+j] = uint16(c)
+		}
+	}
+	return r, true
+}
+
 // Reserve counts n bytes more that Go may take for the call, such as those
 // of a number written out, and ends the Builtin with the out of memory
 // error when the room does not have them.
