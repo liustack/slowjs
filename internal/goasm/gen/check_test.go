@@ -225,6 +225,45 @@ func TestPostLinkCheck(t *testing.T) {
 		}
 	}
 
+	// -go-calls: a function the list does not name stores no result, its Go
+	// declaration has none, and the check takes it. Here Go calls fib only:
+	// add3 returns its result to its callers in registers alone. A name the
+	// list holds that is no function of the engine stops the driver.
+	goCalls := filepath.Join(work, "gocalls.txt")
+	for _, mode := range []string{"pn", "body"} {
+		if err := os.WriteFile(goCalls, []byte(GoCallsHeader+"fib\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := gen(mode, nil, "-go-calls", goCalls, "-out", pkgDir); err != nil {
+			t.Fatalf("generate (%s, -go-calls): %v\n%s", mode, err, out)
+		}
+		decl, err := os.ReadFile(filepath.Join(pkgDir, "engine_decl_amd64.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{`\nfunc fib\([^)]*\) uintptr\n`, `\nfunc add3\([^)]*\)\n`} {
+			if !regexp.MustCompile(want).Match(decl) {
+				t.Fatalf("%s, -go-calls: %q missing from the declarations:\n%s", mode, want, decl)
+			}
+		}
+		run(mod, "go", "build", "-tags", "goasmkeep", "-o", bin, ".")
+		out, err := gen(mode, nil, "-go-calls", goCalls, "-verify-bin", bin, "-verify-pkg", "checkmini/mini", "-verify-all")
+		if err != nil || !strings.Contains(out, "post-link check passed") {
+			t.Fatalf("%s, -go-calls: the check rejects correct code: %v\n%s", mode, err, out)
+		}
+		// The same binary, checked as if every function stored its result.
+		if out, err := check(mode, nil); err == nil || strings.Contains(out, "post-link check passed") {
+			t.Fatalf("%s: functions that store no result pass a check that wants them stored: %v\n%s", mode, err, out)
+		}
+		if err := os.WriteFile(goCalls, []byte(GoCallsHeader+"fib\nnosuch\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := gen(mode, nil, "-go-calls", goCalls, "-out", filepath.Join(work, "nosuch")); err == nil ||
+			!strings.Contains(out, "names nosuch, which is no function of the engine") {
+			t.Fatalf("%s: a stale list of Go calls: %v\n%s", mode, err, out)
+		}
+	}
+
 	// -align64: the body of each named function starts the given number of
 	// bytes past a multiple of 64, after a PCALIGN $64 in place of the
 	// PCALIGN $16 and that many bytes of no-ops, and the check finds it there:

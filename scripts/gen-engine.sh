@@ -76,7 +76,7 @@ if [ -n "${GEN_VERIFY_BIN:-}" ]; then
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
-	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" \
+	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -go-calls internal/cengine/gocalls.txt \
 	-j "${GEN_JOBS:-2}" $release $verify
 
 if [ -n "${GEN_KEEP:-}" ]; then

@@ -58,6 +58,7 @@ var (
 	postArgs  = flag.String("postlink-opt-args", strings.Join(gen.PostLinkOptArgs, " "), "the options of that optimizer run, separated by spaces (-release refuses a change)")
 	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl_<arch>.go records it)")
 	align64F  = flag.String("align64", engineAlign64, "functions whose body starts at a fixed place in a line of 64 bytes, as name:offset (a multiple of 8 below 64), comma separated (with -src the default is none)")
+	goCallsF  = flag.String("go-calls", "", "the list of the engine functions Go code names (internal/cengine/gocalls.txt, gen.GoCalls): every other unified function stores no result to the Go stack and its Go declaration has none (empty: every function stores its result)")
 )
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
@@ -517,8 +518,31 @@ func main() {
 		}
 	}
 	env.RegResult = regResult
+	env.ICallRegResult = !*poisonF
 	if a64env != nil {
 		a64env.RegResult = regResult
+		a64env.ICallRegResult = !*poisonF
+	}
+	// A function no Go code names (-go-calls) is called only by lowered code,
+	// which takes every result from registers, so it stores none to the Go
+	// stack (gen.LowerEnv.NoResult). A packed function counts as named when
+	// Go names the function that makes its block (gen.PackedGo). The poison
+	// build stores every result.
+	goCalled, err := readGoCalls(*goCallsF, unit.FuncOrder, rep)
+	if err != nil {
+		die(err)
+	}
+	noResult := map[string]bool{}
+	if goCalled != nil && !*poisonF {
+		for _, name := range unit.FuncOrder {
+			if !goCalled[name] && !leafSet[name] {
+				noResult[name] = true
+			}
+		}
+	}
+	env.NoResult = noResult
+	if a64env != nil {
+		a64env.NoResult = noResult
 	}
 	type lowering struct {
 		text string
@@ -586,6 +610,12 @@ func main() {
 		metas = append(metas, meta)
 	}
 	if err := gen.CheckBodyDataAlign(plan, metas, align64); err != nil {
+		die(err)
+	}
+	// A call through a pointer reaches only a lowered unified function (or
+	// a stub, which never returns): every pointer the code takes or
+	// engine_rodata holds must name one.
+	if err := gen.CheckPointerTargets(metas, stubs, plan, unit.Sets); err != nil {
 		die(err)
 	}
 	tLower := time.Since(t0)
@@ -667,6 +697,10 @@ func main() {
 	for _, name := range gen.SortedKeys(rep.PackedWas) {
 		g, ok := gonames[name]
 		if !ok {
+			continue
+		}
+		// No Go code makes the block: the function keeps its plain name.
+		if goCalled != nil && !goCalled[name] {
 			continue
 		}
 		src, ok, err := gen.PackedGo(g, g+gen.PackedEntry, rep.PackedWas[name])
@@ -1078,14 +1112,22 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		"// stack check at their entry (gen.MarkNoSplit), for the tests. A constant\n" +
 		"// takes no room in a binary that does not use it.\n")
 	fmt.Fprintf(&b, "const noSplitList = %q\n\n", strings.Join(ns, " "))
-	decl := func(name string) { b.WriteString(gen.GoDecl(names[name], sigs[name])) }
+	// A function that stores no result (gen.FuncRecord.NoResult) is declared
+	// without one, so that Go code cannot read it.
+	decl := func(m gen.Meta) {
+		s := sigs[m.Name]
+		if m.Rec != nil && m.Rec.NoResult {
+			s = gen.Sig{Params: s.Params, Ret: gen.Void}
+		}
+		b.WriteString(gen.GoDecl(names[m.Name], s))
+	}
 	all := append(append([]gen.Meta{}, metas...), stubs...)
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	for _, m := range all {
 		if m.Kind == gen.Register {
 			continue
 		}
-		decl(m.Name)
+		decl(m)
 	}
 	b.WriteString("\n// missingNames lists the stubs in index order.\n" + missingNamesDecl(stubs))
 	b.WriteString("\n// Host callbacks the engine calls (implemented in Go):\n")
@@ -1328,4 +1370,43 @@ func missingNamesDecl(stubs []gen.Meta) string {
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// readGoCalls reads the list of -go-calls and gives the C functions of funcs
+// it names, by their Go name or, for a packed function, by the name of its
+// entry (gen.PackedEntry). It fails on a name that is no function of funcs:
+// the list is stale (go run ./internal/goasm/gen/cmd/gocalls). An empty path
+// gives nil: every function stores its result.
+func readGoCalls(path string, funcs []string, rep *gen.Report) (map[string]bool, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	list, err := gen.ReadGoCalls(b)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	gonames, err := gen.GoNames(dedupe(append(append([]string{}, funcs...), gen.SortedKeys(rep.Sigs)...)))
+	if err != nil {
+		return nil, err
+	}
+	called := map[string]bool{}
+	named := map[string]bool{}
+	for _, name := range funcs {
+		g := gonames[name]
+		for _, n := range []string{g, g + gen.PackedEntry} {
+			if list[n] {
+				called[name], named[n] = true, true
+			}
+		}
+	}
+	for _, n := range gen.SortedKeys(list) {
+		if !named[n] {
+			return nil, fmt.Errorf("%s names %s, which is no function of the engine: run go run ./internal/goasm/gen/cmd/gocalls", path, n)
+		}
+	}
+	return called, nil
 }

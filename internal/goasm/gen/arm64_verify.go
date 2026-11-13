@@ -102,6 +102,24 @@ func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 		}
 		rep.Checked["functions"]++
 	}
+	for _, m := range c.Stubs {
+		s, ok := bin.abi0(c.Pkg, c.Names[m.Name])
+		if !ok {
+			if c.All {
+				return rep, fmt.Errorf("stub %s: not in the binary", m.Name)
+			}
+			rep.Skipped["not in the binary (the linker left it out)"] = append(rep.Skipped["not in the binary (the linker left it out)"], m.Name)
+			continue
+		}
+		words, err := bin.read(s.Value, int(s.Size)&^3)
+		if err != nil {
+			return rep, fmt.Errorf("stub %s: %w", m.Name, err)
+		}
+		if err := k.checkStub(m, s.Value, words); err != nil {
+			return rep, fmt.Errorf("stub %s: %w", m.Name, err)
+		}
+		rep.Checked["stubs"]++
+	}
 	n, err := k.checkRodata()
 	if err != nil {
 		return rep, fmt.Errorf("engine_rodata: %w", err)
@@ -123,6 +141,41 @@ type a64Checker struct {
 	bin       *binFile
 	morestack uint64
 	rodata    uint64
+	// ptrOK holds the addresses a function pointer may hold (pointerTarget).
+	ptrOK map[uint64]bool
+}
+
+// pointerTarget is checker.pointerTarget on arm64: a function pointer, the
+// code's adrp and add of sym (go_name) or a pointer of engine_rodata to the
+// C function name, may hold only the start of a lowered unified function or
+// of a stub (CheckPointerTargets).
+func (k *a64Checker) pointerTarget(name string, add int64) error {
+	if k.ptrOK == nil {
+		k.ptrOK = map[uint64]bool{}
+		for _, m := range append(append([]Meta{}, k.c.Metas...), k.c.Stubs...) {
+			if m.Kind != Unified {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.ptrOK[s.Value] = true
+			}
+		}
+	}
+	if add != 0 {
+		return fmt.Errorf("a pointer to %s%+d, inside a function", name, add)
+	}
+	gn := k.c.Names[name]
+	if gn == "" {
+		return fmt.Errorf("a pointer to %s, which is no generated function", name)
+	}
+	s, ok := k.bin.abi0(k.c.Pkg, gn)
+	if !ok {
+		return fmt.Errorf("a pointer to %s, which is not in the binary", name)
+	}
+	if !k.ptrOK[s.Value] {
+		return fmt.Errorf("a pointer to %s, which is no lowered unified function: a call through it would not get its result", name)
+	}
+	return nil
 }
 
 // target is the address the binary must have for a symbol of the object: a
@@ -181,36 +234,86 @@ func (k *a64Checker) checkHostPoll() error {
 	if more < 0 || more >= n {
 		return fail("its stack check branches to word %d, outside the function", more)
 	}
-	// The block the b.ls goes to is one straight run of words: the spill of
-	// the arguments, mov x3, x30, bl morestack, the reload and a b to the
-	// start. Any other branch in it (a b.cond or a cbz that jumps over the call,
-	// a br, a blr, a ret) lets the stack check be skipped while the words of
-	// the call are still there, so none is allowed.
+	if err := k.morestackBlock(b, sym.Value, more); err != nil {
+		return fail("%v", err)
+	}
+	return nil
+}
+
+// morestackBlock checks the block a stack check branches to, at word more of
+// the function b at base. It is one straight run of words: the spill of the
+// arguments, mov x3, x30, bl morestack, the reload and a b to the start. Any
+// other branch in it (a b.cond or a cbz that jumps over the call, a br, a
+// blr, a ret) lets the stack check be skipped while the words of the call
+// are still there, so none is allowed.
+func (k *a64Checker) morestackBlock(b []byte, base uint64, more int) error {
+	n := len(b) / 4
 	called := false
 	for t := more; t < n && t < more+24; t++ {
 		w := a64Word(b, t)
-		at := sym.Value + uint64(4*t)
+		at := base + uint64(4*t)
 		target := at + uint64(int64(int32(w<<6)>>4))
 		switch {
 		case w&0xfc000000 == 0x94000000 && target == k.morestack: // bl morestack
 			if t == more || a64Word(b, t-1) != a64MovX3LR {
-				return fail("the call of morestack does not follow mov x3, x30")
+				return fmt.Errorf("the call of morestack does not follow mov x3, x30")
 			}
 			called = true
 		case w&0xfc000000 == 0x14000000: // b
-			if !called || target != sym.Value {
-				return fail("its stack check does not call morestack and jump back to the start")
+			if !called || target != base {
+				return fmt.Errorf("its stack check does not call morestack and jump back to the start")
 			}
 			return nil
-		case w&0xfc000000 == 0x94000000, // bl elsewhere
-			w&0xff000010 == 0x54000000,                             // b.cond
-			w&0x7e000000 == 0x34000000,                             // cbz, cbnz
-			w&0x7e000000 == 0x36000000,                             // tbz, tbnz
-			w&0xff9ffc1f == 0xd61f0000, w&0xfffffc1f == 0xd65f0000: // br, blr, ret
-			return fail("its stack check has a branch of its own (%#08x) that can jump over the call of morestack", w)
+		case a64Branch(w):
+			return fmt.Errorf("its stack check has a branch of its own (%#08x) that can jump over the call of morestack", w)
 		}
 	}
-	return fail("its stack check does not call morestack and jump back to the start")
+	return fmt.Errorf("its stack check does not call morestack and jump back to the start")
+}
+
+// a64Branch says w is a branch, a call or a return: bl, b.cond, cbz, cbnz,
+// tbz, tbnz, br, blr or ret (b is told apart by the callers).
+func a64Branch(w uint32) bool {
+	return w&0xfc000000 == 0x94000000 || w&0xff000010 == 0x54000000 || w&0x7e000000 == 0x34000000 ||
+		w&0x7e000000 == 0x36000000 || w&0xff9ffc1f == 0xd61f0000 || w&0xfffffc1f == 0xd65f0000
+}
+
+// checkStub holds a stub (a function the generator could not lower, Meta of
+// EngineCheck.Stubs) to never returning, as checker.checkStub does on amd64:
+// a pointer may hold one (pointerTarget), and a call through it takes its
+// result from registers. After Go's stack check the stub runs straight on to
+// a call of goasmMissing, which panics, with no branch, call or return before
+// it.
+func (k *a64Checker) checkStub(m Meta, base uint64, b []byte) error {
+	miss, ok := k.bin.abi0(k.c.Pkg, "goasmMissing")
+	if !ok {
+		return fmt.Errorf("no goasmMissing in the binary")
+	}
+	n := len(b) / 4
+	if n == 0 || a64Word(b, 0) != a64StackGuard {
+		return fmt.Errorf("a stub with no stack check")
+	}
+	next, more, err := a64StackCheck(b, -1)
+	if err != nil {
+		return err
+	}
+	if more < 0 || more >= n {
+		return fmt.Errorf("its stack check branches to word %d, outside the function", more)
+	}
+	if err := k.morestackBlock(b, base, more); err != nil {
+		return err
+	}
+	for t := next; t < more; t++ {
+		w := a64Word(b, t)
+		target := base + uint64(4*t) + uint64(int64(int32(w<<6)>>4))
+		switch {
+		case w&0xfc000000 == 0x94000000 && target == miss.Value:
+			return nil
+		case w&0xfc000000 == 0x14000000, a64Branch(w):
+			return fmt.Errorf("the stub has %#08x at word %d before it calls goasmMissing", w, t)
+		}
+	}
+	return fmt.Errorf("the stub does not call goasmMissing")
 }
 
 func a64Word(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[4*i:]) }
@@ -390,10 +493,16 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	// the result registers (CallRecord.RegResult), which only a lowered
 	// unified function leaves the result in: this check holds each of them
 	// to storing it from x0, x1 or d0 and then running only Go's epilogue.
+	// A function with FuncRecord.NoResult stores no result, so every call of
+	// it must take the result from registers.
+	noResult := map[string]bool{}
 	unified := map[string]bool{}
 	for _, f := range k.c.Metas {
 		if f.Kind == Unified {
 			unified[f.Name] = true
+		}
+		if f.Rec != nil && f.Rec.NoResult {
+			noResult[f.Name] = true
 		}
 	}
 	ci := 0
@@ -431,10 +540,22 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			return nil
 		}
 		if c.RegResult {
+			// A call through a pointer reaches only a lowered unified
+			// function (pointerTarget holds every pointer to one), and each
+			// of them stores its result from the registers of its type.
+			if c.Kind == CallReg {
+				return nil
+			}
 			if c.Kind != CallUnified || !unified[c.Target] {
 				return fmt.Errorf("the call at %#x takes the result of %s from its registers, which is no lowered unified function", pc-r[0], c.Target)
 			}
 			return nil
+		}
+		if c.Kind == CallReg && len(noResult) > 0 {
+			return fmt.Errorf("the call at %#x through a register loads its result from the Go stack, where %d functions store none", pc-r[0], len(noResult))
+		}
+		if noResult[c.Target] {
+			return fmt.Errorf("the call at %#x loads the result of %s from the Go stack, where %s stores none", pc-r[0], c.Target, c.Target)
 		}
 		_, retOff, _ := layout(c.Sig)
 		for n, wv := range a64FPWords(a64RetRegs(c.Sig.Ret), nil, nil, 8+retOff, true) {
@@ -479,6 +600,11 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 			if err != nil {
 				return err
 			}
+			if f, ok := strings.CutPrefix(rl.sym, "go_"); ok {
+				if err := k.pointerTarget(f, rl.add); err != nil {
+					return fmt.Errorf("the address at %#x: %w", pc-r[0], err)
+				}
+			}
 			add, err := next()
 			if err != nil {
 				return err
@@ -503,7 +629,7 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 		return fmt.Errorf("the record has %d calls, the body %d", len(m.Rec.Calls), ci)
 	}
 	// The result into the Go argument area, the epilogue and RET.
-	if m.Kind != Register {
+	if m.Kind != Register && !m.Rec.NoResult {
 		_, retOff, _ := layout(m.Rec.Sig)
 		rets := a64RetRegs(m.Rec.Sig.Ret)
 		for k, wv := range a64FPWords(rets, nil, nil, frame+8+retOff, false) {
@@ -644,6 +770,9 @@ func (k *a64Checker) checkRodata() (int, error) {
 		if r, ok := relocs[off]; ok {
 			want := uint64(int64(k.rodata) + int64(r.Add))
 			if r.Func {
+				if err := k.pointerTarget(r.Sym, r.Add); err != nil {
+					return 0, fmt.Errorf("pointer at %d: %w", off, err)
+				}
 				gn := k.c.Names[r.Sym]
 				f, ok := k.bin.abi0(k.c.Pkg, gn)
 				if !ok {

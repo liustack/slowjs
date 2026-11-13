@@ -60,7 +60,7 @@ TEXT ·pstrcpy(SB), $56-32
 	WORD $0x14000001
 	RET
 
-TEXT ·pstrcat(SB), $72-40
+TEXT ·pstrcat(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -248,10 +248,9 @@ TEXT ·pstrcat(SB), $72-40
 	WORD $0x17fffff5
 	WORD $0x3900015f
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·strstart(SB), $56-40
+TEXT ·strstart(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -306,10 +305,9 @@ TEXT ·strstart(SB), $56-40
 	WORD $0x14000002
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·has_suffix(SB), $72-32
+TEXT ·has_suffix(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -604,7 +602,6 @@ TEXT ·has_suffix(SB), $72-32
 	WORD $0x17fffff6
 	WORD $0x52800020
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·dbuf_init2(SB), NOSPLIT, $0-32
@@ -633,7 +630,7 @@ TEXT ·dbuf_init2(SB), NOSPLIT, $0-32
 	WORD $0x14000001
 	RET
 
-TEXT ·dbuf_claim(SB), $72-32
+TEXT ·dbuf_claim(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -652,7 +649,7 @@ TEXT ·dbuf_claim(SB), $72-32
 	WORD $0x12800000
 	WORD $0x14000002
 	WORD $0x2a1f03e0
-	WORD $0x1400001f
+	WORD $0x1400001e
 	WORD $0xaa1503eb
 	WORD $0xf90027f5
 	WORD $0xeb08013f
@@ -666,7 +663,6 @@ TEXT ·dbuf_claim(SB), $72-32
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xb4000100
 	WORD $0xf94027e9
 	WORD $0xaa0003e8
@@ -682,11 +678,10 @@ TEXT ·dbuf_claim(SB), $72-32
 	WORD $0xb9001948
 	WORD $0xaa0a03e8
 	WORD $0xf9000909
-	WORD $0x17ffffe2
-	MOVD R0, ret+24(FP)
+	WORD $0x17ffffe3
 	RET
 
-TEXT ·dbuf_put(SB), $120-40
+TEXT ·dbuf_put(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -840,10 +835,9 @@ TEXT ·dbuf_put(SB), $120-40
 	WORD $0x8b170108
 	WORD $0xf90006a8
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·dbuf_put_self(SB), $120-40
+TEXT ·dbuf_put_self(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -999,10 +993,9 @@ TEXT ·dbuf_put_self(SB), $120-40
 	WORD $0xf9402ff6
 	WORD $0xf94006aa
 	WORD $0x17ffff70
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·__dbuf_put_u32(SB), $72-32
+TEXT ·__dbuf_put_u32(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1035,10 +1028,9 @@ TEXT ·__dbuf_put_u32(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·__dbuf_put_u64(SB), $72-32
+TEXT ·__dbuf_put_u64(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1071,10 +1063,9 @@ TEXT ·__dbuf_put_u64(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·dbuf_putstr(SB), $120-32
+TEXT ·dbuf_putstr(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1352,7 +1343,6 @@ TEXT ·dbuf_putstr(SB), $120-32
 	WORD $0x8b0d0108
 	WORD $0xf90006a8
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·dbuf_free(SB), $56-16
@@ -1361,7 +1351,7 @@ TEXT ·dbuf_free(SB), $56-16
 	MOVD a1+8(FP), R21
 	PCALIGN $16
 	WORD $0xf94002b6
-	WORD $0xb40001d6
+	WORD $0xb40001b6
 	WORD $0xaa1503e9
 	WORD $0xf94012a8
 	WORD $0xf9001ff5
@@ -1373,7 +1363,6 @@ TEXT ·dbuf_free(SB), $56-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf9401ff5
 	WORD $0x4b1503e8
 	WORD $0x52800609
@@ -1463,7 +1452,7 @@ TEXT ·unicode_to_utf8(SB), NOSPLIT, $0-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_from_utf8(SB), $72-40
+TEXT ·unicode_from_utf8(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1538,7 +1527,6 @@ TEXT ·unicode_from_utf8(SB), $72-40
 	WORD $0x6b08013f
 	WORD $0x54fff7e2
 	WORD $0x17ffffca
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·exchange_one_int128(SB), NOSPLIT, $0-32
@@ -2238,11 +2226,11 @@ TEXT ·rqsort(SB), $40-48
 	WORD $0x9100c294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·rqsort_stop_block(SB)
+	BL ·rqsort_stop(SB)
 	WORD $0x14000001
 	RET
 
-TEXT ·dbuf_printf(SB), $120-40
+TEXT ·dbuf_printf(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2279,12 +2267,12 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xf94037ee
 	WORD $0xcb080129
 	WORD $0xeb16013f
-	WORD $0x54000c43
-	WORD $0x340011a0
+	WORD $0x54000c23
+	WORD $0x34001180
 	WORD $0xf94001a9
 	WORD $0x8b080128
 	WORD $0x7100401f
-	WORD $0x54000dc8
+	WORD $0x54000da8
 	WORD $0x7100201f
 	WORD $0x540002a3
 	WORD $0xf8420dc9
@@ -2293,20 +2281,20 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xf9000109
 	WORD $0x8b160108
 	WORD $0xf81f810a
-	WORD $0x1400007f
+	WORD $0x1400007e
 	WORD $0x11000409
 	WORD $0xf94037eb
 	WORD $0xab29c108
 	WORD $0x54000102
 	WORD $0xf94009a9
 	WORD $0xeb09011f
-	WORD $0x540005a9
+	WORD $0x54000589
 	WORD $0xb94019aa
 	WORD $0x3500006a
 	WORD $0xab490529
 	WORD $0x540002a3
 	WORD $0x12800000
-	WORD $0x14000076
+	WORD $0x14000075
 	WORD $0x7100101f
 	WORD $0x54000103
 	WORD $0xb8420dc9
@@ -2315,7 +2303,7 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xb9000109
 	WORD $0x8b160108
 	WORD $0xb81fc10a
-	WORD $0x14000069
+	WORD $0x14000068
 	WORD $0x38420dc9
 	WORD $0xd341feca
 	WORD $0xd10006cb
@@ -2324,7 +2312,7 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0x386b69c9
 	WORD $0x382a690c
 	WORD $0x382b6909
-	WORD $0x14000060
+	WORD $0x1400005f
 	WORD $0xa94255aa
 	WORD $0xeb08013f
 	WORD $0xf9002bf6
@@ -2338,7 +2326,6 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xb40003e0
 	WORD $0xa944dbe8
 	WORD $0xf9403fed
@@ -2385,7 +2372,7 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·dbuf_claim(SB)
-	WORD $0x35fff600
+	WORD $0x35fff620
 	WORD $0xf9403fed
 	WORD $0xf9402bf6
 	WORD $0xf94037ee
@@ -2393,7 +2380,7 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0xa94025a8
 	WORD $0x8b090108
 	WORD $0x7100401f
-	WORD $0x54fff289
+	WORD $0x54fff2a9
 	WORD $0x7100801f
 	WORD $0x8b160109
 	WORD $0x910081cb
@@ -2425,10 +2412,9 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0x2a1f03e0
 	WORD $0xf90005a8
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·__dbuf_putc(SB), $72-32
+TEXT ·__dbuf_putc(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2460,10 +2446,9 @@ TEXT ·__dbuf_putc(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·__dbuf_put_u16(SB), $72-32
+TEXT ·__dbuf_put_u16(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2496,10 +2481,9 @@ TEXT ·__dbuf_put_u16(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·rqsort_stop_block(SB), $264-16
+TEXT ·rqsort_stop(SB), $264-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2582,9 +2566,9 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	MOVD $·exchange_bytes(SB), R11
 	WORD $0xf90043eb
 	WORD $0xf100095f
-	WORD $0x540062e3
+	WORD $0x54006183
 	WORD $0xf9407beb
-	WORD $0xb40062ab
+	WORD $0xb400614b
 	WORD $0xf9407bed
 	WORD $0xa9423eae
 	MOVD $·exchange_int16s(SB), R11
@@ -2624,18 +2608,18 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9003fe8
 	WORD $0xf9005bef
 	WORD $0xb94001e8
-	WORD $0x35005c88
+	WORD $0x35005b28
 	WORD $0xaa0b03ea
 	WORD $0xa9fea149
 	WORD $0xf1001d1f
 	WORD $0xf90077e9
-	WORD $0x54002c63
+	WORD $0x54002ba3
 	WORD $0xb85f816b
 	WORD $0xf9407bf7
 	WORD $0x1100056b
 	WORD $0xf9003bea
 	WORD $0x7100cd7f
-	WORD $0x5400386a
+	WORD $0x5400378a
 	WORD $0xf90053e8
 	WORD $0xd342fd08
 	WORD $0x9112c294
@@ -2656,7 +2640,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf9407fe8
 	WORD $0xf94087f5
 	WORD $0xf94063f6
@@ -2669,12 +2652,11 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xb940bbe8
-	WORD $0x37f802a8
+	WORD $0x37f80288
 	WORD $0xf94087f6
 	WORD $0x7100001f
-	WORD $0x5400048c
+	WORD $0x5400044c
 	WORD $0xf9407fe8
 	WORD $0xf94057f5
 	WORD $0xf94063f6
@@ -2686,14 +2668,13 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf94057e8
 	WORD $0xf94063e9
 	WORD $0x7100001f
 	WORD $0x9a894116
-	WORD $0x14000013
+	WORD $0x14000012
 	WORD $0xf94087f6
-	WORD $0x37f80220
+	WORD $0x37f80200
 	WORD $0xf9407fe8
 	WORD $0xf94057f5
 	WORD $0xf94063f6
@@ -2705,7 +2686,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf94057e8
 	WORD $0xf94063e9
 	WORD $0x7100001f
@@ -2734,7 +2714,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xa90927eb
 	WORD $0xf90033e9
 	WORD $0xeb0c02df
-	WORD $0x54000862
+	WORD $0x54000842
 	WORD $0xf90087ec
 	WORD $0xa94ddfe8
 	WORD $0x9112c154
@@ -2746,12 +2726,11 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0x37f805e0
 	WORD $0xf9405be8
 	WORD $0xb9400108
 	WORD $0xf9407fea
-	WORD $0x35004ca8
+	WORD $0x35004be8
 	WORD $0x34000080
 	WORD $0xf9407be9
 	WORD $0xf94063f6
@@ -2786,7 +2765,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf94057e8
 	WORD $0x91000508
 	WORD $0xf90057e8
-	WORD $0x17ffffce
+	WORD $0x17ffffcf
 	WORD $0xf9407ff4
 	WORD $0xf90063f6
 	WORD $0xf90007f4
@@ -2805,7 +2784,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf90063f6
 	WORD $0x8b080188
 	WORD $0xeb0802df
-	WORD $0x54000ba2
+	WORD $0x54000b82
 	WORD $0xf9403fe9
 	WORD $0xaa0803f6
 	WORD $0x8b090189
@@ -2820,13 +2799,12 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf9405be8
 	WORD $0x7100001f
 	WORD $0xb9400108
 	WORD $0x5400052c
 	WORD $0xf9407fea
-	WORD $0x35004348
+	WORD $0x350042a8
 	WORD $0x35000220
 	WORD $0xa949a3f5
 	WORD $0xf94087f6
@@ -2858,14 +2836,14 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0x8b08016b
 	WORD $0x8b0802d6
 	WORD $0xf9005feb
-	WORD $0x17ffffd0
+	WORD $0x17ffffd1
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xf9405feb
 	WORD $0xf9407fea
 	WORD $0x17fffff5
-	WORD $0x35003e68
+	WORD $0x35003dc8
 	WORD $0xa94f23f7
 	WORD $0xf94087f6
 	WORD $0x9112c114
@@ -2889,7 +2867,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0x8b0b02d6
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54ffec8c
+	WORD $0x54ffeccc
 	WORD $0xf9407ff4
 	WORD $0xf90063f6
 	WORD $0xf90007f4
@@ -2897,11 +2875,11 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf94087ec
 	WORD $0xf94063f6
 	WORD $0xf9407fea
-	WORD $0x17ffff5c
+	WORD $0x17ffff5e
 	WORD $0xf9405be8
 	WORD $0xf94053e9
 	WORD $0xb9400108
-	WORD $0x350039e8
+	WORD $0x35003948
 	WORD $0xf90087e9
 	WORD $0xa948a7eb
 	WORD $0xf94077f5
@@ -2974,7 +2952,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf900c109
 	WORD $0xf94053e8
 	WORD $0xf100013f
-	WORD $0x54ffd54c
+	WORD $0x54ffd60c
 	WORD $0xf9407ff4
 	WORD $0xf9003bea
 	WORD $0xf90007f4
@@ -2983,12 +2961,12 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xb9406feb
 	WORD $0xf94053e8
 	WORD $0xf9403bea
-	WORD $0x17fffea1
+	WORD $0x17fffea7
 	WORD $0xf9407bf7
 	WORD $0xf90053ea
 	WORD $0x9b177d08
 	WORD $0xeb0802ff
-	WORD $0x54000a22
+	WORD $0x54000a02
 	WORD $0xf94077e9
 	WORD $0x8b080128
 	WORD $0x8b17012a
@@ -2997,7 +2975,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf94077e8
 	WORD $0xf9005fea
 	WORD $0xeb08015f
-	WORD $0x54000649
+	WORD $0x54000629
 	WORD $0xf94063ea
 	WORD $0xf9407fe8
 	WORD $0x8b170156
@@ -3011,7 +2989,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xa94f53f7
 	WORD $0x7100041f
 	WORD $0x5400042b
@@ -3040,7 +3017,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0x5400008d
 	WORD $0xf9406be8
 	WORD $0x8b08014a
-	WORD $0x17ffffd7
+	WORD $0x17ffffd8
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
@@ -3061,7 +3038,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf94063e8
 	WORD $0x8b170108
 	WORD $0xf90063e8
-	WORD $0x17ffffbd
+	WORD $0x17ffffbe
 	WORD $0xf9407ff4
 	WORD $0xf9005fea
 	WORD $0xf90007f4
@@ -3071,21 +3048,21 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0x17fffff6
 	WORD $0xf94053eb
 	WORD $0xeb14017f
-	WORD $0x540024a9
+	WORD $0x54002429
 	WORD $0x92679a88
 	WORD $0xf9405bef
 	WORD $0xf940c109
 	WORD $0xd1000529
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54ffc72c
+	WORD $0x54ffc80c
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xf9405bef
 	WORD $0xf94053eb
 	WORD $0xf9407ff4
-	WORD $0x17fffe32
+	WORD $0x17fffe39
 	WORD $0xaa0803eb
 	WORD $0xf94077e8
 	WORD $0x2a0802e8
@@ -3122,20 +3099,20 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf90053e8
 	WORD $0xcb170108
 	WORD $0xf9005fe8
-	WORD $0xb4000d8c
+	WORD $0xb4000d4c
 	WORD $0xb9400148
-	WORD $0x35001ce8
+	WORD $0x35001c68
 	WORD $0xcb17018c
 	WORD $0xf94053e8
 	WORD $0x8b0c06ea
 	WORD $0xf9004bec
 	WORD $0xeb08015f
-	WORD $0x54000a82
+	WORD $0x54000a42
 	WORD $0xf9404be9
 	WORD $0xf9405fe8
 	WORD $0xf90063e9
 	WORD $0xeb08015f
-	WORD $0x54000342
+	WORD $0x54000322
 	WORD $0xf94077eb
 	WORD $0xf9407fe9
 	WORD $0xf9004fea
@@ -3151,7 +3128,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf9407be8
 	WORD $0xa94ddfeb
 	WORD $0x7100041f
@@ -3175,7 +3151,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xa94f53f7
 	WORD $0x7100001f
 	WORD $0x5400048c
@@ -3205,7 +3180,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf100013f
 	WORD $0xf900c109
 	WORD $0xf94087e9
-	WORD $0x54fff6ec
+	WORD $0x54fff72c
 	WORD $0xf9407ff4
 	WORD $0xf9004fea
 	WORD $0xf90007f4
@@ -3213,7 +3188,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9404fea
 	WORD $0xf9407bf7
 	WORD $0xf94087e9
-	WORD $0x17ffffaf
+	WORD $0x17ffffb1
 	WORD $0xf9405bea
 	WORD $0xf9404bec
 	WORD $0xb40001cc
@@ -3222,18 +3197,18 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xd1000529
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54fff3ac
+	WORD $0x54fff3ec
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa94f53f7
 	WORD $0xf9404bec
 	WORD $0xf9405bea
-	WORD $0x17ffff96
+	WORD $0x17ffff98
 	WORD $0xf9405fe8
-	WORD $0xb4000fa8
+	WORD $0xb4000f68
 	WORD $0xb9400148
-	WORD $0x35000f48
+	WORD $0x35000f08
 	WORD $0xf94077f5
 	WORD $0xf9405fe8
 	WORD $0x9112c294
@@ -3249,14 +3224,14 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9405fe8
 	WORD $0xeb170108
 	WORD $0xf90053e8
-	WORD $0x54000ae9
+	WORD $0x54000aa9
 	WORD $0xf9407fe9
 	WORD $0xaa1f03ea
 	WORD $0xaa1703eb
 	WORD $0xf94053e8
 	WORD $0xf90063ea
 	WORD $0xeb08017f
-	WORD $0x54000342
+	WORD $0x54000322
 	WORD $0xf94077ec
 	WORD $0xf9407fe9
 	WORD $0xf9004feb
@@ -3272,7 +3247,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xa94f27e8
 	WORD $0x7100041f
 	WORD $0xa94ddfeb
@@ -3295,7 +3269,6 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	CALL (R9)
-	WORD $0xf94017e0
 	WORD $0xf9407bf7
 	WORD $0x7100001f
 	WORD $0x540004cc
@@ -3327,7 +3300,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf100013f
 	WORD $0xf900c109
 	WORD $0xaa0c03e9
-	WORD $0x54fff6cc
+	WORD $0x54fff70c
 	WORD $0xf9407ff4
 	WORD $0xf9004feb
 	WORD $0xf90007f4
@@ -3335,7 +3308,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xa94f27f7
 	WORD $0xf9404feb
 	WORD $0xf94087ea
-	WORD $0x17ffffae
+	WORD $0x17ffffb0
 	WORD $0xf94053eb
 	WORD $0xb40002cb
 	WORD $0xf9407ff4
@@ -3346,7 +3319,7 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xd1000529
 	WORD $0xf100013f
 	WORD $0xf900c109
-	WORD $0x54fff1cc
+	WORD $0x54fff20c
 	WORD $0xf9407ff4
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
@@ -3354,16 +3327,16 @@ TEXT ·rqsort_stop_block(SB), $264-16
 	WORD $0xf94053e8
 	WORD $0xf9405bea
 	WORD $0xf9005fe8
-	WORD $0x17ffff86
+	WORD $0x17ffff88
 	WORD $0xaa1f03e8
 	WORD $0xf9403be9
 	WORD $0xf90053e9
-	WORD $0x17fffe8c
+	WORD $0x17fffe91
 	WORD $0xf9403be9
 	WORD $0xf9407ff4
 	WORD $0xaa1f03e8
 	WORD $0xf90053e9
-	WORD $0x17fffe87
+	WORD $0x17fffe8c
 	WORD $0x14000001
 	RET
 

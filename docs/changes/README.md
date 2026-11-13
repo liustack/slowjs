@@ -49,6 +49,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | v0.30.3 | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
 | The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | v0.30.3 | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
 | On amd64 every SSE instruction that needs its operand on 16 bytes reads data placed by a `PCALIGN $16`, or a local, or a global, and the generator and the post-link check refuse anything else | Unreleased | [c-engine.md](c-engine.md#sse-reads-that-need-16-bytes-stay-on-16) |
+| A call through a pointer takes its result from registers, and a generated function that no Go code calls no longer writes its result to the Go stack | Unreleased | [c-engine.md](c-engine.md#results-only-in-registers) |
 
 ## Commits of upstream QuickJS
 

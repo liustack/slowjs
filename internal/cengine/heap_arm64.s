@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·heap_usable_size(SB), NOSPLIT, $0-24
+TEXT ·heap_usable_size(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15,10 +15,9 @@ TEXT ·heap_usable_size(SB), NOSPLIT, $0-24
 	WORD $0x14000003
 	WORD $0xaa1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·heap_create(SB), $152-32
+TEXT ·heap_create(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -286,7 +285,6 @@ TEXT ·heap_create(SB), $152-32
 	WORD $0xd503201f
 	WORD $0x68656170
 	WORD $0x00000000
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·heap_destroy(SB), NOSPLIT, $0-16
@@ -309,7 +307,7 @@ TEXT ·heap_set_remap(SB), NOSPLIT, $0-24
 	WORD $0x14000001
 	RET
 
-TEXT ·heap_alloc(SB), $56-32
+TEXT ·heap_alloc(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -348,10 +346,9 @@ TEXT ·heap_alloc(SB), $56-32
 	WORD $0xf9001d69
 	WORD $0xf9001568
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·heap_take(SB), $104-40
+TEXT ·heap_take(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -570,7 +567,6 @@ TEXT ·heap_take(SB), $104-40
 	WORD $0x00000000
 	WORD $0x68656170
 	WORD $0x00000001
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·heap_free(SB), $120-24
@@ -659,7 +655,7 @@ TEXT ·heap_free(SB), $120-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·heap_realloc(SB), $248-40
+TEXT ·heap_realloc(SB), $248-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1250,10 +1246,9 @@ TEXT ·heap_realloc(SB), $248-40
 	WORD $0x91008314
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·heap_remap_dedicated(SB), $136-56
+TEXT ·heap_remap_dedicated(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1336,7 +1331,6 @@ TEXT ·heap_remap_dedicated(SB), $136-56
 	WORD $0x9100c114
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+48(FP)
 	RET
 
 TEXT ·heap_untake(SB), $120-24
@@ -1563,7 +1557,7 @@ TEXT ·heap_release_start(SB), $104-24
 	WORD $0x14000001
 	RET
 
-TEXT ·heap_release_next_chunk(SB), $88-32
+TEXT ·heap_release_next_chunk(SB), $88-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1647,11 +1641,9 @@ TEXT ·heap_release_next_chunk(SB), $88-32
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, r0+16(FP)
-	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·heap_release_next_range(SB), $72-32
+TEXT ·heap_release_next_range(SB), $72-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1756,7 +1748,5 @@ TEXT ·heap_release_next_range(SB), $72-32
 	WORD $0xa906febf
 	WORD $0xf90032bf
 	WORD $0x14000001
-	MOVD R0, r0+16(FP)
-	MOVD R1, r1+24(FP)
 	RET
 

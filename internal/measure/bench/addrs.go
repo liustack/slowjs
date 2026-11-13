@@ -113,7 +113,7 @@ var nops = [][]byte{
 	8: {0x0f, 0x1f, 0x84, 0, 0, 0, 0, 0},
 }
 
-// ReadLayout finds the interpreter fn (such as JS_RegvmRun_block) in the
+// ReadLayout finds the interpreter fn (such as JS_RegvmRun) in the
 // amd64 ELF binary, the first instruction of its body, and, with the opcode
 // names, the handler of each of HotOps from its jump table (see jumpTable).
 func ReadLayout(bin, fn string, names []string) (Layout, error) {

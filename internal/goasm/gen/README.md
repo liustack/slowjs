@@ -82,6 +82,7 @@ runs its own checks and lowering in Go (`debug/elf`,
    area, call, read the result, restore), where a call to a unified function
    the driver lowers takes the result from the registers the callee stored
    it from and reads nothing back from the Go stack (`LowerEnv.RegResult`),
+   and so does a call through a pointer (`LowerEnv.ICallRegResult`),
    move LLVM's locals onto the Go frame, keep constant pools inside the
    function, and turn every return into a jump to one Go RET. A function
    starts in the lowered object where its body will sit in the binary
@@ -456,9 +457,40 @@ call before writing it but those results and the saved registers. A call
 whose record says it takes the result from registers (`RegResult`) has no
 result loads: its target must be a lowered unified function, not a stub, a
 leaf or Go code, and the registers llc takes the result from must be the
-ones the callee's probe returns it in. Each return stores the registers llc
+ones the callee's probe returns it in. A call through a pointer may take its
+result from registers too: a pointer holds only a lowered unified function
+(below), so the registers must be the ones every lowered unified function
+returns a result of that type in, by their probes on amd64 and by the
+convention on arm64 (x0, x1 or d0), where each return of llc's facts must
+use them. Each return stores the registers llc
 returns and jumps to Go's epilogue, which touches only BP and SP, so those
-registers still hold the result after the RET. A leaf keeps C's registers, so of
+registers still hold the result after the RET. This rests on what Go does
+with assembly, checked in Go 1.26.6 and 1.27.2: the assembler expands a RET
+of a TEXT with a frame into the restore of BP (FP and LR on arm64), the add
+to SP and the RET (`cmd/internal/obj/x86/obj6.go` at line 815,
+`cmd/internal/obj/arm64/obj7.go` at line 697), and the runtime never stops
+assembly at a point it chooses (`isAsyncSafePoint` in `runtime/preempt.go`
+at line 450 refuses a function with `FuncFlagAsm`), so no call is pushed
+between the RET and the read (`pushCall` in `runtime/signal_amd64.go` at
+line 80 and `signal_arm64.go` at line 91 runs only for such a stop, and on
+windows the stop asks `isAsyncSafePoint` too, `runtime/os_windows.go` at
+line 1221 in 1.26.6 and 1275 in 1.27.2). A fault diverts to a panic
+(`preparePanic`) and never comes back to the read. A function no Go code names stores no result at all
+(`-go-calls`, `FuncRecord.NoResult`): its only callers are lowered calls,
+which take the result from registers. `internal/cengine/gocalls.txt` lists
+the functions the Go files and the hand-written assembly of the module
+name, as a call, as a value, in a `//go:linkname` or in a `#define`. `go run
+./internal/goasm/gen/cmd/gocalls` writes it (`GoCalls`), and
+`TestGoCallsList` fails when it is stale. Such a function is declared to Go
+without a result, so Go code that reads one does not compile, and `go vet
+-asmdecl` holds its TEXT to the size of its arguments. The check takes no
+result store at its returns, still holds the registers llc returns in to
+the ones its callers read, and refuses a call that loads a result from the
+Go stack where it could reach such a function: a direct call of one, and a
+call through a pointer as soon as there is one. A packed function counts as
+named when Go names the function that makes its block (`PackedGo`), and when
+Go does not it gets no such function. A poison build, and a build without
+`-go-calls` (the `-src` builds of the tests), store every result. A leaf keeps C's registers, so of
 its facts only its calls' targets and the number of its calls and returns
 are checked. llc's own code must keep to what the build rules out: a call
 through memory fails, and so does a frame access wider than 8 bytes that is
@@ -467,7 +499,12 @@ must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the
 one the lowering marshalled; a symbol anywhere else fails. It compares engine_rodata and the data each function
-carries byte by byte, pointers by what they point to. It also holds
+carries byte by byte, pointers by what they point to. A function pointer,
+an address the code takes or a pointer of engine_rodata, may hold only the
+start of a lowered unified function or of a stub: a host callback (Go code),
+a leaf or a place inside a function fails, here and already in the driver
+(`CheckPointerTargets`), so every call through a pointer reaches code that
+returns its result the way a lowered unified function does. It also holds
 each pool and table to its alignment at the address where it sits in the
 binary. `-verify-all` also
 fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the

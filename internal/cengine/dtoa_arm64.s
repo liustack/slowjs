@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·u32toa(SB), $104-32
+TEXT ·u32toa(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -206,10 +206,9 @@ TEXT ·u32toa(SB), $104-32
 	WORD $0x3c9e1100
 	WORD $0x3c9f1102
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·i32toa(SB), $88-32
+TEXT ·i32toa(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -594,10 +593,9 @@ TEXT ·i32toa(SB), $88-32
 	WORD $0x52800048
 	WORD $0xcb0e0100
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·u64toa(SB), $104-32
+TEXT ·u64toa(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1207,10 +1205,9 @@ TEXT ·u64toa(SB), $104-32
 	WORD $0xfffffffa
 	WORD $0xfffffffb
 	WORD $0xfffffffd
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·i64toa(SB), $56-32
+TEXT ·i64toa(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1231,10 +1228,9 @@ TEXT ·i64toa(SB), $56-32
 	BL ·u64toa(SB)
 	WORD $0x91000400
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·u64toa_radix(SB), $104-40
+TEXT ·u64toa_radix(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1370,10 +1366,9 @@ TEXT ·u64toa_radix(SB), $104-40
 	BL ·goasm_chunked_memcpy(SB)
 	WORD $0xf94037f3
 	WORD $0x17ffff88
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·i64toa_radix(SB), $104-40
+TEXT ·i64toa_radix(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1645,10 +1640,9 @@ TEXT ·i64toa_radix(SB), $104-40
 	BL ·goasm_chunked_memcpy(SB)
 	WORD $0xf94037f3
 	WORD $0x17ffff0d
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_dtoa_max_len(SB), NOSPLIT, $0-48
+TEXT ·js_dtoa_max_len(SB), NOSPLIT, $0-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	FMOVD a1+8(FP), F0
@@ -1736,10 +1730,9 @@ TEXT ·js_dtoa_max_len(SB), NOSPLIT, $0-48
 	WORD $0x52800129
 	WORD $0x1a89c100
 	WORD $0x14000001
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_dtoa(SB), $248-64
+TEXT ·js_dtoa(SB), $248-56
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1875,7 +1868,7 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xb90029a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xb940dbe8
 	WORD $0xf9407ff5
 	WORD $0x52800037
@@ -2003,7 +1996,7 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xb90029a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xb940dbe8
 	WORD $0xf9407ff5
 	WORD $0x2a1f03f7
@@ -2076,7 +2069,7 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xb90029a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xf9407fe8
 	WORD $0x29402508
 	WORD $0x35000509
@@ -2253,7 +2246,7 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xb90029bf
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xf94077e8
 	WORD $0x2a0003f6
 	WORD $0x52800057
@@ -2310,7 +2303,7 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xb90029a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xb940e3e8
 	WORD $0xf9407ff5
 	WORD $0x52800037
@@ -3034,7 +3027,6 @@ TEXT ·js_dtoa(SB), $248-64
 	WORD $0xd503201f
 	WORD $0x00000001
 	WORD $0x00000000
-	MOVD R0, ret+56(FP)
 	RET
 
 TEXT ·mpb_shr_round(SB), $168-32
@@ -3824,7 +3816,7 @@ TEXT ·mpb_shr_round(SB), $168-32
 	WORD $0x17ffffee
 	RET
 
-TEXT ·output_digits(SB), $168-56
+TEXT ·output_digits(SB), $168-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4187,10 +4179,9 @@ TEXT ·output_digits(SB), $168-56
 	BL ·goasm_chunked_memmove(SB)
 	WORD $0xf94057f3
 	WORD $0x17fffff1
-	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·mul_pow_block(SB), $168-24
+TEXT ·mul_pow(SB), $168-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4487,7 +4478,7 @@ TEXT ·mul_pow_block(SB), $168-24
 	WORD $0xb9002aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mp_div1norm_block(SB)
+	BL ·mp_div1norm(SB)
 	WORD $0xf9403bec
 	WORD $0xf9404feb
 	WORD $0xb940afed
@@ -4590,10 +4581,9 @@ TEXT ·mul_pow_block(SB), $168-24
 	WORD $0xb9000168
 	WORD $0x0b090140
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·mp_div1norm_block(SB), $104-24
+TEXT ·mp_div1norm(SB), $104-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4703,10 +4693,9 @@ TEXT ·mp_div1norm_block(SB), $104-24
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·js_atod_block(SB), $264-24
+TEXT ·js_atod(SB), $264-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5760,7 +5749,7 @@ TEXT ·js_atod_block(SB), $264-24
 	WORD $0xf90043f5
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xf94053f5
 	WORD $0x294026a8
 	WORD $0x350014c9
@@ -6005,15 +5994,14 @@ TEXT ·js_atod_block(SB), $264-24
 	WORD $0xa90222b0
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_atod_poll_block(SB)
+	BL ·js_atod_poll(SB)
 	WORD $0x17ffffe9
 	WORD $0xd503201f
 	WORD $0x00000001
 	WORD $0x00000000
-	FMOVD F0, ret+16(FP)
 	RET
 
-TEXT ·js_atod_poll_block(SB), $280-24
+TEXT ·js_atod_poll(SB), $280-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7176,7 +7164,7 @@ TEXT ·js_atod_poll_block(SB), $280-24
 	WORD $0xf9003bf5
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·mul_pow_block(SB)
+	BL ·mul_pow(SB)
 	WORD $0xf9404feb
 	WORD $0x29402568
 	WORD $0x350014c9
@@ -7433,6 +7421,5 @@ TEXT ·js_atod_poll_block(SB), $280-24
 	WORD $0xd503201f
 	WORD $0x00000001
 	WORD $0x00000000
-	FMOVD F0, ret+16(FP)
 	RET
 

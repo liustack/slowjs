@@ -285,6 +285,28 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及活过一个标签、或放在寄存器入口叶子函数跨调用保留的寄存器里的元组地址。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
 
+## 结果只在寄存器里
+
+发布版本：Unreleased。
+
+从 v0.29.6 起，直接调用生成函数时从被调用者返回结果的寄存器里取结果。生成器又走了两步，把这条路走完：
+
+- 经过指针的调用也从寄存器取结果。以前它要从 Go 栈上把结果读回来，而被调用者几条指令之前刚把结果存到那里。amd64 上有 215 个、arm64 上有 214 个经过指针并带结果的调用，现在都不再读回。
+- 没有 Go 代码调用的生成函数不再把结果存到 Go 栈上。调用它的只有生成的代码，而生成的代码从寄存器读结果。Go 代码调用引擎里的 91 个函数。其余的函数（amd64 上 1,582 个里的 1,489 个，arm64 上 1,576 个里的 1,483 个）都不存结果：其中 1,181 个有返回值，在 amd64 上是 1,646 个结果字，每次返回都不再存。
+
+为什么安全：
+
+- 指针只会指向 lowering 后的统一函数。每个这样的函数都从它的类型对应的寄存器存结果，然后只运行 Go 的尾声，尾声只碰 BP 和 SP（arm64 上是 FP 和 LR），而 Go 运行时从不在它自己挑的位置停下汇编代码，所以调用者读结果的时候寄存器里还是结果。生成器的 README 写明了这依赖 Go 1.26.6 和 1.27.2 的哪几行。生成器拒绝指向别处的函数指针（代码取的地址，或 engine_rodata 里的指针）：宿主回调（Go 代码）、生成器的回调、寄存器入口的叶子函数、函数内部某处（`CheckPointerTargets`），两个链接后检查在二进制里再拒绝一次。桩可以是目标，因为它调用 `goasmMissing`，而 `goasmMissing` 会 panic：两个检查都要求每个桩如此。
+- 结果所在的寄存器就是 llc 用的寄存器。amd64 上，检查要求 llc 读取经过指针调用的结果所用的寄存器，正是每个同类型 lowering 后函数按探针返回结果的寄存器。arm64 上，lowering 要求 llc 的 facts 里每次返回都按类型用 x0、x1 或 d0。
+- Go 代码调用哪些函数的名单从源码生成，不是手写的（`internal/cengine/gocalls.txt`，`go run ./internal/goasm/gen/cmd/gocalls`）：模块里每个 Go 文件和每个手写汇编文件，包括模块里套着的模块，不论是调用、当作值、写在 `//go:linkname` 里还是写在 `#define` 里。Go 代码调用了名单上没有的函数，或者名单上有 Go 已经不再调用的函数，`TestGoCallsList` 都会失败。名单多一个名字，只是多保留一次结果存储。
+- 名单之外的函数向 Go 声明时没有结果，所以读它结果的 Go 代码编译不过，`go vet -asmdecl` 也让它的 TEXT 只有参数的大小。两个链接后检查在它的返回处不要求存结果，但仍要求 llc 返回所用的寄存器就是调用者读取的寄存器，并拒绝可能到达这种函数的、从 Go 栈读结果的调用：直接调用这种函数的调用，以及任何经过指针的调用。
+- 别的都没有变。每个 TEXT 的栈帧大小不变（只有参数和结果的大小变了），`JS_RegvmRun` 的影子栈帧在 amd64 上仍是 256 字节，在 arm64 上仍是 176 字节，`TestRegvmDepth` 的七个深度下限给出同样的深度，`TestCCallDepth` 通过。没有 Go 代码为之建块的打包函数不再有 Go 包装函数（amd64 上从 24 个减到 2 个，arm64 上从 218 个减到 9 个），并保留原来的名字。
+- poison 构建和以前一样存下每个结果、读回每个结果，不带 `-go-calls` 的构建（生成器测试里的 `-src` 构建）也存下每个结果。
+
+它对生成文件的改变，对照同样的 C：amd64 的 `.s` 文件小了 0.74%（11,644,354 字节到 11,558,760 字节），arm64 小了 0.42%（11,120,506 到 11,074,094）。它带来的收益见 [performance.zh-CN.md](../performance.zh-CN.md#结果只在寄存器里)。
+
+测试：`TestCheckPointerTargets` 拒绝指向宿主回调、生成器回调、叶子函数、不存在的函数或函数内部某处的指针，代码里的和 engine_rodata 里的都拒绝，经过别名也一样。`TestCheckCases`（amd64，来自手写的 llc 代码）拒绝叶子函数或宿主回调的地址，拒绝经过指针的调用的结果读取与记录不符（有或没有），拒绝 llc 从别的寄存器取这种结果，对于不存结果的函数，拒绝两个方向上与之不符的记录、llc 用别的寄存器给出的返回，以及读取结果的直接调用或经过指针的调用。`TestCheckARM64FunctionPointer`、`TestCheckARM64Rodata`、`TestCheckARM64ICallRegResult`、`TestCheckARM64NoResult` 和 `TestCheckARM64Stub` 在 arm64 上做同样的事，`TestLowerARM64EngineFacts` 和 `TestLowerARM64EngineNoResult` 检查 lowering。`TestGoCalls` 在一个小模块上运行扫描器（调用、值、闭包、被遮蔽的名字、字段、键、同名的导入、测试、别的包、套着的模块、linkname、宏，以及别的包的汇编），`TestPostLinkCheck` 用只列了一个函数的 `-go-calls` 生成一个 C 文件，检查声明，对它运行链接后检查，用要求每个结果都存下的检查拒绝同一个二进制，并拒绝含有引擎里没有的名字的名单。
+
 ## 释放对象时被要求回收
 
 引擎在释放对象期间，也就是 `gc_phase` 不是 `JS_GC_PHASE_NONE` 时，`JS_RunGC` 和 `JS_RunYoungGC` 立刻返回，什么也不做：在释放引用计数降到零的对象的 `free_zero_refcount` 里，在立即释放引用计数降到零的普通对象的 `free_zero_refcount_first` 里（见 [objects-and-shapes.zh-CN.md](objects-and-shapes.zh-CN.md)），在释放一次回收找到的环的 `gc_free_cycles` 里，以及释放运行时的这两处。创建对象时阈值要求的回收也经过 `JS_RunGC`，所以这时创建的对象同样不会开始回收。阈值不动，在释放之后创建下一个对象时会再检查。

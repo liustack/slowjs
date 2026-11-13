@@ -5,10 +5,10 @@
 #include "funcdata.h"
 
 GLOBL ·engine_rodata(SB), RODATA|NOPTR, $114528
-DATA ·engine_rodata+24(SB)/8, $·js_arguments_define_own_property_block(SB)
+DATA ·engine_rodata+24(SB)/8, $·js_arguments_define_own_property(SB)
 DATA ·engine_rodata+80(SB)/8, $·js_string_get_own_property(SB)
 DATA ·engine_rodata+96(SB)/8, $·js_string_delete_property(SB)
-DATA ·engine_rodata+104(SB)/8, $·js_string_define_own_property_block(SB)
+DATA ·engine_rodata+104(SB)/8, $·js_string_define_own_property(SB)
 DATA ·engine_rodata+192(SB)/8, $·js_module_ns_has(SB)
 DATA ·engine_rodata+240(SB)/8, $0x2064696c61766e69
 DATA ·engine_rodata+248(SB)/8, $0x6c20676e69727473
@@ -557,10 +557,10 @@ DATA ·engine_rodata+4872(SB)/8, $0x0000000000202020
 DATA ·engine_rodata+4880(SB)/8, $·js_proxy_get_own_property(SB)
 DATA ·engine_rodata+4888(SB)/8, $·js_proxy_get_own_property_names(SB)
 DATA ·engine_rodata+4896(SB)/8, $·js_proxy_delete_property(SB)
-DATA ·engine_rodata+4904(SB)/8, $·js_proxy_define_own_property_block(SB)
+DATA ·engine_rodata+4904(SB)/8, $·js_proxy_define_own_property(SB)
 DATA ·engine_rodata+4912(SB)/8, $·js_proxy_has(SB)
 DATA ·engine_rodata+4920(SB)/8, $·js_proxy_get(SB)
-DATA ·engine_rodata+4928(SB)/8, $·js_proxy_set_block(SB)
+DATA ·engine_rodata+4928(SB)/8, $·js_proxy_set(SB)
 DATA ·engine_rodata+4936(SB)/8, $·js_proxy_set_prototype(SB)
 DATA ·engine_rodata+4944(SB)/8, $·js_proxy_is_extensible(SB)
 DATA ·engine_rodata+4952(SB)/8, $·js_proxy_prevent_extensions(SB)
