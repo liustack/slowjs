@@ -551,6 +551,8 @@ Instructions of a render, callgrind on the generated build on linux/amd64 at pos
 
 ## Captures that never change
 
+Release: Unreleased.
+
 A closure reads a variable of the function around it through a `JSVarRef`, which the frame and every closure of the variable share, so that a write on either side is seen on the other. Most captured variables are never written once a closure has them: a parameter, a `const`, a function declaration, a `let` set once before the closure is made. `capture_by_value` finds them. It runs on the final code of each function, after `share_local_slots`, when the compiler makes the function and when `JS_ReadObject` reads code it has not read before with the checks. It marks a captured argument or local of a function `by_value`, and the closure variable of each function that captures it, when:
 
 - no path of the code goes from an instruction that makes such a closure (`fclosure`, or `push_const` of a class) to a write of the variable without a `close_loc` of it on the way (a `for` with `let` gives each round a binding of its own). Paths follow the jumps, go from a `ret` to the instruction after each `gosub`, and from every instruction to every `catch` of the function, so a write in a `catch` counts wherever the closure is made. A `yield` or an `await` goes on at the next instruction, so generators and async functions follow the same rule.

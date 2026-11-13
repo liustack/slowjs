@@ -551,6 +551,8 @@ tifa 商店的六个工作台页面，每次渲染少 0.61% 的指令，店面�
 
 ## 捕获后不再改变的变量
 
+发布：Unreleased。
+
 闭包通过 `JSVarRef` 读外层函数的变量，栈帧和这个变量的每个闭包共用它，所以哪一边写了，另一边都看得到。大多数被捕获的变量在闭包拿到之后就不再写了：参数、`const`、函数声明、在闭包创建之前赋值一次的 `let`。`capture_by_value` 找出它们。它在每个函数的最终代码上运行，在 `share_local_slots` 之后，编译器创建函数时跑一次，`JS_ReadObject` 读入之前没有经过检查读过的代码时再跑一次。一个函数被捕获的参数或局部变量，以及捕获它的每个函数里对应的闭包变量，在满足下面几条时标记为 `by_value`：
 
 - 代码里没有一条路径从创建这种闭包的指令（`fclosure`，或类的 `push_const`）走到这个变量的一次写入，中间又没有它的 `close_loc`（带 `let` 的 `for` 每一轮有自己的绑定）。路径沿着跳转走，从 `ret` 走到每个 `gosub` 的下一条指令，从每条指令走到函数里的每个 `catch`，所以 `catch` 里的写入不论闭包在哪里创建都算数。`yield` 和 `await` 在下一条指令继续，所以生成器和异步函数按同样的规则。
@@ -692,7 +694,7 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 ## catch 偏移和跳转不离开所在的函数
 
-版本：未发布。
+发布：Unreleased。
 
 `JS_ReadObject` 对读到的每个函数跑一遍寄存器 pass，pass 接不了的代码以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝（`engine/regvm-entry.h` 的 `rv_read_check`）。现在又多拒绝三类这样的代码（`engine/regvm-pass.h`）：
 

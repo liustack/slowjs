@@ -286,7 +286,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 往数组里追加元素时，第一次就留 8 个元素的空间
 
-发布版本：未发布。
+发布：Unreleased。
 
 用 `push`、在长度处按下标写、展开、`splice`，或者一个一个往数组里填元素的内置函数（`Object.entries`、`split`、`JSON.parse`、`concat`、`map`）追加元素时，数组第一个元素只分到 1 个槽，之后依次是 2、3、4、6、9，每一步都是一次分配，加上一次复制已有的元素。这样建出来的数组大多只有几个元素（商店页每次渲染有 1.7K 到 3K 个数组超出了第一次分配，MUI 订单页 3K 个）。现在 `engine/quickjs.c` 里的 `expand_fast_array_append`，在一个还没有空间的数组追加第一个元素时，给它 `JS_ARRAY_MIN_ROOM`（8）个槽，之后照常 1.5 倍增长。只有追加的三个地方调用它（`add_fast_array_element`、`push` 的快速路径、`splice` 让数组变长的地方）。一开始就知道大小的数组（字面量、`slice`、剩余参数、`arguments`、自身键的数组）仍然只要刚好的大小。
 
