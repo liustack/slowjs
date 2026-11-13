@@ -599,10 +599,20 @@ var bridge = []*quickjs.Builtin{
 		}
 
 		// go-intl weighs a lone surrogate by its code point, as ICU does, so
-		// the strings keep theirs.
+		// the strings keep theirs. As WTF-8 they take at most three bytes a
+		// unit, counted before they are read. Short strings are compared
+		// with no limits (shortCompare).
+		vm := a.VM()
+		nx, _ := door.Len(1)
+		ny, _ := door.Len(2)
+		var l *gointl.Limits
+		if nx+ny > shortCompare {
+			l = callLimits(vm)
+			l.Room(3 * int64(nx+ny))
+		}
 		x, _ := door.LongWTF8(1)
 		y, _ := door.LongWTF8(2)
-		return a.VM().NewInt(c.c.CompareLimited(x, y, limitsOf(a.VM()))), nil
+		return vm.NewInt(c.c.CompareLimited(x, y, l)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
 	segBreaks,

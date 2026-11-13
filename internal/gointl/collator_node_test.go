@@ -97,12 +97,12 @@ func TestCollatorMatchesNode(t *testing.T) {
 			idx[i] = i
 		}
 		sort.SliceStable(idx, func(i, j int) bool {
-			return c.compareElements(keys[idx[i]], keys[idx[j]]) < 0
+			return c.compareElements(keys[idx[i]], keys[idx[j]], nil) < 0
 		})
 		var got strings.Builder
 		got.WriteString(strconv.Itoa(idx[0]))
 		for i := 1; i < len(idx); i++ {
-			if c.compareElements(keys[idx[i-1]], keys[idx[i]]) == 0 {
+			if c.compareElements(keys[idx[i-1]], keys[idx[i]], nil) == 0 {
 				got.WriteByte('=')
 			} else {
 				got.WriteByte('<')

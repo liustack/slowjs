@@ -21,10 +21,18 @@ import "unicode/utf8"
 // ICU compares UTF-16, and so does this: a JavaScript string's units, the
 // lone surrogates WTF-8 carries among them.
 
+// prefixPiece is how many bytes of the prefix two strings share
+// comparisonStart compares between two checks (qjs).
+const prefixPiece = 1 << 16
+
 // comparisonStart is the byte offset, the same in both, from which ICU
-// compares two different strings.
-func (c *Collator) comparisonStart(a, b string) int {
+// compares two different strings. It checks l between pieces of the prefix
+// they share, and in the walk back over it (qjs).
+func (c *Collator) comparisonStart(a, b string, l *Limits) int {
 	i := 0
+	for n := min(len(a), len(b)); i+prefixPiece <= n && a[i:i+prefixPiece] == b[i:i+prefixPiece]; i += prefixPiece {
+		l.check()
+	}
 	for i < len(a) && i < len(b) && a[i] == b[i] {
 		i++
 	}
@@ -49,7 +57,9 @@ func (c *Collator) comparisonStart(a, b string) int {
 		return i
 	}
 	p := diff.prev(a)
+	turns := 0
 	for !p.isStart() && c.unsafeBackward(p.unit(a)) {
+		l.every(&turns)
 		p = p.prev(a)
 	}
 	return p.off

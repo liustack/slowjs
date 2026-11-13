@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/intlhook"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
 
@@ -359,6 +360,30 @@ func TestCaseRoomCoversGo(t *testing.T) {
 			var e *quickjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
+			}
+		})
+	}
+}
+
+// A compare of two strings of shortCompare units in all, which weighs them
+// with no limits, takes less Go than the door's fixed room, for the
+// characters of the most collation elements and the longest decompositions.
+func TestShortCompareFitsFixedRoom(t *testing.T) {
+	const half = shortCompare / 2
+	for _, unit := range []string{`ﷺ`, `가`, `㍿`, `ǖ`, `ཱི`, `̖́`, `𝒜`} {
+		t.Run(unit, func(t *testing.T) {
+			vm := newVM(t)
+			eval(t, vm, `var u = '`+unit+`', n = Math.floor(`+strconv.Itoa(half)+` / u.length), a = u.repeat(n), b = 'x' + u.repeat(n - 1), c = new Intl.Collator('en'); c.compare(a, b); 0`)
+			if n := eval(t, vm, `a.length + b.length`); n.(int) > shortCompare {
+				t.Fatalf("%d units", n)
+			}
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			eval(t, vm, `c.compare(a, b)`)
+			runtime.ReadMemStats(&after)
+			if took := after.TotalAlloc - before.TotalAlloc; took > intlhook.RoomFixed {
+				t.Errorf("Go took %d bytes, more than the fixed room of %d", took, intlhook.RoomFixed)
 			}
 		})
 	}

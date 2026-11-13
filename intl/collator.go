@@ -106,3 +106,9 @@ func resolveCollator(req request) (*collator, error) {
 
 // init has nothing to do: go-intl made the collator while resolving it.
 func (c *collator) init() error { return nil }
+
+// shortCompare is the most UTF-16 units in all of two strings a compare
+// weighs with no limits: a few microseconds of work, and less Go than the
+// door's fixed room. U+FDFA, of 18 collation elements, took the most, 65,000
+// bytes for 128 units (TestShortCompareFitsFixedRoom).
+const shortCompare = 128

@@ -290,6 +290,23 @@ func limitsOf(vm *quickjs.VM) *gointl.Limits {
 	}
 }
 
+// callLimits are limitsOf for the work of one call that holds what it asks
+// room for until the call ends, as a compare holds the code points and the
+// collation elements of both strings: Room counts every ask of the call, and
+// checks the room for them all. Asks within the door's fixed room, which
+// the door checked when it read the first argument, do not ask the VM.
+func callLimits(vm *quickjs.VM) *gointl.Limits {
+	var held int64
+	return &gointl.Limits{
+		Check: func() { intlhook.Check(vm) },
+		Room: func(n int64) {
+			if held += n; held > intlhook.RoomFixed {
+				intlhook.Room(vm, held)
+			}
+		},
+	}
+}
+
 // stopTurn is checkTurn for a loop that has made javascript values, which
 // it frees before it returns when stopTurn is true: then the call is to
 // end, with its error pending, and the Builtin returns at once.

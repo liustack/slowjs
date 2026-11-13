@@ -263,6 +263,15 @@ var swept = []struct {
 		`var s = 'ÌÍĨ '.repeat(N / 4)`, `s.toLocaleLowerCase('lt').length`, 2 << 20},
 	{"toLocaleUpperCase in Greek",
 		`var s = 'άέή'.repeat(N / 3)`, `s.toLocaleUpperCase('el').length`, 1 << 20},
+	{"compare of two long strings that differ first",
+		`var a = 'b' + 'ab'.repeat(N / 2), b = 'a' + 'ab'.repeat(N / 2), c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
+	{"compare of two long strings that differ first only in case",
+		`var a = 'A' + 'ab'.repeat(N / 2), b = 'a' + 'ab'.repeat(N / 2), c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
+	{"compare of two long strings that share all but the end",
+		`var a = 'ab'.repeat(N / 2) + 'c', b = 'ab'.repeat(N / 2) + 'd', c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
 }
 
 // A dropped cursor is not kept: no slot of the list holds it after.

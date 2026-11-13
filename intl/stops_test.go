@@ -104,9 +104,7 @@ var longWork = []struct{ name, setup, call string }{
 // waiting holds the calls of longWork that still run whole in Go, with no
 // check or no count of the room, each until the change that cuts its work
 // into pieces. A test skips them, and that change takes its call out.
-var waiting = map[string]bool{
-	"Collator.compare of two long strings": true,
-}
+var waiting = map[string]bool{}
 
 // skipWaiting skips the call name of longWork while it waits for its change.
 func skipWaiting(t *testing.T, name string) {
