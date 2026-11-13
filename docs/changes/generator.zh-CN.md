@@ -17,7 +17,7 @@ read_when:
 
 ## tifa 页面的性能画像
 
-发布：��
+发布：v0.30.5。
 
 `make gen` 用一份性能画像（profile）编译引擎：引擎渲染真实页面时，每个分支各跑了多少次的计数。LLVM 用这些计数把常走的块放在一起，把溢出（spill）放在最少执行的地方，并排好 `switch` 各分支的顺序。画像是 `engine/pgo/profile.txt`，用 `engine/pgo/pages` 里的页面训练（见 [engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。在 AMD EPYC 服务器上，它让 tifa 的页面比同样的 C 不用画像生成时渲染快 5.4% 到 8.4%，在 Apple M4 上约快 3%（[performance.zh-CN.md](../performance.zh-CN.md#tifa-页面的性能画像)）。
 
@@ -111,7 +111,7 @@ read_when:
 
 ## 有栈帧的寄存器入口叶子函数有 Go 声明
 
-版本：��
+版本：v0.30.5。
 
 寄存器入口叶子函数（`memcpy`、`memmove`、`memset`）从寄存器取参数，只有生成的代码调用它。它不存寄存器、也不调用别的函数时，TEXT 写 `NOFRAME`。两样做了其中一样，TEXT 就保留栈帧（`NOSPLIT, $8-0`），而 `go vet -asmdecl` 要求每个不是 `NOFRAME` 的 TEXT 都有 Go 声明。现在生成器给这样的叶子函数在 `engine_decl_<arch>.go` 里写一个声明：`func memmove()`，和它的 TEXT 一样没有参数也没有返回值。`.s` 文件不变。
 

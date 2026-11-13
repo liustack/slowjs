@@ -666,7 +666,7 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 
 ## 展开、rest 和 Object.assign 的复制读中断标志
 
-发布版本：��
+发布版本：v0.30.5。
 
 展开、rest 和 `Object.assign` 在 C 里把源对象的键一个个定义到目标上。展开字符串现在会给出它的各个字符（[upstream-commits.zh-CN.md](upstream-commits.zh-CN.md)），一百万个字符的字符串就给出一百万个键，对象也可以有这么多键。现在复制的两个循环（`js_copy_data` 复制列出的键都是普通数据属性的源对象，`js_copy_data_properties` 复制其他源对象）每 4,096 个键读一次中断标志（`JS_COPY_POLL_KEYS`），停下时抛出无法捕获的中断。每个键多一次计数器检查，只复制几个键时看不出代价。
 
