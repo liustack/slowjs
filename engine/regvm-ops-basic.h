@@ -849,6 +849,13 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         if (JS_IsUninitialized(ret))
             break;
         goto answer;
+    case RV_FAST_STRING:
+        /* String(s) of a string is s (JS_ToString). A call does not come
+           here with new */
+        if (n < 1 || JS_VALUE_GET_TAG(W[1]) != JS_TAG_STRING)
+            break;
+        ret = JS_DupValue(ctx, W[1]);
+        goto answer;
     case RV_FAST_PUSH:
         {
             /* the elements are added after the checks, when they fit in

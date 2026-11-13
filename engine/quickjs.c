@@ -1330,6 +1330,7 @@ enum {
     RV_FAST_STR_INCLUDES, /* String.prototype.includes, startsWith, endsWith */
     RV_FAST_HAS_OWN, /* Object.hasOwn */
     RV_FAST_HAS_OWN_PROPERTY, /* Object.prototype.hasOwnProperty */
+    RV_FAST_STRING, /* String called as a function */
 };
 
 struct JSObject {
@@ -8945,6 +8946,8 @@ static JSValue js_string_indexOf(JSContext *ctx, JSValueConst this_val,
                                  int argc, JSValueConst *argv, int lastIndexOf);
 static JSValue js_string_includes(JSContext *ctx, JSValueConst this_val,
                                   int argc, JSValueConst *argv, int magic);
+static JSValue js_string_constructor(JSContext *ctx, JSValueConst this_val,
+                                     int argc, JSValueConst *argv);
 static JSValue js_object_hasOwn(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv);
 static JSValue js_object_hasOwnProperty(JSContext *ctx, JSValueConst this_val,
@@ -8986,6 +8989,8 @@ static int rv_fast_kind(JSCFunction *func, int magic)
         return RV_FAST_HAS_OWN;
     if (func == (JSCFunction *)js_object_hasOwnProperty)
         return RV_FAST_HAS_OWN_PROPERTY;
+    if (func == (JSCFunction *)js_string_constructor)
+        return RV_FAST_STRING;
     return RV_FAST_NONE;
 }
 
