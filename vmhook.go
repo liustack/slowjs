@@ -51,7 +51,7 @@ func (m *VM) goRoom() int64 {
 	if m.memoryLimit == 0 {
 		return -1
 	}
-	if n := m.jsGetMemorySize() + m.keep.Size(); n < m.memoryLimit {
+	if n := m.jsGetMemorySize(); n < m.memoryLimit {
 		return int64(m.memoryLimit - n)
 	}
 	return 0
@@ -64,10 +64,12 @@ func (m *VM) goRoom() int64 {
 // back, of at most keepMax bytes, for the next call that takes one, which
 // finds its pages in memory: the OS hands over the pages of a new block one
 // at a time as they are written, 25 to 40 ms for 16 MiB on the virtual M1
-// of GitHub's macos-15 runner, at every call. A kept block counts against
-// the memory limit (goRoom), m keeps one only when it is at most a quarter
-// of the room left, and gives it back to the OS after keepIdle calls that
-// took none, and at Close.
+// of GitHub's macos-15 runner, at every call. Only a VM with no memory limit
+// keeps a block: the engine counts its memory against the limit where it
+// allocates, in C, which knows nothing of the block, so a VM with a limit
+// and a block kept could pass the limit by the block. m gives the block
+// back to the OS after keepIdle calls that took none, at SetMemoryLimit
+// with a limit, and at Close.
 const (
 	keepMax  = 32 << 20
 	keepIdle = 16
@@ -88,17 +90,10 @@ func (m *VM) goTake(size int) (unsafe.Pointer, func(), bool) {
 	return unsafe.Pointer(unsafe.SliceData(b)), give, true
 }
 
-// mayKeep reports whether m.keep may keep a block of size bytes: always with
-// no memory limit, else when it is at most a quarter of the room left.
-func (m *VM) mayKeep(size uintptr) bool {
-	if m.h.Broken() {
-		return false
-	}
-	if m.memoryLimit == 0 {
-		return true
-	}
-	n := m.jsGetMemorySize() + m.keep.Size()
-	return n < m.memoryLimit && size <= (m.memoryLimit-n)/4
+// mayKeep reports whether m.keep may keep a block: when m has no memory
+// limit and is not broken.
+func (m *VM) mayKeep(uintptr) bool {
+	return m.memoryLimit == 0 && !m.h.Broken()
 }
 
 // goOutOfMemory is vmhook.OutOfMemory.

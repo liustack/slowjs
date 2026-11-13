@@ -125,3 +125,30 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 		})
 	}
 }
+
+// A VM with a memory limit keeps no block after a long call, so its memory
+// stays within the limit: the engine counts its own against the limit in C,
+// which knows nothing of a block kept. A VM with no limit keeps one.
+func TestLimitedVMKeepsNoBlock(t *testing.T) {
+	const n = 4 << 20
+	for _, limit := range []uintptr{1 << 30, 0} {
+		held, before := hostmem.Blocks(), hostmem.Kept()
+		vm := newVM(t)
+		if limit != 0 {
+			vm.SetMemoryLimit(limit)
+		}
+		setUp(t, vm, `var a = 'x'.repeat(N) + 'a', b = 'x'.repeat(N) + 'b', c = new Intl.Collator('en')`, n)
+		eval(t, vm, `c.compare(a, b)`)
+		kept, blocks := hostmem.Kept()-before, hostmem.Blocks()-held
+		if limit != 0 && (kept != 0 || blocks != 0) {
+			t.Errorf("a VM with a limit of %d holds %d bytes kept and %d blocks after a long call, want none", limit, kept, blocks)
+		}
+		if limit == 0 && (kept == 0 || blocks != 1) {
+			t.Errorf("a VM with no limit holds %d bytes kept and %d blocks after a long call, want one block kept", kept, blocks)
+		}
+		vm.Close()
+		if hostmem.Kept() != before || hostmem.Blocks() != held {
+			t.Errorf("after Close: %d bytes kept and %d blocks held", hostmem.Kept()-before, hostmem.Blocks()-held)
+		}
+	}
+}

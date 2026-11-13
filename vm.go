@@ -215,6 +215,10 @@ func (m *VM) SetMemoryLimit(limit uintptr) {
 	if limit == ^uintptr(0) {
 		m.memoryLimit = 0 // the engine's own value for no limit
 	}
+	if m.memoryLimit != 0 {
+		// A VM with a limit keeps no block (goTake).
+		m.keep.Release()
+	}
 }
 
 // SetGCThreshold sets the memory threshold at which a GC will be performed, in
@@ -344,6 +348,9 @@ func (m *VM) Close() error {
 		return errCloseInCall
 	}
 	if m.closed {
+		// What the OS refused at the first Close: the block kept, and
+		// the engine's memory.
+		m.keep.Release()
 		return m.closeEngineAgain()
 	}
 	m.closed, m.closing = true, true
