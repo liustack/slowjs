@@ -784,7 +784,6 @@ var goasmKeep = []any{
 	js_generator_mark,
 	js_generator_next,
 	js_get_array_buffer,
-	js_get_atom_index,
 	js_get_exception,
 	js_get_fast_array_element_out_of_line,
 	js_get_function_name,

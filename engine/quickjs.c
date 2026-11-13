@@ -816,6 +816,13 @@ struct JSString {
     uint32_t hash : 30;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
+    /* the atom of the string as a property key when JS_ValueToAtom takes the
+       string as its own atom (an atom of the type string, not empty, not
+       starting with a digit), else JS_ATOM_NULL: one read answers both
+       (rv_getel_atom, js_has_own_call). Set by __JS_NewAtom, 0 in a new
+       string. An atom string is never changed and is freed with its atom
+       (JS_FreeAtomStruct), so the number never outlives the atom. */
+    uint32_t key_atom;
 #ifdef DUMP_LEAKS
     struct list_head link; /* string list */
 #endif
@@ -3325,6 +3332,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->atom_type = 0;
     str->hash = 0;          /* optional but costless */
     str->hash_next = 0;     /* optional */
+    str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
     list_add_tail(&str->link, &rt->string_list);
 #endif
@@ -4389,6 +4397,8 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
     p->hash = h;
     p->hash_next = i;   /* atom_index */
     p->atom_type = atom_type;
+    p->key_atom = atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+        !is_digit(string_get(p, 0)) ? i : JS_ATOM_NULL;
 
     rt->atom_count++;
 
@@ -13526,7 +13536,10 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
         /* A string that is already an atom and does not start with a digit
            is its own atom: JS_ToPropertyKey would dup it, is_num_string
            would find no index, and __JS_NewAtom would take its index and
-           keep the dup as the reference of the atom, as JS_DupAtom does. */
+           keep the dup as the reference of the atom, as JS_DupAtom does.
+           Its key_atom says the same in one read, but with that LLVM copies
+           this function into 30 of its callers and grows some of their
+           frames. */
         if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
             !is_digit(string_get(p, 0)))
             return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
@@ -23463,12 +23476,10 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
         return JS_UNINITIALIZED;
     tag = JS_VALUE_GET_TAG(key);
     if (tag == JS_TAG_STRING) {
-        JSString *s = JS_VALUE_GET_STRING(key);
         /* the string JS_ValueToAtom takes as its own atom */
-        if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
-            is_digit(string_get(s, 0)))
+        atom = JS_VALUE_GET_STRING(key)->key_atom;
+        if (atom == JS_ATOM_NULL)
             return JS_UNINITIALIZED;
-        atom = js_get_atom_index(rt, s);
     } else if (tag == JS_TAG_INT &&
                (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
         atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));

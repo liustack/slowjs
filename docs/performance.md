@@ -789,6 +789,30 @@ Timed on 2026-11-13 on a linux/amd64 server (AMD EPYC 7B13), base and change in 
 
 A read that finds an own data property costs 115 native instructions instead of 210 (callgrind, linux/amd64, a loop of reads of one key). On the generated amd64 engine the MUI orders page runs 9.85M fewer instructions a render for its 54.6K such reads, about 180 a read. What a hit still pays over GETF's 25: the call of `rv_getel_atom` with its frame (about 20), the frame sync before it (about 5), the operands read again and their tests (about 30), the atom's index from the hash table of atoms (about 10) and the generic store of the result (about 12). The own lookup is the same hash probe GETF makes.
 
+### The key atom kept in the string
+
+[A string keeps the atom it is as a key](changes/c-engine.md#a-string-keeps-the-atom-it-is-as-a-key). Counted on 2026-11-13 against the keyed read of the section above (`5cfade69`). The generated engine inside tifa's `test/ssr` on an Apple M4 (darwin/arm64), warm renders of one VM, retired instructions per render, the median of a page's renders, the mean over pages, 6 rounds in both orders in one session (lowest and highest round in brackets). Every page gives the same HTML.
+
+| Pages | Instructions |
+| --- | ---: |
+| tifa's shop, fourteen store pages | -0.36% (-0.06% to -0.62%) |
+| tifa's shop, six workbench pages | -0.68% (-0.21% to -1.18%) |
+| React's page | -0.76% (-0.23% to -1.14%) |
+| tifa's MUI test app, three pages | -0.72% (-0.15% to -1.27%) |
+
+Timed on 2026-11-13 on a linux/amd64 server (AMD EPYC 7B13), against the keyed read of the section above, in one session: 16 layouts of each binary, 2 rounds in which the sides take turns, one core, the median render, summed over the pages of the group. The change in the mean over the layouts, with its 95% interval:
+
+| Pages | Time |
+| --- | ---: |
+| tifa's shop, fourteen store pages | -1.06% (-1.65% to -0.46%) |
+| tifa's shop, six workbench pages | -0.83% (-1.81% to +0.15%) |
+| React's page | -1.58% (-2.51% to -0.65%) |
+| tifa's MUI test app, three pages | -2.00% (-2.75% to -1.25%) |
+
+The workbench is within the 1% the measurement can tell apart, and no group is slower. Time falls more than the instructions do, on every group.
+
+A read that finds an own data property costs 81 native instructions instead of 116 (callgrind, linux/amd64, a loop of reads of one key). On the generated amd64 engine a render runs 0.65% (storefront home), 0.67% (workbench studio), 0.84% (React) and 0.99% (MUI orders, of which 0.45% is Go's `unicode/utf16.Encode`, which the change does not touch, so about 0.54% in the engine) fewer instructions. Most of it is the atom's number no longer taken from the hash table of atoms in `rv_getel_atom` and `js_has_own_call`, and on the MUI orders page 0.57M of 4.4M is the store of the frame no longer made before a read that hits.
+
 ### What the generated code costs against native C
 
 Measured on 2026-10-30 on linux/amd64 only (the machine above, timing on one core with its sibling idle). Four builds of the same C with the same JavaScript and the same steps in the host (load the bundle, start a render from a JSON, run the jobs, read the result): the pages of the shop, the store, MUI and the bench app from fixed bundles and inputs, with a fake Intl and a fixed clock, so the Go Builtins of tifa are not in it. All 26 pages give the same HTML in all four builds.

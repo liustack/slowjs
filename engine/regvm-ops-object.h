@@ -232,12 +232,14 @@ static inline BOOL rv_ta_num(int class_id)
    that the frame of rv_getel_slow, which a getter it calls sits on, does
    not grow. It tests the tags of o and the key itself, so that the loop
    keeps neither live past its fast paths: a test there made the loop
-   keep them in registers on the path of an array element too. */
+   keep them in registers on the path of an array element too. The loop
+   calls it before RV_SYNC_TOP, as it frees a T object on its array path
+   without it: nothing here runs code or collects, and freeing a value
+   does neither. */
 static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k, BOOL t)
 {
     JSValue obj = F[(int8_t)ip[1]], key, val;
-    JSString *s;
     JSObject *p;
     JSAtom atom;
     JSProperty *pr;
@@ -246,11 +248,10 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
         return FALSE;
-    s = JS_VALUE_GET_STRING(key);
-    if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
-        is_digit(string_get(s, 0)))
+    /* the test of the key and its atom in one read (JSString.key_atom) */
+    atom = JS_VALUE_GET_STRING(key)->key_atom;
+    if (atom == JS_ATOM_NULL)
         return FALSE;
-    atom = js_get_atom_index(ctx->rt, s);
     p = JS_VALUE_GET_OBJ(obj);
     for (;;) {
         prs = find_own_property(&pr, p, atom);
@@ -609,9 +610,9 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                 }                                                       \
             }                                                           \
         }                                                               \
-        RV_SYNC_TOP();                                                  \
         if (!RV_INJ_ARMED && rv_getel_atom(ctx, F, ip, isk, temp))     \
             RV_NEXT();                                                  \
+        RV_SYNC_TOP();                                                  \
         if (rv_getel_slow(ctx, F, ip, isk, temp))                       \
             goto rv_exception;                                          \
     }                                                                   \
