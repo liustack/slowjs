@@ -8,6 +8,8 @@ package fmt // import "github.com/liustack/quickjs/fmt"
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"runtime"
 
 	"github.com/liustack/quickjs"
@@ -48,13 +50,18 @@ const pkg = "fmt"
 // timeout ends it, in a time that grows with the bound: 16 MiB of quoted or hex
 // bytes take about 25 ms on an Apple M4.
 //
-// printf and println write to os.Stdout, and a write that blocks, as one to
-// a full pipe nobody reads does, holds the call, and the goroutine running
-// the VM, until it is done: neither [quickjs.VM.Interrupt] nor the eval
-// timeout ends it.
-func Register(obj quickjs.Value) (err error) {
+// printf and println write to os.Stdout, or to the writer of [Writer], 64
+// KiB at a time, and end the call between two writes when
+// [quickjs.VM.Interrupt] or the eval timeout asks it to. A write that
+// blocks, as one to a full pipe nobody reads does, holds the call, and the
+// goroutine running the VM, until it is done.
+func Register(obj quickjs.Value, opts ...Option) (err error) {
 	defer obj.Free()
 
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
 	vm := obj.VM()
 	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), quickjs.EvalGlobal)
 	if err != nil {
@@ -73,13 +80,13 @@ func Register(obj quickjs.Value) (err error) {
 			if !ok {
 				return 0, nil
 			}
-			return fmt.Printf(format, a...)
+			return write(vm, o.writer(), fmt.Sprintf(format, a...))
 		}, false},
 		{"println", func(a ...any) (int, error) {
 			if !fits(vm, room(vm), sizePrint(a), 0) {
 				return 0, nil
 			}
-			return fmt.Println(a...)
+			return write(vm, o.writer(), fmt.Sprintln(a...))
 		}, false},
 		{"sprint", func(a ...any) string {
 			if !fits(vm, room(vm), sizePrint(a), 0) {
@@ -106,6 +113,46 @@ func Register(obj quickjs.Value) (err error) {
 	}
 
 	return nil
+}
+
+// An Option changes what Register sets up.
+type Option func(*options)
+
+type options struct {
+	w io.Writer
+}
+
+// Writer makes printf and println write to w, where they write to
+// os.Stdout without it.
+func Writer(w io.Writer) Option { return func(o *options) { o.w = w } }
+
+// writer is the writer of o, or os.Stdout as it is when the call writes.
+func (o *options) writer() io.Writer {
+	if o.w != nil {
+		return o.w
+	}
+	return os.Stdout
+}
+
+// writePiece is the most bytes printf and println write at once.
+const writePiece = 64 << 10
+
+// write writes s to w, writePiece bytes at a time, and stops between two
+// writes when the call is to end (vmhook.Stop), which throws the error
+// that ends it. It returns what it wrote.
+func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
+	n := 0
+	for {
+		k, err := io.WriteString(w, s[:min(len(s), writePiece)])
+		n += k
+		if err != nil {
+			return n, err
+		}
+		s = s[k:]
+		if len(s) == 0 || vmhook.Stop(vm) {
+			return n, nil
+		}
+	}
 }
 
 // maxOutput is the most bytes of output a call may make in a VM with no

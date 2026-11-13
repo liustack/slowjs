@@ -75,7 +75,6 @@ func TestSprintfNoLimitStops(t *testing.T) {
 // pipe in one write, which held the call 2 s past Interrupt, until the pipe
 // was read.
 func TestPrintlnWritesInPieces(t *testing.T) {
-	t.Skip("println writes in pieces with the Writer option of Register")
 	const n = 4 << 20
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -102,4 +101,53 @@ func TestPrintlnWritesInPieces(t *testing.T) {
 		t.Errorf("println of %d bytes read vmhook.Stop %d times, want at least %d", n, stops, n/bytesPerStop)
 	}
 	r.Close()
+}
+
+// interrupter is a writer that interrupts its VM at its write number at.
+type interrupter struct {
+	vm     *quickjs.VM
+	at     int
+	writes int
+	n      int
+}
+
+func (w *interrupter) Write(p []byte) (int, error) {
+	w.writes++
+	w.n += len(p)
+	if w.writes == w.at {
+		w.vm.Interrupt()
+	}
+	return len(p), nil
+}
+
+// With Writer, printf and println write to the writer given, and not to
+// os.Stdout, 64 KiB at a time, and end the call at the interrupt that came
+// during a write, before the next one.
+func TestWriterInterrupted(t *testing.T) {
+	vm, err := quickjs.NewVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer vm.Close()
+	w := &interrupter{vm: vm, at: 3}
+	g := vm.GlobalObject()
+	defer g.Free()
+	if err := Register(g.Dup(), Writer(w)); err != nil {
+		t.Fatal(err)
+	}
+	for _, js := range []string{`fmt.println('x'.repeat(4194304))`, `fmt.printf('%s', 'x'.repeat(4194304))`} {
+		w.writes, w.n = 0, 0
+		_, err := vm.Eval(js, quickjs.EvalGlobal)
+		var e *quickjs.Error
+		if !errors.As(err, &e) || !e.Interrupted {
+			t.Errorf("%s: got %v, want the interrupt", js, err)
+		}
+		if w.writes != 3 || w.n != 3*writePiece {
+			t.Errorf("%s: %d writes of %d bytes in all, want 3 of %d", js, w.writes, w.n, 3*writePiece)
+		}
+	}
+	w.writes, w.n = 0, 0
+	if v, err := vm.Eval(`fmt.printf('%d|', 42)`, quickjs.EvalGlobal); err != nil || w.n != 3 {
+		t.Errorf("printf after the interrupt: %v, %v, %d bytes", v, err, w.n)
+	}
 }
