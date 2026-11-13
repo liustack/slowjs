@@ -63,16 +63,24 @@ func TestTakeTakesNoPage(t *testing.T) {
 	}
 	defer give()
 	addr := uintptr(unsafe.Pointer(unsafe.SliceData(b)))
-	if r := resident(t, addr, n); r != 0 {
+	if r := written(t, addr, n); r != 0 {
 		t.Fatalf("a new block of 64 MiB has %d pages in memory, want 0", r)
 	}
 	for i := 0; i < BlockMin; i += int(pageSize) {
 		b[i] = 1
 	}
-	if r := resident(t, addr, n); r == 0 || uintptr(r) > (BlockMin/pageSize)*uintptr(touchPages) {
-		t.Fatalf("1 MiB written of a block of 64 MiB: %d pages in memory, want 1 to %d", r, (BlockMin/pageSize)*uintptr(touchPages))
+	// A kernel that backs memory with huge pages of 2 MiB unasked
+	// (transparent huge pages "always", as in Docker Desktop's) hands over
+	// the whole huge page the written MiB lies in.
+	most := uintptr(max(BlockMin, hugePage)) / pageSize * uintptr(touchPages)
+	if r := written(t, addr, n); r == 0 || uintptr(r) > most {
+		t.Fatalf("1 MiB written of a block of 64 MiB: %d pages in memory, want 1 to %d", r, most)
 	}
 }
+
+// hugePage is the size of the huge pages of linux on amd64 and arm64 with
+// pages of 4 KiB.
+const hugePage = 2 << 20
 
 // Take panics on a negative count, and on one whose size overflows.
 func TestTakePanics(t *testing.T) {

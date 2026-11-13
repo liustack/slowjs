@@ -14,6 +14,12 @@ import (
 
 // resident counts the pages of [addr, addr+size) in the working set of the
 // process.
+// written is resident, for a block (resident_linux_test.go).
+func written(t *testing.T, addr, size uintptr) int {
+	t.Helper()
+	return resident(t, addr, size)
+}
+
 func resident(t *testing.T, addr, size uintptr) int {
 	t.Helper()
 	infos := make([]windows.PSAPI_WORKING_SET_EX_INFORMATION, (size+pageSize-1)/pageSize)

@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // resident counts the pages of the mapping [addr, addr+size) that take
@@ -23,6 +26,25 @@ import (
 func resident(t *testing.T, addr, size uintptr) int {
 	t.Helper()
 	return int(uintptr(smapsKB(t, addr, size, "Rss")<<10) / pageSize)
+}
+
+// written counts the pages of [addr, addr+size) in memory, by mincore, for a
+// range whose pages are written or not touched at all, as a block's are in
+// the tests: mincore counts a page read and never written too, which the
+// range has none of. smaps does not serve for a block, as the kernel may
+// join it with the mapping next to it into one, which it did with one of
+// the race detector's.
+func written(t *testing.T, addr, size uintptr) int {
+	t.Helper()
+	vec := make([]byte, (size+pageSize-1)/pageSize)
+	if _, _, e := unix.Syscall(unix.SYS_MINCORE, addr, size, uintptr(unsafe.Pointer(&vec[0]))); e != 0 {
+		t.Fatalf("mincore of %d bytes at %#x: %v", size, addr, e)
+	}
+	n := 0
+	for _, v := range vec {
+		n += int(v & 1)
+	}
+	return n
 }
 
 // smapsKB returns the field of /proc/self/smaps, in kB, for the mapping
