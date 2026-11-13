@@ -40,7 +40,7 @@ The cost: the argument of `Symbol` holds the string passed to it while `Symbol` 
 
 ## The hash table of atoms holds one atom for two buckets
 
-Release: Unreleased.
+Release: v0.30.5.
 
 An atom is the number the engine gives a property name or a string it keeps once. Making a key from a string, such as `o['key' + i]`, a JSON key or a name in the parser, looks the string up in the hash table of atoms (`__JS_NewAtom`) and walks the chain of its bucket. Upstream doubles the table when it holds two atoms a bucket, so a lookup walks up to about two atoms on average, each a load from the array of atoms, before it finds its own or none. Now `JS_ATOM_COUNT_RESIZE` in `engine/quickjs.c` doubles it at one atom for two buckets. In a counting build of the native C tree, the steps along the chains fall from 87K to 16K a render on MUI's orders page, 38.5K to 5.4K on MUI's home page, 10.1K to 1.8K on the workbench studio page and 6.7K to 0.9K on the shop's English home page.
 
@@ -54,7 +54,7 @@ Tests: `test_key_names_oom` in `engine/test/unit-oom.c` sweeps a script that mak
 
 ## An empty string on the left of `+` gives the string on the right
 
-Release: Unreleased.
+Release: v0.30.5.
 
 `'' + x` is how React and much other code make a string of a value, and a template literal that starts with a substitution (`` `${x}px` ``) compiles to the same `+` after an empty string. QuickJS gave back the left string when the right one was empty, and the right one when the left was empty and the right a rope. An empty left and a flat right went to `JS_ConcatString2`, which grows the left string in place when it can. The empty string is almost always the atom's, which never grows in place, so it allocated a new string and copied the right one into it. `JS_ConcatString` (`engine/quickjs.c`) now frees the empty left string and gives back the right one when the right is a flat string of at most 512 characters. A longer right side still makes a rope, as before: it is rare on the pages.
 

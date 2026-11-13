@@ -17,7 +17,7 @@ How `make gen` turns the C of `engine/` into the Go assembly in `internal/cengin
 
 ## A profile of tifa's pages
 
-Release: Unreleased.
+Release: v0.30.5.
 
 `make gen` compiles the engine with a profile: counts of how often each branch ran while the engine rendered real pages. LLVM uses the counts to put the likely blocks next to each other, to place spills where the code runs least, and to lay out `switch` cases. The profile is `engine/pgo/profile.txt`, trained on the pages in `engine/pgo/pages` (see [engine/pgo/README.md](../../engine/pgo/README.md)). On an AMD EPYC server it makes the pages of tifa render 5.4% to 8.4% faster than the same C generated without it, and about 3% faster on an Apple M4 ([performance.md](../performance.md#a-profile-of-tifas-pages)).
 
@@ -111,7 +111,7 @@ Known and open in this release. Each is a follow-up.
 
 ## A register-entry leaf with a frame has a Go declaration
 
-Release: Unreleased.
+Release: v0.30.5.
 
 A register-entry leaf (`memcpy`, `memmove`, `memset`) takes its arguments in registers, and only the generated code calls it. Its TEXT says `NOFRAME` when it saves no register and calls nothing. When it does either, the TEXT keeps a frame (`NOSPLIT, $8-0`), and `go vet -asmdecl` asks a Go declaration of every TEXT that is not `NOFRAME`. The generator now writes one for such a leaf into `engine_decl_<arch>.go`: `func memmove()`, with no arguments and no result, as its TEXT has. The `.s` files stay the same.
 

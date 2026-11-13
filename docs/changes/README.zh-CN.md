@@ -48,17 +48,17 @@ read_when:
 | 数组字面量把元素的引用直接搬进数组 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 | 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
 | 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
-| amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | Unreleased | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
-| 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | Unreleased | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
-| `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | Unreleased | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
-| 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | Unreleased | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
+| amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
+| 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
+| `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
+| 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
 
 ## 生成器
 
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
-| `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | Unreleased | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
-| 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | Unreleased | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
+| `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | v0.30.5 | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
+| 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 
 ## 上游 QuickJS 的提交
 
@@ -68,7 +68,7 @@ read_when:
 | Iterator.concat 遵循 IteratorClose，并在一步失败后结束 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#iterator-拼接) |
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
-| 展开字符串得到它的各个字符 | Unreleased | [upstream-commits.md](upstream-commits.zh-CN.md) |
+| 展开字符串得到它的各个字符 | v0.30.5 | [upstream-commits.md](upstream-commits.zh-CN.md) |
 
 ## Go API
 
@@ -159,7 +159,7 @@ read_when:
 | fmt 的函数分段造出长输出并检查调用 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#fmt-的函数分段造出长输出并检查调用) |
 | Go 函数的长数组直接向系统要内存 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
 | VM 留下最后一块内存给下一次调用 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
-| 展开、rest 和 Object.assign 的复制读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
+| 展开、rest 和 Object.assign 的复制读中断标志 | v0.30.5 | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
 
 ## 错误和调用栈
 
@@ -222,8 +222,8 @@ read_when:
 | --- | --- | --- |
 | 搜索直接跳到字符串所在的位置 | v0.27.3 | [strings.md](strings.zh-CN.md#搜索直接跳到字符串所在的位置) |
 | symbol 有自己的字符串 | v0.30.2 | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
-| atom 的哈希表两个桶只放一个 atom | Unreleased | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
-| `+` 左边是空字符串时直接给出右边的字符串，不再复制 | Unreleased | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
+| atom 的哈希表两个桶只放一个 atom | v0.30.5 | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
+| `+` 左边是空字符串时直接给出右边的字符串，不再复制 | v0.30.5 | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
 
 ## JSON
 
@@ -266,8 +266,8 @@ read_when:
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
-| 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
-| 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
+| 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
+| 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
 
 ## 内存
 
@@ -275,7 +275,7 @@ read_when:
 | --- | --- | --- |
 | 每个 VM 共用一份源码文本和行表，SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#所有-vm-共用一份源码文本和行表) |
 | 共享字节码只在第一次加载时扫描轮询点 | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#共享字节码只在第一次加载时扫描轮询点) |
-| 内置函数要的大块内存会超过内存上限时先回收 | Unreleased | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#大块内存在会超过内存上限时先回收) |
+| 内置函数要的大块内存会超过内存上限时先回收 | v0.30.5 | [memory-and-allocation.md](memory-and-allocation.zh-CN.md#大块内存在会超过内存上限时先回收) |
 
 ## 年轻代回收
 

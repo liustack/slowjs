@@ -287,7 +287,7 @@ Tests: `TestLowerARM64EngineLR` (`internal/goasm/gen`) lowers every form llc wri
 
 ## Results only in registers
 
-Release: Unreleased.
+Release: v0.30.5.
 
 Since v0.29.6 a direct call of a generated function takes the result from the registers the callee returns it in. Two more steps of the generator finish that path:
 
@@ -852,7 +852,7 @@ Tests: `TestA64CheckJumpTables` takes the farthest distance each width holds and
 
 ## SSE reads that need 16 bytes stay on 16
 
-Release: Unreleased.
+Release: v0.30.5.
 
 An SSE instruction with a 16-byte memory operand faults when the address is not on 16 bytes, except `movups`, `movupd`, `movdqu` and `lddqu`. The amd64 engine has 382 such instructions: 327 read the constant pool of their function through RIP (in 70 functions), and 55 read a local through a register made from the shadow stack pointer. None reads the heap or the Go stack. After linking, every one of them reached an address on 16 on linux, darwin and windows, but nothing said it had to: the pool was on 16 only because each body happened to start on 16 and `.p2align 4` counts from the start of the function, and the shadow stack pointer was rounded in three places by hand.
 
@@ -882,7 +882,7 @@ The change is in C (`engine/quickjs.c`, `engine/regvm-ops-object.h`). `engine/te
 
 ## A string key that is its own atom is read as a named property
 
-Release: Unreleased.
+Release: v0.30.5.
 
 `o[k]` with an object `o` and a string `k` that is an atom (GETEL, GETELT, GETELK and GETELKT of the register loop, when the fast paths of an array or a typed array do not answer) went through `rv_getel_slow`, `JS_GetPropertyValue`, `JS_ValueToAtom`, which took a reference to the atom, the generic `JS_GetPropertyInternal`, and `JS_FreeAtom`. Most such keys come from `for in`, `Object.keys` and literals, so they are atoms already. The loop now calls `rv_getel_atom` for them: when the key is an atom of the type string, not empty and not starting with a digit (the strings `JS_ValueToAtom` takes as their own atom, so never an index), it takes the atom's index from the string and looks for it on `o` and its prototypes the way GETF reads `o.name`: a plain data property gives its value, the end of the chain gives `undefined`. Anything else on the way, an accessor, a closure variable of the global object, a property made on first use, the `stack` of an error, or an exotic object other than an array or `arguments` (a typed array, a Proxy, a String object, a module namespace), sends the read back to `rv_getel_slow`, which does it from the start as before.
 
@@ -896,7 +896,7 @@ The change is in C (`engine/regvm-ops-object.h`). `engine/test/regvm/js/o-getel-
 
 ## A string keeps the atom it is as a key
 
-Release: Unreleased.
+Release: v0.30.5.
 
 A string now holds `key_atom`: the number of its atom when `JS_ValueToAtom` takes the string as its own atom (an atom of the type string, not empty, not starting with a digit), and 0 for every other string. `__JS_NewAtom` sets it when a string becomes an atom, and a new string has 0. The keyed read of the register loop (`rv_getel_atom`, see above) and `hasOwnProperty.call` (`js_has_own_call`) read it once, where they tested the type of the atom, the length and the first character and then looked the string up in the hash table of atoms for its number. The keyed read also runs before the loop stores its top, pc and sp for the frame, as the array element path does: it runs no code and starts no collection. The values it frees there (a key or an object in a temp, the old value of the target) may run a finalizer before the frame is stored, which is safe because no finalizer of the engine reads the frame and the release of a Go value runs no script.
 

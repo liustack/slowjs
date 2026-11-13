@@ -69,7 +69,7 @@ The change is in C (`engine/quickjs.c`, `engine/quickjs.h`): `JS_READ_OBJ_POLLS_
 
 ## A large block collects first when it would pass the memory limit
 
-Release: Unreleased.
+Release: v0.30.5.
 
 Garbage in reference cycles stays until a collection, and the engine starts one only when it makes an object, or calls a JavaScript function, with the memory past the GC threshold. After a collection a script can leave up to the threshold less what is live as such garbage: half of what is live, with the threshold at 1.5 times it. A built-in that then asks for one large block, and makes no object first, ran out of memory at the limit with that garbage still there: `'x'.repeat(n)` failed for an `n` that fitted once the garbage was gone.
 

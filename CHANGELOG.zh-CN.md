@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.30.5] - 2026-11-14
+
 ### 变更
 
 - 页面渲染比 v0.30.4 少用 11% 到 13% 的时间。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），tifa 的工作台页面少用 12.9%，商店页面少 12.6%，React 页面少 11.8%，MUI 页面少 11.2%。在没有内存上限的新 VM 里渲染一篇长 Markdown 文档少用 3.4%：下一条说的性能画像在这里省 5.5%，这一版的其他改动合起来多花 2.2%，原因还没找到（[performance.md](docs/performance.zh-CN.md#不带画像时的长-markdown)）。
@@ -674,7 +676,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2

@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.5] - 2026-11-14
+
 ### Changed
 
 - Pages render in 11% to 13% less time than with v0.30.4. On a linux/amd64 machine with an AMD EPYC 7B13 (16 code layouts), tifa's workbench pages take 12.9% less time, the store pages 12.6% less, React pages 11.8% less and the MUI pages 11.2% less. A long Markdown document rendered in a new VM with no memory limit takes 3.4% less: the profile of the next line gains 5.5% there, and the other changes of this release together cost 2.2%, for a reason not found yet ([performance.md](docs/performance.md#long-markdown-without-the-profile)).
@@ -674,7 +676,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
