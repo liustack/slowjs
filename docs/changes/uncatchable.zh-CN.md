@@ -648,16 +648,18 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 
 [上一节](#go-函数的长数组直接向系统要内存)说的这种内存块，每次调用都是新的，调用写到哪一页，系统才把那一页交出来，而原来 Go 的分配常常能用它手里已有的内存：在 512 Ki 个单位以上的文本上，每次调用都要付这笔代价。在 GitHub 的 macos-15 机器上，在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，每次的中位数是 31 到 34 ms，原来用 Go 的分配是 5.2 到 8.9 ms。
 
-现在 VM 把最后还回来的一块（最大 32 MiB）留着，给下一次要内存块的调用（`internal/hostmem/keep.go` 的 `hostmem.Keep`，`vmhook.go` 的 `goTake`）。调用要的块不比留着的大，就拿留着的那块，它的页已经在内存里，调用要用的部分一次清零 1 MiB，两次之间检查是否要停：已在内存里的 1 MiB 清零远不到一毫秒，所以不会再出现不检查的一段。清零时被停下，调用结束，那块继续留着。VM 已经留着一块时，留下两块里大的那块，另一块还给系统。留着的块算在 Go 函数检查的空间（`vmhook.Room`）里，计入内存上限，只有不超过剩余空间四分之一时才留，所以快到上限的 VM 不留。连续 16 次调用都没要内存块时，在第 16 次结束时还给系统，`Close` 时也还。一个进程里所有 VM 留着的加起来最多 64 MiB（`hostmem.KeptMax`）：超过的那块还给系统。
+现在没有内存上限的 VM 把最后还回来的一块（最大 32 MiB）留着，给下一次要内存块的调用（`internal/hostmem/keep.go` 的 `hostmem.Keep`，`vmhook.go` 的 `goTake`）。调用要的块不比留着的大，就拿留着的那块，它的页已经在内存里，调用要用的部分一次清零 1 MiB，两次之间检查是否要停：已在内存里的 1 MiB 清零远不到一毫秒，所以不会再出现不检查的一段。清零时被停下，调用结束，那块继续留着。VM 已经留着一块时，留下两块里大的那块，另一块还给系统。连续 16 次调用都没要内存块时，在第 16 次结束时还给系统，`SetMemoryLimit` 给 VM 设上限时、`Close` 时也还。一个进程里所有 VM 留着的加起来最多 64 MiB（`hostmem.KeptMax`）：超过的那块还给系统。
+
+有内存上限的 VM 不留块，调用和上一节一样。引擎在 C 里分配时按上限计数，它不知道宿主留着的块：留着一块的 VM 总共可能占到上限再加这一块。先守住上限。
 
 在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，去掉前 5 次，每次时间的中位数：
 
-| 机器 | Go 的分配（v0.30.3） | 每次调用一块新的 | 留下的那块 |
+| 机器 | Go 的分配（v0.30.3） | 有内存上限的 VM：每次调用一块新的 | 没有内存上限的 VM：留下的那块 |
 | --- | --- | --- | --- |
 | GitHub 的 macos-15 机器，Go 1.26.6 和 `go.mod` 的 Go，各三轮 | 5.2 到 8.9 ms | 31.4 到 34.0 ms | 3.7 到 6.1 ms |
 | Apple M4 | 3.6 ms | 4.1 ms | 2.3 ms |
 | Apple M4，Rosetta 下的 amd64 | 3.9 ms | 7.6 ms | 2.6 ms |
 
-代价：留着一块时，VM 在两次调用之间最多多占 32 MiB，有内存上限时最多是剩余空间的四分之一。Go 函数检查的空间算上它，引擎自己的分配不算，所以留着一块的 VM 总共可以占到上限再加这一块。不再有调用的 VM 一直留着它，直到关闭：很多空闲 VM 组成的池最多占 64 MiB，落在其中两个到几个 VM 上。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
+代价：没有内存上限的 VM 留着一块时，在两次调用之间最多多占 32 MiB。不再有调用的 VM 一直留着它，直到关闭：很多空闲 VM 组成的池最多占 64 MiB，落在其中两个到几个 VM 上。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
 
-测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops` 和 `TestKeepProcessCap`，`keep_test.go` 的 `TestKeepCountsAgainstRoom`，以及 `intl/blocks_test.go` 的 `TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，它们现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
+测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops` 和 `TestKeepProcessCap`，`keep_test.go` 的 `TestKeepOnlyWithNoLimit`，以及 `intl/blocks_test.go` 的 `TestLimitedVMKeepsNoBlock`、`TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，后两个现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
