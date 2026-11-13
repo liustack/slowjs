@@ -1205,6 +1205,19 @@ func (m *matcher) next(what string) (insn, error) {
 
 // bodyOf locates the lowered function in the re-assembled object: its start
 // and size, and where its code ends (its constants follow).
+// dataPlaced refuses a body at body in the binary, with codeLen bytes of code
+// out of size, whose data would not start on 16 bytes. The data has a PCALIGN
+// $16 in front of it (emitData), which adds nothing only where the body sits
+// as the lowered object placed it. Off that, the PCALIGN pads, the data moves
+// away from the displacements the code has in its bytes, and the rest of the
+// function is not where this check looks for it.
+func dataPlaced(body, codeLen, size uint64) error {
+	if codeLen < size && (body+codeLen)%16 != 0 {
+		return fmt.Errorf("the data after the code would start at %#x, not on 16 bytes: the PCALIGN $16 in front of it moved it away from the code that reads it", body+codeLen)
+	}
+	return nil
+}
+
 func (k *checker) bodyOf(name string) (elf.Symbol, uint64, error) {
 	s, ok := k.low.byName[name]
 	if !ok {
@@ -1281,6 +1294,9 @@ func (k *checker) checkUnified(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size
@@ -1587,6 +1603,21 @@ var forbiddenOps = func() map[x86asm.Op]string {
 // only 8-byte aligned, so any other access wider than 8 bytes may fault.
 var unalignedOK = map[x86asm.Op]bool{x86asm.MOVUPS: true, x86asm.MOVUPD: true, x86asm.MOVDQU: true, x86asm.LDDQU: true}
 
+// needsAlign16 reports whether the memory operand of in must be on 16 bytes: an
+// SSE access wider than 8 bytes (movaps, movdqa, a packed operation that
+// reads its operand from memory) faults off 16, but for the moves of
+// unalignedOK.
+func needsAlign16(in x86asm.Inst) bool { return in.MemBytes > 8 && !unalignedOK[in.Op] }
+
+// checkAlign16 refuses an instruction that needsAlign16 whose operand is at
+// addr in the binary, not a multiple of 16: it would fault where it runs.
+func checkAlign16(in x86asm.Inst, addr uint64) error {
+	if needsAlign16(in) && addr%16 != 0 {
+		return fmt.Errorf("%v reads %#x, which is not on the 16 bytes it needs", in, addr)
+	}
+	return nil
+}
+
 // one matches a single llc instruction of the body.
 func (m *matcher) one(x insn) error {
 	in := x.in
@@ -1666,7 +1697,7 @@ func (m *matcher) one(x insn) error {
 		mm := mem
 		mm.Base, mm.Disp = x86asm.RSP, d
 		want = &mm
-		if in.MemBytes > 8 && !unalignedOK[in.Op] {
+		if needsAlign16(in) {
 			return fmt.Errorf("a %d-byte frame access that may need alignment the Go frame lacks", in.MemBytes)
 		}
 	case hasMem && frameRegs[mem.Base]:
@@ -1683,6 +1714,16 @@ func (m *matcher) one(x insn) error {
 		}
 		if got := uint64(int64(b.at) + int64(b.in.Len) + bm.Disp); got != target {
 			return fmt.Errorf("generated %v at %#x points to %#x, the reference should point to %#x", b.in, b.at, got, target)
+		}
+		// A constant pool sits on 16 bytes after its PCALIGN $16 (emitData),
+		// and the code reads it there: the address the binary's instruction
+		// reaches has to be on 16 for one that needs it, whatever the
+		// checks of the data found.
+		if err := checkAlign16(b.in, target); err != nil {
+			return err
+		}
+		if needsAlign16(b.in) {
+			m.k.rep.Checked["SSE reads of the code's data that need 16 bytes"]++
 		}
 		w := mem
 		w.Disp = bm.Disp
@@ -2259,6 +2300,9 @@ func (k *checker) checkLeaf(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size

@@ -37,8 +37,6 @@ const (
 	errorKindRange = 1
 )
 
-func align16(p uintptr) uintptr { return (p + 15) &^ 15 }
-
 // defineHostFunc makes a function of the host named name with the id and
 // sets it as a global. It returns the exception's message when
 // JS_NewHostFunction threw.
@@ -80,12 +78,12 @@ func TestHostFunction(t *testing.T) {
 	}
 	testHostFuncs[2] = func(v *VM, sp uintptr, args []gohost.Value) (uintptr, uintptr) {
 		msg := "bad " + strings.Repeat("x", 300)
-		p := align16(sp)
+		p := AlignSP(sp)
 		copy(bytesAt(p, uintptr(len(msg))), msg)
-		return JS_ThrowErrorKind(align16(p+uintptr(len(msg))), v.ctx, errorKindRange, p, uintptr(len(msg)))
+		return JS_ThrowErrorKind(AlignSP(p+uintptr(len(msg))), v.ctx, errorKindRange, p, uintptr(len(msg)))
 	}
 	testHostFuncs[3] = func(v *VM, sp uintptr, args []gohost.Value) (uintptr, uintptr) {
-		u, tag := JS_NewStringChars(align16(sp), v.ctx, 3, 0)
+		u, tag := JS_NewStringChars(AlignSP(sp), v.ctx, 3, 0)
 		if int32(tag) == tagException {
 			return u, tag
 		}
@@ -96,7 +94,7 @@ func TestHostFunction(t *testing.T) {
 		// A call back into the engine: its entries start above sp, and
 		// where they started before is put back after.
 		old := v.sp
-		v.sp = align16(sp)
+		v.sp = AlignSP(sp)
 		defer func() { v.sp = old }()
 		var out string
 		var err error

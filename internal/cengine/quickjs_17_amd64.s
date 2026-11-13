@@ -2325,6 +2325,7 @@ TEXT ·js_emit_put_text(SB), $160-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff92cfffff92c
 	QUAD $0xffffffa0ffffffa0
@@ -4154,6 +4155,7 @@ TEXT ·js_emit_put_escaped(SB), $192-56
 	CALL ·string_buffer_write16_long(SB)
 	QUAD $0x00eee9ffffff70e9
 	QUAD $0x0000441f0f660000
+	PCALIGN $16
 	// data
 	QUAD $0xfffff041ffffef47
 	QUAD $0xfffff041fffff041
@@ -5529,6 +5531,7 @@ TEXT ·js_emit_put_escaped_long(SB), $256-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffedcdffffecd3
 	QUAD $0xffffedcdffffedcd
@@ -7065,6 +7068,7 @@ TEXT ·js_end_tag_make(SB), $224-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x00ff00ff00ff00ff
 	QUAD $0x00ff00ff00ff00ff
@@ -8196,6 +8200,7 @@ TEXT ·JS_NewDate(SB), $144-40
 	BYTE $0xeb
 	BYTE $0x21
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -10414,6 +10419,7 @@ TEXT ·mark_children_specialized_2(SB), $160-24
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffcdccffffc97e
 	QUAD $0xffffcc95ffffcc83
@@ -12815,6 +12821,7 @@ TEXT ·mark_children_specialized_5(SB), $160-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffbd1affffbb1e
 	QUAD $0xffffbbd3ffffbbc1
@@ -15291,6 +15298,7 @@ TEXT ·mark_children_specialized_7(SB), $176-24
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffbfcfffffb9f6
 	QUAD $0xffffbe8dffffbe7b
@@ -15828,6 +15836,7 @@ TEXT ·code_match(SB), $80-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff4efffffece
 	QUAD $0xffffff4efffffece

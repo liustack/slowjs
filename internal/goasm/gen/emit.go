@@ -213,7 +213,7 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 		if err := emitFunc(&b, o, lo, code, names, fp); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
-		if err := emitData(&b, o.code[code:hi]); err != nil {
+		if err := emitData(&b, o.code[code:hi], code); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&b, "\tRET\n\n")
@@ -236,12 +236,29 @@ func emitBytes(b *strings.Builder, data []byte) error {
 
 // emitData writes the data a function carries after its code (constants and
 // jump tables) after dataComment, so that a reader of the .s file knows these
-// bytes are no instructions.
-func emitData(b *strings.Builder, data []byte) error {
+// bytes are no instructions. at is where the data starts in the lowered
+// object, where the function sits as it will in the binary (FuncPlace).
+//
+// A PCALIGN $16 goes in front of the data: the Go assembler puts the
+// instruction after a PCALIGN on its alignment and raises the alignment of
+// the function to it, so a constant pool that an SSE instruction reads with
+// an operand that has to be on 16 bytes is on 16 bytes by what the Go
+// assembler promises, and not by where the data falls from the start of the
+// body. The code reaches the data by displacements already in its bytes, so
+// the PCALIGN must add nothing: the data is on 16 bytes in the object
+// (llc puts a .p2align 4 in front of it), and a function whose data is not
+// is refused here. Should the PCALIGN add bytes all the same, the code
+// would read past where the data went: the post-link check refuses that
+// (verify_insn.go, the bytes of the body and the targets of its RIP
+// references).
+func emitData(b *strings.Builder, data []byte, at int) error {
 	if len(data) == 0 {
 		return nil
 	}
-	b.WriteString(dataComment + "\n")
+	if at%16 != 0 {
+		return fmt.Errorf("the data after the code starts %d bytes past a multiple of 16 in the lowered object: a PCALIGN $16 in front of it would move it away from the code that reads it", at%16)
+	}
+	b.WriteString("\tPCALIGN $16\n" + dataComment + "\n")
 	return emitBytes(b, data)
 }
 

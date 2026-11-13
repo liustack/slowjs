@@ -179,7 +179,7 @@ func EmitEngine(objPath string, e EngineEmit) (map[string]string, error) {
 		if err := emitFunc(&fb, o, lo, code, e.Names, fp); err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
-		if err := emitData(&fb, o.code[code:hi]); err != nil {
+		if err := emitData(&fb, o.code[code:hi], code); err != nil {
 			return nil, fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&fb, "\tRET\n\n")

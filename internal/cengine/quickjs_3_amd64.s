@@ -6687,6 +6687,7 @@ TEXT ·JS_SetPropertyFunctionList(SB), $256-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffee2ffffff238
 	QUAD $0xffffef69ffffee2f
@@ -6946,6 +6947,7 @@ TEXT ·JS_ToNumberHintFree(SB), $128-56
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffed1fffffe8a
 	QUAD $0xfffffea4fffffea4
@@ -7362,6 +7364,7 @@ TEXT ·js_strict_eq2(SB), $144-64
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffb83fffff9f1
 	QUAD $0xfffffa2ffffffa2f
@@ -7853,6 +7856,7 @@ TEXT ·set_array_length(SB), $160-56
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f0feb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x41efffffffe00000
 	RET
@@ -8126,6 +8130,7 @@ TEXT ·JS_ToFloat64(SB), $80-48
 	CALL ·abort(SB)
 	BYTE $0xeb
 	BYTE $0x08
+	PCALIGN $16
 	// data
 	QUAD $0x7ff8000000000000
 	RET
@@ -8161,6 +8166,7 @@ TEXT ·JS_NumberIsNegativeOrMinusZero(SB), NOSPLIT|NOFRAME, $0-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffdfffffffd1
 	QUAD $0xffffffdfffffffdf
@@ -11802,6 +11808,7 @@ TEXT ·__JS_NewAtom(SB), $240-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000000
 	QUAD $0x0000000000000001
@@ -15164,6 +15171,7 @@ TEXT ·js_string_charCodeAt(SB), $144-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16478,6 +16486,7 @@ TEXT ·JS_ToStringInternal(SB), $144-56
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff615fffff526
 	QUAD $0xfffff626fffff61d
@@ -21946,6 +21955,7 @@ TEXT ·js_closure2(SB), $224-80
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffe88dffffe851
 	QUAD $0xffffe56cffffe56c

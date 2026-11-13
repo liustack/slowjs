@@ -1467,6 +1467,7 @@ TEXT ·__JS_ToFloat64Free(SB), $80-48
 	QUAD $0x000000841f0f10eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ff8000000000000
 	RET
@@ -4078,6 +4079,7 @@ TEXT ·js_unary_arith_slow(SB), $176-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000000000000
 	QUAD $0x8000000000000000
@@ -5766,6 +5768,7 @@ TEXT ·js_binary_arith_slow(SB), $224-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -7435,6 +7438,7 @@ TEXT ·js_binary_logic_slow(SB), $272-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffe6b3ffffdf85
 	QUAD $0xffffffdaffffffda
@@ -12479,6 +12483,7 @@ TEXT ·js_eq_slow(SB), $176-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff246fffff49a
 	QUAD $0xfffff246fffff246
@@ -12798,6 +12803,7 @@ TEXT ·js_compare_bigint(SB), $128-64
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff7dffffffa0
 	QUAD $0xffffff9effffff93
@@ -21756,6 +21762,7 @@ TEXT ·JS_ReleaseNextChunk(SB), $96-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffffffffffff
 	QUAD $0x0000000000000000

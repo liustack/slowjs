@@ -579,6 +579,7 @@ TEXT ·fuse_code(SB), $160-32
 	QUAD $0x666667ebffffff52
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff556fffff52b
 	QUAD $0xfffff548fffff540
@@ -1578,6 +1579,7 @@ TEXT ·link_var_scopes(SB), $112-16
 	QUAD $0x6666663ceb00eb08
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000002
 	QUAD $0x0000000000000003
@@ -2154,6 +2156,7 @@ TEXT ·optimize_scope_make_ref(SB), $128-64
 	QUAD $0x6666666666661feb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xb2b2b2b2b2b2b2b2
 	QUAD $0xb2b2b2b2b2b2b2b2
@@ -2851,6 +2854,7 @@ TEXT ·emit_goto(SB), $96-40
 	BYTE $0x01
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffdcbfffffeac
 	QUAD $0xfffffdcbfffffeac
@@ -3539,6 +3543,7 @@ TEXT ·simple_next_token(SB), $144-40
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff0eafffff0f3
 	QUAD $0xfffff0f3fffff0f3
@@ -8055,6 +8060,7 @@ TEXT ·js_parse_class(SB), $256-40
 	BYTE $0xff
 	BYTE $0xeb
 	BYTE $0x1c
+	PCALIGN $16
 	// data
 	QUAD $0xffffe20cffffe201
 	QUAD $0xffffe20cffffe20c
@@ -9555,6 +9561,7 @@ TEXT ·define_var(SB), $160-48
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffea7cffffee25
 	QUAD $0xffffea7cffffea7c
@@ -13925,6 +13932,7 @@ TEXT ·js_parse_statement_or_decl1(SB), $224-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffeba6ffffc91a
 	QUAD $0xfffff04effffd44d
@@ -14934,6 +14942,7 @@ TEXT ·js_parse_skip_parens_token(SB), $144-40
 	QUAD $0x65e9beebfd000009
 	QUAD $0x2e66666666000001
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xfffffb38fffffaa4
 	QUAD $0xfffffc2dfffffc2d
@@ -16953,6 +16962,7 @@ TEXT ·js_is_live_code(SB), NOSPLIT|NOFRAME, $0-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffb3ffffffb8
 	QUAD $0xffffffb3ffffffb8
@@ -17132,6 +17142,7 @@ TEXT ·js_define_var(SB), $48-40
 	BYTE $0x01
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffeeffffffb4
 	QUAD $0xffffffeeffffffee
@@ -22564,6 +22575,7 @@ TEXT ·js_parse_destructuring_element1(SB), $288-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffdc0dffffdc70
 	QUAD $0xffffdc37ffffdc33
@@ -22892,6 +22904,7 @@ TEXT ·js_parse_expr_binary(SB), $160-32
 	MOVQ AX, ret+24(FP)
 	QUAD $0x66000001f5e900eb
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xfffffaccfffffa18
 	QUAD $0xfffffda7fffffae1

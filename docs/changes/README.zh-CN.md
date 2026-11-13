@@ -41,6 +41,7 @@ read_when:
 | 闭包对拿到之后再没有代码能改的被捕获变量直接存值，不再存和帧共享的引用。这样的闭包不再让暂停中的 generator 或 async 函数活着 | Unreleased | [c-engine.md](c-engine.zh-CN.md#捕获后不再改变的变量) |
 | 读取时拒绝 catch 偏移离开原处、或者跳转目标在代码开头之前的字节码 | Unreleased | [c-engine.md](c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数) |
 | arm64 的每张跳转表每项占 4 字节，生成器拒绝被 lowering 撑得太窄的表 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-的跳转表每项占-4-字节) |
+| amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | Unreleased | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
 | 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个前面都有一条 `MOV`（`CALLS`、`CALLSD`） | Unreleased | [c-engine.md](c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口) |
 | 键在局部变量或参数里的 `o[k]` 不给键加引用就读 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就读) |
 | 键在局部变量或参数里的 `o[k] = v` 不给键加引用就写 | Unreleased | [c-engine.md](c-engine.zh-CN.md#局部变量里的键不加引用就写) |

@@ -728,6 +728,7 @@ TEXT ·js_sub_string(SB), $224-56
 	BYTE $0x12
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0x00ff00ff00ff00ff
 	QUAD $0x00ff00ff00ff00ff
@@ -3516,6 +3517,7 @@ TEXT ·JS_ToQuotedString(SB), $352-48
 	QUAD $0x0000801f0f73ebff
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffecd0ffffeba5
 	QUAD $0xffffebbaffffece0
@@ -4552,6 +4554,7 @@ TEXT ·js_sub_string_long(SB), $256-56
 	QUAD $0x000000841f0f18eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x00ff00ff00ff00ff
 	QUAD $0x00ff00ff00ff00ff
@@ -5780,6 +5783,7 @@ TEXT ·json_next_token(SB), $160-24
 	QUAD $0x894800000098248c
 	QUAD $0xe994eb0000018081
 	QUAD $0x00401f0f00000218
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -7346,6 +7350,7 @@ TEXT ·free_token(SB), $64-24
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffee0fffffee0
 	QUAD $0xffffff07fffffee0
@@ -10398,6 +10403,7 @@ TEXT ·json_parse_string(SB), $256-40
 	QUAD $0xe9000000f4249c8b
 	QUAD $0x000130e9fffff7a2
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x00ff00ff00ff00ff
 	QUAD $0x00ff00ff00ff00ff
@@ -13916,6 +13922,7 @@ TEXT ·js_compile_regexp(SB), $304-64
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffd93fffffcb2c
 	QUAD $0xffffd536ffffd93f
@@ -15099,6 +15106,7 @@ TEXT ·JS_ToLengthFree(SB), $128-48
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -20152,6 +20160,7 @@ TEXT ·js_regexp_Symbol_replace(SB), $352-64
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -20784,6 +20793,7 @@ TEXT ·js_regexp_Symbol_match(SB), $240-64
 	QUAD $0x000000d024b48b48
 	QUAD $0x6636ebfffff294e9
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -21261,6 +21271,7 @@ TEXT ·js_regexp_Symbol_matchAll(SB), $240-64
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f3beb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000

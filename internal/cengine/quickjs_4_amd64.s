@@ -3333,6 +3333,7 @@ TEXT ·JS_GetOwnPropertyNamesInternal(SB), $288-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000080000000
 	QUAD $0x0000000000000000
@@ -4674,6 +4675,7 @@ TEXT ·build_arg_list(SB), $176-48
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -6334,6 +6336,7 @@ TEXT ·JS_ToObject(SB), $160-48
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff495fffff28d
 	QUAD $0xfffff2dffffff2df
@@ -6739,6 +6742,7 @@ TEXT ·JS_GetPropertyValue(SB), $176-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	QUAD $0xfffff8adfffff69a
@@ -7342,6 +7346,7 @@ TEXT ·JS_LoadModuleInternal(SB), $192-56
 	QUAD $0x0f23ebfffffe93e9
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x0000000000000000
 	QUAD $0x0000000000000001
@@ -11298,6 +11303,7 @@ TEXT ·promise_reaction_job(SB), $96-48
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x0000441f0f664eeb
+	PCALIGN $16
 	// data
 	QUAD $0xfffffa46fffff9a3
 	QUAD $0xfffff99efffffb87
@@ -15481,6 +15487,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-80
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffec00ffffebc5
 	QUAD $0xffffec00ffffeb52
@@ -16567,6 +16574,7 @@ TEXT ·js_own_keys_scan(SB), $160-48
 	BYTE $0x22
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xfffff66bffffffa3
 	QUAD $0xfffff6a7fffff6a2
@@ -16784,6 +16792,7 @@ TEXT ·js_own_keys_next(SB), $160-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffec3ffffffb9
 	QUAD $0xfffffedffffffed8
@@ -17290,6 +17299,7 @@ TEXT ·js_own_key_kinds(SB), $128-40
 	BYTE $0x00
 	BYTE $0xeb
 	BYTE $0x10
+	PCALIGN $16
 	// data
 	QUAD $0xfffffd4affffffd8
 	QUAD $0xfffffd80fffffd7c
@@ -18309,6 +18319,7 @@ TEXT ·JS_GetFunctionRealm(SB), $64-40
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff11ffffffd6
 	QUAD $0xffffffdaffffff4f
@@ -18982,6 +18993,7 @@ TEXT ·JS_ToBigInt64Free(SB), $128-48
 	MOVQ AX, ret+40(FP)
 	QUAD $0x00441f0f49eb00eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffff6efffffeb8
 	QUAD $0xfffffdccfffffdcc
@@ -20002,6 +20014,7 @@ TEXT ·JS_ToBoolFree(SB), $80-40
 	BYTE $0x00
 	BYTE $0xeb
 	BYTE $0x48
+	PCALIGN $16
 	// data
 	QUAD $0xffffff7dfffffec2
 	QUAD $0xffffff60ffffff68

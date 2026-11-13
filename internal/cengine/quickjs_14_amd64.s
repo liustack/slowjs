@@ -933,6 +933,7 @@ TEXT ·js_string_charAt(SB), $144-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -1160,6 +1161,7 @@ TEXT ·js_string_codePointAt(SB), $128-64
 	QUAD $0x66661bebffffff05
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -2019,6 +2021,7 @@ TEXT ·js_string_indexOf(SB), $160-72
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3347,6 +3350,7 @@ TEXT ·js_string_substring(SB), $144-64
 	QUAD $0x66666666661eebff
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3535,6 +3539,7 @@ TEXT ·js_string_substr(SB), $144-64
 	QUAD $0x441f0f6616ebffff
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3729,6 +3734,7 @@ TEXT ·js_string_slice(SB), $144-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -3970,6 +3976,7 @@ TEXT ·js_string_repeat(SB), $144-64
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -5676,6 +5683,7 @@ TEXT ·js_string_pad(SB), $192-72
 	QUAD $0xfffff703e9000000
 	BYTE $0xeb
 	BYTE $0x10
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -15015,6 +15023,7 @@ TEXT ·js_string_fromCodePoint(SB), $144-64
 	BYTE $0xeb
 	BYTE $0x09
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0x4130ffff00000000
 	RET
@@ -15635,6 +15644,7 @@ TEXT ·js_string_raw(SB), $224-64
 	BYTE $0xff
 	BYTE $0xeb
 	BYTE $0x34
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -15904,6 +15914,7 @@ TEXT ·js_number_toExponential(SB), $128-64
 	BYTE $0xff
 	BYTE $0xeb
 	BYTE $0x10
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16048,6 +16059,7 @@ TEXT ·js_number_toFixed(SB), $128-64
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16197,6 +16209,7 @@ TEXT ·js_number_toPrecision(SB), $128-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16581,6 +16594,7 @@ TEXT ·js_number_toString(SB), $144-72
 	QUAD $0x000000841f0f6619
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x41dfffffffc00000
 	QUAD $0xc1e0000000000000
@@ -16819,6 +16833,7 @@ TEXT ·js_number_isInteger(SB), $80-64
 	QUAD $0x66666666666627eb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc330000000000000
 	QUAD $0x4330000000000000
@@ -16900,6 +16915,7 @@ TEXT ·js_number_isSafeInteger(SB), $80-64
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -21018,6 +21034,7 @@ TEXT ·js_iterator_helper_next(SB), $160-80
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffe3ffffeea9
 	QUAD $0xffffffe3fffff89e
@@ -21903,6 +21920,7 @@ TEXT ·js_create_iterator_helper(SB), $208-72
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f43eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000

@@ -958,6 +958,7 @@ TEXT ·get_lvalue(SB), $192-80
 	CALL ·abort(SB)
 	QUAD $0x2e66660000013be9
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xffffe6beffffe707
 	QUAD $0xffffe6beffffe707
@@ -1411,6 +1412,7 @@ TEXT ·put_lvalue(SB), $80-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff8d9fffff559
 	QUAD $0xfffff8d9fffff715
@@ -2205,6 +2207,7 @@ TEXT ·js_parse_unary1(SB), $144-32
 	QUAD $0x000000841f0f2e66
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff21bfffff0c7
 	QUAD $0xfffff44afffff65a
@@ -6917,6 +6920,7 @@ TEXT ·js_parse_postfix_expr1(SB), $192-32
 	BYTE $0x00
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xffffa0c7ffff9b3a
 	QUAD $0xffffa122ffffa08d
@@ -10584,6 +10588,7 @@ TEXT ·js_parse_string(SB), $160-64
 	QUAD $0x6666666666660000
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff563fffff534
 	QUAD $0xfffff563fffff563
@@ -13435,6 +13440,7 @@ TEXT ·js_date_getTime(SB), $80-64
 	QUAD $0x6666666666661feb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -13754,6 +13760,7 @@ TEXT ·get_date_string(SB), $160-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffc97fffffa2b
 	QUAD $0xfffffc1bfffffb2f
@@ -13990,6 +13997,7 @@ TEXT ·get_date_field(SB), $80-72
 	MOVQ AX, r0+56(FP)
 	MOVQ DX, r1+64(FP)
 	QUAD $0x00401f0f1ceb00eb
+	PCALIGN $16
 	// data
 	QUAD $0xc09db00000000000
 	QUAD $0xc1e0000000000000
@@ -14133,6 +14141,7 @@ TEXT ·js_date_setTime(SB), $112-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -14321,6 +14330,7 @@ TEXT ·set_date_field(SB), $176-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ff8000000000000
 	QUAD $0xc1e0000000000000
@@ -14469,6 +14479,7 @@ TEXT ·js_date_setYear(SB), $128-64
 	CALL ·abort(SB)
 	QUAD $0x000000801f0f27eb
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x4059000000000000
 	QUAD $0x409db00000000000
@@ -15023,6 +15034,7 @@ TEXT ·get_date_fields(SB), $128-56
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x3ff0000000000000
 	QUAD $0x4000000000000000
@@ -15380,6 +15392,7 @@ TEXT ·set_date_fields(SB), $144-32
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x4028000000000000
 	QUAD $0xc330000000000000
@@ -16725,6 +16738,7 @@ TEXT ·js_Date_parse(SB), $272-64
 	QUAD $0x0000801f0f27ebff
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16837,6 +16851,7 @@ TEXT ·js_Date_UTC(SB), $128-64
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -16963,6 +16978,7 @@ TEXT ·set_date_fields_checked(SB), $32-32
 	QUAD $0x6666666625eb00eb
 	QUAD $0x00000000841f0f2e
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7ff8000000000000
 	QUAD $0x409db00000000000
@@ -17822,6 +17838,7 @@ TEXT ·js_number_constructor(SB), $224-64
 	MOVQ AX, r0+48(FP)
 	MOVQ DX, r1+56(FP)
 	QUAD $0x00401f0f14eb00eb
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -18033,6 +18050,7 @@ TEXT ·js_boolean_constructor(SB), $128-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffdd5ffffff1c
 	QUAD $0xffffff14ffffffc9
@@ -18924,6 +18942,7 @@ TEXT ·js_bigint_constructor(SB), $112-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffbc3fffffaea
 	QUAD $0xfffffb1bfffffb1b
@@ -19090,6 +19109,7 @@ TEXT ·js_bigint_toString(SB), $128-64
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x41dfffffffc00000
 	QUAD $0xc1e0000000000000
@@ -19749,6 +19769,7 @@ TEXT ·js_bigint_asUintN(SB), $240-72
 	CALL ·abort(SB)
 	QUAD $0x2e666600000083e9
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -22240,6 +22261,7 @@ TEXT ·js_math_min_max(SB), $160-72
 	BYTE $0x44
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xc1e0000000000000
 	QUAD $0x41dfffffffc00000
@@ -22289,6 +22311,7 @@ TEXT ·js_math_round(SB), NOSPLIT|NOFRAME, $0-24
 	QUAD $0x441f0f6626eb00eb
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x8000000000000000
 	QUAD $0x8000000000000000
@@ -22329,6 +22352,7 @@ TEXT ·js_pow(SB), $32-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -22362,6 +22386,7 @@ TEXT ·js_math_sign(SB), NOSPLIT|NOFRAME, $0-24
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0x3ff0000000000000
 	QUAD $0xbff0000000000000
@@ -22520,6 +22545,7 @@ TEXT ·js_math_hypot(SB), $128-64
 	BYTE $0x24
 	CALL ·abort(SB)
 	QUAD $0x0000441f0f666eeb
+	PCALIGN $16
 	// data
 	QUAD $0x7fffffffffffffff
 	QUAD $0x7fffffffffffffff
@@ -22575,6 +22601,7 @@ TEXT ·js_math_random(SB), NOSPLIT|NOFRAME, $0-64
 	BYTE $0x0a
 	BYTE $0x66
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xbff0000000000000
 	RET
@@ -22631,6 +22658,7 @@ TEXT ·js_math_f16round(SB), NOSPLIT|NOFRAME, $0-24
 	BYTE $0xeb
 	BYTE $0x09
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0x7ef0000000000000
 	RET

@@ -1147,6 +1147,7 @@ TEXT ·JS_JSONStringify_block(SB), $208-32
 	BYTE $0xeb
 	BYTE $0x45
 	BYTE $0x90
+	PCALIGN $16
 	// data
 	QUAD $0xc3e0000000000000
 	QUAD $0x43e0000000000000
@@ -2898,6 +2899,7 @@ TEXT ·js_json_to_str_block(SB), $272-24
 	BYTE $0x0f
 	BYTE $0x1f
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffe3dbffffe2e3
 	QUAD $0xffffe208ffffdea0

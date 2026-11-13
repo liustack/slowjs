@@ -826,6 +826,24 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 测试：`TestA64CheckJumpTables` 让每种宽度取它能存的最远距离，再多一步就拒绝，中间隔着对齐时也一样，并拒绝往回的项、不在代码里的标签和它算不出大小的代码。`TestLowerARM64EngineJumpTable` lower 一个函数，它的 1 字节表在 llc 的代码里放得下（250 步），一旦跨度里的 5 个调用让 lowering 后的代码变长，就被拒绝。
 
+## 需要 16 字节的 SSE 读取保持在 16 上
+
+发布版本：Unreleased。
+
+内存操作数为 16 字节的 SSE 指令，地址不在 16 字节上时会出故障，`movups`、`movupd`、`movdqu` 和 `lddqu` 除外。amd64 引擎里有 382 条这样的指令：327 条经 RIP 读自己函数的常量池（分布在 70 个函数里），55 条经由影子栈指针算出的寄存器读局部变量。没有一条读堆或 Go 栈。链接后，它们在 linux、darwin 和 windows 上读到的地址都在 16 上，但没有什么规定必须如此：常量池在 16 上，只是因为每个函数体碰巧从 16 开始，而 `.p2align 4` 从函数开头算起。影子栈指针则在三个地方各自手工取整。
+
+现在这三处都由设计保证，并各有检查：
+
+- 函数的数据。生成器在代码之后的数据前面写一个 `PCALIGN $16`（`internal/goasm/gen/emit.go` 的 `emitData`）。它不加任何字节：数据在 lowering 后的目标文件里不从 16 开始时，PCALIGN 会把它垫离代码里的 RIP 位移，生成器拒绝这种情况。链接后的检查也拒绝数据在二进制里不从 16 开始的函数体（`dataPlaced`）。链接后的检查还拒绝 RIP 目标在二进制里不在 16 上的每条需要对齐的 SSE 指令，并报出函数、指令和地址（`checkAlign16`）。`xform` 的 `front:` 不是 16 的倍数时照旧被拒绝，因为它现在会把数据垫离读它的代码。
+- 影子栈。区域的基址、`tmp` 占用的空间和宿主函数拿到的栈指针，都由同一个函数 `cengine.AlignSP` 取整到 `cengine.SPAlign`（16）。`cengine.CheckSP` 在每个入口和 `host_call` 里遇到不在 16 上的指针就 panic，只在 `-tags testhooks` 的构建里如此。普通构建里它是一个被编译器内联的空函数，没有代价。
+- 其余一切。pass 在 amd64 上拒绝 IR 标为 16 字节或更高对齐的 load、store、原子操作或内存内建函数，不论宽度，除非它的地址来自局部变量或全局变量（`internal/goasm/gen/pass/shadow.cpp` 的 `heapAligned`）。现在的引擎里没有这样的访问。堆上的指针只保证 8 字节对齐，这样的访问可能让 llc 写出会出故障的 `movaps`。宽度不起作用：IR 说第一个读取在 16 上时，llc 会把两个 8 字节的读取合成一条 `movapd`。这条规则放在 IR 里，也就是对齐信息的来源处，而不放在机器码里，因为 llc 会把局部变量的地址挪到别的寄存器：现在读局部变量的 55 条里，有 37 条不是“影子指针传进来的那个寄存器（r12）加一个常数”的形式。
+
+arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则只用于 amd64。
+
+代价：没有。生成的 amd64 文件在 323 个带数据的函数里各多一行 `PCALIGN $16`，它们不加任何字节：一旦会加，上面的检查就拒绝。
+
+测试：`TestCheckAlign16` 解码读不在 16 上的 RIP 相对地址的 `movaps`、`movdqa`、`xorpd` 和 `paddd`，它们必须被拒绝，而 `movups`、`movdqu`、`movsd` 和 `ucomisd` 必须通过。`TestPostLinkCheck` 构建一个不在 16 上的常量池（`vecpool`），检查必须拒绝它。`TestEmitDataAligned` 和 `TestDataPlaced` 拒绝在目标文件里和在二进制里不从 16 开始的数据。`TestRejectSamples` 拒绝 `testdata/reject/heap_aligned.c`，一次经指针的向量读取，以及 `merged_aligned.c`，经一个声明在 16 上的指针读两个 `double`，llc 会把它们合成一条 `movapd`。`TestAlignSP` 检查取整、一个 VM 的第一个栈指针和宿主函数拿到的栈指针，`TestCheckSP`（testhooks）检查 panic。
+
 ## 局部变量里的键不加引用就读
 
 发布版本：Unreleased。

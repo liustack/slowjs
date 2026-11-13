@@ -1383,6 +1383,7 @@ TEXT ·heap_release_next_chunk(SB), $96-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffffffffffffff
 	QUAD $0x0000000000000000

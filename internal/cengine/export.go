@@ -37,6 +37,17 @@ const (
 	ScratchSize = scratchSize
 )
 
+// SPAlign is the alignment of every shadow pointer the host passes the engine.
+// The generated code lays out a frame at multiples of 16 bytes from the
+// pointer it is given, and on amd64 it reads and writes a local of 16 bytes
+// with SSE instructions that fault off 16 (docs/changes/c-engine.md). So
+// every shadow pointer the host makes comes from AlignSP.
+const SPAlign = 16
+
+// AlignSP rounds p up to a multiple of SPAlign: the shadow pointer of a call
+// into the engine that starts at p or above.
+func AlignSP(p uintptr) uintptr { return (p + SPAlign - 1) &^ (SPAlign - 1) }
+
 // Malloc is js_malloc_rt: n bytes of the VM's heap, or 0.
 func Malloc(sp, rt, n uintptr) uintptr { return js_malloc_rt(sp, rt, n) }
 

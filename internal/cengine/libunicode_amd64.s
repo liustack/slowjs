@@ -338,6 +338,7 @@ TEXT ·lre_case_conv_entry(SB), $96-56
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffb5efffffb5e
 	QUAD $0xfffffb5efffffb5e
@@ -507,6 +508,7 @@ TEXT ·lre_canonicalize(SB), $112-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffee8fffffee8
 	QUAD $0xfffffee8fffffee8
@@ -1434,6 +1436,7 @@ TEXT ·cr_op(SB), $160-64
 	CALL ·abort(SB)
 	BYTE $0xeb
 	BYTE $0x20
+	PCALIGN $16
 	// data
 	QUAD $0xfffff763fffff74c
 	QUAD $0xfffff75cfffff754
@@ -3107,6 +3110,7 @@ TEXT ·cr_sort_and_remove_overlap(SB), $160-16
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff335fffff319
 	QUAD $0xfffff335fffff310
@@ -4694,6 +4698,7 @@ TEXT ·unicode_normalize(SB), $256-72
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xffffeefbffffeeee
 	QUAD $0xffffef0bfffff5f1
@@ -5022,6 +5027,7 @@ TEXT ·unicode_decomp_entry(SB), $96-64
 	QUAD $0xfc64e900000002b8
 	QUAD $0x66000000a1e9ffff
 	QUAD $0x0000000000841f0f
+	PCALIGN $16
 	// data
 	QUAD $0x0000002000000020
 	QUAD $0x0000002000000020
@@ -6914,6 +6920,7 @@ TEXT ·unicode_prop(SB), $144-32
 	BYTE $0x00
 	BYTE $0x00
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffa79fffff886
 	QUAD $0xfffffb5dfffffb85
@@ -8622,6 +8629,7 @@ TEXT ·unicode_sequence_prop1(SB), $176-48
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffff7bbffffefbf
 	QUAD $0xfffff5defffff31a
@@ -8992,6 +9000,7 @@ TEXT ·unicode_prop_ops(SB), $160-32
 	BYTE $0x1f
 	BYTE $0x40
 	BYTE $0x00
+	PCALIGN $16
 	// data
 	QUAD $0xfffffa00fffffa22
 	QUAD $0xfffff8dafffffa3d
