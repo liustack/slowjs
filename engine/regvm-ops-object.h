@@ -237,7 +237,6 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
                                     BOOL k, BOOL t)
 {
     JSValue obj = F[(int8_t)ip[1]], key, val;
-    JSString *s;
     JSObject *p;
     JSAtom atom;
     JSProperty *pr;
@@ -246,11 +245,10 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
         return FALSE;
-    s = JS_VALUE_GET_STRING(key);
-    if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
-        is_digit(string_get(s, 0)))
+    /* the test of the key and its atom in one read (JSString.key_atom) */
+    atom = JS_VALUE_GET_STRING(key)->key_atom;
+    if (atom == JS_ATOM_NULL)
         return FALSE;
-    atom = js_get_atom_index(ctx->rt, s);
     p = JS_VALUE_GET_OBJ(obj);
     for (;;) {
         prs = find_own_property(&pr, p, atom);

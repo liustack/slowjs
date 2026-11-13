@@ -1257,6 +1257,40 @@ int white_shape_hashed(JSValueConst obj)
     return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
 
+/* ---- the atom a string is as a key ---- */
+
+/* The key_atom of the string v (a JS_TAG_STRING value). */
+uint32_t white_key_atom(JSValueConst v)
+{
+    return JS_VALUE_GET_STRING(v)->key_atom;
+}
+
+/* The atoms of rt whose string has a key_atom other than the one
+   JS_ValueToAtom's rule gives (the atom's own index for an atom of the type
+   string, not empty, not starting with a digit, else JS_ATOM_NULL), with the
+   live atoms in *live and those that are their own key in *keys. */
+int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys)
+{
+    uint32_t i, want;
+    JSAtomStruct *p;
+    int bad = 0;
+
+    *live = *keys = 0;
+    for(i = 1; i < rt->atom_size; i++) {
+        p = rt->atom_array[i];
+        if (atom_is_free(p))
+            continue;
+        (*live)++;
+        want = p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+            !is_digit(string_get(p, 0)) ? i : JS_ATOM_NULL;
+        if (want)
+            (*keys)++;
+        if (p->key_atom != want)
+            bad++;
+    }
+    return bad;
+}
+
 /* ---- the cache of the start and end tags ---- */
 
 /* The sizes of the tables of names, of style names and of end tags of ctx

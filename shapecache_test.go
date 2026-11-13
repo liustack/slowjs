@@ -11,12 +11,14 @@ import (
 )
 
 // uniqueKeys builds and drops objects whose shapes no later object has,
-// each holding a key no other object has.
+// each holding a key no other object has. The keys of every round from 0 to
+// 899 have the same lengths, so that a later round does not take more memory
+// for longer keys (a string one byte longer can take a block 8 bytes larger).
 const uniqueKeys = `
 function unique(round) {
 	for (let i = 0; i < 3000; i++) {
 		const o = {id: i}
-		o["u" + round + "_" + i] = i
+		o["u" + (round + 100) + "_" + i] = i
 	}
 }
 `

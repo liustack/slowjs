@@ -25,7 +25,7 @@ const (
 	layoutRefCountOffset = -4
 	layoutStringLenMask  = 2147483647
 	layoutStringWideBit  = 2147483648
-	layoutStringChars    = 12
+	layoutStringChars    = 16
 	layoutStringLenMax   = 1073741823
 	atomEmptyString      = 47
 	atomFileName         = 51
@@ -821,7 +821,6 @@ func js_generator_function_call(a0 uintptr, a1 uintptr)
 func js_generator_mark(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func js_generator_next(a0 uintptr, a1 uintptr)
 func js_get_array_buffer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
-func js_get_atom_index(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_get_exception(a0 uintptr, a1 uintptr)
 func js_get_fast_array_element_out_of_line(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_get_function_name(a0 uintptr, a1 uintptr, a2 uintptr)

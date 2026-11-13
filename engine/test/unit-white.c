@@ -122,6 +122,8 @@ void white_shape_id_set(JSRuntime *rt, uint32_t next);
 int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
+uint32_t white_key_atom(JSValueConst v);
+int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
@@ -1799,6 +1801,100 @@ static void shape_ids_ok(VM *v, const char *what, int cache)
 
     CHECK(bad == 0, "cache %d, %s: %d of %d shapes break the rule of ids", cache, what, bad, count);
     CHECK(count > 0, "cache %d, %s: no shape in the table", cache, what);
+}
+
+/* A string that is an atom of the type string, not empty and not starting
+   with a digit, keeps its atom in key_atom, which the keyed reads and
+   hasOwnProperty.call read in place of the test and the hash chain. Every other
+   string has JS_ATOM_NULL there: a string that is not an atom, the empty
+   string, a string that starts with a digit, a symbol. The rule holds for
+   every atom of the runtime while atoms are made and freed and their
+   numbers are given to other strings, and while the hash table of atoms
+   grows. */
+static void key_atoms_ok(VM *v, const char *what)
+{
+    int live, keys, bad = white_key_atoms_bad(v->rt, &live, &keys);
+
+    CHECK(bad == 0, "%s: %d of %d atoms have the wrong key_atom", what, bad, live);
+    CHECK(keys > 0, "%s: no atom is its own key", what);
+}
+
+static uint32_t key_atom_of_atom(VM *v, JSAtom a)
+{
+    JSValue s = JS_AtomToString(v->ctx, a);
+    uint32_t k = white_key_atom(s);
+
+    JS_FreeValue(v->ctx, s);
+    return k;
+}
+
+static void test_key_atom(void)
+{
+    static const struct { const char *s; int key; } kinds[] = {
+        { "wkaName", 1 }, { "-1", 1 }, { "-0", 1 }, { "Infinity", 1 }, { "NaN", 1 }, { "_0", 1 },
+        { "0", 0 }, { "10", 0 }, { "01", 0 }, { "1e3", 0 }, { "4294967295", 0 }, { "9z", 0 }, { "", 0 },
+    };
+    VM v = vm_new();
+    JSValue s;
+    JSAtom a, b, c;
+    size_t i;
+
+    key_atoms_ok(&v, "a new context");
+    for (i = 0; i < sizeof(kinds) / sizeof(kinds[0]); i++) {
+        a = JS_NewAtom(v.ctx, kinds[i].s);
+        CHECK(a != JS_ATOM_NULL, "the atom of '%s'", kinds[i].s);
+        /* the atoms of "0" to "2147483647" are numbers (JS_ATOM_TAG_INT), with
+           no string */
+        if (!(a & 0x80000000u))
+            CHECK(key_atom_of_atom(&v, a) == (kinds[i].key ? a : JS_ATOM_NULL),
+                  "'%s': key_atom %u, atom %u", kinds[i].s, key_atom_of_atom(&v, a), a);
+        JS_FreeAtom(v.ctx, a);
+    }
+
+    /* a string that is not an atom has none. Made an atom when no atom has
+       its characters, it becomes the atom (__JS_NewAtom) and holds the
+       number */
+    s = JS_NewString(v.ctx, "wkaName");
+    CHECK(white_key_atom(s) == JS_ATOM_NULL, "a new string has key_atom %u", white_key_atom(s));
+    a = JS_ValueToAtom(v.ctx, s);
+    CHECK(a != JS_ATOM_NULL && white_key_atom(s) == a, "the string made an atom: key_atom %u, atom %u",
+          white_key_atom(s), a);
+    JS_FreeAtom(v.ctx, a);
+    JS_FreeValue(v.ctx, s);
+
+    /* a number given back is given to the next atom: the string of the new
+       atom has the number, and a new string of the old characters is no
+       atom until it is made one */
+    a = JS_NewAtom(v.ctx, "wkaFirstOfItsName");
+    JS_FreeAtom(v.ctx, a);
+    b = JS_NewAtom(v.ctx, "wkaSecondOfItsName");
+    CHECK(b == a, "the number %u of the freed atom was not given again (%u)", a, b);
+    CHECK(key_atom_of_atom(&v, b) == b, "the new atom: key_atom %u", key_atom_of_atom(&v, b));
+    s = JS_NewString(v.ctx, "wkaFirstOfItsName");
+    CHECK(white_key_atom(s) == JS_ATOM_NULL, "the old characters: key_atom %u", white_key_atom(s));
+    c = JS_ValueToAtom(v.ctx, s);
+    CHECK(c != a && white_key_atom(s) == c && key_atom_of_atom(&v, c) == c,
+          "the old characters as an atom: %u, key_atom %u", c, white_key_atom(s));
+    JS_FreeAtom(v.ctx, c);
+    JS_FreeAtom(v.ctx, b);
+    JS_FreeValue(v.ctx, s);
+    key_atoms_ok(&v, "atoms freed and made again");
+
+    /* thousands of atoms made, read by key, freed and made again, through
+       the growth of the hash table of atoms and the reuse of numbers */
+    CHECK(eval_ok(v.ctx,
+        "var o = {}, bad = 0;\n"
+        "for (let r = 0; r < 3; r++) {\n"
+        "  let ks = [];\n"
+        "  for (let i = 0; i < 5000; i++) ks.push(Object.keys({ ['wka' + r + '_' + i]: i })[0]);\n"
+        "  for (let i = 0; i < 5000; i++) { o[ks[i]] = i; if (o[ks[i]] !== i || !(ks[i] in o)) bad++ }\n"
+        "  for (let i = 0; i < 5000; i++) delete o[ks[i]];\n"
+        "  ks = null }\n"), "the script threw");
+    CHECK(eval_is(v.ctx, "bad", "0"), "keyed reads of the made atoms");
+    key_atoms_ok(&v, "thousands of atoms");
+    JS_RunGC(v.rt);
+    key_atoms_ok(&v, "after a collection");
+    vm_free(&v);
 }
 
 static void test_shape_ids(void)
@@ -6641,6 +6737,7 @@ int main(int argc, char **argv)
     test_object_lit_shared_shape();
     test_shape_ids();
     test_shape_ids_copy_oom();
+    test_key_atom();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_gc_in_free();

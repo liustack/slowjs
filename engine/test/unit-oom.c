@@ -1969,7 +1969,9 @@ static void test_key_names_oom(void)
 
     /* the script first works with about 68 KiB of room: the hash table of
        the atoms keeps at most one atom for two buckets (62 KiB when it held
-       two atoms a bucket) */
+       two atoms a bucket). With the 4 bytes of key_atom in every string
+       (engine/quickjs.c, JSString), the register loop's build no longer
+       makes the 600 keys in 64 KiB */
     sweep("keys made from strings", "keys.js", NULL,
           "var o = {}; for (var i = 0; i < 600; i++) o['key' + i] = i; String(Object.keys(o).length)",
           want, 81920);
