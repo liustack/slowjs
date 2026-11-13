@@ -104,7 +104,7 @@ step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/c
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain && engine/test/render-test.sh plain"
 step cycles fast last "engine/test/cycles.sh $llvm"
-step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && engine/test/test262-test.sh"
+step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && scripts/check-gen-test.sh && engine/test/test262-test.sh"
 step inject-goldens fast last "engine/test/regvm/inject.sh -goldens engine/test/regvm/corpus engine/test/regvm/js"
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"

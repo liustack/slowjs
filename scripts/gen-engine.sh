@@ -25,6 +25,9 @@
 #                run the post-link check of every function against each
 #                (scripts/go-versions.sh). Set GEN_OUT as well, so that
 #                internal/cengine stays as it is.
+#   GEN_PGO      1 (default) generates with the profile of tifa's pages,
+#                engine/pgo/profile.txt (see engine/pgo/README.md). 0 generates
+#                without it, for comparison, and is not a formal build.
 set -eu
 
 arch=${1:-amd64}
@@ -67,6 +70,11 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 	release=
 	echo "warning: GEN_RELEASE=0 is not a formal build" >&2
 fi
+profile="-profile engine/pgo/profile.txt"
+if [ "${GEN_PGO:-1}" = 0 ]; then
+	profile=
+	echo "warning: GEN_PGO=0 is not a formal build" >&2
+fi
 verify=
 if [ -n "${GEN_VERIFY_BIN:-}" ]; then
 	verify="-verify-bin $GEN_VERIFY_BIN -verify-pkg github.com/liustack/quickjs/internal/cengine -verify-all"
@@ -74,7 +82,7 @@ fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
 	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -go-calls internal/cengine/gocalls.txt \
-	-j "${GEN_JOBS:-2}" $release $verify
+	-j "${GEN_JOBS:-2}" $release $verify $profile
 
 if [ -n "${GEN_KEEP:-}" ]; then
 	rm -rf "$GEN_KEEP"

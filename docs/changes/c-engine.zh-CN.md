@@ -283,7 +283,7 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 一个反向构建说明这个证明管用：`GEN_DROP_LR_PAIRS=1` 把和 x30 配对的另一个寄存器也一起删掉，构建在第一个把那个寄存器读回来的函数上停下。`GEN_DROP_LR_PAIRS=unchecked` 跳过证明，写出一个标明是反向构建的包，要加 `-tags goasmnegative` 才能编译，引擎的测试在它上面失败。`-release` 两个都拒绝。
 
-测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及活过一个标签、或放在寄存器入口叶子函数跨调用保留的寄存器里的元组地址。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
+测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及这些元组地址：过了一个标签或在分支的目标处被读到的、被分支读到的、走到间接分支或函数外标签的、放在寄存器入口叶子函数跨调用保留的寄存器里的。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRTuplePaths` 沿分支和标签跟着这个地址走：接受在分支两边都被重新写入的、经过一条分支或一个循环走到调用的、在一条路径上随返回结束的，拒绝在分支目标处够到槽的，以及被寄存器入口叶子函数（`memcpy`）当作参数拿走的，不论是直线走到还是过了分支。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
 
 ## 结果只在寄存器里
 

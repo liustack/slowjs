@@ -801,3 +801,98 @@ func TestRegvmJumpsCount(t *testing.T) {
 		}
 	}
 }
+
+// pollProfileIR is a module built with a profile (its ProfileSummary): the
+// loop of few ran two turns an entry in the training (the weights of its
+// latch), and its rare call has the weights of __builtin_expect.
+const pollProfileIR = `define void @few(ptr %a, i64 %n) !prof !30 {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i1, %next ]
+  %p = getelementptr i64, ptr %a, i64 %i
+  %v = load i64, ptr %p
+  %z = icmp eq i64 %v, 0
+  br i1 %z, label %rare, label %next, !prof !0
+rare:
+  call void @ext(i64 %i)
+  br label %next
+next:
+  %i1 = add i64 %i, 1
+  %c = icmp ult i64 %i1, %n
+  br i1 %c, label %loop, label %exit, !prof !1
+exit:
+  ret void
+}
+define void @ext(i64 %n) {
+entry:
+  br label %loop
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i1, %loop ]
+  %i1 = add i64 %i, 1
+  %c = icmp ult i64 %i1, %n
+  br i1 %c, label %loop, label %exit
+exit:
+  ret void
+}
+!llvm.module.flags = !{!10}
+!0 = !{!"branch_weights", !"expected", i32 1, i32 2000}
+!1 = !{!"branch_weights", i32 1000, i32 1000}
+!10 = !{i32 1, !"ProfileSummary", !11}
+!11 = !{!12, !13, !14, !15, !16, !17, !18, !19}
+!12 = !{!"ProfileFormat", !"InstrProf"}
+!13 = !{!"TotalCount", i64 3000}
+!14 = !{!"MaxCount", i64 2000}
+!15 = !{!"MaxInternalCount", i64 2000}
+!16 = !{!"MaxFunctionCount", i64 1000}
+!17 = !{!"NumCounts", i64 3}
+!18 = !{!"NumFunctions", i64 2}
+!19 = !{!"DetailedSummary", !20}
+!20 = !{!21}
+!21 = !{i32 999999, i64 1, i32 3}
+!30 = !{!"function_entry_count", i64 1000}
+`
+
+// TestPassPollsProfile: with a profile the pass chooses where a loop counts
+// as it does without one (StaticWeights in pass/poll.cpp). The training ran
+// the loop of few two turns an entry, which would make memory the cheaper
+// place, and an array of a thousand elements would then pay a load and a
+// store each turn.
+func TestPassPollsProfile(t *testing.T) {
+	llvm, pass := os.Getenv("QUICKJS_LLVM"), os.Getenv("QUICKJS_SHADOW_PASS")
+	if llvm == "" || pass == "" {
+		t.Skip("set QUICKJS_LLVM and QUICKJS_SHADOW_PASS")
+	}
+	dir := t.TempDir()
+	for _, c := range []struct{ name, ir string }{
+		{"with the profile", pollProfileIR},
+		{"without it", regexp.MustCompile(`(?m)^!llvm\.module\.flags = .*\n|, !prof !1\n| !prof !30`).ReplaceAllString(pollProfileIR, "\n")},
+		// The numbers of the weights the pass gives its own rare branches: the
+		// same node to LLVM, which only the "expected" mark tells apart.
+		{"with the pass's numbers", strings.Replace(pollProfileIR, "i32 1000, i32 1000}", "i32 1, i32 1048575}", 1)},
+	} {
+		ir, outIR := filepath.Join(dir, "f.ll"), filepath.Join(dir, "out.ll")
+		if err := os.WriteFile(ir, []byte(c.ir), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.Command(filepath.Join(llvm, "opt"), "-load-pass-plugin", pass, "-passes=goasm-shadow-stack",
+			"-shadow-add-sp", "-shadow-size-log2=25", "-shadow-poll", fmt.Sprintf("-shadow-poll-offset=%d", PollCounterOffset),
+			"-S", "-o", outIR, ir).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%s: pass: %v\n%s", c.name, err, out)
+		}
+		text, err := os.ReadFile(outIR)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := string(text)
+		f = f[strings.Index(f, "@few("):]
+		f = f[:strings.Index(f, "\n}")]
+		if reg, mem := tickPlaces(f); reg != 1 || mem != 0 {
+			t.Errorf("%s: few ticks %d times in a register and %d in memory, want 1 and 0:\n%s", c.name, reg, mem, f)
+		}
+		if want := map[string]string{"with the profile": `!{!"branch_weights", i32 1000, i32 1000}`, "with the pass's numbers": `!{!"branch_weights", i32 1, i32 1048575}`}[c.name]; want != "" && !strings.Contains(string(text), want) {
+			t.Errorf("%s: the pass took the weights of the profile off few:\n%s", c.name, text)
+		}
+	}
+}

@@ -59,6 +59,8 @@ var (
 	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl_<arch>.go records it)")
 	align64F  = flag.String("align64", engineAlign64, "functions whose body starts at a fixed place in a line of 64 bytes, as name:offset (a multiple of 8 below 64), comma separated (with -src the default is none)")
 	goCallsF  = flag.String("go-calls", "", "the list of the engine functions Go code names (internal/cengine/gocalls.txt, gen.GoCalls): every other unified function stores no result to the Go stack and its Go declaration has none (empty: every function stores its result)")
+	profileF  = flag.String("profile", "", "a text profile (llvm-profdata merge --text, engine/pgo/profile.txt): compile once without it to write the inlining down, then with it, replaying that inlining (gen.InlineRemarks)")
+	staleMax  = flag.Int("profile-stale-max", gen.PGOStaleMax, "with -profile: warn when the profile no longer fits the C of more functions than this")
 )
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
@@ -158,7 +160,6 @@ func main() {
 	clang := filepath.Join(*llvm, "clang")
 
 	// 1. Compile every C file to IR.
-	type src struct{ path, group string }
 	var srcs []src
 	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa", "heap", "tlsf"} {
 		srcs = append(srcs, src{filepath.Join(*engineDir, f+".c"), f})
@@ -186,16 +187,7 @@ func main() {
 		cflags = append([]string{}, gen.ARM64CFlags...)
 	}
 	libc := filepath.Join(*engineDir, "libc")
-	var lls []string
-	defined := make([][]string, len(srcs))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan bool, *jobs)
-	var cerr error
-	formatCalls := 0
-	for i, s := range srcs {
-		ll := filepath.Join(*work, fmt.Sprintf("%03d_%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c")))
-		lls = append(lls, ll)
+	srcArgs := func(s src) []string {
 		args := append([]string{}, cflags...)
 		if s.group == "libc" {
 			// abort.c asks the host (engine/host.h).
@@ -205,6 +197,27 @@ func main() {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
 			args = append(args, gen.ValueFlagsFor(*arch, s.group)...)
 		}
+		return args
+	}
+	llName := func(i int, s src, kind string) string {
+		return filepath.Join(*work, fmt.Sprintf("%03d_%s%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c"), kind))
+	}
+	var prof *pgoBuild
+	if *profileF != "" {
+		prof = newPGO(*profileF, filepath.Join(*work, "pgo"), len(srcs))
+		prof.firstPass(srcs, srcArgs, llName, strings.Fields(*postArgs), postOn)
+	}
+	var lls []string
+	defined := make([][]string, len(srcs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan bool, *jobs)
+	var cerr error
+	formatCalls := 0
+	for i, s := range srcs {
+		ll := llName(i, s, "")
+		lls = append(lls, ll)
+		args := srcArgs(s)
 		// The formats of the engine's own files are read in IR as written,
 		// before the optimizer changes the calls that carry them.
 		var plainLL string
@@ -213,17 +226,35 @@ func main() {
 			plainLL = strings.TrimSuffix(ll, ".ll") + ".plain.ll"
 			plainArgs = append(append(append([]string{}, args...), "-O0"), "-S", "-emit-llvm", "-o", plainLL, s.path)
 		}
+		var feArgs []string
+		if prof != nil {
+			args = append(args, prof.secondPassArgs(i)...)
+			// The IR before any optimization says which functions have a
+			// profile (gen.UnprofiledFunctions).
+			feArgs = append(append([]string{}, args...), "-Xclang", "-disable-llvm-passes", "-S", "-emit-llvm", "-o", llName(i, s, ".fe"), s.path)
+		}
 		args = append(args, "-S", "-emit-llvm", "-o", ll, s.path)
 		wg.Add(1)
-		go func(s src, ll string, args []string) {
+		go func(i int, s src, ll string, args []string) {
 			defer wg.Done()
 			sem <- true
 			defer func() { <-sem }()
-			if _, err := capture(clang, args...); err != nil {
+			stderr, err := capture(clang, args...)
+			if err != nil {
 				mu.Lock()
 				cerr = err
 				mu.Unlock()
 				return
+			}
+			if feArgs != nil {
+				prof.noteMisexpect(stderr)
+				if _, err := capture(clang, feArgs...); err != nil {
+					mu.Lock()
+					cerr = err
+					mu.Unlock()
+					return
+				}
+				prof.readFrontIR(i, llName(i, s, ".fe"))
 			}
 			if plainLL != "" {
 				if _, err := capture(clang, plainArgs...); err != nil {
@@ -249,11 +280,14 @@ func main() {
 			mu.Lock()
 			defined[i] = names
 			mu.Unlock()
-		}(s, ll, args)
+		}(i, s, ll, args)
 	}
 	wg.Wait()
 	if cerr != nil {
 		die(cerr)
+	}
+	if prof != nil {
+		prof.reportStale(*staleMax)
 	}
 	groups := make([]string, len(srcs))
 	for i, s := range srcs {
@@ -263,14 +297,28 @@ func main() {
 	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
+	if prof != nil {
+		stripCGProfile(linked)
+	}
 	if postOn {
 		// The optimizer sees the calls from one file to another, which clang
 		// could not. It runs before the pass, so the pass takes the module as it
 		// stands: the functions inlined away are gone from it, and the ones the
 		// optimizer cloned (mark_children.specialized.2) are in it under new names.
 		linkedOpt := filepath.Join(*work, "engine.opt.ll")
-		must(gen.PostLinkOpt(*llvm, strings.Fields(*postArgs), linked, linkedOpt))
+		optArgs := strings.Fields(*postArgs)
+		if prof != nil {
+			optArgs = append(optArgs, prof.optArgs()...)
+		}
+		must(gen.PostLinkOpt(*llvm, optArgs, linked, linkedOpt))
 		linked = linkedOpt
+	}
+	if prof != nil {
+		// The line tables served the replay: nothing after this reads them.
+		stripCGProfile(linked)
+		noDebug := filepath.Join(*work, "engine.nodebug.ll")
+		must1(capture(filepath.Join(*llvm, "opt"), "-S", "-strip-debug", "-o", noDebug, linked))
+		linked = noDebug
 	}
 	tCompile := time.Since(t0)
 
@@ -350,6 +398,9 @@ func main() {
 	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
+	if prof != nil {
+		llcArgs = append(llcArgs, gen.PGOLLCFlags...)
+	}
 	if *arch == "arm64" {
 		// The tiny code model reaches data with one instruction that names
 		// the whole address (adr, a load of a label), which the lowering

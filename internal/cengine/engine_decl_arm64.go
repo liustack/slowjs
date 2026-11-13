@@ -41,7 +41,7 @@ const (
 // noSplitList names the functions whose TEXT says NOSPLIT, which have no
 // stack check at their entry (gen.MarkNoSplit), for the tests. A constant
 // takes no room in a binary that does not use it.
-const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_RegvmOpName JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo __cos __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos add_pc2line_info asin atan atan2 atanh cbrt cbv_slot cbv_target ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk js_string_delete_property js_uncatchable_mark log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf re_interval_cmp rint round rv_copy_way rv_fold_canon rv_named_local rv_next_branch rv_old_info rv_scratch_short scalbn specialcase specialcase_595 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
+const noSplitList = "JS_AddIntrinsicEval JS_AddIntrinsicRegExpCompiler JS_DupAtom JS_DupContext JS_GetAnyOpaque JS_GetAsyncContext JS_GetCallDepth JS_GetClassID JS_GetContextOpaque JS_GetException JS_GetGCThreshold JS_GetGlobalObject JS_GetInternalDepth JS_GetInterruptFlag JS_GetMaxCallDepth JS_GetMemorySize JS_GetModuleName JS_GetModulePrivateValue JS_GetOpaque JS_GetRuntime JS_GetRuntimeOpaque JS_GetStripInfo JS_HasException JS_IsCFunction JS_IsConstructor JS_IsError JS_IsException JS_IsFunction JS_IsJobPending JS_IsLiveObject JS_IsRegisteredClass JS_IsUncatchableException JS_NewClassID JS_NumberIsNegativeOrMinusZero JS_PromiseResult JS_PromiseState JS_RegvmOpName JS_SetCallDepth JS_SetConstructorBit JS_SetContextOpaque JS_SetFootprintLimit JS_SetFusedOps JS_SetGCThreshold JS_SetHostPromiseRejectionTracker JS_SetHostRemap JS_SetInternalDepth JS_SetIsHTMLDDA JS_SetMaxCallDepth JS_SetMemoryLimit JS_SetModuleLoaderFunc JS_SetModuleLoaderFunc2 JS_SetRuntimeInfo JS_SetRuntimeOpaque JS_SetSharedArrayBufferFunctions JS_SetStripInfo JS_VALUE_IS_NAN __cos __js_rc __math_divzero __math_invalid __math_oflow __math_uflow __math_xflow __sin __tan acos add_pc2line_info asin atan atan2 atanh cbrt cbv_slot cbv_target ceil copysign cr_init dbuf_init2 exchange_one_byte exchange_one_int128 exchange_one_int16 exchange_one_int32 exchange_one_int64 expm1 fabs floor fmax fmin gc_ephemeron_count gc_scan_incref_child gc_scan_incref_child2 heap_destroy heap_set_remap heap_usable_size hypot js_TA_cmp_float16 js_TA_cmp_float32 js_TA_cmp_float64 js_TA_cmp_int16 js_TA_cmp_int32 js_TA_cmp_int64 js_TA_cmp_int8 js_TA_cmp_uint16 js_TA_cmp_uint32 js_TA_cmp_uint64 js_TA_cmp_uint8 js_TA_get_float16 js_TA_get_float32 js_TA_get_float64 js_TA_get_int16 js_TA_get_int32 js_TA_get_int8 js_TA_get_uint16 js_TA_get_uint32 js_TA_get_uint8 js_array_buffer_isView js_dtoa_max_len js_error_isError js_function_proto js_function_proto_lineNumber js_get_exception js_get_this js_is_live_code js_iterator_proto_iterator js_json_isRawJSON js_large_give js_malloc_usable_size js_malloc_usable_size_rt js_math_f16round js_math_fround js_math_random js_math_round js_math_sign js_promise_finally_value_thunk js_string_delete_property js_uncatchable_mark log log10 log1p log2 lre_check_timeout lre_depth_enter lre_depth_leave lre_get_alloc_count lre_get_capture_count lre_get_flags lre_interrupt_flag lre_is_space_non_ascii lrint memcpy memmove memset modf re_interval_cmp rint round rv_copy_way rv_fold_canon rv_named_local rv_next_branch rv_old_info rv_scratch_short scalbn specialcase specialcase_595 sqrt string_advance_index string_get_milliseconds tlsf_align_size tlsf_alloc_overhead tlsf_block_size tlsf_block_size_max tlsf_block_size_min tlsf_destroy tlsf_free_inside tlsf_get_pool tlsf_next_free tlsf_pool_overhead tlsf_size tofp16 trunc unicode_to_utf8 young_decref_child young_defer young_scan_incref_child young_scan_incref_child2"
 
 func JS_AddIntrinsicBaseObjects(a0 uintptr, a1 uintptr)
 func JS_AddIntrinsicBigInt(a0 uintptr, a1 uintptr)
@@ -165,6 +165,7 @@ func JS_IsArray(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_IsCFunction(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func JS_IsConstructor(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_IsError(a0 uintptr, a1 uintptr, a2, a3 uintptr)
+func JS_IsException(a0 uintptr, a1, a2 uintptr)
 func JS_IsExtensible(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_IsFunction(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func JS_IsInstanceOf(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4, a5 uintptr)
@@ -328,6 +329,7 @@ func JS_ToInt64Ext(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
 func JS_ToInt64Free(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
 func JS_ToInt64Sat(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
 func JS_ToLengthFree(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
+func JS_ToNumberFree(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_ToNumberHintFree(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func JS_ToObject(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_ToPrimitiveFree(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
@@ -337,6 +339,7 @@ func JS_ToString(a0 uintptr, a1 uintptr, a2, a3 uintptr) (r0, r1 uintptr)
 func JS_ToStringFree(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_ToStringInternal(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func JS_ToUint32(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
+func JS_VALUE_IS_NAN(a0 uintptr, a1, a2 uintptr)
 func JS_ValueToAtom(a0 uintptr, a1 uintptr, a2, a3 uintptr) uintptr
 func JS_WriteArray(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func JS_WriteArrayBuffer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
@@ -361,6 +364,7 @@ func __dbuf_put_u64(a0 uintptr, a1 uintptr, a2 uintptr)
 func __dbuf_putc(a0 uintptr, a1 uintptr, a2 uintptr)
 func __expo2(a0 uintptr, a1 float64, a2 float64)
 func __js_poll_interrupts(a0 uintptr, a1 uintptr)
+func __js_rc(a0 uintptr, a1 uintptr)
 func __math_divzero(a0 uintptr, a1 uintptr)
 func __math_invalid(a0 uintptr, a1 float64)
 func __math_oflow(a0 uintptr, a1 uintptr)
@@ -755,6 +759,7 @@ func js_date_getTimezoneOffset(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintpt
 func js_date_setTime(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_date_setYear(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_date_toJSON(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
+func js_dbuf_init(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_dbuf_realloc_rt(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_define_var(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_dst_find(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

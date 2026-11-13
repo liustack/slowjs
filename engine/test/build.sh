@@ -29,6 +29,10 @@
 #               AddressSanitizer (poisoning) and UndefinedBehaviorSanitizer
 #   tsan        ThreadSanitizer, for host-test alone (the host with stubs in
 #               place of the engine): the engine itself runs in one thread
+#   pgo         render and jsrun alone, the engine and its libc built as the generator
+#               compiles them (no JS_HOST_POLL, no RV_SELF_CHECK, the polls of
+#               the generator as empty functions) with -fprofile-instr-generate:
+#               the host that engine/pgo/train.sh trains the profile on
 # OUTDIR defaults to engine/test/out/MODE. It gets run-test262, jsrun (see
 # compare.sh), unit, unit-oom, unit-api and unit-white (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
 # host-test.sh), heap-test and, in asan-heap mode, poison-test (see heap.sh), and
@@ -63,8 +67,9 @@ asan-heap-iter) san='-fsanitize=address -fsanitize-recover=address -fno-omit-fra
 ubsan) san='-fsanitize=undefined -fno-omit-frame-pointer' ;;
 asan-ubsan) san='-fsanitize=address,undefined -fsanitize-recover=address -fno-omit-frame-pointer'; defs=-DJS_HEAP_SYSTEM_MALLOC; system=1 ;;
 tsan) san='-fsanitize=thread -fno-omit-frame-pointer' ;;
+pgo) san= ;;
 fuzz) san='-fsanitize=address,undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; heapsan='-fsanitize=undefined,fuzzer-no-link -fno-sanitize-recover=all -fno-omit-frame-pointer'; defs=-DJS_HEAP_POISON; fuzzflags='-fsanitize=fuzzer' ;;
-*) echo "build.sh: unknown mode $mode (plain, asan, asan-heap, asan-heap-iter, ubsan, asan-ubsan, tsan or fuzz)" >&2; exit 2 ;;
+*) echo "build.sh: unknown mode $mode (plain, asan, asan-heap, asan-heap-iter, ubsan, asan-ubsan, tsan, fuzz or pgo)" >&2; exit 2 ;;
 esac
 defs="$defs ${EXTRA_DEFS:-}"
 [ -n "$heapsan" ] || heapsan=$san
@@ -87,6 +92,11 @@ common="-O2 -g -Wall -Wno-array-bounds $san"
 # it) stops the process here, where the shipped engine throws or gives the
 # conversion up.
 free="$engine_flags $(engine_target_flags native) -DJS_HOST_POLL -DRV_SELF_CHECK"
+if [ "$mode" = pgo ]; then
+	# The functions must be the generator's, or their profile would not fit
+	# them: no host_poll in the flags, the generator's poll calls (cutils.h).
+	free="$engine_flags $(engine_target_flags native) -fprofile-instr-generate"
+fi
 version=$engine_version
 libc=$engine/libc
 
@@ -173,6 +183,18 @@ fi
 
 build_engine "$out" ""
 engineobjs=$objs
+if [ "$mode" = pgo ]; then
+	$cc $hostflags -c "$here/host.c" -o "$out/host.o"
+	$cc $hostflags -DPGO_TRAIN -c "$here/render.c" -o "$out/render.o"
+	$cc $hostflags -c "$here/jsrun.c" -o "$out/jsrun.o"
+	$cc $hostflags -c "$here/pgo-poll.c" -o "$out/pgo-poll.o"
+	for f in render jsrun; do
+		# shellcheck disable=SC2086
+		$cc -fprofile-instr-generate $engineobjs $libcobjs "$out/host.o" "$out/pgo-poll.o" "$out/$f.o" -o "$out/$f" -lpthread
+	done
+	write_stamp
+	exit 0
+fi
 build_host_test > /dev/null
 # poison-test asks AddressSanitizer what the allocator poisoned
 poisontest=

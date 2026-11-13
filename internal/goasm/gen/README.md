@@ -28,7 +28,13 @@ runs its own checks and lowering in Go (`debug/elf`,
    interpreter writes the two halves one at a time, and Zen 3 cannot forward a
    16-byte load from them (see [c-engine.md](../../../docs/changes/c-engine.md#how-a-jsvalue-is-copied)).
    The small libc is left out, since its `memcpy` moves 16 bytes at a time on
-   purpose. CheckIR rejects variadics, byval, sret and long double.
+   purpose. CheckIR rejects variadics, byval, sret and long double. With a
+   profile (`-profile engine/pgo/profile.txt`, which `make gen` passes) each
+   file is compiled twice: first without it, writing down which calls were
+   inlined, then with it and that inlining replayed. The post-link optimizer
+   does the same, and clang, opt and llc get `-pgso=false`. What the profile
+   may decide is in
+   [generator.md](../../../docs/changes/generator.md#a-profile-of-tifas-pages).
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees
@@ -284,8 +290,12 @@ own output (`a64ProveLR`): no instruction left names x30, and none reads,
 writes or takes the address of a byte of a dropped slot, so the slot is
 written only from x30 and read only into x30 on every path, and both are
 gone. The address of a tuple spill counts with every byte a tuple through it
-reaches, up to where its register is written again, a call or a return, and
-must not live past a label or a branch. A function the proof refuses stops
+reaches on every path from it, through labels and into the targets of
+branches, up to where its register is written again, a call or a return
+(`a64TupleReach`). It must not be read in any other way, nor reach an
+indirect branch, a label the function does not have, a call while it sits in
+a register a call keeps, a call to a register-entry leaf that takes it as an
+argument, or the end of the function. A function the proof refuses stops
 the build. Any other use of LR (a w
 register, LR twice in a pair, writeback forms other than the frame's own)
 stops it too. `GEN_DROP_LR_PAIRS=1` is the negative build that drops the
@@ -294,7 +304,7 @@ other register of a pair with x30, which the proof must refuse:
 a negative build, which the engine's tests must fail on. Tests:
 `TestLowerARM64EngineLR`, `TestLowerARM64EngineLRRefused`,
 `TestLowerARM64EngineLRNegative`, `TestLowerARM64EngineLRLabel`,
-`TestLowerARM64EngineLRTuple`.
+`TestLowerARM64EngineLRTuple`, `TestLowerARM64EngineLRTuplePaths`.
 
 A function whose arguments need more integer registers than a unified entry
 has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
