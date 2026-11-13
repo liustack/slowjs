@@ -15,7 +15,7 @@ import (
 )
 
 // swept are long calls of fmt, each with an output or an argument of n units
-// (bytes of output, or numbers of an array), which TestLongCallsStopAtEveryTimeout
+// (bytes of output or of format, or numbers of an array), which TestLongCallsStopAtEveryTimeout
 // stops at many eval timeouts, those marked short under -short too.
 var swept = []struct {
 	name, call string
@@ -28,13 +28,14 @@ var swept = []struct {
 	{"printf of an array of 2 Mi numbers", `fmt.printf('%v', arr)`, 16 << 20, true},
 	{"sprint of an array of 2 Mi numbers", `fmt.sprint(arr).length`, 16 << 20, false},
 	{"%d of the longest BigInt", `fmt.sprintf('%d', big).length`, 1 << 20, false},
+	{"a verb of 8 MiB of zeros", `fmt.sprintf(zeros, 1).length`, 8 << 20, false},
 }
 
 // sweptSetup makes the arguments of swept: in a VM with no memory limit, an
 // output of up to 16 MiB (maxOutput). arrSetup makes the array, which takes
 // longer, for the calls that read it.
 const (
-	sweptSetup = `var K = 16 << 20, s1 = '\x01'.repeat(K / 5), obj = {a: 'x'.repeat(K / 2)}, big = 1n << 1040000n; 0`
+	sweptSetup = `var K = 16 << 20, s1 = '\x01'.repeat(K / 5), obj = {a: 'x'.repeat(K / 2)}, big = 1n << 1040000n, zeros = '%' + '0'.repeat(K / 2) + '5d'; 0`
 	arrSetup   = `var arr = Array.from({length: K / 8}, (_, i) => i); 0`
 )
 

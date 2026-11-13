@@ -42,10 +42,41 @@ import (
 // at most half as many of them as bytes from the first to the end, which
 // is all the format may grow by.
 func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
-	n := int64(len(format))
+	n, read, ok, _ := sizePrintfStop(format, a, room, nil)
+	return n, read, ok
+}
+
+// sizePrintfStop is sizePrintf, which reads stop at least every piece bytes
+// of the format, when it is not nil, and returns at once, with stopped
+// true, when stop says the call is to end: a format of 16 MiB took 18 to 75
+// ms on an Apple M4.
+func sizePrintfStop(format string, a []any, room int64, stop func() bool) (n int64, read string, ok, stopped bool) {
+	// checkAt is where in the format stop is read next.
+	checkAt := piece
+	halt := func(i int) bool {
+		if stop == nil || i < checkAt {
+			return false
+		}
+		checkAt = i + piece
+		stopped = stopped || stop()
+		return stopped
+	}
+	n = int64(len(format))
 	end := len(format)
 	lastClose := strings.LastIndexByte(format, ']')
-	var read strings.Builder
+	var b strings.Builder
+	// write appends s to b a piece at a time, with a read of stop between
+	// two: b was grown whole, with no clearing, and its pages come from
+	// the OS as they are written.
+	write := func(s string) {
+		for lo := 0; lo < len(s) && !stopped; lo += piece {
+			if lo > 0 && stop != nil && stop() {
+				stopped = true
+				return
+			}
+			b.WriteString(s[lo:min(lo+piece, len(s))])
+		}
+	}
 	at := 0
 	fits := true
 	argNum := 0
@@ -63,21 +94,21 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 			// alone before fewer than 3 bytes, ']' or not, so "[]" stands
 			// for "[" only before 3 or more.
 			if end-i >= 3 && fits {
-				if read.Cap() == 0 {
+				if b.Cap() == 0 {
 					size := len(format) + (end-i)/2 + 2
 					if room >= 0 && int64(size) > room {
 						fits = false
 						return argNum, i + 1, false, false
 					}
-					read.Grow(size)
+					b.Grow(size)
 				}
-				read.WriteString(format[at : i+1])
-				read.WriteByte(']')
+				write(format[at : i+1])
+				b.WriteByte(']')
 				at = i + 1
 			}
 			return argNum, i + 1, false, false
 		}
-		index, wid, ok := parseArgNumber(format[i:])
+		index, wid, ok := parseArgNumberStop(format[i:], func(k int) bool { return halt(i + k) })
 		if ok && 0 <= index && index < len(a) {
 			return index, i + wid, true, true
 		}
@@ -86,7 +117,17 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 	for i := 0; i < end; {
 		good := true
 		for i < end && format[i] != '%' {
-			i++
+			if halt(i) {
+				return 0, "", false, true
+			}
+			if k := strings.IndexByte(format[i:min(end, i+piece)], '%'); k >= 0 {
+				i += k
+			} else {
+				i = min(end, i+piece)
+			}
+		}
+		if halt(i) || stopped {
+			return 0, "", false, true
 		}
 		if i >= end {
 			break
@@ -96,6 +137,9 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 		var sharp, space bool
 	flags:
 		for ; i < end; i++ {
+			if i&(haltEvery-1) == 0 && halt(i) {
+				return 0, "", false, true
+			}
 			switch format[i] {
 			case '#':
 				sharp = true
@@ -118,7 +162,7 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 			afterIndex = false
 		} else {
 			var isnum bool
-			wid, isnum, i = parsenum(format, i, end)
+			wid, isnum, i = parsenumStop(format, i, end, halt)
 			if afterIndex && isnum {
 				good = false
 			}
@@ -136,7 +180,7 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 				prec = max(prec, 0)
 				afterIndex = false
 			} else {
-				prec, _, i = parsenum(format, i, end)
+				prec, _, i = parsenumStop(format, i, end, halt)
 			}
 		}
 		if !afterIndex {
@@ -162,14 +206,19 @@ func sizePrintf(format string, a []any, room int64) (int64, string, bool) {
 			n += 64 + sizeArg(arg, 'v', false, false, 0, 0)
 		}
 	}
+	if stopped {
+		return 0, "", false, true
+	}
 	if !fits {
-		return 0, "", false
+		return 0, "", false, false
 	}
-	if read.Cap() == 0 {
-		return n, format, true
+	if b.Cap() == 0 {
+		return n, format, true, false
 	}
-	read.WriteString(format[at:])
-	return n, read.String(), true
+	if write(format[at:]); stopped {
+		return 0, "", false, true
+	}
+	return n, b.String(), true, false
 }
 
 // sizePrint is a bound on the bytes of fmt.Sprint(a...) and fmt.Sprintln(a...).
@@ -326,8 +375,19 @@ const maxNumber = 1_000_000
 // makes it larger than maxNumber, and then reads no more of the format: it
 // returns end.
 func parsenum(s string, i, end int) (num int, isnum bool, next int) {
+	return parsenumStop(s, i, end, nil)
+}
+
+// haltEvery is how many bytes of a verb go between two calls of halt: a
+// verb may be as long as the format, as a run of zeros, a flag or a digit.
+const haltEvery = 1 << 12
+
+// parsenumStop is parsenum, which calls halt, when it is not nil, with
+// the offset of a digit every haltEvery bytes, and ends as at a number too large when halt is
+// true: a run of zeros never is one, and may be as long as the format.
+func parsenumStop(s string, i, end int, halt func(int) bool) (num int, isnum bool, next int) {
 	for next = i; next < end && s[next] >= '0' && s[next] <= '9'; next++ {
-		if num > maxNumber {
+		if num > maxNumber || halt != nil && next&(haltEvery-1) == 0 && halt(next) {
 			return 0, false, end
 		}
 		num = 10*num + int(s[next]-'0')
@@ -340,6 +400,12 @@ func parsenum(s string, i, end int) (num int, isnum bool, next int) {
 // argument it names, counted from 0, how many bytes it takes, as far as its
 // ']', and whether it is a number. Without a ']' it takes the '[' alone.
 func parseArgNumber(s string) (index, size int, ok bool) {
+	return parseArgNumberStop(s, nil)
+}
+
+// parseArgNumberStop is parseArgNumber, which calls halt, when it is not
+// nil, with the offset in s of each digit of the index (parsenumStop).
+func parseArgNumberStop(s string, halt func(int) bool) (index, size int, ok bool) {
 	if len(s) < 3 {
 		return 0, 1, false
 	}
@@ -348,7 +414,7 @@ func parseArgNumber(s string) (index, size int, ok bool) {
 		return 0, 1, false
 	}
 	j++
-	n, isnum, next := parsenum(s, 1, j)
+	n, isnum, next := parsenumStop(s, 1, j, halt)
 	if !isnum || next != j {
 		return 0, j + 1, false
 	}

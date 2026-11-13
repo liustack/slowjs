@@ -19,10 +19,12 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 	"unsafe"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/hostmem"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
 
@@ -84,8 +86,9 @@ type flags struct {
 // A printer makes the output of one call.
 type printer struct {
 	vm *quickjs.VM
-	// buf is the output.
-	buf []byte
+	// buf is the output, and give gives it back (hostmem.Take).
+	buf  []byte
+	give func()
 	// checked is the length of buf at the last read of vmhook.Stop, and
 	// turns the verbs made since.
 	checked, turns int
@@ -145,32 +148,60 @@ func (p *printer) write(s string) bool {
 
 // sprintf is fmt.Sprintf(format, a...), and sprint and sprintln those of
 // fmt.Sprint and fmt.Sprintln, made a piece at a time, in an output of n
-// bytes, a bound on it, which never grows. They are false, with no output,
-// when the call is to end.
-func sprintf(vm *quickjs.VM, n int64, format string, a []any) (string, bool) {
-	p := &printer{vm: vm, buf: make([]byte, 0, n)}
+// bytes, a bound on it, which never grows. The output is a block from 1 MiB
+// (hostmem.Take), which give gives back: nothing may keep the string after
+// that. Go clears an allocation in one go, with no read of vmhook.Stop,
+// while the OS hands over its pages, and the pages of a block come as the
+// output is written, a piece at a time. They are false, with no output and
+// nothing to give back, when the call is to end.
+func sprintf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), bool) {
+	p, ok := newPrinter(vm, n)
+	if !ok {
+		return "", func() {}, false
+	}
 	p.doPrintf(format, a)
 	return p.result()
 }
 
-func sprint(vm *quickjs.VM, n int64, a []any) (string, bool) {
-	p := &printer{vm: vm, buf: make([]byte, 0, n)}
+func sprint(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
+	p, ok := newPrinter(vm, n)
+	if !ok {
+		return "", func() {}, false
+	}
 	p.doPrint(a)
 	return p.result()
 }
 
-func sprintln(vm *quickjs.VM, n int64, a []any) (string, bool) {
-	p := &printer{vm: vm, buf: make([]byte, 0, n)}
+func sprintln(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
+	p, ok := newPrinter(vm, n)
+	if !ok {
+		return "", func() {}, false
+	}
 	p.doPrintln(a)
 	return p.result()
 }
 
-// result is the output of p, and whether the call goes on.
-func (p *printer) result() (string, bool) {
-	if p.stopped {
-		return "", false
+// newPrinter is a printer with an output of n bytes. It is false, with the
+// out of memory error thrown, when the OS refuses the memory.
+func newPrinter(vm *quickjs.VM, n int64) (*printer, bool) {
+	buf, give, err := hostmem.Take[byte](int(n))
+	if err != nil {
+		if vm != nil {
+			vmhook.OutOfMemory(vm)
+		}
+		return nil, false
 	}
-	return p.output(), true
+	return &printer{vm: vm, buf: buf[:0], give: give}, true
+}
+
+// result is the output of p, the function that gives it back, and whether
+// the call goes on. When it does not, the output is given back already.
+func (p *printer) result() (string, func(), bool) {
+	if p.stopped {
+		p.give()
+		return "", func() {}, false
+	}
+	return p.output(), p.give, true
 }
 
 // doPrintf is doPrintf of fmt/print.go.
@@ -184,7 +215,11 @@ formatLoop:
 		goodArgNum := true
 		lasti := i
 		for i < end && format[i] != '%' {
-			i++
+			if k := strings.IndexByte(format[i:min(end, i+piece)], '%'); k >= 0 {
+				i += k
+			} else if i = min(end, i+piece); i < end && p.stop() {
+				return
+			}
 		}
 		if i > lasti && p.write(format[lasti:i]) {
 			return
@@ -198,6 +233,9 @@ formatLoop:
 		flagsAt := i
 	simpleFormat:
 		for ; i < end; i++ {
+			if (i-flagsAt)&(haltEvery-1) == haltEvery-1 && p.stop() {
+				return
+			}
 			c := format[i]
 			switch c {
 			case '#':
@@ -212,11 +250,12 @@ formatLoop:
 				f.space = true
 			default:
 				if 'a' <= c && c <= 'z' && argNum < len(a) {
+					spec := specFlags(format[flagsAt:i], f)
 					if c == 'v' || c == 'w' {
 						f.sharpV, f.sharp = f.sharp, false
 						f.plusV, f.plus = f.plus, false
 					}
-					p.printArg(format[flagsAt:i], nil, a[argNum], rune(c), f)
+					p.printArg(spec, nil, a[argNum], rune(c), f)
 					argNum++
 					i++
 					if p.turn() {
@@ -230,7 +269,7 @@ formatLoop:
 		// spec is the format of this verb alone, for Go's fmt: its flags,
 		// then its width and its precision as given, numbers or '*', whose
 		// arguments are in specArgs.
-		spec := format[flagsAt:i]
+		spec := specFlags(format[flagsAt:i], f)
 		var specArgs []any
 
 		argNum, i, afterIndex = p.argNumber(argNum, format, i, len(a), &goodArgNum, &reordered)
@@ -255,12 +294,15 @@ formatLoop:
 			afterIndex = false
 		} else {
 			at := i
-			f.wid, f.widPresent, i = parsenumGo(format, i, end)
+			f.wid, f.widPresent, i = p.parsenum(format, i, end)
+			if p.stopped {
+				return
+			}
 			if afterIndex && f.widPresent {
 				goodArgNum = false
 			}
 			if f.widPresent {
-				spec += format[at:i]
+				spec += specNumber(format[at:i], f.wid)
 			}
 		}
 
@@ -289,17 +331,23 @@ formatLoop:
 				afterIndex = false
 			} else {
 				at := i
-				f.prec, f.precPresent, i = parsenumGo(format, i, end)
+				f.prec, f.precPresent, i = p.parsenum(format, i, end)
+				if p.stopped {
+					return
+				}
 				if !f.precPresent {
 					f.prec = 0
 					f.precPresent = true
 				}
-				spec += "." + format[at:i]
+				spec += "." + specNumber(format[at:i], f.prec)
 			}
 		}
 
 		if !afterIndex {
 			argNum, i, afterIndex = p.argNumber(argNum, format, i, len(a), &goodArgNum, &reordered)
+		}
+		if p.stopped {
+			return
 		}
 
 		if i >= end {
@@ -390,7 +438,7 @@ func (p *printer) argNumber(argNum int, format string, i int, numArgs int, goodA
 		return argNum, i, false
 	}
 	*reordered = true
-	index, wid, ok := parseArgNumber(format[i:])
+	index, wid, ok := parseArgNumberStop(format[i:], p.halt)
 	if ok && 0 <= index && index < numArgs {
 		return index, i + wid, true
 	}
@@ -427,12 +475,46 @@ func argInt(a []any, argNum int) (num int, isInt bool, newArgNum int, arg any) {
 	return
 }
 
-// parsenumGo is parsenum of fmt/print.go.
-func parsenumGo(s string, start, end int) (num int, isnum bool, newi int) {
+// halt is stop, for the parsers of a verb (parsenumStop).
+func (p *printer) halt(int) bool { return p.stop() }
+
+// parsenum is parsenum of fmt/print.go, which reads whether to stop in a
+// long number (parsenumStop): a run of zeros may be as long as the format.
+func (p *printer) parsenum(s string, start, end int) (num int, isnum bool, newi int) {
 	if start >= end {
 		return 0, false, end
 	}
-	return parsenum(s, start, end)
+	return parsenumStop(s, start, end, p.halt)
+}
+
+// specFlags is the flags s of a verb, which f holds, for the format of the
+// verb alone: s itself, or each flag of f once when s is longer, which Go's
+// fmt reads the same way, as a flag sets a field however often it comes
+// and wherever. A verb may have as many flags as the format has bytes.
+func specFlags(s string, f flags) string {
+	if len(s) <= len("#0+- ") {
+		return s
+	}
+	b := make([]byte, 0, len("#0+- "))
+	for _, x := range []struct {
+		on bool
+		c  byte
+	}{{f.sharp, '#'}, {f.zero, '0'}, {f.plus, '+'}, {f.minus, '-'}, {f.space, ' '}} {
+		if x.on {
+			b = append(b, x.c)
+		}
+	}
+	return string(b)
+}
+
+// specNumber is the digits s of a width or a precision, n, for the format of
+// the verb alone: s itself, or n when s has leading zeros past what n
+// takes, as a run of zeros may be as long as the format.
+func specNumber(s string, n int) string {
+	if len(s) <= 20 {
+		return s
+	}
+	return strconv.Itoa(n)
 }
 
 // specialVerb reports whether verb, written after the flags of a format of

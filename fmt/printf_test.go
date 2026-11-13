@@ -8,6 +8,7 @@ package fmt // import "github.com/liustack/quickjs/fmt"
 import (
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/liustack/quickjs"
@@ -29,7 +30,9 @@ func asGo(t testing.TB, format string, a []any) {
 	if !ok {
 		t.Fatalf("sizePrintf(%q) does not fit in no limit", format)
 	}
-	if got, ok := sprintf(nil, n, read, a); !ok || got != fmt.Sprintf(format, a...) {
+	got, give, ok := sprintf(nil, n, read, a)
+	defer give()
+	if !ok || got != fmt.Sprintf(format, a...) {
 		t.Fatalf("sprintf(%q, %#v) is %q, want %q", format, a, got, fmt.Sprintf(format, a...))
 	}
 }
@@ -52,10 +55,10 @@ func TestPrintfAsGo(t *testing.T) {
 				}
 			}
 			for _, a := range tuples {
-				if got, ok := sprint(nil, sizePrint(a), a); !ok || got != fmt.Sprint(a...) {
+				if got, ok := sprintOf(nil, sizePrint(a), a, false); !ok || got != fmt.Sprint(a...) {
 					t.Fatalf("sprint(%#v) is %q, want %q", a, got, fmt.Sprint(a...))
 				}
-				if got, ok := sprintln(nil, sizePrint(a), a); !ok || got != fmt.Sprintln(a...) {
+				if got, ok := sprintOf(nil, sizePrint(a), a, true); !ok || got != fmt.Sprintln(a...) {
 					t.Fatalf("sprintln(%#v) is %q, want %q", a, got, fmt.Sprintln(a...))
 				}
 			}
@@ -91,10 +94,22 @@ func FuzzPrintfAsGo(f *testing.F) {
 		a := []any{s, n, o, float64(n), s, b}
 		small(t)
 		asGo(t, format, a)
-		if got, ok := sprint(nil, sizePrint(a), a); !ok || got != fmt.Sprint(a...) {
+		if got, ok := sprintOf(nil, sizePrint(a), a, false); !ok || got != fmt.Sprint(a...) {
 			t.Fatalf("sprint(%#v) is %q, want %q", a, got, fmt.Sprint(a...))
 		}
 		longArg, longBits, piece = 1<<16, 1<<16, 1<<16
 		asGo(t, format, a)
 	})
+}
+
+// sprintOf is the output of sprint, or of sprintln when ln is true, copied
+// out of the memory they make it in, which it gives back.
+func sprintOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, bool) {
+	f := sprint
+	if ln {
+		f = sprintln
+	}
+	s, give, ok := f(vm, n, a)
+	defer give()
+	return strings.Clone(s), ok
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"unsafe"
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/internal/vmhook"
@@ -82,26 +83,30 @@ func Register(obj quickjs.Value, opts ...Option) (err error) {
 		wantThis bool
 	}{
 		{"printf", func(format string, a ...any) (int, error) {
-			s, ok := makePrintf(vm, format, a)
+			s, give, ok := makePrintf(vm, format, a)
+			defer give()
 			if !ok {
 				return 0, nil
 			}
 			return write(vm, o.writer(), s)
 		}, false},
 		{"println", func(a ...any) (int, error) {
-			s, ok := makePrint(vm, a, true)
+			s, give, ok := makePrint(vm, a, true)
+			defer give()
 			if !ok {
 				return 0, nil
 			}
 			return write(vm, o.writer(), s)
 		}, false},
-		{"sprint", func(a ...any) string {
-			s, _ := makePrint(vm, a, false)
-			return s
+		{"sprint", func(a ...any) quickjs.Value {
+			s, give, ok := makePrint(vm, a, false)
+			defer give()
+			return result(vm, s, ok)
 		}, false},
-		{"sprintf", func(format string, a ...any) string {
-			s, _ := makePrintf(vm, format, a)
-			return s
+		{"sprintf", func(format string, a ...any) quickjs.Value {
+			s, give, ok := makePrintf(vm, format, a)
+			defer give()
+			return result(vm, s, ok)
 		}, false},
 	} {
 		longName := fmt.Sprintf("__%s_%s__", pkg, v.nm)
@@ -136,6 +141,25 @@ func (o *options) writer() io.Writer {
 	return os.Stdout
 }
 
+// result is the javascript string of s, an output of sprint or sprintf,
+// made while the memory of s is still held (sprintf): the function returns
+// it, not s, which RegisterFunc would convert once the memory is given
+// back. When ok is false the error that ends the call is pending, and what
+// result returns is dropped. A string the engine cannot make ends the call:
+// at Interrupt or the eval timeout with the interrupt, and otherwise, when
+// it has no memory for it or it is longer than the longest string it
+// makes, with the out of memory error.
+func result(vm *quickjs.VM, s string, ok bool) quickjs.Value {
+	if !ok {
+		return quickjs.UndefinedValue
+	}
+	v, err := vm.NewString(s)
+	if err != nil && !vmhook.Stop(vm) {
+		vmhook.OutOfMemory(vm)
+	}
+	return v
+}
+
 // writePiece is the most bytes printf and println write at once.
 const writePiece = 64 << 10
 
@@ -144,8 +168,11 @@ const writePiece = 64 << 10
 // that ends it. It returns what it wrote.
 func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
 	n := 0
+	// Write, not WriteString: a writer may keep the string WriteString gets,
+	// and s is given back after the call (sprintf). Write must not keep the
+	// bytes.
 	for {
-		k, err := io.WriteString(w, s[:min(len(s), writePiece)])
+		k, err := w.Write(unsafe.Slice(unsafe.StringData(s), min(len(s), writePiece)))
 		n += k
 		if err != nil {
 			return n, err
@@ -229,50 +256,54 @@ const shortOutput = 1 << 16
 // make Go's fmt allocate fits in what vm has left under its memory limit
 // (fits), made whole by Go's fmt when it is short and by sprintf otherwise.
 // It is false when the call is to end, with the error that ends it thrown.
-func makePrintf(vm *quickjs.VM, format string, a []any) (string, bool) {
+func makePrintf(vm *quickjs.VM, format string, a []any) (string, func(), bool) {
 	room := room(vm)
-	n, read, ok := sizePrintf(format, a, room)
+	n, read, ok, stopped := sizePrintfStop(format, a, room, func() bool { return vmhook.Stop(vm) })
+	if stopped {
+		return "", func() {}, false
+	}
 	if !ok {
 		vmhook.OutOfMemory(vm)
-		return "", false
+		return "", func() {}, false
 	}
 	var more int64
 	if len(read) != len(format) {
 		more = int64(len(read))
 	}
 	if !fits(vm, room, n, more) {
-		return "", false
+		return "", func() {}, false
 	}
 	return printfOf(vm, n, read, a)
 }
 
 // printfOf is the output of fmt.Sprintf(format, a...), whose bound is n,
-// made whole by Go's fmt when it is short and by sprintf otherwise.
-func printfOf(vm *quickjs.VM, n int64, format string, a []any) (string, bool) {
+// made whole by Go's fmt when it is short and by sprintf otherwise, and the
+// function that gives it back (sprintf).
+func printfOf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), bool) {
 	if n <= shortOutput {
-		return fmt.Sprintf(format, a...), true
+		return fmt.Sprintf(format, a...), func() {}, true
 	}
 	return sprintf(vm, n, format, a)
 }
 
 // makePrint is makePrintf for fmt.Sprint(a...), or fmt.Sprintln(a...) when
 // ln is true.
-func makePrint(vm *quickjs.VM, a []any, ln bool) (string, bool) {
+func makePrint(vm *quickjs.VM, a []any, ln bool) (string, func(), bool) {
 	n := sizePrint(a)
 	if !fits(vm, room(vm), n, 0) {
-		return "", false
+		return "", func() {}, false
 	}
 	return printOf(vm, n, a, ln)
 }
 
 // printOf is printfOf for fmt.Sprint(a...), or fmt.Sprintln(a...) when ln
 // is true.
-func printOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, bool) {
+func printOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 	switch {
 	case n <= shortOutput && ln:
-		return fmt.Sprintln(a...), true
+		return fmt.Sprintln(a...), func() {}, true
 	case n <= shortOutput:
-		return fmt.Sprint(a...), true
+		return fmt.Sprint(a...), func() {}, true
 	case ln:
 		return sprintln(vm, n, a)
 	}
