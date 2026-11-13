@@ -52,6 +52,13 @@ func osMap(size uintptr) (uintptr, error) {
 	return sysAlloc("map", 0, size, windows.MEM_RESERVE|windows.MEM_COMMIT, windows.PAGE_READWRITE)
 }
 
+// osMapBlock maps a block for Take (block.go). Committing reserves room in
+// the page file and takes no page: the pages are zero, and the system hands
+// each over at its first touch.
+func osMapBlock(size uintptr) (uintptr, error) {
+	return sysAlloc("block", 0, size, windows.MEM_RESERVE|windows.MEM_COMMIT, windows.PAGE_READWRITE)
+}
+
 func osUnmap(addr, size uintptr) error {
 	return sysFree(addr, size)
 }
