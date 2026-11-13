@@ -350,6 +350,35 @@ static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     return 0;
 }
 
+/* rv_putel_slow when the element one past the end of a fast array takes
+   more room than the array has: a full collection first when that room would
+   pass the memory limit (js_trigger_gc_block), then the slow path of
+   rv_putel_slow. The elements grow in JS_SetPropertyValue, which may call a
+   setter, and o, the key and v are in the frame. It is a function of its own,
+   which rv_putel_slow calls last, so that the paths that do not grow the
+   array are the code they were. */
+static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    uint32_t new_len = JS_VALUE_GET_INT(key) + 1;
+    uint32_t size = p->u.array.u1.size;
+    int ret;
+
+    /* the growth of the block of elements (expand_fast_array) */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
+                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+    /* the slow path and the end of rv_putel_slow. The key is an int, which
+       JS_SetPropertyValue frees as nothing, so the key in a local needs no
+       JS_SetPropertyValueConst, which rv_putel_slow alone calls and so keeps
+       inline. */
+    ret = JS_SetPropertyValue(ctx, obj, key, rv_take(ctx, F, (int8_t)ip[2]),
+                              rv_throw_flags(F));
+    if (rv_is_temp(F, (int8_t)ip[0]))
+        JS_FreeValue(ctx, obj);
+    return ret < 0 ? -1 : 0;
+}
+
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
    QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
    are taken, a temp o freed. */
@@ -383,7 +412,7 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         /* cannot overflow otherwise the length would not be an integer */
         new_len = idx + 1;
         if (unlikely(new_len > p->u.array.u1.size))
-            goto slow_path;
+            return rv_putel_grow(ctx, F, ip);
         array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
         if (new_len > array_len) {
             if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))

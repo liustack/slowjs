@@ -16,6 +16,7 @@
 ### 修复
 
 - 在对象字面量里展开字符串，现在得到它的各个字符，和 Node 一样：`{..."ab"}` 是 `{0: "a", 1: "b"}`，以前是 `{}`。数字、布尔值、symbol 和 bigint 仍然不给出键。这是上游 QuickJS 的修正 b19b2ec（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md)）。展开、rest 和 `Object.assign` 的复制现在每 4,096 个键读一次中断标志，超时或 `Interrupt` 能在长字符串或键很多的对象复制完之前停下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)）。
+- 有内存上限时，一次要申请一大块内存的操作（`repeat`、`padStart`、`ArrayBuffer` 和类型化数组、`push`、`join` 等）在这块内存会超过上限时，先跑一次完整 GC 再申请。原来引用环里的垃圾还没回收就报内存不足：上限 64 MiB、存活 16 MiB 时，`'x'.repeat(n)` 原来到 39.9 MiB 就失败，现在能到 47.8 MiB，和没有垃圾时一样。在上限内放得下的页面，GC 次数不变。完整清单见 [memory-and-allocation.md](docs/changes/memory-and-allocation.zh-CN.md#大块内存在会超过内存上限时先回收)。
 
 ## [v0.30.4] - 2026-11-14
 

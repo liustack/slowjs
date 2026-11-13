@@ -3906,6 +3906,165 @@ static void test_closure_var_limit(void)
     vm_free(&v);
 }
 
+/* js_trigger_gc_block, before one large block of a built-in: with the block
+   under the memory limit it collects nothing (a page that fits runs the
+   collections it ran before), with garbage in cycles in the way it collects
+   and the block is made, and a threshold of -1 turns it off as it does the
+   collections of js_trigger_gc. The setup of a case runs before the garbage
+   is made, so that the collection counted is the one of the operation. */
+static void test_gc_block(void)
+{
+    static const struct {
+        const char *setup, *op;
+    } ops[] = {
+        { NULL, "globalThis.r = 'x'.repeat(4 << 20); 0" },
+        { NULL, "globalThis.r = ''.padStart(4 << 20, 'x'); 0" },
+        /* a filler of one wide character: the pad is wide */
+        { NULL, "globalThis.r = ''.padStart(2 << 20, '\\u0100'); 0" },
+        { NULL, "globalThis.r = new ArrayBuffer(4 << 20); 0" },
+        { NULL, "globalThis.r = new Float64Array(1 << 19); 0" },
+        { "globalThis.s = new ArrayBuffer(16, { maxByteLength: 8 << 20 }); 0", "s.resize(4 << 20); 0" },
+        { "globalThis.s = new ArrayBuffer(16); 0", "globalThis.r = s.transfer(4 << 20); 0" },
+        { NULL, "{ const a = []; for (let i = 0; i < 1 << 18; i++) a.push(i * 0.5); globalThis.r = a } 0" },
+        { NULL, "{ const a = []; for (let i = 0; i < 1 << 18; i++) a[i] = i * 0.5; globalThis.r = a } 0" },
+        { "{ let p = 'y'.repeat(1 << 16), t = ''; for (let i = 0; i < 64; i++) t += p; globalThis.s = t } 0",
+          "globalThis.r = s.indexOf('z'); 0" },
+        { "{ const p = 'j'.repeat(1 << 16); globalThis.s = []; for (let i = 0; i < 64; i++) s.push(p + i) } 0",
+          "globalThis.r = s.join(''); 0" },
+        /* each element a join of its own, which ends before the outer
+           buffer grows */
+        { "{ const p = 'j'.repeat(1 << 16); globalThis.s = []; for (let i = 0; i < 64; i++) s.push([p, i]) } 0",
+          "globalThis.r = s.join(''); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.toSorted((a, b) => a - b); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.slice(); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.splice(0); 0" },
+    };
+    const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    size_t i;
+
+    for (i = 0; i < countof(ops); i++) {
+        VM v = vm_new();
+        unsigned long full;
+        size_t room;
+        int ok;
+
+        /* no limit: the block fits, and no collection runs */
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw with no limit", i);
+        CHECK(white_gc_run_count(0) == full, "op %zu with no limit ran %lu collections", i,
+              white_gc_run_count(0) - full);
+        vm_free(&v);
+
+        /* garbage in the way: the room fits the block with what the
+           garbage holds given back, and not without it */
+        v = vm_new();
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        room = JS_GetMemorySize(v.rt);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw", i);
+        room = JS_GetMemorySize(v.rt) - room + (1 << 20);
+        vm_free(&v);
+
+        v = vm_new();
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2);
+        full = white_gc_run_count(0);
+        ok = eval_ok(v.ctx, ops[i].op);
+        CHECK(ok, "op %zu ran out of memory with the garbage in the way", i);
+        CHECK(white_gc_run_count(0) > full, "op %zu ran no collection with the garbage in the way", i);
+        unlimit(&v);
+        vm_free(&v);
+
+        /* a threshold of -1: no collection, and out of memory */
+        v = vm_new();
+        JS_SetGCThreshold(v.rt, (size_t)-1);
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2);
+        full = white_gc_run_count(0);
+        {
+            JSValue r = JS_Eval(v.ctx, ops[i].op, strlen(ops[i].op), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            char *t = exception_text(v.ctx);
+
+            CHECK(JS_IsException(r) && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0), "op %zu with the collections off: %s", i,
+                  t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(white_gc_run_count(0) == full, "op %zu collected with a threshold of -1", i);
+        unlimit(&v);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        vm_free(&v);
+    }
+}
+
+/* js_trigger_gc_block counts what the heap gains, as the allocator does: a
+   block that grows counts only its growth, and a rope already made flat
+   counts nothing. Near the limit, with no garbage, steps that fit run no
+   collection. */
+static void test_gc_block_fits(void)
+{
+    static const struct {
+        const char *setup, *op;
+    } ops[] = {
+        { "globalThis.s = new ArrayBuffer(4 << 20, { maxByteLength: 8 << 20 }); 0",
+          "for (let i = 1; i <= 16; i++) s.resize((4 << 20) + i * 4096); 0" },
+        { "{ let p = 'y'.repeat(1 << 16), t = ''; for (let i = 0; i < 64; i++) t += p; globalThis.s = t; t.indexOf('z') } 0",
+          "for (let i = 0; i < 16; i++) s.indexOf('z'); 0" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(ops); i++) {
+        VM v = vm_new();
+        unsigned long full;
+
+        CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (1 << 20));
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw", i);
+        CHECK(white_gc_run_count(0) == full, "op %zu ran %lu collections with no garbage", i,
+              white_gc_run_count(0) - full);
+        unlimit(&v);
+        vm_free(&v);
+    }
+}
+
+/* The buffer of join made 16 bits wide where it is, with room left
+   (string_buffer_widen): the narrow buffer grows to 1.5 Mi characters for
+   1.25 Mi of them, which takes 1.5 MiB of room, and its wide copy takes
+   3 MiB, 1.5 MiB more than the narrow one. With 2.25 MiB of room and the
+   garbage in the way, the narrow buffer fits and the wide one collects
+   first. */
+static void test_gc_block_widen(void)
+{
+    const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    VM v = vm_new();
+    unsigned long full;
+
+    CHECK(eval_ok(v.ctx, "globalThis.s = ['j'.repeat(1 << 20), 'j'.repeat(1 << 18), '\\u0100']; 0"), "the setup threw");
+    JS_RunGC(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+    CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (9 << 18));
+    full = white_gc_run_count(0);
+    CHECK(eval_ok(v.ctx, "globalThis.r = s.join(''); r.length"), "the join made wide ran out of memory");
+    CHECK(white_gc_run_count(0) > full, "the join made wide ran no collection");
+    unlimit(&v);
+    vm_free(&v);
+}
+
 /* js_closure2 gives a function its block of closure variables once every
    entry is written, as it does not zero the block: a collection in the
    middle reads none of it. A script of 17 global definitions, the last of
@@ -6950,6 +7109,9 @@ int main(int argc, char **argv)
     test_capture_by_value();
     test_closure_var_limit();
     test_closure_gc_in_build();
+    test_gc_block();
+    test_gc_block_fits();
+    test_gc_block_widen();
     test_by_value_file();
     test_by_value_oom();
     test_short_opcode_index();

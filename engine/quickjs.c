@@ -548,6 +548,13 @@ struct JSRuntime {
     long rv_frame;
     /* the counts of RV_STATS (JS_RegvmStat 10 and 13 to 15) */
     int64_t rv_count[4];
+    /* the StringBuffers of the calls of Array.prototype.join that run, one
+       in another, gc_join_depth of them, the first 8 in gc_join_sb: their
+       growth collects first when it would pass the memory limit
+       (js_trigger_gc_block, js_array_join). At the end, so that the fields
+       before them keep their offsets. */
+    uint32_t gc_join_depth;
+    void *gc_join_sb[8];
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -2645,6 +2652,61 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
 #endif
         JS_RunGC(rt);
     }
+}
+
+/* js_trigger_gc for one large block that a built-in is about to ask for,
+   with no object made before it: String.prototype.repeat, padStart and
+   padEnd, the data of an ArrayBuffer (and so of a typed array), its resize
+   and transfer, the elements of a new array of a given length, of the copy
+   of slice and splice, of push and of a[i] = v that grows the array, the
+   buffer of join, the slots of sort, and a rope made flat at the entry of a
+   String.prototype method. Garbage in cycles waits for a collection, and
+   only an object made over the threshold starts one, so such a block could
+   fail at the memory limit with the garbage still there. When the block
+   would take the heap past the limit, a full collection runs first. It is
+   called where a collection is as safe as at an object creation: at the
+   entry of the built-in, after the conversions of its arguments, which may
+   run JavaScript, every value it holds is counted, by the frame of the
+   caller or by its own locals, and no object is half made
+   (docs/changes/memory-and-allocation.md). A heap under the limit is left
+   alone: the threshold does not count the block, so a page that fits runs
+   the same collections as before. size is what the count of the heap gains,
+   as the heap checks it against the limit (heap_over): a new block counts
+   whole, a block that grows in place of the old one (heap_realloc) counts
+   its growth. The heap also counts what the size leaves out: the headers of
+   the block and of a string, the rounding of the cache of large blocks, a
+   small block that moves to a large one before it is freed (__js_realloc),
+   and a new arena of small blocks for an object made next to the block, such
+   as the object of a new ArrayBuffer, which the heap counts whole. Under
+   5 KiB in all (the assertion below adds it up), it is covered by
+   JS_GC_BLOCK_SLACK: a block that would come within it of the limit
+   collects first too. A threshold of -1 turns this
+   off, as it does the collections of js_trigger_gc. The test is inline and
+   the collection out of line, so that a block that fits costs three
+   compares. */
+#define JS_GC_BLOCK_SLACK 8192
+_Static_assert(JS_GC_BLOCK_SLACK >=
+               (JS_MALLOC_ARENA_SIZE + sizeof(size_t)) +       /* a new arena */
+               JS_MALLOC_MAX_SMALL_SIZE +                      /* a small block that moves */
+               sizeof(JSMallocLargeBlockHeader) + 2 * sizeof(size_t) + /* header, TLSF word, alignment */
+               JS_LARGE_CACHE_STEP +                           /* the rounding of the large cache */
+               sizeof(JSString) + 1,                           /* a string's header and its 0 */
+               "JS_GC_BLOCK_SLACK covers what the size of a block leaves out");
+
+static no_inline void js_trigger_gc_block_run(JSRuntime *rt)
+{
+    if (rt->malloc_gc_threshold != (size_t)-1)
+        JS_RunGC(rt);
+}
+
+static force_inline void js_trigger_gc_block(JSRuntime *rt, size_t size)
+{
+    JSHeap *h = &rt->malloc_ctx.heap;
+    size_t room = h->limit - h->count;
+
+    if (unlikely(h->count > h->limit || room < JS_GC_BLOCK_SLACK ||
+                 size > room - JS_GC_BLOCK_SLACK))
+        js_trigger_gc_block_run(rt);
 }
 
 void *js_malloc_rt(JSRuntime *rt, size_t size)
@@ -5394,6 +5456,23 @@ static void *string_buffer_realloc2(StringBuffer *s, size_t used_bytes,
     return q;
 }
 
+/* js_trigger_gc_block for the new block of bytes that s, when it is the
+   buffer of the innermost call of Array.prototype.join (js_array_join), is
+   about to take. The heap counts the old block out of the limit while the
+   data moves (heap_realloc, js_malloc_moving), so what counts is the
+   growth. */
+static force_inline void string_buffer_gc_join(StringBuffer *s, size_t bytes)
+{
+    JSRuntime *rt = s->ctx->rt;
+    uint32_t d = rt->gc_join_depth - 1;
+
+    if (d < countof(rt->gc_join_sb) && rt->gc_join_sb[d] == s) {
+        size_t old = (size_t)s->size << s->is_wide_char;
+
+        js_trigger_gc_block(rt, bytes > old ? bytes - old : 0);
+    }
+}
+
 static no_inline int string_buffer_widen(StringBuffer *s, int size)
 {
     JSString *str;
@@ -5402,6 +5481,12 @@ static no_inline int string_buffer_widen(StringBuffer *s, int size)
 
     if (s->error_status)
         return -1;
+
+    /* the buffer of join made wide where it is, with room left: the
+       buffer of 16 bits. string_buffer_realloc, which makes it wide as it
+       grows, checked it already. */
+    if (size == s->size && size >= (64 << 10))
+        string_buffer_gc_join(s, (size_t)size << 1);
 
     /* what the text did before is not added to the first step of the copy */
     if (s->len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
@@ -5446,6 +5531,10 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
         return string_buffer_set_error(s);
     }
     new_size = min_int(max_int(new_len, s->size * 3 / 2), JS_STRING_LEN_MAX);
+    /* the buffer of join, once it takes 64 Ki characters or more: the steps
+       of a short join test one compare */
+    if (unlikely(new_size >= (64 << 10)))
+        string_buffer_gc_join(s, (size_t)new_size << (s->is_wide_char | (c >= 0x100)));
     if (!s->is_wide_char && c >= 0x100) {
         return string_buffer_widen(s, new_size);
     }
@@ -14295,6 +14384,8 @@ static JSValue js_allocate_fast_array(JSContext *ctx, int64_t len)
     
     if (len > INT32_MAX)
         return JS_ThrowRangeError(ctx, "invalid array length");
+    /* the elements, where JS_NewArray may collect */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)len);
     arr = JS_NewArray(ctx);
     if (JS_IsException(arr))
         return arr;
@@ -18667,11 +18758,35 @@ JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val)
     return JS_ToStringInternal(ctx, val, TRUE);
 }
 
+/* JS_ToString of a rope, which makes it flat into one block, after a full
+   collection when that block would pass the memory limit
+   (js_trigger_gc_block). JS_ToStringCheckObject calls it at the entry of a
+   built-in (and in JSON.stringify, between the getters it calls), where a
+   collection is as safe as at the creation of an object. */
+static no_inline JSValue js_rope_to_string_gc(JSContext *ctx, JSValueConst val)
+{
+    JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+
+    /* a rope made flat before keeps the flat string on its left, with an
+       empty string on its right (js_linearize_string_rope): it takes no
+       block */
+    if (!(JS_VALUE_GET_TAG(r->right) == JS_TAG_STRING &&
+          JS_VALUE_GET_STRING(r->right)->len == 0))
+        js_trigger_gc_block(ctx->rt, (size_t)r->len << r->is_wide_char);
+    return JS_ToString(ctx, val);
+}
+
 static JSValue JS_ToStringCheckObject(JSContext *ctx, JSValueConst val)
 {
     uint32_t tag = JS_VALUE_GET_TAG(val);
+    /* a flat string first, what JS_ToString gives it, so that the test of
+       a rope below costs it nothing */
+    if (likely(tag == JS_TAG_STRING))
+        return JS_DupValue(ctx, val);
     if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
         return JS_ThrowTypeError(ctx, "null or undefined are forbidden");
+    if (unlikely(tag == JS_TAG_STRING_ROPE))
+        return js_rope_to_string_gc(ctx, val);
     return JS_ToString(ctx, val);
 }
 
@@ -49942,6 +50057,15 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
             c = -1;
     }
     string_buffer_init(ctx, b, 0);
+    /* the buffer grows where a full collection is as safe as at the
+       creation of an object: between the reads of two elements, each of
+       which may run a getter, with obj and the element counted, and a
+       StringBuffer is no object (string_buffer_realloc). The buffer goes on
+       a stack in the runtime, which holds the buffers of the joins that run
+       one in another, so that the frame keeps nothing of it. */
+    if (ctx->rt->gc_join_depth < countof(ctx->rt->gc_join_sb))
+        ctx->rt->gc_join_sb[ctx->rt->gc_join_depth] = b;
+    ctx->rt->gc_join_depth++;
 
     for(i = 0; i < n; i++) {
         if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
@@ -49964,11 +50088,13 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                 goto fail;
         }
     }
+    ctx->rt->gc_join_depth--;
     JS_FreeValue(ctx, sep);
     JS_FreeValue(ctx, obj);
     return string_buffer_end(b);
 
 fail:
+    ctx->rt->gc_join_depth--;
     string_buffer_free(b);
     JS_FreeValue(ctx, sep);
 exception:
@@ -50029,6 +50155,21 @@ static JSValue js_array_pop(JSContext *ctx, JSValueConst this_val,
     return JS_EXCEPTION;
 }
 
+/* The elements of the fast case of push grow: a full collection first when
+   that room would pass the memory limit (js_trigger_gc_block), at the entry
+   of the built-in, where this and the arguments are in the frame of the
+   caller. It is a function of its own so that a push that does not grow is
+   the code it was. */
+static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t new_len)
+{
+    uint32_t size = p->u.array.u1.size;
+
+    /* the growth of the block of elements (expand_fast_array) */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
+                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+    return expand_fast_array_append(ctx, p, new_len);
+}
+
 static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv, int unshift)
 {
@@ -50048,7 +50189,7 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
             new_len = p->u.array.count + argc;
             if (likely(new_len <= INT32_MAX)) {
                 if (unlikely(new_len > p->u.array.u1.size)) {
-                    if (expand_fast_array_append(ctx, p, new_len))
+                    if (js_array_push_grow(ctx, p, new_len))
                         return JS_EXCEPTION;
                 }
                 for(i = 0; i < argc; i++)
@@ -50238,7 +50379,9 @@ static JSValue js_array_slice(JSContext *ctx, JSValueConst this_val,
     if (JS_IsUndefined(ctor) &&
         js_get_fast_array(ctx, obj, &arrp, &count32) &&
         final <= count32) {
-        /* fast case */
+        /* fast case: the elements, where JS_NewArray may collect, with the
+           values copied counted in obj */
+        js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)count);
         arr = js_create_array(ctx, count, (JSValueConst *)arrp + start);
     } else {
         arr = JS_ArrayCreateFromCtor(ctx, ctor, count);
@@ -50319,7 +50462,9 @@ static JSValue js_array_splice(JSContext *ctx, JSValueConst this_val,
         uint32_t count32 = p->u.array.count;
         JSValue *arrp = p->u.array.u.values;
 
-        /* fast case */
+        /* fast case: the elements, where JS_NewArray may collect, with the
+           values copied counted in obj */
+        js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)del_count);
         arr = js_create_array(ctx, del_count, (JSValueConst *)arrp + start);
         if (JS_IsException(arr))
             goto exception;
@@ -50736,6 +50881,9 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
             size_t new_size, slack;
             ValueSlot *new_array;
             new_size = (array_size + (array_size >> 1) + 31) & ~15;
+            /* between two reads of an element, each of which may run a
+               getter: the values read so far are counted in array */
+            js_trigger_gc_block(ctx->rt, (new_size - array_size) * sizeof(*array));
             new_array = js_realloc2(ctx, array, new_size * sizeof(*array), &slack);
             if (new_array == NULL)
                 goto exception;
@@ -54357,6 +54505,10 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
         JS_ThrowRangeError(ctx, "invalid string length");
         goto fail3;
     }
+    /* the filler is in v, a string, even when its one character is in c */
+    js_trigger_gc_block(ctx->rt, (size_t)n << (p->is_wide_char |
+                                               (JS_VALUE_GET_TAG(v) == JS_TAG_STRING &&
+                                                JS_VALUE_GET_STRING(v)->is_wide_char)));
     if (string_buffer_init(ctx, b, n))
         goto fail3;
     n -= len;
@@ -54484,6 +54636,7 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
         goto fail;
     }
     n = val;
+    js_trigger_gc_block(ctx->rt, (size_t)(n * len) << p->is_wide_char);
     if (string_buffer_init2(ctx, b, n * len, p->is_wide_char))
         goto fail;
     if (n * len >= JS_ROPE_STEP) {
@@ -68199,6 +68352,10 @@ static JSValue js_array_buffer_constructor3(JSContext *ctx,
                                      "resizable ArrayBuffers not supported "
                                      "for externally managed buffers");
     }
+    /* before the object, which js_create_from_ctor makes after it may run
+       JavaScript (a getter of the prototype on new_target) */
+    if (alloc_flag && !(class_id == JS_CLASS_SHARED_ARRAY_BUFFER && rt->sab_funcs.sab_alloc))
+        js_trigger_gc_block(rt, len);
     obj = js_create_from_ctor(ctx, new_target, class_id);
     if (JS_IsException(obj))
         return obj;
@@ -68625,6 +68782,11 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
         return JS_EXCEPTION;
     if (abuf->detached)
         return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+    /* the growth of the block, which the realloc below makes (a buffer of
+       another allocator is copied to a new one, which
+       js_array_buffer_constructor3 counts whole) */
+    if (new_len > abuf->byte_length)
+        js_trigger_gc_block(ctx->rt, new_len - abuf->byte_length);
     pmax_len = NULL;
     if (!transfer_to_fixed_length) {
         if (array_buffer_is_resizable(abuf)) { // carry over maxByteLength
@@ -68748,6 +68910,8 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
         // 2 bytes big in A, and 1 byte big in B
         abuf->byte_length = len;
     } else {
+        if (len > abuf->byte_length)
+            js_trigger_gc_block(ctx->rt, len - abuf->byte_length);
         data = js_array_buffer_realloc(ctx, abuf->data, max_int(len, 1));
         if (!data)
             return JS_EXCEPTION;
