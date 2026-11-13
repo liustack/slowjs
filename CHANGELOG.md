@@ -7,6 +7,7 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 ### Fixed
 
 - `EvalBytecode` and `EvalSharedBytecode` now refuse bytecode in which a catch offset is stored, returned or passed to a call, or a jump goes before the start of its function, with `SyntaxError: invalid bytecode: code no compiler makes`. In bytecode from a file, a `finally` that changes what lies under its return address now throws `InternalError: invalid ret value` at its end. No compiler makes such code: when an exception passed such an offset, the engine jumped to the place the number named in the code of the function where the exception was ([c-engine.md](docs/changes/c-engine.md#catch-offsets-and-jumps-stay-in-their-function)).
+- A timeout or `Interrupt` now ends a call while a Go function converts a very long string or a very large result, and the VM is no longer killed for it. `Args.String`, `Args.WTF8`, `VM.NewString`, `VM.NewStringLatin1`, `VM.NewStringUTF16`, `VM.NewAtom` and the arguments and results of a `RegisterFunc` function read the stop every 256 Ki characters or 16,384 elements: `String` and `WTF8` return ok false, the others return the interrupt. Before, a conversion of 16 Mi characters took 129 to 151 ms on amd64 with no check, past the 50 ms after which a VM is killed. One step is still whole: Go's allocation of the string a read returns, at most 52 ms for 64 Mi characters ([go-api.md](docs/changes/go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call)).
 
 ### Changed
 

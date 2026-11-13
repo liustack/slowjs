@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -67,7 +67,7 @@ read_when:
 
 `*Error` 说明调用是否以脚本无法捕获的异常结束，以及原因，这样嵌入方不必比较名字和消息，而脚本是可以复制名字和消息的。VM 内存不足时（`OutOfMemory`，引擎造不出错误而抛出 `null` 时也算），`Interrupt` 或 eval 超时停住了脚本时（`Interrupted`），以及 javascript 调用的 Go 函数 panic 时（两者都不是），`Uncatchable` 为 true。Go 函数从它所求值的 javascript 得到的错误同样如此。脚本抛出的东西永远不是无法捕获的，即使是 `new InternalError('interrupted')` 或 `{name: 'InternalError', message: 'out of memory'}`，这些过去看起来和真的一模一样。取走一个无法捕获的错误不运行任何页面代码：`Name` 是 `InternalError`，`Message` 和 `Stack` 是错误自己的属性，`Error()` 是 `InternalError: <message>`。它过去会调用页面代码安装的 `Error.prototype.toString` 或 `name` getter，这可能改写消息。中断时在构造错误的过程中内存不足，算作 `OutOfMemory`。
 
-脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, quickjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
+脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。脚本停下之后引擎做的事也算：异常展开时引擎要释放脚本造的东西，正在进行的回收也要做完，它们要多久就轮询多久，所以造了很大数组的脚本可能在停下之后被杀掉。在 Apple M4 上于 055d56cd 测量，每个循环在 eval 超时和 `Interrupt` 下各停 12 次，共 24 次：每轮用展开（`[...big]`）复制一个 100 万个数的数组的循环，从请求到调用结束最多 618 次轮询、64.5 ms。数组换成 400 万个数时，24 次调用里有 21 次被杀，在请求之后 96 到 153 ms。100 万或 400 万个数的数组取 rest（`const [x, ...r] = big`）最多 526 次轮询、9.9 ms。在同一提交上，linux/amd64（AMD EPYC 7B13 服务器，测试钉在一个核上）每个循环在 eval 超时下停 12 次：100 万个数的数组取 rest、带空洞时取 rest、`Array.from` 和读到末尾的 `for-of` 最多 454 次轮询、6.1 ms，展开 596 次轮询、46.4 ms，都没被杀。展开 200 万个数时 12 次调用全部被杀，在请求之后 51 到 91 ms，400 万个数时 12 次里 11 次被杀，在请求之后 131 到 173 ms。不算这部分的话，大堆 VM 上的调用会超过期限好几秒才结束：释放 1 GiB 的数组就要这么久。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, quickjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
 
 测试：`uncatchable_test.go`、`hostuncatchable_test.go`、`hostpanic_test.go` 和 `killed_test.go`。
 
@@ -529,3 +529,31 @@ Go 函数返回的切片、map 或指针包含自身时，比如 `s[0] = s` 的�
 在 javascript 调用的 Go 函数里，`VM.NewArray` 现在每 16,384 个元素看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，返回这个错误，由 Builtin 返回出去。引擎加一个元素约 50 ns，每个元素都是从 Go 发起的一次调用，期间不读中断标志：4 Mi 个元素的数组在 M 系列 Mac 上要 0.14 到 0.2 秒。造数组期间来的停止要等到造完才生效，还可能超过脚本被杀掉之前的宽限期（[ErrKilled](go-api.zh-CN.md#error-说明调用为什么结束)）：对 2M 个孤立代理项（每个后面跟一个 `i`）调用 `toLocaleUpperCase('tr')` 会造这样的数组，造数组期间来的超时会让它的 VM 被杀掉。少于 16,384 个元素的数组什么也不读，用时和原来一样：在 M 系列 Mac 上，返回 3 个元素数组的 Builtin 改动前后每次调用都是 155 ns。在调用 javascript 之外造的数组，以及在停止之前造完的数组，和原来一样。
 
 测试：`builtin_test.go` 里的 `TestNewArrayInterrupted`（`Interrupt` 之后造 4 Mi 个元素的数组：NewArray 返回中断错误，不返回数组，之后 VM 仍可用；在调用之外，无论是在被中断的调用之后，还是 VM 空闲时调用过 `Interrupt` 之后，都造出整个数组）。
+
+## 长字符串和结果的转换在调用的限制处停下
+
+发布版本：Unreleased。
+
+在 javascript 调用的 Go 函数里，Go 字符串和引擎字符串之间的转换现在每 256 Ki 个字符（UTF-8 则是字节）看一次调用是否该结束，碰到 `Interrupt`、eval 超时或调用里无法捕获的错误就停下，和 [NewArray](#newarray-在调用的限制处停下) 一样。这时 `Args.String` 和 `Args.WTF8` 返回 ok 为 false，`VM.NewString`、`VM.NewStringLatin1` 和 `VM.NewStringUTF16` 返回这个错误，不返回字符串，不管 Go 函数返回什么，调用都以这个错误结束。`RegisterFunc` 的 Go 函数的字符串参数和字符串结果、它返回的 map 的键，以及 `VM.NewAtom`，也一样。这种函数的结果在转换时还每 16,384 个元素或属性看一次，跨嵌套的切片和 map 一起计数，因为每个元素都要调用一次引擎，每次 50 ns 以上。
+
+Go 转换期间不会轮询。在 amd64 服务器上，读一个 16 Mi 个孤立代理项的字符串要 129 ms，64 Mi 个要 0.5 秒，造一个 16 Mi 个中日韩字符的字符串要 151 ms。期间来的停止要等到转换完才生效，还可能超过脚本被杀掉之前 50 ms 的宽限期（[ErrKilled](#error-说明调用为什么结束)）。
+
+长于 1 GiB 的字符串（字节数超过引擎能容纳的字符数）原来由 `NewString` 交给 `JS_NewStringLen`，它解码时不看停止。现在它和别的字符串一样在 Go 里转换，字符数超过引擎能容纳的字符串抛出同样的 `InternalError: string too long`。
+
+一步要多久：一个在每次查看时记时间的测试跑三轮，取最坏的一次，覆盖字符串的每种转换方式：ASCII、Latin-1、中日韩字符、代理对、孤立代理项，以及后面跟着各类字符的非法 UTF-8：
+
+| 步骤 | amd64 服务器（EPYC，t2d） | Apple M4 |
+| --- | --- | --- |
+| 循环里的一段，16 Mi 和 64 Mi 个字符的字符串 | 最多 1.6 ms | 最多 2.7 ms |
+| 分配读取结果那个 Go 字符串的一步，16 Mi 个字符 | 最多 14 ms | 最多 2.7 ms |
+| 同上，64 Mi 个字符 | 最多 52 ms | 最多 55 ms |
+
+最慢的一段是非法 UTF-8，每个坏字节变成 U+FFFD。读取返回的 Go 字符串要由 Go 分配，Go 会把它清零，goroutine 还可能要帮 GC 干活，这一步没法切开，字符串越长、GC 当时越忙，它就越久。所以停止恰好在它之前到来时，几千万字符的字符串仍可能超过宽限期，VM 随后被杀掉，和原来一样。这要单个字符串有几千万字符：64 Mi 个字符的字符串在 VM 里按 8 位字符占 64 MiB，按 16 位单元占 128 MiB，内存上限低于这个数的 VM 根本放不下它。数完字节之后、分配之前还会再看一次停止，所以在那之前到来的停止不会分配任何东西。不超过 256 Ki 的字符串什么也不看，转换走原来的代码，只多一次长度比较。量不出差别：在 Apple M4 上，两个构建轮流各跑六次，`BenchmarkBuiltinString` 里用 `Args.String` 和 `Args.WTF8` 读短字符串、再经 `NewString` 送回去的各项，和改动前相差都在 1.7% 以内（每次调用最多 0.8 ns），而其中只跑 javascript、不经过任何改动代码的那一项，在同样两个构建之间就差到 6%。`BenchmarkUTF16String`（一个 200 Ki 单元的页面）相差在 2.1% 以内，一次慢一次快。
+
+仍然不看停止的转换，以及原因：
+
+- `Args.Latin1` 和 `Args.UTF16` 什么也不复制，`Args.Number` 和 `Args.Bool` 只读一个值。
+- `Call`、`CallValue` 或 `SetProperty` 的参数如果不是字符串或数字，会先过 `encoding/json`，再由引擎的 JSON 解析器解析，解析器自己会看中断标志。结果里的结构体也是这样。`encoding/json` 是在程序自己的值上运行的 Go 代码。
+- 给结果拍快照的遍历（[结果的引用在程序代码运行之前取下](#结果的引用在程序代码运行之前取下)）只有 Go，每个元素几 ns，和 Go 函数造这个结果所花的时间差不多，而且它必须走完，才能释放结果交出的引用。
+
+测试：`stringstop_test.go` 里的 `TestArgStringStops`、`TestNewStringStops` 和 `TestNewStringCharsStops`（每种转换方式，在 `Interrupt` 之后和 eval 超时时：不返回字符串，调用以中断结束而不是被杀，之后 VM 仍能运行脚本；在调用之外得到整个字符串），`TestConversionStopsMidway`（另一个 goroutine 在第一次查看时调用 `Interrupt`，转换就停在那里），`TestArgStringStopsBeforeAllocation`（在分配之前那次查看时停下，什么也不分配），`TestConversionPieces`（每段 1 到 7 个字符或字节，结果和整体转换一样）。`resultstop_test.go` 里的 `TestResultConversionStops` 和 `TestResultConversionStopsMidway`（65,536 个元素的切片、切片的切片、map、`[]any` 和 `map[string]any`），`TestRegisterFuncStringStops`（字符串参数，此时 Go 函数不运行，以及字符串结果），`TestResultLongKeys`（分段造出的键和整体造出的是同一个属性，长键会停下）和 `TestNewStringTooLong`。改动之前，每个关于停止的测试都失败：不看停止，ok 为 true，得到整个字符串。

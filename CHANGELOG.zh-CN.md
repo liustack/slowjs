@@ -7,6 +7,7 @@
 ### 修复
 
 - `EvalBytecode` 和 `EvalSharedBytecode` 现在拒绝 catch 偏移被存起来、返回或传给调用，或者跳转目标在函数代码开头之前的字节码，报 `SyntaxError: invalid bytecode: code no compiler makes`。这样的字节码里改了返回地址下面内容的 `finally`，现在在结尾抛 `InternalError: invalid ret value`。编译器不会生成这样的代码：异常经过这样的偏移时，引擎会跳到这个数在异常所在函数的代码里指的位置（[c-engine.md](docs/changes/c-engine.zh-CN.md#catch-偏移和跳转不离开所在的函数)）。
+- Go 函数在转换很长的字符串或很大的结果时，超时和 `Interrupt` 现在能让这次调用结束，VM 不再因此被杀掉。`Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1`、`VM.NewStringUTF16`、`VM.NewAtom` 以及 `RegisterFunc` 函数的参数和结果，每 256 Ki 个字符或 16,384 个元素查一次停止：`String` 和 `WTF8` 返回 ok 为 false，其余返回中断错误。原来 16 Mi 个字符的转换在 amd64 上要 129 到 151 ms，中间不查，超过了 VM 被杀掉之前的 50 ms。仍是一整步的只有 Go 为读出的字符串分配内存，64 Mi 个字符时最多 52 ms（[go-api.md](docs/changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)）。
 
 ### 变更
 

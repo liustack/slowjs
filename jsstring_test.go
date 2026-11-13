@@ -113,7 +113,7 @@ func TestNewStringSameAsEngine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		v, err := m.newStringEngine(s)
+		v, err := m.jsNewStringLen(validUTF8(s))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -280,7 +280,7 @@ func BenchmarkUTF16String(b *testing.B) {
 	}
 	b.SetBytes(int64(len(u)))
 	for b.Loop() {
-		utf16String(u, false)
+		utf16String(nil, u, false)
 	}
 }
 
@@ -314,7 +314,7 @@ func TestUTF16StringUnitByUnit(t *testing.T) {
 				}
 				want = utf8.AppendRune(want, c)
 			}
-			if got := utf16String(u, wtf8); got != string(want) {
+			if got, _ := utf16String(nil, u, wtf8); got != string(want) {
 				t.Fatalf("units %x, wtf8 %v: got %q, want %q", u, wtf8, got, want)
 			}
 		}
