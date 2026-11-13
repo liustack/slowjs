@@ -15,7 +15,8 @@
 #   CHECK_SKIP   space separated step names: leave these out
 #   CHECK_LOGS   folder of the logs, one file per step (default .build/check-logs)
 #   CHECK_STOP   1: stop at the first failed step (default: go on)
-#   LLVM_BIN     bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
+#   LLVM_BIN     bin folder of LLVM 22.1.8 (default: the first that exists of
+#                /usr/lib/llvm-22/bin and the Homebrew llvm@22 folders, see llvm-bin.sh)
 #   LLD          linker of the generator tests (default: ld.lld or ld, first found)
 #   CC           compiler of the native host (default: clang of LLVM_BIN, on
 #                macOS Apple clang, /usr/bin/clang)
@@ -30,13 +31,15 @@ tier=${1:-}
 case $tier in fast|full) ;; *) echo "usage: check.sh fast|full" >&2; exit 2 ;; esac
 cd "$(dirname "$0")/.." || exit 2
 root=$(pwd)
-llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
+# -f only finds the folder: the version is checked by the steps that need LLVM
+# (gen-engine.sh, cycles.sh), so a run of other steps works without it.
+llvm=$("$root/scripts/llvm-bin.sh" -f) || llvm=
 lld=${LLD:-}
 if [ -z "$lld" ]; then
-	for f in "$llvm/ld.lld" /usr/bin/ld.lld /usr/bin/ld; do [ -x "$f" ] && { lld=$f; break; }; done
+	for f in ${llvm:+"$llvm/ld.lld"} /usr/bin/ld.lld /usr/bin/ld; do [ -x "$f" ] && { lld=$f; break; }; done
 fi
 # The scripts of engine/test call clang by its name.
-PATH=$llvm:$PATH
+[ -z "$llvm" ] || PATH=$llvm:$PATH
 export PATH
 # On macOS the native host builds with Apple clang (docs/testing.md), through
 # /usr/bin/clang, which finds the SDK of the system: the clang of LLVM put
@@ -101,8 +104,8 @@ step goasm fast tests "scripts/gen-engine.sh pass && env CGO_ENABLED=0 QUICKJS_L
 step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/cengine"
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain && engine/test/render-test.sh plain"
-step cycles fast last "engine/test/cycles.sh"
-step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && engine/test/test262-test.sh"
+step cycles fast last "engine/test/cycles.sh $llvm"
+step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && engine/test/test262-test.sh"
 step inject-goldens fast last "engine/test/regvm/inject.sh -goldens engine/test/regvm/corpus engine/test/regvm/js"
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"

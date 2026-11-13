@@ -11,7 +11,8 @@ ARCH=${ARCH:-amd64}
 MODE=${MODE:-body}
 OUT=${OUT:-$G/internal/proto}
 BIN=${BIN:-/tmp/proto.test}
-L=/usr/lib/llvm-22/bin
+# llvm-bin.sh finds LLVM 22.1.8 (LLVM_BIN, the Linux folder or Homebrew)
+L=$(scripts/llvm-bin.sh)
 PASS=$G/internal/_shadow.so
 [ $PASS -nt $G/pass/shadow.cpp ] && [ $PASS -nt $G/pass/poll.cpp ] && [ $PASS -nt $G/pass/icall.cpp ] && [ $PASS -nt $G/pass/facts.cpp ] || $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $G/pass/shadow.cpp $G/pass/poll.cpp $G/pass/icall.cpp $G/pass/facts.cpp -o $PASS
 rm -rf $OUT

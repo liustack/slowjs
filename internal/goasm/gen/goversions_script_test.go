@@ -38,6 +38,11 @@ func TestGoVersionsScriptLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 	write("repo/scripts/go-versions.sh", string(script))
+	finder, err := os.ReadFile(filepath.Join("..", "..", "..", "scripts", "llvm-bin.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("repo/scripts/llvm-bin.sh", string(finder))
 	write("repo/scripts/gen-engine.sh", "#!/bin/sh\nset -eu\n[ \"$1\" = pass ] && exit 0\nmkdir -p \"$GEN_OUT\"\n: > \"$GEN_OUT/engine_$1.s\"\n")
 	write("repo/scripts/check.sh", "#!/bin/sh\nexit 0\n")
 	write("llvm/clang", "#!/bin/sh\nexit 0\n")
