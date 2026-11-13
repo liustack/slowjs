@@ -28,9 +28,10 @@ import (
 // measured at each cap.
 //
 // Long content, the text of a compare, a segmenter or a case mapping, the
-// items of a list and a list of locales, has no cap. It is read with Long
-// and LongWTF8, and its work is cut into pieces by a loop of package intl
-// that checks the call between pieces.
+// items of a list and a list of locales, has no cap, though each tag of a
+// list has the cap of a tag. It is read with LongWTF8, LongUTF16 and
+// Locales, and its work is cut into pieces by a loop of package intl that
+// checks the call between pieces.
 //
 // Every string and array a Builtin answers is made by Emit and the
 // functions next to it.
@@ -93,9 +94,9 @@ var caps = [kinds]struct {
 	KindDigits:   {MaxDigits, "number written", 0},
 }
 
-// roomFixed is what Go may take for a call whatever its arguments: the
+// RoomFixed is what Go may take for a call whatever its arguments: the
 // formatter or the parse it makes, and the parts of its answer.
-const roomFixed = 64 << 10
+const RoomFixed = 64 << 10
 
 // Max returns the cap of k.
 func (k Kind) Max() int { return caps[k].max }
@@ -120,16 +121,23 @@ func (e tooLong) error() error { return &quickjs.Error{Name: "RangeError", Messa
 // formatted.
 func RefuseDigits() { panic(tooLong{KindDigits}) }
 
+// RefuseTag ends the Builtin with the RangeError of a tag longer than
+// MaxTag, for a tag of a list of locales, which the list is read with:
+// measured in the list, before any work on it.
+func RefuseTag() { panic(tooLong{KindTag}) }
+
 // A Door reads the string arguments of one call of a Builtin given to
 // NewBuiltin. It counts what Go may take for the arguments it admitted, so
 // that the room is checked for all of them together.
 type Door struct {
 	a    quickjs.Args
 	need int64
+	// list is 1 + the argument of a list of locales the door counted.
+	list int
 }
 
 // Open returns the door of the call whose arguments are a.
-func Open(a quickjs.Args) Door { return Door{a: a, need: roomFixed} }
+func Open(a quickjs.Args) Door { return Door{a: a, need: RoomFixed} }
 
 // VM is the VM of the call.
 func (d *Door) VM() *quickjs.VM { return d.a.VM() }
@@ -152,11 +160,71 @@ func (d *Door) ShortWTF8(i int, k Kind) (string, bool) {
 	return WTF8(d.a, i)
 }
 
-// Long reads argument i, long content, as String does, whole.
-func (d *Door) Long(i int) (string, bool) { return String(d.a, i) }
+// Locales reads argument i, a list of locales joined into one string, as
+// String does, whole. Before it reads the list the first time, it checks
+// the room for what Go may take for each of its tags at the rate of a tag:
+// a list took at most 84 bytes a unit of that string with the call, 'en' a
+// quarter of a million times in getCanonicalLocales, where a tag alone took
+// 99 (TestListRoomCoversGo in intl).
+func (d *Door) Locales(i int) (string, bool) {
+	n, ok := d.a.StringLen(i)
+	if !ok {
+		return "", false
+	}
+	if d.list != i+1 {
+		d.list = i + 1
+		d.Reserve(caps[KindTag].perUnit * int64(n))
+	}
+	return String(d.a, i)
+}
 
 // LongWTF8 reads argument i, long content, as WTF8 does, whole.
 func (d *Door) LongWTF8(i int) (string, bool) { return WTF8(d.a, i) }
+
+// Len is the length of argument i, long content, in UTF-16 code units, read
+// where the engine keeps it, so that a Builtin can count the room for what
+// it does with the argument before it reads it. ok is false for an argument
+// that is not a string.
+func (d *Door) Len(i int) (int, bool) { return d.a.StringLen(i) }
+
+// Piece is the most units of long content a Builtin works on between two
+// checks of the call.
+const Piece = 1 << 16
+
+// LongUTF16 reads argument i, long content, as the UTF-16 code units
+// javascript counts, lone surrogates as they are, into memory of Go's that
+// the Builtin may keep after the call. It checks the room for them first, then
+// copies them from where the engine keeps them, Piece units at a time, and
+// checks the call between pieces: read as WTF-8 and turned back into UTF-16,
+// a text of 8 Mi units held the eval timeout 19 to 40 ms on an Apple M4, with
+// no check. ok is false for an argument that is not a string.
+func (d *Door) LongUTF16(i int) ([]uint16, bool) {
+	n, ok := d.a.StringLen(i)
+	if !ok {
+		return nil, false
+	}
+	d.Reserve(2 * int64(n))
+	latin1, wide, release, ok := vmhook.Chars(d.a, i)
+	if !ok {
+		// A rope the engine could not join: the error is pending.
+		panic(stopped{})
+	}
+	defer release()
+	vm := d.a.VM()
+	r := make([]uint16, max(len(latin1), len(wide)))
+	for at := 0; at < len(r); at += Piece {
+		Check(vm)
+		end := min(at+Piece, len(r))
+		if wide != nil {
+			copy(r[at:end], wide[at:end])
+			continue
+		}
+		for j, c := range latin1[at:end] {
+			r[at+j] = uint16(c)
+		}
+	}
+	return r, true
+}
 
 // Reserve counts n bytes more that Go may take for the call, such as those
 // of a number written out, and ends the Builtin with the out of memory

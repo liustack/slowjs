@@ -107,13 +107,25 @@ func (n *Normalizer) normalize(s string, form NormalizationForm, l *Limits) stri
 // for the accents Lithuanian and Turkish keep a dot through.
 func (n *Normalizer) CombiningClass(r rune) int { return int(n.tables.Class(r)) }
 
+// maxDecomposition is more bytes than the longest decomposition of a
+// character in UTF-8: U+FDFA is 18 characters, of 33 bytes, in NFKD.
+const maxDecomposition = 64
+
 // decompose takes every character apart and puts the accents in order.
 func (n *Normalizer) decompose(s string, compatibility bool, l *Limits) string {
 	var b strings.Builder
+	// asked is how many bytes of the builder the room was asked for (qjs).
+	asked := len(s)
+	l.room(int64(asked))
 	b.Grow(len(s))
 	turns := 0
 	for _, r := range s {
 		l.every(&turns)
+		if l != nil && b.Len()+maxDecomposition > asked {
+			// The builder grows to twice what it needs, at most.
+			asked = 2 * (b.Len() + maxDecomposition)
+			l.room(int64(asked))
+		}
 		switch {
 		case r >= hangulBase && r < hangulBase+hangulSCount:
 			b.WriteString(decomposeHangul(r))
@@ -139,7 +151,7 @@ func (n *Normalizer) decompose(s string, compatibility bool, l *Limits) string {
 // combining class and otherwise unchanged. The sort has to be stable: two
 // accents of the same class are written in the order they were given.
 func (n *Normalizer) order(s string, l *Limits) string {
-	runes := []rune(s)
+	runes := runesOf(s, l)
 	turns := 0
 	for i := 0; i < len(runes); {
 		l.every(&turns)
@@ -155,7 +167,7 @@ func (n *Normalizer) order(s string, l *Limits) string {
 		n.sortMarks(runes[i:j], l)
 		i = j
 	}
-	return string(runes)
+	return stringOf(runes, l)
 }
 
 // marksSorted is the longest run of accents sortMarks sorts in place, by

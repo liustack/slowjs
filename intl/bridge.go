@@ -346,7 +346,7 @@ func (c *ctor) request(a quickjs.Args, door *intlhook.Door) (request, error) {
 	n := len(c.fixed)
 	if s, ok := door.Short(n, intlhook.KindTag); ok {
 		req.Locales = []string{s}
-	} else if s, ok := door.Long(n + 1); ok {
+	} else if s, ok := door.Locales(n + 1); ok {
 		l, ok := splitLocales(a.VM(), s)
 		if !ok {
 			return request{}, errors.New("intl: internal error: a malformed locale list")
@@ -383,12 +383,13 @@ func (c *ctor) request(a quickjs.Args, door *intlhook.Door) (request, error) {
 
 // splitLocales parses the list of tags javascript passes as one string: each
 // tag preceded by its length, in UTF-16 code units as javascript counts them,
-// and a colon, "5:en-US2:de". A long list stops at the eval timeout of vm
-// (see checkTurn).
+// and a colon, "5:en-US2:de". A tag longer than intlhook.MaxTag ends the
+// Builtin with a RangeError, as one given alone does. A long list stops at
+// the eval timeout of vm (see tagTurns).
 func splitLocales(vm *quickjs.VM, s string) ([]string, bool) {
 	r := []string{}
+	t := tagTurns{vm: vm}
 	for s != "" {
-		checkTurn(vm, len(r))
 		i := 0
 		n := 0
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
@@ -402,6 +403,10 @@ func splitLocales(vm *quickjs.VM, s string) ([]string, bool) {
 		if i == 0 || i == len(s) || s[i] != ':' {
 			return nil, false
 		}
+		if n > intlhook.MaxTag {
+			intlhook.RefuseTag()
+		}
+		t.turn(n)
 
 		s = s[i+1:]
 		j := 0
@@ -551,8 +556,9 @@ var bridge = []*quickjs.Builtin{
 		// Each canonical tag once, in the order of its first time.
 		r := []string{}
 		seen := make(map[string]bool, len(tags))
-		for i, tag := range tags {
-			checkTurn(a.VM(), i)
+		t := tagTurns{vm: a.VM()}
+		for _, tag := range tags {
+			t.turn(len(tag))
 			s, err := canonicalLocale(tag)
 			if err != nil {
 				return quickjs.Value{}, jsErr(err)
@@ -599,10 +605,20 @@ var bridge = []*quickjs.Builtin{
 		}
 
 		// go-intl weighs a lone surrogate by its code point, as ICU does, so
-		// the strings keep theirs.
+		// the strings keep theirs. As WTF-8 they take at most three bytes a
+		// unit, counted before they are read. Short strings are compared
+		// with no limits (shortCompare).
+		vm := a.VM()
+		nx, _ := door.Len(1)
+		ny, _ := door.Len(2)
+		var l *gointl.Limits
+		if nx+ny > shortCompare {
+			l = callLimits(vm)
+			l.Room(3 * int64(nx+ny))
+		}
 		x, _ := door.LongWTF8(1)
 		y, _ := door.LongWTF8(2)
-		return a.VM().NewInt(c.c.CompareLimited(x, y, limitsOf(a.VM()))), nil
+		return vm.NewInt(c.c.CompareLimited(x, y, l)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
 	segBreaks,
@@ -795,10 +811,16 @@ var bridge = []*quickjs.Builtin{
 	// change nothing.
 	intlhook.NewBuiltin("casePremap", 3, func(a quickjs.Args) (quickjs.Value, error) {
 		door := intlhook.Open(a)
-		s, _ := door.LongWTF8(0)
 		lang, _ := door.Short(1, intlhook.KindOption)
 		upper, _ := a.Bool(2)
-		pieces, ok, err := premapCase(s, lang, upper)
+		// The string as WTF-8 takes at most three bytes a unit, counted
+		// before it is read.
+		units, _ := door.Len(0)
+		w := newWalk(a.VM())
+		w.take(3 * int64(units))
+		s, _ := door.LongWTF8(0)
+		w.read()
+		pieces, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
 		case err != nil:
 			return quickjs.Value{}, err
@@ -824,7 +846,7 @@ func localesArg(a quickjs.Args, door *intlhook.Door, i int) ([]string, error) {
 		return []string{s}, nil
 	}
 
-	s, ok := door.Long(i + 1)
+	s, ok := door.Locales(i + 1)
 	if !ok {
 		return nil, nil
 	}
@@ -948,7 +970,7 @@ func (c *ctor) str(door *intlhook.Door, i int) (string, bool) {
 	case i == n:
 		return door.Short(i, intlhook.KindTag)
 	case i == n+1:
-		return door.Long(i)
+		return door.Locales(i)
 	}
 	return door.Short(i, intlhook.KindOption)
 }

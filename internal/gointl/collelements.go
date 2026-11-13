@@ -77,19 +77,37 @@ type elementWriter struct {
 	// that follow it, made when a discontiguous contraction first needs it.
 	classEnds []int
 	out       []uint64
+	// l are the limits of the call, which the loops check, every
+	// limitEvery turns in all (qjs).
+	l     *Limits
+	turns int
 }
 
 func (c *Collator) elements(s string) []uint64 { return c.elementsOf([]rune(s)) }
 
 // elementsOf is elements, of the characters themselves.
-func (c *Collator) elementsOf(text []rune) []uint64 { return c.elementsFrom(text, 0) }
+func (c *Collator) elementsOf(text []rune) []uint64 { return c.elementsFrom(text, 0, nil) }
+
+// maxElements is more than the most collation elements one character, or
+// one contraction, makes (qjs).
+const maxElements = 64
 
 // elementsFrom is elementsOf of the characters from index from, those
-// before it read only as the context a prefix matches.
-func (c *Collator) elementsFrom(text []rune, from int) []uint64 {
-	w := elementWriter{c: c, text: text}
-	w.out = make([]uint64, 0, len(w.text)-from+1)
+// before it read only as the context a prefix matches, with the limits of
+// the call checked as it goes (qjs).
+func (c *Collator) elementsFrom(text []rune, from int, l *Limits) []uint64 {
+	w := elementWriter{c: c, text: text, l: l}
+	// asked is how many elements the room was asked for.
+	asked := len(w.text) - from + 1
+	l.room(8 * int64(asked))
+	w.out = make([]uint64, 0, asked)
 	for i := from; i < len(w.text); {
+		l.every(&w.turns)
+		if l != nil && len(w.out)+maxElements > asked {
+			// The array grows to twice what it needs, at most.
+			asked = 2 * (len(w.out) + maxElements)
+			l.room(8 * int64(asked))
+		}
 		if w.consumed != nil && w.consumed[i] {
 			i++
 			continue
@@ -353,6 +371,7 @@ func (w *elementWriter) discontiguous(state colldata.CharTrie, result uint32, fi
 		return result
 	}
 	for {
+		w.l.every(&w.turns)
 		cc := w.ccc(pos)
 		matched := false
 		if prevCC < cc {
@@ -360,6 +379,7 @@ func (w *elementWriter) discontiguous(state colldata.CharTrie, result uint32, fi
 			if m := try.Next(w.text[pos]); m.HasValue() {
 				result = try.Value()
 				if w.consumed == nil {
+					w.l.room(int64(len(w.text)))
 					w.consumed = make([]bool, len(w.text))
 				}
 				w.consumed[pos] = true
@@ -392,8 +412,10 @@ func (w *elementWriter) discontiguous(state colldata.CharTrie, result uint32, fi
 // follow it.
 func (w *elementWriter) classEnd(i int) int {
 	if w.classEnds == nil {
+		w.l.room(8 * int64(len(w.text)))
 		w.classEnds = make([]int, len(w.text))
 		for k := len(w.text) - 1; k >= 0; k-- {
+			w.l.every(&w.turns)
 			cc := w.ccc(k)
 			if k+1 < len(w.text) && cc != 0 && w.ccc(k+1) == cc {
 				w.classEnds[k] = w.classEnds[k+1]
@@ -576,16 +598,21 @@ func sign(less bool) int {
 // compareElements compares two element lists level by level, as ICU's
 // CollationCompare::compareUpToQuaternary does. The lists have had their
 // variable elements shifted already.
-func (c *Collator) compareElements(left, right []uint64) int {
+func (c *Collator) compareElements(left, right []uint64, l *Limits) int {
+	// t counts the turns of every loop, for the checks of l (qjs).
+	t := &turns{l: l}
 
 	// Primary. A shifted element keeps its primary for the quaternary level
 	// and has nothing else, which no ordinary element with a primary is
 	// without; it does not count here.
 	for li, ri := 0, 0; ; li, ri = li+1, ri+1 {
+		t.turn()
 		for left[li]>>32 == 0 || uint32(left[li]) == 0 {
+			t.turn()
 			li++
 		}
 		for right[ri]>>32 == 0 || uint32(right[ri]) == 0 {
+			t.turn()
 			ri++
 		}
 		lp, rp := uint32(left[li]>>32), uint32(right[ri]>>32)
@@ -603,17 +630,17 @@ func (c *Collator) compareElements(left, right []uint64) int {
 	// Secondary.
 	if c.strength >= strengthSecondary {
 		if !c.backwardSecondary {
-			if r := compareLevel(left, right, secondaryOf); r != 0 {
+			if r := compareLevel(left, right, secondaryOf, t); r != 0 {
 				return r
 			}
-		} else if r := compareBackwardSecondary(left, right); r != 0 {
+		} else if r := compareBackwardSecondary(left, right, t); r != 0 {
 			return r
 		}
 	}
 
 	// Case, when asked for as a level of its own.
 	if c.caseLevel {
-		if r := c.compareCaseLevel(left, right); r != 0 {
+		if r := c.compareCaseLevel(left, right, t); r != 0 {
 			return r
 		}
 	}
@@ -630,7 +657,9 @@ func (c *Collator) compareElements(left, right []uint64) int {
 	anyQuaternary := uint32(0)
 	for li, ri := 0, 0; ; li, ri = li+1, ri+1 {
 		var lt, rt uint16
+		t.turn()
 		for {
+			t.turn()
 			anyQuaternary |= uint32(left[li])
 			if lt = uint16(left[li]) & mask; lt != 0 {
 				break
@@ -638,6 +667,7 @@ func (c *Collator) compareElements(left, right []uint64) int {
 			li++
 		}
 		for {
+			t.turn()
 			anyQuaternary |= uint32(right[ri])
 			if rt = uint16(right[ri]) & mask; rt != 0 {
 				break
@@ -658,14 +688,16 @@ func (c *Collator) compareElements(left, right []uint64) int {
 	if c.strength < strengthQuaternary {
 		return 0
 	}
-	if !hasShifted(left) && !hasShifted(right) && anyQuaternary&0xc0 == 0 {
+	if !hasShifted(left, t) && !hasShifted(right, t) && anyQuaternary&0xc0 == 0 {
 		return 0
 	}
 
 	// Quaternary.
 	for li, ri := 0, 0; ; li, ri = li+1, ri+1 {
 		var lq, rq uint32
+		t.turn()
 		for {
+			t.turn()
 			lq = quaternaryOf(left[li])
 			if lq != 0 {
 				break
@@ -673,6 +705,7 @@ func (c *Collator) compareElements(left, right []uint64) int {
 			li++
 		}
 		for {
+			t.turn()
 			rq = quaternaryOf(right[ri])
 			if rq != 0 {
 				break
@@ -695,9 +728,11 @@ func (c *Collator) compareElements(left, right []uint64) int {
 // shiftVariables rewrites variable elements in place: a variable element -- a
 // space, a punctuation mark -- keeps only its primary, which moves to the
 // quaternary level, and the ignorable elements after it go with it.
-func (c *Collator) shiftVariables(ces []uint64) {
+func (c *Collator) shiftVariables(ces []uint64, l *Limits) {
 	shifting := false
+	turns := 0
 	for i, ce := range ces {
+		l.every(&turns)
 		p := uint32(ce >> 32)
 		switch {
 		case p < c.variableTop && p > mergeSeparatorPrimary:
@@ -713,8 +748,9 @@ func (c *Collator) shiftVariables(ces []uint64) {
 
 // hasShifted reports whether a list has a shifted element: one with a
 // primary and nothing else.
-func hasShifted(ces []uint64) bool {
+func hasShifted(ces []uint64, t *turns) bool {
 	for _, ce := range ces {
+		t.turn()
 		if ce>>32 != 0 && uint32(ce) == 0 {
 			return true
 		}
@@ -725,13 +761,16 @@ func hasShifted(ces []uint64) bool {
 func secondaryOf(ce uint64) uint32 { return uint32(ce>>16) & 0xffff }
 
 // compareLevel compares one level's weights, skipping the zeros.
-func compareLevel(left, right []uint64, weight func(uint64) uint32) int {
+func compareLevel(left, right []uint64, weight func(uint64) uint32, t *turns) int {
 	for li, ri := 0, 0; ; li, ri = li+1, ri+1 {
+		t.turn()
 		var lw, rw uint32
 		for lw = weight(left[li]); lw == 0; lw = weight(left[li]) {
+			t.turn()
 			li++
 		}
 		for rw = weight(right[ri]); rw == 0; rw = weight(right[ri]) {
+			t.turn()
 			ri++
 		}
 		if lw != rw {
@@ -747,16 +786,19 @@ func compareLevel(left, right []uint64, weight func(uint64) uint32) int {
 // end, which is how Canadian French weighs accents: the last accent decides.
 // Segments are separated by merge separators, which ECMA-402 never writes, so
 // in practice the whole string is one segment.
-func compareBackwardSecondary(left, right []uint64) int {
+func compareBackwardSecondary(left, right []uint64, t *turns) int {
 	ls, rs := 0, 0
 	for ls < len(left) {
-		le, re := segmentEnd(left, ls), segmentEnd(right, rs)
+		le, re := segmentEnd(left, ls, t), segmentEnd(right, rs, t)
 		li, ri := le-1, re-1
 		for {
+			t.turn()
 			var lw, rw uint32
 			for ; li >= ls && secondaryOf(left[li]) == 0; li-- {
+				t.turn()
 			}
 			for ; ri >= rs && secondaryOf(right[ri]) == 0; ri-- {
+				t.turn()
 			}
 			if li >= ls {
 				lw = secondaryOf(left[li])
@@ -784,8 +826,9 @@ func compareBackwardSecondary(left, right []uint64) int {
 
 // segmentEnd finds the end of a segment: the next merge separator or the end
 // of the text.
-func segmentEnd(ces []uint64, from int) int {
+func segmentEnd(ces []uint64, from int, t *turns) int {
 	for i := from; i < len(ces); i++ {
+		t.turn()
 		if p := uint32(ces[i] >> 32); p != 0 && p <= mergeSeparatorPrimary {
 			return i
 		}
@@ -793,7 +836,7 @@ func segmentEnd(ces []uint64, from int) int {
 	return len(ces)
 }
 
-func (c *Collator) compareCaseLevel(left, right []uint64) int {
+func (c *Collator) compareCaseLevel(left, right []uint64, t *turns) int {
 	upperFirst := c.caseFirst == CaseFirstUpper
 	// At primary strength a case weight counts only where there is a letter,
 	// or "ä" would sort after "a"; above it, only where there is an accent
@@ -805,10 +848,13 @@ func (c *Collator) compareCaseLevel(left, right []uint64) int {
 		return secondaryOf(ce) == 0
 	}
 	for li, ri := 0, 0; ; li, ri = li+1, ri+1 {
+		t.turn()
 		for skip(left[li]) {
+			t.turn()
 			li++
 		}
 		for skip(right[ri]) {
+			t.turn()
 			ri++
 		}
 		lc, rc := uint16(left[li])&caseMask, uint16(right[ri])&caseMask

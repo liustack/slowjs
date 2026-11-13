@@ -84,9 +84,24 @@ var longWork = []struct{ name, setup, call string }{
 	{"toLocaleLowerCase in Turkish of I and marks",
 		`var s = 'I' + '̣'.repeat(N)`,
 		`s.toLocaleLowerCase('tr')`},
+	{"toLocaleUpperCase in Greek",
+		`var s = 'άέήί '.repeat(N / 5)`,
+		`s.toLocaleUpperCase('el')`},
+	{"toLocaleLowerCase in Lithuanian",
+		`var s = 'ÌÍĨ '.repeat(N / 4)`,
+		`s.toLocaleLowerCase('lt')`},
 	{"getCanonicalLocales of one long tag",
 		`var s = 'en-x-' + 'abcdefgh-'.repeat(N / 9) + 'a'`,
 		`Intl.getCanonicalLocales(s)`},
+	{"getCanonicalLocales of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'en-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`Intl.getCanonicalLocales(l)`},
+	{"supportedLocalesOf of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'en-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`Intl.Collator.supportedLocalesOf(l)`},
+	{"a constructor of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'zz-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`new Intl.Collator(l)`},
 	{"DurationFormat of a duration string of zeros",
 		`var s = 'PT' + '0'.repeat(N) + '1S', df = new Intl.DurationFormat('en')`,
 		`df.format(s)`},
@@ -96,15 +111,9 @@ var longWork = []struct{ name, setup, call string }{
 }
 
 // waiting holds the calls of longWork that still run whole in Go, with no
-// check, each until the change that cuts its work into pieces. A test
-// skips them, and that change takes its call out.
-var waiting = map[string]bool{
-	"localeCompare after a shared run of accents": true,
-	"Collator.compare of two long strings":        true,
-	"Segmenter, the word containing 0 in Thai":    true,
-	"toLocaleUpperCase in Turkish":                true,
-	"toLocaleLowerCase in Turkish of I and marks": true,
-}
+// check or no count of the room, each until the change that cuts its work
+// into pieces. A test skips them, and that change takes its call out.
+var waiting = map[string]bool{}
 
 // skipWaiting skips the call name of longWork while it waits for its change.
 func skipWaiting(t *testing.T, name string) {
@@ -112,6 +121,28 @@ func skipWaiting(t *testing.T, name string) {
 	if waiting[name] {
 		t.Skip("still runs whole in Go, with no check")
 	}
+}
+
+// holdWhole holds the calls of longWork that keep their whole input in Go,
+// as arrays as long as it, while they check the call and count those arrays
+// against the room: a compare keeps the code points and the collation
+// elements of its strings, a Segments object its text in UTF-16, and a case
+// mapping the code points of its string before and after. They check the
+// call between pieces of the work, but what they hold between two checks
+// grows with the input, which TestLongWorkHeldPerPiece skips them for. So do
+// the calls on a list of locales, which read the list as one string, and
+// keep the canonical form of each of its tags.
+var holdWhole = map[string]bool{
+	"getCanonicalLocales of a list of long tags":  true,
+	"supportedLocalesOf of a list of long tags":   true,
+	"a constructor of a list of long tags":        true,
+	"localeCompare after a shared run of accents": true,
+	"Collator.compare of two long strings":        true,
+	"Segmenter, the word containing 0 in Thai":    true,
+	"toLocaleUpperCase in Turkish":                true,
+	"toLocaleLowerCase in Turkish of I and marks": true,
+	"toLocaleUpperCase in Greek":                  true,
+	"toLocaleLowerCase in Lithuanian":             true,
 }
 
 // setUp makes the input of setup, of n units, in vm.
@@ -183,6 +214,9 @@ func TestLongWorkHeldPerPiece(t *testing.T) {
 	for _, c := range longWork {
 		t.Run(c.name, func(t *testing.T) {
 			skipWaiting(t, c.name)
+			if holdWhole[c.name] {
+				t.Skip("holds its whole input in Go, counted against the room")
+			}
 			var at [2]stopSpans
 			for i, size := range []int{n, 4 * n} {
 				vm := newVM(t)

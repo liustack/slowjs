@@ -7,7 +7,6 @@ package intl // import "github.com/liustack/quickjs/intl"
 
 import (
 	"strconv"
-	"unicode/utf16"
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -72,25 +71,70 @@ func (f *listFormat) init() error { return nil }
 
 // listItems splits the items intl.js sends as one string, in WTF-8 as
 // Args.WTF8 reads it: each is its length in UTF-16 code units, a colon and
-// the item. A long list stops at the eval timeout of vm (see checkTurn).
+// the item. Each item is the bytes of s it takes, not a copy: go-intl reads
+// only the first characters of an item, and javascript writes the items
+// itself (listParts). A long list stops at the eval timeout of vm (see
+// checkTurn), and a long item between pieces of its units (unitsEnd).
 func listItems(vm *quickjs.VM, s string) ([]string, bool) {
-	u := utf16Of(s)
 	var items []string
-	for i := 0; i < len(u); {
+	for i := 0; i < len(s); {
 		checkTurn(vm, len(items))
 		j := i
-		for j < len(u) && u[j] != ':' {
+		for j < len(s) && j-i <= maxLengthDigits && s[j] != ':' {
 			j++
 		}
-		n, err := strconv.Atoi(string(utf16.Decode(u[i:j])))
-		if err != nil || j+1+n > len(u) {
+		n, err := strconv.Atoi(s[i:j])
+		if err != nil || j == len(s) || s[j] != ':' {
+			return nil, false
+		}
+		end, ok := unitsEnd(vm, s, j+1, n)
+		if !ok {
 			return nil, false
 		}
 
-		items = append(items, string(utf16.Decode(u[j+1:j+1+n])))
-		i = j + 1 + n
+		items = append(items, s[j+1:end])
+		i = end
 	}
 	return items, true
+}
+
+// maxLengthDigits is the most digits the length of an item is written with:
+// a string has fewer than 2³² units.
+const maxLengthDigits = 10
+
+// unitsEnd is the byte offset of s after n UTF-16 code units from byte i,
+// with the call checked between pieces of intlhook.Piece units: a lone
+// surrogate, three bytes in WTF-8, is one unit, and a character past the BMP,
+// four bytes, two. It is false when s ends first.
+func unitsEnd(vm *quickjs.VM, s string, i, n int) (int, bool) {
+	for n > 0 {
+		intlhook.Check(vm)
+		for piece := min(n, intlhook.Piece); piece > 0; {
+			if i >= len(s) {
+				return 0, false
+			}
+			c := s[i]
+			switch {
+			case c < 0x80:
+				i++
+			case c < 0xe0:
+				i += 2
+			case c < 0xf0:
+				i += 3
+			default:
+				if n == 1 {
+					// The item ends inside the pair of a character.
+					return 0, false
+				}
+				i += 4
+				piece--
+				n--
+			}
+			piece--
+			n--
+		}
+	}
+	return i, i <= len(s)
 }
 
 // listParts is the list joined, for javascript to put together: the text

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/stopsweep"
+	"github.com/liustack/quickjs/internal/vmhook"
 )
 
 // uncuttable are calls whose input has one piece no Builtin can cut into
@@ -146,6 +148,130 @@ func TestCJKRunRoom(t *testing.T) {
 	if got := eval(t, vm, `g.segment('我们今天去北京').containing(0).segment`); got != "我们" {
 		t.Errorf("after the error: %v", got)
 	}
+}
+
+// longRead are calls whose work on a long text, after reading it, is short:
+// a Segments object reads its whole text before the first segment, and
+// finds the first ones in the first piece, and a ListFormat reads its items
+// and only the first characters of each.
+var longRead = []struct{ name, setup, call string }{
+	{"a list of one long item",
+		`var l = ['x'.repeat(N), 'y'], f = new Intl.ListFormat('en')`,
+		`f.format(l).length`},
+	{"the parts of a list of one long item in Thai, with characters past the BMP",
+		`var l = ['สวัสดี😀'.repeat(N / 8), 'y'], f = new Intl.ListFormat('th')`,
+		`f.formatToParts(l).length`},
+	{"the first word of a long text",
+		`var s = 'hello world '.repeat(N / 12), g = new Intl.Segmenter('en', {granularity: 'word'})`,
+		`g.segment(s).containing(0).segment`},
+	{"the first grapheme of a long text in Thai",
+		`var s = 'สวัสดี ครับ '.repeat(N / 11), g = new Intl.Segmenter('th')`,
+		`g.segment(s)[Symbol.iterator]().next().value.segment`},
+}
+
+// Reading the text of a Segments object reads vmhook.Stop at least once per
+// workPerStop units of it, as the work on it does. Before, it was read as
+// WTF-8 and turned back into UTF-16 in one pass, with no check, which held
+// the eval timeout 19 to 40 ms on an Apple M4 for a text of 8 Mi units, and
+// three to five times that on the Intel Macs of GitHub.
+func TestLongReadStops(t *testing.T) {
+	const n = 2 << 20
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			s, err := measureStops(t, vm, c.call)
+			if err != nil {
+				t.Fatalf("%s: %v", c.call, err)
+			}
+			if s.stops < n/workPerStop {
+				t.Errorf("%s read vmhook.Stop %d times for %d units, want at least %d", c.call, s.stops, n, n/workPerStop)
+			}
+		})
+	}
+}
+
+// An Interrupt that comes while the text is read ends the call with the
+// interrupt at the next read of vmhook.Stop, and the call returns at once.
+func TestLongReadInterrupt(t *testing.T) {
+	const n = 2 << 20
+	const at = n / workPerStop / 2
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			stops := 0
+			stop := vmhook.Stop
+			vmhook.Stop = func(v any) bool {
+				if stops++; stops == at {
+					vm.Interrupt()
+				}
+				return stop(v)
+			}
+			defer func() { vmhook.Stop = stop }()
+			_, err := vm.Eval(c.call, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.Interrupted {
+				t.Fatalf("%s, interrupted at read %d of vmhook.Stop: got %v after %d reads, want the interrupt", c.call, at, err, stops)
+			}
+			if stops != at {
+				t.Errorf("%s read vmhook.Stop %d times, and the interrupt came at read %d", c.call, stops, at)
+			}
+		})
+	}
+}
+
+// Each long call stops within the grace of stopsweep at every eval timeout
+// from 2 ms to the time it takes whole, so that a part of it with no check
+// shows wherever it lies.
+func TestLongCallsStopAtEveryTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("times each call at many timeouts")
+	}
+	const n = 8 << 20
+	for _, c := range longRead {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, n)
+			stopsweep.Sweep(t, vm, c.call, n, workPerStop)
+		})
+	}
+	for _, c := range swept {
+		t.Run(c.name, func(t *testing.T) {
+			vm := newVM(t)
+			setUp(t, vm, c.setup, c.n)
+			stopsweep.Sweep(t, vm, c.call, c.n, workPerStop)
+		})
+	}
+}
+
+// swept are more long calls TestLongCallsStopAtEveryTimeout sweeps, each with
+// an input of n units that keeps the sweep short. With no check, a case
+// mapping of Greek of 8 Mi units ran 0.75 s past a timeout of 25 ms on an
+// Apple M4.
+var swept = []struct {
+	name, setup, call string
+	n                 int
+}{
+	{"toLocaleUpperCase in Turkish",
+		`var s = 'istanbul '.repeat(N / 9)`, `s.toLocaleUpperCase('tr').length`, 8 << 20},
+	{"toLocaleLowerCase in Turkish of I and marks",
+		`var s = 'I' + '̣'.repeat(N - 1)`, `s.toLocaleLowerCase('tr').length`, 2 << 20},
+	{"toLocaleUpperCase in Lithuanian",
+		`var s = 'i̇'.repeat(N / 2)`, `s.toLocaleUpperCase('lt').length`, 8 << 20},
+	{"toLocaleLowerCase in Lithuanian",
+		`var s = 'ÌÍĨ '.repeat(N / 4)`, `s.toLocaleLowerCase('lt').length`, 2 << 20},
+	{"toLocaleUpperCase in Greek",
+		`var s = 'άέή'.repeat(N / 3)`, `s.toLocaleUpperCase('el').length`, 1 << 20},
+	{"compare of two long strings that differ first",
+		`var a = 'b' + 'ab'.repeat(N / 2), b = 'a' + 'ab'.repeat(N / 2), c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
+	{"compare of two long strings that differ first only in case",
+		`var a = 'A' + 'ab'.repeat(N / 2), b = 'a' + 'ab'.repeat(N / 2), c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
+	{"compare of two long strings that share all but the end",
+		`var a = 'ab'.repeat(N / 2) + 'c', b = 'ab'.repeat(N / 2) + 'd', c = new Intl.Collator('en')`,
+		`c.compare(a, b)`, 4 << 20},
 }
 
 // A dropped cursor is not kept: no slot of the list holds it after.

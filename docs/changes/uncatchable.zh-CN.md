@@ -479,7 +479,7 @@ Map 或 Set 的记录数到了哈希表槽数的两倍时，就把表扩大一�
 
 `Intl.getCanonicalLocales`、`supportedLocalesOf`、拿到 locale 列表的每个 Intl 构造函数和 `toLocaleString`，以及 `Intl.ListFormat` 的 `format` 和 `formatToParts`，现在不管列表多长都会在 `Interrupt` 和 eval 超时时停下。它们在 Go 里做的活不读中断标志，所以长列表会把停下推迟到 Go 做完为止。`getCanonicalLocales` 找重复还要把每个标签和它前面的所有标签比一遍：10 万个互不相同的标签大约要比较 50 亿次，在 GCP 上要 8.5 秒，什么超时都打断不了。
 
-现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。这些检查按标签和项计数，不按字节：单独一个很长的标签或项，在 Go 里读入、变成规范形式和匹配时仍然不检查 VM，占的内存也不算在它的上限里，比如在 M 系列 Mac 上对 16 MiB 的私有用途标签调用 `new Intl.NumberFormat(tag)` 要 0.2 秒，分配 289 MiB。单独给出的标签现在超过 16,384 个字符时，在 Go 读它之前就被拒绝（见[下文](#intl-和-temporal-的短参数在读之前先量长度)）。列表里的标签仍然整个读入。
+现在用一个集合找重复，按顺序保留每个标签第一次出现的那个，这次调用只要 0.32 秒。脚本传进来的列表上的每个循环每 256 轮调用一次 `intlhook.Check`（`internal/intlhook/args.go`）：读列表，把每个标签变成规范形式，把标签和某个服务的 locale 匹配，拼接列表的各项，以及构造结果的数组。`Check` 问 `vmhook.Stop`（`internal/vmhook`，见 [architecture.md](../architecture.zh-CN.md#eval-超时和-interrupt)），它像引擎自己的轮询那样读 VM 的截止时间和中断标志。调用该结束时，它抛出无法捕获的错误并让 Builtin 停下。已经造出 javascript 值的循环自己问 `vmhook.Stop`，返回前先释放这些值。超时设为 20 ms 时，这些调用在 1,048,576 个标签或项的列表上现在都在开始后 20 到 60 ms 停下，原来光是 Go 的活就要跑 0.2 到 3.5 秒。这些检查按标签和项计数，不按字节：单独一个很长的标签或项，在 Go 里读入、变成规范形式和匹配时仍然不检查 VM，占的内存也不算在它的上限里，比如在 M 系列 Mac 上对 16 MiB 的私有用途标签调用 `new Intl.NumberFormat(tag)` 要 0.2 秒，分配 289 MiB。单独给出的标签现在超过 16,384 个字符时，在 Go 读它之前就被拒绝（见[下文](#intl-和-temporal-的短参数在读之前先量长度)）。列表里的标签当时仍然整个读入，之后也有了同样的上限（见[下文](#长文本和-locale-列表分块处理并检查调用)）。
 
 把标签和某个服务的 locale 匹配时一次处理 256 个标签：一段里如果没有这个服务有的 locale 就跳过，答案就是列表剩下部分的答案，因为 ResolveLocale 取的是它找到的第一个标签。不超过 256 个标签的列表（页面传的就是这种）走的还是原来的路，每个答案都一样。
 
@@ -521,7 +521,7 @@ Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给�
 
 有四处活儿比脚本给的输入增长得快得多，现在不会了。二、八、十六进制的数字字符串原来一位一位地转成十进制，每一位都要过一遍已经造出的所有十进制位：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 在 Go 里花 9.6 秒，上限允许的最长数字字符串要大约十分钟。超过 1024 位的值和原来一样是无穷，现在转换之前就认出来：那个最长的字符串只要 4 ms。科学计数法和工程计数法下，单位或货币名称的复数形式取决于按指数移回去的数字，Go 原来把移动中的每个零都写出来：长格式米的 NumberFormat 调用 `format('1e-1073741000')` 在 Go 里花 4.3 秒、3.2 GB。现在复数形式由数字和它们的位置直接算出（`shiftedOperands`），答案不变。`Intl.ListFormat` 去掉空项时，把空项之间的字面文字拼起来，每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表分配 434 MB，时间随列表长度的平方增长。现在一趟拼完，最多 5 MB。长数字的 `formatToParts` 现在一次定好各部分和分组分隔符位置的大小：`10n ** 315000n` 在 en 下 Go 用 52 MB，原来是 112 MB。
 
-属于长内容的字符串，包括 `compare`、`Segmenter`、大小写函数和 `ListFormat` 的文本，以及 locale 列表，仍然和原来一样整个读入。这类文本里 Builtin 切不开的一段文字会检查调用（见[下文](#builtin-切不开的一段文字读中断标志)）。
+属于长内容的字符串，包括 `compare`、`Segmenter`、大小写函数和 `ListFormat` 的文本，以及 locale 列表，仍然和原来一样整个读入。这类文本里 Builtin 切不开的一段文字会检查调用（见[下文](#builtin-切不开的一段文字读中断标志)），之后对它们的其余工作也检查（见[下文](#长文本和-locale-列表分块处理并检查调用)）。
 
 在上限处最长的一次调用，在 Apple M4 上标签 1.5 ms，选项 3 ms，Temporal 的字符串 0.12 ms，数字字符串 1.7 ms，写 525,312 位数字 6.4 ms，在 AMD EPYC 的一个核上分别是 2.9、5.8、0.38、3.6 和 21 ms。最长的 BigInt 拆成各部分，Go 在 M4 上约 40 ms，在 EPYC 的核上约 250 ms，在这之前引擎造它的数字要 2.2 秒和 2.7 秒，期间会轮询。
 
@@ -572,6 +572,30 @@ Intl 有些活儿做在文本里切不成更小块的一段上：没有空格的
 
 答案都不变：在 18 MB 的维基百科文本上（泰文、老挝文、高棉文、缅甸文、中文、文言文、日文、印地文和希腊文），词和句子的分段、行和词的排序，以及每个词和下一个词的 `localeCompare`，都和改动前一样。这些检查让短的 `localeCompare` 和短文本的分段最多慢 2%。
 
-这样一段文字周围的文本，仍然整个读入、整个处理，不做检查：读字符串，为 Segmenter 复制成 UTF-16，以及长字符串比较时的排序元素。
+这样一段文字周围的文本，仍然整个读入、整个处理，不做检查：读字符串，为 Segmenter 复制成 UTF-16，以及长字符串比较时的排序元素。之后这些也检查调用（见[下文](#长文本和-locale-列表分块处理并检查调用)）。
 
 测试：`intl/runs_test.go` 的 `TestUncuttableRunsCheck`、`TestUncuttableRunsTimeout`、`TestSegmenterAfterStop` 和 `TestCJKRunRoom`，`internal/gointl/qjs_limits_test.go` 的 `TestDictionaryRoomCoversGo`、`TestLimitsKeepSegments`、`TestSortMarksStable` 和 `TestNormalizeChecksLongRun`。
+
+## 长文本和 locale 列表分块处理并检查调用
+
+版本：Unreleased。
+
+Intl 的长内容，也就是 Segmenter、大小写转换、比较和 ListFormat 的文本，以及 locale 列表，现在一块一块地处理，块与块之间检查一次调用，Go 要留下的东西在分配之前先检查内存上限下的余量。[上一节](#builtin-切不开的一段文字读中断标志)里的那段文字是检查的，但它周围的工作不读中断标志，在慢的机器上光这些工作就比宽限期长：`TestUncuttableRunsTimeout` 在 CI 的 Intel Mac 上失败，超时设为 100 ms 的 Segmenter 在 215 到 310 ms 之后才停下。下面每个调用原来在 Apple M4 上都要整个跑完，超过求值超时，现在都在扫描测试的宽限期内停下（见 [testing.md](../testing.zh-CN.md#测试里的时间)）：
+
+| 调用 | 原来超出超时多久 | 现在 |
+| --- | --- | --- |
+| 8 Mi 个单位的 Segmenter | 19 到 40 ms：文本整个读成 WTF-8 再转成 UTF-16 | 直接从引擎的字符串里复制它的单位，每次 65,536 个（`internal/intlhook/door.go` 的 `Door.LongUTF16`），整个调用英文从 10 ms 变成 4.6 ms，泰文从 68 ms 变成 1 ms |
+| 只有一项、8 Mi 个单位的 ListFormat 的 `format` | 约 50 ms：文本转成 UTF-16，每一项再转回来 | 每一项按它的长度在原文里直接切出来，长度在字节上按 UTF-16 单位数，每 65,536 个单位检查一次：从 53 ms 变成 8.7 ms |
+| 土耳其语、阿塞拜疆语、立陶宛语和希腊语的 `toLocaleUpperCase` 和 `toLocaleLowerCase` | 8 Mi 个单位的希腊文最多 0.75 秒 | 每个循环每 65,536 步检查一次，数组变长时计算余量：Go 每个单位最多用了 135 字节，出现在代理对上 |
+| 两个长字符串的 `compare` 和 `localeCompare` | 4 Mi 个单位时 18 到 36 ms | 两个字符串的码点、规范形式和排序元素每 4,096 轮检查一次调用并计算余量（`internal/gointl/qjs_limits.go` 的 `Limits`） |
+| 16 个 256 Ki 单位的标签组成的列表 | 60 ms：每个标签整个变成规范形式，每 256 个标签才检查一次 | 每个标签有和单独给出的标签一样的上限，每 256 个标签或 65,536 个单位检查一次，并按列表每个单位 192 字节检查余量，Go 最多用了 84 字节 |
+
+locale 列表里超过 16,384 个字符的标签现在是 `RangeError`，和 v0.30.3 起单独给出的标签一样（见[上文](#intl-和-temporal-的短参数在读之前先量长度)）。Chrome 和 Node 接受它。
+
+两个字符串加起来不超过 128 个单位的比较不向 VM 要余量：调用的固定余量就够了，用得最多的 U+FDFA，128 个单位用了 65,000 字节。大小写转换只在留下的东西超过固定余量之后才要余量。检查的代价：短比较 0 到 4%，长比较不到 2%（和 v0.30.3 交替各跑六次），8 Mi 个单位的土耳其语大小写转换 11%，短的 3%，希腊语 2%，立陶宛语 7%。
+
+每个结果都不变：18 MB 维基百科文本（泰文、老挝文、高棉文、缅甸文、中文、文言文、日文、印地文和希腊文）的词、`containing` 和句子分段，按 `compare` 和 `localeCompare` 排的词序，大小写和列表，都和 v0.30.3 一样。
+
+仍然整个处理的部分：引擎把长参数读成 WTF-8 时每 256 Ki 个字符检查一次，不是每块检查一次。比较和大小写转换在工作期间把整个输入留在 Go 里，算在余量里。DurationFormat 把它的输入整个转成 UTF-16，最多是 Temporal 字符串的 16,384 个单位。`fmt` 的函数整个生成一次调用的输出，整个把 BigInt 写成十进制（见 `fmt/sweep_test.go` 的 `known`）。
+
+测试：`intl/runs_test.go` 的 `TestLongReadStops`、`TestLongReadInterrupt` 和 `TestLongCallsStopAtEveryTimeout`（用 `internal/stopsweep` 在 2 ms 到整个调用时间之间的各个超时下扫每个长调用），`intl/stops_test.go` 的 `longWork` 里的 locale 列表和大小写转换，`intl/door_test.go` 的 `TestCaseRoomCoversGo`、`TestShortCompareFitsFixedRoom`、`TestListTagRefused` 和 `TestListRoomCoversGo`，`fmt/sweep_test.go` 的 `TestLongCallsStopAtEveryTimeout`，以及 `temporal/stops_test.go` 的 `TestCalendarArithmeticStopsAtEveryTimeout`。
