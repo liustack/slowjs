@@ -89,6 +89,7 @@ read_when:
 | 包含自身的结果是一个错误 | v0.30.2 | [go-api.md](go-api.zh-CN.md#包含自身的结果是一个错误) |
 | 结果的引用在程序代码运行之前取下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#结果的引用在程序代码运行之前取下) |
 | NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
+| 长字符串和结果的转换在调用的限制处停下 | Unreleased | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | Unreleased | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 
 ## 守得住的限额

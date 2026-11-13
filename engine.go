@@ -749,6 +749,18 @@ func (m *VM) jsNewAtom(s string) (r uint32, err error) {
 	return r, nil
 }
 
+// jsValueToAtom is JS_ValueToAtom of v.
+func (m *VM) jsValueToAtom(v jsValue) (r uint32) {
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsValueToAtom(v) })
+		return r
+	}
+	m.toEngine()
+	r = uint32(cengine.JS_ValueToAtom(m.sp, m.ctx, v.u, v.tag))
+	m.inEngine--
+	return r
+}
+
 // jsNewEscapeTextFunction is JS_NewEscapeTextFunction of name.
 func (m *VM) jsNewEscapeTextFunction(name string) (r jsValue, err error) {
 	if m.entered == 0 {

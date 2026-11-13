@@ -545,6 +545,9 @@ func (m *VM) buildArray(s *snapshot, start, n int32) (out jsValue, err error) {
 		s.vals = s.vals[:base]
 	}()
 	for _, kid := range s.kids[start : start+n] {
+		if m.elemStop() {
+			return out, m.errFromException()
+		}
 		jv, err := m.build(s, kid.node)
 		if err != nil {
 			return out, err
@@ -572,6 +575,9 @@ func (m *VM) buildObject(s *snapshot, start, n int32) (out jsValue, err error) {
 		}
 	}()
 	for _, kid := range s.kids[start : start+n] {
+		if m.elemStop() {
+			return out, m.errFromException()
+		}
 		jv, err := m.build(s, kid.node)
 		if err != nil {
 			return out, err
@@ -579,10 +585,7 @@ func (m *VM) buildObject(s *snapshot, start, n int32) (out jsValue, err error) {
 		// The key is an atom of all its bytes, NULs too, and an own data
 		// property as in an object literal: no setter runs, and __proto__ is
 		// a key. JS_DefinePropertyValue takes jv, also when it fails.
-		atom, err := m.jsNewAtom(validUTF8(kid.key))
-		if err == nil && atom == atomNull {
-			err = m.errFromException()
-		}
+		atom, err := m.atomOf(kid.key)
 		if err != nil {
 			m.jsFreeValue(jv)
 			return out, err

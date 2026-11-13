@@ -101,6 +101,7 @@ go test -run NumberConversion .                        # a timeout stops Number,
 go test -run TestParse .                                # a timeout stops eval of a 16 Mi byte token within a few polls, at five points of the call
 go test -run 'TestStringCompareCopy|ModuleExportNames' .  # a timeout stops a compare, a sort, Symbol.for and a copy of a 64 Mi character string, and the sort of long export names, within a few polls
 go test -run ArrayBufferMoveStops .                     # a timeout stops resize and transfer of a 256 MiB ArrayBuffer, the move of the block and the clear, within a few polls
+go test -run 'StringStops|StringCharsStops|ConversionStops|ConversionPieces|ResultLongKeys|NewStringTooLong' . # a conversion in Go of a long string, or of a result of many elements, stops at the next read of the stop
 go test -run 'AtomKeys|FieldChain|OwnKeys' .             # keys and property reads give what Node gives (testdata/*.golden)
 go test -run 'ShapeCache|RegExpCache' .                  # the shape cache and the regexp cache give what Node gives and keep to their limits
 go test -run OnClose .                                   # OnClose runs once, in order, and keeps no VM alive
@@ -122,7 +123,7 @@ go test -run '^$' -bench EscapeText .                    # the cost of React DOM
 go test -run '^$' -bench Clock .                         # the cost of Date.now and new Date()
 ```
 
-停止类测试（`TestBuiltinWorkStops`、`TestStringSearchStops`、`TestRegExpCacheStops`、`TestEscapeTextStops` 和 `TestTagsStop`）用 10 ms 的超时或 `Interrupt` 来停一个循环，判断是否停住看的是见到请求的轮询次数（`gohost.VM.StopPolls`），不看用了多久：最多 5 次（`stoppolls_test.go` 里的 `stopPolls`），每 65,536 个字符读一次标志、每次带一个 tick 的循环最多 9 次。`TestBigIntWorkStops` 要求一次 BigInt 长运算最多 8 次（`bigIntStopPolls`），`TestNumberConversionStops` 要求把 64 Mi 个字符的字符串转成数字最多 8 次（`numberStopPolls`），`TestParseStops` 要求解析 16 Mi 字节的空白、注释、标识符、字符串、模板、正则、转义 `\u{...}` 或 hashbang 行时，在一次调用的五个时间点停下，最多 16 次（`parseStopPolls`），`TestStringCompareCopyStops` 要求比较两个 64 Mi 个字符的字符串、给它们排序、做 `Symbol.for` 以及把其中一个复制进字符串缓冲区时，`TestModuleExportNamesStop` 要求给模块里这么长的两个导出名排序时，`TestArrayBufferMoveStops` 要求把 256 MiB 的 `ArrayBuffer` 用 `resize` 和 `transfer` 缩成四分之一再还原时，也最多 16 次（`copyStopPolls`），还要求这次调用没有被杀掉，之后 VM 还能算 `1+1`。这个次数取决于引擎在两次读标志之间运行的代码，和机器的速度、负载以及竞态检测器都无关，所以慢的运行环境不会让它们失败，而差了几次轮询就会失败。
+停止类测试（`TestBuiltinWorkStops`、`TestStringSearchStops`、`TestRegExpCacheStops`、`TestEscapeTextStops` 和 `TestTagsStop`）用 10 ms 的超时或 `Interrupt` 来停一个循环，判断是否停住看的是见到请求的轮询次数（`gohost.VM.StopPolls`），不看用了多久：最多 5 次（`stoppolls_test.go` 里的 `stopPolls`），每 65,536 个字符读一次标志、每次带一个 tick 的循环最多 9 次。`TestBigIntWorkStops` 要求一次 BigInt 长运算最多 8 次（`bigIntStopPolls`），`TestNumberConversionStops` 要求把 64 Mi 个字符的字符串转成数字最多 8 次（`numberStopPolls`），`TestParseStops` 要求解析 16 Mi 字节的空白、注释、标识符、字符串、模板、正则、转义 `\u{...}` 或 hashbang 行时，在一次调用的五个时间点停下，最多 16 次（`parseStopPolls`），`TestStringCompareCopyStops` 要求比较两个 64 Mi 个字符的字符串、给它们排序、做 `Symbol.for` 以及把其中一个复制进字符串缓冲区时，`TestModuleExportNamesStop` 要求给模块里这么长的两个导出名排序时，`TestArrayBufferMoveStops` 要求把 256 MiB 的 `ArrayBuffer` 用 `resize` 和 `transfer` 缩成四分之一再还原时，也最多 16 次（`copyStopPolls`），还要求这次调用没有被杀掉，之后 VM 还能算 `1+1`。这个次数取决于引擎在两次读标志之间运行的代码，和机器的速度、负载以及竞态检测器都无关，所以慢的运行环境不会让它们失败，而差了几次轮询就会失败。Go 里的转换的测试（`stringstop_test.go`、`resultstop_test.go`）通过一个钩子（`stringStepHook`）数查看停止的次数，要求请求之后第一次查看就停下。
 
 [changes](changes/README.zh-CN.md) 下每份文档都列出了它那些改动的测试。
 

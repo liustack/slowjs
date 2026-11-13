@@ -17,6 +17,7 @@
 
 ### 修复
 
+- Go 函数在转换很长的字符串或很大的结果时，超时和 `Interrupt` 现在能让这次调用结束，VM 不再因此被杀掉。`Args.String`、`Args.WTF8`、`VM.NewString`、`VM.NewStringLatin1`、`VM.NewStringUTF16`、`VM.NewAtom` 以及 `RegisterFunc` 函数的参数和结果，每 256 Ki 个字符或 16,384 个元素查一次停止：`String` 和 `WTF8` 返回 ok 为 false，其余返回中断错误。原来 16 Mi 个字符的转换在 amd64 上要 129 到 151 ms，中间不查，超过了 VM 被杀掉之前的 50 ms。仍是一整步的只有 Go 为读出的字符串分配内存，64 Mi 个字符时最多 52 ms（[go-api.md](docs/changes/go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下)）。
 - `Intl.NumberFormat` 在 `roundingPriority: 'lessPrecision'` 时，现在把远小于小数位数的数直接写成零，不再先造出它的有效数字：在 Apple M4 上，`'1e-100000000'` 配 `maximumFractionDigits: 100` 原来要 Go 分配 190 MiB、花 62 ms 才给出 `0`。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - 科学计数法或工程计数法下，长格式单位或货币名称的 `format` 找名称的复数形式时，不再把指数移动的每个零都写出来：米的 `format('1e-1073741000')` 原来在 Go 里花 4.3 秒、3.2 GB，而且不检查调用。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在先认出超过 1024 位的二、八、十六进制数字字符串是无穷，不再先把它转成十进制，转换的时间随长度的平方增长：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 原来在 Go 里花 9.6 秒，而且不检查调用，现在 512 Ki 字符的字符串只要 4 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。

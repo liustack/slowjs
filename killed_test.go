@@ -11,6 +11,7 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -254,5 +255,60 @@ func TestKilledVMReportsItsMemory(t *testing.T) {
 	}
 	if got := m.GCThreshold(); got != threshold {
 		t.Errorf("GCThreshold after a kill is %d, want the %d it had", got, threshold)
+	}
+}
+
+// TestKillWhileFreeing: the polls of the engine while it frees what a
+// stopped script made count toward the kill like any other
+// (docs/changes/go-api.md#error-says-why-a-call-ended). The script asks to
+// stop from a host function, so the request comes at the same place on any
+// machine, and the loop after it throws at its next poll. The unwinding then
+// frees an array the script made. With no grace and a poll every 100 ticks,
+// an array of 100,000 elements takes more than KillPolls polls to free: the
+// poll after KillPolls kills the call, which returns the interrupted error
+// that matches ErrKilled, and the VM is good only for Close. An array of 10
+// is freed within a few polls: the call ends interrupted, not killed, and the
+// VM goes on.
+func TestKillWhileFreeing(t *testing.T) {
+	for _, c := range []struct {
+		n      int
+		killed bool
+	}{{10, false}, {100000, true}} {
+		m := newTestVM(t)
+		mustHost(t, m, "stop", func([]any) (any, error) {
+			m.Interrupt()
+			return nil, nil
+		})
+		if _, err := m.Eval(`globalThis.go = function (n) {
+	var r = Array.from({length: n}, (_, i) => i);
+	stop();
+	for (;;) {}
+}`, EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		m.h.SetKillGrace(0)
+		m.h.SetPollInterval(100)
+		_, err := m.Eval(fmt.Sprintf(`go(%d)`, c.n), EvalGlobal)
+		var e *Error
+		if !errors.As(err, &e) || !e.Interrupted || !e.Uncatchable || err.Error() != "InternalError: interrupted" {
+			t.Fatalf("%d elements: got %v, want the interrupted error", c.n, err)
+		}
+		polls := m.h.StopPolls()
+		t.Logf("%d elements: %d polls saw the request, killed %v", c.n, polls, errors.Is(err, ErrKilled))
+		if !c.killed {
+			if errors.Is(err, ErrKilled) || polls > gohost.KillPolls {
+				t.Fatalf("%d elements: killed %v after %d polls saw the request, want a stop within KillPolls", c.n, errors.Is(err, ErrKilled), polls)
+			}
+			if v, err := m.Eval(`1+1`, EvalGlobal); err != nil || v != 2 {
+				t.Fatalf("%d elements: the VM after the stop: 1+1 got %v, %v", c.n, v, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrKilled) || polls != gohost.KillPolls+1 {
+			t.Fatalf("%d elements: killed %v after %d polls saw the request, want a kill at poll %d", c.n, errors.Is(err, ErrKilled), polls, gohost.KillPolls+1)
+		}
+		if _, err := m.Eval(`1`, EvalGlobal); !errors.Is(err, ErrKilled) {
+			t.Fatalf("%d elements: the next call got %v, want an error that matches ErrKilled", c.n, err)
+		}
 	}
 }
