@@ -30,20 +30,25 @@ const GoCallsFile = "gocalls.txt"
 // GoCallsHeader starts GoCallsFile. Every other line is a Go name.
 const GoCallsHeader = "# The engine functions Go code names (go run ./internal/goasm/gen/cmd/gocalls). Do not edit.\n"
 
-var reAsmRef = regexp.MustCompile(`·([A-Za-z_][A-Za-z_0-9]*)(?:<[^>]*>)?(?:[+-]\d+)?\(SB\)`)
+// reAsmLocal is a name of the package in its own hand-written assembly:
+// any ·name, in an instruction or a #define, so that nothing a macro
+// builds is missed (a name too many only keeps a result store).
+var reAsmLocal = regexp.MustCompile(`·([A-Za-z_][A-Za-z_0-9]*)`)
 
 // GoCalls lists, sorted, the engine functions the Go code of the module at
 // root names: each function declared in the engine's generated declarations
 // (engine_decl_<arch>.go of pkgDir, for every architecture, the Go wrappers
-// of packed functions too) that a Go file names, or a hand-written assembly
-// file of pkgDir. A name counts wherever it is used, as a call or as a
-// value: only Go code can read a result from the Go stack, and a function
-// Go never names never returns to Go. A file of the package names a
-// function by its bare name (unless the file imports a package by that
-// name), any other by a selector of an import of the package. Generated
-// files, testdata, vendor and node_modules folders and folders that start
-// with a dot or an underscore are left out. The modules nested in root are
-// read too: Go lets them import the package.
+// of packed functions too) that a Go file or a hand-written assembly file
+// names. A name counts wherever it is used, as a call, as a value or in a
+// //go:linkname: only Go code can read a result from the Go stack, and a
+// function Go never names never returns to Go. A Go file of the package
+// names a function by its bare name (unless the file imports a package by
+// that name), any other by a selector of an import of the package, and
+// assembly by ·name in the package and by the full symbol elsewhere. The
+// generated files of the package (its declarations and keep lists),
+// testdata, vendor and node_modules folders and folders that start with a
+// dot or an underscore are left out. The modules nested in root are read
+// too: Go lets them import the package.
 func GoCalls(root, pkgDir string) ([]string, error) {
 	pkgPath, err := importPath(root, pkgDir)
 	if err != nil {
@@ -57,6 +62,9 @@ func GoCalls(root, pkgDir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Assembly outside the package names it by its full path, with '∕' for
+	// '/' (cmd/asm).
+	reAsmFull := regexp.MustCompile(regexp.QuoteMeta(strings.ReplaceAll(pkgPath, "/", "∕")) + `·([A-Za-z_][A-Za-z_0-9]*)`)
 	used := map[string]bool{}
 	fset := token.NewFileSet()
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -81,23 +89,27 @@ func GoCalls(root, pkgDir string) ([]string, error) {
 			if err != nil {
 				return err
 			}
-			if generated(src) {
+			if inPkg && generated(src) {
 				return nil
 			}
-			f, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
+			f, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution|parser.ParseComments)
 			if err != nil {
 				return err
 			}
 			goNames(f, inPkg && !strings.HasSuffix(f.Name.Name, "_test"), pkgPath, engine, used)
-		case strings.HasSuffix(name, ".s") && inPkg:
+		case strings.HasSuffix(name, ".s"):
 			src, err := os.ReadFile(path)
 			if err != nil {
 				return err
 			}
-			if generated(src) {
+			if inPkg && generated(src) {
 				return nil
 			}
-			for _, m := range reAsmRef.FindAllSubmatch(src, -1) {
+			re := reAsmFull
+			if inPkg {
+				re = reAsmLocal
+			}
+			for _, m := range re.FindAllSubmatch(src, -1) {
 				if engine[string(m[1])] {
 					used[string(m[1])] = true
 				}
@@ -198,6 +210,25 @@ func importPath(root, dir string) (string, error) {
 // scopes of the file itself, so a local variable, parameter, field, label
 // or import of the same name is not the function.
 func goNames(f *ast.File, inPkg bool, pkgPath string, engine, used map[string]bool) {
+	// A //go:linkname reaches a function by its symbol: one that pulls
+	// pkgPath.name, and in the package one that pushes a name or gives it
+	// another, count as Go naming it.
+	for _, cg := range f.Comments {
+		for _, c := range cg.List {
+			fs := strings.Fields(c.Text)
+			if len(fs) < 2 || fs[0] != "//go:linkname" {
+				continue
+			}
+			if inPkg && engine[fs[1]] {
+				used[fs[1]] = true
+			}
+			if len(fs) == 3 {
+				if name, ok := strings.CutPrefix(fs[2], pkgPath+"."); ok && engine[name] {
+					used[name] = true
+				}
+			}
+		}
+	}
 	imports := map[string]bool{}
 	var pkgNames []string
 	for _, is := range f.Imports {

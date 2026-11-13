@@ -478,8 +478,8 @@ line 1221 in 1.26.6 and 1275 in 1.27.2). A fault diverts to a panic
 (`preparePanic`) and never comes back to the read. A function no Go code names stores no result at all
 (`-go-calls`, `FuncRecord.NoResult`): its only callers are lowered calls,
 which take the result from registers. `internal/cengine/gocalls.txt` lists
-the functions the Go files of the module and the hand-written assembly of
-the package name, as a call or as a value. `go run
+the functions the Go files and the hand-written assembly of the module
+name, as a call, as a value, in a `//go:linkname` or in a `#define`. `go run
 ./internal/goasm/gen/cmd/gocalls` writes it (`GoCalls`), and
 `TestGoCallsList` fails when it is stale. Such a function is declared to Go
 without a result, so Go code that reads one does not compile, and `go vet
