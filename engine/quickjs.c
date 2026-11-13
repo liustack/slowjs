@@ -3583,6 +3583,14 @@ size_t JS_FreeRuntime(JSRuntime *rt)
    frame of its own either. Then rt->c_hop_debt, from the frame of
    js_call_c_hop measured the same way (an argc below 0, read from memory
    too). */
+#if defined(__SANITIZE_ADDRESS__)
+#define JS_FRAME_SET_DOWN 32
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define JS_FRAME_SET_DOWN 32
+#endif
+#endif
+#ifndef JS_FRAME_SET_DOWN
 static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
@@ -3597,6 +3605,65 @@ static no_inline void js_measure_call_frame(JSContext *ctx)
     if (rt->c_hop_debt < 0)
         rt->c_hop_debt = -1;
 }
+#else
+/* Under AddressSanitizer (JS_FRAME_SET_DOWN), which aligns its stack
+   objects to 32 bytes, a function with instrumented stack objects sets its
+   stack pointer down to a multiple of 32: js_call_c_function, JS_RegvmRun
+   and js_call_bound_function, and JS_CallInternal too on x86_64. Then:
+
+   - The measure is left out of the sanitizer (no_sanitize). Instrumented,
+     it would have flags and argc in a block set down below its frame, and
+     its call of JS_CallInternal would push from there the arguments that
+     do not fit in registers, 16 bytes it would count as JS_CallInternal's.
+     A caller with a fixed frame (Function.prototype.call) keeps that room
+     whether it calls JS_CallInternal or js_call_c_hop, so the hop would
+     count 16 bytes it does not save.
+
+   - A frame set down takes 16 bytes more or not by where its caller's
+     ends, so the frames are measured from two places 16 bytes apart
+     (js_measure_frames, the second below an alloca), and the debts are
+     the smaller of the two.
+
+   - A frame of d bytes that a call skips leaves the next frame set down
+     lower by d rounded down to a multiple of 32 at the least, d - 16 when d
+     is an odd multiple of 16 and the stack pointer falls the wrong way:
+     the debts are rounded down so.
+
+   So a call never counts as taken more than it saves, and a recursion
+   with the direct calls on never ends less deep than through
+   JS_CallInternal. */
+static no_inline __attribute__((no_sanitize("address"))) void
+js_measure_frames(JSContext *ctx, long *frame, long *hop)
+{
+    JSRuntime *rt = ctx->rt;
+    long left = __shadow_remaining();
+    volatile int flags = JS_CALL_FLAG_FRAME, argc = -1;
+
+    JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
+                    0, NULL, flags);
+    *frame = left - rt->call_frame;
+    js_call_c_hop(ctx, JS_UNDEFINED, JS_UNDEFINED, argc, NULL);
+    *hop = *frame - (left - rt->c_hop_debt);
+}
+
+static no_inline __attribute__((no_sanitize("address"))) void
+js_measure_call_frame(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+    volatile size_t shift = 16;
+    long frame[2], hop[2], f, h;
+    char *p;
+
+    js_measure_frames(ctx, &frame[0], &hop[0]);
+    p = alloca(shift);
+    __asm__ volatile("" : : "r"(p) : "memory");
+    js_measure_frames(ctx, &frame[1], &hop[1]);
+    f = min_int64(frame[0], frame[1]);
+    h = min_int64(hop[0], hop[1]);
+    rt->call_frame = f - f % JS_FRAME_SET_DOWN;
+    rt->c_hop_debt = h < 0 ? -1 : h - h % JS_FRAME_SET_DOWN;
+}
+#endif
 
 int JS_SetDirectCCalls(JSContext *ctx, int on)
 {

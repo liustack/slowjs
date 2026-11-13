@@ -1536,8 +1536,9 @@ static void test_rv_far_locals(void)
    engine found the frame of js_call_c_hop larger than that of
    JS_CallInternal (Linux's UBSan build) and calls C functions from C
    through JS_CallInternal. The same measure gives the same answer each
-   time the direct calls are turned on, up to a frame AddressSanitizer
-   sets down (C_CALL_SET_DOWN): it measures from where it is called. */
+   time the direct calls are turned on, from wherever it is called: under
+   AddressSanitizer it measures from two places 16 bytes apart and keeps
+   the smaller (see test_c_call_recursions). */
 static void test_call_frames_measured(void)
 {
     VM v = vm_new();
@@ -1550,12 +1551,16 @@ static void test_call_frames_measured(void)
        direct calls off, when every call goes through JS_CallInternal */
     CHECK(hop == -1 || (hop >= 0 && hop < entry),
           "js_call_c_hop counts %d bytes of %d", hop, entry);
+    /* under AddressSanitizer both debts are the least a skipped frame
+       saves, multiples of 32 (see test_c_call_recursions) */
+    CHECK(!C_CALL_ASAN || (entry % 32 == 0 && (hop == -1 || hop % 32 == 0)),
+          "AddressSanitizer: debts of %d and %d bytes, not rounded down to 32", entry, hop);
     /* a build without a sanitizer always has the room */
     CHECK(C_CALL_SAN || hop >= 0, "no sanitizer, and js_call_c_hop is off");
     CHECK(JS_SetDirectCCalls(v.ctx, 0) == 0 && JS_RegvmStat(v.ctx, 12) == -1,
           "direct calls off: js_call_c_hop counts %d bytes", JS_RegvmStat(v.ctx, 12));
     CHECK(JS_SetDirectCCalls(v.ctx, 1) == 0 &&
-          abs(JS_RegvmStat(v.ctx, 12) - hop) <= C_CALL_SET_DOWN,
+          JS_RegvmStat(v.ctx, 12) == hop,
           "direct calls on again: js_call_c_hop counts %d bytes, %d before",
           JS_RegvmStat(v.ctx, 12), hop);
     vm_free(&v);
@@ -1578,16 +1583,21 @@ static void test_call_frames_measured(void)
    depth for these too.
 
    Under AddressSanitizer, which aligns its stack objects to 32 bytes,
-   JS_RegvmRun, js_call_c_function and js_measure_call_frame set their stack
-   pointer down to a multiple of 32 bytes, so each of their frames is 16
-   bytes larger or not by where the frame above it ends. One measure of the
-   frame a direct call skips then cannot match what each level takes, and
-   a level through JS_CallInternal may take up to 16 bytes more for each of
-   the three than a direct one with its debt: on macOS with UBSan too,
-   JS_CallInternal takes 192 bytes and the measure finds 208. So a direct
-   run may end deeper, never less deep, by no more than these bytes explain
-   against the frames each level takes at the least (c_call_same). Without
-   a sanitizer no frame is set down so, and the depths are the same.
+   JS_RegvmRun, js_call_c_function and js_call_bound_function (and
+   JS_CallInternal on x86_64) set their stack pointer down to a multiple of
+   32 bytes, so each of their frames is 16 bytes larger or not by where the
+   frame above it ends, and they push the arguments of JS_CallInternal that
+   do not fit in registers at each call. The engine leaves
+   js_measure_call_frame out of the sanitizer, so that it measures the
+   frames alone, from two places 16 bytes apart, and counts the smaller of
+   each debt rounded down to a multiple of 32, the least a skipped frame
+   saves where the next frame is set down (JS_FRAME_SET_DOWN of
+   quickjs.c). A direct level with its debts then never takes more than a
+   level through JS_CallInternal, and may take less by the rounding, the
+   arguments pushed and the frames set down. So a direct run may end
+   deeper, never less deep, by no more than these bytes explain against
+   the frames each level takes at the least (c_call_same). Without a
+   sanitizer no frame is set down so, and the depths are the same.
 
    With the hop off (JS_RegvmStat 12 is -1: Linux's UBSan build, whose
    frame of js_call_c_hop is the larger) a C function calls a C function
