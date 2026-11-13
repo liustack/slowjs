@@ -113,20 +113,26 @@ func TestKeepIdle(t *testing.T) {
 }
 
 // Clearing a kept block reads stop between pieces of clearPiece bytes, and
-// a stop leaves the block kept.
+// a stop leaves the block kept, and counted as kept all along, so that no
+// other Keep takes its share of KeptMax meanwhile.
 func TestKeepStops(t *testing.T) {
-	held := Blocks()
+	held, before := Blocks(), Kept()
 	k := newKeep()
 	const n = 4 * clearPiece
 	_, give, _, _ := TakeKept[byte](k, n, never)
 	give()
 	reads := 0
-	_, _, stopped, err := TakeKept[byte](k, n, func() bool { reads++; return reads == 2 })
+	_, _, stopped, err := TakeKept[byte](k, n, func() bool {
+		if reads++; Kept() != before+n {
+			t.Errorf("while a kept block is cleared, the Keeps keep %d bytes, want %d", Kept()-before, n)
+		}
+		return reads == 2
+	})
 	if err != nil || !stopped || reads != 2 {
 		t.Fatalf("a stop at the second read: stopped %v, %d reads, %v", stopped, reads, err)
 	}
-	if k.Size() != n || Blocks() != held+1 {
-		t.Fatalf("after a stop: %d bytes kept, %d blocks held, want %d and 1", k.Size(), Blocks()-held, n)
+	if k.Size() != n || Kept() != before+n || Blocks() != held+1 {
+		t.Fatalf("after a stop: %d bytes kept, %d in the process, %d blocks held, want %d, %d and 1", k.Size(), Kept()-before, Blocks()-held, n, n)
 	}
 	reads = 0
 	_, give, stopped, _ = TakeKept[byte](k, n, func() bool { reads++; return false })
