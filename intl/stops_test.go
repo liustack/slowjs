@@ -93,6 +93,15 @@ var longWork = []struct{ name, setup, call string }{
 	{"getCanonicalLocales of one long tag",
 		`var s = 'en-x-' + 'abcdefgh-'.repeat(N / 9) + 'a'`,
 		`Intl.getCanonicalLocales(s)`},
+	{"getCanonicalLocales of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'en-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`Intl.getCanonicalLocales(l)`},
+	{"supportedLocalesOf of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'en-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`Intl.Collator.supportedLocalesOf(l)`},
+	{"a constructor of a list of long tags",
+		`var l = Array.from({length: N / 16384}, (_, i) => 'zz-x-' + 'abcdefgh-'.repeat(1818) + i)`,
+		`new Intl.Collator(l)`},
 	{"DurationFormat of a duration string of zeros",
 		`var s = 'PT' + '0'.repeat(N) + '1S', df = new Intl.DurationFormat('en')`,
 		`df.format(s)`},
@@ -120,8 +129,13 @@ func skipWaiting(t *testing.T, name string) {
 // elements of its strings, a Segments object its text in UTF-16, and a case
 // mapping the code points of its string before and after. They check the
 // call between pieces of the work, but what they hold between two checks
-// grows with the input, which TestLongWorkHeldPerPiece skips them for.
+// grows with the input, which TestLongWorkHeldPerPiece skips them for. So do
+// the calls on a list of locales, which read the list as one string, and
+// keep the canonical form of each of its tags.
 var holdWhole = map[string]bool{
+	"getCanonicalLocales of a list of long tags":  true,
+	"supportedLocalesOf of a list of long tags":   true,
+	"a constructor of a list of long tags":        true,
 	"localeCompare after a shared run of accents": true,
 	"Collator.compare of two long strings":        true,
 	"Segmenter, the word containing 0 in Thai":    true,

@@ -216,6 +216,36 @@ func TestShortArgumentRefused(t *testing.T) {
 	}
 }
 
+// A tag in a list of locales has the cap of a tag given alone: a list with
+// one tag longer than intlhook.MaxTag is a RangeError, and a list of tags at
+// the cap is read. Go put a tag of a list in canonical form whole, with no
+// check: 16 tags of 256 Ki units held the eval timeout 60 ms on an Apple M4.
+func TestListTagRefused(t *testing.T) {
+	vm := newVM(t)
+	eval(t, vm, `var at = 'en-x-' + 'abcdefgh-'.repeat(1819) + 'abcdefgh', over = at + 'a'; 0`)
+	if got := eval(t, vm, `at.length`); got != intlhook.MaxTag {
+		t.Fatalf("the tag at the cap has %v units, want %d", got, intlhook.MaxTag)
+	}
+	for _, js := range []string{
+		`Intl.getCanonicalLocales(['en', TAG]).length`,
+		`Intl.Collator.supportedLocalesOf(['en', TAG]).length`,
+		`new Intl.Collator(['en', TAG]).resolvedOptions().locale`,
+		`new Intl.NumberFormat([TAG, 'en']).resolvedOptions().locale`,
+		`new Date(0).toLocaleString(['en', TAG]).length`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			got := eval(t, vm, `(function () { try { return String(`+strings.ReplaceAll(js, "TAG", "at")+`); } catch (e) { return String(e); } })()`)
+			if g, _ := got.(string); strings.Contains(g, "Error") {
+				t.Errorf("a tag at the cap: got %v", got)
+			}
+			got = eval(t, vm, `(function () { try { return String(`+strings.ReplaceAll(js, "TAG", "over")+`); } catch (e) { return String(e); } })()`)
+			if want := "RangeError: " + intlhook.KindTag.Message(); got != want {
+				t.Errorf("a tag past the cap: got %v, want %s", got, want)
+			}
+		})
+	}
+}
+
 // A short argument under its cap, in a VM with less room than the door
 // counts for the call, ends the call with the out of memory error before it
 // is read.
@@ -276,6 +306,53 @@ func TestRoomCoversGo(t *testing.T) {
 			vm := newVM(t)
 			eval(t, vm, capsJS)
 			src := `(function () { try { ` + js + ` } catch (e) { if (!(e instanceof RangeError)) throw e } return 0 })()`
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			eval(t, vm, src)
+			runtime.ReadMemStats(&after)
+			took := int64(after.TotalAlloc - before.TotalAlloc)
+
+			room := vmhook.Room
+			vmhook.Room = func(any) int64 { return took - 1 }
+			defer func() { vmhook.Room = room }()
+			_, err := vm.Eval(src, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.OutOfMemory {
+				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
+			}
+		})
+	}
+}
+
+// TestListRoomCoversGo is TestRoomCoversGo for a list of locales, which the
+// door counts at the rate of a tag for each unit of the string the list is
+// joined into: lists of many short tags, which take the most a unit, and of
+// tags at the cap.
+func TestListRoomCoversGo(t *testing.T) {
+	const lists = `
+	var en = Array(1 << 16).fill('en'), num = Array.from({length: 1 << 16}, (_, i) => 'en-' + (1000 + i % 9000));
+	var x = Array.from({length: 1 << 16}, (_, i) => 'en-x-' + i), zz = Array.from({length: 1 << 16}, (_, i) => 'zz-x-' + i);
+	var co = Array.from({length: 1 << 16}, (_, i) => 'zz-u-co-ab' + (i % 1000)), zh = Array.from({length: 1 << 16}, (_, i) => 'zh-hant-tw-u-ca-chinese-x-' + i);
+	var long = Array.from({length: 64}, (_, i) => 'zz-x-' + 'abcdefgh-'.repeat(1818) + i);
+	0`
+	for _, js := range []string{
+		`Intl.getCanonicalLocales(en)`,
+		`Intl.getCanonicalLocales(num)`,
+		`Intl.getCanonicalLocales(x)`,
+		`Intl.getCanonicalLocales(zh)`,
+		`Intl.getCanonicalLocales(long)`,
+		`Intl.Collator.supportedLocalesOf(x)`,
+		`Intl.Collator.supportedLocalesOf(en)`,
+		`new Intl.Collator(zz)`,
+		`new Intl.Collator(co)`,
+		`new Intl.Collator(long)`,
+		`new Date(0).toLocaleString(zz)`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			vm := newVM(t)
+			eval(t, vm, lists)
+			src := `(function () { ` + js + `; return 0 })()`
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)

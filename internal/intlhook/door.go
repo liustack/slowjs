@@ -28,9 +28,10 @@ import (
 // measured at each cap.
 //
 // Long content, the text of a compare, a segmenter or a case mapping, the
-// items of a list and a list of locales, has no cap. It is read with Long
-// and LongWTF8, and its work is cut into pieces by a loop of package intl
-// that checks the call between pieces.
+// items of a list and a list of locales, has no cap, though each tag of a
+// list has the cap of a tag. It is read with LongWTF8, LongUTF16 and
+// Locales, and its work is cut into pieces by a loop of package intl that
+// checks the call between pieces.
 //
 // Every string and array a Builtin answers is made by Emit and the
 // functions next to it.
@@ -120,12 +121,19 @@ func (e tooLong) error() error { return &quickjs.Error{Name: "RangeError", Messa
 // formatted.
 func RefuseDigits() { panic(tooLong{KindDigits}) }
 
+// RefuseTag ends the Builtin with the RangeError of a tag longer than
+// MaxTag, for a tag of a list of locales, which the list is read with:
+// measured in the list, before any work on it.
+func RefuseTag() { panic(tooLong{KindTag}) }
+
 // A Door reads the string arguments of one call of a Builtin given to
 // NewBuiltin. It counts what Go may take for the arguments it admitted, so
 // that the room is checked for all of them together.
 type Door struct {
 	a    quickjs.Args
 	need int64
+	// list is 1 + the argument of a list of locales the door counted.
+	list int
 }
 
 // Open returns the door of the call whose arguments are a.
@@ -152,8 +160,23 @@ func (d *Door) ShortWTF8(i int, k Kind) (string, bool) {
 	return WTF8(d.a, i)
 }
 
-// Long reads argument i, long content, as String does, whole.
-func (d *Door) Long(i int) (string, bool) { return String(d.a, i) }
+// Locales reads argument i, a list of locales joined into one string, as
+// String does, whole. Before it reads the list the first time, it checks
+// the room for what Go may take for each of its tags at the rate of a tag:
+// a list took at most 84 bytes a unit of that string with the call, 'en' a
+// quarter of a million times in getCanonicalLocales, where a tag alone took
+// 99 (TestListRoomCoversGo in intl).
+func (d *Door) Locales(i int) (string, bool) {
+	n, ok := d.a.StringLen(i)
+	if !ok {
+		return "", false
+	}
+	if d.list != i+1 {
+		d.list = i + 1
+		d.Reserve(caps[KindTag].perUnit * int64(n))
+	}
+	return String(d.a, i)
+}
 
 // LongWTF8 reads argument i, long content, as WTF8 does, whole.
 func (d *Door) LongWTF8(i int) (string, bool) { return WTF8(d.a, i) }

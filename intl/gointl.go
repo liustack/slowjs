@@ -58,35 +58,52 @@ func goMatcher(s gointl.Service) (*gointl.LocaleMatcher, error) {
 // goLocales is CanonicalizeLocaleList for tags, which javascript has already
 // made strings: each in canonical form, once. A tag that is not one is a
 // RangeError. It is for a Builtin of vm, which a long list stops at the
-// eval timeout or Interrupt (see intlhook.Check).
-func goLocales(vm *quickjs.VM, tags []string) ([]gointl.Locale, error) {
+// eval timeout or Interrupt (see tagTurns). units are the lengths of the tags
+// the locales come from, for the pieces of the work on them (see pieceEnd).
+func goLocales(vm *quickjs.VM, tags []string) (r []gointl.Locale, units []int, err error) {
 	c, err := goCanonicalizer()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	r := make([]gointl.Locale, 0, len(tags))
+	r = make([]gointl.Locale, 0, len(tags))
+	units = make([]int, 0, len(tags))
 	seen := make(map[string]bool, len(tags))
-	for i, tag := range tags {
-		checkTurn(vm, i)
+	t := tagTurns{vm: vm}
+	for _, tag := range tags {
+		t.turn(len(tag))
 		l, err := c.Canonicalize(tag)
 		if err != nil {
-			return nil, rangeError("Incorrect locale information provided")
+			return nil, nil, rangeError("Incorrect locale information provided")
 		}
 
 		if s := l.String(); !seen[s] {
 			seen[s] = true
 			r = append(r, l)
+			units = append(units, len(tag))
 		}
 	}
-	return r, nil
+	return r, units, nil
+}
+
+// pieceEnd is the end of the piece of a list of locales that starts at i:
+// checkEvery locales, or fewer whose tags have intlhook.Piece units in all,
+// and one at least. units are the lengths of the tags.
+func pieceEnd(units []int, i int) int {
+	n := 0
+	j := i
+	for j < len(units) && j-i < checkEvery && n < intlhook.Piece {
+		n += units[j]
+		j++
+	}
+	return j
 }
 
 // goResolve is ResolveLocale for s as far as the locale: the first of tags
 // s is available in, with its Unicode extension, or else en-US. Both
 // matchers match alike, in V8 as in go-intl.
 func goResolve(vm *quickjs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
-	l, err := goLocales(vm, tags)
+	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return gointl.Locale{}, err
 	}
@@ -96,20 +113,25 @@ func goResolve(vm *quickjs.VM, s gointl.Service, tags []string) (gointl.Locale, 
 		return gointl.Locale{}, err
 	}
 
-	// A long list goes checkEvery locales at a time, with a check between.
-	// Supported finds none that s is available in before the part where it
-	// finds one, so resolving from the start of that part resolves the list.
-	for len(l) > checkEvery && len(m.Supported(l[:checkEvery], gointl.BestFit)) == 0 {
+	// A long list goes a piece at a time (pieceEnd), with a check between.
+	// Supported finds none that s is available in before the piece where it
+	// finds one, so resolving from the start of that piece resolves the list.
+	i := 0
+	for {
+		end := pieceEnd(units, i)
+		if end == len(l) || len(m.Supported(l[i:end], gointl.BestFit)) > 0 {
+			break
+		}
 		intlhook.Check(vm)
-		l = l[checkEvery:]
+		i = end
 	}
-	return m.Resolve(l, gointl.BestFit, goDefaultLocale), nil
+	return m.Resolve(l[i:], gointl.BestFit, goDefaultLocale), nil
 }
 
 // goSupported is SupportedLocales for s: those of tags s is available in, in
 // canonical form.
 func goSupported(vm *quickjs.VM, s gointl.Service, tags []string) ([]string, error) {
-	l, err := goLocales(vm, tags)
+	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return nil, err
 	}
@@ -119,16 +141,18 @@ func goSupported(vm *quickjs.VM, s gointl.Service, tags []string) ([]string, err
 		return nil, err
 	}
 
-	// Supported takes each locale on its own: a long list goes checkEvery
-	// locales at a time, with a check between.
+	// Supported takes each locale on its own: a long list goes a piece at a
+	// time (pieceEnd), with a check between.
 	r := []string{}
-	for i := 0; i < len(l); i += checkEvery {
+	for i := 0; i < len(l); {
 		if i > 0 {
 			intlhook.Check(vm)
 		}
-		for _, x := range m.Supported(l[i:min(i+checkEvery, len(l))], gointl.BestFit) {
+		end := pieceEnd(units, i)
+		for _, x := range m.Supported(l[i:end], gointl.BestFit) {
 			r = append(r, x.String())
 		}
+		i = end
 	}
 	return r, nil
 }
@@ -278,6 +302,27 @@ const checkEvery = 256
 func checkTurn(vm *quickjs.VM, i int) {
 	if i%checkEvery == checkEvery-1 {
 		intlhook.Check(vm)
+	}
+}
+
+// tagTurns counts the turns of a loop over a list of locales and the units
+// of their tags, and checks the call every checkEvery turns or every
+// intlhook.Piece units, whichever comes first: the work on a tag grows with
+// its length, up to intlhook.MaxTag units, and checkEvery tags at the cap
+// held the eval timeout 60 ms on an Apple M4.
+type tagTurns struct {
+	vm           *quickjs.VM
+	turns, units int
+}
+
+// turn counts a turn on a tag of n units, and checks the call when a
+// checkEvery turns or a piece of units have gone since the last check.
+func (t *tagTurns) turn(n int) {
+	t.turns++
+	t.units += n
+	if t.turns >= checkEvery || t.units >= intlhook.Piece {
+		t.turns, t.units = 0, 0
+		intlhook.Check(t.vm)
 	}
 }
 
