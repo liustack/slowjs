@@ -38,6 +38,7 @@ English · [简体中文](c-engine.zh-CN.md)
 | `Atomics.wait` throws, `Atomics.notify` wakes nobody | `Atomics.wait` throws a `TypeError` as the main thread of a browser does. There are no threads in the engine | test262 with `engine/test/test262.conf` |
 | `Atomics.pause` sends no hint to the CPU | it checks its argument and returns `undefined`. The specification has an engine send the hint only if its platform can, and the engine holds no inline assembly | test262 `built-ins/Atomics/pause`, the generator (no stub) |
 | A format is a string constant, or the format of a `printf` function, and agrees with its arguments | nothing changes for a program. A new format that `snprintf` would abort on cannot be built | the build (`-Werror=format-nonliteral`), the generator, `libc-test.c` |
+| The answer of a function marked `__exception`, such as the poll `js_poll_interrupts`, is never dropped | nothing changes for a program. A poll whose answer is dropped, which would see a stop and go on, cannot be built | the build (`-Werror=unused-result`) |
 | `JS_NewClassID(rt, &id)` counts per runtime | the Go side keeps its class IDs per VM | `api-test.c` |
 | `JS_DumpMemoryUsage(buf, size, ...)` writes to a buffer | no `FILE`. The Go side gets a string | `api-test.c` |
 | The tools that print are gone: `JS_Dump*`, `dump_token` and the like | the `DUMP_*` options of the C do not build | the build |

@@ -1720,7 +1720,6 @@ static BOOL js_string_eq(JSContext *ctx,
                          const JSString *p1, const JSString *p2);
 static int js_string_compare(JSContext *ctx,
                              const JSString *p1, const JSString *p2);
-static JSValue JS_ToNumber(JSContext *ctx, JSValueConst val);
 static int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj,
                                JSValue prop, JSValue val, int flags);
 static int JS_NumberIsInteger(JSContext *ctx, JSValueConst val);
@@ -17919,12 +17918,7 @@ int JS_ToFloat64(JSContext *ctx, double *pres, JSValueConst val)
     return JS_ToFloat64Free(ctx, pres, JS_DupValue(ctx, val));
 }
 
-static JSValue JS_ToNumber(JSContext *ctx, JSValueConst val)
-{
-    return JS_ToNumberFree(ctx, JS_DupValue(ctx, val));
-}
-
-/* same as JS_ToNumber() but return 0 in case of NaN/Undefined */
+/* same as JS_ToNumberFree() but return 0 in case of NaN/Undefined */
 static __maybe_unused JSValue JS_ToIntegerFree(JSContext *ctx, JSValue val)
 {
     uint32_t tag;
@@ -54437,8 +54431,11 @@ static int js_string_normalize1(JSContext *ctx, uint32_t **pout_buf,
                                 ctx->rt, js_dbuf_realloc_rt,
                                 &ctx->rt->interrupt_flag);
     js_free(ctx, buf);
+    /* -2: unicode_normalize read the interrupt flag set and stopped, having
+       freed its buffer. The stop is thrown here, and the return of -1 below
+       ends the call. */
     if (out_len == -2)
-        __js_poll_interrupts(ctx);
+        JS_ThrowInterrupted(ctx);
     else if (out_len == -1)
         JS_ThrowOutOfMemory(ctx); /* the growth of the buffer failed */
     if (out_len < 0)
