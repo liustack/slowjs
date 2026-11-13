@@ -40,9 +40,9 @@ func recovering(f func()) (r any) {
 	return nil
 }
 
-// When the OS refuses the block kept, SetMemoryLimit panics and leaves the
-// VM as it was: with no limit, keeping the block. A SetMemoryLimit again
-// gives the limit and the block back.
+// When the OS refuses the block kept, a SetMemoryLimit it no longer fits
+// under panics and leaves the VM as it was: with no limit, keeping the block.
+// A SetMemoryLimit again gives the limit and the block back.
 func TestSetMemoryLimitKeepRefused(t *testing.T) {
 	const size = 4 << 20
 	held := hostmem.Blocks()
@@ -54,7 +54,8 @@ func TestSetMemoryLimitKeepRefused(t *testing.T) {
 		}
 		return nil
 	})
-	r := recovering(func() { m.SetMemoryLimit(256 << 20) })
+	limit := m.MemorySize() + size/2
+	r := recovering(func() { m.SetMemoryLimit(limit) })
 	hostmem.SetFault(nil)
 	if r == nil {
 		t.Fatal("SetMemoryLimit did not panic when the OS refused the block kept")
@@ -62,9 +63,41 @@ func TestSetMemoryLimitKeepRefused(t *testing.T) {
 	if m.memoryLimit != 0 || m.keep.Size() != size {
 		t.Fatalf("after the refusal: limit %d, %d bytes kept, want no limit and %d", m.memoryLimit, m.keep.Size(), size)
 	}
-	m.SetMemoryLimit(256 << 20)
-	if m.memoryLimit != 256<<20 || m.keep.Size() != 0 || hostmem.Blocks() != held {
+	m.SetMemoryLimit(limit)
+	if m.memoryLimit != limit || m.keep.Size() != 0 || hostmem.Blocks() != held {
 		t.Fatalf("SetMemoryLimit again: limit %d, %d bytes kept, %d blocks held", m.memoryLimit, m.keep.Size(), hostmem.Blocks()-held)
+	}
+}
+
+// When the OS refuses the block kept to an allocation that needs its room,
+// the allocation fails as out of memory and the VM keeps the block, within
+// its limit. The next allocation that needs the room gets it once the OS
+// takes the block.
+func TestPressureKeepRefused(t *testing.T) {
+	const size = 4 << 20
+	held := hostmem.Blocks()
+	m, at := keptVM(t, size)
+	defer m.Close()
+	m.SetMemoryLimit(m.MemorySize() + 3*size)
+	hostmem.SetFault(func(call string, addr, size uintptr) error {
+		if call == "unmap" && addr == at {
+			return errRefused
+		}
+		return nil
+	})
+	_, err := m.Eval("globalThis.s = 'y'.repeat(9 << 20); s.length", EvalGlobal)
+	hostmem.SetFault(nil)
+	if err == nil {
+		t.Fatal("an allocation that needed the room of a block the OS refused passed")
+	}
+	if m.keep.Size() != size || m.MemorySize()+size > m.memoryLimit {
+		t.Fatalf("after the refusal: %d bytes kept, %d used, limit %d", m.keep.Size(), m.MemorySize(), m.memoryLimit)
+	}
+	if _, err := m.Eval("globalThis.s = 'y'.repeat(9 << 20); s.length", EvalGlobal); err != nil {
+		t.Fatalf("the allocation again: %v", err)
+	}
+	if m.keep.Size() != 0 || hostmem.Blocks() != held {
+		t.Fatalf("after the allocation again: %d bytes kept, %d blocks held", m.keep.Size(), hostmem.Blocks()-held)
 	}
 }
 
