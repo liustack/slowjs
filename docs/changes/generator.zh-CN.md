@@ -91,7 +91,7 @@ read_when:
 - 内联重放会漏掉少数调用。在一组互相成环调用的函数里，画像改变了内联器遇到调用的顺序，于是一个调用在第二遍里出现在第一遍记录没有命名的上下文中，仍是调用。amd64 上是 8 个函数里的 22 个调用：`rv_putel_slow`（10 个），`JS_ToBigInt64Free`（4 个），`free_gc_object`（3 个），`rv_w_gen`、`js_set_fast_array_element_out_of_line`、`js_backtrace_build`、`JS_ToPrimitiveFree` 和 `JS_SetPropertyValue`（各 1 个）。它们调用的 8 个小函数，在不用画像的构建里处处内联，这里各自留下一个函数体：`JS_FreeValue`、`JS_IsException`、`JS_StringToBigIntErr`、`JS_ToNumberFree`、`JS_VALUE_IS_NAN`、`__JS_NewShortBigInt`、`__js_rc` 和 `js_dbuf_init`。arm64 上是其中 5 个函数里的 12 个调用，调用其中 5 个小函数。它们都是慢路径或少见的路径：往类型化数组写一个不是数字的值，BigInt 转换，释放 async 函数的帧，生成回溯。这 8 个函数的栈帧里，只有 `free_gc_object` 的 Go 栈帧变大，两个架构都是 32 字节（amd64 从 96 到 128，arm64 从 88 到 120），它的 shadow 栈帧仍是 0。它在一个调用环上（`free_gc_object`、`__JS_FreeValueRT`、`free_gc_object`），但 C 只让这个环走一层（`engine/quickjs.c` 的 `free_zero_refcount`：一个对象在释放别的对象时死掉，只会加进一个列表），所以没有递归会重复这 32 字节，也没有深度下限会动。其余栈帧相同或变小。在链接后优化器里把这些调用内联，是后续要做的事。
 - 过期的画像会丢掉它覆盖的函数里的收益（见上），C 离训练越远，收益越少，直到重新训练。
 - 画像来自两个应用的页面，用一个手写格式化数字和日期的假 `Intl` 渲染（[engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。它没有 `Intl` 内部工作的计数，也没有加载 bundle 的计数（这些计数是特意去掉的：带上它们的画像被解析器主导，效果更差）。
-- 训练两次得到的文件有几个计数不同：Mac 上训练两次，47,170 行里 40 行不同，Linux 上一次和 Mac 上一次，45 行不同。它们生成的引擎也不同（两次 Mac 训练之间，amd64 上 27 个函数不同）。所以训练不可复现，入库的文件可复现：`make gen` 用它在 macOS 和 Linux 上生成相同的字节。
+- 训练两次得到的文件有几个计数不同：Mac 上训练两次，47,170 行里 40 行不同，Linux 上一次和 Mac 上一次，45 行不同。它们生成的引擎也不同（amd64 上，两次 Mac 训练之间 27 个函数不同，Linux 和 Mac 的训练之间 126 个）。所以训练不可复现，入库的文件可复现：`make gen` 用它在 macOS 和 Linux 上生成相同的字节。
 - LLVM 的画像格式在版本之间会变，所以换 LLVM 就要重新训练。版本固定为 22.1.8。
 - 读 `.s` 的人看不出某个块为什么移动了。画像和训练它的程序都在仓库里，就是为了这个。
 - 保存优化记录（`-fsave-optimization-record`、`-opt-record-file`）会改变带画像构建的代码：它打开 hotness，让块频率信息一直保留，有 2 个函数因此不同。正式构建从不用它。想看优化器做了什么，在一份副本上生成记录，并且不要把那份输出和入库的文件比较。
