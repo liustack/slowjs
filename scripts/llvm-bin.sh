@@ -48,7 +48,7 @@ if [ -z "$dir" ]; then
 	cat >&2 <<EOM
 llvm-bin.sh: no LLVM $want found. Install it and run again:
   Linux (Ubuntu, Debian): the packages clang-22, llvm-22-dev and lld-22 from apt.llvm.org (/usr/lib/llvm-22/bin)
-  macOS: brew install llvm@22, then check that clang --version in its bin folder says $want (Homebrew: /opt/homebrew/opt/llvm@22/bin)
+  macOS: brew install llvm@22 and brew pin llvm@22 (so brew upgrade keeps it), then check that clang --version in its bin folder says $want (Homebrew: /opt/homebrew/opt/llvm@22/bin)
   Another place: set LLVM_BIN to the bin folder of LLVM $want
 EOM
 	exit 1

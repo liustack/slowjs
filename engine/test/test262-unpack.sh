@@ -27,6 +27,7 @@ unpack_test262() {
 	# set -e does not apply. The archive is unpacked into a folder of its own
 	# and moved into place, so an unzip that was stopped leaves nothing that the
 	# next one trips on (it asks before it overwrites, and nothing answers).
+	command -v unzip > /dev/null 2>&1 || { echo "test262: unzip not found: install unzip (apt install unzip)" >&2; return 1; }
 	mkdir -p "$_tmp" || return 1
 	unzip -q "$_archive" -d "$_tmp" < /dev/null || return 1
 	mv "$_tmp/test262-${_zipname%.zip}" "$_run/test262" || return 1
