@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/stopsweep"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
 
@@ -88,6 +89,44 @@ func TestCalendarArithmeticStops(t *testing.T) {
 			case n < c.turns/turnsPerStop:
 				t.Errorf("%s read vmhook.Stop %d times for at least %d turns, want at least %d", c.call, n, c.turns, c.turns/turnsPerStop)
 			}
+		})
+	}
+}
+
+// Each call of the arithmetic of a calendar stops within the grace of
+// stopsweep at every eval timeout from 2 ms to the time it takes whole, so
+// that a part of it with no check shows wherever it lies.
+func TestCalendarArithmeticStopsAtEveryTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("times each call at many timeouts")
+	}
+	const setup = `
+		var first = Temporal.PlainDate.from({year: -271000, month: 1, day: 1, calendar: 'chinese'});
+		var last = Temporal.PlainDate.from({year: 275000, month: 1, day: 1, calendar: 'chinese'});
+		var hebrew = Temporal.PlainDate.from({year: -268000, month: 1, day: 1, calendar: 'hebrew'});
+		var islamic = Temporal.PlainDate.from({year: -271000, month: 1, day: 1, calendar: 'islamic-civil'});
+		var zfirst = Temporal.ZonedDateTime.from('-271000-01-01T00:00[UTC]').withCalendar('chinese');
+		var zlast = Temporal.ZonedDateTime.from('+275000-01-01T00:00[UTC]').withCalendar('chinese');
+		0`
+	const monthsOfDays, yearsOfMonths, yearsBetween = 190_000_000 / 31, 6_700_000 / 13, 546_000
+	for _, c := range []struct {
+		call  string
+		turns int
+	}{
+		{`first.add({days: 1.9e8}).year`, monthsOfDays},
+		{`first.add({months: 6.7e6}).year`, yearsOfMonths},
+		{`first.until(last, {largestUnit: 'months'}).months`, yearsBetween},
+		{`hebrew.add({days: 1.9e8}).year`, monthsOfDays},
+		{`islamic.add({days: 1.9e8}).year`, monthsOfDays},
+		{`Temporal.Duration.from({days: 1.9e8}).total({unit: 'months', relativeTo: first})`, monthsOfDays},
+		{`Temporal.Duration.from({days: 1.9e8}).round({largestUnit: 'months', relativeTo: first}).months`, monthsOfDays},
+		{`zfirst.until(zlast, {largestUnit: 'months'}).months`, yearsBetween},
+		{`first.toPlainYearMonth().add({months: 6.7e6}).year`, yearsOfMonths},
+	} {
+		t.Run(c.call, func(t *testing.T) {
+			vm := newVM(t)
+			eval(t, vm, setup)
+			stopsweep.Sweep(t, vm, c.call, c.turns, turnsPerStop)
 		})
 	}
 }

@@ -515,10 +515,10 @@ func (c *Collator) CompareLimited(a, b string, l *Limits) int {
 		return 0
 	}
 	if c.skipPrefix {
-		start := c.comparisonStart(a, b)
-		return c.compareElements(c.sortElementsFrom(a, start, l), c.sortElementsFrom(b, start, l))
+		start := c.comparisonStart(a, b, l)
+		return c.compareElements(c.sortElementsFrom(a, start, l), c.sortElementsFrom(b, start, l), l)
 	}
-	return c.compareElements(c.sortElements(a, l), c.sortElements(b, l))
+	return c.compareElements(c.sortElements(a, l), c.sortElements(b, l), l)
 }
 
 // normalizedText is a string in NFD, as the characters the collator reads.
@@ -527,22 +527,26 @@ func (c *Collator) CompareLimited(a, b string, l *Limits) int {
 // U+FFFD -- so that it weighs as ICU weighs it, by its code point.
 func (c *Collator) normalizedText(s string, l *Limits) []rune {
 	if strings.IndexByte(s, 0xed) < 0 {
-		return []rune(c.normalizer.normalize(s, NFD, l))
+		return runesOf(c.normalizer.normalize(s, NFD, l), l)
 	}
+	// The code points are at most one a byte (qjs).
+	l.room(4 * int64(len(s)))
 	var out []rune
 	start := 0
+	turns := 0
 	for i := 0; i+2 < len(s); i++ {
+		l.every(&turns)
 		if s[i] != 0xed || s[i+1] < 0xa0 || s[i+1] > 0xbf || s[i+2] < 0x80 || s[i+2] > 0xbf {
 			continue
 		}
 		// A surrogate is a starter, so the text either side of it
 		// normalizes on its own.
-		out = append(out, []rune(c.normalizer.normalize(s[start:i], NFD, l))...)
+		out = append(out, runesOf(c.normalizer.normalize(s[start:i], NFD, l), l)...)
 		out = append(out, 0xd000|rune(s[i+1]&0x3f)<<6|rune(s[i+2]&0x3f))
 		i += 2
 		start = i + 1
 	}
-	return append(out, []rune(c.normalizer.normalize(s[start:], NFD, l))...)
+	return append(out, runesOf(c.normalizer.normalize(s[start:], NFD, l), l)...)
 }
 
 // sortElements returns what a string is compared by: its collation elements,
@@ -560,11 +564,12 @@ func (c *Collator) sortElementsFrom(s string, start int, l *Limits) []uint64 {
 	if start > 0 {
 		before := c.normalizedText(s[:start], l)
 		from = len(before)
+		l.room(8 * int64(len(before)+len(text)))
 		text = append(before, text...)
 	}
-	ces := c.elementsFrom(text, from)
+	ces := c.elementsFrom(text, from, l)
 	if c.shifted {
-		c.shiftVariables(ces)
+		c.shiftVariables(ces, l)
 	}
 	return ces
 }

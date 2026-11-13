@@ -145,6 +145,7 @@ read_when:
 | 日历的运算读中断标志 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#日历的运算读中断标志) |
 | 没有内存上限时 fmt 也限制调用并分段写出 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
 | Builtin 切不开的一段文字读中断标志 | v0.30.3 | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
+| 长文本和 locale 列表分块处理并检查调用 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#长文本和-locale-列表分块处理并检查调用) |
 
 ## 错误和调用栈
 

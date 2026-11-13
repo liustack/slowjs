@@ -258,7 +258,7 @@ var temporalFormatBuiltin = intlhook.NewBuiltin("toLocaleString", 0, func(a quic
 		req := request{Options: map[string]any{}, vm: a.VM()}
 		if s, ok := door.Short(tfLocales, intlhook.KindTag); ok {
 			req.Locales = []string{s}
-		} else if s, ok := door.Long(tfLocales + 1); ok {
+		} else if s, ok := door.Locales(tfLocales + 1); ok {
 			l, ok := splitLocales(a.VM(), s)
 			if !ok {
 				return quickjs.Value{}, &quickjs.Error{Name: "Error", Message: "intl: internal error: a malformed locale list"}
@@ -316,7 +316,7 @@ func temporalFormatArg(door *intlhook.Door, i int) (string, bool) {
 	case tfLocales:
 		return door.Short(i, intlhook.KindTag)
 	case tfLocales + 1:
-		return door.Long(i)
+		return door.Locales(i)
 	}
 	return door.Short(i, intlhook.KindOption)
 }
