@@ -136,3 +136,41 @@ func TestKeepStops(t *testing.T) {
 	give()
 	k.Close()
 }
+
+// The Keeps of the process keep at most KeptMax bytes together: a block
+// that would pass it goes back to the OS.
+func TestKeepProcessCap(t *testing.T) {
+	held, before := Blocks(), Kept()
+	if before != 0 {
+		t.Fatalf("the Keeps of the test keep %d bytes before it", before)
+	}
+	const size = KeptMax / 2
+	var keeps [3]*Keep
+	var gives [3]func()
+	for i := range keeps {
+		keeps[i] = &Keep{Max: size, Allow: func(uintptr) bool { return true }}
+		_, give, _, err := TakeKept[byte](keeps[i], size, never)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gives[i] = give
+	}
+	for _, give := range gives {
+		give()
+	}
+	if Kept() != KeptMax || keeps[2].Size() != 0 || Blocks() != held+2 {
+		t.Fatalf("three blocks of KeptMax/2 given: %d bytes kept, the third keeps %d, %d blocks held, want %d, 0 and 2", Kept(), keeps[2].Size(), Blocks()-held, KeptMax)
+	}
+	keeps[0].Close()
+	_, give, _, _ := TakeKept[byte](keeps[2], size, never)
+	give()
+	if Kept() != KeptMax || keeps[2].Size() != size {
+		t.Fatalf("a block given once there was room: %d bytes kept, the third keeps %d", Kept(), keeps[2].Size())
+	}
+	for _, k := range keeps {
+		k.Close()
+	}
+	if Kept() != 0 || Blocks() != held {
+		t.Fatalf("after Close: %d bytes kept, %d blocks held, want 0", Kept(), Blocks()-held)
+	}
+}

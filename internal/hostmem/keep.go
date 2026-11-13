@@ -7,6 +7,7 @@ package hostmem
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -17,7 +18,9 @@ import (
 // when it is at most Max bytes and Allow lets it, the larger of two when the
 // Keep has one already, and the other goes back to the OS. The block kept
 // goes back to the OS after Idle has been called idle times with no block
-// taken from it or kept in it, and at Close.
+// taken from it or kept in it, and at Close. All the Keeps of the process
+// keep at most KeptMax bytes together, so that a pool of many VMs idle
+// between calls holds no more.
 //
 // A block from a Keep is cleared, over what the call asks of it, a piece at a
 // time with a read of the call's stop between two. A Keep is used by the
@@ -33,6 +36,15 @@ type Keep struct {
 	idle       int
 	closed     bool
 }
+
+// KeptMax is the most bytes the Keeps of the process keep together.
+const KeptMax = 64 << 20
+
+// kept is how many bytes the Keeps of the process keep.
+var kept atomic.Int64
+
+// Kept returns how many bytes the Keeps of the process keep.
+func Kept() int64 { return kept.Load() }
 
 // clearPiece is how many bytes of a kept block are cleared between two
 // reads of the call's stop: well under a millisecond, as the pages are in
@@ -58,10 +70,12 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 	if k.size >= size {
 		addr, size = k.addr, k.size
 		k.addr, k.size, k.idle = 0, 0, 0
+		kept.Add(-int64(size))
 		b := unsafe.Slice((*byte)(pointer(addr)), asked)
 		for lo := uintptr(0); lo < asked; lo += clearPiece {
 			if lo > 0 && stop() {
 				k.addr, k.size = addr, size
+				kept.Add(int64(size))
 				return nil, nil, true, nil
 			}
 			clear(b[lo:min(asked, lo+clearPiece)])
@@ -83,13 +97,19 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 	return unsafe.Slice((*T)(pointer(addr)), n), give, false, nil
 }
 
-// put keeps the block at addr when k may, and gives the block it does not
-// keep back to the OS.
+// put keeps the block at addr when k may and the Keeps of the process stay
+// within KeptMax with it, and gives the block it does not keep back to the
+// OS.
 func (k *Keep) put(addr, size uintptr) {
 	if !k.closed && size <= k.Max && size > k.size && k.Allow(size) {
-		addr, k.addr = k.addr, addr
-		size, k.size = k.size, size
-		k.idle = 0
+		more := int64(size - k.size)
+		if kept.Add(more) <= KeptMax {
+			addr, k.addr = k.addr, addr
+			size, k.size = k.size, size
+			k.idle = 0
+		} else {
+			kept.Add(-more)
+		}
 	}
 	if size != 0 {
 		unmapBlock(addr, size)
@@ -112,6 +132,7 @@ func (k *Keep) Release() {
 	if k.size != 0 {
 		addr, size := k.addr, k.size
 		k.addr, k.size, k.idle = 0, 0, 0
+		kept.Add(-int64(size))
 		unmapBlock(addr, size)
 	}
 }
