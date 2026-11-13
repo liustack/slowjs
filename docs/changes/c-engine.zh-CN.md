@@ -356,7 +356,7 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 ### 寄存器循环直接回答 charCodeAt
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 用 `s.charCodeAt(i)` 扫一遍字符串的循环，每个字符都要调用一次 C 函数，而在生成的引擎里每次这样的调用要几百条指令：调用的检查、一层调用深度、`js_call_c_function` 的帧，以及 `this` 和下标的转换。解析器、哈希函数和普通构建的 emotion（它在 JavaScript 里给每段样式算哈希）的时间大多花在这里。现在寄存器循环自己回答 `String.prototype.charCodeAt`（`rv_fast_call`，在 `RV_CALL_OUT` 里调用），条件是 `this` 是字符串，或者是之前某次调用已经拼平的 rope，并且下标是 int：它给出下标处的码元，越界时给出 `NaN`。其他调用都和以前一样照常调用。
 
@@ -614,7 +614,7 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 ## 超过 32 个参数的调用用数组传参
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 超过 32 个参数的调用，比如 `f(a1, ..., a40)`，以及超过 30 个替换的带标签模板，现在把前 32 个之后的参数放进数组传，和带展开参数的调用一样：编译器对前 32 个发出 `array_from`，之后每个参数发出 `define_array_el`，再用 `OP_apply` 调用，直接 `eval` 则用 `OP_apply_eval`。数组字面量本来就这样构建第 32 个之后的元素。这样一个函数的操作数栈上最多放一次调用的 32 个参数，原来要放全部参数，于是每个函数的帧都放得进寄存器循环用一个字节能指到的 124 个临时槽（`engine/regvm-pass.h`）。这个上限是 `engine/quickjs.c` 里的 `JS_CALL_ARGS_ON_STACK`。
 
@@ -626,7 +626,7 @@ React 构建页面就是这样的：`renderToString` 把每一段 HTML（1 到 1
 
 ## 寄存器循环里一个函数的上限
 
-发布版本：Unreleased。
+发布版本：v0.30.2。
 
 寄存器循环把比临时槽深的栈折进数组，需要几层就折几层，最深到 `JS_STACK_SIZE_MAX`（`engine/regvm-fold.h`）。catch 偏移（`try` 占一个，`for-of` 连同迭代器和 next 方法占三个）单独占临时槽，它下面那段栈冻结成一个数组，也单独占一个。寄存器循环是唯一的解释器，所以它跑不了的函数，解析器在编译时就拒绝，报它自己的上限本来就报的错：
 

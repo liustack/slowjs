@@ -25,7 +25,7 @@ read_when:
 
 ## symbol 有自己的字符串
 
-版本：Unreleased。
+版本：v0.30.2。
 
 `Symbol(s)` 以前把字符串 `s` 本身改成 symbol，哪怕数组、变量还拿着它，或者它是函数里的数字字符串字面量（`Symbol("12")`，函数每次运行共用同一个字符串）。`description` 也把 symbol 本身当作字符串返回。不管哪种，脚本拿着的字符串都让 symbol 一直活着：只要字符串还在，指向它的 `WeakRef` 永远不变空，`FinalizationRegistry` 永远不回调。Node 在下一次回收时就释放这样的 symbol。
 

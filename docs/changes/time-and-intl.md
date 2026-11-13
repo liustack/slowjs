@@ -245,7 +245,7 @@ Tests: `TestFormatStringMatchesParts`, `TestQJSCachedSource`, `TestQJSDataCacheB
 
 ## Intl.Segmenter finds segments as they are read
 
-Release: Unreleased.
+Release: v0.30.2.
 
 `containing` and the iterator of a Segments object now find the segments of its text as javascript reads them, a batch at a time, where the first call found every segment of the whole text in Go. On a text of 8 MiB, `containing(0)` made go-intl list all 8,388,608 graphemes: 1,260 MiB of allocations in Go, outside the VM's memory limit, and 0.8 to 1.5 seconds with no check of the interrupt flag. It now takes 24 MiB, the text in UTF-16 and its copy as Go reads it, and 17 to 36 ms on GCP. That memory is not counted against the memory limit of the VM, nor is the text each kept iterator holds (below), and one break far ahead, as after a long run of text that a dictionary breaks, is found with no check of the VM.
 
@@ -259,7 +259,7 @@ Tests: `TestSegmentsInBatches` in `intl/segmenter_test.go` checks the iterator, 
 
 ## The caches of Temporal formats keep short requests only
 
-Release: Unreleased.
+Release: v0.30.2.
 
 The formats `toLocaleString` and `DateTimeFormat.prototype.format` make for Temporal values are shared by every VM of the process, and they kept what a page asked for at any length, after its VM was closed. The cache of `toLocaleString` held at most 512 formats, but each with its request as the page gave it, a failed one too: a calendar option of 1 MiB that was no calendar stayed with its error. The formatter registry keeps at most 1,024 formatters, each with its resolved options, and those of a Temporal date format held its whole request. On GCP, 40 VMs closed after such calls kept 81 MiB for the failed calendar, and 11 MiB for `DateTimeFormat.format` of a Temporal value with a list of 10,000 locales.
 
@@ -269,7 +269,7 @@ Tests: `TestFormatCachesAfterClose` in `temporal/limits_test.go` (a failed calen
 
 ## Number options are checked before they are rounded down
 
-Release: Unreleased.
+Release: v0.30.2.
 
 A number option such as `fractionalSecondDigits`, `minimumIntegerDigits`, `maximumFractionDigits` or `roundingIncrement` is now checked against its range before it is rounded down, as ECMA-402's DefaultNumberOption does, so a value just past the top of the range is a RangeError, as in Chromium. `fractionalSecondDigits: 3.9` and `minimumIntegerDigits: 21.9` were rounded down to 3 and 21 first, and taken. A value in the range is rounded down as before: `fractionalSecondDigits: 1.5` is 1.
 
@@ -277,7 +277,7 @@ Tests: `TestNumberOptionRange` in `intl/options_test.go` (20 options of DateTime
 
 ## A long locale tag resolves in time linear in its length
 
-Release: Unreleased.
+Release: v0.30.2.
 
 An Intl constructor, `supportedLocalesOf` and `toLocaleString` now resolve a long locale tag in time linear in its length. ECMA-402's BestAvailableLocale cuts a tag short one subtag at a time until a service is available in what is left, and go-intl looked up every part it cut, copying it into the key of the lookup each time: time that grows with the square of the tag. A valid tag can be long, as private use takes any number of subtags: `new Intl.NumberFormat("en-x-" + "abcdefgh-".repeat(116508) + "x")`, a tag of 1 MiB, took 6.8 seconds on an M-series Mac, and one of 4 MiB 58 seconds, in Go, with no check of the interrupt flag.
 

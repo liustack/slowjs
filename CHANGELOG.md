@@ -4,6 +4,8 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.2] - 2026-11-13
+
 ### Fixed
 
 - `new C(...args)` on an object that is not a function, such as `{}`, now throws `TypeError: not a constructor`, as `new C(a, b)` does and Node says. It threw `TypeError: not a function` ([errors-and-stacks.md](docs/changes/errors-and-stacks.md#new-with-a-spread-says-when-its-callee-is-not-a-constructor)).
@@ -609,7 +611,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11

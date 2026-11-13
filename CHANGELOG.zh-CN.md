@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [v0.30.2] - 2026-11-13
+
 ### 修复
 
 - 对不是函数的对象做 `new C(...args)`，比如 `{}`，现在抛 `TypeError: not a constructor`，和 `new C(a, b)` 一样，也和 Node 一致。原来它抛 `TypeError: not a function`（[errors-and-stacks.md](docs/changes/errors-and-stacks.zh-CN.md#带展开参数的-new-会说出被调用的不是构造函数)）。
@@ -609,7 +611,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.1...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.2...main
+[v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2
 [v0.30.1]: https://github.com/liustack/quickjs/compare/v0.30.0...v0.30.1
 [v0.30.0]: https://github.com/liustack/quickjs/compare/v0.29.11...v0.30.0
 [v0.29.11]: https://github.com/liustack/slowjs/compare/v0.29.10...v0.29.11

@@ -53,7 +53,7 @@ Symbol 有引用计数，但不是 GC 对象列表上的节点。弱集合有 sy
 
 ## WeakRef 把目标留到任务结束
 
-发布版本：未发布。
+发布版本：v0.30.2。
 
 规范要求 `WeakRef` 的目标一直活到创建这个 `WeakRef` 或调用它 `deref` 的那个任务结束（AddToKeptObjects，任务结束时 ClearKeptObjects），这样脚本在这个任务剩下的部分里从 `deref` 读到的答案不变。QuickJS 从来没有这张表，上游 QuickJS 和 quickjs-ng 的最新提交也没有：引用计数在目标的最后一个其他引用消失时就把它释放了。所以 `new WeakRef({}).deref()` 和 `const w = new WeakRef(o); o = null; w.deref()` 在同一个任务里得到 `undefined`，而 Node 24 得到那个对象。test262 看不到这个问题：它测 `WeakRef` 的用例都把目标存在变量里，33 个已知错误里也没有和 `WeakRef` 有关的。
 
