@@ -24,9 +24,12 @@ import (
 // It picks the narrow forms (AArch64CompressJumpTables) from the sizes of its
 // own code. The lowering then adds code inside the function (the calls, the
 // polls, the frame), so a narrow table llc sized can end too narrow for the
-// lowered code. llvm-mc refuses an entry past its width today, and the
-// generator turns the narrow forms off (-aarch64-enable-compress-jump-tables=false,
-// cmd/engine). This check does not rest on either: it sizes the lowered code
+// lowered code. llvm-mc refuses an entry past its width only when it knows the
+// distance as it reads the entry: with an alignment between the two labels it
+// works the distance out later and writes its low bits without a word (LLVM
+// 22.1.8). The generator turns the narrow forms off
+// (-aarch64-enable-compress-jump-tables=false, cmd/engine), and this check
+// does not rest on that either: it sizes the lowered code
 // itself and refuses any entry whose distance does not fit its width, or that
 // is not a whole number of steps where it is shifted, naming the function.
 //
