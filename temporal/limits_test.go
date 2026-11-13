@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/vmhook"
 	"github.com/liustack/quickjs/intl"
 )
 
@@ -125,5 +126,54 @@ func TestToStringBounded(t *testing.T) {
 		if s, _ := got.(string); s == "" || len(s) > toStringLength {
 			t.Errorf("%s = %q, longer than %d", js, got, toStringLength)
 		}
+	}
+}
+
+// TestRoomCoversGo checks that what the door counts for a string of
+// Temporal at its cap covers what Go takes for the call: with the room one
+// byte short of what Go took, the door refuses it.
+func TestRoomCoversGo(t *testing.T) {
+	const setup = `
+		const rep = (s, n) => s.repeat(Math.max(1, Math.ceil(n / s.length))).slice(0, n);
+		const C = 16384;
+		var typeSeq = rep('abcdefgh-', C - 1) + 'a', tz = rep('Abcdefgh/', C - 1) + 'A';
+		var isoAnn = '2020-01-01' + '[a=b]'.repeat((C - 10) / 5 | 0), isoKey = '2020-01-01[' + rep('a', C - 14) + '=b]';
+		var durZeros = 'P' + '0'.repeat(C - 3) + '1D', calAnn = '2020-01-01[u-ca=' + rep('abcdefgh-', C - 18) + 'a]';
+		var offFrac = '2020-01-01T00:00+00:00[+00:00:00.' + '0'.repeat(C - 40) + ']';
+		Temporal.PlainDate.from('2020-01-01[u-ca=gregory]').toString(); Temporal.Duration.from('P1D').toString();
+		Temporal.Now.zonedDateTimeISO('UTC'); new Temporal.PlainDate(2020, 1, 1).toLocaleString('en', {calendar: 'gregory'});
+		0`
+	for _, js := range []string{
+		`Temporal.PlainDate.from(isoAnn)`,
+		`Temporal.PlainDate.from(isoKey)`,
+		`Temporal.Duration.from(durZeros).toString()`,
+		`Temporal.PlainDate.from(calAnn)`,
+		`Temporal.ZonedDateTime.from(offFrac)`,
+		`Temporal.Now.zonedDateTimeISO(tz)`,
+		`new Temporal.PlainDate(2020, 1, 1, typeSeq)`,
+		`Temporal.PlainDate.from({year: 2020, month: 1, day: 1, calendar: typeSeq})`,
+		`Temporal.Duration.from({days: 1}).total({unit: 'days', relativeTo: calAnn})`,
+		`new Temporal.PlainDate(2020, 1, 1).toLocaleString('en', {calendar: typeSeq})`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			vm := newVM(t)
+			eval(t, vm, setup)
+			src := `(function () { try { ` + js + ` } catch (e) { if (!(e instanceof RangeError)) throw e } return 0 })()`
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			eval(t, vm, src)
+			runtime.ReadMemStats(&after)
+			took := int64(after.TotalAlloc - before.TotalAlloc)
+
+			room := vmhook.Room
+			vmhook.Room = func(any) int64 { return took - 1 }
+			defer func() { vmhook.Room = room }()
+			_, err := vm.Eval(src, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.OutOfMemory {
+				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
+			}
+		})
 	}
 }

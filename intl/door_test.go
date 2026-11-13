@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/vmhook"
 )
 
 // The door of internal/intlhook is the only way a string of javascript comes
@@ -225,5 +226,69 @@ func TestShortArgumentNoRoom(t *testing.T) {
 	var e *quickjs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 		t.Fatalf("got %v, want the uncatchable out of memory error", err)
+	}
+}
+
+// capsJS makes, for TestRoomCoversGo, the arguments of each kind at its
+// cap that make Go take the most, and warms the data their calls read.
+const capsJS = `
+	const rep = (s, n) => s.repeat(Math.max(1, Math.ceil(n / s.length))).slice(0, n);
+	const C = 16384, N = 524288;
+	function variants(n) { let s = 'en'; for (let i = 0; s.length + 6 <= n; i++) s += '-a' + (1679616 + i).toString(36).slice(1); return s; }
+	var tagVariants = variants(C), tagX = 'en-x-' + rep('abcdefgh-', C - 6) + 'a', tagT = 'en-t-' + rep('m0-abc-', C - 12) + 'm0-abc', tagU = 'en-u-' + rep('ca-gregory-', C - 16) + 'ca-abc';
+	var typeSeq = rep('abcdefgh-', C - 1) + 'a', tz = rep('Abcdefgh/', C - 1) + 'A';
+	var numFrac = '0.' + rep('1', N - 2), numZeros = '0.' + '0'.repeat(N - 3) + '1', numInt = rep('7', N);
+	var fracFmt = new Intl.NumberFormat('en', {maximumFractionDigits: 100}), sig3 = new Intl.NumberFormat('en', {maximumSignificantDigits: 3});
+	fracFmt.formatToParts(0.5); sig3.format(0.5);
+	Intl.getCanonicalLocales('en-a0000-x-a-t-m0-abc-u-ca-gregory'); new Intl.NumberFormat('en-x-a').format(1); new Intl.DateTimeFormat('en-u-ca-abc').format(0);
+	new Intl.Locale('en-u-ca-abc').getCalendars(); 'x'.toLocaleUpperCase('en-x-a'); new Intl.Collator('en', {collation: 'abc'}).compare('a', 'b');
+	new Intl.DisplayNames('en', {type: 'calendar'}).of('abc'); new Intl.DisplayNames('en', {type: 'language'}).of('en-a0000');
+	try { new Intl.DateTimeFormat('en', {timeZone: 'A/B'}) } catch (e) {}
+	0`
+
+// TestRoomCoversGo checks that what the door counts for the arguments of a
+// call at the cap of their kind covers what Go takes for the call: with the
+// room one byte short of what Go took, the door refuses it.
+func TestRoomCoversGo(t *testing.T) {
+	for _, js := range []string{
+		`Intl.getCanonicalLocales(tagVariants)`,
+		`Intl.getCanonicalLocales(tagX)`,
+		`Intl.getCanonicalLocales(tagT)`,
+		`Intl.getCanonicalLocales(tagU)`,
+		`new Intl.NumberFormat(tagT).resolvedOptions().locale`,
+		`new Intl.Locale(tagX.slice(0, C - 16)).maximize().toString()`,
+		`new Intl.Locale(tagU).getCalendars()`,
+		`new Intl.DateTimeFormat(tagU).resolvedOptions().locale`,
+		`'x'.toLocaleUpperCase(tagX)`,
+		`new Intl.DateTimeFormat('en', {calendar: typeSeq}).resolvedOptions().calendar`,
+		`new Intl.NumberFormat('en', {numberingSystem: typeSeq}).resolvedOptions().numberingSystem`,
+		`new Intl.Collator('en', {collation: typeSeq}).resolvedOptions().collation`,
+		`new Intl.DisplayNames('en', {type: 'calendar'}).of(typeSeq)`,
+		`new Intl.DisplayNames('en', {type: 'language'}).of(tagVariants)`,
+		`new Intl.DateTimeFormat('en', {timeZone: tz})`,
+		`fracFmt.formatToParts(numFrac)`,
+		`sig3.format(numZeros)`,
+		`sig3.format(numInt)`,
+	} {
+		t.Run(js, func(t *testing.T) {
+			vm := newVM(t)
+			eval(t, vm, capsJS)
+			src := `(function () { try { ` + js + ` } catch (e) { if (!(e instanceof RangeError)) throw e } return 0 })()`
+			runtime.GC()
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			eval(t, vm, src)
+			runtime.ReadMemStats(&after)
+			took := int64(after.TotalAlloc - before.TotalAlloc)
+
+			room := vmhook.Room
+			vmhook.Room = func(any) int64 { return took - 1 }
+			defer func() { vmhook.Room = room }()
+			_, err := vm.Eval(src, quickjs.EvalGlobal)
+			var e *quickjs.Error
+			if !errors.As(err, &e) || !e.OutOfMemory {
+				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
+			}
+		})
 	}
 }

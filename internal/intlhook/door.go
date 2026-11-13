@@ -48,11 +48,14 @@ const (
 	// duration, a calendar or time zone id, an offset, and the strings of a
 	// property bag.
 	MaxTemporal = 16 << 10
-	// MaxNumber is the longest numeric string Intl.NumberFormat and
-	// Intl.PluralRules read, and so the longest BigInt as digits.
+	// MaxNumber is the longest numeric string Intl.NumberFormat reads.
 	MaxNumber = 512 << 10
 	// MaxDigits is the most digits a number may be written with once it is
-	// rounded, the zeros a format writes out included.
+	// rounded, the zeros a format writes out included. The longest BigInt, of
+	// 315,653 digits, is under it with any options, and is the slowest to
+	// write: its parts in Hindi with digits of four bytes take about 40 ms of
+	// Go on an Apple M4, besides the 2.2 s the engine takes to make its digits.
+	// A short string written with 525,312 digits takes 6.4 ms.
 	MaxDigits = MaxNumber + 1<<10
 )
 
@@ -72,14 +75,19 @@ const (
 
 // caps holds, for each Kind, its cap, what its RangeError says, and the
 // bytes Go may take for each code unit of an argument of that kind, which
-// the door checks the room for before it reads it (TestRoomCoversGo).
+// the door checks the room for before it reads it. At the cap, Go took at
+// most 99 bytes a unit for a tag (Intl.Locale maximize), 129 for an option
+// (DisplayNames of a language), 14 for a string of Temporal and 3 for a
+// numeric string, with the call (TestRoomCoversGo in intl and temporal).
+// The longest takes 1.5 ms for a tag, 3 ms for an option, 0.12 ms for a
+// string of Temporal and 1.7 ms for a numeric string on an Apple M4.
 var caps = [kinds]struct {
 	max     int
 	what    string
 	perUnit int64
 }{
 	KindTag:      {MaxTag, "locale tag", 192},
-	KindOption:   {MaxOption, "option", 128},
+	KindOption:   {MaxOption, "option", 192},
 	KindTemporal: {MaxTemporal, "Temporal string", 32},
 	KindNumber:   {MaxNumber, "numeric string", 8},
 	KindDigits:   {MaxDigits, "number written", 0},
@@ -161,10 +169,6 @@ func (d *Door) Reserve(n int64) {
 	d.room()
 }
 
-// admitHook, when a test sets it, is called with what the door counted
-// after each argument it admitted.
-var admitHook func(need int64)
-
 // admit measures argument i, refuses it over the cap of k, and checks the
 // room for it and the arguments admitted before. It is false for an
 // argument that is not a string.
@@ -187,9 +191,6 @@ func (d *Door) admit(i int, k Kind) bool {
 // room ends the Builtin with the out of memory error when the VM has no
 // room for what the door counted.
 func (d *Door) room() {
-	if h := admitHook; h != nil {
-		h(d.need)
-	}
 	vm := d.a.VM()
 	if room := vmhook.Room(vm); room >= 0 && d.need > room {
 		vmhook.OutOfMemory(vm)
