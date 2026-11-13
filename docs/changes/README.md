@@ -51,6 +51,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | On amd64 every SSE instruction that needs its operand on 16 bytes reads data placed by a `PCALIGN $16`, or a local, or a global, and the generator and the post-link check refuse anything else | Unreleased | [c-engine.md](c-engine.md#sse-reads-that-need-16-bytes-stay-on-16) |
 | A call through a pointer takes its result from registers, and a generated function that no Go code calls no longer writes its result to the Go stack | Unreleased | [c-engine.md](c-engine.md#results-only-in-registers) |
 | `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | Unreleased | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
+| A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | Unreleased | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
 
 ## Commits of upstream QuickJS
 
