@@ -119,11 +119,15 @@ func (v *vmCursors) take(id int) *cursor {
 	return nil
 }
 
-// drop forgets c.
+// drop forgets c, and clears the slot it leaves at the end of the list, so
+// that Go can free its text.
 func (v *vmCursors) drop(c *cursor) {
 	for i, x := range v.list {
 		if x == c {
-			v.list = append(v.list[:i], v.list[i+1:]...)
+			n := len(v.list) - 1
+			copy(v.list[i:], v.list[i+1:])
+			v.list[n] = nil
+			v.list = v.list[:n]
 			return
 		}
 	}

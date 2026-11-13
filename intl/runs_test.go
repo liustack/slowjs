@@ -34,6 +34,15 @@ var uncuttable = []struct{ name, setup, call string }{
 	{"a run of halfwidth katakana, which NFKC changes",
 		`var s = 'ｶﾀｶﾅﾃｽﾄ'.repeat(N / 7), g = new Intl.Segmenter('ja', {granularity: 'word'})`,
 		`g.segment(s).containing(0).segment`},
+	{"a Thai word and a long run of a mark",
+		`var s = 'ภาษา' + 'ั'.repeat(N), g = new Intl.Segmenter('th', {granularity: 'word'})`,
+		`g.segment(s).containing(0).segment`},
+	{"a Thai word and a long run of what is no word",
+		`var s = 'ภาษา' + 'ๆ'.repeat(N), g = new Intl.Segmenter('th', {granularity: 'word'})`,
+		`g.segment(s).containing(0).segment`},
+	{"a Han character and a long run of halfwidth voiced marks",
+		`var s = '中' + 'ﾞ'.repeat(N), g = new Intl.Segmenter('ja', {granularity: 'word'})`,
+		`g.segment(s).containing(0).segment`},
 	{"a run of accents of two classes",
 		`var a = 'a' + '̖́'.repeat(N / 8) + '̀', b = 'b' + '̖́'.repeat(N / 8) + '̂', c = new Intl.Collator('en')`,
 		`c.compare(a, b)`},
@@ -136,5 +145,20 @@ func TestCJKRunRoom(t *testing.T) {
 	}
 	if got := eval(t, vm, `g.segment('我们今天去北京').containing(0).segment`); got != "我们" {
 		t.Errorf("after the error: %v", got)
+	}
+}
+
+// A dropped cursor is not kept: no slot of the list holds it after.
+func TestCursorDropClears(t *testing.T) {
+	v := &vmCursors{next: 1}
+	a, b := &cursor{id: 1}, &cursor{id: 2}
+	v.add(a)
+	v.add(b)
+	v.drop(a)
+	v.drop(b)
+	for i, c := range v.list[:cap(v.list)] {
+		if c != nil {
+			t.Errorf("slot %d holds cursor %d", i, c.id)
+		}
 	}
 }

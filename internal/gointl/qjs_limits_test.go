@@ -17,12 +17,15 @@ import (
 
 // cjkRuns are runs of Chinese and Japanese the dictionary divides as a
 // whole, each of the ways divide reads one: plain, with katakana, with
-// halfwidth katakana that NFKC changes, and with characters past the BMP.
+// halfwidth katakana that NFKC changes, with characters past the BMP, and
+// with a character NFKC makes six.
 var cjkRuns = []struct{ lang, unit string }{
 	{"zh", "我们今天去北京大学看书"},
 	{"ja", "東京タワーに行きました"},
 	{"ja", "ｶﾀｶﾅﾃｽﾄ"},
 	{"zh", "𠀀𠀁中文𠀂"},
+	// Six characters in NFKC, キロメートル.
+	{"ja", "㌖"},
 }
 
 // What Room asks for a run of Chinese or Japanese covers what Go takes to
@@ -165,4 +168,44 @@ func newEmbeddedNormalizer(t *testing.T) *Normalizer {
 		t.Fatal(err)
 	}
 	return n
+}
+
+// divide checks the limits every limitEvery turns of each of its loops, not
+// only of the loop over words or code points: a word followed by a long run
+// of a mark, or of what is no word, and a character followed by a long run
+// that NFKC keeps as one fragment, are one turn of the outer loop.
+func TestDivideChecksEveryLoop(t *testing.T) {
+	const n = 1 << 20
+	for _, c := range []struct{ lang, text string }{
+		{"th", "ภาษา" + strings.Repeat("ั", n)},
+		{"th", "ภาษา" + strings.Repeat("ๆ", n)},
+		{"ja", "中" + strings.Repeat("ﾞ", n)},
+	} {
+		s, err := NewSegmenter(qjsLocale(c.lang), SegmenterOptions{Granularity: GranularityWord})
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := utf16.Encode([]rune(c.text))
+		e := s.engines.forChar([]rune(c.text)[0])
+		checks := 0
+		l := &Limits{Check: func() { checks++ }, Room: func(int64) {}}
+		t0 := &utext{text: u}
+		var breaks []int
+		switch e := e.(type) {
+		case *southeastAsianEngine:
+			e.divide(t0, 0, len(u), &breaks, l)
+		case *cjkEngine:
+			e.divide(t0, 0, len(u), &breaks, l)
+		case nil:
+			if qjsNoCJDict {
+				continue
+			}
+			t.Fatalf("%s: no engine", c.lang)
+		default:
+			t.Fatalf("%s: engine %T", c.lang, e)
+		}
+		if checks < n/limitEvery {
+			t.Errorf("%.12q: %d checks in divide for %d units, want at least %d", c.text, checks, len(u), n/limitEvery)
+		}
+	}
 }

@@ -361,6 +361,7 @@ func (e *southeastAsianEngine) divide(t *utext, rangeStart, rangeEnd int, breaks
 				remaining := rangeEnd - (current + cuWordLength)
 				chars := 0
 				for {
+					l.every(&turns)
 					pcIndex := t.index()
 					pc := t.next32()
 					pcSize := t.index() - pcIndex
@@ -388,6 +389,7 @@ func (e *southeastAsianEngine) divide(t *utext, rangeStart, rangeEnd int, breaks
 		}
 		// Never stop before a combining mark.
 		for {
+			l.every(&turns)
 			pos := t.index()
 			if pos >= rangeEnd || !e.marks.contains(t.current32()) {
 				break
@@ -511,11 +513,41 @@ func isKatakana(c rune) bool {
 }
 
 // cjkRoomPerUnit is what Go may take for each code unit of a run divide
-// divides, which it holds until the run is divided (qjs): the run decoded
-// and put in NFKC, and the arrays of the cheapest segmentation, each as
-// long as the run. Go took at most 222 bytes for each code unit, for
-// halfwidth katakana, which NFKC changes (TestDictionaryRoomCoversGo).
+// divides, counted as long as the run is once NFKC has taken each of its
+// characters apart (expandedUnits), which it holds until the run is
+// divided (qjs): the run decoded and put in NFKC, and the arrays of the
+// cheapest segmentation. Go took at most 225 bytes for each such unit, for
+// halfwidth katakana, and 188 for ㌖ (TestDictionaryRoomCoversGo).
 const cjkRoomPerUnit = 288
+
+// expandedUnits is the length of in, in code units, with each character
+// as long as it is or as its compatibility decomposition, whichever is
+// longer: at least the length of in and of in in NFKC, which makes one
+// character up to 18, as it makes ㌖ the six of キロメートル (qjs).
+func (e *cjkEngine) expandedUnits(in []uint16, l *Limits) int {
+	n, turns := 0, 0
+	u := utext{text: in}
+	for u.index() < len(in) {
+		l.every(&turns)
+		at := u.index()
+		c := u.next32()
+		k := u.index() - at
+		if c >= hangulBase && c < hangulBase+hangulSCount {
+			k = 3
+		} else if d, ok := e.norm.tables.DecomposeCompatibility(c); ok {
+			m := 0
+			for _, r := range d {
+				m++
+				if r > 0xffff {
+					m++
+				}
+			}
+			k = max(k, m)
+		}
+		n += k
+	}
+	return n
+}
 
 // divide checks l every few thousand code points, and first that the call
 // has room for what it takes (qjs): a run of Han with no space is one
@@ -524,8 +556,10 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 	if rangeStart >= rangeEnd {
 		return 0
 	}
-	l.room(int64(rangeEnd-rangeStart) * cjkRoomPerUnit)
 	in := t.text[rangeStart:rangeEnd]
+	if l != nil && l.Room != nil {
+		l.room(int64(e.expandedUnits(in, l)) * cjkRoomPerUnit)
+	}
 	var inputMap []int // nil for positions offset by rangeStart
 	s := string(utf16.Decode(in))
 	turns := 0
@@ -539,6 +573,7 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l 
 			var frag []rune
 			c := u.next32()
 			for {
+				l.every(&turns)
 				frag = append(frag, c)
 				if u.index() == len(in) {
 					break
