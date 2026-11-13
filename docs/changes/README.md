@@ -160,6 +160,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A Go function takes the long arrays of a call from the OS | v0.30.4 | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
 | A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
+| A VM with a memory limit keeps its block too | Unreleased | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
 
 ## Errors and stacks
 

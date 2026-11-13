@@ -110,7 +110,8 @@ func NewVM() (*VM, error) {
 		vm.Close()
 		return nil, err
 	}
-	vm.keep.Max, vm.keep.Allow = keepMax, vm.mayKeep
+	vm.keep.Max, vm.keep.Allow, vm.keep.Hold = keepMax, vm.mayKeep, vm.h.Hold
+	vm.h.SetPressure(vm.goPressure)
 	return vm, nil
 }
 
@@ -210,9 +211,10 @@ func (m *VM) SetEvalTimeout(d time.Duration) error {
 // subject to change without notice.
 func (m *VM) SetMemoryLimit(limit uintptr) {
 	limit = max(limit, 128*1024)
-	if limit != ^uintptr(0) {
-		// A VM with a limit keeps no block (goTake). The block goes back
-		// first, so that the OS refusing it leaves m as it was.
+	if limit != ^uintptr(0) && m.jsGetMemorySize()+m.keep.Size() > limit {
+		// The limit counts the block kept (goTake), which goes back
+		// first when they no longer fit, so that the OS refusing it
+		// leaves m as it was.
 		m.keep.Release()
 	}
 	m.jsSetMemoryLimit(limit)

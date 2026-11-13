@@ -56,11 +56,40 @@ size_t heap_usable_size(const void *ptr)
     return tlsf_block_size((void *)ptr);
 }
 
-/* Would count become base plus request, past the limit? The limit may be
-   below the count (it can be lowered), and request may be huge: subtract. */
+/* the host writes these three words in this order (JS_GetHostLimit) */
+_Static_assert(offsetof(JSHeap, limit_set) == offsetof(JSHeap, limit) + sizeof(size_t), "limit words");
+_Static_assert(offsetof(JSHeap, held) == offsetof(JSHeap, limit) + 2 * sizeof(size_t), "limit words");
+
+/* Would count become base plus request, past limit? limit already has what
+   the host holds taken off, so this is one compare on the way that fits. The
+   limit may be below the count (it can be lowered), and request may be huge:
+   subtract. */
 static int heap_over(const JSHeap *h, size_t base, size_t request)
 {
     return base > h->limit || request > h->limit - base;
+}
+
+/* After heap_over: still over once the host gave back what it holds for the
+   VM, when that is all that keeps the request from fitting
+   (HOST_CALL_MEMORY_PRESSURE)? The host returns what it still holds. Out of
+   line, so that the way that fits runs the instructions it ran before the
+   host held memory. */
+static __attribute__((noinline)) int heap_over_held(JSHeap *h, size_t base, size_t request)
+{
+    JSValue argv[1], ret;
+
+    if (!h->held || base > h->limit_set || request > h->limit_set - base)
+        return 1;
+    argv[0] = HOST_WORD(request);
+    ret = host_call(h->vm, NULL, 1, argv, HOST_CALL_MEMORY_PRESSURE);
+    h->held = HOST_WORD_VALUE(ret);
+    heap_limit_update(h);
+    return heap_over(h, base, request);
+}
+
+int heap_would_pass(JSHeap *h, size_t request)
+{
+    return heap_over(h, h->count, request) && heap_over_held(h, h->count, request);
 }
 
 JSHeap *heap_create(uint32_t vm, size_t rt_size)
@@ -95,7 +124,7 @@ JSHeap *heap_create(uint32_t vm, size_t rt_size)
     h->chunks = c;
     h->chunk_count = 1;
     h->footprint = HEAP_UNIT;
-    h->limit = (size_t)-1;
+    heap_set_limit(h, (size_t)-1);
     h->rt_size = rt_size;
     h->count = rt_size;
     h->vm = vm;
@@ -310,7 +339,7 @@ void *heap_alloc(JSHeap *h, size_t size)
 {
     void *p;
 
-    if (size == 0 || size > JS_HEAP_MAX_REQUEST || heap_over(h, h->count, size))
+    if (size == 0 || size > JS_HEAP_MAX_REQUEST || (heap_over(h, h->count, size) && heap_over_held(h, h->count, size)))
         return NULL;
     p = heap_take(h, size, 0);
     if (!p)
@@ -448,7 +477,7 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
        as upstream checks a resize: the 8 byte size word of the block stays in
        count, since the block is still a block after the resize */
     base = h->count - old_size;
-    if (heap_over(h, base, size))
+    if (heap_over(h, base, size) && heap_over_held(h, base, size))
         return NULL;
     c = heap_dedicated_of(h, ptr, &link);
     if (c && size <= heap_dedicated_room(c) && size >= heap_dedicated_room(c) / 2) {

@@ -21,6 +21,7 @@
 #endif
 
 #include "heap.h"
+#include "host.h"
 
 #define HEAP_BLOCK_OVERHEAD 8
 
@@ -38,13 +39,33 @@ static int heap_over(const JSHeap *h, size_t base, size_t request)
     return base > h->limit || request > h->limit - base;
 }
 
+/* heap_over_held of heap.c: the host gives back what it holds for the VM
+   when that is all that keeps the request from fitting. */
+static int heap_over_held(JSHeap *h, size_t base, size_t request)
+{
+    JSValue argv[1], ret;
+
+    if (!h->held || base > h->limit_set || request > h->limit_set - base)
+        return 1;
+    argv[0] = HOST_WORD(request);
+    ret = host_call(h->vm, NULL, 1, argv, HOST_CALL_MEMORY_PRESSURE);
+    h->held = HOST_WORD_VALUE(ret);
+    heap_limit_update(h);
+    return heap_over(h, base, request);
+}
+
+int heap_would_pass(JSHeap *h, size_t request)
+{
+    return heap_over(h, h->count, request) && heap_over_held(h, h->count, request);
+}
+
 JSHeap *heap_create(uint32_t vm, size_t rt_size)
 {
     JSHeap *h = calloc(1, rt_size);
     if (!h)
         return NULL;
     h->vm = vm;
-    h->limit = (size_t)-1;
+    heap_set_limit(h, (size_t)-1);
     h->rt_size = rt_size;
     h->count = rt_size;
     return h;
@@ -66,7 +87,7 @@ void *heap_alloc(JSHeap *h, size_t size)
 {
     void *p;
 
-    if (size == 0 || size > JS_HEAP_MAX_REQUEST || heap_over(h, h->count, size))
+    if (size == 0 || size > JS_HEAP_MAX_REQUEST || (heap_over(h, h->count, size) && heap_over_held(h, h->count, size)))
         return NULL;
     p = malloc(size);
     if (!p)
@@ -132,7 +153,7 @@ void *heap_realloc(JSHeap *h, void *ptr, size_t size)
     if (size > JS_HEAP_MAX_REQUEST)
         return NULL;
     old_size = heap_usable_size(ptr);
-    if (heap_over(h, h->count - old_size, size))
+    if (heap_over(h, h->count - old_size, size) && heap_over_held(h, h->count - old_size, size))
         return NULL;
     n = old_size < size ? old_size : size;
     if (size > old_size && n >= HEAP_COPY_STEP && h->stop)

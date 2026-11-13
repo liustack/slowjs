@@ -64,12 +64,12 @@ func (m *VM) goRoom() int64 {
 // back, of at most keepMax bytes, for the next call that takes one, which
 // finds its pages in memory: the OS hands over the pages of a new block one
 // at a time as they are written, 25 to 40 ms for 16 MiB on the virtual M1
-// of GitHub's macos-15 runner, at every call. Only a VM with no memory limit
-// keeps a block: the engine counts its memory against the limit where it
-// allocates, in C, which knows nothing of the block, so a VM with a limit
-// and a block kept could pass the limit by the block. m gives the block
-// back to the OS after keepIdle calls that took none, at SetMemoryLimit
-// with a limit, and at Close.
+// of GitHub's macos-15 runner, at every call. The memory limit counts the
+// block kept with the engine's own memory (keep.Hold): a VM keeps a block
+// only when it fits under the limit, and an allocation of the engine that
+// needs the room of the block has it given back first (goPressure). m gives
+// the block back to the OS after keepIdle calls that took none, at
+// SetMemoryLimit when it no longer fits, and at Close.
 const (
 	keepMax  = 32 << 20
 	keepIdle = 16
@@ -90,10 +90,31 @@ func (m *VM) goTake(size int) (unsafe.Pointer, func(), bool) {
 	return unsafe.Pointer(unsafe.SliceData(b)), give, true
 }
 
-// mayKeep reports whether m.keep may keep a block: when m has no memory
-// limit and is not broken.
-func (m *VM) mayKeep(uintptr) bool {
-	return m.memoryLimit == 0 && !m.h.Broken()
+// mayKeep reports whether m.keep may keep a block of size bytes: when m is
+// not broken and the block fits under its memory limit with the memory of
+// the engine.
+func (m *VM) mayKeep(size uintptr) bool {
+	if m.abandoned() {
+		// A give in the unwind of a panic out of the engine: the block
+		// goes back to the OS, and the engine is not asked its size.
+		return false
+	}
+	if m.memoryLimit == 0 {
+		return true
+	}
+	n := m.jsGetMemorySize()
+	return n <= m.memoryLimit && size <= m.memoryLimit-n
+}
+
+// goPressure answers the engine asking, in an allocation that needs the room,
+// for the block m keeps (gohost.CallMemoryPressure): the block goes back to
+// the OS, and goPressure returns what m still holds, a block it is clearing
+// for a call included. When the OS refuses the block, m keeps it, the
+// allocation fails as out of memory, and Close tries the block again.
+func (m *VM) goPressure(uintptr) uintptr {
+	// An error of the OS leaves the block kept, and Close reports it.
+	_ = m.keep.TryRelease()
+	return m.keep.Held()
 }
 
 // goOutOfMemory is vmhook.OutOfMemory.

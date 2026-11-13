@@ -6,6 +6,7 @@
 package hostmem
 
 import (
+	"slices"
 	"sync"
 	"testing"
 	"unsafe"
@@ -257,4 +258,56 @@ func TestKeepRaceForCap(t *testing.T) {
 	if Kept() != 0 || Blocks() != held {
 		t.Fatalf("after the race: %d bytes kept, %d blocks held, want 0", Kept(), Blocks()-held)
 	}
+}
+
+// Hold is told the size of the block a Keep holds each time it changes: when
+// a block is kept, taken or given back to the OS. A block it is clearing for
+// a call is held until the call has it: TryRelease, from a stop that asks
+// for the memory back, leaves it, and a stop that ends the clear leaves it
+// kept, held all along.
+func TestKeepHolds(t *testing.T) {
+	k := newKeep()
+	var told []uintptr
+	k.Hold = func(size uintptr) { told = append(told, size) }
+	want := func(sizes ...uintptr) {
+		t.Helper()
+		if !slices.Equal(told, sizes) {
+			t.Fatalf("Hold was told %v, want %v", told, sizes)
+		}
+		told = nil
+	}
+	const n = 2 * clearPiece
+	_, give, _, _ := TakeKept[byte](k, n, never)
+	want()
+	give()
+	want(n)
+	_, give, _, _ = TakeKept[byte](k, n, never)
+	want(0)
+	give()
+	want(n)
+	stop := func() bool {
+		if err := k.TryRelease(); err != nil || k.Held() != n {
+			t.Errorf("TryRelease while a kept block is cleared: %v, %d bytes held, want %d", err, k.Held(), n)
+		}
+		return true
+	}
+	_, _, stopped, _ := TakeKept[byte](k, n, stop)
+	if !stopped || k.Size() != n || k.Held() != n {
+		t.Fatalf("a stop while clearing: stopped %v, %d bytes kept, %d held, want %d", stopped, k.Size(), k.Held(), n)
+	}
+	want()
+	func() {
+		defer func() { recover() }()
+		TakeKept[byte](k, n, func() bool { stop(); panic("stop") })
+	}()
+	if k.Size() != n || k.Held() != n {
+		t.Fatalf("a stop that panics while clearing: %d bytes kept, %d held, want %d", k.Size(), k.Held(), n)
+	}
+	want()
+	if err := k.TryRelease(); err != nil {
+		t.Fatal(err)
+	}
+	want(0)
+	k.Close()
+	want()
 }

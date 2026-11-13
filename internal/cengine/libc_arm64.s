@@ -7733,7 +7733,7 @@ TEXT ·pow(SB), $56-24
 	WORD $0xfd000be0
 	WORD $0xf9000ff5
 	WORD $0xf90013f6
-	BL ·specialcase_595(SB)
+	BL ·specialcase_597(SB)
 	WORD $0x14000084
 	WORD $0x7110251f
 	WORD $0x54000222
@@ -7868,7 +7868,7 @@ TEXT ·pow(SB), $56-24
 	WORD $0x3fa55555
 	RET
 
-TEXT ·specialcase_595(SB), NOSPLIT, $0-32
+TEXT ·specialcase_597(SB), NOSPLIT, $0-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	FMOVD a1+8(FP), F0

@@ -2683,7 +2683,11 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
    collects first too. A threshold of -1 turns this
    off, as it does the collections of js_trigger_gc. The test is inline and
    the collection out of line, so that a block that fits costs three
-   compares. */
+   compares. The limit it tests is the one the heap tests, less what the host
+   holds for the VM (held in engine/heap.h). A block that fits once the host
+   gives that back has it given back, as the allocation would, and runs no
+   collection: a collection only when the block does not fit even so, or the
+   host keeps it (heap_would_pass). */
 #define JS_GC_BLOCK_SLACK 8192
 _Static_assert(JS_GC_BLOCK_SLACK >=
                (JS_MALLOC_ARENA_SIZE + sizeof(size_t)) +       /* a new arena */
@@ -2693,9 +2697,12 @@ _Static_assert(JS_GC_BLOCK_SLACK >=
                sizeof(JSString) + 1,                           /* a string's header and its 0 */
                "JS_GC_BLOCK_SLACK covers what the size of a block leaves out");
 
-static no_inline void js_trigger_gc_block_run(JSRuntime *rt)
+static no_inline void js_trigger_gc_block_run(JSRuntime *rt, size_t size)
 {
-    if (rt->malloc_gc_threshold != (size_t)-1)
+    if (rt->malloc_gc_threshold == (size_t)-1)
+        return;
+    if (heap_would_pass(&rt->malloc_ctx.heap, size > SIZE_MAX - JS_GC_BLOCK_SLACK ?
+                        SIZE_MAX : size + JS_GC_BLOCK_SLACK))
         JS_RunGC(rt);
 }
 
@@ -2706,7 +2713,7 @@ static force_inline void js_trigger_gc_block(JSRuntime *rt, size_t size)
 
     if (unlikely(h->count > h->limit || room < JS_GC_BLOCK_SLACK ||
                  size > room - JS_GC_BLOCK_SLACK))
-        js_trigger_gc_block_run(rt);
+        js_trigger_gc_block_run(rt, size);
 }
 
 void *js_malloc_rt(JSRuntime *rt, size_t size)
@@ -3191,7 +3198,7 @@ void JS_SetRuntimeOpaque(JSRuntime *rt, void *opaque)
 
 void JS_SetMemoryLimit(JSRuntime *rt, size_t limit)
 {
-    rt->malloc_ctx.heap.limit = limit;
+    heap_set_limit(&rt->malloc_ctx.heap, limit);
 }
 
 /* Bytes of memory the host may be asked for, 0 for no limit. It only stops
@@ -3215,6 +3222,11 @@ size_t JS_GetGCThreshold(JSRuntime *rt)
 void JS_SetHostRemap(JSRuntime *rt, int on)
 {
     heap_set_remap(&rt->malloc_ctx.heap, on);
+}
+
+size_t *JS_GetHostLimit(JSRuntime *rt)
+{
+    return &rt->malloc_ctx.heap.limit;
 }
 
 /* The largest number of blocks a size class keeps in the front cache, 0 for
@@ -5384,15 +5396,15 @@ static int string_buffer_set_error(StringBuffer *s)
 static void *js_malloc_moving_rt(JSRuntime *rt, size_t size, void *old)
 {
     JSHeap *h = &rt->malloc_ctx.heap;
-    size_t limit = h->limit, room;
+    size_t limit = h->limit_set, room;
     void *q;
 
     /* the old block is a large block (it holds 1 MiB or more): the heap counts
        it with its header, and the request for the new one with its header */
     room = js_malloc_usable_size_rt(rt, old) + sizeof(JSMallocLargeBlockHeader);
-    h->limit = room > SIZE_MAX - limit ? SIZE_MAX : limit + room;
+    heap_set_limit(h, room > SIZE_MAX - limit ? SIZE_MAX : limit + room);
     q = js_malloc_rt(rt, size);
-    h->limit = limit;
+    heap_set_limit(h, limit);
     return q;
 }
 
@@ -10482,7 +10494,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
     memset(s, 0, sizeof(*s));
     s->malloc_count = rt->malloc_ctx.heap.blocks + 1; /* the blocks and the runtime */
     s->malloc_size = rt->malloc_ctx.heap.count;
-    s->malloc_limit = rt->malloc_ctx.heap.limit;
+    s->malloc_limit = rt->malloc_ctx.heap.limit_set;
     s->footprint = rt->malloc_ctx.heap.footprint;
     s->footprint_limit = rt->malloc_ctx.heap.footprint_limit;
     s->chunk_count = rt->malloc_ctx.heap.chunk_count;

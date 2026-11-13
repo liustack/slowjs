@@ -30,10 +30,16 @@ type Keep struct {
 	Max uintptr
 	// Allow reports whether the Keep may keep a block of size bytes now.
 	Allow func(size uintptr) bool
+	// Hold, when set, is told the size of the block the Keep keeps each
+	// time it changes, for the memory limit of the VM to count it.
+	Hold func(size uintptr)
 
 	addr, size uintptr
-	idle       int
-	closed     bool
+	// clearing is the size of the block k kept that TakeKept is clearing
+	// for a call, which k holds still until the call has it.
+	clearing uintptr
+	idle     int
+	closed   bool
 }
 
 // KeptMax is the most bytes the Keeps of the process keep together.
@@ -53,6 +59,17 @@ const clearPiece = 1 << 20
 // Size is the size of the block k keeps, 0 for none.
 func (k *Keep) Size() uintptr { return k.size }
 
+// Held is the size of the block k holds: the one it keeps, or the one it is
+// clearing for a call, which TryRelease cannot give back.
+func (k *Keep) Held() uintptr { return k.size + k.clearing }
+
+// hold tells Hold the size of the block k holds.
+func (k *Keep) hold() {
+	if k.Hold != nil {
+		k.Hold(k.Held())
+	}
+}
+
 // TakeKept is Take for a call of the VM of k: the block k keeps when it holds
 // n elements of T, else a block mapped from the OS, and give hands the block
 // to k. Clearing a kept block reads stop between pieces, and stopped is true,
@@ -68,14 +85,15 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 	var addr uintptr
 	if k.size >= size {
 		addr, size = k.addr, k.size
-		k.addr, k.size, k.idle = 0, 0, 0
-		// The block stays counted in kept while it is cleared, and goes
-		// back to k when the clear does not end, by a stop or a panic of
-		// stop, so that it is still k's to give back within KeptMax.
+		k.addr, k.size, k.idle, k.clearing = 0, 0, 0, size
+		// The block stays counted in kept, and held (clearing), while it
+		// is cleared, and goes back to k when the clear does not end, by
+		// a stop or a panic of stop, so that it is still k's to give back
+		// within KeptMax and within what Hold was told.
 		cleared := false
 		defer func() {
 			if !cleared {
-				k.addr, k.size = addr, size
+				k.addr, k.size, k.clearing = addr, size, 0
 			}
 		}()
 		b := unsafe.Slice((*byte)(pointer(addr)), asked)
@@ -86,7 +104,9 @@ func TakeKept[T Elem](k *Keep, n int, stop func() bool) (s []T, give func(), sto
 			clear(b[lo:min(asked, lo+clearPiece)])
 		}
 		cleared = true
+		k.clearing = 0
 		kept.Add(-int64(size))
+		k.hold()
 	} else {
 		if addr, err = osMapBlock(size); err != nil {
 			return nil, nil, false, fmt.Errorf("hostmem: mapping a block of %d bytes: %w", size, err)
@@ -138,6 +158,7 @@ func (k *Keep) put(addr, size uintptr) bool {
 		blocks.Add(-1)
 	}
 	k.addr, k.size, k.idle = addr, size, 0
+	k.hold()
 	return true
 }
 
@@ -152,15 +173,28 @@ func (k *Keep) Idle(idle int) {
 	}
 }
 
-// Release gives the block k keeps back to the OS.
+// Release gives the block k keeps back to the OS. It panics when the OS
+// refuses, with the block still kept, for a Release called again.
 func (k *Keep) Release() {
-	if k.size != 0 {
-		// The block stays kept until the OS took it back, for a Release
-		// called again.
-		unmapBlock(k.addr, k.size)
-		kept.Add(-int64(k.size))
-		k.addr, k.size, k.idle = 0, 0, 0
+	if err := k.TryRelease(); err != nil {
+		panic(err)
 	}
+}
+
+// TryRelease is Release returning the error of the OS refusing the block,
+// for a caller that must not panic.
+func (k *Keep) TryRelease() error {
+	if k.size == 0 {
+		return nil
+	}
+	if err := osUnmap(k.addr, k.size); err != nil {
+		return unmapError(k.addr, k.size, err)
+	}
+	blocks.Add(-1)
+	kept.Add(-int64(k.size))
+	k.addr, k.size, k.idle = 0, 0, 0
+	k.hold()
+	return nil
 }
 
 // Close gives the block k keeps back to the OS, and each block given to k

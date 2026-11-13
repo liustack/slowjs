@@ -160,6 +160,7 @@ read_when:
 | Go 函数的长数组直接向系统要内存 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
 | VM 留下最后一块内存给下一次调用 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
 | 展开、rest 和 Object.assign 的复制读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
+| 有内存上限的 VM 也留下最后一块 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块) |
 
 ## 错误和调用栈
 

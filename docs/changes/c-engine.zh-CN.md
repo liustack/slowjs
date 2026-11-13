@@ -91,7 +91,7 @@ read_when:
 
 ## 时钟、abort 与宿主
 
-`engine/host.h` 声明引擎向宿主要什么。`host_now(vm, kind)` 给出墙上时钟或单调时钟，单位纳秒。`host_call(vm, &this, argc, argv, magic)` 调用宿主的一个函数，小于 0 的 magic 是引擎的请求：`HOST_CALL_ABORT` 对应 `abort()`。this 值按地址传，引擎的请求没有 this，传 NULL：JSValue 按值传是两个字，加上影子指针、`vm`、`argc`、`argv` 和 `magic` 一共 7 个，而生成的代码在 `body` 调用模式下最多用寄存器传 6 个字给回调。`Math.random` 不问时钟：它从 `JS_NewRuntime` 得到的种子开始，同一个运行时的每个上下文都一样。`abort` 不知道自己属于哪个 VM，传 0。`host_memory_grow` 在 `engine/heap.h` 里，随分配器一起来。小于 0 的 `host_call` 有两种属于分配器：`HOST_CALL_MEMORY_RELEASE` 归还一个专用的内存块，`HOST_CALL_MEMORY_REMAP` 把它扩大（linux 上，宿主用 `JS_SetHostRemap` 说明可以时）。它们不跑用户代码，也不回调引擎。`host_poll` 是 Go 在引擎里停住 goroutine 的地方，也是中断到达引擎的地方（见[轮询与中断](#轮询与中断)）。`JS_FreeRuntime` 返回仍在使用的块数，没有泄漏时为 0。如果还有对象被引用着，比如宿主从没释放的值，它不会像上游的 assert 那样 abort：它会在释放剩下的东西之前停下，由宿主整块收回内存。
+`engine/host.h` 声明引擎向宿主要什么。`host_now(vm, kind)` 给出墙上时钟或单调时钟，单位纳秒。`host_call(vm, &this, argc, argv, magic)` 调用宿主的一个函数，小于 0 的 magic 是引擎的请求：`HOST_CALL_ABORT` 对应 `abort()`。this 值按地址传，引擎的请求没有 this，传 NULL：JSValue 按值传是两个字，加上影子指针、`vm`、`argc`、`argv` 和 `magic` 一共 7 个，而生成的代码在 `body` 调用模式下最多用寄存器传 6 个字给回调。`Math.random` 不问时钟：它从 `JS_NewRuntime` 得到的种子开始，同一个运行时的每个上下文都一样。`abort` 不知道自己属于哪个 VM，传 0。`host_memory_grow` 在 `engine/heap.h` 里，随分配器一起来。小于 0 的 `host_call` 有三种属于分配器：`HOST_CALL_MEMORY_RELEASE` 归还一个专用的内存块，`HOST_CALL_MEMORY_REMAP` 把它扩大（linux 上，宿主用 `JS_SetHostRemap` 说明可以时），`HOST_CALL_MEMORY_PRESSURE` 请宿主还回它在堆外替 VM 拿着、内存限制也算进去的内存（`JS_GetHostLimit`，见 [allocator.md](../allocator.zh-CN.md)）。它们不跑用户代码，也不回调引擎。`host_poll` 是 Go 在引擎里停住 goroutine 的地方，也是中断到达引擎的地方（见[轮询与中断](#轮询与中断)）。`JS_FreeRuntime` 返回仍在使用的块数，没有泄漏时为 0。如果还有对象被引用着，比如宿主从没释放的值，它不会像上游的 assert 那样 abort：它会在释放剩下的东西之前停下，由宿主整块收回内存。
 
 ## 调用深度与 C 递归
 

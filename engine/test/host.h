@@ -103,5 +103,9 @@ size_t host_live_vms(void);
 extern JSValue (*host_function_call)(uint32_t vm, const JSValue *this_val, int argc, JSValueConst *argv, int id);
 /* When set, host_release passes the handles the engine lets go of to it. */
 extern void (*host_release_call)(uint32_t vm, uint32_t handle);
+/* The test host holds no memory for a VM outside the heap. A test that has
+   it hold some (the words of JS_GetHostLimit) sets this, and host_call
+   answers HOST_CALL_MEMORY_PRESSURE with what it returns: what is still held. */
+extern size_t (*host_pressure_call)(uint32_t vm, size_t request);
 size_t host_mapped_bytes(void);
 #endif

@@ -1230,7 +1230,20 @@ static void test_object_inline_oom(void)
    (string_buffer_realloc2): the new block is asked for as heap_realloc does,
    against the count less the old block. A limit that has room for the new
    block and not for both makes the growth, and one byte less fails with out
-   of memory, the buffer freed. */
+   of memory, the buffer freed. When the host holds memory for the VM and the
+   growth fits only once the host gives it back, the host is asked while the
+   limit has the room of the old block, and after it the limit is the one set
+   less what the host still holds. */
+static size_t buffer_pressures, buffer_held_after;
+
+static size_t buffer_pressure(uint32_t vm, size_t request)
+{
+    (void)vm;
+    (void)request;
+    buffer_pressures++;
+    return buffer_held_after;
+}
+
 static void test_buffer_limit(void)
 {
     /* Where every block is a request to the system malloc (asan) the heap counts
@@ -1244,10 +1257,11 @@ static void test_buffer_limit(void)
     VM v = vm_new();
     struct StringBuffer *b;
     unsigned long hdr = white_jsstring_header();
-    size_t used, usable, request, limit;
+    size_t used, usable, request, limit, *words = JS_GetHostLimit(v.rt);
     int pass;
 
-    for (pass = 0; pass < 2; pass++) {
+    host_pressure_call = buffer_pressure;
+    for (pass = 0; pass < 3; pass++) {
         /* a buffer of 1500000 characters, full: the next one makes it 2250000 */
         b = white_sb_new(v.ctx, 1500000, 0, 1500000);
         CHECK(b != NULL, "the buffer");
@@ -1258,9 +1272,20 @@ static void test_buffer_limit(void)
         used = JS_GetMemorySize(v.rt);
         usable = white_sb_block_usable(b);
         request = hdr + 2250000 + 1;
-        limit = used - usable + request - (pass == 0 ? 0 : 1);
+        limit = used - usable + request - (pass == 1 ? 1 : 0);
         JS_SetMemoryLimit(v.rt, limit);
-        if (pass == 0) {
+        if (pass == 2) {
+            /* the host holds 1000 bytes, writes held and limit, and gives them all back when asked */
+            words[2] = 1000;
+            words[0] = words[1] - 1000;
+            buffer_pressures = 0;
+            buffer_held_after = 0;
+            CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the buffer did not grow once the host gave back what it held");
+            CHECK(!white_sb_error(b), "the buffer is in error");
+            CHECK(buffer_pressures == 1 && words[2] == 0, "%zu requests to the host, %zu still held, want 1 and 0", buffer_pressures, words[2]);
+            CHECK(white_heap_limit(v.ctx) == limit && words[1] == limit, "the limit is %lu after the growth with held given back, want %lu",
+                  (unsigned long)white_heap_limit(v.ctx), (unsigned long)limit);
+        } else if (pass == 0) {
             CHECK(white_sb_write8(b, (const uint8_t *)"y", 1) == 0, "the buffer did not grow with the room of the old block in the limit");
             CHECK(!white_sb_error(b), "the buffer is in error");
             CHECK(white_heap_limit(v.ctx) == limit, "the limit is %lu after the growth, want %lu", (unsigned long)white_heap_limit(v.ctx), (unsigned long)limit);
@@ -1273,6 +1298,7 @@ static void test_buffer_limit(void)
         JS_SetMemoryLimit(v.rt, (size_t)-1);
         white_sb_free(v.ctx, b);
     }
+    host_pressure_call = NULL;
     vm_free(&v);
 }
 
@@ -4039,6 +4065,121 @@ static void test_gc_block_fits(void)
         unlimit(&v);
         vm_free(&v);
     }
+}
+
+/* js_trigger_gc_block when the host holds memory for the VM (held in
+   engine/heap.h): a block that fits once the host gives it back has it given
+   back, and runs no collection. When the host keeps it, or when the block
+   does not fit even without it, the collection runs. room is what the op
+   leaves the heap holding, 1 MiB more, as test_gc_block measures it. A block
+   that grows takes up to half again what it keeps on the way, so the case
+   with no garbage has twice the room under the limit, all but half the room
+   of it held by the host. */
+static size_t gc_held_pressures, gc_held_after;
+
+static size_t gc_held_pressure(uint32_t vm, size_t request)
+{
+    (void)vm;
+    (void)request;
+    gc_held_pressures++;
+    return gc_held_after;
+}
+
+/* the host holds n bytes: it writes held, then the limit less held */
+static void gc_held_hold(size_t *words, size_t n)
+{
+    words[2] = n;
+    words[0] = words[1] == (size_t)-1 ? (size_t)-1 : words[1] > n ? words[1] - n : 0;
+}
+
+/* a new VM with the setup of an op made and collected, and no collection
+   by the threshold */
+static VM gc_held_vm(const char *setup)
+{
+    VM v = vm_new();
+
+    if (setup)
+        CHECK(eval_ok(v.ctx, setup), "the setup threw: %s", setup);
+    JS_RunGC(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+    return v;
+}
+
+static void test_gc_block_held(void)
+{
+    static const struct {
+        const char *setup, *op;
+    } ops[] = {
+        { NULL, "globalThis.r = 'x'.repeat(4 << 20); 0" },
+        { NULL, "globalThis.r = new ArrayBuffer(4 << 20); 0" },
+        { NULL, "{ const a = []; for (let i = 0; i < 1 << 18; i++) a.push(i * 0.5); globalThis.r = a } 0" },
+        { "{ const p = 'j'.repeat(1 << 16); globalThis.s = []; for (let i = 0; i < 64; i++) s.push(p + i) } 0",
+          "globalThis.r = s.join(''); 0" },
+    };
+    const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    size_t i, room, held, *words;
+
+    host_pressure_call = gc_held_pressure;
+    for (i = 0; i < countof(ops); i++) {
+        VM v = gc_held_vm(ops[i].setup);
+        unsigned long full;
+
+        room = JS_GetMemorySize(v.rt);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw", i);
+        room = JS_GetMemorySize(v.rt) - room + (1 << 20);
+        held = room + room / 2;
+        vm_free(&v);
+
+        /* no garbage, and the block fits once the host gives back what it
+           holds: the host is asked once, and no collection runs */
+        v = gc_held_vm(ops[i].setup);
+        words = JS_GetHostLimit(v.rt);
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + 2 * room);
+        gc_held_hold(words, held);
+        gc_held_pressures = 0;
+        gc_held_after = 0;
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu ran out of memory with the host holding %zu bytes", i, held);
+        CHECK(white_gc_run_count(0) == full, "op %zu ran %lu collections where the host could give back what it held", i,
+              white_gc_run_count(0) - full);
+        CHECK(gc_held_pressures == 1 && words[2] == 0, "op %zu: %zu requests to the host, %zu still held, want 1 and 0", i,
+              gc_held_pressures, words[2]);
+        gc_held_hold(words, 0);
+        unlimit(&v);
+        vm_free(&v);
+
+        /* the host keeps what it holds, and garbage is in the way: the
+           collection runs */
+        v = gc_held_vm(ops[i].setup);
+        words = JS_GetHostLimit(v.rt);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2 + held);
+        gc_held_hold(words, held);
+        gc_held_after = held;
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu ran out of memory with the host keeping what it holds and the garbage in the way", i);
+        CHECK(white_gc_run_count(0) > full, "op %zu ran no collection with the host keeping what it holds", i);
+        CHECK(words[2] == held, "op %zu: the host holds %zu, want %zu", i, words[2], held);
+        gc_held_hold(words, 0);
+        unlimit(&v);
+        vm_free(&v);
+
+        /* the block does not fit even with what the host holds given back,
+           and garbage is in the way: the collection runs */
+        v = gc_held_vm(ops[i].setup);
+        words = JS_GetHostLimit(v.rt);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2);
+        gc_held_hold(words, 64 << 10);
+        gc_held_after = 0;
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu ran out of memory with the garbage in the way and the host holding a little", i);
+        CHECK(white_gc_run_count(0) > full, "op %zu ran no collection with the garbage in the way and the host holding a little", i);
+        gc_held_hold(words, 0);
+        unlimit(&v);
+        vm_free(&v);
+    }
+    host_pressure_call = NULL;
 }
 
 /* The buffer of join made 16 bits wide where it is, with room left
@@ -7112,6 +7253,7 @@ int main(int argc, char **argv)
     test_gc_block();
     test_gc_block_fits();
     test_gc_block_widen();
+    test_gc_block_held();
     test_by_value_file();
     test_by_value_oom();
     test_short_opcode_index();
