@@ -121,6 +121,11 @@ typedef struct RVPass {
     BOOL failed;
     BOOL oom;           /* an allocation of the pass failed */
     BOOL crafted;       /* it stops at code no compiler makes (RV_CRAFTED) */
+    /* the for_of_start that get no DSTART (rv_dst_scan), or dst_off: more
+       than dst_no holds, and none gets one */
+    int32_t dst_no[4];
+    int dst_no_n;
+    BOOL dst_off;
     /* the scratch (rv_scratch_fit): the bytes of each buffer, the bytes
        before the first, the entries of st there, and the round ran out of
        one buffer (rv_scratch_short) */
@@ -322,6 +327,61 @@ static BOOL rv_catch_reads_ok(RVPass *s, int pos, int op, int d, int c, int npop
     return TRUE;
 }
 
+static int rv_fold_reach(RVPass *s, int pos, int npop);
+
+/* the for_of_start at c gets no DSTART (engine/regvm-ops-dst.h) */
+static void rv_dst_no(RVPass *s, int c)
+{
+    int i;
+    for (i = 0; i < s->dst_no_n; i++) {
+        if (s->dst_no[i] == c)
+            return;
+    }
+    if (s->dst_no_n < (int)countof(s->dst_no))
+        s->dst_no[s->dst_no_n++] = c;
+    else
+        s->dst_off = TRUE;
+}
+
+/* The record of a for_of_start that DSTART makes holds the array in place
+   of the iterator and the index of the next element in place of the catch
+   offset (js_dst_ok, quickjs.c): no instruction may read it but for_of_next
+   of it and the iterator_close of it, which know it, or the array could be
+   stored, returned or passed on where the iterator was. The parser's code
+   reads it so, but for nip_catch, which takes the catch offset off and
+   leaves the array and the next method under the value it keeps, for the
+   iterator_close of the return of a generator from a yield in a default
+   (emit_return, quickjs.c): that close could not know the array. Code read
+   by JS_ReadObject could read it with any instruction that reaches its
+   catch offset (rv_catch_reads_ok lets a few: a drop of it, the iterator
+   ops of yield*). Each of those for_of_start gets the old W_FOR_OF_START.
+   Each instruction is read once here, at the depth d and the catch c
+   before it. */
+static void rv_dst_scan(RVPass *s, int pos, int op, int d, int c, int npop)
+{
+    int lo, l;
+    if (op == OP_nip_catch) {
+        if (c >= 0 && s->bc[c] == OP_for_of_start)
+            rv_dst_no(s, c);
+        return;
+    }
+    /* the entries it reads are those from lo up: the catch offsets there,
+       from the innermost down */
+    lo = d - rv_fold_reach(s, pos, npop);
+    for (; c >= 0; c = s->catchpos[c]) {
+        l = rv_catch_level(s, c);
+        if (l < lo)
+            break;
+        if (s->bc[c] != OP_for_of_start)
+            continue;
+        if (op == OP_iterator_close && l == d - 1)
+            continue;
+        if (op == OP_for_of_next && l == d - 1 - s->bc[pos + 1])
+            continue;
+        rv_dst_no(s, c);
+    }
+}
+
 /* the depth before each instruction, the catch or for_of_start whose
    catch offset is the innermost on the stack there (catchpos, -1 for none)
    and the leaders, as compute_stack_size finds them for the instructions
@@ -348,6 +408,7 @@ static int rv_depths(RVPass *s)
                 goto fail;
             if (!rv_catch_reads_ok(s, pos, op, d, c, npop))
                 goto fail;
+            rv_dst_scan(s, pos, op, d, c, npop);
             d = d - npop + npush;
             if (d > s->b->stack_size)
                 goto fail;

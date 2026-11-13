@@ -46,6 +46,7 @@ read_when:
 | `JS_ToBool` 和寄存器循环对局部变量或参数的分支不给值加引用就判断真假 | Unreleased | [c-engine.md](c-engine.zh-CN.md#值的真假不加引用就判断) |
 | 数组字面量把元素的引用直接搬进数组 | Unreleased | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 | 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | Unreleased | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
+| 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | Unreleased | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
 
 ## 上游 QuickJS 的提交
 

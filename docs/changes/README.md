@@ -46,6 +46,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `JS_ToBool` and the branches of the register loop on a local or an argument read the value without a reference | Unreleased | [c-engine.md](c-engine.md#the-truth-of-a-value-is-read-without-a-reference) |
 | An array literal moves the references of its elements into the array | Unreleased | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
 | On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | Unreleased | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
+| The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | Unreleased | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
 
 ## Commits of upstream QuickJS
 

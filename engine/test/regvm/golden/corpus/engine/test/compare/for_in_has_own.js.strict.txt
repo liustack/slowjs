@@ -2,6 +2,6 @@ exception TypeError: object is not extensible
 stack     at <anonymous> (<eval>:230:41)
 stack     at keys (<eval>:21:19)
 stack     at <eval> (<eval>:229:31)
-mem-end obj=215 atom=614 shape=207 prop=1026 jsfunc=5 cfunc=142 array=3 fast_array=3 elements=89 binary=0
-mem-gc obj=212 atom=612 shape=205 prop=1019 jsfunc=3 cfunc=142 array=3 fast_array=3 elements=89 binary=0
+mem-end obj=215 atom=614 shape=206 prop=1026 jsfunc=5 cfunc=142 array=3 fast_array=3 elements=89 binary=0
+mem-gc obj=212 atom=612 shape=204 prop=1019 jsfunc=3 cfunc=142 array=3 fast_array=3 elements=89 binary=0
 --- status exit 0

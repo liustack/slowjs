@@ -56,6 +56,15 @@ type Options struct {
 	// words its errors: the programs run the same under Node (rvgen
 	// node).
 	Portable bool
+	// Dst adds, to the full or wide mode, array destructurings in every
+	// form the parser makes (declarations, assignments, parameters, the
+	// head of for-of, catch parameters, a generator with a yield in a
+	// default) of arrays and other values, with defaults that change the
+	// array or the built-ins its iterator comes from (Array.prototype's
+	// Symbol.iterator, next and return of the iterator prototypes, elements
+	// of Array.prototype for holes). Programs of the other modes stay as
+	// they were.
+	Dst bool
 }
 
 // msg is the field of a caught error the program writes
@@ -67,7 +76,7 @@ func (g *gen) msg() string {
 }
 
 func (o *Options) fill() {
-	if o.Wide {
+	if o.Wide || o.Dst {
 		o.Core = false
 	}
 	if o.Funcs < 2 {
@@ -114,7 +123,7 @@ func (g *gen) line(format string, args ...any) {
 
 func (g *gen) program(seed uint64) {
 	g.line("// rvgen seed %d funcs %d stmts %d depth %d core %v%s%s", seed, g.o.Funcs, g.o.Stmts, g.o.Depth, g.o.Core,
-		map[bool]string{true: " wide"}[g.o.Wide], map[bool]string{true: " portable"}[g.o.Portable]+map[bool]string{true: " captures"}[g.o.Captures])
+		map[bool]string{true: " wide"}[g.o.Wide], map[bool]string{true: " portable"}[g.o.Portable]+map[bool]string{true: " captures"}[g.o.Captures]+map[bool]string{true: " dst"}[g.o.Dst])
 	if g.o.Wide {
 		g.wideTop()
 	}
@@ -150,6 +159,10 @@ func (g *gen) program(seed uint64) {
 	g.line(`function rec(v) { L.push(show(v)); return v; }`)
 	g.line(`function thr(x) { throw new RangeError("thr " + show(x)); }`)
 	g.line(`function run(name, f, d, a, b, c) {`)
+	if g.o.Dst {
+		// the built-ins a default of the run before changed (mis)
+		g.line(`  fix();`)
+	}
 	g.line("%s", `  B.n = 0;
   try { L.push(name + " = " + show(f(d, a, b, c))); } catch (e) { L.push(name + " ! " + (e instanceof Error ? `+map[bool]string{false: `e.name + ": " + e.message`, true: `e.name`}[g.o.Portable]+` : show(e))); }`)
 	if g.o.Captures {
@@ -168,6 +181,9 @@ func (g *gen) program(seed uint64) {
 	g.line(`function leaf(x, y) { return x - y; }`)
 	if g.o.Wide {
 		g.widePrelude()
+	}
+	if g.o.Dst {
+		g.dstPrelude()
 	}
 	g.argc = make([]int, g.o.Funcs)
 	for i := range g.o.Funcs {
@@ -248,6 +264,10 @@ func (g *gen) stmt(depth int) {
 	}
 	if g.o.Captures && depth > 0 && g.chance(0.25) {
 		g.captureStmt()
+		return
+	}
+	if g.o.Dst && depth > 0 && g.chance(0.35) {
+		g.dstStmt()
 		return
 	}
 	if depth <= 0 {

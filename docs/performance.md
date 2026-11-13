@@ -890,6 +890,10 @@ The time falls more than the instructions: the calls that copy run 4.5% to 7.6% 
 
 The instructions fall by about two for each call into a function that saves LR. The time falls by about as much as the instructions, inside the spread of the rounds. The `.s` files of arm64 are 0.40% smaller. amd64 does not change.
 
+### Array destructuring with no iterator
+
+[Array destructuring with no iterator](changes/c-engine.md#array-destructuring-with-no-iterator). Counted on 2026-11-13 on the native C tree at 62df0bc8 against 4922b91a (linux/arm64 callgrind, three timed renders of each page after two warm ones, a young collection after each): 0.71% fewer instructions on the workbench pages (0.48% to 0.85% a page), 0.33% on the storefront (0.14% to 0.51%), 0.27% on MUI (0.21% to 0.29%) and 0.31% on React, and with the URL stand-in (`urlmemo.js`) 0.84%, 0.53% and 0.26%. No page runs more. Timed in tifa's `test/ssr` on linux/amd64 (one core, 60 renders of each page, the P50, 5 alternating rounds), the pages took 0.988 of the time on MUI, 0.996 on the storefront and 1.001 on the workbench, where the engine against a copy of itself took 0.982, 0.994 and 1.001: below what the timing can show, and no page took more than 1.007.
+
 ### Stability under load
 
 Measured on the Google Cloud VM above (Go 1.27.2), with the 18 pages of tifa's example shop (its 6 workbench pages and 6 storefront pages in each language) rendered through tifa's pool, the C engine against the ccgo engine (`lib`, [history.md](history.md)), built from the same tree. The cores are pinned: `1,3` are two physical cores, `1,3,5,7` are those two with their hyperthreads. The pool keeps tifa's rules: any error retires the VM, a young GC runs after each render and a full one every 256.

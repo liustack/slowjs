@@ -749,6 +749,9 @@ struct JSContext {
     JSValue iterator_ctor;
     JSValue async_iterator_proto;
     JSValue array_proto_values;
+    /* the indexes of the properties js_dst_ok read last:
+       Array.prototype[Symbol.iterator] and %ArrayIteratorPrototype%.next */
+    uint32_t dst_hint_iter, dst_hint_next;
     JSValue throw_type_error;
     JSValue eval_obj;
 
@@ -21667,6 +21670,27 @@ static __exception int js_for_of_start(JSContext *ctx, JSValue *sp,
    undefined. */
 static int js_for_of_array_next(JSContext *ctx, JSValueConst iter,
                                  JSValueConst next, JSValue *pval);
+/* an array destructured with no iterator (js_dst_ok, after the Array
+   Iterator) */
+/* the catch offset of such a record, whose next element is at the index
+   i: -(i + 1). The catch offset of every other record is 0, and that of a
+   catch the place of the catch in its function, which a read checks, so
+   never below 0. The index is at most JS_DST_LAST, so that the one after
+   it has a catch offset too. */
+#define JS_DST_REC(i) JS_MKVAL(JS_TAG_CATCH_OFFSET, -(int32_t)(i) - 1)
+#define JS_DST_LAST ((uint32_t)INT32_MAX - 1)
+static inline BOOL js_dst_is_rec(JSValueConst c)
+{
+    return JS_VALUE_GET_TAG(c) == JS_TAG_CATCH_OFFSET && JS_VALUE_GET_INT(c) < 0;
+}
+static inline uint32_t js_dst_index(JSValueConst c)
+{
+    return (uint32_t)(-(JS_VALUE_GET_INT(c) + 1));
+}
+static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext);
+static int js_dst_next(JSContext *ctx, JSValue *it, JSValue *pval);
+static int js_dst_iter(JSContext *ctx, JSValue *it);
+static BOOL js_dst_has_return(JSContext *ctx);
 
 static __exception int js_for_of_next(JSContext *ctx, JSValue *sp, int offset)
 {
@@ -21674,7 +21698,11 @@ static __exception int js_for_of_next(JSContext *ctx, JSValue *sp, int offset)
     int done = 1;
 
     if (likely(!JS_IsUndefined(sp[offset]))) {
-        done = js_for_of_array_next(ctx, sp[offset], sp[offset + 1], &value);
+        done = -1;
+        if (unlikely(js_dst_is_rec(sp[offset + 2])))
+            done = js_dst_next(ctx, sp + offset, &value);
+        if (done < 0)
+            done = js_for_of_array_next(ctx, sp[offset], sp[offset + 1], &value);
         if (done < 0)
             value = JS_IteratorNext(ctx, sp[offset], sp[offset + 1], 0, NULL, &done);
         if (JS_IsException(value))
@@ -50594,6 +50622,174 @@ static int js_for_of_array_next(JSContext *ctx, JSValueConst iter,
     }
     *pval = JS_DupValue(ctx, p->u.array.u.values[it->idx++]);
     return 0;
+}
+
+/* Array destructuring with no iterator (DSTART and DNEXT of the register
+   loop, engine/regvm-ops-dst.h, and docs/changes/c-engine.md). When
+   js_dst_ok holds, GetIterator of the array would call the built-in values,
+   which makes an Array Iterator of it and nothing else, and read the
+   built-in next from %ArrayIteratorPrototype%. Then the iterator record
+   keeps the array in place of the iterator, the built-in next as its next
+   method, and in place of the catch offset 0 the index of the next element
+   (JS_DST_REC). Script never reads the array there: the pass gives such a
+   record only where for_of_next and iterator_close alone read it
+   (rv_dst_scan, engine/regvm-pass.h). Each read takes the element while
+   the array is fast and has it, ends at its length, and otherwise makes the
+   Array Iterator as GetIterator would have it now (js_dst_iter): same
+   array, same index. What GetIterator read cannot change it after, so the
+   code of the real iterator goes on from there. A close looks for a return
+   first, as JS_IteratorClose would read it. */
+
+/* the own property atom of p, or NULL. hint is its index the last time: it
+   is the property when the atom is there, since an atom is in a shape
+   once */
+static JSShapeProperty *js_dst_find(JSObject *p, uint32_t *hint, JSAtom atom,
+                                    JSProperty **ppr)
+{
+    JSShape *sh = p->shape;
+    JSShapeProperty *prs;
+    uint32_t i = *hint;
+
+    if (i < sh->prop_count && get_shape_prop(sh)[i].atom == atom) {
+        *ppr = &p->prop[i];
+        return &get_shape_prop(sh)[i];
+    }
+    prs = find_own_property(ppr, p, atom);
+    if (prs)
+        *hint = prs - get_shape_prop(sh);
+    return prs;
+}
+
+/* 1 when v is a fast Array of this realm with no own property but its
+   length and Array.prototype as its prototype (the shape of a new array),
+   whose own Symbol.iterator is the built-in values, and
+   %ArrayIteratorPrototype% has the built-in next of the Array Iterator (of
+   any realm, as js_for_of_array_next takes it) as its own data property
+   next: *pnext is then that next. The engine makes it at its first use, as
+   the read of GetIterator would: -1 when there is no memory for it, with
+   the exception. */
+static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext)
+{
+    JSObject *p, *f;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT)
+        return 0;
+    p = JS_VALUE_GET_OBJ(v);
+    if (p->shape != ctx->array_shape || p->class_id != JS_CLASS_ARRAY ||
+        !p->fast_array)
+        return 0;
+    prs = js_dst_find(ctx->array_shape->proto, &ctx->dst_hint_iter,
+                      JS_ATOM_Symbol_iterator, &pr);
+    if (!prs || (prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(pr->u.value) != JS_VALUE_GET_OBJ(ctx->array_proto_values))
+        return 0;
+    p = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY_ITERATOR]);
+    prs = js_dst_find(p, &ctx->dst_hint_next, JS_ATOM_next, &pr);
+    if (!prs)
+        return 0;
+    if (unlikely((prs->flags & JS_PROP_TMASK) == JS_PROP_AUTOINIT)) {
+        if (JS_AutoInitProperty(ctx, p, JS_ATOM_next, pr, prs))
+            return -1;
+        /* the shape may have moved */
+        prs = js_dst_find(p, &ctx->dst_hint_next, JS_ATOM_next, &pr);
+        if (!prs)
+            return 0;
+    }
+    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT)
+        return 0;
+    f = JS_VALUE_GET_OBJ(pr->u.value);
+    if (f->class_id != JS_CLASS_C_FUNCTION ||
+        f->u.cfunc.cproto != JS_CFUNC_iterator_next ||
+        f->u.cfunc.c_function.iterator_next != js_array_iterator_next)
+        return 0;
+    *pnext = JS_DupValue(ctx, pr->u.value);
+    return 1;
+}
+
+/* the Array Iterator of the array it[0] at the index of the record, in its
+   place, as values made it and as many reads of next moved it, and the
+   catch offset of every record. -1 when there is no memory for it, it as
+   it was. */
+static int js_dst_iter(JSContext *ctx, JSValue *it)
+{
+    JSValue enum_obj;
+    JSArrayIteratorData *d;
+
+    enum_obj = JS_NewObjectClass(ctx, JS_CLASS_ARRAY_ITERATOR);
+    if (JS_IsException(enum_obj))
+        return -1;
+    d = js_malloc(ctx, sizeof(*d));
+    if (!d) {
+        JS_FreeValue(ctx, enum_obj);
+        return -1;
+    }
+    d->obj = it[0];
+    d->kind = JS_ITERATOR_KIND_VALUE;
+    d->idx = js_dst_index(it[2]);
+    JS_SetOpaque(enum_obj, d);
+    it[0] = enum_obj;
+    it[2] = JS_NewCatchOffset(ctx, 0);
+    return 0;
+}
+
+/* the next element of the array it[0] of the record it, as
+   js_for_of_array_next gives it: 0 with the value, 1 at the end (the value
+   undefined) or with JS_EXCEPTION, and -1 when the array has neither here:
+   it is then the record of the Array Iterator. Each read polls once, as the
+   read by the iterator does. */
+static int js_dst_next(JSContext *ctx, JSValue *it, JSValue *pval)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(it[0]);
+    uint32_t idx = js_dst_index(it[2]);
+    JSValue len;
+
+    if (p->fast_array) {
+        if (idx < p->u.array.count && idx < JS_DST_LAST) {
+            if (js_poll_interrupts(ctx)) {
+                *pval = JS_EXCEPTION;
+                return 1;
+            }
+            it[2] = JS_DST_REC(idx + 1);
+            *pval = JS_DupValue(ctx, p->u.array.u.values[idx]);
+            return 0;
+        }
+        /* the length of an Array is its own data property, which
+           js_array_iterator_next reads */
+        len = p->prop[0].u.value;
+        if (JS_VALUE_GET_TAG(len) == JS_TAG_INT &&
+            idx >= (uint32_t)JS_VALUE_GET_INT(len)) {
+            if (js_poll_interrupts(ctx)) {
+                *pval = JS_EXCEPTION;
+                return 1;
+            }
+            *pval = JS_UNDEFINED;
+            return 1;
+        }
+    }
+    if (js_dst_iter(ctx, it)) {
+        *pval = JS_EXCEPTION;
+        return 1;
+    }
+    return -1;
+}
+
+/* whether the close of the Array Iterator would read a return: one of its
+   own on %ArrayIteratorPrototype% or an object of its chain, or an exotic
+   object there, which could have one (a Proxy) */
+static BOOL js_dst_has_return(JSContext *ctx)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_ARRAY_ITERATOR]);
+    JSProperty *pr;
+
+    for (; p; p = p->shape->proto) {
+        if (p->is_exotic || find_own_property(&pr, p, JS_ATOM_return))
+            return TRUE;
+    }
+    return FALSE;
 }
 
 static void js_array_iterator_finalizer(JSRuntime *rt, JSValue val)

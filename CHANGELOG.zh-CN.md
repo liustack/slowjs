@@ -14,6 +14,7 @@
 - 字节码版本升到 11，因为它给直接存值的闭包变量带上标记，读取时检查过一次之后就照文件里的用（[c-engine.md](docs/changes/c-engine.zh-CN.md#捕获后不再改变的变量)）：v0.30.2 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
 - 一次调用的最后几个参数是局部变量、参数或 `this` 时，由调用自己复制，原来每个都要单独一条指令。在 Apple M4 上，tifa 商店的一次渲染少用 0.9% 到 1.3% 的时间，React 的页面少 0.8%（[c-engine.md](docs/changes/c-engine.zh-CN.md#一次调用自己把最后几个局部变量复制进窗口)）。
 - 在 arm64 上，有调用的生成函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事。在 Apple M4 上，一次渲染少跑 0.75% 到 1.14% 的指令，少用 0.4% 到 1.2% 的时间，在各轮的波动之内。栈帧和调用深度不变，amd64 不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#arm64-只保存一次-lr)）。
+- 解构普通数组（比如 `const [a, b] = arr`）不再造 Array Iterator：不再在调用 `values` 时 poll，也不占一层调用深度，别处不造迭代器的脚本少持有一个形状。有内存上限时，内存不足可能晚一点，在造迭代器的地方才出现。tifa 页面的一次渲染少跑 0.26%（MUI）到 0.84%（workbench）的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#不造迭代器的数组解构)）。
 
 ## [v0.30.2] - 2026-11-13
 

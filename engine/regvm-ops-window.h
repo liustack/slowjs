@@ -99,13 +99,17 @@ static void rv_window_end(RVPass *s, int npop, int npush)
         break;
     case OP_for_of_start:
         /* iterator, next method and the catch offset 0 that closes the
-           iterator when an exception passes it (rv_unwind) */
-        rv_window(s, p, RV_W_FOR_OF_START, 1);
+           iterator when an exception passes it (rv_unwind). DSTART for an
+           array destructured (regvm-ops-dst.h) */
+        rv_window(s, p, rv_dst_site(s, s->pos) ? RV_DSTART : RV_W_FOR_OF_START, 1);
         rv_throws(s, rv_owned(s, 0));
         rv_window_end(s, 1, 3);
         break;
     case OP_for_of_next:
-        /* the iterator is p[1] entries below the top three */
+        /* the iterator is p[1] entries below the top three. With a drop
+           after it, DNEXT (regvm-ops-dst.h) */
+        if (rv_dst_next(s, p))
+            break;
         rv_window(s, p, RV_W_FOR_OF_NEXT, 3 + p[1]);
         rv_throws(s, rv_owned(s, 0));
         rv_hooks(s, RV_HOOK_APART);
@@ -335,6 +339,25 @@ static no_inline int rv_w_iterator_close(JSContext *ctx, JSValue *F, const uint8
     /* an iterator that is done is not closed: nothing to fail */
     if (JS_IsUndefined(sp[-3]))
         RV_INJ_NONE("skip");
+    else if (js_dst_is_rec(sp[-1])) {
+        /* the array of DSTART (regvm-ops-dst.h): the close reads no
+           return where none is, and the array and the next method go.
+           Otherwise its Array Iterator is closed, which stays in its
+           place, as the iterator does when the close throws. */
+        if (!RV_INJ_ARMED && !js_dst_has_return(ctx)) {
+            JS_FreeValue(ctx, sp[-2]);
+            JS_FreeValue(ctx, sp[-3]);
+            return 0;
+        }
+        if (js_dst_iter(ctx, sp - 3)) {
+            /* the cleanup of this instruction frees only the iterator
+               slot, as OP_BODY_iterator_close has freed next before it
+               closes: the next method goes here */
+            JS_FreeValue(ctx, sp[-2]);
+            sp[-2] = JS_UNDEFINED;
+            return -1;
+        }
+    }
 #define JS_IteratorClose(ctx, it, is_throw)                             \
     (RV_INJ_HIT(ctx) ? -1 : JS_IteratorClose(ctx, it, is_throw))
     OP_BODY_iterator_close(ctx, sp, (void)0, exception)

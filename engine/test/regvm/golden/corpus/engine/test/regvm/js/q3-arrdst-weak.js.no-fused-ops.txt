@@ -1,0 +1,9 @@
+result deleted: alive in the default true
+result deleted: a2
+result replaced: alive in the default true
+result replaced: x,2,z,q
+result gone: alive after the destructuring false
+result gone: xpnew
+mem-end obj=191 atom=541 shape=122 prop=950 jsfunc=1 cfunc=127 array=2 fast_array=2 elements=1 binary=0
+mem-gc obj=191 atom=541 shape=122 prop=950 jsfunc=1 cfunc=127 array=2 fast_array=2 elements=1 binary=0
+--- status exit 0
