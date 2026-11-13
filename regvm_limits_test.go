@@ -28,6 +28,10 @@ var regvmSpins = []struct{ name, js string }{
 	{"callback", `function go() { [1].forEach(function () { for (;;) {} }); }`},
 	{"generator", `function* gen() { for (;;) yield 1; } function go() { for (const v of gen()) {} }`},
 	{"Go callback", `function spin() { for (;;) {} } function go() { back(); }`},
+	// built-ins the loop answers itself (rv_fast_call): each answer counts
+	// a poll and reads the flag as the call did
+	{"built-ins", `function go() { var m = new Map([[1, 1]]), s = new Set(['a']), x = 0; for (;;) { x = m.has(1) + s.has('a') + Math.clz32(x); } }`},
+	{"built-ins no loop", `function t(n, m) { return n === 0 ? m.has(n) + Math.clz32(n) : t(n - 1, m) + t(n - 1, m); } function go() { return t(60, new Map()); }`},
 }
 
 // regvmRun runs go() of js on a new VM with the register loop on, with stop

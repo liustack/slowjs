@@ -1319,6 +1319,8 @@ enum {
     RV_FAST_NONE,
     RV_FAST_CALL, /* Function.prototype.call, for hasOwnProperty.call */
     RV_FAST_CHAR_CODE_AT, /* String.prototype.charCodeAt */
+    RV_FAST_CLZ32, /* Math.clz32 */
+    RV_FAST_MAP_HAS, /* Map.prototype.has and Set.prototype.has */
 };
 
 struct JSObject {
@@ -8906,6 +8908,31 @@ static JSValue js_string_charCodeAt(JSContext *ctx, JSValueConst this_val,
                                      int argc, JSValueConst *argv);
 static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv);
+static JSValue js_math_clz32(JSContext *ctx, JSValueConst this_val,
+                             int argc, JSValueConst *argv);
+static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv, int magic);
+static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv, int magic);
+#define MAGIC_SET (1 << 0)
+#define MAGIC_WEAK (1 << 1)
+
+/* The kind of JSObject.rv_fast of the C function func with its magic: the
+   built-ins rv_fast_call (regvm-ops-basic.h) answers in the register loop.
+   Every realm's copy gets it, since the answer does not depend on the
+   realm. */
+static int rv_fast_kind(JSCFunction *func, int magic)
+{
+    if (func == (JSCFunction *)js_string_charCodeAt)
+        return RV_FAST_CHAR_CODE_AT;
+    if (func == (JSCFunction *)js_function_call)
+        return RV_FAST_CALL;
+    if (func == (JSCFunction *)js_math_clz32)
+        return RV_FAST_CLZ32;
+    if (func == (JSCFunction *)js_map_has && (magic == 0 || magic == MAGIC_SET))
+        return RV_FAST_MAP_HAS;
+    return RV_FAST_NONE;
+}
 
 static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
                                 const char *name,
@@ -8929,8 +8956,7 @@ static JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func,
     p->u.cfunc.length = length;
     p->u.cfunc.cproto = cproto;
     p->u.cfunc.magic = magic;
-    p->rv_fast = func == (JSCFunction *)js_string_charCodeAt ? RV_FAST_CHAR_CODE_AT :
-        func == (JSCFunction *)js_function_call ? RV_FAST_CALL : RV_FAST_NONE;
+    p->rv_fast = rv_fast_kind(func, magic);
     p->is_constructor = (cproto == JS_CFUNC_constructor ||
                          cproto == JS_CFUNC_constructor_magic ||
                          cproto == JS_CFUNC_constructor_or_func ||
@@ -63144,8 +63170,8 @@ static JSValue js_weakref_new(JSContext *ctx, JSValueConst val)
     return (JSValue)val;
 }
 
-#define MAGIC_SET (1 << 0)
-#define MAGIC_WEAK (1 << 1)
+/* MAGIC_SET and MAGIC_WEAK are defined before JS_NewCFunction3, which reads
+   them (rv_fast_kind) */
 
 static JSValue js_map_constructor(JSContext *ctx, JSValueConst new_target,
                                   int argc, JSValueConst *argv, int magic)
@@ -63818,6 +63844,77 @@ static JSValue js_map_has(JSContext *ctx, JSValueConst this_val,
     mr = map_find_record(ctx, s, key);
     if (mr == MAP_STOPPED)
         return JS_EXCEPTION;
+    return JS_NewBool(ctx, mr != NULL);
+}
+
+/* map_find_record for an answer of the register loop: the same search, but
+   where map_find_record would read the interrupt flag (a key that is a rope
+   or a string of a step or more, a record whose key is a rope, compares of
+   strings of the key's length that add up to a step) it gives up. TRUE with
+   the record in *pmr, NULL when the key is not there, or FALSE when it gave
+   up. It reads no flag, throws nothing and changes nothing, so the call made
+   after it gives up finds what it would have found. s is of a Map or a Set,
+   not weak. */
+static BOOL map_find_record_quiet(JSContext *ctx, JSMapState *s,
+                                  JSValueConst key, JSMapRecord **pmr)
+{
+    uint32_t tag = JS_VALUE_GET_TAG(key), h, work = 0;
+    const JSString *p, *q;
+    JSMapRecord *mr;
+
+    if (tag == JS_TAG_STRING_ROPE ||
+        (tag == JS_TAG_STRING && JS_VALUE_GET_STRING(key)->len >= JS_ROPE_STEP))
+        return FALSE;
+    h = map_hash_key(key, s->hash_bits);
+    if (tag != JS_TAG_STRING) {
+        for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+            if (!mr->empty && js_same_value_zero(ctx, mr->key, key))
+                break;
+        }
+        *pmr = mr;
+        return TRUE;
+    }
+    p = JS_VALUE_GET_STRING(key);
+    for(mr = s->hash_table[h]; mr != NULL; mr = mr->hash_next) {
+        if (mr->empty)
+            continue;
+        tag = JS_VALUE_GET_TAG(mr->key);
+        if (likely(tag == JS_TAG_STRING)) {
+            q = JS_VALUE_GET_STRING(mr->key);
+            if (q == p)
+                break;
+            if (q->len != p->len)
+                continue;
+            if (unlikely(work + p->len >= JS_ROPE_STEP))
+                return FALSE;
+            work += p->len;
+            if (js_string_eq(ctx, q, p))
+                break;
+        } else if (tag == JS_TAG_STRING_ROPE) {
+            return FALSE;
+        }
+    }
+    *pmr = mr;
+    return TRUE;
+}
+
+/* Map.prototype.has and Set.prototype.has (magic) answered in the register
+   loop (rv_fast_call): what js_map_has returns, for a this of the class and
+   a key whose search reads no interrupt flag (map_find_record_quiet). Else
+   JS_UNINITIALIZED, and the call is made: it throws for another this. */
+static JSValue js_map_has_fast(JSContext *ctx, JSValueConst this_val,
+                               int argc, JSValueConst *argv, int magic)
+{
+    JSObject *p;
+    JSMapRecord *mr;
+
+    if (argc < 1 || JS_VALUE_GET_TAG(this_val) != JS_TAG_OBJECT)
+        return JS_UNINITIALIZED;
+    p = JS_VALUE_GET_OBJ(this_val);
+    if (p->class_id != JS_CLASS_MAP + magic || !p->u.map_state ||
+        !map_find_record_quiet(ctx, p->u.map_state,
+                               map_normalize_key_const(ctx, argv[0]), &mr))
+        return JS_UNINITIALIZED;
     return JS_NewBool(ctx, mr != NULL);
 }
 

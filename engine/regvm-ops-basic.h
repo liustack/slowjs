@@ -705,6 +705,28 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     return ret < 0 ? -1 : 0;
 }
 
+/* What js_call_c_direct does before it calls the C function, for an answer
+   of rv_fast_call, in its order: 1 when the call would go through
+   JS_CallInternal instead (no level of call depth left, or not the stack
+   for it, measured from here, which is deeper than the loop, so this side
+   gives up first): the call is made, and throws as before. Else the count
+   of a poll and the read of the interrupt flag: -1 when the call stops there
+   (interrupted thrown, or an uncatchable exception pending), 0 to answer. */
+static force_inline int rv_fast_enter(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+
+    if (unlikely(rt->call_depth >= rt->max_call_depth ||
+                 js_stack_short(rt, rt->call_frame)))
+        return 1;
+    poll_count(POLL_WEIGHT);
+    if (js_poll_interrupts(ctx))
+        return -1;
+    if (unlikely(js_uncatchable_pending(rt)))
+        return -1;
+    return 0;
+}
+
 /* A call out of the loop of a C function that JS_NewCFunction3 marked
    (JSObject.rv_fast), answered here with what the C function returns, when
    its this and arguments are of the kinds for which it runs no script,
@@ -719,14 +741,27 @@ static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
    through it only goes deeper), no count of a poll (the instructions of
    the loop around it are counted, see check_polls). Of the checks of a
    call only the one of an uncatchable exception pending stays, which makes
-   the call fail. */
+   the call fail.
+   The other built-ins (rv_fast_kind) are answered as the call is made by
+   js_call_c_direct, with the C function's work done here: first the answer
+   is found, which reads no flag, runs no script, throws nothing and changes
+   nothing that can be seen, and gives up (JS_UNINITIALIZED) where the C
+   function would do more. Then the steps of js_call_c_direct before the C
+   function, in its order (rv_fast_enter): the same count of a poll, the same
+   read of the interrupt flag, and the call made instead when it would go
+   through JS_CallInternal. So a stop ends a loop of such calls where it ended
+   it before, an exception comes only from the call that is made, with its
+   stack and message, and the depth a recursion reaches is the same. */
 static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
                                       JSValueConst this_v)
 {
+    JSObject *f = JS_VALUE_GET_OBJ(W[0]);
+    JSValue ret;
     JSString *p;
     uint32_t idx;
+    int r;
 
-    switch (JS_VALUE_GET_OBJ(W[0])->rv_fast) {
+    switch (f->rv_fast) {
     case RV_FAST_CALL:
         return js_has_own_call(ctx, this_v, W + 1, n);
     case RV_FAST_CHAR_CODE_AT:
@@ -751,8 +786,27 @@ static no_inline JSValue rv_fast_call(JSContext *ctx, JSValueConst *W, int n,
         if (idx >= p->len)
             return JS_NAN;
         return JS_NewInt32(ctx, string_get(p, idx));
+    case RV_FAST_CLZ32:
+        /* a number, or a value ToUint32 takes without a script */
+        if (n < 1 || !(JS_VALUE_GET_TAG(W[1]) == JS_TAG_INT ||
+                       JS_TAG_IS_FLOAT64(JS_VALUE_GET_TAG(W[1]))))
+            break;
+        JS_ToUint32(ctx, &idx, W[1]);
+        ret = JS_NewInt32(ctx, idx == 0 ? 32 : clz32(idx));
+        goto answer;
+    case RV_FAST_MAP_HAS:
+        ret = js_map_has_fast(ctx, this_v, n, W + 1, f->u.cfunc.magic);
+        if (JS_IsUninitialized(ret))
+            break;
+        goto answer;
     }
     return JS_UNINITIALIZED;
+ answer:
+    r = rv_fast_enter(ctx);
+    if (likely(r == 0))
+        return ret;
+    JS_FreeValue(ctx, ret);
+    return r > 0 ? JS_UNINITIALIZED : JS_EXCEPTION;
 }
 
 /* CALLS w argc k s1 .. sk: the last k arguments of the call copied with a
