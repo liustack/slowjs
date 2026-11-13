@@ -172,7 +172,10 @@ func (a Args) Bool(i int) (bool, bool) {
 // String returns argument i when it is a string, as UTF-8 with U+FFFD for
 // each lone surrogate. It converts nothing else. ok is false too when there
 // is no memory for the conversion, and the call then fails with the out of
-// memory error whatever the Builtin returns.
+// memory error whatever the Builtin returns. A long string ends the same
+// way at Interrupt, the eval timeout or an uncatchable error of the call,
+// as a loop of the engine does: ok is false, and the call fails with that
+// error.
 func (a Args) String(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
 	case tagString, tagStringRope:
@@ -186,6 +189,7 @@ func (a Args) String(i int) (s string, ok bool) {
 // the engine writes it in, which is not UTF-8. A surrogate pair is its one
 // character in UTF-8, as in String. A Builtin that has to tell lone
 // surrogates apart, as a collator orders them, reads its string this way.
+// It ends at the limits of the call as String does.
 func (a Args) WTF8(i int) (s string, ok bool) {
 	switch v := a.arg(i); tag(v) {
 	case tagString, tagStringRope:

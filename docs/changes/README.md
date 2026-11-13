@@ -89,6 +89,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A result that contains itself is an error | v0.30.2 | [go-api.md](go-api.md#a-result-that-contains-itself-is-an-error) |
 | The references of a result are taken before code of the program runs | v0.30.2 | [go-api.md](go-api.md#the-references-of-a-result-are-taken-before-code-of-the-program-runs) |
 | NewArray stops at the limits of the call | v0.30.2 | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
+| Long strings and results stop converting at the limits of the call | Unreleased | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
 
 ## Limits that hold
 
