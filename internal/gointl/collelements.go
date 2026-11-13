@@ -97,17 +97,12 @@ const maxElements = 64
 // the call checked as it goes (qjs).
 func (c *Collator) elementsFrom(text []rune, from int, l *Limits) []uint64 {
 	w := elementWriter{c: c, text: text, l: l}
-	// asked is how many elements the room was asked for.
 	asked := len(w.text) - from + 1
 	l.room(8 * int64(asked))
-	w.out = make([]uint64, 0, asked)
+	w.out = take[uint64](l, asked)[:0]
 	for i := from; i < len(w.text); {
 		l.every(&w.turns)
-		if l != nil && len(w.out)+maxElements > asked {
-			// The array grows to twice what it needs, at most.
-			asked = 2 * (len(w.out) + maxElements)
-			l.room(8 * int64(asked))
-		}
+		w.ensure()
 		if w.consumed != nil && w.consumed[i] {
 			i++
 			continue
@@ -144,6 +139,18 @@ func (c *Collator) elementsFrom(text []rune, from int, l *Limits) []uint64 {
 		i = w.appendCE32(d, ce32, i)
 	}
 	return append(w.out, noCE)
+}
+
+// ensure makes room in w.out for the elements of one character or one
+// contraction, the most maxElements, counted first: with limits, the array
+// grows to twice what it needs, at most, its elements copied in checked
+// pieces (qjs). Without, append grows it.
+func (w *elementWriter) ensure() {
+	if w.l != nil && len(w.out)+maxElements > cap(w.out) {
+		n := 2 * (len(w.out) + maxElements)
+		w.l.room(8 * int64(n))
+		w.out = grown(w.l, w.out, n)
+	}
 }
 
 // lookup finds a character's element in the tailoring, falling back to the
@@ -380,7 +387,7 @@ func (w *elementWriter) discontiguous(state colldata.CharTrie, result uint32, fi
 				result = try.Value()
 				if w.consumed == nil {
 					w.l.room(int64(len(w.text)))
-					w.consumed = make([]bool, len(w.text))
+					w.consumed = take[bool](w.l, len(w.text))
 				}
 				w.consumed[pos] = true
 				matched = true
@@ -413,7 +420,7 @@ func (w *elementWriter) discontiguous(state colldata.CharTrie, result uint32, fi
 func (w *elementWriter) classEnd(i int) int {
 	if w.classEnds == nil {
 		w.l.room(8 * int64(len(w.text)))
-		w.classEnds = make([]int, len(w.text))
+		w.classEnds = take[int](w.l, len(w.text))
 		for k := len(w.text) - 1; k >= 0; k-- {
 			w.l.every(&w.turns)
 			cc := w.ccc(k)
@@ -432,14 +439,28 @@ func (w *elementWriter) classEnd(i int) int {
 // The first digit is the element in hand, as ICU's is, rather than looked
 // up again, which a corrupt table could answer otherwise, leaving no digit
 // and the writer where it was for ever.
+//
+// The run is as long as the text may be: it is counted first, the digits
+// are written in an array of that length, and each digit is a turn of the
+// limits (qjs).
 func (w *elementWriter) numeric(i int, ce32 uint32) int {
-	digits := []byte{byte(ce32 >> 8 & 0xf)}
-	j := w.next(i)
-	for j < len(w.text) {
-		_, ce32 := w.c.lookup(w.text[j])
-		if !isSpecial(ce32) || tagOf(ce32) != tagDigit {
+	k := 1
+	end := w.next(i)
+	for end < len(w.text) {
+		w.l.every(&w.turns)
+		if _, ce32 := w.c.lookup(w.text[end]); !isSpecial(ce32) || tagOf(ce32) != tagDigit {
 			break
 		}
+		k++
+		end = w.next(end)
+	}
+	w.l.room(int64(k))
+	digits := take[byte](w.l, k)[:0]
+	digits = append(digits, byte(ce32>>8&0xf))
+	j := w.next(i)
+	for j < end {
+		w.l.every(&w.turns)
+		_, ce32 := w.c.lookup(w.text[j])
 		digits = append(digits, byte(ce32>>8&0xf))
 		j = w.next(j)
 	}
@@ -449,12 +470,15 @@ func (w *elementWriter) numeric(i int, ce32 uint32) int {
 		// Leading zeros do not count, but a number that is all zeros keeps
 		// one.
 		for pos < len(digits)-1 && digits[pos] == 0 {
+			w.l.every(&w.turns)
 			pos++
 		}
 		n := len(digits) - pos
 		if n > 254 {
 			n = 254
 		}
+		w.l.every(&w.turns)
+		w.ensure()
 		w.appendNumericSegment(lead, digits[pos:pos+n])
 		pos += n
 	}

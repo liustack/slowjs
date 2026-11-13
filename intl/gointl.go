@@ -6,6 +6,8 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"unsafe"
+
 	"maps"
 	"sync"
 
@@ -340,6 +342,9 @@ func limitsOf(vm *quickjs.VM) *gointl.Limits {
 // collation elements of both strings: Room counts every ask of the call, and
 // checks the room for them all. Asks within the door's fixed room, which
 // the door checked when it read the first argument, do not ask the VM.
+//
+// The work takes its long arrays from the OS (gointl's qjs_blocks.go), which
+// the caller gives back with Done once the work is over.
 func callLimits(vm *quickjs.VM) *gointl.Limits {
 	var held int64
 	return &gointl.Limits{
@@ -348,6 +353,10 @@ func callLimits(vm *quickjs.VM) *gointl.Limits {
 			if held += n; held > intlhook.RoomFixed {
 				intlhook.Room(vm, held)
 			}
+		},
+		Take: func(size int) (unsafe.Pointer, func()) {
+			b, give := intlhook.Take[byte](vm, size)
+			return unsafe.Pointer(unsafe.SliceData(b)), give
 		},
 	}
 }

@@ -78,10 +78,12 @@ const (
 )
 
 // A cursor is the iterator of one Segments object and how many breaks it has
-// handed out.
+// handed out. Its text is a block for a long one (hostmem.Take), which give
+// gives back when the VM drops the cursor or is closed.
 type cursor struct {
 	id   int
 	it   *gointl.SegmentIter
+	give func()
 	word bool
 	n    int
 }
@@ -102,7 +104,13 @@ func cursorsOf(vm *quickjs.VM) *vmCursors {
 	}
 	c := &vmCursors{next: 1}
 	cursors.Store(vm, c)
-	vm.OnClose(func() { cursors.Delete(vm) })
+	vm.OnClose(func() {
+		cursors.Delete(vm)
+		for _, x := range c.list {
+			x.give()
+		}
+		c.list = nil
+	})
 	return c
 }
 
@@ -118,8 +126,8 @@ func (v *vmCursors) take(id int) *cursor {
 	return nil
 }
 
-// drop forgets c, and clears the slot it leaves at the end of the list, so
-// that Go can free its text.
+// drop forgets c and gives back its text, and clears the slot it leaves at
+// the end of the list.
 func (v *vmCursors) drop(c *cursor) {
 	for i, x := range v.list {
 		if x == c {
@@ -127,6 +135,7 @@ func (v *vmCursors) drop(c *cursor) {
 			copy(v.list[i:], v.list[i+1:])
 			v.list[n] = nil
 			v.list = v.list[:n]
+			c.give()
 			return
 		}
 	}
@@ -136,8 +145,7 @@ func (v *vmCursors) drop(c *cursor) {
 // VM keeps maxCursors.
 func (v *vmCursors) add(c *cursor) {
 	if len(v.list) == maxCursors {
-		copy(v.list, v.list[1:])
-		v.list = v.list[:len(v.list)-1]
+		v.drop(v.list[0])
 	}
 	v.list = append(v.list, c)
 }
@@ -171,11 +179,13 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 		}
 
 		door := intlhook.Open(a)
-		text, _ := door.LongUTF16(1)
-		c = &cursor{id: vc.next, it: s.s.Iter(text), word: s.Granularity == "word"}
-		c.it.SetLimits(limitsOf(vm))
+		text, give, _ := door.LongUTF16(1)
+		// The list holds the cursor, and its text, from here on.
+		c = &cursor{id: vc.next, give: give, word: s.Granularity == "word"}
 		vc.next++
 		vc.add(c)
+		c.it = s.s.Iter(text)
+		c.it.SetLimits(limitsOf(vm))
 		// A cursor made again walks past the breaks javascript has.
 		for i := range int(have) {
 			checkTurn(vm, i)

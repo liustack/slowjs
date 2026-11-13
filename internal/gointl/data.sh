@@ -20,7 +20,9 @@
 #	data.sh checkout       clone go-intl at UPSTREAM's commit into $GOINTL_UPSTREAM
 #	                       (default: $HOME/.cache/quickjs-gointl/go-intl), and
 #	                       make its data again next to it with the time zones
-#	                       of the update qjstz names (see tz_data)
+#	                       of the update qjstz names (see tz_data). A checkout
+#	                       that has the commit and that data already needs no
+#	                       network
 #	data.sh pack           rebuild qjsdata/ from the checkout's data/, with
 #	                       qjstz's time zones
 #	                       (extra arguments go to the pack tool, see
@@ -29,7 +31,10 @@
 #	                       (build tag gointl_all, the tests that came with
 #	                       go-intl's code), with the others, in a scratch copy
 #	                       whose packs have every language of go-intl's data
-#	                       and its own time zones (arguments go to go test)
+#	                       and its own time zones (arguments go to go test).
+#	                       The data and the corpora are those of the commit,
+#	                       read from git after git fsck, not the files of the
+#	                       checkout
 #	data.sh test-chromium  run the tests and recorded Chromium corpora on the
 #	                       packs built in (arguments go to go test)
 #	data.sh chromium       record in qjsdata/chromium.json what Chromium resolves
@@ -73,7 +78,7 @@ sha256() {
 # sha256 is $3.
 fetch() {
 	if [ ! -f "$2" ] || [ "$(sha256 "$2")" != "$3" ]; then
-		curl -fsSL -o "$2.tmp" "$1" || die "cannot download $1"
+		curl -fsL -o "$2.tmp" "$1" || die "cannot download $1 (curl exit $?): it needs the network"
 		mv "$2.tmp" "$2"
 	fi
 	got=$(sha256 "$2")
@@ -116,10 +121,14 @@ case "${1:-}" in
 checkout)
 	if [ ! -d "$upstream/.git" ]; then
 		mkdir -p "$(dirname "$upstream")"
-		git clone --quiet "$REPO" "$upstream"
+		git clone --quiet "$REPO" "$upstream" 2>/dev/null ||
+			die "cannot clone $REPO into $upstream, and there is no checkout there: the first checkout needs the network"
 	fi
-	git -C "$upstream" fetch --quiet --tags origin
-	git -C "$upstream" -c advice.detachedHead=false checkout --quiet "$COMMIT"
+	if ! git -C "$upstream" cat-file -e "$COMMIT^{commit}" 2>/dev/null; then
+		git -C "$upstream" fetch --quiet --tags origin 2>/dev/null ||
+			die "cannot fetch $REPO into $upstream, which does not have $COMMIT: it needs the network"
+	fi
+	git -C "$upstream" -c advice.detachedHead=false checkout --quiet --force "$COMMIT"
 	if [ "$(cat "$tzdata/qjstz.stamp" 2>/dev/null)" != "$tzstamp" ]; then
 		tz_data
 	fi
@@ -142,9 +151,35 @@ test)
 	(cd "$here" && tar cf - --exclude=qjsdata .) | (cd "$mod" && tar xf -)
 	mkdir -p "$mod/qjsdata"
 	cp "$here"/qjsdata/NOTICE-* "$mod/qjsdata/"
+	# The packages of the module outside internal/gointl that its tests build
+	# with (internal/hostmem, for the blocks of qjs_blocks.go) come as they
+	# are, and so do the module's requirements and their sums, so the copy
+	# builds what the module builds.
+	deps=$(cd "$root" && go list -deps -test -tags gointl_all \
+		-f '{{if .Module}}{{if eq .Module.Path "github.com/liustack/quickjs"}}{{.Dir}}{{end}}{{end}}' ./internal/gointl/...)
+	while read -r dir; do
+		case $dir in
+		"" | "$here" | "$here"/*) continue ;;
+		"$root"/*) ;;
+		*) die "a package of the module outside it: $dir" ;;
+		esac
+		mkdir -p "$tmp/${dir#"$root"/}"
+		cp "$dir"/*.go "$tmp/${dir#"$root"/}/"
+	done <<EOF
+$deps
+EOF
+	sed '/^tool /d' "$root/go.mod" >"$tmp/go.mod"
+	cp "$root/go.sum" "$tmp/go.sum"
 	# Their corpora are data of the release, as its data/ is: Node's answers
-	# on that data.
-	cp -R "$upstream/testdata" "$mod/testdata"
+	# on that data. Both are read from the commit, after a check of every
+	# object of the checkout, so a file changed in the checkout, or an object
+	# changed under it, does not reach the tests.
+	git -C "$upstream" fsck --no-dangling --no-progress >/dev/null 2>&1 ||
+		die "git fsck of $upstream fails: remove it and run checkout"
+	release=$tmp/release
+	mkdir -p "$release"
+	git -C "$upstream" archive --format=tar "$COMMIT" data testdata | (cd "$release" && tar xf -)
+	mv "$release/testdata" "$mod/testdata"
 	# The tests that came with go-intl's code hold it to Node in every
 	# language ICU has, so they run on packs of every language of go-intl's
 	# data as it is, with its own time zones, not qjstz's: what they check
@@ -153,13 +188,11 @@ test)
 	# go-intl's data/ directory, which is not here.
 	gotz=$(sed -n 's/^| IANA tzdb | \([0-9a-z]*\),.*/\1/p' "$here/SOURCES.md")
 	[ -n "$gotz" ] || die "cannot read the tz release of go-intl's data from $here/SOURCES.md"
-	data=$tmp/gointl-data
-	cp -R "$upstream/data" "$data"
+	data=$release/data
 	printf '%s' "$gotz" >"$data/tzversion.bin"
 	(cd "$root" && go run -tags gointl_walk ./internal/gointl/internal/qjspack/gen \
 		-data "$data" -out "$mod/qjsdata" -locales all >/dev/null)
 	skip='TestGeneratedTablesAreWellFormed|TestQJSAvailable|TestQJSResolveMatchesChromium|TestQJSTZVersion'
-	printf 'module github.com/liustack/quickjs\n\ngo %s\n' "$(sed -n 's/^go //p' "$root/go.mod")" >"$tmp/go.mod"
 	(cd "$tmp" && go test -tags gointl_all -skip "^($skip)\$" "$@" ./internal/gointl/...)
 	;;
 test-chromium)

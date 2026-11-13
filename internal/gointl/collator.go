@@ -531,7 +531,7 @@ func (c *Collator) normalizedText(s string, l *Limits) []rune {
 	}
 	// The code points are at most one a byte (qjs).
 	l.room(4 * int64(len(s)))
-	var out []rune
+	out := take[rune](l, 0)
 	start := 0
 	turns := 0
 	for i := 0; i+2 < len(s); i++ {
@@ -541,12 +541,12 @@ func (c *Collator) normalizedText(s string, l *Limits) []rune {
 		}
 		// A surrogate is a starter, so the text either side of it
 		// normalizes on its own.
-		out = append(out, runesOf(c.normalizer.normalize(s[start:i], NFD, l), l)...)
-		out = append(out, 0xd000|rune(s[i+1]&0x3f)<<6|rune(s[i+2]&0x3f))
+		out = appendPieces(l, out, runesOf(c.normalizer.normalize(s[start:i], NFD, l), l))
+		out = push(l, out, 0xd000|rune(s[i+1]&0x3f)<<6|rune(s[i+2]&0x3f))
 		i += 2
 		start = i + 1
 	}
-	return append(out, runesOf(c.normalizer.normalize(s[start:], NFD, l), l)...)
+	return appendPieces(l, out, runesOf(c.normalizer.normalize(s[start:], NFD, l), l))
 }
 
 // sortElements returns what a string is compared by: its collation elements,
@@ -565,7 +565,7 @@ func (c *Collator) sortElementsFrom(s string, start int, l *Limits) []uint64 {
 		before := c.normalizedText(s[:start], l)
 		from = len(before)
 		l.room(8 * int64(len(before)+len(text)))
-		text = append(before, text...)
+		text = appendPieces(l, appendPieces(l, take[rune](l, len(before)+len(text))[:0], before), text)
 	}
 	ces := c.elementsFrom(text, from, l)
 	if c.shifted {

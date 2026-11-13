@@ -46,6 +46,12 @@ func osMap(size uintptr) (uintptr, error) {
 	return sysMmap("map", size, unix.PROT_READ|unix.PROT_WRITE, 0)
 }
 
+// osMapBlock maps a block for Take (block.go): its pages are zero, and the
+// OS hands each over at its first touch.
+func osMapBlock(size uintptr) (uintptr, error) {
+	return sysMmap("block", size, unix.PROT_READ|unix.PROT_WRITE, 0)
+}
+
 func osUnmap(addr, size uintptr) error {
 	return sysMunmap(addr, size)
 }

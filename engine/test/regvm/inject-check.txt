@@ -1,0 +1,28 @@
+# Copyright (c) 2026 The liustack/quickjs Authors.
+# SPDX-License-Identifier: MIT
+# Use of this source code is governed by the MIT license in LICENSE-MIT at the
+# root of this repository.
+#
+# The scripts of the throw injection that check-full runs (the inject step of
+# scripts/check.sh, inject.sh -max 1: the places each golden records and one
+# place at each site). One script of each kind, the kind being the letters a
+# name starts with (c, e, f, g, k, l, n, o, p, q, r, s, w, z) or the corpus,
+# and of each kind the one with the fewest runs at -max 1, leaving out the
+# scripts with an "inject-hit" line (one place a site may not reach it). The
+# whole set runs before a merge into main that changes engine/
+# (docs/testing.md).
+engine/test/regvm/corpus/depth.js
+engine/test/regvm/js/c-depth.js
+engine/test/regvm/js/e-interrupt.js
+engine/test/regvm/js/f-consts.js
+engine/test/regvm/js/g-sloppy.js
+engine/test/regvm/js/k-import.js
+engine/test/regvm/js/l-stack.js
+engine/test/regvm/js/n-entries.js
+engine/test/regvm/js/o-sloppy.js
+engine/test/regvm/js/p4-spin.js
+engine/test/regvm/js/q-dst.js
+engine/test/regvm/js/r-strlen.js
+engine/test/regvm/js/s-callfold-stop.js
+engine/test/regvm/js/wa-extra.js
+engine/test/regvm/js/z-gen-newtarget.js

@@ -143,7 +143,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The arithmetic of a calendar reads the interrupt flag | v0.30.3 | [uncatchable.md](uncatchable.md#the-arithmetic-of-a-calendar-reads-the-interrupt-flag) |
 | fmt bounds a call with no memory limit, and writes in pieces | v0.30.3 | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
 | A run no Builtin can cut reads the interrupt flag | v0.30.3 | [uncatchable.md](uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag) |
-| Long text and lists of locales are worked on in checked pieces | Unreleased | [uncatchable.md](uncatchable.md#long-text-and-lists-of-locales-are-worked-on-in-checked-pieces) |
+| Long text and lists of locales are worked on in checked pieces | v0.30.4 | [uncatchable.md](uncatchable.md#long-text-and-lists-of-locales-are-worked-on-in-checked-pieces) |
+| The functions of fmt make a long output in checked pieces | v0.30.4 | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
+| A Go function takes the long arrays of a call from the OS | v0.30.4 | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
+| A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 
 ## Errors and stacks
 

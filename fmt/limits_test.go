@@ -76,36 +76,7 @@ func TestOutputLimit(t *testing.T) {
 // formats with every part fmt reads and arguments of every type the VM
 // gives a Go function.
 func TestSizeAtLeastOutput(t *testing.T) {
-	vm := newVM(t)
-	obj, err := vm.Eval(`({a: "\x01\u00ff\ud800", b: [1, 2.5, null]})`, quickjs.EvalGlobal)
-	if err != nil {
-		t.Fatal(err)
-	}
-	big1, _ := new(big.Int).SetString("-123456789012345678901234567890123456789", 10)
-	args := []any{
-		"", "abc", "\x00\x01\x7f\x80\xff\U0010ffff\u00e9\u2028 \"'\\`", strings.Repeat("\x01", 100), obj, big1, big.NewInt(0),
-		new(big.Int).Lsh(big.NewInt(1), 1000), new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(3), 2000)),
-		0.0, -1e308, 5e-324, math.NaN(), math.Inf(-1), 3.25, 0, -2147483648, 2147483647, 1114112, 7,
-		true, nil, quickjs.Undefined{}, quickjs.Unsupported{},
-	}
-	verbs := "vsqxXdbocUeEfFgGtpTw%é"
-	var formats []string
-	for _, f := range []string{"%", "%#", "% ", "%+", "%-", "%0", "%# ", "%+#", "%-# 0"} {
-		for _, w := range []string{"", "12", "1000", "*", "[2]", "[2]*", "*[1]", "[9]", "[0]", "[x]", "[", "[x", "99999999"} {
-			for _, p := range []string{"", ".", ".3", ".*", ".[3]*", ".40", ".99999999"} {
-				for _, v := range verbs {
-					formats = append(formats, f+w+p+string(v))
-				}
-			}
-		}
-	}
-	formats = append(formats, "", "%", "%!", "%[1]", "%.", "%*", "plain", "%v %v", "%[2]v %v %[1]v", "%[3]*.[2]*[1]f", "%v%v%v%v",
-		"%[", "%[x%[x%[x", "%[x]%[x", "%.[x%[3", "[%[", "%-[%[", "%[2]*[x", "%[1][%[", "%[x]x[%[2]v[", "%[%]", "%.[*[d", "%[1.[", "x]%[", "%[]%[")
-	tuples := [][]any{nil}
-	for _, a := range args {
-		tuples = append(tuples, []any{a}, []any{a, 7, a}, []any{3, a})
-	}
-	tuples = append(tuples, args)
+	formats, tuples := cases(t)
 	for _, format := range formats {
 		for _, a := range tuples {
 			out := fmt.Sprintf(format, a...)
@@ -126,6 +97,42 @@ func TestSizeAtLeastOutput(t *testing.T) {
 			t.Fatalf("sizePrint(%#v) is %d, under the output of %d bytes", a, bound, got)
 		}
 	}
+}
+
+// cases are formats with every part fmt reads, and lists of arguments of
+// every type the VM gives a Go function.
+func cases(t *testing.T) (formats []string, tuples [][]any) {
+	vm := newVM(t)
+	obj, err := vm.Eval(`({a: "\x01\u00ff\ud800", b: [1, 2.5, null]})`, quickjs.EvalGlobal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	big1, _ := new(big.Int).SetString("-123456789012345678901234567890123456789", 10)
+	args := []any{
+		"", "abc", "\x00\x01\x7f\x80\xff\U0010ffff\u00e9\u2028 \"'\\`", strings.Repeat("\x01", 100),
+		strings.Repeat("\u00e9\u20ac\U0010ffff\xe2\x82a\xf0\x90\ufeff\t\x80\x80\x80\x80\x80", 3), obj, big1, big.NewInt(0),
+		new(big.Int).Lsh(big.NewInt(1), 1000), new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(3), 2000)),
+		0.0, -1e308, 5e-324, math.NaN(), math.Inf(-1), 3.25, 0, -2147483648, 2147483647, 1114112, 7,
+		true, nil, quickjs.Undefined{}, quickjs.Unsupported{},
+	}
+	verbs := "vsqxXdbocUeEfFgGtpTw%é"
+	for _, f := range []string{"%", "%#", "% ", "%+", "%-", "%0", "%# ", "%+#", "%-# 0"} {
+		for _, w := range []string{"", "12", "1000", "*", "[2]", "[2]*", "*[1]", "[9]", "[0]", "[x]", "[", "[x", "99999999"} {
+			for _, p := range []string{"", ".", ".3", ".*", ".[3]*", ".40", ".99999999"} {
+				for _, v := range verbs {
+					formats = append(formats, f+w+p+string(v))
+				}
+			}
+		}
+	}
+	formats = append(formats, "", "%", "%!", "%[1]", "%.", "%*", "plain", "%v %v", "%[2]v %v %[1]v", "%[3]*.[2]*[1]f", "%v%v%v%v",
+		"%[", "%[x%[x%[x", "%[x]%[x", "%.[x%[3", "[%[", "%-[%[", "%[2]*[x", "%[1][%[", "%[x]x[%[2]v[", "%[%]", "%.[*[d", "%[1.[", "x]%[", "%[]%[")
+	tuples = [][]any{nil}
+	for _, a := range args {
+		tuples = append(tuples, []any{a}, []any{a, 7, a}, []any{3, a})
+	}
+	tuples = append(tuples, args)
+	return formats, tuples
 }
 
 // A format with many a '[' and no ']' after them makes its output in time
@@ -244,19 +251,21 @@ func TestOutputAllocatedUnderBudget(t *testing.T) {
 			t.Fatal(c.format)
 		}
 		var out string
-		alloc := allocatedDuring(func() { out = fmt.Sprintf(read, c.a...) })
+		give := func() {}
+		alloc := allocatedDuring(func() { out, give, _ = printfOf(nil, bound, read, c.a) })
 		if bound >= 4<<10 {
 			most = max(most, float64(alloc)/float64(bound))
 		}
 		if alloc > budget(bound, 0) {
 			t.Errorf("%.40q: Go allocated %d bytes for %d, more than the %d of the bound of %d", c.format, alloc, len(out), budget(bound, 0), bound)
 		}
+		give()
 	}
 	t.Logf("on outputs of 4 KiB or more, Go allocated at most %.1f times the bound", most)
 	for _, a := range [][]any{{s, s, b}, {s, 1.5, "x"}} {
 		bound := sizePrint(a)
-		for _, f := range []func(...any) string{fmt.Sprint, fmt.Sprintln} {
-			if alloc := allocatedDuring(func() { _ = f(a...) }); alloc > budget(bound, 0) {
+		for _, ln := range []bool{false, true} {
+			if alloc := allocatedDuring(func() { _, give, _ := printOf(nil, bound, a, ln); give() }); alloc > budget(bound, 0) {
 				t.Errorf("Go allocated %d bytes, more than the %d of the bound of %d", alloc, budget(bound, 0), bound)
 			}
 		}
@@ -433,6 +442,38 @@ func TestPrecision(t *testing.T) {
 		var e *quickjs.Error
 		if !errors.As(err, &e) || !e.Uncatchable || !e.OutOfMemory {
 			t.Errorf("%s: got %v, want the uncatchable out of memory error", js, err)
+		}
+	}
+}
+
+// sizePrintf reads whether to stop at least every piece bytes of a long
+// format, in the text between verbs, in the verbs, a verb of zeros as long
+// as the format too, and in the format it rewrites, and ends at once when it
+// is to stop. A format of 16 MiB took 18 to 79 ms on an Apple M4 with no
+// check.
+func TestSizePrintfStops(t *testing.T) {
+	const n = 4 << 20
+	for _, format := range []string{
+		strings.Repeat("x", n) + "%d",
+		strings.Repeat("ab%d", n/4),
+		strings.Repeat("%[x", n/3),
+		"%" + strings.Repeat("0", n) + "d",
+		"%." + strings.Repeat("0", n) + "d",
+		"%[" + strings.Repeat("0", n) + "1]d",
+	} {
+		reads := 0
+		_, _, ok, stopped := sizePrintfStop(format, []any{1}, -1, func() bool { reads++; return false })
+		if !ok || stopped {
+			t.Fatalf("a format of %d bytes: ok %v, stopped %v", len(format), ok, stopped)
+		}
+		if reads < len(format)/piece-1 {
+			t.Errorf("a format of %d bytes read stop %d times, want at least %d", len(format), reads, len(format)/piece-1)
+		}
+		at := reads / 2
+		reads = 0
+		_, _, ok, stopped = sizePrintfStop(format, []any{1}, -1, func() bool { reads++; return reads == at })
+		if ok || !stopped || reads != at {
+			t.Errorf("a format of %d bytes stopped at read %d: ok %v, stopped %v after %d reads", len(format), at, ok, stopped, reads)
 		}
 	}
 }

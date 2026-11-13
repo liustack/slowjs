@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"unicode/utf16"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/liustack/quickjs"
 	gointl "github.com/liustack/quickjs/internal/gointl"
@@ -614,10 +615,13 @@ var bridge = []*quickjs.Builtin{
 		var l *gointl.Limits
 		if nx+ny > shortCompare {
 			l = callLimits(vm)
+			defer l.Done()
 			l.Room(3 * int64(nx+ny))
 		}
-		x, _ := door.LongWTF8(1)
-		y, _ := door.LongWTF8(2)
+		x, giveX, _ := door.LongWTF8(1)
+		defer giveX()
+		y, giveY, _ := door.LongWTF8(2)
+		defer giveY()
 		return vm.NewInt(c.c.CompareLimited(x, y, l)), nil
 	}),
 	resolveBuiltin(segmenterCtor),
@@ -673,7 +677,8 @@ var bridge = []*quickjs.Builtin{
 			return quickjs.UndefinedValue, err
 		}
 
-		s, _ := door.LongWTF8(1)
+		s, give, _ := door.LongWTF8(1)
+		defer give()
 		items, ok := listItems(a.VM(), s)
 		if !ok {
 			return quickjs.Value{}, typeError("malformed list")
@@ -817,8 +822,10 @@ var bridge = []*quickjs.Builtin{
 		// before it is read.
 		units, _ := door.Len(0)
 		w := newWalk(a.VM())
+		defer w.done()
 		w.take(3 * int64(units))
-		s, _ := door.LongWTF8(0)
+		s, give, _ := door.LongWTF8(0)
+		defer give()
 		w.read()
 		pieces, ok, err := premapCase(w, s, units, lang, upper)
 		switch {
@@ -921,11 +928,15 @@ func formatted(vm *quickjs.VM, parts []part, wantParts bool) (quickjs.Value, err
 	for _, p := range parts {
 		n += len(p.Value)
 	}
-	b := make([]byte, 0, n)
+	// From 1 MiB, a block (hostmem.Take), which javascript's string is
+	// made from before it is given back.
+	b, give := intlhook.Take[byte](vm, n)
+	defer give()
+	b = b[:0]
 	for _, p := range parts {
 		b = append(b, p.Value...)
 	}
-	return intlhook.Emit(vm, string(b))
+	return intlhook.Emit(vm, unsafe.String(unsafe.SliceData(b), len(b)))
 }
 
 // jsErr returns err as the javascript error ECMA-402 has for it: a jsError's

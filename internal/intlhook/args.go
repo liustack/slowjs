@@ -6,7 +6,10 @@
 package intlhook
 
 import (
+	"unsafe"
+
 	"github.com/liustack/quickjs"
+	"github.com/liustack/quickjs/internal/hostmem"
 	"github.com/liustack/quickjs/internal/vmhook"
 )
 
@@ -58,6 +61,23 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 	})
 }
 
+// Take is vmhook.Take, for a function given to NewBuiltin: n zero elements
+// of T, which give gives back, a Go allocation below hostmem.BlockMin bytes,
+// else a block outside Go's heap, the one the VM keeps or one mapped from
+// the OS. The Builtin stops when the call is to stop or the OS refuses the
+// memory.
+func Take[T hostmem.Elem](vm *quickjs.VM, n int) (s []T, give func()) {
+	if !hostmem.Mapped[T](n) {
+		return make([]T, n), func() {}
+	}
+	var t T
+	p, give, ok := vmhook.Take(vm, n*int(unsafe.Sizeof(t)))
+	if !ok {
+		panic(stopped{})
+	}
+	return unsafe.Slice((*T)(p), n), give
+}
+
 // String is a.String(i), for a function given to NewBuiltin.
 func String(a quickjs.Args, i int) (string, bool) {
 	s, ok := a.String(i)
@@ -98,6 +118,13 @@ func Check(vm *quickjs.VM) {
 	if vmhook.Stop(vm) {
 		panic(stopped{})
 	}
+}
+
+// OutOfMemory stops the Builtin with the out of memory error, for work in
+// Go the OS refused memory to, for a function given to NewBuiltin.
+func OutOfMemory(vm *quickjs.VM) {
+	vmhook.OutOfMemory(vm)
+	panic(stopped{})
 }
 
 // Room stops the Builtin with the out of memory error when the VM has no

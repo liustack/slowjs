@@ -382,3 +382,23 @@ func TestArgStringStopsBeforeAllocation(t *testing.T) {
 		wantStopped(t, "read("+c.name+")", err)
 	}
 }
+
+// A long 8-bit string that is ASCII but for its end converts in steps, the
+// ASCII before the first other character too: the memory of the result is a
+// block, whose pages the OS hands over as they are written (hostmem.Take),
+// and a copy of it in one go would take them all with no read of the stop.
+func TestLatin1PrefixSteps(t *testing.T) {
+	const n = 1 << 25
+	b := []byte(strings.Repeat("a", n) + "\xe9")
+	reads := 0
+	stringStepHook = func() { reads++ }
+	t.Cleanup(func() { stringStepHook = nil })
+	s, ok := latin1String(nil, b)
+	if !ok || len(s) != n+2 || s[n:] != "é" {
+		t.Fatalf("latin1String of %d bytes: %d bytes, ok %v", len(b), len(s), ok)
+	}
+	// The ASCII is read twice, once to find where it ends and once to copy.
+	if want := 2 * (n / stringStep); reads < want {
+		t.Errorf("latin1String of %d bytes read the stop %d times, want at least %d", len(b), reads, want)
+	}
+}

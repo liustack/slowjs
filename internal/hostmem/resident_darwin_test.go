@@ -24,6 +24,12 @@ func init() {
 	}
 }
 
+// written is resident, for a block (resident_linux_test.go).
+func written(t *testing.T, addr, size uintptr) int {
+	t.Helper()
+	return resident(t, addr, size)
+}
+
 // resident counts the pages of [addr, addr+size) in memory, by mincore.
 // x/sys has no wrapper for it on darwin, so it is a system call.
 func resident(t *testing.T, addr, size uintptr) int {

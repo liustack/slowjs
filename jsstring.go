@@ -12,6 +12,8 @@ import (
 	"sync"
 	"unicode/utf8"
 	"unsafe"
+
+	"github.com/liustack/quickjs/internal/hostmem"
 )
 
 // argString returns the Go string of v, a lone surrogate as U+FFFD, or as
@@ -45,6 +47,59 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 		return latin1String(m, unsafe.Slice((*byte)(addr(p)), n))
 	}
 	return utf16String(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8)
+}
+
+// argBlock is argString for a Go function of a door (vmhook.LongWTF8) that
+// uses the string only during the call. A string longer than stringStep is
+// written into a block (hostmem.Take) of its length when that is BlockMin
+// bytes or more, and give gives the block back: nothing may keep the string,
+// or a part of it, after that. A Go allocation of the string would be
+// cleared in one go, with no read of whether to stop, while the OS hands
+// over its pages: 30 ms for 16 MiB on the virtual M1 of GitHub's macos-15
+// runner under Rosetta. The pages of a block come as the pieces are written,
+// with a read between two. ok is false as for argString, and give does
+// nothing then.
+func (m *VM) argBlock(v jsValue, wtf8 bool) (s string, give func(), ok bool) {
+	give = func() {}
+	p, n, wide, isFlat := stringChars(v)
+	if !isFlat && tag(v) == tagStringRope {
+		flat := m.jsToString(v)
+		if isException(flat) {
+			return "", give, false
+		}
+		s, give, ok = m.argBlock(flat, wtf8)
+		m.jsFreeValue(flat)
+		return s, give, ok
+	}
+	if !isFlat || n <= stringStep {
+		s, ok = m.argString(v, wtf8)
+		return s, give, ok
+	}
+	var held func()
+	mk := func(size int) ([]byte, bool) {
+		if !hostmem.Mapped[byte](size) {
+			return make([]byte, size), true
+		}
+		p, g, ok := m.goTake(size)
+		if !ok {
+			return nil, false
+		}
+		held = g
+		return unsafe.Slice((*byte)(p), size), true
+	}
+	if wide {
+		s, ok = utf16Steps(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8, mk)
+	} else {
+		s, ok = latin1Steps(m, unsafe.Slice((*byte)(addr(p)), n), mk)
+	}
+	if held != nil {
+		if !ok {
+			held()
+			return "", give, false
+		}
+		give = held
+	}
+	return s, give, ok
 }
 
 // stringStep is how many characters, or bytes of UTF-8, a conversion of a
@@ -177,16 +232,28 @@ func utf8Cut(b []byte, e int) bool {
 	return true
 }
 
+// An outFunc makes the n bytes a long conversion writes its string into, or
+// returns false, with the error that ends the call pending, when it cannot.
+// goOut is a Go allocation, for a string Go keeps (argString). A Go function
+// of a door that uses its string only during the call takes a block instead
+// (argBlock).
+type outFunc func(n int) ([]byte, bool)
+
+func goOut(n int) ([]byte, bool) { return make([]byte, n), true }
+
 // copySteps copies src into a new string, a piece at a time for a long one.
 // ok is false when m stopped it (convStop).
-func copySteps(m *VM, src []byte) (string, bool) {
+func copySteps(m *VM, src []byte, mk outFunc) (string, bool) {
 	if len(src) <= stringStep {
 		return string(src), true
 	}
 	if m.convStop() {
 		return "", false
 	}
-	out := make([]byte, len(src))
+	out, ok := mk(len(src))
+	if !ok {
+		return "", false
+	}
 	for lo := 0; lo < len(src); lo += stringStep {
 		if lo > 0 && m.convStop() {
 			return "", false
@@ -238,7 +305,7 @@ func stringBytes(s string) []byte {
 // stopped it (convStop), for a long b.
 func latin1String(m *VM, b []byte) (string, bool) {
 	if len(b) > stringStep {
-		return latin1Steps(m, b)
+		return latin1Steps(m, b, goOut)
 	}
 	i := asciiLen(b)
 	if i == len(b) {
@@ -255,13 +322,13 @@ func latin1String(m *VM, b []byte) (string, bool) {
 // latin1Steps is latin1String for a b longer than stringStep, a piece at a
 // time, with a read of whether to stop between two (convStop). ok is false
 // when m stopped it.
-func latin1Steps(m *VM, b []byte) (string, bool) {
+func latin1Steps(m *VM, b []byte, mk outFunc) (string, bool) {
 	i := asciiSteps(m, b)
 	if i < 0 {
 		return "", false
 	}
 	if i == len(b) {
-		return copySteps(m, b)
+		return copySteps(m, b, mk)
 	}
 	src := b[i:]
 	n := len(b)
@@ -274,8 +341,21 @@ func latin1Steps(m *VM, b []byte) (string, bool) {
 	if len(src) > stringStep && m.convStop() {
 		return "", false
 	}
-	out := make([]byte, n)
-	copy(out, b[:i])
+	out, ok := mk(n)
+	if !ok {
+		return "", false
+	}
+	// The ASCII before the first other character is copied in steps too:
+	// its pages come from the OS as it is written (hostmem.Take).
+	for lo := 0; lo < i; lo += stringStep {
+		if lo > 0 && m.convStop() {
+			return "", false
+		}
+		copy(out[lo:], b[lo:min(lo+stringStep, i)])
+	}
+	if i > stringStep && m.convStop() {
+		return "", false
+	}
 	j := i
 	for lo := 0; lo < len(src); lo += stringStep {
 		if lo > 0 && m.convStop() {
@@ -330,7 +410,7 @@ func utf16String(m *VM, u []uint16, wtf8 bool) (string, bool) {
 		return string(b[:utf16Write(b[:], u, wtf8)]), true
 	}
 	if len(u) > stringStep {
-		return utf16Steps(m, u, wtf8)
+		return utf16Steps(m, u, wtf8, goOut)
 	}
 	p := utf16Scratch.Get().(*[]byte)
 	if cap(*p) < 3*len(u) {
@@ -346,7 +426,7 @@ func utf16String(m *VM, u []uint16, wtf8 bool) (string, bool) {
 // bytes of the UTF-8, makes the string of that size, and writes each piece
 // into the scratch memory of one piece and copies it from there. ok is
 // false when m stopped it.
-func utf16Steps(m *VM, u []uint16, wtf8 bool) (string, bool) {
+func utf16Steps(m *VM, u []uint16, wtf8 bool, mk outFunc) (string, bool) {
 	n := 0
 	for lo := 0; lo < len(u); {
 		if lo > 0 && m.convStop() {
@@ -359,19 +439,29 @@ func utf16Steps(m *VM, u []uint16, wtf8 bool) (string, bool) {
 	if m.convStop() {
 		return "", false
 	}
-	out := make([]byte, n)
-	p := utf16Scratch.Get().(*[]byte)
-	defer utf16Scratch.Put(p)
-	if cap(*p) < 3*(stringStep+1) {
-		*p = make([]byte, 3*(stringStep+1))
+	out, ok := mk(n)
+	if !ok {
+		return "", false
 	}
+	// Each piece is written through a buffer of stepScratch units, which
+	// utf16Write needs room of 3 bytes a unit in: one of a whole piece,
+	// 768 KiB, came from utf16Scratch, which Go empties at a collection and
+	// keeps for each P apart, so a call often made it again.
+	buf := make([]byte, 3*(stepScratch+1))
 	j := 0
 	for lo := 0; lo < len(u); {
 		if lo > 0 && m.convStop() {
 			return "", false
 		}
 		hi := cut16(u, lo)
-		j += copy(out[j:], (*p)[:utf16Write((*p)[:3*(hi-lo)], u[lo:hi], wtf8)])
+		for a := lo; a < hi; {
+			b := min(hi, a+stepScratch)
+			if b < hi && u[b-1]&0xFC00 == 0xD800 && u[b]&0xFC00 == 0xDC00 {
+				b++
+			}
+			j += copy(out[j:], buf[:utf16Write(buf[:3*(b-a)], u[a:b], wtf8)])
+			a = b
+		}
 		lo = hi
 	}
 	if j != n {
@@ -400,6 +490,10 @@ func utf16Len(u []uint16) int {
 	}
 	return n
 }
+
+// stepScratch is how many units utf16Steps writes through its buffer at a
+// time: a buffer of 48 KiB.
+const stepScratch = 1 << 14
 
 // utf16Short is the length of the strings utf16String converts on the stack.
 const utf16Short = 64
