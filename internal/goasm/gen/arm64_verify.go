@@ -102,6 +102,24 @@ func CheckEngineARM64(c EngineCheck) (*CheckReport, error) {
 		}
 		rep.Checked["functions"]++
 	}
+	for _, m := range c.Stubs {
+		s, ok := bin.abi0(c.Pkg, c.Names[m.Name])
+		if !ok {
+			if c.All {
+				return rep, fmt.Errorf("stub %s: not in the binary", m.Name)
+			}
+			rep.Skipped["not in the binary (the linker left it out)"] = append(rep.Skipped["not in the binary (the linker left it out)"], m.Name)
+			continue
+		}
+		words, err := bin.read(s.Value, int(s.Size)&^3)
+		if err != nil {
+			return rep, fmt.Errorf("stub %s: %w", m.Name, err)
+		}
+		if err := k.checkStub(m, s.Value, words); err != nil {
+			return rep, fmt.Errorf("stub %s: %w", m.Name, err)
+		}
+		rep.Checked["stubs"]++
+	}
 	n, err := k.checkRodata()
 	if err != nil {
 		return rep, fmt.Errorf("engine_rodata: %w", err)
@@ -216,36 +234,86 @@ func (k *a64Checker) checkHostPoll() error {
 	if more < 0 || more >= n {
 		return fail("its stack check branches to word %d, outside the function", more)
 	}
-	// The block the b.ls goes to is one straight run of words: the spill of
-	// the arguments, mov x3, x30, bl morestack, the reload and a b to the
-	// start. Any other branch in it (a b.cond or a cbz that jumps over the call,
-	// a br, a blr, a ret) lets the stack check be skipped while the words of
-	// the call are still there, so none is allowed.
+	if err := k.morestackBlock(b, sym.Value, more); err != nil {
+		return fail("%v", err)
+	}
+	return nil
+}
+
+// morestackBlock checks the block a stack check branches to, at word more of
+// the function b at base. It is one straight run of words: the spill of the
+// arguments, mov x3, x30, bl morestack, the reload and a b to the start. Any
+// other branch in it (a b.cond or a cbz that jumps over the call, a br, a
+// blr, a ret) lets the stack check be skipped while the words of the call
+// are still there, so none is allowed.
+func (k *a64Checker) morestackBlock(b []byte, base uint64, more int) error {
+	n := len(b) / 4
 	called := false
 	for t := more; t < n && t < more+24; t++ {
 		w := a64Word(b, t)
-		at := sym.Value + uint64(4*t)
+		at := base + uint64(4*t)
 		target := at + uint64(int64(int32(w<<6)>>4))
 		switch {
 		case w&0xfc000000 == 0x94000000 && target == k.morestack: // bl morestack
 			if t == more || a64Word(b, t-1) != a64MovX3LR {
-				return fail("the call of morestack does not follow mov x3, x30")
+				return fmt.Errorf("the call of morestack does not follow mov x3, x30")
 			}
 			called = true
 		case w&0xfc000000 == 0x14000000: // b
-			if !called || target != sym.Value {
-				return fail("its stack check does not call morestack and jump back to the start")
+			if !called || target != base {
+				return fmt.Errorf("its stack check does not call morestack and jump back to the start")
 			}
 			return nil
-		case w&0xfc000000 == 0x94000000, // bl elsewhere
-			w&0xff000010 == 0x54000000,                             // b.cond
-			w&0x7e000000 == 0x34000000,                             // cbz, cbnz
-			w&0x7e000000 == 0x36000000,                             // tbz, tbnz
-			w&0xff9ffc1f == 0xd61f0000, w&0xfffffc1f == 0xd65f0000: // br, blr, ret
-			return fail("its stack check has a branch of its own (%#08x) that can jump over the call of morestack", w)
+		case a64Branch(w):
+			return fmt.Errorf("its stack check has a branch of its own (%#08x) that can jump over the call of morestack", w)
 		}
 	}
-	return fail("its stack check does not call morestack and jump back to the start")
+	return fmt.Errorf("its stack check does not call morestack and jump back to the start")
+}
+
+// a64Branch says w is a branch, a call or a return: bl, b.cond, cbz, cbnz,
+// tbz, tbnz, br, blr or ret (b is told apart by the callers).
+func a64Branch(w uint32) bool {
+	return w&0xfc000000 == 0x94000000 || w&0xff000010 == 0x54000000 || w&0x7e000000 == 0x34000000 ||
+		w&0x7e000000 == 0x36000000 || w&0xff9ffc1f == 0xd61f0000 || w&0xfffffc1f == 0xd65f0000
+}
+
+// checkStub holds a stub (a function the generator could not lower, Meta of
+// EngineCheck.Stubs) to never returning, as checker.checkStub does on amd64:
+// a pointer may hold one (pointerTarget), and a call through it takes its
+// result from registers. After Go's stack check the stub runs straight on to
+// a call of goasmMissing, which panics, with no branch, call or return before
+// it.
+func (k *a64Checker) checkStub(m Meta, base uint64, b []byte) error {
+	miss, ok := k.bin.abi0(k.c.Pkg, "goasmMissing")
+	if !ok {
+		return fmt.Errorf("no goasmMissing in the binary")
+	}
+	n := len(b) / 4
+	if n == 0 || a64Word(b, 0) != a64StackGuard {
+		return fmt.Errorf("a stub with no stack check")
+	}
+	next, more, err := a64StackCheck(b, -1)
+	if err != nil {
+		return err
+	}
+	if more < 0 || more >= n {
+		return fmt.Errorf("its stack check branches to word %d, outside the function", more)
+	}
+	if err := k.morestackBlock(b, base, more); err != nil {
+		return err
+	}
+	for t := next; t < more; t++ {
+		w := a64Word(b, t)
+		target := base + uint64(4*t) + uint64(int64(int32(w<<6)>>4))
+		switch {
+		case w&0xfc000000 == 0x94000000 && target == miss.Value:
+			return nil
+		case w&0xfc000000 == 0x14000000, a64Branch(w):
+			return fmt.Errorf("the stub has %#08x at word %d before it calls goasmMissing", w, t)
+		}
+	}
+	return fmt.Errorf("the stub does not call goasmMissing")
 }
 
 func a64Word(b []byte, i int) uint32 { return binary.LittleEndian.Uint32(b[4*i:]) }

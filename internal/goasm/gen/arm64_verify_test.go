@@ -621,3 +621,39 @@ func TestCheckARM64NoResult(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckARM64Stub: a stub runs from Go's stack check straight on to the
+// call of goasmMissing, which never returns, and anything that could leave
+// it before that call is refused (a pointer may hold a stub).
+func TestCheckARM64Stub(t *testing.T) {
+	const base, miss, morestack = 0x1000, 0x7000, 0x9000
+	made := func() []uint32 {
+		return []uint32{a64StackGuard, a64CmpSPGuard, 0x54000009 | (9-2)<<5,
+			a64Nop, 0xd2800060, 0xf90007e0, a64BL(base+4*6, miss), a64Nop, a64Ret,
+			a64MovX3LR, a64BL(base+4*10, morestack), a64B(base+4*11, base)}
+	}
+	check := func(w []uint32) error {
+		k := &a64Checker{c: EngineCheck{Pkg: "p"}, bin: &binFile{syms: map[string]binSym{"p.goasmMissing.abi0": {Value: miss}}}, morestack: morestack}
+		return k.checkStub(Meta{Name: "s", Kind: Unified}, base, a64Bytes(w))
+	}
+	if err := check(made()); err != nil {
+		t.Fatalf("the stub as made: %v", err)
+	}
+	for name, c := range map[string]struct {
+		edit func(w []uint32)
+		want string
+	}{
+		"no stack check":            {func(w []uint32) { w[0] = a64Nop }, "no stack check"},
+		"a return before the call":  {func(w []uint32) { w[4] = a64Ret }, "before it calls goasmMissing"},
+		"a branch over the call":    {func(w []uint32) { w[4] = a64B(base+4*4, base+4*7) }, "before it calls goasmMissing"},
+		"a call of something else":  {func(w []uint32) { w[6] = a64BL(base+4*6, 0x8000) }, "before it calls goasmMissing"},
+		"no call":                   {func(w []uint32) { w[6], w[8] = a64Nop, a64Nop }, "does not call goasmMissing"},
+		"morestack jumps elsewhere": {func(w []uint32) { w[11] = a64B(base+4*11, base+4*4) }, "jump back to the start"},
+	} {
+		w := made()
+		c.edit(w)
+		if err := check(w); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
