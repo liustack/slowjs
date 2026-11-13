@@ -35,23 +35,32 @@ CC=$cc engine/test/build.sh pgo "$out/host" > "$out/build.log"
 
 # render APP PAGE...: the pages of APP twice, the counters set to zero
 # before the second pass (reset=K, engine/test/render.c). render stops with an
-# error when a page throws; each page must be in its report and the counters
-# must be written.
+# error when a page throws. A page that catches its error renders it as JSON
+# rather than HTML, so the HTML of each page must start with "<". Each page
+# must be in the report and the counters must be written.
 p=engine/pgo/pages
 render() {
 	app=$1
 	shift
+	mkdir -p "$out/html"
 	ins=
 	for pg in "$@" "$@"; do
 		ins="$ins,$p/$app/in/$pg.json"
 	done
 	LLVM_PROFILE_FILE="$out/$app.profraw" "$out/host/render" tifa=1 young=1 prelude="$p/fakeintl.js" \
-		bundle="$p/$app/$app.js" inputs="${ins#,}" warm=2 n=8 tag="$app" reset=$# > "$out/$app.txt"
+		bundle="$p/$app/$app.js" inputs="${ins#,}" warm=2 n=8 tag="$app" html="$out/html" reset=$# > "$out/$app.txt"
 	got=$(grep -o '"input":"[^"]*"' "$out/$app.txt" | wc -l | tr -d ' ')
 	if [ "$got" != $((2 * $#)) ]; then
 		echo "train.sh: $app rendered $got pages, want $((2 * $#)) ($out/$app.txt)" >&2
 		exit 1
 	fi
+	for pg in "$@"; do
+		f=$out/html/$app-$pg.json.html
+		if [ "$(head -c 1 "$f" 2>/dev/null)" != "<" ]; then
+			echo "train.sh: $app did not render $pg: $(head -c 200 "$f" 2>/dev/null)" >&2
+			exit 1
+		fi
+	done
 	if [ ! -s "$out/$app.profraw" ]; then
 		echo "train.sh: $app wrote no counters ($out/$app.profraw)" >&2
 		exit 1
