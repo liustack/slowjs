@@ -77,13 +77,15 @@ func (m *VM) argBlock(v jsValue, wtf8 bool) (s string, give func(), ok bool) {
 	}
 	var held func()
 	mk := func(size int) ([]byte, bool) {
-		b, g, err := hostmem.Take[byte](size)
-		if err != nil {
-			m.goOutOfMemory()
+		if !hostmem.Mapped[byte](size) {
+			return make([]byte, size), true
+		}
+		p, g, ok := m.goTake(size)
+		if !ok {
 			return nil, false
 		}
 		held = g
-		return b, true
+		return unsafe.Slice((*byte)(p), size), true
 	}
 	if wide {
 		s, ok = utf16Steps(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8, mk)

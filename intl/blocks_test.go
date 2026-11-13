@@ -72,9 +72,10 @@ func TestLongCallsUseBlocks(t *testing.T) {
 			if a := after.TotalAlloc - before.TotalAlloc; a > n/4 {
 				t.Errorf("%s: Go allocated %d bytes for a text of %d units, want at most %d", c.call, a, n, n/4)
 			}
-			// Each call made a Segments object, with a cursor of its own.
-			if got := hostmem.Blocks() - held; got != 2*c.kept {
-				t.Errorf("%s: %d blocks held after two calls, want %d", c.call, got, 2*c.kept)
+			// Each call made a Segments object, with a cursor of its own,
+			// and the VM may keep one block more for its next call.
+			if got := hostmem.Blocks() - held; got != 2*c.kept && got != 2*c.kept+1 {
+				t.Errorf("%s: %d blocks held after two calls, want %d, or one more the VM keeps", c.call, got, 2*c.kept)
 			}
 			vm.Close()
 			if got := hostmem.Blocks() - held; got != 0 {
@@ -90,6 +91,7 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 	const n = 4 << 20
 	for _, c := range blockCalls {
 		t.Run(c.name, func(t *testing.T) {
+			first := hostmem.Blocks()
 			vm := newVM(t)
 			setUp(t, vm, c.setup, n)
 			eval(t, vm, c.call)
@@ -107,13 +109,18 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 				}
 				// A stopped Segments call drops its cursor. One that ends
 				// keeps it, and the VM drops its first when it has four.
-				want := int64(0)
+				// The VM may keep one block more for its next call.
+				want := int64(1)
 				if err == nil {
-					want = c.kept
+					want += c.kept
 				}
 				if got := hostmem.Blocks() - held; got > want {
 					t.Errorf("%s with a timeout at %.0f%% of its time (%v): %d more blocks held, want at most %d", c.call, 100*f, err, got, want)
 				}
+			}
+			vm.Close()
+			if got := hostmem.Blocks() - first; got != 0 {
+				t.Errorf("%s: %d blocks held after the VM was closed, want 0", c.call, got)
 			}
 		})
 	}

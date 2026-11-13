@@ -6,6 +6,8 @@
 package intl // import "github.com/liustack/quickjs/intl"
 
 import (
+	"unsafe"
+
 	"maps"
 	"sync"
 
@@ -352,7 +354,10 @@ func callLimits(vm *quickjs.VM) *gointl.Limits {
 				intlhook.Room(vm, held)
 			}
 		},
-		OutOfMemory: func() { intlhook.OutOfMemory(vm) },
+		Take: func(size int) (unsafe.Pointer, func()) {
+			b, give := intlhook.Take[byte](vm, size)
+			return unsafe.Pointer(unsafe.SliceData(b)), give
+		},
 	}
 }
 

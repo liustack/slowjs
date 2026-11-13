@@ -116,6 +116,7 @@ func (m *VM) leave(err *error) {
 func (m *VM) endCall() (p any) {
 	defer func() { p = recover() }()
 	m.jsClearKeptObjects()
+	m.keep.Idle(keepIdle)
 	return nil
 }
 

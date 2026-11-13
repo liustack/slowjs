@@ -20,14 +20,16 @@ import (
 // where it has changed nothing it shares with other work, so that a panic
 // leaves only its own state behind.
 //
-// OutOfMemory, when it is not nil, has the work take each array the length
-// of its text from the OS, as a block (qjs_blocks.go), and ends the work by
-// a panic when the OS refuses one. The owner of such Limits calls Done once
-// nothing the work made is used, and uses them for one piece of work only.
+// Take, when it is not nil, has the work take each array the length of its
+// text from it: size bytes of zeros outside Go's heap, and the function that
+// gives them back (vmhook.Take, qjs_blocks.go). It ends the work by a panic
+// when the call is to stop or the OS refuses the memory. The owner of such
+// Limits calls Done once nothing the work made is used, and uses them for
+// one piece of work only.
 type Limits struct {
-	Check       func()
-	Room        func(n int64)
-	OutOfMemory func()
+	Check func()
+	Room  func(n int64)
+	Take  func(size int) (p unsafe.Pointer, give func())
 
 	gives []func()
 }

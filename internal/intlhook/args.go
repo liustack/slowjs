@@ -6,6 +6,8 @@
 package intlhook
 
 import (
+	"unsafe"
+
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/internal/hostmem"
 	"github.com/liustack/quickjs/internal/vmhook"
@@ -59,15 +61,21 @@ func NewBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, e
 	})
 }
 
-// Take is hostmem.Take, for a function given to NewBuiltin: n elements of T
-// in memory that give gives back, a block mapped from the OS from 1 MiB.
-// When the OS refuses it, the Builtin stops with the out of memory error.
+// Take is vmhook.Take, for a function given to NewBuiltin: n zero elements
+// of T, which give gives back, a Go allocation below hostmem.BlockMin bytes,
+// else a block outside Go's heap, the one the VM keeps or one mapped from
+// the OS. The Builtin stops when the call is to stop or the OS refuses the
+// memory.
 func Take[T hostmem.Elem](vm *quickjs.VM, n int) (s []T, give func()) {
-	s, give, err := hostmem.Take[T](n)
-	if err != nil {
-		OutOfMemory(vm)
+	if !hostmem.Mapped[T](n) {
+		return make([]T, n), func() {}
 	}
-	return s, give
+	var t T
+	p, give, ok := vmhook.Take(vm, n*int(unsafe.Sizeof(t)))
+	if !ok {
+		panic(stopped{})
+	}
+	return unsafe.Slice((*T)(p), n), give
 }
 
 // String is a.String(i), for a function given to NewBuiltin.

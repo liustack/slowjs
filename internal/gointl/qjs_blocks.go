@@ -5,10 +5,14 @@
 
 package intl
 
-import "github.com/liustack/quickjs/internal/hostmem"
+import (
+	"unsafe"
+
+	"github.com/liustack/quickjs/internal/hostmem"
+)
 
 // The arrays the length of its text that a piece of work makes come from
-// the OS, in blocks (hostmem.Take), when its Limits have OutOfMemory: Go
+// the OS, in blocks (hostmem.TakeKept), when its Limits have Take: Go
 // clears an allocation in one call, and copies a slice that append grows
 // in one call, with no Check, while the OS hands over its pages, 30 ms for
 // 16 MiB on a slow virtual machine. The pages of a block come as the work
@@ -20,7 +24,7 @@ import "github.com/liustack/quickjs/internal/hostmem"
 const copyPiece = 1 << 16
 
 // blocks reports whether the work takes its long arrays from the OS.
-func (l *Limits) blocks() bool { return l != nil && l.OutOfMemory != nil }
+func (l *Limits) blocks() bool { return l != nil && l.Take != nil }
 
 // Done gives back the blocks of the work: nothing it made may be used
 // after, a string over one included.
@@ -41,13 +45,10 @@ func take[T hostmem.Elem](l *Limits, n int) []T {
 	if !l.blocks() || !hostmem.Mapped[T](n) {
 		return make([]T, n)
 	}
-	s, give, err := hostmem.Take[T](n)
-	if err != nil {
-		l.OutOfMemory()
-		panic("intl: Limits.OutOfMemory returned")
-	}
+	var t T
+	p, give := l.Take(n * int(unsafe.Sizeof(t)))
 	l.gives = append(l.gives, give)
-	return s
+	return unsafe.Slice((*T)(p), n)
 }
 
 // grown is s with room for n elements: s itself when it has it, else a new

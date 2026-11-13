@@ -76,11 +76,8 @@ func Take[T Elem](n int) (s []T, give func(), err error) {
 		if given {
 			return
 		}
-		if err := osUnmap(addr, size); err != nil {
-			panic(fmt.Errorf("hostmem: giving back the block of %d bytes at %#x: %w", size, addr, err))
-		}
+		unmapBlock(addr, size)
 		given = true
-		blocks.Add(-1)
 	}
 	return unsafe.Slice((*T)(pointer(addr)), n), give, nil
 }

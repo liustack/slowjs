@@ -5,7 +5,12 @@
 
 package quickjs // import "github.com/liustack/quickjs"
 
-import "github.com/liustack/quickjs/internal/vmhook"
+import (
+	"unsafe"
+
+	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/quickjs/internal/vmhook"
+)
 
 // The functions of internal/vmhook, with which the Go functions of packages
 // intl, temporal, fmt and url keep the limits of the VM that called them.
@@ -15,6 +20,7 @@ func init() {
 	vmhook.OutOfMemory = func(vm any) { hookVM(vm).goOutOfMemory() }
 	vmhook.Chars = func(args any, i int) ([]byte, []uint16, func(), bool) { return hookArgs(args).chars(i) }
 	vmhook.LongWTF8 = func(args any, i int) (string, func(), bool) { return hookArgs(args).longWTF8(i) }
+	vmhook.Take = func(vm any, size int) (unsafe.Pointer, func(), bool) { return hookVM(vm).goTake(size) }
 }
 
 // hookVM is the VM a function of vmhook was given, which has to be running a
@@ -45,10 +51,54 @@ func (m *VM) goRoom() int64 {
 	if m.memoryLimit == 0 {
 		return -1
 	}
-	if n := m.jsGetMemorySize(); n < m.memoryLimit {
+	if n := m.jsGetMemorySize() + m.keep.Size(); n < m.memoryLimit {
 		return int64(m.memoryLimit - n)
 	}
 	return 0
+}
+
+// A Go function that javascript called takes the memory for a long input or
+// output of its call from goTake: from hostmem.BlockMin bytes, a block mapped
+// from the OS outside Go's heap, which a stop can end the call in while it is
+// filled (docs/changes/uncatchable.md). The VM keeps the last block given
+// back, of at most keepMax bytes, for the next call that takes one, which
+// finds its pages in memory: the OS hands over the pages of a new block one
+// at a time as they are written, 25 to 40 ms for 16 MiB on the virtual M1
+// of GitHub's macos-15 runner, at every call. A kept block counts against
+// the memory limit (goRoom), m keeps one only when it is at most a quarter
+// of the room left, and gives it back to the OS after keepIdle calls that
+// took none, and at Close.
+const (
+	keepMax  = 32 << 20
+	keepIdle = 16
+)
+
+// goTake is vmhook.Take: size bytes, cleared, and the function that gives
+// them back to m.keep. It is false, with the error that ends the call
+// pending, when the call is to stop or the OS refuses the memory.
+func (m *VM) goTake(size int) (unsafe.Pointer, func(), bool) {
+	b, give, stopped, err := hostmem.TakeKept[byte](&m.keep, size, m.goStop)
+	switch {
+	case err != nil:
+		m.goOutOfMemory()
+		return nil, nil, false
+	case stopped:
+		return nil, nil, false
+	}
+	return unsafe.Pointer(unsafe.SliceData(b)), give, true
+}
+
+// mayKeep reports whether m.keep may keep a block of size bytes: always with
+// no memory limit, else when it is at most a quarter of the room left.
+func (m *VM) mayKeep(size uintptr) bool {
+	if m.h.Broken() {
+		return false
+	}
+	if m.memoryLimit == 0 {
+		return true
+	}
+	n := m.jsGetMemorySize() + m.keep.Size()
+	return n < m.memoryLimit && size <= (m.memoryLimit-n)/4
 }
 
 // goOutOfMemory is vmhook.OutOfMemory.

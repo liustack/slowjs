@@ -184,14 +184,18 @@ func sprintln(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
 // newPrinter is a printer with an output of n bytes. It is false, with the
 // out of memory error thrown, when the OS refuses the memory.
 func newPrinter(vm *quickjs.VM, n int64) (*printer, bool) {
-	buf, give, err := hostmem.Take[byte](int(n))
-	if err != nil {
-		if vm != nil {
-			vmhook.OutOfMemory(vm)
+	if vm == nil || !hostmem.Mapped[byte](int(n)) {
+		buf, give, err := hostmem.Take[byte](int(n))
+		if err != nil {
+			return nil, false
 		}
+		return &printer{vm: vm, buf: buf[:0], give: give}, true
+	}
+	p, give, ok := vmhook.Take(vm, int(n))
+	if !ok {
 		return nil, false
 	}
-	return &printer{vm: vm, buf: buf[:0], give: give}, true
+	return &printer{vm: vm, buf: unsafe.Slice((*byte)(p), n)[:0], give: give}, true
 }
 
 // result is the output of p, the function that gives it back, and whether

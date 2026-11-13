@@ -15,6 +15,8 @@
 // goroutine of the call, and panics anywhere else.
 package vmhook // import "github.com/liustack/quickjs/internal/vmhook"
 
+import "unsafe"
+
 var (
 	// Stop reports whether the call into javascript in progress on vm is to
 	// end: Interrupt asked it to stop, its eval timeout passed, or an
@@ -54,4 +56,11 @@ var (
 	// as one the function returns or stores. When ok is false give does
 	// nothing.
 	LongWTF8 func(args any, i int) (s string, give func(), ok bool)
+
+	// Take returns size bytes of zeros for the Go function vm runs, from
+	// hostmem.BlockMin a block mapped from the OS or the one vm keeps, and the
+	// function that gives them back to vm, on every path (hostmem.TakeKept).
+	// ok is false, with the error that ends the call pending, when the call
+	// is to stop or the OS refuses the memory, and give is nil then.
+	Take func(vm any, size int) (p unsafe.Pointer, give func(), ok bool)
 )
