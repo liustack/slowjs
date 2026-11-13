@@ -19,6 +19,7 @@
 #include "regvm-ops-except.h"
 #include "regvm-ops-window.h"
 #include "regvm-ops-dst.h"
+#include "regvm-ops-copy.h"
 #include "regvm-ops-ctor.h"
 #include "regvm-ops-gen.h"
 #include "regvm-ops-eval.h"

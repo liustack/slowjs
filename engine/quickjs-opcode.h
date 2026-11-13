@@ -152,6 +152,13 @@ DEF(set_home_object, 1, 2, 2, none)
 DEF(define_array_el, 1, 3, 2, none)
 DEF(         append, 1, 3, 2, none) /* append enumerated object, update length */
 DEF(copy_data_properties, 2, 3, 3, u8)
+/* the rest of an object destructuring, `{a, ...r} = s`: OP_object and
+   OP_copy_data_properties in one, with the static keys of the pattern as a
+   list. The u32 is the offsets byte of copy_data_properties (target 0) and,
+   above it, the index of the list in JSFunctionBytecode.object_lits or
+   0xffff for none (js_parse_destructuring_element1). Emitted by the parser,
+   so it comes before the short opcodes */
+DEF(      copy_rest, 5, 0, 1, u32) /* excludeList src ... -> excludeList src ... target */
 DEF(  define_method, 6, 2, 1, atom_u8)
 DEF(define_method_computed, 2, 3, 1, u8) /* must come after define_method */
 DEF(   define_class, 6, 2, 2, atom_u8) /* parent ctor -> ctor proto */

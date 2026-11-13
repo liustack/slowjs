@@ -8266,42 +8266,54 @@ static JSShape *find_hashed_shape_keys(JSRuntime *rt, JSObject *proto,
     return NULL;
 }
 
-/* Make the shape of the objects of the object literal lit of ctx, at its
-   first run, and keep it in lit: the shape in the shape hash table with
-   exactly the keys of lit, in their order, as properties made by
+/* A reference to the shape of an ordinary object of ctx with the count keys
+   of atoms, as an object literal of those keys (js_object_lit_shape) and an
+   object rest (regvm-ops-copy.h) make it: the shape in the shape hash table
+   with exactly those keys, in their order, as properties made by
    OP_define_field, and the Object.prototype of ctx, or else a new one that
    has room for those keys and at least JS_PROP_INITIAL_SIZE, as an empty
-   object has. A shape found may have room for more properties than lit has
+   object has. A shape found may have room for more properties than there are
    keys. The shapes in the table are also the next shapes of objects that get
    keys one at a time (add_property), which move their properties to the room
    of the shape they take: an empty object (room 2) that takes the shape of a
    literal of one key with room 1, and then a second key, would move them
    twice. Return NULL when there is no memory. */
-static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
-                                               const JSAtom *atoms)
+static JSShape *js_shape_of_keys(JSContext *ctx, const JSAtom *atoms,
+                                 uint32_t count)
 {
     JSRuntime *rt = ctx->rt;
     JSObject *proto = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
     JSShape *sh;
     uint32_t i, hash_size;
 
-    sh = find_hashed_shape_keys(rt, proto, atoms, lit->count);
+    sh = find_hashed_shape_keys(rt, proto, atoms, count);
     if (sh) {
         sh = js_dup_shape(sh);
     } else {
         hash_size = JS_PROP_INITIAL_HASH_SIZE;
-        while (hash_size < lit->count)
+        while (hash_size < count)
             hash_size *= 2;
         sh = js_new_shape2(ctx, proto, hash_size,
-                           max_int(lit->count, JS_PROP_INITIAL_SIZE));
+                           max_int(count, JS_PROP_INITIAL_SIZE));
         if (!sh)
             return NULL;
-        for(i = 0; i < lit->count; i++) {
+        for(i = 0; i < count; i++) {
             /* cannot fail: the shape has room for every key */
             add_shape_property(ctx, &sh, NULL, atoms[i], JS_PROP_C_W_E);
         }
     }
-    lit->shape = sh;
+    return sh;
+}
+
+/* the shape of the objects of the object literal lit of ctx, made at its
+   first run and kept in lit */
+static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
+                                               const JSAtom *atoms)
+{
+    JSShape *sh = js_shape_of_keys(ctx, atoms, lit->count);
+
+    if (sh)
+        lit->shape = sh;
     return sh;
 }
 
@@ -9650,6 +9662,21 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             for(i = 0; i < b->object_lit_count; i++) {
                 if (b->object_lits[i].shape)
                     mark_func(rt, &b->object_lits[i].shape->header);
+            }
+            /* and so do those the caches of its object rests hold
+               (engine/regvm-ops-copy.h) */
+            if (b->rv && b->rv->arg_count >= 0) {
+                RVFunc *rf = b->rv;
+                int j;
+                for(i = 0; i < rf->copy_count; i++) {
+                    for(j = 0; j < RV_COPY_WAYS; j++) {
+                        RVCopyEntry *e = rf->copy[i].e[j];
+                        if (!e)
+                            break;
+                        mark_func(rt, &e->src->header);
+                        mark_func(rt, &e->dst->header);
+                    }
+                }
             }
             if (b->realm)
                 mark_func(rt, &b->realm->header);
@@ -22064,6 +22091,22 @@ static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
     return TRUE;
 }
 
+/* whether the key atom is among the n keys of excl or a key of pexcl (when
+   it is not NULL), or -1 for an exception */
+static int js_copy_excluded(JSContext *ctx, JSObject *pexcl,
+                            const JSAtom *excl, int n, JSAtom atom)
+{
+    int i;
+
+    for(i = 0; i < n; i++) {
+        if (excl[i] == atom)
+            return 1;
+    }
+    if (!pexcl)
+        return 0;
+    return js_get_own_property_flags(ctx, NULL, pexcl, atom);
+}
+
 /* Copy the own properties of source into target as JS_CopyDataProperties
    does for a spread in an object literal or the rest of a destructuring,
    which define them on target, a new object, with the result in *pret, and
@@ -22076,6 +22119,7 @@ static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
    source, which defining the keys one by one would have led it to. */
 static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
                          JSValueConst source, JSValueConst excluded,
+                         const JSAtom *excl, int excl_n,
                          BOOL setprop, int *pret)
 {
     JSObject *ps, *pexcl = NULL;
@@ -22090,7 +22134,8 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     ps = JS_VALUE_GET_OBJ(source);
     if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
         pexcl = JS_VALUE_GET_OBJ(excluded);
-    else if (js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
+    else if (excl_n == 0 &&
+             js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
         return TRUE;
     if (!js_own_keys_scan(ctx, &l, ps,
                           JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY) ||
@@ -22099,8 +22144,8 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     prs = get_shape_prop(l.sh);
     *pret = 0;
     while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
-        if (pexcl) {
-            ret = js_get_own_property_flags(ctx, NULL, pexcl, prs[i].atom);
+        if (pexcl || excl_n) {
+            ret = js_copy_excluded(ctx, pexcl, excl, excl_n, prs[i].atom);
             if (ret < 0) {
                 *pret = -1;
                 break;
@@ -22118,11 +22163,12 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     return TRUE;
 }
 
-static __exception int JS_CopyDataProperties(JSContext *ctx,
-                                             JSValueConst target,
-                                             JSValueConst source,
-                                             JSValueConst excluded,
-                                             BOOL setprop)
+/* JS_CopyDataProperties that also leaves out the excl_n keys of excl, the
+   static keys of the pattern of a rest (OP_copy_rest) */
+static int js_copy_data_properties(JSContext *ctx, JSValueConst target,
+                                   JSValueConst source, JSValueConst excluded,
+                                   const JSAtom *excl, int excl_n,
+                                   BOOL setprop)
 {
     JSPropertyEnum *tab_atom;
     JSValue val;
@@ -22135,7 +22181,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     JSProperty *pr;
     JSShapeProperty *prs;
 
-    if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
+    if (js_copy_data(ctx, target, source, excluded, excl, excl_n, setprop,
+                     &ret))
         return ret;
     if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
         return 0;
@@ -22161,8 +22208,8 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
         return -1;
 
     for (i = 0; i < tab_atom_count; i++) {
-        if (pexcl) {
-            ret = js_get_own_property_flags(ctx, NULL, pexcl, tab_atom[i].atom);
+        if (pexcl || excl_n) {
+            ret = js_copy_excluded(ctx, pexcl, excl, excl_n, tab_atom[i].atom);
             if (ret) {
                 if (ret < 0)
                     goto exception;
@@ -22208,6 +22255,16 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
  exception:
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
     return -1;
+}
+
+static __exception int JS_CopyDataProperties(JSContext *ctx,
+                                             JSValueConst target,
+                                             JSValueConst source,
+                                             JSValueConst excluded,
+                                             BOOL setprop)
+{
+    return js_copy_data_properties(ctx, target, source, excluded, NULL, 0,
+                                   setprop);
 }
 
 /* only valid inside C functions */
@@ -28480,19 +28537,15 @@ static BOOL js_object_lit_key_is_static(JSParseState *s)
     }
 }
 
-/* Emit the start of an object literal whose first count fields, of the keys
-   atoms, have their values on the stack: OP_object with none, else
-   OP_object_lit with the keys recorded in the function. */
-static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
+/* Record the count keys of atoms (1 to JS_OBJECT_LIT_MAX, none twice) in
+   the function, for OP_object_lit or OP_copy_rest, and return their index,
+   or -1 when there is no memory. The caller made room for the index
+   (object_lit_open). */
+static int js_object_lit_keys(JSParseState *s, const JSAtom *atoms, int count)
 {
     JSFunctionDef *fd = s->cur_func;
     int i;
 
-    fd->object_lit_open--;
-    if (count == 0) {
-        emit_op(s, OP_object);
-        return 0;
-    }
     /* room for the whole record first: it is never written in part */
     if (dbuf_claim(&fd->object_lits, sizeof(uint32_t) * (count + 1))) {
         JS_ThrowOutOfMemory(s->ctx);
@@ -28501,10 +28554,29 @@ static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
     dbuf_put_u32(&fd->object_lits, count);
     for(i = 0; i < count; i++)
         dbuf_put_u32(&fd->object_lits, JS_DupAtom(s->ctx, atoms[i]));
+    assert(fd->object_lit_count < 0xffff);
+    return fd->object_lit_count++;
+}
+
+/* Emit the start of an object literal whose first count fields, of the keys
+   atoms, have their values on the stack: OP_object with none, else
+   OP_object_lit with the keys recorded in the function. */
+static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
+{
+    JSFunctionDef *fd = s->cur_func;
+    int k;
+
+    fd->object_lit_open--;
+    if (count == 0) {
+        emit_op(s, OP_object);
+        return 0;
+    }
+    k = js_object_lit_keys(s, atoms, count);
+    if (k < 0)
+        return -1;
     emit_op(s, OP_object_lit);
     emit_u16(s, count);
-    assert(fd->object_lit_count < 0xffff);
-    emit_u16(s, fd->object_lit_count++);
+    emit_u16(s, k);
     return 0;
 }
 
@@ -29987,6 +30059,70 @@ fail:
     return JS_ATOM_NULL;
 }
 
+/* The keys an object destructuring with a rest leaves out of the rest,
+   `{a, b: c, [k]: d, ...r}`. The static keys (a, b) go to a list that
+   OP_copy_rest reads (as the keys of an object literal, object_lits), and
+   only the computed keys (k) into the object excludeList, which is null
+   when there are none: no object of the names is made and freed at each
+   run. A static key runs no code, so leaving it out by its atom is what
+   defining it in excludeList and looking it up there does. Past
+   JS_OBJECT_LIT_MAX static keys, or past 0xffff lists in the function, every
+   key goes into excludeList and the rest is OP_copy_data_properties, as
+   before. */
+typedef struct JSRestKeys {
+    BOOL list;      /* the static keys go to the list */
+    BOOL computed;  /* a computed key went into excludeList */
+    int obj_pos;    /* the OP_object of excludeList */
+    int count;
+    /* each held by the code: the get_field that reads its value */
+    JSAtom atoms[JS_OBJECT_LIT_MAX];
+} JSRestKeys;
+
+/* the static key atom of the destructuring of rk, with excludeList and the
+   source at the top of the stack */
+static void js_rest_key(JSParseState *s, JSRestKeys *rk, JSAtom atom)
+{
+    int i;
+
+    if (rk->list) {
+        for(i = 0; i < rk->count; i++) {
+            if (rk->atoms[i] == atom)
+                return;
+        }
+        if (rk->count < JS_OBJECT_LIT_MAX) {
+            rk->atoms[rk->count++] = atom;
+            return;
+        }
+        /* too many: excludeList takes them all */
+        rk->list = FALSE;
+        s->cur_func->object_lit_open--;
+        emit_op(s, OP_swap);
+        for(i = 0; i < rk->count; i++) {
+            emit_op(s, OP_null);
+            emit_op(s, OP_define_field);
+            emit_atom(s, rk->atoms[i]);
+        }
+    } else {
+        emit_op(s, OP_swap); /* TOS: src excludeList */
+    }
+    emit_op(s, OP_null); /* TOS: src excludeList null */
+    emit_op(s, OP_define_field); /* TOS: src excludeList */
+    emit_atom(s, atom);
+    emit_op(s, OP_swap); /* TOS: excludeList src */
+}
+
+/* the end of the destructuring of rk: with no computed key, excludeList is
+   null rather than an object */
+static void js_rest_end(JSParseState *s, JSRestKeys *rk)
+{
+    JSFunctionDef *fd = s->cur_func;
+
+    if (!rk->computed && !dbuf_error(&fd->byte_code)) {
+        assert(fd->byte_code.buf[rk->obj_pos] == OP_object);
+        fd->byte_code.buf[rk->obj_pos] = OP_null;
+    }
+}
+
 /* Return -1 if error, 0 if no initializer, 1 if an initializer is
    present at the top level. */
 static int js_parse_destructuring_element(JSParseState *s, int tok, int is_arg,
@@ -30001,7 +30137,9 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
     JSAtom prop_name, var_name;
     int opcode, scope, tok1, skip_bits;
     BOOL has_initializer;
+    JSRestKeys rk;
 
+    rk.list = FALSE;
     if (has_ellipsis < 0) {
         /* pre-parse destructuration target for spread detection */
         if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
@@ -30033,8 +30171,16 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
         /* throw an exception if the value cannot be converted to an object */
         emit_op(s, OP_to_object);
         if (has_ellipsis) {
+            JSFunctionDef *fd = s->cur_func;
             /* add excludeList on stack just below src object */
             emit_op(s, OP_object);
+            rk.obj_pos = fd->last_opcode_pos;
+            rk.computed = FALSE;
+            rk.count = 0;
+            /* the index of the list is taken at the rest */
+            rk.list = fd->object_lit_count + fd->object_lit_open < 0xffff;
+            if (rk.list)
+                fd->object_lit_open++;
             emit_op(s, OP_swap);
         }
         while (s->token.val != '}') {
@@ -30075,9 +30221,25 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     js_parse_error(s, "assignment rest property must be last");
                     goto var_error;
                 }
-                emit_op(s, OP_object);  /* target */
-                emit_op(s, OP_copy_data_properties);
-                emit_u8(s, 0 | ((depth_lvalue + 1) << 2) | ((depth_lvalue + 2) << 5));
+                if (rk.list) {
+                    int k = 0xffff;
+                    s->cur_func->object_lit_open--;
+                    if (rk.count != 0) {
+                        k = js_object_lit_keys(s, rk.atoms, rk.count);
+                        if (k < 0)
+                            goto var_error;
+                    }
+                    rk.list = FALSE;
+                    js_rest_end(s, &rk);
+                    /* target */
+                    emit_op(s, OP_copy_rest);
+                    emit_u32(s, (0 | ((depth_lvalue + 1) << 2) |
+                                 ((depth_lvalue + 2) << 5)) | ((uint32_t)k << 8));
+                } else {
+                    emit_op(s, OP_object);  /* target */
+                    emit_op(s, OP_copy_data_properties);
+                    emit_u8(s, 0 | ((depth_lvalue + 1) << 2) | ((depth_lvalue + 2) << 5));
+                }
                 goto set_val;
             }
             prop_type = js_parse_property_name(s, &prop_name, FALSE, TRUE, FALSE);
@@ -30097,6 +30259,7 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     if (prop_name == JS_ATOM_NULL) {
                         /* computed property name on stack */
                         if (has_ellipsis) {
+                            rk.computed = TRUE;
                             /* define the property in excludeList */
                             emit_op(s, OP_to_propkey); /* avoid calling ToString twice */
                             emit_op(s, OP_perm3); /* TOS: src excludeList prop */
@@ -30108,14 +30271,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                         emit_op(s, OP_get_array_el2);
                     } else {
                         /* named property */
-                        if (has_ellipsis) {
-                            /* define the property in excludeList */
-                            emit_op(s, OP_swap); /* TOS: src excludeList */
-                            emit_op(s, OP_null); /* TOS: src excludeList null */
-                            emit_op(s, OP_define_field); /* TOS: src excludeList */
-                            emit_atom(s, prop_name);
-                            emit_op(s, OP_swap); /* TOS: excludeList src */
-                        }
+                        if (has_ellipsis)
+                            js_rest_key(s, &rk, prop_name);
                         /* get the named property from the source object */
                         emit_op(s, OP_get_field2);
                         emit_u32(s, prop_name);
@@ -30132,6 +30289,7 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                 if (prop_name == JS_ATOM_NULL) {
                     emit_op(s, OP_to_propkey);
                     if (has_ellipsis) {
+                        rk.computed = TRUE;
                         /* define the property in excludeList */
                         emit_op(s, OP_perm3);
                         emit_op(s, OP_null);
@@ -30141,14 +30299,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     /* source prop -- source source prop */
                     emit_op(s, OP_dup1);
                 } else {
-                    if (has_ellipsis) {
-                        /* define the property in excludeList */
-                        emit_op(s, OP_swap);
-                        emit_op(s, OP_null);
-                        emit_op(s, OP_define_field);
-                        emit_atom(s, prop_name);
-                        emit_op(s, OP_swap);
-                    }
+                    if (has_ellipsis)
+                        js_rest_key(s, &rk, prop_name);
                     /* source -- source source */
                     emit_op(s, OP_dup);
                 }
@@ -30240,14 +30392,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     js_parse_error(s, "invalid destructuring target");
                     goto prop_error;
                 }
-                if (has_ellipsis) {
-                    /* define the property in excludeList */
-                    emit_op(s, OP_swap);
-                    emit_op(s, OP_null);
-                    emit_op(s, OP_define_field);
-                    emit_atom(s, prop_name);
-                    emit_op(s, OP_swap);
-                }
+                if (has_ellipsis)
+                    js_rest_key(s, &rk, prop_name);
                 if (!tok || need_var_reference(s, tok)) {
                     /* generate reference */
                     /* source -- source source */
@@ -30308,6 +30454,12 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
         /* drop the source object */
         emit_op(s, OP_drop);
         if (has_ellipsis) {
+            if (rk.list) {
+                /* no rest at this level after all */
+                s->cur_func->object_lit_open--;
+                rk.list = FALSE;
+                js_rest_end(s, &rk);
+            }
             emit_op(s, OP_drop); /* pop excludeList */
         }
         if (next_token(s))
@@ -44076,7 +44228,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 11
+#define BC_VERSION 12
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -45301,6 +45453,17 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
                 b->byte_code_len = pos;
                 JS_ThrowSyntaxError(s->ctx, "invalid object literal (pc=%d)", pos);
                 return -1;
+            }
+            break;
+        case OP_FMT_u32:
+            /* OP_copy_rest names one of the object literals of b, or none */
+            if (op == OP_copy_rest) {
+                idx = get_u32(bc_buf + pos + 1) >> 8;
+                if (idx != 0xffff && idx >= b->object_lit_count) {
+                    b->byte_code_len = pos;
+                    JS_ThrowSyntaxError(s->ctx, "invalid object rest (pc=%d)", pos);
+                    return -1;
+                }
             }
             break;
         default:

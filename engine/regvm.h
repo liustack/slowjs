@@ -232,10 +232,25 @@ int JS_RegvmStat(JSContext *ctx, int what)
     return ctx->rt->rv_stat[what];
 }
 
+/* an entry of the cache of an object rest (regvm-ops-copy.h) */
+static void rv_copy_entry_free(JSRuntime *rt, RVCopyEntry *e)
+{
+    js_free_shape(rt, e->src);
+    js_free_shape(rt, e->dst);
+    js_free_rt(rt, e);
+}
+
 static void rv_free_func(JSRuntime *rt, RVFunc *rf)
 {
-    if (rf->arg_count >= 0)
-        js_free_rt(rt, rf);
+    int i, j;
+
+    if (rf->arg_count < 0)
+        return;
+    for (i = 0; i < rf->copy_count; i++) {
+        for (j = 0; j < RV_COPY_WAYS && rf->copy[i].e[j]; j++)
+            rv_copy_entry_free(rt, rf->copy[i].e[j]);
+    }
+    js_free_rt(rt, rf);
 }
 
 #include "regvm-pass.h"

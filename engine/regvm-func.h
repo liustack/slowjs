@@ -101,6 +101,26 @@ typedef struct RVPcMask {
 
 enum { RV_HOOK_NONE, RV_HOOK_OWN, RV_HOOK_OWN_POLL, RV_HOOK_APART, RV_HOOK_APART2 };
 
+/* The cache of an object rest (COPYR, engine/regvm-ops-copy.h): for a
+   source of the shape src, the shape dst of the result and, for each of
+   the n slots of src, the slot of dst its value goes to, or RV_COPY_NONE.
+   An entry holds a reference to both shapes, so that neither changes in
+   place nor goes while it is there. */
+#define RV_COPY_WAYS 4   /* the entries of a site */
+#define RV_COPY_KEYS 64  /* the most slots of a source an entry maps */
+#define RV_COPY_NONE 0xff
+#define RV_COPY_SWAPS 16 /* misses of a full site that replace an entry */
+typedef struct RVCopyEntry {
+    JSShape *src, *dst;
+    uint32_t n;
+    uint8_t map[0];
+} RVCopyEntry;
+
+typedef struct RVCopySite {
+    RVCopyEntry *e[RV_COPY_WAYS]; /* filled from the first */
+    uint32_t swaps;  /* entries a miss replaced, at most RV_COPY_SWAPS */
+} RVCopySite;
+
 typedef struct RVFunc {
     struct JSFunctionBytecode *b;
     int arg_count, var_count, stack_size;
@@ -133,6 +153,8 @@ typedef struct RVFunc {
                        first (regvm-ops-except.h rv_ret_target) */
     uint32_t *rets;
     RVPcHi *pcmap_hi; /* NULL when no entry owns a temp past T[31] */
+    int copy_count;   /* the sites of COPYR, each with its cache in copy */
+    RVCopySite *copy;
     uint8_t code[0];
 } RVFunc;
 

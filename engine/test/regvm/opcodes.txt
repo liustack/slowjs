@@ -114,6 +114,7 @@ set_home_object            old
 define_array_el            reg
 append                     window
 copy_data_properties       window
+copy_rest                  window    # COPYR (regvm-ops-copy.h)
 define_method              reg
 define_method_computed     old
 define_class               old

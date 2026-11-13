@@ -257,6 +257,7 @@ read_when:
 | for in 循环对一个 shape 只问一次能不能从它列出键 | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环对一个-shape-只问一次能不能从它列出键) |
 | 往数组里追加元素时，第一次就留 8 个元素的空间 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#往数组里追加元素时第一次就留-8-个元素的空间) |
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
+| 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
 
 ## 内存
 

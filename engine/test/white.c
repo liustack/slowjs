@@ -2351,3 +2351,29 @@ int white_class_after_nop(JSContext *ctx, const char *src, const char *name)
     JS_FreeValue(ctx, v);
     return ret;
 }
+
+/* The cache of the object rest site of the function fn (a function value):
+   the shapes of the sources it keeps, as white_shape_of numbers them, into
+   src (up to max), and the entries a miss replaced so far into *swaps.
+   Return the entries, or -1 when fn has no register code or no such site
+   (engine/regvm-ops-copy.h). */
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, int max, int *swaps)
+{
+    JSFunctionBytecode *b;
+    RVCopySite *cs;
+    int i;
+
+    if (JS_VALUE_GET_TAG(fn) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(fn)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -1;
+    b = JS_VALUE_GET_OBJ(fn)->u.func.function_bytecode;
+    if (!b || !b->rv || b->rv->arg_count < 0 || site >= b->rv->copy_count)
+        return -1;
+    cs = &b->rv->copy[site];
+    for (i = 0; i < RV_COPY_WAYS && cs->e[i]; i++) {
+        if (i < max)
+            src[i] = (uintptr_t)cs->e[i]->src;
+    }
+    *swaps = cs->swaps;
+    return i;
+}

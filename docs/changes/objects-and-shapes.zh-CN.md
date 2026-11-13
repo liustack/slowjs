@@ -4,6 +4,7 @@ read_when:
   - VM 的运行接近它的内存上限，想知道要不要给它一个更小的 shape 缓存
   - 调用 VM.SetShapeCache，或者想知道 DefaultShapeCache 的代价
   - 计划在属性访问或对象创建上做更多工作
+  - 修改对象 rest 或展开的复制（`js_copy_data_properties`，`engine/regvm-ops-copy.h`）
 ---
 
 # 对象和 shape
@@ -307,3 +308,19 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 在原生 C 树上用 callgrind 量（linux/amd64，只算计时的渲染，按 tifa 池子的设置，不算 `host_poll`），商店的英文首页和中文商品页每次渲染少 0.29% 的指令，workbench studio 页少 0.17%，MUI 的 orders 页少 0.05%，React 的 `r_react_ssr` 少 0.06%，商店和 MUI 的 23 个页面 HTML 相同。商店页面上的遍历大多来自 URL polyfill：把商店的 URL 对象复用起来（同样的页面，用一个替身代替 `URL`），收益是 0.05% 到 0.07%。它没有加分支：判断 exotic 对象的那次测试本来就有。
 
 改动在 C 里（`engine/quickjs.c`，`JS_HasProperty`）。`engine/test/compare/has_property_chain.js` 遍历普通的链、快速数组、类型化数组、`String` 对象和全局对象，遍历带 Proxy 的链（它的 `has` trap 剪断链并丢掉 target），遍历原型上有 getter 的描述符（getter 删掉后面的字段并剪断链），用 `toString` 会抛错、会剪断链或删掉键的键，以及由原型上的 getter 为 `every` 和 `concat` 填上的空位。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把同样的遍历扫一遍（`test_has_property_oom`）。
+
+## 对象的 rest 直接按最终的 shape 创建
+
+发布版本：Unreleased。
+
+`const {a, b, ...r} = s` 以前为每次 rest 建一个装着 `a` 和 `b` 的对象来排除它们（先建空对象，再逐个定义键），然后建一个空的 `r`，把 `s` 的键一个个给它，每个键都要在那个对象里查一次。用这种写法拆 props 的 React 组件，每次要付两个对象的钱，每个键还要多查一次。MUI 和商店的页面每次渲染跑 800 到 2,200 次 rest，每次 3 到 5 个键，排除 1.5 到 7 个名字。
+
+现在解析器把模式里的静态键放进一张 atom 列表，作为函数的对象字面量表（`object_lits`）的一项，规则相同：最多 32 个键，不能重复。然后生成带这张列表下标的 `OP_copy_rest`。只有计算出来的键（`{[k]: x, ...r}`）还像以前一样放进一个对象，静态键超过 32 个的模式也走老路。寄存器循环把它当作 `COPYR` 执行（`engine/regvm-ops-copy.h`）。如果源对象是普通对象，自有键都是不是数组下标的字符串，每个都是普通数据属性（不会运行 getter），那么源对象的 shape 就决定了一切：复制哪些键、什么顺序、什么标志。`COPYR` 于是直接按这些键的对象字面量的 shape 建出结果，也就是逐个定义这些键最后会得到的 shape，属性放在按最终大小分配的一个内存块里，然后带着引用复制各个值。每个 `COPYR` 为最多 4 个源对象的 shape 记下结果的 shape 和每个值去哪个槽：命中只要一次比较和一次复制。其他源对象（带 getter 的类实例、proxy、数组、`arguments`、下标键或 symbol 键、被排除的计算键）走通用路径 `js_copy_data_properties`，它现在也接受这张列表。
+
+为什么安全：键在查找之前就被排除，和 CopyDataProperties 的规定一致，列表里是模式读过的键，形式和 `get_field` 用的一样。通用路径就是原来那条。快速路径只在源对象的 shape 能决定结果时才走：没有 getter，所以复制过程中没有东西能改动源对象，每个字符串键都按 shape 的顺序列出（下标键和 symbol 键在 `[[OwnPropertyKeys]]` 里排在最前或最后，遇到就走通用路径），可能装着错误的延迟调用栈的 `stack` 键也走通用路径。缓存项持有源对象 shape 的引用，所以这个 shape 在缓存项还在时不会被原地修改（一个 shape 被两处持有时，对象在增删键之前会先复制它，见 `js_shape_prepare_update`），而且只记 shape 哈希表里的 shape，因为不在表里的 shape 从不共享。只记原型是 null 或本 realm 的 `Object.prototype`、且没有 symbol 的 shape，所以缓存项不会让脚本丢掉的原型活着，也不会让 `WeakRef` 能观察到的 symbol 活着。字节码为循环回收器标记它缓存项里的 shape，并和寄存器代码一起释放它们。见到超过 4 个 shape 的位置最多替换 16 次缓存项，之后每次都在未命中路径上建结果，除了结果本身不再多分配。
+
+代价：函数的寄存器代码里每个 rest 多 8 字节（4 个指针和一个计数的位置），每记一个 shape 多一项 24 字节，外加源对象每个键 1 字节。字节码版本是 12（`OP_copy_rest`）：更早版本写出的字节码不再能加载。
+
+收益：Apple M4 上的原生微基准（每次操作的指令数，含循环本身），`var {a, ...r} = o3` 从 2,591 降到 1,303，排除五个名字从 4,651 降到 1,712，八个键从 4,117 降到 1,441。一次渲染在 workbench 和 MUI 的页面上少执行 2.5% 的指令（产品计数器，M4，预热 3 次后计 8 次），商店页面少 0.7%，React 页面没有 rest，持平。24 个页面的 HTML 相同。
+
+测试：`engine/test/compare/object_rest.js`（输出和 Node 24 一样）在三个位置各跑三次 39 种源对象，在一个位置轮流跑 9 种 shape 共 40 轮，还覆盖记下的 shape 对应的对象之后增加、删除或改动键，计算出来的键及其顺序，重复键、数字键和 `__proto__` 键，默认值，40 个静态键，嵌套模式，参数，`for of`，赋值，`catch`，箭头函数和生成器。`engine/test/unit-white.c` 里的 `test_object_rest_cache` 检查缓存项：结果的 shape 和逐个建键的对象得到的一样，类实例、symbol 和删过键的对象不记，原型为 null 的记，轮流见到七个 shape 后留下 4 项和 16 次替换，shape 随函数一起释放（泄漏检查）。`engine/test/regvm/js/q3-objrest.js` 在抛错注入测试里跑 rest 的各种抛错。test262 的解构测试给出的已知错误不变。

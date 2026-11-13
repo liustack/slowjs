@@ -115,6 +115,7 @@ int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, int max, int *swaps);
 unsigned long white_shape_id_hits(void);
 uint32_t white_shape_id_next(JSRuntime *rt);
 uint32_t white_shape_id_max(void);
@@ -1687,6 +1688,81 @@ static uintptr_t shape_of(VM *v, const char *expr)
 
     JS_FreeValue(v->ctx, o);
     return r;
+}
+
+/* the cache of the first object rest of the global function fn
+   (engine/regvm-ops-copy.h) */
+static int copy_site(VM *v, const char *fn, uintptr_t *src, int max, int *swaps)
+{
+    JSValue f = JS_Eval(v->ctx, fn, strlen(fn), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int n = white_copy_site(f, 0, src, max, swaps);
+
+    JS_FreeValue(v->ctx, f);
+    return n;
+}
+
+/* An object rest keeps, at its place, the shapes of its sources and of
+   their results: the result of a kept shape takes the shape an object built
+   key by key gets, sources of another prototype than Object.prototype or
+   null, with a symbol key or of a shape out of the shape hash table are not
+   kept, a place that sees many shapes in turn keeps four and replaces them
+   RV_COPY_SWAPS times, and the shapes kept stay through a collection and go
+   with their function (the leak check of vm_free). */
+static void test_object_rest_cache(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        uintptr_t src[4];
+        int swaps = -1, n;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f(s) { const { a, ...r } = s; return r }\n"
+                             "var o1 = { a: 1, b: 2, c: 3 }, r1 = f(o1), r2 = f({ a: 4, b: 5, c: 6 });\n"
+                             "var k = {}; k.b = 0; k.c = 0; void 0"), "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 1 && src[0] == shape_of(&v, "o1"), "cache %d: one entry, the shape of o1: %d", cache, n);
+        CHECK(shape_of(&v, "r1") == shape_of(&v, "r2") && shape_of(&v, "r1") == shape_of(&v, "k"),
+              "cache %d: the result has the shape of an object built key by key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([r1, r2])", "[{\"b\":2,\"c\":3},{\"b\":5,\"c\":6}]"),
+              "values of the results");
+
+        /* not kept: another prototype, a symbol key, a shape out of the
+           table */
+        CHECK(eval_ok(v.ctx, "class C { constructor() { this.a = 1; this.b = 2 } }\n"
+                             "var y = { a: 1, b: 2 }; Object.defineProperty(y, Symbol('s'), { value: 1 });\n"
+                             "var d = { a: 1, x: 0, b: 2 }; delete d.x;\n"
+                             "var r3 = [f(new C()), f(y), f(d)].map(x => JSON.stringify(x)).join(); void 0"),
+              "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 1, "cache %d: a class instance, a symbol key or a deleted key kept: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "r3", "{\"b\":2},{\"b\":2},{\"b\":2}"), "values of the sources not kept");
+
+        /* a null prototype is kept */
+        CHECK(eval_ok(v.ctx, "var np = Object.create(null); np.a = 1; np.b = 2; var r4 = f(np); void 0"),
+              "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 2 && src[1] == shape_of(&v, "np"), "cache %d: a null prototype: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "JSON.stringify(r4) + Object.getPrototypeOf(r4).constructor.name", "{\"b\":2}Object"),
+              "the result of a null prototype source");
+
+        /* seven shapes in turn */
+        CHECK(eval_ok(v.ctx, "function g(s) { const { k0, ...r } = s; return r }\n"
+                             "var os = []; for (let n = 1; n <= 7; n++) { const o = {}; for (let i = 0; i < n; i++) o['k' + i] = i; os.push(o) }\n"
+                             "var sum = 0; for (let t = 0; t < 30; t++) for (const o of os) sum += Object.keys(g(o)).length; void 0"),
+              "the script threw");
+        n = copy_site(&v, "g", src, 4, &swaps);
+        CHECK(n == 4 && swaps == 16, "cache %d: seven shapes: %d entries, %d swaps", cache, n, swaps);
+        CHECK(eval_is(v.ctx, "String(sum)", "630"), "the keys of the results of seven shapes");
+
+        JS_RunGC(v.rt);
+        CHECK(eval_is(v.ctx, "JSON.stringify(f({ a: 1, b: 2, c: 3 }))", "{\"b\":2,\"c\":3}"),
+              "a kept shape after a collection");
+        CHECK(eval_ok(v.ctx, "f = g = null; void 0"), "the script threw");
+        JS_RunGC(v.rt);
+        vm_free(&v);
+    }
 }
 
 /* Object literals of the same keys in the same order share one shape, made
@@ -6735,6 +6811,7 @@ int main(int argc, char **argv)
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();
+    test_object_rest_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
     test_key_atom();

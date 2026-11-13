@@ -70,6 +70,6 @@ result construct class 0: 3
 result construct class 1: 3
 result construct not constructor 0 threw TypeError:  is not a constructor
 result construct not constructor 1 threw TypeError:  is not a constructor
-mem-end obj=204 atom=580 shape=155 prop=978 jsfunc=1 cfunc=137 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=200 atom=579 shape=153 prop=970 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=204 atom=580 shape=153 prop=978 jsfunc=1 cfunc=137 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=200 atom=579 shape=151 prop=970 jsfunc=0 cfunc=137 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0
