@@ -212,6 +212,12 @@ type LowerEnv struct {
 	// registers as well: every function a pointer can hold is a lowered
 	// unified function (CheckPointerTargets). A poison build takes none.
 	ICallRegResult bool
+	// NoResult names the unified functions no Go code calls (the list of
+	// internal/cengine/gocalls.txt, gen.GoCalls): they store no result to
+	// the Go stack, since every call of them is a lowered call that takes it
+	// from registers (RegResult and ICallRegResult). A poison build stores
+	// every result.
+	NoResult map[string]bool
 }
 
 // LowerUnified transforms one function's GNU assembly. It returns the rewritten
@@ -338,6 +344,12 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 	}
 	_, retOff, argBytes := layout(fn.Sig)
+	// A function no Go code calls stores no result (LowerEnv.NoResult): its
+	// Go argument area ends with its arguments.
+	noResult := env != nil && env.NoResult[fn.Name] && !a.Poison
+	if noResult {
+		_, _, argBytes = layout(Sig{Params: fn.Sig.Params, Ret: Void})
+	}
 
 	// Frame: outgoing argument area (max over calls), saved callee-saved slots,
 	// then the body's local reservation. Rounded to 16.
@@ -387,7 +399,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	}
 	argBase := frame + 8 + bp
 	rec := &FuncRecord{Name: fn.Name, Kind: Unified, Sig: fn.Sig, PreserveNone: a.PreserveNone, SaveAll: a.SaveAll,
-		Pushed: pushed, Local: local, LocalBase: localBase, SaveBase: saveBase, Saved: saved, Frame: frame}
+		Pushed: pushed, Local: local, LocalBase: localBase, SaveBase: saveBase, Saved: saved, Frame: frame, NoResult: noResult}
 
 	// Build the rewritten body.
 	var out []string
@@ -409,6 +421,9 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 
 	retLabel := ".Lret_" + fn.Name
 	storeResult := func() []string {
+		if noResult {
+			return nil
+		}
 		switch fn.Sig.Ret {
 		case I64, Ptr:
 			return []string{fmt.Sprintf("movq %%rax, %d(%%rsp)", argBase+retOff)}

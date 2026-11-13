@@ -4,126 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·rv_throw_error(SB), $88-32
-	NO_LOCAL_POINTERS
-	MOVD a0+0(FP), R20
-	MOVD a1+8(FP), R21
-	MOVD a2+16(FP), R22
-	MOVD a3+24(FP), R23
-	PCALIGN $16
-	WORD $0x71000aff
-	WORD $0xaa1403e9
-	WORD $0x540002ec
-	WORD $0x2a1603e8
-	WORD $0x340003d7
-	WORD $0x710006ff
-	WORD $0x54000840
-	WORD $0x71000aff
-	WORD $0x540006a1
-	WORD $0x34000c08
-	WORD $0xaa1503ea
-	WORD $0xf9002ff5
-	WORD $0x91034134
-	WORD $0xf9400955
-	WORD $0x91002136
-	WORD $0x2a0803f7
-	WORD $0xf90027e9
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_AtomGetStrRT(SB)
-	WORD $0xf9402ff5
-	WORD $0xf94027e9
-	WORD $0x14000053
-	WORD $0x71000eff
-	WORD $0x540003e0
-	WORD $0x710012ff
-	WORD $0x54000860
-	WORD $0x710016ff
-	WORD $0x540003e1
-	MOVD $·engine_rodata+7281(SB), R22
-	WORD $0x1400001a
-	WORD $0xf9002ff5
-	WORD $0xf9400ab5
-	WORD $0x91034134
-	WORD $0x91022136
-	WORD $0x2a0803f7
-	WORD $0xf90027e9
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_AtomGetStrRT(SB)
-	WORD $0xf94027f7
-	WORD $0xf9402ff5
-	MOVD $·engine_rodata+12053(SB), R22
-	WORD $0x910342f4
-	WORD $0xf90002e0
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_ThrowTypeError(SB)
-	WORD $0x1400003d
-	MOVD $·engine_rodata+7210(SB), R22
-	WORD $0x91034134
-	WORD $0x14000033
-	WORD $0xaa0903f4
-	MOVD $·engine_rodata+7315(SB), R22
-	WORD $0xb80d0697
-	WORD $0xaa0903f7
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_ThrowInternalError(SB)
-	WORD $0x1400002e
-	WORD $0xf9002ff5
-	WORD $0xf9400ab5
-	WORD $0x91034134
-	WORD $0x91012136
-	WORD $0x2a0803f7
-	WORD $0xf90027e9
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_AtomGetStrRT(SB)
-	WORD $0xf94027f7
-	WORD $0xf9402ff5
-	MOVD $·engine_rodata+7152(SB), R22
-	WORD $0x910342f4
-	WORD $0xf90002e0
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_ThrowSyntaxError(SB)
-	WORD $0x14000017
-	MOVD $·engine_rodata+7243(SB), R22
-	WORD $0x91034134
-	WORD $0xaa0903f7
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_ThrowTypeError(SB)
-	WORD $0x1400000d
-	MOVD $·engine_rodata+11804(SB), R0
-	WORD $0xaa0903f4
-	MOVD $·engine_rodata+11782(SB), R22
-	WORD $0xf80d0680
-	WORD $0xaa0903f7
-	WORD $0xf90007f4
-	WORD $0xf9000bf5
-	WORD $0xf9000ff6
-	WORD $0xf90013f7
-	BL ·JS_ThrowReferenceError(SB)
-	WORD $0x14000001
-	RET
-
-TEXT ·rv_ret_target(SB), $120-40
+TEXT ·rv_ret_target(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -214,10 +95,9 @@ TEXT ·rv_ret_target(SB), $120-40
 	BL ·JS_ThrowInternalError(SB)
 	WORD $0xaa1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_object_lit(SB), $136-40
+TEXT ·rv_w_object_lit(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -536,10 +416,9 @@ TEXT ·rv_w_object_lit(SB), $136-40
 	WORD $0xaa1f03f6
 	WORD $0xf94047f4
 	WORD $0x17ffffee
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_array_from(SB), $152-40
+TEXT ·rv_w_array_from(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -759,10 +638,9 @@ TEXT ·rv_w_array_from(SB), $152-40
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf9404fea
 	WORD $0x17ffff41
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_apply(SB), $152-40
+TEXT ·rv_w_apply(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -815,7 +693,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xf900219f
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0xaa0003ec
 	WORD $0x140000b8
 	WORD $0xf85f0177
@@ -862,7 +740,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xf900216e
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x1400007e
 	WORD $0xa94723ea
 	WORD $0x91018174
@@ -878,7 +756,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xb9003968
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallConstructorInternal_block(SB)
+	BL ·JS_CallConstructorInternal(SB)
 	WORD $0x1400006e
 	WORD $0xf9400aa9
 	WORD $0x5280050a
@@ -912,7 +790,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xb9004988
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xaa0003ec
 	WORD $0x14000055
 	WORD $0xf9400955
@@ -969,7 +847,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xf9001960
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_call_c_hop_block(SB)
+	BL ·js_call_c_hop(SB)
 	WORD $0x14000010
 	WORD $0xf94033e8
 	WORD $0x91018174
@@ -985,7 +863,7 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0xb9004968
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf94047e8
 	WORD $0xf9404ff5
 	WORD $0xf9402bf6
@@ -1067,10 +945,9 @@ TEXT ·rv_w_apply(SB), $152-40
 	WORD $0x14000003
 	WORD $0x12800000
 	WORD $0x17fffffe
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_for_in_start(SB), $152-40
+TEXT ·rv_w_for_in_start(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1503,10 +1380,9 @@ TEXT ·rv_w_for_in_start(SB), $152-40
 	WORD $0xf94037e8
 	WORD $0xb9001549
 	WORD $0x17ffff3c
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_for_in_next(SB), $184-40
+TEXT ·rv_w_for_in_next(SB), $184-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2116,7 +1992,7 @@ TEXT ·rv_w_for_in_next(SB), $184-40
 	WORD $0xf9004fe8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xf9404fe8
 	WORD $0xa94a57eb
 	WORD $0xf9403fee
@@ -2282,7 +2158,7 @@ TEXT ·rv_w_for_in_next(SB), $184-40
 	WORD $0xb9005188
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0x37f81e80
 	WORD $0xa9475be8
 	WORD $0xf9405fec
@@ -2404,7 +2280,7 @@ TEXT ·rv_w_for_in_next(SB), $184-40
 	WORD $0xb9005188
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xa947bbf6
 	WORD $0xb940a3ef
 	WORD $0xf94057f5
@@ -2573,10 +2449,9 @@ TEXT ·rv_w_for_in_next(SB), $184-40
 	WORD $0x00000000
 	WORD $0x00000002
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_for_of_start(SB), $104-40
+TEXT ·rv_w_for_of_start(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2651,10 +2526,9 @@ TEXT ·rv_w_for_of_start(SB), $104-40
 	WORD $0x00000000
 	WORD $0x00000005
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_for_of_next(SB), $120-40
+TEXT ·rv_w_for_of_next(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2697,7 +2571,7 @@ TEXT ·rv_w_for_of_next(SB), $120-40
 	WORD $0x7100319f
 	WORD $0x54000581
 	WORD $0xf940196c
-	MOVD $·js_array_iterator_next_block(SB), R13
+	MOVD $·js_array_iterator_next(SB), R13
 	WORD $0xeb0d019f
 	WORD $0x540004e1
 	WORD $0x7940252c
@@ -2747,7 +2621,7 @@ TEXT ·rv_w_for_of_next(SB), $120-40
 	WORD $0x91014114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_IteratorNext_block(SB)
+	BL ·JS_IteratorNext(SB)
 	WORD $0xf9403ff4
 	WORD $0xa9030680
 	WORD $0xf94033ea
@@ -2856,10 +2730,9 @@ TEXT ·rv_w_for_of_next(SB), $120-40
 	WORD $0x00000000
 	WORD $0x00000003
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_iterator_close(SB), $120-40
+TEXT ·rv_w_iterator_close(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3020,7 +2893,7 @@ TEXT ·rv_w_iterator_close(SB), $120-40
 	WORD $0xf9001aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x1400005d
 	WORD $0xf9403ff5
 	WORD $0x91018294
@@ -3112,7 +2985,7 @@ TEXT ·rv_w_iterator_close(SB), $120-40
 	WORD $0xb9004aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xa9445ff6
 	WORD $0xf94037e9
 	WORD $0x310026ff
@@ -3208,10 +3081,9 @@ TEXT ·rv_w_iterator_close(SB), $120-40
 	WORD $0x00000000
 	WORD $0x00000003
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_to_object(SB), $88-40
+TEXT ·rv_w_to_object(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3261,10 +3133,9 @@ TEXT ·rv_w_to_object(SB), $88-40
 	WORD $0x2a1f03e0
 	WORD $0xa93f052a
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_set_name(SB), $136-40
+TEXT ·rv_w_set_name(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3429,7 +3300,7 @@ TEXT ·rv_w_set_name(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xf9403ff7
 	WORD $0xf94047f6
 	WORD $0x310026ff
@@ -3490,10 +3361,9 @@ TEXT ·rv_w_set_name(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_delete(SB), $152-40
+TEXT ·rv_w_delete(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3661,10 +3531,9 @@ TEXT ·rv_w_delete(SB), $152-40
 	WORD $0x17ffff83
 	WORD $0x12800000
 	WORD $0x17ffffeb
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_append(SB), $152-40
+TEXT ·rv_w_append(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3713,7 +3582,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0x7100311f
 	WORD $0x540001e1
 	WORD $0xf9401808
-	MOVD $·js_create_array_iterator_block(SB), R9
+	MOVD $·js_create_array_iterator(SB), R9
 	WORD $0xeb09011f
 	WORD $0x54000141
 	WORD $0x79407408
@@ -3813,7 +3682,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0xf900217f
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x14000036
 	WORD $0xb85fc008
 	WORD $0x51000508
@@ -3865,7 +3734,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0xb9004968
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf94033f6
 	WORD $0x3100043f
 	WORD $0x54000480
@@ -3962,7 +3831,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0x7100311f
 	WORD $0x54000261
 	WORD $0xf9401808
-	MOVD $·js_array_iterator_next_block(SB), R9
+	MOVD $·js_array_iterator_next(SB), R9
 	WORD $0xeb09011f
 	WORD $0x540001c1
 	WORD $0x79407408
@@ -3988,7 +3857,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0xa90222a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_IteratorNext_block(SB)
+	BL ·JS_IteratorNext(SB)
 	WORD $0x7100183f
 	WORD $0x54000621
 	WORD $0xf9404fe8
@@ -4064,7 +3933,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0xb9003968
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefinePropertyValueValue_block(SB)
+	BL ·JS_DefinePropertyValueValue(SB)
 	WORD $0x37fff6c0
 	WORD $0xa946afea
 	WORD $0xf94047e9
@@ -4077,7 +3946,7 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0xa90222a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_IteratorNext_block(SB)
+	BL ·JS_IteratorNext(SB)
 	WORD $0x7100183f
 	WORD $0x54fff500
 	WORD $0xf9404feb
@@ -4258,10 +4127,9 @@ TEXT ·rv_w_append(SB), $152-40
 	WORD $0x35ffc6c0
 	WORD $0xaa0a03e0
 	WORD $0x17fffe67
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_copy_data_properties(SB), $40-40
+TEXT ·rv_w_copy_data_properties(SB), $40-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4292,14 +4160,13 @@ TEXT ·rv_w_copy_data_properties(SB), $40-40
 	WORD $0x91010294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CopyDataProperties_block(SB)
+	BL ·JS_CopyDataProperties(SB)
 	WORD $0x7100001f
 	WORD $0x5a9f03e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_w_dstart(SB), $136-40
+TEXT ·rv_w_dstart(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4436,7 +4303,7 @@ TEXT ·rv_w_dstart(SB), $136-40
 	WORD $0x7100315f
 	WORD $0x54fffac1
 	WORD $0xf940192a
-	MOVD $·js_array_iterator_next_block(SB), R11
+	MOVD $·js_array_iterator_next(SB), R11
 	WORD $0xeb0b015f
 	WORD $0x54fffa21
 	WORD $0xb85fc12a
@@ -4485,10 +4352,9 @@ TEXT ·rv_w_dstart(SB), $136-40
 	WORD $0x00000000
 	WORD $0x00000005
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_new_frame(SB), $264-40
+TEXT ·rv_new_frame(SB), $264-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5034,10 +4900,9 @@ TEXT ·rv_new_frame(SB), $264-40
 	WORD $0x00000000
 	WORD $0x00000003
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_new_slow(SB), $136-40
+TEXT ·rv_new_slow(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5071,7 +4936,7 @@ TEXT ·rv_new_slow(SB), $136-40
 	WORD $0xa904b7eb
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallConstructorInternal_block(SB)
+	BL ·JS_CallConstructorInternal(SB)
 	WORD $0xf9403fe8
 	WORD $0xaa1f03ec
 	WORD $0xa90387e0
@@ -5136,7 +5001,6 @@ TEXT ·rv_new_slow(SB), $136-40
 	WORD $0x5a9f13e0
 	WORD $0xa9002548
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·rv_not_ctor_call(SB), $72-16
@@ -5155,7 +5019,7 @@ TEXT ·rv_not_ctor_call(SB), $72-16
 	WORD $0x14000001
 	RET
 
-TEXT ·rv_init_ctor(SB), $136-40
+TEXT ·rv_init_ctor(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5247,7 +5111,7 @@ TEXT ·rv_init_ctor(SB), $136-40
 	WORD $0xa90557e1
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallConstructorInternal_block(SB)
+	BL ·JS_CallConstructorInternal(SB)
 	WORD $0xf94047f6
 	WORD $0xb9407be8
 	WORD $0xaa0003ea
@@ -5301,7 +5165,6 @@ TEXT ·rv_init_ctor(SB), $136-40
 	WORD $0x7100183f
 	WORD $0x54fffb00
 	WORD $0x17ffffb2
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·rv_chkret_throw(SB), $72-24
@@ -5324,7 +5187,7 @@ TEXT ·rv_chkret_throw(SB), $72-24
 	WORD $0x14000001
 	RET
 
-TEXT ·rv_thisc_slow(SB), $104-40
+TEXT ·rv_thisc_slow(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5392,7 +5255,6 @@ TEXT ·rv_thisc_slow(SB), $104-40
 	WORD $0xa9000520
 	WORD $0x2a0803e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·rv_gen_suspend(SB), $168-48
@@ -5801,7 +5663,7 @@ TEXT ·rv_gen_suspend(SB), $168-48
 	BL ·abort(SB)
 	RET
 
-TEXT ·rv_w_gen(SB), $136-40
+TEXT ·rv_w_gen(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5856,7 +5718,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x1400012b
 	WORD $0x39400aec
 	WORD $0xf90047ea
@@ -5970,7 +5832,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x140000d3
 	WORD $0xf85f8149
 	WORD $0x3100053f
@@ -6110,7 +5972,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0xf900214d
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x14000099
 	WORD $0xf94047e8
 	WORD $0xa9472beb
@@ -6135,7 +5997,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0xf900215f
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x1400009e
 	MOVD $·engine_rodata+12400(SB), R9
 	WORD $0xeb09011f
@@ -6153,7 +6015,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xaa0003e8
 	WORD $0x7100183f
 	WORD $0x54000380
@@ -6178,7 +6040,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0x91018294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf94047e9
 	WORD $0xaa0003ea
 	WORD $0x7100183f
@@ -6260,7 +6122,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0xb9004948
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf94033f7
 	WORD $0x310026ff
 	WORD $0x54000683
@@ -6289,7 +6151,7 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0xb9004948
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf94033f7
 	WORD $0x310026ff
 	WORD $0x540002c3
@@ -6387,10 +6249,9 @@ TEXT ·rv_w_gen(SB), $136-40
 	WORD $0x00000000
 	WORD $0x00000005
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_call_enter(SB), $72-24
+TEXT ·js_call_enter(SB), $72-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6423,10 +6284,9 @@ TEXT ·js_call_enter(SB), $72-24
 	BL ·JS_ThrowRangeError(SB)
 	WORD $0x12800000
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·rv_gen_enter(SB), $184-48
+TEXT ·rv_gen_enter(SB), $184-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6846,10 +6706,9 @@ TEXT ·rv_gen_enter(SB), $184-48
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·rv_with_slow(SB), $152-40
+TEXT ·rv_with_slow(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7288,10 +7147,9 @@ TEXT ·rv_with_slow(SB), $152-40
 	WORD $0x91014294
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_args(SB), $184-40
+TEXT ·rv_args(SB), $184-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8022,10 +7880,9 @@ TEXT ·rv_args(SB), $184-40
 	WORD $0x00000000
 	WORD $0x00000003
 	WORD $0x00000000
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_arglen_slow(SB), $88-40
+TEXT ·rv_arglen_slow(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8090,10 +7947,9 @@ TEXT ·rv_arglen_slow(SB), $88-40
 	WORD $0xa9000520
 	WORD $0x2a0803e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_argget_slow(SB), $136-40
+TEXT ·rv_argget_slow(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8240,10 +8096,9 @@ TEXT ·rv_argget_slow(SB), $136-40
 	WORD $0x2a1f03e0
 	WORD $0xa9002149
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_argmat_slow(SB), $104-40
+TEXT ·rv_argmat_slow(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8308,10 +8163,9 @@ TEXT ·rv_argmat_slow(SB), $104-40
 	WORD $0xa9000520
 	WORD $0x2a0803e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·rv_old(SB), $344-40
+TEXT ·rv_old(SB), $344-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8869,7 +8723,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0x91084294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_closure_block(SB)
+	BL ·js_closure(SB)
 	WORD $0xa951bbe8
 	WORD $0x7100183f
 	WORD $0xf940a7f5
@@ -9409,7 +9263,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xa90cdbf7
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_SetPrototypeInternal_block(SB)
+	BL ·JS_SetPrototypeInternal(SB)
 	WORD $0xa94cdbf7
 	WORD $0xf9409be9
 	WORD $0xa951bbf0
@@ -10214,7 +10068,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0x91084294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_strict_eq2_block(SB)
+	BL ·js_strict_eq2(SB)
 	WORD $0xf94067ea
 	WORD $0x34000260
 	WORD $0xf9409be8
@@ -10262,7 +10116,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0x910842b4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x1400060f
 	WORD $0xb980154b
 	WORD $0xf9407fed
@@ -10323,7 +10177,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xb9002aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_strict_eq2_block(SB)
+	BL ·js_strict_eq2(SB)
 	WORD $0xf940aff5
 	WORD $0xb9420aaa
 	WORD $0xb900bbea
@@ -10884,7 +10738,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xb90052a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xa951bbea
 	WORD $0x531f7c0c
 	WORD $0x14000207
@@ -11172,7 +11026,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xa90222a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_closure2_block(SB)
+	BL ·js_closure2(SB)
 	WORD $0xaa0103eb
 	WORD $0xaa0003ea
 	WORD $0x2a0b03e8
@@ -11221,7 +11075,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xf9001aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_call_block(SB)
+	BL ·js_call(SB)
 	WORD $0xb940bbf7
 	WORD $0xf9406bf6
 	WORD $0x140001a6
@@ -11641,7 +11495,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xb9002aa9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_EvalObject_block(SB)
+	BL ·JS_EvalObject(SB)
 	WORD $0xf9406bf6
 	WORD $0xb940bbf7
 	WORD $0xf9005be0
@@ -11799,7 +11653,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xb9004abf
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xf9005be0
 	WORD $0xa94ca7ea
 	WORD $0xf94093ee
@@ -12155,7 +12009,7 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0xf9001aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_call_block(SB)
+	BL ·js_call(SB)
 	WORD $0x3100243f
 	WORD $0x54000223
 	WORD $0xb85fc008
@@ -13244,7 +13098,6 @@ TEXT ·rv_old(SB), $344-40
 	WORD $0x00002ab0
 	WORD $0x00002ab0
 	WORD $0x000005a8
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·rv_chklw_throw(SB), $88-32
@@ -13299,7 +13152,7 @@ TEXT ·rv_chklw_throw(SB), $88-32
 	WORD $0x14000001
 	RET
 
-TEXT ·rv_clw_init(SB), $56-32
+TEXT ·rv_clw_init(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13340,7 +13193,6 @@ TEXT ·rv_clw_init(SB), $56-32
 	WORD $0x14000003
 	WORD $0x12800000
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·rv_clw_exit(SB), $104-24
@@ -13716,7 +13568,7 @@ TEXT ·rv_seg_back(SB), $104-24
 	WORD $0x17ffffd6
 	RET
 
-TEXT ·rv_unwind(SB), $184-48
+TEXT ·rv_unwind(SB), $184-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -14257,7 +14109,7 @@ TEXT ·rv_unwind(SB), $184-48
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_RegvmRun_block(SB)
+	BL ·JS_RegvmRun(SB)
 	WORD $0x14000013
 	WORD $0xaa0003eb
 	WORD $0xa9442bec
@@ -14276,7 +14128,7 @@ TEXT ·rv_unwind(SB), $184-48
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_CallInternal_block(SB)
+	BL ·JS_CallInternal(SB)
 	WORD $0xa94a53ed
 	WORD $0x5280002e
 	WORD $0xf9401ff7
@@ -14867,7 +14719,6 @@ TEXT ·rv_unwind(SB), $184-48
 	WORD $0x00000000
 	WORD $0x00000004
 	WORD $0x00000000
-	MOVD R0, ret+40(FP)
 	RET
 
 TEXT ·rv_settle(SB), $136-16
@@ -15117,7 +14968,7 @@ TEXT ·rv_settle(SB), $136-16
 	WORD $0x14000001
 	RET
 
-TEXT ·rv_seg_alloc(SB), $72-32
+TEXT ·rv_seg_alloc(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15233,7 +15084,6 @@ TEXT ·rv_seg_alloc(SB), $72-32
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffd7
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·js_backtrace_build(SB), $168-40
@@ -15419,7 +15269,7 @@ TEXT ·js_backtrace_build(SB), $168-40
 	WORD $0xb90052a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xf94043f7
 	WORD $0x2a0003ea
 	WORD $0x310026ff
@@ -15717,7 +15567,7 @@ TEXT ·js_backtrace_build(SB), $168-40
 	WORD $0xb90052a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xf94043f7
 	WORD $0x310026ff
 	WORD $0x540000e3
@@ -15777,7 +15627,7 @@ TEXT ·js_backtrace_build(SB), $168-40
 	WORD $0x17ffffd9
 	RET
 
-TEXT ·js_dst_iter(SB), $120-32
+TEXT ·js_dst_iter(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15959,7 +15809,6 @@ TEXT ·js_dst_iter(SB), $120-32
 	WORD $0x00000000
 	WORD $0x00000005
 	WORD $0x00000000
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·rv_backtrace(SB), $120-40
@@ -16066,7 +15915,7 @@ TEXT ·__JS_ThrowTypeErrorAtom(SB), $88-32
 	WORD $0x14000001
 	RET
 
-TEXT ·string_rope_get(SB), $40-40
+TEXT ·string_rope_get(SB), $40-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16125,10 +15974,9 @@ TEXT ·string_rope_get(SB), $40-40
 	WORD $0x14000002
 	WORD $0x78775900
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_backtrace_settle(SB), $136-40
+TEXT ·js_backtrace_settle(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16457,7 +16305,6 @@ TEXT ·js_backtrace_settle(SB), $136-40
 	WORD $0x2a1f03e0
 	WORD $0xa9000509
 	WORD $0x17ffff00
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·JS_ThrowReferenceErrorUninitialized(SB), $88-24
@@ -16496,7 +16343,7 @@ TEXT ·JS_ThrowReferenceErrorUninitialized(SB), $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_AutoInitProperty(SB), $120-56
+TEXT ·JS_AutoInitProperty(SB), $120-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16722,10 +16569,9 @@ TEXT ·JS_AutoInitProperty(SB), $120-56
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffa7
-	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·JS_AtomIsNumericIndex(SB), $72-32
+TEXT ·JS_AtomIsNumericIndex(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16766,7 +16612,6 @@ TEXT ·JS_AtomIsNumericIndex(SB), $72-32
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x52800020
 	WORD $0x17ffffe7
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·JS_ThrowReferenceErrorNotDefined(SB), $88-24
@@ -16800,7 +16645,7 @@ TEXT ·JS_ThrowReferenceErrorNotDefined(SB), $88-24
 	WORD $0x14000001
 	RET
 
-TEXT ·JS_AtomIsNumericIndex1(SB), $200-40
+TEXT ·JS_AtomIsNumericIndex1(SB), $200-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17164,11 +17009,9 @@ TEXT ·JS_AtomIsNumericIndex1(SB), $200-40
 	WORD $0x910082b4
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, r0+24(FP)
-	MOVD R1, r1+32(FP)
 	RET
 
-TEXT ·js_string_to_number(SB), $168-48
+TEXT ·js_string_to_number(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17395,7 +17238,7 @@ TEXT ·js_string_to_number(SB), $168-48
 	WORD $0xb90029c8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_atof_block(SB)
+	BL ·js_atof(SB)
 	WORD $0x7100183f
 	WORD $0xaa0003f7
 	WORD $0x54000081
@@ -17732,11 +17575,9 @@ TEXT ·js_string_to_number(SB), $168-48
 	WORD $0xf9000ff6
 	BL ·heap_free(SB)
 	WORD $0x17ffffb2
-	MOVD R0, r0+32(FP)
-	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_string_eq(SB), $56-32
+TEXT ·js_string_eq(SB), $56-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17891,10 +17732,9 @@ TEXT ·js_string_eq(SB), $56-32
 	WORD $0x14000002
 	WORD $0x52800020
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_dtoa2(SB), $184-64
+TEXT ·js_dtoa2(SB), $184-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18456,11 +18296,9 @@ TEXT ·js_dtoa2(SB), $184-64
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffb0
-	MOVD R0, r0+48(FP)
-	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_linearize_string_rope(SB), $120-48
+TEXT ·js_linearize_string_rope(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18617,11 +18455,9 @@ TEXT ·js_linearize_string_rope(SB), $120-48
 	WORD $0x91008114
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, r0+32(FP)
-	MOVD R1, r1+40(FP)
 	RET
 
-TEXT ·js_string_to_cstring_json(SB), $344-56
+TEXT ·js_string_to_cstring_json(SB), $344-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19639,10 +19475,9 @@ TEXT ·js_string_to_cstring_json(SB), $344-56
 	WORD $0x54ffbf43
 	WORD $0xaa0803f7
 	WORD $0x17fffdea
-	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·js_atof_poll(SB), $184-64
+TEXT ·js_atof_poll(SB), $184-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20260,7 +20095,7 @@ TEXT ·js_atof_poll(SB), $184-64
 	WORD $0xa909d7e2
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·js_atod_block(SB)
+	BL ·js_atod(SB)
 	WORD $0x1e602000
 	WORD $0xf9404bf0
 	WORD $0x54002046
@@ -20661,11 +20496,9 @@ TEXT ·js_atof_poll(SB), $184-64
 	WORD $0xf9405fee
 	WORD $0xf9403fef
 	WORD $0x17ffff6b
-	MOVD R0, r0+48(FP)
-	MOVD R1, r1+56(FP)
 	RET
 
-TEXT ·js_bigint_from_string(SB), $216-48
+TEXT ·js_bigint_from_string(SB), $216-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21621,10 +21454,9 @@ TEXT ·js_bigint_from_string(SB), $216-48
 	WORD $0xd503201f
 	WORD $0x00000001
 	WORD $0x00000000
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_bigint_new(SB), $104-32
+TEXT ·js_bigint_new(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21742,10 +21574,9 @@ TEXT ·js_bigint_new(SB), $104-32
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_bigint_extend(SB), $104-40
+TEXT ·js_bigint_extend(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21943,7 +21774,6 @@ TEXT ·js_bigint_extend(SB), $104-40
 	WORD $0x17ffffba
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·js_free_string(SB), $72-24
@@ -22047,7 +21877,7 @@ TEXT ·js_free_string(SB), $72-24
 	WORD $0x17ffffe5
 	RET
 
-TEXT ·string_buffer_init2(SB), $104-48
+TEXT ·string_buffer_init2(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22179,10 +22009,9 @@ TEXT ·string_buffer_init2(SB), $104-48
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffe3
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·string_buffer_concat_rope(SB), $104-40
+TEXT ·string_buffer_concat_rope(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22407,10 +22236,9 @@ TEXT ·string_buffer_concat_rope(SB), $104-40
 	BL ·heap_free(SB)
 	WORD $0xf94023ee
 	WORD $0x17ffffcf
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_end(SB), $88-32
+TEXT ·string_buffer_end(SB), $88-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22568,11 +22396,9 @@ TEXT ·string_buffer_end(SB), $88-32
 	WORD $0x17ffffd2
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, r0+16(FP)
-	MOVD R1, r1+24(FP)
 	RET
 
-TEXT ·string_buffer_concat_rope_long(SB), $136-40
+TEXT ·string_buffer_concat_rope_long(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -22994,10 +22820,9 @@ TEXT ·string_buffer_concat_rope_long(SB), $136-40
 	WORD $0xeb0801bf
 	WORD $0x54fffd41
 	WORD $0x17ffff88
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_concat(SB), $184-48
+TEXT ·string_buffer_concat(SB), $184-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -23726,10 +23551,9 @@ TEXT ·string_buffer_concat(SB), $184-48
 	WORD $0xf90013f7
 	BL ·string_buffer_write8_long(SB)
 	WORD $0x17fffff2
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·string_buffer_write16_long(SB), $200-40
+TEXT ·string_buffer_write16_long(SB), $200-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24330,10 +24154,9 @@ TEXT ·string_buffer_write16_long(SB), $200-40
 	BL ·heap_free(SB)
 	WORD $0xf9405fee
 	WORD $0x17ffffdc
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_realloc(SB), $104-40
+TEXT ·string_buffer_realloc(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24508,10 +24331,9 @@ TEXT ·string_buffer_realloc(SB), $104-40
 	BL ·heap_free(SB)
 	WORD $0xf94037ee
 	WORD $0x17ffffdb
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_widen(SB), $152-32
+TEXT ·string_buffer_widen(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24941,10 +24763,9 @@ TEXT ·string_buffer_widen(SB), $152-32
 	WORD $0xf9000ff6
 	BL ·heap_free(SB)
 	WORD $0x17ffffa7
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·string_buffer_write8_long(SB), $168-40
+TEXT ·string_buffer_write8_long(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25480,10 +25301,9 @@ TEXT ·string_buffer_write8_long(SB), $168-40
 	WORD $0xeb0801bf
 	WORD $0x54fffe61
 	WORD $0x17ffff9c
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·string_buffer_realloc2(SB), $136-48
+TEXT ·string_buffer_realloc2(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25668,10 +25488,9 @@ TEXT ·string_buffer_realloc2(SB), $136-48
 	BL ·__js_poll_interrupts(SB)
 	WORD $0xaa1f03e0
 	WORD $0x17ffff7a
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·js_malloc_moving(SB), $104-40
+TEXT ·js_malloc_moving(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25831,10 +25650,9 @@ TEXT ·js_malloc_moving(SB), $104-40
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffe8
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_malloc_usable_size(SB), NOSPLIT, $0-32
+TEXT ·js_malloc_usable_size(SB), NOSPLIT, $0-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25860,10 +25678,9 @@ TEXT ·js_malloc_usable_size(SB), NOSPLIT, $0-32
 	WORD $0x14000003
 	WORD $0xaa1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·js_malloc_moving_rt(SB), $72-40
+TEXT ·js_malloc_moving_rt(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25975,7 +25792,6 @@ TEXT ·js_malloc_moving_rt(SB), $72-40
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffffef
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·string_buffer_set_error(SB), $88-16
@@ -26081,7 +25897,7 @@ TEXT ·string_buffer_set_error(SB), $88-16
 	WORD $0x17ffffdd
 	RET
 
-TEXT ·js_shape_prepare_update(SB), $152-40
+TEXT ·js_shape_prepare_update(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26473,10 +26289,9 @@ TEXT ·js_shape_prepare_update(SB), $152-40
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffff1e
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·js_instantiate_prototype(SB), $120-56
+TEXT ·js_instantiate_prototype(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26632,7 +26447,7 @@ TEXT ·js_instantiate_prototype(SB), $120-56
 	WORD $0xb90052a8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_DefineProperty_block(SB)
+	BL ·JS_DefineProperty(SB)
 	WORD $0xf94033f6
 	WORD $0xb85fc2c8
 	WORD $0x51000508
@@ -26710,11 +26525,9 @@ TEXT ·js_instantiate_prototype(SB), $120-56
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x17ffff64
-	MOVD R0, r0+40(FP)
-	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·js_module_ns_autoinit(SB), $104-56
+TEXT ·js_module_ns_autoinit(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26813,11 +26626,9 @@ TEXT ·js_module_ns_autoinit(SB), $104-56
 	WORD $0xf8687920
 	WORD $0x928000c1
 	WORD $0x17fffff7
-	MOVD R0, r0+40(FP)
-	MOVD R1, r1+48(FP)
 	RET
 
-TEXT ·JS_InstantiateFunctionListItem2(SB), $120-56
+TEXT ·JS_InstantiateFunctionListItem2(SB), $120-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26849,7 +26660,7 @@ TEXT ·JS_InstantiateFunctionListItem2(SB), $120-56
 	WORD $0x91014294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·JS_NewCFunction3_block(SB)
+	BL ·JS_NewCFunction3(SB)
 	WORD $0x140000f0
 	WORD $0xf9400b16
 	WORD $0xf90037f4
@@ -27098,8 +26909,6 @@ TEXT ·JS_InstantiateFunctionListItem2(SB), $120-56
 	WORD $0x91014114
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, r0+40(FP)
-	MOVD R1, r1+48(FP)
 	RET
 
 TEXT ·JS_NewAtomLen(SB), $152-40
@@ -27330,7 +27139,7 @@ TEXT ·JS_NewAtomLen(SB), $152-40
 	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·JS_NewObjectProtoClassAlloc(SB), $152-64
+TEXT ·JS_NewObjectProtoClassAlloc(SB), $152-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27630,7 +27439,5 @@ TEXT ·JS_NewObjectProtoClassAlloc(SB), $152-64
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffff41
-	MOVD R0, r0+48(FP)
-	MOVD R1, r1+56(FP)
 	RET
 

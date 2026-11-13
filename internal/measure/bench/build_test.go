@@ -48,12 +48,12 @@ func TestParsePositions(t *testing.T) {
 		t.Errorf("ops = %v", ops)
 	}
 	// The second shift goes after the regexp matcher, between the first shift and the front.
-	ops = Position{64, 8, 2208}.XformOps("JS_RegvmRun_block", "dbuf_init2")
-	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_RegvmRun_block:8"}) {
+	ops = Position{64, 8, 2208}.XformOps("JS_RegvmRun", "dbuf_init2")
+	if !slices.Equal(ops, []string{"shift:64:dbuf_init2", "shift:2208:" + Matcher, "front:JS_RegvmRun:8"}) {
 		t.Errorf("ops = %v", ops)
 	}
-	ops = Position{0, 0, 32}.XformOps("JS_RegvmRun_block", "")
-	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_RegvmRun_block:0"}) {
+	ops = Position{0, 0, 32}.XformOps("JS_RegvmRun", "")
+	if !slices.Equal(ops, []string{"shift:0", "shift:32:" + Matcher, "front:JS_RegvmRun:0"}) {
 		t.Errorf("ops = %v", ops)
 	}
 	for _, c := range []struct {
@@ -119,8 +119,8 @@ func TestResolveFront(t *testing.T) {
 	}
 	// A packed function: only NAME_block has a body.
 	p := filepath.Join(tree, "internal/cengine/quickjs_amd64.s")
-	os.WriteFile(p, []byte("TEXT ·JS_RegvmRun_block(SB), $496-32\n\tPCALIGN $64\n\tRET\n"), 0o644)
-	if got, err = ResolveFront(tree, "JS_RegvmRun"); err != nil || got != "JS_RegvmRun_block" {
+	os.WriteFile(p, []byte("TEXT ·JS_SetPropertyInternal_block(SB), $496-32\n\tPCALIGN $64\n\tRET\n"), 0o644)
+	if got, err = ResolveFront(tree, "JS_SetPropertyInternal"); err != nil || got != "JS_SetPropertyInternal_block" {
 		t.Fatalf("ResolveFront = %q, %v", got, err)
 	}
 	if _, err = ResolveFront(tree, "nope"); err == nil {

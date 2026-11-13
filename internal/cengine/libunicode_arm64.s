@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_case_conv(SB), $104-40
+TEXT ·lre_case_conv(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -76,10 +76,9 @@ TEXT ·lre_case_conv(SB), $104-40
 	WORD $0xf9001bf9
 	BL ·lre_case_conv_entry(SB)
 	WORD $0x17fffff6
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·lre_case_conv_entry(SB), $88-56
+TEXT ·lre_case_conv_entry(SB), $88-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -363,10 +362,9 @@ TEXT ·lre_case_conv_entry(SB), $88-56
 	WORD $0x0b080148
 	WORD $0x290026a8
 	WORD $0x17fffff4
-	MOVD R0, ret+48(FP)
 	RET
 
-TEXT ·lre_canonicalize(SB), $104-32
+TEXT ·lre_canonicalize(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -549,10 +547,9 @@ TEXT ·lre_canonicalize(SB), $104-32
 	WORD $0x00000094
 	WORD $0x0000009c
 	WORD $0x00000094
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_is_cased(SB), $56-24
+TEXT ·lre_is_cased(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -722,10 +719,9 @@ TEXT ·lre_is_cased(SB), $56-24
 	WORD $0x17ffffc3
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_is_case_ignorable(SB), $56-24
+TEXT ·lre_is_case_ignorable(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -856,7 +852,6 @@ TEXT ·lre_is_case_ignorable(SB), $56-24
 	WORD $0x14000002
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
 TEXT ·cr_init(SB), NOSPLIT, $0-32
@@ -891,7 +886,7 @@ TEXT ·cr_free(SB), $56-16
 	WORD $0x14000001
 	RET
 
-TEXT ·cr_realloc(SB), $72-32
+TEXT ·cr_realloc(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -929,10 +924,9 @@ TEXT ·cr_realloc(SB), $72-32
 	WORD $0x14000002
 	WORD $0x12800000
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·cr_copy(SB), $120-32
+TEXT ·cr_copy(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1084,10 +1078,9 @@ TEXT ·cr_copy(SB), $120-32
 	WORD $0x2a1f03e0
 	WORD $0xb9000188
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·cr_op1(SB), $88-48
+TEXT ·cr_op1(SB), $88-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1115,7 +1108,7 @@ TEXT ·cr_op1(SB), $88-48
 	WORD $0x9100c294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf9401be8
 	WORD $0xa94457f6
 	WORD $0xaa1f03f7
@@ -1130,10 +1123,9 @@ TEXT ·cr_op1(SB), $88-48
 	CALL (R9)
 	WORD $0xb9403fe0
 	WORD $0x14000001
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·cr_invert(SB), $120-24
+TEXT ·cr_invert(SB), $120-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1440,10 +1432,9 @@ TEXT ·cr_invert(SB), $120-24
 	WORD $0xf94037f4
 	WORD $0x11000af5
 	WORD $0x17ffff3c
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·cr_regexp_canonicalize(SB), $216-32
+TEXT ·cr_regexp_canonicalize(SB), $216-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1496,7 +1487,7 @@ TEXT ·cr_regexp_canonicalize(SB), $216-32
 	WORD $0xb9002aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0x35000360
 	WORD $0xf9406fe8
 	WORD $0x91038114
@@ -1522,7 +1513,7 @@ TEXT ·cr_regexp_canonicalize(SB), $216-32
 	WORD $0xb9002aa8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0x34000600
 	WORD $0xf90067ff
 	WORD $0xf9406fe9
@@ -1928,7 +1919,7 @@ TEXT ·cr_regexp_canonicalize(SB), $216-32
 	WORD $0xb90022a9
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0x35ffcc60
 	WORD $0xf9406fe9
 	WORD $0xaa1f03f7
@@ -1985,10 +1976,9 @@ TEXT ·cr_regexp_canonicalize(SB), $216-32
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_case1(SB), $136-32
+TEXT ·unicode_case1(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2295,7 +2285,6 @@ TEXT ·unicode_case1(SB), $136-32
 	WORD $0x92679929
 	WORD $0xf900c128
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·cr_sort_and_remove_overlap(SB), $168-16
@@ -2999,7 +2988,7 @@ TEXT ·cr_sort_and_remove_overlap(SB), $168-16
 	WORD $0x00000000
 	RET
 
-TEXT ·lre_is_id_start(SB), $56-24
+TEXT ·lre_is_id_start(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3130,10 +3119,9 @@ TEXT ·lre_is_id_start(SB), $56-24
 	WORD $0x14000002
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_is_id_continue(SB), $56-24
+TEXT ·lre_is_id_continue(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -3390,10 +3378,9 @@ TEXT ·lre_is_id_continue(SB), $56-24
 	WORD $0x14000002
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·unicode_script(SB), $200-40
+TEXT ·unicode_script(SB), $200-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4137,7 +4124,7 @@ TEXT ·unicode_script(SB), $200-40
 	WORD $0xf9001be0
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf9405ff4
 	WORD $0x35000400
 	WORD $0xa94923e9
@@ -4204,10 +4191,9 @@ TEXT ·unicode_script(SB), $200-40
 	WORD $0xb94057e8
 	WORD $0x35fffc68
 	WORD $0x17fffffa
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·unicode_general_category(SB), $152-32
+TEXT ·unicode_general_category(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4550,10 +4536,9 @@ TEXT ·unicode_general_category(SB), $152-32
 	WORD $0xf9000ff6
 	BL ·unicode_general_category1(SB)
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_general_category1(SB), $120-32
+TEXT ·unicode_general_category1(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -4747,10 +4732,9 @@ TEXT ·unicode_general_category1(SB), $120-32
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_prop(SB), $152-32
+TEXT ·unicode_prop(SB), $152-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5478,10 +5462,9 @@ TEXT ·unicode_prop(SB), $152-32
 	WORD $0x000004e8
 	WORD $0x0000046c
 	WORD $0x00000084
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_prop1(SB), $120-32
+TEXT ·unicode_prop1(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5643,10 +5626,9 @@ TEXT ·unicode_prop1(SB), $120-32
 	WORD $0x14000002
 	WORD $0x12800000
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_is_space_non_ascii(SB), NOSPLIT, $0-24
+TEXT ·lre_is_space_non_ascii(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -5705,10 +5687,9 @@ TEXT ·lre_is_space_non_ascii(SB), NOSPLIT, $0-24
 	WORD $0x14000003
 	WORD $0x1a9f17e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·unicode_sequence_prop(SB), $168-48
+TEXT ·unicode_sequence_prop(SB), $168-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6645,10 +6626,9 @@ TEXT ·unicode_sequence_prop(SB), $168-48
 	WORD $0xd503201f
 	WORD $0x0000fe0f
 	WORD $0x000020e3
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·unicode_sequence_prop1(SB), $152-48
+TEXT ·unicode_sequence_prop1(SB), $152-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7668,10 +7648,9 @@ TEXT ·unicode_sequence_prop1(SB), $152-48
 	WORD $0x14000003
 	WORD $0x0000fe0f
 	WORD $0x000020e3
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·unicode_prop_ops(SB), $168-32
+TEXT ·unicode_prop_ops(SB), $168-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7805,7 +7784,7 @@ TEXT ·unicode_prop_ops(SB), $168-32
 	WORD $0xf90047ed
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0x35001f60
 	WORD $0xf94047e9
 	WORD $0xaa1f03f7
@@ -8141,10 +8120,9 @@ TEXT ·unicode_prop_ops(SB), $168-32
 	WORD $0x9103c194
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·cr_op_block(SB), $136-24
+TEXT ·cr_op(SB), $136-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8744,10 +8722,9 @@ TEXT ·cr_op_block(SB), $136-24
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·unicode_normalize_block(SB), $200-24
+TEXT ·unicode_normalize(SB), $200-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8964,7 +8941,7 @@ TEXT ·unicode_normalize_block(SB), $200-24
 	WORD $0xb9009be2
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·unicode_decomp_entry_block(SB)
+	BL ·unicode_decomp_entry(SB)
 	WORD $0xf9405fe8
 	WORD $0xf940c108
 	WORD $0x340009e0
@@ -10304,7 +10281,7 @@ TEXT ·unicode_normalize_block(SB), $200-24
 	WORD $0xf9005fe8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·unicode_decomp_entry_block(SB)
+	BL ·unicode_decomp_entry(SB)
 	WORD $0xf9404bf5
 	WORD $0xb94083ea
 	WORD $0xb940a3f6
@@ -10396,10 +10373,9 @@ TEXT ·unicode_normalize_block(SB), $200-24
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·unicode_decomp_entry_block(SB), $120-24
+TEXT ·unicode_decomp_entry(SB), $120-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -10879,6 +10855,5 @@ TEXT ·unicode_decomp_entry_block(SB), $120-24
 	WORD $0x000005e4
 	WORD $0x000003b4
 	WORD $0x000003b4
-	MOVD R0, ret+16(FP)
 	RET
 

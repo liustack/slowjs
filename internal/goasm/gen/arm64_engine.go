@@ -67,6 +67,9 @@ type ARM64Env struct {
 	// ICallRegResult is LowerEnv.ICallRegResult: a call through a pointer
 	// takes its result from x0, x1 or d0 too.
 	ICallRegResult bool
+	// NoResult is LowerEnv.NoResult: these functions store no result before
+	// their RET.
+	NoResult map[string]bool
 	// DropLRPairs is the negative build of GEN_DROP_LR_PAIRS: the lowering
 	// drops a pair that holds x30 whole, the other register's save with it,
 	// which a64ProveLR must refuse. NoLRProof (GEN_DROP_LR_PAIRS=unchecked)
@@ -242,7 +245,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	}
 	L := align(8+outArea, 16)
 	goret := ".Lgoret_" + fn.Name
-	rec := &FuncRecord{Name: fn.Name, Kind: fn.Kind, Sig: fn.Sig, PreserveNone: true, Local: F, LocalBase: L}
+	rec := &FuncRecord{Name: fn.Name, Kind: fn.Kind, Sig: fn.Sig, PreserveNone: true, Local: F, LocalBase: L, NoResult: fn.Kind == Unified && env.NoResult[fn.Name]}
 	var ff *FuncFacts
 	if env.Facts != nil {
 		ff = env.Facts[fn.Name]
@@ -623,6 +626,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		out = append(out, ".p2align 4", fn.Name+".const:", data)
 	}
 	_, _, argBytes := layout(fn.Sig)
+	if rec.NoResult {
+		_, _, argBytes = layout(Sig{Params: fn.Sig.Params, Ret: Void})
+	}
 	if fn.Kind == Register {
 		argBytes = 0
 	}
@@ -701,7 +707,8 @@ func a64SameRegs(what string, want, got []string) error {
 // WORDs, every call a BL or CALL (R9) Go sees, each address of data or of a
 // function a MOVD $sym(SB) (which the Go assembler writes as the adrp and
 // add it stands for), the arguments loaded from the Go argument area after
-// Go's prologue and the result stored before its RET.
+// Go's prologue and the result stored before its RET (none for a function
+// with FuncRecord.NoResult).
 func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 	if e.NoStubs && len(e.Stubs) > 0 {
 		return nil, fmt.Errorf("a release build has no stub, but %d functions would be", len(e.Stubs))
@@ -865,7 +872,7 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 		if icalls != 0 {
 			return nil, fmt.Errorf("%s: %d indirect calls not found in the bytes", m.Name, icalls)
 		}
-		if m.Kind != Register {
+		if m.Kind != Register && !m.Rec.NoResult {
 			_, results := GoSlots(m.Rec.Sig)
 			for k, reg := range a64RetRegs(m.Rec.Sig.Ret) {
 				mov := "MOVD"

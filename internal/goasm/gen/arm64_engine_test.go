@@ -224,3 +224,25 @@ func TestLowerARM64EngineRegResult(t *testing.T) {
 		t.Errorf("the record says the calls take the result from registers %v, want [true false false]", got)
 	}
 }
+
+// TestLowerARM64EngineNoResult: a function no Go code calls (ARM64Env.NoResult)
+// is recorded as storing no result, and its Go argument area ends with its
+// arguments.
+func TestLowerARM64EngineNoResult(t *testing.T) {
+	fn, env := a64TestEnv()
+	_, with, err := LowerARM64EngineFunc(a64Good, fn, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn, env = a64TestEnv()
+	env.NoResult = map[string]bool{fn.Name: true}
+	_, without, err := LowerARM64EngineFunc(a64Good, fn, env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, args := layout(Sig{Params: fn.Sig.Params})
+	if with.Rec.NoResult || !without.Rec.NoResult || without.ArgBytes != args || with.ArgBytes <= args {
+		t.Errorf("stores: NoResult %v, %d bytes, stores none: NoResult %v, %d bytes, the arguments take %d",
+			with.Rec.NoResult, with.ArgBytes, without.Rec.NoResult, without.ArgBytes, args)
+	}
+}

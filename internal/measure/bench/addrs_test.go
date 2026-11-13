@@ -88,7 +88,7 @@ var formalLayout = Layout{
 	Funcs: map[string]uint64{
 		"first": 0x600000, "heap_alloc": 0x640020, "re_parse_error": 0x6ea0c0, "lre_exec_backtrack": 0x6f0000,
 		"js_malloc_rt": 0x6f4b20, "js_free_rt": 0x6f4e60, "JS_NewObjectFromShape": 0x6f6c80,
-		"JS_RegvmRun_block": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
+		"JS_RegvmRun": 0x6f7e00, "JS_SetPropertyInternal_block": 0x6f9a00,
 	},
 }
 
@@ -157,7 +157,7 @@ func TestCheckLayoutInterpreterOn32(t *testing.T) {
 	for op, a := range formalLayout.Handlers {
 		formal.Handlers[op] = a + off
 	}
-	for _, f := range []string{"JS_RegvmRun_block"} {
+	for _, f := range []string{"JS_RegvmRun"} {
 		if _, ok := formal.Funcs[f]; ok {
 			formal.Funcs[f] += off
 		}
@@ -244,7 +244,7 @@ func TestCheckLayoutFindsAWrongLanding(t *testing.T) {
 	}
 	// Nothing between the matcher and the interpreter to check is an error too.
 	empty := formalLayout
-	empty.Funcs = map[string]uint64{"first": formalLayout.Funcs["first"], "lre_exec_backtrack": formalLayout.Matcher, "JS_RegvmRun_block": formalLayout.Func}
+	empty.Funcs = map[string]uint64{"first": formalLayout.Funcs["first"], "lre_exec_backtrack": formalLayout.Matcher, "JS_RegvmRun": formalLayout.Func}
 	if err := CheckLayout(empty, empty, Position{}, ""); err == nil || !strings.Contains(err.Error(), "between") {
 		t.Errorf("no function between: %v", err)
 	}

@@ -475,7 +475,22 @@ between the RET and the read (`pushCall` in `runtime/signal_amd64.go` at
 line 80 and `signal_arm64.go` at line 91 runs only for such a stop, and on
 windows the stop asks `isAsyncSafePoint` too, `runtime/os_windows.go` at
 line 1221 in 1.26.6 and 1275 in 1.27.2). A fault diverts to a panic
-(`preparePanic`) and never comes back to the read. A leaf keeps C's registers, so of
+(`preparePanic`) and never comes back to the read. A function no Go code names stores no result at all
+(`-go-calls`, `FuncRecord.NoResult`): its only callers are lowered calls,
+which take the result from registers. `internal/cengine/gocalls.txt` lists
+the functions the Go files of the module and the hand-written assembly of
+the package name, as a call or as a value. `go run
+./internal/goasm/gen/cmd/gocalls` writes it (`GoCalls`), and
+`TestGoCallsList` fails when it is stale. Such a function is declared to Go
+without a result, so Go code that reads one does not compile, and `go vet
+-asmdecl` holds its TEXT to the size of its arguments. The check takes no
+result store at its returns, still holds the registers llc returns in to
+the ones its callers read, and refuses a call that loads a result from the
+Go stack where it could reach such a function: a direct call of one, and a
+call through a pointer as soon as there is one. A packed function counts as
+named when Go names the function that makes its block (`PackedGo`), and when
+Go does not it gets no such function. A poison build, and a build without
+`-go-calls` (the `-src` builds of the tests), store every result. A leaf keeps C's registers, so of
 its facts only its calls' targets and the number of its calls and returns
 are checked. llc's own code must keep to what the build rules out: a call
 through memory fails, and so does a frame access wider than 8 bytes that is

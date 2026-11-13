@@ -365,10 +365,16 @@ func TestCheckARM64BodyPlace(t *testing.T) {
 // result back from 16(RSP) when load is set. The check is told g is a
 // lowered unified function, which it holds to its return sequence.
 func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
+	return a64CallCaseStore(regResult, load, true)
+}
+
+// a64CallCaseStore is a64CallCase, where f stores its result only if store
+// (FuncRecord.NoResult otherwise).
+func a64CallCaseStore(regResult, load, store bool) (*a64Checker, Meta, []uint32) {
 	const base, gAt, morestack = 0x1000, 0x8000, 0x9000
 	sig := Sig{Params: []Type{I64}, Ret: I64}
 	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16,
-		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g", Sig: sig, RegResult: regResult}}}}
+		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g", Sig: sig, RegResult: regResult}}, NoResult: !store}}
 	g := Meta{Name: "g", Kind: Unified, Rec: &FuncRecord{Name: "g", Sig: sig}}
 	// The object: str x20, [sp, #8]; bl go_g; ldr x0, [sp, #16].
 	obj := []uint32{0xf9000000 | 1<<10 | 31<<5 | 20, 0x94000000}
@@ -389,7 +395,10 @@ func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
 	at := func() uint64 { return base + uint64(4*len(w)) }
 	w = append(w, obj[0], a64BL(at()+4, gAt))
 	w = append(w, obj[2:]...)
-	w = append(w, 0xf9000000|10<<10|31<<5|0, a64LoadFP, 0xf84407fe, a64Ret)
+	if store {
+		w = append(w, 0xf9000000|10<<10|31<<5|0)
+	}
+	w = append(w, a64LoadFP, 0xf84407fe, a64Ret)
 	w[2] = 0x54000009 | uint32(len(w)-2)<<5
 	w = append(w, a64MovX3LR, a64BL(at()+4, morestack))
 	w = append(w, a64B(at(), base))
@@ -561,6 +570,48 @@ func TestCheckARM64ICallRegResult(t *testing.T) {
 		binary.LittleEndian.PutUint32(k.o.code[4:], a64BLRX9)
 		delete(k.o.relocs, 4)
 		w[9] = a64BLRX9
+		err := k.function(m, 0x1000, a64Bytes(w))
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+// TestCheckARM64NoResult: a function no Go code calls stores no result
+// (FuncRecord.NoResult), the record says which, and no call may load the
+// result of one back from the Go stack.
+func TestCheckARM64NoResult(t *testing.T) {
+	for name, c := range map[string]struct {
+		regResult, load, store bool
+		edit                   func(k *a64Checker, m *Meta)
+		want                   string
+	}{
+		"stores none":                         {true, false, false, nil, ""},
+		"stores none, the record says stores": {true, false, false, func(k *a64Checker, m *Meta) { m.Rec.NoResult = false }, "result store 0"},
+		"stores, the record says none":        {true, false, true, func(k *a64Checker, m *Meta) { m.Rec.NoResult = true }, "unknown epilogue"},
+		"a load of g, which stores none": {false, true, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+		}, "loads the result of g from the Go stack, where g stores none"},
+		"g from registers, which stores none": {true, false, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+		}, ""},
+		"a load through a register where one stores none": {false, true, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+			m.Rec.Calls[0].Kind, m.Rec.Calls[0].Target = CallReg, "x9"
+		}, "through a register loads its result from the Go stack"},
+	} {
+		k, m, w := a64CallCaseStore(c.regResult, c.load, c.store)
+		if c.edit != nil {
+			c.edit(k, &m)
+		}
+		if m.Rec.Calls[0].Kind == CallReg {
+			binary.LittleEndian.PutUint32(k.o.code[4:], a64BLRX9)
+			delete(k.o.relocs, 4)
+			w[9] = a64BLRX9
+		}
 		err := k.function(m, 0x1000, a64Bytes(w))
 		if c.want == "" && err != nil {
 			t.Errorf("%s: %v", name, err)

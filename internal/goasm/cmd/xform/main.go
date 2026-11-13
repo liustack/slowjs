@@ -30,7 +30,7 @@
 //	                       run at each call. They move the code of that
 //	                       function only, with the data after its code. Use a
 //	                       multiple of 16 from 0 to 48 on the interpreter
-//	                       (JS_RegvmRun_block): its constant pools stay on 16
+//	                       (JS_RegvmRun): its constant pools stay on 16
 //	                       bytes, and a front that is not a multiple of 16 is
 //	                       refused on a function with data after its code.
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
@@ -42,7 +42,7 @@
 // Example, the position "moved 32 bytes, 16 NOP bytes in front of the
 // interpreter":
 //
-//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_RegvmRun_block:16
+//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_RegvmRun:16
 package main
 
 import (

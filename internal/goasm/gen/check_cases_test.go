@@ -114,6 +114,7 @@ type ckCase struct {
 	files  func(map[string]string)      // the emitted Go files, before they are built
 	poll   string                       // Go source of host_poll in the built program; "" for none
 	loads  bool                         // lower every call with its result loads (no LowerEnv.RegResult)
+	noRes  bool                         // no Go code calls a unified function: none stores its result (LowerEnv.NoResult)
 	edit   func(*EngineCheck)           // what the check is told
 	facts  func(probes, facts RegFacts) // what llc's facts say
 	calls  func(*testing.T, []Meta)     // what the lowering recorded
@@ -327,6 +328,35 @@ func TestCheckCases(t *testing.T) {
 			llc:   llcSub("pg", "\tcallq\tph\n", "\tmovq\t%r12, %rax\n"+ckLabel("pg", 0, "ii>i")+"\tcallq\t*%rax\n", 1),
 			facts: func(_, f RegFacts) { f["pg"].Calls[0].Defs = []string{"rdx"} },
 			want:  "a lowered function returns a result of its type in [RAX]"},
+		// A function no Go code calls stores no result (FuncRecord.NoResult):
+		// every call of it takes the result from registers, and its returns
+		// must still give it there.
+		{name: "no function stores its result", noRes: true, calls: func(t *testing.T, ms []Meta) {
+			for _, m := range ms {
+				if m.Kind == Unified && !m.Rec.NoResult {
+					t.Errorf("%s stores its result", m.Name)
+				}
+				if _, _, ab := layout(Sig{Params: m.Rec.Sig.Params}); m.Kind == Unified && m.ArgBytes != ab {
+					t.Errorf("%s has %d bytes of arguments and results, its arguments take %d", m.Name, m.ArgBytes, ab)
+				}
+			}
+		}},
+		{name: "a function that stores no result the record says stores it", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "h").Rec.NoResult = false
+		}, want: "is not the store of"},
+		{name: "a function that stores its result the record says stores none", metas: func(ms []Meta) {
+			meta(ms, "h").Rec.NoResult = true
+		}, want: "is not a jump to the epilogue"},
+		{name: "llc's return gives a register the callers do not read", noRes: true,
+			facts: func(_, f RegFacts) { f["h"].Rets[0] = []string{"rax", "rdx"} },
+			want:  "its callers take the result from [RAX]"},
+		{name: "a call that loads the result of a function that stores none", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "g").Rec.Calls[0].RegResult = false
+		}, want: "a call that loads the result of h from the Go stack, where h stores none"},
+		{name: "a call through a pointer that loads its result where functions store none", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "ic").Rec.Calls[0].RegResult = false
+		}, want: "that loads its result from the Go stack, where"},
+		{name: "lowered with result loads where functions store none", noRes: true, loads: true, want: "stores none"},
 		{name: "a call to a leaf that takes the result from registers", metas: func(ms []Meta) {
 			meta(ms, "g").Rec.Calls[1].RegResult = true
 		}, want: "that takes the result from registers"},
@@ -595,6 +625,12 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 		env.RegResult[n] = !leaves[n] && !c.loads
 	}
 	env.ICallRegResult = !c.loads
+	if c.noRes {
+		env.NoResult = map[string]bool{}
+		for _, n := range unit.FuncOrder {
+			env.NoResult[n] = !leaves[n]
+		}
+	}
 	var metas []Meta
 	lowered := ".text\n"
 	for _, n := range unit.FuncOrder {
@@ -656,7 +692,7 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 			}
 		}
 		ret := ""
-		if !leaves[n] {
+		if !leaves[n] && !c.noRes {
 			switch r := sigs[n].Ret; r {
 			case JSV:
 				ret = " (uintptr, uintptr)"

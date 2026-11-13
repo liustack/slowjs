@@ -17,6 +17,10 @@ type FuncRecord struct {
 	// so the binary has no stack check at its entry, and every unified
 	// function that is not on it has one.
 	NoSplit bool
+	// NoResult: no Go code calls the function (LowerEnv.NoResult), so it does
+	// not store its result to the Go stack, and its Go declaration and TEXT
+	// have no result. Every call of it takes the result from registers.
+	NoResult bool
 	// The canonical prologue the lowering removed: the callee-saved
 	// registers it pushed, in order, and the bytes it reserved below them.
 	Pushed []string

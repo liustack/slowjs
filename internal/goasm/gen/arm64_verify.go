@@ -425,10 +425,16 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 	// the result registers (CallRecord.RegResult), which only a lowered
 	// unified function leaves the result in: this check holds each of them
 	// to storing it from x0, x1 or d0 and then running only Go's epilogue.
+	// A function with FuncRecord.NoResult stores no result, so every call of
+	// it must take the result from registers.
+	noResult := map[string]bool{}
 	unified := map[string]bool{}
 	for _, f := range k.c.Metas {
 		if f.Kind == Unified {
 			unified[f.Name] = true
+		}
+		if f.Rec != nil && f.Rec.NoResult {
+			noResult[f.Name] = true
 		}
 	}
 	ci := 0
@@ -476,6 +482,12 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 				return fmt.Errorf("the call at %#x takes the result of %s from its registers, which is no lowered unified function", pc-r[0], c.Target)
 			}
 			return nil
+		}
+		if c.Kind == CallReg && len(noResult) > 0 {
+			return fmt.Errorf("the call at %#x through a register loads its result from the Go stack, where %d functions store none", pc-r[0], len(noResult))
+		}
+		if noResult[c.Target] {
+			return fmt.Errorf("the call at %#x loads the result of %s from the Go stack, where %s stores none", pc-r[0], c.Target, c.Target)
 		}
 		_, retOff, _ := layout(c.Sig)
 		for n, wv := range a64FPWords(a64RetRegs(c.Sig.Ret), nil, nil, 8+retOff, true) {
@@ -549,7 +561,7 @@ func (k *a64Checker) function(m Meta, base uint64, b []byte) error {
 		return fmt.Errorf("the record has %d calls, the body %d", len(m.Rec.Calls), ci)
 	}
 	// The result into the Go argument area, the epilogue and RET.
-	if m.Kind != Register {
+	if m.Kind != Register && !m.Rec.NoResult {
 		_, retOff, _ := layout(m.Rec.Sig)
 		rets := a64RetRegs(m.Rec.Sig.Ret)
 		for k, wv := range a64FPWords(rets, nil, nil, frame+8+retOff, false) {

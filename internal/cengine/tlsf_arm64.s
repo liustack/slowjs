@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·tlsf_check(SB), $104-24
+TEXT ·tlsf_check(SB), $104-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -150,7 +150,6 @@ TEXT ·tlsf_check(SB), $104-24
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 
 TEXT ·tlsf_walk_pool(SB), $88-32
@@ -211,7 +210,7 @@ TEXT ·tlsf_walk_pool(SB), $88-32
 	BL ·abort(SB)
 	RET
 
-TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
+TEXT ·tlsf_block_size(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -222,10 +221,9 @@ TEXT ·tlsf_block_size(SB), NOSPLIT, $0-24
 	WORD $0x14000003
 	WORD $0xaa1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_check_pool(SB), $40-24
+TEXT ·tlsf_check_pool(SB), $40-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -266,64 +264,57 @@ TEXT ·tlsf_check_pool(SB), $40-24
 	WORD $0xf900c128
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_size(SB), NOSPLIT, $0-16
+TEXT ·tlsf_size(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0x52833100
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_align_size(SB), NOSPLIT, $0-16
+TEXT ·tlsf_align_size(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0x52800100
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_block_size_min(SB), NOSPLIT, $0-16
+TEXT ·tlsf_block_size_min(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0x52800300
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_block_size_max(SB), NOSPLIT, $0-16
+TEXT ·tlsf_block_size_max(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0xd2c00020
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_pool_overhead(SB), NOSPLIT, $0-16
+TEXT ·tlsf_pool_overhead(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0x52800200
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-16
+TEXT ·tlsf_alloc_overhead(SB), NOSPLIT, $0-8
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	PCALIGN $16
 	WORD $0x52800100
 	WORD $0x14000001
-	MOVD R0, ret+8(FP)
 	RET
 
-TEXT ·tlsf_add_pool(SB), $8-40
+TEXT ·tlsf_add_pool(SB), $8-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -381,7 +372,6 @@ TEXT ·tlsf_add_pool(SB), $8-40
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·tlsf_remove_pool(SB), $8-24
@@ -448,7 +438,7 @@ TEXT ·tlsf_remove_pool(SB), $8-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·tlsf_create(SB), $56-24
+TEXT ·tlsf_create(SB), $56-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -504,10 +494,9 @@ TEXT ·tlsf_create(SB), $56-24
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_create_with_pool(SB), $88-32
+TEXT ·tlsf_create_with_pool(SB), $88-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -621,7 +610,6 @@ TEXT ·tlsf_create_with_pool(SB), $88-32
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·tlsf_destroy(SB), NOSPLIT, $0-16
@@ -632,7 +620,7 @@ TEXT ·tlsf_destroy(SB), NOSPLIT, $0-16
 	WORD $0x14000001
 	RET
 
-TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
+TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -640,10 +628,9 @@ TEXT ·tlsf_get_pool(SB), NOSPLIT, $0-24
 	WORD $0x52833108
 	WORD $0x8b0802a0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·tlsf_malloc(SB), $8-32
+TEXT ·tlsf_malloc(SB), $8-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -829,7 +816,6 @@ TEXT ·tlsf_malloc(SB), $8-32
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·tlsf_free(SB), $72-24
@@ -973,7 +959,7 @@ TEXT ·tlsf_free(SB), $72-24
 	BL ·abort(SB)
 	RET
 
-TEXT ·block_merge_next(SB), $8-32
+TEXT ·block_merge_next(SB), $8-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1041,10 +1027,9 @@ TEXT ·block_merge_next(SB), $8-32
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·tlsf_realloc_inplace(SB), $88-40
+TEXT ·tlsf_realloc_inplace(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1193,10 +1178,9 @@ TEXT ·tlsf_realloc_inplace(SB), $88-40
 	WORD $0xf94023f4
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_realloc(SB), $136-40
+TEXT ·tlsf_realloc(SB), $136-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1372,10 +1356,9 @@ TEXT ·tlsf_realloc(SB), $136-40
 	BL ·tlsf_free(SB)
 	WORD $0xf94033e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_next_free(SB), NOSPLIT, $0-40
+TEXT ·tlsf_next_free(SB), NOSPLIT, $0-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1441,10 +1424,9 @@ TEXT ·tlsf_next_free(SB), NOSPLIT, $0-40
 	WORD $0x17ffffd8
 	WORD $0xaa1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
+TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1458,10 +1440,9 @@ TEXT ·tlsf_free_inside(SB), NOSPLIT, $0-40
 	WORD $0x8b0902a0
 	WORD $0xf90002e8
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·tlsf_pool_is_free(SB), $8-24
+TEXT ·tlsf_pool_is_free(SB), $8-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1480,6 +1461,5 @@ TEXT ·tlsf_pool_is_free(SB), $8-24
 	WORD $0x14000003
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+16(FP)
 	RET
 

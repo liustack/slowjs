@@ -4,7 +4,7 @@
 #include "textflag.h"
 #include "funcdata.h"
 
-TEXT ·lre_parse_escape(SB), $72-32
+TEXT ·lre_parse_escape(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19,10 +19,9 @@ TEXT ·lre_parse_escape(SB), $72-32
 	WORD $0xf90017f8
 	BL ·re_parse_escape(SB)
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_parse_escape(SB), $136-48
+TEXT ·re_parse_escape(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -397,10 +396,9 @@ TEXT ·re_parse_escape(SB), $136-48
 	WORD $0xf94047f7
 	WORD $0x12800040
 	WORD $0x17ffff48
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·lre_parse_escape_poll(SB), $72-40
+TEXT ·lre_parse_escape_poll(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -416,10 +414,9 @@ TEXT ·lre_parse_escape_poll(SB), $72-40
 	WORD $0xf90017f8
 	BL ·re_parse_escape(SB)
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·lre_bytecode_realloc(SB), $56-40
+TEXT ·lre_bytecode_realloc(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -437,10 +434,9 @@ TEXT ·lre_bytecode_realloc(SB), $56-40
 	WORD $0xf90013f7
 	BL ·js_realloc_rt(SB)
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_parse_disjunction(SB), $104-32
+TEXT ·re_parse_disjunction(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -662,10 +658,9 @@ TEXT ·re_parse_disjunction(SB), $104-32
 	WORD $0x51000529
 	WORD $0xb9098509
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_code(SB), $72-32
+TEXT ·re_code(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -712,7 +707,6 @@ TEXT ·re_code(SB), $72-32
 	WORD $0xf9401fe8
 	WORD $0xf9000808
 	WORD $0x17ffffdd
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·lre_plan(SB), $88-16
@@ -853,7 +847,7 @@ TEXT ·lre_plan(SB), $88-16
 	WORD $0x17ffff9a
 	RET
 
-TEXT ·lre_chains(SB), $152-24
+TEXT ·lre_chains(SB), $152-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1358,10 +1352,9 @@ TEXT ·lre_chains(SB), $152-24
 	WORD $0x7100011f
 	WORD $0x9a890156
 	WORD $0x17ffffd3
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_first_set(SB), $104-32
+TEXT ·lre_first_set(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1734,10 +1727,9 @@ TEXT ·lre_first_set(SB), $104-32
 	WORD $0x00000034
 	WORD $0x00000024
 	WORD $0x00000024
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_parse_alternative(SB), $232-32
+TEXT ·re_parse_alternative(SB), $232-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6079,10 +6071,9 @@ TEXT ·re_parse_alternative(SB), $232-32
 	WORD $0x000004a0
 	WORD $0x00000018
 	WORD $0x00000010
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_insert(SB), $152-40
+TEXT ·re_insert(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6292,10 +6283,9 @@ TEXT ·re_insert(SB), $152-40
 	BL ·goasm_chunked_memmove(SB)
 	WORD $0xa945d7f3
 	WORD $0x17ffff47
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·parse_digits(SB), $120-32
+TEXT ·parse_digits(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6384,7 +6374,6 @@ TEXT ·parse_digits(SB), $120-32
 	WORD $0x92679ae9
 	WORD $0xf900c128
 	WORD $0x17fffff2
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·re_emit_op(SB), $88-24
@@ -6447,7 +6436,7 @@ TEXT ·re_emit_op(SB), $88-24
 	WORD $0x17ffffd5
 	RET
 
-TEXT ·re_parse_group_name(SB), $152-40
+TEXT ·re_parse_group_name(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -6899,10 +6888,9 @@ TEXT ·re_parse_group_name(SB), $152-40
 	WORD $0x17ffffef
 	WORD $0x12800000
 	WORD $0x17ffffef
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·is_duplicate_group_name(SB), $104-40
+TEXT ·is_duplicate_group_name(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7224,10 +7212,9 @@ TEXT ·is_duplicate_group_name(SB), $104-40
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_need_group_names(SB), $120-24
+TEXT ·re_need_group_names(SB), $120-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7354,10 +7341,9 @@ TEXT ·re_need_group_names(SB), $120-24
 	WORD $0x92679ae9
 	WORD $0xf900c128
 	WORD $0x17fffff0
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·find_group_name(SB), $152-40
+TEXT ·find_group_name(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -7807,10 +7793,9 @@ TEXT ·find_group_name(SB), $152-40
 	WORD $0xf900c128
 	WORD $0x2a1103e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_parse_captures(SB), $136-48
+TEXT ·re_parse_captures(SB), $136-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -8075,7 +8060,6 @@ TEXT ·re_parse_captures(SB), $136-48
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0x17fffff0
-	MOVD R0, ret+40(FP)
 	RET
 
 TEXT ·re_emit_op_u8(SB), $88-32
@@ -8167,7 +8151,7 @@ TEXT ·re_emit_op_u8(SB), $88-32
 	WORD $0x17ffffb5
 	RET
 
-TEXT ·re_parse_nested_class(SB), $168-40
+TEXT ·re_parse_nested_class(SB), $168-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -9420,7 +9404,7 @@ TEXT ·re_parse_nested_class(SB), $168-40
 	WORD $0xa90221df
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·rqsort_stop_block(SB)
+	BL ·rqsort_stop(SB)
 	WORD $0xf9404be8
 	WORD $0xb9409bed
 	WORD $0xf94057ee
@@ -10523,10 +10507,9 @@ TEXT ·re_parse_nested_class(SB), $168-40
 	WORD $0xaa1f03f6
 	WORD $0xaa1003ec
 	WORD $0x17fffd26
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_emit_string_list(SB), $216-32
+TEXT ·re_emit_string_list(SB), $216-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -11235,7 +11218,7 @@ TEXT ·re_emit_string_list(SB), $216-32
 	WORD $0xb90029bf
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xa94c23f5
 	WORD $0xaa1f03f7
 	WORD $0xf9405ff6
@@ -12461,10 +12444,9 @@ TEXT ·re_emit_string_list(SB), $216-32
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17fffb94
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·get_class_atom1(SB), $104-48
+TEXT ·get_class_atom1(SB), $104-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12888,7 +12870,6 @@ TEXT ·get_class_atom1(SB), $104-48
 	WORD $0x00000220
 	WORD $0x00000220
 	WORD $0x00000010
-	MOVD R0, ret+40(FP)
 	RET
 
 TEXT ·re_emit_char(SB), $88-24
@@ -13194,7 +13175,7 @@ TEXT ·re_emit_goto_u8_u32(SB), $88-40
 	WORD $0x17ffff91
 	RET
 
-TEXT ·cr_init_char_range(SB), $120-40
+TEXT ·cr_init_char_range(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -13541,10 +13522,9 @@ TEXT ·cr_init_char_range(SB), $120-40
 	WORD $0xf9403fee
 	WORD $0xf94037f4
 	WORD $0x17ffffca
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·parse_unicode_property(SB), $248-56
+TEXT ·parse_unicode_property(SB), $248-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -15076,7 +15056,7 @@ TEXT ·parse_unicode_property(SB), $248-56
 	WORD $0xb90029df
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf94077e8
 	WORD $0xa94d57f6
 	WORD $0xaa1f03f7
@@ -15172,7 +15152,6 @@ TEXT ·parse_unicode_property(SB), $248-56
 	WORD $0x926799c9
 	WORD $0xf900c128
 	WORD $0x17ffffcc
-	MOVD R0, ret+48(FP)
 	RET
 
 TEXT ·re_string_list_free(SB), $104-16
@@ -15588,7 +15567,7 @@ TEXT ·seq_prop_cb(SB), $120-32
 	WORD $0x17ffffd4
 	RET
 
-TEXT ·re_string_list_canonicalize(SB), $248-40
+TEXT ·re_string_list_canonicalize(SB), $248-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16304,7 +16283,7 @@ TEXT ·re_string_list_canonicalize(SB), $248-40
 	WORD $0x91154114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xa94e23f5
 	WORD $0xaa1f03f7
 	WORD $0xf9406ff6
@@ -16815,10 +16794,9 @@ TEXT ·re_string_list_canonicalize(SB), $248-40
 	WORD $0xa93db549
 	WORD $0xf90001ab
 	WORD $0x17ffffdd
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_interval_cmp(SB), NOSPLIT, $0-40
+TEXT ·re_interval_cmp(SB), NOSPLIT, $0-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -16831,10 +16809,9 @@ TEXT ·re_interval_cmp(SB), NOSPLIT, $0-40
 	WORD $0x1a9f97e8
 	WORD $0x5a9f2100
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_string_find2(SB), $200-48
+TEXT ·re_string_find2(SB), $200-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -17735,10 +17712,9 @@ TEXT ·re_string_find2(SB), $200-48
 	WORD $0x92679929
 	WORD $0xf900c128
 	WORD $0x17ffff54
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·re_zero(SB), $120-40
+TEXT ·re_zero(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18008,10 +17984,9 @@ TEXT ·re_zero(SB), $120-40
 	WORD $0xf94033f4
 	WORD $0x52800388
 	WORD $0x17fffff5
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_emit_range(SB), $104-32
+TEXT ·re_emit_range(SB), $104-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18752,10 +18727,9 @@ TEXT ·re_emit_range(SB), $104-32
 	WORD $0xf94027eb
 	WORD $0xb94043ec
 	WORD $0x17fffe44
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·re_emit_op_u32(SB), $88-40
+TEXT ·re_emit_op_u32(SB), $88-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -18843,10 +18817,9 @@ TEXT ·re_emit_op_u32(SB), $88-40
 	WORD $0xb94037f6
 	WORD $0xf9000aaa
 	WORD $0x17ffffb5
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·get_class_atom(SB), $152-40
+TEXT ·get_class_atom(SB), $152-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -19442,10 +19415,9 @@ TEXT ·get_class_atom(SB), $152-40
 	WORD $0xf9403fee
 	WORD $0xf9404ff4
 	WORD $0x17ffffa3
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_string_list_op(SB), $248-40
+TEXT ·re_string_list_op(SB), $248-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -20172,7 +20144,7 @@ TEXT ·re_string_list_op(SB), $248-40
 	WORD $0x91264114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf9407fe8
 	WORD $0xa94dd7f6
 	WORD $0xaa1f03f7
@@ -20902,7 +20874,7 @@ TEXT ·re_string_list_op(SB), $248-40
 	WORD $0x91264114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf9407fe8
 	WORD $0xa94dd7f6
 	WORD $0xaa1f03f7
@@ -20938,7 +20910,7 @@ TEXT ·re_string_list_op(SB), $248-40
 	WORD $0xa90db7ec
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·cr_op_block(SB)
+	BL ·cr_op(SB)
 	WORD $0xf9407fe8
 	WORD $0xf9406ff6
 	WORD $0xaa1f03f7
@@ -21283,10 +21255,9 @@ TEXT ·re_string_list_op(SB), $248-40
 	WORD $0x91264294
 	WORD $0xf90007f4
 	BL ·abort(SB)
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·re_parse_class_set_operand(SB), $104-40
+TEXT ·re_parse_class_set_operand(SB), $104-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -21644,20 +21615,18 @@ TEXT ·re_parse_class_set_operand(SB), $104-40
 	WORD $0xf9000ff6
 	BL ·heap_free(SB)
 	WORD $0x17ffffc9
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·lre_get_flags(SB), NOSPLIT, $0-24
+TEXT ·lre_get_flags(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
 	PCALIGN $16
 	WORD $0x794002a0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_exec_backtrack(SB), $248-48
+TEXT ·lre_exec_backtrack(SB), $248-40
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24485,10 +24454,9 @@ TEXT ·lre_exec_backtrack(SB), $248-48
 	WORD $0x000005a0
 	WORD $0x00000fc8
 	WORD $0x00000638
-	MOVD R0, ret+40(FP)
 	RET
 
-TEXT ·stack_realloc(SB), $136-32
+TEXT ·stack_realloc(SB), $136-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24711,10 +24679,9 @@ TEXT ·stack_realloc(SB), $136-32
 	WORD $0xf9000149
 	WORD $0xa9007c1f
 	WORD $0x17ffff86
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·lre_get_alloc_count(SB), NOSPLIT, $0-24
+TEXT ·lre_get_alloc_count(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24723,20 +24690,18 @@ TEXT ·lre_get_alloc_count(SB), NOSPLIT, $0-24
 	WORD $0x39400ea9
 	WORD $0x0b080520
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_get_capture_count(SB), NOSPLIT, $0-24
+TEXT ·lre_get_capture_count(SB), NOSPLIT, $0-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
 	PCALIGN $16
 	WORD $0x39400aa0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_get_groupnames(SB), $40-24
+TEXT ·lre_get_groupnames(SB), $40-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -24786,7 +24751,6 @@ TEXT ·lre_get_groupnames(SB), $40-24
 	WORD $0x5100054a
 	WORD $0x17ffffe0
 	WORD $0x14000001
-	MOVD R0, ret+16(FP)
 	RET
 
 TEXT ·re_parse_error(SB), $72-32
@@ -24820,7 +24784,7 @@ TEXT ·re_parse_error(SB), $72-32
 	WORD $0x14000001
 	RET
 
-TEXT ·lre_compile_block(SB), $136-24
+TEXT ·lre_compile(SB), $136-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -25951,10 +25915,9 @@ TEXT ·lre_compile_block(SB), $136-24
 	WORD $0x00000001
 	WORD $0x00000001
 	WORD $0xffffffff
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_exec_block(SB), $184-24
+TEXT ·lre_exec(SB), $184-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26029,7 +25992,7 @@ TEXT ·lre_exec_block(SB), $184-24
 	WORD $0xb90021d1
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·lre_find_block(SB)
+	BL ·lre_find(SB)
 	WORD $0x7100041f
 	WORD $0x54000181
 	WORD $0xf9405fee
@@ -26376,7 +26339,7 @@ TEXT ·lre_exec_block(SB), $184-24
 	WORD $0xa902a5c8
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·lre_find_block(SB)
+	BL ·lre_find(SB)
 	WORD $0x7100041f
 	WORD $0x54000d41
 	WORD $0xf9405fee
@@ -26580,10 +26543,9 @@ TEXT ·lre_exec_block(SB), $184-24
 	WORD $0xd503201f
 	WORD $0x00000008
 	WORD $0x00000000
-	MOVD R0, ret+16(FP)
 	RET
 
-TEXT ·lre_find_block(SB), $184-24
+TEXT ·lre_find(SB), $184-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -26937,6 +26899,5 @@ TEXT ·lre_find_block(SB), $184-24
 	WORD $0xf9405fec
 	WORD $0xcb080015
 	WORD $0x17fffff3
-	MOVD R0, ret+16(FP)
 	RET
 

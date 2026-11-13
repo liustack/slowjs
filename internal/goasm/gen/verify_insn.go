@@ -222,6 +222,9 @@ type checker struct {
 	ptrOK map[uint64]bool
 	// retRegs holds the registers of a result by its type (retRegsOf).
 	retRegs map[Type][]x86asm.Reg
+	// noRes holds the addresses of the functions that store no result
+	// (noResult).
+	noRes map[uint64]bool
 }
 
 func (k *checker) skip(why, fn string) { k.rep.Skipped[why] = append(k.rep.Skipped[why], fn) }
@@ -1916,7 +1919,9 @@ func (m *matcher) dataRef(x insn, r *relAt, mem x86asm.Mem) (uint64, error) {
 }
 
 // ret matches a return: the result stored into the Go result slot, then a
-// jump to the Go epilogue (checked once the body is done).
+// jump to the Go epilogue (checked once the body is done). A function with
+// FuncRecord.NoResult stores nothing, and llc's return must still give its
+// result in the registers its probe names: every call of it reads them.
 func (m *matcher) ret() error {
 	if m.nrets >= len(m.facts.Rets) {
 		return fmt.Errorf("a return llc's facts do not list")
@@ -1929,6 +1934,10 @@ func (m *matcher) ret() error {
 	stored := map[x86asm.Reg]bool{}
 	off := m.argBase + int64(8*len(m.args))
 	for w, reg := range m.res {
+		stored[reg] = true
+		if m.r.NoResult {
+			continue
+		}
 		b, err := m.next("a result store")
 		if err != nil {
 			return err
@@ -1936,9 +1945,11 @@ func (m *matcher) ret() error {
 		if !isStackMove(b.in, true, reg, off+int64(8*w), isXMM(reg)) {
 			return fmt.Errorf("return: %v at %#x is not the store of %v to the result slot", b.in, b.at, reg)
 		}
-		stored[reg] = true
 	}
 	for _, reg := range uses {
+		if !stored[reg] && m.r.NoResult {
+			return fmt.Errorf("llc's return gives %v, its callers take the result from %v", reg, m.res)
+		}
 		if !stored[reg] {
 			return fmt.Errorf("llc's return gives %v, which the result stores do not take", reg)
 		}
@@ -2052,6 +2063,9 @@ func (m *matcher) call(x insn, r *relAt) error {
 				return err
 			}
 		}
+		if !c.RegResult && c.Sig.Ret != Void && k.noResult()[addr] {
+			return fmt.Errorf("a call that loads the result of %s from the Go stack, where %s stores none", name, name)
+		}
 		return m.marshal(c.Sig, cf, c.RegResult, direct)
 	case x86asm.Reg:
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
@@ -2071,6 +2085,8 @@ func (m *matcher) call(x insn, r *relAt) error {
 			if err := m.icallRegResult(c.Sig, cf); err != nil {
 				return err
 			}
+		} else if c.Sig.Ret != Void && len(k.noResult()) > 0 {
+			return fmt.Errorf("a call through %v that loads its result from the Go stack, where %d functions store none", a, len(k.noResult()))
 		}
 		m.icalls++
 		return m.marshal(c.Sig, cf, c.RegResult, func(b insn) error {
@@ -2849,4 +2865,23 @@ func (m *matcher) regResult(name string, cf CallFacts) error {
 		return fmt.Errorf("call: llc takes the result from %v, %s returns it in %v", defs, name, res)
 	}
 	return nil
+}
+
+// noResult gives the addresses in the binary of the functions that store no
+// result to the Go stack (FuncRecord.NoResult). A call that loads a result
+// back from the Go stack must not reach one: by address, so that an alias
+// is the function it names.
+func (k *checker) noResult() map[uint64]bool {
+	if k.noRes == nil {
+		k.noRes = map[uint64]bool{}
+		for _, m := range k.c.Metas {
+			if m.Rec == nil || !m.Rec.NoResult {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.noRes[s.Value] = true
+			}
+		}
+	}
+	return k.noRes
 }

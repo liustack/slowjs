@@ -60,7 +60,7 @@ TEXT ·pstrcpy(SB), $56-32
 	WORD $0x14000001
 	RET
 
-TEXT ·pstrcat(SB), $72-40
+TEXT ·pstrcat(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -248,10 +248,9 @@ TEXT ·pstrcat(SB), $72-40
 	WORD $0x17fffff5
 	WORD $0x3900015f
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·strstart(SB), $56-40
+TEXT ·strstart(SB), $56-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -306,10 +305,9 @@ TEXT ·strstart(SB), $56-40
 	WORD $0x14000002
 	WORD $0x2a1f03e0
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·has_suffix(SB), $72-32
+TEXT ·has_suffix(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -604,7 +602,6 @@ TEXT ·has_suffix(SB), $72-32
 	WORD $0x17fffff6
 	WORD $0x52800020
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·dbuf_init2(SB), NOSPLIT, $0-32
@@ -633,7 +630,7 @@ TEXT ·dbuf_init2(SB), NOSPLIT, $0-32
 	WORD $0x14000001
 	RET
 
-TEXT ·dbuf_claim(SB), $72-32
+TEXT ·dbuf_claim(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -682,10 +679,9 @@ TEXT ·dbuf_claim(SB), $72-32
 	WORD $0xaa0a03e8
 	WORD $0xf9000909
 	WORD $0x17ffffe3
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·dbuf_put(SB), $120-40
+TEXT ·dbuf_put(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -839,10 +835,9 @@ TEXT ·dbuf_put(SB), $120-40
 	WORD $0x8b170108
 	WORD $0xf90006a8
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·dbuf_put_self(SB), $120-40
+TEXT ·dbuf_put_self(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -998,10 +993,9 @@ TEXT ·dbuf_put_self(SB), $120-40
 	WORD $0xf9402ff6
 	WORD $0xf94006aa
 	WORD $0x17ffff70
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·__dbuf_put_u32(SB), $72-32
+TEXT ·__dbuf_put_u32(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1034,10 +1028,9 @@ TEXT ·__dbuf_put_u32(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·__dbuf_put_u64(SB), $72-32
+TEXT ·__dbuf_put_u64(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1070,10 +1063,9 @@ TEXT ·__dbuf_put_u64(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·dbuf_putstr(SB), $120-32
+TEXT ·dbuf_putstr(SB), $120-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1351,7 +1343,6 @@ TEXT ·dbuf_putstr(SB), $120-32
 	WORD $0x8b0d0108
 	WORD $0xf90006a8
 	WORD $0x14000001
-	MOVD R0, ret+24(FP)
 	RET
 
 TEXT ·dbuf_free(SB), $56-16
@@ -1461,7 +1452,7 @@ TEXT ·unicode_to_utf8(SB), NOSPLIT, $0-32
 	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·unicode_from_utf8(SB), $72-40
+TEXT ·unicode_from_utf8(SB), $72-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -1536,7 +1527,6 @@ TEXT ·unicode_from_utf8(SB), $72-40
 	WORD $0x6b08013f
 	WORD $0x54fff7e2
 	WORD $0x17ffffca
-	MOVD R0, ret+32(FP)
 	RET
 
 TEXT ·exchange_one_int128(SB), NOSPLIT, $0-32
@@ -2236,11 +2226,11 @@ TEXT ·rqsort(SB), $40-48
 	WORD $0x9100c294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
-	BL ·rqsort_stop_block(SB)
+	BL ·rqsort_stop(SB)
 	WORD $0x14000001
 	RET
 
-TEXT ·dbuf_printf(SB), $120-40
+TEXT ·dbuf_printf(SB), $120-32
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2422,10 +2412,9 @@ TEXT ·dbuf_printf(SB), $120-40
 	WORD $0x2a1f03e0
 	WORD $0xf90005a8
 	WORD $0x14000001
-	MOVD R0, ret+32(FP)
 	RET
 
-TEXT ·__dbuf_putc(SB), $72-32
+TEXT ·__dbuf_putc(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2457,10 +2446,9 @@ TEXT ·__dbuf_putc(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·__dbuf_put_u16(SB), $72-32
+TEXT ·__dbuf_put_u16(SB), $72-24
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -2493,10 +2481,9 @@ TEXT ·__dbuf_put_u16(SB), $72-32
 	WORD $0xa94026a8
 	WORD $0x8b090108
 	WORD $0x17ffffec
-	MOVD R0, ret+24(FP)
 	RET
 
-TEXT ·rqsort_stop_block(SB), $264-16
+TEXT ·rqsort_stop(SB), $264-16
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
