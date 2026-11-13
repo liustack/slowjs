@@ -1,5 +1,5 @@
 ---
-summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，以及没有内存上限时的 fmt 和它的分段写出'
+summary: '让中断、超时和内存不足无论脚本做什么都能结束调用的改动：不能穿过 promise、迭代器或 Go 函数被捕获，Go 函数的 panic，内存很少时编译，JS_ToCStringLen2 的泄漏，单调时钟上的 eval 超时，嵌套调用，Close 期间的 Interrupt，正则编译、解析和字符串构建计入中断检查，属性读写上的 eval 超时，JSON 和错误的读取，开始和结束标签函数的长循环，把长 rope 拼平，repeat，编译一个正则时的长循环，以及有很多字符或字符串的类，字节码调用的结果，读取异常时遇到的中断或内存不足，Intl 读不了的字符串参数，Intl 在长列表上的循环，fmt 的输出，BigInt 的长运算，把长字符串转成数字，解析很长的源码，比较和复制很长的字符串，以及改变很大的 ArrayBuffer 的大小，normalize 和 Map 变大时的内存不足，内置函数留下挂起的无法捕获的异常后没有调用的循环，在读之前先量长度的 Intl 和 Temporal 短参数，日历运算的循环，没有内存上限时的 fmt 和它的分段写出，以及 Builtin 切不开的一段文字'
 read_when:
   - 脚本捕获了中断或内存不足错误，或者超时没有停住脚本
   - 交给 javascript 的 Go 函数 panic，或者从它所求值的 javascript 得到了错误
@@ -521,7 +521,7 @@ Intl 或 Temporal 当作一个短值来读的脚本字符串，包括单独给�
 
 有四处活儿比脚本给的输入增长得快得多，现在不会了。二、八、十六进制的数字字符串原来一位一位地转成十进制，每一位都要过一遍已经造出的所有十进制位：在 Apple M4 上，`'0x' + 'f'.repeat(65536)` 在 Go 里花 9.6 秒，上限允许的最长数字字符串要大约十分钟。超过 1024 位的值和原来一样是无穷，现在转换之前就认出来：那个最长的字符串只要 4 ms。科学计数法和工程计数法下，单位或货币名称的复数形式取决于按指数移回去的数字，Go 原来把移动中的每个零都写出来：长格式米的 NumberFormat 调用 `format('1e-1073741000')` 在 Go 里花 4.3 秒、3.2 GB。现在复数形式由数字和它们的位置直接算出（`shiftedOperands`），答案不变。`Intl.ListFormat` 去掉空项时，把空项之间的字面文字拼起来，每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表分配 434 MB，时间随列表长度的平方增长。现在一趟拼完，最多 5 MB。长数字的 `formatToParts` 现在一次定好各部分和分组分隔符位置的大小：`10n ** 315000n` 在 en 下 Go 用 52 MB，原来是 112 MB。
 
-属于长内容的字符串，包括 `compare`、`Segmenter`、大小写函数和 `ListFormat` 的文本，以及 locale 列表，仍然和原来一样整个读入。
+属于长内容的字符串，包括 `compare`、`Segmenter`、大小写函数和 `ListFormat` 的文本，以及 locale 列表，仍然和原来一样整个读入。这类文本里 Builtin 切不开的一段文字会检查调用（见[下文](#builtin-切不开的一段文字读中断标志)）。
 
 在上限处最长的一次调用，在 Apple M4 上标签 1.5 ms，选项 3 ms，Temporal 的字符串 0.12 ms，数字字符串 1.7 ms，写 525,312 位数字 6.4 ms，在 AMD EPYC 的一个核上分别是 2.9、5.8、0.38、3.6 和 21 ms。最长的 BigInt 拆成各部分，Go 在 M4 上约 40 ms，在 EPYC 的核上约 250 ms，在这之前引擎造它的数字要 2.2 秒和 2.7 秒，期间会轮询。
 
@@ -557,3 +557,21 @@ Temporal 在 ISO 8601 以外的日历里做 `add`、`subtract`、`until`、`sinc
 `printf` 和 `println` 现在先造出输出，再每次写 64 KiB，`Interrupt` 和 eval 超时可以在两次写入之间结束调用（`fmt/fmt.go` 的 `write`）。原来写 1 MiB 到管道时，调用一直卡到管道被读走。`Register` 接收选项，`Writer(w)` 让这两个函数写到 `w` 而不是 `os.Stdout`。单独一次会阻塞的写入仍然卡住调用，直到写完。
 
 测试：`fmt/stops_test.go` 的 `TestSprintfNoLimitStops`、`TestPrintlnWritesInPieces` 和 `TestWriterInterrupted`。
+
+## Builtin 切不开的一段文字读中断标志
+
+版本：Unreleased。
+
+Intl 有些活儿做在文本里切不成更小块的一段上：没有空格的一段泰文、老挝文、高棉文或缅甸文，由词典每次往前看几个词来切分，一段中文或日文，由词典找出切分整段代价最小的方式，还有一串重音符号，比较时按组合类排好顺序。这样一段可以和整个字符串一样长，而这些活儿不读中断标志：在 Apple M4 上，超时设为 100 ms 时，Segmenter 在 8 Mi 字符的泰文上调用 `containing(0)` 要跑 0.5 秒，中文 6.6 秒，半角片假名 14.5 秒，比较两个 2 Mi 重音符号的字符串的 `compare` 要 1.7 秒，而且都没有报错就结束了。
+
+现在这些活儿每 4,096 圈读一次中断标志：一个泰文词、一个中文码点或一个重音符号算一圈（`internal/gointl/qjs_limits.go` 的 `Limits`，`intl` 的 Builtin 把它设成 `intlhook.Check`），找这段在哪里结束的断行规则扫描也一样。超时相同时，这些调用都在超时后半毫秒内停下。在一段文字中间被停下的 Segmenter 会丢掉它的迭代器，下一次调用从文本开头重新建一个，所以分段不变。
+
+一段中文或日文在切分完之前，还占用和长度成正比的 Go 内存：每个码元最多 222 字节，出现在 NFKC 会改变的半角片假名上。现在调用开始前先检查 VM 是否还有每个码元 288 字节的空间，没有就用内存不足的错误结束调用。原来在内存上限为 64 MiB 的 VM 里，8.8 Mi 字符的中文让 Go 用了 1.2 GiB。
+
+重音符号现在按组合类逐个计数排好，用时和这一串的长度成线性，原来的稳定排序排 1 Mi 个重音符号要 0.9 秒。
+
+答案都不变：在 18 MB 的维基百科文本上（泰文、老挝文、高棉文、缅甸文、中文、文言文、日文、印地文和希腊文），词和句子的分段、行和词的排序，以及每个词和下一个词的 `localeCompare`，都和改动前一样。这些检查让短的 `localeCompare` 和短文本的分段最多慢 2%。
+
+这样一段文字周围的文本，仍然整个读入、整个处理，不做检查：读字符串，为 Segmenter 复制成 UTF-16，以及长字符串比较时的排序元素。
+
+测试：`intl/runs_test.go` 的 `TestUncuttableRunsCheck`、`TestUncuttableRunsTimeout`、`TestSegmenterAfterStop` 和 `TestCJKRunRoom`，`internal/gointl/qjs_limits_test.go` 的 `TestDictionaryRoomCoversGo`、`TestLimitsKeepSegments`、`TestSortMarksStable` 和 `TestNormalizeChecksLongRun`。

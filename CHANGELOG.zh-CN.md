@@ -24,6 +24,7 @@
 - 去掉空项的 `Intl.ListFormat` 现在一趟拼完空项之间的字面文字，原来每拼一段都把已有的文字复制一遍：20,000 项、除了两头都是空的列表在 Go 里分配 434 MB，现在最多 5 MB。长数字的 `formatToParts` 用的 Go 内存不到原来的一半：`10n ** 315000n` 在 en 下 52 MB，原来是 112 MB。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度)）。
 - `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 `Number` 的方式读数字字符串：`"1e+-5"` 和 `"1xe1073741825"` 是 NaN，原来是 Infinity，`"1e--5"` 是 NaN，原来是零，`"0e1073741825"` 是 0，原来是 Infinity（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#数字字符串按-number-的方式读)）。
 - `Interrupt` 和 eval 超时现在能停下 Temporal 在 ISO 8601 以外日历里的 `add`、`subtract`、`until`、`since`、`round` 和 `total`，它们一次走一个月或一年，原来不做检查：农历日期加 1.9 亿天，超过 20 ms 的 eval 超时后又跑了 64 ms。答案不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#日历的运算读中断标志)）。
+- `Interrupt` 和 eval 超时现在能停下 `Intl.Segmenter` 在没有空格的一长段泰文、老挝文、高棉文、缅甸文、中文或日文上的工作，以及 `Intl.Collator` 和 `localeCompare` 在一长串重音符号上的工作，这些对词典或重音符号的排序来说都是一整块：在 Apple M4 上，超时设为 100 ms 时，在 8 Mi 字符的中文上调用 `containing(0)` 原来要跑 6.6 秒，而且没有报错就结束了，现在在超时后半毫秒内停下。一段中文或日文在 VM 没有每个字符 288 字节的空间时，现在用内存不足的错误结束调用。分段和顺序都不变（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志)）。
 
 ## [v0.30.2] - 2026-11-13
 

@@ -28,6 +28,10 @@ func (s *Segmenter) Iter(text []uint16) *SegmentIter {
 	return it
 }
 
+// SetLimits makes the iterator check l in a long run a dictionary divides
+// (Limits). A panic of l leaves the iterator broken: the caller drops it.
+func (it *SegmentIter) SetLimits(l *Limits) { it.b.limits = l }
+
 // Next is the next segment, and false once the text has none left.
 func (it *SegmentIter) Next() (Segment, bool) {
 	if it.done {

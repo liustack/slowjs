@@ -99,3 +99,13 @@ func Check(vm *quickjs.VM) {
 		panic(stopped{})
 	}
 }
+
+// Room stops the Builtin with the out of memory error when the VM has no
+// room for n bytes more under its memory limit, for work in Go that holds
+// n bytes for a while, for a function given to NewBuiltin.
+func Room(vm *quickjs.VM, n int64) {
+	if room := vmhook.Room(vm); room >= 0 && n > room {
+		vmhook.OutOfMemory(vm)
+		panic(stopped{})
+	}
+}

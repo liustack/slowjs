@@ -90,7 +90,7 @@ func TestCollatorMatchesNode(t *testing.T) {
 		// Each word's elements once, then the sort compares those.
 		keys := make([][]uint64, len(words))
 		for i, w := range words {
-			keys[i] = c.sortElements(w)
+			keys[i] = c.sortElements(w, nil)
 		}
 		idx := make([]int, len(words))
 		for i := range idx {

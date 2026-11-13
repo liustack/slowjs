@@ -2,7 +2,6 @@ package intl
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/liustack/quickjs/internal/gointl/internal/normdata"
@@ -88,10 +87,16 @@ func Normalize(s string, form NormalizationForm) (string, error) {
 
 // Normalize puts a string into one of Unicode's forms.
 func (n *Normalizer) Normalize(s string, form NormalizationForm) string {
+	return n.normalize(s, form, nil)
+}
+
+// normalize is Normalize with the limits of the call it is done for, which
+// it checks as it goes (qjs).
+func (n *Normalizer) normalize(s string, form NormalizationForm, l *Limits) string {
 	compatibility := form == NFKC || form == NFKD
-	out := n.decompose(s, compatibility)
+	out := n.decompose(s, compatibility, l)
 	if form == NFC || form == NFKC {
-		out = n.compose(out)
+		out = n.compose(out, l)
 	}
 	return out
 }
@@ -103,10 +108,12 @@ func (n *Normalizer) Normalize(s string, form NormalizationForm) string {
 func (n *Normalizer) CombiningClass(r rune) int { return int(n.tables.Class(r)) }
 
 // decompose takes every character apart and puts the accents in order.
-func (n *Normalizer) decompose(s string, compatibility bool) string {
+func (n *Normalizer) decompose(s string, compatibility bool, l *Limits) string {
 	var b strings.Builder
 	b.Grow(len(s))
+	turns := 0
 	for _, r := range s {
+		l.every(&turns)
 		switch {
 		case r >= hangulBase && r < hangulBase+hangulSCount:
 			b.WriteString(decomposeHangul(r))
@@ -125,36 +132,81 @@ func (n *Normalizer) decompose(s string, compatibility bool) string {
 			b.WriteRune(r)
 		}
 	}
-	return n.order(b.String())
+	return n.order(b.String(), l)
 }
 
 // order puts a run of accents into the order Unicode fixes, which is by
 // combining class and otherwise unchanged. The sort has to be stable: two
 // accents of the same class are written in the order they were given.
-func (n *Normalizer) order(s string) string {
+func (n *Normalizer) order(s string, l *Limits) string {
 	runes := []rune(s)
+	turns := 0
 	for i := 0; i < len(runes); {
+		l.every(&turns)
 		if n.tables.Class(runes[i]) == 0 {
 			i++
 			continue
 		}
 		j := i
 		for j < len(runes) && n.tables.Class(runes[j]) != 0 {
+			l.every(&turns)
 			j++
 		}
-		run := runes[i:j]
-		sort.SliceStable(run, func(a, b int) bool {
-			return n.tables.Class(run[a]) < n.tables.Class(run[b])
-		})
+		n.sortMarks(runes[i:j], l)
 		i = j
 	}
 	return string(runes)
 }
 
+// marksSorted is the longest run of accents sortMarks sorts in place, by
+// insertion, which takes time of the square of the run.
+const marksSorted = 32
+
+// sortMarks sorts a run of accents by combining class, stably, in time
+// linear in its length (qjs): a longer run is counted out by class, one of
+// the 255 an accent has. sort.SliceStable took 0.9 s for a run of 1 Mi
+// accents, with no check of the call, and the run is one piece no caller
+// can cut, as each of its accents may move past all the others.
+func (n *Normalizer) sortMarks(run []rune, l *Limits) {
+	if len(run) <= marksSorted {
+		for i := 1; i < len(run); i++ {
+			r, c := run[i], n.tables.Class(run[i])
+			j := i
+			for ; j > 0 && n.tables.Class(run[j-1]) > c; j-- {
+				run[j] = run[j-1]
+			}
+			run[j] = r
+		}
+		return
+	}
+	l.room(int64(len(run)) * 8)
+	classes := make([]uint8, len(run))
+	var at [256]int
+	turns := 0
+	for i, r := range run {
+		l.every(&turns)
+		c := n.tables.Class(r)
+		classes[i] = c
+		at[c]++
+	}
+	sum := 0
+	for c, k := range at {
+		at[c] = sum
+		sum += k
+	}
+	sorted := make([]rune, len(run))
+	for i, r := range run {
+		l.every(&turns)
+		sorted[at[classes[i]]] = r
+		at[classes[i]]++
+	}
+	copy(run, sorted)
+}
+
 // compose puts the decomposed text back together, by Unicode's algorithm: each
 // character that follows a starter is joined to it where the two make one,
 // unless something with an equal or greater combining class stands between.
-func (n *Normalizer) compose(s string) string {
+func (n *Normalizer) compose(s string, l *Limits) string {
 	runes := []rune(s)
 	if len(runes) == 0 {
 		return s
@@ -163,7 +215,9 @@ func (n *Normalizer) compose(s string) string {
 	starter := -1
 	lastClass := -1
 
+	turns := 0
 	for _, r := range runes {
+		l.every(&turns)
 		class := int(n.tables.Class(r))
 		// A character is blocked from the starter when something between them
 		// has an equal or greater combining class. Immediately after a starter

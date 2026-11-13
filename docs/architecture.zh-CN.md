@@ -98,9 +98,10 @@ javascript 调用的 Go 函数在 Go 里干活时没有轮询，所以时限和 
 - Intl 遍历脚本传入的列表（locale 列表或 `Intl.ListFormat` 的各项）的循环，每 256 个标签或项检查一次。
 - `Intl.Segmenter`，读到哪里才一批批找到哪里的分段，每 256 个检查一次。
 - `Temporal` 里 ISO 以外日历的运算，每 4,096 个月或年检查一次。
+- Intl 在文本里 Builtin 切不开的一段文字上做的活儿，也就是词典切分的一段文字或要排序的一串重音符号，每 4,096 个词、码点或重音符号检查一次，一段中文或日文开始前先检查空间（[uncatchable.md](changes/uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志)）。
 - `fmt` 的各个函数，在 Go 造出输出之前拿输出的上界和 `vmhook.Room` 比较，没有内存上限的 VM 按能放下 16 MiB 来算。`printf` 和 `println` 每次写 64 KiB，两次写入之间检查。
 
-脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.Collator` 和 `localeCompare`，`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，读列表里一个很长的 locale 标签或一个很长的列表项，以及 `Intl.Segmenter` 找一批分段时对词典的扫描。Go 造出 `fmt` 的输出时同样不检查调用，用时随输出的上界增长，不过输出可能让它分配的内存在开始之前已经和 VM 剩下的空间比过（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
+脚本能拉长、又没做这些调用的 Go 里的工作，仍会一直跑完，分配的内存也不算进内存上限：`Intl.Collator` 和 `localeCompare`（一串重音符号除外），`toLocaleUpperCase` 和 `toLocaleLowerCase` 的大小写转换，读列表里一个很长的 locale 标签或一个很长的列表项，以及读 `Intl.Segmenter` 的文本并复制成 UTF-16。Go 造出 `fmt` 的输出时同样不检查调用，用时随输出的上界增长，不过输出可能让它分配的内存在开始之前已经和 VM 剩下的空间比过（[uncatchable.md](changes/uncatchable.zh-CN.md#fmt-的函数在输出放不下时结束调用)）。
 
 ## 一次长调用和 Go 的调度器
 

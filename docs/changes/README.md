@@ -131,6 +131,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A short argument of Intl and Temporal is measured before it is read | Unreleased | [uncatchable.md](uncatchable.md#a-short-argument-of-intl-and-temporal-is-measured-before-it-is-read) |
 | The arithmetic of a calendar reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#the-arithmetic-of-a-calendar-reads-the-interrupt-flag) |
 | fmt bounds a call with no memory limit, and writes in pieces | Unreleased | [uncatchable.md](uncatchable.md#fmt-bounds-a-call-with-no-memory-limit-and-writes-in-pieces) |
+| A run no Builtin can cut reads the interrupt flag | Unreleased | [uncatchable.md](uncatchable.md#a-run-no-builtin-can-cut-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 

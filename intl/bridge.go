@@ -602,7 +602,7 @@ var bridge = []*quickjs.Builtin{
 		// the strings keep theirs.
 		x, _ := door.LongWTF8(1)
 		y, _ := door.LongWTF8(2)
-		return a.VM().NewInt(c.c.Compare(x, y)), nil
+		return a.VM().NewInt(c.c.CompareLimited(x, y, limitsOf(a.VM()))), nil
 	}),
 	resolveBuiltin(segmenterCtor),
 	segBreaks,

@@ -131,6 +131,7 @@ read_when:
 | Intl 和 Temporal 的短参数在读之前先量长度 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#intl-和-temporal-的短参数在读之前先量长度) |
 | 日历的运算读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#日历的运算读中断标志) |
 | 没有内存上限时 fmt 也限制调用并分段写出 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#没有内存上限时-fmt-也限制调用并分段写出) |
+| Builtin 切不开的一段文字读中断标志 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#builtin-切不开的一段文字读中断标志) |
 
 ## 错误和调用栈
 

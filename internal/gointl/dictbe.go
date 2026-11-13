@@ -21,8 +21,9 @@ type breakEngine interface {
 	handles(c rune) bool
 	// findBreaks is LanguageBreakEngine::findBreaks: the breaks in the run
 	// of the engine's characters from start, added to breaks, and the
-	// iterator left after the run.
-	findBreaks(t *utext, start, end int, breaks *[]int) int
+	// iterator left after the run. It checks l as it goes (qjs): a run is
+	// one piece, which a dictionary divides as a whole.
+	findBreaks(t *utext, start, end int, breaks *[]int, l *Limits) int
 }
 
 // breakEngines are the engines ICU's factory makes, and the Script
@@ -258,24 +259,26 @@ const (
 
 func (e *southeastAsianEngine) handles(c rune) bool { return e.set.contains(c) }
 
-func (e *southeastAsianEngine) findBreaks(t *utext, start, end int, breaks *[]int) int {
-	return dictionaryFindBreaks(t, start, end, breaks, e.set, e.divide)
+func (e *southeastAsianEngine) findBreaks(t *utext, start, end int, breaks *[]int, l *Limits) int {
+	return dictionaryFindBreaks(t, start, end, breaks, e.set, l, e.divide)
 }
 
 // dictionaryFindBreaks is DictionaryBreakEngine::findBreaks: the run of
 // the engine's characters from start, divided.
-func dictionaryFindBreaks(t *utext, start, end int, breaks *[]int, set codeRanges,
-	divide func(t *utext, start, end int, breaks *[]int) int) int {
+func dictionaryFindBreaks(t *utext, start, end int, breaks *[]int, set codeRanges, l *Limits,
+	divide func(t *utext, start, end int, breaks *[]int, l *Limits) int) int {
 	t.setIndex(start)
 	begin := t.index()
 	c := t.current32()
 	current := t.index()
+	turns := 0
 	for current < end && set.contains(c) {
+		l.every(&turns)
 		t.next32()
 		c = t.current32()
 		current = t.index()
 	}
-	n := divide(t, begin, current, breaks)
+	n := divide(t, begin, current, breaks, l)
 	t.setIndex(current)
 	return n
 }
@@ -287,7 +290,9 @@ func peek(breaks []int) int {
 	return breaks[len(breaks)-1]
 }
 
-func (e *southeastAsianEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int) int {
+// divide checks l every few thousand words (qjs): a run of Thai with no
+// space is one piece of any length, and a word takes about a microsecond.
+func (e *southeastAsianEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l *Limits) int {
 	if e.minSpanInCodePoints {
 		t.setIndex(rangeStart)
 		t.moveIndex32(seaMinWordSpan)
@@ -303,7 +308,9 @@ func (e *southeastAsianEngine) divide(t *utext, rangeStart, rangeEnd int, breaks
 	}
 	wordsFound := 0
 	t.setIndex(rangeStart)
+	turns := 0
 	for {
+		l.every(&turns)
 		current := t.index()
 		if current >= rangeEnd {
 			break
@@ -450,8 +457,8 @@ func newCJKEngine(d *breakDictionary, set codeRanges, norm *Normalizer) *cjkEngi
 
 func (e *cjkEngine) handles(c rune) bool { return e.set.contains(c) }
 
-func (e *cjkEngine) findBreaks(t *utext, start, end int, breaks *[]int) int {
-	return dictionaryFindBreaks(t, start, end, breaks, e.set, e.divide)
+func (e *cjkEngine) findBreaks(t *utext, start, end int, breaks *[]int, l *Limits) int {
+	return dictionaryFindBreaks(t, start, end, breaks, e.set, l, e.divide)
 }
 
 // hasBoundaryBefore is NFKC's hasBoundaryBefore: nothing before the
@@ -503,18 +510,31 @@ func isKatakana(c rune) bool {
 	return c >= 0x30a1 && c <= 0x30fe && c != 0x30fb || c >= 0xff66 && c <= 0xff9f
 }
 
-func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int) int {
+// cjkRoomPerUnit is what Go may take for each code unit of a run divide
+// divides, which it holds until the run is divided (qjs): the run decoded
+// and put in NFKC, and the arrays of the cheapest segmentation, each as
+// long as the run. Go took at most 222 bytes for each code unit, for
+// halfwidth katakana, which NFKC changes (TestDictionaryRoomCoversGo).
+const cjkRoomPerUnit = 288
+
+// divide checks l every few thousand code points, and first that the call
+// has room for what it takes (qjs): a run of Han with no space is one
+// piece of any length.
+func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int, l *Limits) int {
 	if rangeStart >= rangeEnd {
 		return 0
 	}
+	l.room(int64(rangeEnd-rangeStart) * cjkRoomPerUnit)
 	in := t.text[rangeStart:rangeEnd]
 	var inputMap []int // nil for positions offset by rangeStart
 	s := string(utf16.Decode(in))
-	if e.norm.Normalize(s, NFKC) != s {
+	turns := 0
+	if e.norm.normalize(s, NFKC, l) != s {
 		var normalized []uint16
 		var nmap []int
 		u := utext{text: in}
 		for u.index() < len(in) {
+			l.every(&turns)
 			fragStart := u.index()
 			var frag []rune
 			c := u.next32()
@@ -529,7 +549,7 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int) in
 				}
 				u.next32()
 			}
-			nf := utf16.Encode([]rune(e.norm.Normalize(string(frag), NFKC)))
+			nf := utf16.Encode([]rune(e.norm.normalize(string(frag), NFKC, l)))
 			normalized = append(normalized, nf...)
 			for len(nmap) < len(normalized) {
 				nmap = append(nmap, fragStart+rangeStart)
@@ -545,6 +565,7 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int) in
 		var cp []int
 		cu := 0
 		for i := 0; ; i++ {
+			l.every(&turns)
 			if inputMap != nil {
 				cp = append(cp, inputMap[cu])
 			} else {
@@ -574,6 +595,7 @@ func (e *cjkEngine) divide(t *utext, rangeStart, rangeEnd int, breaks *[]int) in
 	ix := 0
 	prevKatakana := false
 	for i := 0; i < numCodePts; i++ {
+		l.every(&turns)
 		c, n := fu.at(ix)
 		if bestSnlp[i] != maxUint32 {
 			fu.setIndex(ix)
