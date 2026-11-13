@@ -97,9 +97,9 @@ Build every position with the same flags (`-pgo=off` or the same profile), and p
 
 Making the positions:
 
-- The tool in [testing.md](testing.md#time-one-build-against-another) makes the positions of the C engine, runs the builds in turn and judges the result (`bench build`, `bench run`, `bench judge`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_CallInternal_block:16` on the copy (use `shift:0` and `front:...:0` for no move, and the name of the first engine function of your binary, which `go tool nm -n` shows), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
+- The tool in [testing.md](testing.md#time-one-build-against-another) makes the positions of the C engine, runs the builds in turn and judges the result (`bench build`, `bench run`, `bench judge`), and counts instructions (`bench cg`). By hand: C engine (`internal/cengine`): copy the generated `*_amd64.s` files, run `go run ./internal/goasm/cmd/xform DIR shift:1664:dbuf_init2 front:JS_RegvmRun_block:16` on the copy (use `shift:0` and `front:...:0` for no move, and the name of the first engine function of your binary, which `go tool nm -n` shows), and build with the copy. The bytes of `shift` sit after a `RET` and never run. The bytes of `front` sit after the `PCALIGN` at the start of the interpreter body and run once per call.
 
-A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. The interpreter as built reads its pool with scalar instructions only (`movsd`, `ucomisd`), which need no alignment, so this does no harm today. A build in which it reads the pool with an instruction that needs 16 bytes, as a profile-guided one did in 19 places, faults at those positions. Make those two places with the generator instead: `-align64 JS_CallInternal:48` and `-align64 JS_CallInternal:0` put the body there with its pool on 16 bytes.
+A `front` that is not a multiple of 16 (8, 24, 40, 56) moves the body and the constant pool it keeps after its code together, so the pool leaves its 16 bytes. On amd64 the register loop `JS_RegvmRun` reads a 16-byte mask from its pool with `xorpd` (to flip the sign of a double), and the memory operand of `xorpd` must sit on 16 bytes. In the shipped layout the pool is on 16 bytes. At a front that is not a multiple of 16 it is not.
 
 ## The C engine
 
@@ -808,6 +808,8 @@ All changes in time are under 3%, so the instructions are the measure. All 4 pos
 
 ### Where a render's time goes on the C engine
 
+Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so the shares below no longer describe it.
+
 From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/quickjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
 
 | Share of a render | shop workbench | store | MUI | bench | `r_react_ssr` | Markdown 400 KB |
@@ -1063,9 +1065,12 @@ Each item says what it would give and why it was dropped. Check here before tryi
 
 What the measurements above leave for the C engine, none of it large. A change under about 3% needs the positions of [Code positions](#code-positions), and callgrind below that.
 
+- **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes: its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it. In the build measured on 2026-11-13 it started on a boundary of 32 bytes, not 64. Whether a fixed place gains anything is not measured yet.
+- **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
+
+Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
+
 - **The interpreter function** is 52.7% of the instructions of tifa's pages (15 pages, 4,147 million instructions a render on average) and the next functions are far behind: `add_property` 4.9%, `free_object` 2.8%, `js_call_c_function` 2.2%, `JS_NewObjectFromShape` 1.7%, `JS_GetPropertyInternal` 1.7%, `lre_find` 1.6%.
 - **The entry of a JavaScript call** is about 95 of the 190 native instructions a call takes, and 73,000 calls make a workbench render. The loop that sets the locals to `undefined` is 2.1% of the interpreter's native instructions. Smaller entries have been tried ([Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall), and fewer arguments above).
 - **Adding a property** (`add_property`, 4.9% of the instructions and 8.6% of the last level misses) is the largest piece of property access that is left. Object literals now skip it for plain keys ([Object literals made at their final shape](#object-literals-made-at-their-final-shape)).
 - **The translation** costs 11% to 13% and the polls 2% to 7%. What is left of the causes is the design (locals on the shadow stack) or tried above.
-- **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes is not measured yet. Until it is, its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it.
-- **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
