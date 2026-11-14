@@ -143,6 +143,8 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
+int64_t white_array_room(JSValueConst a);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
 int white_regvm_oom_pending(JSContext *ctx);
@@ -7573,6 +7575,94 @@ static void test_regvm_dst(void)
     }
 }
 
+/* ---- an element added at 2^31 - 1 ----
+
+   A fast array holds at most 2^31 - 1 elements: an element added after them
+   leaves it as it was and throws, by each way to add one. Such an array takes
+   32 GiB, so the array of a case has 8 elements and is given a count and a
+   length of 2^31 - 1 (white_array_fake_count), with no collection while it
+   is so. Before, the element was written 16 GiB past the block, which was
+   made smaller. Each case runs in a process of its own, where a crash is one
+   failed case. */
+static const char *const max_index_ways[] = {
+    "JS_SetPropertyUint32", "JS_SetPropertyStr", "JS_DefinePropertyValueUint32",
+    "a[i] = v", "push", "splice",
+};
+
+static void max_index_case(int way)
+{
+    static const char setup[] =
+        "function put(a, i, v) { a[i] = v; }\n"
+        "function push(a, v) { return a.push(v); }\n"
+        "function splice(a, v) { return a.splice(a.length, 0, v); }\n"
+        /* once before, so that their register code is made */
+        "put([], 0, 0); push([], 0); splice([], 0);\n";
+    const char *want = "RangeError: invalid array length";
+    VM v = vm_new();
+    JSValue a, g, f, r = JS_UNDEFINED, args[3];
+    int64_t room;
+    size_t threshold;
+    uint32_t old, count;
+    int ret = 0;
+    char *t;
+
+    CHECK(eval_ok(v.ctx, setup), "%s: the setup", max_index_ways[way]);
+    a = JS_Eval(v.ctx, "[0, 1, 2, 3, 4, 5, 6, 7]", 24, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, way == 3 ? "put" : way == 4 ? "push" : "splice");
+    room = white_array_room(a);
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    old = white_array_fake_count(v.ctx, a, INT32_MAX);
+    args[0] = a;
+    args[1] = JS_NewInt32(v.ctx, INT32_MAX);
+    args[2] = JS_NewInt32(v.ctx, 1);
+    switch (way) {
+    case 0: ret = JS_SetPropertyUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1)); break;
+    case 1: ret = JS_SetPropertyStr(v.ctx, a, "2147483647", JS_NewInt32(v.ctx, 1)); break;
+    case 2: ret = JS_DefinePropertyValueUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1), JS_PROP_C_W_E | JS_PROP_THROW); break;
+    case 3: r = JS_Call(v.ctx, f, JS_UNDEFINED, 3, args); break;
+    default: args[1] = args[2]; r = JS_Call(v.ctx, f, JS_UNDEFINED, 2, args); break;
+    }
+    t = exception_text(v.ctx);
+    CHECK((ret < 0 || JS_IsException(r)) && t && strcmp(t, want) == 0, "%s at 2^31 - 1: %s, want %s",
+          max_index_ways[way], t ? t : "no exception", want);
+    free(t);
+    JS_FreeValue(v.ctx, r);
+    CHECK(eval_is(v.ctx, "this.x = 1; 'ok'", "ok"), "%s: the context after", max_index_ways[way]);
+    r = JS_GetPropertyStr(v.ctx, a, "length");
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == INT32_MAX, "%s: the length is no longer 2^31 - 1",
+          max_index_ways[way]);
+    JS_FreeValue(v.ctx, r);
+    CHECK(white_array_room(a) == room, "%s: the room was %lld, is %lld", max_index_ways[way], (long long)room,
+          (long long)white_array_room(a));
+    count = white_array_fake_count(v.ctx, a, old);
+    CHECK(count == INT32_MAX, "%s: the count is %u", max_index_ways[way], count);
+    JS_SetGCThreshold(v.rt, threshold);
+    CHECK(eval_is(v.ctx, "put.length", "3"), "%s: a script after", max_index_ways[way]);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, a);
+    vm_free(&v);
+}
+
+static void test_max_index(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_index_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-index";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "an element at 2^31 - 1 by %s: %s %d", max_index_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7589,6 +7679,13 @@ int main(int argc, char **argv)
        its own */
     if (argc == 5 && strcmp(argv[1], "regvm-convert") == 0)
         regvm_convert_one(atoi(argv[2]), atoi(argv[3]), strcmp(argv[4], "small") == 0);
+    /* one case of test_max_index, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-index") == 0) {
+        failures = 0;
+        max_index_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
@@ -7638,6 +7735,7 @@ int main(int argc, char **argv)
     test_fused_ops();
     test_typeof_is();
     test_share_local_slots();
+    test_max_index();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();

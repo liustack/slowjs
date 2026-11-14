@@ -76,6 +76,7 @@ read_when:
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
 | 展开字符串得到它的各个字符 | v0.30.5 | [upstream-commits.md](upstream-commits.zh-CN.md) |
+| 在快数组的 2^31 - 1 个元素之后加元素会抛 RangeError，因内存不够而失败的追加让长度保持不变 | Unreleased | [upstream-commits.md](upstream-commits.zh-CN.md#加在最大的快数组之后的元素) |
 
 ## Go API
 

@@ -76,6 +76,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
 | The spread of a string gives its characters | v0.30.5 | [upstream-commits.md](upstream-commits.md) |
+| An element added after 2^31 - 1 elements of a fast array throws a RangeError, and one that fails for want of memory leaves the length | Unreleased | [upstream-commits.md](upstream-commits.md#an-element-added-past-the-largest-fast-array) |
 
 ## Go API
 

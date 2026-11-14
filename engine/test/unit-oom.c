@@ -2482,6 +2482,24 @@ static void test_array_room_oom(void)
     }
 }
 
+/* An element added at the end of an array whose block must grow, which
+   fails for want of memory, leaves the length as it was (upstream b25da59):
+   the run with the memory back finds the last element where the length says
+   it is. Before, the length counted the element that was not added. */
+static void test_array_length_oom(void)
+{
+    static const char setup[] = "var a = 'x'.repeat(200).split('');\n";
+    static const char src[] =
+        "var n = a.length, last = (n - 1) in a;\n"
+        "while (a.length < 1000) a[a.length] = 0;\n"
+        "last ? 'no hole' : 'a hole at ' + (n - 1)";
+    static const char *const want[] = { "no hole", NULL };
+
+    sweep_step = 64;
+    sweep("the length of a failed append", "arraylength.js", setup, src, want, 65536);
+    sweep_step = 8;
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -2880,6 +2898,7 @@ int main(void)
     test_normalize_oom();
     test_map_grow_oom();
     test_array_room_oom();
+    test_array_length_oom();
     test_string_append_oom();
     test_string_add_oom();
     test_copy_props_oom();

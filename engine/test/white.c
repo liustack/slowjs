@@ -2451,3 +2451,27 @@ long white_call_debt(JSContext *ctx, int direct, int *depth)
         return -2;
     return white_seen_debt - debt;
 }
+
+/* white_array_fake_count gives the fast array a the count count and a length
+   of count, and gives back the count it had. Its block and its room stay as
+   they are: a test of an element added at 2^31 - 1, which cannot take the
+   32 GiB of such an array, puts the count back before anything reads past
+   the block (a collection, the free of a). */
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+    uint32_t old = p->u.array.count;
+
+    p->u.array.count = count;
+    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, count));
+    return old;
+}
+
+/* white_array_room gives the room of the block of the fast array a, -1 when
+   a is not a fast array. */
+int64_t white_array_room(JSValueConst a)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+
+    return p->fast_array ? p->u.array.u1.size : -1;
+}

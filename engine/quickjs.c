@@ -7960,6 +7960,10 @@ static JSProperty *js_resize_prop(JSContext *ctx, JSObject *p, uint32_t count,
     return js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
 }
 
+/* The most properties a shape holds: its counts are ints, and
+   add_shape_property adds one to prop_count. */
+#define JS_SHAPE_PROP_MAX (INT32_MAX - 1)
+
 /* make space to hold at least 'count' properties */
 static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
                                        JSObject *p, uint32_t count)
@@ -7971,7 +7975,17 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
     JSShape *old_sh;
 
     sh = *psh;
-    new_size = max_int(count, sh->prop_size * 3 / 2);
+    /* prop_size + prop_size / 2 is prop_size * 3 / 2, which overflows an
+       int past 715,827,882 */
+    new_size = max_uint32(count, (uint32_t)sh->prop_size + sh->prop_size / 2);
+    if (unlikely(new_size > JS_SHAPE_PROP_MAX)) {
+        /* the conversion of a fast array of 2^31 - 1 elements asks for more */
+        if (count > JS_SHAPE_PROP_MAX) {
+            JS_ThrowRangeError(ctx, "too many properties");
+            return -1;
+        }
+        new_size = JS_SHAPE_PROP_MAX;
+    }
     /* Reallocate prop array first to avoid crash or size inconsistency
        in case of memory allocation failure */
     if (p) {
@@ -14484,20 +14498,26 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
     return TRUE;
 }
 
-/* return -1 if exception */
+/* return -1 if exception. A fast array holds at most 2^31 - 1 elements (an
+   index of one is an int atom), and so does its room, so that an element
+   added after 2^31 - 1 elements is past the room and comes to the test of
+   expand_fast_array_append before the length or the block changes. new_len
+   is at most 2^31 - 1 (each caller tests it). */
 static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
-    uint32_t new_size;
-    size_t slack;
+    uint32_t new_size, size = p->u.array.u1.size;
+    size_t room, slack;
     JSValue *new_array_prop;
-    /* XXX: potential arithmetic overflow */
-    new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
+
+    /* size * 3 / 2, which overflows 32 bits past 2^32 / 3: with the room at
+       most 2^31 - 1 this does not */
+    new_size = max_uint32(new_len, size + size / 2);
     new_array_prop = js_realloc2(ctx, p->u.array.u.values, sizeof(JSValue) * new_size, &slack);
     if (!new_array_prop)
         return -1;
-    new_size += slack / sizeof(*new_array_prop);
+    room = (size_t)new_size + slack / sizeof(*new_array_prop);
     p->u.array.u.values = new_array_prop;
-    p->u.array.u1.size = new_size;
+    p->u.array.u1.size = unlikely(room > INT32_MAX) ? INT32_MAX : room;
     return 0;
 }
 
@@ -14508,23 +14528,42 @@ static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 #define JS_ARRAY_MIN_ROOM 8
 #endif
 
-/* expand_fast_array for an array that new_len elements are appended to */
+/* expand_fast_array for an array that new_len elements are appended to. Past
+   2^31 - 1 elements it is an error: an element added after them, by any way
+   to add one, comes here and fails before the length or the block changes. */
 static int expand_fast_array_append(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
+    if (unlikely(new_len > INT32_MAX)) {
+        JS_ThrowRangeError(ctx, "invalid array length");
+        return -1;
+    }
     if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
         new_len = JS_ARRAY_MIN_ROOM;
     return expand_fast_array(ctx, p, new_len);
 }
 
 /* Preconditions: 'p' must be of class JS_CLASS_ARRAY, p->fast_array =
-   TRUE and p->extensible = TRUE */
+   TRUE and p->extensible = TRUE. After 2^31 - 1 elements it throws a
+   RangeError (expand_fast_array_append), where upstream b25da59 has each
+   caller test the index and convert the array, which then fails as well
+   (resize_properties) and costs a test on each element added. The room is
+   made before the length changes, so that a failure leaves the length
+   (b25da59 tests the length first and so has two calls of
+   expand_fast_array: with them the function was no longer inlined, and a
+   page ran 0.24% more instructions). A length that cannot be written then
+   throws with the room made, which nothing sees. */
 static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                                          JSValue val, int flags)
 {
     uint32_t new_len, array_len;
     /* extend the array by one */
-    /* XXX: convert to slow array if new_len > 2^31-1 elements */
     new_len = p->u.array.count + 1;
+    if (unlikely(new_len > p->u.array.u1.size)) {
+        if (expand_fast_array_append(ctx, p, new_len)) {
+            JS_FreeValue(ctx, val);
+            return -1;
+        }
+    }
     /* update the length if necessary. We assume that if the length is
        not an integer, then if it >= 2^31.  */
     if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT)) {
@@ -14535,12 +14574,6 @@ static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                 return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
             }
             p->prop[0].u.value = JS_NewInt32(ctx, new_len);
-        }
-    }
-    if (unlikely(new_len > p->u.array.u1.size)) {
-        if (expand_fast_array_append(ctx, p, new_len)) {
-            JS_FreeValue(ctx, val);
-            return -1;
         }
     }
     p->u.array.u.values[new_len - 1] = val;
@@ -50838,7 +50871,7 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
 
     /* the growth of the block of elements (expand_fast_array) */
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
-                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+                        (size_t)(max_uint32(new_len, size + size / 2) - size));
     return expand_fast_array_append(ctx, p, new_len);
 }
 

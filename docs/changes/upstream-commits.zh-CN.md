@@ -12,7 +12,7 @@ read_when:
 
 [English](upstream-commits.md) · 简体中文
 
-`engine/` 起步于 QuickJS `3d5e064`（2026-06-04），之后自己演变（[c-engine.md](c-engine.zh-CN.md)）。最初的调研覆盖了到 `19d6bd8`（2026-10-26）为止的 81 个上游提交。表里还包括 2026-10-31 推送的那批挑选出来的修复，以及 2026-11-10 的 `b19b2ec`。本页列出并入的提交（每个都是单独的一个提交，并写明它对应的上游提交）、试过又撤回的，以及没有并入的。这不是跟随上游的承诺。修正确答案、泄漏或崩溃的提交，不管页面碰不碰得到，都会并入，让 tifa 的渲染更快的也是。新功能或者为速度做的改动，在 tifa 用得上时才并入。每一个都带一个测试，输出和 Node 24 的输出一致（按当前规范而不同的行，在文件里有标记），泄漏则用一次对剩余内存的扫描来检查。
+`engine/` 起步于 QuickJS `3d5e064`（2026-06-04），之后自己演变（[c-engine.md](c-engine.zh-CN.md)）。最初的调研覆盖了到 `19d6bd8`（2026-10-26）为止的 81 个上游提交。表里还包括 2026-10-31 推送的那批挑选出来的修复，2026-11-10 的 `b19b2ec`，以及 2026-11-07 的 `b25da59`。本页列出并入的提交（每个都是单独的一个提交，并写明它对应的上游提交）、试过又撤回的，以及没有并入的。这不是跟随上游的承诺。修正确答案、泄漏或崩溃的提交，不管页面碰不碰得到，都会并入，让 tifa 的渲染更快的也是。新功能或者为速度做的改动，在 tifa 用得上时才并入。每一个都带一个测试，输出和 Node 24 的输出一致（按当前规范而不同的行，在文件里有标记），泄漏则用一次对剩余内存的扫描来检查。
 
 上游的某个提交和 liustack/quickjs 的某项改动碰在一起时，保留我们的改动，把上游的文本合并在它周围。想知道某个提交是否仍然适用，对它的 diff 运行 `git apply --directory=engine --check`。
 
@@ -50,6 +50,7 @@ read_when:
 | `de4c9e0` fixed Iterator.prototype.reduce empty iterator closing | 没有初始累加值的空迭代器抛错，不读取也不调用 `return` | 全部 | `compare/iterator_reduce.js`、`TestUpstreamIteratorReduce` |
 | `aac9bc5` fixed Iterator.concat logic | 通过 IteratorClose 关闭，并在任何一步失败后结束 helper | 合并进单独的 next 和 return 函数，return 返回一个新的已完成结果 | `compare/iterator_concat.js`、`TestUpstreamIteratorConcat` |
 | `b19b2ec` fixed object spread with strings | `{..."ab"}` 得到 `{0: "a", 1: "b"}`：展开先把不是 null 或 undefined 的源转成对象，和 `Object.assign` 及 rest 原来的做法一样 | 全部，放在 rest 和展开的通用路径 `js_copy_data_properties` 里，复制每 4,096 个键读一次中断标志（[uncatchable.zh-CN.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)） | `compare/spread_string.js`、`TestSpreadCopyStops`、`TestSpreadStringOutOfMemory` |
+| `b25da59` add_fast_array_element: don't update the array length in case of memory allocation error (#576) and handling the specific case of p->u.array.count = INT32_MAX | 往快数组加元素因内存不够而失败时，长度保持不变，而在 2^31 - 1 个元素之后加的元素不再写到块外面 | 空间到位之后才设长度（先做空间），检查放在数组增长的地方而不是检查下标，另加我们自己对快数组空间和 shape 属性数的上限（[见下](#加在最大的快数组之后的元素)） | `unit-oom`（`test_array_length_oom`）、`unit-white`（`test_max_index`） |
 
 ## Iterator 拼接
 
@@ -66,6 +67,22 @@ read_when:
 `3c4c6ed` 先准备一个私有 shape，移除属性但不移动剩下的条目，然后只压实一次。以前在删除循环里压实，会跳过一些条目，所以截断之后写一个旧下标，可能让长度不变。不可配置的下标仍然让截断停在最高的这类下标加一处。回归测试把清空、重新填充、访问器、非下标键和另一个数组，与 Node 24.13.0 做对比。
 
 生成的 linux/amd64 引擎，把下标为 `i * 10` 的 100,000 个元素截断到零，中位数用时之前是 2.616 ms，之后是 2.170 ms（是原来的 0.830）。旧引擎留下 50,000 个属性，修好的引擎一个也没留。每个构建 21 个样本，在 GCP VM 上交替跑三批、每批七个，限定在 CPU 3 和 7 上。Go 的单调时钟包住 `Eval("a.length = 0")`，不包括构造和之后对自有键的计数。这是一个针对正确性的工作负载，不是对 tifa 渲染的测量。
+
+## 加在最大的快数组之后的元素
+
+Release: Unreleased.
+
+快数组最多放 2^31 - 1 个元素：它的下标是整数原子。以前，在 2^31 - 1 个元素之后再加一个（一个 32 GiB 的数组，在没有内存上限或上限更高的 VM 里），会把长度设成 -2^31，并向 `expand_fast_array` 要 2^31 个元素的空间。`max_int` 把这个数当成负数，按一半增长又溢出了，于是块被改小（16 GiB），元素写到了块末尾之后 16 GiB 的地方：这是一次写到块外面的写入，`a[i] = v`、`push`、`splice`、`Object.defineProperty`、`JSON.parse` 和 C API 都会走到。加元素因内存不够而失败时，长度也会比元素多一个。
+
+`b25da59` 在空间到位之后才设长度。这里先做空间，再检查长度，只调用一次 `expand_fast_array`，上游调用两次：调用两次时这个函数不再被内联，一个页面多跑 0.24% 的指令。上游还让 `JS_SetPropertyInternal`、`JS_SetPropertyValue` 和 `JS_CreateProperty` 把下标 2^31 - 1 的元素交给把数组变成普通数组的那条路径。这部分没有并入：变成的普通数组要 2^31 + 1 个属性，在这里会失败（见下），在上游会让 shape 的 int 计数溢出，而且每加一个元素都要做这项检查（每次调用 `JS_CreateProperty` 多 4 条指令）。检查改放在数组增长的地方：
+
+- `expand_fast_array_append` 不给超过 2^31 - 1 个元素的空间（抛 RangeError，"invalid array length"）。`expand_fast_array` 用 `size + size / 2` 算增长，不会超出 32 位，并且从不让一块的空间超过 2^31 - 1，算上余量也一样。这样下标 2^31 - 1 的元素总在空间之外，每种加元素的方式都会在改长度或改块之前碰到这项检查：C API、`a[i] = v`（`rv_putel_slow`，它的代码不变）、`push`、`splice` 的快路径、`Object.defineProperty` 和 `JSON.parse`。
+- `resize_properties` 给一个 shape 的属性不超过 2^31 - 2 个（抛 RangeError，"too many properties"），并用不溢出的方式算增长。以前，属性超过 715,827,882 个时，按一半增长会让 int 溢出。
+- `js_array_push_grow` 和 `rv_putel_grow` 在增长之前告诉回收器的增长量，和 `expand_fast_array` 用同样的方式算。以前，元素超过 1,431,655,765 个时它会溢出。
+
+所以在 2^31 - 1 个元素之后加元素，会抛 RangeError，数组保持原样。页面看到的不变，这些检查只在数组增长时才会走到。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 相同：react +0.020%，商店的英文首页 +0.026%、中文商品页 +0.031%，两个 studio 页面 +0.039% 和 +0.030%，两个 MUI 页面 +0.027% 和 +0.028%，Markdown 页面 +0.035%。这是数组的块每增长一次约多 4 条指令（空间的上限，以及在 32 位里按一半增长），shape 每增长一次多 2 条。
+
+测试：`unit-white` 的 `test_max_index` 给一个 8 个元素的数组设上 2^31 - 1 的个数和长度（`white_array_fake_count`，期间不做回收），再分别用 `JS_SetPropertyUint32`、`JS_SetPropertyStr`、`JS_DefinePropertyValueUint32`、寄存器循环里的 `a[i] = v`、`push` 和 `splice` 加一个元素，每种都在自己的进程里：每种都抛出 RangeError，长度、个数和空间都不变。以前每种都以段错误结束。`JSON.parse` 没有这样的测试：它边读边建数组，没有测试能给它 2^31 个元素。`unit-oom` 的 `test_array_length_oom` 在 64 KiB 以内的每种内存空间里，把一个 200 个元素的数组追加到 1,000 个，内存回来之后的那次运行在末尾找不到空洞。以前有 173 种空间留下了一个。
 
 ## 速度
 
