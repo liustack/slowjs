@@ -26,6 +26,12 @@ func newVM(o options) (vm, error) {
 	if !o.clock.IsZero() {
 		v.SetWallClock(o.clock, false)
 	}
+	if o.place > 0 {
+		if err := v.Place(o.place); err != nil {
+			v.Close()
+			return nil, err
+		}
+	}
 	return cvm{v}, nil
 }
 

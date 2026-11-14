@@ -212,3 +212,17 @@ func (p Position) XformOps(front, pad string) []string {
 
 // BinName is the file name of the binary of a side at a position.
 func BinName(side string, p Position) string { return side + "@" + p.String() }
+
+// PlaceOf is the placement of the data paired with a layout: its number in
+// Protocol, 0 for the formal layout. A micro benchmark run with the pairing
+// (RunOptions.Place) moves its data with each layout, k small objects before
+// the script, so that the mean of the layouts also covers where the heap puts
+// the data (docs/measuring.md). A position outside the protocol has no number.
+func PlaceOf(pos string) (int, error) {
+	for i, p := range Protocol() {
+		if p.String() == pos {
+			return i, nil
+		}
+	}
+	return 0, fmt.Errorf("layout %s is not one of the protocol, so it has no placement of the data to pair with", pos)
+}
