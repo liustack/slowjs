@@ -152,12 +152,23 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 // bytes that are not UTF-8, the control characters (a newline or a 0 byte
 // among them), U+2028 and U+2029 become U+FFFD, and a name longer than 1024
 // bytes is cut at the last character that fits. An empty name is <eval>.
+//
+// The name of a module is its identity, which a cleaned name would lose: two
+// names could clean to one. So with EvalModule, a name the cleaning would
+// change, other than the empty one, is an error, and nothing runs. Two
+// modules given the same name both run, and import.meta and an import of
+// that name find the first, as for the modules of Eval, which are all
+// named <eval>.
 func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
+	clean := cleanEvalName(name)
+	if flags&evalTypeMask == EvalModule && name != "" && clean != name {
+		return r, fmt.Errorf("quickjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameProblem(name))
+	}
 	if err = m.enter(); err != nil {
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEval(cleanEvalName(name), javascript, int32(flags))
+	v, err := m.jsEval(clean, javascript, int32(flags))
 	if err != nil {
 		return r, err
 	}
@@ -173,6 +184,27 @@ func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
 
 // maxEvalName is the most bytes of the file name of EvalFile.
 const maxEvalName = 1024
+
+// evalTypeMask is the bits of the flags of an eval that say its type
+// (JS_EVAL_TYPE_MASK).
+const evalTypeMask = 3
+
+// evalNameProblem says why cleanEvalName changes name.
+func evalNameProblem(name string) string {
+	switch {
+	case !utf8.ValidString(name):
+		return "it is not valid UTF-8"
+	case strings.IndexFunc(name, evalNameBad) >= 0:
+		return "it has a control character, U+2028 or U+2029"
+	default:
+		return fmt.Sprintf("it is longer than %d bytes", maxEvalName)
+	}
+}
+
+// evalNameBad reports whether c becomes U+FFFD in a file name.
+func evalNameBad(c rune) bool {
+	return c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) || c == '\u2028' || c == '\u2029'
+}
 
 // cleanEvalName is name as EvalFile uses it: at most maxEvalName bytes of
 // valid UTF-8, with no control character, U+2028 or U+2029, which become
@@ -191,7 +223,7 @@ func cleanEvalName(name string) string {
 	}
 	var b strings.Builder
 	for _, c := range name {
-		if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) || c == ' ' || c == ' ' {
+		if evalNameBad(c) {
 			c = utf8.RuneError
 		}
 		if b.Len()+utf8.RuneLen(c) > maxEvalName {
