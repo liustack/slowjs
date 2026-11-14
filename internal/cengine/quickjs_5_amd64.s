@@ -17768,7 +17768,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-64
 	BYTE $0x07
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948c9048b4a
 	QUAD $0x9d148d4a000000b0
 	QUAD $0xdd048d4a00000000

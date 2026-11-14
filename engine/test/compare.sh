@@ -180,7 +180,7 @@ while read -r script want opts; do
 done < "$out/cases.list"
 
 # What the scripts cannot see, checked in C.
-for u in unit unit-oom unit-api unit-white; do
+for u in unit unit-oom unit-api unit-white dtoa-test; do
 	"$bindir/$u"
 done
 if [ "$failed" -ne 0 ]; then

@@ -2751,7 +2751,7 @@ TEXT ·cr_sort_and_remove_overlap(SB), $168-16
 	WORD $0x924009a8
 	WORD $0xf1001d1f
 	WORD $0x54001ec0
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90043e8
 	WORD $0xd37ef5c8

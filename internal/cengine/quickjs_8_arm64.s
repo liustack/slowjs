@@ -10687,7 +10687,7 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0x34000200
 	WORD $0x7100441f
 	WORD $0x540022e8
-	MOVD $·engine_rodata+99856(SB), R8
+	MOVD $·engine_rodata+109728(SB), R8
 	WORD $0x7100381f
 	WORD $0x2a0003e9
 	WORD $0x8b204908
@@ -10883,7 +10883,7 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0x5400c4e0
 	WORD $0x910006b5
 	WORD $0x17fffff3
-	MOVD $·engine_rodata+99924(SB), R10
+	MOVD $·engine_rodata+109796(SB), R10
 	WORD $0x8b09014a
 	WORD $0x385f214a
 	WORD $0xaa0a8108
@@ -11756,7 +11756,7 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0xf94073e8
 	WORD $0xf9006fe8
 	WORD $0xb940cbec
-	MOVD $·engine_rodata+100156(SB), R8
+	MOVD $·engine_rodata+110028(SB), R8
 	WORD $0x1000bd4a
 	WORD $0xfd400140
 	WORD $0x5100098b
@@ -11765,12 +11765,12 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0x5ac0112a
 	WORD $0x51000989
 	WORD $0xb900abe8
-	MOVD $·engine_rodata+99928(SB), R8
+	MOVD $·engine_rodata+109800(SB), R8
 	WORD $0x386b6908
 	WORD $0xf90047e9
 	WORD $0xf9406fe9
 	WORD $0xb900a3e8
-	MOVD $·engine_rodata+99964(SB), R8
+	MOVD $·engine_rodata+109836(SB), R8
 	WORD $0xb86b5908
 	WORD $0x1aca258b
 	WORD $0xf90027e8
@@ -11870,7 +11870,7 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0x7100451f
 	WORD $0x54002308
 	WORD $0xb940d3e9
-	MOVD $·engine_rodata+99856(SB), R8
+	MOVD $·engine_rodata+109728(SB), R8
 	WORD $0x8b294908
 	WORD $0x7100393f
 	WORD $0x2a0903e9
@@ -11905,12 +11905,12 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0x4b080129
 	WORD $0x35002b6a
 	WORD $0xf94047eb
-	MOVD $·engine_rodata+100192(SB), R10
+	MOVD $·engine_rodata+110064(SB), R10
 	WORD $0x78eb794a
 	WORD $0x6b0a013f
 	WORD $0x5400630c
 	WORD $0xf94047eb
-	MOVD $·engine_rodata+100262(SB), R10
+	MOVD $·engine_rodata+110134(SB), R10
 	WORD $0x78eb794a
 	WORD $0x6b0a013f
 	WORD $0x5400482d
@@ -12101,7 +12101,7 @@ TEXT ·json_next_token(SB), $264-16
 	WORD $0xf94087ef
 	WORD $0xf9407fee
 	WORD $0x17fffa44
-	MOVD $·engine_rodata+99924(SB), R10
+	MOVD $·engine_rodata+109796(SB), R10
 	WORD $0x8b09014a
 	WORD $0x385f214a
 	WORD $0xaa0a8108

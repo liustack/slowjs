@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
+summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, numbers converted to text, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of liustack/quickjs on tifa's pages before a release
@@ -1166,6 +1166,43 @@ The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pa
 | React's page | -0.16% | -0.30% |
 
 The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
+
+### Numbers converted to text by Schubfach
+
+[Numbers that are not integers convert to text without big numbers](changes/strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers), against v0.30.7 (`d7c86e16`). Instructions a render, callgrind on the AMD EPYC 7B13. The wider pages are 12 React pages built with other libraries (`chart` draws with recharts and d3) and the script `sh`. Native is the native C tree (`jsrun -call`, four renders less two, halved). The product is the generated engine through the Go API: the wider pages through `v8run` (four renders less two, halved), tifa's pages in the pages test of tifa's apps (three renders less one, halved, Markdown two less one), with `GOGC=off`, counting the instructions of the engine's functions alone (`internal/cengine`): what the Go runtime runs besides changes by up to 0.4% from one run to the next on the same build. First as generated with the profile of v0.30.7, in which `js_dtoa` no longer matches its C and so is compiled with no profile (and `dtoa_shortest10`, `dtoa_round_to_odd` and `dtoa_format10` are new), then with the profile trained again on the change (`engine/pgo/train.sh`). The HTML of every page is the same.
+
+| Page | Native | Product, profile of v0.30.7 | Product, trained again |
+| --- | ---: | ---: | ---: |
+| `chart` | -9.471% | -8.572% | -8.702% |
+| `diff` | +0.000% | +0.000% | +0.000% |
+| `dates` | +0.019% | +0.000% | -0.007% |
+| `forms` | -0.003% | +0.000% | -0.008% |
+| `i18n` | -0.113% | -0.106% | -0.108% |
+| `markdown` | +0.009% | +0.000% | +0.001% |
+| `radix` | +0.002% | -0.000% | -0.000% |
+| `styled` | +0.014% | +0.002% | +0.001% |
+| `table` | -0.070% | -0.059% | -0.061% |
+| `state` | -0.001% | -0.001% | -0.001% |
+| `antd` | -0.048% | -0.062% | -0.062% |
+| `domain` | +0.005% | -0.030% | -0.031% |
+| `sh` | -0.095% | | |
+
+| Page | Product, profile of v0.30.7 | Product, trained again |
+| --- | ---: | ---: |
+| The store's home page | -0.061% | -0.062% |
+| The store's products page | -0.006% | -0.038% |
+| The workbench's studio page | +0.001% | -0.001% |
+| The workbench's stats page | -0.065% | -0.068% |
+| MUI's orders page | -0.003% | -0.000% |
+| MUI's home page | -0.039% | -0.034% |
+| React's page | -0.252% | -0.259% |
+| Long Markdown (400 sections) | +0.000% | -0.001% |
+
+A render of `chart` converts 38,732 numbers in `js_dtoa`, which took 2,585 instructions each natively (11.5% of the render) and now take about 460. The other pages convert few numbers that are not integers. Natively, their changes of a few hundredths of a percent either way are where the heap lands: the hash of a new shape starts from the address of its prototype, and the 9.8 KB of the table move the heap, so the same calls of `add_property` look through more or fewer shapes (on `dates`, 895,000 instructions more in `add_property` over four renders, with the same calls and a fixed clock). In the product, counting the engine alone, no page runs more than 0.002% more. `sh` was counted natively only: through `v8run` it does not render more for more renders.
+
+The micro benchmarks of `compare/testdata` that convert numbers, instructions a turn (three conversions), native and product trained again: `float_toString` 9,026 to 3,162 natively (-65.0%) and 8,662 to 3,421 in the product (-60.5%), `float_to_string` 8,870 to 3,006 (-66.1%) and 8,622 to 3,381 (-60.8%). `float_toFixed`, `float_toPrecision` and `float_toExponential`, which give digits and keep the big numbers, run 1.0% to 1.1% more natively and 1.2% to 2.0% more in the product: `js_dtoa`, which holds the new path, gets other registers and spills from the compiler, and the fix of the powers of two alone adds 0.4% natively to `float_toFixed`. `int_toString`, `int_to_string` and `int_to_string2` run the same in both.
+
+The table of powers of ten is 9,872 bytes of read-only data. The native `dtoa.o` grows by 11,648 bytes with the code, and `v8run` (the Go product) by 16,184 bytes.
 
 ### A profile of tifa's pages
 

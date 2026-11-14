@@ -235,6 +235,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
 | A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | Unreleased | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
+| A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | Unreleased | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
 
 ## JSON
 

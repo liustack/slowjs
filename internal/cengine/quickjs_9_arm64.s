@@ -1723,7 +1723,7 @@ TEXT ·js_regexp_Symbol_split(SB), $296-48
 	WORD $0xf900c128
 	WORD $0xb900d3ea
 	WORD $0x371002ad
-	MOVD $·engine_rodata+113602(SB), R22
+	MOVD $·engine_rodata+123474(SB), R22
 	MOVD $·engine_rodata+23270(SB), R25
 	WORD $0x910242b4
 	WORD $0xaa0b03f5

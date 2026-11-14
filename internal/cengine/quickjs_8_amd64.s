@@ -3811,7 +3811,7 @@ TEXT ·js_error_toString(SB), $128-48
 	BYTE $0x7f
 	BYTE $0x74
 	BYTE $0x63
-	LEAQ ·engine_rodata+114638(SB), R14
+	LEAQ ·engine_rodata+124510(SB), R14
 	BYTE $0x48
 	BYTE $0x89
 	BYTE $0x74
