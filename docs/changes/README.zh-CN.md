@@ -234,6 +234,7 @@ read_when:
 | atom 的哈希表两个桶只放一个 atom | v0.30.5 | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
 | `+` 左边是空字符串时直接给出右边的字符串，不再复制 | v0.30.5 | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
 | 寄存器循环把两个字符串的加法交给一个专门的小函数，不再走加、减和比较共用的通用路径 | v0.30.7 | [strings.md](strings.zh-CN.md#两个字符串的加法不走通用路径) |
+| 2 的幂输出最短的数字，和 Node 一样：其中 54 个以前多输出一位 | Unreleased | [strings.md](strings.zh-CN.md#2-的幂输出最短的数字) |
 
 ## JSON
 

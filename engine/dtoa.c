@@ -1189,6 +1189,22 @@ int js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
                     break;
                 E++; /* at most one iteration is possible */
             }
+            if (P_found != 0 && radix == 10 &&
+                (a & (((uint64_t)1 << 52) - 1)) == 0 && ((a >> 52) & 0x7ff) > 1) {
+                /* d is a power of two, and the float64 below it is closer
+                   than the one above: the P digits below d may not read back
+                   as d when the P digits above it do (2^-44 has 16 digits,
+                   5.684341886080802e-14). Take those above then. */
+                mpb_set_u64(tmp1, mant);
+                m1 = mul_pow_round_to_d(&e1, tmp1, radix1, radix_shift, E - P, JS_RNDN);
+                if (m1 != m || e1 != e) {
+                    mant++;
+                    if (mant == mant_max1) {
+                        mant /= radix;
+                        E++;
+                    }
+                }
+            }
             /* remove useless trailing zero digits */
             while ((mant % radix) == 0) {
                 mant /= radix;
