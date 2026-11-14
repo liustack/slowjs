@@ -53,7 +53,9 @@ func TestCallDepthInLevels(t *testing.T) {
 
 // MemorySize counts what the allocator holds for the blocks in use. It counts
 // less than the ccgo engine did (libc's malloc) for the same objects.
-// The sizes of that engine are those of linux/amd64 after a full collection.
+// The sizes of that engine are those of linux/amd64 after a full collection,
+// with the ring of 2048 kept shapes it had: a ring of DefaultShapeCache
+// (4096) takes 16 KiB more, 8 bytes a shape.
 func TestMemorySizeBelowPrevious(t *testing.T) {
 	for _, c := range []struct {
 		js       string
@@ -69,6 +71,9 @@ func TestMemorySizeBelowPrevious(t *testing.T) {
 		{`globalThis.a = Array.from({length: 1e3}, (_, i) => ({i, a: [i, i + 1], f() { return i }}))`, 711896, 95},
 	} {
 		m := newTestVM(t)
+		if err := m.SetShapeCache(2048); err != nil {
+			t.Fatal(err)
+		}
 		if _, err := m.Eval(c.js, EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
