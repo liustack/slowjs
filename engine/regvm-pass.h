@@ -53,6 +53,7 @@ enum {
     RV_SC_N
 };
 
+#define RV_FI_MAX 4 /* the for in loops a body is in that the pass follows */
 typedef struct RVPass {
     JSRuntime *rt;
     JSFunctionBytecode *b;
@@ -134,6 +135,12 @@ typedef struct RVPass {
     int st_n;
     BOOL sc_short;
     int copy_n;         /* the sites of COPYR so far (regvm-ops-copy.h) */
+    /* the for in loops whose bodies come next, innermost last: the old
+       code from lo to hi is the body, the key goes to the local or
+       argument slot key, and the iterator is the temp it at depth d
+       (rv_for_in_ctx, regvm-ops-window.h) */
+    struct { int32_t lo, hi; int16_t d; int8_t key, it; } fi[RV_FI_MAX];
+    int fi_n;
     /* not cleared at the start of a conversion (rv_build): an entry of
        the stack model is written before it is read, and rv_fold_init sets
        lev and fold_k */
@@ -1494,6 +1501,7 @@ static void rv_round_init(RVPass *s)
     s->last_dst = -1;
     s->skip_to = 0;
     s->drop_at = -1;
+    s->fi_n = 0;
     s->failed = FALSE;
     s->args = FALSE;
     s->copy_n = 0;

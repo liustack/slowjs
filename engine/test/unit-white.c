@@ -7190,9 +7190,14 @@ static JSValue dst_call(VM *v, const char *name, JSValue *fun)
     return r;
 }
 
-/* The next key of a for in loop (engine/regvm-ops-window.h): the pass makes
-   FINEXT for the for_in_next followed by its if_false, whatever stores the
-   key, and the reads o[k] stay GETEL and GETELT. Each function is run once
+/* The next key and the read of it of a for in loop (engine/regvm-ops-window.h,
+   engine/regvm-ops-object.h): the pass makes FINEXT for the for_in_next
+   followed by its if_false, whatever stores the key, and GETELE or GETELET
+   for the read o[k] inside the loop whose key k is the local or argument the
+   loop stores, not for a read with another key, a key in a property, a let
+   a closure captures (which the pass does not take as the slot of the key)
+   or a read outside the loop. The read checks the key it is given, so a
+   miss of the pass costs only the fast path. Each function is run once
    first, so that it has its register code, and its result is checked. */
 static void forin_case(VM *v, const char *name, const char *want, int fin, int win,
                        int ele, int el)
@@ -7233,16 +7238,16 @@ static void test_regvm_forin(void)
 
     v = vm_new();
     CHECK(eval_ok(v.ctx, src), "the setup threw");
-    forin_case(&v, "plain", "a1b[object Object]c4", 1, 0, 0, 1);
-    forin_case(&v, "arg", "1[object Object]4", 1, 0, 0, 1);
+    forin_case(&v, "plain", "a1b[object Object]c4", 1, 0, 1, 0);
+    forin_case(&v, "arg", "1[object Object]4", 1, 0, 1, 0);
     forin_case(&v, "prop", "1[object Object]4", 1, 0, 0, 1);
     forin_case(&v, "other", "111", 1, 0, 0, 1);
     forin_case(&v, "after", "4", 1, 0, 0, 1);
-    forin_case(&v, "nest", "bx2by3", 2, 0, 0, 4);
-    forin_case(&v, "letk", "1[object Object]4", 1, 0, 0, 1);
+    forin_case(&v, "nest", "bx2by3", 2, 0, 4, 0);
+    forin_case(&v, "letk", "1[object Object]4", 1, 0, 1, 0);
     forin_case(&v, "cap", "1[object Object]4abc", 1, 0, 0, 1);
     CHECK(eval_is(v.ctx, "genr(src)", "1,[object Object],4"), "gen: the values differ");
-    forin_case(&v, "gen", "[object Generator]", 1, 0, 0, 1);
+    forin_case(&v, "gen", "[object Generator]", 1, 0, 1, 0);
     vm_free(&v);
 }
 

@@ -1558,8 +1558,8 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
 /* the for in loops of the function f, converted, found by their pcmap
    entries: n[0] the for_in_next the pass made FINEXT (its entry for the
    next ends the four bytes of the instruction), n[1] those it made
-   W_FOR_IN_NEXT (two bytes), n[2] none yet, n[3] the get_array_el it made
-   GETEL or GETELT (four bytes).
+   W_FOR_IN_NEXT (two bytes), n[2] the get_array_el it made GETELE or
+   GETELET (five bytes), n[3] those it made GETEL or GETELT (four bytes).
    -1 when f has no register code (engine/regvm-ops-window.h). */
 int white_regvm_forin_sites(JSValueConst f, int n[4])
 {
@@ -1585,8 +1585,11 @@ int white_regvm_forin_sites(JSValueConst f, int n[4])
             else if (m->end >= 2 && rf->code[m->end - 2] == RV_W_FOR_IN_NEXT)
                 n[1]++;
         } else if (b->byte_code_buf[m->old] == OP_get_array_el) {
-            if (m->end >= 4 && (rf->code[m->end - 4] == RV_GETEL ||
-                                rf->code[m->end - 4] == RV_GETELT))
+            if (m->end >= 5 && (rf->code[m->end - 5] == RV_GETELE ||
+                                rf->code[m->end - 5] == RV_GETELET))
+                n[2]++;
+            else if (m->end >= 4 && (rf->code[m->end - 4] == RV_GETEL ||
+                                     rf->code[m->end - 4] == RV_GETELT))
                 n[3]++;
         }
     }

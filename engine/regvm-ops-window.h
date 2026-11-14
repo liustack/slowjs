@@ -72,6 +72,56 @@ static void rv_window_end(RVPass *s, int npop, int npush)
         rv_push(s, RV_E_TEMP, rv_tslot(s, s->sp), 0);
 }
 
+/* the for_in_start at s->pos, whose iterator is now the top temp: when the
+   loop is laid out as the parser makes it, for_in_start, a goto to the
+   for_in_next and its if_false at the end of the loop, which jumps back to
+   a put_loc or put_arg of the key, and the body from there to the
+   for_in_next, the reads o[k] of the key in the body name the iterator
+   (rv_getel, regvm-ops-object.h). Anything else names nothing. */
+static void rv_for_in_ctx(RVPass *s)
+{
+    const uint8_t *bc = s->bc;
+    int q = rv_next_pos(s, s->pos), cont, l, key, i;
+    if (s->fold || q >= s->len)
+        return;
+    switch (bc[q]) {
+    case OP_goto: cont = q + 1 + (int32_t)get_u32(bc + q + 1); break;
+    case OP_goto16: cont = q + 1 + (int16_t)get_u16(bc + q + 1); break;
+    case OP_goto8: cont = q + 1 + (int8_t)bc[q + 1]; break;
+    default: return;
+    }
+    if (cont <= q || cont + 1 >= s->len || bc[cont] != OP_for_in_next)
+        return;
+    l = rv_next_branch(s, cont, &i);
+    if (l <= q || l >= cont || i)
+        return;
+    switch (bc[l]) {
+    case OP_put_loc: case OP_put_loc8: case OP_put_arg:
+    case OP_put_loc0: case OP_put_loc1: case OP_put_loc2: case OP_put_loc3:
+    case OP_put_arg0: case OP_put_arg1: case OP_put_arg2: case OP_put_arg3:
+        key = rv_local_slot(s, bc[l], bc + l);
+        break;
+    default:
+        return;
+    }
+    if (rv_far_slot(key))
+        return;
+    /* the loops the pass has left are dropped, and the outermost when
+       there is no room */
+    while (s->fi_n > 0 && s->fi[s->fi_n - 1].hi <= s->pos)
+        s->fi_n--;
+    if (s->fi_n == RV_FI_MAX) {
+        memmove(s->fi, s->fi + 1, sizeof(s->fi[0]) * (RV_FI_MAX - 1));
+        s->fi_n--;
+    }
+    i = s->fi_n++;
+    s->fi[i].lo = rv_next_pos(s, l);
+    s->fi[i].hi = cont;
+    s->fi[i].d = s->sp - 1;
+    s->fi[i].key = key;
+    s->fi[i].it = rv_tslot(s, s->sp - 1);
+}
+
 /* for_in_next at s->pos then the if_false of the loop, which no jump
    reaches: FINEXT w off, with the iterator in the temp below w. It leaves
    the value in w, as W_FOR_IN_NEXT does, and jumps where the if_false jumps
@@ -126,6 +176,7 @@ static BOOL rv_for_in_branch(RVPass *s)
         rv_window(s, p, RV_W_FOR_IN_START, 1);
         rv_throws(s, rv_owned(s, 0));
         rv_window_end(s, 1, 1);
+        rv_for_in_ctx(s);
         break;
     case OP_for_in_next:
         if (rv_for_in_branch(s))
