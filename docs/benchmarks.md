@@ -202,8 +202,8 @@ runtime.
 
 ### V8 suite against C QuickJS
 
-There are two sessions, on different machines. The scores of one are not
-compared with the scores of the other.
+There are three sessions, on different machines. The scores of one are not
+compared with the scores of another.
 
 **v0.30.1, 2026-11-06.** C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
 same machine and core, taking turns with liustack/quickjs, 5 rounds each.
@@ -244,6 +244,37 @@ did in the session above (0.98). The other pure Go engines were not run in
 this session, so the place of liustack/quickjs among them on the V8 suite
 is still the one of the run of v0.30.1. Every round:
 [`compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md).
+
+**Hermes V1, 2026-11-14.** A third session, on a third machine (server C, the
+same type: GCP t2d-standard-4, AMD EPYC 7B13, one core, the whole machine
+held for each round). It is not the machine of the table above, so the
+v0.30.6 and C QuickJS rows here are this session's own, and their scores are
+not to be compared with that table. liustack/quickjs v0.30.6, C QuickJS
+2026-06-04 and four Hermes rows took turns, 5 rounds each. Score per
+benchmark, median of the rounds:
+
+| Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.6 | 1144 | 1002 | 1107 | 1476 | 2244 | 560 | 4669 | 2580 | 1520 (1447–1529) |
+| C QuickJS 2026-06-04 (reference) | 826 | 754 | 914 | 1578 | 2059 | 385 | 3240 | 1856 | 1194 (1186–1206) |
+| Hermes V1 release, from source | 968 | 1077 | 1023 | 2187 | 2811 | 557 | 2649 | 1775 | 1422 (1408–1435) |
+| Hermes V1 release, `-O` bytecode | 1326 | 1526 | 1755 | 4579 | 4881 | 563 | 3137 | 3444 | 2154 (2151–2192) |
+| Hermes V1 head, `-O` bytecode | 1391 | 1470 | 1757 | 4452 | 4850 | 920 | 3198 | 3455 | 2297 (2284–2324) |
+| Hermes V1 head, `-O` bytecode, `-Xjit` | 3174 | 3468 | 4084 | 7002 | 6259 | 934 | 3414 | 6658 | 3796 (3759–3929) |
+
+Hermes V1 is a C++ engine and cannot be used from Go without cgo. It is here as a yardstick: on the V8 suite it scores 1.4 times v0.30.6 running precompiled bytecode, about the same running source, and 2.5 times with its JIT, which is off by default.
+
+Which Hermes: the release is `260318099.0.0-stable` at `fd22091391c3`, the
+head is `static_h` at `44f5f48c3edf`, both built Release with clang 22.1.8
+and `-DHERMES_ENABLE_INTL=OFF`. React Native calls the releases of `static_h`
+Hermes V1. The release has no x86-64 JIT, so the JIT row is the head with
+`-Xjit`. A JIT build still runs its interpreter until `-Xjit` is given. The
+bytecode rows are compiled ahead by `hermesc -O`, outside the timed run, and
+the source row is run by an indirect `eval` of each file, with no `-O`.
+`native/hermes-v8.js` is the driver. All eight benchmarks ran on every Hermes
+row. v0.30.6 scores higher than every Hermes row only on Splay. Every round,
+and how Hermes was found, built and run:
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md).
 
 ## tifa pages
 
@@ -739,12 +770,17 @@ terms retained in each downloaded distribution:
 | C QuickJS master snapshot | 7d1c13c5d8 | [MIT](https://github.com/bellard/quickjs/blob/7d1c13c5d8/LICENSE) |
 | QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
 | Node, Linux x64 binary | v24.11.1 | [MIT and third-party notices](https://github.com/nodejs/node/blob/v24.11.1/LICENSE), including V8 (BSD-3-Clause), OpenSSL (Apache-2.0) and ICU (Unicode) |
+| Hermes V1, `260318099.0.0-stable` and `static_h` at `44f5f48c3edf` | built from source | [MIT](https://github.com/facebook/hermes/blob/static_h/LICENSE), Copyright (c) Meta Platforms, Inc. and affiliates, [facebook/hermes](https://github.com/facebook/hermes) |
 | CMake, Linux x86_64 binary | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt), with third-party terms under `Licenses/` in the distribution |
 
 The two C QuickJS rows are built by the Makefile that ships with them, which
 defines no `NDEBUG`, so their `assert` calls run, while QuickJS-NG's CMake
 Release build defines `-DNDEBUG`. A row of C QuickJS built for speed adds
 `-DNDEBUG` to `DEFINES` in its Makefile. Say which one a table shows.
+
+Hermes is not built by `native/build.sh`. Its flags and how it is run are in
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md).
+Nothing of Hermes is checked in: `native/hermes-v8.js` is written here.
 
 The tifa pages and the native reference rows have a script of their own
 (Linux, CPU 1 and its sibling CPU 5):

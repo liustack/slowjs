@@ -2,6 +2,20 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：V8 套件上的 Hermes V1
+
+- Hermes V1 在 V8 套件上有了自己的行，在服务器 C（GCP t2d-standard-4，AMD EPYC 7B13，CPU 0，
+  每一轮独占整台机器）上单独一场跑，liustack/quickjs v0.30.6 和 C QuickJS 2026-06-04
+  在同一场里重新跑了一遍
+  （[2026-11-14-v0.30.6-gcp-v8-hermes](results/2026-11-14-v0.30.6-gcp-v8-hermes.md)）。
+  这一场的得分不和另一台机器上那一场的得分比较。
+- 各行：release `260318099.0.0-stable`（`fd22091391c3`）跑源码和跑 `hermesc -O` 字节码，
+  `static_h`（`44f5f48c3edf`）跑 `-O` 字节码，不带和带 `-Xjit`。release 没有 x86-64 JIT。
+  用 clang 22.1.8 以 Release 构建，Intl 关闭。
+- `native/hermes-v8.js` 按 `qjs-v8.js` 的步骤在 `hermes` 命令行上跑这个套件。
+  这个命令行只能通过 `hermescli` 读文件，它需要 `-Xhermes-internal-test-methods`。
+- Hermes 没有跑其他负载，其他纯 Go 引擎也没有在这一场里跑。
+
 ## 2026-11-14：v0.30.6 的 V8 套件，换了机器
 
 - 之前运行用的机器（GCP c2d-standard-8）已经没有了。这次在 GCP t2d-standard-4
