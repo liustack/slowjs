@@ -480,7 +480,7 @@ pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码
 
 `JS_CallInternal` 为 C 函数、绑定函数或 proxy 进入时，`js_call_enter` 的检查改为内联（`js_call_checks_in`，计数在 `js_call_enter_in` 里），只有 `RangeError` 留在外面：每次这样进入少约 20 条指令，它的帧在 arm64 上仍是 96 字节，amd64 上仍是 112 字节。
 
-`JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，`JS_RegvmRun`、`js_call_c_function` 和 `js_call_bound_function`（在 x86_64 上还有 `JS_CallInternal`）会把栈指针往下调到 32 的倍数，每次调用时还会压入 `JS_CallInternal` 放不进寄存器的参数。`js_measure_call_frame` 不受这个检查器处理，这样它量到的只是帧本身，不含它自己会压入的 16 字节。它在相隔 16 字节的两个位置各量一次，取小的那个，因为被往下调的帧会因调用的位置多占或不多占 16 字节。两种欠账也都向下取到 32 的倍数，也就是下一个帧被往下调时跳过的帧至少省下的字节。在这种构建里直接调用的递归从不更浅，最多可能深 2%，普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
+`JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，`JS_RegvmRun`、`js_call_c_function` 和 `js_call_bound_function`（在 x86_64 上还有 `JS_CallInternal`）会把栈指针往下调到 32 的倍数，每次调用时还会压入 `JS_CallInternal` 放不进寄存器的参数。`js_measure_call_frame` 不受这个检查器处理，这样它量到的只是帧本身，不含它自己会压入的 16 字节。它在相隔 16 字节的两个位置各量一次，取小的那个，因为被往下调的帧会因调用的位置多占或不多占 16 字节。两种欠账也都向下取到 32 的倍数，也就是下一个帧被往下调时跳过的帧至少省下的字节。在这种构建里直接调用的递归从不更浅，可能深百分之几：一层跳过的每个调用都可能比它的欠账多省最多 80 字节（取整丢掉的不到 32 字节，帧往下调的位置差出的 16 字节，以及被往下调的调用者为 `JS_CallInternal` 压入、而替代它的调用不压的 32 字节参数）。在 linux/amd64 上同时开两个检查器时，从 `Reflect.apply` 到 `call` 的一层经过 `JS_CallInternal` 占 2208 字节，直接调用占 1856 字节、算了 224 字节欠账，在 1 MiB 的线程上停在 438 层，对 413 层。`test_c_call_recursions` 在递归运行时量出经过 `JS_CallInternal` 的一层占多少字节，用它和一层跳过的每个调用 80 字节去检查直接调用的深度。普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
 
 ### 寄存器循环直接回答 charCodeAt
 
@@ -1007,6 +1007,56 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
 - `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。
 
+## 展开只读一次 Symbol.iterator，也不关闭迭代器
+
+发布版本：v0.30.7。
+
+展开（`[...it]`、`f(...it)`、`new C(...it)`、`super(...it)`）把值的迭代器跑到底。某一步抛错时（`next` 抛错、它的结果不是对象，或者读 `done`、`value` 时抛错），规范让错误直接往外走，不调用 `return`：ArrayAccumulation 和 ArgumentListEvaluation 里没有 IteratorClose。QuickJS 原来会先读出并调用迭代器的 `return`，和 `for-of` 循环体抛错时一样，上游 QuickJS 现在仍是这样。C 树现在放掉迭代器、不关闭它（`engine/quickjs.c` 的 `js_append_enumerate`），和 Node 24 一样。复制时唯一的另一种错误是内存不足，它以前也不会跑 `return`。因为不再读 `return`，注入测试里 `p5-literals.js` 和 `z-gen-newtarget.js` 中展开某一步抛错的那些位置，结束时少了一个原先由这次读取造出的 C 函数对象（连同它的形状和属性），它们的 golden 已重新写过。
+
+展开原来还会把值的 `Symbol.iterator` 读两次：一次看它是不是内置的 `values`，一次在 `JS_GetIterator` 里。所以那里的 getter 会跑两次，Proxy 也会看到两次读取。现在只读一次，把读到的方法交给 `JS_GetIterator2`，它不是函数时抛同样的 TypeError。
+
+`%ArrayIteratorPrototype%` 的 `next` 是 getter 时，读它会跑脚本，脚本可以推进展开刚造出的 Array Iterator、让它结束，或者把它存起来。快数组的复制代替了内置 `next` 的逐步读取，原来却照样从第一个元素开始，也不动迭代器：展开会再给出迭代器已经走过的元素，存起来的迭代器之后还会再给一遍。现在复制从迭代器的下标开始，结束时让迭代器处于已结束的状态，和逐步读取一样，getter 已让它结束时就什么也不复制。
+
+测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`，以及经由值自己的 getter、`Array.prototype` 的 getter 和 Proxy 读 `Symbol.iterator` 的次数，以及 `next` 作为 getter 把迭代器推进 0、1、3、4 步并存起来时的结果，和存起来的迭代器在展开之后给出什么，以及同一个 getter 在推进之后往数组里追加元素、展开之后再追加一次的情形：存起来的迭代器仍是已结束的状态，被 getter 结束的迭代器也不会读之后追加的元素。
+
+## 不造迭代器地展开普通数组
+
+发布版本：v0.30.7。
+
+字面量和调用里的每个展开，解析器都生成 `append`：`[...a]`、`f(...a)`、`o.m(...a)`、`new C(...a)`、`super(...a)` 和 `eval(...a)`（没有自己构造函数的类不经展开就把参数传下去）。寄存器循环在 `rv_w_append` 里执行它。展开一个数组时，原来要取 Array Iterator、读 `next`、逐个元素做一次定义再复制、最后释放迭代器：展开一个元素约 1,450 条指令。wb studio 每次渲染展开 2,432 次，店面 968 到 1,415 次，MUI 12 到 49 次，React 一次也没有。
+
+现在由 `js_append_array`（`engine/quickjs.c`，不内联，`js_append_enumerate` 先试它）一步把元素复制到展开所建数组的末尾。下面几条全部成立才这样做，否则什么都不动：
+
+- 这个值通过 `js_dst_ok`，也就是[数组解构](#不造迭代器的数组解构)的那道检查：函数所在 realm 的快速 Array，形状是新数组的形状，`Array.prototype[Symbol.iterator]` 是内置的 `values` 且是数据属性，`%ArrayIteratorPrototype%.next` 是内置的 `next` 且是数据属性（引擎还没造出它时先造出来，和读 `next` 时一样）
+- 它的长度是 int，并且等于元素个数
+- 正在建的数组是新数组形状的快速 Array，可扩展，元素个数和长度都等于展开所在的位置
+- 位置加上元素个数小于 2^31
+
+### 为什么结果不变
+
+有这道检查，GetIterator 找到的是内置的 `values`（数组的形状里没有自己的 `Symbol.iterator`），调用它只造出一个 Array Iterator，别的什么也不做。在这个新迭代器上读到的 `next` 是内置的那个。它每一步读数组的 `length` 和当前下标的元素：都是快速数组自己的数据属性，快速数组没有空洞，所以不会跑 getter，长度等于元素个数，也就不会到原型上找元素。展开的另一步是对它所建数组做 CreateDataPropertyOrThrow，这个数组脚本拿不到（由字面量或调用的参数造出），而且它是 realm 里可扩展的快速 Array，定义时什么也不会跑。所以两步之间没有脚本运行，展开过程中数组改不了，每一步按顺序给出它的元素，和一次复制的结果相同。
+
+这正是展开和解构不同的地方：解构的两次读取之间会跑默认值，默认值能改数组，所以 `DNEXT` 每次读都要看一眼数组，并保留迭代记录。展开一口气跑到底，中间什么也不插，而且不关闭迭代器（见上一节），所以 `%ArrayIteratorPrototype%` 上有没有 `return` 和它无关。
+
+脚本能改的东西都在检查之外：数组的 `Symbol.iterator`，被换掉、改成 getter 或删掉的 `values` 和 `next`（检查的是内置函数且是数据属性），子类和别的 realm 的数组（原型不同，形状也就不同），`arguments`、类型化数组、字符串、Proxy、Set、Map 和生成器（不是这个形状的 Array），以及空洞和被改长的长度（不再是快速数组，或者长度超过元素个数）。展开不读 `Array.prototype[Symbol.species]`。正在建的数组脚本碰不到，也照样检查，这样以后编译器改了，也不会把别的对象送到这里。
+
+参数个数的上限还在原处：复制填的是 `apply` 要变成参数的那个数组，由 `apply` 数个数，所以 65,535 个参数照样报 "too many arguments in function call (only 65534 allowed)"。
+
+变了但脚本看不到的：不再造 Array Iterator，展开少分配一次，在内存上限下，内存不足的错误可能来得更晚，或者不来。正在建的数组一次长到新的元素个数，原来是每次长一半，所以它的空间可能不同。这次增长失败时，展开抛出内存不足，数组保持原样。除此之外不造 Array Iterator 的脚本，结束时少一个形状，即 Array Iterator 的形状：语料里 8 个脚本、rvgen 种子里 102 个程序，以及注入集里这类脚本停下的位置，结束时的计数都显示了这一点，在这是唯一差别的地方，它们的金标准输出重新写过。原来调用 `values` 要占一层调用深度，现在展开不占，所以经过它的递归只会更深。复制是一个循环，生成器照样在里面轮询，和原来那个逐个定义的循环一样。
+
+`js_append_enumerate` 强制内联进 `rv_w_append`，所以复制单独成一个函数，GetIterator 也是（`js_spread_iterator`）：内联时，它对方法的调用会让 amd64 上 `rv_w_append` 的帧大 112 字节。`js_dst_ok` 现在有两个调用者，改成强制内联，这样 `rv_w_dstart` 保持原样。`JS_RegvmRun` 和 `JS_CallInternal` 的帧不变。`rv_w_append` 的帧变了，因为编译器对它余下的部分换了一种内联方式：amd64 上 Go 帧从 208 字节变成 192，影子帧从 16 变成 96，arm64 上从 152 变成 184，从 96 变成 80。它位于 JavaScript 写的迭代器 `next` 的调用之下，不在普通调用之下，深度测试（`TestRegvmDepth`、`TestShadowStack*`、`TestCCallDepth`）照常通过。
+
+### 收益
+
+按每次渲染的指令数，2026-11-14 对照 main 的 78a90364 计数（做法见 [performance.md](../performance.zh-CN.md#不造迭代器地展开普通数组)）：C 树在 linux/amd64 上用 callgrind，wb studio -1.79%，wb stats -0.81%，商店首页 -0.93%，商品页 -0.89%，MUI 和 React 在 0.06% 以内。按生成方式得到的 Go 引擎，带随版本发布的 profile：wb studio -1.38%，wb stats -0.64%，商店 -0.43%，MUI 0.00%，React +0.13%，长 Markdown -2.97%。arm64 上（C 树，Apple M4）：wb studio -1.39%，wb stats -0.53%，商店 -0.74% 和 -0.67%，MUI 和 React 在 0.11% 以内。 没有哪个微基准多出 0.11% 以上的指令。计时留给 train。
+
+### 测试
+
+- `engine/test/regvm/js/q5-spread.js`，金标准输出在改动之前录下（语料的三种模式和注入集）：每种写法（展开前后和中间有元素的字面量、空洞、超过 32 个参数、方法、计算属性调用、箭头函数、`new`、`super`、没有构造函数的类、`Math.max`、`push` 和 `apply`），配上每种值（空数组、空洞、被改长或改短的长度、慢数组、冻结、密封、不可扩展、自有键、自有的 `Symbol.iterator` 或它的 getter、别的原型、字符串、类型化数组、Set、Map、`arguments`、生成器、`null`、数字、普通对象），还有长数组、子类、Proxy、别的 realm 的数组，把 `return`、`next` 和 `Symbol.iterator` 改成别的值、getter 或删掉，`Object.prototype[Symbol.iterator]` 上的 getter，`Symbol.species`，两次展开之间的改动，能成功的最多参数（65,534 个，单独展开和跟在一个参数后面）和会失败的最少参数（65,535 个），`eval(...a)`，`new` 一个不是构造函数的值，最后是 `Object.prototype` 和 `Array.prototype` 上的下标 getter。去掉错误信息后，它的输出和 Node 24 相同，只有两处不同：参数个数上限（V8 的更大）和 `eval(...a)`（V8 把它当间接 eval 执行）。
+- `test_spread_alloc`（`engine/test/unit-white.c`）：分别展开进字面量和调用，展开的数组一个能过检查，一个因为有自有键过不了，同时让每次分配轮流失败，`%ArrayIteratorPrototype%` 的 `next` 第一次造出也落在这轮扫描里。每次运行都以内存不足或正确结果结束，不留下引用，并且复制比原路径至少少两次分配。
+- `test_spread_refs`（`engine/test/unit-white.c`）：把一个对象、一个 80 个字符的字符串和一个 symbol 展开三次，分别进字面量和调用，源数组一个能被复制、一个被拒绝，同时让每次分配轮流失败，第三次展开时数组的增长也在其中。每次运行之后，每个元素的引用数都和之前一样：复制多留一个引用就会让它失败，而 `test_spread_alloc` 的整数元素看不出这一点。
+- `engine/test/compare/spread_iterator.js`（见上一节）覆盖复制不接手的迭代器。
+
 ## 热调用少传参数字
 
 发布：v0.30.6。
@@ -1025,3 +1075,24 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 收益（在 linux/amd64 上按 16 种代码布局计时）：tifa 商店的 14 个店面页面用时少 0.67%，工作台、MUI 和 React 页面在各自的误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。数字在 [performance.md](../performance.zh-CN.md#热调用少传参数字)。
 
 改动在 C 里（`engine/quickjs.c`、`engine/quickjs.h`、`engine/regvm.h`）。测试：unit-api 的 `test_c_call_recursions` 和 `test_call_frames_measured`，`TestCCallDepth`、`TestCCallDepthAfterExits`、`TestRegvmFrame`，带 `unit-api` 和 `unit-white` 的 `compare.sh`，以及商店、MUI 和 React 页面的 HTML。
+
+## 给普通对象加键的写入不走通用路径
+
+发布版本：v0.30.7。
+
+`o[k] = v` 里 `o` 是对象、`k` 是自身就是原子的字符串时（寄存器循环的 PUTEL，数组的快路不回答时），以及 `o` 没有自有属性 `x` 时的 `o.x = v`（PUTF），原来要走 `rv_putel_slow` 或 `rv_putf_slow`、`JS_SetPropertyValue`、`JS_ValueToAtom`（给原子加一个引用），再走通用的 `JS_SetPropertyInternal`，一路检查每一种对象。这类写入几乎都是给刚造出来的对象加新键：一个键一个键搭起来的对象，`for in` 循环里做的拷贝。现在循环对字符串键调用 `rv_putel_atom`，PUTF 自己查找没找到自有属性时调用 `rv_putf_atom`。它们用字符串里存着的原子（`key_atom`，见[字符串保存自己作为键时的原子](#字符串保存自己作为键时的原子)），写一个可写的自有数据属性，或者走一遍原型链，再用 `add_property` 加上这个键。调用和标志都和 `JS_SetPropertyInternal` 一样，所以对象最后的形状和键的顺序都一样。其他情况都交回 `rv_putel_slow` 或 `rv_putf_slow`，从头按原来的方式写。
+
+为什么安全：这条路径只做 `JS_SetPropertyInternal(o, atom, v, o)` 在只写一个值时做的事，遇到别的情况就停下。它的检查，以及每个检查挡住的情况：
+
+- `o` 不是特殊对象，也不是全局对象。数组（下标、`length`）、类型化数组（`"-0"` 和 `"1.5"` 在那里是数字）、`arguments`、String 对象、Proxy（陷阱）和模块命名空间各有自己的规则，全局对象有闭包变量。
+- 只有可写的普通自有数据属性才直接写：访问器、只读的键、首次使用时才建立的属性、闭包变量和数组的 `length` 都交回原路径。
+- 原型链上找到的键只要不是可写的数据属性就交回：setter 照常运行，只有 getter 的键和只读的键照常失败（严格模式下抛 TypeError），首次使用时才建立的属性照常建立。找到可写的数据属性就停止查找，把键加到 `o` 上，和 OrdinarySet 说的一样。
+- 原型链上的特殊对象，除了不是类型化数组的快速数组，都交回原路径。通用的查找对不是下标的键也会越过这种快速数组。
+- `o` 必须可扩展：不可扩展、密封或冻结的对象交回原路径，在那里失败。
+- 键一定不是下标（这类字符串的 `key_atom` 是 0）。`o["__proto__"] = v` 和 `o.__proto__ = v` 会找到 `Object.prototype` 上的访问器，交回原路径。原型为 null 的对象照旧把 `__proto__` 加成自己的键。
+
+这条路径上不运行任何代码：没有 getter、setter、陷阱，也没有类型转换。唯一的分配在 `add_property` 里（新的形状或更大的属性数组）。分配失败时，写入和原路径一样抛出内存不足错误，操作数的释放方式也一样，`o` 不变。键所在的槽让键活着，键让原子活着，`add_property` 自己给原子加引用。测试的抛错注入要在哪条写入上抛错，那条写入就走原路径。两个函数都是单独的叶子函数，所以 setter 运行时压在下面的 `rv_putel_slow` 和 `rv_putf_slow` 帧大小不变，寄存器循环（SHADOW 在 amd64 上 256，arm64 上 176）和 `JS_CallInternal`（112 和 96）也不变。循环只对字符串键调用 `rv_putel_atom`，只在自己没找到自有属性时调用 `rv_putf_atom`，所以写下标或写数组的 `length` 不多付一次调用。
+
+收益：在原生宿主上，amd64 每次渲染的指令少 0.35%（店面首页）到 1.45%（MUI 订单页），MUI 订单页每次渲染 22.5K 次这样的写入，每次少约 120 条，长 Markdown 少 0.25%。React 每次渲染只有 30 次这样的写入，指令多 0.10%，是去原路径途中多出的检查。在产品上，重新训练画像之后，MUI 少 1.2% 到 2.1%，工作台少 1.1% 到 1.4%，店面少 0.3% 到 0.9%，React 不变。代价：这个改动让 `JS_RegvmRun` 的画像过期，重新训练画像之前（[releasing.md](../releasing.zh-CN.md#性能画像)），产品在 React 上最多多跑 1.4% 的指令，在店面上最多多 0.9%。数组的快路不回答的下标写入（比如追加元素）多付 3 条指令。数字见 [performance.md](../performance.zh-CN.md#按键和按名加键的写入)。
+
+改动在 C 里（`engine/regvm-ops-basic.h`、`engine/regvm-ops-object.h`）。`engine/test/regvm/js/o-putel-atom.js` 把每次写入在两个同样造出来的接收者上各做一次：一次用原来的键，一次用重新做成非原子字符串的同一个键，后者走不了新路径。它对 25 个键（新的和已有的名字，原型上是数据、只读数据、setter 或只有 getter 的名字，`length`、`__proto__`、`prototype`、`stack`，像数字的字符串，空字符串）和 37 种接收者（各种形式的普通对象，原型为 null 的对象，上一层和上三层有 setter 的原型，不可扩展、密封和冻结的对象，数组，类型化数组，`arguments`，String 对象，函数，类，错误对象，Proxy，原型是这些对象之一的对象，全局对象，原始值）都这样做，对象、键和值分别放在局部变量、临时槽和常量里，宽松和严格模式都有，也包括 `o.x = v`。两次写入必须给出同样的结果或异常，用同样的接收者运行同样的 setter 和陷阱，留下同样的自有键，顺序和特性都一样。它的 golden 由改动前的引擎写出。拿掉任何一个检查，它都会失败。`engine/test/regvm/js/o-putel-realm.js` 跨两个领域（原生宿主的 `newRealm`）做同样成对的写入：执行写入的代码、接收者和它的原型（带可写键、只读键、setter 和只有 getter 的键的对象，数组，Int8Array 或 `Object.prototype`）各自来自两个领域之一，接收者有普通的和不可扩展的，每个领域的全局对象也作为接收者。两次写入抛出的异常必须来自同一个领域。`engine/test/compare/putel_atom_ns.mjs` 在模块命名空间和原型是命名空间的对象上做同样的事。`unit-white`（`test_putel_atom_shape`）检查这些写入造出的对象，和 `Object.assign`、`Reflect.set`、字面量造出的对象共享形状，形状缓存开着和关着都查。`unit-white`（`test_putel_atom_each_failing`）还让分配器的每一次调用依次失败，每次都在新的 VM 里，覆盖按键和按名的加键：属性数组变大、克隆别的对象共用的形状、造 300 个新形状（让形状哈希表变大）。值是新造的对象，操作数分别放在参数、局部变量和临时槽里，形状缓存开着和关着都查。每次调用要么抛出内存不足错误，要么给出正确的结果，留下的对象、字符串和形状数和之前一样，释放 VM 时也没有剩下的内存块，在 AddressSanitizer 下也一样。在任何一个函数里去掉加键失败后对值的释放，这个测试都会失败。`unit-oom`（`test_putel_atom_oom`）在从太少开始逐步放宽的内存上限下做按键加键。

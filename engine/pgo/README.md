@@ -8,21 +8,36 @@ What `make gen` needs to compile the engine with a profile: the profile itself, 
 
 | Path | What |
 | --- | --- |
-| `train.sh` | Trains the profile. Builds the engine as the generator compiles it with counters in, renders the pages and writes `profile.txt` |
+| `train.sh` | Trains the profile. Builds the engine as the generator compiles it with counters in, renders the pages, runs `loops.js`, checks it and writes `profile.txt` |
 | `profile.txt` | The profile, in the text form of `llvm-profdata`. One file for amd64 and arm64: the hash of a function depends on the C only. Training twice gives files that differ in a few counts, so the file is checked in and `make gen` never trains |
 | `pages/` | The pages the training renders (below) |
+| `loops.js` | The second input: plain loops over paths the pages never run (below) |
+| `cover.awk` | The check of `loops.js` that `train.sh` runs (below) |
 
 ## Train again
 
 On Linux or macOS with LLVM 22.1.8 (`scripts/llvm-bin.sh` finds it, or `LLVM_BIN` names its bin folder):
 
 ```sh
-engine/pgo/train.sh   # about 30 seconds
+engine/pgo/train.sh   # about a minute
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 ```
 
 `train.sh` stops when it finds no LLVM 22.1.8. It works in `.build/pgo-train` (`TRAIN_OUT` changes it). It needs nothing outside the repository. The profile and the generated files go in one commit, as `make check-gen` wants. When to train again is in [docs/releasing.md](../../docs/releasing.md#the-profile).
+
+## The loops
+
+The pages leave many paths of the engine at a count of 0: typed arrays, DataView, regular expressions on text that is not Latin-1, BigInt, `Date.parse`, the slow paths of the operators and more. LLVM takes a count of 0 for a path that never runs, moves spills into it and its blocks out of the way, and a script that runs it pays for that. `loops.js` runs each such kind of path a few thousand times. It is merged with the pages as it is, neither input scaled: its counts are about 3% of the profile, enough to lift those paths above 0 and far too few to change what the pages run. What it gains and costs is in [docs/changes/generator.md](../../docs/changes/generator.md#a-second-input-plain-loops).
+
+The loops are written for the training. The micro benchmarks of `compare/testdata` measure what the profile does to paths it was not trained on, so none of them may go into `loops.js`, not even in part.
+
+`train.sh` checks the loops (`cover.awk`) and stops when the check fails:
+
+- It runs the 64 micro benchmarks (N=100, for the check only: their counts never go into the profile) and takes the paths the pages leave cold and the benchmarks run at least 100 times. It prints how many of them `loops.js` runs, `engine/pgo/loops.js: runs 1553 of the 1601 paths ... (97.0%, at least 95%)`, and stops below 95% (`COVER_FLOOR`).
+- Each part of `loops.js` is there for a function, listed in `need` in `train.sh`, and the training stops when the loops no longer run one of them, or when it no longer exists.
+
+When the C changes, the check can fail. Then write or change a loop for the paths it names, and train again. Lower the floor only with the reason in the commit.
 
 ## The pages
 

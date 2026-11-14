@@ -46,8 +46,9 @@ liustack/quickjs 的行叫 `liustack-quickjs` 和 `liustack-tifa`。模块还叫
   得分是它的 4.1 倍，不带 JIT 的 go-quickjs（默认）是 1.4 倍，
   带 JIT 的 goant 和 moejs 得分比它低。go-quickjs 跑正则表达式，不带 JIT 快 2.9 倍，带 JIT 快 5.2
   倍，在 63 个 QuickJS 微基准里有 32 个更快（JIT：51 个）。moejs 写 JSON 快 2.0 倍，go-quickjs 快 1.3
-  倍。goant 解析 JSON 快 1.1 倍。C QuickJS 2026-06-04 在 V8 套件上的得分是它的
-  1.025 倍（见 [V8 套件对比 C QuickJS](#v8-套件对比-c-quickjs)）。
+  倍。goant 解析 JSON 快 1.1 倍。v0.30.6 的 liustack/quickjs 在 V8 套件上的得分是
+  C QuickJS 2026-06-04 的 1.27 倍，只在 RayTrace 上落后（0.95），这是 2026-11-14
+  只跑这两个引擎的一场（见 [V8 套件对比 C QuickJS](#v8-套件对比-c-quickjs)）。
 - **远远落后。** 没有一项达到其他纯 Go 引擎中位数的两倍。
   最远的是空循环（1.71）、数字运算（1.52 到 1.59）和数组上的循环（1.44）：见
   [liustack/quickjs 远远落后的地方](#liustackquickjs-远远落后的地方)。
@@ -159,7 +160,9 @@ bundle 并渲染了一个页面。goant 的 Program 只服务编译它的
 
 ### V8 套件对比 C QuickJS
 
-C QuickJS 2026-06-04 的 V8 套件是在同一台机器、同一个核上单独一场跑的，
+一共三场，在不同的机器上。一场的得分不和另一场的得分比较。
+
+**v0.30.1，2026-11-06。** C QuickJS 2026-06-04 的 V8 套件是在同一台机器、同一个核上单独一场跑的，
 和 liustack/quickjs 轮流跑，各 5 轮。`native/qjs-v8.js` 按驱动程序的步骤在 `qjs` 上跑这个套件。
 每个基准的得分，取各轮中位数：
 
@@ -175,6 +178,49 @@ DeltaBlue（0.96）落后。它的 assert 没有花掉各轮能看出来的时�
 构建的得分在各轮的波动范围内一样。liustack/quickjs 在主运行里得 1268 分，比这一场低 1.2%。
 每一轮的数据：
 [`compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md`](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md)。
+
+**v0.30.6，2026-11-14。** 在另一台机器上（GCP t2d-standard-4，AMD EPYC 7B13，一个核，整台机器安静），
+liustack/quickjs v0.30.1、v0.30.6 和 C QuickJS 2026-06-04 在同一场里轮流跑，各 5 轮，步骤相同。
+没有设内存上限，C QuickJS 按原样构建（assert 会运行）。每个基准的得分，取各轮中位数：
+
+| 引擎 | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | 总分 |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.1 | 892 | 779 | 761 | 1321 | 1753 | 447 | 3574 | 1580 | 1155（1147–1164） |
+| liustack-quickjs v0.30.6 | 1131 | 976 | 1109 | 1487 | 2214 | 558 | 4384 | 2587 | 1501（1485–1510） |
+| C QuickJS 2026-06-04（参照） | 832 | 752 | 919 | 1566 | 2013 | 382 | 3089 | 1798 | 1186（1179–1196） |
+
+v0.30.6 的得分是 v0.30.1 的 1.30 倍，是 C QuickJS 的 1.27 倍。八个基准里它有七个领先 C QuickJS
+（RegExp 1.46，NavierStokes 1.44，Splay 1.42，Richards 1.36，DeltaBlue 1.30，Crypto 1.21，EarleyBoyer 1.10），
+RayTrace 落后（0.95）。v0.30.1 在这里是 C QuickJS 的 0.97，和上面那一场（0.98）一样。
+其他纯 Go 引擎没有在这一场里跑，所以 liustack/quickjs 在它们当中的 V8 套件名次，仍是 v0.30.1 那次运行的名次。
+每一轮的数据：
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md)。
+
+**Hermes V1，2026-11-14。** 第三场，在第三台机器上（服务器 C，同一种型号：
+GCP t2d-standard-4，AMD EPYC 7B13，一个核，每一轮都独占整台机器）。它不是上面那张表的机器，
+所以这里的 v0.30.6 和 C QuickJS 两行是这一场自己的，得分不要和上面那张表比较。
+liustack/quickjs v0.30.6、C QuickJS 2026-06-04 和四个 Hermes 行轮流跑，各 5 轮。
+每个基准的得分，取各轮中位数：
+
+| 引擎 | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | 总分 |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.6 | 1144 | 1002 | 1107 | 1476 | 2244 | 560 | 4669 | 2580 | 1520（1447–1529） |
+| C QuickJS 2026-06-04（参照） | 826 | 754 | 914 | 1578 | 2059 | 385 | 3240 | 1856 | 1194（1186–1206） |
+| Hermes V1 release，跑源码 | 968 | 1077 | 1023 | 2187 | 2811 | 557 | 2649 | 1775 | 1422（1408–1435） |
+| Hermes V1 release，`-O` 字节码 | 1326 | 1526 | 1755 | 4579 | 4881 | 563 | 3137 | 3444 | 2154（2151–2192） |
+| Hermes V1 head，`-O` 字节码 | 1391 | 1470 | 1757 | 4452 | 4850 | 920 | 3198 | 3455 | 2297（2284–2324） |
+| Hermes V1 head，`-O` 字节码，`-Xjit` | 3174 | 3468 | 4084 | 7002 | 6259 | 934 | 3414 | 6658 | 3796（3759–3929） |
+
+Hermes V1 是 C++ 引擎，不走 cgo 就没法在 Go 里用，放在这里只当一把尺子：V8 套件上它跑预编译字节码时得分是 v0.30.6 的 1.4 倍，直接跑源码时差不多，开了 JIT（默认关闭）是 2.5 倍。
+
+用的是哪个 Hermes：release 是 `260318099.0.0-stable`（`fd22091391c3`），
+head 是 `static_h`（`44f5f48c3edf`），都用 clang 22.1.8 以 Release 构建，加 `-DHERMES_ENABLE_INTL=OFF`。
+React Native 把 `static_h` 的发布版叫做 Hermes V1。release 没有 x86-64 JIT，
+所以 JIT 那一行是 head 加 `-Xjit`。带 JIT 的构建在给出 `-Xjit` 之前仍然只跑解释器。
+字节码行由 `hermesc -O` 提前编译，编译不计入计时，源码行是对每个文件做间接 `eval`，没有 `-O`。
+`native/hermes-v8.js` 是驱动程序。八个基准在每个 Hermes 行上都跑通了。
+只有 Splay 一项，v0.30.6 的得分高于每一个 Hermes 行。每一轮的数据，以及 Hermes 是怎么找到、构建和运行的：
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md)。
 
 ## tifa 页面
 
@@ -659,12 +705,17 @@ SHA256 哈希。下面是主要的许可证，各个下载的发行版里
 | C QuickJS master 快照 | 7d1c13c5d8 | [MIT](https://github.com/bellard/quickjs/blob/7d1c13c5d8/LICENSE) |
 | QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
 | Node，Linux x64 二进制 | v24.11.1 | [MIT 和第三方声明](https://github.com/nodejs/node/blob/v24.11.1/LICENSE)，包括 V8（BSD-3-Clause）、OpenSSL（Apache-2.0）和 ICU（Unicode） |
+| Hermes V1，`260318099.0.0-stable` 和 `static_h`（`44f5f48c3edf`） | 从源码构建 | [MIT](https://github.com/facebook/hermes/blob/static_h/LICENSE)，Copyright (c) Meta Platforms, Inc. and affiliates，[facebook/hermes](https://github.com/facebook/hermes) |
 | CMake，Linux x86_64 二进制 | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt)，第三方条款在发行版的 `Licenses/` 下 |
 
 两个 C QuickJS 行用随它们发布的 Makefile 构建，它
 没有定义 `NDEBUG`，所以它们的 `assert` 会运行，而 QuickJS-NG 的 CMake
 Release 构建定义了 `-DNDEBUG`。为速度而构建的 C QuickJS 行，要在它的
 Makefile 里往 `DEFINES` 加 `-DNDEBUG`。要说明表里是哪一种。
+
+Hermes 不是由 `native/build.sh` 构建的。它的构建参数和运行方式见
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md)。
+仓库里没有 Hermes 的任何文件：`native/hermes-v8.js` 是这里自己写的。
 
 tifa 页面和原生参照行有自己的脚本
 （Linux，CPU 1 和它的同伴 CPU 5）：
@@ -763,6 +814,7 @@ tifa 把它的 SSR bundle 构建成 ES 模块：把它放在那里，
 
 | 运行 | liustack/quickjs | 机器 | 备注 |
 |---|---|---|---|
+| [2026-11-14-v0.30.6-gcp-v8](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md) | v0.30.6（main `78a90364`）和 v0.30.1（`5e99b850`） | GCP t2d-standard-4，AMD EPYC 7B13，CPU 0，整台机器安静 | 只跑 V8 套件，liustack/quickjs v0.30.1、v0.30.6 和 C QuickJS 2026-06-04（原样构建），各 5 轮轮流跑，不设内存上限。机器和之前的运行不同，得分不和它们比较 |
 | [2026-11-06-v0.30.1-gcp-v8-c](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md) | main `c23e76e6`（v0.30.1 的引擎） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 只跑 V8 套件，liustack/quickjs 和 C QuickJS 2026-06-04（原样构建，以及加 `-DNDEBUG`），各 5 轮，C QuickJS 第一次有 V8 套件的数据 |
 | [2026-11-06-v0.30.1-gcp](../compare/engines/results/2026-11-06-v0.30.1-gcp.md) | v0.30.1（main `5e99b850`） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 所有引擎重新运行（[页面](../compare/engines/results/2026-11-06-v0.30.1-gcp-pages.md)），go-quickjs 是 v0.34.1，modernc.org/quickjs 是 v0.27.0。计时的负载和 tifa 页面在一对核的锁下分成短的几段运行，test262 在另一对核上以低优先级运行并合并进来。页面运行里 go-quickjs-jit 在两次渲染之间把 bench 的 `table` 页面渲染得不一样，所以那个页面是在单独的一次运行里测的。结果文件里引擎表的版本列写的是 `v0.30.1 => ../../`，驱动程序报 `v0.30.1-dirty`，因为对比的 `go.mod` 为了用更新的引擎被改过 |
 | [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0（main `0cc6d332`） | GCP c2d-standard-8，AMD EPYC 7B13，CPU 0 和它的同伴核 4 | 所有引擎重新运行，这是 C 引擎的第一次运行（[页面](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)）。先是计时的负载，然后是 tifa 页面，然后是两个核上的 test262，一个接一个。go-quickjs 失败的页面在补跑里测。`liustack-tifa-nogoasm` 这一行没有了。结果文件里引擎表的版本列写的是 `v0.26.16 => ../../`，因为对比的 `go.mod` 没有往前移：引擎就是这份检出 |

@@ -1,0 +1,49 @@
+result temp 747033992
+result local 747033992
+result arg 747033992
+result self 747033992
+result selfRight 747033992
+result selfArg 747033992
+result plusEq 747033992
+result prop 747033992
+result elem 747033992
+result array 747033992
+result thisProp 747033992
+result chain 1954810328
+result nested 1954810328
+result kRight 27764350
+result kRightLocal -323207810
+result kRightSelf 976480894
+result kLeft 1995241934
+result kLeftLocal 265879422
+result kLeftSelf -290379778
+result kEmpty 1480363102
+result kEmptyLeft 1480363102
+result pair 2 1f600 1 true
+result key 2 name! namename
+result held 180 100,118,136,154,172 100 202
+result other obj LV[valueOf] VR[valueOf] LV[valueOf] VR[valueOf] xV[valueOf] Vx[valueOf] PV[valueOf]
+result other objS LT[toString] TR[toString] LT[toString] TR[toString] xT[toString] Tx[toString] PT[toString]
+result other prim LP[prim:default] PR[prim:default] LP[prim:default] PR[prim:default] xP[prim:default] Px[prim:default] PP[prim:default]
+result other strObj Lso soR Lso soR xso sox Pso
+result other arr La,b a,bR La,b a,bR xa,b a,bx Pa,b
+result other num L1.5 1.5R L1.5 1.5R x1.5 1.5x P1.5
+result other int L7 7R L7 7R x7 7x P7
+result other neg0 L0 0R L0 0R x0 0x P0
+result other nan LNaN NaNR LNaN NaNR xNaN NaNx PNaN
+result other t Ltrue trueR Ltrue trueR xtrue truex Ptrue
+result other nul Lnull nullR Lnull nullR xnull nullx Pnull
+result other undef Lundefined undefinedR Lundefined undefinedR xundefined undefinedx Pundefined
+result other big L12 12R L12 12R x12 12x P12
+result other sym !TypeError !TypeError !TypeError !TypeError !TypeError !TypeError !TypeError
+result other fn Lfunction f() {} function f() {}R Lfunction f() {} function f() {}R xfunction f() {} function f() {}x Pfunction f() {}
+result hooked aac caa 602:-1783372000 602:-1783372000 601:213897835 aaaa spc[S.prim:default] csp[S.prim:default] aasp[S.prim:default]
+result restored soc
+result sub 2 9 2 5 6 6 NaN
+result loop k n16 2400 932267880 true
+result loop n8 l600 3645 833408364 true
+result loop wrope key 3 49874 true
+result loop empty hi 600 -221711168 true
+mem-end obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
+mem-gc obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
+--- status exit 0

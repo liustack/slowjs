@@ -267,3 +267,56 @@ func WriteMemory(w io.Writer, rows []MemRow) {
 		fmt.Fprintf(w, "| %s | %.1f | %.1f | %.1f | %d |\n", r.Side, r.Median, r.Min, r.Max, r.N)
 	}
 }
+
+// PlaceRow is the time of each side at one placement of the data, for one
+// metric.
+type PlaceRow struct {
+	K         int
+	Pos       string
+	Metric    string
+	Base, New float64 // the median of the processes of the side there
+}
+
+// Places lists, for records run with the placement paired with the layout
+// (RunOptions.Place), the median of each side at each placement, in the order
+// of k. Records without a placement give none.
+func Places(rs []Record, kind, base, nw string) []PlaceRow {
+	type key struct {
+		k      int
+		pos    string
+		metric string
+	}
+	vals := map[key]map[string][]float64{}
+	for _, r := range Final(rs, kind) {
+		if r.Place == nil || (r.Side != base && r.Side != nw) {
+			continue
+		}
+		for m, x := range r.Metrics {
+			k := key{*r.Place, r.Pos, m}
+			if vals[k] == nil {
+				vals[k] = map[string][]float64{}
+			}
+			vals[k][r.Side] = append(vals[k][r.Side], x)
+		}
+	}
+	var rows []PlaceRow
+	for k, by := range vals {
+		rows = append(rows, PlaceRow{k.k, k.pos, k.metric, Median(by[base]), Median(by[nw])})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].K != rows[j].K {
+			return rows[i].K < rows[j].K
+		}
+		return rows[i].Metric < rows[j].Metric
+	})
+	return rows
+}
+
+// WritePlaces writes the table of Places.
+func WritePlaces(w io.Writer, rows []PlaceRow, base, nw string) {
+	fmt.Fprintf(w, "| k | layout | metric | %s | %s | change |\n", base, nw)
+	fmt.Fprintln(w, "| ---: | --- | --- | ---: | ---: | ---: |")
+	for _, r := range rows {
+		fmt.Fprintf(w, "| %d | %s | %s | %.2f | %.2f | %+.2f%% |\n", r.K, r.Pos, r.Metric, r.Base, r.New, 100*(r.New/r.Base-1))
+	}
+}

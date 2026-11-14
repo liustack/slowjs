@@ -67,6 +67,7 @@ type Manifest struct {
 	Sib        int               `json:"sib"`
 	BusyPct    float64           `json:"busy_pct"`
 	StealPct   float64           `json:"steal_pct"`
+	Place      string            `json:"place,omitempty"` // RunOptions.Place
 }
 
 // ManifestPath is the manifest of a file of records.
@@ -143,6 +144,7 @@ func (m Manifest) Same(o Manifest) error {
 	eq("sib", o.Sib, m.Sib)
 	eq("busy", o.BusyPct, m.BusyPct)
 	eq("steal", o.StealPct, m.StealPct)
+	eq("place", o.Place, m.Place)
 	if len(diffs) > 0 {
 		return fmt.Errorf("the run is not the experiment of the file:\n  %s", strings.Join(diffs, "\n  "))
 	}
@@ -158,6 +160,7 @@ func Begin(o RunOptions, vs []Variant, old []Record) (Manifest, error) {
 		Binaries: map[string]string{},
 		Parse:    o.Parse, Args: o.Args, Dir: o.Dir, Env: o.Env,
 		CPU: o.CPU, Sib: o.Sib, BusyPct: o.BusyPct, StealPct: o.StealPct,
+		Place: o.Place,
 	}
 	for _, v := range vs {
 		if !slices.Contains(m.Plan.Sides, v.Side) {

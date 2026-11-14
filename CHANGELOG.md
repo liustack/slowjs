@@ -4,6 +4,25 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.7] - 2026-11-14
+
+### Changed
+
+- Pages render in 1.4% to 2.3% less time than with v0.30.6, with the changes below and a profile trained again on them. On a linux/amd64 machine with an AMD EPYC 7B13 (the mean of 16 code layouts), tifa's workbench pages take 2.3% less time, the MUI pages 1.7% less, the store pages 1.6% less and a long Markdown document 1.4% less. For React pages the timing shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% fewer. Of the 64 micro benchmarks of `compare/testdata`, timed the same way on a second machine of that type, 23 are faster (`prop_create` 19.9%, `string_build2` 18.9%, `string_build3` and `typed_array_read` 9.2%, `string_build_large2` 8.6%) and 14 are slower. Three of the 14 run more instructions: `int_to_string2` 1.9% more for 3.6% more time, `array_prop_create` 1.3% for 1.2%, and `weak_map_set` 1.2% for 2.1%. The others take more time for the same or fewer instructions, by where their code and data land in memory: `global_write` and `global_write_strict` 8.1% and 8.8% more time for the same instructions, `array_write` 8.6% more for 1.5% more instructions, and `regexp_ascii` and `regexp_utf16` 7.9% and 8.5% more for 3% fewer ([performance.md](docs/performance.md#v0307-against-v0306)).
+- A spread of a plain array (`[...a]`, `f(...a)`, `new C(...a)`, `super(...a)`) copies its elements to the array it builds in one step, with no Array Iterator, when no script could see the difference. A render of tifa's workbench studio page runs 1.4% fewer instructions, the store pages 0.4% fewer and a long Markdown document 3.0% fewer, and the MUI and React pages the same. A spread allocates less, so under a memory limit an out of memory error can come later or not at all ([c-engine.md](docs/changes/c-engine.md#the-spread-of-a-plain-array-with-no-iterator)).
+- `o[k] = v` with a string key and `o.x = v` that add a key to a plain object, or set an own writable data property of one, no longer go through the generic store. With the profile trained again, a render of the MUI pages runs 1.2% to 2.1% fewer instructions, the workbench pages 1.1% to 1.4% and the store pages 0.3% to 0.9%, and React pages the same ([c-engine.md](docs/changes/c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path)).
+- The register loop adds two strings in a small function of its own, not in the path that add, subtract and the compares share. An add of a string and a value that is not a string pays about 3 instructions more ([strings.md](docs/changes/strings.md#two-strings-are-added-without-the-generic-path)).
+- `Object.defineProperty`, and the calls that read a property descriptor the same way, read a descriptor that is a plain object in one pass, and `Function.prototype.bind` reads the length and name of a plain function from its shape. Together a render runs 1.2% fewer instructions on the workbench pages, 0.5% to 0.7% fewer on the store pages and up to 0.2% fewer on the MUI and React pages ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass)).
+- The HTML of a page with a character outside Latin-1 goes from the engine's 16-bit string to Go's UTF-8 eight ASCII units at a time. On an Apple M4 the conversion of the store's home page runs 1.6 million instructions where it ran 7.5 million, and that of the workbench studio page 0.75 million where it ran 2.0 million. Text with no runs of ASCII, such as Chinese, takes up to 2.2% more instructions to convert ([go-api.md](docs/changes/go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time)).
+- The profile the engine is generated with is now trained on plain loops too (`engine/pgo/loops.js`), so that code the pages never run, such as typed arrays, regular expressions on 16-bit text and BigInt, is no longer compiled as code that never runs. Timed against v0.30.6 with the same C, `typed_array_read` and `typed_array_write` take 6.6% and 6.7% less time, `regexp_utf16` and `array_prop_create` 3.7% and 3.2% more, and no kind of page is slower ([generator.md](docs/changes/generator.md#a-second-input-plain-loops)).
+
+### Fixed
+
+- A spread no longer calls `return` on an iterator whose step threw (`next` throws, its result is not an object, or reading `done` or `value` throws): the error goes on, as the specification says and Node does. It also reads `Symbol.iterator` of its value once, where a getter there ran twice. And when `next` of the Array Iterator prototype is a getter that steps the iterator, the spread goes on from where the getter left it, where it gave the passed elements again ([c-engine.md](docs/changes/c-engine.md#a-spread-reads-symboliterator-once-and-closes-no-iterator)).
+- A `has` trap of a Proxy given as a property descriptor that throws now ends `Object.defineProperty`, `Object.defineProperties`, `Object.create` and `Reflect.defineProperty` with its exception. The property could be defined with the exception lost. A getter of the field `get` or `set` that throws now ends them with its own exception, where it became `TypeError: invalid getter` ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#a-field-of-a-property-descriptor-that-throws-ends-the-conversion)).
+- `bind` with too little memory left now fails with the out of memory error. It could crash the process, or return a bound function without its `length` or `name` ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#bind-with-too-little-memory-fails-whole)).
+- The line of v0.30.5 said that `global_read` was 13.9% slower than with v0.30.4 and `array_read` 3.2%, the first for a reason not found. Timed again with the data of the benchmark placed in 16 ways, what both lost was the place of their data, not work of the engine: v0.30.5 is 9% faster than v0.30.4 on `global_read` at 11 of the placements, and within 0.8% of it on `array_read` at 13. `prop_create`, `typed_array_read` and `array_for` were slower at every placement ([performance.md](docs/performance.md#the-micro-benchmarks-by-time)).
+
 ## [v0.30.6] - 2026-11-14
 
 ### Changed
@@ -685,7 +704,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.6...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.7...main
+[v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4

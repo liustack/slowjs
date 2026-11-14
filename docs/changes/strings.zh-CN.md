@@ -1,10 +1,11 @@
 ---
-summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变，symbol 和它的描述为什么不和脚本共用字符串，atom 的哈希表为什么两个桶只放一个 atom，以及 + 左边是空字符串时为什么直接给出右边的字符串'
+summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变，symbol 和它的描述为什么不和脚本共用字符串，atom 的哈希表为什么两个桶只放一个 atom，+ 左边是空字符串时为什么直接给出右边的字符串，以及寄存器循环为什么不走通用路径就把两个字符串相加'
 read_when:
   - String.prototype.includes、indexOf 或 lastIndexOf 给出的结果和以前不一样，或者在长字符串上很慢
   - 用字符串做出的 symbol，或者描述被拿着的 symbol，WeakRef 或 FinalizationRegistry 一直放不掉它
   - 一个 VM 给 atom 占的内存比以前多，或者接近内存上限的脚本在以前不会内存不足的地方内存不足
   - 左边是空字符串的加法，比如 '' + x 或以替换开头的模板字符串，给出的字符串和操作数是同一个
+  - 两个字符串的加法给出的字符串、字符串种类或异常和以前不一样，或者一个数加一个不是数的值变慢了
 ---
 
 # 字符串
@@ -62,3 +63,26 @@ atom 是引擎给属性名或者只存一份的字符串编的号。用字符串
 收益，在 3ae98161 的原生 C 树上数的（linux/amd64 callgrind，整个进程，一次预热之后三次和一次计时渲染之差）：React 的页面每次渲染做 2,151 次这样的加法，指令少 1.28%，MUI 的三个页面 4,306 次、0.49%，十四个商店页面 2,426 次、0.17%，六个工作台页面 1,018 次、0.21%，每次加法大约省 150 到 210 条指令。表格见 [performance.md](../performance.zh-CN.md#左边是空字符串的加法)。
 
 测试：`engine/test/unit-white.c` 的 `test_string_empty_left` 检查 `'' + s`、空字符串局部变量的 `e + s` 和 `t = t + s`、`''.concat(s)` 和 `` `${s}` `` 给出的就是字符串 `s` 本身，并检查对结果的原地拼接（`add_loc`，以及加到局部变量里）不改动 `s`（`s` 有 76 个字符，超过不做原地拼接的 64）。把 `js_concat_string_in_place` 的检查放宽一个持有者，加到局部变量里那一例就会改动 `s`，测试失败。
+
+## 两个字符串的加法不走通用路径
+
+发布版本：v0.30.7。
+
+在寄存器循环里，操作数不是两个数的加法都交给 `rv_binop_slow`，也就是加、减和比较共用的慢路径：它重新读一遍操作码和操作数，先看是不是数，再看是不是两个字符串，最后才调用 `JS_ConcatString`。页面上的加法大多是两个字符串相加，拼 HTML、类名和键。现在加法的处理代码把两个字符串交给 `rv_add_str`（`engine/regvm-ops-basic.h`），它只做这一件事：按 `rv_binop_slow` 的方式取操作数（临时值直接拿走，局部变量、参数和常量复制一份），调用同一个 `JS_ConcatString`，结果写进局部变量或参数时调用 `js_add_string_into`，它可能把局部变量的字符串原地加长。处理代码在调用前看一个操作数的标签，`rv_add_str` 两个都看。有一个不是字符串时，它什么也不做就返回，处理代码照旧调用 `rv_binop_slow`。
+
+加法的各种形式，以及现在各自怎么走：
+
+- ADD（结果放进临时值）、ADDL（放进局部变量或参数）、ADDK 和 ADDKL（常量在右边，`x + 'px'`）：处理代码看左操作数。四种都交给 `rv_add_str`。
+- KADD（常量在左边，`'<' + x`）：处理代码看右操作数，因为左边是常量。交给 `rv_add_str`。
+- ADDLOC 和 ADDLOCK（局部变量上的 `s += x`）以及 ADDVR 和 ADDVRC（闭包变量上的 `s += x`）本来就在自己的辅助函数 `rv_addloc_slow` 和 `rv_addvr_slow` 里加两个字符串，不经过 `rv_binop_slow`，没有改。
+- `o.s += x` 和 `o[k] += x` 是一次读、一次 ADD、一次写，所以走新路径。SUB、SUBL、SUBK、SUBKL 和 KSUB 都不走。
+
+每个页面都会跑到改过的这五种形式。MUI 订单页一次渲染通过它们加两个字符串 34,500 次，它的首页 16,600 次，商店页 13,700 次（首页）和 19,400 次（商品页），工作台页 7,300 次（studio）和 3,900 次（stats），React 的页面 2,700 次。其中 KADD 在 MUI 订单页占 10%，在 React 的页面占 65%。表格见 [performance.md](../performance.zh-CN.md#两个字符串的加法不走通用路径)。
+
+为什么安全：条件是两个操作数的标签都是字符串或 rope（`JS_IsString`），别的什么都不看。这时两个都是原始字符串，加法不会运行脚本的任何代码：不调用 `valueOf`、`toString` 或 `Symbol.toPrimitive`，`String.prototype` 上的也不调用。结果和 `rv_binop_slow` 对同样的操作数给出的一样，因为对它们调用的是同一个函数：同样种类的字符串（8 位或 16 位的普通字符串，或者按同样的长度规则做成的 rope），同样的字符，同样地原地加长局部变量的字符串，超过 2^30-1 个字符时同样抛出 `InternalError: string too long`，内存用完时同样抛出异常。atom 的字符串，以及记着自己作为键的 atom 的字符串，在这里和别的字符串一样：结果是一个新字符串，左边为空时就是右操作数本身（[见上文](#-左边是空字符串时直接给出右边的字符串)）。任何一边是 String 对象、数、BigInt、Symbol 或别的值，都照旧交给 `rv_binop_slow`。`rv_add_str` 只有一个可以抛出的位置，就是 `rv_binop_slow` 在两个字符串相加时的那一个，在取完操作数之后，所以抛出注入的位置和它们的 golden 不变。`JS_RegvmRun` 的帧不变，影子栈在 amd64 上 256 字节，在 arm64 上 176 字节。
+
+代价：一个数加一个不是数的值（`n + ''`）在进 `rv_binop_slow` 之前多看一个标签，大约 3 条指令。被看的那个操作数是字符串、另一个不是的加法（`s + n`、`s + obj`、`1 + s`）还要多付一次 `rv_add_str` 的调用，它立刻返回。七个页面里，不是两个字符串、走 `rv_binop_slow` 的加法最多的是 store 商品页，每次渲染约 3,100 次，其中只有一部分要付这个调用。微基准 `int_to_string2` 在原生构建上多跑 0.7% 的指令。处理代码里两个整数或两个浮点数相加的部分，指令和以前一样。这个改动动了 `JS_RegvmRun` 的 C 代码，所以在重新训练 tifa 页面的性能画像之前，生成器编译这个函数时不用画像，页面的指令反而多 0.6% 到 1.1%（[performance.md](../performance.zh-CN.md#两个字符串的加法不走通用路径)）。
+
+这和[试过但没做的](../performance.zh-CN.md#试过但没做的)里的「`rv_binop_slow` 只传 5 个字」不是一回事：那个分支给每一次走慢路径的加法和比较少传参数字，因为 clang 换了 `JS_RegvmRun` 里严格比较处理代码的排布而没有采用。这个改动不碰 `rv_binop_slow` 和对它的调用，只是把两个字符串的加法从它那里拿走。
+
+测试：`engine/test/compare/string_add.js`（输出和 Node 24 核对过）用 13 种形式（临时值、局部变量、参数、局部变量在任一边、局部变量上的 `+=`、属性、元素、连加）和任一边 8 种常量，把 12 种字符串（空串、atom 的、8 位和 16 位普通字符串、单独的代理项、对象的键、600 和 9,000 个字符、8 位和 16 位的 rope）两两相加，还有不是字符串的操作数（带 `valueOf`、`toString` 或 `Symbol.toPrimitive` 的对象、String 对象、数组、数、`-0`、`NaN`、布尔值、`null`、`undefined`、BigInt、函数、会抛出的 Symbol），并替换 `String.prototype` 的方法，表明一个都不会运行，严格和非严格代码都有。`engine/test/regvm/js/r-stradd.js` 检查每种形式的长度上限，出错后要写入的局部变量还是原来的字符串，操作数也没有变，并让抛出注入打到每种形式（`inject-hit` 行）。`engine/test/unit-white.c` 的 `test_string_add_kinds` 检查每种形式给出的字符串种类（rope 还是普通，8 位还是 16 位）和字符都和 `JS_ConcatString` 一样。`engine/test/unit-oom.c` 的 `test_string_add_oom` 让每一次分配轮流失败来跑这些形式，检查结果或异常，出错后要写入的参数还是原来的字符串或者是完整的新字符串，原地加长的字符串对它的其他持有者没有变，只有局部变量持有的字符串不管是原地加长还是带余量复制，都完整地加长了。

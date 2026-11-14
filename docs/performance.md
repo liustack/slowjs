@@ -67,6 +67,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.4 | Long text of Intl and long outputs of `fmt` are worked on in checked pieces, and a VM with no memory limit keeps its last block for the next call | Fixes. No speed claim on a render |
 | v0.30.5 | The engine is generated with [a profile of tifa's pages](#a-profile-of-tifas-pages), on top of five changes of the register interpreter: the atom table, `'' + x`, the keyed read, the key atom of a string, object rest and spread | Against v0.30.4, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.871 of the time, its fourteen store pages 0.874, the three MUI pages 0.888, React's page 0.882 and the long Markdown page 0.966. The profile alone gives 0.916 to 0.946. Without it the long Markdown page takes 1.022 of the time of v0.30.4, for a cause not found yet ([Long Markdown without the profile](#long-markdown-without-the-profile)) |
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
+| v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 
 ## Measuring in tifa
 
@@ -961,6 +962,23 @@ The instructions fall on every group on both architectures: this takes back a sm
 
 [Array destructuring with no iterator](changes/c-engine.md#array-destructuring-with-no-iterator). Counted on 2026-11-13 on the native C tree at 62df0bc8 against 4922b91a (linux/arm64 callgrind, three timed renders of each page after two warm ones, a young collection after each): 0.71% fewer instructions on the workbench pages (0.48% to 0.85% a page), 0.33% on the storefront (0.14% to 0.51%), 0.27% on MUI (0.21% to 0.29%) and 0.31% on React, and with the URL stand-in (`urlmemo.js`) 0.84%, 0.53% and 0.26%. No page runs more. Timed in tifa's `test/ssr` on linux/amd64 (one core, 60 renders of each page, the P50, 5 alternating rounds), the pages took 0.988 of the time on MUI, 0.996 on the storefront and 1.001 on the workbench, where the engine against a copy of itself took 0.982, 0.994 and 1.001: below what the timing can show, and no page took more than 1.007.
 
+### The spread of a plain array with no iterator
+
+[The spread of a plain array with no iterator](changes/c-engine.md#the-spread-of-a-plain-array-with-no-iterator), counted on 2026-11-14 against main at 78a90364, instructions a render. The native C tree: callgrind on linux/amd64 (an AMD EPYC 7B13), three timed renders after two warm ones with a young collection after each, `host_poll` left out, and the instruction counter of an Apple M4 (the same renders, `host_poll` in, the median of 5 runs that alternate with 5 of main, which move by up to 0.9% from run to run). The Go engine as generated, with the profile as shipped: callgrind on linux/amd64, the whole process, the difference of three and one renders after a warm one, `GOMAXPROCS=1`. The store pages of the native tree run the URL stand-in (`urlmemo.js`). The HTML of every page is the same.
+
+| Page | amd64, C tree | arm64, C tree | amd64, Go engine |
+| --- | ---: | ---: | ---: |
+| wb studio | -1.79% | -1.39% | -1.38% |
+| wb stats | -0.81% | -0.53% | -0.64% |
+| store home | -0.93% | -0.74% | -0.43% |
+| store products | -0.89% | -0.67% | -0.43% |
+| MUI orders | +0.02% | 0.00% | 0.00% |
+| MUI home | -0.06% | -0.08% | -0.01% |
+| React | -0.01% | -0.11% | +0.13% |
+| long Markdown (400 sections) | | | -2.97% |
+
+The Go engine gains less than the C tree on the same pages: the Go engine spends more of a render elsewhere, and `js_append_enumerate`, whose C changed, compiles without its profile until the next training (`js_append_array` and `js_spread_iterator` are new and have none either). React, which spreads no array, runs 0.13% more on the Go engine and the same on the C tree, under the 0.3% that counts: the cause was not traced to a function. The 64 micro benchmarks run between 0.54% fewer and 0.11% more instructions a turn: none of them spreads an array. The timing is left to the train.
+
 ### Fewer argument words into hot calls
 
 [Fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), against the train at 1e2e9227. Timed on server A (linux/amd64, one core, `GOMAXPROCS=1`) with the 16 code layouts of [measuring.md](measuring.md): one VM per run with the bundle loaded once, each page rendered 3 times to warm and 7 times timed (React's page 8 and 20), the median of each page, summed over the pages of a group. The change is the mean over the layouts with its 95% interval. The formal layout, the binary that ships, is given apart. Store and workbench ran 4 rounds (36 units), MUI and React 6 (54 units). Instructions are per render, amd64 callgrind. Every page gives the same HTML.
@@ -1017,6 +1035,59 @@ On an Apple M4 (darwin/arm64), tifa's `test/ssr` with the product counters, 10 r
 
 A second session timed MUI and React again: -0.10% [-0.74%, +0.54%] and -1.37% [-1.83%, -0.92%]. MUI takes the same time within the 1% delta: its pages call `charCodeAt` most, and that call now goes through the table of `rv_fast_fns`, about 8 instructions more on arm64. The binary at the first position was slower on MUI in one session (+1.61% [+0.54%, +2.69%]), and so was the same change without the table in the other: where the code lands, not the table. A render makes fewer direct C calls: 71,440 to 33,104 on the store's home, 30,030 to 14,315 on MUI's orders, 10,339 to 2,178 on React's page. Most of the gain comes from `push`, `Map.get` and `Math.clz32` on React, from `has`, `Array.isArray` and `Math.clz32` on MUI, and from `hasOwn`, `has` and `String` on the store. Most of the store's `hasOwn` and `String` calls are made while it builds URLs, so where a URL costs less the store gains less.
 
+### Keyed and named stores that add a key
+
+[A store that adds a key to a plain object skips the generic path](changes/c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path), counted on 2026-11-14 against `78a90364` (v0.30.6). Native: the test host built by clang, the 3 renders after 2 warm, callgrind on linux/amd64 and retired instructions on an Apple M4 (the lowest of 2 or 3 rounds). Product: the generated engine inside tifa's `test/ssr`, callgrind on linux/amd64 (3 renders less 1, halved) and retired instructions on the M4 (the median render, the lowest of 3 rounds, summed over the pages of the group). "As generated" is the engine of this change with the profile of v0.30.6, which has no data for `JS_RegvmRun` any more. "Trained" is the same engine with the profile trained again on it, as the release will ship it. Every page gives the same HTML.
+
+| Pages | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| workbench studio | -0.67% | -0.53% | -0.21% | -1.18% | -0.27% | -1.36% |
+| workbench stats | -0.59% | -0.16% | | | +0.40% | -1.11% |
+| store home | -0.35% | -0.41% | +0.63% | -0.30% | +0.64% (en-US), +0.90% (zh-CN) | -0.57%, -0.42% |
+| store products | -0.48% | -0.42% | | | +0.10% | -0.88% |
+| MUI orders | -1.45% | -1.12% | -1.35% | -2.07% | -1.04% | -1.96% |
+| MUI home | -1.03% | -0.94% | | | -0.60% | -1.19% |
+| React | +0.10% | +0.05% | +1.29% | +0.07% | +1.36% | -0.22% |
+| long Markdown | -0.25% | -0.16% | | | | |
+
+A render makes 22.5K stores that take the path on MUI orders (19.6K keyed, 2.9K named), 7.4K on MUI home, 10.1K on wb studio, 4.2K on wb stats, 4.9K and 9.1K on the store home and products pages and 30 on React. Nearly all of them add a key. On amd64 `rv_putel_atom` runs about 96 instructions for a store, with the walk of the prototypes inlined, and `add_property` its own. Without a training `JS_RegvmRun` loses its profile and the pages with few such stores run more instructions, React most (+1.3%). The trained engine has the gain on every group but React, which stays the same. A training moves the code of the other functions a little too, so the trained columns are the change and a new profile together.
+
+The micro benchmarks of `compare/testdata` (native, M4): the geometric mean is 0.20% fewer instructions, `prop_create` 5.6% fewer (amd64 7.1%). `array_prop_create` runs 0.80% more (amd64 1.29%): its `tab[i] = i` appends through `rv_putel_slow`, about 230 instructions, and now pays the test of the key's tag before it, 3 instructions on amd64. `weak_map_delete` (`tab[i] = null` over an object) pays the same 3, 0.14%. No other benchmark runs more than 0.36% more.
+
+### Two strings added without the generic path
+
+[Two strings are added without the generic path](changes/strings.md#two-strings-are-added-without-the-generic-path), against `78a90364`. The adds of two strings a render makes through each form, counted with counters added to the native C tree for the count only:
+
+| Page | ADD | ADDL | ADDK | ADDKL | KADD | Ropes among them |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MUI's orders page | 7,157 | 11,468 | 12,582 | 6 | 3,321 | 422 |
+| MUI's home page | 3,616 | 5,443 | 6,005 | 6 | 1,489 | 319 |
+| The store's home page | 5,447 | 1,720 | 3,781 | 38 | 2,684 | 49 |
+| The store's products page | 7,036 | 2,391 | 5,201 | 121 | 4,608 | 49 |
+| The workbench's studio page | 1,485 | 1,403 | 1,183 | 59 | 3,169 | 47 |
+| The workbench's stats page | 1,099 | 745 | 861 | 26 | 1,205 | 49 |
+| React's page | 313 | 367 | 255 | 2 | 1,757 | 0 |
+| Long Markdown (400 sections) | 297,887 | 11,064 | 179,824 | 14 | 69,631 | 31 |
+
+`s += x` on a local (ADDLOC) and on a closure variable (ADDVR) did not go through the generic path before and are not in the table.
+
+Instructions a render, per page: amd64 is callgrind of the native C tree on an AMD EPYC 7B13 (three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with the URL stand-in `urlmemo.js`; Markdown two after one). arm64 is the retired instructions of the same renders on an Apple M4, the lowest of 3 rounds. The product is the generated engine in tifa's `test/ssr` (amd64: callgrind, the difference of three and one timed renders after two warm ones, `GOGC=off`; arm64: retired instructions, the lowest of 3 rounds), first as generated with the profile of v0.30.6, in which `JS_RegvmRun` no longer matches its C and so is compiled with no profile, then with the profile trained again on the change (`engine/pgo/train.sh`). The HTML of every page is the same.
+
+| Page | Native, amd64 | Native, M4 | Product, amd64, profile of v0.30.6 | Product, amd64, trained again | Product, M4, profile of v0.30.6 | Product, M4, trained again |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| React's page | -0.31% | -0.18% | +0.85% | -0.43% | +1.00% | -0.35% |
+| The store's home page | -0.31% | -0.34% | +0.95% | -0.10% | +0.89% | -0.22% |
+| The store's products page | -0.29% | -0.17% | +0.73% | -0.29% | +0.73% | -0.31% |
+| The workbench's studio page | -0.18% | -0.21% | +0.70% | -0.07% | +1.11% | +0.13% |
+| The workbench's stats page | -0.17% | -0.02% | +0.64% | -0.10% | +0.56% | -0.23% |
+| MUI's orders page | -0.52% | -0.42% | -0.02% | -0.69% | +0.15% | -0.50% |
+| MUI's home page | -0.58% | -0.42% | +0.13% | -0.59% | +0.16% | -0.40% |
+| Long Markdown (400 sections) | -0.11% | -0.11% | | | | |
+
+The micro benchmarks of `compare/testdata` by instructions (native, Apple M4, the lowest of 3 runs): `string_build2` -7.0%, `string_build3` -4.5%, `string_build_large2` -3.9%, `int_arith` and `float_arith` the same within 0.05%, and `int_to_string2` +0.7%, whose `n + ''` now tests the tag of `n` before the generic path. No other benchmark runs more than 0.5% more.
+
+Native, an add of two strings costs about 30 instructions less than before on amd64 (MUI's pages and React's page: the instructions saved over the adds of the table). As generated with the profile of v0.30.6, every page but MUI's runs 0.6% to 1.1% more instructions: the generator finds that the C of `JS_RegvmRun` changed since the profile was trained and compiles it with no profile, which costs more than the change saves. With the profile trained again every page runs fewer on amd64, so the profile must be trained again before a release that has this change ([releasing.md](releasing.md#the-profile)). The counts on the M4 differ by about 0.3% from one round to the next, so a row of it below that says nothing alone. Long Markdown was counted on the native C tree only.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1054,6 +1125,47 @@ The changes made to the register loop since are measured in their own sections: 
 | tifa's shop, six workbench pages | 155.56 ms | 1.004 (0.968 to 1.026), 3 of 10 | 50.87 ms | 0.996 (0.978 to 1.079), 6 of 10 |
 
 The instructions of a render on the M4 (retired instructions, the median of a page's renders, summed over the pages) are 0.26% fewer on MUI and 0.02% more on the store and workbench pages: the gain shows in time, not in instructions, as fewer loads along the chains of the table, each a likely cache miss, would. The workbench took 0.4% more time on linux/amd64 and 0.4% less on the M4 with the same instructions, which is no change. The native C tree on linux/amd64 (`render`, tifa's pool, one session of 10 rounds) showed more on MUI than tifa does: 0.977 (0.950 to 0.997), 10 of 10 rounds under 1, where the generated engine in tifa gives 0.990.
+
+### The UTF-8 of a page, eight ASCII units at a time
+
+[A 16-bit string goes to UTF-8 eight ASCII units at a time](changes/go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time), against main at `78a90364` (v0.30.6). The HTML of every page reaches Go as a string of 16-bit units, 97% to 100% ASCII, of 28,398 (React) to 482,807 units (the store's product list). Counted on 2026-11-14 in tifa's `test/ssr` (the real compile, load and render, one Go thread): on an Apple M4, the retired instructions of each render, the lowest of 10 renders after 3 warm ones (React 100 after 20), 3 runs that alternate the two builds, the sum over the pages of a group. On linux/amd64, callgrind of the whole process, the difference of 3 renders and 1 after 2 warm ones, halved (AMD EPYC 7B13). Every page gives the same HTML.
+
+| Pages | Apple M4, the group (3 runs) | Apple M4, by page | linux/amd64, one page |
+| --- | ---: | ---: | ---: |
+| tifa's shop, fourteen store pages | -1.94% to -2.04% | -0.20% (post) to -3.83% (product) | -2.95% (home), -0.84% (cart in Chinese) |
+| tifa's shop, six workbench pages | -0.99% to -1.24% | -0.83% (studio) to -1.34% (order) | -0.75% (studio) |
+| tifa's MUI test app, three pages | -0.53% to -0.67% | -0.40% (orders) to -0.84% (order) | -0.39% (orders) |
+| React's page | -0.44% to -0.46% | | -0.48% |
+
+The store's home, product and product list pages gain 3% to 4%: they are longer than `stringStep` (262,144 units), so their bytes were counted one unit at a time before they were written, about 21 instructions a unit in all, where the other pages took about 9. The conversion alone now takes 3 to 6.5 instructions a unit (the Chinese pages most). The time was not measured on its own: a merged batch is timed as a whole.
+
+### Property descriptors and bind without generic lookups
+
+[Object.defineProperty reads a plain descriptor in one pass](changes/objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) (descriptors), and on top of it [bind reads the length and name of a plain target from its shape](changes/objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) (bind), against main at `78a90364` (v0.30.6). Instructions per render are from callgrind on the native C tree on linux/amd64 (the 3 timed renders after 2 warm ones, the pool of tifa's settings, `host_poll` left out), the shop's pages with the URL objects reused. The calls are counted in `js_obj_to_desc` and `js_function_bind`. The HTML of every page is the same.
+
+| Page | Descriptors a render | Binds a render | Descriptors | Descriptors and bind |
+| --- | ---: | ---: | ---: | ---: |
+| the workbench studio page | 2,944 | 855 | -0.71% | -1.17% |
+| the workbench stats page | 1,609 | 394 | -0.74% | -1.16% |
+| the shop's English home page | 459 | 572 | -0.14% | -0.49% |
+| the shop's Chinese products page | 975 | 1,286 | -0.17% | -0.68% |
+| MUI's orders page | 83 | 331 | +0.01% | -0.14% |
+| MUI's home page | 83 | 37 | -0.02% | -0.06% |
+| React's page | 0 | 60 | -0.01% | -0.18% |
+
+The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pages without the reused URL objects), against the same commit of main. The profile of `make gen` is the one trained before the change: `js_obj_to_desc`, `js_function_bind` and `js_bound_function_finalizer` changed, so they are compiled without it, and the six new helpers have none, until the profile is trained again. On linux/amd64 the instructions of a render are from callgrind, two warm renders and then the difference of three renders and one, halved. On an Apple M4 (darwin/arm64) they are the retired instructions, the median of 20 renders (60 for React's page), the lowest of 3 rounds. The HTML of every page is the same.
+
+| Page | linux/amd64 | darwin/arm64 |
+| --- | ---: | ---: |
+| the workbench studio page | -0.64% | -0.59% |
+| the workbench stats page | -0.47% | -0.65% |
+| the shop's English home page | -0.46% | -0.28% |
+| the shop's Chinese products page | -0.45% | -0.59% |
+| MUI's orders page | -0.22% | -0.10% |
+| MUI's home page | -0.18% | -0.12% |
+| React's page | -0.16% | -0.30% |
+
+The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
 
 ### A profile of tifa's pages
 
@@ -1116,11 +1228,27 @@ Against v0.30.4 the release runs six of the 12 slower (`global_read` 13.90%, `ty
 
 The profile makes six of them slower, two by about twice as much in time as in instructions: `typed_array_read` 14.34% slower for 7.53% more instructions, `array_for` 4.47% for 2.10%, `prop_create` 3.98% for 3.78%, `int_arith` 3.85% for 2.86%, `array_read` 2.36% for 3.84% and `prop_read` 1.35% for 3.13% (instructions per turn of the loop, callgrind on linux/amd64, the same two builds). It makes `array_prop_create` 6.12% faster (2.55% fewer instructions), and the timing cannot tell for the other five (`float_arith` +4.92% instructions, `global_read` +4.36%, `prop_write` +2.42%, `prop_update` +2.12%, `array_slice` -0.51%). The cause: the training runs none of this code. A second training input that runs it is a follow-up.
 
-Without the profile, `global_read` is 12.77% slower than v0.30.4 (+9.68% to +15.95%, formal +15.74%) and `prop_create` 2.97% slower (+2.00% to +3.95%). This is not the profile: it comes from the changes since v0.30.4, and the release keeps it. The cause is not found. Finding the change that costs each is a follow-up, as for the long Markdown page ([below](#long-markdown-without-the-profile)).
+Without the profile, `global_read` is 12.77% slower than v0.30.4 (+9.68% to +15.95%, formal +15.74%) and `prop_create` 2.97% slower (+2.00% to +3.95%). This is not the profile: it comes from the changes since v0.30.4, and the release keeps it. The cause is not found. Finding the change that costs each is a follow-up. For the long Markdown page, counts showed no change that adds work ([below](#long-markdown-without-the-profile)).
+
+**Correction, 2026-11-14.** `global_read` and `array_read` moved with the place of their data, not with the engine. A quick look on a second server of the same type (core 0, `jsrun` with 2 warm runs and 10 timed, the median, 2 rounds, no layouts and no verdict) ran the releases v0.30.4 and v0.30.5 with k small objects allocated before the benchmark, k = 0 to 15, which moves only where the heap puts the data of the loop. `global_read` has two levels in both versions, about 100 to 104 ms and about 114 to 117 ms: v0.30.4 is at the low level only at k = 0, v0.30.5 only at k = 2 and k = 6 to 15. `typed_array_read`, `array_for` and `prop_create` keep their difference at every k. v0.30.5 against v0.30.4:
+
+| Benchmark | k = 0 (the script as it is) | k = 1 to 15 | What moves it |
+| --- | ---: | ---: | --- |
+| `global_read` | +16.2% | -9.2% to +5.6% (-8.9% to -9.2% at k = 2 and 6 to 15) | the place of the data |
+| `array_read` | +4.7% | -0.3% to +3.4% (-0.3% to +0.8% at 13 of the 15) | the place of the data |
+| `typed_array_read` | +6.5% | +1.9% to +8.2% (+5.4% to +6.7% at 13 of the 15) | the engine |
+| `array_for` | +5.2% | +5.1% to +5.6% | the engine |
+| `prop_create` | +3.5% | +0.6% to +8.0% (+5.4% to +7.3% at 13 of the 15) | the engine |
+
+So the 13.90% and 3.15% above are what the release gave at one placement of the data, and the cause given for `global_read` without the profile, the changes since v0.30.4, does not hold: those changes moved its data. How to time a micro benchmark against this: [measuring.md](measuring.md#known-limits).
 
 #### Long Markdown without the profile
 
-Without the profile, the release renders the long Markdown page with no pool and no limit 2.18% slower than v0.30.4 (+1.57% to +2.79% at the mean of the layouts, judged slower, and +2.34% at the formal layout): 2.96% at 100 sections and 2.00% at 400. The cause is not found. It is in the changes since v0.30.4, not in the profile, which makes the page 5.49% faster and the release 3.43% faster than v0.30.4. Finding the change that costs it is a follow-up.
+Without the profile, the release renders the long Markdown page with no pool and no limit 2.18% slower than v0.30.4 (+1.57% to +2.79% at the mean of the layouts, judged slower, and +2.34% at the formal layout): 2.96% at 100 sections and 2.00% at 400. It is not in the profile, which makes the page 5.49% faster and the release 3.43% faster than v0.30.4.
+
+It is not more work, and no change since v0.30.4 adds it (looked at on 2026-11-14). Counted with callgrind on linux/amd64 (one render as half the difference between 3 and 1 timed renders after one warm render, in the program that timed the page), v0.30.6 generated without the profile runs fewer instructions a render than v0.30.4: 2.53% fewer at 100 sections (5.37 billion against 5.51 billion) and 3.13% fewer at 400 (20.97 billion against 21.65 billion, and 20.17 billion with the profile). Callgrind's caches and branch predictor find nothing that costs the time back: 4.1% more mispredicted branches (1.6 million more a render, about 0.6% of its time at 13 cycles each), 1.0% more misses of the first level data cache, the same misses of a second level of 512 KiB within 0.4%, 2.0% fewer misses of the instruction cache and 1.6% fewer mispredicted indirect jumps. Counted after each of the 13 merges that changed the engine from v0.30.4 to v0.30.6 (100 sections), the instructions a render rise at three steps, by 0.11% at most (the string that keeps its key atom, f3c8d900, +0.11%, keeping a block within the memory limit, bc3fe6c2, +0.09%, and the larger hash table of atoms, a673dadb, +0.07%), fall or stay the same at the others, and fall most with the built-ins answered in the register loop (e9357670, -1.06%). Callgrind's mispredicted branches go up and down from build to build, from 1% fewer to 7.6% more than v0.30.4, also for a change that only pads the code (91b1133e, +0.64%): they follow where the code lands more than what it does.
+
+A quick look on one server (an AMD EPYC 7B13, core 0 with the whole machine quiet, the formal layout of each build, 6 processes each, no verdict) found the time of this page set by where its code and data land more than by any change. v0.30.5 and v0.30.6 without the profile were about 3% slower than v0.30.4 at 100 sections and 3% faster at 400, faster in all 6 processes. The builds after each change in between were 0% to 4% slower at 100 sections, with no single step, except the one after the larger hash table of atoms (a673dadb), 8% slower for 0.07% more instructions, and the next build, which keeps that change, 3% slower. With 3 or 7 small objects made by a script before the bundle, which moves where the heap puts the page's data, v0.30.4 itself took 0.4% to 3% longer, and the ratio of the build without the profile to v0.30.4 moved by up to 3 points. The layouts of the protocol move the code but never the data, so a difference of 2% on this page can come from where the data lands. There is no cost here to give back by a change to the engine.
 
 #### v0.30.6 against v0.30.5
 
@@ -1159,6 +1287,141 @@ The 12 micro benchmarks of [the timing of v0.30.5](#the-micro-benchmarks-by-time
 
 At the mean of the layouts v0.30.6 is faster on 7 of them, shows no regression beyond the delta on `prop_read` and `prop_write`, cannot tell on `prop_update` and `typed_array_read`, and is slower by less than the delta on `array_slice`. `typed_array_read` is 7.19% slower at the formal layout, the build that ships, while the mean of the layouts cannot tell (its interval runs from -5.35% to +3.63%): the place of its code moves it more than the change does. `global_read` and `prop_create` gain 1.45% and 2.12%, but stay slower than with v0.30.4 (they lost 13.90% and 7.08% in v0.30.5).
 
+**Correction, 2026-11-14.** What `global_read` lost in v0.30.5 was the place of its data, not the engine, and the same holds for `array_read`: with k small objects allocated before the loop, v0.30.5 is 9% faster than v0.30.4 on `global_read` at k = 2 and 6 to 15, and within -0.3% to +0.8% of it on `array_read` at 13 of k = 1 to 15. `prop_create`, `typed_array_read` and `array_for` were slower in v0.30.5 at every placement tried ([the table of k](#the-micro-benchmarks-by-time)).
+
+#### The second input of the profile
+
+[The second input](changes/generator.md#a-second-input-plain-loops) (plain loops trained next to the pages) was timed on 2026-11-14 on the same machine and in the same way as v0.30.6 above. Two sides: v0.30.6 as it shipped (78a90364) and the same C generated with the profile trained on the pages and the loops (f3c21188). The micro benchmarks pair the place of their data with each layout (`measure bench run -place -place`), and two of them are new here: `typed_array_write` (N = 1,000,000) and `regexp_utf16` (N = 500). Every kind ran its 18 units with no block run again.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | +0.19% (-0.22% to +0.60%) no regression beyond delta | +0.08% (-0.86% to +1.03%) inconclusive |
+| tifa's shop, fourteen store pages | -0.23% (-0.56% to +0.10%) no regression beyond delta | +0.05% (-0.51% to +0.62%) no regression beyond delta |
+| tifa's MUI test app, three pages | -0.20% (-0.86% to +0.47%) no regression beyond delta | +0.32% (-0.25% to +0.88%) no regression beyond delta |
+| React's page | -0.82% (-1.76% to +0.13%) no regression beyond delta | -2.13% (-3.58% to -0.65%) faster |
+| The long Markdown page, 100 and 400 sections | -0.56% (-0.98% to -0.15%) faster | -0.57% (-1.40% to +0.26%) no regression beyond delta |
+
+| Benchmark | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| `array_for` | -1.04% (-3.17% to +1.13%) inconclusive | -6.30% (-8.27% to -4.29%) faster |
+| `array_prop_create` | +3.15% (+1.98% to +4.34%) slower | +2.40% (+1.63% to +3.17%) slower |
+| `array_read` | +0.50% (-0.06% to +1.07%) inconclusive | -0.38% (-0.66% to -0.09%) faster |
+| `array_slice` | +0.34% (-6.22% to +7.36%) inconclusive | +12.56% (+5.43% to +20.18%) slower |
+| `float_arith` | -0.82% (-1.74% to +0.12%) no regression beyond delta | -3.61% (-4.10% to -3.13%) faster |
+| `global_read` | -0.57% (-0.79% to -0.34%) faster | -0.41% (-0.64% to -0.18%) faster |
+| `int_arith` | -0.84% (-2.88% to +1.24%) inconclusive | -5.22% (-5.47% to -4.98%) faster |
+| `prop_create` | -1.24% (-3.04% to +0.59%) no regression beyond delta | +0.95% (-3.69% to +5.82%) inconclusive |
+| `prop_read` | -1.30% (-2.02% to -0.58%) faster | -1.83% (-2.85% to -0.80%) faster |
+| `prop_update` | -2.69% (-4.98% to -0.35%) faster | -1.73% (-6.11% to +2.86%) inconclusive |
+| `prop_write` | +1.18% (-0.57% to +2.95%) inconclusive | -1.33% (-4.89% to +2.37%) inconclusive |
+| `regexp_utf16` | +3.65% (+1.29% to +6.07%) slower | +1.37% (-0.31% to +3.08%) inconclusive |
+| `typed_array_read` | -6.55% (-10.25% to -2.70%) faster | -9.66% (-14.30% to -4.77%) faster |
+| `typed_array_write` | -6.70% (-8.23% to -5.14%) faster | -5.06% (-7.21% to -2.86%) faster |
+
+No kind of page is slower beyond the delta. MUI's pages run 0.86% fewer instructions with the loops, and the time shows -0.20%, which this timing cannot tell from no change. The long Markdown page is 0.56% faster. Of the micro benchmarks, the two the loops were written for gain the most: `typed_array_read` 6.55% and `typed_array_write` 6.70%. Two are slower at the mean of the layouts though they run fewer instructions (callgrind, linux/amd64): `regexp_utf16` 3.65% slower for 3.5% fewer instructions, and `array_prop_create` 3.15% slower for 0.4% fewer. That is where their code lands, not the work they do. `array_slice` is 12.56% slower at the formal layout and cannot tell at the mean, as in [the timing of v0.30.5](#the-micro-benchmarks-by-time), where the formal layout moved it by 12% the other way.
+
+#### v0.30.7 against v0.30.6
+
+v0.30.7 was timed on 2026-11-14 on a server of the same type as v0.30.6 above, in the same way (linux/amd64, an AMD EPYC 7B13 server with 4 cores, core 0 with the whole machine quiet, the 16 layouts of [measuring.md](measuring.md#the-protocol), 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals). Two sides: v0.30.6 (78a90364) and the commit of v0.30.7 with its profile (f698a910, trained again on its C, 2,788 functions, none stale). The pages are those of the shop, the MUI app, React and the long Markdown in the bundles the profile trains on. Both sides give the same HTML on every page. Each cell is the mean of the layouts with its interval and the verdict of `measure bench judge`, then the formal layout, the build that ships. Every kind ran its 18 units, and one block of the store pages ran again for a disturbance.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -2.29% (-3.22% to -1.35%) faster | +0.39% (-1.23% to +2.03%) inconclusive |
+| tifa's shop, fourteen store pages | -1.60% (-2.05% to -1.15%) faster | -1.14% (-2.11% to -0.16%) faster |
+| tifa's MUI test app, three pages | -1.72% (-2.32% to -1.11%) faster | -1.13% (-2.04% to -0.21%) faster |
+| React's page | -0.03% (-0.98% to +0.94%) no regression beyond delta | +0.68% (-0.87% to +2.25%) inconclusive |
+| The long Markdown page, 100 and 400 sections | -1.39% (-2.44% to -0.34%) faster | -2.04% (-5.24% to +1.26%) inconclusive |
+
+Instructions a render, the same two builds. amd64: callgrind on linux/amd64, one page of each group, half the difference of 3 renders and 1 after a warm one (Markdown, 400 sections: 2 renders less 1). M4: retired instructions on an Apple M4 (darwin/arm64), the lowest of 3 rounds, 10 renders less 1 (React 40, Markdown 2). Every page gives the same HTML.
+
+| Page | amd64 | M4 |
+| --- | ---: | ---: |
+| The store's home page | -4.67% | -4.11% |
+| The store's products page | -4.55% | -4.50% |
+| The workbench's studio page | -4.40% | -4.00% |
+| The workbench's stats page | -3.33% | -3.20% |
+| MUI's orders page | -3.17% | -3.43% |
+| MUI's home page | -2.94% | -2.55% |
+| React's page | -0.82% | -0.91% |
+| Long Markdown (400 sections) | -4.15% | -3.45% |
+
+Every kind of page but React is faster at the mean of the layouts, by 1.4% to 2.3%, and none is slower beyond the delta at the formal layout. React's page runs 0.8% fewer instructions, which the timing cannot tell from no change. The time gains less than the instructions: the instructions saved are in the stores that add a key, the adds of two strings, the spread and the bound functions, and a render spends much of its time elsewhere.
+
+An early reading of the same kind, on the same server before the spread and the string add were in (290da901 with a profile trained on it), gave the six workbench pages -1.31% (-2.15% to -0.45%) at the mean of the layouts and the fourteen store pages -1.03% (-1.58% to -0.48%, 17 of 18 units).
+
+The 64 micro benchmarks of `compare/testdata`, timed the same way on a second server of the same type (server B, core 0 with the whole machine quiet), each in `jsrun` with a new VM for each run, its N set so that one run takes about 100 ms on v0.30.6, 2 warm runs and 10 timed in a process, the median, with the place of the data paired with the layout (`measure bench run -place -place`). The side of v0.30.6 is its engine with the `-place` flag of `jsrun` (dbaa450c, no change to the engine). Every benchmark ran its 18 units, and one block of `global_func_call` ran again for a disturbance. Times of this server are not compared with those of the pages above.
+
+| Benchmark | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| `array_for` | -0.97% (-1.78% to -0.14%) faster | -2.35% (-2.71% to -1.99%) faster |
+| `array_for_in` | -1.02% (-1.62% to -0.41%) faster | -0.23% (-1.23% to +0.79%) no regression beyond delta |
+| `array_for_of` | -1.33% (-2.09% to -0.58%) faster | -0.75% (-3.26% to +1.81%) inconclusive |
+| `array_hole_length_decr` | -2.18% (-2.58% to -1.77%) faster | -3.24% (-3.94% to -2.53%) faster |
+| `array_length_decr` | -2.21% (-2.52% to -1.91%) faster | -1.32% (-1.63% to -1.00%) faster |
+| `array_pop` | -2.12% (-3.42% to -0.80%) faster | -2.99% (-5.51% to -0.40%) faster |
+| `array_prop_create` | +1.15% (+0.22% to +2.08%) slower | +1.74% (+1.05% to +2.43%) slower |
+| `array_push` | -0.84% (-1.86% to +0.19%) no regression beyond delta | -2.91% (-3.19% to -2.62%) faster |
+| `array_read` | +0.69% (-0.74% to +2.14%) inconclusive | +1.84% (-0.07% to +3.79%) inconclusive |
+| `array_slice` | -0.93% (-7.43% to +6.03%) inconclusive | -11.99% (-12.60% to -11.38%) faster |
+| `array_write` | +8.58% (+3.91% to +13.47%) slower | +17.11% (+11.64% to +22.86%) slower |
+| `date_now` | -0.76% (-1.69% to +0.18%) no regression beyond delta | +1.02% (-0.36% to +2.42%) inconclusive |
+| `date_parse` | -1.95% (-2.97% to -0.93%) faster | -4.21% (-4.59% to -3.83%) faster |
+| `empty_do_loop` | +0.76% (-1.31% to +2.87%) inconclusive | +2.65% (+1.56% to +3.75%) slower |
+| `empty_down_loop` | +2.32% (-0.22% to +4.93%) inconclusive | +7.26% (+5.29% to +9.27%) slower |
+| `empty_down_loop2` | -0.77% (-2.45% to +0.93%) no regression beyond delta | -2.01% (-3.88% to -0.09%) faster |
+| `empty_loop` | -1.42% (-2.54% to -0.29%) faster | +0.93% (-0.13% to +1.99%) inconclusive |
+| `factorial10` | -0.75% (-1.63% to +0.14%) no regression beyond delta | +0.41% (-6.07% to +7.34%) inconclusive |
+| `float_arith` | +0.05% (-1.73% to +1.87%) inconclusive | +4.42% (+3.52% to +5.33%) slower |
+| `float_toExponential` | -7.50% (-10.41% to -4.50%) faster | -0.24% (-0.89% to +0.41%) no regression beyond delta |
+| `float_toFixed` | +1.12% (-0.54% to +2.80%) inconclusive | -1.77% (-2.66% to -0.87%) faster |
+| `float_toPrecision` | -5.68% (-7.78% to -3.55%) faster | -6.69% (-7.39% to -5.99%) faster |
+| `float_toString` | +0.21% (-1.04% to +1.47%) inconclusive | -1.11% (-1.70% to -0.51%) faster |
+| `float_to_string` | +2.57% (+1.07% to +4.09%) slower | -2.71% (-3.33% to -2.09%) faster |
+| `func_call` | -0.09% (-4.31% to +4.33%) inconclusive | -0.02% (-8.73% to +9.52%) inconclusive |
+| `func_closure_call` | -1.37% (-3.19% to +0.48%) no regression beyond delta | +1.98% (-0.37% to +4.38%) inconclusive |
+| `global_destruct` | +1.02% (-0.47% to +2.54%) inconclusive | +2.33% (+1.29% to +3.38%) slower |
+| `global_destruct_strict` | +1.54% (+0.32% to +2.77%) slower | +2.61% (+2.02% to +3.20%) slower |
+| `global_func_call` | +0.48% (-2.44% to +3.49%) inconclusive | +4.41% (+1.09% to +7.85%) slower |
+| `global_read` | -0.68% (-1.88% to +0.53%) no regression beyond delta | -0.82% (-3.09% to +1.50%) inconclusive |
+| `global_write` | +8.05% (+2.45% to +13.96%) slower | +22.52% (+19.74% to +25.37%) slower |
+| `global_write_strict` | +8.80% (+3.39% to +14.50%) slower | +21.13% (+19.09% to +23.20%) slower |
+| `int_arith` | -1.47% (-2.86% to -0.07%) faster | -1.44% (-3.82% to +1.01%) inconclusive |
+| `int_toString` | -1.58% (-2.32% to -0.84%) faster | -1.94% (-4.20% to +0.38%) no regression beyond delta |
+| `int_to_string` | -3.41% (-3.90% to -2.93%) faster | -3.39% (-4.55% to -2.21%) faster |
+| `int_to_string2` | +3.63% (+0.09% to +7.29%) slower | +0.62% (-0.13% to +1.37%) inconclusive |
+| `local_destruct` | +0.53% (-0.76% to +1.84%) inconclusive | +1.24% (+0.03% to +2.46%) slower |
+| `map_delete` | +3.78% (+2.27% to +5.32%) slower | +4.33% (+3.75% to +4.91%) slower |
+| `map_set_bigint` | -7.47% (-8.65% to -6.28%) faster | -7.11% (-9.59% to -4.56%) faster |
+| `map_set_int` | +0.75% (-0.07% to +1.58%) inconclusive | +2.45% (+1.65% to +3.25%) slower |
+| `map_set_string` | +1.54% (+0.05% to +3.05%) slower | +0.97% (-0.54% to +2.50%) inconclusive |
+| `math_min` | -0.76% (-1.41% to -0.10%) faster | -0.41% (-1.48% to +0.67%) no regression beyond delta |
+| `prop_clone` | -0.22% (-1.57% to +1.14%) inconclusive | -6.25% (-9.22% to -3.17%) faster |
+| `prop_create` | -19.89% (-20.64% to -19.13%) faster | -20.90% (-21.90% to -19.88%) faster |
+| `prop_delete` | -0.49% (-1.91% to +0.95%) no regression beyond delta | -4.82% (-9.02% to -0.44%) faster |
+| `prop_read` | -0.88% (-1.13% to -0.63%) faster | -0.20% (-0.49% to +0.08%) no regression beyond delta |
+| `prop_update` | -1.29% (-2.09% to -0.48%) faster | +0.34% (-0.07% to +0.75%) no regression beyond delta |
+| `prop_write` | -2.08% (-5.32% to +1.26%) inconclusive | -1.98% (-9.16% to +5.76%) inconclusive |
+| `regexp_ascii` | +7.87% (+3.69% to +12.21%) slower | -3.60% (-5.28% to -1.90%) faster |
+| `regexp_utf16` | +8.53% (+5.29% to +11.87%) slower | +2.11% (+0.29% to +3.96%) slower |
+| `string_build1` | -0.80% (-1.75% to +0.15%) no regression beyond delta | -3.05% (-3.68% to -2.43%) faster |
+| `string_build1x` | -0.42% (-1.53% to +0.70%) no regression beyond delta | -2.43% (-3.01% to -1.86%) faster |
+| `string_build2` | -18.94% (-19.79% to -18.09%) faster | -17.42% (-17.80% to -17.04%) faster |
+| `string_build2c` | -0.42% (-1.58% to +0.76%) no regression beyond delta | -2.46% (-3.04% to -1.87%) faster |
+| `string_build3` | -9.23% (-11.23% to -7.18%) faster | -8.93% (-12.64% to -5.06%) faster |
+| `string_build4` | +4.09% (+1.88% to +6.36%) slower | +6.25% (+5.59% to +6.93%) slower |
+| `string_build_large1` | -0.49% (-1.18% to +0.21%) no regression beyond delta | -0.84% (-2.56% to +0.90%) no regression beyond delta |
+| `string_build_large2` | -8.55% (-9.30% to -7.80%) faster | -8.66% (-10.58% to -6.69%) faster |
+| `string_to_float` | -1.52% (-4.85% to +1.92%) inconclusive | +0.88% (+0.54% to +1.22%) slower |
+| `string_to_int` | -1.75% (-5.31% to +1.96%) inconclusive | +7.80% (+6.75% to +8.86%) slower |
+| `typed_array_read` | -9.16% (-12.41% to -5.79%) faster | -11.59% (-16.14% to -6.80%) faster |
+| `typed_array_write` | -6.85% (-8.38% to -5.30%) faster | -1.26% (-3.71% to +1.24%) inconclusive |
+| `weak_map_delete` | +0.86% (+0.30% to +1.42%) slower | +2.13% (+1.16% to +3.11%) slower |
+| `weak_map_set` | +2.07% (+1.37% to +2.77%) slower | +4.68% (+3.12% to +6.27%) slower |
+
+At the mean of the layouts 23 run faster, 11 show no regression beyond the delta, 16 cannot tell and 14 are slower. The largest gains are where the changes of the release land: `prop_create` 19.89% (stores that add a key), `string_build2` 18.94%, `string_build3` 9.23% and `string_build_large2` 8.55% (adds of two strings), and `typed_array_read` 9.16% and `typed_array_write` 6.85% (the second input of the profile).
+
+Instructions per turn of the loop of the 14 that are slower (callgrind on linux/amd64, `jsrun -n 1` at 3N less N over 2N, the same two engines) say that most of it is where the code and the data land, not more work. `global_write` (+8.05% in time) and `global_write_strict` (+8.80%) run the same instructions within 0.02%: their time sits at about 100 ms or about 120 ms by where the data lands, and the release falls on the slow level at more of the 16 placements than v0.30.6. `array_write` runs 1.53% more for 8.58% more time, the same two levels. `regexp_ascii` and `regexp_utf16` run 2.97% and 3.05% fewer instructions and take 7.87% and 8.53% more time, and `map_delete`, `map_set_string`, `float_to_string`, `string_build4` and `weak_map_delete` run 0.23% to 0.62% fewer. Three run more: `int_to_string2` 1.86% (its `n + ''` tests the tag of `n` before the generic path, [two strings added](#two-strings-added-without-the-generic-path)), `array_prop_create` 1.30% (the test of the key's tag before `rv_putel_slow`, [stores that add a key](#keyed-and-named-stores-that-add-a-key)) and `weak_map_set` 1.20%. `global_destruct_strict` runs 0.12% more.
+
 #### The study of 2026-11-13
 
 The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
@@ -1186,6 +1449,20 @@ The time falls about twice as much as the instructions. What goes is misses of t
 On an Apple M4 (darwin/arm64, one layout, the machine not idle, 10 rounds in turning order) the time of a page is 0.964 to 0.971 of the time without the profile in the median round (React 0.964, the store 0.969, the workbench 0.971, MUI 0.968) and the instructions fall by 2.7% to 3.6%. The gain is about 3%, under half the server's for the same instruction gain: the M4's instruction cache is 6 times the EPYC's (192 KB against 32 KB), so the misses the profile removes cost less. This is a reading, not a verdict.
 
 A profile one small branch old kept all of the gain (the workbench -7.54%, the store -9.18%, MUI -6.33%, React -7.63%, each against the same branch generated without the profile), and clang dropped the profile of 1 function of 2,264.
+
+#### The loop vectorizer without the profile's turns
+
+v0.30.7. `-loop-vectorize-with-block-frequency=false` keeps the loop vectorizer from taking the number of turns of a loop from the profile ([generator.md](changes/generator.md#what-the-profile-decides)). Callgrind on linux/amd64 against v0.30.6, instructions per render (3 renders less 1, divided by 2, and for the Markdown 2 less 1):
+
+| Pages | Instructions (the page counted) | Time of the group, mean of the layouts |
+| --- | ---: | --- |
+| the 14 store pages (home en-US) | -0.07% | +0.35% (-0.19% to +0.90%) no regression beyond delta |
+| the 6 workbench pages (studio) | -0.11% | -0.56% (-1.44% to +0.33%) no regression beyond delta |
+| the 3 MUI pages (orders) | -0.10% | +0.13% (-0.44% to +0.70%) no regression beyond delta |
+| React's page | -0.12% | +0.12% (-1.35% to +1.62%) inconclusive |
+| the 400 KB Markdown | -0.22% | -0.05% (-1.41% to +1.32%) inconclusive |
+
+The 64 micro benchmarks run 0.11% fewer instructions (geometric mean). Time on the AMD EPYC 7B13 server, `go tool measure bench`, 16 layouts, 2 rounds, delta 1%, all 18 units with no block run again. The gain is under what the timing can see. What it buys is that the pages no longer decide how a copy loop is compiled, and that `memmove` runs no Go prologue.
 
 ### Stability under load
 
@@ -1276,7 +1553,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005). It is done since together with the listing of keys, which it shares with `for in` and `Object.keys` (see [Own keys listed from the shape](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)).
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
 - **Reading the count of locals once, alone**: at the start of a call the interpreter read `b->var_count` again after each local it set. Reading it once gave React 1.0% fewer instructions but a loop of arithmetic 3.9% more, from a register spilled in one handler, and the time did not change. It is done since together with setting four locals a turn and freeing two values a turn (see [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall)).
-- **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules.
+- **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules. Corrected on 2026-11-14: that no longer holds for today's pages. wb studio spreads arrays 2,432 times a render at about 1,450 instructions each, the storefront 968 to 1,415 times, and the spread with no iterator is done since, in the C engine (see [The spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator)).
 - **Keeping the in-between shapes of every object literal**, before v0.26.16: about 2% more on top of the new property fast path, but the two list pages ran out of VM memory, because the kept shapes held their prototypes and everything those reach. v0.26.16 keeps only shapes whose prototype is `Object.prototype`, at most 32 keys and no unregistered symbol key, in a ring of 2048 (see [Kept shapes](changes/objects-and-shapes.md#kept-shapes)).
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.
 - **Literal templates in the bytecode**, as V8 copies a prebuilt object: needs compiler and bytecode format changes, and quickjs-ng saw no clear difference when it tried. It is done since, as one opcode for each run of plain keys whose final shape the function keeps (see [Object literals made at their final shape](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)).
@@ -1344,6 +1621,13 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **`rv_binop_slow` with 5 words**: the flag of an operand in a register folded into a bit of `k`, so the slow path of the arithmetic and comparison opcodes takes 5 words rather than 6 and no block on arm64. It saves a few hundred instructions a render, but React's page took 0.94% more time [+0.14%, +1.76%] over the 16 layouts on linux/amd64 (the formal layout +1.20%), the other pages the same within their spread. The likely cause was read from the code, not shown by a counter: clang laid out the strict comparison handler of `JS_RegvmRun` differently, with the test of the two tags moved out of line behind a jump in two places, and the rest of the function stayed the same instruction for instruction. Not taken.
 - **No argument blocks on arm64 at all**, measured with callgrind on amd64 and on the Apple M4, not built. On arm64 a function that takes more than five words besides the shadow pointer takes them in a block on the shadow stack: 28.8% of the calls of a store render (449K of 1.56M) pass a block, 21.7% to 29.3% on the other pages. The stores and loads of all argument words are about 6% of the instructions, but most words carry values the callee needs, so that is not what can be saved. Taking one block away from the 133K direct calls of C functions a store render makes measured about 2.5 cycles a call on the M4 (noisy), so all blocks would give at most about 1.4% of a store render and 0 on amd64. It needs a register list past the 6 the pass passes now (three dummy parameters, then X0 to X7, X10, X11, ...), a new adapter between Go's argument area and those registers, a check that no argument reads X26 to X28, and bigger Go frames of the callers, which risks the depth floors unless it stays off the chains of recursion, where most of the gain is. About 4 to 6 days for at most 1.4%. A hot callee whose block is on its critical path is cut more cheaply by giving it fewer words in C, as [Fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls) does.
 - **Fewer words for the other hot callees** (amd64 callgrind, the share of a store render each could save at most): `JS_DefinePropertyValue` and `JS_CreateProperty` about 0.07% (every word is used), `JS_CallInternal` about 0.05% (flags and `new_target` on the plain call path, still 10 words and a block on amd64), `JS_SetPropertyInternal` about 0.01%, `js_closure` about 0.005%. The C functions with a magic number (`js_map_has`, `js_array_push`, ...) take 7 words fixed by the table of C functions and its indirect call. Below what a timing can show.
+- **The engine's functions in order of heat, the hottest first** (2026-11-13 and 2026-11-14, amd64, counted and timed, callgrind's cache model with an I1 of 32 KiB and 8 ways, time over the 16 layouts of [measuring.md](measuring.md) on an AMD EPYC 7B13). The generator wrote the functions a table names first, in its order, into files whose names sort before the others, and Go's linker keeps that order (the `.s` files of a package by name, then their `TEXT` in order, on every Go version and target the module builds for). Only the place of whole functions changes: every function has the same text, frame and constant pools, and every page gives the same HTML. The table came from callgrind runs of tifa's pages, by the instructions each function runs in a render. On v0.30.3, without the profile, it took the instruction cache misses of a render down 7.4% on the workbench, 8.3% on the store and 5.5% on MUI, and the time of the mean of the layouts down 0.29% (workbench, [-0.92%, +0.34%]), 0.53% (store, [-1.12%, +0.07%]) and 0.09% (MUI), none of it faster by the rule. Tables that differed only in their tail gave from 3.6% to 5.0% fewer misses on the workbench and from 1.5% to 4.9% on MUI, a spread as wide as the gain. A table made from the profile's counters, not from callgrind, gained less or lost. On v0.30.6, with its profile, a table made again from that engine (354 functions, the same 14 pages) gives more misses on three of the five kinds the release is timed on, per render with the same instructions (within 0.03%): the store +4.29%, the workbench +3.94%, React's page +4.71%, MUI -0.42% and the long Markdown page -0.75%. So the misses follow where each function lands, not the order: the 32 KiB cache repeats every 4 KiB, the code a render runs is about 1.5 MB, and every set of the cache holds far more hot code than it can whatever the order. An order surely puts the hot code on fewer pages (on v0.30.3 the 200 hottest functions on 140 pages of 4 KiB rather than 235), which is the TLB, and callgrind does not count it. Timed on v0.30.6 all the same, against the release (the 14-page table, the five kinds, 2 rounds, delta 1%), the mean of the layouts was +0.21% on the workbench ([-0.19%, +0.61%]), +0.11% on the store ([-0.32%, +0.54%]), +0.19% on MUI ([-0.35%, +0.73%]), +0.84% on React's page ([-0.27%, +1.97%], with a layout SD of 1.75%) and +0.18% on the long Markdown page ([-0.20%, +0.56%]): none of them faster. The formal layout was 0.7% to 1.3% faster on every kind but the Markdown page (past zero on the store, -0.80%, and on MUI, -1.27%), but the layouts keep the order within each section and that gain is gone from their mean, so it came from where this one build put the code, not from the order. If it is tried again: the table has to come from the build it orders, the counts move by about 4% with the table alone, and only a timing over the layouts can tell a gain of the pages from the place of the code.
+- **Pinning more of what the profile decides**, measured on 2026-11-14 on v0.30.6: callgrind on linux/amd64, instructions per render of the store home (en-US), the workbench studio, MUI orders, React's page and the 400 KB Markdown, and per turn of the 64 micro benchmarks of `compare/testdata`, against v0.30.6 as released. Each variant was generated for both architectures. One pin was kept, the loop vectorizer without the profile's number of turns ([generator.md](changes/generator.md#what-the-profile-decides)). The others are not done:
+  - A cap of 2 turns on loop peeling (`-unroll-peel-max-count=2`): 0.34% to 1.11% more instructions a render, 0.52% more on the micro benchmarks. A cap of 1: 1.51% to 1.80% and 1.07%. The peeling the profile asks for pays on these pages. Timed (AMD EPYC, 16 layouts, delta 1%, the mean of the layouts): MUI 1.66% slower, the store 1.02% and the 100 KB Markdown 1.57%.
+  - LoopSink off (`-max-uses-for-sinking=0`): 0.01% to 0.32% more a render, 0.23% more on the micro benchmarks. Timed the same way: no regression beyond the delta on the workbench, MUI, the store and the Markdown (-0.09% to -0.33%), and the timing cannot tell on React.
+  - The flat-loop threshold of the unroller at 0: one function changes (`js_Date_parse`, amd64 only), 0.01% to 0.03% fewer a render. At 1,000,000: 0.44% to 1.14% more a render. The threshold decides almost nothing today.
+  - `engine/libc` compiled without the profile, which was the way named to take `memmove` back to a leaf without a frame. All of the libc: 219 functions change on amd64, the renders move by 0.03% or less, a bundle load runs 0.07% to 0.15% fewer instructions, and `date_parse` 4.4% more. Only `memcpy.c`, `memmove.c` and `memset.c`: 128 functions change (the post-link optimizer inlines those by name), 0.01% to 0.11% fewer a render, 0.02% fewer on the micro benchmarks. The vectorizer pin gives `memmove` back its leaf form with fewer changes and more gain, so neither was kept.
+  - A fix of the inline replay for the calls it misses: about a day of work, and the functions those calls keep run 0 instructions in every count ([generator.md](changes/generator.md#limits)).
 
 ## Where to continue
 

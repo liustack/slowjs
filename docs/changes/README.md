@@ -48,19 +48,24 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | An array literal moves the references of its elements into the array | v0.30.3 | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
 | On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | v0.30.3 | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
 | The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | v0.30.3 | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
+| A spread reads `Symbol.iterator` once, closes no iterator when a step of it throws, and goes on from where a getter of `next` left the Array Iterator, as the specification says | v0.30.7 | [c-engine.md](c-engine.md#a-spread-reads-symboliterator-once-and-closes-no-iterator) |
+| A spread of a plain array of the realm (`[...a]`, `f(...a)`, `new C(...a)`, `super(...a)`) copies its elements to the array it builds with no Array Iterator | v0.30.7 | [c-engine.md](c-engine.md#the-spread-of-a-plain-array-with-no-iterator) |
 | On amd64 every SSE instruction that needs its operand on 16 bytes reads data placed by a `PCALIGN $16`, or a local, or a global, and the generator and the post-link check refuse anything else | v0.30.5 | [c-engine.md](c-engine.md#sse-reads-that-need-16-bytes-stay-on-16) |
 | A call through a pointer takes its result from registers, and a generated function that no Go code calls no longer writes its result to the Go stack | v0.30.5 | [c-engine.md](c-engine.md#results-only-in-registers) |
 | `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | v0.30.5 | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
 | A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | v0.30.5 | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
 | Two hot calls pass fewer argument words: the interpreter's direct call of a C function and `js_call_c_hop` call `js_call_c_plain` (5 words, not 8), and the engine's own `JS_GetProperty` calls `JS_GetPropertyObj` (5, not 7). On arm64 neither passes its arguments in a block on the shadow stack any more | v0.30.6 | [c-engine.md](c-engine.md#fewer-argument-words-into-hot-calls) |
 | The register loop answers `Math.clz32`, `has` and `get` of Map, Set, WeakMap and WeakSet, `Array.isArray`, `push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty` and `String` of a string without the call | v0.30.6 | [c-engine.md](c-engine.md#built-ins-answered-in-the-register-loop) |
+| `o[k] = v` with a string key that is its own atom and `o.x = v` set an own writable data property or add the key to a plain object without the generic path | v0.30.7 | [c-engine.md](c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path) |
 
 ## The generator
 
 | Change | Release | Doc |
 | --- | --- | --- |
 | `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | v0.30.5 | [generator.md](generator.md#a-profile-of-tifas-pages) |
+| The profile is trained on plain loops (`engine/pgo/loops.js`) as well as the pages, so the paths the pages never run are not compiled as never run, and `train.sh` checks that the loops reach them | v0.30.7 | [generator.md](generator.md#a-second-input-plain-loops) |
 | A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
+| The loop vectorizer no longer takes the number of turns from the profile: `memmove` is a leaf without a frame again, and a render runs 0.07% to 0.22% fewer instructions | v0.30.7 | [generator.md](generator.md#what-the-profile-decides) |
 
 ## Commits of upstream QuickJS
 
@@ -116,6 +121,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | NewArray stops at the limits of the call | v0.30.2 | [go-api.md](go-api.md#newarray-stops-at-the-limits-of-the-call) |
 | Long strings and results stop converting at the limits of the call | v0.30.3 | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
 | Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
+| A 16-bit string goes to UTF-8 eight ASCII units at a time | v0.30.7 | [go-api.md](go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time) |
 
 ## Limits that hold
 
@@ -227,6 +233,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A symbol has a string of its own | v0.30.2 | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
 | The hash table of atoms holds one atom for two buckets | v0.30.5 | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
 | An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
+| The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
 
 ## JSON
 
@@ -271,6 +278,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The `in` operator walks a prototype chain without references | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
 | An object rest leaves out the keys of its pattern by a list the parser makes, and is made at its final shape from a cache of the shapes of its sources | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.md#an-object-rest-is-made-at-its-final-shape) |
 | The spread of an object literal copies a source of a shape it has seen into its target from a cache of the shapes of both | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.md#a-spread-copies-from-a-cache-of-the-shapes-of-its-target-and-source) |
+| A field of a property descriptor that throws, or a `has` trap that throws, ends the conversion with its exception | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#a-field-of-a-property-descriptor-that-throws-ends-the-conversion) |
+| bind with too little memory fails with the out of memory error, and no longer crashes or returns a bound function without its length or name | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-with-too-little-memory-fails-whole) |
+| `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
+| `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
 
 ## Memory
 

@@ -9461,10 +9461,8 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
     }
 }
 
-static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
+static void js_bound_function_free(JSRuntime *rt, JSBoundFunction *bf)
 {
-    JSObject *p = JS_VALUE_GET_OBJ(val);
-    JSBoundFunction *bf = p->u.bound_function;
     int i;
 
     JS_FreeValueRT(rt, bf->func_obj);
@@ -9473,6 +9471,13 @@ static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, bf->argv[i]);
     }
     js_free_rt(rt, bf);
+}
+
+static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(val);
+
+    js_bound_function_free(rt, p->u.bound_function);
 }
 
 static void js_bound_function_mark(JSRuntime *rt, JSValueConst val,
@@ -22087,7 +22092,7 @@ static inline uint32_t js_dst_index(JSValueConst c)
 {
     return (uint32_t)(-(JS_VALUE_GET_INT(c) + 1));
 }
-static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext);
+static force_inline int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext);
 static int js_dst_next(JSContext *ctx, JSValue *it, JSValue *pval);
 static int js_dst_iter(JSContext *ctx, JSValue *it);
 static BOOL js_dst_has_return(JSContext *ctx);
@@ -22220,6 +22225,12 @@ static JSValue js_array_iterator_next(JSContext *ctx, JSValueConst this_val,
 static JSValue js_create_array_iterator(JSContext *ctx, JSValueConst this_val,
                                         int argc, JSValueConst *argv, int magic);
 
+typedef struct JSArrayIteratorData {
+    JSValue obj;
+    JSIteratorKindEnum kind;
+    uint32_t idx;
+} JSArrayIteratorData;
+
 /* Access an Array's internal JSValue array if available */
 static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
                               JSValue **arrpp, uint32_t *countp)
@@ -22236,6 +22247,74 @@ static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
     return FALSE;
 }
 
+/* GetIterator of a spread, with its method read already (js_append_enumerate).
+   Out of line: inlined, the call of the method (js_call) makes the frame of
+   rv_w_append larger, and every call that runs under a spread pays it. */
+static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
+                                            JSValueConst method)
+{
+    if (!JS_IsFunction(ctx, method))
+        return JS_ThrowTypeError(ctx, "value is not iterable");
+    return JS_GetIterator2(ctx, obj, method);
+}
+
+/* A spread of a plain array with no Array Iterator (docs/changes/c-engine.md).
+   When js_dst_ok holds for the array sp[-1], GetIterator calls the built-in
+   values, which makes an Array Iterator of it and nothing else, and reads the
+   built-in next. Each step of that next reads the length and the element at
+   its index of the array, both its own data properties, and runs no script:
+   while the length is the count of the fast array, the steps give its
+   elements in order and nothing can change it between two of them, since a
+   definition on the array the spread builds runs no script either. That
+   array, sp[-3], is the one a literal or a call builds, which no script can
+   reach: when it is a fast Array at the shape of a new array, extensible,
+   with sp[-2] elements and that length, the elements go to its end at once,
+   as CreateDataPropertyOrThrow would put them one by one. 1 when done, 0
+   when not (nothing changed), -1 on an exception (out of memory, the array
+   as it was). */
+static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
+{
+    JSObject *ps, *pt;
+    JSValue next;
+    uint32_t i, n, len, pos;
+    int ret;
+
+    if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(sp[-2]) != JS_TAG_INT ||
+        JS_VALUE_GET_TAG(sp[-3]) != JS_TAG_OBJECT)
+        return 0;
+    ps = JS_VALUE_GET_OBJ(sp[-1]);
+    pos = JS_VALUE_GET_INT(sp[-2]);
+    pt = JS_VALUE_GET_OBJ(sp[-3]);
+    if (pt->shape != ctx->array_shape || pt->class_id != JS_CLASS_ARRAY ||
+        !pt->fast_array || !pt->extensible || pt->u.array.count != pos ||
+        JS_VALUE_GET_TAG(pt->prop[0].u.value) != JS_TAG_INT ||
+        JS_VALUE_GET_INT(pt->prop[0].u.value) != pos)
+        return 0;
+    ret = js_dst_ok(ctx, sp[-1], &next);
+    if (ret <= 0)
+        return ret;
+    JS_FreeValue(ctx, next);
+    /* the length is that of a fast array: an int, or past 2^31 - 1 */
+    if (JS_VALUE_GET_TAG(ps->prop[0].u.value) != JS_TAG_INT)
+        return 0;
+    len = JS_VALUE_GET_INT(ps->prop[0].u.value);
+    n = ps->u.array.count;
+    /* a length past the count reads the rest through the prototypes, and
+       the index stays an int */
+    if (len != n || n > (uint32_t)INT32_MAX - pos)
+        return 0;
+    if (pos + n > pt->u.array.u1.size &&
+        expand_fast_array_append(ctx, pt, pos + n))
+        return -1;
+    for (i = 0; i < n; i++)
+        pt->u.array.u.values[pos + i] = JS_DupValue(ctx, ps->u.array.u.values[i]);
+    pt->u.array.count = pos + n;
+    pt->prop[0].u.value = JS_NewInt32(ctx, pos + n);
+    sp[-2] = JS_NewInt32(ctx, pos + n);
+    return 1;
+}
+
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
    register loop calls it too (engine/regvm-ops-window.h): inlined in both,
    the code of JS_CallInternal stays the same. */
@@ -22243,9 +22322,16 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
 {
     JSValue iterator, enumobj, method, value;
     int is_array_iterator;
+    int ret;
     JSValue *arrp;
     uint32_t i, count32, pos;
     JSCFunctionType ft;
+
+    /* a plain array with no Array Iterator: its own function, so that the
+       frame of this one stays as it was */
+    ret = js_append_array(ctx, sp);
+    if (ret)
+        return ret < 0 ? -1 : 0;
 
     if (JS_VALUE_GET_TAG(sp[-2]) != JS_TAG_INT) {
         JS_ThrowInternalError(ctx, "invalid index for append");
@@ -22255,20 +22341,17 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     pos = JS_VALUE_GET_INT(sp[-2]);
 
     /* XXX: further optimisations:
-       - use ctx->array_proto_values?
-       - check if array_iterator_prototype next method is built-in and
-         avoid constructing actual iterator object?
        - build this into js_for_of_start and use in all `for (x of o)` loops
      */
+    /* GetIterator, with the method read once */
     iterator = JS_GetProperty(ctx, sp[-1], JS_ATOM_Symbol_iterator);
     if (JS_IsException(iterator))
         return -1;
     ft.generic_magic = js_create_array_iterator;
     is_array_iterator = JS_IsCFunction(ctx, iterator, ft.generic,
                                        JS_ITERATOR_KIND_VALUE);
+    enumobj = js_spread_iterator(ctx, sp[-1], iterator);
     JS_FreeValue(ctx, iterator);
-
-    enumobj = JS_GetIterator(ctx, sp[-1], FALSE);
     if (JS_IsException(enumobj))
         return -1;
     method = JS_GetProperty(ctx, enumobj, JS_ATOM_next);
@@ -22281,7 +22364,16 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     if (is_array_iterator
     &&  JS_IsCFunction(ctx, method, ft.generic, 0)
     &&  js_get_fast_array(ctx, sp[-1], &arrp, &count32)) {
+        JSArrayIteratorData *it;
         uint32_t len;
+        /* the read of next may have run a getter, which can step the
+           iterator, end it, or keep it for later: go on from its index and
+           leave it ended, as the steps of the built-in next would */
+        if (JS_VALUE_GET_OBJ(enumobj)->class_id != JS_CLASS_ARRAY_ITERATOR)
+            goto general_case;
+        it = JS_VALUE_GET_OBJ(enumobj)->u.array_iterator_data;
+        if (JS_VALUE_GET_TAG(it->obj) != JS_TAG_OBJECT)
+            goto general_case;
         if (js_get_length32(ctx, &len, sp[-1]))
             goto exception;
         /* if len > count32, the elements >= count32 might be read in
@@ -22289,11 +22381,14 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
         if (len != count32)
             goto general_case;
         /* Handle fast arrays explicitly */
-        for (i = 0; i < count32; i++) {
+        for (i = it->idx; i < count32; i++) {
+            it->idx = i + 1;
             if (JS_DefinePropertyValueUint32(ctx, sp[-3], pos++,
                                              JS_DupValue(ctx, arrp[i]), JS_PROP_C_W_E) < 0)
                 goto exception;
         }
+        JS_FreeValue(ctx, it->obj);
+        it->obj = JS_UNDEFINED;
     } else {
     general_case:
         for (;;) {
@@ -22316,7 +22411,10 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     return 0;
 
 exception:
-    JS_IteratorClose(ctx, enumobj, TRUE);
+    /* a spread closes no iterator: ArrayAccumulation and
+       ArgumentListEvaluation call no IteratorClose when a step throws, and
+       a definition on the array they build cannot (out of memory, the only
+       other error here, runs no return either) */
     JS_FreeValue(ctx, enumobj);
     JS_FreeValue(ctx, method);
     return -1;
@@ -47310,21 +47408,112 @@ static JSValue JS_ToObjectFree(JSContext *ctx, JSValue val)
     return obj;
 }
 
+/* ToPropertyDescriptor of an ordinary object (class Object) whose six
+   fields are each a plain data property of its own (no getter, no
+   autoinit) or found on no object of its prototype chain, which holds no
+   exotic object: the HasProperty and Get of each field then run no code and
+   read the property of the object itself, so the fields are read from its
+   shape in one pass. Getters, a field inherited from a prototype, a Proxy or
+   another exotic object anywhere on the chain take the generic path. Returns
+   1 with d set, 0 when the generic path must read the descriptor, -1 with
+   the exception pending (a getter or setter not callable, both kinds of
+   fields). Out of line, so that the frame of js_obj_to_desc, which getters
+   can reenter, does not grow. */
+static no_inline int js_obj_to_desc_plain(JSContext *ctx, JSPropertyDescriptor *d,
+                                          JSObject *p)
+{
+    static const JSAtom names[6] = {
+        JS_ATOM_enumerable, JS_ATOM_configurable, JS_ATOM_value,
+        JS_ATOM_writable, JS_ATOM_get, JS_ATOM_set,
+    };
+    JSProperty *own[6], *pr;
+    JSShapeProperty *prs;
+    JSObject *q;
+    int i, flags;
+
+    if (p->class_id != JS_CLASS_OBJECT)
+        return 0;
+    for(i = 0; i < 6; i++) {
+        prs = find_own_property(&pr, p, names[i]);
+        if (prs) {
+            if (prs->flags & JS_PROP_TMASK)
+                return 0;
+            own[i] = pr;
+        } else {
+            own[i] = NULL;
+            for(q = p->shape->proto; q; q = q->shape->proto) {
+                if (q->is_exotic || find_own_property(&pr, q, names[i]))
+                    return 0;
+            }
+        }
+    }
+    /* nothing below allocates before the values are taken: the pointers
+       into the property array stay valid */
+    flags = 0;
+    if (own[0]) {
+        flags |= JS_PROP_HAS_ENUMERABLE;
+        if (JS_ToBool(ctx, own[0]->u.value))
+            flags |= JS_PROP_ENUMERABLE;
+    }
+    if (own[1]) {
+        flags |= JS_PROP_HAS_CONFIGURABLE;
+        if (JS_ToBool(ctx, own[1]->u.value))
+            flags |= JS_PROP_CONFIGURABLE;
+    }
+    if (own[2])
+        flags |= JS_PROP_HAS_VALUE;
+    if (own[3]) {
+        flags |= JS_PROP_HAS_WRITABLE;
+        if (JS_ToBool(ctx, own[3]->u.value))
+            flags |= JS_PROP_WRITABLE;
+    }
+    if (own[4]) {
+        flags |= JS_PROP_HAS_GET;
+        if (!(JS_IsUndefined(own[4]->u.value) || JS_IsFunction(ctx, own[4]->u.value))) {
+            JS_ThrowTypeError(ctx, "invalid getter");
+            return -1;
+        }
+    }
+    if (own[5]) {
+        flags |= JS_PROP_HAS_SET;
+        if (!(JS_IsUndefined(own[5]->u.value) || JS_IsFunction(ctx, own[5]->u.value))) {
+            JS_ThrowTypeError(ctx, "invalid setter");
+            return -1;
+        }
+    }
+    if ((flags & (JS_PROP_HAS_SET | JS_PROP_HAS_GET)) &&
+        (flags & (JS_PROP_HAS_VALUE | JS_PROP_HAS_WRITABLE))) {
+        JS_ThrowTypeError(ctx, "cannot have setter/getter and value or writable");
+        return -1;
+    }
+    d->flags = flags;
+    d->value = own[2] ? JS_DupValue(ctx, own[2]->u.value) : JS_UNDEFINED;
+    d->getter = own[4] ? JS_DupValue(ctx, own[4]->u.value) : JS_UNDEFINED;
+    d->setter = own[5] ? JS_DupValue(ctx, own[5]->u.value) : JS_UNDEFINED;
+    return 1;
+}
+
 static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
                           JSValueConst desc)
 {
     JSValue val, getter, setter;
-    int flags;
+    int flags, ret;
 
     if (!JS_IsObject(desc)) {
         JS_ThrowTypeErrorNotAnObject(ctx);
         return -1;
     }
+    ret = js_obj_to_desc_plain(ctx, d, JS_VALUE_GET_OBJ(desc));
+    if (ret != 0)
+        return ret < 0 ? -1 : 0;
     flags = 0;
     val = JS_UNDEFINED;
     getter = JS_UNDEFINED;
     setter = JS_UNDEFINED;
-    if (JS_HasProperty(ctx, desc, JS_ATOM_enumerable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_enumerable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_enumerable);
         if (JS_IsException(prop))
             goto fail;
@@ -47332,7 +47521,10 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_ENUMERABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_configurable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_configurable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_configurable);
         if (JS_IsException(prop))
             goto fail;
@@ -47340,13 +47532,19 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_CONFIGURABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_value)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_value);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_VALUE;
         val = JS_GetProperty(ctx, desc, JS_ATOM_value);
         if (JS_IsException(val))
             goto fail;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_writable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_writable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_writable);
         if (JS_IsException(prop))
             goto fail;
@@ -47354,20 +47552,28 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_WRITABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_get)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_get);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_GET;
         getter = JS_GetProperty(ctx, desc, JS_ATOM_get);
-        if (JS_IsException(getter) ||
-            !(JS_IsUndefined(getter) || JS_IsFunction(ctx, getter))) {
+        if (JS_IsException(getter))
+            goto fail;
+        if (!(JS_IsUndefined(getter) || JS_IsFunction(ctx, getter))) {
             JS_ThrowTypeError(ctx, "invalid getter");
             goto fail;
         }
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_set)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_set);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_SET;
         setter = JS_GetProperty(ctx, desc, JS_ATOM_set);
-        if (JS_IsException(setter) ||
-            !(JS_IsUndefined(setter) || JS_IsFunction(ctx, setter))) {
+        if (JS_IsException(setter))
+            goto fail;
+        if (!(JS_IsUndefined(setter) || JS_IsFunction(ctx, setter))) {
             JS_ThrowTypeError(ctx, "invalid setter");
             goto fail;
         }
@@ -48765,6 +48971,138 @@ static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
     }
 }
 
+/* The length bind gives the bound function from the length len_val of its
+   target, which it takes: what is left of an integer after the arguments it
+   binds, 0 for anything that is not a number, Infinity kept. */
+static JSValue js_bind_length(JSContext *ctx, JSValue len_val, int arg_count)
+{
+    if (JS_VALUE_GET_TAG(len_val) == JS_TAG_INT) {
+        /* most common case */
+        int len1 = JS_VALUE_GET_INT(len_val);
+        if (len1 <= arg_count)
+            len1 = 0;
+        else
+            len1 -= arg_count;
+        return JS_NewInt32(ctx, len1);
+    } else if (JS_VALUE_GET_NORM_TAG(len_val) == JS_TAG_FLOAT64) {
+        double d = JS_VALUE_GET_FLOAT64(len_val);
+        if (isnan(d)) {
+            d = 0.0;
+        } else {
+            d = trunc(d);
+            if (d <= (double)arg_count)
+                d = 0.0;
+            else
+                d -= (double)arg_count; /* also converts -0 to +0 */
+        }
+        return JS_NewFloat64(ctx, d);
+    } else {
+        JS_FreeValue(ctx, len_val);
+        return JS_NewInt32(ctx, 0);
+    }
+}
+
+/* bind reads HasOwnProperty(target, "length"), Get(target, "length") and
+   Get(target, "name"). For a target that is not exotic, whose own name, and
+   own length if it has one, are plain data properties (no getter, no
+   autoinit), they run no code and give the values of those properties, and
+   GetPrototypeOf, which comes first, runs none either: they are read from
+   the shape before the bound function is made. Returns TRUE with *plen, the
+   length of the bound function, and *pname, the name of the target or
+   JS_UNDEFINED when it is not a string (a reference taken), FALSE when the
+   generic path must read them. */
+static BOOL js_bind_read_plain(JSContext *ctx, JSObject *p, int arg_count,
+                               JSValue *plen, JSValue *pname)
+{
+    JSShapeProperty *prs_len, *prs_name;
+    JSProperty *pr_len, *pr_name;
+
+    if (p->is_exotic)
+        return FALSE;
+    prs_name = find_own_property(&pr_name, p, JS_ATOM_name);
+    if (!prs_name || (prs_name->flags & JS_PROP_TMASK))
+        return FALSE;
+    prs_len = find_own_property(&pr_len, p, JS_ATOM_length);
+    if (prs_len && (prs_len->flags & JS_PROP_TMASK))
+        return FALSE;
+    if (!prs_len)
+        *plen = JS_NewInt32(ctx, 0);
+    else
+        *plen = js_bind_length(ctx, JS_DupValue(ctx, pr_len->u.value), arg_count);
+    if (JS_IsString(pr_name->u.value))
+        *pname = JS_DupValue(ctx, pr_name->u.value);
+    else
+        *pname = JS_UNDEFINED;
+    return TRUE;
+}
+
+/* "bound " and the name name, which it takes, JS_UNDEFINED for none. A flat
+   name of fewer than JS_POLL_SHORT_STEP characters is copied at once (a
+   longer one, or a rope, goes through a string buffer, which reads the
+   interrupt flag as it copies). */
+static JSValue js_bound_name(JSContext *ctx, JSValue name)
+{
+    static const char prefix[] = "bound ";
+    JSString *p, *r;
+    int i, n = sizeof(prefix) - 1;
+
+    if (JS_IsUndefined(name))
+        return js_new_string8_len(ctx, prefix, n);
+    if (JS_VALUE_GET_TAG(name) != JS_TAG_STRING ||
+        JS_VALUE_GET_STRING(name)->len >= JS_POLL_SHORT_STEP)
+        return JS_ConcatString3(ctx, prefix, name, "");
+    p = JS_VALUE_GET_STRING(name);
+    r = js_alloc_string(ctx, n + p->len, p->is_wide_char);
+    if (!r) {
+        JS_FreeValue(ctx, name);
+        return JS_EXCEPTION;
+    }
+    if (p->is_wide_char) {
+        for(i = 0; i < n; i++)
+            r->u.str16[i] = prefix[i];
+        memcpy(r->u.str16 + n, p->u.str16, p->len * 2);
+    } else {
+        memcpy(r->u.str8, prefix, n);
+        memcpy(r->u.str8 + n, p->u.str8, p->len);
+        r->u.str8[n + p->len] = '\0';
+    }
+    JS_FreeValue(ctx, name);
+    return JS_MKPTR(JS_TAG_STRING, r);
+}
+
+/* Give the bound function func_obj, made just now, its length and name,
+   which it takes, as two defines one after the other give them. When it
+   has the empty shape of one of the prototypes of new functions, it goes
+   straight onto the shape with both that new functions of that prototype
+   get (js_function_shape): the same keys, in the same order, with the same
+   flags (configurable only) and the same size of the property array.
+   Returns -1 with the exception pending, and the caller frees func_obj. */
+static int js_bound_function_props(JSContext *ctx, JSValueConst func_obj,
+                                   JSValue len_val, JSValue name_val)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(func_obj);
+    JSShape *sh = p->shape;
+    int i;
+
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0] != sh)
+            continue;
+        js_shape_found(ctx);
+        p->shape = js_dup_shape(ctx->func_shapes[i][1]);
+        js_free_shape(ctx->rt, sh);
+        p->prop[0].u.value = len_val;
+        p->prop[1].u.value = name_val;
+        return 0;
+    }
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, len_val,
+                               JS_PROP_CONFIGURABLE) < 0) {
+        JS_FreeValue(ctx, name_val);
+        return -1;
+    }
+    return JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name_val,
+                                  JS_PROP_CONFIGURABLE) < 0 ? -1 : 0;
+}
+
 static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
@@ -48772,31 +49110,49 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     JSValue func_obj, name1, len_val, proto;
     JSObject *p;
     int arg_count, i, ret;
+    BOOL plain;
 
     if (check_function(ctx, this_val))
         return JS_EXCEPTION;
 
-    proto = JS_GetPrototype(ctx, this_val);
-    if (JS_IsException(proto))
-        return JS_EXCEPTION;
-    func_obj = JS_NewObjectProtoClass(ctx, proto,
-                                 JS_CLASS_BOUND_FUNCTION);
-    JS_FreeValue(ctx, proto);
-    if (JS_IsException(func_obj))
-        return JS_EXCEPTION;
-    p = JS_VALUE_GET_OBJ(func_obj);
-    p->is_constructor = JS_IsConstructor(ctx, this_val);
     arg_count = max_int(0, argc - 1);
+    plain = js_bind_read_plain(ctx, JS_VALUE_GET_OBJ(this_val), arg_count,
+                               &len_val, &name1);
+    if (!plain)
+        name1 = JS_UNDEFINED;
+    /* made before the bound function, which is never without it: its
+       finalizer and its mark function read it */
     bf = js_malloc(ctx, sizeof(*bf) + arg_count * sizeof(JSValue));
-    if (!bf)
-        goto exception;
+    if (!bf) {
+        JS_FreeValue(ctx, name1);
+        return JS_EXCEPTION;
+    }
     bf->func_obj = JS_DupValue(ctx, this_val);
     bf->this_val = JS_DupValue(ctx, argv[0]);
     bf->argc = arg_count;
     for(i = 0; i < arg_count; i++) {
         bf->argv[i] = JS_DupValue(ctx, argv[i + 1]);
     }
+    proto = JS_GetPrototype(ctx, this_val);
+    if (JS_IsException(proto))
+        goto fail;
+    func_obj = JS_NewObjectProtoClass(ctx, proto,
+                                 JS_CLASS_BOUND_FUNCTION);
+    JS_FreeValue(ctx, proto);
+    if (JS_IsException(func_obj))
+        goto fail;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->is_constructor = JS_IsConstructor(ctx, this_val);
     p->u.bound_function = bf;
+
+    if (plain) {
+        /* js_bound_name and js_bound_function_props take the name */
+        name1 = js_bound_name(ctx, name1);
+        if (JS_IsException(name1) ||
+            js_bound_function_props(ctx, func_obj, len_val, name1) < 0)
+            goto exception;
+        return func_obj;
+    }
 
     /* XXX: the spec could be simpler by only using GetOwnProperty */
     ret = JS_GetOwnProperty(ctx, NULL, this_val, JS_ATOM_length);
@@ -48808,33 +49164,11 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
         len_val = JS_GetProperty(ctx, this_val, JS_ATOM_length);
         if (JS_IsException(len_val))
             goto exception;
-        if (JS_VALUE_GET_TAG(len_val) == JS_TAG_INT) {
-            /* most common case */
-            int len1 = JS_VALUE_GET_INT(len_val);
-            if (len1 <= arg_count)
-                len1 = 0;
-            else
-                len1 -= arg_count;
-            len_val = JS_NewInt32(ctx, len1);
-        } else if (JS_VALUE_GET_NORM_TAG(len_val) == JS_TAG_FLOAT64) {
-            double d = JS_VALUE_GET_FLOAT64(len_val);
-            if (isnan(d)) {
-                d = 0.0;
-            } else {
-                d = trunc(d);
-                if (d <= (double)arg_count)
-                    d = 0.0;
-                else
-                    d -= (double)arg_count; /* also converts -0 to +0 */
-            }
-            len_val = JS_NewFloat64(ctx, d);
-        } else {
-            JS_FreeValue(ctx, len_val);
-            len_val = JS_NewInt32(ctx, 0);
-        }
+        len_val = js_bind_length(ctx, len_val, arg_count);
     }
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length,
-                           len_val, JS_PROP_CONFIGURABLE);
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length,
+                               len_val, JS_PROP_CONFIGURABLE) < 0)
+        goto exception;
 
     name1 = JS_GetProperty(ctx, this_val, JS_ATOM_name);
     if (JS_IsException(name1))
@@ -48846,11 +49180,16 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     name1 = JS_ConcatString3(ctx, "bound ", name1, "");
     if (JS_IsException(name1))
         goto exception;
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name1,
-                           JS_PROP_CONFIGURABLE);
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name1,
+                               JS_PROP_CONFIGURABLE) < 0)
+        goto exception;
     return func_obj;
  exception:
     JS_FreeValue(ctx, func_obj);
+    return JS_EXCEPTION;
+ fail:
+    JS_FreeValue(ctx, name1);
+    js_bound_function_free(ctx->rt, bf);
     return JS_EXCEPTION;
 }
 
@@ -51372,12 +51711,6 @@ exception:
     return ret;
 }
 
-typedef struct JSArrayIteratorData {
-    JSValue obj;
-    JSIteratorKindEnum kind;
-    uint32_t idx;
-} JSArrayIteratorData;
-
 static JSValue js_array_iterator_next(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv,
                                       BOOL *pdone, int magic);
@@ -51466,8 +51799,9 @@ static JSShapeProperty *js_dst_find(JSObject *p, uint32_t *hint, JSAtom atom,
    any realm, as js_for_of_array_next takes it) as its own data property
    next: *pnext is then that next. The engine makes it at its first use, as
    the read of GetIterator would: -1 when there is no memory for it, with
-   the exception. */
-static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext)
+   the exception. force_inline: rv_w_dstart and js_append_array call it, and
+   a call of its own would cost each destructuring. */
+static force_inline int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext)
 {
     JSObject *p, *f;
     JSShapeProperty *prs;

@@ -43,6 +43,7 @@ type Record struct {
 	Start         string             `json:"start,omitempty"`          // RFC 3339, UTC
 	FreshPages    bool               `json:"fresh_pages,omitempty"`    // dropping the cached pages of the binary was asked before it ran
 	FreshVerified bool               `json:"fresh_verified,omitempty"` // and mincore found none of them left in memory
+	Place         *int               `json:"place,omitempty"`          // the placement of the data the process ran with (RunOptions.Place)
 	Metrics       map[string]float64 `json:"metrics,omitempty"`
 	HWMKB         int64              `json:"vmhwm_kb,omitempty"`
 	WallMs        float64            `json:"wall_ms"`
@@ -273,6 +274,7 @@ type RunOptions struct {
 	MinTicks   int64 // fewer busy ticks than this are noise
 	Session    string
 	FreshPages bool   // drop the cached pages of a binary before each of its processes (DropPages)
+	Place      string // the flag of the program that takes the placement of the data, such as -place of jsrun: each process gets FLAG=K, K = PlaceOf its layout (empty: none)
 	Experiment string // set by Run from the manifest
 }
 
@@ -456,6 +458,13 @@ func Run(ctx context.Context, o RunOptions, start Starter, ticks Ticks, w io.Wri
 	if err != nil {
 		return err
 	}
+	if o.Place != "" {
+		for _, v := range vs {
+			if _, err := PlaceOf(v.Pos); err != nil {
+				return err
+			}
+		}
+	}
 	old, err := ReadRecords(o.Out)
 	if err != nil {
 		return err
@@ -562,9 +571,19 @@ func once(ctx context.Context, o RunOptions, v Variant, round, attempt int, pars
 	if ticks != nil {
 		t0 = ticks()
 	}
+	args := o.Args
+	if o.Place != "" {
+		k, err := PlaceOf(v.Pos)
+		if err != nil {
+			r.Err = err.Error()
+			return r
+		}
+		r.Place = &k
+		args = append([]string{fmt.Sprintf("%s=%d", o.Place, k)}, o.Args...)
+	}
 	begin := time.Now()
 	r.Start = begin.UTC().Format(time.RFC3339Nano)
-	p := start(pctx, v.Path, o.Args, o.Dir, o.Env)
+	p := start(pctx, v.Path, args, o.Dir, o.Env)
 	var t1 map[int]CPUTicks
 	if ticks != nil {
 		t1 = ticks()

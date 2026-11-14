@@ -27,6 +27,9 @@
 # -j is the number of scripts run at once (default 2). -t is the time each run
 # may take (default 60 s, 240 s in the sanitizer modes, which run 4 to 8
 # times slower): a run the limit ends is not compared (rvdiff prints SLOW).
+# A run whose transcript could not be written whole, as when /tmp is full,
+# is a difference too (rvdiff prints LOST), and a run made so on purpose
+# (rvdiff -fsize) checks that rvdiff finds it.
 # MODE is a mode of build.sh of this folder (default plain), built already:
 # engine/test/regvm/build.sh MODE. BIN_DIR names another folder of the
 # programs (a build with -DRV_STATS, for one). Results are in
@@ -136,9 +139,20 @@ norm() {
 
 status=0
 "$bin" -q -j "$jobs" -t "$tmo" -o "$out/diffs" ${ign:+-ignore "$ign"} -golden "$golden" -root "$root" ${update:+-update} -cases "$cases" > "$out/rvdiff.log" 2>&1 || status=$?
-grep '^DIFF\|^NOTE\|^SLOW\|^NOUPDATE\|^UPDATE' "$out/rvdiff.log" || true
+grep '^DIFF\|^NOTE\|^SLOW\|^LOST\|^NOUPDATE\|^UPDATE' "$out/rvdiff.log" || true
 grep "^rvdiff: engine \\|^rvdiff: [0-9]* scripts" "$out/rvdiff.log" || true
 [ $status -le 1 ] || { echo "corpus.sh: rvdiff failed with status $status, see $out/rvdiff.log" >&2; exit 1; }
+
+# a run whose transcript could not be written whole, as when /tmp is full,
+# must be a difference and never a golden: -fsize makes one (see rvdiff.c)
+fs=$out/fsize
+mkdir -p "$fs/g"
+echo 'print("x".repeat(8000))' > "$fs/big.js"
+"$bin" -q -fsize 4096 -golden "$fs/g" -update -root "$fs" "$fs/big.js" > "$fs/rvdiff.log" 2>&1 || true
+if ! grep -q '^LOST ' "$fs/rvdiff.log" || [ -e "$fs/g/big.js.txt" ]; then
+	echo "DIFF rvdiff -fsize: a transcript cut by a failed write was taken as a run, see $fs/rvdiff.log"
+	status=1
+fi
 
 # the unit programs, each once against its golden
 : > "$out/units.log"

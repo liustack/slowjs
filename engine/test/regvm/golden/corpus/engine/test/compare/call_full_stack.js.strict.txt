@@ -10,6 +10,6 @@ result method2 fewer: 13
 result throws: Error: in callee | TypeError: in method | TypeError: not a function | TypeError: not a function
 result chains: 0,2000
 result loop: 740000 heap 0
-mem-end obj=211 atom=577 shape=126 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
-mem-gc obj=211 atom=577 shape=126 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
+mem-end obj=211 atom=577 shape=125 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
+mem-gc obj=211 atom=577 shape=125 prop=1023 jsfunc=21 cfunc=127 array=2 fast_array=2 elements=12 binary=0
 --- status exit 0

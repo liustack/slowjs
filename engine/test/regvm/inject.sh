@@ -30,6 +30,7 @@
 # test is written for cannot be lost.
 #
 #   engine/test/regvm/inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH...
+#   engine/test/regvm/inject.sh [-j N] [-every K] [-golden G] DIR PATH...
 #   engine/test/regvm/inject.sh [-golden G] -goldens PATH...
 #
 # DIR holds rvdiff of a build with -DRV_INJECT:
@@ -54,6 +55,15 @@
 # differs and a line for each script, and exits with 1 when any run
 # differs. The transcripts of a run that differs are in DIR/inject/SCRIPT-N/.
 #
+# -every K runs none of the places the sampling picks: of each script only the
+# lines 1, 1 + K, 1 + 2K and so on of G/SCRIPT.txt and its last line, besides
+# the run with no injection, and it reads no "inject-hit" line (the run that
+# throws there may not be among them). The choice is the same on every run of
+# the same goldens, so that a commit always gets the same verdict: a golden
+# that a change moved, and that was not written again, differs at the lines
+# picked, unless the change moved none of them. The whole set checks them all.
+# The last line gives the count of scripts, runs and runs that differ.
+#
 # -goldens builds and runs nothing: it names each script of PATH with neither
 # a G/SCRIPT.txt nor a line in G/skip, and exits with 1 when there is one, so
 # that a script added without its golden shows before the injections run.
@@ -62,6 +72,7 @@ set -eu
 self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 jobs=4
 max=2000
+every=
 single=
 update=
 goldens=
@@ -70,11 +81,12 @@ while [ $# -gt 0 ]; do
 	case $1 in
 	-j) jobs=$2; shift 2 ;;
 	-max) max=$2; shift 2 ;;
+	-every) every=$2; shift 2 ;;
 	-golden) golden=$2; shift 2 ;;
 	-update) update=1; shift ;;
 	-goldens) goldens=1; shift ;;
 	-one) single=1; shift ;; # -one DIR N SCRIPT: one run, for xargs
-	-*) echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2; exit 2 ;;
+	-*) echo "usage: inject.sh [-j N] [-max M] [-every K] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2; exit 2 ;;
 	*) break ;;
 	esac
 done
@@ -96,7 +108,7 @@ if [ -n "$goldens" ]; then
 	exit 1
 fi
 if [ $# -lt 2 ]; then
-	echo "usage: inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2
+	echo "usage: inject.sh [-j N] [-max M] [-every K] [-golden G] [-update] DIR PATH..., or inject.sh [-golden G] -goldens PATH..." >&2
 	exit 2
 fi
 dir=$(cd "$1" && pwd)
@@ -187,6 +199,12 @@ if [ -n "$single" ]; then
 	exit 0
 fi
 
+case $every in
+'') ;;
+*[!0-9]* | 0) echo "inject.sh: -every takes a count of 1 or more" >&2; exit 2 ;;
+*) [ -z "$update" ] || { echo "inject.sh: -every with -update would write a golden of the lines picked only" >&2; exit 2; } ;;
+esac
+
 scripts=
 for p in "$@"; do
 	if [ -d "$p" ]; then
@@ -199,6 +217,7 @@ for p in "$@"; do
 done
 
 status=0
+nscripts=0 nruns=0 nbad=0
 for sc in $scripts; do
 	base=$(basename "$sc")
 	why=$(sed -n "s|^$base ||p" "$golden/skip" 2>/dev/null | head -1)
@@ -206,10 +225,12 @@ for sc in $scripts; do
 		echo "SKIP $sc: $why"
 		continue
 	fi
+	nscripts=$((nscripts + 1))
 	if [ ! -f "$golden/$base.txt" ] && [ -z "$update" ]; then
 		echo "DIFF $sc: no golden $golden/$base.txt (-update writes it from the run, read it first)"
 		echo "inject: $sc: 1 differ, it has none"
 		status=1
+		nbad=$((nbad + 1))
 		continue
 	fi
 	key=$work/$base.count
@@ -220,6 +241,7 @@ for sc in $scripts; do
 	if [ -z "$c" ] || ! grep -q '^--- status exit [01]$' "$c"; then
 		echo "DIFF $sc: the run with no injection ends with $( [ -n "$c" ] && sed -n 's/^--- status //p' "$c" || grep '^NOUPDATE' "$work/$base.count.d.log" | cut -c1-200)"
 		status=1
+		nbad=$((nbad + 1))
 	fi
 	rm -rf "$work/$base.count.d" "$work/$base.count.d.log"
 	total=$(sed -n 's/^none \([0-9]*\) [0-9]*$/\1/p' "$key" 2>/dev/null | sort -n | tail -1)
@@ -233,9 +255,13 @@ for sc in $scripts; do
 		echo "DIFF $sc: no place to throw ran in the count run"
 		echo "inject: $sc: 0 places to throw run at 0 sites, 0 injected, 1 differ"
 		status=1
+		nbad=$((nbad + 1))
 		continue
 	fi
-	if [ "$total" -le "$max" ]; then
+	if [ -n "$every" ]; then
+		# the lines picked of the golden, in the order of the file
+		ns=$(awk -v k="$every" '(NR - 1) % k == 0 { print $2 } END { print $2 }' "$golden/$base.txt" | LC_ALL=C sort -u)
+	elif [ "$total" -le "$max" ]; then
 		ns=$(seq 1 "$total")
 	else
 		each=$((max / sites))
@@ -245,7 +271,7 @@ for sc in $scripts; do
 	fi
 	# each injection recorded too, so that its place is compared even when
 	# the sampling here picks others
-	if [ -f "$golden/$base.txt" ]; then
+	if [ -z "$every" ] && [ -f "$golden/$base.txt" ]; then
 		ns=$(printf '%s\n' $ns $(cut -d' ' -f2 "$golden/$base.txt") | LC_ALL=C sort -u)
 	fi
 	runs=$(echo $ns | wc -w | tr -d ' ')
@@ -261,7 +287,7 @@ for sc in $scripts; do
 		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places"
 	fi
 	# the places the script says a run must throw at: "// inject-hit: NAME P"
-	sed -n "s|^// inject-hit: \(.*\)$|hit \1|p" "$sc" | while read -r want; do
+	[ -n "$every" ] || sed -n "s|^// inject-hit: \(.*\)$|hit \1|p" "$sc" | while read -r want; do
 		grep -qxF "$want" "$hits" 2>/dev/null ||
 			echo "DIFF $sc: no run threw at \"${want#hit }\""
 	done >> "$out"
@@ -269,6 +295,8 @@ for sc in $scripts; do
 	bad=$(wc -l < "$out" | tr -d ' ')
 	cat "$out"
 	echo "inject: $sc: $total places to throw run at $sites sites, $runs injected, $bad differ"
+	nruns=$((nruns + runs)) nbad=$((nbad + bad))
 	[ "$bad" = 0 ] || status=1
 done
+echo "inject: $nscripts scripts, $nruns injected, $nbad differ"
 exit $status

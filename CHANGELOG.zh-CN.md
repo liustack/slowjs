@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [v0.30.7] - 2026-11-14
+
+### 变更
+
+- 页面渲染比 v0.30.6 少用 1.4% 到 2.3% 的时间，来自下面几项改动和在它们之上重新训练的性能画像。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局的平均），tifa 的工作台页面少用 2.3%，MUI 页面少 1.7%，商店页面少 1.6%，长 Markdown 文档少 1.4%。React 页面，计时看不出变化。一次渲染少跑 2.9% 到 4.7% 的指令，React 少 0.8%。`compare/testdata` 的 64 个微基准在同型号的另一台机器上按同样办法计时，23 个变快（`prop_create` 19.9%，`string_build2` 18.9%，`string_build3` 和 `typed_array_read` 9.2%，`string_build_large2` 8.6%），14 个变慢。这 14 个里有 3 个多跑了指令：`int_to_string2` 指令多 1.9%，时间多 3.6%，`array_prop_create` 指令多 1.3%，时间多 1.2%，`weak_map_set` 指令多 1.2%，时间多 2.1%。其余的指令没变或更少，时间却多了，原因是代码和数据在内存里落的位置：`global_write` 和 `global_write_strict` 指令相同，时间多 8.1% 和 8.8%，`array_write` 指令多 1.5%，时间多 8.6%，`regexp_ascii` 和 `regexp_utf16` 指令少 3%，时间多 7.9% 和 8.5%（[performance.md](docs/performance.zh-CN.md#v0307-对-v0306)）。
+- 展开一个普通数组（`[...a]`、`f(...a)`、`new C(...a)`、`super(...a)`）时，只要没有脚本能看出区别，就一步把元素拷进正在造的数组，不再造 Array Iterator。tifa 工作台 studio 页面的一次渲染少跑 1.4% 的指令，商店页面少 0.4%，长 Markdown 文档少 3.0%，MUI 和 React 页面不变。展开分配的内存变少，所以在内存上限下，内存不足的错误可能来得更晚，或者不来（[c-engine.md](docs/changes/c-engine.zh-CN.md#不造迭代器地展开普通数组)）。
+- 键是字符串的 `o[k] = v` 和 `o.x = v`，给普通对象加一个键，或者写它自己的一个可写数据属性时，不再走通用的写入路径。重新训练画像后，MUI 页面的一次渲染少跑 1.2% 到 2.1% 的指令，工作台页面少 1.1% 到 1.4%，商店页面少 0.3% 到 0.9%，React 页面不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#给普通对象加键的写入不走通用路径)）。
+- 寄存器循环用一个专门的小函数做两个字符串的加法，不再走加、减和比较共用的路径。字符串加一个不是字符串的值，要多付约 3 条指令（[strings.md](docs/changes/strings.zh-CN.md#两个字符串的加法不走通用路径)）。
+- `Object.defineProperty` 和按同样办法读属性描述符的调用，对普通对象形式的描述符一次读完。`Function.prototype.bind` 从普通函数的 shape 读它的 length 和 name。两项合起来，工作台页面的一次渲染少跑 1.2% 的指令，商店页面少 0.5% 到 0.7%，MUI 和 React 页面最多少 0.2%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象)）。
+- 页面的 HTML 里有 Latin-1 以外的字符时，从引擎的 16 位字符串转成 Go 的 UTF-8，现在一次处理八个 ASCII 单元。在 Apple M4 上，商店首页的转换从 750 万条指令降到 160 万条，工作台 studio 页面从 200 万条降到 75 万条。没有成段 ASCII 的文本（比如中文），转换最多多用 2.2% 的指令（[go-api.md](docs/changes/go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元)）。
+- 生成引擎用的性能画像现在也在普通循环上训练（`engine/pgo/loops.js`），页面从来不跑的代码（类型化数组、16 位文本上的正则、BigInt 等）不再被当成永远不跑的代码来编译。C 代码相同，对 v0.30.6 计时：`typed_array_read` 和 `typed_array_write` 少用 6.6% 和 6.7% 的时间，`regexp_utf16` 和 `array_prop_create` 多用 3.7% 和 3.2%，没有哪类页面变慢（[generator.md](docs/changes/generator.zh-CN.md#第二份输入普通循环)）。
+
+### 修复
+
+- 迭代器的一步抛错时（`next` 抛错、它的结果不是对象，或者读 `done` 或 `value` 抛错），展开不再调用迭代器的 `return`：错误直接往外走，规范这样写，Node 也这样做。展开对值的 `Symbol.iterator` 也只读一次，以前那里的 getter 会跑两次。Array Iterator 原型上的 `next` 是一个会推进迭代器的 getter 时，展开从 getter 停下的位置接着走，以前会把已经走过的元素再给一遍（[c-engine.md](docs/changes/c-engine.zh-CN.md#展开只读一次-symboliterator也不关闭迭代器)）。
+- 把 Proxy 当属性描述符传入，它的 `has` 陷阱抛错时，`Object.defineProperty`、`Object.defineProperties`、`Object.create` 和 `Reflect.defineProperty` 现在带着这个异常结束。以前属性可能照样被定义，异常丢失。字段 `get` 或 `set` 的 getter 抛错时，现在带着它自己的异常结束，以前会变成 `TypeError: invalid getter`（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#属性描述符的字段读取抛错时转换就此结束)）。
+- 剩余内存太少时，`bind` 现在以内存不足的错误失败。以前可能让进程崩溃，或者返回一个缺 `length` 或 `name` 的绑定函数（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败)）。
+- v0.30.5 那一条说 `global_read` 比 v0.30.4 慢 13.9%，`array_read` 慢 3.2%，前者原因没找到。把基准的数据按 16 种位置摆放后重新计时，这两项丢的是数据的位置，不是引擎多干了活：`global_read` 在 11 种摆放下 v0.30.5 比 v0.30.4 快 9%，`array_read` 在 13 种摆放下两者相差不到 0.8%。`prop_create`、`typed_array_read` 和 `array_for` 在每种摆放下都变慢（[performance.md](docs/performance.zh-CN.md#按时间看微基准)）。
+
 ## [v0.30.6] - 2026-11-14
 
 ### 变更
@@ -685,7 +704,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.6...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.7...main
+[v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4

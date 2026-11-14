@@ -48,19 +48,24 @@ read_when:
 | 数组字面量把元素的引用直接搬进数组 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 | 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
 | 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
+| 展开只读一次 `Symbol.iterator`，某一步抛错时也不关闭迭代器，`next` 的 getter 推进过 Array Iterator 时从它停下的地方接着走，和规范一致 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#展开只读一次-symboliterator也不关闭迭代器) |
+| 展开本 realm 的普通数组（`[...a]`、`f(...a)`、`new C(...a)`、`super(...a)`）时不造 Array Iterator，直接把元素复制到所建的数组 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#不造迭代器地展开普通数组) |
 | amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
 | 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
 | `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
 | 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
 | 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
 | 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
+| `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
 
 ## 生成器
 
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | v0.30.5 | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
+| 画像除了页面还用普通循环训练（`engine/pgo/loops.js`），页面从不走的路径不再按从不执行编译，`train.sh` 检查循环确实走到这些路径 | v0.30.7 | [generator.md](generator.zh-CN.md#第二份输入普通循环) |
 | 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
+| 循环向量化器不再从画像里取循环圈数：`memmove` 又是没有栈帧的叶子函数，一次渲染少跑 0.07% 到 0.22% 的指令 | v0.30.7 | [generator.md](generator.zh-CN.md#画像决定什么) |
 
 ## 上游 QuickJS 的提交
 
@@ -116,6 +121,7 @@ read_when:
 | NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 | 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
+| 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | v0.30.7 | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
 
 ## 守得住的限额
 
@@ -227,6 +233,7 @@ read_when:
 | symbol 有自己的字符串 | v0.30.2 | [strings.md](strings.zh-CN.md#symbol-有自己的字符串) |
 | atom 的哈希表两个桶只放一个 atom | v0.30.5 | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
 | `+` 左边是空字符串时直接给出右边的字符串，不再复制 | v0.30.5 | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
+| 寄存器循环把两个字符串的加法交给一个专门的小函数，不再走加、减和比较共用的通用路径 | v0.30.7 | [strings.md](strings.zh-CN.md#两个字符串的加法不走通用路径) |
 
 ## JSON
 
@@ -271,6 +278,10 @@ read_when:
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 | 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
 | 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
+| 属性描述符的字段读取或 `has` trap 抛错时，转换以这个异常结束 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#属性描述符的字段读取抛错时转换就此结束) |
+| 内存不够时 bind 以内存不足的错误失败，不再崩溃，也不再返回缺 length 或 name 的绑定函数 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败) |
+| `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
+| `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
 
 ## 内存
 

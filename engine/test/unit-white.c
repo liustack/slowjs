@@ -69,6 +69,7 @@ uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
 int white_atom_refs(JSContext *ctx, const char *s);
+int white_ref_count(JSValueConst v);
 int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
 int white_string_slack(JSValueConst v);
 int white_emit_chunks_slack(JSContext *ctx);
@@ -109,6 +110,8 @@ int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
+int white_string_wide(JSValueConst v);
+JSValue white_concat(JSContext *ctx, JSValueConst a, JSValueConst b);
 int white_every_block_is_a_request(void);
 int white_fused_ops(const uint8_t *code, int len, int *count, size_t cap);
 int white_short_index_check(char *bad, size_t cap);
@@ -1978,6 +1981,163 @@ static void test_object_lit_shared_shape(void)
         CHECK(eval_is(v.ctx, "JSON.stringify([x1, x2, x3])",
                       "[{\"ww1\":1,\"ww2\":2,\"ww3\":3},{\"ww1\":3,\"ww2\":4},{\"ww1\":3,\"ww2\":4}]"), "values of the objects");
         vm_free(&v);
+    }
+}
+
+/* o[k] = v with a key that is its own atom adds the key as the generic path
+   does: objects that get the same keys in the same order by o[k] with keys
+   from Object.keys, by o[k] with the same keys made again (not atoms), by
+   o.x = v, by Reflect.set and by Object.assign share one shape, empty and
+   from a literal, with the shape cache on and off, past the room of the
+   first property array and of the block of a literal. A key on the
+   prototype (a writable data property) is added as an own key of the same
+   shape, and keys in another order are another shape. */
+static void test_putel_atom_shape(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx,
+                      "var names = Object.keys({ ka: 0, kb: 0, kc: 0, kd: 0, ke: 0, kf: 0, kg: 0, kh: 0, ki: 0, kj: 0 });\n"
+                      "function fresh(k) { return (' ' + k).slice(1) }\n"
+                      "function put(o, k, v) { o[k] = v }\n"
+                      "function byAtom(o) { for (var i = 0; i < names.length; i++) put(o, names[i], i); return o }\n"
+                      "function byFresh(o) { for (var i = 0; i < names.length; i++) put(o, fresh(names[i]), i); return o }\n"
+                      "function byField(o) { o.ka = 0; o.kb = 1; o.kc = 2; o.kd = 3; o.ke = 4; o.kf = 5; o.kg = 6;\n"
+                      "  o.kh = 7; o.ki = 8; o.kj = 9; return o }\n"
+                      "function byReflect(o) { for (var i = 0; i < names.length; i++) Reflect.set(o, names[i], i); return o }\n"
+                      "function lit() { return { la: 1, lb: 2 } }\n"
+                      "var a1 = byAtom({}), a2 = byFresh({}), a3 = byField({}), a4 = byReflect({});\n"
+                      "var a5 = Object.assign({}, a1), a6 = byAtom({});\n"
+                      "var l1 = byAtom(lit()), l2 = byFresh(lit()), l3 = byField(lit());\n"
+                      "var inh = { ka: 'p', kb: 'p' }, i1 = byAtom(Object.create(inh)), i2 = byFresh(Object.create(inh));\n"
+                      "var r1 = {}; for (var j = names.length - 1; j >= 0; j--) put(r1, names[j], j);\n"
+                      "void 0"), "the script threw");
+        CHECK(shape_of(&v, "a1") != 0 && shape_of(&v, "a1") == shape_of(&v, "a2"),
+              "cache %d: atom keys and keys made again: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a3"), "cache %d: atom keys and o.x: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a4"), "cache %d: atom keys and Reflect.set: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a5"), "cache %d: atom keys and Object.assign: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a6"), "cache %d: atom keys twice: two shapes", cache);
+        CHECK(shape_of(&v, "l1") == shape_of(&v, "l2") && shape_of(&v, "l1") == shape_of(&v, "l3"),
+              "cache %d: a literal grown three ways: more than one shape", cache);
+        CHECK(shape_of(&v, "i1") == shape_of(&v, "i2"), "cache %d: keys of the prototype added: two shapes", cache);
+        CHECK(shape_of(&v, "r1") != shape_of(&v, "a1"), "cache %d: keys in another order share a shape", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([a1, l1, i1]) + Object.keys(r1)",
+                      "[{\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9},"
+                      "{\"la\":1,\"lb\":2,\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9},"
+                      "{\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9}]"
+                      "kj,ki,kh,kg,kf,ke,kd,kc,kb,ka"),
+              "values of the objects");
+        vm_free(&v);
+    }
+}
+
+/* each_vm_failing calls the global f of setup with each call of the
+   allocator failing in turn, as each_call_failing does, but each call in a VM
+   of its own, made and set up again, so that what only a first call
+   allocates (the hash table of shapes growing) fails in turn too. The shape
+   cache is off when nocache is set. Each call either throws the out of
+   memory error or returns want, and leaves as many objects, strings and
+   shapes as there were before it, after a collection. The VM is freed after
+   each call, which fails the test (status 87) when a block is left. At least
+   min_ooms of the calls fail. */
+static void each_vm_failing(const char *what, int nocache, const char *setup, const char *want, int min_ooms)
+{
+    int fail, n = 0, ooms = 0;
+
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        VM v = vm_new();
+        JSMemoryUsage before, after;
+        JSValue g, f, r;
+        int made;
+
+        if (nocache)
+            JS_SetShapeCache(v.ctx, 0);
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", what);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &before);
+        r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "%s, call %d failing: an exception that is not out of memory", what, fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            const char *s = JS_ToCString(v.ctx, r);
+
+            CHECK(s && !strcmp(s, want), "%s, call %d failing: %s", what, fail, s ? s : "(no string)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(!JS_HasException(v.ctx), "%s, call %d failing: an exception is pending", what, fail);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &after);
+        CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count &&
+              after.shape_count == before.shape_count,
+              "%s, call %d failing: %lld objects, %lld strings and %lld shapes, before it %lld, %lld and %lld", what, fail,
+              (long long)after.obj_count, (long long)after.str_count, (long long)after.shape_count,
+              (long long)before.obj_count, (long long)before.str_count, (long long)before.shape_count);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+    CHECK(ooms >= min_ooms, "%s: only %d of %d calls failed", what, ooms, n);
+}
+
+/* The stores of rv_putel_atom (o[k] = v, k a key that is its own atom) and of
+   rv_putf_atom (o.x = v) with each allocation failing in turn: the property
+   array of the object growing, the shape cloned when another object shares
+   it or grown in place, the hash table of shapes growing (300 new shapes in
+   a new VM), with the shape cache on and off. The value is a new object, so
+   that one freed twice or not at all shows (in the counts, in the leak check
+   of the runtime, and under AddressSanitizer). The object, the key and the
+   value are in arguments, in locals and in temps. The functions run once on
+   other keys first, so that they are register code. */
+static void test_putel_atom_each_failing(void)
+{
+    static const char setup[] =
+        "var K = ['w'], U = ['w'];\n"
+        "function mk() { return {} }\n"
+        "function args(o, k, v) { o[k] = v }\n"
+        "function locals() { var o = {}, n = K.length; for (var i = 0; i < n; i++) { var k = K[i], v = {}; o[k] = v } return o }\n"
+        "function temps() { var o = mk(); for (var i = 0; i < K.length; i++) mk()[K[i]] = {}; return o }\n"
+        "function shared() { var a = { s0: 1 }, b = { s0: 1 }; b[K[0]] = {}; return a.s0 + b.s0 }\n"
+        "function many() { var keep = []; for (var i = 0; i < U.length; i++) { var o = {}; o[U[i]] = {}; keep.push(o) } return keep.length }\n"
+        "function fargs(o) { o.x0 = {}; o.x1 = {}; o.x2 = {}; o.x3 = {}; o.x4 = {}; o.x5 = {}; o.x6 = {}; o.x7 = {}; o.x8 = {}; o.x9 = {}; return o }\n"
+        "function flocals() { var o = {}, v = {}; o.y0 = v; o.y1 = {}; o.y2 = {}; o.y3 = {}; o.y4 = {}; o.y5 = {}; return o }\n"
+        "function ftemps() { mk().z0 = {}; mk().z1 = {}; return mk() }\n"
+        "function fshared() { var a = { s0: 1 }, b = { s0: 1 }; b.zs = {}; return a.s0 + b.s0 }\n"
+        "function fmany() { var keep = []; for (var i = 0; i < 300; i++) { var o = {}; o.zm = {}; keep.push(o) } return keep.length }\n"
+        "args(mk(), 'w', 1); locals(); temps(); shared(); many(); fargs({}); flocals(); ftemps(); fshared(); fmany();\n"
+        "var src = {}; for (var i = 0; i < 300; i++) src['u' + i] = 0; U = Object.keys(src);\n"
+        "K = Object.keys({ ka: 0, kb: 0, kc: 0, kd: 0, ke: 0, kf: 0, kg: 0, kh: 0, ki: 0, kj: 0 }); src = null;\n";
+    static const struct { const char *what, *f, *want; } cases[] = {
+        { "o[k] = v in arguments", "function f() { var o = {}; for (var i = 0; i < K.length; i++) args(o, K[i], {}); return Object.keys(o).length }", "10" },
+        { "o[k] = v in locals", "function f() { return Object.keys(locals()).length }", "10" },
+        { "o[k] = v in temps", "function f() { return Object.keys(temps()).length }", "0" },
+        { "o[k] = v on a shared shape", "function f() { return shared() }", "2" },
+        { "o[k] = v making 300 shapes", "function f() { return many() }", "300" },
+        { "o.x = v in arguments", "function f() { return Object.keys(fargs({})).length }", "10" },
+        { "o.x = v in locals", "function f() { return Object.keys(flocals()).length }", "6" },
+        { "o.x = v in temps", "function f() { return Object.keys(ftemps()).length }", "0" },
+        { "o.x = v on a shared shape", "function f() { return fshared() }", "2" },
+        { "o.x = v on 300 objects", "function f() { return fmany() }", "300" },
+    };
+    char buf[4096];
+    int i, nocache;
+
+    for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+        for (nocache = 0; nocache <= 1; nocache++) {
+            snprintf(buf, sizeof(buf), "%s%s\n", setup, cases[i].f);
+            each_vm_failing(cases[i].what, nocache, buf, cases[i].want, 3);
+        }
     }
 }
 
@@ -4959,6 +5119,78 @@ static void test_string_empty_left(void)
     }
 }
 
+/* a + b of two strings in each form of the register loop's add (ADD, ADDL,
+   ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h) gives the string the
+   generic add gives, JS_ConcatString of the two (white_concat): a rope where
+   it makes a rope, a flat string where it makes one, of the same width,
+   length and characters. Operands of every kind the engine has: the empty
+   string, an atom, flat strings of 8 and 16 bits, short and long, a rope and
+   the string of a property key, made again for each add. */
+static void test_string_add_kinds(void)
+{
+    static const char *const kinds[] = {
+        "''", "'a'", "'ab'.repeat(2)", "'\\u4e2d'.repeat(2)", "'x'.repeat(600)",
+        "'\\u00e9'.repeat(600)", "'y'.repeat(9000)", "'r'.repeat(9000) + 's'.repeat(9000)",
+        "Object.keys({ keyName: 1 })[0]", "'p'.repeat(100) + 'q'",
+    };
+    /* kl and kr: the constant on the left or the right, in place of a or b */
+    static const struct {
+        const char *what, *add, *kl, *kr;
+    } forms[] = {
+        { "ADD", "(a, b) => a + b", NULL, NULL },
+        { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", NULL, NULL },
+        { "ADDK", "(a, b) => a + '<k>'", NULL, "'<k>'" },
+        { "ADDKL", "(a, b) => { let t = 0; t = a + '\\u4e2d'; return t }", NULL, "'\\u4e2d'" },
+        { "KADD", "(a, b) => '<k>' + b", "'<k>'", NULL },
+        { "KADD into a local", "(a, b) => { let t = 0; t = '\\u4e2d' + b; return t }", "'\\u4e2d'", NULL },
+    };
+    size_t f, i, j;
+
+    for (f = 0; f < countof(forms); f++) {
+        VM v = vm_new();
+        JSValue add = JS_Eval(v.ctx, forms[f].add, strlen(forms[f].add), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (i = 0; i < countof(kinds); i++) {
+            for (j = 0; j < countof(kinds); j++) {
+                const char *l = forms[f].kl ? forms[f].kl : kinds[i];
+                const char *r = forms[f].kr ? forms[f].kr : kinds[j];
+                int k;
+
+                /* twice: the first call converts the function to register
+                   code, the second runs it there */
+                for (k = 0; k < 2; k++) {
+                    JSValue args[2], res, want;
+
+                    args[0] = JS_Eval(v.ctx, kinds[i], strlen(kinds[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    args[1] = JS_Eval(v.ctx, kinds[j], strlen(kinds[j]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                    JS_FreeValue(v.ctx, args[0]);
+                    JS_FreeValue(v.ctx, args[1]);
+                    args[0] = JS_Eval(v.ctx, l, strlen(l), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    args[1] = JS_Eval(v.ctx, r, strlen(r), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    want = white_concat(v.ctx, args[0], args[1]);
+                    JS_FreeValue(v.ctx, args[0]);
+                    JS_FreeValue(v.ctx, args[1]);
+                    CHECK(white_string_is_rope(res) >= 0 && white_string_is_rope(want) >= 0,
+                          "%s of %s and %s: no string", forms[f].what, l, r);
+                    CHECK(white_string_is_rope(res) == white_string_is_rope(want),
+                          "%s of %s and %s: a rope is %d, the generic add's %d", forms[f].what, l, r,
+                          white_string_is_rope(res), white_string_is_rope(want));
+                    CHECK(white_string_wide(res) == white_string_wide(want),
+                          "%s of %s and %s: wide is %d, the generic add's %d", forms[f].what, l, r,
+                          white_string_wide(res), white_string_wide(want));
+                    CHECK(JS_StrictEq(v.ctx, res, want), "%s of %s and %s: not the string of the generic add",
+                          forms[f].what, l, r);
+                    JS_FreeValue(v.ctx, res);
+                    JS_FreeValue(v.ctx, want);
+                }
+            }
+        }
+        JS_FreeValue(v.ctx, add);
+        vm_free(&v);
+    }
+}
+
 /* ---- the own keys of an object ---- */
 
 /* objects of every kind of key, with the shapes the listing handles itself,
@@ -7025,6 +7257,137 @@ static void test_regvm_dst_alloc(void)
     }
 }
 
+/* The spread of a plain array makes no Array Iterator (js_append_array,
+   engine/quickjs.c): it allocates two blocks less than the spread of an
+   array with an own property more, which takes the iterator, in an array
+   literal and in a call. Each allocation of every spread fails in turn,
+   those of the built-in next of the array iterator, which the first spread
+   of a VM makes, too, and each run ends with out of memory or the result
+   and leaves nothing. */
+static void test_spread_alloc(void)
+{
+    static const char setup[] =
+        "var p = [1, 2, 3], q = [1, 2, 3]; q.x = 0;"
+        "globalThis.lp = function (k) { 'use strict'; if (k === 0) return 0; return [0, ...p].join(); };"
+        "globalThis.lq = function (k) { 'use strict'; if (k === 0) return 0; return [0, ...q].join(); };"
+        "globalThis.cp = function (k) { 'use strict'; if (k === 0) return 0; return Math.max(...p, 0); };"
+        "globalThis.cq = function (k) { 'use strict'; if (k === 0) return 0; return Math.max(...q, 0); };"
+        "globalThis.tp = function (k) { 'use strict'; if (k === 0) return 0; return [...p, ...p, ...p, ...p].length; }; 0";
+    static const char *const names[] = { "lp", "lq", "cp", "cq", "tp" };
+    static const char *const want[] = { "0,1,2,3", "0,1,2,3", "3", "3", "12" };
+    int c, fail, n, made, ooms, allocs[countof(names)];
+    JSValue zero = JS_MKVAL(JS_TAG_INT, 0);
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r;
+            const char *s;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            JS_FreeValue(v.ctx, g);
+            /* converted, with no spread run: the built-in next of the
+               array iterator is made by the first spread, in the sweep */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &zero);
+            JS_FreeValue(v.ctx, r);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                s = JS_ToCString(v.ctx, r);
+                CHECK(s && strcmp(s, want[c]) == 0, "%s, call %d failing: %s, not %s", names[c], fail,
+                      s ? s : "?", want[c]);
+                JS_FreeCString(v.ctx, s);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        allocs[c] = n;
+        CHECK(n >= 1 && ooms >= 1, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+    CHECK(allocs[0] + 2 <= allocs[1], "a spread in a literal: %d allocations, %d with the iterator",
+          allocs[0], allocs[1]);
+    CHECK(allocs[2] + 2 <= allocs[3], "a spread in a call: %d allocations, %d with the iterator",
+          allocs[2], allocs[3]);
+}
+
+/* Elements with a reference count (an object, a string of 80 characters, a
+   symbol), spread three times into one array, of an array the copy takes
+   (e) and of one it refuses (f, an own key): each allocation fails in turn,
+   the growth of the array for the third spread among them, and after each
+   run every element has the references it had before, none kept by the
+   elements already appended to the array that the error frees. */
+static void test_spread_refs(void)
+{
+    static const char setup[] =
+        "var e = [{}, 'e'.repeat(80), Symbol('e')], f = [{}, 'f'.repeat(80), Symbol('f')]; f.x = 0;"
+        "function k() { return arguments.length; }"
+        "globalThis.le = function () { 'use strict'; return [...e, ...e, ...e].length; };"
+        "globalThis.lf = function () { 'use strict'; return [...f, ...f, ...f].length; };"
+        "globalThis.ce = function () { 'use strict'; return k(...e, ...e, ...e); };"
+        "globalThis.cf = function () { 'use strict'; return k(...f, ...f, ...f); }; 0";
+    static const char *const names[] = { "le", "lf", "ce", "cf" };
+    int c, fail, n, made, ooms, i, before[3];
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r, src, el[3];
+            int32_t got = -1;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            src = JS_GetPropertyStr(v.ctx, g, names[c][1] == 'e' ? "e" : "f");
+            JS_FreeValue(v.ctx, g);
+            /* converted, and what the first spread of a VM makes made */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            JS_FreeValue(v.ctx, r);
+            JS_RunGC(v.rt);
+            for (i = 0; i < 3; i++) {
+                el[i] = JS_GetPropertyUint32(v.ctx, src, i);
+                before[i] = white_ref_count(el[i]);
+            }
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                CHECK(JS_ToInt32(v.ctx, &got, r) == 0 && got == 9, "%s, call %d failing: %d elements, not 9",
+                      names[c], fail, got);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_RunGC(v.rt);
+            for (i = 0; i < 3; i++) {
+                CHECK(white_ref_count(el[i]) == before[i] && before[i] > 0,
+                      "%s, call %d failing: element %d has %d references, had %d", names[c], fail, i,
+                      white_ref_count(el[i]), before[i]);
+                JS_FreeValue(v.ctx, el[i]);
+            }
+            JS_FreeValue(v.ctx, src);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        CHECK(n >= 1 && ooms >= 1, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+}
+
 static void test_regvm_dst(void)
 {
     static const char src[] =
@@ -7252,6 +7615,8 @@ int main(int argc, char **argv)
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();
+    test_putel_atom_shape();
+    test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();
     test_shape_ids();
@@ -7290,6 +7655,7 @@ int main(int argc, char **argv)
     test_string_append_flat();
     test_string_append_atom();
     test_string_empty_left();
+    test_string_add_kinds();
     test_own_keys_flags();
     test_shared_debug_read();
     test_regexp_cache_keeps();
@@ -7314,6 +7680,8 @@ int main(int argc, char **argv)
     test_regvm_call_copies();
     test_regvm_dst();
     test_regvm_dst_alloc();
+    test_spread_alloc();
+    test_spread_refs();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

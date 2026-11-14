@@ -218,6 +218,27 @@ int white_string_is_rope(JSValueConst v)
     }
 }
 
+/* 1 when the string or rope v holds 16-bit characters, 0 when 8-bit, -1 when
+   v is no string. */
+int white_string_wide(JSValueConst v)
+{
+    switch (JS_VALUE_GET_TAG(v)) {
+    case JS_TAG_STRING_ROPE:
+        return JS_VALUE_GET_STRING_ROPE(v)->is_wide_char;
+    case JS_TAG_STRING:
+        return JS_VALUE_GET_STRING(v)->is_wide_char;
+    default:
+        return -1;
+    }
+}
+
+/* a + b as the generic add makes it into a temp (rv_binop_slow in
+   regvm-ops-basic.h): JS_ConcatString of the two strings. */
+JSValue white_concat(JSContext *ctx, JSValueConst a, JSValueConst b)
+{
+    return JS_ConcatString(ctx, JS_DupValue(ctx, a), JS_DupValue(ctx, b));
+}
+
 /* The characters the block of the flat string v has room for past its
    length, -1 when v is no flat string. */
 int white_string_room(JSContext *ctx, JSValueConst v)
@@ -1131,6 +1152,15 @@ int white_atom_refs(JSContext *ctx, const char *s)
     n = js_rc(ctx->rt->atom_array[a])->ref_count - 1;
     JS_FreeAtom(ctx, a);
     return n;
+}
+
+/* The references v has, an object, a string, a symbol or another value
+   with a count, or -1 when it has none. */
+int white_ref_count(JSValueConst v)
+{
+    if (!JS_VALUE_HAS_REF_COUNT(v))
+        return -1;
+    return js_rc(JS_VALUE_GET_PTR(v))->ref_count;
 }
 
 /* ---- collections that run (JS_RunGC, JS_RunYoungGC) ---- */

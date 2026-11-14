@@ -7,17 +7,28 @@
 # train.sh: train the profile make gen compiles the engine with, into
 # engine/pgo/profile.txt (see engine/pgo/README.md). Run it from anywhere
 # inside the repository on a machine with LLVM 22.1.8, then make gen and
-# make gen ARCH=arm64. It takes about 30 seconds.
+# make gen ARCH=arm64. It takes about a minute.
 #
 # The engine and its libc are built as the generator compiles them, with
-# -fprofile-instr-generate (engine/test/build.sh pgo). The profile holds the
-# pages of engine/pgo/pages, each rendered twice, with the counters set to zero
-# when the second pass starts: warm renders only, no load of a bundle and no
-# first render.
+# -fprofile-instr-generate (engine/test/build.sh pgo). The profile holds two
+# inputs, merged as they are, neither one scaled (scaling a profile is not
+# neutral, see docs/changes/generator.md):
+#
+#   - the pages of engine/pgo/pages, each rendered twice, with the counters set
+#     to zero when the second pass starts: warm renders only, no load of a
+#     bundle and no first render,
+#   - engine/pgo/loops.js, plain loops over the paths the pages never run, so
+#     that the compiler does not take them for paths that never run.
+#
+# Then it checks loops.js (cover.awk): it runs the micro benchmarks of
+# compare/testdata, for the check only, and stops when loops.js runs less
+# than COVER_FLOOR percent of the paths the pages leave cold and the micro
+# benchmarks run, or when a part of loops.js no longer reaches its function.
 #
 # Environment:
 #   LLVM_BIN   bin folder of LLVM 22.1.8 (default: what scripts/llvm-bin.sh finds)
 #   TRAIN_OUT  work folder (default .build/pgo-train)
+#   COVER_FLOOR  the least percent of the paths loops.js must run (default 95)
 set -eu
 
 cd "$(dirname "$0")/../.."
@@ -70,6 +81,49 @@ render shop wb-studio wb-order-studio wb-stats-studio store-en-US-home store-en-
 	store-en-US-product store-en-US-journal store-en-US-post store-en-US-cart store-en-US-checkout
 render mui home
 
-"$llvm/llvm-profdata" merge -o "$out/profile.profdata" "$out/shop.profraw" "$out/mui.profraw"
+# run NAME FILE...: the scripts in one process of the native jsrun, counted
+# into NAME.profraw. jsrun stops with an error when a script throws.
+run() {
+	name=$1
+	shift
+	LLVM_PROFILE_FILE="$out/$name.profraw" "$out/host/jsrun" -raw "$@" > "$out/$name.txt" || {
+		echo "train.sh: $name: jsrun failed ($out/$name.txt)" >&2
+		exit 1
+	}
+	if [ ! -s "$out/$name.profraw" ]; then
+		echo "train.sh: $name wrote no counters ($out/$name.profraw)" >&2
+		exit 1
+	fi
+}
+run loops engine/pgo/loops.js
+
+# The check of loops.js. The micro benchmarks run with N=100, so a path they
+# run 100 times runs about once in each turn of a benchmark's loop.
+# factorial10 makes a million calls in each turn and runs one. Each part of
+# loops.js names one function it is there for (cover.awk).
+mkdir -p "$out/micro"
+for f in compare/testdata/*.js; do
+	n=100
+	[ "${f##*/}" = factorial10.js ] && n=1
+	sed "s/\\\$N/$n/" "$f" > "$out/micro/${f##*/}"
+done
+run micro "$out"/micro/*.js
+"$llvm/llvm-profdata" merge -o "$out/pages.profdata" "$out/shop.profraw" "$out/mui.profraw"
+"$llvm/llvm-profdata" merge --text -o "$out/pages.profile.txt" "$out/pages.profdata"
+for p in micro loops; do
+	"$llvm/llvm-profdata" merge --text -o "$out/$p.profile.txt" "$out/$p.profraw"
+done
+# the cold count of the pages: below it, LLVM takes a count for a path that
+# does not run (the count of the 99.9999th percentile)
+cold=$("$llvm/llvm-profdata" show -detailed-summary "$out/pages.profdata" | awk '/ account for 99\.9999% / { print $7 }')
+# the function each part of loops.js is there for, in the order of the parts
+need="rv_ta_get js_set_fast_array_element_out_of_line js_dataview_getValue js_dataview_setValue \
+lre_exec_backtrack js_bigint_cmp js_Date_parse string_get_tzabbr js_number_toPrecision \
+js_number_toExponential upper_ascii delete_property set_array_length js_binary_logic_slow \
+map_delete_record"
+awk -v cold="$cold" -v hot=100 -v floor="${COVER_FLOOR:-95}" -v need="$need" -f engine/pgo/cover.awk \
+	"$out/pages.profile.txt" "$out/micro.profile.txt" "$out/loops.profile.txt"
+
+"$llvm/llvm-profdata" merge -o "$out/profile.profdata" "$out/pages.profdata" "$out/loops.profraw"
 "$llvm/llvm-profdata" merge --text -o engine/pgo/profile.txt "$out/profile.profdata"
 echo "engine/pgo/profile.txt: $(grep -c '^# Func Hash:' engine/pgo/profile.txt) functions"

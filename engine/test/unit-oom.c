@@ -1676,6 +1676,45 @@ static void test_putel_local_key_oom(void)
     sweep("local key put", "putel.js", setup, "run()", want, 16384);
 }
 
+static void no_shape_cache(JSContext *ctx)
+{
+    JS_SetShapeCache(ctx, 0);
+}
+
+/* o[k] = v with a key that is its own atom (from Object.keys) on plain
+   objects, empty, a literal and with a prototype, that grow one key at a time
+   and get a key again: with too little memory (the copy of a shared shape,
+   the next shape, the hash table of shapes, the property array) it fails
+   with the out of memory error and frees each key and value once, with the
+   shape cache at its default and off. */
+static void test_putel_atom_oom(void)
+{
+    static const char setup[] =
+        "var names = Object.keys({ pa0: 0, pa1: 0, pa2: 0, pa3: 0, pa4: 0, pa5: 0,\n"
+        "  pa6: 0, pa7: 0, pa8: 0, pa9: 0, pa10: 0, pa11: 0 });\n"
+        "function put(obj, key, v) { obj[key] = v }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var o = i % 2 ? { lit: 1 } : {}, p = Object.create({ inh: 1 });\n"
+        "    for (var j = 0; j < names.length; j++) {\n"
+        "      put(o, names[j], 'v' + j); put(p, names[(j + i) % names.length], [j]);\n"
+        "    }\n"
+        "    put(o, names[0], 'again');\n"
+        "    out.push(Object.keys(o).length + ':' + o.pa0 + ':' + Object.keys(p)[0] + ':' + p.pa11[0]);\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "12:again:pa0:11 13:again:pa1:10 12:again:pa2:9 13:again:pa3:8", NULL };
+
+    sweep("atom key put", "putelatom.js", setup, "run()", want, 16384);
+    sweep_register = no_shape_cache;
+    sweep("atom key put, no shape cache", "putelatom.js", setup, "run()", want, 16384);
+    sweep_register = NULL;
+}
+
 /* The truth of strings, ropes and objects in locals and temps: with too
    little memory (the strings and objects made, the result) it fails with
    the out of memory error and frees each value once. */
@@ -1748,6 +1787,185 @@ static void test_fast_builtins_oom(void)
     static const char *const want[] = { "80,3104", NULL };
 
     sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
+}
+
+/* Object.defineProperty, Object.defineProperties, Object.create and
+   Reflect.defineProperty with plain descriptors, read from their shape
+   (js_obj_to_desc_plain), and with descriptors that take the generic path (a
+   getter, an inherited field, a proxy): with too little memory (the key, the
+   property, the shape of the object, the result) they fail with the out of
+   memory error and lose nothing. */
+static void test_define_desc_oom(void)
+{
+    static const char setup[] =
+        "var up = { enumerable: true }, fn = function () { return 1 };\n"
+        "var px = new Proxy({ value: 'p', configurable: true }, {});\n"
+        "function show(o) { return Object.keys(o).length + Object.getOwnPropertyNames(o).join('') }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var o = {}, d = Object.create(up);\n"
+        "    d.value = 'v' + i;\n"
+        "    Object.defineProperty(o, 'a' + i, { value: i, writable: true, enumerable: i % 2 == 0 });\n"
+        "    Object.defineProperty(o, 'b' + i, { get: fn, set: fn, configurable: true });\n"
+        "    Object.defineProperty(o, 'c' + i, d);\n"
+        "    Object.defineProperty(o, 'd' + i, { get value() { return i } });\n"
+        "    Object.defineProperty(o, 'e' + i, px);\n"
+        "    Object.defineProperties(o, { f: { value: 1, enumerable: true }, g: d });\n"
+        "    Reflect.defineProperty(o, 'h' + i, { value: 'h', enumerable: true });\n"
+        "    var c = Object.create(null, { x: { value: i, enumerable: true }, y: { get: fn } });\n"
+        "    out.push(show(o), show(c), o['a' + i], o['b' + i], o['c' + i], o['d' + i], o['e' + i]);\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "5a0b0c0d0e0fgh0 1xy 0 1 v0 0 p 4a1b1c1d1e1fgh1 1xy 1 1 v1 1 p "
+        "5a2b2c2d2e2fgh2 1xy 2 1 v2 2 p 4a3b3c3d3e3fgh3 1xy 3 1 v3 3 p "
+        "5a4b4c4d4e4fgh4 1xy 4 1 v4 4 p 4a5b5c5d5e5fgh5 1xy 5 1 v5 5 p",
+        NULL
+    };
+
+    sweep("define descriptors", "define_desc.js", setup, "run()", want, 16384);
+}
+
+/* Function.prototype.bind makes the bound function, the copy of its
+   arguments, its length and its name ("bound " and the name of the target):
+   with too little memory it fails with the out of memory error, never
+   returns a function without its length or name, and loses nothing. The
+   targets: functions of each prototype, a C function, a class, a bound
+   function, a name outside latin-1, a length that a getter gives, and a
+   function of a new prototype, whose bound function needs new shapes. */
+static void test_bind_oom(void)
+{
+    static const char setup[] =
+        "function f(a, b, c) { return this.k + a + b + c }\n"
+        "var g = function* gen(x) { }, h = async function () { }, ag = async function* agen(a, b) { };\n"
+        "var named = function () { };\n"
+        "Object.defineProperty(named, 'name', { value: 'n\\u00e9\\u4e2d' });\n"
+        "var lenf = function () { };\n"
+        "Object.defineProperty(lenf, 'length', { get: function () { return 2.5 } });\n"
+        "function show(x) { return x.name + '/' + x.length + '/' + Object.getOwnPropertyNames(x).join('+') }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var t = function (a) { };\n"
+        "    Object.setPrototypeOf(t, Object.create(Function.prototype));\n"
+        "    var b = f.bind({ k: i }, 1), bb = b.bind(null, 2);\n"
+        "    var all = [b, bb, g.bind(), h.bind(), ag.bind(null, 1), Math.max.bind(null, i), named.bind(), lenf.bind(), (class C { }).bind(), t.bind()];\n"
+        "    out.push(all.map(show).join(' '), bb(3));\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 6 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 7 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 8 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 9",
+        NULL
+    };
+
+    sweep("bind", "bind.js", setup, "run()", want, 16384);
+}
+
+/* A host that calls bind sees either the bound function, whole, with no
+   exception pending, or the exception with the out of memory error pending.
+   (A script cannot see a bound function bind returned with the error
+   pending: the next call fails and the next backward jump ends the loop.)
+   The target has a new prototype whose empty shape another object shares,
+   so the bound function gets its keys on copies of the shape, which are
+   the requests that fail in the sweep of all sizes but one. */
+#define BIND_BYTE_ROOMS (1 + 16384 / 8)
+#define BIND_BUT_ONE (1024 / 8)
+
+static void test_bind_host_oom(void)
+{
+    static const char setup[] =
+        "var p = Object.create(Function.prototype), other = Object.create(p);\n"
+        "var t = function (a, b) { };\n"
+        "Object.setPrototypeOf(t, p);\n"
+        "var bind = Function.prototype.bind;\n";
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), k;
+    int failed = 0, made = 0;
+
+    for (k = 0; k < BIND_BYTE_ROOMS + nfill + BIND_BUT_ONE; k++) {
+        VM v = vm_new();
+        JSValue g, bind, t, f, args[2], name, len;
+        JSAtom alen, aname;
+        int bytes = k < BIND_BYTE_ROOMS, butone = k >= BIND_BYTE_ROOMS + nfill, pending, unc;
+        size_t n = bytes ? k * 8 : butone ? 8 * (k - BIND_BYTE_ROOMS - nfill + 1) : k - BIND_BYTE_ROOMS;
+        const char *sweep = bytes ? "byte" : butone ? "all but" : "fill";
+        char *s;
+
+        CHECK(eval_ok(v.ctx, setup), "bind host: the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        bind = JS_GetPropertyStr(v.ctx, g, "bind");
+        t = JS_GetPropertyStr(v.ctx, g, "t");
+        args[0] = JS_NULL;
+        args[1] = JS_NewInt32(v.ctx, 1);
+        if (bytes) {
+            room(&v, n);
+        } else if (butone) {
+            fill_memory(&v);
+            free_blocks(&v, 8, n - 8, 4);
+            free_blocks(&v, n + 8, MAX_BLOCK, 4);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[n].min, rm[n].max, rm[n].n);
+        }
+        f = JS_Call(v.ctx, bind, t, 2, args);
+        pending = JS_HasException(v.ctx);
+        unc = JS_IsUncatchableException(v.ctx);
+        if (bytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (JS_IsException(f)) {
+            failed++;
+            CHECK(pending && unc, "bind host %s room %zu: pending %d, uncatchable %d", sweep, n, pending, unc);
+            free(exception_text(v.ctx));
+        } else {
+            made++;
+            CHECK(!pending, "bind host %s room %zu: a bound function came back with an exception pending", sweep, n);
+            free(exception_text(v.ctx));
+            alen = JS_NewAtom(v.ctx, "length");
+            aname = JS_NewAtom(v.ctx, "name");
+            CHECK(JS_GetOwnProperty(v.ctx, NULL, f, alen) == 1 &&
+                  JS_GetOwnProperty(v.ctx, NULL, f, aname) == 1,
+                  "bind host %s room %zu: no own length or name", sweep, n);
+            JS_FreeAtom(v.ctx, alen);
+            JS_FreeAtom(v.ctx, aname);
+            name = JS_GetPropertyStr(v.ctx, f, "name");
+            len = JS_GetPropertyStr(v.ctx, f, "length");
+            s = value_text(v.ctx, name);
+            CHECK(s && !strcmp(s, "bound t") && JS_VALUE_GET_TAG(len) == JS_TAG_INT && JS_VALUE_GET_INT(len) == 1,
+                  "bind host %s room %zu: name %s, length tag %d", sweep, n, s ? s : "?", JS_VALUE_GET_TAG(len));
+            free(s);
+            JS_FreeValue(v.ctx, name);
+            JS_FreeValue(v.ctx, len);
+            JS_FreeValue(v.ctx, f);
+        }
+        JS_FreeValue(v.ctx, t);
+        JS_FreeValue(v.ctx, bind);
+        JS_FreeValue(v.ctx, g);
+        /* a lost object ends the process in vm_free: say what failed first */
+        fflush(stdout);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "bind host: no room made it fail");
+    CHECK(made > 0, "bind host: no room let it work");
 }
 
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
@@ -2115,6 +2333,125 @@ static void test_string_append_oom(void)
 
     for (i = 0; i < countof(calls); i++)
         sweep(calls[i], "append.js", setup, calls[i], want, 32768);
+}
+
+/* a + b of two strings in each form of the register loop's add (ADD, ADDL,
+   ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h): with too little
+   memory for the new string, the copy with room or the rope, it fails with
+   the out of memory error and frees each operand once, and the variable it
+   was to go into keeps its string. A variable appended to is written
+   t = t + id(b): t = t + b of two locals is add_loc (ADDLOC), not ADDL.
+   Three sweeps. run(): strings of 8 and 16 bits, short ones that are
+   copied, long ones that make ropes, and self, which appends to a string
+   another variable holds too, which must not change. It keeps each string
+   it makes, about 118 KiB at its peak, so it is swept every 64 bytes up to
+   128 KiB: each copy of 600 characters or more is then a new block that
+   takes the count to a new peak. runArgs(): the adds
+   into an argument, which the mapped arguments object still reads after
+   the out of memory error has ended the call: check(), at the start of the
+   next run, finds each argument holding the string it had or the whole new
+   one. A function that has the arguments object reads its arguments into
+   temps for an add, so the operands of an add into a temp are not seen
+   here: r-stradd.js reads them after the length error, which leaves
+   rv_add_str by the same path. runGrow(): grow appends to a string only
+   its local holds, which js_add_string_into grows in place or copies with
+   room (JS_ConcatStringAppend): it keeps only the old length, as a
+   number, so that nothing else holds the string, and aGrow does it in an
+   argument, which check() finds whole. Its answer is fixed, as the
+   sweep's answer comes from the same engine: an append done wrong in
+   place gives "cut".
+   The strings are past 504 bytes, so that each new one is a large block
+   the heap gives (docs/allocator.md): a small one takes a free slot of an
+   arena that is counted already, and would not fail. An add fails only
+   when its block takes the count past the limit, so the runs free no large
+   block before their adds: a freed one waits in the cache of large blocks,
+   counted still, and the next add of its size takes it and adds nothing to
+   the count. check() makes no string, run() and runArgs() keep the
+   strings they make, and grow frees the block it copies from only for a
+   copy half as large again, of another size. */
+static void test_string_add_oom(void)
+{
+    static const char setup[] =
+        "function sum(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h }\n"
+        "function hash(out) { let h = 0; for (const s of out) h = (h * 7 + s.length + s.charCodeAt(s.length - 1)) | 0; return out.length + ' ' + h }\n"
+        "function id(x) { return x }\n"
+        "function add(a, b) { return a + b }\n"
+        "function addl(a, b) { let t = 0; t = a + b; return t }\n"
+        "function addk(a) { return a + '<k>' }\n"
+        "function addkl(a) { let t = 0; t = a + '\\u4e2d'; return t }\n"
+        "function kadd(b) { return '<k>' + b }\n"
+        "function kaddl(b) { let t = b; t = '\\u4e2d' + t; return t }\n"
+        "function self(a, b) { let t = a; for (let i = 0; i < 8; i++) { const was = t; t = t + id(b); if (was.length !== t.length - b.length) return 'changed' } return t }\n"
+        "function grow(b, n) { let t = 'p'.repeat(n); for (let i = 0; i < 40; i++) { const m = t.length; t = t + id(b); if (t.length !== m + b.length) return 'cut' } return t }\n"
+        "function grown(v, n, b) {\n"
+        "  if (typeof v !== 'string' || v.length < n || (v.length - n) % b.length) return false\n"
+        "  for (let i = 0; i < v.length; i++) if (v.charCodeAt(i) !== (i < n ? 112 : b.charCodeAt((i - n) % b.length))) return false\n"
+        "  return true\n"
+        "}\n"
+        "var seen = {}\n"
+        "function rec(k, args, old, len) { seen[k] = { args, old, len } }\n"
+        "function aAddl(t, a, b) { rec('addl', arguments, t, a.length + b.length); t = a + b; return t }\n"
+        "function aAddkl(t, a) { rec('addkl', arguments, t, a.length + 1); t = a + '\\u4e2d'; return t }\n"
+        "function aKadd(t, b) { rec('kadd', arguments, t, b.length + 1); t = '\\u4e2d' + b; return t }\n"
+        "function aGrow(t, b) { rec('grow', arguments, [t.length, b], -2); for (let i = 0; i < 40; i++) t = t + id(b); return t }\n"
+        "function check() {\n"
+        "  for (const k in seen) {\n"
+        "    const s = seen[k], v = s.args[0]\n"
+        "    if (s.len === -2 ? !grown(v, s.old[0], s.old[1])\n"
+        "        : !(v === s.old || (typeof v === 'string' && v.length === s.len))) return 'lost ' + k + ' ' + typeof v\n"
+        "  }\n"
+        "  return 'kept'\n"
+        "}\n"
+        "var parts = ['ab', '\\u4e2d\\u6587', 'x'.repeat(70), 'y'.repeat(600), '\\u00e9'.repeat(600)]\n"
+        "function run() {\n"
+        "  const out = []\n"
+        "  for (const a of parts) {\n"
+        "    for (const b of parts) out.push(add(a, b), addl(a, b), self(a, b))\n"
+        "    out.push(addk(a), addkl(a), kadd(a), kaddl(a))\n"
+        "  }\n"
+        "  return hash(out.map(sum))\n"
+        "}\n"
+        "var l8 = 'y'.repeat(600), l16 = '\\u00e9'.repeat(600), m8 = 'x'.repeat(500)\n"
+        "function runArgs() {\n"
+        "  const was = check(), out = []\n"
+        "  for (const [a, b] of [[l8, 'ab'], [l16, 'cd'], [l8, '\\u00e9'], [l16, m8]])\n"
+        "    out.push(aAddl('old', a, b), aAddkl('old', a), aKadd('old', b === 'ab' ? m8 : b))\n"
+        "  return was + ' ' + hash(out.map(sum))\n"
+        "}\n"
+        "function runGrow() {\n"
+        "  const was = check(), b = 'q'.repeat(50), c = '\\u4e2d'.repeat(20)\n"
+        "  const g = grow(b, 600), h = grow(c, 600), a = aGrow('p'.repeat(600), b)\n"
+        "  return was + ' ' + (grown(g, 600, b) && grown(h, 600, c) && grown(a, 600, b) ? 'whole' : 'cut')\n"
+        "}\n"
+        /* once before the sweeps, so that their register code is made */
+        "run(); runArgs(); runGrow()\n";
+    static const struct { const char *what, *src, *answer; size_t step, max; } runs[] = {
+        { "string add", "run()", NULL, 64, 131072 },
+        { "string add into an argument", "runArgs()", NULL, 8, 32768 },
+        { "string add grown in place", "runGrow()", "kept whole", 8, 32768 },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(runs); i++) {
+        const char *want[] = { NULL, NULL };
+        VM v = vm_new();
+        JSValue r;
+
+        /* the answer, from a run with all the memory it needs */
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup failed", runs[i].what);
+        r = JS_Eval(v.ctx, runs[i].src, strlen(runs[i].src), "add.js", JS_EVAL_TYPE_GLOBAL);
+        want[0] = value_text(v.ctx, r);
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+        CHECK(want[0] != NULL, "%s: no answer", runs[i].what);
+        CHECK(!runs[i].answer || (want[0] && strcmp(want[0], runs[i].answer) == 0),
+              "%s: the answer is %s, not %s", runs[i].what, want[0] ? want[0] : "(none)", runs[i].answer);
+        sweep_step = runs[i].step;
+        if (want[0])
+            sweep(runs[i].what, "add.js", setup, runs[i].src, want, runs[i].max);
+        sweep_step = 8;
+        free((char *)want[0]);
+    }
 }
 
 /* An array that is appended to takes its first room in one allocation (push,
@@ -2544,13 +2881,18 @@ int main(void)
     test_map_grow_oom();
     test_array_room_oom();
     test_string_append_oom();
+    test_string_add_oom();
     test_copy_props_oom();
     test_has_property_oom();
     test_getel_local_key_oom();
     test_putel_local_key_oom();
+    test_putel_atom_oom();
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
+    test_define_desc_oom();
+    test_bind_oom();
+    test_bind_host_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();

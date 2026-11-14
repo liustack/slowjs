@@ -72,8 +72,10 @@ the C engine does not need.
   regular expressions 2.9 times faster without its JIT and 5.2 times
   faster with it, and is faster on 32 (JIT: 51) of 63 QuickJS micro
   benchmarks. moejs writes JSON 2.0 times faster and go-quickjs 1.3 times
-  faster. goant parses JSON 1.1 times faster. C QuickJS 2026-06-04 scores
-  1.025 times as high on the V8 suite (see
+  faster. goant parses JSON 1.1 times faster. At v0.30.6 liustack/quickjs
+  scores 1.27 times as high as C QuickJS 2026-06-04 on the V8 suite, and is
+  behind it only on RayTrace (0.95), in a session of 2026-11-14 with these
+  two engines alone (see
   [V8 suite against C QuickJS](#v8-suite-against-c-quickjs)).
 - **Far behind.** Nothing is at twice the median of the other pure Go
   engines. The farthest are the empty loop (1.71), number
@@ -200,7 +202,10 @@ runtime.
 
 ### V8 suite against C QuickJS
 
-C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
+There are three sessions, on different machines. The scores of one are not
+compared with the scores of another.
+
+**v0.30.1, 2026-11-06.** C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
 same machine and core, taking turns with liustack/quickjs, 5 rounds each.
 `native/qjs-v8.js` runs the suite on `qjs` with the steps of the driver.
 Score per benchmark, median of the rounds:
@@ -218,6 +223,58 @@ cost nothing that the rounds can show: the build with `-DNDEBUG` scores the
 same within their spread. liustack/quickjs scored 1268 in the main run, 1.2%
 under this session. Every round:
 [`compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md`](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md).
+
+**v0.30.6, 2026-11-14.** On another machine (GCP t2d-standard-4, AMD EPYC
+7B13, one core, the whole machine quiet), liustack/quickjs v0.30.1 and
+v0.30.6 and C QuickJS 2026-06-04 took turns in one session, 5 rounds each,
+with the same steps. No memory limit was set, and C QuickJS was built as
+shipped (its asserts run). Score per benchmark, median of the rounds:
+
+| Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.1 | 892 | 779 | 761 | 1321 | 1753 | 447 | 3574 | 1580 | 1155 (1147–1164) |
+| liustack-quickjs v0.30.6 | 1131 | 976 | 1109 | 1487 | 2214 | 558 | 4384 | 2587 | 1501 (1485–1510) |
+| C QuickJS 2026-06-04 (reference) | 832 | 752 | 919 | 1566 | 2013 | 382 | 3089 | 1798 | 1186 (1179–1196) |
+
+v0.30.6 scores 1.30 times v0.30.1 and 1.27 times C QuickJS. It is ahead of
+C QuickJS on seven of the eight benchmarks (RegExp 1.46, NavierStokes 1.44,
+Splay 1.42, Richards 1.36, DeltaBlue 1.30, Crypto 1.21, EarleyBoyer 1.10)
+and behind on RayTrace (0.95). v0.30.1 scores 0.97 of C QuickJS here, as it
+did in the session above (0.98). The other pure Go engines were not run in
+this session, so the place of liustack/quickjs among them on the V8 suite
+is still the one of the run of v0.30.1. Every round:
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md).
+
+**Hermes V1, 2026-11-14.** A third session, on a third machine (server C, the
+same type: GCP t2d-standard-4, AMD EPYC 7B13, one core, the whole machine
+held for each round). It is not the machine of the table above, so the
+v0.30.6 and C QuickJS rows here are this session's own, and their scores are
+not to be compared with that table. liustack/quickjs v0.30.6, C QuickJS
+2026-06-04 and four Hermes rows took turns, 5 rounds each. Score per
+benchmark, median of the rounds:
+
+| Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.6 | 1144 | 1002 | 1107 | 1476 | 2244 | 560 | 4669 | 2580 | 1520 (1447–1529) |
+| C QuickJS 2026-06-04 (reference) | 826 | 754 | 914 | 1578 | 2059 | 385 | 3240 | 1856 | 1194 (1186–1206) |
+| Hermes V1 release, from source | 968 | 1077 | 1023 | 2187 | 2811 | 557 | 2649 | 1775 | 1422 (1408–1435) |
+| Hermes V1 release, `-O` bytecode | 1326 | 1526 | 1755 | 4579 | 4881 | 563 | 3137 | 3444 | 2154 (2151–2192) |
+| Hermes V1 head, `-O` bytecode | 1391 | 1470 | 1757 | 4452 | 4850 | 920 | 3198 | 3455 | 2297 (2284–2324) |
+| Hermes V1 head, `-O` bytecode, `-Xjit` | 3174 | 3468 | 4084 | 7002 | 6259 | 934 | 3414 | 6658 | 3796 (3759–3929) |
+
+Hermes V1 is a C++ engine and cannot be used from Go without cgo. It is here as a yardstick: on the V8 suite it scores 1.4 times v0.30.6 running precompiled bytecode, about the same running source, and 2.5 times with its JIT, which is off by default.
+
+Which Hermes: the release is `260318099.0.0-stable` at `fd22091391c3`, the
+head is `static_h` at `44f5f48c3edf`, both built Release with clang 22.1.8
+and `-DHERMES_ENABLE_INTL=OFF`. React Native calls the releases of `static_h`
+Hermes V1. The release has no x86-64 JIT, so the JIT row is the head with
+`-Xjit`. A JIT build still runs its interpreter until `-Xjit` is given. The
+bytecode rows are compiled ahead by `hermesc -O`, outside the timed run, and
+the source row is run by an indirect `eval` of each file, with no `-O`.
+`native/hermes-v8.js` is the driver. All eight benchmarks ran on every Hermes
+row. v0.30.6 scores higher than every Hermes row only on Splay. Every round,
+and how Hermes was found, built and run:
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md).
 
 ## tifa pages
 
@@ -713,12 +770,17 @@ terms retained in each downloaded distribution:
 | C QuickJS master snapshot | 7d1c13c5d8 | [MIT](https://github.com/bellard/quickjs/blob/7d1c13c5d8/LICENSE) |
 | QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
 | Node, Linux x64 binary | v24.11.1 | [MIT and third-party notices](https://github.com/nodejs/node/blob/v24.11.1/LICENSE), including V8 (BSD-3-Clause), OpenSSL (Apache-2.0) and ICU (Unicode) |
+| Hermes V1, `260318099.0.0-stable` and `static_h` at `44f5f48c3edf` | built from source | [MIT](https://github.com/facebook/hermes/blob/static_h/LICENSE), Copyright (c) Meta Platforms, Inc. and affiliates, [facebook/hermes](https://github.com/facebook/hermes) |
 | CMake, Linux x86_64 binary | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt), with third-party terms under `Licenses/` in the distribution |
 
 The two C QuickJS rows are built by the Makefile that ships with them, which
 defines no `NDEBUG`, so their `assert` calls run, while QuickJS-NG's CMake
 Release build defines `-DNDEBUG`. A row of C QuickJS built for speed adds
 `-DNDEBUG` to `DEFINES` in its Makefile. Say which one a table shows.
+
+Hermes is not built by `native/build.sh`. Its flags and how it is run are in
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8-hermes.md).
+Nothing of Hermes is checked in: `native/hermes-v8.js` is written here.
 
 The tifa pages and the native reference rows have a script of their own
 (Linux, CPU 1 and its sibling CPU 5):
@@ -818,6 +880,7 @@ At each release, follow "Engine comparison" in
 
 | Run | liustack/quickjs | Machine | Notes |
 |---|---|---|---|
+| [2026-11-14-v0.30.6-gcp-v8](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md) | v0.30.6 (main `78a90364`) and v0.30.1 (`5e99b850`) | GCP t2d-standard-4, AMD EPYC 7B13, CPU 0, the whole machine quiet | the V8 suite only, on liustack/quickjs v0.30.1 and v0.30.6 and C QuickJS 2026-06-04 (as shipped), 5 rounds each in turns, no memory limit. A machine other than that of the earlier runs: its scores are not compared with theirs |
 | [2026-11-06-v0.30.1-gcp-v8-c](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md) | main `c23e76e6` (the engine of v0.30.1) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | the V8 suite only, on liustack/quickjs and C QuickJS 2026-06-04 (as shipped, and with `-DNDEBUG`), 5 rounds each, the first row of C QuickJS on the V8 suite |
 | [2026-11-06-v0.30.1-gcp](../compare/engines/results/2026-11-06-v0.30.1-gcp.md) | v0.30.1 (main `5e99b850`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again ([pages](../compare/engines/results/2026-11-06-v0.30.1-gcp-pages.md)), go-quickjs at v0.34.1 and modernc.org/quickjs at v0.27.0. Timed workloads and tifa pages in short pieces under a lock on the core pair, test262 on another pair at low priority and merged in. go-quickjs-jit rendered the bench `table` page differently between two renders in the page run, so that page was measured in a run of its own. The version column of the Engines table in the results file reads `v0.30.1 => ../../`, and the driver reports `v0.30.1-dirty` because `go.mod` of the comparison was edited for the newer engines |
 | [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0 (main `0cc6d332`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again, the first run of the C engine ([pages](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)). Timed workloads, then the tifa pages, then test262 on both cores, one after the other. go-quickjs failed pages were measured in rest runs. The row `liustack-tifa-nogoasm` is gone. The version column of the Engines table in the results file reads `v0.26.16 => ../../`, as `go.mod` of the comparison was not moved: the engine is the checkout |

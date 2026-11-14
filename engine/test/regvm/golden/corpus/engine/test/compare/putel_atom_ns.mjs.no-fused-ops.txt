@@ -1,0 +1,19 @@
+result a-b: TypeError, under ok a-b, TypeError, under ok a-b
+result default: TypeError, under ok default, TypeError, under ok default
+result normal: TypeError, under ok normal, TypeError, under ok normal
+result plain: TypeError, under ok plain, TypeError, under ok plain
+result with space: TypeError, under ok with space, TypeError, under ok with space
+result 😀: TypeError, under ok 😀, TypeError, under ok 😀
+result plain: TypeError, under ok plain, TypeError, under ok plain
+result nope: TypeError, under ok nope, TypeError, under ok nope
+result zz: TypeError, under ok zz, TypeError, under ok zz
+result -0: TypeError, under ok -0, TypeError, under ok -0
+result 1e3: TypeError, under ok 1e3, TypeError, under ok 1e3
+result length: TypeError, under ok length, TypeError, under ok length
+result __proto__: TypeError, under ok __proto__, TypeError, under ok __proto__
+result then: TypeError, under ok then, TypeError, under ok then
+result Symbol(Symbol.toStringTag): TypeError, under TypeError, TypeError, under TypeError
+result values: 1,1,4,false,false
+mem-end obj=203 atom=573 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
+mem-gc obj=203 atom=573 shape=122 prop=970 jsfunc=5 cfunc=130 array=3 fast_array=3 elements=31 binary=0
+--- status exit 0

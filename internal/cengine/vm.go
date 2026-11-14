@@ -90,6 +90,7 @@ type VM struct {
 	freed   bool          // Close freed the engine, or tried to
 	leaked  uintptr       // what JS_FreeRuntime returned
 	timeout time.Duration // of Eval (SetTimeout)
+	placed  [][2]uintptr  // the objects of Place, freed by Close
 }
 
 // Options are the settings of a new VM.
@@ -272,6 +273,37 @@ func (v *VM) Eval(src, file string) (out string, err error) {
 	}()
 	v.enterScript(func() { out, err = v.eval(src, file) })
 	return out, err
+}
+
+// Place allocates k small objects, each {a: i}, and holds them until Close.
+// No script sees them: they are not in any global. They move where the heap
+// puts what is allocated after them, which a timing uses to run a micro
+// benchmark at several placements of its data (docs/measuring.md). Place(0)
+// does nothing.
+func (v *VM) Place(k int) (err error) {
+	if k < 0 {
+		return fmt.Errorf("cengine: Place(%d), want 0 or more", k)
+	}
+	if err := v.usable(); err != nil {
+		return err
+	}
+	const propCWE = 7 // JS_PROP_C_W_E
+	v.enter(func() {
+		for i := range k {
+			u, tag := JS_NewObject(v.sp, v.ctx)
+			if int32(tag) == tagException {
+				err = v.exception()
+				return
+			}
+			v.placed = append(v.placed, [2]uintptr{u, tag})
+			// JS_TAG_INT is 0: the value is i.
+			if int32(JS_DefinePropertyValueStr(v.sp, v.ctx, u, tag, v.cstring("a"), uintptr(i), 0, propCWE)) < 0 {
+				err = v.exception()
+				return
+			}
+		}
+	})
+	return err
 }
 
 // SetTimeout makes each Eval stop its script once it has run for d, as
@@ -629,6 +661,10 @@ func (v *VM) Close() (leaked uintptr, err error) {
 			}()
 			engineFreed(v)
 			v.enter(func() {
+				for _, o := range v.placed {
+					v.free(o[0], o[1])
+				}
+				v.placed = nil
 				// The kept shapes hold the context: they go first.
 				JS_SetShapeCache(v.sp, v.ctx, 0)
 				JS_FreeContext(v.sp, v.ctx)

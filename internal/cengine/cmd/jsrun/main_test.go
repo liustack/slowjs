@@ -78,3 +78,46 @@ func TestOutputEndsWithItsOwnPeakMemory(t *testing.T) {
 		t.Errorf("no vmhwm-kb line:\n%s", out)
 	}
 }
+
+// TestPlaceMovesNothingTheScriptSees: -place K holds K objects in each VM
+// before its run, says so, and leaves the globals of the script as they are.
+// Without it, or with K = 0, no line about it is printed.
+func TestPlaceMovesNothingTheScriptSees(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "globals.js")
+	if err := os.WriteFile(file, []byte(`Object.getOwnPropertyNames(globalThis).join()`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(os.Args[0], append(args, file)...)
+		cmd.Env = append(os.Environ(), "JSRUN_AS_MAIN=1")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("jsrun %v: %v\n%s", args, err, out)
+		}
+		return string(out)
+	}
+	line := func(out, prefix string) string {
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, prefix) {
+				return l
+			}
+		}
+		return ""
+	}
+	plain, zero, placed := run("-n", "2"), run("-n", "2", "-place", "0"), run("-n", "2", "-place", "7")
+	if line(plain, "place:") != "" || line(zero, "place:") != "" {
+		t.Errorf("a line about the placement without one:\n%s\n%s", plain, zero)
+	}
+	if l := line(placed, "place:"); !strings.Contains(l, "7") {
+		t.Errorf("-place 7 does not say so:\n%s", placed)
+	}
+	if a, b := line(plain, "result:"), line(placed, "result:"); a == "" || a != b {
+		t.Errorf("the script sees other globals with -place 7: %q, without: %q", b, a)
+	}
+	cmd := exec.Command(os.Args[0], "-place", "-1", file)
+	cmd.Env = append(os.Environ(), "JSRUN_AS_MAIN=1")
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Errorf("-place -1 ran:\n%s", out)
+	}
+}
