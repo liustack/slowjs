@@ -69,7 +69,7 @@ What tifa adds for its own bundle is not there: its functions named `__tifa_*` (
 
 Each call writes its line at once, and stdout is written before a line of stderr, so a terminal or a pipe sees the lines when the script prints them, in that order. A lone surrogate prints as U+FFFD.
 
-An uncaught exception prints its text and its stack to stderr, at most 50 frames. The file in the stack is `<eval>`, the name under which the Go API evaluates a script, not the name of the file.
+An uncaught exception prints its text and its stack to stderr, at most 50 frames. The stack names the file by its path as given on the command line, cleaned to one line of at most 1,024 bytes, and the code of `-e` as `<eval>`.
 
 ## Show a problem
 

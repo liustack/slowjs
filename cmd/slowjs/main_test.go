@@ -164,6 +164,35 @@ print("after");
 	}
 }
 
+// TestStackFileName: the stack names the file by its path as given, cleaned
+// to one line, and the code of -e as <eval>.
+func TestStackFileName(t *testing.T) {
+	src := "print(1);\nfunction f() { throw new RangeError(\"boom\") }\nf();\n"
+	p := script(t, src)
+	r := runCmd(t, p)
+	r.want(t, exitException, "1\n")
+	if !strings.Contains(r.stderr, "at f ("+p+":2:") {
+		t.Errorf("file: stderr %q", r.stderr)
+	}
+	r = runCmd(t, "-e", src)
+	r.want(t, exitException, "1\n")
+	if !strings.Contains(r.stderr, "at f (<eval>:2:") {
+		t.Errorf("-e: stderr %q", r.stderr)
+	}
+	if runtime.GOOS == "windows" {
+		return // no newline in a file name
+	}
+	p = filepath.Join(t.TempDir(), "a\nb.js")
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r = runCmd(t, p)
+	r.want(t, exitException, "1\n")
+	if want := "at f (" + strings.ReplaceAll(p, "\n", "�") + ":2:"; !strings.Contains(r.stderr, want) {
+		t.Errorf("newline: stderr %q, want %q in it", r.stderr, want)
+	}
+}
+
 // TestDeepStack: the stack of an exception thrown deep in a recursion is
 // cut to its first frames.
 func TestDeepStack(t *testing.T) {

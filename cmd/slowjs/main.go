@@ -131,7 +131,7 @@ func run(args []string) int {
 	}
 	evalSet := false
 	fs.Visit(func(f *flag.Flag) { evalSet = evalSet || f.Name == "e" })
-	src := *eval
+	src, name := *eval, ""
 	if !evalSet {
 		if fs.NArg() == 0 {
 			return usageError("no script to run")
@@ -140,9 +140,9 @@ func run(args []string) int {
 		if err != nil {
 			return usageError(err.Error())
 		}
-		src = string(b)
+		src, name = string(b), fs.Arg(0)
 	}
-	return runScript(src, fs.Args(), *timeout, limit, *limitText)
+	return runScript(name, src, fs.Args(), *timeout, limit, *limitText)
 }
 
 func usageError(msg string) int {
@@ -244,9 +244,10 @@ const setup = `(function (write, args) {
   globalThis.scriptArgs = JSON.parse(args);
 })`
 
-// runScript runs src and the jobs it queued in a new VM, under the limits,
-// and returns the exit code.
-func runScript(src string, args []string, timeout time.Duration, limit uint64, limitText string) (code int) {
+// runScript runs src, named name in its stack (the path as given, or
+// <eval> for -e), and the jobs it queued in a new VM, under the limits, and
+// returns the exit code.
+func runScript(name, src string, args []string, timeout time.Duration, limit uint64, limitText string) (code int) {
 	defer func() {
 		out[1].Flush()
 		out[2].Flush()
@@ -290,7 +291,7 @@ func runScript(src string, args []string, timeout time.Duration, limit uint64, l
 	}
 	if err == nil {
 		var v quickjs.Value
-		if v, err = vm.EvalValue(src, quickjs.EvalGlobal); err == nil {
+		if v, err = vm.EvalFile(name, src, quickjs.EvalGlobal); err == nil {
 			v.Free()
 		}
 	}
