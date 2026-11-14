@@ -79,40 +79,20 @@ git commit -m "build(pgo): train the profile again"
 
 ### 重新和其他引擎对比
 
-次版本发布时，重新运行和其他纯 Go JavaScript 引擎的对比（[benchmarks.md](benchmarks.md)）。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。它在 `compare/engines` 里，是一个独立的模块，在一台 Linux 机器上运行，为它留出一个 CPU 和它的超线程兄弟（下面的 CPU 1 和 CPU 5）：
+次版本发布时，重新运行和其他 Go 的 JavaScript 引擎以及原生引擎的对比（[benchmarks.md](benchmarks.zh-CN.md)）。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。一次运行是两张表：tifa 页面的渲染时间和 V8 套件，只在解释器之间比（带 JIT 的引擎关掉 JIT 来跑，或者不比）。它在 `compare/engines` 里，是一个独立的 Go 模块，在没有别的任务的四核 Linux 机器上运行。命令见 [compare/engines/README.zh-CN.md](../compare/engines/README.zh-CN.md)。
 
-1. 让对比指向这个版本，如果其他引擎的最新版本应该参加这次运行，就更新它们：
+1. 让对比指向这个版本，如果其他引擎的最新版本该进这次运行，就更新它们：
 
    ```sh
    cd compare/engines
-   go get <module>@latest && go mod tidy      # optional, for each other engine
+   go get <module>@latest && go mod tidy      # 可选，对每个其他引擎
    ```
 
-   `compare/engines` 通过对仓库根目录的 `replace` 找到这个模块，所以这次运行测的是它所在的检出：先检出那个标签。
+   `compare/engines` 通过一条指向仓库根的 `replace` 引用本模块，所以运行测的是它所在的检出：先检出这个标签。
 
-2. 运行每个工作负载，五轮，以及带参考行的 tifa 页面：
-
-   ```sh
-   run="<date>-<version>-<host>"
-   go run ./cmd/compare -cpu 1 -sibling 5 -name "$run"
-   tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
-   page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
-   tifa/run.sh "$page_dir" bin "$HOME/jsnative"    # TIFA_ONLY=a,b runs only some engines
-   go run ./cmd/behind "results/$run.json"
-   ```
-
-   带 `-cpu 1 -sibling 5` 时，驱动程序把计时的进程钉在 CPU 1 上，GOMAXPROCS=1。`tifa/run.sh` 把功能检查（正常、桩和代理）和计时的进程都钉在 CPU 1 上，GOMAXPROCS=1，TZ=UTC。两个阶段用同样限定 4 GiB 的入口，因 CPU 干扰最多允许三次尝试。二进制用 `-pgo=off` 构建。在共用的机器上，用 `-add` 把运行切成几段，并把 test262 放到另一个 CPU 上以低优先级运行，如 [benchmarks.md](benchmarks.md#rerun) 所示。当某个引擎在 shop 页面上失败并关闭了它的运行时，把其他页面放在单独的一次运行里测，同一节也这样说。
-
-3. 在任何补测运行或单个页面的探测之后，用一条命令写出并提交两个页面文件：
-
-   ```sh
-   go run ./cmd/pages "$page_dir" --output "results/$run-pages" &&
-     git add "results/$run-pages.md" "results/$run-pages.json" &&
-     git commit -m "docs(bench): record $run pages" -m "Archive page times and normalized HTML digests so equality can be checked from the saved results."
-   ```
-
-   JSON 保存原始的进程结果、补测运行、探测、尝试次数和每个页面的 HTML 比较。也提交 `results/<run>.json` 和 `results/<run>.md`，更新 [benchmarks.md](benchmarks.md) 的表格和引擎远远落后之处的列表，并把这次运行加进它的 History。
-4. 如果方法变了（一个工作负载、一个引擎、一个钉住的输入、一个设置），在 `compare/engines/CHANGELOG.md` 里加一条。
+2. 构建各引擎和原生参照（`native/build.sh`），按 README 所说运行：tifa 页面每次调用一个引擎，V8 套件五轮。每次计时的调用独占整台机器，钉在一个核上。所有的计时都在同一次会话里重新跑。对比从不在其他引擎上运行 test262。机器是共用的话，用 `-add` 把运行切成几段。
+3. 用 `go run ./cmd/pages "$page_dir" --output "results/$run-pages"` 写页面文件，和这次运行的 V8 文件一起提交。同一个提交里删掉上一次运行的结果文件：`results/` 只留最近一次。更新 [benchmarks.md](benchmarks.zh-CN.md) 的表格。
+4. 如果方法变了（负载、引擎、固定的输入、某项设置），在 `compare/engines/CHANGELOG.md` 里加一条。
 
 ### 升级 tifa
 

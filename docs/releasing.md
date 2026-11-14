@@ -79,7 +79,7 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
 
 ### Compare with the other engines again
 
-A minor release runs the comparison with the other pure Go JavaScript engines again ([benchmarks.md](benchmarks.md)). Patch releases skip it unless the owner asks: while the engine changes from week to week, a new table each patch costs hours of a machine and says little. It lives in `compare/engines`, a module of its own, and runs on a Linux machine with a CPU and its hyperthread sibling kept free for it (CPU 1 and CPU 5 below):
+A minor release runs the comparison with the other JavaScript engines for Go and the native engines again ([benchmarks.md](benchmarks.md)). Patch releases skip it unless the owner asks: while the engine changes from week to week, a new table each patch costs hours of a machine and says little. A run is two tables: the render time of tifa's pages and the V8 suite, among interpreters only (an engine with a JIT runs with it off or is left out). It lives in `compare/engines`, a module of its own, and runs on a Linux machine of four cores that nothing else uses. [compare/engines/README.md](../compare/engines/README.md) has the commands.
 
 1. Point the comparison at the release, and update the other engines if their newest versions should be in the run:
 
@@ -90,28 +90,9 @@ A minor release runs the comparison with the other pure Go JavaScript engines ag
 
    `compare/engines` reaches this module through a `replace` of the repository root, so the run measures the checkout it is in: check out the tag first.
 
-2. Run every workload, five rounds, and the tifa pages with the reference rows:
+2. Build the engines and the native references (`native/build.sh`), run the tifa pages one engine per call and the V8 suite for five rounds, as the README says. Each timed call holds the whole machine and is pinned to one core. All timings are run again in one session. The comparison never runs test262 on other engines. On a shared machine, cut the run into pieces with `-add`.
 
-   ```sh
-   run="<date>-<version>-<host>"
-   go run ./cmd/compare -cpu 1 -sibling 5 -name "$run"
-   tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
-   page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
-   tifa/run.sh "$page_dir" bin "$HOME/jsnative"    # TIFA_ONLY=a,b runs only some engines
-   go run ./cmd/behind "results/$run.json"
-   ```
-
-   With `-cpu 1 -sibling 5` the driver pins timed processes to CPU 1 with GOMAXPROCS=1. `tifa/run.sh` pins both functional checks (normal, stub and proxy) and timed processes to CPU 1, with GOMAXPROCS=1 and TZ=UTC. Both stages use the same 4 GiB capped entry and allow at most three tries for CPU disturbance. The binaries are built with `-pgo=off`. On a shared machine, cut the run into pieces with `-add` and run test262 on another CPU at low priority, as [benchmarks.md](benchmarks.md#rerun) shows. When an engine fails shop pages and closes its runtime, measure the other pages in a run of their own, as the same section says.
-
-3. After any rest runs or single-page probes, write and commit both page files with one command:
-
-   ```sh
-   go run ./cmd/pages "$page_dir" --output "results/$run-pages" &&
-     git add "results/$run-pages.md" "results/$run-pages.json" &&
-     git commit -m "docs(bench): record $run pages" -m "Archive page times and normalized HTML digests so equality can be checked from the saved results."
-   ```
-
-   The JSON keeps raw process results, rest runs, probes, tries and per-page HTML comparisons. Commit `results/<run>.json` and `results/<run>.md` too, update the tables of [benchmarks.md](benchmarks.md) and the list of where the engine is far behind, and add the run to its History.
+3. Write the page files with `go run ./cmd/pages "$page_dir" --output "results/$run-pages"`, and commit them with the V8 file of the run. Delete the result files of the older run in the same commit: `results/` keeps the last run only. Update the tables of [benchmarks.md](benchmarks.md).
 4. If the method changed (a workload, an engine, a pinned input, a setting), add an entry to `compare/engines/CHANGELOG.md`.
 
 ### Upgrade tifa
