@@ -1118,6 +1118,18 @@ The profile makes six of them slower, two by about twice as much in time as in i
 
 Without the profile, `global_read` is 12.77% slower than v0.30.4 (+9.68% to +15.95%, formal +15.74%) and `prop_create` 2.97% slower (+2.00% to +3.95%). This is not the profile: it comes from the changes since v0.30.4, and the release keeps it. The cause is not found. Finding the change that costs each is a follow-up, as for the long Markdown page ([below](#long-markdown-without-the-profile)).
 
+**Correction, 2026-11-14.** `global_read` and `array_read` moved with the place of their data, not with the engine. A quick look on a second server of the same type (core 0, `jsrun` with 2 warm runs and 10 timed, the median, 2 rounds, no layouts and no verdict) ran the releases v0.30.4 and v0.30.5 with k small objects allocated before the benchmark, k = 0 to 15, which moves only where the heap puts the data of the loop. `global_read` has two levels in both versions, about 100 to 104 ms and about 114 to 117 ms: v0.30.4 is at the low level only at k = 0, v0.30.5 only at k = 2 and k = 6 to 15. `typed_array_read`, `array_for` and `prop_create` keep their difference at every k. v0.30.5 against v0.30.4:
+
+| Benchmark | k = 0 (the script as it is) | k = 1 to 15 | What moves it |
+| --- | ---: | ---: | --- |
+| `global_read` | +16.2% | -9.2% to +5.6% (-8.9% to -9.2% at k = 2 and 6 to 15) | the place of the data |
+| `array_read` | +4.7% | -0.3% to +3.4% (-0.3% to +0.8% at 13 of the 15) | the place of the data |
+| `typed_array_read` | +6.5% | +1.9% to +8.2% (+5.4% to +6.7% at 13 of the 15) | the engine |
+| `array_for` | +5.2% | +5.1% to +5.6% | the engine |
+| `prop_create` | +3.5% | +0.6% to +8.0% (+5.4% to +7.3% at 13 of the 15) | the engine |
+
+So the 13.90% and 3.15% above are what the release gave at one placement of the data, and the cause given for `global_read` without the profile, the changes since v0.30.4, does not hold: those changes moved its data. How to time a micro benchmark against this: [measuring.md](measuring.md#known-limits).
+
 #### Long Markdown without the profile
 
 Without the profile, the release renders the long Markdown page with no pool and no limit 2.18% slower than v0.30.4 (+1.57% to +2.79% at the mean of the layouts, judged slower, and +2.34% at the formal layout): 2.96% at 100 sections and 2.00% at 400. The cause is not found. It is in the changes since v0.30.4, not in the profile, which makes the page 5.49% faster and the release 3.43% faster than v0.30.4. Finding the change that costs it is a follow-up.
@@ -1158,6 +1170,8 @@ The 12 micro benchmarks of [the timing of v0.30.5](#the-micro-benchmarks-by-time
 | `typed_array_read` | -0.96% (-5.35% to +3.63%) inconclusive | +7.19% (+1.02% to +13.73%) slower |
 
 At the mean of the layouts v0.30.6 is faster on 7 of them, shows no regression beyond the delta on `prop_read` and `prop_write`, cannot tell on `prop_update` and `typed_array_read`, and is slower by less than the delta on `array_slice`. `typed_array_read` is 7.19% slower at the formal layout, the build that ships, while the mean of the layouts cannot tell (its interval runs from -5.35% to +3.63%): the place of its code moves it more than the change does. `global_read` and `prop_create` gain 1.45% and 2.12%, but stay slower than with v0.30.4 (they lost 13.90% and 7.08% in v0.30.5).
+
+**Correction, 2026-11-14.** What `global_read` lost in v0.30.5 was the place of its data, not the engine, and the same holds for `array_read`: with k small objects allocated before the loop, v0.30.5 is 9% faster than v0.30.4 on `global_read` at k = 2 and 6 to 15, and within -0.3% to +0.8% of it on `array_read` at 13 of k = 1 to 15. `prop_create`, `typed_array_read` and `array_for` were slower in v0.30.5 at every placement tried ([the table of k](#the-micro-benchmarks-by-time)).
 
 #### The study of 2026-11-13
 
