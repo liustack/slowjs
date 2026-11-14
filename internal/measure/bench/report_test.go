@@ -210,3 +210,41 @@ func TestFinalKeepsTheLastTry(t *testing.T) {
 		t.Errorf("Memory counted %d processes", m[0].N)
 	}
 }
+
+// TestPlacesListsEachSideAtEachPlacement: with the placement paired with the
+// layout, the table has a row for each k, in the order of k, with the median
+// of each side there, so that two levels of time show at a glance.
+func TestPlacesListsEachSideAtEachPlacement(t *testing.T) {
+	ps := Protocol()
+	rec := func(side string, k, round int, ms float64) Record {
+		return Record{Side: side, Pos: ps[k].String(), Kind: "m", Round: round, Place: &k, Metrics: map[string]float64{"eval": ms}}
+	}
+	rs := []Record{
+		rec("a", 7, 0, 100), rec("b", 7, 0, 115), rec("a", 7, 1, 102), rec("b", 7, 1, 117),
+		rec("a", 0, 0, 114), rec("b", 0, 0, 104), rec("a", 0, 1, 114), rec("b", 0, 1, 104),
+		// another kind is not read
+		{Side: "a", Pos: ps[1].String(), Kind: "other", Metrics: map[string]float64{"eval": 1}},
+	}
+	rows := Places(rs, "m", "a", "b")
+	if len(rows) != 2 || rows[0].K != 0 || rows[1].K != 7 {
+		t.Fatalf("rows %+v", rows)
+	}
+	if r := rows[1]; r.Pos != ps[7].String() || r.Base != 101 || r.New != 116 {
+		t.Errorf("k 7: %+v", r)
+	}
+	var b bytes.Buffer
+	WritePlaces(&b, rows, "a", "b")
+	out := b.String()
+	for _, want := range []string{"| 0 | " + ps[0].String() + " | eval | 114.00 | 104.00 | -8.77% |", "| 7 | " + ps[7].String() + " | eval | 101.00 | 116.00 | +14.85% |"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("no row %q in:\n%s", want, out)
+		}
+	}
+	// Records without a placement give no table.
+	for i := range rs {
+		rs[i].Place = nil
+	}
+	if rows := Places(rs, "m", "a", "b"); len(rows) != 0 {
+		t.Errorf("rows without a placement: %+v", rows)
+	}
+}

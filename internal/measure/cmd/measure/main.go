@@ -156,6 +156,7 @@ func benchRun(ctx context.Context, args []string) error {
 	fs.IntVar(&o.Tries, "tries", 3, "tries of a disturbed block")
 	fs.BoolVar(&o.FreshPages, "fresh-pages", runtime.GOOS == "linux", "before each process, drop the cached pages of its binary and check with mincore that none is left (linux only, on by default there)")
 	fs.DurationVar(&o.Timeout, "timeout", 30*time.Minute, "limit of one process")
+	fs.StringVar(&o.Place, "place", "", "pair the placement of the data with the layout, for micro benchmarks: give each process this flag of the program with the number K of its layout in the protocol (0 for the formal one), such as -place of jsrun, which holds K small objects in each VM before its run (docs/measuring.md)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -190,6 +191,7 @@ func benchReport(args []string) error {
 	}
 	fmt.Printf("%s: %s against %s\n\n", *kind, *nw, *base)
 	bench.WriteTable(os.Stdout, rows, *base, *nw, *detail)
+	writePlaces(rs, *kind, *base, *nw)
 	if n := bench.Disturbed(rs, *kind); n > 0 {
 		fmt.Printf("\n%d processes still ran with a busy sibling core or other work after all their tries. Run again on a quiet machine.\n", n)
 	}
@@ -308,6 +310,7 @@ func benchJudge(args []string) error {
 	}
 	fmt.Printf("%s: %s against %s\n\n", *kind, *nw, *base)
 	bench.WriteJudgement(os.Stdout, as, v, *delta, *alpha, *detail)
+	writePlaces(rs, *kind, *base, *nw)
 	return nil
 }
 
@@ -335,4 +338,16 @@ func benchAddrs(args []string) error {
 		fmt.Println(l.Row(b, h))
 	}
 	return nil
+}
+
+// writePlaces writes the time of each side at each placement of the data, for
+// a run that paired it with the layout (bench run -place), so that levels of
+// time that come from where the heap puts the data show next to the verdict.
+func writePlaces(rs []bench.Record, kind, base, nw string) {
+	rows := bench.Places(rs, kind, base, nw)
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Printf("\nThe median of each side at each placement of the data (k small objects before the script, paired with the layout):\n\n")
+	bench.WritePlaces(os.Stdout, rows, base, nw)
 }

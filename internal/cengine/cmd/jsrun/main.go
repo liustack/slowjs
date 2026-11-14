@@ -48,6 +48,7 @@ type options struct {
 	seed  uint64
 	clock time.Time // zero: the real clock
 	stack uintptr
+	place int // small objects each VM holds before its run (VM.Place)
 }
 
 func main() {
@@ -60,12 +61,13 @@ func main() {
 	release := flag.Int64("release", -1, "after each evaluation give free memory back, keeping this many bytes (-1: do not)")
 	mem := flag.Bool("mem", false, "print the memory of the VM after each run")
 	goheap := flag.Bool("goheap", false, "print the live Go heap after each run")
+	place := flag.Int("place", 0, "small objects each VM allocates and holds before its run, which moves where the heap puts the data of the script (docs/measuring.md)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "usage: jsrun [flags] file.js\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
-	if flag.NArg() != 1 || *n < 1 || *warm < 0 {
+	if flag.NArg() != 1 || *n < 1 || *warm < 0 || *place < 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
@@ -76,7 +78,7 @@ func main() {
 	}
 	// The conversion is not part of any run.
 	src := string(bytes)
-	o := options{seed: *seed, stack: uintptr(*stack)}
+	o := options{seed: *seed, stack: uintptr(*stack), place: *place}
 	if *clock != "" {
 		if o.clock, err = time.Parse(time.RFC3339, *clock); err != nil {
 			fatal(err)
@@ -84,6 +86,9 @@ func main() {
 	}
 	fmt.Printf("engine: %s\n", engineName)
 	fmt.Printf("timed: %s, not timed: reading the file, making, collecting, releasing and closing the VM\n", timedWhat)
+	if o.place > 0 {
+		fmt.Printf("place: %d small objects held in each VM before its run, not timed\n", o.place)
+	}
 	var times []time.Duration
 	var result string
 	for i := range *warm + *n {

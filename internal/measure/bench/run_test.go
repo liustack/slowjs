@@ -185,6 +185,7 @@ type fakeStart struct {
 	seen    []string
 	dirs    []string
 	envs    [][]string
+	args    [][]string
 }
 
 func (f *fakeStart) start(ctx context.Context, bin string, args []string, dir string, env []string) Proc {
@@ -192,6 +193,7 @@ func (f *fakeStart) start(ctx context.Context, bin string, args []string, dir st
 	f.seen = append(f.seen, filepath.Base(bin))
 	f.dirs = append(f.dirs, dir)
 	f.envs = append(f.envs, env)
+	f.args = append(f.args, args)
 	return Proc{Out: f.out, Wall: time.Second, CPU: time.Second, Err: f.err}
 }
 
@@ -474,5 +476,76 @@ func TestRunRecordsTheEnvironmentAndFolderItUses(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "GOGC") || slices.Contains(f.envs[len(f.envs)-1], "GOGC=10") {
 		t.Errorf("log: %s", log.String())
+	}
+}
+
+// TestRunPairsThePlacementWithTheLayout: with Place, each process gets the
+// flag with the number of its layout in the protocol (0 for the formal one),
+// before the other arguments, and its record and the manifest say so.
+func TestRunPairsThePlacementWithTheLayout(t *testing.T) {
+	ps := Protocol()
+	want := map[string]int{ps[0].String(): 0, ps[1].String(): 1, ps[7].String(): 7}
+	var names []string
+	for pos := range want {
+		names = append(names, "a@"+pos, "b@"+pos)
+	}
+	dir := variants(t, names...)
+	out := filepath.Join(t.TempDir(), "r.jsonl")
+	f := &fakeStart{out: "eval: 10 runs, min 1ms, median 2ms, mean 2ms, max 3ms\n"}
+	o := RunOptions{Bin: dir, Out: out, Rounds: 2, Parse: "jsrun", Args: []string{"-n", "10", "x.js"}, Place: "-place", CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	rs, err := ReadRecords(out)
+	if err != nil || len(rs) != f.calls {
+		t.Fatalf("%d records for %d processes, %v", len(rs), f.calls, err)
+	}
+	for i, r := range rs {
+		k := want[r.Pos]
+		if got := strings.Join(f.args[i], " "); got != fmt.Sprintf("-place=%d -n 10 x.js", k) {
+			t.Errorf("%s@%s ran with %q", r.Side, r.Pos, got)
+		}
+		if r.Place == nil || *r.Place != k {
+			t.Errorf("%s@%s: the record says place %v, want %d", r.Side, r.Pos, r.Place, k)
+		}
+	}
+	if m, _, _ := ReadManifest(out); m.Place != "-place" {
+		t.Errorf("the manifest says place %q", m.Place)
+	}
+	// The same file without the pairing is another experiment.
+	o.Place = ""
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "place") {
+		t.Errorf("a run without the pairing went on in the file: %v", err)
+	}
+}
+
+// TestRunWithoutPlaceLeavesTheArguments: without Place, a process gets the
+// arguments as they are and its record no placement.
+func TestRunWithoutPlaceLeavesTheArguments(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0")
+	f := &fakeStart{out: "eval: 10 runs, min 1ms, median 2ms, mean 2ms, max 3ms\n"}
+	o := RunOptions{Bin: dir, Out: filepath.Join(t.TempDir(), "r.jsonl"), Rounds: 2, Parse: "jsrun", Args: []string{"x.js"}, CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	rs, _ := ReadRecords(o.Out)
+	for i, r := range rs {
+		if strings.Join(f.args[i], " ") != "x.js" || r.Place != nil {
+			t.Errorf("args %q, place %v", f.args[i], r.Place)
+		}
+	}
+}
+
+// TestRunRefusesToPairALayoutOutsideTheProtocol: the number of a layout is its
+// place in the protocol, so a position outside it has none.
+func TestRunRefusesToPairALayoutOutsideTheProtocol(t *testing.T) {
+	dir := variants(t, "a@0.0", "b@0.0", "a@32.16", "b@32.16")
+	f := &fakeStart{out: "eval: 10 runs, min 1ms, median 2ms, mean 2ms, max 3ms\n"}
+	o := RunOptions{Bin: dir, Out: filepath.Join(t.TempDir(), "r.jsonl"), Rounds: 2, Parse: "jsrun", Place: "-place", CPU: -1, Sib: -1}
+	if err := Run(context.Background(), o, f.start, nil, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "32.16") {
+		t.Errorf("a layout outside the protocol was paired: %v", err)
+	}
+	if f.calls != 0 {
+		t.Errorf("%d processes ran", f.calls)
 	}
 }
