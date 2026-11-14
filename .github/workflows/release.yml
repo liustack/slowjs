@@ -1,0 +1,150 @@
+# The GitHub release of a version: when a tag v* is pushed, it builds the
+# slowjs command (cmd/slowjs) for the five targets with
+# scripts/slowjs-release.sh, runs the tests of cmd/slowjs against each binary
+# on its own platform, and makes the release of the tag with the archives and
+# their checksums. The module itself is still the tag, as before. Run by hand
+# (workflow_dispatch) on a branch, it builds and tests the binaries and makes
+# no release. See docs/releasing.md.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Version
+        id: version
+        # The tag, or for a run by hand on a branch dev-<commit>.
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "version=$GITHUB_REF_NAME" >>"$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::12}" >>"$GITHUB_OUTPUT"
+          fi
+      - name: Build and pack
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/slowjs-release.sh "$VERSION" dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: slowjs
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    needs: build
+    name: test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux/amd64
+            os: ubuntu-24.04
+            archive: slowjs-linux-amd64.tar.gz
+          - name: linux/arm64
+            os: ubuntu-24.04-arm
+            archive: slowjs-linux-arm64.tar.gz
+          - name: darwin/arm64
+            os: macos-15
+            archive: slowjs-darwin-arm64.tar.gz
+          # The amd64 binary on the arm64 runner, which Rosetta runs.
+          - name: darwin/amd64
+            os: macos-15
+            goarch: amd64
+            archive: slowjs-darwin-amd64.tar.gz
+          - name: windows/amd64
+            os: windows-2025
+            archive: slowjs-windows-amd64.zip
+    defaults:
+      run:
+        # Git Bash on windows.
+        shell: bash
+    env:
+      # Empty: the runner's own architecture.
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: slowjs
+          path: dist
+      - name: Check and unpack the archive
+        working-directory: dist
+        run: |
+          grep "  ${{ matrix.archive }}\$" checksums.txt >one.txt
+          if [ "$RUNNER_OS" = macOS ]; then shasum -a 256 -c one.txt; else sha256sum -c one.txt; fi
+          case "${{ matrix.archive }}" in
+          *.zip) pwsh -NoProfile -Command "Expand-Archive -Path '${{ matrix.archive }}' -DestinationPath ." ;;
+          *) tar -xzf "${{ matrix.archive }}" ;;
+          esac
+          ls -lR "$(basename "${{ matrix.archive }}" | sed 's/\.tar\.gz$//; s/\.zip$//')"
+      - name: Tests of cmd/slowjs against the binary
+        # The V8 benchmark suite among them, run as a harness runs it.
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          dir=$(basename "${{ matrix.archive }}" | sed 's/\.tar\.gz$//; s/\.zip$//')
+          exe=
+          if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          bin="$PWD/dist/$dir/slowjs$exe"
+          "$bin" --version
+          # Go on windows wants the path as windows writes it.
+          if [ "$RUNNER_OS" = Windows ]; then bin=$(cygpath -w "$bin"); fi
+          export SLOWJS_BIN="$bin" SLOWJS_VERSION="$VERSION"
+          go test -count=1 -v -timeout 20m ./cmd/slowjs
+
+  release:
+    # Only for a pushed tag: a run by hand stops after the tests.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, test]
+    name: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: slowjs
+          path: dist
+      - name: Make the release of the tag
+        # Run again for a tag that has its release, it replaces the files.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="Prebuilt binaries of slowjs, the command that runs a JavaScript file in this engine: see [docs/command.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/docs/command.md). Check an archive against checksums.txt, then unpack it and run \`slowjs file.js\`.
+
+          The Go module is the tag: \`go get github.com/$GITHUB_REPOSITORY@$TAG\`. What changed is in [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/CHANGELOG.md)."
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes "$notes"
+          fi

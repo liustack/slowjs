@@ -877,10 +877,12 @@ func (m *VM) jsJSONStringify(v jsValue) (r jsValue) {
 	return r
 }
 
-// The file names of syntax errors.
+// The file names of syntax errors: evalName is that of a script that has
+// none, and evalFN and jsonFN those of JSON.parse, each with its 0 byte.
 const (
-	evalFN = "<eval>\x00"
-	jsonFN = "JSON\x00"
+	evalName = "<eval>"
+	evalFN   = evalName + "\x00"
+	jsonFN   = "JSON\x00"
 )
 
 // jsParseJSON2 is JS_ParseJSON2 of s, with the file name of syntax errors
@@ -911,50 +913,54 @@ func (m *VM) jsParseJSON2(s string, json bool, flags int32) (r jsValue, err erro
 	return r, nil
 }
 
-// evalSource is tmp of src with the 0 byte JS_Eval reads up to, and of the
-// file name "<eval>" before it. src is at p+len(evalFN).
-func (m *VM) evalSource(src string) (p, sp uintptr, heap bool) {
-	n := uintptr(len(evalFN) + len(src) + 1)
+// evalSource is tmp of the file name, a 0 byte, src and the 0 byte JS_Eval
+// reads up to: n bytes, n computed from the lengths of name and src before
+// tmp, and written through a slice of exactly n bytes, so nothing is written
+// past what tmp gave. name has no 0 byte (cleanEvalName) and src is at
+// p+len(name)+1.
+func (m *VM) evalSource(name, src string) (p, sp uintptr, heap bool) {
+	n := uintptr(len(name) + 1 + len(src) + 1)
 	p, sp, heap = m.tmp(n)
 	if p != 0 {
 		b := bytesAt(p, n)
-		copy(b, evalFN)
-		copy(b[len(evalFN):], src)
+		copy(b, name)
+		b[len(name)] = 0
+		copy(b[len(name)+1:], src)
 		b[n-1] = 0
 	}
 	return p, sp, heap
 }
 
-// jsEval is JS_Eval of src, with the file name "<eval>". err is not nil when
-// there is no memory for the source.
-func (m *VM) jsEval(src string, flags int32) (r jsValue, err error) {
+// jsEval is JS_Eval of src, with the file name name (evalName for none). err
+// is not nil when there is no memory for the source.
+func (m *VM) jsEval(name, src string, flags int32) (r jsValue, err error) {
 	if m.entered == 0 {
-		m.outer(func() { r, err = m.jsEval(src, flags) })
+		m.outer(func() { r, err = m.jsEval(name, src, flags) })
 		return r, err
 	}
-	p, sp, heap := m.evalSource(src)
+	p, sp, heap := m.evalSource(name, src)
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
 	m.toEngine()
-	r = val(cengine.JS_Eval(sp, m.ctx, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
+	r = val(cengine.JS_Eval(sp, m.ctx, p+uintptr(len(name)+1), uintptr(len(src)), p, uintptr(flags)))
 	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil
 }
 
-// jsEvalThis is JS_EvalThis, as jsEval.
+// jsEvalThis is JS_EvalThis, as jsEval with the file name evalName.
 func (m *VM) jsEvalThis(this jsValue, src string, flags int32) (r jsValue, err error) {
 	if m.entered == 0 {
 		m.outer(func() { r, err = m.jsEvalThis(this, src, flags) })
 		return r, err
 	}
-	p, sp, heap := m.evalSource(src)
+	p, sp, heap := m.evalSource(evalName, src)
 	if p == 0 {
 		return jsValue{}, m.tmpError()
 	}
 	m.toEngine()
-	r = val(cengine.JS_EvalThis(sp, m.ctx, this.u, this.tag, p+uintptr(len(evalFN)), uintptr(len(src)), p, uintptr(flags)))
+	r = val(cengine.JS_EvalThis(sp, m.ctx, this.u, this.tag, p+uintptr(len(evalName)+1), uintptr(len(src)), p, uintptr(flags)))
 	m.inEngine--
 	m.tmpFree(p, heap)
 	return r, nil

@@ -37,6 +37,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `intl/`，还要运行 `go test ./intl`（golden 测试在里面）。
 - 改了 `internal/gointl`，还要运行 `go test ./internal/gointl/...` 和 `make gointl`。
 - 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（落后很远的列表，页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
+- 改了 `cmd/slowjs`，还要不带 `-short` 运行 `go test ./cmd/slowjs`，它会通过这个命令跑一个长脚本（大约一分钟），并用 `GOTOOLCHAIN=go1.26.6` 再跑一次。改了 `scripts/slowjs-release.sh` 或 `.github/workflows/release.yml`，还要把脚本运行到一个单独的文件夹里，看看压缩包里的内容（[releasing.md](releasing.zh-CN.md#发布任务)）。
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
 - 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
 - 改了 `fmt/printf.go` 或 `fmt/bound.go`，还要把 `FuzzPrintfAsGo` 跑几分钟：`go test -run '^$' -fuzz '^FuzzPrintfAsGo$' -fuzztime 3m ./fmt`。它检查一个动词一个动词、分段造出的输出和 Go 的 fmt 逐字节相同，`TestPrintfAsGo` 对固定的格式做同样的检查。
@@ -475,6 +476,8 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 `scripts/check.sh` 的步骤用 `CHECK_ONLY` 选择，它们的日志作为 artifact 保留 7 天。其中的跳过是预期的：`TestStackResidency` 要 `HOSTMEM_RESIDENCY=1`，重新映射的测试和 `TestStackWithoutHugePages` 只在 linux 上。
 
 `go-latest.yml` 每周一次，在最新的稳定版 Go 上，在五个平台上运行 C 引擎的测试（`internal/cengine`、`internal/gohost`、`internal/hostmem`、`internal/idtable` 和根包）。它带 `-tags quickjs_anygo` 构建它们，越过更新的 Go 会停下的那个错误。它的第二个任务在 linux/amd64、linux/arm64、darwin/arm64、darwin/amd64（由 Rosetta 运行）和 windows/amd64 上运行 `scripts/go-versions.sh`，用从 `go.mod` 的 `go` 行到 `internal/goversion` 停下的那个次版本之前的每个 Go 补丁版本，由 go 命令取来（`GOTOOLCHAIN`）。补丁版本也可能改变汇编所依赖的东西，所以一个都不漏，新的补丁版本会在下一次每周运行里测到。每个版本都跑 `go build`、`go vet` 和上面那些 Go 测试（根包带和不带 `testhooks` 各一遍）。在 linux/amd64 上它还装 LLVM 22.1.8，跑生成器的测试（`scripts/check.sh` 的 `goasm` 一步）和对 amd64、arm64 整个引擎的链接后检查（`-verify-bin` 加 `-verify-all`，对象是这个版本的 Go 带 `-tags goasmkeep` 编出的 `internal/cengine` 测试程序，amd64 有 linux、darwin 和 windows 三个，arm64 有 linux 和 darwin 两个，经由 `scripts/gen-engine.sh` 的 `GEN_VERIFY_BIN`）。这两项检查把引擎写进 `.build`，不动 `internal/cengine`。发布之前运行这个脚本。在装了 LLVM 的机器上它做全部这些，没有 LLVM 时（`GO_VERSIONS_LLVM=0`）不做生成器的检查，`GO_VERSIONS_LIST=1` 会打印它选了哪些版本。取不到或读不懂版本列表时（go list 失败，或列表里没有 `go` 行的那个版本），脚本以状态 2 停下，什么也不检查：它不会退到只检查最低版本。`scripts/go-versions-test.sh` 用一个代替 `go` 的程序测试这一点。提交进仓库的汇编依赖 Go 内部的一些细节，新版本一改动其中一个，这个检查就能早早发现。它不阻止合并。运行变红是去看新的 Go 改了什么的理由。
+
+`release.yml` 在推送 `v*` 标签时运行，也可以在分支上手动运行：它为五个目标构建 `slowjs` 命令，在每个系统上对相应的二进制运行 `cmd/slowjs` 的测试，对推送的标签再用它们生成 GitHub release（[releasing.md](releasing.zh-CN.md#发布任务)）。它是唯一有 `contents: write` 的工作流，而且只在最后一个任务里有。
 
 有意不做的：
 

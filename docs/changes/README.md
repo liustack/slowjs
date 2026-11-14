@@ -123,6 +123,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Long strings and results stop converting at the limits of the call | v0.30.3 | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
 | Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
 | A 16-bit string goes to UTF-8 eight ASCII units at a time | v0.30.7 | [go-api.md](go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time) |
+| EvalFile gives a script a file name | v0.31.0 | [go-api.md](go-api.md#evalfile-gives-a-script-a-file-name) |
 
 ## Limits that hold
 
@@ -313,6 +314,12 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | quickjs-libc.c keeps only what the Go API calls | v0.27.0 | [trimmed.md](trimmed.md#no-shell-library) |
+
+## The command
+
+| Change | Release | Doc |
+| --- | --- | --- |
+| `slowjs`, a command that runs a JavaScript file in a VM set up as tifa sets it up, with `print`, `console.log` and a timeout and memory limit that hold, prebuilt for the five targets in the GitHub release of each tag | v0.31.0 | [command.md](../command.md) |
 
 ## Adding a change
 

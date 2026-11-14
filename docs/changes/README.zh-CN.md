@@ -123,6 +123,7 @@ read_when:
 | 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 | 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | v0.30.7 | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
+| EvalFile 给脚本一个文件名 | v0.31.0 | [go-api.md](go-api.zh-CN.md#evalfile-给脚本一个文件名) |
 
 ## 守得住的限额
 
@@ -313,6 +314,12 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | quickjs-libc.c 只保留 Go API 会调用的部分 | v0.27.0 | [trimmed.md](trimmed.zh-CN.md#没有-shell-库) |
+
+## 命令
+
+| 改动 | 版本 | 文档 |
+| --- | --- | --- |
+| `slowjs`，一个运行 JavaScript 文件的命令，虚拟机按 tifa 的方式配置，有 `print`、`console.log` 以及一定生效的超时和内存上限，每个标签的 GitHub release 里都有为五个目标预编译好的它 | v0.31.0 | [command.md](../command.zh-CN.md) |
 
 ## 新增一项改动
 

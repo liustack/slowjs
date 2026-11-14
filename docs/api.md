@@ -4,6 +4,7 @@ read_when:
   - Looking for a Go function of the API that is not Eval or Call
   - Adding a function or type to the Go API (add it here, in both languages)
   - Asking which release added a function
+  - Running the engine without writing Go (the slowjs command)
 ---
 
 # The Go API beyond Eval and Call
@@ -37,6 +38,7 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/qui
 ## Source and time
 
 - **`VM.SetStrip(s)`** with `type Strip` (v0.26.17): `StripSource` compiles functions without their source, so their `toString` shows `[native code]`, and `StripDebug` leaves out line and column numbers. [More](changes/go-api.md#setstrip)
+- **`VM.EvalFile(name, javascript, flags)`** (v0.31.0): `EvalValue` with `name` as the file of the script, so its stack frames and syntax errors say `repro.js:1:31` where those of every other eval say `<eval>`. The name is cleaned to one line of valid UTF-8 of at most 1,024 bytes, and a module name the cleaning would change is an error. [More](changes/go-api.md#evalfile-gives-a-script-a-file-name)
 - **`VM.SetClock(now)` and `VM.Now()`** (v0.28.2): set and read the wall clock of a VM, which Date, Intl and Temporal all read. nil restores the live clock. [More](changes/time-and-intl.md#one-wall-clock-per-vm)
 - **Package `temporal`** (v0.27.0): `temporal.Register(vm)` adds `Temporal`, every type and method V8 ships, computed in Go by go-intl with ICU's zones for tz 2026e built in, so the host's zoneinfo is never read. `Temporal.Now` reads the VM clock, and `temporal.Clock` overrides it for `Temporal.Now` alone. The linked doc has the binary size it adds. [More](changes/temporal.md)
 - **Package `url`** (v0.30.3): `url.Register(vm)` adds `URL` and `URLSearchParams`, the whole standard, parsed in Go. core-js finds a native URL that passes its checks and installs nothing, so a bundle that carries it needs no change. A string it takes is at most 65,536 UTF-16 units, so a call of Go is a few milliseconds: past that an input is not a URL and a name or value of a query string is a `RangeError`. A URL is an object of the VM, under its memory limit, and the eval timeout and `Interrupt` end the script at the next call or poll. Where Node 24 (ada) differs, this follows the standard: it checks the Bidi rule of a domain, keeps an ASCII `xn--` label as written, fails an input with a `#` against a base with an opaque path, and gives a URL with no host an empty host when `host` is set to an empty value. [More](changes/url.md#url-and-urlsearchparams-on-a-go-parser)
@@ -48,3 +50,7 @@ Each of these defines a function on the global object, written in C inside the e
 - **`VM.RegisterEscapeText(name)`** (v0.29.2): escapes text for HTML as React DOM's string renderer does (`&`, `<`, `>`, `"` and `'` become entities, and the argument becomes a string as in `"" + text`). With it in tifa, the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. [More](changes/go-api.md#registerescapetext)
 - **`VM.RegisterCopyProps(name)`** (v0.29.3): does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element. It copies only where its result and the loop's cannot differ, and answers `false` for any other config, which the script gives to the loop. With it in tifa, the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. [More](changes/go-api.md#registercopyprops)
 - **`VM.RegisterStartTag(name)` and `VM.RegisterEndTag(name)`** (v0.29.10): write the start tag of an element, with its attributes, style and text, as React DOM's server renderer does in `pushStartGenericElement`, and give its end tag as `endChunkForTag` does. The start tag function writes only where React's functions could write nothing else, and returns the caller's `decline` object for any other call, which the script gives to React. On the start and end tags of one render of tifa's example pages they run about a fifth of the instructions React's functions take. [More](changes/go-api.md#registerstarttag-and-registerendtag)
+
+## Without Go
+
+- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for the five targets. [More](command.md)

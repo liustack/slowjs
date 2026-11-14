@@ -13,11 +13,12 @@
 
 ## Current state of the repository
 
-- `main` is the branch of liustack/quickjs. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`.
+- `main` is the branch of liustack/quickjs. Every release since v0.26.0 is a lightweight tag on a merge commit of `main`. From v0.31.0, pushing the tag also makes a GitHub release of it, which only carries the prebuilt binaries of the `slowjs` command.
 - Root: the Go API, package `quickjs` (`quickjs.go` and the files next to it), and its tests. It calls the engine only through `engine.go`, `entry.go`, `hostcall.go` and `enginememory.go` (see [docs/architecture.md](docs/architecture.md#the-engine-layer)).
 - `engine/`: the C tree of the engine, QuickJS at the pinned commit with the C changes of liustack/quickjs. It has no Go file, and no Go package directory may hold a C file (`layout_test.go` checks it). It builds with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc (musl's string and math functions, see [engine/libc/README.md](engine/libc/README.md)), and asks its host only for the callbacks of `engine/host.h`. `engine/test/` is the native test host that runs test262 and the recorded outputs on it, also under the sanitizers (see [docs/testing.md](docs/testing.md#the-c-tree-and-its-native-test-host)).
 - `internal/cengine/`: the generated engine and the Go host files next to it. `internal/goasm/gen/`: the generator that compiles `engine/` to Go assembly (see its README), and `internal/goasm/cmd/xform` that moves the code for timing. `internal/gohost/`, `internal/hostmem/`, `internal/idtable/`: the Go side of the host callbacks, the memory of a VM and the table of handles. `internal/measure/`: the tool that times builds, `go tool measure`.
 - `intl/`: `Intl` for a VM, in every locale Chromium has. `temporal/`: `Temporal` for a VM, computed by go-intl. `internal/gointl/`: our ECMA-402 and Temporal, which `intl/` and `temporal/` use, copied once from go-intl v0.6.1 and changed here freely since. Only go-intl's data is still taken: `internal/gointl/data.sh` makes the packs from the data of the release in `internal/gointl/UPSTREAM` (see docs/upgrading.md). `internal/intlhook/`: what `temporal/` takes from `intl/`, and the checks every Builtin of both makes. `internal/vmhook/`: what a Go function of a package next to the engine asks of its VM (stop at the timeout, the room under the memory limit), see docs/architecture.md. `url/`: `URL` and `URLSearchParams` for a VM, parsed in Go by `internal/whatwgurl` (a parser written after nlnwa/whatwg-url, with the IDNA code of x/net and x/text, and the web-platform-tests data it runs). `fmt/`: Go's fmt for a VM. `compare/`: a module of its own, with QuickJS's micro benchmarks. `compare/engines/`: another module, the comparison with the other pure Go engines that docs/benchmarks.md reports.
+- `cmd/slowjs/`: the `slowjs` command, which runs a JavaScript file in the engine, set up as tifa sets it up, to show a problem or run a script without Go ([docs/command.md](docs/command.md)). `.github/workflows/release.yml` and `scripts/slowjs-release.sh` build it for the five targets and attach it to the GitHub release of each tag.
 - `assets/`: the logo, icon, banner and share card in `assets/brand/` (the gopher drawn after Renée French's Go gopher, CC BY 4.0, see NOTICE.md) and the WeChat QR code the READMEs show.
 - [docs/architecture.md](docs/architecture.md) has the full map, the core types and the rules of the Go API.
 
@@ -34,9 +35,10 @@
    - [docs/performance.md](docs/performance.md): render speed of each release, measured in tifa
    - [docs/measuring.md](docs/measuring.md): how to time a change and judge it, the defaults and what they can see
    - docs/benchmarks.md: the comparison with the other pure Go JavaScript engines, with its history, run again at every minor release, and at a patch release when the owner asks. It leaves out goja, sobek and otto. Its results are kept under `compare/engines/results/` and its changes in `compare/engines/CHANGELOG.md`
-   - [docs/releasing.md](docs/releasing.md): versions, tags and what follows a release
+   - [docs/releasing.md](docs/releasing.md): versions, tags, the release job and what follows a release
    - [docs/upstream.md](docs/upstream.md): where the code comes from, how QuickJS commits are taken in, and what changes when moving from modernc.org/quickjs
    - [docs/api.md](docs/api.md): the Go API beyond Eval and Call, with the release of each function
+   - [docs/command.md](docs/command.md): the `slowjs` command, its flags, limits and exit codes, and what it leaves out
 4. Each change liustack/quickjs makes to the QuickJS C tree or to the Go API is written up in the doc of its area under [docs/changes](docs/changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests. A change for speed also goes into [docs/performance.md](docs/performance.md).
    - New changes are written into [docs/changes](docs/changes/README.md), never into README.md. The README is a landing page: it only links to the docs. New Go API goes into [docs/api.md](docs/api.md), in both languages, with the release it came in.
    - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/changes with a row in the index ("Unreleased" until it ships), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
@@ -84,6 +86,6 @@ Plans, design drafts, experiment notes and raw measurement data go in the reposi
 See [docs/releasing.md](docs/releasing.md).
 
 - Release patch versions only (v0.26.17, v0.26.18, ...). Do not move to a new minor version for a small problem.
-- A release is a lightweight tag on the merge commit of `main`. There are no GitHub releases.
+- A release is a lightweight tag on the merge commit of `main`: that is the version of the module. Pushing it runs the release job, which makes the GitHub release of the tag with the binaries of `slowjs` and nothing else (docs/releasing.md). Check that the job passed.
 - Ask the user before you create a tag, and again before you push one. Never push `main` or a tag on your own.
 - After a minor release (or a patch release the owner names), run the comparison with the other engines again and update docs/benchmarks.md as docs/releasing.md says. After every release, upgrade tifa to it and measure the release on tifa's pages.
