@@ -2,6 +2,18 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：v0.30.6 的 V8 套件，换了机器
+
+- 之前运行用的机器（GCP c2d-standard-8）已经没有了。这次在 GCP t2d-standard-4
+  上跑（AMD EPYC 7B13，4 个核，没有超线程），固定在 CPU 0，整台机器保持安静。
+  这台机器的得分不和之前那台的得分比较，所以这一场把 liustack/quickjs v0.30.1
+  和 v0.30.6、C QuickJS 2026-06-04 放在一起重新跑
+  （[2026-11-14-v0.30.6-gcp-v8](results/2026-11-14-v0.30.6-gcp-v8.md)）。
+- 只跑了 V8 套件，只跑了这三方。其他纯 Go 引擎没有跑，所以 v0.30.1 那次运行的表不变。
+- Go 的两方各自用自己那棵树的 `cmd/jsbench v8` 在 `taskset` 下跑，没有经过
+  `cmd/compare -phases v8`，也没有设内存上限。套件的步骤相同，`jsbench`、适配器和套件的文件
+  在两棵树里相同。
+
 ## 2026-11-06：更新的 go-quickjs 和 modernc，一对核加锁
 
 - go-quickjs 是 v0.34.1（之前是 v0.28.0），modernc.org/quickjs 是 v0.27.0

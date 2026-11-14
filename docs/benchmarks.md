@@ -72,8 +72,10 @@ the C engine does not need.
   regular expressions 2.9 times faster without its JIT and 5.2 times
   faster with it, and is faster on 32 (JIT: 51) of 63 QuickJS micro
   benchmarks. moejs writes JSON 2.0 times faster and go-quickjs 1.3 times
-  faster. goant parses JSON 1.1 times faster. C QuickJS 2026-06-04 scores
-  1.025 times as high on the V8 suite (see
+  faster. goant parses JSON 1.1 times faster. At v0.30.6 liustack/quickjs
+  scores 1.27 times as high as C QuickJS 2026-06-04 on the V8 suite, and is
+  behind it only on RayTrace (0.95), in a session of 2026-11-14 with these
+  two engines alone (see
   [V8 suite against C QuickJS](#v8-suite-against-c-quickjs)).
 - **Far behind.** Nothing is at twice the median of the other pure Go
   engines. The farthest are the empty loop (1.71), number
@@ -200,7 +202,10 @@ runtime.
 
 ### V8 suite against C QuickJS
 
-C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
+There are two sessions, on different machines. The scores of one are not
+compared with the scores of the other.
+
+**v0.30.1, 2026-11-06.** C QuickJS 2026-06-04 was run on the V8 suite in a session of its own on the
 same machine and core, taking turns with liustack/quickjs, 5 rounds each.
 `native/qjs-v8.js` runs the suite on `qjs` with the steps of the driver.
 Score per benchmark, median of the rounds:
@@ -218,6 +223,27 @@ cost nothing that the rounds can show: the build with `-DNDEBUG` scores the
 same within their spread. liustack/quickjs scored 1268 in the main run, 1.2%
 under this session. Every round:
 [`compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md`](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md).
+
+**v0.30.6, 2026-11-14.** On another machine (GCP t2d-standard-4, AMD EPYC
+7B13, one core, the whole machine quiet), liustack/quickjs v0.30.1 and
+v0.30.6 and C QuickJS 2026-06-04 took turns in one session, 5 rounds each,
+with the same steps. No memory limit was set, and C QuickJS was built as
+shipped (its asserts run). Score per benchmark, median of the rounds:
+
+| Engine | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | Score |
+|---|---|---|---|---|---|---|---|---|---|
+| liustack-quickjs v0.30.1 | 892 | 779 | 761 | 1321 | 1753 | 447 | 3574 | 1580 | 1155 (1147–1164) |
+| liustack-quickjs v0.30.6 | 1131 | 976 | 1109 | 1487 | 2214 | 558 | 4384 | 2587 | 1501 (1485–1510) |
+| C QuickJS 2026-06-04 (reference) | 832 | 752 | 919 | 1566 | 2013 | 382 | 3089 | 1798 | 1186 (1179–1196) |
+
+v0.30.6 scores 1.30 times v0.30.1 and 1.27 times C QuickJS. It is ahead of
+C QuickJS on seven of the eight benchmarks (RegExp 1.46, NavierStokes 1.44,
+Splay 1.42, Richards 1.36, DeltaBlue 1.30, Crypto 1.21, EarleyBoyer 1.10)
+and behind on RayTrace (0.95). v0.30.1 scores 0.97 of C QuickJS here, as it
+did in the session above (0.98). The other pure Go engines were not run in
+this session, so the place of liustack/quickjs among them on the V8 suite
+is still the one of the run of v0.30.1. Every round:
+[`compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md`](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md).
 
 ## tifa pages
 
@@ -818,6 +844,7 @@ At each release, follow "Engine comparison" in
 
 | Run | liustack/quickjs | Machine | Notes |
 |---|---|---|---|
+| [2026-11-14-v0.30.6-gcp-v8](../compare/engines/results/2026-11-14-v0.30.6-gcp-v8.md) | v0.30.6 (main `78a90364`) and v0.30.1 (`5e99b850`) | GCP t2d-standard-4, AMD EPYC 7B13, CPU 0, the whole machine quiet | the V8 suite only, on liustack/quickjs v0.30.1 and v0.30.6 and C QuickJS 2026-06-04 (as shipped), 5 rounds each in turns, no memory limit. A machine other than that of the earlier runs: its scores are not compared with theirs |
 | [2026-11-06-v0.30.1-gcp-v8-c](../compare/engines/results/2026-11-06-v0.30.1-gcp-v8-c.md) | main `c23e76e6` (the engine of v0.30.1) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | the V8 suite only, on liustack/quickjs and C QuickJS 2026-06-04 (as shipped, and with `-DNDEBUG`), 5 rounds each, the first row of C QuickJS on the V8 suite |
 | [2026-11-06-v0.30.1-gcp](../compare/engines/results/2026-11-06-v0.30.1-gcp.md) | v0.30.1 (main `5e99b850`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again ([pages](../compare/engines/results/2026-11-06-v0.30.1-gcp-pages.md)), go-quickjs at v0.34.1 and modernc.org/quickjs at v0.27.0. Timed workloads and tifa pages in short pieces under a lock on the core pair, test262 on another pair at low priority and merged in. go-quickjs-jit rendered the bench `table` page differently between two renders in the page run, so that page was measured in a run of its own. The version column of the Engines table in the results file reads `v0.30.1 => ../../`, and the driver reports `v0.30.1-dirty` because `go.mod` of the comparison was edited for the newer engines |
 | [2026-10-29-v0.29.0-gcp](../compare/engines/results/2026-10-29-v0.29.0-gcp.md) | v0.29.0 (main `0cc6d332`) | GCP c2d-standard-8, AMD EPYC 7B13, CPU 0 and its sibling 4 | every engine again, the first run of the C engine ([pages](../compare/engines/results/2026-10-29-v0.29.0-gcp-pages.md)). Timed workloads, then the tifa pages, then test262 on both cores, one after the other. go-quickjs failed pages were measured in rest runs. The row `liustack-tifa-nogoasm` is gone. The version column of the Engines table in the results file reads `v0.26.16 => ../../`, as `go.mod` of the comparison was not moved: the engine is the checkout |

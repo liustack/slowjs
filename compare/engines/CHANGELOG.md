@@ -2,6 +2,21 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14: the V8 suite at v0.30.6, on another machine
+
+- The machine of the earlier runs (GCP c2d-standard-8) is gone. This run is
+  on a GCP t2d-standard-4 (AMD EPYC 7B13, 4 cores without SMT), pinned to
+  CPU 0 with the whole machine held quiet. Scores of this machine are not
+  compared with scores of the earlier one, so the session ran liustack/quickjs
+  v0.30.1 again next to v0.30.6 and C QuickJS 2026-06-04
+  ([2026-11-14-v0.30.6-gcp-v8](results/2026-11-14-v0.30.6-gcp-v8.md)).
+- Only the V8 suite was run, and only these three sides. The other pure Go
+  engines were not run, so the tables of the run of v0.30.1 stay as they are.
+- The Go sides ran `cmd/jsbench v8` of their own tree under `taskset`, not
+  through `cmd/compare -phases v8`, with no memory limit. The steps of the
+  suite are the same, and `jsbench`, the adapter and the files of the suite
+  are the same in both trees.
+
 ## 2026-11-06: newer go-quickjs and modernc, a core pair under a lock
 
 - go-quickjs is v0.34.1 (it was v0.28.0) and modernc.org/quickjs is v0.27.0
