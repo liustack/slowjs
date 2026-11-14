@@ -1019,6 +1019,44 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`，以及经由值自己的 getter、`Array.prototype` 的 getter 和 Proxy 读 `Symbol.iterator` 的次数，以及 `next` 作为 getter 把迭代器推进 0、1、3、4 步并存起来时的结果，和存起来的迭代器在展开之后给出什么。
 
+## 不造迭代器地展开普通数组
+
+发布版本：Unreleased。
+
+字面量和调用里的每个展开，解析器都生成 `append`：`[...a]`、`f(...a)`、`o.m(...a)`、`new C(...a)`、`super(...a)` 和 `eval(...a)`（没有自己构造函数的类不经展开就把参数传下去）。寄存器循环在 `rv_w_append` 里执行它。展开一个数组时，原来要取 Array Iterator、读 `next`、逐个元素做一次定义再复制、最后释放迭代器：展开一个元素约 1,450 条指令。wb studio 每次渲染展开 2,432 次，店面 968 到 1,415 次，MUI 12 到 49 次，React 一次也没有。
+
+现在由 `js_append_array`（`engine/quickjs.c`，不内联，`js_append_enumerate` 先试它）一步把元素复制到展开所建数组的末尾。下面几条全部成立才这样做，否则什么都不动：
+
+- 这个值通过 `js_dst_ok`，也就是[数组解构](#不造迭代器的数组解构)的那道检查：函数所在 realm 的快速 Array，形状是新数组的形状，`Array.prototype[Symbol.iterator]` 是内置的 `values` 且是数据属性，`%ArrayIteratorPrototype%.next` 是内置的 `next` 且是数据属性（引擎还没造出它时先造出来，和读 `next` 时一样）
+- 它的长度是 int，并且等于元素个数
+- 正在建的数组是新数组形状的快速 Array，可扩展，元素个数和长度都等于展开所在的位置
+- 位置加上元素个数小于 2^31
+
+### 为什么结果不变
+
+有这道检查，GetIterator 找到的是内置的 `values`（数组的形状里没有自己的 `Symbol.iterator`），调用它只造出一个 Array Iterator，别的什么也不做。在这个新迭代器上读到的 `next` 是内置的那个。它每一步读数组的 `length` 和当前下标的元素：都是快速数组自己的数据属性，快速数组没有空洞，所以不会跑 getter，长度等于元素个数，也就不会到原型上找元素。展开的另一步是对它所建数组做 CreateDataPropertyOrThrow，这个数组脚本拿不到（由字面量或调用的参数造出），而且它是 realm 里可扩展的快速 Array，定义时什么也不会跑。所以两步之间没有脚本运行，展开过程中数组改不了，每一步按顺序给出它的元素，和一次复制的结果相同。
+
+这正是展开和解构不同的地方：解构的两次读取之间会跑默认值，默认值能改数组，所以 `DNEXT` 每次读都要看一眼数组，并保留迭代记录。展开一口气跑到底，中间什么也不插，而且不关闭迭代器（见上一节），所以 `%ArrayIteratorPrototype%` 上有没有 `return` 和它无关。
+
+脚本能改的东西都在检查之外：数组的 `Symbol.iterator`，被换掉、改成 getter 或删掉的 `values` 和 `next`（检查的是内置函数且是数据属性），子类和别的 realm 的数组（原型不同，形状也就不同），`arguments`、类型化数组、字符串、Proxy、Set、Map 和生成器（不是这个形状的 Array），以及空洞和被改长的长度（不再是快速数组，或者长度超过元素个数）。展开不读 `Array.prototype[Symbol.species]`。正在建的数组脚本碰不到，也照样检查，这样以后编译器改了，也不会把别的对象送到这里。
+
+参数个数的上限还在原处：复制填的是 `apply` 要变成参数的那个数组，由 `apply` 数个数，所以 65,535 个参数照样报 "too many arguments in function call (only 65534 allowed)"。
+
+变了但脚本看不到的：不再造 Array Iterator，展开少分配一次，在内存上限下，内存不足的错误可能来得更晚，或者不来。正在建的数组一次长到新的元素个数，原来是每次长一半，所以它的空间可能不同。这次增长失败时，展开抛出内存不足，数组保持原样。除此之外不造 Array Iterator 的脚本，结束时少一个形状，即 Array Iterator 的形状：语料里 8 个脚本、rvgen 种子里 102 个程序，以及注入集里这类脚本停下的位置，结束时的计数都显示了这一点，在这是唯一差别的地方，它们的金标准输出重新写过。原来调用 `values` 要占一层调用深度，现在展开不占，所以经过它的递归只会更深。复制是一个循环，生成器照样在里面轮询，和原来那个逐个定义的循环一样。
+
+`js_append_enumerate` 强制内联进 `rv_w_append`，所以复制单独成一个函数，GetIterator 也是（`js_spread_iterator`）：内联时，它对方法的调用会让 amd64 上 `rv_w_append` 的帧大 112 字节。`js_dst_ok` 现在有两个调用者，改成强制内联，这样 `rv_w_dstart` 保持原样。`JS_RegvmRun` 和 `JS_CallInternal` 的帧不变。`rv_w_append` 的帧变了，因为编译器对它余下的部分换了一种内联方式：amd64 上 Go 帧从 208 字节变成 192，影子帧从 16 变成 96，arm64 上从 152 变成 184，从 96 变成 80。它位于 JavaScript 写的迭代器 `next` 的调用之下，不在普通调用之下，深度测试（`TestRegvmDepth`、`TestShadowStack*`、`TestCCallDepth`）照常通过。
+
+### 收益
+
+按每次渲染的指令数，2026-11-14 对照 main 的 78a90364 计数（做法见 [performance.md](../performance.zh-CN.md#不造迭代器地展开普通数组)）：C 树在 linux/amd64 上用 callgrind，wb studio -1.79%，wb stats -0.81%，商店首页 -0.93%，商品页 -0.89%，MUI 和 React 在 0.06% 以内。按生成方式得到的 Go 引擎，带随版本发布的 profile：wb studio -1.38%，wb stats -0.64%，商店 -0.43%，MUI 0.00%，React +0.13%，长 Markdown -2.97%。arm64 上（C 树，Apple M4）：wb studio -1.39%，wb stats -0.53%，商店 -0.74% 和 -0.67%，MUI 和 React 在 0.11% 以内。 没有哪个微基准多出 0.11% 以上的指令。计时留给 train。
+
+### 测试
+
+- `engine/test/regvm/js/q5-spread.js`，金标准输出在改动之前录下（语料的三种模式和注入集）：每种写法（展开前后和中间有元素的字面量、空洞、超过 32 个参数、方法、计算属性调用、箭头函数、`new`、`super`、没有构造函数的类、`Math.max`、`push` 和 `apply`），配上每种值（空数组、空洞、被改长或改短的长度、慢数组、冻结、密封、不可扩展、自有键、自有的 `Symbol.iterator` 或它的 getter、别的原型、字符串、类型化数组、Set、Map、`arguments`、生成器、`null`、数字、普通对象），还有长数组、子类、Proxy、别的 realm 的数组，把 `return`、`next` 和 `Symbol.iterator` 改成别的值、getter 或删掉，`Object.prototype[Symbol.iterator]` 上的 getter，`Symbol.species`，两次展开之间的改动，能成功的最多参数（65,534 个，单独展开和跟在一个参数后面）和会失败的最少参数（65,535 个），`eval(...a)`，`new` 一个不是构造函数的值，最后是 `Object.prototype` 和 `Array.prototype` 上的下标 getter。去掉错误信息后，它的输出和 Node 24 相同，只有两处不同：参数个数上限（V8 的更大）和 `eval(...a)`（V8 把它当间接 eval 执行）。
+- `test_spread_alloc`（`engine/test/unit-white.c`）：分别展开进字面量和调用，展开的数组一个能过检查，一个因为有自有键过不了，同时让每次分配轮流失败，`%ArrayIteratorPrototype%` 的 `next` 第一次造出也落在这轮扫描里。每次运行都以内存不足或正确结果结束，不留下引用，并且复制比原路径至少少两次分配。
+- `test_spread_refs`（`engine/test/unit-white.c`）：把一个对象、一个 80 个字符的字符串和一个 symbol 展开三次，分别进字面量和调用，源数组一个能被复制、一个被拒绝，同时让每次分配轮流失败，第三次展开时数组的增长也在其中。每次运行之后，每个元素的引用数都和之前一样：复制多留一个引用就会让它失败，而 `test_spread_alloc` 的整数元素看不出这一点。
+- `engine/test/compare/spread_iterator.js`（见上一节）覆盖复制不接手的迭代器。
+
 ## 热调用少传参数字
 
 发布：v0.30.6。

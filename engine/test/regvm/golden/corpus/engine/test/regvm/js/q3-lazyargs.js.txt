@@ -26,6 +26,6 @@ result defaults: undefined:undefined 0 | string:given 1
 result method: this object
 result compare: 2 undefined:undefined 2
 result loop: 0 undefined:undefined 3 | 2 undefined:undefined 3 | 4 undefined:undefined 3 | 6 undefined:undefined 3 | 8 undefined:undefined 3
-mem-end obj=197 atom=550 shape=128 prop=969 jsfunc=2 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=195 atom=542 shape=127 prop=963 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=197 atom=550 shape=127 prop=969 jsfunc=2 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=542 shape=126 prop=963 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

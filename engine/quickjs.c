@@ -22087,7 +22087,7 @@ static inline uint32_t js_dst_index(JSValueConst c)
 {
     return (uint32_t)(-(JS_VALUE_GET_INT(c) + 1));
 }
-static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext);
+static force_inline int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext);
 static int js_dst_next(JSContext *ctx, JSValue *it, JSValue *pval);
 static int js_dst_iter(JSContext *ctx, JSValue *it);
 static BOOL js_dst_has_return(JSContext *ctx);
@@ -22253,6 +22253,63 @@ static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
     return JS_GetIterator2(ctx, obj, method);
 }
 
+/* A spread of a plain array with no Array Iterator (docs/changes/c-engine.md).
+   When js_dst_ok holds for the array sp[-1], GetIterator calls the built-in
+   values, which makes an Array Iterator of it and nothing else, and reads the
+   built-in next. Each step of that next reads the length and the element at
+   its index of the array, both its own data properties, and runs no script:
+   while the length is the count of the fast array, the steps give its
+   elements in order and nothing can change it between two of them, since a
+   definition on the array the spread builds runs no script either. That
+   array, sp[-3], is the one a literal or a call builds, which no script can
+   reach: when it is a fast Array at the shape of a new array, extensible,
+   with sp[-2] elements and that length, the elements go to its end at once,
+   as CreateDataPropertyOrThrow would put them one by one. 1 when done, 0
+   when not (nothing changed), -1 on an exception (out of memory, the array
+   as it was). */
+static no_inline int js_append_array(JSContext *ctx, JSValue *sp)
+{
+    JSObject *ps, *pt;
+    JSValue next;
+    uint32_t i, n, len, pos;
+    int ret;
+
+    if (JS_VALUE_GET_TAG(sp[-1]) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(sp[-2]) != JS_TAG_INT ||
+        JS_VALUE_GET_TAG(sp[-3]) != JS_TAG_OBJECT)
+        return 0;
+    ps = JS_VALUE_GET_OBJ(sp[-1]);
+    pos = JS_VALUE_GET_INT(sp[-2]);
+    pt = JS_VALUE_GET_OBJ(sp[-3]);
+    if (pt->shape != ctx->array_shape || pt->class_id != JS_CLASS_ARRAY ||
+        !pt->fast_array || !pt->extensible || pt->u.array.count != pos ||
+        JS_VALUE_GET_TAG(pt->prop[0].u.value) != JS_TAG_INT ||
+        JS_VALUE_GET_INT(pt->prop[0].u.value) != pos)
+        return 0;
+    ret = js_dst_ok(ctx, sp[-1], &next);
+    if (ret <= 0)
+        return ret;
+    JS_FreeValue(ctx, next);
+    /* the length is that of a fast array: an int, or past 2^31 - 1 */
+    if (JS_VALUE_GET_TAG(ps->prop[0].u.value) != JS_TAG_INT)
+        return 0;
+    len = JS_VALUE_GET_INT(ps->prop[0].u.value);
+    n = ps->u.array.count;
+    /* a length past the count reads the rest through the prototypes, and
+       the index stays an int */
+    if (len != n || n > (uint32_t)INT32_MAX - pos)
+        return 0;
+    if (pos + n > pt->u.array.u1.size &&
+        expand_fast_array_append(ctx, pt, pos + n))
+        return -1;
+    for (i = 0; i < n; i++)
+        pt->u.array.u.values[pos + i] = JS_DupValue(ctx, ps->u.array.u.values[i]);
+    pt->u.array.count = pos + n;
+    pt->prop[0].u.value = JS_NewInt32(ctx, pos + n);
+    sp[-2] = JS_NewInt32(ctx, pos + n);
+    return 1;
+}
+
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
    register loop calls it too (engine/regvm-ops-window.h): inlined in both,
    the code of JS_CallInternal stays the same. */
@@ -22260,9 +22317,16 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
 {
     JSValue iterator, enumobj, method, value;
     int is_array_iterator;
+    int ret;
     JSValue *arrp;
     uint32_t i, count32, pos;
     JSCFunctionType ft;
+
+    /* a plain array with no Array Iterator: its own function, so that the
+       frame of this one stays as it was */
+    ret = js_append_array(ctx, sp);
+    if (ret)
+        return ret < 0 ? -1 : 0;
 
     if (JS_VALUE_GET_TAG(sp[-2]) != JS_TAG_INT) {
         JS_ThrowInternalError(ctx, "invalid index for append");
@@ -22272,9 +22336,6 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     pos = JS_VALUE_GET_INT(sp[-2]);
 
     /* XXX: further optimisations:
-       - use ctx->array_proto_values?
-       - check if array_iterator_prototype next method is built-in and
-         avoid constructing actual iterator object?
        - build this into js_for_of_start and use in all `for (x of o)` loops
      */
     /* GetIterator, with the method read once */
@@ -51492,8 +51553,9 @@ static JSShapeProperty *js_dst_find(JSObject *p, uint32_t *hint, JSAtom atom,
    any realm, as js_for_of_array_next takes it) as its own data property
    next: *pnext is then that next. The engine makes it at its first use, as
    the read of GetIterator would: -1 when there is no memory for it, with
-   the exception. */
-static int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext)
+   the exception. force_inline: rv_w_dstart and js_append_array call it, and
+   a call of its own would cost each destructuring. */
+static force_inline int js_dst_ok(JSContext *ctx, JSValueConst v, JSValue *pnext)
 {
     JSObject *p, *f;
     JSShapeProperty *prs;

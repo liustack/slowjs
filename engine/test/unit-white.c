@@ -69,6 +69,7 @@ uintptr_t white_json_run_limit(uintptr_t p, uintptr_t end);
 const uint8_t *white_json_plain_run(const uint8_t *p, const uint8_t *end);
 int white_json_count_high_bytes(const uint8_t *p, int n);
 int white_atom_refs(JSContext *ctx, const char *s);
+int white_ref_count(JSValueConst v);
 int white_emit_tables(JSContext *ctx, int size[3], int count[3]);
 int white_string_slack(JSValueConst v);
 int white_emit_chunks_slack(JSContext *ctx);
@@ -7025,6 +7026,137 @@ static void test_regvm_dst_alloc(void)
     }
 }
 
+/* The spread of a plain array makes no Array Iterator (js_append_array,
+   engine/quickjs.c): it allocates two blocks less than the spread of an
+   array with an own property more, which takes the iterator, in an array
+   literal and in a call. Each allocation of every spread fails in turn,
+   those of the built-in next of the array iterator, which the first spread
+   of a VM makes, too, and each run ends with out of memory or the result
+   and leaves nothing. */
+static void test_spread_alloc(void)
+{
+    static const char setup[] =
+        "var p = [1, 2, 3], q = [1, 2, 3]; q.x = 0;"
+        "globalThis.lp = function (k) { 'use strict'; if (k === 0) return 0; return [0, ...p].join(); };"
+        "globalThis.lq = function (k) { 'use strict'; if (k === 0) return 0; return [0, ...q].join(); };"
+        "globalThis.cp = function (k) { 'use strict'; if (k === 0) return 0; return Math.max(...p, 0); };"
+        "globalThis.cq = function (k) { 'use strict'; if (k === 0) return 0; return Math.max(...q, 0); };"
+        "globalThis.tp = function (k) { 'use strict'; if (k === 0) return 0; return [...p, ...p, ...p, ...p].length; }; 0";
+    static const char *const names[] = { "lp", "lq", "cp", "cq", "tp" };
+    static const char *const want[] = { "0,1,2,3", "0,1,2,3", "3", "3", "12" };
+    int c, fail, n, made, ooms, allocs[countof(names)];
+    JSValue zero = JS_MKVAL(JS_TAG_INT, 0);
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r;
+            const char *s;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            JS_FreeValue(v.ctx, g);
+            /* converted, with no spread run: the built-in next of the
+               array iterator is made by the first spread, in the sweep */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &zero);
+            JS_FreeValue(v.ctx, r);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                s = JS_ToCString(v.ctx, r);
+                CHECK(s && strcmp(s, want[c]) == 0, "%s, call %d failing: %s, not %s", names[c], fail,
+                      s ? s : "?", want[c]);
+                JS_FreeCString(v.ctx, s);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        allocs[c] = n;
+        CHECK(n >= 1 && ooms >= 1, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+    CHECK(allocs[0] + 2 <= allocs[1], "a spread in a literal: %d allocations, %d with the iterator",
+          allocs[0], allocs[1]);
+    CHECK(allocs[2] + 2 <= allocs[3], "a spread in a call: %d allocations, %d with the iterator",
+          allocs[2], allocs[3]);
+}
+
+/* Elements with a reference count (an object, a string of 80 characters, a
+   symbol), spread three times into one array, of an array the copy takes
+   (e) and of one it refuses (f, an own key): each allocation fails in turn,
+   the growth of the array for the third spread among them, and after each
+   run every element has the references it had before, none kept by the
+   elements already appended to the array that the error frees. */
+static void test_spread_refs(void)
+{
+    static const char setup[] =
+        "var e = [{}, 'e'.repeat(80), Symbol('e')], f = [{}, 'f'.repeat(80), Symbol('f')]; f.x = 0;"
+        "function k() { return arguments.length; }"
+        "globalThis.le = function () { 'use strict'; return [...e, ...e, ...e].length; };"
+        "globalThis.lf = function () { 'use strict'; return [...f, ...f, ...f].length; };"
+        "globalThis.ce = function () { 'use strict'; return k(...e, ...e, ...e); };"
+        "globalThis.cf = function () { 'use strict'; return k(...f, ...f, ...f); }; 0";
+    static const char *const names[] = { "le", "lf", "ce", "cf" };
+    int c, fail, n, made, ooms, i, before[3];
+
+    for (c = 0; c < (int)countof(names); c++) {
+        n = 0;
+        ooms = 0;
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            VM v = vm_new();
+            JSValue g, f, r, src, el[3];
+            int32_t got = -1;
+
+            CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", names[c]);
+            g = JS_GetGlobalObject(v.ctx);
+            f = JS_GetPropertyStr(v.ctx, g, names[c]);
+            src = JS_GetPropertyStr(v.ctx, g, names[c][1] == 'e' ? "e" : "f");
+            JS_FreeValue(v.ctx, g);
+            /* converted, and what the first spread of a VM makes made */
+            r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+            JS_FreeValue(v.ctx, r);
+            JS_RunGC(v.rt);
+            for (i = 0; i < 3; i++) {
+                el[i] = JS_GetPropertyUint32(v.ctx, src, i);
+                before[i] = white_ref_count(el[i]);
+            }
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s, call %d failing: an exception that is not out of memory", names[c], fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+            } else {
+                CHECK(JS_ToInt32(v.ctx, &got, r) == 0 && got == 9, "%s, call %d failing: %d elements, not 9",
+                      names[c], fail, got);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_RunGC(v.rt);
+            for (i = 0; i < 3; i++) {
+                CHECK(white_ref_count(el[i]) == before[i] && before[i] > 0,
+                      "%s, call %d failing: element %d has %d references, had %d", names[c], fail, i,
+                      white_ref_count(el[i]), before[i]);
+                JS_FreeValue(v.ctx, el[i]);
+            }
+            JS_FreeValue(v.ctx, src);
+            JS_FreeValue(v.ctx, f);
+            vm_free(&v);
+        }
+        CHECK(n >= 1 && ooms >= 1, "%s: %d calls, %d failed", names[c], n, ooms);
+    }
+}
+
 static void test_regvm_dst(void)
 {
     static const char src[] =
@@ -7314,6 +7446,8 @@ int main(int argc, char **argv)
     test_regvm_call_copies();
     test_regvm_dst();
     test_regvm_dst_alloc();
+    test_spread_alloc();
+    test_spread_refs();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;
