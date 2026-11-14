@@ -44,6 +44,12 @@ var PGOPinned = []string{
 	// cold in tifa's pages but hot elsewhere (loading a bundle: +6% to +8%
 	// instructions, test262: +2.7%) would get slower.
 	"-pgso=false",
+	// The loop vectorizer does not take the number of turns from the
+	// profile: a copy loop the pages run a few turns stays vectorized for
+	// the long strings of other work. It takes musl's memmove back to a leaf
+	// without a frame on amd64 and vsnprintf's Go frame from 368 to 224
+	// bytes, for 0.07% to 0.12% fewer instructions on the pages.
+	"-loop-vectorize-with-block-frequency=false",
 }
 
 // ProfileFlags are the flags of the second compile besides the replay. The

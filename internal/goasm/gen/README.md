@@ -32,8 +32,8 @@ runs its own checks and lowering in Go (`debug/elf`,
    profile (`-profile engine/pgo/profile.txt`, which `make gen` passes) each
    file is compiled twice: first without it, writing down which calls were
    inlined, then with it and that inlining replayed. The post-link optimizer
-   does the same, and clang, opt and llc get `-pgso=false`. What the profile
-   may decide is in
+   does the same. clang, opt and llc get `-pgso=false`, and clang and opt
+   `-loop-vectorize-with-block-frequency=false`. What the profile may decide is in
    [generator.md](../../../docs/changes/generator.md#a-profile-of-tifas-pages).
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
