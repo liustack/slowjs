@@ -1025,3 +1025,24 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 收益（在 linux/amd64 上按 16 种代码布局计时）：tifa 商店的 14 个店面页面用时少 0.67%，工作台、MUI 和 React 页面在各自的误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。数字在 [performance.md](../performance.zh-CN.md#热调用少传参数字)。
 
 改动在 C 里（`engine/quickjs.c`、`engine/quickjs.h`、`engine/regvm.h`）。测试：unit-api 的 `test_c_call_recursions` 和 `test_call_frames_measured`，`TestCCallDepth`、`TestCCallDepthAfterExits`、`TestRegvmFrame`，带 `unit-api` 和 `unit-white` 的 `compare.sh`，以及商店、MUI 和 React 页面的 HTML。
+
+## 给普通对象加键的写入不走通用路径
+
+发布版本：Unreleased。
+
+`o[k] = v` 里 `o` 是对象、`k` 是自身就是原子的字符串时（寄存器循环的 PUTEL，数组的快路不回答时），以及 `o` 没有自有属性 `x` 时的 `o.x = v`（PUTF），原来要走 `rv_putel_slow` 或 `rv_putf_slow`、`JS_SetPropertyValue`、`JS_ValueToAtom`（给原子加一个引用），再走通用的 `JS_SetPropertyInternal`，一路检查每一种对象。这类写入几乎都是给刚造出来的对象加新键：一个键一个键搭起来的对象，`for in` 循环里做的拷贝。现在循环对字符串键调用 `rv_putel_atom`，PUTF 自己查找没找到自有属性时调用 `rv_putf_atom`。它们用字符串里存着的原子（`key_atom`，见[字符串保存自己作为键时的原子](#字符串保存自己作为键时的原子)），写一个可写的自有数据属性，或者走一遍原型链，再用 `add_property` 加上这个键。调用和标志都和 `JS_SetPropertyInternal` 一样，所以对象最后的形状和键的顺序都一样。其他情况都交回 `rv_putel_slow` 或 `rv_putf_slow`，从头按原来的方式写。
+
+为什么安全：这条路径只做 `JS_SetPropertyInternal(o, atom, v, o)` 在只写一个值时做的事，遇到别的情况就停下。它的检查，以及每个检查挡住的情况：
+
+- `o` 不是特殊对象，也不是全局对象。数组（下标、`length`）、类型化数组（`"-0"` 和 `"1.5"` 在那里是数字）、`arguments`、String 对象、Proxy（陷阱）和模块命名空间各有自己的规则，全局对象有闭包变量。
+- 只有可写的普通自有数据属性才直接写：访问器、只读的键、首次使用时才建立的属性、闭包变量和数组的 `length` 都交回原路径。
+- 原型链上找到的键只要不是可写的数据属性就交回：setter 照常运行，只有 getter 的键和只读的键照常失败（严格模式下抛 TypeError），首次使用时才建立的属性照常建立。找到可写的数据属性就停止查找，把键加到 `o` 上，和 OrdinarySet 说的一样。
+- 原型链上的特殊对象，除了不是类型化数组的快速数组，都交回原路径。通用的查找对不是下标的键也会越过这种快速数组。
+- `o` 必须可扩展：不可扩展、密封或冻结的对象交回原路径，在那里失败。
+- 键一定不是下标（这类字符串的 `key_atom` 是 0）。`o["__proto__"] = v` 和 `o.__proto__ = v` 会找到 `Object.prototype` 上的访问器，交回原路径。原型为 null 的对象照旧把 `__proto__` 加成自己的键。
+
+这条路径上不运行任何代码：没有 getter、setter、陷阱，也没有类型转换。唯一的分配在 `add_property` 里（新的形状或更大的属性数组）。分配失败时，写入和原路径一样抛出内存不足错误，操作数的释放方式也一样，`o` 不变。键所在的槽让键活着，键让原子活着，`add_property` 自己给原子加引用。测试的抛错注入要在哪条写入上抛错，那条写入就走原路径。两个函数都是单独的叶子函数，所以 setter 运行时压在下面的 `rv_putel_slow` 和 `rv_putf_slow` 帧大小不变，寄存器循环（SHADOW 在 amd64 上 256，arm64 上 176）和 `JS_CallInternal`（112 和 96）也不变。循环只对字符串键调用 `rv_putel_atom`，只在自己没找到自有属性时调用 `rv_putf_atom`，所以写下标或写数组的 `length` 不多付一次调用。
+
+收益：在原生宿主上，amd64 每次渲染的指令少 0.35%（店面首页）到 1.45%（MUI 订单页），MUI 订单页每次渲染 22.5K 次这样的写入，每次少约 120 条，长 Markdown 少 0.25%。React 每次渲染只有 30 次这样的写入，指令多 0.10%，是去原路径途中多出的检查。在产品上，重新训练画像之后，MUI 少 1.2% 到 2.1%，工作台少 1.1% 到 1.4%，店面少 0.3% 到 0.9%，React 不变。代价：这个改动让 `JS_RegvmRun` 的画像过期，重新训练画像之前（[releasing.md](../releasing.zh-CN.md#性能画像)），产品在 React 上最多多跑 1.4% 的指令，在店面上最多多 0.9%。数组的快路不回答的下标写入（比如追加元素）多付 3 条指令。数字见 [performance.md](../performance.zh-CN.md#按键和按名加键的写入)。
+
+改动在 C 里（`engine/regvm-ops-basic.h`、`engine/regvm-ops-object.h`）。`engine/test/regvm/js/o-putel-atom.js` 把每次写入在两个同样造出来的接收者上各做一次：一次用原来的键，一次用重新做成非原子字符串的同一个键，后者走不了新路径。它对 25 个键（新的和已有的名字，原型上是数据、只读数据、setter 或只有 getter 的名字，`length`、`__proto__`、`prototype`、`stack`，像数字的字符串，空字符串）和 37 种接收者（各种形式的普通对象，原型为 null 的对象，上一层和上三层有 setter 的原型，不可扩展、密封和冻结的对象，数组，类型化数组，`arguments`，String 对象，函数，类，错误对象，Proxy，原型是这些对象之一的对象，全局对象，原始值）都这样做，对象、键和值分别放在局部变量、临时槽和常量里，宽松和严格模式都有，也包括 `o.x = v`。两次写入必须给出同样的结果或异常，用同样的接收者运行同样的 setter 和陷阱，留下同样的自有键，顺序和特性都一样。它的 golden 由改动前的引擎写出。拿掉任何一个检查，它都会失败。`engine/test/regvm/js/o-putel-realm.js` 跨两个领域（原生宿主的 `newRealm`）做同样成对的写入：执行写入的代码、接收者和它的原型（带可写键、只读键、setter 和只有 getter 的键的对象，数组，Int8Array 或 `Object.prototype`）各自来自两个领域之一，接收者有普通的和不可扩展的，每个领域的全局对象也作为接收者。两次写入抛出的异常必须来自同一个领域。`engine/test/compare/putel_atom_ns.mjs` 在模块命名空间和原型是命名空间的对象上做同样的事。`unit-white`（`test_putel_atom_shape`）检查这些写入造出的对象，和 `Object.assign`、`Reflect.set`、字面量造出的对象共享形状，形状缓存开着和关着都查。`unit-white`（`test_putel_atom_each_failing`）还让分配器的每一次调用依次失败，每次都在新的 VM 里，覆盖按键和按名的加键：属性数组变大、克隆别的对象共用的形状、造 300 个新形状（让形状哈希表变大）。值是新造的对象，操作数分别放在参数、局部变量和临时槽里，形状缓存开着和关着都查。每次调用要么抛出内存不足错误，要么给出正确的结果，留下的对象、字符串和形状数和之前一样，释放 VM 时也没有剩下的内存块，在 AddressSanitizer 下也一样。在任何一个函数里去掉加键失败后对值的释放，这个测试都会失败。`unit-oom`（`test_putel_atom_oom`）在从太少开始逐步放宽的内存上限下做按键加键。

@@ -1017,6 +1017,25 @@ On an Apple M4 (darwin/arm64), tifa's `test/ssr` with the product counters, 10 r
 
 A second session timed MUI and React again: -0.10% [-0.74%, +0.54%] and -1.37% [-1.83%, -0.92%]. MUI takes the same time within the 1% delta: its pages call `charCodeAt` most, and that call now goes through the table of `rv_fast_fns`, about 8 instructions more on arm64. The binary at the first position was slower on MUI in one session (+1.61% [+0.54%, +2.69%]), and so was the same change without the table in the other: where the code lands, not the table. A render makes fewer direct C calls: 71,440 to 33,104 on the store's home, 30,030 to 14,315 on MUI's orders, 10,339 to 2,178 on React's page. Most of the gain comes from `push`, `Map.get` and `Math.clz32` on React, from `has`, `Array.isArray` and `Math.clz32` on MUI, and from `hasOwn`, `has` and `String` on the store. Most of the store's `hasOwn` and `String` calls are made while it builds URLs, so where a URL costs less the store gains less.
 
+### Keyed and named stores that add a key
+
+[A store that adds a key to a plain object skips the generic path](changes/c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path), counted on 2026-11-14 against `78a90364` (v0.30.6). Native: the test host built by clang, the 3 renders after 2 warm, callgrind on linux/amd64 and retired instructions on an Apple M4 (the lowest of 2 or 3 rounds). Product: the generated engine inside tifa's `test/ssr`, callgrind on linux/amd64 (3 renders less 1, halved) and retired instructions on the M4 (the median render, the lowest of 3 rounds, summed over the pages of the group). "As generated" is the engine of this change with the profile of v0.30.6, which has no data for `JS_RegvmRun` any more. "Trained" is the same engine with the profile trained again on it, as the release will ship it. Every page gives the same HTML.
+
+| Pages | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| workbench studio | -0.67% | -0.53% | -0.21% | -1.18% | -0.27% | -1.36% |
+| workbench stats | -0.59% | -0.16% | | | +0.40% | -1.11% |
+| store home | -0.35% | -0.41% | +0.63% | -0.30% | +0.64% (en-US), +0.90% (zh-CN) | -0.57%, -0.42% |
+| store products | -0.48% | -0.42% | | | +0.10% | -0.88% |
+| MUI orders | -1.45% | -1.12% | -1.35% | -2.07% | -1.04% | -1.96% |
+| MUI home | -1.03% | -0.94% | | | -0.60% | -1.19% |
+| React | +0.10% | +0.05% | +1.29% | +0.07% | +1.36% | -0.22% |
+| long Markdown | -0.25% | -0.16% | | | | |
+
+A render makes 22.5K stores that take the path on MUI orders (19.6K keyed, 2.9K named), 7.4K on MUI home, 10.1K on wb studio, 4.2K on wb stats, 4.9K and 9.1K on the store home and products pages and 30 on React. Nearly all of them add a key. On amd64 `rv_putel_atom` runs about 96 instructions for a store, with the walk of the prototypes inlined, and `add_property` its own. Without a training `JS_RegvmRun` loses its profile and the pages with few such stores run more instructions, React most (+1.3%). The trained engine has the gain on every group but React, which stays the same. A training moves the code of the other functions a little too, so the trained columns are the change and a new profile together.
+
+The micro benchmarks of `compare/testdata` (native, M4): the geometric mean is 0.20% fewer instructions, `prop_create` 5.6% fewer (amd64 7.1%). `array_prop_create` runs 0.80% more (amd64 1.29%): its `tab[i] = i` appends through `rv_putel_slow`, about 230 instructions, and now pays the test of the key's tag before it, 3 instructions on amd64. `weak_map_delete` (`tab[i] = null` over an object) pays the same 3, 0.14%. No other benchmark runs more than 0.36% more.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.

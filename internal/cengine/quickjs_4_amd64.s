@@ -3095,7 +3095,7 @@ TEXT ·JS_FreeValue(SB), $32-32
 	BYTE $0x18
 	CALL ·__JS_FreeValueRT(SB)
 	BYTE $0xeb
-	BYTE $0xe0
+	BYTE $0x00
 	RET
 
 TEXT ·js_new_string_len_long(SB), $224-32

@@ -379,6 +379,49 @@ static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip
     return ret < 0 ? -1 : 0;
 }
 
+/* PUTEL, ip at o key v, with a string key that is its own atom (the field
+   key_atom of the string, never an index, see rv_getel_atom), when the
+   store only writes a value (rv_put_atom_prop): an own writable data
+   property gets v, or the key is added as the generic path adds it. 1 when
+   done, with v and a key in a temp taken and a temp o freed as
+   rv_putel_slow does, 0 with nothing done for anything else, which
+   rv_putel_slow then does from the start, -1 when add_property failed, with
+   the operands taken and freed as when rv_putel_slow fails. The key, which
+   its slot keeps alive, keeps its atom alive: add_property takes its own
+   reference. The loop calls it only for a string key, so that a store at
+   an index (the end of an array) does not pay the call, and after
+   RV_SYNC_TOP: it may throw the out of memory error, and the old value it
+   replaces may be the last reference to an object. It is a function of its
+   own, so that the frame of rv_putel_slow, which a setter it calls sits on,
+   does not grow. */
+static no_inline int rv_putel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
+    JSProperty *pr;
+    JSAtom atom;
+    int r;
+
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
+        return 0;
+    atom = JS_VALUE_GET_STRING(key)->key_atom;
+    if (atom == JS_ATOM_NULL)
+        return 0;
+    r = rv_put_atom_prop(ctx, JS_VALUE_GET_OBJ(obj), atom, &pr);
+    if (r == 0)
+        return 0;
+    if (r == 1)
+        set_value(ctx, &pr->u.value, rv_take(ctx, F, (int8_t)ip[2]));
+    else if (r == 2)
+        pr->u.value = rv_take(ctx, F, (int8_t)ip[2]);
+    else if (rv_is_temp(F, (int8_t)ip[2]))
+        JS_FreeValue(ctx, F[(int8_t)ip[2]]);
+    if (rv_is_temp(F, (int8_t)ip[1]))
+        JS_FreeValue(ctx, key);
+    if (rv_is_temp(F, (int8_t)ip[0]))
+        JS_FreeValue(ctx, obj);
+    return r < 0 ? -1 : 1;
+}
+
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
    QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
    are taken, a temp o freed. */
@@ -677,7 +720,8 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 
     /* put_array_el: an element in the count of a fast array here, when
        the old value has no reference count, so that nothing is freed
-       before o; the rest in rv_putel_slow */
+       before o; a string key that is its own atom in rv_putel_atom, the
+       rest in rv_putel_slow */
  rv_PUTEL:
     ip = pc; pc += 3;
     {
@@ -704,6 +748,13 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
             }
         }
         RV_SYNC_TOP();
+        if (JS_VALUE_GET_TAG(key) == JS_TAG_STRING && !RV_INJ_ARMED) {
+            int r = rv_putel_atom(ctx, F, ip);
+            if (r > 0)
+                RV_NEXT();
+            if (r < 0)
+                goto rv_exception;
+        }
         if (rv_putel_slow(ctx, F, ip))
             goto rv_exception;
     }
