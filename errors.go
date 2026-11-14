@@ -165,13 +165,14 @@ func (m *VM) errIntProp(v jsValue, name uint32) (r int, ok bool) {
 // to the caller of ErrorFromValue, as from any call into javascript. On a VM
 // a kill left good only for Close, ErrorFromValue panics.
 func ErrorFromValue(v Value) *Error {
-	return v.vm.errorFrom(v.v)
+	return v.vm.errorFrom(v.v, nil)
 }
 
 // errorFrom is ErrorFromValue of v, borrowed, which can also be the
 // exception takeException took. A script cannot make an *Error with
-// Uncatchable set: only an uncatchable exception and a kill give one.
-func (m *VM) errorFrom(v jsValue) (e *Error) {
+// Uncatchable set: only an uncatchable exception and a kill give one. With
+// t, each text is cut as cutString does.
+func (m *VM) errorFrom(v jsValue, t *textCut) (e *Error) {
 	var err error
 	if err = m.enter(); err != nil {
 		panic(brokenPanic)
@@ -184,9 +185,9 @@ func (m *VM) errorFrom(v jsValue) (e *Error) {
 	}()
 	defer m.leave(&err)
 
-	e, ok := m.readError(v, nil)
+	e, ok := m.readError(v, t)
 	if !ok {
-		e, _ = m.takeException()
+		e, _ = m.takeExceptionCut(t)
 	}
 	return e
 }
@@ -237,6 +238,13 @@ func (m *VM) errFromException() error {
 // uncatchable one is what takeException takes and returns, as the call
 // ends with it.
 func (m *VM) takeException() (err *Error, uncatchable bool) {
+	return m.takeExceptionCut(nil)
+}
+
+// takeExceptionCut is takeException with each text of the error cut as
+// cutString does, with t, for the error a read of the rejections ends with
+// (see UnhandledRejections). With nil, nothing is cut.
+func (m *VM) takeExceptionCut(t *textCut) (err *Error, uncatchable bool) {
 	uncatchable = m.uncatchablePending()
 	e := m.jsGetException()
 	// The flag outlives the exception. Clear it, so that it does not stay
@@ -249,7 +257,7 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 	if !uncatchable {
 		// Reading e runs javascript, inside the eval timeout. When that
 		// met an uncatchable exception, it is the error (errorFrom).
-		err = m.errorFrom(e)
+		err = m.errorFrom(e, t)
 		return err, err.Uncatchable
 	}
 
@@ -258,7 +266,7 @@ func (m *VM) takeException() (err *Error, uncatchable bool) {
 		// error.
 		err = outOfMemoryError()
 	} else {
-		err = m.uncatchableError(e)
+		err = m.uncatchableError(e, t)
 	}
 	// No script can throw an uncatchable exception, and none runs between
 	// the engine making it and here (uncatchableError runs none either), so
@@ -312,14 +320,15 @@ func (m *VM) repanic() {
 // could rewrite the message, which tells the errors apart. So only the own
 // data properties message and stack are read, the name is InternalError,
 // the class the engine and hostPanicked make all of them with, and the
-// string form is the one Error.prototype.toString makes of the two.
-func (m *VM) uncatchableError(e jsValue) *Error {
-	message := m.ownString(e, atomMessage)
+// string form is the one Error.prototype.toString makes of the two. With t,
+// the two are cut as cutString does.
+func (m *VM) uncatchableError(e jsValue, t *textCut) *Error {
+	message := m.ownString(e, atomMessage, t)
 	raw := "InternalError"
 	if message != "" {
 		raw += ": " + message
 	}
-	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: m.ownString(e, atomStack)}
+	return &Error{engine: true, raw: raw, Name: "InternalError", Message: message, Stack: m.ownString(e, atomStack, t)}
 }
 
 // ownString returns the own property atom of v, an error the engine or the
@@ -329,8 +338,9 @@ func (m *VM) uncatchableError(e jsValue) *Error {
 // lacks is not looked up on the prototype, where page code could have put a
 // getter. Reading a stack the engine has not formatted yet formats it, and
 // making the Go string of a string built by concatenation needs memory:
-// running out of memory there is dropped, uncatchable flag and all.
-func (m *VM) ownString(v jsValue, atom uint32) string {
+// running out of memory there is dropped, uncatchable flag and all. With t,
+// the string is cut as cutString does.
+func (m *VM) ownString(v jsValue, atom uint32, t *textCut) string {
 	switch m.jsGetOwnProperty(v, atom) {
 	case 0:
 		return ""
@@ -352,7 +362,13 @@ func (m *VM) ownString(v jsValue, atom uint32) string {
 		return ""
 	}
 
-	str, ok := m.argString(p, false)
+	var str string
+	var ok bool
+	if t != nil {
+		str, ok = m.cutString(p, t)
+	} else {
+		str, ok = m.argString(p, false)
+	}
 	if !ok {
 		m.dropUncatchable()
 	}

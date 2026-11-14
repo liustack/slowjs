@@ -139,6 +139,9 @@ func (m *VM) TrackRejections(max int) (err error) {
 // use the room it took, so m and the read together may pass the limit by
 // what the read holds in Go.
 //
+// The error a read ends with has its texts cut the same way, so that all it
+// returns is bounded. The errors of the other calls are not cut.
+//
 // A read is the only one on m while it runs: called from javascript it runs,
 // UnhandledRejections returns an error and takes nothing, as TrackRejections
 // does.
@@ -159,7 +162,7 @@ func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
 	t := &textCut{room: true}
 	for len(reasons) < MaxTrackedRejections && m.jsHasRejection(mark) {
 		if m.goStop() {
-			return reasons, dropped, m.errFromException()
+			return reasons, dropped, m.readFailed()
 		}
 		if reasons == nil {
 			t.held = reasonsRoom
@@ -169,7 +172,7 @@ func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
 		// takes its own, after the getters that ran before it.
 		if room := m.goRoom(); room >= 0 && int64(t.held+rejectionRoom) > room {
 			m.goOutOfMemory()
-			return reasons, dropped, m.errFromException()
+			return reasons, dropped, m.readFailed()
 		}
 		if reasons == nil {
 			reasons = make([]*Error, 0, MaxTrackedRejections)
@@ -179,9 +182,17 @@ func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
 		e, ok := m.readError(v, t)
 		m.jsFreeValue(v)
 		if !ok {
-			return reasons, dropped, m.errFromException()
+			return reasons, dropped, m.readFailed()
 		}
 		reasons = append(reasons, e)
 	}
 	return reasons, dropped, nil
+}
+
+// readFailed is the error a read of the rejections ends with, the exception
+// pending, its texts cut as those of the reasons, so that all a read returns
+// is bounded. It takes no room: it is the error that tells the room ran out.
+func (m *VM) readFailed() error {
+	err, _ := m.takeExceptionCut(&textCut{})
+	return err
 }

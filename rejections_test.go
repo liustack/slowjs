@@ -540,3 +540,32 @@ Promise.reject({ name: "n", message: "m", get stack() { while (room() > 6144) ho
 		t.Fatalf("%d reasons, %v, want none and the out of memory error", len(reasons), err)
 	}
 }
+
+// TestRejectionsErrorCut: the error a read ends with is cut as the texts of
+// the reasons are. A getter that runs out of memory in a function with a
+// name of 128 KiB made the Stack of that error 128 KiB, past what a read
+// returns otherwise.
+func TestRejectionsErrorCut(t *testing.T) {
+	m := newRejectionsVM(t, 4)
+	m.SetMemoryLimit(8 << 20)
+	if _, err := m.Eval(`
+function big() { return new ArrayBuffer(1 << 30) }
+Object.defineProperty(big, "name", { value: "n".repeat(128 << 10) });
+Promise.reject({ get message() { big(); return "m" } });
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := m.UnhandledRejections()
+	var e *Error
+	if !errors.As(err, &e) || !e.OutOfMemory {
+		t.Fatalf("%v, want the out of memory error", err)
+	}
+	if !strings.Contains(e.Stack, "nnnn") {
+		t.Fatalf("Stack %q, want the frame of big", e.Stack[:min(len(e.Stack), 100)])
+	}
+	for _, f := range []struct{ what, s string }{{"text", e.Error()}, {"Message", e.Message}, {"Stack", e.Stack}} {
+		if len(f.s) > rejectionText+len(cutMark) {
+			t.Errorf("%s: %d bytes, more than %d", f.what, len(f.s), rejectionText+len(cutMark))
+		}
+	}
+}
