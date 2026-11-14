@@ -67,6 +67,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.4 | Long text of Intl and long outputs of `fmt` are worked on in checked pieces, and a VM with no memory limit keeps its last block for the next call | Fixes. No speed claim on a render |
 | v0.30.5 | The engine is generated with [a profile of tifa's pages](#a-profile-of-tifas-pages), on top of five changes of the register interpreter: the atom table, `'' + x`, the keyed read, the key atom of a string, object rest and spread | Against v0.30.4, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.871 of the time, its fourteen store pages 0.874, the three MUI pages 0.888, React's page 0.882 and the long Markdown page 0.966. The profile alone gives 0.916 to 0.946. Without it the long Markdown page takes 1.022 of the time of v0.30.4, for a cause not found yet ([Long Markdown without the profile](#long-markdown-without-the-profile)) |
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
+| v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 
 ## Measuring in tifa
 
@@ -1318,6 +1319,35 @@ At the mean of the layouts v0.30.6 is faster on 7 of them, shows no regression b
 | `typed_array_write` | -6.70% (-8.23% to -5.14%) faster | -5.06% (-7.21% to -2.86%) faster |
 
 No kind of page is slower beyond the delta. MUI's pages run 0.86% fewer instructions with the loops, and the time shows -0.20%, which this timing cannot tell from no change. The long Markdown page is 0.56% faster. Of the micro benchmarks, the two the loops were written for gain the most: `typed_array_read` 6.55% and `typed_array_write` 6.70%. Two are slower at the mean of the layouts though they run fewer instructions (callgrind, linux/amd64): `regexp_utf16` 3.65% slower for 3.5% fewer instructions, and `array_prop_create` 3.15% slower for 0.4% fewer. That is where their code lands, not the work they do. `array_slice` is 12.56% slower at the formal layout and cannot tell at the mean, as in [the timing of v0.30.5](#the-micro-benchmarks-by-time), where the formal layout moved it by 12% the other way.
+
+#### v0.30.7 against v0.30.6
+
+v0.30.7 was timed on 2026-11-14 on a server of the same type as v0.30.6 above, in the same way (linux/amd64, an AMD EPYC 7B13 server with 4 cores, core 0 with the whole machine quiet, the 16 layouts of [measuring.md](measuring.md#the-protocol), 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals). Two sides: v0.30.6 (78a90364) and the commit of v0.30.7 with its profile (f698a910, trained again on its C, 2,788 functions, none stale). The pages are those of the shop, the MUI app, React and the long Markdown in the bundles the profile trains on. Both sides give the same HTML on every page. Each cell is the mean of the layouts with its interval and the verdict of `measure bench judge`, then the formal layout, the build that ships. Every kind ran its 18 units, and one block of the store pages ran again for a disturbance.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -2.29% (-3.22% to -1.35%) faster | +0.39% (-1.23% to +2.03%) inconclusive |
+| tifa's shop, fourteen store pages | -1.60% (-2.05% to -1.15%) faster | -1.14% (-2.11% to -0.16%) faster |
+| tifa's MUI test app, three pages | -1.72% (-2.32% to -1.11%) faster | -1.13% (-2.04% to -0.21%) faster |
+| React's page | -0.03% (-0.98% to +0.94%) no regression beyond delta | +0.68% (-0.87% to +2.25%) inconclusive |
+| The long Markdown page, 100 and 400 sections | -1.39% (-2.44% to -0.34%) faster | -2.04% (-5.24% to +1.26%) inconclusive |
+
+Instructions a render, the same two builds. amd64: callgrind on linux/amd64, one page of each group, half the difference of 3 renders and 1 after a warm one (Markdown, 400 sections: 2 renders less 1). M4: retired instructions on an Apple M4 (darwin/arm64), the lowest of 3 rounds, 10 renders less 1 (React 40, Markdown 2). Every page gives the same HTML.
+
+| Page | amd64 | M4 |
+| --- | ---: | ---: |
+| The store's home page | -4.67% | -4.11% |
+| The store's products page | -4.55% | -4.50% |
+| The workbench's studio page | -4.40% | -4.00% |
+| The workbench's stats page | -3.33% | -3.20% |
+| MUI's orders page | -3.17% | -3.43% |
+| MUI's home page | -2.94% | -2.55% |
+| React's page | -0.82% | -0.91% |
+| Long Markdown (400 sections) | -4.15% | -3.45% |
+
+Every kind of page but React is faster at the mean of the layouts, by 1.4% to 2.3%, and none is slower beyond the delta at the formal layout. React's page runs 0.8% fewer instructions, which the timing cannot tell from no change. The time gains less than the instructions: the instructions saved are in the stores that add a key, the adds of two strings, the spread and the bound functions, and a render spends much of its time elsewhere.
+
+An early reading of the same kind, on the same server before the spread and the string add were in (290da901 with a profile trained on it), gave the six workbench pages -1.31% (-2.15% to -0.45%) at the mean of the layouts and the fourteen store pages -1.03% (-1.58% to -0.48%, 17 of 18 units).
 
 #### The study of 2026-11-13
 

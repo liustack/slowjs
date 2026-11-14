@@ -38,7 +38,7 @@ func (m *VM) Call(function string, args ...any) (r any, err error) {
 	}
 	defer m.leave(&err)
 
-	f, err := m.jsEval(function, EvalGlobal)
+	f, err := m.jsEval(evalName, function, EvalGlobal)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (m *VM) CallValue(function string, args ...any) (r Value, err error) {
 	}
 	defer m.leave(&err)
 
-	f, err := m.jsEval(function, EvalGlobal)
+	f, err := m.jsEval(evalName, function, EvalGlobal)
 	if err != nil {
 		return r, err
 	}

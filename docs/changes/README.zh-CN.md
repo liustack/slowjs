@@ -122,6 +122,7 @@ read_when:
 | 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 | 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | v0.30.7 | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
+| EvalFile 给脚本一个文件名 | v0.31.0 | [go-api.md](go-api.zh-CN.md#evalfile-给脚本一个文件名) |
 
 ## 守得住的限额
 
