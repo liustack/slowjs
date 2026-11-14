@@ -22220,6 +22220,12 @@ static JSValue js_array_iterator_next(JSContext *ctx, JSValueConst this_val,
 static JSValue js_create_array_iterator(JSContext *ctx, JSValueConst this_val,
                                         int argc, JSValueConst *argv, int magic);
 
+typedef struct JSArrayIteratorData {
+    JSValue obj;
+    JSIteratorKindEnum kind;
+    uint32_t idx;
+} JSArrayIteratorData;
+
 /* Access an Array's internal JSValue array if available */
 static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
                               JSValue **arrpp, uint32_t *countp)
@@ -22292,7 +22298,16 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     if (is_array_iterator
     &&  JS_IsCFunction(ctx, method, ft.generic, 0)
     &&  js_get_fast_array(ctx, sp[-1], &arrp, &count32)) {
+        JSArrayIteratorData *it;
         uint32_t len;
+        /* the read of next may have run a getter, which can step the
+           iterator, end it, or keep it for later: go on from its index and
+           leave it ended, as the steps of the built-in next would */
+        if (JS_VALUE_GET_OBJ(enumobj)->class_id != JS_CLASS_ARRAY_ITERATOR)
+            goto general_case;
+        it = JS_VALUE_GET_OBJ(enumobj)->u.array_iterator_data;
+        if (JS_VALUE_GET_TAG(it->obj) != JS_TAG_OBJECT)
+            goto general_case;
         if (js_get_length32(ctx, &len, sp[-1]))
             goto exception;
         /* if len > count32, the elements >= count32 might be read in
@@ -22300,11 +22315,14 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
         if (len != count32)
             goto general_case;
         /* Handle fast arrays explicitly */
-        for (i = 0; i < count32; i++) {
+        for (i = it->idx; i < count32; i++) {
+            it->idx = i + 1;
             if (JS_DefinePropertyValueUint32(ctx, sp[-3], pos++,
                                              JS_DupValue(ctx, arrp[i]), JS_PROP_C_W_E) < 0)
                 goto exception;
         }
+        JS_FreeValue(ctx, it->obj);
+        it->obj = JS_UNDEFINED;
     } else {
     general_case:
         for (;;) {
@@ -51385,12 +51403,6 @@ exception:
     JS_FreeValue(ctx, obj);
     return ret;
 }
-
-typedef struct JSArrayIteratorData {
-    JSValue obj;
-    JSIteratorKindEnum kind;
-    uint32_t idx;
-} JSArrayIteratorData;
 
 static JSValue js_array_iterator_next(JSContext *ctx, JSValueConst this_val,
                                       int argc, JSValueConst *argv,

@@ -52,6 +52,30 @@ result read array call: 2 [get Array.prototype iterator]
 result read array new: 2 [get Array.prototype iterator]
 result read array super: 3 [get Array.prototype iterator]
 result read array method: 3 [get Array.prototype iterator]
-mem-end obj=197 atom=550 shape=138 prop=963 jsfunc=2 cfunc=131 array=1 fast_array=0 elements=0 binary=0
-mem-gc obj=193 atom=545 shape=134 prop=955 jsfunc=0 cfunc=131 array=1 fast_array=0 elements=0 binary=0
+result stepped 0 literal: 10,20,30 then true undefined
+result stepped 0 middle: 0,10,20,30,9 then true undefined
+result stepped 0 call: 10,20,30 then true undefined
+result stepped 0 new: 10,20,30 then true undefined
+result stepped 0 super: 0,10,20,30 then true undefined
+result stepped 0 method: 4 then true undefined
+result stepped 1 literal: 20,30 then true undefined
+result stepped 1 middle: 0,20,30,9 then true undefined
+result stepped 1 call: 20,30 then true undefined
+result stepped 1 new: 20,30 then true undefined
+result stepped 1 super: 0,20,30 then true undefined
+result stepped 1 method: 3 then true undefined
+result stepped 3 literal:  then true undefined
+result stepped 3 middle: 0,9 then true undefined
+result stepped 3 call:  then true undefined
+result stepped 3 new:  then true undefined
+result stepped 3 super: 0 then true undefined
+result stepped 3 method: 1 then true undefined
+result stepped 4 literal:  then true undefined
+result stepped 4 middle: 0,9 then true undefined
+result stepped 4 call:  then true undefined
+result stepped 4 new:  then true undefined
+result stepped 4 super: 0 then true undefined
+result stepped 4 method: 1 then true undefined
+mem-end obj=202 atom=553 shape=144 prop=973 jsfunc=4 cfunc=132 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=194 atom=545 shape=138 prop=957 jsfunc=0 cfunc=132 array=1 fast_array=0 elements=0 binary=0
 --- status exit 0

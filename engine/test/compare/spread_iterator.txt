@@ -52,3 +52,27 @@ read array call: 2 [get Array.prototype iterator]
 read array new: 2 [get Array.prototype iterator]
 read array super: 3 [get Array.prototype iterator]
 read array method: 3 [get Array.prototype iterator]
+stepped 0 literal: 10,20,30 then true undefined
+stepped 0 middle: 0,10,20,30,9 then true undefined
+stepped 0 call: 10,20,30 then true undefined
+stepped 0 new: 10,20,30 then true undefined
+stepped 0 super: 0,10,20,30 then true undefined
+stepped 0 method: 4 then true undefined
+stepped 1 literal: 20,30 then true undefined
+stepped 1 middle: 0,20,30,9 then true undefined
+stepped 1 call: 20,30 then true undefined
+stepped 1 new: 20,30 then true undefined
+stepped 1 super: 0,20,30 then true undefined
+stepped 1 method: 3 then true undefined
+stepped 3 literal:  then true undefined
+stepped 3 middle: 0,9 then true undefined
+stepped 3 call:  then true undefined
+stepped 3 new:  then true undefined
+stepped 3 super: 0 then true undefined
+stepped 3 method: 1 then true undefined
+stepped 4 literal:  then true undefined
+stepped 4 middle: 0,9 then true undefined
+stepped 4 call:  then true undefined
+stepped 4 new:  then true undefined
+stepped 4 super: 0 then true undefined
+stepped 4 method: 1 then true undefined

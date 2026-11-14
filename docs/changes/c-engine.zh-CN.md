@@ -1015,7 +1015,9 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 展开原来还会把值的 `Symbol.iterator` 读两次：一次看它是不是内置的 `values`，一次在 `JS_GetIterator` 里。所以那里的 getter 会跑两次，Proxy 也会看到两次读取。现在只读一次，把读到的方法交给 `JS_GetIterator2`，它不是函数时抛同样的 TypeError。
 
-测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`，以及经由值自己的 getter、`Array.prototype` 的 getter 和 Proxy 读 `Symbol.iterator` 的次数。
+`%ArrayIteratorPrototype%` 的 `next` 是 getter 时，读它会跑脚本，脚本可以推进展开刚造出的 Array Iterator、让它结束，或者把它存起来。快数组的复制代替了内置 `next` 的逐步读取，原来却照样从第一个元素开始，也不动迭代器：展开会再给出迭代器已经走过的元素，存起来的迭代器之后还会再给一遍。现在复制从迭代器的下标开始，结束时让迭代器处于已结束的状态，和逐步读取一样，getter 已让它结束时就什么也不复制。
+
+测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`，以及经由值自己的 getter、`Array.prototype` 的 getter 和 Proxy 读 `Symbol.iterator` 的次数，以及 `next` 作为 getter 把迭代器推进 0、1、3、4 步并存起来时的结果，和存起来的迭代器在展开之后给出什么。
 
 ## 热调用少传参数字
 

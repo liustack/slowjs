@@ -98,5 +98,37 @@
       Object.defineProperty(Array.prototype, Symbol.iterator, { value: values, writable: true, configurable: true })
     }
   }
+  // next of %ArrayIteratorPrototype% as a getter that steps the iterator
+  // it is read on, and keeps it, then gives the built-in next: the spread
+  // goes on from where the iterator is, and leaves it at its end
+  const j = (...a) => a.join()
+  class V { constructor(...a) { this.s = a.join() } }
+  class W extends V { constructor(it) { super(0, ...it) } }
+  const vforms = {
+    literal: (it) => [...it].join(),
+    middle: (it) => [0, ...it, 9].join(),
+    call: (it) => j(...it),
+    new: (it) => new V(...it).s,
+    super: (it) => new W(it).s,
+    method: (it) => o.m(1, ...it)
+  }
+  const nextDesc = Object.getOwnPropertyDescriptor(AIP, 'next')
+  for (const steps of [0, 1, 3, 4]) {
+    for (const name of Object.keys(vforms)) {
+      let kept
+      Object.defineProperty(AIP, 'next', {
+        get() {
+          kept = this
+          for (let i = 0; i < steps; i++) nextDesc.value.call(this)
+          return nextDesc.value
+        },
+        configurable: true
+      })
+      let r
+      try { r = vforms[name]([10, 20, 30]) } finally { Object.defineProperty(AIP, 'next', nextDesc) }
+      const after = kept.next()
+      out.push('stepped ' + steps + ' ' + name + ': ' + r + ' then ' + after.done + ' ' + after.value)
+    }
+  }
   return out.join('\n')
 })()
