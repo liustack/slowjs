@@ -7890,7 +7890,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	PCALIGN $16
 	WORD $0xaa1603e8
 	WORD $0xf90047f4
-	MOVD $·engine_rodata+7708(SB), R22
+	MOVD $·engine_rodata+7670(SB), R22
 	WORD $0xa907dff5
 	WORD $0x91004294
 	WORD $0xaa0803f5
@@ -7920,7 +7920,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	BL ·js_string_to_cstring(SB)
 	WORD $0xb40014c0
 	WORD $0x39400008
-	MOVD $·engine_rodata+7716(SB), R9
+	MOVD $·engine_rodata+7678(SB), R9
 	WORD $0xf9404ff5
 	WORD $0xf9003be0
 	WORD $0x7100011f
@@ -8055,7 +8055,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	WORD $0x14000025
 	WORD $0xf94047e8
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+7716(SB), R22
+	MOVD $·engine_rodata+7678(SB), R22
 	WORD $0x91004114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -8065,7 +8065,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	WORD $0x17ffff83
 	WORD $0xf94047e8
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+7740(SB), R22
+	MOVD $·engine_rodata+7702(SB), R22
 	WORD $0x91004114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -8124,7 +8124,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	WORD $0xb4fffb00
 	WORD $0xf94047f7
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+7728(SB), R22
+	MOVD $·engine_rodata+7690(SB), R22
 	WORD $0xf90037e0
 	WORD $0xaa1703f4
 	WORD $0xf8010680
@@ -8144,7 +8144,7 @@ TEXT ·js_backtrace_put_frame(SB), $152-32
 	WORD $0x340001e8
 	WORD $0xf94047f7
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+7733(SB), R22
+	MOVD $·engine_rodata+7695(SB), R22
 	WORD $0xb90002e8
 	WORD $0xb94073e8
 	WORD $0x910042f4
@@ -10295,7 +10295,7 @@ TEXT ·free_function_bytecode(SB), $136-24
 	WORD $0x710005bf
 	WORD $0x540007eb
 	WORD $0x2a1f03f0
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0x92679a88
 	WORD $0xf940c108
 	WORD $0x8b30c189
@@ -10345,7 +10345,7 @@ TEXT ·free_function_bytecode(SB), $136-24
 	WORD $0xf94027e8
 	WORD $0xa946bfec
 	WORD $0xb94053f3
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0xb9405bf0
 	WORD $0xb94063ed
 	WORD $0xf94047f4
@@ -11483,7 +11483,7 @@ TEXT ·free_function_bytecode(SB), $136-24
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa946bfec
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0xb9405bf0
 	WORD $0xb94063ed
 	WORD $0xf94047f4

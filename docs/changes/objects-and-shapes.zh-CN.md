@@ -390,3 +390,11 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 `Object.isFrozen` 和 `Object.isSealed` 先列出对象的自有键，逐个取描述符，最后才问对象能不能扩展。规范（TestIntegrityLevel）先问这一步，能扩展的对象既不是 sealed 也不是 frozen，键就不用再问了。在 Proxy 上看得出区别。目标能扩展时，引擎调用 `ownKeys` 和 `getOwnPropertyDescriptor` 两个 trap，从不调用 `isExtensible`，而 Node 只调用 `isExtensible`。`ownKeys` trap 抛错时引擎的调用跟着抛错，而 Node 返回 false。目标不能扩展时，各个 trap 现在按 Node 的顺序调用，先调用 `isExtensible`。另外，键已经列出之后 `isExtensible` 抛错的话，这份键的列表从没释放：它占的块一直用着，直到 runtime 释放，测试宿主于是报 "1 runtimes freed with blocks still in use" 退出。上游 QuickJS 的顺序和引擎原来的一样。
 
 测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样）测试各种对象的完整性级别，以及 `Object.freeze`、`Object.seal`、`Object.preventExtensions` 之后的属性标志：原始值、普通对象、带访问器的对象、删过键的对象、symbol 键和数字键、键很多的对象、共用 shape 的对象、私有名字、类的实例、数组、类型化数组、`String` 对象、arguments、函数、错误对象、内置对象，以及 Proxy 的 trap 顺序、抛错的 trap 和已撤销的 Proxy。有三种情况 V8 的答案不合规范，所以由 `engine/test/unit.c` 的 `test_integrity_levels` 按规范检查：不能扩展的空数组，要等 length 不可写才算 frozen。有元素、不能扩展的类型化数组不算 sealed。元素都已冻结的数组，也要等 length 不可写才算 frozen。它还冻结全局对象，Node 在自己的 context 里做不到这一步。
+
+## 给模块命名空间定义属性时先读它的绑定
+
+版本：Unreleased。
+
+模块命名空间的 `[[DefineOwnProperty]]` 先取这个属性，也就是读它的绑定，绑定还没初始化时读取会抛 `ReferenceError`（模块导入自己，在自己的 `let`、`const`、`class` 执行之前查看自己的命名空间）。引擎没有读：对这样的命名空间 `Object.seal` 直接返回它，对某个绑定 `Reflect.defineProperty` 返回 true 或 false，`Object.defineProperty` 抛 `TypeError`。现在 `JS_DefineProperty` 遇到模块命名空间里还没初始化的绑定时抛 `ReferenceError`，和 Node 一样。`Object.isSealed`、`Object.isFrozen` 和 `Object.freeze` 原来就抛这个错。
+
+测试：`engine/test/compare/integrity_levels_module.mjs`（输出和 Node 24 一样）在绑定初始化之前和之后，查看自己命名空间的完整性级别，封住、冻结它，并定义它的绑定。

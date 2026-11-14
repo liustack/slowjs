@@ -486,7 +486,7 @@ TEXT ·js_iterator_concat_next(SB), $168-16
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf94057e8
 	WORD $0xf9404ff5
-	MOVD $·engine_rodata+12326(SB), R22
+	MOVD $·engine_rodata+12325(SB), R22
 	WORD $0xaa0803f7
 	WORD $0x91028114
 	WORD $0xf8050ee0
@@ -2944,7 +2944,7 @@ TEXT ·js_new_host_function(SB), $152-16
 	WORD $0x79007408
 	WORD $0x1400003a
 	WORD $0xaa1703f4
-	MOVD $·engine_rodata+11806(SB), R22
+	MOVD $·engine_rodata+11768(SB), R22
 	WORD $0xaa0d03f5
 	WORD $0xb8010688
 	WORD $0xf90007f4

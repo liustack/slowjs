@@ -15399,6 +15399,15 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
  redo_prop_update:
     prs = find_own_property(&pr, p, prop);
     if (prs) {
+        /* the [[DefineOwnProperty]] of a module namespace asks for the
+           property first, which reads the binding: it throws while the
+           binding is not initialized */
+        if (unlikely((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) &&
+            p->class_id == JS_CLASS_MODULE_NS &&
+            JS_IsUninitialized(*pr->u.var_ref->pvalue)) {
+            JS_ThrowReferenceErrorUninitialized(ctx, prs->atom);
+            return -1;
+        }
         /* the range of the Array length property is always tested before */
         if ((prs->flags & JS_PROP_LENGTH) && (flags & JS_PROP_HAS_VALUE)) {
             uint32_t array_length;

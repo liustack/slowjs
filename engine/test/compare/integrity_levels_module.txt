@@ -1,0 +1,2 @@
+early: false ReferenceError ReferenceError ReferenceError true ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError false
+after: false true false true true TypeError true false true TypeError true false

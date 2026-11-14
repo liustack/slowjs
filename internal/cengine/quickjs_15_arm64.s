@@ -10303,7 +10303,7 @@ TEXT ·JS_GetArrayBuffer(SB), $88-40
 	BL ·JS_AtomGetStrRT(SB)
 	WORD $0xf94023ea
 	WORD $0xf9402ff5
-	MOVD $·engine_rodata+12326(SB), R22
+	MOVD $·engine_rodata+12325(SB), R22
 	WORD $0xf9000140
 	WORD $0x91014154
 	WORD $0xaa0a03f7
@@ -23670,7 +23670,7 @@ TEXT ·code_match(SB), $88-32
 	WORD $0xf94002ae
 	WORD $0x2a1f03f0
 	WORD $0x1280000f
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0x100015f3
 	WORD $0xa9007e97
 	WORD $0xa9017e9f
@@ -23771,7 +23771,7 @@ TEXT ·code_match(SB), $88-32
 	WORD $0xa94243f7
 	WORD $0x100009b3
 	WORD $0xa943dbee
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0xb94037ef
 	WORD $0xf94027f5
 	WORD $0xf9402ff4
@@ -23837,7 +23837,7 @@ TEXT ·code_match(SB), $88-32
 	WORD $0x92679a88
 	WORD $0xb94037ef
 	WORD $0x10000133
-	MOVD $·engine_rodata+7857(SB), R17
+	MOVD $·engine_rodata+7819(SB), R17
 	WORD $0xf94027f5
 	WORD $0xf940c108
 	WORD $0x17ffff65
