@@ -1,0 +1,16 @@
+a-b: TypeError, under ok a-b, TypeError, under ok a-b
+default: TypeError, under ok default, TypeError, under ok default
+normal: TypeError, under ok normal, TypeError, under ok normal
+plain: TypeError, under ok plain, TypeError, under ok plain
+with space: TypeError, under ok with space, TypeError, under ok with space
+😀: TypeError, under ok 😀, TypeError, under ok 😀
+plain: TypeError, under ok plain, TypeError, under ok plain
+nope: TypeError, under ok nope, TypeError, under ok nope
+zz: TypeError, under ok zz, TypeError, under ok zz
+-0: TypeError, under ok -0, TypeError, under ok -0
+1e3: TypeError, under ok 1e3, TypeError, under ok 1e3
+length: TypeError, under ok length, TypeError, under ok length
+__proto__: TypeError, under ok __proto__, TypeError, under ok __proto__
+then: TypeError, under ok then, TypeError, under ok then
+Symbol(Symbol.toStringTag): TypeError, under TypeError, TypeError, under TypeError
+values: 1,1,4,false,false

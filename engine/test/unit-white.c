@@ -1981,6 +1981,58 @@ static void test_object_lit_shared_shape(void)
     }
 }
 
+/* o[k] = v with a key that is its own atom adds the key as the generic path
+   does: objects that get the same keys in the same order by o[k] with keys
+   from Object.keys, by o[k] with the same keys made again (not atoms), by
+   o.x = v, by Reflect.set and by Object.assign share one shape, empty and
+   from a literal, with the shape cache on and off, past the room of the
+   first property array and of the block of a literal. A key on the
+   prototype (a writable data property) is added as an own key of the same
+   shape, and keys in another order are another shape. */
+static void test_putel_atom_shape(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx,
+                      "var names = Object.keys({ ka: 0, kb: 0, kc: 0, kd: 0, ke: 0, kf: 0, kg: 0, kh: 0, ki: 0, kj: 0 });\n"
+                      "function fresh(k) { return (' ' + k).slice(1) }\n"
+                      "function put(o, k, v) { o[k] = v }\n"
+                      "function byAtom(o) { for (var i = 0; i < names.length; i++) put(o, names[i], i); return o }\n"
+                      "function byFresh(o) { for (var i = 0; i < names.length; i++) put(o, fresh(names[i]), i); return o }\n"
+                      "function byField(o) { o.ka = 0; o.kb = 1; o.kc = 2; o.kd = 3; o.ke = 4; o.kf = 5; o.kg = 6;\n"
+                      "  o.kh = 7; o.ki = 8; o.kj = 9; return o }\n"
+                      "function byReflect(o) { for (var i = 0; i < names.length; i++) Reflect.set(o, names[i], i); return o }\n"
+                      "function lit() { return { la: 1, lb: 2 } }\n"
+                      "var a1 = byAtom({}), a2 = byFresh({}), a3 = byField({}), a4 = byReflect({});\n"
+                      "var a5 = Object.assign({}, a1), a6 = byAtom({});\n"
+                      "var l1 = byAtom(lit()), l2 = byFresh(lit()), l3 = byField(lit());\n"
+                      "var inh = { ka: 'p', kb: 'p' }, i1 = byAtom(Object.create(inh)), i2 = byFresh(Object.create(inh));\n"
+                      "var r1 = {}; for (var j = names.length - 1; j >= 0; j--) put(r1, names[j], j);\n"
+                      "void 0"), "the script threw");
+        CHECK(shape_of(&v, "a1") != 0 && shape_of(&v, "a1") == shape_of(&v, "a2"),
+              "cache %d: atom keys and keys made again: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a3"), "cache %d: atom keys and o.x: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a4"), "cache %d: atom keys and Reflect.set: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a5"), "cache %d: atom keys and Object.assign: two shapes", cache);
+        CHECK(shape_of(&v, "a1") == shape_of(&v, "a6"), "cache %d: atom keys twice: two shapes", cache);
+        CHECK(shape_of(&v, "l1") == shape_of(&v, "l2") && shape_of(&v, "l1") == shape_of(&v, "l3"),
+              "cache %d: a literal grown three ways: more than one shape", cache);
+        CHECK(shape_of(&v, "i1") == shape_of(&v, "i2"), "cache %d: keys of the prototype added: two shapes", cache);
+        CHECK(shape_of(&v, "r1") != shape_of(&v, "a1"), "cache %d: keys in another order share a shape", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([a1, l1, i1]) + Object.keys(r1)",
+                      "[{\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9},"
+                      "{\"la\":1,\"lb\":2,\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9},"
+                      "{\"ka\":0,\"kb\":1,\"kc\":2,\"kd\":3,\"ke\":4,\"kf\":5,\"kg\":6,\"kh\":7,\"ki\":8,\"kj\":9}]"
+                      "kj,ki,kh,kg,kf,ke,kd,kc,kb,ka"),
+              "values of the objects");
+        vm_free(&v);
+    }
+}
+
 /* ---- the lists of the collector ---- */
 
 static void lists(VM *v, int *old, int *young, const char *when)
@@ -7252,6 +7304,7 @@ int main(int argc, char **argv)
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();
+    test_putel_atom_shape();
     test_object_rest_cache();
     test_object_spread_cache();
     test_shape_ids();

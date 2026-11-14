@@ -1676,6 +1676,45 @@ static void test_putel_local_key_oom(void)
     sweep("local key put", "putel.js", setup, "run()", want, 16384);
 }
 
+static void no_shape_cache(JSContext *ctx)
+{
+    JS_SetShapeCache(ctx, 0);
+}
+
+/* o[k] = v with a key that is its own atom (from Object.keys) on plain
+   objects, empty, a literal and with a prototype, that grow one key at a time
+   and get a key again: with too little memory (the copy of a shared shape,
+   the next shape, the hash table of shapes, the property array) it fails
+   with the out of memory error and frees each key and value once, with the
+   shape cache at its default and off. */
+static void test_putel_atom_oom(void)
+{
+    static const char setup[] =
+        "var names = Object.keys({ pa0: 0, pa1: 0, pa2: 0, pa3: 0, pa4: 0, pa5: 0,\n"
+        "  pa6: 0, pa7: 0, pa8: 0, pa9: 0, pa10: 0, pa11: 0 });\n"
+        "function put(obj, key, v) { obj[key] = v }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var o = i % 2 ? { lit: 1 } : {}, p = Object.create({ inh: 1 });\n"
+        "    for (var j = 0; j < names.length; j++) {\n"
+        "      put(o, names[j], 'v' + j); put(p, names[(j + i) % names.length], [j]);\n"
+        "    }\n"
+        "    put(o, names[0], 'again');\n"
+        "    out.push(Object.keys(o).length + ':' + o.pa0 + ':' + Object.keys(p)[0] + ':' + p.pa11[0]);\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "12:again:pa0:11 13:again:pa1:10 12:again:pa2:9 13:again:pa3:8", NULL };
+
+    sweep("atom key put", "putelatom.js", setup, "run()", want, 16384);
+    sweep_register = no_shape_cache;
+    sweep("atom key put, no shape cache", "putelatom.js", setup, "run()", want, 16384);
+    sweep_register = NULL;
+}
+
 /* The truth of strings, ropes and objects in locals and temps: with too
    little memory (the strings and objects made, the result) it fails with
    the out of memory error and frees each value once. */
@@ -2548,6 +2587,7 @@ int main(void)
     test_has_property_oom();
     test_getel_local_key_oom();
     test_putel_local_key_oom();
+    test_putel_atom_oom();
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
