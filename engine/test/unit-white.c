@@ -7670,53 +7670,101 @@ static void test_max_index(void)
    A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
    of a property plus one is kept in the 26 bits of hash_next, and past it a
    lookup would miss a property that is there. One more throws and leaves the
-   object as it was. Such an object takes gigabytes, so the shape of a small
-   one is given a count at the limit (white_shape_fake_count), with no
-   collection while it is so. Before, the shape was copied with that count,
-   past its block. Each case runs in a process of its own. */
+   object as it was, and a store that the object refuses anyway is refused as
+   before, by the length that cannot be written or the array that cannot be
+   extended, with no RangeError. Such an object takes gigabytes, so a small
+   one is given a count at the limit (white_shape_fake_count for its shape,
+   white_array_fake_count for a fast array), with no collection while it is
+   so. Before, the shape was copied with that count, past its block, an
+   element added to a normal array at the limit left its length one more, and
+   a store refused by the length or the array threw a RangeError. Each case
+   runs in a process of its own. */
 static const char *const max_props_ways[] = {
-    "a new key", "an array made a normal one",
+    "a new key",
+    "an array made a normal one",
+    "an element at the end of a normal array",
+    "a store past a length that cannot be written",
+    "a store past the end of an array that cannot be extended",
 };
 
 static void max_props_case(int way)
 {
+    static const char *const setup[] = {
+        /* a delete takes the shape out of the shape table, as its own */
+        "var o = { a: 1, b: 2, c: 3 }; delete o.c; o",
+        /* a fast array of 2^26 - 1 elements and its length would be 2^26
+           properties as a normal array: an element far past its end makes it
+           one */
+        "var o = [1, 2, 3]; o",
+        /* the delete makes the array a normal one, with a shape of its own */
+        "var o = [1, 2, 3]; delete o[0]; o",
+        "var o = Object.defineProperty([1, 2, 3], 'length', { writable: false }); o",
+        "var o = Object.preventExtensions([1, 2, 3]); o",
+    };
+    /* what is left of o once its count is back */
+    static const char *const after[] = {
+        "o.a + o.b + ':' + ('z' in o)",
+        "o.join() + ':' + o.length + ':' + (1073741824 in o)",
+        "o.join() + ':' + o.length + ':' + (3 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+    };
+    static const char *const after_want[] = {
+        "3:false", "1,2,3:3:false", ",2,3:3:false", "1,2,3:3:false", "1,2,3:3:false",
+    };
     VM v = vm_new();
-    JSValue o, r;
+    JSValue o;
     size_t threshold;
-    int64_t old;
-    uint32_t old_count = 0;
-    int ret;
+    int64_t old = 0;
+    uint32_t max = white_shape_prop_max();
+    int ret, refused;
     char *t;
 
-    CHECK(white_shape_prop_max() == (1u << 26) - 1, "the limit is %u", white_shape_prop_max());
+    CHECK(max == (1u << 26) - 1, "the limit is %u", max);
     threshold = JS_GetGCThreshold(v.rt);
     JS_SetGCThreshold(v.rt, (size_t)-1);
-    if (way == 0) {
-        /* a delete takes the shape out of the shape table, as its own */
-        o = JS_Eval(v.ctx, "var o = { a: 1, b: 2, c: 3 }; delete o.c; o", 43, "<unit>", JS_EVAL_TYPE_GLOBAL);
-        old = white_shape_fake_count(o, white_shape_prop_max());
+    o = JS_Eval(v.ctx, setup[way], strlen(setup[way]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(o), "%s: the setup threw", max_props_ways[way]);
+    refused = way >= 3;
+    switch (way) {
+    case 0:
+        old = white_shape_fake_count(o, max);
         CHECK(old == 3, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
         ret = JS_SetPropertyStr(v.ctx, o, "z", JS_NewInt32(v.ctx, 1));
         white_shape_fake_count(o, (uint32_t)old);
-    } else {
-        /* a fast array of 2^26 - 1 elements and its length would be 2^26
-           properties as a normal array: an element far past its end makes
-           it one */
-        o = JS_Eval(v.ctx, "var o = [1, 2, 3]; o", 20, "<unit>", JS_EVAL_TYPE_GLOBAL);
-        old_count = white_array_fake_count(v.ctx, o, white_shape_prop_max());
-        ret = JS_SetPropertyUint32(v.ctx, o, 1u << 30, JS_NewInt32(v.ctx, 1));
-        white_array_fake_count(v.ctx, o, old_count);
+        break;
+    case 2:
+        /* length, a deleted 0, 1 and 2 */
+        old = white_shape_fake_count(o, max);
+        CHECK(old == 4, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyUint32(v.ctx, o, 3, JS_NewInt32(v.ctx, 4));
+        white_shape_fake_count(o, (uint32_t)old);
+        break;
+    default:
+        old = white_array_fake_count(v.ctx, o, max);
+        ret = JS_SetPropertyUint32(v.ctx, o, way == 1 ? 1u << 30 : max + 1, JS_NewInt32(v.ctx, 1));
+        if (refused) {
+            t = exception_text(v.ctx);
+            CHECK(ret < 0 && t && strncmp(t, "TypeError: ", 11) == 0, "%s: %s", max_props_ways[way],
+                  t ? t : "no exception");
+            free(t);
+            /* in sloppy code the store does nothing, and Reflect.set gives
+               false */
+            CHECK(eval_is(v.ctx, "[Reflect.set(o, 67108864, 1), (function () { o[67108864] = 1; return 7 })()].join()",
+                          "false,7"),
+                  "%s: Reflect.set and a sloppy store", max_props_ways[way]);
+        }
+        white_array_fake_count(v.ctx, o, (uint32_t)old);
+        break;
     }
-    t = exception_text(v.ctx);
-    CHECK(ret < 0 && t && strcmp(t, "RangeError: too many properties") == 0, "%s at the limit: %s",
-          max_props_ways[way], t ? t : "no exception");
-    free(t);
+    if (!refused) {
+        t = exception_text(v.ctx);
+        CHECK(ret < 0 && t && strcmp(t, "RangeError: too many properties") == 0, "%s at the limit: %s",
+              max_props_ways[way], t ? t : "no exception");
+        free(t);
+    }
     JS_SetGCThreshold(v.rt, threshold);
-    r = JS_GetPropertyStr(v.ctx, o, way == 0 ? "z" : "1073741824");
-    CHECK(JS_IsUndefined(r), "%s: the property was added", max_props_ways[way]);
-    JS_FreeValue(v.ctx, r);
-    CHECK(eval_is(v.ctx, way == 0 ? "o.a + o.b" : "o.join()", way == 0 ? "3" : "1,2,3"), "%s: the object after",
-          max_props_ways[way]);
+    CHECK(eval_is(v.ctx, after[way], after_want[way]), "%s: the object after", max_props_ways[way]);
     JS_FreeValue(v.ctx, o);
     vm_free(&v);
 }

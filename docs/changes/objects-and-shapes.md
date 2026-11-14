@@ -389,9 +389,22 @@ Release: Unreleased.
 
 A shape keeps, for each property, the index plus one of the next property in its hash chain, in the 26 bits of `hash_next`. Past 2^26 - 1 properties that index was cut, and a lookup could miss a property that is there. A script reaches it, as each block stays under the 4 GiB the allocator gives one block: an array with 2^26 - 1 odd indices is a normal array of 2^26 properties with its length, a few GiB in all, and one more key in the bucket of the last index made that element read as `undefined`. Upstream has the same 26 bits and no limit.
 
-Now `resize_properties` gives a shape at most 2^26 - 1 properties (`JS_SHAPE_PROP_MAX`). One more throws a RangeError, "too many properties", as a fast array past its limit throws "invalid array length", and leaves the object as it was: a key added, and a fast array of that many elements made a normal one. `JS_SHAPE_HASH_NEXT_BITS` names the width of the field, and static asserts tie the limit to it. The test is on the path where a shape grows, where the limit of 2^31 - 2 was tested before, so a page runs the same instructions there.
+Now `resize_properties` gives a shape at most 2^26 - 1 properties (`JS_SHAPE_PROP_MAX`). One more throws a RangeError, "too many properties", as a fast array past its limit throws "invalid array length", and leaves the object as it was: a key added, and a fast array of that many elements made a normal one. `JS_SHAPE_HASH_NEXT_BITS` names the width of the field, and static asserts tie the limit to it. The test is on the path where a shape grows, where the limit of 2^31 - 2 was tested before, so a page runs the same instructions there. An element added to an array is refused before the limit is met ([below](#an-array-element-is-refused-before-the-array-changes)).
 
-Tests: `test_max_props` of `unit-white` gives the shape of a small object a count of 2^26 - 1 (`white_shape_fake_count`, with no collection while it is so) and adds a key, and gives a fast array of 3 elements a count of 2^26 - 1 and adds an element far past its end, which makes it a normal array, each in a process of its own: each throws the RangeError and leaves the object. With the limit at 2^31 - 2 the array case copied the shape with that count, past its block, and ended with a segmentation fault.
+Tests: `test_max_props` of `unit-white` gives a small object a count of 2^26 - 1 (`white_shape_fake_count` for its shape, `white_array_fake_count` for a fast array of 3 elements, with no collection while it is so) and adds one more, each in a process of its own. A key added to an object and an element far past the end of a fast array, which makes it a normal one, each throw the RangeError and leave the object. With the limit at 2^31 - 2 the fast array case copied the shape with that count, past its block, and ended with a segmentation fault.
+
+## An array element is refused before the array changes
+
+Release: Unreleased.
+
+An element added to an array is refused, or fails, before the array changes, in the order of ArrayDefineOwnProperty (`JS_CreateProperty`):
+
+- A fast array that becomes a normal one for the element first tests that it can be extended, and that its length can be written when the element is at or past the length. A store it refuses does nothing in sloppy code, gives false to `Reflect.set` and throws a TypeError in strict code, as before, and not the RangeError of a conversion that does not fit ([above](#a-shape-holds-at-most-226---1-properties)).
+- A normal array gets its length once the element is there, so an element that does not fit, or finds no memory, leaves the length. Before, the length came first (upstream says in a comment that it should come after), and such an element left the length one more and no element.
+
+The normal array adds its element on a path of its own, which the end of `JS_CreateProperty` keeps as it was. Instructions per render (callgrind, linux/amd64, native host), with the same HTML, against the build before: from -0.006% (the Markdown page) to -0.0002% (the shop's English home page), none more.
+
+Tests: `test_max_props` of `unit-white`, as above, adds an element at the end of a normal array at the limit: it throws the RangeError and leaves the length. A store past the end of a fast array whose length cannot be written, or that cannot be extended, throws a TypeError from `JS_SetPropertyUint32`, gives false to `Reflect.set` and does nothing in sloppy code. With the length first, the normal array kept a length one more, and the refused stores threw the RangeError.
 
 ## Array.from on a constructor passes the whole index and length
 

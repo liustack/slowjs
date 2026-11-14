@@ -15242,29 +15242,59 @@ static int JS_CreateProperty(JSContext *ctx, JSObject *p,
                 } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
                     /* convert the fast array to normal array */
                 convert_to_array:
+                    /* the tests that refuse the element come first: the
+                       conversion can fail (too many properties, no
+                       memory), and it would then throw where the
+                       element is refused */
+                    if (!p->extensible)
+                        goto not_extensible;
+                    JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                    if (idx >= len &&
+                        unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
+                        return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
                     if (convert_fast_array_to_array(ctx, p))
                         return -1;
                     goto generic_array;
                 }
             } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
-                JSProperty *plen;
-                JSShapeProperty *pslen;
             generic_array:
                 /* adding the element fails when the array is not extensible,
                    and the length then stays as it is */
                 if (!p->extensible)
                     goto not_extensible;
-                /* update the length field */
-                plen = &p->prop[0];
-                JS_ToUint32(ctx, &len, plen->u.value);
-                if ((idx + 1) > len) {
-                    pslen = get_shape_prop(p->shape);
-                    if (unlikely(!(pslen->flags & JS_PROP_WRITABLE)))
+                JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                if (idx >= len) {
+                    if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
                         return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
-                    /* XXX: should update the length after defining
-                       the property */
-                    len = idx + 1;
-                    set_value(ctx, &plen->u.value, JS_NewUint32(ctx, len));
+                    /* the element is added as at the end of this function
+                       for an object that is not the global object, and the
+                       length is set once it is there, as
+                       ArrayDefineOwnProperty sets it: adding it can fail
+                       (too many properties, no memory) */
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        prop_flags = (flags & (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE)) |
+                            JS_PROP_GETSET;
+                    } else {
+                        prop_flags = flags & JS_PROP_C_W_E;
+                    }
+                    pr = add_property(ctx, p, prop, prop_flags);
+                    if (unlikely(!pr))
+                        return -1;
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        pr->u.getset.getter = NULL;
+                        if ((flags & JS_PROP_HAS_GET) && JS_IsFunction(ctx, getter))
+                            pr->u.getset.getter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, getter));
+                        pr->u.getset.setter = NULL;
+                        if ((flags & JS_PROP_HAS_SET) && JS_IsFunction(ctx, setter))
+                            pr->u.getset.setter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, setter));
+                    } else if (flags & JS_PROP_HAS_VALUE) {
+                        pr->u.value = JS_DupValue(ctx, val);
+                    } else {
+                        pr->u.value = JS_UNDEFINED;
+                    }
+                    /* the length is the first property of an array */
+                    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, idx + 1));
+                    return TRUE;
                 }
             }
         } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&

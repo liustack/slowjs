@@ -389,9 +389,22 @@ Release: Unreleased.
 
 shape 为每个属性记下它的哈希链里下一个属性的序号加一，放在 `hash_next` 的 26 位里。属性超过 2^26 - 1 个时，这个序号会被截断，查找可能找不到一个确实存在的属性。脚本能走到这里，因为每个块都在分配器给单个块的 4 GiB 以内：一个有 2^26 - 1 个奇数下标的数组，加上长度，是一个有 2^26 个属性的普通数组，总共几 GiB，再在最后那个下标所在的桶里加一个键，那个元素就会读成 `undefined`。上游有同样的 26 位，也没有上限。
 
-现在 `resize_properties` 给一个 shape 最多 2^26 - 1 个属性（`JS_SHAPE_PROP_MAX`）。再加一个会抛 RangeError，"too many properties"，和快数组超过上限时抛 "invalid array length" 一样，对象保持原样：加一个键是这样，把这么多元素的快数组变成普通数组也是这样。`JS_SHAPE_HASH_NEXT_BITS` 给这个字段的宽度起了名字，几条静态断言把上限和它绑在一起。检查在 shape 增长的路径上，以前那里检查的是 2^31 - 2 的上限，所以页面在那里跑的指令不变。
+现在 `resize_properties` 给一个 shape 最多 2^26 - 1 个属性（`JS_SHAPE_PROP_MAX`）。再加一个会抛 RangeError，"too many properties"，和快数组超过上限时抛 "invalid array length" 一样，对象保持原样：加一个键是这样，把这么多元素的快数组变成普通数组也是这样。`JS_SHAPE_HASH_NEXT_BITS` 给这个字段的宽度起了名字，几条静态断言把上限和它绑在一起。检查在 shape 增长的路径上，以前那里检查的是 2^31 - 2 的上限，所以页面在那里跑的指令不变。往数组里加的元素在碰到上限之前就会被拒绝（[见下](#数组元素在数组改动之前被拒绝)）。
 
-测试：`unit-white` 的 `test_max_props` 给一个小对象的 shape 设上 2^26 - 1 的个数（`white_shape_fake_count`，期间不做回收）再加一个键，又给一个 3 个元素的快数组设上 2^26 - 1 的个数，再在远超末尾的地方加一个元素，让它变成普通数组，每种都在自己的进程里：每种都抛出这个 RangeError，对象保持原样。上限是 2^31 - 2 时，数组那种会按这个个数复制 shape，读到块外面，以段错误结束。
+测试：`unit-white` 的 `test_max_props` 给一个小对象设上 2^26 - 1 的个数（shape 用 `white_shape_fake_count`，3 个元素的快数组用 `white_array_fake_count`，期间不做回收），再加一个，每种都在自己的进程里。给对象加一个键，以及在快数组远超末尾的地方加一个元素让它变成普通数组，都抛出这个 RangeError，对象保持原样。上限是 2^31 - 2 时，快数组那种会按这个个数复制 shape，读到块外面，以段错误结束。
+
+## 数组元素在数组改动之前被拒绝
+
+Release: Unreleased.
+
+往数组里加的元素，在数组改动之前就被拒绝或失败，顺序和 ArrayDefineOwnProperty 一样（`JS_CreateProperty`）：
+
+- 为这个元素变成普通数组的快数组，先检查它能否扩展，元素在长度处或之后时还检查长度能否写入。它拒绝的存储和以前一样，在非严格代码里什么也不做，`Reflect.set` 得到 false，严格代码里抛 TypeError，而不是抛放不下的转换的 RangeError（[见上](#一个-shape-最多放-226---1-个属性)）。
+- 普通数组在元素放进去之后才设长度，所以放不下或没有内存的元素让长度保持不变。以前长度先设（上游在注释里说应该放在后面），这样的元素会让长度多一个，元素却不在。
+
+普通数组在一条自己的路径上加它的元素，`JS_CreateProperty` 的末尾保持原样。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 相同，和之前的构建相比：从 -0.006%（Markdown 页面）到 -0.0002%（商店的英文首页），没有一个变多。
+
+测试：`unit-white` 的 `test_max_props` 和上面一样，在到了上限的普通数组末尾加一个元素：它抛出这个 RangeError，长度不变。写到长度不可写或不可扩展的快数组末尾之后的存储，`JS_SetPropertyUint32` 抛 TypeError，`Reflect.set` 得到 false，非严格代码里什么也不做。长度先设时，普通数组的长度多一个，被拒绝的存储抛出 RangeError。
 
 ## 在构造函数上调用 Array.from 传完整的下标和长度
 

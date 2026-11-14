@@ -747,8 +747,8 @@ static no_inline int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
    use is made), an exotic object on the chain that is not a fast array of a
    kind a name passes (a typed array reads a key like "-0" as a number, a
    Proxy has traps), and a p that is not extensible. -1 when add_property
-   failed, with the out of memory error pending and p as it was. atom is
-   not an index. No code runs and nothing is freed. rv_put_atom_new is the
+   failed, with its error pending (no memory, or too many properties) and
+   p as it was. atom is not an index. No code runs and nothing is freed. rv_put_atom_new is the
    part after the own property of p: p is not exotic, not the global object
    and has no own property atom. */
 static force_inline int rv_put_atom_new(JSContext *ctx, JSObject *p, JSAtom atom,

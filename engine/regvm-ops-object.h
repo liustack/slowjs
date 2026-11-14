@@ -390,10 +390,10 @@ static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip
    its slot keeps alive, keeps its atom alive: add_property takes its own
    reference. The loop calls it only for a string key, so that a store at
    an index (the end of an array) does not pay the call, and after
-   RV_SYNC_TOP: it may throw the out of memory error, and the old value it
-   replaces may be the last reference to an object. It is a function of its
-   own, so that the frame of rv_putel_slow, which a setter it calls sits on,
-   does not grow. */
+   RV_SYNC_TOP: it may throw (no memory, too many properties), and the old
+   value it replaces may be the last reference to an object. It is a
+   function of its own, so that the frame of rv_putel_slow, which a setter
+   it calls sits on, does not grow. */
 static no_inline int rv_putel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
