@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，脚本返回或抛出的字符串在调用顶层也会停止转换'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，脚本返回或抛出的字符串在调用顶层也会停止转换，TrackRejections 和 UnhandledRejections 报告没有处理函数接住的拒绝'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -593,3 +593,25 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 不是字符串的值，比如抛出的带自己 `toString` 的对象，以前经过 `JS_ToCStringLen2`，它把整个字符串做成一份 UTF-8 拷贝，Go 再一次性复制。现在由引擎生成字符串（`JS_ToString`，运行 javascript 时会看中断标志），Go 像读其他字符串一样就地读它。
 
 测试：`stringstop_test.go` 的 `TestTopLevelConversionStops`：`Eval` 返回的字符串、以它为 message 抛出的 `Error`、`toString` 返回它的被抛出对象，每种字符串，在 `Interrupt` 和 eval 超时时。调用在第一次读停止时以中断结束，不是被杀掉，虚拟机之后照常运行脚本。改动之前，字符串整个返回，被抛出的对象转换时一次也不看停止。
+
+## TrackRejections 和 UnhandledRejections
+
+发布版本：Unreleased。
+
+`VM.TrackRejections(max)` 让虚拟机保留被拒绝时还没有处理函数的 promise，最多 `max` 个（上限 `MaxTrackedRejections`，65,536），按先后顺序，直到有处理函数挂上（`then`、`catch`、`finally`、`await`）或者 `VM.UnhandledRejections()` 把它们取走。`UnhandledRejections` 把每个拒绝原因按调用抛出的错误来读（Error 读出 `Name`、`Message`、`Stack`，其他值读出文本），并返回自上次调用以来丢掉了多少个拒绝：超过 `max` 的，或者没有内存保留的。换一个 `max` 只改上限，已保留的照样保留，哪怕超过更低的上限。`max` 为 0 时关闭并丢掉已保留的。虚拟机开始时是关闭的。
+
+宿主运行脚本和它的任务，然后报告没有处理函数接住的拒绝，和 Node 报告未处理的拒绝一样。以前这样的拒绝在虚拟机里不留痕迹：宿主只看到脚本的结果，或者什么结果也没有，却没有任何说明。
+
+列表由引擎保存（`engine/quickjs.c` 的 `JS_TrackRejections`、`JS_TakeRejection` 和 `JS_TakeDroppedRejections`），作为 `JS_SetHostPromiseRejectionTracker` 的跟踪函数：QuickJS 在 promise 被拒绝而没有处理函数时调用它，在之后给这样的 promise 挂上处理函数时再调用一次，第一次加一项，第二次去掉这一项。跟踪函数是 C 函数，因为只能通过 `host_call` 进入 Go。
+
+它是安全的，因为：
+
+- 不保留的虚拟机和以前一样运行：拒绝 promise 时读的还是原来那个跟踪函数指针，它是 NULL，promise 的函数都没改。列表挂在跟踪函数的 opaque 指针上，所以 `JSRuntime` 没有新字段。
+- 跟踪函数不抛异常：它用 `js_malloc_rt` 分配一项，没有空位或没有内存时只计入 `dropped`，绝不变成脚本的错误。
+- 列表持有的是自己的引用，指向 promise 和拒绝原因，回收器像对待任务列表的引用一样计算它们：在被取走之前它们一直活着，包括环在内。`JS_FreeRuntime` 在释放任务列表之后、最后一次回收之前释放这个列表。设置别的跟踪函数也会释放它。
+- 读拒绝原因会运行 javascript（比如 message 的 getter），在这次调用的 eval 超时之内，和读抛出的错误一样。如果遇到无法捕获的错误，`UnhandledRejections` 返回它，正在读的那一项之后的拒绝仍然保留。
+- 列表有界：在虚拟机的内存上限之内最多 `max` 项，每项 48 字节，去掉一项最多查看 `max` 项，一次 `UnhandledRejections` 在 Go 里最多造出 `max` 个错误。
+
+代价：不保留的虚拟机没有代价。打开时，每个发生时没有处理函数的拒绝占一项和两个引用，之后给这样的 promise 挂处理函数要遍历一次列表，拒绝原因在被取走之前一直活着。
+
+测试：`engine/test/unit.c` 的 `test_rejections_kept`、`test_rejections_max` 和 `test_rejections_collected`（顺序，之后挂上的处理函数，`then` 和 async 函数生成的 promise，上限和丢掉的计数，关闭时释放，与自己的 promise 成环的拒绝原因在一次完整回收和一次年轻代回收后仍然保留，带着保留项释放运行时），`engine/test/unit-oom.c` 的 `test_rejections_oom`（列表没有内存：返回 `-1`，什么也不保留，一项没有内存：计数，promise 照样被拒绝，没有泄漏），以及 `rejections_test.go` 的 `TestRejectionsOff`、`TestRejections`、`TestRejectionsMax`、`TestRejectionsReadStops`（永不结束的 getter 被 eval 超时停下，下一个拒绝仍然保留）和 `TestRejectionsClose`（带着保留的拒绝关闭虚拟机，`Close` 之后这两个方法和其他方法一样 panic）。

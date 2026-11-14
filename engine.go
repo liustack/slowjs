@@ -36,19 +36,20 @@ func val(u, tag uintptr) jsValue { return jsValue{u, tag} }
 
 // The tags of a JSValue (engine/quickjs.h).
 const (
-	tagFirst       = -9
-	tagBigInt      = -9
-	tagString      = -7
-	tagStringRope  = -6
-	tagModule      = -3
-	tagObject      = -1
-	tagInt         = 0
-	tagBool        = 1
-	tagNull        = 2
-	tagUndefined   = 3
-	tagException   = 6
-	tagShortBigInt = 7
-	tagFloat64     = 8
+	tagFirst         = -9
+	tagBigInt        = -9
+	tagString        = -7
+	tagStringRope    = -6
+	tagModule        = -3
+	tagObject        = -1
+	tagInt           = 0
+	tagBool          = 1
+	tagNull          = 2
+	tagUndefined     = 3
+	tagUninitialized = 4
+	tagException     = 6
+	tagShortBigInt   = 7
+	tagFloat64       = 8
 )
 
 // The atoms the package reads properties by.
@@ -1345,4 +1346,42 @@ func (m *VM) jsThrowError(kind int, msg string) (r jsValue) {
 	m.inEngine--
 	m.tmpFree(p, heap)
 	return r
+}
+
+// jsTrackRejections is JS_TrackRejections: keep up to max rejections, 0 for
+// none. ok is false when there was no memory for the list.
+func (m *VM) jsTrackRejections(max uint32) (ok bool) {
+	if m.entered == 0 {
+		m.outer(func() { ok = m.jsTrackRejections(max) })
+		return ok
+	}
+	m.toEngine()
+	ok = int32(cengine.JS_TrackRejections(m.sp, m.rt, uintptr(max))) == 0
+	m.inEngine--
+	return ok
+}
+
+// jsTakeRejection is JS_TakeRejection: the reason of the oldest rejection
+// kept, owned by the caller, or ok false when none is left.
+func (m *VM) jsTakeRejection() (r jsValue, ok bool) {
+	if m.entered == 0 {
+		m.outer(func() { r, ok = m.jsTakeRejection() })
+		return r, ok
+	}
+	m.toEngine()
+	r = val(cengine.JS_TakeRejection(m.sp, m.rt))
+	m.inEngine--
+	return r, tag(r) != tagUninitialized
+}
+
+// jsTakeDroppedRejections is JS_TakeDroppedRejections.
+func (m *VM) jsTakeDroppedRejections() (n uint32) {
+	if m.entered == 0 {
+		m.outer(func() { n = m.jsTakeDroppedRejections() })
+		return n
+	}
+	m.toEngine()
+	n = uint32(cengine.JS_TakeDroppedRejections(m.sp, m.rt))
+	m.inEngine--
+	return n
 }
