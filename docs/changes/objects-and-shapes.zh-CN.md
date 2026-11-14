@@ -25,11 +25,11 @@ shape 是一个对象的键按顺序排成的列表，键相同的对象共享�
 
 发布版本：v0.26.16。
 
-VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是它的键按顺序排成的列表，对象字面量每加一个键就经过一个 shape。以前只有它的对象在用一个 shape 时，`add_property` 会原地增长这个 shape，所以对象有了全部的键之后，中间的 shape 就都没了，最后一个随最后一个对象消失：下一个带同样键的字面量又要把它们全部复制、增长一遍。现在下一个带同样键的字面量，在 shape 哈希表里找到它需要的每一个 shape，一个也不用新建。本条里的计时都是在 linux/amd64（AMD EPYC）上不开 PGO 测得的。一次复制要花一次分配加上到目前为止的键，而一个对象一个一个地得到别的对象都没有的键，每个键都要付出这笔开销，而且永远收不回来：这样的对象构建时间长了 22%。所以 `add_property` 找到的每个 shape 赚得一次复制，最多 64 次，没有额度时 shape 原地增长。这样中间的 shape 仍然被保留，只是晚一点：对象找到下一个被保留的 shape 时离开的那个 shape 会被保留。键是别的对象都没有的对象，现在构建时间比关掉缓存时长约 6%，键相同的对象字面量少用 30%。只有原型是 VM 的 `Object.prototype`、最多 32 个键、而且没有未注册 symbol 作为键的 shape 才会被保留，所以被保留的 shape 除了那个原型和它的键的 atom（引擎给属性名和常用字符串的编号） 之外，不会让任何东西存活，目标是 symbol 的 `WeakRef` 或 `FinalizationRegistry` 会像没有缓存时一样看到它消失。循环回收器释放的 shape 不保留，`JS_FreeRuntime` 会放掉每个被保留的 shape。这个环在运行时的状态里，紧挨着前端缓存（见 [allocator.md](../allocator.zh-CN.md)）。新 VM 保留 `DefaultShapeCache`（2048）个 shape，`VM.SetShapeCache` 可以改它，`VM.Close` 在释放 context 之前先把它关掉。
+VM 在普通对象消失之后，仍保留它们的 shape。对象的 shape 是它的键按顺序排成的列表，对象字面量每加一个键就经过一个 shape。以前只有它的对象在用一个 shape 时，`add_property` 会原地增长这个 shape，所以对象有了全部的键之后，中间的 shape 就都没了，最后一个随最后一个对象消失：下一个带同样键的字面量又要把它们全部复制、增长一遍。现在下一个带同样键的字面量，在 shape 哈希表里找到它需要的每一个 shape，一个也不用新建。本条里的计时都是在 linux/amd64（AMD EPYC）上不开 PGO 测得的。一次复制要花一次分配加上到目前为止的键，而一个对象一个一个地得到别的对象都没有的键，每个键都要付出这笔开销，而且永远收不回来：这样的对象构建时间长了 22%。所以 `add_property` 找到的每个 shape 赚得一次复制，最多 64 次，没有额度时 shape 原地增长。这样中间的 shape 仍然被保留，只是晚一点：对象找到下一个被保留的 shape 时离开的那个 shape 会被保留。键是别的对象都没有的对象，现在构建时间比关掉缓存时长约 6%，键相同的对象字面量少用 30%。只有原型是 VM 的 `Object.prototype`、最多 32 个键、而且没有未注册 symbol 作为键的 shape 才会被保留，所以被保留的 shape 除了那个原型和它的键的 atom（引擎给属性名和常用字符串的编号） 之外，不会让任何东西存活，目标是 symbol 的 `WeakRef` 或 `FinalizationRegistry` 会像没有缓存时一样看到它消失。循环回收器释放的 shape 不保留，`JS_FreeRuntime` 会放掉每个被保留的 shape。这个环在运行时的状态里，紧挨着前端缓存（见 [allocator.md](../allocator.zh-CN.md)）。新 VM 保留 `DefaultShapeCache` 个 shape（从[一个 VM 保留 4096 个 shape](#一个-vm-保留-4096-个-shape)起是 4096，以前是 2048），`VM.SetShapeCache` 可以改它，`VM.Close` 在释放 context 之前先把它关掉。
 
-内存：商店的一个 VM 在一次 GC 之后多占 647 KiB，连前端缓存一起多占 722 KiB（8.03 MiB，以前是 7.33）。1024 个 shape 时是多占 190 KiB 和 461 到 502 KiB，4096 个 shape 加前端缓存多占 1.26 MiB。内存块在 arena 里怎么落，会让这些数字在两次运行之间相差最多 0.5 MiB，剩下的 shape 和对象是一样的。单是加载商店的 bundle 就会保留约 1250 个 shape，所以 1024 的环在第一次渲染之前就满了。被保留的 shape 计入 VM 的内存上限，分配失败时也不会放掉它们：`add_property` 里的一次分配，可能正好发生在对象要取得一个只有缓存持有的 shape 之前。一个有 32 个键、每个键约十个字符、别的对象都没有的 shape，连同它的键的 atom 约占 3 KiB，所以 2048 个这样的 shape 约占 6 MiB，它们消失之后 atom 表保持它长到的大小。接近内存上限运行的脚本，开着缓存可能内存耗尽，不开则不会：给这样的 VM 一个更小的缓存，或者不给。不开 PGO，在 linux/amd64（AMD EPYC）上，HTML 相同，单是 shape 缓存就让一次渲染快 3.6%，加上前端缓存和中断倒计数之后，一次渲染比没有这三者时少用 4.5% 的时间（六轮）。一个核的两个硬件线程上的两个 VM，每秒多渲染 2.9% 的页面。
+内存：商店的一个 VM 在一次 GC 之后多占 647 KiB，连前端缓存一起多占 722 KiB（8.03 MiB，以前是 7.33）。1024 个 shape 时是多占 190 KiB 和 461 到 502 KiB，4096 个 shape 加前端缓存多占 1.26 MiB。内存块在 arena 里怎么落，会让这些数字在两次运行之间相差最多 0.5 MiB，剩下的 shape 和对象是一样的。单是加载商店的 bundle 就会保留约 1250 个 shape，所以 1024 的环在第一次渲染之前就满了。被保留的 shape 计入 VM 的内存上限，分配失败时也不会放掉它们：`add_property` 里的一次分配，可能正好发生在对象要取得一个只有缓存持有的 shape 之前。一个有 32 个键、每个键约十个字符、别的对象都没有的 shape，连同它的键的 atom 约占 3 KiB，所以 2048 个这样的 shape 约占 6 MiB，4096 个约占 12 MiB，它们消失之后 atom 表保持它长到的大小。接近内存上限运行的脚本，开着缓存可能内存耗尽，不开则不会：给这样的 VM 一个更小的缓存，或者不给。不开 PGO，在 linux/amd64（AMD EPYC）上，HTML 相同，单是 shape 缓存就让一次渲染快 3.6%，加上前端缓存和中断倒计数之后，一次渲染比没有这三者时少用 4.5% 的时间（六轮）。一个核的两个硬件线程上的两个 VM，每秒多渲染 2.9% 的页面。
 
-改动在 C 里（`engine/quickjs.c`）：`JSRuntime` 的字段 `shape_cache`、`js_free_shape0` 里的 `js_shape_keep`、`add_property` 里的 `js_shape_keepable` 和 `js_shape_found`、`quickjs.h` 里的 `JS_SetShapeCache(ctx, n)`，`JS_FreeRuntime` 会放掉每个被保留的 shape。在 `JS_SetShapeCache` 打开它之前，它是关着的。环满时，`js_shape_keep` 返回它放掉的那个 shape，由 `js_free_shape0` 去释放，而不是它自己释放。原生运行器（`jsrun` 和 `run-test262`）像新 VM 一样保留 2048 个 shape。测试还检查：完整回收和年轻代回收都不动被保留的 shape，循环回收器会释放它所释放的环里的 shape，满了的环会放掉它最旧的 shape，带着被保留 shape 被释放的运行时会释放它们和它的 context，以及分配失败时环保持完整。
+改动在 C 里（`engine/quickjs.c`）：`JSRuntime` 的字段 `shape_cache`、`js_free_shape0` 里的 `js_shape_keep`、`add_property` 里的 `js_shape_keepable` 和 `js_shape_found`、`quickjs.h` 里的 `JS_SetShapeCache(ctx, n)`，`JS_FreeRuntime` 会放掉每个被保留的 shape。在 `JS_SetShapeCache` 打开它之前，它是关着的。环满时，`js_shape_keep` 返回它放掉的那个 shape，由 `js_free_shape0` 去释放，而不是它自己释放。原生运行器（`jsrun`、`run-test262` 和 `render`）和新 VM 保留一样多的 shape。测试还检查：完整回收和年轻代回收都不动被保留的 shape，循环回收器会释放它所释放的环里的 shape，满了的环会放掉它最旧的 shape，带着被保留 shape 被释放的运行时会释放它们和它的 context，以及分配失败时环保持完整。
 
 ## for in 跳过没有可枚举属性的原型
 
@@ -382,3 +382,22 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
 
 测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。
+
+## 一个 VM 保留 4096 个 shape
+
+发布版本：Unreleased。
+
+新 VM 在普通对象没了以后保留它们的 4096 个 shape（`DefaultShapeCache`，见[保留 shape](#保留-shape)），以前是 2048 个。tifa 池子里的一个 VM 会一个接一个地渲染它所在应用的每个页面，而一个应用的页面反复用到的 shape，2048 格的环装不下。在一个 VM 上轮流渲染，示例商店的页面（20 个）留下 3,720 个 shape，MUI 应用的页面（3 个）留下 3,784 个，这是用一个能全部装下的环数出来的。2048 时，MUI 页面每渲染一次，就从环里挤出 757 个之后的渲染还要重新造的 shape（每次渲染复制 821 个 shape，4096 时是 99 个），商店页面每次挤出 117 个（复制 905 个，4096 时是 794 个）。4096 时两个应用一个也不挤出，8192 留下的 shape 一样。单个页面反复渲染时，2048 也一个不挤出：每个页面单独都装得下。`VM.SetShapeCache` 仍然可以给单个 VM 设别的大小，0 表示关掉。原生运行器（`jsrun`、`run-test262`、`render`）也保留 4096 个，所以 `engine/pgo/train.sh` 训练 profile 时用的环和 VM 一样大。
+
+为什么安全：只有环的长度变了。哪些 shape 会被保留，被保留的 shape 让什么活着（`Object.prototype` 和它的键的 atom），环怎么放掉 shape，都和以前一样，所以脚本看不到任何新东西。商店和 MUI 的 23 个页面在 1024、2048、4096、8192 的环下 HTML 都相同，语料库的 golden 只有结尾记录的 shape 数和 atom 数变了。被保留的 shape 照旧计入内存上限，接近上限运行的 VM 可以给一个更小的环。
+
+代价是内存，按 Go API 的 VM 在一次完整回收之后的 `MemorySize`（linux/amd64，各跑一次）：
+
+- 环本身占 32 KiB，比以前多 16 KiB：新 VM 占 233 KB，以前是 217 KB。
+- 一个应用的页面轮流渲染（10 轮）之后，商店的 VM 多占 41 KB（0.2%），MUI 的多占 370 KB（4.7%）：就是 2048 时被挤出的那些 shape。单个页面渲染 20 次之后，商店和 React 的页面多占的就是环的 16 KB，MUI 的订单列表页多 253 KB（3.3%），单个订单页多 265 KB（3.4%），首页多 83 KB（1.1%）。
+- 一直造出之后的渲染再也找不到的 shape 的页面，代价最大。长 Markdown 页面（400 节）不管环多大，每次渲染都有约 16,600 个 shape 经过环，一个也不会再被找到，所以环里装满了没人再用的 shape。渲染 3 次之后它的 VM 占 14.05 MB，以前是 11.28 MB（多 2.8 MB，25%），8192 时是 17.04 MB：被保留的 shape 本身只占其中 0.2 MB，其余是小块的 arena，只要里面还有一个被保留的 shape，整个 arena 都算在内（[allocator.md](../allocator.zh-CN.md)）。它的指令数不变。
+- 最坏的情况是环里全是别的对象都没有的、有 32 个长键的 shape：约 12 MiB，2048 时约 6 MiB。
+
+收益，按每次渲染的指令数（linux/amd64 上的 callgrind，每个应用的页面在一个 VM 上按 tifa 池子的设置轮流渲染，在环稳定之后）：原生 C 树上 MUI 少 0.67%，Go 产品里少 0.38%，商店少 0.05% 和 0.06%。单个页面单独渲染不变（原生在 0.1% 以内，Go 产品在 0.2% 以内），长 Markdown 页面也不变。8192 的收益和 4096 一样，1024 让 MUI 多 0.32%。表在 [performance.md](../performance.zh-CN.md#一个-vm-保留-4096-个-shape)。
+
+测试：`TestShapeCacheHoldsAnApp`（`shapecache_test.go`）造 3,800 个对象，每个死的时候带着一个别的对象都没有的 shape，要求新 VM 把它们全部留下。2048 时它失败。`TestShapeCache` 把第 4 轮和第 5 轮中较大的那个大小当作稳定值：4096 的环装着一轮的 3,000 个 shape 和前一轮的一部分，它们的块落在哪里一轮一轮地交替。`TestMemorySizeBelowPrevious` 把环设成 ccgo 引擎当时保留的 2048 个，这样比的是同样的对象。[testing.md](../testing.zh-CN.md#分配器) 里的长跑测试在 4096 下仍在带宽之内。

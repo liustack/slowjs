@@ -89,7 +89,7 @@ When `NewVM` cannot make a context, for example with no memory left, it frees wh
 
 Release: v0.26.16.
 
-`DefaultShapeCache` (2048) is the number of shapes a new VM keeps once their objects are gone, and `VM.SetShapeCache(n)` changes it for one VM, 0 turning it off. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Kept shapes](objects-and-shapes.md#kept-shapes) has what it gains and costs.
+`DefaultShapeCache` (4096, and 2048 up to v0.30.7) is the number of shapes a new VM keeps once their objects are gone, and `VM.SetShapeCache(n)` changes it for one VM, 0 turning it off. A VM that runs close to its memory limit can run out of memory with the cache on where it would not without it: give such a VM a smaller cache, or none. [Kept shapes](objects-and-shapes.md#kept-shapes) has what it gains and costs.
 
 ## SetRegExpCache and DefaultRegExpCache
 

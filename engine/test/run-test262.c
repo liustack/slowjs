@@ -29,7 +29,7 @@
  * its runtimes with host_new_runtime() and frees them with
  * host_free_runtime(), and prints a memory report through
  * print_memory_usage(), as JS_DumpMemoryUsage() fills a buffer. Each test
- * runs with the shape cache on: run_test_buf() keeps 2048 shapes, as a VM of
+ * runs with the shape cache on: run_test_buf() keeps 4096 shapes, as a VM of
  * the Go API does (DefaultShapeCache). The engine has no threads that block,
  * so JS_SetCanBlock() is gone: a test of Atomics.wait needs its excludes in
  * test262.conf. Its threads have stacks of HOST_THREAD_STACK bytes, not 2 MB:
@@ -1765,7 +1765,7 @@ int run_test_buf(ThreadLocalStorage *tls,
     add_helpers(ctx);
     /* keep shapes as a VM of the Go API does (DefaultShapeCache), so that
        test262 runs with the shape cache on */
-    JS_SetShapeCache(ctx, 2048);
+    JS_SetShapeCache(ctx, 4096);
 
     ret = -1;
     for (i = 0; i < ip->count; i++) {

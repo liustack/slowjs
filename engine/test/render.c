@@ -10,7 +10,7 @@
    each input one render whose HTML can be written out, warm renders, and n
    timed renders. A render is startRender(json) followed by the jobs it
    queued. It prints one JSON line with the time of each page. The context
-   keeps 2048 shapes, as a VM of the Go API does: shapes=N keeps N, and
+   keeps 4096 shapes, as a VM of the Go API does: shapes=N keeps N, and
    shapes=0 turns the shape cache off.
 
      render bundle=B.js inputs=a.json,b.json [prelude=p1.js,p2.js] [warm=50]
@@ -709,7 +709,7 @@ int main(int argc, char **argv)
     /* the shapes a context keeps, as NewVM of the Go API keeps them
        (DefaultShapeCache of vm.go) unless shapes= says otherwise: 0 turns
        the cache off, as the strict soak of docs/testing.md runs */
-    if (JS_SetShapeCache(ctx, atoi(arg(argc, argv, "shapes", "2048"))) < 0) {
+    if (JS_SetShapeCache(ctx, atoi(arg(argc, argv, "shapes", "4096"))) < 0) {
         fprintf(stderr, "render: no shape cache\n");
         return 1;
     }

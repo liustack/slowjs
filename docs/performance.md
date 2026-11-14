@@ -1167,6 +1167,19 @@ The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pa
 
 The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
 
+### A VM keeps 4096 shapes
+
+[A VM keeps 4096 shapes](changes/objects-and-shapes.md#a-vm-keeps-4096-shapes). Counted on 2026-11-15 against main d7c86e16 with callgrind on linux/amd64 (AMD EPYC), one build with the ring set to each size. The pages of each app take turns on one VM, as in tifa's pool: on the native C tree `render soak=K young=1` (a young collection after each render), and in the Go product the pages program that the release counts use, with tifa's pool between renders. A render is the difference of two runs of the whole process divided by the renders between them, after the ring settled: 60 renders native (MUI 30 to 90, the shop 40 to 100) and 60 in the product (MUI rounds 10 to 30, the shop rounds 1 to 4). Every page gives the same HTML with every ring.
+
+| Ring | MUI, 3 pages, native | MUI, Go product | Shop, 20 pages, native | Shop, Go product |
+| --- | ---: | ---: | ---: | ---: |
+| 1024 | +0.32% | +0.19% | +0.05% | +0.06% |
+| 2048 (before) | 122.45 M | 238.17 M | 198.65 M | 236.07 M |
+| 4096 | **-0.67%** | **-0.38%** | -0.05% | -0.06% |
+| 8192 | -0.67% | -0.40% | -0.04% | -0.06% |
+
+One page rendered again and again does not change: the seven pages and MUI's order page within -0.08% and +0.02% on the native C tree (one timed render after two warm ones, `host_poll` left out), and within -0.08% and +0.16% in the Go product ((3 renders less 1) / 2, where the Go runtime's own work moves that much). The long Markdown page (100 sections) runs 0.003% more. The time was not taken on its own: the gain is on MUI only, and under 1% of its instructions.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.
