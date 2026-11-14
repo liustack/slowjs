@@ -61,6 +61,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | v0.30.5 | [generator.md](generator.md#a-profile-of-tifas-pages) |
 | A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
+| The loop vectorizer no longer takes the number of turns from the profile: `memmove` is a leaf without a frame again, and a render runs 0.07% to 0.22% fewer instructions | Unreleased | [generator.md](generator.md#what-the-profile-decides) |
 
 ## Commits of upstream QuickJS
 
