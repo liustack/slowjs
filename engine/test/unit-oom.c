@@ -1726,6 +1726,30 @@ static void test_array_literal_oom(void)
     sweep("array literal", "array_literal.js", setup, "run()", want, 16384);
 }
 
+/* The built-ins the register loop answers itself (rv_fast_call): a push that
+   must grow its array is the call of push, so with too little memory it fails
+   with the out of memory error of push and leaves the array as it was, and
+   the answers that make nothing give the same result in every room. */
+static void test_fast_builtins_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var a = [], m = new Map([[1, 'x']]), w = new WeakMap(), o = { k: 1 }, s = 'abcabd', n = 0;\n"
+        "  w.set(o, 2);\n"
+        "  for (var i = 0; i < 40; i++) {\n"
+        "    a.push(i, m.get(1));\n"
+        "    n += Math.clz32(i) + m.has(i) + w.get(o) + a.indexOf(i) + a.includes('x') + Array.isArray(a) +\n"
+        "      s.indexOf('bd') + s.includes('ca') + s.startsWith('ab') + Object.hasOwn(o, 'k') + o.hasOwnProperty('j');\n"
+        "  }\n"
+        "  return a.length + ',' + n;\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "80,3104", NULL };
+
+    sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2526,6 +2550,7 @@ int main(void)
     test_putel_local_key_oom();
     test_truth_oom();
     test_array_literal_oom();
+    test_fast_builtins_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();

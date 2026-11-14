@@ -1,0 +1,7 @@
+exception InternalError: interrupted
+stack     at mSpin (<eval>:14:10)
+stack     at mSpinBelow (<eval>:21:52)
+stack     at <anonymous> (<eval>:28:22)
+mem-end obj=194 atom=584 shape=122 prop=999 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=584 shape=122 prop=999 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

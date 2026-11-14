@@ -4,6 +4,15 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.6] - 2026-11-14
+
+### Changed
+
+- Pages render in 1% to 2% less time than with v0.30.5, with the three changes below and a profile trained again on them. On a linux/amd64 machine with an AMD EPYC 7B13 (the mean of 16 code layouts), tifa's store pages take 2.1% less time, React pages 2.1% less, the workbench pages 1.3% less and a long Markdown document 0.6% less. For the MUI pages and the load of a bundle the timing shows no change. Of the 12 micro benchmarks timed for v0.30.5, seven are faster than with v0.30.5 (`float_arith` 4.9%, `int_arith` 4.7%, `array_read` 3.5%, `array_for` 2.7%, `prop_create` 2.1%, `global_read` 1.5%, `array_prop_create` 1.4%) and `array_slice` is 0.6% slower. `global_read` and `typed_array_read` are still slower than with v0.30.4, and in the build that ships `typed_array_read` takes 7.2% more time than with v0.30.5, where the mean of the layouts cannot tell ([performance.md](docs/performance.md#v0306-against-v0305)).
+- A VM with a memory limit now keeps the last block of a long call of Intl or `fmt` too, when it fits under the limit with the VM's memory, and the limit counts it: an allocation of the engine that needs its room has it given back to the OS first, so a kept block never makes a script run out of memory. On GitHub's macos-15 runner, the first word of a text of 8 Mi characters in a VM with a limit of 1 GiB takes 3.9 to 4.9 ms a call, where v0.30.4 took 28 to 35 ms ([uncatchable.md](docs/changes/uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too)).
+- The interpreter's direct call of a C function and the calls that `call`, `apply` and bound functions make of one pass 5 argument words rather than 8, and the engine's own property reads 5 rather than 7, so on arm64 neither passes a block on the shadow stack. On linux/amd64 the store pages of tifa's shop take 0.67% less time over 16 code layouts, the other pages the same within their spread, with 0.30% to 0.51% fewer instructions per render. Results, frames and the call depth are the same ([c-engine.md](docs/changes/c-engine.md#fewer-argument-words-into-hot-calls)).
+- The register loop answers `Math.clz32`, `has` and `get` of `Map`, `Set`, `WeakMap` and `WeakSet`, `Array.isArray`, `push`, `includes` and `indexOf` of an array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty`, and `String` of a string itself, without calling the C function, for the values where the call runs no script and throws nothing. A render runs 0.4% (MUI) to 2.5% (React) fewer instructions, and on amd64 takes 1.4% less time on React's page, 1.0% on tifa's store pages and 0.9% on its workbench pages, and the same time on the MUI pages ([c-engine.md](docs/changes/c-engine.md#built-ins-answered-in-the-register-loop)).
+
 ## [v0.30.5] - 2026-11-14
 
 ### Changed
@@ -676,7 +685,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.6...main
+[v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3

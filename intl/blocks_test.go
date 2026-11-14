@@ -126,29 +126,49 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 	}
 }
 
-// A VM with a memory limit keeps no block after a long call, so its memory
-// stays within the limit: the engine counts its own against the limit in C,
-// which knows nothing of a block kept. A VM with no limit keeps one.
-func TestLimitedVMKeepsNoBlock(t *testing.T) {
+// A VM keeps the block of a long call when it fits under the memory limit
+// with the memory of the VM, and the limit counts it: an allocation that
+// needs its room gets it, and the block goes back to the OS.
+func TestKeptBlockWithinLimit(t *testing.T) {
 	const n = 4 << 20
-	for _, limit := range []uintptr{1 << 30, 0} {
+	call := func(vm *quickjs.VM) (kept, blocks int64) {
+		t.Helper()
 		held, before := hostmem.Blocks(), hostmem.Kept()
+		eval(t, vm, `c.compare(a, b)`)
+		return hostmem.Kept() - before, hostmem.Blocks() - held
+	}
+	for _, limit := range []uintptr{1 << 30, 0} {
 		vm := newVM(t)
 		if limit != 0 {
 			vm.SetMemoryLimit(limit)
 		}
 		setUp(t, vm, `var a = 'x'.repeat(N) + 'a', b = 'x'.repeat(N) + 'b', c = new Intl.Collator('en')`, n)
-		eval(t, vm, `c.compare(a, b)`)
-		kept, blocks := hostmem.Kept()-before, hostmem.Blocks()-held
-		if limit != 0 && (kept != 0 || blocks != 0) {
-			t.Errorf("a VM with a limit of %d holds %d bytes kept and %d blocks after a long call, want none", limit, kept, blocks)
-		}
-		if limit == 0 && (kept == 0 || blocks != 1) {
-			t.Errorf("a VM with no limit holds %d bytes kept and %d blocks after a long call, want one block kept", kept, blocks)
+		if kept, blocks := call(vm); kept == 0 || blocks != 1 {
+			t.Errorf("a VM with a limit of %d holds %d bytes kept and %d blocks after a long call, want one block kept", limit, kept, blocks)
 		}
 		vm.Close()
-		if hostmem.Kept() != before || hostmem.Blocks() != held {
-			t.Errorf("after Close: %d bytes kept and %d blocks held", hostmem.Kept()-before, hostmem.Blocks()-held)
-		}
+	}
+
+	held, before := hostmem.Blocks(), hostmem.Kept()
+	vm := newVM(t)
+	setUp(t, vm, `var a = 'x'.repeat(N) + 'a', b = 'x'.repeat(N) + 'b', c = new Intl.Collator('en')`, n)
+	// The call needs room of its own: more than 128 MiB for this compare.
+	vm.SetMemoryLimit(vm.MemorySize() + 512<<20)
+	kept, _ := call(vm)
+	if kept == 0 {
+		t.Fatal("a VM with room for the block under its limit kept none")
+	}
+	vm.SetMemoryLimit(vm.MemorySize() + uintptr(kept) + 8<<20)
+	if hostmem.Kept()-before != kept {
+		t.Fatalf("a limit with room for the block took it: %d bytes kept, want %d", hostmem.Kept()-before, kept)
+	}
+	// An allocation that fits only without the block.
+	setUp(t, vm, `var big = 'y'.repeat(N)`, 8<<20+int(kept)/2)
+	if hostmem.Kept() != before || hostmem.Blocks() != held {
+		t.Errorf("after an allocation that needed the room of the block: %d bytes kept, %d blocks held, want none", hostmem.Kept()-before, hostmem.Blocks()-held)
+	}
+	vm.Close()
+	if hostmem.Kept() != before || hostmem.Blocks() != held {
+		t.Errorf("after Close: %d bytes kept and %d blocks held", hostmem.Kept()-before, hostmem.Blocks()-held)
 	}
 }

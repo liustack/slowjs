@@ -53,7 +53,11 @@ typedef struct JSHeap {
     int remap;                 /* the host remaps a dedicated chunk (heap_set_remap) */
     size_t rt_size;            /* the runtime, which is part of count and not a block */
     size_t count;              /* the runtime and the blocks in use, and for each block its size and the 8 byte size word before it: MemorySize, what the limit and the GC count */
-    size_t limit;              /* (size_t)-1 for none */
+    /* The three words of the limit, in this order: the host writes held and
+       limit (JS_GetHostLimit), and heap_limit_update says how. */
+    size_t limit;              /* what count may reach: limit_set less held (0 when held reaches it), or (size_t)-1 for none */
+    size_t limit_set;          /* the limit set (heap_set_limit), (size_t)-1 for none */
+    size_t held;               /* bytes the host holds for the VM outside the heap, which a limit counts with count */
     size_t blocks;             /* blocks in use, the runtime not counted */
     size_t footprint;          /* the sum of the chunks, shared and dedicated */
     size_t footprint_limit;    /* 0 for none. Only stops growth, never takes memory back */
@@ -66,6 +70,22 @@ typedef struct JSHeap {
     int stopped;               /* the last heap_realloc failed because *stop was set */
     uint32_t vm;
 } JSHeap;
+
+/* limit from limit_set and held. With no limit set, held is not counted. */
+static inline void heap_limit_update(JSHeap *h)
+{
+    if (h->limit_set == (size_t)-1)
+        h->limit = (size_t)-1;
+    else
+        h->limit = h->limit_set > h->held ? h->limit_set - h->held : 0;
+}
+
+/* Set the limit of count with what the host holds, (size_t)-1 for none. */
+static inline void heap_set_limit(JSHeap *h, size_t limit)
+{
+    h->limit_set = limit;
+    heap_limit_update(h);
+}
 
 /* Start a heap for the VM vm: map the first chunk and put in it a zeroed
    block of rt_size bytes, which is the JSHeap and the rest of the runtime
@@ -86,7 +106,7 @@ void heap_set_remap(JSHeap *h, int on);
 
 /* Like malloc, free and realloc, for a size of at least 1 and at most
    JS_HEAP_MAX_REQUEST. They fail (NULL) when count plus the size would pass
-   the limit, when a new chunk is needed and the budget or the host refuses
+   limit (the limit set less held), when a new chunk is needed and the budget or the host refuses
    it, and for a size over the maximum. A failed heap_realloc leaves the block,
    its content and the count as they were. A block is 8 byte aligned. A block
    too big to share a chunk gets a dedicated chunk, and the chunk goes back to the
@@ -97,9 +117,19 @@ void heap_set_remap(JSHeap *h, int on);
    a GiB does not hold up a stop for the time of its copy. When it is set, the
    new block is given back, the call fails as above, and stopped is set until
    the next heap_realloc: the caller tells a stop from running out of memory
-   by it. */
+   by it.
+
+   When the size would pass limit and not limit_set, the heap first asks the
+   host to give back what it holds for the VM (HOST_CALL_MEMORY_PRESSURE, see
+   host.h), takes the result as held, updates limit, and checks again. */
 #define HEAP_COPY_STEP ((size_t)1 << 20)
 void *heap_alloc(JSHeap *h, size_t size);
+
+/* Would count pass limit with request bytes more, once the host gave back
+   what it holds for the VM as heap_alloc asks it? Nonzero when it would. For
+   a caller that makes room another way when it would (a collection,
+   js_trigger_gc_block in quickjs.c): what the host holds goes back first. */
+int heap_would_pass(JSHeap *h, size_t request);
 void heap_free(JSHeap *h, void *ptr);
 void *heap_realloc(JSHeap *h, void *ptr, size_t size);
 

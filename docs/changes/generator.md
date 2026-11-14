@@ -21,6 +21,8 @@ Release: v0.30.5.
 
 `make gen` compiles the engine with a profile: counts of how often each branch ran while the engine rendered real pages. LLVM uses the counts to put the likely blocks next to each other, to place spills where the code runs least, and to lay out `switch` cases. The profile is `engine/pgo/profile.txt`, trained on the pages in `engine/pgo/pages` (see [engine/pgo/README.md](../../engine/pgo/README.md)). On an AMD EPYC server it makes the pages of tifa render 5.4% to 8.4% faster than the same C generated without it, and about 3% faster on an Apple M4 ([performance.md](../performance.md#a-profile-of-tifas-pages)).
 
+For v0.30.6 the profile was trained again on the C of that release, with its three new changes (2,774 functions, none stale).
+
 ### What make gen does with it
 
 1. First pass, as before and without the profile. It also writes down which calls were inlined (`-Rpass=inline`, `-gline-tables-only`).

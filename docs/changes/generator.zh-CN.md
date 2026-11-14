@@ -21,6 +21,8 @@ read_when:
 
 `make gen` 用一份性能画像（profile）编译引擎：引擎渲染真实页面时，每个分支各跑了多少次的计数。LLVM 用这些计数把常走的块放在一起，把溢出（spill）放在最少执行的地方，并排好 `switch` 各分支的顺序。画像是 `engine/pgo/profile.txt`，用 `engine/pgo/pages` 里的页面训练（见 [engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。在 AMD EPYC 服务器上，它让 tifa 的页面比同样的 C 不用画像生成时渲染快 5.4% 到 8.4%，在 Apple M4 上约快 3%（[performance.zh-CN.md](../performance.zh-CN.md#tifa-页面的性能画像)）。
 
+v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改动（2,774 个函数，没有过期的）。
+
 ### make gen 怎么用它
 
 1. 第一遍，和以前一样，不用画像。它还记下哪些调用被内联了（`-Rpass=inline`、`-gline-tables-only`）。

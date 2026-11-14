@@ -2383,3 +2383,41 @@ int white_copy_site(JSValueConst fn, int site, uintptr_t *src, uintptr_t *tgt, i
     *swaps = cs->swaps;
     return i;
 }
+
+/* white_call_debt: the stack debt and the call depth a C function sees
+   while js_call_c_counted (direct 0) or js_call_c_direct (direct 1) calls
+   it, less those before the call: what the answer of push in the register
+   loop counts when the push must grow its array (regvm-ops-basic.h), and
+   what a direct call counts. *depth gets the depth, and -2 comes back when
+   the call did not give the debt or the depth back. */
+static long white_seen_debt;
+static int white_seen_depth;
+
+static JSValue white_debt_probe(JSContext *ctx, JSValueConst this_val,
+                                int argc, JSValueConst *argv)
+{
+    white_seen_debt = ctx->rt->stack_debt;
+    white_seen_depth = ctx->rt->call_depth;
+    return JS_UNDEFINED;
+}
+
+long white_call_debt(JSContext *ctx, int direct, int *depth)
+{
+    JSRuntime *rt = ctx->rt;
+    long debt = rt->stack_debt;
+    int d = rt->call_depth;
+    JSValue f = JS_NewCFunction(ctx, white_debt_probe, "probe", 0), r;
+
+    white_seen_debt = -1;
+    white_seen_depth = -1;
+    if (direct)
+        r = js_call_c_direct(ctx, f, JS_UNDEFINED, 0, NULL);
+    else
+        r = js_call_c_counted(ctx, f, JS_UNDEFINED, 0, NULL);
+    JS_FreeValue(ctx, r);
+    JS_FreeValue(ctx, f);
+    *depth = white_seen_depth - d;
+    if (rt->stack_debt != debt || rt->call_depth != d)
+        return -2;
+    return white_seen_debt - debt;
+}

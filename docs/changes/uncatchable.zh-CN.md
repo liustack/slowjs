@@ -650,7 +650,7 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 
 现在没有内存上限的 VM 把最后还回来的一块（最大 32 MiB）留着，给下一次要内存块的调用（`internal/hostmem/keep.go` 的 `hostmem.Keep`，`vmhook.go` 的 `goTake`）。调用要的块不比留着的大，就拿留着的那块，它的页已经在内存里，调用要用的部分一次清零 1 MiB，两次之间检查是否要停：已在内存里的 1 MiB 清零远不到一毫秒，所以不会再出现不检查的一段。清零时被停下，调用结束，那块继续留着。VM 已经留着一块时，留下两块里大的那块，另一块还给系统。连续 16 次调用都没要内存块时，在第 16 次结束时还给系统，`SetMemoryLimit` 给 VM 设上限时、`Close` 时也还。一个进程里所有 VM 留着的加起来最多 64 MiB（`hostmem.KeptMax`），两个 VM 同时还块时，这个计数也不会超过它：超过的那块还给系统。系统拒绝收回一块时，还块的调用会 panic，VM 仍拿着这块，清零中途检查停止时 panic 的话，正在清零的那块也照样留着：之后再还、`SetMemoryLimit` 或 `Close` 会再试。这时 `SetMemoryLimit` 让 VM 保持原样，仍然没有上限，再次 `Close` 也照样还回引擎的内存。
 
-有内存上限的 VM 不留块，调用和上一节一样。引擎在 C 里分配时按上限计数，它不知道宿主留着的块：留着一块的 VM 总共可能占到上限再加这一块。先守住上限。
+这一版里有内存上限的 VM 不留块，调用和上一节一样。引擎在 C 里分配时按上限计数，那时它不知道宿主留着的块：留着一块的 VM 总共可能占到上限再加这一块。先守住上限。之后它也留一块，并且守住上限：见[下一节](#有内存上限的-vm-也留下最后一块)。
 
 在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，去掉前 5 次，每次时间的中位数：
 
@@ -662,7 +662,7 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 
 代价：没有内存上限的 VM 留着一块时，在两次调用之间最多多占 32 MiB。不再有调用的 VM 一直留着它，直到关闭：很多空闲 VM 组成的池最多占 64 MiB，落在其中两个到几个 VM 上。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
 
-测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops`、`TestKeepStopPanics`、`TestKeepProcessCap` 和 `TestKeepRaceForCap`，`internal/hostmem/keep_fault_test.go` 的 `TestKeepSwapRefused`，`keep_test.go` 的 `TestKeepOnlyWithNoLimit`，`keep_hooks_test.go` 的 `TestSetMemoryLimitKeepRefused` 和 `TestCloseAgainKeepRefused`（带 `testhooks` 标签），以及 `intl/blocks_test.go` 的 `TestLimitedVMKeepsNoBlock`、`TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，后两个现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
+测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops`、`TestKeepStopPanics`、`TestKeepProcessCap` 和 `TestKeepRaceForCap`，`internal/hostmem/keep_fault_test.go` 的 `TestKeepSwapRefused`，`keep_hooks_test.go` 的 `TestSetMemoryLimitKeepRefused` 和 `TestCloseAgainKeepRefused`（带 `testhooks` 标签），以及 `intl/blocks_test.go` 的 `TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，后两个现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
 
 ## 展开、rest 和 Object.assign 的复制读中断标志
 
@@ -673,3 +673,25 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 复制里的其他步骤各是对源对象或目标的一次遍历，不读标志，长度和它们一样，而它们的大小受内存上限约束：列出 `String` 对象的键，每个字符一次写入（`JS_GetOwnPropertyNamesInternal`），扫描源对象的 shape（`js_own_keys_scan`），把源对象的 shape 复制到空目标（`js_copy_shape`），目标属性表的扩容（`resize_properties`），以及停下后释放键的列表和复制出来的东西。524,288 个键时，前面几步各用了 20 到 25 次轮询，在 Apple M4 上约一毫秒，释放用了 100 到 520 次，都在 kill 允许的轮询次数之内（`KillPolls`，1000）。
 
 测试：`engine/test/unit-white.c` 里的 `test_copy_poll_work` 用展开、rest 和 `Object.assign` 复制字符串和对象的 100,000 个键，走遍复制的两个循环，要求每个键算一份工作，两次读标志之间最多 4,096 个键。`TestSpreadCopyStops`（`spreadstop_hooks_test.go`，用 `-tags testhooks` 构建）先给几种调用计时：把 65,536 个字符的字符串展开到空目标和一个键之后，对它做 `Object.assign`，把有 65,536 个键的对象展开到一个键之后，以及对它做 rest。然后在每个新 VM 里，在这段时间的四分之一、一半和四分之三处停下各自的循环：得到的是无法捕获的中断而不是 kill，除去释放用的轮询，看到停止请求的轮询不超过 `copyStopPolls` 次，VM 还能接着用。`TestSpreadStringOutOfMemory` 在 32 MiB 的上限下展开 4 Mi 个字符的字符串，也把它交给 `Object.assign`：得到内存不足的错误，VM 还能接着用。
+
+## 有内存上限的 VM 也留下最后一块
+
+版本：v0.30.6。
+
+[上一节](#vm-留下最后一块内存给下一次调用)里有内存上限的 VM 不留块，每次调用都要为一块新内存的页付代价：在 GitHub 的 macos-15 机器上，在 8 Mi 个单位的文本里找第一个词，这样的 VM 每次调用 28 到 35 ms，没有上限的 VM 是 3.9 到 5.4 ms。
+
+现在引擎把宿主替 VM 拿着的内存和它自己的内存一起算进上限，有上限的 VM 也留下最后一块，只要这块和 VM 的内存加起来放得进上限（`vmhook.go` 的 `mayKeep`）。VM 每次留着的块变了，就把块的大小写进堆里，同时写上上限减去这个大小，分配检查的就是它（`engine/heap.h` 的 `held` 和 `limit`，地址由 `JS_GetHostLimit` 给出）：分配仍只拿一个字和计数比较。引擎的一次分配如果只有去掉这块才放得下，就向宿主要一次（`engine/host.h` 的 `HOST_CALL_MEMORY_PRESSURE`，`vmhook.go` 的 `goPressure`）：块还给系统，分配接着做。所以留着的块不会让脚本在本来不会内存不足的地方内存不足，VM 的内存和它留着的块加起来也守在上限以内，和引擎自己的内存一样按每个请求检查（[allocator.md](../allocator.zh-CN.md)）。`SetMemoryLimit` 只在新上限放不下这块时才先把它还掉，还回来时放不下的块直接还给系统。
+
+调用正在清零的留着的块，在调用拿到它之前一直算数：清零中途检查停止时向引擎要内存，拿不到这块的空间。分配中系统拒绝收回这块时，VM 继续留着它，这次分配按内存不足失败，`Close` 时再试。从引擎里出来的 panic 展开时还回来的块直接还给系统，不去问引擎用了多少内存。
+
+在上限 1 GiB 的 VM 里，在 8 Mi 个单位的文本里找第一个词，连续调用 40 次，去掉前 5 次，每次时间的中位数：
+
+| 机器 | v0.30.3（Go 的分配） | v0.30.4（每次调用一块新的） | 现在（留下的那块） |
+| --- | --- | --- | --- |
+| GitHub 的 macos-15 机器，Go 1.26.6，两个 job 各三轮 | 4.1 到 8.0 ms | 27.9 到 34.9 ms | 3.9 到 4.9 ms |
+| Apple M4，同时有别的任务在跑（负载 13），三轮 | | 7.6 到 7.9 ms | 5.5 到 5.8 ms |
+| Apple M4，Rosetta 下的 amd64，同上 | | 12.0 到 13.4 ms | 6.2 到 7.4 ms |
+
+代价：有上限的 VM 在两次调用之间最多占着上限里的 32 MiB，第一次需要这块空间的分配把它要回来，付一次 unmap 的代价（32 MiB 在 AMD EPYC 的一个核上约 3 ms）。`MemorySize` 不算这块。引擎每个请求最多问宿主一次，而且只在这块是放不下的唯一原因时才问。分配的检查没有多出代价：仍是计数和一个字比较一次，向宿主要内存放在单独的函数里。在 linux/amd64 上用 callgrind 数，商店（14 页）、工作台（6 页）、MUI（3 页）和 React 页各渲染一次，引擎分配函数的指令数和 v0.30.4 一样或少 0.1% 到 0.2%，也从没问过宿主。`heap_alloc` 多用 16 字节 Go 栈（amd64 上 80，arm64 上 72），只在调用链的顶端，不是递归的每一层。
+
+测试：`engine/test/heap-test.c` 的 `scenario_held`，`engine/test/unit-white.c` 的 `test_buffer_limit`，`internal/gohost/gohost_test.go` 的 `TestCallPressure`，`internal/hostmem/keep_test.go` 的 `TestKeepHolds`，`keep_test.go` 的 `TestKeepWithinLimit` 和 `TestKeepInEngineFault`，`keep_hooks_test.go` 的 `TestPressureKeepRefused`（带 `testhooks` 标签），以及 `intl/blocks_test.go` 的 `TestKeptBlockWithinLimit`。

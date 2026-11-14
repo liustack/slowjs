@@ -91,7 +91,7 @@ read_when:
 
 ## 时钟、abort 与宿主
 
-`engine/host.h` 声明引擎向宿主要什么。`host_now(vm, kind)` 给出墙上时钟或单调时钟，单位纳秒。`host_call(vm, &this, argc, argv, magic)` 调用宿主的一个函数，小于 0 的 magic 是引擎的请求：`HOST_CALL_ABORT` 对应 `abort()`。this 值按地址传，引擎的请求没有 this，传 NULL：JSValue 按值传是两个字，加上影子指针、`vm`、`argc`、`argv` 和 `magic` 一共 7 个，而生成的代码在 `body` 调用模式下最多用寄存器传 6 个字给回调。`Math.random` 不问时钟：它从 `JS_NewRuntime` 得到的种子开始，同一个运行时的每个上下文都一样。`abort` 不知道自己属于哪个 VM，传 0。`host_memory_grow` 在 `engine/heap.h` 里，随分配器一起来。小于 0 的 `host_call` 有两种属于分配器：`HOST_CALL_MEMORY_RELEASE` 归还一个专用的内存块，`HOST_CALL_MEMORY_REMAP` 把它扩大（linux 上，宿主用 `JS_SetHostRemap` 说明可以时）。它们不跑用户代码，也不回调引擎。`host_poll` 是 Go 在引擎里停住 goroutine 的地方，也是中断到达引擎的地方（见[轮询与中断](#轮询与中断)）。`JS_FreeRuntime` 返回仍在使用的块数，没有泄漏时为 0。如果还有对象被引用着，比如宿主从没释放的值，它不会像上游的 assert 那样 abort：它会在释放剩下的东西之前停下，由宿主整块收回内存。
+`engine/host.h` 声明引擎向宿主要什么。`host_now(vm, kind)` 给出墙上时钟或单调时钟，单位纳秒。`host_call(vm, &this, argc, argv, magic)` 调用宿主的一个函数，小于 0 的 magic 是引擎的请求：`HOST_CALL_ABORT` 对应 `abort()`。this 值按地址传，引擎的请求没有 this，传 NULL：JSValue 按值传是两个字，加上影子指针、`vm`、`argc`、`argv` 和 `magic` 一共 7 个，而生成的代码在 `body` 调用模式下最多用寄存器传 6 个字给回调。`Math.random` 不问时钟：它从 `JS_NewRuntime` 得到的种子开始，同一个运行时的每个上下文都一样。`abort` 不知道自己属于哪个 VM，传 0。`host_memory_grow` 在 `engine/heap.h` 里，随分配器一起来。小于 0 的 `host_call` 有三种属于分配器：`HOST_CALL_MEMORY_RELEASE` 归还一个专用的内存块，`HOST_CALL_MEMORY_REMAP` 把它扩大（linux 上，宿主用 `JS_SetHostRemap` 说明可以时），`HOST_CALL_MEMORY_PRESSURE` 请宿主还回它在堆外替 VM 拿着、内存限制也算进去的内存（`JS_GetHostLimit`，见 [allocator.md](../allocator.zh-CN.md)）。它们不跑用户代码，也不回调引擎。`host_poll` 是 Go 在引擎里停住 goroutine 的地方，也是中断到达引擎的地方（见[轮询与中断](#轮询与中断)）。`JS_FreeRuntime` 返回仍在使用的块数，没有泄漏时为 0。如果还有对象被引用着，比如宿主从没释放的值，它不会像上游的 assert 那样 abort：它会在释放剩下的东西之前停下，由宿主整块收回内存。
 
 ## 调用深度与 C 递归
 
@@ -507,6 +507,35 @@ pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码
 每个页面的 HTML 都不变。帧不变：`JS_RegvmRun` 在 arm64 上占影子栈 176 字节，amd64 上 256 字节，它的 Go 帧是 $312 和 $256，`TestRegvmDepth`、`TestCCallDepth` 和 `TestHasOwnCallDepth` 在两种架构上都在同样的深度结束。
 
 测试：`engine/test/regvm/js/q3-charcode.js` 在两种宽度的字符串、一个长字符串和拼平前后的 rope 上调用 `charCodeAt`，下标覆盖各种情况（范围内、越界、负数、`-0`、double、字符串、`null`、会转换的对象、Symbol、BigInt、转换时抛错的、没有下标、多给参数），`this` 覆盖各种类型，还有另一个 realm 的 `charCodeAt`，以及被替换、包进 proxy 和绑定过的，还有递归到深度上限。它的输出就是改动之前那个构建的输出。`e-charcode-interrupt.js` 在原生宿主上用中断停住只做 `charCodeAt` 调用的循环，`TestRegvmCharCodeAtLoopStops` 在生成的引擎上用 eval 超时和 Interrupt 停住它，要求在 `stopPolls` 次轮询之内停下，并且停在循环里不是调用的地方，而改动之前的构建停在某次调用里面。改动之前的构建跑这个脚本，输出和它的 golden 只差停下的位置。`unit-oom` 的 `test_uncatchable_fast_call` 检查有无法捕获的异常挂起时，`charCodeAt` 之后的代码不运行。
+
+### 寄存器循环直接回答的内置函数
+
+版本：v0.30.6。
+
+寄存器循环在它回答 `charCodeAt` 的那个调用点（`RV_CALL_OUT`）自己回答更多内置函数：`Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has`，`Map` 和 `WeakMap` 的 `get`，`Array.isArray`，`Array.prototype.push`，数组的 `includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`，`Object.prototype.hasOwnProperty`，以及参数是字符串的 `String`。这些是 tifa 的页面和 React 从 JavaScript 里调用最多的 C 函数。每次调用要比答案本身多花 70 到 250 条指令：调用的检查、一层调用深度、`js_call_c_function` 的帧，以及 `this` 和参数的转换。`JS_NewCFunction3` 在每个 realm 里按函数是什么给它做标记（`rv_fast_kind`，记在 `JSObject.rv_fast` 的几位里）。脚本替换过、绑定过或者包进 proxy 的函数是另一个对象，照常调用。
+
+先找出答案，只对 C 函数不跑脚本、不抛异常、不做任何看得见的改动、也不读中断标志的那些 `this` 和参数：
+
+| 内置函数 | 直接回答 | 其余照常调用，例如 |
+| --- | --- | --- |
+| `Math.clz32` | int 或 double | 需要转换的值 |
+| 四种集合的 `has` 和 `get` | 类对得上的 `this`，查找时不读标志的键 | rope 键，加起来够一步的字符串比较，别的类的 `this` |
+| `Array.isArray` | 除 proxy 以外的任何值 | proxy，它可能已被撤销 |
+| `Array.prototype.push` | 长度等于元素个数且可写的快速数组，元素放得进它的空间时 | 需要扩容的 push，冻结或不可扩展的数组，类数组对象 |
+| 数组的 `includes`、`indexOf` | 长度等于元素个数的快速数组，`fromIndex` 没给或是 int | 空位，原型上的 getter，类数组对象，typed array，proxy，需要转换的 `fromIndex`，rope，超过一步的比较 |
+| 字符串的 `indexOf`、`includes`、`startsWith`、`endsWith` | 拼平的字符串和短于一步的拼平的子串，位置没给或是 int | rope，需要转换的子串或位置，RegExp |
+| `Object.hasOwn`、`hasOwnProperty` | 普通对象，以及 atom 已经存在的键（`js_key_atom_quiet`：字符串自己的 `key_atom`，下标，Symbol，或在 atom 表里找到的不超过 64 个字符的字符串） | exotic 对象（数组、proxy、String 对象、`arguments`），原始值，调用时才会新建 atom 的键 |
+| `String` | 字符串 | 其他任何值，没有参数，`new String` |
+
+然后循环按 `js_call_c_direct` 调用 C 函数之前的顺序做同样的事（`rv_fast_enter`）：深度和栈的检查（不通过时照常调用，像以前一样抛出），计一次 poll，读中断标志，检查有没有待处理的不可捕获错误。需要扩容的 push 做完这些检查，再像 `js_call_c_direct` 那样调用 `push`（`js_call_c_counted`）：占一层调用深度，像直接调用那样把跳过的帧记作已占用（`rt->c_direct_debt`），经 `js_call_c_plain` 调用，由 `push` 扩容或抛出，和以前一样。
+
+为什么结果相同：答案用的是 C 函数自己的比较和查找（`indexOf` 和 `includes` 用 `js_quick_strict_eq` 和 `js_strict_eq2`，集合用 `js_same_value_zero`，字符串用 `js_string_find`，键用 `__JS_NewAtom` 的查找），并且在 C 函数会读中断标志的地方放弃，所以接下来做的调用找到的就是它本来会找到的。异常只来自真正做的那次调用，带着它自己的栈和消息。停下的地方、poll 的计数和递归能到的深度都和调用时一样。`hasOwnProperty.call(o, k)` 还走它自己的路径（[hasOwnProperty.call 在解释器里直接回答](objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答)），现在也用同样的办法找键的 atom。在生成的引擎里，查找中的循环和在 C 函数里一样计入下一次 poll：查找做到一半放弃时，调用会把这一半再做一遍，所以 poll 最多早来一步的工作量。也因为这样，还不是 atom 的键只有不超过 64 个字符时才去 atom 表里查。
+
+代价：调用其他函数什么也不多花，`rv_fast` 的测试本来就在。新的内置函数在单独的函数 `rv_fast_builtin` 里回答，循环在它唯一的调用点按种类从一张表（`rv_fast_fns`）里取函数，所以 `rv_fast_call` 的帧不变，内置函数也不用再多一次调用。经过这张表，`charCodeAt` 在 arm64 上每次多约 8 条指令，而把所有种类放进一个函数时它多 12 条，从一个函数再调用另一个时内置函数多约 33 条。`rv_fast_builtin` 的 Go 帧在 arm64 上是 168 字节，在 amd64 上是 208 字节，`js_key_atom_quiet` 是 168 和 160，`js_has_own_call` 在 amd64 上多 16 字节。它们都在下一次调用之前返回，所以没有递归经过它们。`JS_RegvmRun` 在 arm64 上仍占 176 字节影子栈，在 amd64 上仍占 256，其他帧都不变，`TestRegvmDepth`、`TestCCallDepth` 和 `TestHasOwnCallDepth` 在两种架构上停在同样的深度。
+
+收益：在 Apple M4 上，一次渲染在 React 的页面上少跑 2.1% 的指令，store 页面 1.8%，workbench 页面 1.2%，MUI 页面 0.7%。在 amd64 上用 callgrind 量每组一个页面，分别少 2.5%、2.1%、1.4% 和 0.4%（[performance.zh-CN.md](../performance.zh-CN.md#寄存器循环直接回答的内置函数)）。React 上主要来自 `push`、`Map.get` 和 `Math.clz32`，MUI 上来自 `has`、`Array.isArray` 和 `Math.clz32`，store 上来自 `hasOwn`、`has` 和 `String`。在 linux/amd64 的一个 EPYC 核上，一次渲染在 React 的页面上少花 1.4% 的时间，store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面在计时能分辨的 1% 以内不变。
+
+测试：`engine/test/regvm/js/q4-fast-clz32-has.js`、`q4-fast-get.js`、`q4-fast-weak.js`、`q4-fast-array.js`、`q4-fast-find.js`、`q4-fast-strfind.js`、`q4-fast-hasown.js` 和 `q4-fast-string.js` 在循环里调用每个内置函数，也经 `Reflect.apply` 调用（循环不回答它），覆盖上表列出的每种 `this` 和参数以及各自的边界（NaN、`-0`、空位、长度超过元素个数、原型上的 getter、冻结的数组、rope、两种宽度的字符串、BigInt、Symbol、已回收的弱键、运行时拼出的键、会记录转换过程的对象、另一个 realm 的函数、被替换的函数），并递归到深度上限。它们的 golden 是改动前那个构建的输出。`e-fast-interrupt.js` 用固定次数的 poll 停下一个回答调用的循环，停在和以前相同的地方。`TestRegvmLimitsInterrupt` 用 eval 超时和 `Interrupt` 停下这些内置函数的循环和递归，`TestRegvmLimitsMemory` 用内存上限停下用它们扩数组的循环，`unit-white` 的 `test_counted_call_debt` 检查 `js_call_c_counted` 做的调用和直接调用占同样的深度、记作已占用的栈也一样，`unit-oom` 的 `test_fast_builtins_oom` 在内存不够时运行它们，每个都以调用本身的内存不足错误失败，什么也不丢。
 
 ## 调用结束时跳过没有引用计数的值
 
@@ -977,3 +1006,22 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `test_regvm_dst_oom`（`engine/test/unit-oom.c`）：解构在空洞、慢数组、默认值改过 `%ArrayIteratorPrototype%.next` 之后、带 `return` 的关闭，以及异常经过还没读完的解构时造 Array Iterator，每一次分配依次失败都以内存不足结束。
 - `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
 - `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。
+
+## 热调用少传参数字
+
+发布：v0.30.6。
+
+在生成代码里，一次调用的每个参数字都要经过 Go 的栈区：调用方存一次，被调方读一次。在 arm64 上，一个函数除了影子栈指针还要收五个以上的字时，参数放在影子栈上的一个块里传，多出一次存和一次读，而且后者要等前者。现在有两个热调用少传了字：
+
+- 解释器直接调 C 函数（`js_call_c_direct`）和 `js_call_c_hop` 改调 `js_call_c_plain(p, this_obj, argc, argv)`：传函数的对象而不是它的值，不传上下文（这次调用本来就把函数的 realm 设为上下文），也不传 flags（这两条路都不做构造调用）。一共 5 个字，`js_call_c_function` 要 8 个，所以 arm64 用寄存器传。`js_call_c_function` 仍是 `JS_CLASS_C_FUNCTION` 这个类的调用入口，`JS_CallInternal` 和构造调用都走它。两者是同一个函数体 `js_call_c_body`，各自内联一份。
+- 引擎自己用的 `JS_GetProperty`（`quickjs.h` 的这个宏把对象也当作 `this` 传）改调 `JS_GetPropertyObj(ctx, obj, prop, throw_ref_error)`：5 个字，`JS_GetPropertyInternal` 要 7 个。导出的 `JS_GetPropertyInternal` 不变，两者是同一个函数体 `js_get_property`。`js_invoke` 仍调 `JS_GetPropertyInternal`：换成更短的调用后，amd64 上的 clang 把它内联进调用方，调用方在影子栈上的栈帧大了 112 字节。
+
+为什么结果不变：每个新入口跑的都是旧入口原来跑的函数体，值也一样。旧的 `js_call_c_function` 收到的上下文只用来找运行时，函数体在用到上下文之前就已经把它换成了函数的 realm。`js_call_c_plain` 从这个 realm 取运行时，它属于同一个运行时。
+
+需要小心的是递归的深度。直接调用在 C 函数运行期间把它跳过的 `JS_CallInternal` 栈帧算作已占用，这样经过 C 函数的递归两条路停在同一深度（[解释器如何调用 C 函数](#解释器如何调用-c-函数)）。这件事的前提是两条路跑的是同一个 `js_call_c_function`。现在一条路跑 `js_call_c_plain`，另一条跑 `js_call_c_function`，编译器不一定给两者同样大的栈帧：本机 clang 在 arm64 上给 `js_call_c_plain` 192 字节，给 `js_call_c_function` 160 字节，于是在本机测试宿主上经过直接调用的递归浅了约 1.4%（unit-api 的 `c_call_same` 有 36 项检查失败）。现在 `js_measure_call_frame` 也量这两个栈帧，量的位置是共用函数体的开头（`argc` 小于 0，用 `Function.prototype`，每个上下文都有这个 C 函数），直接调用和 `js_call_c_hop` 把差值加进它们算作已占用的量（`rt->c_direct_debt`、`rt->c_hop_plain_debt`）。这类调用之前的栈检查不变。欠账小于 0 会让调用越过栈底，所以这时关掉那条路，和 `js_call_c_hop` 栈帧大于 `JS_CallInternal` 时的做法一样：`JS_RegvmStat` 17 和 18 给出这两笔欠账，那条路关掉时是 -1，直接调用开着而任一条路被关掉时，unit-api 的 `test_call_frames_measured` 和 `TestRegvmFrame` 都会失败。生成的引擎里两个栈帧一样大，所以欠账和以前一样：amd64 上直接调用 112 字节、经过 `js_call_c_hop` 16 字节，arm64 上 96 和 16。在 AddressSanitizer 下，这两笔欠账和 `JS_CallInternal` 的栈帧在同样两个位置上量，各取两处之和里较小的那个，再向下取整到 32 的倍数，和其他欠账一样。
+
+栈帧：两种架构上都没有函数多占影子栈，`JS_RegvmRun` 的 SHADOW 仍是 arm64 上 176 字节、amd64 上 256 字节。在 arm64 上有 42 个函数少占了，一共 2448 字节，因为它们调的函数不再收参数块（`JS_GetPropertyValue` 从 96 字节降到 32）。
+
+收益（在 linux/amd64 上按 16 种代码布局计时）：tifa 商店的 14 个店面页面用时少 0.67%，工作台、MUI 和 React 页面在各自的误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。数字在 [performance.md](../performance.zh-CN.md#热调用少传参数字)。
+
+改动在 C 里（`engine/quickjs.c`、`engine/quickjs.h`、`engine/regvm.h`）。测试：unit-api 的 `test_c_call_recursions` 和 `test_call_frames_measured`，`TestCCallDepth`、`TestCCallDepthAfterExits`、`TestRegvmFrame`，带 `unit-api` 和 `unit-white` 的 `compare.sh`，以及商店、MUI 和 React 页面的 HTML。
