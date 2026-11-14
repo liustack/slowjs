@@ -392,3 +392,11 @@ A shape keeps, for each property, the index plus one of the next property in its
 Now `resize_properties` gives a shape at most 2^26 - 1 properties (`JS_SHAPE_PROP_MAX`). One more throws a RangeError, "too many properties", as a fast array past its limit throws "invalid array length", and leaves the object as it was: a key added, and a fast array of that many elements made a normal one. `JS_SHAPE_HASH_NEXT_BITS` names the width of the field, and static asserts tie the limit to it. The test is on the path where a shape grows, where the limit of 2^31 - 2 was tested before, so a page runs the same instructions there.
 
 Tests: `test_max_props` of `unit-white` gives the shape of a small object a count of 2^26 - 1 (`white_shape_fake_count`, with no collection while it is so) and adds a key, and gives a fast array of 3 elements a count of 2^26 - 1 and adds an element far past its end, which makes it a normal array, each in a process of its own: each throws the RangeError and leaves the object. With the limit at 2^31 - 2 the array case copied the shape with that count, past its block, and ended with a segmentation fault.
+
+## Array.from on a constructor passes the whole index and length
+
+Release: Unreleased.
+
+`Array.from` called on a constructor of the program (`Array.from.call(C, items, f)`) counts the elements in 64 bits, but passed the index to the mapping function as an int32 and set the length at the end as a uint32. Past 2^31 elements the mapping function got a negative index, and past 2^32 - 1 the length was cut: an object of `C` that keeps nothing takes that many with little memory. Both are now the whole count (`JS_NewInt64`), as the specification asks, and up to 2^31 - 1 they are the same ints as before.
+
+Tests: `engine/test/compare/array_from_ctor.js` (what Node 24 prints) runs `Array.from` with a mapping function on a constructor whose object keeps nothing (a proxy that accepts every define) and on one that keeps the elements, for array-likes and iterables of 0 to 3 elements, which pins the path. No test runs 2^31 steps.
