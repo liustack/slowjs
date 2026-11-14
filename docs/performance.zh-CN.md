@@ -1349,7 +1349,7 @@ v0.30.6 在 2026-11-14 计时，机器和方法都和上面的 v0.30.5 一样（
 
 #### 循环向量化器不用画像里的圈数
 
-Unreleased。`-loop-vectorize-with-block-frequency=false` 让循环向量化器不再从画像里取循环跑几圈（[generator.md](changes/generator.zh-CN.md#画像决定什么)）。在 linux/amd64 上用 callgrind 对 v0.30.6 数每次渲染的指令（3 次渲染减 1 次再除以 2，Markdown 是 2 次减 1 次）：
+v0.30.7。`-loop-vectorize-with-block-frequency=false` 让循环向量化器不再从画像里取循环跑几圈（[generator.md](changes/generator.zh-CN.md#画像决定什么)）。在 linux/amd64 上用 callgrind 对 v0.30.6 数每次渲染的指令（3 次渲染减 1 次再除以 2，Markdown 是 2 次减 1 次）：
 
 | 页面 | 指令（所数的页面） | 这组页面的时间，各布局的平均 |
 | --- | ---: | --- |

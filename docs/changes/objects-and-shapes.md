@@ -345,7 +345,7 @@ Tests: `engine/test/compare/object_spread.js` (what Node 24 prints) spreads 30 k
 
 ## A field of a property descriptor that throws ends the conversion
 
-Release: Unreleased.
+Release: v0.30.7.
 
 `js_obj_to_desc`, the ToPropertyDescriptor of `Object.defineProperty`, `Object.defineProperties`, `Object.create` with properties, `Reflect.defineProperty` and the result of a `getOwnPropertyDescriptor` trap, took the -1 of `JS_HasProperty` (a `has` trap of a Proxy that throws) for true: it read the field with `Get` while the exception was pending, went on to the next fields, and could define the property with the exception lost. And when the getter of the field `get` or `set` threw, it replaced that exception with `TypeError: invalid getter` (or setter). Both now end the conversion with the exception of the read, as the specification says and Node does. QuickJS upstream has the same code.
 
@@ -353,7 +353,7 @@ Tests: `engine/test/compare/property_descriptor.js` (what Node 24 prints) has a 
 
 ## bind with too little memory fails whole
 
-Release: Unreleased.
+Release: v0.30.7.
 
 `Function.prototype.bind` made the bound function first and the block that holds its target, `this` and arguments after. When that block could not be had, it freed the bound function, whose finalizer read the block it did not have: the process crashed. It then defined `length` and `name` and did not look at what the two defines returned: when one ran out of memory (a shape copied for a key), bind went on and returned a bound function without that key, with the out of memory error pending (a script could not see it, as the next call fails and the next backward jump ends a loop, but a host that calls bind could). Now the block is made before the bound function, and a define that fails fails bind. QuickJS upstream has the same code.
 
@@ -361,7 +361,7 @@ Tests: `test_bind_oom` in `engine/test/unit-oom.c` binds functions of each proto
 
 ## Object.defineProperty reads a plain descriptor in one pass
 
-Release: Unreleased.
+Release: v0.30.7.
 
 `js_obj_to_desc`, the ToPropertyDescriptor that `Object.defineProperty`, `Object.defineProperties`, `Object.create` with properties, `Reflect.defineProperty` and the result of a `getOwnPropertyDescriptor` trap share, asks the descriptor for each of its six fields with a `HasProperty` and then a `Get`: twelve lookups, and each field the descriptor leaves out walks its prototype chain. zod 4's `defineLazy` and react-hook-form's proxy of the form state define 2,944 properties a render on the workbench studio page, 459 on the shop's home and 83 on MUI's orders page, most with a descriptor of two or three fields. Now a descriptor that is an ordinary object (class `Object`) whose fields are each its own data property, or absent from it and from every object of its prototype chain, is read from its shape in one pass (`js_obj_to_desc_plain`): six lookups in the object, and for each field it leaves out, one in each prototype.
 
@@ -373,7 +373,7 @@ Tests: `engine/test/compare/property_descriptor.js` (what Node 24 prints) define
 
 ## bind reads the length and name of a plain target from its shape
 
-Release: Unreleased.
+Release: v0.30.7.
 
 `Function.prototype.bind` asked its target for `length` with `GetOwnProperty` and then `Get`, and for `name` with `Get`, made `"bound " + name` by a concatenation, and gave the bound function both with two defines, each a lookup of its key and a move to the next shape. React's server renderer makes one bound dispatch for each `useState` and `useReducer` hook a render (a `bind(null, ...)` of its dispatch function): 855 binds a render on the workbench studio page, 572 on the shop's home, 331 on MUI's orders page and 60 on React's page. Now, for a target that is not exotic, whose own `name` is a data property and whose own `length` is a data property or absent, bind reads both from the shape of the target before it makes the bound function (`js_bind_read_plain`), copies the name after `"bound "` into one new string (`js_bound_name`), and moves the bound function from the empty shape of its prototype straight to the shape that a new function of that prototype has with its `length` and `name` (`js_bound_function_props`): the same keys in the same order, configurable only, with the same room.
 

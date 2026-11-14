@@ -345,7 +345,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 属性描述符的字段读取抛错时，转换就此结束
 
-版本：Unreleased。
+版本：v0.30.7。
 
 `js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它把 `JS_HasProperty` 返回的 -1（Proxy 的 `has` trap 抛错）当成 true：在异常还挂着时用 `Get` 读这个字段，接着读后面的字段，最后可能把属性定义下来，异常就丢了。另外，字段 `get` 或 `set` 的 getter 抛错时，它用 `TypeError: invalid getter`（或 setter）替换了原来的异常。现在两种情况都用读取时抛出的异常结束转换，和规范及 Node 一致。上游 QuickJS 的代码也是这样。
 
@@ -353,7 +353,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 内存不够时 bind 整个失败
 
-版本：Unreleased。
+版本：v0.30.7。
 
 `Function.prototype.bind` 以前先建绑定函数，再分配存放目标函数、`this` 和参数的内存块。这块内存要不到时，它释放绑定函数，而绑定函数的 finalizer 会去读这个不存在的块，进程就崩溃了。之后它定义 `length` 和 `name`，却不看两次定义的返回值：其中一次内存不够（为键复制 shape）时，bind 照样返回少了这个键的绑定函数，同时挂着内存不足的错误（脚本看不到，因为下一次调用会失败，下一次向后跳转会结束循环，但从宿主调用 bind 就能看到）。现在先分配这块内存再建绑定函数，定义失败时 bind 也失败。上游 QuickJS 的代码也是这样。
 
@@ -361,7 +361,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## Object.defineProperty 一次读完普通的描述符对象
 
-版本：Unreleased。
+版本：v0.30.7。
 
 `js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它对描述符的六个字段各做一次 `HasProperty` 再做一次 `Get`，一共十二次查找，描述符没写的字段每个都要沿原型链走一遍。zod 4 的 `defineLazy` 和 react-hook-form 给表单状态做的代理，每次渲染在 workbench 的 studio 页定义 2,944 个属性，在商店首页 459 个，在 MUI 的订单页 83 个，描述符大多只有两三个字段。现在，描述符是普通对象（类 `Object`），而且每个字段要么是它自己的数据属性，要么它和原型链上的每个对象都没有这个字段时，就从它的 shape 一次读完（`js_obj_to_desc_plain`）：在对象里查六次，没写的字段在每个原型里各查一次。
 
@@ -373,7 +373,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## bind 从普通目标函数的 shape 读 length 和 name
 
-版本：Unreleased。
+版本：v0.30.7。
 
 `Function.prototype.bind` 以前先用 `GetOwnProperty` 再用 `Get` 向目标函数要 `length`，用 `Get` 要 `name`，用拼接造出 `"bound " + name`，再用两次定义把两者交给绑定函数，每次定义都要查一次键、换一次 shape。React 的服务端渲染器每次渲染为每个 `useState` 和 `useReducer` hook 绑定一个 dispatch（对它的 dispatch 函数做一次 `bind(null, ...)`）：workbench studio 页每次渲染 855 次 bind，商店首页 572 次，MUI 的订单页 331 次，React 页 60 次。现在，目标函数不是特殊对象，自有的 `name` 是数据属性，自有的 `length` 是数据属性或者没有时，bind 在创建绑定函数之前就从目标函数的 shape 读出两者（`js_bind_read_plain`），把名字接在 `"bound "` 后面一次造出新字符串（`js_bound_name`），再让绑定函数从它原型的空 shape 直接换到同一原型的新函数带上 `length` 和 `name` 后的 shape（`js_bound_function_props`）：键相同，顺序相同，都只可配置，属性数组大小也相同。
 

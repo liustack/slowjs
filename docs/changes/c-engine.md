@@ -1009,7 +1009,7 @@ Timed in tifa's `test/ssr` on linux/amd64 (an AMD EPYC 7B13 server, one core, 60
 
 ## A spread reads Symbol.iterator once and closes no iterator
 
-Release: Unreleased.
+Release: v0.30.7.
 
 A spread (`[...it]`, `f(...it)`, `new C(...it)`, `super(...it)`) runs the iterator of its value to the end. When a step throws (`next` throws, its result is not an object, or reading `done` or `value` throws), the specification lets the error go on and calls no `return`: ArrayAccumulation and ArgumentListEvaluation have no IteratorClose. QuickJS read and called the `return` of the iterator first, as a `for-of` loop does when its body throws, and upstream QuickJS still does. The C tree now frees the iterator without closing it (`js_append_enumerate`, `engine/quickjs.c`), as Node 24 does. Out of memory, the only other error of the copy, ran no `return` before either. As `return` is not read, the places of the injection set where a step of a spread in `p5-literals.js` or `z-gen-newtarget.js` throws end with one C function object less (and its shapes and properties), which the read made, and their goldens were written again.
 
@@ -1021,7 +1021,7 @@ Test: `engine/test/compare/spread_iterator.js` prints what Node 24 prints for an
 
 ## The spread of a plain array with no iterator
 
-Release: Unreleased.
+Release: v0.30.7.
 
 The parser makes `append` for every spread of a literal or a call: `[...a]`, `f(...a)`, `o.m(...a)`, `new C(...a)`, `super(...a)` and `eval(...a)` (a class with no constructor of its own passes its arguments on without one). The register loop runs it in `rv_w_append`. For an array it got the Array Iterator, read `next`, copied the elements with a definition each and freed the iterator: about 1,450 instructions for a spread of one element. wb studio spreads 2,432 times a render, the storefront 968 to 1,415 times, MUI 12 to 49 times and React never.
 
@@ -1078,7 +1078,7 @@ The change is in C (`engine/quickjs.c`, `engine/quickjs.h`, `engine/regvm.h`). T
 
 ## A store that adds a key to a plain object skips the generic path
 
-Release: Unreleased.
+Release: v0.30.7.
 
 `o[k] = v` with an object `o` and a string `k` that is its own atom (PUTEL of the register loop, when the paths of an array do not answer), and `o.x = v` when `o` has no own `x` (PUTF), went through `rv_putel_slow` or `rv_putf_slow`, `JS_SetPropertyValue`, `JS_ValueToAtom`, which took a reference to the atom, and the generic `JS_SetPropertyInternal`, which tests every kind of object on the way. Nearly all of these stores add a new key to an object made a moment before: objects built key by key and copies made in a `for in` loop. The loop now calls `rv_putel_atom` for a string key, and `rv_putf_atom` when its own lookup of PUTF found nothing. With the atom the string keeps (`key_atom`, see [A string keeps the atom it is as a key](#a-string-keeps-the-atom-it-is-as-a-key)), they set an own writable data property, or walk the prototypes and add the key with `add_property`, the call and the flags `JS_SetPropertyInternal` uses, so the object ends with the same shape and the same order of keys. Any other case goes back to `rv_putel_slow` or `rv_putf_slow`, which do the store from the start.
 

@@ -1009,7 +1009,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 展开只读一次 Symbol.iterator，也不关闭迭代器
 
-发布版本：Unreleased。
+发布版本：v0.30.7。
 
 展开（`[...it]`、`f(...it)`、`new C(...it)`、`super(...it)`）把值的迭代器跑到底。某一步抛错时（`next` 抛错、它的结果不是对象，或者读 `done`、`value` 时抛错），规范让错误直接往外走，不调用 `return`：ArrayAccumulation 和 ArgumentListEvaluation 里没有 IteratorClose。QuickJS 原来会先读出并调用迭代器的 `return`，和 `for-of` 循环体抛错时一样，上游 QuickJS 现在仍是这样。C 树现在放掉迭代器、不关闭它（`engine/quickjs.c` 的 `js_append_enumerate`），和 Node 24 一样。复制时唯一的另一种错误是内存不足，它以前也不会跑 `return`。因为不再读 `return`，注入测试里 `p5-literals.js` 和 `z-gen-newtarget.js` 中展开某一步抛错的那些位置，结束时少了一个原先由这次读取造出的 C 函数对象（连同它的形状和属性），它们的 golden 已重新写过。
 
@@ -1021,7 +1021,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 不造迭代器地展开普通数组
 
-发布版本：Unreleased。
+发布版本：v0.30.7。
 
 字面量和调用里的每个展开，解析器都生成 `append`：`[...a]`、`f(...a)`、`o.m(...a)`、`new C(...a)`、`super(...a)` 和 `eval(...a)`（没有自己构造函数的类不经展开就把参数传下去）。寄存器循环在 `rv_w_append` 里执行它。展开一个数组时，原来要取 Array Iterator、读 `next`、逐个元素做一次定义再复制、最后释放迭代器：展开一个元素约 1,450 条指令。wb studio 每次渲染展开 2,432 次，店面 968 到 1,415 次，MUI 12 到 49 次，React 一次也没有。
 
@@ -1078,7 +1078,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 给普通对象加键的写入不走通用路径
 
-发布版本：Unreleased。
+发布版本：v0.30.7。
 
 `o[k] = v` 里 `o` 是对象、`k` 是自身就是原子的字符串时（寄存器循环的 PUTEL，数组的快路不回答时），以及 `o` 没有自有属性 `x` 时的 `o.x = v`（PUTF），原来要走 `rv_putel_slow` 或 `rv_putf_slow`、`JS_SetPropertyValue`、`JS_ValueToAtom`（给原子加一个引用），再走通用的 `JS_SetPropertyInternal`，一路检查每一种对象。这类写入几乎都是给刚造出来的对象加新键：一个键一个键搭起来的对象，`for in` 循环里做的拷贝。现在循环对字符串键调用 `rv_putel_atom`，PUTF 自己查找没找到自有属性时调用 `rv_putf_atom`。它们用字符串里存着的原子（`key_atom`，见[字符串保存自己作为键时的原子](#字符串保存自己作为键时的原子)），写一个可写的自有数据属性，或者走一遍原型链，再用 `add_property` 加上这个键。调用和标志都和 `JS_SetPropertyInternal` 一样，所以对象最后的形状和键的顺序都一样。其他情况都交回 `rv_putel_slow` 或 `rv_putf_slow`，从头按原来的方式写。
 

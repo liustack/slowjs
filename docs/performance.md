@@ -1349,7 +1349,7 @@ A profile one small branch old kept all of the gain (the workbench -7.54%, the s
 
 #### The loop vectorizer without the profile's turns
 
-Unreleased. `-loop-vectorize-with-block-frequency=false` keeps the loop vectorizer from taking the number of turns of a loop from the profile ([generator.md](changes/generator.md#what-the-profile-decides)). Callgrind on linux/amd64 against v0.30.6, instructions per render (3 renders less 1, divided by 2, and for the Markdown 2 less 1):
+v0.30.7. `-loop-vectorize-with-block-frequency=false` keeps the loop vectorizer from taking the number of turns of a loop from the profile ([generator.md](changes/generator.md#what-the-profile-decides)). Callgrind on linux/amd64 against v0.30.6, instructions per render (3 renders less 1, divided by 2, and for the Markdown 2 less 1):
 
 | Pages | Instructions (the page counted) | Time of the group, mean of the layouts |
 | --- | ---: | --- |

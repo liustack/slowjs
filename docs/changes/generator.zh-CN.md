@@ -59,7 +59,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 关掉的，因为它在训练跑过的地方省一点，在别的数据跑到的地方要多花（`internal/goasm/gen/pgo.go` 里的 `PGOPinned`，通过 `-mllvm` 交给 clang，也交给链接后的优化器。llc 只拿到 `-pgso=false`，来自 `PGOLLCFlags`）：
 
 - `-pgso`，对训练里跑得少或没跑过的代码按体积优化。开着它，加载一个 bundle 多跑 5.6% 到 8.2% 的指令，关掉则少 0.8% 到 0.9%。在这些页面里冷的代码，在别的工作里是热的。
-- `-loop-vectorize-with-block-frequency`（Unreleased，以 `=false` 交给 clang 和 opt）。开着它，循环向量化器从画像里取一个循环跑几圈，训练里只跑几圈的循环可能丢掉宽的循环体，而别的工作拿它跑长字符串。在 amd64 上它还让 LLVM 在 musl 的 `memmove` 里用到 `rbx`，这个叶子函数因此有了栈帧，每次调用都跑 Go 的序言（`NOSPLIT, $8-0`），`vsnprintf` 的 Go 栈帧在 amd64 上大了 144 字节，在 arm64 上大了 176 字节。关掉之后，amd64 上 19 个函数变了，arm64 上 78 个：`memmove` 又是 `NOSPLIT|NOFRAME, $0-0`，`vsnprintf` 的栈帧和不用画像的构建一样。在 linux/amd64 上用 callgrind 对 v0.30.6 数，一次渲染少跑 0.07% 到 0.22% 的指令（商店 -0.07%，工作台 -0.11%，MUI -0.10%，React -0.12%，400 KB 的 Markdown -0.22%），64 个微基准少 0.11%（几何平均。`string_to_int` -2.65%，五个 `float_to*` -0.9% 到 -1.5%，`weak_map_delete` +1.25%，代码一有变动它就动这么多）。HTML 相同，两个架构上 `JS_RegvmRun` 和 `JS_CallInternal` 的栈帧、每个深度测试的深度也都相同。在 AMD EPYC 服务器上计时（16 种布局，delta 1%，各布局的平均），收益低于计时能看出的量：工作台（-0.56%）、MUI（+0.13%）和商店（+0.35%）没有超过 delta 的变慢，React（+0.12%）和 Markdown（-0.05%）分不出快慢。
+- `-loop-vectorize-with-block-frequency`（v0.30.7，以 `=false` 交给 clang 和 opt）。开着它，循环向量化器从画像里取一个循环跑几圈，训练里只跑几圈的循环可能丢掉宽的循环体，而别的工作拿它跑长字符串。在 amd64 上它还让 LLVM 在 musl 的 `memmove` 里用到 `rbx`，这个叶子函数因此有了栈帧，每次调用都跑 Go 的序言（`NOSPLIT, $8-0`），`vsnprintf` 的 Go 栈帧在 amd64 上大了 144 字节，在 arm64 上大了 176 字节。关掉之后，amd64 上 19 个函数变了，arm64 上 78 个：`memmove` 又是 `NOSPLIT|NOFRAME, $0-0`，`vsnprintf` 的栈帧和不用画像的构建一样。在 linux/amd64 上用 callgrind 对 v0.30.6 数，一次渲染少跑 0.07% 到 0.22% 的指令（商店 -0.07%，工作台 -0.11%，MUI -0.10%，React -0.12%，400 KB 的 Markdown -0.22%），64 个微基准少 0.11%（几何平均。`string_to_int` -2.65%，五个 `float_to*` -0.9% 到 -1.5%，`weak_map_delete` +1.25%，代码一有变动它就动这么多）。HTML 相同，两个架构上 `JS_RegvmRun` 和 `JS_CallInternal` 的栈帧、每个深度测试的深度也都相同。在 AMD EPYC 服务器上计时（16 种布局，delta 1%，各布局的平均），收益低于计时能看出的量：工作台（-0.56%）、MUI（+0.13%）和商店（+0.35%）没有超过 delta 的变慢，React（+0.12%）和 Markdown（-0.05%）分不出快慢。
 
 找过但没有，在 IR 和 LLVM 22 的代码里都找过：来自画像的冷属性，冷热代码的拆分，非平凡分支的 unswitch，GVN、LICM 和 JumpThreading 里由画像带动的决定。
 
@@ -91,7 +91,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 ### 第二份输入：普通循环
 
-发布：Unreleased。
+发布：v0.30.7。
 
 页面让引擎的许多路径计数为 0：typed array、DataView、UTF-16 文本上的正则、BigInt、`Date.parse`、运算符的慢路径等等。LLVM 把计数为 0 的路径当成从不执行：把溢出放进这条路径，把它的基本块挪开。v0.30.6 的画像里，冷计数（第 99.9999 百分位的计数，低于它 LLVM 就当作冷的）是 44，寄存器循环读 typed array 元素时调用的 `rv_ta_get` 计数为 0。`typed_array_read` 比不用画像多跑 5.3% 的指令。
 
@@ -147,7 +147,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 寄存器入口叶子函数（`memcpy`、`memmove`、`memset`）从寄存器取参数，只有生成的代码调用它。它不存寄存器、也不调用别的函数时，TEXT 写 `NOFRAME`。两样做了其中一样，TEXT 就保留栈帧（`NOSPLIT, $8-0`），而 `go vet -asmdecl` 要求每个不是 `NOFRAME` 的 TEXT 都有 Go 声明。现在生成器给这样的叶子函数在 `engine_decl_<arch>.go` 里写一个声明：`func memmove()`，和它的 TEXT 一样没有参数也没有返回值。`.s` 文件不变。
 
-这是画像带出来的：在 amd64 上画像让 `memmove` 保存 RBX，`go vet ./...` 在 linux/amd64 上失败（`memmove: function memmove missing Go declaration`）。Mac 上的 `go vet` 只查 arm64，所以没看到。循环向量化器不再读画像之后（[画像决定什么](#画像决定什么)，Unreleased），`memmove` 不再保存寄存器，又是 `NOFRAME`，生成器不再给它写声明，现在没有一个叶子函数有声明。这条规则留着，给下一个保存寄存器或有调用的叶子函数。
+这是画像带出来的：在 amd64 上画像让 `memmove` 保存 RBX，`go vet ./...` 在 linux/amd64 上失败（`memmove: function memmove missing Go declaration`）。Mac 上的 `go vet` 只查 arm64，所以没看到。循环向量化器不再读画像之后（[画像决定什么](#画像决定什么)，v0.30.7），`memmove` 不再保存寄存器，又是 `NOFRAME`，生成器不再给它写声明，现在没有一个叶子函数有声明。这条规则留着，给下一个保存寄存器或有调用的叶子函数。
 
 为什么安全：声明只是给函数一个名字，代码和栈帧都没变。Go 代码不能调用叶子函数，所以 `internal/cengine/gocalls.txt` 里出现叶子函数时生成器会停下。
 

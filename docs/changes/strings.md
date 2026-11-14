@@ -67,7 +67,7 @@ Tests: `test_string_empty_left` in `engine/test/unit-white.c` checks that `'' + 
 
 ## Two strings are added without the generic path
 
-Release: Unreleased.
+Release: v0.30.7.
 
 In the register loop an add whose operands are not two numbers went to `rv_binop_slow`, the slow side that add, sub and the compares share: it reads the op and its operands again, tests for numbers, then for two strings, and only then calls `JS_ConcatString`. Most adds a page makes are of two strings, the HTML, the class names and the keys it builds. Now the add handlers send two strings to `rv_add_str` (`engine/regvm-ops-basic.h`), which does only that: it takes the operands as `rv_binop_slow` takes them (a temp moved, a local, an argument or a constant copied) and calls the same `JS_ConcatString`, or `js_add_string_into` when the result goes into a local or an argument, which may grow the string of the local in place. The handler tests the tag of one operand before the call and `rv_add_str` tests both. When one is not a string it returns with nothing done, and the handler calls `rv_binop_slow` as before.
 

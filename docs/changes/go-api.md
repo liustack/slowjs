@@ -570,7 +570,7 @@ Test: `TestStringLenRope` in `vmhook_test.go` (the longest rope javascript makes
 
 ## A 16-bit string goes to UTF-8 eight ASCII units at a time
 
-Release: Unreleased.
+Release: v0.30.7.
 
 A string that Go reads from javascript (the result of `Call`, an argument of a Go function or a Builtin) is written as UTF-8 in Go. The engine holds a string in 16-bit units as soon as one of its characters is above U+00FF, and then each run of ASCII went four units at a time. It now goes eight at a time (`asciiUnits` in `jsstring.go`): one check of two words, and the eight units narrowed to eight bytes with shifts and one store. A string of more than 262,144 units (`stringStep`) is counted before it is written, and its runs of ASCII are now counted eight at a time too, where they were counted one unit at a time. Every other character goes as before, four at a time for text from U+0800 such as Chinese.
 
