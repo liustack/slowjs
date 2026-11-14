@@ -1,0 +1,84 @@
+function: true,false,true,true,false
+class chain: true,false,true,true,true,true,true,true
+object and function: true,true,true,true,true,true
+built-ins: true,true,true,true,true,true,false,true,true,true
+arguments and strings: true,false,true,true
+subclass of a built-in: true,true,false
+subclass of Array: true,true,false
+generator and async: true,true,true
+deep chain: true,true,false
+long chain on the left: true,false,true
+primitives: false,false,false,false,false,false,false,false,false
+null prototype object: false,false
+null prototype set later: false,false
+prototype changed: false,true,true
+frozen and sealed: true,true,true
+a function on the left: false,false,false,true
+proxy on the left: true,true [getPrototypeOf getPrototypeOf]
+proxy in the chain of the left: true,false [getPrototypeOf getPrototypeOf]
+revoked proxy in the chain of the left: throws TypeError
+proxy on the left, primitive right: throws TypeError
+arrow function: false,false
+arrow function, object on the left: throws TypeError
+method, object on the left: throws TypeError
+async function, object on the left: throws TypeError
+bound function: true,true,false,false
+bound class: true,false
+bound function with an own prototype: true,false
+bound of bound: true,false
+bound arrow, object on the left: throws TypeError
+bound arrow, primitive on the left: false
+bound function with its own hasInstance: true,false [own own]
+callable proxy: true,true,false,false
+callable proxy with a get trap: true,false [Symbol.hasInstance prototype Symbol.hasInstance]
+callable proxy of an arrow: throws TypeError
+revoked callable proxy: throws TypeError
+object proxy: throws TypeError
+plain object: throws TypeError
+primitive: throws TypeError
+primitive on both sides: throws TypeError
+right side undefined: throws TypeError
+right side null: throws TypeError
+symbol: throws TypeError
+not callable, with the original hasInstance: false,false,false
+not callable, with the original hasInstance and a prototype: false,false,false
+static method: true,false [S S]
+static method inherited: true,true [S true S true]
+defineProperty: true,true [H H]
+Reflect.defineProperty: true,false
+getter: true,true [get get]
+getter giving undefined: false,true,false [get get get]
+hasInstance null: false,true,false
+undefined, object right side: throws TypeError
+not callable: throws TypeError
+not callable object: throws TypeError
+on a plain object: true [o]
+results that are not booleans: false,true,false,true,false,false,true,false,false,true,true
+throws: throws RangeError
+this and arguments: true [true 1]
+added and removed between tests: true,false,true
+added to a parent class between tests: true,false,false,true
+prototype of the function set to an object with one: true,false,true [set]
+prototype of the function set to null: true,false,false
+prototype of the function set to an object without one: true,false
+prototype of the function set to a proxy: true,false [Symbol.hasInstance Symbol.hasInstance]
+Function.prototype keeps its own: TypeError,assigned,TypeError,false,false,true
+called directly: true,false,false,true
+Object.prototype gets one: false,false,true,true [op op]
+prototype a getter: true,false,false [prototype prototype]
+prototype a getter that changes the chain: true,true [prototype]
+prototype a getter that tests instanceof: true,false [true true true true]
+prototype a getter that throws: throws SyntaxError
+prototype inherited: true,true,false
+prototype not an object: TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false
+prototype a function: true,false,false
+prototype replaced between tests: true,false
+prototype not made yet: false,false,true,true
+prototype of a class not writable: true
+prototype of a built-in: true,false,false,false
+the left side is not converted: false,true
+hasInstance read once, before the prototype: true,false,true [Symbol.hasInstance prototype prototype Symbol.hasInstance]
+operands evaluated first: L,R,TypeError
+in a loop: 156512
+result used as a value and in a branch: true,false,y,and,false,true,n,false,false,true,n,false
+strict code: true,false,true
