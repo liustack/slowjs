@@ -1,0 +1,45 @@
+temp 747033992
+local 747033992
+arg 747033992
+self 747033992
+selfRight 747033992
+selfArg 747033992
+plusEq 747033992
+prop 747033992
+elem 747033992
+array 747033992
+thisProp 747033992
+chain 1954810328
+nested 1954810328
+kRight 27764350
+kRightLocal -323207810
+kRightSelf 976480894
+kLeft 1995241934
+kLeftLocal 265879422
+kLeftSelf -290379778
+kEmpty 1480363102
+kEmptyLeft 1480363102
+pair 2 1f600 1 true
+key 2 name! namename
+held 180 100,118,136,154,172 100 202
+other obj LV[valueOf] VR[valueOf] LV[valueOf] VR[valueOf] xV[valueOf] Vx[valueOf] PV[valueOf]
+other objS LT[toString] TR[toString] LT[toString] TR[toString] xT[toString] Tx[toString] PT[toString]
+other prim LP[prim:default] PR[prim:default] LP[prim:default] PR[prim:default] xP[prim:default] Px[prim:default] PP[prim:default]
+other strObj Lso soR Lso soR xso sox Pso
+other arr La,b a,bR La,b a,bR xa,b a,bx Pa,b
+other num L1.5 1.5R L1.5 1.5R x1.5 1.5x P1.5
+other int L7 7R L7 7R x7 7x P7
+other neg0 L0 0R L0 0R x0 0x P0
+other nan LNaN NaNR LNaN NaNR xNaN NaNx PNaN
+other t Ltrue trueR Ltrue trueR xtrue truex Ptrue
+other nul Lnull nullR Lnull nullR xnull nullx Pnull
+other undef Lundefined undefinedR Lundefined undefinedR xundefined undefinedx Pundefined
+other big L12 12R L12 12R x12 12x P12
+other sym !TypeError !TypeError !TypeError !TypeError !TypeError !TypeError !TypeError
+other fn Lfunction f() {} function f() {}R Lfunction f() {} function f() {}R xfunction f() {} function f() {}x Pfunction f() {}
+hooked aac caa 602:-1783372000 602:-1783372000 601:213897835 aaaa spc[S.prim:default] csp[S.prim:default] aasp[S.prim:default]
+restored soc
+loop k n16 2400 932267880 true
+loop n8 l600 3645 833408364 true
+loop wrope key 3 49874 true
+loop empty hi 600 -221711168 true

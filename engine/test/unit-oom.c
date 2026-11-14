@@ -2117,6 +2117,52 @@ static void test_string_append_oom(void)
         sweep(calls[i], "append.js", setup, calls[i], want, 32768);
 }
 
+/* a + b of two strings in each form of the register loop's add (ADD, ADDL,
+   ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h): with too little
+   memory for the new string, the copy with room or the rope, it fails with
+   the out of memory error and frees each operand once, and the variable it
+   was to go into keeps its string. Strings of 8 and 16 bits, short ones that
+   are copied, long ones that make ropes, and a local grown in place. */
+static void test_string_add_oom(void)
+{
+    static const char setup[] =
+        "function sum(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h }\n"
+        "function add(a, b) { return a + b }\n"
+        "function addl(a, b) { let t = 0; t = a + b; return t }\n"
+        "function addk(a) { return a + '<k>' }\n"
+        "function addkl(a) { let t = 0; t = a + '\\u4e2d'; return t }\n"
+        "function kadd(b) { return '<k>' + b }\n"
+        "function kaddl(b) { let t = b; t = '\\u4e2d' + t; return t }\n"
+        "function self(a, b) { let t = a; for (let i = 0; i < 8; i++) { const was = t; t = t + b; if (was.length !== t.length - b.length) return 'changed' } return t }\n"
+        "var parts = ['ab', '\\u4e2d\\u6587', 'x'.repeat(70), 'y'.repeat(600), '\\u00e9'.repeat(600)]\n"
+        "function run() {\n"
+        "  const out = []\n"
+        "  for (const a of parts) {\n"
+        "    for (const b of parts) out.push(sum(add(a, b)), sum(addl(a, b)), sum(self(a, b)))\n"
+        "    out.push(sum(addk(a)), sum(addkl(a)), sum(kadd(a)), sum(kaddl(a)))\n"
+        "  }\n"
+        "  let h = 0\n"
+        "  for (const s of out) h = (h * 7 + s.length + s.charCodeAt(s.length - 1)) | 0\n"
+        "  return out.length + ' ' + h\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run()\n";
+    static const char *want[] = { NULL, NULL };
+    VM v = vm_new();
+    JSValue r;
+
+    /* the answer, from a run with all the memory it needs */
+    CHECK(eval_ok(v.ctx, setup), "string add: the setup failed");
+    r = JS_Eval(v.ctx, "run()", 5, "add.js", JS_EVAL_TYPE_GLOBAL);
+    want[0] = value_text(v.ctx, r);
+    JS_FreeValue(v.ctx, r);
+    vm_free(&v);
+    CHECK(want[0] != NULL, "string add: no answer");
+    if (want[0])
+        sweep("string add", "add.js", setup, "run()", want, 32768);
+    free((char *)want[0]);
+}
+
 /* An array that is appended to takes its first room in one allocation (push,
    an index at the length, spread, splice and the arrays of the engine's own
    builtins), and out of memory there fails the call with the out of memory
@@ -2544,6 +2590,7 @@ int main(void)
     test_map_grow_oom();
     test_array_room_oom();
     test_string_append_oom();
+    test_string_add_oom();
     test_copy_props_oom();
     test_has_property_oom();
     test_getel_local_key_oom();
