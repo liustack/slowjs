@@ -1349,6 +1349,79 @@ Every kind of page but React is faster at the mean of the layouts, by 1.4% to 2.
 
 An early reading of the same kind, on the same server before the spread and the string add were in (290da901 with a profile trained on it), gave the six workbench pages -1.31% (-2.15% to -0.45%) at the mean of the layouts and the fourteen store pages -1.03% (-1.58% to -0.48%, 17 of 18 units).
 
+The 64 micro benchmarks of `compare/testdata`, timed the same way on a second server of the same type (server B, core 0 with the whole machine quiet), each in `jsrun` with a new VM for each run, its N set so that one run takes about 100 ms on v0.30.6, 2 warm runs and 10 timed in a process, the median, with the place of the data paired with the layout (`measure bench run -place -place`). The side of v0.30.6 is its engine with the `-place` flag of `jsrun` (dbaa450c, no change to the engine). Every benchmark ran its 18 units, and one block of `global_func_call` ran again for a disturbance. Times of this server are not compared with those of the pages above.
+
+| Benchmark | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| `array_for` | -0.97% (-1.78% to -0.14%) faster | -2.35% (-2.71% to -1.99%) faster |
+| `array_for_in` | -1.02% (-1.62% to -0.41%) faster | -0.23% (-1.23% to +0.79%) no regression beyond delta |
+| `array_for_of` | -1.33% (-2.09% to -0.58%) faster | -0.75% (-3.26% to +1.81%) inconclusive |
+| `array_hole_length_decr` | -2.18% (-2.58% to -1.77%) faster | -3.24% (-3.94% to -2.53%) faster |
+| `array_length_decr` | -2.21% (-2.52% to -1.91%) faster | -1.32% (-1.63% to -1.00%) faster |
+| `array_pop` | -2.12% (-3.42% to -0.80%) faster | -2.99% (-5.51% to -0.40%) faster |
+| `array_prop_create` | +1.15% (+0.22% to +2.08%) slower | +1.74% (+1.05% to +2.43%) slower |
+| `array_push` | -0.84% (-1.86% to +0.19%) no regression beyond delta | -2.91% (-3.19% to -2.62%) faster |
+| `array_read` | +0.69% (-0.74% to +2.14%) inconclusive | +1.84% (-0.07% to +3.79%) inconclusive |
+| `array_slice` | -0.93% (-7.43% to +6.03%) inconclusive | -11.99% (-12.60% to -11.38%) faster |
+| `array_write` | +8.58% (+3.91% to +13.47%) slower | +17.11% (+11.64% to +22.86%) slower |
+| `date_now` | -0.76% (-1.69% to +0.18%) no regression beyond delta | +1.02% (-0.36% to +2.42%) inconclusive |
+| `date_parse` | -1.95% (-2.97% to -0.93%) faster | -4.21% (-4.59% to -3.83%) faster |
+| `empty_do_loop` | +0.76% (-1.31% to +2.87%) inconclusive | +2.65% (+1.56% to +3.75%) slower |
+| `empty_down_loop` | +2.32% (-0.22% to +4.93%) inconclusive | +7.26% (+5.29% to +9.27%) slower |
+| `empty_down_loop2` | -0.77% (-2.45% to +0.93%) no regression beyond delta | -2.01% (-3.88% to -0.09%) faster |
+| `empty_loop` | -1.42% (-2.54% to -0.29%) faster | +0.93% (-0.13% to +1.99%) inconclusive |
+| `factorial10` | -0.75% (-1.63% to +0.14%) no regression beyond delta | +0.41% (-6.07% to +7.34%) inconclusive |
+| `float_arith` | +0.05% (-1.73% to +1.87%) inconclusive | +4.42% (+3.52% to +5.33%) slower |
+| `float_toExponential` | -7.50% (-10.41% to -4.50%) faster | -0.24% (-0.89% to +0.41%) no regression beyond delta |
+| `float_toFixed` | +1.12% (-0.54% to +2.80%) inconclusive | -1.77% (-2.66% to -0.87%) faster |
+| `float_toPrecision` | -5.68% (-7.78% to -3.55%) faster | -6.69% (-7.39% to -5.99%) faster |
+| `float_toString` | +0.21% (-1.04% to +1.47%) inconclusive | -1.11% (-1.70% to -0.51%) faster |
+| `float_to_string` | +2.57% (+1.07% to +4.09%) slower | -2.71% (-3.33% to -2.09%) faster |
+| `func_call` | -0.09% (-4.31% to +4.33%) inconclusive | -0.02% (-8.73% to +9.52%) inconclusive |
+| `func_closure_call` | -1.37% (-3.19% to +0.48%) no regression beyond delta | +1.98% (-0.37% to +4.38%) inconclusive |
+| `global_destruct` | +1.02% (-0.47% to +2.54%) inconclusive | +2.33% (+1.29% to +3.38%) slower |
+| `global_destruct_strict` | +1.54% (+0.32% to +2.77%) slower | +2.61% (+2.02% to +3.20%) slower |
+| `global_func_call` | +0.48% (-2.44% to +3.49%) inconclusive | +4.41% (+1.09% to +7.85%) slower |
+| `global_read` | -0.68% (-1.88% to +0.53%) no regression beyond delta | -0.82% (-3.09% to +1.50%) inconclusive |
+| `global_write` | +8.05% (+2.45% to +13.96%) slower | +22.52% (+19.74% to +25.37%) slower |
+| `global_write_strict` | +8.80% (+3.39% to +14.50%) slower | +21.13% (+19.09% to +23.20%) slower |
+| `int_arith` | -1.47% (-2.86% to -0.07%) faster | -1.44% (-3.82% to +1.01%) inconclusive |
+| `int_toString` | -1.58% (-2.32% to -0.84%) faster | -1.94% (-4.20% to +0.38%) no regression beyond delta |
+| `int_to_string` | -3.41% (-3.90% to -2.93%) faster | -3.39% (-4.55% to -2.21%) faster |
+| `int_to_string2` | +3.63% (+0.09% to +7.29%) slower | +0.62% (-0.13% to +1.37%) inconclusive |
+| `local_destruct` | +0.53% (-0.76% to +1.84%) inconclusive | +1.24% (+0.03% to +2.46%) slower |
+| `map_delete` | +3.78% (+2.27% to +5.32%) slower | +4.33% (+3.75% to +4.91%) slower |
+| `map_set_bigint` | -7.47% (-8.65% to -6.28%) faster | -7.11% (-9.59% to -4.56%) faster |
+| `map_set_int` | +0.75% (-0.07% to +1.58%) inconclusive | +2.45% (+1.65% to +3.25%) slower |
+| `map_set_string` | +1.54% (+0.05% to +3.05%) slower | +0.97% (-0.54% to +2.50%) inconclusive |
+| `math_min` | -0.76% (-1.41% to -0.10%) faster | -0.41% (-1.48% to +0.67%) no regression beyond delta |
+| `prop_clone` | -0.22% (-1.57% to +1.14%) inconclusive | -6.25% (-9.22% to -3.17%) faster |
+| `prop_create` | -19.89% (-20.64% to -19.13%) faster | -20.90% (-21.90% to -19.88%) faster |
+| `prop_delete` | -0.49% (-1.91% to +0.95%) no regression beyond delta | -4.82% (-9.02% to -0.44%) faster |
+| `prop_read` | -0.88% (-1.13% to -0.63%) faster | -0.20% (-0.49% to +0.08%) no regression beyond delta |
+| `prop_update` | -1.29% (-2.09% to -0.48%) faster | +0.34% (-0.07% to +0.75%) no regression beyond delta |
+| `prop_write` | -2.08% (-5.32% to +1.26%) inconclusive | -1.98% (-9.16% to +5.76%) inconclusive |
+| `regexp_ascii` | +7.87% (+3.69% to +12.21%) slower | -3.60% (-5.28% to -1.90%) faster |
+| `regexp_utf16` | +8.53% (+5.29% to +11.87%) slower | +2.11% (+0.29% to +3.96%) slower |
+| `string_build1` | -0.80% (-1.75% to +0.15%) no regression beyond delta | -3.05% (-3.68% to -2.43%) faster |
+| `string_build1x` | -0.42% (-1.53% to +0.70%) no regression beyond delta | -2.43% (-3.01% to -1.86%) faster |
+| `string_build2` | -18.94% (-19.79% to -18.09%) faster | -17.42% (-17.80% to -17.04%) faster |
+| `string_build2c` | -0.42% (-1.58% to +0.76%) no regression beyond delta | -2.46% (-3.04% to -1.87%) faster |
+| `string_build3` | -9.23% (-11.23% to -7.18%) faster | -8.93% (-12.64% to -5.06%) faster |
+| `string_build4` | +4.09% (+1.88% to +6.36%) slower | +6.25% (+5.59% to +6.93%) slower |
+| `string_build_large1` | -0.49% (-1.18% to +0.21%) no regression beyond delta | -0.84% (-2.56% to +0.90%) no regression beyond delta |
+| `string_build_large2` | -8.55% (-9.30% to -7.80%) faster | -8.66% (-10.58% to -6.69%) faster |
+| `string_to_float` | -1.52% (-4.85% to +1.92%) inconclusive | +0.88% (+0.54% to +1.22%) slower |
+| `string_to_int` | -1.75% (-5.31% to +1.96%) inconclusive | +7.80% (+6.75% to +8.86%) slower |
+| `typed_array_read` | -9.16% (-12.41% to -5.79%) faster | -11.59% (-16.14% to -6.80%) faster |
+| `typed_array_write` | -6.85% (-8.38% to -5.30%) faster | -1.26% (-3.71% to +1.24%) inconclusive |
+| `weak_map_delete` | +0.86% (+0.30% to +1.42%) slower | +2.13% (+1.16% to +3.11%) slower |
+| `weak_map_set` | +2.07% (+1.37% to +2.77%) slower | +4.68% (+3.12% to +6.27%) slower |
+
+At the mean of the layouts 23 run faster, 11 show no regression beyond the delta, 16 cannot tell and 14 are slower. The largest gains are where the changes of the release land: `prop_create` 19.89% (stores that add a key), `string_build2` 18.94%, `string_build3` 9.23% and `string_build_large2` 8.55% (adds of two strings), and `typed_array_read` 9.16% and `typed_array_write` 6.85% (the second input of the profile).
+
+Instructions per turn of the loop of the 14 that are slower (callgrind on linux/amd64, `jsrun -n 1` at 3N less N over 2N, the same two engines) say that most of it is where the code and the data land, not more work. `global_write` (+8.05% in time) and `global_write_strict` (+8.80%) run the same instructions within 0.02%: their time sits at about 100 ms or about 120 ms by where the data lands, and the release falls on the slow level at more of the 16 placements than v0.30.6. `array_write` runs 1.53% more for 8.58% more time, the same two levels. `regexp_ascii` and `regexp_utf16` run 2.97% and 3.05% fewer instructions and take 7.87% and 8.53% more time, and `map_delete`, `map_set_string`, `float_to_string`, `string_build4` and `weak_map_delete` run 0.23% to 0.62% fewer. Three run more: `int_to_string2` 1.86% (its `n + ''` tests the tag of `n` before the generic path, [two strings added](#two-strings-added-without-the-generic-path)), `array_prop_create` 1.30% (the test of the key's tag before `rv_putel_slow`, [stores that add a key](#keyed-and-named-stores-that-add-a-key)) and `weak_map_set` 1.20%. `global_destruct_strict` runs 0.12% more.
+
 #### The study of 2026-11-13
 
 The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
