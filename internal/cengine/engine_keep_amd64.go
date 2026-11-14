@@ -1348,6 +1348,7 @@ var goasmKeep = []any{
 	round,
 	rqsort,
 	rqsort_stop,
+	rv_add_str,
 	rv_add_var_ref,
 	rv_addloc_slow,
 	rv_addvr_slow,

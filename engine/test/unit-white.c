@@ -110,6 +110,8 @@ int white_resolve_var(JSContext *ctx, int kind, int in_arrow, size_t room, int *
 int white_eval_vars(JSContext *ctx, int in_arrow, size_t room, int *pending, int *made);
 int white_string_is_rope(JSValueConst v);
 int white_string_room(JSContext *ctx, JSValueConst v);
+int white_string_wide(JSValueConst v);
+JSValue white_concat(JSContext *ctx, JSValueConst a, JSValueConst b);
 int white_every_block_is_a_request(void);
 int white_fused_ops(const uint8_t *code, int len, int *count, size_t cap);
 int white_short_index_check(char *bad, size_t cap);
@@ -5117,6 +5119,78 @@ static void test_string_empty_left(void)
     }
 }
 
+/* a + b of two strings in each form of the register loop's add (ADD, ADDL,
+   ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h) gives the string the
+   generic add gives, JS_ConcatString of the two (white_concat): a rope where
+   it makes a rope, a flat string where it makes one, of the same width,
+   length and characters. Operands of every kind the engine has: the empty
+   string, an atom, flat strings of 8 and 16 bits, short and long, a rope and
+   the string of a property key, made again for each add. */
+static void test_string_add_kinds(void)
+{
+    static const char *const kinds[] = {
+        "''", "'a'", "'ab'.repeat(2)", "'\\u4e2d'.repeat(2)", "'x'.repeat(600)",
+        "'\\u00e9'.repeat(600)", "'y'.repeat(9000)", "'r'.repeat(9000) + 's'.repeat(9000)",
+        "Object.keys({ keyName: 1 })[0]", "'p'.repeat(100) + 'q'",
+    };
+    /* kl and kr: the constant on the left or the right, in place of a or b */
+    static const struct {
+        const char *what, *add, *kl, *kr;
+    } forms[] = {
+        { "ADD", "(a, b) => a + b", NULL, NULL },
+        { "ADDL", "(a, b) => { let t = 0; t = a + b; return t }", NULL, NULL },
+        { "ADDK", "(a, b) => a + '<k>'", NULL, "'<k>'" },
+        { "ADDKL", "(a, b) => { let t = 0; t = a + '\\u4e2d'; return t }", NULL, "'\\u4e2d'" },
+        { "KADD", "(a, b) => '<k>' + b", "'<k>'", NULL },
+        { "KADD into a local", "(a, b) => { let t = 0; t = '\\u4e2d' + b; return t }", "'\\u4e2d'", NULL },
+    };
+    size_t f, i, j;
+
+    for (f = 0; f < countof(forms); f++) {
+        VM v = vm_new();
+        JSValue add = JS_Eval(v.ctx, forms[f].add, strlen(forms[f].add), "<unit>", JS_EVAL_TYPE_GLOBAL);
+
+        for (i = 0; i < countof(kinds); i++) {
+            for (j = 0; j < countof(kinds); j++) {
+                const char *l = forms[f].kl ? forms[f].kl : kinds[i];
+                const char *r = forms[f].kr ? forms[f].kr : kinds[j];
+                int k;
+
+                /* twice: the first call converts the function to register
+                   code, the second runs it there */
+                for (k = 0; k < 2; k++) {
+                    JSValue args[2], res, want;
+
+                    args[0] = JS_Eval(v.ctx, kinds[i], strlen(kinds[i]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    args[1] = JS_Eval(v.ctx, kinds[j], strlen(kinds[j]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    res = JS_Call(v.ctx, add, JS_UNDEFINED, 2, args);
+                    JS_FreeValue(v.ctx, args[0]);
+                    JS_FreeValue(v.ctx, args[1]);
+                    args[0] = JS_Eval(v.ctx, l, strlen(l), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    args[1] = JS_Eval(v.ctx, r, strlen(r), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                    want = white_concat(v.ctx, args[0], args[1]);
+                    JS_FreeValue(v.ctx, args[0]);
+                    JS_FreeValue(v.ctx, args[1]);
+                    CHECK(white_string_is_rope(res) >= 0 && white_string_is_rope(want) >= 0,
+                          "%s of %s and %s: no string", forms[f].what, l, r);
+                    CHECK(white_string_is_rope(res) == white_string_is_rope(want),
+                          "%s of %s and %s: a rope is %d, the generic add's %d", forms[f].what, l, r,
+                          white_string_is_rope(res), white_string_is_rope(want));
+                    CHECK(white_string_wide(res) == white_string_wide(want),
+                          "%s of %s and %s: wide is %d, the generic add's %d", forms[f].what, l, r,
+                          white_string_wide(res), white_string_wide(want));
+                    CHECK(JS_StrictEq(v.ctx, res, want), "%s of %s and %s: not the string of the generic add",
+                          forms[f].what, l, r);
+                    JS_FreeValue(v.ctx, res);
+                    JS_FreeValue(v.ctx, want);
+                }
+            }
+        }
+        JS_FreeValue(v.ctx, add);
+        vm_free(&v);
+    }
+}
+
 /* ---- the own keys of an object ---- */
 
 /* objects of every kind of key, with the shapes the listing handles itself,
@@ -7581,6 +7655,7 @@ int main(int argc, char **argv)
     test_string_append_flat();
     test_string_append_atom();
     test_string_empty_left();
+    test_string_add_kinds();
     test_own_keys_flags();
     test_shared_debug_read();
     test_regexp_cache_keeps();
