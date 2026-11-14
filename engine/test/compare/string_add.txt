@@ -39,6 +39,7 @@ other sym !TypeError !TypeError !TypeError !TypeError !TypeError !TypeError !Typ
 other fn Lfunction f() {} function f() {}R Lfunction f() {} function f() {}R xfunction f() {} function f() {}x Pfunction f() {}
 hooked aac caa 602:-1783372000 602:-1783372000 601:213897835 aaaa spc[S.prim:default] csp[S.prim:default] aasp[S.prim:default]
 restored soc
+sub 2 9 2 5 6 6 NaN
 loop k n16 2400 932267880 true
 loop n8 l600 3645 833408364 true
 loop wrope key 3 49874 true

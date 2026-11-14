@@ -39,10 +39,11 @@ result other sym !TypeError !TypeError !TypeError !TypeError !TypeError !TypeErr
 result other fn Lfunction f() {} function f() {}R Lfunction f() {} function f() {}R xfunction f() {} function f() {}x Pfunction f() {}
 result hooked aac caa 602:-1783372000 602:-1783372000 601:213897835 aaaa spc[S.prim:default] csp[S.prim:default] aasp[S.prim:default]
 result restored soc
+result sub 2 9 2 5 6 6 NaN
 result loop k n16 2400 932267880 true
 result loop n8 l600 3645 833408364 true
 result loop wrope key 3 49874 true
 result loop empty hi 600 -221711168 true
-mem-end obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=59 binary=0
-mem-gc obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=59 binary=0
+mem-end obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
+mem-gc obj=243 atom=627 shape=139 prop=1105 jsfunc=29 cfunc=141 array=5 fast_array=5 elements=60 binary=0
 --- status exit 0

@@ -164,6 +164,15 @@ for (const [n, v] of Object.entries(others)) {
   String.prototype.toString = saved[1]
   out.push('restored ' + show(() => strObj + 'c'))
 }
+// a sub of two strings stays a sub, in each form of sub: SUB, SUBL, SUBK,
+// SUBKL and KSUB
+{
+  const s3 = '3', s1 = '1'
+  let l = '10'; l = l - s1
+  let lk = '7'; lk = lk - '2'
+  const o = { p: '8' }; o.p -= '2'
+  out.push('sub ' + [s3 - s1, l, s3 - '1', lk, '9' - s3, o.p, 'a' - 'b'].map(String).join(' '))
+}
 // a loop of every form, warm, in strict and sloppy code
 {
   const strictLoop = new Function('a', 'b', '"use strict"; let s = ""; for (let i = 0; i < 300; i++) { s = s + a; s = b + s; s += "|"; if (s.length > 4000) s = "" + i } return s')
