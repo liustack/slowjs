@@ -173,3 +173,63 @@ func TestRejectionsClose(t *testing.T) {
 		}()
 	}
 }
+
+// TestRejectionsReadRange: a read takes the rejections kept when it starts,
+// at most max. Those made while it reads, by a getter of a reason, wait
+// for the next read, after their jobs could attach a handler: a getter
+// that rejects its own reason again made one read take them all, 100 from
+// max 1, and never end without a counter.
+func TestRejectionsReadRange(t *testing.T) {
+	m := newRejectionsVM(t, 1)
+	if _, err := m.Eval(`
+var remaining = 100;
+var reason = { get message() { if (--remaining > 0) Promise.reject(reason); return "again" } };
+Promise.reject(reason);
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	for k := 0; k < 3; k++ {
+		reasons, dropped, err := m.UnhandledRejections()
+		if err != nil || len(reasons) != 1 || dropped != 0 {
+			t.Fatalf("read %d: %d reasons, %d dropped, %v, want 1", k, len(reasons), dropped, err)
+		}
+	}
+
+	m = newRejectionsVM(t, 1)
+	if err := m.SetEvalTimeout(2 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Eval(`
+var forever = { get message() { Promise.reject(forever); return "again" } };
+Promise.reject(forever);
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	for k := 0; k < 3; k++ {
+		reasons, _, err := m.UnhandledRejections()
+		if err != nil || len(reasons) != 1 {
+			t.Fatalf("forever, read %d: %d reasons, %v, want 1", k, len(reasons), err)
+		}
+	}
+
+	m = newRejectionsVM(t, 4)
+	if _, err := m.Eval(`
+Promise.reject({ get message() {
+  const p = Promise.reject(new Error("late"));
+  Promise.resolve().then(() => p.catch(() => {}));
+  return "first";
+} });
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	if err != nil || len(reasons) != 1 || reasons[0].Message != "first" {
+		t.Fatalf("%d reasons, %v, want first alone", len(reasons), err)
+	}
+	if _, err := m.ExecutePendingJobs(); err != nil {
+		t.Fatal(err)
+	}
+	if reasons, _, err := m.UnhandledRejections(); err != nil || len(reasons) != 0 {
+		t.Fatalf("after the jobs: %d reasons, %v, want none", len(reasons), err)
+	}
+}

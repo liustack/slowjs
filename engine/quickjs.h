@@ -1111,13 +1111,18 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTrac
 /* the rejections of promises that no handler took, kept for the host: at
    most max of them, oldest first (0 turns keeping off and frees what is
    kept, -1 when there is no memory for the list). JS_TakeRejection gives
-   the reason of the oldest and forgets it, JS_UNINITIALIZED when none is
-   left. JS_TakeDroppedRejections gives how many were not kept, past max or
+   the reason of the oldest kept before JS_RejectionMark gave mark and
+   forgets it, JS_UNINITIALIZED when none is left, and JS_HasRejection
+   tells whether there is one: a read takes what was kept when it began,
+   not what the reasons it reads make it keep.
+   JS_TakeDroppedRejections gives how many were not kept, past max or
    with no memory, since it was last called. Keeping them replaces the
    tracker of JS_SetHostPromiseRejectionTracker, and setting a tracker
    frees them. */
 int JS_TrackRejections(JSRuntime *rt, uint32_t max);
-JSValue JS_TakeRejection(JSRuntime *rt);
+uint32_t JS_RejectionMark(JSRuntime *rt);
+int JS_HasRejection(JSRuntime *rt, uint32_t mark);
+JSValue JS_TakeRejection(JSRuntime *rt, uint32_t mark);
 uint32_t JS_TakeDroppedRejections(JSRuntime *rt);
 /* the async context of promise jobs: an object that promise reactions keep
    and run with, or none (undefined) */

@@ -1317,10 +1317,12 @@ static char *take_rejections(JSContext *ctx)
 {
     char buf[1024];
     size_t n = 0;
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    uint32_t mark = JS_RejectionMark(rt);
     JSValue r;
 
     buf[0] = 0;
-    while (!JS_IsUninitialized(r = JS_TakeRejection(JS_GetRuntime(ctx)))) {
+    while (!JS_IsUninitialized(r = JS_TakeRejection(rt, mark))) {
         const char *s = JS_ToCString(ctx, r);
 
         if (n < sizeof(buf))
@@ -1420,6 +1422,32 @@ static void test_rejections_max(void)
     host_free_runtime(rt);
 }
 
+/* A take with a mark takes only the rejections kept before the mark was
+   read, oldest first: one kept after it waits for the next mark, also once
+   all before it are taken or handled. */
+static void test_rejections_mark(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    uint32_t mark;
+    JSValue r;
+
+    CHECK(JS_RejectionMark(rt) == 0, "a mark with no list");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(1); var p2 = Promise.reject(2)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(eval(ctx, "Promise.reject(3); p2.catch(() => {})"), "the script threw");
+    CHECK(JS_HasRejection(rt, mark), "none before the mark");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 1, "the first before the mark");
+    CHECK(!JS_HasRejection(rt, mark), "one before the mark after the first");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_IsUninitialized(r), "one kept after the mark taken with it");
+    CHECK(rejections_are(ctx, "3"), "the one kept after the mark");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The collector keeps what the list holds: a reason that holds its own
    promise, a cycle nothing else reaches, outlives a full and a young
    collection, and goes once taken and freed. */
@@ -1436,7 +1464,7 @@ static void test_rejections_collected(void)
     JS_RunYoungGC(rt);
     JS_RunGC(rt);
     JS_RunYoungGC(rt);
-    r = JS_TakeRejection(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
     CHECK(JS_IsObject(r), "no reason kept");
     p = JS_GetPropertyStr(ctx, r, "p");
     CHECK(JS_PromiseState(ctx, p) == JS_PROMISE_REJECTED, "the promise of the reason");
@@ -1446,7 +1474,7 @@ static void test_rejections_collected(void)
     CHECK(n == 42, "the reason read %d", n);
     JS_FreeValue(ctx, p);
     JS_FreeValue(ctx, r);
-    CHECK(JS_IsUninitialized(JS_TakeRejection(rt)), "a second reason");
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, JS_RejectionMark(rt))), "a second reason");
     JS_RunGC(rt);
     JS_FreeContext(ctx);
     host_free_runtime(rt);
@@ -4971,6 +4999,7 @@ int main(void)
     test_async_context_job();
     test_rejections_kept();
     test_rejections_max();
+    test_rejections_mark();
     test_rejections_collected();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

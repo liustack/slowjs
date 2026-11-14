@@ -602,7 +602,9 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 
 宿主运行脚本和它的任务，然后报告没有处理函数接住的拒绝，和 Node 报告未处理的拒绝一样。以前这样的拒绝在虚拟机里不留痕迹：宿主只看到脚本的结果，或者什么结果也没有，却没有任何说明。
 
-列表由引擎保存（`engine/quickjs.c` 的 `JS_TrackRejections`、`JS_TakeRejection` 和 `JS_TakeDroppedRejections`），作为 `JS_SetHostPromiseRejectionTracker` 的跟踪函数：QuickJS 在 promise 被拒绝而没有处理函数时调用它，在之后给这样的 promise 挂上处理函数时再调用一次，第一次加一项，第二次去掉这一项。跟踪函数是 C 函数，因为只能通过 `host_call` 进入 Go。
+列表由引擎保存（`engine/quickjs.c` 的 `JS_TrackRejections`、`JS_RejectionMark`、`JS_HasRejection`、`JS_TakeRejection` 和 `JS_TakeDroppedRejections`），作为 `JS_SetHostPromiseRejectionTracker` 的跟踪函数：QuickJS 在 promise 被拒绝而没有处理函数时调用它，在之后给这样的 promise 挂上处理函数时再调用一次，第一次加一项，第二次去掉这一项。跟踪函数是 C 函数，因为只能通过 `host_call` 进入 Go。
+
+一次读取只取开始时已保留的拒绝（`JS_RejectionMark`，每一项按顺序得到一个编号）：拒绝原因的 getter 新造的拒绝留给下一次读取，那时它的任务已经有机会挂上处理函数。以前一个再次拒绝自己拒绝原因的 getter 能让 `max` 为 1 的一次读取取出 100 个，去掉计数器就永不结束。
 
 它是安全的，因为：
 
@@ -610,8 +612,8 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 - 跟踪函数不抛异常：它用 `js_malloc_rt` 分配一项，没有空位或没有内存时只计入 `dropped`，绝不变成脚本的错误。
 - 列表持有的是自己的引用，指向 promise 和拒绝原因，回收器像对待任务列表的引用一样计算它们：在被取走之前它们一直活着，包括环在内。`JS_FreeRuntime` 在释放任务列表之后、最后一次回收之前释放这个列表。设置别的跟踪函数也会释放它。
 - 读拒绝原因会运行 javascript（比如 message 的 getter），在这次调用的 eval 超时之内，和读抛出的错误一样。如果遇到无法捕获的错误，`UnhandledRejections` 返回它，正在读的那一项之后的拒绝仍然保留。
-- 列表有界：在虚拟机的内存上限之内最多 `max` 项，每项 48 字节，去掉一项最多查看 `max` 项，一次 `UnhandledRejections` 在 Go 里最多造出 `max` 个错误。
+- 列表有界：在虚拟机的内存上限之内最多 `max` 项，每项 56 字节，去掉一项最多查看 `max` 项，一次 `UnhandledRejections` 在 Go 里最多造出 `max` 个错误。
 
 代价：不保留的虚拟机没有代价。打开时，每个发生时没有处理函数的拒绝占一项和两个引用，之后给这样的 promise 挂处理函数要遍历一次列表，拒绝原因在被取走之前一直活着。
 
-测试：`engine/test/unit.c` 的 `test_rejections_kept`、`test_rejections_max` 和 `test_rejections_collected`（顺序，之后挂上的处理函数，`then` 和 async 函数生成的 promise，上限和丢掉的计数，关闭时释放，与自己的 promise 成环的拒绝原因在一次完整回收和一次年轻代回收后仍然保留，带着保留项释放运行时），`engine/test/unit-oom.c` 的 `test_rejections_oom`（列表没有内存：返回 `-1`，什么也不保留，一项没有内存：计数，promise 照样被拒绝，没有泄漏），以及 `rejections_test.go` 的 `TestRejectionsOff`、`TestRejections`、`TestRejectionsMax`、`TestRejectionsReadStops`（永不结束的 getter 被 eval 超时停下，下一个拒绝仍然保留）和 `TestRejectionsClose`（带着保留的拒绝关闭虚拟机，`Close` 之后这两个方法和其他方法一样 panic）。
+测试：`engine/test/unit.c` 的 `test_rejections_kept`、`test_rejections_max`、`test_rejections_mark` 和 `test_rejections_collected`（顺序，之后挂上的处理函数，`then` 和 async 函数生成的 promise，上限和丢掉的计数，关闭时释放，带编号的读取留下编号之后保留的，与自己的 promise 成环的拒绝原因在一次完整回收和一次年轻代回收后仍然保留，带着保留项释放运行时），`engine/test/unit-oom.c` 的 `test_rejections_oom`（列表没有内存：返回 `-1`，什么也不保留，一项没有内存：计数，promise 照样被拒绝，没有泄漏），以及 `rejections_test.go` 的 `TestRejectionsOff`、`TestRejections`、`TestRejectionsMax`、`TestRejectionsReadStops`（永不结束的 getter 被 eval 超时停下，下一个拒绝仍然保留）和 `TestRejectionsClose`（带着保留的拒绝关闭虚拟机，`Close` 之后这两个方法和其他方法一样 panic），以及 `TestRejectionsReadRange`（再次拒绝自己拒绝原因的 getter，有计数器和没有计数器两种，以及 getter 造的拒绝在下一次读取前被它的任务处理掉：改动之前它会失败）。

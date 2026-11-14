@@ -2575,7 +2575,7 @@ static void test_rejections_oom(void)
             CHECK(JS_TrackRejections(v.rt, 4) == -1, "the list made with a full heap");
             release_blocks(&v);
             CHECK(eval_ok(v.ctx, "Promise.reject(1)"), "the script threw");
-            r = JS_TakeRejection(v.rt);
+            r = JS_TakeRejection(v.rt, JS_RejectionMark(v.rt));
             CHECK(JS_IsUninitialized(r), "a rejection kept with no list");
             JS_FreeValue(v.ctx, r);
             CHECK(JS_TakeDroppedRejections(v.rt) == 0, "dropped with no list");
@@ -2595,7 +2595,7 @@ static void test_rejections_oom(void)
         JS_FreeValue(v.ctx, r);
         CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_REJECTED, "full %d: not rejected", full);
         CHECK(JS_TakeDroppedRejections(v.rt) == (uint32_t)full, "full %d: dropped", full);
-        r = JS_TakeRejection(v.rt);
+        r = JS_TakeRejection(v.rt, JS_RejectionMark(v.rt));
         if (full) {
             CHECK(JS_IsUninitialized(r), "full %d: a rejection kept", full);
         } else {

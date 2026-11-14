@@ -1361,15 +1361,40 @@ func (m *VM) jsTrackRejections(max uint32) (ok bool) {
 	return ok
 }
 
-// jsTakeRejection is JS_TakeRejection: the reason of the oldest rejection
-// kept, owned by the caller, or ok false when none is left.
-func (m *VM) jsTakeRejection() (r jsValue, ok bool) {
+// jsRejectionMark is JS_RejectionMark: the mark of the rejections kept now.
+func (m *VM) jsRejectionMark() (n uint32) {
 	if m.entered == 0 {
-		m.outer(func() { r, ok = m.jsTakeRejection() })
+		m.outer(func() { n = m.jsRejectionMark() })
+		return n
+	}
+	m.toEngine()
+	n = uint32(cengine.JS_RejectionMark(m.sp, m.rt))
+	m.inEngine--
+	return n
+}
+
+// jsHasRejection is JS_HasRejection: whether a rejection kept before mark is
+// left.
+func (m *VM) jsHasRejection(mark uint32) (ok bool) {
+	if m.entered == 0 {
+		m.outer(func() { ok = m.jsHasRejection(mark) })
+		return ok
+	}
+	m.toEngine()
+	ok = int32(cengine.JS_HasRejection(m.sp, m.rt, uintptr(mark))) != 0
+	m.inEngine--
+	return ok
+}
+
+// jsTakeRejection is JS_TakeRejection: the reason of the oldest rejection
+// kept before mark, owned by the caller, or ok false when none is left.
+func (m *VM) jsTakeRejection(mark uint32) (r jsValue, ok bool) {
+	if m.entered == 0 {
+		m.outer(func() { r, ok = m.jsTakeRejection(mark) })
 		return r, ok
 	}
 	m.toEngine()
-	r = val(cengine.JS_TakeRejection(m.sp, m.rt))
+	r = val(cengine.JS_TakeRejection(m.sp, m.rt, uintptr(mark)))
 	m.inEngine--
 	return r, tag(r) != tagUninitialized
 }

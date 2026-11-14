@@ -65770,12 +65770,14 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt,
 typedef struct JSRejection {
     struct list_head link;
     JSValue promise, reason;
+    uint32_t seq; /* the order it was kept in */
 } JSRejection;
 
 typedef struct JSRejections {
     struct list_head list; /* JSRejection.link */
     uint32_t max, count;
     uint32_t dropped; /* not kept since the host last read it */
+    uint32_t seq; /* the seq of the next one kept */
 } JSRejections;
 
 static void js_rejection_free(JSRuntime *rt, JSRejections *r, JSRejection *e)
@@ -65819,6 +65821,7 @@ static void js_track_rejection(JSContext *ctx, JSValueConst promise,
     }
     e->promise = JS_DupValueRT(rt, promise);
     e->reason = JS_DupValueRT(rt, reason);
+    e->seq = r->seq++;
     list_add_tail(&e->link, &r->list);
     r->count++;
 }
@@ -65852,6 +65855,7 @@ int JS_TrackRejections(JSRuntime *rt, uint32_t max)
         init_list_head(&r->list);
         r->count = 0;
         r->dropped = 0;
+        r->seq = 0;
         rt->host_promise_rejection_tracker = js_track_rejection;
         rt->host_promise_rejection_tracker_opaque = r;
     }
@@ -65859,18 +65863,43 @@ int JS_TrackRejections(JSRuntime *rt, uint32_t max)
     return 0;
 }
 
-JSValue JS_TakeRejection(JSRuntime *rt)
+uint32_t JS_RejectionMark(JSRuntime *rt)
+{
+    JSRejections *r = js_rejections(rt);
+
+    return r ? r->seq : 0;
+}
+
+/* the oldest rejection kept, when it was kept before the mark, or NULL */
+static JSRejection *js_rejection_before(JSRuntime *rt, uint32_t mark)
 {
     JSRejections *r = js_rejections(rt);
     JSRejection *e;
-    JSValue reason;
 
     if (!r || list_empty(&r->list))
-        return JS_UNINITIALIZED;
+        return NULL;
     e = list_entry(r->list.next, JSRejection, link);
+    /* kept at or after the mark: the oldest is, so are the others */
+    if ((int32_t)(e->seq - mark) >= 0)
+        return NULL;
+    return e;
+}
+
+int JS_HasRejection(JSRuntime *rt, uint32_t mark)
+{
+    return js_rejection_before(rt, mark) != NULL;
+}
+
+JSValue JS_TakeRejection(JSRuntime *rt, uint32_t mark)
+{
+    JSRejection *e = js_rejection_before(rt, mark);
+    JSValue reason;
+
+    if (!e)
+        return JS_UNINITIALIZED;
     reason = e->reason;
     e->reason = JS_UNDEFINED;
-    js_rejection_free(rt, r, e);
+    js_rejection_free(rt, js_rejections(rt), e);
     return reason;
 }
 

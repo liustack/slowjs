@@ -30,6 +30,7 @@ JS_GetPropertyInternal
 JS_GetPropertyStr
 JS_GetPrototype
 JS_HasException
+JS_HasRejection
 JS_IsFunction
 JS_IsUncatchableException
 JS_JSONStringify
@@ -55,6 +56,7 @@ JS_PromiseState
 JS_ReadObject
 JS_RegvmFuncStat
 JS_RegvmStat
+JS_RejectionMark
 JS_ReleaseNextChunk
 JS_ReleaseNextRange
 JS_ReleaseStart

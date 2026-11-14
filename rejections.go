@@ -40,7 +40,7 @@ func (m *VM) TrackRejections(max int) (err error) {
 	return nil
 }
 
-// UnhandledRejections takes the rejections m keeps (see
+// UnhandledRejections takes the rejections m kept when it is called (see
 // [VM.TrackRejections]), oldest first, and forgets them. Each reason is read
 // as the error of a call that threw it is: an Error gives its Name, Message
 // and Stack, any other value its text. dropped is how many rejections were
@@ -48,17 +48,22 @@ func (m *VM) TrackRejections(max int) (err error) {
 // may have been attached to some of them since.
 //
 // Reading a reason runs javascript, such as a getter of its message, inside
-// the eval timeout. When that ends with an uncatchable error, such as the
-// timeout, UnhandledRejections returns the reasons read before it and that
-// error, and the rejections after the one it was reading stay kept.
+// the eval timeout. A rejection that this javascript makes is kept for the
+// next call, after its jobs could attach a handler to it. When that
+// javascript ends with an uncatchable error, such as the timeout,
+// UnhandledRejections returns the reasons read before it and that error,
+// and the rejections after the one it was reading stay kept.
 func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
 	if err = m.enter(); err != nil {
 		return nil, 0, err
 	}
 	defer m.leave(&err)
 	dropped = int(m.jsTakeDroppedRejections())
+	// The rejections kept from here on, by javascript a read runs, are for
+	// the next call.
+	mark := m.jsRejectionMark()
 	for {
-		v, ok := m.jsTakeRejection()
+		v, ok := m.jsTakeRejection(mark)
 		if !ok {
 			return reasons, dropped, nil
 		}
