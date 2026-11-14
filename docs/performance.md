@@ -1138,6 +1138,12 @@ Instructions a render. Native is the C tree built by clang, callgrind on an AMD 
 | MUI's home page | +0.01% | -0.15% | -0.03% |
 | Long Markdown (400 sections) | 0.00% | -0.09% | |
 
+### The next key of a for in loop and the read of it
+
+[The next key of a for in loop is taken in the register loop](changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop), counted on 2026-11-15 against `3c12c835`. A render takes 2,399 steps of for in loops on React's page, 8,465 on the store's home page, 16,450 on its products page, 9,934 on the workbench's studio page, 4,111 on its stats page, 34,096 on MUI's orders page, 12,523 on its home page and 215,983 in long Markdown. A step took about 155 instructions on amd64 (callgrind, a loop over 8 keys, `host_poll` left out) and 223 on the M4, about 90 of them in `rv_w_for_in_next`.
+
+Instructions a render, native, amd64 (callgrind, three timed renders after two warm ones, `host_poll` left out): MUI's orders page 185.07M to 183.06M (-1.09%), its home page 81.08M to 80.41M (-0.83%), the workbench's studio page 153.52M to 152.94M (-0.38%), React's page 29.74M to 29.63M (-0.38%). Every page gives the same HTML.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.

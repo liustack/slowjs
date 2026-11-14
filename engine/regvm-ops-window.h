@@ -35,6 +35,8 @@ RV_OP(W_SET_NAME)       /* w atom */
 RV_OP(W_DELETE)         /* w */
 RV_OP(W_APPEND)         /* w */
 RV_OP(W_COPY_DATA_PROPERTIES) /* w mask8 */
+RV_OP(FINEXT)           /* w off: W_FOR_IN_NEXT then if_false, the key in w and a jump
+                           to off, or undefined in w at the end (rv_for_in_branch) */
 #elif RV_PART == RV_PART_INFO
     case OP_object_lit: case OP_array_from:
         *npop = get_u16(bc + pos + 1);
@@ -69,6 +71,39 @@ static void rv_window_end(RVPass *s, int npop, int npush)
     while (npush-- > 0)
         rv_push(s, RV_E_TEMP, rv_tslot(s, s->sp), 0);
 }
+
+/* for_in_next at s->pos then the if_false of the loop, which no jump
+   reaches: FINEXT w off, with the iterator in the temp below w. It leaves
+   the value in w, as W_FOR_IN_NEXT does, and jumps where the if_false jumps
+   when a key came, so the done flag is not written. Like a compare and
+   branch it can throw by itself (the next of the window) and at the
+   interrupt of its jump: the value temp is owned at both, and holds
+   undefined when the next throws. At the end it leaves undefined in w, and
+   the drop of it after the branch, when no jump reaches the drop, frees
+   nothing. */
+static BOOL rv_for_in_branch(RVPass *s)
+{
+    int target, jt, q, w;
+    if (s->fold || s->sp < 1)
+        return FALSE;
+    target = rv_next_branch(s, s->pos, &jt);
+    if (target < 0 || jt)
+        return FALSE;
+    q = rv_next_pos(s, s->pos);
+    rv_block_end(s, s->sp);
+    w = rv_tslot(s, s->sp);
+    rv_emit(s, RV_FINEXT);
+    rv_byte(s, w);
+    rv_jump_to(s, target);
+    rv_push(s, RV_E_TEMP, w, 0);
+    rv_jump_throws(s, rv_owned(s, 0), q, TRUE);
+    q = rv_next_pos(s, q);
+    if (q < s->len && !(s->leader[q] & (RV_LEAD_JUMP | RV_LEAD_CASE)) &&
+        s->bc[q] == OP_drop)
+        s->drop_at = q;
+    s->last = -2;
+    return TRUE;
+}
 #elif RV_PART == RV_PART_PASS
     /* the bodies that take their operands and free them when they throw:
        the operands are not owned across the throw */
@@ -93,6 +128,8 @@ static void rv_window_end(RVPass *s, int npop, int npush)
         rv_window_end(s, 1, 1);
         break;
     case OP_for_in_next:
+        if (rv_for_in_branch(s))
+            break;
         rv_window(s, p, RV_W_FOR_IN_NEXT, 1);
         rv_throws(s, rv_owned(s, 0));
         rv_window_end(s, 1, 3);
@@ -482,4 +519,50 @@ static no_inline int rv_w_copy_data_properties(JSContext *ctx, JSValue *F, const
     RV_WINDOW(rv_W_APPEND, rv_w_append, 1)
     RV_WINDOW(rv_W_COPY_DATA_PROPERTIES, rv_w_copy_data_properties, 2)
 #undef RV_WINDOW
+
+    /* the next key of a for in loop and the branch on it (rv_for_in_branch):
+       the next string key of the shape the iterator holds while the object
+       still has that shape, as js_for_in_next gives it, here. Every other
+       step, the end and the prototype chain in rv_w_for_in_next, which
+       leaves the done flag in the temp above w. */
+ rv_FINEXT:
+    ip = pc;
+    pc += 3;
+    {
+        JSValue *w = &RV_R(ip[0]);
+        if (likely(JS_VALUE_GET_TAG(w[-1]) == JS_TAG_OBJECT && !RV_INJ_ARMED)) {
+            p = JS_VALUE_GET_OBJ(w[-1]);
+            if (likely(p->class_id == JS_CLASS_FOR_IN_ITERATOR)) {
+                JSForInIterator *it = p->u.for_in_iterator;
+                JSShape *sh = it->sh;
+                if (likely(sh && it->idx < it->atom_count)) {
+                    JSShapeProperty *prs = &get_shape_prop(sh)[it->idx];
+                    if (likely(js_for_in_shape_key(rt, prs) &&
+                               (prs->flags & JS_PROP_ENUMERABLE) &&
+                               JS_VALUE_GET_OBJ(it->obj)->shape == sh)) {
+                        it->idx++;
+                        *w = JS_DupValue(ctx, JS_MKPTR(JS_TAG_STRING, rt->atom_array[prs->atom]));
+                        n = 1;
+                        goto rv_finext_jump;
+                    }
+                }
+            }
+        }
+        RV_SYNC_TOP();
+        if (rv_w_for_in_next(ctx, F, ip)) {
+            /* owned by the pcmap entry of the throw */
+            *w = JS_UNDEFINED;
+            goto rv_exception;
+        }
+        n = !JS_VALUE_GET_BOOL(w[1]);
+    }
+ rv_finext_jump:
+    RV_JUMP_POLL(n, 1);
+    if (n) {
+        int off = (int16_t)get_u16(ip + 1);
+        if (off < 0)
+            poll_count(POLL_WEIGHT);
+        pc += off;
+    }
+    RV_NEXT();
 #endif
