@@ -564,6 +564,55 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         rv_throws(s, rv_owned(s, 0));
         break;
 #elif RV_PART == RV_PART_RUN_FN
+/* add of two strings or ropes, ip at d a b, k as for rv_binop_slow (1 a
+   constant b, 2 a constant a): what rv_binop_slow does for them, without
+   its decode of the op and the operands. Both are primitive strings, so the
+   add runs no code of the script. Returns 1 when a or b is not a string,
+   with nothing done, for rv_binop_slow, called after it and not from it so
+   that a conversion that calls back into the script costs no more stack.
+   Else 0, or -1 on an exception. The loop checks the tag of one operand
+   before the call, so that an add of a number and something else does not
+   pay it, and this checks both. rv_add_str_k is its body for one k. */
+static force_inline int rv_add_str_k(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
+{
+    int d = (int8_t)ip[0];
+    JSValue a, b;
+    a = (k & 2) ? ((RVHeader *)F)->k[ip[1]] : F[(int8_t)ip[1]];
+    b = (k & 1) ? ((RVHeader *)F)->k[ip[2]] : F[(int8_t)ip[2]];
+    if (!JS_IsString(a) || !JS_IsString(b))
+        return 1;
+    /* taken as rv_binop_slow takes them: a temp moved, a local, an
+       argument or a constant copied */
+    if ((k & 2) || !rv_is_temp(F, (int8_t)ip[1]))
+        JS_DupValue(ctx, a);
+    if ((k & 1) || !rv_is_temp(F, (int8_t)ip[2]))
+        JS_DupValue(ctx, b);
+    if (RV_INJ_HIT(ctx)) {
+        JS_FreeValue(ctx, a);
+        JS_FreeValue(ctx, b);
+        return -1;
+    }
+    /* into a local or an argument, the string of d grows in place when it
+       is the left operand (js_add_string_into) */
+    if (!rv_is_temp(F, d))
+        a = js_add_string_into(ctx, a, b, &F[d]);
+    else
+        a = JS_ConcatString(ctx, a, b);
+    if (JS_IsException(a))
+        return -1;
+    rv_put(ctx, F, d, a);
+    return 0;
+}
+
+static no_inline int rv_add_str(JSContext *ctx, JSValue *F, const uint8_t *ip, int k)
+{
+    if (k == 0)
+        return rv_add_str_k(ctx, F, ip, 0);
+    if (k == 1)
+        return rv_add_str_k(ctx, F, ip, 1);
+    return rv_add_str_k(ctx, F, ip, 2);
+}
+
 /* the slow side of add, sub and the compares, ip at the operands: d a b,
    or d a k when k has 1, d k b when it has 2 (KADD, KSUB), a idx16 of a
    var ref when it has 4 (JSEQVF). Stores the result for arith, returns 0
@@ -603,7 +652,9 @@ static no_inline int rv_binop_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
                 if (JS_IsString(ops[0]) && JS_IsString(ops[1])) {
                     /* as QuickJS's OP_add: into a local or an
                        argument (d below 0, ADDL and ADDKL), the string of
-                       d grows in place when it is the left operand */
+                       d grows in place when it is the left operand. The
+                       add handlers send two strings to rv_add_str, which
+                       does the same, before they come here. */
                     if (has_d && !rv_is_temp(F, d))
                         ops[0] = js_add_string_into(ctx, ops[0], ops[1], &F[d]);
                     else
@@ -1143,7 +1194,8 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     RV_ARITH(rv_SUBKL, -, RV_K(ip[2]), TRUE)
 
     /* add and sub with the constant on the left (1 + x, "<" + x, 31 - x):
-       two ints with an int result here, the rest in rv_binop_slow */
+       two ints with an int result here, two strings in rv_add_str, the
+       rest in rv_binop_slow */
 #define RV_KARITH(label, cop, opc)                                      \
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
@@ -1157,6 +1209,12 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             }                                                           \
         }                                                               \
         RV_SYNC_TOP();                                                  \
+        if ((opc) == OP_add && JS_IsString(bv) &&                       \
+            (n = rv_add_str(ctx, F, ip, 2)) <= 0) {                     \
+            if (n)                                                      \
+                goto rv_exception;                                      \
+            RV_NEXT();                                                  \
+        }                                                               \
         if (rv_binop_slow(ctx, F, ip, opc, 2, TRUE) < 0)                \
             goto rv_exception;                                          \
     }                                                                   \
@@ -1194,6 +1252,12 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
             RV_NEXT();
         }
         RV_SYNC_TOP();
+        if (!(arith & 4) && JS_IsString(a) &&
+            (n = rv_add_str(ctx, F, ip, (arith >> 1) & 1)) <= 0) {
+            if (n)
+                goto rv_exception;
+            RV_NEXT();
+        }
         if (rv_binop_slow(ctx, F, ip, (arith & 4) ? OP_sub : OP_add, (arith >> 1) & 1, TRUE) < 0)
             goto rv_exception;
     }

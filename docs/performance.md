@@ -1017,6 +1017,40 @@ On an Apple M4 (darwin/arm64), tifa's `test/ssr` with the product counters, 10 r
 
 A second session timed MUI and React again: -0.10% [-0.74%, +0.54%] and -1.37% [-1.83%, -0.92%]. MUI takes the same time within the 1% delta: its pages call `charCodeAt` most, and that call now goes through the table of `rv_fast_fns`, about 8 instructions more on arm64. The binary at the first position was slower on MUI in one session (+1.61% [+0.54%, +2.69%]), and so was the same change without the table in the other: where the code lands, not the table. A render makes fewer direct C calls: 71,440 to 33,104 on the store's home, 30,030 to 14,315 on MUI's orders, 10,339 to 2,178 on React's page. Most of the gain comes from `push`, `Map.get` and `Math.clz32` on React, from `has`, `Array.isArray` and `Math.clz32` on MUI, and from `hasOwn`, `has` and `String` on the store. Most of the store's `hasOwn` and `String` calls are made while it builds URLs, so where a URL costs less the store gains less.
 
+### Two strings added without the generic path
+
+[Two strings are added without the generic path](changes/strings.md#two-strings-are-added-without-the-generic-path), against `78a90364`. The adds of two strings a render makes through each form, counted with counters added to the native C tree for the count only:
+
+| Page | ADD | ADDL | ADDK | ADDKL | KADD | Ropes among them |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| MUI's orders page | 7,157 | 11,468 | 12,582 | 6 | 3,321 | 422 |
+| MUI's home page | 3,616 | 5,443 | 6,005 | 6 | 1,489 | 319 |
+| The store's home page | 5,447 | 1,720 | 3,781 | 38 | 2,684 | 49 |
+| The store's products page | 7,036 | 2,391 | 5,201 | 121 | 4,608 | 49 |
+| The workbench's studio page | 1,485 | 1,403 | 1,183 | 59 | 3,169 | 47 |
+| The workbench's stats page | 1,099 | 745 | 861 | 26 | 1,205 | 49 |
+| React's page | 313 | 367 | 255 | 2 | 1,757 | 0 |
+| Long Markdown (400 sections) | 297,887 | 11,064 | 179,824 | 14 | 69,631 | 31 |
+
+`s += x` on a local (ADDLOC) and on a closure variable (ADDVR) did not go through the generic path before and are not in the table.
+
+Instructions a render, per page: amd64 is callgrind of the native C tree on an AMD EPYC 7B13 (three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with the URL stand-in `urlmemo.js`; Markdown two after one). arm64 is the retired instructions of the same renders on an Apple M4, the lowest of 3 rounds. The product is the generated engine in tifa's `test/ssr` (amd64: callgrind, the difference of three and one timed renders after two warm ones, `GOGC=off`; arm64: retired instructions, the lowest of 3 rounds), first as generated with the profile of v0.30.6, in which `JS_RegvmRun` no longer matches its C and so is compiled with no profile, then with the profile trained again on the change (`engine/pgo/train.sh`). The HTML of every page is the same.
+
+| Page | Native, amd64 | Native, M4 | Product, amd64, profile of v0.30.6 | Product, amd64, trained again | Product, M4, profile of v0.30.6 | Product, M4, trained again |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| React's page | -0.31% | -0.18% | +0.85% | -0.43% | +1.00% | -0.35% |
+| The store's home page | -0.31% | -0.34% | +0.95% | -0.10% | +0.89% | -0.22% |
+| The store's products page | -0.29% | -0.17% | +0.73% | -0.29% | +0.73% | -0.31% |
+| The workbench's studio page | -0.18% | -0.21% | +0.70% | -0.07% | +1.11% | +0.13% |
+| The workbench's stats page | -0.17% | -0.02% | +0.64% | -0.10% | +0.56% | -0.23% |
+| MUI's orders page | -0.52% | -0.42% | -0.02% | -0.69% | +0.15% | -0.50% |
+| MUI's home page | -0.58% | -0.42% | +0.13% | -0.59% | +0.16% | -0.40% |
+| Long Markdown (400 sections) | -0.11% | -0.11% | | | | |
+
+The micro benchmarks of `compare/testdata` by instructions (native, Apple M4, the lowest of 3 runs): `string_build2` -7.0%, `string_build3` -4.5%, `string_build_large2` -3.9%, `int_arith` and `float_arith` the same within 0.05%, and `int_to_string2` +0.7%, whose `n + ''` now tests the tag of `n` before the generic path. No other benchmark runs more than 0.5% more.
+
+Native, an add of two strings costs about 30 instructions less than before on amd64 (MUI's pages and React's page: the instructions saved over the adds of the table). As generated with the profile of v0.30.6, every page but MUI's runs 0.6% to 1.1% more instructions: the generator finds that the C of `JS_RegvmRun` changed since the profile was trained and compiles it with no profile, which costs more than the change saves. With the profile trained again every page runs fewer on amd64, so the profile must be trained again before a release that has this change ([releasing.md](releasing.md#the-profile)). The counts on the M4 differ by about 0.3% from one round to the next, so a row of it below that says nothing alone. Long Markdown was counted on the native C tree only.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
