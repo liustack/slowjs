@@ -118,7 +118,7 @@ done
 cold=$("$llvm/llvm-profdata" show -detailed-summary "$out/pages.profdata" | awk '/ account for 99\.9999% / { print $7 }')
 # the function each part of loops.js is there for, in the order of the parts
 need="rv_ta_get js_set_fast_array_element_out_of_line js_dataview_getValue js_dataview_setValue \
-lre_exec_backtrack js_bigint_cmp js_Date_parse string_get_tzabbr js_number_toPrecision \
+lre_exec_backtrack js_bigint_cmp js_Date_parse string_get_tzabbr date_fields_find js_number_toPrecision \
 js_number_toExponential upper_ascii delete_property set_array_length js_binary_logic_slow \
 map_delete_record"
 awk -v cold="$cold" -v hot=100 -v floor="${COVER_FLOOR:-95}" -v need="$need" -f engine/pgo/cover.awk \
