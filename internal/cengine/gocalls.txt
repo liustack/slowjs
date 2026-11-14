@@ -75,11 +75,14 @@ JS_SetRegExpCache
 JS_SetShapeCache
 JS_SetStripInfo
 JS_SetUncatchableException
+JS_TakeDroppedRejections
+JS_TakeRejection
 JS_Throw
 JS_ThrowErrorKind
 JS_ThrowOutOfMemory
 JS_ToCStringLen2
 JS_ToString
+JS_TrackRejections
 JS_ValueToAtom
 JS_WriteObject
 __JS_FreeValue

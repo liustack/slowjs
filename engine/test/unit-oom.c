@@ -2552,6 +2552,63 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* ---- the rejections kept for the host ---- */
+
+/* The two allocations of keeping rejections, each with no memory: the list,
+   which JS_TrackRejections makes and fails with -1 for, keeping nothing and
+   changing nothing, and the entry of a rejection, which the tracker counts
+   as dropped when it gets no memory: the rejection itself goes through, the
+   promise is rejected, and nothing leaks (vm_free). With memory, the same
+   rejection is kept. */
+static void test_rejections_oom(void)
+{
+    static const char setup[] = "var rej; var p = new Promise((_, r) => { rej = r }); p";
+    int full;
+
+    for (full = 0; full < 2; full++) {
+        VM v = vm_new();
+        JSValue arg = JS_NewInt32(v.ctx, 7), g, rej, p, r;
+        int32_t n = 0;
+
+        if (full) {
+            fill_memory(&v);
+            CHECK(JS_TrackRejections(v.rt, 4) == -1, "the list made with a full heap");
+            release_blocks(&v);
+            CHECK(eval_ok(v.ctx, "Promise.reject(1)"), "the script threw");
+            r = JS_TakeRejection(v.rt);
+            CHECK(JS_IsUninitialized(r), "a rejection kept with no list");
+            JS_FreeValue(v.ctx, r);
+            CHECK(JS_TakeDroppedRejections(v.rt) == 0, "dropped with no list");
+        }
+        CHECK(JS_TrackRejections(v.rt, 4) == 0, "full %d: no list", full);
+        p = JS_Eval(v.ctx, setup, strlen(setup), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(p), "the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        rej = JS_GetPropertyStr(v.ctx, g, "rej");
+        JS_FreeValue(v.ctx, g);
+        if (full)
+            fill_memory(&v);
+        r = JS_Call(v.ctx, rej, JS_UNDEFINED, 1, &arg);
+        if (full)
+            release_blocks(&v);
+        CHECK(!JS_IsException(r), "full %d: the rejection threw", full);
+        JS_FreeValue(v.ctx, r);
+        CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_REJECTED, "full %d: not rejected", full);
+        CHECK(JS_TakeDroppedRejections(v.rt) == (uint32_t)full, "full %d: dropped", full);
+        r = JS_TakeRejection(v.rt);
+        if (full) {
+            CHECK(JS_IsUninitialized(r), "full %d: a rejection kept", full);
+        } else {
+            JS_ToInt32(v.ctx, &n, r);
+            CHECK(n == 7, "full %d: the reason %d", full, n);
+        }
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, rej);
+        JS_FreeValue(v.ctx, p);
+        vm_free(&v);
+    }
+}
+
 /* ---- the register loop ---- */
 
 /* A function converts to register code at its first call, with the memory
@@ -2874,6 +2931,7 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();
     test_key_names_oom();
