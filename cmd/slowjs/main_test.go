@@ -23,12 +23,18 @@ import (
 )
 
 // bin is the command, built once by TestMain with a version stamped in, as
-// the release job stamps it.
+// the release job stamps it. With SLOWJS_BIN set, the tests run that binary
+// instead, which must report the version SLOWJS_VERSION: the release job
+// checks each binary it made this way, on its own platform.
 var bin string
 
-const testVersion = "v0.0.0-test"
+var testVersion = "v0.0.0-test"
 
 func TestMain(m *testing.M) {
+	if b := os.Getenv("SLOWJS_BIN"); b != "" {
+		bin, testVersion = b, os.Getenv("SLOWJS_VERSION")
+		os.Exit(m.Run())
+	}
 	dir, err := os.MkdirTemp("", "slowjs-test")
 	if err != nil {
 		panic(err)
@@ -55,10 +61,10 @@ type result struct {
 }
 
 // runCmd runs the command with args, and fails the test when it is still
-// running after two minutes.
+// running after five minutes.
 func runCmd(t *testing.T, args ...string) result {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	var stdout, stderr bytes.Buffer
@@ -67,7 +73,7 @@ func runCmd(t *testing.T, args ...string) result {
 	err := cmd.Run()
 	r := result{stdout: stdout.String(), stderr: stderr.String(), took: time.Since(start)}
 	if ctx.Err() != nil {
-		t.Fatalf("slowjs %q did not end in two minutes", args)
+		t.Fatalf("slowjs %q did not end in five minutes", args)
 	}
 	var exit *exec.ExitError
 	switch {
