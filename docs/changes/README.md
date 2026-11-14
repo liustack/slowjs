@@ -274,6 +274,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A field of a property descriptor that throws, or a `has` trap that throws, ends the conversion with its exception | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-field-of-a-property-descriptor-that-throws-ends-the-conversion) |
 | bind with too little memory fails with the out of memory error, and no longer crashes or returns a bound function without its length or name | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#bind-with-too-little-memory-fails-whole) |
 | `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
+| `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
 
 ## Memory
 

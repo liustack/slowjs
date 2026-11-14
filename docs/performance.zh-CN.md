@@ -1057,17 +1057,31 @@ M4 上一次渲染的指令（退休指令，每页取各次渲染的中位数�
 
 ### 不走通用查找的属性描述符和 bind
 
-[Object.defineProperty 一次读完普通的描述符对象](changes/objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象)，对比 main 的 `78a90364`（v0.30.6）。每次渲染的指令来自 linux/amd64 上原生 C 树的 callgrind（暖 2 次后计时的 3 次渲染，tifa 池子的设置，不算 `host_poll`），商店的页面复用 URL 对象。调用次数在 `js_obj_to_desc` 里数。每一页的 HTML 都一样。
+[Object.defineProperty 一次读完普通的描述符对象](changes/objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象)（描述符），以及在它之上的 [bind 从普通目标函数的 shape 读 length 和 name](changes/objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name)（bind），对比 main 的 `78a90364`（v0.30.6）。每次渲染的指令来自 linux/amd64 上原生 C 树的 callgrind（暖 2 次后计时的 3 次渲染，tifa 池子的设置，不算 `host_poll`），商店的页面复用 URL 对象。调用次数在 `js_obj_to_desc` 和 `js_function_bind` 里数。每一页的 HTML 都一样。
 
-| 页面 | 每次渲染的描述符 | 指令 |
+| 页面 | 每次渲染的描述符 | 每次渲染的 bind | 描述符 | 描述符和 bind |
+| --- | ---: | ---: | ---: | ---: |
+| workbench studio 页 | 2,944 | 855 | -0.71% | -1.17% |
+| workbench stats 页 | 1,609 | 394 | -0.74% | -1.16% |
+| 商店的英文首页 | 459 | 572 | -0.14% | -0.49% |
+| 商店的中文商品页 | 975 | 1,286 | -0.17% | -0.68% |
+| MUI 的 orders 页 | 83 | 331 | +0.01% | -0.14% |
+| MUI 的首页 | 83 | 37 | -0.02% | -0.06% |
+| React 页 | 0 | 60 | -0.01% | -0.18% |
+
+`make gen` 生成的引擎放在 tifa 的 `test/ssr` 里（商店页面不复用 URL 对象），对比 main 的同一提交。`make gen` 用的 profile 是改动之前训练的：`js_obj_to_desc`、`js_function_bind` 和 `js_bound_function_finalizer` 改过，编译时不用它，六个新的辅助函数也没有 profile，要等下次重新训练。linux/amd64 上每次渲染的指令来自 callgrind，先暖 2 次，再用 3 次渲染减 1 次渲染的差除以 2。Apple M4（darwin/arm64）上是退休指令，取 20 次渲染（React 页 60 次）的中位数，3 轮里最低的一轮。每一页的 HTML 都一样。
+
+| 页面 | linux/amd64 | darwin/arm64 |
 | --- | ---: | ---: |
-| workbench studio 页 | 2,944 | -0.71% |
-| workbench stats 页 | 1,609 | -0.74% |
-| 商店的英文首页 | 459 | -0.14% |
-| 商店的中文商品页 | 975 | -0.17% |
-| MUI 的 orders 页 | 83 | +0.01% |
-| MUI 的首页 | 83 | -0.02% |
-| React 页 | 0 | -0.01% |
+| workbench studio 页 | -0.64% | -0.59% |
+| workbench stats 页 | -0.47% | -0.65% |
+| 商店的英文首页 | -0.46% | -0.28% |
+| 商店的中文商品页 | -0.45% | -0.59% |
+| MUI 的 orders 页 | -0.22% | -0.10% |
+| MUI 的首页 | -0.18% | -0.12% |
+| React 页 | -0.16% | -0.30% |
+
+长 Markdown 页（react-markdown，100 节，不用池子）每次渲染定义 35,000 个属性，改动涉及的函数每次渲染少执行 600 万条指令（0.12%）。整次渲染的指令会随循环回收器运行的位置变化，而改动挪动了这些位置：在 linux/amd64 上，暖 1 次后每次渲染多 0.41% 的指令，暖 2 次后少 0.28%，差别都在回收的标记上。
 
 ### tifa 页面的性能画像
 

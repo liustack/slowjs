@@ -1,0 +1,88 @@
+function: length+name length=3 c name="bound f3" c proto=Function
+function, one argument: length+name length=2 c name="bound f3" c proto=Function
+function, more arguments than its length: length+name length=0 c name="bound f3" c proto=Function
+call: K,1,2,3
+arrow: length+name length=2 c name="bound a" c proto=Function
+anonymous: length+name length=0 c name="bound " c proto=Function
+method: length+name length=1 c name="bound m" c proto=Function
+getter as a function: length+name length=0 c name="bound get p" c proto=Function
+symbol named method: length+name length=2 c name="bound [sym]" c proto=Function
+index named method: length+name length=1 c name="bound 7" c proto=Function
+class: length+name length=2 c name="bound A" c proto=Function
+class with a static name method: length+name length=0 c name="bound " c proto=Function
+class with a static length getter: length+name length=4 c name="bound A" c proto=Function [length]
+derived class: length+name length=0 c name="bound B" c proto=function true
+generator: length+name length=1 c name="bound gen" c proto=Generator
+async: length+name length=2 c name="bound asy" c proto=Async
+async arrow: length+name length=1 c name="bound " c proto=Async
+async generator: length+name length=0 c name="bound ag" c proto=AsyncGenerator
+C function: length+name length=1 c name="bound max" c proto=Function
+C function of a prototype: length+name length=1 c name="bound push" c proto=Function
+C constructor: length+name length=6 c name="bound Date" c proto=Function 0
+bound function: length+name length=1 c name="bound bound f3" c proto=Function
+bound bound bound: length+name length=0 c name="bound bound bound f3" c proto=Function
+Function.prototype: length+name length=0 c name="bound " c proto=object
+new of a bound function: xy true true
+length 0: length=0 c length=0 c
+length 1: length=1 c length=0 c
+length 5: length=5 c length=3 c
+length 2.5: length=2 c length=0 c
+length -1: length=0 c length=0 c
+length -2.5: length=0 c length=0 c
+length -0: length=0 c length=0 c
+length 2147483648: length=2147483648 c length=2147483646 c
+length 9007199254740994: length=9007199254740994 c length=9007199254740992 c
+length Infinity: length=Infinity c length=Infinity c
+length -Infinity: length=0 c length=0 c
+length NaN: length=0 c length=0 c
+length "3": length=0 c length=0 c
+length null: length=0 c length=0 c
+length undefined: length=0 c length=0 c
+length true: length=0 c length=0 c
+length 3n: length=0 c length=0 c
+length [object Object]: length=0 c length=0 c
+length symbol: length=0 c length=0 c
+length deleted: length+name length=0 c name="bound f" c proto=Function
+length deleted, on the prototype: length+name length=0 c name="bound f" c proto=object
+length getter: length+name length=6 c name="bound f" c proto=Function [length]
+length getter throws: throws RangeError [length]
+length writable: length+name length=6 c name="bound f" c proto=Function
+length non-configurable: length+name length=1 c name="bound f" c proto=Function
+name "x": "bound x"
+name "": "bound "
+name "ünïcödé": "bound ünïcödé"
+name "中文": "bound 中文"
+name "😀": "bound 😀"
+name "a\u0000b": "bound a\u0000b"
+name 1: "bound "
+name null: "bound "
+name undefined: "bound "
+name [object Object]: "bound "
+name symbol: "bound "
+name long 5000: 5006 "bound kkkkkk" true
+name long 6000: 6006 "bound w中w中w中" true
+name a rope: 410 true
+name deleted: length+name length=0 c name="bound " c proto=Function
+name deleted, on the prototype: length+name length=0 c name="bound up" c proto=object
+name deleted, getter on the prototype: length+name length=0 c name="bound got" c proto=object [name]
+name getter: length+name length=1 c name="bound gn" c proto=Function [name]
+name getter throws: throws RangeError [name]
+both getters, in order: length+name length=1 c name="bound n" c proto=Function [length,name]
+name writable: length+name length=1 c name="bound w" c proto=Function
+Function.prototype.name changed: length+name length=0 c name="bound fp" c proto=Function length+name length=0 c name="bound h" c proto=Function
+Function.prototype.length getter: length+name length=0 c name="bound f" c proto=Function length+name length=1 c name="bound h" c proto=Function
+null prototype: length+name length=1 c name="bound n" c proto=null
+object prototype: length+name length=1 c name="bound n" c proto=object 1
+generator prototype on a plain function: length+name length=1 c name="bound n" c proto=Generator
+frozen: length+name length=2 c name="bound fr" c proto=Function
+not extensible: length+name length=1 c name="bound ne" c proto=Function
+extra keys: length+name length=1 c name="bound ex" c proto=Function
+keys in another order: length+prototype+name length+name length=1 c name="bound ko" c proto=Function
+proxy: length+name length=1 c name="bound px" c proto=Function [getPrototypeOf,gopd length,get length,get name]
+proxy of a class: length+name length=0 c name="bound PC" c proto=Function [getPrototypeOf,gopd length,get length,get name]
+proxy with no length: length+name length=0 c name="bound pn" c proto=Function [getPrototypeOf,gopd length,get name]
+revoked proxy: throws TypeError
+not callable: throws TypeError
+many binds: length+name length=1 c name="bound many" c proto=Function | length length=1 c name none proto=Function | length+name length=9 c name="bound many" c proto=Function | length+name+extra length=1 c name="bound many" c proto=Function | length+name length=1 c name="bound many" c proto=null | length+name length=1 c name="bound many" c proto=Function | length+name length=2 c name="bound many" c proto=Function
+binds in a loop of many kinds: bound k1/0 bound /1 bound k3/0 bound k4/0 bound min/1 bound K6/0 bound k1/0 bound /1 bound k3/0 bound k4/0 bound min/1 bound K6/0
+another realm: length+name length=2 c name="bound realm" c true

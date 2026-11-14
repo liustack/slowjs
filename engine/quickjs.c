@@ -48878,6 +48878,138 @@ static JSValue js_function_call(JSContext *ctx, JSValueConst this_val,
     }
 }
 
+/* The length bind gives the bound function from the length len_val of its
+   target, which it takes: what is left of an integer after the arguments it
+   binds, 0 for anything that is not a number, Infinity kept. */
+static JSValue js_bind_length(JSContext *ctx, JSValue len_val, int arg_count)
+{
+    if (JS_VALUE_GET_TAG(len_val) == JS_TAG_INT) {
+        /* most common case */
+        int len1 = JS_VALUE_GET_INT(len_val);
+        if (len1 <= arg_count)
+            len1 = 0;
+        else
+            len1 -= arg_count;
+        return JS_NewInt32(ctx, len1);
+    } else if (JS_VALUE_GET_NORM_TAG(len_val) == JS_TAG_FLOAT64) {
+        double d = JS_VALUE_GET_FLOAT64(len_val);
+        if (isnan(d)) {
+            d = 0.0;
+        } else {
+            d = trunc(d);
+            if (d <= (double)arg_count)
+                d = 0.0;
+            else
+                d -= (double)arg_count; /* also converts -0 to +0 */
+        }
+        return JS_NewFloat64(ctx, d);
+    } else {
+        JS_FreeValue(ctx, len_val);
+        return JS_NewInt32(ctx, 0);
+    }
+}
+
+/* bind reads HasOwnProperty(target, "length"), Get(target, "length") and
+   Get(target, "name"). For a target that is not exotic, whose own name, and
+   own length if it has one, are plain data properties (no getter, no
+   autoinit), they run no code and give the values of those properties, and
+   GetPrototypeOf, which comes first, runs none either: they are read from
+   the shape before the bound function is made. Returns TRUE with *plen, the
+   length of the bound function, and *pname, the name of the target or
+   JS_UNDEFINED when it is not a string (a reference taken), FALSE when the
+   generic path must read them. */
+static BOOL js_bind_read_plain(JSContext *ctx, JSObject *p, int arg_count,
+                               JSValue *plen, JSValue *pname)
+{
+    JSShapeProperty *prs_len, *prs_name;
+    JSProperty *pr_len, *pr_name;
+
+    if (p->is_exotic)
+        return FALSE;
+    prs_name = find_own_property(&pr_name, p, JS_ATOM_name);
+    if (!prs_name || (prs_name->flags & JS_PROP_TMASK))
+        return FALSE;
+    prs_len = find_own_property(&pr_len, p, JS_ATOM_length);
+    if (prs_len && (prs_len->flags & JS_PROP_TMASK))
+        return FALSE;
+    if (!prs_len)
+        *plen = JS_NewInt32(ctx, 0);
+    else
+        *plen = js_bind_length(ctx, JS_DupValue(ctx, pr_len->u.value), arg_count);
+    if (JS_IsString(pr_name->u.value))
+        *pname = JS_DupValue(ctx, pr_name->u.value);
+    else
+        *pname = JS_UNDEFINED;
+    return TRUE;
+}
+
+/* "bound " and the name name, which it takes, JS_UNDEFINED for none. A flat
+   name of fewer than JS_POLL_SHORT_STEP characters is copied at once (a
+   longer one, or a rope, goes through a string buffer, which reads the
+   interrupt flag as it copies). */
+static JSValue js_bound_name(JSContext *ctx, JSValue name)
+{
+    static const char prefix[] = "bound ";
+    JSString *p, *r;
+    int i, n = sizeof(prefix) - 1;
+
+    if (JS_IsUndefined(name))
+        return js_new_string8_len(ctx, prefix, n);
+    if (JS_VALUE_GET_TAG(name) != JS_TAG_STRING ||
+        JS_VALUE_GET_STRING(name)->len >= JS_POLL_SHORT_STEP)
+        return JS_ConcatString3(ctx, prefix, name, "");
+    p = JS_VALUE_GET_STRING(name);
+    r = js_alloc_string(ctx, n + p->len, p->is_wide_char);
+    if (!r) {
+        JS_FreeValue(ctx, name);
+        return JS_EXCEPTION;
+    }
+    if (p->is_wide_char) {
+        for(i = 0; i < n; i++)
+            r->u.str16[i] = prefix[i];
+        memcpy(r->u.str16 + n, p->u.str16, p->len * 2);
+    } else {
+        memcpy(r->u.str8, prefix, n);
+        memcpy(r->u.str8 + n, p->u.str8, p->len);
+        r->u.str8[n + p->len] = '\0';
+    }
+    JS_FreeValue(ctx, name);
+    return JS_MKPTR(JS_TAG_STRING, r);
+}
+
+/* Give the bound function func_obj, made just now, its length and name,
+   which it takes, as two defines one after the other give them. When it
+   has the empty shape of one of the prototypes of new functions, it goes
+   straight onto the shape with both that new functions of that prototype
+   get (js_function_shape): the same keys, in the same order, with the same
+   flags (configurable only) and the same size of the property array.
+   Returns -1 with the exception pending, and the caller frees func_obj. */
+static int js_bound_function_props(JSContext *ctx, JSValueConst func_obj,
+                                   JSValue len_val, JSValue name_val)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(func_obj);
+    JSShape *sh = p->shape;
+    int i;
+
+    for(i = 0; i < countof(ctx->func_shapes); i++) {
+        if (ctx->func_shapes[i][0] != sh)
+            continue;
+        js_shape_found(ctx);
+        p->shape = js_dup_shape(ctx->func_shapes[i][1]);
+        js_free_shape(ctx->rt, sh);
+        p->prop[0].u.value = len_val;
+        p->prop[1].u.value = name_val;
+        return 0;
+    }
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length, len_val,
+                               JS_PROP_CONFIGURABLE) < 0) {
+        JS_FreeValue(ctx, name_val);
+        return -1;
+    }
+    return JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name_val,
+                                  JS_PROP_CONFIGURABLE) < 0 ? -1 : 0;
+}
+
 static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
@@ -48885,16 +49017,23 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     JSValue func_obj, name1, len_val, proto;
     JSObject *p;
     int arg_count, i, ret;
+    BOOL plain;
 
     if (check_function(ctx, this_val))
         return JS_EXCEPTION;
 
+    arg_count = max_int(0, argc - 1);
+    plain = js_bind_read_plain(ctx, JS_VALUE_GET_OBJ(this_val), arg_count,
+                               &len_val, &name1);
+    if (!plain)
+        name1 = JS_UNDEFINED;
     /* made before the bound function, which is never without it: its
        finalizer and its mark function read it */
-    arg_count = max_int(0, argc - 1);
     bf = js_malloc(ctx, sizeof(*bf) + arg_count * sizeof(JSValue));
-    if (!bf)
+    if (!bf) {
+        JS_FreeValue(ctx, name1);
         return JS_EXCEPTION;
+    }
     bf->func_obj = JS_DupValue(ctx, this_val);
     bf->this_val = JS_DupValue(ctx, argv[0]);
     bf->argc = arg_count;
@@ -48913,6 +49052,15 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     p->is_constructor = JS_IsConstructor(ctx, this_val);
     p->u.bound_function = bf;
 
+    if (plain) {
+        /* js_bound_name and js_bound_function_props take the name */
+        name1 = js_bound_name(ctx, name1);
+        if (JS_IsException(name1) ||
+            js_bound_function_props(ctx, func_obj, len_val, name1) < 0)
+            goto exception;
+        return func_obj;
+    }
+
     /* XXX: the spec could be simpler by only using GetOwnProperty */
     ret = JS_GetOwnProperty(ctx, NULL, this_val, JS_ATOM_length);
     if (ret < 0)
@@ -48923,30 +49071,7 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
         len_val = JS_GetProperty(ctx, this_val, JS_ATOM_length);
         if (JS_IsException(len_val))
             goto exception;
-        if (JS_VALUE_GET_TAG(len_val) == JS_TAG_INT) {
-            /* most common case */
-            int len1 = JS_VALUE_GET_INT(len_val);
-            if (len1 <= arg_count)
-                len1 = 0;
-            else
-                len1 -= arg_count;
-            len_val = JS_NewInt32(ctx, len1);
-        } else if (JS_VALUE_GET_NORM_TAG(len_val) == JS_TAG_FLOAT64) {
-            double d = JS_VALUE_GET_FLOAT64(len_val);
-            if (isnan(d)) {
-                d = 0.0;
-            } else {
-                d = trunc(d);
-                if (d <= (double)arg_count)
-                    d = 0.0;
-                else
-                    d -= (double)arg_count; /* also converts -0 to +0 */
-            }
-            len_val = JS_NewFloat64(ctx, d);
-        } else {
-            JS_FreeValue(ctx, len_val);
-            len_val = JS_NewInt32(ctx, 0);
-        }
+        len_val = js_bind_length(ctx, len_val, arg_count);
     }
     if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length,
                                len_val, JS_PROP_CONFIGURABLE) < 0)
@@ -48970,6 +49095,7 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     JS_FreeValue(ctx, func_obj);
     return JS_EXCEPTION;
  fail:
+    JS_FreeValue(ctx, name1);
     js_bound_function_free(ctx->rt, bf);
     return JS_EXCEPTION;
 }

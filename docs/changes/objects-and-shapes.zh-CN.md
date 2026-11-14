@@ -370,3 +370,15 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益：每次渲染，workbench 的 studio 页少执行 0.71% 的指令，stats 页少 0.74%，商店首页少 0.14%，商品页少 0.17%（两页都复用 URL 对象），MUI 的两页和 React 页不变（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
 
 测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）经五个调用方定义属性，描述符覆盖各个字段和各种真假值、继承来的字段、以 Proxy 和 `String` 对象为原型、改过的 `Object.prototype`、另一个 realm 的对象，以及抛错的 getter。`engine/test/regvm/js/q5-desc.js` 在 corpus 和抛错注入测试里跑报错信息、另一个 realm，以及普通、getter 和 proxy 描述符混在一起的循环。`engine/test/unit-oom.c` 里的 `test_define_desc_oom` 在内存不够时跑同样的组合。
+
+## bind 从普通目标函数的 shape 读 length 和 name
+
+版本：Unreleased。
+
+`Function.prototype.bind` 以前先用 `GetOwnProperty` 再用 `Get` 向目标函数要 `length`，用 `Get` 要 `name`，用拼接造出 `"bound " + name`，再用两次定义把两者交给绑定函数，每次定义都要查一次键、换一次 shape。React 的服务端渲染器每次渲染为每个 `useState` 和 `useReducer` hook 绑定一个 dispatch（对它的 dispatch 函数做一次 `bind(null, ...)`）：workbench studio 页每次渲染 855 次 bind，商店首页 572 次，MUI 的订单页 331 次，React 页 60 次。现在，目标函数不是特殊对象，自有的 `name` 是数据属性，自有的 `length` 是数据属性或者没有时，bind 在创建绑定函数之前就从目标函数的 shape 读出两者（`js_bind_read_plain`），把名字接在 `"bound "` 后面一次造出新字符串（`js_bound_name`），再让绑定函数从它原型的空 shape 直接换到同一原型的新函数带上 `length` 和 `name` 后的 shape（`js_bound_function_props`）：键相同，顺序相同，都只可配置，属性数组大小也相同。
+
+为什么安全：对这样的目标函数，`GetPrototypeOf`、`HasOwnProperty` 以及读 `length` 和 `name` 的 `Get` 都不运行代码，所以在创建绑定函数之前读而不是之后读，看不出区别。length 仍由原来的代码算（`js_bind_length`：整数减去绑定的参数个数，`NaN` 得 0，无穷保留，不是数字得 0），名字不是字符串时得 `"bound "`。名字有 4096 个字符或更长，或者是 rope 时，照旧经字符串缓冲区拼接，拼接时会检查中断标志。下面这些走通用路径：目标函数是特殊对象（Proxy），自有的 `length` 或 `name` 是 getter 或首次使用时才创建的属性，以及目标函数没有自有的 `name`（被删掉了）。绑定函数、类、生成器、async 函数和换了原型的函数，只要 `length` 和 `name` 是数据属性，就走这条快路径：只有绑定函数的 shape 是四个函数原型之一的空 shape 时才直接换 shape，其他原型照旧做两次定义。
+
+收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
+
+测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。
