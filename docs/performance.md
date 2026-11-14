@@ -66,6 +66,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.3 | [Package `url`: URL and URLSearchParams parsed in Go](changes/url.md#cost-and-gain) | tifa's storefront pages take 0.669 of the time (19.88 ms to 13.30 ms, 107 `new URL` per render), the workbench pages 0.860, the MUI pages 0.998. The HTML of all 23 pages is the same. It is not a change of the engine: a host registers the package, and core-js leaves a native URL alone |
 | v0.30.4 | Long text of Intl and long outputs of `fmt` are worked on in checked pieces, and a VM with no memory limit keeps its last block for the next call | Fixes. No speed claim on a render |
 | v0.30.5 | The engine is generated with [a profile of tifa's pages](#a-profile-of-tifas-pages), on top of five changes of the register interpreter: the atom table, `'' + x`, the keyed read, the key atom of a string, object rest and spread | Against v0.30.4, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.871 of the time, its fourteen store pages 0.874, the three MUI pages 0.888, React's page 0.882 and the long Markdown page 0.966. The profile alone gives 0.916 to 0.946. Without it the long Markdown page takes 1.022 of the time of v0.30.4, for a cause not found yet ([Long Markdown without the profile](#long-markdown-without-the-profile)) |
+| v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
 
 ## Measuring in tifa
 
@@ -1120,6 +1121,43 @@ Without the profile, `global_read` is 12.77% slower than v0.30.4 (+9.68% to +15.
 #### Long Markdown without the profile
 
 Without the profile, the release renders the long Markdown page with no pool and no limit 2.18% slower than v0.30.4 (+1.57% to +2.79% at the mean of the layouts, judged slower, and +2.34% at the formal layout): 2.96% at 100 sections and 2.00% at 400. The cause is not found. It is in the changes since v0.30.4, not in the profile, which makes the page 5.49% faster and the release 3.43% faster than v0.30.4. Finding the change that costs it is a follow-up.
+
+#### v0.30.6 against v0.30.5
+
+v0.30.6 was timed on 2026-11-14 on the same machine and in the same way as v0.30.5 above (linux/amd64, an AMD EPYC 7B13 server with 4 cores, core 0 with the whole machine quiet, the 16 layouts of [measuring.md](measuring.md#the-protocol), 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals). Two sides: v0.30.5 and the commit of v0.30.6 with its profile (59105c3b, trained again on its C, 2,774 functions, none stale). Both give the same HTML on every page. Each cell is the mean of the layouts with its interval and the verdict of `measure bench judge`, then the formal layout, the build that ships.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -1.31% (-1.72% to -0.89%) faster | -0.95% (-1.58% to -0.30%) faster |
+| tifa's shop, fourteen store pages | -2.08% (-2.63% to -1.53%) faster | -1.59% (-2.60% to -0.56%) faster |
+| tifa's MUI test app, three pages | -0.67% (-1.55% to +0.23%) no regression beyond delta | -0.07% (-1.34% to +1.21%) inconclusive |
+| React's page | -2.13% (-3.04% to -1.21%) faster | -2.35% (-4.14% to -0.53%) faster |
+| The long Markdown page, 100 and 400 sections | -0.64% (-1.09% to -0.19%) faster | -2.23% (-2.93% to -1.52%) faster |
+
+| Bundle | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| React's page (`react-ssr.js`) | -0.01% (-0.35% to +0.33%) no regression beyond delta | -0.68% (-1.27% to -0.09%) faster |
+| tifa's bench app (`bench.js`) | -0.01% (-0.46% to +0.45%) no regression beyond delta | -0.41% (-0.90% to +0.08%) no regression beyond delta |
+| tifa's MUI test app (`mui.js`) | +0.07% (-0.20% to +0.34%) no regression beyond delta | -0.02% (-0.51% to +0.47%) no regression beyond delta |
+
+The 12 micro benchmarks of [the timing of v0.30.5](#the-micro-benchmarks-by-time), with the same N:
+
+| Benchmark | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| `array_for` | -2.71% (-3.36% to -2.05%) faster | -2.64% (-3.47% to -1.80%) faster |
+| `array_prop_create` | -1.42% (-2.46% to -0.38%) faster | -1.24% (-1.64% to -0.84%) faster |
+| `array_read` | -3.45% (-4.82% to -2.05%) faster | -5.18% (-7.09% to -3.23%) faster |
+| `array_slice` | +0.58% (+0.31% to +0.85%) slower, by less than delta | +0.44% (-0.16% to +1.05%) inconclusive |
+| `float_arith` | -4.87% (-6.43% to -3.27%) faster | -6.31% (-8.53% to -4.03%) faster |
+| `global_read` | -1.45% (-1.96% to -0.93%) faster | -2.24% (-2.76% to -1.71%) faster |
+| `int_arith` | -4.65% (-6.02% to -3.25%) faster | -6.49% (-8.39% to -4.55%) faster |
+| `prop_create` | -2.12% (-2.98% to -1.25%) faster | -0.42% (-2.91% to +2.14%) inconclusive |
+| `prop_read` | -2.38% (-4.97% to +0.29%) no regression beyond delta | -1.43% (-6.73% to +4.17%) inconclusive |
+| `prop_update` | +0.44% (-0.38% to +1.26%) inconclusive | -1.03% (-1.99% to -0.05%) faster |
+| `prop_write` | -1.15% (-2.50% to +0.21%) no regression beyond delta | -1.10% (-3.75% to +1.61%) inconclusive |
+| `typed_array_read` | -0.96% (-5.35% to +3.63%) inconclusive | +7.19% (+1.02% to +13.73%) slower |
+
+At the mean of the layouts v0.30.6 is faster on 7 of them, shows no regression beyond the delta on `prop_read` and `prop_write`, cannot tell on `prop_update` and `typed_array_read`, and is slower by less than the delta on `array_slice`. `typed_array_read` is 7.19% slower at the formal layout, the build that ships, while the mean of the layouts cannot tell (its interval runs from -5.35% to +3.63%): the place of its code moves it more than the change does. `global_read` and `prop_create` gain 1.45% and 2.12%, but stay slower than with v0.30.4 (they lost 13.90% and 7.08% in v0.30.5).
 
 #### The study of 2026-11-13
 
