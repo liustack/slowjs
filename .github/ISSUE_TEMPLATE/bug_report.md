@@ -12,9 +12,19 @@ A security problem (memory outside the VM, a crash of the Go process, a limit a 
 
 A clear description of the problem.
 
-## The smallest code that shows it
+## The script that shows it
 
-The Go code and the JavaScript, cut down as far as it still shows the problem.
+A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/command.md](https://github.com/liustack/quickjs/blob/main/docs/command.md).
+
+```js
+...
+```
+
+```sh
+slowjs repro.js
+```
+
+For a problem of the Go API (a call from Go, a Value, a Builtin, a limit set from Go), give the Go program instead, cut down the same way.
 
 ```go
 vm, _ := quickjs.NewVM()
@@ -24,7 +34,7 @@ v, err := vm.Eval(`...`, quickjs.EvalGlobal)
 
 ## The full output
 
-Paste the complete output or error, not a paraphrase. For a crash, the whole Go stack trace.
+Paste the complete output, not a paraphrase: what `slowjs` printed and its exit code (`echo $?`), or what the Go program printed. For a crash, the whole Go stack trace.
 
 ```
 ...
@@ -32,10 +42,9 @@ Paste the complete output or error, not a paraphrase. For a crash, the whole Go 
 
 ## Environment
 
-- liustack/quickjs version (`go list -m github.com/liustack/quickjs`):
-- `go version`:
-- OS and CPU (`go env GOOS GOARCH`, and the CPU model):
-- Other packages registered on the VM (`intl`, `temporal`, `fmt`):
+- `slowjs --version`:
+- For a Go program instead: the version (`go list -m github.com/liustack/quickjs`), `go version`, and the packages registered on the VM (`intl`, `temporal`, `url`, `fmt`):
+- OS and CPU model:
 
 ## Expected
 
