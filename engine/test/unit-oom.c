@@ -2125,7 +2125,10 @@ static void test_string_append_oom(void)
    t = t + id(b): t = t + b of two locals is add_loc (ADDLOC), not ADDL.
    Three sweeps. run(): strings of 8 and 16 bits, short ones that are
    copied, long ones that make ropes, and self, which appends to a string
-   another variable holds too, which must not change. runArgs(): the adds
+   another variable holds too, which must not change. It keeps each string
+   it makes, about 118 KiB at its peak, so it is swept every 64 bytes up to
+   128 KiB: each copy of 600 characters or more is then a new block that
+   takes the count to a new peak. runArgs(): the adds
    into an argument, which the mapped arguments object still reads after
    the out of memory error has ended the call: check(), at the start of the
    next run, finds each argument holding the string it had or the whole new
@@ -2139,13 +2142,15 @@ static void test_string_append_oom(void)
    argument, which check() finds whole. Its answer is fixed, as the
    sweep's answer comes from the same engine: an append done wrong in
    place gives "cut".
-   The strings of runArgs() and runGrow() are past 504 bytes, so that each
-   new one is a large block that the limit counts (docs/allocator.md): a
-   small one takes a free slot of an arena, which the limit does not see,
-   and would not fail. Nothing before the adds of a run frees a large
-   block, which the cache of large blocks would give the next add
-   uncounted: check() makes no string, and runArgs() keeps each string it
-   makes. */
+   The strings are past 504 bytes, so that each new one is a large block
+   the heap gives (docs/allocator.md): a small one takes a free slot of an
+   arena that is counted already, and would not fail. An add fails only
+   when its block takes the count past the limit, so the runs free no large
+   block before their adds: a freed one waits in the cache of large blocks,
+   counted still, and the next add of its size takes it and adds nothing to
+   the count. check() makes no string, run() and runArgs() keep the
+   strings they make, and grow frees the block it copies from only for a
+   copy half as large again, of another size. */
 static void test_string_add_oom(void)
 {
     static const char setup[] =
@@ -2183,10 +2188,10 @@ static void test_string_add_oom(void)
         "function run() {\n"
         "  const out = []\n"
         "  for (const a of parts) {\n"
-        "    for (const b of parts) out.push(sum(add(a, b)), sum(addl(a, b)), sum(self(a, b)))\n"
-        "    out.push(sum(addk(a)), sum(addkl(a)), sum(kadd(a)), sum(kaddl(a)))\n"
+        "    for (const b of parts) out.push(add(a, b), addl(a, b), self(a, b))\n"
+        "    out.push(addk(a), addkl(a), kadd(a), kaddl(a))\n"
         "  }\n"
-        "  return hash(out)\n"
+        "  return hash(out.map(sum))\n"
         "}\n"
         "var l8 = 'y'.repeat(600), l16 = '\\u00e9'.repeat(600), m8 = 'x'.repeat(500)\n"
         "function runArgs() {\n"
@@ -2202,10 +2207,10 @@ static void test_string_add_oom(void)
         "}\n"
         /* once before the sweeps, so that their register code is made */
         "run(); runArgs(); runGrow()\n";
-    static const struct { const char *what, *src, *answer; } runs[] = {
-        { "string add", "run()", NULL },
-        { "string add into an argument", "runArgs()", NULL },
-        { "string add grown in place", "runGrow()", "kept whole" },
+    static const struct { const char *what, *src, *answer; size_t step, max; } runs[] = {
+        { "string add", "run()", NULL, 64, 131072 },
+        { "string add into an argument", "runArgs()", NULL, 8, 32768 },
+        { "string add grown in place", "runGrow()", "kept whole", 8, 32768 },
     };
     size_t i;
 
@@ -2223,8 +2228,10 @@ static void test_string_add_oom(void)
         CHECK(want[0] != NULL, "%s: no answer", runs[i].what);
         CHECK(!runs[i].answer || (want[0] && strcmp(want[0], runs[i].answer) == 0),
               "%s: the answer is %s, not %s", runs[i].what, want[0] ? want[0] : "(none)", runs[i].answer);
+        sweep_step = runs[i].step;
         if (want[0])
-            sweep(runs[i].what, "add.js", setup, runs[i].src, want, 32768);
+            sweep(runs[i].what, "add.js", setup, runs[i].src, want, runs[i].max);
+        sweep_step = 8;
         free((char *)want[0]);
     }
 }
