@@ -51,10 +51,12 @@ const (
 	exitMemory    = 4 // the VM passed --memory-limit
 )
 
-// The defaults of the limits, in docs/command.md.
+// The defaults of the limits, in docs/command.md: a script run by hand, or
+// one that shows a problem, that hangs or keeps allocating ends while
+// someone still waits for it, and a longer or larger run asks for it.
 const (
-	defaultTimeout     = 10 * time.Minute
-	defaultMemoryLimit = "2GiB"
+	defaultTimeout     = time.Minute
+	defaultMemoryLimit = "1GiB"
 )
 
 // stackDepth is how deep calls may nest: tifa's default, the most the

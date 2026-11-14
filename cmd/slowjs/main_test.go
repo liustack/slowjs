@@ -338,7 +338,7 @@ func v8Script(t *testing.T) string {
 }
 
 // TestV8Suite runs the V8 benchmark suite through the command, a long
-// script that uses much of the engine, and checks that
+// script that uses much of the engine, with no timeout, and checks that
 // it prints a score for each benchmark and the total, and that the
 // benchmarks whose own checks pass are those that pass when the suite runs
 // in a VM of the library. It times nothing.
@@ -346,7 +346,7 @@ func TestV8Suite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("the suite takes about 20 seconds, twice")
 	}
-	r := runCmd(t, script(t, v8Script(t)))
+	r := runCmd(t, "--timeout", "0", script(t, v8Script(t)))
 	if r.code != 0 || r.stderr != "" {
 		t.Fatalf("exit %d, stderr %q, stdout %q", r.code, r.stderr, r.stdout)
 	}
@@ -419,6 +419,14 @@ print(u.href);
 print(fmt.sprintf("%05.1f|%x", 3.14159, 255));
 fmt.printf("%s|", "p"); fmt.println("q"); print("r");
 `)).want(t, 0, "1.234.567,891\nJanuary 1, 1970\n2026-03-01\nhttps://example.com/b?x=1&y=2+3\n003.1|ff\np|q\nr\n")
+}
+
+// TestDefaults: the limits are those docs/command.md gives.
+func TestDefaults(t *testing.T) {
+	r := runCmd(t, "-h")
+	if !strings.Contains(r.stdout, "(default 1m0s)") || !strings.Contains(r.stdout, "(default 1GiB)") {
+		t.Fatalf("stdout %q", r.stdout)
+	}
 }
 
 // TestStackDepth: calls nest as deep as in tifa, 10000.
