@@ -15,6 +15,7 @@ func TestScript(t *testing.T) {
 		{"trailing blank lines", "var a=1;export{};\n\n\n", "(function(){\"use strict\";\nvar a=1;\n})();\n"},
 		{"map comment with trailing spaces", "x();export{};\n//# sourceMappingURL=a.map  \n\n", "(function(){\"use strict\";\nx();\n})();\n"},
 		{"a map comment in the middle stays", "//# sourceMappingURL=a.map\nx();export{};", "(function(){\"use strict\";\n//# sourceMappingURL=a.map\nx();\n})();\n"},
+		{"helper functions after the export stay", "var a=1;export{};function $(e){throw e}\n", "(function(){\"use strict\";\nvar a=1;function $(e){throw e}\n})();\n"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			got, err := script(c.in)

@@ -154,9 +154,15 @@ func hasher(algorithm string) (hash.Hash, error) {
 // bundle without its export and source map comment, in a strict function.
 func asScript(bundle []byte) []byte {
 	body := strings.TrimRightFunc(sourceMapComment.ReplaceAllString(string(bundle), "\n"), unicode.IsSpace)
-	body = strings.TrimSuffix(body, "export{};")
+	if m := scriptTail.FindStringSubmatchIndex(body); m != nil {
+		body = body[:m[0]] + body[m[2]:m[3]]
+	}
 	return []byte(`(function(){"use strict";` + "\n" + body + "\n})();\n")
 }
+
+// scriptTail is the end of a tifa module bundle: the empty export, then the
+// helper functions tifa writes after it (as in cmd/modulescript).
+var scriptTail = regexp.MustCompile(`export\{\};((?:function [A-Za-z_$][\w$]*\([\w$,]*\)\{[^{}]*\})*)$`)
 
 var sourceMapComment = regexp.MustCompile(`\n//# sourceMappingURL=\S+\s*$`)
 
@@ -189,9 +195,9 @@ func generate(root, here string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		want := bundle
-		if !withPolyfill {
-			want = asScript(bundle)
+		want := asScript(bundle)
+		if withPolyfill && bytes.Equal(bundle, pinned) {
+			want = bundle // the pinned file is the module as tifa wrote it
 		}
 		if !bytes.Equal(want, pinned) {
 			return "", fmt.Errorf("%s: bundle differs", a.name)

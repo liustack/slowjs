@@ -36,7 +36,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `engine/` 里的 C、生成器，或者 `scripts/gen-engine.sh` 和 `engine/test/flags.sh` 的参数，还要重新生成引擎，放在同一个提交里（`make gen`、`make gen ARCH=arm64`），并运行 `make check-fast`。一批改动做完时运行 `make check-full`（见[生成并检查](#生成并检查)）。
 - 改了 `intl/`，还要运行 `go test ./intl`（golden 测试在里面）。
 - 改了 `internal/gointl`，还要运行 `go test ./internal/gointl/...` 和 `make gointl`。
-- 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（落后很远的列表，页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
+- 改了 `compare/engines`，还要在那里运行 `go test ./cmd/... ./internal/... ./tifa`。它是独立的模块，上面的命令够不着它，CI 也不跑它。这些测试覆盖辅助工具（页面表格和归档，模块转脚本的工具，版权声明生成器）和 `tifa/` 的 shell 脚本（用替身）。
 - 改了 `cmd/slowjs`，还要不带 `-short` 运行 `go test ./cmd/slowjs`，它会通过这个命令跑一个长脚本（大约一分钟），并用 `GOTOOLCHAIN=go1.26.6` 再跑一次。改了 `scripts/slowjs-release.sh` 或 `.github/workflows/release.yml`，还要把脚本运行到一个单独的文件夹里，看看压缩包里的内容（[releasing.md](releasing.zh-CN.md#发布任务)）。
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
 - 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
@@ -62,7 +62,7 @@ go test -count=1 -p 1 .                # about a minute
 | `make remote RUN="..."` | 在另一台机器上运行别的 make 目标（见[在另一台机器上](#在另一台机器上)） |
 | `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 里放的就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的内容（文件相同，解压后的字节相同，不比较压缩后的字节：标准库的 DEFLATE 编码器在不同 Go 版本之间有差别，而 `data.sh pack -check` 在模块支持的每个 Go 上都必须通过），以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
 | `make benchmark` | `make -C compare benchmark`：`compare/testdata/` 里 QuickJS 的 64 个微基准（goja 或 fastschema/qjs 有 6 个跑不过，所以三个引擎共有的是另外 58 个），每个都在这个引擎、goja 和 fastschema/qjs（wazero 上的 QuickJS）上跑，也就是 QuickJS 自己的测试集 |
-| `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他纯 Go JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.md)（支持度，速度，内存，限额，tifa 页面），每个引擎在自己的二进制里 |
+| `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他 JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.zh-CN.md)（tifa 页面、V8 套件和 test262，只在解释器之间比），每个引擎在自己的二进制里 |
 | `make cpu`、`make mem` | `make -C compare cpu` 和 `make -C compare mem`：对比基准的 CPU 和内存剖析 |
 | `make cover` | 根包的覆盖率，以 HTML 显示 |
 | `make work` | 写一个 `go.work`（见 [go.work](#gowork)） |
@@ -488,4 +488,4 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 
 ## 速度
 
-`go test -run '^$' -bench Call .` 给出每种调用的代价，`make benchmark` 从 `compare/` 在这个引擎、goja 和 fastschema/qjs 上运行 QuickJS 的微基准。选引擎的用户会去读的对比是 `compare/engines`，它是紧挨着的一个独立模块：它在同样的工作负载上运行这个引擎、modernc.org/quickjs、go-quickjs、goant 和 moejs，每个在自己的二进制里，钉在一个 CPU 上，并把 C 版 QuickJS、QuickJS-NG 和 Node 作为参考行放在 tifa 的页面上（[benchmarks.md](benchmarks.md)）。渲染速度在 tifa 里测量，用它示例应用的页面：见 [performance.md](performance.zh-CN.md#在-tifa-里测量)。
+`go test -run '^$' -bench Call .` 给出每种调用的代价，`make benchmark` 从 `compare/` 在这个引擎、goja 和 fastschema/qjs 上运行 QuickJS 的微基准。选引擎的用户会去读的对比是 `compare/engines`，它是紧挨着的一个独立模块：它在 tifa 的页面、V8 套件和 test262 上运行这个引擎、modernc.org/quickjs、go-quickjs、goant 和 moejs，每个在自己的二进制里，钉在一个 CPU 上，并以 C 版 QuickJS、Hermes V1 和 Node（`--jitless`）作参照（[benchmarks.md](benchmarks.zh-CN.md)）。渲染速度在 tifa 里测量，用它示例应用的页面：见 [performance.md](performance.zh-CN.md#在-tifa-里测量)。

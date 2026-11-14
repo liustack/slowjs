@@ -32,7 +32,6 @@ type Results struct {
 	Timed      map[string]map[string][]json.RawMessage `json:"timed,omitempty"` // workload -> engine -> one result per round
 	Disturbed  map[string]int                          `json:"disturbed_reruns,omitempty"`
 	MemCap     string                                  `json:"memory_cap"`
-	Test262    *T262Summary                            `json:"test262,omitempty"`
 	Added      []Added                                 `json:"added,omitempty"` // engines merged in from runs made later
 }
 
@@ -257,7 +256,7 @@ func (n *notes) write(b *strings.Builder) {
 func renderMarkdown(res *Results) string {
 	var b strings.Builder
 	p := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
-	p("# Pure Go JavaScript engines: run %s\n\n", res.Name)
+	p("# JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
 	p("- liustack/quickjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
@@ -321,9 +320,6 @@ func renderMarkdown(res *Results) string {
 	}
 	if res.Features != nil {
 		renderFeatures(&b, res, names)
-	}
-	if res.Test262 != nil {
-		renderTest262(&b, res)
 	}
 	return strings.TrimRight(b.String(), " \t\n") + "\n"
 }
@@ -632,48 +628,4 @@ func pct(a, t int) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%.1f%%", 100*float64(a)/float64(t))
-}
-
-func renderTest262(b *strings.Builder, res *Results) {
-	p := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
-	t := res.Test262
-	var ex []string
-	for k, v := range t.Excluded {
-		ex = append(ex, fmt.Sprintf("%d %s", v, k))
-	}
-	sort.Strings(ex)
-	p("\n## test262\n\ntest262 at `%s`, directories %s: %d files. Left out for every engine: %s (module tests need a loader each engine wires differently, the others need host hooks such as `$262.createRealm` or `$262.detachArrayBuffer`). The rest run once sloppy and once strict unless their flags say otherwise: %d runs per engine. Each run gets a fresh VM and a 10 s limit, and each test262 process a memory cap. Out of memory: tests that went over the cap when run alone in a new process. Memory restarts: times a process went over the cap while the test it was on, run alone, did not; the memory came from earlier tests. \"ES2023 and older\" counts the runs in language and built-ins of tests whose feature tags are all from ES2023 or earlier (the list of newer tags is `t262.Newer`).\n\n",
-		t.Commit, strings.Join(t.Dirs, ", "), t.Files, strings.Join(ex, ", "), t.Runs)
-	p("| Engine | All | language | built-ins | intl402 | ES2023 and older | ES2023 language | ES2023 built-ins | Crashes | Timeouts | Out of memory | Memory restarts |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
-	var names []string
-	for n := range t.Engines {
-		names = append(names, n)
-	}
-	sort.Slice(names, func(i, j int) bool { return t.Engines[names[i]].Pass > t.Engines[names[j]].Pass })
-	for _, n := range names {
-		e := t.Engines[n]
-		var cnt = map[string][2]int{}
-		for a, c := range e.Areas {
-			top := strings.SplitN(a, "/", 2)[0]
-			x := cnt[top]
-			x[0] += c[0]
-			x[1] += c[1]
-			cnt[top] = x
-		}
-		es := e.ES2023
-		p("| %s | %s (%d/%d) | %s | %s | %s | %s (%d/%d) | %s | %s | %d | %d | %d | %d |\n", n, pct(e.Pass, e.Runs), e.Pass, e.Runs,
-			pct(cnt["language"][0], cnt["language"][1]), pct(cnt["built-ins"][0], cnt["built-ins"][1]), pct(cnt["intl402"][0], cnt["intl402"][1]),
-			pct(es["all"][0]-es["intl402"][0], es["all"][1]-es["intl402"][1]), es["all"][0]-es["intl402"][0], es["all"][1]-es["intl402"][1],
-			pct(es["language"][0], es["language"][1]), pct(es["built-ins"][0], es["built-ins"][1]), e.Crashes, e.Timeout, e.OOM, e.MemRestarts)
-	}
-	tags := []string{"class", "generators", "async-functions", "async-iteration", "Proxy", "Reflect", "BigInt", "regexp-named-groups", "regexp-lookbehind", "regexp-unicode-property-escapes", "regexp-v-flag", "optional-chaining", "coalesce-expression", "class-fields-private", "WeakRef", "Array.prototype.at", "Temporal", "iterator-helpers", "set-methods"}
-	p("\n### test262 by feature tag\n\nPass rate of the runs whose `features` include the tag.\n\n| Tag | %s |\n|---|%s\n", strings.Join(names, " | "), strings.Repeat("---|", len(names)))
-	for _, tag := range tags {
-		row := []string{"`" + tag + "`"}
-		for _, n := range names {
-			c := t.Engines[n].Feature[tag]
-			row = append(row, pct(c[0], c[1]))
-		}
-		p("| %s |\n", strings.Join(row, " | "))
-	}
 }

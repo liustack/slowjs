@@ -27,7 +27,7 @@ func writeFile(t *testing.T, path, content string, mode os.FileMode) {
 }
 
 // run.sh calls pagerun.sh with paths made from the caller's directory, with
-// TZ=UTC and GOMAXPROCS=1, for the nine functional checks and the timed runs.
+// TZ=UTC and GOMAXPROCS=1, for the timed runs.
 func TestCallerPathsAndCheckEnvironment(t *testing.T) {
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -54,7 +54,7 @@ func TestCallerPathsAndCheckEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	checks, node := 0, false
+	calls, node := 0, false
 	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
 		f := strings.Split(line, "\t")
 		if len(f) != 4 {
@@ -67,18 +67,16 @@ func TestCallerPathsAndCheckEnvironment(t *testing.T) {
 		if !strings.HasPrefix(stem, filepath.Join(root, "new output")+"/") {
 			t.Errorf("output %q is not under the caller's output directory", stem)
 		}
-		if !strings.HasPrefix(bin, filepath.Join(root, "engine bins")+"/") && !strings.HasPrefix(bin, filepath.Join(root, "native bins")+"/") {
+		if bin != "bash" && !strings.HasPrefix(bin, filepath.Join(root, "engine bins")+"/") && !strings.HasPrefix(bin, filepath.Join(root, "native bins")+"/") {
 			t.Errorf("command %q is not under the caller's bin directories", bin)
 		}
-		if strings.Contains(stem, "/check/") {
-			checks++
-		}
+		calls++
 		if strings.HasSuffix(bin, "/bin/node") {
 			node = true
 		}
 	}
-	if checks != 9 {
-		t.Errorf("%d functional checks, want 9", checks)
+	if calls != 18 {
+		t.Errorf("%d runs, want 18: 6 engines, bench and two more each", calls)
 	}
 	if !node {
 		t.Error("no run of Node")
