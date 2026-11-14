@@ -202,6 +202,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A long locale tag resolves in time linear in its length | v0.30.2 | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
 | A numeric string is read as Number reads it | v0.30.3 | [time-and-intl.md](time-and-intl.md#a-numeric-string-is-read-as-number-reads-it) |
 | A Date finds its year, month and day with no loop | Unreleased | [time-and-intl.md](time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop) |
+| The strings of a Date are written without snprintf | Unreleased | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
 
 ## Temporal
 

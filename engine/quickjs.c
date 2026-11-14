@@ -67703,14 +67703,64 @@ static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
     return JS_SetThisTimeValue(ctx, this_val, d);
 }
 
+/* v in decimal at buf + pos, with at least ndigits digits, and a minus sign
+   before it when it is negative, or a plus sign when it is not and plus is
+   set: what snprintf's "%0*d" with a width of ndigits plus the sign gives,
+   and "%+0*d" with plus. Returns the position after it. */
+static int date_put_int(char *buf, int pos, int v, int ndigits, BOOL plus)
+{
+    char digits[10];
+    uint32_t u;
+    int n = 0;
+
+    if (v < 0) {
+        buf[pos++] = '-';
+        u = -(uint32_t)v;
+    } else {
+        if (plus)
+            buf[pos++] = '+';
+        u = v;
+    }
+    do {
+        digits[n++] = '0' + u % 10;
+        u /= 10;
+    } while (u != 0);
+    while (n < ndigits)
+        digits[n++] = '0';
+    while (n > 0)
+        buf[pos++] = digits[--n];
+    return pos;
+}
+
+/* the three letters of a name of names at index i, at buf + pos */
+static int date_put_name(char *buf, int pos, const char *names, int i)
+{
+    buf[pos] = names[i * 3];
+    buf[pos + 1] = names[i * 3 + 1];
+    buf[pos + 2] = names[i * 3 + 2];
+    return pos + 3;
+}
+
+/* h, m and s as hh:mm:ss at buf + pos */
+static int date_put_time(char *buf, int pos, int h, int m, int s)
+{
+    pos = date_put_int(buf, pos, h, 2, FALSE);
+    buf[pos++] = ':';
+    pos = date_put_int(buf, pos, m, 2, FALSE);
+    buf[pos++] = ':';
+    return date_put_int(buf, pos, s, 2, FALSE);
+}
+
 /* fmt:
    0: toUTCString: "Tue, 02 Jan 2018 23:04:46 GMT"
    1: toString: "Wed Jan 03 2018 00:05:22 GMT+0100 (CET)"
    2: toISOString: "2018-01-02T23:02:56.927Z"
    3: toLocaleString: "1/2/2018, 11:40:40 PM"
    part: 1=date, 2=time 3=all
-   XXX: should use a variant of strftime().
- */
+   The digits are written by hand, as snprintf's "%02d", "%0*d" and the
+   like gave them before: a call of snprintf took about 900 instructions,
+   and toString made three. The longest string, the toString of a year of
+   six digits and a minus sign, is 36 characters. */
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv, int magic)
 {
@@ -67748,34 +67798,49 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 1) { /* date part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s, %02d %.3s %0*d ",
-                            day_names + wd * 3, d,
-                            month_names + mon * 3, 4 + (y < 0), y);
+            /* "%.3s, %02d %.3s %0*d " */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ',';
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
+            buf[pos++] = ' ';
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s %.3s %02d %0*d",
-                            day_names + wd * 3,
-                            month_names + mon * 3, d, 4 + (y < 0), y);
+            /* "%.3s %.3s %02d %0*d" */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ' ';
             }
             break;
         case 2:
-            if (y >= 0 && y <= 9999) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%04d", y);
-            } else {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%+07d", y);
-            }
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "-%02d-%02dT", mon + 1, d);
+            /* "%04d" for 0 to 9999, else "%+07d", then "-%02d-%02dT" */
+            if (y >= 0 && y <= 9999)
+                pos = date_put_int(buf, pos, y, 4, FALSE);
+            else
+                pos = date_put_int(buf, pos, y, 6, TRUE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = 'T';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d/%02d/%0*d", mon + 1, d, 4 + (y < 0), y);
+            /* "%02d/%02d/%0*d" */
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ',';
                 buf[pos++] = ' ';
@@ -67786,12 +67851,16 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 2) { /* time part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT", the sign, "%02d%02d" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             if (tz < 0) {
                 buf[pos++] = '-';
                 tz = -tz;
@@ -67799,18 +67868,23 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                 buf[pos++] = '+';
             }
             /* tz is >= 0, can use % */
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d%02d", tz / 60, tz % 60);
+            pos = date_put_int(buf, pos, tz / 60, 2, FALSE);
+            pos = date_put_int(buf, pos, tz % 60, 2, FALSE);
             /* XXX: tack the time zone code? */
             break;
         case 2:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d.%03dZ", h, m, s, ms);
+            /* "%02d:%02d:%02d.%03dZ" */
+            pos = date_put_time(buf, pos, h, m, s);
+            buf[pos++] = '.';
+            pos = date_put_int(buf, pos, ms, 3, FALSE);
+            buf[pos++] = 'Z';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d %cM", (h + 11) % 12 + 1, m, s,
-                            (h < 12) ? 'A' : 'P');
+            /* "%02d:%02d:%02d %cM" */
+            pos = date_put_time(buf, pos, (h + 11) % 12 + 1, m, s);
+            buf[pos++] = ' ';
+            buf[pos++] = (h < 12) ? 'A' : 'P';
+            buf[pos++] = 'M';
             break;
         }
     }

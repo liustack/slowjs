@@ -305,3 +305,11 @@ Date 的取值方法（`getFullYear`、`getMonth`、`getDate`、`getDay` 等，�
 为什么安全：从 -100,000,002 到 100,000,002 的 200,000,005 天（每个时间值所在的天，再加两端各一天），一个检查程序算出的年、月、日都和原来的循环一样。`engine/test/unit-white.c` 的 `test_days_to_date` 拿原来循环的副本对照：[-300000, 300000] 的每一天、范围两端的天，以及中间每隔 997 天取一天。
 
 测试：`engine/test/compare/date_fields.js` 输出的内容和 Node 24 一样，覆盖范围两端、负数年份、闰日前后的每个取值方法，每个设值方法之后的取值，同一时间值的两个 Date，NaN，子类和不是 Date 的接收者，还有对 292,574 天和铺满整个范围的 200,001 个时间值求的和。
+
+## Date 的字符串不再经过 snprintf
+
+版本：Unreleased。
+
+`toString`、`toDateString`、`toTimeString`、`toUTCString`、`toISOString`，以及引擎自带的 `toLocaleString`、`toLocaleDateString`、`toLocaleTimeString`，原来每一段（日期、时间、时区）都用引擎 libc 的 `snprintf` 写，每次约 940 条指令。现在它们自己把数字和名字填进去（`date_put_int`、`date_put_name`、`date_put_time`），字符一个不差：`toISOString` 里 0 到 9999 以外的年份带符号和六位数字，别处的年份至少四位，负数前面加负号，时间每段两位，还有 `GMT+0000`。一个循环里调用 `toString`、`toISOString`、`toUTCString`、`toLocaleString` 四个字符串，每轮原来 14,006 条指令，现在 6,132 条（callgrind，linux/amd64）。`compare/testdata` 的微基准 `date_parse` 每轮生成六个字符串再解析，原来 41,567 条，现在 29,201 条。dayjs 的 `isValid` 会调用 `toString`，在 2026-11-15 那次研究的日期页上每次渲染 3,132 次，一次渲染少跑 0.62% 的指令。
+
+测试：`engine/test/compare/date_fields.js` 输出的 `toString`、`toDateString`、`toTimeString`、`toUTCString`、`toISOString` 在整个范围内都和 Node 24 一样（`toString` 和 `toTimeString` 去掉 Node 附加的时区名）。Node 用 Intl 格式化三个 `toLocale*`，所以 `engine/test/compare/date_locale.js` 记下的是改动之前引擎自己的输出，覆盖范围两端、负数年份、正午和午夜前后，以及铺满整个范围的 200,001 个时间值。

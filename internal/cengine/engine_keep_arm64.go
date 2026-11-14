@@ -416,6 +416,8 @@ var goasmKeep = []any{
 	cr_realloc,
 	cr_regexp_canonicalize,
 	cr_sort_and_remove_overlap,
+	date_put_int,
+	date_put_time,
 	dbuf_claim,
 	dbuf_free,
 	dbuf_init2,
