@@ -682,6 +682,106 @@ static no_inline int rv_getf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
     return 0;
 }
 
+/* The property of the store o[atom] = v when JS_SetPropertyInternal(ctx, o,
+   atom, v, o, flags) would only write a value, whatever flags is: 1 with
+   *ppr the own writable data property of p, 2 with *ppr the property that
+   add_property just added to p (its value not set yet), as the generic path
+   adds it when no object of the chain has the key, or has it only as a
+   writable data property. 0 for anything else, with nothing done: an exotic
+   p (an Array, a typed array, arguments, a String object, a Proxy, a module
+   namespace) or the global object, an own property that is an accessor, read
+   only, made on first use, a closure variable or the length of an array, a
+   key that an object of the chain has as anything but a writable data
+   property (a setter runs, a read-only key fails, a property made on first
+   use is made), an exotic object on the chain that is not a fast array of a
+   kind a name passes (a typed array reads a key like "-0" as a number, a
+   Proxy has traps), and a p that is not extensible. -1 when add_property
+   failed, with the out of memory error pending and p as it was. atom is
+   not an index. No code runs and nothing is freed. rv_put_atom_new is the
+   part after the own property of p: p is not exotic, not the global object
+   and has no own property atom. */
+static force_inline int rv_put_atom_new(JSContext *ctx, JSObject *p, JSAtom atom,
+                                        JSProperty **ppr)
+{
+    JSObject *q;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+
+    for (q = p->shape->proto; q; q = q->shape->proto) {
+        prs = find_own_property(&pr, q, atom);
+        if (prs) {
+            if ((prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE)) != JS_PROP_WRITABLE)
+                return 0;
+            break;
+        }
+        if (unlikely(q->is_exotic) && !goasm_field_goes_on(q, atom))
+            return 0;
+    }
+    if (unlikely(!p->extensible))
+        return 0;
+    pr = add_property(ctx, p, atom, JS_PROP_C_W_E);
+    if (unlikely(!pr))
+        return -1;
+    *ppr = pr;
+    return 2;
+}
+
+static force_inline int rv_put_atom_prop(JSContext *ctx, JSObject *p, JSAtom atom,
+                                         JSProperty **ppr)
+{
+    JSProperty *pr;
+    JSShapeProperty *prs;
+
+    if (unlikely(p->is_exotic) || p->class_id == JS_CLASS_GLOBAL_OBJECT)
+        return 0;
+    prs = find_own_property(&pr, p, atom);
+    if (prs) {
+        if ((prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE | JS_PROP_LENGTH)) != JS_PROP_WRITABLE)
+            return 0;
+        *ppr = pr;
+        return 1;
+    }
+    return rv_put_atom_new(ctx, p, atom, ppr);
+}
+
+/* PUTF, ip at o v flags atom, when the loop found that the object p in o
+   has no own property atom: the key is added as rv_put_atom_new adds it,
+   as rv_putel_atom does for PUTEL. 1 when done, with v taken and a temp o
+   freed as rv_putf_slow does, 0 with nothing done, which rv_putf_slow then
+   does from the start, -1 when add_property failed, with v and a temp o
+   freed as when rv_putf_slow fails. The loop calls it after RV_SYNC_TOP,
+   and only for an object with no such own property, so that a store that
+   cannot be an add (the length of an array, a setter of the object) does
+   not pay the call. It is a function of its own, so that rv_putf_slow, on
+   whose frame a setter runs, stays as it was. */
+static no_inline int rv_putf_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                  JSObject *p)
+{
+    int flags = ip[2], r;
+    JSAtom atom = get_u32(ip + 3);
+    JSProperty *pr;
+
+    if (unlikely(p->is_exotic) || p->class_id == JS_CLASS_GLOBAL_OBJECT ||
+        __JS_AtomIsTaggedInt(atom))
+        return 0;
+    r = rv_put_atom_new(ctx, p, atom, &pr);
+    if (r == 0)
+        return 0;
+    if (r > 0) {
+        if (flags & RV_PUT_VAL_K)
+            pr->u.value = JS_DupValue(ctx, ((RVHeader *)F)->k[ip[1]]);
+        else if (flags & RV_PUT_VAL_TEMP)
+            pr->u.value = F[(int8_t)ip[1]];
+        else
+            pr->u.value = JS_DupValue(ctx, F[(int8_t)ip[1]]);
+    } else if (flags & RV_PUT_VAL_TEMP) {
+        JS_FreeValue(ctx, F[(int8_t)ip[1]]);
+    }
+    if (flags & RV_PUT_OBJ_TEMP)
+        JS_FreeValue(ctx, F[(int8_t)ip[0]]);
+    return r < 0 ? -1 : 1;
+}
+
 static no_inline int rv_putf_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     int flags = ip[2], ret;
@@ -1326,6 +1426,15 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                 if (flags & RV_PUT_OBJ_TEMP)
                     JS_FreeValue(ctx, obj);
                 RV_NEXT();
+            }
+            if (!prs) {
+                int r;
+                RV_SYNC_TOP();
+                r = rv_putf_atom(ctx, F, ip, p);
+                if (r > 0)
+                    RV_NEXT();
+                if (r < 0)
+                    goto rv_exception;
             }
         }
         RV_SYNC_TOP();
