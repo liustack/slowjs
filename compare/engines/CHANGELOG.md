@@ -2,6 +2,23 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14: Hermes V1 on the V8 suite
+
+- Hermes V1 has rows on the V8 suite, in a session of its own on server C (GCP
+  t2d-standard-4, AMD EPYC 7B13, CPU 0, the machine held for each round),
+  with liustack/quickjs v0.30.6 and C QuickJS 2026-06-04 run again in the
+  same session ([2026-11-14-v0.30.6-gcp-v8-hermes](results/2026-11-14-v0.30.6-gcp-v8-hermes.md)).
+  Its scores are not compared with those of the session on the other machine.
+- Rows: the release `260318099.0.0-stable` (`fd22091391c3`) from source and
+  as `hermesc -O` bytecode, and `static_h` (`44f5f48c3edf`) as `-O` bytecode,
+  without and with `-Xjit`. The release has no x86-64 JIT. Built Release
+  with clang 22.1.8 and Intl off.
+- `native/hermes-v8.js` runs the suite on the `hermes` shell with the steps of
+  `qjs-v8.js`. The shell reads files only through `hermescli`, which needs
+  `-Xhermes-internal-test-methods`.
+- Hermes is not run on the other workloads, and the other pure Go engines
+  were not run in this session.
+
 ## 2026-11-14: the V8 suite at v0.30.6, on another machine
 
 - The machine of the earlier runs (GCP c2d-standard-8) is gone. This run is
