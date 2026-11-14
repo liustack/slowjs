@@ -350,3 +350,11 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 `js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它把 `JS_HasProperty` 返回的 -1（Proxy 的 `has` trap 抛错）当成 true：在异常还挂着时用 `Get` 读这个字段，接着读后面的字段，最后可能把属性定义下来，异常就丢了。另外，字段 `get` 或 `set` 的 getter 抛错时，它用 `TypeError: invalid getter`（或 setter）替换了原来的异常。现在两种情况都用读取时抛出的异常结束转换，和规范及 Node 一致。上游 QuickJS 的代码也是这样。
 
 测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）让 `has` trap 依次在六个字段上抛错，也让 getter 依次在每个字段上抛错，并记下读了哪些字段。
+
+## 内存不够时 bind 整个失败
+
+版本：Unreleased。
+
+`Function.prototype.bind` 以前先建绑定函数，再分配存放目标函数、`this` 和参数的内存块。这块内存要不到时，它释放绑定函数，而绑定函数的 finalizer 会去读这个不存在的块，进程就崩溃了。之后它定义 `length` 和 `name`，却不看两次定义的返回值：其中一次内存不够（为键复制 shape）时，bind 照样返回少了这个键的绑定函数，同时挂着内存不足的错误（脚本看不到，因为下一次调用会失败，下一次向后跳转会结束循环，但从宿主调用 bind 就能看到）。现在先分配这块内存再建绑定函数，定义失败时 bind 也失败。上游 QuickJS 的代码也是这样。
+
+测试：`engine/test/unit-oom.c` 里的 `test_bind_oom` 在内存不够时 bind 各种原型的函数、C 函数、类、绑定函数、名字超出 latin-1 的函数、length 由 getter 给出的函数和新原型的函数。`test_bind_host_oom` 从宿主调用 bind，目标函数的新原型的空 shape 还被另一个对象共用，内存余量从 0 到 16 KiB 逐个试，也试堆满后还回几块和堆满后除一种大小外每种都还回几块的情况：结果要么是完整、没有挂着异常的绑定函数，要么是内存不足的错误。改动之前它会崩溃。

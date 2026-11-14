@@ -724,6 +724,7 @@ func js_boolean_constructor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 u
 func js_boolean_toString(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_boolean_valueOf(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_bound_function_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
+func js_bound_function_free(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_bound_function_mark(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func js_bytecode_function_finalizer(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_bytecode_function_mark(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)

@@ -9461,10 +9461,8 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
     }
 }
 
-static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
+static void js_bound_function_free(JSRuntime *rt, JSBoundFunction *bf)
 {
-    JSObject *p = JS_VALUE_GET_OBJ(val);
-    JSBoundFunction *bf = p->u.bound_function;
     int i;
 
     JS_FreeValueRT(rt, bf->func_obj);
@@ -9473,6 +9471,13 @@ static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
         JS_FreeValueRT(rt, bf->argv[i]);
     }
     js_free_rt(rt, bf);
+}
+
+static void js_bound_function_finalizer(JSRuntime *rt, JSValue val)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(val);
+
+    js_bound_function_free(rt, p->u.bound_function);
 }
 
 static void js_bound_function_mark(JSRuntime *rt, JSValueConst val,
@@ -48796,26 +48801,28 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     if (check_function(ctx, this_val))
         return JS_EXCEPTION;
 
-    proto = JS_GetPrototype(ctx, this_val);
-    if (JS_IsException(proto))
-        return JS_EXCEPTION;
-    func_obj = JS_NewObjectProtoClass(ctx, proto,
-                                 JS_CLASS_BOUND_FUNCTION);
-    JS_FreeValue(ctx, proto);
-    if (JS_IsException(func_obj))
-        return JS_EXCEPTION;
-    p = JS_VALUE_GET_OBJ(func_obj);
-    p->is_constructor = JS_IsConstructor(ctx, this_val);
+    /* made before the bound function, which is never without it: its
+       finalizer and its mark function read it */
     arg_count = max_int(0, argc - 1);
     bf = js_malloc(ctx, sizeof(*bf) + arg_count * sizeof(JSValue));
     if (!bf)
-        goto exception;
+        return JS_EXCEPTION;
     bf->func_obj = JS_DupValue(ctx, this_val);
     bf->this_val = JS_DupValue(ctx, argv[0]);
     bf->argc = arg_count;
     for(i = 0; i < arg_count; i++) {
         bf->argv[i] = JS_DupValue(ctx, argv[i + 1]);
     }
+    proto = JS_GetPrototype(ctx, this_val);
+    if (JS_IsException(proto))
+        goto fail;
+    func_obj = JS_NewObjectProtoClass(ctx, proto,
+                                 JS_CLASS_BOUND_FUNCTION);
+    JS_FreeValue(ctx, proto);
+    if (JS_IsException(func_obj))
+        goto fail;
+    p = JS_VALUE_GET_OBJ(func_obj);
+    p->is_constructor = JS_IsConstructor(ctx, this_val);
     p->u.bound_function = bf;
 
     /* XXX: the spec could be simpler by only using GetOwnProperty */
@@ -48853,8 +48860,9 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
             len_val = JS_NewInt32(ctx, 0);
         }
     }
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length,
-                           len_val, JS_PROP_CONFIGURABLE);
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_length,
+                               len_val, JS_PROP_CONFIGURABLE) < 0)
+        goto exception;
 
     name1 = JS_GetProperty(ctx, this_val, JS_ATOM_name);
     if (JS_IsException(name1))
@@ -48866,11 +48874,15 @@ static JSValue js_function_bind(JSContext *ctx, JSValueConst this_val,
     name1 = JS_ConcatString3(ctx, "bound ", name1, "");
     if (JS_IsException(name1))
         goto exception;
-    JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name1,
-                           JS_PROP_CONFIGURABLE);
+    if (JS_DefinePropertyValue(ctx, func_obj, JS_ATOM_name, name1,
+                               JS_PROP_CONFIGURABLE) < 0)
+        goto exception;
     return func_obj;
  exception:
     JS_FreeValue(ctx, func_obj);
+    return JS_EXCEPTION;
+ fail:
+    js_bound_function_free(ctx->rt, bf);
     return JS_EXCEPTION;
 }
 

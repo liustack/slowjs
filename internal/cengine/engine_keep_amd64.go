@@ -687,6 +687,7 @@ var goasmKeep = []any{
 	js_boolean_toString,
 	js_boolean_valueOf,
 	js_bound_function_finalizer,
+	js_bound_function_free,
 	js_bound_function_mark,
 	js_bytecode_function_finalizer,
 	js_bytecode_function_mark,

@@ -350,3 +350,11 @@ Release: Unreleased.
 `js_obj_to_desc`, the ToPropertyDescriptor of `Object.defineProperty`, `Object.defineProperties`, `Object.create` with properties, `Reflect.defineProperty` and the result of a `getOwnPropertyDescriptor` trap, took the -1 of `JS_HasProperty` (a `has` trap of a Proxy that throws) for true: it read the field with `Get` while the exception was pending, went on to the next fields, and could define the property with the exception lost. And when the getter of the field `get` or `set` threw, it replaced that exception with `TypeError: invalid getter` (or setter). Both now end the conversion with the exception of the read, as the specification says and Node does. QuickJS upstream has the same code.
 
 Tests: `engine/test/compare/property_descriptor.js` (what Node 24 prints) has a `has` trap that throws at each of the six fields in turn and a getter that throws at each, with the reads they make.
+
+## bind with too little memory fails whole
+
+Release: Unreleased.
+
+`Function.prototype.bind` made the bound function first and the block that holds its target, `this` and arguments after. When that block could not be had, it freed the bound function, whose finalizer read the block it did not have: the process crashed. It then defined `length` and `name` and did not look at what the two defines returned: when one ran out of memory (a shape copied for a key), bind went on and returned a bound function without that key, with the out of memory error pending (a script could not see it, as the next call fails and the next backward jump ends a loop, but a host that calls bind could). Now the block is made before the bound function, and a define that fails fails bind. QuickJS upstream has the same code.
+
+Tests: `test_bind_oom` in `engine/test/unit-oom.c` binds functions of each prototype, a C function, a class, a bound function, a name outside latin-1, a length a getter gives and a function of a new prototype with too little memory. `test_bind_host_oom` calls bind from the host on a target whose new prototype has an empty shape another object shares, with each room up to 16 KiB, a full heap with a few blocks back, and a full heap with blocks of every size but one back: it gets the bound function, whole, with no exception pending, or the out of memory error. Before the change it crashed.
