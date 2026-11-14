@@ -61,6 +61,7 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | `make gen` 用 tifa 页面的性能画像编译引擎，内联固定成不带画像的构建所做的结果 | v0.30.5 | [generator.md](generator.zh-CN.md#tifa-页面的性能画像) |
+| 画像除了页面还用普通循环训练（`engine/pgo/loops.js`），页面从不走的路径不再按从不执行编译，`train.sh` 检查循环确实走到这些路径 | Unreleased | [generator.md](generator.zh-CN.md#第二份输入普通循环) |
 | 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 | 循环向量化器不再从画像里取循环圈数：`memmove` 又是没有栈帧的叶子函数，一次渲染少跑 0.07% 到 0.22% 的指令 | Unreleased | [generator.md](generator.zh-CN.md#画像决定什么) |
 

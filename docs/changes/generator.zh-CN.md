@@ -1,11 +1,12 @@
 ---
-summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，它的限制和检查），以及有栈帧的寄存器入口叶子函数的 Go 声明'
+summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，第二份输入普通循环，它的限制和检查），以及有栈帧的寄存器入口叶子函数的 Go 声明'
 read_when:
   - 想知道 make gen 为什么编译两遍，或 engine/pgo/profile.txt 有什么用
   - make gen 打印了以 "warning: profile:" 或 "profile:" 开头的行，或者改了一处没碰到某个生成函数的 C 之后，那个函数变了
   - 改生成器给 clang、opt 或 llc 的参数，或改生成引擎的内联
   - 想知道画像带来什么、花掉什么，哪些脚本可能因它变慢
   - 重新训练画像，或取入一个改了寄存器循环的 QuickJS 提交
+  - train.sh 在检查 engine/pgo/loops.js 时停下，或者想知道为什么不拿微基准训练
   - go vet 对某个生成的 .s 文件报 `function memmove missing Go declaration` 之类的错
 ---
 
@@ -88,11 +89,39 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 `make check-full` 会把这些行按两个架构显示出来（`scripts/check-gen.sh`）。发布前怎么处理它们，见 [releasing.zh-CN.md](../releasing.zh-CN.md#性能画像)。
 
+### 第二份输入：普通循环
+
+发布：Unreleased。
+
+页面让引擎的许多路径计数为 0：typed array、DataView、UTF-16 文本上的正则、BigInt、`Date.parse`、运算符的慢路径等等。LLVM 把计数为 0 的路径当成从不执行：把溢出放进这条路径，把它的基本块挪开。v0.30.6 的画像里，冷计数（第 99.9999 百分位的计数，低于它 LLVM 就当作冷的）是 44，寄存器循环读 typed array 元素时调用的 `rv_ta_get` 计数为 0。`typed_array_read` 比不用画像多跑 5.3% 的指令。
+
+所以 `engine/pgo/train.sh` 现在把第二份输入和页面合并：`engine/pgo/loops.js`，一些普通循环，把每类这样的路径各跑几千次（[engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md#循环)）。它原样合并，约占计数的 3%。页面留成冷的、`compare/testdata` 的微基准每圈至少跑一次的 1601 条路径里，循环跑到 1553 条（97.0%）。低于 95%，或者循环的某一部分不再走到它负责的函数，`train.sh` 就停下。
+
+和 v0.30.6 的画像相比（callgrind，linux/amd64，同一份 C）：
+
+| 页面 | 每次渲染的指令数 |
+| --- | ---: |
+| store 首页 | +0.083% |
+| workbench | +0.105% |
+| MUI 订单页 | -0.860% |
+| React | -0.006% |
+| 长 Markdown 页 | -0.026% |
+
+同一个构建数两遍，React 页面最多差 0.15%，其余页面差不到 0.03%。64 个微基准（每圈的指令数）里，两个多跑超过 0.5%（`weak_map_set` +0.75%，`weak_map_delete` +0.69%），17 个少跑超过 0.5%：`map_set_bigint` -7.0%，`typed_array_read` -4.3%，`regexp_utf16` -3.6%，`regexp_ascii` -3.2%，`typed_array_write` -2.4%，浮点数和整数转字符串约 -1% 到 -2%。64 个合起来少跑 0.57%（几何平均），比不用画像少 3.48%，v0.30.6 的画像是少 2.92%。`typed_array_read` 每圈 1301 条指令，用 v0.30.6 的画像是 1360，不用画像是 1291。
+
+和 v0.30.6 比计时（[performance.md](../performance.zh-CN.md#画像的第二份输入)，16 种布局的平均），没有哪一类页面慢过 1%，长 Markdown 页面快 0.56%。MUI 少跑的 0.86% 指令在时间上是 -0.20%，计时分辨不出它和没变化的区别。`typed_array_read` 和 `typed_array_write` 快 6.55% 和 6.70%。`regexp_utf16` 和 `array_prop_create` 慢 3.65% 和 3.15%，虽然它们跑的指令更少。
+
+为什么用循环，不用微基准本身。拿 64 个里的一半训练（按名字分，另一半留着不训练），确实把 `typed_array_read` 拉了回来，但两个没训练的邻居变慢了：这一半约占计数的 0.1% 时，`typed_array_write` 多跑 9.1% 的指令，`regexp_utf16` 多跑 5.0%。约占 10% 时，每个页面多跑 0.45% 到 1.0%。一个基准训练的正好是测它的那个循环，它的邻居还是老样子。微基准留着做它本来的事：量画像对没训练过的路径做了什么，`train.sh` 跑它们只为检查循环。测每条寄存器指令的脚本（`engine/test/regvm/corpus.sh`）也试过当第二份输入。它们只读了 4,388 次 typed array，除非这份输入占到画像的约 10%，否则一直低于冷计数，而占到这个比例时，页面多跑 0.25% 到 1.2%。
+
+放大画像不是中性的。把 v0.30.6 的画像乘以 100，别的什么都不改（`llvm-profdata merge -weighted-input=100`），amd64 的 32 个汇编文件变了 29 个，MUI 页面多跑 0.32% 的指令。所以两份输入都不放大：循环占多少由它跑多少决定，不靠权重。可能的原因是 clang 把计数换成分支权重的方式，没有再往下查。
+
+`prop_create` 不是训练能解决的事。画像里页面已经调用 `add_property` 约 320 万次、`JS_SetPropertyInternal` 约 140 万次，远高于冷计数。试过的第二份输入没有一个让 `prop_create` 变快：它们让它差不到 0.1%，或者最多慢 1.9%。它的代价在于画像为页面最常走的那条路径怎么安排 `JS_SetPropertyInternal` 的溢出。这要另外看。
+
 ### 限制
 
 本次发布里已知且未解决的。每一项都是后续要做的事。
 
-- 训练从没跑过的路径可能更慢，时间可能比指令数涨得更多。在 AMD EPYC 服务器上计时（[performance.md](../performance.zh-CN.md#按时间看微基准)，`compare/testdata` 的 12 个微基准，16 种布局的平均），画像让六个变慢：`typed_array_read` 多 7.5% 的指令，慢 14.3%，`array_for` 是 2.1% 和 4.5%，`prop_create` 是 3.8% 和 4.0%，`int_arith` 是 2.9% 和 3.9%，`array_read` 是 3.8% 和 2.4%，`prop_read` 是 3.1% 和 1.4%。它让 `array_prop_create` 快 6.1%（指令少 2.6%），其余五个计时分辨不出来。这些时间只对数据的一种位置成立：在循环之前分配 k 个小对象再计时（k 从 0 到 15，2026-11-14），`array_read` 和 `global_read` 只因为位置就换了档，而 v0.30.5 对 v0.30.4 在 `typed_array_read`、`array_for` 和 `prop_create` 上的差距在每个 k 上都还在（[performance.md](../performance.zh-CN.md#按时间看微基准)）。所以下面的指令数不是全部代价。64 个微基准（callgrind，每个基准的循环每圈的指令数，linux/amd64）里，18 个比不用画像多跑超过 0.5% 的指令，39 个少跑超过 0.5%，64 个合起来少 1.9%（几何平均）。多跑的：`typed_array_read` +7.5%，`float_arith` +4.9%，`global_read` +4.4%，`array_read` +3.8%，`prop_create` +3.8%，`prop_read` +3.1%，`int_arith` +2.9%，`prop_write` +2.4%，`prop_update` +2.1%，`array_for` +2.1%，`empty_down_loop2` +2.0%，`empty_do_loop` +1.6%，`empty_down_loop` +1.0%，另有五个在 +0.5% 到 +1.0% 之间（`string_build2c`、`string_build1x`、`string_build1`、`string_build_large1`、`global_func_call`）。页面不训练这些循环。把它们加进画像是后续要做的事，基准分成两半，这样没训练的那一半仍能说明没训练过的路径要多花多少。
+- 训练从没跑过的路径可能更慢，时间可能比指令数涨得更多。在 AMD EPYC 服务器上计时（[performance.md](../performance.zh-CN.md#按时间看微基准)，`compare/testdata` 的 12 个微基准，16 种布局的平均），画像让六个变慢：`typed_array_read` 多 7.5% 的指令，慢 14.3%，`array_for` 是 2.1% 和 4.5%，`prop_create` 是 3.8% 和 4.0%，`int_arith` 是 2.9% 和 3.9%，`array_read` 是 3.8% 和 2.4%，`prop_read` 是 3.1% 和 1.4%。它让 `array_prop_create` 快 6.1%（指令少 2.6%），其余五个计时分辨不出来。这些时间只对数据的一种位置成立：在循环之前分配 k 个小对象再计时（k 从 0 到 15，2026-11-14），`array_read` 和 `global_read` 只因为位置就换了档，而 v0.30.5 对 v0.30.4 在 `typed_array_read`、`array_for` 和 `prop_create` 上的差距在每个 k 上都还在（[performance.md](../performance.zh-CN.md#按时间看微基准)）。所以下面的指令数不是全部代价。64 个微基准（callgrind，每个基准的循环每圈的指令数，linux/amd64）里，18 个比不用画像多跑超过 0.5% 的指令，39 个少跑超过 0.5%，64 个合起来少 1.9%（几何平均）。多跑的：`typed_array_read` +7.5%，`float_arith` +4.9%，`global_read` +4.4%，`array_read` +3.8%，`prop_create` +3.8%，`prop_read` +3.1%，`int_arith` +2.9%，`prop_write` +2.4%，`prop_update` +2.1%，`array_for` +2.1%，`empty_down_loop2` +2.0%，`empty_do_loop` +1.6%，`empty_down_loop` +1.0%，另有五个在 +0.5% 到 +1.0% 之间（`string_build2c`、`string_build1x`、`string_build1`、`string_build_large1`、`global_func_call`）。这些是 v0.30.5 画像的数字。用 v0.30.6 的画像，64 个里有三个比不用画像多跑超过 0.5% 的指令（`typed_array_read` +5.3%，`prop_create` +3.3%，`float_arith` +0.5%）。加上[第二份输入](#第二份输入普通循环)后剩两个：`prop_create` +3.2%，训练管不到它，`typed_array_read` +0.8%。按时间算，`regexp_utf16` 和 `array_prop_create` 比用 v0.30.6 的画像慢约 3%，指令却更少（[见上](#第二份输入普通循环)）。页面和循环都没跑的路径，仍按从不执行编译，`train.sh` 的检查只管微基准跑到的路径。
 - 内联重放会漏掉少数调用。在一组互相成环调用的函数里，画像改变了内联器遇到调用的顺序，于是一个调用在第二遍里出现在第一遍记录没有命名的上下文中，仍是调用。amd64 上是 8 个函数里的 22 个调用：`rv_putel_slow`（10 个），`JS_ToBigInt64Free`（4 个），`free_gc_object`（3 个），`rv_w_gen`、`js_set_fast_array_element_out_of_line`、`js_backtrace_build`、`JS_ToPrimitiveFree` 和 `JS_SetPropertyValue`（各 1 个）。它们调用的 8 个小函数，在不用画像的构建里处处内联，这里各自留下一个函数体：`JS_FreeValue`、`JS_IsException`、`JS_StringToBigIntErr`、`JS_ToNumberFree`、`JS_VALUE_IS_NAN`、`__JS_NewShortBigInt`、`__js_rc` 和 `js_dbuf_init`。arm64 上是其中 5 个函数里的 12 个调用，调用其中 5 个小函数。它们都是慢路径或少见的路径：往类型化数组写一个不是数字的值，BigInt 转换，释放 async 函数的帧，生成回溯。在 linux/amd64 上用 callgrind 数，这 8 个小函数在全部 64 个微基准里，以及商店、工作台和 MUI 页面的渲染里，都跑 0 条指令。这 8 个函数的栈帧里，只有 `free_gc_object` 的 Go 栈帧变大，两个架构都是 32 字节（amd64 从 96 到 128，arm64 从 88 到 120），它的 shadow 栈帧仍是 0。它在一个调用环上（`free_gc_object`、`__JS_FreeValueRT`、`free_gc_object`），但 C 只让这个环走一层（`engine/quickjs.c` 的 `free_zero_refcount`：一个对象在释放别的对象时死掉，只会加进一个列表），所以没有递归会重复这 32 字节，也没有深度下限会动。其余栈帧相同或变小。重放没有便宜的修法。第一遍的记录按调用被内联经过的那串调用点来命名每个调用（`free_gc_object` 里的 `__js_rc` 是 `JS_FreeValueRT` @ `async_func_free_frame` @ `__async_func_free` @ `free_gc_object`），而 `JS_FreeValueRT`、`async_func_free_frame`、`JS_FreeValueRT` 这个环让第二遍经过另一串调用点碰到它。没有内联的调用，记录里不带调用点串。要修，要么把记录能推出的每一串都补上（C 内联进 X，X 又内联进 F，就得出 C 经过这两段进入 F），要么改用 AlwaysInline 兜底，再从第一遍的 IR 里连同调用点串读出它留下的调用，列成清单。两种都要一天左右的工作量，再加测试，而在数过的地方收益是 0 条指令，所以不做。
 - 过期的画像会丢掉它覆盖的函数里的收益（见上），C 离训练越远，收益越少，直到重新训练。
 - 画像来自两个应用的页面，用一个手写格式化数字和日期的假 `Intl` 渲染（[engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。它没有 `Intl` 内部工作的计数，也没有加载 bundle 的计数（这些计数是特意去掉的：带上它们的画像被解析器主导，效果更差）。
@@ -105,7 +134,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 ### 测试和检查
 
-- `engine/pgo/train.sh` 训练画像。它按生成器编译引擎的方式构建宿主，所以画像里每个函数的哈希和生成器看到的一致。
+- `engine/pgo/train.sh` 训练画像。它按生成器编译引擎的方式构建宿主，所以画像里每个函数的哈希和生成器看到的一致。`engine/pgo/loops.js` 跑到的、页面留成冷的而微基准跑到的路径不足 95%，或者循环的某一部分不再走到它的函数时，它就停下（`engine/pgo/cover.awk`）。
 - `TestInlineRemarks`、`TestStripCGProfile`、`TestProfileNames`、`TestUnprofiledFunctions`、`TestStaleWarnings` 和 `TestMisexpectLines`（`internal/goasm/gen/pgo_test.go`）检查第一遍的记录、模块标志、画像里的名字、哪些函数没有画像，以及警告。
 - `TestPassPollsProfile`（`internal/goasm/gen/poll_test.go`，需要 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS`）检查轮询 pass 选计数器位置的方式和没有画像时相同，画像里某个权重的数字恰好和 pass 自己的罕见分支相同时也一样。
 - `TestLowerARM64EngineLRTuplePaths`（`internal/goasm/gen`）检查 arm64 上扩展后的证明。
