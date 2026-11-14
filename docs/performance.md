@@ -1159,6 +1159,37 @@ The 12 micro benchmarks of [the timing of v0.30.5](#the-micro-benchmarks-by-time
 
 At the mean of the layouts v0.30.6 is faster on 7 of them, shows no regression beyond the delta on `prop_read` and `prop_write`, cannot tell on `prop_update` and `typed_array_read`, and is slower by less than the delta on `array_slice`. `typed_array_read` is 7.19% slower at the formal layout, the build that ships, while the mean of the layouts cannot tell (its interval runs from -5.35% to +3.63%): the place of its code moves it more than the change does. `global_read` and `prop_create` gain 1.45% and 2.12%, but stay slower than with v0.30.4 (they lost 13.90% and 7.08% in v0.30.5).
 
+#### The second input of the profile
+
+[The second input](changes/generator.md#a-second-input-plain-loops) (plain loops trained next to the pages) was timed on 2026-11-14 on the same machine and in the same way as v0.30.6 above. Two sides: v0.30.6 as it shipped (78a90364) and the same C generated with the profile trained on the pages and the loops (f3c21188). The micro benchmarks pair the place of their data with each layout (`measure bench run -place -place`), and two of them are new here: `typed_array_write` (N = 1,000,000) and `regexp_utf16` (N = 500). Every kind ran its 18 units with no block run again.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | +0.19% (-0.22% to +0.60%) no regression beyond delta | +0.08% (-0.86% to +1.03%) inconclusive |
+| tifa's shop, fourteen store pages | -0.23% (-0.56% to +0.10%) no regression beyond delta | +0.05% (-0.51% to +0.62%) no regression beyond delta |
+| tifa's MUI test app, three pages | -0.20% (-0.86% to +0.47%) no regression beyond delta | +0.32% (-0.25% to +0.88%) no regression beyond delta |
+| React's page | -0.82% (-1.76% to +0.13%) no regression beyond delta | -2.13% (-3.58% to -0.65%) faster |
+| The long Markdown page, 100 and 400 sections | -0.56% (-0.98% to -0.15%) faster | -0.57% (-1.40% to +0.26%) no regression beyond delta |
+
+| Benchmark | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| `array_for` | -1.04% (-3.17% to +1.13%) inconclusive | -6.30% (-8.27% to -4.29%) faster |
+| `array_prop_create` | +3.15% (+1.98% to +4.34%) slower | +2.40% (+1.63% to +3.17%) slower |
+| `array_read` | +0.50% (-0.06% to +1.07%) inconclusive | -0.38% (-0.66% to -0.09%) faster |
+| `array_slice` | +0.34% (-6.22% to +7.36%) inconclusive | +12.56% (+5.43% to +20.18%) slower |
+| `float_arith` | -0.82% (-1.74% to +0.12%) no regression beyond delta | -3.61% (-4.10% to -3.13%) faster |
+| `global_read` | -0.57% (-0.79% to -0.34%) faster | -0.41% (-0.64% to -0.18%) faster |
+| `int_arith` | -0.84% (-2.88% to +1.24%) inconclusive | -5.22% (-5.47% to -4.98%) faster |
+| `prop_create` | -1.24% (-3.04% to +0.59%) no regression beyond delta | +0.95% (-3.69% to +5.82%) inconclusive |
+| `prop_read` | -1.30% (-2.02% to -0.58%) faster | -1.83% (-2.85% to -0.80%) faster |
+| `prop_update` | -2.69% (-4.98% to -0.35%) faster | -1.73% (-6.11% to +2.86%) inconclusive |
+| `prop_write` | +1.18% (-0.57% to +2.95%) inconclusive | -1.33% (-4.89% to +2.37%) inconclusive |
+| `regexp_utf16` | +3.65% (+1.29% to +6.07%) slower | +1.37% (-0.31% to +3.08%) inconclusive |
+| `typed_array_read` | -6.55% (-10.25% to -2.70%) faster | -9.66% (-14.30% to -4.77%) faster |
+| `typed_array_write` | -6.70% (-8.23% to -5.14%) faster | -5.06% (-7.21% to -2.86%) faster |
+
+No kind of page is slower beyond the delta. MUI's pages run 0.86% fewer instructions with the loops, and the time shows -0.20%, which this timing cannot tell from no change. The long Markdown page is 0.56% faster. Of the micro benchmarks, the two the loops were written for gain the most: `typed_array_read` 6.55% and `typed_array_write` 6.70%. Two are slower at the mean of the layouts though they run fewer instructions (callgrind, linux/amd64): `regexp_utf16` 3.65% slower for 3.5% fewer instructions, and `array_prop_create` 3.15% slower for 0.4% fewer. That is where their code lands, not the work they do. `array_slice` is 12.56% slower at the formal layout and cannot tell at the mean, as in [the timing of v0.30.5](#the-micro-benchmarks-by-time), where the formal layout moved it by 12% the other way.
+
 #### The study of 2026-11-13
 
 The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
