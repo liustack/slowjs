@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | 内存和字符串函数：`memmove memset memcmp bcmp bzero memchr memrchr strlen strcmp strchr strchrnul strrchr` | `string/` | musl，原样使用 |
 | `memcpy` | `string/memcpy.c` | 这里写的，代替 musl 的。128 字节以内用同一宽度的重叠加载和存储，再往上是每次 128 字节的循环，目标按 16 对齐。只用 SSE2 和 NEON 的移动指令，没有 `REP MOVSB`，没有 AVX。由 `engine/test/libc-test.sh` 测试 |
-| 34 个数学函数：22 个需要真正的算法（`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`），12 个是精确的（`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`），以及它们用到的辅助函数和表 | `math/`、`internal/libm.h` | musl。`libm.h` 有一个补丁（见下） |
+| 34 个数学函数：22 个需要真正的算法（`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`），12 个是精确的（`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`），以及它们用到的辅助函数和表 | `math/`、`internal/libm.h` | musl。`libm.h` 和 `acosh.c` 各有一个补丁（见下） |
 | `snprintf`、`vsnprintf` | `stdio.c` | 这里写的。标志 `- + space 0 #`，宽度和精度（数字或 `*`），长度 `hh h l ll z j t` 只用于整数转换，转换 `d i u x X o c s p %`。没有浮点转换。其他任何情况都会在读取参数之前调用 `abort`：别的转换，给 `c s p %` 加长度，在转换中间结束的格式，装不进 int 的宽度或精度，超过 INT_MAX 的输出 |
 | `abort` | `abort.c` | 这里写的。它用魔数 `HOST_CALL_ABORT` 调用 `host_call`。Go 宿主 panic，并把 VM 标为只能关闭。陷阱指令会产生信号，而信号会杀死 Go 进程 |
 | `sqrt`、`fabs` | `math.c` | 这里写的，各一条指令。musl 的 `sqrt` 是软件实现 |
@@ -31,6 +31,8 @@
 - long double 的布局去掉了，因为 C 树里没有 long double
 - `fp_barrier` 返回它的输入，`FORCE_EVAL` 什么也不做，因为 C 树不看浮点标志
 - 定义了 `__FP_FAST_FMA` 或 `__FP_FAST_FMAF` 时编译失败
+
+`math/acosh.c` 是 musl 的，带着 `patches/acosh.c.patch`，即 musl 的提交 `3e80328d45b73604012b9b174f11e3ed632005ce`（2026-08-03，"math: fix acosh for x<0"），比钉住的提交新。在它之前，`acosh` 只读 `x` 的指数，不看符号，对 -2^26 到 -2 之间的许多 `x` 给出有限的数，而结果应该是 NaN。钉住的提交越过它时，这个补丁就去掉。
 
 musl 的 `log`、`log2` 和 `pow` 为硬件 fma 准备了第二条路径，两条路径的结果在最后一位上不同。构建在每个目标上都走没有 fma 的路径，带 `-ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF`。这样 arm64 和 amd64 给出相同的位。
 

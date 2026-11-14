@@ -33,7 +33,7 @@ read_when:
 
 | 改动 | 程序会看到什么变化 | 由什么检查 |
 | --- | --- | --- |
-| 引擎用 `-ffreestanding -nostdinc` 对着 `engine/libc` 构建 | 在 linux/amd64 上 `Math.*` 的结果和旧引擎逐位相同。在 darwin/arm64 上末位可能不同（见“小libc”） | `check-symbols.sh`、`libc-test.sh`、`math.sh` |
+| 引擎用 `-ffreestanding -nostdinc` 对着 `engine/libc` 构建 | 在 linux/amd64 上 `Math.*` 的结果和旧引擎逐位相同，小于 -1 的 `Math.acosh` 除外（见“Math.acosh 小于 -1 时是 NaN”）。在 darwin/arm64 上末位可能不同（见“小libc”） | `check-symbols.sh`、`libc-test.sh`、`math.sh` |
 | `Date` 和 `Math.random` 的种子来自 `host_now` | Go 宿主用 VM 的时钟回答 | 原生宿主，`HOST_CLOCK` |
 | `abort` 是对宿主的一个请求：带 `HOST_CALL_ABORT` 的 `host_call` | Go 宿主 panic，VM 之后只能关闭。陷阱指令会变成信号，让整个进程结束 | `api-test.c` |
 | `Atomics.wait` 抛错，`Atomics.notify` 不唤醒任何人 | `Atomics.wait` 像浏览器主线程一样抛 `TypeError`。引擎里没有线程 | test262，用 `engine/test/test262.conf` |
@@ -52,6 +52,7 @@ read_when:
 
 | 改动 | 程序会看到什么变化 | 由什么检查 |
 | --- | --- | --- |
+| 小于 -1 的值的 `Math.acosh` 是 NaN | `Math.acosh(-9115.56)` 过去是 -13.31，`Math.acosh(-8192)` 过去是 `-Infinity`：musl 的 `acosh` 不看符号。musl `3e80328d`，作为小 libc 的补丁拿进来，见 [Math.acosh 小于 -1 时是 NaN](#mathacosh-小于--1-时是-nan) | `compare/math_domain.js`，`math.sh` |
 | 模板字面量把每个代入值立刻转成字符串 | `${c} ${c.n++}`，以及被后面的代入值改掉的 `Date`，现在打印 Node 打印的结果，被改过的 `String.prototype.concat` 也不再影响模板。上游 QuickJS `f8199dc`，见 [upstream-commits.zh-CN.md](upstream-commits.zh-CN.md) | `compare/template_literal.js` |
 | 负的 BigInt 和负的浮点数比较正确 | `-0.5 < -1n` 过去是 true。上游 QuickJS 和旧引擎有同样的 bug | `compare/number_compare.js` |
 | 编译 `\p{Script=...}` 时内存不足，调用以内存不足错误结束 | 过去进程崩溃。上游 QuickJS `817509a` | `unit-oom`（`test_regexp_script_oom`） |
@@ -78,7 +79,7 @@ read_when:
 
 整个引擎也带 `-ffp-contract=off` 构建，生成器会拒绝 IR 里出现 `llvm.fmuladd` 或 `llvm.fma` 以及任何 fast-math 标志（`reassoc`、`nnan`、`ninf`、`nsz`、`arcp`、`contract`、`afn`，或 `unsafe-fp-math` 属性），在 arm64 上还拒绝 llc 文本里出现融合指令（`fmadd`、`fmsub`、`fnmadd`、`fnmsub`、`fmla`、`fmls`）。测了什么，没测什么：
 
-- linux/amd64：`engine/test/math.sh` 逐位检查，对 libc 的 33 个函数各取 100000 个输入，对脚本看到的 33 个 `Math` 运算也各取 100000 个，和 `engine/test/math` 里保存的哈希比较。这些哈希最初是从旧引擎记下来的，C 引擎每个结果的位都和它相同。JavaScript 的检查把 NaN 写成 JavaScript 里唯一的那个 NaN，所以不检查 NaN 的符号和负载。libc 的检查会检查，所以只在 x86-64 上跑。
+- linux/amd64：`engine/test/math.sh` 逐位检查，对 libc 的 33 个函数各取 100000 个输入，对脚本看到的 33 个 `Math` 运算也各取 100000 个，和 `engine/test/math` 里保存的哈希比较。这些哈希最初是从旧引擎记下来的，C 引擎每个结果的位都和它相同，直到下面 `acosh` 的修复改了 `acosh` 对负数输入的结果。JavaScript 的检查把 NaN 写成 JavaScript 里唯一的那个 NaN，所以不检查 NaN 的符号和负载。libc 的检查会检查，所以只在 x86-64 上跑。
 - macOS arm64：`math.sh` 在那里检查 JavaScript 的哈希。libc 的结果除了 NaN 的符号（由处理器决定，arm64 上为正，amd64 上为负）之外都相同，所以那部分在 arm64 上不检查。
 - 引擎只在 amd64 和 arm64 上运行，所以两者末位相同是有证据的。
 
@@ -88,6 +89,18 @@ read_when:
 格式串在到达这个 `abort` 之前就被检查了。引擎文件用 `-Werror=format` 和 `-Werror=format-nonliteral` 构建（`engine/test/flags.sh`），所以格式串和参数一致，并且要么是字符串常量，要么是带 `printf` 属性并把它往下传的函数的格式串（`JS_ThrowError2`、`JS_ThrowError` 和 `js_parse_error_v` 有这个属性，`va_list` 形式用 `format(printf, 3, 0)`）。`JS_ThrowTypeErrorAtom` 和 `JS_ThrowSyntaxErrorAtom` 背后的两个辅助函数，传格式串时用 atom 的名字代替参数，clang 跟不上这一点，于是用一个 pragma 只对这两个函数关掉检查。
 
 `check-symbols.sh` 只证明符号这一层。引擎文件加上 libc，除了 `engine/host.h` 的回调和 `engine/heap.h` 的 `host_memory_grow` 之外，不留任何未定义符号。分配器（[allocator.zh-CN.md](../allocator.zh-CN.md)）是引擎文件之一，引擎不调用 malloc：`dbuf` 和 `CharRange` 没有默认分配器，libc 的 `stdlib.h` 也没有声明。它不能证明机器码不用线程局部存储、不含系统调用指令、不用固定地址。这些检查随生成器一起来，不在这之前。
+
+### Math.acosh 小于 -1 时是 NaN
+
+Release: Unreleased.
+
+对每个小于 1 的 `x`，`Math.acosh(x)` 都是 NaN，规范这么写，Node 和各浏览器也这么给。以前小 libc 里 musl 的 `acosh` 只读 `x` 的指数，不看符号，所以负的 `x` 走的是同样大小的正数的公式。从 -1 到大约 -8192，这个公式仍然给出 NaN，但从那里往下到 -2^26，许多 `x` 会得到一个数：`Math.acosh(-8192)` 是 `-Infinity`，`Math.acosh(-9115.56)` 是 -13.31，`Math.acosh(-67108863)` 是 0.69。旧引擎给出同样的数（从它记下的 `engine/test/math` 哈希和这些结果一致）。
+
+修复是 musl 自己的，2026-08-03 的提交 `3e80328d`（"math: fix acosh for x<0"），比小 libc 钉住的 musl 提交新。它放在 `engine/libc/patches/acosh.c.patch`，由 `engine/libc/vendor.sh` 应用，`MUSL.sha256` 记下它（见 [README](../../engine/libc/README.zh-CN.md#musl)），钉住的提交越过它时就去掉。取指数的移位现在保留符号位，所以负的 `x` 越过两个公式，落到新加的对这一位的判断上，返回 NaN。小于 2^26 的正数 `x` 执行的指令和以前一样，大于等于 2^26 的多一次判断。
+
+为什么安全：补丁就是 musl 做的改动，打在同一个文件上（`vendor.sh --verify MUSL_DIR` 在 musl 检出上重放它，得到这里的文件，也就是 musl 在那个提交的文件）。只有负数输入换了路径。`engine/test/math` 的哈希里，只有 `acosh` 的结果变了，JavaScript 文件和 libc 文件都是，输入和其他所有函数都没变。
+
+测试：`engine/test/compare/math_domain.js` 打印 `acosh`、`asinh`、`atanh`、`log`、`log1p`、`log2`、`log10`、`sqrt` 和负底数的 `pow` 在定义域边上的输入的结果种类（NaN、无穷、带符号的零，或有限数的符号），以及 `acosh` 在 -1 到 -2^40 之间 321 个值上的结果。它的文件是 Node 24 打印的内容。修复前这 321 个值里有 79 个不是 NaN。`engine/test/math.sh` 检查逐位结果。
 
 ## 时钟、abort 与宿主
 

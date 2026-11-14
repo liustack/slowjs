@@ -58,6 +58,7 @@ read_when:
 | 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 | `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
 | 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | Unreleased | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
+| `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | Unreleased | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
 
 ## 生成器
 
