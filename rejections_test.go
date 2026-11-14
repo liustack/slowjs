@@ -241,11 +241,11 @@ func allocated(f func()) uint64 {
 	return after.TotalAlloc - before.TotalAlloc
 }
 
-// TestRejectionsGoMemory: what one read makes Go allocate is bounded by the
-// number of reasons times rejectionRoom, however long the reasons are and
-// however many references they share: MaxTrackedRejections references to
-// one string of 1 MiB, in a VM limited to 64 MiB, read 1 GiB into Go before
-// the texts were cut.
+// TestRejectionsGoMemory: what one read makes Go allocate is bounded by
+// reasonsRoom and the number of reasons times rejectionRoom, however long
+// the reasons are and however many references they share:
+// MaxTrackedRejections references to one string of 1 MiB, in a VM limited to
+// 64 MiB, read 1 GiB into Go before the texts were cut.
 func TestRejectionsGoMemory(t *testing.T) {
 	m := newRejectionsVM(t, MaxTrackedRejections)
 	m.SetMemoryLimit(64 << 20)
@@ -258,7 +258,7 @@ func TestRejectionsGoMemory(t *testing.T) {
 	if err != nil || len(reasons) != MaxTrackedRejections {
 		t.Fatalf("%d reasons, %v", len(reasons), err)
 	}
-	if bound := uint64(MaxTrackedRejections * rejectionRoom); n > bound {
+	if bound := uint64(reasonsRoom + MaxTrackedRejections*rejectionRoom); n > bound {
 		t.Fatalf("Go allocated %d bytes, more than %d", n, bound)
 	}
 }
@@ -341,8 +341,8 @@ func TestRejectionsReadSweep(t *testing.T) {
 // TestRejectionsLongReasonsTimeout is the case of the review: 64 references
 // to a string of 4 Mi characters, read under an eval timeout of 1 ms, read
 // 256 MiB into Go before the texts were cut, with no read of the stop. Now
-// a read makes Go allocate at most 64 times rejectionRoom, and ends with
-// all of them or the interrupt.
+// a read makes Go allocate at most reasonsRoom and 64 times rejectionRoom,
+// and ends with all of them or the interrupt.
 func TestRejectionsLongReasonsTimeout(t *testing.T) {
 	m := newRejectionsVM(t, 64)
 	if _, err := m.Eval(`var s = "x".repeat(4 << 20); for (var i = 0; i < 64; i++) Promise.reject(s)`, EvalGlobal); err != nil {
@@ -357,7 +357,7 @@ func TestRejectionsLongReasonsTimeout(t *testing.T) {
 	if err != nil && (!errors.As(err, &e) || !e.Interrupted) {
 		t.Fatalf("%v, want none or the interrupt", err)
 	}
-	if bound := uint64(64 * rejectionRoom); n > bound {
+	if bound := uint64(reasonsRoom + 64*rejectionRoom); n > bound {
 		t.Fatalf("Go allocated %d bytes, more than %d", n, bound)
 	}
 }
@@ -483,5 +483,60 @@ Promise.reject("second");
 	got, dropped := messages(t, m, `for (var i = 1; i <= 4; i++) Promise.reject(i)`)
 	if strings.Join(got, ",") != "1,2,3,4" || dropped != 0 {
 		t.Fatalf("after: %q, %d dropped, want 1 to 4 kept", got, dropped)
+	}
+}
+
+// TestRejectionsWideMemory: what a read makes Go allocate stays under what it
+// takes from the room, also for texts of 16-bit characters that are mostly
+// ASCII, with no memory kept from earlier conversions (two collections empty
+// sync.Pool). The conversion into a buffer of 3 bytes a unit, then a copy,
+// took 106,526 bytes for the five texts of such a reason, more than the room
+// taken for it.
+func TestRejectionsWideMemory(t *testing.T) {
+	const n = 64
+	m := newRejectionsVM(t, n)
+	if _, err := m.Eval(fmt.Sprintf(`var s = "a".repeat(8192) + "中";
+for (var i = 0; i < %d; i++) Promise.reject({ toString() { return s }, name: s, message: s, stack: s, fileName: s })`, n), EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	runtime.GC()
+	runtime.GC()
+	var reasons []*Error
+	var err error
+	got := allocated(func() { reasons, _, err = m.UnhandledRejections() })
+	if err != nil || len(reasons) != n {
+		t.Fatalf("%d reasons, %v", len(reasons), err)
+	}
+	if bound := uint64(reasonsRoom + n*rejectionRoom); got > bound {
+		t.Fatalf("Go allocated %d bytes, more than the %d taken from the room", got, bound)
+	}
+	for i, e := range reasons {
+		if !textOK(e.Stack, strings.Repeat("a", 8192)+"中") {
+			t.Fatalf("reason %d: Stack of %d bytes", i, len(e.Stack))
+		}
+	}
+}
+
+// TestRejectionsGetterRoom: each text takes its room when it is read, after
+// the getters that ran before it. A getter of the stack that allocates the
+// room away makes the read end with the out of memory error before it reads
+// the file name, where the room was taken once, before the reason.
+func TestRejectionsGetterRoom(t *testing.T) {
+	m := newRejectionsVM(t, 4)
+	limit := m.MemorySize() + 4<<20
+	m.SetMemoryLimit(limit)
+	defineBuiltin(t, m, "room", NewBuiltin("room", 0, func(a Args) (Value, error) {
+		return a.VM().NewFloat64(float64(limit - a.VM().MemorySize())), nil
+	}))
+	if _, err := m.Eval(`
+var s = "f".repeat(8192), hold = [];
+Promise.reject({ name: "n", message: "m", get stack() { while (room() > 6144) hold.push(new Uint8Array(room() - 4096)); return "s" }, fileName: s });
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	var e *Error
+	if !errors.As(err, &e) || !e.OutOfMemory || len(reasons) != 0 {
+		t.Fatalf("%d reasons, %v, want none and the out of memory error", len(reasons), err)
 	}
 }

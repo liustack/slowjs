@@ -5,7 +5,10 @@
 
 package quickjs // import "github.com/liustack/quickjs"
 
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // MaxTrackedRejections is the most rejections [VM.TrackRejections] keeps. A
 // host logs the few a script and its jobs left, and a read holds up to five
@@ -16,10 +19,54 @@ const MaxTrackedRejections = 1024
 // (cutString): its string, Name, Message, Stack and FileName.
 const rejectionText = 8 << 10
 
-// rejectionRoom is the most bytes a read of one reason makes Go allocate:
-// each of its five texts written into a buffer and copied, with cutMark,
-// and the Error.
-const rejectionRoom = 2*5*(rejectionText+len(cutMark)) + 256
+// What a read of the rejections takes from the room under the memory limit
+// of the VM (textCut.take). Go allocates each text once, at most
+// rejectionText bytes and cutMark (8,198), and the Error of each reason, and
+// rounds an allocation of up to 32 KiB up to its size class, at most a
+// quarter more, or 16 bytes for the smallest (runtime/sizeclasses.go: 8,198
+// bytes take 9,472). So the room taken for n bytes is n + n/4 + 16 (roomOf):
+//
+//	textRoom      = 8,198 + 2,049 + 16                = 10,263
+//	errorRoom     = the same of unsafe.Sizeof(Error{}) (112 on 64 bits: 156)
+//	rejectionRoom = 5 * textRoom + errorRoom          = 51,471
+//	reasonsRoom   = the same of 1,024 pointers, 8,192 = 10,256
+//
+// reasonsRoom is the slice of reasons, made with the first.
+const (
+	textRoom      = rejectionText + len(cutMark) + (rejectionText+len(cutMark))/4 + 16
+	errorRoom     = int(unsafe.Sizeof(Error{})) + int(unsafe.Sizeof(Error{}))/4 + 16
+	rejectionRoom = 5*textRoom + errorRoom
+	reasonsSize   = MaxTrackedRejections * int(unsafe.Sizeof((*Error)(nil)))
+	reasonsRoom   = reasonsSize + reasonsSize/4 + 16
+)
+
+// roomOf is the room taken for n bytes Go allocates (see textRoom).
+func roomOf(n int) int { return n + n/4 + 16 }
+
+// textCut is how readError reads the texts of a reason of
+// UnhandledRejections, or of the error it ends with: each cut (cutString),
+// and with room, each taken first from the room m has under its memory
+// limit. held is what the read took so far.
+type textCut struct {
+	room bool
+	held int
+}
+
+// take takes the room for n bytes that Go is to allocate, when t takes the
+// room. When the room m has left under its memory limit is less than held
+// and that, it leaves the out of memory error pending and returns false.
+func (t *textCut) take(m *VM, n int) bool {
+	if !t.room {
+		return true
+	}
+	r := roomOf(n)
+	if room := m.goRoom(); room >= 0 && int64(t.held+r) > room {
+		m.goOutOfMemory()
+		return false
+	}
+	t.held += r
+	return true
+}
 
 // TrackRejections makes m keep the promises that are rejected while no
 // handler is attached to them, at most max of them, oldest first, until a
@@ -81,13 +128,16 @@ func (m *VM) TrackRejections(max int) (err error) {
 // UnhandledRejections returns the reasons read before it and the interrupt,
 // and the rejections after the one it was reading stay kept.
 //
-// What Go keeps of the reasons is taken from the room m has under its memory
-// limit (see [VM.SetMemoryLimit]): before each reason, UnhandledRejections
-// checks that the room left holds what reading it may make Go allocate,
-// about 80 KiB, twice its five texts. When it does not, it returns the
-// reasons read before and the out of memory error, and the others stay kept.
-// So a read holds at most 40 MiB of texts in Go (1,024 reasons of five texts
-// of 8 KiB), and less than the room under the limit.
+// What Go allocates for the reasons is taken from the room m has under its
+// memory limit (see [VM.SetMemoryLimit]): before each reason, the most it
+// may take, about 50 KiB, and then each text before it is copied, after the
+// getters that ran before it. When the room left is less, UnhandledRejections
+// returns the reasons read before and the out of memory error, and the
+// rejections after the one it was reading stay kept. So a read allocates at
+// most about 50 MiB in Go for 1,024 reasons, of which it keeps at most
+// 40 MiB of texts. Javascript a getter runs after a text was copied can still
+// use the room it took, so m and the read together may pass the limit by
+// what the read holds in Go.
 //
 // A read is the only one on m while it runs: called from javascript it runs,
 // UnhandledRejections returns an error and takes nothing, as TrackRejections
@@ -106,22 +156,31 @@ func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
 	// The rejections kept from here on, by javascript a read runs, are for
 	// the next call.
 	mark := m.jsRejectionMark()
-	var held int64
+	t := &textCut{room: true}
 	for len(reasons) < MaxTrackedRejections && m.jsHasRejection(mark) {
 		if m.goStop() {
 			return reasons, dropped, m.errFromException()
 		}
-		if room := m.goRoom(); room >= 0 && held+int64(rejectionRoom) > room {
+		if reasons == nil {
+			t.held = reasonsRoom
+		}
+		// The room for all a reason may take, before it is taken off the
+		// list: when there is not that much, it stays kept. Each text then
+		// takes its own, after the getters that ran before it.
+		if room := m.goRoom(); room >= 0 && int64(t.held+rejectionRoom) > room {
 			m.goOutOfMemory()
 			return reasons, dropped, m.errFromException()
 		}
+		if reasons == nil {
+			reasons = make([]*Error, 0, MaxTrackedRejections)
+		}
+		t.held += errorRoom
 		v, _ := m.jsTakeRejection(mark)
-		e, ok := m.readError(v, rejectionText)
+		e, ok := m.readError(v, t)
 		m.jsFreeValue(v)
 		if !ok {
 			return reasons, dropped, m.errFromException()
 		}
-		held += 2*int64(len(e.raw)+len(e.Name)+len(e.Message)+len(e.Stack)+len(e.FileName)) + 256
 		reasons = append(reasons, e)
 	}
 	return reasons, dropped, nil

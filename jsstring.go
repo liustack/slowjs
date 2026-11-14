@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/bits"
 	"sync"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 
@@ -54,47 +55,49 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 // cutMark ends a text cutString cut.
 const cutMark = " [cut]"
 
-// cutString is argString for a text Go keeps only to show, a reason of
-// UnhandledRejections: the UTF-8 of v cut to its first max bytes, or up to
-// three fewer where a character would be cut, with cutMark after it when v
-// is longer. It reads at most max characters of the string, so it takes
-// about as long, and makes Go allocate about as much, for a string of any
-// length: at most max bytes and cutMark, which the conversion writes into a
-// buffer of its size first, so twice that. A value that is not a string in
-// one piece is made one first, as argString does. max is at most
-// stringStep, so the conversion reads no stop: the caller reads it between
-// two texts.
-func (m *VM) cutString(v jsValue, max int) (string, bool) {
+// cutString is argString for a text Go keeps only to show, of a reason of
+// UnhandledRejections or of the error it ends with: the UTF-8 of v cut to
+// its first rejectionText bytes, or up to three fewer where a character
+// would be cut, with cutMark after it when v is longer. It reads at most
+// rejectionText characters of the string, so it takes about as long, and
+// makes Go allocate as much, for a string of any length: one allocation, of
+// the bytes it returns, at most rejectionText and cutMark. When t takes the
+// room, that is taken from the room of m first (textCut.take). A value that
+// is not a string in one piece is made one first, as argString does.
+// rejectionText is below stringStep, so the conversion reads no stop: the
+// caller reads it between two reasons.
+func (m *VM) cutString(v jsValue, t *textCut) (string, bool) {
 	p, n, wide, ok := stringChars(v)
 	if !ok {
 		flat := m.jsToString(v)
 		if isException(flat) {
 			return "", false
 		}
-		s, ok := m.cutString(flat, max)
+		s, ok := m.cutString(flat, t)
 		m.jsFreeValue(flat)
 		return s, ok
 	}
 	if n == 0 {
 		return "", true
 	}
+	// k characters (units of u), size bytes of UTF-8, fit.
 	k, size := 0, 0
-	var s string
+	var b []byte
+	var u []uint16
 	if !wide {
-		b := unsafe.Slice((*byte)(addr(p)), n)
+		b = unsafe.Slice((*byte)(addr(p)), n)
 		for ; k < n; k++ {
 			c := 1
-			if b[k] >= 0x80 {
+			if b[k] >= utf8.RuneSelf {
 				c = 2
 			}
-			if size+c > max {
+			if size+c > rejectionText {
 				break
 			}
 			size += c
 		}
-		s, ok = latin1String(m, b[:k])
 	} else {
-		u := unsafe.Slice((*uint16)(addr(p)), n)
+		u = unsafe.Slice((*uint16)(addr(p)), n)
 		for k < n {
 			// A lone surrogate becomes U+FFFD, three bytes.
 			c, w := 3, 1
@@ -106,18 +109,44 @@ func (m *VM) cutString(v jsValue, max int) (string, bool) {
 			case x&0xFC00 == 0xD800 && k+1 < n && u[k+1]&0xFC00 == 0xDC00:
 				c, w = 4, 2
 			}
-			if size+c > max {
+			if size+c > rejectionText {
 				break
 			}
 			size += c
 			k += w
 		}
-		s, ok = utf16String(m, u[:k], false)
 	}
-	if ok && k < n {
-		s += cutMark
+	if k < n {
+		size += len(cutMark)
 	}
-	return s, ok
+	if !t.take(m, size) {
+		return "", false
+	}
+	out := make([]byte, 0, size)
+	if !wide {
+		for _, c := range b[:k] {
+			out = utf8.AppendRune(out, rune(c))
+		}
+	} else {
+		for i := 0; i < k; i++ {
+			r := rune(u[i])
+			if utf16.IsSurrogate(r) {
+				if i+1 < k {
+					r = utf16.DecodeRune(r, rune(u[i+1]))
+				} else {
+					r = utf8.RuneError
+				}
+				if r != utf8.RuneError {
+					i++
+				}
+			}
+			out = utf8.AppendRune(out, r)
+		}
+	}
+	if k < n {
+		out = append(out, cutMark...)
+	}
+	return unsafe.String(unsafe.SliceData(out), len(out)), true
 }
 
 // argBlock is argString for a Go function of a door (vmhook.LongWTF8) that

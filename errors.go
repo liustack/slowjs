@@ -104,7 +104,7 @@ func (e *Error) Error() string {
 // when reading it throws, or when converting it does. ok is false when that
 // was an uncatchable exception, which stays pending (see readError). 'v' is
 // borrowed.
-func (m *VM) errStrProp(v jsValue, name uint32, cut int) (r string, ok bool) {
+func (m *VM) errStrProp(v jsValue, name uint32, t *textCut) (r string, ok bool) {
 	vr := m.jsGetProperty(v, name)
 	if isException(vr) {
 		return "", m.dropCatchable()
@@ -113,7 +113,7 @@ func (m *VM) errStrProp(v jsValue, name uint32, cut int) (r string, ok bool) {
 	defer m.jsFreeValue(vr)
 
 	if tag(vr) == tagString || tag(vr) == tagStringRope {
-		return m.errString(vr, cut)
+		return m.errString(vr, t)
 	}
 
 	return "", true
@@ -184,7 +184,7 @@ func (m *VM) errorFrom(v jsValue) (e *Error) {
 	}()
 	defer m.leave(&err)
 
-	e, ok := m.readError(v, 0)
+	e, ok := m.readError(v, nil)
 	if !ok {
 		e, _ = m.takeException()
 	}
@@ -195,19 +195,19 @@ func (m *VM) errorFrom(v jsValue) (e *Error) {
 // false when a read met an uncatchable exception: it stays pending, for the
 // caller to take as the error in place of 'v', and the fields are not read
 // further. So is one that javascript the read ran left pending without
-// failing (see settled). cut above 0 cuts each text as cutString does.
-func (m *VM) readError(v jsValue, cut int) (e *Error, ok bool) {
+// failing (see settled). With t, each text is cut as cutString does.
+func (m *VM) readError(v jsValue, t *textCut) (e *Error, ok bool) {
 	e = &Error{engine: true}
-	if e.raw, ok = m.errString(v, cut); !ok {
+	if e.raw, ok = m.errString(v, t); !ok {
 		return nil, false
 	}
-	if e.Name, ok = m.errStrProp(v, atomName, cut); !ok {
+	if e.Name, ok = m.errStrProp(v, atomName, t); !ok {
 		return nil, false
 	}
-	if e.Message, ok = m.errStrProp(v, atomMessage, cut); !ok {
+	if e.Message, ok = m.errStrProp(v, atomMessage, t); !ok {
 		return nil, false
 	}
-	if e.Stack, ok = m.errStrProp(v, atomStack, cut); !ok {
+	if e.Stack, ok = m.errStrProp(v, atomStack, t); !ok {
 		return nil, false
 	}
 	if e.LineNumber, ok = m.errIntProp(v, atomLineNumber); !ok {
@@ -216,7 +216,7 @@ func (m *VM) readError(v jsValue, cut int) (e *Error, ok bool) {
 	if e.ColumnNumber, ok = m.errIntProp(v, atomColumnNumber); !ok {
 		return nil, false
 	}
-	if e.FileName, ok = m.errStrProp(v, atomFileName, cut); !ok {
+	if e.FileName, ok = m.errStrProp(v, atomFileName, t); !ok {
 		return nil, false
 	}
 	if m.uncatchablePending() {
