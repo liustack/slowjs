@@ -48,6 +48,7 @@ read_when:
 | 数组字面量把元素的引用直接搬进数组 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#数组字面量直接接过元素的引用) |
 | 在 arm64 上，有调用的函数不再自己保存和读回 LR，Go 的序言和尾声已经做了这件事：每次调用少两条指令，栈帧不变。amd64 不变 | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#arm64-只保存一次-lr) |
 | 寄存器循环解构本 realm 的普通数组时不造迭代器：DSTART 和 DNEXT 直接读元素，只在需要的地方才造 Array Iterator | v0.30.3 | [c-engine.md](c-engine.zh-CN.md#不造迭代器的数组解构) |
+| 展开某一步抛错时不关闭迭代器，和规范一致 | Unreleased | [c-engine.md](c-engine.zh-CN.md#展开不关闭迭代器) |
 | amd64 上每条要求操作数在 16 字节上的 SSE 指令，读的都是由 `PCALIGN $16` 放好的数据、局部变量或全局变量，其余的由生成器和链接后的检查拒绝 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#需要-16-字节的-sse-读取保持在-16-上) |
 | 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
 | `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |

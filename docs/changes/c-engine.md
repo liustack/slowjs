@@ -1007,6 +1007,14 @@ Timed in tifa's `test/ssr` on linux/amd64 (an AMD EPYC 7B13 server, one core, 60
 - `TestInterruptArrayDestructuring` and `TestArrayDestructuringPolls` (`dststop_test.go`): an empty pattern and a single element in a loop with no call stop at the timeout and at `Interrupt` within 5 polls. `TestArrayDestructuringRestStop` (`dststop_hooks_test.go`, tag `testhooks`) stops the rest of an array of 100,000 elements within 5 polls of the loop: the polls of a collection and of freeing the arrays the loop made are not its own, and the kill judges them ([go-api.md](go-api.md#error-says-why-a-call-ended)).
 - `go run ./internal/rvgen/cmd/rvgen -dst`: random programs that destructure arrays, sets, maps, strings, `arguments`, subclasses and iterators of their own while their defaults change the array and the built-ins, compared with the output of the engine before the change.
 
+## A spread closes no iterator
+
+Release: Unreleased.
+
+A spread (`[...it]`, `f(...it)`, `new C(...it)`, `super(...it)`) runs the iterator of its value to the end. When a step throws (`next` throws, its result is not an object, or reading `done` or `value` throws), the specification lets the error go on and calls no `return`: ArrayAccumulation and ArgumentListEvaluation have no IteratorClose. QuickJS read and called the `return` of the iterator first, as a `for-of` loop does when its body throws, and upstream QuickJS still does. The C tree now frees the iterator without closing it (`js_append_enumerate`, `engine/quickjs.c`), as Node 24 does. Out of memory, the only other error of the copy, ran no `return` before either. As `return` is not read, the places of the injection set where a step of a spread in `p5-literals.js` or `z-gen-newtarget.js` throws end with one C function object less (and its shapes and properties), which the read made, and their goldens were written again.
+
+Test: `engine/test/compare/spread_iterator.js` prints what Node 24 prints for an iterator whose step throws in each of these ways, and for an array whose hole is read through a getter of `Array.prototype` that throws while `%ArrayIteratorPrototype%` has a `return`, in each form of the spread.
+
 ## Fewer argument words into hot calls
 
 Release: v0.30.6.

@@ -22316,7 +22316,10 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
     return 0;
 
 exception:
-    JS_IteratorClose(ctx, enumobj, TRUE);
+    /* a spread closes no iterator: ArrayAccumulation and
+       ArgumentListEvaluation call no IteratorClose when a step throws, and
+       a definition on the array they build cannot (out of memory, the only
+       other error here, runs no return either) */
     JS_FreeValue(ctx, enumobj);
     JS_FreeValue(ctx, method);
     return -1;
