@@ -2033,6 +2033,111 @@ static void test_putel_atom_shape(void)
     }
 }
 
+/* each_vm_failing calls the global f of setup with each call of the
+   allocator failing in turn, as each_call_failing does, but each call in a VM
+   of its own, made and set up again, so that what only a first call
+   allocates (the hash table of shapes growing) fails in turn too. The shape
+   cache is off when nocache is set. Each call either throws the out of
+   memory error or returns want, and leaves as many objects, strings and
+   shapes as there were before it, after a collection. The VM is freed after
+   each call, which fails the test (status 87) when a block is left. At least
+   min_ooms of the calls fail. */
+static void each_vm_failing(const char *what, int nocache, const char *setup, const char *want, int min_ooms)
+{
+    int fail, n = 0, ooms = 0;
+
+    for (fail = 0; fail == 0 || fail <= n; fail++) {
+        VM v = vm_new();
+        JSMemoryUsage before, after;
+        JSValue g, f, r;
+        int made;
+
+        if (nocache)
+            JS_SetShapeCache(v.ctx, 0);
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup threw", what);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "f");
+        JS_FreeValue(v.ctx, g);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &before);
+        r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+        if (fail == 0)
+            n = made;
+        if (JS_IsException(r)) {
+            CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "%s, call %d failing: an exception that is not out of memory", what, fail);
+            JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+            ooms++;
+        } else {
+            const char *s = JS_ToCString(v.ctx, r);
+
+            CHECK(s && !strcmp(s, want), "%s, call %d failing: %s", what, fail, s ? s : "(no string)");
+            JS_FreeCString(v.ctx, s);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(!JS_HasException(v.ctx), "%s, call %d failing: an exception is pending", what, fail);
+        JS_RunGC(v.rt);
+        JS_ComputeMemoryUsage(v.rt, &after);
+        CHECK(after.obj_count == before.obj_count && after.str_count == before.str_count &&
+              after.shape_count == before.shape_count,
+              "%s, call %d failing: %lld objects, %lld strings and %lld shapes, before it %lld, %lld and %lld", what, fail,
+              (long long)after.obj_count, (long long)after.str_count, (long long)after.shape_count,
+              (long long)before.obj_count, (long long)before.str_count, (long long)before.shape_count);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+    CHECK(ooms >= min_ooms, "%s: only %d of %d calls failed", what, ooms, n);
+}
+
+/* The stores of rv_putel_atom (o[k] = v, k a key that is its own atom) and of
+   rv_putf_atom (o.x = v) with each allocation failing in turn: the property
+   array of the object growing, the shape cloned when another object shares
+   it or grown in place, the hash table of shapes growing (300 new shapes in
+   a new VM), with the shape cache on and off. The value is a new object, so
+   that one freed twice or not at all shows (in the counts, in the leak check
+   of the runtime, and under AddressSanitizer). The object, the key and the
+   value are in arguments, in locals and in temps. The functions run once on
+   other keys first, so that they are register code. */
+static void test_putel_atom_each_failing(void)
+{
+    static const char setup[] =
+        "var K = ['w'], U = ['w'];\n"
+        "function mk() { return {} }\n"
+        "function args(o, k, v) { o[k] = v }\n"
+        "function locals() { var o = {}, n = K.length; for (var i = 0; i < n; i++) { var k = K[i], v = {}; o[k] = v } return o }\n"
+        "function temps() { var o = mk(); for (var i = 0; i < K.length; i++) mk()[K[i]] = {}; return o }\n"
+        "function shared() { var a = { s0: 1 }, b = { s0: 1 }; b[K[0]] = {}; return a.s0 + b.s0 }\n"
+        "function many() { var keep = []; for (var i = 0; i < U.length; i++) { var o = {}; o[U[i]] = {}; keep.push(o) } return keep.length }\n"
+        "function fargs(o) { o.x0 = {}; o.x1 = {}; o.x2 = {}; o.x3 = {}; o.x4 = {}; o.x5 = {}; o.x6 = {}; o.x7 = {}; o.x8 = {}; o.x9 = {}; return o }\n"
+        "function flocals() { var o = {}, v = {}; o.y0 = v; o.y1 = {}; o.y2 = {}; o.y3 = {}; o.y4 = {}; o.y5 = {}; return o }\n"
+        "function ftemps() { mk().z0 = {}; mk().z1 = {}; return mk() }\n"
+        "function fshared() { var a = { s0: 1 }, b = { s0: 1 }; b.zs = {}; return a.s0 + b.s0 }\n"
+        "function fmany() { var keep = []; for (var i = 0; i < 300; i++) { var o = {}; o.zm = {}; keep.push(o) } return keep.length }\n"
+        "args(mk(), 'w', 1); locals(); temps(); shared(); many(); fargs({}); flocals(); ftemps(); fshared(); fmany();\n"
+        "var src = {}; for (var i = 0; i < 300; i++) src['u' + i] = 0; U = Object.keys(src);\n"
+        "K = Object.keys({ ka: 0, kb: 0, kc: 0, kd: 0, ke: 0, kf: 0, kg: 0, kh: 0, ki: 0, kj: 0 }); src = null;\n";
+    static const struct { const char *what, *f, *want; } cases[] = {
+        { "o[k] = v in arguments", "function f() { var o = {}; for (var i = 0; i < K.length; i++) args(o, K[i], {}); return Object.keys(o).length }", "10" },
+        { "o[k] = v in locals", "function f() { return Object.keys(locals()).length }", "10" },
+        { "o[k] = v in temps", "function f() { return Object.keys(temps()).length }", "0" },
+        { "o[k] = v on a shared shape", "function f() { return shared() }", "2" },
+        { "o[k] = v making 300 shapes", "function f() { return many() }", "300" },
+        { "o.x = v in arguments", "function f() { return Object.keys(fargs({})).length }", "10" },
+        { "o.x = v in locals", "function f() { return Object.keys(flocals()).length }", "6" },
+        { "o.x = v in temps", "function f() { return Object.keys(ftemps()).length }", "0" },
+        { "o.x = v on a shared shape", "function f() { return fshared() }", "2" },
+        { "o.x = v on 300 objects", "function f() { return fmany() }", "300" },
+    };
+    char buf[4096];
+    int i, nocache;
+
+    for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+        for (nocache = 0; nocache <= 1; nocache++) {
+            snprintf(buf, sizeof(buf), "%s%s\n", setup, cases[i].f);
+            each_vm_failing(cases[i].what, nocache, buf, cases[i].want, 3);
+        }
+    }
+}
+
 /* ---- the lists of the collector ---- */
 
 static void lists(VM *v, int *old, int *young, const char *when)
@@ -7305,6 +7410,7 @@ int main(int argc, char **argv)
     test_object_inline_limit();
     test_object_lit_shared_shape();
     test_putel_atom_shape();
+    test_putel_atom_each_failing();
     test_object_rest_cache();
     test_object_spread_cache();
     test_shape_ids();
