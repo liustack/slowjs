@@ -89,14 +89,14 @@ What a release holds:
 
 | File | What it is |
 | --- | --- |
-| `slowjs-x86_64-unknown-linux-gnu.tar.gz` | linux/amd64 |
-| `slowjs-aarch64-unknown-linux-gnu.tar.gz` | linux/arm64 |
-| `slowjs-x86_64-apple-darwin.tar.gz` | darwin/amd64 |
-| `slowjs-aarch64-apple-darwin.tar.gz` | darwin/arm64 |
-| `slowjs-x86_64-pc-windows-msvc.zip` | windows/amd64 |
+| `slowjs-linux-amd64.tar.gz` | linux/amd64 |
+| `slowjs-linux-arm64.tar.gz` | linux/arm64 |
+| `slowjs-darwin-amd64.tar.gz` | darwin/amd64 |
+| `slowjs-darwin-arm64.tar.gz` | darwin/arm64 |
+| `slowjs-windows-amd64.zip` | windows/amd64 |
 | `checksums.txt` | The SHA-256 of each archive, as `sha256sum` writes it |
 
-The names carry the target as Rust names it, and no version, so that installers of prebuilt binaries find them and `releases/latest/download/<name>` always points to the newest. Each archive holds one folder, `slowjs-<target>`, with the binary (`slowjs`, or `slowjs.exe`), `NOTICE.md` and the texts [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) says a binary must carry, at their paths in this repository: `LICENSE`, `LICENSE-MIT`, `LICENSE-LIBQUICKJS`, `LICENSE-MODERNC-LIBQUICKJS`, `LICENSE-TLSF`, `engine/libc/COPYRIGHT`, and under `third_party/` the license of Go and of golang.org/x/sys. The command links no Intl, so the notices of `intl` and `internal/gointl` are not needed. The script stops when the binary links a module other than golang.org/x/sys, which would ship without its license.
+The names carry the target as Go names it, and no version, so that `releases/latest/download/<name>` always points to the newest. Each archive holds one folder of the same name, with the binary (`slowjs`, or `slowjs.exe`), `NOTICE.md` and the texts [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) says a binary must carry, at their paths in this repository: `LICENSE`, `LICENSE-MIT`, `LICENSE-LIBQUICKJS`, `LICENSE-MODERNC-LIBQUICKJS`, `LICENSE-TLSF`, `engine/libc/COPYRIGHT`, those of `intl` and `temporal` (`intl/LICENSE-DATA`, `internal/gointl/LICENSE` and the four notices of `internal/gointl/qjsdata/`), of `url` (`internal/whatwgurl/LICENSE-WHATWG-URL` and `LICENSE-GO`) and of `fmt` (`fmt/LICENSE-GO`), and under `third_party/` the license of Go and of golang.org/x/sys. The script stops when the binary links a module other than golang.org/x/sys, which would ship without its license.
 
 Before the branch of a release is merged, run the job by hand on it (`gh workflow run release.yml --ref <branch>`): it builds and tests the binaries, with `dev-<commit>` as the version, and makes no release. The same build runs locally with `scripts/slowjs-release.sh <version> <dir>`.
 

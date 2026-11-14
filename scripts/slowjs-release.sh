@@ -8,15 +8,14 @@
 # for the five targets the engine runs on, with <version> stamped in, packs
 # each binary with the license texts NOTICE.md says a binary must carry, and
 # writes <dir>/checksums.txt. The release job (.github/workflows/release.yml)
-# runs it, see docs/releasing.md. Each archive holds one folder,
-# slowjs-<target>, named after the target as Rust names it, which is what
-# installers of prebuilt binaries look for:
+# runs it, see docs/releasing.md. Each archive is named after its target as
+# Go names it, with no version, and holds one folder of the same name:
 #
-#   slowjs-x86_64-unknown-linux-gnu.tar.gz    linux/amd64
-#   slowjs-aarch64-unknown-linux-gnu.tar.gz   linux/arm64
-#   slowjs-x86_64-apple-darwin.tar.gz         darwin/amd64
-#   slowjs-aarch64-apple-darwin.tar.gz        darwin/arm64
-#   slowjs-x86_64-pc-windows-msvc.zip         windows/amd64
+#   slowjs-linux-amd64.tar.gz
+#   slowjs-linux-arm64.tar.gz
+#   slowjs-darwin-amd64.tar.gz
+#   slowjs-darwin-arm64.tar.gz
+#   slowjs-windows-amd64.zip
 #
 # The binaries are static: no cgo, no C library, so the linux ones run on
 # glibc and musl systems alike, and the windows one needs no runtime.
@@ -33,9 +32,12 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 
 # The license texts, at their paths in this repository, which NOTICE.md
-# names. The binary links no Intl data, so the notices of intl/ and
-# internal/gointl are not among them.
-notices="NOTICE.md LICENSE LICENSE-MIT LICENSE-LIBQUICKJS LICENSE-MODERNC-LIBQUICKJS LICENSE-TLSF engine/libc/COPYRIGHT"
+# names: those of the engine, then those of intl and temporal, of url, and
+# of fmt.
+notices="NOTICE.md LICENSE LICENSE-MIT LICENSE-LIBQUICKJS LICENSE-MODERNC-LIBQUICKJS LICENSE-TLSF engine/libc/COPYRIGHT
+	intl/LICENSE-DATA internal/gointl/LICENSE internal/gointl/qjsdata/NOTICE-ICU internal/gointl/qjsdata/NOTICE-ICU4X
+	internal/gointl/qjsdata/NOTICE-TEMPORAL internal/gointl/qjsdata/NOTICE-V8
+	internal/whatwgurl/LICENSE-WHATWG-URL internal/whatwgurl/LICENSE-GO fmt/LICENSE-GO"
 # What else a Go binary links: the runtime and standard library of Go, and
 # golang.org/x/sys, the only module the command links besides this one.
 goroot=$(go env GOROOT)
@@ -46,13 +48,10 @@ if [ ! -f "$goroot/LICENSE" ] || [ ! -f "$xsys/LICENSE" ]; then
 	exit 1
 fi
 
-for t in linux/amd64/x86_64-unknown-linux-gnu linux/arm64/aarch64-unknown-linux-gnu \
-	darwin/amd64/x86_64-apple-darwin darwin/arm64/aarch64-apple-darwin \
-	windows/amd64/x86_64-pc-windows-msvc; do
-	goos=${t%%/*}
-	rest=${t#*/}
-	goarch=${rest%%/*}
-	name=slowjs-${rest#*/}
+for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+	goos=${t%/*}
+	goarch=${t#*/}
+	name=slowjs-$goos-$goarch
 	exe=
 	[ "$goos" = windows ] && exe=.exe
 	dir=$stage/$name

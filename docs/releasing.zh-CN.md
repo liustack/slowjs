@@ -90,14 +90,14 @@ git commit -m "build(pgo): train the profile again"
 
 | 文件 | 是什么 |
 | --- | --- |
-| `slowjs-x86_64-unknown-linux-gnu.tar.gz` | linux/amd64 |
-| `slowjs-aarch64-unknown-linux-gnu.tar.gz` | linux/arm64 |
-| `slowjs-x86_64-apple-darwin.tar.gz` | darwin/amd64 |
-| `slowjs-aarch64-apple-darwin.tar.gz` | darwin/arm64 |
-| `slowjs-x86_64-pc-windows-msvc.zip` | windows/amd64 |
+| `slowjs-linux-amd64.tar.gz` | linux/amd64 |
+| `slowjs-linux-arm64.tar.gz` | linux/arm64 |
+| `slowjs-darwin-amd64.tar.gz` | darwin/amd64 |
+| `slowjs-darwin-arm64.tar.gz` | darwin/arm64 |
+| `slowjs-windows-amd64.zip` | windows/amd64 |
 | `checksums.txt` | 每个压缩包的 SHA-256，格式和 `sha256sum` 写的一样 |
 
-文件名里带的是 Rust 叫法的目标名，不带版本号，这样预编译二进制的安装工具能找到它们，`releases/latest/download/<name>` 也总是指向最新的那个。每个压缩包里是一个文件夹 `slowjs-<target>`，放着二进制（`slowjs` 或 `slowjs.exe`）、`NOTICE.md`，以及 [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) 说二进制必须附带的文本，路径和在本仓库里一样：`LICENSE`、`LICENSE-MIT`、`LICENSE-LIBQUICKJS`、`LICENSE-MODERNC-LIBQUICKJS`、`LICENSE-TLSF`、`engine/libc/COPYRIGHT`，还有 `third_party/` 下 Go 和 golang.org/x/sys 的许可证。这个命令不链接 Intl，所以不需要 `intl` 和 `internal/gointl` 的声明。如果二进制链接了 golang.org/x/sys 之外的模块，脚本会停下，否则那个模块会没有许可证就发出去。
+文件名里带的是 Go 叫法的目标名，不带版本号，这样 `releases/latest/download/<name>` 总是指向最新的那个。每个压缩包里是一个同名的文件夹，放着二进制（`slowjs` 或 `slowjs.exe`）、`NOTICE.md`，以及 [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) 说二进制必须附带的文本，路径和在本仓库里一样：`LICENSE`、`LICENSE-MIT`、`LICENSE-LIBQUICKJS`、`LICENSE-MODERNC-LIBQUICKJS`、`LICENSE-TLSF`、`engine/libc/COPYRIGHT`，`intl` 和 `temporal` 的（`intl/LICENSE-DATA`、`internal/gointl/LICENSE` 和 `internal/gointl/qjsdata/` 下的四份声明），`url` 的（`internal/whatwgurl/LICENSE-WHATWG-URL` 和 `LICENSE-GO`），`fmt` 的（`fmt/LICENSE-GO`），还有 `third_party/` 下 Go 和 golang.org/x/sys 的许可证。如果二进制链接了 golang.org/x/sys 之外的模块，脚本会停下，否则那个模块会没有许可证就发出去。
 
 一个版本的分支合并之前，在分支上手动运行这个任务（`gh workflow run release.yml --ref <branch>`）：它构建并测试二进制，版本号是 `dev-<commit>`，不生成 release。同样的构建在本地用 `scripts/slowjs-release.sh <version> <dir>` 运行。
 

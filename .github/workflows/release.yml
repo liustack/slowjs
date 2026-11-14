@@ -63,21 +63,21 @@ jobs:
         include:
           - name: linux/amd64
             os: ubuntu-24.04
-            archive: slowjs-x86_64-unknown-linux-gnu.tar.gz
+            archive: slowjs-linux-amd64.tar.gz
           - name: linux/arm64
             os: ubuntu-24.04-arm
-            archive: slowjs-aarch64-unknown-linux-gnu.tar.gz
+            archive: slowjs-linux-arm64.tar.gz
           - name: darwin/arm64
             os: macos-15
-            archive: slowjs-aarch64-apple-darwin.tar.gz
+            archive: slowjs-darwin-arm64.tar.gz
           # The amd64 binary on the arm64 runner, which Rosetta runs.
           - name: darwin/amd64
             os: macos-15
             goarch: amd64
-            archive: slowjs-x86_64-apple-darwin.tar.gz
+            archive: slowjs-darwin-amd64.tar.gz
           - name: windows/amd64
             os: windows-2025
-            archive: slowjs-x86_64-pc-windows-msvc.zip
+            archive: slowjs-windows-amd64.zip
     defaults:
       run:
         # Git Bash on windows.
