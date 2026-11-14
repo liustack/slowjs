@@ -257,7 +257,7 @@ func (n *notes) write(b *strings.Builder) {
 func renderMarkdown(res *Results) string {
 	var b strings.Builder
 	p := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
-	p("# Pure Go JavaScript engines: run %s\n\n", res.Name)
+	p("# JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
 	p("- liustack/quickjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)

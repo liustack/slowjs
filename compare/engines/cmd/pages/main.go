@@ -41,14 +41,14 @@ import (
 )
 
 var (
-	goEngines = []string{"liustack-quickjs", "modernc-quickjs", "go-quickjs-interp", "goant-interp", "moejs"}
+	goEngines = []string{"liustack-quickjs", "go-quickjs-interp", "moejs"}
 	refEngine = []string{"quickjs-2026-06-04", "hermes", "node-jitless"}
 	// ownIntl are the engines that run the shop and MUI pages on an Intl of
 	// their own. The others run the FormatJS polyfill.
-	ownIntl = []string{"liustack-quickjs", "modernc-quickjs", "go-quickjs-interp", "goant-interp", "moejs", "node-jitless"}
+	ownIntl = []string{"liustack-quickjs", "go-quickjs-interp", "moejs", "node-jitless"}
 	label   = map[string]string{
 		"quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
-		"hermes":             "Hermes V1 260318099.0.0-stable (reference)",
+		"hermes":             "Hermes V1 260318099.0.0-stable, -O bytecode (reference)",
 		"node-jitless":       "Node v24.22.3 --jitless (reference)",
 	}
 	apps = []string{"bench", "mui", "shop"}

@@ -75,8 +75,8 @@ func TestCallerPathsAndCheckEnvironment(t *testing.T) {
 			node = true
 		}
 	}
-	if calls != 24 {
-		t.Errorf("%d runs, want 24: 8 engines, bench and two more each", calls)
+	if calls != 18 {
+		t.Errorf("%d runs, want 18: 6 engines, bench and two more each", calls)
 	}
 	if !node {
 		t.Error("no run of Node")

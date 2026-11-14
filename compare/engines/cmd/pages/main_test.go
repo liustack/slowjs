@@ -125,27 +125,27 @@ func TestDifferencesShowTheFirstPlace(t *testing.T) {
 func TestTableRows(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "liustack-quickjs-bench.json", `{"load_ms": 7, "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 10}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
-	write(t, dir, "modernc-quickjs-bench.json", `{"load_ms": 4.6, "prelude_ms": [1.2], "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 20}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
-	write(t, dir, "modernc-quickjs-bench.meta", `{"try":0,"disturbed":1}`+"\n")
-	write(t, dir, "goant-interp-bench.json", `{"err": "load: SyntaxError: no\nsecond line"}`)
-	write(t, dir, "moejs-bench.json", ``)
+	write(t, dir, "go-quickjs-interp-bench.json", `{"load_ms": 4.6, "prelude_ms": [1.2], "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 20}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
+	write(t, dir, "go-quickjs-interp-bench.meta", `{"try":0,"disturbed":1}`+"\n")
+	write(t, dir, "moejs-bench.json", `{"err": "load: SyntaxError: no\nsecond line"}`)
+	write(t, dir, "hermes-bench.json", ``)
 	write(t, dir, "node-jitless-bench.json", `{"pages": [{"input": "a.json", "ok": false, "err": "boom"}, {"input": "b.json", "ok": false, "err": "bang"}]}`)
-	for _, e := range []string{"liustack-quickjs", "modernc-quickjs"} {
+	for _, e := range []string{"liustack-quickjs", "go-quickjs-interp"} {
 		write(t, dir, "html/"+e+"-bench-a.html", "<p>u:1234567890123</p>")
 		write(t, dir, "html/"+e+"-bench-b.html", "<p>b</p>")
 	}
 	w := &report{}
-	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "modernc-quickjs", "goant-interp", "moejs", "node-jitless", "go-quickjs-interp"}, "")
+	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "go-quickjs-interp", "moejs", "hermes", "node-jitless", "quickjs-2026-06-04"}, "")
 	want := `### Pages
 
 | Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
 |---|---|---|---|---|
 | liustack-quickjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
-| modernc-quickjs | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
-| goant-interp | load: SyntaxError: no | 0 of 2 | | |
-| moejs | not run | | | |
+| go-quickjs-interp | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
+| moejs | load: SyntaxError: no | 0 of 2 | | |
+| Hermes V1 260318099.0.0-stable, -O bytecode (reference) | not run | | | |
 | Node v24.22.3 --jitless (reference) | a: boom; b: bang | 0 of 2 | | |
-| go-quickjs-interp | not run | | | |
+| C QuickJS 2026-06-04 (reference) | not run | | | |
 
 `
 	if got := w.String(); got != want {

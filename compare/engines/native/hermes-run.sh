@@ -21,6 +21,15 @@ for a in "$@"; do
     IFS=, read -ra fs <<<"$v"
     [ "$k" = prelude ] && fs=("$here/hermes-shim.js" "${fs[@]}")
     for f in "${fs[@]}"; do
+      if [ "$k" = bundle ]; then
+        # Hermes V1 has no async generators: lower them and for-await to ES2017 async functions, for Hermes only.
+        mkdir -p "$bd"
+        low=$bd/$(basename "$f")
+        if [ ! -f "$low" ] || [ "$f" -nt "$low" ]; then
+          "$here/../tifa/polyfill/node_modules/.bin/esbuild" "$f" --supported:async-generator=false --supported:for-await=false --legal-comments=none --outfile="$low" >/dev/null
+        fi
+        f=$low
+      fi
       if [ "$mode" = hbc ]; then
         o=$bd/$(basename "$f").hbc
         mkdir -p "$bd"

@@ -47,7 +47,16 @@ list() { ls "$B"/in/"$1"/*.json | tr '\n' , | sed 's/,$//'; }
 BENCH=$(list bench) SHOP=$(list shop) MUI=$(list mui)
 INTL=prelude/nointl.js,polyfill/intl-polyfill.js
 CORE=polyfill/corejs-polyfill.js
-run() { env TZ=UTC GOMAXPROCS=1 bash pagerun.sh "$@"; }
+bad=0
+# run <out stem> <command...>. A run in which no page rendered is not an error of the run (an
+# engine that cannot load a bundle is a result), but it is said at the end and makes the exit status 1.
+run() {
+  env TZ=UTC GOMAXPROCS=1 bash pagerun.sh "$@"
+  if [ -f "$1.json" ] && ! grep -q '"ok":true' "$1.json"; then
+    echo "run.sh: no page rendered in $1.json: $(head -c 300 "$1.json")" >&2
+    bad=1
+  fi
+}
 want() { [ -z "${TIFA_ONLY:-}" ] || case ",$TIFA_ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 # go_runs <bin> <engine name> <polyfill for URL: "" or the prelude>
 # The Go engines all have an Intl of their own (a partial one for moejs).
@@ -61,8 +70,6 @@ go_runs() {
 }
 go_runs liustack liustack-quickjs ""            # its own Intl, URL and Temporal (packages intl, temporal, url)
 go_runs goquickjs go-quickjs-interp $CORE
-go_runs goant goant-interp $CORE
-go_runs modernc modernc-quickjs $CORE
 go_runs moejs moejs $CORE
 # native_runs <engine name> <driver command...>: no Intl of their own, so the
 # FormatJS polyfills for the shop and MUI pages.
@@ -76,7 +83,7 @@ native_runs() {
 }
 qjs=$nat/quickjs-2026-06-04/qjs
 native_runs quickjs-2026-06-04 "$qjs" --std ../native/ssr-driver.js
-native_runs hermes bash ../native/hermes-run.sh src "$nat/hermes" "$out/hbc"
+native_runs hermes bash ../native/hermes-run.sh hbc "$nat/hermes" "$out/hbc"
 # Node has its own Intl and URL, and lacks Iterator.concat.
 if want node-jitless; then
   d=("$nat/node-v24.22.3-linux-x64/bin/node" --jitless ../native/node-ssr.cjs "engine=node-jitless" "html=$out/html")
@@ -84,3 +91,4 @@ if want node-jitless; then
   run "$out/node-jitless-native" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP prelude=$CORE warm=20 n=100 tag=-native
   run "$out/node-jitless-mui-native" "${d[@]}" bundle=$B/bundles/mui.js inputs=$MUI prelude=$CORE warm=20 n=100 tag=-mui-native
 fi
+[ "$bad" = 0 ] || { echo "run.sh: some runs rendered no page (see above)" >&2; exit 1; }

@@ -47,14 +47,12 @@ type variant struct {
 
 var variants = []variant{
 	{"liustack-quickjs", "liustack", "eng_liustack", nil, true},
-	{"modernc-quickjs", "modernc", "eng_modernc", nil, true},
 	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, true},
-	{"goant-interp", "goant", "eng_goant", nil, true},
 	{"moejs", "moejs", "eng_moejs", nil, true},
 }
 
 var (
-	flagPhases    = flag.String("phases", "v8,t262", "workloads to run")
+	flagPhases    = flag.String("phases", "v8", "workloads to run")
 	flagEngines   = flag.String("engines", "", "comma-separated engines (default all)")
 	flagRounds    = flag.Int("rounds", 5, "rounds of each timed workload, engines take turns in a different order each round")
 	flagCPU       = flag.String("cpu", "", "run every engine process under taskset -c <cpu> (Linux)")
