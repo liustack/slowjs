@@ -197,7 +197,7 @@ go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 
 ### 寄存器循环
 
-在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。除了注入抛错的一部分（`inject-goldens` 和 `inject` 两步），它们不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
+在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。`check-full` 运行 `golden.sh`（`golden` 一步：语料、单元程序和 rvgen 的固定种子），以及注入抛错的一部分（`inject-goldens` 和 `inject` 两步）。其余的不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
 
 ```sh
 engine/test/regvm/build.sh asan                          # rvdiff、rvops 和给寄存器循环计数的 unit 程序，放在 engine/test/out/MODE
@@ -357,6 +357,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
 | `heap` | 全档 | `engine/test/heap.sh -s 2 -n 100000`：分配器的各个场景，以及对堆 100000 步、对运行时 300000 步的两个种子的随机序列，用 plain 构建（约 30 秒）。poison 和其他模式见[分配器的检查](#分配器) |
+| `golden` | 全档 | `engine/test/regvm/build.sh plain` 和 `engine/test/regvm/golden.sh -j 2 plain`：语料里每个脚本按三种方式运行，加上单元程序，以及 rvgen 每种模式（`core`、`full`、`wide`）的 1,000 个固定种子，各自对照 `engine/test/regvm/golden` 里的黄金文件（[寄存器循环](#寄存器循环)）。改动让脚本显示的东西变了，包括结束时运行时的计数，就在同一个提交里重写黄金文件（语料用 `golden.sh -update`，种子文件用 `rvgen record`，并读过它的 diff）。在 Apple M4 上构建之后约 2 分 20 秒 |
 | `inject` | 全档 | 在用 `-DRV_INJECT` 构建的引擎上，对 `engine/test/regvm/inject-check.txt` 里每类一个的脚本运行注入抛错（`engine/test/regvm/inject.sh -max 1`）：每个黄金文件记下的位置，加上每个 site 一个位置（在一个核上连构建约 10 分钟）。完整的注入集在合进 main 之前运行（[寄存器循环](#寄存器循环)） |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | 全档 | `go test -p 1 .` |
