@@ -2152,12 +2152,25 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf940c108
 	WORD $0xb9401409
 	WORD $0x6b0b013f
-	WORD $0x54001641
+	WORD $0x540000c1
 	WORD $0xf9401c09
 	WORD $0xeb16013f
-	WORD $0x540015e1
+	WORD $0x54000061
 	WORD $0xb9402009
-	WORD $0x350015a9
+	WORD $0x340001c9
+	WORD $0xf9401800
+	WORD $0xb40018a0
+	WORD $0xd1000508
+	WORD $0xf100011f
+	WORD $0x54fffe8c
+	WORD $0xa907dbe0
+	WORD $0xb9005beb
+	WORD $0xf90007f4
+	BL ·host_poll(SB)
+	WORD $0xa947dbe0
+	WORD $0xb9405beb
+	WORD $0xf94047f4
+	WORD $0x17ffffea
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0xb85fc008
@@ -2177,7 +2190,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0x2a0103e9
 	WORD $0xa90783e1
 	WORD $0xf100193f
-	WORD $0x54001820
+	WORD $0x54001680
 	WORD $0x12800008
 	WORD $0xf94047eb
 	WORD $0xf9002fe9
@@ -2205,7 +2218,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xb85fc12a
 	WORD $0xd1002129
 	WORD $0x7101115f
-	WORD $0x54001721
+	WORD $0x54001581
 	WORD $0xb5000809
 	WORD $0xf9404ff5
 	WORD $0x91018174
@@ -2218,7 +2231,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf90013f7
 	WORD $0xf90017f8
 	BL ·add_property(SB)
-	WORD $0xb4001a80
+	WORD $0xb40018e0
 	WORD $0xa946a3e9
 	WORD $0xa9002009
 	WORD $0xf9402fe9
@@ -2251,7 +2264,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xb85fc12a
 	WORD $0xd1002129
 	WORD $0x7101b15f
-	WORD $0x540013c1
+	WORD $0x54001221
 	WORD $0xb50005e9
 	WORD $0xf9404ff5
 	WORD $0x91018174
@@ -2269,7 +2282,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0x52800028
 	WORD $0xa9002009
 	WORD $0xa94783e1
-	WORD $0x140000c0
+	WORD $0x140000b3
 	WORD $0xf9404fe8
 	WORD $0x91018174
 	WORD $0xaa0b03f5
@@ -2295,7 +2308,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc2c8
-	WORD $0x5400060d
+	WORD $0x5400046d
 	WORD $0xf9402fe9
 	WORD $0x36fff6a0
 	WORD $0x14000014
@@ -2326,23 +2339,10 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc128
-	WORD $0x54000f8d
+	WORD $0x54000ded
 	WORD $0x528000c8
 	WORD $0xa907ffe8
 	WORD $0x17ffffc3
-	WORD $0xf9401800
-	WORD $0xb4000320
-	WORD $0xd1000508
-	WORD $0xf100011f
-	WORD $0x54ffe90c
-	WORD $0xa907dbe0
-	WORD $0xb9005beb
-	WORD $0xf90007f4
-	BL ·host_poll(SB)
-	WORD $0xa947dbe0
-	WORD $0xb9405beb
-	WORD $0xf94047f4
-	WORD $0x17ffff3e
 	WORD $0xf9404fe8
 	WORD $0xf9403bf7
 	WORD $0xb90073e0
@@ -2355,7 +2355,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xb94073e0
-	WORD $0x17ffffc5
+	WORD $0x17ffffd2
 	WORD $0x92679a89
 	WORD $0xf900c128
 	WORD $0xf9404ff5
@@ -2367,18 +2367,18 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf90013f7
 	BL ·js_new_proto_shape(SB)
 	WORD $0xf94047f4
-	WORD $0xb5ffe680
+	WORD $0xb5ffe820
 	WORD $0x528000c8
 	WORD $0xa907ffe8
 	WORD $0xf9403be8
 	WORD $0x3100251f
-	WORD $0x54fff303
+	WORD $0x54fff4a3
 	WORD $0xf94037e9
 	WORD $0xb85fc128
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc128
-	WORD $0x54fff24c
+	WORD $0x54fff3ec
 	WORD $0xf9404fe8
 	WORD $0xa946dff6
 	WORD $0xf9400915
@@ -2389,38 +2389,38 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17ffff87
+	WORD $0x17ffff94
 	WORD $0xb9400129
 	WORD $0xf240652a
-	WORD $0x54ffe8e0
+	WORD $0x54ffea80
 	WORD $0xf1000508
-	WORD $0x54ffe7e1
+	WORD $0x54ffe981
 	WORD $0x92679968
 	WORD $0xf940c109
 	WORD $0xd1004529
 	WORD $0xf100013f
 	WORD $0xf900c109
 	WORD $0x52800228
-	WORD $0x54ffe70c
+	WORD $0x54ffe8ac
 	WORD $0xaa0b03f4
 	WORD $0xa904b3ea
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa944b3ea
 	WORD $0xa9482fe0
-	WORD $0x17ffff30
+	WORD $0x17ffff3d
 	WORD $0xb9400129
 	WORD $0xf240652a
-	WORD $0x54ffec40
+	WORD $0x54ffede0
 	WORD $0xf1000508
-	WORD $0x54ffeb41
+	WORD $0x54ffece1
 	WORD $0x92679968
 	WORD $0xf940c109
 	WORD $0xd1004529
 	WORD $0xf100013f
 	WORD $0xf900c109
 	WORD $0x52800228
-	WORD $0x54ffea6c
+	WORD $0x54ffec0c
 	WORD $0xaa0b03f4
 	WORD $0xa906b3ed
 	WORD $0xf90033ea
@@ -2429,16 +2429,16 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xa94637ea
 	WORD $0xf9403bec
 	WORD $0xa9482ff6
-	WORD $0x17ffff49
+	WORD $0x17ffff56
 	WORD $0xf9403be8
 	WORD $0x3100251f
-	WORD $0x54fff1c3
+	WORD $0x54fff363
 	WORD $0xf94037e9
 	WORD $0xb85fc128
 	WORD $0x51000508
 	WORD $0x7100011f
 	WORD $0xb81fc128
-	WORD $0x54fff10c
+	WORD $0x54fff2ac
 	WORD $0xf9404fe8
 	WORD $0xa946dff6
 	WORD $0xf9400915
@@ -2449,7 +2449,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17ffff7d
+	WORD $0x17ffff8a
 	WORD $0xf9404fe8
 	WORD $0xf9403ff7
 	WORD $0xf9400915
@@ -2460,7 +2460,7 @@ TEXT ·js_create_iterator_result(SB), $152-40
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·__JS_FreeValueRT(SB)
-	WORD $0x17ffff7b
+	WORD $0x17ffff88
 	RET
 
 TEXT ·js_module_ns_has(SB), $56-40
