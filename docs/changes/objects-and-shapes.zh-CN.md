@@ -382,3 +382,11 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
 
 测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。
+
+## Object.isFrozen 和 Object.isSealed 先问对象能不能扩展
+
+版本：Unreleased。
+
+`Object.isFrozen` 和 `Object.isSealed` 先列出对象的自有键，逐个取描述符，最后才问对象能不能扩展。规范（TestIntegrityLevel）先问这一步，能扩展的对象既不是 sealed 也不是 frozen，键就不用再问了。在 Proxy 上看得出区别。目标能扩展时，引擎调用 `ownKeys` 和 `getOwnPropertyDescriptor` 两个 trap，从不调用 `isExtensible`，而 Node 只调用 `isExtensible`。`ownKeys` trap 抛错时引擎的调用跟着抛错，而 Node 返回 false。目标不能扩展时，各个 trap 现在按 Node 的顺序调用，先调用 `isExtensible`。另外，键已经列出之后 `isExtensible` 抛错的话，这份键的列表从没释放：它占的块一直用着，直到 runtime 释放，测试宿主于是报 "1 runtimes freed with blocks still in use" 退出。上游 QuickJS 的顺序和引擎原来的一样。
+
+测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样）测试各种对象的完整性级别，以及 `Object.freeze`、`Object.seal`、`Object.preventExtensions` 之后的属性标志：原始值、普通对象、带访问器的对象、删过键的对象、symbol 键和数字键、键很多的对象、共用 shape 的对象、私有名字、类的实例、数组、类型化数组、`String` 对象、arguments、函数、错误对象、内置对象，以及 Proxy 的 trap 顺序、抛错的 trap 和已撤销的 Proxy。有三种情况 V8 的答案不合规范，所以由 `engine/test/unit.c` 的 `test_integrity_levels` 按规范检查：不能扩展的空数组，要等 length 不可写才算 frozen。有元素、不能扩展的类型化数组不算 sealed。元素都已冻结的数组，也要等 length 不可写才算 frozen。它还冻结全局对象，Node 在自己的 context 里做不到这一步。

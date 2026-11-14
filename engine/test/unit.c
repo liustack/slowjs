@@ -4410,6 +4410,67 @@ static void test_string_copy_polls(void)
     host_free_runtime(rt);
 }
 
+/* Object.isFrozen, Object.isSealed and Object.freeze where Node 24 answers
+   against the specification or cannot run the case (engine/test/compare/
+   integrity_levels.js has the rest, with what Node prints): an empty array
+   that is not extensible has a writable length, so it is sealed and not
+   frozen, and so is an array whose elements are frozen and whose length is
+   not; a typed array with elements that is not extensible has configurable
+   elements, so it is neither; one with no elements has no own key. The
+   global object is frozen with its var bindings, functions and the
+   built-ins it makes when first read. */
+static void test_integrity_levels(void)
+{
+    static const char arrays[] =
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "var a = [1, 2]\n"
+        "Object.defineProperty(a, 0, { configurable: false, writable: false })\n"
+        "Object.defineProperty(a, 1, { configurable: false, writable: false })\n"
+        "Object.preventExtensions(a)\n"
+        "var b = [1]; b.pop(); Object.preventExtensions(b)\n"
+        "var c = []; c.x = 1; Object.defineProperty(c, 'x', { configurable: false, writable: false })\n"
+        "Object.preventExtensions(c)\n"
+        "var r = [lv(Object.preventExtensions([])), lv(Object.seal([])), lv(a), lv(b), lv(c),\n"
+        "  lv(Object.preventExtensions(new Int16Array(3))), lv(Object.preventExtensions(new Int16Array(0)))]\n"
+        "Object.defineProperty(a, 'length', { writable: false })\n"
+        "Object.defineProperty(c, 'length', { writable: false })\n"
+        "r.push(lv(a), lv(c))\n"
+        "r.join(' ')\n";
+    static const char global[] =
+        "var gv = 1\n"
+        "let gl = 2\n"
+        "function gf() {}\n"
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "var fl = k => { var d = Object.getOwnPropertyDescriptor(globalThis, k);\n"
+        "  return ('value' in d ? (d.writable ? 'w' : '-') : 'a') + (d.enumerable ? 'e' : '-') +"
+        " (d.configurable ? 'c' : '-') }\n"
+        "var r = [lv(globalThis), fl('gv'), fl('gf'), fl('Array'), fl('Math')]\n"
+        "Object.preventExtensions(globalThis)\n"
+        "r.push(lv(globalThis))\n"
+        "Object.seal(globalThis)\n"
+        "r.push(lv(globalThis), fl('gv'), fl('Array'))\n"
+        "Object.freeze(globalThis)\n"
+        "r.push(lv(globalThis), fl('gv'), fl('gf'), fl('Array'), fl('globalThis'))\n"
+        "gv = 5\n"
+        "gl = 3\n"
+        "try { (function () { 'use strict'; gv = 6 })() } catch (e) { r.push(e.name) }\n"
+        "r.push(gv, gl, typeof Array, typeof Promise, typeof gf, Object.isFrozen(globalThis))\n"
+        "r.join(' ')\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, arrays, "010 010 010 010 010 000 011 011 011"), "arrays");
+    JS_FreeContext(ctx);
+    ctx = JS_NewContext(rt);
+    CHECK(eval_is(ctx, global,
+                  "100 we- we- w-c w-c 000 010 we- w-- 011 -e- -e- --- --- TypeError "
+                  "1 3 function function function true"), "the global object");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The export names of a module are sorted by a compare that reads the
    interrupt flag (exported_names_cmp, with rqsort_stop): two names of a
    million characters that differ in the last one and 3,000 short names in a
@@ -4819,6 +4880,7 @@ int main(void)
     test_long_utf8_decode();
     test_string_copy_polls();
     test_module_export_order();
+    test_integrity_levels();
     test_heap_move_polls();
     test_error_reads_no_flag();
     test_tag_polls();

@@ -282,6 +282,7 @@ read_when:
 | 内存不够时 bind 以内存不足的错误失败，不再崩溃，也不再返回缺 length 或 name 的绑定函数 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败) |
 | `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
 | `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
+| `Object.isFrozen` 和 `Object.isSealed` 按规范先问对象能不能扩展，proxy 的 `isExtensible` trap 抛错时不再让键的列表一直占着内存 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展) |
 
 ## 内存
 

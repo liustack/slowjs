@@ -48435,6 +48435,15 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
     if (!JS_IsObject(obj))
         return JS_TRUE;
 
+    /* TestIntegrityLevel asks first whether the object is extensible, and
+       an extensible object is neither sealed nor frozen: the keys of a proxy
+       are not asked for then */
+    res = JS_IsExtensible(ctx, obj);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res)
+        return JS_FALSE;
+
     p = JS_VALUE_GET_OBJ(obj);
     flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
     if (JS_GetOwnPropertyNamesInternal(ctx, &props, &len, p, flags))
@@ -48456,10 +48465,7 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
             }
         }
     }
-    res = JS_IsExtensible(ctx, obj);
-    if (res < 0)
-        return JS_EXCEPTION;
-    res ^= 1;
+    res = TRUE;
 done:
     JS_FreePropertyEnum(ctx, props, len);
     return JS_NewBool(ctx, res);
