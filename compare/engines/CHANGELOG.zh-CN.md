@@ -2,6 +2,11 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：moejs 渲染页面，去掉 test262
+
+- moejs 现在能渲染全部 25 个页面。包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，新的 `native/moejs-shim.js` 给它一个从不回调的注册表（没有承诺会调用回调，所以这是合法的实现）。HTML 和我们的在 25 个页面上逐字节相同。moejs 在单独的一个会话里计时，同一会话里重新跑了 liustack-quickjs，比值相对那次运行（[2026-11-14-v0.30.7-gcp-pages-moejs](results/2026-11-14-v0.30.7-gcp-pages-moejs.md)）。
+- 去掉 test262：`t262` 包、`jsbench` 子命令、驱动里的 test262 阶段和它的参数、test262 结果的合并以及报告里的那一节都删掉了，驱动测试相应调整。`-merge` 现在只接受 `-merge-engines`。
+
 ## 2026-11-14：两张表，只比解释器，新的包
 
 - 对比只剩两张表：tifa 页面的渲染时间和 V8 套件。功能探测、QuickJS 微基准、

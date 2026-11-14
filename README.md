@@ -36,11 +36,11 @@ CPU time of one render of the server bundles of tifa's apps, with the same JavaS
 | C QuickJS 2026-06-04 | no, C | 1.32 | 1.30 | 1.04 |
 | go-quickjs | yes | 1.87 | 1.39 | 1.73 |
 | go-quickjs with its JIT | yes | 2.03 | 1.58 | 2.85 |
-| moejs | yes | 2.29 | 1.51 | does not load |
+| moejs | yes | 1.35 | 1.46 | 1.78 |
 | modernc.org/quickjs | yes | 3.97 | 4.00 | 2.56 |
 | goant with its JIT | yes | 5.04 | 3.97 | 4.03 |
 
-liustack/quickjs v0.30.1 on a GCP c2d-standard-8 (AMD EPYC 7B13), Go 1.27.2. The MUI and shop pages need `Intl`, which C QuickJS and most of the others do not have, so every engine runs them on the FormatJS polyfill. With its own `Intl`, as tifa runs it, liustack/quickjs takes 0.75, 0.34 and 0.72 of the time of C QuickJS. Node 24 with its JIT takes 0.21 to 0.23 of the time of liustack/quickjs, and 0.60 to 0.69 with `--jitless`.
+liustack/quickjs v0.30.1 on a GCP c2d-standard-8 (AMD EPYC 7B13), Go 1.27.2. The moejs row is from a later run (v0.30.7) on its own `Intl`, as a ratio to liustack/quickjs timed in the same session. The MUI and shop pages need `Intl`, which C QuickJS and most of the others do not have, so every engine runs them on the FormatJS polyfill. With its own `Intl`, as tifa runs it, liustack/quickjs takes 0.75, 0.34 and 0.72 of the time of C QuickJS. Node 24 with its JIT takes 0.21 to 0.23 of the time of liustack/quickjs, and 0.60 to 0.69 with `--jitless`.
 
 It is not the fastest engine on everything. On the V8 benchmark suite (higher is better):
 

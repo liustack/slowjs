@@ -11,7 +11,7 @@ read_when:
 
 [English](benchmarks.md) · 简体中文
 
-2026-11-14 的运行：liustack/quickjs v0.30.7 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-14-v0.30.7-gcp-pages` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。这次运行是以 v0.30.7 做的，模块路径是 `github.com/liustack/quickjs`。
+2026-11-14 的运行：liustack/quickjs v0.30.7 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-14-v0.30.7-gcp-pages`、`-pages-moejs` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。这次运行是以 v0.30.7 做的，模块路径是 `github.com/liustack/quickjs`。
 
 ## 比什么
 
@@ -25,7 +25,7 @@ read_when:
 |---|---|---|
 | liustack-quickjs | v0.30.7 | 注册本模块的 `intl`、`temporal` 和 `url` 三个包 |
 | go-quickjs-interp | go-quickjs v0.37.3 | 关 JIT，用它自己的 Intl |
-| moejs | v0.1.0 | 用它自己的（不完整的）Intl |
+| moejs | v0.1.0 | 用它自己的（不完整的）Intl，外加一个 `FinalizationRegistry` 替身（`native/moejs-shim.js`） |
 | C QuickJS | 2026-06-04 | `qjs`，照发布的方式构建 |
 | Hermes V1 | `260318099.0.0-stable` | 这个版本没有 JIT，运行 `hermesc -O` 编好的字节码，就像应用发布的那样 |
 | Node | v24.22.3 | `--jitless`，用它自己的 Intl 和 URL |
@@ -40,15 +40,15 @@ tifa 页面一次渲染的 CPU 时间，表示成相对 liustack/quickjs 的比�
 |---|---|---|---|
 | liustack-quickjs | 1.00 | 1.00 | 1.00 |
 | go-quickjs-interp | 2.35 (2.33–2.36) | 2.39 (2.32–2.51) | 3.32 (2.26–5.29) |
-| moejs | 渲染不出来 | 渲染不出来 | 渲染不出来 |
+| moejs（单独一个会话） | 1.35 (1.32–1.37) | 1.46 (1.45–1.46) | 1.78 (1.41–2.67) |
 | C QuickJS 2026-06-04 | 1.76 (1.63–1.90) | 3.53 (2.18–4.97) | 2.26 (1.45–2.95) |
 | Hermes V1，`-O` 字节码 | 0.91 (0.86–0.97) | 1.83 (1.18–2.50) | 1.66 (0.79–4.15) |
 | Node v24.22.3 `--jitless` | 0.85 (0.83–0.87) | 1.09 (1.03–1.11) | 0.86 (0.64–0.96) |
 
-- **哪些引擎用了 polyfill。** C QuickJS 和 Hermes 没有 Intl，在 MUI 和商店页面上用了 FormatJS。go-quickjs、C QuickJS 和 Hermes 的 URL、URLSearchParams 和 structuredClone 来自 core-js，moejs 的 URL、URLSearchParams 和迭代器辅助方法来自 core-js，Hermes 和 Node 的 `Iterator.concat` 也是。liustack/quickjs 和 Node 的 Intl 与 URL 不需要 polyfill。bench 页面不需要 Intl，所以那一列是每个引擎跑同样的 JavaScript：说这个引擎在同样的代码上比 C QuickJS 快，靠的是那一列和 V8 套件。
-- **moejs 一个页面也渲染不出来。** 这些包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，也没有标准的 polyfill 可用。
+- **哪些引擎用了 polyfill。** C QuickJS 和 Hermes 没有 Intl，在 MUI 和商店页面上用了 FormatJS。go-quickjs、C QuickJS 和 Hermes 的 URL、URLSearchParams 和 structuredClone 来自 core-js，moejs 的 URL、URLSearchParams 和迭代器辅助方法来自 core-js，Hermes 和 Node 的 `Iterator.concat` 也是。liustack/quickjs 和 Node 的 Intl 与 URL 不需要 polyfill。bench 页面不需要 Intl，所以那一列是每个引擎跑同样的 JavaScript：说这个引擎在同样的代码上比 C QuickJS 快，靠的是那一列和 V8 套件。core-js 在 C QuickJS 和 Hermes 里只替换了 `Function.prototype.toString` 和 `Iterator.prototype.drop`、`take`（C QuickJS 里还有 `flatMap`），而 bench 页面的渲染一个都不调用（每个页面数过 3 次渲染），也不调用 `new URL`，所以那一列测的是引擎本身。
+- **moejs** 要一个替身才能加载这些包：包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，`native/moejs-shim.js` 给它一个从不回调的注册表。有了它再加 core-js，25 个页面全部渲染。它在单独的一个会话里计时（文件 `2026-11-14-v0.30.7-gcp-pages-moejs`），liustack/quickjs 在那个会话里重新跑了一遍，所以它的比值是相对那次运行的，不是相对主运行的。
 - **Hermes** 没有异步生成器，所以只为 Hermes，用 esbuild 把包里的异步生成器和 `for await` 降级成 ES2017 的 async 函数。一个很小的替身文件（`native/hermes-shim.js`）给 Hermes 补上包只在加载时读、而它没有的内置对象（可调整大小的 ArrayBuffer 的取值器、RegExp 标志的取值器、`SharedArrayBuffer`、`Float16Array`）。它的 shell 没有 `performance.now`，所以它的时间是整个计时循环的墙钟时间除以渲染次数。
-- **HTML。** go-quickjs 和 Node 在全部 25 个页面上和我们的 HTML 相同。C QuickJS 有 9 个页面不同，Hermes 是全部 25 个，不同的地方总是 Intl 格式化的文字，Hermes 还有路由的内嵌脚本。C QuickJS 用 FormatJS 把日期写成 `October 13, 14:32`，Go 的 Intl 写成 `October 13 at 14:32`，`AM` 和 `PM` 前面还是一个窄的不换行空格。Hermes 把路由的脱水函数打印成 `function($R){return ...}`，别的引擎打印的是原样的箭头函数（不在 Intl 的输出里），MUI 和工作台页面的日期文字和 C QuickJS 一样不同。其余每个字节都相同：不同的页面在 `-pages.md` 文件里列出，附上各自第一处不同的位置。
+- **HTML。** go-quickjs、moejs 和 Node 在全部 25 个页面上和我们的 HTML 相同。C QuickJS 有 9 个页面不同，Hermes 是全部 25 个，不同的地方总是 Intl 格式化的文字，Hermes 还有路由的内嵌脚本。C QuickJS 用 FormatJS 把日期写成 `October 13, 14:32`，Go 的 Intl 写成 `October 13 at 14:32`，`AM` 和 `PM` 前面还是一个窄的不换行空格。Hermes 把路由的脱水函数打印成 `function($R){return ...}`，别的引擎打印的是原样的箭头函数（不在 Intl 的输出里），MUI 和工作台页面的日期文字和 C QuickJS 一样不同。其余每个字节都相同：不同的页面在 `-pages.md` 文件里列出，附上各自第一处不同的位置。
 
 ## V8 套件
 

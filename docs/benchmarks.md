@@ -11,7 +11,7 @@ read_when:
 
 English · [简体中文](benchmarks.zh-CN.md)
 
-Run of 2026-11-14: liustack/quickjs v0.30.7 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-14-v0.30.7-gcp-pages` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another. The run was made as v0.30.7, under the module path `github.com/liustack/quickjs`.
+Run of 2026-11-14: liustack/quickjs v0.30.7 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-14-v0.30.7-gcp-pages`, `-pages-moejs` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another. The run was made as v0.30.7, under the module path `github.com/liustack/quickjs`.
 
 ## What is compared
 
@@ -25,7 +25,7 @@ Two tables: the render time of tifa's pages and the V8 suite. The comparison nev
 |---|---|---|
 | liustack-quickjs | v0.30.7 | the packages `intl`, `temporal` and `url` of the module registered |
 | go-quickjs-interp | go-quickjs v0.37.3 | JIT off, its own Intl |
-| moejs | v0.1.0 | its own (partial) Intl |
+| moejs | v0.1.0 | its own (partial) Intl, plus a `FinalizationRegistry` stand-in (`native/moejs-shim.js`) |
 | C QuickJS | 2026-06-04 | `qjs`, built as shipped |
 | Hermes V1 | `260318099.0.0-stable` | no JIT in this release, run as `hermesc -O` bytecode, as an app ships it |
 | Node | v24.22.3 | `--jitless`, its own Intl and URL |
@@ -40,15 +40,15 @@ CPU time of a render of tifa's pages, as a ratio to liustack/quickjs: geometric 
 |---|---|---|---|
 | liustack-quickjs | 1.00 | 1.00 | 1.00 |
 | go-quickjs-interp | 2.35 (2.33–2.36) | 2.39 (2.32–2.51) | 3.32 (2.26–5.29) |
-| moejs | does not render | does not render | does not render |
+| moejs (own session) | 1.35 (1.32–1.37) | 1.46 (1.45–1.46) | 1.78 (1.41–2.67) |
 | C QuickJS 2026-06-04 | 1.76 (1.63–1.90) | 3.53 (2.18–4.97) | 2.26 (1.45–2.95) |
 | Hermes V1, `-O` bytecode | 0.91 (0.86–0.97) | 1.83 (1.18–2.50) | 1.66 (0.79–4.15) |
 | Node v24.22.3 `--jitless` | 0.85 (0.83–0.87) | 1.09 (1.03–1.11) | 0.86 (0.64–0.96) |
 
-- **Where polyfills ran.** C QuickJS and Hermes have no Intl and got FormatJS on the MUI and shop pages. URL, URLSearchParams and structuredClone came from core-js for go-quickjs, C QuickJS and Hermes, URL, URLSearchParams and the iterator helpers for moejs, and `Iterator.concat` for Hermes and Node. liustack/quickjs and Node need no polyfill for Intl and URL. The bench pages need no Intl, so that column is the same JavaScript on every engine: the claim that this engine is faster than C QuickJS on the same code rests on that column and on the V8 suite.
-- **moejs does not render any page.** The bundles read `FinalizationRegistry` at load, which moejs v0.1.0 does not have, and no standard polyfill exists for it.
+- **Where polyfills ran.** C QuickJS and Hermes have no Intl and got FormatJS on the MUI and shop pages. URL, URLSearchParams and structuredClone came from core-js for go-quickjs, C QuickJS and Hermes, URL, URLSearchParams and the iterator helpers for moejs, and `Iterator.concat` for Hermes and Node. liustack/quickjs and Node need no polyfill for Intl and URL. The bench pages need no Intl, so that column is the same JavaScript on every engine: the claim that this engine is faster than C QuickJS on the same code rests on that column and on the V8 suite. core-js replaces only `Function.prototype.toString` and `Iterator.prototype.drop` and `take` (and `flatMap` on C QuickJS) in C QuickJS and Hermes, and a bench render calls none of them (counted over 3 renders of each page), nor `new URL`, so that column measures the engines.
+- **moejs** needs one stand-in to load the bundles: they read `FinalizationRegistry` at load, which moejs v0.1.0 lacks, and `native/moejs-shim.js` gives it a registry that never calls back. With that and core-js, all 25 pages render. It was timed in a session of its own (the files `2026-11-14-v0.30.7-gcp-pages-moejs`), with liustack/quickjs run again in that session, so its ratios are against that run and not against the main run.
 - **Hermes** has no async generators, so for Hermes only esbuild lowered the bundles' async generators and `for await` to ES2017 async functions. A small file of stand-ins (`native/hermes-shim.js`) gives Hermes the builtins the bundles only read at load and it lacks (the resizable ArrayBuffer getters, the RegExp flag getters, `SharedArrayBuffer`, `Float16Array`). Its shell has no `performance.now`, so its time is the wall time of the whole timed loop divided by the number of renders.
-- **HTML.** go-quickjs and Node give the same HTML as ours on all 25 pages. C QuickJS differs on 9 pages, and Hermes on all 25, always inside text that Intl formats or, for Hermes, in the inline script of the router. C QuickJS on FormatJS writes dates as `October 13, 14:32` where Go's Intl writes `October 13 at 14:32`, and a narrow no-break space before `AM` and `PM`. Hermes prints the router's dehydration function as `function($R){return ...}` where the others print the arrow function as written (outside Intl output), and the date text of the MUI and workbench pages differs as in C QuickJS. Every other byte is the same: the pages are listed in the `-pages.md` file with the first place each differs.
+- **HTML.** go-quickjs, moejs and Node give the same HTML as ours on all 25 pages. C QuickJS differs on 9 pages, and Hermes on all 25, always inside text that Intl formats or, for Hermes, in the inline script of the router. C QuickJS on FormatJS writes dates as `October 13, 14:32` where Go's Intl writes `October 13 at 14:32`, and a narrow no-break space before `AM` and `PM`. Hermes prints the router's dehydration function as `function($R){return ...}` where the others print the arrow function as written (outside Intl output), and the date text of the MUI and workbench pages differs as in C QuickJS. Every other byte is the same: the pages are listed in the `-pages.md` file with the first place each differs.
 
 ## The V8 suite
 

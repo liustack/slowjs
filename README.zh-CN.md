@@ -36,11 +36,11 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，同样的 JavaSc
 | C QuickJS 2026-06-04 | 否，C | 1.32 | 1.30 | 1.04 |
 | go-quickjs | 是 | 1.87 | 1.39 | 1.73 |
 | go-quickjs 开 JIT | 是 | 2.03 | 1.58 | 2.85 |
-| moejs | 是 | 2.29 | 1.51 | 加载不了 |
+| moejs | 是 | 1.35 | 1.46 | 1.78 |
 | modernc.org/quickjs | 是 | 3.97 | 4.00 | 2.56 |
 | goant 开 JIT | 是 | 5.04 | 3.97 | 4.03 |
 
-liustack/quickjs v0.30.1，GCP c2d-standard-8（AMD EPYC 7B13），Go 1.27.2。MUI 和商店页面要用 `Intl`，C QuickJS 和大多数其他引擎没有，所以每个引擎都在 FormatJS polyfill 上跑这两组。用它自己的 `Intl`，也就是 tifa 的跑法，liustack/quickjs 的耗时是 C QuickJS 的 0.75、0.34 和 0.72。Node 24 开 JIT 的耗时是 liustack/quickjs 的 0.21 到 0.23，`--jitless` 是 0.60 到 0.69。
+liustack/quickjs v0.30.1，GCP c2d-standard-8（AMD EPYC 7B13），Go 1.27.2。moejs 一行来自后来的 v0.30.7 运行，用 moejs 自己的 `Intl`，比值相对同一会话里重新跑的 liustack/quickjs。MUI 和商店页面要用 `Intl`，C QuickJS 和大多数其他引擎没有，所以每个引擎都在 FormatJS polyfill 上跑这两组。用它自己的 `Intl`，也就是 tifa 的跑法，liustack/quickjs 的耗时是 C QuickJS 的 0.75、0.34 和 0.72。Node 24 开 JIT 的耗时是 liustack/quickjs 的 0.21 到 0.23，`--jitless` 是 0.60 到 0.69。
 
 它不是每一项都最快的引擎。V8 测试套件的得分（越高越好）：
 
