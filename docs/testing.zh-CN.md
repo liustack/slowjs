@@ -40,6 +40,7 @@ go test -count=1 -p 1 .                # about a minute
 - 改了 `temporal/`，还要运行不带 `-short` 的 `go test ./temporal`（和 Chromium 的对照以及链接测试都在里面），以及[重点检查](#重点检查)里 Temporal 的那几行和竞态检测器一节。
 - 改了 `url/` 或 `internal/whatwgurl`，还要运行 `go test ./url ./internal/whatwgurl/...`（web-platform-tests 的数据、限额测试和篡改测试都在里面），以及这两个包的 `go test -race`。改了解析器，还要把每个 fuzz 目标各跑几分钟：`go test -run '^$' -fuzz '^FuzzParse$' -fuzztime 3m ./internal/whatwgurl`，`FuzzSetters` 和 `FuzzLimit` 同理，还有 `./url` 里的 `FuzzRoom`。
 - 改了 `fmt/printf.go` 或 `fmt/bound.go`，还要把 `FuzzPrintfAsGo` 跑几分钟：`go test -run '^$' -fuzz '^FuzzPrintfAsGo$' -fuzztime 3m ./fmt`。它检查一个动词一个动词、分段造出的输出和 Go 的 fmt 逐字节相同，`TestPrintfAsGo` 对固定的格式做同样的检查。
+- 改了 `jsstring.go` 把 16 位单元写成 UTF-8 的方式（`utf16Write`、`utf16Len`、`asciiUnits`），还要把 `FuzzUTF16String` 跑几分钟：`go test -run '^$' -fuzz '^FuzzUTF16String$' -fuzztime 3m .`。它检查整段转换和分段转换的输出与 `utf16ref_test.go` 里保留的 v0.30.6 的转换逐字节相同，`TestUTF16Boundaries` 对固定的字符串做同样的检查。
 - 改了引擎，还要运行它所涉及部分的[重点检查](#重点检查)，以及 [test262](#test262)。
 - `-p 1` 一次只跑一个包：根包的测试会启动很多 VM，每个 VM 都映射自己的内存。
 

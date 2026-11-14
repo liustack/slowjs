@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -567,3 +567,19 @@ Go 转换期间不会轮询。在 amd64 服务器上，读一个 16 Mi 个孤立
 字符串多长，它都花一样的时间，也不分配内存。`intl` 和 `temporal` 的 Builtin 读每个短参数之前先用它量长度。
 
 测试：`vmhook_test.go` 里的 `TestStringLenRope`（JavaScript 能造的最长的 rope，2^30-1 个码元：长度对，VM 不增长，调用 1,000 次 Go 里不分配内存），以及 `TestVMHookChars`（数字、没有参数、每字符一字节和两字节的普通字符串，以及 rope）。
+
+## 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元
+
+发布版本：Unreleased。
+
+Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin 的参数）在 Go 里写成 UTF-8。只要有一个字符大于 U+00FF，引擎就用 16 位单元存这个字符串，这时每段 ASCII 原来一次处理四个单元。现在一次处理八个（`jsstring.go` 里的 `asciiUnits`）：检查一次两个字，再用移位把八个单元收窄成八个字节，存一次。超过 262,144 个单元（`stringStep`）的字符串写之前要先数字节，其中的 ASCII 现在也是八个一数，原来是一个一个数。其他字符和以前一样，从 U+0800 起的文字（比如中文）仍是四个一次。
+
+页面的 HTML 就是这样的字符串：tifa 的 shop、MUI 测试应用和 React 页面的每一页都至少有一个大于 U+00FF 的字符，其余 97% 到 100% 是 ASCII。它以 rope 的形式到达 Go，和以前一样先由引擎拼接（`JS_ToString`）。
+
+它是安全的，因为输出逐字节相同。测试把它和 `utf16ref_test.go` 里保留的 v0.30.6 的转换比较，整段比，也按 1 到 9 个单元分段比：UTF-8 每种长度的边界（U+007F、U+0080、U+07FF、U+0800、U+FFFF、U+10000、U+10FFFF），开头、中间和结尾的孤立高代理项和低代理项，以及长度从 0 到 20 的每一段 ASCII 后面跟一个代理对、一个孤立代理项、一个两字节或三字节的字符，让它落在八个或四个一块的每个位置上。不带 `wtf8` 时，输出也和 Go 的 `utf16.Decode` 一样，孤立代理项是 U+FFFD。`asciiUnits` 读写时绕过 Go 的边界检查，因为检查比转换本身还费指令：它只读 `u` 里有的单元（放得下的八的倍数），往 `utf16Write` 开始时检查过的、每个单元三个字节的空间里，每八个单元写八个字节。它通过字节数组来读，指针不需要对齐，竞态检测器的指针检查也能通过。它是一个不内联的独立函数：放在 `utf16Write` 的循环里时，那个循环的其他路径变慢了。
+
+只量转换本身，用每一页的 HTML（Apple M4 上的退休指令数，5 轮各 50 次转换取最低）：工作台 studio 页从 202 万降到 75 万，商店首页英文从 745 万降到 161 万，中文从 751 万降到 220 万，React 页面从 27 万降到 13 万。商店的大页面收益最大，因为它们比 `stringStep` 长，原来要先一个单元一个单元地数。整次渲染的数字见 [performance.zh-CN.md](../performance.zh-CN.md#页面的-utf-8一次处理八个-ascii-单元)。内存不变：字符串分配一次，暂存内存和以前一样。
+
+代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
+
+测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。

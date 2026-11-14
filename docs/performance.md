@@ -1055,6 +1055,19 @@ The changes made to the register loop since are measured in their own sections: 
 
 The instructions of a render on the M4 (retired instructions, the median of a page's renders, summed over the pages) are 0.26% fewer on MUI and 0.02% more on the store and workbench pages: the gain shows in time, not in instructions, as fewer loads along the chains of the table, each a likely cache miss, would. The workbench took 0.4% more time on linux/amd64 and 0.4% less on the M4 with the same instructions, which is no change. The native C tree on linux/amd64 (`render`, tifa's pool, one session of 10 rounds) showed more on MUI than tifa does: 0.977 (0.950 to 0.997), 10 of 10 rounds under 1, where the generated engine in tifa gives 0.990.
 
+### The UTF-8 of a page, eight ASCII units at a time
+
+[A 16-bit string goes to UTF-8 eight ASCII units at a time](changes/go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time), against main at `78a90364` (v0.30.6). The HTML of every page reaches Go as a string of 16-bit units, 97% to 100% ASCII, of 28,398 (React) to 482,807 units (the store's product list). Counted on 2026-11-14 in tifa's `test/ssr` (the real compile, load and render, one Go thread): on an Apple M4, the retired instructions of each render, the lowest of 10 renders after 3 warm ones (React 100 after 20), 3 runs that alternate the two builds, the sum over the pages of a group. On linux/amd64, callgrind of the whole process, the difference of 3 renders and 1 after 2 warm ones, halved (AMD EPYC 7B13). Every page gives the same HTML.
+
+| Pages | Apple M4, the group (3 runs) | Apple M4, by page | linux/amd64, one page |
+| --- | ---: | ---: | ---: |
+| tifa's shop, fourteen store pages | -1.94% to -2.04% | -0.20% (post) to -3.83% (product) | -2.95% (home), -0.84% (cart in Chinese) |
+| tifa's shop, six workbench pages | -0.99% to -1.24% | -0.83% (studio) to -1.34% (order) | -0.75% (studio) |
+| tifa's MUI test app, three pages | -0.53% to -0.67% | -0.40% (orders) to -0.84% (order) | -0.39% (orders) |
+| React's page | -0.44% to -0.46% | | -0.48% |
+
+The store's home, product and product list pages gain 3% to 4%: they are longer than `stringStep` (262,144 units), so their bytes were counted one unit at a time before they were written, about 21 instructions a unit in all, where the other pages took about 9. The conversion alone now takes 3 to 6.5 instructions a unit (the Chinese pages most). The time was not measured on its own: a merged batch is timed as a whole.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.
