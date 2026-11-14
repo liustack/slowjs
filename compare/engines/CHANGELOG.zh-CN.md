@@ -2,6 +2,14 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：更新的参照引擎
+
+- 本机参照行换成 C QuickJS master `e585640ffa`（之前是 `7d1c13c5d8`）、QuickJS-NG v0.18.0
+  （之前是 v0.17.0）和 Node v24.22.3（之前是 v24.11.1，主版本相同）。C QuickJS 2026-06-04
+  是这个引擎的出处，保持不变。`native/build.sh` 用 SHA256 钉住新的压缩包。
+  更早的结果文件里的数字是旧版本的。
+- Node v24.22.3 仍然没有 `Iterator.concat`，所以 `native/node-ssr.cjs` 保留它的替身。
+
 ## 2026-11-14：更新的 moejs 和 go-quickjs
 
 - moejs 是 v0.1.0（之前是 v0.1.0-alpha.11，2026-11-09 发布），go-quickjs 是 v0.37.3

@@ -46,10 +46,10 @@ var (
 	ownIntl   = []string{"liustack-quickjs", "liustack-tifa", "go-quickjs-interp", "go-quickjs-jit", "node-jit", "node-jitless"}
 	label     = map[string]string{
 		"quickjs-2026-06-04": "C QuickJS 2026-06-04 (reference)",
-		"quickjs-master":     "C QuickJS master 7d1c13c5d8 (reference)",
-		"quickjs-ng":         "QuickJS-NG v0.17.0 (reference)",
-		"node-jit":           "Node v24.11.1 (reference)",
-		"node-jitless":       "Node v24.11.1 --jitless (reference)",
+		"quickjs-master":     "C QuickJS master e585640ffa (reference)",
+		"quickjs-ng":         "QuickJS-NG v0.18.0 (reference)",
+		"node-jit":           "Node v24.22.3 (reference)",
+		"node-jitless":       "Node v24.22.3 --jitless (reference)",
 	}
 	apps = []string{"bench", "mui", "shop"}
 )
@@ -835,8 +835,8 @@ func (r *run) vsC(w *report) {
 		{"liustack-quickjs, own Intl only", "liustack-quickjs", own},
 		{"liustack-tifa, as tifa runs it", "liustack-tifa", own},
 		{"C QuickJS 2026-06-04", "quickjs-2026-06-04", pf},
-		{"Node v24.11.1", "node-jit", pf},
-		{"Node v24.11.1 --jitless", "node-jitless", pf},
+		{"Node v24.22.3", "node-jit", pf},
+		{"Node v24.22.3 --jitless", "node-jitless", pf},
 	}
 	w.println("### Per bundle, against C QuickJS 2026-06-04\n")
 	w.println("Geometric mean over the pages of a bundle, range in brackets. Below 1 is faster than C. Bench has no Intl, MUI and the shop need it: every row but liustack-tifa and the \"own Intl only\" row runs them on the polyfill.\n")

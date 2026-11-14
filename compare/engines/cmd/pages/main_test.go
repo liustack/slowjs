@@ -162,7 +162,7 @@ func TestTableRows(t *testing.T) {
 | modernc-quickjs | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
 | goant-interp | load: SyntaxError: no | 0 of 2 | | |
 | moejs | not run | | | |
-| Node v24.11.1 (reference) | a: boom; b: bang | 0 of 2 | | |
+| Node v24.22.3 (reference) | a: boom; b: bang | 0 of 2 | | |
 | go-quickjs-jit | not run | | | |
 
 `

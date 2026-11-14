@@ -2,6 +2,16 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14: newer reference engines
+
+- The native reference rows move to C QuickJS master `e585640ffa` (it was
+  `7d1c13c5d8`), QuickJS-NG v0.18.0 (it was v0.17.0) and Node v24.22.3 (it was
+  v24.11.1, the same major version). C QuickJS 2026-06-04, the release this engine
+  is built from, stays. `native/build.sh` pins the new archives by SHA256.
+  Numbers in earlier result files are those of the old versions.
+- Node v24.22.3 still has no `Iterator.concat`, so `native/node-ssr.cjs` keeps its
+  stand-in.
+
 ## 2026-11-14: newer moejs and go-quickjs
 
 - moejs is v0.1.0 (it was v0.1.0-alpha.11, released 2026-11-09) and go-quickjs is

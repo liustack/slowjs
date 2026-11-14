@@ -767,9 +767,9 @@ terms retained in each downloaded distribution:
 | Download | Version | License |
 | --- | --- | --- |
 | C QuickJS release | 2026-06-04 | MIT, see the archive's `LICENSE` |
-| C QuickJS master snapshot | 7d1c13c5d8 | [MIT](https://github.com/bellard/quickjs/blob/7d1c13c5d8/LICENSE) |
-| QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
-| Node, Linux x64 binary | v24.11.1 | [MIT and third-party notices](https://github.com/nodejs/node/blob/v24.11.1/LICENSE), including V8 (BSD-3-Clause), OpenSSL (Apache-2.0) and ICU (Unicode) |
+| C QuickJS master snapshot | e585640ffa | [MIT](https://github.com/bellard/quickjs/blob/e585640ffa/LICENSE) |
+| QuickJS-NG | v0.18.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.18.0/LICENSE) |
+| Node, Linux x64 binary | v24.22.3 | [MIT and third-party notices](https://github.com/nodejs/node/blob/v24.22.3/LICENSE), including V8 (BSD-3-Clause), OpenSSL (Apache-2.0) and ICU (Unicode) |
 | Hermes V1, `260318099.0.0-stable` and `static_h` at `44f5f48c3edf` | built from source | [MIT](https://github.com/facebook/hermes/blob/static_h/LICENSE), Copyright (c) Meta Platforms, Inc. and affiliates, [facebook/hermes](https://github.com/facebook/hermes) |
 | CMake, Linux x86_64 binary | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt), with third-party terms under `Licenses/` in the distribution |
 

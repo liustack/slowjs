@@ -109,7 +109,7 @@ done
 for m in jit jitless; do
   want node-$m || continue
   f=(); [ "$m" = jitless ] && f=(--jitless)
-  d=("$nat/node-v24.11.1-linux-x64/bin/node" "${f[@]}" ../native/node-ssr.cjs "engine=node-$m" "html=$out/html")
+  d=("$nat/node-v24.22.3-linux-x64/bin/node" "${f[@]}" ../native/node-ssr.cjs "engine=node-$m" "html=$out/html")
   run "$out/node-$m-bench" "${d[@]}" bundle=$B/bundles/bench.js inputs=$BENCH warm=50 n=200 tag=-bench
   run "$out/node-$m-pf" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP prelude=$PF warm=20 n=100 tag=-pf
   run "$out/node-$m-native" "${d[@]}" bundle=$B/bundles/shop.js inputs=$SHOP warm=20 n=100 tag=-native

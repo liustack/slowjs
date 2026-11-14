@@ -702,9 +702,9 @@ SHA256 哈希。下面是主要的许可证，各个下载的发行版里
 | 下载 | 版本 | 许可证 |
 | --- | --- | --- |
 | C QuickJS 发布版 | 2026-06-04 | MIT，见压缩包里的 `LICENSE` |
-| C QuickJS master 快照 | 7d1c13c5d8 | [MIT](https://github.com/bellard/quickjs/blob/7d1c13c5d8/LICENSE) |
-| QuickJS-NG | v0.17.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.17.0/LICENSE) |
-| Node，Linux x64 二进制 | v24.11.1 | [MIT 和第三方声明](https://github.com/nodejs/node/blob/v24.11.1/LICENSE)，包括 V8（BSD-3-Clause）、OpenSSL（Apache-2.0）和 ICU（Unicode） |
+| C QuickJS master 快照 | e585640ffa | [MIT](https://github.com/bellard/quickjs/blob/e585640ffa/LICENSE) |
+| QuickJS-NG | v0.18.0 | [MIT](https://github.com/quickjs-ng/quickjs/blob/v0.18.0/LICENSE) |
+| Node，Linux x64 二进制 | v24.22.3 | [MIT 和第三方声明](https://github.com/nodejs/node/blob/v24.22.3/LICENSE)，包括 V8（BSD-3-Clause）、OpenSSL（Apache-2.0）和 ICU（Unicode） |
 | Hermes V1，`260318099.0.0-stable` 和 `static_h`（`44f5f48c3edf`） | 从源码构建 | [MIT](https://github.com/facebook/hermes/blob/static_h/LICENSE)，Copyright (c) Meta Platforms, Inc. and affiliates，[facebook/hermes](https://github.com/facebook/hermes) |
 | CMake，Linux x86_64 二进制 | 3.31.6 | [BSD-3-Clause](https://github.com/Kitware/CMake/blob/v3.31.6/Copyright.txt)，第三方条款在发行版的 `Licenses/` 下 |
 
