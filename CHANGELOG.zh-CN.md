@@ -6,15 +6,22 @@
 
 ### 变更
 
+- 有内存上限的 VM 现在也留下 Intl 或 `fmt` 长调用的最后一块，前提是这块和 VM 的内存加起来放得进上限，上限也把它算进去：引擎的分配需要这块空间时，先把它还给系统，所以留着的块不会让脚本内存不足。在 GitHub 的 macos-15 机器上，上限 1 GiB 的 VM 在 8 Mi 字符的文本里找第一个词，每次调用 3.9 到 4.9 ms，v0.30.4 是 28 到 35 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块)）。
+- 解释器直接调 C 函数，以及 `call`、`apply` 和绑定函数对 C 函数的调用，参数从 8 个字减到 5 个，引擎自己读属性的调用从 7 个减到 5 个，所以在 arm64 上这两个调用都不再在影子栈上传参数块。在 linux/amd64 上按 16 种代码布局计时，tifa 商店的店面页面用时少 0.67%，其他页面在误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。结果、栈帧和调用深度都不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#热调用少传参数字)）。
+- 寄存器循环自己回答 `Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String`，对调用不跑脚本、不抛异常的那些值不再调用 C 函数。一次渲染少跑 0.4%（MUI）到 2.5%（React）的指令，在 amd64 上 React 的页面少花 1.4% 的时间，tifa 的 store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面时间不变（[c-engine.zh-CN.md](docs/changes/c-engine.zh-CN.md#寄存器循环直接回答的内置函数)）。
+
+## [v0.30.5] - 2026-11-14
+
+### 变更
+
+- 页面渲染比 v0.30.4 少用 11% 到 13% 的时间。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局的平均），tifa 的工作台页面少用 12.9%，商店页面少 12.6%，React 页面少 11.8%，MUI 页面少 11.2%。在没有内存上限的新 VM 里渲染一篇长 Markdown 文档少用 3.4%：下一条说的性能画像在这里省 5.5%，这一版的其他改动合起来多花 2.2%，原因还没找到（[performance.md](docs/performance.zh-CN.md#不带画像时的长-markdown)）。只做一件事的小循环可能更慢。用同样的方法给 `compare/testdata` 的 12 个微基准计时，6 个比 v0.30.4 慢（`global_read` 13.9%，`typed_array_read` 13.3%，`prop_create` 7.1%，`array_for` 3.5%，`array_read` 3.2%，`prop_read` 1.6%），3 个更快（`array_prop_create` 10.8%，`int_arith` 3.4%，`array_slice` 1.1%），另外 3 个计时分不出快慢。`typed_array_read` 变慢是画像造成的，画像只用页面训练。`global_read` 不带画像时也慢 12.8%，原因还没找到（[performance.md](docs/performance.zh-CN.md#按时间看微基准)）。
+- 引擎现在带着性能画像生成，也就是真实页面渲染时每个分支跑了多少次的计数：LLVM 按 tifa 的商店页面和 MUI 页面的计数来排列代码。C 代码相同时，单是画像就让一次渲染在这台机器上少用 5.4%（MUI 页面）到 8.4%（商店页面），在 Apple M4 上约 3%。页面不跑的代码可能变慢：C 代码相同时，画像让上一条那 12 个微基准里的 6 个变慢（`typed_array_read` 最多，各布局平均慢 14.3%），1 个变快。构建这个模块的方式不变，因为画像和用它生成的代码都已入库（[generator.md](docs/changes/generator.zh-CN.md#tifa-页面的性能画像)）。
 - atom（引擎给属性名和只存一份的字符串编的号）的哈希表，现在两个桶有一个 atom 时就加倍，以前是每个桶两个 atom 时才加倍。用字符串做键时要走的链变短了：我们在 linux/amd64 上量到，tifa 的 MUI 页面少用 1.0% 的时间，商店页面少用 1.1%，工作台页面没有变化。一个 VM 多占 50 KB 到 200 KB，接近内存上限的脚本会稍早一点内存不足（[strings.md](docs/changes/strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom)）。
 - `'' + x` 里的 `x` 是字符串时（React 用这种写法把值变成字符串），现在直接返回 `x` 本身，不再复制一份新的。以 `${x}` 开头的模板字符串，第一步也不再复制。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），React 页面的渲染时间少 2.2%，MUI 页面少 0.7%。
 - `o[k]` 的键是 `for in` 或 `Object.keys` 给出的字符串时，引擎直接用它已有的属性名编号去查，不再走通用的属性路径。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），渲染时间少 0.6%（商店页面）到 1.4%（MUI 页面）。
 - 字符串记住自己作为属性名的编号，键来自 `for in` 或 `Object.keys` 时，`o[k]` 和 `hasOwnProperty.call` 读一次就能拿到。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），渲染时间比只有上一条的按键读取时再少 0.8%（工作台页面）到 2.0%（MUI 页面）。每个字符串多占 4 字节：全是短字符串的堆，`MemorySize` 最多多算 10%。
 - 对象的 rest（如 `const {a, ...rest} = props`）和对象字面量里的展开（如 `{type: x, ...props}`），源对象的属性布局以前见过时，现在照着记下的布局直接复制，不再一个属性一个属性地查。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），tifa 的工作台页面用时少 3.1%，MUI 页面少 2.5%，商店页面少 1.3%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建)）。
 - 字节码版本升到 12，因为对象的 rest 用一张列表记下它排除的键（`OP_copy_rest`）：v0.30.4 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
-- 有内存上限的 VM 现在也留下 Intl 或 `fmt` 长调用的最后一块，前提是这块和 VM 的内存加起来放得进上限，上限也把它算进去：引擎的分配需要这块空间时，先把它还给系统，所以留着的块不会让脚本内存不足。在 GitHub 的 macos-15 机器上，上限 1 GiB 的 VM 在 8 Mi 字符的文本里找第一个词，每次调用 3.9 到 4.9 ms，v0.30.4 是 28 到 35 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块)）。
-- 解释器直接调 C 函数，以及 `call`、`apply` 和绑定函数对 C 函数的调用，参数从 8 个字减到 5 个，引擎自己读属性的调用从 7 个减到 5 个，所以在 arm64 上这两个调用都不再在影子栈上传参数块。在 linux/amd64 上按 16 种代码布局计时，tifa 商店的店面页面用时少 0.67%，其他页面在误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。结果、栈帧和调用深度都不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#热调用少传参数字)）。
-- 寄存器循环自己回答 `Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String`，对调用不跑脚本、不抛异常的那些值不再调用 C 函数。一次渲染少跑 0.4%（MUI）到 2.5%（React）的指令，在 amd64 上 React 的页面少花 1.4% 的时间，tifa 的 store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面时间不变（[c-engine.zh-CN.md](docs/changes/c-engine.zh-CN.md#寄存器循环直接回答的内置函数)）。
 
 ### 修复
 
@@ -675,7 +682,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2

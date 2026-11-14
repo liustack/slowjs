@@ -311,7 +311,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 对象的 rest 直接按最终的 shape 创建
 
-发布版本：Unreleased。
+发布版本：v0.30.5。
 
 `const {a, b, ...r} = s` 以前为每次 rest 建一个装着 `a` 和 `b` 的对象来排除它们（先建空对象，再逐个定义键），然后建一个空的 `r`，把 `s` 的键一个个给它，每个键都要在那个对象里查一次。用这种写法拆 props 的 React 组件，每次要付两个对象的钱，每个键还要多查一次。MUI 和商店的页面每次渲染跑 800 到 2,200 次 rest，每次 3 到 5 个键，排除 1.5 到 7 个名字。
 
@@ -327,7 +327,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 展开按目标和源对象 shape 的缓存复制
 
-发布版本：Unreleased。
+发布版本：v0.30.5。
 
 `{type: x, ...props}` 以前把 `props` 的键一个个复制过去，每个键都是对目标的一次定义：查一次键，把目标移到下一个 shape，属性数组一路按 2、4、8 增长。商店页面的展开里，80% 的键是这样复制的（每次展开 10.5 个键）。展开到空目标时，如果源对象是普通对象，原来就已经一次拿到它的 shape（`js_copy_shape`）。
 

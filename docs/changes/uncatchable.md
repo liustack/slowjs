@@ -665,7 +665,7 @@ Tests: `TestKeepReuses`, `TestKeepShort`, `TestKeepChooses`, `TestKeepIdle`, `Te
 
 ## The copy of a spread, a rest and Object.assign reads the interrupt flag
 
-Release: Unreleased.
+Release: v0.30.5.
 
 A spread, a rest and `Object.assign` define the keys of their source on the target one at a time in C. Since the spread of a string gives its characters ([upstream-commits.md](upstream-commits.md)), a string of a million characters gives a million keys, and an object can have as many. Now both loops of the copy (`js_copy_data`, of a source whose listed keys are plain data properties, and `js_copy_data_properties`, of any other) read the flag every 4,096 keys (`JS_COPY_POLL_KEYS`), and a stop throws the uncatchable interrupt. A test of a counter a key costs nothing a copy of a few keys can see.
 

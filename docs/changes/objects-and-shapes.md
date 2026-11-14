@@ -311,7 +311,7 @@ The change is in C (`engine/quickjs.c`, `JS_HasProperty`). `engine/test/compare/
 
 ## An object rest is made at its final shape
 
-Release: Unreleased.
+Release: v0.30.5.
 
 `const {a, b, ...r} = s` left out `a` and `b` by building an object of them for each rest (an empty object, then a define for each key), then made an empty `r` and gave it the keys of `s` one at a time, looking each up in that object. A React component that takes its props apart this way paid for two objects and a lookup a key. MUI's and the shop's pages run 800 to 2,200 rests a render, of 3 to 5 keys with 1.5 to 7 names left out.
 
@@ -327,7 +327,7 @@ Tests: `engine/test/compare/object_rest.js` (what Node 24 prints) covers 39 kind
 
 ## A spread copies from a cache of the shapes of its target and source
 
-Release: Unreleased.
+Release: v0.30.5.
 
 `{type: x, ...props}` copied the keys of `props` one at a time, each a define on the target that looked the key up and moved the target to its next shape, and its property array grew 2, 4, 8 on the way. The shop's pages copy 80% of their spread keys this way (10.5 keys a spread). A spread into an empty target already took the shape of a plain source at once (`js_copy_shape`).
 

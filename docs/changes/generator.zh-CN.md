@@ -17,9 +17,9 @@ read_when:
 
 ## tifa 页面的性能画像
 
-发布：Unreleased。
+发布：v0.30.5。
 
-`make gen` 用一份性能画像（profile）编译引擎：引擎渲染真实页面时，每个分支各跑了多少次的计数。LLVM 用这些计数把常走的块放在一起，把溢出（spill）放在最少执行的地方，并排好 `switch` 各分支的顺序。画像是 `engine/pgo/profile.txt`，用 `engine/pgo/pages` 里的页面训练（见 [engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。同样的 C 不用画像生成，渲染要慢 3% 到 9%（[performance.zh-CN.md](../performance.zh-CN.md#tifa-页面的性能画像)）。
+`make gen` 用一份性能画像（profile）编译引擎：引擎渲染真实页面时，每个分支各跑了多少次的计数。LLVM 用这些计数把常走的块放在一起，把溢出（spill）放在最少执行的地方，并排好 `switch` 各分支的顺序。画像是 `engine/pgo/profile.txt`，用 `engine/pgo/pages` 里的页面训练（见 [engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。在 AMD EPYC 服务器上，它让 tifa 的页面比同样的 C 不用画像生成时渲染快 5.4% 到 8.4%，在 Apple M4 上约快 3%（[performance.zh-CN.md](../performance.zh-CN.md#tifa-页面的性能画像)）。
 
 ### make gen 怎么用它
 
@@ -88,8 +88,9 @@ read_when:
 
 本次发布里已知且未解决的。每一项都是后续要做的事。
 
-- 训练从没跑过的路径可能更慢。`compare/testdata` 的 64 个微基准（callgrind，每个基准的循环每圈的指令数，linux/amd64，是指令数，不是时间）里，18 个比不用画像多跑超过 0.5% 的指令，39 个少跑超过 0.5%，64 个合起来少 1.9%（几何平均）。多跑的：`typed_array_read` +7.5%，`float_arith` +4.9%，`global_read` +4.4%，`array_read` +3.8%，`prop_create` +3.8%，`prop_read` +3.1%，`int_arith` +2.9%，`prop_write` +2.4%，`prop_update` +2.1%，`array_for` +2.1%，`empty_down_loop2` +2.0%，`empty_do_loop` +1.6%，`empty_down_loop` +1.0%，另有五个在 +0.5% 到 +1.0% 之间（`string_build2c`、`string_build1x`、`string_build1`、`string_build_large1`、`global_func_call`）。页面不训练这些循环。把它们加进画像是后续要做的事，基准分成两半，这样没训练的那一半仍能说明没训练过的路径要多花多少。
+- 训练从没跑过的路径可能更慢，时间可能比指令数涨得更多。在 AMD EPYC 服务器上计时（[performance.md](../performance.zh-CN.md#按时间看微基准)，`compare/testdata` 的 12 个微基准，16 种布局的平均），画像让六个变慢：`typed_array_read` 多 7.5% 的指令，慢 14.3%，`array_for` 是 2.1% 和 4.5%，`prop_create` 是 3.8% 和 4.0%，`int_arith` 是 2.9% 和 3.9%，`array_read` 是 3.8% 和 2.4%，`prop_read` 是 3.1% 和 1.4%。它让 `array_prop_create` 快 6.1%（指令少 2.6%），其余五个计时分辨不出来。所以下面的指令数不是全部代价。64 个微基准（callgrind，每个基准的循环每圈的指令数，linux/amd64）里，18 个比不用画像多跑超过 0.5% 的指令，39 个少跑超过 0.5%，64 个合起来少 1.9%（几何平均）。多跑的：`typed_array_read` +7.5%，`float_arith` +4.9%，`global_read` +4.4%，`array_read` +3.8%，`prop_create` +3.8%，`prop_read` +3.1%，`int_arith` +2.9%，`prop_write` +2.4%，`prop_update` +2.1%，`array_for` +2.1%，`empty_down_loop2` +2.0%，`empty_do_loop` +1.6%，`empty_down_loop` +1.0%，另有五个在 +0.5% 到 +1.0% 之间（`string_build2c`、`string_build1x`、`string_build1`、`string_build_large1`、`global_func_call`）。页面不训练这些循环。把它们加进画像是后续要做的事，基准分成两半，这样没训练的那一半仍能说明没训练过的路径要多花多少。
 - 内联重放会漏掉少数调用。在一组互相成环调用的函数里，画像改变了内联器遇到调用的顺序，于是一个调用在第二遍里出现在第一遍记录没有命名的上下文中，仍是调用。amd64 上是 8 个函数里的 22 个调用：`rv_putel_slow`（10 个），`JS_ToBigInt64Free`（4 个），`free_gc_object`（3 个），`rv_w_gen`、`js_set_fast_array_element_out_of_line`、`js_backtrace_build`、`JS_ToPrimitiveFree` 和 `JS_SetPropertyValue`（各 1 个）。它们调用的 8 个小函数，在不用画像的构建里处处内联，这里各自留下一个函数体：`JS_FreeValue`、`JS_IsException`、`JS_StringToBigIntErr`、`JS_ToNumberFree`、`JS_VALUE_IS_NAN`、`__JS_NewShortBigInt`、`__js_rc` 和 `js_dbuf_init`。arm64 上是其中 5 个函数里的 12 个调用，调用其中 5 个小函数。它们都是慢路径或少见的路径：往类型化数组写一个不是数字的值，BigInt 转换，释放 async 函数的帧，生成回溯。这 8 个函数的栈帧里，只有 `free_gc_object` 的 Go 栈帧变大，两个架构都是 32 字节（amd64 从 96 到 128，arm64 从 88 到 120），它的 shadow 栈帧仍是 0。它在一个调用环上（`free_gc_object`、`__JS_FreeValueRT`、`free_gc_object`），但 C 只让这个环走一层（`engine/quickjs.c` 的 `free_zero_refcount`：一个对象在释放别的对象时死掉，只会加进一个列表），所以没有递归会重复这 32 字节，也没有深度下限会动。其余栈帧相同或变小。在链接后优化器里把这些调用内联，是后续要做的事。
+- 在 amd64 上，画像让 LLVM 在 musl 的 `memmove` 里用到 `rbx`，生成器因此给它一个栈帧（`NOSPLIT, $8-0`，原来是 `NOSPLIT|NOFRAME, $0-0`，见[下文](#有栈帧的寄存器入口叶子函数有-go-声明)），每次调用都要跑 Go 的序言和尾声。在 linux/amd64 上用 callgrind 数（`jsrun`，同一个提交带画像和不带画像），加载打包文件时 `memmove` 多跑 10% 到 34% 的指令，占 React 打包文件加载的 0.05%，bench 打包文件的 0.02%，MUI 的 0.01%。微基准调用它太少，数不出来。不带画像编译 `engine/libc` 就能把它拿回来，这是后续要做的事。
 - 过期的画像会丢掉它覆盖的函数里的收益（见上），C 离训练越远，收益越少，直到重新训练。
 - 画像来自两个应用的页面，用一个手写格式化数字和日期的假 `Intl` 渲染（[engine/pgo/README.zh-CN.md](../../engine/pgo/README.zh-CN.md)）。它没有 `Intl` 内部工作的计数，也没有加载 bundle 的计数（这些计数是特意去掉的：带上它们的画像被解析器主导，效果更差）。
 - 训练两次得到的文件有几个计数不同：Mac 上训练两次，47,170 行里 40 行不同，Linux 上一次和 Mac 上一次，45 行不同。它们生成的引擎也不同（amd64 上，两次 Mac 训练之间 27 个函数不同，Linux 和 Mac 的训练之间 126 个）。所以训练不可复现，入库的文件可复现：`make gen` 用它在 macOS 和 Linux 上生成相同的字节。
@@ -97,7 +98,7 @@ read_when:
 - 读 `.s` 的人看不出某个块为什么移动了。画像和训练它的程序都在仓库里，就是为了这个。
 - 保存优化记录（`-fsave-optimization-record`、`-opt-record-file`）会改变带画像构建的代码：它打开 hotness，让块频率信息一直保留，有 2 个函数因此不同。正式构建从不用它。想看优化器做了什么，在一份副本上生成记录，并且不要把那份输出和入库的文件比较。
 - 生成器里开着 `-Wmisexpect`，容差 50%。它指出每个训练里多数时候跑成反方向的 `likely()` 或 `unlikely()`，写进 `.build/w-<arch>/pgo/misexpect.txt`（约 50 项，每次训练会多几项或少几项）。开不开这个标志，IR 逐字节相同。它告诉你 C 里哪些提示页面不支持，不改变任何东西。
-- 在 Apple M4 上收益较小（约 3%），在 AMD EPYC 服务器上是 6% 到 9%：M4 的指令缓存大 6 倍，画像去掉的缺失在那里代价更小。
+- 在 Apple M4 上收益较小（约 3%，研究里的读数），在 AMD EPYC 服务器上是 5.4% 到 8.4%（为发布计的时）：M4 的指令缓存大 6 倍，画像去掉的缺失在那里代价更小。
 
 ### 测试和检查
 
@@ -110,7 +111,7 @@ read_when:
 
 ## 有栈帧的寄存器入口叶子函数有 Go 声明
 
-版本：Unreleased。
+版本：v0.30.5。
 
 寄存器入口叶子函数（`memcpy`、`memmove`、`memset`）从寄存器取参数，只有生成的代码调用它。它不存寄存器、也不调用别的函数时，TEXT 写 `NOFRAME`。两样做了其中一样，TEXT 就保留栈帧（`NOSPLIT, $8-0`），而 `go vet -asmdecl` 要求每个不是 `NOFRAME` 的 TEXT 都有 Go 声明。现在生成器给这样的叶子函数在 `engine_decl_<arch>.go` 里写一个声明：`func memmove()`，和它的 TEXT 一样没有参数也没有返回值。`.s` 文件不变。
 
