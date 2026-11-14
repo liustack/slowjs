@@ -2339,19 +2339,64 @@ static void test_string_append_oom(void)
    ADDK, ADDKL, KADD, rv_add_str in regvm-ops-basic.h): with too little
    memory for the new string, the copy with room or the rope, it fails with
    the out of memory error and frees each operand once, and the variable it
-   was to go into keeps its string. Strings of 8 and 16 bits, short ones that
-   are copied, long ones that make ropes, and a local grown in place. */
+   was to go into keeps its string. A variable appended to is written
+   t = t + id(b): t = t + b of two locals is add_loc (ADDLOC), not ADDL.
+   Three sweeps. run(): strings of 8 and 16 bits, short ones that are
+   copied, long ones that make ropes, and self, which appends to a string
+   another variable holds too, which must not change. runArgs(): the adds
+   into an argument, which the mapped arguments object still reads after
+   the out of memory error has ended the call: check(), at the start of the
+   next run, finds each argument holding the string it had or the whole new
+   one. A function that has the arguments object reads its arguments into
+   temps for an add, so the operands of an add into a temp are not seen
+   here: r-stradd.js reads them after the length error, which leaves
+   rv_add_str by the same path. runGrow(): grow appends to a string only
+   its local holds, which js_add_string_into grows in place or copies with
+   room (JS_ConcatStringAppend): it keeps only the old length, as a
+   number, so that nothing else holds the string, and aGrow does it in an
+   argument, which check() finds whole. Its answer is fixed, as the
+   sweep's answer comes from the same engine: an append done wrong in
+   place gives "cut".
+   The strings of runArgs() and runGrow() are past 504 bytes, so that each
+   new one is a large block that the limit counts (docs/allocator.md): a
+   small one takes a free slot of an arena, which the limit does not see,
+   and would not fail. Nothing before the adds of a run frees a large
+   block, which the cache of large blocks would give the next add
+   uncounted: check() makes no string, and runArgs() keeps each string it
+   makes. */
 static void test_string_add_oom(void)
 {
     static const char setup[] =
         "function sum(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return s.length + ':' + h }\n"
+        "function hash(out) { let h = 0; for (const s of out) h = (h * 7 + s.length + s.charCodeAt(s.length - 1)) | 0; return out.length + ' ' + h }\n"
+        "function id(x) { return x }\n"
         "function add(a, b) { return a + b }\n"
         "function addl(a, b) { let t = 0; t = a + b; return t }\n"
         "function addk(a) { return a + '<k>' }\n"
         "function addkl(a) { let t = 0; t = a + '\\u4e2d'; return t }\n"
         "function kadd(b) { return '<k>' + b }\n"
         "function kaddl(b) { let t = b; t = '\\u4e2d' + t; return t }\n"
-        "function self(a, b) { let t = a; for (let i = 0; i < 8; i++) { const was = t; t = t + b; if (was.length !== t.length - b.length) return 'changed' } return t }\n"
+        "function self(a, b) { let t = a; for (let i = 0; i < 8; i++) { const was = t; t = t + id(b); if (was.length !== t.length - b.length) return 'changed' } return t }\n"
+        "function grow(b, n) { let t = 'p'.repeat(n); for (let i = 0; i < 40; i++) { const m = t.length; t = t + id(b); if (t.length !== m + b.length) return 'cut' } return t }\n"
+        "function grown(v, n, b) {\n"
+        "  if (typeof v !== 'string' || v.length < n || (v.length - n) % b.length) return false\n"
+        "  for (let i = 0; i < v.length; i++) if (v.charCodeAt(i) !== (i < n ? 112 : b.charCodeAt((i - n) % b.length))) return false\n"
+        "  return true\n"
+        "}\n"
+        "var seen = {}\n"
+        "function rec(k, args, old, len) { seen[k] = { args, old, len } }\n"
+        "function aAddl(t, a, b) { rec('addl', arguments, t, a.length + b.length); t = a + b; return t }\n"
+        "function aAddkl(t, a) { rec('addkl', arguments, t, a.length + 1); t = a + '\\u4e2d'; return t }\n"
+        "function aKadd(t, b) { rec('kadd', arguments, t, b.length + 1); t = '\\u4e2d' + b; return t }\n"
+        "function aGrow(t, b) { rec('grow', arguments, [t.length, b], -2); for (let i = 0; i < 40; i++) t = t + id(b); return t }\n"
+        "function check() {\n"
+        "  for (const k in seen) {\n"
+        "    const s = seen[k], v = s.args[0]\n"
+        "    if (s.len === -2 ? !grown(v, s.old[0], s.old[1])\n"
+        "        : !(v === s.old || (typeof v === 'string' && v.length === s.len))) return 'lost ' + k + ' ' + typeof v\n"
+        "  }\n"
+        "  return 'kept'\n"
+        "}\n"
         "var parts = ['ab', '\\u4e2d\\u6587', 'x'.repeat(70), 'y'.repeat(600), '\\u00e9'.repeat(600)]\n"
         "function run() {\n"
         "  const out = []\n"
@@ -2359,26 +2404,47 @@ static void test_string_add_oom(void)
         "    for (const b of parts) out.push(sum(add(a, b)), sum(addl(a, b)), sum(self(a, b)))\n"
         "    out.push(sum(addk(a)), sum(addkl(a)), sum(kadd(a)), sum(kaddl(a)))\n"
         "  }\n"
-        "  let h = 0\n"
-        "  for (const s of out) h = (h * 7 + s.length + s.charCodeAt(s.length - 1)) | 0\n"
-        "  return out.length + ' ' + h\n"
+        "  return hash(out)\n"
         "}\n"
-        /* once before the sweep, so that its register code is made */
-        "run()\n";
-    static const char *want[] = { NULL, NULL };
-    VM v = vm_new();
-    JSValue r;
+        "var l8 = 'y'.repeat(600), l16 = '\\u00e9'.repeat(600), m8 = 'x'.repeat(500)\n"
+        "function runArgs() {\n"
+        "  const was = check(), out = []\n"
+        "  for (const [a, b] of [[l8, 'ab'], [l16, 'cd'], [l8, '\\u00e9'], [l16, m8]])\n"
+        "    out.push(aAddl('old', a, b), aAddkl('old', a), aKadd('old', b === 'ab' ? m8 : b))\n"
+        "  return was + ' ' + hash(out.map(sum))\n"
+        "}\n"
+        "function runGrow() {\n"
+        "  const was = check(), b = 'q'.repeat(50), c = '\\u4e2d'.repeat(20)\n"
+        "  const g = grow(b, 600), h = grow(c, 600), a = aGrow('p'.repeat(600), b)\n"
+        "  return was + ' ' + (grown(g, 600, b) && grown(h, 600, c) && grown(a, 600, b) ? 'whole' : 'cut')\n"
+        "}\n"
+        /* once before the sweeps, so that their register code is made */
+        "run(); runArgs(); runGrow()\n";
+    static const struct { const char *what, *src, *answer; } runs[] = {
+        { "string add", "run()", NULL },
+        { "string add into an argument", "runArgs()", NULL },
+        { "string add grown in place", "runGrow()", "kept whole" },
+    };
+    size_t i;
 
-    /* the answer, from a run with all the memory it needs */
-    CHECK(eval_ok(v.ctx, setup), "string add: the setup failed");
-    r = JS_Eval(v.ctx, "run()", 5, "add.js", JS_EVAL_TYPE_GLOBAL);
-    want[0] = value_text(v.ctx, r);
-    JS_FreeValue(v.ctx, r);
-    vm_free(&v);
-    CHECK(want[0] != NULL, "string add: no answer");
-    if (want[0])
-        sweep("string add", "add.js", setup, "run()", want, 32768);
-    free((char *)want[0]);
+    for (i = 0; i < countof(runs); i++) {
+        const char *want[] = { NULL, NULL };
+        VM v = vm_new();
+        JSValue r;
+
+        /* the answer, from a run with all the memory it needs */
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup failed", runs[i].what);
+        r = JS_Eval(v.ctx, runs[i].src, strlen(runs[i].src), "add.js", JS_EVAL_TYPE_GLOBAL);
+        want[0] = value_text(v.ctx, r);
+        JS_FreeValue(v.ctx, r);
+        vm_free(&v);
+        CHECK(want[0] != NULL, "%s: no answer", runs[i].what);
+        CHECK(!runs[i].answer || (want[0] && strcmp(want[0], runs[i].answer) == 0),
+              "%s: the answer is %s, not %s", runs[i].what, want[0] ? want[0] : "(none)", runs[i].answer);
+        if (want[0])
+            sweep(runs[i].what, "add.js", setup, runs[i].src, want, 32768);
+        free((char *)want[0]);
+    }
 }
 
 /* An array that is appended to takes its first room in one allocation (push,
