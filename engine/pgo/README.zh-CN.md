@@ -8,21 +8,36 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `train.sh` | 训练画像。按生成器编译引擎的方式构建带计数器的引擎，渲染页面，写出 `profile.txt` |
+| `train.sh` | 训练画像。按生成器编译引擎的方式构建带计数器的引擎，渲染页面，跑 `loops.js` 并检查它，写出 `profile.txt` |
 | `profile.txt` | 画像，用 `llvm-profdata` 的文本格式。amd64 和 arm64 共用一份：函数的哈希只取决于 C 代码。同样的训练跑两次，文件里有几个计数不同，所以文件入库，`make gen` 从不训练 |
 | `pages/` | 训练渲染的页面（见下） |
+| `loops.js` | 第二份输入：一些普通循环，跑页面从不走的路径（见下） |
+| `cover.awk` | `train.sh` 对 `loops.js` 做的检查（见下） |
 
 ## 重新训练
 
 在装有 LLVM 22.1.8 的 Linux 或 macOS 上（`scripts/llvm-bin.sh` 会找到它，也可以用 `LLVM_BIN` 指定它的 bin 目录）：
 
 ```sh
-engine/pgo/train.sh   # 约 30 秒
+engine/pgo/train.sh   # 约一分钟
 make gen && make gen ARCH=arm64
 git add engine/pgo/profile.txt internal/cengine
 ```
 
 找不到 LLVM 22.1.8 时 `train.sh` 会停下。它在 `.build/pgo-train` 里工作（`TRAIN_OUT` 可改）。它不需要仓库之外的任何东西。画像和生成的文件放进同一个提交，`make check-gen` 要求如此。什么时候该重新训练，见 [docs/releasing.zh-CN.md](../../docs/releasing.zh-CN.md#性能画像)。
+
+## 循环
+
+页面让引擎的许多路径计数为 0：typed array、DataView、非 Latin-1 文本上的正则、BigInt、`Date.parse`、运算符的慢路径等等。LLVM 把计数为 0 的路径当成从不执行，把溢出放进去，把它的基本块挪开，真走这些路径的脚本就要付出代价。`loops.js` 把每类这样的路径各跑几千次。它和页面原样合并，两份输入都不放大：它的计数约占画像的 3%，足以把这些路径抬到 0 以上，又远不足以改变页面走的路径。它的收益和代价见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#第二份输入普通循环)。
+
+这些循环是专为训练写的。`compare/testdata` 的微基准用来衡量画像对没训练过的路径有什么影响，所以它们一个也不能进 `loops.js`，哪怕一部分也不行。
+
+`train.sh` 会检查这些循环（`cover.awk`），检查不过就停下：
+
+- 它跑 64 个微基准（N=100，只为检查：它们的计数从不进画像），取页面留在冷区、而微基准至少跑 100 次的路径。它打印 `loops.js` 跑到了其中多少条，`engine/pgo/loops.js: runs 1553 of the 1601 paths ... (97.0%, at least 95%)`，低于 95%（`COVER_FLOOR`）就停。
+- `loops.js` 的每一部分对应一个函数，列在 `train.sh` 的 `need` 里。循环不再跑到其中某个函数，或者这个函数不存在了，训练就停。
+
+C 改了以后检查可能不过。这时为它点名的路径写一段循环或改一段循环，再训练。只有在提交里写明理由，才能降低下限。
 
 ## 页面
 
