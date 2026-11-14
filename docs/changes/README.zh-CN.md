@@ -284,6 +284,7 @@ read_when:
 | `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
 | `Object.isFrozen` 和 `Object.isSealed` 按规范先问对象能不能扩展，proxy 的 `isExtensible` trap 抛错时不再让键的列表一直占着内存 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展) |
 | 给模块命名空间定义属性时先读它的绑定，绑定还没初始化时抛出 `ReferenceError` | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#给模块命名空间定义属性时先读它的绑定) |
+| 普通对象或数组的 `Object.isFrozen`、`Object.isSealed`、`Object.freeze` 和 `Object.seal` 走一遍它的 shape，不列键的列表，也不逐个查找 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape) |
 
 ## 内存
 

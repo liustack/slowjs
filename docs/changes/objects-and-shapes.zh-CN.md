@@ -398,3 +398,15 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 模块命名空间的 `[[DefineOwnProperty]]` 先取这个属性，也就是读它的绑定，绑定还没初始化时读取会抛 `ReferenceError`（模块导入自己，在自己的 `let`、`const`、`class` 执行之前查看自己的命名空间）。引擎没有读：对这样的命名空间 `Object.seal` 直接返回它，对某个绑定 `Reflect.defineProperty` 返回 true 或 false，`Object.defineProperty` 抛 `TypeError`。现在 `JS_DefineProperty` 遇到模块命名空间里还没初始化的绑定时抛 `ReferenceError`，和 Node 一样。`Object.isSealed`、`Object.isFrozen` 和 `Object.freeze` 原来就抛这个错。
 
 测试：`engine/test/compare/integrity_levels_module.mjs`（输出和 Node 24 一样）在绑定初始化之前和之后，查看自己命名空间的完整性级别，封住、冻结它，并定义它的绑定。
+
+## Object.isFrozen、Object.isSealed、Object.freeze 和 Object.seal 走一遍 shape
+
+版本：Unreleased。
+
+对不能扩展的对象，`Object.isFrozen` 和 `Object.isSealed` 先把它的键列进一个新数组，再逐个查找取描述符。`Object.freeze` 和 `Object.seal` 列出键后逐个重新定义，每个键都要查找一次、检查一次标志。Redux Toolkit 用的 immer 会冻结它交出去的状态，遍历时对每个对象先问 `isFrozen` 再冻结，一遍又一遍：用 Redux Toolkit 管状态的页面每次渲染调用约 156,000 次 `isFrozen`、2,900 次 `freeze`，多数是 9 个键的已冻结对象。现在对普通对象和数组，这四个调用直接走一遍对象的 shape，标志就存在 shape 的属性里：判断时每个属性的标志读一次（`js_shape_test_integrity`），冻结或封住时先读一遍看有没有要改的，再像 `JS_DefineProperty` 改标志之前那样让对象拥有自己的 shape（`js_shape_prepare_update`），第二遍清掉标志（`js_shape_set_integrity`）。已经冻结的对象保留原来的 shape。
+
+为什么安全：对这样的对象，列出键、逐个读取或定义都不运行代码，步骤的先后看不出来，走一遍得到的和通用路径一样。下面这些走通用路径：数组以外的特殊对象（Proxy、类型化数组、`String` 对象、arguments、模块命名空间），以及有属性是绑定（全局对象）或第一次读取时才创建的对象，这种属性由通用路径在读取时创建。数组的元素可以配置，所以有元素的数组既不是 sealed 也不是 frozen，冻结或封住时先把元素变成属性，和通用路径第一次定义时一样。私有名字和删掉的属性不是键，保持原样，访问器属性只去掉 configurable。每走 65,536 个属性检查一次中断标志，超时能停下来。复制共用的 shape 或复制元素时内存不够，调用失败，对象已经不能扩展，标志都没变，和通用路径在第一次定义时失败一样。
+
+收益：tifa 的 `test/apps/libs` 里的 state 页（immer 和 Redux Toolkit）每次渲染，在原生 C 树上少 42.8% 的指令，在生成的引擎上少 43.4%，重新训练 profile 后少 43.8%。这组的其余 11 页和 tifa 的页面变化都不到 0.1%（[performance.md](../performance.zh-CN.md#从-shape-读出完整性级别)）。state 页回收前少占 4% 的内存，回收后一样。每一页的 HTML 都一样。
+
+测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样，见[上文](#objectisfrozen-和-objectissealed-先问对象能不能扩展)）覆盖走两条路径的各种对象。`engine/test/unit.c` 的 `test_integrity_polls` 判断和冻结有 200,000 个属性的对象和数组，数中断标志的读取次数，并让每个调用分别在第一次、中间一次和最后一次读取时停下。`engine/test/unit-oom.c` 的 `test_integrity_oom` 在每次分配都内存不够的情况下，冻结和封住共用 shape 与独有 shape 的对象、数组和有 40 个键的对象。`engine/test/regvm/js/q7-integrity.js` 在 corpus 和抛错注入测试里，循环跑两条路径，也跑另一个 realm 的对象和冻结全局对象。

@@ -48381,6 +48381,137 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* Object.isSealed, Object.isFrozen, Object.seal and Object.freeze of an
+   object whose own properties are all in its shape answer or change them in
+   a pass over the shape, without listing the keys and looking each one up:
+   an ordinary object, or an array (the elements of a fast array are made
+   properties of the shape first, as the generic path does). On such an
+   object listing the keys and reading or defining each runs no code, so the
+   order of the steps cannot be seen and one pass gives what the generic
+   path gives. A property that is a binding (JS_PROP_VARREF, the global
+   object) or made when first read (JS_PROP_AUTOINIT) leaves the object to the
+   generic path, as is every other object. Private names are not keys. A
+   pass reads the interrupt flag every JS_SHAPE_PASS_STEP properties. */
+#define JS_SHAPE_PASS_STEP 65536
+
+/* what js_shape_test_integrity and js_shape_set_integrity return for an
+   object they leave to the generic path */
+#define JS_SHAPE_PASS_GENERIC 2
+
+/* whether the generic path lists the key of prs: not a deleted property or
+   a private name */
+static BOOL js_shape_prop_is_key(JSContext *ctx, const JSShapeProperty *prs)
+{
+    return prs->atom != JS_ATOM_NULL &&
+        JS_AtomGetKind(ctx, prs->atom) != JS_ATOM_KIND_PRIVATE;
+}
+
+/* the object of js_shape_test_integrity and js_shape_set_integrity: one
+   whose own properties are all in its shape, once the elements of a fast
+   array are */
+static BOOL js_shape_pass_object(JSObject *p)
+{
+    return !p->is_exotic || p->class_id == JS_CLASS_ARRAY;
+}
+
+/* TestIntegrityLevel of p, which is not extensible: TRUE when no key is
+   configurable and, if is_frozen, no data property is writable (as the
+   generic path, it reads JS_PROP_WRITABLE, which an accessor never has).
+   Return JS_SHAPE_PASS_GENERIC for an object it does not answer for, and -1
+   when the interrupt flag stops it. */
+static int js_shape_test_integrity(JSContext *ctx, JSObject *p, BOOL is_frozen)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i, end, n, bad, res;
+
+    if (!js_shape_pass_object(p))
+        return JS_SHAPE_PASS_GENERIC;
+    /* the elements of a fast array are configurable */
+    if (p->fast_array && p->u.array.count != 0)
+        return FALSE;
+    sh = p->shape;
+    n = sh->prop_count;
+    /* JS_PROP_VARREF is a bit of JS_PROP_AUTOINIT too */
+    bad = JS_PROP_CONFIGURABLE | JS_PROP_VARREF |
+        (is_frozen ? JS_PROP_WRITABLE : 0);
+    res = TRUE;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if (likely(!(prs->flags & bad)))
+                continue;
+            /* even when an earlier property says no: the generic path may
+               throw at a binding that comes earlier in the order of the keys */
+            if ((prs->flags & JS_PROP_TMASK) >= JS_PROP_VARREF)
+                return JS_SHAPE_PASS_GENERIC;
+            if (js_shape_prop_is_key(ctx, prs))
+                res = FALSE;
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    return res;
+}
+
+/* SetIntegrityLevel of p once it is not extensible: every key not
+   configurable and, if freeze, every data property not writable. Return
+   TRUE when done, JS_SHAPE_PASS_GENERIC for an object it does not do, and
+   -1 with an exception (out of memory, or the interrupt flag). The shape
+   is made one that only p holds before a flag changes, as JS_DefineProperty
+   does (js_shape_prepare_update), and is left as it is when no flag
+   changes. */
+static int js_shape_set_integrity(JSContext *ctx, JSObject *p, BOOL freeze)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i, end, n, clear, t;
+    BOOL change;
+
+    if (!js_shape_pass_object(p))
+        return JS_SHAPE_PASS_GENERIC;
+    clear = JS_PROP_CONFIGURABLE | (freeze ? JS_PROP_WRITABLE : 0);
+    sh = p->shape;
+    n = sh->prop_count;
+    change = FALSE;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if ((prs->flags & JS_PROP_TMASK) >= JS_PROP_VARREF)
+                return JS_SHAPE_PASS_GENERIC;
+            if ((prs->flags & clear) && js_shape_prop_is_key(ctx, prs))
+                change = TRUE;
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    /* the first define of an element does this in the generic path, and
+       makes the shape one that only p holds */
+    if (p->fast_array && p->u.array.count != 0) {
+        if (convert_fast_array_to_array(ctx, p))
+            return -1;
+        change = TRUE;
+    }
+    if (!change)
+        return TRUE;
+    if (js_shape_prepare_update(ctx, p, NULL))
+        return -1;
+    sh = p->shape;
+    n = sh->prop_count;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if (!(prs->flags & clear) || !js_shape_prop_is_key(ctx, prs))
+                continue;
+            t = prs->flags & JS_PROP_TMASK;
+            prs->flags &= ~(t == JS_PROP_GETSET ? JS_PROP_CONFIGURABLE : clear);
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    return TRUE;
+}
+
 static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv, int freeze_flag)
 {
@@ -48401,6 +48532,11 @@ static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
     }
 
     p = JS_VALUE_GET_OBJ(obj);
+    res = js_shape_set_integrity(ctx, p, freeze_flag);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res != JS_SHAPE_PASS_GENERIC)
+        return JS_DupValue(ctx, obj);
     flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
     if (JS_GetOwnPropertyNamesInternal(ctx, &props, &len, p, flags))
         return JS_EXCEPTION;
@@ -48454,6 +48590,11 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
         return JS_FALSE;
 
     p = JS_VALUE_GET_OBJ(obj);
+    res = js_shape_test_integrity(ctx, p, is_frozen);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res != JS_SHAPE_PASS_GENERIC)
+        return JS_NewBool(ctx, res);
     flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
     if (JS_GetOwnPropertyNamesInternal(ctx, &props, &len, p, flags))
         return JS_EXCEPTION;

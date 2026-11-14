@@ -284,6 +284,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
 | `Object.isFrozen` and `Object.isSealed` ask first whether the object is extensible, as the specification says, and no longer leave the list of keys in use when the `isExtensible` trap of a proxy throws | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-and-objectissealed-ask-first-whether-the-object-is-extensible) |
 | Defining a property of a module namespace reads its binding first and throws a `ReferenceError` while the binding is not initialized | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#defining-a-property-of-a-module-namespace-reads-its-binding-first) |
+| `Object.isFrozen`, `Object.isSealed`, `Object.freeze` and `Object.seal` of an ordinary object or an array go over its shape once, with no list of keys and no lookup of each | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape) |
 
 ## Memory
 

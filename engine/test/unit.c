@@ -4471,6 +4471,107 @@ static void test_integrity_levels(void)
     host_free_runtime(rt);
 }
 
+/* Object.isFrozen, Object.isSealed, Object.freeze and Object.seal of an
+   ordinary object or an array go over its shape in steps of 65,536
+   properties, with a reading of the interrupt flag between two steps
+   (js_shape_test_integrity and js_shape_set_integrity), called from C so that
+   the readings counted are those of the call. An object of 200,000
+   properties takes 4 steps: at least 3 readings for a test, 6 for a
+   freeze or seal, which goes over the shape twice. A flag set at the first
+   reading, the one in the middle and the last stops the call: it fails with
+   "interrupted", uncatchable, and the same call then gives what it gives
+   with no stop. An array of 200,000 elements is frozen after its elements
+   are made properties: one pass over them, at least 3 readings. */
+static JSValue integrity_call(JSContext *ctx, const char *fn, const char *obj)
+{
+    JSValue g = JS_GetGlobalObject(ctx), o = JS_GetPropertyStr(ctx, g, "Object");
+    JSValue f = JS_GetPropertyStr(ctx, o, fn), a = JS_GetPropertyStr(ctx, g, obj), r;
+
+    r = JS_Call(ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&a);
+    JS_FreeValue(ctx, a);
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, o);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+static void test_integrity_polls(void)
+{
+    static const char setup[] =
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "function make(n) { var o = {}; for (var i = 0; i < n; i++) o['p' + i] = i; return o }\n"
+        "var F = Object.freeze(make(200000)), P = Object.preventExtensions(make(200000)), O, A\n"
+        "0";
+    static const struct {
+        const char *prep, *fn, *obj, *want, *after, *after_want;
+        long reads;
+    } cases[] = {
+        { "0", "isFrozen", "F", "true", "lv(F)", "011", 3 },
+        { "0", "isSealed", "F", "true", "lv(F)", "011", 3 },
+        { "0", "isFrozen", "P", "false", "lv(P)", "000", 3 },
+        { "O = make(200000); 0", "freeze", "O", "[object Object]", "lv(O)", "011", 6 },
+        { "O = make(200000); 0", "seal", "O", "[object Object]", "lv(O)", "010", 6 },
+        { "A = Array.from({ length: 200000 }, (u, i) => i); 0", "freeze", "A", "", "lv(A) + A[5]", "0115", 3 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue r, e;
+    size_t i, j;
+
+    CHECK(eval(ctx, setup), "the setup threw");
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long before, reads, at[3];
+        const char *s;
+
+        CHECK(eval(ctx, cases[i].prep), "%s: the setup threw", cases[i].prep);
+        before = host_poll_reads;
+        r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+        reads = host_poll_reads - before;
+        s = JS_ToCString(ctx, r);
+        CHECK(s && !strncmp(s, cases[i].want, strlen(cases[i].want)), "%s of %s gives %s, want %s", cases[i].fn,
+              cases[i].obj, s ? s : "an exception", cases[i].want);
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, r);
+        CHECK(eval_is(ctx, cases[i].after, cases[i].after_want), "%s of %s: the object after", cases[i].fn, cases[i].obj);
+        CHECK(reads >= cases[i].reads, "%s of %s: %ld readings of the flag, want at least %ld", cases[i].fn,
+              cases[i].obj, reads, cases[i].reads);
+        at[0] = 1;
+        at[1] = reads / 2;
+        at[2] = reads;
+        for (j = 0; j < 3; j++) {
+            const char *m;
+            int stopped;
+
+            CHECK(eval(ctx, cases[i].prep), "%s: the setup threw", cases[i].prep);
+            host_poll_stop_after(at[j]);
+            r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+            host_poll_stop_after(0);
+            *JS_GetInterruptFlag(rt) = 0;
+            stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(stopped && m && strstr(m, "interrupted"), "%s of %s was not stopped at reading %ld of %ld (%s)",
+                  cases[i].fn, cases[i].obj, at[j], reads, m ? m : "no exception");
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (!JS_IsException(r))
+                JS_FreeValue(ctx, r);
+            r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+            s = JS_ToCString(ctx, r);
+            CHECK(s && !strncmp(s, cases[i].want, strlen(cases[i].want)), "%s of %s after a stop at reading %ld gives %s",
+                  cases[i].fn, cases[i].obj, at[j], s ? s : "an exception");
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, r);
+            CHECK(eval_is(ctx, cases[i].after, cases[i].after_want), "%s of %s after a stop at reading %ld: the object", cases[i].fn,
+                      cases[i].obj, at[j]);
+        }
+    }
+    CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The export names of a module are sorted by a compare that reads the
    interrupt flag (exported_names_cmp, with rqsort_stop): two names of a
    million characters that differ in the last one and 3,000 short names in a
@@ -4881,6 +4982,7 @@ int main(void)
     test_string_copy_polls();
     test_module_export_order();
     test_integrity_levels();
+    test_integrity_polls();
     test_heap_move_polls();
     test_error_reads_no_flag();
     test_tag_polls();
