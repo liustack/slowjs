@@ -51,6 +51,75 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 	return utf16String(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8)
 }
 
+// cutMark ends a text cutString cut.
+const cutMark = " [cut]"
+
+// cutString is argString for a text Go keeps only to show, a reason of
+// UnhandledRejections: the UTF-8 of v cut to its first max bytes, or up to
+// three fewer where a character would be cut, with cutMark after it when v
+// is longer. It reads at most max characters of the string, so it takes
+// about as long, and makes Go allocate about as much, for a string of any
+// length: at most max bytes and cutMark, which the conversion writes into a
+// buffer of its size first, so twice that. A value that is not a string in
+// one piece is made one first, as argString does. max is at most
+// stringStep, so the conversion reads no stop: the caller reads it between
+// two texts.
+func (m *VM) cutString(v jsValue, max int) (string, bool) {
+	p, n, wide, ok := stringChars(v)
+	if !ok {
+		flat := m.jsToString(v)
+		if isException(flat) {
+			return "", false
+		}
+		s, ok := m.cutString(flat, max)
+		m.jsFreeValue(flat)
+		return s, ok
+	}
+	if n == 0 {
+		return "", true
+	}
+	k, size := 0, 0
+	var s string
+	if !wide {
+		b := unsafe.Slice((*byte)(addr(p)), n)
+		for ; k < n; k++ {
+			c := 1
+			if b[k] >= 0x80 {
+				c = 2
+			}
+			if size+c > max {
+				break
+			}
+			size += c
+		}
+		s, ok = latin1String(m, b[:k])
+	} else {
+		u := unsafe.Slice((*uint16)(addr(p)), n)
+		for k < n {
+			// A lone surrogate becomes U+FFFD, three bytes.
+			c, w := 3, 1
+			switch x := u[k]; {
+			case x < 0x80:
+				c = 1
+			case x < 0x800:
+				c = 2
+			case x&0xFC00 == 0xD800 && k+1 < n && u[k+1]&0xFC00 == 0xDC00:
+				c, w = 4, 2
+			}
+			if size+c > max {
+				break
+			}
+			size += c
+			k += w
+		}
+		s, ok = utf16String(m, u[:k], false)
+	}
+	if ok && k < n {
+		s += cutMark
+	}
+	return s, ok
+}
+
 // argBlock is argString for a Go function of a door (vmhook.LongWTF8) that
 // uses the string only during the call. A string longer than stringStep is
 // written into a block (hostmem.Take) of its length when that is BlockMin

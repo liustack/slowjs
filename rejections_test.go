@@ -7,9 +7,12 @@ package quickjs // import "github.com/liustack/quickjs"
 
 import (
 	"errors"
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func newRejectionsVM(t *testing.T, max int) *VM {
@@ -174,6 +177,191 @@ func TestRejectionsClose(t *testing.T) {
 	}
 }
 
+// textOK reports whether s, a text of a reason, is at most rejectionText
+// bytes of UTF-8 cut where no character is cut, followed by cutMark when
+// the whole text was longer, and starts as whole would.
+func textOK(s, whole string) bool {
+	body, cut := strings.CutSuffix(s, cutMark)
+	if !cut {
+		return s == whole && len(whole) <= rejectionText
+	}
+	return len(whole) > rejectionText && len(body) <= rejectionText &&
+		len(body) > rejectionText-utf8.UTFMax && strings.HasPrefix(whole, body)
+}
+
+// TestRejectionsText: each text of a reason Go reads, its string, name,
+// message, stack and file name, is cut to its first rejectionText bytes of
+// UTF-8 or a few fewer, where no character is cut, and marked as cut.
+func TestRejectionsText(t *testing.T) {
+	m := newRejectionsVM(t, 8)
+	if _, err := m.Eval(`
+var a = "x".repeat(1 << 20), w = "中".repeat(1 << 20), p = "😀".repeat(1 << 18);
+Promise.reject(a);
+Promise.reject(w);
+Promise.reject(p);
+var e = new Error(w); e.name = p; e.stack = a; e.fileName = w;
+Promise.reject(e);
+Promise.reject({ toString() { return p } });
+Promise.reject("é".repeat(5000) + "short");
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	if err != nil || len(reasons) != 6 {
+		t.Fatalf("%d reasons, %v", len(reasons), err)
+	}
+	a, w, p := strings.Repeat("x", 1<<20), strings.Repeat("中", 1<<20), strings.Repeat("😀", 1<<18)
+	wants := []struct{ raw, name, message, stack, file string }{
+		{a, "", "", "", ""},
+		{w, "", "", "", ""},
+		{p, "", "", "", ""},
+		{p + ": " + w, p, w, a, w},
+		{p, "", "", "", ""},
+		{strings.Repeat("é", 5000) + "short", "", "", "", ""},
+	}
+	for i, e := range reasons {
+		want := wants[i]
+		for _, f := range []struct{ what, got, want string }{
+			{"text", e.Error(), want.raw}, {"Name", e.Name, want.name}, {"Message", e.Message, want.message},
+			{"Stack", e.Stack, want.stack}, {"FileName", e.FileName, want.file},
+		} {
+			if !utf8.ValidString(f.got) || strings.ContainsRune(f.got, utf8.RuneError) || !textOK(f.got, f.want) {
+				t.Errorf("reason %d, %s: %d bytes, want the first %d bytes or a few fewer of %d, marked", i, f.what, len(f.got), rejectionText, len(f.want))
+			}
+		}
+	}
+}
+
+// allocated returns the bytes Go allocated while f ran.
+func allocated(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// TestRejectionsGoMemory: what one read makes Go allocate is bounded by the
+// number of reasons times rejectionRoom, however long the reasons are and
+// however many references they share: MaxTrackedRejections references to
+// one string of 1 MiB, in a VM limited to 64 MiB, read 1 GiB into Go before
+// the texts were cut.
+func TestRejectionsGoMemory(t *testing.T) {
+	m := newRejectionsVM(t, MaxTrackedRejections)
+	m.SetMemoryLimit(64 << 20)
+	if _, err := m.Eval(fmt.Sprintf(`var s = "x".repeat(1 << 20); for (var i = 0; i < %d; i++) Promise.reject(s)`, MaxTrackedRejections), EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	var reasons []*Error
+	var err error
+	n := allocated(func() { reasons, _, err = m.UnhandledRejections() })
+	if err != nil || len(reasons) != MaxTrackedRejections {
+		t.Fatalf("%d reasons, %v", len(reasons), err)
+	}
+	if bound := uint64(MaxTrackedRejections * rejectionRoom); n > bound {
+		t.Fatalf("Go allocated %d bytes, more than %d", n, bound)
+	}
+}
+
+// TestRejectionsRoom: a read takes the room for each reason under the
+// memory limit of the VM before it reads it. When it has none left, it ends
+// with the out of memory error, and the reasons it did not read stay kept
+// for the next read.
+func TestRejectionsRoom(t *testing.T) {
+	m := newRejectionsVM(t, 16)
+	// One string for all, so that taking a reason frees little of the VM.
+	if _, err := m.Eval(`var y = "y".repeat(1 << 16); for (var i = 0; i < 16; i++) Promise.reject(y)`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	m.SetMemoryLimit(m.MemorySize() + uintptr(3*rejectionRoom+rejectionRoom/2))
+	first, _, err := m.UnhandledRejections()
+	var e *Error
+	if !errors.As(err, &e) || !e.OutOfMemory || len(first) == 0 || len(first) >= 16 {
+		t.Fatalf("%d reasons, %v, want some and the out of memory error", len(first), err)
+	}
+	m.SetMemoryLimit(^uintptr(0))
+	rest, _, err := m.UnhandledRejections()
+	if err != nil || len(first)+len(rest) != 16 {
+		t.Fatalf("%d then %d reasons, %v, want 16 in all", len(first), len(rest), err)
+	}
+	for i, e := range append(first, rest...) {
+		if !strings.HasSuffix(e.Error(), cutMark) {
+			t.Errorf("reason %d: not cut", i)
+		}
+	}
+}
+
+// TestRejectionsReadSweep: a read of many reasons, each of which runs
+// javascript for about a millisecond, under eval timeouts from 1 to 32 ms,
+// ends by the timeout plus the grace of a kill with the interrupt or with
+// all of them, never killed. The reasons it did not take stay kept: only
+// the one it was reading when the timeout came is lost.
+func TestRejectionsReadSweep(t *testing.T) {
+	const n = 64
+	for _, d := range []time.Duration{0, time.Millisecond, 2 * time.Millisecond, 4 * time.Millisecond, 8 * time.Millisecond, 16 * time.Millisecond, 32 * time.Millisecond} {
+		m := newRejectionsVM(t, n)
+		if _, err := m.Eval(fmt.Sprintf(`for (let i = 0; i < %d; i++) Promise.reject({
+  get message() { const end = Date.now() + 1; while (Date.now() < end) {} return "m" + i }
+})`, n), EvalGlobal); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.SetEvalTimeout(d); err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		first, _, err := m.UnhandledRejections()
+		took := time.Since(start)
+		if d > 0 && took > d+50*time.Millisecond {
+			t.Errorf("timeout %v: the read took %v", d, took)
+		}
+		var e *Error
+		lost := 0
+		if err != nil {
+			if !errors.As(err, &e) || !e.Interrupted || errors.Is(err, ErrKilled) {
+				t.Fatalf("timeout %v: %v, want the interrupt", d, err)
+			}
+			lost = 1
+		}
+		if err := m.SetEvalTimeout(0); err != nil {
+			t.Fatal(err)
+		}
+		rest, _, err := m.UnhandledRejections()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := len(first) + len(rest); got != n && got != n-lost {
+			t.Errorf("timeout %v: %d then %d reasons, want %d, or %d when one was being read", d, len(first), len(rest), n, n-1)
+		}
+		if got := evalString(t, m, `String(1 + 1)`); got != "2" {
+			t.Errorf("timeout %v: after the read %q", d, got)
+		}
+	}
+}
+
+// TestRejectionsLongReasonsTimeout is the case of the review: 64 references
+// to a string of 4 Mi characters, read under an eval timeout of 1 ms, read
+// 256 MiB into Go before the texts were cut, with no read of the stop. Now
+// a read makes Go allocate at most 64 times rejectionRoom, and ends with
+// all of them or the interrupt.
+func TestRejectionsLongReasonsTimeout(t *testing.T) {
+	m := newRejectionsVM(t, 64)
+	if _, err := m.Eval(`var s = "x".repeat(4 << 20); for (var i = 0; i < 64; i++) Promise.reject(s)`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetEvalTimeout(time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	n := allocated(func() { _, _, err = m.UnhandledRejections() })
+	var e *Error
+	if err != nil && (!errors.As(err, &e) || !e.Interrupted) {
+		t.Fatalf("%v, want none or the interrupt", err)
+	}
+	if bound := uint64(64 * rejectionRoom); n > bound {
+		t.Fatalf("Go allocated %d bytes, more than %d", n, bound)
+	}
+}
+
 // TestRejectionsReadRange: a read takes the rejections kept when it starts,
 // at most max. Those made while it reads, by a getter of a reason, wait
 // for the next read, after their jobs could attach a handler: a getter
@@ -231,5 +419,34 @@ Promise.reject({ get message() {
 	}
 	if reasons, _, err := m.UnhandledRejections(); err != nil || len(reasons) != 0 {
 		t.Fatalf("after the jobs: %d reasons, %v, want none", len(reasons), err)
+	}
+}
+
+// TestRejectionsStopBetween: the stop is read before each reason, also when
+// reading the reasons runs no javascript that would read it: called from a
+// Go function after Interrupt, a read takes none, and all stay kept.
+func TestRejectionsStopBetween(t *testing.T) {
+	m := newRejectionsVM(t, 8)
+	var reasons []*Error
+	var readErr error
+	defineBuiltin(t, m, "readAll", NewBuiltin("readAll", 0, func(a Args) (Value, error) {
+		a.VM().Interrupt()
+		reasons, _, readErr = a.VM().UnhandledRejections()
+		return UndefinedValue, nil
+	}))
+	if _, err := m.Eval(`for (var i = 0; i < 8; i++) Promise.reject("r" + i)`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.Eval(`readAll()`, EvalGlobal)
+	var e *Error
+	if len(reasons) != 0 || !errors.As(readErr, &e) || !e.Interrupted {
+		t.Fatalf("%d reasons, %v, want none and the interrupt", len(reasons), readErr)
+	}
+	if !errors.As(err, &e) || !e.Interrupted {
+		t.Fatalf("the call: %v, want the interrupt", err)
+	}
+	rest, _, err := m.UnhandledRejections()
+	if err != nil || len(rest) != 8 {
+		t.Fatalf("after: %d reasons, %v, want 8", len(rest), err)
 	}
 }

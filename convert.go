@@ -179,9 +179,13 @@ func (m *VM) goString(v jsValue) (string, error) {
 // exception being read is the one to report, and a second one left pending
 // would be found by the next JS_GetException of an unrelated call. ok is
 // false when the conversion threw an uncatchable exception, which stays
-// pending (dropCatchable).
-func (m *VM) errString(v jsValue) (s string, ok bool) {
-	s, ok = m.argString(v, false)
+// pending (dropCatchable). cut above 0 cuts the string as cutString does.
+func (m *VM) errString(v jsValue, cut int) (s string, ok bool) {
+	if cut > 0 {
+		s, ok = m.cutString(v, cut)
+	} else {
+		s, ok = m.argString(v, false)
+	}
 	if !ok {
 		return "", m.dropCatchable()
 	}
