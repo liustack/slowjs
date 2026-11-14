@@ -33,7 +33,7 @@ English · [简体中文](c-engine.zh-CN.md)
 
 | Change | What changes for a program | Checked by |
 | --- | --- | --- |
-| The engine builds with `-ffreestanding -nostdinc` against `engine/libc` | `Math.*` gives the same bits on linux/amd64 as the previous engine did. On darwin/arm64 it can differ in the last digit (see "The small libc") | `check-symbols.sh`, `libc-test.sh`, `math.sh` |
+| The engine builds with `-ffreestanding -nostdinc` against `engine/libc` | `Math.*` gives the same bits on linux/amd64 as the previous engine did, except `Math.acosh` below -1 (see "Math.acosh below -1 is NaN"). On darwin/arm64 it can differ in the last digit (see "The small libc") | `check-symbols.sh`, `libc-test.sh`, `math.sh` |
 | `Date` and the seed of `Math.random` come from `host_now` | the Go host answers with the clock of the VM | the native host, `HOST_CLOCK` |
 | `abort` is a request to the host: `host_call` with `HOST_CALL_ABORT` | the Go host panics and the VM can only be closed. A trap would be a signal and would end the process | `api-test.c` |
 | `Atomics.wait` throws, `Atomics.notify` wakes nobody | `Atomics.wait` throws a `TypeError` as the main thread of a browser does. There are no threads in the engine | test262 with `engine/test/test262.conf` |
@@ -52,6 +52,7 @@ English · [简体中文](c-engine.zh-CN.md)
 
 | Change | What changes for a program | Checked by |
 | --- | --- | --- |
+| `Math.acosh` of a value below -1 is NaN | `Math.acosh(-9115.56)` was -13.31 and `Math.acosh(-8192)` was `-Infinity`: musl's `acosh` did not look at the sign. musl `3e80328d`, taken as a patch of the small libc, see [Math.acosh below -1 is NaN](#mathacosh-below--1-is-nan) | `compare/math_domain.js`, `math.sh` |
 | A template literal converts each substitution to a string at once | `${c} ${c.n++}` and a `Date` that a later substitution changes print what Node prints, and a changed `String.prototype.concat` no longer changes templates. Upstream QuickJS `f8199dc`, see [upstream-commits.md](upstream-commits.md) | `compare/template_literal.js` |
 | A negative BigInt and a negative float compare right | `-0.5 < -1n` was true. Upstream QuickJS and the previous engine have the same bug | `compare/number_compare.js` |
 | `\p{Script=...}` that runs out of memory while it compiles ends the call with the out of memory error | the process crashed. Upstream QuickJS `817509a` | `unit-oom` (`test_regexp_script_oom`) |
@@ -78,7 +79,7 @@ What a program sees against the previous engine, besides the rows above:
 
 The whole engine is built with `-ffp-contract=off` too, and the generator refuses an `llvm.fmuladd` or `llvm.fma` and any fast-math flag (`reassoc`, `nnan`, `ninf`, `nsz`, `arcp`, `contract`, `afn`, or the `unsafe-fp-math` attributes) in the IR, and on arm64 a fused instruction (`fmadd`, `fmsub`, `fnmadd`, `fnmsub`, `fmla`, `fmls`) in llc's text. What is tested, and what is not:
 
-- linux/amd64: `engine/test/math.sh` checks, bit for bit, 100000 inputs for each of 33 functions of libc and for 33 `Math` operations as JavaScript sees them, against hashes kept in `engine/test/math`. They were first recorded from the previous engine, and the C engine gave the same bits on every result. The JavaScript check writes a NaN as the one NaN of JavaScript, so it does not check the sign and payload of a NaN. The libc check does, so it runs on x86-64 only.
+- linux/amd64: `engine/test/math.sh` checks, bit for bit, 100000 inputs for each of 33 functions of libc and for 33 `Math` operations as JavaScript sees them, against hashes kept in `engine/test/math`. They were first recorded from the previous engine, and the C engine gave the same bits on every result, until the fix of `acosh` below changed the results of `acosh` for negative inputs. The JavaScript check writes a NaN as the one NaN of JavaScript, so it does not check the sign and payload of a NaN. The libc check does, so it runs on x86-64 only.
 - macOS arm64: `math.sh` checks the JavaScript hashes there. The libc results are the same except for the sign of a NaN, which the processor chooses (positive on arm64, negative on amd64), so that part is not checked on arm64.
 - The engine runs on amd64 and arm64 only, so the same last digit on both is shown.
 
@@ -88,6 +89,18 @@ The whole engine is built with `-ffp-contract=off` too, and the generator refuse
 A format is checked before it can reach that `abort`. The engine files are built with `-Werror=format` and `-Werror=format-nonliteral` (`engine/test/flags.sh`), so a format agrees with its arguments, and is either a string constant or the format of a function that has the `printf` attribute and passes it on (`JS_ThrowError2`, `JS_ThrowError` and `js_parse_error_v` have it, with the `va_list` form `format(printf, 3, 0)`). The two helpers behind `JS_ThrowTypeErrorAtom` and `JS_ThrowSyntaxErrorAtom` pass their format with the name of an atom in place of their arguments, which clang cannot follow, and a pragma turns the check off for just those two.
 
 `check-symbols.sh` proves the symbol level only. The engine files, with the libc, leave undefined nothing but the callbacks of `engine/host.h` and `host_memory_grow` of `engine/heap.h`. The allocator ([allocator.md](../allocator.md)) is among the engine files, and the engine calls no malloc: `dbuf` and `CharRange` have no default allocator, and `stdlib.h` of the libc declares none. It does not prove that the machine code uses no thread local storage, no system call instruction and no fixed address. Those checks come with the generator, not before.
+
+### Math.acosh below -1 is NaN
+
+Release: Unreleased.
+
+`Math.acosh(x)` is NaN for every `x` below 1, as the specification says and Node and the browsers give. Before, the musl `acosh` of the small libc read only the exponent of `x` and not its sign, so a negative `x` took the formula of the positive number of the same size. From -1 to about -8192 that formula still gave NaN, but for many `x` from there down to -2^26 it gave a number: `Math.acosh(-8192)` was `-Infinity`, `Math.acosh(-9115.56)` was -13.31 and `Math.acosh(-67108863)` was 0.69. The previous engine gave the same numbers (the hashes of `engine/test/math`, recorded from it, held them).
+
+The fix is musl's own, commit `3e80328d` of 2026-08-03 ("math: fix acosh for x<0"), which is newer than the musl commit the libc is pinned to. It is kept as `engine/libc/patches/acosh.c.patch`, so that `engine/libc/vendor.sh` applies it and `MUSL.sha256` records it (see the [README](../../engine/libc/README.md#musl)), and it goes when the pinned commit moves past it. The shift that takes the exponent keeps the sign bit now, so a negative `x` falls past both formulas to a new test of that bit and returns NaN. A positive `x` below 2^26 runs the same instructions as before, and one at or above 2^26 runs one more test.
+
+Why it is safe: the patch is the change musl made, applied to the same file (`vendor.sh --verify MUSL_DIR` replays it on the musl checkout and gets the file here, which is the file of musl at that commit). Only negative inputs take another path. Of the hashes of `engine/test/math`, only the results of `acosh` changed, in the JavaScript file and in the libc file, and the inputs and every other function are the same.
+
+Tests: `engine/test/compare/math_domain.js` prints the kind of each result (NaN, an infinity, a signed zero, or the sign of a finite number) of `acosh`, `asinh`, `atanh`, `log`, `log1p`, `log2`, `log10`, `sqrt` and `pow` with negative bases on inputs at the edges of their domains, and of `acosh` on 321 values from -1 to -2^40. Its file is what Node 24 prints. Before the fix 79 of those 321 values were not NaN. `engine/test/math.sh` checks the bits.
 
 ## Time, abort and the host
 
