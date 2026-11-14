@@ -52,4 +52,4 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 
 ## 不写 Go
 
-- **`slowjs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，有 `print`、`console.log`，以及一定生效的超时和内存上限，给不写 Go 也想试用引擎或给它跑基准的人用。每个 GitHub release 里都有为五个目标预编译好的它。[详情](command.zh-CN.md)
+- **`slowjs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，虚拟机按 tifa 的方式配置（Intl、Temporal、URL），有 `print`、`console.log`，以及一定生效的超时和内存上限：不写 Go 就能用一个脚本复现问题或跑脚本。每个 GitHub release 里都有为五个目标预编译好的它。[详情](command.zh-CN.md)

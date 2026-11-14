@@ -52,4 +52,4 @@ Each of these defines a function on the global object, written in C inside the e
 
 ## Without Go
 
-- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, with `print`, `console.log` and a timeout and memory limit that hold, for people who try or benchmark the engine without writing Go. Each GitHub release has it prebuilt for the five targets. [More](command.md)
+- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold: to show a problem with a script, or to run one, without writing Go. Each GitHub release has it prebuilt for the five targets. [More](command.md)

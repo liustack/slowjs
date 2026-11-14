@@ -314,7 +314,7 @@ read_when:
 
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
-| `slowjs`，一个运行 JavaScript 文件的命令，有 `print`、`console.log` 以及一定生效的超时和内存上限，每个标签的 GitHub release 里都有为五个目标预编译好的它 | v0.31.0 | [command.md](../command.zh-CN.md) |
+| `slowjs`，一个运行 JavaScript 文件的命令，虚拟机按 tifa 的方式配置，有 `print`、`console.log` 以及一定生效的超时和内存上限，每个标签的 GitHub release 里都有为五个目标预编译好的它 | v0.31.0 | [command.md](../command.zh-CN.md) |
 
 ## 新增一项改动
 

@@ -314,7 +314,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 | Change | Release | Doc |
 | --- | --- | --- |
-| `slowjs`, a command that runs a JavaScript file with `print`, `console.log` and a timeout and memory limit that hold, prebuilt for the five targets in the GitHub release of each tag | v0.31.0 | [command.md](../command.md) |
+| `slowjs`, a command that runs a JavaScript file in a VM set up as tifa sets it up, with `print`, `console.log` and a timeout and memory limit that hold, prebuilt for the five targets in the GitHub release of each tag | v0.31.0 | [command.md](../command.md) |
 
 ## Adding a change
 
