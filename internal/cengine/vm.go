@@ -77,7 +77,7 @@ const (
 // after their last object is gone, as a VM of package quickjs does
 // (quickjs.DefaultShapeCache): an object that gets the same keys in the same
 // order as one before it finds its shapes kept.
-const DefaultShapeCache = 4096
+const DefaultShapeCache = 2048
 
 // VM is one runtime of the engine with one context.
 type VM struct {

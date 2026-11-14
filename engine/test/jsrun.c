@@ -71,7 +71,7 @@
 #include "host.h"
 
 /* DefaultShapeCache of the Go API */
-#define SHAPE_CACHE 4096
+#define SHAPE_CACHE 2048
 
 /* What both runners call with the completion value. */
 static const char format_src_raw[] =

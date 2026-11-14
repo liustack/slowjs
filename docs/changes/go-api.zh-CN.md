@@ -89,7 +89,7 @@ read_when:
 
 发布版本：v0.26.16。
 
-`DefaultShapeCache`（4096，v0.30.7 及以前是 2048）是新 VM 在对象消失后继续保留的 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 数量，`VM.SetShapeCache(n)` 为单个 VM 修改它，0 表示关闭。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[保留的 shape](objects-and-shapes.zh-CN.md#保留-shape)。
+`DefaultShapeCache`（2048）是新 VM 在对象消失后继续保留的 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 数量，`VM.SetShapeCache(n)` 为单个 VM 修改它，0 表示关闭。一个在接近内存上限时运行的 VM，开着缓存可能会内存不足，而不开就不会：给这样的 VM 一个更小的缓存，或者不给。它的收益和代价见[保留的 shape](objects-and-shapes.zh-CN.md#保留-shape)。
 
 ## SetRegExpCache 和 DefaultRegExpCache
 

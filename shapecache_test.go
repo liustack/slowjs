@@ -38,9 +38,6 @@ func TestShapeCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A ring of 4096 holds the shapes of a round and part of the round
-	// before, and where their blocks land alternates from one round to the
-	// next: the size settles to the larger of rounds 4 and 5.
 	var settled int64
 	for n := range 12 {
 		if _, err := m.Call("unique", n); err != nil {
@@ -49,10 +46,10 @@ func TestShapeCache(t *testing.T) {
 
 		used := int64(vmMemory(m).Fmalloc_size)
 		switch {
-		case n == 4 || n == 5:
-			settled = max(settled, used)
-		case n > 5 && used > settled:
-			t.Fatalf("round %d: %d bytes after GC, %d after rounds 4 and 5", n, used, settled)
+		case n == 4:
+			settled = used
+		case n > 4 && used > settled:
+			t.Fatalf("round %d: %d bytes after GC, %d after round 4", n, used, settled)
 		}
 	}
 
@@ -71,38 +68,6 @@ func TestShapeCache(t *testing.T) {
 	}
 	if _, err := m.Call("unique", 99); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// appShapes is more than the shapes a VM of tifa's apps keeps when it
-// renders all their pages in turn: 3,720 for the example shop (20 pages) and
-// 3,784 for the MUI app (3 pages), counted on the native C tree. A ring
-// smaller than that throws out on each round shapes the next round makes
-// again (see docs/changes/objects-and-shapes.md).
-const appShapes = 3800
-
-// A new VM keeps appShapes shapes: each object below dies with a shape no
-// other object has, and every one of them is still kept after a GC.
-func TestShapeCacheHoldsAnApp(t *testing.T) {
-	run := func(cache bool) int64 {
-		m, err := NewVM()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer m.Close()
-		if !cache {
-			if err := m.SetShapeCache(0); err != nil {
-				t.Fatal(err)
-			}
-		}
-		src := fmt.Sprintf(`for (let i = 0; i < %d; i++) { const o = {id: i}; o["k" + i] = i }`, appShapes)
-		if _, err := m.Eval(src, EvalGlobal); err != nil {
-			t.Fatal(err)
-		}
-		return vmMemory(m).Fshape_count
-	}
-	if kept := run(true) - run(false); kept < appShapes {
-		t.Errorf("a new VM keeps %d shapes, want %d", kept, appShapes)
 	}
 }
 

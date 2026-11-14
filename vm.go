@@ -117,7 +117,7 @@ func NewVM() (*VM, error) {
 
 // DefaultShapeCache is the number of shapes a new VM keeps (see
 // [VM.SetShapeCache]).
-const DefaultShapeCache = 4096
+const DefaultShapeCache = 2048
 
 // SetShapeCache sets how many shapes of plain objects m keeps after their
 // last object is gone, 0 for none. The shape of an object is its keys in
@@ -131,8 +131,8 @@ const DefaultShapeCache = 4096
 // Kept shapes take memory that counts against the limit of SetMemoryLimit,
 // and each holds the atoms of its keys. A kept shape of a few keys takes
 // about 100 bytes. A shape of 32 keys of about ten characters, that no
-// other object has, takes about 3 KiB with its atoms, so 4096 of them take
-// about 12 MiB, and the table of atoms m grew for them keeps its size after
+// other object has, takes about 3 KiB with its atoms, so 2048 of them take
+// about 6 MiB, and the table of atoms m grew for them keeps its size after
 // they are let go. So a script
 // that runs close to its memory limit can run out of memory with the cache
 // on where it would not without it: give such a VM a smaller cache, or 0.

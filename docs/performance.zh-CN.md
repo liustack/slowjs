@@ -76,7 +76,6 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 要在发布前测量 liustack/quickjs 的某个分支，用 `replace` 把 tifa 指向那份检出的代码，构建示例应用，然后运行 tifa 的 [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons) 里的基准：
 
 ```sh
-
 # in tifa
 go mod edit -replace github.com/liustack/quickjs=../quickjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
@@ -1256,19 +1255,6 @@ tifa `test/ssr` 里生成的引擎。`JS_RegvmRun` 改了，所以在重新训�
 | React 页 | +1.09% | -0.02% | +1.59% | +0.01% |
 
 长 Markdown 页每次渲染做 32 次 `instanceof` 测试。在原生构建上它的寄存器循环每次渲染多跑 50 万条指令（0.003%）：`JS_RegvmRun` 里多了这个调用，clang 对它的布局稍有不同。`compare/testdata` 的 64 个微基准都不做 `instanceof` 测试：在 M4 的原生构建上它们的几何平均少 0.17%，最多的一个多 0.86%（`array_for`，在它那次短运行的噪声之内）。
-
-### 一个 VM 保留 4096 个 shape
-
-[一个 VM 保留 4096 个 shape](changes/objects-and-shapes.zh-CN.md#一个-vm-保留-4096-个-shape)。2026-11-15 在 main d7c86e16 上用 callgrind 数的（linux/amd64，AMD EPYC），同一个构建，把环设成各个大小。每个应用的页面在一个 VM 上轮流渲染，和 tifa 的池子一样：原生 C 树上用 `render soak=K young=1`（每次渲染后一次年轻代回收），Go 产品里用发布时计数的那个页面程序，两次渲染之间按 tifa 池子的做法。一次渲染是整个进程两次运行之差除以中间的渲染次数，在环稳定之后：原生 60 次（MUI 第 30 到 90 次，商店第 40 到 100 次），产品 60 次（MUI 第 10 到 30 轮，商店第 1 到 4 轮）。每个页面在每种环下 HTML 都相同。
-
-| 环 | MUI，3 个页面，原生 | MUI，Go 产品 | 商店，20 个页面，原生 | 商店，Go 产品 |
-| --- | ---: | ---: | ---: | ---: |
-| 1024 | +0.32% | +0.19% | +0.05% | +0.06% |
-| 2048（以前） | 122.45 M | 238.17 M | 198.65 M | 236.07 M |
-| 4096 | **-0.67%** | **-0.38%** | -0.05% | -0.06% |
-| 8192 | -0.67% | -0.40% | -0.04% | -0.06% |
-
-单个页面反复渲染不变：七个页面和 MUI 的单个订单页，原生 C 树上在 -0.08% 到 +0.02% 之间（两次预热后一次计时渲染，不算 `host_poll`），Go 产品里在 -0.08% 到 +0.16% 之间（(3 次渲染减 1 次) / 2，Go 运行时自己的工作就会动这么多）。长 Markdown 页面（100 节）多 0.003%。没有单独计时：收益只在 MUI 上，不到它指令数的 1%。
 
 ### tifa 页面的性能画像
 

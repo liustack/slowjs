@@ -287,7 +287,6 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
 | `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
 | A `for in` loop makes no shape: the context holds the empty shape with no prototype its iterator starts from | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape) |
-| A VM keeps 4096 shapes of plain objects once their objects are gone, where it kept 2048 | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-vm-keeps-4096-shapes) |
 
 ## Memory
 
