@@ -14542,16 +14542,30 @@ static int expand_fast_array_append(JSContext *ctx, JSObject *p, uint32_t new_le
     return expand_fast_array(ctx, p, new_len);
 }
 
+/* The room for the element of add_fast_array_element, of new_len elements:
+   0, or -1 on exception. A length that cannot be written is tested first,
+   so that a store that fails on it allocates nothing: then it returns 1,
+   with no room made, and add_fast_array_element throws as it did. A
+   function of its own, so that an element added with room is the code it
+   was. */
+static no_inline int add_fast_array_room(JSContext *ctx, JSObject *p,
+                                         uint32_t new_len)
+{
+    if (JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+        new_len > (uint32_t)JS_VALUE_GET_INT(p->prop[0].u.value) &&
+        !(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))
+        return 1;
+    return expand_fast_array_append(ctx, p, new_len);
+}
+
 /* Preconditions: 'p' must be of class JS_CLASS_ARRAY, p->fast_array =
    TRUE and p->extensible = TRUE. After 2^31 - 1 elements it throws a
    RangeError (expand_fast_array_append), where upstream b25da59 has each
    caller test the index and convert the array, which then fails as well
-   (resize_properties) and costs a test on each element added. The room is
-   made before the length changes, so that a failure leaves the length
-   (b25da59 tests the length first and so has two calls of
-   expand_fast_array: with them the function was no longer inlined, and a
-   page ran 0.24% more instructions). A length that cannot be written then
-   throws with the room made, which nothing sees. */
+   (resize_properties) and costs a test on each element added. As in
+   b25da59, a length that cannot be written is tested before the room is
+   made (add_fast_array_room), and the room is made before the length
+   changes, so that a failure leaves the length. */
 static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                                          JSValue val, int flags)
 {
@@ -14559,7 +14573,7 @@ static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
     /* extend the array by one */
     new_len = p->u.array.count + 1;
     if (unlikely(new_len > p->u.array.u1.size)) {
-        if (expand_fast_array_append(ctx, p, new_len)) {
+        if (unlikely(add_fast_array_room(ctx, p, new_len) < 0)) {
             JS_FreeValue(ctx, val);
             return -1;
         }

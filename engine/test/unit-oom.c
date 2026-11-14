@@ -2500,6 +2500,50 @@ static void test_array_length_oom(void)
     sweep_step = 8;
 }
 
+/* An element stored after the last one of an array whose length cannot be
+   written does nothing (a[0] = 1 in sloppy code) or gives false
+   (Reflect.set), with a full heap too: the length is tested before room is
+   made for the element. Before, the room came first, and with no memory the
+   call ended with the uncatchable out of memory error. */
+static void test_array_readonly_length_oom(void)
+{
+    static const char setup[] =
+        "var a = Object.defineProperty([], 'length', { writable: false });\n"
+        "function put() { a[0] = 1; return 7; }\n"
+        "function reflect() { return Reflect.set(a, 0, 1); }\n"
+        "put(); reflect();\n"
+        /* a new array, with no room yet */
+        "a = Object.defineProperty([], 'length', { writable: false });\n";
+    static const char *const names[] = { "put", "reflect" };
+    static const char *const want[] = { "7", "false" };
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        VM v = vm_new();
+        JSValue g, f, r;
+        char *t;
+        int fail, unc;
+
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup", names[i]);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, names[i]);
+        fill_memory(&v);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        fail = JS_IsException(r);
+        unc = JS_IsUncatchableException(v.ctx);
+        release_blocks(&v);
+        t = fail ? exception_text(v.ctx) : value_text(v.ctx, r);
+        CHECK(!fail && t && strcmp(t, want[i]) == 0, "%s on a length that cannot be written, a full heap: %s%s, want %s",
+              names[i], fail ? (unc ? "uncatchable " : "exception ") : "", t ? t : "?", want[i]);
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        CHECK(eval_is(v.ctx, "a.length === 0 && !(0 in a)", "true"), "%s: the array changed", names[i]);
+        JS_FreeValue(v.ctx, f);
+        JS_FreeValue(v.ctx, g);
+        vm_free(&v);
+    }
+}
+
 /* The empty string is the string of an atom: making it takes no memory,
    from a full heap too, where a string of one character fails. The string
    of an index atom is made, with memory. */
@@ -2899,6 +2943,7 @@ int main(void)
     test_map_grow_oom();
     test_array_room_oom();
     test_array_length_oom();
+    test_array_readonly_length_oom();
     test_string_append_oom();
     test_string_add_oom();
     test_copy_props_oom();

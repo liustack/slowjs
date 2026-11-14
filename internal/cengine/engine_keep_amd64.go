@@ -356,6 +356,7 @@ var goasmKeep = []any{
 	add_eval_this_vars,
 	add_export_entry,
 	add_fast_array_element,
+	add_fast_array_room,
 	add_global_var,
 	add_import,
 	add_pc2line_info,
