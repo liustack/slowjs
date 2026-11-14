@@ -342,3 +342,11 @@ What it gains: native micro on an Apple M4 (instructions an operation, with the 
 An empty target made at the size of the result, by freeing the empty object of the literal and making the result in one block, was tried and is slower: `{...o3, z}` 1,422 to 1,542 instructions, `{...o2, z}` 1,272 to 1,499. Freeing the empty object costs more than growing its array, and a result whose properties sit in its block moves them out when the next key comes.
 
 Tests: `engine/test/compare/object_spread.js` (what Node 24 prints) spreads 30 kinds of source into 7 kinds of target, each three times, a place of 7 shapes for 50 rounds, targets of other shapes at one place, a kept shape whose object then changes, getters that add or delete keys, a setter on `Object.prototype`, and a hot loop. `test_object_spread_cache` in `engine/test/unit-white.c` checks the entries, and `engine/test/regvm/js/q3-objspread.js` runs the throws of a spread in the throw-injection test.
+
+## A field of a property descriptor that throws ends the conversion
+
+Release: Unreleased.
+
+`js_obj_to_desc`, the ToPropertyDescriptor of `Object.defineProperty`, `Object.defineProperties`, `Object.create` with properties, `Reflect.defineProperty` and the result of a `getOwnPropertyDescriptor` trap, took the -1 of `JS_HasProperty` (a `has` trap of a Proxy that throws) for true: it read the field with `Get` while the exception was pending, went on to the next fields, and could define the property with the exception lost. And when the getter of the field `get` or `set` threw, it replaced that exception with `TypeError: invalid getter` (or setter). Both now end the conversion with the exception of the read, as the specification says and Node does. QuickJS upstream has the same code.
+
+Tests: `engine/test/compare/property_descriptor.js` (what Node 24 prints) has a `has` trap that throws at each of the six fields in turn and a getter that throws at each, with the reads they make.

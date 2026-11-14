@@ -1,0 +1,97 @@
+data: v=1 w=true e=true c=true
+data, keys in another order: v=2 w=false e=true c=true
+value only: v=3 w=false e=false c=false
+empty: v=undefined w=false e=false c=false
+accessor: g=function s=function e=true c=false
+get undefined: g=undefined s=undefined e=false c=false
+set only: g=undefined s=function e=false c=true
+extra keys: v=4 w=false e=true c=false
+symbol and numeric keys: v=5 w=false e=false c=false
+deleted and added again: v=7 w=false e=true c=false
+symbol value: v=sym w=true e=false c=false
+frozen: v=8 w=false e=true c=false
+sealed: v=9 w=true e=false c=false
+not extensible: v=10 w=false e=false c=true
+null prototype: v=11 w=false e=true c=false
+field not enumerable: v=12 w=false e=true c=false
+field read only: v=undefined w=true e=false c=false
+class instance: v=13 w=false e=false c=true
+many descriptors in a loop: k0,k2,k4,k6,k8,k10,k12,k14,k16,k18 v=3 w=true e=false c=false v=4 w=false e=true c=false
+truth: v=undefined w=false e=false c=false | v=undefined w=false e=false c=false | v=undefined w=false e=false c=false | v=undefined w=false e=false c=false | v=undefined w=true e=true c=true | v=undefined w=true e=true c=true | v=undefined w=true e=true c=true | v=undefined w=false e=false c=false | v=undefined w=false e=false c=false | v=undefined w=true e=true c=true | v=undefined w=true e=true c=true | v=undefined w=false e=false c=false | v=undefined w=true e=true c=true | v=undefined w=true e=true c=true | v=undefined w=true e=true c=true
+getters of a data descriptor: v=1 w=true e=true c=true [enumerable,configurable,value,writable]
+getters of an accessor descriptor: g=function s=function e=false c=false [enumerable,get,set]
+a getter deletes a later field: v=undefined w=true e=true c=false [enumerable]
+a getter adds a later field: v=added w=false e=false c=true [configurable]
+a getter adds get to Object.prototype: throws TypeError [value]
+one plain field and one getter: v=1 w=false e=true c=false [enumerable]
+getter of enumerable throws: throws RangeError [enumerable]
+getter of configurable throws: throws RangeError [enumerable,configurable]
+getter of value throws: throws RangeError [enumerable,configurable,value]
+getter of writable throws: throws RangeError [enumerable,configurable,value,writable]
+getter of get throws: throws RangeError [enumerable,configurable,value,writable,get]
+getter of set throws: throws RangeError [enumerable,configurable,value,writable,get,set]
+has trap throws at enumerable: throws RangeError [has enumerable]
+has trap throws at configurable: throws RangeError [has enumerable,has configurable]
+has trap throws at value: throws RangeError [has enumerable,has configurable,has value]
+has trap throws at writable: throws RangeError [has enumerable,has configurable,has value,get value,has writable]
+has trap throws at get: throws RangeError [has enumerable,has configurable,has value,get value,has writable,has get]
+has trap throws at set: throws RangeError [has enumerable,has configurable,has value,get value,has writable,has get,has set]
+get trap throws: throws RangeError [get enumerable]
+inherited value: v=up w=false e=true c=false
+inherited from two up: v=two w=true e=false c=false
+own and inherited: v=own w=false e=false c=true
+inherited getter: v=got w=false e=false c=false [value]
+inherited get: g=function s=undefined e=false c=false
+inherited from a function: v=fn w=false e=false c=false
+inherited from an array: v=arr w=false e=false c=false
+prototype is a proxy: v=undefined w=false e=true c=false [has enumerable,get enumerable,has configurable,has value,has writable,has get,has set]
+prototype is a proxy, own fields: v=1 w=true e=true c=true [has get,has set]
+prototype is a String object: v=undefined w=false e=false c=false
+prototype set later: v=1 w=false e=true c=false
+Object.prototype.enumerable: v=1 w=false e=true c=false
+Object.prototype.value: v=proto w=true e=false c=false
+Object.prototype.get: g=function s=undefined e=true c=false
+Object.prototype.get with a value: throws TypeError
+Object.prototype.set not callable: throws TypeError
+Object.prototype.get, null prototype descriptor: v=2 w=false e=false c=false
+Object.prototype getter: v=1 w=true e=false c=false [writable desc]
+Object.prototype changed and back in a loop: v=0 w=false e=true c=false | v=1 w=false e=true c=false | v=2 w=false e=true c=true | v=3 w=false e=true c=true | v=4 w=false e=true c=false | v=5 w=false e=true c=false
+proxy: v=1 w=false e=true c=false [has enumerable,get enumerable,has configurable,has value,get value,has writable,has get,has set]
+proxy of an accessor: g=function s=undefined e=false c=true [has enumerable,has configurable,get configurable,has value,has writable,has get,get get,has set]
+revoked proxy: throws TypeError
+array: v=a w=false e=true c=false
+function: v=f w=true e=false c=false
+arguments: v=args w=false e=false c=false
+String object: v=s w=false e=false c=false
+typed array: g=undefined s=function e=false c=true
+Date: v=date w=false e=false c=false
+RegExp: v=re w=false e=false c=false
+Map: throws TypeError
+Error: v=err w=false e=true c=false
+global object: v=g w=false e=false c=false
+another realm: v=realm w=false e=true c=false
+another realm, its Object.prototype.get: g=function s=undefined e=true c=false
+not an object: TypeError,TypeError,TypeError,TypeError,TypeError,TypeError,TypeError
+get not callable: throws TypeError
+get null: throws TypeError
+set not callable: throws TypeError
+get a class: g=function s=undefined e=false c=false
+get a proxy of a function: g=function s=undefined e=false c=false
+get a bound function: g=function s=undefined e=false c=false
+get and value: throws TypeError
+set and writable: throws TypeError
+get undefined and value undefined: throws TypeError
+get and set not callable, read in order: throws TypeError [get]
+get not callable and value: throws TypeError [value,get]
+get and value, all read first: throws TypeError [value,get,set]
+defineProperties: v=1 w=false e=true c=false g=function s=undefined e=false c=false v=3 w=false e=false c=false [has enumerable,has configurable,has value,get value,has writable,has get,has set]
+defineProperties, a later descriptor throws: TypeError 0
+create: v=1 w=true e=false c=false g=function s=undefined e=true c=false v=up w=false e=false c=false
+create, inherited get on Object.prototype: g=function s=undefined e=false c=false
+Reflect.defineProperty: true,false,true,v=1 w=false e=false c=false,g=function s=undefined e=false c=false
+Reflect.defineProperty, not an object: throws TypeError
+Reflect.defineProperty, get not callable: throws TypeError
+getOwnPropertyDescriptor trap: v=trap w=true e=true c=true
+getOwnPropertyDescriptor trap, inherited fields: v=up w=false e=false c=true
+getOwnPropertyDescriptor trap, getter field: v=got w=false e=false c=true [value]
+getOwnPropertyDescriptor trap, get not callable: throws TypeError

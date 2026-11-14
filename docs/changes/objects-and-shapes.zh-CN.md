@@ -342,3 +342,11 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 还试过把空目标直接按结果的大小建出来：释放字面量的空对象，在一个内存块里建出结果。这样更慢：`{...o3, z}` 从 1,422 变成 1,542 条指令，`{...o2, z}` 从 1,272 变成 1,499。释放空对象比让它的数组增长更贵，而且属性放在对象内存块里的结果，在下一个键到来时还要把属性搬出去。
 
 测试：`engine/test/compare/object_spread.js`（输出和 Node 24 一样）把 30 种源对象展开到 7 种目标里，各跑三次，在一个位置轮流跑 7 种 shape 共 50 轮，还覆盖一个位置上其他 shape 的目标，记下的 shape 对应的对象之后发生改动，会增删键的 getter，以及 `Object.prototype` 上的 setter 和一个热循环。`engine/test/unit-white.c` 里的 `test_object_spread_cache` 检查缓存项，`engine/test/regvm/js/q3-objspread.js` 在抛错注入测试里跑展开的各种抛错。
+
+## 属性描述符的字段读取抛错时，转换就此结束
+
+版本：Unreleased。
+
+`js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它把 `JS_HasProperty` 返回的 -1（Proxy 的 `has` trap 抛错）当成 true：在异常还挂着时用 `Get` 读这个字段，接着读后面的字段，最后可能把属性定义下来，异常就丢了。另外，字段 `get` 或 `set` 的 getter 抛错时，它用 `TypeError: invalid getter`（或 setter）替换了原来的异常。现在两种情况都用读取时抛出的异常结束转换，和规范及 Node 一致。上游 QuickJS 的代码也是这样。
+
+测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）让 `has` trap 依次在六个字段上抛错，也让 getter 依次在每个字段上抛错，并记下读了哪些字段。

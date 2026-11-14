@@ -47314,7 +47314,7 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
                           JSValueConst desc)
 {
     JSValue val, getter, setter;
-    int flags;
+    int flags, ret;
 
     if (!JS_IsObject(desc)) {
         JS_ThrowTypeErrorNotAnObject(ctx);
@@ -47324,7 +47324,10 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
     val = JS_UNDEFINED;
     getter = JS_UNDEFINED;
     setter = JS_UNDEFINED;
-    if (JS_HasProperty(ctx, desc, JS_ATOM_enumerable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_enumerable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_enumerable);
         if (JS_IsException(prop))
             goto fail;
@@ -47332,7 +47335,10 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_ENUMERABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_configurable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_configurable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_configurable);
         if (JS_IsException(prop))
             goto fail;
@@ -47340,13 +47346,19 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_CONFIGURABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_value)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_value);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_VALUE;
         val = JS_GetProperty(ctx, desc, JS_ATOM_value);
         if (JS_IsException(val))
             goto fail;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_writable)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_writable);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         JSValue prop = JS_GetProperty(ctx, desc, JS_ATOM_writable);
         if (JS_IsException(prop))
             goto fail;
@@ -47354,20 +47366,28 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         if (JS_ToBoolFree(ctx, prop))
             flags |= JS_PROP_WRITABLE;
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_get)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_get);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_GET;
         getter = JS_GetProperty(ctx, desc, JS_ATOM_get);
-        if (JS_IsException(getter) ||
-            !(JS_IsUndefined(getter) || JS_IsFunction(ctx, getter))) {
+        if (JS_IsException(getter))
+            goto fail;
+        if (!(JS_IsUndefined(getter) || JS_IsFunction(ctx, getter))) {
             JS_ThrowTypeError(ctx, "invalid getter");
             goto fail;
         }
     }
-    if (JS_HasProperty(ctx, desc, JS_ATOM_set)) {
+    ret = JS_HasProperty(ctx, desc, JS_ATOM_set);
+    if (ret < 0)
+        goto fail;
+    if (ret) {
         flags |= JS_PROP_HAS_SET;
         setter = JS_GetProperty(ctx, desc, JS_ATOM_set);
-        if (JS_IsException(setter) ||
-            !(JS_IsUndefined(setter) || JS_IsFunction(ctx, setter))) {
+        if (JS_IsException(setter))
+            goto fail;
+        if (!(JS_IsUndefined(setter) || JS_IsFunction(ctx, setter))) {
             JS_ThrowTypeError(ctx, "invalid setter");
             goto fail;
         }
