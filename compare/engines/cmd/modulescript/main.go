@@ -29,14 +29,18 @@ var sourceMap = regexp.MustCompile(`\n//# sourceMappingURL=\S+\s*$`)
 
 const export = "export{};"
 
+// tifa now writes helper functions after the export (`export{};function $(e){throw e}`).
+// They are declarations, hoisted, so they stay in the wrapped body.
+var tail = regexp.MustCompile(`export\{\};((?:function [A-Za-z_$][\w$]*\([\w$,]*\)\{[^{}]*\})*)$`)
+
 // script returns the bundle src, an ES module, as a script.
 func script(src string) (string, error) {
 	body := strings.TrimRightFunc(sourceMap.ReplaceAllString(src, "\n"), unicode.IsSpace)
-	body, ok := strings.CutSuffix(body, export)
-	if !ok {
+	m := tail.FindStringSubmatchIndex(body)
+	if m == nil {
 		return "", fmt.Errorf("does not end with %s, not a tifa ES module bundle", export)
 	}
-	return `(function(){"use strict";` + "\n" + body + "\n})();\n", nil
+	return `(function(){"use strict";` + "\n" + body[:m[0]] + body[m[2]:m[3]] + "\n})();\n", nil
 }
 
 func main() {
