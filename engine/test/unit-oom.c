@@ -1848,36 +1848,6 @@ static void test_fast_builtins_oom(void)
     sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
 }
 
-/* s[i] with an int key inside the length of a string, read in the loop
-   (rv_getel_str): with too little memory for the string of the code unit it
-   fails with the out of memory error, which the generic path throws, and
-   frees each string once. 8-bit and 16-bit strings, a lone surrogate, the
-   key in a local, a constant and a temp, the string in a temp, and an index
-   out of the length. */
-static void test_string_index_oom(void)
-{
-    static const char setup[] =
-        "var s8 = 'abcdefgh', s16 = 'a\\u20acb\\u00e9c\\ud800';\n"
-        "function get(s, i) { return s[i] }\n"
-        "function run() {\n"
-        "  var out = [], n = 0;\n"
-        "  for (var i = 0; i < 6; i++) {\n"
-        "    var w = get(s16, i);\n"
-        "    out.push(get(s8, i), s8[3], (s8 + s16)[i + 7], String(get(s8, i + 9)));\n"
-        "    n += w.charCodeAt(0) + s16[1].length + (s8 + i)[8].charCodeAt(0);\n"
-        "  }\n"
-        "  return out.join('') + ' ' + n;\n"
-        "}\n"
-        /* once before the sweep, so that its register code is made */
-        "run();\n";
-    static const char *const want[] = {
-        "adhundefinedbdaundefinedcd\xe2\x82\xac" "undefinedddbundefineded\xc3\xa9" "undefinedfdcundefined 64496",
-        NULL
-    };
-
-    sweep("string index", "string_index.js", setup, "run()", want, 16384);
-}
-
 /* for in loops over objects, arrays, strings, null and a prototype, nested
    and in a generator: with too little memory (the iterator, its object, the
    empty shape the context then holds, the keys) they fail with the out of
@@ -3012,7 +2982,6 @@ int main(void)
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
-    test_string_index_oom();
     test_for_in_oom();
     test_define_desc_oom();
     test_bind_oom();

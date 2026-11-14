@@ -237,7 +237,6 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The hash table of atoms holds one atom for two buckets | v0.30.5 | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
 | An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
-| `s[i]` with a string and an int index inside its length is read in the register loop, with no generic lookup | Unreleased | [strings.md](strings.md#a-character-of-a-string-is-read-in-the-register-loop) |
 
 ## JSON
 

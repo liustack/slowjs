@@ -237,7 +237,6 @@ read_when:
 | atom 的哈希表两个桶只放一个 atom | v0.30.5 | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
 | `+` 左边是空字符串时直接给出右边的字符串，不再复制 | v0.30.5 | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
 | 寄存器循环把两个字符串的加法交给一个专门的小函数，不再走加、减和比较共用的通用路径 | v0.30.7 | [strings.md](strings.zh-CN.md#两个字符串的加法不走通用路径) |
-| 字符串加上长度之内的 int 下标 `s[i]` 在寄存器循环里直接读，不走通用的查找 | Unreleased | [strings.md](strings.zh-CN.md#寄存器循环里直接读字符串的一个字符) |
 
 ## JSON
 
