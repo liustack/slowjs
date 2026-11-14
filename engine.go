@@ -1101,25 +1101,29 @@ func (m *VM) jsExecutePendingJob() (r int32) {
 	return r
 }
 
-// valuesFit is nil when n values more than have can be counted, else the
-// error of more values than the engine counts. The engine takes a count of
+// maxValues is the most values the engine counts. It takes a count of
 // values as a C int, and the snapshot of the results of a Go function
 // numbers its nodes and kids in int32: past math.MaxInt32 either would see
 // another number.
-func valuesFit(have, n int) error {
-	if n > math.MaxInt32-have {
-		return fmt.Errorf("quickjs: %d values, the engine takes at most %d", n, math.MaxInt32)
+const maxValues = math.MaxInt32
+
+// valuesFit is nil when n values more than have are at most max, else the
+// error of more values than the engine counts. max is maxValues, or less in
+// a test.
+func valuesFit(have, n, max int) error {
+	if n > max-have {
+		return fmt.Errorf("quickjs: %d values, the engine takes at most %d", n, max)
 	}
 	return nil
 }
 
 // tmpValues is tmp of the values a, copied there, or p 0 for no values. The
-// engine takes their count as a C int (valuesFit).
+// engine takes their count as a C int (maxValues).
 func (m *VM) tmpValues(a []jsValue) (p, sp uintptr, heap bool, err error) {
 	if len(a) == 0 {
 		return 0, m.sp, false, nil
 	}
-	if err := valuesFit(0, len(a)); err != nil {
+	if err := valuesFit(0, len(a), maxValues); err != nil {
 		return 0, 0, false, err
 	}
 	p, sp, heap = m.tmp(sizeofJsValue * uintptr(len(a)))

@@ -154,7 +154,7 @@ func (m *VM) convertResults(out []reflect.Value, many bool) (r jsValue, err erro
 
 	s := m.takeSnapshot()
 	defer m.releaseSnapshot(s)
-	w := refWalk{m: m, s: s}
+	w := refWalk{m: m, s: s, max: maxValues}
 	if !many {
 		root := w.node(out[0], false)
 		if w.err != nil {
@@ -180,7 +180,7 @@ func (m *VM) convertResults(out []reflect.Value, many bool) (r jsValue, err erro
 // convert, as that of a host function that returns an error.
 func (m *VM) dropResult(v reflect.Value) {
 	s := m.takeSnapshot()
-	w := refWalk{m: m, s: s}
+	w := refWalk{m: m, s: s, max: maxValues}
 	w.node(v, false)
 	m.releaseSnapshot(s)
 }
@@ -190,6 +190,9 @@ type refWalk struct {
 	m   *VM
 	s   *snapshot
 	err error
+	// max is the most nodes and the most kids: maxValues, or less in a
+	// test.
+	max int
 	// The places and maps the walk is in (node -1), to find a cycle, and
 	// the ones it is done with and their nodes, to go through each once:
 	// the first ones in few, and all of them in s.many once few is full.
@@ -217,11 +220,11 @@ func (w *refWalk) fail(err error) {
 	}
 }
 
-// add adds nd to the snapshot and returns its index. Past what an int32
-// numbers (valuesFit) the walk fails, and node 0 stands for nd: the
-// conversion does not run, and the references are in s.held.
+// add adds nd to the snapshot and returns its index. Past w.max nodes
+// (valuesFit) the walk fails, and node 0 stands for nd: the conversion does
+// not run, and the references are in s.held.
 func (w *refWalk) add(nd snapNode) int32 {
-	if err := valuesFit(0, len(w.s.nodes)+1); err != nil {
+	if err := valuesFit(len(w.s.nodes), 1, w.max); err != nil {
 		w.fail(err)
 		return 0
 	}
@@ -236,11 +239,11 @@ func (w *refWalk) failed(err error) int32 {
 
 // reserve adds n kids to the snapshot and returns the index of the first.
 //
-// Past what an int32 numbers (valuesFit) it fails the walk and returns -1,
-// and the caller walks the values only for the references they hand over.
+// Past w.max kids (valuesFit) it fails the walk and returns -1, and the
+// caller walks the values only for the references they hand over.
 func (w *refWalk) reserve(n int) int {
 	start := len(w.s.kids)
-	if err := valuesFit(start, n); err != nil {
+	if err := valuesFit(start, n, w.max); err != nil {
 		w.fail(err)
 		return -1
 	}
