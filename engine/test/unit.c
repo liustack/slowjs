@@ -1318,7 +1318,7 @@ static char *take_rejections(JSContext *ctx)
     char buf[1024];
     size_t n = 0;
     JSRuntime *rt = JS_GetRuntime(ctx);
-    uint32_t mark = JS_RejectionMark(rt);
+    uint64_t mark = JS_RejectionMark(rt);
     JSValue r;
 
     buf[0] = 0;
@@ -1429,7 +1429,7 @@ static void test_rejections_mark(void)
 {
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
-    uint32_t mark;
+    uint64_t mark;
     JSValue r;
 
     CHECK(JS_RejectionMark(rt) == 0, "a mark with no list");
@@ -1444,7 +1444,42 @@ static void test_rejections_mark(void)
     r = JS_TakeRejection(rt, mark);
     CHECK(JS_IsUninitialized(r), "one kept after the mark taken with it");
     CHECK(rejections_are(ctx, "3"), "the one kept after the mark");
+    /* off and on again, the numbers go on: a mark read before comes before
+       what is kept since */
+    CHECK(eval(ctx, "Promise.reject(4)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(5)"), "the script threw");
+    CHECK(!JS_HasRejection(rt, mark), "one kept after the mark, once off and on");
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, mark)), "one kept after the mark taken with it, once off and on");
+    CHECK(rejections_are(ctx, "5"), "the one kept after off and on");
     JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The list belongs to the runtime: a reason made in a context that is
+   freed is read from another context of the runtime, and freed with no
+   leak (host_free_runtime checks). */
+static void test_rejections_context(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx1 = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    JSValue r;
+    const char *s;
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx1, "Promise.reject(new Error(\"from one\")); Promise.reject({ toString() { return \"two\" } })"),
+          "the script threw");
+    JS_FreeContext(ctx1);
+    JS_RunGC(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
+    s = JS_ToCString(ctx2, r);
+    CHECK(s && strcmp(s, "Error: from one") == 0, "the first read %s", s ? s : "(null)");
+    JS_FreeCString(ctx2, s);
+    JS_FreeValue(ctx2, r);
+    CHECK(rejections_are(ctx2, "two"), "the second, read in the other context");
+    JS_FreeContext(ctx2);
     host_free_runtime(rt);
 }
 
@@ -5000,6 +5035,7 @@ int main(void)
     test_rejections_kept();
     test_rejections_max();
     test_rejections_mark();
+    test_rejections_context();
     test_rejections_collected();
     if (failures) {
         printf("unit: %d checks failed\n", failures);

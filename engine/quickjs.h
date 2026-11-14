@@ -1114,15 +1114,16 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt, JSHostPromiseRejectionTrac
    the reason of the oldest kept before JS_RejectionMark gave mark and
    forgets it, JS_UNINITIALIZED when none is left, and JS_HasRejection
    tells whether there is one: a read takes what was kept when it began,
-   not what the reasons it reads make it keep.
+   not what the reasons it reads make it keep, also when keeping was
+   turned off and on in between.
    JS_TakeDroppedRejections gives how many were not kept, past max or
    with no memory, since it was last called. Keeping them replaces the
    tracker of JS_SetHostPromiseRejectionTracker, and setting a tracker
    frees them. */
 int JS_TrackRejections(JSRuntime *rt, uint32_t max);
-uint32_t JS_RejectionMark(JSRuntime *rt);
-int JS_HasRejection(JSRuntime *rt, uint32_t mark);
-JSValue JS_TakeRejection(JSRuntime *rt, uint32_t mark);
+uint64_t JS_RejectionMark(JSRuntime *rt);
+int JS_HasRejection(JSRuntime *rt, uint64_t mark);
+JSValue JS_TakeRejection(JSRuntime *rt, uint64_t mark);
 uint32_t JS_TakeDroppedRejections(JSRuntime *rt);
 /* the async context of promise jobs: an object that promise reactions keep
    and run with, or none (undefined) */
