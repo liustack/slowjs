@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -583,3 +583,17 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
 
 测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。
+
+## EvalFile 给脚本一个文件名
+
+发布版本：v0.31.0。
+
+`VM.EvalFile(name, javascript, flags)` 就是 `EvalValue`，只是把 `name` 作为脚本的文件名，而其他所有 eval 都叫它 `<eval>`。它的调用栈帧和语法错误显示 `at f (repro.js:1:31)`，而不是 `at f (<eval>:1:31)`，用 `EvalModule` 时模块的名字也是 `name`。它不读任何文件。一个虚拟机里跑多个脚本的程序，或者运行一个文件的命令，能从栈里看出每一帧在哪个脚本里。
+
+引擎一直随源码一起接收文件名：Go API 传的是 `<eval>`，把它拷贝到交给 `JS_Eval` 的那块内存里、源码前面（`engine.go` 的 `evalSource`）。EvalFile 改为拷贝给定的名字，所以 C 和生成的引擎都不用改。名字先在 Go 里清理（`eval.go` 的 `cleanEvalName`），让栈的每一帧保持一行，并且引擎读到的是它能接收的字符串：不是 UTF-8 的字节、控制字符（包括换行和 0 字节，0 字节在 C 里还会让名字提前结束）以及 U+2028 和 U+2029 都变成 U+FFFD，超过 1,024 字节的名字在最后一个放得下的字符处截断。空名字就是 `<eval>`。
+
+它是安全的，因为 `evalSource` 写入的字节和以前一样有界：它在申请内存之前，用清理后的名字和源码的长度算出字节数，从虚拟机的影子栈或堆里拿到正好这么多字节，或者一个字节也拿不到（内存不足，此时什么都还没写），然后通过一个正好这么长的切片写入。不给名字时，写入的字节和以前一样：`<eval>`、一个 0 字节、源码、一个 0 字节。
+
+代价：不给名字时没有代价，其他所有 eval 照旧传 `<eval>`。给了名字时，脚本的函数还活着期间，引擎把名字作为一个 atom 保留，需要清理的名字在 Go 里多一次分配。
+
+测试在 `evalfile_test.go`：`TestEvalFile`（结果、带名字的栈帧和语法错误、空名字，以及 `Eval` 仍是 `<eval>`），`TestEvalFileName`（换行、回车、0 字节、制表符、DEL、U+2028 和 U+2029、不是 UTF-8 的字节、在字符之间截断的 1,200 字节名字、在放不下的字符前截断的名字和 1 MiB 的名字，每个都经过一次调用栈检查），`TestEvalFileNameBound`（1 MiB 的名字配上大小在拷贝从影子栈换到堆的边界附近的源码：写入的字节是名字、0 字节、源码、0 字节，影子栈上它们后面的标记没被动过。内存上限放不下的源码以内存不足结束，虚拟机继续可用）和 `TestEvalFileSameAsEval`（不给名字、给 `<eval>` 和给 `repro.js` 时，结果相同，Go 的分配次数相同，函数释放后引擎的块数、字节数和 atom 数也相同）。

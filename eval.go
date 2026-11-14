@@ -7,6 +7,8 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"errors"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 )
 
 // Eval flags.
@@ -34,7 +36,7 @@ func (m *VM) Eval(javascript string, flags int) (r any, err error) {
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEval(javascript, int32(flags))
+	v, err := m.jsEval(evalName, javascript, int32(flags))
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +129,7 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEval(javascript, int32(flags))
+	v, err := m.jsEval(evalName, javascript, int32(flags))
 	if err != nil {
 		return r, err
 	}
@@ -139,6 +141,65 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 	}
 
 	return Value{vm: m, v: v}, nil
+}
+
+// EvalFile is like EvalValue, with name as the file of the script: its stack
+// frames and its syntax errors show name where those of EvalValue show
+// <eval>, and a module of EvalModule gets name as its name. It reads no file:
+// javascript is the source.
+//
+// The name is cleaned first, so that each frame stays on a line of its own:
+// bytes that are not UTF-8, the control characters (a newline or a 0 byte
+// among them), U+2028 and U+2029 become U+FFFD, and a name longer than 1024
+// bytes is cut at the last character that fits. An empty name is <eval>.
+func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
+	if err = m.enter(); err != nil {
+		return
+	}
+	defer m.leave(&err)
+	v, err := m.jsEval(cleanEvalName(name), javascript, int32(flags))
+	if err != nil {
+		return r, err
+	}
+
+	v = m.settled(v)
+	if isException(v) {
+		m.jsFreeValue(v)
+		return r, m.errFromException()
+	}
+
+	return Value{vm: m, v: v}, nil
+}
+
+// maxEvalName is the most bytes of the file name of EvalFile.
+const maxEvalName = 1024
+
+// cleanEvalName is name as EvalFile uses it: at most maxEvalName bytes of
+// valid UTF-8, with no control character, U+2028 or U+2029, which become
+// U+FFFD. A name that is already so is returned as it is, with no
+// allocation.
+func cleanEvalName(name string) string {
+	if name == "" {
+		return evalName
+	}
+	clean := len(name) <= maxEvalName
+	for i := 0; clean && i < len(name); i++ {
+		clean = name[i] >= 0x20 && name[i] < 0x7f
+	}
+	if clean {
+		return name
+	}
+	var b strings.Builder
+	for _, c := range name {
+		if c < 0x20 || c == 0x7f || (c >= 0x80 && c < 0xa0) || c == ' ' || c == ' ' {
+			c = utf8.RuneError
+		}
+		if b.Len()+utf8.RuneLen(c) > maxEvalName {
+			break
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 // EvalThisValue is like EvalValue but sets javascript 'this' to obj. It
@@ -364,7 +425,7 @@ func (m *VM) eval(js string, flags int) (r jsValue, err error) {
 		return
 	}
 	defer m.leave(&err)
-	v, err := m.jsEval(js, int32(flags))
+	v, err := m.jsEval(evalName, js, int32(flags))
 	if err != nil {
 		return r, err
 	}
