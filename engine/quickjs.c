@@ -800,6 +800,11 @@ struct JSContext {
     /* the atoms and the caches of JS_NewStartTagFunction and
        JS_NewEndTagFunction, or NULL until one of them ran (see js_start_tag) */
     struct JSEmitCache *emit_cache;
+    /* the fields 0 to 7 of get_date_fields for the time value date_key in
+       ms, local or UTC (date_fields_of), and INT64_MIN, which no time value
+       is, for none yet */
+    int64_t date_key;
+    double date_fields[8];
 };
 
 typedef union JSFloat64Union {
@@ -3858,6 +3863,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
     ctx->iterator_ctor = JS_NULL;
     ctx->regexp_ctor = JS_NULL;
     ctx->promise_ctor = JS_NULL;
+    ctx->date_key = INT64_MIN;
     init_list_head(&ctx->loaded_modules);
 
     if (JS_AddIntrinsicBasicObjects(ctx)) {
@@ -67519,27 +67525,12 @@ static void days_to_date(int64_t days, int *py, int *pm, int *pd)
     *pd = (int)d + 1;
 }
 
-static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
-                                       double fields[minimum_length(9)], int is_local, int force)
+/* fields 0 to 7 of get_date_fields for d, a time value in ms, already
+   moved to local time when that is asked */
+static no_inline void date_fields_find(int64_t d, double fields[minimum_length(8)])
 {
-    double dval;
-    int64_t d, days, wd, h, m, s, ms, tz = 0;
+    int64_t days, wd, h, m, s, ms;
     int y, mon, md;
-
-    if (JS_ThisTimeValue(ctx, &dval, obj))
-        return -1;
-
-    if (isnan(dval)) {
-        if (!force)
-            return FALSE; /* NaN */
-        d = 0;        /* initialize all fields to 0 */
-    } else {
-        d = dval;     /* assuming -8.64e15 <= dval <= -8.64e15 */
-        if (is_local) {
-            tz = -getTimezoneOffset(d);
-            d += tz * 60000;
-        }
-    }
 
     /* result is >= 0, we can use % */
     h = math_mod(d, 86400000);
@@ -67560,6 +67551,65 @@ static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
     fields[5] = s;
     fields[6] = ms;
     fields[7] = wd;
+}
+
+/* the fields 0 to 7 of d as date_fields_find gives them, kept in the
+   context for the last d asked: a page reads several getters of one Date,
+   or of copies of it, in a row. They depend on d alone, so no change of a
+   Date can make them wrong: a setter gives the Date a new time value, which
+   is another key. */
+static inline const double *date_fields_of(JSContext *ctx, int64_t d)
+{
+    if (unlikely(ctx->date_key != d)) {
+        date_fields_find(d, ctx->date_fields);
+        ctx->date_key = d;
+    }
+    return ctx->date_fields;
+}
+
+/* the time value of the Date obj in ms in *pd, moved to local time with
+   is_local, and the offset of local time in minutes in *ptz: TRUE, FALSE
+   for NaN (0 and TRUE with force), -1 with an exception when obj is not a
+   Date */
+static inline int date_time_value(JSContext *ctx, JSValueConst obj, int is_local,
+                                  int force, int64_t *pd, int *ptz)
+{
+    double dval;
+    int64_t d;
+    int tz = 0;
+
+    if (JS_ThisTimeValue(ctx, &dval, obj))
+        return -1;
+
+    if (isnan(dval)) {
+        if (!force)
+            return FALSE; /* NaN */
+        d = 0;        /* initialize all fields to 0 */
+    } else {
+        d = dval;     /* assuming -8.64e15 <= dval <= -8.64e15 */
+        if (is_local) {
+            tz = -getTimezoneOffset(d);
+            d += tz * 60000;
+        }
+    }
+    *pd = d;
+    *ptz = tz;
+    return TRUE;
+}
+
+static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
+                                       double fields[minimum_length(9)], int is_local, int force)
+{
+    int64_t d;
+    int tz, res, i;
+    const double *f;
+
+    res = date_time_value(ctx, obj, is_local, force, &d, &tz);
+    if (res <= 0)
+        return res;
+    f = date_fields_of(ctx, d);
+    for (i = 0; i < 8; i++)
+        fields[i] = f[i];
     fields[8] = tz;
     return TRUE;
 }
@@ -67649,21 +67699,23 @@ static JSValue get_date_field(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv, int magic)
 {
     // get_date_field(obj, n, is_local)
-    double fields[9];
-    int res, n, is_local;
+    int64_t d;
+    int res, n, is_local, tz;
+    double v;
 
     is_local = magic & 0x0F;
     n = (magic >> 4) & 0x0F;
-    res = get_date_fields(ctx, this_val, fields, is_local, 0);
+    res = date_time_value(ctx, this_val, is_local, 0, &d, &tz);
     if (res < 0)
         return JS_EXCEPTION;
     if (!res)
         return JS_NAN;
 
+    v = date_fields_of(ctx, d)[n];
     if (magic & 0x100) {    // getYear
-        fields[0] -= 1900;
+        v -= 1900;
     }
-    return JS_NewFloat64(ctx, fields[n]);
+    return JS_NewFloat64(ctx, v);
 }
 
 static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
