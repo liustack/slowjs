@@ -510,7 +510,7 @@ pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码
 
 ### 寄存器循环直接回答的内置函数
 
-版本：Unreleased。
+版本：v0.30.6。
 
 寄存器循环在它回答 `charCodeAt` 的那个调用点（`RV_CALL_OUT`）自己回答更多内置函数：`Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has`，`Map` 和 `WeakMap` 的 `get`，`Array.isArray`，`Array.prototype.push`，数组的 `includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`，`Object.prototype.hasOwnProperty`，以及参数是字符串的 `String`。这些是 tifa 的页面和 React 从 JavaScript 里调用最多的 C 函数。每次调用要比答案本身多花 70 到 250 条指令：调用的检查、一层调用深度、`js_call_c_function` 的帧，以及 `this` 和参数的转换。`JS_NewCFunction3` 在每个 realm 里按函数是什么给它做标记（`rv_fast_kind`，记在 `JSObject.rv_fast` 的几位里）。脚本替换过、绑定过或者包进 proxy 的函数是另一个对象，照常调用。
 
@@ -1009,7 +1009,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 热调用少传参数字
 
-发布：Unreleased。
+发布：v0.30.6。
 
 在生成代码里，一次调用的每个参数字都要经过 Go 的栈区：调用方存一次，被调方读一次。在 arm64 上，一个函数除了影子栈指针还要收五个以上的字时，参数放在影子栈上的一个块里传，多出一次存和一次读，而且后者要等前者。现在有两个热调用少传了字：
 

@@ -52,8 +52,8 @@ read_when:
 | 经过指针的调用从寄存器取结果，没有 Go 代码调用的生成函数不再把结果写到 Go 栈上 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#结果只在寄存器里) |
 | `o[k]` 的键是自身就是原子的字符串时，像 GETF 读 `o.name` 那样读取，不走通用路径，也不给原子加引用 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#自身就是原子的字符串键按具名属性读取) |
 | 字符串保存自己作为键时的原子编号，按键读取和 `hasOwnProperty.call` 读一次就能拿到。每个字符串大 4 字节 | v0.30.5 | [c-engine.md](c-engine.zh-CN.md#字符串保存自己作为键时的原子) |
-| 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | Unreleased | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
-| 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | Unreleased | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
+| 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
+| 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 
 ## 生成器
 
@@ -162,7 +162,7 @@ read_when:
 | Go 函数的长数组直接向系统要内存 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#go-函数的长数组直接向系统要内存) |
 | VM 留下最后一块内存给下一次调用 | v0.30.4 | [uncatchable.md](uncatchable.zh-CN.md#vm-留下最后一块内存给下一次调用) |
 | 展开、rest 和 Object.assign 的复制读中断标志 | v0.30.5 | [uncatchable.md](uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志) |
-| 有内存上限的 VM 也留下最后一块 | Unreleased | [uncatchable.md](uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块) |
+| 有内存上限的 VM 也留下最后一块 | v0.30.6 | [uncatchable.md](uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块) |
 
 ## 错误和调用栈
 

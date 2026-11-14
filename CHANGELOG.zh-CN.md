@@ -4,8 +4,11 @@
 
 ## [Unreleased]
 
+## [v0.30.6] - 2026-11-14
+
 ### 变更
 
+- 页面渲染比 v0.30.5 少用 1% 到 2% 的时间，来自下面三项改动和在它们之上重新训练的性能画像。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局的平均），tifa 的商店页面少用 2.1%，React 页面少 2.1%，工作台页面少 1.3%，长 Markdown 文档少 0.6%。MUI 页面和打包文件的加载，计时看不出变化。v0.30.5 计过时的 12 个微基准里，7 个比 v0.30.5 快（`float_arith` 4.9%，`int_arith` 4.7%，`array_read` 3.5%，`array_for` 2.7%，`prop_create` 2.1%，`global_read` 1.5%，`array_prop_create` 1.4%），`array_slice` 慢 0.6%。`global_read` 和 `typed_array_read` 仍比 v0.30.4 慢，在实际发布的构建里 `typed_array_read` 比 v0.30.5 多用 7.2% 的时间，各布局的平均则分不出快慢（[performance.md](docs/performance.zh-CN.md#v0306-对-v0305)）。
 - 有内存上限的 VM 现在也留下 Intl 或 `fmt` 长调用的最后一块，前提是这块和 VM 的内存加起来放得进上限，上限也把它算进去：引擎的分配需要这块空间时，先把它还给系统，所以留着的块不会让脚本内存不足。在 GitHub 的 macos-15 机器上，上限 1 GiB 的 VM 在 8 Mi 字符的文本里找第一个词，每次调用 3.9 到 4.9 ms，v0.30.4 是 28 到 35 ms（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#有内存上限的-vm-也留下最后一块)）。
 - 解释器直接调 C 函数，以及 `call`、`apply` 和绑定函数对 C 函数的调用，参数从 8 个字减到 5 个，引擎自己读属性的调用从 7 个减到 5 个，所以在 arm64 上这两个调用都不再在影子栈上传参数块。在 linux/amd64 上按 16 种代码布局计时，tifa 商店的店面页面用时少 0.67%，其他页面在误差范围内不变，每次渲染的指令少 0.30% 到 0.51%。结果、栈帧和调用深度都不变（[c-engine.md](docs/changes/c-engine.zh-CN.md#热调用少传参数字)）。
 - 寄存器循环自己回答 `Math.clz32`，`Map`、`Set`、`WeakMap` 和 `WeakSet` 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String`，对调用不跑脚本、不抛异常的那些值不再调用 C 函数。一次渲染少跑 0.4%（MUI）到 2.5%（React）的指令，在 amd64 上 React 的页面少花 1.4% 的时间，tifa 的 store 页面少 1.0%，workbench 页面少 0.9%，MUI 页面时间不变（[c-engine.zh-CN.md](docs/changes/c-engine.zh-CN.md#寄存器循环直接回答的内置函数)）。
@@ -682,7 +685,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.6...main
+[v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3

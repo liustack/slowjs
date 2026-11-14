@@ -52,8 +52,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A call through a pointer takes its result from registers, and a generated function that no Go code calls no longer writes its result to the Go stack | v0.30.5 | [c-engine.md](c-engine.md#results-only-in-registers) |
 | `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | v0.30.5 | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
 | A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | v0.30.5 | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
-| Two hot calls pass fewer argument words: the interpreter's direct call of a C function and `js_call_c_hop` call `js_call_c_plain` (5 words, not 8), and the engine's own `JS_GetProperty` calls `JS_GetPropertyObj` (5, not 7). On arm64 neither passes its arguments in a block on the shadow stack any more | Unreleased | [c-engine.md](c-engine.md#fewer-argument-words-into-hot-calls) |
-| The register loop answers `Math.clz32`, `has` and `get` of Map, Set, WeakMap and WeakSet, `Array.isArray`, `push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty` and `String` of a string without the call | Unreleased | [c-engine.md](c-engine.md#built-ins-answered-in-the-register-loop) |
+| Two hot calls pass fewer argument words: the interpreter's direct call of a C function and `js_call_c_hop` call `js_call_c_plain` (5 words, not 8), and the engine's own `JS_GetProperty` calls `JS_GetPropertyObj` (5, not 7). On arm64 neither passes its arguments in a block on the shadow stack any more | v0.30.6 | [c-engine.md](c-engine.md#fewer-argument-words-into-hot-calls) |
+| The register loop answers `Math.clz32`, `has` and `get` of Map, Set, WeakMap and WeakSet, `Array.isArray`, `push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty` and `String` of a string without the call | v0.30.6 | [c-engine.md](c-engine.md#built-ins-answered-in-the-register-loop) |
 
 ## The generator
 
@@ -162,7 +162,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A Go function takes the long arrays of a call from the OS | v0.30.4 | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
 | A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
 | The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
-| A VM with a memory limit keeps its block too | Unreleased | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
+| A VM with a memory limit keeps its block too | v0.30.6 | [uncatchable.md](uncatchable.md#a-vm-with-a-memory-limit-keeps-its-block-too) |
 
 ## Errors and stacks
 

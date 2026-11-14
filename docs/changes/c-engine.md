@@ -510,7 +510,7 @@ Tests: `engine/test/regvm/js/q3-charcode.js` calls `charCodeAt` on strings of bo
 
 ### Built-ins answered in the register loop
 
-Release: Unreleased.
+Release: v0.30.6.
 
 The register loop answers more built-ins itself, at the call site where it answers `charCodeAt` (`RV_CALL_OUT`): `Math.clz32`, `has` of `Map`, `Set`, `WeakMap` and `WeakSet`, `get` of `Map` and `WeakMap`, `Array.isArray`, `Array.prototype.push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `Object.prototype.hasOwnProperty`, and `String` called with a string. These are the C functions tifa's pages and React call most from JavaScript. Each call costs a C call of about 70 to 250 instructions more than the answer: the checks of a call, a level of call depth, the frame of `js_call_c_function` and the conversions of `this` and the arguments. `JS_NewCFunction3` marks each function by what it is (`rv_fast_kind`, in the bits of `JSObject.rv_fast`), in every realm. A function a script replaced, bound or wrapped in a proxy is another object and is called.
 
@@ -1009,7 +1009,7 @@ Timed in tifa's `test/ssr` on linux/amd64 (an AMD EPYC 7B13 server, one core, 60
 
 ## Fewer argument words into hot calls
 
-Release: Unreleased.
+Release: v0.30.6.
 
 In the generated code every argument word of a call is stored by the caller and loaded by the callee through Go's stack area. On arm64 a function that takes more than five words, besides the pointer of the shadow stack, takes them in a block on the shadow stack, which adds a store and a load that depend on each other. Two hot calls now pass fewer words:
 

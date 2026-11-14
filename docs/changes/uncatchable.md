@@ -675,7 +675,7 @@ Tests: `test_copy_poll_work` in `engine/test/unit-white.c` copies 100,000 keys o
 
 ## A VM with a memory limit keeps its block too
 
-Release: Unreleased.
+Release: v0.30.6.
 
 In the [section above](#a-vm-keeps-its-last-block-for-the-next-call) a VM with a memory limit keeps no block, and pays at each call for the pages of a new one: on GitHub's macos-15 runner, the first word of a text of 8 Mi units took 28 to 35 ms a call in such a VM, and 3.9 to 5.4 ms in a VM with no limit.
 
