@@ -3,19 +3,21 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-// Command slowjs runs a JavaScript file in the engine of this module, to try
-// the engine or benchmark it without writing Go:
+// Command slowjs runs a JavaScript file in the engine of this module, set up
+// as tifa sets it up, without writing Go:
 //
 //	slowjs [flags] file.js [args...]
 //	slowjs [flags] -e code [args...]
 //
 // The script runs as a global script in one VM, then the promise jobs it
-// queued. It has print, console.log and console.error, which write their
-// arguments, each made a string, to stdout (stderr for console.error), and
-// scriptArgs, the arguments after the flags. It has no file system, network,
-// timers or modules. The run ends at the timeout and at the memory limit
-// whatever the script catches. docs/command.md has the exit codes and why
-// the defaults are what they are.
+// queued. The VM has Intl, Temporal, URL and URLSearchParams, registered as
+// tifa registers them, Go's fmt as fmt, and calls may nest 10000 deep, as in
+// tifa. The script also has print, console.log and console.error, which
+// write their arguments, each made a string, to stdout (stderr for
+// console.error), and scriptArgs, the arguments after the flags. It has no
+// file system, network, timers or modules. The run ends at the timeout and
+// at the memory limit whatever the script catches. docs/command.md has the
+// exit codes and why the defaults are what they are.
 package main
 
 import (
@@ -27,12 +29,17 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/liustack/quickjs"
+	qjsfmt "github.com/liustack/quickjs/fmt"
+	"github.com/liustack/quickjs/intl"
+	"github.com/liustack/quickjs/temporal"
+	"github.com/liustack/quickjs/url"
 )
 
 // The exit codes, in docs/command.md.
@@ -49,6 +56,10 @@ const (
 	defaultTimeout     = 10 * time.Minute
 	defaultMemoryLimit = "2GiB"
 )
+
+// stackDepth is how deep calls may nest: tifa's default, the most the
+// engine allows.
+const stackDepth = 10000
 
 // version is the release, stamped by the release job with
 // -ldflags "-X main.version=<tag>". A build without it reports the version
@@ -73,16 +84,18 @@ const usage = `usage: slowjs [flags] file.js [args...]
        slowjs [flags] -e code [args...]
 
 Runs a JavaScript file, or the code of -e, as a global script, then the
-promise jobs it queued. The script has print, console.log, console.error
-and scriptArgs (the arguments after the flags). It has no file system,
-network, timers or modules.
+promise jobs it queued, in a VM set up as tifa sets it up: Intl, Temporal,
+URL and URLSearchParams, and calls nested up to 10000 deep. The script also
+has Go's fmt as fmt, print, console.log, console.error and scriptArgs (the
+arguments after the flags). It has no file system, network, timers or
+modules.
 
 Flags:
   -e code              run code instead of a file
   --timeout d          end the run after d, such as 30s or 2m (0: never) (default %v)
   --memory-limit n     end the run when the VM takes more than n bytes,
                        with K, M or G (KiB, MiB, GiB) allowed (0: no limit) (default %s)
-  --version            print the version and exit
+  --version            print the version, the Go release and the platform, and exit
   -h, --help           print this and exit
 
 Exit status: 0 done, 1 uncaught exception, 2 wrong command line or unreadable
@@ -104,7 +117,7 @@ func run(args []string) int {
 		return usageError(err.Error())
 	}
 	if *showVersion {
-		fmt.Println("slowjs " + versionString())
+		fmt.Printf("slowjs %s %s %s/%s\n", versionString(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 		return exitOK
 	}
 	if *timeout < 0 {
@@ -262,6 +275,12 @@ func runScript(src string, args []string, timeout time.Duration, limit uint64, l
 		return failed(err, exitException)
 	}
 	if err = arm(); err == nil {
+		err = register(vm)
+	}
+	if err == nil {
+		err = arm()
+	}
+	if err == nil {
 		err = define(vm, string(argsJSON))
 	}
 	if err == nil {
@@ -299,6 +318,24 @@ func runScript(src string, args []string, timeout time.Duration, limit uint64, l
 		return exitException
 	}
 	return failed(err, exitException)
+}
+
+// register sets the VM up as tifa's renderer does, after the eval timeout:
+// the call depth, then URL, Intl and Temporal in that order, then fmt,
+// which tifa does not have.
+func register(vm *quickjs.VM) error {
+	vm.SetMaxStackSize(stackDepth)
+	err := url.Register(vm)
+	if err == nil {
+		err = intl.Register(vm)
+	}
+	if err == nil {
+		err = temporal.Register(vm)
+	}
+	if err == nil {
+		err = qjsfmt.Register(vm.GlobalObject())
+	}
+	return err
 }
 
 // define runs setup with the write Builtin and the script arguments.

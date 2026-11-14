@@ -255,7 +255,13 @@ func TestNoMemoryLimit(t *testing.T) {
 }
 
 func TestVersion(t *testing.T) {
-	runCmd(t, "--version").want(t, 0, "slowjs "+testVersion+"\n")
+	// The Go release may differ from the test's when SLOWJS_BIN is a
+	// release binary, the platform may not.
+	r := runCmd(t, "--version")
+	f := strings.Fields(r.stdout)
+	if r.code != 0 || len(f) != 4 || f[0] != "slowjs" || f[1] != testVersion || !strings.HasPrefix(f[2], "go1.") || f[3] != runtime.GOOS+"/"+runtime.GOARCH {
+		t.Fatalf("exit %d, stdout %q, want slowjs %s go1.N %s/%s", r.code, r.stdout, testVersion, runtime.GOOS, runtime.GOARCH)
+	}
 }
 
 func TestHelp(t *testing.T) {
@@ -303,8 +309,7 @@ const v8Dir = "../../internal/arewefastyet/v8-v7"
 
 var v8Benchmarks = []string{"Richards", "DeltaBlue", "Crypto", "RayTrace", "EarleyBoyer", "RegExp", "Splay", "NavierStokes"}
 
-// v8Script is the suite as one file, as a benchmark harness that runs
-// engines from the command line makes it: run.js with each load('x.js')
+// v8Script is the suite as one file: run.js with each load('x.js')
 // replaced by the file, and print taken from console.log when there is one,
 // which calls console.log unbound.
 func v8Script(t *testing.T) string {
@@ -332,10 +337,11 @@ func v8Script(t *testing.T) string {
 	return b.String()
 }
 
-// TestV8Suite runs the V8 benchmark suite through the command, as a
-// harness does, and checks that it prints a score for each benchmark and
-// the total, and that the benchmarks whose own checks pass are those that
-// pass when the suite runs in a VM of the library. It times nothing.
+// TestV8Suite runs the V8 benchmark suite through the command, a long
+// script that uses much of the engine, and checks that
+// it prints a score for each benchmark and the total, and that the
+// benchmarks whose own checks pass are those that pass when the suite runs
+// in a VM of the library. It times nothing.
 func TestV8Suite(t *testing.T) {
 	if testing.Short() {
 		t.Skip("the suite takes about 20 seconds, twice")
@@ -398,4 +404,28 @@ JSON.stringify(res)`, quickjs.EvalGlobal)
 		t.Fatal(err)
 	}
 	return res
+}
+
+// TestPackages: the VM has the packages tifa registers, Intl, Temporal and
+// URL, and Go's fmt.
+func TestPackages(t *testing.T) {
+	runCmd(t, script(t, `
+print(new Intl.NumberFormat("de-DE").format(1234567.891));
+print(new Intl.DateTimeFormat("en-US", { timeZone: "UTC", dateStyle: "long" }).format(new Date(0)));
+print(Temporal.PlainDate.from("2026-02-28").add({ days: 1 }).toString());
+var u = new URL("https://example.com/a/../b?x=1");
+u.searchParams.append("y", "2 3");
+print(u.href);
+print(fmt.sprintf("%05.1f|%x", 3.14159, 255));
+fmt.printf("%s|", "p"); fmt.println("q"); print("r");
+`)).want(t, 0, "1.234.567,891\nJanuary 1, 1970\n2026-03-01\nhttps://example.com/b?x=1&y=2+3\n003.1|ff\np|q\nr\n")
+}
+
+// TestStackDepth: calls nest as deep as in tifa, 10000.
+func TestStackDepth(t *testing.T) {
+	runCmd(t, "-e", `function f(n) { return n === 0 ? 0 : 1 + f(n - 1) } print(f(9000))`).want(t, 0, "9000\n")
+	r := runCmd(t, "-e", `function f(n) { return n === 0 ? 0 : 1 + f(n - 1) } f(10001)`)
+	if r.code != exitException || !strings.Contains(r.stderr, "RangeError") {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
 }
