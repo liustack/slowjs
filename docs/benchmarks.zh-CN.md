@@ -47,7 +47,7 @@ tifa 页面一次渲染的 CPU 时间，表示成相对 liustack/quickjs 的比�
 
 - **哪些引擎用了 polyfill。** C QuickJS 和 Hermes 没有 Intl，在 MUI 和商店页面上用了 FormatJS。go-quickjs、C QuickJS 和 Hermes 的 URL、URLSearchParams 和 structuredClone 来自 core-js，moejs 的 URL、URLSearchParams 和迭代器辅助方法来自 core-js，Hermes 和 Node 的 `Iterator.concat` 也是。liustack/quickjs 和 Node 的 Intl 与 URL 不需要 polyfill。bench 页面不需要 Intl，所以那一列是每个引擎跑同样的 JavaScript：说这个引擎在同样的代码上比 C QuickJS 快，靠的是那一列和 V8 套件。
 - **moejs 一个页面也渲染不出来。** 这些包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，也没有标准的 polyfill 可用。
-- **Hermes** 没有异步生成器，所以只为 Hermes，用 esbuild 把包里的异步生成器和 `for await` 降级成 ES2017 的 async 函数。它的 shell 没有 `performance.now`，所以它的时间是整个计时循环的墙钟时间除以渲染次数。
+- **Hermes** 没有异步生成器，所以只为 Hermes，用 esbuild 把包里的异步生成器和 `for await` 降级成 ES2017 的 async 函数。一个很小的替身文件（`native/hermes-shim.js`）给 Hermes 补上包只在加载时读、而它没有的内置对象（可调整大小的 ArrayBuffer 的取值器、RegExp 标志的取值器、`SharedArrayBuffer`、`Float16Array`）。它的 shell 没有 `performance.now`，所以它的时间是整个计时循环的墙钟时间除以渲染次数。
 - **HTML。** go-quickjs 和 Node 在全部 25 个页面上和我们的 HTML 相同。C QuickJS 有 9 个页面不同，Hermes 是全部 25 个，不同的地方总是 Intl 格式化的文字，Hermes 还有路由的内嵌脚本。C QuickJS 用 FormatJS 把日期写成 `October 13, 14:32`，Go 的 Intl 写成 `October 13 at 14:32`，`AM` 和 `PM` 前面还是一个窄的不换行空格。Hermes 把路由的脱水函数打印成 `function($R){return ...}`，别的引擎打印的是原样的箭头函数（不在 Intl 的输出里），MUI 和工作台页面的日期文字和 C QuickJS 一样不同。其余每个字节都相同：不同的页面在 `-pages.md` 文件里列出，附上各自第一处不同的位置。
 
 ## V8 套件
