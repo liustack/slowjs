@@ -1789,6 +1789,185 @@ static void test_fast_builtins_oom(void)
     sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
 }
 
+/* Object.defineProperty, Object.defineProperties, Object.create and
+   Reflect.defineProperty with plain descriptors, read from their shape
+   (js_obj_to_desc_plain), and with descriptors that take the generic path (a
+   getter, an inherited field, a proxy): with too little memory (the key, the
+   property, the shape of the object, the result) they fail with the out of
+   memory error and lose nothing. */
+static void test_define_desc_oom(void)
+{
+    static const char setup[] =
+        "var up = { enumerable: true }, fn = function () { return 1 };\n"
+        "var px = new Proxy({ value: 'p', configurable: true }, {});\n"
+        "function show(o) { return Object.keys(o).length + Object.getOwnPropertyNames(o).join('') }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var o = {}, d = Object.create(up);\n"
+        "    d.value = 'v' + i;\n"
+        "    Object.defineProperty(o, 'a' + i, { value: i, writable: true, enumerable: i % 2 == 0 });\n"
+        "    Object.defineProperty(o, 'b' + i, { get: fn, set: fn, configurable: true });\n"
+        "    Object.defineProperty(o, 'c' + i, d);\n"
+        "    Object.defineProperty(o, 'd' + i, { get value() { return i } });\n"
+        "    Object.defineProperty(o, 'e' + i, px);\n"
+        "    Object.defineProperties(o, { f: { value: 1, enumerable: true }, g: d });\n"
+        "    Reflect.defineProperty(o, 'h' + i, { value: 'h', enumerable: true });\n"
+        "    var c = Object.create(null, { x: { value: i, enumerable: true }, y: { get: fn } });\n"
+        "    out.push(show(o), show(c), o['a' + i], o['b' + i], o['c' + i], o['d' + i], o['e' + i]);\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "5a0b0c0d0e0fgh0 1xy 0 1 v0 0 p 4a1b1c1d1e1fgh1 1xy 1 1 v1 1 p "
+        "5a2b2c2d2e2fgh2 1xy 2 1 v2 2 p 4a3b3c3d3e3fgh3 1xy 3 1 v3 3 p "
+        "5a4b4c4d4e4fgh4 1xy 4 1 v4 4 p 4a5b5c5d5e5fgh5 1xy 5 1 v5 5 p",
+        NULL
+    };
+
+    sweep("define descriptors", "define_desc.js", setup, "run()", want, 16384);
+}
+
+/* Function.prototype.bind makes the bound function, the copy of its
+   arguments, its length and its name ("bound " and the name of the target):
+   with too little memory it fails with the out of memory error, never
+   returns a function without its length or name, and loses nothing. The
+   targets: functions of each prototype, a C function, a class, a bound
+   function, a name outside latin-1, a length that a getter gives, and a
+   function of a new prototype, whose bound function needs new shapes. */
+static void test_bind_oom(void)
+{
+    static const char setup[] =
+        "function f(a, b, c) { return this.k + a + b + c }\n"
+        "var g = function* gen(x) { }, h = async function () { }, ag = async function* agen(a, b) { };\n"
+        "var named = function () { };\n"
+        "Object.defineProperty(named, 'name', { value: 'n\\u00e9\\u4e2d' });\n"
+        "var lenf = function () { };\n"
+        "Object.defineProperty(lenf, 'length', { get: function () { return 2.5 } });\n"
+        "function show(x) { return x.name + '/' + x.length + '/' + Object.getOwnPropertyNames(x).join('+') }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var t = function (a) { };\n"
+        "    Object.setPrototypeOf(t, Object.create(Function.prototype));\n"
+        "    var b = f.bind({ k: i }, 1), bb = b.bind(null, 2);\n"
+        "    var all = [b, bb, g.bind(), h.bind(), ag.bind(null, 1), Math.max.bind(null, i), named.bind(), lenf.bind(), (class C { }).bind(), t.bind()];\n"
+        "    out.push(all.map(show).join(' '), bb(3));\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 6 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 7 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 8 "
+        "bound f/2/length+name bound bound f/1/length+name bound gen/1/length+name "
+        "bound h/0/length+name bound agen/1/length+name bound max/1/length+name "
+        "bound n\xc3\xa9\xe4\xb8\xad/0/length+name bound lenf/2/length+name bound C/0/length+name bound t/1/length+name 9",
+        NULL
+    };
+
+    sweep("bind", "bind.js", setup, "run()", want, 16384);
+}
+
+/* A host that calls bind sees either the bound function, whole, with no
+   exception pending, or the exception with the out of memory error pending.
+   (A script cannot see a bound function bind returned with the error
+   pending: the next call fails and the next backward jump ends the loop.)
+   The target has a new prototype whose empty shape another object shares,
+   so the bound function gets its keys on copies of the shape, which are
+   the requests that fail in the sweep of all sizes but one. */
+#define BIND_BYTE_ROOMS (1 + 16384 / 8)
+#define BIND_BUT_ONE (1024 / 8)
+
+static void test_bind_host_oom(void)
+{
+    static const char setup[] =
+        "var p = Object.create(Function.prototype), other = Object.create(p);\n"
+        "var t = function (a, b) { };\n"
+        "Object.setPrototypeOf(t, p);\n"
+        "var bind = Function.prototype.bind;\n";
+    FillRoom rm[FILL_ROOMS];
+    size_t nfill = fill_rooms(rm), k;
+    int failed = 0, made = 0;
+
+    for (k = 0; k < BIND_BYTE_ROOMS + nfill + BIND_BUT_ONE; k++) {
+        VM v = vm_new();
+        JSValue g, bind, t, f, args[2], name, len;
+        JSAtom alen, aname;
+        int bytes = k < BIND_BYTE_ROOMS, butone = k >= BIND_BYTE_ROOMS + nfill, pending, unc;
+        size_t n = bytes ? k * 8 : butone ? 8 * (k - BIND_BYTE_ROOMS - nfill + 1) : k - BIND_BYTE_ROOMS;
+        const char *sweep = bytes ? "byte" : butone ? "all but" : "fill";
+        char *s;
+
+        CHECK(eval_ok(v.ctx, setup), "bind host: the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        bind = JS_GetPropertyStr(v.ctx, g, "bind");
+        t = JS_GetPropertyStr(v.ctx, g, "t");
+        args[0] = JS_NULL;
+        args[1] = JS_NewInt32(v.ctx, 1);
+        if (bytes) {
+            room(&v, n);
+        } else if (butone) {
+            fill_memory(&v);
+            free_blocks(&v, 8, n - 8, 4);
+            free_blocks(&v, n + 8, MAX_BLOCK, 4);
+        } else {
+            fill_memory(&v);
+            free_blocks(&v, rm[n].min, rm[n].max, rm[n].n);
+        }
+        f = JS_Call(v.ctx, bind, t, 2, args);
+        pending = JS_HasException(v.ctx);
+        unc = JS_IsUncatchableException(v.ctx);
+        if (bytes)
+            unlimit(&v);
+        else
+            release_blocks(&v);
+        if (JS_IsException(f)) {
+            failed++;
+            CHECK(pending && unc, "bind host %s room %zu: pending %d, uncatchable %d", sweep, n, pending, unc);
+            free(exception_text(v.ctx));
+        } else {
+            made++;
+            CHECK(!pending, "bind host %s room %zu: a bound function came back with an exception pending", sweep, n);
+            free(exception_text(v.ctx));
+            alen = JS_NewAtom(v.ctx, "length");
+            aname = JS_NewAtom(v.ctx, "name");
+            CHECK(JS_GetOwnProperty(v.ctx, NULL, f, alen) == 1 &&
+                  JS_GetOwnProperty(v.ctx, NULL, f, aname) == 1,
+                  "bind host %s room %zu: no own length or name", sweep, n);
+            JS_FreeAtom(v.ctx, alen);
+            JS_FreeAtom(v.ctx, aname);
+            name = JS_GetPropertyStr(v.ctx, f, "name");
+            len = JS_GetPropertyStr(v.ctx, f, "length");
+            s = value_text(v.ctx, name);
+            CHECK(s && !strcmp(s, "bound t") && JS_VALUE_GET_TAG(len) == JS_TAG_INT && JS_VALUE_GET_INT(len) == 1,
+                  "bind host %s room %zu: name %s, length tag %d", sweep, n, s ? s : "?", JS_VALUE_GET_TAG(len));
+            free(s);
+            JS_FreeValue(v.ctx, name);
+            JS_FreeValue(v.ctx, len);
+            JS_FreeValue(v.ctx, f);
+        }
+        JS_FreeValue(v.ctx, t);
+        JS_FreeValue(v.ctx, bind);
+        JS_FreeValue(v.ctx, g);
+        /* a lost object ends the process in vm_free: say what failed first */
+        fflush(stdout);
+        vm_free(&v);
+    }
+    CHECK(failed > 0, "bind host: no room made it fail");
+    CHECK(made > 0, "bind host: no room let it work");
+}
+
 /* startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) make the
    names, styles and end tags they keep, the tables that hold them (made at the
    first entry and grown as they fill), the buffer the start tag keeps (freed
@@ -2591,6 +2770,9 @@ int main(void)
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
+    test_define_desc_oom();
+    test_bind_oom();
+    test_bind_host_oom();
     test_tags_oom();
     test_tags_register_oom();
     test_regvm_convert_oom();

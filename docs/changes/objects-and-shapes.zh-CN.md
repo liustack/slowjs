@@ -342,3 +342,43 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 还试过把空目标直接按结果的大小建出来：释放字面量的空对象，在一个内存块里建出结果。这样更慢：`{...o3, z}` 从 1,422 变成 1,542 条指令，`{...o2, z}` 从 1,272 变成 1,499。释放空对象比让它的数组增长更贵，而且属性放在对象内存块里的结果，在下一个键到来时还要把属性搬出去。
 
 测试：`engine/test/compare/object_spread.js`（输出和 Node 24 一样）把 30 种源对象展开到 7 种目标里，各跑三次，在一个位置轮流跑 7 种 shape 共 50 轮，还覆盖一个位置上其他 shape 的目标，记下的 shape 对应的对象之后发生改动，会增删键的 getter，以及 `Object.prototype` 上的 setter 和一个热循环。`engine/test/unit-white.c` 里的 `test_object_spread_cache` 检查缓存项，`engine/test/regvm/js/q3-objspread.js` 在抛错注入测试里跑展开的各种抛错。
+
+## 属性描述符的字段读取抛错时，转换就此结束
+
+版本：Unreleased。
+
+`js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它把 `JS_HasProperty` 返回的 -1（Proxy 的 `has` trap 抛错）当成 true：在异常还挂着时用 `Get` 读这个字段，接着读后面的字段，最后可能把属性定义下来，异常就丢了。另外，字段 `get` 或 `set` 的 getter 抛错时，它用 `TypeError: invalid getter`（或 setter）替换了原来的异常。现在两种情况都用读取时抛出的异常结束转换，和规范及 Node 一致。上游 QuickJS 的代码也是这样。
+
+测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）让 `has` trap 依次在六个字段上抛错，也让 getter 依次在每个字段上抛错，并记下读了哪些字段。
+
+## 内存不够时 bind 整个失败
+
+版本：Unreleased。
+
+`Function.prototype.bind` 以前先建绑定函数，再分配存放目标函数、`this` 和参数的内存块。这块内存要不到时，它释放绑定函数，而绑定函数的 finalizer 会去读这个不存在的块，进程就崩溃了。之后它定义 `length` 和 `name`，却不看两次定义的返回值：其中一次内存不够（为键复制 shape）时，bind 照样返回少了这个键的绑定函数，同时挂着内存不足的错误（脚本看不到，因为下一次调用会失败，下一次向后跳转会结束循环，但从宿主调用 bind 就能看到）。现在先分配这块内存再建绑定函数，定义失败时 bind 也失败。上游 QuickJS 的代码也是这样。
+
+测试：`engine/test/unit-oom.c` 里的 `test_bind_oom` 在内存不够时 bind 各种原型的函数、C 函数、类、绑定函数、名字超出 latin-1 的函数、length 由 getter 给出的函数和新原型的函数。`test_bind_host_oom` 从宿主调用 bind，目标函数的新原型的空 shape 还被另一个对象共用，内存余量从 0 到 16 KiB 逐个试，也试堆满后还回几块和堆满后除一种大小外每种都还回几块的情况：结果要么是完整、没有挂着异常的绑定函数，要么是内存不足的错误。改动之前它会崩溃。
+
+## Object.defineProperty 一次读完普通的描述符对象
+
+版本：Unreleased。
+
+`js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它对描述符的六个字段各做一次 `HasProperty` 再做一次 `Get`，一共十二次查找，描述符没写的字段每个都要沿原型链走一遍。zod 4 的 `defineLazy` 和 react-hook-form 给表单状态做的代理，每次渲染在 workbench 的 studio 页定义 2,944 个属性，在商店首页 459 个，在 MUI 的订单页 83 个，描述符大多只有两三个字段。现在，描述符是普通对象（类 `Object`），而且每个字段要么是它自己的数据属性，要么它和原型链上的每个对象都没有这个字段时，就从它的 shape 一次读完（`js_obj_to_desc_plain`）：在对象里查六次，没写的字段在每个原型里各查一次。
+
+为什么安全：对这样的对象，读字段的 `HasProperty` 和 `Get` 都不运行代码，`ToBoolean` 也不运行，所以读的先后看不出来，一次读完和十二次查找结果相同。检查的顺序和报错信息不变：先查 getter 能否调用，再查 setter，再查是否两类字段都有。下面这些照旧走通用路径：其他类的对象（Proxy、数组、函数、`String` 对象），自有字段是 getter、setter 或首次使用时才创建的属性，字段在原型上找到（原型有 `value`，或者脚本给 `Object.prototype` 加了 `enumerable`），以及原型链上有特殊对象（以 Proxy 或 `String` 对象为原型）。所有检查做完才取值，查找和复制之间不分配内存，指向属性数组的指针一直有效。这个辅助函数不内联，getter 可能再次进入的 `js_obj_to_desc` 的栈帧不会变大。
+
+收益：每次渲染，workbench 的 studio 页少执行 0.71% 的指令，stats 页少 0.74%，商店首页少 0.14%，商品页少 0.17%（两页都复用 URL 对象），MUI 的两页和 React 页不变（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
+
+测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）经五个调用方定义属性，描述符覆盖各个字段和各种真假值、继承来的字段、以 Proxy 和 `String` 对象为原型、改过的 `Object.prototype`、另一个 realm 的对象，以及抛错的 getter。`engine/test/regvm/js/q5-desc.js` 在 corpus 和抛错注入测试里跑报错信息、另一个 realm，以及普通、getter 和 proxy 描述符混在一起的循环。`engine/test/unit-oom.c` 里的 `test_define_desc_oom` 在内存不够时跑同样的组合。
+
+## bind 从普通目标函数的 shape 读 length 和 name
+
+版本：Unreleased。
+
+`Function.prototype.bind` 以前先用 `GetOwnProperty` 再用 `Get` 向目标函数要 `length`，用 `Get` 要 `name`，用拼接造出 `"bound " + name`，再用两次定义把两者交给绑定函数，每次定义都要查一次键、换一次 shape。React 的服务端渲染器每次渲染为每个 `useState` 和 `useReducer` hook 绑定一个 dispatch（对它的 dispatch 函数做一次 `bind(null, ...)`）：workbench studio 页每次渲染 855 次 bind，商店首页 572 次，MUI 的订单页 331 次，React 页 60 次。现在，目标函数不是特殊对象，自有的 `name` 是数据属性，自有的 `length` 是数据属性或者没有时，bind 在创建绑定函数之前就从目标函数的 shape 读出两者（`js_bind_read_plain`），把名字接在 `"bound "` 后面一次造出新字符串（`js_bound_name`），再让绑定函数从它原型的空 shape 直接换到同一原型的新函数带上 `length` 和 `name` 后的 shape（`js_bound_function_props`）：键相同，顺序相同，都只可配置，属性数组大小也相同。
+
+为什么安全：对这样的目标函数，`GetPrototypeOf`、`HasOwnProperty` 以及读 `length` 和 `name` 的 `Get` 都不运行代码，所以在创建绑定函数之前读而不是之后读，看不出区别。length 仍由原来的代码算（`js_bind_length`：整数减去绑定的参数个数，`NaN` 得 0，无穷保留，不是数字得 0），名字不是字符串时得 `"bound "`。名字有 4096 个字符或更长，或者是 rope 时，照旧经字符串缓冲区拼接，拼接时会检查中断标志。下面这些走通用路径：目标函数是特殊对象（Proxy），自有的 `length` 或 `name` 是 getter 或首次使用时才创建的属性，以及目标函数没有自有的 `name`（被删掉了）。绑定函数、类、生成器、async 函数和换了原型的函数，只要 `length` 和 `name` 是数据属性，就走这条快路径：只有绑定函数的 shape 是四个函数原型之一的空 shape 时才直接换 shape，其他原型照旧做两次定义。
+
+收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
+
+测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。

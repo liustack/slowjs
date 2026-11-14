@@ -1,0 +1,6 @@
+result bound realmFn/1/length+name true
+result bound named/2 bound getter/0 bound /1 bound named/2 bound max/1 bound gen/0 bound named/2 bound getter/0 bound /1 bound named/2 bound max/1 bound gen/0 6 7
+result bound named/2 bound getter/0 bound /1 bound named/2 bound max/1 bound gen/0 bound named/2 bound getter/0 bound /1 bound named/2 bound max/1 bound gen/0 6 7
+mem-end obj=385 atom=605 shape=244 prop=1963 jsfunc=8 cfunc=252 array=3 fast_array=3 elements=3 binary=0
+mem-gc obj=381 atom=605 shape=241 prop=1955 jsfunc=8 cfunc=252 array=3 fast_array=3 elements=3 binary=0
+--- status exit 0

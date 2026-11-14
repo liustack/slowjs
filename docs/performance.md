@@ -1087,6 +1087,34 @@ The instructions of a render on the M4 (retired instructions, the median of a pa
 
 The store's home, product and product list pages gain 3% to 4%: they are longer than `stringStep` (262,144 units), so their bytes were counted one unit at a time before they were written, about 21 instructions a unit in all, where the other pages took about 9. The conversion alone now takes 3 to 6.5 instructions a unit (the Chinese pages most). The time was not measured on its own: a merged batch is timed as a whole.
 
+### Property descriptors and bind without generic lookups
+
+[Object.defineProperty reads a plain descriptor in one pass](changes/objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) (descriptors), and on top of it [bind reads the length and name of a plain target from its shape](changes/objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) (bind), against main at `78a90364` (v0.30.6). Instructions per render are from callgrind on the native C tree on linux/amd64 (the 3 timed renders after 2 warm ones, the pool of tifa's settings, `host_poll` left out), the shop's pages with the URL objects reused. The calls are counted in `js_obj_to_desc` and `js_function_bind`. The HTML of every page is the same.
+
+| Page | Descriptors a render | Binds a render | Descriptors | Descriptors and bind |
+| --- | ---: | ---: | ---: | ---: |
+| the workbench studio page | 2,944 | 855 | -0.71% | -1.17% |
+| the workbench stats page | 1,609 | 394 | -0.74% | -1.16% |
+| the shop's English home page | 459 | 572 | -0.14% | -0.49% |
+| the shop's Chinese products page | 975 | 1,286 | -0.17% | -0.68% |
+| MUI's orders page | 83 | 331 | +0.01% | -0.14% |
+| MUI's home page | 83 | 37 | -0.02% | -0.06% |
+| React's page | 0 | 60 | -0.01% | -0.18% |
+
+The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pages without the reused URL objects), against the same commit of main. The profile of `make gen` is the one trained before the change: `js_obj_to_desc`, `js_function_bind` and `js_bound_function_finalizer` changed, so they are compiled without it, and the six new helpers have none, until the profile is trained again. On linux/amd64 the instructions of a render are from callgrind, two warm renders and then the difference of three renders and one, halved. On an Apple M4 (darwin/arm64) they are the retired instructions, the median of 20 renders (60 for React's page), the lowest of 3 rounds. The HTML of every page is the same.
+
+| Page | linux/amd64 | darwin/arm64 |
+| --- | ---: | ---: |
+| the workbench studio page | -0.64% | -0.59% |
+| the workbench stats page | -0.47% | -0.65% |
+| the shop's English home page | -0.46% | -0.28% |
+| the shop's Chinese products page | -0.45% | -0.59% |
+| MUI's orders page | -0.22% | -0.10% |
+| MUI's home page | -0.18% | -0.12% |
+| React's page | -0.16% | -0.30% |
+
+The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.

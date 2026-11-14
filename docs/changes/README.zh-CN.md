@@ -275,6 +275,10 @@ read_when:
 | `in` 运算符遍历原型链时不加引用 | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#in-运算符遍历原型链时不加引用) |
 | 对象的 rest 用解析器生成的列表排除模式里的键，并按源对象 shape 的缓存直接建成最终的 shape | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建) |
 | 对象字面量里的展开遇到见过的 shape 时，按目标和源对象 shape 的缓存复制 | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#展开按目标和源对象-shape-的缓存复制) |
+| 属性描述符的字段读取或 `has` trap 抛错时，转换以这个异常结束 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#属性描述符的字段读取抛错时转换就此结束) |
+| 内存不够时 bind 以内存不足的错误失败，不再崩溃，也不再返回缺 length 或 name 的绑定函数 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败) |
+| `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
+| `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
 
 ## 内存
 
