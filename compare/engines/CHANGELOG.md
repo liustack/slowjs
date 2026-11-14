@@ -2,6 +2,17 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14: newer moejs and go-quickjs
+
+- moejs is v0.1.0 (it was v0.1.0-alpha.11, released 2026-11-09) and go-quickjs is
+  v0.37.3 (it was v0.34.1), both from `go get <module>@latest`. go-quickjs now
+  pulls go-intl v0.9.0 (it was v0.8.0). goant (v0.2.1) and modernc.org/quickjs
+  (v0.27.0) were already the newest. The adapters needed no change, and the
+  feature probes give the same answers as in the run of 2026-11-06.
+  Numbers in earlier result files are those of the old versions.
+- The module line for liustack/quickjs reads v0.30.7. `compare/engines` reaches
+  the module through its `replace`, so the run measures the checkout it is in.
+
 ## 2026-11-14: Hermes V1 on the V8 suite
 
 - Hermes V1 has rows on the V8 suite, in a session of its own on server C (GCP

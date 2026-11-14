@@ -2,6 +2,16 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：更新的 moejs 和 go-quickjs
+
+- moejs 是 v0.1.0（之前是 v0.1.0-alpha.11，2026-11-09 发布），go-quickjs 是 v0.37.3
+  （之前是 v0.34.1），都来自 `go get <module>@latest`。go-quickjs 现在依赖 go-intl v0.9.0
+  （之前是 v0.8.0）。goant（v0.2.1）和 modernc.org/quickjs（v0.27.0）本来就是最新版。
+  适配器不用改，特性探测给出的答案和 2026-11-06 那次运行相同。
+  更早的结果文件里的数字是旧版本的。
+- liustack/quickjs 的模块行写 v0.30.7。`compare/engines` 通过自己的 `replace` 引用这个模块，
+  所以运行测的是它所在的那份检出。
+
 ## 2026-11-14：V8 套件上的 Hermes V1
 
 - Hermes V1 在 V8 套件上有了自己的行，在服务器 C（GCP t2d-standard-4，AMD EPYC 7B13，CPU 0，
