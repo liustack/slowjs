@@ -49,22 +49,12 @@ var variants = []variant{
 	{"liustack-quickjs", "liustack", "eng_liustack", nil, true},
 	{"modernc-quickjs", "modernc", "eng_modernc", nil, true},
 	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, true},
-	{"go-quickjs-jit", "goquickjsjit", "eng_goquickjsjit quickjs_jit", nil, true},
 	{"goant-interp", "goant", "eng_goant", nil, true},
-	{"goant-jit", "goantjit", "eng_goantjit", nil, true},
 	{"moejs", "moejs", "eng_moejs", nil, true},
 }
 
-// pagesOnly are variants for the tifa page runs (tifa/run.sh). Their binaries
-// are built with the others, but a run of cmd/compare leaves them out unless
-// -engines names them: they are the same engine as one above, set up another
-// way.
-var pagesOnly = []variant{
-	{"liustack-tifa", "liustacktifa", "eng_liustacktifa", nil, false},
-}
-
 var (
-	flagPhases    = flag.String("phases", "features,concurrent,react,micro,v8,upstream,cold,mem,t262", "workloads to run")
+	flagPhases    = flag.String("phases", "v8,t262", "workloads to run")
 	flagEngines   = flag.String("engines", "", "comma-separated engines (default all)")
 	flagRounds    = flag.Int("rounds", 5, "rounds of each timed workload, engines take turns in a different order each round")
 	flagCPU       = flag.String("cpu", "", "run every engine process under taskset -c <cpu> (Linux)")
@@ -116,7 +106,7 @@ func main() {
 	vs := selected()
 	if !*flagNoBuild {
 		if *flagEngines == "" {
-			build(append(slices.Clone(vs), pagesOnly...))
+			build(vs)
 		} else {
 			build(vs)
 		}
@@ -270,7 +260,7 @@ func selected() []variant {
 	var out []variant
 	for _, n := range strings.Split(*flagEngines, ",") {
 		found := false
-		for _, v := range slices.Concat(variants, pagesOnly) {
+		for _, v := range variants {
 			if v.Name == n || v.Bin == n {
 				out, found = append(out, v), true
 			}

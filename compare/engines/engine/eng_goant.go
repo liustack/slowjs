@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build eng_goant || eng_goantjit
+//go:build eng_goant
 
 package engine
 
@@ -14,12 +14,9 @@ import (
 )
 
 func init() {
-	name, notes := "goant-interp", []string{"JIT off: goant.New() without WithJIT, the library default."}
-	if goantJIT {
-		name, notes = "goant-jit", []string{"JIT on: goant.New(goant.WithJIT(true)), the opt-in baseline JIT."}
-	}
+	notes := []string{"JIT off: goant.New() without WithJIT, the library default."}
 	register(&Engine{
-		Name:        name,
+		Name:        "goant-interp",
 		Module:      "github.com/robomotionio/goant",
 		New:         newGoant,
 		Interrupt:   true,
@@ -33,7 +30,7 @@ func init() {
 type goantVM struct{ rt *goant.Runtime }
 
 func newGoant(o Options) (VM, error) {
-	opts := []goant.Option{goant.WithJIT(goantJIT)}
+	opts := []goant.Option{goant.WithJIT(false)}
 	if o.MemoryLimit > 0 {
 		opts = append(opts, goant.WithMemoryLimit(uint64(o.MemoryLimit)))
 	}

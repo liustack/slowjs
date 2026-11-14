@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build eng_goquickjs || eng_goquickjsjit
+//go:build eng_goquickjs
 
 package engine
 
@@ -16,12 +16,9 @@ import (
 )
 
 func init() {
-	name, notes := "go-quickjs-interp", []string{"JIT off: built without the quickjs_jit tag, the library default."}
-	if goquickjsJIT {
-		name, notes = "go-quickjs-jit", []string{"JIT on: built with -tags quickjs_jit and run with quickjs.WithJIT(), the experimental JIT."}
-	}
+	notes := []string{"JIT off: built without the quickjs_jit tag, the library default."}
 	register(&Engine{
-		Name:           name,
+		Name:           "go-quickjs-interp",
 		Module:         "github.com/go-quickjs/go-quickjs",
 		New:            newGoquickjs,
 		SharedPrograms: true,
@@ -49,9 +46,6 @@ func compileGoquickjs(name, src string) (Program, error) {
 
 func newGoquickjs(o Options) (VM, error) {
 	var opts []quickjs.Option
-	if goquickjsJIT {
-		opts = append(opts, quickjs.WithJIT())
-	}
 	if o.MemoryLimit > 0 {
 		opts = append(opts, quickjs.WithMemoryLimit(o.MemoryLimit))
 	}
