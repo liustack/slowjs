@@ -247,6 +247,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Bitwise operators on floats skip the slow path | v0.26.17 | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | v0.26.17 | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
+| `instanceof` of an ordinary function answers without calling `Symbol.hasInstance` | Unreleased | [operators.md](operators.md#instanceof-without-the-call-of-symbolhasinstance) |
 
 ## Objects and shapes
 

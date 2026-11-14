@@ -247,6 +247,7 @@ read_when:
 | --- | --- | --- |
 | 浮点数的位运算跳过慢路径 | v0.26.17 | [operators.md](operators.zh-CN.md#浮点数的位运算跳过慢路径) |
 | 常见的比较在解释器里直接回答 | v0.26.17 | [operators.md](operators.zh-CN.md#常见的比较在解释器里直接回答) |
+| 普通函数的 `instanceof` 不调用 `Symbol.hasInstance` 就给出答案 | Unreleased | [operators.md](operators.zh-CN.md#instanceof-不再调用-symbolhasinstance) |
 
 ## 对象和 shape
 

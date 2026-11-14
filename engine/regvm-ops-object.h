@@ -543,6 +543,82 @@ static no_inline int rv_defm(JSContext *ctx, JSValue *F, const uint8_t *ip)
     return ret < 0 ? -1 : 0;
 }
 
+/* x instanceof C with nothing run, ip at d a b: 1 with the boolean in d and
+   the temps a and b freed, 0 with nothing done, for rv_obj2_slow. The
+   specification's InstanceofOperator(a, b) calls GetMethod(b, @@hasInstance),
+   then that method. When b is a function (callable, not a proxy, not bound)
+   and no object from b up to the Function.prototype of this realm has an own
+   @@hasInstance or is exotic, the method is the one Function.prototype got
+   when the realm was made, js_function_hasInstance (not writable and not
+   configurable, so it is still that one, once a read has made it), and its
+   call is
+   OrdinaryHasInstance(b, a): false for a that is not an object, else the own
+   data property prototype of b, an object, looked for in the chain of a,
+   which must have no proxy. Anything else (a getter, the prototype not made
+   yet, an error to throw, a proxy) is left to the generic path, which does
+   it all again: nothing here can be seen, throws, allocates or calls. */
+static no_inline int rv_instof(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue v = F[(int8_t)ip[1]], fv = F[(int8_t)ip[2]];
+    JSObject *f, *p, *fproto;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    BOOL ret;
+
+    if (JS_VALUE_GET_TAG(fv) != JS_TAG_OBJECT)
+        return 0;
+    f = JS_VALUE_GET_OBJ(fv);
+    if (f->is_exotic || f->class_id == JS_CLASS_BOUND_FUNCTION ||
+        (f->class_id != JS_CLASS_BYTECODE_FUNCTION &&
+         !ctx->rt->class_array[f->class_id].call))
+        return 0;
+    /* @@hasInstance: the realm's own, with no other on the way */
+    fproto = JS_VALUE_GET_OBJ(ctx->function_proto);
+    for (p = f; p != fproto; ) {
+        if (p->is_exotic || find_own_property(&pr, p, JS_ATOM_Symbol_hasInstance))
+            return 0;
+        p = p->shape->proto;
+        if (!p)
+            return 0;
+    }
+    /* and made already: the read of the generic path makes it the first
+       time, and a test answered here must leave the memory as that read */
+    prs = find_own_property(&pr, fproto, JS_ATOM_Symbol_hasInstance);
+    if (!prs || (prs->flags & JS_PROP_TMASK))
+        return 0;
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT) {
+        ret = FALSE;
+    } else {
+        prs = find_own_property(&pr, f, JS_ATOM_prototype);
+        if (!prs || (prs->flags & JS_PROP_TMASK) ||
+            JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT)
+            return 0;
+        fproto = JS_VALUE_GET_OBJ(pr->u.value);
+        /* the walk of JS_OrdinaryIsInstanceOf: only an exotic object with
+           no prototype in its shape (a proxy) has another one */
+        for (p = JS_VALUE_GET_OBJ(v); ; ) {
+            JSObject *p1 = p->shape->proto;
+            if (!p1) {
+                if (p->is_exotic && !p->fast_array)
+                    return 0;
+                ret = FALSE;
+                break;
+            }
+            p = p1;
+            if (p == fproto) {
+                ret = TRUE;
+                break;
+            }
+        }
+    }
+    if (rv_is_temp(F, (int8_t)ip[1]))
+        JS_FreeValue(ctx, v);
+    if (rv_is_temp(F, (int8_t)ip[2]))
+        JS_FreeValue(ctx, fv);
+    rv_put(ctx, F, (int8_t)ip[0], JS_NewBool(ctx, ret));
+    return 1;
+}
+
 /* regexp, in and instanceof, ip at d a b: both taken */
 static no_inline int rv_obj2_slow(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                   int rop)
@@ -799,10 +875,14 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
         goto rv_exception;
     RV_NEXT();
 
+ rv_INSTOF:
+    if (!RV_INJ_ARMED && rv_instof(ctx, F, pc)) {
+        pc += 3;
+        RV_NEXT();
+    }
  rv_REGEXP:
  rv_IN:
  rv_INK:
- rv_INSTOF:
     ip = pc; pc += 3;
     RV_SYNC_TOP();
     if (rv_obj2_slow(ctx, F, ip, ip[-1]))
