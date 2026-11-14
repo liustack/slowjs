@@ -50,6 +50,8 @@ make check-gen
 git commit -m "build(pgo): train the profile again"
 ```
 
+`train.sh` 检查 `engine/pgo/loops.js` 不过时会停下：循环跑到的、页面留成冷的路径不够了，或者循环的某一部分不再走到它的函数。怎么办见 [engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md#循环)。不要把 `compare/testdata` 的微基准放进循环。
+
 新画像和它改动的文件放进同一个提交。然后再跑一次 `make check-gen`：不应再有 `warning: profile:` 开头的行（说 `likely()` 的那行 `profile:` 是提示，不是警告）。取入上游 QuickJS 的提交之后（[upgrading.md](upgrading.zh-CN.md)），以及换了 LLVM 版本之后（画像格式不同），也要重新训练。
 
 ## 打标签

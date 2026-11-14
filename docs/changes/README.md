@@ -60,6 +60,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Change | Release | Doc |
 | --- | --- | --- |
 | `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | v0.30.5 | [generator.md](generator.md#a-profile-of-tifas-pages) |
+| The profile is trained on plain loops (`engine/pgo/loops.js`) as well as the pages, so the paths the pages never run are not compiled as never run, and `train.sh` checks that the loops reach them | Unreleased | [generator.md](generator.md#a-second-input-plain-loops) |
 | A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
 
 ## Commits of upstream QuickJS

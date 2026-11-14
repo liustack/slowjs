@@ -50,6 +50,8 @@ make check-gen
 git commit -m "build(pgo): train the profile again"
 ```
 
+`train.sh` stops when its check of `engine/pgo/loops.js` fails: the loops no longer run enough of the paths the pages leave cold, or a part of them no longer reaches its function. [engine/pgo/README.md](../engine/pgo/README.md#the-loops) says what to do. Do not put the micro benchmarks of `compare/testdata` into the loops.
+
 The new profile and the files it changes go in one commit. Then run `make check-gen` again: no `warning: profile:` line should be left (the `profile:` line about `likely()` is a note, not a warning). Train again also after taking commits of upstream QuickJS ([upgrading.md](upgrading.md)) and after moving to another LLVM, whose profile format differs.
 
 ## Tagging
