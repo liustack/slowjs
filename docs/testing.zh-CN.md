@@ -198,7 +198,7 @@ go test ./internal/goasm/cmd/cycles      # the checks of the cycles tool
 
 ### 寄存器循环
 
-在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。`check-full` 运行 `golden.sh`（`golden` 一步：语料、单元程序和 rvgen 的固定种子），以及注入抛错的一部分（`inject-goldens` 和 `inject` 两步）。其余的不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
+在寄存器解释器（[寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)）上运行原生测试宿主的工具在 `engine/test/regvm/` 里。`check-full` 运行 `golden.sh`（`golden` 一步：语料、单元程序和 rvgen 的固定种子），以及注入抛错的一部分（`inject-goldens`、`inject` 和 `inject-sample` 三步）。其余的不是 `check-fast` 或 `check-full` 的步骤：改动碰到 `engine/regvm*.h`、函数的转换、某个操作的处理函数，或者引擎在调用和异常时做的事，就要运行它们。这个模式的引擎还没构建，或者是用别的源码构建的，`build.sh` 会先构建它。
 
 ```sh
 engine/test/regvm/build.sh asan                          # rvdiff、rvops 和给寄存器循环计数的 unit 程序，放在 engine/test/out/MODE
@@ -212,7 +212,7 @@ engine/test/out/MODE/rvops engine/test/regvm/opcodes.txt # 操作码表
 - 黄金文件（`engine/test/regvm/golden`）是在最后一个还有栈式解释器的提交（`deb70815`）上，从栈式解释器记下来的，记的是两个解释器结果一致的用例。没有黄金文件的用例算作不一致，这样后来加的脚本不会在没有东西可比的情况下通过。它的黄金文件来自 Node 24，或者来自读过输出、确认正确之后的 `-update`。
 - `rvgen`（`internal/rvgen`）为 pass 写小的随机程序：算术、比较、实参缺少和多余的调用、方法、递归、循环、字符串 `switch`、对象和数组、会回调的 getter，范围更宽的模式里还有闭包、`try`、类等等。`golden.sh` 对每种模式（`core`、`full`、`wide`，固定在 `internal/rvgen/v1`）的 1,000 个固定种子，对着 `golden/seeds` 检查，`rvgen node` 让新程序经 `rvdiff` 和 Node 24 各跑一遍，并显示每处差别。
 - `inject.sh`（引擎和工具用 `EXTRA_DEFS=-DRV_INJECT` 构建，见它的开头注释）让寄存器指令可能抛错的第 n 个位置抛一个 `InternalError`，n 取 1、2、3 等等。处理函数照常运行，走它的慢速一侧，在它调进引擎的地方失败，所以它释放什么、它的 pcmap 项让展开释放什么，是分开写的两件事：一个临时槽被释放两次或一次也没释放，会在 AddressSanitizer 下或运行时的计数里显现。每次运行都和栈式解释器在同一位置抛同一个错的那次运行比较，那些记录在 `golden/inject` 里。
-- 完整的注入集，`inject.sh DIR engine/test/regvm/corpus engine/test/regvm/js`，在一个改了 `engine/` 的分支合进 main 之前运行。它在一个核上要约 10 小时（多数脚本 2 到 7 分钟，最大的约 25 分钟），所以分成每次几个脚本的任务来跑。跑不同脚本的几个 `inject.sh` 可以同时共用一个构建目录：每个只动它自己那些脚本的目录。`check-full` 每类脚本用 `-max 1` 跑一个（`inject` 步骤，在一个核上连构建约 10 分钟，脚本列在 `engine/test/regvm/inject-check.txt`），`inject.sh -goldens`（`inject-goldens` 步骤）在注入集里有脚本既没有黄金文件、`golden/inject/skip` 里也没有它那一行时失败。栈式解释器已经没了，一个改动让某个黄金文件变了，就用 `inject.sh -update` 跑一次重新写：只取这个改动解释得了的那些行，其余位置保持栈式解释器当初记下的样子。
+- 完整的注入集，`inject.sh DIR engine/test/regvm/corpus engine/test/regvm/js`，在一个改了 `engine/` 的分支合进 main 之前手动运行，`check.sh` 没有哪一步跑它。它在一个核上要约 10 小时（多数脚本 2 到 7 分钟，最大的约 25 分钟），所以分成每次几个脚本的任务来跑。跑不同脚本的几个 `inject.sh` 可以同时共用一个构建目录：每个只动它自己那些脚本的目录。`check-full` 分三步跑它的一部分。`inject-goldens`（`inject.sh -goldens`）在注入集里有脚本既没有黄金文件、`golden/inject/skip` 里也没有它那一行时失败。`inject` 每类脚本用 `-max 1` 跑一个（在一个核上连构建约 10 分钟，脚本列在 `engine/test/regvm/inject-check.txt`）：它的黄金文件记下的每个位置，加上每个 site 一个位置。`inject-sample` 用 `-every 20` 跑注入集的每个脚本：它的黄金文件的第一行、每第 20 行和最后一行，127 个黄金文件记下的 92,795 个位置里的 4,815 个，每次跑都是同样这些行。一个改动让某个黄金文件变了却没有重新写，就会在这里失败，除非这个改动挑中的行一行也没变。合并前仍然要跑完整的注入集：每个黄金文件的其余位置、它抽到的没有黄金文件记录的位置（看运行怎么结束来判断），以及脚本里的 `inject-hit` 行，都靠它来查。栈式解释器已经没了，一个改动让某个黄金文件变了，就用 `inject.sh -update` 跑一次重新写：只取这个改动解释得了的那些行，其余位置保持栈式解释器当初记下的样子。
 - 完整的注入集不跑 `engine/test/regvm/golden/inject/skip` 列出的脚本，现在是 `l-code.js` 和 `l-consts.js`，它们能抛出的位置太多，一次测试跑不完（168,813 个和 77,196 个）：`inject.sh` 对每个打印一行 `SKIP`，什么也不跑。
 - `rvops` 把表 `engine/test/regvm/opcodes.txt` 和引擎的操作码对照：每个操作码一行，说明寄存器循环怎样接它（自己的操作，只靠 pass 的模型，窗口操作，`OLD`，或者没有），而且 pass 必须接受函数可能有的每个操作码。以 `>` 开头的一行是 pass 曾经拒绝过的函数，现在必须有寄存器码。
 - `unit-white`、`unit-oom` 和 `unit-api` 里是需要 pass 和入口内部才能做的检查（`test_regvm_*` 和 `test_rv_*`）：转换和它的暂存块，折叠和寄存器栈的新段在每次分配时依次失败，没有编译器会做出来的代码，帧的上限。`compare.sh` 会运行它们。
@@ -360,6 +360,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | `heap` | 全档 | `engine/test/heap.sh -s 2 -n 100000`：分配器的各个场景，以及对堆 100000 步、对运行时 300000 步的两个种子的随机序列，用 plain 构建（约 30 秒）。poison 和其他模式见[分配器的检查](#分配器) |
 | `golden` | 全档 | `engine/test/regvm/build.sh plain` 和 `engine/test/regvm/golden.sh -j 2 plain`：语料里每个脚本按三种方式运行，加上单元程序，以及 rvgen 每种模式（`core`、`full`、`wide`）的 1,000 个固定种子，各自对照 `engine/test/regvm/golden` 里的黄金文件（[寄存器循环](#寄存器循环)）。改动让脚本显示的东西变了，包括结束时运行时的计数，就在同一个提交里重写黄金文件（语料用 `golden.sh -update`，种子文件用 `rvgen record`，并读过它的 diff）。在 Apple M4 上构建之后约 2 分 20 秒 |
 | `inject` | 全档 | 在用 `-DRV_INJECT` 构建的引擎上，对 `engine/test/regvm/inject-check.txt` 里每类一个的脚本运行注入抛错（`engine/test/regvm/inject.sh -max 1`）：每个黄金文件记下的位置，加上每个 site 一个位置（在一个核上连构建约 10 分钟）。完整的注入集在合进 main 之前运行（[寄存器循环](#寄存器循环)） |
+| `inject-sample` | 全档 | 在用 `-DRV_INJECT` 构建的引擎上，对 `engine/test/regvm/corpus` 和 `engine/test/regvm/js` 里每个有黄金文件的脚本（127 个）运行注入抛错（`engine/test/regvm/inject.sh -every 20`）：不注入的那次运行，以及它的黄金文件的第 1、21、41 行等等和最后一行，92,795 个位置里的 4,815 个，每次跑都一样。一个改动让某个黄金文件变了却没有重新写，会在这里失败。在 Apple M4 上构建之后约 3 分 35 秒，构建约 90 秒。完整的注入集在合进 main 之前手动运行（[寄存器循环](#寄存器循环)） |
 | `testhooks` | 全档 | `go test -tags testhooks ./internal/gohost ./internal/hostmem ./internal/idtable` |
 | `root` | 全档 | `go test -p 1 .` |
 | `root-hooks` | 全档 | `go test -tags testhooks -p 1 .`：带测试钩子再运行一遍根包，这会启用 `memfault_test.go`（渲染期间系统拒绝内存）、`closeunmap_test.go`（释放失败后再次 Close）和 `closepanic_hooks_test.go`（SharedBytecode 释放时 panic 之后的清理）。没有这个标签时这些文件不参与构建，也不会显示为跳过 |
@@ -379,7 +380,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 
 在 Mac（Apple 芯片，在 M4 上验证过）上什么都不设就能跑的步骤：`build`、`gofmt`、`docs`、`goasm`、`cengine`、`host-plain`、`compare-plain`、`cycles`、`scripts`、`inject-goldens`、`gen`、`host-asan`、`compare-asan`、`host-ubsan`、`compare-ubsan`，以及表里其余的步骤（`gointl` 第一次要下载 go-intl 的数据，见下）。`gen` 一步在 Mac 上生成 arm64 和 amd64 两份引擎，和已提交的文件逐字节相同。Homebrew 的 llvm@22 没有 `ld.lld`，`check.sh` 改给 `/usr/bin/ld`，`goasm` 里有七个测试在 Mac 上跳过，并且自己会说明：它们要在本机运行 linux/amd64 的代码（`TestArgBlockShared`、`TestICallSymbols`、`TestNarrowArgs`、`TestSampleRuns`，以及 `TestVarargsNative` 的三个子测试）。要在 Linux 上跑它们（`make remote`，或 CI，`llvm-steps.yml` 会跑 `goasm`）。
 
-原生步骤（`host-*`、`compare-*`、`inject`、`test262`，以及 `race` 里的 cgo）在两个系统上都用 LLVM 22.1.8 的 clang：`check.sh` 把它的文件夹放在 PATH 最前面。Homebrew 的 clang 按 macOS 版本选 SDK 文件夹（这里是 `MacOSX15.sdk`），而命令行工具只有 `MacOSX.sdk` 时那个文件夹不存在，于是它找不到 `errno.h`。所以在 macOS 上，`check.sh` 会设 `CC="clang -isysroot $(xcrun --show-sdk-path)"`，除非已经设了 `CC`。没找到 LLVM 时，这些步骤用系统自带的编译器（Mac 上是 Apple clang 15 及以后）。手动运行 `engine/test` 里的脚本，用的是 `$CC`，或 PATH 里排第一的 clang。
+原生步骤（`host-*`、`compare-*`、`inject`、`inject-sample`、`test262`，以及 `race` 里的 cgo）在两个系统上都用 LLVM 22.1.8 的 clang：`check.sh` 把它的文件夹放在 PATH 最前面。Homebrew 的 clang 按 macOS 版本选 SDK 文件夹（这里是 `MacOSX15.sdk`），而命令行工具只有 `MacOSX.sdk` 时那个文件夹不存在，于是它找不到 `errno.h`。所以在 macOS 上，`check.sh` 会设 `CC="clang -isysroot $(xcrun --show-sdk-path)"`，除非已经设了 `CC`。没找到 LLVM 时，这些步骤用系统自带的编译器（Mac 上是 Apple clang 15 及以后）。手动运行 `engine/test` 里的脚本，用的是 `$CC`，或 PATH 里排第一的 clang。
 
 检查还会调用的工具：`git`、`make`、`curl`（第一次 `make gointl`）和 `unzip`（`engine/test/test262-test.sh` 和 test262 的解包。缺它时解包会停下并说 `unzip not found: install unzip`：Linux 上 `apt install unzip`，macOS 自带）。
 
