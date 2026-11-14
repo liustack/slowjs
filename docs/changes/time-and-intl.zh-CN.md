@@ -9,6 +9,7 @@ read_when:
   - 页面改了某个内置对象，Intl 给出了另一个结果
   - 改基于 go-intl 的构造函数，或 intl/gointl.go 里的 chromiumData
   - 页面在第一次使用之前替换或删除了 Intl 或某个 toLocaleString 方法，Intl 又把它放了回去
+  - Date 的取值方法、设值方法或字符串给出的值和 Node 不一样，或者读 Date 的字段很慢
 ---
 
 # 时间和 Intl
@@ -292,3 +293,15 @@ Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标
 `Intl.NumberFormat` 的 `format` 和 `formatToParts` 现在按 StrDecimalLiteral 的规定读数字字符串的指数和尾数，和 `Number` 一样。原来指数不是整数时，它们会读出带两个符号的指数：`"1e+-5"` 读成 Infinity，`"1e--5"` 读成零，而这两个都应该是 NaN。它们还在读尾数之前，就把大到写不出来的指数当成无穷或零：`"1xe1073741825"` 是 Infinity，应该是 NaN，`"0e1073741825"` 是 Infinity，应该是 0。现在先检查指数最多一个符号、其余都是数字，并且先读尾数。
 
 测试：`internal/gointl/qjs_parse_test.go` 的 `TestParseDecimalExponent`（36 个字符串，原来有 19 个读错）。
+
+## Date 不用循环求年、月、日
+
+版本：Unreleased。
+
+Date 的取值方法（`getFullYear`、`getMonth`、`getDate`、`getDay` 等，本地和 UTC 都有）、设值方法和各种字符串，都要先求出时间值的年、月、日。QuickJS 先用一次除法估出年份，再一年一年地挪，直到这一天落在年内，然后逐月减去天数。现在 `days_to_date` 只用几次乘法和移位算出它们，做法来自 Neri 和 Schneider 的论文 "Euclidean affine functions and their application to calendar algorithms"（2022）。天数改从 1970 年之前 280,000 年那一年的 3 月 1 日数起：时间值能表示的每一天，加上两端各一天的时区，都成了从 0 起、放得进 32 位的计数，而带闰日的二月落在一年的最后。
+
+求一个 Date 的各个字段，原来要 261 条指令，现在 163 条（callgrind，linux/amd64，循环里对相隔三天的日期做 `setTime` 和 `getUTCDate`）。2026-11-15 那次研究的日期页上，date-fns 和 dayjs 每次渲染调用取值方法 136,524 次，一次渲染少跑 1.23% 的指令。
+
+为什么安全：从 -100,000,002 到 100,000,002 的 200,000,005 天（每个时间值所在的天，再加两端各一天），一个检查程序算出的年、月、日都和原来的循环一样。`engine/test/unit-white.c` 的 `test_days_to_date` 拿原来循环的副本对照：[-300000, 300000] 的每一天、范围两端的天，以及中间每隔 997 天取一天。
+
+测试：`engine/test/compare/date_fields.js` 输出的内容和 Node 24 一样，覆盖范围两端、负数年份、闰日前后的每个取值方法，每个设值方法之后的取值，同一时间值的两个 Date，NaN，子类和不是 Date 的接收者，还有对 292,574 天和铺满整个范围的 200,001 个时间值求的和。

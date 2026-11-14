@@ -9,6 +9,7 @@ read_when:
   - A page changed a built-in and Intl gave another result
   - Changing a constructor built on go-intl, or chromiumData in intl/gointl.go
   - A page replaced or deleted Intl or a toLocaleString method before the first use, and Intl put it back
+  - A getter, a setter or a string of Date gives another value than Node, or reading the fields of a Date is slow
 ---
 
 # Time and Intl
@@ -292,3 +293,15 @@ Release: v0.30.3.
 `format` and `formatToParts` of `Intl.NumberFormat` now read the exponent and the mantissa of a numeric string as StrDecimalLiteral says, as `Number` does. They read an exponent with two signs when it was no int: `"1e+-5"` as Infinity and `"1e--5"` as zero, where both are NaN. And they took an exponent too large to write out for an infinity or a zero before they read the mantissa: `"1xe1073741825"` was Infinity where it is NaN, and `"0e1073741825"` Infinity where it is 0. The exponent is now checked to be one sign at most and digits, and the mantissa is read first.
 
 Tests: `TestParseDecimalExponent` in `internal/gointl/qjs_parse_test.go` (36 strings, 19 of which were read wrong).
+
+## A Date finds its year, month and day with no loop
+
+Release: Unreleased.
+
+The getters of a Date (`getFullYear`, `getMonth`, `getDate`, `getDay` and the rest, local and UTC), its setters and its strings all find the year, the month and the day of the time value. QuickJS guessed the year with a division, stepped it until the day fell inside it, then counted off the months one by one. Now `days_to_date` works them out with a few multiplications and shifts, after Neri and Schneider, "Euclidean affine functions and their application to calendar algorithms" (2022). The days are counted from 1 March of a year 280,000 years before 1970: every day a time value can name, and a day of zone past either end, is then a count from 0 that fits in 32 bits, and February, with its leap day, ends the year.
+
+A Date's fields take 163 instructions where they took 261 (callgrind, linux/amd64, a loop of `setTime` and `getUTCDate` on days three apart). On the dates page of the study of 2026-11-15, whose date-fns and dayjs read 136,524 getters a render, a render takes 1.23% fewer instructions.
+
+Why it is safe: for each of the 200,000,005 days from -100,000,002 to 100,000,002, the days of every time value and a day on either side, a check program gave the same year, month and day as the old loops. `test_days_to_date` in `engine/test/unit-white.c` checks the same against a copy of the old loops, for every day of [-300000, 300000], the days at both ends of the range and every 997th day between.
+
+Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for every getter at the ends of the range, in negative years and around leap days, after each setter, for two Dates of one time value, NaN, a subclass and receivers that are not Dates, and sums over 292,574 days and 200,001 time values spread over the range.

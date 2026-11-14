@@ -2451,3 +2451,10 @@ long white_call_debt(JSContext *ctx, int direct, int *depth)
         return -2;
     return white_seen_debt - debt;
 }
+
+/* the year, month and day of the count of days from 1970-01-01 that
+   get_date_fields gives the getters of Date */
+void white_days_to_date(int64_t days, int *y, int *m, int *d)
+{
+    days_to_date(days, y, m, d);
+}

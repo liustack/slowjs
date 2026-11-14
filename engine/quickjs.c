@@ -67477,38 +67477,54 @@ static int64_t days_in_year(int64_t y) {
     return 365 + !(y % 4) - !(y % 100) + !(y % 400);
 }
 
-/* return the year, update days */
-static int64_t year_from_days(int64_t *days) {
-    int64_t y, d1, nd, d = *days;
-    y = floor_div(d * 10000, 3652425) + 1970;
-    /* the initial approximation is very good, so only a few
-       iterations are necessary */
-    for(;;) {
-        d1 = d - days_from_year(y);
-        if (d1 < 0) {
-            y--;
-            d1 += days_in_year(y);
-        } else {
-            nd = days_in_year(y);
-            if (d1 < nd)
-                break;
-            d1 -= nd;
-            y++;
-        }
-    }
-    *days = d1;
-    return y;
-}
-
 static int const month_days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 static char const month_names[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 static char const day_names[] = "SunMonTueWedThuFriSat";
+
+/* the year, the month (0 to 11) and the day of the month (1 to 31) of a
+   count of days from 1970-01-01, with no loop and no division but by
+   constants, after Neri and Schneider, "Euclidean affine functions and their
+   application to calendar algorithms" (2022). The count is moved to start on
+   0000-03-01 (719468 days before 1970-01-01), so that a year of the count
+   starts in March and ends with 29 February, plus 700 cycles of 400 years
+   (146097 days each): every day from -102,987,368 to 970,754,455, which holds
+   the -100,000,000 to 100,000,000 days of a time value and a day of time zone
+   past either end, is then an n >= 0 with 4 * n + 3 below 2^32. It gives
+   what the loops that stepped the year and counted off the months gave, for
+   every day of that range of a time value (test_days_to_date in
+   engine/test/unit-white.c). */
+static void days_to_date(int64_t days, int *py, int *pm, int *pd)
+{
+    uint32_t n, n1, c, nc, n2, z, ny, n3, m, d, j;
+    uint64_t p2;
+
+    n = (uint32_t)(days + 719468 + 146097 * 700);
+    /* the century of the count, and the day in it */
+    n1 = 4 * n + 3;
+    c = n1 / 146097;
+    nc = n1 % 146097 / 4;
+    /* the year in the century, and the day in the year */
+    n2 = 4 * nc + 3;
+    p2 = (uint64_t)2939745 * n2;
+    z = (uint32_t)(p2 >> 32);
+    ny = (uint32_t)p2 / 2939745 / 4;
+    /* the month, 3 to 14 for March to February, and the day in it */
+    n3 = 2141 * ny + 197913;
+    m = n3 >> 16;
+    d = (n3 & 0xffff) / 2141;
+    /* January and February are in the next year of the calendar */
+    j = ny >= 306;
+    *py = (int)(100 * c + z + j) - 400 * 700;
+    *pm = (int)(j ? m - 12 : m) - 1;
+    *pd = (int)d + 1;
+}
 
 static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
                                        double fields[minimum_length(9)], int is_local, int force)
 {
     double dval;
-    int64_t d, days, wd, y, i, md, h, m, s, ms, tz = 0;
+    int64_t d, days, wd, h, m, s, ms, tz = 0;
+    int y, mon, md;
 
     if (JS_ThisTimeValue(ctx, &dval, obj))
         return -1;
@@ -67535,19 +67551,10 @@ static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
     m = h % 60;
     h = (h - m) / 60;
     wd = math_mod(days + 4, 7); /* week day */
-    y = year_from_days(&days);
-
-    for(i = 0; i < 11; i++) {
-        md = month_days[i];
-        if (i == 1)
-            md += days_in_year(y) - 365;
-        if (days < md)
-            break;
-        days -= md;
-    }
+    days_to_date(days, &y, &mon, &md);
     fields[0] = y;
-    fields[1] = i;
-    fields[2] = days + 1;
+    fields[1] = mon;
+    fields[2] = md;
     fields[3] = h;
     fields[4] = m;
     fields[5] = s;
