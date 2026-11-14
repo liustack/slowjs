@@ -1638,12 +1638,12 @@ static void test_rv_far_locals(void)
 #define C_CALL_SAN 0
 #endif
 
-/* the bytes a frame that AddressSanitizer sets down to 32 may add (see
-   test_c_call_recursions) */
+/* the bytes a call that a direct level skips may save under AddressSanitizer
+   beyond the debt the engine counts for it (see test_c_call_recursions) */
 #if C_CALL_ASAN
-#define C_CALL_SET_DOWN 16
+#define C_CALL_SKIP_SLACK 80
 #else
-#define C_CALL_SET_DOWN 0
+#define C_CALL_SKIP_SLACK 0
 #endif
 
 /* JS_RegvmStat 5 and 6, the bytes of stack a frame of JS_RegvmRun and of
@@ -1732,11 +1732,24 @@ static void test_call_frames_measured(void)
    each debt rounded down to a multiple of 32, the least a skipped frame
    saves where the next frame is set down (JS_FRAME_SET_DOWN of
    quickjs.c). A direct level with its debts then never takes more than a
-   level through JS_CallInternal, and may take less by the rounding, the
-   arguments pushed and the frames set down. So a direct run may end
-   deeper, never less deep, by no more than these bytes explain against
-   the frames each level takes at the least (c_call_same). Without a
-   sanitizer no frame is set down so, and the depths are the same.
+   level through JS_CallInternal, and may take less: for each call it
+   skips, less than 32 bytes the debt lost to the rounding, 16 by where the
+   frame was set down, and 32 for the four words of JS_CallInternal that a
+   caller set down pushes and the call that stands for it does not
+   (C_CALL_SKIP_SLACK). With the hop on a level of call_call or apply_apply
+   skips two calls (the direct call of Reflect.apply and the hop to the C
+   function it calls), and a level of bound_call three (the hop from the
+   bound function to call, and from that call to the call it makes), one
+   with the hop off.
+   So a direct run may end deeper, never less deep, by no more than these
+   bytes explain against the bytes a level takes through JS_CallInternal,
+   which the recursion measures as it runs (c_call_same). Linux's build
+   with both sanitizers sets js_function_apply down too, and finds the
+   frame of js_call_c_plain 32 bytes larger than that of
+   js_call_c_function, so that the hop counts no debt while the function
+   runs: with LLVM 22.1.8 a level of call_call there takes 2208 bytes through
+   JS_CallInternal and 1856 direct with 224 counted, 128 left out. Without
+   a sanitizer no frame is set down so, and the depths are the same.
 
    With the hop off (JS_RegvmStat 12 is -1: Linux's UBSan build, whose
    frame of js_call_c_hop is the larger) a C function calls a C function
@@ -1744,31 +1757,47 @@ static void test_call_frames_measured(void)
    at the same depth both ways, HOP_DEEPER too. */
 enum { HOP = 1, HOP_DEEPER = 2 };
 
-static const struct { const char *name, *body; int hop; } c_call_kinds[] = {
-    { "call", "return f.call(null) + v0" },
-    { "apply", "return f.apply(null, []) + v0" },
-    { "reflect_apply", "return Reflect.apply(f, null, []) + v0" },
-    { "map", "return [1].map(f)[0] + v0" },
-    { "map_tail", "return [0].map(f)" },
-    { "sort", "[2, 1].sort(f); return v0" },
-    { "getter", "return o.x + v0" },
-    { "proxy_get", "return p.x + v0" },
-    { "tail_apply", "return apply(f, null, [])" },
-    { "call_call", "return apply(call, f, [null]) + v0", HOP },
-    { "apply_apply", "return apply(apply, null, [f, null, []]) + v0", HOP },
-    { "bound_call", "return apply(ucall, null, [f, null]) + v0", HOP_DEEPER },
+/* skips: the calls a level skips with the hop on (one with it off) */
+static const struct { const char *name, *body; int hop, skips; } c_call_kinds[] = {
+    { "call", "return f.call(null) + v0", 0, 1 },
+    { "apply", "return f.apply(null, []) + v0", 0, 1 },
+    { "reflect_apply", "return Reflect.apply(f, null, []) + v0", 0, 1 },
+    { "map", "return [1].map(f)[0] + v0", 0, 1 },
+    { "map_tail", "return [0].map(f)", 0, 1 },
+    { "sort", "[2, 1].sort(f); return v0", 0, 1 },
+    { "getter", "return o.x + v0", 0, 1 },
+    { "proxy_get", "return p.x + v0", 0, 1 },
+    { "tail_apply", "return apply(f, null, [])", 0, 1 },
+    { "call_call", "return apply(call, f, [null]) + v0", HOP, 2 },
+    { "apply_apply", "return apply(apply, null, [f, null, []]) + v0", HOP, 2 },
+    { "bound_call", "return apply(ucall, null, [f, null]) + v0", HOP_DEEPER, 3 },
 };
 
 typedef struct {
     int kind, locals, direct;
     int hop; /* the run had js_call_c_hop on (JS_RegvmStat 12) */
     int rv, entry; /* the frames of JS_RegvmRun and JS_CallInternal (5, 6) */
+    int64_t level; /* the bytes of stack a level took, from level 10 to 12 */
     char *out;
 } CCallRun;
 
+long __shadow_remaining(void); /* host.c */
+
+/* stackLeft() of c_call_run: the bytes of stack left in this thread */
+static JSValue c_call_stack_left(JSContext *ctx, JSValueConst this_val,
+                                 int argc, JSValueConst *argv)
+{
+    (void)this_val;
+    (void)argc;
+    (void)argv;
+    return JS_NewInt64(ctx, __shadow_remaining());
+}
+
 /* Runs one recursion of c_call_kinds at the most call depth a runtime
    allows, with the direct calls of C functions on or off, and keeps
-   "REACHED ERROR" in r->out. */
+   "REACHED ERROR" in r->out, and in r->level the bytes of stack a level
+   takes, measured as the recursion passes levels 10 to 12 (a call of
+   stackLeft at each, after which its frame is gone). */
 static int c_call_run(void *arg)
 {
     CCallRun *r = arg;
@@ -1781,13 +1810,23 @@ static int c_call_run(void *arg)
         n += snprintf(vars + n, sizeof(vars) - n, ", v%d = %d", i, i);
     snprintf(src, sizeof(src),
              "(() => { const apply = Reflect.apply, call = Function.prototype.call;\n"
-             "  const ucall = call.bind(call); let reached = 0;\n"
+             "  const ucall = call.bind(call); let reached = 0, l10 = 0, l12 = 0;\n"
              "  const o = { get x() { return apply(f, null, []) } };\n"
              "  const p = new Proxy({}, { get() { return [1].map(f)[0] } });\n"
-             "  function f() { %s; reached++; %s }\n"
+             "  function f() { %s; reached++;\n"
+             "    if (reached === 10) l10 = stackLeft(); else if (reached === 12) l12 = stackLeft();\n"
+             "    %s }\n"
              "  let at = ''; try { f() } catch (e) { at = e instanceof RangeError ? 'RangeError' : String(e) }\n"
+             "  globalThis.levelBytes = (l10 - l12) / 2;\n"
              "  return reached + ' ' + at })()",
              vars, c_call_kinds[r->kind].body);
+    {
+        JSValue g = JS_GetGlobalObject(v.ctx);
+
+        JS_SetPropertyStr(v.ctx, g, "stackLeft",
+                          JS_NewCFunction(v.ctx, c_call_stack_left, "stackLeft", 0));
+        JS_FreeValue(v.ctx, g);
+    }
     CHECK(JS_SetMaxCallDepth(v.rt, JS_MAX_CALL_DEPTH_LIMIT) == 0, "the call depth cannot be set");
     CHECK(JS_SetDirectCCalls(v.ctx, r->direct) == 0, "JS_SetDirectCCalls refused");
     r->hop = JS_RegvmStat(v.ctx, 12) >= 0;
@@ -1795,6 +1834,14 @@ static int c_call_run(void *arg)
     r->entry = JS_RegvmStat(v.ctx, 6);
     r->out = eval_text(v.ctx, src);
     free(exception_text(v.ctx));
+    {
+        JSValue g = JS_GetGlobalObject(v.ctx);
+        JSValue b = JS_GetPropertyStr(v.ctx, g, "levelBytes");
+
+        CHECK(JS_ToInt64(v.ctx, &r->level, b) == 0, "levelBytes is not a number");
+        JS_FreeValue(v.ctx, b);
+        JS_FreeValue(v.ctx, g);
+    }
     vm_free(&v);
     return 0;
 }
@@ -1806,26 +1853,26 @@ static void *c_call_thread(void *arg)
 }
 
 /* c_call_slack: the bytes a level of kind k may take through
-   JS_CallInternal beyond what a direct level takes with its debt, which no
-   measure sees (c_call_kinds): 16 for each of the three frames that
-   AddressSanitizer sets down, and with the hop on, 16 for the arguments
-   pushed below a bound function of a kind with HOP_DEEPER */
+   JS_CallInternal beyond what a direct level takes with its debts, which no
+   measure sees (c_call_kinds): C_CALL_SKIP_SLACK for each call the level
+   skips, and with the hop on, 16 for the arguments pushed below a bound
+   function of a kind with HOP_DEEPER */
 static int c_call_slack(int k, int hop)
 {
-    return 3 * C_CALL_SET_DOWN + (hop && c_call_kinds[k].hop == HOP_DEEPER ? 16 : 0);
+    return (hop ? c_call_kinds[k].skips : 1) * C_CALL_SKIP_SLACK +
+        (hop && c_call_kinds[k].hop == HOP_DEEPER ? 16 : 0);
 }
 
 /* c_call_same: TRUE when the run d directly ended as the run t through
    JS_CallInternal, with the same error, never less deep, and deeper by no
-   more than the slack explains: each level takes at least the frames of
-   JS_RegvmRun and of JS_CallInternal that the engine measured (JS_RegvmStat
-   5 and 6, of the direct run), so with s bytes of slack a level, the m
-   levels of d take no more stack than the n levels of t when
-   m * (rv + entry - s) <= n * (rv + entry) */
+   more than the slack explains: a level of t takes t->level bytes, and one
+   of d with its debts at least t->level - s with s bytes of slack a level,
+   so the m levels of d take no more stack than the n levels of t and the
+   one t stopped in when m * (t->level - s) <= (n + 1) * t->level */
 static int c_call_same(int k, const CCallRun *t, const CCallRun *d)
 {
     const char *a, *b;
-    long n, m, s, least;
+    long n, m, s, level;
 
     if (!t->out || !d->out)
         return 0;
@@ -1838,8 +1885,8 @@ static int c_call_same(int k, const CCallRun *t, const CCallRun *d)
     if (!a || !b || strcmp(a, b) != 0 || m < n)
         return 0;
     s = c_call_slack(k, d->hop);
-    least = (long)d->rv + d->entry;
-    return s > 0 && least > s && m * (least - s) <= n * least;
+    level = (long)t->level;
+    return s > 0 && level > s && m * (level - s) <= (n + 1) * level;
 }
 
 /* Every recursion of c_call_kinds ends in a RangeError, never past the end
@@ -1879,10 +1926,11 @@ static void test_c_call_recursions(void)
                           r[d].out ? r[d].out : "(exception)");
                 }
                 CHECK(c_call_same(k, &r[0], &r[1]),
-                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s (slack %d, frames %d and %d, hop %d)",
+                      "%s, %s, %d locals: through JS_CallInternal %s, direct %s (slack %d, a level %lld and %lld bytes, frames %d and %d, hop %d)",
                       stack ? "1 MiB" : "main thread", c_call_kinds[k].name, locals[l],
                       r[0].out ? r[0].out : "?", r[1].out ? r[1].out : "?",
-                      c_call_slack(k, r[1].hop), r[1].rv, r[1].entry, r[1].hop);
+                      c_call_slack(k, r[1].hop), (long long)r[0].level, (long long)r[1].level,
+                      r[1].rv, r[1].entry, r[1].hop);
                 free(r[0].out);
                 free(r[1].out);
             }
