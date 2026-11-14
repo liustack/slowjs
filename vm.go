@@ -97,6 +97,9 @@ type vmState struct {
 	// shared holds the SharedBytecode the VM loaded, whose bytes its
 	// functions point into, until Close has freed the runtime.
 	shared []*SharedBytecode
+	// readingRejections is set while UnhandledRejections reads, which runs
+	// javascript that may call it, or TrackRejections, again.
+	readingRejections bool
 }
 
 // NewVM returns a newly created VM.

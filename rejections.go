@@ -36,8 +36,20 @@ const rejectionRoom = 2*5*(rejectionText+len(cutMark)) + 256
 // UnhandledRejections to report the rejections no handler took.
 //
 // TrackRejections returns an error when max is below 0 or above
-// MaxTrackedRejections, and when m has no memory for the list.
+// MaxTrackedRejections, when m has no memory for the list, and when it is
+// called while UnhandledRejections reads m, from javascript the read runs:
+// it then changes nothing.
+// errReadingRejections is the error of TrackRejections and
+// UnhandledRejections called from javascript that a read of the rejections
+// runs.
+func errReadingRejections(name string) error {
+	return fmt.Errorf("quickjs: %s: called while UnhandledRejections reads the rejections", name)
+}
+
 func (m *VM) TrackRejections(max int) (err error) {
+	if m.readingRejections {
+		return errReadingRejections("TrackRejections")
+	}
 	if max < 0 || max > MaxTrackedRejections {
 		return fmt.Errorf("quickjs: TrackRejections(%d): max is from 0 to %d", max, MaxTrackedRejections)
 	}
@@ -76,11 +88,20 @@ func (m *VM) TrackRejections(max int) (err error) {
 // reasons read before and the out of memory error, and the others stay kept.
 // So a read holds at most 40 MiB of texts in Go (1,024 reasons of five texts
 // of 8 KiB), and less than the room under the limit.
+//
+// A read is the only one on m while it runs: called from javascript it runs,
+// UnhandledRejections returns an error and takes nothing, as TrackRejections
+// does.
 func (m *VM) UnhandledRejections() (reasons []*Error, dropped int, err error) {
+	if m.readingRejections {
+		return nil, 0, errReadingRejections("UnhandledRejections")
+	}
 	if err = m.enter(); err != nil {
 		return nil, 0, err
 	}
 	defer m.leave(&err)
+	m.readingRejections = true
+	defer func() { m.readingRejections = false }()
 	dropped = int(m.jsTakeDroppedRejections())
 	// The rejections kept from here on, by javascript a read runs, are for
 	// the next call.

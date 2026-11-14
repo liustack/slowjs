@@ -450,3 +450,38 @@ func TestRejectionsStopBetween(t *testing.T) {
 		t.Fatalf("after: %d reasons, %v, want 8", len(rest), err)
 	}
 }
+
+// TestRejectionsReadAlone: a read in progress is the only one. A getter of a
+// reason that reaches UnhandledRejections or TrackRejections of the same VM
+// through a Go function gets an error, and nothing changes: the limit stays,
+// and what is kept stays kept for the next read.
+func TestRejectionsReadAlone(t *testing.T) {
+	m := newRejectionsVM(t, 4)
+	var nestedRead, track0, track1 error
+	var nestedReasons []*Error
+	defineBuiltin(t, m, "nested", NewBuiltin("nested", 0, func(a Args) (Value, error) {
+		nestedReasons, _, nestedRead = a.VM().UnhandledRejections()
+		track0 = a.VM().TrackRejections(0)
+		track1 = a.VM().TrackRejections(1)
+		return UndefinedValue, nil
+	}))
+	if _, err := m.Eval(`
+Promise.reject({ get message() { nested(); return "outer" } });
+Promise.reject("second");
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	if err != nil || len(reasons) != 2 || reasons[0].Message != "outer" || reasons[1].Error() != "second" {
+		t.Fatalf("%d reasons, %v, want outer and second", len(reasons), err)
+	}
+	if nestedRead == nil || nestedReasons != nil || track0 == nil || track1 == nil {
+		t.Fatalf("inside a read: UnhandledRejections %d reasons, %v, TrackRejections(0) %v, (1) %v, want errors",
+			len(nestedReasons), nestedRead, track0, track1)
+	}
+	// The limit is still 4: none of the calls inside took effect.
+	got, dropped := messages(t, m, `for (var i = 1; i <= 4; i++) Promise.reject(i)`)
+	if strings.Join(got, ",") != "1,2,3,4" || dropped != 0 {
+		t.Fatalf("after: %q, %d dropped, want 1 to 4 kept", got, dropped)
+	}
+}

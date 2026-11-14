@@ -24,7 +24,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 
 - **`*Error` 的字段 `Uncatchable`、`OutOfMemory` 和 `Interrupted`**（v0.26.7）：一次调用为什么结束，脚本没法伪造。[详情](changes/go-api.zh-CN.md#error-说明调用为什么结束)
 - **在 Go 里建的 `*Error` 的 `Error()`**（v0.26.17）是 `Name: Message`，和 `Error.prototype.toString` 的写法一样，以前是空的。从 JavaScript 拿到的错误保留引擎给的文字。[详情](changes/go-api.zh-CN.md#在-go-里造的-error-的-error)
-- **`VM.TrackRejections(max)` 和 `VM.UnhandledRejections()`**（Unreleased）：保留被拒绝时没有处理函数的 promise，最多 `max` 个，在脚本和它的任务跑完后取走，每个拒绝原因读成一个 `*Error`，每段文本截到 8 KiB，用来报告没有处理函数接住的拒绝。不要求就不保留。[详情](changes/go-api.zh-CN.md#trackrejections-和-unhandledrejections)
+- **`VM.TrackRejections(max)` 和 `VM.UnhandledRejections()`**（Unreleased）：保留被拒绝时没有处理函数的 promise，最多 `max` 个，在脚本和它的任务跑完后取走，每个拒绝原因读成一个 `*Error`，每段文本截到 8 KiB，用来报告没有处理函数接住的拒绝。不要求就不保留。一次读取进行时，它运行的 javascript 再调用这两个方法会得到错误，什么也不改变。[详情](changes/go-api.zh-CN.md#trackrejections-和-unhandledrejections)
 
 ## 内存和 GC
 
