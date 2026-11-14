@@ -116,6 +116,7 @@ read_when:
 | NewArray 在调用的限制处停下 | v0.30.2 | [go-api.md](go-api.zh-CN.md#newarray-在调用的限制处停下) |
 | 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
+| 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | Unreleased | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
 
 ## 守得住的限额
 

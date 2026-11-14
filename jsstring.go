@@ -478,6 +478,13 @@ func utf16Len(u []uint16) int {
 	for i := 0; i < len(u); i++ {
 		switch c := u[i]; {
 		case c < 0x80:
+			// Eight ASCII units at a time, as utf16Write takes them.
+			if i+8 <= len(u) && (unitsAt(u, i)|unitsAt(u, i+4))&laneNotASCII == 0 {
+				k := asciiUnitsLen(u[i:])
+				n += k
+				i += k - 1
+				continue
+			}
 			n++
 		case c < 0x800:
 			n += 2
@@ -511,11 +518,18 @@ func utf16Write(out []byte, u []uint16, wtf8 bool) int {
 	j := uintptr(0)
 	for i := 0; i < len(u); i++ {
 		// Pages are mostly ASCII markup around runs of text, so this takes
-		// four units at a time while they are ASCII, or all from U+0800 and
-		// none a surrogate.
+		// eight units at a time while they are ASCII (asciiUnits), four
+		// when fewer than eight are, or four all from U+0800 and none a
+		// surrogate, as text in Chinese is.
 		if i+4 <= len(u) {
 			w := unitsAt(u, i)
 			if w&laneNotASCII == 0 {
+				if i+8 <= len(u) && unitsAt(u, i+4)&laneNotASCII == 0 {
+					k := asciiUnits(d, j, u, i)
+					i += k - 1
+					j += uintptr(k)
+					continue
+				}
 				*(*[4]byte)(unsafe.Add(d, j)) = [4]byte{byte(w), byte(w >> 16), byte(w >> 32), byte(w >> 48)}
 				i += 3
 				j += 4
@@ -587,6 +601,58 @@ func unitsAt(u []uint16, i int) uint64 {
 	b := unsafe.Slice((*byte)(unsafe.Pointer(&u[i])), 8)
 	_ = u[i+3]
 	return binary.LittleEndian.Uint64(b)
+}
+
+// asciiUnits writes the units of u from i while they are ASCII to d+j, one
+// byte each, 8 at a time, for utf16Write, and returns how many it wrote: a
+// multiple of 8, up to 7 fewer than the run. It reads no unit past the end
+// of u, and d+j has room for 3 bytes a unit of u from i, which utf16Write
+// checked. It reads and writes past Go's checks, which would take more
+// instructions than the conversion, and is a call of its own (noinline):
+// in the loop of utf16Write it made that loop's other paths slower.
+//
+//go:noinline
+func asciiUnits(d unsafe.Pointer, j uintptr, u []uint16, i int) int {
+	n := (len(u) - i) &^ 7
+	src := unsafe.Pointer(unsafe.SliceData(u))
+	k := 0
+	for ; k < n; k += 8 {
+		w0, w1 := units8At(src, i+k)
+		if (w0|w1)&laneNotASCII != 0 {
+			break
+		}
+		binary.LittleEndian.PutUint64((*[8]byte)(unsafe.Add(d, j+uintptr(k)))[:], narrow(w0)|narrow(w1)<<32)
+	}
+	return k
+}
+
+// asciiUnitsLen is asciiUnits without the writes: how many of the units u
+// starts with are ASCII, a multiple of 8, up to 7 fewer than the run.
+func asciiUnitsLen(u []uint16) int {
+	n := len(u) &^ 7
+	src := unsafe.Pointer(unsafe.SliceData(u))
+	i := 0
+	for ; i < n; i += 8 {
+		if w0, w1 := units8At(src, i); (w0|w1)&laneNotASCII != 0 {
+			break
+		}
+	}
+	return i
+}
+
+// units8At returns the 8 units from unit i of the units at p, four in each
+// word, the first in the low bits. It reads them as bytes, which the
+// compiler makes two loads, as a pointer to a uint64 would not be aligned.
+func units8At(p unsafe.Pointer, i int) (uint64, uint64) {
+	b := (*[16]byte)(unsafe.Add(p, 2*i))
+	return binary.LittleEndian.Uint64(b[:8]), binary.LittleEndian.Uint64(b[8:])
+}
+
+// narrow returns the four units of w, each below 0x100, as four bytes in
+// its low 32 bits, the first unit lowest.
+func narrow(w uint64) uint64 {
+	w = (w | w>>8) & 0x0000_FFFF_0000_FFFF
+	return (w | w>>16) & 0xFFFF_FFFF
 }
 
 // newStringFast makes the JS string of s in Go, as validUTF8 and
