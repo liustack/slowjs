@@ -1819,6 +1819,38 @@ static void test_string_index_oom(void)
     sweep("string index", "string_index.js", setup, "run()", want, 16384);
 }
 
+/* for in loops over objects, arrays, strings, null and a prototype, nested
+   and in a generator: with too little memory (the iterator, its object, the
+   empty shape the context then holds, the keys) they fail with the out of
+   memory error and leave nothing behind. The first sweep makes the shape in
+   its setup, the second makes it under the room. */
+static void test_for_in_oom(void)
+{
+    static const char fns[] =
+        "function keys(o) { var r = ''; for (var k in o) r += k; return r }\n"
+        "function* gen(o) { for (var k in o) yield k }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var g = gen({ g: i, h: i });\n"
+        "    out.push(keys({ a: 1, b: 2 }), keys([1, 2]), keys('xy'), keys(null),\n"
+        "      keys(Object.create({ p: 1 })), g.next().value);\n"
+        "    for (var k in { n: 1 }) out.push(keys({ m: k }));\n"
+        "    out.push(g.next().value);\n"
+        "  }\n"
+        "  return out.join();\n"
+        "}\n";
+    static const char *const want[] = {
+        "ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h",
+        NULL
+    };
+    char setup[sizeof(fns) + 16];
+
+    snprintf(setup, sizeof(setup), "%srun();\n", fns);
+    sweep("for in", "for_in.js", setup, "run()", want, 16384);
+    sweep("for in, first loop", "for_in.js", fns, "run()", want, 32768);
+}
+
 /* Object.defineProperty, Object.defineProperties, Object.create and
    Reflect.defineProperty with plain descriptors, read from their shape
    (js_obj_to_desc_plain), and with descriptors that take the generic path (a
@@ -2914,6 +2946,7 @@ int main(void)
     test_array_literal_oom();
     test_fast_builtins_oom();
     test_string_index_oom();
+    test_for_in_oom();
     test_define_desc_oom();
     test_bind_oom();
     test_bind_host_oom();

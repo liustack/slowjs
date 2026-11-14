@@ -1,0 +1,30 @@
+plain: a,b,c
+array: 0,1,2
+sparse array: 0,2,x
+string: 0,1,2
+String object: 0,1,extra
+null and undefined: [][]
+number and boolean: [][]
+null prototype: 2,b,a
+frozen null prototype: k
+deleted during: a,b,d
+added during: a,b a,b,na,nb
+deleted and added again: a,b,c
+shadowed: a,t,b,m
+not enumerable: a,shown
+class instance: x,y
+proxy: a,b,c true
+proxy that hides a key: b
+proxy whose ownKeys throws: throws Error ownKeys
+return: q,none,none
+break: a,b|
+throw: throws Error at b
+throw caught: at a,at b,at c
+continue: a,c
+labelled break: xp
+nested: x00,x01,x10,x11,y00,y01,y10,y11
+recursive: a,-b,--c,-d,--0,--1,e
+generators: a,0,m,n,b,1,true,stop,true,z,in
+many generators: 50
+null prototype objects between loops: -,k0,0,-,k1,0,-,k2,0,-
+iterators made in a loop: 1000

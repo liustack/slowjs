@@ -1,0 +1,33 @@
+result plain: a,b,c
+result array: 0,1,2
+result sparse array: 0,2,x
+result string: 0,1,2
+result String object: 0,1,extra
+result null and undefined: [][]
+result number and boolean: [][]
+result null prototype: 2,b,a
+result frozen null prototype: k
+result deleted during: a,b,d
+result added during: a,b a,b,na,nb
+result deleted and added again: a,b,c
+result shadowed: a,t,b,m
+result not enumerable: a,shown
+result class instance: x,y
+result proxy: a,b,c true
+result proxy that hides a key: b
+result proxy whose ownKeys throws: throws Error ownKeys
+result return: q,none,none
+result break: a,b|
+result throw: throws Error at b
+result throw caught: at a,at b,at c
+result continue: a,c
+result labelled break: xp
+result nested: x00,x01,x10,x11,y00,y01,y10,y11
+result recursive: a,-b,--c,-d,--0,--1,e
+result generators: a,0,m,n,b,1,true,stop,true,z,in
+result many generators: 50
+result null prototype objects between loops: -,k0,0,-,k1,0,-,k2,0,-
+result iterators made in a loop: 1000
+mem-end obj=210 atom=577 shape=158 prop=1011 jsfunc=9 cfunc=135 array=2 fast_array=2 elements=30 binary=0
+mem-gc obj=204 atom=573 shape=154 prop=997 jsfunc=5 cfunc=135 array=2 fast_array=2 elements=30 binary=0
+--- status exit 0

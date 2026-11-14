@@ -86,6 +86,6 @@ result many before: ReferenceError
 result async before: ReferenceError
 result async catch: no
 result async: 4
-mem-end obj=224 atom=580 shape=141 prop=1032 jsfunc=19 cfunc=135 array=2 fast_array=2 elements=88 binary=0
-mem-gc obj=207 atom=577 shape=133 prop=998 jsfunc=10 cfunc=135 array=2 fast_array=2 elements=88 binary=0
+mem-end obj=224 atom=580 shape=142 prop=1032 jsfunc=19 cfunc=135 array=2 fast_array=2 elements=88 binary=0
+mem-gc obj=207 atom=577 shape=134 prop=998 jsfunc=10 cfunc=135 array=2 fast_array=2 elements=88 binary=0
 --- status exit 0

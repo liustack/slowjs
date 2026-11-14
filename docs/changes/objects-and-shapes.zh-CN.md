@@ -382,3 +382,17 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
 
 测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。
+
+## for in 循环的迭代器能找到它的空 shape
+
+版本：Unreleased。
+
+每个 `for in` 循环都会做一个 `ForInIterator` 类的迭代器对象，它的原型是 null。它从没有原型的空 shape 开始，这也是 `Object.create(null)` 的 shape。页面上如果没有活着的无原型对象，两次循环之间就没有谁拿着这个 shape，于是每次循环都要做一次再释放一次：React 的页面每次渲染 717 次。tifa 的页面留着这样的对象，它们的循环能找到它的 shape。现在一个 context 的第一个循环替 context 拿着这个 shape（`build_for_in_iterator` 把它放进 `class_shapes`，`js_new_proto_shape` 也把内置类的空 shape 放在那里，[见上文](#内置类的对象找到它们原型的空-shape)），后面的循环都能找到它：for in 循环不再做 shape。
+
+为什么安全：迭代器拿到的 shape 和以前一样：没有原型、没有键、哈希大小也一样，只是不再是新做的。context 拿着它，所以它的持有者不止一个，一直是空的：给对象加键时会复制它，或者换到表里的下一个 shape（`add_property`、`js_shape_prepare_update`）。循环走原型链时会把给出过的键记成迭代器的键，`Object.create(null)` 的对象也会加键，这两种都属于这种情况。没有原型，这个 shape 不会让任何对象活着。`JS_MarkContext` 标记它，`JS_FreeContext` 放掉它，和 context 拿着的其他 shape 一样。没有原型的 shape 对每个 realm、每个类都是同一个，所以每个跑过循环的 context 拿着的是同一个 shape，它一直活到这些 context 里最后一个被释放。拿着它不占内存：第一个循环只是给它的迭代器已有的 shape 加一个引用。`js_new_proto_shape` 保持原样，每个用构造函数做出来、shape 不在表里的对象都要调它：在那里拿着这个 shape 会让每次调用在 amd64 原生构建上多大约 11 条指令，V8 套件的 RayTrace、Earley 和 Boyer 多跑 0.1% 到 0.3%。
+
+代价：`Object.create(null)` 的对象加第一个键时，现在要复制拿着的 shape 或者找到表里的下一个 shape，以前在没有别人拿着时它可以就地扩展自己的空 shape。收益：React 的页面在 amd64 原生构建上少跑 0.55% 的指令（M4 上 0.52%），其他页面在 0.02% 以内不变。表格在 [performance.zh-CN.md](../performance.zh-CN.md#for-in-循环的迭代器和它的-shape)。
+
+脚本最后留下的对象、atom 和 shape 是 `engine/test/regvm` 的 golden 的一部分：跑过 for in 循环、又没有别的东西拿着这个 shape 的脚本，现在结束时多一个拿着的 shape，所以这个改动重新录了这些 golden 里记内存的那几行，别的都没动。
+
+改动在 C 里（`engine/quickjs.c` 的 `build_for_in_iterator`）。测试：`engine/test/compare/for_in_iterator.js`（内容就是 Node 24 的输出）在这些东西上跑循环：对象、数组、稀疏数组、字符串、String 对象、`null`、`undefined`、数、无原型的对象、冻结的对象、循环中删掉、加上、删掉又加回的键、原型链上被遮住的键、不可枚举的键、类的实例、Proxy（一个藏起一个键，一个的 `ownKeys` 会抛出），用 `return`、`break`、`continue`、带标签的 `break` 和抛出离开循环，循环套循环和递归里的循环，在循环里停住的生成器再往下跑、返回和抛入，同时停住 50 个生成器，在两次循环之间加键的无原型对象，以及连着跑 1000 次循环。`engine/test/regvm/js/o-forin-shape.js`（golden 是在改动前的引擎上录的）跑本 realm 和另一个 realm 的循环，遍历两边的对象，一个套在另一个里面，两个 realm 的生成器在循环里停住并跨过回收，两次循环之间被冻结和清空的无原型对象，以及 Proxy 的 trap 在两个 realm 里的调用顺序，这个顺序和 Node 24 的不同，保持原样。`engine/test/unit.c` 的 `test_for_in_shape` 检查一次循环之后 context 留下一个 shape、再跑一百次也不会更多，加键的 `Object.create(null)` 对象让它保持为空，第二个 context 也拿着第一个的 shape，第一个释放之后它还在：改动前它因为没有拿着的 shape 而失败。`engine/test/unit-oom.c` 的 `test_for_in_oom` 在 16 KiB 以内的每种剩余空间下和堆满时跑各种循环，包括嵌套的和生成器里的，一次让 shape 在准备阶段做好，一次让第一次循环在剩余空间里去做它，检查结果或者内存不足的错误，并且检查没有留下任何东西。

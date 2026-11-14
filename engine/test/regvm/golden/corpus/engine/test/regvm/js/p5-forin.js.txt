@@ -56,6 +56,6 @@ result getPrototypeOf
 result proxy prototype 1: ["own","pa"]
 result body throws 0 threw Error: in body
 result body throws 1 threw Error: in body
-mem-end obj=196 atom=550 shape=143 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=196 atom=550 shape=143 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=196 atom=550 shape=144 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=550 shape=144 prop=974 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

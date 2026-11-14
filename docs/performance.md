@@ -1115,6 +1115,34 @@ A read that takes the new path runs about 130 instructions less (a micro benchma
 
 Trained, most of the gain on amd64 goes: the new profile lays out `JS_RegvmRun`, whose C this change does not touch, so that it runs 0.6% more on React's page (callgrind by function: 113.15M to 113.86M instructions a run, where the base trained again leaves it the same to the instruction). That is the layout one profile gives, not the code of the change: the M4 keeps the gain trained, and a release trains its profile once over all its changes. The product's counts on the M4 differ by up to 0.2% from one session to the next.
 
+### The iterator of a for in loop and its shape
+
+[The iterator of a for in loop finds its empty shape](changes/objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape), counted on 2026-11-15 against `b0271108`. A render starts 718 for in loops on React's page, and 717 of them made the empty shape of their iterator and freed it again. The other pages start 616 (the workbench's stats page) to 10,376 (MUI's orders page) loops, and long Markdown 41,841, and none of them made the shape: something on those pages keeps an object with no prototype alive. A loop that makes no shape runs about 215 instructions less (a micro benchmark of `for (k in null)`, native, M4: 937 to 722 a loop).
+
+Instructions a render, measured as for [the character of a string](#a-character-of-a-string-in-the-register-loop): this change alone and together with that one ("both"), natively, and both in the product, as generated with the profile of `b0271108` and trained again on them, the trained one against the base trained again the same way. This change alone was counted natively only. Every page gives the same HTML.
+
+| Page | Native, amd64 | Native, M4 | Both, native, amd64 | Both, native, M4 |
+| --- | ---: | ---: | ---: | ---: |
+| React's page | -0.55% | -0.52% | -1.05% | -0.92% |
+| The store's home page | 0.00% | -0.07% | -0.10% | -0.11% |
+| The store's products page | 0.00% | -0.12% | -0.09% | -0.20% |
+| The workbench's studio page | 0.00% | -0.21% | -0.05% | -0.29% |
+| The workbench's stats page | 0.00% | -0.07% | -0.04% | -0.12% |
+| MUI's orders page | 0.00% | -0.02% | -0.09% | -0.12% |
+| MUI's home page | +0.01% | -0.15% | -0.04% | -0.16% |
+| Long Markdown (400 sections) | 0.00% | -0.09% | -0.01% | -0.07% |
+
+| Pages | Both, product, amd64, as generated | Both, product, amd64, trained | Both, product, M4, as generated | Both, product, M4, trained |
+| --- | ---: | ---: | ---: | ---: |
+| React's page | -1.20% | -0.59% | -1.02% | -1.10% |
+| The store (amd64: home, M4: 14 pages) | -0.19% | +0.12% | -0.06% | -0.08% |
+| The workbench (amd64: studio, M4: 6 pages) | -0.05% | +0.10% | -0.07% | -0.11% |
+| MUI (amd64: orders, M4: 3 pages) | +0.12% | +0.11% | +0.05% | -0.17% |
+
+The micro benchmarks of `compare/testdata` with both changes (native, M4, the lowest of 3 runs): the geometric mean is 0.06% fewer instructions, `array_for_in` 0.50% fewer, and none runs more than 0.3% more. A loop that reads each key it gets (`for (k in o) s += o[k]` over an object of 8 keys) runs 3,459 instructions a loop before and 3,244 after.
+
+Trained, both lose about 0.6% of React's gain on amd64 for the reason given [above](#a-character-of-a-string-in-the-register-loop): `JS_RegvmRun` runs 113.15M instructions a run as generated and 113.86M trained, the same counts as with the character of a string alone. The V8 suite (native, amd64, callgrind) is the same with this change: both together run as the character of a string alone, within 0.001%.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1562,6 +1590,7 @@ What the measurements above leave for the C engine, none of it large. A change u
 - **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes: its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it. In the build measured on 2026-11-13 it started on a boundary of 32 bytes, not 64. Fixing its place does not pay. On 2026-11-13 (batch 2's engine, amd64, an AMD EPYC 7B13, 16 layouts of [measuring.md](measuring.md), 4 rounds per group) the generator's `-align64` put the body at byte 0 or byte 8 of its line, against the base, whose body the layouts put at 0, 16, 32 and 48. Mean of the layouts, byte 0 then byte 8: workbench -0.22% [-0.64%, +0.20%] and -0.17% [-0.57%, +0.24%], store -0.20% [-0.55%, +0.14%] and -0.44% [-0.89%, +0.01%], MUI +0.28% [-0.22%, +0.78%] and -0.19% [-0.67%, +0.30%]. Fitted over every side and layout, each of the 8 places of the body takes 0.992 to 1.008 of the mean time, and the best place differs by group (workbench 40 or 48, store 24 or 40, MUI 56 or 0).
 - **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
 - **Results of the functions Go code calls**: the 91 functions Go code calls still store their result, because Go reads the result of an assembly function from memory. A generated Go entry for each hot one, which calls a body that stores nothing, would remove the stores of those bodies when generated code calls them: at most 0.24% of the instructions on the store pages, 0.21% on the workbench, 0.11% on MUI and 0.14% on React (arm64, writing each such store twice), less one extra call for each call from Go. It needs a new kind of function in both post-link checks.
+- **The next key of a for in loop and the read of it** (`for (k in o) ... o[k]`), counted on 2026-11-15 against `b0271108`: a render takes 34,096 next keys and 34,244 reads of the key just given on MUI's orders page, 12,523 and 11,986 on its home page, 16,450 and 11,940 on the store's products page, 8,465 and 5,709 on its home page, 9,934 and 7,989 on the workbench's studio page, and 2,399 and 1,681 on React's page. One op of the register loop that gives the next key from the shape the loop checked, branches on the end and reads the value at the slot the loop is at would save two dispatches a key and the lookup of the read: about 0.7% to 1.2% of MUI's orders page and 0.6% to 1.0% of its home page, under 0.3% elsewhere, estimated from the counts. Taking the next out of its window alone saves only about 16 instructions a key on arm64. The fused op needs a new op of the pass and its branch, and the frame of `JS_RegvmRun` checked.
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
 
