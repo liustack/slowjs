@@ -164,6 +164,10 @@ func (m *VM) convertResults(out []reflect.Value, many bool) (r jsValue, err erro
 	}
 	start := w.reserve(len(out))
 	for i, v := range out {
+		if start < 0 {
+			w.node(v, false)
+			continue
+		}
 		s.kids[start+i].node = w.node(v, false)
 	}
 	if w.err != nil {
@@ -213,8 +217,14 @@ func (w *refWalk) fail(err error) {
 	}
 }
 
-// add adds nd to the snapshot and returns its index.
+// add adds nd to the snapshot and returns its index. Past what an int32
+// numbers (valuesFit) the walk fails, and node 0 stands for nd: the
+// conversion does not run, and the references are in s.held.
 func (w *refWalk) add(nd snapNode) int32 {
+	if err := valuesFit(0, len(w.s.nodes)+1); err != nil {
+		w.fail(err)
+		return 0
+	}
 	w.s.nodes = append(w.s.nodes, nd)
 	return int32(len(w.s.nodes) - 1)
 }
@@ -225,8 +235,15 @@ func (w *refWalk) failed(err error) int32 {
 }
 
 // reserve adds n kids to the snapshot and returns the index of the first.
+//
+// Past what an int32 numbers (valuesFit) it fails the walk and returns -1,
+// and the caller walks the values only for the references they hand over.
 func (w *refWalk) reserve(n int) int {
 	start := len(w.s.kids)
+	if err := valuesFit(start, n); err != nil {
+		w.fail(err)
+		return -1
+	}
 	w.s.kids = slices.Grow(w.s.kids, n)[:start+n]
 	return start
 }
@@ -377,7 +394,14 @@ func (w *refWalk) content(v reflect.Value, kind reflect.Kind, inline bool) int32
 		n := v.Len()
 		start := w.reserve(n)
 		for i := range n {
+			if start < 0 {
+				w.node(v.Index(i), false)
+				continue
+			}
 			w.s.kids[start+i].node = w.node(v.Index(i), false)
+		}
+		if start < 0 {
+			return w.failed(w.err)
 		}
 		return w.add(snapNode{kind: snapArray, start: int32(start), n: int32(n)})
 	case reflect.Array:
@@ -442,7 +466,7 @@ func (w *refWalk) genericMap(v reflect.Value) int32 {
 			k.SetIterKey(it)
 		}
 		val.SetIterValue(it)
-		if key == nil {
+		if key == nil || start < 0 {
 			// The object is refused, but the references in it are taken.
 			if holdsRefs(t.Key()) {
 				w.node(k, true)
@@ -454,6 +478,8 @@ func (w *refWalk) genericMap(v reflect.Value) int32 {
 		i++
 	}
 	switch {
+	case start < 0:
+		return w.failed(w.err)
 	case key != nil:
 		return w.object(start, i)
 	case v.Len() == 0:
@@ -480,6 +506,14 @@ func (w *refWalk) anySlice(v reflect.Value) int32 {
 		s = v.Interface().([]any)
 	}
 	start := w.reserve(len(s))
+	if start < 0 {
+		for i, x := range s {
+			if x != nil && holdsRefs(reflect.TypeOf(x)) {
+				w.node(reflect.ValueOf(&s[i]).Elem(), false)
+			}
+		}
+		return w.failed(w.err)
+	}
 	for i, x := range s {
 		var nd int32
 		switch {
@@ -499,6 +533,14 @@ func (w *refWalk) anySlice(v reflect.Value) int32 {
 func (w *refWalk) anyMap(v reflect.Value) int32 {
 	mp := v.Interface().(map[string]any)
 	start, i := w.reserve(len(mp)), 0
+	if start < 0 {
+		for _, x := range mp {
+			if x != nil && holdsRefs(reflect.TypeOf(x)) {
+				w.node(reflect.ValueOf(x), true)
+			}
+		}
+		return w.failed(w.err)
+	}
 	for k, x := range mp {
 		var nd int32
 		switch {
