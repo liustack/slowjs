@@ -310,6 +310,12 @@ read_when:
 | --- | --- | --- |
 | quickjs-libc.c 只保留 Go API 会调用的部分 | v0.27.0 | [trimmed.md](trimmed.zh-CN.md#没有-shell-库) |
 
+## 命令
+
+| 改动 | 版本 | 文档 |
+| --- | --- | --- |
+| `slowjs`，一个运行 JavaScript 文件的命令，有 `print`、`console.log` 以及一定生效的超时和内存上限，每个标签的 GitHub release 里都有为五个目标预编译好的它 | v0.31.0 | [command.md](../command.zh-CN.md) |
+
 ## 新增一项改动
 
 - 把它放进所属领域的文档，没有合适的领域就在这里新建一份文档，并在该领域的表里加一行，版本写 "Unreleased"。发布步骤（[releasing.md](../releasing.zh-CN.md#发布前)）会把这里各表以及各领域文档的 Release 行里的 "Unreleased" 换成版本号。永远不要写进 README.md，它只负责链接到这里。

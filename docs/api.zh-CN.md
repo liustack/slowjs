@@ -4,6 +4,7 @@ read_when:
   - 找 Eval 和 Call 之外的某个 Go API 函数
   - 给 Go API 加函数或类型（中英两份都写在这里）
   - 想知道某个函数是哪个版本加的
+  - 不写 Go 就运行引擎（slowjs 命令）
 ---
 
 # Eval 和 Call 之外的 Go API
@@ -48,3 +49,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 - **`VM.RegisterEscapeText(name)`**（v0.29.2）：像 React DOM 的字符串渲染器那样为 HTML 转义文本（`&`、`<`、`>`、`"` 和 `'` 变成实体，参数按 `"" + text` 变成字符串）。tifa 用上它以后，示例商店的页面渲染时间变成原来的 0.974，bench 页面变成 0.938。[详情](changes/go-api.zh-CN.md#registerescapetext)
 - **`VM.RegisterCopyProps(name)`**（v0.29.3）：替 React 的 `createElement` 和 `cloneElement` 里把 config 的键复制进元素 props 的那个循环干活。只在它和循环的结果不可能不同的时候复制，其他 config 一律回答 `false`，脚本再交给循环处理。tifa 用上它以后，示例商店的页面渲染时间变成原来的 0.988 和 0.989，MUI 页面变成 0.980。[详情](changes/go-api.zh-CN.md#registercopyprops)
 - **`VM.RegisterStartTag(name)` 和 `VM.RegisterEndTag(name)`**（v0.29.10）：像 React DOM 服务端渲染器的 `pushStartGenericElement` 那样写出元素的开始标签，带属性、样式和文本，像 `endChunkForTag` 那样给出结束标签。开始标签函数只在 React 的函数也只可能写出同样内容时才写，其他调用一律返回调用方给的 `decline` 对象，脚本再交给 React 处理。在 tifa 示例页面一次渲染的所有开始和结束标签上，它们跑的指令数约为 React 函数的五分之一。[详情](changes/go-api.zh-CN.md#registerstarttag-和-registerendtag)
+
+## 不写 Go
+
+- **`slowjs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，有 `print`、`console.log`，以及一定生效的超时和内存上限，给不写 Go 也想试用引擎或给它跑基准的人用。每个 GitHub release 里都有为五个目标预编译好的它。[详情](command.zh-CN.md)

@@ -310,6 +310,12 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | quickjs-libc.c keeps only what the Go API calls | v0.27.0 | [trimmed.md](trimmed.md#no-shell-library) |
 
+## The command
+
+| Change | Release | Doc |
+| --- | --- | --- |
+| `slowjs`, a command that runs a JavaScript file with `print`, `console.log` and a timeout and memory limit that hold, prebuilt for the five targets in the GitHub release of each tag | v0.31.0 | [command.md](../command.md) |
+
 ## Adding a change
 
 - Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table of that area, with "Unreleased" as its release. The release step in [releasing.md](../releasing.md#before-the-release) replaces "Unreleased" with the version, in the tables here and in the Release lines of the area docs. Never write it into README.md, which only links here.

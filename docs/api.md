@@ -4,6 +4,7 @@ read_when:
   - Looking for a Go function of the API that is not Eval or Call
   - Adding a function or type to the Go API (add it here, in both languages)
   - Asking which release added a function
+  - Running the engine without writing Go (the slowjs command)
 ---
 
 # The Go API beyond Eval and Call
@@ -48,3 +49,7 @@ Each of these defines a function on the global object, written in C inside the e
 - **`VM.RegisterEscapeText(name)`** (v0.29.2): escapes text for HTML as React DOM's string renderer does (`&`, `<`, `>`, `"` and `'` become entities, and the argument becomes a string as in `"" + text`). With it in tifa, the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. [More](changes/go-api.md#registerescapetext)
 - **`VM.RegisterCopyProps(name)`** (v0.29.3): does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element. It copies only where its result and the loop's cannot differ, and answers `false` for any other config, which the script gives to the loop. With it in tifa, the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. [More](changes/go-api.md#registercopyprops)
 - **`VM.RegisterStartTag(name)` and `VM.RegisterEndTag(name)`** (v0.29.10): write the start tag of an element, with its attributes, style and text, as React DOM's server renderer does in `pushStartGenericElement`, and give its end tag as `endChunkForTag` does. The start tag function writes only where React's functions could write nothing else, and returns the caller's `decline` object for any other call, which the script gives to React. On the start and end tags of one render of tifa's example pages they run about a fifth of the instructions React's functions take. [More](changes/go-api.md#registerstarttag-and-registerendtag)
+
+## Without Go
+
+- **The `slowjs` command** (v0.31.0): runs a JavaScript file in this engine, with `print`, `console.log` and a timeout and memory limit that hold, for people who try or benchmark the engine without writing Go. Each GitHub release has it prebuilt for the five targets. [More](command.md)

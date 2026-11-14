@@ -70,6 +70,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `url/` | 包 `github.com/liustack/quickjs/url`，给 VM 用的 `URL` 和 `URLSearchParams` |
 | `url/testdata/` | `TestWPT` 在 VM 里跑的 web-platform-tests `url/` 里的文件、testharness 的外壳、core-js 判断原生 URL 的那段代码，以及篡改测试和形状测试的答案 |
 | `internal/whatwgurl/` | 包 `url` 背后的 URL 解析器（见 [url.md](changes/url.zh-CN.md)）：状态机、主机解析、setter 和序列化，加上 `idna/` 和 `bidi/`，那是 golang.org/x/net 和 x/text 里它要用的部分，带 Unicode 17 的表。`testdata/` 里是 web-platform-tests 的 URL 数据和 `known-failures.txt` |
+| `cmd/slowjs/` | `slowjs` 命令，通过 Go API 运行一个 JavaScript 文件（见 [command.md](command.zh-CN.md)），以及它的测试。`scripts/slowjs-release.sh` 为发布构建它（[releasing.md](releasing.zh-CN.md#发布任务)） |
 | `compare/` | 一个独立的模块，从上游保留下来，在这个引擎、goja 和 fastschema/qjs 上跑 QuickJS 的微基准 |
 | `internal/arewefastyet/` | compare/engines 运行的 V8 基准套件（v8-v7） |
 | `scripts/docs-list.sh` | `docs/` 的索引 |
