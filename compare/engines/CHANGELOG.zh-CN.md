@@ -2,6 +2,35 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-14：两张表，只比解释器，新的包
+
+- 对比只剩两张表：tifa 页面的渲染时间和 V8 套件。功能探测、QuickJS 微基准、
+  冷启动、内存、并发、远远落后的列表（`cmd/behind`）、liustack-tifa 一行
+  （`eng_liustacktifa*.go`）以及引擎自带 Intl 对照 polyfill 的各张表，都不再属于这次运行。
+  `cmd/compare` 默认运行 `v8`，对比从不在其他引擎上运行 test262。
+- 对比只在解释器之间进行。go-quickjs 关掉 JIT 来跑（它的默认，不带 `quickjs_jit` 标签构建）。
+  带 JIT 的行，go-quickjs-jit、goant-jit 和开着 JIT 的 Node，都去掉了，构建它们的变体也一起
+  去掉。Go 引擎是 liustack/quickjs、go-quickjs 和 moejs。modernc.org/quickjs 和 goant 退出了
+  对比（它们的适配器和依赖都删掉了）。原生参照是 C QuickJS 2026-06-04、Hermes V1（发布版
+  `260318099.0.0-stable`，由 `native/build.sh` 构建，按提交和 SHA256 钉住，这个版本没有 JIT，
+  照它的发布方式运行 `hermesc -O` 编好的字节码）和 Node `--jitless`。QuickJS-NG 和 C QuickJS
+  master 快照去掉了。
+- 新的包。`tifa/bundles` 和 `tifa/in` 按 tifa main `ba584f71` 重新构建（bench、MUI 和商店，
+  25 个页面）：旧的是 2026-10-22 的。这些包只在 tifa 的 Go 函数存在时才用它们，而对比里没有
+  引擎注册它们，所以每个引擎跑的都是 React 自己的代码。`cmd/modulescript` 和 `cmd/notices`
+  接受 tifa 现在写在 `export{};` 之后的辅助函数。
+- 每个引擎照原样运行。它有自己的 Intl 和 URL 就用自己的（liustack-quickjs 用 `intl`、
+  `temporal` 和 `url` 三个包），没有的就加载标准的 polyfill：Intl 用 FormatJS，URL、
+  URLSearchParams、structuredClone 和迭代器辅助方法用 core-js 3.51.0
+  （`tifa/polyfill/corejs-polyfill.js`），它也取代了 `native/node-ssr.cjs` 里 Iterator.concat 的替身。
+  `tifa/run.sh` 里有各引擎的清单。有一次运行没渲染出任何页面时，它以状态 1 退出。
+- Hermes V1 的页面通过 `native/hermes-run.sh`、`hermes-ssr.js` 和 `hermes-shim.js` 运行。
+  Hermes 没有异步生成器，所以只为 Hermes 降级这些包：esbuild 把异步生成器和 `for await`
+  改写成 ES2017 的 async 函数。Hermes 的 shell 没有 `performance.now`，所以一个页面的
+  时间是计时循环的墙钟时间除以渲染次数。
+- `cmd/pages` 给出一张渲染表（每组页面相对 liustack-quickjs 的比值）、每页的时间，以及 HTML
+  和我们不同的页面清单，附上第一处不同的位置。`results/` 只留最近一次运行的文件。
+
 ## 2026-11-14：更新的参照引擎
 
 - 本机参照行换成 C QuickJS master `e585640ffa`（之前是 `7d1c13c5d8`）、QuickJS-NG v0.18.0
@@ -25,7 +54,7 @@
 - Hermes V1 在 V8 套件上有了自己的行，在服务器 C（GCP t2d-standard-4，AMD EPYC 7B13，CPU 0，
   每一轮独占整台机器）上单独一场跑，liustack/quickjs v0.30.6 和 C QuickJS 2026-06-04
   在同一场里重新跑了一遍
-  （[2026-11-14-v0.30.6-gcp-v8-hermes](results/2026-11-14-v0.30.6-gcp-v8-hermes.md)）。
+  （2026-11-14-v0.30.6-gcp-v8-hermes）。
   这一场的得分不和另一台机器上那一场的得分比较。
 - 各行：release `260318099.0.0-stable`（`fd22091391c3`）跑源码和跑 `hermesc -O` 字节码，
   `static_h`（`44f5f48c3edf`）跑 `-O` 字节码，不带和带 `-Xjit`。release 没有 x86-64 JIT。
@@ -40,7 +69,7 @@
   上跑（AMD EPYC 7B13，4 个核，没有超线程），固定在 CPU 0，整台机器保持安静。
   这台机器的得分不和之前那台的得分比较，所以这一场把 liustack/quickjs v0.30.1
   和 v0.30.6、C QuickJS 2026-06-04 放在一起重新跑
-  （[2026-11-14-v0.30.6-gcp-v8](results/2026-11-14-v0.30.6-gcp-v8.md)）。
+  （2026-11-14-v0.30.6-gcp-v8）。
 - 只跑了 V8 套件，只跑了这三方。其他纯 Go 引擎没有跑，所以 v0.30.1 那次运行的表不变。
 - Go 的两方各自用自己那棵树的 `cmd/jsbench v8` 在 `taskset` 下跑，没有经过
   `cmd/compare -phases v8`，也没有设内存上限。套件的步骤相同，`jsbench`、适配器和套件的文件
@@ -63,7 +92,7 @@
   表里用的是通过的那次运行。
 - C QuickJS 2026-06-04 有了 V8 套件的一行：`native/qjs-v8.js` 按 `runV8` 的步骤
   在 `qjs` 上跑这个套件。它是单独一场跑的，和 liustack-quickjs 轮流跑
-  （[2026-11-06-v0.30.1-gcp-v8-c](results/2026-11-06-v0.30.1-gcp-v8-c.md)）。
+  （2026-11-06-v0.30.1-gcp-v8-c）。
 
 ## 2026-11-05：行又叫 liustack-quickjs 了
 

@@ -2,6 +2,46 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14: two tables, interpreters only, new bundles
+
+- The comparison is two tables: the render time of tifa's pages and the V8 suite.
+  The feature probes, the QuickJS micro benchmarks, cold start, memory,
+  concurrency, the far-behind list (`cmd/behind`), the liustack-tifa row
+  (`eng_liustacktifa*.go`) and every table of the engine's own Intl against the
+  polyfill are gone from the run. `cmd/compare` runs `v8` by default, and the
+  comparison never runs test262 on other engines.
+- The comparison is among interpreters. go-quickjs runs with its JIT off (its
+  default, built without the `quickjs_jit` tag). The rows with a JIT,
+  go-quickjs-jit, goant-jit and Node with its JIT, are out, and so are the
+  variants that built them. The Go engines are liustack/quickjs, go-quickjs and
+  moejs. modernc.org/quickjs and goant are out of the comparison (their adapters
+  and requirements are removed). The native references are C QuickJS 2026-06-04,
+  Hermes V1 (release `260318099.0.0-stable`, built by `native/build.sh`, pinned by
+  commit and SHA256, no JIT in that release, run as `hermesc -O` bytecode, as it
+  ships) and Node `--jitless`. QuickJS-NG and the C QuickJS master snapshot are
+  out.
+- New bundles. `tifa/bundles` and `tifa/in` are built again from tifa main
+  `ba584f71` (bench, MUI and shop, 25 pages): the old ones were from 2026-10-22.
+  The bundles use tifa's Go functions only when they exist, and no engine of the
+  comparison registers them, so every engine runs React's own code.
+  `cmd/modulescript` and `cmd/notices` accept the helper functions tifa now
+  writes after `export{};`.
+- Each engine runs as it comes. It has its own Intl and URL where it has them
+  (liustack-quickjs with the packages `intl`, `temporal` and `url`), and gets a
+  standard polyfill where it has none: FormatJS for Intl, core-js 3.51.0
+  (`tifa/polyfill/corejs-polyfill.js`) for URL, URLSearchParams, structuredClone
+  and the iterator helpers, which also replaces the Iterator.concat stand-in of
+  `native/node-ssr.cjs`. `tifa/run.sh` has the lists. It exits with status 1 when
+  a run renders no page.
+- Hermes V1 runs the pages through `native/hermes-run.sh`, `hermes-ssr.js` and
+  `hermes-shim.js`. Hermes has no async generators, so the bundles are lowered for
+  Hermes only: esbuild turns async generators and `for await` into ES2017 async
+  functions. The Hermes shell has no `performance.now`, so a page's time is the
+  wall time of the timed loop divided by the number of renders.
+- `cmd/pages` makes one render table (ratio to liustack-quickjs per page group),
+  the per-page times, and the list of pages whose HTML differs from ours with the
+  first place they differ. `results/` holds only the files of the last run.
+
 ## 2026-11-14: newer reference engines
 
 - The native reference rows move to C QuickJS master `e585640ffa` (it was
@@ -28,7 +68,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 - Hermes V1 has rows on the V8 suite, in a session of its own on server C (GCP
   t2d-standard-4, AMD EPYC 7B13, CPU 0, the machine held for each round),
   with liustack/quickjs v0.30.6 and C QuickJS 2026-06-04 run again in the
-  same session ([2026-11-14-v0.30.6-gcp-v8-hermes](results/2026-11-14-v0.30.6-gcp-v8-hermes.md)).
+  same session (2026-11-14-v0.30.6-gcp-v8-hermes).
   Its scores are not compared with those of the session on the other machine.
 - Rows: the release `260318099.0.0-stable` (`fd22091391c3`) from source and
   as `hermesc -O` bytecode, and `static_h` (`44f5f48c3edf`) as `-O` bytecode,
@@ -47,7 +87,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
   CPU 0 with the whole machine held quiet. Scores of this machine are not
   compared with scores of the earlier one, so the session ran liustack/quickjs
   v0.30.1 again next to v0.30.6 and C QuickJS 2026-06-04
-  ([2026-11-14-v0.30.6-gcp-v8](results/2026-11-14-v0.30.6-gcp-v8.md)).
+  (2026-11-14-v0.30.6-gcp-v8).
 - Only the V8 suite was run, and only these three sides. The other pure Go
   engines were not run, so the tables of the run of v0.30.1 stay as they are.
 - The Go sides ran `cmd/jsbench v8` of their own tree under `taskset`, not
@@ -74,7 +114,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
   that passed is the one in the tables.
 - C QuickJS 2026-06-04 has a row on the V8 suite: `native/qjs-v8.js` runs the
   suite on `qjs` with the steps of `runV8`. It was run in a session of its own,
-  taking turns with liustack-quickjs ([2026-11-06-v0.30.1-gcp-v8-c](results/2026-11-06-v0.30.1-gcp-v8-c.md)).
+  taking turns with liustack-quickjs (2026-11-06-v0.30.1-gcp-v8-c).
 
 ## 2026-11-05: rows named liustack-quickjs again
 
