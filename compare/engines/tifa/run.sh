@@ -70,7 +70,7 @@ go_runs() {
 }
 go_runs liustack liustack-quickjs ""            # its own Intl, URL and Temporal (packages intl, temporal, url)
 go_runs goquickjs go-quickjs-interp $CORE
-go_runs moejs moejs $CORE
+go_runs moejs moejs ../native/moejs-shim.js,$CORE   # moejs lacks FinalizationRegistry: native/moejs-shim.js
 # native_runs <engine name> <driver command...>: no Intl of their own, so the
 # FormatJS polyfills for the shop and MUI pages.
 native_runs() {
