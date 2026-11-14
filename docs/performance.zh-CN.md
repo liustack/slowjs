@@ -1055,6 +1055,20 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 M4 上一次渲染的指令（退休指令，每页取各次渲染的中位数，再把各页加起来）在 MUI 上少 0.26%，在 store 和 workbench 页面上多 0.02%：收益出现在时间上，不在指令上，这和沿着表里的链少读几次内存（每次都可能缓存未命中）相符。workbench 在 linux/amd64 上多用 0.4% 的时间，在 M4 上少用 0.4%，指令一样，算作没有变化。linux/amd64 上的原生 C 树（`render`，tifa 的池子，一次 10 轮）在 MUI 上显示的比 tifa 里多：0.977（0.950 到 0.997），10 轮全部低于 1，而 tifa 里的生成引擎是 0.990。
 
+### 不走通用查找的属性描述符和 bind
+
+[Object.defineProperty 一次读完普通的描述符对象](changes/objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象)，对比 main 的 `78a90364`（v0.30.6）。每次渲染的指令来自 linux/amd64 上原生 C 树的 callgrind（暖 2 次后计时的 3 次渲染，tifa 池子的设置，不算 `host_poll`），商店的页面复用 URL 对象。调用次数在 `js_obj_to_desc` 里数。每一页的 HTML 都一样。
+
+| 页面 | 每次渲染的描述符 | 指令 |
+| --- | ---: | ---: |
+| workbench studio 页 | 2,944 | -0.71% |
+| workbench stats 页 | 1,609 | -0.74% |
+| 商店的英文首页 | 459 | -0.14% |
+| 商店的中文商品页 | 975 | -0.17% |
+| MUI 的 orders 页 | 83 | +0.01% |
+| MUI 的首页 | 83 | -0.02% |
+| React 页 | 0 | -0.01% |
+
 ### tifa 页面的性能画像
 
 [tifa 页面的性能画像](changes/generator.zh-CN.md#tifa-页面的性能画像)：`make gen` 用页面渲染的性能画像编译引擎，内联仍是不带画像的构建所做的结果。

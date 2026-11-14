@@ -358,3 +358,15 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 `Function.prototype.bind` 以前先建绑定函数，再分配存放目标函数、`this` 和参数的内存块。这块内存要不到时，它释放绑定函数，而绑定函数的 finalizer 会去读这个不存在的块，进程就崩溃了。之后它定义 `length` 和 `name`，却不看两次定义的返回值：其中一次内存不够（为键复制 shape）时，bind 照样返回少了这个键的绑定函数，同时挂着内存不足的错误（脚本看不到，因为下一次调用会失败，下一次向后跳转会结束循环，但从宿主调用 bind 就能看到）。现在先分配这块内存再建绑定函数，定义失败时 bind 也失败。上游 QuickJS 的代码也是这样。
 
 测试：`engine/test/unit-oom.c` 里的 `test_bind_oom` 在内存不够时 bind 各种原型的函数、C 函数、类、绑定函数、名字超出 latin-1 的函数、length 由 getter 给出的函数和新原型的函数。`test_bind_host_oom` 从宿主调用 bind，目标函数的新原型的空 shape 还被另一个对象共用，内存余量从 0 到 16 KiB 逐个试，也试堆满后还回几块和堆满后除一种大小外每种都还回几块的情况：结果要么是完整、没有挂着异常的绑定函数，要么是内存不足的错误。改动之前它会崩溃。
+
+## Object.defineProperty 一次读完普通的描述符对象
+
+版本：Unreleased。
+
+`js_obj_to_desc` 是 `Object.defineProperty`、`Object.defineProperties`、带属性参数的 `Object.create`、`Reflect.defineProperty` 和 `getOwnPropertyDescriptor` trap 结果共用的 ToPropertyDescriptor。它对描述符的六个字段各做一次 `HasProperty` 再做一次 `Get`，一共十二次查找，描述符没写的字段每个都要沿原型链走一遍。zod 4 的 `defineLazy` 和 react-hook-form 给表单状态做的代理，每次渲染在 workbench 的 studio 页定义 2,944 个属性，在商店首页 459 个，在 MUI 的订单页 83 个，描述符大多只有两三个字段。现在，描述符是普通对象（类 `Object`），而且每个字段要么是它自己的数据属性，要么它和原型链上的每个对象都没有这个字段时，就从它的 shape 一次读完（`js_obj_to_desc_plain`）：在对象里查六次，没写的字段在每个原型里各查一次。
+
+为什么安全：对这样的对象，读字段的 `HasProperty` 和 `Get` 都不运行代码，`ToBoolean` 也不运行，所以读的先后看不出来，一次读完和十二次查找结果相同。检查的顺序和报错信息不变：先查 getter 能否调用，再查 setter，再查是否两类字段都有。下面这些照旧走通用路径：其他类的对象（Proxy、数组、函数、`String` 对象），自有字段是 getter、setter 或首次使用时才创建的属性，字段在原型上找到（原型有 `value`，或者脚本给 `Object.prototype` 加了 `enumerable`），以及原型链上有特殊对象（以 Proxy 或 `String` 对象为原型）。所有检查做完才取值，查找和复制之间不分配内存，指向属性数组的指针一直有效。这个辅助函数不内联，getter 可能再次进入的 `js_obj_to_desc` 的栈帧不会变大。
+
+收益：每次渲染，workbench 的 studio 页少执行 0.71% 的指令，stats 页少 0.74%，商店首页少 0.14%，商品页少 0.17%（两页都复用 URL 对象），MUI 的两页和 React 页不变（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
+
+测试：`engine/test/compare/property_descriptor.js`（输出和 Node 24 一样）经五个调用方定义属性，描述符覆盖各个字段和各种真假值、继承来的字段、以 Proxy 和 `String` 对象为原型、改过的 `Object.prototype`、另一个 realm 的对象，以及抛错的 getter。`engine/test/regvm/js/q5-desc.js` 在 corpus 和抛错注入测试里跑报错信息、另一个 realm，以及普通、getter 和 proxy 描述符混在一起的循环。`engine/test/unit-oom.c` 里的 `test_define_desc_oom` 在内存不够时跑同样的组合。

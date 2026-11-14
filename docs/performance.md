@@ -1055,6 +1055,20 @@ The changes made to the register loop since are measured in their own sections: 
 
 The instructions of a render on the M4 (retired instructions, the median of a page's renders, summed over the pages) are 0.26% fewer on MUI and 0.02% more on the store and workbench pages: the gain shows in time, not in instructions, as fewer loads along the chains of the table, each a likely cache miss, would. The workbench took 0.4% more time on linux/amd64 and 0.4% less on the M4 with the same instructions, which is no change. The native C tree on linux/amd64 (`render`, tifa's pool, one session of 10 rounds) showed more on MUI than tifa does: 0.977 (0.950 to 0.997), 10 of 10 rounds under 1, where the generated engine in tifa gives 0.990.
 
+### Property descriptors and bind without generic lookups
+
+[Object.defineProperty reads a plain descriptor in one pass](changes/objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass), against main at `78a90364` (v0.30.6). Instructions per render are from callgrind on the native C tree on linux/amd64 (the 3 timed renders after 2 warm ones, the pool of tifa's settings, `host_poll` left out), the shop's pages with the URL objects reused. The calls are counted in `js_obj_to_desc`. The HTML of every page is the same.
+
+| Page | Descriptors a render | Instructions |
+| --- | ---: | ---: |
+| the workbench studio page | 2,944 | -0.71% |
+| the workbench stats page | 1,609 | -0.74% |
+| the shop's English home page | 459 | -0.14% |
+| the shop's Chinese products page | 975 | -0.17% |
+| MUI's orders page | 83 | +0.01% |
+| MUI's home page | 83 | -0.02% |
+| React's page | 0 | -0.01% |
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.

@@ -1,0 +1,21 @@
+result TypeError: invalid getter
+result TypeError: invalid setter
+result TypeError: cannot have setter/getter and value or writable
+result TypeError: cannot have setter/getter and value or writable
+result TypeError: invalid getter
+result TypeError: not an object
+result TypeError: not an object
+result TypeError: invalid getter
+result TypeError: invalid getter
+result TypeError: cannot have setter/getter and value or writable
+result TypeError: invalid getter
+result TypeError: invalid setter
+result TypeError: cannot have setter/getter and value or writable
+result v=4 falsetruefalse
+result v=5 falsetruetrue
+result v=6 falsetruefalse
+result k0,m0,k1,m2,k3,k4,m4 v=g falsetruefalse v=p truefalsefalse v=3 falsefalsetrue v=1 falsefalsefalse
+result k0,m0,k1,m2,k3,k4,m4 v=g falsetruefalse v=p truefalsefalse v=3 falsefalsetrue v=1 falsefalsefalse
+mem-end obj=384 atom=587 shape=282 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
+mem-gc obj=384 atom=587 shape=282 prop=1925 jsfunc=7 cfunc=252 array=3 fast_array=3 elements=18 binary=0
+--- status exit 0

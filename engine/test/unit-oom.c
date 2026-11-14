@@ -1750,6 +1750,47 @@ static void test_fast_builtins_oom(void)
     sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
 }
 
+/* Object.defineProperty, Object.defineProperties, Object.create and
+   Reflect.defineProperty with plain descriptors, read from their shape
+   (js_obj_to_desc_plain), and with descriptors that take the generic path (a
+   getter, an inherited field, a proxy): with too little memory (the key, the
+   property, the shape of the object, the result) they fail with the out of
+   memory error and lose nothing. */
+static void test_define_desc_oom(void)
+{
+    static const char setup[] =
+        "var up = { enumerable: true }, fn = function () { return 1 };\n"
+        "var px = new Proxy({ value: 'p', configurable: true }, {});\n"
+        "function show(o) { return Object.keys(o).length + Object.getOwnPropertyNames(o).join('') }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 6; i++) {\n"
+        "    var o = {}, d = Object.create(up);\n"
+        "    d.value = 'v' + i;\n"
+        "    Object.defineProperty(o, 'a' + i, { value: i, writable: true, enumerable: i % 2 == 0 });\n"
+        "    Object.defineProperty(o, 'b' + i, { get: fn, set: fn, configurable: true });\n"
+        "    Object.defineProperty(o, 'c' + i, d);\n"
+        "    Object.defineProperty(o, 'd' + i, { get value() { return i } });\n"
+        "    Object.defineProperty(o, 'e' + i, px);\n"
+        "    Object.defineProperties(o, { f: { value: 1, enumerable: true }, g: d });\n"
+        "    Reflect.defineProperty(o, 'h' + i, { value: 'h', enumerable: true });\n"
+        "    var c = Object.create(null, { x: { value: i, enumerable: true }, y: { get: fn } });\n"
+        "    out.push(show(o), show(c), o['a' + i], o['b' + i], o['c' + i], o['d' + i], o['e' + i]);\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "5a0b0c0d0e0fgh0 1xy 0 1 v0 0 p 4a1b1c1d1e1fgh1 1xy 1 1 v1 1 p "
+        "5a2b2c2d2e2fgh2 1xy 2 1 v2 2 p 4a3b3c3d3e3fgh3 1xy 3 1 v3 3 p "
+        "5a4b4c4d4e4fgh4 1xy 4 1 v4 4 p 4a5b5c5d5e5fgh5 1xy 5 1 v5 5 p",
+        NULL
+    };
+
+    sweep("define descriptors", "define_desc.js", setup, "run()", want, 16384);
+}
+
 /* Function.prototype.bind makes the bound function, the copy of its
    arguments, its length and its name ("bound " and the name of the target):
    with too little memory it fails with the out of memory error, never
@@ -2689,6 +2730,7 @@ int main(void)
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
+    test_define_desc_oom();
     test_bind_oom();
     test_bind_host_oom();
     test_tags_oom();

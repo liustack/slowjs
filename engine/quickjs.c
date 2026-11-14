@@ -47315,6 +47315,91 @@ static JSValue JS_ToObjectFree(JSContext *ctx, JSValue val)
     return obj;
 }
 
+/* ToPropertyDescriptor of an ordinary object (class Object) whose six
+   fields are each a plain data property of its own (no getter, no
+   autoinit) or found on no object of its prototype chain, which holds no
+   exotic object: the HasProperty and Get of each field then run no code and
+   read the property of the object itself, so the fields are read from its
+   shape in one pass. Getters, a field inherited from a prototype, a Proxy or
+   another exotic object anywhere on the chain take the generic path. Returns
+   1 with d set, 0 when the generic path must read the descriptor, -1 with
+   the exception pending (a getter or setter not callable, both kinds of
+   fields). Out of line, so that the frame of js_obj_to_desc, which getters
+   can reenter, does not grow. */
+static no_inline int js_obj_to_desc_plain(JSContext *ctx, JSPropertyDescriptor *d,
+                                          JSObject *p)
+{
+    static const JSAtom names[6] = {
+        JS_ATOM_enumerable, JS_ATOM_configurable, JS_ATOM_value,
+        JS_ATOM_writable, JS_ATOM_get, JS_ATOM_set,
+    };
+    JSProperty *own[6], *pr;
+    JSShapeProperty *prs;
+    JSObject *q;
+    int i, flags;
+
+    if (p->class_id != JS_CLASS_OBJECT)
+        return 0;
+    for(i = 0; i < 6; i++) {
+        prs = find_own_property(&pr, p, names[i]);
+        if (prs) {
+            if (prs->flags & JS_PROP_TMASK)
+                return 0;
+            own[i] = pr;
+        } else {
+            own[i] = NULL;
+            for(q = p->shape->proto; q; q = q->shape->proto) {
+                if (q->is_exotic || find_own_property(&pr, q, names[i]))
+                    return 0;
+            }
+        }
+    }
+    /* nothing below allocates before the values are taken: the pointers
+       into the property array stay valid */
+    flags = 0;
+    if (own[0]) {
+        flags |= JS_PROP_HAS_ENUMERABLE;
+        if (JS_ToBool(ctx, own[0]->u.value))
+            flags |= JS_PROP_ENUMERABLE;
+    }
+    if (own[1]) {
+        flags |= JS_PROP_HAS_CONFIGURABLE;
+        if (JS_ToBool(ctx, own[1]->u.value))
+            flags |= JS_PROP_CONFIGURABLE;
+    }
+    if (own[2])
+        flags |= JS_PROP_HAS_VALUE;
+    if (own[3]) {
+        flags |= JS_PROP_HAS_WRITABLE;
+        if (JS_ToBool(ctx, own[3]->u.value))
+            flags |= JS_PROP_WRITABLE;
+    }
+    if (own[4]) {
+        flags |= JS_PROP_HAS_GET;
+        if (!(JS_IsUndefined(own[4]->u.value) || JS_IsFunction(ctx, own[4]->u.value))) {
+            JS_ThrowTypeError(ctx, "invalid getter");
+            return -1;
+        }
+    }
+    if (own[5]) {
+        flags |= JS_PROP_HAS_SET;
+        if (!(JS_IsUndefined(own[5]->u.value) || JS_IsFunction(ctx, own[5]->u.value))) {
+            JS_ThrowTypeError(ctx, "invalid setter");
+            return -1;
+        }
+    }
+    if ((flags & (JS_PROP_HAS_SET | JS_PROP_HAS_GET)) &&
+        (flags & (JS_PROP_HAS_VALUE | JS_PROP_HAS_WRITABLE))) {
+        JS_ThrowTypeError(ctx, "cannot have setter/getter and value or writable");
+        return -1;
+    }
+    d->flags = flags;
+    d->value = own[2] ? JS_DupValue(ctx, own[2]->u.value) : JS_UNDEFINED;
+    d->getter = own[4] ? JS_DupValue(ctx, own[4]->u.value) : JS_UNDEFINED;
+    d->setter = own[5] ? JS_DupValue(ctx, own[5]->u.value) : JS_UNDEFINED;
+    return 1;
+}
+
 static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
                           JSValueConst desc)
 {
@@ -47325,6 +47410,9 @@ static int js_obj_to_desc(JSContext *ctx, JSPropertyDescriptor *d,
         JS_ThrowTypeErrorNotAnObject(ctx);
         return -1;
     }
+    ret = js_obj_to_desc_plain(ctx, d, JS_VALUE_GET_OBJ(desc));
+    if (ret != 0)
+        return ret < 0 ? -1 : 0;
     flags = 0;
     val = JS_UNDEFINED;
     getter = JS_UNDEFINED;

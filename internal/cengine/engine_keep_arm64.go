@@ -925,6 +925,7 @@ var goasmKeep = []any{
 	js_number_toString,
 	js_number_valueOf,
 	js_obj_to_desc,
+	js_obj_to_desc_plain,
 	js_object___defineGetter__,
 	js_object___lookupGetter__,
 	js_object_assign,

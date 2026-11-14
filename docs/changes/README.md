@@ -273,6 +273,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The spread of an object literal copies a source of a shape it has seen into its target from a cache of the shapes of both | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.md#a-spread-copies-from-a-cache-of-the-shapes-of-its-target-and-source) |
 | A field of a property descriptor that throws, or a `has` trap that throws, ends the conversion with its exception | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-field-of-a-property-descriptor-that-throws-ends-the-conversion) |
 | bind with too little memory fails with the out of memory error, and no longer crashes or returns a bound function without its length or name | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#bind-with-too-little-memory-fails-whole) |
+| `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
 
 ## Memory
 

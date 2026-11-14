@@ -962,6 +962,7 @@ func js_number_toPrecision(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a
 func js_number_toString(a0 uintptr, a1 uintptr)
 func js_number_valueOf(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_obj_to_desc(a0 uintptr, a1 uintptr, a2 uintptr, a3, a4 uintptr)
+func js_obj_to_desc_plain(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_object___defineGetter__(a0 uintptr, a1 uintptr)
 func js_object___lookupGetter__(a0 uintptr, a1 uintptr)
 func js_object_assign(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
