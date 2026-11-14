@@ -130,5 +130,37 @@
       out.push('stepped ' + steps + ' ' + name + ': ' + r + ' then ' + after.done + ' ' + after.value)
     }
   }
+  // the same getter, which may also push onto the array after its steps,
+  // then a push after the spread: the kept iterator must still be ended,
+  // and one the getter ended does not read the elements pushed later
+  class R { constructor(...r) { this.r = r } }
+  class S extends R { constructor(it) { super(...it) } }
+  const rforms = {
+    literal: (it) => [...it],
+    call: (it) => ((...r) => r)(...it),
+    new: (it) => new R(...it).r,
+    super: (it) => new S(it).r
+  }
+  for (const name of Object.keys(rforms)) {
+    const res = []
+    for (const [steps, push] of [[1, false], [4, true], [3, true]]) {
+      const a = [10, 20, 30]
+      let kept
+      Object.defineProperty(AIP, 'next', {
+        get() {
+          kept = this
+          for (let i = 0; i < steps; i++) nextDesc.value.call(this)
+          if (push) a.push(40)
+          return nextDesc.value
+        },
+        configurable: true
+      })
+      let r
+      try { r = rforms[name](a) } finally { Object.defineProperty(AIP, 'next', nextDesc) }
+      a.push(50)
+      res.push([r, nextDesc.value.call(kept).done])
+    }
+    out.push('kept ' + name + ': ' + JSON.stringify(res))
+  }
   return out.join('\n')
 })()

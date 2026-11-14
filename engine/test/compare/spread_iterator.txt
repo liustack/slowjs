@@ -76,3 +76,7 @@ stepped 4 call:  then true undefined
 stepped 4 new:  then true undefined
 stepped 4 super: 0 then true undefined
 stepped 4 method: 1 then true undefined
+kept literal: [[[20,30],true],[[],true],[[40],true]]
+kept call: [[[20,30],true],[[],true],[[40],true]]
+kept new: [[[20,30],true],[[],true],[[40],true]]
+kept super: [[[20,30],true],[[],true],[[40],true]]
