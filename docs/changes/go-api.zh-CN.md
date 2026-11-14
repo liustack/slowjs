@@ -582,4 +582,4 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 
 代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
 
-测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。
+测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。

@@ -94,7 +94,7 @@ func checkUTF16(t *testing.T, u []uint16) {
 		if n := utf16Len(u); n != len(want) {
 			t.Fatalf("units %x: utf16Len %d, want %d", u, n, len(want))
 		}
-		for _, step := range []int{1, 2, 3, 5, 8, 9} {
+		for step := 1; step <= 9; step++ {
 			stringStep = step
 			got, ok := utf16Steps(nil, u, wtf8, goOut)
 			stringStep = 1 << 18
