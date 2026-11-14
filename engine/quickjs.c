@@ -548,6 +548,13 @@ struct JSRuntime {
     long rv_frame;
     /* the counts of RV_STATS (JS_RegvmStat 10 and 13 to 15) */
     int64_t rv_count[4];
+    /* the StringBuffers of the calls of Array.prototype.join that run, one
+       in another, gc_join_depth of them, the first 8 in gc_join_sb: their
+       growth collects first when it would pass the memory limit
+       (js_trigger_gc_block, js_array_join). At the end, so that the fields
+       before them keep their offsets. */
+    uint32_t gc_join_depth;
+    void *gc_join_sb[8];
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -816,6 +823,13 @@ struct JSString {
     uint32_t hash : 30;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
+    /* the atom of the string as a property key when JS_ValueToAtom takes the
+       string as its own atom (an atom of the type string, not empty, not
+       starting with a digit), else JS_ATOM_NULL: one read answers both
+       (rv_getel_atom, js_has_own_call). Set by __JS_NewAtom, 0 in a new
+       string. An atom string is never changed and is freed with its atom
+       (JS_FreeAtomStruct), so the number never outlives the atom. */
+    uint32_t key_atom;
 #ifdef DUMP_LEAKS
     struct list_head link; /* string list */
 #endif
@@ -2640,6 +2654,61 @@ static void js_trigger_gc(JSRuntime *rt, size_t size)
     }
 }
 
+/* js_trigger_gc for one large block that a built-in is about to ask for,
+   with no object made before it: String.prototype.repeat, padStart and
+   padEnd, the data of an ArrayBuffer (and so of a typed array), its resize
+   and transfer, the elements of a new array of a given length, of the copy
+   of slice and splice, of push and of a[i] = v that grows the array, the
+   buffer of join, the slots of sort, and a rope made flat at the entry of a
+   String.prototype method. Garbage in cycles waits for a collection, and
+   only an object made over the threshold starts one, so such a block could
+   fail at the memory limit with the garbage still there. When the block
+   would take the heap past the limit, a full collection runs first. It is
+   called where a collection is as safe as at an object creation: at the
+   entry of the built-in, after the conversions of its arguments, which may
+   run JavaScript, every value it holds is counted, by the frame of the
+   caller or by its own locals, and no object is half made
+   (docs/changes/memory-and-allocation.md). A heap under the limit is left
+   alone: the threshold does not count the block, so a page that fits runs
+   the same collections as before. size is what the count of the heap gains,
+   as the heap checks it against the limit (heap_over): a new block counts
+   whole, a block that grows in place of the old one (heap_realloc) counts
+   its growth. The heap also counts what the size leaves out: the headers of
+   the block and of a string, the rounding of the cache of large blocks, a
+   small block that moves to a large one before it is freed (__js_realloc),
+   and a new arena of small blocks for an object made next to the block, such
+   as the object of a new ArrayBuffer, which the heap counts whole. Under
+   5 KiB in all (the assertion below adds it up), it is covered by
+   JS_GC_BLOCK_SLACK: a block that would come within it of the limit
+   collects first too. A threshold of -1 turns this
+   off, as it does the collections of js_trigger_gc. The test is inline and
+   the collection out of line, so that a block that fits costs three
+   compares. */
+#define JS_GC_BLOCK_SLACK 8192
+_Static_assert(JS_GC_BLOCK_SLACK >=
+               (JS_MALLOC_ARENA_SIZE + sizeof(size_t)) +       /* a new arena */
+               JS_MALLOC_MAX_SMALL_SIZE +                      /* a small block that moves */
+               sizeof(JSMallocLargeBlockHeader) + 2 * sizeof(size_t) + /* header, TLSF word, alignment */
+               JS_LARGE_CACHE_STEP +                           /* the rounding of the large cache */
+               sizeof(JSString) + 1,                           /* a string's header and its 0 */
+               "JS_GC_BLOCK_SLACK covers what the size of a block leaves out");
+
+static no_inline void js_trigger_gc_block_run(JSRuntime *rt)
+{
+    if (rt->malloc_gc_threshold != (size_t)-1)
+        JS_RunGC(rt);
+}
+
+static force_inline void js_trigger_gc_block(JSRuntime *rt, size_t size)
+{
+    JSHeap *h = &rt->malloc_ctx.heap;
+    size_t room = h->limit - h->count;
+
+    if (unlikely(h->count > h->limit || room < JS_GC_BLOCK_SLACK ||
+                 size > room - JS_GC_BLOCK_SLACK))
+        js_trigger_gc_block_run(rt);
+}
+
 void *js_malloc_rt(JSRuntime *rt, size_t size)
 {
     if (unlikely(JS_ALLOC_FAILS(rt, NULL, size)))
@@ -3325,6 +3394,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->atom_type = 0;
     str->hash = 0;          /* optional but costless */
     str->hash_next = 0;     /* optional */
+    str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
     list_add_tail(&str->link, &rt->string_list);
 #endif
@@ -3583,6 +3653,14 @@ size_t JS_FreeRuntime(JSRuntime *rt)
    frame of its own either. Then rt->c_hop_debt, from the frame of
    js_call_c_hop measured the same way (an argc below 0, read from memory
    too). */
+#if defined(__SANITIZE_ADDRESS__)
+#define JS_FRAME_SET_DOWN 32
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define JS_FRAME_SET_DOWN 32
+#endif
+#endif
+#ifndef JS_FRAME_SET_DOWN
 static no_inline void js_measure_call_frame(JSContext *ctx)
 {
     JSRuntime *rt = ctx->rt;
@@ -3597,6 +3675,65 @@ static no_inline void js_measure_call_frame(JSContext *ctx)
     if (rt->c_hop_debt < 0)
         rt->c_hop_debt = -1;
 }
+#else
+/* Under AddressSanitizer (JS_FRAME_SET_DOWN), which aligns its stack
+   objects to 32 bytes, a function with instrumented stack objects sets its
+   stack pointer down to a multiple of 32: js_call_c_function, JS_RegvmRun
+   and js_call_bound_function, and JS_CallInternal too on x86_64. Then:
+
+   - The measure is left out of the sanitizer (no_sanitize). Instrumented,
+     it would have flags and argc in a block set down below its frame, and
+     its call of JS_CallInternal would push from there the arguments that
+     do not fit in registers, 16 bytes it would count as JS_CallInternal's.
+     A caller with a fixed frame (Function.prototype.call) keeps that room
+     whether it calls JS_CallInternal or js_call_c_hop, so the hop would
+     count 16 bytes it does not save.
+
+   - A frame set down takes 16 bytes more or not by where its caller's
+     ends, so the frames are measured from two places 16 bytes apart
+     (js_measure_frames, the second below an alloca), and the debts are
+     the smaller of the two.
+
+   - A frame of d bytes that a call skips leaves the next frame set down
+     lower by d rounded down to a multiple of 32 at the least, d - 16 when d
+     is an odd multiple of 16 and the stack pointer falls the wrong way:
+     the debts are rounded down so.
+
+   So a call never counts as taken more than it saves, and a recursion
+   with the direct calls on never ends less deep than through
+   JS_CallInternal. */
+static no_inline __attribute__((no_sanitize("address"))) void
+js_measure_frames(JSContext *ctx, long *frame, long *hop)
+{
+    JSRuntime *rt = ctx->rt;
+    long left = __shadow_remaining();
+    volatile int flags = JS_CALL_FLAG_FRAME, argc = -1;
+
+    JS_CallInternal(ctx, JS_UNDEFINED, JS_UNDEFINED, JS_UNDEFINED,
+                    0, NULL, flags);
+    *frame = left - rt->call_frame;
+    js_call_c_hop(ctx, JS_UNDEFINED, JS_UNDEFINED, argc, NULL);
+    *hop = *frame - (left - rt->c_hop_debt);
+}
+
+static no_inline __attribute__((no_sanitize("address"))) void
+js_measure_call_frame(JSContext *ctx)
+{
+    JSRuntime *rt = ctx->rt;
+    volatile size_t shift = 16;
+    long frame[2], hop[2], f, h;
+    char *p;
+
+    js_measure_frames(ctx, &frame[0], &hop[0]);
+    p = alloca(shift);
+    __asm__ volatile("" : : "r"(p) : "memory");
+    js_measure_frames(ctx, &frame[1], &hop[1]);
+    f = min_int64(frame[0], frame[1]);
+    h = min_int64(hop[0], hop[1]);
+    rt->call_frame = f - f % JS_FRAME_SET_DOWN;
+    rt->c_hop_debt = h < 0 ? -1 : h - h % JS_FRAME_SET_DOWN;
+}
+#endif
 
 int JS_SetDirectCCalls(JSContext *ctx, int on)
 {
@@ -3956,8 +4093,10 @@ static inline BOOL is_strict_mode(JSContext *ctx)
 #define JS_ATOM_MAX_INT (JS_ATOM_TAG_INT - 1)
 #define JS_ATOM_MAX     ((1U << 30) - 1)
 
-/* return the max count from the hash size */
-#define JS_ATOM_COUNT_RESIZE(n) ((n) * 2)
+/* return the max count from the hash size: at most one atom for two
+   buckets, so that a lookup walks a short chain (upstream allows two atoms
+   a bucket, see docs/changes/strings.md) */
+#define JS_ATOM_COUNT_RESIZE(n) ((n) / 2)
 
 static inline BOOL __JS_AtomIsConst(JSAtom v)
 {
@@ -4320,6 +4459,8 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
     p->hash = h;
     p->hash_next = i;   /* atom_index */
     p->atom_type = atom_type;
+    p->key_atom = atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+        !is_digit(string_get(p, 0)) ? i : JS_ATOM_NULL;
 
     rt->atom_count++;
 
@@ -5315,6 +5456,23 @@ static void *string_buffer_realloc2(StringBuffer *s, size_t used_bytes,
     return q;
 }
 
+/* js_trigger_gc_block for the new block of bytes that s, when it is the
+   buffer of the innermost call of Array.prototype.join (js_array_join), is
+   about to take. The heap counts the old block out of the limit while the
+   data moves (heap_realloc, js_malloc_moving), so what counts is the
+   growth. */
+static force_inline void string_buffer_gc_join(StringBuffer *s, size_t bytes)
+{
+    JSRuntime *rt = s->ctx->rt;
+    uint32_t d = rt->gc_join_depth - 1;
+
+    if (d < countof(rt->gc_join_sb) && rt->gc_join_sb[d] == s) {
+        size_t old = (size_t)s->size << s->is_wide_char;
+
+        js_trigger_gc_block(rt, bytes > old ? bytes - old : 0);
+    }
+}
+
 static no_inline int string_buffer_widen(StringBuffer *s, int size)
 {
     JSString *str;
@@ -5323,6 +5481,12 @@ static no_inline int string_buffer_widen(StringBuffer *s, int size)
 
     if (s->error_status)
         return -1;
+
+    /* the buffer of join made wide where it is, with room left: the
+       buffer of 16 bits. string_buffer_realloc, which makes it wide as it
+       grows, checked it already. */
+    if (size == s->size && size >= (64 << 10))
+        string_buffer_gc_join(s, (size_t)size << 1);
 
     /* what the text did before is not added to the first step of the copy */
     if (s->len >= JS_ROPE_STEP && js_poll_interrupts(s->ctx))
@@ -5367,6 +5531,10 @@ static no_inline int string_buffer_realloc(StringBuffer *s, int new_len, int c)
         return string_buffer_set_error(s);
     }
     new_size = min_int(max_int(new_len, s->size * 3 / 2), JS_STRING_LEN_MAX);
+    /* the buffer of join, once it takes 64 Ki characters or more: the steps
+       of a short join test one compare */
+    if (unlikely(new_size >= (64 << 10)))
+        string_buffer_gc_join(s, (size_t)new_size << (s->is_wide_char | (c >= 0x100)));
     if (!s->is_wide_char && c >= 0x100) {
         return string_buffer_widen(s, new_size);
     }
@@ -7112,6 +7280,14 @@ static JSValue JS_ConcatString(JSContext *ctx, JSValue op1, JSValue op2)
             if (JS_VALUE_GET_TAG(op1) == JS_TAG_STRING) {
                 p1 = JS_VALUE_GET_STRING(op1);
                 if (p1->len <= JS_STRING_ROPE_SHORT2_LEN) {
+                    /* '' + x, as React writes to make a string of a
+                       value: the right string is the result. The empty
+                       string is mostly the atom's, which cannot grow in
+                       place, so JS_ConcatString2 would copy it. */
+                    if (p1->len == 0) {
+                        JS_FreeValue(ctx, op1);
+                        return op2;
+                    }
                     return JS_ConcatString2(ctx, op1, op2);
                 } else {
                     return js_new_string_rope(ctx, op1, op2);
@@ -8179,42 +8355,56 @@ static JSShape *find_hashed_shape_keys(JSRuntime *rt, JSObject *proto,
     return NULL;
 }
 
-/* Make the shape of the objects of the object literal lit of ctx, at its
-   first run, and keep it in lit: the shape in the shape hash table with
-   exactly the keys of lit, in their order, as properties made by
-   OP_define_field, and the Object.prototype of ctx, or else a new one that
-   has room for those keys and at least JS_PROP_INITIAL_SIZE, as an empty
-   object has. A shape found may have room for more properties than lit has
-   keys. The shapes in the table are also the next shapes of objects that get
-   keys one at a time (add_property), which move their properties to the room
-   of the shape they take: an empty object (room 2) that takes the shape of a
-   literal of one key with room 1, and then a second key, would move them
-   twice. Return NULL when there is no memory. */
-static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
-                                               const JSAtom *atoms)
+/* A reference to the shape of an ordinary object of the prototype proto
+   (NULL for none) with the count keys of atoms, as an object literal of
+   those keys (js_object_lit_shape), an object rest and a spread
+   (regvm-ops-copy.h) make it: the shape in the shape hash table with exactly
+   those keys, in their order, as properties made by OP_define_field, and
+   proto, or else a new one that has room for those keys and at least
+   JS_PROP_INITIAL_SIZE, as an empty object has. A shape found may have room
+   for more properties than there are keys. The shapes in the table are also
+   the next shapes of objects that get keys one at a time (add_property),
+   which move their properties to the room of the shape they take: an empty
+   object (room 2) that takes the shape of a literal of one key with room 1,
+   and then a second key, would move them twice. Return NULL when there is no
+   memory. */
+static JSShape *js_shape_of_keys(JSContext *ctx, JSObject *proto,
+                                 const JSAtom *atoms, uint32_t count)
 {
     JSRuntime *rt = ctx->rt;
-    JSObject *proto = JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]);
     JSShape *sh;
     uint32_t i, hash_size;
 
-    sh = find_hashed_shape_keys(rt, proto, atoms, lit->count);
+    sh = find_hashed_shape_keys(rt, proto, atoms, count);
     if (sh) {
         sh = js_dup_shape(sh);
     } else {
         hash_size = JS_PROP_INITIAL_HASH_SIZE;
-        while (hash_size < lit->count)
+        while (hash_size < count)
             hash_size *= 2;
         sh = js_new_shape2(ctx, proto, hash_size,
-                           max_int(lit->count, JS_PROP_INITIAL_SIZE));
+                           max_int(count, JS_PROP_INITIAL_SIZE));
         if (!sh)
             return NULL;
-        for(i = 0; i < lit->count; i++) {
+        for(i = 0; i < count; i++) {
             /* cannot fail: the shape has room for every key */
             add_shape_property(ctx, &sh, NULL, atoms[i], JS_PROP_C_W_E);
         }
     }
-    lit->shape = sh;
+    return sh;
+}
+
+/* the shape of the objects of the object literal lit of ctx, made at its
+   first run and kept in lit */
+static no_inline JSShape *js_object_lit_shape(JSContext *ctx, JSObjectLit *lit,
+                                               const JSAtom *atoms)
+{
+    JSShape *sh = js_shape_of_keys(ctx,
+                                   JS_VALUE_GET_OBJ(ctx->class_proto[JS_CLASS_OBJECT]),
+                                   atoms, lit->count);
+
+    if (sh)
+        lit->shape = sh;
     return sh;
 }
 
@@ -9563,6 +9753,23 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             for(i = 0; i < b->object_lit_count; i++) {
                 if (b->object_lits[i].shape)
                     mark_func(rt, &b->object_lits[i].shape->header);
+            }
+            /* and so do those the caches of its object rests and spreads
+               hold (engine/regvm-ops-copy.h) */
+            if (b->rv && b->rv->arg_count >= 0) {
+                RVFunc *rf = b->rv;
+                int j;
+                for(i = 0; i < rf->copy_count; i++) {
+                    for(j = 0; j < RV_COPY_WAYS; j++) {
+                        RVCopyEntry *e = rf->copy[i].e[j];
+                        if (!e)
+                            break;
+                        if (e->tgt)
+                            mark_func(rt, &e->tgt->header);
+                        mark_func(rt, &e->src->header);
+                        mark_func(rt, &e->dst->header);
+                    }
+                }
             }
             if (b->realm)
                 mark_func(rt, &b->realm->header);
@@ -13449,7 +13656,10 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
         /* A string that is already an atom and does not start with a digit
            is its own atom: JS_ToPropertyKey would dup it, is_num_string
            would find no index, and __JS_NewAtom would take its index and
-           keep the dup as the reference of the atom, as JS_DupAtom does. */
+           keep the dup as the reference of the atom, as JS_DupAtom does.
+           Its key_atom says the same in one read, but with that LLVM copies
+           this function into 30 of its callers and grows some of their
+           frames. */
         if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
             !is_digit(string_get(p, 0)))
             return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
@@ -14174,6 +14384,8 @@ static JSValue js_allocate_fast_array(JSContext *ctx, int64_t len)
     
     if (len > INT32_MAX)
         return JS_ThrowRangeError(ctx, "invalid array length");
+    /* the elements, where JS_NewArray may collect */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)len);
     arr = JS_NewArray(ctx);
     if (JS_IsException(arr))
         return arr;
@@ -18546,11 +18758,35 @@ JSValue JS_ToPropertyKey(JSContext *ctx, JSValueConst val)
     return JS_ToStringInternal(ctx, val, TRUE);
 }
 
+/* JS_ToString of a rope, which makes it flat into one block, after a full
+   collection when that block would pass the memory limit
+   (js_trigger_gc_block). JS_ToStringCheckObject calls it at the entry of a
+   built-in (and in JSON.stringify, between the getters it calls), where a
+   collection is as safe as at the creation of an object. */
+static no_inline JSValue js_rope_to_string_gc(JSContext *ctx, JSValueConst val)
+{
+    JSStringRope *r = JS_VALUE_GET_STRING_ROPE(val);
+
+    /* a rope made flat before keeps the flat string on its left, with an
+       empty string on its right (js_linearize_string_rope): it takes no
+       block */
+    if (!(JS_VALUE_GET_TAG(r->right) == JS_TAG_STRING &&
+          JS_VALUE_GET_STRING(r->right)->len == 0))
+        js_trigger_gc_block(ctx->rt, (size_t)r->len << r->is_wide_char);
+    return JS_ToString(ctx, val);
+}
+
 static JSValue JS_ToStringCheckObject(JSContext *ctx, JSValueConst val)
 {
     uint32_t tag = JS_VALUE_GET_TAG(val);
+    /* a flat string first, what JS_ToString gives it, so that the test of
+       a rope below costs it nothing */
+    if (likely(tag == JS_TAG_STRING))
+        return JS_DupValue(ctx, val);
     if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
         return JS_ThrowTypeError(ctx, "null or undefined are forbidden");
+    if (unlikely(tag == JS_TAG_STRING_ROPE))
+        return js_rope_to_string_gc(ctx, val);
     return JS_ToString(ctx, val);
 }
 
@@ -21974,6 +22210,27 @@ static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
     return TRUE;
 }
 
+/* whether the key atom is among the n keys of excl or a key of pexcl (when
+   it is not NULL), or -1 for an exception */
+static int js_copy_excluded(JSContext *ctx, JSObject *pexcl,
+                            const JSAtom *excl, int n, JSAtom atom)
+{
+    int i;
+
+    for(i = 0; i < n; i++) {
+        if (excl[i] == atom)
+            return 1;
+    }
+    if (!pexcl)
+        return 0;
+    return js_get_own_property_flags(ctx, NULL, pexcl, atom);
+}
+
+/* The copy of the keys of a source reads the interrupt flag every
+   JS_COPY_POLL_KEYS keys: a string of n characters gives n keys, and a
+   source may have millions (docs/changes/uncatchable.md) */
+#define JS_COPY_POLL_KEYS 4096
+
 /* Copy the own properties of source into target as JS_CopyDataProperties
    does for a spread in an object literal or the rest of a destructuring,
    which define them on target, a new object, with the result in *pret, and
@@ -21986,6 +22243,7 @@ static BOOL js_copy_shape(JSContext *ctx, JSObject *pt, JSObject *ps, int *pret)
    source, which defining the keys one by one would have led it to. */
 static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
                          JSValueConst source, JSValueConst excluded,
+                         const JSAtom *excl, int excl_n,
                          BOOL setprop, int *pret)
 {
     JSObject *ps, *pexcl = NULL;
@@ -21993,6 +22251,7 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     JSOwnKeyList l;
     JSOwnKeyIter it = { 0 };
     int i, ret;
+    uint32_t done = 0;
 
     if (setprop || JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT)
@@ -22000,7 +22259,8 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     ps = JS_VALUE_GET_OBJ(source);
     if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
         pexcl = JS_VALUE_GET_OBJ(excluded);
-    else if (js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
+    else if (excl_n == 0 &&
+             js_copy_shape(ctx, JS_VALUE_GET_OBJ(target), ps, pret))
         return TRUE;
     if (!js_own_keys_scan(ctx, &l, ps,
                           JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK | JS_GPN_ENUM_ONLY) ||
@@ -22009,8 +22269,14 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     prs = get_shape_prop(l.sh);
     *pret = 0;
     while ((i = js_own_keys_next(ctx->rt, &l, &it)) >= 0) {
-        if (pexcl) {
-            ret = js_get_own_property_flags(ctx, NULL, pexcl, prs[i].atom);
+        if (unlikely((++done & (JS_COPY_POLL_KEYS - 1)) == 0) &&
+            js_poll_interrupts(ctx)) {
+            *pret = -1;
+            break;
+        }
+        JS_WORK(1);
+        if (pexcl || excl_n) {
+            ret = js_copy_excluded(ctx, pexcl, excl, excl_n, prs[i].atom);
             if (ret < 0) {
                 *pret = -1;
                 break;
@@ -22028,11 +22294,12 @@ static BOOL js_copy_data(JSContext *ctx, JSValueConst target,
     return TRUE;
 }
 
-static __exception int JS_CopyDataProperties(JSContext *ctx,
-                                             JSValueConst target,
-                                             JSValueConst source,
-                                             JSValueConst excluded,
-                                             BOOL setprop)
+/* JS_CopyDataProperties that also leaves out the excl_n keys of excl, the
+   static keys of the pattern of a rest (OP_copy_rest) */
+static int js_copy_data_properties(JSContext *ctx, JSValueConst target,
+                                   JSValueConst source, JSValueConst excluded,
+                                   const JSAtom *excl, int excl_n,
+                                   BOOL setprop)
 {
     JSPropertyEnum *tab_atom;
     JSValue val;
@@ -22044,11 +22311,28 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     BOOL is_enumerable;
     JSProperty *pr;
     JSShapeProperty *prs;
+    JSValue obj = JS_UNDEFINED;
 
-    if (js_copy_data(ctx, target, source, excluded, setprop, &ret))
+    /* a source that is not an object is made one (ToObject), as
+       CopyDataProperties says (upstream b19b2ec): a string gives its
+       characters, as the String object of it has them, and a number, a
+       boolean, a symbol or a bigint no key. null and undefined give none.
+       The copy goes on here with that object as its source, freed on every
+       way out, rather than in a call of this function: engine/test/cycles.sh
+       wants no function to call itself without a count */
+    if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT) {
+        if (JS_IsNull(source) || JS_IsUndefined(source))
+            return 0;
+        obj = JS_ToObject(ctx, source);
+        if (JS_IsException(obj))
+            return -1;
+        source = obj;
+    }
+    if (js_copy_data(ctx, target, source, excluded, excl, excl_n, setprop,
+                     &ret)) {
+        JS_FreeValue(ctx, obj);
         return ret;
-    if (JS_VALUE_GET_TAG(source) != JS_TAG_OBJECT)
-        return 0;
+    }
 
     if (JS_VALUE_GET_TAG(excluded) == JS_TAG_OBJECT)
         pexcl = JS_VALUE_GET_OBJ(excluded);
@@ -22067,12 +22351,18 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
     if (p->class_id == JS_CLASS_MODULE_NS)
         gpn_flags |= JS_GPN_ENUM_ONLY;
     if (JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &tab_atom_count, p,
-                                       gpn_flags))
+                                       gpn_flags)) {
+        JS_FreeValue(ctx, obj);
         return -1;
+    }
 
     for (i = 0; i < tab_atom_count; i++) {
-        if (pexcl) {
-            ret = js_get_own_property_flags(ctx, NULL, pexcl, tab_atom[i].atom);
+        if (unlikely((i & (JS_COPY_POLL_KEYS - 1)) == JS_COPY_POLL_KEYS - 1) &&
+            js_poll_interrupts(ctx))
+            goto exception;
+        JS_WORK(1);
+        if (pexcl || excl_n) {
+            ret = js_copy_excluded(ctx, pexcl, excl, excl_n, tab_atom[i].atom);
             if (ret) {
                 if (ret < 0)
                     goto exception;
@@ -22114,10 +22404,22 @@ static __exception int JS_CopyDataProperties(JSContext *ctx,
             goto exception;
     }
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, obj);
     return 0;
  exception:
     JS_FreePropertyEnum(ctx, tab_atom, tab_atom_count);
+    JS_FreeValue(ctx, obj);
     return -1;
+}
+
+static __exception int JS_CopyDataProperties(JSContext *ctx,
+                                             JSValueConst target,
+                                             JSValueConst source,
+                                             JSValueConst excluded,
+                                             BOOL setprop)
+{
+    return js_copy_data_properties(ctx, target, source, excluded, NULL, 0,
+                                   setprop);
 }
 
 /* only valid inside C functions */
@@ -23386,12 +23688,10 @@ static no_inline JSValue js_has_own_call(JSContext *ctx, JSValueConst fn,
         return JS_UNINITIALIZED;
     tag = JS_VALUE_GET_TAG(key);
     if (tag == JS_TAG_STRING) {
-        JSString *s = JS_VALUE_GET_STRING(key);
         /* the string JS_ValueToAtom takes as its own atom */
-        if (s->atom_type != JS_ATOM_TYPE_STRING || s->len == 0 ||
-            is_digit(string_get(s, 0)))
+        atom = JS_VALUE_GET_STRING(key)->key_atom;
+        if (atom == JS_ATOM_NULL)
             return JS_UNINITIALIZED;
-        atom = js_get_atom_index(rt, s);
     } else if (tag == JS_TAG_INT &&
                (uint32_t)JS_VALUE_GET_INT(key) <= JS_ATOM_MAX_INT) {
         atom = __JS_AtomFromUInt32(JS_VALUE_GET_INT(key));
@@ -28392,19 +28692,15 @@ static BOOL js_object_lit_key_is_static(JSParseState *s)
     }
 }
 
-/* Emit the start of an object literal whose first count fields, of the keys
-   atoms, have their values on the stack: OP_object with none, else
-   OP_object_lit with the keys recorded in the function. */
-static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
+/* Record the count keys of atoms (1 to JS_OBJECT_LIT_MAX, none twice) in
+   the function, for OP_object_lit or OP_copy_rest, and return their index,
+   or -1 when there is no memory. The caller made room for the index
+   (object_lit_open). */
+static int js_object_lit_keys(JSParseState *s, const JSAtom *atoms, int count)
 {
     JSFunctionDef *fd = s->cur_func;
     int i;
 
-    fd->object_lit_open--;
-    if (count == 0) {
-        emit_op(s, OP_object);
-        return 0;
-    }
     /* room for the whole record first: it is never written in part */
     if (dbuf_claim(&fd->object_lits, sizeof(uint32_t) * (count + 1))) {
         JS_ThrowOutOfMemory(s->ctx);
@@ -28413,10 +28709,29 @@ static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
     dbuf_put_u32(&fd->object_lits, count);
     for(i = 0; i < count; i++)
         dbuf_put_u32(&fd->object_lits, JS_DupAtom(s->ctx, atoms[i]));
+    assert(fd->object_lit_count < 0xffff);
+    return fd->object_lit_count++;
+}
+
+/* Emit the start of an object literal whose first count fields, of the keys
+   atoms, have their values on the stack: OP_object with none, else
+   OP_object_lit with the keys recorded in the function. */
+static int emit_object_lit(JSParseState *s, const JSAtom *atoms, int count)
+{
+    JSFunctionDef *fd = s->cur_func;
+    int k;
+
+    fd->object_lit_open--;
+    if (count == 0) {
+        emit_op(s, OP_object);
+        return 0;
+    }
+    k = js_object_lit_keys(s, atoms, count);
+    if (k < 0)
+        return -1;
     emit_op(s, OP_object_lit);
     emit_u16(s, count);
-    assert(fd->object_lit_count < 0xffff);
-    emit_u16(s, fd->object_lit_count++);
+    emit_u16(s, k);
     return 0;
 }
 
@@ -29899,6 +30214,70 @@ fail:
     return JS_ATOM_NULL;
 }
 
+/* The keys an object destructuring with a rest leaves out of the rest,
+   `{a, b: c, [k]: d, ...r}`. The static keys (a, b) go to a list that
+   OP_copy_rest reads (as the keys of an object literal, object_lits), and
+   only the computed keys (k) into the object excludeList, which is null
+   when there are none: no object of the names is made and freed at each
+   run. A static key runs no code, so leaving it out by its atom is what
+   defining it in excludeList and looking it up there does. Past
+   JS_OBJECT_LIT_MAX static keys, or past 0xffff lists in the function, every
+   key goes into excludeList and the rest is OP_copy_data_properties, as
+   before. */
+typedef struct JSRestKeys {
+    BOOL list;      /* the static keys go to the list */
+    BOOL computed;  /* a computed key went into excludeList */
+    int obj_pos;    /* the OP_object of excludeList */
+    int count;
+    /* each held by the code: the get_field that reads its value */
+    JSAtom atoms[JS_OBJECT_LIT_MAX];
+} JSRestKeys;
+
+/* the static key atom of the destructuring of rk, with excludeList and the
+   source at the top of the stack */
+static void js_rest_key(JSParseState *s, JSRestKeys *rk, JSAtom atom)
+{
+    int i;
+
+    if (rk->list) {
+        for(i = 0; i < rk->count; i++) {
+            if (rk->atoms[i] == atom)
+                return;
+        }
+        if (rk->count < JS_OBJECT_LIT_MAX) {
+            rk->atoms[rk->count++] = atom;
+            return;
+        }
+        /* too many: excludeList takes them all */
+        rk->list = FALSE;
+        s->cur_func->object_lit_open--;
+        emit_op(s, OP_swap);
+        for(i = 0; i < rk->count; i++) {
+            emit_op(s, OP_null);
+            emit_op(s, OP_define_field);
+            emit_atom(s, rk->atoms[i]);
+        }
+    } else {
+        emit_op(s, OP_swap); /* TOS: src excludeList */
+    }
+    emit_op(s, OP_null); /* TOS: src excludeList null */
+    emit_op(s, OP_define_field); /* TOS: src excludeList */
+    emit_atom(s, atom);
+    emit_op(s, OP_swap); /* TOS: excludeList src */
+}
+
+/* the end of the destructuring of rk: with no computed key, excludeList is
+   null rather than an object */
+static void js_rest_end(JSParseState *s, JSRestKeys *rk)
+{
+    JSFunctionDef *fd = s->cur_func;
+
+    if (!rk->computed && !dbuf_error(&fd->byte_code)) {
+        assert(fd->byte_code.buf[rk->obj_pos] == OP_object);
+        fd->byte_code.buf[rk->obj_pos] = OP_null;
+    }
+}
+
 /* Return -1 if error, 0 if no initializer, 1 if an initializer is
    present at the top level. */
 static int js_parse_destructuring_element(JSParseState *s, int tok, int is_arg,
@@ -29913,7 +30292,9 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
     JSAtom prop_name, var_name;
     int opcode, scope, tok1, skip_bits;
     BOOL has_initializer;
+    JSRestKeys rk;
 
+    rk.list = FALSE;
     if (has_ellipsis < 0) {
         /* pre-parse destructuration target for spread detection */
         if (js_parse_skip_parens_token(s, &skip_bits, FALSE) == TOK_ERROR)
@@ -29945,8 +30326,16 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
         /* throw an exception if the value cannot be converted to an object */
         emit_op(s, OP_to_object);
         if (has_ellipsis) {
+            JSFunctionDef *fd = s->cur_func;
             /* add excludeList on stack just below src object */
             emit_op(s, OP_object);
+            rk.obj_pos = fd->last_opcode_pos;
+            rk.computed = FALSE;
+            rk.count = 0;
+            /* the index of the list is taken at the rest */
+            rk.list = fd->object_lit_count + fd->object_lit_open < 0xffff;
+            if (rk.list)
+                fd->object_lit_open++;
             emit_op(s, OP_swap);
         }
         while (s->token.val != '}') {
@@ -29987,9 +30376,25 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     js_parse_error(s, "assignment rest property must be last");
                     goto var_error;
                 }
-                emit_op(s, OP_object);  /* target */
-                emit_op(s, OP_copy_data_properties);
-                emit_u8(s, 0 | ((depth_lvalue + 1) << 2) | ((depth_lvalue + 2) << 5));
+                if (rk.list) {
+                    int k = 0xffff;
+                    s->cur_func->object_lit_open--;
+                    if (rk.count != 0) {
+                        k = js_object_lit_keys(s, rk.atoms, rk.count);
+                        if (k < 0)
+                            goto var_error;
+                    }
+                    rk.list = FALSE;
+                    js_rest_end(s, &rk);
+                    /* target */
+                    emit_op(s, OP_copy_rest);
+                    emit_u32(s, (0 | ((depth_lvalue + 1) << 2) |
+                                 ((depth_lvalue + 2) << 5)) | ((uint32_t)k << 8));
+                } else {
+                    emit_op(s, OP_object);  /* target */
+                    emit_op(s, OP_copy_data_properties);
+                    emit_u8(s, 0 | ((depth_lvalue + 1) << 2) | ((depth_lvalue + 2) << 5));
+                }
                 goto set_val;
             }
             prop_type = js_parse_property_name(s, &prop_name, FALSE, TRUE, FALSE);
@@ -30009,6 +30414,7 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     if (prop_name == JS_ATOM_NULL) {
                         /* computed property name on stack */
                         if (has_ellipsis) {
+                            rk.computed = TRUE;
                             /* define the property in excludeList */
                             emit_op(s, OP_to_propkey); /* avoid calling ToString twice */
                             emit_op(s, OP_perm3); /* TOS: src excludeList prop */
@@ -30020,14 +30426,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                         emit_op(s, OP_get_array_el2);
                     } else {
                         /* named property */
-                        if (has_ellipsis) {
-                            /* define the property in excludeList */
-                            emit_op(s, OP_swap); /* TOS: src excludeList */
-                            emit_op(s, OP_null); /* TOS: src excludeList null */
-                            emit_op(s, OP_define_field); /* TOS: src excludeList */
-                            emit_atom(s, prop_name);
-                            emit_op(s, OP_swap); /* TOS: excludeList src */
-                        }
+                        if (has_ellipsis)
+                            js_rest_key(s, &rk, prop_name);
                         /* get the named property from the source object */
                         emit_op(s, OP_get_field2);
                         emit_u32(s, prop_name);
@@ -30044,6 +30444,7 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                 if (prop_name == JS_ATOM_NULL) {
                     emit_op(s, OP_to_propkey);
                     if (has_ellipsis) {
+                        rk.computed = TRUE;
                         /* define the property in excludeList */
                         emit_op(s, OP_perm3);
                         emit_op(s, OP_null);
@@ -30053,14 +30454,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     /* source prop -- source source prop */
                     emit_op(s, OP_dup1);
                 } else {
-                    if (has_ellipsis) {
-                        /* define the property in excludeList */
-                        emit_op(s, OP_swap);
-                        emit_op(s, OP_null);
-                        emit_op(s, OP_define_field);
-                        emit_atom(s, prop_name);
-                        emit_op(s, OP_swap);
-                    }
+                    if (has_ellipsis)
+                        js_rest_key(s, &rk, prop_name);
                     /* source -- source source */
                     emit_op(s, OP_dup);
                 }
@@ -30152,14 +30547,8 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
                     js_parse_error(s, "invalid destructuring target");
                     goto prop_error;
                 }
-                if (has_ellipsis) {
-                    /* define the property in excludeList */
-                    emit_op(s, OP_swap);
-                    emit_op(s, OP_null);
-                    emit_op(s, OP_define_field);
-                    emit_atom(s, prop_name);
-                    emit_op(s, OP_swap);
-                }
+                if (has_ellipsis)
+                    js_rest_key(s, &rk, prop_name);
                 if (!tok || need_var_reference(s, tok)) {
                     /* generate reference */
                     /* source -- source source */
@@ -30220,6 +30609,12 @@ static int js_parse_destructuring_element1(JSParseState *s, int tok, int is_arg,
         /* drop the source object */
         emit_op(s, OP_drop);
         if (has_ellipsis) {
+            if (rk.list) {
+                /* no rest at this level after all */
+                s->cur_func->object_lit_open--;
+                rk.list = FALSE;
+                js_rest_end(s, &rk);
+            }
             emit_op(s, OP_drop); /* pop excludeList */
         }
         if (next_token(s))
@@ -43988,7 +44383,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 11
+#define BC_VERSION 12
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -45213,6 +45608,17 @@ static int JS_ReadFunctionBytecode(BCReaderState *s, JSFunctionBytecode *b,
                 b->byte_code_len = pos;
                 JS_ThrowSyntaxError(s->ctx, "invalid object literal (pc=%d)", pos);
                 return -1;
+            }
+            break;
+        case OP_FMT_u32:
+            /* OP_copy_rest names one of the object literals of b, or none */
+            if (op == OP_copy_rest) {
+                idx = get_u32(bc_buf + pos + 1) >> 8;
+                if (idx != 0xffff && idx >= b->object_lit_count) {
+                    b->byte_code_len = pos;
+                    JS_ThrowSyntaxError(s->ctx, "invalid object rest (pc=%d)", pos);
+                    return -1;
+                }
             }
             break;
         default:
@@ -47481,27 +47887,19 @@ static JSValue js_object_assign(JSContext *ctx, JSValueConst this_val,
                                 int argc, JSValueConst *argv)
 {
     // Object.assign(obj, source1)
-    JSValue obj, s;
+    JSValue obj;
     int i;
 
-    s = JS_UNDEFINED;
     obj = JS_ToObject(ctx, argv[0]);
     if (JS_IsException(obj))
         goto exception;
     for (i = 1; i < argc; i++) {
-        if (!JS_IsNull(argv[i]) && !JS_IsUndefined(argv[i])) {
-            s = JS_ToObject(ctx, argv[i]);
-            if (JS_IsException(s))
-                goto exception;
-            if (JS_CopyDataProperties(ctx, obj, s, JS_UNDEFINED, TRUE))
-                goto exception;
-            JS_FreeValue(ctx, s);
-        }
+        if (JS_CopyDataProperties(ctx, obj, argv[i], JS_UNDEFINED, TRUE))
+            goto exception;
     }
     return obj;
 exception:
     JS_FreeValue(ctx, obj);
-    JS_FreeValue(ctx, s);
     return JS_EXCEPTION;
 }
 
@@ -49659,6 +50057,15 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
             c = -1;
     }
     string_buffer_init(ctx, b, 0);
+    /* the buffer grows where a full collection is as safe as at the
+       creation of an object: between the reads of two elements, each of
+       which may run a getter, with obj and the element counted, and a
+       StringBuffer is no object (string_buffer_realloc). The buffer goes on
+       a stack in the runtime, which holds the buffers of the joins that run
+       one in another, so that the frame keeps nothing of it. */
+    if (ctx->rt->gc_join_depth < countof(ctx->rt->gc_join_sb))
+        ctx->rt->gc_join_sb[ctx->rt->gc_join_depth] = b;
+    ctx->rt->gc_join_depth++;
 
     for(i = 0; i < n; i++) {
         if ((i & 1023) == 1023 && js_poll_interrupts(ctx))
@@ -49681,11 +50088,13 @@ static JSValue js_array_join(JSContext *ctx, JSValueConst this_val,
                 goto fail;
         }
     }
+    ctx->rt->gc_join_depth--;
     JS_FreeValue(ctx, sep);
     JS_FreeValue(ctx, obj);
     return string_buffer_end(b);
 
 fail:
+    ctx->rt->gc_join_depth--;
     string_buffer_free(b);
     JS_FreeValue(ctx, sep);
 exception:
@@ -49746,6 +50155,21 @@ static JSValue js_array_pop(JSContext *ctx, JSValueConst this_val,
     return JS_EXCEPTION;
 }
 
+/* The elements of the fast case of push grow: a full collection first when
+   that room would pass the memory limit (js_trigger_gc_block), at the entry
+   of the built-in, where this and the arguments are in the frame of the
+   caller. It is a function of its own so that a push that does not grow is
+   the code it was. */
+static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t new_len)
+{
+    uint32_t size = p->u.array.u1.size;
+
+    /* the growth of the block of elements (expand_fast_array) */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
+                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+    return expand_fast_array_append(ctx, p, new_len);
+}
+
 static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv, int unshift)
 {
@@ -49765,7 +50189,7 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
             new_len = p->u.array.count + argc;
             if (likely(new_len <= INT32_MAX)) {
                 if (unlikely(new_len > p->u.array.u1.size)) {
-                    if (expand_fast_array_append(ctx, p, new_len))
+                    if (js_array_push_grow(ctx, p, new_len))
                         return JS_EXCEPTION;
                 }
                 for(i = 0; i < argc; i++)
@@ -49955,7 +50379,9 @@ static JSValue js_array_slice(JSContext *ctx, JSValueConst this_val,
     if (JS_IsUndefined(ctor) &&
         js_get_fast_array(ctx, obj, &arrp, &count32) &&
         final <= count32) {
-        /* fast case */
+        /* fast case: the elements, where JS_NewArray may collect, with the
+           values copied counted in obj */
+        js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)count);
         arr = js_create_array(ctx, count, (JSValueConst *)arrp + start);
     } else {
         arr = JS_ArrayCreateFromCtor(ctx, ctor, count);
@@ -50036,7 +50462,9 @@ static JSValue js_array_splice(JSContext *ctx, JSValueConst this_val,
         uint32_t count32 = p->u.array.count;
         JSValue *arrp = p->u.array.u.values;
 
-        /* fast case */
+        /* fast case: the elements, where JS_NewArray may collect, with the
+           values copied counted in obj */
+        js_trigger_gc_block(ctx->rt, sizeof(JSValue) * (size_t)del_count);
         arr = js_create_array(ctx, del_count, (JSValueConst *)arrp + start);
         if (JS_IsException(arr))
             goto exception;
@@ -50453,6 +50881,9 @@ static JSValue js_array_sort(JSContext *ctx, JSValueConst this_val,
             size_t new_size, slack;
             ValueSlot *new_array;
             new_size = (array_size + (array_size >> 1) + 31) & ~15;
+            /* between two reads of an element, each of which may run a
+               getter: the values read so far are counted in array */
+            js_trigger_gc_block(ctx->rt, (new_size - array_size) * sizeof(*array));
             new_array = js_realloc2(ctx, array, new_size * sizeof(*array), &slack);
             if (new_array == NULL)
                 goto exception;
@@ -54074,6 +54505,10 @@ static JSValue js_string_pad(JSContext *ctx, JSValueConst this_val,
         JS_ThrowRangeError(ctx, "invalid string length");
         goto fail3;
     }
+    /* the filler is in v, a string, even when its one character is in c */
+    js_trigger_gc_block(ctx->rt, (size_t)n << (p->is_wide_char |
+                                               (JS_VALUE_GET_TAG(v) == JS_TAG_STRING &&
+                                                JS_VALUE_GET_STRING(v)->is_wide_char)));
     if (string_buffer_init(ctx, b, n))
         goto fail3;
     n -= len;
@@ -54201,6 +54636,7 @@ static JSValue js_string_repeat(JSContext *ctx, JSValueConst this_val,
         goto fail;
     }
     n = val;
+    js_trigger_gc_block(ctx->rt, (size_t)(n * len) << p->is_wide_char);
     if (string_buffer_init2(ctx, b, n * len, p->is_wide_char))
         goto fail;
     if (n * len >= JS_ROPE_STEP) {
@@ -67916,6 +68352,10 @@ static JSValue js_array_buffer_constructor3(JSContext *ctx,
                                      "resizable ArrayBuffers not supported "
                                      "for externally managed buffers");
     }
+    /* before the object, which js_create_from_ctor makes after it may run
+       JavaScript (a getter of the prototype on new_target) */
+    if (alloc_flag && !(class_id == JS_CLASS_SHARED_ARRAY_BUFFER && rt->sab_funcs.sab_alloc))
+        js_trigger_gc_block(rt, len);
     obj = js_create_from_ctor(ctx, new_target, class_id);
     if (JS_IsException(obj))
         return obj;
@@ -68342,6 +68782,11 @@ static JSValue js_array_buffer_transfer(JSContext *ctx,
         return JS_EXCEPTION;
     if (abuf->detached)
         return JS_ThrowTypeErrorDetachedArrayBuffer(ctx);
+    /* the growth of the block, which the realloc below makes (a buffer of
+       another allocator is copied to a new one, which
+       js_array_buffer_constructor3 counts whole) */
+    if (new_len > abuf->byte_length)
+        js_trigger_gc_block(ctx->rt, new_len - abuf->byte_length);
     pmax_len = NULL;
     if (!transfer_to_fixed_length) {
         if (array_buffer_is_resizable(abuf)) { // carry over maxByteLength
@@ -68465,6 +68910,8 @@ static JSValue js_array_buffer_resize(JSContext *ctx, JSValueConst this_val,
         // 2 bytes big in A, and 1 byte big in B
         abuf->byte_length = len;
     } else {
+        if (len > abuf->byte_length)
+            js_trigger_gc_block(ctx->rt, len - abuf->byte_length);
         data = js_array_buffer_realloc(ctx, abuf->data, max_int(len, 1));
         if (!data)
             return JS_EXCEPTION;

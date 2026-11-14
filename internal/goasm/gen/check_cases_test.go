@@ -114,6 +114,7 @@ type ckCase struct {
 	files  func(map[string]string)      // the emitted Go files, before they are built
 	poll   string                       // Go source of host_poll in the built program; "" for none
 	loads  bool                         // lower every call with its result loads (no LowerEnv.RegResult)
+	noRes  bool                         // no Go code calls a unified function: none stores its result (LowerEnv.NoResult)
 	edit   func(*EngineCheck)           // what the check is told
 	facts  func(probes, facts RegFacts) // what llc's facts say
 	calls  func(*testing.T, []Meta)     // what the lowering recorded
@@ -310,9 +311,52 @@ func TestCheckCases(t *testing.T) {
 		{name: "preserve_none: a result load the record says is not there", pn: true, loads: true, metas: func(ms []Meta) {
 			meta(ms, "pg").Rec.Calls[0].RegResult = true
 		}, want: "generated"},
-		{name: "a call through a pointer that takes the result from registers", metas: func(ms []Meta) {
+		// A call through a pointer takes its result from the registers a
+		// lowered unified function of its result type returns it in: every
+		// function a pointer can hold is one.
+		{name: "a call through a pointer with a result load the record says is not there", loads: true, metas: func(ms []Meta) {
 			meta(ms, "ic").Rec.Calls[0].RegResult = true
-		}, want: "that takes the result from registers"},
+		}, want: "is not the restore of r14"},
+		{name: "a call through a pointer with no result load the record says is there", metas: func(ms []Meta) {
+			meta(ms, "ic").Rec.Calls[0].RegResult = false
+		}, want: "is not the load of the result into RAX"},
+		{name: "llc takes the result of a call through a pointer from another register",
+			facts: func(_, f RegFacts) { f["ic"].Calls[0].Defs = []string{"rdx"} },
+			want:  "a lowered function returns a result of its type in [RAX]"},
+		{name: "preserve_none: llc takes the result of a call through a pointer from another register", pn: true,
+			input: llcSub("pg", "\tcallq\tph\n", "\tmovq\t%r12, %rax\n"+ckLabel("pg", 0, "ii>i")+"\tcallq\t*%rax\n", 1),
+			llc:   llcSub("pg", "\tcallq\tph\n", "\tmovq\t%r12, %rax\n"+ckLabel("pg", 0, "ii>i")+"\tcallq\t*%rax\n", 1),
+			facts: func(_, f RegFacts) { f["pg"].Calls[0].Defs = []string{"rdx"} },
+			want:  "a lowered function returns a result of its type in [RAX]"},
+		// A function no Go code calls stores no result (FuncRecord.NoResult):
+		// every call of it takes the result from registers, and its returns
+		// must still give it there.
+		{name: "no function stores its result", noRes: true, calls: func(t *testing.T, ms []Meta) {
+			for _, m := range ms {
+				if m.Kind == Unified && !m.Rec.NoResult {
+					t.Errorf("%s stores its result", m.Name)
+				}
+				if _, _, ab := layout(Sig{Params: m.Rec.Sig.Params}); m.Kind == Unified && m.ArgBytes != ab {
+					t.Errorf("%s has %d bytes of arguments and results, its arguments take %d", m.Name, m.ArgBytes, ab)
+				}
+			}
+		}},
+		{name: "a function that stores no result the record says stores it", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "h").Rec.NoResult = false
+		}, want: "is not the store of"},
+		{name: "a function that stores its result the record says stores none", metas: func(ms []Meta) {
+			meta(ms, "h").Rec.NoResult = true
+		}, want: "is not a jump to the epilogue"},
+		{name: "llc's return gives a register the callers do not read", noRes: true,
+			facts: func(_, f RegFacts) { f["h"].Rets[0] = []string{"rax", "rdx"} },
+			want:  "its callers take the result from [RAX]"},
+		{name: "a call that loads the result of a function that stores none", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "g").Rec.Calls[0].RegResult = false
+		}, want: "a call that loads the result of h from the Go stack, where h stores none"},
+		{name: "a call through a pointer that loads its result where functions store none", noRes: true, metas: func(ms []Meta) {
+			meta(ms, "ic").Rec.Calls[0].RegResult = false
+		}, want: "that loads its result from the Go stack, where"},
+		{name: "lowered with result loads where functions store none", noRes: true, loads: true, want: "stores none"},
 		{name: "a call to a leaf that takes the result from registers", metas: func(ms []Meta) {
 			meta(ms, "g").Rec.Calls[1].RegResult = true
 		}, want: "that takes the result from registers"},
@@ -455,6 +499,20 @@ func TestCheckCases(t *testing.T) {
 			want: "to a direct call"},
 		{name: "a signature symbol off any call", llc: llcSub("ic", "\taddq\t%r14, %rax\n", ckLabel("ic", 2, "i>i")+"\taddq\t%r14, %rax\n", 1),
 			want: "signature symbols in the function"},
+		// A function pointer holds a lowered unified function (a call
+		// through it takes the result from registers), never Go code such
+		// as a host callback and never a register-entry leaf.
+		{name: "the code takes the address of a unified function",
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tg(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tg(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1)},
+		{name: "the code takes the address of a leaf",
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tlf(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\tlf(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			want:  "a pointer to lf, which is no lowered unified function"},
+		{name: "the code takes the address of a host callback", poll: pollSplit,
+			input: llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\thost_poll(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			llc:   llcSub("h", "\tleaq\t(%rdi,%rsi), %rax\n", "\tleaq\thost_poll(%rip), %rcx\n\tleaq\t(%rdi,%rsi), %rax\n", 1),
+			want:  "a pointer to host_poll, which is no lowered unified function"},
 		{name: "a call through memory", llc: llcSub("mc", "\tmovq\t8(%rax), %rax\n"+ckLabel("mc", 0, "i>i")+"\tcallq\t*%rax",
 			ckLabel("mc", 0, "i>i")+"\tcallq\t*8(%rax)", 1), want: "llc calls through memory"},
 	}
@@ -527,6 +585,10 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	for _, n := range unit.FuncOrder {
 		funcs[n] = true
 	}
+	// As the driver has them: the host callbacks are functions too.
+	if c.poll != "" {
+		funcs["host_poll"] = true
+	}
 	plan := PlanData(unit, funcs)
 	for fn, errs := range plan.Errors {
 		t.Fatalf("data plan of %s: %v", fn, errs)
@@ -561,6 +623,13 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	env := &LowerEnv{Plan: plan, Funcs: funcs, RegResult: map[string]bool{}}
 	for _, n := range unit.FuncOrder {
 		env.RegResult[n] = !leaves[n] && !c.loads
+	}
+	env.ICallRegResult = !c.loads
+	if c.noRes {
+		env.NoResult = map[string]bool{}
+		for _, n := range unit.FuncOrder {
+			env.NoResult[n] = !leaves[n]
+		}
 	}
 	var metas []Meta
 	lowered := ".text\n"
@@ -599,6 +668,9 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if c.poll != "" {
+		names["host_poll"] = "host_poll"
+	}
 	files, err := EmitEngine(low, EngineEmit{Metas: metas, Names: names, MaxBytes: 1 << 20, Plan: plan, Arch: "amd64"})
 	if err != nil {
 		return metas, err
@@ -620,7 +692,7 @@ func ckBuild(t *testing.T, llvm string, c ckCase) ([]Meta, error) {
 			}
 		}
 		ret := ""
-		if !leaves[n] {
+		if !leaves[n] && !c.noRes {
 			switch r := sigs[n].Ret; r {
 			case JSV:
 				ret = " (uintptr, uintptr)"

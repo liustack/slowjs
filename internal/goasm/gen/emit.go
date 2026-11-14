@@ -99,8 +99,9 @@ func readObject(path string) (*object, error) {
 // NOFRAME, which changes nothing in its code (Go writes no prologue for a
 // NOSPLIT function with neither) and is what go vet -asmdecl asks of a
 // function with no Go declaration. With a call, Go saves BP, which NOFRAME
-// would stop, so such a leaf, like one with a frame, would need a Go
-// declaration for that check (TestEngineAsmDecl).
+// would stop, so such a leaf, like one with a frame, keeps the frame and
+// gets a Go declaration for that check instead (LeafHasFrame, LeafDecl,
+// TestEngineAsmDecl).
 //
 // A NOSPLIT unified function without a frame says NOFRAME as well, which the
 // Go assembler gives a frameless leaf by itself: on windows its room check
@@ -108,7 +109,7 @@ func readObject(path string) (*object, error) {
 // and move the arguments the body reads. Every unified function is followed
 // by its room check (roomCheck).
 func funcHeader(goName string, m Meta) string {
-	if m.Kind == Register && m.Frame == 0 && len(m.Rec.Calls) == 0 {
+	if m.Kind == Register && !LeafHasFrame(m) {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-0\n", goName)
 	}
 	if m.Kind == Register {
@@ -121,6 +122,27 @@ func funcHeader(goName string, m Meta) string {
 		return fmt.Sprintf("TEXT ·%s(SB), NOSPLIT, $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
 	}
 	return fmt.Sprintf("TEXT ·%s(SB), $%d-%d\n\tNO_LOCAL_POINTERS\n", goName, m.Frame, m.ArgBytes) + roomCheck(m)
+}
+
+// LeafHasFrame says whether the TEXT of the register-entry leaf m gives it
+// a Go frame: it saved registers (Meta.Frame > 0) or it calls. On arm64 a
+// call also means a frame, since the leaf saves LR in it. Such a TEXT is
+// not NOFRAME, and go vet -asmdecl asks a Go declaration of every TEXT that
+// is not NOFRAME, so the generator writes one for it (LeafDecl).
+func LeafHasFrame(m Meta) bool {
+	return m.Frame > 0 || len(m.Rec.Calls) > 0
+}
+
+// LeafDecl is the Go declaration of the register-entry leaf m, and empty
+// for a leaf without a frame, whose TEXT says NOFRAME (LeafHasFrame). It
+// declares neither arguments nor result, as the TEXT does ($N-0): the leaf
+// takes them in registers, so Go code must never call it, and the generator
+// fails when gocalls.txt names one.
+func LeafDecl(goName string, m Meta) string {
+	if !LeafHasFrame(m) {
+		return ""
+	}
+	return strings.TrimSuffix(GoDecl(goName, Sig{Ret: Void}), "\n") + " // a register-entry leaf with a frame, declared for go vet only\n"
 }
 
 // RoomBelow is how many bytes past Go's stack guard every unified function
@@ -213,7 +235,7 @@ func Emit(objPath string, metas []Meta, names NameMap, buildTag string) (string,
 		if err := emitFunc(&b, o, lo, code, names, fp); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
-		if err := emitData(&b, o.code[code:hi]); err != nil {
+		if err := emitData(&b, o.code[code:hi], code); err != nil {
 			return "", fmt.Errorf("%s: %w", m.Name, err)
 		}
 		fmt.Fprintf(&b, "\tRET\n\n")
@@ -236,12 +258,29 @@ func emitBytes(b *strings.Builder, data []byte) error {
 
 // emitData writes the data a function carries after its code (constants and
 // jump tables) after dataComment, so that a reader of the .s file knows these
-// bytes are no instructions.
-func emitData(b *strings.Builder, data []byte) error {
+// bytes are no instructions. at is where the data starts in the lowered
+// object, where the function sits as it will in the binary (FuncPlace).
+//
+// A PCALIGN $16 goes in front of the data: the Go assembler puts the
+// instruction after a PCALIGN on its alignment and raises the alignment of
+// the function to it, so a constant pool that an SSE instruction reads with
+// an operand that has to be on 16 bytes is on 16 bytes by what the Go
+// assembler promises, and not by where the data falls from the start of the
+// body. The code reaches the data by displacements already in its bytes, so
+// the PCALIGN must add nothing: the data is on 16 bytes in the object
+// (llc puts a .p2align 4 in front of it), and a function whose data is not
+// is refused here. Should the PCALIGN add bytes all the same, the code
+// would read past where the data went: the post-link check refuses that
+// (verify_insn.go, the bytes of the body and the targets of its RIP
+// references).
+func emitData(b *strings.Builder, data []byte, at int) error {
 	if len(data) == 0 {
 		return nil
 	}
-	b.WriteString(dataComment + "\n")
+	if at%16 != 0 {
+		return fmt.Errorf("the data after the code starts %d bytes past a multiple of 16 in the lowered object: a PCALIGN $16 in front of it would move it away from the code that reads it", at%16)
+	}
+	b.WriteString("\tPCALIGN $16\n" + dataComment + "\n")
 	return emitBytes(b, data)
 }
 

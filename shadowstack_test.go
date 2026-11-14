@@ -90,8 +90,10 @@ var recursions = []recursion{
 	{"promise_executor", `function f() { reached++; new Promise(f) }`, `f()`},
 	{"generator", `function* g() { reached++; yield* g() }`, `g().next()`},
 	{"tagged_template", `function t() { reached++; return t` + "`a`" + ` + 1 }`, `t()`},
-	// Frames that carry more: the engine keeps the arguments, locals and
-	// operand stack of a call on the shadow stack.
+	// Frames that carry more. Their frames are on the register stack, so they
+	// take no more shadow stack than a plain call, but args_100 (a call of more
+	// than 32 arguments passes them in an array through C) and sort_locals_100
+	// (through sort).
 	{"locals_20", `function f() { reached++; ` + frameOf(20) + ` return f() + v0 }`, `f()`},
 	{"locals_100", `function f() { reached++; ` + frameOf(100) + ` return f() + v0 }`, `f()`},
 	{"locals_250", `function f() { reached++; ` + frameOf(250) + ` return f() + v0 }`, `f()`},
@@ -126,15 +128,11 @@ func shadowRun(t *testing.T, r recursion, limit uintptr) (reached int, used uint
 	return reached, shadowStackUsed(m), strings.HasPrefix(caught, "RangeError")
 }
 
-// bigFrames names the recursions whose frames carry 100 or more values: at the
-// depth limit of 10000 they come within a few MiB of the end of the stack, and
-// more would end on the stack first (with a RangeError).
-var bigFrames = map[string]bool{"locals_100": true, "locals_250": true, "args_100": true, "sort_locals_100": true}
-
 // TestShadowStackAtDepth runs each recursion at depth limits of 5000 and 10000
-// and logs how far up the shadow stack it went. The recursions of ordinary
-// frames must end on the depth counters with at least a quarter of the stack
-// left, and every recursion must end in a RangeError, not a fault.
+// and logs how far up the shadow stack it went. Every recursion must end on the
+// depth counters with at least a quarter of the stack left, whatever its frame,
+// and in a RangeError, not a fault. A call from JavaScript to JavaScript takes
+// no shadow stack, so only the levels that go through C count here.
 func TestShadowStackAtDepth(t *testing.T) {
 	size := uintptr(cengine.ShadowSize)
 	for _, limit := range []uintptr{5000, 10000} {
@@ -147,7 +145,7 @@ func TestShadowStackAtDepth(t *testing.T) {
 			if !rangeErr && !catchesItself[r.name] {
 				t.Errorf("%s: the recursion did not end in a RangeError", r.name)
 			}
-			if !bigFrames[r.name] && used > size/4*3 {
+			if used > size/4*3 {
 				t.Errorf("%s: used %d%% of the shadow stack at a depth limit of %d", r.name, 100*used/size, limit)
 			}
 		}

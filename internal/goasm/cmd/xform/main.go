@@ -30,7 +30,7 @@
 //	                       run at each call. They move the code of that
 //	                       function only, with the data after its code. Use a
 //	                       multiple of 16 from 0 to 48 on the interpreter
-//	                       (JS_RegvmRun_block): its constant pools stay on 16
+//	                       (JS_RegvmRun): its constant pools stay on 16
 //	                       bytes, and a front that is not a multiple of 16 is
 //	                       refused on a function with data after its code.
 //	endalign:A[:F1,F2,..]  PCALIGN $A after the RET that ends a function (all
@@ -42,7 +42,7 @@
 // Example, the position "moved 32 bytes, 16 NOP bytes in front of the
 // interpreter":
 //
-//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_RegvmRun_block:16
+//	go run ./internal/goasm/cmd/xform copy-of-generated-dir shift:32 front:JS_RegvmRun:16
 package main
 
 import (
@@ -182,13 +182,16 @@ func apply(dir string, ops []string) error {
 				hit++
 				// The data after the code of the function (its constant pools
 				// and jump tables) moves with the body, and the generator keeps
-				// a pool on 16 bytes for the SSE instructions that read it.
+				// a pool on 16 bytes for the SSE instructions that read it with
+				// a PCALIGN $16 that adds nothing where the body sits on its
+				// 16 bytes. A front off 16 makes that PCALIGN pad, and the data
+				// moves away from the displacements the code reads it by.
 				fn := s[m[1]:]
 				if k := bytes.Index(fn, []byte("\nTEXT ")); k >= 0 {
 					fn = fn[:k]
 				}
 				if n%16 != 0 && bytes.Contains(fn, []byte("\n\t// data\n")) {
-					return fmt.Errorf("%s: %s keeps data after its code, which the front moves with the body, and %d bytes would take its constant pools off the 16 bytes an SSE read of them needs: use a multiple of 16", op, parts[1], n)
+					return fmt.Errorf("%s: %s keeps data after its code, which the front moves with the body, and %d bytes would make the PCALIGN $16 in front of the data pad it away from the code that reads it: use a multiple of 16", op, parts[1], n)
 				}
 				out := string(s[:m[1]]) + nopBytes(n) + string(s[m[1]:])
 				if err := os.WriteFile(p, []byte(out), 0o644); err != nil {

@@ -1,8 +1,10 @@
 ---
-summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, and why a symbol and its description never share a string with the script'
+summary: 'The change to string searches: includes, startsWith, endsWith, indexOf and lastIndexOf skip to where the string is and count what they look through toward the interrupt check, with what it gains and why it gives the same results, why a symbol and its description never share a string with the script, why the hash table of atoms holds one atom for two buckets, and why an empty string on the left of + gives back the string on the right'
 read_when:
   - String.prototype.includes, indexOf or lastIndexOf gives another result than before, or is slow on a long string
   - A WeakRef or FinalizationRegistry of a symbol made from a string, or whose description is held, does not let go of it
+  - A VM holds more memory for its atoms than before, or a script near its memory limit runs out of memory where it did not
+  - A sum with an empty string on the left, such as '' + x or a template literal that starts with a substitution, gives a string that is shared with its operand
 ---
 
 # Strings
@@ -35,3 +37,29 @@ Now a symbol and the strings the script sees never share their characters. `JS_N
 The cost: the argument of `Symbol` holds the string passed to it while `Symbol` runs, so a symbol of a string is always a copy, one allocation the length of the description. A literal that is not all digits, such as `Symbol('react.element')`, is an atom and was copied before too. Each read of `description` allocates its copy, where it shared the string. Upstream QuickJS shares the string both ways.
 
 `engine/test/compare/symbol_shared_string.js` (run by `engine/test/compare.sh`) checks that the symbols of strings held by an array, a variable and a literal of digits, and a symbol whose description is held, are freed after the job that made each `WeakRef` ends (`clearKeptObjects()`), that the strings stay strings, the description and `Symbol.for` of them, and descriptions of millions of characters, of 8 and 16 bits. Its file is what Node 24 prints. `test_symbol_copy_oom` in `engine/test/unit-oom.c` runs out of memory at each point of making symbols of held strings and of reading their descriptions, and finds the out of memory error and nothing left behind.
+
+## The hash table of atoms holds one atom for two buckets
+
+Release: v0.30.5.
+
+An atom is the number the engine gives a property name or a string it keeps once. Making a key from a string, such as `o['key' + i]`, a JSON key or a name in the parser, looks the string up in the hash table of atoms (`__JS_NewAtom`) and walks the chain of its bucket. Upstream doubles the table when it holds two atoms a bucket, so a lookup walks up to about two atoms on average, each a load from the array of atoms, before it finds its own or none. Now `JS_ATOM_COUNT_RESIZE` in `engine/quickjs.c` doubles it at one atom for two buckets. In a counting build of the native C tree, the steps along the chains fall from 87K to 16K a render on MUI's orders page, 38.5K to 5.4K on MUI's home page, 10.1K to 1.8K on the workbench studio page and 6.7K to 0.9K on the shop's English home page.
+
+Why it is safe: only the size of the table changes, never which atom a string gets, its number or the order of keys. The table grows by the same `JS_ResizeAtomHash` at another count, and when it cannot grow the atom is made in the table it has, as before. The HTML is the same on the 24 pages of the shop, MUI and React, and test262 gives the same 33 known errors.
+
+What it costs: the table takes four times the room. After 20 renders and a full collection, on the native C tree, a VM of the shop holds 196 KB more (13.65 MB rather than 13.45 on its home page) and one of MUI 49 KB to 73 KB more. The footprint does not change. The smallest room in which a new runtime makes 600 names (`test_key_names_oom`) moved from 62,096 to 68,240 bytes.
+
+What it gains: the instructions of a render do not move by more than the noise of the rounds (tifa's `test/ssr` on an Apple M4, three rounds, within 0.3% on each group). Fewer steps along the chains are fewer loads, each a likely cache miss, so any gain shows in time, not in instructions.
+
+Tests: `test_key_names_oom` in `engine/test/unit-oom.c` sweeps a script that makes 600 names from no room to 80 KiB, so that some room lets it work with the larger table, and every other check of `unit`, `unit-api`, `unit-white` and `unit-oom` passes as before.
+
+## An empty string on the left of `+` gives the string on the right
+
+Release: v0.30.5.
+
+`'' + x` is how React and much other code make a string of a value, and a template literal that starts with a substitution (`` `${x}px` ``) compiles to the same `+` after an empty string. QuickJS gave back the left string when the right one was empty, and the right one when the left was empty and the right a rope. An empty left and a flat right went to `JS_ConcatString2`, which grows the left string in place when it can. The empty string is almost always the atom's, which never grows in place, so it allocated a new string and copied the right one into it. `JS_ConcatString` (`engine/quickjs.c`) now frees the empty left string and gives back the right one when the right is a flat string of at most 512 characters. A longer right side still makes a rope, as before: it is rare on the pages.
+
+Why it is safe: a string has no identity a script can see, and the result has the same characters and the same width. The right string now has one more holder, so the appends that grow a string in place, which ask for no holder but the ones they know of (`js_concat_string_in_place`), copy it rather than change it. An atom's string can now be the result, and those appends refuse an atom already. What keeps the result now keeps the right string itself: `new RegExp(p, f + 'g')` with an empty `f` puts the atom's `'g'` in the regexp cache rather than a copy, so three scripts of the corpus (`q3-regexp-prefix.js`, `q3-regexp-skip.js` and `shikire.js`) end with one more atom and the same objects, and their goldens were written again. While the regexp cache keeps such a flags string, this costs at most 32 bytes and one atom more than the copy did, and less when several entries share the atom, since each of them held a copy before. The injection goldens of the two regexp scripts were written again for the same reason.
+
+What it gains, counted on the native C tree at 3ae98161 (linux/amd64 callgrind, the whole process, the difference of three and one timed renders after one warm render): React's page renders 2,151 such sums a render and runs 1.28% fewer instructions, MUI's three pages 4,306 and 0.49%, the fourteen store pages 2,426 and 0.17%, the six workbench pages 1,018 and 0.21%, about 150 to 210 instructions a sum. The table is in [performance.md](../performance.md#an-empty-string-on-the-left-of-a-sum).
+
+Tests: `test_string_empty_left` in `engine/test/unit-white.c` checks that `'' + s`, `e + s` and `t = t + s` with an empty local, `''.concat(s)` and `` `${s}` `` give back the string `s` itself, and that an append to the result in place (`add_loc`, and an add into a local) leaves `s` as it was (`s` has 76 characters, past the 64 below which nothing is appended in place). With the check of `js_concat_string_in_place` loosened by one holder, the add into a local changes `s` and the test fails.

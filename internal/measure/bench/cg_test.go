@@ -143,7 +143,7 @@ const cgFile = `version: 1
 creator: callgrind-3.25.1
 positions: line
 events: Ir Bc Bcm
-fn=github.com/liustack/quickjs/internal/cengine.JS_CallInternal_block.abi0
+fn=github.com/liustack/quickjs/internal/cengine.JS_RegvmRun.abi0
 0 100 10 2
 0 50 5 1
 cfn=github.com/liustack/quickjs/internal/cengine.js_malloc.abi0
@@ -164,7 +164,7 @@ func TestParseProfileSumsSelfCostAndSkipsCalls(t *testing.T) {
 	if fmt.Sprint(p.Events) != "[Ir Bc Bcm]" || fmt.Sprint(p.Total) != "[560 56 7]" {
 		t.Errorf("events %v total %v", p.Events, p.Total)
 	}
-	if fmt.Sprint(p.fnRow("JS_CallInternal_block")) != "[150 15 3]" || fmt.Sprint(p.Fn["main.f"]) != "[10 1 0]" {
+	if fmt.Sprint(p.fnRow("JS_RegvmRun")) != "[150 15 3]" || fmt.Sprint(p.Fn["main.f"]) != "[10 1 0]" {
 		t.Errorf("fns %v", p.Fn)
 	}
 	q := p.Scale(10)
@@ -179,8 +179,8 @@ func TestParseProfileSumsSelfCostAndSkipsCalls(t *testing.T) {
 		t.Error("compressed names accepted")
 	}
 	var b strings.Builder
-	WriteProfiles(&b, "JS_CallInternal_block", p, &q)
-	if !strings.Contains(b.String(), "| JS_CallInternal_block (own code) | Bcm | 3 | 0 | -90.00% |") {
+	WriteProfiles(&b, "JS_RegvmRun", p, &q)
+	if !strings.Contains(b.String(), "| JS_RegvmRun (own code) | Bcm | 3 | 0 | -90.00% |") {
 		t.Errorf("table:\n%s", b.String())
 	}
 }
@@ -197,7 +197,7 @@ func TestCGWindowRunsEachBinaryOnce(t *testing.T) {
 		}
 		return measure.Result{}
 	}
-	o := CGOptions{Bins: []string{"/a", "/b"}, Big: 10, Toggle: "*cgWindow*", Sim: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
+	o := CGOptions{Bins: []string{"/a", "/b"}, Big: 10, Toggle: "*cgWindow*", Sim: true, Interp: "JS_RegvmRun", Out: out, Args: []string{"-test.benchtime={N}x"}}
 	var b bytes.Buffer
 	if err := CG(context.Background(), o, run, &b); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestCGWindowReadsTheDumpOfTheProgram(t *testing.T) {
 		}
 		return measure.Result{}
 	}
-	o := CGOptions{Bins: []string{"/a"}, Big: 10, Dumps: true, Interp: "JS_CallInternal_block", Out: out, Args: []string{"-test.benchtime={N}x"}}
+	o := CGOptions{Bins: []string{"/a"}, Big: 10, Dumps: true, Interp: "JS_RegvmRun", Out: out, Args: []string{"-test.benchtime={N}x"}}
 	var b bytes.Buffer
 	if err := CG(context.Background(), o, run, &b); err != nil {
 		t.Fatal(err)

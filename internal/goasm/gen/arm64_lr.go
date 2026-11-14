@@ -134,7 +134,7 @@ func (s *a64LRSlots) any() bool { return len(s.stored)+len(s.loaded)+len(s.extra
 // a64ProveLR checks the lowered text of a function from which the lowering
 // dropped the slots s, and calls the number of calls it makes. See the
 // comment at the top of this file.
-func a64ProveLR(out []string, s *a64LRSlots, calls int) error {
+func a64ProveLR(out []string, s *a64LRSlots, calls int, leafArgs map[int][]string) error {
 	if !s.any() {
 		return nil
 	}
@@ -184,7 +184,7 @@ func a64ProveLR(out []string, s *a64LRSlots, calls int) error {
 			// it counts, up to where the register is written again.
 			at, _ = strconv.Atoi(m[2])
 			var err error
-			if n, err = a64TupleReach(out[i+1:], m[1]); err != nil {
+			if n, err = a64TupleReach(out, i+1, m[1], leafArgs); err != nil {
 				return fmt.Errorf("%q: %v", l, err)
 			}
 		} else if m := a64PlainSPAccess(l); m != nil {
@@ -202,40 +202,114 @@ func a64ProveLR(out []string, s *a64LRSlots, calls int) error {
 	return nil
 }
 
-// a64TupleReach is how many bytes from the address in reg the lines in rest
-// reach, up to the line that writes reg without reading it: only st1 or ld1
-// of a tuple through [reg] may use it, and it must be written again before
-// a label or a branch, past which the proof would not follow it, or end at a
-// call or a return.
-func a64TupleReach(rest []string, reg string) (int, error) {
+// a64TupleReach is how many bytes from the address in reg the lines of out
+// from index from reach, on every path the code can take, up to where reg is
+// written without being read: only st1 or ld1 of a tuple through [reg] may
+// use it. The walk follows the code as the processor does: through a label,
+// into the target of a branch and, for a conditional branch, also on to the
+// next line. A path ends where reg is written without being read, at a call
+// or at a return. It is refused where reg is read in any other way, at an
+// indirect branch (br), whose targets the text does not name, at a branch to
+// a label the function does not have, at a call while reg is one of the
+// registers a call keeps, at a directive other than .p2align, and at the end
+// of the function. Each line is walked once: what reg holds there is the
+// address on every path that comes from from, so one visit sees all it can
+// reach.
+//
+// A call ends the address in a register that no convention keeps across it:
+// llc reads such a register after a call only once it has written it again.
+// The AAPCS registers a register-entry leaf keeps, x19 to x28, are not taken.
+//
+// The call to a unified function reads its arguments from the stores the
+// lowering wrote before it, which the walk sees. A register-entry leaf reads
+// them from registers no line names, and leafArgs gives those registers for
+// the call at each index: the address must not be one of them.
+//
+// llc puts the address of a tuple's spill slot in a register its scavenger
+// finds free and that is dead after the st1 or ld1, so a path seldom goes
+// far: with a profile, llc places a reload at the end of a block whose
+// branch comes before any write of the register (found in
+// JS_GetOwnPropertyNamesInternal under clang PGO), which a walk that stopped
+// at the first branch refused.
+func a64TupleReach(out []string, from int, reg string, leafArgs map[int][]string) (int, error) {
 	r, n := a64RegNumber(reg), 0
-	for _, l := range rest {
-		if m := reA64Tuple.FindStringSubmatch(l); m != nil && m[3] == reg {
-			n = max(n, 16*strings.Count(m[2], "v"))
-			continue
-		}
-		op, _, _ := strings.Cut(l, " ")
-		// A call ends the address in a register that no convention keeps
-		// across it: llc reads such a register after a call only once it has
-		// written it again. The AAPCS registers a register-entry leaf keeps,
-		// x19 to x28, are not taken. A return ends it too.
-		if (op == "bl" || op == "blr") && (r < 19 || r > 28) || strings.HasPrefix(l, "b .Lgoret_") {
-			return n, nil
-		}
-		branch := op == "b" || op == "bl" || op == "blr" || op == "br" || strings.HasPrefix(op, "b.") ||
-			op == "cbz" || op == "cbnz" || op == "tbz" || op == "tbnz"
-		if isA64Label(l) || strings.HasPrefix(l, ".") || branch {
-			return 0, fmt.Errorf("the stack address in %s may live past %q", reg, l)
-		}
-		reads, writes := a64Reads(l, r)
-		if reads {
-			return 0, fmt.Errorf("the stack address in %s is read by %q", reg, l)
-		}
-		if writes {
-			return n, nil
+	labels := map[string]int{}
+	for i, l := range out {
+		if isA64Label(l) {
+			labels[strings.TrimSuffix(l, ":")] = i
 		}
 	}
-	return 0, fmt.Errorf("the stack address in %s lives to the end of the function", reg)
+	seen := map[int]bool{}
+	work := []int{from}
+	for len(work) > 0 {
+		i := work[len(work)-1]
+		work = work[:len(work)-1]
+	path:
+		for ; ; i++ {
+			if i >= len(out) {
+				return 0, fmt.Errorf("the stack address in %s lives to the end of the function", reg)
+			}
+			if seen[i] {
+				break
+			}
+			seen[i] = true
+			l := out[i]
+			if isA64Label(l) || strings.HasPrefix(l, ".p2align") {
+				continue
+			}
+			if strings.HasPrefix(l, ".") {
+				return 0, fmt.Errorf("the stack address in %s may live past %q", reg, l)
+			}
+			if m := reA64Tuple.FindStringSubmatch(l); m != nil && m[3] == reg {
+				n = max(n, 16*strings.Count(m[2], "v"))
+				continue
+			}
+			op, ops := a64Operands(l)
+			switch {
+			case strings.HasPrefix(l, "b .Lgoret_"):
+				break path
+			case op == "bl" || op == "blr":
+				if r >= 19 && r <= 28 {
+					return 0, fmt.Errorf("the stack address in %s may live past %q", reg, l)
+				}
+				if reads, _ := a64Reads(l, r); reads {
+					return 0, fmt.Errorf("the stack address in %s is read by %q", reg, l)
+				}
+				for _, a := range leafArgs[i] {
+					if a64RegNumber(a) == r {
+						return 0, fmt.Errorf("the stack address in %s is an argument of %q", reg, l)
+					}
+				}
+				break path
+			case op == "br":
+				return 0, fmt.Errorf("the stack address in %s may live past %q", reg, l)
+			case op == "b" || strings.HasPrefix(op, "b.") || op == "cbz" || op == "cbnz" || op == "tbz" || op == "tbnz":
+				if reads, _ := a64Reads(l, r); reads {
+					return 0, fmt.Errorf("the stack address in %s is read by %q", reg, l)
+				}
+				if len(ops) == 0 {
+					return 0, fmt.Errorf("the stack address in %s may live past %q", reg, l)
+				}
+				t, ok := labels[ops[len(ops)-1]]
+				if !ok {
+					return 0, fmt.Errorf("the stack address in %s may live past %q, to a label outside the function", reg, l)
+				}
+				work = append(work, t)
+				if op == "b" {
+					break path
+				}
+				continue
+			}
+			reads, writes := a64Reads(l, r)
+			if reads {
+				return 0, fmt.Errorf("the stack address in %s is read by %q", reg, l)
+			}
+			if writes {
+				break path
+			}
+		}
+	}
+	return n, nil
 }
 
 // a64PlainSPAccess matches a load or store whose last operand is [sp] or
@@ -253,3 +327,31 @@ var reA64MemSPWhole = regexp.MustCompile(`^\[sp(?:, #(-?\d+))?\]$`)
 
 // reA64SPReg finds SP as an operand, not as part of a label.
 var reA64SPReg = regexp.MustCompile(`(?:^|[ ,\[])sp(?:[,\]]|$)`)
+
+// a64LeafArgs are the general registers a call to the register-entry leaf t
+// reads: those llc's facts give for the call and those the AAPCS gives its
+// signature, or x0 to x8 when neither is known.
+func a64LeafArgs(t string, self FuncSpec, facts *CallFacts) []string {
+	var regs []string
+	sig, ok := callSig(t, self, calleeSigs)
+	if ok {
+		if r, err := a64ArgRegs(sig, false); err == nil {
+			regs = append(regs, r...)
+		} else {
+			ok = false
+		}
+	}
+	if facts != nil {
+		regs = append(regs, facts.Args...)
+	}
+	if !ok && facts == nil {
+		regs = []string{"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8"}
+	}
+	var out []string
+	for _, r := range regs {
+		if (r[0] == 'x' || r[0] == 'w') && a64RegNumber(r) >= 0 {
+			out = append(out, r)
+		}
+	}
+	return out
+}

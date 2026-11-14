@@ -663,3 +663,13 @@ javascript 调用的 Go 函数为一次调用复制长文本或造长输出时�
 代价：没有内存上限的 VM 留着一块时，在两次调用之间最多多占 32 MiB。不再有调用的 VM 一直留着它，直到关闭：很多空闲 VM 组成的池最多占 64 MiB，落在其中两个到几个 VM 上。Segmenter 的文本由它的游标拿着，所以读很多 Segments 对象的 VM，留下的是它最后丢掉的那个游标的块。连续 16 次调用没用之后把留着的块还给系统，32 MiB 在 AMD EPYC 的一个核上约 3 ms（16 MiB 实测 1.5 ms），发生在一次调用结束、脚本已跑完之后。
 
 测试：`internal/hostmem/keep_test.go` 的 `TestKeepReuses`、`TestKeepShort`、`TestKeepChooses`、`TestKeepIdle`、`TestKeepStops`、`TestKeepStopPanics`、`TestKeepProcessCap` 和 `TestKeepRaceForCap`，`internal/hostmem/keep_fault_test.go` 的 `TestKeepSwapRefused`，`keep_test.go` 的 `TestKeepOnlyWithNoLimit`，`keep_hooks_test.go` 的 `TestSetMemoryLimitKeepRefused` 和 `TestCloseAgainKeepRefused`（带 `testhooks` 标签），以及 `intl/blocks_test.go` 的 `TestLimitedVMKeepsNoBlock`、`TestLongCallsUseBlocks` 和 `TestStoppedCallsGiveBlocks`，后两个现在允许 VM 运行时多拿着一块，`Close` 之后一块也不拿。
+
+## 展开、rest 和 Object.assign 的复制读中断标志
+
+发布版本：v0.30.5。
+
+展开、rest 和 `Object.assign` 在 C 里把源对象的键一个个定义到目标上。展开字符串现在会给出它的各个字符（[upstream-commits.zh-CN.md](upstream-commits.zh-CN.md)），一百万个字符的字符串就给出一百万个键，对象也可以有这么多键。现在复制的两个循环（`js_copy_data` 复制列出的键都是普通数据属性的源对象，`js_copy_data_properties` 复制其他源对象）每 4,096 个键读一次中断标志（`JS_COPY_POLL_KEYS`），停下时抛出无法捕获的中断。每个键多一次计数器检查，只复制几个键时看不出代价。
+
+复制里的其他步骤各是对源对象或目标的一次遍历，不读标志，长度和它们一样，而它们的大小受内存上限约束：列出 `String` 对象的键，每个字符一次写入（`JS_GetOwnPropertyNamesInternal`），扫描源对象的 shape（`js_own_keys_scan`），把源对象的 shape 复制到空目标（`js_copy_shape`），目标属性表的扩容（`resize_properties`），以及停下后释放键的列表和复制出来的东西。524,288 个键时，前面几步各用了 20 到 25 次轮询，在 Apple M4 上约一毫秒，释放用了 100 到 520 次，都在 kill 允许的轮询次数之内（`KillPolls`，1000）。
+
+测试：`engine/test/unit-white.c` 里的 `test_copy_poll_work` 用展开、rest 和 `Object.assign` 复制字符串和对象的 100,000 个键，走遍复制的两个循环，要求每个键算一份工作，两次读标志之间最多 4,096 个键。`TestSpreadCopyStops`（`spreadstop_hooks_test.go`，用 `-tags testhooks` 构建）先给几种调用计时：把 65,536 个字符的字符串展开到空目标和一个键之后，对它做 `Object.assign`，把有 65,536 个键的对象展开到一个键之后，以及对它做 rest。然后在每个新 VM 里，在这段时间的四分之一、一半和四分之三处停下各自的循环：得到的是无法捕获的中断而不是 kill，除去释放用的轮询，看到停止请求的轮询不超过 `copyStopPolls` 次，VM 还能接着用。`TestSpreadStringOutOfMemory` 在 32 MiB 的上限下展开 4 Mi 个字符的字符串，也把它交给 `Object.assign`：得到内存不足的错误，VM 还能接着用。

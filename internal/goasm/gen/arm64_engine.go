@@ -64,6 +64,12 @@ type ARM64Env struct {
 	// RegResult is LowerEnv.RegResult: the functions whose result a direct
 	// call takes from x0, x1 or d0, where they stored it from.
 	RegResult map[string]bool
+	// ICallRegResult is LowerEnv.ICallRegResult: a call through a pointer
+	// takes its result from x0, x1 or d0 too.
+	ICallRegResult bool
+	// NoResult is LowerEnv.NoResult: these functions store no result before
+	// their RET.
+	NoResult map[string]bool
 	// DropLRPairs is the negative build of GEN_DROP_LR_PAIRS: the lowering
 	// drops a pair that holds x30 whole, the other register's save with it,
 	// which a64ProveLR must refuse. NoLRProof (GEN_DROP_LR_PAIRS=unchecked)
@@ -239,7 +245,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	}
 	L := align(8+outArea, 16)
 	goret := ".Lgoret_" + fn.Name
-	rec := &FuncRecord{Name: fn.Name, Kind: fn.Kind, Sig: fn.Sig, PreserveNone: true, Local: F, LocalBase: L}
+	rec := &FuncRecord{Name: fn.Name, Kind: fn.Kind, Sig: fn.Sig, PreserveNone: true, Local: F, LocalBase: L, NoResult: fn.Kind == Unified && env.NoResult[fn.Name]}
 	var ff *FuncFacts
 	if env.Facts != nil {
 		ff = env.Facts[fn.Name]
@@ -269,6 +275,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	D := 0 // bytes of the LLVM frame allocated at this point
 	goOff := func(k int) int { return L + (F - D) + k }
 	callIdx := 0
+	retIdx := 0
 	lr := &a64LRSlots{stored: map[int]bool{}, loaded: map[int]bool{}, extra: map[int]bool{}}
 	pending := "" // signature of the indirect call on the next line
 	// materialize puts the whole address of sym+add in register x<r>.
@@ -298,6 +305,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 	// adapter is the call-site glue: store the argument registers into the
 	// ABI0 area, call, load the result registers back, unless regResult
 	// (CallRecord.RegResult) leaves the result in them.
+	// leafArgs are the registers the call to a register-entry leaf at out[i]
+	// reads without an instruction of the text naming them (a64ProveLR).
+	leafArgs := map[int][]string{}
 	adapter := func(sig Sig, call string, facts *CallFacts, regResult bool) error {
 		regs, err := a64ArgRegs(sig, true)
 		if err != nil {
@@ -451,6 +461,17 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if D != 0 {
 				return fail("ret with %d bytes of frame still allocated", D)
 			}
+			// A caller takes the result from x0, x1 or d0 (RegResult),
+			// so llc's return gives it in no other register.
+			if ff != nil && fn.Kind == Unified {
+				if retIdx >= len(ff.Rets) {
+					return fail("a return llc's facts do not list")
+				}
+				if err := a64RetIn(ff.Rets[retIdx], a64RetRegs(fn.Sig.Ret)); err != nil {
+					return fail("return %d: %v", retIdx, err)
+				}
+				retIdx++
+			}
 			out = append(out, "b "+goret)
 			D = F // the code after a return block runs with the full frame
 			continue
@@ -529,6 +550,7 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if calleeKinds[t] == Register {
 				// A register-entry leaf takes its arguments where llc put
 				// them and keeps the AAPCS callee-saved registers.
+				leafArgs[len(out)] = a64LeafArgs(t, fn, facts)
 				out = append(out, "bl go_"+t)
 				rec.Calls = append(rec.Calls, CallRecord{Kind: CallLeaf, Target: t})
 				continue
@@ -565,19 +587,26 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 			if m[1] != "x9" {
 				out = append(out, "mov x9, "+m[1])
 			}
-			if err := adapter(sig, "blr x9", facts, false); err != nil {
+			// Every function a pointer can hold is a lowered unified function
+			// (CheckPointerTargets), so the call takes the result from x0, x1
+			// or d0, as a direct call does.
+			regResult := env.ICallRegResult && sig.Ret != Void
+			if err := adapter(sig, "blr x9", facts, regResult); err != nil {
 				return fail("indirect call: %v", err)
 			}
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig, RegResult: regResult})
 			continue
 		}
 		out = append(out, a64FitPair(l)...)
+	}
+	if ff != nil && fn.Kind == Unified && retIdx != len(ff.Rets) {
+		return fail("%d returns in the text, llc's facts have %d", retIdx, len(ff.Rets))
 	}
 	if D != 0 && D != F {
 		return fail("the frame is half freed at the end")
 	}
 	if !env.NoLRProof {
-		if err := a64ProveLR(out, lr, len(rec.Calls)); err != nil {
+		if err := a64ProveLR(out, lr, len(rec.Calls), leafArgs); err != nil {
 			return fail("%v", err)
 		}
 	}
@@ -601,6 +630,9 @@ func LowerARM64EngineFunc(lines []string, fn FuncSpec, env *ARM64Env) (string, M
 		out = append(out, ".p2align 4", fn.Name+".const:", data)
 	}
 	_, _, argBytes := layout(fn.Sig)
+	if rec.NoResult {
+		_, _, argBytes = layout(Sig{Params: fn.Sig.Params, Ret: Void})
+	}
 	if fn.Kind == Register {
 		argBytes = 0
 	}
@@ -679,7 +711,8 @@ func a64SameRegs(what string, want, got []string) error {
 // WORDs, every call a BL or CALL (R9) Go sees, each address of data or of a
 // function a MOVD $sym(SB) (which the Go assembler writes as the adrp and
 // add it stands for), the arguments loaded from the Go argument area after
-// Go's prologue and the result stored before its RET.
+// Go's prologue and the result stored before its RET (none for a function
+// with FuncRecord.NoResult).
 func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 	if e.NoStubs && len(e.Stubs) > 0 {
 		return nil, fmt.Errorf("a release build has no stub, but %d functions would be", len(e.Stubs))
@@ -726,7 +759,7 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 		var fb strings.Builder
 		gn := e.Names[m.Name]
 		switch {
-		case m.Kind == Register && m.Frame == 0:
+		case m.Kind == Register && !LeafHasFrame(m):
 			fmt.Fprintf(&fb, "TEXT ·%s(SB), NOSPLIT|NOFRAME, $0-0\n", gn)
 		case m.Kind == Register:
 			fmt.Fprintf(&fb, "TEXT ·%s(SB), NOSPLIT, $%d-0\n", gn, m.Frame)
@@ -843,7 +876,7 @@ func EmitARM64Engine(objPath string, e EngineEmit) (map[string]string, error) {
 		if icalls != 0 {
 			return nil, fmt.Errorf("%s: %d indirect calls not found in the bytes", m.Name, icalls)
 		}
-		if m.Kind != Register {
+		if m.Kind != Register && !m.Rec.NoResult {
 			_, results := GoSlots(m.Rec.Sig)
 			for k, reg := range a64RetRegs(m.Rec.Sig.Ret) {
 				mov := "MOVD"
@@ -1055,4 +1088,30 @@ func readA64Object(path string) (*a64Object, error) {
 		}
 	}
 	return o, nil
+}
+
+// a64RetIn checks that llc's return gives its result in none but the
+// registers rets (a64RetRegs of the result type), as a64SameRegs reads llc's
+// names.
+func a64RetIn(got, rets []string) error {
+	in := map[string]bool{}
+	for _, r := range rets {
+		in[r] = true
+	}
+	for _, r := range got {
+		if r == "lr" || strings.HasSuffix(r, "_hi") || strings.HasPrefix(r, "w30") {
+			continue
+		}
+		n := r
+		switch r[0] {
+		case 'w':
+			n = "x" + r[1:]
+		case 'b', 'h', 's', 'q':
+			n = "d" + r[1:]
+		}
+		if !in[n] {
+			return fmt.Errorf("llc's return gives %s, the result goes in %v", r, rets)
+		}
+	}
+	return nil
 }

@@ -203,3 +203,38 @@ func TestGenerateRefuses(t *testing.T) {
 		t.Errorf("a wrong integrity hash: %v", err)
 	}
 }
+
+// A folder of pinned bundles that holds <app>/<app>.js for some of the apps
+// and no polyfill lockfile (engine/pgo/pages) gets notices for those apps only.
+func TestGeneratePages(t *testing.T) {
+	srv := server()
+	defer srv.Close()
+	stubLicenseFetch(t, srv)
+	root, full, here := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := buildFixture(root, full, srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"mui", "shop"} {
+		// The script form of the bundle, as cmd/modulescript makes it.
+		script := "(function(){\"use strict\";\nvar " + name + "=1;\n\n})();\n"
+		if err := put(filepath.Join(here, name, name+".js"), script); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := generate(root, here)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"| react | 19.0.0 | MIT | mui, shop | [LICENSE.md](#text-3) |",
+		"| mui | ",
+		"| shop | ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the notices lack %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "bench") || strings.Contains(out, "polyfill") || strings.Contains(out, "Polyfill") {
+		t.Errorf("the notices name an app or a polyfill that was not given:\n%s", out)
+	}
+}

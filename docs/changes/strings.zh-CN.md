@@ -1,8 +1,10 @@
 ---
-summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变，以及 symbol 和它的描述为什么不和脚本共用字符串'
+summary: '字符串搜索的改动：includes、startsWith、endsWith、indexOf 和 lastIndexOf 直接跳到字符串所在的位置，并把查看过的内容计入中断检查，收益是什么，为什么结果不变，symbol 和它的描述为什么不和脚本共用字符串，atom 的哈希表为什么两个桶只放一个 atom，以及 + 左边是空字符串时为什么直接给出右边的字符串'
 read_when:
   - String.prototype.includes、indexOf 或 lastIndexOf 给出的结果和以前不一样，或者在长字符串上很慢
   - 用字符串做出的 symbol，或者描述被拿着的 symbol，WeakRef 或 FinalizationRegistry 一直放不掉它
+  - 一个 VM 给 atom 占的内存比以前多，或者接近内存上限的脚本在以前不会内存不足的地方内存不足
+  - 左边是空字符串的加法，比如 '' + x 或以替换开头的模板字符串，给出的字符串和操作数是同一个
 ---
 
 # 字符串
@@ -34,3 +36,29 @@ read_when:
 代价：`Symbol` 运行时，它的参数还拿着传进来的字符串，所以用字符串做的 symbol 总是副本，按描述长度分配一次。不全是数字的字面量，比如 `Symbol('react.element')`，本来就是 atom，以前也要复制。每次读 `description` 都分配一份副本，原来是共用字符串。上游 QuickJS 两个方向都共用字符串。
 
 `engine/test/compare/symbol_shared_string.js`（由 `engine/test/compare.sh` 运行）检查数组、变量和数字字面量拿着的字符串做出的 symbol，以及描述被拿着的 symbol，在做出各个 `WeakRef` 的任务结束后（`clearKeptObjects()`）会被释放，字符串仍是字符串，它们的 description 和 `Symbol.for`，还有几百万个字符的 8 位和 16 位描述。对照文件是 Node 24 的输出。`engine/test/unit-oom.c` 里的 `test_symbol_copy_oom` 在用被拿着的字符串做 symbol、读它们描述的每一处让内存耗尽，检查得到的是内存不足错误，而且什么都没留下。
+
+## atom 的哈希表两个桶只放一个 atom
+
+发布版本：v0.30.5。
+
+atom 是引擎给属性名或者只存一份的字符串编的号。用字符串做键，比如 `o['key' + i]`、JSON 的键或者解析器里的名字，都要在 atom 的哈希表里查这个字符串（`__JS_NewAtom`），沿着它所在桶的链往下走。上游在表里平均每个桶有两个 atom 时才把表加倍，所以一次查找在找到自己的 atom 或者确定没有之前，平均最多要走过大约两个 atom，每个都要从 atom 数组里读一次。现在 `engine/quickjs.c` 里的 `JS_ATOM_COUNT_RESIZE` 在两个桶有一个 atom 时就把表加倍。在原生 C 树的计数构建里，每次渲染沿链走的步数，MUI 订单页从 87K 降到 16K，MUI 首页从 38.5K 降到 5.4K，工作台 studio 页从 10.1K 降到 1.8K，商店英文首页从 6.7K 降到 0.9K。
+
+为什么安全：只有表的大小变了，一个字符串得到哪个 atom、它的编号和键的顺序都不变。表还是由同一个 `JS_ResizeAtomHash` 加倍，只是换了一个时机，加倍失败时 atom 照旧建在现有的表里。商店、MUI 和 React 的 24 个页面 HTML 相同，test262 还是那 33 个已知错误。
+
+代价：表占四倍的空间。在原生 C 树上，20 次渲染再做一次完整回收之后，商店的一个 VM 多占 196 KB（首页 13.65 MB，以前是 13.45 MB），MUI 的一个 VM 多占 49 KB 到 73 KB。footprint 不变。在新运行时里造 600 个名字（`test_key_names_oom`）所需的最小余量，从 62,096 字节变成 68,240 字节。
+
+收益：一次渲染的指令数的变化不超过各轮之间的波动（在 Apple M4 上跑 tifa 的 `test/ssr`，三轮，每组都在 0.3% 以内）。沿链走的步数少了，就是读的次数少了，而每次读都可能缓存未命中，所以如果有收益，会体现在时间上，而不是指令上。
+
+测试：`engine/test/unit-oom.c` 里的 `test_key_names_oom` 让一个造 600 个名字的脚本在从 0 到 80 KiB 的余量下各跑一次，这样表变大以后也有余量能让它跑完。`unit`、`unit-api`、`unit-white` 和 `unit-oom` 的其他检查都和以前一样通过。
+
+## `+` 左边是空字符串时直接给出右边的字符串
+
+发布版本：v0.30.5。
+
+`'' + x` 是 React 和很多代码把一个值变成字符串的写法，以替换开头的模板字符串（`` `${x}px` ``）也编译成空字符串后面跟同样的 `+`。QuickJS 在右边为空时直接给出左边的字符串，在左边为空而右边是 rope 时直接给出右边的。左边为空、右边是普通字符串时，走的是 `JS_ConcatString2`，它在能做到时把左边的字符串原地加长。空字符串几乎总是 atom 的那一个，从不原地加长，所以它会分配一个新字符串，把右边的复制进去。现在 `JS_ConcatString`（`engine/quickjs.c`）在右边是不超过 512 个字符的普通字符串时，释放左边的空字符串，直接给出右边的。右边更长时照旧做成 rope：这在页面上很少见。
+
+为什么安全：字符串没有脚本能看到的身份，结果的字符和宽度都一样。右边的字符串现在多了一个持有者，所以原地加长字符串的拼接（`js_concat_string_in_place`，它要求除了自己知道的持有者之外没有别人）会复制它，而不是改它。结果现在可能是 atom 的字符串，这些拼接本来就不碰 atom。留住结果的地方现在留住的就是右边那个字符串：`f` 为空时 `new RegExp(p, f + 'g')` 放进正则缓存的是 atom 的 `'g'`，不再是一份拷贝，所以语料里有三个脚本（`q3-regexp-prefix.js`、`q3-regexp-skip.js` 和 `shikire.js`）结束时多一个 atom，对象数不变，它们的 golden 重新写过。正则缓存留着这样的 flags 字符串时，最多比原来那份拷贝多占 32 字节和一个 atom，几个缓存条目共用这个 atom 时反而更少，因为以前每个条目各有一份拷贝。两个正则脚本的注入 golden 也因此重新写过。
+
+收益，在 3ae98161 的原生 C 树上数的（linux/amd64 callgrind，整个进程，一次预热之后三次和一次计时渲染之差）：React 的页面每次渲染做 2,151 次这样的加法，指令少 1.28%，MUI 的三个页面 4,306 次、0.49%，十四个商店页面 2,426 次、0.17%，六个工作台页面 1,018 次、0.21%，每次加法大约省 150 到 210 条指令。表格见 [performance.md](../performance.zh-CN.md#左边是空字符串的加法)。
+
+测试：`engine/test/unit-white.c` 的 `test_string_empty_left` 检查 `'' + s`、空字符串局部变量的 `e + s` 和 `t = t + s`、`''.concat(s)` 和 `` `${s}` `` 给出的就是字符串 `s` 本身，并检查对结果的原地拼接（`add_loc`，以及加到局部变量里）不改动 `s`（`s` 有 76 个字符，超过不做原地拼接的 64）。把 `js_concat_string_in_place` 的检查放宽一个持有者，加到局部变量里那一例就会改动 `s`，测试失败。

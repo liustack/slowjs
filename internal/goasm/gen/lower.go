@@ -208,6 +208,16 @@ type LowerEnv struct {
 	// never a Go callback, a stub or a register-entry leaf. A poison build
 	// takes none, since it writes over every register at a return.
 	RegResult map[string]bool
+	// ICallRegResult says a call through a pointer takes its result from the
+	// registers as well: every function a pointer can hold is a lowered
+	// unified function (CheckPointerTargets). A poison build takes none.
+	ICallRegResult bool
+	// NoResult names the unified functions no Go code calls (the list of
+	// internal/cengine/gocalls.txt, gen.GoCalls): they store no result to
+	// the Go stack, since every call of them is a lowered call that takes it
+	// from registers (RegResult and ICallRegResult). A poison build stores
+	// every result.
+	NoResult map[string]bool
 }
 
 // LowerUnified transforms one function's GNU assembly. It returns the rewritten
@@ -334,6 +344,12 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 		return "", Meta{}, fmt.Errorf("%s: %w", fn.Name, err)
 	}
 	_, retOff, argBytes := layout(fn.Sig)
+	// A function no Go code calls stores no result (LowerEnv.NoResult): its
+	// Go argument area ends with its arguments.
+	noResult := env != nil && env.NoResult[fn.Name] && !a.Poison
+	if noResult {
+		_, _, argBytes = layout(Sig{Params: fn.Sig.Params, Ret: Void})
+	}
 
 	// Frame: outgoing argument area (max over calls), saved callee-saved slots,
 	// then the body's local reservation. Rounded to 16.
@@ -383,7 +399,7 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 	}
 	argBase := frame + 8 + bp
 	rec := &FuncRecord{Name: fn.Name, Kind: Unified, Sig: fn.Sig, PreserveNone: a.PreserveNone, SaveAll: a.SaveAll,
-		Pushed: pushed, Local: local, LocalBase: localBase, SaveBase: saveBase, Saved: saved, Frame: frame}
+		Pushed: pushed, Local: local, LocalBase: localBase, SaveBase: saveBase, Saved: saved, Frame: frame, NoResult: noResult}
 
 	// Build the rewritten body.
 	var out []string
@@ -405,6 +421,9 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 
 	retLabel := ".Lret_" + fn.Name
 	storeResult := func() []string {
+		if noResult {
+			return nil
+		}
 		switch fn.Sig.Ret {
 		case I64, Ptr:
 			return []string{fmt.Sprintf("movq %%rax, %d(%%rsp)", argBase+retOff)}
@@ -512,8 +531,12 @@ func LowerUnifiedFunc(a AMD64Arch, lines []string, fn FuncSpec, env *LowerEnv, a
 			if err != nil {
 				return "", Meta{}, err
 			}
-			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase, false)...)
-			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig})
+			// Every function a pointer can hold is a lowered unified function
+			// (CheckPointerTargets), so the call takes the result from the
+			// registers it returns it in, as a direct call does.
+			regResult := env != nil && env.ICallRegResult && sig.Ret != Void && !a.Poison
+			out = append(out, marshalCallTarget(a, "*%"+m[1], sig, saved, saveBase, regResult)...)
+			rec.Calls = append(rec.Calls, CallRecord{Kind: CallReg, Target: m[1], Sig: sig, RegResult: regResult})
 			continue
 		}
 		if m := reCall.FindStringSubmatch(n); m != nil && env != nil && env.Variadic[m[1]] && !env.LooseVarargs {

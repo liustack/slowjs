@@ -1257,6 +1257,40 @@ int white_shape_hashed(JSValueConst obj)
     return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
 
+/* ---- the atom a string is as a key ---- */
+
+/* The key_atom of the string v (a JS_TAG_STRING value). */
+uint32_t white_key_atom(JSValueConst v)
+{
+    return JS_VALUE_GET_STRING(v)->key_atom;
+}
+
+/* The atoms of rt whose string has a key_atom other than the one
+   JS_ValueToAtom's rule gives (the atom's own index for an atom of the type
+   string, not empty, not starting with a digit, else JS_ATOM_NULL), with the
+   live atoms in *live and those that are their own key in *keys. */
+int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys)
+{
+    uint32_t i, want;
+    JSAtomStruct *p;
+    int bad = 0;
+
+    *live = *keys = 0;
+    for(i = 1; i < rt->atom_size; i++) {
+        p = rt->atom_array[i];
+        if (atom_is_free(p))
+            continue;
+        (*live)++;
+        want = p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
+            !is_digit(string_get(p, 0)) ? i : JS_ATOM_NULL;
+        if (want)
+            (*keys)++;
+        if (p->key_atom != want)
+            bad++;
+    }
+    return bad;
+}
+
 /* ---- the cache of the start and end tags ---- */
 
 /* The sizes of the tables of names, of style names and of end tags of ctx
@@ -2316,4 +2350,36 @@ int white_class_after_nop(JSContext *ctx, const char *src, const char *name)
     }
     JS_FreeValue(ctx, v);
     return ret;
+}
+
+/* The cache of the object rest or spread site of the function fn (a
+   function value): the shapes of the sources it keeps, as white_shape_of
+   numbers them, into src (up to max), those of the targets of a spread
+   (0 for a rest) into tgt when it is not NULL, and the entries a miss
+   replaced so far into *swaps.
+   Return the entries, or -1 when fn has no register code or no such site
+   (engine/regvm-ops-copy.h). */
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, uintptr_t *tgt, int max,
+                    int *swaps)
+{
+    JSFunctionBytecode *b;
+    RVCopySite *cs;
+    int i;
+
+    if (JS_VALUE_GET_TAG(fn) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(fn)->class_id != JS_CLASS_BYTECODE_FUNCTION)
+        return -1;
+    b = JS_VALUE_GET_OBJ(fn)->u.func.function_bytecode;
+    if (!b || !b->rv || b->rv->arg_count < 0 || site >= b->rv->copy_count)
+        return -1;
+    cs = &b->rv->copy[site];
+    for (i = 0; i < RV_COPY_WAYS && cs->e[i]; i++) {
+        if (i < max) {
+            src[i] = (uintptr_t)cs->e[i]->src;
+            if (tgt)
+                tgt[i] = (uintptr_t)cs->e[i]->tgt;
+        }
+    }
+    *swaps = cs->swaps;
+    return i;
 }

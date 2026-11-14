@@ -284,3 +284,54 @@ func (p *Pack) inflate(i int) ([]byte, error) {
 func (p *Pack) Inflated() (chunks, bytes int) {
 	return int(p.inflated.Load()), int(p.inflatedBytes.Load())
 }
+
+// Same reports why two packs do not hold the same data, or nil when they do:
+// the same files in the same chunks at the same places, each chunk with the
+// same method and the same bytes once inflated. It does not compare the
+// compressed bytes, which are not the same on every Go release: the DEFLATE
+// encoder of the standard library has changed between releases, and the
+// check of the packs (qjspack/gen -check) must hold on every Go the module
+// supports. A pack made by one release is read by all of them.
+func Same(a, b []byte) error {
+	pa, err := Open(string(a))
+	if err != nil {
+		return err
+	}
+	pb, err := Open(string(b))
+	if err != nil {
+		return err
+	}
+	if len(pa.chunks) != len(pb.chunks) || pa.nfiles != pb.nfiles {
+		return fmt.Errorf("%d files in %d chunks, want %d in %d", pa.nfiles, len(pa.chunks), pb.nfiles, len(pb.chunks))
+	}
+	// The header, the records of the files (names, chunks, places) and the
+	// names themselves do not depend on how a chunk is compressed.
+	table := headerSize + fileSize*pa.nfiles
+	if !bytes.Equal(a[:table], b[:table]) {
+		return fmt.Errorf("the files are not the same: names, chunks or places differ")
+	}
+	for i := range pa.chunks {
+		ma, ra, _, _ := pa.chunk(i)
+		mb, rb, _, _ := pb.chunk(i)
+		if ma != mb || ra != rb {
+			return fmt.Errorf("chunk %d: method %d and %d bytes, want method %d and %d bytes", i, ma, ra, mb, rb)
+		}
+		x, err := pa.inflate(i)
+		if err != nil {
+			return err
+		}
+		y, err := pb.inflate(i)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(x, y) {
+			return fmt.Errorf("chunk %d: the bytes differ once inflated", i)
+		}
+	}
+	for i := 0; i < pa.nfiles; i++ {
+		if pa.name(i) != pb.name(i) {
+			return fmt.Errorf("file %d is %q, want %q", i, pa.name(i), pb.name(i))
+		}
+	}
+	return nil
+}

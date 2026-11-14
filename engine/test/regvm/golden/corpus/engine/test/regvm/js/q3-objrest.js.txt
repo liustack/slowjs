@@ -1,0 +1,12 @@
+result one: 0|b=0,c=x0;1|b=2,c=x1;2|b=4,c=x2;3|b=6,c=x3;4|b=8,c=x4;
+result poly: 0:a=1;1:a=1,b=2;2:b=2,c=3;3:;4:d=4,e=[object Object],g=g;5:z=26;6:a=1;7:a=1,b=2;8:b=2,c=3;9:;10:d=10,e=[object Object],g=g;11:z=26;12:a=1;13:a=1,b=2;14:b=2,c=3;15:;16:d=16,e=[object Object],g=g;17:z=26;18:a=1;19:a=1,b=2;20:b=2,c=3;21:;22:d=22,e=[object Object],g=g;23:z=26;24:a=1;25:a=1,b=2;26:b=2,c=3;27:;28:d=28,e=[object Object],g=g;29:z=26;
+result kinds: 1:p=2;0:b=2;0:h=got,j=3;0:x=1,Symbol(s)=sym;undefined:0=7,1=8;undefined:0=s,1=t,2=r;undefined:
+result computed: B0c=C;B1c=C;B2c=C;
+result null: throws TypeError cannot convert to object
+result undefined: throws TypeError cannot convert to object
+result getter throws: throws Error from b
+result ownKeys throws: throws Error from ownKeys
+result frozen: 1|b=21|b=2falseb=2,c=3
+mem-end obj=195 atom=554 shape=151 prop=969 jsfunc=1 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=553 shape=149 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

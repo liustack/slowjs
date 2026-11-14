@@ -115,6 +115,8 @@ int white_short_index_check(char *bad, size_t cap);
 size_t white_object_block(JSContext *ctx, JSValueConst obj, size_t *full);
 int white_props_inline(JSValueConst obj, int *room);
 uintptr_t white_shape_of(JSValueConst obj);
+int white_copy_site(JSValueConst fn, int site, uintptr_t *src, uintptr_t *tgt, int max,
+                    int *swaps);
 unsigned long white_shape_id_hits(void);
 uint32_t white_shape_id_next(JSRuntime *rt);
 uint32_t white_shape_id_max(void);
@@ -122,6 +124,8 @@ void white_shape_id_set(JSRuntime *rt, uint32_t next);
 int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
+uint32_t white_key_atom(JSValueConst v);
+int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
 JSValue white_call_failing(JSContext *ctx, JSValueConst func, JSValueConst this_val, int argc, JSValueConst *argv, int fail, int *nallocs);
 int white_regvm_convert_failing(JSContext *ctx, JSValueConst f, int fail, int mode, int *nallocs);
@@ -1310,6 +1314,37 @@ static void test_buffer_copy_work(void)
     vm_free(&v);
 }
 
+/* The copy of a spread, a rest and Object.assign reads the interrupt flag
+   every 4096 keys (JS_COPY_POLL_KEYS), a unit of work a key, in both of its
+   loops: js_copy_data, of a plain object, and js_copy_data_properties, of a
+   String object or into Object.assign. */
+static void test_copy_poll_work(void)
+{
+    static const char *const calls[] = {
+        "({...s}), 0",
+        "({a: 1, ...s}), 0",
+        "Object.assign({}, s), 0",
+        "({a: 1, ...big}), 0",
+        "(({k0, ...r}) => r)(big), 0",
+        "Object.assign({}, big), 0",
+    };
+    VM v = vm_new();
+    size_t i;
+
+    CHECK(eval_ok(v.ctx, "var s = 'x'.repeat(100000), big = {};\n"
+                         "for (var i = 0; i < 100000; i++) big['k' + i] = i; void 0"),
+          "the sources");
+    for (i = 0; i < sizeof(calls) / sizeof(calls[0]); i++) {
+        white_work_reset();
+        CHECK(eval_is(v.ctx, calls[i], "0"), "%s threw", calls[i]);
+        CHECK(white_work_sum() >= 100000 && white_work_sum() < 101000,
+              "%s: %lu units of work, want a key each", calls[i], white_work_sum());
+        CHECK(white_work_longest() <= 4096, "%s: %lu keys between two readings of the flag",
+              calls[i], white_work_longest());
+    }
+    vm_free(&v);
+}
+
 /* The loops that read the interrupt flag after so many units of work say how
    much they did (JS_WORK in quickjs.c), and white.c adds it up between two
    readings of the flag. A call below does a known amount of work in all (the
@@ -1687,6 +1722,162 @@ static uintptr_t shape_of(VM *v, const char *expr)
     return r;
 }
 
+/* the cache of the first object rest or spread of the global function fn,
+   with the shapes of the targets of a spread in tgt (engine/regvm-ops-copy.h) */
+static int copy_site2(VM *v, const char *fn, uintptr_t *src, uintptr_t *tgt, int max,
+                      int *swaps)
+{
+    JSValue f = JS_Eval(v->ctx, fn, strlen(fn), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int n = white_copy_site(f, 0, src, tgt, max, swaps);
+
+    JS_FreeValue(v->ctx, f);
+    return n;
+}
+
+/* the same for a rest, which has no target */
+static int copy_site(VM *v, const char *fn, uintptr_t *src, int max, int *swaps)
+{
+    JSValue f = JS_Eval(v->ctx, fn, strlen(fn), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int n = white_copy_site(f, 0, src, NULL, max, swaps);
+
+    JS_FreeValue(v->ctx, f);
+    return n;
+}
+
+/* An object rest keeps, at its place, the shapes of its sources and of
+   their results: the result of a kept shape takes the shape an object built
+   key by key gets, sources of another prototype than Object.prototype or
+   null, with a symbol key or of a shape out of the shape hash table are not
+   kept, a place that sees many shapes in turn keeps four and replaces them
+   RV_COPY_SWAPS times, and the shapes kept stay through a collection and go
+   with their function (the leak check of vm_free). */
+static void test_object_rest_cache(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        uintptr_t src[4];
+        int swaps = -1, n;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f(s) { const { a, ...r } = s; return r }\n"
+                             "var o1 = { a: 1, b: 2, c: 3 }, r1 = f(o1), r2 = f({ a: 4, b: 5, c: 6 });\n"
+                             "var k = {}; k.b = 0; k.c = 0; void 0"), "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 1 && src[0] == shape_of(&v, "o1"), "cache %d: one entry, the shape of o1: %d", cache, n);
+        CHECK(shape_of(&v, "r1") == shape_of(&v, "r2") && shape_of(&v, "r1") == shape_of(&v, "k"),
+              "cache %d: the result has the shape of an object built key by key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([r1, r2])", "[{\"b\":2,\"c\":3},{\"b\":5,\"c\":6}]"),
+              "values of the results");
+
+        /* not kept: another prototype, a symbol key, a shape out of the
+           table */
+        CHECK(eval_ok(v.ctx, "class C { constructor() { this.a = 1; this.b = 2 } }\n"
+                             "var y = { a: 1, b: 2 }; Object.defineProperty(y, Symbol('s'), { value: 1 });\n"
+                             "var d = { a: 1, x: 0, b: 2 }; delete d.x;\n"
+                             "var r3 = [f(new C()), f(y), f(d)].map(x => JSON.stringify(x)).join(); void 0"),
+              "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 1, "cache %d: a class instance, a symbol key or a deleted key kept: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "r3", "{\"b\":2},{\"b\":2},{\"b\":2}"), "values of the sources not kept");
+
+        /* a null prototype is kept */
+        CHECK(eval_ok(v.ctx, "var np = Object.create(null); np.a = 1; np.b = 2; var r4 = f(np); void 0"),
+              "the script threw");
+        n = copy_site(&v, "f", src, 4, &swaps);
+        CHECK(n == 2 && src[1] == shape_of(&v, "np"), "cache %d: a null prototype: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "JSON.stringify(r4) + Object.getPrototypeOf(r4).constructor.name", "{\"b\":2}Object"),
+              "the result of a null prototype source");
+
+        /* seven shapes in turn */
+        CHECK(eval_ok(v.ctx, "function g(s) { const { k0, ...r } = s; return r }\n"
+                             "var os = []; for (let n = 1; n <= 7; n++) { const o = {}; for (let i = 0; i < n; i++) o['k' + i] = i; os.push(o) }\n"
+                             "var sum = 0; for (let t = 0; t < 30; t++) for (const o of os) sum += Object.keys(g(o)).length; void 0"),
+              "the script threw");
+        n = copy_site(&v, "g", src, 4, &swaps);
+        CHECK(n == 4 && swaps == 16, "cache %d: seven shapes: %d entries, %d swaps", cache, n, swaps);
+        CHECK(eval_is(v.ctx, "String(sum)", "630"), "the keys of the results of seven shapes");
+
+        JS_RunGC(v.rt);
+        CHECK(eval_is(v.ctx, "JSON.stringify(f({ a: 1, b: 2, c: 3 }))", "{\"b\":2,\"c\":3}"),
+              "a kept shape after a collection");
+        CHECK(eval_ok(v.ctx, "f = g = null; void 0"), "the script threw");
+        JS_RunGC(v.rt);
+        vm_free(&v);
+    }
+}
+
+/* The spread of an object literal keeps, at its place, the shapes of its
+   target and its source and of the result: a target with keys before the
+   spread, a key of the source that the target has stays in its place with
+   the value of the source, the result takes the shape an object built key
+   by key gets, sources and targets of another prototype, with a symbol or a
+   getter on either side are not kept, a place that sees many
+   shapes in turn keeps four, and the shapes kept go with their function
+   (the leak check of vm_free). */
+static void test_object_spread_cache(void)
+{
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        uintptr_t src[4], tgt[4];
+        int swaps = -1, n;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, "function f(s) { return { a: 0, z: 0, ...s, w: 1 } }\n"
+                             "var o1 = { x: 1, a: 2 }, r1 = f(o1), r2 = f({ x: 3, a: 4 });\n"
+                             "var k = {}; k.a = 0; k.z = 0; k.x = 0; k.w = 0; var tz = { a: 9, z: 9 }; void 0"),
+              "the script threw");
+        n = copy_site2(&v, "f", src, tgt, 4, &swaps);
+        CHECK(n == 1 && src[0] == shape_of(&v, "o1") && tgt[0] == shape_of(&v, "tz"),
+              "cache %d: one entry, the shapes of o1 and of the target: %d", cache, n);
+        CHECK(shape_of(&v, "r1") == shape_of(&v, "r2") && shape_of(&v, "r1") == shape_of(&v, "k"),
+              "cache %d: the result has the shape of an object built key by key", cache);
+        CHECK(eval_is(v.ctx, "JSON.stringify([r1, r2])",
+                      "[{\"a\":2,\"z\":0,\"x\":1,\"w\":1},{\"a\":4,\"z\":0,\"x\":3,\"w\":1}]"),
+              "values of the results");
+
+        /* an empty target takes the shape of a plain source */
+        CHECK(eval_ok(v.ctx, "function e(s) { return { ...s } }\n"
+                             "var o2 = { p: 1, q: 2 }, r3 = e(o2), r4 = e(o2); void 0"), "the script threw");
+        n = copy_site2(&v, "e", src, tgt, 4, &swaps);
+        CHECK(n == 1 && shape_of(&v, "r3") == shape_of(&v, "o2") && shape_of(&v, "r4") == shape_of(&v, "o2"),
+              "cache %d: an empty target: %d entries", cache, n);
+
+        /* not kept: a class instance, a symbol, a getter of the source or
+           of the target */
+        CHECK(eval_ok(v.ctx, "class C { constructor() { this.x = 1 } }\n"
+                             "var y = { x: 1 }; y[Symbol('s')] = 2;\n"
+                             "var g = { get x() { return 5 } };\n"
+                             "function t(s) { return { a: 1, get b() { return 2 }, ...s } }\n"
+                             "var r5 = [f(new C()), f(y), f(g), t({ b: 3 }), t({ b: 3 })].map(x => JSON.stringify(x)).join(); void 0"),
+              "the script threw");
+        n = copy_site2(&v, "f", src, tgt, 4, &swaps);
+        CHECK(n == 1, "cache %d: a class instance, a symbol or a getter kept: %d entries", cache, n);
+        CHECK(eval_is(v.ctx, "r5", "{\"a\":0,\"z\":0,\"x\":1,\"w\":1},{\"a\":0,\"z\":0,\"x\":1,\"w\":1},"
+                                   "{\"a\":0,\"z\":0,\"x\":5,\"w\":1},{\"a\":1,\"b\":3},{\"a\":1,\"b\":3}"),
+              "values of the spreads not kept");
+
+        /* seven shapes in turn */
+        CHECK(eval_ok(v.ctx, "function h(s) { return { k0: -1, ...s } }\n"
+                             "var os = []; for (let n = 1; n <= 7; n++) { const o = {}; for (let i = 0; i < n; i++) o['k' + i] = i; os.push(o) }\n"
+                             "var sum = 0; for (let t = 0; t < 30; t++) for (const o of os) { const r = h(o); sum += Object.keys(r).length + r.k0 } void 0"),
+              "the script threw");
+        n = copy_site2(&v, "h", src, tgt, 4, &swaps);
+        CHECK(n == 4 && swaps == 16, "cache %d: seven shapes: %d entries, %d swaps", cache, n, swaps);
+        CHECK(eval_is(v.ctx, "String(sum)", "840"), "the keys of the results of seven shapes");
+
+        JS_RunGC(v.rt);
+        CHECK(eval_is(v.ctx, "JSON.stringify(f({ x: 1, a: 2 }))", "{\"a\":2,\"z\":0,\"x\":1,\"w\":1}"),
+              "a kept shape after a collection");
+        CHECK(eval_ok(v.ctx, "f = e = h = t = null; void 0"), "the script threw");
+        JS_RunGC(v.rt);
+        vm_free(&v);
+    }
+}
+
 /* Object literals of the same keys in the same order share one shape, made
    at whichever ran first, wherever they are written and whether or not the
    empty shape of Object.prototype and the shapes in between exist: with the
@@ -1799,6 +1990,100 @@ static void shape_ids_ok(VM *v, const char *what, int cache)
 
     CHECK(bad == 0, "cache %d, %s: %d of %d shapes break the rule of ids", cache, what, bad, count);
     CHECK(count > 0, "cache %d, %s: no shape in the table", cache, what);
+}
+
+/* A string that is an atom of the type string, not empty and not starting
+   with a digit, keeps its atom in key_atom, which the keyed reads and
+   hasOwnProperty.call read in place of the test and the hash chain. Every other
+   string has JS_ATOM_NULL there: a string that is not an atom, the empty
+   string, a string that starts with a digit, a symbol. The rule holds for
+   every atom of the runtime while atoms are made and freed and their
+   numbers are given to other strings, and while the hash table of atoms
+   grows. */
+static void key_atoms_ok(VM *v, const char *what)
+{
+    int live, keys, bad = white_key_atoms_bad(v->rt, &live, &keys);
+
+    CHECK(bad == 0, "%s: %d of %d atoms have the wrong key_atom", what, bad, live);
+    CHECK(keys > 0, "%s: no atom is its own key", what);
+}
+
+static uint32_t key_atom_of_atom(VM *v, JSAtom a)
+{
+    JSValue s = JS_AtomToString(v->ctx, a);
+    uint32_t k = white_key_atom(s);
+
+    JS_FreeValue(v->ctx, s);
+    return k;
+}
+
+static void test_key_atom(void)
+{
+    static const struct { const char *s; int key; } kinds[] = {
+        { "wkaName", 1 }, { "-1", 1 }, { "-0", 1 }, { "Infinity", 1 }, { "NaN", 1 }, { "_0", 1 },
+        { "0", 0 }, { "10", 0 }, { "01", 0 }, { "1e3", 0 }, { "4294967295", 0 }, { "9z", 0 }, { "", 0 },
+    };
+    VM v = vm_new();
+    JSValue s;
+    JSAtom a, b, c;
+    size_t i;
+
+    key_atoms_ok(&v, "a new context");
+    for (i = 0; i < sizeof(kinds) / sizeof(kinds[0]); i++) {
+        a = JS_NewAtom(v.ctx, kinds[i].s);
+        CHECK(a != JS_ATOM_NULL, "the atom of '%s'", kinds[i].s);
+        /* the atoms of "0" to "2147483647" are numbers (JS_ATOM_TAG_INT), with
+           no string */
+        if (!(a & 0x80000000u))
+            CHECK(key_atom_of_atom(&v, a) == (kinds[i].key ? a : JS_ATOM_NULL),
+                  "'%s': key_atom %u, atom %u", kinds[i].s, key_atom_of_atom(&v, a), a);
+        JS_FreeAtom(v.ctx, a);
+    }
+
+    /* a string that is not an atom has none. Made an atom when no atom has
+       its characters, it becomes the atom (__JS_NewAtom) and holds the
+       number */
+    s = JS_NewString(v.ctx, "wkaName");
+    CHECK(white_key_atom(s) == JS_ATOM_NULL, "a new string has key_atom %u", white_key_atom(s));
+    a = JS_ValueToAtom(v.ctx, s);
+    CHECK(a != JS_ATOM_NULL && white_key_atom(s) == a, "the string made an atom: key_atom %u, atom %u",
+          white_key_atom(s), a);
+    JS_FreeAtom(v.ctx, a);
+    JS_FreeValue(v.ctx, s);
+
+    /* a number given back is given to the next atom: the string of the new
+       atom has the number, and a new string of the old characters is no
+       atom until it is made one */
+    a = JS_NewAtom(v.ctx, "wkaFirstOfItsName");
+    JS_FreeAtom(v.ctx, a);
+    b = JS_NewAtom(v.ctx, "wkaSecondOfItsName");
+    CHECK(b == a, "the number %u of the freed atom was not given again (%u)", a, b);
+    CHECK(key_atom_of_atom(&v, b) == b, "the new atom: key_atom %u", key_atom_of_atom(&v, b));
+    s = JS_NewString(v.ctx, "wkaFirstOfItsName");
+    CHECK(white_key_atom(s) == JS_ATOM_NULL, "the old characters: key_atom %u", white_key_atom(s));
+    c = JS_ValueToAtom(v.ctx, s);
+    CHECK(c != a && white_key_atom(s) == c && key_atom_of_atom(&v, c) == c,
+          "the old characters as an atom: %u, key_atom %u", c, white_key_atom(s));
+    JS_FreeAtom(v.ctx, c);
+    JS_FreeAtom(v.ctx, b);
+    JS_FreeValue(v.ctx, s);
+    key_atoms_ok(&v, "atoms freed and made again");
+
+    /* thousands of atoms made, read by key, freed and made again, through
+       the growth of the hash table of atoms and the reuse of numbers */
+    CHECK(eval_ok(v.ctx,
+        "var o = {}, bad = 0;\n"
+        "for (let r = 0; r < 3; r++) {\n"
+        "  let ks = [];\n"
+        "  for (let i = 0; i < 5000; i++) ks.push(Object.keys({ ['wka' + r + '_' + i]: i })[0]);\n"
+        "  for (let i = 0; i < 5000; i++) { o[ks[i]] = i; if (o[ks[i]] !== i || !(ks[i] in o)) bad++ }\n"
+        "  for (let i = 0; i < 5000; i++) delete o[ks[i]];\n"
+        "  ks = null }\n"), "the script threw");
+    CHECK(eval_is(v.ctx, "bad", "0"), "keyed reads of the made atoms");
+    key_atoms_ok(&v, "thousands of atoms");
+    JS_RunGC(v.rt);
+    key_atoms_ok(&v, "after a collection");
+    vm_free(&v);
 }
 
 static void test_shape_ids(void)
@@ -3621,6 +3906,165 @@ static void test_closure_var_limit(void)
     vm_free(&v);
 }
 
+/* js_trigger_gc_block, before one large block of a built-in: with the block
+   under the memory limit it collects nothing (a page that fits runs the
+   collections it ran before), with garbage in cycles in the way it collects
+   and the block is made, and a threshold of -1 turns it off as it does the
+   collections of js_trigger_gc. The setup of a case runs before the garbage
+   is made, so that the collection counted is the one of the operation. */
+static void test_gc_block(void)
+{
+    static const struct {
+        const char *setup, *op;
+    } ops[] = {
+        { NULL, "globalThis.r = 'x'.repeat(4 << 20); 0" },
+        { NULL, "globalThis.r = ''.padStart(4 << 20, 'x'); 0" },
+        /* a filler of one wide character: the pad is wide */
+        { NULL, "globalThis.r = ''.padStart(2 << 20, '\\u0100'); 0" },
+        { NULL, "globalThis.r = new ArrayBuffer(4 << 20); 0" },
+        { NULL, "globalThis.r = new Float64Array(1 << 19); 0" },
+        { "globalThis.s = new ArrayBuffer(16, { maxByteLength: 8 << 20 }); 0", "s.resize(4 << 20); 0" },
+        { "globalThis.s = new ArrayBuffer(16); 0", "globalThis.r = s.transfer(4 << 20); 0" },
+        { NULL, "{ const a = []; for (let i = 0; i < 1 << 18; i++) a.push(i * 0.5); globalThis.r = a } 0" },
+        { NULL, "{ const a = []; for (let i = 0; i < 1 << 18; i++) a[i] = i * 0.5; globalThis.r = a } 0" },
+        { "{ let p = 'y'.repeat(1 << 16), t = ''; for (let i = 0; i < 64; i++) t += p; globalThis.s = t } 0",
+          "globalThis.r = s.indexOf('z'); 0" },
+        { "{ const p = 'j'.repeat(1 << 16); globalThis.s = []; for (let i = 0; i < 64; i++) s.push(p + i) } 0",
+          "globalThis.r = s.join(''); 0" },
+        /* each element a join of its own, which ends before the outer
+           buffer grows */
+        { "{ const p = 'j'.repeat(1 << 16); globalThis.s = []; for (let i = 0; i < 64; i++) s.push([p, i]) } 0",
+          "globalThis.r = s.join(''); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.toSorted((a, b) => a - b); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.slice(); 0" },
+        { "{ globalThis.s = []; for (let i = 0; i < 1 << 18; i++) s.push(i) } 0", "globalThis.r = s.splice(0); 0" },
+    };
+    const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    size_t i;
+
+    for (i = 0; i < countof(ops); i++) {
+        VM v = vm_new();
+        unsigned long full;
+        size_t room;
+        int ok;
+
+        /* no limit: the block fits, and no collection runs */
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw with no limit", i);
+        CHECK(white_gc_run_count(0) == full, "op %zu with no limit ran %lu collections", i,
+              white_gc_run_count(0) - full);
+        vm_free(&v);
+
+        /* garbage in the way: the room fits the block with what the
+           garbage holds given back, and not without it */
+        v = vm_new();
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        room = JS_GetMemorySize(v.rt);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw", i);
+        room = JS_GetMemorySize(v.rt) - room + (1 << 20);
+        vm_free(&v);
+
+        v = vm_new();
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2);
+        full = white_gc_run_count(0);
+        ok = eval_ok(v.ctx, ops[i].op);
+        CHECK(ok, "op %zu ran out of memory with the garbage in the way", i);
+        CHECK(white_gc_run_count(0) > full, "op %zu ran no collection with the garbage in the way", i);
+        unlimit(&v);
+        vm_free(&v);
+
+        /* a threshold of -1: no collection, and out of memory */
+        v = vm_new();
+        JS_SetGCThreshold(v.rt, (size_t)-1);
+        if (ops[i].setup)
+            CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + room / 2);
+        full = white_gc_run_count(0);
+        {
+            JSValue r = JS_Eval(v.ctx, ops[i].op, strlen(ops[i].op), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            char *t = exception_text(v.ctx);
+
+            CHECK(JS_IsException(r) && t && (strstr(t, "out of memory") || strcmp(t, "null") == 0), "op %zu with the collections off: %s", i,
+                  t ? t : "no exception");
+            free(t);
+            JS_FreeValue(v.ctx, r);
+        }
+        CHECK(white_gc_run_count(0) == full, "op %zu collected with a threshold of -1", i);
+        unlimit(&v);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        vm_free(&v);
+    }
+}
+
+/* js_trigger_gc_block counts what the heap gains, as the allocator does: a
+   block that grows counts only its growth, and a rope already made flat
+   counts nothing. Near the limit, with no garbage, steps that fit run no
+   collection. */
+static void test_gc_block_fits(void)
+{
+    static const struct {
+        const char *setup, *op;
+    } ops[] = {
+        { "globalThis.s = new ArrayBuffer(4 << 20, { maxByteLength: 8 << 20 }); 0",
+          "for (let i = 1; i <= 16; i++) s.resize((4 << 20) + i * 4096); 0" },
+        { "{ let p = 'y'.repeat(1 << 16), t = ''; for (let i = 0; i < 64; i++) t += p; globalThis.s = t; t.indexOf('z') } 0",
+          "for (let i = 0; i < 16; i++) s.indexOf('z'); 0" },
+    };
+    size_t i;
+
+    for (i = 0; i < countof(ops); i++) {
+        VM v = vm_new();
+        unsigned long full;
+
+        CHECK(eval_ok(v.ctx, ops[i].setup), "the setup of op %zu threw", i);
+        JS_RunGC(v.rt);
+        JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+        JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (1 << 20));
+        full = white_gc_run_count(0);
+        CHECK(eval_ok(v.ctx, ops[i].op), "op %zu threw", i);
+        CHECK(white_gc_run_count(0) == full, "op %zu ran %lu collections with no garbage", i,
+              white_gc_run_count(0) - full);
+        unlimit(&v);
+        vm_free(&v);
+    }
+}
+
+/* The buffer of join made 16 bits wide where it is, with room left
+   (string_buffer_widen): the narrow buffer grows to 1.5 Mi characters for
+   1.25 Mi of them, which takes 1.5 MiB of room, and its wide copy takes
+   3 MiB, 1.5 MiB more than the narrow one. With 2.25 MiB of room and the
+   garbage in the way, the narrow buffer fits and the wide one collects
+   first. */
+static void test_gc_block_widen(void)
+{
+    const char *garbage = "for (let i = 0; i < 120000; i++) { const a = { x: [1, 2, 3] }, b = { a }; a.b = b } 0";
+    VM v = vm_new();
+    unsigned long full;
+
+    CHECK(eval_ok(v.ctx, "globalThis.s = ['j'.repeat(1 << 20), 'j'.repeat(1 << 18), '\\u0100']; 0"), "the setup threw");
+    JS_RunGC(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)1 << 40);
+    CHECK(eval_ok(v.ctx, garbage), "the garbage threw");
+    JS_SetMemoryLimit(v.rt, JS_GetMemorySize(v.rt) + (9 << 18));
+    full = white_gc_run_count(0);
+    CHECK(eval_ok(v.ctx, "globalThis.r = s.join(''); r.length"), "the join made wide ran out of memory");
+    CHECK(white_gc_run_count(0) > full, "the join made wide ran no collection");
+    unlimit(&v);
+    vm_free(&v);
+}
+
 /* js_closure2 gives a function its block of closure variables once every
    entry is written, as it does not zero the block: a collection in the
    middle reads none of it. A script of 17 global definitions, the last of
@@ -4292,6 +4736,57 @@ static void test_string_append_atom(void)
         JS_FreeValue(v.ctx, set);
         JS_FreeValue(v.ctx, holder);
         JS_FreeValue(v.ctx, g);
+        vm_free(&v);
+    }
+}
+
+/* An empty string on the left of + gives the string on the right, not a copy
+   of it, whichever way the add is made. The string is then shared, so an
+   append to the result must leave the operand as it was. */
+static void test_string_empty_left(void)
+{
+    static const struct {
+        const char *what, *src;
+    } ways[] = {
+        { "add", "s => '' + s" },
+        { "add of a local", "s => { let e = ''; return e + s }" },
+        { "add into a local", "s => { let t = ''; t = t + s; return t }" },
+        { "concat", "s => ''.concat(s)" },
+        { "template", "s => `${s}`" },
+    };
+    static const char *appends[] = {
+        /* add_loc, in place when the local holds the only reference */
+        "(s => { let t = '' + s; t += '!'; return [s, t] })",
+        /* an add into a local, in place when the string has two references */
+        "(s => { let t = '' + s; for (let i = 0; i < 3; i++) t = t + '!'; return [s, t] })",
+    };
+    /* longer than JS_STRING_APPEND_MIN and in a block with room */
+    static const char text[] = "a string of more than sixty-four characters, kept in a variable of the test ";
+    size_t i;
+
+    /* JS_STRING_APPEND_MIN of quickjs.c */
+    CHECK(strlen(text) >= 64, "the text is too short to be appended to in place");
+    for (i = 0; i < countof(ways); i++) {
+        VM v = vm_new();
+        JSValue f = JS_Eval(v.ctx, ways[i].src, strlen(ways[i].src), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        JSValue s = JS_NewString(v.ctx, text), r;
+
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 1, &s);
+        CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_STRING, "%s: gave no string", ways[i].what);
+        if (JS_VALUE_GET_TAG(r) == JS_TAG_STRING)
+            CHECK(JS_VALUE_GET_PTR(r) == JS_VALUE_GET_PTR(s), "%s: copied the string", ways[i].what);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+    for (i = 0; i < countof(appends); i++) {
+        VM v = vm_new();
+        char src[512], want[256];
+
+        snprintf(src, sizeof src, "var r = %s(['%s'].join('')); r[0] + '|' + r[1]", appends[i], text);
+        snprintf(want, sizeof want, "%s|%s%s", text, text, i == 0 ? "!" : "!!!");
+        CHECK(eval_is(v.ctx, src, want), "append %zu: the operand changed", i);
         vm_free(&v);
     }
 }
@@ -6585,11 +7080,15 @@ int main(int argc, char **argv)
     test_poll_work_gaps();
     test_tag_work_gaps();
     test_buffer_copy_work();
+    test_copy_poll_work();
     test_buffer_limit();
     test_object_inline_limit();
     test_object_lit_shared_shape();
+    test_object_rest_cache();
+    test_object_spread_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
+    test_key_atom();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_gc_in_free();
@@ -6610,6 +7109,9 @@ int main(int argc, char **argv)
     test_capture_by_value();
     test_closure_var_limit();
     test_closure_gc_in_build();
+    test_gc_block();
+    test_gc_block_fits();
+    test_gc_block_widen();
     test_by_value_file();
     test_by_value_oom();
     test_short_opcode_index();
@@ -6617,6 +7119,7 @@ int main(int argc, char **argv)
     test_added_vars_oom();
     test_string_append_flat();
     test_string_append_atom();
+    test_string_empty_left();
     test_own_keys_flags();
     test_shared_debug_read();
     test_regexp_cache_keeps();

@@ -16,15 +16,17 @@
 #
 #   engine/test/cycles.sh [LLVM_BIN]
 #
-# LLVM_BIN is the folder of clang and llvm-link, /usr/lib/llvm-22/bin by
-# default as for the generator. The module and the list are in
-# engine/test/out/cycles/.
+# LLVM_BIN is the folder of clang and llvm-link. Without it, scripts/llvm-bin.sh
+# finds LLVM 22.1.8 as for the generator (LLVM_BIN of the environment, the Linux
+# folder, the Homebrew folders), and stops with what to install when it is not
+# there. The module and the list are in engine/test/out/cycles/.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 engine=$(dirname "$here")
 root=$(dirname "$engine")
-llvm=${1:-/usr/lib/llvm-22/bin}
+llvm=${1:-}
+[ -n "$llvm" ] || llvm=$("$here/../../scripts/llvm-bin.sh")
 out=$here/out/cycles
 rm -rf "$out"
 mkdir -p "$out"

@@ -8,6 +8,7 @@
 package cengine
 
 import (
+	"fmt"
 	"sync"
 	"weak"
 
@@ -59,4 +60,13 @@ func teardowns(v *VM) int {
 	teardownMu.Lock()
 	defer teardownMu.Unlock()
 	return teardownCounts[weak.Make(v)]
+}
+
+// CheckSP panics when sp, a shadow pointer the host passes the engine or the
+// engine passes the host, is not on SPAlign: every one comes from AlignSP
+// (hooks.go has the normal one, which does nothing).
+func CheckSP(sp uintptr) {
+	if sp%SPAlign != 0 {
+		panic(fmt.Sprintf("cengine: a shadow pointer %#x not on %d bytes", sp, SPAlign))
+	}
 }

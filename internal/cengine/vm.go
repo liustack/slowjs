@@ -161,7 +161,7 @@ func New(o Options) (_ *VM, err error) {
 		}
 	}()
 	base, _ := h.Stack()
-	v := &VM{h: h, base: base, sp: base + scratchSize}
+	v := &VM{h: h, base: base, sp: AlignSP(base + scratchSize)}
 	v.enter(func() { v.rt = JS_NewRuntime(v.sp, uintptr(h.ID()), uintptr(o.Seed)) })
 	if v.rt == 0 {
 		// The engine gave back what it had: the host unmaps the chunks.
@@ -202,12 +202,14 @@ func (v *VM) Host() *gohost.VM { return v.h }
 // never kills (gohost.VM.Enter). A panic or a Goexit that leaves through the
 // engine's frames leaves the VM broken.
 func (v *VM) enter(f func()) {
+	CheckSP(v.sp)
 	v.h.Enter()
 	v.run(f)
 }
 
 // enterScript is enter for f that runs a script, with the timeout of the VM.
 func (v *VM) enterScript(f func()) {
+	CheckSP(v.sp)
 	v.h.EnterScript(v.timeout)
 	v.run(f)
 }

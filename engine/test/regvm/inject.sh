@@ -252,12 +252,12 @@ for sc in $scripts; do
 	hits=$work/$base.hits
 	rm -f "$hits"
 	out=$work/$base.diffs
-	find "$work" -name "$base-*.gline" -exec rm -f {} +
+	find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 	# shellcheck disable=SC2086
 	printf '%s\n' $ns | xargs -P "$jobs" -I{} "$self" -golden "$golden" ${update:+-update} -one "$dir" {} "$sc" > "$out" || true
 	if [ -n "$update" ]; then
-		find "$work" -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$golden/$base.txt"
-		find "$work" -name "$base-*.gline" -exec rm -f {} +
+		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$golden/$base.txt"
+		find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places"
 	fi
 	# the places the script says a run must throw at: "// inject-hit: NAME P"

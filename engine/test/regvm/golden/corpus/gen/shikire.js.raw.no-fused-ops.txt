@@ -551,6 +551,6 @@ result 548 /dgv 155 1232174535
 result 549 /dgv 44 283468026
 result 550 /dgv 42 -1561300265
 result 551 /dgv 3278 1006072137
-mem-end obj=756 atom=1127 shape=126 prop=2100 jsfunc=2 cfunc=131 array=8 fast_array=8 elements=1269 binary=0
-mem-gc obj=756 atom=1127 shape=126 prop=2100 jsfunc=2 cfunc=131 array=8 fast_array=8 elements=1269 binary=0
+mem-end obj=756 atom=1128 shape=126 prop=2100 jsfunc=2 cfunc=131 array=8 fast_array=8 elements=1269 binary=0
+mem-gc obj=756 atom=1128 shape=126 prop=2100 jsfunc=2 cfunc=131 array=8 fast_array=8 elements=1269 binary=0
 --- status exit 0

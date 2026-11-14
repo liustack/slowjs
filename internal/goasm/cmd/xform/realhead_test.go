@@ -82,18 +82,18 @@ func TestHeadMatchesEveryGeneratedFunctionOnce(t *testing.T) {
 
 func TestFrontOnGeneratedHead(t *testing.T) {
 	d := copyEngine(t)
-	file, before := engineFile(t, d, "JS_RegvmRun_block")
+	file, before := engineFile(t, d, "JS_RegvmRun")
 	// The interpreter keeps a pool that XORPD reads after its code: a front
 	// that is not a multiple of 16 would take it off its 16 bytes.
-	if err := apply(d, []string{"front:JS_RegvmRun_block:8"}); err == nil || !strings.Contains(err.Error(), "multiple of 16") {
+	if err := apply(d, []string{"front:JS_RegvmRun:8"}); err == nil || !strings.Contains(err.Error(), "multiple of 16") {
 		t.Fatalf("a front of 8 on the interpreter: %v", err)
 	}
 	if read(t, d, file) != before {
 		t.Fatal("a refused front changed the file")
 	}
-	run(t, d, "front:JS_RegvmRun_block:16")
+	run(t, d, "front:JS_RegvmRun:16")
 	after := read(t, d, file)
-	i := strings.Index(before, "TEXT ·JS_RegvmRun_block(SB)")
+	i := strings.Index(before, "TEXT ·JS_RegvmRun(SB)")
 	j := strings.Index(before[i:], "\tPCALIGN $")
 	k := i + j + strings.Index(before[i+j:], "\n") + 1 // the line after the PCALIGN
 	want := before[:k] + nopBytes(16) + before[k:]
@@ -108,19 +108,19 @@ func TestFrontOnGeneratedHead(t *testing.T) {
 
 func TestBodyOnGeneratedHead(t *testing.T) {
 	d := copyEngine(t)
-	file, before := engineFile(t, d, "JS_RegvmRun_block")
-	run(t, d, "body:128:JS_RegvmRun_block")
+	file, before := engineFile(t, d, "JS_RegvmRun")
+	run(t, d, "body:128:JS_RegvmRun")
 	after := read(t, d, file)
 	if strings.Count(after, "PCALIGN $128") != 1 {
 		t.Fatalf("want one PCALIGN $128, got %d", strings.Count(after, "PCALIGN $128"))
 	}
-	i := strings.Index(after, "TEXT ·JS_RegvmRun_block(SB)")
+	i := strings.Index(after, "TEXT ·JS_RegvmRun(SB)")
 	if !strings.Contains(after[i:i+400], "#endif\n\tPCALIGN $128\n") {
 		t.Fatal("the PCALIGN of the body was not replaced in place")
 	}
 	// the PCALIGN of the body as the generator wrote it: $64 with -align64,
 	// $16 without
-	j := strings.Index(before, "TEXT ·JS_RegvmRun_block(SB)")
+	j := strings.Index(before, "TEXT ·JS_RegvmRun(SB)")
 	was := regexp.MustCompile(`#endif\n\tPCALIGN (\$\d+)\n`).FindStringSubmatch(before[j : j+400])
 	if was == nil {
 		t.Fatal("no PCALIGN of the body after the room check")

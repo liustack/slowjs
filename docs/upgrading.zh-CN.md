@@ -37,7 +37,8 @@ git fetch quickjs
 3. 写一个没有这个提交就失败、有了就通过的测试，放在 `engine/test/` 里（`engine/test/compare/` 里的一个脚本加它的输出，或者 `unit.c`、`unit-oom.c` 或 `unit-white.c` 里的一个检查），如 [testing.md](testing.zh-CN.md#c-树和它的原生测试宿主) 所述。
 4. 运行 `make check-fast`，为两种架构重新生成引擎（`make gen`、`make gen ARCH=arm64`，见 [testing.md](testing.zh-CN.md#生成并检查)），并把 C、测试和生成的文件一起提交，提交信息里写明上游的提交。
 5. 一批改动做完时，运行 `make check-full`。test262 的已知错误（33 个）必须逐行保持不变，除非这个提交修好了其中一些。那就更新 `engine/test/test262_errors.txt` 并说明。
-6. 按 [performance.md](performance.zh-CN.md#数字是怎么测的) 所说测量它，在 [changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 里加一行，用户能看到时在两份更新记录里各加一行。
+6. 看 `make check-full` 打印的 profile 行。某个提交改了 `JS_RegvmRun`，或改了超过 30 个函数时，重新训练性能画像（[releasing.md](releasing.zh-CN.md#性能画像)），和生成的文件一起提交。
+7. 按 [performance.md](performance.zh-CN.md#数字是怎么测的) 所说测量它，在 [changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 里加一行，用户能看到时在两份更新记录里各加一行。
 
 寄存器循环（`engine/regvm.h`）的窗口操作运行上游解释器的处理函数：每个的主体是 `engine/regvm-bodies.h` 里的宏 `OP_BODY_<op>`，取自上游 `JS_CallInternal` 里这个操作的 `CASE`。提交改动了这类操作的 `CASE` 时，用同样的方式改它的 `OP_BODY_<op>`。这些主体调用的几个函数在 `engine/regvm-ops-window.h` 里有一份副本，每份都写明了原函数。提交改动了其中某个函数时，用同样的方式改它的副本。
 
@@ -108,7 +109,7 @@ go test -short -p 2 ./intl/... ./temporal/...
 
 格式化器读到的字节从不能写：不压缩的块是二进制的只读数据，写了会出错，解压后的块被进程里的每个格式化器和 VM 共用。把这样的字节交给 JS 的代码，比如作为 `ArrayBuffer` 之类，要先复制它们。
 
-`make gointl` 运行 `go test ./...` 不跑的检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建，以及 `qjsdata/` 就是 go-intl 的数据加上下面的时区所得的结果。
+`make gointl` 运行 `go test ./...` 不跑的检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建，以及 `qjsdata/` 里放的就是 go-intl 的数据加上下面的时区所得的内容。这项检查比较文件和解压后的字节，不比较压缩后的字节，因为压缩后的字节取决于压缩它的 Go 版本：换一个 Go 运行 `data.sh pack` 可能写出别的字节，检查在所有版本上都能通过。
 
 ### 时区
 

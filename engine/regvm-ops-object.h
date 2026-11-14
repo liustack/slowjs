@@ -216,6 +216,70 @@ static inline BOOL rv_ta_num(int class_id)
         class_id != JS_CLASS_BIG_INT64_ARRAY && class_id != JS_CLASS_BIG_UINT64_ARRAY;
 }
 
+/* GETEL of an object by a string key, ip at d o key|k, read as GETF reads
+   a named property when the key is a string atom JS_ValueToAtom takes as
+   its own atom (an atom of the type string, not empty, not starting with a
+   digit, so never an index: see JS_ValueToAtom): a plain data property of o
+   or of an object on its chain of prototypes, or undefined at the end of
+   the chain. Then the result is put in d, a key in a temp freed, o too for
+   the T forms, and it gives TRUE. It gives FALSE with nothing done for any
+   other key, and when the walk meets anything else (an accessor, a closure
+   variable of the global object, a property made on first use, the stack
+   of an error, an exotic object that is not a fast array GETF passes):
+   rv_getel_slow then reads it from the start. No code runs before the
+   result is taken, so the key, which its slot keeps alive, keeps its atom
+   alive without a reference of its own. It is a function of its own, so
+   that the frame of rv_getel_slow, which a getter it calls sits on, does
+   not grow. It tests the tags of o and the key itself, so that the loop
+   keeps neither live past its fast paths: a test there made the loop
+   keep them in registers on the path of an array element too. The loop
+   calls it before RV_SYNC_TOP, as it frees a T object on its array path
+   without it: nothing here runs code or collects, and freeing a value
+   does neither. */
+static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                    BOOL k, BOOL t)
+{
+    JSValue obj = F[(int8_t)ip[1]], key, val;
+    JSObject *p;
+    JSAtom atom;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    key = k ? ((RVHeader *)F)->k[ip[2]] : F[(int8_t)ip[2]];
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
+        return FALSE;
+    /* the test of the key and its atom in one read (JSString.key_atom) */
+    atom = JS_VALUE_GET_STRING(key)->key_atom;
+    if (atom == JS_ATOM_NULL)
+        return FALSE;
+    p = JS_VALUE_GET_OBJ(obj);
+    for (;;) {
+        prs = find_own_property(&pr, p, atom);
+        if (prs) {
+            if (unlikely(prs->flags & JS_PROP_TMASK))
+                return FALSE;
+            if (atom == JS_ATOM_stack &&
+                JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_OBJECT)
+                return FALSE;
+            val = JS_DupValue(ctx, pr->u.value);
+            break;
+        }
+        if (unlikely(p->is_exotic) && !goasm_field_goes_on(p, atom))
+            return FALSE;
+        p = p->shape->proto;
+        if (!p) {
+            val = JS_UNDEFINED;
+            break;
+        }
+    }
+    if (!k && rv_is_temp(F, (int8_t)ip[2]))
+        JS_FreeValue(ctx, key);
+    if (t)
+        JS_FreeValue(ctx, obj);
+    rv_put(ctx, F, (int8_t)ip[0], val);
+    return TRUE;
+}
+
 /* the slow side of GETEL, ip at d o key|k, as the slow path of
    QuickJS's get_array_el: a key in a temp is freed, o too for the T
    forms */
@@ -286,6 +350,35 @@ static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     return 0;
 }
 
+/* rv_putel_slow when the element one past the end of a fast array takes
+   more room than the array has: a full collection first when that room would
+   pass the memory limit (js_trigger_gc_block), then the slow path of
+   rv_putel_slow. The elements grow in JS_SetPropertyValue, which may call a
+   setter, and o, the key and v are in the frame. It is a function of its own,
+   which rv_putel_slow calls last, so that the paths that do not grow the
+   array are the code they were. */
+static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
+    JSObject *p = JS_VALUE_GET_OBJ(obj);
+    uint32_t new_len = JS_VALUE_GET_INT(key) + 1;
+    uint32_t size = p->u.array.u1.size;
+    int ret;
+
+    /* the growth of the block of elements (expand_fast_array) */
+    js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
+                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+    /* the slow path and the end of rv_putel_slow. The key is an int, which
+       JS_SetPropertyValue frees as nothing, so the key in a local needs no
+       JS_SetPropertyValueConst, which rv_putel_slow alone calls and so keeps
+       inline. */
+    ret = JS_SetPropertyValue(ctx, obj, key, rv_take(ctx, F, (int8_t)ip[2]),
+                              rv_throw_flags(F));
+    if (rv_is_temp(F, (int8_t)ip[0]))
+        JS_FreeValue(ctx, obj);
+    return ret < 0 ? -1 : 0;
+}
+
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
    QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
    are taken, a temp o freed. */
@@ -313,12 +406,13 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
                      !p->fast_array ||
                      !can_extend_fast_array(p)))
             goto slow_path;
-        if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
+        /* the length of an array is an int below 2^31 */
+        if (unlikely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
             goto slow_path;
         /* cannot overflow otherwise the length would not be an integer */
         new_len = idx + 1;
         if (unlikely(new_len > p->u.array.u1.size))
-            goto slow_path;
+            return rv_putel_grow(ctx, F, ip);
         array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
         if (new_len > array_len) {
             if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
@@ -517,7 +611,8 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 }
 #elif RV_PART == RV_PART_RUN
     /* get_array_el: an element of a fast array here, as QuickJS's
-       GET_ARRAY_EL_INLINE, the rest in rv_getel_slow */
+       GET_ARRAY_EL_INLINE, a string key that is its own atom in
+       rv_getel_atom, the rest in rv_getel_slow */
 #define RV_GETEL(label, kexpr, isk, temp)                               \
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
@@ -544,6 +639,8 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
                 }                                                       \
             }                                                           \
         }                                                               \
+        if (!RV_INJ_ARMED && rv_getel_atom(ctx, F, ip, isk, temp))     \
+            RV_NEXT();                                                  \
         RV_SYNC_TOP();                                                  \
         if (rv_getel_slow(ctx, F, ip, isk, temp))                       \
             goto rv_exception;                                          \

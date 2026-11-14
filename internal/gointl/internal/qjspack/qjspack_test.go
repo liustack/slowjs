@@ -7,12 +7,104 @@ package qjspack
 
 import (
 	"bytes"
+	"compress/flate"
+	"encoding/binary"
 	"errors"
 	"io/fs"
 	"strings"
 	"sync"
 	"testing"
 )
+
+// A pack compressed by another encoder is the same data: Go releases differ
+// in how DEFLATE encodes, and the check of qjsdata must not.
+func TestSameIgnoresHowAChunkIsCompressed(t *testing.T) {
+	chunks := testChunks()
+	a, err := Build(chunks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := rebuildWithLevel(t, chunks, flate.BestSpeed)
+	if bytes.Equal(a, b) {
+		t.Fatal("the two encoders give the same bytes: the test shows nothing")
+	}
+	if err := Same(a, b); err != nil {
+		t.Errorf("Same: %v", err)
+	}
+	if err := Same(a, a); err != nil {
+		t.Errorf("Same of a pack with itself: %v", err)
+	}
+}
+
+func TestSameSeesADifferenceInTheData(t *testing.T) {
+	base := testChunks()
+	a, err := Build(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func([]Chunk){
+		"a byte of a compressed file": func(c []Chunk) { c[0].Files[1].Data = []byte("fr numbers!") },
+		"a byte of a stored file":     func(c []Chunk) { c[1].Files[0].Data = []byte("stored as it is") },
+		"a name":                      func(c []Chunk) { c[1].Files[0].Name = "likelysubtags2.bin" },
+		"the method of a chunk":       func(c []Chunk) { c[2].Deflate = false },
+		"a file moved to another chunk": func(c []Chunk) {
+			c[1].Files = append(c[1].Files, c[2].Files[0])
+			c[2].Files = nil
+		},
+	} {
+		chunks := testChunks()
+		mutate(chunks)
+		b, err := Build(chunks)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Same(a, b); err == nil {
+			t.Errorf("Same does not see %s", name)
+		}
+		if err := Same(b, rebuildWithLevel(t, chunks, flate.BestSpeed)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// rebuildWithLevel builds a pack as Build does, with another DEFLATE level, by
+// building it with Build and putting each compressed chunk back in at the level.
+func rebuildWithLevel(t *testing.T, chunks []Chunk, level int) []byte {
+	t.Helper()
+	b, err := Build(chunks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Open(string(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The data of the chunks after the names, recompressed one by one.
+	var data []byte
+	out := append([]byte(nil), b[:headerSize+fileSize*p.nfiles+chunkSize*len(p.chunks)]...)
+	_, _, firstStart, _ := p.chunk(0)
+	out = append(out, b[len(out):firstStart]...)
+	for i := range p.chunks {
+		method, _, start, end := p.chunk(i)
+		d := []byte(b[start:end])
+		if method == deflate {
+			raw, err := p.inflate(i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var buf bytes.Buffer
+			w, _ := flate.NewWriter(&buf, level)
+			w.Write(raw)
+			w.Close()
+			d = buf.Bytes()
+		}
+		at := headerSize + fileSize*p.nfiles + chunkSize*i
+		binary.LittleEndian.PutUint32(out[at+8:], uint32(firstStart+len(data)))
+		binary.LittleEndian.PutUint32(out[at+12:], uint32(firstStart+len(data)+len(d)))
+		data = append(data, d...)
+	}
+	return append(out, data...)
+}
 
 func testChunks() []Chunk {
 	return []Chunk{

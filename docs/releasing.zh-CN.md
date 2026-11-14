@@ -26,8 +26,31 @@ read_when:
 2. 每个改动都写在 [changes](changes/README.zh-CN.md) 下对应领域的文档里，并在索引里有一行，为速度做的改动还写在 [performance.md](performance.zh-CN.md) 里。
 3. [CHANGELOG.md](../CHANGELOG.zh-CN.md) 和 [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) 写明这个分支对用户改变了什么。分支的最后一个提交把它放到新版本号和日期之下（`docs(changelog): release <version>`），这样你要打标签的合并提交里就带着它。
 4. 在 [changes](changes/README.zh-CN.md) 里，这个版本的改动仍写着"Unreleased"。在索引的表格里和每个领域文档的 `Release:` 行里，把它换成新版本号（`grep -rn Unreleased docs/changes`，"Adding a change"下面的那句话不用管），和更新记录放在同一个最后的提交里。没有别的东西会做这件事，打了标签之后仍写着"Unreleased"的一行，从那时起就是错的。
+5. 性能画像在要紧的地方没有过期：见下面的[性能画像](#性能画像)。
 
 然后用合并提交把它合并进 `main`，信息是 `merge: <分支做了什么>`（见 [commit.md](commit.zh-CN.md#分支和合并)）。
+
+## 性能画像
+
+引擎用一份页面渲染的性能画像（profile）生成（`engine/pgo/profile.txt`，见 [engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md)）。训练之后 C 代码改过的函数没有可用的画像，编译时就像没有画像一样。引擎的其余部分仍保有收益。所以旧画像只会丢掉一部分收益，其他都不会坏。
+
+`make check-full` 会打印这份清单：生成器以 `warning: profile:`、`profile:` 和 `profile ` 开头的行，每个架构各一份，在 `gen` 步骤的输出里。`scripts/check-gen.sh` 单独运行也打印同样的行。发布前读一遍：
+
+- 清单里有 `JS_RegvmRun` 就重新训练。它是寄存器解释器，没有它的画像只剩 60% 到 80% 的收益（在 tifa 的页面上测得）。
+- 生成器说超过 30 个函数的 C 改过，就重新训练。画像已经旧了。
+- 清单上只有几个别的函数，不用处理。想把它们的收益拿回来时再训练。
+
+重新训练，在装有 LLVM 22.1.8 的机器上：
+
+```sh
+engine/pgo/train.sh
+make gen && make gen ARCH=arm64
+git add engine/pgo/profile.txt internal/cengine
+make check-gen
+git commit -m "build(pgo): train the profile again"
+```
+
+新画像和它改动的文件放进同一个提交。然后再跑一次 `make check-gen`：不应再有 `warning: profile:` 开头的行（说 `likely()` 的那行 `profile:` 是提示，不是警告）。取入上游 QuickJS 的提交之后（[upgrading.md](upgrading.zh-CN.md)），以及换了 LLVM 版本之后（画像格式不同），也要重新训练。
 
 ## 打标签
 

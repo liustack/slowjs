@@ -211,15 +211,27 @@ func TestCheckARM64Rodata(t *testing.T) {
 		binary.LittleEndian.PutUint64(b[16:], gAt)
 		return b
 	}
-	check := func(b []byte) error {
+	g := []Meta{{Name: "g", Kind: Unified}}
+	checkAs := func(b []byte, metas, stubs []Meta) error {
 		bin := &binFile{format: "ELF", secs: []*binSec{{name: "rodata", addr: rodata, size: uint64(len(b)), data: b}},
 			syms: map[string]binSym{"p.g.abi0": {Value: gAt}, "p." + RodataGo: {Value: rodata, Size: uint64(len(b))}}}
-		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan}, bin: bin, rodata: rodata}
+		k := &a64Checker{c: EngineCheck{Pkg: "p", Names: NameMap{"g": "g"}, Plan: plan, Metas: metas, Stubs: stubs}, bin: bin, rodata: rodata}
 		_, err := k.checkRodata()
 		return err
 	}
+	check := func(b []byte) error { return checkAs(b, g, nil) }
 	if err := check(made()); err != nil {
 		t.Fatalf("engine_rodata as made: %v", err)
+	}
+	// A function pointer may hold a lowered unified function or a stub,
+	// and nothing else: not Go code (a host callback) and not a leaf.
+	if err := checkAs(made(), nil, g); err != nil {
+		t.Fatalf("a pointer to a stub: %v", err)
+	}
+	for name, metas := range map[string][]Meta{"Go code": nil, "a leaf": {{Name: "g", Kind: Register}}} {
+		if err := checkAs(made(), metas, nil); err == nil || !strings.Contains(err.Error(), "no lowered unified function") {
+			t.Errorf("a pointer to %s: %v", name, err)
+		}
 	}
 	for name, c := range map[string]struct {
 		at   int
@@ -353,10 +365,16 @@ func TestCheckARM64BodyPlace(t *testing.T) {
 // result back from 16(RSP) when load is set. The check is told g is a
 // lowered unified function, which it holds to its return sequence.
 func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
+	return a64CallCaseStore(regResult, load, true)
+}
+
+// a64CallCaseStore is a64CallCase, where f stores its result only if store
+// (FuncRecord.NoResult otherwise).
+func a64CallCaseStore(regResult, load, store bool) (*a64Checker, Meta, []uint32) {
 	const base, gAt, morestack = 0x1000, 0x8000, 0x9000
 	sig := Sig{Params: []Type{I64}, Ret: I64}
 	m := Meta{Name: "f", Kind: Unified, Frame: 40, ArgBytes: 16,
-		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g", Sig: sig, RegResult: regResult}}}}
+		Rec: &FuncRecord{Name: "f", Sig: sig, Calls: []CallRecord{{Kind: CallUnified, Target: "g", Sig: sig, RegResult: regResult}}, NoResult: !store}}
 	g := Meta{Name: "g", Kind: Unified, Rec: &FuncRecord{Name: "g", Sig: sig}}
 	// The object: str x20, [sp, #8]; bl go_g; ldr x0, [sp, #16].
 	obj := []uint32{0xf9000000 | 1<<10 | 31<<5 | 20, 0x94000000}
@@ -377,7 +395,10 @@ func a64CallCase(regResult, load bool) (*a64Checker, Meta, []uint32) {
 	at := func() uint64 { return base + uint64(4*len(w)) }
 	w = append(w, obj[0], a64BL(at()+4, gAt))
 	w = append(w, obj[2:]...)
-	w = append(w, 0xf9000000|10<<10|31<<5|0, a64LoadFP, 0xf84407fe, a64Ret)
+	if store {
+		w = append(w, 0xf9000000|10<<10|31<<5|0)
+	}
+	w = append(w, a64LoadFP, 0xf84407fe, a64Ret)
 	w[2] = 0x54000009 | uint32(len(w)-2)<<5
 	w = append(w, a64MovX3LR, a64BL(at()+4, morestack))
 	w = append(w, a64B(at(), base))
@@ -489,5 +510,150 @@ func TestCheckARM64HostPoll(t *testing.T) {
 	delete(k.bin.syms, "p.host_poll")
 	if err := k.checkHostPoll(); err == nil || !strings.Contains(err.Error(), "not in the binary") {
 		t.Errorf("host_poll absent: %v", err)
+	}
+}
+
+// TestCheckARM64FunctionPointer: the code may take the address of a lowered
+// unified function or a stub (a call through the pointer takes its result
+// from registers), and of nothing else: not Go code, a host callback, and
+// not a register-entry leaf.
+func TestCheckARM64FunctionPointer(t *testing.T) {
+	const gAt = 0x8000
+	run := func(metas, stubs []Meta, add int64) error {
+		k, m, w := a64CheckCase()
+		// adrp x8 and add x8 of go_g+add instead of engine_rodata+16.
+		k.o.relocs[8] = a64Reloc{elf.R_AARCH64_ADR_PREL_PG_HI21, "go_g", add}
+		k.o.relocs[12] = a64Reloc{elf.R_AARCH64_ADD_ABS_LO12_NC, "go_g", add}
+		w[10] = a64Adrp(0x1000+4*10, uint64(gAt+add), 8)
+		w[11] = 0x91000108 | uint32((gAt+add)&0xfff)<<10
+		k.c.Metas, k.c.Stubs = append([]Meta{m}, metas...), stubs
+		return k.function(m, 0x1000, a64Bytes(w))
+	}
+	g := []Meta{{Name: "g", Kind: Unified}}
+	if err := run(g, nil, 0); err != nil {
+		t.Fatalf("the address of a lowered unified function: %v", err)
+	}
+	if err := run(nil, g, 0); err != nil {
+		t.Fatalf("the address of a stub: %v", err)
+	}
+	for name, c := range map[string]struct {
+		metas []Meta
+		add   int64
+		want  string
+	}{
+		"Go code":           {nil, 0, "no lowered unified function"},
+		"a leaf":            {[]Meta{{Name: "g", Kind: Register}}, 0, "no lowered unified function"},
+		"inside a function": {g, 8, "inside a function"},
+	} {
+		if err := run(c.metas, nil, c.add); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("the address of %s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+// TestCheckARM64ICallRegResult: a call through a pointer takes its result
+// from x0, x1 or d0 where the record says so (every function a pointer can
+// hold is a lowered unified function, which stores its result from them),
+// and loads it back where the record says it does.
+func TestCheckARM64ICallRegResult(t *testing.T) {
+	for name, c := range map[string]struct {
+		regResult, load bool
+		want            string
+	}{
+		"load":                   {false, true, ""},
+		"from registers":         {true, false, ""},
+		"no load, none declared": {false, false, "no load of the result"},
+	} {
+		k, m, w := a64CallCase(c.regResult, c.load)
+		// blr x9 instead of bl go_g: the record has a call through x9.
+		m.Rec.Calls[0].Kind, m.Rec.Calls[0].Target = CallReg, "x9"
+		binary.LittleEndian.PutUint32(k.o.code[4:], a64BLRX9)
+		delete(k.o.relocs, 4)
+		w[9] = a64BLRX9
+		err := k.function(m, 0x1000, a64Bytes(w))
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+// TestCheckARM64NoResult: a function no Go code calls stores no result
+// (FuncRecord.NoResult), the record says which, and no call may load the
+// result of one back from the Go stack.
+func TestCheckARM64NoResult(t *testing.T) {
+	for name, c := range map[string]struct {
+		regResult, load, store bool
+		edit                   func(k *a64Checker, m *Meta)
+		want                   string
+	}{
+		"stores none":                         {true, false, false, nil, ""},
+		"stores none, the record says stores": {true, false, false, func(k *a64Checker, m *Meta) { m.Rec.NoResult = false }, "result store 0"},
+		"stores, the record says none":        {true, false, true, func(k *a64Checker, m *Meta) { m.Rec.NoResult = true }, "unknown epilogue"},
+		"a load of g, which stores none": {false, true, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+		}, "loads the result of g from the Go stack, where g stores none"},
+		"g from registers, which stores none": {true, false, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+		}, ""},
+		"a load through a register where one stores none": {false, true, true, func(k *a64Checker, m *Meta) {
+			k.c.Metas[1].Rec.NoResult = true
+			m.Rec.Calls[0].Kind, m.Rec.Calls[0].Target = CallReg, "x9"
+		}, "through a register loads its result from the Go stack"},
+	} {
+		k, m, w := a64CallCaseStore(c.regResult, c.load, c.store)
+		if c.edit != nil {
+			c.edit(k, &m)
+		}
+		if m.Rec.Calls[0].Kind == CallReg {
+			binary.LittleEndian.PutUint32(k.o.code[4:], a64BLRX9)
+			delete(k.o.relocs, 4)
+			w[9] = a64BLRX9
+		}
+		err := k.function(m, 0x1000, a64Bytes(w))
+		if c.want == "" && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
+	}
+}
+
+// TestCheckARM64Stub: a stub runs from Go's stack check straight on to the
+// call of goasmMissing, which never returns, and anything that could leave
+// it before that call is refused (a pointer may hold a stub).
+func TestCheckARM64Stub(t *testing.T) {
+	const base, miss, morestack = 0x1000, 0x7000, 0x9000
+	made := func() []uint32 {
+		return []uint32{a64StackGuard, a64CmpSPGuard, 0x54000009 | (9-2)<<5,
+			a64Nop, 0xd2800060, 0xf90007e0, a64BL(base+4*6, miss), a64Nop, a64Ret,
+			a64MovX3LR, a64BL(base+4*10, morestack), a64B(base+4*11, base)}
+	}
+	check := func(w []uint32) error {
+		k := &a64Checker{c: EngineCheck{Pkg: "p"}, bin: &binFile{syms: map[string]binSym{"p.goasmMissing.abi0": {Value: miss}}}, morestack: morestack}
+		return k.checkStub(Meta{Name: "s", Kind: Unified}, base, a64Bytes(w))
+	}
+	if err := check(made()); err != nil {
+		t.Fatalf("the stub as made: %v", err)
+	}
+	for name, c := range map[string]struct {
+		edit func(w []uint32)
+		want string
+	}{
+		"no stack check":            {func(w []uint32) { w[0] = a64Nop }, "no stack check"},
+		"a return before the call":  {func(w []uint32) { w[4] = a64Ret }, "before it calls goasmMissing"},
+		"a branch over the call":    {func(w []uint32) { w[4] = a64B(base+4*4, base+4*7) }, "before it calls goasmMissing"},
+		"a call of something else":  {func(w []uint32) { w[6] = a64BL(base+4*6, 0x8000) }, "before it calls goasmMissing"},
+		"no call":                   {func(w []uint32) { w[6], w[8] = a64Nop, a64Nop }, "does not call goasmMissing"},
+		"morestack jumps elsewhere": {func(w []uint32) { w[11] = a64B(base+4*11, base+4*4) }, "jump back to the start"},
+	} {
+		w := made()
+		c.edit(w)
+		if err := check(w); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want %q", name, err, c.want)
+		}
 	}
 }

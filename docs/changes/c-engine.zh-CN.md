@@ -233,12 +233,14 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 ### 影子栈的大小
 
-影子栈是 32 MiB（生成器的 `-shadow-size-log2=25`），在引擎生成时固定。一层调用占约 1.25 KB，加上函数的每个参数、局部变量和操作数槽位各 16 字节，所以引擎计数的每一层占 1.2 到 2.1 KB（中间有原生函数，如 `sort` 或 `map`，会多算一次自己的计数）。`TestShadowStackAtDepth` 和 `TestShadowStackInternalDepth` 测栈到达的最高点，方法是找最高的非零字：
+影子栈是 32 MiB（生成器的 `-shadow-size-log2=25`），在引擎生成时固定。一个 JavaScript 函数调用另一个，不占影子栈：寄存器解释器把这类调用的栈帧放在[寄存器栈](#寄存器栈)上，用的是 VM 的内存，所以函数的参数、局部变量和临时值不管有多少，都不再占影子栈。仍然占影子栈的是经过 C 的那一层：回调 JavaScript 的原生函数（`sort`、`map`、`apply`、getter 或 setter、`toString`、proxy 的陷阱、`eval`、生成器），超过 32 个参数的调用（参数用数组传，经 `OP_apply`），以及 C 自己的递归。`TestShadowStackAtDepth` 和 `TestShadowStackInternalDepth` 测栈到达的最高点，方法是找最高的非零字。下面是深度上限 10000 时在 linux/amd64 和 darwin/arm64 上量的（先写 amd64，括号里是 arm64）：
 
-- 深度上限 10000 时，局部变量少的函数用栈的 37% 到 62%。最多的是又一次排序的 `sort` 比较函数（20.7 MB，因为 `sort` 和比较函数各占一层）。有 100 个局部变量或参数的函数用 85%（28 MB）。有 250 个局部变量的函数到 6379 层深，下一个栈帧放不下，就在那里抛 `RangeError`。上限 5000 时用量减半。
-- C 的递归（解析器、JSON、正则解析器、`flat`、stringify）在内部深度 2000 层结束，用量不到 3%。一个由嵌套 100000 层的数组组成的字符串占 47%。
-- 渲染示例商店的 18 个页面，最多占 0.85 MiB（2.6%）。
-- 所以 32 MiB 够容纳深度上限 10000 且最多约 130 个槽位的任何函数，以及深度上限 5000 且约 340 个槽位的函数。更大的栈帧会在栈用完之前以 `RangeError` 结束，保护页从不会被碰到。把栈加到 64 MiB，只会把这两个数移到 340 和 760 个槽位，而且在 linux 和 darwin 上占地址空间，在 windows 上给每个 VM 占已提交内存。
+- JavaScript 调 JavaScript 的递归，不管栈帧什么样（普通调用、方法、`call`、绑定函数、`new`、标签模板、20 到 250 个局部变量、20 个参数、100 个操作数），在任何深度都只用 7 到 11 KB，也就是这次运行入口占的那些。有 250 个局部变量的函数能到深度上限。
+- 经过 C 的一层：100 个参数的调用占 419 字节（275），迭代器、getter、`toString`、`apply`、展开、proxy 陷阱或 `map` 约 450 到 610（390 到 580），setter、promise 的执行函数、生成器或 `toJSON` 737 到 881（544 到 833），`eval` 1,265（1,089），`replace` 的回调 1,713（1,393），又一次排序的 `sort` 比较函数 1,921（1,809）。最后这个最多：9.6 MB，占栈的 28.6%（27.0%），因为 `sort` 和比较函数各算一层。上限 5000 时用量减半。
+- C 的递归（解析器、JSON、正则解析器、`flat`、stringify、一串 proxy）在内部深度结束，用量不到 3%。一个由嵌套 100000 层的数组组成的字符串占 13.4%（14.3%）。
+- 所以深度上限 10000 让每个递归结束时都还剩 70% 以上的栈，保护页从不会被碰到。栈帧多大都放得下，因为栈帧在寄存器栈上。
+
+在 v0.30.1 及以前的栈式解释器下，每一层调用都占影子栈，约 1.25 KB，加上每个参数、局部变量和操作数槽位各 16 字节：深度上限 10000 时，局部变量少的函数用栈的 37% 到 62%，有 100 个局部变量的用 85%，有 250 个局部变量的在 6379 层停下，嵌套的字符串占 47%，渲染示例商店的 18 个页面最多占 0.85 MiB。这些数已经不适用了。
 
 ## 按名字读写参数和结果
 
@@ -281,7 +283,29 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 一个反向构建说明这个证明管用：`GEN_DROP_LR_PAIRS=1` 把和 x30 配对的另一个寄存器也一起删掉，构建在第一个把那个寄存器读回来的函数上停下。`GEN_DROP_LR_PAIRS=unchecked` 跳过证明，写出一个标明是反向构建的包，要加 `-tags goasmnegative` 才能编译，引擎的测试在它上面失败。`-release` 两个都拒绝。
 
-测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及活过一个标签、或放在寄存器入口叶子函数跨调用保留的寄存器里的元组地址。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
+测试：`TestLowerARM64EngineLR`（`internal/goasm/gen`）对 llc 写出的每种形式做 lowering（分配栈帧的一对、释放栈帧的读回、x30 在一对里的第一个或第二个、单独一个槽、不调用任何函数的函数），检查没有留下 x30、另一个寄存器的偏移不变、栈帧大小不变。`TestLowerARM64EngineLRRefused` 拒绝作为 w 寄存器的 x30、一对里两个都是 x30、算术里的 x30、栈帧自身之外的回写形式、经过别的基址寄存器和在栈帧之外的访问、从没有存过 x30 的槽读 x30，以及被另一条读、字节读、另一条写、一对或元组地址够到的槽，以及这些元组地址：过了一个标签或在分支的目标处被读到的、被分支读到的、走到间接分支或函数外标签的、放在寄存器入口叶子函数跨调用保留的寄存器里的。`TestLowerARM64EngineLRTuple` 接受槽旁边的元组溢出，拒绝盖住槽的。`TestLowerARM64EngineLRTuplePaths` 沿分支和标签跟着这个地址走：接受在分支两边都被重新写入的、经过一条分支或一个循环走到调用的、在一条路径上随返回结束的，拒绝在分支目标处够到槽的，以及被寄存器入口叶子函数（`memcpy`）当作参数拿走的，不论是直线走到还是过了分支。`TestLowerARM64EngineLRNegative` 检查反向构建的两个取值，`TestLowerARM64EngineLRLabel` 检查名字以 `sp` 结尾的标签不算用栈。`TestDropLRPairsFromEnv` 和 `TestReleaseError`（`cmd/engine`）检查这个开关。
+
+## 结果只在寄存器里
+
+发布版本：v0.30.5。
+
+从 v0.29.6 起，直接调用生成函数时从被调用者返回结果的寄存器里取结果。生成器又走了两步，把这条路走完：
+
+- 经过指针的调用也从寄存器取结果。以前它要从 Go 栈上把结果读回来，而被调用者几条指令之前刚把结果存到那里。amd64 上有 215 个、arm64 上有 214 个经过指针并带结果的调用，现在都不再读回。
+- 没有 Go 代码调用的生成函数不再把结果存到 Go 栈上。调用它的只有生成的代码，而生成的代码从寄存器读结果。Go 代码调用引擎里的 91 个函数。其余的函数（amd64 上 1,582 个里的 1,489 个，arm64 上 1,576 个里的 1,483 个）都不存结果：其中 1,181 个有返回值，在 amd64 上是 1,646 个结果字，每次返回都不再存。
+
+为什么安全：
+
+- 指针只会指向 lowering 后的统一函数。每个这样的函数都从它的类型对应的寄存器存结果，然后只运行 Go 的尾声，尾声只碰 BP 和 SP（arm64 上是 FP 和 LR），而 Go 运行时从不在它自己挑的位置停下汇编代码，所以调用者读结果的时候寄存器里还是结果。生成器的 README 写明了这依赖 Go 1.26.6 和 1.27.2 的哪几行。生成器拒绝指向别处的函数指针（代码取的地址，或 engine_rodata 里的指针）：宿主回调（Go 代码）、生成器的回调、寄存器入口的叶子函数、函数内部某处（`CheckPointerTargets`），两个链接后检查在二进制里再拒绝一次。桩可以是目标，因为它调用 `goasmMissing`，而 `goasmMissing` 会 panic：两个检查都要求每个桩如此。
+- 结果所在的寄存器就是 llc 用的寄存器。amd64 上，检查要求 llc 读取经过指针调用的结果所用的寄存器，正是每个同类型 lowering 后函数按探针返回结果的寄存器。arm64 上，lowering 要求 llc 的 facts 里每次返回都按类型用 x0、x1 或 d0。
+- Go 代码调用哪些函数的名单从源码生成，不是手写的（`internal/cengine/gocalls.txt`，`go run ./internal/goasm/gen/cmd/gocalls`）：模块里每个 Go 文件和每个手写汇编文件，包括模块里套着的模块，不论是调用、当作值、写在 `//go:linkname` 里还是写在 `#define` 里。Go 代码调用了名单上没有的函数，或者名单上有 Go 已经不再调用的函数，`TestGoCallsList` 都会失败。名单多一个名字，只是多保留一次结果存储。
+- 名单之外的函数向 Go 声明时没有结果，所以读它结果的 Go 代码编译不过，`go vet -asmdecl` 也让它的 TEXT 只有参数的大小。两个链接后检查在它的返回处不要求存结果，但仍要求 llc 返回所用的寄存器就是调用者读取的寄存器，并拒绝可能到达这种函数的、从 Go 栈读结果的调用：直接调用这种函数的调用，以及任何经过指针的调用。
+- 别的都没有变。每个 TEXT 的栈帧大小不变（只有参数和结果的大小变了），`JS_RegvmRun` 的影子栈帧在 amd64 上仍是 256 字节，在 arm64 上仍是 176 字节，`TestRegvmDepth` 的七个深度下限给出同样的深度，`TestCCallDepth` 通过。没有 Go 代码为之建块的打包函数不再有 Go 包装函数（amd64 上从 24 个减到 2 个，arm64 上从 218 个减到 9 个），并保留原来的名字。
+- poison 构建和以前一样存下每个结果、读回每个结果，不带 `-go-calls` 的构建（生成器测试里的 `-src` 构建）也存下每个结果。
+
+它对生成文件的改变，对照同样的 C：amd64 的 `.s` 文件小了 0.74%（11,644,354 字节到 11,558,760 字节），arm64 小了 0.42%（11,120,506 到 11,074,094）。它带来的收益见 [performance.zh-CN.md](../performance.zh-CN.md#结果只在寄存器里)。
+
+测试：`TestCheckPointerTargets` 拒绝指向宿主回调、生成器回调、叶子函数、不存在的函数或函数内部某处的指针，代码里的和 engine_rodata 里的都拒绝，经过别名也一样。`TestCheckCases`（amd64，来自手写的 llc 代码）拒绝叶子函数或宿主回调的地址，拒绝经过指针的调用的结果读取与记录不符（有或没有），拒绝 llc 从别的寄存器取这种结果，对于不存结果的函数，拒绝两个方向上与之不符的记录、llc 用别的寄存器给出的返回，以及读取结果的直接调用或经过指针的调用。`TestCheckARM64FunctionPointer`、`TestCheckARM64Rodata`、`TestCheckARM64ICallRegResult`、`TestCheckARM64NoResult` 和 `TestCheckARM64Stub` 在 arm64 上做同样的事，`TestLowerARM64EngineFacts` 和 `TestLowerARM64EngineNoResult` 检查 lowering。`TestGoCalls` 在一个小模块上运行扫描器（调用、值、闭包、被遮蔽的名字、字段、键、同名的导入、测试、别的包、套着的模块、linkname、宏，以及别的包的汇编），`TestPostLinkCheck` 用只列了一个函数的 `-go-calls` 生成一个 C 文件，检查声明，对它运行链接后检查，用要求每个结果都存下的检查拒绝同一个二进制，并拒绝含有引擎里没有的名字的名单。
 
 ## 释放对象时被要求回收
 
@@ -456,7 +480,7 @@ pass 改变的是值放在哪里，不是对值做什么。指令按旧字节码
 
 `JS_CallInternal` 为 C 函数、绑定函数或 proxy 进入时，`js_call_enter` 的检查改为内联（`js_call_checks_in`，计数在 `js_call_enter_in` 里），只有 `RangeError` 留在外面：每次这样进入少约 20 条指令，它的帧在 arm64 上仍是 96 字节，amd64 上仍是 112 字节。
 
-`JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，因此会把 `JS_RegvmRun`、`js_call_c_function` 和直接调用所跳过的帧的测量的栈指针往下调，这时经过 `JS_CallInternal` 的一层比直接的一层多用约 16 字节：在这种构建里 unit-api 允许每种调用直接时最多深 2%，经过 `js_call_c_hop` 的调用也可以浅同样多，普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
+`JS_RegvmStat(ctx, 12)` 给出 `js_call_c_hop` 的欠账，关闭直接调用（`JS_SetDirectCCalls(ctx, 0)`）时为 -1，这时这些调用也经过 `JS_CallInternal`。`TestCCallDepth` 和 unit-api 的 `test_c_call_recursions` 加了从 `Reflect.apply` 到 `call`、到 `apply`、到绑定的 `call` 再到函数的递归，要求直接调用开和关时深度相同。在原生测试宿主上，经过绑定函数的递归在开着直接调用时会深几层（1 MiB 的线程上 500 对 496）：`js_call_bound_function` 里有 `alloca`，原生构建每次调用都在它下面压入 `JS_CallInternal` 放不进寄存器的参数，而调用 `js_call_c_hop` 不需要这 16 字节。生成的引擎把参数放在被调用者的帧里，深度相同。AddressSanitizer 把栈上的对象按 32 字节对齐，`JS_RegvmRun`、`js_call_c_function` 和 `js_call_bound_function`（在 x86_64 上还有 `JS_CallInternal`）会把栈指针往下调到 32 的倍数，每次调用时还会压入 `JS_CallInternal` 放不进寄存器的参数。`js_measure_call_frame` 不受这个检查器处理，这样它量到的只是帧本身，不含它自己会压入的 16 字节。它在相隔 16 字节的两个位置各量一次，取小的那个，因为被往下调的帧会因调用的位置多占或不多占 16 字节。两种欠账也都向下取到 32 的倍数，也就是下一个帧被往下调时跳过的帧至少省下的字节。在这种构建里直接调用的递归从不更浅，最多可能深 2%，普通构建仍要求深度相同。`test_c_call_hop_checks` 检查每次这样的调用读一次中断标志，中断或挂起的无法捕获的异常会在函数运行前停下它，`TestRegvmFrame` 和 `test_call_frames_measured` 检查直接调用开着时新路径也开着。
 
 ### 寄存器循环直接回答 charCodeAt
 
@@ -669,7 +693,7 @@ tifa 商店的六个工作台页面，每次渲染少 0.61% 的指令，店面�
 
 分析相信异常只会落到本函数的 `catch` 上，编译器生成的代码都是这样。读取时会拒绝 catch 偏移可能离开原处（被存起来、返回或传给另一个函数）的代码（[catch 偏移和跳转不离开所在的函数](#catch-偏移和跳转不离开所在的函数)）。
 
-标记随代码写进字节码文件，每个闭包变量的标志里占一位，`BC_VERSION` 为 11。不带 `JS_READ_OBJ_POLLS_CHECKED` 的读取（`EvalBytecode`，以及 `SharedBytecode` 的第一次读取）会重新算出标记，文件里的标记只要有一个和算出的不同，不论哪个方向，就以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝这个文件（`cbv_check_file`）：一个按值存的闭包变量下面，如果有个闭包变量还留着 `JSVarRef`，就会对单元做引用计数。`SharedBytecode` 第一次之后的读取（tifa 的池里每个 VM 一次）直接取文件里的标记，不再跑这个分析。这样读入时，商店包的字节码（6.3 MB）执行 38.9 M 条指令，原来是 151.3 M，MUI 18.5 M，原来 72.3 M，React 2.1 M，原来 6.4 M：商店的一个 VM 加载时为这个分析付出的约等于 0.8 次渲染。第一次读取检查标记，比原来多 0.25%，商店包上是 0.9 M。
+标记随代码写进字节码文件，每个闭包变量的标志里占一位，`BC_VERSION` 因此升到 11（[对象的 rest 直接按最终的 shape 创建](objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建)以后是 12）。不带 `JS_READ_OBJ_POLLS_CHECKED` 的读取（`EvalBytecode`，以及 `SharedBytecode` 的第一次读取）会重新算出标记，文件里的标记只要有一个和算出的不同，不论哪个方向，就以 `SyntaxError: invalid bytecode: code no compiler makes` 拒绝这个文件（`cbv_check_file`）：一个按值存的闭包变量下面，如果有个闭包变量还留着 `JSVarRef`，就会对单元做引用计数。`SharedBytecode` 第一次之后的读取（tifa 的池里每个 VM 一次）直接取文件里的标记，不再跑这个分析。这样读入时，商店包的字节码（6.3 MB）执行 38.9 M 条指令，原来是 151.3 M，MUI 18.5 M，原来 72.3 M，React 2.1 M，原来 6.4 M：商店的一个 VM 加载时为这个分析付出的约等于 0.8 次渲染。第一次读取检查标记，比原来多 0.25%，商店包上是 0.9 M。
 
 在 tifa 的页面上计数，商店页面一次渲染捕获的 14,157 个变量里有 11,298 个满足条件，工作台页面 8,454 个里有 7,639 个，MUI 页面 12,401 个里有 9,897 个。一个在捕获时记下每个变量的值、在释放时和变量比较的构建，没有发现其中任何一个变过。
 
@@ -826,6 +850,24 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 
 测试：`TestA64CheckJumpTables` 让每种宽度取它能存的最远距离，再多一步就拒绝，中间隔着对齐时也一样，并拒绝往回的项、不在代码里的标签和它算不出大小的代码。`TestLowerARM64EngineJumpTable` lower 一个函数，它的 1 字节表在 llc 的代码里放得下（250 步），一旦跨度里的 5 个调用让 lowering 后的代码变长，就被拒绝。
 
+## 需要 16 字节的 SSE 读取保持在 16 上
+
+发布版本：v0.30.5。
+
+内存操作数为 16 字节的 SSE 指令，地址不在 16 字节上时会出故障，`movups`、`movupd`、`movdqu` 和 `lddqu` 除外。amd64 引擎里有 382 条这样的指令：327 条经 RIP 读自己函数的常量池（分布在 70 个函数里），55 条经由影子栈指针算出的寄存器读局部变量。没有一条读堆或 Go 栈。链接后，它们在 linux、darwin 和 windows 上读到的地址都在 16 上，但没有什么规定必须如此：常量池在 16 上，只是因为每个函数体碰巧从 16 开始，而 `.p2align 4` 从函数开头算起。影子栈指针则在三个地方各自手工取整。
+
+现在这三处都由设计保证，并各有检查：
+
+- 函数的数据。生成器在代码之后的数据前面写一个 `PCALIGN $16`（`internal/goasm/gen/emit.go` 的 `emitData`）。它不加任何字节：数据在 lowering 后的目标文件里不从 16 开始时，PCALIGN 会把它垫离代码里的 RIP 位移，生成器拒绝这种情况。链接后的检查也拒绝数据在二进制里不从 16 开始的函数体（`dataPlaced`）。链接后的检查还拒绝 RIP 目标在二进制里不在 16 上的每条需要对齐的 SSE 指令，并报出函数、指令和地址（`checkAlign16`）。`xform` 的 `front:` 不是 16 的倍数时照旧被拒绝，因为它现在会把数据垫离读它的代码。
+- 影子栈。区域的基址、`tmp` 占用的空间和宿主函数拿到的栈指针，都由同一个函数 `cengine.AlignSP` 取整到 `cengine.SPAlign`（16）。`cengine.CheckSP` 在每个入口和 `host_call` 里遇到不在 16 上的指针就 panic，只在 `-tags testhooks` 的构建里如此。普通构建里它是一个被编译器内联的空函数，没有代价。
+- 其余一切。pass 在 amd64 上拒绝 IR 标为 16 字节或更高对齐的 load、store、原子操作或内存内建函数，不论宽度，除非它的地址来自局部变量或全局变量（`internal/goasm/gen/pass/shadow.cpp` 的 `heapAligned`）。现在的引擎里没有这样的访问。堆上的指针只保证 8 字节对齐，这样的访问可能让 llc 写出会出故障的 `movaps`。宽度不起作用：IR 说第一个读取在 16 上时，llc 会把两个 8 字节的读取合成一条 `movapd`。这条规则放在 IR 里，也就是对齐信息的来源处，而不放在机器码里，因为 llc 会把局部变量的地址挪到别的寄存器：现在读局部变量的 55 条里，有 37 条不是“影子指针传进来的那个寄存器（r12）加一个常数”的形式。
+
+arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则只用于 amd64。
+
+代价：没有。生成的 amd64 文件在 323 个带数据的函数里各多一行 `PCALIGN $16`，它们不加任何字节：一旦会加，上面的检查就拒绝。
+
+测试：`TestCheckAlign16` 解码读不在 16 上的 RIP 相对地址的 `movaps`、`movdqa`、`xorpd` 和 `paddd`，它们必须被拒绝，而 `movups`、`movdqu`、`movsd` 和 `ucomisd` 必须通过。`TestPostLinkCheck` 构建一个不在 16 上的常量池（`vecpool`），检查必须拒绝它。`TestEmitDataAligned` 和 `TestDataPlaced` 拒绝在目标文件里和在二进制里不从 16 开始的数据。`TestRejectSamples` 拒绝 `testdata/reject/heap_aligned.c`，一次经指针的向量读取，以及 `merged_aligned.c`，经一个声明在 16 上的指针读两个 `double`，llc 会把它们合成一条 `movapd`。`TestAlignSP` 检查取整、一个 VM 的第一个栈指针和宿主函数拿到的栈指针，`TestCheckSP`（testhooks）检查 panic。
+
 ## 局部变量里的键不加引用就读
 
 发布版本：v0.30.3。
@@ -837,6 +879,34 @@ llc 写 arm64 的跳转表时，距离放得下就每项只用 1 或 2 字节（
 收益：MUI 的 orders 页每次渲染少 0.52% 的指令，其他页面少 0.06% 到 0.13%，商店和 MUI 的 23 个页面 HTML 相同。数字在 [performance.md](../performance.zh-CN.md#局部变量里的键不加引用)。
 
 改动在 C 里（`engine/quickjs.c`，`engine/regvm-ops-object.h`）。`engine/test/compare/getel_local_key.js` 读各种键：字符串、数字、symbol、`null`，以及 `toString` 或 `valueOf` 会抛错、触发回收、改对象、通过闭包或映射的 `arguments` 对象改写键的对象，还经过会改写键并触发回收的 getter 和 Proxy trap 读，并在循环里读。它的文件和 goldens 由改动前的引擎写出。`unit-oom` 在内存不够时把运行时造出的键扫一遍（`test_getel_local_key_oom`）。
+
+## 自身就是原子的字符串键按具名属性读取
+
+发布版本：v0.30.5。
+
+`o[k]` 里 `o` 是对象、`k` 是原子字符串时（寄存器循环的 GETEL、GETELT、GETELK 和 GETELKT，数组和类型化数组的快路不回答时），原来要走 `rv_getel_slow`、`JS_GetPropertyValue`、`JS_ValueToAtom`（给原子加一个引用）、通用的 `JS_GetPropertyInternal`，最后 `JS_FreeAtom`。这类键大多来自 `for in`、`Object.keys` 和字面量，本来就是原子。现在循环对它们调用 `rv_getel_atom`：键是类型为字符串的原子，非空，首字符不是数字（也就是 `JS_ValueToAtom` 当作自身原子的那些字符串，所以一定不是下标）时，直接从字符串拿到原子的编号，按 GETF 读 `o.name` 的方式在 `o` 和它的原型上找：找到纯数据属性就给出它的值，走到原型链尽头就给出 `undefined`。路上碰到别的情况（访问器、全局对象的闭包变量、首次使用时才建立的属性、错误对象的 `stack`、数组和 `arguments` 以外的特殊对象，比如类型化数组、Proxy、String 对象、模块命名空间），就回到 `rv_getel_slow`，从头按原来的方式读。
+
+这不是内联缓存。两次读之间什么也不保留，也不持有形状：每次读都像 GETF 那样查一遍键。试过又放弃的三次缓存（[performance.md](../performance.zh-CN.md#试过但没做的)）为每个读具名属性的位置保存形状和槽位，想省掉一次查找，而那次查找和检查缓存项的开销差不多。这个改动不省查找，省的是只有按键读取才付的那部分：调用通用路径，给原子加引用再放掉，还有对“什么都可能是”的键做的检查。
+
+为什么安全：对它回答的情况，这条路径和 `JS_GetPropertyInternal` 自己的查找是同一套走法，所以对同一个原子给出同样的答案，对它不回答的每种情况都停下来交回原路径。哪些字符串算自身原子，用的是 `JS_ValueToAtom` 和 `hasOwnProperty.call` 共用的判断（[hasOwnProperty.call 在解释器里直接回答](objects-and-shapes.zh-CN.md#hasownpropertycall-在解释器里直接回答)）：`"0"`、`"10"`、`"01"`、`"4294967295"` 以数字开头，走原路径。`"-0"`、`"1e3"`、`"Infinity"`、`"NaN"` 在普通对象上是名字，在类型化数组上是规范数字，而查找不会越过类型化数组。符号不是字符串，走原路径。取到值之前不运行任何代码，键所在的槽（指令的临时槽、读取期间没有代码能写的局部变量（见上节）或函数的常量）让键活着，键又让原子活着，所以不需要给原子加引用。临时槽里的键在读完之后才释放，不像 `JS_GetPropertyValue` 那样在读之前释放，这一点没有代码能看到。测试的抛错注入要在哪条指令抛错，那条指令就走原路径，和别的快路一样。`rv_getel_atom` 是单独的函数，所以 getter 或 Proxy 陷阱运行时压在下面的 `rv_getel_slow` 的帧大小不变（amd64 和 arm64 上改动前后都是 192 和 200 字节），寄存器循环的帧也不变（SHADOW 在 amd64 上 256，arm64 上 176）。数组下标、类型化数组元素和其他所有键都走原来的路径。循环在自己的快路之后调用 `rv_getel_atom`，只传指令的操作数，对象和键的类型标记由 `rv_getel_atom` 自己检查。把这两个检查放在循环里时，对象和键在数组元素那条路上也得一直活着，LLVM 因此给那条路换了寄存器：amd64 上每次 `arr[i]` 多 6 条生成的指令（callgrind，一个每次渲染做 20 万次这种读取的包），原生构建看不出来。检查挪进这个函数之后，在没有字符串按键读取的页面上，循环跑的指令和改动前一样。
+
+收益：在自有数据属性上用原子键做一次按键读取，原生指令从 210 条降到 115 条（amd64，callgrind），`o.c` 是 25 条。每次渲染里这样的读取，React 有 2.8K 次，MUI 有 31K 次（订单页 55K 次）。其中 77%（MUI）到 100%（React）找到自有数据属性，最多 16% 在原型上找到（店面），最多 22% 什么也没找到（MUI）。在产品上（Apple M4），MUI 少 3.4% 的指令，React 少 0.9%，工作台少 0.7%，店面少 0.5%，24 个页面的 HTML 都一样。数字见 [performance.md](../performance.zh-CN.md#用原子键按键读取)。
+
+改动在 C 里（`engine/regvm-ops-object.h`）。`engine/test/regvm/js/o-getel-atom.js` 在 30 种对象和原始值上读 20 个键（名字、空字符串、下标和像数字的字符串、`length`、`stack`、`__proto__`），键分别放在局部变量、临时槽和常量里，每次读取都和 `Reflect.get`、以及把同一个键重新做成非原子字符串后的读取比较，并统计运行了多少次 getter 和 Proxy 陷阱。它的 golden 由改动前的引擎写出（普通、严格模式、不融合操作码三种）。`unit` 检查键是其原子的最后一个引用、或是许多被保留的键之一时，没有原子遗留，也没有原子被提前释放（`test_getel_atom_refs`）。
+
+## 字符串保存自己作为键时的原子
+
+发布版本：v0.30.5。
+
+字符串现在带一个 `key_atom` 字段：`JS_ValueToAtom` 把这个字符串当作自身原子时（类型为字符串的原子，非空，首字符不是数字），它是原子的编号，其他字符串都是 0。字符串变成原子时由 `__JS_NewAtom` 设置，新建的字符串是 0。寄存器循环的按键读取（`rv_getel_atom`，见上节）和 `hasOwnProperty.call`（`js_has_own_call`）读一次这个字段就够了，原来要检查原子的类型、长度和首字符，再到原子哈希表里查出编号。按键读取也挪到循环保存帧的栈顶、pc 和 sp 之前调用，和数组元素那条路一样：它不运行代码，也不启动回收。它在这里释放的值（临时槽里的键或对象、目标原来的值）可能在帧保存之前触发 finalizer，这是安全的，因为引擎的 finalizer 都不读帧，释放 Go 值也不运行脚本。
+
+为什么安全：字符串只在 `__JS_NewAtom` 里变成原子，无论是原地变成原子还是复制一份，两条路都会设置这个字段。原子字符串从不被原地修改（`JS_ConcatStringInPlace` 只改 `atom_type` 为 0 的字符串），并且和它的原子一起释放，所以字符串活着的时候，它的编号不会属于别的原子。原子活着的时候编号不变：哈希表变大时移动的是链，不是 `atom_array`。唯一比原子活得久的结构是被弱引用留住的符号，它的字段是 0。所有字符串都由 `js_alloc_string` 创建，从字节码读出的和从 Go 创建的也一样，所以没有字符串缺这个字段。`JS_ValueToAtom` 保留自己的检查：改成读这个字段后，LLVM 把它复制进 30 个调用者，其中一些的帧变大了。没有帧变大：amd64 上 `__JS_NewAtom`、`js_has_own_call`、`js_string_to_cstring_json` 变小，arm64 上 `js_has_own_call`、`js_string_normalize` 变小，寄存器循环的 SHADOW 仍是 amd64 256、arm64 176。
+
+代价：每个扁平字符串大 4 字节（字符前面是 16 字节，原来 12 字节）。按 8 字节一块分配，大约一半的字符串多 8 字节，其余不变。新建的 VM 多算 4%（217 KB 对 208 KB），1 万个短字符串多 10%，1 万个各带一个短字符串的对象多 0.8%。只有字符串的堆，计数是 ccgo 引擎的 0.98，原来是 0.89（`TestMemorySizeBelowPrevious`）。
+
+收益：在自有数据属性上用原子键做一次按键读取，原生指令从 116 条降到 81 条（amd64，callgrind）。在生成的 amd64 引擎上，每次渲染的指令少 0.65%（店面）到 0.99%（MUI 订单页），在产品上（Apple M4）少 0.36% 到 0.76%。在 linux/amd64 服务器上，渲染时间少 0.8%（工作台）到 2.0%（MUI）。数字见 [performance.md](../performance.zh-CN.md#字符串里保存键的原子)。
+
+改动在 C 里（`engine/quickjs.c`、`engine/regvm-ops-object.h`）。`unit-white`（`test_key_atom`）检查名字、`"-0"`、`"NaN"`、`"Infinity"` 这些键的字段，检查 `"0"`、`"10"`、`"01"`、`"1e3"`、`"4294967295"`、`""` 的字段是 0，新建的字符串、以及和某个原子字符相同但不是那个原子的字符串也是 0。它检查释放的原子编号给了新原子之后，只有新原子持有这个编号，并在建立、读取、删除 1.5 万个键之后，在完整回收前后各检查一遍所有活着的原子。语料、`o-getel-atom.js` 和 `o-object.js` 的抛错注入、ASAN 加 UBSAN 的结果都和原来一样。
 
 ## 值的真假不加引用就判断
 

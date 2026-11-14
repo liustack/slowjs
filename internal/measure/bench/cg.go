@@ -136,7 +136,7 @@ type CGOptions struct {
 	ValgrindRoot string // a folder with usr/bin/valgrind inside, when valgrind is not installed
 	Out          string // folder of the callgrind files
 	Sim          bool   // simulate the branch predictor and the caches (--branch-sim=yes --cache-sim=yes)
-	Interp       string // the interpreter function, reported on its own (JS_RegvmRun_block)
+	Interp       string // the interpreter function, reported on its own (JS_RegvmRun)
 	Dumps        bool   // the program zeroes the counts and dumps them itself around the window (CALLGRIND_ZERO_STATS, CALLGRIND_DUMP_STATS)
 }
 

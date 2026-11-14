@@ -9,4 +9,6 @@ package bench
 
 import "testing"
 
+func skipWherePagesStay(t *testing.T, dir string) {}
+
 func testDropPagesLocked(t *testing.T) {}

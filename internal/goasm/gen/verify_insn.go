@@ -218,6 +218,13 @@ type checker struct {
 	bin      *binFile
 	rep      *CheckReport
 	roomOK   bool // goasm_room was checked (roomFunc)
+	// ptrOK holds the addresses a function pointer may hold (pointerTarget).
+	ptrOK map[uint64]bool
+	// retRegs holds the registers of a result by its type (retRegsOf).
+	retRegs map[Type][]x86asm.Reg
+	// noRes holds the addresses of the functions that store no result
+	// (noResult).
+	noRes map[uint64]bool
 }
 
 func (k *checker) skip(why, fn string) { k.rep.Skipped[why] = append(k.rep.Skipped[why], fn) }
@@ -371,6 +378,37 @@ func (o *objFile) extent(s elf.Symbol) (int, error) {
 		}
 	}
 	return int(n), nil
+}
+
+// pointerTarget holds a function pointer of the engine, the code's LEA of
+// cname+add or a pointer of engine_rodata, to what a call through a pointer
+// may reach (CheckPointerTargets): the start of a lowered unified function
+// or of a stub. It compares addresses in the binary, so an alias is the
+// function it names, and a host callback, whose name is a Go function, is
+// none of them.
+func (k *checker) pointerTarget(cname string, add int64) error {
+	if k.ptrOK == nil {
+		k.ptrOK = map[uint64]bool{}
+		for _, m := range append(append([]Meta{}, k.c.Metas...), k.c.Stubs...) {
+			if m.Kind != Unified {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.ptrOK[s.Value] = true
+			}
+		}
+	}
+	if add != 0 {
+		return fmt.Errorf("a pointer to %s%+d, inside a function", cname, add)
+	}
+	a, err := k.funcAddr(cname)
+	if err != nil {
+		return err
+	}
+	if !k.ptrOK[a] {
+		return fmt.Errorf("a pointer to %s, which is no lowered unified function: a call through it would not get its result", cname)
+	}
+	return nil
 }
 
 func (k *checker) funcAddr(cname string) (uint64, error) {
@@ -1205,6 +1243,19 @@ func (m *matcher) next(what string) (insn, error) {
 
 // bodyOf locates the lowered function in the re-assembled object: its start
 // and size, and where its code ends (its constants follow).
+// dataPlaced refuses a body at body in the binary, with codeLen bytes of code
+// out of size, whose data would not start on 16 bytes. The data has a PCALIGN
+// $16 in front of it (emitData), which adds nothing only where the body sits
+// as the lowered object placed it. Off that, the PCALIGN pads, the data moves
+// away from the displacements the code has in its bytes, and the rest of the
+// function is not where this check looks for it.
+func dataPlaced(body, codeLen, size uint64) error {
+	if codeLen < size && (body+codeLen)%16 != 0 {
+		return fmt.Errorf("the data after the code would start at %#x, not on 16 bytes: the PCALIGN $16 in front of it moved it away from the code that reads it", body+codeLen)
+	}
+	return nil
+}
+
 func (k *checker) bodyOf(name string) (elf.Symbol, uint64, error) {
 	s, ok := k.low.byName[name]
 	if !ok {
@@ -1281,6 +1332,9 @@ func (k *checker) checkUnified(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size
@@ -1587,6 +1641,21 @@ var forbiddenOps = func() map[x86asm.Op]string {
 // only 8-byte aligned, so any other access wider than 8 bytes may fault.
 var unalignedOK = map[x86asm.Op]bool{x86asm.MOVUPS: true, x86asm.MOVUPD: true, x86asm.MOVDQU: true, x86asm.LDDQU: true}
 
+// needsAlign16 reports whether the memory operand of in must be on 16 bytes: an
+// SSE access wider than 8 bytes (movaps, movdqa, a packed operation that
+// reads its operand from memory) faults off 16, but for the moves of
+// unalignedOK.
+func needsAlign16(in x86asm.Inst) bool { return in.MemBytes > 8 && !unalignedOK[in.Op] }
+
+// checkAlign16 refuses an instruction that needsAlign16 whose operand is at
+// addr in the binary, not a multiple of 16: it would fault where it runs.
+func checkAlign16(in x86asm.Inst, addr uint64) error {
+	if needsAlign16(in) && addr%16 != 0 {
+		return fmt.Errorf("%v reads %#x, which is not on the 16 bytes it needs", in, addr)
+	}
+	return nil
+}
+
 // one matches a single llc instruction of the body.
 func (m *matcher) one(x insn) error {
 	in := x.in
@@ -1666,7 +1735,7 @@ func (m *matcher) one(x insn) error {
 		mm := mem
 		mm.Base, mm.Disp = x86asm.RSP, d
 		want = &mm
-		if in.MemBytes > 8 && !unalignedOK[in.Op] {
+		if needsAlign16(in) {
 			return fmt.Errorf("a %d-byte frame access that may need alignment the Go frame lacks", in.MemBytes)
 		}
 	case hasMem && frameRegs[mem.Base]:
@@ -1683,6 +1752,16 @@ func (m *matcher) one(x insn) error {
 		}
 		if got := uint64(int64(b.at) + int64(b.in.Len) + bm.Disp); got != target {
 			return fmt.Errorf("generated %v at %#x points to %#x, the reference should point to %#x", b.in, b.at, got, target)
+		}
+		// A constant pool sits on 16 bytes after its PCALIGN $16 (emitData),
+		// and the code reads it there: the address the binary's instruction
+		// reaches has to be on 16 for one that needs it, whatever the
+		// checks of the data found.
+		if err := checkAlign16(b.in, target); err != nil {
+			return err
+		}
+		if needsAlign16(b.in) {
+			m.k.rep.Checked["SSE reads of the code's data that need 16 bytes"]++
 		}
 		w := mem
 		w.Disp = bm.Disp
@@ -1796,6 +1875,9 @@ func (m *matcher) dataRef(x insn, r *relAt, mem x86asm.Mem) (uint64, error) {
 				return 0, fmt.Errorf("%s is not a function of llc's object", ref.Label)
 			}
 		}
+		if err := k.pointerTarget(ref.Label, ref.Add); err != nil {
+			return 0, err
+		}
 		a, err := k.funcAddr(ref.Label)
 		if err != nil {
 			return 0, err
@@ -1837,7 +1919,9 @@ func (m *matcher) dataRef(x insn, r *relAt, mem x86asm.Mem) (uint64, error) {
 }
 
 // ret matches a return: the result stored into the Go result slot, then a
-// jump to the Go epilogue (checked once the body is done).
+// jump to the Go epilogue (checked once the body is done). A function with
+// FuncRecord.NoResult stores nothing, and llc's return must still give its
+// result in the registers its probe names: every call of it reads them.
 func (m *matcher) ret() error {
 	if m.nrets >= len(m.facts.Rets) {
 		return fmt.Errorf("a return llc's facts do not list")
@@ -1850,6 +1934,10 @@ func (m *matcher) ret() error {
 	stored := map[x86asm.Reg]bool{}
 	off := m.argBase + int64(8*len(m.args))
 	for w, reg := range m.res {
+		stored[reg] = true
+		if m.r.NoResult {
+			continue
+		}
 		b, err := m.next("a result store")
 		if err != nil {
 			return err
@@ -1857,9 +1945,11 @@ func (m *matcher) ret() error {
 		if !isStackMove(b.in, true, reg, off+int64(8*w), isXMM(reg)) {
 			return fmt.Errorf("return: %v at %#x is not the store of %v to the result slot", b.in, b.at, reg)
 		}
-		stored[reg] = true
 	}
 	for _, reg := range uses {
+		if !stored[reg] && m.r.NoResult {
+			return fmt.Errorf("llc's return gives %v, its callers take the result from %v", reg, m.res)
+		}
 		if !stored[reg] {
 			return fmt.Errorf("llc's return gives %v, which the result stores do not take", reg)
 		}
@@ -1973,13 +2063,13 @@ func (m *matcher) call(x insn, r *relAt) error {
 				return err
 			}
 		}
+		if !c.RegResult && c.Sig.Ret != Void && k.noResult()[addr] {
+			return fmt.Errorf("a call that loads the result of %s from the Go stack, where %s stores none", name, name)
+		}
 		return m.marshal(c.Sig, cf, c.RegResult, direct)
 	case x86asm.Reg:
 		if c.Kind != CallReg || gpRegs[c.Target] != a {
 			return fmt.Errorf("llc calls through %v, the lowering declared %+v", a, c)
-		}
-		if c.RegResult {
-			return fmt.Errorf("a call through %v that takes the result from registers", a)
 		}
 		bound, err := m.boundSig(x)
 		if err != nil {
@@ -1991,8 +2081,15 @@ func (m *matcher) call(x insn, r *relAt) error {
 		if want := fmt.Sprintf("*%d", k.llc.icall[x.at].id); cf.Target != want {
 			return fmt.Errorf("llc's facts give this call to %s, its signature symbol has type id %s", cf.Target, want)
 		}
+		if c.RegResult {
+			if err := m.icallRegResult(c.Sig, cf); err != nil {
+				return err
+			}
+		} else if c.Sig.Ret != Void && len(k.noResult()) > 0 {
+			return fmt.Errorf("a call through %v that loads its result from the Go stack, where %d functions store none", a, len(k.noResult()))
+		}
 		m.icalls++
-		return m.marshal(c.Sig, cf, false, func(b insn) error {
+		return m.marshal(c.Sig, cf, c.RegResult, func(b insn) error {
 			if b.in.Op != x86asm.CALL || !isReg(b.in.Args[0], a) || !plain(b.in) {
 				return fmt.Errorf("generated %v at %#x is not a call through %v", b.in, b.at, a)
 			}
@@ -2259,6 +2356,9 @@ func (k *checker) checkLeaf(meta Meta) error {
 	}
 	B, err := decodeStream(code, body)
 	if err != nil {
+		return err
+	}
+	if err := dataPlaced(body, codeLen, lowSym.Size); err != nil {
 		return err
 	}
 	e := body + lowSym.Size
@@ -2561,6 +2661,9 @@ func (k *checker) blobSlot(blob []byte, base uint64, bo, si int, lo uint64, relo
 		}
 		var want uint64
 		if br.Func {
+			if err := k.pointerTarget(br.Label, br.LabelAdd); err != nil {
+				return 0, err
+			}
 			a, err := k.funcAddr(br.Label)
 			if err != nil {
 				return 0, err
@@ -2673,6 +2776,62 @@ func readInt(b []byte, n int) int64 {
 	return int64(binary.LittleEndian.Uint64(b))
 }
 
+// icallRegResult holds a call through a pointer that takes its result from
+// registers (CallRecord.RegResult) to the registers every lowered unified
+// function returning that type returns it in. Any function a pointer can
+// hold is one of them (pointerTarget), which ret holds to storing its
+// result from those registers and then jumping to Go's epilogue. Which one
+// the pointer holds is not known here, so the registers are the ones of the
+// result's type: those of every probe of that type, which must agree. A call
+// through a pointer of another type than its target's is undefined in C,
+// and the native host's -fsanitize=undefined (function) stops on one.
+func (m *matcher) icallRegResult(sig Sig, cf CallFacts) error {
+	want, err := m.k.retRegsOf(sig.Ret)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
+	defs, err := x86Regs(cf.Defs)
+	if err != nil {
+		return err
+	}
+	if fmt.Sprint(defs) != fmt.Sprint(want) {
+		return fmt.Errorf("call: llc takes the result of a call through a pointer from %v, a lowered function returns a result of its type in %v", defs, want)
+	}
+	return nil
+}
+
+// retRegsOf gives the registers the lowered unified functions return a
+// result of type t in, from their probes, and fails when two of them differ
+// or none returns one.
+func (k *checker) retRegsOf(t Type) ([]x86asm.Reg, error) {
+	if k.retRegs == nil {
+		k.retRegs = map[Type][]x86asm.Reg{}
+		from := map[Type]string{}
+		for _, f := range k.c.Metas {
+			if f.Kind != Unified || f.RetType == Void {
+				continue
+			}
+			p, ok := k.c.Probes[ProbePrefix+f.Name]
+			if !ok || len(p.Rets) != 1 {
+				continue
+			}
+			r, err := x86Regs(p.Rets[0])
+			if err != nil {
+				return nil, err
+			}
+			if prev, ok := k.retRegs[f.RetType]; ok && fmt.Sprint(prev) != fmt.Sprint(r) {
+				return nil, fmt.Errorf("%s returns its result in %v, %s in %v", from[f.RetType], prev, f.Name, r)
+			}
+			k.retRegs[f.RetType], from[f.RetType] = r, f.Name
+		}
+	}
+	r, ok := k.retRegs[t]
+	if !ok {
+		return nil, fmt.Errorf("no lowered unified function returns a result of type %v", t)
+	}
+	return r, nil
+}
+
 // regResult holds a call that takes the result of name from registers
 // (CallRecord.RegResult) to what makes them hold it after the callee's RET:
 // name is a lowered unified function, which this check holds at each return
@@ -2706,4 +2865,23 @@ func (m *matcher) regResult(name string, cf CallFacts) error {
 		return fmt.Errorf("call: llc takes the result from %v, %s returns it in %v", defs, name, res)
 	}
 	return nil
+}
+
+// noResult gives the addresses in the binary of the functions that store no
+// result to the Go stack (FuncRecord.NoResult). A call that loads a result
+// back from the Go stack must not reach one: by address, so that an alias
+// is the function it names.
+func (k *checker) noResult() map[uint64]bool {
+	if k.noRes == nil {
+		k.noRes = map[uint64]bool{}
+		for _, m := range k.c.Metas {
+			if m.Rec == nil || !m.Rec.NoResult {
+				continue
+			}
+			if s, ok := k.bin.abi0(k.c.Pkg, k.c.Names[m.Name]); ok {
+				k.noRes[s.Value] = true
+			}
+		}
+	}
+	return k.noRes
 }

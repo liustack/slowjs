@@ -48,6 +48,17 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | An array literal moves the references of its elements into the array | v0.30.3 | [c-engine.md](c-engine.md#an-array-literal-takes-the-references-of-its-elements) |
 | On arm64 a function that calls no longer saves and loads LR itself, which Go's prologue and epilogue already do: two instructions less a call, with the same frames. amd64 is the same | v0.30.3 | [c-engine.md](c-engine.md#lr-is-saved-once-on-arm64) |
 | The register loop takes a plain array of the realm apart with no iterator: DSTART and DNEXT read its elements, and the Array Iterator is made only where one is needed | v0.30.3 | [c-engine.md](c-engine.md#array-destructuring-with-no-iterator) |
+| On amd64 every SSE instruction that needs its operand on 16 bytes reads data placed by a `PCALIGN $16`, or a local, or a global, and the generator and the post-link check refuse anything else | v0.30.5 | [c-engine.md](c-engine.md#sse-reads-that-need-16-bytes-stay-on-16) |
+| A call through a pointer takes its result from registers, and a generated function that no Go code calls no longer writes its result to the Go stack | v0.30.5 | [c-engine.md](c-engine.md#results-only-in-registers) |
+| `o[k]` with a string key that is its own atom is read as GETF reads `o.name`, without the generic path and without a reference to the atom | v0.30.5 | [c-engine.md](c-engine.md#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) |
+| A string keeps the number of the atom it is as a key, so a keyed read and `hasOwnProperty.call` take it in one read. Every string is 4 bytes larger | v0.30.5 | [c-engine.md](c-engine.md#a-string-keeps-the-atom-it-is-as-a-key) |
+
+## The generator
+
+| Change | Release | Doc |
+| --- | --- | --- |
+| `make gen` compiles the engine with a profile of tifa's pages, with the inlining held to what the build without a profile does | v0.30.5 | [generator.md](generator.md#a-profile-of-tifas-pages) |
+| A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
 
 ## Commits of upstream QuickJS
 
@@ -57,6 +68,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Iterator.concat follows IteratorClose and finishes after a failed step | v0.29.8 | [upstream-commits.md](upstream-commits.md#iterator-concatenation) |
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
+| The spread of a string gives its characters | v0.30.5 | [upstream-commits.md](upstream-commits.md) |
 
 ## Go API
 
@@ -147,6 +159,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The functions of fmt make a long output in checked pieces | v0.30.4 | [uncatchable.md](uncatchable.md#the-functions-of-fmt-make-a-long-output-in-checked-pieces) |
 | A Go function takes the long arrays of a call from the OS | v0.30.4 | [uncatchable.md](uncatchable.md#a-go-function-takes-the-long-arrays-of-a-call-from-the-os) |
 | A VM keeps its last block for the next call | v0.30.4 | [uncatchable.md](uncatchable.md#a-vm-keeps-its-last-block-for-the-next-call) |
+| The copy of a spread, a rest and Object.assign reads the interrupt flag | v0.30.5 | [uncatchable.md](uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag) |
 
 ## Errors and stacks
 
@@ -209,6 +222,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Searches skip to where the string is | v0.27.3 | [strings.md](strings.md#searches-skip-to-where-the-string-is) |
 | A symbol has a string of its own | v0.30.2 | [strings.md](strings.md#a-symbol-has-a-string-of-its-own) |
+| The hash table of atoms holds one atom for two buckets | v0.30.5 | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
+| An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
 
 ## JSON
 
@@ -251,6 +266,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A for in loop asks a shape once whether it lists its keys | v0.30.2 | [objects-and-shapes.md](objects-and-shapes.md#a-for-in-loop-asks-a-shape-once-whether-it-lists-its-keys) |
 | An array that is appended to takes room for 8 elements at first | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first) |
 | The `in` operator walks a prototype chain without references | v0.30.3 | [objects-and-shapes.md](objects-and-shapes.md#the-in-operator-walks-a-prototype-chain-without-references) |
+| An object rest leaves out the keys of its pattern by a list the parser makes, and is made at its final shape from a cache of the shapes of its sources | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.md#an-object-rest-is-made-at-its-final-shape) |
+| The spread of an object literal copies a source of a shape it has seen into its target from a cache of the shapes of both | v0.30.5 | [objects-and-shapes.md](objects-and-shapes.md#a-spread-copies-from-a-cache-of-the-shapes-of-its-target-and-source) |
 
 ## Memory
 
@@ -258,6 +275,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | One copy of source text and line tables for every VM, SharedBytecode | v0.28.1 | [memory-and-allocation.md](memory-and-allocation.md#one-copy-of-source-text-and-line-tables-for-every-vm) |
 | Shared bytecode is scanned for the polls on its first load only | v0.29.1 | [memory-and-allocation.md](memory-and-allocation.md#shared-bytecode-is-scanned-for-the-polls-on-its-first-load-only) |
+| A large block of a built-in collects first when it would pass the memory limit | v0.30.5 | [memory-and-allocation.md](memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit) |
 
 ## Young collection
 

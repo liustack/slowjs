@@ -4,6 +4,24 @@
 
 ## [Unreleased]
 
+## [v0.30.5] - 2026-11-14
+
+### 变更
+
+- 页面渲染比 v0.30.4 少用 11% 到 13% 的时间。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局的平均），tifa 的工作台页面少用 12.9%，商店页面少 12.6%，React 页面少 11.8%，MUI 页面少 11.2%。在没有内存上限的新 VM 里渲染一篇长 Markdown 文档少用 3.4%：下一条说的性能画像在这里省 5.5%，这一版的其他改动合起来多花 2.2%，原因还没找到（[performance.md](docs/performance.zh-CN.md#不带画像时的长-markdown)）。只做一件事的小循环可能更慢。用同样的方法给 `compare/testdata` 的 12 个微基准计时，6 个比 v0.30.4 慢（`global_read` 13.9%，`typed_array_read` 13.3%，`prop_create` 7.1%，`array_for` 3.5%，`array_read` 3.2%，`prop_read` 1.6%），3 个更快（`array_prop_create` 10.8%，`int_arith` 3.4%，`array_slice` 1.1%），另外 3 个计时分不出快慢。`typed_array_read` 变慢是画像造成的，画像只用页面训练。`global_read` 不带画像时也慢 12.8%，原因还没找到（[performance.md](docs/performance.zh-CN.md#按时间看微基准)）。
+- 引擎现在带着性能画像生成，也就是真实页面渲染时每个分支跑了多少次的计数：LLVM 按 tifa 的商店页面和 MUI 页面的计数来排列代码。C 代码相同时，单是画像就让一次渲染在这台机器上少用 5.4%（MUI 页面）到 8.4%（商店页面），在 Apple M4 上约 3%。页面不跑的代码可能变慢：C 代码相同时，画像让上一条那 12 个微基准里的 6 个变慢（`typed_array_read` 最多，各布局平均慢 14.3%），1 个变快。构建这个模块的方式不变，因为画像和用它生成的代码都已入库（[generator.md](docs/changes/generator.zh-CN.md#tifa-页面的性能画像)）。
+- atom（引擎给属性名和只存一份的字符串编的号）的哈希表，现在两个桶有一个 atom 时就加倍，以前是每个桶两个 atom 时才加倍。用字符串做键时要走的链变短了：我们在 linux/amd64 上量到，tifa 的 MUI 页面少用 1.0% 的时间，商店页面少用 1.1%，工作台页面没有变化。一个 VM 多占 50 KB 到 200 KB，接近内存上限的脚本会稍早一点内存不足（[strings.md](docs/changes/strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom)）。
+- `'' + x` 里的 `x` 是字符串时（React 用这种写法把值变成字符串），现在直接返回 `x` 本身，不再复制一份新的。以 `${x}` 开头的模板字符串，第一步也不再复制。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），React 页面的渲染时间少 2.2%，MUI 页面少 0.7%。
+- `o[k]` 的键是 `for in` 或 `Object.keys` 给出的字符串时，引擎直接用它已有的属性名编号去查，不再走通用的属性路径。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），渲染时间少 0.6%（商店页面）到 1.4%（MUI 页面）。
+- 字符串记住自己作为属性名的编号，键来自 `for in` 或 `Object.keys` 时，`o[k]` 和 `hasOwnProperty.call` 读一次就能拿到。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），渲染时间比只有上一条的按键读取时再少 0.8%（工作台页面）到 2.0%（MUI 页面）。每个字符串多占 4 字节：全是短字符串的堆，`MemorySize` 最多多算 10%。
+- 对象的 rest（如 `const {a, ...rest} = props`）和对象字面量里的展开（如 `{type: x, ...props}`），源对象的属性布局以前见过时，现在照着记下的布局直接复制，不再一个属性一个属性地查。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局），tifa 的工作台页面用时少 3.1%，MUI 页面少 2.5%，商店页面少 1.3%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#对象的-rest-直接按最终的-shape-创建)）。
+- 字节码版本升到 12，因为对象的 rest 用一张列表记下它排除的键（`OP_copy_rest`）：v0.30.4 及更早版本写出的字节码不能再读入（`SyntaxError: invalid version`），要重新编译。
+
+### 修复
+
+- 在对象字面量里展开字符串，现在得到它的各个字符，和 Node 一样：`{..."ab"}` 是 `{0: "a", 1: "b"}`，以前是 `{}`。数字、布尔值、symbol 和 bigint 仍然不给出键。这是上游 QuickJS 的修正 b19b2ec（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md)）。展开、rest 和 `Object.assign` 的复制现在每 4,096 个键读一次中断标志，超时或 `Interrupt` 能在长字符串或键很多的对象复制完之前停下它（[uncatchable.md](docs/changes/uncatchable.zh-CN.md#展开rest-和-objectassign-的复制读中断标志)）。
+- 有内存上限时，一次要申请一大块内存的操作（`repeat`、`padStart`、`ArrayBuffer` 和类型化数组、`push`、`join` 等）在这块内存会超过上限时，先跑一次完整 GC 再申请。原来引用环里的垃圾还没回收就报内存不足：上限 64 MiB、存活 16 MiB 时，`'x'.repeat(n)` 原来到 39.9 MiB 就失败，现在能到 47.8 MiB，和没有垃圾时一样。在上限内放得下的页面，GC 次数不变。完整清单见 [memory-and-allocation.md](docs/changes/memory-and-allocation.zh-CN.md#大块内存在会超过内存上限时先回收)。
+
 ## [v0.30.4] - 2026-11-14
 
 ### 变更
@@ -658,7 +676,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2

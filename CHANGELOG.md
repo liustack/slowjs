@@ -4,6 +4,24 @@ What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again 
 
 ## [Unreleased]
 
+## [v0.30.5] - 2026-11-14
+
+### Changed
+
+- Pages render in 11% to 13% less time than with v0.30.4. On a linux/amd64 machine with an AMD EPYC 7B13 (the mean of 16 code layouts), tifa's workbench pages take 12.9% less time, the store pages 12.6% less, React pages 11.8% less and the MUI pages 11.2% less. A long Markdown document rendered in a new VM with no memory limit takes 3.4% less: the profile of the next line gains 5.5% there, and the other changes of this release together cost 2.2%, for a reason not found yet ([performance.md](docs/performance.md#long-markdown-without-the-profile)). A small loop that does one thing can take more time. Of 12 micro benchmarks of `compare/testdata` timed the same way, six are slower than with v0.30.4 (`global_read` 13.9%, `typed_array_read` 13.3%, `prop_create` 7.1%, `array_for` 3.5%, `array_read` 3.2%, `prop_read` 1.6%), three are faster (`array_prop_create` 10.8%, `int_arith` 3.4%, `array_slice` 1.1%), and for three the timing cannot tell. `typed_array_read` is slower because of the profile, which is trained on pages only. `global_read` is 12.8% slower without the profile too, for a reason not found yet ([performance.md](docs/performance.md#the-micro-benchmarks-by-time)).
+- The engine is now generated with a profile of real page renders: LLVM orders the code by how often each branch ran while tifa's store and MUI pages rendered. With the same C, the profile alone takes 5.4% (MUI pages) to 8.4% (store pages) off a render on that machine, and about 3% on an Apple M4. Code the pages do not run can get slower: with the same C, the profile makes six of the 12 micro benchmarks of the line above slower (`typed_array_read` the most, by 14.3% at the mean of the layouts) and one faster. A build of the module does not change, since the profile and the code generated with it are checked in ([generator.md](docs/changes/generator.md#a-profile-of-tifas-pages)).
+- The hash table of atoms, the numbers the engine gives property names and the strings it keeps once, now doubles when it holds one atom for two buckets, where it doubled at two atoms a bucket. Making a key from a string walks a shorter chain: in our measurement on linux/amd64 tifa's MUI pages took 1.0% less time and the shop's pages 1.1% less, and the workbench's pages did not change. A VM holds 50 KB to 200 KB more, and a script near its memory limit can run out of memory a little sooner ([strings.md](docs/changes/strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets)).
+- `'' + x` with a string `x`, which React writes to turn a value into a string, now gives back `x` itself instead of a new copy of it, and so does the first step of a template literal that starts with `${x}`. On a linux/amd64 machine with an AMD EPYC 7B13 (16 code layouts), React pages take 2.2% less time to render and MUI pages 0.7% less.
+- `o[k]` with a key that is a string given by `for in` or `Object.keys` is looked up by the number the engine already has for that property name, not through the generic property path. On a linux/amd64 machine with an AMD EPYC 7B13 (16 code layouts), renders take 0.6% (storefront pages) to 1.4% (MUI pages) less time.
+- A string remembers the number of the property name it is, so `o[k]` and `hasOwnProperty.call` with a key from `for in` or `Object.keys` take it in one read. On a linux/amd64 machine with an AMD EPYC 7B13 (16 code layouts), renders take 0.8% (workbench pages) to 2.0% (MUI pages) less time than with only the keyed read of the line above. Every string takes 4 bytes more: a heap of short strings counts up to 10% more in `MemorySize`.
+- An object rest, such as `const {a, ...rest} = props`, and the spread of an object into an object literal, such as `{type: x, ...props}`, now copy a source whose layout of properties they have seen before by the layout they wrote down, instead of looking its properties up one at a time. On a linux/amd64 machine with an AMD EPYC 7B13 (16 code layouts), tifa's workbench pages take 3.1% less time, the MUI pages 2.5% less and the store pages 1.3% less ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#an-object-rest-is-made-at-its-final-shape)).
+- Bytecode is version 12, because an object rest lists the keys it leaves out (`OP_copy_rest`): bytecode written by v0.30.4 or an earlier release no longer loads (`SyntaxError: invalid version`), and has to be compiled again.
+
+### Fixed
+
+- The spread of a string into an object literal gives its characters, as Node does: `{..."ab"}` is `{0: "a", 1: "b"}`, where it was `{}`. A number, a boolean, a symbol or a bigint still gives no key. This is upstream QuickJS's fix b19b2ec ([upstream-commits.md](docs/changes/upstream-commits.md)). The copy of a spread, a rest or `Object.assign` now reads the interrupt flag every 4,096 keys, so a timeout or `Interrupt` stops the copy of a long string or of an object of many keys before it ends ([uncatchable.md](docs/changes/uncatchable.md#the-copy-of-a-spread-a-rest-and-objectassign-reads-the-interrupt-flag)).
+- Under a memory limit, an operation that asks for one large block (`repeat`, `padStart`, `ArrayBuffer` and the typed arrays, `push`, `join` and others) now runs a full GC first when the block would pass the limit. It ran out of memory with garbage in reference cycles still there: `'x'.repeat(n)` under a limit of 64 MiB with 16 MiB live failed at 39.9 MiB and now works up to 47.8 MiB, where it works with no garbage. A page that fits under its limit runs the same GCs as before. The full list is in [memory-and-allocation.md](docs/changes/memory-and-allocation.md#a-large-block-collects-first-when-it-would-pass-the-memory-limit).
+
 ## [v0.30.4] - 2026-11-14
 
 ### Changed
@@ -658,7 +676,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.4...main
+[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.5...main
+[v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
 [v0.30.4]: https://github.com/liustack/quickjs/compare/v0.30.3...v0.30.4
 [v0.30.3]: https://github.com/liustack/quickjs/compare/v0.30.2...v0.30.3
 [v0.30.2]: https://github.com/liustack/quickjs/compare/v0.30.1...v0.30.2

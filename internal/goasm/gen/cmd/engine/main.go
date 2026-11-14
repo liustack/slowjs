@@ -58,6 +58,9 @@ var (
 	postArgs  = flag.String("postlink-opt-args", strings.Join(gen.PostLinkOptArgs, " "), "the options of that optimizer run, separated by spaces (-release refuses a change)")
 	pollOff   = flag.Int("poll-offset", gen.PollCounterOffset, "offset of the poll counter from the base of the shadow-stack region (engine_decl_<arch>.go records it)")
 	align64F  = flag.String("align64", engineAlign64, "functions whose body starts at a fixed place in a line of 64 bytes, as name:offset (a multiple of 8 below 64), comma separated (with -src the default is none)")
+	goCallsF  = flag.String("go-calls", "", "the list of the engine functions Go code names (internal/cengine/gocalls.txt, gen.GoCalls): every other unified function stores no result to the Go stack and its Go declaration has none (empty: every function stores its result)")
+	profileF  = flag.String("profile", "", "a text profile (llvm-profdata merge --text, engine/pgo/profile.txt): compile once without it to write the inlining down, then with it, replaying that inlining (gen.InlineRemarks)")
+	staleMax  = flag.Int("profile-stale-max", gen.PGOStaleMax, "with -profile: warn when the profile no longer fits the C of more functions than this")
 )
 
 var defaultNonFormat = strings.Join(gen.EngineNonFormatVariadic, ",")
@@ -157,7 +160,6 @@ func main() {
 	clang := filepath.Join(*llvm, "clang")
 
 	// 1. Compile every C file to IR.
-	type src struct{ path, group string }
 	var srcs []src
 	for _, f := range []string{"quickjs", "libregexp", "libunicode", "cutils", "dtoa", "heap", "tlsf"} {
 		srcs = append(srcs, src{filepath.Join(*engineDir, f+".c"), f})
@@ -185,16 +187,7 @@ func main() {
 		cflags = append([]string{}, gen.ARM64CFlags...)
 	}
 	libc := filepath.Join(*engineDir, "libc")
-	var lls []string
-	defined := make([][]string, len(srcs))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan bool, *jobs)
-	var cerr error
-	formatCalls := 0
-	for i, s := range srcs {
-		ll := filepath.Join(*work, fmt.Sprintf("%03d_%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c")))
-		lls = append(lls, ll)
+	srcArgs := func(s src) []string {
 		args := append([]string{}, cflags...)
 		if s.group == "libc" {
 			// abort.c asks the host (engine/host.h).
@@ -204,6 +197,27 @@ func main() {
 			args = append(args, "-I"+libc, "-I"+*engineDir, `-DCONFIG_VERSION="2026-06-04"`)
 			args = append(args, gen.ValueFlagsFor(*arch, s.group)...)
 		}
+		return args
+	}
+	llName := func(i int, s src, kind string) string {
+		return filepath.Join(*work, fmt.Sprintf("%03d_%s%s.ll", i, strings.TrimSuffix(filepath.Base(s.path), ".c"), kind))
+	}
+	var prof *pgoBuild
+	if *profileF != "" {
+		prof = newPGO(*profileF, filepath.Join(*work, "pgo"), len(srcs))
+		prof.firstPass(srcs, srcArgs, llName, strings.Fields(*postArgs), postOn)
+	}
+	var lls []string
+	defined := make([][]string, len(srcs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan bool, *jobs)
+	var cerr error
+	formatCalls := 0
+	for i, s := range srcs {
+		ll := llName(i, s, "")
+		lls = append(lls, ll)
+		args := srcArgs(s)
 		// The formats of the engine's own files are read in IR as written,
 		// before the optimizer changes the calls that carry them.
 		var plainLL string
@@ -212,17 +226,35 @@ func main() {
 			plainLL = strings.TrimSuffix(ll, ".ll") + ".plain.ll"
 			plainArgs = append(append(append([]string{}, args...), "-O0"), "-S", "-emit-llvm", "-o", plainLL, s.path)
 		}
+		var feArgs []string
+		if prof != nil {
+			args = append(args, prof.secondPassArgs(i)...)
+			// The IR before any optimization says which functions have a
+			// profile (gen.UnprofiledFunctions).
+			feArgs = append(append([]string{}, args...), "-Xclang", "-disable-llvm-passes", "-S", "-emit-llvm", "-o", llName(i, s, ".fe"), s.path)
+		}
 		args = append(args, "-S", "-emit-llvm", "-o", ll, s.path)
 		wg.Add(1)
-		go func(s src, ll string, args []string) {
+		go func(i int, s src, ll string, args []string) {
 			defer wg.Done()
 			sem <- true
 			defer func() { <-sem }()
-			if _, err := capture(clang, args...); err != nil {
+			stderr, err := capture(clang, args...)
+			if err != nil {
 				mu.Lock()
 				cerr = err
 				mu.Unlock()
 				return
+			}
+			if feArgs != nil {
+				prof.noteMisexpect(stderr)
+				if _, err := capture(clang, feArgs...); err != nil {
+					mu.Lock()
+					cerr = err
+					mu.Unlock()
+					return
+				}
+				prof.readFrontIR(i, llName(i, s, ".fe"))
 			}
 			if plainLL != "" {
 				if _, err := capture(clang, plainArgs...); err != nil {
@@ -248,11 +280,14 @@ func main() {
 			mu.Lock()
 			defined[i] = names
 			mu.Unlock()
-		}(s, ll, args)
+		}(i, s, ll, args)
 	}
 	wg.Wait()
 	if cerr != nil {
 		die(cerr)
+	}
+	if prof != nil {
+		prof.reportStale(*staleMax)
 	}
 	groups := make([]string, len(srcs))
 	for i, s := range srcs {
@@ -262,14 +297,28 @@ func main() {
 	fmt.Fprintf(os.Stderr, "format strings: %d calls of the formatter checked\n", formatCalls)
 	linked := filepath.Join(*work, "engine.ll")
 	must1(capture(filepath.Join(*llvm, "llvm-link"), append([]string{"-S", "-o", linked}, lls...)...))
+	if prof != nil {
+		stripCGProfile(linked)
+	}
 	if postOn {
 		// The optimizer sees the calls from one file to another, which clang
 		// could not. It runs before the pass, so the pass takes the module as it
 		// stands: the functions inlined away are gone from it, and the ones the
 		// optimizer cloned (mark_children.specialized.2) are in it under new names.
 		linkedOpt := filepath.Join(*work, "engine.opt.ll")
-		must(gen.PostLinkOpt(*llvm, strings.Fields(*postArgs), linked, linkedOpt))
+		optArgs := strings.Fields(*postArgs)
+		if prof != nil {
+			optArgs = append(optArgs, prof.optArgs()...)
+		}
+		must(gen.PostLinkOpt(*llvm, optArgs, linked, linkedOpt))
 		linked = linkedOpt
+	}
+	if prof != nil {
+		// The line tables served the replay: nothing after this reads them.
+		stripCGProfile(linked)
+		noDebug := filepath.Join(*work, "engine.nodebug.ll")
+		must1(capture(filepath.Join(*llvm, "opt"), "-S", "-strip-debug", "-o", noDebug, linked))
+		linked = noDebug
 	}
 	tCompile := time.Since(t0)
 
@@ -349,6 +398,9 @@ func main() {
 	// check take for one text.
 	llcArgs := []string{"-O2", "-relocation-model=pic", "-enable-shrink-wrap=false", "-profile-guided-section-prefix=false",
 		"-load", *pass}
+	if prof != nil {
+		llcArgs = append(llcArgs, gen.PGOLLCFlags...)
+	}
 	if *arch == "arm64" {
 		// The tiny code model reaches data with one instruction that names
 		// the whole address (adr, a load of a label), which the lowering
@@ -517,8 +569,39 @@ func main() {
 		}
 	}
 	env.RegResult = regResult
+	env.ICallRegResult = !*poisonF
 	if a64env != nil {
 		a64env.RegResult = regResult
+		a64env.ICallRegResult = !*poisonF
+	}
+	// A function no Go code names (-go-calls) is called only by lowered code,
+	// which takes every result from registers, so it stores none to the Go
+	// stack (gen.LowerEnv.NoResult). A packed function counts as named when
+	// Go names the function that makes its block (gen.PackedGo). The poison
+	// build stores every result.
+	goCalled, err := readGoCalls(*goCallsF, unit.FuncOrder, rep)
+	if err != nil {
+		die(err)
+	}
+	// A register-entry leaf with a frame has a Go declaration only for go
+	// vet (gen.LeafDecl). It takes its arguments in registers, so a Go call
+	// of it would run on whatever the registers hold.
+	for _, name := range unit.FuncOrder {
+		if goCalled[name] && leafSet[name] {
+			die(fmt.Errorf("%s names the register-entry leaf %s, which Go code must not call", *goCallsF, name))
+		}
+	}
+	noResult := map[string]bool{}
+	if goCalled != nil && !*poisonF {
+		for _, name := range unit.FuncOrder {
+			if !goCalled[name] && !leafSet[name] {
+				noResult[name] = true
+			}
+		}
+	}
+	env.NoResult = noResult
+	if a64env != nil {
+		a64env.NoResult = noResult
 	}
 	type lowering struct {
 		text string
@@ -586,6 +669,12 @@ func main() {
 		metas = append(metas, meta)
 	}
 	if err := gen.CheckBodyDataAlign(plan, metas, align64); err != nil {
+		die(err)
+	}
+	// A call through a pointer reaches only a lowered unified function (or
+	// a stub, which never returns): every pointer the code takes or
+	// engine_rodata holds must name one.
+	if err := gen.CheckPointerTargets(metas, stubs, plan, unit.Sets); err != nil {
 		die(err)
 	}
 	tLower := time.Since(t0)
@@ -667,6 +756,10 @@ func main() {
 	for _, name := range gen.SortedKeys(rep.PackedWas) {
 		g, ok := gonames[name]
 		if !ok {
+			continue
+		}
+		// No Go code makes the block: the function keeps its plain name.
+		if goCalled != nil && !goCalled[name] {
 			continue
 		}
 		src, ok, err := gen.PackedGo(g, g+gen.PackedEntry, rep.PackedWas[name])
@@ -1078,14 +1171,23 @@ func goDecls(metas, stubs []gen.Meta, sigs map[string]gen.Sig, names gen.NameMap
 		"// stack check at their entry (gen.MarkNoSplit), for the tests. A constant\n" +
 		"// takes no room in a binary that does not use it.\n")
 	fmt.Fprintf(&b, "const noSplitList = %q\n\n", strings.Join(ns, " "))
-	decl := func(name string) { b.WriteString(gen.GoDecl(names[name], sigs[name])) }
+	// A function that stores no result (gen.FuncRecord.NoResult) is declared
+	// without one, so that Go code cannot read it.
+	decl := func(m gen.Meta) {
+		s := sigs[m.Name]
+		if m.Rec != nil && m.Rec.NoResult {
+			s = gen.Sig{Params: s.Params, Ret: gen.Void}
+		}
+		b.WriteString(gen.GoDecl(names[m.Name], s))
+	}
 	all := append(append([]gen.Meta{}, metas...), stubs...)
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	for _, m := range all {
 		if m.Kind == gen.Register {
+			b.WriteString(gen.LeafDecl(names[m.Name], m))
 			continue
 		}
-		decl(m.Name)
+		decl(m)
 	}
 	b.WriteString("\n// missingNames lists the stubs in index order.\n" + missingNamesDecl(stubs))
 	b.WriteString("\n// Host callbacks the engine calls (implemented in Go):\n")
@@ -1328,4 +1430,43 @@ func missingNamesDecl(stubs []gen.Meta) string {
 	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// readGoCalls reads the list of -go-calls and gives the C functions of funcs
+// it names, by their Go name or, for a packed function, by the name of its
+// entry (gen.PackedEntry). It fails on a name that is no function of funcs:
+// the list is stale (go run ./internal/goasm/gen/cmd/gocalls). An empty path
+// gives nil: every function stores its result.
+func readGoCalls(path string, funcs []string, rep *gen.Report) (map[string]bool, error) {
+	if path == "" {
+		return nil, nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	list, err := gen.ReadGoCalls(b)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	gonames, err := gen.GoNames(dedupe(append(append([]string{}, funcs...), gen.SortedKeys(rep.Sigs)...)))
+	if err != nil {
+		return nil, err
+	}
+	called := map[string]bool{}
+	named := map[string]bool{}
+	for _, name := range funcs {
+		g := gonames[name]
+		for _, n := range []string{g, g + gen.PackedEntry} {
+			if list[n] {
+				called[name], named[n] = true, true
+			}
+		}
+	}
+	for _, n := range gen.SortedKeys(list) {
+		if !named[n] {
+			return nil, fmt.Errorf("%s names %s, which is no function of the engine: run go run ./internal/goasm/gen/cmd/gocalls", path, n)
+		}
+	}
+	return called, nil
 }

@@ -28,7 +28,13 @@ runs its own checks and lowering in Go (`debug/elf`,
    interpreter writes the two halves one at a time, and Zen 3 cannot forward a
    16-byte load from them (see [c-engine.md](../../../docs/changes/c-engine.md#how-a-jsvalue-is-copied)).
    The small libc is left out, since its `memcpy` moves 16 bytes at a time on
-   purpose. CheckIR rejects variadics, byval, sret and long double.
+   purpose. CheckIR rejects variadics, byval, sret and long double. With a
+   profile (`-profile engine/pgo/profile.txt`, which `make gen` passes) each
+   file is compiled twice: first without it, writing down which calls were
+   inlined, then with it and that inlining replayed. The post-link optimizer
+   does the same, and clang, opt and llc get `-pgso=false`. What the profile
+   may decide is in
+   [generator.md](../../../docs/changes/generator.md#a-profile-of-tifas-pages).
 2. The shadow-stack pass (`pass/shadow.cpp`) moves every address-taken local
    and dynamic alloca onto the VM's shadow stack: argument 0 of every engine
    function is the first free shadow byte, each function hands its callees
@@ -82,6 +88,7 @@ runs its own checks and lowering in Go (`debug/elf`,
    area, call, read the result, restore), where a call to a unified function
    the driver lowers takes the result from the registers the callee stored
    it from and reads nothing back from the Go stack (`LowerEnv.RegResult`),
+   and so does a call through a pointer (`LowerEnv.ICallRegResult`),
    move LLVM's locals onto the Go frame, keep constant pools inside the
    function, and turn every return into a jump to one Go RET. A function
    starts in the lowered object where its body will sit in the binary
@@ -283,8 +290,12 @@ own output (`a64ProveLR`): no instruction left names x30, and none reads,
 writes or takes the address of a byte of a dropped slot, so the slot is
 written only from x30 and read only into x30 on every path, and both are
 gone. The address of a tuple spill counts with every byte a tuple through it
-reaches, up to where its register is written again, a call or a return, and
-must not live past a label or a branch. A function the proof refuses stops
+reaches on every path from it, through labels and into the targets of
+branches, up to where its register is written again, a call or a return
+(`a64TupleReach`). It must not be read in any other way, nor reach an
+indirect branch, a label the function does not have, a call while it sits in
+a register a call keeps, a call to a register-entry leaf that takes it as an
+argument, or the end of the function. A function the proof refuses stops
 the build. Any other use of LR (a w
 register, LR twice in a pair, writeback forms other than the frame's own)
 stops it too. `GEN_DROP_LR_PAIRS=1` is the negative build that drops the
@@ -293,7 +304,7 @@ other register of a pair with x30, which the proof must refuse:
 a negative build, which the engine's tests must fail on. Tests:
 `TestLowerARM64EngineLR`, `TestLowerARM64EngineLRRefused`,
 `TestLowerARM64EngineLRNegative`, `TestLowerARM64EngineLRLabel`,
-`TestLowerARM64EngineLRTuple`.
+`TestLowerARM64EngineLRTuple`, `TestLowerARM64EngineLRTuplePaths`.
 
 A function whose arguments need more integer registers than a unified entry
 has (10 on amd64, 6 on arm64) takes the shadow pointer and the address of a
@@ -414,10 +425,10 @@ same folder removes the file.
 
 ```sh
 go build -o /tmp/engine-gen ./internal/goasm/gen/cmd/engine
-L=/usr/lib/llvm-22/bin P=internal/goasm/gen/pass
+L=$(scripts/llvm-bin.sh) P=internal/goasm/gen/pass
 $L/clang++ -shared -fPIC -O1 $($L/llvm-config --cxxflags) $P/shadow.cpp $P/poll.cpp $P/icall.cpp $P/facts.cpp \
     -o internal/goasm/gen/internal/_shadow.so
-/tmp/engine-gen -engine engine -pass internal/goasm/gen/internal/_shadow.so \
+/tmp/engine-gen -engine engine -llvm $L -pass internal/goasm/gen/internal/_shadow.so \
     -keep-going -report /tmp/rej.json -out /tmp/cengine/cengine
 ```
 
@@ -456,9 +467,40 @@ call before writing it but those results and the saved registers. A call
 whose record says it takes the result from registers (`RegResult`) has no
 result loads: its target must be a lowered unified function, not a stub, a
 leaf or Go code, and the registers llc takes the result from must be the
-ones the callee's probe returns it in. Each return stores the registers llc
+ones the callee's probe returns it in. A call through a pointer may take its
+result from registers too: a pointer holds only a lowered unified function
+(below), so the registers must be the ones every lowered unified function
+returns a result of that type in, by their probes on amd64 and by the
+convention on arm64 (x0, x1 or d0), where each return of llc's facts must
+use them. Each return stores the registers llc
 returns and jumps to Go's epilogue, which touches only BP and SP, so those
-registers still hold the result after the RET. A leaf keeps C's registers, so of
+registers still hold the result after the RET. This rests on what Go does
+with assembly, checked in Go 1.26.6 and 1.27.2: the assembler expands a RET
+of a TEXT with a frame into the restore of BP (FP and LR on arm64), the add
+to SP and the RET (`cmd/internal/obj/x86/obj6.go` at line 815,
+`cmd/internal/obj/arm64/obj7.go` at line 697), and the runtime never stops
+assembly at a point it chooses (`isAsyncSafePoint` in `runtime/preempt.go`
+at line 450 refuses a function with `FuncFlagAsm`), so no call is pushed
+between the RET and the read (`pushCall` in `runtime/signal_amd64.go` at
+line 80 and `signal_arm64.go` at line 91 runs only for such a stop, and on
+windows the stop asks `isAsyncSafePoint` too, `runtime/os_windows.go` at
+line 1221 in 1.26.6 and 1275 in 1.27.2). A fault diverts to a panic
+(`preparePanic`) and never comes back to the read. A function no Go code names stores no result at all
+(`-go-calls`, `FuncRecord.NoResult`): its only callers are lowered calls,
+which take the result from registers. `internal/cengine/gocalls.txt` lists
+the functions the Go files and the hand-written assembly of the module
+name, as a call, as a value, in a `//go:linkname` or in a `#define`. `go run
+./internal/goasm/gen/cmd/gocalls` writes it (`GoCalls`), and
+`TestGoCallsList` fails when it is stale. Such a function is declared to Go
+without a result, so Go code that reads one does not compile, and `go vet
+-asmdecl` holds its TEXT to the size of its arguments. The check takes no
+result store at its returns, still holds the registers llc returns in to
+the ones its callers read, and refuses a call that loads a result from the
+Go stack where it could reach such a function: a direct call of one, and a
+call through a pointer as soon as there is one. A packed function counts as
+named when Go names the function that makes its block (`PackedGo`), and when
+Go does not it gets no such function. A poison build, and a build without
+`-go-calls` (the `-src` builds of the tests), store every result. A leaf keeps C's registers, so of
 its facts only its calls' targets and the number of its calls and returns
 are checked. llc's own code must keep to what the build rules out: a call
 through memory fails, and so does a frame access wider than 8 bytes that is
@@ -467,13 +509,34 @@ must agree with the pass's signature for it, its list of leaves and its
 calling convention. Each indirect call must carry the symbol LLVM put at it
 in llc's object, of that function, and the signature it names must be the
 one the lowering marshalled; a symbol anywhere else fails. It compares engine_rodata and the data each function
-carries byte by byte, pointers by what they point to. It also holds
+carries byte by byte, pointers by what they point to. A function pointer,
+an address the code takes or a pointer of engine_rodata, may hold only the
+start of a lowered unified function or of a stub: a host callback (Go code),
+a leaf or a place inside a function fails, here and already in the driver
+(`CheckPointerTargets`), so every call through a pointer reaches code that
+returns its result the way a lowered unified function does. It also holds
 each pool and table to its alignment at the address where it sits in the
 binary. `-verify-all` also
 fails when a function was not in the binary. `GEN_EDIT_LOWERED` edits the
 lowered text before it is assembled, for the check's own tests
 (`TestPostLinkCheck`, from C through the driver, and `TestCheckCases`, from
 hand-written llc code).
+
+On amd64, an SSE instruction whose memory operand must be on 16 bytes (any
+16-byte operand but those of `movups`, `movupd`, `movdqu` and `lddqu`) reads
+only the data of its own function through RIP, or a local or a global. Each
+part of that is held: the data after the code has a `PCALIGN $16` in front of
+it that must add no byte (`emitData` refuses data off 16 in the lowered object,
+`dataPlaced` a body whose data starts off 16 in the binary), each such RIP read
+must reach an address on 16 in the binary (`checkAlign16`, which names the
+function, the instruction and the address), every shadow stack pointer is made
+by `cengine.AlignSP` and checked by `cengine.CheckSP` in a `testhooks` build,
+and the pass refuses an access of any width aligned to 16 or more whose address
+does not come from a local or a global (`heapAligned` in `pass/shadow.cpp`).
+Tests: `TestCheckAlign16`, `TestPostLinkCheck` (`vecpool`, a pool off 16),
+`TestEmitDataAligned`, `TestDataPlaced`, `TestRejectSamples`
+(`heap_aligned.c`, `merged_aligned.c`), `TestAlignSP` and `TestCheckSP`. arm64 needs none of it:
+its `ldr q` and `str q` take any address.
 
 What the check takes on trust, and where it stops:
 

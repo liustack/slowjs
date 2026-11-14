@@ -177,6 +177,7 @@ type engineState struct {
 // panics when the engine was left halfway (abandoned): the call would run on
 // the state a panic left.
 func (m *VM) toEngine() {
+	cengine.CheckSP(m.sp)
 	if m.abandoned() {
 		panic(brokenPanic)
 	}
@@ -205,7 +206,7 @@ const tmpMax = 64 << 10
 // (tmpError), or the exception.
 func (m *VM) tmp(n uintptr) (p, sp uintptr, heap bool) {
 	if n <= tmpMax {
-		if end := (m.sp + n + 15) &^ 15; end+tmpMax <= m.end {
+		if end := cengine.AlignSP(m.sp + n); end+tmpMax <= m.end {
 			return m.sp, end, false
 		}
 	}

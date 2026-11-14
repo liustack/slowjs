@@ -16,6 +16,7 @@
      render bundle=B.js inputs=a.json,b.json [prelude=p1.js,p2.js] [warm=50]
             [n=200] [html=DIR] [tag=T] [front=N] [limit=BYTES]
             [footprint=BYTES] [tifa=1 [murmur=0]] [young=1] [shapes=N]
+            [reset=K]
 
    A timed render ends when the HTML is one flat string of the engine: tifa
    makes its UTF-8 in Go, and here it is made after the clock stops. startRender
@@ -49,7 +50,13 @@
    With RV_STATS set in the environment, a build with -DRV_STATS prints the
    dispatches of the register loop and the calls into it from C and out of
    it, a timed render, and with RV_OPS also set the dispatches of each
-   register op. */
+   register op.
+
+   reset=K is for a build with -fprofile-instr-generate (engine/pgo/train.sh):
+   the counters of the profile are set to zero before the page of index K, so
+   that the profile holds only what came after (give the pages twice and K
+   the number of pages, and it holds warm renders only: no load of the
+   bundle, no first render of a page). */
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -99,6 +106,22 @@ static const char *arg(int argc, char **argv, const char *name, const char *def)
         if (!strncmp(argv[i], name, n) && argv[i][n] == '=')
             return argv[i] + n + 1;
     return def;
+}
+
+/* PGO_TRAIN: the build of engine/test/build.sh pgo, with the runtime of
+   -fprofile-instr-generate, which defines the reset. */
+#ifdef PGO_TRAIN
+void __llvm_profile_reset_counters(void);
+#endif
+
+static void profile_reset(void)
+{
+#ifdef PGO_TRAIN
+    __llvm_profile_reset_counters();
+#else
+    fprintf(stderr, "render: reset= needs the build of engine/test/build.sh pgo\n");
+    exit(2);
+#endif
 }
 
 static double now_ns(void)
@@ -645,6 +668,7 @@ int main(int argc, char **argv)
     const char *release = arg(argc, argv, "release", NULL);
     int young = atoi(arg(argc, argv, "young", soak ? "1" : "0"));
     int tifa = atoi(arg(argc, argv, "tifa", "0"));
+    int reset = atoi(arg(argc, argv, "reset", "-1"));
     Pool pool = { 0 };
     JSRuntime *rt;
     JSContext *ctx;
@@ -769,6 +793,8 @@ int main(int argc, char **argv)
         printf("{\"pages\":[");
         for (int k = 0; k < in.n; k++) {
             size_t len, hl;
+            if (k == reset)
+                profile_reset();
             char *html = render(ctx, start, in.json[k], in.len[k], &len);
             long rv_before[4];
             static long rv_ops_before[256];

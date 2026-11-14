@@ -74,6 +74,11 @@ static int rv_fold_reach(RVPass *s, int pos, int npop)
         n = max_int(3, 1 + (m & 3));
         n = max_int(n, 1 + ((m >> 2) & 7));
         return max_int(n, 1 + ((m >> 5) & 7));
+    case OP_copy_rest:
+        /* the offsets byte of copy_data_properties, read below the top
+           before the result (regvm-ops-copy.h) */
+        m = p[1];
+        return max_int((m >> 2) & 7, (m >> 5) & 7);
     case OP_iterator_next: case OP_iterator_call:
     case OP_iterator_get_value_done:
         return 4;

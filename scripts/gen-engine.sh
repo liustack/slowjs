@@ -11,7 +11,8 @@
 # internal/goasm/gen need (scripts/check.sh does it before them).
 #
 # Environment:
-#   LLVM_BIN     bin folder of LLVM 22.1.8 (default /usr/lib/llvm-22/bin)
+#   LLVM_BIN     bin folder of LLVM 22.1.8 (default: the first that exists of
+#                /usr/lib/llvm-22/bin and the Homebrew llvm@22 folders, see llvm-bin.sh)
 #   GEN_JOBS     parallel clang jobs (default 2)
 #   GEN_SHADOW   log2 of the shadow stack (default 25, the 32 MiB the host uses)
 #   GEN_KEEP     copy the generated files to this folder
@@ -24,20 +25,19 @@
 #                run the post-link check of every function against each
 #                (scripts/go-versions.sh). Set GEN_OUT as well, so that
 #                internal/cengine stays as it is.
+#   GEN_PGO      1 (default) generates with the profile of tifa's pages,
+#                engine/pgo/profile.txt (see engine/pgo/README.md). 0 generates
+#                without it, for comparison, and is not a formal build.
 set -eu
 
 arch=${1:-amd64}
 case $arch in amd64|arm64|pass) ;; *) echo "gen-engine.sh: ARCH $arch: want amd64, arm64 or pass" >&2; exit 2 ;; esac
-llvm=${LLVM_BIN:-/usr/lib/llvm-22/bin}
-want=22.1.8
+here=$(cd "$(dirname "$0")" && pwd)
+# llvm-bin.sh finds LLVM 22.1.8, checks its version and says what to install
+llvm=$("$here/llvm-bin.sh")
 
-cd "$(dirname "$0")/.."
+cd "$here/.."
 out=${GEN_OUT:-internal/cengine}
-got=$("$llvm/clang" --version 2>/dev/null | sed -n 's/.*clang version \([0-9][0-9.]*\).*/\1/p' | head -n 1)
-if [ "$got" != "$want" ]; then
-	echo "gen-engine.sh: clang in $llvm is '${got:-missing}': the engine is generated with LLVM $want only (set LLVM_BIN)" >&2
-	exit 1
-fi
 
 export CGO_ENABLED=0
 mkdir -p .build
@@ -70,14 +70,19 @@ if [ "${GEN_RELEASE:-1}" = 0 ]; then
 	release=
 	echo "warning: GEN_RELEASE=0 is not a formal build" >&2
 fi
+profile="-profile engine/pgo/profile.txt"
+if [ "${GEN_PGO:-1}" = 0 ]; then
+	profile=
+	echo "warning: GEN_PGO=0 is not a formal build" >&2
+fi
 verify=
 if [ -n "${GEN_VERIFY_BIN:-}" ]; then
 	verify="-verify-bin $GEN_VERIFY_BIN -verify-pkg github.com/liustack/quickjs/internal/cengine -verify-all"
 fi
 # shellcheck disable=SC2086
 .build/engine-gen -engine engine -llvm "$llvm" -pass $pass -arch "$arch" -mode pn -varargs-block \
-	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" \
-	-j "${GEN_JOBS:-2}" $release $verify
+	-shadow-size-log2="${GEN_SHADOW:-25}" -pkg cengine -work ".build/w-$arch" -out "$out" -go-calls internal/cengine/gocalls.txt \
+	-j "${GEN_JOBS:-2}" $release $verify $profile
 
 if [ -n "${GEN_KEEP:-}" ]; then
 	rm -rf "$GEN_KEEP"

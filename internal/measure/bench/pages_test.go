@@ -13,7 +13,8 @@ import (
 )
 
 func TestDropPages(t *testing.T) {
-	f := filepath.Join(t.TempDir(), "bin")
+	dir := t.TempDir()
+	f := filepath.Join(dir, "bin")
 	// Just written: its pages are dirty and in memory.
 	if err := os.WriteFile(f, make([]byte, 1<<20), 0o644); err != nil {
 		t.Fatal(err)
@@ -24,6 +25,7 @@ func TestDropPages(t *testing.T) {
 		}
 		return
 	}
+	skipWherePagesStay(t, dir)
 	if _, err := os.ReadFile(f); err != nil {
 		t.Fatal(err)
 	}
