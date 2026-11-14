@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，脚本返回或抛出的字符串在调用顶层也会停止转换'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -583,3 +583,13 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
 
 测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。
+
+## 脚本返回或抛出的字符串在顶层也会停止转换
+
+发布版本：Unreleased。
+
+长字符串的转换现在在调用的顶层也会在 `Interrupt` 和 eval 超时时停下，不只是在 javascript 调用的 Go 函数里：`Eval`、`Call`、`Value.Any` 等返回 Go 值的函数在脚本跑完之后转换脚本返回或抛出的字符串，或者对象的 JSON。这个字符串有多长，转换要多久，由脚本决定，只受内存上限约束：在 amd64 上读一个 64 Mi 个字符的字符串要 0.5 秒，期间不看停止，所以一次调用可能在超时之后这么久才结束。现在调用以中断结束，和 Go 函数里一样每 256 Ki 个字符看一次，虚拟机之后照常运行脚本。在对虚拟机的调用之外，比如 `NewString` 转换一个 Go 字符串时，没有停止可看，和以前一样。
+
+不是字符串的值，比如抛出的带自己 `toString` 的对象，以前经过 `JS_ToCStringLen2`，它把整个字符串做成一份 UTF-8 拷贝，Go 再一次性复制。现在由引擎生成字符串（`JS_ToString`，运行 javascript 时会看中断标志），Go 像读其他字符串一样就地读它。
+
+测试：`stringstop_test.go` 的 `TestTopLevelConversionStops`：`Eval` 返回的字符串、以它为 message 抛出的 `Error`、`toString` 返回它的被抛出对象，每种字符串，在 `Interrupt` 和 eval 超时时。调用在第一次读停止时以中断结束，不是被杀掉，虚拟机之后照常运行脚本。改动之前，字符串整个返回，被抛出的对象转换时一次也不看停止。

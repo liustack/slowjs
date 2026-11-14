@@ -23,15 +23,17 @@ import (
 // piece is read where it is, as one copy, where JS_ToCStringLen2 made a UTF-8
 // copy of any string that is not ASCII in the VM's memory, which Go then
 // copied again. A rope, a string kept as the pieces it was joined from, is
-// joined first (JS_ToString), and any other value goes the way of
-// toGoString. ok is false, and the exception pending, when that threw, as
+// joined first (JS_ToString), and any other value made a string the same
+// way. ok is false, and the exception pending, when that threw, as
 // when there is no memory to join a rope.
 func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 	p, n, wide, ok := stringChars(v)
 	if !ok {
-		if tag(v) != tagStringRope {
-			return m.toGoString(v, wtf8)
-		}
+		// A rope is joined, and any other value made the string String(v)
+		// makes, by the engine, which reads the interrupt flag while
+		// javascript runs. The string is then read as any other, a piece at
+		// a time when it is long. JS_ToCStringLen2 made a UTF-8 copy of it,
+		// which Go copied in one go with no read of the stop.
 		flat := m.jsToString(v)
 		if isException(flat) {
 			return "", false
@@ -158,14 +160,18 @@ func (m *VM) atomOf(s string) (uint32, error) {
 
 // convStop reports whether a conversion of a long string is to stop, and
 // then leaves the uncatchable "interrupted" pending, as NewArray does
-// (goStop): only in a Go function that javascript called, at Interrupt,
-// the eval timeout or an uncatchable error of the call. m is nil for a
-// conversion that never stops.
+// (goStop): at Interrupt, the eval timeout or an uncatchable error of a
+// call into m. That holds at the top level of a call too, where Eval or
+// Call converts the string a script returned or threw: how long that
+// string is, and so how long its conversion takes, is up to the script.
+// The caller then takes the interrupt as the error of the call. Outside a
+// call into m, as NewString converts first, it reads nothing: an Interrupt
+// then is for no call. m is nil for a conversion that never stops.
 func (m *VM) convStop() bool {
 	if stringStepHook != nil {
 		stringStepHook()
 	}
-	return m != nil && m.host > 0 && m.goStop()
+	return m != nil && m.entered > 0 && m.goStop()
 }
 
 // elemStop counts an element or a property that the conversion of a result

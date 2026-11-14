@@ -198,7 +198,7 @@ func TestConversionStopsMidway(t *testing.T) {
 		return v, gotErr
 	}))
 	for _, c := range longJSStrings {
-		if _, err := m.Eval(`globalThis.s = `+c.js, EvalGlobal); err != nil {
+		if _, err := m.Eval(`globalThis.s = `+c.js+`; undefined`, EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		reads, ok = 0, true
@@ -216,6 +216,78 @@ func TestConversionStopsMidway(t *testing.T) {
 		}
 		wantStopped(t, "NewString("+c.name+")", gotErr)
 		wantStopped(t, "the call of NewString("+c.name+")", err)
+	}
+}
+
+// A long string a script returns or throws, converted at the top level of
+// Eval after the script ran, stops at Interrupt and at the eval timeout as a
+// conversion inside a call does: the length of the string, and so the time
+// its conversion takes, is up to the script. The stop comes at the first
+// read, the call ends with the interrupt and not killed, and the VM runs
+// scripts after.
+func TestTopLevelConversionStops(t *testing.T) {
+	m := newTestVM(t)
+	reads := 0
+	var stop func()
+	stringStepHook = func() {
+		reads++
+		if reads == 1 {
+			stop()
+		}
+	}
+	t.Cleanup(func() { stringStepHook = nil })
+	stops := []struct {
+		name  string
+		setup func()
+		stop  func()
+	}{
+		{"interrupt", func() {}, func() {
+			done := make(chan struct{})
+			go func() {
+				m.Interrupt()
+				close(done)
+			}()
+			<-done
+		}},
+		{"timeout", func() {
+			if err := m.SetEvalTimeout(5 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+		}, func() {
+			// A wait for the deadline, which a hang leaves to go test.
+			for !m.h.Stopping() {
+			}
+		}},
+	}
+	for _, st := range stops {
+		stop = st.stop
+		for _, c := range longJSStrings {
+			if err := m.SetEvalTimeout(0); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := m.Eval(`globalThis.s = `+c.js+`; undefined`, EvalGlobal); err != nil {
+				t.Fatal(err)
+			}
+			for _, src := range []string{`s`, `throw new Error(s)`, `throw { toString() { return s } }`} {
+				st.setup()
+				reads = 0
+				r, err := m.Eval(src, EvalGlobal)
+				what := fmt.Sprintf("%s: Eval(%s) of %s", st.name, src, c.name)
+				// The engine may see the deadline before the conversion does.
+				if (r != nil && r != "") || reads > 1 || (reads == 0 && st.name == "interrupt") {
+					t.Errorf("%s: a %T after %d reads of the stop, want none at the first", what, r, reads)
+				}
+				if e := (*Error)(nil); !errors.As(err, &e) || !e.Uncatchable || !e.Interrupted || errors.Is(err, ErrKilled) {
+					t.Errorf("%s: an error of %d bytes, want the interrupt", what, len(fmt.Sprint(err)))
+				}
+				if err := m.SetEvalTimeout(0); err != nil {
+					t.Fatal(err)
+				}
+				if got := evalString(t, m, `String(1 + 1)`); got != "2" {
+					t.Errorf("after %s: %q", what, got)
+				}
+			}
+		}
 	}
 }
 
@@ -371,7 +443,9 @@ func TestArgStringStopsBeforeAllocation(t *testing.T) {
 		{"cjk", `'中'.repeat(1 << 24)`},
 		{"lone", `'\ud800'.repeat(1 << 24)`},
 	} {
-		if _, err := m.Eval(`globalThis.s = `+c.js, EvalGlobal); err != nil {
+		// undefined: a string returned would be read at the top level, where
+		// the hook stops it too.
+		if _, err := m.Eval(`globalThis.s = `+c.js+`; undefined`, EvalGlobal); err != nil {
 			t.Fatal(err)
 		}
 		reads, ok = 0, true

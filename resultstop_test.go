@@ -275,7 +275,7 @@ func TestRegisterFuncStringStops(t *testing.T) {
 	if err := m.RegisterFunc("gives", func() string { return strings.Repeat("中", 1<<24) }, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.Eval(`globalThis.s = '中'.repeat(1 << 24)`, EvalGlobal); err != nil {
+	if _, err := m.Eval(`globalThis.s = '中'.repeat(1 << 24); undefined`, EvalGlobal); err != nil {
 		t.Fatal(err)
 	}
 	reads = 0
