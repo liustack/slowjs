@@ -569,3 +569,92 @@ Promise.reject({ get message() { big(); return "m" } });
 		}
 	}
 }
+
+// TestRejectionsOddReasons: a reason that cannot be made a string, or whose
+// reads throw, is read with the texts it gives, "" for the others, and the
+// read goes on to the next reason: a Symbol, a revoked Proxy, a Proxy whose
+// trap throws, and a toString that throws a primitive.
+func TestRejectionsOddReasons(t *testing.T) {
+	m := newRejectionsVM(t, 8)
+	if _, err := m.Eval(`
+Promise.reject(Symbol("s"));
+var r = Proxy.revocable({}, {}); r.revoke(); Promise.reject(r.proxy);
+Promise.reject(new Proxy({}, { get() { throw new Error("trap") } }));
+Promise.reject({ toString() { throw 42 }, message: "m" });
+Promise.reject("last");
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	if err != nil || len(reasons) != 5 {
+		t.Fatalf("%d reasons, %v, want 5", len(reasons), err)
+	}
+	for i, e := range reasons[:3] {
+		if e.raw != "" || e.Name != "" || e.Message != "" || e.Stack != "" || e.Uncatchable {
+			t.Errorf("reason %d: %+v, want no text", i, e)
+		}
+	}
+	if e := reasons[3]; e.raw != "" || e.Message != "m" {
+		t.Errorf("toString that throws: %+v, want the message alone", e)
+	}
+	if e := reasons[4]; e.Error() != "last" {
+		t.Errorf("after them: %q", e.Error())
+	}
+	if got := evalString(t, m, `String(1 + 1)`); got != "2" {
+		t.Errorf("after the read %q", got)
+	}
+}
+
+// TestRejectionsLoneSurrogateCut: a lone surrogate is U+FFFD, three bytes,
+// and the cut keeps it when it fits and leaves it out when it does not.
+func TestRejectionsLoneSurrogateCut(t *testing.T) {
+	m := newRejectionsVM(t, 8)
+	if _, err := m.Eval(`
+Promise.reject("a".repeat(8189) + "\uD800" + "bcd");
+Promise.reject("a".repeat(8190) + "\uDC00" + "bcd");
+Promise.reject("a".repeat(8189) + "\uDC00");
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	reasons, _, err := m.UnhandledRejections()
+	if err != nil || len(reasons) != 3 {
+		t.Fatalf("%d reasons, %v", len(reasons), err)
+	}
+	a := func(n int) string { return strings.Repeat("a", n) }
+	for i, want := range []string{a(8189) + "�" + cutMark, a(8190) + cutMark, a(8189) + "�"} {
+		if got := reasons[i].Error(); got != want {
+			t.Errorf("reason %d: %d bytes ending %q, want %d ending %q", i, len(got), got[max(0, len(got)-12):], len(want), want[len(want)-12:])
+		}
+	}
+}
+
+// TestRejectionsInterruptGetter: Interrupt from another goroutine while a
+// getter of a reason runs ends the read with the interrupt, and the reasons
+// after it stay kept.
+func TestRejectionsInterruptGetter(t *testing.T) {
+	m := newRejectionsVM(t, 4)
+	ready := make(chan struct{})
+	defineBuiltin(t, m, "ready", NewBuiltin("ready", 0, func(a Args) (Value, error) {
+		close(ready)
+		return UndefinedValue, nil
+	}))
+	if _, err := m.Eval(`
+Promise.reject({ get message() { ready(); for (;;) {} } });
+Promise.reject("after");
+`, EvalGlobal); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		<-ready
+		m.Interrupt()
+	}()
+	reasons, _, err := m.UnhandledRejections()
+	var e *Error
+	if !errors.As(err, &e) || !e.Interrupted || len(reasons) != 0 {
+		t.Fatalf("%d reasons, %v, want none and the interrupt", len(reasons), err)
+	}
+	reasons, _, err = m.UnhandledRejections()
+	if err != nil || len(reasons) != 1 || reasons[0].Error() != "after" {
+		t.Fatalf("after: %d reasons, %v, want after", len(reasons), err)
+	}
+}
