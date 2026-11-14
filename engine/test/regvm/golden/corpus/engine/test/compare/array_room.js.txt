@@ -290,6 +290,6 @@ result string split: [[a,b,c,d,e],[],[a,b,c],[a,b,,c]]
 result JSON.parse arrays: [1,[2,3],[],[[4,5,6,7,8]]]
 result regexp match all: [1,22,333]
 result regexp exec groups: [ac,a,undefined,c]
-mem-end obj=264 atom=613 shape=231 prop=1115 jsfunc=16 cfunc=172 array=4 fast_array=3 elements=300 binary=0
-mem-gc obj=239 atom=606 shape=220 prop=1064 jsfunc=3 cfunc=172 array=2 fast_array=1 elements=292 binary=0
+mem-end obj=264 atom=613 shape=232 prop=1115 jsfunc=16 cfunc=172 array=4 fast_array=3 elements=300 binary=0
+mem-gc obj=239 atom=606 shape=221 prop=1064 jsfunc=3 cfunc=172 array=2 fast_array=1 elements=292 binary=0
 --- status exit 0

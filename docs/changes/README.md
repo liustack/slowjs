@@ -235,6 +235,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The hash table of atoms holds one atom for two buckets | v0.30.5 | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
 | An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
+| `s[i]` with a string and an int index inside its length is read in the register loop, with no generic lookup | Unreleased | [strings.md](strings.md#a-character-of-a-string-is-read-in-the-register-loop) |
 
 ## JSON
 
@@ -284,6 +285,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | bind with too little memory fails with the out of memory error, and no longer crashes or returns a bound function without its length or name | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-with-too-little-memory-fails-whole) |
 | `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
 | `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
+| A `for in` loop makes no shape: the context holds the empty shape with no prototype its iterator starts from | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape) |
 
 ## Memory
 

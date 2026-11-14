@@ -1,0 +1,11 @@
+result this realm a|x,y|q|
+result other realm a|x,y||
+result nested p:r,s,q:r,s
+result generators a,c,x,0 b,d,y,1 true,true,true,true 20
+result nulls -,-,0,-,n1,0,-,-,0,-,n3,0,-,-,0
+result proxy a,b [ownKeys;gopd a;gopd b;gopd a;gopd b;proto]
+result proxy other realm a,b [ownKeys;gopd a;gopd b;gopd a;gopd b;proto]
+result left threw g
+mem-end obj=380 atom=569 shape=273 prop=1904 jsfunc=0 cfunc=256 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=195 atom=569 shape=155 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

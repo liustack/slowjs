@@ -59,6 +59,6 @@ result "var r = function () { f() = 1 }; r()" => f,ReferenceError
 result "if (false) f() = 1; log.push(\"skipped\")" => skipped
 result "f() = 1; log.push(\"after\")" => f,ReferenceError
 result "x = () => { f() = 1 }; log.push(\"defined\")" => defined
-mem-end obj=197 atom=604 shape=125 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
-mem-gc obj=197 atom=604 shape=125 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
+mem-end obj=197 atom=604 shape=126 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
+mem-gc obj=197 atom=604 shape=126 prop=971 jsfunc=6 cfunc=127 array=4 fast_array=4 elements=108 binary=0
 --- status exit 0

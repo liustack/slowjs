@@ -21613,6 +21613,13 @@ static force_inline JSValue build_for_in_iterator(JSContext *ctx, JSValue obj)
     it->in_prototype_chain = FALSE;
     p1 = JS_VALUE_GET_OBJ(enum_obj);
     p1->u.for_in_iterator = it;
+    /* ctx holds the empty shape with no prototype the iterator starts from,
+       as js_new_proto_shape holds those of the built-in classes, so the next
+       loop finds it rather than making and freeing it again. It stays
+       empty: an iterator that gets keys copies a shape held by more than
+       one. */
+    if (unlikely(!ctx->class_shapes[JS_CLASS_FOR_IN_ITERATOR]))
+        ctx->class_shapes[JS_CLASS_FOR_IN_ITERATOR] = js_dup_shape(p1->shape);
 
     if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
         return enum_obj;
