@@ -59,82 +59,64 @@ func archiveOf(t *testing.T, dir string) *jobj {
 
 func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"liustack-quickjs-pf", "liustack-quickjs-native", "quickjs-ng-pf"} {
+	for _, name := range []string{"liustack-quickjs-pf", "liustack-quickjs-native", "hermes-pf"} {
 		write(t, dir, name+".json", `{"pages": [{"input": "one.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "missing.json", "ok": false}]}`)
 	}
-	for _, name := range []string{"go-quickjs-interp-pf"} {
+	for _, name := range []string{"go-quickjs-interp-native"} {
 		write(t, dir, name+".json", `{"pages": [{"input": "one.json", "ok": false, "cpu_ms_per_op": 1}, {"input": "missing.json", "ok": false}]}`)
 	}
-	result(t, dir, "go-quickjs-interp-pf-rest", true, "one")
+	result(t, dir, "go-quickjs-interp-native-rest", true, "one")
 	result(t, dir, "probe-one", true, "one")
 	write(t, dir, "probe-one.meta", `{"try":0,"disturbed":1}`+"\n"+`{"try":1,"disturbed":0}`+"\n")
 	for name, body := range map[string]string{
-		"liustack-quickjs-pf":     "<p>u:1234567890123</p>",
-		"liustack-quickjs-native": "<p>u:1234567890124</p>",
-		"go-quickjs-interp-pf":    "<p>u:1234567890125</p>",
-		"quickjs-ng-pf":           "<p><!-- -->u:1234567890126</p>",
+		"liustack-quickjs-pf":      "<p>u:1234567890123</p>",
+		"liustack-quickjs-native":  "<p>u:1234567890124</p>",
+		"go-quickjs-interp-native": "<p>u:1234567890125</p>",
+		"hermes-pf":                "<p><!-- -->u:1234567890126</p>",
 	} {
 		write(t, dir, "html/"+name+"-one.html", body)
 	}
 	a := archiveOf(t, dir)
-	if getPath(t, a, "go-quickjs-interp-pf-rest") == nil {
+	if getPath(t, a, "go-quickjs-interp-native-rest") == nil {
 		t.Error("the rest run is not archived")
 	}
 	if tries := getPath(t, a, "probe-one", "tries").([]any); len(tries) != 2 {
 		t.Errorf("tries = %v, want 2", tries)
 	}
-	if ok := getPath(t, a, "go-quickjs-interp-pf", "result", "pages").([]any)[0].(*jobj).m["ok"]; ok != false {
+	if ok := getPath(t, a, "go-quickjs-interp-native", "result", "pages").([]any)[0].(*jobj).m["ok"]; ok != false {
 		t.Errorf("the raw page of the engine was replaced: ok = %v", ok)
 	}
 	cmp := func(kind, engine, page string) *jobj {
 		return getPath(t, a, "_html", "comparisons", kind, engine, page).(*jobj)
 	}
-	same := cmp("pf", "go-quickjs-interp", "one")
+	same := cmp("shop", "go-quickjs-interp", "one")
 	if same.m["same_as_liustack"] != true {
 		t.Errorf("a page with a different timestamp is not the same: %v", same.m)
 	}
 	if h := same.m["normalized_sha256"].(string); len(h) != 64 || h != same.m["reference_sha256"] {
 		t.Errorf("digests: %v", same.m)
 	}
-	if v := cmp("pf", "quickjs-ng", "one").m["same_as_liustack"]; v != false {
-		t.Errorf("quickjs-ng page differs, got %v", v)
+	if v := cmp("shop", "hermes", "one").m["same_as_liustack"]; v != false {
+		t.Errorf("hermes page differs, got %v", v)
 	}
-	if v := cmp("pf", "quickjs-ng", "missing").m["same_as_liustack"]; v != nil {
+	if v := cmp("shop", "hermes", "missing").m["same_as_liustack"]; v != nil {
 		t.Errorf("a page that did not render has no verdict, got %v", v)
 	}
-	if v := cmp("deployed", "liustack-quickjs", "one").m["same_as_liustack"]; v != true {
+	if v := cmp("shop", "liustack-quickjs", "one").m["same_as_liustack"]; v != true {
 		t.Errorf("liustack-quickjs against itself: %v", v)
 	}
 }
 
-func TestTifaRowIsComparedWithThePolyfillRow(t *testing.T) {
+func TestDifferencesShowTheFirstPlace(t *testing.T) {
 	dir := t.TempDir()
-	result(t, dir, "liustack-tifa-native", true, "a", "b")
-	result(t, dir, "liustack-quickjs-pf", true, "a", "b")
-	result(t, dir, "liustack-tifa-mui-native", true, "home", "order")
-	result(t, dir, "liustack-quickjs-mui-pf", true, "home")
-	for name, body := range map[string]string{
-		"liustack-tifa-native-a":        "<p>8:00 AM u:1234567890123</p>",
-		"liustack-quickjs-pf-a":         "<p>8:00 AM u:1234567890124</p>",
-		"liustack-tifa-native-b":        "x 8:00 AM",
-		"liustack-quickjs-pf-b":         "x 8:00 AM",
-		"liustack-tifa-mui-native-home": "<p>one</p>",
-		"liustack-quickjs-mui-pf-home":  "<p>two</p>",
-	} {
-		write(t, dir, "html/"+name+".html", body)
-	}
-	_, ev := (&run{dir: dir}).tifaRowEvidence()
-	if ev["shop/a"]["same"] != true {
-		t.Errorf("shop/a: %v", ev["shop/a"])
-	}
-	if ev["shop/b"]["same"] != false || ev["shop/b"]["same_but_u202f"] != true || ev["shop/b"]["u202f_in_polyfill_page"] != 1 {
-		t.Errorf("shop/b: %v", ev["shop/b"])
-	}
-	if ev["mui/home"]["same"] != false || ev["mui/home"]["same_but_u202f"] != false {
-		t.Errorf("mui/home: %v", ev["mui/home"])
-	}
-	if ev["mui/order"]["same"] != nil {
-		t.Errorf("mui/order: %v", ev["mui/order"])
+	result(t, dir, "liustack-quickjs-native", true, "a")
+	result(t, dir, "go-quickjs-interp-native", true, "a")
+	write(t, dir, "html/liustack-quickjs-native-a.html", "<p>8:00 AM u:1234567890123</p>")
+	write(t, dir, "html/go-quickjs-interp-native-a.html", "<p>8:00\u202fAM u:1234567890124</p>")
+	w := &report{}
+	(&run{dir: dir}).differences(w)
+	if got := w.String(); !strings.Contains(got, "go-quickjs-interp, shop a: at byte 7 ") {
+		t.Errorf("differences:\n%s", got)
 	}
 }
 
@@ -147,13 +129,13 @@ func TestTableRows(t *testing.T) {
 	write(t, dir, "modernc-quickjs-bench.meta", `{"try":0,"disturbed":1}`+"\n")
 	write(t, dir, "goant-interp-bench.json", `{"err": "load: SyntaxError: no\nsecond line"}`)
 	write(t, dir, "moejs-bench.json", ``)
-	write(t, dir, "node-jit-bench.json", `{"pages": [{"input": "a.json", "ok": false, "err": "boom"}, {"input": "b.json", "ok": false, "err": "bang"}]}`)
+	write(t, dir, "node-jitless-bench.json", `{"pages": [{"input": "a.json", "ok": false, "err": "boom"}, {"input": "b.json", "ok": false, "err": "bang"}]}`)
 	for _, e := range []string{"liustack-quickjs", "modernc-quickjs"} {
 		write(t, dir, "html/"+e+"-bench-a.html", "<p>u:1234567890123</p>")
 		write(t, dir, "html/"+e+"-bench-b.html", "<p>b</p>")
 	}
 	w := &report{}
-	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "modernc-quickjs", "goant-interp", "moejs", "node-jit", "go-quickjs-jit"}, "")
+	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "modernc-quickjs", "goant-interp", "moejs", "node-jitless", "go-quickjs-interp"}, "")
 	want := `### Pages
 
 | Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
@@ -162,8 +144,8 @@ func TestTableRows(t *testing.T) {
 | modernc-quickjs | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
 | goant-interp | load: SyntaxError: no | 0 of 2 | | |
 | moejs | not run | | | |
-| Node v24.22.3 (reference) | a: boom; b: bang | 0 of 2 | | |
-| go-quickjs-jit | not run | | | |
+| Node v24.22.3 --jitless (reference) | a: boom; b: bang | 0 of 2 | | |
+| go-quickjs-interp | not run | | | |
 
 `
 	if got := w.String(); got != want {
