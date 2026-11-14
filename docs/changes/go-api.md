@@ -583,3 +583,9 @@ Counted with the conversion alone, on the HTML of each page (retired instruction
 What it costs: text with no runs of ASCII (Cyrillic, Chinese, emoji) takes from 2% fewer to 2.2% more instructions than before, and a string of ten units up to about 30 more. A string made only of runs of 8 to 15 ASCII units between other characters runs up to 18% more, a call for each run: no page has that shape.
 
 Tests: `TestUTF16Boundaries` and `FuzzUTF16String` (with its seed corpus in `testdata/fuzz/FuzzUTF16String`) in `utf16_test.go`, `TestUTF16RealCuts` (strings of 9 units under to 9 over `stringStep` and `stepScratch`, each kind of unit at the cut), `TestUTF16WritesStayInRoom` (canary bytes around the room) and `TestUTF16ScratchReused` (three strings through one pooled buffer) in `utf16room_test.go`, `TestUTF16ReadsStayInSource` in `utf16fault_test.go` (units that end at the end of a mapped page with a page after it that cannot be read, linux and darwin), and `TestUTF16StringUnitByUnit`, `TestArgStringSameAsEngine` and `TestScratchPutBack` as before.
+
+## More values than the engine can count fail
+
+Release: Unreleased.
+
+`Call` and a Go slice converted to an array hand the engine a list of values with their count as a C int. A list of more than 2^31 - 1 values (32 GiB of values in Go) reached the engine as another count, cut to 32 bits: a call got fewer arguments, or a negative count, and an array fewer elements, with no error. Such a list is now an error, `quickjs: N values, the engine takes at most 2147483647`, before anything is copied (`tmpValues` in `engine.go`). It is one test of a length on a path that already copies the values, so a call costs the same. No test makes such a list: it takes 32 GiB in Go.

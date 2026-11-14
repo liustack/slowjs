@@ -123,6 +123,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Long strings and results stop converting at the limits of the call | v0.30.3 | [go-api.md](go-api.md#long-strings-and-results-stop-converting-at-the-limits-of-the-call) |
 | Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
 | A 16-bit string goes to UTF-8 eight ASCII units at a time | v0.30.7 | [go-api.md](go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time) |
+| More values than the engine can count fail | Unreleased | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
 
 ## Limits that hold
 

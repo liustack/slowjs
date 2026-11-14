@@ -1101,10 +1101,15 @@ func (m *VM) jsExecutePendingJob() (r int32) {
 	return r
 }
 
-// tmpValues is tmp of the values a, copied there, or p 0 for no values.
+// tmpValues is tmp of the values a, copied there, or p 0 for no values. The
+// engine takes their count as a C int: past math.MaxInt32 it would see
+// another count, so that is an error.
 func (m *VM) tmpValues(a []jsValue) (p, sp uintptr, heap bool, err error) {
 	if len(a) == 0 {
 		return 0, m.sp, false, nil
+	}
+	if uint64(len(a)) > math.MaxInt32 {
+		return 0, 0, false, fmt.Errorf("quickjs: %d values, the engine takes at most %d", len(a), math.MaxInt32)
 	}
 	p, sp, heap = m.tmp(sizeofJsValue * uintptr(len(a)))
 	if p == 0 {

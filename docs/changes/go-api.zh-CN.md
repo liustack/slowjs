@@ -583,3 +583,9 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
 
 测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。
+
+## 引擎数不过来的值会报错
+
+Release: Unreleased.
+
+`Call` 和转成数组的 Go 切片，把一串值连同它们的个数（C 的 int）交给引擎。超过 2^31 - 1 个值的列表（在 Go 里占 32 GiB）到了引擎那里就成了另一个个数，被截成 32 位：调用拿到的参数变少，或者个数成了负数，数组的元素变少，而且没有错误。现在这样的列表是一个错误，`quickjs: N values, the engine takes at most 2147483647`，在复制任何东西之前就报（`engine.go` 里的 `tmpValues`）。它只是在一条本来就要复制这些值的路径上多查一次长度，所以调用的开销不变。没有测试造这样的列表：它在 Go 里要占 32 GiB。
