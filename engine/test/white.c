@@ -1133,6 +1133,15 @@ int white_atom_refs(JSContext *ctx, const char *s)
     return n;
 }
 
+/* The references v has, an object, a string, a symbol or another value
+   with a count, or -1 when it has none. */
+int white_ref_count(JSValueConst v)
+{
+    if (!JS_VALUE_HAS_REF_COUNT(v))
+        return -1;
+    return js_rc(JS_VALUE_GET_PTR(v))->ref_count;
+}
+
 /* ---- collections that run (JS_RunGC, JS_RunYoungGC) ---- */
 
 /* The full (young 0) or young (young 1) collections that ran, past the check

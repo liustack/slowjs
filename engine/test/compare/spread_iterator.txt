@@ -1,0 +1,78 @@
+end literal: 2 []
+end middle: 4 []
+end call: 2 []
+end new: 2 []
+end super: 3 []
+end method: 3 []
+throw literal: RangeError next []
+throw middle: RangeError next []
+throw call: RangeError next []
+throw new: RangeError next []
+throw super: RangeError next []
+throw method: RangeError next []
+primitive literal: TypeError  []
+primitive middle: TypeError  []
+primitive call: TypeError  []
+primitive new: TypeError  []
+primitive super: TypeError  []
+primitive method: TypeError  []
+done literal: RangeError done []
+done middle: RangeError done []
+done call: RangeError done []
+done new: RangeError done []
+done super: RangeError done []
+done method: RangeError done []
+value literal: RangeError value []
+value middle: RangeError value []
+value call: RangeError value []
+value new: RangeError value []
+value super: RangeError value []
+value method: RangeError value []
+hole literal: RangeError hole []
+hole middle: RangeError hole []
+hole call: RangeError hole []
+hole new: RangeError hole []
+hole super: RangeError hole []
+hole method: RangeError hole []
+read own literal: 1 [get own iterator]
+read own middle: 3 [get own iterator]
+read own call: 1 [get own iterator]
+read own new: 1 [get own iterator]
+read own super: 2 [get own iterator]
+read own method: 2 [get own iterator]
+read proxy literal: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read proxy middle: 4 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read proxy call: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read proxy new: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read proxy super: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read proxy method: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+read array literal: 2 [get Array.prototype iterator]
+read array middle: 4 [get Array.prototype iterator]
+read array call: 2 [get Array.prototype iterator]
+read array new: 2 [get Array.prototype iterator]
+read array super: 3 [get Array.prototype iterator]
+read array method: 3 [get Array.prototype iterator]
+stepped 0 literal: 10,20,30 then true undefined
+stepped 0 middle: 0,10,20,30,9 then true undefined
+stepped 0 call: 10,20,30 then true undefined
+stepped 0 new: 10,20,30 then true undefined
+stepped 0 super: 0,10,20,30 then true undefined
+stepped 0 method: 4 then true undefined
+stepped 1 literal: 20,30 then true undefined
+stepped 1 middle: 0,20,30,9 then true undefined
+stepped 1 call: 20,30 then true undefined
+stepped 1 new: 20,30 then true undefined
+stepped 1 super: 0,20,30 then true undefined
+stepped 1 method: 3 then true undefined
+stepped 3 literal:  then true undefined
+stepped 3 middle: 0,9 then true undefined
+stepped 3 call:  then true undefined
+stepped 3 new:  then true undefined
+stepped 3 super: 0 then true undefined
+stepped 3 method: 1 then true undefined
+stepped 4 literal:  then true undefined
+stepped 4 middle: 0,9 then true undefined
+stepped 4 call:  then true undefined
+stepped 4 new:  then true undefined
+stepped 4 super: 0 then true undefined
+stepped 4 method: 1 then true undefined

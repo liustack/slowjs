@@ -1,0 +1,81 @@
+result end literal: 2 []
+result end middle: 4 []
+result end call: 2 []
+result end new: 2 []
+result end super: 3 []
+result end method: 3 []
+result throw literal: RangeError next []
+result throw middle: RangeError next []
+result throw call: RangeError next []
+result throw new: RangeError next []
+result throw super: RangeError next []
+result throw method: RangeError next []
+result primitive literal: TypeError  []
+result primitive middle: TypeError  []
+result primitive call: TypeError  []
+result primitive new: TypeError  []
+result primitive super: TypeError  []
+result primitive method: TypeError  []
+result done literal: RangeError done []
+result done middle: RangeError done []
+result done call: RangeError done []
+result done new: RangeError done []
+result done super: RangeError done []
+result done method: RangeError done []
+result value literal: RangeError value []
+result value middle: RangeError value []
+result value call: RangeError value []
+result value new: RangeError value []
+result value super: RangeError value []
+result value method: RangeError value []
+result hole literal: RangeError hole []
+result hole middle: RangeError hole []
+result hole call: RangeError hole []
+result hole new: RangeError hole []
+result hole super: RangeError hole []
+result hole method: RangeError hole []
+result read own literal: 1 [get own iterator]
+result read own middle: 3 [get own iterator]
+result read own call: 1 [get own iterator]
+result read own new: 1 [get own iterator]
+result read own super: 2 [get own iterator]
+result read own method: 2 [get own iterator]
+result read proxy literal: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy middle: 4 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy call: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy new: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy super: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy method: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read array literal: 2 [get Array.prototype iterator]
+result read array middle: 4 [get Array.prototype iterator]
+result read array call: 2 [get Array.prototype iterator]
+result read array new: 2 [get Array.prototype iterator]
+result read array super: 3 [get Array.prototype iterator]
+result read array method: 3 [get Array.prototype iterator]
+result stepped 0 literal: 10,20,30 then true undefined
+result stepped 0 middle: 0,10,20,30,9 then true undefined
+result stepped 0 call: 10,20,30 then true undefined
+result stepped 0 new: 10,20,30 then true undefined
+result stepped 0 super: 0,10,20,30 then true undefined
+result stepped 0 method: 4 then true undefined
+result stepped 1 literal: 20,30 then true undefined
+result stepped 1 middle: 0,20,30,9 then true undefined
+result stepped 1 call: 20,30 then true undefined
+result stepped 1 new: 20,30 then true undefined
+result stepped 1 super: 0,20,30 then true undefined
+result stepped 1 method: 3 then true undefined
+result stepped 3 literal:  then true undefined
+result stepped 3 middle: 0,9 then true undefined
+result stepped 3 call:  then true undefined
+result stepped 3 new:  then true undefined
+result stepped 3 super: 0 then true undefined
+result stepped 3 method: 1 then true undefined
+result stepped 4 literal:  then true undefined
+result stepped 4 middle: 0,9 then true undefined
+result stepped 4 call:  then true undefined
+result stepped 4 new:  then true undefined
+result stepped 4 super: 0 then true undefined
+result stepped 4 method: 1 then true undefined
+mem-end obj=202 atom=553 shape=144 prop=973 jsfunc=4 cfunc=132 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=194 atom=545 shape=138 prop=957 jsfunc=0 cfunc=132 array=1 fast_array=0 elements=0 binary=0
+--- status exit 0
