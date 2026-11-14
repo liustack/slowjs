@@ -1,0 +1,14 @@
+exception TypeError: '3' is read-only
+stack     at down (<eval>:46:81)
+stack     at down (<eval>:48:38)
+stack     at make (<eval>:91:18)
+stack     at check (<eval>:94:15)
+stack     at <anonymous> (<eval>:141:10)
+stack     at onProtos (<eval>:131:13)
+stack     at <anonymous> (<eval>:138:11)
+stack     at forEach (native)
+stack     at <anonymous> (<eval>:137:52)
+stack     at <eval> (<eval>:168:3)
+mem-end obj=37351 atom=580 shape=23452 prop=188362 jsfunc=5 cfunc=24095 array=596 fast_array=54 elements=144 binary=0
+mem-gc obj=200 atom=556 shape=135 prop=983 jsfunc=0 cfunc=137 array=1 fast_array=0 elements=0 binary=0
+--- status exit 0

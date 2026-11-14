@@ -1088,6 +1088,38 @@ The micro benchmarks of `compare/testdata` by instructions (native, Apple M4, th
 
 Native, an add of two strings costs about 30 instructions less than before on amd64 (MUI's pages and React's page: the instructions saved over the adds of the table). As generated with the profile of v0.30.6, every page but MUI's runs 0.6% to 1.1% more instructions: the generator finds that the C of `JS_RegvmRun` changed since the profile was trained and compiles it with no profile, which costs more than the change saves. With the profile trained again every page runs fewer on amd64, so the profile must be trained again before a release that has this change ([releasing.md](releasing.md#the-profile)). The counts on the M4 differ by about 0.3% from one round to the next, so a row of it below that says nothing alone. Long Markdown was counted on the native C tree only.
 
+### Arrays that are no longer fast arrays
+
+[An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom), counted on 2026-11-15 against `b0271108` (the changes of v0.30.7). Native: the test host built by clang. amd64 is callgrind on an AMD EPYC 7B13, arm64 the retired instructions on an Apple M4. Product: the generated engine through the Go API (a V8 benchmark run by `Eval` in one VM, the pages in tifa's `test/ssr`), callgrind on linux/amd64 and retired instructions on the M4 (the lowest of 3 rounds). "As generated" has the profile of v0.30.7, in which `rv_getel_atom`, `rv_getel3_slow` and `rv_putel_slow` no longer match their C and the two new functions have none. `JS_RegvmRun` keeps its profile. "Trained" has the profile trained again on the change.
+
+The V8 benchmark Crypto, instructions an iteration (12 runs less 4, over 8):
+
+| Benchmark | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Crypto decrypt | -19.8% | -20.5% | -22.5% | -22.7% | -22.4% | -22.9% |
+| Crypto encrypt | -19.4% | -20.0% | -22.1% | -22.3% | -22.6% | -22.8% |
+
+The other benchmarks run the same on amd64 (callgrind, -0.08% to +0.04%, native and product), but EarleyBoyer's first part runs 0.32% more on the native host and 0.48% more through the Go API (0.46% trained): it reads 96K int keys an iteration on objects that are not Arrays, and each pays about 25 instructions for the call that gives up. RegExp is left out: the work of an iteration is not fixed (the calls of `replace` differ by 1.2% from one run to the next). On the M4 the benchmarks of a few million instructions an iteration (Richards, Splay) move by several percent from run to run with the collector.
+
+Pages, instructions a render, with the same HTML:
+
+| Page | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| React's page | -0.01% | +0.11% | -0.12% | -0.06% | -0.19% | -0.23% |
+| shop, store home (en-US) | -0.01% | +0.24% | +0.10% | +0.09% | +0.02% | -0.28% |
+| shop, store products (zh-CN) | -0.01% | -0.16% | +0.07% | +0.08% | -0.17% | -0.35% |
+| shop, workbench studio | -0.03% | -0.56% | 0.00% | +0.04% | -0.12% | -0.24% |
+| shop, workbench stats | -0.03% | +0.13% | +0.05% | +0.13% | -0.02% | -0.14% |
+| MUI home | -0.02% | -0.11% | +0.28% | +0.14% | -0.12% | -0.37% |
+| MUI orders | -0.02% | -0.12% | -0.01% | -0.14% | -0.15% | -0.27% |
+| long Markdown | -0.44% | -0.64% | | | | |
+
+The native counts of the M4 move by about 0.3% from run to run. Through the Go API on amd64 the pages move by -0.14% to +0.28%, where their native counts move by less than 0.04%: the generated code of the three changed functions and of what is next to them is laid out again. On the M4 every page runs fewer instructions through the Go API.
+
+The micro benchmarks of `compare/testdata` (native, M4): the geometric mean is 0.11% fewer instructions. `array_prop_create` runs 1.4% more (amd64 2.6%, 235 to 241 instructions an append): its `tab[i] = i` appends to a fast array through `rv_putel_slow`, which now also has the call of `rv_putel_index` on its other branch and keeps two more values on its stack. No other benchmark runs more than 0.73% more (`prop_create`, which does not take the path).
+
+A read of an element of such an array costs about 94 instructions instead of 180 (amd64, Crypto: 35 in `rv_getel_atom`, 59 in `rv_getel_index`), a write 104 instead of 199. The pages make no such reads and writes: long Markdown runs 0.44% fewer on amd64 (0.64% on the M4), from reads past the count of a fast array.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1637,6 +1669,7 @@ What the measurements above leave for the C engine, none of it large. A change u
 - **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes: its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it. In the build measured on 2026-11-13 it started on a boundary of 32 bytes, not 64. Fixing its place does not pay. On 2026-11-13 (batch 2's engine, amd64, an AMD EPYC 7B13, 16 layouts of [measuring.md](measuring.md), 4 rounds per group) the generator's `-align64` put the body at byte 0 or byte 8 of its line, against the base, whose body the layouts put at 0, 16, 32 and 48. Mean of the layouts, byte 0 then byte 8: workbench -0.22% [-0.64%, +0.20%] and -0.17% [-0.57%, +0.24%], store -0.20% [-0.55%, +0.14%] and -0.44% [-0.89%, +0.01%], MUI +0.28% [-0.22%, +0.78%] and -0.19% [-0.67%, +0.30%]. Fitted over every side and layout, each of the 8 places of the body takes 0.992 to 1.008 of the mean time, and the best place differs by group (workbench 40 or 48, store 24 or 40, MUI 56 or 0).
 - **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
 - **Results of the functions Go code calls**: the 91 functions Go code calls still store their result, because Go reads the result of an assembly function from memory. A generated Go entry for each hot one, which calls a body that stores nothing, would remove the stores of those bodies when generated code calls them: at most 0.24% of the instructions on the store pages, 0.21% on the workbench, 0.11% on MUI and 0.14% on React (arm64, writing each such store twice), less one extra call for each call from Go. It needs a new kind of function in both post-link checks.
+- **Arrays that keep their elements in one block with holes**: an Array written past its end, or with an element deleted, becomes an array of properties and never becomes a fast array again ([An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom)). V8 keeps such an array in its block, with a mark for each missing element. Upstream QuickJS and quickjs-ng turn it into properties, as this engine does. Keeping the block would need the mark checked wherever the engine reads the block of a fast array: about 60 functions of `quickjs.c` (`js_get_fast_array` and its callers, the fast paths of `push`, `pop`, `includes`, `indexOf`, `slice`, `splice`, `with` and `toSpliced`, JSON, `for in`, `for of`, `delete`, `set_array_length`, `JS_GetOwnPropertyNames`, the collector and the free of an object, `JS_WriteArray`, `build_arg_list`, `JS_CopySubArray`) and the register loop (GETEL, GETEL3, PUTEL, DSTART and DNEXT, the spread, the built-ins it answers), and every read of an element on the pages would pay the check, while the pages make no such reads. The read by atom takes about 94 instructions where an element of a block takes about 10, so the block would gain only where such arrays are hot, Crypto among the V8 benchmarks.
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
 
