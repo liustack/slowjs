@@ -2467,6 +2467,28 @@ uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count)
     return old;
 }
 
+/* white_shape_fake_count gives the shape of the object o the property count
+   count, and gives back the count it had, or -1 when the shape is shared or
+   in the shape table (it must be o's own, as after a delete). Its blocks
+   stay as they are: a test of a shape at JS_SHAPE_PROP_MAX properties puts
+   the count back before anything reads past them. */
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count)
+{
+    JSShape *sh = JS_VALUE_GET_OBJ(o)->shape;
+    uint32_t old = sh->prop_count;
+
+    if (sh->is_hashed || js_rc(sh)->ref_count != 1)
+        return -1;
+    sh->prop_count = count;
+    return old;
+}
+
+/* white_shape_prop_max is JS_SHAPE_PROP_MAX. */
+uint32_t white_shape_prop_max(void)
+{
+    return JS_SHAPE_PROP_MAX;
+}
+
 /* white_array_room gives the room of the block of the fast array a, -1 when
    a is not a fast array. */
 int64_t white_array_room(JSValueConst a)

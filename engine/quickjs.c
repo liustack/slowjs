@@ -1273,9 +1273,13 @@ typedef struct JSProperty {
 #define JS_PROP_INITIAL_SIZE 2
 #define JS_PROP_INITIAL_HASH_SIZE 4 /* must be a power of two */
 
+/* the width of JSShapeProperty.hash_next, which holds the index of a property
+   plus one: a shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX) */
+#define JS_SHAPE_HASH_NEXT_BITS 26
+
 typedef struct JSShapeProperty {
-    uint32_t hash_next : 26; /* 0 if last in list */
-    uint32_t flags : 6;   /* JS_PROP_XXX */
+    uint32_t hash_next : JS_SHAPE_HASH_NEXT_BITS; /* 0 if last in list */
+    uint32_t flags : 32 - JS_SHAPE_HASH_NEXT_BITS;   /* JS_PROP_XXX */
     JSAtom atom; /* JS_ATOM_NULL = free property entry */
 } JSShapeProperty;
 
@@ -7960,9 +7964,15 @@ static JSProperty *js_resize_prop(JSContext *ctx, JSObject *p, uint32_t count,
     return js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
 }
 
-/* The most properties a shape holds: its counts are ints, and
-   add_shape_property adds one to prop_count. */
-#define JS_SHAPE_PROP_MAX (INT32_MAX - 1)
+/* The most properties a shape holds: hash_next and the hash table hold the
+   index of a property plus one, in JS_SHAPE_HASH_NEXT_BITS bits. Past it
+   the index would be cut and a lookup would miss a property that is there.
+   Upstream has no such limit. */
+#define JS_SHAPE_PROP_MAX ((1u << JS_SHAPE_HASH_NEXT_BITS) - 1)
+_Static_assert(JS_SHAPE_PROP_MAX < (1u << JS_SHAPE_HASH_NEXT_BITS),
+               "the index of a property plus one fits in hash_next");
+_Static_assert(JS_SHAPE_PROP_MAX <= INT32_MAX - 1, "the counts of a shape are ints");
+_Static_assert(sizeof(JSShapeProperty) == 8, "hash_next and flags share 32 bits");
 
 /* make space to hold at least 'count' properties */
 static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
@@ -7979,7 +7989,8 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
        int past 715,827,882 */
     new_size = max_uint32(count, (uint32_t)sh->prop_size + sh->prop_size / 2);
     if (unlikely(new_size > JS_SHAPE_PROP_MAX)) {
-        /* the conversion of a fast array of 2^31 - 1 elements asks for more */
+        /* an object of 2^26 - 1 properties, or the conversion of a fast
+           array of as many elements, asks for more */
         if (count > JS_SHAPE_PROP_MAX) {
             JS_ThrowRangeError(ctx, "too many properties");
             return -1;

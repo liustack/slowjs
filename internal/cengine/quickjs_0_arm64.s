@@ -16563,19 +16563,18 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x0b890508
 	WORD $0x6b08031f
 	WORD $0x1a888310
-	WORD $0x12b00008
-	WORD $0x6b08021f
-	WORD $0x54005a22
+	WORD $0x531a7e08
+	WORD $0x35005a48
 	WORD $0xb40002f7
 	WORD $0xf94012f6
 	WORD $0xa908cff7
 	WORD $0x9100a2e8
-	WORD $0xd37c7e17
+	WORD $0x531c6e17
 	WORD $0xa90a3ff4
 	WORD $0xeb0802df
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xf9004ff1
-	WORD $0x54005aa0
+	WORD $0x54005ac0
 	WORD $0xf9400a75
 	WORD $0x91004294
 	WORD $0xf90007f4
@@ -16583,9 +16582,9 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·js_realloc_rt(SB)
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xf94047f3
-	WORD $0xb4006180
+	WORD $0xb40061a0
 	WORD $0xf9001260
 	WORD $0xa94a3ff4
 	WORD $0xa94947f3
@@ -16605,7 +16604,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x52800488
 	WORD $0x54fffeac
 	WORD $0xa90a3ff4
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xf90043ee
 	WORD $0xf90007f4
@@ -16613,14 +16612,15 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xa94947f3
 	WORD $0xf94043ee
 	WORD $0xa94a3ff4
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0x17ffffe9
+	WORD $0x531d7208
 	WORD $0xd37e7dcd
 	WORD $0xf9400a75
-	WORD $0x8b304da8
-	WORD $0xd106e509
-	WORD $0x91010116
-	WORD $0xb107e13f
+	WORD $0x11010108
+	WORD $0x8b0801b6
+	WORD $0xd107e6c8
+	WORD $0xb107e11f
 	WORD $0x54004a23
 	WORD $0x91001eca
 	MOVD $·engine_rodata+5250(SB), R9
@@ -16734,13 +16734,13 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xb90083f5
 	WORD $0xa908cfe1
 	WORD $0xa909d3f1
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xf90057ef
 	WORD $0x540001c0
 	WORD $0xa9452fee
 	WORD $0x6f00e400
 	WORD $0xa94633ea
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa94a3ff4
 	WORD $0xf94047e1
 	WORD $0xd100116b
@@ -16909,7 +16909,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf100011f
 	WORD $0x54fffdcc
 	WORD $0xa90a3ff4
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xa90807eb
 	WORD $0xa90733ee
@@ -16918,7 +16918,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa945d7f6
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa946bbed
 	WORD $0xf94057ef
 	WORD $0xa947afec
@@ -16963,7 +16963,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf100011f
 	WORD $0x54fffdec
 	WORD $0xa90a3ff4
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xf90047e1
 	WORD $0xb90083f5
@@ -16978,7 +16978,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xa94663f9
 	WORD $0xb94083f5
 	WORD $0xd1031109
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xf94057ef
 	WORD $0xa9475fee
 	WORD $0xa948cfe1
@@ -17092,7 +17092,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf100011f
 	WORD $0x54fffdec
 	WORD $0xa90a3ff4
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xa90807ee
 	WORD $0xa90757f7
@@ -17103,7 +17103,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xa94633eb
 	WORD $0xf9402fe8
 	WORD $0xa94757f7
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xd1031109
 	WORD $0xa94807ee
 	WORD $0xa94947f3
@@ -17157,7 +17157,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf100011f
 	WORD $0x54fffe0c
 	WORD $0xa90a3ff4
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xf90047e1
 	WORD $0xb90083f5
@@ -17174,7 +17174,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xb94073ec
 	WORD $0xf9403ff7
 	WORD $0xb94083f5
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xf94057ef
 	WORD $0x17ffffd9
 	WORD $0x92679a89
@@ -17214,7 +17214,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x17ffffe0
 	WORD $0xa90a3ff4
 	WORD $0x91004294
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xa90837ee
 	WORD $0xf90007f4
@@ -17224,7 +17224,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xa94837ee
 	WORD $0xaa0003e1
 	WORD $0xa94947f3
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa94a3ff4
 	WORD $0xb5ffb600
 	WORD $0x91004294
@@ -17238,7 +17238,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x91004294
 	WORD $0xaa1103f7
 	WORD $0xa908d7e1
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xf9004ff1
 	WORD $0xf90043f6
 	WORD $0xf90007f4
@@ -17247,7 +17247,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf90013f7
 	BL ·js_large_give(SB)
 	WORD $0xa948d7e1
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa94a3ff4
 	WORD $0x35fff980
 	WORD $0xf94043f6
@@ -17283,8 +17283,8 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf9000128
 	WORD $0x3c9d8140
 	WORD $0x1400003d
-	WORD $0x6b08031f
-	WORD $0x540003e3
+	WORD $0x531a7f08
+	WORD $0x340003e8
 	MOVD $·engine_rodata+12342(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
@@ -17312,14 +17312,14 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf141005f
 	WORD $0x54000748
 	BL ·memcpy(SB)
-	WORD $0xf9405ff0
-	WORD $0x17fffd25
-	WORD $0x321f77f0
-	WORD $0xb5ffa217
-	WORD $0x17fffd25
+	WORD $0xb940bff0
+	WORD $0x17fffd24
+	WORD $0x12bf8010
+	WORD $0xb5ffa1f7
+	WORD $0x17fffd24
 	WORD $0xa90a3ff4
 	WORD $0x91004294
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xa90947f3
 	WORD $0xa90837ee
 	WORD $0xf9003fea
@@ -17328,7 +17328,7 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0xf9000ff6
 	BL ·js_malloc_new_arena(SB)
 	WORD $0xa947bbea
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa948cfed
 	WORD $0xf94057ef
 	WORD $0xa949d3f1
@@ -17344,14 +17344,14 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x54ffedc0
 	WORD $0x91004294
 	WORD $0xf90047e1
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xf90057ef
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·heap_free(SB)
 	WORD $0xf94047e1
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xf94057ef
 	WORD $0x17ffff62
 	WORD $0x8b0912a8
@@ -17389,12 +17389,12 @@ TEXT ·resize_properties(SB), $184-40
 	WORD $0x52800388
 	WORD $0xa908cfe1
 	WORD $0xa909d3f1
-	WORD $0xf9005ff0
+	WORD $0xb900bff0
 	WORD $0xf90057ef
 	WORD $0xa9475fe9
 	WORD $0x6f00e400
 	WORD $0xa94a3ff4
-	WORD $0xf9405ff0
+	WORD $0xb940bff0
 	WORD $0xa94947f3
 	WORD $0xf94047e1
 	WORD $0xf1008129

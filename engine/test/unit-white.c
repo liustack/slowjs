@@ -145,6 +145,8 @@ int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
 int64_t white_array_room(JSValueConst a);
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
+uint32_t white_shape_prop_max(void);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
 int white_regvm_oom_pending(JSContext *ctx);
@@ -7663,6 +7665,79 @@ static void test_max_index(void)
     }
 }
 
+/* ---- a property added to a shape at its limit ----
+
+   A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
+   of a property plus one is kept in the 26 bits of hash_next, and past it a
+   lookup would miss a property that is there. One more throws and leaves the
+   object as it was. Such an object takes gigabytes, so the shape of a small
+   one is given a count at the limit (white_shape_fake_count), with no
+   collection while it is so. Before, the shape was copied with that count,
+   past its block. Each case runs in a process of its own. */
+static const char *const max_props_ways[] = {
+    "a new key", "an array made a normal one",
+};
+
+static void max_props_case(int way)
+{
+    VM v = vm_new();
+    JSValue o, r;
+    size_t threshold;
+    int64_t old;
+    uint32_t old_count = 0;
+    int ret;
+    char *t;
+
+    CHECK(white_shape_prop_max() == (1u << 26) - 1, "the limit is %u", white_shape_prop_max());
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    if (way == 0) {
+        /* a delete takes the shape out of the shape table, as its own */
+        o = JS_Eval(v.ctx, "var o = { a: 1, b: 2, c: 3 }; delete o.c; o", 43, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        old = white_shape_fake_count(o, white_shape_prop_max());
+        CHECK(old == 3, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyStr(v.ctx, o, "z", JS_NewInt32(v.ctx, 1));
+        white_shape_fake_count(o, (uint32_t)old);
+    } else {
+        /* a fast array of 2^26 - 1 elements and its length would be 2^26
+           properties as a normal array: an element far past its end makes
+           it one */
+        o = JS_Eval(v.ctx, "var o = [1, 2, 3]; o", 20, "<unit>", JS_EVAL_TYPE_GLOBAL);
+        old_count = white_array_fake_count(v.ctx, o, white_shape_prop_max());
+        ret = JS_SetPropertyUint32(v.ctx, o, 1u << 30, JS_NewInt32(v.ctx, 1));
+        white_array_fake_count(v.ctx, o, old_count);
+    }
+    t = exception_text(v.ctx);
+    CHECK(ret < 0 && t && strcmp(t, "RangeError: too many properties") == 0, "%s at the limit: %s",
+          max_props_ways[way], t ? t : "no exception");
+    free(t);
+    JS_SetGCThreshold(v.rt, threshold);
+    r = JS_GetPropertyStr(v.ctx, o, way == 0 ? "z" : "1073741824");
+    CHECK(JS_IsUndefined(r), "%s: the property was added", max_props_ways[way]);
+    JS_FreeValue(v.ctx, r);
+    CHECK(eval_is(v.ctx, way == 0 ? "o.a + o.b" : "o.join()", way == 0 ? "3" : "1,2,3"), "%s: the object after",
+          max_props_ways[way]);
+    JS_FreeValue(v.ctx, o);
+    vm_free(&v);
+}
+
+static void test_max_props(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_props_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-props";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "a property at 2^26 - 1 by %s: %s %d", max_props_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7683,6 +7758,13 @@ int main(int argc, char **argv)
     if (argc == 3 && strcmp(argv[1], "max-index") == 0) {
         failures = 0;
         max_index_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
+    /* one case of test_max_props, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-props") == 0) {
+        failures = 0;
+        max_props_case(atoi(argv[2]));
         fflush(stdout);
         host_leave(failures ? 1 : 0);
     }
@@ -7736,6 +7818,7 @@ int main(int argc, char **argv)
     test_typeof_is();
     test_share_local_slots();
     test_max_index();
+    test_max_props();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();

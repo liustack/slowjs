@@ -382,3 +382,13 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益（在描述符改动之上）：每次渲染，workbench 的两页都少执行 0.47% 的指令，商店首页少 0.35%，商品页少 0.50%，MUI 订单页少 0.15%，MUI 首页少 0.04%，React 页少 0.18%（linux/amd64 上原生 C 树的 callgrind，见 [performance.md](../performance.zh-CN.md#不走通用查找的属性描述符和-bind)）。各页 HTML 不变。
 
 测试：`engine/test/compare/bind_length_name.js`（输出和 Node 24 一样）对各种目标函数调用 bind：普通函数、箭头函数、方法、类、生成器和 async 函数、C 函数、绑定函数、Proxy、换了原型的函数、`length` 或 `name` 被删掉或替换的函数、记录调用并抛错的 getter、各种类型和长度的名字，以及对同一个目标函数多次 bind。`engine/test/regvm/js/q5-bind.js` 在 corpus 和抛错注入测试里对各种目标函数、另一个 realm 的函数和循环里的函数调用 bind。`engine/test/unit-oom.c` 里的 `test_bind_oom` 和 `test_bind_host_oom` 在每次分配都可能内存不够的情况下跑这条快路径。
+
+## 一个 shape 最多放 2^26 - 1 个属性
+
+Release: Unreleased.
+
+shape 为每个属性记下它的哈希链里下一个属性的序号加一，放在 `hash_next` 的 26 位里。属性超过 2^26 - 1 个时，这个序号会被截断，查找可能找不到一个确实存在的属性。脚本能走到这里，因为每个块都在分配器给单个块的 4 GiB 以内：一个有 2^26 - 1 个奇数下标的数组，加上长度，是一个有 2^26 个属性的普通数组，总共几 GiB，再在最后那个下标所在的桶里加一个键，那个元素就会读成 `undefined`。上游有同样的 26 位，也没有上限。
+
+现在 `resize_properties` 给一个 shape 最多 2^26 - 1 个属性（`JS_SHAPE_PROP_MAX`）。再加一个会抛 RangeError，"too many properties"，和快数组超过上限时抛 "invalid array length" 一样，对象保持原样：加一个键是这样，把这么多元素的快数组变成普通数组也是这样。`JS_SHAPE_HASH_NEXT_BITS` 给这个字段的宽度起了名字，几条静态断言把上限和它绑在一起。检查在 shape 增长的路径上，以前那里检查的是 2^31 - 2 的上限，所以页面在那里跑的指令不变。
+
+测试：`unit-white` 的 `test_max_props` 给一个小对象的 shape 设上 2^26 - 1 的个数（`white_shape_fake_count`，期间不做回收）再加一个键，又给一个 3 个元素的快数组设上 2^26 - 1 的个数，再在远超末尾的地方加一个元素，让它变成普通数组，每种都在自己的进程里：每种都抛出这个 RangeError，对象保持原样。上限是 2^31 - 2 时，数组那种会按这个个数复制 shape，读到块外面，以段错误结束。

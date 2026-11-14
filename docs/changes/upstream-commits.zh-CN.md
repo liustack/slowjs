@@ -77,7 +77,7 @@ Release: Unreleased.
 `b25da59` 先检查长度能不能写，再做空间，最后设长度，现在引擎也这样做。长度不可写时，存值和以前一样什么也不做（或者给出 false，严格模式下抛错），不分配任何东西。这里只在块必须增长时才做这项检查，放在一个单独的函数里（`add_fast_array_room`），它只调用一次 `expand_fast_array` 来做空间，有空间时加元素跑的代码和以前一样。上游在 `add_fast_array_element` 里调用两次 `expand_fast_array`：这样这个函数不再被内联，一个页面多跑 0.24% 的指令。上游还让 `JS_SetPropertyInternal`、`JS_SetPropertyValue` 和 `JS_CreateProperty` 把下标 2^31 - 1 的元素交给把数组变成普通数组的那条路径。这部分没有并入：变成的普通数组要 2^31 + 1 个属性，在这里会失败（见下），在上游会让 shape 的 int 计数溢出，而且每加一个元素都要做这项检查（每次调用 `JS_CreateProperty` 多 4 条指令）。检查改放在数组增长的地方：
 
 - `expand_fast_array_append` 不给超过 2^31 - 1 个元素的空间（抛 RangeError，"invalid array length"）。`expand_fast_array` 用 `size + size / 2` 算增长，不会超出 32 位，并且从不让一块的空间超过 2^31 - 1，算上余量也一样。这样下标 2^31 - 1 的元素总在空间之外，每种加元素的方式都会在改长度或改块之前碰到这项检查：C API、`a[i] = v`（`rv_putel_slow`，它的代码不变）、`push`、`splice` 的快路径、`Object.defineProperty` 和 `JSON.parse`。
-- `resize_properties` 给一个 shape 的属性不超过 2^31 - 2 个（抛 RangeError，"too many properties"），并用不溢出的方式算增长。以前，属性超过 715,827,882 个时，按一半增长会让 int 溢出。
+- `resize_properties` 用不溢出的方式算增长（以前属性超过 715,827,882 个时，按一半增长会让 int 溢出），一个 shape 最多放 2^26 - 1 个属性（[objects-and-shapes.md](objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性)）。
 - `js_array_push_grow` 和 `rv_putel_grow` 在增长之前告诉回收器的增长量，和 `expand_fast_array` 用同样的方式算。以前，元素超过 1,431,655,765 个时它会溢出。
 
 所以在 2^31 - 1 个元素之后加元素，会抛 RangeError，数组保持原样。页面看到的不变，这些检查只在数组增长时才会走到。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 相同：react +0.020%，商店的英文首页 +0.026%、中文商品页 +0.031%，两个 studio 页面 +0.039% 和 +0.030%，两个 MUI 页面 +0.027% 和 +0.028%，Markdown 页面 +0.035%。这是数组的块每增长一次约多 4 条指令（空间的上限，以及在 32 位里按一半增长），shape 每增长一次多 2 条。
