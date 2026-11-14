@@ -22236,6 +22236,17 @@ static BOOL js_get_fast_array(JSContext *ctx, JSValueConst obj,
     return FALSE;
 }
 
+/* GetIterator of a spread, with its method read already (js_append_enumerate).
+   Out of line: inlined, the call of the method (js_call) makes the frame of
+   rv_w_append larger, and every call that runs under a spread pays it. */
+static no_inline JSValue js_spread_iterator(JSContext *ctx, JSValueConst obj,
+                                            JSValueConst method)
+{
+    if (!JS_IsFunction(ctx, method))
+        return JS_ThrowTypeError(ctx, "value is not iterable");
+    return JS_GetIterator2(ctx, obj, method);
+}
+
 /* force_inline: with one caller, LLVM inlined it into JS_CallInternal. The
    register loop calls it too (engine/regvm-ops-window.h): inlined in both,
    the code of JS_CallInternal stays the same. */
@@ -22260,15 +22271,15 @@ static force_inline __exception int js_append_enumerate(JSContext *ctx, JSValue 
          avoid constructing actual iterator object?
        - build this into js_for_of_start and use in all `for (x of o)` loops
      */
+    /* GetIterator, with the method read once */
     iterator = JS_GetProperty(ctx, sp[-1], JS_ATOM_Symbol_iterator);
     if (JS_IsException(iterator))
         return -1;
     ft.generic_magic = js_create_array_iterator;
     is_array_iterator = JS_IsCFunction(ctx, iterator, ft.generic,
                                        JS_ITERATOR_KIND_VALUE);
+    enumobj = js_spread_iterator(ctx, sp[-1], iterator);
     JS_FreeValue(ctx, iterator);
-
-    enumobj = JS_GetIterator(ctx, sp[-1], FALSE);
     if (JS_IsException(enumobj))
         return -1;
     method = JS_GetProperty(ctx, enumobj, JS_ATOM_next);

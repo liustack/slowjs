@@ -34,6 +34,24 @@ result hole call: RangeError hole []
 result hole new: RangeError hole []
 result hole super: RangeError hole []
 result hole method: RangeError hole []
-mem-end obj=196 atom=550 shape=134 prop=961 jsfunc=2 cfunc=130 array=1 fast_array=0 elements=0 binary=0
-mem-gc obj=192 atom=545 shape=130 prop=953 jsfunc=0 cfunc=130 array=1 fast_array=0 elements=0 binary=0
+result read own literal: 1 [get own iterator]
+result read own middle: 3 [get own iterator]
+result read own call: 1 [get own iterator]
+result read own new: 1 [get own iterator]
+result read own super: 2 [get own iterator]
+result read own method: 2 [get own iterator]
+result read proxy literal: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy middle: 4 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy call: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy new: 2 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy super: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read proxy method: 3 [get Symbol(Symbol.iterator),get Array.prototype iterator,get length,get 0,get length,get 1,get length]
+result read array literal: 2 [get Array.prototype iterator]
+result read array middle: 4 [get Array.prototype iterator]
+result read array call: 2 [get Array.prototype iterator]
+result read array new: 2 [get Array.prototype iterator]
+result read array super: 3 [get Array.prototype iterator]
+result read array method: 3 [get Array.prototype iterator]
+mem-end obj=197 atom=550 shape=138 prop=963 jsfunc=2 cfunc=131 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=193 atom=545 shape=134 prop=955 jsfunc=0 cfunc=131 array=1 fast_array=0 elements=0 binary=0
 --- status exit 0

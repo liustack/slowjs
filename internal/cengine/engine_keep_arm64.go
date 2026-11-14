@@ -1105,6 +1105,7 @@ var goasmKeep = []any{
 	js_shape_renumber,
 	js_shared_array_buffer_constructor,
 	js_shr_slow,
+	js_spread_iterator,
 	js_start_tag,
 	js_strdup,
 	js_strict_eq2,

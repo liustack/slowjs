@@ -1007,13 +1007,15 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `TestInterruptArrayDestructuring` 和 `TestArrayDestructuringPolls`（`dststop_test.go`）：没有调用的循环里的空模式和单个元素，在超时和 `Interrupt` 时 5 次 poll 之内停下。`TestArrayDestructuringRestStop`（`dststop_hooks_test.go`，标签 `testhooks`）让 10 万元素数组的 rest 在循环自己的 5 次 poll 之内停下：回收和释放循环造的数组时的 poll 不算它的，由 kill 去判断（[go-api.md](go-api.zh-CN.md#error-说明调用为什么结束)）。
 - `go run ./internal/rvgen/cmd/rvgen -dst`：随机程序解构数组、Set、Map、字符串、`arguments`、子类和自定义迭代器，默认值里改数组和内置对象，和改动前引擎的输出比对。
 
-## 展开不关闭迭代器
+## 展开只读一次 Symbol.iterator，也不关闭迭代器
 
 发布版本：Unreleased。
 
 展开（`[...it]`、`f(...it)`、`new C(...it)`、`super(...it)`）把值的迭代器跑到底。某一步抛错时（`next` 抛错、它的结果不是对象，或者读 `done`、`value` 时抛错），规范让错误直接往外走，不调用 `return`：ArrayAccumulation 和 ArgumentListEvaluation 里没有 IteratorClose。QuickJS 原来会先读出并调用迭代器的 `return`，和 `for-of` 循环体抛错时一样，上游 QuickJS 现在仍是这样。C 树现在放掉迭代器、不关闭它（`engine/quickjs.c` 的 `js_append_enumerate`），和 Node 24 一样。复制时唯一的另一种错误是内存不足，它以前也不会跑 `return`。因为不再读 `return`，注入测试里 `p5-literals.js` 和 `z-gen-newtarget.js` 中展开某一步抛错的那些位置，结束时少了一个原先由这次读取造出的 C 函数对象（连同它的形状和属性），它们的 golden 已重新写过。
 
-测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`。
+展开原来还会把值的 `Symbol.iterator` 读两次：一次看它是不是内置的 `values`，一次在 `JS_GetIterator` 里。所以那里的 getter 会跑两次，Proxy 也会看到两次读取。现在只读一次，把读到的方法交给 `JS_GetIterator2`，它不是函数时抛同样的 TypeError。
+
+测试：`engine/test/compare/spread_iterator.js` 在每种展开写法下，打印 Node 24 对这几种抛错方式的结果，还有一个数组：它的空洞经由 `Array.prototype` 上一个会抛错的 getter 读取，同时 `%ArrayIteratorPrototype%` 上有 `return`，以及经由值自己的 getter、`Array.prototype` 的 getter 和 Proxy 读 `Symbol.iterator` 的次数。
 
 ## 热调用少传参数字
 

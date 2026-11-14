@@ -7,7 +7,8 @@
 // its iterator: when next throws, or its result is not an object, or
 // reading its done or value throws, the error goes on and return is
 // neither read nor called (ArrayAccumulation and ArgumentListEvaluation
-// call no IteratorClose).
+// call no IteratorClose). It reads Symbol.iterator of its value once
+// (GetIterator).
 (() => {
   const out = []
   let log = []
@@ -71,6 +72,31 @@
   } finally {
     delete Array.prototype[2]
     delete AIP.return
+  }
+  // Symbol.iterator is read once: as a getter of the value, of
+  // Array.prototype, and through a Proxy
+  const own = () => ({
+    get [Symbol.iterator]() { log.push('get own iterator'); return function* () { yield 'o' } }
+  })
+  const px = () => new Proxy([1, 2], {
+    get(t, k) { log.push('get ' + String(k)); return t[k] }
+  })
+  const values = Array.prototype[Symbol.iterator]
+  for (const [what, mk] of [['own', own], ['proxy', px], ['array', () => [1, 2]]]) {
+    Object.defineProperty(Array.prototype, Symbol.iterator, {
+      get() { log.push('get Array.prototype iterator'); return values },
+      configurable: true
+    })
+    try {
+      for (const name of Object.keys(forms)) {
+        log = []
+        let r
+        try { r = forms[name](mk()) } catch (e) { r = e.name }
+        out.push('read ' + what + ' ' + name + ': ' + r + ' [' + log.join(',') + ']')
+      }
+    } finally {
+      Object.defineProperty(Array.prototype, Symbol.iterator, { value: values, writable: true, configurable: true })
+    }
   }
   return out.join('\n')
 })()
