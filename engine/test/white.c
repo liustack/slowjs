@@ -19,6 +19,11 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+/* white_array_from_first is the first index of Array.from (JS_ARRAY_FROM_FIRST),
+   0 but in a test of the indices past 32 bits. */
+static long long white_array_from_first;
+#define JS_ARRAY_FROM_FIRST() white_array_from_first
+
 #include "../quickjs.h"
 
 /* JS_HEAP_FAILS makes the engine fail the request to the heap number
@@ -2487,6 +2492,12 @@ int64_t white_shape_fake_count(JSValueConst o, uint32_t count)
 uint32_t white_shape_prop_max(void)
 {
     return JS_SHAPE_PROP_MAX;
+}
+
+/* white_set_array_from_first sets the first index of Array.from. */
+void white_set_array_from_first(long long k)
+{
+    white_array_from_first = k;
 }
 
 /* white_array_room gives the room of the block of the fast array a, -1 when

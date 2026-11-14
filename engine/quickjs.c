@@ -49646,6 +49646,13 @@ fail:
     return JS_EXCEPTION;
 }
 
+/* JS_ARRAY_FROM_FIRST() is the first index of Array.from, 0. white.c sets one
+   near 2^32, so that a test reaches the indices and lengths that pass 32 bits
+   without as many calls. */
+#ifndef JS_ARRAY_FROM_FIRST
+#define JS_ARRAY_FROM_FIRST() 0
+#endif
+
 static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -49695,7 +49702,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         next_method = JS_GetProperty(ctx, enum_obj, JS_ATOM_next);
         if (JS_IsException(next_method))
             goto exception;
-        for (k = 0;; k++) {
+        for (k = JS_ARRAY_FROM_FIRST();; k++) {
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -49730,7 +49737,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         JS_FreeValue(ctx, v);
         if (JS_IsException(r))
             goto exception;
-        for(k = 0; k < len; k++) {
+        for(k = JS_ARRAY_FROM_FIRST(); k < len; k++) {
             if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
                 goto exception;
             v = JS_GetPropertyInt64(ctx, arrayLike, k);

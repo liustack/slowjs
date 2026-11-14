@@ -147,6 +147,7 @@ uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
 int64_t white_array_room(JSValueConst a);
 int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
 uint32_t white_shape_prop_max(void);
+void white_set_array_from_first(long long k);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
 int white_regvm_oom_pending(JSContext *ctx);
@@ -7786,6 +7787,42 @@ static void test_max_props(void)
     }
 }
 
+/* ---- Array.from past 32 bits ----
+
+   Array.from on a constructor of the program passes the mapping function an
+   index of 64 bits and sets the length it ends at, which a constructor whose
+   object keeps nothing can take past 2^32. Reaching that index would take
+   2^32 calls, so Array.from starts there (white_set_array_from_first). Before,
+   the index was cut to an int32 and the length to a uint32. */
+static void test_array_from_past_32_bits(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_is(v.ctx,
+                  "var log = [];"
+                  "function Sink() {"
+                  "  return new Proxy({}, {"
+                  "    defineProperty(t, k, d) { log.push(k + ':' + d.value); return true },"
+                  "    set(t, k, x) { log.push(k + '=' + x); return true },"
+                  "  })"
+                  "}"
+                  "function* two() { yield 'a'; yield 'b' }"
+                  "'' + log",
+                  ""),
+          "Array.from past 32 bits: the setup");
+    white_set_array_from_first(4294967295LL);
+    CHECK(eval_is(v.ctx,
+                  "Array.from.call(Sink, { length: 4294967297 }, (x, i) => i); log.push('|');"
+                  "Array.from.call(Sink, two(), (x, i) => x + i); log.push('|');"
+                  "Array.from.call(Sink, two()); '' + log",
+                  "4294967295:4294967295,4294967296:4294967296,length=4294967297,|,"
+                  "4294967295:a4294967295,4294967296:b4294967296,length=4294967297,|,"
+                  "4294967295:a,4294967296:b,length=4294967297"),
+          "Array.from past 32 bits");
+    white_set_array_from_first(0);
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7867,6 +7904,7 @@ int main(int argc, char **argv)
     test_share_local_slots();
     test_max_index();
     test_max_props();
+    test_array_from_past_32_bits();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();
