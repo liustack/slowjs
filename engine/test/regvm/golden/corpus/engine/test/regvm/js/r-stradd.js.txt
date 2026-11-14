@@ -8,9 +8,16 @@ result long 3 InternalError: string too long
 result long 4 InternalError: string too long
 result long 5 InternalError: string too long
 result long 6 InternalError: string too long
+result held 0 InternalError: string too long kept
+result held 1 InternalError: string too long kept
+result held 2 InternalError: string too long kept
+result held 3 InternalError: string too long kept
+result held 4 InternalError: string too long kept kept
+result held 5 InternalError: string too long kept
+result held 6 InternalError: string too long kept
 result others s1|1s|1<k>|<k>1|<k>1 s1.5|1.5s|1.5<k>|<k>1.5|<k>1.5 strue|trues|true<k>|<k>true|<k>true snull|nulls|null<k>|<k>null|<k>null sundefined|undefineds|undefined<k>|<k>undefined|<k>undefined s3|3s|3<k>|<k>3|<k>3 sV|Vs|V<k>|<k>V|<k>V sso|sos|so<k>|<k>so|<k>so s1,2|1,2s|1,2<k>|<k>1,2|<k>1,2 valueOf,valueOf,valueOf,valueOf,valueOf
 result symbol TypeError
 result symbol k TypeError
-mem-end obj=192 atom=540 shape=120 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=192 atom=540 shape=120 prop=951 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=193 atom=540 shape=120 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=540 shape=120 prop=953 jsfunc=0 cfunc=131 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

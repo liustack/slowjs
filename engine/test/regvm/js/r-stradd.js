@@ -66,6 +66,28 @@ var tries = [
 for (i = 0; i < tries.length; i++) {
   try { log.push("long " + i + " " + tries[i]().length); } catch (e) { log.push("long " + i + " " + err(e)); }
 }
+// the same error caught in the function that holds the destination: a local
+// keeps the string it had, after ADDL, ADDL into its own left operand (the
+// right one from a call: t = t + b of two locals is ADDLOC), ADDKL and KADD
+// into a local, and the operands of ADD, ADDK and KADD into a temp are still
+// there
+function id(x) { return x; }
+function same(x, y) { return x === y ? "kept" : "LOST " + typeof x; }
+var held = [
+  function (a, b) { var t = "old"; try { t = a + b; } catch (e) { return err(e) + " " + same(t, "old"); } return "none"; },
+  function (a, b) { var t = a; try { t = t + id(b); } catch (e) { return err(e) + " " + same(t, a); } return "none"; },
+  function (a) { var t = "old"; try { t = a + "</k>"; } catch (e) { return err(e) + " " + same(t, "old"); } return "none"; },
+  function (b) { var t = "old"; try { t = "<k>" + b; } catch (e) { return err(e) + " " + same(t, "old"); } return "none"; },
+  function (a, b) { var x = a, y = b; try { return (a + b).length; } catch (e) { return err(e) + " " + same(a, x) + " " + same(b, y); } },
+  function (a) { var x = a; try { return (a + "<k>").length; } catch (e) { return err(e) + " " + same(a, x); } },
+  function (b) { var y = b; try { return ("<k>" + b).length; } catch (e) { return err(e) + " " + same(b, y); } },
+];
+for (i = 0; i < held.length; i++) {
+  held[i]("a", "b");
+  held[i]("a", "b");
+  log.push("held " + i + " " + held[i](big2, big2));
+}
+rvExpect.apply(null, held);
 big = big2 = r = piece = undefined;
 // an operand that is not a string: the generic add, which converts it
 var conv = [];
