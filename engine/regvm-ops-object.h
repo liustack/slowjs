@@ -235,7 +235,9 @@ static inline BOOL rv_ta_num(int class_id)
    keep them in registers on the path of an array element too. The loop
    calls it before RV_SYNC_TOP, as it frees a T object on its array path
    without it: nothing here runs code or collects, and freeing a value
-   does neither. */
+   does neither. A string read by an int key goes on to rv_getel_str. */
+static no_inline BOOL rv_getel_str(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                   BOOL k, BOOL t);
 static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k, BOOL t)
 {
@@ -245,8 +247,13 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     JSProperty *pr;
     JSShapeProperty *prs;
     key = k ? ((RVHeader *)F)->k[ip[2]] : F[(int8_t)ip[2]];
-    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT) {
+        if (JS_VALUE_GET_TAG(obj) == JS_TAG_STRING &&
+            JS_VALUE_GET_TAG(key) == JS_TAG_INT)
+            return rv_getel_str(ctx, F, ip, k, t);
+        return FALSE;
+    }
+    if (JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
         return FALSE;
     /* the test of the key and its atom in one read (JSString.key_atom) */
     atom = JS_VALUE_GET_STRING(key)->key_atom;
@@ -277,6 +284,45 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     if (t)
         JS_FreeValue(ctx, obj);
     rv_put(ctx, F, (int8_t)ip[0], val);
+    return TRUE;
+}
+
+/* GETEL of a string by an int key, ip at d o key|k, from rv_getel_atom:
+   inside the length of the string, the string of the code unit there, as
+   js_get_property gives it (a lone surrogate too: the unit, not a code
+   point). The index of a string is an own property that cannot be
+   configured, so no getter or index on the chain of prototypes can answer
+   first, and the key, an int, converts with no code. It gives FALSE with
+   nothing done for an index out of the length or negative, which
+   String.prototype and what it inherits answer (rv_getel_slow asks them),
+   and when the string cannot be made: rv_getel_slow makes it again and
+   throws the out of memory error. A rope has a tag of its own and never
+   comes here. Then the result is put in d and o freed for the T forms (an
+   int key holds nothing to free). */
+static no_inline BOOL rv_getel_str(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                   BOOL k, BOOL t)
+{
+    JSValue obj = F[(int8_t)ip[1]], key;
+    JSString *p = JS_VALUE_GET_STRING(obj), *r;
+    uint32_t idx, c;
+    key = k ? ((RVHeader *)F)->k[ip[2]] : F[(int8_t)ip[2]];
+    idx = JS_VALUE_GET_INT(key);
+    if (idx >= p->len)
+        return FALSE;
+    c = string_get(p, idx);
+    /* no exception here: the slow path throws it */
+    r = js_alloc_string_rt(ctx->rt, 1, c >= 0x100);
+    if (unlikely(!r))
+        return FALSE;
+    if (c >= 0x100) {
+        r->u.str16[0] = c;
+    } else {
+        r->u.str8[0] = c;
+        r->u.str8[1] = '\0';
+    }
+    if (t)
+        JS_FreeValue(ctx, obj);
+    rv_put(ctx, F, (int8_t)ip[0], JS_MKPTR(JS_TAG_STRING, r));
     return TRUE;
 }
 

@@ -1,0 +1,24 @@
+8-bit: '61','62','63','e9','ff'
+16-bit: '61','20ac','d83d','de00','7a'
+lone surrogates: '78','d800','79','dfff','7a','d800'
+empty: undefined,undefined
+constant keys: '61','ff','d83d',undefined,undefined
+temp string: '63','20ac',undefined
+temp key: '63','de00',undefined
+rope: '30','39',undefined,'20ac','30',801
+long: '21','71',undefined
+same string twice: true,true,string
+numbers: '61','62','ff',undefined,undefined,undefined,'61',undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined
+strings: '61','62',undefined,undefined,undefined,undefined,'ff',undefined,undefined,undefined,undefined,5,fn,undefined,obj,undefined
+symbols: function,undefined,undefined
+length: 5,5,5,6
+String object: '73','72',undefined,undefined,'74'
+String object with an index past its length: '66 69 76 65',undefined,0|1|2|5
+subclass: '61','62','63',undefined,true,3
+indexes on the prototypes: '62','62',undefined,'70 72 6f 74 6f 36','70 72 6f 74 6f 36','6f 62 6a 37','6f 62 6a 37','6d 69 6e 75 73','68 61 6c 66','70 72 6f 74 6f 31','70 72 6f 74 6f 36' [O7 string 5;O7 string 2;S1 string]
+after the prototypes: '62',undefined,undefined,undefined
+a prototype of String.prototype: '63','74 72 61 70 20 39 20 73 74 72 69 6e 67','74 72 61 70 20 39 20 73 74 72 69 6e 67','74 72 61 70 20 2d 33 20 73 74 72 69 6e 67'
+primitives: '6e 30','6e 30','62 30',undefined,undefined,undefined
+null: throws TypeError
+undefined: throws TypeError
+walk: true,17

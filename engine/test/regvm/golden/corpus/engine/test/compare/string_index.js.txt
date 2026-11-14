@@ -1,0 +1,27 @@
+result 8-bit: '61','62','63','e9','ff'
+result 16-bit: '61','20ac','d83d','de00','7a'
+result lone surrogates: '78','d800','79','dfff','7a','d800'
+result empty: undefined,undefined
+result constant keys: '61','ff','d83d',undefined,undefined
+result temp string: '63','20ac',undefined
+result temp key: '63','de00',undefined
+result rope: '30','39',undefined,'20ac','30',801
+result long: '21','71',undefined
+result same string twice: true,true,string
+result numbers: '61','62','ff',undefined,undefined,undefined,'61',undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined
+result strings: '61','62',undefined,undefined,undefined,undefined,'ff',undefined,undefined,undefined,undefined,5,fn,undefined,obj,undefined
+result symbols: function,undefined,undefined
+result length: 5,5,5,6
+result String object: '73','72',undefined,undefined,'74'
+result String object with an index past its length: '66 69 76 65',undefined,0|1|2|5
+result subclass: '61','62','63',undefined,true,3
+result indexes on the prototypes: '62','62',undefined,'70 72 6f 74 6f 36','70 72 6f 74 6f 36','6f 62 6a 37','6f 62 6a 37','6d 69 6e 75 73','68 61 6c 66','70 72 6f 74 6f 31','70 72 6f 74 6f 36' [O7 string 5;O7 string 2;S1 string]
+result after the prototypes: '62',undefined,undefined,undefined
+result a prototype of String.prototype: '63','74 72 61 70 20 39 20 73 74 72 69 6e 67','74 72 61 70 20 39 20 73 74 72 69 6e 67','74 72 61 70 20 2d 33 20 73 74 72 69 6e 67'
+result primitives: '6e 30','6e 30','62 30',undefined,undefined,undefined
+result null: throws TypeError
+result undefined: throws TypeError
+result walk: true,17
+mem-end obj=213 atom=589 shape=126 prop=1018 jsfunc=10 cfunc=136 array=5 fast_array=5 elements=62 binary=0
+mem-gc obj=213 atom=589 shape=126 prop=1018 jsfunc=10 cfunc=136 array=5 fast_array=5 elements=62 binary=0
+--- status exit 0

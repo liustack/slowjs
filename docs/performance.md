@@ -1087,6 +1087,34 @@ The micro benchmarks of `compare/testdata` by instructions (native, Apple M4, th
 
 Native, an add of two strings costs about 30 instructions less than before on amd64 (MUI's pages and React's page: the instructions saved over the adds of the table). As generated with the profile of v0.30.6, every page but MUI's runs 0.6% to 1.1% more instructions: the generator finds that the C of `JS_RegvmRun` changed since the profile was trained and compiles it with no profile, which costs more than the change saves. With the profile trained again every page runs fewer on amd64, so the profile must be trained again before a release that has this change ([releasing.md](releasing.md#the-profile)). The counts on the M4 differ by about 0.3% from one round to the next, so a row of it below that says nothing alone. Long Markdown was counted on the native C tree only.
 
+### A character of a string in the register loop
+
+[A character of a string is read in the register loop](changes/strings.md#a-character-of-a-string-is-read-in-the-register-loop), counted on 2026-11-15 against `b0271108`. The reads `s[i]` of a string with an int key that went to `rv_getel_slow` before, a render, counted with counters added to the native C tree for the count only: React's page 1,002, the store's home page 804, its products page 1,168, the workbench's studio page 440 and its stats page 195, MUI's orders page 752 and its home page 97, long Markdown (400 sections) 1,856. Each is inside the length of an 8-bit string that is not a rope: none is out of the length, negative, of a rope or of a 16-bit string. The other reads of a string on the slow path have a key that is neither a number nor a string (194 a render on the workbench's studio page, 87 on its stats page) and stay there, as do the reads of a number (60 and 34 there). The rest of the slow path is reads of objects: with a string key the atom path does not take (from 119 a render on the workbench's stats page to 4,914 on MUI's orders page) and with an int key (12 on the store's home page to 245 on the workbench's studio page, 720,143 in long Markdown).
+
+Instructions a render: native is the C tree built by clang, callgrind on an AMD EPYC 7B13 (linux/amd64, three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with the URL stand-in `urlmemo.js`, Markdown two after one) and retired instructions of the same renders on an Apple M4 (the lowest of 3 rounds). The product is the generated engine in tifa's `test/ssr`, callgrind on linux/amd64 (three timed renders less one, halved, one page of each group) and retired instructions on the M4 (the median render, the lowest of 3 rounds, over the pages of each group). "As generated" is the engine of this change with the profile of `b0271108`, "trained" the same engine with the profile trained again on it, against the base with its profile trained again the same way (which alone moves the base by -0.07% to +0.11%). Every page gives the same HTML.
+
+| Page | Native, amd64 | Native, M4 |
+| --- | ---: | ---: |
+| React's page | -0.50% | -0.47% |
+| The store's home page | -0.10% | -0.09% |
+| The store's products page | -0.09% | -0.16% |
+| The workbench's studio page | -0.05% | -0.23% |
+| The workbench's stats page | -0.04% | -0.11% |
+| MUI's orders page | -0.09% | -0.08% |
+| MUI's home page | -0.05% | -0.20% |
+| Long Markdown (400 sections) | -0.01% | -0.04% |
+
+| Pages | Product, amd64, as generated | Product, amd64, trained | Product, M4, as generated | Product, M4, trained |
+| --- | ---: | ---: | ---: | ---: |
+| React's page | -0.80% | -0.09% | -0.56% | -0.71% |
+| The store (amd64: home, M4: 14 pages) | -0.15% | +0.18% | -0.24% | -0.28% |
+| The workbench (amd64: studio, M4: 6 pages) | -0.10% | +0.10% | -0.04% | -0.03% |
+| MUI (amd64: orders, M4: 3 pages) | +0.08% | +0.10% | -0.07% | -0.22% |
+
+A read that takes the new path runs about 130 instructions less (a micro benchmark of `s[i]` over an 8-bit string, native, M4). The M4 rounds of the native tree differ by 1.3% to 2.6% from one to the next, so its rows other than React's say little alone. The V8 suite (native, amd64, callgrind): Crypto runs 0.12% fewer instructions, every other benchmark is the same within 0.05%.
+
+Trained, most of the gain on amd64 goes: the new profile lays out `JS_RegvmRun`, whose C this change does not touch, so that it runs 0.6% more on React's page (callgrind by function: 113.15M to 113.86M instructions a run, where the base trained again leaves it the same to the instruction). That is the layout one profile gives, not the code of the change: the M4 keeps the gain trained, and a release trains its profile once over all its changes. The product's counts on the M4 differ by up to 0.2% from one session to the next.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
