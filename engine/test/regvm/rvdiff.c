@@ -22,11 +22,12 @@
                 (see below)
      status     how the process ended: 0, a leak found when the runtime was
                 freed (87), a sanitizer (86 or its report on stderr), a
-                signal, or the time limit
+                signal, the time limit, or a transcript that could not be
+                written or read whole (88, see below)
 
      rvdiff -golden DIR [-update] [-full] [-root ROOT] [-o DIR] [-v] [-q]
             [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES]
-            [-cases FILE] [OPTIONS of jsrun] PATH...
+            [-fsize BYTES] [-cases FILE] [OPTIONS of jsrun] PATH...
 
    A PATH is a script (.js, or .mjs for a module) or a folder, read for
    scripts with no recursion into its subfolders. A script names options of
@@ -47,6 +48,18 @@
    takes would move the points of an automatic collection, and the mem-end
    counts with them). auto keeps the threshold of the engine, BYTES sets
    one, a small one to collect often.
+
+   The transcript of a run goes to a file of tmpfile(), in /tmp. When that
+   file system is full (on a machine others share, their files can fill
+   it), the writes of the run fail and its transcript ends early, while the
+   script ended well: compared, that would be a difference of the engine
+   that is none, and -update would write the cut lines as a golden. A run
+   checks that its transcript was written and exits with 88 when not, and
+   rvdiff checks that it read it whole: such a run is a difference with the
+   status "exit 88 (the transcript was not written whole)", rvdiff prints a
+   line "LOST PATH: ..." (also with -q), and -update writes no golden from
+   it. -fsize BYTES makes it on purpose: each run may write files of BYTES
+   at most (RLIMIT_FSIZE), as a full file system would let it.
 
    It prints one line per script that differs, with the kinds that differ
    and the first lines that differ, then a summary, and exits with 1 when any
@@ -102,6 +115,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -561,6 +575,9 @@ static Script *scripts;
 static int nscripts, cap_scripts;
 static const char *out_dir;
 static int verbose, quiet, timeout_sec = 60, jobs = 1;
+static long fsize_max; /* -fsize: the largest file a run may write, 0: no limit */
+/* the status of a run whose transcript was not written whole */
+#define EXIT_LOST 88
 static char ignore[256];
 static char global_opts[1024];
 /* -golden DIR: each script runs once and is compared with its golden in
@@ -800,6 +817,13 @@ static int start_run(Run *r, Script *sc)
         signal(SIGALRM, SIG_DFL);
         if (timeout_sec > 0)
             alarm(timeout_sec);
+        if (fsize_max > 0) {
+            /* a write past it fails as on a full file system, with no
+               signal */
+            struct rlimit rl = { (rlim_t)fsize_max, (rlim_t)fsize_max };
+            signal(SIGXFSZ, SIG_IGN);
+            setrlimit(RLIMIT_FSIZE, &rl);
+        }
         script_opts(sc->path, fopts, sizeof(fopts));
         if (set_opts(global_opts) < 0 || set_opts(fopts) < 0 ||
             (sc->opts && set_opts(sc->opts) < 0)) {
@@ -807,8 +831,10 @@ static int start_run(Run *r, Script *sc)
             _exit(2);
         }
         st = host_run_thread(child_run, &job);
-        fflush(tr);
-        fflush(stderr);
+        /* the error of a write is kept on the stream: a transcript, or a
+           stderr that may hold a report, cut by a failed write is no run */
+        if ((fflush(tr) | fflush(stderr)) != 0 || ferror(tr) || ferror(stderr))
+            st = EXIT_LOST;
         /* exit, not _exit: the check of the host for runtimes freed with
            blocks in use (87) and LeakSanitizer run at exit */
         exit(st);
@@ -816,18 +842,24 @@ static int start_run(Run *r, Script *sc)
     return 0;
 }
 
-static char *slurp(FILE *f, size_t *len)
+/* the whole of the file f, which it closes: *lost is 1 when it could not
+   be read whole */
+static char *slurp(FILE *f, size_t *len, int *lost)
 {
     long n;
     char *buf;
 
-    fflush(f);
-    fseek(f, 0, SEEK_END);
-    n = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    buf = malloc(n + 1);
-    if (n > 0 && fread(buf, 1, n, f) != (size_t)n)
+    *lost = 0;
+    if (fflush(f) != 0 || fseek(f, 0, SEEK_END) != 0 || (n = ftell(f)) < 0 ||
+        fseek(f, 0, SEEK_SET) != 0) {
+        *lost = 1;
         n = 0;
+    }
+    buf = malloc(n + 1);
+    if (n > 0 && fread(buf, 1, n, f) != (size_t)n) {
+        *lost = 1;
+        n = 0;
+    }
     buf[n] = 0;
     *len = n;
     fclose(f);
@@ -841,6 +873,7 @@ typedef struct Side {
     char **line;  /* the compared lines of tr */
     int nline;
     char *info;   /* the lines after "--- info", or NULL */
+    int lost;     /* the transcript was not written or read whole */
 } Side;
 
 static int has_report(const char *err)
@@ -852,10 +885,11 @@ static int has_report(const char *err)
 static void finish_side(Side *s, Run *r)
 {
     char *p;
-    int cap = 0;
+    int cap = 0, lost_err;
 
-    s->tr = slurp(r->out, &s->tr_len);
-    s->err = slurp(r->err, &s->err_len);
+    s->tr = slurp(r->out, &s->tr_len, &s->lost);
+    s->err = slurp(r->err, &s->err_len, &lost_err);
+    s->lost |= lost_err || (WIFEXITED(r->status) && WEXITSTATUS(r->status) == EXIT_LOST);
     if (WIFEXITED(r->status))
         snprintf(s->status, sizeof(s->status), "exit %d", WEXITSTATUS(r->status));
     else if (WIFSIGNALED(r->status))
@@ -865,6 +899,8 @@ static void finish_side(Side *s, Run *r)
         snprintf(s->status, sizeof(s->status), "status %d", r->status);
     if (has_report(s->err))
         strncat(s->status, " with a report on stderr", sizeof(s->status) - strlen(s->status) - 1);
+    if (s->lost)
+        strncat(s->status, " (the transcript was not written whole)", sizeof(s->status) - strlen(s->status) - 1);
     s->line = NULL;
     s->nline = 0;
     s->info = NULL;
@@ -1093,7 +1129,7 @@ static int load_golden(const char *path, Side *s)
     memset(s, 0, sizeof(*s));
     if (!f)
         return -1;
-    s->tr = slurp(f, &s->tr_len);
+    s->tr = slurp(f, &s->tr_len, &s->lost);
     s->err = strdup("");
     snprintf(s->status, sizeof(s->status), "(no status in the golden)");
     for (p = s->tr; *p;) {
@@ -1131,12 +1167,15 @@ static int compare(Script *sc, Run *on, int index)
 
     golden_name(sc, golden_dir, gname, sizeof(gname));
     finish_side(&b, on);
+    if (b.lost)
+        printf("LOST %s%s%s: the transcript of the run was not written or read whole (is /tmp full?), a difference\n",
+               sc->path, sc->opts && *sc->opts ? " " : "", sc->opts ? sc->opts : "");
     if (load_golden(gname, &a) < 0) {
         stat_nogolden++;
         stat_mismatch++;
         printf("DIFF %s%s%s: no golden %s\n", sc->path, sc->opts && *sc->opts ? " " : "",
                sc->opts ? sc->opts : "", gname);
-        if (golden_update && !ran_out(on) && !has_report(b.err) && write_golden(gname, &b) == 0) {
+        if (golden_update && !ran_out(on) && !b.lost && !has_report(b.err) && write_golden(gname, &b) == 0) {
             stat_updated++;
             printf("UPDATE %s\n", gname);
         } else if (golden_update) {
@@ -1206,7 +1245,7 @@ static int compare(Script *sc, Run *on, int index)
         free(la);
         free(lb);
     }
-    if (!ignored("status") && (strcmp(a.status, b.status) || slow)) {
+    if (!ignored("status") && (strcmp(a.status, b.status) || slow || a.lost || b.lost)) {
         if (!differ && !quiet)
             printf("DIFF %s%s%s\n", sc->path, sc->opts && *sc->opts ? " " : "", sc->opts ? sc->opts : "");
         differ = 1;
@@ -1233,7 +1272,7 @@ static int compare(Script *sc, Run *on, int index)
         }
         printf("\n");
     }
-    if (golden_update && differ && !slow && !has_report(b.err)) {
+    if (golden_update && differ && !slow && !b.lost && !has_report(b.err)) {
         if (write_golden(gname, &b) == 0) {
             stat_updated++;
             printf("UPDATE %s\n", gname);
@@ -1289,6 +1328,8 @@ int main(int argc, char **argv)
             quiet = 1;
         } else if (!strcmp(a, "-t") && i + 1 < argc) {
             timeout_sec = atoi(argv[++i]);
+        } else if (!strcmp(a, "-fsize") && i + 1 < argc) {
+            fsize_max = atol(argv[++i]);
         } else if (!strcmp(a, "-j") && i + 1 < argc) {
             jobs = atoi(argv[++i]);
             if (jobs < 1)
@@ -1326,7 +1367,7 @@ int main(int argc, char **argv)
         if (add_path(argv[i]) < 0)
             return 2;
     if (nscripts == 0 || !golden_dir) {
-        fprintf(stderr, "usage: rvdiff -golden DIR [-update] [-full] [-root ROOT] [-o DIR] [-v] [-q] [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES] [-cases FILE] [OPTIONS of jsrun] PATH...\n");
+        fprintf(stderr, "usage: rvdiff -golden DIR [-update] [-full] [-root ROOT] [-o DIR] [-v] [-q] [-t SECONDS] [-j N] [-ignore KIND,...] [-gc off|auto|BYTES] [-fsize BYTES] [-cases FILE] [OPTIONS of jsrun] PATH...\n");
         return 2;
     }
     if (!stamp_fresh())

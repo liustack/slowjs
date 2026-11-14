@@ -207,7 +207,7 @@ engine/test/regvm/corpus.sh [-j N] [MODE] [PATH...]      # 各个脚本和 unit 
 engine/test/out/MODE/rvops engine/test/regvm/opcodes.txt # 操作码表
 ```
 
-- `rvdiff`（`engine/test/regvm/rvdiff.c`）让每个脚本在自己的进程和运行时里跑，把它显示的东西和这个脚本的黄金文件比较：输出，结果，异常和它的调用栈，它的任务里的异常，脚本和它的任务结束时、以及完整回收之后运行时仍持有的对象、atom、shape 和函数，还有进程怎么结束的（释放运行时时发现泄漏，sanitizer 报告，信号，超时）。
+- `rvdiff`（`engine/test/regvm/rvdiff.c`）让每个脚本在自己的进程和运行时里跑，把它显示的东西和这个脚本的黄金文件比较：输出，结果，异常和它的调用栈，它的任务里的异常，脚本和它的任务结束时、以及完整回收之后运行时仍持有的对象、atom、shape 和函数，还有进程怎么结束的（释放运行时时发现泄漏，sanitizer 报告，信号，超时）。运行记录没能完整写下的一次运行（比如共用机器的 `/tmp` 被写满）算作差异（`LOST`），也不会被写成黄金文件，免得把磁盘写满当成引擎的变化。`corpus.sh` 会故意截断一次运行（`rvdiff -fsize`）来检查这一点。
 - `corpus.sh` 让原生宿主认识的每个脚本（`compare.sh` 的、`engine/test/regvm/corpus` 的，以及 `engine/test/regvm/js` 的，后者放着寄存器循环各部分的测试）用三种方式跑：像 `compare.sh` 那样跑，加 `-no-fused-ops`，以及当作严格模式代码跑（这时 pass 转换得更多）。然后运行 `unit`、`unit-oom` 和 `unit-api`，它们必须和各自的黄金文件一样地结束：状态和输出相同，只有通过的检查数不算。`-update` 会写下不一致的用例的黄金文件，提交之前要先读它的 diff。
 - 黄金文件（`engine/test/regvm/golden`）是在最后一个还有栈式解释器的提交（`deb70815`）上，从栈式解释器记下来的，记的是两个解释器结果一致的用例。没有黄金文件的用例算作不一致，这样后来加的脚本不会在没有东西可比的情况下通过。它的黄金文件来自 Node 24，或者来自读过输出、确认正确之后的 `-update`。
 - `rvgen`（`internal/rvgen`）为 pass 写小的随机程序：算术、比较、实参缺少和多余的调用、方法、递归、循环、字符串 `switch`、对象和数组、会回调的 getter，范围更宽的模式里还有闭包、`try`、类等等。`golden.sh` 对每种模式（`core`、`full`、`wide`，固定在 `internal/rvgen/v1`）的 1,000 个固定种子，对着 `golden/seeds` 检查，`rvgen node` 让新程序经 `rvdiff` 和 Node 24 各跑一遍，并显示每处差别。
