@@ -1177,6 +1177,8 @@ EarleyBoyer of the V8 suite, instructions an iteration: the difference of 12 ite
 | Earley | -6.25% | -6.55% | -6.15% | -6.66% |
 | Boyer | -19.41% | -20.15% | -20.46% | -21.95% |
 
+These numbers and the ones below are from before the path read the interrupt flag (see the change). The read costs about 7 instructions a test in the product as generated on linux/amd64: with it Boyer is -20.12% and Earley -6.04%, and tifa's pages as generated are +0.62% to +1.11%, the same as without it within the noise of a run. The native test host reads the flag through a call to `host_poll`, so natively it costs more: Boyer -18.08% and Earley -5.80% on linux/amd64.
+
 tifa's pages test `instanceof` 0 (React) to 680 (the shop's English home page) times a render. On the native C tree on linux/amd64 (callgrind, the timed renders after the warm ones, `host_poll` left out):
 
 | Page | change |

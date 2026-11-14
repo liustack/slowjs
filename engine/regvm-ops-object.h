@@ -556,7 +556,10 @@ static no_inline int rv_defm(JSContext *ctx, JSValue *F, const uint8_t *ip)
    data property prototype of b, an object, looked for in the chain of a,
    which must have no proxy. Anything else (a getter, the prototype not made
    yet, an error to throw, a proxy) is left to the generic path, which does
-   it all again: nothing here can be seen, throws, allocates or calls. */
+   it all again: nothing here can be seen, throws, allocates or calls. The
+   call this skips is the one of the built-in, with the checks at its entry:
+   the interrupt flag is read here as there, and the level of depth it
+   counted is not counted (a script recurses deeper, never less deep). */
 static no_inline int rv_instof(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue v = F[(int8_t)ip[1]], fv = F[(int8_t)ip[2]];
@@ -565,7 +568,11 @@ static no_inline int rv_instof(JSContext *ctx, JSValue *F, const uint8_t *ip)
     JSShapeProperty *prs;
     BOOL ret;
 
-    if (JS_VALUE_GET_TAG(fv) != JS_TAG_OBJECT)
+    /* the call of the built-in stops at the host's stop and while an
+       uncatchable exception is pending (its 2 in the flag), so the code
+       after the test does not run: the generic path makes that call */
+    if (unlikely(poll_flag(&ctx->rt->interrupt_flag)) ||
+        JS_VALUE_GET_TAG(fv) != JS_TAG_OBJECT)
         return 0;
     f = JS_VALUE_GET_OBJ(fv);
     if (f->is_exotic || f->class_id == JS_CLASS_BOUND_FUNCTION ||
