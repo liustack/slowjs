@@ -13,6 +13,8 @@ import (
 
 	"github.com/liustack/quickjs"
 	"github.com/liustack/quickjs/intl"
+	"github.com/liustack/quickjs/temporal"
+	"github.com/liustack/quickjs/url"
 )
 
 func init() {
@@ -27,7 +29,7 @@ func init() {
 		Modules:        true,
 		Notes: []string{
 			"Scripts are compiled to bytecode with VM.Compile and run with EvalBytecode.",
-			"Intl comes from package intl, registered only when a test asks for it.",
+			"Intl, Temporal and URL come from the packages intl, temporal and url of the module, registered only when a test asks for them.",
 		},
 	})
 }
@@ -84,6 +86,14 @@ func newLiustack(o Options) (VM, error) {
 	}
 	if o.Intl {
 		if err := intl.Register(vm); err != nil {
+			vm.Close()
+			return nil, err
+		}
+		if err := temporal.Register(vm); err != nil {
+			vm.Close()
+			return nil, err
+		}
+		if err := url.Register(vm); err != nil {
 			vm.Close()
 			return nil, err
 		}
