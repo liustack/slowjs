@@ -1440,6 +1440,7 @@ var goasmKeep = []any{
 	rv_getvar_slow,
 	rv_gosub_entries,
 	rv_init_ctor,
+	rv_instof,
 	rv_islands,
 	rv_jump_throws_p,
 	rv_jump_to,

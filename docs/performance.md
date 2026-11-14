@@ -1199,6 +1199,46 @@ The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pa
 
 The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
 
+### instanceof without the call of Symbol.hasInstance
+
+[instanceof without the call of Symbol.hasInstance](changes/operators.md#instanceof-without-the-call-of-symbolhasinstance), against `b0271108` (the tree of v0.30.7 before batch 6). An `instanceof` that takes the path runs about 380 fewer instructions on linux/amd64. Instructions are counted, not timed. The HTML of every page is the same.
+
+EarleyBoyer of the V8 suite, instructions an iteration: the difference of 12 iterations and 4, divided by 8. Natively the C tree's `jsrun` on linux/amd64 (callgrind) and on an Apple M4 (the retired instructions, the lowest of 3 runs). The product is the generated engine as `make gen` makes it, under callgrind on linux/amd64: as generated, and with the profile trained again on the change.
+
+| Benchmark | native linux/amd64 | native darwin/arm64 | product as generated | product trained again |
+| --- | ---: | ---: | ---: | ---: |
+| Earley | -6.25% | -6.55% | -6.15% | -6.66% |
+| Boyer | -19.41% | -20.15% | -20.46% | -21.95% |
+
+These numbers and the ones below are from before the path read the interrupt flag (see the change). The read costs about 7 instructions a test in the product as generated on linux/amd64: with it Boyer is -20.12% and Earley -6.04%, and tifa's pages as generated are +0.62% to +1.11%, the same as without it within the noise of a run. The native test host reads the flag through a call to `host_poll`, so natively it costs more: Boyer -18.08% and Earley -5.80% on linux/amd64.
+
+tifa's pages test `instanceof` 0 (React) to 680 (the shop's English home page) times a render. On the native C tree on linux/amd64 (callgrind, the timed renders after the warm ones, `host_poll` left out):
+
+| Page | change |
+| --- | ---: |
+| the workbench studio page | -0.04% |
+| the workbench stats page | -0.05% |
+| the shop's English home page | -0.19% |
+| the shop's Chinese products page | -0.18% |
+| MUI's orders page | -0.02% |
+| MUI's home page | -0.08% |
+| React's page | -0.00% |
+| the long Markdown page (react-markdown, 400 sections) | +0.00% |
+
+The generated engine in tifa's `test/ssr`. `JS_RegvmRun` changed, so `make gen` compiles it without the profile until the profile is trained again, and the new `rv_instof` has none: as generated every page runs 0.5% to 1.6% more instructions. The profile trained on the change gives them back. On linux/amd64 callgrind, two warm renders and then the difference of three renders and one, halved. One run a page, and the median of four for React's page, the workbench stats page and MUI's orders page: runs of one build differ by up to 0.4%, as the order of Go's maps changes from run to run. On the workbench stats page the trained build is 0.11% over the base with its shipped profile, but the base with its profile trained again the same way is as high (four runs): against it the change is +0.02%. On an Apple M4 the retired instructions, the median of 10 renders (40 for React's page), the lowest of 3 rounds.
+
+| Page | linux/amd64, as generated | linux/amd64, trained | darwin/arm64, as generated | darwin/arm64, trained |
+| --- | ---: | ---: | ---: | ---: |
+| the workbench studio page | +0.56% | -0.25% | +0.94% | -0.09% |
+| the workbench stats page | +1.13% | +0.11% | +0.89% | -0.07% |
+| the shop's English home page | +0.82% | -0.19% | +1.01% | -0.23% |
+| the shop's Chinese products page | +0.77% | -0.24% | +0.97% | -0.07% |
+| MUI's orders page | +0.82% | -0.01% | +0.90% | -0.08% |
+| MUI's home page | +0.56% | -0.22% | +0.86% | -0.12% |
+| React's page | +1.09% | -0.02% | +1.59% | +0.01% |
+
+The long Markdown page tests `instanceof` 32 times a render. Natively its register loop runs 0.5 million more instructions a render (0.003%): clang lays out `JS_RegvmRun` a little differently with the new call in it. The 64 micro benchmarks of `compare/testdata` test no `instanceof`: natively on the M4 their geometric mean is 0.17% lower, none more than 0.86% higher (`array_for`, within the noise of its short run).
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.

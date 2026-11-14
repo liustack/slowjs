@@ -1,0 +1,112 @@
+result main code, main right, main left, F: true
+result main code, main right, main left, B: true
+result main code, main right, main left, A of B: true
+result main code, main right, main left, Object: true
+result main code, main right, main left, Array: true
+result main code, main right, main left, Function: true
+result main code, main right, main left, primitive: false
+result main code, main right, main left, arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result main code, main right, main left, arrow, primitive: false
+result main code, main right, main left, object: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, main right, main left, number: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, main right, other left, F: false
+result main code, main right, other left, B: false
+result main code, main right, other left, A of B: false
+result main code, main right, other left, Object: false
+result main code, main right, other left, Array: false
+result main code, main right, other left, Function: false
+result main code, main right, other left, primitive: false
+result main code, main right, other left, arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result main code, main right, other left, arrow, primitive: false
+result main code, main right, other left, object: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, main right, other left, number: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, other right, main left, F: false
+result main code, other right, main left, B: false
+result main code, other right, main left, A of B: false
+result main code, other right, main left, Object: false
+result main code, other right, main left, Array: false
+result main code, other right, main left, Function: false
+result main code, other right, main left, primitive: false
+result main code, other right, main left, arrow: throws TypeError (operand 'prototype' property is not an object) of other
+result main code, other right, main left, arrow, primitive: false
+result main code, other right, main left, object: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, other right, main left, number: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, other right, other left, F: true
+result main code, other right, other left, B: true
+result main code, other right, other left, A of B: true
+result main code, other right, other left, Object: true
+result main code, other right, other left, Array: true
+result main code, other right, other left, Function: true
+result main code, other right, other left, primitive: false
+result main code, other right, other left, arrow: throws TypeError (operand 'prototype' property is not an object) of other
+result main code, other right, other left, arrow, primitive: false
+result main code, other right, other left, object: throws TypeError (invalid 'instanceof' right operand) of main
+result main code, other right, other left, number: throws TypeError (invalid 'instanceof' right operand) of main
+result other code, main right, main left, F: true
+result other code, main right, main left, B: true
+result other code, main right, main left, A of B: true
+result other code, main right, main left, Object: true
+result other code, main right, main left, Array: true
+result other code, main right, main left, Function: true
+result other code, main right, main left, primitive: false
+result other code, main right, main left, arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result other code, main right, main left, arrow, primitive: false
+result other code, main right, main left, object: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, main right, main left, number: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, main right, other left, F: false
+result other code, main right, other left, B: false
+result other code, main right, other left, A of B: false
+result other code, main right, other left, Object: false
+result other code, main right, other left, Array: false
+result other code, main right, other left, Function: false
+result other code, main right, other left, primitive: false
+result other code, main right, other left, arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result other code, main right, other left, arrow, primitive: false
+result other code, main right, other left, object: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, main right, other left, number: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, other right, main left, F: false
+result other code, other right, main left, B: false
+result other code, other right, main left, A of B: false
+result other code, other right, main left, Object: false
+result other code, other right, main left, Array: false
+result other code, other right, main left, Function: false
+result other code, other right, main left, primitive: false
+result other code, other right, main left, arrow: throws TypeError (operand 'prototype' property is not an object) of other
+result other code, other right, main left, arrow, primitive: false
+result other code, other right, main left, object: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, other right, main left, number: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, other right, other left, F: true
+result other code, other right, other left, B: true
+result other code, other right, other left, A of B: true
+result other code, other right, other left, Object: true
+result other code, other right, other left, Array: true
+result other code, other right, other left, Function: true
+result other code, other right, other left, primitive: false
+result other code, other right, other left, arrow: throws TypeError (operand 'prototype' property is not an object) of other
+result other code, other right, other left, arrow, primitive: false
+result other code, other right, other left, object: throws TypeError (invalid 'instanceof' right operand) of other
+result other code, other right, other left, number: throws TypeError (invalid 'instanceof' right operand) of other
+result main code, chain through the other Function.prototype: true
+result main code, chain through the other Function.prototype, primitive: false
+result main code, chain through the other Function.prototype, prototype 3: throws TypeError (operand 'prototype' property is not an object) of other
+result main code, not callable, the other Function.prototype: false
+result other code, chain through the other Function.prototype: true
+result other code, chain through the other Function.prototype, primitive: false
+result other code, chain through the other Function.prototype, prototype 3: throws TypeError (operand 'prototype' property is not an object) of main
+result other code, not callable, the other Function.prototype: false
+result shadow on a function of the other realm: true,false,true
+result Object.prototype of the other realm: false,true,true,throws TypeError (invalid 'instanceof' right operand) of main
+result message, right side a number: throws TypeError (invalid 'instanceof' right operand) of main
+result message, right side undefined: throws TypeError (invalid 'instanceof' right operand) of main
+result message, right side a plain object: throws TypeError (invalid 'instanceof' right operand) of main
+result message, arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result message, bound arrow: throws TypeError (operand 'prototype' property is not an object) of main
+result message, prototype null: throws TypeError (operand 'prototype' property is not an object) of main
+result message, hasInstance not callable: throws TypeError (not a function) of main
+result message, hasInstance a throwing getter: throws RangeError (getter) of main
+result message, revoked proxy: throws TypeError (revoked proxy) of main
+result loop: 240
+result 0 differ
+mem-end obj=423 atom=594 shape=265 prop=2023 jsfunc=23 cfunc=253 array=6 fast_array=6 elements=111 binary=0
+mem-gc obj=417 atom=591 shape=261 prop=2010 jsfunc=20 cfunc=253 array=6 fast_array=6 elements=111 binary=0
+--- status exit 0

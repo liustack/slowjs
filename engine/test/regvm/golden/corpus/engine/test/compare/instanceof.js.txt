@@ -1,0 +1,87 @@
+result function: true,false,true,true,false
+result class chain: true,false,true,true,true,true,true,true
+result object and function: true,true,true,true,true,true
+result built-ins: true,true,true,true,true,true,false,true,true,true
+result arguments and strings: true,false,true,true
+result subclass of a built-in: true,true,false
+result subclass of Array: true,true,false
+result generator and async: true,true,true
+result deep chain: true,true,false
+result long chain on the left: true,false,true
+result primitives: false,false,false,false,false,false,false,false,false
+result null prototype object: false,false
+result null prototype set later: false,false
+result prototype changed: false,true,true
+result frozen and sealed: true,true,true
+result a function on the left: false,false,false,true
+result proxy on the left: true,true [getPrototypeOf getPrototypeOf]
+result proxy in the chain of the left: true,false [getPrototypeOf getPrototypeOf]
+result revoked proxy in the chain of the left: throws TypeError
+result proxy on the left, primitive right: throws TypeError
+result arrow function: false,false
+result arrow function, object on the left: throws TypeError
+result method, object on the left: throws TypeError
+result async function, object on the left: throws TypeError
+result bound function: true,true,false,false
+result bound class: true,false
+result bound function with an own prototype: true,false
+result bound of bound: true,false
+result bound arrow, object on the left: throws TypeError
+result bound arrow, primitive on the left: false
+result bound function with its own hasInstance: true,false [own own]
+result callable proxy: true,true,false,false
+result callable proxy with a get trap: true,false [Symbol.hasInstance prototype Symbol.hasInstance]
+result callable proxy of an arrow: throws TypeError
+result revoked callable proxy: throws TypeError
+result object proxy: throws TypeError
+result plain object: throws TypeError
+result primitive: throws TypeError
+result primitive on both sides: throws TypeError
+result right side undefined: throws TypeError
+result right side null: throws TypeError
+result symbol: throws TypeError
+result not callable, with the original hasInstance: false,false,false
+result not callable, with the original hasInstance and a prototype: false,false,false
+result static method: true,false [S S]
+result static method inherited: true,true [S true S true]
+result defineProperty: true,true [H H]
+result Reflect.defineProperty: true,false
+result getter: true,true [get get]
+result getter giving undefined: false,true,false [get get get]
+result hasInstance null: false,true,false
+result undefined, object right side: throws TypeError
+result not callable: throws TypeError
+result not callable object: throws TypeError
+result on a plain object: true [o]
+result results that are not booleans: false,true,false,true,false,false,true,false,false,true,true
+result throws: throws RangeError
+result this and arguments: true [true 1]
+result added and removed between tests: true,false,true
+result added to a parent class between tests: true,false,false,true
+result prototype of the function set to an object with one: true,false,true [set]
+result prototype of the function set to null: true,false,false
+result prototype of the function set to an object without one: true,false
+result prototype of the function set to a proxy: true,false [Symbol.hasInstance Symbol.hasInstance]
+result Function.prototype keeps its own: TypeError,assigned,TypeError,false,false,true
+result called directly: true,false,false,true
+result Object.prototype gets one: false,false,true,true [op op]
+result prototype a getter: true,false,false [prototype prototype]
+result prototype a getter that changes the chain: true,true [prototype]
+result prototype a getter that tests instanceof: true,false [true true true true]
+result prototype a getter that throws: throws SyntaxError
+result prototype inherited: true,true,false
+result prototype not an object: TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false,TypeError,false
+result prototype a function: true,false,false
+result prototype replaced between tests: true,false
+result prototype not made yet: false,false,true,true
+result prototype of a class not writable: true
+result prototype of a built-in: true,false,false,false
+result the left side is not converted: false,true
+result hasInstance read once, before the prototype: true,false,true [Symbol.hasInstance prototype prototype Symbol.hasInstance]
+result operands evaluated first: L,R,TypeError
+result in a loop: 156512
+result result used as a value and in a branch: true,false,y,and,false,true,n,false,false,true,n,false
+result strict code: true,false,true
+mem-end obj=485 atom=580 shape=356 prop=1568 jsfunc=37 cfunc=139 array=3 fast_array=3 elements=84 binary=0
+mem-gc obj=223 atom=566 shape=157 prop=1032 jsfunc=8 cfunc=139 array=3 fast_array=3 elements=84 binary=0
+--- status exit 0
