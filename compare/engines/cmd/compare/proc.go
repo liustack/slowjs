@@ -25,7 +25,6 @@ import (
 // of the process and kills it when it goes over.
 var (
 	flagMemCap    = flag.String("memcap", "4G", "memory cap per engine process for timed workloads and probes")
-	flagMemCap262 = flag.String("memcap-test262", "2G", "memory cap per test262 process")
 	flagCgroup    = flag.Bool("cgroup", true, "on Linux, also put each engine process in a systemd scope with MemoryMax")
 	cgroupOK      bool
 	cgroupChecked sync.Once
@@ -61,7 +60,7 @@ func capDesc() string {
 	if useCgroup() {
 		how = "cgroup MemoryMax (systemd-run --user --scope), swap off, and resident size checked by the driver"
 	}
-	return fmt.Sprintf("%s for timed workloads and probes, %s for test262: %s", *flagMemCap, *flagMemCap262, how)
+	return fmt.Sprintf("%s for timed workloads and probes: %s", *flagMemCap, how)
 }
 
 // argv puts the cgroup cap and the CPU pinning in front of the command.

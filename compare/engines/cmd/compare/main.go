@@ -14,7 +14,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -25,14 +24,11 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/liustack/quickjs/compare/engines/t262"
 )
 
 type variant struct {
@@ -40,15 +36,12 @@ type variant struct {
 	Bin  string   // binary name
 	Tags string   // build tags
 	Env  []string // extra environment
-	// Conformance: run test262 on this variant. Every variant runs it: a
-	// JIT can get things wrong that its interpreter gets right.
-	Conformance bool
 }
 
 var variants = []variant{
-	{"liustack-quickjs", "liustack", "eng_liustack", nil, true},
-	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, true},
-	{"moejs", "moejs", "eng_moejs", nil, true},
+	{"liustack-quickjs", "liustack", "eng_liustack", nil},
+	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil},
+	{"moejs", "moejs", "eng_moejs", nil},
 }
 
 var (
@@ -60,8 +53,6 @@ var (
 	flagProcs     = flag.Int("gomaxprocs", 1, "GOMAXPROCS of timed workloads")
 	flagOut       = flag.String("out", "results", "where results go")
 	flagRaw       = flag.String("raw", "", "directory for raw output (default results/raw/<run>)")
-	flagT262      = flag.String("test262", "", "test262 checkout (default: download the pinned commit into the cache)")
-	flagJobs      = flag.Int("j", 1, "test262 processes per engine (each under -memcap-test262)")
 	flagReport    = flag.String("report", "", "write Markdown for an existing results JSON and exit")
 	flagMachine   = flag.String("machine", "", "machine description for the results (default: detected)")
 	flagRun       = flag.String("name", "", "run name (default <date>-<version>-<host>)")
@@ -71,9 +62,7 @@ var (
 	flagBuildArc  = flag.String("goarch", "", "build the engine binaries for this GOARCH")
 	flagBuildOnl  = flag.Bool("build-only", false, "build the engine binaries and exit")
 	flagBinDir    = flag.String("bindir", "bin", "where the engine binaries are")
-	flagCPU262    = flag.String("cpu-test262", "", "taskset -c for test262 processes (default -cpu); test262 needs no quiet core")
-	flagNice262   = flag.Int("nice-test262", 0, "run test262 processes under nice -n <n>")
-	flagMerge     = flag.String("merge", "", "copy the test262 results of this results JSON into the run named by -name, and exit")
+	flagMerge     = flag.String("merge", "", "with -merge-engines: the results JSON whose engines are copied into the run named by -name, and exit")
 	flagMergeEng  = flag.Bool("merge-engines", false, "with -merge: copy every result of the engines in that JSON (made by other binaries too) into the run, replacing what the run has for them")
 	flagAdd       = flag.Bool("add", false, "add to the existing run named by -name: timed workloads get -rounds more rounds, other phases are replaced. Splits a long run into short ones")
 	flagExtraTags = flag.String("extra-tags", "", "build tags added to every engine binary, such as testhooks")
@@ -81,8 +70,7 @@ var (
 
 // Pinned inputs.
 const (
-	test262Commit = "d53ebc8b1931d9f1541e43d59650776e4b766248"
-	v8Commit      = "d2ddc6ce1ce4f8d90606864615543708d1cfa3fd" // mozilla/arewefastyet benchmarks/v8-v7
+	v8Commit = "d2ddc6ce1ce4f8d90606864615543708d1cfa3fd" // mozilla/arewefastyet benchmarks/v8-v7
 )
 
 func main() {
@@ -113,7 +101,7 @@ func main() {
 		return
 	}
 	res := &Results{Started: time.Now().UTC().Format(time.RFC3339), Machine: machine(), Rounds: *flagRounds,
-		Pinned: map[string]string{"test262": test262Commit, "v8-v7 (mozilla/arewefastyet)": v8Commit}}
+		Pinned: map[string]string{"v8-v7 (mozilla/arewefastyet)": v8Commit}}
 	res.GOMAXPROCS, res.CPU = *flagProcs, *flagCPU
 	if b, err := os.ReadFile(filepath.Join(*flagBinDir, "build.json")); err == nil {
 		check(json.Unmarshal(b, &res.Source))
@@ -222,22 +210,6 @@ func main() {
 			save()
 		}
 	}
-	if has("t262") {
-		root := *flagT262
-		if root == "" {
-			root = fetchTest262()
-		}
-		t := runTest262(vs, root)
-		if res.Test262 != nil && res.Test262.Commit == t.Commit {
-			// -add with some engines: keep the others.
-			for n, e := range t.Engines {
-				res.Test262.Engines[n] = e
-			}
-		} else {
-			res.Test262 = t
-		}
-		save()
-	}
 	save()
 	fmt.Println("wrote", filepath.Join(*flagOut, res.Name+".json"))
 }
@@ -323,13 +295,6 @@ func command(v variant, pinned bool, args ...string) *exec.Cmd {
 	// uses no other core. GOMAXPROCS is set for timed workloads only.
 	cpu, nice := *flagCPU, 0
 	limit := parseSize(*flagMemCap)
-	if len(args) > 0 && args[0] == "t262" {
-		limit = parseSize(*flagMemCap262)
-		nice = *flagNice262
-		if *flagCPU262 != "" {
-			cpu = *flagCPU262
-		}
-	}
 	a := argv(limit, cpu, nice, bin, args)
 	cmd := exec.Command(a[0], a[1:]...)
 	cmd.Env = append(os.Environ(), v.Env...)
@@ -654,9 +619,7 @@ func disturbed(ticks, share float64) bool {
 	return ticks >= 3 && share > 0.05
 }
 
-// merge copies the test262 engines of another run into the run named by
-// -name. test262 can then run on another core, as its own run, while timed
-// workloads run on the quiet one.
+// merge copies the engines of another run into the run named by -name (see mergeEngines).
 func merge(from string) {
 	read := func(p string) *Results {
 		b, err := os.ReadFile(p)
@@ -678,27 +641,11 @@ func merge(from string) {
 		fmt.Println("merged the engines of", from, "into", p)
 		return
 	}
-	if src.Test262 == nil {
-		check(fmt.Errorf("-merge: %s has no test262 results", from))
-	}
-	if src.Source.Commit != res.Source.Commit {
-		check(fmt.Errorf("-merge: %s was made with other binaries", from))
-	}
-	if res.Test262 == nil || res.Test262.Commit != src.Test262.Commit {
-		res.Test262 = src.Test262
-	} else {
-		for n, e := range src.Test262.Engines {
-			res.Test262.Engines[n] = e
-		}
-	}
-	b, _ := json.MarshalIndent(res, "", " ")
-	check(os.WriteFile(p, b, 0o644))
-	check(os.WriteFile(strings.TrimSuffix(p, ".json")+".md", []byte(renderMarkdown(res)), 0o644))
-	fmt.Println("merged test262 of", from, "into", p)
+	check(errors.New("-merge needs -merge-engines"))
 }
 
 // mergeEngines copies everything src has for its engines into res: their
-// info, feature probes, concurrent run, timed rounds, repeats and test262. An
+// info, feature probes, concurrent run, timed rounds and repeats. An
 // engine added to a run after it was made comes from other binaries, so res
 // records the run and commit it came from.
 func mergeEngines(res, src *Results) {
@@ -755,12 +702,6 @@ func mergeEngines(res, src *Results) {
 				res.Disturbed[k] = c
 			}
 		}
-		if src.Test262 != nil && src.Test262.Engines[n] != nil {
-			if res.Test262 == nil || res.Test262.Commit != src.Test262.Commit {
-				check(fmt.Errorf("-merge-engines: test262 of %s is not at the run's commit", n))
-			}
-			res.Test262.Engines[n] = src.Test262.Engines[n]
-		}
 	}
 	res.Added = slices.DeleteFunc(res.Added, func(a Added) bool { return slices.Equal(a.Engines, names) })
 	res.Added = append(res.Added, Added{Engines: names, Run: src.Name, Source: src.Source, Started: src.Started, Finished: src.Finished})
@@ -779,272 +720,6 @@ func preempted(cpu, wall time.Duration) bool {
 	}
 	lost := wall - cpu
 	return lost >= 50*time.Millisecond && lost > wall/10
-}
-
-// ---- test262 ----
-
-func fetchTest262() string {
-	cache, err := os.UserCacheDir()
-	check(err)
-	dir := filepath.Join(cache, "jsbench", "test262-"+test262Commit)
-	if _, err := os.Stat(filepath.Join(dir, "harness", "assert.js")); err == nil {
-		return dir
-	}
-	check(os.MkdirAll(filepath.Dir(dir), 0o755))
-	tgz := dir + ".tar.gz"
-	fmt.Fprintln(os.Stderr, "download test262", test262Commit)
-	check(exec.Command("curl", "-sSfL", "-o", tgz, "https://codeload.github.com/tc39/test262/tar.gz/"+test262Commit).Run())
-	check(exec.Command("tar", "xzf", tgz, "-C", filepath.Dir(dir)).Run())
-	os.Remove(tgz)
-	return dir
-}
-
-type T262Engine struct {
-	Runs    int `json:"runs"`
-	Pass    int `json:"pass"`
-	Crashes int `json:"crashes"`
-	Timeout int `json:"timeouts"`
-	OOM     int `json:"out_of_memory"` // tests that went over -memcap-test262 when run alone
-	// MemRestarts counts processes that went over the cap while the test
-	// they were on passed or failed normally when run alone: memory the
-	// engine kept from earlier tests.
-	MemRestarts int64             `json:"memory_restarts"`
-	Areas       map[string][2]int `json:"areas"` // area -> [pass, runs]
-	// ES2023 counts the runs of tests that use no feature newer than
-	// ES2023 (t262.Newer), by top directory: [pass, runs].
-	ES2023  map[string][2]int `json:"es2023"`
-	Feature map[string][2]int `json:"features"` // test262 feature tag -> [pass, runs]
-}
-
-type T262Summary struct {
-	Commit   string                 `json:"commit"`
-	Dirs     []string               `json:"dirs"`
-	Files    int                    `json:"files"`
-	Excluded map[string]int         `json:"excluded"`
-	Runs     int                    `json:"runs"`
-	Engines  map[string]*T262Engine `json:"engines"`
-}
-
-func runTest262(vs []variant, root string) *T262Summary {
-	plans, err := t262.Collect(root)
-	check(err)
-	sum := &T262Summary{Commit: test262Commit, Dirs: t262.Dirs, Files: len(plans), Excluded: map[string]int{}, Engines: map[string]*T262Engine{}}
-	var lines []string
-	features := map[string][]string{}
-	for _, p := range plans {
-		if p.Exclude != "" {
-			sum.Excluded[p.Exclude]++
-			continue
-		}
-		b, _ := os.ReadFile(filepath.Join(root, p.Path))
-		features[p.Path] = t262.Parse(string(b)).Features
-		for _, m := range p.Modes {
-			lines = append(lines, m+" "+p.Path)
-		}
-	}
-	sum.Runs = len(lines)
-	for _, v := range vs {
-		if !v.Conformance {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "test262 %s: %d runs\n", v.Name, len(lines))
-		memRestarts.Store(0)
-		results := supervise262(v, root, lines)
-		e := &T262Engine{Areas: map[string][2]int{}, Feature: map[string][2]int{}, ES2023: map[string][2]int{}}
-		f, err := os.Create(filepath.Join(rawDir, "test262-"+v.Name+".jsonl"))
-		check(err)
-		w := bufio.NewWriter(f)
-		for _, r := range results {
-			b, _ := json.Marshal(r)
-			w.Write(append(b, '\n'))
-			e.Runs++
-			if r.Pass {
-				e.Pass++
-			}
-			if strings.HasPrefix(r.Err, "crash") {
-				e.Crashes++
-			}
-			if strings.HasPrefix(r.Err, "timeout") {
-				e.Timeout++
-			}
-			if strings.HasPrefix(r.Err, "out of memory") {
-				e.OOM++
-			}
-			a := t262.Area(r.Path)
-			c := e.Areas[a]
-			c[1]++
-			if r.Pass {
-				c[0]++
-			}
-			e.Areas[a] = c
-			if !t262.IsNewer(features[r.Path]) {
-				top := strings.SplitN(a, "/", 2)[0]
-				for _, k := range []string{top, "all"} {
-					c := e.ES2023[k]
-					c[1]++
-					if r.Pass {
-						c[0]++
-					}
-					e.ES2023[k] = c
-				}
-			}
-			for _, ft := range features[r.Path] {
-				c := e.Feature[ft]
-				c[1]++
-				if r.Pass {
-					c[0]++
-				}
-				e.Feature[ft] = c
-			}
-		}
-		w.Flush()
-		f.Close()
-		e.MemRestarts = memRestarts.Load()
-		sum.Engines[v.Name] = e
-	}
-	return sum
-}
-
-type t262Result struct {
-	Path string  `json:"t"`
-	Mode string  `json:"m"`
-	Pass bool    `json:"ok"`
-	Err  string  `json:"e,omitempty"`
-	MS   float64 `json:"ms"`
-}
-
-// supervise262 runs the list in -j processes. A process that dies or stops
-// reporting for 60 s is killed; the test it was on is recorded as a crash
-// or a timeout, and a new process carries on after it.
-func supervise262(v variant, root string, lines []string) []t262Result {
-	n := *flagJobs
-	chunks := make([][]string, n)
-	for i, l := range lines {
-		chunks[i%n] = append(chunks[i%n], l)
-	}
-	results := make([][]t262Result, n)
-	var wg sync.WaitGroup
-	for i := range chunks {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			results[i] = superviseChunk(v, root, chunks[i], i)
-		}(i)
-	}
-	wg.Wait()
-	var all []t262Result
-	for _, r := range results {
-		all = append(all, r...)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Path != all[j].Path {
-			return all[i].Path < all[j].Path
-		}
-		return all[i].Mode < all[j].Mode
-	})
-	return all
-}
-
-func superviseChunk(v variant, root string, lines []string, id int) []t262Result {
-	var out []t262Result
-	listFile := filepath.Join(rawDir, fmt.Sprintf("t262-%s-%d.list", v.Bin, id))
-	defer os.Remove(listFile)
-	mem := parseSize(*flagMemCap262)
-	for len(lines) > 0 {
-		got, why, detail := runChunk(v, root, listFile, lines)
-		out = append(out, got...)
-		lines = lines[len(got):]
-		if len(lines) == 0 {
-			break
-		}
-		mode, path, _ := strings.Cut(lines[0], " ")
-		var r t262Result
-		switch why {
-		case "timeout":
-			r = t262Result{Path: path, Mode: mode, Err: "timeout: no result in 60 s"}
-		case "memory":
-			// The process may have grown over earlier tests. Run this
-			// test alone in a new process before blaming it.
-			again, why2, _ := runChunk(v, root, listFile, lines[:1])
-			switch {
-			case len(again) == 1:
-				r = again[0]
-				memRestarts.Add(1)
-			case why2 == "memory":
-				r = t262Result{Path: path, Mode: mode, Err: outOfMemory(mem)}
-			default:
-				r = t262Result{Path: path, Mode: mode, Err: "crash: the test alone ended with " + why2 + " after its process went over the memory cap"}
-			}
-		default:
-			r = t262Result{Path: path, Mode: mode, Err: "crash: " + detail}
-		}
-		out = append(out, r)
-		lines = lines[1:]
-		if len(out)%1000 == 0 {
-			fmt.Fprintf(os.Stderr, "  %s/%d: %d done\n", v.Name, id, len(out))
-		}
-	}
-	return out
-}
-
-// memRestarts counts test262 processes that went over the memory cap while
-// the test they were on passed or failed normally when run alone.
-var memRestarts atomic.Int64
-
-// runChunk runs lines in one process until it ends. It returns the results
-// it got, why the process ended early ("", "timeout", "memory" or "crash")
-// and, for a crash, the end of its stderr.
-func runChunk(v variant, root, listFile string, lines []string) ([]t262Result, string, string) {
-	check(os.WriteFile(listFile, []byte(strings.Join(lines, "\n")+"\n"), 0o644))
-	cmd := command(v, false, "t262", "-root", root, "-list", listFile, "-timeout", "10s")
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	pipe, err := cmd.StdoutPipe()
-	check(err)
-	check(cmd.Start())
-	g := newGuard(cmd, parseSize(*flagMemCap262))
-	got := make(chan t262Result)
-	readDone := make(chan struct{})
-	go func() {
-		sc := bufio.NewScanner(pipe)
-		sc.Buffer(make([]byte, 1<<20), 1<<24)
-		for sc.Scan() {
-			var r t262Result
-			if json.Unmarshal(sc.Bytes(), &r) == nil {
-				got <- r
-			}
-		}
-		close(readDone)
-	}()
-	var out []t262Result
-loop:
-	for {
-		select {
-		case r := <-got:
-			out = append(out, r)
-		case <-readDone:
-			break loop
-		case <-time.After(60 * time.Second):
-			g.kill("timeout")
-			<-readDone
-			break loop
-		}
-	}
-	werr := cmd.Wait()
-	why := g.why()
-	if len(out) == len(lines) || why != "" {
-		return out, why, ""
-	}
-	tail := stderr.String()
-	if i := strings.Index(tail, "fatal error"); i >= 0 {
-		tail = tail[i:]
-	} else if i := strings.Index(tail, "panic:"); i >= 0 {
-		tail = tail[i:]
-	}
-	if len(tail) > 200 {
-		tail = tail[:200]
-	}
-	return out, "crash", fmt.Sprint(werr) + " " + strings.ReplaceAll(tail, "\n", " ")
 }
 
 var _ = errors.New
