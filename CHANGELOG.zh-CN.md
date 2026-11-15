@@ -4,9 +4,25 @@
 
 ## [Unreleased]
 
+## [v0.31.0] - 2026-11-15
+
 ### Changed
 
 - **不兼容：** 模块又叫 `github.com/liustack/slowjs` 了，也就是 v0.28.0 到 v0.29.11 的名字。v0.30.0 到 v0.30.7 叫 `github.com/liustack/quickjs`，这些版本留在那个路径上。要迁移，改 import 路径（`github.com/liustack/quickjs/intl` 改成 `github.com/liustack/slowjs/intl`，其余同理），把写 `quickjs.` 的地方写成 `slowjs.`，构建标签换成新名字：`quickjs_anygo` 改成 `slowjs_anygo`，`quickjs_intl_nonames` 改成 `slowjs_intl_nonames`，`quickjs_intl_nocjdict` 改成 `slowjs_intl_nocjdict`。构建时还传旧标签不会报错，只是不再起作用。根包的错误和 panic 信息原来以 `quickjs:` 开头，现在以 `slowjs:` 开头，`intl`、`temporal` 和 `url` 用来标记 VM 的 `Symbol.for` 键也改成新路径。仓库脚本原来读 `QUICKJS_*` 的地方现在读 `SLOWJS_*`。C 引擎仍然是 QuickJS。`go.mod` 撤回了声明旧路径的 v0.30.0 到 v0.30.7（[upstream.md](docs/upstream.zh-CN.md#从-githubcomliustackquickjs-换过来)）。
+- V8 测试套件的得分比 v0.30.7 高 5.4%，来自下面三项改动和在它们之上重新训练的画像。在 linux/amd64 的 AMD EPYC 7B13 上（各跑 10 次取中位数），Crypto 高 29.6%，EarleyBoyer 高 14.1%。这些改动针对的是 tifa 页面很少跑到的代码，所以页面耗时不变：16 种代码布局下没有哪类页面变慢，也没有哪个页面多跑指令（React 的页面少 0.63%）。同一个 VM 里先渲染短文档再渲染长 Markdown 文档，耗时少 8.0%，原因是引擎回收的时机换了位置，进程的内存峰值从 356 MB 降到 258 MB，不是一次渲染干的活少了：单独渲染只少 1.2%。这个版本没有给微基准计时（[performance.md](docs/performance.zh-CN.md#v0310-对-v0307)）。
+- 不再是快数组的 Array（从上往下填的、有空洞的、删过元素的、冻结或密封的）上，`a[i]` 和 `a[i] = v` 按下标的编号读写，不走通用的属性路径。Crypto 的大数就是这种数组，它每次迭代少跑 22% 的指令。给这种数组新增一个元素的写入多跑约 36 条指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#不再是快数组的数组按原子读写下标)）。
+- 普通函数的 `instanceof` 在寄存器循环里给出答案，不调用 `Symbol.hasInstance`。V8 套件的 Boyer 每次迭代要判断 491,887 次，少跑 21.5% 的指令（[operators.md](docs/changes/operators.zh-CN.md#instanceof-不再调用-symbolhasinstance)）。
+- `for in` 循环不再为它的迭代器新建 shape：context 拿着它起步用的那个空 shape。React 的页面少跑 0.55% 的指令，其他页面不变（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape)）。
+- [docs/benchmarks.zh-CN.md](docs/benchmarks.zh-CN.md) 只比两样：tifa 页面的渲染和 V8 套件，而且只比解释器：关掉 JIT 的 go-quickjs、moejs，以及作为参照的 C QuickJS、Hermes V1 和 Node `--jitless`。里面的数字是 v0.30.7 的。
+
+### Added
+
+- `VM.EvalFile(name, javascript, flags)` 是带文件名的 `EvalValue`，脚本的栈帧和语法错误写的是 `repro.js:1:31`，其他 eval 写的是 `<eval>`（[go-api.md](docs/changes/go-api.zh-CN.md#evalfile-给脚本一个文件名)）。
+- `slowjs` 命令在这个引擎里运行一个 JavaScript 文件，VM 的设置和 tifa 的一样（Intl、Temporal、URL），带 `print`、`console.log`，以及管得住的超时和内存上限。每个版本的 GitHub release 里有为 linux 和 darwin 的 amd64、arm64 以及 windows/amd64 预先编好的二进制（[command.md](docs/command.zh-CN.md)）。
+
+### Fixed
+
+- `Math.acosh` 对每个小于 -1 的值都给出 NaN。原来从 -8192 往下到 -2^26 的许多值会得到一个数：`Math.acosh(-8192)` 是 `-Infinity`。用的是 musl 自己的修复（[c-engine.md](docs/changes/c-engine.zh-CN.md#mathacosh-小于--1-时是-nan)）。
 
 ## [v0.30.7] - 2026-11-14
 
@@ -708,7 +724,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.30.7...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.0...main
+[v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5

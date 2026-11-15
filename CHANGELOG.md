@@ -4,9 +4,25 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.0] - 2026-11-15
+
 ### Changed
 
 - **Breaking:** the module is `github.com/liustack/slowjs` again, the name of v0.28.0 to v0.29.11. From v0.30.0 to v0.30.7 it was `github.com/liustack/quickjs`, and those versions stay at that path. To move, change the import paths (`github.com/liustack/quickjs/intl` becomes `github.com/liustack/slowjs/intl`, and so on), write `slowjs.` where you wrote `quickjs.`, and pass the build tags under their new names: `quickjs_anygo` becomes `slowjs_anygo`, `quickjs_intl_nonames` becomes `slowjs_intl_nonames` and `quickjs_intl_nocjdict` becomes `slowjs_intl_nocjdict`. A build that still passes an old tag loses its effect without an error. The errors and panics of the root package start with `slowjs:` where they started with `quickjs:`, and the `Symbol.for` keys with which `intl`, `temporal` and `url` mark a VM name the new path. The scripts of the repository read `SLOWJS_*` where they read `QUICKJS_*`. The C engine is still QuickJS. The `go.mod` retracts v0.30.0 to v0.30.7, which declare the old path ([upstream.md](docs/upstream.md#moving-from-githubcomliustackquickjs)).
+- The V8 benchmark suite scores 5.4% higher than with v0.30.7, with the three changes below and a profile trained again on them. On a linux/amd64 machine with an AMD EPYC 7B13 (the median of 10 runs each), Crypto scores 29.6% higher and EarleyBoyer 14.1%. The changes are for code that tifa's pages run little, so pages take the same time: over 16 code layouts no kind of page is slower, and none runs more instructions (React's page 0.63% fewer). A long Markdown document rendered after a shorter one in the same VM takes 8.0% less time, because the engine's collections fall at other points and the process peaks at 258 MB where it peaked at 356 MB, not because a render does less work: rendered alone it takes 1.2% less. The micro benchmarks were not timed for this release ([performance.md](docs/performance.md#v0310-against-v0307)).
+- `a[i]` and `a[i] = v` on an Array that is no longer a fast array (one filled from the top down, with a hole, with an element deleted, frozen or sealed) read and write the index by its number, without the generic property path. Crypto, whose big numbers are such arrays, runs 22% fewer instructions an iteration. A write that adds an element to such an array runs about 36 instructions more ([c-engine.md](docs/changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom)).
+- `instanceof` of an ordinary function is answered in the register loop, with no call of `Symbol.hasInstance`. Boyer of the V8 suite, which tests 491,887 times an iteration, runs 21.5% fewer instructions ([operators.md](docs/changes/operators.md#instanceof-without-the-call-of-symbolhasinstance)).
+- A `for in` loop makes no shape for its iterator: the context holds the empty shape it starts from. React's page runs 0.55% fewer instructions, and the other pages the same ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape)).
+- [docs/benchmarks.md](docs/benchmarks.md) compares two things only, the render of tifa's pages and the V8 suite, among interpreters: go-quickjs with its JIT off, moejs, and C QuickJS, Hermes V1 and Node `--jitless` as references. Its numbers are of v0.30.7.
+
+### Added
+
+- `VM.EvalFile(name, javascript, flags)` is `EvalValue` with a file name for the script, so its stack frames and syntax errors say `repro.js:1:31` where every other eval says `<eval>` ([go-api.md](docs/changes/go-api.md#evalfile-gives-a-script-a-file-name)).
+- The `slowjs` command runs a JavaScript file in this engine, set up as tifa sets it up (Intl, Temporal, URL), with `print`, `console.log` and a timeout and memory limit that hold. The GitHub release of each version has it prebuilt for linux and darwin on amd64 and arm64 and for windows/amd64 ([command.md](docs/command.md)).
+
+### Fixed
+
+- `Math.acosh` of a value below -1 is NaN for every such value. For many values from -8192 down to -2^26 it gave a number: `Math.acosh(-8192)` was `-Infinity`. The fix is musl's own ([c-engine.md](docs/changes/c-engine.md#mathacosh-below--1-is-nan)).
 
 ## [v0.30.7] - 2026-11-14
 
@@ -708,7 +724,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.30.7...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.0...main
+[v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5
