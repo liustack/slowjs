@@ -22,41 +22,38 @@
 
 Your Go server renders React pages itself, faster than C QuickJS on the same code, in one static binary with no cgo and no Node process beside it.
 
-It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt and `Intl` in every Chromium locale. It is QuickJS compiled to Go assembly and tuned for server rendering, built for [tifa](https://github.com/liustack/tifa), a Go framework for React pages.
+It is for Go programs that need to run JavaScript, such as rendering React on the server. The engine runs ES2023 with modules, async generators, proxies, BigInt, and `Intl` in every Chromium locale and `Temporal`, both built in. It is QuickJS compiled to Go assembly and tuned for server rendering, built for [tifa](https://github.com/liustack/tifa), a Go framework for React pages.
 
 It is an engine, not Node: there is no `require`, `fs` or `process`. Code from npm runs unchanged once it is bundled as for a browser, as React is.
 
 ## How fast
 
-CPU time of one render of the server bundles of tifa's apps, with the same JavaScript on one core, as a multiple of liustack/slowjs (lower is faster):
+CPU time of one render of the server bundles of tifa's apps, on one core, as a multiple of liustack/slowjs (lower is faster):
 
 | Engine | Pure Go | React bench pages | MUI pages | Shop pages |
 | :-- | :-: | --: | --: | --: |
 | **liustack/slowjs** | yes | **1.00** | **1.00** | **1.00** |
-| C QuickJS 2026-06-04 | no, C | 1.32 | 1.30 | 1.04 |
-| go-quickjs | yes | 1.87 | 1.39 | 1.73 |
-| go-quickjs with its JIT | yes | 2.03 | 1.58 | 2.85 |
 | moejs | yes | 1.35 | 1.46 | 1.78 |
-| modernc.org/quickjs | yes | 3.97 | 4.00 | 2.56 |
-| goant with its JIT | yes | 5.04 | 3.97 | 4.03 |
+| go-quickjs | yes | 2.35 | 2.39 | 3.32 |
+| C QuickJS 2026-06-04 | no, C | 1.76 | 3.53 | 2.26 |
+| Hermes V1 | no, C++ | 0.91 | 1.83 | 1.66 |
+| Node 24 `--jitless` | no, C++ | 0.85 | 1.09 | 0.86 |
 
-liustack/slowjs v0.30.1 on a GCP c2d-standard-8 (AMD EPYC 7B13), Go 1.27.2. The moejs row is from a later run (v0.30.7) on its own `Intl`, as a ratio to liustack/slowjs timed in the same session. The MUI and shop pages need `Intl`, which C QuickJS and most of the others do not have, so every engine runs them on the FormatJS polyfill. With its own `Intl`, as tifa runs it, liustack/slowjs takes 0.75, 0.34 and 0.72 of the time of C QuickJS. Node 24 with its JIT takes 0.21 to 0.23 of the time of liustack/slowjs, and 0.60 to 0.69 with `--jitless`.
+Measured on v0.30.7, when the module was named liustack/quickjs, on a GCP t2d-standard-4 (AMD EPYC 7B13), Go 1.27.4. The comparison is among interpreters: go-quickjs runs with its JIT off, as it comes, Hermes runs `hermesc -O` bytecode and Node runs with `--jitless`. Every engine runs as it comes, on its own `Intl` where it has one and on the FormatJS polyfill where it has none (C QuickJS and Hermes). The bench pages need no `Intl`, so that column is the same JavaScript on every engine.
 
-It is not the fastest engine on everything. On the V8 benchmark suite (higher is better):
+It is not the fastest on everything: on the V8 benchmark suite two pure Go engines score higher.
 
 | Engine | Pure Go | V8 suite score |
 | :-- | :-: | --: |
-| go-quickjs with its JIT | yes | 5157 |
-| go-quickjs | yes | 1785 |
-| C QuickJS 2026-06-04 | no, C | 1315 |
-| **liustack/slowjs** | yes | **1268** |
-| goant with its JIT | yes | 1130 |
-| moejs | yes | 811 |
-| modernc.org/quickjs | yes | 431 |
+| Hermes V1 | no, C++ | 2080 |
+| moejs | yes | 1852 |
+| go-quickjs | yes | 1630 |
+| **liustack/slowjs** | yes | **1493** |
+| C QuickJS 2026-06-04 | no, C | 1161 |
 
-C QuickJS was run in a session of its own on the same machine, taking turns with liustack/slowjs, which scored 1283 there: C scores 1.025 times as high, ahead on RayTrace, Crypto, EarleyBoyer and NavierStokes and behind on RegExp, Splay, Richards and DeltaBlue.
+It scores 1.29 times C QuickJS. go-quickjs leads on the RegExp and Crypto benchmarks, moejs on seven of eight.
 
-[docs/benchmarks.md](docs/benchmarks.md) has every table, the test262 results of each engine, the workloads where liustack/slowjs is slowest, and how to run it all again.
+[docs/benchmarks.md](docs/benchmarks.md) has both tables in full, what each engine was given to run, and how to run it all again.
 
 ## Install
 

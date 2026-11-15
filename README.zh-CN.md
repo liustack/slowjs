@@ -22,41 +22,38 @@
 
 你的 Go 服务自己渲染 React 页面：同样的代码比 C 版 QuickJS 还快，一个静态二进制，不用 cgo，旁边也不用跑 Node。
 
-给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 [tifa](https://github.com/liustack/tifa) 而做，tifa 是一个渲染 React 页面的 Go 框架。
+给需要在 Go 程序里跑 JavaScript 的场景用，比如在服务端渲染 React。引擎支持 ES2023（模块、异步生成器、Proxy、BigInt），`Intl` 覆盖 Chromium 的全部语言，还有 `Temporal`，两者都是内置的。它是编译成 Go 汇编、为服务端渲染调优过的 QuickJS，为 [tifa](https://github.com/liustack/tifa) 而做，tifa 是一个渲染 React 页面的 Go 框架。
 
 它是引擎，不是 Node：没有 `require`、`fs`、`process`。npm 上的代码按浏览器的方式打包后就能原样运行，React 就是这样。
 
 ## 有多快
 
-tifa 几个应用的服务端代码渲染一次的 CPU 时间，同样的 JavaScript，跑在一个核上，以 liustack/slowjs 为 1（越小越快）：
+tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核上，以 liustack/slowjs 为 1（越小越快）：
 
 | 引擎 | 纯 Go | React bench 页面 | MUI 页面 | 商店页面 |
 | :-- | :-: | --: | --: | --: |
 | **liustack/slowjs** | 是 | **1.00** | **1.00** | **1.00** |
-| C QuickJS 2026-06-04 | 否，C | 1.32 | 1.30 | 1.04 |
-| go-quickjs | 是 | 1.87 | 1.39 | 1.73 |
-| go-quickjs 开 JIT | 是 | 2.03 | 1.58 | 2.85 |
 | moejs | 是 | 1.35 | 1.46 | 1.78 |
-| modernc.org/quickjs | 是 | 3.97 | 4.00 | 2.56 |
-| goant 开 JIT | 是 | 5.04 | 3.97 | 4.03 |
+| go-quickjs | 是 | 2.35 | 2.39 | 3.32 |
+| C QuickJS 2026-06-04 | 否，C | 1.76 | 3.53 | 2.26 |
+| Hermes V1 | 否，C++ | 0.91 | 1.83 | 1.66 |
+| Node 24 `--jitless` | 否，C++ | 0.85 | 1.09 | 0.86 |
 
-liustack/slowjs v0.30.1，GCP c2d-standard-8（AMD EPYC 7B13），Go 1.27.2。moejs 一行来自后来的 v0.30.7 运行，用 moejs 自己的 `Intl`，比值相对同一会话里重新跑的 liustack/slowjs。MUI 和商店页面要用 `Intl`，C QuickJS 和大多数其他引擎没有，所以每个引擎都在 FormatJS polyfill 上跑这两组。用它自己的 `Intl`，也就是 tifa 的跑法，liustack/slowjs 的耗时是 C QuickJS 的 0.75、0.34 和 0.72。Node 24 开 JIT 的耗时是 liustack/slowjs 的 0.21 到 0.23，`--jitless` 是 0.60 到 0.69。
+在 v0.30.7 上量的，那时模块还叫 liustack/quickjs，机器是 GCP t2d-standard-4（AMD EPYC 7B13），Go 1.27.4。对比只比解释器：go-quickjs 按它的默认设置跑，JIT 是关的，Hermes 跑 `hermesc -O` 的字节码，Node 加 `--jitless`。每个引擎都按它本来的样子跑，有自己的 `Intl` 就用自己的，没有的（C QuickJS 和 Hermes）用 FormatJS polyfill。bench 页面用不到 `Intl`，所以这一列每个引擎跑的是同样的 JavaScript。
 
-它不是每一项都最快的引擎。V8 测试套件的得分（越高越好）：
+它不是每一项都最快：在 V8 测试套件上，有两个纯 Go 引擎得分更高。
 
 | 引擎 | 纯 Go | V8 套件得分 |
 | :-- | :-: | --: |
-| go-quickjs 开 JIT | 是 | 5157 |
-| go-quickjs | 是 | 1785 |
-| C QuickJS 2026-06-04 | 否，C | 1315 |
-| **liustack/slowjs** | 是 | **1268** |
-| goant 开 JIT | 是 | 1130 |
-| moejs | 是 | 811 |
-| modernc.org/quickjs | 是 | 431 |
+| Hermes V1 | 否，C++ | 2080 |
+| moejs | 是 | 1852 |
+| go-quickjs | 是 | 1630 |
+| **liustack/slowjs** | 是 | **1493** |
+| C QuickJS 2026-06-04 | 否，C | 1161 |
 
-C QuickJS 是在同一台机器上单独一场跑的，和 liustack/slowjs 轮流跑，那一场 liustack/slowjs 得 1283 分：C 的得分是它的 1.025 倍，RayTrace、Crypto、EarleyBoyer 和 NavierStokes 领先，RegExp、Splay、Richards 和 DeltaBlue 落后。
+得分是 C QuickJS 的 1.29 倍。go-quickjs 在 RegExp 和 Crypto 两项上领先，moejs 在八项里的七项上领先。
 
-所有表格、每个引擎的 test262 结果、liustack/slowjs 最慢的几类负载，以及怎么重跑，见 [docs/benchmarks.zh-CN.md](docs/benchmarks.zh-CN.md)。
+两张表的完整内容、每个引擎跑的是什么，以及怎么重跑，见 [docs/benchmarks.zh-CN.md](docs/benchmarks.zh-CN.md)。
 
 ## 安装
 
