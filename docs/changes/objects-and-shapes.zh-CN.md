@@ -385,7 +385,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## for in 循环的迭代器能找到它的空 shape
 
-版本：Unreleased。
+版本：v0.31.0。
 
 每个 `for in` 循环都会做一个 `ForInIterator` 类的迭代器对象，它的原型是 null。它从没有原型的空 shape 开始，这也是 `Object.create(null)` 的 shape。页面上如果没有活着的无原型对象，两次循环之间就没有谁拿着这个 shape，于是每次循环都要做一次再释放一次：React 的页面每次渲染 717 次。tifa 的页面留着这样的对象，它们的循环能找到它的 shape。现在一个 context 的第一个循环替 context 拿着这个 shape（`build_for_in_iterator` 把它放进 `class_shapes`，`js_new_proto_shape` 也把内置类的空 shape 放在那里，[见上文](#内置类的对象找到它们原型的空-shape)），后面的循环都能找到它：for in 循环不再做 shape。
 

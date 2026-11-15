@@ -92,7 +92,7 @@ A format is checked before it can reach that `abort`. The engine files are built
 
 ### Math.acosh below -1 is NaN
 
-Release: Unreleased.
+Release: v0.31.0.
 
 `Math.acosh(x)` is NaN for every `x` below 1, as the specification says and Node and the browsers give. Before, the musl `acosh` of the small libc read only the exponent of `x` and not its sign, so a negative `x` took the formula of the positive number of the same size. From -1 to about -8192 that formula still gave NaN, but for many `x` from there down to -2^26 it gave a number: `Math.acosh(-8192)` was `-Infinity`, `Math.acosh(-9115.56)` was -13.31 and `Math.acosh(-67108863)` was 0.69. The previous engine gave the same numbers (the hashes of `engine/test/math`, recorded from it, held them).
 
@@ -1112,7 +1112,7 @@ The change is in C (`engine/regvm-ops-basic.h`, `engine/regvm-ops-object.h`). `e
 
 ## An index of an Array that is not a fast array is read and written by its atom
 
-Release: Unreleased.
+Release: v0.31.0.
 
 An Array is a fast array, its elements in one block, until an element is written past its end (filling `new Array()` from the top down, `a[5] = x` on an array of 2), deleted, made an accessor or read-only, or the array is frozen or sealed. Then its elements are properties of its shape, and it never becomes a fast array again. `a[i]` on such an array went through `rv_getel_slow`, `JS_GetPropertyValue`, a new atom for the index and the generic `JS_GetPropertyInternal`, and `a[i] = v` through `rv_putel_slow`, `JS_SetPropertyValue` and the generic `JS_SetPropertyInternal`. The V8 benchmark Crypto builds its big numbers this way, so these two paths were 43% of its instructions. Now `rv_getel_atom`, which the loop calls when its own paths of an array do not answer, sends an int key to `rv_getel_index`, and GETEL3 (`a[i] += v`) calls it too. It takes the int atom of the index and walks the Array and its prototypes the way `rv_getel_atom` walks for a string key. `rv_putel_slow` calls `rv_putel_index` for an Array that is not a fast array: when the index is an own writable data property, the value takes its place. Anything else goes on as before.
 

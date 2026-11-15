@@ -385,7 +385,7 @@ Tests: `engine/test/compare/bind_length_name.js` (what Node 24 prints) binds tar
 
 ## The iterator of a for in loop finds its empty shape
 
-Release: Unreleased.
+Release: v0.31.0.
 
 Each `for in` loop makes an iterator object of the class `ForInIterator`, whose prototype is null. It starts from the empty shape with no prototype, which is also the shape of `Object.create(null)`. On a page that keeps no object with no prototype alive, nothing held that shape between two loops, so each loop made it and freed it again: 717 times a render on React's page. tifa's pages keep such an object, and their loops found its shape. Now the first loop of a context holds that shape for the context (`build_for_in_iterator` puts it in `class_shapes`, where `js_new_proto_shape` keeps the empty shapes of the built-in classes, [above](#objects-of-the-built-in-classes-find-the-empty-shape-of-their-prototype)), and the next loops find it: a for in loop makes no shape.
 

@@ -57,8 +57,8 @@ read_when:
 | 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
 | 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 | `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
-| 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | Unreleased | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
-| `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | Unreleased | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
+| 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | v0.31.0 | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
+| `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | v0.31.0 | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
 
 ## 生成器
 
@@ -250,7 +250,7 @@ read_when:
 | --- | --- | --- |
 | 浮点数的位运算跳过慢路径 | v0.26.17 | [operators.md](operators.zh-CN.md#浮点数的位运算跳过慢路径) |
 | 常见的比较在解释器里直接回答 | v0.26.17 | [operators.md](operators.zh-CN.md#常见的比较在解释器里直接回答) |
-| 普通函数的 `instanceof` 不调用 `Symbol.hasInstance` 就给出答案 | Unreleased | [operators.md](operators.zh-CN.md#instanceof-不再调用-symbolhasinstance) |
+| 普通函数的 `instanceof` 不调用 `Symbol.hasInstance` 就给出答案 | v0.31.0 | [operators.md](operators.zh-CN.md#instanceof-不再调用-symbolhasinstance) |
 
 ## 对象和 shape
 
@@ -286,7 +286,7 @@ read_when:
 | 内存不够时 bind 以内存不足的错误失败，不再崩溃，也不再返回缺 length 或 name 的绑定函数 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败) |
 | `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
 | `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
-| `for in` 循环不再做 shape：context 拿着迭代器起步时那个没有原型的空 shape | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape) |
+| `for in` 循环不再做 shape：context 拿着迭代器起步时那个没有原型的空 shape | v0.31.0 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape) |
 
 ## 内存
 

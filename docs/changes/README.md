@@ -57,8 +57,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Two hot calls pass fewer argument words: the interpreter's direct call of a C function and `js_call_c_hop` call `js_call_c_plain` (5 words, not 8), and the engine's own `JS_GetProperty` calls `JS_GetPropertyObj` (5, not 7). On arm64 neither passes its arguments in a block on the shadow stack any more | v0.30.6 | [c-engine.md](c-engine.md#fewer-argument-words-into-hot-calls) |
 | The register loop answers `Math.clz32`, `has` and `get` of Map, Set, WeakMap and WeakSet, `Array.isArray`, `push`, `includes` and `indexOf` of an Array, `indexOf`, `includes`, `startsWith` and `endsWith` of a string, `Object.hasOwn`, `hasOwnProperty` and `String` of a string without the call | v0.30.6 | [c-engine.md](c-engine.md#built-ins-answered-in-the-register-loop) |
 | `o[k] = v` with a string key that is its own atom and `o.x = v` set an own writable data property or add the key to a plain object without the generic path | v0.30.7 | [c-engine.md](c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path) |
-| `a[i]` and `a[i] = v` on an Array that is no longer a fast array read and write the index by its atom, without the generic path | Unreleased | [c-engine.md](c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom) |
-| `Math.acosh` of a value below -1 is NaN: musl's fix of `acosh` for negative inputs (commit `3e80328d`), taken as a patch of the small libc | Unreleased | [c-engine.md](c-engine.md#mathacosh-below--1-is-nan) |
+| `a[i]` and `a[i] = v` on an Array that is no longer a fast array read and write the index by its atom, without the generic path | v0.31.0 | [c-engine.md](c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom) |
+| `Math.acosh` of a value below -1 is NaN: musl's fix of `acosh` for negative inputs (commit `3e80328d`), taken as a patch of the small libc | v0.31.0 | [c-engine.md](c-engine.md#mathacosh-below--1-is-nan) |
 
 ## The generator
 
@@ -250,7 +250,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Bitwise operators on floats skip the slow path | v0.26.17 | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | v0.26.17 | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
-| `instanceof` of an ordinary function answers without calling `Symbol.hasInstance` | Unreleased | [operators.md](operators.md#instanceof-without-the-call-of-symbolhasinstance) |
+| `instanceof` of an ordinary function answers without calling `Symbol.hasInstance` | v0.31.0 | [operators.md](operators.md#instanceof-without-the-call-of-symbolhasinstance) |
 
 ## Objects and shapes
 
@@ -286,7 +286,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | bind with too little memory fails with the out of memory error, and no longer crashes or returns a bound function without its length or name | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-with-too-little-memory-fails-whole) |
 | `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
 | `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
-| A `for in` loop makes no shape: the context holds the empty shape with no prototype its iterator starts from | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape) |
+| A `for in` loop makes no shape: the context holds the empty shape with no prototype its iterator starts from | v0.31.0 | [objects-and-shapes.md](objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape) |
 
 ## Memory
 

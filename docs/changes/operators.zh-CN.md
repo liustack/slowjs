@@ -41,7 +41,7 @@ read_when:
 
 ## instanceof 不再调用 Symbol.hasInstance
 
-发布版本：Unreleased。
+发布版本：v0.31.0。
 
 寄存器循环里的 `x instanceof C`，在它要调用的方法就是 `Function.prototype[Symbol.hasInstance]` 时，不再调用这个 C 函数。规范的 `InstanceofOperator` 读出 `C[Symbol.hasInstance]` 再调用它，对普通函数来说这就是 `Function.prototype` 上的内置函数，调用它等于 `OrdinaryHasInstance(C, x)`。以前每次测试都要经过 `rv_obj2_slow`、`JS_IsInstanceOf`、两次属性查找（`Symbol.hasInstance` 在函数上找不到，在 `Function.prototype` 上找到，然后是 `prototype`）、为这个内置函数建一个调用帧的 `JS_CallFree`、`JS_OrdinaryIsInstanceOf`，布尔值再经过 `JS_NewBool` 和 `JS_ToBoolFree` 回来：在 amd64 上大约 475 条指令。现在 `INSTOF` 的处理分支先问 `rv_instof`，它要么就地给出答案，要么什么都不做，把测试留给原来的路径。
 

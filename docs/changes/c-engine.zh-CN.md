@@ -92,7 +92,7 @@ read_when:
 
 ### Math.acosh 小于 -1 时是 NaN
 
-Release: Unreleased.
+Release: v0.31.0.
 
 对每个小于 1 的 `x`，`Math.acosh(x)` 都是 NaN，规范这么写，Node 和各浏览器也这么给。以前小 libc 里 musl 的 `acosh` 只读 `x` 的指数，不看符号，所以负的 `x` 走的是同样大小的正数的公式。从 -1 到大约 -8192，这个公式仍然给出 NaN，但从那里往下到 -2^26，许多 `x` 会得到一个数：`Math.acosh(-8192)` 是 `-Infinity`，`Math.acosh(-9115.56)` 是 -13.31，`Math.acosh(-67108863)` 是 0.69。旧引擎给出同样的数（从它记下的 `engine/test/math` 哈希和这些结果一致）。
 
@@ -1112,7 +1112,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 不再是快数组的数组按原子读写下标
 
-发布版本：Unreleased。
+发布版本：v0.31.0。
 
 一个 Array 是快数组，元素放在一整块内存里，直到有元素写到了末尾之后（从高到低填 `new Array()`，在长度为 2 的数组上写 `a[5] = x`），或者元素被删除、被改成访问器或只读，或者数组被冻结、密封。这之后它的元素就是形状里的属性，再也变不回快数组。在这样的数组上，`a[i]` 原来要走 `rv_getel_slow`、`JS_GetPropertyValue`，为下标新建一个原子，再走通用的 `JS_GetPropertyInternal`。`a[i] = v` 要走 `rv_putel_slow`、`JS_SetPropertyValue` 和通用的 `JS_SetPropertyInternal`。V8 基准 Crypto 就是这样造它的大数，这两条路径占了它 43% 的指令。现在循环自己的数组快路不回答时调用的 `rv_getel_atom` 把整数键交给 `rv_getel_index`，GETEL3（`a[i] += v`）也调用它。它取下标的整数原子，像 `rv_getel_atom` 对字符串键那样沿着 Array 和它的原型走一遍。`rv_putel_slow` 对不是快数组的 Array 调用 `rv_putel_index`：下标是一个可写的自有数据属性时，新值直接放进去。其他情况都和原来一样。
 

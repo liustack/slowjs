@@ -42,7 +42,7 @@ On linux/amd64 without PGO, against v0.26.16 over 10 rounds, a render of tifa's 
 
 ## instanceof without the call of Symbol.hasInstance
 
-Release: Unreleased.
+Release: v0.31.0.
 
 `x instanceof C` in the register loop no longer calls the C function `Function.prototype[Symbol.hasInstance]` when that is the method it would call. The specification's `InstanceofOperator` reads `C[Symbol.hasInstance]` and calls it, and for an ordinary function that is the built-in of `Function.prototype`, whose call is `OrdinaryHasInstance(C, x)`. Before, every test went through `rv_obj2_slow`, `JS_IsInstanceOf`, two property lookups (`Symbol.hasInstance`, a miss on the function and a hit on `Function.prototype`, then `prototype`), `JS_CallFree` with a frame for the built-in, `JS_OrdinaryIsInstanceOf`, and the boolean back through `JS_NewBool` and `JS_ToBoolFree`: about 475 instructions on amd64. The handler of `INSTOF` now asks `rv_instof` first, which answers in place or does nothing and leaves the test to the old path.
 
