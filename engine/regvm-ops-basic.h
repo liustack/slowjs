@@ -1276,9 +1276,10 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     }
     RV_NEXT();
 
-    /* add and sub: two ints with an int result here, the rest in
-       rv_arith_other, shared by the eight of them, so that the code of
-       each stays as short as the int case needs */
+    /* add and sub: two ints with an int result here, any other two numbers
+       in rv_arith_num and the rest in rv_arith_other, both shared by the
+       eight of them, so that the code of each stays as short as the int
+       case needs */
 #define RV_ARITH(label, cop, bexpr, isloc)                              \
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
@@ -1297,6 +1298,8 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
                 RV_NEXT();                                              \
             }                                                           \
         }                                                               \
+        if (RV_BOTH_NUMBERS(a, bv) && !RV_INJ_ARMED)                    \
+            goto rv_arith_num;                                          \
         goto rv_arith_other;                                            \
     }
 
@@ -1339,34 +1342,37 @@ static inline BOOL rv_unwrap_in_loop(JSValueConst f)
     RV_KARITH(rv_KSUB, -, OP_sub)
 #undef RV_KARITH
 
-    /* the rest of add and sub, as QuickJS's OP_add and OP_sub: a float
-       of two ints that overflow, or of an int or a float with a float, else
-       rv_binop_slow. Which of the eight it is comes from the opcode byte
-       again (arith: 1 a local destination, 2 a constant operand, 4 sub),
-       not from a value each handler sets: a value set on the way out made
-       LLVM keep it, and pc, in registers through the int case of all
-       eight. */
+    /* two numbers that are not two ints with an int result, as QuickJS's
+       OP_add and OP_sub: a float. Which of the eight it is comes from the
+       opcode byte again (arith: 1 a local destination, 2 a constant
+       operand, 4 sub), not from a value each handler sets: a value set on
+       the way out made LLVM keep it, and pc, in registers through the int
+       case of all eight. The handlers test the tags, which they have in
+       registers, and the number code is here once: written into each
+       handler it moved registers of the whole loop and made the pages run
+       more instructions (docs/changes/operators.md). */
+ rv_arith_num:
+    arith = ip[-1] - RV_ADD;
+    {
+        double d1 = RV_NUMBER(RV_R(ip[1]));
+        double d2 = RV_NUMBER((arith & 2) ? RV_K(ip[2]) : RV_R(ip[2]));
+        ret_val = __JS_NewFloat64(ctx, (arith & 4) ? d1 - d2 : d1 + d2);
+        if (arith & 1) {
+            JSValue old = RV_R(ip[0]);
+            RV_R(ip[0]) = ret_val;
+            JS_FreeValue(ctx, old);
+        } else {
+            RV_R(ip[0]) = ret_val;
+        }
+    }
+    RV_NEXT();
+
+    /* the rest of add and sub: two strings in rv_add_str, else
+       rv_binop_slow */
  rv_arith_other:
     arith = ip[-1] - RV_ADD;
     {
-        JSValue a = RV_R(ip[1]), bv = (arith & 2) ? RV_K(ip[2]) : RV_R(ip[2]);
-        uint32_t ta = JS_VALUE_GET_TAG(a), tb = JS_VALUE_GET_TAG(bv);
-        double d1, d2;
-        if (!RV_INJ_ARMED &&
-            (ta == JS_TAG_INT || JS_TAG_IS_FLOAT64(ta)) &&
-            (tb == JS_TAG_INT || JS_TAG_IS_FLOAT64(tb))) {
-            d1 = ta == JS_TAG_INT ? JS_VALUE_GET_INT(a) : JS_VALUE_GET_FLOAT64(a);
-            d2 = tb == JS_TAG_INT ? JS_VALUE_GET_INT(bv) : JS_VALUE_GET_FLOAT64(bv);
-            ret_val = __JS_NewFloat64(ctx, (arith & 4) ? d1 - d2 : d1 + d2);
-            if (arith & 1) {
-                JSValue old = RV_R(ip[0]);
-                RV_R(ip[0]) = ret_val;
-                JS_FreeValue(ctx, old);
-            } else {
-                RV_R(ip[0]) = ret_val;
-            }
-            RV_NEXT();
-        }
+        JSValue a = RV_R(ip[1]);
         RV_SYNC_TOP();
         if (!(arith & 4) && JS_IsString(a) &&
             (n = rv_add_str(ctx, F, ip, (arith >> 1) & 1)) <= 0) {

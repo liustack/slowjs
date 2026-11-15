@@ -1,7 +1,7 @@
 ---
-summary: 'Changes to operators: bitwise operators on two numbers, the usual pairs of ===, !==, == and !=, and instanceof of an ordinary function answered without the slow paths, with what each gains, why it is safe'
+summary: 'Changes to operators: bitwise operators on two numbers, the usual pairs of ===, !==, == and !=, instanceof of an ordinary function, and add and sub of two numbers answered without the slow paths, with what each gains, why it is safe'
 read_when:
-  - A bitwise operator or a comparison gives another result than before, or a compared value is freed twice
+  - A bitwise operator, a comparison, an add or a sub gives another result than before, or a compared value is freed twice
   - instanceof gives another answer or error than before, or a Symbol.hasInstance method is not called
 ---
 
@@ -63,3 +63,25 @@ What it gains: on amd64 an `instanceof` that takes the path costs about 95 instr
 `test_uncatchable_instanceof` in `engine/test/unit-oom.c` leaves an interrupt and an out of memory error pending in an async function, then tests `instanceof` with an object and with a primitive on the left: the run must end with that uncatchable error and the statement after the test must not run.
 
 Tests: `engine/test/compare/instanceof.js`, which prints what Node 24 prints, runs classes and subclasses, built-ins, primitives and objects with a null prototype on the left, arrow, async and bound functions (a bound function with an own `prototype` too), callable proxies, proxies in the chain of either side, an own or inherited `Symbol.hasInstance` (a method, a getter, `null`, not callable, giving values that are not booleans, throwing), one added and deleted between tests and on a parent class, `Object.setPrototypeOf` of the function to an object with one, to `null` and to a proxy, a `prototype` that is a getter (one that changes the chain of the left side, one that tests `instanceof` itself, one that throws), inherited, not an object or not made yet, and the order of the steps the specification makes observable. `engine/test/regvm/js/o-instanceof.js` runs the same across two realms: the code, the right side and the left side from either, a function whose chain goes through the other realm's `Function.prototype`, a shadow on a function of the other realm, and the message and realm of each error. Its throw injection golden has 1,107 places, and its `inject-hit` line makes the set fail when no run throws at `INSTOF`. Each guard of `rv_instof` was taken out in turn, and these tests fail for each (the walk of `Symbol.hasInstance`, the bound and callable checks, the proxy on the left, the value of `prototype`, the free of a temp, and the check that the property is made, which the memory counts of the goldens catch), but for two that stay as a second line of defense. The test of an exotic object in the walk of the right side: a proxy there has no prototype in its shape, so the walk ends at it either way, and no other exotic class answers a symbol from outside its shape. The test that `prototype` is a data property: the slot of a getter or of a prototype not made yet never reads as an object, so the test of the value sends both to the old path anyway.
+
+## Add and sub of two numbers without the shared tail
+
+Release: Unreleased.
+
+`+` and `-` of two numbers no longer go through the tail that the eight forms of add and sub share (`rv_arith_other`) when the result is not an int from two ints. That covers two floats, an int with a float, and two ints whose sum does not fit in an int. Each handler did two ints itself and jumped to the tail for anything else. The tail then found the form again from the opcode byte, read both operands again and tested each tag twice before it computed. Now the handler tests both tags in one step (`JS_TAG_INT` is 0, `JS_TAG_FLOAT64` is 8, and every other tag has another bit set) and jumps to one block for the eight forms (`rv_arith_num`). The block reads the two operands as doubles and stores a float made by `__JS_NewFloat64`, as QuickJS's `OP_add` and `OP_sub` do: NaN, -0 and the infinities are what the C arithmetic gives, and a whole result such as `1.5 + 1.5` stays a float. The tail keeps two strings and the slow path.
+
+Mul is left as it was. Its handler does two ints and jumps to the tail of the other binary operators (`rv_bin_other`), which already did two numbers in its first lines. Division, `%` and the compares are left as they were too: a NavierStokes or RayTrace iteration and a tifa page run too few of them on floats to pay for the work.
+
+Why this is safe: numbers hold no reference, and for two numbers the slow path only converts them, which cannot throw or call a script. A local that receives the result has its old value freed after the write, as the int case does. Under the throw injection the handlers skip the block, as they skip the int case.
+
+What it costs and gains: each handler gets a test of the tags and a jump. NavierStokes runs 1.9% fewer instructions, MUI's pages 0.25% fewer, and no page runs more. Every other way of placing the code made something run more, because the register allocation of the whole interpreter moved with it:
+
+- the number code written into each of the ten handlers of add, sub and mul: NavierStokes 12% fewer, but the shop's pages 0.12% to 0.17% more, nearly all in the call and return path of the interpreter, which read `ctx` from the stack again where it had kept it in a register
+- a call of a function from each handler: NavierStokes 27% more
+- the float pair alone inline: the MUI pages 1.1% more
+- the three register forms inline and the rest in the block: the shop 0.06% to 0.08% more
+- mul through a block of its own as add and sub do, tested in the handler, in its own tail or in an `else` of the int test: NavierStokes 2.6% to 4.1% fewer, but V8's Crypto 0.7% to 1.8% more. Crypto multiplies ints, and the int path of mul kept `ip` on the stack.
+
+The counts of each are in [performance.md](../performance.md#numbers-added-and-subtracted-without-the-shared-tail).
+
+Tests: `engine/test/compare/double_arith.js` compares add, sub and mul of floats, ints and their edges (NaN, -0, the infinities, values around 2^53, whole results, int overflow), objects with `valueOf`, strings and the BigInt `TypeError`, in each form, with what Node 24 prints. `engine/test/regvm/js/q4-floatarith.js` runs the forms with old values to free and temps a call below owns, with its goldens for the corpus and the throw injection. A part of `engine/pgo/loops.js` runs the block, which tifa's pages run too little to train it.

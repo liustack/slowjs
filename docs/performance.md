@@ -1271,6 +1271,85 @@ In the product (tifa's `test/ssr`, callgrind on linux/amd64 for one page of each
 
 As generated, the changes make the profile of `JS_RegvmRun`, `rv_getel` and `rv_one` stale, and `JS_RegvmRun` without its profile costs more than the changes gain on React's page and the store. Trained again, every page runs fewer instructions.
 
+### Numbers added and subtracted without the shared tail
+
+[Add and sub of two numbers skip the shared tail](changes/operators.md#add-and-sub-of-two-numbers-without-the-shared-tail), counted on 2026-11-15 against `d7c86e16` (v0.30.7). The adds, subs and muls of two numbers that are not two ints with an int result (two floats, an int with a float, two ints whose result does not fit), per V8 iteration or per render, counted with counters added to the native C tree for the count only. Mul is in the table because it was tried and left as it was.
+
+| Run | Add and sub | Mul |
+| --- | ---: | ---: |
+| NavierStokes, an iteration | 3,245,534 | 1,853,164 |
+| RayTrace, an iteration | 125,797 | 128,715 |
+| MUI's orders page | 124,175 | 161,491 |
+| The chart page (wider pages) | 103,178 | 104,242 |
+| The store's home page | 224 | 10 |
+| The workbench's stats page | 26 | 81 |
+| React's page | 0 | 15 |
+| Crypto, an iteration | 38 | 77 |
+
+Instructions on linux/amd64 (AMD EPYC 7B13), callgrind. Native: the test host built by clang, the renders after the warm ones. Product: the generated engine inside tifa's `test/ssr`, `GOGC=off`, the difference of three renders and one, halved (long Markdown: two and one). Both product engines are generated with a profile trained on their own C, with the part of `engine/pgo/loops.js` this change adds, as the release will ship it. The whole program carries about 0.1% of noise from the Go runtime on React, so the engine alone (the functions of `internal/cengine`) is given too, which runs the same count each time. Every page gives the same HTML.
+
+| Page | Native | Product, engine | Product, whole program |
+| --- | ---: | ---: | ---: |
+| MUI's orders page | | -0.256% | -0.235% |
+| MUI's home page | | -0.254% | -0.255% |
+| MUI's three pages (mean) | -0.217% | | |
+| React's page | -0.018% | -0.014% | -0.049% |
+| The store's home page | -0.032% | -0.027% | -0.033% |
+| The store's products page | | -0.025% | -0.010% |
+| The workbench's studio page | | -0.019% | -0.087% |
+| The workbench's stats page | -0.014% | -0.008% | +0.002% |
+| Long Markdown (400 sections) | | -0.011% | -0.012% |
+
+The V8 suite, an iteration (product: `v8run`, whole program):
+
+| Benchmark | Native | Product |
+| --- | ---: | ---: |
+| NavierStokes | -2.37% | -1.88% |
+| RayTrace | -0.15% | -0.12% |
+| Splay | -0.13% | -0.14% |
+| Crypto | +0.001%, +0.006% | +0.002%, +0.005% |
+| DeltaBlue | 0.000% | +0.001% |
+| EarleyBoyer | +0.014%, 0.000% | +0.006%, -0.011% |
+| RegExp | 0.000% | 0.000% |
+| Richards | 0.000% | -0.006% |
+
+The wider pages, a render (`jsrun -call` native, `wrun` in the product):
+
+| Page | Native | Product, engine | Product, whole program |
+| --- | ---: | ---: | ---: |
+| antd | -0.153% | -0.156% | -0.154% |
+| chart | -0.138% | -0.112% | -0.115% |
+| dates | -0.024% | -0.019% | -0.019% |
+| diff | +0.006% | +0.013% | +0.011% |
+| domain | -0.016% | -0.014% | -0.015% |
+| forms | -0.010% | -0.007% | -0.005% |
+| i18n | -0.047% | -0.039% | -0.037% |
+| markdown | -0.018% | -0.013% | -0.010% |
+| radix | -0.021% | -0.015% | -0.025% |
+| state | -0.001% | +0.109% | +0.107% |
+| styled | -0.050% | -0.039% | -0.041% |
+| table | -0.011% | -0.008% | -0.004% |
+
+The state page runs the same natively. In the product its 0.11% more is all in `js_own_keys_scan`, whose C did not change: it inlines `is_num_string`, whose counts differ between two trainings of the same C (main trained twice differs there too).
+
+The ways of placing the code that were tried, each generated with a profile trained on it, against main trained the same way (the pages: the engine alone, the V8 benchmarks: the whole program):
+
+| Placement | Pages, engine | NavierStokes | Crypto |
+| --- | --- | ---: | ---: |
+| Add and sub in `rv_arith_num`, mul as before (this change) | -0.008% to -0.26% | -1.9% | +0.002% |
+| Add, sub and mul in `rv_arith_num` and a block for mul | -0.007% to -0.44% | -4.1% | +1.8% |
+| The same, mul tested in a tail of its own | MUI -0.07%, the others -0.01% to -0.03% | -2.6% | +1.4% |
+| The same, mul tested in an `else` of the int test | MUI +0.97% | -4.1% | +0.7% |
+| The number code in each of the ten handlers | the shop +0.12% to +0.17%, MUI -2.0% | -12.1% | |
+| The three register forms inline, the rest in the blocks | the shop +0.06% to +0.08%, React +0.05% | -11.2% | |
+| Add and mul inline | the shop +0.05% to +0.08%, React +0.04% | -11.3% | |
+| The pair of floats alone inline, after the int test | +0.15% to +0.23%, MUI +1.1% | -9.2% | |
+| The pair of floats alone through one block | React +0.09%, MUI +1.6% | -2.1% | |
+| A test at the entry of the tails | React +0.02%, the shop +0.03% | -2.9% | |
+| A call of a `no_inline` function from each handler | MUI +4%, the shop +0.1% to +0.17% | +27% | |
+
+The code inline gives most of the gain on NavierStokes, but it moves the register allocation of the whole interpreter: on the shop `ctx` is read from the stack about 3.2 million more times a render, in the call and return path, not in the arithmetic. Mul through a block of its own makes Crypto, which multiplies ints, run its int path of mul with `ip` kept on the stack and a few moves more, about 8 instructions more on each of its 158,000 int muls an iteration. As generated with the profile of v0.30.7, which has no data for `JS_RegvmRun` once its C changes, the pages run 1.2% to 1.9% more in the engine (NavierStokes still 1.9% fewer), so the profile must be trained again before the release ([releasing.md](releasing.md#the-profile)).
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
