@@ -90,7 +90,7 @@ JS_WriteObject
 __JS_FreeValue
 abort
 goasm_chunked_memcpy
-js_array_of
+js_create_array
 js_free
 js_free_rt
 js_malloc_rt

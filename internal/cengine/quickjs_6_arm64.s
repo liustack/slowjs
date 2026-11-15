@@ -26990,7 +26990,7 @@ TEXT ·js_array_from(SB), $264-48
 	WORD $0x17fffd32
 	RET
 
-TEXT ·js_array_of(SB), $136-64
+TEXT ·js_array_of(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -27143,8 +27143,6 @@ TEXT ·js_array_of(SB), $136-64
 	WORD $0x52800108
 	WORD $0xfd0023e0
 	WORD $0x17ffffd3
-	MOVD R0, r0+48(FP)
-	MOVD R1, r1+56(FP)
 	RET
 
 TEXT ·js_get_this(SB), NOSPLIT, $0-32

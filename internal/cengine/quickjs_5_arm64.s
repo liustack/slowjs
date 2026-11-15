@@ -11875,7 +11875,7 @@ TEXT ·js_dst_find(SB), $72-40
 	WORD $0x17ffffcf
 	RET
 
-TEXT ·js_create_array(SB), $136-32
+TEXT ·js_create_array(SB), $136-48
 	NO_LOCAL_POINTERS
 	MOVD a0+0(FP), R20
 	MOVD a1+8(FP), R21
@@ -12071,6 +12071,8 @@ TEXT ·js_create_array(SB), $136-32
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0xf94033ef
 	WORD $0x17ffffd0
+	MOVD R0, r0+32(FP)
+	MOVD R1, r1+40(FP)
 	RET
 
 TEXT ·js_append_array(SB), $136-24

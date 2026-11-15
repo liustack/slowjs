@@ -1159,8 +1159,37 @@ func (m *VM) jsCall(f, this jsValue, args []jsValue) (r jsValue, err error) {
 	return r, nil
 }
 
-// jsArrayOfValues is js_array_of (Array.of) of the values a, which it
-// borrows. err is not nil when there is no memory to pass the values.
+// jsCreateArray is jsArrayOfValues of the values of vals, which it borrows.
+// The values are written straight into the memory the call passes.
+func (m *VM) jsCreateArray(vals []Value) (r jsValue, err error) {
+	if m.entered == 0 {
+		m.outer(func() { r, err = m.jsCreateArray(vals) })
+		return r, err
+	}
+	if len(vals) == 0 {
+		return m.jsNewArray(), nil
+	}
+	if err := valuesFit(0, len(vals), maxValues); err != nil {
+		return jsValue{}, err
+	}
+	p, sp, heap := m.tmp(sizeofJsValue * uintptr(len(vals)))
+	if p == 0 {
+		return jsValue{}, m.tmpError()
+	}
+	tab := unsafe.Slice((*jsValue)(addr(p)), len(vals))
+	for i, v := range vals {
+		tab[i] = v.jsValue()
+	}
+	m.toEngine()
+	r = val(cengine.CreateArray(sp, m.ctx, uintptr(len(vals)), p))
+	m.inEngine--
+	m.tmpFree(p, heap)
+	return r, nil
+}
+
+// jsArrayOfValues is js_create_array of the values a, which it borrows: an
+// array as a literal makes it, in one call of the engine. err is not nil
+// when there is no memory to pass the values.
 func (m *VM) jsArrayOfValues(a []jsValue) (r jsValue, err error) {
 	if m.entered == 0 {
 		m.outer(func() { r, err = m.jsArrayOfValues(a) })
@@ -1171,7 +1200,7 @@ func (m *VM) jsArrayOfValues(a []jsValue) (r jsValue, err error) {
 		return jsValue{}, err
 	}
 	m.toEngine()
-	r = val(cengine.ArrayOf(sp, m.ctx, uintptr(len(a)), argv))
+	r = val(cengine.CreateArray(sp, m.ctx, uintptr(len(a)), argv))
 	m.inEngine--
 	m.tmpFree(argv, heap)
 	return r, nil

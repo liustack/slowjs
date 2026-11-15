@@ -62,9 +62,10 @@ func Free(sp, ctx, p uintptr) { js_free(sp, ctx, p) }
 // went to 0.
 func FreeValue(sp, ctx, u, tag uintptr) { __JS_FreeValue(sp, ctx, u, tag) }
 
-// ArrayOf is js_array_of, Array.of of the argc values at argv.
-func ArrayOf(sp, ctx, argc, argv uintptr) (u, tag uintptr) {
-	return js_array_of(sp, ctx, 0, tagUndefined, argc, argv)
+// CreateArray is js_create_array, a new array of the n values at tab, which
+// it borrows, made in one step as an array literal makes it.
+func CreateArray(sp, ctx, n, tab uintptr) (u, tag uintptr) {
+	return js_create_array(sp, ctx, n, tab)
 }
 
 // Runtime and Context are the JSRuntime and the JSContext of the VM.
