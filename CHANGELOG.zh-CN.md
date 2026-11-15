@@ -4,6 +4,34 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **字节码版本 13。** 更早版本的 `Compile` 写出的字节码不能再加载（`SyntaxError: invalid version`），用这个版本重新编译。原因是正则字节码后面带的那份计划变大了，见下一条。
+- 正则在回溯机运行之前，先找每个匹配都必须含有的最长字面量（最多 16 个字符）：字符串里没有它就没有匹配，有的话从字面量允许匹配开始的位置搜起。`/(\d+)em/` 用在不含 `em` 的字符串上少跑 72% 的指令，V8 套件的 RegExp 基准每次迭代少跑 54%。字面量一上来就找到、又排除不了什么的时候，扫描本身就是代价：`/(\d+)px/` 用在短字符串上多跑 9%。停止照旧管得住：扫描每 65,536 个字符读一次中断标志（[regexp.md](docs/changes/regexp.zh-CN.md#每个匹配都含有的字面量)）。
+- `f.apply(this, arguments)` 直接用当前帧的参数调用 `f`：不造 arguments 对象，不造参数列表，调用深度只占一层（原来两层），所以经过它的递归能到 4,988 层，原来是 2,497 层。参数列表简单的非严格函数，只在有读取需要时才造 arguments 对象，和严格函数原来的做法一样。V8 套件的 RayTrace 每次迭代少跑 23% 的指令，用 recharts 画的图表页少跑 2.3%。一次调用分配得更少，所以在内存上限下，内存不足的错误可能来得更晚，或者不来（[c-engine.md](docs/changes/c-engine.zh-CN.md#用-apply-传下参数时不造-arguments-对象)）。
+- 构造函数用 `new` 造的对象，能找到之前的对象走过的 shape，自己不再新建和释放 shape。原来每个对象都新建一个空 shape，再一个键一个键地长。V8 套件的 Boyer 每次迭代少跑 9.4% 的指令，RayTrace 7.1%，Earley 5.5%，tifa 工作台页面的一次渲染少跑 0.4% 到 0.6%。每个 shape 多占 8 字节，渲染 200 次之后，工作台和商店页面的 VM 最多多占 73 KiB，MUI 页面最多少占 156 KiB（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#构造函数的对象找到之前的对象走过的-shape)）。
+- `for in` 循环走在一个 shape 没变的对象上时，寄存器循环用一个操作取下一个键并跳回，读循环刚给出的那个键 `o[k]` 时直接从这个键的槽里取值，不再查找。循环的一步跑 89 条指令（原来 155），这样的读取跑 68 条（原来 103）。在这两项之上重新训练画像后，MUI 订单页的一次渲染少跑 2.1% 的指令，工作台 studio 页和 React 的页面少 0.7%，商店首页少 0.4%（[c-engine.md](docs/changes/c-engine.zh-CN.md#for-in-循环的下一个键在寄存器循环里取)）。
+- 对普通对象或数组，`Object.isFrozen`、`Object.isSealed`、`Object.freeze` 和 `Object.seal` 把它的 shape 走一遍就完成，不列出键，也不逐个查找。用 Redux Toolkit 存状态的页面，里面的 immer 每次渲染要问约 156,000 次 `isFrozen`，这样的页面少跑 44% 的指令（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape)）。
+- 不是整数的数转成文字（`String(x)`、模板字符串、`x + ''`、`toString()`、`JSON.stringify`）改用 Schubfach 算法，只用整数运算和一张 10 的幂的表，不再用大数：每个数约 460 条指令，原来 2,585 条。得到的字符串不变。图表页的 SVG 路径就是这样写出来的，它少跑 8.7% 的指令。带位数的 `toFixed`、`toPrecision` 和 `toExponential` 仍用大数，多跑 1% 到 2%（[strings.md](docs/changes/strings.zh-CN.md#不是整数的数转成文字不再用大数)）。
+- Date 用几次乘法求出年、月、日，原来是按年按月一步步数。它的字符串不再经过 `snprintf`。context 还会记住上一个时间值的各个字段，所以同一个 Date 的 `getFullYear`、`getMonth` 和 `getDate` 只算一次。同一个 Date 的这三个 getter 一共跑 1,266 条指令（原来 2,046），`toString`、`toISOString`、`toUTCString` 和 `toLocaleString` 一共跑 6,132 条（原来 14,006）。用 date-fns 和 dayjs 格式化日期的页面少跑 3.2% 的指令（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#date-不用循环求年月日)）。
+- 两个数的 `+` 和 `-`，结果不是由两个 int 得到的 int 时（两个浮点数、一个 int 加一个浮点数、溢出 int 的和），在寄存器循环的一个代码块里算完，不再经过加和减各种形式共用的尾段。V8 套件的 NavierStokes 少跑 1.9% 的指令，MUI 页面少 0.25%，没有页面多跑（[operators.md](docs/changes/operators.zh-CN.md#两个数的加和减不再经过共用的尾段)）。
+
+### Added
+
+- `VM.TrackRejections(max)` 让 VM 记住被拒绝时没有处理函数的 promise，最多 `max` 个（上限 1,024），直到有处理函数接上，或者被 `VM.UnhandledRejections()` 取走。后者把每个拒绝原因按「调用抛出了它」时的错误返回，并给出丢掉了多少个。宿主就能像 Node 那样，报告没人处理的拒绝。一次读取占用的东西有上限：原因的每段文字截到 8 KiB，读取计入 VM 的内存上限，超时和 `Interrupt` 能让它停下。VM 默认不开，不开就没有任何代价（[api.md](docs/api.zh-CN.md)，[go-api.md](docs/changes/go-api.zh-CN.md#trackrejections-和-unhandledrejections)）。
+
+### Fixed
+
+- 脚本返回或抛出的长字符串，在转成 Go 值的过程中遇到 eval 超时和 `Interrupt` 会停下。`Eval`、`Call`、`Value.Any` 等返回 Go 值的函数是在脚本跑完之后读它的。原来读一个 64 Mi 字符的字符串要 0.5 秒，中间不看停止信号，所以一次调用可能在超时之后这么久才结束（[go-api.md](docs/changes/go-api.zh-CN.md#脚本返回或抛出的字符串在顶层也会停止转换)）。
+- 2 的幂输出最短的数字，和 Node 一样。原来有 54 个 2 的幂（以及它们的负数）多输出一位：`2 ** -44` 原来是 `5.6843418860808015e-14`，现在是 `5.684341886080802e-14`（[strings.md](docs/changes/strings.zh-CN.md#2-的幂输出最短的数字)）。
+- 给数组追加元素时没有内存放这个元素，长度保持不变。原来长度会比元素多一个，脚本带着末尾的一个空洞继续跑。普通数组放不下的元素同样不改长度，数组拒绝的写入（不能扩展，或者长度不可写）在改动任何东西之前就被拒绝（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md#追加因内存不够失败时长度不变)，[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#数组元素在数组改动之前被拒绝)）。
+- 改动属性标志的 `Object.defineProperty` 内存不足时，属性保持原样。原来 `Object.defineProperty(a, "length", {value: 2, writable: false})` 内存不足时，可能让 `a` 被截成 2 个元素，长度却仍然可写。把数组缩短到下标 2^31 - 1 以外时内存不足，同样什么都不改（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败)）。
+- 一个对象最多有 2^26 - 1 个属性，再多一个就抛出 RangeError，"too many properties"。原来超过这个数之后，查找可能找不到明明存在的属性：有这么多元素的稀疏数组里，某个元素读出来是 `undefined`（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性)）。
+- `Object.isFrozen` 和 `Object.isSealed` 按规范先问对象能不能扩展。对目标可扩展的 proxy，它们只调用 `isExtensible` 陷阱，原来调用的是 `ownKeys` 和 `getOwnPropertyDescriptor`，`ownKeys` 陷阱抛错也不再让它们抛错。`isExtensible` 陷阱抛错时，键的列表不再一直占着内存到 VM 关闭（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展)）。
+- 给模块命名空间定义属性，而它的绑定还没初始化时，抛出 `ReferenceError`，和 Node 一样。原来对这样的命名空间 `Object.seal` 会直接返回它，`Object.defineProperty` 抛的是 `TypeError`（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#给模块命名空间定义属性时先读它的绑定)）。
+- 在程序自己的构造函数上调用 `Array.from`，超过 2^31 个元素之后，传给映射函数的仍是完整的下标，设置的仍是完整的长度。原来下标会变成负数，长度被截成 32 位（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#在构造函数上调用-arrayfrom-传完整的下标和长度)）。
+- Go 函数返回超过 2^31 - 1 个值时得到一个错误，`slowjs: N values, the engine takes at most 2147483647`，原来是下标越界的 panic。`Call` 传这么多参数也是这个错误（[go-api.md](docs/changes/go-api.zh-CN.md#引擎数不过来的值会报错)）。
+
 ## [v0.31.0] - 2026-11-15
 
 ### Changed
