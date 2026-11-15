@@ -8044,9 +8044,19 @@ static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
    in the block of p is not used again. */
 #define JS_OBJ_INLINE_PROPS(p) ((JSProperty *)((uint8_t *)(p) + offsetof(JSObject, u)))
 
+/* The properties of a function object made by js_new_function_object sit
+   right after the object, with the same rules. The block of an object of
+   any class but JS_CLASS_OBJECT is at least sizeof(JSObject), so this
+   address lies inside it or at its end, and no block of its own starts at
+   the end of another: every block has its header, with its count, before
+   it (JS_BLOCK_REF_COUNT_OFFSET). The block of an ordinary object may end
+   before it, so the test leaves ordinary objects out. */
+#define JS_FUNC_INLINE_PROPS(p) ((JSProperty *)((JSObject *)(p) + 1))
+
 static inline BOOL js_props_inline(const JSObject *p)
 {
-    return p->prop == JS_OBJ_INLINE_PROPS(p);
+    return p->prop == JS_OBJ_INLINE_PROPS(p) ||
+        (p->prop == JS_FUNC_INLINE_PROPS(p) && p->class_id != JS_CLASS_OBJECT);
 }
 
 /* Return an array of new_size properties for p that starts with the first
@@ -9553,7 +9563,7 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
                         free_var_ref(rt, var_refs[i]);
                 }
             }
-            js_free_rt(rt, var_refs);
+            /* var_refs is in the block of p (js_new_function_object) */
         }
         JS_FreeValueRT(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b));
     }
@@ -10924,7 +10934,7 @@ void JS_ComputeMemoryUsage(JSRuntime *rt, JSMemoryUsage *s)
                 JSVarRef **var_refs = p->u.func.var_refs;
                 /* home_object: object will be accounted for in list scan */
                 if (var_refs) {
-                    s->memory_used_count++;
+                    /* in the block of p, not a block of its own */
                     s->js_func_size += b->closure_var_count * sizeof(*var_refs) +
                         b->by_value_count * sizeof(JSValueCell);
                     for (i = 0; i < b->closure_var_count; i++) {
@@ -23353,11 +23363,13 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
                            BOOL is_eval, JSModuleDef *m)
 {
     JSObject *p;
-    JSVarRef **var_refs = NULL;
+    JSVarRef **var_refs;
     JSValueCell *c = NULL;
     int i = 0;
 
     p = JS_VALUE_GET_OBJ(func_obj);
+    /* the room js_new_function_object left for the closure variables */
+    var_refs = p->u.func.var_refs;
     p->u.func.function_bytecode = b;
     p->u.func.home_object = NULL;
     p->u.func.var_refs = NULL;
@@ -23365,12 +23377,9 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
         /* the cells of the closure variables marked by_value after the
            var_refs. Not zeroed: the loop below writes every entry and
            every cell, and fail_refs those it does not reach. The function
-           gets the block only then, as a collection can run in the loop
-           (an error made, a global variable defined) and would read it. */
-        var_refs = js_malloc(ctx, sizeof(var_refs[0]) * b->closure_var_count +
-                             sizeof(JSValueCell) * b->by_value_count);
-        if (!var_refs)
-            goto fail;
+           gets them only then, as a collection can run in the loop (an
+           error made, a global variable defined) and would read them. */
+        assert(var_refs);
         c = js_value_cells(b, var_refs);
         if (is_eval) {
             /* first pass to check the global variable definitions */
@@ -23449,7 +23458,6 @@ static JSValue js_closure2(JSContext *ctx, JSValue func_obj,
 #endif
     }
     p->u.func.var_refs = var_refs;
- fail:
     /* bfunc is freed when func_obj is freed */
     JS_FreeValue(ctx, func_obj);
     return JS_EXCEPTION;
@@ -23482,6 +23490,75 @@ static const uint16_t func_kind_to_class_id[] = {
     [JS_FUNC_ASYNC] = JS_CLASS_ASYNC_FUNCTION,
     [JS_FUNC_ASYNC_GENERATOR] = JS_CLASS_ASYNC_GENERATOR_FUNCTION,
 };
+
+/* A function object of class class_id for the bytecode b, of the shape sh,
+   which it takes, before js_closure2: one block holds the object, its
+   properties (as many as sh->prop_size, not set, see JS_FUNC_INLINE_PROPS)
+   and the closure variables of b (var_refs and the cells after them, see
+   js_value_cells), which js_closure2 fills. A closure is then one
+   allocation and one free, not three. The fields of u.func are those of no
+   function yet: the finalizer and the mark do nothing with them, and
+   var_refs is the room for js_closure2. Returns JS_EXCEPTION when there is
+   no memory, with sh freed, as JS_NewObjectFromShape. */
+static force_inline JSValue js_new_function_object(JSContext *ctx, JSShape *sh,
+                                                   JSClassID class_id,
+                                                   JSFunctionBytecode *b)
+{
+    JSObject *p;
+    size_t size;
+
+    size = sizeof(JSObject) + sizeof(JSProperty) * (size_t)sh->prop_size;
+    if (b->closure_var_count)
+        size += sizeof(JSVarRef *) * (size_t)b->closure_var_count +
+            sizeof(JSValueCell) * (size_t)b->by_value_count;
+    js_trigger_gc(ctx->rt, sizeof(JSObject));
+    p = js_malloc(ctx, size);
+    if (unlikely(!p)) {
+        js_free_shape(ctx->rt, sh);
+        return JS_EXCEPTION;
+    }
+    p->class_id = class_id;
+    p->is_std_array_prototype = 0;
+    p->extensible = TRUE;
+    p->free_mark = 0;
+    p->is_exotic = 0;
+    p->fast_array = 0;
+    p->is_constructor = 0;
+    p->has_immutable_prototype = 0;
+    p->tmp_mark = 0;
+    p->is_HTMLDDA = 0;
+    p->rv_fast = 0;
+    p->weakref_count = 0;
+    p->shape = sh;
+    p->prop = JS_FUNC_INLINE_PROPS(p);
+    p->u.func.function_bytecode = NULL;
+    p->u.func.var_refs = b->closure_var_count ?
+        (JSVarRef **)(p->prop + sh->prop_size) : NULL;
+    p->u.func.home_object = NULL;
+    js_rc(p)->ref_count = 1;
+    add_gc_object(ctx->rt, &p->header, JS_GC_OBJ_TYPE_JS_OBJECT);
+    return JS_MKPTR(JS_TAG_OBJECT, p);
+}
+
+/* js_new_function_object with the prototype proto_val, whose shape is
+   found as JS_NewObjectProtoClass finds it */
+static JSValue js_new_function_proto(JSContext *ctx, JSValueConst proto_val,
+                                     JSClassID class_id, JSFunctionBytecode *b)
+{
+    JSShape *sh;
+    JSObject *proto;
+
+    proto = get_proto_obj(proto_val);
+    sh = find_hashed_shape_proto(ctx->rt, proto);
+    if (likely(sh)) {
+        sh = js_dup_shape(sh);
+    } else {
+        sh = js_new_proto_shape(ctx, proto, class_id);
+        if (!sh)
+            return JS_EXCEPTION;
+    }
+    return js_new_function_object(ctx, sh, class_id, b);
+}
 
 /* The slot of func_shapes for a function of kind func_kind: 0 for a
    function, 1 for an async function, -1 for a generator (its prototype is an
@@ -23530,19 +23607,20 @@ static JSValue js_closure_object(JSContext *ctx, JSFunctionBytecode *b, BOOL *ma
                                        JS_PROP_WRITABLE | JS_PROP_AUTOINIT) :
                 NULL;
     }
-    if (!sh) {
+    if (sh) {
+        *made = TRUE;
+        sh = js_dup_shape(sh);
+    } else if (sh0) {
         /* as JS_NewObjectClass */
-        if (sh0) {
-            sh0 = js_dup_shape(sh0);
-        } else {
-            sh0 = js_new_proto_shape(ctx, proto, class_id);
-            if (!sh0)
-                return JS_EXCEPTION;
-        }
-        return JS_NewObjectFromShape(ctx, sh0, class_id, NULL);
+        sh = js_dup_shape(sh0);
+    } else {
+        sh = js_new_proto_shape(ctx, proto, class_id);
+        if (!sh)
+            return JS_EXCEPTION;
     }
-    obj = JS_NewObjectFromShape(ctx, js_dup_shape(sh), class_id, NULL);
-    if (JS_IsException(obj))
+    /* one call, which is inlined */
+    obj = js_new_function_object(ctx, sh, class_id, b);
+    if (!*made || JS_IsException(obj))
         return obj;
     p = JS_VALUE_GET_OBJ(obj);
     js_shape_found(ctx);
@@ -23554,7 +23632,6 @@ static JSValue js_closure_object(JSContext *ctx, JSFunctionBytecode *b, BOOL *ma
         p->prop[2].u.init.realm_and_id = (uintptr_t)JS_DupContext(ctx) | JS_AUTOINIT_ID_PROTOTYPE;
         p->prop[2].u.init.opaque = NULL;
     }
-    *made = TRUE;
     return obj;
 }
 
@@ -23664,8 +23741,8 @@ static int js_op_define_class(JSContext *ctx, JSValue *sp,
 
     b = JS_VALUE_GET_PTR(bfunc);
     assert(b->func_kind == JS_FUNC_NORMAL);
-    ctor = JS_NewObjectProtoClass(ctx, parent_class,
-                                  JS_CLASS_BYTECODE_FUNCTION);
+    ctor = js_new_function_proto(ctx, parent_class,
+                                 JS_CLASS_BYTECODE_FUNCTION, b);
     if (JS_IsException(ctor))
         goto fail;
     ctor = js_closure2(ctx, ctor, b, cur_var_refs, sf, FALSE, NULL);
@@ -35486,13 +35563,13 @@ static int js_create_module_bytecode_function(JSContext *ctx, JSModuleDef *m)
     JSValue func_obj, bfunc;
 
     bfunc = m->func_obj;
-    func_obj = JS_NewObjectProtoClass(ctx, ctx->function_proto,
-                                      JS_CLASS_BYTECODE_FUNCTION);
+    b = JS_VALUE_GET_PTR(bfunc);
+    func_obj = js_new_function_proto(ctx, ctx->function_proto,
+                                     JS_CLASS_BYTECODE_FUNCTION, b);
 
     if (JS_IsException(func_obj))
         return -1;
     m->func_obj = func_obj;
-    b = JS_VALUE_GET_PTR(bfunc);
     func_obj = js_closure2(ctx, func_obj, b, NULL, NULL, TRUE, m);
     if (JS_IsException(func_obj)) {
         m->func_obj = JS_UNDEFINED; /* XXX: keep it ? */
