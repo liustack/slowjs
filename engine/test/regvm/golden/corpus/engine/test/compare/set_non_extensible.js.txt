@@ -315,6 +315,6 @@ result super[k] in a static method: throws TypeError
 result static field of a prevented class: throws TypeError
 result module-like frozen namespace: false
 result global object prevented: [true,3]
-mem-end obj=244 atom=570 shape=156 prop=1079 jsfunc=30 cfunc=136 array=3 fast_array=3 elements=323 binary=0
-mem-gc obj=215 atom=565 shape=142 prop=1024 jsfunc=15 cfunc=136 array=3 fast_array=3 elements=323 binary=0
+mem-end obj=244 atom=570 shape=157 prop=1079 jsfunc=30 cfunc=136 array=3 fast_array=3 elements=323 binary=0
+mem-gc obj=215 atom=565 shape=143 prop=1024 jsfunc=15 cfunc=136 array=3 fast_array=3 elements=323 binary=0
 --- status exit 0

@@ -128,6 +128,7 @@ void white_shape_id_set(JSRuntime *rt, uint32_t next);
 int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
+int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented);
 uint32_t white_key_atom(JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
@@ -2167,7 +2168,8 @@ static void lists(VM *v, int *old, int *young, const char *when)
    a shape found by its parent id that starts with other keys than the shape
    it grew from ends the test. Shapes are found by their parent id
    (white_shape_id_hits) where an object held the shape before, and again
-   once the ids were given anew. */
+   once the ids were given anew: by the parent id a comparison of the keys
+   gave them, and for a new stair. */
 static int global_shape_hashed(VM *v)
 {
     JSValue g = JS_GetGlobalObject(v->ctx);
@@ -2387,6 +2389,17 @@ static void test_shape_ids(void)
         CHECK(shape_of(&v, "w12") == shape_of(&v, "ws[11]"), "cache %d: w12 has a shape of its own", cache);
         CHECK(shape_of(&v, "k10b") == shape_of(&v, "ks[9]"), "cache %d: k10b has a shape of its own", cache);
 
+        /* the shapes numbered again have no parent id, so k10b found each
+           by comparing its keys, which gave it the id of the shape before
+           as its parent id: the next object finds them by it */
+        hits = white_shape_id_hits();
+        CHECK(eval_ok(v.ctx, "var k10c = build(10, 'k'); void 0"), "the script threw");
+        CHECK(white_shape_id_hits() >= hits + 9,
+              "cache %d: %lu shapes found by the parent id a comparison of their keys gave, want 9",
+              cache, white_shape_id_hits() - hits);
+        CHECK(shape_of(&v, "k10c") == shape_of(&v, "ks[9]"), "cache %d: k10c has a shape of its own", cache);
+        shape_ids_ok(&v, "parent ids from a comparison", cache);
+
         /* a new stair after the ids were given anew is found by parent id */
         CHECK(eval_ok(v.ctx, "var vs = stair(8, 'v'); void 0"), "the stair threw");
         hits = white_shape_id_hits();
@@ -2451,6 +2464,158 @@ static void test_shape_ids_copy_oom(void)
         CHECK(n > 0, "cache %d: adding the key makes no call of the allocator", cache);
     }
     CHECK(twins > 0, "no failing call of %ld left two shapes of one id", cases);
+}
+
+/* The shapes of the prototype the global expression proto names: *count of
+   them, *parented of those that hold a parent, and no shape of the runtime
+   breaks the rule of parents (white_shape_parents_bad). */
+static void shape_parents_ok(VM *v, const char *proto, const char *what, int cache,
+                             int *count, int *parented)
+{
+    JSValue p = JS_Eval(v->ctx, proto, strlen(proto), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int bad;
+
+    CHECK(JS_IsObject(p), "cache %d, %s: %s is no object", cache, what, proto);
+    bad = white_shape_parents_bad(v->rt, p, count, parented);
+    CHECK(bad == 0, "cache %d, %s: %d shapes break the rule of parents", cache, what, bad);
+    JS_FreeValue(v->ctx, p);
+    shape_ids_ok(v, what, cache);
+}
+
+static int64_t shape_count(VM *v)
+{
+    JSMemoryUsage u;
+
+    JS_RunGC(v->rt);
+    JS_ComputeMemoryUsage(v->rt, &u);
+    return u.shape_count;
+}
+
+/* new F() of a function whose body sets four keys on this, with the shape
+   cache on and off (js_shape_leave): once a few objects were made and kept,
+   the shapes of F.prototype are the empty one and one for each key, each but
+   the empty one holding the one before it, and a hundred more objects make no
+   shape. Objects that leave the shape of the others (a delete, a new
+   prototype, a freeze, a key of their own) keep the rule, and once every
+   object is gone, so is every shape of F.prototype. A class with a field and
+   a derived class do the same (B.prototype also has the shape of
+   D.prototype, which has no parent). A constructor of 32 keys keeps a chain
+   of 33 shapes, one of 33 keys none (a parent past 32 keys is not taken, and
+   a chain is found from its last shape back), and a constructor whose
+   objects all go one by one, none kept, makes no chain (the first one makes
+   T.prototype, which has a shape of its own). */
+static void test_new_shapes(void)
+{
+    static const char setup[] =
+        "function F(v) { this.a = v; this.b = v; this.c = v; this.d = v }\n"
+        "class B { x = 1; constructor(v) { this.y = v } }\n"
+        "class D extends B { constructor(v) { super(v); this.z = v } }\n"
+        "function L(n) { for (let i = 0; i < n; i++) this['k' + i] = i }\n"
+        "function M(n) { for (let i = 0; i < n; i++) this['k' + i] = i }\n"
+        "function T(v) { this.p = v; this.q = v }\n"
+        "var keep = [], bs = [], ls = [], ms = [];\n"
+        "function make(n) { for (let i = 0; i < n; i++) keep.push(new F(i)) }\n"
+        "void 0";
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        int count, parented;
+        int64_t before;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, setup), "the setup threw");
+        CHECK(eval_ok(v.ctx, "make(10); void 0"), "make threw");
+        shape_parents_ok(&v, "F.prototype", "ten objects", cache, &count, &parented);
+        CHECK(count == 5 && parented == 4, "cache %d, ten objects: %d shapes of F.prototype, %d with a parent, want 5 and 4",
+              cache, count, parented);
+        before = shape_count(&v);
+        CHECK(eval_ok(v.ctx, "make(100); void 0"), "make threw");
+        CHECK(shape_count(&v) == before, "cache %d: 100 more objects made %lld shapes", cache,
+              (long long)(shape_count(&v) - before));
+        CHECK(eval_is(v.ctx, "keep.length + ' ' + Object.keys(keep[109]) + ' ' + keep[109].d", "110 a,b,c,d 99"),
+              "cache %d: the keys of the objects", cache);
+
+        CHECK(eval_ok(v.ctx,
+                      "delete keep[0].b; Object.setPrototypeOf(keep[1], {}); Object.freeze(keep[2]);\n"
+                      "keep[3].e = 1; keep[4].e = 1; keep[5].a = 'x'; make(5); void 0"), "the changes threw");
+        shape_parents_ok(&v, "F.prototype", "objects that left the shape", cache, &count, &parented);
+        CHECK(eval_is(v.ctx, "[0, 1, 2, 3, 114].map(i => Object.keys(keep[i])).join(' ')",
+                      "a,c,d a,b,c,d a,b,c,d a,b,c,d,e a,b,c,d"), "cache %d: keys after the changes", cache);
+
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 20; i++) { bs.push(new B(i)); bs.push(new D(i)) } void 0"),
+              "the classes threw");
+        shape_parents_ok(&v, "B.prototype", "class B", cache, &count, &parented);
+        CHECK(count == 4 && parented == 2, "cache %d, class B: %d shapes, %d with a parent, want 4 and 2",
+              cache, count, parented);
+        shape_parents_ok(&v, "D.prototype", "class D", cache, &count, &parented);
+        CHECK(count == 4 && parented == 3, "cache %d, class D: %d shapes, %d with a parent, want 4 and 3",
+              cache, count, parented);
+
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 40; i++) { ls.push(new L(32)); ms.push(new M(33)) } void 0"), "L threw");
+        shape_parents_ok(&v, "L.prototype", "32 keys", cache, &count, &parented);
+        CHECK(count == 33 && parented == 32, "cache %d, 32 keys: %d shapes, %d with a parent, want 33 and 32",
+              cache, count, parented);
+        shape_parents_ok(&v, "M.prototype", "33 keys", cache, &count, &parented);
+        CHECK(count == 1 && parented == 0, "cache %d, 33 keys: %d shapes, %d with a parent, want 1 and 0",
+              cache, count, parented);
+
+        CHECK(eval_ok(v.ctx, "new T(0); void 0"), "T threw");
+        before = shape_count(&v);
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 50; i++) new T(i); void 0"), "T threw");
+        shape_parents_ok(&v, "T.prototype", "objects that go at once", cache, &count, &parented);
+        CHECK(count == 0 && shape_count(&v) == before, "cache %d, objects that go at once: %d shapes left, %lld more in all",
+              cache, count, (long long)(shape_count(&v) - before));
+
+        CHECK(eval_ok(v.ctx, "keep.length = 0; bs.length = 0; ls.length = 0; ms.length = 0; void 0"), "the drop threw");
+        JS_RunGC(v.rt);
+        shape_parents_ok(&v, "F.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of F.prototype with no object", cache, count);
+        shape_parents_ok(&v, "D.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of D.prototype with no object", cache, count);
+        shape_parents_ok(&v, "L.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of L.prototype with no object", cache, count);
+        vm_free(&v);
+    }
+}
+
+/* new F() and new of a class with each allocation failing in turn, in a new
+   VM each time (each_vm_failing): the object, its property array, the empty
+   shape, a shape grown or copied, the property array growing when the object
+   takes a shape found with more room. Objects are kept and dropped, so that
+   the shapes of earlier ones are found and given a parent, and some of them
+   go before the next ones. The setup makes enough objects of F, C and W
+   that their chains are whole before the call, so that the call leaves as
+   many shapes as it found, and none of G, whose chain the call makes and
+   frees with its objects. The setup calls f once, so that what only a
+   first call leaves is there before. With the shape cache on and off. Each
+   call throws the out of memory error or gives the right answer, and leaves
+   as many objects, strings and shapes as before it. */
+static void test_new_shapes_each_failing(void)
+{
+    static const char setup[] =
+        "function F(v) { this.a = v; this.b = {}; this.c = v }\n"
+        "class C { x = {}; constructor(v) { this.y = v; this.z = {} } }\n"
+        "function W(v) { this.p = v; this.q = v; this.r = v; this.s = v; this.t = {} }\n"
+        "function G(v) { this.g = v; this.h = {}; this.i = v; this.j = v }\n"
+        "G.prototype;\n"
+        "var held = []; for (let i = 0; i < 8; i++) held.push(new F(i), new C(i), new W(i));\n";
+    static const struct { const char *what, *f, *want; } cases[] = {
+        { "new F, kept", "function f() { var k = []; for (var i = 0; i < 8; i++) k.push(new F(i)); return k.map(o => Object.keys(o).length).join('') }", "33333333" },
+        { "new F, dropped", "function f() { var s = 0; for (var i = 0; i < 8; i++) s += new F(i).c; return s }", "28" },
+        { "new class", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new C(i)); return k.map(o => Object.keys(o).join('')).join(' ') }", "xyz xyz xyz xyz xyz xyz" },
+        { "new W, five keys", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new W(i)); held = null; return k.map(o => Object.keys(o).length).join('') }", "555555" },
+        { "new G, the chain made in the call", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new G(i)); return k.map(o => Object.keys(o).length).join('') }", "444444" },
+    };
+    char buf[4096];
+    int i, nocache;
+
+    for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+        for (nocache = 0; nocache <= 1; nocache++) {
+            snprintf(buf, sizeof(buf), "%s%s\nf();\n", setup, cases[i].f);
+            each_vm_failing(cases[i].what, nocache, buf, cases[i].want, 3);
+        }
+    }
 }
 
 /* New GC objects are young, a young collection makes what it keeps old, and a
@@ -8106,6 +8271,8 @@ int main(int argc, char **argv)
     test_object_spread_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
+    test_new_shapes();
+    test_new_shapes_each_failing();
     test_counted_call_debt();
     test_key_atom();
     test_young_lists();

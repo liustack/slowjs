@@ -25,6 +25,6 @@ result Math: eq string=false seq string=false ne string=true sne string=true eq 
 result globalThis: eq string=false seq string=false ne string=true sne string=true eq object=true sne object=false eq number=false eq boolean=false eq symbol=false sne symbol=true eq bigint=false eq undefined=false sne undefined=true eq function=false ne function=true lt u=true gt u=false lt u template=true le u=true lt v=true lt t=true eq not a type=false eq empty=false eq String=false eq strin=false eq number as a number=false if string=no if not string=yes if not object=no if lt u=yes if gt u=no and=true or=false not=true ternary=b while=3 member=true reverse=false
 result missing global: false true true
 result tdz: ReferenceError: later is not initialized
-mem-end obj=278 atom=647 shape=135 prop=1165 jsfunc=45 cfunc=129 array=29 fast_array=29 elements=102 binary=0
-mem-gc obj=278 atom=647 shape=135 prop=1165 jsfunc=45 cfunc=129 array=29 fast_array=29 elements=102 binary=0
+mem-end obj=278 atom=647 shape=136 prop=1165 jsfunc=45 cfunc=129 array=29 fast_array=29 elements=102 binary=0
+mem-gc obj=278 atom=647 shape=136 prop=1165 jsfunc=45 cfunc=129 array=29 fast_array=29 elements=102 binary=0
 --- status exit 0

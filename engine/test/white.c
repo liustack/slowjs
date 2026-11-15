@@ -1292,6 +1292,59 @@ int white_shape_hashed(JSValueConst obj)
     return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
 
+/* The shapes on the lists of the collector of rt, in the shape hash table or
+   not: *count of them whose prototype is proto (an object), *parented of
+   those that hold a parent (js_shape_leave). Return how many shapes of rt
+   break the rule of parents: a shape holds a parent when and only when its
+   parent_ok says so, and then it is in the table, and so is its parent,
+   which has its prototype, one key less, the same keys and flags before its
+   last one, and a count of at least one. */
+int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented)
+{
+    struct list_head *heads[2] = { &rt->gc_obj_list, &rt->young_obj_list };
+    JSObject *pp = JS_VALUE_GET_OBJ(proto);
+    int k, i, bad = 0;
+
+    *count = *parented = 0;
+    for(k = 0; k < 2; k++) {
+        struct list_head *el;
+
+        list_for_each(el, heads[k]) {
+            JSGCObjectHeader *gp = list_entry(el, JSGCObjectHeader, link);
+            JSShape *sh, *ps;
+
+            if (js_rc(gp)->gc_obj_type != JS_GC_OBJ_TYPE_SHAPE)
+                continue;
+            sh = (JSShape *)gp;
+            ps = sh->parent;
+            if (sh->proto == pp) {
+                (*count)++;
+                if (ps)
+                    (*parented)++;
+            }
+            if (!ps) {
+                if (sh->parent_ok == JS_SHAPE_PARENT_HELD)
+                    bad++;
+                continue;
+            }
+            if (sh->parent_ok != JS_SHAPE_PARENT_HELD || !sh->is_hashed || !ps->is_hashed ||
+                ps->proto != sh->proto ||
+                ps->prop_count + 1 != sh->prop_count || js_rc(ps)->ref_count < 1) {
+                bad++;
+                continue;
+            }
+            for(i = 0; i < ps->prop_count; i++) {
+                if (get_shape_prop(ps)[i].atom != get_shape_prop(sh)[i].atom ||
+                    get_shape_prop(ps)[i].flags != get_shape_prop(sh)[i].flags) {
+                    bad++;
+                    break;
+                }
+            }
+        }
+    }
+    return bad;
+}
+
 /* ---- the atom a string is as a key ---- */
 
 /* The key_atom of the string v (a JS_TAG_STRING value). */

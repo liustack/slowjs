@@ -1375,6 +1375,83 @@ React's page runs 28,000 more instructions a render after training. A callgrind 
 
 Memory, after four renders on the native C tree: the state page holds 5.78 MB rather than 6.03 MB before a collection, since no array of keys is made a call, and 5,387,616 bytes rather than 5,384,080 after one, the same count of blocks. The other 11 pages hold the same.
 
+### Objects of a constructor that find their shapes
+
+[Objects of a constructor find the shapes the objects before them went through](changes/objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through), counted on 2026-11-15 against `d7c86e16` (v0.30.7). Native: the test host built by clang, callgrind on linux/amd64. A page is one timed render after 2 warm ones in the pool of tifa's settings, `host_poll` left out, the shop's pages with the URL objects reused. A V8 benchmark is the difference of 12 runs and 4, divided by 8 (Splay: 50 and 10, by 40). A wider page is the difference of 4 renders and 2 through `jsrun -call`, halved. The HTML of every page and the result of every benchmark are the same.
+
+The shapes made and freed and the keys compared, counted with counters added to the native C tree for the count only: an empty shape that `new` made for an object (`js_new_shape2` with the prototype of a constructor), and a shape that `find_hashed_shape_prop` found by comparing its keys.
+
+| | Empty shapes, v0.30.7 | Empty shapes, now | Shapes found by their keys, v0.30.7 | Shapes found by their keys, now |
+| --- | ---: | ---: | ---: | ---: |
+| an iteration of Boyer | 256,604 | 0 | 256,604 | 0 |
+| an iteration of RayTrace | 66,594 | 7,878 | 60,709 | 3,449 |
+| an iteration of Earley | 8,703 | 0 | 8,703 | 0 |
+| an iteration of Splay | 479 | 0 | 479 | 0 |
+| an iteration of DeltaBlue | 1,450 | 16 | 1,440 | 6 |
+| a render of the domain page | 30,172 | 23 | 30,283 | 26 |
+| a render of the dates page | 11,729 | 4,708 | 13,084 | 4,245 |
+| a render of the workbench studio page | 604 | 138 | 5,678 | 127 |
+| a render of MUI's orders page | 261 | 56 | 4,551 | 30 |
+| a render of the long Markdown page | 13,887 | 13,595 | 258,338 | 820 |
+
+| Native, linux/amd64 | Instructions |
+| --- | ---: |
+| Boyer | -9.45% |
+| RayTrace | -7.07% |
+| Earley | -5.52% |
+| Splay | -3.33% |
+| DeltaBlue | -1.77% |
+| Richards | +0.01% |
+| the domain page | -3.93% |
+| the dates page | -1.89% |
+| forms, chart, table, i18n, styled, state, radix, diff, antd | +0.04% to -0.08% |
+| the markdown page | +0.09% |
+
+The markdown page looks up about as many shapes a render as before (1% more) and takes more steps along the chains of the shape hash table for them, which now holds the shapes the chains keep: per line, the walk of the chains and its tests run 2.4 million more instructions in a run of 2 renders.
+
+The generated engine in tifa's pages app, against the same commit. "As generated" is the engine `make gen` makes with the profile of v0.30.7, which still fits `add_property` and `find_hashed_shape_prop` and no longer `js_free_shape0` and `mark_children`; the five new functions have none. "Trained" is the same C with the profile trained again on it in a scratch copy, which is not checked in. On linux/amd64 a page is callgrind, one warm render and then the difference of three renders and one, halved (the long Markdown page: two and one). The HTML of every page is the same. Training v0.30.7 again moves the counts by itself: +0.01% on MUI's orders page, -0.04% on its home page, +0.11% on React's page.
+
+| Page | Native | As generated | Trained |
+| --- | ---: | ---: | ---: |
+| the workbench studio page | -0.62% | -0.45% | -0.56% |
+| the workbench stats page | -0.42% | -0.26% | -0.36% |
+| the shop's English home page | -0.12% | -0.41% | -0.46% |
+| the shop's products page (native: Chinese, tifa: English) | -0.12% | -0.39% | -0.44% |
+| MUI's orders page | -0.14% | -0.16% | -0.16% |
+| MUI's order page | -0.10% | | |
+| MUI's home page | -0.06% | -0.08% | -0.08% |
+| React's page | +0.00% | +0.17% | +0.08% |
+| the long Markdown page | -1.41% | -0.33% | -0.64% |
+
+On React's page the engine itself runs 7,600 more instructions a render as generated (0.02%: `js_free_shape0` tests the parent of each shape it frees, and the young collection marks it), and the rest is `runtime.(*pageAlloc).find` and the poller of the Go runtime, which move by up to 70,000 instructions from one run to the next. Natively React's page runs 1,126 more instructions a render (0.004%).
+
+| V8, through the Go API | As generated | Trained |
+| --- | ---: | ---: |
+| Boyer | -9.47% | -9.42% |
+| RayTrace | -6.92% | -6.85% |
+| Earley | -4.45% | -5.28% |
+| Splay | -3.30% | -3.20% |
+| DeltaBlue | -1.65% | -1.76% |
+| Richards | +0.02% | +0.02% |
+
+Memory, the bytes the runtime holds after a full collection: after 200 renders of a page, after 20 of the long Markdown page, after 4 of a wider page, and after the 12 runs of a V8 benchmark.
+
+| Page | v0.30.7 | Now |
+| --- | ---: | ---: |
+| the workbench studio page | 13,849,568 | +56,832 |
+| the workbench stats page | 13,505,296 | +43,752 |
+| the shop's English home page | 13,902,320 | +42,224 |
+| the shop's Chinese products page | 14,534,768 | +74,360 |
+| MUI's orders page | 7,570,248 | -119,904 |
+| MUI's order page | 7,707,936 | -159,656 |
+| MUI's home page | 7,175,888 | -48,368 |
+| React's page | 970,736 | +11,928 |
+| the long Markdown page | 12,693,688 | -1,115,136 |
+| the wider pages | | -12,400 (i18n) to +73,640 (antd) |
+| a V8 benchmark | | -4,184 (Boyer) to +5,208 (DeltaBlue) |
+
+The frames of `JS_RegvmRun` (a shadow frame of 256 bytes on amd64, 176 on arm64) and `JS_CallInternal` (112, 96) are those of v0.30.7.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.
@@ -1848,6 +1925,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **A call that also copies constants into its window**, measured on 2026-11-12 in llc's output of the generated engine. The first form of [the calls that copy their last locals](#calls-that-copy-their-last-locals) took a `LOADK` too, told a slot from a constant at each copy and tested the count from four down. A call with one copy, the most common, then ran more instructions than the `CALL` and the `MOV` it stood for, so the form kept takes slots only and tests a single copy first.
 - **Freeing the objects that die with an object by a direct call, to a depth cap**, rather than through `gc_zero_ref_count_list`, counted on 2026-11-12 and not built. Disassembled from the generated engine (5fe8d6f7): freeing an object whose count reaches zero, at phase NONE down to `free_object` and back, is 67 instructions on amd64 and 71 on arm64. Of these, 26 / 27 are the call (the Go prologue with its stack check, the loads of the arguments, the spills, the epilogue), 17 / 14 the dispatch on the tag and the phase, and 24 / 30 the round trip of `free_zero_refcount_first` (the moves between lists, the mark, the nesting count, the phase). An object that dies while another is freed costs `__JS_FreeValueRT` in phase DECREF (40 / 44) and an item of the loop of `free_zero_refcount` (29 / about 19). Per render, 4,171 objects are freed first and 2,003 die with them on React, 49,086 and 16,117 on the shop's store, 23,810 and 12,156 on wb, 29,083 and 14,868 on MUI. A direct call would save at most about 29 instructions for each object that dies with another: 0.19% of React, 0.20% of store, 0.37% of wb and 0.34% of MUI, upper bounds, and the first object of each free keeps its round trip. It changes the order of the finalizers: today an object's finalizer runs before those of its children, which go in reverse order of the properties, depth first, and with a direct call the children finish first. No script can see it (no JavaScript runs during a free, WeakRef, WeakMap and WeakSet read the count when a script runs, and FinalizationRegistry jobs are queued in the order of the registries in a collection, not of the frees). The Go side would get the calls of `host_release` in another order, so a later handle may get another number, which no API shows. Each level would take about 300 bytes of Go stack below the frame that drops the last reference, which lowers the depth floors unless the recursion stops where the stack has no more room than now.
 - **Room reserved by the place that creates an object**, so that an object starts with the room the objects made there before ended with, counted on 2026-11-12 on the native host set up as tifa's pool, with the shape cache on, and not built. Kept shapes take away most copies of shapes (MUI's orders page 10.2k to 3.0k a render, the shop's home 5.1k to 0.8k), but not the times the property array of an object grows after it is made (the shop's home 33.2k to 33.0k, its products page 57.1k to 55.1k). All those moves together are about 0.25% of a render's instructions, and about 0.15% after object literals got the room of an empty object (see [Object literals with the room of an empty object](#object-literals-with-the-room-of-an-empty-object)). The most a table per place could give is about 0.2%, not worth the table and the memory it holds.
+- **The last shape of a constructor kept on the function, and a property array of a size learned from the objects before**, counted on 2026-11-15 against v0.30.7 on the native C tree, and not built. These were the two other ways for `new C()` to stop making shapes, besides the parent a found shape keeps (see [Objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes)). A shape kept on the function would keep the prototype it was made with alive after a script gives the function another `prototype`, which a `WeakRef` can see, and letting it go needs a check on every store of `prototype`. Once the parents are kept, it could still save the empty shapes that are made: 7,878 an iteration of RayTrace (about 0.8% of its instructions), 4,708 a render of the dates page (0.2%), at most 181 a render on tifa's pages and none on Boyer and Earley. A property array of the right size would save the times an object takes a found shape with more room than its array (`js_resize_prop`): 54,291 an iteration of RayTrace (about 1.9%), 47,182 a render of the domain page (1.3%), 43,540 of the dates page (0.4%), 2,242 on the workbench studio page (0.2%) and fewer on the other pages, but every shape of a chain would need the room of the last one, or the function a size of its own. A link from a shape to the next one would only skip the lookup in the shape hash table, which the table of shape steps (above) already tried: fewer instructions and more time.
 - **The iterator of a `for in` loop in the block of its object**, so that a loop start makes one allocation rather than two, counted on 2026-11-12 and not built. As an upper bound, a probe that kept the last freed iterator and gave it to the next loop, so that nearly no loop allocated one, took 0.04% of the instructions of MUI's orders page (10,376 loops a render), 0.03% of the order page and nothing of the home page: the front cache makes a small block and its free cost about 9 instructions together. The rest of the cost of the iterator object is its object and finalizer, which this would keep.
 - **Room remembered per place for the arrays that are built by appending, and the exact length for the results of `concat` and `map`, `Array(n)` and the array of own keys**, counted and measured on 2026-11-12 on top of [arrays that take room for 8 elements at first](#arrays-that-are-appended-to-take-room-for-8-elements-at-first). The place is the bytecode site of an `[]` literal, remembering the smaller of the last two lengths its arrays ended with, as moejs's allocation sites do: modelled from the length of each array at its death, it saves 0.27% to 0.28% on the shop's pages, 0.23% on a workbench page and 0.06% on MUI's orders page, against 0.23%, 0.23%, 0.19% and 0.39% for the 8 slots, and needs a table and a lookup for each `[]`. One site of 41 makes 41% of the regrows of the shop's products page and one of 19 91% of MUI's orders page. Not built: the saving is the size of the room reserved by the place that creates an object (above), which was dropped. The exact length (the room of `Array(len)` for `map`, the sum of the lengths of the arrays that `concat` spreads, the number of own keys) was built and measured on top of 4 slots: React -0.001%, the shop's home -0.061%, its products page +0.012%, a workbench page +0.025% and MUI's orders page -0.076% of the instructions, under 0.3% on every page. It is kept as the commit `wip(engine): give the result of concat and map, Array(n) and the own keys room at once` of the branch `regvm/s1-reserve`, with its tests.
 - **Returning the receiver from `toLowerCase` and `toUpperCase` when no character changes** (and converting a string of 8 bits with only ASCII in one pass over its bytes when one does), measured on 2026-11-12 on the native C tree at 641f7dc7, kept as the commit `wip(engine): return the receiver when toLowerCase or toUpperCase changes nothing` of the branch `regvm/s1-case` and not handed in. A render of the store pages makes 1,963 (home) and 3,339 (products) conversions that are not of the empty string, of which 1,711 and 2,656 change nothing, and each cost about 555 instructions because a new string was made anyway. The change took 0.268% (home) and 0.297% (products) of a render's instructions (callgrind, `render tifa=1 young=1 shapes=2048`, one timed render after two warm ones, `host_poll` and `__shadow_remaining` left out), 0.121% on wb studio, 0.020% on MUI orders and 0.006% on a React render, under the 0.3% a change needs. Most of those calls come from the URL polyfill of core-js, which lowercases the scheme and host of every link and which a Go URL replaces in tifa. With a stand-in that reuses a URL object after the first render (`urlmemo.js`), the same pages make 295 (home) and 502 (products) conversions, of which 43 and 155 change nothing, so the polyfill makes 1,668 and 2,837 of them, and the change takes 0.054% (home), 0.071% (products), 0.057% (wb studio) and 0.018% (MUI orders), under the 0.2% a page must keep. A scan of 8 bytes at a time was slightly worse than the byte loop (0.290%).

@@ -2603,7 +2603,12 @@ static void test_array_room_oom(void)
 
         want[0] = cases[i].want;
         want[1] = NULL;
-        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 16384);
+        /* up to 16 KiB and an arena of small blocks (4 KiB): where a
+           script needs a new arena for a size class depends on the room
+           the blocks made before it left in the arenas the runtime has
+           (push many needs 12,872 bytes with shapes of 64 bytes before
+           their keys and 16,968 with shapes of 72) */
+        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 20480);
     }
 }
 
