@@ -31,7 +31,9 @@
 # A run that throws also says at which hook: "hit NAME P", the P-th place
 # of the register instruction NAME. A script that has a line
 # "// inject-hit: NAME P" fails when no run threw there, so that a place a
-# test is written for cannot be lost.
+# test is written for cannot be lost. A place of G/SCRIPT.txt that the
+# runs were to compare and that no run threw at differs too: the places of
+# the script moved, and its golden is to be written again.
 #
 #   engine/test/regvm/inject.sh [-j N] [-max M] [-golden G] [-update] DIR PATH...
 #   engine/test/regvm/inject.sh [-j N] [-every K] [-golden G] DIR PATH...
@@ -178,12 +180,15 @@ if [ -n "$single" ]; then
 	one_run "$work/$name" "$key" "$var=$val"
 	grep "^hit " "$key" >> "$work/$base.hits" 2>/dev/null || true
 	at=$(grep -E '^(at|nokey|real|skip|miss|outside)' "$key" 2>/dev/null || echo '?')
+	place=$(echo "$at" | sed -n 's/^at //p' | tr ' ' _)
+	# the places reached, by a run that differs too: each place of the golden
+	# the runs were to compare must be one of them
+	[ -z "$place" ] || echo "$place" >> "$work/$base.reached"
 	g=$(find "$work/$name" -name "*.txt" | head -1)
 	if [ -z "$g" ]; then
 		echo "DIFF $sc N=$n status ($at): $(grep '^NOUPDATE' "$work/$name.log" | cut -c1-200)"
 		exit 0
 	fi
-	place=$(echo "$at" | sed -n 's/^at //p' | tr ' ' _)
 	want=
 	[ -z "$place" ] || want=$(grep "^$place " "$golden/$base.txt" 2>/dev/null | cut -d' ' -f3- || true)
 	got=$(summary "$g")
@@ -285,7 +290,7 @@ for sc in $scripts; do
 	fi
 	runs=$(echo $ns | wc -w | tr -d ' ')
 	hits=$work/$base.hits
-	rm -f "$hits"
+	rm -f "$hits" "$work/$base.reached"
 	out=$work/$base.diffs
 	find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 	# shellcheck disable=SC2086
@@ -294,7 +299,21 @@ for sc in $scripts; do
 		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$golden/$base.txt"
 		find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places"
+	elif [ -f "$golden/$base.txt" ]; then
+		# each place of the golden the runs were to compare was reached: a
+		# place no run threw at any more is compared with nothing
+		if [ -n "$every" ]; then
+			awk -v k="$every" '(NR - 1) % k == 0 { print } END { print }' "$golden/$base.txt"
+		else
+			cat "$golden/$base.txt"
+		fi | LC_ALL=C sort -u -k1,1 > "$work/$base.want"
+		LC_ALL=C sort -u "$work/$base.reached" 2>/dev/null | LC_ALL=C join -v 1 "$work/$base.want" - |
+			while read -r p n rest; do
+				echo "DIFF $sc: no run threw at the place $p of the golden (its run $n): the places of the script moved, record its golden again (inject.sh -update)"
+			done >> "$out"
+		rm -f "$work/$base.want"
 	fi
+	rm -f "$work/$base.reached"
 	# the places the script says a run must throw at: "// inject-hit: NAME P"
 	[ -n "$every" ] || sed -n "s|^// inject-hit: \(.*\)$|hit \1|p" "$sc" | while read -r want; do
 		grep -qxF "$want" "$hits" 2>/dev/null ||

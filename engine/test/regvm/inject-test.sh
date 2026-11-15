@@ -6,7 +6,8 @@
 #
 # Test inject.sh. With no argument, with a stand-in for rvdiff (no build):
 # a golden holds no memory counts, so a run whose counts moved alone passes,
-# and a run whose result moved fails.
+# a run whose result moved fails, and a place of the golden no run reaches
+# fails (also among the lines -every picks).
 #
 # With DIR, a build with -DRV_INJECT (see inject.sh), it runs that build
 # instead: it records the golden of a small script, then plants a leak in
@@ -92,6 +93,17 @@ EOS
 	printf '1 1 1 1 a\n2 1 2 1 B\n3 1 3 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places2"
 	FAKE_PLACES=$d/places2 FAKE_MEM=10 run "a result moved" fail
 	has "a result moved" "DIFF $d/s.js N=2 at 1 2 1"
+
+	# the third injection throws one place further: 1_3_1 is not reached
+	printf '1 1 1 1 a\n2 1 2 1 b\n3 1 4 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places3"
+	FAKE_PLACES=$d/places3 FAKE_MEM=10 run "a place of the golden is not reached" fail
+	has "a place of the golden is not reached" "1_3_1"
+	# -every 2 picks the lines 1, 3 and 5: 1_1_1, 1_3_1 and 2_2_1
+	FAKE_PLACES=$d/places3 FAKE_MEM=10 run "a place -every picks is not reached" fail -every 2
+	has "a place -every picks is not reached" "1_3_1"
+	# a place -every does not pick may move
+	printf '1 1 1 1 a\n2 1 9 1 b\n3 1 3 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places4"
+	FAKE_PLACES=$d/places4 FAKE_MEM=10 run "a place -every does not pick moved" pass -every 2
 
 	exit 0
 fi
