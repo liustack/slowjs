@@ -780,6 +780,18 @@ func (m *VM) jsNewEscapeTextFunction(name string) (r jsValue, err error) {
 	return r, nil
 }
 
+// jsNewMurmur2Function is JS_NewMurmur2Function.
+func (m *VM) jsNewMurmur2Function() (r jsValue) {
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsNewMurmur2Function() })
+		return r
+	}
+	m.toEngine()
+	r = val(cengine.JS_NewMurmur2Function(m.sp, m.ctx))
+	m.inEngine--
+	return r
+}
+
 // jsNewCopyPropsFunction is JS_NewCopyPropsFunction of name.
 func (m *VM) jsNewCopyPropsFunction(name string) (r jsValue, err error) {
 	if m.entered == 0 {

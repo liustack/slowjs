@@ -17,9 +17,9 @@
 //   - __tifa_random_bytes__(n): n bytes from crypto/rand, 0 to 65536, in
 //     base64. The bundle's crypto.getRandomValues and crypto.randomUUID read
 //     them.
-//   - __tifa_murmur2__(s): the hash of @emotion/hash of the string s, in Go,
-//     or undefined for anything else, which emotion then hashes in
-//     javascript.
+//   - __tifa_murmur2__(s): the hash of @emotion/hash of the string s, by
+//     the engine ([slowjs.VM.NewMurmur2Function]), or undefined for anything
+//     else, which emotion then hashes in javascript.
 //   - __tifa_escape, __tifa_copy_props, __tifa_start_tag and __tifa_end_tag:
 //     the functions of the engine that do the work of React's escape, its
 //     copy of props and the tags React DOM writes ([slowjs.VM.RegisterEscapeText],

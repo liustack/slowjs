@@ -1321,6 +1321,14 @@ JSValue JS_NewHostFunctionRelease(JSContext *ctx, const char *name, size_t name_
    that throws), a RangeError when the escaped string would be too long, and
    the interrupt when the host asks for one while it works on a long string. */
 JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_len);
+/* Returns a function, murmur2, that hashes a string as murmur2 of
+   @emotion/hash 0.9 does: the low byte of each UTF-16 code unit, in base 36,
+   with a lone surrogate as the unit it is. It returns undefined for anything
+   but a string, joins a rope first, and stops at the interrupt when the host
+   asks for one while it works on a long string. The checks of emotion's
+   function (String.prototype.charCodeAt and Number.prototype.toString are the
+   built-ins) are the caller's. */
+JSValue JS_NewMurmur2Function(JSContext *ctx);
 /* Returns a function named by the name_len bytes at name that does the work of
    the loop with which React's createElement and cloneElement copy the keys of
    their config into the props of the element:

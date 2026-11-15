@@ -44,6 +44,7 @@ JS_NewError
 JS_NewEscapeTextFunction
 JS_NewHostFunction
 JS_NewHostFunctionRelease
+JS_NewMurmur2Function
 JS_NewObject
 JS_NewPromiseCapability
 JS_NewRuntime

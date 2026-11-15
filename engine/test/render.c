@@ -36,8 +36,8 @@
    (ssr.vm_stack_depth), the engine's __tifa_escape, __tifa_start_tag,
    __tifa_end_tag and __tifa_copy_props, __tifa_async_context__ for the
    AsyncLocalStorage of the bundle, __tifa_random_bytes__ (from a fixed
-   sequence here), and __tifa_murmur2__, the hash of emotion that tifa
-   computes in Go, here in C (murmur=0 leaves it out, and the bundle hashes
+   sequence here), and __tifa_murmur2__, the hash of emotion of the engine
+   (murmur=0 leaves it out, and the bundle hashes
    in JavaScript).
 
    With soak=N it renders the inputs in turn N times in all, with a young
@@ -197,95 +197,8 @@ static JSValue js_perf_now(JSContext *ctx, JSValueConst this_val, int argc, JSVa
     return JS_NewFloat64(ctx, now_ns() / 1e6);
 }
 
-/* murmur2 of @emotion/hash 0.9 over the low bytes b of the UTF-16 code units
-   of a string, in base 36 into out (at least 8 bytes). The JavaScript
-   multiplies in two halves that stay exact doubles, and its bit operators cut
-   each product to 32 bits, so each step is a product of uint32_t. */
-static void murmur2_low(const uint8_t *b, size_t n, char *out)
-{
-    const uint32_t m = 0x5bd1e995;
-    uint32_t h = 0, k;
-    char d[8];
-    int i = 0;
-
-    for (; n >= 4; b += 4, n -= 4) {
-        k = (uint32_t)b[0] | (uint32_t)b[1] << 8 | (uint32_t)b[2] << 16 | (uint32_t)b[3] << 24;
-        k *= m;
-        k ^= k >> 24;
-        h = k * m ^ h * m;
-    }
-    switch (n) {
-    case 3:
-        h ^= (uint32_t)b[2] << 16;
-        /* fall through */
-    case 2:
-        h ^= (uint32_t)b[1] << 8;
-        /* fall through */
-    case 1:
-        h ^= b[0];
-        h *= m;
-    }
-    h ^= h >> 13;
-    h *= m;
-    h ^= h >> 15;
-    do {
-        d[i++] = "0123456789abcdefghijklmnopqrstuvwxyz"[h % 36];
-        h /= 36;
-    } while (h);
-    while (i)
-        *out++ = d[--i];
-    *out = 0;
-}
-
-/* tifa's murmur2 builtin (internal/ssr/hash.go of tifa): the hash of a
-   string argument, undefined for anything else. The string comes as WTF-8
-   (a lone surrogate as the three bytes of its code point), as tifa reads a
-   rope, and each code unit gives its low byte. */
-static JSValue js_murmur2(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
-{
-    const uint8_t *s;
-    uint8_t *low;
-    size_t len, n = 0;
-    char out[8];
-
-    (void)this_val;
-    if (argc < 1 || !JS_IsString(argv[0]))
-        return JS_UNDEFINED;
-    s = (const uint8_t *)JS_ToCStringLen(ctx, &len, argv[0]);
-    if (!s)
-        return JS_EXCEPTION;
-    low = malloc(len ? len : 1);
-    if (!low) {
-        JS_FreeCString(ctx, (const char *)s);
-        return JS_ThrowOutOfMemory(ctx);
-    }
-    for (size_t i = 0; i < len;) {
-        uint8_t c = s[i];
-        if (c < 0x80) {
-            low[n++] = c;
-            i++;
-        } else if (c < 0xe0) {
-            low[n++] = (uint8_t)(c << 6 | (s[i + 1] & 0x3f));
-            i += 2;
-        } else if (c < 0xf0) {
-            low[n++] = (uint8_t)(s[i + 1] << 6 | (s[i + 2] & 0x3f));
-            i += 3;
-        } else {
-            uint32_t r = ((uint32_t)(c & 7) << 18 | (uint32_t)(s[i + 1] & 0x3f) << 12 |
-                          (uint32_t)(s[i + 2] & 0x3f) << 6 | (uint32_t)(s[i + 3] & 0x3f)) - 0x10000;
-            low[n++] = (uint8_t)(0xd800 + (r >> 10));
-            low[n++] = (uint8_t)(0xdc00 + (r & 0x3ff));
-            i += 4;
-        }
-    }
-    JS_FreeCString(ctx, (const char *)s);
-    murmur2_low(low, n, out);
-    free(low);
-    return JS_NewString(ctx, out);
-}
-
-/* __tifa_murmur2__ as tifa defines it on each VM (murmur2Hook of
-   internal/ssr/hash.go): the hash of a string while the page has not replaced
+/* __tifa_murmur2__ as tifa defines it on each VM (murmur2Hook of tifa/hash.go),
+   with the hash of the engine: the hash of a string while the page has not replaced
    String.prototype.charCodeAt or Number.prototype.toString, which the
    JavaScript murmur2 calls, and undefined otherwise, when the bundle hashes
    in JavaScript. */
@@ -302,7 +215,7 @@ static void add_murmur2(JSContext *ctx)
 
     if (JS_IsException(define))
         die(ctx, "murmur2");
-    b = JS_NewCFunction(ctx, js_murmur2, "murmur2", 1);
+    b = JS_NewMurmur2Function(ctx);
     r = JS_Call(ctx, define, JS_UNDEFINED, 1, &b);
     if (JS_IsException(r))
         die(ctx, "murmur2");
@@ -738,7 +651,7 @@ int main(int argc, char **argv)
         JS_SetPropertyStr(ctx, g, "__tifa_end_tag", JS_NewEndTagFunction(ctx, "__tifa_end_tag", 14));
         JS_SetPropertyStr(ctx, g, "__tifa_copy_props", JS_NewCopyPropsFunction(ctx, "__tifa_copy_props", 17));
         JS_FreeValue(ctx, g);
-        /* and tifa's Go hash for emotion, unless murmur=0 leaves the hash to
+        /* and the engine's hash for emotion, unless murmur=0 leaves the hash to
            the JavaScript of the bundle */
         if (atoi(arg(argc, argv, "murmur", "1")))
             add_murmur2(ctx);

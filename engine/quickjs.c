@@ -56608,6 +56608,137 @@ JSValue JS_NewEscapeTextFunction(JSContext *ctx, const char *name, size_t name_l
     return func_obj;
 }
 
+/* murmur2 of @emotion/hash 0.9, which emotion takes of every style it
+   serializes, for a host that asks for it (JS_NewMurmur2Function): the hash
+   of the low byte of each UTF-16 code unit of a string, in base 36, as the
+   function of emotion gives it while String.prototype.charCodeAt and
+   Number.prototype.toString are the built-ins. Its JavaScript multiplies in
+   two halves that stay exact doubles, and its bit operators cut each product
+   to 32 bits, so each step is a product of uint32_t. */
+
+/* units between two reads of the interrupt flag, a multiple of 16 */
+#define JS_MURMUR2_STEP 4096
+
+static inline uint32_t murmur2_mix(uint32_t h, uint32_t k)
+{
+    const uint32_t m = 0x5bd1e995;
+
+    k *= m;
+    k ^= k >> 24;
+    return k * m ^ h * m;
+}
+
+/* the 4 units at s as one block: the first in the low byte */
+static inline uint32_t murmur2_block8(const uint8_t *s)
+{
+    if (is_be())
+        return s[0] | s[1] << 8 | s[2] << 16 | (uint32_t)s[3] << 24;
+    return get_u32(s);
+}
+
+/* the low bytes of the 4 units at s as one block */
+static inline uint32_t murmur2_block16(const uint16_t *s)
+{
+    uint64_t x;
+
+    if (is_be())
+        return (s[0] & 0xff) | (s[1] & 0xff) << 8 | (s[2] & 0xff) << 16 |
+            (uint32_t)(s[3] & 0xff) << 24;
+    x = get_u64((const uint8_t *)s) & 0x00ff00ff00ff00ffULL;
+    x = (x | x >> 8) & 0x0000ffff0000ffffULL;
+    return (uint32_t)(x | x >> 16);
+}
+
+/* h after the units [i, end) of p, end - i a multiple of 4 */
+static uint32_t murmur2_blocks(const JSString *p, uint32_t i, uint32_t end,
+                               uint32_t h)
+{
+    if (p->is_wide_char) {
+        const uint16_t *s = p->u.str16 + i, *e = p->u.str16 + end;
+        for (; e - s >= 16; s += 16) {
+            h = murmur2_mix(h, murmur2_block16(s));
+            h = murmur2_mix(h, murmur2_block16(s + 4));
+            h = murmur2_mix(h, murmur2_block16(s + 8));
+            h = murmur2_mix(h, murmur2_block16(s + 12));
+        }
+        for (; s < e; s += 4)
+            h = murmur2_mix(h, murmur2_block16(s));
+    } else {
+        const uint8_t *s = p->u.str8 + i, *e = p->u.str8 + end;
+        for (; e - s >= 16; s += 16) {
+            h = murmur2_mix(h, murmur2_block8(s));
+            h = murmur2_mix(h, murmur2_block8(s + 4));
+            h = murmur2_mix(h, murmur2_block8(s + 8));
+            h = murmur2_mix(h, murmur2_block8(s + 12));
+        }
+        for (; s < e; s += 4)
+            h = murmur2_mix(h, murmur2_block8(s));
+    }
+    return h;
+}
+
+static JSValue js_murmur2(JSContext *ctx, JSValueConst this_val,
+                          int argc, JSValueConst *argv)
+{
+    const uint32_t m = 0x5bd1e995;
+    JSValue str = JS_UNDEFINED; /* the rope argument joined */
+    JSValueConst v = argv[0];
+    JSString *p;
+    uint32_t h = 0, b[3], n, i, end, full;
+    int j;
+    char d[8], out[8];
+
+    if (JS_VALUE_GET_TAG(v) == JS_TAG_STRING_ROPE) {
+        str = JS_ToString(ctx, v);
+        if (JS_IsException(str))
+            return str;
+        v = str;
+    } else if (JS_VALUE_GET_TAG(v) != JS_TAG_STRING) {
+        return JS_UNDEFINED;
+    }
+    p = JS_VALUE_GET_STRING(v);
+    n = p->len;
+    full = n & ~3u;
+    for (i = 0; i < full; i = end) {
+        if (i > 0 && js_poll_interrupts(ctx)) {
+            JS_FreeValue(ctx, str);
+            return JS_EXCEPTION;
+        }
+        end = full - i > JS_MURMUR2_STEP ? i + JS_MURMUR2_STEP : full;
+        h = murmur2_blocks(p, i, end, h);
+    }
+    for (j = 0; i + j < n; j++)
+        b[j] = (p->is_wide_char ? p->u.str16[i + j] : p->u.str8[i + j]) & 0xff;
+    switch (j) {
+    case 3:
+        h ^= b[2] << 16;
+        /* fall through */
+    case 2:
+        h ^= b[1] << 8;
+        /* fall through */
+    case 1:
+        h ^= b[0];
+        h *= m;
+    }
+    JS_FreeValue(ctx, str);
+    h ^= h >> 13;
+    h *= m;
+    h ^= h >> 15;
+    i = 0;
+    do {
+        d[i++] = "0123456789abcdefghijklmnopqrstuvwxyz"[h % 36];
+        h /= 36;
+    } while (h);
+    for (j = 0; i > 0; j++)
+        out[j] = d[--i];
+    return js_new_string8_len(ctx, out, j);
+}
+
+JSValue JS_NewMurmur2Function(JSContext *ctx)
+{
+    return JS_NewCFunction(ctx, js_murmur2, "murmur2", 1);
+}
+
 /* ---- the copy of the props of an element in React ---- */
 
 /* React's createElement and cloneElement copy the keys of their config into
