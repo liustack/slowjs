@@ -1057,6 +1057,49 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `test_spread_refs`（`engine/test/unit-white.c`）：把一个对象、一个 80 个字符的字符串和一个 symbol 展开三次，分别进字面量和调用，源数组一个能被复制、一个被拒绝，同时让每次分配轮流失败，第三次展开时数组的增长也在其中。每次运行之后，每个元素的引用数都和之前一样：复制多留一个引用就会让它失败，而 `test_spread_alloc` 的整数元素看不出这一点。
 - `engine/test/compare/spread_iterator.js`（见上一节）覆盖复制不接手的迭代器。
 
+## 用 apply 传下参数时不造 arguments 对象
+
+发布版本：Unreleased。
+
+`f.apply(this, arguments)` 是一个函数把全部参数原样传下去的写法：老式写法造出的类，构造函数就是这样（`function K() { this.initialize.apply(this, arguments); }`），还有在调用前后加一步的包装函数。参数列表简单的非严格函数，原来不管拿 arguments 做什么，进入时都先造出映射的 arguments 对象，因为只有严格函数才在读取需要时再造。随后 `apply` 把这个对象的长度和每个元素读进自己的一个列表（`build_arg_list`），再经 `JS_CallInternal` 调用 `f`，那里又开一轮寄存器循环。在 Apple M4 上，这样一次调用比直接调用 `f` 多约 1,650 条指令，还多占一层调用深度。
+
+V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个这种函数。在仓库之外计数的 12 个基于常用库的 React 页面（recharts 和 d3、Redux Toolkit 和 immer、Radix、antd、styled-components 等）里，chart 每次渲染有 619 次，state 1,048 次，antd 468 次，radix 159 次，算上别的用法，chart 每次渲染造 13,844 个映射的 arguments 对象，antd 9,537 个，radix 1,813 个。tifa 的页面每次渲染最多造 171 个 arguments 对象。
+
+两处改动，都在 `engine/regvm-ops-args.h`：
+
+- **映射的 arguments 等读取需要时再造。** `rv_lazy_args` 现在也接受参数列表简单的非严格函数（`rv_args_mapped`）。`arguments.length` 和 `arguments[i]` 直接读帧（`ARGLEN`、`ARGGET`），对这个局部变量的其他读取先造出映射对象，用的是进入时用的那个函数（`rv_build_mapped_arguments`）。照旧拒绝的有：`arguments` 局部变量被捕获的函数（箭头函数或直接 `eval` 读了它）、生成器和 async 函数，现在再加上经 `with` 或直接 `eval` 引用参数的函数（`make_arg_ref`）。参数列表不简单的非严格代码，照旧在进入时造不映射的对象。
+- **`CALLMA`。** 一个带两个参数的方法调用，最后一个参数是这个延后造的局部变量，并且中间什么也没有就直接读到时，转换在这次调用的 `CALLM` 或 `CALLMD` 前面放一个 `CALLMA`。只要对象还没造出、方法是 `Function.prototype.apply`，`CALLMA` 就自己调用 `f`：把帧里的参数复制进这次调用的窗口作为参数，把 `apply` 留在结果的槽里，经慢入口（`rv_enter_args`）在同一个循环里进入 `f`，新帧的头里带上标志 `RV_DST_APPLY`。其他情况下，它把对象造进局部变量，作为最后一个参数传过去，由 `CALLM` 照旧调用 `apply`。
+
+### 为什么结果不变
+
+映射对象把参数个数以内的每个下标映射到参数本身，所以读到的是读取那一刻参数的值，而不是进入时的值。帧运行期间，它的槽里放着每个参数，捕获参数的闭包也经它的引用读写这个槽。超出参数个数的实参没有名字，除了对象本身没有东西能写它。所以在第一次需要它的读取时造出的对象，内容和进入时造出的对象在那一刻的内容相同，之后的读取看到的都是这同一个对象。严格函数的对象复制的是进入时的值，所以它仍然要求没有任何指令写参数。带 `make_arg_ref` 的函数也一并拒绝：这种函数很少，拒绝它不需要证明。
+
+下面几条全部成立时 `CALLMA` 才自己调用，否则照旧：
+
+- 局部变量还是 undefined：还没有读取造出过对象，所以脚本不可能改过它
+- 读到的方法是本 realm 的 `Function.prototype.apply`：一个 C 函数，函数是 `js_function_apply` 且 magic 为 0（`Reflect.apply` 和带展开的 `new` 用 2 和 1），realm 是本 realm。`apply` 的 getter 此时已经照旧跑过
+- `f` 是本 realm 的字节码函数，并且寄存器循环能运行它
+- 参数个数不超过 65,534，即 `apply` 检查的上限（`JS_MAX_LOCAL_VARS`），寄存器栈的当前段放得下这个帧，中断标志没有置位，没有待抛的不可捕获错误，调用深度没到上限，也就是循环内调用要做的那些检查
+
+拿本 realm 的 arguments 对象调用 `apply`，会读它的 `length` 和其下的每个下标。对象还没造出时，长度就是实参个数，每个下标都是对象自己的属性，值是参数此刻的值或传进来的实参，所以 `Object.prototype` 上的 getter 跑不到，而 `CALLMA` 复制的正是这些值。它像 `apply` 一样原样传 `this`，非严格的 `f` 照旧在入口处转换 `this`。绑定函数、Proxy、C 函数、类构造函数（照旧在自己的帧里抛错）、别的 realm 的函数、被换掉、删掉或在 `f` 上被遮住的 `apply`，以及已经造出的对象，都走原来的路。
+
+在 `f` 里或它下面造出的错误，栈里 `f` 和它的调用者之间照旧有 `at apply (native)`，和 C 调用 `apply` 时一样：遍历帧（`JSFrameWalk`，`engine/quickjs.c`）时，每个带 `RV_DST_APPLY` 的帧下面都给出一个 `apply` 的帧，它的函数就是调用者槽里留着的 `apply`。这种帧返回或展开时，先释放这个 `apply`，槽再拿到结果（`rv_apply_unpark`）。被调用的函数在入口处读中断标志，和循环里每次调用一样，所以 eval 超时和 `Interrupt` 能停下它里面的循环。有不可捕获错误待抛时，`CALLMA` 走原来的路，照旧拒绝这次调用。
+
+变了但脚本看不到的：不造 arguments 对象，也不造参数列表，一次调用分配更少，在内存上限下，内存不足的错误可能来得更晚，或者不来。传下去的调用只占一层调用深度，`apply` 原来占两层，所以经过它的递归更深：默认 `SetMaxStackSize` 下，非严格的从 2,497 层变成 4,988 层，中间隔一次调用的严格递归从 1,664 层变成 2,495 层。用数组调用 `f.apply` 照旧是 2,497 层。
+
+帧：`JS_RegvmRun`（amd64 上 256 字节，arm64 上 176）和 `JS_CallInternal`（112 和 96）的影子帧不变。`rv_callma` 占 80 和 64 字节，它在 `f` 运行前就返回，所以传下去的每一层不占影子栈，也不占 Go 栈，而 C 调用 `apply` 要占 `JS_CallInternal` 的帧和新一轮 `JS_RegvmRun` 的帧。转换阶段的函数 `rv_call` 在两种架构上都从 64 字节变成 128，只在转换时出现。`rv_args` 现在调用 `rv_build_mapped_arguments`（48 字节），原来是内联的。深度测试（`TestRegvmDepth`、`TestShadowStack*`、`TestCCallDepth`、`TestRegvmFrame`）照常通过。
+
+### 收益
+
+2026-11-15 对照 main 的 d7c86e16 计数（做法和更多数字见 [performance.md](../performance.zh-CN.md#用-apply-传下参数)）。Apple M4 上的本地 C 树：一次 `f.apply(this, arguments)` 调用从 2,874 条指令降到 1,516 条，非严格函数读 `arguments.length` 从 1,597 条降到 788 条。linux/amd64 上用 callgrind 数本地 C 树：RayTrace 每轮迭代少 23.35% 的指令，Earley 少 3.22%，V8 套件其余基准变化在 0.08% 以内，12 个 React 页面里 chart 每次渲染少 2.33%，radix 少 0.58%，styled 少 0.45%，antd 少 0.35%，其余最多多 0.15%。tifa 的页面不传参数，在本地 C 树上多 0.8% 到 1.6%，分散在 clang 本地编译出的 `JS_RegvmRun` 循环里。在用 `engine/pgo/loops.js` 里为这条路径加的那段重新训练 profile 的 Go 引擎上（M4），chart 少 2.57%，其余页面和 tifa 的页面的变化都在计数器的噪声以内，amd64 上用 callgrind 数，tifa 的页面多 0.04% 到 0.10%。每个页面的 HTML 都不变。
+
+### 测试
+
+- `engine/test/compare/apply_arguments.js`：在非严格和严格函数里调用 `f.apply(x, arguments)`，实参比参数少、一样多和多，调用前后写参数，读、写、留下或展开这个对象，每种被调用者和 `this`，`apply` 被换掉、经 getter 读取、被遮住和经 `call` 调用，`Reflect.apply`，被调用者经闭包写调用者的参数，递归，很多参数，以及被调用者抛出的错误。`engine/test/compare/sloppy_arguments_reads.js`：非严格函数里的 `arguments.length` 和 `arguments[key]`，每种键，经参数和经对象的写入，同一个参数名写两次。两个文件都是 Node 24 的输出，main 也给出同样的输出。
+- `engine/test/regvm/js/c-applyargs.js`：同样的写法，0 到 7 个和 300 个实参，丢弃结果，连续两次传下去，嵌套传下去，构造函数传给自己的 `init`，绑定函数、Proxy、类构造函数、C 函数，别的 realm 的函数和 `apply`，在被调用者里造出和抛出的错误的栈，以及经它递归的深度。`engine/test/regvm/js/e-applyargs-interrupt.js`：在传下去的调用里来一次中断。两者都有语料三种模式的金标准输出和注入集的金标准输出（`// inject-hit: CALLMA 1`）。
+- `test_regvm_args_oom`（`engine/test/unit-oom.c`）：延后造的映射对象和每种传下去的调用，同时让每次分配轮流失败。`test_uncatchable_apply_forward`：不可捕获错误待抛之后，传下去的调用不运行被调用者。
+- `TestRegvmApplyArgumentsStops`：eval 超时和 `Interrupt` 能停下传下去的调用里的循环，栈里被调用者和它的调用者之间有 `apply`，停下之后 VM 照常应答。
+
 ## 热调用少传参数字
 
 发布：v0.30.6。

@@ -1,0 +1,171 @@
+sloppy, no parameters 0: string:this:obj:t n:0
+sloppy, no parameters 1: string:this:obj:t n:1 number:1
+sloppy, no parameters 2: string:this:obj:t n:2 number:1 number:2
+sloppy, no parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+sloppy, no parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+sloppy, two parameters 0: string:this:obj:t n:0
+sloppy, two parameters 1: string:this:obj:t n:1 number:1
+sloppy, two parameters 2: string:this:obj:t n:2 number:1 number:2
+sloppy, two parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+sloppy, two parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+strict, no parameters 0: string:this:obj:t n:0
+strict, no parameters 1: string:this:obj:t n:1 number:1
+strict, no parameters 2: string:this:obj:t n:2 number:1 number:2
+strict, no parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+strict, no parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+strict, two parameters 0: string:this:obj:t n:0
+strict, two parameters 1: string:this:obj:t n:1 number:1
+strict, two parameters 2: string:this:obj:t n:2 number:1 number:2
+strict, two parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+strict, two parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result dropped 0: number:0
+result dropped 1: number:0
+result dropped 2: number:0
+result dropped 3: number:0
+result dropped 5: number:0
+result dropped, callee logs 0: string:done
+result dropped, callee logs 1: string:done
+result dropped, callee logs 2: string:done
+result dropped, callee logs 3: string:done
+result dropped, callee logs 5: string:done
+callee logged 0,1,2,3,5
+sloppy, parameters written before 0: string:this:obj:t n:0
+sloppy, parameters written before 1: string:this:obj:t n:1 string:A
+sloppy, parameters written before 2: string:this:obj:t n:2 string:A string:B
+sloppy, parameters written before 3: string:this:obj:t n:3 string:A string:B number:3
+sloppy, parameters written before 5: string:this:obj:t n:5 string:A string:B number:3 number:4 number:5
+strict, parameters written before 0: string:this:obj:t n:0
+strict, parameters written before 1: string:this:obj:t n:1 number:1
+strict, parameters written before 2: string:this:obj:t n:2 number:1 number:2
+strict, parameters written before 3: string:this:obj:t n:3 number:1 number:2 number:3
+strict, parameters written before 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+sloppy with a default, parameter written 0: string:this:obj:t n:0
+sloppy with a default, parameter written 1: string:this:obj:t n:1 number:1
+sloppy with a default, parameter written 2: string:this:obj:t n:2 number:1 number:2
+sloppy with a default, parameter written 3: string:this:obj:t n:3 number:1 number:2 number:3
+sloppy with a default, parameter written 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+sloppy, parameter written after 0: string:this:obj:t n:0 | undefined 0
+sloppy, parameter written after 1: string:this:obj:t n:1 number:1 | late 1
+sloppy, parameter written after 2: string:this:obj:t n:2 number:1 number:2 | late 2
+sloppy, parameter written after 3: string:this:obj:t n:3 number:1 number:2 number:3 | late 3
+sloppy, parameter written after 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5 | late 5
+sloppy, reads and forwards 0: string:0 undefined | this:obj:t n:0
+sloppy, reads and forwards 1: string:1 undefined | this:obj:t n:1 number:1
+sloppy, reads and forwards 2: string:2 2 | this:obj:t n:2 number:1 number:2
+sloppy, reads and forwards 3: string:3 2 | this:obj:t n:3 number:1 number:2 number:3
+sloppy, reads and forwards 5: string:5 2 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+strict, reads and forwards 0: string:0 undefined | this:obj:t n:0
+strict, reads and forwards 1: string:1 undefined | this:obj:t n:1 number:1
+strict, reads and forwards 2: string:2 2 | this:obj:t n:2 number:1 number:2
+strict, reads and forwards 3: string:3 2 | this:obj:t n:3 number:1 number:2 number:3
+strict, reads and forwards 5: string:5 2 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+two forwards 0: string:key:undefined | this:obj:t n:0
+two forwards 1: string:key:1 | this:obj:t n:1 number:1
+two forwards 2: string:key:1 | this:obj:t n:2 number:1 number:2
+two forwards 3: string:key:1 | this:obj:t n:3 number:1 number:2 number:3
+two forwards 5: string:key:1 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+arguments[0] written 0: string:this:obj:t n:0 a=undefined
+arguments[0] written 1: string:this:obj:t n:1 string:w a=w
+arguments[0] written 2: string:this:obj:t n:2 string:w number:2 a=w
+arguments[0] written 3: string:this:obj:t n:3 string:w number:2 number:3 a=w
+arguments[0] written 5: string:this:obj:t n:5 string:w number:2 number:3 number:4 number:5 a=w
+kept in a variable 0: string:this:obj:t n:0 | undefined
+kept in a variable 1: string:this:obj:t n:1 string:late | late
+kept in a variable 2: string:this:obj:t n:2 string:late number:2 | late
+kept in a variable 3: string:this:obj:t n:3 string:late number:2 number:3 | late
+kept in a variable 5: string:this:obj:t n:5 string:late number:2 number:3 number:4 number:5 | late
+spread 0: string:this:u n:0
+spread 1: string:this:u n:1 number:1
+spread 2: string:this:u n:2 number:1 number:2
+spread 3: string:this:u n:3 number:1 number:2 number:3
+spread 5: string:this:u n:5 number:1 number:2 number:3 number:4 number:5
+apply through call 0: string:this:obj:t n:0
+apply through call 1: string:this:obj:t n:1 number:1
+apply through call 2: string:this:obj:t n:2 number:1 number:2
+apply through call 3: string:this:obj:t n:3 number:1 number:2 number:3
+apply through call 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+Reflect.apply 0: string:this:obj:t n:0
+Reflect.apply 1: string:this:obj:t n:1 number:1
+Reflect.apply 2: string:this:obj:t n:2 number:1 number:2
+Reflect.apply 3: string:this:obj:t n:3 number:1 number:2 number:3
+Reflect.apply 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+apply with a third argument 0: string:this:obj:t n:0
+apply with a third argument 1: string:this:obj:t n:1 number:1
+apply with a third argument 2: string:this:obj:t n:2 number:1 number:2
+apply with a third argument 3: string:this:obj:t n:3 number:1 number:2 number:3
+apply with a third argument 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+from an arrow function 0: string:this:obj:t n:0
+from an arrow function 1: string:this:obj:t n:1 string:A
+from an arrow function 2: string:this:obj:t n:2 string:A number:2
+from an arrow function 3: string:this:obj:t n:3 string:A number:2 number:3
+from an arrow function 5: string:this:obj:t n:5 string:A number:2 number:3 number:4 number:5
+length set 0: string:this:obj:t n:1 u
+length set 1: string:this:obj:t n:1 number:1
+length set 2: string:this:obj:t n:1 number:1
+length set 3: string:this:obj:t n:1 number:1
+length set 5: string:this:obj:t n:1 number:1
+callee read after 0: string:this:obj:t n:0 callee true
+callee read after 1: string:this:obj:t n:1 number:1 callee true
+callee read after 2: string:this:obj:t n:2 number:1 number:2 callee true
+callee read after 3: string:this:obj:t n:3 number:1 number:2 number:3 callee true
+callee read after 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5 callee true
+sloppy callee, this undefined: string:this:global n:2 number:1 number:2
+strict callee, this undefined: string:this:u n:2 number:1 number:2
+sloppy callee, this null: string:this:global n:2 number:1 number:2
+strict callee, this null: string:this:n n:2 number:1 number:2
+sloppy callee, this a number: string:this:box:number:5 n:2 number:1 number:2
+strict callee, this a number: string:this:number:5 n:2 number:1 number:2
+sloppy callee, this a string: string:this:box:string:s n:2 number:1 number:2
+strict callee, this a string: string:this:string:s n:2 number:1 number:2
+sloppy callee, this an object: string:this:obj:t n:2 number:1 number:2
+strict callee, this an object: string:this:obj:t n:2 number:1 number:2
+sloppy forward to an arrow function: string:arrow 3
+strict forward to an arrow function: string:arrow 3
+sloppy forward to a bound function: string:this:obj:bound n:4 string:b0 number:1 number:2 number:3
+strict forward to a bound function: string:this:obj:bound n:4 string:b0 number:1 number:2 number:3
+sloppy forward to a bound arrow function: string:x/1/2/3
+strict forward to a bound arrow function: string:x/1/2/3
+sloppy forward to a proxy: string:trap 3 this:obj:t n:3 number:1 number:2 number:3
+strict forward to a proxy: string:trap 3 this:obj:t n:3 number:1 number:2 number:3
+sloppy forward to a revoked proxy: string:throws TypeError
+strict forward to a revoked proxy: string:throws TypeError
+sloppy forward to a class: string:throws TypeError
+strict forward to a class: string:throws TypeError
+sloppy forward to a derived class: string:throws TypeError
+strict forward to a derived class: string:throws TypeError
+sloppy forward to Math.max: number:3
+strict forward to Math.max: number:3
+sloppy forward to Array.prototype.push on this: number:4
+strict forward to Array.prototype.push on this: number:4
+sloppy forward to a generator function: string:gen number:1 number:2
+strict forward to a generator function: string:gen number:1 number:2
+sloppy forward to an async function: string:promise
+strict forward to an async function: string:promise
+sloppy forward to a method: string:m 12
+strict forward to a method: string:m 12
+sloppy forward to a getter of a function: string:getter 3
+strict forward to a getter of a function: string:getter 3
+sloppy forward to an object: string:throws TypeError
+strict forward to an object: string:throws TypeError
+sloppy forward to undefined: string:throws TypeError
+strict forward to undefined: string:throws TypeError
+sloppy forward to a number: string:throws TypeError
+strict forward to a number: string:throws TypeError
+sloppy forward to an object with apply: string:throws TypeError
+strict forward to an object with apply: string:throws TypeError
+new.target: string:no new.target
+apply replaced: string:replaced obj:t 3 [object Arguments] | replaced obj:t 1 [object Arguments]
+apply as a getter: string:this:obj:t n:2 number:1 number:2 | reads true
+apply deleted: string:throws TypeError
+apply of the callee shadowed: string:own apply 2
+apply restored: string:this:obj:t n:1 string:r
+call of another prototype chain: string:chain 3
+callee writes the caller parameter: string:callee sees 1 1 a=changed arg0=changed
+callee writes its own arguments: string:callee mine2 a=orig
+recursion 1000: number:500500
+recursion with extra arguments: number:50
+10000 arguments: string:49995000:10000
+10000 arguments, strict: number:118904
+callee throws: string:throws TypeError k2
+callee throws, strict: string:throws TypeError k3
+callee throws, caught by the caller: string:caught k4 2

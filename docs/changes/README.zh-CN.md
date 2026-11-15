@@ -57,6 +57,7 @@ read_when:
 | 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
 | 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 | `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
+| 参数列表简单的非严格函数等读取需要时才造 arguments 对象，`f.apply(this, arguments)` 在寄存器循环里直接用帧里的参数调用 `f`，不造 arguments 对象和参数列表，只占一层调用深度 | Unreleased | [c-engine.md](c-engine.zh-CN.md#用-apply-传下参数时不造-arguments-对象) |
 
 ## 生成器
 

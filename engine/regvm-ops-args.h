@@ -26,6 +26,9 @@ RV_OP(ARGLEN)   /* d a: arguments.length, a the arguments local of
 RV_OP(ARGGET)   /* d a key: arguments[key], the same a */
 RV_OP(ARGMAT)   /* d a: d = the object in a, built there first if a is
                    undefined: any other read of the same a */
+RV_OP(CALLMA)   /* w a drop: f.apply(t, arguments), the window w as the
+                   CALLM (drop: CALLMD) right after it has it, but for its
+                   last argument, a the arguments local of rv_lazy_args */
 #elif RV_PART == RV_PART_INFO
     case OP_rest:
         return 0;
@@ -39,19 +42,19 @@ RV_OP(ARGMAT)   /* d a: d = the object in a, built there first if a is
 static void rv_args_pass(RVPass *s, int kind, int first)
 {
     int d = rv_tslot(s, s->sp);
-    if (kind == RV_ARGS_PLAIN && s->lazy_args) {
-        /* nothing at entry: the put_loc of the local after it is read with
-           it, and the local stays undefined until ARGGET builds the
-           object (rv_lazy_args) */
-        s->skip_to = s->pos + 2 + short_opcode_info(s->bc[s->pos + 2]).size;
-        s->args = TRUE;
-        return;
-    }
     /* the mapped arguments are var refs into the frame's closure state:
        the compiler marks every argument of the function captured, so a
        function with arguments has one */
     if (kind == RV_ARGS_MAPPED && s->b->arg_count && !s->b->var_ref_count) {
         rv_crafted(s);
+        return;
+    }
+    if (kind != RV_ARGS_REST && s->lazy_args) {
+        /* nothing at entry: the put_loc of the local after it is read with
+           it, and the local stays undefined until ARGGET builds the
+           object (rv_lazy_args) */
+        s->skip_to = s->pos + 2 + short_opcode_info(s->bc[s->pos + 2]).size;
+        s->args = TRUE;
         return;
     }
     rv_emit(s, RV_ARGS);
@@ -104,9 +107,10 @@ static int rv_named_local(const uint8_t *p, int op, BOOL *get)
 }
 
 /* the get of a local at pos goes straight to the object operand of a
-   get_length or a get_array_el, with no jump and no block start on the
-   way, so that the entry is still the lazy read of the local there: the
-   first instruction after it that pops it, through the depths of
+   get_length or a get_array_el, or to the last argument of a call_method
+   of two (f.apply(t, arguments), CALLMA), with no jump and no block start
+   on the way, so that the entry is still the lazy read of the local there:
+   the first instruction after it that pops it, through the depths of
    rv_depths */
 static BOOL rv_lazy_fast(RVPass *s, int pos)
 {
@@ -126,44 +130,67 @@ static BOOL rv_lazy_fast(RVPass *s, int pos)
             return FALSE;
     }
     return (bc[q] == OP_get_length && s->depth[q] == d + 1) ||
-           (bc[q] == OP_get_array_el && s->depth[q] == d + 2);
+           (bc[q] == OP_get_array_el && s->depth[q] == d + 2) ||
+           ((bc[q] == OP_call_method || bc[q] == OP_tail_call_method) &&
+            get_u16(bc + q + 1) == 2 && s->depth[q] == d + 1);
 }
 
-/* The arguments object of a strict function made only when a read needs
-   it: the slot of its local, or 0 when the function makes it at entry.
-   A normal function (no generator, no async function) qualifies when the
-   object has the values of entry whenever it is built: no instruction
-   writes an argument and no closure captures one, nor the local. Every
-   read of the local, but the put_loc of the prologue (special_object
-   ARGUMENTS then put_loc), is a get, and at least one goes straight to
-   the object operand of a get_length or a get_array_el (rv_lazy_fast):
-   ARGLEN and ARGGET read the frame there while the local is undefined.
-   Any other get, an escape, is ARGMAT, which builds the object into the
-   local if it is not there and copies it: from then on every read of the
-   call sees that object, as it would the one made at entry. A direct eval or an arrow function that reads arguments
-   captures the local, strict code cannot assign it, and Error.stack and
-   the backtrace show no argument. Not for a function that folds or names
-   slots past -128 (the pass reads those differently). One walk for the
-   prologue and the writes, one for the reads. */
+/* the arguments object of b is mapped: a sloppy function with a simple
+   parameter list, as the compiler decides it (special_object
+   MAPPED_ARGUMENTS) */
+static inline BOOL rv_args_mapped(const JSFunctionBytecode *b)
+{
+    return !(b->js_mode & JS_MODE_STRICT) && b->has_simple_parameter_list;
+}
+
+/* The arguments object made only when a read needs it: the slot of its
+   local, or 0 when the function makes it at entry. A normal function (no
+   generator, no async function) qualifies when the object built later
+   holds what the one made at entry would hold then. Strict code
+   (special_object ARGUMENTS) copies the values of entry, so no
+   instruction may write an argument and no closure capture one. A sloppy
+   function with a simple parameter list (MAPPED_ARGUMENTS, rv_args_mapped)
+   maps each argument below arg_count to its parameter, whose slot in the
+   frame holds its value now whoever wrote it (a closure too, as its var
+   ref is that slot while the frame runs), and the arguments past arg_count
+   have no name, so nothing writes them: its parameters may be written and
+   are captured anyway, only make_arg_ref, a reference of with or eval, is
+   refused. In both no closure captures the local (a direct eval or an
+   arrow function that reads arguments does), and every read of the local,
+   but the put_loc of the prologue (special_object then put_loc), is a get,
+   at least one going straight to the object operand of a get_length or a
+   get_array_el, or as the second argument of a call_method of two
+   (rv_lazy_fast): ARGLEN, ARGGET and CALLMA read the frame there while the
+   local is undefined. Any other get, an escape, is ARGMAT, which builds the
+   object into the local if it is not there and copies it: from then on
+   every read of the call sees that object, as it would the one made at
+   entry. Error.stack and the backtrace show no argument, and
+   Function.prototype.arguments throws. Not for a function that folds or
+   names slots past -128 (the pass reads those differently). One walk for
+   the prologue and the writes, one for the reads. */
 static int rv_lazy_args(RVPass *s)
 {
     JSFunctionBytecode *b = s->b;
     const uint8_t *bc = s->bc;
     int pos, op, size, a = -1, init = -1, idx, i;
-    BOOL get, fast = FALSE;
+    BOOL get, fast = FALSE, mapped = rv_args_mapped(b);
 
-    if (b->func_kind != JS_FUNC_NORMAL || !(b->js_mode & JS_MODE_STRICT) ||
-        s->fold || s->wide)
+    if (b->func_kind != JS_FUNC_NORMAL || s->fold || s->wide)
         return 0;
     for (pos = 0; pos < s->len; pos += size) {
         op = bc[pos];
         size = short_opcode_info(op).size;
         switch (op) {
         case OP_special_object:
-            if (bc[pos + 1] == OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS)
-                return 0;
-            if (bc[pos + 1] != OP_SPECIAL_OBJECT_ARGUMENTS)
+            if (bc[pos + 1] != OP_SPECIAL_OBJECT_ARGUMENTS &&
+                bc[pos + 1] != OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS)
                 break;
+            /* plain arguments of sloppy code (a parameter list that is not
+               simple) are left as they are made: its parameters may be
+               written */
+            if ((bc[pos + 1] == OP_SPECIAL_OBJECT_MAPPED_ARGUMENTS) != mapped ||
+                (!mapped && !(b->js_mode & JS_MODE_STRICT)))
+                return 0;
             if (a >= 0 || pos + 2 >= s->len)
                 return 0;
             switch (bc[pos + 2]) {
@@ -176,16 +203,20 @@ static int rv_lazy_args(RVPass *s)
             a = rv_named_local(bc + pos + 2, bc[pos + 2], &get);
             init = pos + 2;
             break;
-        case OP_put_arg: case OP_set_arg: case OP_make_arg_ref:
+        case OP_make_arg_ref:
+            return 0;
+        case OP_put_arg: case OP_set_arg:
         case OP_put_arg0: case OP_put_arg1: case OP_put_arg2: case OP_put_arg3:
         case OP_set_arg0: case OP_set_arg1: case OP_set_arg2: case OP_set_arg3:
-            return 0;
+            if (!mapped)
+                return 0;
+            break;
         }
     }
     if (a < 0 || a >= b->var_count)
         return 0;
     if (b->var_ref_count) {
-        for (i = 0; i < b->arg_count; i++) {
+        for (i = 0; i < b->arg_count && !mapped; i++) {
             if (b->vardefs[i].is_captured)
                 return 0;
         }
@@ -383,6 +414,15 @@ static JSValue rv_build_rest(JSContext *ctx, JSValue *F, const RVFunc *rf, int a
     return obj;
 }
 
+/* the arguments object of rv_lazy_args for the frame F with the header h,
+   mapped or not as the function's code makes it at entry */
+static JSValue rv_build_lazy(JSContext *ctx, JSValue *F, RVHeader *h)
+{
+    if (rv_args_mapped(h->rf->b))
+        return rv_build_mapped_arguments(ctx, F, h->rf, h->argc);
+    return rv_build_arguments(ctx, F, h->rf, h->argc);
+}
+
 /* the slow side of ARGLEN, ip at d a: the length of the object built in
    the local, which a script may have redefined, else the count */
 static no_inline int rv_arglen_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
@@ -423,7 +463,7 @@ static no_inline int rv_argget_slow(JSContext *ctx, JSValue *F, const uint8_t *i
                    JS_DupValue(ctx, rv_arg_at(F, h->rf, h->argc, JS_VALUE_GET_INT(key))));
             return 0;
         }
-        v = rv_build_arguments(ctx, F, h->rf, h->argc);
+        v = rv_build_lazy(ctx, F, h);
         if (JS_IsException(v)) {
             JS_FreeValue(ctx, key);
             return -1;
@@ -447,7 +487,7 @@ static no_inline int rv_argmat_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     if (RV_INJ_HIT(ctx))
         return -1;
     if (JS_IsUndefined(*pa)) {
-        v = rv_build_arguments(ctx, F, h->rf, h->argc);
+        v = rv_build_lazy(ctx, F, h);
         if (JS_IsException(v))
             return -1;
         *pa = v;
@@ -480,6 +520,84 @@ static no_inline int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
     rv_put(ctx, F, (int8_t)ip[0], v);
     return 0;
 }
+/* CALLMA, ip at w a drop, the CALLM or CALLMD w 2 that follows it ending
+   at end: the call of f.apply(t, arguments) of a function whose arguments
+   object is not built yet (rv_lazy_args), with W[-1] f, W[0] what was read
+   for its apply and W[1] t, W[2] not set yet. When W[0] is
+   Function.prototype.apply of this realm, f a converted function of
+   bytecode of this realm and the call could go into the loop from here,
+   the loop calls f with this t and the frame's own arguments, as apply
+   would call it with the values of the object: the arguments of F, read
+   in place (rv_arg_at, the parameters as they are now, as the mapped
+   object shows them), go into the window as the arguments of the call,
+   and f is entered through the slow entry (rv_enter_args) with RV_DST_APPLY
+   and the result and the return of the CALLM. apply is kept in W[-1], the
+   slot of the result, until the frame of f returns or is left
+   (rv_apply_unpark), and a stack trace shows its frame there
+   (rv_frame_apply), as it showed the frame of the C call of apply. Returns
+   the frame of f. Otherwise the object is built into the local, if it is
+   not there, and W[2] gets it: F is returned, and the CALLM makes the
+   call as before. NULL: out of memory there. */
+static JSValue *rv_enter_args(JSContext *ctx, JSValue *F, const uint8_t *pc,
+                              JSValue *W, int argc, JSValue this_v, int dst);
+
+static no_inline JSValue *rv_callma(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                    const uint8_t *end)
+{
+    JSRuntime *rt = ctx->rt;
+    RVHeader *h = (RVHeader *)F;
+    JSValue *W = F + (int8_t)ip[0], *pa = &F[(int8_t)ip[1]], this_v, v;
+    JSObject *p;
+    const RVFunc *rf;
+    int argc = h->argc, i, dst;
+
+    if (JS_IsUndefined(*pa) && JS_VALUE_GET_TAG(W[0]) == JS_TAG_OBJECT &&
+        JS_VALUE_GET_TAG(W[-1]) == JS_TAG_OBJECT && !RV_INJ_ARMED) {
+        p = JS_VALUE_GET_OBJ(W[0]);
+        if (p->class_id != JS_CLASS_C_FUNCTION ||
+            p->u.cfunc.cproto != JS_CFUNC_generic_magic ||
+            p->u.cfunc.c_function.generic_magic != js_function_apply ||
+            p->u.cfunc.magic != 0 || p->u.cfunc.realm != ctx)
+            goto generic;
+        p = JS_VALUE_GET_OBJ(W[-1]);
+        if (p->class_id != JS_CLASS_BYTECODE_FUNCTION ||
+            p->u.func.function_bytecode->realm != ctx)
+            goto generic;
+        rf = p->u.func.function_bytecode->rv;
+        /* not converted yet or refused, too many arguments for apply
+           (build_arg_list), no room in the segment, and the checks of the
+           entry of JS_CallInternal */
+        if (rf->arg_count < 0 || argc > JS_MAX_LOCAL_VARS ||
+            (uint8_t *)(W + (argc > rf->arg_count ? argc + 1 : 0)) + rf->room_b >
+            (uint8_t *)rt->rv_end ||
+            poll_flag(&rt->interrupt_flag) || js_uncatchable_pending(rt) ||
+            rt->call_depth >= rt->max_call_depth)
+            goto generic;
+        this_v = W[1];
+        v = W[0];
+        W[0] = W[-1];
+        W[-1] = v;
+        for (i = 0; i < argc; i++)
+            W[1 + i] = JS_DupValue(ctx, rv_arg_at(F, h->rf, argc, i));
+        dst = ip[2] ? RV_DST_DROP : (int8_t)ip[0] - 1;
+        rt->call_depth++;
+        F = rv_enter_args(ctx, F, end, W, argc, this_v, dst);
+        ((RVHeader *)F)->dst |= RV_DST_APPLY;
+        return F;
+    }
+ generic:
+    if (RV_INJ_HIT(ctx))
+        return NULL;
+    if (JS_IsUndefined(*pa)) {
+        v = rv_build_lazy(ctx, F, h);
+        if (JS_IsException(v))
+            return NULL;
+        *pa = v;
+    }
+    W[2] = JS_DupValue(ctx, *pa);
+    return F;
+}
+
 #elif RV_PART == RV_PART_RUN
  rv_ARGS:
     ip = pc; pc += 4;
@@ -522,5 +640,19 @@ static no_inline int rv_args(JSContext *ctx, JSValue *F, const uint8_t *ip)
     RV_SYNC_TOP();
     if (rv_argmat_slow(ctx, F, ip))
         goto rv_exception;
+    RV_NEXT();
+
+    /* the CALLM after it makes the call, or the frame of f runs */
+ rv_CALLMA:
+    ip = pc; pc += 3;
+    RV_SYNC_TOP();
+    W = rv_callma(ctx, F, ip, pc + 3);
+    if (unlikely(!W))
+        goto rv_exception;
+    if (W != F) {
+        poll_count(POLL_WEIGHT);
+        F = W;
+        pc = ((RVHeader *)F)->rf->code;
+    }
     RV_NEXT();
 #endif

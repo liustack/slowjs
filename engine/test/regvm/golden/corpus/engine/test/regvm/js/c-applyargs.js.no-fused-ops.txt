@@ -1,0 +1,271 @@
+result show 0 0 o:0
+result show 1 0 o:0
+result show 2 0 o:0
+result show 3 0 o:0
+result show 0 1 o:1:x
+result show 1 1 o:1:x
+result show 2 1 o:1:x
+result show 3 1 o:1:x
+result show 0 2 o:2:x:y
+result show 1 2 o:2:x:y
+result show 2 2 o:2:x:y
+result show 3 2 o:2:x:y
+result show 0 3 o:3:1:2:3
+result show 1 3 o:3:1:2:3
+result show 2 3 o:3:1:2:3
+result show 3 3 o:3:1:2:3
+result show 0 7 o:7:1:2:3:4:5:6
+result show 1 7 o:7:1:2:3:4:5:6
+result show 2 7 o:7:1:2:3:4:5:6
+result show 3 7 o:7:1:2:3:4:5:6
+result show undefined 0 0 u:0
+result show undefined 1 0 u:0
+result show undefined 2 0 u:0
+result show undefined 3 0 u:0
+result show undefined 0 1 u:1:x
+result show undefined 1 1 u:1:x
+result show undefined 2 1 u:1:x
+result show undefined 3 1 u:1:x
+result show undefined 0 2 u:2:x:y
+result show undefined 1 2 u:2:x:y
+result show undefined 2 2 u:2:x:y
+result show undefined 3 2 u:2:x:y
+result show undefined 0 3 u:3:1:2:3
+result show undefined 1 3 u:3:1:2:3
+result show undefined 2 3 u:3:1:2:3
+result show undefined 3 3 u:3:1:2:3
+result show undefined 0 7 u:7:1:2:3:4:5:6
+result show undefined 1 7 u:7:1:2:3:4:5:6
+result show undefined 2 7 u:7:1:2:3:4:5:6
+result show undefined 3 7 u:7:1:2:3:4:5:6
+result show 7 0 0 7:0
+result show 7 1 0 7:0
+result show 7 2 0 7:0
+result show 7 3 0 7:0
+result show 7 0 1 7:1:x
+result show 7 1 1 7:1:x
+result show 7 2 1 7:1:x
+result show 7 3 1 7:1:x
+result show 7 0 2 7:2:x:y
+result show 7 1 2 7:2:x:y
+result show 7 2 2 7:2:x:y
+result show 7 3 2 7:2:x:y
+result show 7 0 3 7:3:1:2:3
+result show 7 1 3 7:3:1:2:3
+result show 7 2 3 7:3:1:2:3
+result show 7 3 3 7:3:1:2:3
+result show 7 0 7 7:7:1:2:3:4:5:6
+result show 7 1 7 7:7:1:2:3:4:5:6
+result show 7 2 7 7:7:1:2:3:4:5:6
+result show 7 3 7 7:7:1:2:3:4:5:6
+result arrow 0 0 arrow
+result arrow 1 0 arrow
+result arrow 2 0 arrow
+result arrow 3 0 arrow
+result arrow 0 1 arrow
+result arrow 1 1 arrow
+result arrow 2 1 arrow
+result arrow 3 1 arrow
+result arrow 0 2 arrow
+result arrow 1 2 arrow
+result arrow 2 2 arrow
+result arrow 3 2 arrow
+result arrow 0 3 arrow
+result arrow 1 3 arrow
+result arrow 2 3 arrow
+result arrow 3 3 arrow
+result arrow 0 7 arrow
+result arrow 1 7 arrow
+result arrow 2 7 arrow
+result arrow 3 7 arrow
+result nt 0 0 u
+result nt 1 0 u
+result nt 2 0 u
+result nt 3 0 u
+result nt 0 1 u
+result nt 1 1 u
+result nt 2 1 u
+result nt 3 1 u
+result nt 0 2 u
+result nt 1 2 u
+result nt 2 2 u
+result nt 3 2 u
+result nt 0 3 u
+result nt 1 3 u
+result nt 2 3 u
+result nt 3 3 u
+result nt 0 7 u
+result nt 1 7 u
+result nt 2 7 u
+result nt 3 7 u
+result bound 0 0 o:1:b
+result bound 1 0 o:1:b
+result bound 2 0 o:1:b
+result bound 3 0 o:1:b
+result bound 0 1 o:2:b:x
+result bound 1 1 o:2:b:x
+result bound 2 1 o:2:b:x
+result bound 3 1 o:2:b:x
+result bound 0 2 o:3:b:x:y
+result bound 1 2 o:3:b:x:y
+result bound 2 2 o:3:b:x:y
+result bound 3 2 o:3:b:x:y
+result bound 0 3 o:4:b:1:2:3
+result bound 1 3 o:4:b:1:2:3
+result bound 2 3 o:4:b:1:2:3
+result bound 3 3 o:4:b:1:2:3
+result bound 0 7 o:8:b:1:2:3:4:5
+result bound 1 7 o:8:b:1:2:3:4:5
+result bound 2 7 o:8:b:1:2:3:4:5
+result bound 3 7 o:8:b:1:2:3:4:5
+result proxy 0 0 o:0
+result proxy 1 0 o:0
+result proxy 2 0 o:0
+result proxy 3 0 o:0
+result proxy 0 1 o:1:x
+result proxy 1 1 o:1:x
+result proxy 2 1 o:1:x
+result proxy 3 1 o:1:x
+result proxy 0 2 o:2:x:y
+result proxy 1 2 o:2:x:y
+result proxy 2 2 o:2:x:y
+result proxy 3 2 o:2:x:y
+result proxy 0 3 o:3:1:2:3
+result proxy 1 3 o:3:1:2:3
+result proxy 2 3 o:3:1:2:3
+result proxy 3 3 o:3:1:2:3
+result proxy 0 7 o:7:1:2:3:4:5:6
+result proxy 1 7 o:7:1:2:3:4:5:6
+result proxy 2 7 o:7:1:2:3:4:5:6
+result proxy 3 7 o:7:1:2:3:4:5:6
+result class 0 0 throws TypeError: class constructors must be invoked with 'new'
+result class 1 0 throws TypeError: class constructors must be invoked with 'new'
+result class 2 0 throws TypeError: class constructors must be invoked with 'new'
+result class 3 0 throws TypeError: class constructors must be invoked with 'new'
+result class 0 1 throws TypeError: class constructors must be invoked with 'new'
+result class 1 1 throws TypeError: class constructors must be invoked with 'new'
+result class 2 1 throws TypeError: class constructors must be invoked with 'new'
+result class 3 1 throws TypeError: class constructors must be invoked with 'new'
+result class 0 2 throws TypeError: class constructors must be invoked with 'new'
+result class 1 2 throws TypeError: class constructors must be invoked with 'new'
+result class 2 2 throws TypeError: class constructors must be invoked with 'new'
+result class 3 2 throws TypeError: class constructors must be invoked with 'new'
+result class 0 3 throws TypeError: class constructors must be invoked with 'new'
+result class 1 3 throws TypeError: class constructors must be invoked with 'new'
+result class 2 3 throws TypeError: class constructors must be invoked with 'new'
+result class 3 3 throws TypeError: class constructors must be invoked with 'new'
+result class 0 7 throws TypeError: class constructors must be invoked with 'new'
+result class 1 7 throws TypeError: class constructors must be invoked with 'new'
+result class 2 7 throws TypeError: class constructors must be invoked with 'new'
+result class 3 7 throws TypeError: class constructors must be invoked with 'new'
+result max 0 0 -Infinity
+result max 1 0 -Infinity
+result max 2 0 -Infinity
+result max 3 0 -Infinity
+result max 0 1 NaN
+result max 1 1 NaN
+result max 2 1 NaN
+result max 3 1 NaN
+result max 0 2 NaN
+result max 1 2 NaN
+result max 2 2 NaN
+result max 3 2 NaN
+result max 0 3 3
+result max 1 3 3
+result max 2 3 3
+result max 3 3 3
+result max 0 7 7
+result max 1 7 7
+result max 2 7 7
+result max 3 7 7
+result not callable 0 0 throws TypeError: not a function
+result not callable 1 0 throws TypeError: not a function
+result not callable 2 0 throws TypeError: not a function
+result not callable 3 0 throws TypeError: not a function
+result not callable 0 1 throws TypeError: not a function
+result not callable 1 1 throws TypeError: not a function
+result not callable 2 1 throws TypeError: not a function
+result not callable 3 1 throws TypeError: not a function
+result not callable 0 2 throws TypeError: not a function
+result not callable 1 2 throws TypeError: not a function
+result not callable 2 2 throws TypeError: not a function
+result not callable 3 2 throws TypeError: not a function
+result not callable 0 3 throws TypeError: not a function
+result not callable 1 3 throws TypeError: not a function
+result not callable 2 3 throws TypeError: not a function
+result not callable 3 3 throws TypeError: not a function
+result not callable 0 7 throws TypeError: not a function
+result not callable 1 7 throws TypeError: not a function
+result not callable 2 7 throws TypeError: not a function
+result not callable 3 7 throws TypeError: not a function
+result number 0 0 throws TypeError: not a function
+result number 1 0 throws TypeError: not a function
+result number 2 0 throws TypeError: not a function
+result number 3 0 throws TypeError: not a function
+result number 0 1 throws TypeError: not a function
+result number 1 1 throws TypeError: not a function
+result number 2 1 throws TypeError: not a function
+result number 3 1 throws TypeError: not a function
+result number 0 2 throws TypeError: not a function
+result number 1 2 throws TypeError: not a function
+result number 2 2 throws TypeError: not a function
+result number 3 2 throws TypeError: not a function
+result number 0 3 throws TypeError: not a function
+result number 1 3 throws TypeError: not a function
+result number 2 3 throws TypeError: not a function
+result number 3 3 throws TypeError: not a function
+result number 0 7 throws TypeError: not a function
+result number 1 7 throws TypeError: not a function
+result number 2 7 throws TypeError: not a function
+result number 3 7 throws TypeError: not a function
+result generator 0 0 [object Generator]
+result generator 1 0 [object Generator]
+result generator 2 0 [object Generator]
+result generator 3 0 [object Generator]
+result generator 0 1 [object Generator]
+result generator 1 1 [object Generator]
+result generator 2 1 [object Generator]
+result generator 3 1 [object Generator]
+result generator 0 2 [object Generator]
+result generator 1 2 [object Generator]
+result generator 2 2 [object Generator]
+result generator 3 2 [object Generator]
+result generator 0 3 [object Generator]
+result generator 1 3 [object Generator]
+result generator 2 3 [object Generator]
+result generator 3 3 [object Generator]
+result generator 0 7 [object Generator]
+result generator 1 7 [object Generator]
+result generator 2 7 [object Generator]
+result generator 3 7 [object Generator]
+result 300 o:300:0:1:2:3:4:5
+result 300 strict o:300:0:1:2:3:4:5
+result written o:1:A # o:2:A:2 # o:4:A:B:3:4
+result written none o:0
+result closure o:1:closure # o:0
+result dropped dropped
+result twice o:2:1:2/o:2:1:2
+result nested o:2:n1:n2
+result klass 1,2,,2 # 1,2,3,4 # ,,,0
+result stack s1     at st (<eval>:35:46) |     at apply (native) |     at <anonymous> (<input>:3:21) |     at <anonymous> (<eval>:104:22) |     at <eval> (<eval>:158:3) | 
+result stack strict s2     at st (<eval>:35:46) |     at apply (native) |     at fwdS (<eval>:43:26) |     at <anonymous> (<eval>:105:30) |     at <eval> (<eval>:158:3) | 
+result stack nested s3     at st (<eval>:35:46) |     at apply (native) |     at fwdS (<eval>:43:26) |     at f (<eval>:106:50) |     at apply (native) |     at <anonymous> (<input>:3:21)
+result thrown     at thr (<eval>:36:30) |     at apply (native) |     at <anonymous> (<input>:3:21) |     at <anonymous> (<eval>:107:15) |     at <eval> (<eval>:158:3) | 
+result class TypeError     at C (<eval>:38:11) |     at apply (native) |     at fwd3S (<eval>:45:34) |     at <anonymous> (<eval>:108:17) |     at <eval> (<eval>:158:3) | 
+result c function SyntaxError     at <input>:1:2 |     at parse (native) |     at apply (native) |     at <anonymous> (<input>:3:21) |     at <anonymous> (<eval>:109:15) |     at <eval> (<eval>:158:3)
+result other apply 2:o
+result other target 3:true
+result other stack     at st (<realm>:1:175) |     at apply (native) |     at <anonymous> (<input>:3:21) |     at <anonymous> (<eval>:118:28)
+result replaced 2 # replaced 1
+result getter o:1:1 o:2:1:2 reads 2
+result deleted TypeError: not a function
+result shadowed 3
+result built o:1:changed # o:2:changed:2
+result built strict o:2:1:2:true:2
+result depth sloppy 4988 RangeError: Maximum call stack size exceeded
+result depth array 2497 RangeError: Maximum call stack size exceeded
+result depth strict 2495 RangeError: Maximum call stack size exceeded
+result named o:1:q
+mem-end obj=396 atom=603 shape=254 prop=1978 jsfunc=7 cfunc=261 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=199 atom=591 shape=131 prop=1013 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

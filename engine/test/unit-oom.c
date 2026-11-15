@@ -1267,6 +1267,46 @@ static void test_uncatchable_fast_call(void)
     vm_free(&v);
 }
 
+/* f.apply(this, arguments) in the register loop (CALLMA,
+   engine/regvm-ops-args.h) calls f from the loop only when no uncatchable
+   exception is pending: with one pending, after an async function ran out
+   of memory, the call goes out of the loop and fails there, and f does not
+   run. */
+static void test_uncatchable_apply_forward(void)
+{
+    VM v = vm_new();
+    JSValue r, g, f;
+    char *text = NULL;
+    int st, unc = 0;
+
+    eval_ok(v.ctx, fail_js[END_OOM]);
+    eval_ok(v.ctx, "var ran = 0, after = 0; function tg(a, b) { ran++; return a + b; }"
+            " function fa(k) { var n = tg.apply(this, arguments);"
+            " if (k) { (async () => { fail() })(); n += tg.apply(this, arguments); after = n; } return n; }"
+            " fa(0, 1); fa(0, 1);");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "fa");
+    st = JS_RegvmFuncStat(v.ctx, f, 0);
+    CHECK(st == 1, "apply forward: fa is not in the register loop (state %d)", st);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    eval_ok(v.ctx, "ran = 0");
+    room(&v, 1 << 20);
+    r = JS_Eval(v.ctx, "fa(1, 2)", strlen("fa(1, 2)"), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r)) {
+        unc = JS_IsUncatchableException(v.ctx);
+        text = exception_text(v.ctx);
+    }
+    JS_FreeValue(v.ctx, r);
+    unlimit(&v);
+    CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+          "apply forward: ended with %s, want the uncatchable out of memory error", text ? text : "no error");
+    CHECK(eval_is(v.ctx, "ran", "1"), "apply forward: f ran with the exception pending");
+    CHECK(eval_is(v.ctx, "after", "0"), "apply forward: the code after the call ran with the exception pending");
+    free(text);
+    vm_free(&v);
+}
+
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
    alone: set when an exception is made uncatchable, cleared when it is taken
    or made catchable, never set for a catchable one or with nothing pending,
@@ -2610,7 +2650,10 @@ static void test_regvm_cases_oom(void)
    with nothing lost (the local is written only with the whole object), and
    the reads after the build in the same call see the object. The same for
    a function that also lets the object go, where it is built at that read
-   (ARGMAT). */
+   (ARGMAT). The same for the mapped object of a sloppy function, whose
+   parameters may be written first, and for f.apply(t, arguments) (CALLMA):
+   a call of a function of bytecode makes no object, and a call of a C
+   function builds it, where each allocation fails in turn. */
 static void test_regvm_args_oom(void)
 {
     static const char setup[] =
@@ -2635,7 +2678,31 @@ static void test_regvm_args_oom(void)
     static const char *const want_escape[] = { "3:x-y-z:x:z|1::w:w", NULL };
 
     sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
+    static const char setup_mapped[] =
+        "var m = (function () {\n"
+        "  function g(a, b) {\n"
+        "    a = 'A';\n"
+        "    var r = arguments.length + ':' + arguments[0] + ':' + arguments[3];\n"
+        "    return r + ':' + arguments[1] + ':' + a;\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want_mapped[] = { "3:A:undefined:y:A|1:A:undefined:undefined:A", NULL };
+
+    static const char setup_apply[] =
+        "var fw = (function () {\n"
+        "  function show() { return this.k + ':' + Array.prototype.join.call(arguments, ','); }\n"
+        "  function f(a) { a = 'A'; return show.apply(this, arguments); }\n"
+        "  function m(a) { return Math.max.apply(null, arguments) + ':' + arguments[5]; }\n"
+        "  function s(a) { 'use strict'; return Math.min.apply(null, arguments); }\n"
+        "  var o = { k: 'o' };\n"
+        "  return function () { return f.call(o, 1, 2) + '|' + m(3, 9, 4) + '|' + s(5, 1); };\n"
+        "})();\n";
+    static const char *const want_apply[] = { "o:A,2|9:undefined|1", NULL };
+
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+    sweep("mapped arguments built on a read", "<args>", setup_mapped, "m()", want_mapped, 16384);
+    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 16384);
 }
 
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h) makes the
@@ -2864,6 +2931,7 @@ int main(void)
     test_field_chain_uncatchable();
     test_uncatchable_then_loop();
     test_uncatchable_fast_call();
+    test_uncatchable_apply_forward();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();

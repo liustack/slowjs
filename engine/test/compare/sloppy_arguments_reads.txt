@@ -1,0 +1,39 @@
+keys 0: 0 undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined 0 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 0
+keys 1: 1 string:x undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined string:x undefined:undefined string:x undefined:undefined 1 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 1
+keys 2: 2 string:x 2 undefined:undefined undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 2 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 2
+keys 3: 3 string:x 2 null undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 3 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 3
+keys 5: 5 1 2 3 undefined:undefined undefined:undefined undefined:undefined 2 1 undefined:undefined 1 2 5 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 5
+no parameters 0: 0 undefined:undefined
+no parameters 3: 3 string:p string:q string:r undefined:undefined
+writes 0: undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined 0 A B C
+writes 1: 1 undefined:undefined undefined:undefined string:A undefined:undefined undefined:undefined undefined:undefined 1 A B C
+writes 2: 1 2 undefined:undefined string:A string:B undefined:undefined undefined:undefined 2 A B C
+writes 4: 1 2 3 string:A string:B string:C 4 4 A B C
+increments: 11 12 13 1
+increments, no argument:    0
+object writes 1: string:x string:w0 undefined:undefined string:w0 string:w1 string:w3 1 string:back
+object writes 2: string:x string:w0 string:w1 string:w0 string:w1 string:w3 2 string:back
+object writes 4: string:x string:w0 string:w1 string:w0 string:w1 string:w3 4 string:back
+closure writes 1: string:orig string:closure string:closure 1
+closure writes 0: undefined:undefined undefined:undefined string:closure 0
+getter for a missing index: string:got object [object Arguments] string:written string:written string:b 42 string:five
+kept: 1 42 written b five [object Arguments]
+delete: undefined:undefined string:x 2 undefined:undefined string:y
+defineProperty: string:defined string:defined string:param string:param string:param string:param2
+length set: 1 string:x string:y 5 undefined:undefined
+callee: function 1 string:x
+iterated: string:A string:y 2
+sliced: A,y,z 3
+twice: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:2:string:t:undefined:undefined
+twice extra: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:3:string:t:string:e
+sum none: 0/0/undefined:undefined
+sum fewer: 1/1/1
+sum more: 10/4/4
+sum apply: 4498500/3000/2999
+children 0: div undefined
+children 1: div "a"
+children 3: div ["a",1,[2]]
+throwing getter: caught first object 1 string:only string:second
+twice 2: 1 5 2
+twice 1: 1 undefined:undefined 1
+twice 3: 1 5 3

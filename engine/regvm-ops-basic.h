@@ -180,10 +180,16 @@ static int rv_call_copies(RVPass *s, int first)
    temp is moved, a local copied, by the call. When a drop or a
    return_undef that no jump reaches follows, the result is dropped by the
    call (CALLD, CALLSD, CALLMD, CALLMLD), and the drop only pops it
-   (drop_at). */
+   (drop_at). A method call of two whose last argument is the arguments
+   local of rv_lazy_args, as f.apply(t, arguments), is CALLMA then CALLM
+   or CALLMD: the object below the method in its temp, and the window but
+   for that argument, which CALLMA puts there when it does not make the
+   call itself (regvm-ops-args.h). */
 static void rv_call(RVPass *s, int argc, int method, int tail)
 {
     int i, n = argc + (method ? 2 : 1), base = s->sp - n, d, w, k;
+    int apply = method && argc == 2 && unlikely(s->lazy_args) &&
+        s->st[s->sp - 1].kind == RV_E_SLOT && s->st[s->sp - 1].slot == s->lazy_args;
     int f = method ? base + 1 : base;
     int q = s->pos + short_opcode_info(s->bc[s->pos]).size;
     int drop = !tail && q < s->len && !s->leader[q] &&
@@ -194,10 +200,20 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
         return;
     }
     k = method ? 0 : rv_call_copies(s, base + 1);
-    for (i = f; i < s->sp - k; i++)
+    for (i = f; i < s->sp - k - apply; i++)
         rv_materialize(s, i);
     w = rv_tslot(s, f);
     d = rv_tslot(s, base);
+    if (apply) {
+        rv_materialize(s, base);
+        rv_emit(s, RV_CALLMA);
+        rv_byte(s, w);
+        rv_byte(s, s->lazy_args);
+        rv_byte(s, drop);
+        rv_throws(s, rv_owned(s, 1));
+        s->sp--;
+        rv_push(s, RV_E_TEMP, rv_tslot(s, s->sp), 0);
+    }
     if (k) {
         rv_emit(s, drop ? RV_CALLSD : RV_CALLS);
         rv_byte(s, w);

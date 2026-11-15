@@ -84,7 +84,7 @@
    int16_t (RV_DST_SLOT), the bits above are flags. The return's one test
    (RV_DST_FAST) lets through only a temp of the caller with no flag:
    everything else goes out of line, in this order: RV_DST_EXTRA, RV_DST_SEG,
-   then the slot. Code that reads dst uses these names, never a number or
+   RV_DST_APPLY, then the slot. Code that reads dst uses these names, never a number or
    the sign. */
 #define RV_DST_ENTRY 0               /* slot: the frame was entered from C */
 #define RV_DST_DROP 1                /* slot: the caller drops the result: the
@@ -93,6 +93,10 @@
 #define RV_DST_SEG (1 << 17)         /* flag: the frame starts a segment of the
                                         register stack, its return steps back
                                         to the caller's (engine/regvm-entry.h) */
+#define RV_DST_APPLY (1 << 18)       /* flag: CALLMA entered the frame for
+                                        Function.prototype.apply, which waits
+                                        in the caller's slot of the result
+                                        (engine/regvm-ops-args.h) */
 #define RV_DST_SLOT(d) ((int16_t)(d))
 #define RV_DST_FAST(d) ((uint32_t)((d) - RV_HDR) < 128 - RV_HDR)
 /* The slots of a segment of register stack of about r bytes: the most that a
