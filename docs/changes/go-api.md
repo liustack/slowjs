@@ -27,8 +27,6 @@ read_when:
 
 # The Go API
 
-English · [简体中文](go-api.zh-CN.md)
-
 Changes an embedder sees in what the methods of `github.com/liustack/slowjs` return. [uncatchable.md](uncatchable.md) has the changes to how a call ends on an interrupt, a timeout or out of memory.
 
 ## Call reports the exception of the function expression

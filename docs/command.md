@@ -8,8 +8,6 @@ read_when:
 
 # The slowjs command
 
-English · [简体中文](command.zh-CN.md)
-
 `slowjs` runs a JavaScript file in this engine, in a VM set up as tifa sets it up, with no Go program to write. It is for three things:
 
 - **Show a problem.** A script and what `slowjs` printed for it is the whole report: the engine is the one we ship, set up as we use it.

@@ -11,8 +11,6 @@ read_when:
 
 # Upgrading from upstream
 
-English · [简体中文](upgrading.zh-CN.md)
-
 ## Branches and remotes
 
 `main` is the branch of liustack/slowjs.
@@ -57,7 +55,7 @@ When Go changes any of these, a check of the generator or a test fails. A progra
 1. Run `go test -p 1 -tags testhooks,slowjs_anygo ./internal/cengine .`, and the hammer (`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,slowjs_anygo -run Hammer ./internal/cengine`). The fault tests (`TestFault*`, `TestFaultNoSplit`) are the ones that see a changed signal path.
 2. Run the generator's tests with the new Go (`CHECK_TAGS=slowjs_anygo make check-fast`, its `goasm` step. `GOFLAGS=-tags=...` alone does not do: a command that gives its own `-tags` replaces it, and the gate stops it). They build sample programs, link them, and check the stack check, the call of `runtime.morestack_noctxt.abi0` and which functions are NOSPLIT in the linked binary, so a changed shape fails there. Then check the engine itself the same way, with the post-link check of [testing.md](testing.md#the-go-host-of-the-generated-engine) (`-verify-bin`, on a test binary built with `-tags goasmkeep,slowjs_anygo`). `make check-gen` does not test the Go version: it only checks that the files checked in are what the generator makes.
 3. If the fault tests fail, read the source of `runtime.sigpanic` and of the stack check of the new release to find out why. If the assembler marks other functions NOSPLIT by itself, change `autoNoSplit` in `internal/goasm/gen/nosplit.go` to what you read there and make the engine again.
-4. When all pass, move the build line of `internal/goversion/newer.go` to the next version and the name in it to the version you checked, and write the new version here and in the README, in both languages. `TestNewerGoStops` checks that the line and the name agree.
+4. When all pass, move the build line of `internal/goversion/newer.go` to the next version and the name in it to the version you checked, and write the new version here and in README.md and README.zh-CN.md. `TestNewerGoStops` checks that the line and the name agree.
 
 Three build options are not supported, and the build stops with an error at a line of `internal/cengine/goasm_tripwire.<arch>.s`: `-asmflags=-spectre=ret` and `-spectre=all` on amd64, and `-dynlink`, which the go command passes for `-buildmode=plugin`, `-buildmode=shared` and `-linkshared`. The generated engine writes each function body as bytes with the branch offsets fixed and leaves its calls and loads of symbol addresses to the assembler. These options make the assembler encode those with other lengths (a 5 byte call through a retpoline instead of `CALL AX`, two instructions instead of a `LEAQ` of a symbol), so the branches land wrong and the first `NewVM` crashes though the build succeeds. The tripwire is a function that is never linked and assembles only when the assembler keeps the instructions as written. When you move to a newer Go, build with these options again and check that the tripwire still refuses them (`TestEngineAsmOptions`, `TestEngineBuildmodeShared`), and that `-buildmode=pie` still gives an engine that runs: the linux/amd64 assembler adds 2 bytes to the stack check of each function with `-shared`, which is harmless. Add a new option to the tripwire when one changes the length of an instruction the engine leaves to the assembler.
 

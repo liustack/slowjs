@@ -5,9 +5,9 @@
 <p align="center">
   <a href="./README.md">English</a> ·
   <a href="#有多快">有多快</a> ·
-  <a href="docs/api.zh-CN.md">API</a> ·
-  <a href="docs/benchmarks.zh-CN.md">对比</a> ·
-  <a href="CHANGELOG.zh-CN.md">更新记录</a>
+  <a href="docs/api.md">API</a> ·
+  <a href="docs/benchmarks.md">对比</a> ·
+  <a href="CHANGELOG.md">更新记录</a>
 </p>
 
 <p align="center">
@@ -55,7 +55,7 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 
 得分是 C QuickJS 的 1.57 倍，是 go-quickjs 的 1.09 倍。moejs 高 10 分，比各轮之间的波动还小。go-quickjs 在 RegExp 一项上领先，moejs 在八项里的四项上领先。
 
-两张表的完整内容、每个引擎跑的是什么，以及怎么重跑，见 [docs/benchmarks.zh-CN.md](docs/benchmarks.zh-CN.md)。
+两张表的完整内容、每个引擎跑的是什么，以及怎么重跑，见 [docs/benchmarks.md](docs/benchmarks.md)。
 
 ## 安装
 
@@ -63,7 +63,7 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 go get github.com/liustack/slowjs
 ```
 
-需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.4 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见[换用更新的 Go](docs/upgrading.zh-CN.md#换用更新的-go)）。
+需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.4 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见[换用更新的 Go](docs/upgrading.md#moving-to-a-newer-go)）。
 
 ## 支持的平台
 
@@ -111,7 +111,7 @@ func main() {
 
 一个 VM 不能同时给多个 goroutine 用：每个 goroutine 一个，或者用池。Intl 和 Temporal 内嵌了 tz 2026e，不需要主机的 zoneinfo。
 
-除了 `Eval` 和 `Call`，API 还有：JavaScript 像调内建函数一样调用的 Go 函数、控制 VM 的 GC 和内存、每个 VM 一个时钟、`Temporal`，以及用 C 写的 React 服务端渲染器的几个部分。清单见 [docs/api.zh-CN.md](docs/api.zh-CN.md)，每个函数的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
+除了 `Eval` 和 `Call`，API 还有：JavaScript 像调内建函数一样调用的 Go 函数、控制 VM 的 GC 和内存、每个 VM 一个时钟、`Temporal`，以及用 C 写的 React 服务端渲染器的几个部分。清单见 [docs/api.md](docs/api.md)，每个函数的文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。
 
 ## 用了以后有什么不同
 
@@ -122,9 +122,9 @@ func main() {
 
 ## 凭什么信它
 
-- **引擎就是上游 QuickJS。** `engine/` 是 Bellard 的 C 代码在一个固定的提交上，加上 liustack/slowjs 的改动，每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.zh-CN.md#生成并检查)）。
+- **引擎就是上游 QuickJS。** `engine/` 是 Bellard 的 C 代码在一个固定的提交上，加上 liustack/slowjs 的改动，每处改动都有记录。LLVM 把它编译成提交进仓库的 Go 汇编，所以构建不需要 C 编译器，而且提交的文件和生成器从 `engine/` 生成的结果不一致时，`make check-gen` 会失败（[怎么核对](docs/testing.md#generate-and-check)）。
 - **生成器不放过没核对过的东西。** 遇到它没有规则的指令、调用或栈帧就停下，还会检查测试程序链接后的代码，所以 C 或 Go 本身的改动弄坏了引擎，表现为构建或测试失败，而不是答案错了。
-- **每处改动都有记录。** [docs/changes](docs/changes/README.zh-CN.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
+- **每处改动都有记录。** [docs/changes](docs/changes/README.md) 逐项写了为什么安全、内存代价多少、在哪台机器上快了多少，以及对应的测试。
 - **测试用上游的，还多加了一层。** test262 有 33 个已知失败，比搬进上游的修正之前少了 25 个，每次跑都是同样这些。另外还有引擎的记录输出、在 AddressSanitizer 和 UndefinedBehaviorSanitizer 下跑的 C 检查，以及 Go API 的测试。
 - **有人真在依赖它。** 它是为 [tifa](https://github.com/liustack/tifa) 维护的，tifa 是一个用它渲染 React 页面的 Go 框架，每个版本都先在 tifa 的页面上测过再让 tifa 升级。
 
@@ -132,21 +132,21 @@ func main() {
 
 | 文档 | 什么时候读 |
 | :-- | :-- |
-| [API](docs/api.zh-CN.md) | 想找 `Eval` 和 `Call` 之外的 Go API |
-| [改动](docs/changes/README.zh-CN.md) | 想知道引擎的每处改动为什么安全、代价多少、换来什么 |
-| [性能](docs/performance.zh-CN.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
-| [对比](docs/benchmarks.zh-CN.md) | 想知道这个引擎和其他纯 Go JavaScript 引擎比起来怎样 |
-| [更新记录](CHANGELOG.zh-CN.md) | 升级前想知道改了什么 |
-| [架构](docs/architecture.zh-CN.md) | 准备改代码 |
-| [测试](docs/testing.zh-CN.md) | 准备提交，或者想核对引擎 |
-| [升级](docs/upgrading.zh-CN.md) | 要合入上游 QuickJS 的提交、新的语言数据或更新的 Go |
-| [发版](docs/releasing.zh-CN.md)、[提交](docs/commit.zh-CN.md) | 要发版或提交 |
-| [上游](docs/upstream.zh-CN.md) | 要从 modernc.org/quickjs 或 github.com/liustack/quickjs（v0.30.0 到 v0.30.7）换过来，或者想知道代码从哪来 |
-| [历史](docs/history.zh-CN.md) | 想看 v0.29 之前那个引擎（ccgo 把 QuickJS 转译成的 Go）的数字 |
+| [API](docs/api.md) | 想找 `Eval` 和 `Call` 之外的 Go API |
+| [改动](docs/changes/README.md) | 想知道引擎的每处改动为什么安全、代价多少、换来什么 |
+| [性能](docs/performance.md) | 想知道每个版本渲染多快，或者试过哪些办法 |
+| [对比](docs/benchmarks.md) | 想知道这个引擎和其他纯 Go JavaScript 引擎比起来怎样 |
+| [更新记录](CHANGELOG.md) | 升级前想知道改了什么 |
+| [架构](docs/architecture.md) | 准备改代码 |
+| [测试](docs/testing.md) | 准备提交，或者想核对引擎 |
+| [升级](docs/upgrading.md) | 要合入上游 QuickJS 的提交、新的语言数据或更新的 Go |
+| [发版](docs/releasing.md)、[提交](docs/commit.md) | 要发版或提交 |
+| [上游](docs/upstream.md) | 要从 modernc.org/quickjs 或 github.com/liustack/quickjs（v0.30.0 到 v0.30.7）换过来，或者想知道代码从哪来 |
+| [历史](docs/history.md) | 想看 v0.29 之前那个引擎（ccgo 把 QuickJS 转译成的 Go）的数字 |
 
 ## 来自哪里
 
-引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。确切版本、怎么合入 QuickJS 的新提交，以及从 modernc.org/quickjs 换过来会遇到什么，见 [docs/upstream.zh-CN.md](docs/upstream.zh-CN.md)。
+引擎是 Fabrice Bellard 和 Charlie Gordon 的 [QuickJS](https://bellard.org/quickjs)，用的是 2026-06-04 版。确切版本、怎么合入 QuickJS 的新提交，以及从 modernc.org/quickjs 换过来会遇到什么，见 [docs/upstream.md](docs/upstream.md)。
 
 感谢 Fabrice Bellard 和 Charlie Gordon 写了 QuickJS，感谢 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) 和 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs) 的作者 Jan Mercl、Dan Kortschak 等人。他们的工作证明了 QuickJS 可以跑在纯 Go 程序里，也启发了 liustack/slowjs。
 
@@ -167,7 +167,7 @@ liustack/slowjs 不接受 pull request。每一行都由一个维护者审读、
 - **[提一个 issue](https://github.com/liustack/slowjs/issues/new/choose)。** 算错了，渲染慢，限制没拦住，文档不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。
 - **Fork 一份。** 你的那份完全归你，想怎么改、怎么发布都行。
 
-安全问题请按 [SECURITY.zh-CN.md](SECURITY.zh-CN.md) 私下报告。其余见 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)。
+安全问题请按 [SECURITY.md](SECURITY.md) 私下报告。其余见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 许可证
 

@@ -9,8 +9,6 @@ read_when:
 
 # JavaScript engines compared
 
-English · [简体中文](benchmarks.zh-CN.md)
-
 Run of 2026-11-16: liustack/slowjs v0.31.1 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-16-v0.31.1-gcp-pages` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another.
 
 ## What is compared

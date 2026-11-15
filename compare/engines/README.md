@@ -3,8 +3,6 @@
 
 # compare/engines
 
-English · [简体中文](README.zh-CN.md)
-
 The comparison of liustack/slowjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/benchmarks.md](../../docs/benchmarks.md).
 
 ## What is compared

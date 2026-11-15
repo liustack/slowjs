@@ -40,15 +40,14 @@
    - [docs/upstream.md](docs/upstream.md): where the code comes from, how QuickJS commits are taken in, and what changes when moving from modernc.org/quickjs
    - [docs/api.md](docs/api.md): the Go API beyond Eval and Call, with the release of each function
    - [docs/command.md](docs/command.md): the `slowjs` command, its flags, limits and exit codes, and what it leaves out
-4. Each change liustack/slowjs makes to the QuickJS C tree or to the Go API is written up in the doc of its area under [docs/changes](docs/changes/README.md), with a row in its index: what it does, why it is safe, what it gains or costs and how that was measured, its tests. A change for speed also goes into [docs/performance.md](docs/performance.md).
-   - New changes are written into [docs/changes](docs/changes/README.md), never into README.md. The README is a landing page: it only links to the docs. New Go API goes into [docs/api.md](docs/api.md), in both languages, with the release it came in.
-   - A branch started before the README became a landing page may still add its notes to the old long README. When it is merged, move each note to where it belongs: the change into the doc of its area under docs/changes with a row in the index ("Unreleased" until it ships), its focused checks into [docs/testing.md](docs/testing.md), its numbers into [docs/performance.md](docs/performance.md), and what users see into the Unreleased section of both changelogs. Then check that each paragraph the branch added to the README has a place in the new docs.
-
-   A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first.
-5. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
-6. Every doc is written in English and has a Chinese version `X.zh-CN.md` next to it: every doc of `docs/`, README.md, CHANGELOG.md and the READMEs and changelogs listed in `scripts/docs-list.sh`. When you change one side, change the other in the same commit. Under the title, each links to the other (`English · [简体中文](X.zh-CN.md)`). A Chinese doc links to the Chinese version of another doc, with the anchor GitHub makes from its Chinese heading. `scripts/docs-list.sh --check` fails when a doc has no Chinese version.
-7. English: keep it short and direct, use everyday words, and do not invent terms. Chinese: do not use semicolons, and do not use dashes as punctuation.
-8. Code comments and error messages point to a doc by its path, such as `docs/upgrading.md`, never to a section of the README.
+4. Each change liustack/slowjs makes to the QuickJS C tree or to the Go API gets one row in the index of its area under [docs/changes](docs/changes/README.md): what it does, its release and where it is described. The reasons, the numbers and the tests live in code comments and commit messages. Never write a change into README.md, which only links to the docs. New Go API goes into [docs/api.md](docs/api.md) with the release it came in. This is the rule for new writing: the write-ups already in `docs/changes` stay as they are.
+   - A claim about how this engine ranks among the other JavaScript engines for Go, in the README or elsewhere, needs a measurement in docs/benchmarks.md first.
+5. [docs/performance.md](docs/performance.md) keeps one table per release and the list of what was tried and not done. Detailed tables stay in the draft folder. This is the rule for new writing: the content already there stays as it is.
+6. A changelog entry is one or two sentences.
+7. Docs are written for readers: write conclusions and how to do things, not reasoning or work logs.
+8. Only the root README.md has a Chinese version, README.zh-CN.md, and they link to each other. When you change one, change the other in the same commit. Every other doc is English only, with no `.zh-CN.md` next to it. `scripts/docs-list.sh --check` fails when a doc has no summary or when one of the two READMEs is missing.
+9. English: keep it short and direct, use everyday words, and do not invent terms. Chinese (README.zh-CN.md): do not use semicolons, and do not use dashes as punctuation.
+10. Code comments and error messages point to a doc by its path, such as `docs/upgrading.md`, never to a section of the README.
 
 ## Issues and pull requests
 
@@ -80,7 +79,7 @@ Plans, design drafts, experiment notes and raw measurement data go in the reposi
 - For new behavior, write a failing test first, then implement. For a bug, find the root cause before changing code, and do not hide it with fallback values.
 - After a new release of QuickJS, follow [docs/upgrading.md](docs/upgrading.md).
 - Tools are Go programs or short shell scripts. Do not add Python.
-- When merging a branch that changes what programs using the module can see, add it to both CHANGELOG.md and CHANGELOG.zh-CN.md.
+- When merging a branch that changes what programs using the module can see, add it to CHANGELOG.md.
 
 ## Releases
 

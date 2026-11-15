@@ -1,7 +1,5 @@
 # Changes to the engine comparison
 
-English · [简体中文](CHANGELOG.zh-CN.md)
-
 ## 2026-11-16: the run of v0.31.1
 
 - moejs is timed in the same session as the other six page engines now, not in a session of its own, so its ratios come from the same session as the others'.

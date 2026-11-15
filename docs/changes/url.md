@@ -10,8 +10,6 @@ read_when:
 
 # URL and URLSearchParams
 
-English · [简体中文](url.zh-CN.md)
-
 QuickJS has neither `URL` nor `URLSearchParams`. Package `url` adds them for a VM that calls `url.Register(vm)`, the way `intl.Register` adds `Intl`. Go parses and keeps nothing: a URL lives in the VM.
 
 ## URL and URLSearchParams on a Go parser

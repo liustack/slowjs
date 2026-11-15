@@ -8,8 +8,6 @@ read_when:
 
 # Changes
 
-English · [简体中文](README.zh-CN.md)
-
 The engine is QuickJS release 2026-06-04 (commit `3d5e064`, the C) with the changes below on top. Each doc below takes one area. For each change it says what the change does, why it is safe, what it gains or costs and how that was measured, and which tests check it. [upgrading.md](../upgrading.md) has the procedure of taking a new QuickJS release and [CHANGELOG.md](../../CHANGELOG.md) what each release changed for users.
 
 The engine is the C in `engine/`, which the generator compiles to Go assembly. A change to it is a change of the C, checked in with the generated files (see [AGENTS.md](../../AGENTS.md)). Releases up to v0.28 ran QuickJS translated to Go by ccgo, with the changes of liustack/slowjs written into that Go by a tool that is gone now. The entries that name those releases keep the C form of their change here, and their timings were taken on that engine. [performance.md](../performance.md) has the speed of the C engine.
@@ -348,6 +346,6 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 
 ## Adding a change
 
-- Put it in the doc of its area, or in a new doc here when no area fits, and add a row to the table of that area, with "Unreleased" as its release. The release step in [releasing.md](../releasing.md#before-the-release) replaces "Unreleased" with the version, in the tables here and in the Release lines of the area docs. Never write it into README.md, which only links here.
-- Say what it does, why it is safe, what it gains or costs with the machine and how it was measured, and which tests check it.
-- Add it to [CHANGELOG.md](../../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../../CHANGELOG.zh-CN.md), and a change for speed to [performance.md](../performance.md).
+- Add one row to the table of its area, or a new area table when none fits, with "Unreleased" as its release. The release step in [releasing.md](../releasing.md#before-the-release) replaces "Unreleased" with the version, in the tables here and in the Release lines of the area docs. Never write it into README.md, which only links here.
+- The row says what the change does and links to where it is described. The reasons, the numbers and the tests live in code comments and commit messages. The longer write-ups under this folder are older and stay as they are.
+- Add it to [CHANGELOG.md](../../CHANGELOG.md) in one or two sentences, and a change for speed to [performance.md](../performance.md) (one table per release).

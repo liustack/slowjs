@@ -7,8 +7,6 @@ read_when:
 
 # Errors and stacks
 
-English · [简体中文](errors-and-stacks.zh-CN.md)
-
 ## Error stacks formatted when first read
 
 Release: v0.26.1.

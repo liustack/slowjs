@@ -11,8 +11,6 @@ read_when:
 
 # Releasing
 
-English · [简体中文](releasing.zh-CN.md)
-
 ## Versions
 
 - Releases are patch versions: v0.30.0, v0.30.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the module loaders it removed. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
@@ -26,8 +24,8 @@ On the branch, before it is merged:
 1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass. `scripts/go-versions.sh` passes: the checks of the engine with every patch release of Go the module lets build, from the lowest Go of `go.mod` up (the Go tests, and on a machine with LLVM the generator tests and the post-link check, see [testing.md](testing.md#ci)). When the branch changes `engine/`, the whole throw injection passes too. Push the branch as `gates/<name>` (`git push origin HEAD:gates/<name>`): `gates.yml` runs the injection in 12 jobs and `go-versions.sh` one job for each Go release, about 40 minutes in all, next to `ci.yml` and `llvm-steps.yml` on the same commit. Push it again when the engine or a golden changes after that.
 
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
-3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
-4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelogs. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
+3. [CHANGELOG.md](../CHANGELOG.md) says what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
+4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelog. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
 5. The profile is not stale where it matters: see [The profile](#the-profile) below.
 6. When this release runs the comparison with the other engines, it is run now, on the branch, and its tables are in the branch: see [The comparison with the other engines](#the-comparison-with-the-other-engines) below.
 
