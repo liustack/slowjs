@@ -162,7 +162,7 @@ TEXT ·js_emit_put_style(SB), $296-48
 	WORD $0x540056e1
 	WORD $0xaa1f03f7
 	WORD $0x52800061
-	MOVD $·engine_rodata+70464(SB), R15
+	MOVD $·engine_rodata+70496(SB), R15
 	WORD $0xb4010de6
 	WORD $0xf94000c4
 	WORD $0xa90d87f7
@@ -771,7 +771,7 @@ TEXT ·js_emit_put_style(SB), $296-48
 	WORD $0xaa0e03ec
 	WORD $0x6b0b015f
 	WORD $0x52800750
-	MOVD $·engine_rodata+70464(SB), R15
+	MOVD $·engine_rodata+70496(SB), R15
 	WORD $0xaa1103e6
 	WORD $0xaa1403e1
 	WORD $0xaa1503f7
@@ -2386,7 +2386,7 @@ TEXT ·js_emit_put_style(SB), $296-48
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa95137f6
-	MOVD $·engine_rodata+70464(SB), R15
+	MOVD $·engine_rodata+70496(SB), R15
 	WORD $0xf94063e4
 	WORD $0xa94d87f7
 	WORD $0xf94043ec
@@ -2499,7 +2499,7 @@ TEXT ·js_emit_put_style(SB), $296-48
 	WORD $0xf90007f4
 	BL ·host_poll(SB)
 	WORD $0xa95137f6
-	MOVD $·engine_rodata+70464(SB), R15
+	MOVD $·engine_rodata+70496(SB), R15
 	WORD $0xf94063e4
 	WORD $0xa94d87f7
 	WORD $0xf94043eb
@@ -24379,6 +24379,29 @@ TEXT ·emit_u8(SB), $56-24
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·__dbuf_putc(SB)
+	WORD $0x14000001
+	RET
+
+TEXT ·dbuf_put_u16_342(SB), $56-24
+	NO_LOCAL_POINTERS
+	MOVD a0+0(FP), R20
+	MOVD a1+8(FP), R21
+	MOVD a2+16(FP), R22
+	PCALIGN $16
+	WORD $0xa940a6a8
+	WORD $0xcb080129
+	WORD $0xf100053f
+	WORD $0x540000c9
+	WORD $0xf94002a9
+	WORD $0x9100090a
+	WORD $0xf90006aa
+	WORD $0x78286936
+	WORD $0x14000007
+	WORD $0x12003ed6
+	WORD $0xf90007f4
+	WORD $0xf9000bf5
+	WORD $0xf9000ff6
+	BL ·__dbuf_put_u16(SB)
 	WORD $0x14000001
 	RET
 

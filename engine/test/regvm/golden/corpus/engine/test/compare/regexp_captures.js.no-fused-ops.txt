@@ -1,0 +1,36 @@
+result 254 groups: length 255 index 1 1="b" 255=u 256=u 253="t" 254="u"
+result 255 groups: length 256 index 1 1="b" 255="v" 256=u 254="u" 255="v"
+result 256 groups: length 257 index 1 1="b" 255="v" 256="w" 255="v" 256="w"
+result 300 groups: length 301 index 1 1="b" 255="v" 256="w" 299="n" 300="o"
+result 912 groups: length 913 index 1 1="b" 255="v" 256="w" 911="b" 912="c"
+result 32767 groups: length 32768 index 1 1="b" 255="v" 256="w" 32766="g" 32767="h"
+result 32768 groups: SyntaxError
+result 65535 groups: SyntaxError
+result 65536 groups: SyntaxError
+result empty groups 32767: 32768
+result empty groups 32768: SyntaxError
+result lookahead 32768: SyntaxError
+result class 32767: 32768
+result 912: length 913 index 1 1="b" 3="d" 256="w" 300="o" 600="c" 911="b" 912="c"
+result 912 groups: 304 g300=o g912=c g3=d
+result 912 indices: 1,2 256,257 300,301 912,913 g600=600,601
+result 912 no match: null
+result backward: 399="j" 400="k"
+result backward no match: null
+result lookbehind groups: 400="k" 401="j" 402="k"
+result ignore case: 300="o" 301="q" / 300="o"
+result reset: 300="o" 301=u 302="y"
+result reset: 300="o" 301="x" 302=u
+result optional: 301=u / 301="z"
+result shared name: 1=u 2="c" d=c / 1="a" 2=u / null
+result matchAll: 0:301:o 301:301:o
+result replace: [bvz6e0]-[bvz6e0]
+result replace fn: 303:o:0-303:o:301
+result replace named: <dccn2><dccn2>
+result replace named fn: 916:c:0
+result split: 302 0bo1
+result nested 100: 101
+result nested 600: 601
+mem-end obj=206 atom=550 shape=122 prop=982 jsfunc=0 cfunc=143 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=206 atom=550 shape=122 prop=982 jsfunc=0 cfunc=143 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

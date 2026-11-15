@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Fixed
+
+- A regexp takes up to 32,767 capture groups, as V8 does, where it stopped at 254 with "SyntaxError: too many captures". shiki's JavaScript engine needs 410 to 912 groups in one regexp to highlight JavaScript, TypeScript and HTML. Bytecode version 14: bytecode written by `Compile` of an earlier release no longer loads.
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed

@@ -15587,7 +15587,7 @@ TEXT ·JS_NewCFunction3(SB), $160-16
 	QUAD $0x9024a48b4c0400b8
 	QUAD $0x8024b48b4c000000
 	QUAD $0xfffffd54e9000000
-	LEAQ ·engine_rodata+124846(SB), R14
+	LEAQ ·engine_rodata+124878(SB), R14
 	QUAD $0x00b866fffffd74e9
 	QUAD $0xb866fffffd3fe902
 	QUAD $0x66fffffd36e90a00

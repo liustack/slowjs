@@ -53,7 +53,12 @@ typedef enum {
     REOP_COUNT,
 } REOPCodeEnum;
 
-#define CAPTURE_COUNT_MAX 255
+/* the most capture groups, group 0 included: those of V8 (32767 groups in a
+   pattern, as Node 24 takes). A capture index is a u16 in the header and in
+   every op that names a group, so the count could go to 65535: the bound of
+   V8 keeps the captures of one exec (lre_get_alloc_count, 8 bytes each) under
+   512 KiB, and a pattern that runs in Node runs here. */
+#define CAPTURE_COUNT_MAX 32768
 #define REGISTER_COUNT_MAX 255
 
 /* LRE_WORK(n) says that a loop of the compiler that reads the interrupt flag
@@ -124,12 +129,20 @@ static const REOpCode reopcode_info[REOP_COUNT] = {
 #undef DEF
 };
 
+/* The header of the bytecode: the flags (u16), the capture count (u16, group
+   0 included), the register count (u8), a byte that holds 0 and the length of
+   the code (u32). The capture count is read through lre_capture_count. */
 #define RE_HEADER_FLAGS          0
-#define RE_HEADER_CAPTURE_COUNT  2
-#define RE_HEADER_REGISTER_COUNT 3
-#define RE_HEADER_BYTECODE_LEN   4
+#define RE_HEADER_CAPTURES       2
+#define RE_HEADER_REGISTER_COUNT 4
+#define RE_HEADER_BYTECODE_LEN   6
 
-#define RE_HEADER_LEN 8
+#define RE_HEADER_LEN 10
+
+static inline int lre_capture_count(const uint8_t *bc)
+{
+    return get_u16(bc + RE_HEADER_CAPTURES);
+}
 
 /* the plan of lre_skip after the bytecode (see lre_plan) */
 #define LRE_PLAN_LEN (LRE_PLAN_LIT_UNITS + 2 * LRE_LIT_MAX)
@@ -781,12 +794,12 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
     bc_len = get_u32(buf + RE_HEADER_BYTECODE_LEN);
     assert(bc_len + RE_HEADER_LEN + lre_plan_size(buf) <= buf_len);
     printf("flags: 0x%x capture_count=%d reg_count=%d\n",
-           re_flags, buf[RE_HEADER_CAPTURE_COUNT], buf[RE_HEADER_REGISTER_COUNT]);
+           re_flags, lre_capture_count(buf), buf[RE_HEADER_REGISTER_COUNT]);
     if (re_flags & LRE_FLAG_NAMED_GROUPS) {
         const char *p;
         p = (char *)buf + RE_HEADER_LEN + bc_len + lre_plan_size(buf);
         printf("named groups: ");
-        for(i = 1; i < buf[RE_HEADER_CAPTURE_COUNT]; i++) {
+        for(i = 1; i < lre_capture_count(buf); i++) {
             if (i != 1)
                 printf(",");
             printf("<%s>", p);
@@ -859,7 +872,7 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
             break;
         case REOP_save_start:
         case REOP_save_end:
-            printf(" %u", buf[pos + 1]);
+            printf(" %u", get_u16(buf + pos + 1));
             break;
         case REOP_back_reference:
         case REOP_back_reference_i:
@@ -867,17 +880,17 @@ static __maybe_unused void lre_dump_bytecode(const uint8_t *buf,
         case REOP_backward_back_reference_i:
             {
                 int n, i;
-                n = buf[pos + 1];
-                len += n;
+                n = get_u16(buf + pos + 1);
+                len += 2 * n;
                 for(i = 0; i < n; i++) {
                     if (i != 0)
                         printf(",");
-                    printf(" %u", buf[pos + 2 + i]);
+                    printf(" %u", get_u16(buf + pos + 3 + 2 * i));
                 }
             }
             break;
         case REOP_save_reset:
-            printf(" %u %u", buf[pos + 1], buf[pos + 2]);
+            printf(" %u %u", get_u16(buf + pos + 1), get_u16(buf + pos + 3));
             break;
         case REOP_set_i32:
             val = buf[pos + 1];
@@ -2187,8 +2200,8 @@ static int re_need_check_adv_and_capture_init(REParseState *s, BOOL *pneed_captu
         case REOP_back_reference_i:
         case REOP_backward_back_reference:
         case REOP_backward_back_reference_i:
-            val = bc_buf[pos + 1];
-            len += val;
+            val = get_u16(bc_buf + pos + 1);
+            len += 2 * val;
             need_capture_init = TRUE;
             break;
         default:
@@ -2313,7 +2326,7 @@ static int re_parse_captures(REParseState *s, int *phas_named_captures,
                         if (ret == 0) {
                             if (!strcmp(name, capture_name)) {
                                 if (emit_group_index)
-                                    dbuf_putc(re_code(s, 1), capture_index);
+                                    dbuf_put_u16(re_code(s, 2), capture_index);
                                 n++;
                             }
                         }
@@ -2389,7 +2402,7 @@ static int find_group_name(REParseState *s, const char *name, BOOL emit_group_in
         len = strlen(p);
         if (len == name_len && memcmp(name, p, name_len) == 0) {
             if (emit_group_index)
-                dbuf_putc(re_code(s, 1), capture_index);
+                dbuf_put_u16(re_code(s, 2), capture_index);
             n++;
         }
         p += len + LRE_GROUP_NAME_TRAILER_LEN;
@@ -2632,7 +2645,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
             last_atom_start = s->byte_code.size;
             last_capture_count = s->capture_count;
             capture_index = s->capture_count++;
-            re_emit_op_u8(s, REOP_save_start + is_backward_dir,
+            re_emit_op_u16(s, REOP_save_start + is_backward_dir,
                           capture_index);
 
             s->buf_ptr = p;
@@ -2640,7 +2653,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 return -1;
             p = s->buf_ptr;
 
-            re_emit_op_u8(s, REOP_save_start + 1 - is_backward_dir,
+            re_emit_op_u16(s, REOP_save_start + 1 - is_backward_dir,
                           capture_index);
 
             if (re_parse_expect(s, &p, ')'))
@@ -2714,7 +2727,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 last_capture_count = s->capture_count;
                 
                 /* emit back references to all the captures indexes matching the group name */
-                re_emit_op_u8(s, REOP_back_reference + 2 * is_backward_dir + s->ignore_case, n);
+                re_emit_op_u16(s, REOP_back_reference + 2 * is_backward_dir + s->ignore_case, n);
                 if (is_forward) {
                     if (re_parse_captures(s, &dummy_res, s->u.tmp_buf, TRUE) < 0)
                         return -1;
@@ -2774,8 +2787,8 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 last_atom_start = s->byte_code.size;
                 last_capture_count = s->capture_count;
                 
-                re_emit_op_u8(s, REOP_back_reference + 2 * is_backward_dir + s->ignore_case, 1);
-                dbuf_putc(re_code(s, 1), c);
+                re_emit_op_u16(s, REOP_back_reference + 2 * is_backward_dir + s->ignore_case, 1);
+                dbuf_put_u16(re_code(s, 2), c);
             }
             break;
         default:
@@ -2917,12 +2930,12 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                    need to reset once the captures in case the atom
                    does not match. */
                 if (need_capture_init && last_capture_count != s->capture_count) {
-                    if (re_insert(s, last_atom_start, 3))
+                    if (re_insert(s, last_atom_start, 5))
                         return -1;
                     int pos = last_atom_start;
-                    s->byte_code.buf[pos++] = REOP_save_reset;
-                    s->byte_code.buf[pos++] = last_capture_count;
-                    s->byte_code.buf[pos++] = s->capture_count - 1;
+                    s->byte_code.buf[pos] = REOP_save_reset;
+                    put_u16(s->byte_code.buf + pos + 1, last_capture_count);
+                    put_u16(s->byte_code.buf + pos + 3, s->capture_count - 1);
                 }
 
                 len = s->byte_code.size - last_atom_start;
@@ -2930,11 +2943,12 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                     /* need to reset the capture in case the atom is
                        not executed */
                     if (!need_capture_init && last_capture_count != s->capture_count) {
-                        if (re_insert(s, last_atom_start, 3))
+                        if (re_insert(s, last_atom_start, 5))
                             return -1;
-                        s->byte_code.buf[last_atom_start++] = REOP_save_reset;
-                        s->byte_code.buf[last_atom_start++] = last_capture_count;
-                        s->byte_code.buf[last_atom_start++] = s->capture_count - 1;
+                        s->byte_code.buf[last_atom_start] = REOP_save_reset;
+                        put_u16(s->byte_code.buf + last_atom_start + 1, last_capture_count);
+                        put_u16(s->byte_code.buf + last_atom_start + 3, s->capture_count - 1);
+                        last_atom_start += 5;
                     }
                     if (quant_max == 0) {
                         s->byte_code.size = last_atom_start;
@@ -3159,8 +3173,8 @@ static int compute_register_count(REParseState *s, uint8_t *bc_buf, int bc_buf_l
             case REOP_back_reference_i:
             case REOP_backward_back_reference:
             case REOP_backward_back_reference_i:
-                val = bc_buf[pos + 1];
-                len += val;
+                val = get_u16(bc_buf + pos + 1);
+                len += 2 * val;
                 break;
             }
             pos += len;
@@ -3183,10 +3197,10 @@ static int64_t lre_way_key(const uint8_t *q, int *kind)
         switch (*q) {
         case REOP_save_start:
         case REOP_save_end:
-            q += 2;
+            q += 3;
             continue;
         case REOP_save_reset:
-            q += 3;
+            q += 5;
             continue;
         case REOP_char:
             *kind = LRE_CHAIN_CASE;
@@ -3243,7 +3257,7 @@ static int lre_chains(REParseState *s)
             case REOP_back_reference_i:
             case REOP_backward_back_reference:
             case REOP_backward_back_reference_i:
-                oplen += code[pos + 1];
+                oplen += 2 * get_u16(code + pos + 1);
                 break;
             }
             key64 = -1;
@@ -3354,8 +3368,9 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
     dbuf_init2(&s->group_names, opaque, lre_realloc);
 
     dbuf_put_u16(re_code(s, 2), re_flags); /* first element is the flags */
-    dbuf_putc(re_code(s, 1), 0); /* second element is the number of captures */
+    dbuf_put_u16(re_code(s, 2), 0); /* second element is the number of captures */
     dbuf_putc(re_code(s, 1), 0); /* stack size */
+    dbuf_putc(re_code(s, 1), 0);
     dbuf_put_u32(re_code(s, 4), 0); /* bytecode length */
 
     if (!is_sticky) {
@@ -3367,7 +3382,7 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         re_emit_op(s, REOP_any);
         re_emit_op_u32(s, REOP_goto, -(5 + 1 + 5));
     }
-    re_emit_op_u8(s, REOP_save_start, 0);
+    re_emit_op_u16(s, REOP_save_start, 0);
 
     if (re_parse_disjunction(s, FALSE)) {
     error:
@@ -3384,7 +3399,7 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         return NULL;
     }
 
-    re_emit_op_u8(s, REOP_save_end, 0);
+    re_emit_op_u16(s, REOP_save_end, 0);
 
     re_emit_op(s, REOP_match);
 
@@ -3405,7 +3420,7 @@ uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
         goto error;
     }
 
-    s->byte_code.buf[RE_HEADER_CAPTURE_COUNT] = s->capture_count;
+    put_u16(s->byte_code.buf + RE_HEADER_CAPTURES, s->capture_count);
     s->byte_code.buf[RE_HEADER_REGISTER_COUNT] = register_count;
     put_u32(s->byte_code.buf + RE_HEADER_BYTECODE_LEN,
             s->byte_code.size - RE_HEADER_LEN);
@@ -3864,7 +3879,7 @@ static void lre_split(REExecContext *s, const uint8_t *sp, const uint8_t **ppc,
         op = *q;
         while (op == REOP_save_start || op == REOP_save_end ||
                op == REOP_save_reset) {
-            q += op == REOP_save_reset ? 3 : 2;
+            q += op == REOP_save_reset ? 5 : 3;
             op = *q;
         }
         if (!((LRE_READ_OPS >> op) & 1))
@@ -4189,7 +4204,8 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
             break;
         case REOP_save_start:
         case REOP_save_end:
-            val = *pc++;
+            val = get_u16(pc);
+            pc += 2;
             assert(val < s->capture_count);
             idx = 2 * val + opcode - REOP_save_start;
             SAVE_CAPTURE(idx, (uint8_t *)cptr);
@@ -4197,9 +4213,9 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
         case REOP_save_reset:
             {
                 uint32_t val2;
-                val = pc[0];
-                val2 = pc[1];
-                pc += 2;
+                val = get_u16(pc);
+                val2 = get_u16(pc + 2);
+                pc += 4;
                 assert(val2 < s->capture_count);
                 CHECK_STACK_SPACE(2 * (val2 - val + 1));
                 while (val <= val2) {
@@ -4338,12 +4354,12 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
                 uint32_t c1, c2;
                 int i, n;
 
-                n = *pc++;
-                pc1 = pc;
-                pc += n;
+                n = get_u16(pc);
+                pc1 = pc + 2;
+                pc += 2 + 2 * n;
 
                 for(i = 0; i < n; i++) {
-                    val = pc1[i];
+                    val = get_u16(pc1 + 2 * i);
                     if (val >= s->capture_count)
                         goto no_match;
                     cptr1_start = capture[2 * val];
@@ -4516,7 +4532,7 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
    LRE_PLAN_RANGE and LRE_PLAN_SET and unused for the other kinds. */
 #define LRE_SKIP_LOOP (5 + 1 + 5)
 #define LRE_SKIP_MATCH (RE_HEADER_LEN + LRE_SKIP_LOOP)
-#define LRE_SKIP_BODY (LRE_SKIP_MATCH + 2)
+#define LRE_SKIP_BODY (LRE_SKIP_MATCH + 3)
 
 /* the kinds of plan lre_plan writes */
 enum {
@@ -4624,14 +4640,16 @@ static BOOL lre_first_set(LRESet *set, const uint8_t *pc0)
         if (--budget < 0)
             return FALSE;
         switch (*pc) {
-        case REOP_save_start:
-        case REOP_save_end:
         case REOP_set_char_pos:
         case REOP_check_advance:
             pc += 2;
             continue;
-        case REOP_save_reset:
+        case REOP_save_start:
+        case REOP_save_end:
             pc += 3;
+            continue;
+        case REOP_save_reset:
+            pc += 5;
             continue;
         case REOP_set_i32:
             pc += 6;
@@ -4919,7 +4937,7 @@ static int lre_op_size(const uint8_t *pc)
     case REOP_back_reference_i:
     case REOP_backward_back_reference:
     case REOP_backward_back_reference_i:
-        len += pc[1];
+        len += 2 * get_u16(pc + 1);
         break;
     }
     return len;
@@ -5078,7 +5096,7 @@ static int lre_literal_before(const uint8_t *code, int body, int lit)
 static void lre_plan_literal(const uint8_t *bc, uint8_t *plan, int prefix)
 {
     const uint8_t *code = bc + RE_HEADER_LEN;
-    int len = get_u32(bc + RE_HEADER_BYTECODE_LEN), body = LRE_SKIP_LOOP + 2;
+    int len = get_u32(bc + RE_HEADER_BYTECODE_LEN), body = LRE_SKIP_LOOP + 3;
     BOOL unicode = (get_u16(bc + RE_HEADER_FLAGS) &
                     (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
     int end = len - body > LRE_SCAN_STEP ? body + LRE_SCAN_STEP : len;
@@ -5191,12 +5209,12 @@ static void lre_plan(uint8_t *bc)
         return;
     /* The bytecode holds at least the loop, save_start 0 and the op after
        it: an empty regexp is followed by save_end 0, then match. */
-    if (get_u32(bc + RE_HEADER_BYTECODE_LEN) < LRE_SKIP_LOOP + 2 + 1)
+    if (get_u32(bc + RE_HEADER_BYTECODE_LEN) < LRE_SKIP_LOOP + 3 + 1)
         return;
     if (loop[0] != REOP_split_goto_first || get_u32(loop + 1) != 1 + 5 ||
         loop[5] != REOP_any || loop[6] != REOP_goto ||
         (int)get_u32(loop + 7) != -LRE_SKIP_LOOP ||
-        loop[LRE_SKIP_LOOP] != REOP_save_start || loop[LRE_SKIP_LOOP + 1] != 0)
+        loop[LRE_SKIP_LOOP] != REOP_save_start || get_u16(loop + LRE_SKIP_LOOP + 1) != 0)
         return;
 #ifndef LRE_NO_LITERAL
     if (*op != REOP_line_start) {
@@ -5393,7 +5411,7 @@ static BOOL lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
     if (ret == 1)
         return TRUE;
  none:
-    lre_clear(capture, 2 * bc[RE_HEADER_CAPTURE_COUNT]);
+    lre_clear(capture, 2 * lre_capture_count(bc));
     st->index = ret;
     return FALSE;
 }
@@ -5476,7 +5494,7 @@ int lre_exec(uint8_t **capture,
     cindex = skip.index;
     re_flags = lre_get_flags(bc_buf);
     s->is_unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
-    s->capture_count = bc_buf[RE_HEADER_CAPTURE_COUNT];
+    s->capture_count = lre_capture_count(bc_buf);
     s->cbuf = cbuf;
     s->cbuf_end = cbuf + (clen << cbuf_type);
     s->cbuf_type = cbuf_type;
@@ -5512,13 +5530,13 @@ int lre_exec(uint8_t **capture,
 
 int lre_get_alloc_count(const uint8_t *bc_buf)
 {
-    return bc_buf[RE_HEADER_CAPTURE_COUNT] * 2 +
+    return lre_capture_count(bc_buf) * 2 +
         bc_buf[RE_HEADER_REGISTER_COUNT];
 }
 
 int lre_get_capture_count(const uint8_t *bc_buf)
 {
-    return bc_buf[RE_HEADER_CAPTURE_COUNT];
+    return lre_capture_count(bc_buf);
 }
 
 int lre_get_flags(const uint8_t *bc_buf)

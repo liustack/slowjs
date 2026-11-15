@@ -5,9 +5,9 @@
 // the index and flags of a regexp, then the error it throws or how many
 // matches it found and a hash of them: the regexp is run from every
 // position of every line of the input, as a tokenizer of shiki runs it.
-// A regexp with more capture groups than the engine allows (254, where
-// Node allows 32767) is left out. testdata/shikire.txt is what Node prints
-// for it (see TestRegexpShiki).
+// A regexp with more capture groups than the engine allows (32767, as
+// Node) would be left out: none has as many. testdata/shikire.txt is what
+// Node prints for it (see TestRegexpShiki).
 var lines = shikiInput.split('\n');
 // groups counts the capture groups of the pattern src, with the v flag or
 // the u flag.
@@ -29,7 +29,7 @@ function hash(s, h) {
 var out = [], bad = 0, skipped = 0, total = 0;
 for (var i = 0; i < shikiRegexps.length; i++) {
   var x = shikiRegexps[i], r, g = groups(x.source, x.flags.indexOf('v') >= 0);
-  if (g > 254) {
+  if (g > 32767) {
     skipped++;
     out.push(i + ' /' + x.flags + ' ' + g + ' groups');
     continue;
