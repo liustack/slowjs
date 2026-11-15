@@ -3877,6 +3877,7 @@ static void test_tag_polls(void)
         "function key(p) { return Object.keys(p.style)[0] }\n"
         "function start(p, type) { F = startTag; A = [T, p, type, fc, hop, d] }\n"
         "function self(p, type) { F = startTag; A = [T, p, type, fc, hop, d, 1] }\n"
+        "function inp(p) { F = startTag; A = [T, p, 'input', fc, hop, d, 2] }\n"
         "0";
     static const struct {
         const char *prep, *want;
@@ -3890,6 +3891,7 @@ static void test_tag_polls(void)
         { "start({ children: wide }, 'div')", "'<div>' + wide.replaceAll('&', '&amp;')", 256 },
         { "start({ title: q }, 'div')", "'<div title=\"' + q.replaceAll('\"', '&quot;') + '\">'", 256 },
         { "self({ alt: q }, 'img')", "'<img alt=\"' + q.replaceAll('\"', '&quot;') + '\"/>'", 256 },
+        { "inp({ value: q, name: 'n' })", "'<input name=\"n\" value=\"' + q.replaceAll('\"', '&quot;') + '\"/>'", 256 },
         /* the white space, then the escape */
         { "start({ style: { color: sv } }, 'div')", "'<div style=\"color:' + sv.trim().replaceAll('<', '&lt;') + '\">'", 512 },
         { "start({ href: ul }, 'a')", "'<a href=\"' + ul + '\">'", 512 },

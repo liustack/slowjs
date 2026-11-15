@@ -29,7 +29,11 @@ import (
 // mode, makes it stand in for another function of React: 1 for
 // pushSelfClosing, which React DOM writes img (after its image preload) and
 // the void elements such as br and hr with: the attributes, "/>" and no text,
-// null returned, and a decline when children is set, where React throws.
+// null returned, and a decline when children is set, where React throws. 2 is
+// the case "input" of pushStartInstance: the same, with name, formAction,
+// formEncType, formMethod, formTarget, checked and value (or defaultChecked
+// and defaultValue) written after the other props, as React writes them, and a
+// decline when formAction is a function.
 // undefined and 0 are pushStartGenericElement, and any other mode declines,
 // so that a script that asks for a mode the engine does not have gets
 // React's function. When it cannot be sure to

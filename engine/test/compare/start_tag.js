@@ -4,10 +4,11 @@
 // root of this repository.
 // startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) against
 // the functions of React DOM 19.3 they stand in for: pushStartGenericElement,
-// with what it calls, pushSelfClosing (startTag with mode 1) and
-// endChunkForTag. The functions between the two "React DOM" lines are those
-// of react-dom-server-legacy.browser.production.js of react-dom 19.3.1, as
-// they are (MIT, Copyright (c) Meta Platforms, Inc. and affiliates). For
+// with what it calls, pushSelfClosing (startTag with mode 1), the case
+// "input" of pushStartInstance (mode 2) and endChunkForTag. The functions
+// between the two "React DOM" lines are those of
+// react-dom-server-legacy.browser.production.js of react-dom 19.3.1, as they
+// are (MIT, Copyright (c) Meta Platforms, Inc. and affiliates). For
 // every call, listed or random, startTag either pushes onto target one string
 // that is the text React's function pushes, and returns what it returns, or
 // returns decline and leaves target as it was. It never takes a call where
@@ -431,6 +432,68 @@ function pushInnerHTML(target, innerHTML, children) {
     null !== innerHTML && void 0 !== innerHTML && target.push("" + innerHTML);
   }
 }
+var actionJavaScriptURL = escapeTextForBrowser(
+  "javascript:throw new Error('React form unexpectedly submitted.')"
+);
+function pushAdditionalFormField(value, key) {
+  this.push('<input type="hidden"');
+  validateAdditionalFormField(value);
+  pushStringAttribute(this, "name", key);
+  pushStringAttribute(this, "value", value);
+  this.push("/>");
+}
+function validateAdditionalFormField(value) {
+  if ("string" !== typeof value) throw Error(formatProdErrorMessage(480));
+}
+function getCustomFormFields(resumableState, formAction) {
+  if ("function" === typeof formAction.$$FORM_ACTION) {
+    var id = resumableState.nextFormID++;
+    resumableState = resumableState.idPrefix + id;
+    try {
+      var customFields = formAction.$$FORM_ACTION(resumableState);
+      if (customFields) {
+        var formData = customFields.data;
+        null != formData && formData.forEach(validateAdditionalFormField);
+      }
+      return customFields;
+    } catch (x) {
+      if ("object" === typeof x && null !== x && "function" === typeof x.then)
+        throw x;
+    }
+  }
+  return null;
+}
+function pushFormActionAttribute(
+  target,
+  resumableState,
+  renderState,
+  formAction,
+  formEncType,
+  formMethod,
+  formTarget,
+  name
+) {
+  var formData = null;
+  if ("function" === typeof formAction) {
+    var customFields = getCustomFormFields(resumableState, formAction);
+    null !== customFields
+      ? ((name = customFields.name),
+        (formAction = customFields.action || ""),
+        (formEncType = customFields.encType),
+        (formMethod = customFields.method),
+        (formTarget = customFields.target),
+        (formData = customFields.data))
+      : (target.push(" ", "formAction", '="', actionJavaScriptURL, '"'),
+        (formTarget = formMethod = formEncType = formAction = name = null),
+        injectFormReplayingRuntime(resumableState, renderState));
+  }
+  null != name && pushAttribute(target, "name", name);
+  null != formAction && pushAttribute(target, "formAction", formAction);
+  null != formEncType && pushAttribute(target, "formEncType", formEncType);
+  null != formMethod && pushAttribute(target, "formMethod", formMethod);
+  null != formTarget && pushAttribute(target, "formTarget", formTarget);
+  return formData;
+}
 function pushSelfClosing(target, props, tag, formatContext) {
   target.push(startChunkForTag(tag));
   for (var propKey in props)
@@ -494,6 +557,93 @@ function endChunkForTag(tag) {
   return chunk;
 }
 // ---- end of React DOM ----
+// The case "input" of pushStartInstance as React DOM 19.3.1 has it, made a
+// function of its own (startTag with mode 2), and a stand-in for
+// injectFormReplayingRuntime, which writes into renderState and not into
+// target and runs only for a formAction that is a function
+function pushInput(target$jscomp$0, props, formatContext, resumableState, renderState) {
+  switch ("input") {
+    case "input":
+      target$jscomp$0.push(startChunkForTag("input"));
+      var name = null,
+        formAction = null,
+        formEncType = null,
+        formMethod = null,
+        formTarget = null,
+        value$jscomp$1 = null,
+        defaultValue$jscomp$0 = null,
+        checked = null,
+        defaultChecked = null,
+        propKey$jscomp$3;
+      for (propKey$jscomp$3 in props)
+        if (hasOwnProperty.call(props, propKey$jscomp$3)) {
+          var propValue$jscomp$3 = props[propKey$jscomp$3];
+          if (null != propValue$jscomp$3)
+            switch (propKey$jscomp$3) {
+              case "children":
+              case "dangerouslySetInnerHTML":
+                throw Error(formatProdErrorMessage(399, "input"));
+              case "name":
+                name = propValue$jscomp$3;
+                break;
+              case "formAction":
+                formAction = propValue$jscomp$3;
+                break;
+              case "formEncType":
+                formEncType = propValue$jscomp$3;
+                break;
+              case "formMethod":
+                formMethod = propValue$jscomp$3;
+                break;
+              case "formTarget":
+                formTarget = propValue$jscomp$3;
+                break;
+              case "defaultChecked":
+                defaultChecked = propValue$jscomp$3;
+                break;
+              case "defaultValue":
+                defaultValue$jscomp$0 = propValue$jscomp$3;
+                break;
+              case "checked":
+                checked = propValue$jscomp$3;
+                break;
+              case "value":
+                value$jscomp$1 = propValue$jscomp$3;
+                break;
+              default:
+                pushAttribute(
+                  target$jscomp$0,
+                  propKey$jscomp$3,
+                  propValue$jscomp$3
+                );
+            }
+        }
+      var formData = pushFormActionAttribute(
+        target$jscomp$0,
+        resumableState,
+        renderState,
+        formAction,
+        formEncType,
+        formMethod,
+        formTarget,
+        name
+      );
+      null !== checked
+        ? pushBooleanAttribute(target$jscomp$0, "checked", checked)
+        : null !== defaultChecked &&
+          pushBooleanAttribute(target$jscomp$0, "checked", defaultChecked);
+      null !== value$jscomp$1
+        ? pushAttribute(target$jscomp$0, "value", value$jscomp$1)
+        : null !== defaultValue$jscomp$0 &&
+          pushAttribute(target$jscomp$0, "value", defaultValue$jscomp$0);
+      pushViewTransitionAttributes(target$jscomp$0, formatContext);
+      target$jscomp$0.push("/>");
+      null != formData &&
+        formData.forEach(pushAdditionalFormField, target$jscomp$0);
+      return null;
+  }
+}
+function injectFormReplayingRuntime() {}
 
 const D = {}
 const FC = { insertionMode: 2, selectedValue: null, tagScope: 0, viewTransition: null }
@@ -508,15 +658,19 @@ function show(v) {
 }
 
 // pushStartGenericElement and startTag on the same arguments, or with mode 1
-// pushSelfClosing and startTag with mode 1. want is 'take', 'decline' or
-// undefined (either is right).
+// pushSelfClosing, or with mode 2 the case "input", and startTag with the
+// mode. want is 'take', 'decline' or undefined (either is right).
 function check(name, tag, props, want, fc, hop, target, mode) {
   fc = fc || FC
   hop = hop || hasOwnProperty
   count++
   const o = []
   let ro, oerr = null
-  try { ro = (mode === 1 ? pushSelfClosing : pushStartGenericElement)(o, props, tag, fc) } catch (e) { oerr = e }
+  try {
+    ro = mode === 1 ? pushSelfClosing(o, props, tag, fc)
+      : mode === 2 ? pushInput(o, props, fc, { idPrefix: '', nextFormID: 0, instructions: 0 }, {})
+      : pushStartGenericElement(o, props, tag, fc)
+  } catch (e) { oerr = e }
   const c = target || ['before']
   const before = c.slice()
   let rc
@@ -766,6 +920,68 @@ for (const m of [false, true, null, -1, 3, 2 ** 31 - 1, 1.5, NaN, '1', 1n, {}, [
   if (startTag(t, {}, 'br', FC, hasOwnProperty, D, m) !== D || t.length !== 1) fail('mode ' + show(m) + ' taken')
 }
 
+// the case "input": the other props in order, then name and the four form
+// props, checked or else defaultChecked, value or else defaultValue, "/>"
+const inputCases = [
+  [{ type: 'email', name: 'email', placeholder: 'you@example.com', className: cls60, value: 'a&b', onChange: fn, required: true }, 'take'],
+  [{ value: 'v', type: 'text', name: 'n', checked: 'yes', id: 'i', defaultValue: 'd', defaultChecked: false }, 'take'],
+  [{ type: 'checkbox', checked: true, onChange: fn, id: 'c1' }, 'take'],
+  [{ type: 'checkbox', defaultChecked: true }, 'take'],
+  [{ type: 'checkbox', checked: false, defaultChecked: true }, 'take'],
+  [{ type: 'radio', checked: 0, defaultChecked: 1 }, 'take'],
+  [{ checked: '', defaultChecked: 'x' }, 'take'],
+  [{ checked: fn }, 'take'],
+  [{ checked: sym, defaultChecked: true }, 'take'],
+  [{ checked: {} }, 'take'],
+  [{ checked: null, defaultChecked: true }, 'take'],
+  [{ checked: undefined, defaultChecked: 'on' }, 'take'],
+  [{ defaultValue: 'x', value: undefined }, 'take'],
+  [{ defaultValue: 'x', value: null }, 'take'],
+  [{ value: 0 }, 'take'],
+  [{ value: -0, defaultValue: 'no' }, 'take'],
+  [{ value: false }, 'take'],
+  [{ value: true }, 'take'],
+  [{ value: '' }, 'take'],
+  [{ value: 1.5e300 }, 'take'],
+  [{ value: '<"\'&>' }, 'take'],
+  [{ value: fn, defaultValue: 'd' }, 'take'],
+  [{ value: sym }, 'take'],
+  [{ defaultValue: fn }, 'take'],
+  [{ value: {} }, 'decline'],
+  [{ value: [1, 2] }, 'decline'],
+  [{ value: 1n }, 'decline'],
+  [{ defaultValue: {} }, 'decline'],
+  [{ name: 'q', formAction: '/search?a=1&b=2', formMethod: 'get', formEncType: 'text/plain', formTarget: '_blank', type: 'submit', value: 'Go' }, 'take'],
+  [{ formTarget: 't', formMethod: 'm', formEncType: 'e', formAction: 'a', name: 'n' }, 'take'],
+  [{ formAction: '' }, 'take'],
+  [{ formAction: true, name: false, formMethod: 1 }, 'take'],
+  [{ name: fn, formTarget: sym }, 'take'],
+  [{ name: {} }, 'decline'],
+  [{ formAction: fn }, 'decline'],
+  [{ formAction: class {} }, 'decline'],
+  [{ formAction: fn.bind(null), name: 'n' }, 'decline'],
+  [{ formAction: 'javascript:void 0' }, 'decline'],
+  [{ formAction: ' JAVASCRIPT:x', name: 'n' }, 'decline'],
+  [{ formAction: {} }, 'decline'],
+  [{ children: 'x' }, 'decline'],
+  [{ children: null, value: 'v' }, 'take'],
+  [{ children: [], value: 'v' }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: 'x' } }, 'decline'],
+  [{ style: { width: 120, borderColor: 'red' }, disabled: true, readOnly: true, autoFocus: true, size: 3 }, 'decline'],
+  [{ style: { width: 120, borderColor: 'red' }, disabled: true, readOnly: true, autoFocus: true, 'aria-invalid': false, 'data-x': true }, 'take'],
+  [{ ref: fn, suppressHydrationWarning: true, defaultValue: 'x', key: 'k' }, 'take'],
+  [{ name: 'a'.repeat(200) + '中', value: 'Ā\ud800' }, 'take'],
+  [{ value: 'Ā'.repeat(3000), name: '"'.repeat(3000) }, 'take'],
+  [{}, 'take'],
+]
+inputCases.forEach(([props, want], i) => check('input case ' + i, 'input', props, want, FC, null, null, 2))
+check('input with viewTransition', 'input', { value: 'v' }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 2)
+check('input into a frozen target', 'input', { value: 'v' }, 'decline', FC, null, Object.freeze([]), 2)
+check('input of 32 props', 'input', Object.fromEntries(Array.from({ length: 23 }, (_, i) => ['data-' + i, i])
+  .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'take', FC, null, null, 2)
+check('input of 33 props', 'input', Object.fromEntries(Array.from({ length: 24 }, (_, i) => ['data-' + i, i])
+  .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'decline', FC, null, null, 2)
+
 // what the call finds around it
 check('another hasOwnProperty', 'div', { a: 1 }, 'decline', FC, function () {})
 check('a bound hasOwnProperty', 'div', { a: 1 }, 'decline', FC, hasOwnProperty.bind(null))
@@ -912,6 +1128,12 @@ for (let t = 0; t < 4000; t++)
   check('random ' + t, rand(20) === 0 ? pick(['1x', 'my-el', 'svg', 'x:y', '']) : 'div', props())
 for (let t = 0; t < 2000; t++)
   check('random self ' + t, rand(20) === 0 ? pick(['1x', 'x:y', '']) : pick(['img', 'br', 'hr', 'source', 'meta']), props(), undefined, FC, null, null, 1)
+const heldNames = ['name', 'formAction', 'formEncType', 'formMethod', 'formTarget', 'checked', 'defaultChecked', 'value', 'defaultValue']
+for (let t = 0; t < 2000; t++) {
+  const p = props()
+  for (let i = rand(5); i > 0; i--) p[pick(heldNames)] = rand(3) ? str() : value()
+  check('random input ' + t, 'input', p, undefined, FC, null, null, 2)
+}
 
 // An index on Array.prototype makes push set it there, and React's push runs
 // the setter. startTag declines from then on, as push leaves its fast path.

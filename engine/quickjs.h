@@ -1353,8 +1353,10 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    nothing, for the caller to run React's function. The seventh argument, a
    mode, picks the function of React: undefined or 0 pushStartGenericElement,
    1 pushSelfClosing, for img and the void elements ("/>" in place of ">", no
-   text, a decline for children, and null returned). It declines any other
-   mode. It throws only when the engine has no memory or the host interrupts
+   text, a decline for children, and null returned), 2 the case "input" of
+   pushStartInstance (as 1, with name, the form attributes, checked and value
+   written last as React does, and a decline for a formAction that is a
+   function). It declines any other mode. It throws only when the engine has no memory or the host interrupts
    it, with target unchanged. Its length is 7, it has no prototype property
    and cannot be called with new. */
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len);

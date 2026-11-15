@@ -173,6 +173,8 @@ func TestTagsStop(t *testing.T) {
 		{"attribute", `var p = { title: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		{"self-closing attribute", `var p = { alt: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'img', fc, hop, d, 1)`, stopPolls},
 		{"self-closing style value", `var p = { style: { width: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'img', fc, hop, d, 1)`, stopPolls},
+		{"input value", `var p = { value: '"'.repeat(1 << 24), name: 'n' }`, `for (;;) st([], p, 'input', fc, hop, d, 2)`, stopPolls},
+		{"input name", `var p = { type: 'text', name: '<'.repeat(1 << 24) }`, `for (;;) st([], p, 'input', fc, hop, d, 2)`, stopPolls},
 		// a rope, made flat by the first call
 		{"style value", `var p = { style: { color: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		// the scan of a style name for a character that is not ASCII reads
@@ -272,6 +274,8 @@ func TestTagsMemoryLimit(t *testing.T) {
 	      if (T.length !== 1) throw new Error('target changed');
 	      st(T, P[i], 'img', fc, hop, d, 1);
 	      if (T.pop() !== '<img data-n' + i + '="v" style="w' + i + ':1px"/>') throw new Error('wrote img ' + i);
+	      st(T, P[i], 'input', fc, hop, d, 2);
+	      if (T.pop() !== '<input data-n' + i + '="v" style="w' + i + ':1px"/>') throw new Error('wrote input ' + i);
 	      if (et(E[i]) !== '</t' + i + '>') throw new Error('end ' + i);
 	    }
 	    return P.length;
