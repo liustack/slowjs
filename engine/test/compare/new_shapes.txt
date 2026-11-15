@@ -1,0 +1,31 @@
+Pair kept: ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] ["car","cdr"] 19,38
+Pair alone 0: ["car","cdr"] ["car:0wec","cdr:1wec"]
+Pair alone 1: ["car","cdr"] ["car:1wec","cdr:1wec"]
+Pair alone 2: ["car","cdr"] ["car:2wec","cdr:1wec"]
+Pair alone 3: ["car","cdr"] ["car:3wec","cdr:1wec"]
+Pair alone 4: ["car","cdr"] ["car:4wec","cdr:1wec"]
+Seen: []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"] / []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"] / []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"] / []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"] / []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"] / []|["log","x"]|["log","x","y"]|["log","x","y","z"] ["log","x","y","z"]
+S setter: ["a","b","c"] ["a","b","c"] ["a","b","c"] ["a","b","c"] ["a","b","c"] ["a","b","c"] ["a","_b","c"] ["a","_b","c"] ["a","_b","c"] ["a","_b","c"] got 1,11,21,31
+S setter gone: ["a","b","c"] 8
+R read-only: ["a","b"] ["a","b"] ["a","b"] ["a","b"] ["a","b"] then ["a"] ro
+R getter alone: ["a"] g
+R plain again: ["a","b"] 3
+RS read-only: ["a","b"] ["a","b"] ["a","b"] ["a","b"] ["a","b"] then TypeError
+RS getter alone: TypeError
+RS plain again: ["a","b"] 3
+PX proxy: ["a","b"] ["a","b"] ["a","b"] ["a","b"] ["a","b"] ["a","b"] ["a","b"] traps set a,set b,set a,set b,set a,set b
+Ch: ["a","b"]A ["a","b"]A ["a","b"]A ["a","b"]A ["a","b"]B ["a","b"]B ["a","b"]B ["a","b"]B ["a","b"]A ["a","b"]A ["a","viaSetter"]C ["a","viaSetter"]C
+Ch primitive prototype: ["a","b"] true
+D: ["b","a","c"] ["b","a","c"] ["a","c"] ["b","a","c"] ["b","a","c"] ["b","a","c"] ["b","a","c"] ["b","a","c"] ["b","a","c"]
+F2: ["p","q"]FSN ["p","q"]SN ["p","q"]N ["p","q"]O ["p","q"] ["p","q","r"] ["p","q"] ["p","q"]
+F2 frozen store: TypeError 0
+Br: ["a","b","z"] ["b","a","z"] ["a","c","b","z"] ["a","b","z"] ["b","a","z"] ["a","c","b","z"] ["a","b","z"] ["b","a","z"] ["a","c","b","z"] ["a","b","z"] ["b","a","z"] ["a","c","b","z"]
+Ret: ["a"]true ["other"]false ["a"]true ["other"]false ["a"]true ["other"]false
+classes: ["x","y"]2 ["x","y","z","w"]2 ["a","_b","c"] ["x","y"]2 ["x","y","z","w"]2 ["a","_b","c"] ["x","y"]2 ["x","y","z","w"]2 ["a","_b","c"] ["x","y"]2 ["x","y","z","w"]2 ["a","_b","c"] ["x","y"]2 ["x","y","z","w"]2 ["a","_b","c"]
+Reflect.construct(Derived, [5], Base): ["x","y","z","w"] true
+Reflect.construct(Pair, [i], Other): ["car","cdr"] true
+Reflect.construct(Pair, [i], Other): ["car","cdr"] true
+Reflect.construct(Pair, [i], Other): ["car","cdr"] true
+Mix: ["m","n"] ["m","n","extra"] ["m","n"] ["m","n"] ["m","n"] ["m","n"] ["m","n"] ["m","n","o"] ["m","n"] truetrue
+Many: 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 6:7,k0,k1:k2,01,Symbol(s) 34:7,k0,k1:k30,01,Symbol(s) 35:7,k0,k1:k31,01,Symbol(s) 36:7,k0,k1:k32,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s) 43:7,k0,k1:k39,01,Symbol(s)
+J: [{"b":0,"a":1},{"b":1,"a":2},{"b":2,"a":3},{"b":3,"a":4},{"b":4,"a":5}] b,a,inherited

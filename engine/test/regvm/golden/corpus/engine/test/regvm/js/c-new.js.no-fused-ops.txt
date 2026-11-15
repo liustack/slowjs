@@ -85,6 +85,6 @@ result reflect class true 1
 result reflect true undefined
 result reflect nt false function true
 result reflect class true 2
-mem-end obj=227 atom=595 shape=144 prop=1038 jsfunc=20 cfunc=130 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=193 atom=545 shape=127 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=227 atom=595 shape=145 prop=1038 jsfunc=20 cfunc=130 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=193 atom=545 shape=128 prop=965 jsfunc=0 cfunc=130 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

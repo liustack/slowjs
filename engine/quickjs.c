@@ -1297,6 +1297,13 @@ struct JSShape {
        in the table do not change (see js_own_key_kinds). Fits in the
        padding. */
     uint8_t for_in_keys;
+    /* whether the shape may take a parent (js_shape_leave): 0 while it may
+       and holds none, JS_SHAPE_PARENT_HELD while it holds one, and
+       JS_SHAPE_PARENT_NO once it was to take one with the Object.prototype
+       of that context as its prototype or with more than
+       JS_SHAPE_MAX_PROPS keys. Back to 0 when it lets its parent go or gets
+       a key in place, and in a copy. Fits in the padding. */
+    uint8_t parent_ok;
     uint32_t hash; /* current hash value */
     uint32_t prop_hash_mask; /* >= 2 */
     int prop_size; /* allocated properties */
@@ -1310,8 +1317,17 @@ struct JSShape {
     uint32_t parent_id;
     JSShape *shape_hash_next; /* in JSRuntime.shape_hash[h] list */
     JSObject *proto;
+    /* a reference to the shape an object left when add_property found this
+       one for its next key, or NULL (see js_shape_leave) */
+    JSShape *parent;
     uint32_t hash_table[]; /* prop_hash_mask + 1 elements */
     /* followed by JSShapeProperty prop[prop_size]; */
+};
+
+/* JSShape.parent_ok, besides 0 */
+enum {
+    JS_SHAPE_PARENT_NO = 1,
+    JS_SHAPE_PARENT_HELD,
 };
 
 /* JSObject.rv_fast */
@@ -7588,9 +7604,11 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 /* The ids of the shapes of the shape hash table (JSShape.id and parent_id).
    A shape of the table gets a new id when it is made and each time it gets
    a key (add_shape_property), and the id it had then becomes its parent id.
-   Nothing else changes a shape of the table: js_shape_prepare_update takes a
-   shape out of it for good before its keys, flags or prototype change, and
-   gives it the id 0. The one place that changes flags in place without it,
+   find_hashed_shape_prop also gives the shape it finds one key after sh,
+   whose keys and flags it compared with those of sh, the id of sh as its
+   parent id. Nothing else changes a shape of the table:
+   js_shape_prepare_update takes a shape out of it for good before its
+   keys, flags or prototype change, and gives it the id 0. The one place that changes flags in place without it,
    js_closure_define_global_var, changes those of the global object, whose
    shape is never in the table: it is made out of the table
    (JS_NewObjectProtoClassAlloc), a shape made out of the table never goes
@@ -7654,6 +7672,8 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     sh->is_hashed = FALSE;
     sh->inline_grew = FALSE;
     sh->for_in_keys = 0;
+    sh->parent = NULL;
+    sh->parent_ok = 0;
     return sh;
 }
 
@@ -7706,6 +7726,8 @@ static JSShape *js_clone_shape(JSContext *ctx, JSShape *sh1)
     js_rc(sh)->ref_count = 1;
     add_gc_object(ctx->rt, &sh->header, JS_GC_OBJ_TYPE_SHAPE);
     sh->is_hashed = FALSE;
+    sh->parent = NULL;
+    sh->parent_ok = 0;
     if (sh->proto) {
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
@@ -7890,16 +7912,19 @@ static JSShape *js_shape_keep(JSRuntime *rt, JSShape *sh)
     return old;
 }
 
-static void js_free_shape0(JSRuntime *rt, JSShape *sh)
+/* Free sh, whose count is 0, or give it to the shape cache, and return the
+   parent it held (see js_shape_leave), whose count the caller drops. */
+static inline JSShape *js_free_shape1(JSRuntime *rt, JSShape *sh)
 {
     uint32_t i;
     JSShapeProperty *pr;
+    JSShape *parent;
 
     assert(js_rc(sh)->ref_count == 0);
     /* keep sh in the shape cache, or free the shape the cache let go */
     sh = js_shape_keep(rt, sh);
     if (!sh)
-        return;
+        return NULL;
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -7910,8 +7935,28 @@ static void js_free_shape0(JSRuntime *rt, JSShape *sh)
         JS_FreeAtomRT(rt, pr->atom);
         pr++;
     }
+    parent = sh->parent;
     remove_gc_object(&sh->header);
     js_free_rt(rt, sh);
+    return parent;
+}
+
+/* Drop the count of the parent a freed shape held, and free the parents
+   whose count gets to 0 one after another, so that a chain of shapes is
+   freed at one level of the C stack. Out of line: most shapes have no
+   parent. */
+static no_inline void js_free_shape_parents(JSRuntime *rt, JSShape *sh)
+{
+    while (sh != NULL && --js_rc(sh)->ref_count == 0)
+        sh = js_free_shape1(rt, sh);
+}
+
+static void js_free_shape0(JSRuntime *rt, JSShape *sh)
+{
+    JSShape *parent = js_free_shape1(rt, sh);
+
+    if (unlikely(parent != NULL))
+        js_free_shape_parents(rt, parent);
 }
 
 static void js_free_shape(JSRuntime *rt, JSShape *sh)
@@ -7925,6 +7970,20 @@ static void js_free_shape_null(JSRuntime *rt, JSShape *sh)
 {
     if (sh)
         js_free_shape(rt, sh);
+}
+
+/* Let go of the parent of sh (see js_shape_leave), when sh changes in a way
+   that makes it no longer the shape one key after its parent, and leave
+   whether sh may take one to be worked out again: its keys changed. */
+static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
+{
+    JSShape *parent = sh->parent;
+
+    sh->parent_ok = 0;
+    if (parent) {
+        sh->parent = NULL;
+        js_free_shape(rt, parent);
+    }
 }
 
 /* The properties of an ordinary object made by OP_object_lit sit at the end
@@ -8148,6 +8207,8 @@ static int add_shape_property(JSContext *ctx, JSShape **psh,
     h = atom & hash_mask;
     pr->hash_next = sh->hash_table[h];
     sh->hash_table[h] = sh->prop_count;
+    /* sh grew in place: it is no longer one key after its parent */
+    js_shape_drop_parent(rt, sh);
     return 0;
 }
 
@@ -8219,6 +8280,10 @@ static JSShape *find_hashed_shape_prop(JSRuntime *rt, JSShape *sh,
                     abort();
 #endif
             }
+            /* sh1 starts with the keys of sh: the next shape of the id of
+               sh that gets this key finds sh1 by it, without comparing its
+               keys (a store that changes nothing when sh1 was found so) */
+            sh1->parent_id = sh->id;
             return sh1;
         }
     next: ;
@@ -9974,6 +10039,9 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             JSShape *sh = (JSShape *)gp;
             if (sh->proto != NULL) {
                 mark_func(rt, &sh->proto->header);
+            }
+            if (sh->parent != NULL) {
+                mark_func(rt, &sh->parent->header);
             }
         }
         break;
@@ -14076,6 +14144,62 @@ JSValue JS_GetPropertyStr(JSContext *ctx, JSValueConst this_obj,
     return ret;
 }
 
+/* add_property found new_sh in the shape hash table as the shape one key
+   after sh, the shape of an object that now moves to new_sh, and the
+   reference of the object to sh was the last one (its count is 0). Make sh
+   the parent of new_sh, which takes that reference, or free sh.
+
+   `new C()` starts each object from the empty shape of C.prototype, and
+   nothing kept the shapes between that empty one and the shape the
+   constructor ends with: the objects of C all have their last shape. So each
+   object made a new empty shape and grew it in place key by key, until it
+   found the shape of an object of C made before, and freed its own then. A
+   shape found this way now holds the shape the object leaves, so the shapes
+   one key apart stay in the shape hash table as long as an object of the
+   last one lives: after a few objects, the next one finds the empty shape
+   and every shape after it, and makes and frees none. Only a shape that
+   would be freed is kept this way, so that add_property pays nothing more
+   when it finds a shape: it is the shape an object made for itself, which
+   the objects of a constructor leave as the chain forms.
+
+   A parent has the prototype of new_sh, and its keys are the keys of new_sh
+   but the last, so it holds alive no object and no atom that new_sh does
+   not hold: only its own memory, until new_sh is freed. It stays the shape
+   one key before new_sh: a shape in the table changes only by growing in
+   place (add_shape_property) or by leaving the table for good
+   (js_shape_prepare_update), and both let go of the parent. Shapes whose
+   prototype is the Object.prototype of ctx get no parent: the shape cache
+   keeps those (js_shape_keep). A parent is not taken past JS_SHAPE_MAX_PROPS
+   keys, so a chain is at most that long. Both are worked out once for each
+   shape (parent_ok), the first time it would take a parent. */
+static no_inline void js_shape_leave(JSContext *ctx, JSShape *new_sh, JSShape *sh)
+{
+    if (new_sh->parent_ok == 0) {
+        /* the prototype and the keys of a shape in the table do not change
+           while it is there, but by add_shape_property, which sets
+           parent_ok to 0 again */
+        if (new_sh->proto != JS_VALUE_GET_PTR(ctx->class_proto[JS_CLASS_OBJECT]) &&
+            new_sh->prop_count <= JS_SHAPE_MAX_PROPS) {
+            js_rc(sh)->ref_count = 1;
+            new_sh->parent = sh;
+            new_sh->parent_ok = JS_SHAPE_PARENT_HELD;
+            return;
+        }
+        new_sh->parent_ok = JS_SHAPE_PARENT_NO;
+    }
+    js_free_shape0(ctx->rt, sh);
+}
+
+/* add_property lets go of the reference of its object to sh, the shape the
+   object leaves for new_sh: the last one goes to new_sh or frees sh. A
+   function of its own, as js_free_shape was there, so that add_property has
+   the branches it had and keeps its profile (engine/pgo/README.md). */
+static void js_shape_release(JSContext *ctx, JSShape *new_sh, JSShape *sh)
+{
+    if (unlikely(--js_rc(sh)->ref_count <= 0))
+        js_shape_leave(ctx, new_sh, sh);
+}
+
 /* Note: the property value is not initialized. Return NULL if memory
    error. */
 static JSProperty *add_property(JSContext *ctx,
@@ -14124,7 +14248,7 @@ static JSProperty *add_property(JSContext *ctx,
             }
             js_shape_found(ctx);
             p->shape = js_dup_shape(new_sh);
-            js_free_shape(ctx->rt, sh);
+            js_shape_release(ctx, new_sh, sh);
             return &p->prop[new_sh->prop_count - 1];
         } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {
             /* if the shape is shared, or the shape cache can keep it, clone
@@ -15352,6 +15476,8 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
         } else {
             js_shape_hash_unlink(ctx->rt, sh);
             sh->is_hashed = FALSE;
+            /* its keys, flags or prototype change next (see js_shape_leave) */
+            js_shape_drop_parent(ctx->rt, sh);
         }
         /* out of the table for good: no id (see JS_SHAPE_ID_MAX) */
         sh->id = 0;

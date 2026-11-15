@@ -46,6 +46,6 @@ result kept 7:1:2 # 7:2:5 # 7:2:6 # 3     at st (<eval>:25:46) |     at call (na
 result thrown     at thr (<eval>:26:30) |     at thrown (<eval>:68:17) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  #     at thr (<eval>:26:30) |     at thrown (<eval>:69:14) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3) |  # SyntaxError     at <input>:1:2 |     at parse (native) |     at thrown (<eval>:70:18) |     at <anonymous> (<eval>:100:23) |     at <eval> (<eval>:107:3)
 result notcallable TypeError: not a function # TypeError: not a function # TypeError: not a function # TypeError: class constructors must be invoked with 'new' # TypeError: class constructors must be invoked with 'new'
 result realms 2,true # 2,true # 7:2:1 # 2,true #     at st (<realm>:1:164) |     at call (native) |     at realms (<eval>:84:47) |     at <anonymous> (<eval>:102:23)
-mem-end obj=389 atom=592 shape=246 prop=1957 jsfunc=2 cfunc=260 array=2 fast_array=2 elements=0 binary=0
-mem-gc obj=198 atom=588 shape=126 prop=1010 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=389 atom=592 shape=247 prop=1957 jsfunc=2 cfunc=260 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=198 atom=588 shape=127 prop=1010 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

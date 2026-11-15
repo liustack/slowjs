@@ -95,6 +95,6 @@ result getOwnPropertyDescriptor trap: v=trap w=true e=true c=true
 result getOwnPropertyDescriptor trap, inherited fields: v=up w=false e=false c=true
 result getOwnPropertyDescriptor trap, getter field: v=got w=false e=false c=true [value]
 result getOwnPropertyDescriptor trap, get not callable: throws TypeError
-mem-end obj=586 atom=596 shape=461 prop=2908 jsfunc=13 cfunc=386 array=6 fast_array=6 elements=103 binary=0
-mem-gc obj=217 atom=594 shape=226 prop=1038 jsfunc=10 cfunc=144 array=4 fast_array=4 elements=103 binary=0
+mem-end obj=586 atom=596 shape=462 prop=2908 jsfunc=13 cfunc=386 array=6 fast_array=6 elements=103 binary=0
+mem-gc obj=217 atom=594 shape=227 prop=1038 jsfunc=10 cfunc=144 array=4 fast_array=4 elements=103 binary=0
 --- status exit 0
