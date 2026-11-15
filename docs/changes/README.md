@@ -61,6 +61,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
 | A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
 | A destructuring that renames its fields (`const { a: b } = f()`) reads each field of the temp itself, with no copy of the object for each field | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
+| `++k` or `--k` of a local that is also read below it (`x[k] = x[++k]`) writes the local in its INC or DEC, with no copy into the local after it | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
 
 ## The generator
 

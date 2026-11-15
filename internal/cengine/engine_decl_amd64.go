@@ -1497,6 +1497,7 @@ func rv_getel_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr, a
 func rv_getf_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func rv_getvar_slow(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr, a4 uintptr)
 func rv_gosub_entries(a0 uintptr, a1 uintptr)
+func rv_incdec_store(a0 uintptr, a1 uintptr, a2 uintptr)
 func rv_init_ctor(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func rv_instof(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func rv_islands(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)

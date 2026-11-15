@@ -61,6 +61,39 @@ static void rv_bin2(RVPass *s, int rop, int krop)
     rv_mark_dst(s, d);
 }
 
+/* inc or dec of a local read lazily, whose result the next instruction
+   stores back into it (++k in x[++k]: get_loc k, inc, set_loc k): the other
+   lazy reads of k on the stack, such as the key of x[k] = ... x[++k], are
+   copied now, before the INC, so that the store finds nothing to copy and
+   folds into the INC, which then writes k itself (rv_store). The INC reads k
+   and writes a temp, so the copies get the value they would get after it,
+   and they are owned temps when it throws, as the stack of QuickJS's
+   interpreter holds them then. */
+static void rv_incdec_store(RVPass *s, int pos)
+{
+    int q = rv_next_pos(s, pos), slot, i;
+    if (s->st[s->sp - 1].kind != RV_E_SLOT || q >= s->len || s->leader[q])
+        return;
+    switch (s->bc[q]) {
+    case OP_put_loc: case OP_put_loc0: case OP_put_loc1: case OP_put_loc2:
+    case OP_put_loc3: case OP_put_loc8: case OP_set_loc: case OP_set_loc0:
+    case OP_set_loc1: case OP_set_loc2: case OP_set_loc3: case OP_set_loc8:
+    case OP_put_arg: case OP_put_arg0: case OP_put_arg1: case OP_put_arg2:
+    case OP_put_arg3: case OP_set_arg: case OP_set_arg0: case OP_set_arg1:
+    case OP_set_arg2: case OP_set_arg3:
+        break;
+    default:
+        return;
+    }
+    slot = s->st[s->sp - 1].slot;
+    if (rv_local_slot(s, s->bc[q], s->bc + q) != slot)
+        return;
+    for (i = 0; i < s->sp - 1; i++) {
+        if (s->st[i].kind == RV_E_SLOT && s->st[i].slot == slot)
+            rv_materialize(s, i);
+    }
+}
+
 /* a unary op: d a, the result in the temp of the operand (and the one above
    it for POSTINC and POSTDEC) */
 static void rv_un1(RVPass *s, int rop, int npush, BOOL throws)
@@ -94,8 +127,14 @@ static void rv_un1(RVPass *s, int rop, int npush, BOOL throws)
     case OP_not: rv_un1(s, RV_NOT, 1, TRUE); break;
     case OP_neg: rv_un1(s, RV_NEG, 1, TRUE); break;
     case OP_plus: rv_un1(s, RV_PLUS, 1, TRUE); break;
-    case OP_inc: rv_un1(s, RV_INC, 1, TRUE); break;
-    case OP_dec: rv_un1(s, RV_DEC, 1, TRUE); break;
+    case OP_inc:
+        rv_incdec_store(s, pos);
+        rv_un1(s, RV_INC, 1, TRUE);
+        break;
+    case OP_dec:
+        rv_incdec_store(s, pos);
+        rv_un1(s, RV_DEC, 1, TRUE);
+        break;
     case OP_post_inc: rv_un1(s, RV_POSTINC, 2, TRUE); break;
     case OP_post_dec: rv_un1(s, RV_POSTDEC, 2, TRUE); break;
     case OP_typeof: rv_un1(s, RV_TYPEOF, 1, FALSE); break;

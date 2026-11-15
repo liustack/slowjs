@@ -4665,6 +4665,173 @@ TEXT ·rv_un1(SB), $96-40
 	BYTE $0xff
 	RET
 
+TEXT ·rv_incdec_store(SB), $112-24
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	MOVQ a2+16(FP), R14
+	QUAD $0xe8858b49107d8b4d
+	QUAD $0x0f41ce6349000001
+	QUAD $0xf98113518d0f0cb6
+	QUAD $0x41d1420f000000b4
+	QUAD $0xc9ff000002148d8b
+	QUAD $0x80490c8d48c96348
+	QUAD $0x0001a9850f00083c
+	BYTE $0x00
+	LEAQ ·engine_rodata+7920(SB), SI
+	QUAD $0x45d601419614b60f
+	QUAD $0x0001918d0f18753b
+	QUAD $0xd6634930758b4900
+	QUAD $0x0180850f00163c80
+	QUAD $0x411734b60f450000
+	QUAD $0x000084fe81a8768d
+	QUAD $0x480000016b870f00
+	QUAD $0x63480000017a3d8d
+	QUAD $0x48e6fffe0148b734
+	QUAD $0x40be0fd70149c801
+	QUAD $0x64894c5c24448901
+	QUAD $0x4c4824648b4c4824
+	QUAD $0x246c8b4c60246c89
+	QUAD $0x6c894c2424894c60
+	QUAD $0x4c102474894c0824
+	BYTE $0x89
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·rv_local_slot(SB)
+	QUAD $0x548b4848244c8b48
+	QUAD $0x850f5c24443b6024
+	QUAD $0x14828b440000010d
+	QUAD $0x85ff408d41000002
+	QUAD $0x48000000fa8e0fc0
+	QUAD $0x8948fe000000e181
+	QUAD $0x0180818b4850244c
+	QUAD $0x4100000001bf0000
+	QUAD $0x8a8b4800000001b9
+	QUAD $0xff397c80000001e8
+	QUAD $0x405c24748b637500
+	QUAD $0x718d455975393438
+	QUAD $0x894850244c8b48ff
+	QUAD $0x648b4c0000018081
+	QUAD $0x4860246c8b4c4824
+	QUAD $0x244c894c38247c89
+	QUAD $0x6c894c2424894c40
+	BYTE $0x24
+	BYTE $0x08
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x74
+	BYTE $0x24
+	BYTE $0x10
+	CALL ·rv_materialize(SB)
+	QUAD $0x7c8b4840244c8b4c
+	QUAD $0x486024548b483824
+	QUAD $0x80808b485024448b
+	QUAD $0x0214828b44000001
+	QUAD $0x6348ff488d410000
+	QUAD $0xff48537dc93949c9
+	QUAD $0xff490c7ec08548c8
+	QUAD $0xff6fe903c78348c1
+	QUAD $0x484824648b4cffff
+	QUAD $0x2444894c38247c89
+	QUAD $0x894c40244c894c30
+	BYTE $0x24
+	BYTE $0x24
+	CALL ·host_poll(SB)
+	QUAD $0x448b4c40244c8b4c
+	QUAD $0x4838247c8b483024
+	QUAD $0x24448b486024548b
+	QUAD $0x00000180808b4850
+	QUAD $0x4850244c8b48b5eb
+	QUAD $0x00eb000001808189
+	QUAD $0x66666600000223e9
+	QUAD $0x00841f0f2e666666
+	BYTE $0x00
+	BYTE $0x00
+	BYTE $0x00
+	BYTE $0x00
+	PCALIGN $16
+	// data
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xfffffe8fffffffea
+	QUAD $0xffffffeafffffe8f
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xffffffeaffffffea
+	QUAD $0xfffffe8fffffffea
+	QUAD $0xffffffeafffffe8f
+	QUAD $0xffffffeaffffffea
+	QUAD $0xfffffe8fffffffea
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xffffffeafffffe8f
+	QUAD $0xffffffeaffffffea
+	QUAD $0xfffffe8fffffffea
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xfffffe8ffffffe8f
+	QUAD $0xfffffe8ffffffe8f
+	BYTE $0x8f
+	BYTE $0xfe
+	BYTE $0xff
+	BYTE $0xff
+	RET
+
 TEXT ·rv_old_op(SB), $112-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows

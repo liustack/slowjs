@@ -7447,6 +7447,39 @@ static void test_regvm_dup_get_field(void)
     }
 }
 
+/* ++k or --k of a local read lazily below it (x[k] = x[++k]): the read below
+   is copied before the INC, which then writes k itself, INC k k, with no
+   SETL after it (rv_incdec_store of engine/regvm-ops-arith.h) */
+static void test_regvm_incdec_store(void)
+{
+    static const struct { const char *what, *src, *op; } cases[] = {
+        { "x[k] = x[++k]", "var x = [1, 2, 3], k = a - 1; x[k] = x[++k]; return x[0] + k;", "INC" },
+        { "x[k] = x[--k]", "var x = [1, 2, 3], k = a + 1; x[k] = x[--k]; return x[0] + k;", "DEC" },
+        { "k + ++k", "var k = a; var s = k + ++k; return s + k;", "INC" },
+    };
+    int k, i, len, op, self;
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    for (k = 0; k < (int)countof(cases); k++) {
+        op = regvm_op(cases[k].op);
+        CHECK(op >= 0, "the name of %s", cases[k].op);
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        self = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if (code[i] == op && code[i + 1] == code[i + 2] && (int8_t)code[i + 1] < 0)
+                self++;
+        }
+        CHECK(self >= 1, "%s: no %s of the local into itself", cases[k].what, cases[k].op);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -8567,6 +8600,7 @@ int main(int argc, char **argv)
     test_regvm_ret_value();
     test_regvm_call_copies();
     test_regvm_dup_get_field();
+    test_regvm_incdec_store();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();
