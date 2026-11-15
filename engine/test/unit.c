@@ -3437,6 +3437,64 @@ static void test_regexp_fast_stop_last_index(void)
     host_free_runtime(rt);
 }
 
+/* The scan for the literal every match holds (lre_literal) reads the flag
+   after each LRE_SKIP_CHUNK units, on the fast paths of match, replace and
+   split as in exec. Stopped there after 100 matches, a global match or
+   replace leaves lastIndex at the end of the 100th match, where the last
+   call of exec left it, and split leaves it as it was, on both paths, with
+   u (where the literal is all there is to skip by) and without. The stop
+   comes 2 readings of the flag after all those of the same call on the
+   string without the long tail, which has no literal: the scan of the tail
+   reads it 512 times, more than the calls of a replace function read it
+   after the scan. */
+static void test_regexp_literal_stop_last_index(void)
+{
+    static const struct {
+        const char *call, *re;
+        int middle;
+    } cases[] = {
+        { "re[Symbol.match](%s)", "/\\d+px/g", 300 },
+        { "re[Symbol.match](%s)", "/\\d+px/gu", 300 },
+        { "re[Symbol.replace](%s, () => 'z')", "/\\d+px/g", 300 },
+        { "re[Symbol.replace](%s, () => 'z')", "/\\d+px/gu", 300 },
+        { "re[Symbol.replace](%s, '$&')", "/\\d+px/g", 300 },
+        { "re[Symbol.replace](%s, '$&')", "/\\d+px/gu", 300 },
+        { "re[Symbol.split](%s)", "/\\d+px/", 77777 },
+        { "re[Symbol.split](%s)", "/\\d+px/u", 77777 },
+    };
+    static const char *const paths[] = { "the fast path", "the generic path" };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char src[256], call[256];
+    size_t i;
+    int k, got;
+    long reads;
+
+    CHECK(eval(ctx, "var s0 = '1px'.repeat(100), s = [s0, 'a'.repeat(1 << 25)].join(''); 0"), "the script threw");
+    for (i = 0; i < countof(cases); i++) {
+        for (k = 0; k < 2; k++) {
+            snprintf(src, sizeof(src), "var re = %s; re.lastIndex = 77777; if (%d) re.extra = 1; 0",
+                     cases[i].re, k);
+            CHECK(eval(ctx, src), "the script threw");
+            snprintf(call, sizeof(call), cases[i].call, "s0");
+            reads = host_poll_reads;
+            CHECK(eval(ctx, call), "%s on %s threw", call, paths[k]);
+            reads = host_poll_reads - reads;
+            CHECK(eval(ctx, "re.lastIndex = 77777; 0"), "the script threw");
+            snprintf(call, sizeof(call), cases[i].call, "s");
+            host_poll_stop_after(reads + 2);
+            CHECK(interrupted(ctx, call), "%s %s on %s was not stopped in the scan", cases[i].re, call,
+                  paths[k]);
+            host_poll_stop_after(0);
+            got = eval_int(ctx, "re.lastIndex");
+            CHECK(got == cases[i].middle, "%s %s on %s: lastIndex %d after the stop in the scan, want %d",
+                  cases[i].re, call, paths[k], got, cases[i].middle);
+        }
+    }
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* split by a regexp that nothing changed (js_regexp_split_fast) tries a
    match at the positions the generic path tries, from 0 to the one before
    the end, and never at the end: a regexp that fails at once everywhere but
@@ -5459,6 +5517,7 @@ int main(void)
     test_canonicalize_ascii();
     test_regexp_stops();
     test_regexp_fast_stop_last_index();
+    test_regexp_literal_stop_last_index();
     test_regexp_split_fast_stops();
     test_regexp_skip_polls();
     test_rope_polls();
