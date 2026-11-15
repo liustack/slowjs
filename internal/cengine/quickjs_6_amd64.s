@@ -3956,7 +3956,7 @@ TEXT ·js_array_iterator_next(SB), $128-64
 	BYTE $0x8d
 	BYTE $0x67
 	BYTE $0x70
-	LEAQ ·engine_rodata+49670(SB), R14
+	LEAQ ·engine_rodata+49686(SB), R14
 	QUAD $0xf88948fffffecde9
 	QUAD $0x000001ac880fff85
 	QUAD $0x48fffffe3ae9d231
@@ -16630,12 +16630,12 @@ TEXT ·JS_GetPrototypeFree(SB), $80-32
 	BYTE $0xff
 	BYTE $0x89
 	BYTE $0xc8
-	LEAQ ·engine_rodata+55744(SB), CX
+	LEAQ ·engine_rodata+55760(SB), CX
 	BYTE $0x48
 	BYTE $0x8b
 	BYTE $0x0c
 	BYTE $0xc1
-	LEAQ ·engine_rodata+55888(SB), DX
+	LEAQ ·engine_rodata+55904(SB), DX
 	QUAD $0x24548b48c2048b48
 	QUAD $0x00000298928b4840
 	QUAD $0x02048b480a0c8b48

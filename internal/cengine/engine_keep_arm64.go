@@ -758,6 +758,7 @@ var goasmKeep = []any{
 	js_emit_inner_html,
 	js_emit_input_tail,
 	js_emit_is_javascript_url,
+	js_emit_mode_attrs,
 	js_emit_name_add,
 	js_emit_new_function,
 	js_emit_plain_keys,

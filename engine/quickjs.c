@@ -58413,6 +58413,58 @@ static no_inline int js_emit_inner_html(JSContext *ctx, JSEmitCache *ec,
     return 0;
 }
 
+/* the attributes of the start tag of a mode other than the generic one, into
+   b after "<" and the tag tp, and what the mode writes after them (see
+   js_start_tag), for the props p of the kinds of keys kinds: 0, 1 to decline
+   or -1 as js_emit_attr */
+static no_inline int js_emit_mode_attrs(JSContext *ctx, JSEmitCache *ec,
+                                        StringBuffer *b, JSObject *p,
+                                        const uint8_t *kinds,
+                                        const JSString *tp, int mode)
+{
+    JSShapeProperty *prs = get_shape_prop(p->shape);
+    JSValueConst v;
+    JSEmitName *e;
+    int i, tag, n = p->shape->prop_count, r = 0;
+    /* the index in p of each prop the case "input" or "style" holds back,
+       or -1 */
+    int8_t held[JS_EMIT_HELD_COUNT];
+
+    memset(held, -1, sizeof(held));
+    for (i = 0; i < n && r == 0 && !b->error_status; i++) {
+        if (kinds[i] != JS_OWN_KIND_STRING || !(prs[i].flags & JS_PROP_ENUMERABLE))
+            continue;
+        v = p->prop[i].u.value;
+        tag = JS_VALUE_GET_NORM_TAG(v);
+        if (tag == JS_TAG_NULL || tag == JS_TAG_UNDEFINED)
+            continue;
+        e = js_emit_attr_entry(ctx, ec, prs[i].atom);
+        if (!e)
+            return -1;
+        if (e->kind == JS_EMIT_CHILDREN) {
+            /* pushSelfClosing and the case "input" throw, and the style
+               element is written with children by React */
+            r = 1;
+        } else if ((mode == JS_EMIT_MODE_INPUT && e->held &&
+                    e->held <= JS_EMIT_HELD_DEFAULT_VALUE + 1) ||
+                   (mode == JS_EMIT_MODE_STYLE &&
+                    e->held == JS_EMIT_HELD_INNER_HTML + 1)) {
+            held[e->held - 1] = i;
+        } else {
+            r = js_emit_attr(ctx, ec, b, e, v);
+        }
+    }
+    if (r != 0 || b->error_status)
+        return r;
+    if (mode == JS_EMIT_MODE_STYLE)
+        return js_emit_inner_html(ctx, ec, b, p, held[JS_EMIT_HELD_INNER_HTML], tp);
+    if (mode == JS_EMIT_MODE_INPUT)
+        r = js_emit_input_tail(ctx, ec, b, p, held);
+    if (r == 0)
+        js_emit_s8(b, "/>");
+    return r;
+}
+
 /* startTag(target, props, type, formatContext, hasOwnProperty, decline,
             mode) */
 static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
@@ -58430,9 +58482,6 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     JSValue str, ret;
     uint32_t count;
     int i, n, tag, valid, mode, r = 0;
-    /* the index in props of each prop the case "input" or "style" holds
-       back, or -1 */
-    int8_t held[JS_EMIT_HELD_COUNT];
 
     /* argv has the seven values: that is the length of the function */
     if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_UNDEFINED)
@@ -58468,13 +58517,14 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
         goto decline;
     n = pp->shape->prop_count;
     prs = get_shape_prop(pp->shape);
-    if (mode == JS_EMIT_MODE_INPUT || mode == JS_EMIT_MODE_STYLE)
-        memset(held, -1, sizeof(held));
 
     js_emit_buf_take(ctx, ec, &b);
     js_emit_c8(&b, '<');
     js_emit_wstr(&b, tp, 0, tp->len);
-    for (i = 0; i < n && r == 0 && !b.error_status; i++) {
+    /* the loop of a generic element has no test of the mode */
+    if (mode != JS_EMIT_MODE_GENERIC)
+        r = js_emit_mode_attrs(ctx, ec, &b, pp, kinds, tp, mode);
+    else for (i = 0; i < n && r == 0 && !b.error_status; i++) {
         JSValueConst v;
         JSEmitName *e;
 
@@ -58489,28 +58539,12 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
             r = -1;
             break;
         }
-        if (e->kind == JS_EMIT_CHILDREN) {
-            /* pushSelfClosing and the case "input" throw */
-            if (mode != JS_EMIT_MODE_GENERIC)
-                r = 1;
-            else
-                children = v;
-        } else if ((mode == JS_EMIT_MODE_INPUT && e->held &&
-                    e->held <= JS_EMIT_HELD_DEFAULT_VALUE + 1) ||
-                   (mode == JS_EMIT_MODE_STYLE &&
-                    e->held == JS_EMIT_HELD_INNER_HTML + 1)) {
-            held[e->held - 1] = i;
-        } else {
+        if (e->kind == JS_EMIT_CHILDREN)
+            children = v;
+        else
             r = js_emit_attr(ctx, ec, &b, e, v);
-        }
     }
-    if (r == 0 && mode == JS_EMIT_MODE_INPUT)
-        r = js_emit_input_tail(ctx, ec, &b, pp, held);
-    if (r == 0 && mode == JS_EMIT_MODE_STYLE) {
-        r = js_emit_inner_html(ctx, ec, &b, pp, held[JS_EMIT_HELD_INNER_HTML], tp);
-    } else if (r == 0 && mode != JS_EMIT_MODE_GENERIC) {
-        js_emit_s8(&b, "/>");
-    } else if (r == 0) {
+    if (r == 0 && mode == JS_EMIT_MODE_GENERIC) {
         js_emit_c8(&b, '>');
         tag = JS_VALUE_GET_TAG(children);
         if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
