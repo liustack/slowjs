@@ -79,6 +79,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
 | The spread of a string gives its characters | v0.30.5 | [upstream-commits.md](upstream-commits.md) |
+| An append that fails for want of memory leaves the length of the array, and an element after 2^31 - 1 elements, which no script reaches, throws a RangeError | Unreleased | [upstream-commits.md](upstream-commits.md#an-append-that-runs-out-of-memory-leaves-the-length) |
 
 ## Go API
 
@@ -128,6 +129,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | EvalFile gives a script a file name | v0.31.0 | [go-api.md](go-api.md#evalfile-gives-a-script-a-file-name) |
 | Strings a script returns or throws stop converting at the top level too | Unreleased | [go-api.md](go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too) |
 | TrackRejections and UnhandledRejections | Unreleased | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
+| More values than the engine can count fail | Unreleased | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
 
 ## Limits that hold
 
@@ -298,6 +300,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Object.isFrozen` and `Object.isSealed` ask first whether the object is extensible, as the specification says, and no longer leave the list of keys in use when the `isExtensible` trap of a proxy throws | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-and-objectissealed-ask-first-whether-the-object-is-extensible) |
 | Defining a property of a module namespace reads its binding first and throws a `ReferenceError` while the binding is not initialized | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#defining-a-property-of-a-module-namespace-reads-its-binding-first) |
 | `Object.isFrozen`, `Object.isSealed`, `Object.freeze` and `Object.seal` of an ordinary object or an array go over its shape once, with no list of keys and no lookup of each | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape) |
+| A shape holds at most 2^26 - 1 properties, so that a lookup cannot miss one past that | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shape-holds-at-most-226---1-properties) |
+| An element added to an array is refused, or fails, before the array changes: a refused store does not throw the RangeError of a conversion, and an element that fails leaves the length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-element-is-refused-before-the-array-changes) |
+| `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
+| A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 
 ## Memory
 

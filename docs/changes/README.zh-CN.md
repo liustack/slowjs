@@ -79,6 +79,7 @@ read_when:
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
 | 展开字符串得到它的各个字符 | v0.30.5 | [upstream-commits.md](upstream-commits.zh-CN.md) |
+| 因内存不够而失败的追加让数组长度保持不变，在 2^31 - 1 个元素（没有脚本能到）之后加元素会抛 RangeError | Unreleased | [upstream-commits.md](upstream-commits.zh-CN.md#追加因内存不够失败时长度不变) |
 
 ## Go API
 
@@ -128,6 +129,7 @@ read_when:
 | EvalFile 给脚本一个文件名 | v0.31.0 | [go-api.md](go-api.zh-CN.md#evalfile-给脚本一个文件名) |
 | 脚本返回或抛出的字符串在顶层也会停止转换 | Unreleased | [go-api.md](go-api.zh-CN.md#脚本返回或抛出的字符串在顶层也会停止转换) |
 | TrackRejections 和 UnhandledRejections | Unreleased | [go-api.md](go-api.zh-CN.md#trackrejections-和-unhandledrejections) |
+| 引擎数不过来的值会报错 | Unreleased | [go-api.md](go-api.zh-CN.md#引擎数不过来的值会报错) |
 
 ## 守得住的限额
 
@@ -298,6 +300,10 @@ read_when:
 | `Object.isFrozen` 和 `Object.isSealed` 按规范先问对象能不能扩展，proxy 的 `isExtensible` trap 抛错时不再让键的列表一直占着内存 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展) |
 | 给模块命名空间定义属性时先读它的绑定，绑定还没初始化时抛出 `ReferenceError` | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#给模块命名空间定义属性时先读它的绑定) |
 | 普通对象或数组的 `Object.isFrozen`、`Object.isSealed`、`Object.freeze` 和 `Object.seal` 走一遍它的 shape，不列键的列表，也不逐个查找 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape) |
+| 一个 shape 最多放 2^26 - 1 个属性，查找不会漏掉超过这个数的属性 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性) |
+| 往数组里加的元素在数组改动之前被拒绝或失败：被拒绝的存储不抛转换的 RangeError，失败的元素让长度不变 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#数组元素在数组改动之前被拒绝) |
+| 在构造函数上调用 `Array.from` 时，给映射函数完整的下标，设完整的长度 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#在构造函数上调用-arrayfrom-传完整的下标和长度) |
+| 改动已有属性标志的定义在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样，数组的长度也一样。被拒绝的定义什么都不复制，缩短下标超过 2^31 - 1 的数组时不造名字 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败) |
 
 ## 内存
 

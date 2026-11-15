@@ -1,0 +1,13 @@
+sink array-like 0: [0,["length=0"]]
+sink iterable 0: [0,["length=0"]]
+keep array-like 0: [0,[]]
+keep iterable 0: [0,[]]
+sink array-like 1: [1,["0","length=1"]]
+sink iterable 1: [1,["0","length=1"]]
+keep array-like 1: [1,["number:0"]]
+keep iterable 1: [1,["a0"]]
+sink array-like 3: [3,["0","1","2","length=3"]]
+sink iterable 3: [3,["0","1","2","length=3"]]
+keep array-like 3: [3,["number:0","number:1","number:2"]]
+keep iterable 3: [3,["a0","b1","c2"]]
+length set through a setter of the object: 0

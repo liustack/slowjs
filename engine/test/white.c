@@ -19,6 +19,11 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+/* white_array_from_first is the first index of Array.from (JS_ARRAY_FROM_FIRST),
+   0 but in a test of the indices past 32 bits. */
+static long long white_array_from_first;
+#define JS_ARRAY_FROM_FIRST() white_array_from_first
+
 #include "../quickjs.h"
 
 /* JS_HEAP_FAILS makes the engine fail the request to the heap number
@@ -2457,4 +2462,56 @@ long white_call_debt(JSContext *ctx, int direct, int *depth)
 void white_days_to_date(int64_t days, int *y, int *m, int *d)
 {
     days_to_date(days, y, m, d);
+}
+
+/* white_array_fake_count gives the fast array a the count count and a length
+   of count, and gives back the count it had. Its block and its room stay as
+   they are: a test of an element added at 2^31 - 1, which cannot take the
+   32 GiB of such an array, puts the count back before anything reads past
+   the block (a collection, the free of a). */
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+    uint32_t old = p->u.array.count;
+
+    p->u.array.count = count;
+    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, count));
+    return old;
+}
+
+/* white_shape_fake_count gives the shape of the object o the property count
+   count, and gives back the count it had, or -1 when the shape is shared or
+   in the shape table (it must be o's own, as after a delete). Its blocks
+   stay as they are: a test of a shape at JS_SHAPE_PROP_MAX properties puts
+   the count back before anything reads past them. */
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count)
+{
+    JSShape *sh = JS_VALUE_GET_OBJ(o)->shape;
+    uint32_t old = sh->prop_count;
+
+    if (sh->is_hashed || js_rc(sh)->ref_count != 1)
+        return -1;
+    sh->prop_count = count;
+    return old;
+}
+
+/* white_shape_prop_max is JS_SHAPE_PROP_MAX. */
+uint32_t white_shape_prop_max(void)
+{
+    return JS_SHAPE_PROP_MAX;
+}
+
+/* white_set_array_from_first sets the first index of Array.from. */
+void white_set_array_from_first(long long k)
+{
+    white_array_from_first = k;
+}
+
+/* white_array_room gives the room of the block of the fast array a, -1 when
+   a is not a fast array. */
+int64_t white_array_room(JSValueConst a)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+
+    return p->fast_array ? p->u.array.u1.size : -1;
 }

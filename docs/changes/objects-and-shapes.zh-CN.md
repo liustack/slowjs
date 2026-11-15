@@ -424,3 +424,50 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 收益：tifa 的 `test/apps/libs` 里的 state 页（immer 和 Redux Toolkit）每次渲染，在原生 C 树上少 42.8% 的指令，在生成的引擎上少 43.4%，重新训练 profile 后少 43.8%。这组的其余 11 页和 tifa 的页面变化都不到 0.1%（[performance.md](../performance.zh-CN.md#从-shape-读出完整性级别)）。state 页回收前少占 4% 的内存，回收后一样。每一页的 HTML 都一样。
 
 测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样，见[上文](#objectisfrozen-和-objectissealed-先问对象能不能扩展)）覆盖走两条路径的各种对象。`engine/test/unit.c` 的 `test_integrity_polls` 判断和冻结有 200,000 个属性的对象和数组，数中断标志的读取次数，并让每个调用分别在第一次、中间一次和最后一次读取时停下。`engine/test/unit-oom.c` 的 `test_integrity_oom` 在每次分配都内存不够的情况下，冻结和封住共用 shape 与独有 shape 的对象、数组和有 40 个键的对象。`engine/test/regvm/js/q7-integrity.js` 在 corpus 和抛错注入测试里，循环跑两条路径，也跑另一个 realm 的对象和冻结全局对象。
+
+## 一个 shape 最多放 2^26 - 1 个属性
+
+Release: Unreleased.
+
+shape 为每个属性记下它的哈希链里下一个属性的序号加一，放在 `hash_next` 的 26 位里。属性超过 2^26 - 1 个时，这个序号会被截断，查找可能找不到一个确实存在的属性。脚本能走到这里，因为每个块都在分配器给单个块的 4 GiB 以内：一个有 2^26 - 1 个奇数下标的数组，加上长度，是一个有 2^26 个属性的普通数组，总共几 GiB，再在最后那个下标所在的桶里加一个键，那个元素就会读成 `undefined`。上游有同样的 26 位，也没有上限。
+
+现在 `resize_properties` 给一个 shape 最多 2^26 - 1 个属性（`JS_SHAPE_PROP_MAX`）。再加一个会抛 RangeError，"too many properties"，和快数组超过上限时抛 "invalid array length" 一样，对象保持原样：加一个键是这样，把这么多元素的快数组变成普通数组也是这样。`JS_SHAPE_HASH_NEXT_BITS` 给这个字段的宽度起了名字，几条静态断言把上限和它绑在一起。检查在 shape 增长的路径上，以前那里检查的是 2^31 - 2 的上限，所以页面在那里跑的指令不变。往数组里加的元素在碰到上限之前就会被拒绝（[见下](#数组元素在数组改动之前被拒绝)）。
+
+测试：`unit-white` 的 `test_max_props` 给一个小对象设上 2^26 - 1 的个数（shape 用 `white_shape_fake_count`，3 个元素的快数组用 `white_array_fake_count`，期间不做回收），再加一个，每种都在自己的进程里。给对象加一个键，以及在快数组远超末尾的地方加一个元素让它变成普通数组，都抛出这个 RangeError，对象保持原样。上限是 2^31 - 2 时，快数组那种会按这个个数复制 shape，读到块外面，以段错误结束。
+
+## 数组元素在数组改动之前被拒绝
+
+Release: Unreleased.
+
+往数组里加的元素，在数组改动之前就被拒绝或失败，顺序和 ArrayDefineOwnProperty 一样（`JS_CreateProperty`）：
+
+- 为这个元素变成普通数组的快数组，先检查它能否扩展，元素在长度处或之后时还检查长度能否写入。它拒绝的存储和以前一样，在非严格代码里什么也不做，`Reflect.set` 得到 false，严格代码里抛 TypeError，而不是抛放不下的转换的 RangeError（[见上](#一个-shape-最多放-226---1-个属性)）。
+- 普通数组在元素放进去之后才设长度，所以放不下或没有内存的元素让长度保持不变。以前长度先设（上游在注释里说应该放在后面），这样的元素会让长度多一个，元素却不在。
+
+普通数组在一条自己的路径上加它的元素，`JS_CreateProperty` 的末尾保持原样。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 相同，和之前的构建相比：从 -0.006%（Markdown 页面）到 -0.0002%（商店的英文首页），没有一个变多。
+
+测试：`unit-white` 的 `test_max_props` 和上面一样，在到了上限的普通数组末尾加一个元素：它抛出这个 RangeError，长度不变。写到长度不可写或不可扩展的快数组末尾之后的存储，`JS_SetPropertyUint32` 抛 TypeError，`Reflect.set` 得到 false，非严格代码里什么也不做。长度先设时，普通数组的长度多一个，被拒绝的存储抛出 RangeError。
+
+## 在构造函数上调用 Array.from 传完整的下标和长度
+
+Release: Unreleased.
+
+在程序自己的构造函数上调用 `Array.from`（`Array.from.call(C, items, f)`）时，元素用 64 位计数，但传给映射函数的下标是 int32，最后设的长度是 uint32。超过 2^31 个元素时映射函数拿到负的下标，超过 2^32 - 1 个时长度被截断：一个什么都不留的 `C` 对象，用很少的内存就能接下这么多。现在两者都是完整的计数（`JS_NewInt64`），和规范要求的一样，在 2^31 - 1 以内它们和以前是同样的整数。
+
+测试：`unit-white` 的 `test_array_from_past_32_bits` 让 `Array.from` 从下标 2^32 - 1 开始（`JS_ARRAY_FROM_FIRST`，除了 `white.c` 都是 0），这样两步就越过两个上限。在一个对象什么都不留的构造函数（一个接受所有定义的 proxy）上，对长度 2^32 + 1 的类数组和两个值的可迭代对象，带和不带映射函数，映射函数拿到 4294967295 和 4294967296，设的长度是 4294967297。用 32 位的写法时拿到的是 -1 和 0，长度是 1。从 0 开始要走 2^32 步才到这些下标。`engine/test/compare/array_from_ctor.js`（Node 24 打印的结果）在同一个构造函数和一个保留元素的构造函数上，用映射函数对 0 到 3 个元素的类数组和可迭代对象运行 `Array.from`，把脚本走的路径固定下来。
+
+## 改动属性标志的定义在改动任何东西之前失败
+
+Release: Unreleased.
+
+在已有的属性上调用 `Object.defineProperty`，描述符改动它的标志时，要让对象的 shape 归它自己（`js_shape_prepare_update`）。和别的对象或和 context 共用的 shape 要为此复制一份，复制可能内存不够。以前复制在最后，在定义已经改了数组的长度（`set_array_length`）、值或 getter 之后：`Object.defineProperty(a, "length", {value: 2, writable: false})` 在那里内存不够时，`a` 被截成 2 个元素，长度却仍可写。现在每条路径都在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样。数据属性先设标志，再设值，设值不会失败。数组的长度、访问器属性和闭包变量（全局对象的，或映射的 `arguments` 对象的）在定义把长度设为只读或改动标志时，先让 shape 归对象自己，再改长度、getter 或变量。`set_array_length` 压缩出的 shape 也归对象自己，所以它之后设标志不会失败。描述符不改任何标志时，像以前一样不复制。
+
+`Object.freeze` 和 `Object.seal` 用这种方式定义每个属性，所以内存不够的那个属性保持原样。它们仍可能在做完一部分属性后停下，规范允许这样（SetIntegrityLevel）。`Object.preventExtensions` 只设对象的一个标志，不会失败。
+
+被拒绝的定义什么都不改，也什么都不复制，所以内存不够时它也给出 false，或抛出它的 TypeError：模块命名空间在动 shape 之前就拒绝把导出设为只读。导出相同的两个模块的命名空间共用 shape，所以那里的复制原本可能失败。
+
+缩短数组时如果下标超过 2^31 - 1（`set_array_length` 逐个下标删除元素时），以前为每个下标造名字，也就是超过 2^31 - 1 的字符串，而造名字可能在一个元素删掉之后内存不够。调用抛出错误，长度停在剩下的元素处，定义长度时还会继续把它设为只读。现在先让数组的 shape 归它自己，这是唯一可能失败的一步，然后在 atom 表里查每个名字而不造它（`js_find_index_atom`）：没有名字的下标就没有元素。所以内存不够的缩短什么都不改。另一种缩短方式在剩下的属性比要删的下标少时遍历属性，它本来就不造名字，也先复制 shape。删不掉的元素（不可配置）让缩短停在它后面，这时定义仍然把长度设为只读，规范要求这样（ArraySetLength）：这是带改动的拒绝，不是失败。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 不变，和改动之前的构建相比：六个页面不变，商店商品页少 3 条指令，Markdown 页面 -0.0002%。
+
+数据属性已有描述符的标志时像以前一样不动，要改时一步设好，以前要两步。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 不变，和改动之前的构建相比：从 -0.042%（MUI 订单页）到 +0.007%（Markdown 页面）。
+
+测试：`unit-white` 的 `test_define_existing_oom` 在和另一个对象共用的 shape 上，把空数组和有 4 个元素的数组的长度定义为 2 并设为只读，把一个值设为只读，把一个值和一个 getter 设为不可枚举。它依次让定义的每次分配失败：每次失败都抛出内存不够的错误，属性保持原样，没有失败时定义完成。复制在最后时，每种情况都留下新值和旧标志。在导出相同的两个模块的命名空间上，用 `Reflect.defineProperty` 把导出设为只读，无论哪次分配失败都给出 false：它从不内存不够。一个在 2^31 + 2 有元素、还有另一个属性的数组，分别被把长度设为只读的定义和一次赋值缩短到 2^31：定义里的失败让数组保持原样，赋值不做会失败的分配。以前命名空间在该给 false 的地方内存不够，缩短时第二个名字失败而元素已经删掉：长度是 2^31 + 2，定义之后还是只读。

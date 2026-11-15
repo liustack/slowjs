@@ -432,7 +432,7 @@ static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip
 
     /* the growth of the block of elements (expand_fast_array) */
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
-                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+                        (size_t)(max_uint32(new_len, size + size / 2) - size));
     /* the slow path and the end of rv_putel_slow. The key is an int, which
        JS_SetPropertyValue frees as nothing, so the key in a local needs no
        JS_SetPropertyValueConst, which rv_putel_slow alone calls and so keeps
@@ -455,10 +455,10 @@ static no_inline int rv_putel_grow(JSContext *ctx, JSValue *F, const uint8_t *ip
    its slot keeps alive, keeps its atom alive: add_property takes its own
    reference. The loop calls it only for a string key, so that a store at
    an index (the end of an array) does not pay the call, and after
-   RV_SYNC_TOP: it may throw the out of memory error, and the old value it
-   replaces may be the last reference to an object. It is a function of its
-   own, so that the frame of rv_putel_slow, which a setter it calls sits on,
-   does not grow. */
+   RV_SYNC_TOP: it may throw (no memory, too many properties), and the old
+   value it replaces may be the last reference to an object. It is a
+   function of its own, so that the frame of rv_putel_slow, which a setter
+   it calls sits on, does not grow. */
 static no_inline int rv_putel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip)
 {
     JSValue obj = F[(int8_t)ip[0]], key = F[(int8_t)ip[1]];
@@ -546,7 +546,10 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         /* the length of an array is an int below 2^31 */
         if (unlikely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
             goto slow_path;
-        /* cannot overflow otherwise the length would not be an integer */
+        /* cannot overflow otherwise the length would not be an integer. At
+           idx 2^31 - 1 new_len is past the room, which never passes
+           2^31 - 1 (expand_fast_array), so the element goes through
+           rv_putel_grow to JS_SetPropertyValue, which throws */
         new_len = idx + 1;
         if (unlikely(new_len > p->u.array.u1.size))
             return rv_putel_grow(ctx, F, ip);

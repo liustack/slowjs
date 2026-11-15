@@ -144,6 +144,11 @@ int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
+int64_t white_array_room(JSValueConst a);
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
+uint32_t white_shape_prop_max(void);
+void white_set_array_from_first(long long k);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
 int white_regvm_oom_pending(JSContext *ctx);
@@ -7661,6 +7666,384 @@ static void test_days_to_date(void)
     CHECK(bad == 0, "%ld of %ld days give another date", bad, n);
 }
 
+/* ---- an element added at 2^31 - 1 ----
+
+   A fast array holds at most 2^31 - 1 elements: an element added after them
+   leaves it as it was and throws, by each way to add one. Such an array takes
+   32 GiB, so the array of a case has 8 elements and is given a count and a
+   length of 2^31 - 1 (white_array_fake_count), with no collection while it
+   is so. Before, the element was written 16 GiB past the block, which was
+   made smaller. Each case runs in a process of its own, where a crash is one
+   failed case. */
+static const char *const max_index_ways[] = {
+    "JS_SetPropertyUint32", "JS_SetPropertyStr", "JS_DefinePropertyValueUint32",
+    "a[i] = v", "push", "splice",
+};
+
+static void max_index_case(int way)
+{
+    static const char setup[] =
+        "function put(a, i, v) { a[i] = v; }\n"
+        "function push(a, v) { return a.push(v); }\n"
+        "function splice(a, v) { return a.splice(a.length, 0, v); }\n"
+        /* once before, so that their register code is made */
+        "put([], 0, 0); push([], 0); splice([], 0);\n";
+    const char *want = "RangeError: invalid array length";
+    VM v = vm_new();
+    JSValue a, g, f, r = JS_UNDEFINED, args[3];
+    int64_t room;
+    size_t threshold;
+    uint32_t old, count;
+    int ret = 0;
+    char *t;
+
+    CHECK(eval_ok(v.ctx, setup), "%s: the setup", max_index_ways[way]);
+    a = JS_Eval(v.ctx, "[0, 1, 2, 3, 4, 5, 6, 7]", 24, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, way == 3 ? "put" : way == 4 ? "push" : "splice");
+    room = white_array_room(a);
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    old = white_array_fake_count(v.ctx, a, INT32_MAX);
+    args[0] = a;
+    args[1] = JS_NewInt32(v.ctx, INT32_MAX);
+    args[2] = JS_NewInt32(v.ctx, 1);
+    switch (way) {
+    case 0: ret = JS_SetPropertyUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1)); break;
+    case 1: ret = JS_SetPropertyStr(v.ctx, a, "2147483647", JS_NewInt32(v.ctx, 1)); break;
+    case 2: ret = JS_DefinePropertyValueUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1), JS_PROP_C_W_E | JS_PROP_THROW); break;
+    case 3: r = JS_Call(v.ctx, f, JS_UNDEFINED, 3, args); break;
+    default: args[1] = args[2]; r = JS_Call(v.ctx, f, JS_UNDEFINED, 2, args); break;
+    }
+    t = exception_text(v.ctx);
+    CHECK((ret < 0 || JS_IsException(r)) && t && strcmp(t, want) == 0, "%s at 2^31 - 1: %s, want %s",
+          max_index_ways[way], t ? t : "no exception", want);
+    free(t);
+    JS_FreeValue(v.ctx, r);
+    CHECK(eval_is(v.ctx, "this.x = 1; 'ok'", "ok"), "%s: the context after", max_index_ways[way]);
+    r = JS_GetPropertyStr(v.ctx, a, "length");
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == INT32_MAX, "%s: the length is no longer 2^31 - 1",
+          max_index_ways[way]);
+    JS_FreeValue(v.ctx, r);
+    CHECK(white_array_room(a) == room, "%s: the room was %lld, is %lld", max_index_ways[way], (long long)room,
+          (long long)white_array_room(a));
+    count = white_array_fake_count(v.ctx, a, old);
+    CHECK(count == INT32_MAX, "%s: the count is %u", max_index_ways[way], count);
+    JS_SetGCThreshold(v.rt, threshold);
+    CHECK(eval_is(v.ctx, "put.length", "3"), "%s: a script after", max_index_ways[way]);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, a);
+    vm_free(&v);
+}
+
+static void test_max_index(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_index_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-index";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "an element at 2^31 - 1 by %s: %s %d", max_index_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
+/* ---- a property added to a shape at its limit ----
+
+   A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
+   of a property plus one is kept in the 26 bits of hash_next, and past it a
+   lookup would miss a property that is there. One more throws and leaves the
+   object as it was, and a store that the object refuses anyway is refused as
+   before, by the length that cannot be written or the array that cannot be
+   extended, with no RangeError. Such an object takes gigabytes, so a small
+   one is given a count at the limit (white_shape_fake_count for its shape,
+   white_array_fake_count for a fast array), with no collection while it is
+   so. Before, the shape was copied with that count, past its block, an
+   element added to a normal array at the limit left its length one more, and
+   a store refused by the length or the array threw a RangeError. Each case
+   runs in a process of its own. */
+static const char *const max_props_ways[] = {
+    "a new key",
+    "an array made a normal one",
+    "an element at the end of a normal array",
+    "a store past a length that cannot be written",
+    "a store past the end of an array that cannot be extended",
+};
+
+static void max_props_case(int way)
+{
+    static const char *const setup[] = {
+        /* a delete takes the shape out of the shape table, as its own */
+        "var o = { a: 1, b: 2, c: 3 }; delete o.c; o",
+        /* a fast array of 2^26 - 1 elements and its length would be 2^26
+           properties as a normal array: an element far past its end makes it
+           one */
+        "var o = [1, 2, 3]; o",
+        /* the delete makes the array a normal one, with a shape of its own */
+        "var o = [1, 2, 3]; delete o[0]; o",
+        "var o = Object.defineProperty([1, 2, 3], 'length', { writable: false }); o",
+        "var o = Object.preventExtensions([1, 2, 3]); o",
+    };
+    /* what is left of o once its count is back */
+    static const char *const after[] = {
+        "o.a + o.b + ':' + ('z' in o)",
+        "o.join() + ':' + o.length + ':' + (1073741824 in o)",
+        "o.join() + ':' + o.length + ':' + (3 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+    };
+    static const char *const after_want[] = {
+        "3:false", "1,2,3:3:false", ",2,3:3:false", "1,2,3:3:false", "1,2,3:3:false",
+    };
+    VM v = vm_new();
+    JSValue o;
+    size_t threshold;
+    int64_t old = 0;
+    uint32_t max = white_shape_prop_max();
+    int ret, refused;
+    char *t;
+
+    CHECK(max == (1u << 26) - 1, "the limit is %u", max);
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    o = JS_Eval(v.ctx, setup[way], strlen(setup[way]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(o), "%s: the setup threw", max_props_ways[way]);
+    refused = way >= 3;
+    switch (way) {
+    case 0:
+        old = white_shape_fake_count(o, max);
+        CHECK(old == 3, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyStr(v.ctx, o, "z", JS_NewInt32(v.ctx, 1));
+        white_shape_fake_count(o, (uint32_t)old);
+        break;
+    case 2:
+        /* length, a deleted 0, 1 and 2 */
+        old = white_shape_fake_count(o, max);
+        CHECK(old == 4, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyUint32(v.ctx, o, 3, JS_NewInt32(v.ctx, 4));
+        white_shape_fake_count(o, (uint32_t)old);
+        break;
+    default:
+        old = white_array_fake_count(v.ctx, o, max);
+        ret = JS_SetPropertyUint32(v.ctx, o, way == 1 ? 1u << 30 : max + 1, JS_NewInt32(v.ctx, 1));
+        if (refused) {
+            t = exception_text(v.ctx);
+            CHECK(ret < 0 && t && strncmp(t, "TypeError: ", 11) == 0, "%s: %s", max_props_ways[way],
+                  t ? t : "no exception");
+            free(t);
+            /* in sloppy code the store does nothing, and Reflect.set gives
+               false */
+            CHECK(eval_is(v.ctx, "[Reflect.set(o, 67108864, 1), (function () { o[67108864] = 1; return 7 })()].join()",
+                          "false,7"),
+                  "%s: Reflect.set and a sloppy store", max_props_ways[way]);
+        }
+        white_array_fake_count(v.ctx, o, (uint32_t)old);
+        break;
+    }
+    if (!refused) {
+        t = exception_text(v.ctx);
+        CHECK(ret < 0 && t && strcmp(t, "RangeError: too many properties") == 0, "%s at the limit: %s",
+              max_props_ways[way], t ? t : "no exception");
+        free(t);
+    }
+    JS_SetGCThreshold(v.rt, threshold);
+    CHECK(eval_is(v.ctx, after[way], after_want[way]), "%s: the object after", max_props_ways[way]);
+    JS_FreeValue(v.ctx, o);
+    vm_free(&v);
+}
+
+static void test_max_props(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_props_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-props";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "a property at 2^26 - 1 by %s: %s %d", max_props_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
+/* ---- Array.from past 32 bits ----
+
+   Array.from on a constructor of the program passes the mapping function an
+   index of 64 bits and sets the length it ends at, which a constructor whose
+   object keeps nothing can take past 2^32. Reaching that index would take
+   2^32 calls, so Array.from starts there (white_set_array_from_first). Before,
+   the index was cut to an int32 and the length to a uint32. */
+static void test_array_from_past_32_bits(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_is(v.ctx,
+                  "var log = [];"
+                  "function Sink() {"
+                  "  return new Proxy({}, {"
+                  "    defineProperty(t, k, d) { log.push(k + ':' + d.value); return true },"
+                  "    set(t, k, x) { log.push(k + '=' + x); return true },"
+                  "  })"
+                  "}"
+                  "function* two() { yield 'a'; yield 'b' }"
+                  "'' + log",
+                  ""),
+          "Array.from past 32 bits: the setup");
+    white_set_array_from_first(4294967295LL);
+    CHECK(eval_is(v.ctx,
+                  "Array.from.call(Sink, { length: 4294967297 }, (x, i) => i); log.push('|');"
+                  "Array.from.call(Sink, two(), (x, i) => x + i); log.push('|');"
+                  "Array.from.call(Sink, two()); '' + log",
+                  "4294967295:4294967295,4294967296:4294967296,length=4294967297,|,"
+                  "4294967295:a4294967295,4294967296:b4294967296,length=4294967297,|,"
+                  "4294967295:a,4294967296:b,length=4294967297"),
+          "Array.from past 32 bits");
+    white_set_array_from_first(0);
+    vm_free(&v);
+}
+
+/* ---- Object.defineProperty on a property that is there, out of memory ----
+
+   A define that changes the flags of a property that is there copies the
+   shape of the object when another object shares it, which can run out of
+   memory. Each call of the allocator fails in turn in a define of the
+   length of a new array, of a data property and of an accessor of a new
+   literal, each sharing its shape (with the context, or with a twin o2),
+   and after each the property is as it was (the define threw out of
+   memory) or as the define makes it.
+   Before, the length or the value was set first, and a failed copy left it
+   set with the flags as they were.
+   A define that is refused changes nothing and copies nothing, so it gives
+   false and never runs out of memory: a read-only export of a module
+   namespace, whose shape the namespace of a twin module shares.
+   Shortening an array past index 2^31 - 1 looks the names of the elements
+   up and makes none, so it cannot fail once it has deleted one. Before, it
+   made the name of each index, and when the second failed the first element
+   was gone, the define threw and still made the length read-only. */
+
+/* reset of test_define_existing_oom: "NS" makes two new modules with the same
+   export, whose namespaces share a shape, as ns1 and ns2 (a namespace whose
+   define copied its shape shares it no more) */
+static int define_reset(JSContext *ctx, const char *reset, int k)
+{
+    static const char mod_src[] = "export let x = 1;";
+    JSValue g, mod, r;
+    char name[32];
+    int i, ok = 1;
+
+    if (strcmp(reset, "NS") != 0)
+        return eval_ok(ctx, reset);
+    g = JS_GetGlobalObject(ctx);
+    for (i = 0; i < 2 && ok; i++) {
+        snprintf(name, sizeof(name), "ns%d-%d", i + 1, k);
+        mod = JS_Eval(ctx, mod_src, strlen(mod_src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (JS_IsException(mod)) {
+            ok = 0;
+            break;
+        }
+        r = JS_EvalFunction(ctx, JS_DupValue(ctx, mod));
+        ok = !JS_IsException(r);
+        JS_FreeValue(ctx, r);
+        if (ok)
+            JS_SetPropertyStr(ctx, g, i ? "ns2" : "ns1", JS_GetModuleNamespace(ctx, JS_VALUE_GET_PTR(mod)));
+        JS_FreeValue(ctx, mod);
+    }
+    JS_FreeValue(ctx, g);
+    return ok && eval_ok(ctx, "o = ns1; o2 = ns2; r = 0");
+}
+
+static void test_define_existing_oom(void)
+{
+    static const struct {
+        const char *name, *reset, *change, *state, *before, *after;
+        int oom; /* 1: some call fails and changes nothing, 0: none fails */
+    } cases[] = {
+        { "the length and writable of an array", "o = []",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable", "0:true", "2:false", 1 },
+        { "the length of an array and writable after a shorter one", "o = [1, 2, 3, 4]",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable + ':' + o.join()",
+          "4:true:1,2,3,4", "2:false:1,2", 1 },
+        { "a value and writable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, writable: false })",
+          "o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "1:true", "2:false", 1 },
+        { "a value and enumerable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, enumerable: false })", "o.x + ':' + Object.keys(o).length",
+          "1:1", "2:0", 1 },
+        { "a getter and enumerable", "o = mk(); o2 = mk()",
+          "Object.defineProperty(o, 'x', { get: function () { return 2 }, enumerable: false })",
+          "o.x + ':' + Object.keys(o).length", "1:1", "2:0", 1 },
+        { "a read-only export of a module namespace", "NS",
+          "r = Reflect.defineProperty(o, 'x', readOnly)",
+          "r + ':' + o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "0:1:true", "false:1:true", 0 },
+        { "the length and writable of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "Object.defineProperty(o, 'length', { value: 2147483648, writable: false })",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:false", 1 },
+        { "the length of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "o.length = 2147483648",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:true", 0 },
+    };
+    VM v = vm_new();
+    JSValue g;
+    size_t c;
+    int k = 0;
+    char src[320];
+
+    for (c = 0; c < countof(cases); c++) {
+        JSValue f;
+        int fail, n = 0, ooms = 0;
+
+        snprintf(src, sizeof(src), "var o, o2, r, readOnly = { writable: false };"
+                 " function mk() { return { get x() { return 1 } } }"
+                 " function change() { %s }", cases[c].change);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[c].name);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "change");
+        JS_FreeValue(v.ctx, g);
+        /* once, so that the code of change is compiled and its atoms made */
+        CHECK(define_reset(v.ctx, cases[c].reset, k++) && eval_ok(v.ctx, "change()"), "%s: the first change threw",
+              cases[c].name);
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            int made;
+            JSValue r;
+
+            CHECK(define_reset(v.ctx, cases[c].reset, k++), "%s: the reset threw", cases[c].name);
+            CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: before call %d", cases[c].name, fail);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(cases[c].oom && fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s: call %d failing: threw", cases[c].name, fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: call %d failing: the define changed it",
+                      cases[c].name, fail);
+            } else {
+                JS_FreeValue(v.ctx, r);
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].after), "%s: call %d failing: not defined",
+                      cases[c].name, fail);
+            }
+        }
+        if (cases[c].oom)
+            CHECK(n > 0 && ooms > 0, "%s: %d calls of the allocator, %d failed the define", cases[c].name, n, ooms);
+        JS_FreeValue(v.ctx, f);
+    }
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7677,6 +8060,20 @@ int main(int argc, char **argv)
        its own */
     if (argc == 5 && strcmp(argv[1], "regvm-convert") == 0)
         regvm_convert_one(atoi(argv[2]), atoi(argv[3]), strcmp(argv[4], "small") == 0);
+    /* one case of test_max_index, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-index") == 0) {
+        failures = 0;
+        max_index_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
+    /* one case of test_max_props, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-props") == 0) {
+        failures = 0;
+        max_props_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
@@ -7726,6 +8123,10 @@ int main(int argc, char **argv)
     test_fused_ops();
     test_typeof_is();
     test_share_local_slots();
+    test_max_index();
+    test_max_props();
+    test_array_from_past_32_bits();
+    test_define_existing_oom();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();

@@ -1284,9 +1284,13 @@ typedef struct JSProperty {
 #define JS_PROP_INITIAL_SIZE 2
 #define JS_PROP_INITIAL_HASH_SIZE 4 /* must be a power of two */
 
+/* the width of JSShapeProperty.hash_next, which holds the index of a property
+   plus one: a shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX) */
+#define JS_SHAPE_HASH_NEXT_BITS 26
+
 typedef struct JSShapeProperty {
-    uint32_t hash_next : 26; /* 0 if last in list */
-    uint32_t flags : 6;   /* JS_PROP_XXX */
+    uint32_t hash_next : JS_SHAPE_HASH_NEXT_BITS; /* 0 if last in list */
+    uint32_t flags : 32 - JS_SHAPE_HASH_NEXT_BITS;   /* JS_PROP_XXX */
     JSAtom atom; /* JS_ATOM_NULL = free property entry */
 } JSShapeProperty;
 
@@ -4804,6 +4808,37 @@ JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n)
     }
 }
 
+/* The atom of the index n when there is one, or JS_ATOM_NULL, with no
+   reference taken. Unlike JS_NewAtomUInt32 it makes nothing, so it cannot
+   fail: no property is named n when the atom is not there. An index past
+   JS_ATOM_MAX_INT is a string atom, found as __JS_NewAtom finds it (its
+   characters may be 8 or 16 bits wide). */
+static JSAtom js_find_index_atom(JSRuntime *rt, uint32_t n)
+{
+    char buf[11];
+    uint32_t h, i;
+    size_t len, k;
+    JSAtomStruct *p;
+
+    if (n <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(n);
+    len = u32toa(buf, n);
+    h = hash_string8((const uint8_t *)buf, len, JS_ATOM_TYPE_STRING) &
+        JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0;
+         i = p->hash_next) {
+        p = rt->atom_array[i];
+        if (p->hash == h && p->atom_type == JS_ATOM_TYPE_STRING &&
+            p->len == len) {
+            for (k = 0; k < len && string_get(p, k) == (uint8_t)buf[k]; k++)
+                continue;
+            if (k == len)
+                return i;
+        }
+    }
+    return JS_ATOM_NULL;
+}
+
 static JSAtom JS_NewAtomInt64(JSContext *ctx, int64_t n)
 {
     if ((uint64_t)n <= JS_ATOM_MAX_INT) {
@@ -7973,6 +8008,16 @@ static JSProperty *js_resize_prop(JSContext *ctx, JSObject *p, uint32_t count,
     return js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
 }
 
+/* The most properties a shape holds: hash_next and the hash table hold the
+   index of a property plus one, in JS_SHAPE_HASH_NEXT_BITS bits. Past it
+   the index would be cut and a lookup would miss a property that is there.
+   Upstream has no such limit. */
+#define JS_SHAPE_PROP_MAX ((1u << JS_SHAPE_HASH_NEXT_BITS) - 1)
+_Static_assert(JS_SHAPE_PROP_MAX < (1u << JS_SHAPE_HASH_NEXT_BITS),
+               "the index of a property plus one fits in hash_next");
+_Static_assert(JS_SHAPE_PROP_MAX <= INT32_MAX - 1, "the counts of a shape are ints");
+_Static_assert(sizeof(JSShapeProperty) == 8, "hash_next and flags share 32 bits");
+
 /* make space to hold at least 'count' properties */
 static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
                                        JSObject *p, uint32_t count)
@@ -7984,7 +8029,18 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
     JSShape *old_sh;
 
     sh = *psh;
-    new_size = max_int(count, sh->prop_size * 3 / 2);
+    /* prop_size + prop_size / 2 is prop_size * 3 / 2, which overflows an
+       int past 715,827,882 */
+    new_size = max_uint32(count, (uint32_t)sh->prop_size + sh->prop_size / 2);
+    if (unlikely(new_size > JS_SHAPE_PROP_MAX)) {
+        /* an object of 2^26 - 1 properties, or the conversion of a fast
+           array of as many elements, asks for more */
+        if (count > JS_SHAPE_PROP_MAX) {
+            JS_ThrowRangeError(ctx, "too many properties");
+            return -1;
+        }
+        new_size = JS_SHAPE_PROP_MAX;
+    }
     /* Reallocate prop array first to avoid crash or size inconsistency
        in case of memory allocation failure */
     if (p) {
@@ -14432,20 +14488,21 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
             if (d <= sh->prop_count) {
                 JSAtom atom;
 
-                /* faster to iterate */
+                /* faster to iterate. The shape is made p's own first, the
+                   one step that can fail, and nothing has changed then:
+                   delete_property then cannot fail, and an index is looked
+                   up with no atom made for it. */
+                if (js_shape_prepare_update(ctx, p, NULL))
+                    return -1;
                 while (cur_len > len) {
-                    atom = JS_NewAtomUInt32(ctx, cur_len - 1);
-                    if (atom == JS_ATOM_NULL) {
-                        /* the elements from cur_len on are gone */
-                        set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, cur_len));
-                        return -1;
-                    }
-                    ret = delete_property(ctx, p, atom);
-                    JS_FreeAtom(ctx, atom);
-                    if (unlikely(!ret)) {
-                        /* unlikely case: property is not
-                           configurable */
-                        break;
+                    atom = js_find_index_atom(ctx->rt, cur_len - 1);
+                    if (atom != JS_ATOM_NULL) {
+                        ret = delete_property(ctx, p, atom);
+                        if (unlikely(!ret)) {
+                            /* unlikely case: property is not
+                               configurable */
+                            break;
+                        }
                     }
                     cur_len--;
                 }
@@ -14497,20 +14554,26 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
     return TRUE;
 }
 
-/* return -1 if exception */
+/* return -1 if exception. A fast array holds at most 2^31 - 1 elements (an
+   index of one is an int atom), and so does its room, so that an element
+   added after 2^31 - 1 elements is past the room and comes to the test of
+   expand_fast_array_append before the length or the block changes. new_len
+   is at most 2^31 - 1 (each caller tests it). */
 static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
-    uint32_t new_size;
-    size_t slack;
+    uint32_t new_size, size = p->u.array.u1.size;
+    size_t room, slack;
     JSValue *new_array_prop;
-    /* XXX: potential arithmetic overflow */
-    new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
+
+    /* size * 3 / 2, which overflows 32 bits past 2^32 / 3: with the room at
+       most 2^31 - 1 this does not */
+    new_size = max_uint32(new_len, size + size / 2);
     new_array_prop = js_realloc2(ctx, p->u.array.u.values, sizeof(JSValue) * new_size, &slack);
     if (!new_array_prop)
         return -1;
-    new_size += slack / sizeof(*new_array_prop);
+    room = (size_t)new_size + slack / sizeof(*new_array_prop);
     p->u.array.u.values = new_array_prop;
-    p->u.array.u1.size = new_size;
+    p->u.array.u1.size = unlikely(room > INT32_MAX) ? INT32_MAX : room;
     return 0;
 }
 
@@ -14521,23 +14584,56 @@ static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 #define JS_ARRAY_MIN_ROOM 8
 #endif
 
-/* expand_fast_array for an array that new_len elements are appended to */
+/* expand_fast_array for an array that new_len elements are appended to. Past
+   2^31 - 1 elements it is an error: an element added after them, by any way
+   to add one, comes here and fails before the length or the block changes. */
 static int expand_fast_array_append(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
+    if (unlikely(new_len > INT32_MAX)) {
+        JS_ThrowRangeError(ctx, "invalid array length");
+        return -1;
+    }
     if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
         new_len = JS_ARRAY_MIN_ROOM;
     return expand_fast_array(ctx, p, new_len);
 }
 
+/* The room for the element of add_fast_array_element, of new_len elements:
+   0, or -1 on exception. A length that cannot be written is tested first,
+   so that a store that fails on it allocates nothing: then it returns 1,
+   with no room made, and add_fast_array_element throws as it did. A
+   function of its own, so that an element added with room is the code it
+   was. */
+static no_inline int add_fast_array_room(JSContext *ctx, JSObject *p,
+                                         uint32_t new_len)
+{
+    if (JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+        new_len > (uint32_t)JS_VALUE_GET_INT(p->prop[0].u.value) &&
+        !(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))
+        return 1;
+    return expand_fast_array_append(ctx, p, new_len);
+}
+
 /* Preconditions: 'p' must be of class JS_CLASS_ARRAY, p->fast_array =
-   TRUE and p->extensible = TRUE */
+   TRUE and p->extensible = TRUE. After 2^31 - 1 elements it throws a
+   RangeError (expand_fast_array_append), where upstream b25da59 has each
+   caller test the index and convert the array, which then fails as well
+   (resize_properties) and costs a test on each element added. As in
+   b25da59, a length that cannot be written is tested before the room is
+   made (add_fast_array_room), and the room is made before the length
+   changes, so that a failure leaves the length. */
 static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                                          JSValue val, int flags)
 {
     uint32_t new_len, array_len;
     /* extend the array by one */
-    /* XXX: convert to slow array if new_len > 2^31-1 elements */
     new_len = p->u.array.count + 1;
+    if (unlikely(new_len > p->u.array.u1.size)) {
+        if (unlikely(add_fast_array_room(ctx, p, new_len) < 0)) {
+            JS_FreeValue(ctx, val);
+            return -1;
+        }
+    }
     /* update the length if necessary. We assume that if the length is
        not an integer, then if it >= 2^31.  */
     if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT)) {
@@ -14548,12 +14644,6 @@ static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                 return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
             }
             p->prop[0].u.value = JS_NewInt32(ctx, new_len);
-        }
-    }
-    if (unlikely(new_len > p->u.array.u1.size)) {
-        if (expand_fast_array_append(ctx, p, new_len)) {
-            JS_FreeValue(ctx, val);
-            return -1;
         }
     }
     p->u.array.u.values[new_len - 1] = val;
@@ -15197,29 +15287,59 @@ static int JS_CreateProperty(JSContext *ctx, JSObject *p,
                 } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
                     /* convert the fast array to normal array */
                 convert_to_array:
+                    /* the tests that refuse the element come first: the
+                       conversion can fail (too many properties, no
+                       memory), and it would then throw where the
+                       element is refused */
+                    if (!p->extensible)
+                        goto not_extensible;
+                    JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                    if (idx >= len &&
+                        unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
+                        return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
                     if (convert_fast_array_to_array(ctx, p))
                         return -1;
                     goto generic_array;
                 }
             } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
-                JSProperty *plen;
-                JSShapeProperty *pslen;
             generic_array:
                 /* adding the element fails when the array is not extensible,
                    and the length then stays as it is */
                 if (!p->extensible)
                     goto not_extensible;
-                /* update the length field */
-                plen = &p->prop[0];
-                JS_ToUint32(ctx, &len, plen->u.value);
-                if ((idx + 1) > len) {
-                    pslen = get_shape_prop(p->shape);
-                    if (unlikely(!(pslen->flags & JS_PROP_WRITABLE)))
+                JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                if (idx >= len) {
+                    if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
                         return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
-                    /* XXX: should update the length after defining
-                       the property */
-                    len = idx + 1;
-                    set_value(ctx, &plen->u.value, JS_NewUint32(ctx, len));
+                    /* the element is added as at the end of this function
+                       for an object that is not the global object, and the
+                       length is set once it is there, as
+                       ArrayDefineOwnProperty sets it: adding it can fail
+                       (too many properties, no memory) */
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        prop_flags = (flags & (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE)) |
+                            JS_PROP_GETSET;
+                    } else {
+                        prop_flags = flags & JS_PROP_C_W_E;
+                    }
+                    pr = add_property(ctx, p, prop, prop_flags);
+                    if (unlikely(!pr))
+                        return -1;
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        pr->u.getset.getter = NULL;
+                        if ((flags & JS_PROP_HAS_GET) && JS_IsFunction(ctx, getter))
+                            pr->u.getset.getter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, getter));
+                        pr->u.getset.setter = NULL;
+                        if ((flags & JS_PROP_HAS_SET) && JS_IsFunction(ctx, setter))
+                            pr->u.getset.setter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, setter));
+                    } else if (flags & JS_PROP_HAS_VALUE) {
+                        pr->u.value = JS_DupValue(ctx, val);
+                    } else {
+                        pr->u.value = JS_UNDEFINED;
+                    }
+                    /* the length is the first property of an array */
+                    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, idx + 1));
+                    return TRUE;
                 }
             }
         } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
@@ -15447,6 +15567,11 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
             goto redo_prop_update;
         }
 
+        /* A define that changes the flags of the property makes the shape
+           p's own (js_shape_prepare_update), and copying a shared shape can
+           run out of memory. Each path below does that before it changes
+           anything (a getter, a value, the length of an array), so that a
+           define that fails leaves the property as it was. */
         if (flags & (JS_PROP_HAS_VALUE | JS_PROP_HAS_WRITABLE |
                      JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
             if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
@@ -15492,6 +15617,12 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                             goto not_configurable;
                         }
                     }
+                    /* the flags set at the end */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if (((prs->flags ^ flags) & mask) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                 }
                 if (flags & JS_PROP_HAS_GET) {
                     if (pr->u.getset.getter)
@@ -15551,6 +15682,19 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                 }
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) {
+                    /* the variable made read-only below, or the flags set
+                       at the end. A module namespace refuses a read-only
+                       export below, and a define that is refused copies
+                       nothing (its exports are not configurable, so their
+                       flags are not changed at the end either). */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if ((((prs->flags ^ flags) & mask) ||
+                         ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                          JS_PROP_HAS_WRITABLE &&
+                          p->class_id != JS_CLASS_MODULE_NS)) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         if (p->class_id == JS_CLASS_MODULE_NS) {
                             /* JS_PROP_WRITABLE is always true for variable
@@ -15584,6 +15728,13 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                         }
                     }
                 } else if (prs->flags & JS_PROP_LENGTH) {
+                    /* the length made read-only below. A shape that
+                       set_array_length compacts is p's own too. */
+                    if ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                        JS_PROP_HAS_WRITABLE &&
+                        (prs->flags & JS_PROP_WRITABLE) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         /* Note: no JS code is executable because
                            'val' is guaranted to be a Uint32 */
@@ -15605,16 +15756,18 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                     return res;
                 } else {
+                    /* the flags before the value, which cannot fail */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) & JS_PROP_C_W_E;
+                    if ((prs->flags ^ flags) & mask) {
+                        if (js_shape_prepare_update(ctx, p, &prs))
+                            return -1;
+                        prs->flags = (prs->flags & ~mask) | (flags & mask);
+                    }
                     if (flags & JS_PROP_HAS_VALUE) {
                         JS_FreeValue(ctx, pr->u.value);
                         pr->u.value = JS_DupValue(ctx, val);
                     }
-                    if (flags & JS_PROP_HAS_WRITABLE) {
-                        if (js_update_property_flags(ctx, p, &prs,
-                                                     (prs->flags & ~JS_PROP_WRITABLE) |
-                                                     (flags & JS_PROP_WRITABLE)))
-                            return -1;
-                    }
+                    return TRUE;
                 }
             }
         }
@@ -49734,6 +49887,13 @@ fail:
     return JS_EXCEPTION;
 }
 
+/* JS_ARRAY_FROM_FIRST() is the first index of Array.from, 0. white.c sets one
+   near 2^32, so that a test reaches the indices and lengths that pass 32 bits
+   without as many calls. */
+#ifndef JS_ARRAY_FROM_FIRST
+#define JS_ARRAY_FROM_FIRST() 0
+#endif
+
 static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -49783,7 +49943,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         next_method = JS_GetProperty(ctx, enum_obj, JS_ATOM_next);
         if (JS_IsException(next_method))
             goto exception;
-        for (k = 0;; k++) {
+        for (k = JS_ARRAY_FROM_FIRST();; k++) {
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -49791,7 +49951,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 break;
             if (mapping) {
                 args[0] = v;
-                args[1] = JS_NewInt32(ctx, k);
+                args[1] = JS_NewInt64(ctx, k);
                 v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
@@ -49818,7 +49978,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         JS_FreeValue(ctx, v);
         if (JS_IsException(r))
             goto exception;
-        for(k = 0; k < len; k++) {
+        for(k = JS_ARRAY_FROM_FIRST(); k < len; k++) {
             if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
                 goto exception;
             v = JS_GetPropertyInt64(ctx, arrayLike, k);
@@ -49826,7 +49986,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (mapping) {
                 args[0] = v;
-                args[1] = JS_NewInt32(ctx, k);
+                args[1] = JS_NewInt64(ctx, k);
                 v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
@@ -49838,7 +49998,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 goto exception;
         }
     }
-    if (JS_SetProperty(ctx, r, JS_ATOM_length, JS_NewUint32(ctx, k)) < 0)
+    if (JS_SetProperty(ctx, r, JS_ATOM_length, JS_NewInt64(ctx, k)) < 0)
         goto exception;
     goto done;
 
@@ -51014,7 +51174,7 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
 
     /* the growth of the block of elements (expand_fast_array) */
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
-                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+                        (size_t)(max_uint32(new_len, size + size / 2) - size));
     return expand_fast_array_append(ctx, p, new_len);
 }
 
