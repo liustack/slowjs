@@ -317,7 +317,7 @@ func TestManyURLsCountedInVM(t *testing.T) {
 func TestNoPackageState(t *testing.T) {
 	allowed := map[string]bool{
 		"setBuiltin": true, "formDecodeBuiltin": true, "formEncodeBuiltin": true,
-		"errTooLong": true, "errNotParts": true, "admitHook": true, "callHook": true, "baseParseHook": true, "shim": true, "script": true, "_": true,
+		"errTooLong": true, "errNotParts": true, "admitHook": true, "callHook": true, "baseParseHook": true, "fromPartsHook": true, "shim": true, "script": true, "_": true,
 	}
 	var vars []string
 	for _, f := range parseFiles(t, ".") {

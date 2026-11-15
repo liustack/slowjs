@@ -43,13 +43,13 @@ func newForgingVM(t *testing.T) *slowjs.VM {
 	defer wrap.Free()
 	bridge := newBridge()
 	args := make([]any, 0, len(bridge))
-	for _, b := range bridge {
+	for i, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer v.Free()
-		if b == setBuiltin {
+		if i == 1 { // set
 			if v, err = wrap.CallValue(slowjs.UndefinedValue, v); err != nil {
 				t.Fatal(err)
 			}

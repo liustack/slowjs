@@ -15,7 +15,8 @@ import (
 
 // The Builtins url.js is called with. A URL is javascript's, in the VM, under
 // its memory limit, and nothing a script gave is held in Go when a call ends,
-// but for the last base a VM parsed (keptBase below). Each reads its strings
+// but for the last base a VM parsed and the last record it made (keptBase and
+// keptRecord below). Each reads its strings
 // through the door (door.go) and answers undefined when the call is to end:
 // the uncatchable error is then pending and the answer is not read.
 
@@ -97,12 +98,46 @@ func parseArgs(a slowjs.Args, kept *keptBase) (*whatwgurl.URL, bool) {
 	return u, err == nil
 }
 
+// maxKeptBytes is the longest href of a record a VM keeps (keptRecord).
+const maxKeptBytes = 1024
+
+// keptRecord is the last record parts made for a VM, when its href is at most
+// maxKeptBytes: its parts and bits, as url.js hands them back to set, and the
+// URL they are the parts of. A router changes a URL just after it made it
+// (u.pathname = '/zh-CN' + u.pathname), and set then takes a copy of that URL
+// in place of making the record again from its parts (FromParts), which
+// parses its href once more. Parts and bits equal to these are the parts of
+// that URL, from which FromParts makes a URL that gives them back: the same
+// record. Nothing changes u: set changes a copy. It goes with the VM, at most
+// maxKeptBytes of href and the URL made of it, under 4 KiB of Go's memory a
+// VM.
+type keptRecord struct {
+	p whatwgurl.Parts
+	u *whatwgurl.URL
+}
+
+// vmState is what the Builtins of one VM keep between its calls, which the VM
+// makes one at a time (newBridge).
+type vmState struct {
+	base keptBase
+	last keptRecord
+}
+
+// fromPartsHook, when a test sets it, is called for each record set makes
+// again from its parts.
+var fromPartsHook func()
+
 // parts is the array url.js keeps for a URL: the href, then protocol,
 // username, password, host, hostname, port, pathname, search, hash and
 // origin, and last the bits of the record the getters do not show, which with
-// the parts make the record again (record).
-func parts(vm *slowjs.VM, u *whatwgurl.URL) (slowjs.Value, error) {
+// the parts make the record again (record). It keeps the record in st.last,
+// when its href is at most maxKeptBytes, and nothing there otherwise.
+func parts(vm *slowjs.VM, u *whatwgurl.URL, st *vmState) (slowjs.Value, error) {
 	p, href := u.Parts()
+	st.last = keptRecord{}
+	if len(href) <= maxKeptBytes {
+		st.last = keptRecord{p: p, u: u}
+	}
 	host := p.Hostname.Text()
 	if port := p.Port.Text(); port != "" {
 		host += ":" + port
@@ -170,20 +205,20 @@ func parts(vm *slowjs.VM, u *whatwgurl.URL) (slowjs.Value, error) {
 }
 
 // parseBuiltin is parse(input, base): the parts of the URL, or undefined.
-func parseBuiltin(kept *keptBase) *slowjs.Builtin {
+func parseBuiltin(st *vmState) *slowjs.Builtin {
 	return newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-		u, ok := parseArgs(a, kept)
+		u, ok := parseArgs(a, &st.base)
 		if !ok {
 			return slowjs.UndefinedValue, nil
 		}
-		return parts(a.VM(), u)
+		return parts(a.VM(), u, st)
 	})
 }
 
 // canParseBuiltin is canParse(input, base): 1 or 0.
-func canParseBuiltin(kept *keptBase) *slowjs.Builtin {
+func canParseBuiltin(st *vmState) *slowjs.Builtin {
 	return newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-		if _, ok := parseArgs(a, kept); ok {
+		if _, ok := parseArgs(a, &st.base); ok {
 			return a.VM().NewInt(1), nil
 		}
 		return a.VM().NewInt(0), nil
@@ -202,7 +237,14 @@ var errNotParts = &slowjs.Error{Name: "TypeError", Message: "URL: the record of 
 // than MaxUnits or the URL would be, and undefined when the call is to end.
 // Parts and bits that are not those of a URL, and a part number that is not
 // one of the setters, are a TypeError: the URL is not changed.
-var setBuiltin = newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error) {
+func setBuiltin(st *vmState) *slowjs.Builtin {
+	return newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error) {
+		return set(a, st)
+	})
+}
+
+// set is the work of setBuiltin.
+func set(a slowjs.Args, st *vmState) (slowjs.Value, error) {
 	vm := a.VM()
 	pn, ok := a.Number(0)
 	part := int(pn)
@@ -235,14 +277,24 @@ var setBuiltin = newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error)
 			return slowjs.Value{}, errNotParts
 		}
 	}
-	u, err := whatwgurl.FromParts(whatwgurl.Parts{
+	p := whatwgurl.Parts{
 		Protocol: in[1], Username: in[2], Password: in[3], Hostname: in[4],
 		Port: in[5], Pathname: in[6], Search: in[7], Hash: in[8],
 		HasHost: f&hasHost != 0, Opaque: f&opaque != 0, HasQuery: f&hasQuery != 0, HasFragment: f&hasFragment != 0,
-	})
-	if err != nil {
-		return slowjs.Value{}, errNotParts
 	}
+	var u *whatwgurl.URL
+	if st.last.u != nil && st.last.p == p {
+		u = st.last.u.Clone()
+	} else {
+		if h := fromPartsHook; h != nil {
+			h()
+		}
+		var err error
+		if u, err = whatwgurl.FromParts(p); err != nil {
+			return slowjs.Value{}, errNotParts
+		}
+	}
+	var err error
 	switch value := in[0]; part {
 	case setProtocol:
 		err = u.SetProtocol(value)
@@ -266,8 +318,8 @@ var setBuiltin = newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error)
 	if err != nil {
 		return vm.NewInt(0), nil
 	}
-	return parts(vm, u)
-})
+	return parts(vm, u, st)
+}
 
 // errTooLong is the error of a name or a value of a query string, or of its
 // encoding, that is longer than MaxUnits.
@@ -305,10 +357,10 @@ var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a slowjs.Args) (slowjs.
 })
 
 // newBridge is the list of Builtins url.js is a function of, in its order,
-// for one VM: parse and canParse share the base of that VM.
+// for one VM: parse, canParse and set share the state of that VM.
 func newBridge() []*slowjs.Builtin {
-	kept := &keptBase{}
-	return []*slowjs.Builtin{parseBuiltin(kept), setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin(kept)}
+	st := &vmState{}
+	return []*slowjs.Builtin{parseBuiltin(st), setBuiltin(st), formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin(st)}
 }
 
 // callHook, when a test sets it, is called as each Builtin of this package
