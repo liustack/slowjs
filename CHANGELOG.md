@@ -11,6 +11,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - `localeCompare` and `Intl.Collator.prototype.compare` compare two short strings of Latin letters, digits and punctuation from a table of their characters, with no normal form and no allocation: two ids of 12 characters compare in 206 ns where they took 2.15 µs, with the same answer as before for every pair. `localeCompare` with no locales or options no longer looks its collator up on each call. A page of jotai that sorts with `localeCompare` runs 9.1% fewer instructions.
+- `formatToParts` of `Intl.NumberFormat` and `Intl.DateTimeFormat` gives each type as a string the engine keeps as an atom, so a page that reads a key with it, as luxon does, skips looking the string up again. A page of luxon runs 1.6% fewer instructions.
 
 ## [v0.31.1] - 2026-11-16
 

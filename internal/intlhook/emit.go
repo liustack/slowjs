@@ -65,6 +65,28 @@ func EmitMixed(vm *slowjs.VM, l []any) (slowjs.Value, error) {
 	return vm.NewArray(vals...)
 }
 
+// EmitStringsAs is EmitStrings, but element i is the number asInt gives
+// for it, where it gives one.
+func EmitStringsAs(vm *slowjs.VM, l []string, asInt func(i int, s string) (int, bool)) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(l))
+	defer func() { freeAll(vals) }()
+	for i, s := range l {
+		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
+			return slowjs.UndefinedValue, nil
+		}
+		if n, ok := asInt(i, s); ok {
+			vals = append(vals, vm.NewInt(n))
+			continue
+		}
+		v, err := vm.NewString(s)
+		if err != nil {
+			return slowjs.Value{}, err
+		}
+		vals = append(vals, v)
+	}
+	return vm.NewArray(vals...)
+}
+
 // EmitInts is a javascript array of the numbers of l.
 func EmitInts(vm *slowjs.VM, l []int) (slowjs.Value, error) {
 	vals := make([]slowjs.Value, len(l))

@@ -295,10 +295,25 @@
 	// made of elements 2i and 2i+1, already read, and the array is then cut
 	// to half its length. Only own elements are set, so no setter on
 	// Array.prototype runs.
+	//
+	// A type is a string, or its index in lists.partTypes, which the first
+	// such part makes of the keys of lists.partTypeNames: each type is then
+	// the engine's atom of its text, and a page reads a key with it as fast
+	// as with a literal. Literals here would be atoms in every VM that formats
+	// anything, and a string of a page with the same text would then never
+	// become the atom itself, which slows every read the page makes with it.
 	function parts(a) {
 		const n = a.length / 2;
 		for (let i = 0; i < n; i++) {
-			a[i] = {type: a[2 * i], value: a[2 * i + 1]};
+			let t = a[2 * i];
+			if (typeof t === 'number') {
+				let types = lists.partTypes;
+				if (types === null) {
+					types = lists.partTypes = bare(ownKeys(parse(lists.partTypeNames)));
+				}
+				t = types[t];
+			}
+			a[i] = {type: t, value: a[2 * i + 1]};
 		}
 		a.length = n;
 		return a;

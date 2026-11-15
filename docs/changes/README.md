@@ -217,6 +217,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A context keeps the fields of the last time value | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
 | `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts`, on the range formatter of `internal/gointl` | Unreleased | [intl/intl.js](../../intl/intl.js), `numberRangeFormatted` in [intl/bridge.go](../../intl/bridge.go) |
 | A collator compares two short Latin strings from a table of their characters, with no normal form, and `localeCompare` with no locales or options keeps one collator | Unreleased | [internal/gointl/qjs_collshort.go](../../internal/gointl/qjs_collshort.go), `localeCompare` in [intl/intl.js](../../intl/intl.js) |
+| `formatToParts` gives the types of parts as atoms, which intl.js makes once from the list of Go | Unreleased | `partTypes` in [intl/bridge.go](../../intl/bridge.go), `parts` in [intl/intl.js](../../intl/intl.js) |
 
 ## Temporal
 
