@@ -41,7 +41,8 @@ func newForgingVM(t *testing.T) *slowjs.VM {
 		t.Fatal(err)
 	}
 	defer wrap.Free()
-	bridge := newBridge()
+	states.Store(vm, &vmState{})
+	vm.OnClose(func() { states.Delete(vm) })
 	args := make([]any, 0, len(bridge))
 	for i, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)

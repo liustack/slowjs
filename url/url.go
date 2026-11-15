@@ -170,7 +170,8 @@ func Register(vm *slowjs.VM, opts ...Option) error {
 		return err
 	}
 	defer f.Free()
-	bridge := newBridge()
+	states.Store(vm, &vmState{})
+	vm.OnClose(func() { states.Delete(vm) })
 	args := make([]any, 0, len(bridge))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)

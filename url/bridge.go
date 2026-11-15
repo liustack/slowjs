@@ -7,6 +7,7 @@ package url
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/liustack/slowjs"
 	"github.com/liustack/slowjs/internal/intlhook"
@@ -49,8 +50,9 @@ const maxBaseBytes = 256
 
 // keptBase is the last base a VM parsed that was a URL of at most maxBaseBytes,
 // and its parse: a router resolves every link of a page against one base, so
-// most calls parse it no more. Each VM has its own (newBridge), which the
-// Builtins of that VM change, one call at a time, and which goes with the VM:
+// most calls parse it no more. Each VM has its own (states), which the
+// Builtins change in the calls of that VM, one at a time, and which goes when
+// the VM closes:
 // at most maxBaseBytes and the URL made of them, under 1 KiB of Go's memory a
 // VM. The parser only reads a base and copies what it takes of it, so a
 // parsed base gives what a new parse of it would.
@@ -116,11 +118,27 @@ type keptRecord struct {
 	u *whatwgurl.URL
 }
 
-// vmState is what the Builtins of one VM keep between its calls, which the VM
-// makes one at a time (newBridge).
+// vmState is what the Builtins keep for one VM between its calls, which the
+// VM makes one at a time.
 type vmState struct {
 	base keptBase
 	last keptRecord
+}
+
+// states holds the vmState of each VM that Register set up, until the VM
+// closes (Register gives it to OnClose). The Builtins are the package's, made
+// once, as a process may have only 32768 of them, so a VM's state is found
+// by the VM that calls.
+var states sync.Map // *slowjs.VM -> *vmState
+
+// stateOf returns the state of vm. Only url.js calls the Builtins, and only
+// in a VM that Register set up, which has one.
+func stateOf(vm *slowjs.VM) *vmState {
+	st, ok := states.Load(vm)
+	if !ok {
+		panic("url: a Builtin of package url called in a VM that Register did not set up")
+	}
+	return st.(*vmState)
 }
 
 // fromPartsHook, when a test sets it, is called for each record set makes
@@ -205,25 +223,22 @@ func parts(vm *slowjs.VM, u *whatwgurl.URL, st *vmState) (slowjs.Value, error) {
 }
 
 // parseBuiltin is parse(input, base): the parts of the URL, or undefined.
-func parseBuiltin(st *vmState) *slowjs.Builtin {
-	return newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-		u, ok := parseArgs(a, &st.base)
-		if !ok {
-			return slowjs.UndefinedValue, nil
-		}
-		return parts(a.VM(), u, st)
-	})
-}
+var parseBuiltin = newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
+	st := stateOf(a.VM())
+	u, ok := parseArgs(a, &st.base)
+	if !ok {
+		return slowjs.UndefinedValue, nil
+	}
+	return parts(a.VM(), u, st)
+})
 
 // canParseBuiltin is canParse(input, base): 1 or 0.
-func canParseBuiltin(st *vmState) *slowjs.Builtin {
-	return newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-		if _, ok := parseArgs(a, &st.base); ok {
-			return a.VM().NewInt(1), nil
-		}
-		return a.VM().NewInt(0), nil
-	})
-}
+var canParseBuiltin = newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
+	if _, ok := parseArgs(a, &stateOf(a.VM()).base); ok {
+		return a.VM().NewInt(1), nil
+	}
+	return a.VM().NewInt(0), nil
+})
 
 // errNotParts is the error of set for arguments that url.js does not hand it:
 // a part that is not a setter's, or a record that is not a URL's. A script
@@ -237,15 +252,12 @@ var errNotParts = &slowjs.Error{Name: "TypeError", Message: "URL: the record of 
 // than MaxUnits or the URL would be, and undefined when the call is to end.
 // Parts and bits that are not those of a URL, and a part number that is not
 // one of the setters, are a TypeError: the URL is not changed.
-func setBuiltin(st *vmState) *slowjs.Builtin {
-	return newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error) {
-		return set(a, st)
-	})
-}
+var setBuiltin = newBuiltin("set", 11, set)
 
 // set is the work of setBuiltin.
-func set(a slowjs.Args, st *vmState) (slowjs.Value, error) {
+func set(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
+	st := stateOf(vm)
 	pn, ok := a.Number(0)
 	part := int(pn)
 	if !ok || float64(part) != pn || part < setProtocol || part > setHash {
@@ -356,12 +368,8 @@ var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a slowjs.Args) (slowjs.
 	return emit(a.VM(), out)
 })
 
-// newBridge is the list of Builtins url.js is a function of, in its order,
-// for one VM: parse, canParse and set share the state of that VM.
-func newBridge() []*slowjs.Builtin {
-	st := &vmState{}
-	return []*slowjs.Builtin{parseBuiltin(st), setBuiltin(st), formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin(st)}
-}
+// bridge is the list of Builtins url.js is a function of, in its order.
+var bridge = []*slowjs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
 
 // callHook, when a test sets it, is called as each Builtin of this package
 // starts (enter true) and as it ends.
