@@ -806,6 +806,11 @@ struct JSContext {
     /* the atoms and the caches of JS_NewStartTagFunction and
        JS_NewEndTagFunction, or NULL until one of them ran (see js_start_tag) */
     struct JSEmitCache *emit_cache;
+    /* the fields 0 to 7 of get_date_fields for the time value date_key in
+       ms, local or UTC (date_fields_of), and INT64_MIN, which no time value
+       is, for none yet */
+    int64_t date_key;
+    double date_fields[8];
 };
 
 typedef union JSFloat64Union {
@@ -3865,6 +3870,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
     ctx->iterator_ctor = JS_NULL;
     ctx->regexp_ctor = JS_NULL;
     ctx->promise_ctor = JS_NULL;
+    ctx->date_key = INT64_MIN;
     init_list_head(&ctx->loaded_modules);
 
     if (JS_AddIntrinsicBasicObjects(ctx)) {
@@ -67643,38 +67649,100 @@ static int64_t days_in_year(int64_t y) {
     return 365 + !(y % 4) - !(y % 100) + !(y % 400);
 }
 
-/* return the year, update days */
-static int64_t year_from_days(int64_t *days) {
-    int64_t y, d1, nd, d = *days;
-    y = floor_div(d * 10000, 3652425) + 1970;
-    /* the initial approximation is very good, so only a few
-       iterations are necessary */
-    for(;;) {
-        d1 = d - days_from_year(y);
-        if (d1 < 0) {
-            y--;
-            d1 += days_in_year(y);
-        } else {
-            nd = days_in_year(y);
-            if (d1 < nd)
-                break;
-            d1 -= nd;
-            y++;
-        }
-    }
-    *days = d1;
-    return y;
-}
-
 static int const month_days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 static char const month_names[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 static char const day_names[] = "SunMonTueWedThuFriSat";
 
-static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
-                                       double fields[minimum_length(9)], int is_local, int force)
+/* the year, the month (0 to 11) and the day of the month (1 to 31) of a
+   count of days from 1970-01-01, with no loop and no division but by
+   constants, after Neri and Schneider, "Euclidean affine functions and their
+   application to calendar algorithms" (2022). The count is moved to start on
+   0000-03-01 (719468 days before 1970-01-01), so that a year of the count
+   starts in March and ends with 29 February, plus 700 cycles of 400 years
+   (146097 days each): every day from -102,987,368 to 970,754,455, which holds
+   the -100,000,000 to 100,000,000 days of a time value and a day of time zone
+   past either end, is then an n >= 0 with 4 * n + 3 below 2^32. It gives
+   what the loops that stepped the year and counted off the months gave, for
+   every day of that range of a time value (test_days_to_date in
+   engine/test/unit-white.c). */
+static void days_to_date(int64_t days, int *py, int *pm, int *pd)
+{
+    uint32_t n, n1, c, nc, n2, z, ny, n3, m, d, j;
+    uint64_t p2;
+
+    n = (uint32_t)(days + 719468 + 146097 * 700);
+    /* the century of the count, and the day in it */
+    n1 = 4 * n + 3;
+    c = n1 / 146097;
+    nc = n1 % 146097 / 4;
+    /* the year in the century, and the day in the year */
+    n2 = 4 * nc + 3;
+    p2 = (uint64_t)2939745 * n2;
+    z = (uint32_t)(p2 >> 32);
+    ny = (uint32_t)p2 / 2939745 / 4;
+    /* the month, 3 to 14 for March to February, and the day in it */
+    n3 = 2141 * ny + 197913;
+    m = n3 >> 16;
+    d = (n3 & 0xffff) / 2141;
+    /* January and February are in the next year of the calendar */
+    j = ny >= 306;
+    *py = (int)(100 * c + z + j) - 400 * 700;
+    *pm = (int)(j ? m - 12 : m) - 1;
+    *pd = (int)d + 1;
+}
+
+/* fields 0 to 7 of get_date_fields for d, a time value in ms, already
+   moved to local time when that is asked */
+static no_inline void date_fields_find(int64_t d, double fields[minimum_length(8)])
+{
+    int64_t days, wd, h, m, s, ms;
+    int y, mon, md;
+
+    /* result is >= 0, we can use % */
+    h = math_mod(d, 86400000);
+    days = (d - h) / 86400000;
+    ms = h % 1000;
+    h = (h - ms) / 1000;
+    s = h % 60;
+    h = (h - s) / 60;
+    m = h % 60;
+    h = (h - m) / 60;
+    wd = math_mod(days + 4, 7); /* week day */
+    days_to_date(days, &y, &mon, &md);
+    fields[0] = y;
+    fields[1] = mon;
+    fields[2] = md;
+    fields[3] = h;
+    fields[4] = m;
+    fields[5] = s;
+    fields[6] = ms;
+    fields[7] = wd;
+}
+
+/* the fields 0 to 7 of d as date_fields_find gives them, kept in the
+   context for the last d asked: a page reads several getters of one Date,
+   or of copies of it, in a row. They depend on d alone, so no change of a
+   Date can make them wrong: a setter gives the Date a new time value, which
+   is another key. */
+static inline const double *date_fields_of(JSContext *ctx, int64_t d)
+{
+    if (unlikely(ctx->date_key != d)) {
+        date_fields_find(d, ctx->date_fields);
+        ctx->date_key = d;
+    }
+    return ctx->date_fields;
+}
+
+/* the time value of the Date obj in ms in *pd, moved to local time with
+   is_local, and the offset of local time in minutes in *ptz: TRUE, FALSE
+   for NaN (0 and TRUE with force), -1 with an exception when obj is not a
+   Date */
+static inline int date_time_value(JSContext *ctx, JSValueConst obj, int is_local,
+                                  int force, int64_t *pd, int *ptz)
 {
     double dval;
-    int64_t d, days, wd, y, i, md, h, m, s, ms, tz = 0;
+    int64_t d;
+    int tz = 0;
 
     if (JS_ThisTimeValue(ctx, &dval, obj))
         return -1;
@@ -67690,35 +67758,24 @@ static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
             d += tz * 60000;
         }
     }
+    *pd = d;
+    *ptz = tz;
+    return TRUE;
+}
 
-    /* result is >= 0, we can use % */
-    h = math_mod(d, 86400000);
-    days = (d - h) / 86400000;
-    ms = h % 1000;
-    h = (h - ms) / 1000;
-    s = h % 60;
-    h = (h - s) / 60;
-    m = h % 60;
-    h = (h - m) / 60;
-    wd = math_mod(days + 4, 7); /* week day */
-    y = year_from_days(&days);
+static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
+                                       double fields[minimum_length(9)], int is_local, int force)
+{
+    int64_t d;
+    int tz, res, i;
+    const double *f;
 
-    for(i = 0; i < 11; i++) {
-        md = month_days[i];
-        if (i == 1)
-            md += days_in_year(y) - 365;
-        if (days < md)
-            break;
-        days -= md;
-    }
-    fields[0] = y;
-    fields[1] = i;
-    fields[2] = days + 1;
-    fields[3] = h;
-    fields[4] = m;
-    fields[5] = s;
-    fields[6] = ms;
-    fields[7] = wd;
+    res = date_time_value(ctx, obj, is_local, force, &d, &tz);
+    if (res <= 0)
+        return res;
+    f = date_fields_of(ctx, d);
+    for (i = 0; i < 8; i++)
+        fields[i] = f[i];
     fields[8] = tz;
     return TRUE;
 }
@@ -67808,21 +67865,23 @@ static JSValue get_date_field(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv, int magic)
 {
     // get_date_field(obj, n, is_local)
-    double fields[9];
-    int res, n, is_local;
+    int64_t d;
+    int res, n, is_local, tz;
+    double v;
 
     is_local = magic & 0x0F;
     n = (magic >> 4) & 0x0F;
-    res = get_date_fields(ctx, this_val, fields, is_local, 0);
+    res = date_time_value(ctx, this_val, is_local, 0, &d, &tz);
     if (res < 0)
         return JS_EXCEPTION;
     if (!res)
         return JS_NAN;
 
+    v = date_fields_of(ctx, d)[n];
     if (magic & 0x100) {    // getYear
-        fields[0] -= 1900;
+        v -= 1900;
     }
-    return JS_NewFloat64(ctx, fields[n]);
+    return JS_NewFloat64(ctx, v);
 }
 
 static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
@@ -67862,14 +67921,64 @@ static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
     return JS_SetThisTimeValue(ctx, this_val, d);
 }
 
+/* v in decimal at buf + pos, with at least ndigits digits, and a minus sign
+   before it when it is negative, or a plus sign when it is not and plus is
+   set: what snprintf's "%0*d" with a width of ndigits plus the sign gives,
+   and "%+0*d" with plus. Returns the position after it. */
+static int date_put_int(char *buf, int pos, int v, int ndigits, BOOL plus)
+{
+    char digits[10];
+    uint32_t u;
+    int n = 0;
+
+    if (v < 0) {
+        buf[pos++] = '-';
+        u = -(uint32_t)v;
+    } else {
+        if (plus)
+            buf[pos++] = '+';
+        u = v;
+    }
+    do {
+        digits[n++] = '0' + u % 10;
+        u /= 10;
+    } while (u != 0);
+    while (n < ndigits)
+        digits[n++] = '0';
+    while (n > 0)
+        buf[pos++] = digits[--n];
+    return pos;
+}
+
+/* the three letters of a name of names at index i, at buf + pos */
+static int date_put_name(char *buf, int pos, const char *names, int i)
+{
+    buf[pos] = names[i * 3];
+    buf[pos + 1] = names[i * 3 + 1];
+    buf[pos + 2] = names[i * 3 + 2];
+    return pos + 3;
+}
+
+/* h, m and s as hh:mm:ss at buf + pos */
+static int date_put_time(char *buf, int pos, int h, int m, int s)
+{
+    pos = date_put_int(buf, pos, h, 2, FALSE);
+    buf[pos++] = ':';
+    pos = date_put_int(buf, pos, m, 2, FALSE);
+    buf[pos++] = ':';
+    return date_put_int(buf, pos, s, 2, FALSE);
+}
+
 /* fmt:
    0: toUTCString: "Tue, 02 Jan 2018 23:04:46 GMT"
    1: toString: "Wed Jan 03 2018 00:05:22 GMT+0100 (CET)"
    2: toISOString: "2018-01-02T23:02:56.927Z"
    3: toLocaleString: "1/2/2018, 11:40:40 PM"
    part: 1=date, 2=time 3=all
-   XXX: should use a variant of strftime().
- */
+   The digits are written by hand, as snprintf's "%02d", "%0*d" and the
+   like gave them before: a call of snprintf took about 900 instructions,
+   and toString made three. The longest string, the toString of a year of
+   six digits and a minus sign, is 36 characters. */
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv, int magic)
 {
@@ -67907,34 +68016,49 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 1) { /* date part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s, %02d %.3s %0*d ",
-                            day_names + wd * 3, d,
-                            month_names + mon * 3, 4 + (y < 0), y);
+            /* "%.3s, %02d %.3s %0*d " */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ',';
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
+            buf[pos++] = ' ';
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s %.3s %02d %0*d",
-                            day_names + wd * 3,
-                            month_names + mon * 3, d, 4 + (y < 0), y);
+            /* "%.3s %.3s %02d %0*d" */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ' ';
             }
             break;
         case 2:
-            if (y >= 0 && y <= 9999) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%04d", y);
-            } else {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%+07d", y);
-            }
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "-%02d-%02dT", mon + 1, d);
+            /* "%04d" for 0 to 9999, else "%+07d", then "-%02d-%02dT" */
+            if (y >= 0 && y <= 9999)
+                pos = date_put_int(buf, pos, y, 4, FALSE);
+            else
+                pos = date_put_int(buf, pos, y, 6, TRUE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = 'T';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d/%02d/%0*d", mon + 1, d, 4 + (y < 0), y);
+            /* "%02d/%02d/%0*d" */
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ',';
                 buf[pos++] = ' ';
@@ -67945,12 +68069,16 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 2) { /* time part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT", the sign, "%02d%02d" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             if (tz < 0) {
                 buf[pos++] = '-';
                 tz = -tz;
@@ -67958,18 +68086,23 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                 buf[pos++] = '+';
             }
             /* tz is >= 0, can use % */
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d%02d", tz / 60, tz % 60);
+            pos = date_put_int(buf, pos, tz / 60, 2, FALSE);
+            pos = date_put_int(buf, pos, tz % 60, 2, FALSE);
             /* XXX: tack the time zone code? */
             break;
         case 2:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d.%03dZ", h, m, s, ms);
+            /* "%02d:%02d:%02d.%03dZ" */
+            pos = date_put_time(buf, pos, h, m, s);
+            buf[pos++] = '.';
+            pos = date_put_int(buf, pos, ms, 3, FALSE);
+            buf[pos++] = 'Z';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d %cM", (h + 11) % 12 + 1, m, s,
-                            (h < 12) ? 'A' : 'P');
+            /* "%02d:%02d:%02d %cM" */
+            pos = date_put_time(buf, pos, (h + 11) % 12 + 1, m, s);
+            buf[pos++] = ' ';
+            buf[pos++] = (h < 12) ? 'A' : 'P';
+            buf[pos++] = 'M';
             break;
         }
     }

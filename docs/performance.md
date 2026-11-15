@@ -1138,6 +1138,48 @@ Instructions a render. Native is the C tree built by clang, callgrind on an AMD 
 | MUI's home page | +0.01% | -0.15% | -0.03% |
 | Long Markdown (400 sections) | 0.00% | -0.09% | |
 
+### The fields and strings of a Date
+
+[A Date finds its year, month and day with no loop](changes/time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop), [the strings of a Date are written without snprintf](changes/time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) and [a context keeps the fields of the last time value](changes/time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value), counted on 2026-11-15 against `d7c86e16` (v0.30.7), callgrind on linux/amd64. Native is the test host built by clang. The product is the generated engine in two Go programs: one renders tifa's pages from pinned bundles as tifa's pool keeps a VM (one VM, the bundle loaded once, a release and a collection after each render), the other calls `render` of a bundle in one VM. "As generated" is the engine with the profile of v0.30.7, in which `get_date_fields` and `get_date_string` changed and are compiled with no profile. "Trained" is the same engine with the profile trained again on it (`engine/pgo/train.sh`), in a copy, as the next release would ship it. For the twelve wider pages, each a bundle of open source libraries (`dates` uses date-fns and dayjs), a render is the difference of 4 renders and 2, halved. For tifa's pages it is the mean of 3 timed renders after 2 warm ones natively, and the difference of 3 timed renders and 1, halved, in the product (long Markdown: 2 and 1). Every page gives the same HTML before and after.
+
+On the dates page, each change against the one before it, native:
+
+| Change | Instructions a render | Against the one before |
+| --- | ---: | ---: |
+| v0.30.7 | 1,167,606,994 | |
+| the year, month and day with no loop | 1,153,224,724 | -1.23% |
+| the strings without snprintf | 1,146,058,451 | -0.62% |
+| the fields of the last time value kept | 1,126,445,373 | -1.71% |
+
+All three against v0.30.7, instructions a render:
+
+| Page | Native | Product, as generated | Product, trained |
+| --- | ---: | ---: | ---: |
+| `dates` | -3.53% | -3.19% | -3.22% |
+| `antd` | +0.01% | -0.01% | -0.01% |
+| `chart` | +0.02% | -0.02% | -0.02% |
+| `diff` | 0.00% | 0.00% | 0.00% |
+| `domain` | +0.10% | +0.10% | +0.10% |
+| `forms` | -0.05% | -0.05% | -0.01% |
+| `i18n` | -0.16% | -0.08% | -0.08% |
+| `markdown` | 0.00% | +0.01% | +0.01% |
+| `radix` | 0.00% | +0.02% | +0.01% |
+| `state` | 0.00% | 0.00% | 0.00% |
+| `styled` | +0.03% | -0.03% | 0.00% |
+| `table` | -0.06% | -0.06% | -0.05% |
+| the store's home page | +0.01% | +0.05% | -0.01% |
+| the store's products page | +0.03% | -0.02% | -0.02% |
+| the workbench's studio page | -0.02% | 0.00% | 0.00% |
+| the workbench's stats page | -0.10% | 0.00% | -0.02% |
+| MUI's orders page | -0.03% | 0.00% | 0.00% |
+| MUI's home page | -0.04% | +0.02% | +0.03% |
+| React's page | 0.00% | 0.00% | -0.04% |
+| Long Markdown (400 sections) | -0.05% | +0.03% | +0.04% |
+
+The `dates` page gains: its date-fns and dayjs call 136,524 getters, 6,058 setters and 3,132 `toString` a render. The other pages make few Dates and move by 0.16% or less either way. Where one runs more, as `domain` (+0.10%) and the store's products page natively (+0.03%), no function of Date runs more: the extra instructions are in `add_property`, `js_closure` and `js_create_from_ctor`, which find shapes in a hash table keyed by addresses, and the context is 72 bytes larger, so the blocks allocated after it lie at other addresses. Long Markdown runs 0.03% more in the product and 0.05% fewer natively, which was not looked into further. Trained again, the profile moves the `dates` page by 0.03 points.
+
+The micro benchmark `date_parse` of `compare/testdata` (native) runs 28,498 instructions a turn where it ran 42,158 (-32%). `JS_RegvmRun` and `JS_CallInternal` keep their frames on both systems (SHADOW 256 and 112 on amd64, 176 and 96 on arm64), and so does the trained engine on amd64.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.

@@ -207,6 +207,9 @@ read_when:
 | 数字选项先检查范围再向下取整 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
 | 长的 locale 标签按长度的线性时间解析 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
 | 数字字符串按 Number 的方式读 | v0.30.3 | [time-and-intl.md](time-and-intl.zh-CN.md#数字字符串按-number-的方式读) |
+| Date 不用循环求年、月、日 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#date-不用循环求年月日) |
+| Date 的字符串不再经过 snprintf | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#date-的字符串不再经过-snprintf) |
+| context 记住上一个时间值的字段 | Unreleased | [time-and-intl.md](time-and-intl.zh-CN.md#context-记住上一个时间值的字段) |
 
 ## Temporal
 

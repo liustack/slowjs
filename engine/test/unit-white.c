@@ -92,6 +92,7 @@ JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
+void white_days_to_date(int64_t days, int *y, int *m, int *d);
 int white_poll_run(void);
 void white_poll_skip(int on);
 const char *white_poll_scan(const uint8_t *code, int len);
@@ -7573,6 +7574,93 @@ static void test_regvm_dst(void)
     }
 }
 
+/* ---- the date of a count of days ---- */
+
+/* The year, month and day as get_date_fields found them before
+   days_to_date: an estimate of the year stepped by whole years, then the
+   months counted off. */
+static int64_t ref_floor_div(int64_t a, int64_t b)
+{
+    int64_t m = a % b;
+    return (a - (m + (m < 0) * b)) / b;
+}
+
+static int64_t ref_days_from_year(int64_t y)
+{
+    return 365 * (y - 1970) + ref_floor_div(y - 1969, 4) -
+        ref_floor_div(y - 1901, 100) + ref_floor_div(y - 1601, 400);
+}
+
+static int64_t ref_days_in_year(int64_t y)
+{
+    return 365 + !(y % 4) - !(y % 100) + !(y % 400);
+}
+
+static void ref_days_to_date(int64_t days, int *py, int *pm, int *pd)
+{
+    static const int month_days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    int64_t y = ref_floor_div(days * 10000, 3652425) + 1970, d1, nd, md;
+    int i;
+
+    for (;;) {
+        d1 = days - ref_days_from_year(y);
+        if (d1 < 0) {
+            y--;
+            d1 += ref_days_in_year(y);
+        } else {
+            nd = ref_days_in_year(y);
+            if (d1 < nd)
+                break;
+            d1 -= nd;
+            y++;
+        }
+    }
+    for (i = 0; i < 11; i++) {
+        md = month_days[i];
+        if (i == 1)
+            md += ref_days_in_year(y) - 365;
+        if (d1 < md)
+            break;
+        d1 -= md;
+    }
+    *py = (int)y;
+    *pm = i;
+    *pd = (int)d1 + 1;
+}
+
+/* days_to_date gives the date the loops gave, for every day from 1148 to
+   2791, every day of two cycles of 400 years at each end of the days a time
+   value can name, and two days past each end (a day of time zone), and every
+   997th day between. A run over every day of that range, 200,000,005 days,
+   found no difference when it was written. */
+static void test_days_to_date(void)
+{
+    static const int64_t ranges[][3] = {
+        { -300000, 300000, 1 },
+        { -100000002, -100000002 + 2 * 146097, 1 },
+        { 100000002 - 2 * 146097, 100000002, 1 },
+        { -100000002, 100000002, 997 },
+    };
+    long bad = 0, n = 0;
+    int i;
+
+    for (i = 0; i < (int)countof(ranges); i++) {
+        int64_t x;
+        for (x = ranges[i][0]; x <= ranges[i][1]; x += ranges[i][2]) {
+            int y, m, d, ry, rm, rd;
+            white_days_to_date(x, &y, &m, &d);
+            ref_days_to_date(x, &ry, &rm, &rd);
+            if (y != ry || m != rm || d != rd) {
+                if (bad++ < 5)
+                    printf("day %lld: %d-%d-%d, the loops give %d-%d-%d\n",
+                           (long long)x, y, m + 1, d, ry, rm + 1, rd);
+            }
+            n++;
+        }
+    }
+    CHECK(bad == 0, "%ld of %ld days give another date", bad, n);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7682,6 +7770,7 @@ int main(int argc, char **argv)
     test_regvm_dst_alloc();
     test_spread_alloc();
     test_spread_refs();
+    test_days_to_date();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

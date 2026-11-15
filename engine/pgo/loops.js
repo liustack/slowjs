@@ -120,6 +120,23 @@ taBigInt(BigUint64Array);
     use(t);
 })();
 
+// The getters of Date, local and UTC, on a few time values by turns (the
+// fields of the last one are kept, so a turn finds them or works them out),
+// a setter between, and the strings of a Date.
+(function () {
+    var ds = [new Date(1700000000000), new Date(-5e12), new Date(0), new Date(2e14)], t = 0;
+    for (var r = 0; r < 600; r++) {
+        var d = ds[r & 3];
+        t += d.getFullYear() + d.getMonth() + d.getDate() + d.getDay() + d.getHours() + d.getMinutes();
+        t += d.getUTCSeconds() + d.getUTCMilliseconds() + d.getUTCDate() + d.getUTCFullYear();
+        if ((r & 31) === 0) {
+            d.setUTCHours(r & 15);
+            t += d.toString().length + d.toLocaleString().length + d.toDateString().length;
+        }
+    }
+    use(t);
+})();
+
 // Numbers to text in every form, and text to numbers.
 (function () {
     var s = 0;
