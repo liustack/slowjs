@@ -4,6 +4,14 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- Package `url` keeps the last base and the last record each VM made, and `VM.NewArray` makes a short array in one call of the engine: tifa's store pages run 1.77% fewer instructions (zh-CN journal 6.4%) and its workbench pages 0.53% fewer ([url/bridge.go](url/bridge.go)).
+
+### Added
+
+- `VM.NewMurmur2Function()`: emotion's style hash in C, which package `tifa` now gives as `__tifa_murmur2__`. tifa's MUI pages run 0.91% fewer instructions ([murmur2.go](murmur2.go)).
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
