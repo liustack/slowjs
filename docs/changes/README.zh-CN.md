@@ -134,6 +134,7 @@ read_when:
 | 脚本返回或抛出的字符串在顶层也会停止转换 | Unreleased | [go-api.md](go-api.zh-CN.md#脚本返回或抛出的字符串在顶层也会停止转换) |
 | TrackRejections 和 UnhandledRejections | Unreleased | [go-api.md](go-api.zh-CN.md#trackrejections-和-unhandledrejections) |
 | 引擎数不过来的值会报错 | Unreleased | [go-api.md](go-api.zh-CN.md#引擎数不过来的值会报错) |
+| tifa 包：`tifa.Register` 按 tifa 的方式配置虚拟机 | Unreleased | [go-api.md](go-api.zh-CN.md#tifa-包) |
 
 ## 守得住的限额
 

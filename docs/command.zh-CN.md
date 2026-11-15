@@ -65,7 +65,7 @@ slowjs [flags] -e code [args...]
 - `console.error(...args)`：同上，写到 stderr。
 - `scriptArgs`：参数之后的命令行参数：文件名和它后面的参数，用 `-e` 时只有后面的参数。
 
-tifa 为自己的 bundle 加的东西这里没有：它那些名为 `__tifa_*` 的函数（随机字节、哈希、React 输出的文本转义和标签、props 拷贝）。它们属于 tifa，不属于引擎。
+命令用 `tifa.Register` 配置虚拟机，所以脚本还能看到 tifa 给它的 bundle 的那些名为 `__tifa_*` 的函数（[api.md](api.zh-CN.md#让-react-渲染更快)）。
 
 每次调用立刻写出它的那一行，写 stderr 的一行之前先写完 stdout，所以终端或管道看到的行和脚本打印的时间、顺序一致。单独的代理项打印为 U+FFFD。
 
