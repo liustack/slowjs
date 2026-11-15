@@ -268,3 +268,17 @@ func TestParseJSONRefuses(t *testing.T) {
 		}
 	}
 }
+
+// liustack-slowjs-polyfill runs the pf kinds of the shop and MUI pages, as the
+// engines without an Intl of their own do, and liustack-slowjs its own.
+func TestBareVariantRunsThePolyfillKinds(t *testing.T) {
+	shop := asDeployed("native", "pf")
+	for e, want := range map[string]string{"liustack-slowjs": "native", "liustack-slowjs-polyfill": "pf", "hermes": "pf"} {
+		if got := shop.of(e); got != want {
+			t.Errorf("shop kind of %s = %q, want %q", e, got, want)
+		}
+	}
+	if got := asDeployed("mui-native", "mui-pf").of("liustack-slowjs-polyfill"); got != "mui-pf" {
+		t.Errorf("mui kind = %q", got)
+	}
+}

@@ -18,6 +18,8 @@
 # (prelude/nointl.js first, which removes a partial Intl) for Intl, core-js
 # (polyfill/corejs-polyfill.js) for URL, URLSearchParams, structuredClone and
 # the iterator helpers. Which engine gets which is the lists below.
+# liustack-slowjs-polyfill is liustack-slowjs without the packages intl, temporal and url (the
+# bare engine), so it gets the polyfills of an engine that lacks them: it is run on the pf kinds.
 #
 #   bench   the bench pages (they need no Intl), 50 warm and 200 timed renders
 #   native  the shop pages on the engine's own Intl    (-native), or
@@ -34,7 +36,7 @@
 # Results: <out dir>/<engine>-<kind>.json and .meta, HTML in <out dir>/html.
 set -e
 out=${1:-} bin=${2:-} nat=${3:-}
-[ -n "$out" ] && [ -n "$bin" ] && [ -n "$nat" ] || { sed -n '6,34p' "$0"; exit 2; }
+[ -n "$out" ] && [ -n "$bin" ] && [ -n "$nat" ] || { sed -n '6,36p' "$0"; exit 2; }
 # Resolve before changing directory, including output directories not yet made.
 absolute() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s/%s\n' "$PWD" "$1" ;; esac; }
 out=$(absolute "$out")
@@ -59,7 +61,7 @@ run() {
 }
 want() { [ -z "${TIFA_ONLY:-}" ] || case ",$TIFA_ONLY," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 # go_runs <bin> <engine name> <polyfill for URL: "" or the prelude>
-# The Go engines all have an Intl of their own (a partial one for moejs).
+# The Go engines of these three calls have an Intl of their own (a partial one for moejs).
 go_runs() {
   want "$2" || return 0
   local b=("$bin/$1" tifa-ssr -html "$out/html") pre=() p=$3
@@ -69,6 +71,16 @@ go_runs() {
   run "$out/$2-mui-native" "${b[@]}" -bundle $B/bundles/mui.js -inputs $MUI "${pre[@]}" -warm 20 -n 100 -tag -mui-native
 }
 go_runs liustack liustack-slowjs ""            # its own Intl, URL and Temporal (packages intl, temporal, url)
+# go_pf_runs <bin> <engine name>: a Go engine with no Intl, URL or Temporal of its own,
+# set up as the native engines are: the FormatJS polyfills for the shop and MUI pages, core-js for the rest.
+go_pf_runs() {
+  want "$2" || return 0
+  local b=("$bin/$1" tifa-ssr -html "$out/html")
+  run "$out/$2-bench" "${b[@]}" -bundle $B/bundles/bench.js -inputs $BENCH -prelude $CORE -warm 50 -n 200 -tag -bench
+  run "$out/$2-pf" "${b[@]}" -bundle $B/bundles/shop.js -inputs $SHOP -prelude $INTL,$CORE -warm 20 -n 100 -tag -pf
+  run "$out/$2-mui-pf" "${b[@]}" -bundle $B/bundles/mui.js -inputs $MUI -prelude $INTL,$CORE -warm 20 -n 100 -tag -mui-pf
+}
+go_pf_runs liustackpolyfill liustack-slowjs-polyfill   # the same engine as the line above, with none of those packages
 go_runs goquickjs go-quickjs-interp $CORE
 go_runs moejs moejs ../native/moejs-shim.js,$CORE   # moejs lacks FinalizationRegistry: native/moejs-shim.js
 # native_runs <engine name> <driver command...>: no Intl of their own, so the

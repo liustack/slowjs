@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-15：liustack-slowjs-polyfill，V8 套件加入 Node
+
+- 页面表给 liustack/slowjs 加了第二行 `liustack-slowjs-polyfill`：裸引擎，不带 `intl`、`temporal` 和 `url` 这几个包，加载的是缺这些功能的引擎会拿到的 polyfill。它有自己的适配器（`eng_liustackpolyfill`）、二进制（`liustackpolyfill`）、`tifa/run.sh` 的运行（`TIFA_ONLY=liustack-slowjs-polyfill`，类别 `bench`、`pf` 和 `mui-pf`）和 `cmd/pages` 里的一列。比值仍以 `liustack-slowjs` 为基准。`cmd/compare -build-only` 会构建它，V8 套件不跑它，除非 `-engines` 点名。
+
 ## 2026-11-15：行叫 liustack-slowjs
 
 - 模块又叫 `github.com/liustack/slowjs` 了，所以它的行叫 `liustack-slowjs`，

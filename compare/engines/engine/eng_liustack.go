@@ -3,7 +3,7 @@
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-//go:build eng_liustack
+//go:build eng_liustack || eng_liustackpolyfill
 
 package engine
 
@@ -12,14 +12,15 @@ import (
 	"time"
 
 	"github.com/liustack/slowjs"
-	"github.com/liustack/slowjs/intl"
-	"github.com/liustack/slowjs/temporal"
-	"github.com/liustack/slowjs/url"
 )
 
+// liustackName, liustackNotes and registerGoPackages are the part that differs
+// between the two builds of the adapter: eng_liustack_own.go (liustack-slowjs,
+// with the Go packages next to the engine) and eng_liustack_bare.go
+// (liustack-slowjs-polyfill, the bare engine).
 func init() {
 	register(&Engine{
-		Name:           "liustack-slowjs",
+		Name:           liustackName,
 		Module:         "github.com/liustack/slowjs",
 		New:            newLiustack,
 		SharedPrograms: true,
@@ -27,10 +28,9 @@ func init() {
 		Interrupt:      true,
 		MemoryLimit:    true,
 		Modules:        true,
-		Notes: []string{
+		Notes: append([]string{
 			"Scripts are compiled to bytecode with VM.Compile and run with EvalBytecode.",
-			"Intl, Temporal and URL come from the packages intl, temporal and url of the module, registered only when a test asks for them.",
-		},
+		}, liustackNotes...),
 	})
 }
 
@@ -85,15 +85,7 @@ func newLiustack(o Options) (VM, error) {
 		}
 	}
 	if o.Intl {
-		if err := intl.Register(vm); err != nil {
-			vm.Close()
-			return nil, err
-		}
-		if err := temporal.Register(vm); err != nil {
-			vm.Close()
-			return nil, err
-		}
-		if err := url.Register(vm); err != nil {
+		if err := registerGoPackages(vm); err != nil {
 			vm.Close()
 			return nil, err
 		}

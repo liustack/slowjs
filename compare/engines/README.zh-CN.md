@@ -16,7 +16,9 @@ liustack/slowjs 和其他 Go 的 JavaScript 引擎、以及三个原生引擎的
 
 对比从不在其他引擎上运行 test262。
 
-引擎集合的规则：**对比只在解释器之间进行。** 带 JIT 的引擎关掉 JIT 来跑，或者不比。Go 引擎有 liustack/slowjs、go-quickjs（JIT 默认关）和 moejs。原生参照是 C QuickJS 2026-06-04、Hermes V1（发布版，它没有 x86-64 的 JIT，照它的发布方式：用 `hermesc -O` 编好的字节码）和带 `--jitless` 的 Node。
+页面表把 liustack/slowjs 列了两次，因为各 Go 引擎内置的东西不一样。**liustack-slowjs** 照它发布的样子跑：用自己的 Intl、Temporal、URL 和 URLSearchParams，它们来自 Go 包 `intl/`、`temporal/` 和 `url/`。**liustack-slowjs-polyfill** 是同一个引擎，但这些包既不链接也不注册，加载的是缺这些功能的引擎会拿到的 polyfill（Intl 用 FormatJS，URL、URLSearchParams、structuredClone 和迭代器辅助方法用 core-js）。在格式化日期和数字的页面上，Hermes 和 C QuickJS 用 JavaScript 跑 FormatJS，而 liustack-slowjs 跑的是用 Go 写的 Intl，所以第一行把解释器的速度和 Intl 内置这两件事混在了一起。第二行只有解释器本身。比值仍然表示成相对 liustack-slowjs 的倍数，也就是第一行。第二行只用于页面：`cmd/compare` 会构建它的二进制，但不让它跑 V8 套件（那样就是同一个引擎出现两次），除非用 `-engines liustack-slowjs-polyfill` 点名。
+
+引擎集合的规则：**对比只在解释器之间进行。** 带 JIT 的引擎关掉 JIT 来跑，或者不比。Go 引擎有 liustack/slowjs（占两行，见下）、go-quickjs（JIT 默认关）和 moejs。原生参照是 C QuickJS 2026-06-04、Hermes V1（发布版，它没有 x86-64 的 JIT，照它的发布方式：用 `hermesc -O` 编好的字节码）和带 `--jitless` 的 Node。
 
 每个引擎都照人们真实使用的方式运行。它有自己的 Intl 和 URL 就用自己的，没有就加载标准的 polyfill：Intl 用 FormatJS，URL、URLSearchParams、structuredClone 和迭代器辅助方法用 core-js。polyfill 只加载进缺这个功能的引擎（清单在 `tifa/run.sh`）。对比里的包不带 tifa 的 Go 函数（`__tifa_escape`、`__tifa_start_tag`、`__tifa_end_tag`、`__tifa_copy_props`、`__tifa_murmur2__`、`__tifa_random_bytes__`）、tifa 的 GC 规则和池的设置，也不共用字节码：没有哪个引擎注册它们，我们的也不例外，所以每个引擎跑的都是 React 自己的代码。
 
@@ -26,7 +28,7 @@ liustack/slowjs 和其他 Go 的 JavaScript 引擎、以及三个原生引擎的
 | --- | --- |
 | `cmd/compare` | 驱动程序：给每个引擎构建一个 `jsbench`，运行 V8 套件（`-phases v8`，默认值） |
 | `cmd/jsbench` | 链接了一个引擎的程序：`v8`、`tifa-ssr` 和较早的负载 |
-| `engine/` | 每个引擎一个适配器，放在构建标签（`eng_<name>`）后面 |
+| `engine/` | 每个引擎一个适配器，放在构建标签（`eng_<name>`）后面。liustack-slowjs 和 liustack-slowjs-polyfill 共用 `eng_liustack.go`，区别在 `eng_liustack_own.go` 和 `eng_liustack_bare.go` |
 | `tifa/` | 三个服务端包（`bundles/`）、25 个页面输入（`in/`）、polyfill（`polyfill/`、`prelude/`）、`run.sh` 和 `pagerun.sh` |
 | `native/` | `build.sh`（C QuickJS、Hermes、Node）和各原生引擎的驱动（`ssr-driver.js`、`node-ssr.cjs`、`hermes-ssr.js`、`hermes-run.sh`、`qjs-v8.js`、`hermes-v8.js`） |
 | `cmd/pages` | 一次 `tifa/run.sh` 运行的页面表格和归档 |
@@ -51,7 +53,7 @@ tifa 页面每次调用一个引擎，每次调用独占一个核，并用 `~/bi
 ```sh
 run=<日期>-<版本>-<主机>
 page_dir=$HOME/pages-$run
-for e in liustack-slowjs go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
+for e in liustack-slowjs liustack-slowjs-polyfill go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
   TIFA_ONLY=$e TIFA_CPU=0 TIFA_SIBLING=3 tifa/run.sh $page_dir bin $HOME/jsnative
 done
 go run ./cmd/pages $page_dir --output results/$run-pages
