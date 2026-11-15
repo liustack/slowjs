@@ -5,6 +5,7 @@ English · [简体中文](CHANGELOG.zh-CN.md)
 ## 2026-11-15: liustack-slowjs-polyfill, Node in the V8 suite
 
 - The page table has a second row for liustack/slowjs, `liustack-slowjs-polyfill`: the bare engine, with none of the packages `intl`, `temporal` and `url` and with the polyfills an engine without those features gets. It has its own adapter (`eng_liustackpolyfill`), binary (`liustackpolyfill`), `tifa/run.sh` runs (`TIFA_ONLY=liustack-slowjs-polyfill`, kinds `bench`, `pf` and `mui-pf`) and column in `cmd/pages`. Ratios stay against `liustack-slowjs`. `cmd/compare -build-only` builds it, and the V8 suite leaves it out unless `-engines` names it.
+- The V8 suite has a row for Node `--jitless` (`native/node-v8.cjs`, run as `node --jitless native/node-v8.cjs <dir>` on one core, like `qjs-v8.js` and `hermes-v8.js`). It is part of the round that README.md describes.
 
 ## 2026-11-15: rows named liustack-slowjs
 

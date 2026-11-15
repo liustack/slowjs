@@ -5,6 +5,7 @@
 ## 2026-11-15：liustack-slowjs-polyfill，V8 套件加入 Node
 
 - 页面表给 liustack/slowjs 加了第二行 `liustack-slowjs-polyfill`：裸引擎，不带 `intl`、`temporal` 和 `url` 这几个包，加载的是缺这些功能的引擎会拿到的 polyfill。它有自己的适配器（`eng_liustackpolyfill`）、二进制（`liustackpolyfill`）、`tifa/run.sh` 的运行（`TIFA_ONLY=liustack-slowjs-polyfill`，类别 `bench`、`pf` 和 `mui-pf`）和 `cmd/pages` 里的一列。比值仍以 `liustack-slowjs` 为基准。`cmd/compare -build-only` 会构建它，V8 套件不跑它，除非 `-engines` 点名。
+- V8 套件里有了带 `--jitless` 的 Node 一行（`native/node-v8.cjs`，在一个核上用 `node --jitless native/node-v8.cjs <dir>` 运行，和 `qjs-v8.js`、`hermes-v8.js` 一样）。它属于 README.zh-CN.md 描述的那一轮。
 
 ## 2026-11-15：行叫 liustack-slowjs
 
