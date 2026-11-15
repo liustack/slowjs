@@ -251,6 +251,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
 | A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | v0.31.1 | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
 | A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | v0.31.1 | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
+| A string that is no atom, made a key, keeps the atom it found, with a reference, so later keyed reads by that string skip the hash and the search of the atom table | Unreleased | `js_string_to_atom` in [engine/quickjs.c](../../engine/quickjs.c) |
 
 ## JSON
 

@@ -840,7 +840,9 @@ struct JSString {
     uint8_t is_wide_char : 1; /* 0 = 8 bits, 1 = 16 bits characters */
     /* for JS_ATOM_TYPE_SYMBOL: hash = weakref_count, atom_type = 3,
        for JS_ATOM_TYPE_PRIVATE: hash = JS_ATOM_HASH_PRIVATE, atom_type = 3
-       XXX: could change encoding to have one more bit in hash */
+       XXX: could change encoding to have one more bit in hash.
+       A string that is no atom: 1 when it keeps a key (key_atom), else 0,
+       see js_string_atom_or_key */
     uint32_t hash : 30;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
@@ -3466,7 +3468,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->is_wide_char = is_wide_char;
     str->len = max_len;
     str->atom_type = 0;
-    str->hash = 0;          /* optional but costless */
+    str->hash = 0;          /* see js_string_atom_or_key */
     str->hash_next = 0;     /* optional */
     str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
@@ -3488,12 +3490,48 @@ static force_inline JSString *js_alloc_string(JSContext *ctx, int max_len, int i
     return p;
 }
 
-/* same as JS_FreeValueRT() but faster */
-static inline void js_free_string(JSRuntime *rt, JSString *str)
+/* Give back the atom that p, a string that is no atom, keeps as its key
+   (js_string_to_atom). */
+static no_inline void js_string_drop_key(JSRuntime *rt, JSString *p)
+{
+    JSAtom atom = p->key_atom;
+
+    p->key_atom = JS_ATOM_NULL;
+    JS_FreeAtomRT(rt, atom);
+}
+
+/* Nonzero when p is an atom, or a string that is no atom and keeps an atom
+   as its key: js_string_to_atom gives such a string the hash 1, and every
+   other string that is no atom has the hash 0. Both fields are one 32-bit
+   word, so this is the one test that p->atom_type alone was. */
+static force_inline BOOL js_string_atom_or_key(const JSString *p)
+{
+    /* written as two tests, which LLVM makes one compare of the word; an or
+       of the two fields it does not */
+    return p->hash != 0 || p->atom_type != 0;
+}
+
+/* Free p, a string that is no atom and keeps a key, whose ref_count reached
+   zero. */
+static no_inline void js_free_string_keyed(JSRuntime *rt, JSString *p)
+{
+    js_string_drop_key(rt, p);
+#ifdef DUMP_LEAKS
+    list_del(&p->link);
+#endif
+    js_free_rt(rt, p);
+}
+
+/* same as JS_FreeValueRT() but faster. Forced inline, as LLVM inlined it
+   before the test of a kept key. */
+static force_inline void js_free_string(JSRuntime *rt, JSString *str)
 {
     if (--js_rc(str)->ref_count <= 0) {
-        if (str->atom_type) {
-            JS_FreeAtomStruct(rt, str);
+        if (js_string_atom_or_key(str)) {
+            if (str->atom_type)
+                JS_FreeAtomStruct(rt, str);
+            else
+                js_free_string_keyed(rt, str);
         } else {
 #ifdef DUMP_LEAKS
             list_del(&str->link);
@@ -4534,6 +4572,11 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
         if (str->atom_type == 0) {
             p = str;
             p->atom_type = atom_type;
+            /* the string atom str kept as its key (js_string_to_atom), when
+               it becomes a symbol: it would have found that atom above if
+               it were to be a string atom */
+            if (unlikely(p->key_atom != JS_ATOM_NULL))
+                js_string_drop_key(rt, p);
         } else {
             p = js_malloc_rt(rt, sizeof(JSString) +
                              (str->len << str->is_wide_char) +
@@ -6841,7 +6884,8 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
 /* Append op2 to p1 in the room at the end of its block. p1 must have no
    holder but the 'owners' references its caller knows of (1, or 2 for
    JS_ConcatStringAppend), and must not be an atom: the atom table holds the
-   same JSString without counting a reference. */
+   same JSString without counting a reference. Nor may it keep an atom as its
+   key (js_string_to_atom), which names its characters as they are. */
 static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
                                                    JSValueConst op2, int owners)
 {
@@ -6851,7 +6895,7 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != owners || p1->atom_type)
+        if (js_rc(p1)->ref_count != owners || js_string_atom_or_key(p1))
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
@@ -9789,11 +9833,15 @@ static void free_zero_refcount_first(JSRuntime *rt, JSObject *p)
 }
 
 
-/* Free a string whose ref_count reached zero. */
-static void js_free_string_rt(JSRuntime *rt, JSString *p)
+/* Free a string whose ref_count reached zero. Forced inline, as LLVM
+   inlined it before the test of a kept key. */
+static force_inline void js_free_string_rt(JSRuntime *rt, JSString *p)
 {
-    if (p->atom_type) {
-        JS_FreeAtomStruct(rt, p);
+    if (js_string_atom_or_key(p)) {
+        if (p->atom_type)
+            JS_FreeAtomStruct(rt, p);
+        else
+            js_free_string_keyed(rt, p);
     } else {
 #ifdef DUMP_LEAKS
         list_del(&p->link);
@@ -13976,6 +14024,41 @@ static JSAtom js_symbol_to_atom(JSContext *ctx, JSValue val)
     return js_get_atom_index(ctx->rt, p);
 }
 
+/* JS_ValueToAtom of the string p that is not its own atom as a key. A string
+   that is no atom, whose characters are those of a string atom that is its
+   own key (not empty, not starting with a digit), keeps that atom in its
+   key_atom, with a reference of its own, the first time it is made a key:
+   __JS_NewAtom finds the atom and does not make p the atom, so without it
+   every later read by p would hash p and search the table again, which a
+   key that comes from data (a string of JSON.parse, of a Go function, of a
+   join) pays at each read. With it, the next JS_ValueToAtom of p takes the
+   atom in one read here, and the reads of the register loop take it as they
+   take the atom of a string that is one (rv_getel_atom). The reference is
+   given back when p is freed (js_free_string, js_free_string_rt) or made an
+   atom of another type (__JS_NewAtom), and p is not appended to in place
+   while it holds one (js_concat_string_in_place): the characters of p never
+   change while key_atom names their atom. p also gets the hash 1, which no
+   other string that is no atom has (js_string_atom_or_key), so that the
+   free and the append in place test for an atom or a kept key in the one
+   test they made for an atom. */
+static no_inline JSAtom js_string_to_atom(JSContext *ctx, JSString *p)
+{
+    JSRuntime *rt = ctx->rt;
+    JSAtom atom;
+
+    if (p->key_atom != JS_ATOM_NULL)
+        return JS_DupAtom(ctx, p->key_atom);
+    /* JS_ToPropertyKey of a string: a reference that JS_NewAtomStr takes */
+    js_rc(p)->ref_count++;
+    atom = JS_NewAtomStr(ctx, p);
+    if (atom != JS_ATOM_NULL && !__JS_AtomIsTaggedInt(atom) &&
+        p->atom_type == 0 && rt->atom_array[atom]->key_atom == atom) {
+        p->key_atom = JS_DupAtom(ctx, atom);
+        p->hash = 1;
+    }
+    return atom;
+}
+
 /* return JS_ATOM_NULL in case of exception */
 JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
 {
@@ -13994,6 +14077,7 @@ JSAtom JS_ValueToAtom(JSContext *ctx, JSValueConst val)
         if (p->atom_type == JS_ATOM_TYPE_STRING && p->len != 0 &&
             !is_digit(string_get(p, 0)))
             return JS_DupAtom(ctx, js_get_atom_index(ctx->rt, p));
+        return js_string_to_atom(ctx, p);
     }
     if (tag == JS_TAG_INT &&
         (uint32_t)JS_VALUE_GET_INT(val) <= JS_ATOM_MAX_INT) {

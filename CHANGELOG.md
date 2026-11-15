@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - `JSON.stringify` with no replacer and no indent writes plain objects and arrays straight from their shapes. A react-intl page, which makes a memo key with it for every formatter, runs 16% fewer instructions, and writing 300 orders as a loader does takes two thirds fewer ([changes](docs/changes/README.md#json)).
+- A string made while the script runs, such as one from `join` or `JSON.parse`, finds a property as fast as a key written in the source from its second use as a key on: 398 instructions a read, not 901 ([changes](docs/changes/README.md#strings)).
 
 ## [v0.31.1] - 2026-11-16
 

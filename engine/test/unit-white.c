@@ -2425,6 +2425,87 @@ static void test_key_atom(void)
     JS_FreeValue(v.ctx, s);
     key_atoms_ok(&v, "atoms freed and made again");
 
+    /* a string that is no atom, whose characters are an atom that exists,
+       keeps that atom as its key, with a reference of its own, from the
+       first time it is made a key, and gives it back when it is freed. A
+       string whose atom is no key (an index, a string that starts with a
+       digit) keeps none */
+    a = JS_NewAtom(v.ctx, "wkaKept");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaKept");
+
+        s = JS_NewString(v.ctx, "wkaKept");
+        b = JS_ValueToAtom(v.ctx, s);
+        CHECK(b == a && white_key_atom(s) == a, "the kept atom: %u, key_atom %u, atom %u", b,
+              white_key_atom(s), a);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs + 2, "the atom kept: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs + 2);
+        c = JS_ValueToAtom(v.ctx, s);
+        CHECK(c == a && white_atom_refs(v.ctx, "wkaKept") == refs + 3, "made a key again: %u, %d references",
+              c, white_atom_refs(v.ctx, "wkaKept"));
+        JS_FreeAtom(v.ctx, c);
+        JS_FreeAtom(v.ctx, b);
+        JS_FreeValue(v.ctx, s);
+        CHECK(white_atom_refs(v.ctx, "wkaKept") == refs, "the string freed: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaKept"), refs);
+    }
+    JS_FreeAtom(v.ctx, a);
+    /* made a registered symbol, which takes the string itself as its
+       atom, the string gives back the atom it kept */
+    a = JS_NewAtom(v.ctx, "wkaSym");
+    {
+        int refs = white_atom_refs(v.ctx, "wkaSym");
+        JSValue g = JS_GetGlobalObject(v.ctx), sy = JS_GetPropertyStr(v.ctx, g, "Symbol");
+        JSValue sfor = JS_GetPropertyStr(v.ctx, sy, "for"), r;
+
+        s = JS_NewString(v.ctx, "wkaSym");
+        JS_FreeAtom(v.ctx, JS_ValueToAtom(v.ctx, s));
+        CHECK(white_key_atom(s) == a && white_atom_refs(v.ctx, "wkaSym") == refs + 1,
+              "the string keeps the atom: key_atom %u, %d references", white_key_atom(s),
+              white_atom_refs(v.ctx, "wkaSym"));
+        r = JS_Call(v.ctx, sfor, sy, 1, &s);
+        CHECK(JS_IsSymbol(r) && white_key_atom(s) == JS_ATOM_NULL, "Symbol.for: key_atom %u",
+              white_key_atom(s));
+        CHECK(white_atom_refs(v.ctx, "wkaSym") == refs, "the symbol made: %d references, want %d",
+              white_atom_refs(v.ctx, "wkaSym"), refs);
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, s);
+        JS_FreeValue(v.ctx, sfor);
+        JS_FreeValue(v.ctx, sy);
+        JS_FreeValue(v.ctx, g);
+    }
+    JS_FreeAtom(v.ctx, a);
+    a = JS_NewAtom(v.ctx, "07");
+    s = JS_NewString(v.ctx, "07");
+    b = JS_ValueToAtom(v.ctx, s);
+    CHECK(b == a && white_key_atom(s) == JS_ATOM_NULL, "\"07\": atom %u, key_atom %u", b, white_key_atom(s));
+    JS_FreeAtom(v.ctx, b);
+    JS_FreeAtom(v.ctx, a);
+    JS_FreeValue(v.ctx, s);
+    /* in a script: the string a join makes reads its key from the second
+       read on without a search. Appended to, it is copied, though it has
+       room at its end (the second append made it with some): in place it
+       would keep the atom of its old characters. Made a registered symbol,
+       it is read by its key as before (the string is the atom of the symbol now) */
+    CHECK(eval_ok(v.ctx,
+        "var T = { wkaMonth: 1, wkaMonthx: 2 }, k = ['wka', 'Month'].join(''), r = 0;\n"
+        "for (let i = 0; i < 100; i++) r += T[k];\n"
+        "var m = (function () { let m = 'wk'; m += 'a'; m += 'Month'; r += T[m];\n"
+        "  m += 'x'; r += T[m]; return m })();\n"
+        "var g = ['wka', 'Month'].join(''); r += T[g]; var sym = Symbol.for(g); r += T[g];\n"
+        "r += T[k] + T[m] + T[g]\n"), "the script threw");
+    CHECK(eval_is(v.ctx, "r + ' ' + m + ' ' + String(sym.description)", "109 wkaMonthx wkaMonth"),
+          "reads by kept atoms");
+    {
+        JSValue k = JS_Eval(v.ctx, "k", 1, "<k>", 0);
+        JSAtom month = JS_NewAtom(v.ctx, "wkaMonth");
+
+        CHECK(white_key_atom(k) == month, "the joined key: key_atom %u, atom %u", white_key_atom(k), month);
+        JS_FreeAtom(v.ctx, month);
+        JS_FreeValue(v.ctx, k);
+    }
+    key_atoms_ok(&v, "strings that keep atoms");
+
     /* thousands of atoms made, read by key, freed and made again, through
        the growth of the hash table of atoms and the reuse of numbers */
     CHECK(eval_ok(v.ctx,

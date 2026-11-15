@@ -6195,6 +6195,37 @@ TEXT ·JS_ToString(SB), $64-48
 	BYTE $0x00
 	RET
 
+TEXT ·JS_FreeCString(SB), $32-24
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	MOVQ a2+16(FP), R14
+	QUAD $0x468b410e74f6854d
+	QUAD $0x85ec468941c8ffec
+	QUAD $0xc6834929eb027ec0
+	QUAD $0xc7c749106d8b4df0
+	QUAD $0x2424894cfffffff9
+	QUAD $0x74894c08246c894c
+	BYTE $0x24
+	BYTE $0x10
+	BYTE $0x4c
+	BYTE $0x89
+	BYTE $0x7c
+	BYTE $0x24
+	BYTE $0x18
+	CALL ·__JS_FreeValueRT(SB)
+	BYTE $0xeb
+	BYTE $0xd5
+	RET
+
 TEXT ·JS_SetShapeCache(SB), $96-32
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
