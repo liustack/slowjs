@@ -23,7 +23,8 @@ read_when:
 
 在分支上，合并之前：
 
-1. [testing.md](testing.zh-CN.md#提交前) 里的检查通过，分支涉及的部分的检查也通过（重点检查、test262、`make build_all_targets`）。`make check-full` 在装了 LLVM 22.1.8 的机器上通过：提交进仓库的引擎就是生成器生成的，根包、竞态检测器、sanitizer 和 test262 都通过。`scripts/go-versions.sh` 通过：从 `go.mod` 里最低的 Go 起，用模块允许构建的每个 Go 补丁版本运行引擎的检查（Go 测试，在装了 LLVM 的机器上还有生成器的测试和链接后检查，见 [testing.md](testing.zh-CN.md#ci)）。
+1. [testing.md](testing.zh-CN.md#提交前) 里的检查通过，分支涉及的部分的检查也通过（重点检查、test262、`make build_all_targets`）。`make check-full` 在装了 LLVM 22.1.8 的机器上通过：提交进仓库的引擎就是生成器生成的，根包、竞态检测器、sanitizer 和 test262 都通过。`scripts/go-versions.sh` 通过：从 `go.mod` 里最低的 Go 起，用模块允许构建的每个 Go 补丁版本运行引擎的检查（Go 测试，在装了 LLVM 的机器上还有生成器的测试和链接后检查，见 [testing.md](testing.zh-CN.md#ci)）。分支改了 `engine/` 时，整套抛错注入也要通过。把分支推成 `gates/<name>`（`git push origin HEAD:gates/<name>`）：`gates.yml` 分 12 个任务跑注入，每个 Go 版本一个任务跑 `go-versions.sh`，整轮约 40 分钟，同一个提交上的 `ci.yml` 和 `llvm-steps.yml` 也一起跑。之后引擎或黄金文件再有改动，就再推一次。
+
 2. 每个改动都写在 [changes](changes/README.zh-CN.md) 下对应领域的文档里，并在索引里有一行，为速度做的改动还写在 [performance.md](performance.zh-CN.md) 里。
 3. [CHANGELOG.md](../CHANGELOG.zh-CN.md) 和 [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) 写明这个分支对用户改变了什么。分支的最后一个提交把它放到新版本号和日期之下（`docs(changelog): release <version>`），这样你要打标签的合并提交里就带着它。
 4. 在 [changes](changes/README.zh-CN.md) 里，这个版本的改动仍写着"Unreleased"。在索引的表格里和每个领域文档的 `Release:` 行里，把它换成新版本号（`grep -rn Unreleased docs/changes`，"Adding a change"下面的那句话不用管），和更新记录放在同一个最后的提交里。没有别的东西会做这件事，打了标签之后仍写着"Unreleased"的一行，从那时起就是错的。
