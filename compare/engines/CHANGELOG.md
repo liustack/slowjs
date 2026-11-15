@@ -2,6 +2,19 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-15: rows named liustack-slowjs
+
+- The module is `github.com/liustack/slowjs` again, so its row is
+  `liustack-slowjs`, in the results, the reports, `TIFA_ONLY`, `-engines`
+  and the file names of `tifa/run.sh`. Results files made while the module was
+  `github.com/liustack/quickjs` (v0.30.0 to v0.30.7) name the row
+  `liustack-quickjs`, those of 2026-10-24 to 2026-10-29 name it `slowjs`.
+  `-report` reads all three. Saved results files are not rewritten, so `-add`
+  and `-merge` into one of them would give the engine two rows: start a new run
+  instead. `cmd/pages` reads the raw files of `tifa/run.sh` under the new name
+  only, so make the page tables of a raw run of v0.30.7 or older with the tools
+  of that release.
+
 ## 2026-11-14: moejs renders the pages, test262 removed
 
 - moejs renders all 25 pages now. The bundles read `FinalizationRegistry` at load, which moejs v0.1.0 lacks, and the new `native/moejs-shim.js` gives it a registry that never calls back (no call of the callback is promised, so that is a valid one). The HTML is byte-identical to ours on all 25 pages. moejs was timed in a session of its own, with liustack-quickjs run again in the same session, and its ratios are against that run ([2026-11-14-v0.30.7-gcp-pages-moejs](results/2026-11-14-v0.30.7-gcp-pages-moejs.md)).

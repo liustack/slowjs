@@ -1,14 +1,14 @@
-module github.com/liustack/quickjs/compare
+module github.com/liustack/slowjs/compare
 
 go 1.27.0
 
-replace github.com/liustack/quickjs => ../
+replace github.com/liustack/slowjs => ../
 
 require (
 	github.com/dop251/goja v0.0.0-20260723142020-b4aef50fa347
 	github.com/fastschema/qjs v0.0.6
 	// Replaced by ../, so this version is not resolved and nothing reads it.
-	github.com/liustack/quickjs v0.0.0-00010101000000-000000000000
+	github.com/liustack/slowjs v0.0.0-00010101000000-000000000000
 )
 
 require (

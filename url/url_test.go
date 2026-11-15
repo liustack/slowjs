@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
-func evalString(t testing.TB, vm *quickjs.VM, src string) string {
+func evalString(t testing.TB, vm *slowjs.VM, src string) string {
 	t.Helper()
-	v, err := vm.Eval(src, quickjs.EvalGlobal)
+	v, err := vm.Eval(src, slowjs.EvalGlobal)
 	if err != nil {
 		t.Fatalf("%s: %v", src, err)
 	}

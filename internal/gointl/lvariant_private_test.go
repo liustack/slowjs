@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // The private use before "lvariant" goes with it, as ICU's ultag_parse

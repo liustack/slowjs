@@ -1,22 +1,22 @@
-<!-- Copyright (c) 2026 The liustack/quickjs Authors. -->
+<!-- Copyright (c) 2026 The liustack/slowjs Authors. -->
 <!-- SPDX-License-Identifier: MIT -->
 
 # compare/engines
 
 [English](README.md) · 简体中文
 
-liustack/quickjs 和其他 Go 的 JavaScript 引擎、以及三个原生引擎的对比。它是一个独立的 Go 模块，所以其他引擎不会进入根目录的 `go.mod`。结果和结论见 [docs/benchmarks.zh-CN.md](../../docs/benchmarks.zh-CN.md)。
+liustack/slowjs 和其他 Go 的 JavaScript 引擎、以及三个原生引擎的对比。它是一个独立的 Go 模块，所以其他引擎不会进入根目录的 `go.mod`。结果和结论见 [docs/benchmarks.zh-CN.md](../../docs/benchmarks.zh-CN.md)。
 
 ## 比什么
 
 两张表：
 
-1. **渲染。** tifa 页面一次渲染的 CPU 时间：bench 应用（2 个页面）、MUI 应用（3 个）和商店（20 个），表示成相对 liustack/quickjs 的比值。
+1. **渲染。** tifa 页面一次渲染的 CPU 时间：bench 应用（2 个页面）、MUI 应用（3 个）和商店（20 个），表示成相对 liustack/slowjs 的比值。
 2. **V8 套件。** 每个引擎的得分，以及它 8 个子项各自的得分。
 
 对比从不在其他引擎上运行 test262。
 
-引擎集合的规则：**对比只在解释器之间进行。** 带 JIT 的引擎关掉 JIT 来跑，或者不比。Go 引擎有 liustack/quickjs、go-quickjs（JIT 默认关）和 moejs。原生参照是 C QuickJS 2026-06-04、Hermes V1（发布版，它没有 x86-64 的 JIT，照它的发布方式：用 `hermesc -O` 编好的字节码）和带 `--jitless` 的 Node。
+引擎集合的规则：**对比只在解释器之间进行。** 带 JIT 的引擎关掉 JIT 来跑，或者不比。Go 引擎有 liustack/slowjs、go-quickjs（JIT 默认关）和 moejs。原生参照是 C QuickJS 2026-06-04、Hermes V1（发布版，它没有 x86-64 的 JIT，照它的发布方式：用 `hermesc -O` 编好的字节码）和带 `--jitless` 的 Node。
 
 每个引擎都照人们真实使用的方式运行。它有自己的 Intl 和 URL 就用自己的，没有就加载标准的 polyfill：Intl 用 FormatJS，URL、URLSearchParams、structuredClone 和迭代器辅助方法用 core-js。polyfill 只加载进缺这个功能的引擎（清单在 `tifa/run.sh`）。对比里的包不带 tifa 的 Go 函数（`__tifa_escape`、`__tifa_start_tag`、`__tifa_end_tag`、`__tifa_copy_props`、`__tifa_murmur2__`、`__tifa_random_bytes__`）、tifa 的 GC 规则和池的设置，也不共用字节码：没有哪个引擎注册它们，我们的也不例外，所以每个引擎跑的都是 React 自己的代码。
 
@@ -51,7 +51,7 @@ tifa 页面每次调用一个引擎，每次调用独占一个核，并用 `~/bi
 ```sh
 run=<日期>-<版本>-<主机>
 page_dir=$HOME/pages-$run
-for e in liustack-quickjs go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
+for e in liustack-slowjs go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
   TIFA_ONLY=$e TIFA_CPU=0 TIFA_SIBLING=3 tifa/run.sh $page_dir bin $HOME/jsnative
 done
 go run ./cmd/pages $page_dir --output results/$run-pages

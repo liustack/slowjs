@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // ICU puts no zone in a metazone before 1970 or after 9999-12-31 23:59, the

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // bin is the command, built once by TestMain with a version stamped in, as
@@ -404,7 +404,7 @@ func TestV8Suite(t *testing.T) {
 // v8Library runs the suite in a VM of the library, each file a global
 // script, as compare/engines runs it, and returns each benchmark's result.
 func v8Library(t *testing.T) map[string]string {
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func v8Library(t *testing.T) map[string]string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := vm.Eval(string(src), quickjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(string(src), slowjs.EvalGlobal); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 	}
@@ -424,7 +424,7 @@ BenchmarkSuite.RunSuites({
   NotifyError: function (name, error) { res[name] = "error: " + error },
   NotifyScore: function (score) {}
 });
-JSON.stringify(res)`, quickjs.EvalGlobal)
+JSON.stringify(res)`, slowjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}

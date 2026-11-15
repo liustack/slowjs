@@ -3,7 +3,7 @@ summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，G
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
-  - 修改 quickjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
+  - 修改 slowjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
   - 从 javascript 得到的 Go 字符串里有替换字符，或者从 Go 传出的字符串在 javascript 里读起来不一样
   - 区分中断或内存不足与脚本抛出的错误
   - 用全局对象已经有的名字注册 Go 函数
@@ -29,7 +29,7 @@ read_when:
 
 [English](go-api.md) · 简体中文
 
-嵌入方在 `github.com/liustack/quickjs` 的方法返回值里看到的改动。中断、超时或内存不足时一次调用如何结束的改动，见 [uncatchable.zh-CN.md](uncatchable.zh-CN.md)。
+嵌入方在 `github.com/liustack/slowjs` 的方法返回值里看到的改动。中断、超时或内存不足时一次调用如何结束的改动，见 [uncatchable.zh-CN.md](uncatchable.zh-CN.md)。
 
 ## Call 报告函数表达式的异常
 
@@ -67,7 +67,7 @@ read_when:
 
 `*Error` 说明调用是否以脚本无法捕获的异常结束，以及原因，这样嵌入方不必比较名字和消息，而脚本是可以复制名字和消息的。VM 内存不足时（`OutOfMemory`，引擎造不出错误而抛出 `null` 时也算），`Interrupt` 或 eval 超时停住了脚本时（`Interrupted`），以及 javascript 调用的 Go 函数 panic 时（两者都不是），`Uncatchable` 为 true。Go 函数从它所求值的 javascript 得到的错误同样如此。脚本抛出的东西永远不是无法捕获的，即使是 `new InternalError('interrupted')` 或 `{name: 'InternalError', message: 'out of memory'}`，这些过去看起来和真的一模一样。取走一个无法捕获的错误不运行任何页面代码：`Name` 是 `InternalError`，`Message` 和 `Stack` 是错误自己的属性，`Error()` 是 `InternalError: <message>`。它过去会调用页面代码安装的 `Error.prototype.toString` 或 `name` getter，这可能改写消息。中断时在构造错误的过程中内存不足，算作 `OutOfMemory`。
 
-脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。脚本停下之后引擎做的事也算：异常展开时引擎要释放脚本造的东西，正在进行的回收也要做完，它们要多久就轮询多久，所以造了很大数组的脚本可能在停下之后被杀掉。在 Apple M4 上于 055d56cd 测量，每个循环在 eval 超时和 `Interrupt` 下各停 12 次，共 24 次：每轮用展开（`[...big]`）复制一个 100 万个数的数组的循环，从请求到调用结束最多 618 次轮询、64.5 ms。数组换成 400 万个数时，24 次调用里有 21 次被杀，在请求之后 96 到 153 ms。100 万或 400 万个数的数组取 rest（`const [x, ...r] = big`）最多 526 次轮询、9.9 ms。在同一提交上，linux/amd64（AMD EPYC 7B13 服务器，测试钉在一个核上）每个循环在 eval 超时下停 12 次：100 万个数的数组取 rest、带空洞时取 rest、`Array.from` 和读到末尾的 `for-of` 最多 454 次轮询、6.1 ms，展开 596 次轮询、46.4 ms，都没被杀。展开 200 万个数时 12 次调用全部被杀，在请求之后 51 到 91 ms，400 万个数时 12 次里 11 次被杀，在请求之后 131 到 173 ms。不算这部分的话，大堆 VM 上的调用会超过期限好几秒才结束：释放 1 GiB 的数组就要这么久。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, quickjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
+脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。脚本停下之后引擎做的事也算：异常展开时引擎要释放脚本造的东西，正在进行的回收也要做完，它们要多久就轮询多久，所以造了很大数组的脚本可能在停下之后被杀掉。在 Apple M4 上于 055d56cd 测量，每个循环在 eval 超时和 `Interrupt` 下各停 12 次，共 24 次：每轮用展开（`[...big]`）复制一个 100 万个数的数组的循环，从请求到调用结束最多 618 次轮询、64.5 ms。数组换成 400 万个数时，24 次调用里有 21 次被杀，在请求之后 96 到 153 ms。100 万或 400 万个数的数组取 rest（`const [x, ...r] = big`）最多 526 次轮询、9.9 ms。在同一提交上，linux/amd64（AMD EPYC 7B13 服务器，测试钉在一个核上）每个循环在 eval 超时下停 12 次：100 万个数的数组取 rest、带空洞时取 rest、`Array.from` 和读到末尾的 `for-of` 最多 454 次轮询、6.1 ms，展开 596 次轮询、46.4 ms，都没被杀。展开 200 万个数时 12 次调用全部被杀，在请求之后 51 到 91 ms，400 万个数时 12 次里 11 次被杀，在请求之后 131 到 173 ms。不算这部分的话，大堆 VM 上的调用会超过期限好几秒才结束：释放 1 GiB 的数组就要这么久。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, slowjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
 
 测试：`uncatchable_test.go`、`hostuncatchable_test.go`、`hostpanic_test.go` 和 `killed_test.go`。
 
@@ -351,18 +351,18 @@ C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_start_tag`、`js_en
 用比检查过引擎的 Go 更新的 Go 构建，会以一个错误停下：
 
 ```
-undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo
+undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
 ```
 
-引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !quickjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。
+引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !slowjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。
 
-- **仍要构建时**，用一个 liustack/quickjs 没有检查过的 Go，加上 `-tags quickjs_anygo`。
-- **新的Go发布时**，liustack/quickjs 用它运行 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/quickjs 的这个发布版本。
+- **仍要构建时**，用一个 liustack/slowjs 没有检查过的 Go，加上 `-tags slowjs_anygo`。
+- **新的Go发布时**，liustack/slowjs 用它运行 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/slowjs 的这个发布版本。
 - **Go 的补丁发布**不加区分：构建行可以写 `go1.28`，但不能写 `go1.27.3`。
 
 这个错误在它自己的包 `internal/goversion` 里，`internal/cengine` 导入它，所以 go 命令先构建它，它是构建报告的唯一错误。
 
-测试：`TestNewerGoStops`（`internal/goversion`）用被检查过的 Go 的发布标签、接下来两个版本的标签和 `quickjs_anygo` 读构建行，并检查错误的名字和这一行给出的是同一个版本。`TestEngineNewerGo`（`enginedeps_test.go`）用手工给出的这一行的 `go1.N` 标签构建这个包：构建只以 `internal/goversion/newer.go` 的错误失败，其中一个是上面那个名字，而再加上 `quickjs_anygo` 就能构建。手工给出的标签还会让 go 命令说这个文件要求更新的 Go，更新的 Go 不会这么说。
+测试：`TestNewerGoStops`（`internal/goversion`）用被检查过的 Go 的发布标签、接下来两个版本的标签和 `slowjs_anygo` 读构建行，并检查错误的名字和这一行给出的是同一个版本。`TestEngineNewerGo`（`enginedeps_test.go`）用手工给出的这一行的 `go1.N` 标签构建这个包：构建只以 `internal/goversion/newer.go` 的错误失败，其中一个是上面那个名字，而再加上 `slowjs_anygo` 就能构建。手工给出的标签还会让 go 命令说这个文件要求更新的 Go，更新的 Go 不会这么说。
 
 ## 会改变汇编器对引擎编码方式的构建选项会让构建停下
 
@@ -381,7 +381,7 @@ asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a glob
 asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
 ```
 
-文件里每一行上面的注释说明是哪个选项，并说 liustack/quickjs 不能用它构建。这个函数从不被调用，也从不被链接，所以它不给程序增加任何东西。这些文件用带点的名字 `goasm_tripwire.<arch>.s`，因为 `make gen` 会删除文件夹里每个 `*_<arch>.s`。每一行都是汇编器按原样接受、在该选项下拒绝的指令（`CALL (AX)` 是经内存的调用，retpoline 没法替换它，而在全局访问之后读 R15 在 `-dynlink` 下被拒绝）。
+文件里每一行上面的注释说明是哪个选项，并说 liustack/slowjs 不能用它构建。这个函数从不被调用，也从不被链接，所以它不给程序增加任何东西。这些文件用带点的名字 `goasm_tripwire.<arch>.s`，因为 `make gen` 会删除文件夹里每个 `*_<arch>.s`。每一行都是汇编器按原样接受、在该选项下拒绝的指令（`CALL (AX)` 是经内存的调用，retpoline 没法替换它，而在全局访问之后读 R15 在 `-dynlink` 下被拒绝）。
 
 - **让引擎保持原样的选项。**`-shared`（linux 和 darwin 上 `-buildmode=pie` 传的就是它）、`-spectre=index`、`-race`、`-msan`、`-asan`、`-cover` 和 `-gcflags` 到不了汇编器，或者只改变汇编器在固定字节之前写的前导。在 linux/amd64 上，`-shared` 让函数开头的栈检查长 2 个字节（见 `quickjs_0_amd64.s`），这会移动函数体，但不移动里面的任何分支。引擎用 `-buildmode=pie` 在 linux/amd64 上构建时通过它的测试。
 - **新的Go发布时**，[upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的步骤包括再用这些选项构建一次。

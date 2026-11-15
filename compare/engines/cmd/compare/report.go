@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -259,7 +259,7 @@ func renderMarkdown(res *Results) string {
 	p("# JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
-	p("- liustack/quickjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
+	p("- liustack/slowjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
 	if len(res.Drivers) > 0 {
 		p("- Driver (`cmd/compare`) at %s, the engine binaries are from the commit above\n", strings.Join(res.Drivers, ", "))
 	}
@@ -394,7 +394,7 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 
 	if _, ok := res.Timed["cold"]; ok {
 		var n notes
-		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-quickjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
+		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-slowjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
 		p("| Engine | New VM | New VM + load source | New VM + load program | First render | RSS per VM (MiB) | Go heap per VM (MiB) |\n|---|---|---|---|---|---|---|\n")
 		for _, e := range names {
 			raws := res.Timed["cold"][e]
@@ -433,8 +433,8 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 	}
 
 	if _, ok := res.Timed["upstream"]; ok {
-		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-quickjs, geometric mean over the tests both engines run (below 1 is faster than liustack-quickjs).\n\n")
-		p("| Engine | Tests run | Geomean time vs liustack-quickjs | Faster than liustack-quickjs on |\n|---|---|---|---|\n")
+		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-slowjs, geometric mean over the tests both engines run (below 1 is faster than liustack-slowjs).\n\n")
+		p("| Engine | Tests run | Geomean time vs liustack-slowjs | Faster than liustack-slowjs on |\n|---|---|---|---|\n")
 		base := upstreamMedians(res.Timed["upstream"][selfRow(res.Timed["upstream"])])
 		for _, e := range names {
 			mine := upstreamMedians(res.Timed["upstream"][e])
@@ -523,16 +523,17 @@ func v8Bench(name string) func(json.RawMessage) (float64, string) {
 	}
 }
 
-// selfRow is the name of the row of liustack/quickjs in a results file. Files
-// made from 2026-10-24 to 2026-10-29, while the module was
-// github.com/liustack/slowjs, name it slowjs.
+// selfRow is the name of the row of liustack/slowjs in a results file. Files
+// made while the module was github.com/liustack/quickjs (v0.30.0 to v0.30.7)
+// name it liustack-quickjs, and files made from 2026-10-24 to 2026-10-29, while
+// the module was github.com/liustack/slowjs the first time, name it slowjs.
 func selfRow(byEngine map[string][]json.RawMessage) string {
-	if _, ok := byEngine["liustack-quickjs"]; !ok {
-		if _, old := byEngine["slowjs"]; old {
-			return "slowjs"
+	for _, name := range []string{"liustack-slowjs", "liustack-quickjs", "slowjs"} {
+		if _, ok := byEngine[name]; ok {
+			return name
 		}
 	}
-	return "liustack-quickjs"
+	return "liustack-slowjs"
 }
 
 func upstreamMedians(raws []json.RawMessage) map[string]float64 {

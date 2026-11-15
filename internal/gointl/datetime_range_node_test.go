@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestDateTimeRangeMatchesNode holds formatRange and formatRangeToParts to

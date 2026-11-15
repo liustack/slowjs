@@ -58,7 +58,7 @@ jobs:
       - name: Cache the data of go-intl
         uses: actions/cache@v6
         with:
-          path: ~/.cache/quickjs-gointl
+          path: ~/.cache/slowjs-gointl
           key: gointl-${{ hashFiles('internal/gointl/UPSTREAM', 'internal/gointl/qjstz') }}
       - name: Tests of every language
         run: make gointl

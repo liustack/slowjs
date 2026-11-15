@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const registerChild = "QUICKJS_TEST_REGISTER_CHILD"
+const registerChild = "SLOWJS_TEST_REGISTER_CHILD"
 
 // TestRegisterExistingName registers Go functions under names the global
 // object already has. Registering used to abort the process there, so the

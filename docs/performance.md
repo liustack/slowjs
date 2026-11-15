@@ -2,7 +2,7 @@
 summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
-  - Measuring a branch of liustack/quickjs on tifa's pages before a release
+  - Measuring a branch of liustack/slowjs on tifa's pages before a release
   - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
@@ -20,9 +20,9 @@ read_when:
 
 English · [简体中文](performance.zh-CN.md)
 
-liustack/quickjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
+liustack/slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
-The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/quickjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).
+The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/slowjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).
 
 ## How the numbers were measured
 
@@ -74,11 +74,11 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 
 Judge every timing by the protocol of [measuring.md](measuring.md). This section is how to build and run tifa against a checkout.
 
-To measure a branch of liustack/quickjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
+To measure a branch of liustack/slowjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/quickjs=../quickjs
+go mod edit -replace github.com/liustack/slowjs=../slowjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr
@@ -349,7 +349,7 @@ The second change is [a call setting its locals eight to a turn](changes/c-engin
 
 ### React DOM's text escape in C
 
-[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is liustack/quickjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is liustack/slowjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
 
 On linux/amd64 (one core of an EPYC 7B13, its sibling idle), 3 rounds at the 8 code positions. Time is the sum of the p50 of the pages of an app, as the median over positions of the paired ratios. Instructions are callgrind's, per render of every page, at position 0.0 (the difference of a run of 5 renders and one of 2):
 
@@ -382,7 +382,7 @@ Memory does not change that can be told from the heap's own spread: the live hea
 
 ### The copy of the props of a React element in C
 
-[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) gives a host the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, as a C function of the engine. tifa registers it as `__tifa_copy_props`, and its Vite plugin makes both functions ask it before their loop. The step before is liustack/quickjs main (a5feface) with tifa main (4b511fc). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) gives a host the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, as a C function of the engine. tifa registers it as `__tifa_copy_props`, and its Vite plugin makes both functions ask it before their loop. The step before is liustack/slowjs main (a5feface) with tifa main (4b511fc). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
 
 How often it is asked, from one render of each page in tifa with a wrapper that counted its answers: the six workbench pages make 980 elements with `createElement` and 518 with `cloneElement`, the five storefront pages 2,507 and 328, the three MUI pages 3,266 and 114, and each bench page 1. The function copies all of them but one config of 39 keys (MUI's input, on the order list and on an order page), which is over the 32 keys it takes and goes through the loop.
 
@@ -650,7 +650,7 @@ Where the C engine was slower than the C QuickJS builds, the same C of `engine/`
 | `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
 | `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
 
-The C changes of liustack/quickjs cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
+The C changes of liustack/slowjs cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
 
 - `c_array_methods`: `js_array_includes` 6020 samples against 1826, `js_array_indexOf` 3915 against 957, `JS_CallInternal` 10743 against 8749, the rest alike (`js_strict_eq2` 13630 against 13231). The loops called `js_strict_eq2` for each element, and a loop with a call that may poll keeps its poll counter in memory, which is a read, decrement and write of one word per turn: 36% of the samples of `js_array_includes` sit on that decrement. Fixed by [deciding most elements without a call](changes/upstream-commits.md#indexof-and-includes-decide-most-elements-without-a-call): the script took 0.583 of the time.
 - `c_string_methods`: 38900 samples against 30440, spread over many small functions: `JS_CallInternal` +940, `js_call_c_function` 1964 against 1210, `JS_ToStringInternal` 1726 against 1122, `JS_ConcatString` 1182 against 658, `js_string_includes` 967 against 523. No loop with one hot instruction. It is the cost of each call of the generated code (arguments and results through memory, a stack check, the poll counter).
@@ -864,7 +864,7 @@ All changes in time are under 3%, so the instructions are the measure. All 4 pos
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so the shares below no longer describe it.
 
-From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/quickjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
+From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/slowjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
 
 | Share of a render | shop workbench | store | MUI | bench | `r_react_ssr` | Markdown 400 KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -884,7 +884,7 @@ From callgrind on the generated engine (amd64), with cycles estimated as instruc
 - A workbench render runs about 73,000 JavaScript calls and 1.28 million opcodes: 81 native instructions per opcode counting what it calls, and about 190 per call in the entry, the exit and the call opcodes, of which about 95 are the entry. The largest piece of the entry is the loop that sets the locals to `undefined` (2.1% of the native instructions of `JS_CallInternal`).
 - The polls, measured by building the engine without them: the shop, store and MUI pages took 0.953 to 0.955 of the time and the bench pages 0.930, at 8 of 8 positions. 4.9% to 8.3% fewer instructions. `JS_CallInternal` holds 41% of the polls' instructions on a store page and 64% on a bench page, and the rest is spread over about 40 functions. The stack check is 4 instructions at the start of 729 of 1320 functions, 1.2% to 1.8% of the instructions of a page.
 - Collection matters only on the long Markdown: 8.5% of the time and 40% of its last level misses. On tifa's pages it is under 2%.
-- Against Node with `--jitless`, liustack/quickjs took 1.82 times as long on the shop workbench, 1.67 on the store and 1.52 on MUI. The JavaScript functions with the highest ratio are small ones (3 to 5 times, since the cost is the fixed price of a call), React's `for in` with `hasOwnProperty.call` (2.0 to 2.6 times, done since: [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall) and [The copy of the props of a React element in C](#the-copy-of-the-props-of-a-react-element-in-c)), and functions where a reference count reaching 0 frees a whole chain at the assignment, where Node leaves it to its collector (`resetHooksState` 3.5 to 4.9 times).
+- Against Node with `--jitless`, liustack/slowjs took 1.82 times as long on the shop workbench, 1.67 on the store and 1.52 on MUI. The JavaScript functions with the highest ratio are small ones (3 to 5 times, since the cost is the fixed price of a call), React's `for in` with `hasOwnProperty.call` (2.0 to 2.6 times, done since: [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall) and [The copy of the props of a React element in C](#the-copy-of-the-props-of-a-react-element-in-c)), and functions where a reference count reaching 0 frees a whole chain at the assignment, where Node leaves it to its collector (`resetHooksState` 3.5 to 4.9 times).
 
 ### Where a regexp starts, worked out once
 
@@ -1683,7 +1683,7 @@ Every bad request failed with a deadline error, every one got a new VM, no good 
 
 Each item says what it would give and why it was dropped. Check here before trying one of them again. The numbers come from tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) and [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md), and from the docs of the changes.
 
-- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/quickjs to make only mechanical changes. Not tried.
+- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/slowjs to make only mechanical changes. Not tried.
 - **A check in JavaScript in front of one spread for the props of `createElement` and `cloneElement`**, measured on v0.29.1 before `RegisterCopyProps`: the plugin tested the config (the prototype, the symbols, `__proto__`, `__self` and `__source`, a getter behind `key`) and then copied it with the rest of a destructuring. The test took 310 to 380 ns a call, more than the loop takes for a config of none, one or two keys, so `createElement` took 1.57 times as long for no keys, 1.07 for one key and 1.13 to 1.40 for a `key` and one or two more. The shop took 0.99 of the time (1.6% to 2.5% fewer instructions) and no page passed the rule. It also could not rule out a proxy, a getter that deletes a later key and a setter added to `Object.prototype` after React loaded. The same checks in C cost less than the empty loop, and the function gives 2.1% to 4.1% fewer instructions.
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005). It is done since together with the listing of keys, which it shares with `for in` and `Object.keys` (see [Own keys listed from the shape](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)).
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.

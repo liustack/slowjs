@@ -19,7 +19,7 @@ read_when:
 
 Bellard 在 2026-10-22 的最新发布是 [2026-06-04](https://bellard.org/quickjs/Changelog)。它在 GitHub 上的 master `7d1c13c5d8f8c6b32893786ed35cdcebd88194d2` 仍然从 map 出发标记弱 map 的值。
 
-QuickJS-NG 在 [a57877c, Retain WeakMap values only when key is reachable](https://github.com/quickjs-ng/quickjs/commit/a57877cef88c3d80aadf69153209b9f0dfc6324f) 里修了反向引用的情形。v0.17.0 和 master `270b8c974a4427726e7b580349ae061af08f53a5` 改成从对象键出发标记这些值。liustack/quickjs 沿用这种条件边的办法。它用一个临时的键索引，因为 Bellard 当前的弱引用布局是运行时上的一条列表，而不是每个目标一份记录。它还处理了 symbol 键，并检查 map 是否可达。
+QuickJS-NG 在 [a57877c, Retain WeakMap values only when key is reachable](https://github.com/quickjs-ng/quickjs/commit/a57877cef88c3d80aadf69153209b9f0dfc6324f) 里修了反向引用的情形。v0.17.0 和 master `270b8c974a4427726e7b580349ae061af08f53a5` 改成从对象键出发标记这些值。liustack/slowjs 沿用这种条件边的办法。它用一个临时的键索引，因为 Bellard 当前的弱引用布局是运行时上的一条列表，而不是每个目标一份记录。它还处理了 symbol 键，并检查 map 是否可达。
 
 ## 回收器
 

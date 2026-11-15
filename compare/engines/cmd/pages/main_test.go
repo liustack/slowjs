@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -59,7 +59,7 @@ func archiveOf(t *testing.T, dir string) *jobj {
 
 func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"liustack-quickjs-pf", "liustack-quickjs-native", "hermes-pf"} {
+	for _, name := range []string{"liustack-slowjs-pf", "liustack-slowjs-native", "hermes-pf"} {
 		write(t, dir, name+".json", `{"pages": [{"input": "one.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "missing.json", "ok": false}]}`)
 	}
 	for _, name := range []string{"go-quickjs-interp-native"} {
@@ -69,8 +69,8 @@ func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	result(t, dir, "probe-one", true, "one")
 	write(t, dir, "probe-one.meta", `{"try":0,"disturbed":1}`+"\n"+`{"try":1,"disturbed":0}`+"\n")
 	for name, body := range map[string]string{
-		"liustack-quickjs-pf":      "<p>u:1234567890123</p>",
-		"liustack-quickjs-native":  "<p>u:1234567890124</p>",
+		"liustack-slowjs-pf":       "<p>u:1234567890123</p>",
+		"liustack-slowjs-native":   "<p>u:1234567890124</p>",
 		"go-quickjs-interp-native": "<p>u:1234567890125</p>",
 		"hermes-pf":                "<p><!-- -->u:1234567890126</p>",
 	} {
@@ -102,16 +102,16 @@ func TestArchiveKeepsRawRunsAndHTMLEvidence(t *testing.T) {
 	if v := cmp("shop", "hermes", "missing").m["same_as_liustack"]; v != nil {
 		t.Errorf("a page that did not render has no verdict, got %v", v)
 	}
-	if v := cmp("shop", "liustack-quickjs", "one").m["same_as_liustack"]; v != true {
-		t.Errorf("liustack-quickjs against itself: %v", v)
+	if v := cmp("shop", "liustack-slowjs", "one").m["same_as_liustack"]; v != true {
+		t.Errorf("liustack-slowjs against itself: %v", v)
 	}
 }
 
 func TestDifferencesShowTheFirstPlace(t *testing.T) {
 	dir := t.TempDir()
-	result(t, dir, "liustack-quickjs-native", true, "a")
+	result(t, dir, "liustack-slowjs-native", true, "a")
 	result(t, dir, "go-quickjs-interp-native", true, "a")
-	write(t, dir, "html/liustack-quickjs-native-a.html", "<p>8:00 AM u:1234567890123</p>")
+	write(t, dir, "html/liustack-slowjs-native-a.html", "<p>8:00 AM u:1234567890123</p>")
 	write(t, dir, "html/go-quickjs-interp-native-a.html", "<p>8:00\u202fAM u:1234567890124</p>")
 	w := &report{}
 	(&run{dir: dir}).differences(w)
@@ -121,26 +121,26 @@ func TestDifferencesShowTheFirstPlace(t *testing.T) {
 }
 
 // A row of a table: the pages that render, the pages that are the same as
-// liustack-quickjs's, the geometric mean of the ratios with its range, and the notes.
+// liustack-slowjs's, the geometric mean of the ratios with its range, and the notes.
 func TestTableRows(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "liustack-quickjs-bench.json", `{"load_ms": 7, "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 10}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
+	write(t, dir, "liustack-slowjs-bench.json", `{"load_ms": 7, "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 10}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
 	write(t, dir, "go-quickjs-interp-bench.json", `{"load_ms": 4.6, "prelude_ms": [1.2], "pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 20}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 20}]}`)
 	write(t, dir, "go-quickjs-interp-bench.meta", `{"try":0,"disturbed":1}`+"\n")
 	write(t, dir, "moejs-bench.json", `{"err": "load: SyntaxError: no\nsecond line"}`)
 	write(t, dir, "hermes-bench.json", ``)
 	write(t, dir, "node-jitless-bench.json", `{"pages": [{"input": "a.json", "ok": false, "err": "boom"}, {"input": "b.json", "ok": false, "err": "bang"}]}`)
-	for _, e := range []string{"liustack-quickjs", "go-quickjs-interp"} {
+	for _, e := range []string{"liustack-slowjs", "go-quickjs-interp"} {
 		write(t, dir, "html/"+e+"-bench-a.html", "<p>u:1234567890123</p>")
 		write(t, dir, "html/"+e+"-bench-b.html", "<p>b</p>")
 	}
 	w := &report{}
-	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-quickjs", "go-quickjs-interp", "moejs", "hermes", "node-jitless", "quickjs-2026-06-04"}, "")
+	(&run{dir: dir}).table(w, fixed("bench"), "Pages", []string{"liustack-slowjs", "go-quickjs-interp", "moejs", "hermes", "node-jitless", "quickjs-2026-06-04"}, "")
 	want := `### Pages
 
-| Engine | Load ms | Pages that render | Same page as liustack-quickjs | Time per render vs liustack-quickjs |
+| Engine | Load ms | Pages that render | Same page as liustack-slowjs | Time per render vs liustack-slowjs |
 |---|---|---|---|---|
-| liustack-quickjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
+| liustack-slowjs | 7 | 2 of 2 | 2 of 2 | 1.00 (1.00–1.00) |
 | go-quickjs-interp | 6 | 2 of 2 | 2 of 2 | 1.41 (1.00–2.00) (disturbed) |
 | moejs | load: SyntaxError: no | 0 of 2 | | |
 | Hermes V1 260318099.0.0-stable, -O bytecode (reference) | not run | | | |
@@ -156,7 +156,7 @@ func TestTableRows(t *testing.T) {
 // Pages that stop an engine come from the run of the engine without them.
 func TestRestRunReplacesFailedPages(t *testing.T) {
 	dir := t.TempDir()
-	write(t, dir, "liustack-quickjs-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "c.json", "ok": true, "cpu_ms_per_op": 1}]}`)
+	write(t, dir, "liustack-slowjs-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "c.json", "ok": true, "cpu_ms_per_op": 1}]}`)
 	write(t, dir, "go-quickjs-interp-pf.json", `{"pages": [{"input": "a.json", "ok": true, "cpu_ms_per_op": 1}, {"input": "b.json", "ok": false}, {"input": "c.json", "ok": false}]}`)
 	write(t, dir, "go-quickjs-interp-pf-rest.json", `{"pages": [{"input": "b.json", "ok": true, "cpu_ms_per_op": 3}, {"input": "a.json", "ok": true, "cpu_ms_per_op": 9}]}`)
 	r := &run{dir: dir}

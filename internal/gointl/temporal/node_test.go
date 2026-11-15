@@ -19,7 +19,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestTemporalMatchesNode replays testdata/temporal_node.js: Temporal's

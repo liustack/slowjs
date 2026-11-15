@@ -20,11 +20,11 @@ read_when:
 
 ## 获取
 
-从[最新 release](https://github.com/liustack/quickjs/releases/latest) 下载你系统的压缩包，用 `checksums.txt` 校验后解压。压缩包按 Go 的目标名命名：`slowjs-linux-amd64.tar.gz`、`slowjs-linux-arm64.tar.gz`、`slowjs-darwin-amd64.tar.gz`（Intel 芯片的 macOS）、`slowjs-darwin-arm64.tar.gz`（Apple 芯片的 macOS）和 `slowjs-windows-amd64.zip`。
+从[最新 release](https://github.com/liustack/slowjs/releases/latest) 下载你系统的压缩包，用 `checksums.txt` 校验后解压。压缩包按 Go 的目标名命名：`slowjs-linux-amd64.tar.gz`、`slowjs-linux-arm64.tar.gz`、`slowjs-darwin-amd64.tar.gz`（Intel 芯片的 macOS）、`slowjs-darwin-arm64.tar.gz`（Apple 芯片的 macOS）和 `slowjs-windows-amd64.zip`。
 
 ```sh
-curl -LO https://github.com/liustack/quickjs/releases/latest/download/slowjs-linux-amd64.tar.gz
-curl -LO https://github.com/liustack/quickjs/releases/latest/download/checksums.txt
+curl -LO https://github.com/liustack/slowjs/releases/latest/download/slowjs-linux-amd64.tar.gz
+curl -LO https://github.com/liustack/slowjs/releases/latest/download/checksums.txt
 sha256sum -c --ignore-missing checksums.txt
 tar -xzf slowjs-linux-amd64.tar.gz
 ./slowjs-linux-amd64/slowjs --version

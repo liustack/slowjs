@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // uz-AF and uz-Arab-AF reckon in the Persian calendar. CLDR writes their

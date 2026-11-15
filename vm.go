@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // The eval timeout runs on the monotonic clock, which only goes forward. The
@@ -142,10 +142,10 @@ func (m *VM) SetShapeCache(n int) error {
 		return err
 	}
 	if n < 0 || n > math.MaxInt32/8 {
-		return fmt.Errorf("quickjs: a shape cache of %d shapes", n)
+		return fmt.Errorf("slowjs: a shape cache of %d shapes", n)
 	}
 	if m.jsSetShapeCache(int32(n)) != 0 {
-		return fmt.Errorf("quickjs: out of memory for a shape cache of %d shapes", n)
+		return fmt.Errorf("slowjs: out of memory for a shape cache of %d shapes", n)
 	}
 	return nil
 }
@@ -178,7 +178,7 @@ func (m *VM) SetRegExpCache(n, bytes int) error {
 		return err
 	}
 	if n < 0 || bytes < 0 || n > math.MaxInt32/8 || uint64(bytes) > uint64(^uintptr(0)) {
-		return fmt.Errorf("quickjs: a regexp cache of %d regexps in %d bytes", n, bytes)
+		return fmt.Errorf("slowjs: a regexp cache of %d regexps in %d bytes", n, bytes)
 	}
 	m.jsSetRegExpCache(int32(n), uint64(bytes))
 	return nil
@@ -401,7 +401,7 @@ func (m *VM) Close() error {
 // closure that may reference the VM, removes it here, so that the table
 // does not keep the VM, or what it closes over, reachable after Close.
 // errCloseInCall is the error of a Close during a call into the VM.
-var errCloseInCall = errors.New("quickjs: Close while the VM runs a call")
+var errCloseInCall = errors.New("slowjs: Close while the VM runs a call")
 
 func (m *VM) OnClose(f func()) {
 	m.onClose = append(m.onClose, f)

@@ -1,22 +1,22 @@
-<!-- Copyright (c) 2026 The liustack/quickjs Authors. -->
+<!-- Copyright (c) 2026 The liustack/slowjs Authors. -->
 <!-- SPDX-License-Identifier: MIT -->
 
 # compare/engines
 
 English · [简体中文](README.zh-CN.md)
 
-The comparison of liustack/quickjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/benchmarks.md](../../docs/benchmarks.md).
+The comparison of liustack/slowjs with other JavaScript engines for Go and with three native engines. A Go module of its own, so the other engines never enter the `go.mod` of the root. The results and what they say are in [docs/benchmarks.md](../../docs/benchmarks.md).
 
 ## What is compared
 
 Two tables:
 
-1. **Rendering.** CPU time of a render of tifa's pages: the bench app (2 pages), the MUI app (3) and the shop (20), as a ratio to liustack/quickjs.
+1. **Rendering.** CPU time of a render of tifa's pages: the bench app (2 pages), the MUI app (3) and the shop (20), as a ratio to liustack/slowjs.
 2. **The V8 suite.** The score of each engine, and of each of its 8 benchmarks.
 
 The comparison never runs test262 on other engines.
 
-The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/quickjs, go-quickjs (its JIT is off by default) and moejs. The native references are C QuickJS 2026-06-04, Hermes V1 (the release, which has no x86-64 JIT, as it ships: bytecode compiled with `hermesc -O`) and Node with `--jitless`.
+The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/slowjs, go-quickjs (its JIT is off by default) and moejs. The native references are C QuickJS 2026-06-04, Hermes V1 (the release, which has no x86-64 JIT, as it ships: bytecode compiled with `hermesc -O`) and Node with `--jitless`.
 
 Each engine runs the way a person would use it. It has its own Intl and URL where it has them, and a standard polyfill where it has none: FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers. A polyfill is loaded only into an engine that lacks the feature (`tifa/run.sh` has the list). The comparison's bundles run without tifa's Go functions (`__tifa_escape`, `__tifa_start_tag`, `__tifa_end_tag`, `__tifa_copy_props`, `__tifa_murmur2__`, `__tifa_random_bytes__`), tifa's GC rules and pool settings, and shared bytecode: no engine registers them, ours included, so every engine runs React's own code.
 
@@ -51,7 +51,7 @@ The tifa pages, one engine per call, each call on its own core held by `~/bin/qu
 ```sh
 run=<date>-<version>-<host>
 page_dir=$HOME/pages-$run
-for e in liustack-quickjs go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
+for e in liustack-slowjs go-quickjs-interp quickjs-2026-06-04 node-jitless hermes moejs; do
   TIFA_ONLY=$e TIFA_CPU=0 TIFA_SIBLING=3 tifa/run.sh $page_dir bin $HOME/jsnative
 done
 go run ./cmd/pages $page_dir --output results/$run-pages

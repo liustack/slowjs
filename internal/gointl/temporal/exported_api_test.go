@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl/temporal"
+	"github.com/liustack/slowjs/internal/gointl/temporal"
 )
 
 // Every exported function can be called from outside the package: they had

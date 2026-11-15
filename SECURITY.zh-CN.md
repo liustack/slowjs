@@ -6,9 +6,9 @@
 
 安全问题请私下报告，不要开公开 issue。
 
-用 [GitHub Security Advisories](https://github.com/liustack/quickjs/security/advisories/new) 提交私密报告。修复发布之前，细节只在你和维护者之间。
+用 [GitHub Security Advisories](https://github.com/liustack/slowjs/security/advisories/new) 提交私密报告。修复发布之前，细节只在你和维护者之间。
 
-算安全问题的情形：脚本读写了自己 VM 之外的内存，让 Go 进程崩溃，越过了 eval 超时或内存上限还在跑，碰到了宿主没给它的东西，或者让一个 VM 看到另一个 VM。请附上能复现的最小脚本和 Go 代码、完整输出、liustack/quickjs 版本（`go list -m github.com/liustack/quickjs`）、`go version`，以及操作系统和 CPU。你会收到回复和修复，除非你不愿意，否则会署上你的名字致谢。
+算安全问题的情形：脚本读写了自己 VM 之外的内存，让 Go 进程崩溃，越过了 eval 超时或内存上限还在跑，碰到了宿主没给它的东西，或者让一个 VM 看到另一个 VM。请附上能复现的最小脚本和 Go 代码、完整输出、liustack/slowjs 版本（`go list -m github.com/liustack/slowjs`）、`go version`，以及操作系统和 CPU。你会收到回复和修复，除非你不愿意，否则会署上你的名字致谢。
 
 ## 支持的版本
 

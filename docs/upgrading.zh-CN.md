@@ -15,7 +15,7 @@ read_when:
 
 ## 分支和远端
 
-`main` 是 liustack/quickjs 的分支。
+`main` 是 liustack/slowjs 的分支。
 
 在新克隆里设置一次远端。它是 Fabrice Bellard 的仓库，C 代码就从那里来：
 
@@ -28,12 +28,12 @@ git fetch quickjs
 
 ## 把上游 QuickJS 搬进 engine/
 
-`engine/` 是 `3d5e064`（2026-06-04）的 QuickJS 加上 liustack/quickjs 的改动，并且它自己在变。它不跟着上游一个版本一个版本地走。上游的提交，凡是修正确性、内存泄漏或崩溃的，不管 tifa 的页面碰不碰得到，都会搬进来，让 tifa 渲染更快的也一样。新功能或只为速度的改动，tifa 用得上才搬。每一个都是单独的提交。[changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 列出了搬进来的，试过又撤回的，以及没搬的。
+`engine/` 是 `3d5e064`（2026-06-04）的 QuickJS 加上 liustack/slowjs 的改动，并且它自己在变。它不跟着上游一个版本一个版本地走。上游的提交，凡是修正确性、内存泄漏或崩溃的，不管 tifa 的页面碰不碰得到，都会搬进来，让 tifa 渲染更快的也一样。新功能或只为速度的改动，tifa 用得上才搬。每一个都是单独的提交。[changes/upstream-commits.md](changes/upstream-commits.zh-CN.md) 列出了搬进来的，试过又撤回的，以及没搬的。
 
 对每个提交：
 
 1. `git fetch quickjs`，然后看有什么新的：`git log --oneline 3d5e064..quickjs/master -- quickjs.c quickjs.h libregexp.c libunicode.c cutils.c dtoa.c`。
-2. 把它的 diff 应用到 C 树上：`git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`。碰到 liustack/quickjs 的改动时（[changes](changes/README.zh-CN.md) 里写了涉及的函数），那个改动保留，上游的文字围着它合并。丢掉修改 `engine/` 里没有的东西的那些块（shell 库、`fuzz/`、Makefile）。
+2. 把它的 diff 应用到 C 树上：`git diff <commit>^ <commit> -- quickjs.c | git apply --directory=engine`。碰到 liustack/slowjs 的改动时（[changes](changes/README.zh-CN.md) 里写了涉及的函数），那个改动保留，上游的文字围着它合并。丢掉修改 `engine/` 里没有的东西的那些块（shell 库、`fuzz/`、Makefile）。
 3. 写一个没有这个提交就失败、有了就通过的测试，放在 `engine/test/` 里（`engine/test/compare/` 里的一个脚本加它的输出，或者 `unit.c`、`unit-oom.c` 或 `unit-white.c` 里的一个检查），如 [testing.md](testing.zh-CN.md#c-树和它的原生测试宿主) 所述。
 4. 运行 `make check-fast`，为两种架构重新生成引擎（`make gen`、`make gen ARCH=arm64`，见 [testing.md](testing.zh-CN.md#生成并检查)），并把 C、测试和生成的文件一起提交，提交信息里写明上游的提交。
 5. 一批改动做完时，运行 `make check-full`。test262 的已知错误（33 个）必须逐行保持不变，除非这个提交修好了其中一些。那就更新 `engine/test/test262_errors.txt` 并说明。
@@ -46,16 +46,16 @@ git fetch quickjs
 
 ## 换用更新的 Go
 
-C 引擎的 Go 汇编（`internal/cengine`，提交进仓库的）是用 Go 1.27.2 生成的。`scripts/go-versions.sh` 用从 1.26.6（`go.mod` 的 `go` 行）到 1.27.3（写这段时最新的版本）的每个 Go 补丁版本核对它（见 [testing.md](testing.zh-CN.md#ci)）。之后的 1.27 补丁版本在下一次每周运行里核对。`go.mod` 要求 1.26.6 或更新，更新的 Go 会让构建停下，报 `internal/goversion` 的错误（它的文件 `newer.go` 里的构建行是 `go1.28 && !quickjs_anygo`），因为这份汇编从没对着它核对过。`-tags quickjs_anygo` 仍然能构建。生成器的检查和它的测试依赖 Go 1.27.2 的这些东西：
+C 引擎的 Go 汇编（`internal/cengine`，提交进仓库的）是用 Go 1.27.2 生成的。`scripts/go-versions.sh` 用从 1.26.6（`go.mod` 的 `go` 行）到 1.27.3（写这段时最新的版本）的每个 Go 补丁版本核对它（见 [testing.md](testing.zh-CN.md#ci)）。之后的 1.27 补丁版本在下一次每周运行里核对。`go.mod` 要求 1.26.6 或更新，更新的 Go 会让构建停下，报 `internal/goversion` 的错误（它的文件 `newer.go` 里的构建行是 `go1.28 && !slowjs_anygo`），因为这份汇编从没对着它核对过。`-tags slowjs_anygo` 仍然能构建。生成器的检查和它的测试依赖 Go 1.27.2 的这些东西：
 
 - 每个非 NOSPLIT 函数开头的栈检查：把栈指针和 goroutine 里的保护值 `g.stackguard0` 比较（在 `g` 的偏移 16 处，`g` 在 amd64 上放在 R14，在 arm64 上放在 X28），一个分支跳到对 `runtime.morestack_noctxt.abi0` 的调用，再跳回开头（`internal/goasm/gen/verify_insn.go`、`arm64_verify.go`）。
 - 哪些函数是 NOSPLIT：生成器一个也不选，只标记寄存器入口的叶子，以及 Go 汇编器自己标为 NOSPLIT 的叶子，也就是什么也不调用、带保存的基址指针的栈帧小于 128 字节的函数（`internal/goasm/gen/nosplit.go`）。在引擎里它们都不调用任何东西，所以其中一个里的错误，拥有调用者的栈检查留下的空间，至少 800 字节减去它自己的栈帧，并且需要其中 16 字节（amd64）或 24 字节（arm64），用于 `runtime.sigpanic` 的调用和它对 morestack 的调用。如果汇编器自己标了别的叶子，或者不再标这些，链接后的检查就会失败。
 - 抢占锤（`internal/cengine/hammer_test.go`）读 `g` 并写它的栈保护值。
 
-Go 改了其中任何一项，生成器的某个检查或某个测试就会失败。程序在构建时不做这个检查，所以更新的 Go 会让构建停下。因此，在换用更新的 Go 之前，用它运行下面这些，每条命令的标签里都加上 `-tags quickjs_anygo`：
+Go 改了其中任何一项，生成器的某个检查或某个测试就会失败。程序在构建时不做这个检查，所以更新的 Go 会让构建停下。因此，在换用更新的 Go 之前，用它运行下面这些，每条命令的标签里都加上 `-tags slowjs_anygo`：
 
-1. 运行 `go test -p 1 -tags testhooks,quickjs_anygo ./internal/cengine .`，以及抢占锤（`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,quickjs_anygo -run Hammer ./internal/cengine`）。故障测试（`TestFault*`、`TestFaultNoSplit`）是能发现信号路径变化的那些。
-2. 用新的 Go 运行生成器的测试（`CHECK_TAGS=quickjs_anygo make check-fast`，它的 `goasm` 步骤。光用 `GOFLAGS=-tags=...` 不行：自己带 `-tags` 的命令会替换它，门会把它挡住）。它们构建样本程序，把它们链接起来，检查栈检查、对 `runtime.morestack_noctxt.abi0` 的调用，以及链接后的二进制里哪些函数是 NOSPLIT，所以 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 变了会在那里失败。然后用 [testing.md](testing.zh-CN.md#生成引擎的-go-宿主) 的链接后检查（`-verify-bin`，对一个用 `-tags goasmkeep,quickjs_anygo` 构建的测试二进制）以同样的方式检查引擎本身。`make check-gen` 不测 Go 版本：它只检查提交进仓库的文件就是生成器生成的。
+1. 运行 `go test -p 1 -tags testhooks,slowjs_anygo ./internal/cengine .`，以及抢占锤（`CENGINE_HAMMER_N=3000 go test -tags cenginehammer,slowjs_anygo -run Hammer ./internal/cengine`）。故障测试（`TestFault*`、`TestFaultNoSplit`）是能发现信号路径变化的那些。
+2. 用新的 Go 运行生成器的测试（`CHECK_TAGS=slowjs_anygo make check-fast`，它的 `goasm` 步骤。光用 `GOFLAGS=-tags=...` 不行：自己带 `-tags` 的命令会替换它，门会把它挡住）。它们构建样本程序，把它们链接起来，检查栈检查、对 `runtime.morestack_noctxt.abi0` 的调用，以及链接后的二进制里哪些函数是 NOSPLIT，所以 shape（引擎记录一个对象有哪些键、按什么顺序的结构） 变了会在那里失败。然后用 [testing.md](testing.zh-CN.md#生成引擎的-go-宿主) 的链接后检查（`-verify-bin`，对一个用 `-tags goasmkeep,slowjs_anygo` 构建的测试二进制）以同样的方式检查引擎本身。`make check-gen` 不测 Go 版本：它只检查提交进仓库的文件就是生成器生成的。
 3. 如果故障测试失败，就读新版本里 `runtime.sigpanic` 和栈检查的源码，找出原因。如果汇编器自己把别的函数标成了 NOSPLIT，就把 `internal/goasm/gen/nosplit.go` 里的 `autoNoSplit` 改成你在那里读到的样子，并重新生成引擎。
 4. 全部通过后，把 `internal/goversion/newer.go` 的构建行移到下一个版本，把里面的名字改成你核对过的版本，并把新版本写在这里和 README 里，中英文两份都写。`TestNewerGoStops` 检查这一行和名字是一致的。
 
@@ -96,8 +96,8 @@ go test -short -p 2 ./intl/... ./temporal/...
 数据在 `internal/gointl/qjsdata/` 里，由 `internal/gointl/internal/qjspack/gen` 从 go-intl 的 `data/` 目录生成：
 
 - `core.bin`（3.39 MB），除下面这些之外的所有东西。
-- `names.bin`（1.9 MB），显示名称。用 `-tags quickjs_intl_nonames` 构建可以把它去掉：这样 `Intl.DisplayNames` 没有名称，`of` 对每个代码都返回回退值，即代码本身，在 `fallback: 'none'` 时返回 `undefined`。
-- `cjdict.bin`（2.0 MB），中文和日文的分词词典。用 `-tags quickjs_intl_nocjdict` 构建可以把它去掉：这样一串中文或日文就是一个词，和没有这个词典的 ICU 一样。
+- `names.bin`（1.9 MB），显示名称。用 `-tags slowjs_intl_nonames` 构建可以把它去掉：这样 `Intl.DisplayNames` 没有名称，`of` 对每个代码都返回回退值，即代码本身，在 `fallback: 'none'` 时返回 `undefined`。
+- `cjdict.bin`（2.0 MB），中文和日文的分词词典。用 `-tags slowjs_intl_nocjdict` 构建可以把它去掉：这样一串中文或日文就是一个词，和没有这个词典的 ICU 一样。
 - `tz.bin`（92 KB），包 `temporal` 读的东西：ICU 的时区，Temporal 用的时区名称，中国农历、韩国历和 Umm al-Qura 历的表，以及 `tzversion.bin`，即这些时区的 tz 版本。`Embedded` 把它和其余的一起提供，`EmbeddedTemporalSource` 单独提供它。两者共用一份：通过任何一个读到的块只解压一次。
 - 读取者的数据包，每个只链接进链接了读它的函数的二进制（`qjs_readers.go`）：`dates.bin`（677 KB），go-intl 的 `DateTimeFormat` 读的东西，`zonenames.bin`（1.27 MB），时区名称，以及 `hostzones.bin`（6 KB），猜测宿主时区用的表。包 `intl` 对 Date 和 Temporal 的值与范围使用这些数据包。它链接日期和时区名称这两个包，但不链接宿主时区包（`TestLinksOnlyReadData`）。读它们的数据的每个加载函数，都会先调用 `qjsUseDates`、`qjsUseZoneNames` 或 `qjsUseHostZones`，如果某个函数读了它们的某个数据集而没有这个调用，`TestQJSReadersUsePacks` 就会失败：把调用加上。为新的读取者添加的数据集，同样得到自己的数据包，做法是在打包工具的 `packOf` 里、`qjs_readers.go` 的一个变量里，以及它的加载函数里的调用里加上。
 
@@ -127,11 +127,11 @@ go-intl v0.6.1 用 tz 2026c 生成它的时区。数据包带的是更晚的一�
 要换用 go-intl 新版本的数据，在 `internal/gointl/UPSTREAM` 里设置 `VERSION` 和 `COMMIT`，然后：
 
 ```sh
-internal/gointl/data.sh checkout       # clones go-intl into $GOINTL_UPSTREAM (default ~/.cache/quickjs-gointl/go-intl)
+internal/gointl/data.sh checkout       # clones go-intl into $GOINTL_UPSTREAM (default ~/.cache/slowjs-gointl/go-intl)
 internal/gointl/data.sh chromium       # records what Chromium resolves the new tags to
 internal/gointl/data.sh pack           # writes qjsdata/ again
 internal/gointl/data.sh test -p 2      # the tests of every language, on packs of every language
-internal/gointl/data.sh test-chromium -p 2  # the Chromium corpora of liustack/quickjs on the shipped packs
+internal/gointl/data.sh test-chromium -p 2  # the Chromium corpora of liustack/slowjs on the shipped packs
 go test ./internal/gointl/... && make gointl
 ```
 

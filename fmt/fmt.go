@@ -3,8 +3,8 @@
 // license that can be found in the LICENSE file.
 
 // Package fmt exposes some functionality of the Go stdlib fmt package to a
-// [quickjs.VM].
-package fmt // import "github.com/liustack/quickjs/fmt"
+// [slowjs.VM].
+package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
 	"fmt"
@@ -13,8 +13,8 @@ import (
 	"runtime"
 	"unsafe"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 const pkg = "fmt"
@@ -38,7 +38,7 @@ const pkg = "fmt"
 // and the arguments, and when what making the output may make Go allocate,
 // sixteen times its bytes and a few KiB for the printer that makes it, is
 // more than the VM has left under its memory limit (see
-// [quickjs.VM.SetMemoryLimit]), the call ends with the uncatchable out of
+// [slowjs.VM.SetMemoryLimit]), the call ends with the uncatchable out of
 // memory error and makes nothing. A VM with no memory limit has room for
 // an output of at most 16 MiB. The bound comes from the format
 // and the arguments, not from the output, and can be far above it: when an
@@ -50,7 +50,7 @@ const pkg = "fmt"
 //
 // A call whose bound is more than 64 KiB makes its output a verb at a time,
 // and a long string, object or big int a part at a time, in the same bytes
-// as Go's fmt, and ends between two parts when [quickjs.VM.Interrupt] or
+// as Go's fmt, and ends between two parts when [slowjs.VM.Interrupt] or
 // the eval timeout asks it to. It takes about as long as Go's fmt for a long
 // argument, and about three times as long for many short verbs. The longest
 // part is in the conversion of a big int to decimal: one division by
@@ -59,10 +59,10 @@ const pkg = "fmt"
 //
 // printf and println write to os.Stdout, or to the writer of [Writer], 64
 // KiB at a time, and end the call between two writes when
-// [quickjs.VM.Interrupt] or the eval timeout asks it to. A write that
+// [slowjs.VM.Interrupt] or the eval timeout asks it to. A write that
 // blocks, as one to a full pipe nobody reads does, holds the call, and the
 // goroutine running the VM, until it is done.
-func Register(obj quickjs.Value, opts ...Option) (err error) {
+func Register(obj slowjs.Value, opts ...Option) (err error) {
 	defer obj.Free()
 
 	var o options
@@ -70,7 +70,7 @@ func Register(obj quickjs.Value, opts ...Option) (err error) {
 		opt(&o)
 	}
 	vm := obj.VM()
-	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), quickjs.EvalGlobal)
+	mod, err := vm.EvalThisValue(obj.Dup(), fmt.Sprintf("this.%s={}; this.%[1]s", pkg), slowjs.EvalGlobal)
 	if err != nil {
 		return err
 	}
@@ -98,12 +98,12 @@ func Register(obj quickjs.Value, opts ...Option) (err error) {
 			}
 			return write(vm, o.writer(), s)
 		}, false},
-		{"sprint", func(a ...any) quickjs.Value {
+		{"sprint", func(a ...any) slowjs.Value {
 			s, give, ok := makePrint(vm, a, false)
 			defer give()
 			return result(vm, s, ok)
 		}, false},
-		{"sprintf", func(format string, a ...any) quickjs.Value {
+		{"sprintf", func(format string, a ...any) slowjs.Value {
 			s, give, ok := makePrintf(vm, format, a)
 			defer give()
 			return result(vm, s, ok)
@@ -114,7 +114,7 @@ func Register(obj quickjs.Value, opts ...Option) (err error) {
 			return err
 		}
 
-		if _, err := vm.EvalThis(mod.Dup(), fmt.Sprintf("this.%s = %s", v.nm, longName), quickjs.EvalGlobal); err != nil {
+		if _, err := vm.EvalThis(mod.Dup(), fmt.Sprintf("this.%s = %s", v.nm, longName), slowjs.EvalGlobal); err != nil {
 			return err
 		}
 	}
@@ -149,9 +149,9 @@ func (o *options) writer() io.Writer {
 // at Interrupt or the eval timeout with the interrupt, and otherwise, when
 // it has no memory for it or it is longer than the longest string it
 // makes, with the out of memory error.
-func result(vm *quickjs.VM, s string, ok bool) quickjs.Value {
+func result(vm *slowjs.VM, s string, ok bool) slowjs.Value {
 	if !ok {
-		return quickjs.UndefinedValue
+		return slowjs.UndefinedValue
 	}
 	v, err := vm.NewString(s)
 	if err != nil && !vmhook.Stop(vm) {
@@ -166,7 +166,7 @@ const writePiece = 64 << 10
 // write writes s to w, writePiece bytes at a time, and stops between two
 // writes when the call is to end (vmhook.Stop), which throws the error
 // that ends it. It returns what it wrote.
-func write(vm *quickjs.VM, w io.Writer, s string) (int, error) {
+func write(vm *slowjs.VM, w io.Writer, s string) (int, error) {
 	n := 0
 	// Write, not WriteString: a writer may keep the string WriteString gets,
 	// and s is given back after the call (sprintf). Write must not keep the
@@ -192,7 +192,7 @@ const maxOutput = 16 << 20
 
 // room is the room vm has left under its memory limit (vmhook.Room), or
 // that of an output of maxOutput bytes when it has none.
-func room(vm *quickjs.VM) int64 {
+func room(vm *slowjs.VM) int64 {
 	if r := vmhook.Room(vm); r >= 0 {
 		return r
 	}
@@ -256,7 +256,7 @@ const shortOutput = 1 << 16
 // make Go's fmt allocate fits in what vm has left under its memory limit
 // (fits), made whole by Go's fmt when it is short and by sprintf otherwise.
 // It is false when the call is to end, with the error that ends it thrown.
-func makePrintf(vm *quickjs.VM, format string, a []any) (string, func(), bool) {
+func makePrintf(vm *slowjs.VM, format string, a []any) (string, func(), bool) {
 	room := room(vm)
 	n, read, ok, stopped := sizePrintfStop(format, a, room, func() bool { return vmhook.Stop(vm) })
 	if stopped {
@@ -279,7 +279,7 @@ func makePrintf(vm *quickjs.VM, format string, a []any) (string, func(), bool) {
 // printfOf is the output of fmt.Sprintf(format, a...), whose bound is n,
 // made whole by Go's fmt when it is short and by sprintf otherwise, and the
 // function that gives it back (sprintf).
-func printfOf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), bool) {
+func printfOf(vm *slowjs.VM, n int64, format string, a []any) (string, func(), bool) {
 	if n <= shortOutput {
 		return fmt.Sprintf(format, a...), func() {}, true
 	}
@@ -288,7 +288,7 @@ func printfOf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), 
 
 // makePrint is makePrintf for fmt.Sprint(a...), or fmt.Sprintln(a...) when
 // ln is true.
-func makePrint(vm *quickjs.VM, a []any, ln bool) (string, func(), bool) {
+func makePrint(vm *slowjs.VM, a []any, ln bool) (string, func(), bool) {
 	n := sizePrint(a)
 	if !fits(vm, room(vm), n, 0) {
 		return "", func() {}, false
@@ -298,7 +298,7 @@ func makePrint(vm *quickjs.VM, a []any, ln bool) (string, func(), bool) {
 
 // printOf is printfOf for fmt.Sprint(a...), or fmt.Sprintln(a...) when ln
 // is true.
-func printOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
+func printOf(vm *slowjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 	switch {
 	case n <= shortOutput && ln:
 		return fmt.Sprintln(a...), func() {}, true
@@ -315,7 +315,7 @@ func printOf(vm *quickjs.VM, n int64, a []any, ln bool) (string, func(), bool) {
 // (vmhook.Room): allocated times n, and more. When it does not, it throws the
 // out of memory error, which ends the call: what the function returns then
 // is dropped.
-func fits(vm *quickjs.VM, room, n, more int64) bool {
+func fits(vm *slowjs.VM, room, n, more int64) bool {
 	if room >= 0 && budget(n, more) > room {
 		vmhook.OutOfMemory(vm)
 		return false

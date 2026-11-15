@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // The expectations are node's, across several locales rather than one: English

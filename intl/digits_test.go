@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"errors"
@@ -11,9 +11,9 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/intlhook"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // A numeric string of a few characters can ask for a written form of a
@@ -38,9 +38,9 @@ func TestWrittenDigitsRefused(t *testing.T) {
 			runtime.GC()
 			var before, after runtime.MemStats
 			runtime.ReadMemStats(&before)
-			_, err := vm.Eval(`f.`+c.call, quickjs.EvalGlobal)
+			_, err := vm.Eval(`f.`+c.call, slowjs.EvalGlobal)
 			runtime.ReadMemStats(&after)
-			var e *quickjs.Error
+			var e *slowjs.Error
 			if !errors.As(err, &e) || e.Uncatchable || e.Name != "RangeError" || e.Message != intlhook.KindDigits.Message() {
 				t.Fatalf("got %v, want the RangeError %q", err, intlhook.KindDigits.Message())
 			}
@@ -72,7 +72,7 @@ func TestWrittenDigitsUnderCap(t *testing.T) {
 			t.Errorf("%s = %v, want %d", c.js, got, c.want)
 		}
 	}
-	if _, err := vm.Eval(`2n ** 1048575n`, quickjs.EvalGlobal); err == nil {
+	if _, err := vm.Eval(`2n ** 1048575n`, slowjs.EvalGlobal); err == nil {
 		t.Errorf("2n ** 1048575n is a BigInt: a longer one may be refused")
 	}
 }
@@ -113,8 +113,8 @@ func TestDigitsRoomCoversGo(t *testing.T) {
 			room := vmhook.Room
 			vmhook.Room = func(any) int64 { return took - 1 }
 			defer func() { vmhook.Room = room }()
-			_, err := vm.Eval(src, quickjs.EvalGlobal)
-			var e *quickjs.Error
+			_, err := vm.Eval(src, slowjs.EvalGlobal)
+			var e *slowjs.Error
 			if !errors.As(err, &e) || !e.OutOfMemory {
 				t.Errorf("Go took %d bytes, and with one less of room the call gave %v, want the out of memory error", took, err)
 			}
@@ -169,7 +169,7 @@ func TestValueDrivenOutputBounded(t *testing.T) {
 		{`new Date(-8.64e15).toLocaleString('en', {fractionalSecondDigits: 3, era: 'long', timeZone: 'America/Argentina/ComodRivadavia', timeZoneName: 'longGeneric', weekday: 'long', month: 'long', year: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', dayPeriod: 'long'})`, dateLength},
 		{`new Intl.DateTimeFormat('hi-u-nu-adlm-ca-ethiopic', {dateStyle: 'full', timeStyle: 'full', timeZone: '-23:59'}).format(8.64e15)`, dateLength},
 	} {
-		got, err := vm.Eval(c.js, quickjs.EvalGlobal)
+		got, err := vm.Eval(c.js, slowjs.EvalGlobal)
 		if err != nil {
 			t.Errorf("%s: %v", c.js, err)
 			continue

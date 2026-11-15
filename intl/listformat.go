@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"strconv"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // listFormat is a resolved Intl.ListFormat.
@@ -75,7 +75,7 @@ func (f *listFormat) init() error { return nil }
 // only the first characters of an item, and javascript writes the items
 // itself (listParts). A long list stops at the eval timeout of vm (see
 // checkTurn), and a long item between pieces of its units (unitsEnd).
-func listItems(vm *quickjs.VM, s string) ([]string, bool) {
+func listItems(vm *slowjs.VM, s string) ([]string, bool) {
 	var items []string
 	for i := 0; i < len(s); {
 		checkTurn(vm, len(items))
@@ -106,7 +106,7 @@ const maxLengthDigits = 10
 // with the call checked between pieces of intlhook.Piece units: a lone
 // surrogate, three bytes in WTF-8, is one unit, and a character past the BMP,
 // four bytes, two. It is false when s ends first.
-func unitsEnd(vm *quickjs.VM, s string, i, n int) (int, bool) {
+func unitsEnd(vm *slowjs.VM, s string, i, n int) (int, bool) {
 	for n > 0 {
 		intlhook.Check(vm)
 		for piece := min(n, intlhook.Piece); piece > 0; {
@@ -142,8 +142,8 @@ func unitsEnd(vm *quickjs.VM, s string, i, n int) (int, bool) {
 // that javascript writes the item it has, lone surrogates and all. An item
 // in a part that is not one of the items as they come, in order, which no
 // locale's patterns make, is written as go-intl has it.
-func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, 0, len(parts))
+func listParts(vm *slowjs.VM, items []string, parts []gointl.ListPart) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(parts))
 	free := func() {
 		for i := range vals {
 			vals[i].Free()
@@ -153,7 +153,7 @@ func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs
 	for i, p := range parts {
 		if stopTurn(vm, i) {
 			free()
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		}
 		if p.Kind == gointl.ListElement {
 			for next < len(items) && items[next] == "" && p.Value != "" {
@@ -169,7 +169,7 @@ func listParts(vm *quickjs.VM, items []string, parts []gointl.ListPart) (quickjs
 		v, err := intlhook.Emit(vm, p.Value)
 		if err != nil {
 			free()
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		vals = append(vals, v)

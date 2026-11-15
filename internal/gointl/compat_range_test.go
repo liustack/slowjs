@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // A range whose two ends are the same double but not the same number:

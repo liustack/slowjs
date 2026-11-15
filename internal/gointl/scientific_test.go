@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Rounding can carry a mantissa to the next power. Scientific notation then

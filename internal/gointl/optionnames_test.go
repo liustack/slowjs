@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Every option value prints as JavaScript spells it: the option's string in

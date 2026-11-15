@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"sync"
@@ -11,11 +11,11 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/hostmem"
-	"github.com/liustack/quickjs/internal/intlhook"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // toLocaleUpperCase and toLocaleLowerCase map case as ICU does for the
@@ -77,7 +77,7 @@ func isSurrogate(c rune) bool { return c >= 0xd800 && c <= 0xdfff }
 // each allocation that grows with the text, and ends the call with the out
 // of memory error when the VM has no room for it (TestCaseRoomCoversGo).
 type walk struct {
-	vm    *quickjs.VM
+	vm    *slowjs.VM
 	steps int
 	held  int64
 	// gives gives back the arrays of code points of the call (runes).
@@ -93,7 +93,7 @@ type walk struct {
 const unknownRoom = -2
 
 // newWalk is the walk of a call on vm.
-func newWalk(vm *quickjs.VM) *walk { return &walk{vm: vm, room: unknownRoom} }
+func newWalk(vm *slowjs.VM) *walk { return &walk{vm: vm, room: unknownRoom} }
 
 // read tells w that the string was read, which may have joined it in the
 // VM and taken some of the room: the room is asked again.

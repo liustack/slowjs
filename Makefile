@@ -45,7 +45,7 @@ bench:
 
 # A make target on another machine (scripts/remote.sh): make remote RUN="gen",
 # make remote REF=my-branch TREE=new RUN="check-fast". The machine comes from
-# QUICKJS_REMOTE and QUICKJS_REMOTE_DIR, the cores from QUICKJS_REMOTE_CPUS.
+# SLOWJS_REMOTE and SLOWJS_REMOTE_DIR, the cores from SLOWJS_REMOTE_CPUS.
 REF ?= HEAD
 TREE ?= main
 remote:
@@ -82,8 +82,8 @@ shorttest:
 # go-intl (which clones go-intl once, and reads it from the cache after).
 gointl:
 	go test -count=1 -tags gointl_walk ./internal/gointl/internal/...
-	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict ./internal/gointl/...
-	go test -count=1 -tags quickjs_intl_nonames,quickjs_intl_nocjdict -run WithoutNames ./intl/
+	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict ./internal/gointl/...
+	go test -count=1 -tags slowjs_intl_nonames,slowjs_intl_nocjdict -run WithoutNames ./intl/
 	internal/gointl/data.sh checkout
 	internal/gointl/data.sh pack -check
 	internal/gointl/data.sh test -count=1 -p 2

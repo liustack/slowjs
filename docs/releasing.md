@@ -16,8 +16,8 @@ English · [简体中文](releasing.zh-CN.md)
 ## Versions
 
 - Releases are patch versions: v0.30.0, v0.30.1, and so on. A fix or a speedup, even a large one, is the next patch version. A release that removes or changes a public API is the next minor version, as v0.27.0 was for the module loaders it removed. Do not move to a new minor version for anything else: that is for the owner of the repository to decide.
-- A version of the module is a tag, and users get it with `go get github.com/liustack/quickjs@<version>`. From v0.31.0, pushing the tag also makes a GitHub release of it, which carries only the prebuilt binaries of the `slowjs` command ([command.md](command.md)): see [The release job](#the-release-job).
-- The versions from v0.28.0 to v0.29.11 are at `github.com/liustack/slowjs`, all others at `github.com/liustack/quickjs`. The Go module proxy keeps serving the old ones there, and the `go.mod` of v0.29.11 marks the module deprecated and names the new path. How the rename went is in [upstream.md](upstream.md#moving-from-githubcomliustackslowjs).
+- A version of the module is a tag, and users get it with `go get github.com/liustack/slowjs@<version>`. From v0.31.0, pushing the tag also makes a GitHub release of it, which carries only the prebuilt binaries of the `slowjs` command ([command.md](command.md)): see [The release job](#the-release-job).
+- The versions up to v0.27.3 and from v0.30.0 to v0.30.7 declare `github.com/liustack/quickjs`, all others `github.com/liustack/slowjs`. The Go module proxy keeps serving the old ones under the old path, and the `go.mod` of v0.31.0 retracts v0.30.0 to v0.30.7, which declare the old path. How the rename went is in [upstream.md](upstream.md#moving-from-githubcomliustackquickjs).
 
 ## Before the release
 
@@ -74,7 +74,7 @@ Ask the owner before you create a tag and again before you push one. A pushed ta
    git push origin <version>
    ```
 
-3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@<version>`.
+3. Check that the proxy has it: `GOPROXY=https://proxy.golang.org go list -m github.com/liustack/slowjs@<version>`.
 4. Check that the release job made the GitHub release of the tag (`gh run list --workflow release.yml`, then the release page): five archives and `checksums.txt`.
 
 ### The release job
@@ -124,8 +124,8 @@ A minor release runs the comparison with the other JavaScript engines for Go and
 
 ### Upgrade tifa
 
-liustack/quickjs exists for tifa, so every release goes into tifa next:
+liustack/slowjs exists for tifa, so every release goes into tifa next:
 
-1. In tifa, `go get github.com/liustack/quickjs@<version>` and `go mod tidy`.
+1. In tifa, `go get github.com/liustack/slowjs@<version>` and `go mod tidy`.
 2. Put the numbers each change was measured with before it merged into tifa's docs/performance.md and its changelogs. Do not measure the release again as a whole: each change was already measured against main. Measure on tifa's pages ([Measuring in tifa](performance.md#measuring-in-tifa)) only when the owner asks, or when two changes of the release may affect each other.
 3. Run tifa's checks. The SSR soak tests (`TIFA_SSR_SOAK=1`) also cover running out of memory and VM reuse.

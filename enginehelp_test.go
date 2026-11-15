@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 // Helpers of the tests that read the C engine, with the names and the
 // results of the ones of lib (enginehelp_lib_test.go).
@@ -11,7 +11,7 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"testing"
 
-	"github.com/liustack/quickjs/internal/cengine"
+	"github.com/liustack/slowjs/internal/cengine"
 )
 
 // engineMemoryUsage holds the fields of JSMemoryUsage the tests read,.

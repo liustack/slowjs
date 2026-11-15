@@ -5,7 +5,7 @@ package intl
 import (
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 // A table of locale pairs begins with its version, and one without it, as

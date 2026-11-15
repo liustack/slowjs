@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build testhooks
 
-package quickjs
+package slowjs
 
 import (
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gohost"
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // keptVM is a VM with no memory limit that keeps a block of size bytes, at

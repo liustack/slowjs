@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestRoundingPriorityMatchesNode holds significant and fraction digits

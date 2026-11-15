@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"encoding/json"
@@ -11,9 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // Intl.Locale is not a formatter: an object holds its tag and what its
@@ -282,15 +282,15 @@ func localeJSON(r *localeRecord) (string, error) {
 
 // localeInfo is the method what of the Intl.Locale of tag, a tag newLocale
 // made.
-func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
+func localeInfo(vm *slowjs.VM, tag, what string) (slowjs.Value, error) {
 	info, err := goLocaleInfo()
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	l, err := gointl.ParseLocale(tag)
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	var list []string
@@ -316,19 +316,19 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 	case "timeZones":
 		var ok bool
 		if list, ok, err = info.TimeZones(l); err == nil && !ok {
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		}
 	case "direction":
 		d, err := info.Direction(l)
 		if err != nil || d == "" {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		return intlhook.Emit(vm, d)
 	case "firstDay":
 		first, _, err := info.WeekInfo(l)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		// ICU's ISO 8601 calendar starts the week on Monday, where no
@@ -343,15 +343,15 @@ func localeInfo(vm *quickjs.VM, tag, what string) (quickjs.Value, error) {
 	case "weekend":
 		_, weekend, err := info.WeekInfo(l)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 
 		return intlhook.EmitInts(vm, weekend)
 	default:
-		return quickjs.Value{}, errors.New("intl: internal error: no Intl.Locale method " + what)
+		return slowjs.Value{}, errors.New("intl: internal error: no Intl.Locale method " + what)
 	}
 	if err != nil {
-		return quickjs.Value{}, err
+		return slowjs.Value{}, err
 	}
 
 	return intlhook.EmitStrings(vm, list)

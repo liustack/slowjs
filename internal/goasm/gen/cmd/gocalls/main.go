@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -18,7 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
-	gen "github.com/liustack/quickjs/internal/goasm/gen"
+	gen "github.com/liustack/slowjs/internal/goasm/gen"
 )
 
 func main() {

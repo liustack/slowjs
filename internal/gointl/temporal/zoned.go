@@ -1,6 +1,6 @@
 package temporal
 
-import intl "github.com/liustack/quickjs/internal/gointl"
+import intl "github.com/liustack/slowjs/internal/gointl"
 
 // A ZonedDateTime is Temporal.ZonedDateTime's value: an instant, a zone and
 // a calendar, and the zone's offset at the instant as temporal_rs caches

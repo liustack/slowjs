@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // A two-digit year is its last two digits as ICU's zeroPaddingNumber(value,

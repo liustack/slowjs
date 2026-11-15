@@ -15,7 +15,7 @@
  */
 
 // This file started from github.com/nlnwa/whatwg-url v0.6.2 (see
-// LICENSE-WHATWG-URL) and was rewritten and changed by The liustack/quickjs
+// LICENSE-WHATWG-URL) and was rewritten and changed by The liustack/slowjs
 // Authors, who offer their changes under the MIT license (LICENSE-MIT at the
 // root of this repository) as well. SOURCES.md says what remains of it.
 

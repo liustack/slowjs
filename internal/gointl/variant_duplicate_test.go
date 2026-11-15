@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // A variant alias that names a variant the locale already has leaves it

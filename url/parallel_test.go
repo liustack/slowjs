@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // TestParallelVMs makes a VM on each of many goroutines, registers URL on
@@ -34,7 +34,7 @@ func TestParallelVMs(t *testing.T) {
 		inputs = append(inputs, fmt.Sprintf("http://h%d.é́%d.example/p%d?q=%d", i, i, i, i))
 	}
 	bases := []string{"http://localhost", "https://shop.example/a/b/c", "http://é.example/"}
-	run := func(vm *quickjs.VM) string {
+	run := func(vm *slowjs.VM) string {
 		src := "(function(){ var inputs = " + jsArray(inputs) + ", bases = " + jsArray(bases) + ", out = '';" + `
 			for (var n = 0; n < 60; n++) {
 				var s = inputs[n % inputs.length], b = bases[n % bases.length];
@@ -47,7 +47,7 @@ func TestParallelVMs(t *testing.T) {
 			}
 			return out;
 		})()`
-		v, err := vm.Eval(src, quickjs.EvalGlobal)
+		v, err := vm.Eval(src, slowjs.EvalGlobal)
 		if err != nil {
 			t.Error(err)
 			return ""
@@ -55,7 +55,7 @@ func TestParallelVMs(t *testing.T) {
 		return v.(string)
 	}
 	// What one VM answers alone.
-	alone, err := quickjs.NewVM()
+	alone, err := slowjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestParallelVMs(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for r := 0; r < 5; r++ {
-				vm, err := quickjs.NewVM()
+				vm, err := slowjs.NewVM()
 				if err != nil {
 					t.Error(err)
 					return

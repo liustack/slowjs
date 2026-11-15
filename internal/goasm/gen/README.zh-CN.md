@@ -31,7 +31,7 @@
 
 ## 运行
 
-测试包是一个小的 C 样本模块，单独用来演练生成器。`proto.sh`（在 liustack/quickjs 的根目录运行，linux/amd64）构建 pass，把它生成为 `internal/proto`（不提交进仓库），构建它的测试，并运行链接后的验证。`ARCH=arm64` 生成 arm64 的包并交叉构建它的测试：把包复制到 arm64 机器上运行它们。`MODE` 是调用模式。设置 `CALL_OVERHEAD=1` 可以运行调用开销的计时。它的测试是 `testdata/*.txt`，以文本形式保存，这样这个包不会编译它们。这里的 `go test` 运行规则测试。设置了 `QUICKJS_LLVM`（LLVM 的 bin 目录）和 `QUICKJS_SHADOW_PASS`（构建好的 pass）后，它还会让 `testdata/reject` 里的每个样本走一遍真实的流水线，再设置 `QUICKJS_LLD`（ld.lld），`TestNarrowArgs` 会原生地和生成后各运行一次 `testdata/narrow`，`TestSampleRuns` 对 `testdata/run` 里的每个样本做同样的事：每个样本定义 `long run(long *r, int one)`，原生运行（也在 UBSan 下），并从 Go 里在 body、pn 和 pn 毒化构建中运行，必须打印同样的行，并且链接后的检查必须通过。`internal/enginecmp` 在和这些测试相同的 GC 停止设置下，测量当前的引擎。
+测试包是一个小的 C 样本模块，单独用来演练生成器。`proto.sh`（在 liustack/slowjs 的根目录运行，linux/amd64）构建 pass，把它生成为 `internal/proto`（不提交进仓库），构建它的测试，并运行链接后的验证。`ARCH=arm64` 生成 arm64 的包并交叉构建它的测试：把包复制到 arm64 机器上运行它们。`MODE` 是调用模式。设置 `CALL_OVERHEAD=1` 可以运行调用开销的计时。它的测试是 `testdata/*.txt`，以文本形式保存，这样这个包不会编译它们。这里的 `go test` 运行规则测试。设置了 `SLOWJS_LLVM`（LLVM 的 bin 目录）和 `SLOWJS_SHADOW_PASS`（构建好的 pass）后，它还会让 `testdata/reject` 里的每个样本走一遍真实的流水线，再设置 `SLOWJS_LLD`（ld.lld），`TestNarrowArgs` 会原生地和生成后各运行一次 `testdata/narrow`，`TestSampleRuns` 对 `testdata/run` 里的每个样本做同样的事：每个样本定义 `long run(long *r, int one)`，原生运行（也在 UBSan 下），并从 Go 里在 body、pn 和 pn 毒化构建中运行，必须打印同样的行，并且链接后的检查必须通过。`internal/enginecmp` 在和这些测试相同的 GC 停止设置下，测量当前的引擎。
 
 ## 整个引擎
 

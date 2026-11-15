@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
 )
 
 func TestDateTimeFormatMatchesICU(t *testing.T) {

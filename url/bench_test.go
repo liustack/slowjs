@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -8,7 +8,7 @@ package url
 import (
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // BenchmarkRegister is what Register adds to a new VM, once the bytecode of
@@ -19,7 +19,7 @@ func BenchmarkRegister(b *testing.B) {
 	}
 	b.Run("NewVM", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -28,7 +28,7 @@ func BenchmarkRegister(b *testing.B) {
 	})
 	b.Run("NewVM+Register", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -41,7 +41,7 @@ func BenchmarkRegister(b *testing.B) {
 }
 
 func TestRegisterMemory(t *testing.T) {
-	a, _ := quickjs.NewVM()
+	a, _ := slowjs.NewVM()
 	defer a.Close()
 	b := newVM(t)
 	ma, mb := a.MemoryUsage(), b.MemoryUsage()
@@ -52,7 +52,7 @@ func TestRegisterMemory(t *testing.T) {
 // BenchmarkShop is what a page of a shop does for each link, in a VM: a
 // relative path against the origin, and the parts a router reads.
 func BenchmarkShop(b *testing.B) {
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func BenchmarkShop(b *testing.B) {
 		const u = new URL(path, 'http://localhost');
 		u.pathname = '/zh-CN' + u.pathname;
 		return u.protocol.length + u.username.length + u.password.length + u.origin.length + u.pathname.length + u.search.length + u.hash.length;
-	})`, quickjs.EvalGlobal)
+	})`, slowjs.EvalGlobal)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func BenchmarkShop(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := f.Call(quickjs.UndefinedValue, "/products/some-product-name?page=2&sort=price"); err != nil {
+		if _, err := f.Call(slowjs.UndefinedValue, "/products/some-product-name?page=2&sort=price"); err != nil {
 			b.Fatal(err)
 		}
 	}

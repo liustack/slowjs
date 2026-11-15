@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -30,7 +30,7 @@ type Options struct {
 	// speed and is off unless asked. No engine of the comparison needs it now.
 	Interruptible bool
 	// Clock asks for globalThis.__jsbench_now(), milliseconds from a Go
-	// monotonic clock, where the adapter has it (liustack-quickjs), to time
+	// monotonic clock, where the adapter has it (liustack-slowjs), to time
 	// parts of a render from inside the script.
 	Clock bool
 }

@@ -67,12 +67,12 @@ git clone https://github.com/liustack/tifa && cd tifa && git checkout 07b6ce0f7e
 # 2. bundle：<app>/.tifa/dist/ssr.js，再转成脚本形式
 (cd examples/shop && go tool tifa build)
 (cd test/apps/mui && go tool tifa build)
-(cd /path/to/quickjs/compare/engines &&
-  go run ./cmd/modulescript /path/to/tifa/examples/shop/.tifa/dist/ssr.js /path/to/quickjs/engine/pgo/pages/shop/shop.js &&
-  go run ./cmd/modulescript /path/to/tifa/test/apps/mui/.tifa/dist/ssr.js /path/to/quickjs/engine/pgo/pages/mui/mui.js)
+(cd /path/to/slowjs/compare/engines &&
+  go run ./cmd/modulescript /path/to/tifa/examples/shop/.tifa/dist/ssr.js /path/to/slowjs/engine/pgo/pages/shop/shop.js &&
+  go run ./cmd/modulescript /path/to/tifa/test/apps/mui/.tifa/dist/ssr.js /path/to/slowjs/engine/pgo/pages/mui/mui.js)
 
 # 3. 声明文件，它读构建出的 source map
-(cd /path/to/quickjs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
+(cd /path/to/slowjs/compare/engines && go run ./cmd/notices /path/to/tifa ../../engine/pgo/pages)
 ```
 
 `shop.js` 的 SHA-256 是 `0d2f9542f12c68959572a2dc3e8a0775a01244cfcc0f59778413e6911d3ea6a3`，`mui.js` 的是 `3c8d8c50d448f80b67e92f89228043c5b8cf7cae7f0268254c593e56f5dbcd1c`。bundle 和 `pages/` 里的不一致时，声明文件工具会停下。

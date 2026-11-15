@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"runtime/debug"
 	"testing"
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/faulttest"
+	"github.com/liustack/slowjs/internal/faulttest"
 )
 
 // On the C engine the bytes of a SharedBytecode are a read-only mapping that

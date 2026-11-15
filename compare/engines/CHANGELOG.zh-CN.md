@@ -2,6 +2,16 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-15：行叫 liustack-slowjs
+
+- 模块又叫 `github.com/liustack/slowjs` 了，所以它的行叫 `liustack-slowjs`，
+  在结果、报告、`TIFA_ONLY`、`-engines` 和 `tifa/run.sh` 的文件名里都是。
+  模块还叫 `github.com/liustack/quickjs` 时（v0.30.0 到 v0.30.7）生成的结果文件把这一行叫
+  `liustack-quickjs`，2026-10-24 到 2026-10-29 的叫 `slowjs`。`-report`
+  三种名字都读。保存下来的结果文件不改写，所以用 `-add` 或 `-merge` 往其中一个里加，会让这个引擎有两行，
+  请新开一次运行。`cmd/pages` 只按新名字读 `tifa/run.sh` 的原始文件，所以 v0.30.7 及更早的原始运行，
+  请用那个版本的工具生成页面表。
+
 ## 2026-11-14：moejs 渲染页面，去掉 test262
 
 - moejs 现在能渲染全部 25 个页面。包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，新的 `native/moejs-shim.js` 给它一个从不回调的注册表（没有承诺会调用回调，所以这是合法的实现）。HTML 和我们的在 25 个页面上逐字节相同。moejs 在单独的一个会话里计时，同一会话里重新跑了 liustack-quickjs，比值相对那次运行（[2026-11-14-v0.30.7-gcp-pages-moejs](results/2026-11-14-v0.30.7-gcp-pages-moejs.md)）。

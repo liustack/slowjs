@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // blockCalls are long calls that hold a copy of their text, in a block
@@ -56,7 +56,7 @@ func TestLongCallsUseBlocks(t *testing.T) {
 	for _, c := range blockCalls {
 		t.Run(c.name, func(t *testing.T) {
 			held := hostmem.Blocks()
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -103,7 +103,7 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 				if err := vm.SetEvalTimeout(time.Duration(f * float64(whole))); err != nil {
 					t.Fatal(err)
 				}
-				_, err := vm.Eval(c.call, quickjs.EvalGlobal)
+				_, err := vm.Eval(c.call, slowjs.EvalGlobal)
 				if err := vm.SetEvalTimeout(0); err != nil {
 					t.Fatal(err)
 				}
@@ -131,7 +131,7 @@ func TestStoppedCallsGiveBlocks(t *testing.T) {
 // needs its room gets it, and the block goes back to the OS.
 func TestKeptBlockWithinLimit(t *testing.T) {
 	const n = 4 << 20
-	call := func(vm *quickjs.VM) (kept, blocks int64) {
+	call := func(vm *slowjs.VM) (kept, blocks int64) {
 		t.Helper()
 		held, before := hostmem.Blocks(), hostmem.Kept()
 		eval(t, vm, `c.compare(a, b)`)

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -38,7 +38,7 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "github.com/liustack/quickjs/internal/rvgen/v1"
+	v1 "github.com/liustack/slowjs/internal/rvgen/v1"
 )
 
 // the kinds of a transcript (rvdiff.c), in order

@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl"
 )
 
 // Valid is ECMA-402's IsValidDuration: whole numbers of one sign, the

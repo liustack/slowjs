@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -35,11 +35,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/liustack/quickjs"
-	qjsfmt "github.com/liustack/quickjs/fmt"
-	"github.com/liustack/quickjs/intl"
-	"github.com/liustack/quickjs/temporal"
-	"github.com/liustack/quickjs/url"
+	"github.com/liustack/slowjs"
+	qjsfmt "github.com/liustack/slowjs/fmt"
+	"github.com/liustack/slowjs/intl"
+	"github.com/liustack/slowjs/temporal"
+	"github.com/liustack/slowjs/url"
 )
 
 // The exit codes, in docs/command.md.
@@ -186,30 +186,30 @@ var out = [3]*bufio.Writer{
 // write is write(fd, piece, last): it writes piece, a string of at most
 // 65,536 UTF-16 units, to stdout (1) or stderr (2), and flushes after
 // the last piece of a line. A write error ends the run as an exception.
-var write = quickjs.NewBuiltin("write", 3, func(a quickjs.Args) (quickjs.Value, error) {
+var write = slowjs.NewBuiltin("write", 3, func(a slowjs.Args) (slowjs.Value, error) {
 	fd, _ := a.Number(0)
 	s, ok := a.String(1)
 	if !ok {
 		// Out of memory or a stop of the call, which ends it whatever
 		// is returned.
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}
 	last, _ := a.Bool(2)
 	w := out[int(fd)]
 	if fd == 2 {
 		if err := out[1].Flush(); err != nil {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 	}
 	if _, err := w.WriteString(s); err != nil {
-		return quickjs.UndefinedValue, err
+		return slowjs.UndefinedValue, err
 	}
 	if last {
 		if err := w.Flush(); err != nil {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 	}
-	return quickjs.UndefinedValue, nil
+	return slowjs.UndefinedValue, nil
 })
 
 // setup defines print, console and scriptArgs. A line is cut into pieces of
@@ -252,7 +252,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		out[1].Flush()
 		out[2].Flush()
 	}()
-	vm, err := quickjs.NewVM()
+	vm, err := slowjs.NewVM()
 	if err != nil {
 		return failed(err, exitException)
 	}
@@ -290,8 +290,8 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		err = arm()
 	}
 	if err == nil {
-		var v quickjs.Value
-		if v, err = vm.EvalFile(name, src, quickjs.EvalGlobal); err == nil {
+		var v slowjs.Value
+		if v, err = vm.EvalFile(name, src, slowjs.EvalGlobal); err == nil {
 			v.Free()
 		}
 	}
@@ -305,7 +305,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 		return exitOK
 	}
 
-	var e *quickjs.Error
+	var e *slowjs.Error
 	switch {
 	case errors.As(err, &e) && e.Interrupted:
 		return failed(fmt.Errorf("the run did not end within its timeout of %v (--timeout)", timeout), exitTimeout)
@@ -326,7 +326,7 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 // register sets the VM up as tifa's renderer does, after the eval timeout:
 // the call depth, then URL, Intl and Temporal in that order, then fmt,
 // which tifa does not have.
-func register(vm *quickjs.VM) error {
+func register(vm *slowjs.VM) error {
 	vm.SetMaxStackSize(stackDepth)
 	err := url.Register(vm)
 	if err == nil {
@@ -342,8 +342,8 @@ func register(vm *quickjs.VM) error {
 }
 
 // define runs setup with the write Builtin and the script arguments.
-func define(vm *quickjs.VM, argsJSON string) error {
-	f, err := vm.EvalValue(setup, quickjs.EvalGlobal)
+func define(vm *slowjs.VM, argsJSON string) error {
+	f, err := vm.EvalValue(setup, slowjs.EvalGlobal)
 	if err != nil {
 		return err
 	}
@@ -353,7 +353,7 @@ func define(vm *quickjs.VM, argsJSON string) error {
 		return err
 	}
 	defer w.Free()
-	r, err := f.CallValue(quickjs.UndefinedValue, w, argsJSON)
+	r, err := f.CallValue(slowjs.UndefinedValue, w, argsJSON)
 	if err == nil {
 		r.Free()
 	}

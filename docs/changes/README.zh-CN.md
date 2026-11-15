@@ -1,5 +1,5 @@
 ---
-summary: 'liustack/quickjs 对 QuickJS 的 C 树和 Go API 所做的全部改动的索引，按领域分组：每项改动一行，写明它在哪个版本发布，以及哪份文档说明了它做什么、为什么安全、收益是什么、由哪些测试检查'
+summary: 'liustack/slowjs 对 QuickJS 的 C 树和 Go API 所做的全部改动的索引，按领域分组：每项改动一行，写明它在哪个版本发布，以及哪份文档说明了它做什么、为什么安全、收益是什么、由哪些测试检查'
 read_when:
   - 想知道某项对引擎的改动为什么安全、代价是什么、收益是什么
   - 改动同一段代码之前，想找到相关改动的文档
@@ -12,7 +12,7 @@ read_when:
 
 引擎是 QuickJS 的 2026-06-04 版（提交 `3d5e064`，C 代码），上面加了下面这些改动。下面每份文档讲一个领域。对每项改动，它们说明改动做什么、为什么安全、收益或代价是什么以及怎么测的，还有哪些测试检查它。[upgrading.md](../upgrading.zh-CN.md) 写了怎样接入新的 QuickJS 版本，[CHANGELOG.md](../../CHANGELOG.zh-CN.md) 写了每个版本对用户的改变。
 
-引擎是 `engine/` 里的 C，由生成器编译成 Go 汇编。对它的改动就是对 C 的改动，和生成的文件一起提交（见 [AGENTS.md](../../AGENTS.md)）。到 v0.28 为止的版本，跑的是 ccgo 翻译成 Go 的 QuickJS，liustack/quickjs 的改动由一个现在已经没有的工具写进那份 Go。提到这些版本的条目在这里保留了改动的 C 形式，它们的计时是在那个引擎上测的。[performance.md](../performance.zh-CN.md) 写了 C 引擎的速度。
+引擎是 `engine/` 里的 C，由生成器编译成 Go 汇编。对它的改动就是对 C 的改动，和生成的文件一起提交（见 [AGENTS.md](../../AGENTS.md)）。到 v0.28 为止的版本，跑的是 ccgo 翻译成 Go 的 QuickJS，liustack/slowjs 的改动由一个现在已经没有的工具写进那份 Go。提到这些版本的条目在这里保留了改动的 C 形式，它们的计时是在那个引擎上测的。[performance.md](../performance.zh-CN.md) 写了 C 引擎的速度。
 
 ## C 引擎
 

@@ -16,8 +16,8 @@ read_when:
 ## 版本
 
 - 发布的是补丁版本：v0.30.0、v0.30.1，依此类推。一个修复或一次提速，哪怕很大，也是下一个补丁版本。删除或改变公开 API 的版本是下一个次版本，v0.27.0 就是这样，它删除了模块加载器。别的情况都不要升到新的次版本：那由仓库的所有者决定。
-- 模块的一个版本就是一个标签，用户用 `go get github.com/liustack/quickjs@<version>` 获取。从 v0.31.0 起，推送标签还会为它生成一个 GitHub release，里面只放 `slowjs` 命令的预编译二进制（[command.md](command.zh-CN.md)）：见[发布任务](#发布任务)。
-- 从 v0.28.0 到 v0.29.11 的版本在 `github.com/liustack/slowjs`，其余都在 `github.com/liustack/quickjs`。Go 模块代理会继续在那里提供旧版本，v0.29.11 的 `go.mod` 把该模块标为已弃用，并写出了新路径。改名的经过见 [upstream.md](upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)。
+- 模块的一个版本就是一个标签，用户用 `go get github.com/liustack/slowjs@<version>` 获取。从 v0.31.0 起，推送标签还会为它生成一个 GitHub release，里面只放 `slowjs` 命令的预编译二进制（[command.md](command.zh-CN.md)）：见[发布任务](#发布任务)。
+- v0.27.3 及之前和 v0.30.0 到 v0.30.7 的版本声明的模块路径是 `github.com/liustack/quickjs`，其余是 `github.com/liustack/slowjs`。Go 模块代理会继续在旧路径下提供旧版本，v0.31.0 的 `go.mod` 撤回了声明旧路径的 v0.30.0 到 v0.30.7。改名的经过见 [upstream.md](upstream.zh-CN.md#从-githubcomliustackquickjs-换过来)。
 
 ## 发布前
 
@@ -74,7 +74,7 @@ git commit -m "build(pgo): train the profile again"
    git push origin <version>
    ```
 
-3. 检查代理上有了它：`GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@<version>`。
+3. 检查代理上有了它：`GOPROXY=https://proxy.golang.org go list -m github.com/liustack/slowjs@<version>`。
 
 4. 检查发布任务为这个标签生成了 GitHub release（`gh run list --workflow release.yml`，再看 release 页面）：五个压缩包和 `checksums.txt`。
 
@@ -124,8 +124,8 @@ git commit -m "build(pgo): train the profile again"
 
 ### 升级 tifa
 
-liustack/quickjs 是为 tifa 而存在的，所以每个版本接下来都要进 tifa：
+liustack/slowjs 是为 tifa 而存在的，所以每个版本接下来都要进 tifa：
 
-1. 在 tifa 里运行 `go get github.com/liustack/quickjs@<version>` 和 `go mod tidy`。
+1. 在 tifa 里运行 `go get github.com/liustack/slowjs@<version>` 和 `go mod tidy`。
 2. 把每个改动合并之前测得的数字，放进 tifa 的 docs/performance.md 和它的更新记录。不要把整个版本再测一遍：每个改动都已经对着 main 测过了。只有在所有者要求，或者这个版本的两个改动可能互相影响时，才在 tifa 的页面上测（[Measuring in tifa](performance.zh-CN.md#在-tifa-里测量)）。
 3. 运行 tifa 的检查。SSR 浸泡测试（`TIFA_SSR_SOAK=1`）也覆盖内存耗尽和 VM 复用。

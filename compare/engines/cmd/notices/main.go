@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -38,7 +38,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/liustack/quickjs/compare/engines/internal/pytext"
+	"github.com/liustack/slowjs/compare/engines/internal/pytext"
 )
 
 var apps = []struct{ name, dir string }{{"bench", "test/apps/bench"}, {"mui", "test/apps/mui"}, {"shop", "examples/shop"}}
@@ -339,7 +339,7 @@ func generate(root, here string) (string, error) {
 		pending = append(pending, deps...)
 	}
 
-	lines := []string{"<!-- Copyright (c) 2026 The liustack/quickjs Authors. -->",
+	lines := []string{"<!-- Copyright (c) 2026 The liustack/slowjs Authors. -->",
 		"<!-- SPDX-License-Identifier: MIT -->",
 		"<!-- The generator and inventory are MIT under LICENSE-MIT at the repository root. -->",
 		"<!-- The copied third-party notices below retain their own terms. -->", "",

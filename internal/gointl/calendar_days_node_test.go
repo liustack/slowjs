@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl"
 )
 
 // calendarDayGaps are the calendars testdata/calendar_days_node.txt.gz holds

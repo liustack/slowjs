@@ -6,7 +6,7 @@ labels: bug
 assignees: ''
 ---
 
-A security problem (memory outside the VM, a crash of the Go process, a limit a script got past) goes in a [private report](https://github.com/liustack/quickjs/security/advisories/new), not here.
+A security problem (memory outside the VM, a crash of the Go process, a limit a script got past) goes in a [private report](https://github.com/liustack/slowjs/security/advisories/new), not here.
 
 ## What happened
 
@@ -14,7 +14,7 @@ A clear description of the problem.
 
 ## The script that shows it
 
-A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/command.md](https://github.com/liustack/quickjs/blob/main/docs/command.md).
+A JavaScript file, cut down as far as it still shows the problem, and the exact command you ran it with. `slowjs` runs a file in the engine, set up as tifa sets it up, with no Go to write: take it from the release, see [docs/command.md](https://github.com/liustack/slowjs/blob/main/docs/command.md).
 
 ```js
 ...
@@ -27,9 +27,9 @@ slowjs repro.js
 For a problem of the Go API (a call from Go, a Value, a Builtin, a limit set from Go), give the Go program instead, cut down the same way.
 
 ```go
-vm, _ := quickjs.NewVM()
+vm, _ := slowjs.NewVM()
 defer vm.Close()
-v, err := vm.Eval(`...`, quickjs.EvalGlobal)
+v, err := vm.Eval(`...`, slowjs.EvalGlobal)
 ```
 
 ## The full output
@@ -43,7 +43,7 @@ Paste the complete output, not a paraphrase: what `slowjs` printed and its exit 
 ## Environment
 
 - `slowjs --version`:
-- For a Go program instead: the version (`go list -m github.com/liustack/quickjs`), `go version`, and the packages registered on the VM (`intl`, `temporal`, `url`, `fmt`):
+- For a Go program instead: the version (`go list -m github.com/liustack/slowjs`), `go version`, and the packages registered on the VM (`intl`, `temporal`, `url`, `fmt`):
 - OS and CPU model:
 
 ## Expected

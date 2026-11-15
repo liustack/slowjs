@@ -1,6 +1,6 @@
 package temporal
 
-import intl "github.com/liustack/quickjs/internal/gointl"
+import intl "github.com/liustack/slowjs/internal/gointl"
 
 // Rounding and totalling durations relative to a date, as temporal_rs
 // 0.2.3's normalized duration module does it.

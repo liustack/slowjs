@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -18,7 +18,7 @@ import (
 
 // errCycle is the error of a result of a Go function that contains itself,
 // which no conversion could finish. encoding/json refuses such a value too.
-var errCycle = errors.New("quickjs: a result that contains itself")
+var errCycle = errors.New("slowjs: a result that contains itself")
 
 // The results of a Go function, of RegisterFunc or RegisterHostFunc, hand
 // the call the references they hold, whether they convert or not:
@@ -392,7 +392,7 @@ func (w *refWalk) content(v reflect.Value, kind reflect.Kind, inline bool) int32
 		}
 		return w.genericMap(v)
 	}
-	panic(fmt.Sprintf("quickjs: internal error: the walk of a result met %v", v.Type()))
+	panic(fmt.Sprintf("slowjs: internal error: the walk of a result met %v", v.Type()))
 }
 
 // mapKey is how a key of a map of type t becomes the name of a property, or

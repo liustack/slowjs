@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE-GO file.
 //
-// Changed by the liustack/quickjs Authors in 2026: doPrintf, doPrint and
+// Changed by the liustack/slowjs Authors in 2026: doPrintf, doPrint and
 // doPrintln of Go's fmt/print.go, and fmtS, fmtQ, fmtSbx, truncateString,
 // padString and writePadding of fmt/format.go, and Int.Format of
 // math/big/intconv.go, made to write the output of a call a piece at a
 // time, with a read of vmhook.Stop between pieces, and to hand each verb on
 // an argument that is not long to Go's fmt itself.
 
-package fmt // import "github.com/liustack/quickjs/fmt"
+package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
 	"bytes"
@@ -23,9 +23,9 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/hostmem"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // Go's fmt makes the whole output of a call before it returns, with no
@@ -85,7 +85,7 @@ type flags struct {
 
 // A printer makes the output of one call.
 type printer struct {
-	vm *quickjs.VM
+	vm *slowjs.VM
 	// buf is the output, and give gives it back (hostmem.Take).
 	buf  []byte
 	give func()
@@ -154,7 +154,7 @@ func (p *printer) write(s string) bool {
 // while the OS hands over its pages, and the pages of a block come as the
 // output is written, a piece at a time. They are false, with no output and
 // nothing to give back, when the call is to end.
-func sprintf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), bool) {
+func sprintf(vm *slowjs.VM, n int64, format string, a []any) (string, func(), bool) {
 	p, ok := newPrinter(vm, n)
 	if !ok {
 		return "", func() {}, false
@@ -163,7 +163,7 @@ func sprintf(vm *quickjs.VM, n int64, format string, a []any) (string, func(), b
 	return p.result()
 }
 
-func sprint(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
+func sprint(vm *slowjs.VM, n int64, a []any) (string, func(), bool) {
 	p, ok := newPrinter(vm, n)
 	if !ok {
 		return "", func() {}, false
@@ -172,7 +172,7 @@ func sprint(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
 	return p.result()
 }
 
-func sprintln(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
+func sprintln(vm *slowjs.VM, n int64, a []any) (string, func(), bool) {
 	p, ok := newPrinter(vm, n)
 	if !ok {
 		return "", func() {}, false
@@ -183,7 +183,7 @@ func sprintln(vm *quickjs.VM, n int64, a []any) (string, func(), bool) {
 
 // newPrinter is a printer with an output of n bytes. It is false, with the
 // out of memory error thrown, when the OS refuses the memory.
-func newPrinter(vm *quickjs.VM, n int64) (*printer, bool) {
+func newPrinter(vm *slowjs.VM, n int64) (*printer, bool) {
 	if vm == nil || !hostmem.Mapped[byte](int(n)) {
 		buf, give, err := hostmem.Take[byte](int(n))
 		if err != nil {
@@ -549,7 +549,7 @@ func (p *printer) printArg(spec string, specArgs []any, arg any, verb rune, f fl
 			p.longString(x, verb, f)
 			return
 		}
-	case *quickjs.Object:
+	case *slowjs.Object:
 		if verb != 'T' && verb != 'p' {
 			if j := x.String(); len(j) > longArg {
 				p.longObject(j, verb, f)
@@ -655,9 +655,9 @@ func (p *printer) badVerb(verb rune, s string, f flags) {
 func (p *printer) longObject(j string, verb rune, f flags) {
 	switch {
 	case verb == 'w':
-		p.buf = append(p.buf, "%!w(*quickjs.Object=&"...)
+		p.buf = append(p.buf, "%!w(*slowjs.Object=&"...)
 		if f.sharpV {
-			p.buf = append(p.buf, "quickjs.Object"...)
+			p.buf = append(p.buf, "slowjs.Object"...)
 		}
 		p.buf = append(p.buf, '{')
 		if f.plusV || f.sharpV {
@@ -670,7 +670,7 @@ func (p *printer) longObject(j string, verb rune, f flags) {
 		}
 		p.buf = append(p.buf, "})"...)
 	case verb == 'v' && f.sharpV:
-		p.buf = append(p.buf, "&quickjs.Object{json:"...)
+		p.buf = append(p.buf, "&slowjs.Object{json:"...)
 		p.fmtQ(j, f)
 		p.buf = append(p.buf, '}')
 	case verb == 'v', verb == 's', verb == 'x', verb == 'X', verb == 'q':

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Zones is the time zones Temporal takes, as V8's provider has them:

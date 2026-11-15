@@ -1,5 +1,5 @@
 ---
-summary: 'liustack/quickjs 和 Go 的其他 JavaScript 引擎以及三个原生引擎比起来怎样，全部作为解释器来比：tifa 页面的渲染时间和 V8 套件得分，每个引擎用什么运行，以及怎么重新运行这个对比'
+summary: 'liustack/slowjs 和 Go 的其他 JavaScript 引擎以及三个原生引擎比起来怎样，全部作为解释器来比：tifa 页面的渲染时间和 V8 套件得分，每个引擎用什么运行，以及怎么重新运行这个对比'
 read_when:
   - 对外说这个引擎和其他 Go 引擎、C QuickJS、Hermes 或 Node 比起来怎样
   - 为一项工作选 Go 的 JavaScript 引擎
@@ -11,7 +11,7 @@ read_when:
 
 [English](benchmarks.md) · 简体中文
 
-2026-11-14 的运行：liustack/quickjs v0.30.7 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-14-v0.30.7-gcp-pages`、`-pages-moejs` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。这次运行是以 v0.30.7 做的，模块路径是 `github.com/liustack/quickjs`。
+2026-11-14 的运行：liustack/quickjs v0.30.7 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-14-v0.30.7-gcp-pages`、`-pages-moejs` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。这次运行是以 v0.30.7 做的，当时模块叫 `github.com/liustack/quickjs`（v0.30.0 到 v0.30.7），所以这一页写的是 liustack/quickjs，行叫 `liustack-quickjs`。从 v0.31.0 起模块是 `github.com/liustack/slowjs`，新的运行把这一行叫 `liustack-slowjs`。
 
 ## 比什么
 

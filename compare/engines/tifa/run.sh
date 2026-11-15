@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
@@ -68,7 +68,7 @@ go_runs() {
   run "$out/$2-native" "${b[@]}" -bundle $B/bundles/shop.js -inputs $SHOP "${pre[@]}" -warm 20 -n 100 -tag -native
   run "$out/$2-mui-native" "${b[@]}" -bundle $B/bundles/mui.js -inputs $MUI "${pre[@]}" -warm 20 -n 100 -tag -mui-native
 }
-go_runs liustack liustack-quickjs ""            # its own Intl, URL and Temporal (packages intl, temporal, url)
+go_runs liustack liustack-slowjs ""            # its own Intl, URL and Temporal (packages intl, temporal, url)
 go_runs goquickjs go-quickjs-interp $CORE
 go_runs moejs moejs ../native/moejs-shim.js,$CORE   # moejs lacks FinalizationRegistry: native/moejs-shim.js
 # native_runs <engine name> <driver command...>: no Intl of their own, so the

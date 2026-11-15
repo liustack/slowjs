@@ -20,11 +20,11 @@ The code is `cmd/slowjs`.
 
 ## Get it
 
-Download the archive of your system from the [latest release](https://github.com/liustack/quickjs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `slowjs-linux-amd64.tar.gz`, `slowjs-linux-arm64.tar.gz`, `slowjs-darwin-amd64.tar.gz` (macOS, Intel), `slowjs-darwin-arm64.tar.gz` (macOS, Apple silicon) and `slowjs-windows-amd64.zip`.
+Download the archive of your system from the [latest release](https://github.com/liustack/slowjs/releases/latest), check it against `checksums.txt` and unpack it. The archives are named after the target as Go names it: `slowjs-linux-amd64.tar.gz`, `slowjs-linux-arm64.tar.gz`, `slowjs-darwin-amd64.tar.gz` (macOS, Intel), `slowjs-darwin-arm64.tar.gz` (macOS, Apple silicon) and `slowjs-windows-amd64.zip`.
 
 ```sh
-curl -LO https://github.com/liustack/quickjs/releases/latest/download/slowjs-linux-amd64.tar.gz
-curl -LO https://github.com/liustack/quickjs/releases/latest/download/checksums.txt
+curl -LO https://github.com/liustack/slowjs/releases/latest/download/slowjs-linux-amd64.tar.gz
+curl -LO https://github.com/liustack/slowjs/releases/latest/download/checksums.txt
 sha256sum -c --ignore-missing checksums.txt
 tar -xzf slowjs-linux-amd64.tar.gz
 ./slowjs-linux-amd64/slowjs --version

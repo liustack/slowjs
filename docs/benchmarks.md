@@ -1,5 +1,5 @@
 ---
-summary: 'How liustack/quickjs compares with the other JavaScript engines for Go and with three native engines, all as interpreters: the render time of tifa pages and the V8 suite score, what each engine runs with, and how to run the comparison again'
+summary: 'How liustack/slowjs compares with the other JavaScript engines for Go and with three native engines, all as interpreters: the render time of tifa pages and the V8 suite score, what each engine runs with, and how to run the comparison again'
 read_when:
   - Saying anything in public about how this engine compares with other Go engines, C QuickJS, Hermes or Node
   - Choosing a JavaScript engine for Go for a job
@@ -11,7 +11,7 @@ read_when:
 
 English · [简体中文](benchmarks.zh-CN.md)
 
-Run of 2026-11-14: liustack/quickjs v0.30.7 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-14-v0.30.7-gcp-pages`, `-pages-moejs` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another. The run was made as v0.30.7, under the module path `github.com/liustack/quickjs`.
+Run of 2026-11-14: liustack/quickjs v0.30.7 against two other engines for Go and three native engines, on a GCP t2d-standard-4 (AMD EPYC 7B13, four cores without SMT), Linux 7.0, Go 1.27.4. Every timed process ran on one core with the whole machine held for it, GOMAXPROCS=1. The files of the run are in [`compare/engines/results/`](../compare/engines/results/) (`2026-11-14-v0.30.7-gcp-pages`, `-pages-moejs` and `-v8`, each as `.md` and `.json`), and [`compare/engines/README.md`](../compare/engines/README.md) says how to run it again. The numbers are from this one machine: do not compare them with numbers from another. The run was made as v0.30.7, while the module was `github.com/liustack/quickjs` (v0.30.0 to v0.30.7), so this page says liustack/quickjs and names its row `liustack-quickjs`. From v0.31.0 the module is `github.com/liustack/slowjs`, and a new run names the row `liustack-slowjs`.
 
 ## What is compared
 

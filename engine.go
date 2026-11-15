@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build ((linux || darwin) && (amd64 || arm64)) || (windows && amd64)
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 // The C engine of internal/cengine, as the rest of the package sees it: the
 // engine's generated functions, with the names the rest of the package uses. A
@@ -22,8 +22,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/cengine"
-	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 // jsValue is a JSValue of the engine: its union and its tag, a word each.
@@ -1248,7 +1248,7 @@ func (m *VM) newStringChars(n int, wide bool) (r jsValue, p uintptr) {
 		return r, p
 	}
 	if n < 0 || n > stringLenMax {
-		panic("quickjs: newStringChars of a length the engine cannot hold")
+		panic("slowjs: newStringChars of a length the engine cannot hold")
 	}
 	w := uintptr(0)
 	if wide {
@@ -1336,7 +1336,7 @@ func (m *VM) jsThrowError(kind int, msg string) (r jsValue) {
 		return r
 	}
 	if kind < 0 || kind >= len(errorKinds) {
-		panic(fmt.Sprintf("quickjs: an error of kind %d", kind))
+		panic(fmt.Sprintf("slowjs: an error of kind %d", kind))
 	}
 	msg = validUTF8(msg)
 	if len(msg) > maxErrorMessage {

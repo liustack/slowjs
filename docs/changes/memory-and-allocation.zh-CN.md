@@ -11,7 +11,7 @@ read_when:
 
 [English](memory-and-allocation.md) · 简体中文
 
-引擎有自己的分配器，前面有一层已释放小块的缓存，见 [allocator.md](../allocator.zh-CN.md)。本页写的是 liustack/quickjs 对同一个程序里多个 VM 如何共享内存、以及 VM 何时回收所做的改动。
+引擎有自己的分配器，前面有一层已释放小块的缓存，见 [allocator.md](../allocator.zh-CN.md)。本页写的是 liustack/slowjs 对同一个程序里多个 VM 如何共享内存、以及 VM 何时回收所做的改动。
 
 ## 所有 VM 共用一份源码文本和行表
 

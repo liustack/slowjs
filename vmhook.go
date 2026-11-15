@@ -1,15 +1,15 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/hostmem"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // The functions of internal/vmhook, with which the Go functions of packages
@@ -28,7 +28,7 @@ func init() {
 func hookVM(vm any) *VM {
 	m := vm.(*VM)
 	if m.host == 0 {
-		panic("quickjs: a function of internal/vmhook outside a Go function called from javascript")
+		panic("slowjs: a function of internal/vmhook outside a Go function called from javascript")
 	}
 	return m
 }

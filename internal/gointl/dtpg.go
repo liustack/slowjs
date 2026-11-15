@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/datedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/datedata"
 )
 
 // ICU's date-time pattern generator, ported from dtptngen.cpp in ICU 78.3.

@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"slices"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/eastasian"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/eastasian"
 )
 
 // An ISODate is a date in the proleptic Gregorian calendar, as Temporal's

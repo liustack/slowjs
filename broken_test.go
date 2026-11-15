@@ -1,16 +1,16 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"runtime"
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs/internal/cengine"
+	"github.com/liustack/slowjs/internal/cengine"
 )
 
 // A panic or a Goexit that goes up through the engine's frames leaves the VM

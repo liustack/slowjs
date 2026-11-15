@@ -136,7 +136,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 - `engine/pgo/train.sh` 训练画像。它按生成器编译引擎的方式构建宿主，所以画像里每个函数的哈希和生成器看到的一致。`engine/pgo/loops.js` 跑到的、页面留成冷的而微基准跑到的路径不足 95%，或者循环的某一部分不再走到它的函数时，它就停下（`engine/pgo/cover.awk`）。
 - `TestInlineRemarks`、`TestStripCGProfile`、`TestProfileNames`、`TestUnprofiledFunctions`、`TestStaleWarnings` 和 `TestMisexpectLines`（`internal/goasm/gen/pgo_test.go`）检查第一遍的记录、模块标志、画像里的名字、哪些函数没有画像，以及警告。
-- `TestPassPollsProfile`（`internal/goasm/gen/poll_test.go`，需要 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS`）检查轮询 pass 选计数器位置的方式和没有画像时相同，画像里某个权重的数字恰好和 pass 自己的罕见分支相同时也一样。
+- `TestPassPollsProfile`（`internal/goasm/gen/poll_test.go`，需要 `SLOWJS_LLVM` 和 `SLOWJS_SHADOW_PASS`）检查轮询 pass 选计数器位置的方式和没有画像时相同，画像里某个权重的数字恰好和 pass 自己的罕见分支相同时也一样。
 - `TestLowerARM64EngineLRTuplePaths`（`internal/goasm/gen`）检查 arm64 上扩展后的证明。
 - `scripts/check-gen-test.sh` 检查 `scripts/check-gen.sh` 总会显示画像的行。它在 `scripts/check.sh` 的 `scripts` 步骤里运行。
 - `compare/engines` 里的 `go run ./cmd/notices` 为训练用 bundle 里的包做声明文件（`TestGeneratePages`）。

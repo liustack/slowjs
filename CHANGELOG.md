@@ -1,8 +1,12 @@
 # Changelog
 
-What changed in `github.com/liustack/quickjs` (its name up to v0.27.3 and again from v0.30.0, `github.com/liustack/slowjs` from v0.28.0 to v0.29.11) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise.
+What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 and again from v0.31.0, `github.com/liustack/quickjs` up to v0.27.3 and from v0.30.0 to v0.30.7) that programs using it can see. Each release is tagged on `main`: a patch version, or the next minor version when it removes or changes a public API. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). [Fork changes](docs/changes/README.md) has the details of each change, and [Performance](docs/performance.md) how each speedup was measured. Times are for a server render of a page of tifa's example shop, on linux/amd64 (AMD EPYC) unless an entry says otherwise. Entries of v0.30.0 to v0.30.7 say `github.com/liustack/quickjs`, the name the module had then.
 
 ## [Unreleased]
+
+### Changed
+
+- **Breaking:** the module is `github.com/liustack/slowjs` again, the name of v0.28.0 to v0.29.11. From v0.30.0 to v0.30.7 it was `github.com/liustack/quickjs`, and those versions stay at that path. To move, change the import paths (`github.com/liustack/quickjs/intl` becomes `github.com/liustack/slowjs/intl`, and so on), write `slowjs.` where you wrote `quickjs.`, and pass the build tags under their new names: `quickjs_anygo` becomes `slowjs_anygo`, `quickjs_intl_nonames` becomes `slowjs_intl_nonames` and `quickjs_intl_nocjdict` becomes `slowjs_intl_nocjdict`. A build that still passes an old tag loses its effect without an error. The errors and panics of the root package start with `slowjs:` where they started with `quickjs:`, and the `Symbol.for` keys with which `intl`, `temporal` and `url` mark a VM name the new path. The scripts of the repository read `SLOWJS_*` where they read `QUICKJS_*`. The C engine is still QuickJS. The `go.mod` retracts v0.30.0 to v0.30.7, which declare the old path ([upstream.md](docs/upstream.md#moving-from-githubcomliustackquickjs)).
 
 ## [v0.30.7] - 2026-11-14
 
@@ -704,7 +708,7 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.7...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.30.7...main
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5

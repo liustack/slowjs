@@ -11,7 +11,7 @@ read_when:
 
 [English](api.md) · 简体中文
 
-API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外还有下面这些。每一条都链到一份文档，讲它为什么安全、怎么测的。v0.28.0 到 v0.29.11 发布时的模块路径是 `github.com/liustack/slowjs`。
+API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外还有下面这些。每一条都链到一份文档，讲它为什么安全、怎么测的。v0.30.0 到 v0.30.7 发布时的模块路径是 `github.com/liustack/quickjs`。
 
 ## 从 JavaScript 调 Go
 

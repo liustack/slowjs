@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/tzdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/tzdata"
 )
 
 // Time zones as ICU reckons them, which is what Node formats with: the

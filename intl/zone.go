@@ -2,9 +2,9 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
-import gointl "github.com/liustack/quickjs/internal/gointl"
+import gointl "github.com/liustack/slowjs/internal/gointl"
 
 // resolveTimeZone uses the embedded ICU tz pack, never the host's zoneinfo.
 func resolveTimeZone(name string) (string, error) {

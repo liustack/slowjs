@@ -1,8 +1,12 @@
 # 更新记录
 
-记录 `github.com/liustack/quickjs`（v0.27.3 及之前和 v0.30.0 起都叫这个名字，v0.28.0 到 v0.29.11 叫 `github.com/liustack/slowjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。
+记录 `github.com/liustack/slowjs`（v0.28.0 到 v0.29.11 和 v0.31.0 起叫这个名字，v0.27.3 及之前和 v0.30.0 到 v0.30.7 叫 `github.com/liustack/quickjs`）里用它的程序看得到的变化。每个版本的 tag 打在 `main` 上：一般是补丁版本，删掉或改动公开 API 时升次版本号。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。每项改动的细节见 [Fork changes](docs/changes/README.md)，每项提速怎么测的见 [Performance](docs/performance.md)。没有特别说明时，时间指在 linux/amd64（AMD EPYC）上服务端渲染 tifa 示例商店一个页面的耗时。v0.30.0 到 v0.30.7 的条目写的是 `github.com/liustack/quickjs`，那是模块当时的名字。
 
 ## [Unreleased]
+
+### Changed
+
+- **不兼容：** 模块又叫 `github.com/liustack/slowjs` 了，也就是 v0.28.0 到 v0.29.11 的名字。v0.30.0 到 v0.30.7 叫 `github.com/liustack/quickjs`，这些版本留在那个路径上。要迁移，改 import 路径（`github.com/liustack/quickjs/intl` 改成 `github.com/liustack/slowjs/intl`，其余同理），把写 `quickjs.` 的地方写成 `slowjs.`，构建标签换成新名字：`quickjs_anygo` 改成 `slowjs_anygo`，`quickjs_intl_nonames` 改成 `slowjs_intl_nonames`，`quickjs_intl_nocjdict` 改成 `slowjs_intl_nocjdict`。构建时还传旧标签不会报错，只是不再起作用。根包的错误和 panic 信息原来以 `quickjs:` 开头，现在以 `slowjs:` 开头，`intl`、`temporal` 和 `url` 用来标记 VM 的 `Symbol.for` 键也改成新路径。仓库脚本原来读 `QUICKJS_*` 的地方现在读 `SLOWJS_*`。C 引擎仍然是 QuickJS。`go.mod` 撤回了声明旧路径的 v0.30.0 到 v0.30.7（[upstream.md](docs/upstream.zh-CN.md#从-githubcomliustackquickjs-换过来)）。
 
 ## [v0.30.7] - 2026-11-14
 
@@ -704,7 +708,7 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/quickjs/compare/v0.30.7...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.30.7...main
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6
 [v0.30.5]: https://github.com/liustack/quickjs/compare/v0.30.4...v0.30.5

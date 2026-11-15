@@ -60,7 +60,7 @@ go test -count=1 -p 1 .                # about a minute
 | `make check-gen` | 检查提交进仓库的引擎就是现在 `make gen` 的结果，两种架构都查（`check-full` 的一部分） |
 | `make bench ARGS="..."` | `go tool measure bench`：代码位置计时和 callgrind（见[给两个构建计时对比](#给两个构建计时对比)） |
 | `make remote RUN="..."` | 在另一台机器上运行别的 make 目标（见[在另一台机器上](#在另一台机器上)） |
-| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags quickjs_intl_nonames,quickjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 里放的就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的内容（文件相同，解压后的字节相同，不比较压缩后的字节：标准库的 DEFLATE 编码器在不同 Go 版本之间有差别，而 `data.sh pack -check` 在模块支持的每个 Go 上都必须通过），以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
+| `make gointl` | `go test ./...` 不跑的 `internal/gointl` 检查：打包工具的测试（需要 `gointl_walk` 构建标签），不带可选数据包的构建（`-tags slowjs_intl_nonames,slowjs_intl_nocjdict`，在那里和 `intl` 里的 `Intl.DisplayNames` 都要跑），`qjsdata/` 里放的就是 go-intl 的数据加上 `internal/gointl/qjstz` 所指 tz 更新里的时区所得的内容（文件相同，解压后的字节相同，不比较压缩后的字节：标准库的 DEFLATE 编码器在不同 Go 版本之间有差别，而 `data.sh pack -check` 在模块支持的每个 Go 上都必须通过），以及随 go-intl 来的、拿每种语言对照 Node 答案的测试（`data.sh test`，见[下文](#每种语言的测试)）。第一次运行会克隆 go-intl，并下载那个更新和 ICU 的源码，之后再运行不需要网络 |
 | `make benchmark` | `make -C compare benchmark`：`compare/testdata/` 里 QuickJS 的 64 个微基准（goja 或 fastschema/qjs 有 6 个跑不过，所以三个引擎共有的是另外 58 个），每个都在这个引擎、goja 和 fastschema/qjs（wazero 上的 QuickJS）上跑，也就是 QuickJS 自己的测试集 |
 | `make compare-engines` | 在 `compare/engines` 里运行 `go run ./cmd/compare $(ARGS)`：和其他 JavaScript 引擎的对比，见 [benchmarks.md](benchmarks.zh-CN.md)（tifa 页面、V8 套件和 test262，只在解释器之间比），每个引擎在自己的二进制里 |
 | `make cpu`、`make mem` | `make -C compare cpu` 和 `make -C compare mem`：对比基准的 CPU 和内存剖析 |
@@ -77,13 +77,13 @@ go test -count=1 -p 1 .                # about a minute
 `internal/goasm/gen` 里生成器的测试需要 LLVM，没给就跳过（并且仍算通过），所以单独运行 `go test ./internal/goasm/gen` 只检查规则。设置这三个变量就能全部运行：
 
 ```sh
-export QUICKJS_LLVM=$(scripts/llvm-bin.sh)                        # LLVM 22.1.8 bin directory (clang, opt, llc), see [Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)
-export QUICKJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
-export QUICKJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux). llvm@22 of Homebrew has no ld.lld, see below
+export SLOWJS_LLVM=$(scripts/llvm-bin.sh)                        # LLVM 22.1.8 bin directory (clang, opt, llc), see [Linux 和 macOS 上的 LLVM](#linux-和-macos-上的-llvm)
+export SLOWJS_SHADOW_PASS=$PWD/internal/goasm/gen/internal/_shadow.so   # the built pass, made by internal/goasm/gen/proto.sh
+export SLOWJS_LLD=/usr/lib/llvm-22/bin/ld.lld                    # the linker (GNU ld, /usr/bin/ld, also works on linux). llvm@22 of Homebrew has no ld.lld, see below
 go test -p 2 -timeout 30m ./internal/goasm/gen/...
 ```
 
-只设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`QUICKJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。在 Mac 上还有七个测试会跳过，因为它们要在本机运行 linux/amd64 的代码（[见下](#linux-和-macos-上的-llvm)）。
+只设 `SLOWJS_LLVM` 和 `SLOWJS_SHADOW_PASS` 时，需要 `ld.lld` 的测试（`TestVarargsNative`、`TestSampleRuns`、`TestNarrowArgs`）仍然跳过。被跳过的测试会打印 `--- SKIP` 和它要的变量名：相信一次绿色的结果之前，先带 `-v` 运行并找一找。`SLOWJS_QEMU_AARCH64`（可选）指向一个模拟器，让 arm64 的用例能在 amd64 主机上跑。在 Mac 上还有七个测试会跳过，因为它们要在本机运行 linux/amd64 的代码（[见下](#linux-和-macos-上的-llvm)）。
 
 `internal/measure/bench` 里丢弃文件缓存页的测试（`TestDropPages`、`TestDropPagesFailsWhenAPageStays`），在 linux 上 `TMPDIR` 位于 tmpfs 或 ramfs 时会跳过，因为那里的页丢不掉，`/tmp` 是 tmpfs 的机器就是这样。要跑它们，把 `TMPDIR` 设成磁盘上的目录：`TMPDIR=$HOME/tmp go test ./internal/measure/...`。`make check-full` 不跑它们，CI 在 `/tmp` 位于磁盘的机器上跑。
 
@@ -236,8 +236,8 @@ engine/test/build.sh plain && engine/test/out/plain/render bundle=B.js inputs=A.
 go test -race -tags testhooks ./internal/gohost         # VMs by id and by shadow stack, chunks, release and remap, clocks, poll, abort, what is left when the OS refuses
 go test -tags testhooks ./internal/cengine      # scripts on the engine: results, leaks, footprint, release and remap counts, Go heap, the shape cache, Close and New under panics and refusals, polls and Interrupt
 go run ./internal/cengine/cmd/jsrun -n 10 -mem file.js   # one script, timed, on the C engine
-go test -p 1 .                    # the tests of package quickjs on the C engine (linux/amd64, linux/arm64, darwin/arm64)
-go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package quickjs
+go test -p 1 .                    # the tests of package slowjs on the C engine (linux/amd64, linux/arm64, darwin/arm64)
+go run ./internal/cengine/cmd/jsrun -n 10 file.js                      # the same on package slowjs
 go test -run 'TestShadowStack' -v .      # how far up its 32 MiB shadow stack a VM goes at depth limits of 5000 and 10000, and in C recursion
 go test -tags testhooks -run 'TestMapRefused|TestReleaseRefused|TestRemapRefused' .   # the system refuses memory in the middle of a render
 go test -tags testhooks -run TestInterruptStopsLongBuiltins -v ./internal/cengine   # long calls of built-ins stop within a few polls of Interrupt
@@ -259,7 +259,7 @@ go run ./internal/cengine/cmd/gcpause -secs 10      # how long the Go GC waits t
 
 `TestFault*`（`internal/cengine/fault_test.go`，带 `-tags testhooks`）故意让引擎失败，办法是用没有哪个调用者会给的东西去调用它的入口：通过指向未映射内存的指针读和写（0xdead0000，1 << 46，0x4000，在 linux/arm64 上它低于 Go 链接代码的 0x10000，还有一个在 amd64 上不是规范形式的地址），给一个入口一个什么也不剩的影子栈，`abort`，以及一个陷阱（`callOverrideHook` 回答 abort 自己的 `host_call`，这样它之后的代码，即 `host_trap` 的调用，能运行）。每一个都必须是一个能 recover 的 panic，VM 损坏，除 `Close` 外每个入口都返回 `ErrBroken`，宿主在 `Close` 之后不持有内存，goroutine 的 `SetPanicOnFault` 保持原样，并且同一个进程里的新 VM 能运行脚本。它们在 windows 上也运行：在那里，生成的引擎为系统在出错时写到栈指针下面的 CPU 状态留出了空间，其他在 Go 代码里故意制造错误的测试在错误之前紧接着调用 `faulttest.Room`。只有 `TestRegistry`（`internal/gohost`）里错误发生在 `ByStack` 内部的两个用例在 windows 上跳过（`faulttest.Unsafe`，[docs/changes/c-engine.md](changes/c-engine.zh-CN.md#windows-上给故障留的空间)），因为那里没法留出空间。`TestCallbacksMakeRoom` 要求生成代码调用的每个宿主回调最后都再留一次空间，`TestRoomCheck`、`TestRoomCheckAssembles` 和 `TestPostLinkFormats` 里 windows 的用例（`internal/goasm/gen`）检查生成器写的空间检查、windows 的汇编器接受它，以及链接后的检查拒绝没有它的二进制。`TestFaultsAmongVMs` 在 4 个各自在自己的 VM 上运行脚本的 goroutine 旁边制造 40 个错误。`TestFaultNoSplit` 有两个用例，在没有栈检查的函数里出错（生成器的 NOSPLIT 列表，`noSplitList`），从全新的 goroutine 发起调用，在它们栈的 12 KiB 范围内每隔 8 字节调用一次。引擎列表里的每个函数都是什么也不调用的叶子，所以它的调用者有栈检查，为出错时添加的 `runtime.sigpanic` 调用和它的 morestack 调用留出了空间。每个用例都要求，在 `runtime.Callers` 里，从出错处往上列表中的引擎栈帧恰好就是它指名的那个叶子，每种架构上都是如此。`unicode_to_utf8` 是 Go 汇编器自己标为 NOSPLIT 的叶子，给它一个指向无处的缓冲区，它在自己里面出错。`goasm_chunked_memcpy` 被给了一个指向无处的源，在 `memcpy` 里出错，`memcpy` 是一个寄存器入口的叶子，在有栈检查的 `goasm_chunked_memcpy` 之下。如果引擎的某个改动让其中一个函数调用了别的东西，或者在那里内联了 `memcpy`，用例就会失败，需要另一个叶子。生成器的 `TestSampleRuns/nosplit_fault` 检查一个有 24 层调用链的样本的 NOSPLIT 列表（就是它的两个叶子），从以最小的栈起步的 goroutine，在最底下的叶子里出错，并要求在只有 sigpanic 让栈增长的地方出错。同样的错误，以及一次除以零，也在 proto 包生成的代码上运行（`testdata/fault_test.go.txt`），arm64 也一样：在 linux/amd64 上用 `ARCH=arm64 OUT=internal/goasm/gen/internal/proto-a64 sh internal/goasm/gen/proto.sh` 生成它，把目录复制到 Mac 上，在那里运行 `go test -vet=off`。`TestBigFrames` 找名为 `proto` 的包的栈帧，所以在那里要把目录命名为 `proto`，否则它只因为名字就会失败。`go test -run '^$' -bench 'Enter|EvalTiny' ./internal/cengine` 和 `-bench EnterLeave ./internal/gohost` 给出一次进入的代价，其中包含 `SetPanicOnFault`。
 
-轮询测试（`internal/cengine/poll_test.go`）需要用 `-poll` 生成的引擎，没有它就自己跳过。`TestPollEveryCycle` 运行解释器的紧循环（包括通过 `do while` 向回跳的循环，`continue` 到标签，catch，`finally` 块和 `with`，以及一个 3000 行、没有跳转的函数）和 C 的紧循环（类型化数组，正则，字符串搜索，`repeat`，排序，JSON），以及分配类脚本，分别用默认的间隔和间隔为 1（让每次计数都轮询）：结果必须相同，这说明轮询保住了生成的代码放在寄存器里的东西。`TestGCInTightLoops` 在另一个 goroutine 不断启动回收的同时运行它们，并要求每个脚本的轮询次数不少于它的下限（`gcTightPolls`）：回收要等引擎走到一次轮询，一个不再轮询的 C 循环既会让回收一直等到循环结束，也会让它的脚本低于下限。`TestInterrupt`（带标签 `testhooks`）让每个无限脚本的一次设定的轮询请求停止，并要求在继续运行的部分抛出 `InternalError: interrupted`（栈顶的帧：脚本的循环，或者内置函数），在 `gohost.KillPolls` 次轮询之内，并且 VM 在这之后能运行代码和捕获异常。`TestInterruptOneProc` 在 `GOMAXPROCS=1` 下从另一个 goroutine 调用 `Interrupt`，那个 goroutine 只有在引擎的 goroutine 在轮询处停下时才能运行。`TestKill` 杀掉一个没有及时读标志的脚本，宽限期分别为 30 ms 和 0：得到 `ErrKilled`，VM 损坏，`SetPanicOnFault` 保持原样，新的 VM 能运行。`TestNoKillBeforeThePolls` 以 0 的宽限期中断每个无限脚本：每个都在 `gohost.KillPolls` 次轮询到来之前以 `InternalError: interrupted` 停下，没有一个被杀。`TestTimeout` 在 VM 的超时时停下一个无限循环，每个 `Eval` 都有完整的超时，并在截止时间之后的宽限期结束时杀掉一个 join。`TestNoKillOutsideScripts` 在 VM 回收的同时不断调用 `Interrupt`，宽限期为 0，每个周期都轮询，什么也没被杀。`TestPollKill`、`TestPollStallNoKill` 和 `TestPollDeadline`（`internal/gohost`）直接调用 `Poll`：杀进程既要有宽限期，也要有轮询，线程停顿超过宽限期但其间没有轮询，不会杀任何东西。生成器的 `TestPassPolls`（`internal/goasm/gen`，需要设 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS`）检查 pass 把计数放在哪里，放在寄存器里还是内存里，并检查 pass 自己的检查会在 `-shadow-poll-fault` 放进去的每个错误上停下：测试从不轮询的计数，没有入口计数的解释器，没有计数的解释器标记，以及放在寄存器里的计数，它在可能轮询的调用之前没有写回，在调用之后没有重新读取，或者在它的循环离开处没有写回。`TestRegvmJumpsCount`（`internal/goasm/gen`，不需要 LLVM）读 `JS_RegvmRun`，也就是 `engine/regvm-run.h` 里它的函数体加上每个操作文件里的处理函数。`pc` 的移动只能是一个常数步长向前，或者一次往回跳时先计数的跳转，或者它列出的几处之一（调用，`RV_CALLOP`、`RV_CALLSOP` 和 `NEW` 先计数，返回，捕获，由 `rv_unwind` 计数，以及紧接着 `goto rv_exception` 之前为了指明出错指令而往回退一步）。不是这样就失败，入口计数不在最前面或者调用不再计数也失败，并检查把其中每一项弄坏的副本都会失败。`unit-white` 检查 `check_polls` 和 `insert_polls`（见下）。
+轮询测试（`internal/cengine/poll_test.go`）需要用 `-poll` 生成的引擎，没有它就自己跳过。`TestPollEveryCycle` 运行解释器的紧循环（包括通过 `do while` 向回跳的循环，`continue` 到标签，catch，`finally` 块和 `with`，以及一个 3000 行、没有跳转的函数）和 C 的紧循环（类型化数组，正则，字符串搜索，`repeat`，排序，JSON），以及分配类脚本，分别用默认的间隔和间隔为 1（让每次计数都轮询）：结果必须相同，这说明轮询保住了生成的代码放在寄存器里的东西。`TestGCInTightLoops` 在另一个 goroutine 不断启动回收的同时运行它们，并要求每个脚本的轮询次数不少于它的下限（`gcTightPolls`）：回收要等引擎走到一次轮询，一个不再轮询的 C 循环既会让回收一直等到循环结束，也会让它的脚本低于下限。`TestInterrupt`（带标签 `testhooks`）让每个无限脚本的一次设定的轮询请求停止，并要求在继续运行的部分抛出 `InternalError: interrupted`（栈顶的帧：脚本的循环，或者内置函数），在 `gohost.KillPolls` 次轮询之内，并且 VM 在这之后能运行代码和捕获异常。`TestInterruptOneProc` 在 `GOMAXPROCS=1` 下从另一个 goroutine 调用 `Interrupt`，那个 goroutine 只有在引擎的 goroutine 在轮询处停下时才能运行。`TestKill` 杀掉一个没有及时读标志的脚本，宽限期分别为 30 ms 和 0：得到 `ErrKilled`，VM 损坏，`SetPanicOnFault` 保持原样，新的 VM 能运行。`TestNoKillBeforeThePolls` 以 0 的宽限期中断每个无限脚本：每个都在 `gohost.KillPolls` 次轮询到来之前以 `InternalError: interrupted` 停下，没有一个被杀。`TestTimeout` 在 VM 的超时时停下一个无限循环，每个 `Eval` 都有完整的超时，并在截止时间之后的宽限期结束时杀掉一个 join。`TestNoKillOutsideScripts` 在 VM 回收的同时不断调用 `Interrupt`，宽限期为 0，每个周期都轮询，什么也没被杀。`TestPollKill`、`TestPollStallNoKill` 和 `TestPollDeadline`（`internal/gohost`）直接调用 `Poll`：杀进程既要有宽限期，也要有轮询，线程停顿超过宽限期但其间没有轮询，不会杀任何东西。生成器的 `TestPassPolls`（`internal/goasm/gen`，需要设 `SLOWJS_LLVM` 和 `SLOWJS_SHADOW_PASS`）检查 pass 把计数放在哪里，放在寄存器里还是内存里，并检查 pass 自己的检查会在 `-shadow-poll-fault` 放进去的每个错误上停下：测试从不轮询的计数，没有入口计数的解释器，没有计数的解释器标记，以及放在寄存器里的计数，它在可能轮询的调用之前没有写回，在调用之后没有重新读取，或者在它的循环离开处没有写回。`TestRegvmJumpsCount`（`internal/goasm/gen`，不需要 LLVM）读 `JS_RegvmRun`，也就是 `engine/regvm-run.h` 里它的函数体加上每个操作文件里的处理函数。`pc` 的移动只能是一个常数步长向前，或者一次往回跳时先计数的跳转，或者它列出的几处之一（调用，`RV_CALLOP`、`RV_CALLSOP` 和 `NEW` 先计数，返回，捕获，由 `rv_unwind` 计数，以及紧接着 `goto rv_exception` 之前为了指明出错指令而往回退一步）。不是这样就失败，入口计数不在最前面或者调用不再计数也失败，并检查把其中每一项弄坏的副本都会失败。`unit-white` 检查 `check_polls` 和 `insert_polls`（见下）。
 
 `TestShadowStackAtDepth` 和 `TestShadowStackInternalDepth`（根包）在 30 种递归和 11 种 C 递归之后，读影子栈里最高的非零字，并记录每一层占的字节数。每种递归都必须以 `RangeError` 结束，并且不管栈帧多大，都要留下四分之一的栈。`TestHasOwnCallDepth` 通过 `hasOwnProperty.call(obj, key)` 递归，解释器在可能时不做那两次调用而直接回答，栈帧里有 0 到 250 个局部变量，并要求它和用数组做的同样递归在同样的深度结束，后者总是做那两次调用，在深度限制处和栈末尾都一样。`TestCCallDepth` 通过解释器自己调用的 C 函数（`call`、`apply`、`map`、`sort`、`Math.max`、没有接收者的 `abs` 和两个尾调用）递归，有 0 到 300 个局部变量，限制为 5000 和 10000，并要求开启和关闭这些直接调用（`JS_SetDirectCCalls`）时，`RangeError` 的深度和栈相同。`TestCCallDepthAfterExits` 通过 `RangeError`、被捕获的 `Error` 和中断离开嵌套的直接调用，同一个 VM 里的下一次递归必须和第一次结束在同一处。`TestMapRefusedSweep`、`TestMapRefusedAmongVMs`、`TestReleaseRefused` 和 `TestRemapRefused`（`-tags testhooks`）让 `hostmem.SetFault` 在脚本运行中间拒绝系统的内存块、释放和重新映射，对每个内存块依次进行，并对四个 goroutine 中的一个进行：被拒绝的那次调用以内存耗尽结束，`Close` 之后没有任何映射残留，其他 VM 都不失败。`TestInterruptStopsLongBuiltins` 运行 `replace`、`fill`、`join`、`normalize`、`localeCompare`、`toUpperCase` 和 `toLowerCase`（还包括在 4 Mi 个大小写无关的字符之前和之后各有一个大写 sigma 的情形）、`isWellFormed`、`toWellFormed`（开头和末尾各有一个孤立代理项，以及开头一个孤立代理项后面跟着很长一串代理项对，修复的循环每次处理两个字符）、分隔符不存在的 `split`、`padStart`、`padEnd`、`trim`、`trimEnd`、`anchor`、`encodeURI`、`decodeURI`、`escape`、`unescape`、两个 rope 的 `<`，以及约一百万位的 BigInt（`toString`、`String`、对字符串调用 `BigInt`、乘法、除法、乘方和与字符串的 `==`），输入的大小让每次调用至少要 640 次轮询，让一连串调用里的第一次调用，在均匀分布的 6 个位置上的轮询请求停止（`gohost.VM.InterruptAtPoll`，带标签 `testhooks`），并要求错误来自内置函数（栈顶的帧），调用停下之前看到请求的轮询不超过 16 次（`gohost.VM.StopPolls`），并且 VM 没有被杀。生成很多片段结果的内置函数（拆成很多段的 `split`，对字符串和类数组对象的 `Array.from`，对字符串的 `Uint8Array.from`，以及对 Array 的 `new Uint8Array`）运行在回收器关闭的 VM 上，因为调用中间的一次回收本身就是一批轮询。释放它们已经做出的那部分结果，在停止之后要用掉一些轮询，而以加倍方式增长的结果的复制不读标志，所以一次停止除了那 16 次轮询之外，还可能花掉释放一整个结果的时间和调用的四分之一。对这些，只要求错误所在的帧符合：如果它读了标志，帧就是内置函数，没读就是它之后的解释器。位置和停止按轮询次数计，而不按时间，从一次回收开始，并且不把调用的结果转成字符串，所以在任何机器上位置都一样，一台负载高、让线程等待的机器不会让它失败，而它的输入在循环之前做好，保持存活，标记和释放都很便宜，这样脚本停止时的一次回收或释放不会算到内置函数头上。新的、有长循环的内置函数应该放进这个测试。rope 的字符串由 memcpy 复制，计的轮询很少，所以把 rope 变平由 `engine/test/unit.c` 的 `test_rope_polls` 来检查，它数原生宿主读标志的次数（`host_poll_reads`），并在第 20 次时停下一次调用，还有 `test_rope_flat_polls`，它把长字符串的 rope 变平，并在每次的第一次，中间一次和最后一次读取时停下。`test_regexp_compile_polls` 对长正则的编译做同样的事（几百万个字符的模式，以及几百万个字符的单个项：一个计数，一个转义或前导零的分组名，类里的 `&&` 和 `--`，`\q{...}` 的字符串），`test_regexp_cache_polls` 对正则缓存中哈希并比较一个 900,002 字符模式的查找做同样的事。`test_bigint_polls` 对 BigInt 的乘法、除法、乘方和转换做同样的事，在中间停下每一种，最后释放运行时时不剩任何内存块。`test_number_polls` 对一百万个数字或空白的字符串做 `Number`、`parseInt`、`parseFloat`、`BigInt`、`JSON.parse` 和 `eval`，每种至少读 12 次标志，做同样的事，`test_parse_polls` 对一百万字节的空白、换行、注释、标识符、字符串、模板、正则或函数的源码做 `eval` 和 `JSON.parse`，也做同样的事，并在它们的读取处停下每一次，`test_long_utf8_decode` 检查长名字或长源码的分步解码遇到跨过一步的非 UTF-8 字节时，得到的字符串和整体解码相同，`test_string_copy_polls` 对一百万个字符的字符串做比较、`Symbol.for` 取键和复制，也做同样的事。`cmd/gcpause` 和 `cmd/interrupt` 运行 `cmd/scenarios` 的脚本，每个都停留在一次长操作里：`fib`、正则、`JSON`、字符串搜索、`split`、`join`、排序、`fill`、`normalize` 和 BigInt 乘积。`gcpause` 每隔几毫秒强制一次 GC，并报告运行时等待 VM 停下所用的时间。`interrupt` 在随机的点上停下每个脚本，并报告 `Eval` 返回用了多久。数字见 [performance.md](performance.zh-CN.md#负载下的稳定性)。
 
@@ -313,7 +313,7 @@ for t in linux/amd64 linux/arm64 darwin/arm64 darwin/amd64 windows/amd64; do
 done
 ```
 
-为任何其他平台构建，都会以 `internal/unsupported` 的错误失败，不会有别的错误（`TestEngineUnsupportedTarget` 对 freebsd/amd64、windows/arm64、linux/386 和 linux/riscv64 检查这一点）。用比引擎核对过的版本更新的 Go 构建，会以 `internal/goversion` 的错误失败，不会有别的错误，用 `-tags quickjs_anygo` 则能构建（`TestEngineNewerGo` 手工给出 `go1.N` 标签，包里的 `TestNewerGoStops`）。在 amd64 上带 `-asmflags=-spectre=ret` 构建，或带 `-dynlink`（`-buildmode=plugin`、`-buildmode=shared` 和 `-linkshared` 会传它）构建，会以 `internal/cengine` 里绊线的错误失败，不会有别的错误，而 `-shared`（`-buildmode=pie`）和 `-spectre=index` 仍能构建（`TestEngineAsmOptions` 把这个选项限定在引擎包，`TestEngineBuildmodeShared` 为 linux/amd64 用 `-buildmode=shared` 构建，`-short` 会跳过它）。
+为任何其他平台构建，都会以 `internal/unsupported` 的错误失败，不会有别的错误（`TestEngineUnsupportedTarget` 对 freebsd/amd64、windows/arm64、linux/386 和 linux/riscv64 检查这一点）。用比引擎核对过的版本更新的 Go 构建，会以 `internal/goversion` 的错误失败，不会有别的错误，用 `-tags slowjs_anygo` 则能构建（`TestEngineNewerGo` 手工给出 `go1.N` 标签，包里的 `TestNewerGoStops`）。在 amd64 上带 `-asmflags=-spectre=ret` 构建，或带 `-dynlink`（`-buildmode=plugin`、`-buildmode=shared` 和 `-linkshared` 会传它）构建，会以 `internal/cengine` 里绊线的错误失败，不会有别的错误，而 `-shared`（`-buildmode=pie`）和 `-spectre=index` 仍能构建（`TestEngineAsmOptions` 把这个选项限定在引擎包，`TestEngineBuildmodeShared` 为 linux/amd64 用 `-buildmode=shared` 构建，`-short` 会跳过它）。
 
 ## go.work
 
@@ -321,7 +321,7 @@ done
 
 只在一种情况下用 `make work` 建一个：对着这份检出，在旁边的另一个模块（比如 tifa）里工作。用完就删掉它（`make clean`，或者 `rm -f go.work go.work.sum`），否则这个目录会一直对着隔壁工作副本里的东西构建，而不是 `go.mod` 里的版本。
 
-只要有 `go.work`，它就必须一直列着 `./compare`。工作区是从当前目录一路往上找到的，所以它也管着 `compare/` 里的构建，那里的构建否则会失败，报 `main module (github.com/liustack/quickjs) does not contain package github.com/liustack/quickjs/compare`。`make work` 把当前的工具链写进 `go` 那一行：留下来的旧工具链的 `go.work`，如果低于 `compare/go.mod` 的 `go` 版本，会让 `make benchmark` 失败，报 `module . listed in go.work file requires go >= …`。
+只要有 `go.work`，它就必须一直列着 `./compare`。工作区是从当前目录一路往上找到的，所以它也管着 `compare/` 里的构建，那里的构建否则会失败，报 `main module (github.com/liustack/slowjs) does not contain package github.com/liustack/slowjs/compare`。`make work` 把当前的工具链写进 `go` 那一行：留下来的旧工具链的 `go.work`，如果低于 `compare/go.mod` 的 `go` 版本，会让 `make benchmark` 失败，报 `module . listed in go.work file requires go >= …`。
 
 ## 开发者工具：生成、检查、计时
 
@@ -339,7 +339,7 @@ CHECK_LIST=1 scripts/check.sh full   # the steps and their tier
 make check-fast                # every commit
 make check-full                # the end of a batch
 CHECK_ONLY="goasm root" make check-full     # some steps (CHECK_SKIP leaves some out, CHECK_STOP=1 stops at the first failure)
-CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go command, such as past the gate of a newer Go
+CHECK_TAGS=slowjs_anygo make check-fast      # with tags added to every go command, such as past the gate of a newer Go
 ```
 
 生成的引擎是提交进仓库的：`internal/cengine` 里有 amd64 和 arm64 的 `.s`、`engine_decl_<arch>.go` 和 `engine_keep_<arch>.go` 文件（约 18 MiB，压缩后 3 MiB），因为模块的使用者没有 LLVM。对 `engine/` 的 C、生成器或 `scripts/gen-engine.sh` 的参数的改动，要连同 `make gen` 和 `make gen ARCH=arm64` 重新生成的文件放在同一个提交里，没有的话 `make check-gen` 会失败。它比较的是 git 暂存区里的字节，所以在 `make gen` 之后、`make check-gen` 之前要运行 `git add internal/cengine`。不管 `GEN_JOBS` 取什么、在哪个目录里运行，生成器给出的字节都一样。
@@ -351,7 +351,7 @@ CHECK_TAGS=quickjs_anygo make check-fast      # with tags added to every go comm
 | 步骤 | 档 | 运行什么 |
 | --- | --- | --- |
 | `build`、`gofmt`、`docs` | 快档 | `go build ./...`，`gofmt -l -s .`（不含生成的文件），`scripts/docs-list.sh --check` |
-| `goasm` | 快档 | `internal/goasm/...` 的测试，设了 `QUICKJS_LLVM`、`QUICKJS_SHADOW_PASS` 和 `QUICKJS_LLD`，这样它们不会跳过 |
+| `goasm` | 快档 | `internal/goasm/...` 的测试，设了 `SLOWJS_LLVM`、`SLOWJS_SHADOW_PASS` 和 `SLOWJS_LLD`，这样它们不会跳过 |
 | `cengine` | 快档 | `go test -tags testhooks ./internal/cengine` |
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain` 和 `render-test.sh plain`、`cycles.sh` |
 | `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`scripts/llvm-bin-test.sh`（LLVM 的查找）、`scripts/check-gen-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
@@ -391,7 +391,7 @@ CI 也运行 `make gointl`，在 `llvm-steps.yml` 里（[见下](#ci)）。
 
 `internal/gointl` 归我们自己维护：它的代码从 go-intl v0.6.1 复制过来一次，之后不再和 go-intl 同步。随这份代码来的测试放在构建标签 `gointl_all` 下，靠它们让我们的答案在 ICU 的每种语言上都和 Node 一样：它们在包含 go-intl 数据里每种语言的数据包上，重放 go-intl 的 `testdata/` 里 Node 答案的语料。这份数据和这些语料不放在这个仓库里（语料 15 MB，还有每种语言的数据包），所以 `internal/gointl/data.sh test` 在一份带着它们的模块临时副本里跑这些测试，副本里也有 `internal/gointl` 构建时用到的本模块的包（`internal/hostmem`）和模块的依赖。`make gointl`（也就是 `make check-full` 的 `gointl` 步骤）会运行它，CI 的 `llvm-steps.yml` 每次推送也运行它（[CI](#ci)）。在原地运行 `go test -tags gointl_all` 会立刻失败，并用一句话说明这一点（`qjs_all_test.go` 里的 `TestMain`）。
 
-这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/quickjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
+这个步骤从缓存 `$GOINTL_UPSTREAM`（默认 `~/.cache/slowjs-gointl/go-intl`）读 go-intl，只在缓存里缺东西时才用网络：
 
 - `data.sh checkout` 第一次克隆 go-intl，只在检出里没有 `internal/gointl/UPSTREAM` 所写的提交时才去 fetch。然后检出那个提交，检出里改过的文件也会被覆盖，所以停在别的提交上的缓存会被移到这个提交，缓存里有这个提交时不需要网络。
 - `data.sh test` 在检出不在那个提交上时停下，对它运行 `git fsck`，再用 `git archive` 从提交里读 `data/` 和 `testdata/`。检出里改过或删掉的文件到不了测试，检出底下被改过的对象会让这一步失败。
@@ -436,11 +436,11 @@ go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 2 -big 12 -ou
 `scripts/remote.sh`（POSIX sh）在一台能 ssh 到的机器上，在后台，在它自己的检出里，用指定的核并限定内存，运行一个 make 目标。仓库里没有任何关于那台机器的信息：全部来自环境变量。
 
 ```sh
-export QUICKJS_REMOTE=user@host QUICKJS_REMOTE_DIR='~/work'     # the machine and a folder it may own
-export QUICKJS_REMOTE_CPUS=1,5 QUICKJS_REMOTE_MEM=4G           # optional: taskset and a systemd memory cap
+export SLOWJS_REMOTE=user@host SLOWJS_REMOTE_DIR='~/work'     # the machine and a folder it may own
+export SLOWJS_REMOTE_CPUS=1,5 SLOWJS_REMOTE_MEM=4G           # optional: taskset and a systemd memory cap
 make remote RUN="gen"                          # HEAD, as the tree "main" on the machine
 make remote REF=my-branch TREE=new RUN="check-fast"
-make remote RUN="bench ARGS='run ...'" QUICKJS_REMOTE_CPUS=1      # a timing job on one core, its sibling idle
+make remote RUN="bench ARGS='run ...'" SLOWJS_REMOTE_CPUS=1      # a timing job on one core, its sibling idle
 scripts/remote.sh -g shop.jsonl HEAD -- make bench ARGS='report ...'      # copy a file back to .build/remote/
 ```
 
@@ -471,11 +471,11 @@ GitHub Actions（`.github/workflows/`）在 linux/amd64（`ubuntu-24.04`）、li
 | --- | --- |
 | Generated engine | `make check-gen`（`GEN_JOBS=4`）：把 amd64 和 arm64 的 `.s` 和 `engine_*` 文件，和一次全新的 `make gen` 对比 |
 | Generator and cycles | `CHECK_ONLY="goasm cycles" scripts/check.sh fast`：`internal/goasm`（生成器）的测试，以及检查 C 引擎的每一处递归都有计数 |
-| Tests of every language | `make gointl`，前面有一步缓存 `~/.cache/quickjs-gointl`（go-intl 的数据和时区文件，约 240 MB，键由 `internal/gointl/UPSTREAM` 和 `internal/gointl/qjstz` 算出）。它不需要 LLVM，冷缓存时约 5 分钟（在一台 4 核 Linux 机器上实测 4 分 45 秒） |
+| Tests of every language | `make gointl`，前面有一步缓存 `~/.cache/slowjs-gointl`（go-intl 的数据和时区文件，约 240 MB，键由 `internal/gointl/UPSTREAM` 和 `internal/gointl/qjstz` 算出）。它不需要 LLVM，冷缓存时约 5 分钟（在一台 4 核 Linux 机器上实测 4 分 45 秒） |
 
 `scripts/check.sh` 的步骤用 `CHECK_ONLY` 选择，它们的日志作为 artifact 保留 7 天。其中的跳过是预期的：`TestStackResidency` 要 `HOSTMEM_RESIDENCY=1`，重新映射的测试和 `TestStackWithoutHugePages` 只在 linux 上。
 
-`go-latest.yml` 每周一次，在最新的稳定版 Go 上，在五个平台上运行 C 引擎的测试（`internal/cengine`、`internal/gohost`、`internal/hostmem`、`internal/idtable` 和根包）。它带 `-tags quickjs_anygo` 构建它们，越过更新的 Go 会停下的那个错误。它的第二个任务在 linux/amd64、linux/arm64、darwin/arm64、darwin/amd64（由 Rosetta 运行）和 windows/amd64 上运行 `scripts/go-versions.sh`，用从 `go.mod` 的 `go` 行到 `internal/goversion` 停下的那个次版本之前的每个 Go 补丁版本，由 go 命令取来（`GOTOOLCHAIN`）。补丁版本也可能改变汇编所依赖的东西，所以一个都不漏，新的补丁版本会在下一次每周运行里测到。每个版本都跑 `go build`、`go vet` 和上面那些 Go 测试（根包带和不带 `testhooks` 各一遍）。在 linux/amd64 上它还装 LLVM 22.1.8，跑生成器的测试（`scripts/check.sh` 的 `goasm` 一步）和对 amd64、arm64 整个引擎的链接后检查（`-verify-bin` 加 `-verify-all`，对象是这个版本的 Go 带 `-tags goasmkeep` 编出的 `internal/cengine` 测试程序，amd64 有 linux、darwin 和 windows 三个，arm64 有 linux 和 darwin 两个，经由 `scripts/gen-engine.sh` 的 `GEN_VERIFY_BIN`）。这两项检查把引擎写进 `.build`，不动 `internal/cengine`。发布之前运行这个脚本。在装了 LLVM 的机器上它做全部这些，没有 LLVM 时（`GO_VERSIONS_LLVM=0`）不做生成器的检查，`GO_VERSIONS_LIST=1` 会打印它选了哪些版本。取不到或读不懂版本列表时（go list 失败，或列表里没有 `go` 行的那个版本），脚本以状态 2 停下，什么也不检查：它不会退到只检查最低版本。`scripts/go-versions-test.sh` 用一个代替 `go` 的程序测试这一点。提交进仓库的汇编依赖 Go 内部的一些细节，新版本一改动其中一个，这个检查就能早早发现。它不阻止合并。运行变红是去看新的 Go 改了什么的理由。
+`go-latest.yml` 每周一次，在最新的稳定版 Go 上，在五个平台上运行 C 引擎的测试（`internal/cengine`、`internal/gohost`、`internal/hostmem`、`internal/idtable` 和根包）。它带 `-tags slowjs_anygo` 构建它们，越过更新的 Go 会停下的那个错误。它的第二个任务在 linux/amd64、linux/arm64、darwin/arm64、darwin/amd64（由 Rosetta 运行）和 windows/amd64 上运行 `scripts/go-versions.sh`，用从 `go.mod` 的 `go` 行到 `internal/goversion` 停下的那个次版本之前的每个 Go 补丁版本，由 go 命令取来（`GOTOOLCHAIN`）。补丁版本也可能改变汇编所依赖的东西，所以一个都不漏，新的补丁版本会在下一次每周运行里测到。每个版本都跑 `go build`、`go vet` 和上面那些 Go 测试（根包带和不带 `testhooks` 各一遍）。在 linux/amd64 上它还装 LLVM 22.1.8，跑生成器的测试（`scripts/check.sh` 的 `goasm` 一步）和对 amd64、arm64 整个引擎的链接后检查（`-verify-bin` 加 `-verify-all`，对象是这个版本的 Go 带 `-tags goasmkeep` 编出的 `internal/cengine` 测试程序，amd64 有 linux、darwin 和 windows 三个，arm64 有 linux 和 darwin 两个，经由 `scripts/gen-engine.sh` 的 `GEN_VERIFY_BIN`）。这两项检查把引擎写进 `.build`，不动 `internal/cengine`。发布之前运行这个脚本。在装了 LLVM 的机器上它做全部这些，没有 LLVM 时（`GO_VERSIONS_LLVM=0`）不做生成器的检查，`GO_VERSIONS_LIST=1` 会打印它选了哪些版本。取不到或读不懂版本列表时（go list 失败，或列表里没有 `go` 行的那个版本），脚本以状态 2 停下，什么也不检查：它不会退到只检查最低版本。`scripts/go-versions-test.sh` 用一个代替 `go` 的程序测试这一点。提交进仓库的汇编依赖 Go 内部的一些细节，新版本一改动其中一个，这个检查就能早早发现。它不阻止合并。运行变红是去看新的 Go 改了什么的理由。
 
 `release.yml` 在推送 `v*` 标签时运行，也可以在分支上手动运行：它为五个目标构建 `slowjs` 命令，在每个系统上对相应的二进制运行 `cmd/slowjs` 的测试，对推送的标签再用它们生成 GitHub release（[releasing.md](releasing.zh-CN.md#发布任务)）。它是唯一有 `contents: write` 的工作流，而且只在最后一个任务里有。
 

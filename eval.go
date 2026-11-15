@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -88,7 +88,7 @@ func (m *VM) ExecutePendingJobs() (n int, err error) {
 	}
 
 	if err == nil {
-		err = fmt.Errorf("quickjs: aborted draining after %d pending jobs", maxJobs)
+		err = fmt.Errorf("slowjs: aborted draining after %d pending jobs", maxJobs)
 	}
 	return n, err
 }
@@ -162,7 +162,7 @@ func (m *VM) EvalValue(javascript string, flags int) (r Value, err error) {
 func (m *VM) EvalFile(name, javascript string, flags int) (r Value, err error) {
 	clean := cleanEvalName(name)
 	if flags&evalTypeMask == EvalModule && name != "" && clean != name {
-		return r, fmt.Errorf("quickjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameProblem(name))
+		return r, fmt.Errorf("slowjs: EvalFile: the module name %.64q is not usable: %s", name, evalNameProblem(name))
 	}
 	if err = m.enter(); err != nil {
 		return
@@ -363,7 +363,7 @@ func (m *VM) evalBytecode(obj jsValue) (jsValue, error) {
 // What it waits for may still settle from outside the job queue, such as a
 // promise that a Go function returned and Go resolves later. Then
 // ExecutePendingJobs runs the rest of the module.
-var errAwaitPending = errors.New("quickjs: the module's top-level await is still pending and no job is left to run")
+var errAwaitPending = errors.New("slowjs: the module's top-level await is still pending and no job is left to run")
 
 // await runs pending jobs until the promise v, which it frees, settles, and
 // returns its result, or the exception of a rejected promise. It follows the

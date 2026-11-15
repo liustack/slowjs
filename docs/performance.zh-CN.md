@@ -2,7 +2,7 @@
 summary: 'C 引擎每个版本渲染页面快了多少，怎样在 tifa 里和在不同代码位置上测量一个引擎改动，以及每项提速改动的测量（热循环、追加、对象、调用、C 里的 React 辅助函数、JSON、局部变量、寄存器解释器、优化器 pass、tifa 页面的性能画像、生成的代码相对原生 C 的开销、负载下的稳定性），连同试过但没做的事'
 read_when:
   - 要为提速改动引擎，或者审阅这样的改动
-  - 发布前要在 tifa 的页面上测量 liustack/quickjs 的某个分支
+  - 发布前要在 tifa 的页面上测量 liustack/slowjs 的某个分支
   - 一个只有百分之几的速度结果，可能只是代码落在了哪里
   - 要试一个可能已经试过的引擎想法
   - 规划渲染速度的下一轮工作
@@ -20,9 +20,9 @@ read_when:
 
 [English](performance.md) · 简体中文
 
-liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.md)。
+liustack/slowjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.md)。
 
-光是到 v0.26.15 为止的引擎改动，就让渲染比 liustack/quickjs 起步时的引擎（modernc.org/quickjs v0.25.0 加 libquickjs v0.13.1）快了 1.63 到 1.66 倍，再加上 tifa 的 Vite 插件重写和 PGO，是 2.07 倍（2026-10-20 测量）。C 引擎之前的引擎（到 v0.28）的数字在 [history.md](history.zh-CN.md)。
+光是到 v0.26.15 为止的引擎改动，就让渲染比 liustack/slowjs 起步时的引擎（modernc.org/quickjs v0.25.0 加 libquickjs v0.13.1）快了 1.63 到 1.66 倍，再加上 tifa 的 Vite 插件重写和 PGO，是 2.07 倍（2026-10-20 测量）。C 引擎之前的引擎（到 v0.28）的数字在 [history.md](history.zh-CN.md)。
 
 ## 数字是怎么测的
 
@@ -74,11 +74,11 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 
 每个计时都要按 [measuring.md](measuring.zh-CN.md) 的规程来判断。这一节讲怎样针对一份检出的代码构建并运行 tifa。
 
-要在发布前测量 liustack/quickjs 的某个分支，用 `replace` 把 tifa 指向那份检出的代码，构建示例应用，然后运行 tifa 的 [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons) 里的基准：
+要在发布前测量 liustack/slowjs 的某个分支，用 `replace` 把 tifa 指向那份检出的代码，构建示例应用，然后运行 tifa 的 [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons) 里的基准：
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/quickjs=../quickjs
+go mod edit -replace github.com/liustack/slowjs=../slowjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr
@@ -349,7 +349,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里的 React DOM 文本转义
 
-[`VM.RegisterEscapeText`](changes/go-api.zh-CN.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/quickjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterEscapeText`](changes/go-api.zh-CN.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/slowjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 在 linux/amd64（EPYC 7B13 的一个核，同伴核空闲）上，在 8 个代码位置各跑 3 轮。时间是一个应用的各页 p50 之和，取各位置配对比值的中位数。指令数是 callgrind 的，每次渲染所有页，位置 0.0（5 次渲染的运行和 2 次渲染的运行之差）：
 
@@ -382,7 +382,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里复制 React 元素的 props
 
-[`VM.RegisterCopyProps`](changes/go-api.zh-CN.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/quickjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterCopyProps`](changes/go-api.zh-CN.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/slowjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 它被问到的频率，来自 tifa 里每个页的一次渲染，带一个数它的回答的包装：六个工作台页用 `createElement` 做了 980 个元素，用 `cloneElement` 做了 518 个，五个店面页是 2,507 和 328，三个 MUI 页是 3,266 和 114，每个 bench 页是 1。这个函数复制了其中所有的，只有一个有 39 个键的 config 除外（MUI 的 input，在订单列表和订单页上），它超过了函数接受的 32 个键，走循环。
 
@@ -650,7 +650,7 @@ C 引擎比 C 版 QuickJS 构建慢的地方，用同样的 `engine/` 的 C 代�
 | `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
 | `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
 
-liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 和固定的 QuickJS 一样快，或者更快），所以剩下的是汇编的代价：这三个脚本上 20% 到 30%，`r_react_ssr` 上 6%。在 `q_regexp_ascii` 上，同样的 C 比固定的 QuickJS 慢 8%（0.829，对 0.765 到 0.777）。原因没有去找：原生宿主也调用 `host_poll`（占 2% 的样本）。perf（4999 Hz，同样 20 次运行的样本，汇编对同样的 C）：
+liustack/slowjs 对 C 的改动在前两个脚本上不花什么（同样的 C 和固定的 QuickJS 一样快，或者更快），所以剩下的是汇编的代价：这三个脚本上 20% 到 30%，`r_react_ssr` 上 6%。在 `q_regexp_ascii` 上，同样的 C 比固定的 QuickJS 慢 8%（0.829，对 0.765 到 0.777）。原因没有去找：原生宿主也调用 `host_poll`（占 2% 的样本）。perf（4999 Hz，同样 20 次运行的样本，汇编对同样的 C）：
 
 - `c_array_methods`：`js_array_includes` 6020 个样本，对 1826，`js_array_indexOf` 3915，对 957，`JS_CallInternal` 10743，对 8749，其余相近（`js_strict_eq2` 13630，对 13231）。这些循环对每个元素调用 `js_strict_eq2`，而带可能轮询的调用的循环把它的轮询计数放在内存里，每轮就是对一个字做读、减、写：`js_array_includes` 36% 的样本落在那个减法上。用[不经调用就判定大多数元素](changes/upstream-commits.zh-CN.md#indexof-和-includes-对大多数元素不用调用就能判断)修好了：脚本用了原来时间的 0.583。
 - `c_string_methods`：38900 个样本，对 30440，分散在许多小函数里：`JS_CallInternal` +940，`js_call_c_function` 1964，对 1210，`JS_ToStringInternal` 1726，对 1122，`JS_ConcatString` 1182，对 658，`js_string_includes` 967，对 523。没有哪个循环里有一条热指令。这是生成代码每次调用的代价（参数和结果经过内存、栈检查、轮询计数）。
@@ -864,7 +864,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 这一节是在栈式解释器上量的，也就是 v0.30.1 及以前的引擎。v0.30.2 的寄存器解释器跑一次渲染的方式不同，下面的占比已经不能说明它。
 
-来自 callgrind 在生成引擎（amd64）上的结果，周期按指令数加每次 L1 未命中 10 加每次最后一级未命中 40 来估计（最后一级 512 KB，和 Zen 3 的 L2 一样）。每个页是一次渲染次数多的运行减去次数少的运行，所以加载和热身抵消掉。`JS_CallInternal` 的各行，是用同样页面上带调试行号的原生构建拆分的。2026-10-29 在 liustack/quickjs `6c757279` 上测量，在 40 字节对象和对共用字节码的轮询只扫描一次之前。
+来自 callgrind 在生成引擎（amd64）上的结果，周期按指令数加每次 L1 未命中 10 加每次最后一级未命中 40 来估计（最后一级 512 KB，和 Zen 3 的 L2 一样）。每个页是一次渲染次数多的运行减去次数少的运行，所以加载和热身抵消掉。`JS_CallInternal` 的各行，是用同样页面上带调试行号的原生构建拆分的。2026-10-29 在 liustack/slowjs `6c757279` 上测量，在 40 字节对象和对共用字节码的轮询只扫描一次之前。
 
 | 一次渲染的占比 | 商店工作台 | 店面 | MUI | bench | `r_react_ssr` | Markdown 400 KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -884,7 +884,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 - 一次工作台渲染大约运行 73,000 次 JavaScript 调用和 128 万个操作码：每个操作码 81 条原生指令（算上它调用的东西），在入口、出口和调用操作码里，每次调用约 190 条，其中约 95 条是入口。入口里最大的一块是把局部变量设成 `undefined` 的循环（占 `JS_CallInternal` 原生指令的 2.1%）。
 - 轮询，通过构建一个没有它们的引擎来测：商店、店面和 MUI 页用了原来时间的 0.953 到 0.955，bench 页 0.930，8 个位置全部如此。指令少 4.9% 到 8.3%。`JS_CallInternal` 占一个店面页轮询指令的 41%，占一个 bench 页的 64%，其余分散在约 40 个函数里。栈检查是 1320 个函数里 729 个开头的 4 条指令，占一个页指令数的 1.2% 到 1.8%。
 - 回收只在长 Markdown 上要紧：占它时间的 8.5%，占它最后一级未命中的 40%。在 tifa 的页面上它低于 2%。
-- 对比带 `--jitless` 的 Node，liustack/quickjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的回收器（`resetHooksState` 3.5 到 4.9 倍）。
+- 对比带 `--jitless` 的 Node，liustack/slowjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的回收器（`resetHooksState` 3.5 到 4.9 倍）。
 
 ### 正则从哪里开始找，编译时算一次
 
@@ -1683,7 +1683,7 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 
 每一项说明它能带来什么，以及为什么放弃。试其中任何一项之前先在这里查一下。这些数字来自 tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) 和 [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md)，以及各项改动的文档。
 
-- **通过闭包或函数表分发操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/quickjs 只做机械改动的规则。没有试。
+- **通过闭包或函数表分发操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/slowjs 只做机械改动的规则。没有试。
 - **在 `createElement` 和 `cloneElement` 的 props 的一次展开前面用 JavaScript 做检查**，在 v0.29.1 上、`RegisterCopyProps` 之前测的：插件检查 config（原型、symbol、`__proto__`、`__self` 和 `__source`、`key` 背后的 getter），然后用解构的其余部分复制它。这个检查每次调用花 310 到 380 ns，比循环处理没有键、一个键或两个键的 config 还多，所以 `createElement` 在没有键时用了 1.57 倍的时间，一个键时 1.07，一个 `key` 加一两个其他键时 1.13 到 1.40。商店用了 0.99 的时间（指令少 1.6% 到 2.5%），没有页面过规则。它也排除不了 proxy、删除后面一个键的 getter，以及 React 加载之后加到 `Object.prototype` 上的 setter。同样的检查在 C 里比空循环花得更少，这个函数让指令少 2.1% 到 4.1%。
 - **对象展开的快速路径**（`JS_CopyDataProperties`）：在 Apple M4 的微基准里，一次展开 240 ns，原来是 415 ns，但商店没变（0.997 到 1.005）。后来已经做了，连同键的列举一起，它和 `for in` 和 `Object.keys` 共用后者（见[从 shape 里列出自有键](changes/objects-and-shapes.zh-CN.md#自有键从-shape-列出)）。
 - **在 `JS_CallInternal` 入口处调用 `_js_uncatchable_pending` 之前先测无法捕获标志**：这个辅助函数太大，没法内联进解释器，所以每次 JavaScript 调用都要付一次真正的调用。先内联地测运行时的标志，在正常路径上跳过这次调用，并保留完整检查，那仍然需要，因为异常被取走之后标志仍然置着。V8 上指令少 0.06%，商店少 0.09%，MUI 少 0.41%。在三种代码布局上跑六轮，V8 是基线分数的 0.9988（0.9883 到 1.0254），商店是时间的 0.9927（0.9859 到 1.0014），MUI 0.9850（0.9763 到 1.0265）。符号跟着布局走：MUI 在一种布局的两轮里是时间的 1.027 和 1.012，在另外两种布局的四轮里是 0.976 到 0.988。这个收益和布局的噪声分不开。

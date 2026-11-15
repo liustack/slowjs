@@ -1,7 +1,7 @@
 ---
-summary: '引擎和 Go API 从哪来，怎么搬进上游 QuickJS 的一个提交，从 modernc.org/quickjs 换过来的程序会遇到什么，以及 liustack/quickjs 所建立的代码是谁写的'
+summary: '引擎和 Go API 从哪来，怎么搬进上游 QuickJS 的一个提交，从 modernc.org/quickjs 换过来的程序会遇到什么，以及 liustack/slowjs 所建立的代码是谁写的'
 read_when:
-  - 把程序从 modernc.org/quickjs 换到 liustack/quickjs
+  - 把程序从 modernc.org/quickjs 换到 liustack/slowjs
   - 问引擎建立在 QuickJS 的哪个提交上，或者代码是谁写的
   - 把上游 QuickJS 的一个提交搬进引擎
 ---
@@ -12,24 +12,24 @@ read_when:
 
 ## 代码从哪来
 
-- **引擎**是 [QuickJS](https://bellard.org/quickjs)，Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎，取 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`。`engine/` 是这份 C 加上 liustack/quickjs 的改动。`internal/goasm/gen` 把它编译成 Go 汇编，提交进仓库。生成的文件从不手改，和生成器的结果不一致时 `make check-gen` 会失败。test262 有 33 个已知失败，列在 `engine/test/test262_errors.txt`。
+- **引擎**是 [QuickJS](https://bellard.org/quickjs)，Fabrice Bellard 和 Charlie Gordon 用 C 写的 JavaScript 引擎，取 2026-06-04 版，提交 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`。`engine/` 是这份 C 加上 liustack/slowjs 的改动。`internal/goasm/gen` 把它编译成 Go 汇编，提交进仓库。生成的文件从不手改，和生成器的结果不一致时 `make check-gen` 会失败。test262 有 33 个已知失败，列在 `engine/test/test262_errors.txt`。
 - **Go API**（模块根目录的 `VM`、`Value`、`Eval`、`Call` 等）起步于 [modernc.org/quickjs](https://gitlab.com/cznic/quickjs) v0.25.0（2026-10-01），也就是本仓库历史里的提交 `ea7b851`，之后重写并扩充过。其中一些名字、注释和测试还在。v0.28 之前，它下面的引擎是 [modernc.org/libquickjs](https://gitlab.com/cznic/libquickjs)，ccgo 把 QuickJS 转译成的 Go。那个引擎已经删掉，它的 Go 也不在了。
 - **`Intl` 和 `Temporal` 的 Go 部分**（`internal/gointl`）是从 [go-intl](https://github.com/go-quickjs/go-intl) v0.6.1（提交 `59e7b7a9f80bb90458f314e7d99efa4fb592dc3b`）复制过来的，只复制了一次，之后在这里随便改：不再吸收 go-intl 后来的代码。只吸收它的数据：数据包取自 `internal/gointl/UPSTREAM` 里那个 go-intl 版本的 `data/` 目录，裁到 Chromium 的语言，时区用 `internal/gointl/qjstz` 的（见 [upgrading.md](upgrading.zh-CN.md#更新-intl-的数据internalgointl)）。
-- **其余部分**是为 liustack/quickjs 写的，或者来自 [NOTICE.md](../NOTICE.md) 里列出的项目：分配器（TLSF）、引擎自带的小 libc（musl）、语言数据，以及 `Intl` 和 `Temporal` 的 Go 部分（go-intl、ICU、Chromium）。
+- **其余部分**是为 liustack/slowjs 写的，或者来自 [NOTICE.md](../NOTICE.md) 里列出的项目：分配器（TLSF）、引擎自带的小 libc（musl）、语言数据，以及 `Intl` 和 `Temporal` 的 Go 部分（go-intl、ICU、Chromium）。
 
-liustack/quickjs 的作者列在 [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK)。modernc.org/quickjs 的 `AUTHORS` 文件按它原样保留为 [AUTHORS](../AUTHORS)。
+liustack/slowjs 的作者列在 [AUTHORS-LIUSTACK](../AUTHORS-LIUSTACK)。modernc.org/quickjs 的 `AUTHORS` 文件按它原样保留为 [AUTHORS](../AUTHORS)。
 
 ## 合入 QuickJS 的提交
 
 `engine/` 里的 C 树不跟着上游的每个版本走。钉住的提交之后上游的提交，凡是修正确性、内存泄漏、崩溃的（不管页面碰不碰得到），或者让渲染更快的，单独搬进来，带测试。新功能和只为速度的改动，tifa 用得上才搬。搬进来的、试过又撤回的提交都在 [upstream-commits.md](changes/upstream-commits.zh-CN.md)。怎么合入一个提交，见 [upgrading.md](upgrading.zh-CN.md)。
 
-liustack/quickjs 对这份 C 的改动逐项列在 [changes](changes/README.zh-CN.md)：脚本无法捕获的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。
+liustack/slowjs 对这份 C 的改动逐项列在 [changes](changes/README.zh-CN.md)：脚本无法捕获的限额、每台机器上一样的输出、覆盖 Chromium 全部语言的 `Intl`，以及更快的渲染。
 
 ## 从 modernc.org/quickjs 换过来
 
 用过 modernc.org/quickjs v0.25.0 的程序会遇到这些：
 
-- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/quickjs`，包名还是 `quickjs`，它的 `intl` 和 `fmt` 包跟着改。引擎在模块里面，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
+- **import 路径。** `modernc.org/quickjs` 改成 `github.com/liustack/slowjs`，包名从 `quickjs` 改成 `slowjs`，它的 `intl` 和 `fmt` 包跟着改。引擎在模块里面，所以 `go.mod` 里不再有 `modernc.org/libquickjs`。
 - **Go 版本。** 需要 Go 1.26.6 或更新（没核对过的更新版本会直接报错，见 [upgrading.md](upgrading.zh-CN.md#换用更新的-go)），modernc.org/quickjs v0.25.0 需要 1.26。
 - **本地时间是 UTC。** 每个 VM 里脚本的本地时间都是 UTC，不管进程的 `TZ` 是什么。要显示别的时区，把时区名交给 `Intl`（[详情](changes/time-and-intl.zh-CN.md#每个-vm-里本地时间都是-utc)）。
 - **Intl 覆盖所有语言。** `intl` 包支持 Chromium 有的所有语言，modernc.org/quickjs 只有 en-US。import 它的程序会内嵌语言数据和这些数据的版权声明（[详情](changes/time-and-intl.zh-CN.md#覆盖-chromium-全部语言的-intl)）。
@@ -46,10 +46,12 @@ liustack/quickjs 对这份 C 的改动逐项列在 [changes](changes/README.zh-C
 
 每个版本的所有改动见[更新记录](../CHANGELOG.zh-CN.md)。
 
-## 从 github.com/liustack/slowjs 换过来
+<a id="从-githubcomliustackslowjs-换过来"></a>
 
-v0.28.0 到 v0.29.11 是以 `github.com/liustack/slowjs` 发布的，从 v0.30.0 起模块又叫 `github.com/liustack/quickjs`，API 不变。用过 `github.com/liustack/slowjs` 的程序只需要改名字：import 路径（`github.com/liustack/slowjs/intl` 改成 `github.com/liustack/quickjs/intl`，其余同理），代码里的包名（`slowjs.NewVM` 改成 `quickjs.NewVM`），以及构建标签（`slowjs_intl_nonames` 和 `slowjs_intl_nocjdict` 改成 `quickjs_intl_nonames` 和 `quickjs_intl_nocjdict`，v0.29.11 加的 `slowjs_anygo` 改成 `quickjs_anygo`）。宿主如果靠 `intl` 或 `temporal` 标记 VM 的那个 `Symbol.for` 键来认 VM，键里的路径也换成新的。根包的错误信息改以 `quickjs:` 开头。
+## 从 github.com/liustack/quickjs 换过来
+
+v0.30.0 到 v0.30.7 是以 `github.com/liustack/quickjs` 发布的，从 v0.31.0 起模块又叫 `github.com/liustack/slowjs`，API 不变。用过 `github.com/liustack/quickjs` 的程序只需要改名字：import 路径（`github.com/liustack/quickjs/intl` 改成 `github.com/liustack/slowjs/intl`，其余同理），代码里的包名（`quickjs.NewVM` 改成 `slowjs.NewVM`），以及构建标签（`quickjs_intl_nonames` 和 `quickjs_intl_nocjdict` 改成 `slowjs_intl_nonames` 和 `slowjs_intl_nocjdict`，`quickjs_anygo` 改成 `slowjs_anygo`）。构建时还传旧标签不会报错，只是不再起作用。宿主如果靠 `intl`、`temporal` 或 `url` 标记 VM 的那个 `Symbol.for` 键来认 VM，键里的路径也换成新的，根包的错误信息改以 `slowjs:` 开头。仓库脚本里原来以 `QUICKJS_` 开头的变量改以 `SLOWJS_` 开头。v0.28.0 到 v0.29.11 的路径和包名与新的一样，用它们的程序不用改任何名字。
 
 ## 致谢
 
-引擎是 Fabrice Bellard 和 Charlie Gordon 的 QuickJS。Go API 起步于 modernc.org/quickjs，作者是 quickjs-go 的 Jan Mercl 和 Dan Kortschak，他们还用 ccgo 把 QuickJS 转译成 Go，做成 modernc.org/libquickjs。liustack/quickjs 感谢他们带来的最初那套 API。还留在仓库里的那部分代码需要他们的许可证文件，所以都保留着：[LICENSE](../LICENSE) 和 [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS)，QuickJS 的是 [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS)。
+引擎是 Fabrice Bellard 和 Charlie Gordon 的 QuickJS。Go API 起步于 modernc.org/quickjs，作者是 quickjs-go 的 Jan Mercl 和 Dan Kortschak，他们还用 ccgo 把 QuickJS 转译成 Go，做成 modernc.org/libquickjs。liustack/slowjs 感谢他们带来的最初那套 API。还留在仓库里的那部分代码需要他们的许可证文件，所以都保留着：[LICENSE](../LICENSE) 和 [LICENSE-MODERNC-LIBQUICKJS](../LICENSE-MODERNC-LIBQUICKJS)，QuickJS 的是 [LICENSE-LIBQUICKJS](../LICENSE-LIBQUICKJS)。

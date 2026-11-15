@@ -6,7 +6,7 @@ import (
 	"math"
 	"math/big"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // The methods of Temporal's types other than Duration, as V8's

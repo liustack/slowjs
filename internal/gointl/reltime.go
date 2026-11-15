@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/reltimedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/reltimedata"
 )
 
 // Intl.RelativeTimeFormat.

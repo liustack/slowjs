@@ -2,7 +2,7 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -17,7 +17,7 @@ var (
 )
 
 // errForeignValue is the error of a method given a Value of another VM.
-var errForeignValue = errors.New("quickjs: a Value of another VM")
+var errForeignValue = errors.New("slowjs: a Value of another VM")
 
 // foreign reports whether v belongs to a VM other than m: every method that
 // takes a Value refuses it before it reaches the engine, where it would keep
@@ -280,8 +280,8 @@ func (v Value) IsUndefined() bool {
 // resulting (value, error). 'v' must be a Javascript function. Pass
 // [UndefinedValue] as 'this' when the function does not use it.
 //
-//	resolve.Call(quickjs.UndefinedValue, "done")
-//	reject.Call(quickjs.UndefinedValue, err.Error())
+//	resolve.Call(slowjs.UndefinedValue, "done")
+//	reject.Call(slowjs.UndefinedValue, err.Error())
 //
 // Argument types are converted using the same rules as in [VM.Call] and the
 // result is unpacked using the same rules as there are for the return value of
