@@ -1335,6 +1335,45 @@ A render of `chart` converts 38,732 numbers in `js_dtoa`, which took 2,585 instr
 The micro benchmarks of `compare/testdata` that convert numbers, instructions a turn (three conversions), native and product trained again: `float_toString` 9,026 to 3,162 natively (-65.0%) and 8,662 to 3,421 in the product (-60.5%), `float_to_string` 8,870 to 3,006 (-66.1%) and 8,622 to 3,381 (-60.8%). `float_toFixed`, `float_toPrecision` and `float_toExponential`, which give digits and keep the big numbers, run 1.0% to 1.1% more natively and 1.2% to 2.0% more in the product: `js_dtoa`, which holds the new path, gets other registers and spills from the compiler, and the fix of the powers of two alone adds 0.4% natively to `float_toFixed`. `int_toString`, `int_to_string` and `int_to_string2` run the same in both.
 
 The table of powers of ten is 9,872 bytes of read-only data. The native `dtoa.o` grows by 11,648 bytes with the code, and `v8run` (the Go product) by 16,184 bytes.
+### Integrity levels from the shape
+
+[Object.isFrozen, Object.isSealed, Object.freeze and Object.seal go over the shape](changes/objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape), against main at `d7c86e16` (v0.30.7). The 12 pages are React pages built on widely used libraries, in tifa's `test/apps/libs`. The state page keeps its state in Redux Toolkit, whose immer freezes what it hands out and asks `isFrozen` of every object it walks: about 156,000 calls of `isFrozen` and 2,900 of `freeze` a render. Instructions per render are from callgrind on the native C tree on linux/amd64, with `jsrun -call`: the difference of four renders and two, halved. The HTML of every page is the same.
+
+| Page | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| state (immer and Redux Toolkit) | 1,273,874,249 | 728,769,446 | -42.79% |
+| antd | 3,008,791,497 | 3,009,257,916 | +0.02% |
+| markdown (react-markdown) | 1,672,961,653 | 1,672,890,481 | -0.00% |
+| dates (date-fns and dayjs) | 1,167,606,991 | 1,167,743,140 | +0.01% |
+| table (@tanstack/table) | 984,371,316 | 984,330,834 | -0.00% |
+| chart (recharts and d3) | 869,366,379 | 869,558,035 | +0.02% |
+| forms | 910,172,776 | 910,803,585 | +0.07% |
+| diff (jsdiff) | 782,314,693 | 782,321,512 | +0.00% |
+| i18n (i18next) | 648,792,336 | 648,825,785 | +0.01% |
+| domain | 435,456,323 | 435,536,936 | +0.02% |
+| radix (Radix) | 295,612,771 | 295,664,547 | +0.02% |
+| styled (styled-components) | 169,205,102 | 169,216,376 | +0.01% |
+
+The 630,000 more instructions of the forms page are in `js_closure` (+298,000), `add_property` (+161,000), `JS_DefineProperty` (+119,000) and `js_own_key_kinds` (+52,000), as the C compiler lays them out again. Of these the change only adds a test to `JS_DefineProperty`, for a binding of a module namespace.
+
+The generated engine, on linux/amd64, with tifa's pages and two of the 12: callgrind, a warm render, then the difference of three renders and one, halved (the long Markdown page: two renders and one). As `make gen` makes it, the profile is the one trained before the change: `JS_DefineProperty`, `js_object_isSealed` and `js_object_seal` changed and are compiled without it, and the four new functions have none. After the profile is trained again (`engine/pgo/train.sh`), tifa's pages reach the new functions (880 tests and 166 freezes or seals in the training), so `engine/pgo/loops.js` needs no new loop. The HTML of every page is the same.
+
+| Page | As `make gen` makes it | Trained again |
+| --- | ---: | ---: |
+| the workbench studio page | +0.02% | -0.01% |
+| the workbench stats page | -0.08% | +0.01% |
+| the shop's English home page | +0.03% | -0.04% |
+| the shop's English products page | +0.01% | +0.00% |
+| MUI's orders page | +0.04% | -0.02% |
+| MUI's home page | -0.05% | -0.01% |
+| React's page | +0.15% | +0.08% |
+| the long Markdown page | +0.07% | -0.04% |
+| state (immer and Redux Toolkit) | -43.38% | -43.79% |
+| forms | +0.07% | -0.03% |
+
+React's page runs 28,000 more instructions a render after training. A callgrind of each function puts none of them in the engine: its functions run 5,000 fewer a render, and the rest is the Go runtime walking stacks for the garbage collector, which moves with when it collects.
+
+Memory, after four renders on the native C tree: the state page holds 5.78 MB rather than 6.03 MB before a collection, since no array of keys is made a call, and 5,387,616 bytes rather than 5,384,080 after one, the same count of blocks. The other 11 pages hold the same.
 
 ### A profile of tifa's pages
 
@@ -1842,6 +1881,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
   - The flat-loop threshold of the unroller at 0: one function changes (`js_Date_parse`, amd64 only), 0.01% to 0.03% fewer a render. At 1,000,000: 0.44% to 1.14% more a render. The threshold decides almost nothing today.
   - `engine/libc` compiled without the profile, which was the way named to take `memmove` back to a leaf without a frame. All of the libc: 219 functions change on amd64, the renders move by 0.03% or less, a bundle load runs 0.07% to 0.15% fewer instructions, and `date_parse` 4.4% more. Only `memcpy.c`, `memmove.c` and `memset.c`: 128 functions change (the post-link optimizer inlines those by name), 0.01% to 0.11% fewer a render, 0.02% fewer on the micro benchmarks. The vectorizer pin gives `memmove` back its leaf form with fewer changes and more gain, so neither was kept.
   - A fix of the inline replay for the calls it misses: about a day of work, and the functions those calls keep run 0 instructions in every count ([generator.md](changes/generator.md#limits)).
+- **A frozen bit on the shape**, as Hermes marks a hidden class sealed or frozen, so that `Object.isFrozen` of a frozen object answers without going over its properties. Counted on 2026-11-15 on top of [integrity levels from the shape](#integrity-levels-from-the-shape): on the state page `js_object_isSealed` runs 161 instructions a call, about 98 of them in the pass over some 20 properties, so the bit would save about 15 million instructions a render, 2.1% of that page and nothing on tifa's pages. Every change in place of a shape that is not hashed would have to clear the bit: adding a property, a private field added to a frozen object, changing flags, deleting, a property made on first read, the flags of bindings, about 15 places in the C. One missed place gives a wrong answer and no error. Not done.
 
 ## Where to continue
 

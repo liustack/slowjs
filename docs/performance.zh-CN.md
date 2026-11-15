@@ -1336,6 +1336,46 @@ tifa `test/ssr` 里生成的引擎。`JS_RegvmRun` 改了，所以在重新训�
 
 10 的幂的表是 9,872 字节的只读数据。原生的 `dtoa.o` 连代码一共大了 11,648 字节，`v8run`（Go 产品）大了 16,184 字节。
 
+### 从 shape 读出完整性级别
+
+[Object.isFrozen、Object.isSealed、Object.freeze 和 Object.seal 走一遍 shape](changes/objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape)，对比 main 的 `d7c86e16`（v0.30.7）。12 个页面是用常用库写的 React 页面，在 tifa 的 `test/apps/libs` 里。state 页用 Redux Toolkit 管状态，其中的 immer 会冻结交出去的状态，遍历时对每个对象都问 `isFrozen`：每次渲染约 156,000 次 `isFrozen`、2,900 次 `freeze`。每次渲染的指令来自 linux/amd64 上原生 C 树的 callgrind，用 `jsrun -call`：4 次渲染减 2 次渲染的差除以 2。每一页的 HTML 都一样。
+
+| 页面 | 之前 | 之后 | 变化 |
+| --- | ---: | ---: | ---: |
+| state（immer 和 Redux Toolkit） | 1,273,874,249 | 728,769,446 | -42.79% |
+| antd | 3,008,791,497 | 3,009,257,916 | +0.02% |
+| markdown（react-markdown） | 1,672,961,653 | 1,672,890,481 | -0.00% |
+| dates（date-fns 和 dayjs） | 1,167,606,991 | 1,167,743,140 | +0.01% |
+| table（@tanstack/table） | 984,371,316 | 984,330,834 | -0.00% |
+| chart（recharts 和 d3） | 869,366,379 | 869,558,035 | +0.02% |
+| forms | 910,172,776 | 910,803,585 | +0.07% |
+| diff（jsdiff） | 782,314,693 | 782,321,512 | +0.00% |
+| i18n（i18next） | 648,792,336 | 648,825,785 | +0.01% |
+| domain | 435,456,323 | 435,536,936 | +0.02% |
+| radix（Radix） | 295,612,771 | 295,664,547 | +0.02% |
+| styled（styled-components） | 169,205,102 | 169,216,376 | +0.01% |
+
+forms 页多出的 630,000 条指令在 `js_closure`（+298,000）、`add_property`（+161,000）、`JS_DefineProperty`（+119,000）和 `js_own_key_kinds`（+52,000）里，是 C 编译器重新排布了这些函数的代码。其中改动只给 `JS_DefineProperty` 加了一个判断，针对模块命名空间的绑定。
+
+生成的引擎，linux/amd64，tifa 的页面和 12 个页面里的两个：callgrind，先暖 1 次，再用 3 次渲染减 1 次渲染的差除以 2（长 Markdown 页是 2 次减 1 次）。`make gen` 生成时用的是改动之前训练的 profile：`JS_DefineProperty`、`js_object_isSealed` 和 `js_object_seal` 改过，编译时不用它，四个新函数也没有 profile。重新训练 profile（`engine/pgo/train.sh`）后，tifa 的页面会走到新函数（训练里有 880 次判断、166 次冻结或封住），所以 `engine/pgo/loops.js` 不需要新的循环。每一页的 HTML 都一样。
+
+| 页面 | `make gen` 生成的 | 重新训练后 |
+| --- | ---: | ---: |
+| workbench studio 页 | +0.02% | -0.01% |
+| workbench stats 页 | -0.08% | +0.01% |
+| 商店的英文首页 | +0.03% | -0.04% |
+| 商店的英文商品页 | +0.01% | +0.00% |
+| MUI 的 orders 页 | +0.04% | -0.02% |
+| MUI 的首页 | -0.05% | -0.01% |
+| React 页 | +0.15% | +0.08% |
+| 长 Markdown 页 | +0.07% | -0.04% |
+| state（immer 和 Redux Toolkit） | -43.38% | -43.79% |
+| forms | +0.07% | -0.03% |
+
+React 页重新训练后每次渲染多 28,000 条指令。按函数看 callgrind，这些指令都不在引擎里：引擎的函数每次渲染少 5,000 条，其余是 Go 运行时为垃圾回收遍历栈，随回收的时机变化。
+
+内存，原生 C 树上渲染 4 次后：state 页回收前占 5.78 MB，之前是 6.03 MB，因为每次调用不再创建键的数组。回收后是 5,387,616 字节，之前是 5,384,080 字节，块数一样。其余 11 页一样。
+
 ### tifa 页面的性能画像
 
 [tifa 页面的性能画像](changes/generator.zh-CN.md#tifa-页面的性能画像)：`make gen` 用页面渲染的性能画像编译引擎，内联仍是不带画像的构建所做的结果。
@@ -1842,6 +1882,7 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
   - 展开器的 flat-loop 阈值设成 0：只变一个函数（`js_Date_parse`，只在 amd64 上），一次渲染少 0.01% 到 0.03%。设成 1,000,000：一次渲染多 0.44% 到 1.14%。这个阈值现在几乎什么都不决定。
   - 不带画像编译 `engine/libc`，这原本是让 `memmove` 变回没有栈帧的叶子函数的办法。整个 libc：amd64 上 219 个函数变了，渲染变化不超过 0.03%，加载一个打包文件少 0.07% 到 0.15% 的指令，`date_parse` 多 4.4%。只编 `memcpy.c`、`memmove.c` 和 `memset.c`：128 个函数变了（链接后的优化器按名字内联它们），一次渲染少 0.01% 到 0.11%，微基准少 0.02%。固定向量化器也让 `memmove` 变回叶子函数，改动更少，收益更多，所以两种都没留。
   - 修内联重放漏掉的调用：要一天左右，而这些调用留下的函数在每次计数里都跑 0 条指令（[generator.md](changes/generator.zh-CN.md#限制)）。
+- **shape 上加一个「已冻结」位**，像 Hermes 给隐藏类标上 sealed 或 frozen 那样，让已冻结对象的 `Object.isFrozen` 不用走一遍属性就能回答。2026-11-15 在[从 shape 读出完整性级别](#从-shape-读出完整性级别)之上数过：state 页上 `js_object_isSealed` 每次调用 161 条指令，其中约 98 条是走一遍约 20 个属性，所以这个位每次渲染能省约 1500 万条指令，是这一页的 2.1%，tifa 的页面上没有收益。不在哈希表里的 shape 每次原地修改都得清掉这个位：加属性、给冻结对象加私有字段、改标志、删除、第一次读取时才创建的属性、绑定的标志，C 里约 15 处。漏掉一处就会给出错的答案，而且不报错。没做。
 
 ## 接下来
 

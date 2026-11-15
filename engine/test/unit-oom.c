@@ -1880,6 +1880,40 @@ static void test_for_in_oom(void)
     sweep("for in, first loop", "for_in.js", fns, "run()", want, 32768);
 }
 
+/* Object.freeze and Object.seal in one pass over the shape
+   (js_shape_set_integrity): of objects whose shape another object holds (the
+   shape is copied first), of an object alone with its shape, of arrays whose
+   elements are made properties first, of an empty array and of an object of
+   40 keys, and Object.isFrozen and Object.isSealed of each. With too little
+   memory a call fails with the out of memory error and loses nothing, and
+   the same calls on new objects then give the same levels. */
+static void test_integrity_oom(void)
+{
+    static const char setup[] =
+        "function lv(o) { return (Object.isExtensible(o) ? '1' : '0') + (Object.isSealed(o) ? 1 : 0) +"
+        " (Object.isFrozen(o) ? 1 : 0) }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var a = { x: i, y: 2, get g() { return 1 } }, b = { x: i, y: 2, get g() { return 1 } };\n"
+        "    var c = {}; c['k' + i] = 1; c.z = 2;\n"
+        "    var d = [i, 2, 3], e = [], big = {};\n"
+        "    for (var j = 0; j < 40; j++) big['p' + j] = j;\n"
+        "    Object.freeze(a); Object.seal(b); Object.freeze(c); Object.freeze(d); Object.seal(e);\n"
+        "    Object.freeze(big);\n"
+        "    out.push(lv(a) + lv(b) + lv(c) + lv(d) + lv(e) + lv(big));\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "011010011011010011 011010011011010011 011010011011010011 011010011011010011", NULL
+    };
+
+    sweep("integrity levels", "integrity.js", setup, "run()", want, 16384);
+}
+
 /* Object.defineProperty, Object.defineProperties, Object.create and
    Reflect.defineProperty with plain descriptors, read from their shape
    (js_obj_to_desc_plain), and with descriptors that take the generic path (a
@@ -3042,6 +3076,7 @@ int main(void)
     test_fast_builtins_oom();
     test_for_in_oom();
     test_define_desc_oom();
+    test_integrity_oom();
     test_bind_oom();
     test_bind_host_oom();
     test_tags_oom();

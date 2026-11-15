@@ -24023,7 +24023,7 @@ TEXT ·js_bigint_constructor(SB), $104-48
 	WORD $0xf94037f5
 	WORD $0xeb09011f
 	WORD $0x54fff983
-	MOVD $·engine_rodata+12498(SB), R22
+	MOVD $·engine_rodata+12497(SB), R22
 	WORD $0x910082f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -24580,7 +24580,7 @@ TEXT ·js_symbol_toString(SB), $152-48
 	WORD $0x54000061
 	WORD $0xf94016d6
 	WORD $0x17ffffcd
-	MOVD $·engine_rodata+9082(SB), R22
+	MOVD $·engine_rodata+9044(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xf90007f4
@@ -24719,7 +24719,7 @@ TEXT ·js_symbol_valueOf(SB), $72-48
 	WORD $0x54000061
 	WORD $0xf9401400
 	WORD $0x17fffff5
-	MOVD $·engine_rodata+9082(SB), R22
+	MOVD $·engine_rodata+9044(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -24775,7 +24775,7 @@ TEXT ·js_symbol_get_description(SB), $136-32
 	WORD $0x54000061
 	WORD $0xf94016d6
 	WORD $0x17ffffe2
-	MOVD $·engine_rodata+9082(SB), R22
+	MOVD $·engine_rodata+9044(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xf90007f4
@@ -25279,7 +25279,7 @@ TEXT ·js_symbol_keyFor(SB), $72-48
 	WORD $0xb81fc008
 	WORD $0x14000010
 	WORD $0xaa1403f7
-	MOVD $·engine_rodata+9082(SB), R22
+	MOVD $·engine_rodata+9044(SB), R22
 	WORD $0x91004294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -27128,7 +27128,7 @@ TEXT ·js_string_concat(SB), $136-48
 	BL ·js_rope_to_string_gc(SB)
 	WORD $0x17ffffed
 	WORD $0xa946d7f7
-	MOVD $·engine_rodata+7634(SB), R22
+	MOVD $·engine_rodata+7596(SB), R22
 	WORD $0x91004294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -27329,7 +27329,7 @@ TEXT ·js_string_codePointAt(SB), $120-48
 	WORD $0xf9403ff7
 	WORD $0x17ffff6d
 	WORD $0xa945d7f7
-	MOVD $·engine_rodata+7634(SB), R22
+	MOVD $·engine_rodata+7596(SB), R22
 	WORD $0x91004294
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -27497,7 +27497,7 @@ TEXT ·js_string_isWellFormed(SB), $120-48
 	WORD $0x17ffffd9
 	WORD $0xf9403ff5
 	WORD $0xf94033f7
-	MOVD $·engine_rodata+7634(SB), R22
+	MOVD $·engine_rodata+7596(SB), R22
 	WORD $0x91004174
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -28172,7 +28172,7 @@ TEXT ·js_string_toWellFormed(SB), $216-48
 	WORD $0xa949c3ed
 	WORD $0xa94adbef
 	WORD $0x17fffe45
-	MOVD $·engine_rodata+7634(SB), R22
+	MOVD $·engine_rodata+7596(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xf90007f4

@@ -1,0 +1,58 @@
+result primitives: true/true/true true/true/true true/true/true true/true/true true/true/true true/true/true true/true/true
+result plain: 100
+result empty: 100
+result empty, not extensible: 011
+result one key, not extensible: 000
+result sealed: 010 a:we- b:we-
+result frozen: 011 a:-e- b:-e-
+result freeze returns its argument: true
+result accessors only, sealed: 011 a:ae- b:ae-
+result accessors and data, frozen: 011 x:-e- a:ae- b:ae- c:ae- 12
+result one key left writable: 010
+result one key left configurable: 000
+result keys made frozen one at a time: 100 011
+result deleted key: 011 a:-e- c:-e-
+result deleted key, then freeze: 011 b:-e- c:-e-
+result symbol keys: 000 010 011 a:-e- Symbol(s):-e-
+result numeric keys: 011 1:-e- 2:-e- 10:-e- b:-e- a:-e-
+result many keys: 100 010 011 2871 2871 0:-e- 3:-e- 6:-e- 9:-e- 12:-e- 15:-e- 18 :-e- k296:-e- k297:-e- k298:-e- k299:-e-
+result dictionary of many keys, one deleted: 011 0 0 1999
+result writes after freeze: TypeError,TypeError,TypeError,TypeError 1 2 false
+result writes after seal: TypeError,TypeError,TypeError 2 011 a:-e- g:ae-
+result shared shape: the other object keeps its flags: 011 100 100 x:-e- y:-e- | x:wec y:wec z:wec | x:wec y:wec 11050
+result shared shape: seal then freeze, then a new object: 100,010,011,011,100 100 99 p:we- q:we- | p:-e- q:-e-
+result a lone object, written in a loop before and after freeze: TypeError 49 49 011100
+result an object alone with its shape, written in a loop before and after freeze: TypeError 60 49 011100 lone1:wec lone2:wec
+result for in over frozen and plain objects of one shape: abcabcabc
+result freeze twice and isFrozen again and again: 100 a:-e- b:-e-
+result private names do not count: 011 011 2 true y:-e-
+result class instance with accessors on the prototype: 011 2 100 true
+result null prototype: 011 a:-e-
+result Object.create with descriptors: 010 a:--- b:w-- c:a--
+result arrays: 100 | 100 | 000 | 010 | 011 | 011 | 011 0:-e- 2:-e- length:--- | 011 350 | TypeError | TypeError | 5 0:we- length:w-- | 0:-e- 1:-e- length:--- foo:-e-
+result arrays made not extensible key by key: true 011 0:-e- 1:-e- length:---
+result typed arrays: 100 011 011 freeze TypeError seal TypeError false
+result strings: 100 011 000 011 0:-e- 1:-e- length:--- x:-e- 011
+result arguments: 100 011 0:-e- 1:-e- length:--- callee:a-- Symbol(Symbol.iterator):--- 011 0:-e- 1:-e- length:--- callee:a-- Symbol(Symbol.iterator):--- 1
+result functions: 011,011,011,011 length:--- name:--- prototype:--- | length:--- name:--- | length:--- name:--- prototype:--- s:-e-
+result error with a stack: 100 011 string true boom
+result built-in objects: 100 100 100 100 011
+result Map and Set objects: 011 2 011 2
+result Date and RegExp objects: 011 5 011 TypeError lastIndex:---
+result proxy: isFrozen of an extensible target: false isExtensible
+result proxy: isSealed of an extensible target: false isExtensible
+result proxy: isFrozen of a frozen target: true isExtensible,ownKeys,gopd a,gopd b
+result proxy: isFrozen of a sealed target stops at the first writable key: false isExtensible,ownKeys,gopd a
+result proxy: isSealed of a target not extensible with a configurable key: false isExtensible,ownKeys,gopd a
+result proxy: freeze: 011 preventExtensions,ownKeys,gopd a,define a configurable,writable,gopd b,define b configurable
+result proxy: seal: 010 preventExtensions,ownKeys,define a configurable,define b configurable
+result proxy: ownKeys throws, target extensible: false false
+result proxy: ownKeys throws, target not extensible: throws RangeError
+result proxy: isExtensible throws: throws SyntaxError
+result proxy: preventExtensions returns false: throws TypeError
+result revoked proxy: throws TypeError
+result proxy of a frozen array: true isExtensible,ownKeys,gopd 0,gopd 1,gopd length
+result global object: 100
+mem-end obj=236 atom=690 shape=245 prop=1109 jsfunc=20 cfunc=153 array=2 fast_array=2 elements=55 binary=0
+mem-gc obj=223 atom=680 shape=239 prop=1078 jsfunc=11 cfunc=153 array=2 fast_array=2 elements=55 binary=0
+--- status exit 0
