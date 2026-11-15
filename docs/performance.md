@@ -69,6 +69,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
 | v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 | v0.31.0 | [Arrays that are no longer fast arrays](#arrays-that-are-no-longer-fast-arrays), [instanceof without the call of Symbol.hasInstance](#instanceof-without-the-call-of-symbolhasinstance), [the iterator of a for in loop and its shape](#the-iterator-of-a-for-in-loop-and-its-shape), and the profile trained again on them | Against v0.30.7, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no kind of tifa's pages is slower beyond the delta of 1%, and none runs more instructions. React's page runs 0.63% fewer. The V8 suite scores 5.4% higher, Crypto 29.6% and EarleyBoyer 14.1% ([v0.31.0 against v0.30.7](#v0310-against-v0307)) |
+| v0.31.1 | [Numbers converted to text by Schubfach](#numbers-converted-to-text-by-schubfach), [the fields and strings of a Date](#the-fields-and-strings-of-a-date), [integrity levels from the shape](#integrity-levels-from-the-shape), [objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes), [passing arguments on with apply](#passing-arguments-on-with-apply), [the next key of a for in loop and the read of it](#the-next-key-of-a-for-in-loop-and-the-read-of-it), [numbers added and subtracted without the shared tail](#numbers-added-and-subtracted-without-the-shared-tail), [a literal every match holds](#a-literal-every-match-holds), and the profile trained again on them | Against v0.31.0, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.2% less time, the six workbench pages 1.5% less and the three MUI pages 1.1% less, and the store pages show no change. The long Markdown page is 2.6% slower. The V8 suite scores 18.7% higher, RegExp 97.2% and RayTrace 48.6% ([v0.31.1 against v0.31.0](#v0311-against-v0310)) |
 
 ## Measuring in tifa
 
@@ -1940,6 +1941,48 @@ The V8 suite (`compare/engines`, `jsbench v8`, the formal build of each side, 10
 | RayTrace | 1531 | 1511.5 | -1.3% |
 
 Crypto reads and writes the elements of arrays that are no longer fast arrays, and runs 22.3% and 22.7% fewer instructions an iteration in its two parts (callgrind, the same builds). EarleyBoyer tests `instanceof`: Earley runs 6.05% fewer and Boyer 21.51% fewer. The other benchmarks run within 0.08% of the instructions of v0.30.7, so their changes of score, NavierStokes' 3.7% among them, are where the code lands.
+
+#### v0.31.1 against v0.31.0
+
+v0.31.1 (1eeac784) was timed against v0.31.0 (7a2f394a) on 2026-11-15 on the server and in the way of v0.31.0 above, with the shop and MUI pages in an app that registers tifa's four functions and `__tifa_murmur2__` as tifa does, and both sides give the same HTML on every page.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -1.52% (-2.73% to -0.29%) faster | +0.24% (-2.22% to +2.75%) inconclusive |
+| tifa's shop, fourteen store pages | -0.35% (-1.19% to +0.50%) no regression beyond delta | +0.07% (-1.28% to +1.44%) inconclusive |
+| tifa's MUI test app, three pages | -1.09% (-1.72% to -0.46%) faster | -2.42% (-3.64% to -1.19%) faster |
+| React's page | -2.16% (-2.92% to -1.39%) faster | -1.53% (-2.62% to -0.43%) faster |
+| The long Markdown page, 100 and 400 sections | +2.58% (+0.67% to +4.53%) slower | +2.47% (-1.11% to +6.18%) inconclusive |
+| The long Markdown page, 400 sections alone (4 runs each) | | +2.9% (medians 4,007 ms and 4,122 ms) |
+
+Instructions a render (callgrind on linux/amd64, the shop and MUI pages with tifa's functions), against v0.31.0 with its profile trained again on the same server:
+
+| Page | amd64 |
+| --- | ---: |
+| The store's home page | -1.00% |
+| The store's products page | -1.10% |
+| The workbench's studio page | -1.38% |
+| The workbench's stats page | -1.26% |
+| MUI's orders page | -2.51% |
+| MUI's home page | -1.87% |
+| React's page | -0.98% |
+| Long Markdown (400 sections) | -0.17% |
+
+The V8 suite, measured as for v0.31.0:
+
+| Benchmark | v0.31.0 | v0.31.1 | Change |
+| --- | ---: | ---: | ---: |
+| Score | 1586 | 1882.5 | +18.7% |
+| RegExp | 568.5 | 1121 | +97.2% |
+| RayTrace | 1511 | 2246 | +48.6% |
+| EarleyBoyer | 2667 | 3067 | +15.0% |
+| Splay | 4258 | 4573.5 | +7.4% |
+| NavierStokes | 2535 | 2633.5 | +3.9% |
+| DeltaBlue | 1018.5 | 1043 | +2.4% |
+| Richards | 1106 | 1131.5 | +2.3% |
+| Crypto | 1423.5 | 1447 | +1.7% |
+
+The long Markdown page is slower although it runs fewer instructions, and 100 and then 400 sections rendered in one VM peak at 460 MB where v0.31.0 peaked at 258 MB: the plan the engine keeps for each regexp grew from 36 to 74 bytes, so the engine's own collections land at other points (one more in the three timed renders of 400 sections), and the next version is to fix it. Under tifa's limit of 128 MiB the page of 400 sections does not render, on v0.31.0 as on v0.31.1. The shop and MUI times of v0.30.5 to v0.31.0 were taken with an app that did not register tifa's functions, so they are of another workload.
 
 #### The study of 2026-11-13
 
