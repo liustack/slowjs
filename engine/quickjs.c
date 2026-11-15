@@ -62152,13 +62152,42 @@ static JSValue js_json_rawJSON(JSContext *ctx, JSValueConst this_val,
 }
 
 
+/* An object or an array that json_walk_object or json_walk_array writes,
+   while they read its keys and values straight from the object. */
+typedef struct JSONFrame {
+    struct JSONFrame *up; /* the frame of the object or array around it */
+    JSObject *p;
+    int i; /* the place in the shape, or the index, of the value written now */
+    int n; /* the count of the shape's properties, or the length */
+    BOOL is_array;
+    /* code may have run: what is left is read as the general path reads it,
+       the keys of an object from keys, the keys it had after i before any
+       code ran, as the general path lists them at the start */
+    BOOL ran;
+    JSAtom *keys;
+    int nkeys;
+} JSONFrame;
+
+/* the objects open at once that the stack holds without an allocation */
+#define JSON_STACK_INLINE 32
+
 typedef struct JSONStringifyContext {
     JSValueConst replacer_func;
-    JSValue stack;
     JSValue property_list;
     JSValue gap;
     JSValue empty;
     StringBuffer *b;
+    /* the objects and arrays open now, the outermost first, for the check of
+       a cycle: each is held by the caller that writes it */
+    JSObject **stack;
+    int stack_len, stack_size;
+    JSObject *stack_inline[JSON_STACK_INLINE];
+    /* no replacer function, no property list and no gap: plain objects and
+       arrays take json_walk_object and json_walk_array */
+    BOOL plain;
+    JSONFrame *frames; /* the innermost walk, or NULL */
+    /* a prototype whose chain has no toJSON, or NULL: true until code runs */
+    JSObject *proto_ok;
 } JSONStringifyContext;
 
 /* Put the run of characters of p from *pi that JSON.stringify keeps as
@@ -62292,12 +62321,93 @@ static int JS_ToQuotedStringFree(JSContext *ctx, StringBuffer *b, JSValue val) {
     return ret;
 }
 
+/* Whether the shape property prs is a key JSON.stringify lists for an
+   object: present, enumerable and a string (EnumerableOwnProperties). */
+static inline BOOL json_key_listed(JSRuntime *rt, const JSShapeProperty *prs)
+{
+    JSAtom atom = prs->atom;
+
+    if (atom == JS_ATOM_NULL || !(prs->flags & JS_PROP_ENUMERABLE))
+        return FALSE;
+    return __JS_AtomIsTaggedInt(atom) ||
+        rt->atom_array[atom]->atom_type == JS_ATOM_TYPE_STRING;
+}
+
+/* Call before anything that may run code of the script: a toJSON method, a
+   getter, a proxy trap, the replacer, a toString or valueOf. The walks of
+   json_walk_object and json_walk_array that are open read their object
+   straight until then, which is right only while no code runs, since code
+   may add, delete or change any property. So each that has not yet keeps
+   the keys it has left now, as the general path listed them at its start:
+   nothing has changed them since, as no code ran. Returns -1 when that runs
+   out of memory. */
+static int json_may_run(JSContext *ctx, JSONStringifyContext *jsc)
+{
+    JSONFrame *f;
+
+    jsc->proto_ok = NULL;
+    for (f = jsc->frames; f && !f->ran; f = f->up) {
+        if (!f->is_array) {
+            JSShapeProperty *prs = get_shape_prop(f->p->shape);
+            int i, n = 0;
+
+            for (i = f->i + 1; i < f->n; i++)
+                n += json_key_listed(ctx->rt, &prs[i]);
+            if (n) {
+                f->keys = js_malloc(ctx, sizeof(f->keys[0]) * n);
+                if (!f->keys)
+                    return -1;
+                for (i = f->i + 1; i < f->n; i++) {
+                    if (json_key_listed(ctx->rt, &prs[i]))
+                        f->keys[f->nkeys++] = JS_DupAtom(ctx, prs[i].atom);
+                }
+            }
+        }
+        f->ran = TRUE;
+    }
+    return 0;
+}
+
+/* Open the object p, or throw the TypeError of a cycle when it is open
+   already. */
+static int json_stack_push(JSContext *ctx, JSONStringifyContext *jsc, JSObject *p)
+{
+    int i;
+
+    for (i = 0; i < jsc->stack_len; i++) {
+        if (jsc->stack[i] == p) {
+            JS_ThrowTypeError(ctx, "circular reference");
+            return -1;
+        }
+    }
+    if (unlikely(jsc->stack_len >= jsc->stack_size)) {
+        int size = jsc->stack_size * 2;
+        JSObject **stack;
+
+        if (jsc->stack == jsc->stack_inline) {
+            stack = js_malloc(ctx, sizeof(stack[0]) * size);
+            if (stack)
+                memcpy(stack, jsc->stack, sizeof(stack[0]) * jsc->stack_len);
+        } else {
+            stack = js_realloc(ctx, jsc->stack, sizeof(stack[0]) * size);
+        }
+        if (!stack)
+            return -1;
+        jsc->stack = stack;
+        jsc->stack_size = size;
+    }
+    jsc->stack[jsc->stack_len++] = p;
+    return 0;
+}
+
 static JSValue js_json_check(JSContext *ctx, JSONStringifyContext *jsc,
                              JSValueConst holder, JSValue val, JSValueConst key)
 {
     JSValue v;
     JSValueConst args[2];
 
+    if (json_may_run(ctx, jsc))
+        goto exception;
     /* check for object.toJSON method */
     /* ECMA specifies this is done only for Object and BigInt */
     if (JS_IsObject(val) || JS_IsBigInt(ctx, val)) {
@@ -62353,6 +62463,404 @@ exception:
 static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
                           JSValueConst holder, JSValue val,
                           JSValueConst indent);
+
+/* The walks: JSON.stringify of an ordinary object or a fast array with no
+   replacer function, no property list and no gap, the common call, write it
+   from its shape and its values without the general path's array of keys,
+   a read of each key by its string, the lookup of toJSON on every value and
+   the quote of each key a character at a time. They write what the general
+   path writes and run the same code of the script in the same order: they
+   leave to it every value that may run code or that they do not know
+   (json_put_property, json_put_element), and before such code runs every
+   open walk switches to the general path for the rest of its object
+   (json_may_run). A value still reads the interrupt flag and takes its
+   level (json_leaf_enter), an object or array the same checks as before
+   (js_json_to_str), and a cycle throws the same TypeError
+   (json_stack_push). JS_JSON_WALK() set to 0 leaves them out and
+   JS_JSON_WALKED() counts each object and array they write, for the test
+   that compares the two paths (white.c). */
+#ifndef JS_JSON_WALK
+#define JS_JSON_WALK() 1
+#endif
+#ifndef JS_JSON_WALKED
+#define JS_JSON_WALKED() ((void)0)
+#endif
+
+/* a key of at most this many characters of 8 bits is checked for
+   characters to escape and copied in one piece */
+#define JSON_KEY_SHORT 128
+
+/* The checks js_json_to_str makes before each value, for a value a walk
+   writes itself: the interrupt flag, and a level of the internal depth, so
+   that the deepest data that fits is the same as on the general path. */
+static force_inline int json_leaf_enter(JSContext *ctx)
+{
+    if (js_poll_interrupts(ctx) || js_json_enter(ctx))
+        return -1;
+    js_internal_leave(ctx->rt);
+    return 0;
+}
+
+/* Whether a read of toJSON on the object o finds nothing and runs no code:
+   o and its prototypes have no own property of that name and are not
+   exotic (a fast array is, but its own properties for a name that is no
+   index are those of its shape). A prototype found so is kept in
+   jsc->proto_ok, so the next object of the same prototype checks only its
+   own shape. json_may_run forgets it: until code runs no property of any
+   object can change, and the walk holds each object it passes. */
+static BOOL json_no_tojson(JSONStringifyContext *jsc, JSObject *o)
+{
+    JSObject *q;
+
+    for (q = o; q; q = q->shape->proto) {
+        if (q == jsc->proto_ok)
+            return TRUE;
+        if (q->is_exotic && !goasm_field_goes_on(q, JS_ATOM_toJSON))
+            return FALSE;
+        if (find_own_property1(q, JS_ATOM_toJSON))
+            return FALSE;
+    }
+    jsc->proto_ok = o->shape->proto;
+    return TRUE;
+}
+
+/* a number as js_primitive_to_string writes it, null when it is not finite */
+static no_inline int json_put_float64(StringBuffer *b, double d)
+{
+    JSDTOATempMem dtoa_mem;
+    char buf[32];
+    int len;
+
+    if (!isfinite(d))
+        return string_buffer_write8(b, (const uint8_t *)"null", 4);
+    len = js_dtoa(buf, d, 10, 0, JS_DTOA_FORMAT_FREE, &dtoa_mem);
+    return string_buffer_write8(b, (const uint8_t *)buf, len);
+}
+
+/* Write the key ks of an object, quoted, and the colon after it, after a
+   comma when comma is set. A short key of 8 bits with no character to
+   escape, the common one, goes in one copy and counts the work
+   JS_ToQuotedString counts for it. */
+static int json_put_key(JSContext *ctx, StringBuffer *b, JSString *ks, BOOL comma)
+{
+    if (!ks->is_wide_char && ks->len <= JSON_KEY_SHORT) {
+        const uint8_t *s = ks->u.str8;
+        int i, n = ks->len, need;
+
+        for (i = 0; i < n; i++) {
+            uint32_t c = s[i];
+            if (c < 0x20 || c == '\"' || c == '\\')
+                goto slow;
+        }
+        need = n + 3 + comma;
+        if (b->len + need > b->size &&
+            string_buffer_realloc(b, b->len + need, 0))
+            return -1;
+        if (!b->is_wide_char) {
+            uint8_t *d = b->str->u.str8 + b->len;
+            if (comma)
+                *d++ = ',';
+            *d++ = '\"';
+            memcpy(d, s, n);
+            d += n;
+            d[0] = '\"';
+            d[1] = ':';
+        } else {
+            uint16_t *d = b->str->u.str16 + b->len;
+            if (comma)
+                *d++ = ',';
+            *d++ = '\"';
+            for (i = 0; i < n; i++)
+                d[i] = s[i];
+            d[n] = '\"';
+            d[n + 1] = ':';
+            JS_WORK(n);
+        }
+        JS_WORK(n);
+        b->len += need;
+        return 0;
+    }
+ slow:
+    if (comma && string_buffer_putc8(b, ','))
+        return -1;
+    if (JS_ToQuotedString(ctx, b, JS_MKPTR(JS_TAG_STRING, ks)))
+        return -1;
+    return string_buffer_putc8(b, ':');
+}
+
+/* The value v of the key atom of the object holder, as js_json_to_str1
+   writes a property: through js_json_check, which runs json_may_run.
+   Takes v. */
+static int json_put_property(JSContext *ctx, JSONStringifyContext *jsc,
+                             JSValueConst holder, JSAtom atom, JSValue v,
+                             BOOL *has_content)
+{
+    JSValue prop;
+    int ret = -1;
+
+    prop = JS_AtomToString(ctx, atom);
+    v = js_json_check(ctx, jsc, holder, v, prop);
+    if (JS_IsException(v))
+        goto done;
+    if (!JS_IsUndefined(v)) {
+        if ((*has_content && string_buffer_putc8(jsc->b, ',')) ||
+            JS_ToQuotedString(ctx, jsc->b, prop) ||
+            string_buffer_putc8(jsc->b, ':')) {
+            JS_FreeValue(ctx, v);
+            goto done;
+        }
+        if (js_json_to_str(ctx, jsc, holder, v, jsc->empty))
+            goto done;
+        *has_content = TRUE;
+    }
+    ret = 0;
+ done:
+    JS_FreeValue(ctx, prop);
+    return ret;
+}
+
+/* The element i of the array holder, read already into v, as js_json_to_str1
+   writes it after its comma. Takes v. */
+static int json_put_element(JSContext *ctx, JSONStringifyContext *jsc,
+                            JSValueConst holder, int64_t i, JSValue v)
+{
+    JSValue prop;
+
+    prop = JS_ToStringFree(ctx, JS_NewInt64(ctx, i));
+    if (JS_IsException(prop)) {
+        JS_FreeValue(ctx, v);
+        return -1;
+    }
+    v = js_json_check(ctx, jsc, holder, v, prop);
+    JS_FreeValue(ctx, prop);
+    if (JS_IsException(v))
+        return -1;
+    if (JS_IsUndefined(v))
+        v = JS_NULL;
+    return js_json_to_str(ctx, jsc, holder, v, jsc->empty);
+}
+
+/* Write the value v of a walk, which v does not give: 0 when it was
+   written, 1 when it is left out (undefined, a function, a symbol: a key
+   of an object is then not written, an element of an array is null), 2
+   when it goes to the general path, -1 on an exception. key is the key of
+   an object, written first, or NULL for an element of an array. */
+static force_inline int json_put_value(JSContext *ctx, JSONStringifyContext *jsc,
+                                       JSValueConst holder, JSValueConst v,
+                                       JSString *key, BOOL comma)
+{
+    StringBuffer *b = jsc->b;
+    uint32_t tag = JS_VALUE_GET_TAG(v);
+
+    switch (tag) {
+    case JS_TAG_OBJECT:
+        {
+            JSObject *o = JS_VALUE_GET_OBJ(v);
+            if (o->class_id == JS_CLASS_BACKTRACE || !json_no_tojson(jsc, o))
+                return 2;
+            if (JS_IsFunction(ctx, v))
+                return 1;
+            if (key && json_put_key(ctx, b, key, comma))
+                return -1;
+            return js_json_to_str(ctx, jsc, holder, JS_DupValue(ctx, v),
+                                  jsc->empty);
+        }
+    case JS_TAG_UNDEFINED:
+    case JS_TAG_SYMBOL:
+        return 1;
+    case JS_TAG_STRING:
+    case JS_TAG_STRING_ROPE:
+    case JS_TAG_INT:
+    case JS_TAG_FLOAT64:
+    case JS_TAG_BOOL:
+    case JS_TAG_NULL:
+        break;
+    default:
+        /* a BigInt, whose toJSON is looked up on its prototype */
+        return 2;
+    }
+    if (json_leaf_enter(ctx))
+        return -1;
+    if (key && json_put_key(ctx, b, key, comma))
+        return -1;
+    switch (tag) {
+    case JS_TAG_INT:
+        {
+            char buf[16];
+            int len = i32toa(buf, JS_VALUE_GET_INT(v));
+            return string_buffer_write8(b, (const uint8_t *)buf, len);
+        }
+    case JS_TAG_FLOAT64:
+        return json_put_float64(b, JS_VALUE_GET_FLOAT64(v));
+    case JS_TAG_BOOL:
+        if (JS_VALUE_GET_BOOL(v))
+            return string_buffer_write8(b, (const uint8_t *)"true", 4);
+        return string_buffer_write8(b, (const uint8_t *)"false", 5);
+    case JS_TAG_NULL:
+        return string_buffer_write8(b, (const uint8_t *)"null", 4);
+    default:
+        return JS_ToQuotedString(ctx, b, v);
+    }
+}
+
+/* Write the ordinary object p (val) from its shape: 0 when written, -1 on
+   an exception, 1 when p has a key the walk does not take (an array index,
+   which the general path puts first, or an enumerable accessor), with
+   nothing done. */
+static int json_walk_object(JSContext *ctx, JSONStringifyContext *jsc,
+                            JSValueConst val, JSObject *p)
+{
+    JSRuntime *rt = ctx->rt;
+    JSShape *sh = p->shape;
+    JSShapeProperty *prs = get_shape_prop(sh);
+    JSONFrame f;
+    BOOL has_content = FALSE;
+    int i, ret;
+
+    if (!JS_JSON_WALK())
+        return 1;
+    for (i = 0; i < sh->prop_count; i++) {
+        JSAtom atom = prs[i].atom;
+        JSString *ks;
+        uint32_t idx;
+
+        if (!json_key_listed(rt, &prs[i]))
+            continue;
+        if (__JS_AtomIsTaggedInt(atom) ||
+            (prs[i].flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
+            return 1;
+        /* a string atom that is an array index: key_atom is 0 for those,
+           and for "" and the other strings that start with a digit */
+        ks = rt->atom_array[atom];
+        if (ks->key_atom == JS_ATOM_NULL && is_num_string(&idx, ks) &&
+            idx != 0xffffffff)
+            return 1;
+    }
+    JS_JSON_WALKED();
+    if (json_stack_push(ctx, jsc, p))
+        return -1;
+    if (string_buffer_putc8(jsc->b, '{'))
+        return -1;
+    f.up = jsc->frames;
+    f.p = p;
+    f.i = -1;
+    f.n = sh->prop_count;
+    f.is_array = FALSE;
+    f.ran = FALSE;
+    f.keys = NULL;
+    f.nkeys = 0;
+    jsc->frames = &f;
+    for (i = 0; i < f.n; i++) {
+        /* no code ran: p has the shape sh still */
+        if (!json_key_listed(rt, &prs[i]))
+            continue;
+        f.i = i;
+        ret = json_put_value(ctx, jsc, val, p->prop[i].u.value,
+                             rt->atom_array[prs[i].atom], has_content);
+        if (ret == 0) {
+            has_content = TRUE;
+        } else if (ret == 2) {
+            /* read again as the general path reads it */
+            JSValue v = JS_GetProperty(ctx, val, prs[i].atom);
+            if (JS_IsException(v) ||
+                json_put_property(ctx, jsc, val, prs[i].atom, v, &has_content))
+                goto fail;
+        } else if (ret < 0) {
+            goto fail;
+        }
+        if (f.ran)
+            break;
+    }
+    /* code ran: the keys left, read as the general path reads them */
+    for (i = 0; i < f.nkeys; i++) {
+        JSValue v = JS_GetProperty(ctx, val, f.keys[i]);
+        if (JS_IsException(v) ||
+            json_put_property(ctx, jsc, val, f.keys[i], v, &has_content))
+            goto fail;
+    }
+    ret = 0;
+    if (string_buffer_putc8(jsc->b, '}'))
+        ret = -1;
+    jsc->stack_len--;
+ done:
+    jsc->frames = f.up;
+    for (i = 0; i < f.nkeys; i++)
+        JS_FreeAtom(ctx, f.keys[i]);
+    js_free(ctx, f.keys);
+    return ret;
+ fail:
+    ret = -1;
+    goto done;
+}
+
+/* Write the Array p (val) from its elements: 0 when written, -1 on an
+   exception, 1 when it is not a fast array whose count is its length, with
+   nothing done. Its length is read once, as the general path reads it. */
+static int json_walk_array(JSContext *ctx, JSONStringifyContext *jsc,
+                           JSValueConst val, JSObject *p)
+{
+    JSONFrame f;
+    JSValue v;
+    uint32_t len, i;
+    int ret;
+
+    if (!JS_JSON_WALK() || !p->fast_array ||
+        JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT)
+        return 1;
+    len = JS_VALUE_GET_INT(p->prop[0].u.value);
+    if (len != p->u.array.count)
+        return 1;
+    JS_JSON_WALKED();
+    if (json_stack_push(ctx, jsc, p))
+        return -1;
+    if (string_buffer_putc8(jsc->b, '['))
+        return -1;
+    f.up = jsc->frames;
+    f.p = p;
+    f.i = -1;
+    f.n = len;
+    f.is_array = TRUE;
+    f.ran = FALSE;
+    f.keys = NULL;
+    f.nkeys = 0;
+    jsc->frames = &f;
+    for (i = 0; i < len; i++) {
+        if (i > 0 && string_buffer_putc8(jsc->b, ','))
+            goto fail;
+        f.i = i;
+        if (!f.ran) {
+            /* no code ran: the elements are those of the start */
+            ret = json_put_value(ctx, jsc, val, p->u.array.u.values[i], NULL, FALSE);
+            if (ret == 1) {
+                if (json_leaf_enter(ctx) ||
+                    string_buffer_write8(jsc->b, (const uint8_t *)"null", 4))
+                    goto fail;
+                continue;
+            }
+            if (ret != 2) {
+                if (ret < 0)
+                    goto fail;
+                continue;
+            }
+            v = JS_DupValue(ctx, p->u.array.u.values[i]);
+        } else {
+            v = JS_GetPropertyInt64(ctx, val, i);
+            if (JS_IsException(v))
+                goto fail;
+        }
+        if (json_put_element(ctx, jsc, val, i, v))
+            goto fail;
+    }
+    if (string_buffer_putc8(jsc->b, ']'))
+        goto fail;
+    jsc->stack_len--;
+    jsc->frames = f.up;
+    return 0;
+ fail:
+    jsc->frames = f.up;
+    return -1;
+}
+
 static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
                           JSValueConst holder, JSValue val,
                           JSValueConst indent)
@@ -62372,6 +62880,18 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
     if (JS_IsObject(val)) {
         p = JS_VALUE_GET_OBJ(val);
         cl = p->class_id;
+        if (jsc->plain && (cl == JS_CLASS_OBJECT || cl == JS_CLASS_ARRAY)) {
+            if (cl == JS_CLASS_OBJECT)
+                ret = json_walk_object(ctx, jsc, val, p);
+            else
+                ret = json_walk_array(ctx, jsc, val, p);
+            if (ret <= 0) {
+                JS_FreeValue(ctx, val);
+                return ret;
+            }
+        }
+        if (json_may_run(ctx, jsc))
+            goto exception;
         if (cl == JS_CLASS_STRING) {
             val = JS_ToStringFree(ctx, val);
             if (JS_IsException(val))
@@ -62395,13 +62915,8 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             val = val1;
             goto concat_value;
         }
-        v = js_array_includes(ctx, jsc->stack, 1, (JSValueConst *)&val);
-        if (JS_IsException(v))
+        if (json_stack_push(ctx, jsc, p))
             goto exception;
-        if (JS_ToBoolFree(ctx, v)) {
-            JS_ThrowTypeError(ctx, "circular reference");
-            goto exception;
-        }
         indent1 = JS_ConcatString(ctx, JS_DupValue(ctx, indent), JS_DupValue(ctx, jsc->gap));
         if (JS_IsException(indent1))
             goto exception;
@@ -62416,9 +62931,6 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             sep = JS_DupValue(ctx, jsc->empty);
             sep1 = JS_DupValue(ctx, jsc->empty);
         }
-        v = js_array_push(ctx, jsc->stack, 1, (JSValueConst *)&val, 0);
-        if (check_exception_free(ctx, v))
-            goto exception;
         ret = JS_IsArray(ctx, val);
         if (ret < 0)
             goto exception;
@@ -62497,8 +63009,7 @@ static int js_json_to_str1(JSContext *ctx, JSONStringifyContext *jsc,
             }
             string_buffer_putc8(jsc->b, '}');
         }
-        if (check_exception_free(ctx, js_array_pop(ctx, jsc->stack, 0, NULL, 0)))
-            goto exception;
+        jsc->stack_len--;
         JS_FreeValue(ctx, val);
         JS_FreeValue(ctx, tab);
         JS_FreeValue(ctx, sep);
@@ -62568,18 +63079,20 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
     int64_t i, j, n;
 
     jsc->replacer_func = JS_UNDEFINED;
-    jsc->stack = JS_UNDEFINED;
     jsc->property_list = JS_UNDEFINED;
     jsc->gap = JS_UNDEFINED;
     jsc->b = &b_s;
+    jsc->stack = jsc->stack_inline;
+    jsc->stack_len = 0;
+    jsc->stack_size = JSON_STACK_INLINE;
+    jsc->plain = FALSE;
+    jsc->frames = NULL;
+    jsc->proto_ok = NULL;
     jsc->empty = JS_AtomToString(ctx, JS_ATOM_empty_string);
     ret = JS_UNDEFINED;
     wrapper = JS_UNDEFINED;
 
     string_buffer_init(ctx, jsc->b, 0);
-    jsc->stack = JS_NewArray(ctx);
-    if (JS_IsException(jsc->stack))
-        goto exception;
     if (JS_IsFunction(ctx, replacer)) {
         jsc->replacer_func = replacer;
     } else {
@@ -62665,6 +63178,8 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
     JS_FreeValue(ctx, space);
     if (JS_IsException(jsc->gap))
         goto exception;
+    jsc->plain = JS_IsUndefined(jsc->replacer_func) &&
+        JS_IsUndefined(jsc->property_list) && JS_IsEmptyString(jsc->gap);
     wrapper = JS_NewObject(ctx);
     if (JS_IsException(wrapper))
         goto exception;
@@ -62695,7 +63210,8 @@ done:
     JS_FreeValue(ctx, jsc->empty);
     JS_FreeValue(ctx, jsc->gap);
     JS_FreeValue(ctx, jsc->property_list);
-    JS_FreeValue(ctx, jsc->stack);
+    if (jsc->stack != jsc->stack_inline)
+        js_free(ctx, jsc->stack);
     return ret;
 }
 

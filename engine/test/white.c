@@ -84,6 +84,15 @@ static unsigned long white_shape_hits;
 #define JS_SHAPE_ID_CHECK 1
 #define JS_SHAPE_ID_HIT() (white_shape_hits++)
 
+/* JS_JSON_WALK() is 0 while white_json_walk_off is set: JSON.stringify then
+   writes every object and array on its general path, for the test that
+   compares the two. JS_JSON_WALKED counts the objects and arrays the walks
+   wrote. */
+static int white_json_walk_off;
+static unsigned long white_json_walked;
+#define JS_JSON_WALK() (!white_json_walk_off)
+#define JS_JSON_WALKED() (white_json_walked++)
+
 /* JS_GC_RUN counts the collections that run, full (0) and young (1). */
 static unsigned long white_gc_runs[2];
 #define JS_GC_RUN(young) (white_gc_runs[young]++)
@@ -2608,4 +2617,20 @@ int64_t white_array_room(JSValueConst a)
     JSObject *p = JS_VALUE_GET_OBJ(a);
 
     return p->fast_array ? p->u.array.u1.size : -1;
+}
+
+/* ---- the walks of JSON.stringify ---- */
+
+/* on 0 leaves the walks out (JS_JSON_WALK), 1 takes them again */
+void white_json_walk(int on)
+{
+    white_json_walk_off = !on;
+}
+
+/* the objects and arrays the walks wrote since the last call */
+unsigned long white_json_walks(void)
+{
+    unsigned long n = white_json_walked;
+    white_json_walked = 0;
+    return n;
 }

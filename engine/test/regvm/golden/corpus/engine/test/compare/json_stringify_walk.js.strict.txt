@@ -1,0 +1,64 @@
+result flat: {"a":1,"b":"two","c":true,"d":null,"e":false,"f":1.5,"g":-7}
+result nested: {"a":{"b":{"c":[1,2,{"d":[]}]}},"e":{}}
+result empty: {}
+result empty array: []
+result numbers: [0,0,1e+21,1e-7,123456789012,-1.25,null,null,null,2147483648,-2147483648,0.30000000000000004]
+result left out: {"d":1}
+result null in arrays: [null,null,null,1,null]
+result holes: [1,null,3]
+result length past the elements: [1,2,null,null]
+result array with a hole and a getter on the prototype: [0,"from proto",2] | proto get 1
+result array with extra keys: [1,2]
+result index keys first: {"1":"one","2":"two","4294967294":"last index","b":1,"a":3,"4294967295":"big","01":"zero one"}
+result the empty key and odd keys: {"":1,"a\"b":2,"c\\d":3,"e\nf":4,"\u0001":5,"é":6,"中":7,"\ud800":8,"\udc00x":9,"😀":10}
+result strings: ["","a\"b","\\","\n\r\t\b\f","\u0000\u001f","é","中文","\ud800","x\udfff","😀","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+result ropes: 42019 {"s":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"]}
+result non enumerable: {"a":1,"c":3}
+result getter: {"a":1,"b":2,"c":3} | get b
+result non enumerable getter: {"a":1}
+result getter deletes a later key: {"a":1,"c":3} | get a
+result getter adds a key: {"a":1,"b":2} | get a
+result toJSON deletes a later key: {"a":"A","c":3} | toJSON a
+result toJSON changes a later value: {"a":"A","b":2,"c":"changed"} | toJSON a
+result toJSON makes a later key not enumerable: {"a":"A","b":2,"c":3}
+result toJSON adds a key to an outer object: {"x":{"y":"Y","v":1},"u":{"t":3}} | inner toJSON
+result toJSON deep down deletes a key of every level: {"a":{"b":{"c":"C"}},"g":4}
+result toJSON deep in an array changes the array: [1,[2,"T",3],null,null]
+result toJSON pushes onto the array: ["T",2]
+result toJSON on the prototype: ["P1",{"n":2}] | proto toJSON 1
+result toJSON added to Object.prototype by a toJSON: ["first","everywhere","everywhere"]
+result toJSON added to Array.prototype by a getter: {"a":1,"b":"arr","c":{"d":"arr"}}
+result toJSON not callable: {"a":{"toJSON":5,"b":1}}
+result toJSON getter: {"a":"got"} | get toJSON
+result dates: {"d":"1970-01-01T00:00:00.000Z","e":["1970-01-02T00:00:00.000Z"]}
+result class instances: [{"x":1,"y":[2]},{"p":{"x":1,"y":[2]}}]
+result null prototype: {"a":1,"b":{}}
+result boxed: {"s":"str","n":4,"b":false,"arr":["x",5]}
+result boxed with valueOf: [9,"b"] | valueOf, toString
+result raw JSON: {"r":123,"q":["x"]}
+result proxy object: {"p":{"a":1,"b":2}} | trap get toJSON, trap ownKeys, trap get a, trap get b
+result proxy array: [[1,2]]
+result proxy on the prototype: {"a":{}} | proto trap toJSON
+result map and set: {"m":{},"s":{},"w":{}}
+result typed arrays: {"u":{"0":1,"1":2},"f":{"0":0.5}}
+result regexp and error: {"r":{},"e":{}}
+result arguments: {"0":1,"1":"two"}
+result bigint: TypeError
+result bigint in an array: TypeError
+result bigint with toJSON: {"a":"3n","b":["4n"]}
+result symbol keys only: {}
+result frozen and sealed: {"f":{"a":1},"s":[1,2]}
+result cycle: TypeError
+result cycle through an array: TypeError
+result cycle made by toJSON: TypeError
+result the same object twice: {"a":{"x":1},"b":[{"x":1},{"x":1}]}
+result functions with keys: {"g":[null]}
+result a deleted key: {"a":1,"c":3}
+result a key added after a delete: {"b":2,"a":"again"}
+result many keys: 1085 {"k0":{"i":0},"k1":1,"k2":2,"k3":{"i":3},"k4":4,"k5":5,"k6":...94,"k95":95,"k96":{"i":96},"k97":97,"k98":98,"k99":{"i":99}}
+result a long key: 451 {"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"":2}
+result deep: 4001 [{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":...}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]
+result nesting: true,true,RangeError
+mem-end obj=1378 atom=716 shape=223 prop=2272 jsfunc=101 cfunc=148 array=574 fast_array=573 elements=764 binary=0
+mem-gc obj=1345 atom=716 shape=221 prop=2224 jsfunc=101 cfunc=148 array=568 fast_array=567 elements=752 binary=0
+--- status exit 0
