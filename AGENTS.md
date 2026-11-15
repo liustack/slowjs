@@ -88,4 +88,5 @@ See [docs/releasing.md](docs/releasing.md).
 - Release patch versions only (v0.26.17, v0.26.18, ...). Do not move to a new minor version for a small problem.
 - A release is a lightweight tag on the merge commit of `main`: that is the version of the module. Pushing it runs the release job, which makes the GitHub release of the tag with the binaries of `slowjs` and nothing else (docs/releasing.md). Check that the job passed.
 - Ask the user before you create a tag, and again before you push one. Never push `main` or a tag on your own.
-- After a minor release (or a patch release the owner names), run the comparison with the other engines again and update docs/benchmarks.md as docs/releasing.md says. After every release, upgrade tifa to it and measure the release on tifa's pages.
+- Before a minor release is tagged (or a patch release the owner names), run the comparison with the other engines again on the branch of the release, on its final engine, and update docs/benchmarks.md and the README tables as docs/releasing.md says: a release ships its own numbers. After every release, upgrade tifa to it and measure the release on tifa's pages.
+

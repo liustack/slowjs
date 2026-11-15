@@ -1,5 +1,5 @@
 ---
-summary: '怎么发布一个版本：只发补丁版本，在 main 的合并提交上打轻量标签，打标签和推送前先问，发布前要更新什么，构建 slowjs 命令并把它附到标签的 GitHub release 上的发布任务，以及发布后重新运行和其他 Go 引擎的对比，并把 tifa 升级到新版本'
+summary: '怎么发布一个版本：只发补丁版本，在 main 的合并提交上打轻量标签，打标签和推送前先问，发布前要更新什么，构建 slowjs 命令并把它附到标签的 GitHub release 上的发布任务，打标签前重新运行和其他 Go 引擎的对比，让这个版本带着自己的数字发出去，以及发布后把 tifa 升级到新版本'
 read_when:
   - 一个分支已合并进 main，准备发布
   - 选下一个版本的版本号
@@ -28,6 +28,7 @@ read_when:
 3. [CHANGELOG.md](../CHANGELOG.zh-CN.md) 和 [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) 写明这个分支对用户改变了什么。分支的最后一个提交把它放到新版本号和日期之下（`docs(changelog): release <version>`），这样你要打标签的合并提交里就带着它。
 4. 在 [changes](changes/README.zh-CN.md) 里，这个版本的改动仍写着"Unreleased"。在索引的表格里和每个领域文档的 `Release:` 行里，把它换成新版本号（`grep -rn Unreleased docs/changes`，"Adding a change"下面的那句话不用管），和更新记录放在同一个最后的提交里。没有别的东西会做这件事，打了标签之后仍写着"Unreleased"的一行，从那时起就是错的。
 5. 性能画像在要紧的地方没有过期：见下面的[性能画像](#性能画像)。
+6. 这个版本要重新跑和其他引擎的对比时，现在就在分支上跑，表格也放进分支：见下面的[和其他引擎的对比](#和其他引擎的对比)。
 
 然后用合并提交把它合并进 `main`，信息是 `merge: <分支做了什么>`（见 [commit.md](commit.zh-CN.md#分支和合并)）。
 
@@ -54,6 +55,24 @@ git commit -m "build(pgo): train the profile again"
 `train.sh` 检查 `engine/pgo/loops.js` 不过时会停下：循环跑到的、页面留成冷的路径不够了，或者循环的某一部分不再走到它的函数。怎么办见 [engine/pgo/README.zh-CN.md](../engine/pgo/README.zh-CN.md#循环)。不要把 `compare/testdata` 的微基准放进循环。
 
 新画像和它改动的文件放进同一个提交。然后再跑一次 `make check-gen`：不应再有 `warning: profile:` 开头的行（说 `likely()` 的那行 `profile:` 是提示，不是警告）。取入上游 QuickJS 的提交之后（[upgrading.md](upgrading.zh-CN.md)），以及换了 LLVM 版本之后（画像格式不同），也要重新训练。
+
+## 和其他引擎的对比
+
+次版本发布时，重新运行和其他 Go 的 JavaScript 引擎以及原生引擎的对比（[benchmarks.md](benchmarks.zh-CN.md)）。它在打标签之前跑，在这个版本的分支上，在最后一次训练画像、最后一次改引擎之后，这样版本发出去时，[benchmarks.md](benchmarks.zh-CN.md) 和 README 里就是它自己这个引擎的数字。打完标签再出表，表是这个版本的，文档里却还是上一个版本的。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。一次运行是两张表：tifa 页面的渲染时间和 V8 套件，只在解释器之间比（带 JIT 的引擎关掉 JIT 来跑，或者不比）。它在 `compare/engines` 里，是一个独立的 Go 模块，在没有别的任务的四核 Linux 机器上运行。命令见 [compare/engines/README.zh-CN.md](../compare/engines/README.zh-CN.md)。
+
+1. 让对比指向这个分支，如果其他引擎的最新版本该进这次运行，就更新它们：
+
+   ```sh
+   cd compare/engines
+   go get <module>@latest && go mod tidy      # 可选，对每个其他引擎
+   ```
+
+   `compare/engines` 通过一条指向仓库根的 `replace` 引用本模块，所以运行测的是它所在的检出：检出分支上带着最终生成的引擎的那个提交。分支上在它之后的提交只改文档和对比的文件。
+
+2. 构建各引擎和原生参照（`native/build.sh`），按 README 所说运行：tifa 页面每次调用一个引擎，V8 套件五轮。每次计时的调用独占整台机器，钉在一个核上。所有的计时都在同一次会话里重新跑。对比从不在其他引擎上运行 test262。机器是共用的话，用 `-add` 把运行切成几段。
+3. 用 `go run ./cmd/pages "$page_dir" --output "results/$run-pages"` 写页面文件，和这次运行的 V8 文件一起提交。同一个提交里删掉上一次运行的结果文件：`results/` 只留最近一次。更新 [benchmarks.md](benchmarks.zh-CN.md) 和 README 的表格，版本号写这次要发的版本。
+
+4. 如果方法变了（负载、引擎、固定的输入、某项设置），在 `compare/engines/CHANGELOG.md` 里加一条。
 
 ## 打标签
 
@@ -104,23 +123,6 @@ git commit -m "build(pgo): train the profile again"
 推送标签之后任务失败了，模块照样已经发出去了：标签保留。机器的问题，重跑失败的任务就好。需要改代码的问题，修复放进下一个补丁版本，那个版本的 release 里就有二进制。
 
 ## 发布后
-
-### 重新和其他引擎对比
-
-次版本发布时，重新运行和其他 Go 的 JavaScript 引擎以及原生引擎的对比（[benchmarks.md](benchmarks.zh-CN.md)）。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。一次运行是两张表：tifa 页面的渲染时间和 V8 套件，只在解释器之间比（带 JIT 的引擎关掉 JIT 来跑，或者不比）。它在 `compare/engines` 里，是一个独立的 Go 模块，在没有别的任务的四核 Linux 机器上运行。命令见 [compare/engines/README.zh-CN.md](../compare/engines/README.zh-CN.md)。
-
-1. 让对比指向这个版本，如果其他引擎的最新版本该进这次运行，就更新它们：
-
-   ```sh
-   cd compare/engines
-   go get <module>@latest && go mod tidy      # 可选，对每个其他引擎
-   ```
-
-   `compare/engines` 通过一条指向仓库根的 `replace` 引用本模块，所以运行测的是它所在的检出：先检出这个标签。
-
-2. 构建各引擎和原生参照（`native/build.sh`），按 README 所说运行：tifa 页面每次调用一个引擎，V8 套件五轮。每次计时的调用独占整台机器，钉在一个核上。所有的计时都在同一次会话里重新跑。对比从不在其他引擎上运行 test262。机器是共用的话，用 `-add` 把运行切成几段。
-3. 用 `go run ./cmd/pages "$page_dir" --output "results/$run-pages"` 写页面文件，和这次运行的 V8 文件一起提交。同一个提交里删掉上一次运行的结果文件：`results/` 只留最近一次。更新 [benchmarks.md](benchmarks.zh-CN.md) 的表格。
-4. 如果方法变了（负载、引擎、固定的输入、某项设置），在 `compare/engines/CHANGELOG.md` 里加一条。
 
 ### 升级 tifa
 

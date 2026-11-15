@@ -78,6 +78,7 @@ b0d5bc4bf6c795e6fe50de3beb10b4a55c7ece542c65dd01c71dcba3a8f6e439  shop.js
 
 ## 重新运行
 
-见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)：命令、需要的机器、怎么重新构建包，以及怎么测。每次发布时，按 [releasing.md](releasing.zh-CN.md#重新和其他引擎对比) 里的“重新和其他引擎对比”做。
+见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)：命令、需要的机器、怎么重新构建包，以及怎么测。要重新跑对比的版本，打标签之前按 [releasing.md](releasing.zh-CN.md#和其他引擎的对比) 里的“和其他引擎的对比”做。
+
 
 test262 只在 liustack/quickjs 上运行，用仓库自己的检查（[testing.md](testing.zh-CN.md#test262)）：83426 个测试，33 个已知错误，每次运行都一样。

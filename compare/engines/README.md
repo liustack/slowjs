@@ -20,7 +20,8 @@ The V8 suite has a row for Node `--jitless` as well. `native/node-v8.cjs` takes 
 
 The page table shows liustack/slowjs twice, because the Go engines differ in what is built in. **liustack-slowjs** runs as it ships: its own Intl, Temporal, URL and URLSearchParams, from the Go packages `intl/`, `temporal/` and `url/`. **liustack-slowjs-polyfill** is the same engine with none of those packages linked or registered, and with the polyfills an engine without the features gets (FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers). On pages that format dates and numbers, Hermes and C QuickJS run FormatJS in JavaScript while liustack-slowjs runs Intl written in Go, so the first row mixes the speed of the interpreter with the Intl being built in. The second row has the interpreter alone. Ratios stay a multiple of liustack-slowjs, the first row. The second row is for the pages only: `cmd/compare` builds its binary but leaves it out of the V8 suite, where it would be the same engine twice, unless `-engines liustack-slowjs-polyfill` names it.
 
-The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/slowjs (two rows, see below), go-quickjs (its JIT is off by default) and moejs. The native references are C QuickJS 2026-06-04, Hermes V1 (the release, which has no x86-64 JIT, as it ships: bytecode compiled with `hermesc -O`) and Node with `--jitless`.
+The rule of the engine set: **the comparison is among interpreters.** An engine with a JIT runs with it off, or is left out. The Go engines are liustack/slowjs (two rows, see above)
+, go-quickjs (its JIT is off by default) and moejs. The native references are C QuickJS 2026-06-04, Hermes V1 (the release, which has no x86-64 JIT, as it ships: bytecode compiled with `hermesc -O`) and Node with `--jitless`.
 
 Each engine runs the way a person would use it. It has its own Intl and URL where it has them, and a standard polyfill where it has none: FormatJS for Intl, core-js for URL, URLSearchParams, structuredClone and the iterator helpers. A polyfill is loaded only into an engine that lacks the feature (`tifa/run.sh` has the list). The comparison's bundles run without tifa's Go functions (`__tifa_escape`, `__tifa_start_tag`, `__tifa_end_tag`, `__tifa_copy_props`, `__tifa_murmur2__`, `__tifa_random_bytes__`), tifa's GC rules and pool settings, and shared bytecode: no engine registers them, ours included, so every engine runs React's own code.
 
@@ -39,7 +40,7 @@ Each engine runs the way a person would use it. It has its own Intl and URL wher
 
 ## Run it again
 
-On a Linux machine with four cores that nothing else uses, with Go, clang, and Node and npm (the Node of `native/build.sh` will do). The run measures the checkout it is in, so check out the tag first.
+On a Linux machine with four cores that nothing else uses, with Go, clang, and Node and npm (the Node of `native/build.sh` will do). The run measures the checkout it is in, so check out the commit to measure first: for a release, the commit of its branch that holds the final generated engine, before the tag ([releasing.md](../../docs/releasing.md#the-comparison-with-the-other-engines)).
 
 ```sh
 cd compare/engines

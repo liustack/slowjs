@@ -78,6 +78,7 @@ Each page is rendered as tifa renders it: `startRender(json)` with the input eac
 
 ## Run it again
 
-See [`compare/engines/README.md`](../compare/engines/README.md): the commands, the machine it needs, how the bundles are made again and how it measures. At each release, follow "Compare with the other engines again" in [releasing.md](releasing.md#compare-with-the-other-engines-again).
+See [`compare/engines/README.md`](../compare/engines/README.md): the commands, the machine it needs, how the bundles are made again and how it measures. Before a release that runs it again is tagged, follow "The comparison with the other engines" in [releasing.md](releasing.md#the-comparison-with-the-other-engines).
+
 
 test262 is run on liustack/quickjs only, by the repository's own check ([testing.md](testing.md#test262)): 83426 tests run and 33 known errors, the same on every run.
