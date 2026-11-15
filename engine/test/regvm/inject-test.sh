@@ -128,6 +128,10 @@ EOS
 	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "two runs at one place, recorded again" pass -update
 	[ -z "$(cut -d' ' -f1 "$d/golden/s.js.txt" | sort | uniq -d)" ] || fail "two runs at one place, recorded again: $(cat "$d/golden/s.js.txt")"
 	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "two runs at one place, the golden recorded" pass
+	# an empty golden written again: every place is new
+	: > "$d/golden/s.js.txt"
+	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "an empty golden recorded again" pass -update
+	has "an empty golden recorded again" "0 changed, 4 new, 0 gone"
 	exit 0
 fi
 

@@ -170,7 +170,7 @@ summary() {
 # KEYS the count of places of each key that changed and of the new and gone
 # ones, a line "NAME COUNT" each.
 changes() {
-	awk -v sc="$sc" -v keys="$3" '
+	awk -v sc="$sc" -v keys="$3" -v oldf="$1" '
 	function fields(line, m,   i, n, f, k) {
 		split("", m)
 		n = split(line, f, " ")
@@ -180,7 +180,7 @@ changes() {
 			m[k] = f[i]
 		}
 	}
-	FNR == NR { old[$1] = $0; next }
+	FILENAME == oldf { old[$1] = $0; next }
 	{ new[$1] = $0 }
 	END {
 		for (p in new)
