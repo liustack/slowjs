@@ -1640,6 +1640,23 @@ Memory, the bytes the runtime holds after a full collection: after 200 renders o
 
 The frames of `JS_RegvmRun` (a shadow frame of 256 bytes on amd64, 176 on arm64) and `JS_CallInternal` (112, 96) are those of v0.30.7.
 
+### `new` with extra arguments in the register loop, and the own prototype read directly
+
+[`new` with more arguments than parameters stays in the register loop](changes/c-engine.md#the-frame-and-the-window-of-a-call) and [`new` reads the own `prototype` of its function directly](changes/objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through), both against main at 420dc95a, with the profile trained again on each side in a scratch copy. The generated engine on linux/amd64, callgrind: a V8 benchmark is the difference of two runs in one VM, a page of `internal/measure/pages` in the tifa mode is 3 renders after 8 warm ones. The HTML of every page and the result of every benchmark are the same.
+
+| | Instructions |
+| --- | ---: |
+| RayTrace | -8.36% |
+| Boyer | -1.86% |
+| Earley | -0.83% |
+| DeltaBlue, Splay | -0.15%, -0.24% |
+| Richards | +0.04% |
+| the 24 pages of the shop, MUI and React, without the Go runtime | -0.025% to +0.005% |
+
+A page moves by up to 0.03% between runs of one binary: the Chinese products page, at +0.005%, gave -0.005% and +0.022% in two more runs. The functions the change touches (`rv_new_frame`, `js_create_from_ctor`, `JS_GetPropertyObj`, `rv_new_slow`, `JS_CallConstructorInternal`) run 160 (React's page) to 65,000 (the post pages) fewer instructions a render on every page.
+
+The V8 suite on linux/amd64, timed before the last fix of the first change (one more test in `rv_new_frame`), 10 runs a side, alternating, medians: the score goes from 1883 to 1910, RayTrace from 2218 to 2447 and EarleyBoyer from 2966 to 3148.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.

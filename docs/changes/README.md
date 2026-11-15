@@ -311,6 +311,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
 | A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 | A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| `new f()` takes the prototype of the object it makes from the own `prototype` of `f` in its shape when that is a plain data property that holds an object, without the generic read, and reads the interrupt flag once, as a call does | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 
 ## Memory
 

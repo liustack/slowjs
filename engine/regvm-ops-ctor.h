@@ -259,12 +259,29 @@ static no_inline JSValue *rv_new_frame(JSContext *ctx, JSValue *F, const uint8_t
         rt->call_depth >= rt->max_call_depth)
         return RV_NEW_OUT;
     if (!cb->is_derived_class_constructor) {
-        obj = js_create_from_ctor(ctx, W[1], JS_CLASS_OBJECT);
-        if (JS_IsException(obj))
-            goto fail;
-        if (js_poll_interrupts(ctx) || js_uncatchable_pending(rt)) {
-            JS_FreeValue(ctx, obj);
-            goto fail;
+        JSProperty *ppr;
+        JSShapeProperty *prs;
+        /* new.target is the function and its own prototype a plain data
+           property that holds an object: what js_create_from_ctor reads
+           (JS_GetProperty finds an own property first), with no lookup
+           of the generic path. No JavaScript ran, so the interrupt flag
+           read above holds. A prototype made on first read, one that is
+           not an object, and another new.target go the generic way. */
+        if (JS_VALUE_GET_TAG(W[1]) == JS_TAG_OBJECT && JS_VALUE_GET_OBJ(W[1]) == p &&
+            (prs = find_own_property(&ppr, p, JS_ATOM_prototype)) != NULL &&
+            !(prs->flags & JS_PROP_TMASK) &&
+            JS_VALUE_GET_TAG(ppr->u.value) == JS_TAG_OBJECT) {
+            obj = JS_NewObjectProtoClass(ctx, ppr->u.value, JS_CLASS_OBJECT);
+            if (JS_IsException(obj))
+                goto fail;
+        } else {
+            obj = js_create_from_ctor(ctx, W[1], JS_CLASS_OBJECT);
+            if (JS_IsException(obj))
+                goto fail;
+            if (js_poll_interrupts(ctx) || js_uncatchable_pending(rt)) {
+                JS_FreeValue(ctx, obj);
+                goto fail;
+            }
         }
     } else {
         obj = JS_UNDEFINED;

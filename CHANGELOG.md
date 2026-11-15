@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - `new` of a constructor given more arguments than it has parameters stays in the register loop, as a call does, and takes no C stack: RayTrace runs 6.6% fewer instructions.
+- `new f()` reads the own `prototype` of `f` without the generic property read when it is a plain object. Boyer runs 2% fewer instructions, RayTrace 1.6% fewer.
 
 ## [v0.31.1] - 2026-11-16
 
