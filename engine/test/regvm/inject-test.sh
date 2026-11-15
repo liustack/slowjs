@@ -138,7 +138,14 @@ fi
 # A build with -DRV_INJECT: a script with a place that has a key and places
 # that have none (the interrupt of a conditional jump), recorded, then run
 # with a leak planted in each run that throws.
-bin=$(cd "$1" && pwd)
+# A folder of this run that links to the build: inject.sh works in
+# BIN/inject, by the name of the script, and two runs of this test at once
+# would share it.
+build=$(cd "$1" && pwd)
+bin=$d/bin
+mkdir "$bin"
+ln -s "$build/rvdiff" "$bin/rvdiff"
+ln -s "$build/regvm.stamp" "$bin/regvm.stamp"
 mkdir "$d/golden"
 cat > "$d/s.js" <<'EOS'
 "use strict";
