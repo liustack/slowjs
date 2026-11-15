@@ -643,6 +643,7 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 
 Release: Unreleased.
 
-`Call` 和转成数组的 Go 切片，把一串值连同它们的个数（C 的 int）交给引擎，Go 函数的结果则先走一遍，做成一份快照，快照里的节点和子项用 int32 编号。超过 2^31 - 1 个值（在 Go 里占 32 GiB）现在是一个错误，`quickjs: N values, the engine takes at most 2147483647`，在任何东西被截成 32 位之前就报（`engine.go` 里的 `maxValues` 和 `valuesFit`，`tmpValues` 和 `result.go` 里对结果的遍历都用它）。以前 `tmpValues` 先把整串值复制到引擎内存的一个块里，而一个块不到 4 GiB，所以这样的调用在个数被截断之前就以内存耗尽失败了：这项检查把上限写明，块变大时也仍然成立。对结果的遍历以前没有这项检查：一个 Go 函数返回 2^31 个值的切片，在内存够做快照的机器上，节点编号会被截成负的 int32，以下标越界 panic。它只是在本来就要复制或遍历一串值的地方多查一次长度，所以调用的开销不变。
+`Call` 和转成数组的 Go 切片，把一串值连同它们的个数（C 的 int）交给引擎，Go 函数的结果则先走一遍，做成一份快照，快照里的节点和子项用 int32 编号。超过 2^31 - 1 个值（在 Go 里占 32 GiB）现在是一个错误，`slowjs: N values, the engine takes at most 2147483647`
+，在任何东西被截成 32 位之前就报（`engine.go` 里的 `maxValues` 和 `valuesFit`，`tmpValues` 和 `result.go` 里对结果的遍历都用它）。以前 `tmpValues` 先把整串值复制到引擎内存的一个块里，而一个块不到 4 GiB，所以这样的调用在个数被截断之前就以内存耗尽失败了：这项检查把上限写明，块变大时也仍然成立。对结果的遍历以前没有这项检查：一个 Go 函数返回 2^31 个值的切片，在内存够做快照的机器上，节点编号会被截成负的 int32，以下标越界 panic。它只是在本来就要复制或遍历一串值的地方多查一次长度，所以调用的开销不变。
 
 测试：`valuesfit_test.go` 里的 `TestValuesFit` 在上限（`maxValues`）的两边检查它。`TestSnapshotTooManyValues` 给结果的遍历设上 3 或 4 的上限（它的字段 `max`，除了测试都是 `maxValues`），遍历含有更多 `Value` 的切片、`[]any` 和 map：遍历在超过上限的节点或子项之前就以这个错误失败，并且仍然拿到每个引用，交给快照释放。没有测试造 2^31 个值的列表：它在 Go 里要占 32 GiB。
