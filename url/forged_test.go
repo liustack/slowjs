@@ -41,6 +41,7 @@ func newForgingVM(t *testing.T) *slowjs.VM {
 		t.Fatal(err)
 	}
 	defer wrap.Free()
+	bridge := newBridge()
 	args := make([]any, 0, len(bridge))
 	for _, b := range bridge {
 		v, err := vm.NewBuiltinFunction(b)

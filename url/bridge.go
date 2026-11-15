@@ -6,16 +6,18 @@
 package url
 
 import (
+	"strings"
+
 	"github.com/liustack/slowjs"
 	"github.com/liustack/slowjs/internal/intlhook"
 	"github.com/liustack/slowjs/internal/whatwgurl"
 )
 
-// The Builtins url.js is called with. They keep no state: a URL is javascript's,
-// in the VM, under its memory limit, and nothing a script gave is held in Go
-// when a call ends. Each reads its strings through the door (door.go) and
-// answers undefined when the call is to end: the uncatchable error is then
-// pending and the answer is not read.
+// The Builtins url.js is called with. A URL is javascript's, in the VM, under
+// its memory limit, and nothing a script gave is held in Go when a call ends,
+// but for the last base a VM parsed (keptBase below). Each reads its strings
+// through the door (door.go) and answers undefined when the call is to end:
+// the uncatchable error is then pending and the answer is not read.
 
 // The bits of the record that parts puts after the parts and set takes, which
 // the getters do not show, as url.js reads them: the URL has a host (which may
@@ -41,17 +43,51 @@ const (
 	setHash
 )
 
+// maxBaseBytes is the longest base a VM keeps parsed, in bytes of UTF-8.
+const maxBaseBytes = 256
+
+// keptBase is the last base a VM parsed that was a URL of at most maxBaseBytes,
+// and its parse: a router resolves every link of a page against one base, so
+// most calls parse it no more. Each VM has its own (newBridge), which the
+// Builtins of that VM change, one call at a time, and which goes with the VM:
+// at most maxBaseBytes and the URL made of them, under 1 KiB of Go's memory a
+// VM. The parser only reads a base and copies what it takes of it, so a
+// parsed base gives what a new parse of it would.
+type keptBase struct {
+	s string
+	u *whatwgurl.URL
+}
+
+// baseParseHook, when a test sets it, is called for each base parsed.
+var baseParseHook func()
+
+// parse parses in as a base, or returns the one kept when it is the same.
+func (b *keptBase) parse(in whatwgurl.Input) (*whatwgurl.URL, error) {
+	s := in.Text()
+	if b.u != nil && b.s == s {
+		return b.u, nil
+	}
+	if h := baseParseHook; h != nil {
+		h()
+	}
+	u, err := whatwgurl.Parse(in, nil)
+	if err == nil && len(s) <= maxBaseBytes {
+		b.s, b.u = strings.Clone(s), u
+	}
+	return u, err
+}
+
 // parseArgs parses argument 0 against argument 1, a base or undefined. ok is
 // false when the input is not a URL, a string is longer than MaxUnits, the URL
 // would be, or the call is to end.
-func parseArgs(a slowjs.Args) (*whatwgurl.URL, bool) {
+func parseArgs(a slowjs.Args, kept *keptBase) (*whatwgurl.URL, bool) {
 	in, present, v := admit(a, 2, 0, 0, 1)
 	if v != admitted || !present[0] {
 		return nil, false
 	}
 	var base *whatwgurl.URL
 	if present[1] {
-		b, err := whatwgurl.Parse(in[1], nil)
+		b, err := kept.parse(in[1])
 		if err != nil {
 			return nil, false
 		}
@@ -117,21 +153,25 @@ func parts(vm *slowjs.VM, u *whatwgurl.URL) (slowjs.Value, error) {
 }
 
 // parseBuiltin is parse(input, base): the parts of the URL, or undefined.
-var parseBuiltin = newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-	u, ok := parseArgs(a)
-	if !ok {
-		return slowjs.UndefinedValue, nil
-	}
-	return parts(a.VM(), u)
-})
+func parseBuiltin(kept *keptBase) *slowjs.Builtin {
+	return newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
+		u, ok := parseArgs(a, kept)
+		if !ok {
+			return slowjs.UndefinedValue, nil
+		}
+		return parts(a.VM(), u)
+	})
+}
 
 // canParseBuiltin is canParse(input, base): 1 or 0.
-var canParseBuiltin = newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
-	if _, ok := parseArgs(a); ok {
-		return a.VM().NewInt(1), nil
-	}
-	return a.VM().NewInt(0), nil
-})
+func canParseBuiltin(kept *keptBase) *slowjs.Builtin {
+	return newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
+		if _, ok := parseArgs(a, kept); ok {
+			return a.VM().NewInt(1), nil
+		}
+		return a.VM().NewInt(0), nil
+	})
+}
 
 // errNotParts is the error of set for arguments that url.js does not hand it:
 // a part that is not a setter's, or a record that is not a URL's. A script
@@ -247,8 +287,12 @@ var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a slowjs.Args) (slowjs.
 	return emit(a.VM(), out)
 })
 
-// bridge is the list of Builtins url.js is a function of, in its order.
-var bridge = []*slowjs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
+// newBridge is the list of Builtins url.js is a function of, in its order,
+// for one VM: parse and canParse share the base of that VM.
+func newBridge() []*slowjs.Builtin {
+	kept := &keptBase{}
+	return []*slowjs.Builtin{parseBuiltin(kept), setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin(kept)}
+}
 
 // callHook, when a test sets it, is called as each Builtin of this package
 // starts (enter true) and as it ends.

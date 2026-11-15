@@ -310,13 +310,14 @@ func TestManyURLsCountedInVM(t *testing.T) {
 
 // TestNoPackageState reads the source: no variable of the package outside a
 // function holds what a script gave, or anything that changes. A cache of
-// parsed bases, in Go, would belong to no VM's memory limit and outlive its
-// VM. What stays is made once and the same for every VM (the Builtins, the
-// compiled script, the errors they answer, the hooks of the tests).
+// parsed bases for the whole process would belong to no VM and outlive them:
+// each VM keeps its last base in its own Builtins (newBridge). What stays is
+// made once and the same for every VM (the Builtins, the compiled script, the
+// errors they answer, the hooks of the tests).
 func TestNoPackageState(t *testing.T) {
 	allowed := map[string]bool{
-		"parseBuiltin": true, "canParseBuiltin": true, "setBuiltin": true, "formDecodeBuiltin": true, "formEncodeBuiltin": true,
-		"bridge": true, "errTooLong": true, "errNotParts": true, "admitHook": true, "callHook": true, "shim": true, "script": true, "_": true,
+		"setBuiltin": true, "formDecodeBuiltin": true, "formEncodeBuiltin": true,
+		"errTooLong": true, "errNotParts": true, "admitHook": true, "callHook": true, "baseParseHook": true, "shim": true, "script": true, "_": true,
 	}
 	var vars []string
 	for _, f := range parseFiles(t, ".") {
