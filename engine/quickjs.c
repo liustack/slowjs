@@ -15629,12 +15629,16 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                 }
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) {
                     /* the variable made read-only below, or the flags set
-                       at the end */
+                       at the end. A module namespace refuses a read-only
+                       export below, and a define that is refused copies
+                       nothing (its exports are not configurable, so their
+                       flags are not changed at the end either). */
                     mask = (flags >> JS_PROP_HAS_SHIFT) &
                         (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
                     if ((((prs->flags ^ flags) & mask) ||
-                         (flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
-                         JS_PROP_HAS_WRITABLE) &&
+                         ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                          JS_PROP_HAS_WRITABLE &&
+                          p->class_id != JS_CLASS_MODULE_NS)) &&
                         js_shape_prepare_update(ctx, p, &prs))
                         return -1;
                     if (flags & JS_PROP_HAS_VALUE) {

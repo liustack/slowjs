@@ -287,7 +287,7 @@ read_when:
 | 一个 shape 最多放 2^26 - 1 个属性，查找不会漏掉超过这个数的属性 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性) |
 | 往数组里加的元素在数组改动之前被拒绝或失败：被拒绝的存储不抛转换的 RangeError，失败的元素让长度不变 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#数组元素在数组改动之前被拒绝) |
 | 在构造函数上调用 `Array.from` 时，给映射函数完整的下标，设完整的长度 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#在构造函数上调用-arrayfrom-传完整的下标和长度) |
-| 改动已有属性标志的定义在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样，数组的长度也一样 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败) |
+| 改动已有属性标志的定义在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样，数组的长度也一样。被拒绝的定义什么都不复制 | Unreleased | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败) |
 
 ## 内存
 

@@ -7833,55 +7833,100 @@ static void test_array_from_past_32_bits(void)
    and after each the property is as it was (the define threw out of
    memory) or as the define makes it.
    Before, the length or the value was set first, and a failed copy left it
-   set with the flags as they were. */
+   set with the flags as they were.
+   A define that is refused changes nothing and copies nothing, so it gives
+   false and never runs out of memory: a read-only export of a module
+   namespace, whose shape the namespace of a twin module shares. */
+
+/* reset of test_define_existing_oom: "NS" makes two new modules with the same
+   export, whose namespaces share a shape, as ns1 and ns2 (a namespace whose
+   define copied its shape shares it no more) */
+static int define_reset(JSContext *ctx, const char *reset, int k)
+{
+    static const char mod_src[] = "export let x = 1;";
+    JSValue g, mod, r;
+    char name[32];
+    int i, ok = 1;
+
+    if (strcmp(reset, "NS") != 0)
+        return eval_ok(ctx, reset);
+    g = JS_GetGlobalObject(ctx);
+    for (i = 0; i < 2 && ok; i++) {
+        snprintf(name, sizeof(name), "ns%d-%d", i + 1, k);
+        mod = JS_Eval(ctx, mod_src, strlen(mod_src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (JS_IsException(mod)) {
+            ok = 0;
+            break;
+        }
+        r = JS_EvalFunction(ctx, JS_DupValue(ctx, mod));
+        ok = !JS_IsException(r);
+        JS_FreeValue(ctx, r);
+        if (ok)
+            JS_SetPropertyStr(ctx, g, i ? "ns2" : "ns1", JS_GetModuleNamespace(ctx, JS_VALUE_GET_PTR(mod)));
+        JS_FreeValue(ctx, mod);
+    }
+    JS_FreeValue(ctx, g);
+    return ok && eval_ok(ctx, "o = ns1; o2 = ns2; r = 0");
+}
+
 static void test_define_existing_oom(void)
 {
     static const struct {
-        const char *name, *reset, *desc, *state, *before, *after;
+        const char *name, *reset, *change, *state, *before, *after;
+        int oom; /* 1: some call fails and changes nothing, 0: none fails */
     } cases[] = {
-        { "the length and writable of an array", "o = []", "'length', { value: 2, writable: false }",
-          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable", "0:true", "2:false" },
+        { "the length and writable of an array", "o = []",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable", "0:true", "2:false", 1 },
         { "the length of an array and writable after a shorter one", "o = [1, 2, 3, 4]",
-          "'length', { value: 2, writable: false }",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
           "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable + ':' + o.join()",
-          "4:true:1,2,3,4", "2:false:1,2" },
-        { "a value and writable", "o = { x: 1 }; o2 = { x: 1 }", "'x', { value: 2, writable: false }",
-          "o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "1:true", "2:false" },
-        { "a value and enumerable", "o = { x: 1 }; o2 = { x: 1 }", "'x', { value: 2, enumerable: false }",
-          "o.x + ':' + Object.keys(o).length", "1:1", "2:0" },
+          "4:true:1,2,3,4", "2:false:1,2", 1 },
+        { "a value and writable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, writable: false })",
+          "o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "1:true", "2:false", 1 },
+        { "a value and enumerable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, enumerable: false })", "o.x + ':' + Object.keys(o).length",
+          "1:1", "2:0", 1 },
         { "a getter and enumerable", "o = mk(); o2 = mk()",
-          "'x', { get: function () { return 2 }, enumerable: false }", "o.x + ':' + Object.keys(o).length", "1:1",
-          "2:0" },
+          "Object.defineProperty(o, 'x', { get: function () { return 2 }, enumerable: false })",
+          "o.x + ':' + Object.keys(o).length", "1:1", "2:0", 1 },
+        { "a read-only export of a module namespace", "NS",
+          "r = Reflect.defineProperty(o, 'x', readOnly)",
+          "r + ':' + o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "0:1:true", "false:1:true", 0 },
     };
     VM v = vm_new();
+    JSValue g;
     size_t c;
-    char src[256];
+    int k = 0;
+    char src[320];
 
     for (c = 0; c < countof(cases); c++) {
-        JSValue g, f;
+        JSValue f;
         int fail, n = 0, ooms = 0;
 
-        snprintf(src, sizeof(src), "var o, o2; function mk() { return { get x() { return 1 } } }"
-                 " function change() { Object.defineProperty(o, %s) }", cases[c].desc);
+        snprintf(src, sizeof(src), "var o, o2, r, readOnly = { writable: false };"
+                 " function mk() { return { get x() { return 1 } } }"
+                 " function change() { %s }", cases[c].change);
         CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[c].name);
         g = JS_GetGlobalObject(v.ctx);
         f = JS_GetPropertyStr(v.ctx, g, "change");
         JS_FreeValue(v.ctx, g);
         /* once, so that the code of change is compiled and its atoms made */
-        CHECK(eval_ok(v.ctx, cases[c].reset) && eval_ok(v.ctx, "change()"), "%s: the first change threw",
+        CHECK(define_reset(v.ctx, cases[c].reset, k++) && eval_ok(v.ctx, "change()"), "%s: the first change threw",
               cases[c].name);
         for (fail = 0; fail == 0 || fail <= n; fail++) {
             int made;
             JSValue r;
 
-            CHECK(eval_ok(v.ctx, cases[c].reset), "%s: the reset threw", cases[c].name);
+            CHECK(define_reset(v.ctx, cases[c].reset, k++), "%s: the reset threw", cases[c].name);
             CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: before call %d", cases[c].name, fail);
             r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
             if (fail == 0)
                 n = made;
             if (JS_IsException(r)) {
-                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "%s: call %d failing: not out of memory",
-                      cases[c].name, fail);
+                CHECK(cases[c].oom && fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s: call %d failing: threw", cases[c].name, fail);
                 JS_FreeValue(v.ctx, JS_GetException(v.ctx));
                 ooms++;
                 CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: call %d failing: the define changed it",
@@ -7892,7 +7937,8 @@ static void test_define_existing_oom(void)
                       cases[c].name, fail);
             }
         }
-        CHECK(n > 0 && ooms > 0, "%s: %d calls of the allocator, %d failed the define", cases[c].name, n, ooms);
+        if (cases[c].oom)
+            CHECK(n > 0 && ooms > 0, "%s: %d calls of the allocator, %d failed the define", cases[c].name, n, ooms);
         JS_FreeValue(v.ctx, f);
     }
     vm_free(&v);
