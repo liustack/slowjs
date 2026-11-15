@@ -1140,9 +1140,31 @@ Instructions a render. Native is the C tree built by clang, callgrind on an AMD 
 
 ### The next key of a for in loop and the read of it
 
-[The next key of a for in loop is taken in the register loop](changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop), counted on 2026-11-15 against `3c12c835`. A render takes 2,399 steps of for in loops on React's page, 8,465 on the store's home page, 16,450 on its products page, 9,934 on the workbench's studio page, 4,111 on its stats page, 34,096 on MUI's orders page, 12,523 on its home page and 215,983 in long Markdown. A step took about 155 instructions on amd64 (callgrind, a loop over 8 keys, `host_poll` left out) and 223 on the M4, about 90 of them in `rv_w_for_in_next`.
+[The next key of a for in loop is taken in the register loop](changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) and [the read of the key a for in loop just gave](changes/c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave), counted on 2026-11-15 against v0.31.0. A render takes 2,399 steps of for in loops on React's page, 8,465 on the store's home page, 16,450 on its products page, 9,934 on the workbench's studio page, 4,111 on its stats page, 34,096 on MUI's orders page, 12,523 on its home page and 215,983 in long Markdown, and reads the key just given 1,681, 5,709, 11,940, 7,989, 3,248, 34,291, 12,116 and 24,184 times. 98% to 100% of the keys come from the shape the loop started from. In a loop over 8 keys on amd64 (callgrind, `host_poll` left out) a step took 155 instructions and takes 89, and a read `x = o[k]` took 103 and takes 68, where `x = o.c` takes 48. On the M4 (the native host built by LLVM 22, the lowest of 3 runs) a step took 174 and takes 111, and a read 88 and 67. A loop over an array that reads its elements by key (`array_for_in` of `compare/testdata`) took 603 instructions a step on amd64 and takes 560, and on the M4 572 and 541.
 
-Instructions a render, native, amd64 (callgrind, three timed renders after two warm ones, `host_poll` left out): MUI's orders page 185.07M to 183.06M (-1.09%), its home page 81.08M to 80.41M (-0.83%), the workbench's studio page 153.52M to 152.94M (-0.38%), React's page 29.74M to 29.63M (-0.38%). Every page gives the same HTML.
+Instructions a render on the native host, callgrind on linux/amd64 (three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with `urlmemo.js`, Markdown two after one), for the next key alone and for both changes. Every page gives the same HTML.
+
+| Page | Next key | Both |
+| --- | ---: | ---: |
+| React's page | -0.38% | -0.76% |
+| The store's home page | -0.32% | -0.54% |
+| The store's products page | -0.42% | -0.68% |
+| The workbench's studio page | -0.37% | -0.61% |
+| The workbench's stats page | -0.25% | -0.44% |
+| MUI's orders page | -1.12% | -1.74% |
+| MUI's home page | -0.92% | -1.39% |
+| Long Markdown (400 sections) | -0.02% | -0.11% |
+
+In the product (tifa's `test/ssr`, callgrind on linux/amd64 for one page of each group, three timed renders less one, halved), as generated with the profile of v0.31.0, and with the profile trained again on both changes against v0.31.0 trained again the same way. Trained again the same way, v0.31.0 itself moves by -0.19% to +0.03%. Every page gives the same HTML.
+
+| Page | As generated | Trained |
+| --- | ---: | ---: |
+| React's page | +0.41% | -0.66% |
+| The store's home page | +0.29% | -0.41% |
+| The workbench's studio page | +0.03% | -0.71% |
+| MUI's orders page | -1.28% | -2.14% |
+
+As generated, the changes make the profile of `JS_RegvmRun`, `rv_getel` and `rv_one` stale, and `JS_RegvmRun` without its profile costs more than the changes gain on React's page and the store. Trained again, every page runs fewer instructions.
 
 ### The register interpreter
 
