@@ -28,6 +28,7 @@ func TestBuiltinWorkStops(t *testing.T) {
 		{"padStart", ``, `for (;;) ''.padStart(1e5, 'ab')`, stopPolls},
 		{"replaceAll", `var s = 'ab'.repeat(1e4)`, `for (;;) s.replaceAll('a', 'c')`, stopPolls},
 		{"join", `var a = Array.from({length: 1e4}, (_, i) => i)`, `for (;;) a.join(',')`, stopPolls},
+		{"join of strings", `var a = Array.from({length: 1e4}, (_, i) => 'item ' + i)`, `for (;;) a.join(',')`, stopPolls},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			m := newTestVM(t)

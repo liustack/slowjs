@@ -900,6 +900,7 @@ func js_iterator_proto_toArray(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintpt
 func js_iterator_wrap_finalizer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func js_iterator_wrap_mark(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func js_iterator_wrap_next(a0 uintptr, a1 uintptr)
+func js_join_wide(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr)
 func js_json_check(a0 uintptr, a1 uintptr)
 func js_json_isRawJSON(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_json_parse(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
