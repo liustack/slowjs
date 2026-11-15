@@ -6,6 +6,7 @@
 package slowjs // import "github.com/liustack/slowjs"
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -33,6 +34,30 @@ var regvmSpins = []struct{ name, js string }{
 	{"built-ins", `function go() { var m = new Map([[1, 1]]), s = new Set(['a']), x = 0; for (;;) { x = m.has(1) + s.has('a') + Math.clz32(x); } }`},
 	{"built-ins no loop", `function t(n, m) { return n === 0 ? m.has(n) + Math.clz32(n) : t(n - 1, m) + t(n - 1, m); } function go() { return t(60, new Map()); }`},
 	{"built-ins searches", `function go() { var o = { a: 1 }, a = [1, 2, 3], s = "abcabc", w = new WeakMap([[o, 1]]), x = 0; for (;;) { x = Object.hasOwn(o, "a") + o.hasOwnProperty("b") + a.indexOf(3) + a.includes(x) + s.indexOf("c") + s.includes("ca") + s.startsWith("ab") + s.endsWith("bc") + Array.isArray(a) + w.has(o) + w.get(o); } }`},
+	// frames of 3000 live locals that hold a value with a reference count:
+	// a return frees them in groups of 8 with a poll tick for each group
+	// (rv_free_slots in engine/regvm-run.h)
+	{"big frames", bigFrame(3000) + `function go() { var o = {}; for (;;) big(0, o); }`},
+	{"big frames no loop", bigFrame(3000) + `function go() { return big(60, {}); }`},
+}
+
+// bigFrame is big(n, o), a function of n live locals, each holding o, that
+// calls itself twice down to n = 0.
+func bigFrame(n int) string {
+	var b strings.Builder
+	b.WriteString("function big(n, o) { var ")
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "v%d = o", i)
+	}
+	b.WriteString("; if (n > 0) { big(n - 1, o); big(n - 1, o); } if (globalThis.never) {")
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, " keep(v%d);", i)
+	}
+	b.WriteString(" } }\n")
+	return b.String()
 }
 
 // regvmRun runs go() of js on a new VM with the register loop on, with stop
