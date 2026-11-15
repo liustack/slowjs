@@ -23,6 +23,10 @@ reset: 300="o" 301=u 302="y"
 reset: 300="o" 301="x" 302=u
 optional: 301=u / 301="z"
 shared name: 1=u 2="c" d=c / 1="a" 2=u / null
+shared name, 255 bars apart: c
+shared name, 256 bars apart: c
+shared name, 257 bars apart: c
+shared name, 65536 bars apart: c
 matchAll: 0:301:o 301:301:o
 replace: [bvz6e0]-[bvz6e0]
 replace fn: 303:o:0-303:o:301

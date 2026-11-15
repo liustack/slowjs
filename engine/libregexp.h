@@ -40,8 +40,9 @@
 #define LRE_RET_MEMORY_ERROR (-1)
 #define LRE_RET_TIMEOUT      (-2)
 
-/* trailer length after the group name including the trailing '\0' */
-#define LRE_GROUP_NAME_TRAILER_LEN 2 
+/* trailer length after the group name including the trailing '\0': the
+   '\0', then the scope of the name (u32, see is_duplicate_group_name) */
+#define LRE_GROUP_NAME_TRAILER_LEN 5
 
 uint8_t *lre_compile(int *plen, char *error_msg, int error_msg_size,
                      const char *buf, size_t buf_len, int re_flags,

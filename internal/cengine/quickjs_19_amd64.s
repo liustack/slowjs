@@ -8462,6 +8462,31 @@ TEXT ·JS_GetTypedArrayBuffer(SB), $48-56
 	BYTE $0x8c
 	RET
 
+TEXT ·dbuf_put_u32_313(SB), $32-24
+	NO_LOCAL_POINTERS
+#ifdef GOOS_windows
+	LEAQ -12288(SP), R12
+	CMPQ R12, 16(R14)
+	JHI 2(PC)
+	CALL ·goasm_room(SB)
+	BYTE $0x90
+#endif
+	PCALIGN $16
+	MOVQ a0+0(FP), R12
+	MOVQ a1+8(FP), R13
+	MOVQ a2+16(FP), R14
+	QUAD $0x104d8b4908458b49
+	QUAD $0x7603f98348c12948
+	QUAD $0x348944004d8b4912
+	QUAD $0x45894904c0834801
+	QUAD $0x4c2424894c15eb08
+	QUAD $0x2474894c08246c89
+	BYTE $0x10
+	CALL ·__dbuf_put_u32(SB)
+	BYTE $0xeb
+	BYTE $0x00
+	RET
+
 TEXT ·mark_children_specialized_1(SB), $160-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
@@ -18249,7 +18274,7 @@ TEXT ·emit_u8(SB), $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·dbuf_put_u16_342(SB), $32-24
+TEXT ·dbuf_put_u16_343(SB), $32-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
 	LEAQ -12288(SP), R12

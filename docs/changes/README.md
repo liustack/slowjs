@@ -238,6 +238,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | v0.30.2 | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
 | A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | v0.31.1 | [regexp.md](regexp.md#a-literal-every-match-holds) |
 | A regexp takes up to 32,767 capture groups, as V8 does, where upstream stops at 254: a capture index is a u16 in the header and in every op that names a group. Bytecode version 14 | Unreleased | [regexp.md](regexp.md#up-to-32767-capture-groups) |
+| Two groups of one name in alternatives 256 bars apart, or a multiple of 256, are no longer refused as duplicates: the scope of a group name is a u32 | Unreleased | `is_duplicate_group_name` in [libregexp.c](../../engine/libregexp.c) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 

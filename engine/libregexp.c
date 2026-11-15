@@ -96,7 +96,9 @@ typedef struct {
     BOOL ignore_case;
     BOOL multi_line;
     BOOL dotall;
-    uint8_t group_name_scope;
+    /* the alternatives started so far: a u32, so that names more than 255
+       alternatives apart are not taken for one scope */
+    uint32_t group_name_scope;
     int capture_count;
     int total_capture_count; /* -1 = not computed yet */
     int has_named_captures; /* -1 = don't know, 0 = no, 1 = yes */
@@ -2411,11 +2413,11 @@ static int find_group_name(REParseState *s, const char *name, BOOL emit_group_in
     return n;
 }
 
-static BOOL is_duplicate_group_name(REParseState *s, const char *name, int scope)
+static BOOL is_duplicate_group_name(REParseState *s, const char *name, uint32_t scope)
 {
     const char *p, *buf_end;
     size_t len, name_len;
-    int scope1;
+    uint32_t scope1;
     
     p = (char *)s->group_names.buf;
     if (!p)
@@ -2425,7 +2427,7 @@ static BOOL is_duplicate_group_name(REParseState *s, const char *name, int scope
     while (p < buf_end) {
         len = strlen(p);
         if (len == name_len && memcmp(name, p, name_len) == 0) {
-            scope1 = (uint8_t)p[len + 1];
+            scope1 = get_u32((const uint8_t *)p + len + 1);
             if (scope == scope1)
                 return TRUE;
         }
@@ -2627,7 +2629,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
                 /* group name with a trailing zero */
                 dbuf_put(&s->group_names, (uint8_t *)s->u.tmp_buf,
                          strlen(s->u.tmp_buf) + 1);
-                dbuf_putc(&s->group_names, s->group_name_scope);
+                dbuf_put_u32(&s->group_names, s->group_name_scope);
                 s->has_named_captures = 1;
                 goto parse_capture;
             } else {
@@ -2638,7 +2640,7 @@ static int re_parse_term(REParseState *s, BOOL is_backward_dir)
             p++;
             /* capture without group name */
             dbuf_putc(&s->group_names, 0);
-            dbuf_putc(&s->group_names, 0);
+            dbuf_put_u32(&s->group_names, 0);
         parse_capture:
             if (s->capture_count >= CAPTURE_COUNT_MAX)
                 return re_parse_error(s, "too many captures");

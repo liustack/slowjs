@@ -97,6 +97,12 @@
   var dup = make("(?:(?<d>a)|" + alts.join("|") + "|(?<d>c))\\k<d>");
   out.push("shared name: " + pick(dup.exec("cc"), [1, 2]) + " d=" + dup.exec("cc").groups.d +
            " / " + pick(dup.exec("aa"), [1, 2]) + " / " + dup.exec("ca"));
+  [254, 255, 256, 65535].forEach(function (n) {
+    var many = [];
+    for (var k = 0; k < n; k++) many.push("b" + k);
+    var r = make("(?<d>a)|" + many.join("|") + "|(?<d>c)");
+    out.push("shared name, " + (n + 1) + " bars apart: " + (typeof r === "string" ? r : r.exec("c").groups.d));
+  });
 
   // matchAll, replace and split
   var g = make(n_groups(300), "g");
