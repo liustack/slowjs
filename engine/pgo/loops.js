@@ -246,4 +246,28 @@ taBigInt(BigUint64Array);
     }
     use(s);
 })();
+
+// Functions that pass their arguments on with f.apply(this, arguments),
+// sloppy and strict, with 0 to 5 arguments, a constructor that passes its
+// arguments to an init method that way, and arguments.length and
+// arguments[i] read in a sloppy function.
+(function () {
+    function add3(a, b, c) { return (a | 0) + (b | 0) + (c | 0); }
+    function fwd() { return add3.apply(this, arguments); }
+    function fwdS() { "use strict"; return add3.apply(this, arguments); }
+    function Point() { this.init.apply(this, arguments); }
+    Point.prototype.init = function (x, y) { this.x = x; this.y = y | 0; };
+    function count() {
+        var n = 0;
+        for (var i = 0; i < arguments.length; i++) n += arguments[i];
+        return n;
+    }
+    var s = 0;
+    for (var k = 0; k < 3000; k++) {
+        s += fwd() + fwd(k) + fwd(k, 1) + fwd(k, 1, 2) + fwdS(k, 2, 3, 4) + fwdS(k, 1, 2, 3, 4);
+        var p = new Point(k, k & 7);
+        s += p.x + p.y + count(k, 1, 2) + count();
+    }
+    use(s);
+})();
 sink;
