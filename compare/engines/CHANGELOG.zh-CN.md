@@ -2,6 +2,12 @@
 
 [English](CHANGELOG.md) · 简体中文
 
+## 2026-11-16：v0.31.1 的这一次运行
+
+- moejs 这次和另外六个页面引擎在同一个会话里计时，不再单独一个会话，所以它的比值和其他引擎来自同一个会话。
+- go-quickjs 从 v0.37.3 升到 v0.38.0（`go.mod`、`go.sum`）。moejs 仍是 v0.1.0，那是它最新的版本。
+- V8 的每一轮有六方：三个 Go 引擎、C QuickJS、Hermes 和带 `--jitless` 的 Node，每方每轮各跑一次，顺序轮流变。`liustack-slowjs-polyfill` 不在其中。
+
 ## 2026-11-15：liustack-slowjs-polyfill，V8 套件加入 Node
 
 - 页面表给 liustack/slowjs 加了第二行 `liustack-slowjs-polyfill`：裸引擎，不带 `intl`、`temporal` 和 `url` 这几个包，加载的是缺这些功能的引擎会拿到的 polyfill。它有自己的适配器（`eng_liustackpolyfill`）、二进制（`liustackpolyfill`）、`tifa/run.sh` 的运行（`TIFA_ONLY=liustack-slowjs-polyfill`，类别 `bench`、`pf` 和 `mui-pf`）和 `cmd/pages` 里的一列。比值仍以 `liustack-slowjs` 为基准。`cmd/compare -build-only` 会构建它，V8 套件不跑它，除非 `-engines` 点名。
