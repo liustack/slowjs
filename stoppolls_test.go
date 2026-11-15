@@ -31,7 +31,8 @@ const stopPolls = 5
 // characters and spends about a tick on each (repeat writing one character
 // at a time, the backward search of lastIndexOf, a search in a string of 16
 // bits): a step is 6.6 polls of 10,000 ticks, so up to 7 polls see the
-// request. A call of 'x'.repeat(1e5) that reads no flag is 10.
+// request. The scan of a style name of the tag functions is as long a step
+// on amd64. A call of 'x'.repeat(1e5) that reads no flag is 10.
 const stepStopPolls = 9
 
 // checkStopped fails t unless err is the uncatchable interrupt and the engine
