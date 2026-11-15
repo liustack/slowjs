@@ -1739,14 +1739,25 @@ struct ShadowStack : PassInfoMixin<ShadowStack> {
       };
 
       // Each use computes the address from argument 0 where it needs it, so
-      // no derived pointer has to survive a call in a register.
+      // no derived pointer has to survive a call in a register. A phi gets
+      // its address at the end of the incoming block, one per phi and block:
+      // a phi that names a block several times (cases of one switch) must
+      // hold the same value in each of those entries, and they are all A.
       for (auto [A, o] : placed) {
+        DenseMap<std::pair<PHINode *, BasicBlock *>, Value *> phiAt;
         for (Use &U : make_early_inc_range(A->uses())) {
           auto *I = cast<Instruction>(U.getUser());
-          Instruction *at = I;
-          if (auto *Phi = dyn_cast<PHINode>(I))
-            at = Phi->getIncomingBlock(U)->getTerminator();
-          IRBuilder<> B(at);
+          if (auto *Phi = dyn_cast<PHINode>(I)) {
+            BasicBlock *from = Phi->getIncomingBlock(U);
+            Value *&gep = phiAt[{Phi, from}];
+            if (!gep) {
+              IRBuilder<> B(from->getTerminator());
+              gep = B.CreateConstGEP1_64(I8, ss, o);
+            }
+            U.set(gep);
+            continue;
+          }
+          IRBuilder<> B(I);
           U.set(B.CreateConstGEP1_64(I8, ss, o));
         }
         A->eraseFromParent();
