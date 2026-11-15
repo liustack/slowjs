@@ -168,7 +168,7 @@ Tests: `hole` in `internal/goasm/gen/testdata/check/mini.c` is a `switch` with s
 
 ## A phi gets one address of a local per incoming block
 
-Release: Unreleased.
+Release: v0.31.1.
 
 The shadow-stack pass (`internal/goasm/gen/pass/shadow.cpp`) moves every local onto the shadow stack and writes the address of the local, argument 0 plus its offset, where each use needs it. For a phi, that is at the end of the block the value comes from. It made one address for each use, and a phi that names one block several times (three cases of one `switch` that go to the same block) holds one use per entry, so it got several different addresses for that block. LLVM's verifier refuses such a phi (`PHI node has multiple entries for the same basic block with different incoming values!`), and the generation stopped: no wrong code was written. The optimizer makes this shape from a small array of two locals indexed by a counter (`next[n++] = t`) in code with a `switch`. The engine had none, so C that made one could not be generated.
 

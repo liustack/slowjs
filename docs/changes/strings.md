@@ -92,7 +92,7 @@ Tests: `engine/test/compare/string_add.js` (its output checked against Node 24) 
 
 ## A power of two prints its shortest digits
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Number::toString` gives the fewest digits that read back as the number (the specification asks for the smallest k). QuickJS looked for them by rounding the number to 17 digits, then 16, and so on, and stopped at the first count whose rounding did not read back. Every float64 has its neighbours at the same distance on both sides, except a power of two: the float64 below it is twice as close as the one above. So for a power of two the digits rounded to nearest can lie below it and too far, while the digits just above it still read back, and QuickJS stopped one digit too early. It printed `2 ** -44` as `5.6843418860808015e-14`, 17 digits, where Node prints `5.684341886080802e-14`. 54 powers of two (and their negatives) were printed with one digit too many: 2^-1017, 2^-1007, 2^-957, 2^-921, 2^-808, 2^-791, 2^-788, 2^-778, 2^-705, 2^-695, 2^-662, 2^-652, 2^-645, 2^-569, 2^-549, 2^-509, 2^-499, 2^-496, 2^-489, 2^-383, 2^-366, 2^-296, 2^-140, 2^-97, 2^-77, 2^-44, 2^-24, 2^89, 2^122, 2^132, 2^149, 2^172, 2^182, 2^275, 2^305, 2^345, 2^378, 2^398, 2^405, 2^481, 2^534, 2^544, 2^554, 2^574, 2^594, 2^710, 2^740, 2^803, 2^863, 2^890, 2^896, 2^956, 2^966 and 2^976. Now, in radix 10, when the number is a power of two and its digits rounded to nearest do not read back, `js_dtoa` (`engine/dtoa.c`) tries the digits just above it, and goes on to fewer digits when those read back. These 108 numbers print as Node prints them. `toString` with another radix, `toFixed`, `toPrecision` and `toExponential` with digits are as they were.
 
@@ -102,7 +102,7 @@ Tests: `engine/test/compare/number_to_string.js` prints what Node 24 prints for 
 
 ## Numbers that are not integers convert to text without big numbers
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Number::toString` in radix 10 of a number that is not an integer of 53 bits or less (`String(x)`, a template, `'' + x`, `x + ''`, `toString()`, `JSON.stringify`, a property key, `join`) went through the loop of `js_dtoa` that looks for the shortest digits with big numbers: it rounds the number to 17 digits, then 16 and so on, with a multiplication by a power of ten and a conversion back for each count, then writes the digits out of a big number. That is about 5,000 instructions a number. A chart drawn by recharts and d3 writes its SVG paths with `d3-path`, which converts every coordinate, and spent about a fifth of a render there.
 

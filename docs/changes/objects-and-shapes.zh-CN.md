@@ -399,7 +399,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## Object.isFrozen 和 Object.isSealed 先问对象能不能扩展
 
-版本：Unreleased。
+版本：v0.31.1。
 
 `Object.isFrozen` 和 `Object.isSealed` 先列出对象的自有键，逐个取描述符，最后才问对象能不能扩展。规范（TestIntegrityLevel）先问这一步，能扩展的对象既不是 sealed 也不是 frozen，键就不用再问了。在 Proxy 上看得出区别。目标能扩展时，引擎调用 `ownKeys` 和 `getOwnPropertyDescriptor` 两个 trap，从不调用 `isExtensible`，而 Node 只调用 `isExtensible`。`ownKeys` trap 抛错时引擎的调用跟着抛错，而 Node 返回 false。目标不能扩展时，各个 trap 现在按 Node 的顺序调用，先调用 `isExtensible`。另外，键已经列出之后 `isExtensible` 抛错的话，这份键的列表从没释放：它占的块一直用着，直到 runtime 释放，测试宿主于是报 "1 runtimes freed with blocks still in use" 退出。上游 QuickJS 的顺序和引擎原来的一样。
 
@@ -407,7 +407,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 给模块命名空间定义属性时先读它的绑定
 
-版本：Unreleased。
+版本：v0.31.1。
 
 模块命名空间的 `[[DefineOwnProperty]]` 先取这个属性，也就是读它的绑定，绑定还没初始化时读取会抛 `ReferenceError`（模块导入自己，在自己的 `let`、`const`、`class` 执行之前查看自己的命名空间）。引擎没有读：对这样的命名空间 `Object.seal` 直接返回它，对某个绑定 `Reflect.defineProperty` 返回 true 或 false，`Object.defineProperty` 抛 `TypeError`。现在 `JS_DefineProperty` 遇到模块命名空间里还没初始化的绑定时抛 `ReferenceError`，和 Node 一样。`Object.isSealed`、`Object.isFrozen` 和 `Object.freeze` 原来就抛这个错。
 
@@ -415,7 +415,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## Object.isFrozen、Object.isSealed、Object.freeze 和 Object.seal 走一遍 shape
 
-版本：Unreleased。
+版本：v0.31.1。
 
 对不能扩展的对象，`Object.isFrozen` 和 `Object.isSealed` 先把它的键列进一个新数组，再逐个查找取描述符。`Object.freeze` 和 `Object.seal` 列出键后逐个重新定义，每个键都要查找一次、检查一次标志。Redux Toolkit 用的 immer 会冻结它交出去的状态，遍历时对每个对象先问 `isFrozen` 再冻结，一遍又一遍：用 Redux Toolkit 管状态的页面每次渲染调用约 156,000 次 `isFrozen`、2,900 次 `freeze`，多数是 9 个键的已冻结对象。现在对普通对象和数组，这四个调用直接走一遍对象的 shape，标志就存在 shape 的属性里：判断时每个属性的标志读一次（`js_shape_test_integrity`），冻结或封住时先读一遍看有没有要改的，再像 `JS_DefineProperty` 改标志之前那样让对象拥有自己的 shape（`js_shape_prepare_update`），第二遍清掉标志（`js_shape_set_integrity`）。已经冻结的对象保留原来的 shape。
 
@@ -427,7 +427,7 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 
 ## 一个 shape 最多放 2^26 - 1 个属性
 
-Release: Unreleased.
+Release: v0.31.1.
 
 shape 为每个属性记下它的哈希链里下一个属性的序号加一，放在 `hash_next` 的 26 位里。属性超过 2^26 - 1 个时，这个序号会被截断，查找可能找不到一个确实存在的属性。脚本能走到这里，因为每个块都在分配器给单个块的 4 GiB 以内：一个有 2^26 - 1 个奇数下标的数组，加上长度，是一个有 2^26 个属性的普通数组，总共几 GiB，再在最后那个下标所在的桶里加一个键，那个元素就会读成 `undefined`。上游有同样的 26 位，也没有上限。
 
@@ -437,7 +437,7 @@ shape 为每个属性记下它的哈希链里下一个属性的序号加一，�
 
 ## 数组元素在数组改动之前被拒绝
 
-Release: Unreleased.
+Release: v0.31.1.
 
 往数组里加的元素，在数组改动之前就被拒绝或失败，顺序和 ArrayDefineOwnProperty 一样（`JS_CreateProperty`）：
 
@@ -450,7 +450,7 @@ Release: Unreleased.
 
 ## 在构造函数上调用 Array.from 传完整的下标和长度
 
-Release: Unreleased.
+Release: v0.31.1.
 
 在程序自己的构造函数上调用 `Array.from`（`Array.from.call(C, items, f)`）时，元素用 64 位计数，但传给映射函数的下标是 int32，最后设的长度是 uint32。超过 2^31 个元素时映射函数拿到负的下标，超过 2^32 - 1 个时长度被截断：一个什么都不留的 `C` 对象，用很少的内存就能接下这么多。现在两者都是完整的计数（`JS_NewInt64`），和规范要求的一样，在 2^31 - 1 以内它们和以前是同样的整数。
 
@@ -458,7 +458,7 @@ Release: Unreleased.
 
 ## 改动属性标志的定义在改动任何东西之前失败
 
-Release: Unreleased.
+Release: v0.31.1.
 
 在已有的属性上调用 `Object.defineProperty`，描述符改动它的标志时，要让对象的 shape 归它自己（`js_shape_prepare_update`）。和别的对象或和 context 共用的 shape 要为此复制一份，复制可能内存不够。以前复制在最后，在定义已经改了数组的长度（`set_array_length`）、值或 getter 之后：`Object.defineProperty(a, "length", {value: 2, writable: false})` 在那里内存不够时，`a` 被截成 2 个元素，长度却仍可写。现在每条路径都在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样。数据属性先设标志，再设值，设值不会失败。数组的长度、访问器属性和闭包变量（全局对象的，或映射的 `arguments` 对象的）在定义把长度设为只读或改动标志时，先让 shape 归对象自己，再改长度、getter 或变量。`set_array_length` 压缩出的 shape 也归对象自己，所以它之后设标志不会失败。描述符不改任何标志时，像以前一样不复制。
 
@@ -474,7 +474,7 @@ Release: Unreleased.
 
 ## 构造函数的对象找到之前的对象走过的 shape
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 对一个函数或类做 `new C()`，而它的构造函数一个接一个地给 `this` 设键时，每个对象从 `C.prototype` 的空 shape 开始，每个键换到一个新 shape。shape 缓存只保留原型是 `Object.prototype` 的 shape（[保留 shape](#保留-shape)），此外没有谁持有 `C.prototype` 的空 shape，以及它和最后一个 shape 之间的那些 shape：`C` 的对象都持有自己最后的 shape。所以每个对象都新建一个空 shape，一个键一个键地原地长大，直到找到之前某个对象的 shape，再释放自己的那个。在 V8 测试集里，Boyer 每轮新建并释放空 shape 256,604 次，RayTrace 66,594 次，Earley 8,703 次。现在，`add_property` 在 shape 哈希表里找到对象下一个键要换到的 shape 时，如果对象持有的是它离开的那个 shape 的最后一个引用，找到的 shape 就接过这个引用：离开的 shape 不再被释放，而是成为它的父 shape（`js_shape_leave`）。只有本来要释放的 shape 才这样保留，所以找到 shape 的路径不多花什么。于是相差一个键的那些 shape 只要还有一个对象持有最后的 shape，就一直留在哈希表里，几个对象之后，下一个对象就能找到空 shape 和它之后的每个 shape，不再新建和释放任何 shape：Boyer 和 Earley 每轮不再新建空 shape，RayTrace 是 7,878 次。V8、JavaScriptCore 和 Hermes 也这样保留最后一个键之前的 shape（反向指针）。
 

@@ -66,7 +66,7 @@ Tests: `engine/test/compare/instanceof.js`, which prints what Node 24 prints, ru
 
 ## Add and sub of two numbers without the shared tail
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `+` and `-` of two numbers no longer go through the tail that the eight forms of add and sub share (`rv_arith_other`) when the result is not an int from two ints. That covers two floats, an int with a float, and two ints whose sum does not fit in an int. Each handler did two ints itself and jumped to the tail for anything else. The tail then found the form again from the opcode byte, read both operands again and tested each tag twice before it computed. Now the handler tests both tags in one step (`JS_TAG_INT` is 0, `JS_TAG_FLOAT64` is 8, and every other tag has another bit set) and jumps to one block for the eight forms (`rv_arith_num`). The block reads the two operands as doubles and stores a float made by `__JS_NewFloat64`, as QuickJS's `OP_add` and `OP_sub` do: NaN, -0 and the infinities are what the C arithmetic gives, and a whole result such as `1.5 + 1.5` stays a float. The tail keeps two strings and the slow path.
 

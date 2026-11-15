@@ -70,7 +70,7 @@ The generated linux/amd64 engine took a median 2.616 ms before and 2.170 ms afte
 
 ## An append that runs out of memory leaves the length
 
-Release: Unreleased.
+Release: v0.31.1.
 
 An element added at the end of a fast array whose block had to grow, when the block could not grow for want of memory, left the length one past the elements: the script went on with a hole at the end (#576 of upstream). Now the length changes only once the room is there.
 

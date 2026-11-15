@@ -296,7 +296,7 @@ Tests: `TestParseDecimalExponent` in `internal/gointl/qjs_parse_test.go` (36 str
 
 ## A Date finds its year, month and day with no loop
 
-Release: Unreleased.
+Release: v0.31.1.
 
 The getters of a Date (`getFullYear`, `getMonth`, `getDate`, `getDay` and the rest, local and UTC), its setters and its strings all find the year, the month and the day of the time value. QuickJS guessed the year with a division, stepped it until the day fell inside it, then counted off the months one by one. Now `days_to_date` works them out with a few multiplications and shifts, after Neri and Schneider, "Euclidean affine functions and their application to calendar algorithms" (2022). The days are counted from 1 March of a year 280,000 years before 1970: every day a time value can name, and a day of zone past either end, is then a count from 0 that fits in 32 bits, and February, with its leap day, ends the year.
 
@@ -308,7 +308,7 @@ Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for every
 
 ## The strings of a Date are written without snprintf
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `toString`, `toDateString`, `toTimeString`, `toUTCString`, `toISOString` and the engine's own `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString` wrote each part of the string with `snprintf` of the engine's libc: the date, the time and the zone, about 940 instructions each. They now put the digits and the names in place themselves (`date_put_int`, `date_put_name`, `date_put_time`), the same characters: the sign and six digits of a year outside 0 to 9999 in `toISOString`, at least four digits of a year elsewhere, after a minus sign when it is negative, two digits for each part of the time, and `GMT+0000`. A loop of the four strings `toString`, `toISOString`, `toUTCString` and `toLocaleString` takes 6,132 instructions a turn where it took 14,006 (callgrind, linux/amd64), and the `date_parse` micro benchmark of `compare/testdata`, which makes six strings and parses them, 29,201 where it took 41,567. dayjs's `isValid` calls `toString`, 3,132 times a render on the dates page of the study of 2026-11-15, which takes 0.62% fewer instructions.
 
@@ -316,7 +316,7 @@ Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for `toSt
 
 ## A context keeps the fields of the last time value
 
-Release: Unreleased.
+Release: v0.31.1.
 
 A page reads several getters of one Date in a row (`getFullYear`, `getMonth`, `getDate`), or of copies of it, as date-fns makes with `constructFrom`. Each getter worked out every field again. Now a context keeps the fields of the last time value it worked out, the year to the day of the week, in 72 bytes, and a getter that asks for the same time value reads its field from there. The key is the time value in milliseconds after the move to local time, and the fields depend on it alone, so no entry can be wrong: a setter gives the Date another time value, which is another key, and two Dates of one time value share the entry. Local time is UTC ([Local time is UTC in every VM](#local-time-is-utc-in-every-vm)), so the move is 0 and the compiler drops it: a local getter costs what a UTC one does.
 

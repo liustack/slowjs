@@ -399,7 +399,7 @@ The change is in C (`engine/quickjs.c`, `build_for_in_iterator`). Tests: `engine
 
 ## Object.isFrozen and Object.isSealed ask first whether the object is extensible
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Object.isFrozen` and `Object.isSealed` listed the own keys of an object and asked for the descriptor of each before they asked whether the object is extensible. The specification (TestIntegrityLevel) asks first, and an extensible object is neither sealed nor frozen, so its keys are not asked for. This shows on a proxy. For an extensible target the engine called the `ownKeys` and `getOwnPropertyDescriptor` traps and never `isExtensible`, where Node calls `isExtensible` alone, and an `ownKeys` trap that throws made the call throw, where Node returns false. For a target that is not extensible the traps now come in Node's order, `isExtensible` first. And when `isExtensible` threw after the keys were listed, the list was never freed: its blocks stayed in use until the runtime was freed, and the test host stopped with "1 runtimes freed with blocks still in use". Upstream QuickJS has the same order as the engine had.
 
@@ -407,7 +407,7 @@ Tests: `engine/test/compare/integrity_levels.js` (what Node 24 prints) tests the
 
 ## Defining a property of a module namespace reads its binding first
 
-Release: Unreleased.
+Release: v0.31.1.
 
 The `[[DefineOwnProperty]]` of a module namespace asks for the property first, and that reads the binding, which throws a `ReferenceError` while the binding is not initialized (a module that imports itself and looks at its own namespace before its `let`, `const` and `class` run). The engine did not read it: `Object.seal` of such a namespace returned it, `Reflect.defineProperty` of a binding returned true or false, and `Object.defineProperty` threw a `TypeError`. `JS_DefineProperty` now throws the `ReferenceError` for a binding of a module namespace that is not initialized, as Node does. `Object.isSealed`, `Object.isFrozen` and `Object.freeze` threw it already.
 
@@ -415,7 +415,7 @@ Tests: `engine/test/compare/integrity_levels_module.mjs` (what Node 24 prints) a
 
 ## Object.isFrozen, Object.isSealed, Object.freeze and Object.seal go over the shape
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Object.isFrozen` and `Object.isSealed` of an object that is not extensible listed its keys into a new array and looked each one up for its descriptor, and `Object.freeze` and `Object.seal` listed the keys and defined each one again, a lookup and a check of its flags for every key. immer, which Redux Toolkit uses, freezes the state it hands out and asks `isFrozen` of each object it walks before it freezes it, over and over: a page that keeps its state in Redux Toolkit makes about 156,000 `isFrozen` calls and 2,900 `freeze` calls a render, most of them on frozen objects of 9 keys. Now, for an ordinary object or an array, the four calls go over the shape of the object, whose properties hold the flags: a test reads the flags of each property once (`js_shape_test_integrity`), and a freeze or seal reads them once to see whether any must change, gives the object a shape of its own as `JS_DefineProperty` does before it changes a flag (`js_shape_prepare_update`), and clears the flags in a second pass (`js_shape_set_integrity`). An object that is already frozen keeps its shape.
 
@@ -427,7 +427,7 @@ Tests: `engine/test/compare/integrity_levels.js` (what Node 24 prints, [above](#
 
 ## A shape holds at most 2^26 - 1 properties
 
-Release: Unreleased.
+Release: v0.31.1.
 
 A shape keeps, for each property, the index plus one of the next property in its hash chain, in the 26 bits of `hash_next`. Past 2^26 - 1 properties that index was cut, and a lookup could miss a property that is there. A script reaches it, as each block stays under the 4 GiB the allocator gives one block: an array with 2^26 - 1 odd indices is a normal array of 2^26 properties with its length, a few GiB in all, and one more key in the bucket of the last index made that element read as `undefined`. Upstream has the same 26 bits and no limit.
 
@@ -437,7 +437,7 @@ Tests: `test_max_props` of `unit-white` gives a small object a count of 2^26 - 1
 
 ## An array element is refused before the array changes
 
-Release: Unreleased.
+Release: v0.31.1.
 
 An element added to an array is refused, or fails, before the array changes, in the order of ArrayDefineOwnProperty (`JS_CreateProperty`):
 
@@ -450,7 +450,7 @@ Tests: `test_max_props` of `unit-white`, as above, adds an element at the end of
 
 ## Array.from on a constructor passes the whole index and length
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Array.from` called on a constructor of the program (`Array.from.call(C, items, f)`) counts the elements in 64 bits, but passed the index to the mapping function as an int32 and set the length at the end as a uint32. Past 2^31 elements the mapping function got a negative index, and past 2^32 - 1 the length was cut: an object of `C` that keeps nothing takes that many with little memory. Both are now the whole count (`JS_NewInt64`), as the specification asks, and up to 2^31 - 1 they are the same ints as before.
 
@@ -458,7 +458,7 @@ Tests: `test_array_from_past_32_bits` of `unit-white` starts `Array.from` at the
 
 ## A define that changes the flags of a property fails before it changes anything
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Object.defineProperty` on a property that is there, with a descriptor that changes its flags, makes the shape of the object its own (`js_shape_prepare_update`). A shape shared with other objects, or with the context, is copied for that, and the copy can run out of memory. Before, the copy came last, after the define had changed the length of an array (`set_array_length`), a value or a getter: `Object.defineProperty(a, "length", {value: 2, writable: false})` that ran out of memory there left `a` cut to 2 elements and its length writable. Now each path makes the shape its own before it changes anything, so a define that runs out of memory leaves the property as it was. A data property gets its flags before its value, which cannot fail. The length of an array, an accessor and a closure variable (of the global object, or of a mapped `arguments` object) make the shape their own before the length, the getter or the variable changes, when the define makes the length read-only or changes a flag. A shape that `set_array_length` compacts is the object's own too, so the flags set after it cannot fail. When the descriptor changes no flag, nothing is copied, as before.
 
@@ -474,7 +474,7 @@ Tests: `test_define_existing_oom` of `unit-white` defines, on a shape shared wit
 
 ## Objects of a constructor find the shapes the objects before them went through
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `new C()` of a function or a class whose constructor sets keys on `this` one after another starts each object from the empty shape of `C.prototype` and moves it to a new shape for each key. The shape cache keeps only shapes whose prototype is `Object.prototype` ([Kept shapes](#kept-shapes)), and nothing else held the empty shape of `C.prototype` or the shapes between it and the last one: the objects of `C` all hold their last shape. So each object made a new empty shape, grew it in place key by key until it found the shape of an object made before, and freed its own then. In the V8 suite, Boyer made and freed an empty shape 256,604 times an iteration, RayTrace 66,594, Earley 8,703. Now, when `add_property` finds in the shape hash table the shape an object takes for its next key, and the object held the last reference to the shape it leaves, the shape found takes that reference: the shape left becomes its parent rather than being freed (`js_shape_leave`). Only a shape that would be freed is kept, so finding a shape costs nothing more. The shapes one key apart then stay in the table as long as an object of the last one lives, and after a few objects the next one finds the empty shape and every shape after it, and makes and frees none: Boyer and Earley make no empty shape an iteration, RayTrace 7,878. V8, JavaScriptCore and Hermes keep the shape before the last key the same way (a back pointer).
 

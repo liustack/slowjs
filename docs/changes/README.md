@@ -59,9 +59,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `o[k] = v` with a string key that is its own atom and `o.x = v` set an own writable data property or add the key to a plain object without the generic path | v0.30.7 | [c-engine.md](c-engine.md#a-store-that-adds-a-key-to-a-plain-object-skips-the-generic-path) |
 | `a[i]` and `a[i] = v` on an Array that is no longer a fast array read and write the index by its atom, without the generic path | v0.31.0 | [c-engine.md](c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom) |
 | `Math.acosh` of a value below -1 is NaN: musl's fix of `acosh` for negative inputs (commit `3e80328d`), taken as a patch of the small libc | v0.31.0 | [c-engine.md](c-engine.md#mathacosh-below--1-is-nan) |
-| A sloppy function with a simple parameter list makes its arguments object only when a read needs it, and `f.apply(this, arguments)` calls `f` in the register loop with the frame's arguments, with no arguments object, no list and one level of call depth | Unreleased | [c-engine.md](c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object) |
-| A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | Unreleased | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
-| A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | Unreleased | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
+| A sloppy function with a simple parameter list makes its arguments object only when a read needs it, and `f.apply(this, arguments)` calls `f` in the register loop with the frame's arguments, with no arguments object, no list and one level of call depth | v0.31.1 | [c-engine.md](c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object) |
+| A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
+| A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
 
 ## The generator
 
@@ -72,7 +72,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
 | The loop vectorizer no longer takes the number of turns from the profile: `memmove` is a leaf without a frame again, and a render runs 0.07% to 0.22% fewer instructions | v0.30.7 | [generator.md](generator.md#what-the-profile-decides) |
 | The post-link check takes a jump table entry that reaches the end of the function's code, the entry of a `switch` value that cannot occur, when it reaches the same place in the binary | v0.31.0 | [generator.md](generator.md#a-jump-table-entry-may-reach-the-end-of-the-code) |
-| The shadow-stack pass gives a phi one address of a local per incoming block, so a phi that names one block several times (cases of one `switch`) passes LLVM's verifier. The generated engine does not change | Unreleased | [generator.md](generator.md#a-phi-gets-one-address-of-a-local-per-incoming-block) |
+| The shadow-stack pass gives a phi one address of a local per incoming block, so a phi that names one block several times (cases of one `switch`) passes LLVM's verifier. The generated engine does not change | v0.31.1 | [generator.md](generator.md#a-phi-gets-one-address-of-a-local-per-incoming-block) |
 
 ## Commits of upstream QuickJS
 
@@ -83,7 +83,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Reducing an empty iterator without an initial accumulator does not close it | v0.29.8 | [upstream-commits.md](upstream-commits.md#empty-iterator-reduction) |
 | Sparse array truncation removes indices before compacting the property table | v0.29.8 | [upstream-commits.md](upstream-commits.md#array-truncation) |
 | The spread of a string gives its characters | v0.30.5 | [upstream-commits.md](upstream-commits.md) |
-| An append that fails for want of memory leaves the length of the array, and an element after 2^31 - 1 elements, which no script reaches, throws a RangeError | Unreleased | [upstream-commits.md](upstream-commits.md#an-append-that-runs-out-of-memory-leaves-the-length) |
+| An append that fails for want of memory leaves the length of the array, and an element after 2^31 - 1 elements, which no script reaches, throws a RangeError | v0.31.1 | [upstream-commits.md](upstream-commits.md#an-append-that-runs-out-of-memory-leaves-the-length) |
 
 ## Go API
 
@@ -131,10 +131,10 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
 | A 16-bit string goes to UTF-8 eight ASCII units at a time | v0.30.7 | [go-api.md](go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time) |
 | EvalFile gives a script a file name | v0.31.0 | [go-api.md](go-api.md#evalfile-gives-a-script-a-file-name) |
-| Strings a script returns or throws stop converting at the top level too | Unreleased | [go-api.md](go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too) |
-| TrackRejections and UnhandledRejections | Unreleased | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
-| More values than the engine can count fail | Unreleased | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
-| Package tifa: `tifa.Register` sets a VM up as tifa does | Unreleased | [go-api.md](go-api.md#package-tifa) |
+| Strings a script returns or throws stop converting at the top level too | v0.31.1 | [go-api.md](go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too) |
+| TrackRejections and UnhandledRejections | v0.31.1 | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
+| More values than the engine can count fail | v0.31.1 | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
+| Package tifa: `tifa.Register` sets a VM up as tifa does | v0.31.1 | [go-api.md](go-api.md#package-tifa) |
 
 ## Limits that hold
 
@@ -214,9 +214,9 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Number options are checked before they are rounded down | v0.30.2 | [time-and-intl.md](time-and-intl.md#number-options-are-checked-before-they-are-rounded-down) |
 | A long locale tag resolves in time linear in its length | v0.30.2 | [time-and-intl.md](time-and-intl.md#a-long-locale-tag-resolves-in-time-linear-in-its-length) |
 | A numeric string is read as Number reads it | v0.30.3 | [time-and-intl.md](time-and-intl.md#a-numeric-string-is-read-as-number-reads-it) |
-| A Date finds its year, month and day with no loop | Unreleased | [time-and-intl.md](time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop) |
-| The strings of a Date are written without snprintf | Unreleased | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
-| A context keeps the fields of the last time value | Unreleased | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
+| A Date finds its year, month and day with no loop | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop) |
+| The strings of a Date are written without snprintf | v0.31.1 | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
+| A context keeps the fields of the last time value | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
 
 ## Temporal
 
@@ -238,7 +238,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Alternatives that cannot match are not pushed | v0.26.17 | [regexp.md](regexp.md#alternatives-that-cannot-match-are-not-pushed) |
 | Where a regexp starts to look is worked out once, with a table of first characters and a compare of a literal prefix. Bytecode version 9 | v0.30.2 | [regexp.md](regexp.md#where-a-regexp-starts-is-worked-out-once) |
 | A long list of alternatives that start with a literal goes straight to the ones that start with the character. Bytecode version 10 | v0.30.2 | [regexp.md](regexp.md#long-lists-of-alternatives-that-start-with-a-literal) |
-| A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | Unreleased | [regexp.md](regexp.md#a-literal-every-match-holds) |
+| A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | v0.31.1 | [regexp.md](regexp.md#a-literal-every-match-holds) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
 
@@ -251,8 +251,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The hash table of atoms holds one atom for two buckets | v0.30.5 | [strings.md](strings.md#the-hash-table-of-atoms-holds-one-atom-for-two-buckets) |
 | An empty string on the left of `+` gives the string on the right, with no copy | v0.30.5 | [strings.md](strings.md#an-empty-string-on-the-left-of--gives-the-string-on-the-right) |
 | The register loop adds two strings in a small function of its own, not in the generic path of add, sub and the compares | v0.30.7 | [strings.md](strings.md#two-strings-are-added-without-the-generic-path) |
-| A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | Unreleased | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
-| A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | Unreleased | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
+| A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | v0.31.1 | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
+| A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | v0.31.1 | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
 
 ## JSON
 
@@ -267,7 +267,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Bitwise operators on floats skip the slow path | v0.26.17 | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | v0.26.17 | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
 | `instanceof` of an ordinary function answers without calling `Symbol.hasInstance` | v0.31.0 | [operators.md](operators.md#instanceof-without-the-call-of-symbolhasinstance) |
-| Add and sub of two numbers without the shared tail | Unreleased | [operators.md](operators.md#add-and-sub-of-two-numbers-without-the-shared-tail) |
+| Add and sub of two numbers without the shared tail | v0.31.1 | [operators.md](operators.md#add-and-sub-of-two-numbers-without-the-shared-tail) |
 
 ## Objects and shapes
 
@@ -304,14 +304,14 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Object.defineProperty` and the calls that share its conversion read a descriptor that is a plain object from its shape in one pass | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#objectdefineproperty-reads-a-plain-descriptor-in-one-pass) |
 | `Function.prototype.bind` reads the length and name of a plain target from its shape and gives the bound function the shape of a new function at once | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.md#bind-reads-the-length-and-name-of-a-plain-target-from-its-shape) |
 | A `for in` loop makes no shape: the context holds the empty shape with no prototype its iterator starts from | v0.31.0 | [objects-and-shapes.md](objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape) |
-| `Object.isFrozen` and `Object.isSealed` ask first whether the object is extensible, as the specification says, and no longer leave the list of keys in use when the `isExtensible` trap of a proxy throws | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-and-objectissealed-ask-first-whether-the-object-is-extensible) |
-| Defining a property of a module namespace reads its binding first and throws a `ReferenceError` while the binding is not initialized | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#defining-a-property-of-a-module-namespace-reads-its-binding-first) |
-| `Object.isFrozen`, `Object.isSealed`, `Object.freeze` and `Object.seal` of an ordinary object or an array go over its shape once, with no list of keys and no lookup of each | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape) |
-| A shape holds at most 2^26 - 1 properties, so that a lookup cannot miss one past that | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shape-holds-at-most-226---1-properties) |
-| An element added to an array is refused, or fails, before the array changes: a refused store does not throw the RangeError of a conversion, and an element that fails leaves the length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-element-is-refused-before-the-array-changes) |
-| `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
-| A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
-| A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| `Object.isFrozen` and `Object.isSealed` ask first whether the object is extensible, as the specification says, and no longer leave the list of keys in use when the `isExtensible` trap of a proxy throws | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-and-objectissealed-ask-first-whether-the-object-is-extensible) |
+| Defining a property of a module namespace reads its binding first and throws a `ReferenceError` while the binding is not initialized | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#defining-a-property-of-a-module-namespace-reads-its-binding-first) |
+| `Object.isFrozen`, `Object.isSealed`, `Object.freeze` and `Object.seal` of an ordinary object or an array go over its shape once, with no list of keys and no lookup of each | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape) |
+| A shape holds at most 2^26 - 1 properties, so that a lookup cannot miss one past that | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-shape-holds-at-most-226---1-properties) |
+| An element added to an array is refused, or fails, before the array changes: a refused store does not throw the RangeError of a conversion, and an element that fails leaves the length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#an-array-element-is-refused-before-the-array-changes) |
+| `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
+| A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
+| A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
 
 ## Memory
 

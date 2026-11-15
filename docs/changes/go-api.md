@@ -601,7 +601,7 @@ What it costs: nothing when no name is given, as every other eval passes `<eval>
 Tests in `evalfile_test.go`: `TestEvalFile` (the result, the frames and a syntax error with the name, an empty name, and `Eval` still `<eval>`), `TestEvalFileName` (a newline, a carriage return, a 0 byte, a tab, DEL, U+2028 and U+2029, bytes that are not UTF-8, a name of 1,200 bytes cut between characters, one cut before a character that does not fit and one of 1 MiB, each through a stack), `TestEvalFileNameBound` (names of 1 MiB with sources around the size where the copy moves from the shadow stack to the heap: the bytes written are the name, a 0 byte, the source and a 0 byte, and a mark past them on the shadow stack is untouched. A source the memory limit has no room for ends with out of memory and the VM goes on) and `TestEvalFileSameAsEval` (the same result, the same number of Go allocations, and the same blocks, bytes and atoms of the engine once the functions are gone, with no name, `<eval>` and `repro.js`). Also `TestEvalFileModuleName` (with `EvalModule`, the names the cleaning would change are refused: a newline, a carriage return, a 0 byte, invalid UTF-8, U+2028, and two names that share their first 1,024 bytes, and a name it keeps is what an import finds), `TestEvalModuleSameName` (two modules of the same name, given by `EvalFile` and by `Eval`, both run, and `import.meta` and an import find the first), `TestEvalFileStops` (a source in a block of the heap stopped by the eval timeout and by `Interrupt`: the block is given back and the VM goes on) and `TestEvalSourceRounding` (for the smallest block, 3 bytes, the shadow stack reserves 16 from a 16-byte boundary: the engine reads the name with `strlen`, a whole aligned word at a time, so up to 7 bytes past its 0 byte, inside that rounding, and inside the rounding to 8 bytes of a block of the heap). `TestEvalFileName` also has C1 controls and cuts inside a character of 3 and 4 bytes and next to a replaced character.
 ## Strings a script returns or throws stop converting at the top level too
 
-Release: Unreleased.
+Release: v0.31.1.
 
 A long string now stops converting at `Interrupt` and the eval timeout at the top level of a call too, not only in a Go function that javascript called: where `Eval`, `Call`, `Value.Any` and the other functions that return a Go value convert the string a script returned or threw, or the JSON of an object, after the script ran. How long that string is, and so how long it takes to convert, is up to the script, as far as the memory limit lets it: reading a string of 64 Mi characters took 0.5 seconds on amd64 with no read of the stop, so a call could end that long after its timeout. Now the call ends with the interrupt, read every 256 Ki characters as in a Go function, and the VM runs scripts after. Outside a call into the VM, as when `NewString` converts a Go string, there is no stop to read, as before.
 
@@ -611,7 +611,7 @@ Tests: `TestTopLevelConversionStops` in `stringstop_test.go`: a string returned 
 
 ## TrackRejections and UnhandledRejections
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `VM.TrackRejections(max)` makes a VM keep the promises that are rejected while no handler is attached to them, at most `max` (up to `MaxTrackedRejections`, 1,024), oldest first, until a handler is attached (`then`, `catch`, `finally`, an `await`) or `VM.UnhandledRejections()` takes them. `UnhandledRejections` returns each reason read as the error of a call that threw it (`Name`, `Message`, `Stack` for an Error, the text of any other value), and how many rejections were dropped since the last call: past `max`, or with no memory to keep them. Another `max` changes the limit and keeps what is kept, even past a lower one. `max` 0 turns it off and forgets what is kept. A VM starts with it off.
 
@@ -641,7 +641,7 @@ Tests: `test_rejections_kept`, `test_rejections_max`, `test_rejections_mark`, `t
 
 ## More values than the engine can count fail
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Call` and a Go slice converted to an array hand the engine a list of values with their count as a C int, and the results of a Go function are walked into a snapshot that numbers its nodes and kids in int32. More than 2^31 - 1 values (32 GiB of values in Go) are now an error, `slowjs: N values, the engine takes at most 2147483647`
 , before anything is cut to 32 bits (`maxValues` and `valuesFit` in `engine.go`, which `tmpValues` and the walk of results in `result.go` use). Before, `tmpValues` copied the whole list into one block of engine memory, which is under 4 GiB, so such a call failed with out of memory before the count was cut: the check states the limit and stays right if that block grows. The walk of results had no such check: a Go function that returned a slice of 2^31 values, on a machine with the memory for its snapshot, cut a node number to a negative int32 and panicked with an index out of range. It is one test of a length where a list is copied or walked, so a call costs the same.
@@ -650,6 +650,6 @@ Tests: `TestValuesFit` in `valuesfit_test.go` checks the limit (`maxValues`) at 
 
 ## Package tifa
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `tifa.Register(vm)` gives a VM what tifa gives each VM of its pool, in tifa's order: `URL`, `Intl`, `Temporal`, then the functions named `__tifa_*` that tifa's bundles ask for (`tifa.Hooks()` lists them). tifa, the `slowjs` command and the program that measures tifa's pages call it, so the three set a VM up the same way. The hash, the random bytes and the async context moved here from tifa. Limits, the bundle and the collections stay with the host.

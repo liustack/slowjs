@@ -106,7 +106,7 @@ The change is in C (`engine/libregexp.c`): `lre_chains`, called by `lre_compile`
 
 ## A literal every match holds
 
-Release: Unreleased.
+Release: v0.31.1.
 
 A regexp such as `/(^|[^\\])"\\\/Date\((-?[0-9]+)\)\\\/"/`, which reads dates out of JSON, can only match where the string holds `"\/Date(`. The skip found where a match can start by its first character, and the first characters of this one are almost every character, so the backtracking machine was tried at nearly every position of a long string that held no date at all. Now `lre_compile` also finds, in `lre_plan`, the longest literal every match must hold, up to 16 units, and `lre_exec` looks for it first. When the rest of the string does not hold it, there is no match, and the machine does not run. When it does, no match starts more than the most units a match can read before the literal ahead of where it is first found, and the search starts there.
 

@@ -4,8 +4,13 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.1] - 2026-11-16
+
 ### Changed
 
+- Pages render in up to 2.2% less time than with v0.31.0, and the V8 benchmark suite scores 18.7% higher, with the changes below and a profile trained again on them. On a linux/amd64 machine with an AMD EPYC 7B13 (the mean of 16 code layouts), React pages take 2.2% less time, tifa's workbench pages 1.5% less and the MUI pages 1.1% less, and for the store pages the timing shows no change. On the V8 suite RegExp scores 97% higher, RayTrace 49% and EarleyBoyer 15% ([performance.md](docs/performance.md#v0311-against-v0310)).
+- Known limit: a long Markdown document renders about 3% slower than with v0.31.0, and rendered after a shorter one in the same VM the process peaks at 460 MB where it peaked at 258 MB. Every regexp now carries 38 more bytes and that page compiles about 5,500 of them a render, so the engine's collections fall at other points. The next release gives the bytes only to the regexps that use them.
+- [docs/benchmarks.md](docs/benchmarks.md) is run again on v0.31.1: among the engines for Go, liustack/slowjs renders tifa's pages fastest and ties with moejs on the V8 suite. The page table has a row for liustack/slowjs on polyfills, and the V8 table one for Node `--jitless`.
 - Bytecode version 13: bytecode written by `Compile` of an earlier release no longer loads. Compile again.
 - A regexp looks for the longest literal every match must hold before its backtracking machine runs. The RegExp benchmark of the V8 suite runs 54% fewer instructions ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).
 - `f.apply(this, arguments)` calls `f` with the arguments of the frame: no arguments object, and one level of call depth where it took two. RayTrace runs 23% fewer instructions ([c-engine.md](docs/changes/c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object)).
@@ -19,6 +24,8 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Added
 
 - `VM.TrackRejections(max)` and `VM.UnhandledRejections()`: a VM keeps the promises rejected with no handler, for the host to report ([go-api.md](docs/changes/go-api.md#trackrejections-and-unhandledrejections)).
+- Package `tifa`: `tifa.Register(vm)` gives a VM what tifa gives each VM of its pool (`URL`, `Intl`, `Temporal` and the functions named `__tifa_*`). The `slowjs` command uses it, so its scripts have those functions too ([go-api.md](docs/changes/go-api.md#package-tifa)).
+
 
 ### Fixed
 
@@ -749,7 +756,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.1...main
+[v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6

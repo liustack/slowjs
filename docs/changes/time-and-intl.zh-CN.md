@@ -296,7 +296,7 @@ Intl 的构造函数、`supportedLocalesOf` 和 `toLocaleString` 现在用和标
 
 ## Date 不用循环求年、月、日
 
-版本：Unreleased。
+版本：v0.31.1。
 
 Date 的取值方法（`getFullYear`、`getMonth`、`getDate`、`getDay` 等，本地和 UTC 都有）、设值方法和各种字符串，都要先求出时间值的年、月、日。QuickJS 先用一次除法估出年份，再一年一年地挪，直到这一天落在年内，然后逐月减去天数。现在 `days_to_date` 只用几次乘法和移位算出它们，做法来自 Neri 和 Schneider 的论文 "Euclidean affine functions and their application to calendar algorithms"（2022）。天数改从 1970 年之前 280,000 年那一年的 3 月 1 日数起：时间值能表示的每一天，加上两端各一天的时区，都成了从 0 起、放得进 32 位的计数，而带闰日的二月落在一年的最后。
 
@@ -308,7 +308,7 @@ Date 的取值方法（`getFullYear`、`getMonth`、`getDate`、`getDay` 等，�
 
 ## Date 的字符串不再经过 snprintf
 
-版本：Unreleased。
+版本：v0.31.1。
 
 `toString`、`toDateString`、`toTimeString`、`toUTCString`、`toISOString`，以及引擎自带的 `toLocaleString`、`toLocaleDateString`、`toLocaleTimeString`，原来每一段（日期、时间、时区）都用引擎 libc 的 `snprintf` 写，每次约 940 条指令。现在它们自己把数字和名字填进去（`date_put_int`、`date_put_name`、`date_put_time`），字符一个不差：`toISOString` 里 0 到 9999 以外的年份带符号和六位数字，别处的年份至少四位，负数前面加负号，时间每段两位，还有 `GMT+0000`。一个循环里调用 `toString`、`toISOString`、`toUTCString`、`toLocaleString` 四个字符串，每轮原来 14,006 条指令，现在 6,132 条（callgrind，linux/amd64）。`compare/testdata` 的微基准 `date_parse` 每轮生成六个字符串再解析，原来 41,567 条，现在 29,201 条。dayjs 的 `isValid` 会调用 `toString`，在 2026-11-15 那次研究的日期页上每次渲染 3,132 次，一次渲染少跑 0.62% 的指令。
 
@@ -316,7 +316,7 @@ Date 的取值方法（`getFullYear`、`getMonth`、`getDate`、`getDay` 等，�
 
 ## context 记住上一个时间值的字段
 
-版本：Unreleased。
+版本：v0.31.1。
 
 页面常常连着读同一个 Date 的几个字段（`getFullYear`、`getMonth`、`getDate`），或者读它的副本，比如 date-fns 用 `constructFrom` 复制出来的那些。原来每个取值方法都把所有字段重算一遍。现在 context 记住它最后算过的那个时间值的字段，从年到星期几，占 72 字节，问到同一个时间值的取值方法直接从这里读。键是换到本地时间之后的毫秒数，字段只取决于它，所以记下的内容不会过时：设值方法会给 Date 一个新的时间值，也就是一个新的键，同一时间值的两个 Date 共用这一项。本地时间就是 UTC（[每个 VM 里本地时间都是 UTC](#每个-vm-里本地时间都是-utc)），换算的偏移是 0，编译器把它整个去掉：本地取值方法和 UTC 的一样快。
 

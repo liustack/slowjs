@@ -168,7 +168,7 @@ LLVM 证明 `switch` 的某个值不可能出现时，跳转表里这个值的�
 
 ## phi 从每个来源块只拿一个局部变量地址
 
-版本：Unreleased。
+版本：v0.31.1。
 
 影子栈 pass（`internal/goasm/gen/pass/shadow.cpp`）把每个局部变量搬到影子栈上，在每个用到它的地方写出它的地址，也就是参数 0 加上它的偏移。对 phi 来说，这个地方是值所来自的那个块的末尾。以前它给每个用处各做一个地址，而一个多次指向同一个块的 phi（同一个 `switch` 的三个分支跳到同一个块）每一项都是一个用处，于是这个块得到好几个不同的地址。LLVM 的校验器拒绝这样的 phi（`PHI node has multiple entries for the same basic block with different incoming values!`），生成就停下了，没有写出错误的代码。优化器会从带 `switch` 的代码里用计数器下标的两个局部变量的小数组（`next[n++] = t`）做出这种形状。引擎里原来没有，所以会做出它的 C 没法生成。
 

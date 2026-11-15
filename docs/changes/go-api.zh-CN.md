@@ -601,7 +601,7 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 测试在 `evalfile_test.go`：`TestEvalFile`（结果、带名字的栈帧和语法错误、空名字，以及 `Eval` 仍是 `<eval>`），`TestEvalFileName`（换行、回车、0 字节、制表符、DEL、U+2028 和 U+2029、不是 UTF-8 的字节、在字符之间截断的 1,200 字节名字、在放不下的字符前截断的名字和 1 MiB 的名字，每个都经过一次调用栈检查），`TestEvalFileNameBound`（1 MiB 的名字配上大小在拷贝从影子栈换到堆的边界附近的源码：写入的字节是名字、0 字节、源码、0 字节，影子栈上它们后面的标记没被动过。内存上限放不下的源码以内存不足结束，虚拟机继续可用）和 `TestEvalFileSameAsEval`（不给名字、给 `<eval>` 和给 `repro.js` 时，结果相同，Go 的分配次数相同，函数释放后引擎的块数、字节数和 atom 数也相同）。另外还有 `TestEvalFileModuleName`（用 `EvalModule` 时，清理会改变的名字被拒绝：换行、回车、0 字节、非法 UTF-8、U+2028，以及前 1,024 字节相同的两个名字，而清理不改变的名字就是 import 找到的名字），`TestEvalModuleSameName`（同名的两个模块，不论由 `EvalFile` 还是 `Eval` 给出，都会运行，`import.meta` 和 import 找到的是第一个），`TestEvalFileStops`（放在堆块里的源码被 eval 超时和 `Interrupt` 停下：块被归还，虚拟机继续可用）和 `TestEvalSourceRounding`（最小的块 3 字节，影子栈从 16 字节边界留出 16 字节：引擎用 `strlen` 读名字，一次读一个对齐的整字，所以最多读到 0 字节之后 7 字节，都在这个取整范围内，堆块也取整到 8 字节）。`TestEvalFileName` 还加了 C1 控制字符，以及截断落在 3 字节和 4 字节字符中间、紧挨被替换字符的情况。
 ## 脚本返回或抛出的字符串在顶层也会停止转换
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 长字符串的转换现在在调用的顶层也会在 `Interrupt` 和 eval 超时时停下，不只是在 javascript 调用的 Go 函数里：`Eval`、`Call`、`Value.Any` 等返回 Go 值的函数在脚本跑完之后转换脚本返回或抛出的字符串，或者对象的 JSON。这个字符串有多长，转换要多久，由脚本决定，只受内存上限约束：在 amd64 上读一个 64 Mi 个字符的字符串要 0.5 秒，期间不看停止，所以一次调用可能在超时之后这么久才结束。现在调用以中断结束，和 Go 函数里一样每 256 Ki 个字符看一次，虚拟机之后照常运行脚本。在对虚拟机的调用之外，比如 `NewString` 转换一个 Go 字符串时，没有停止可看，和以前一样。
 
@@ -611,7 +611,7 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 
 ## TrackRejections 和 UnhandledRejections
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 `VM.TrackRejections(max)` 让虚拟机保留被拒绝时还没有处理函数的 promise，最多 `max` 个（上限 `MaxTrackedRejections`，1,024），按先后顺序，直到有处理函数挂上（`then`、`catch`、`finally`、`await`）或者 `VM.UnhandledRejections()` 把它们取走。`UnhandledRejections` 把每个拒绝原因按调用抛出的错误来读（Error 读出 `Name`、`Message`、`Stack`，其他值读出文本），并返回自上次调用以来丢掉了多少个拒绝：超过 `max` 的，或者没有内存保留的。换一个 `max` 只改上限，已保留的照样保留，哪怕超过更低的上限。`max` 为 0 时关闭并丢掉已保留的。虚拟机开始时是关闭的。
 
@@ -641,7 +641,7 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 
 ## 引擎数不过来的值会报错
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `Call` 和转成数组的 Go 切片，把一串值连同它们的个数（C 的 int）交给引擎，Go 函数的结果则先走一遍，做成一份快照，快照里的节点和子项用 int32 编号。超过 2^31 - 1 个值（在 Go 里占 32 GiB）现在是一个错误，`slowjs: N values, the engine takes at most 2147483647`
 ，在任何东西被截成 32 位之前就报（`engine.go` 里的 `maxValues` 和 `valuesFit`，`tmpValues` 和 `result.go` 里对结果的遍历都用它）。以前 `tmpValues` 先把整串值复制到引擎内存的一个块里，而一个块不到 4 GiB，所以这样的调用在个数被截断之前就以内存耗尽失败了：这项检查把上限写明，块变大时也仍然成立。对结果的遍历以前没有这项检查：一个 Go 函数返回 2^31 个值的切片，在内存够做快照的机器上，节点编号会被截成负的 int32，以下标越界 panic。它只是在本来就要复制或遍历一串值的地方多查一次长度，所以调用的开销不变。
@@ -650,6 +650,6 @@ Release: Unreleased.
 
 ## tifa 包
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 `tifa.Register(vm)` 给虚拟机配上 tifa 给它池里每个虚拟机的东西，顺序和 tifa 相同：`URL`、`Intl`、`Temporal`，然后是 tifa 的 bundle 要用的名为 `__tifa_*` 的函数（`tifa.Hooks()` 列出它们）。tifa、`slowjs` 命令和测量 tifa 页面的程序都调用它，所以三者配置虚拟机的方式相同。哈希、随机字节和异步上下文从 tifa 搬到了这里。上限、bundle 和回收仍由宿主负责。

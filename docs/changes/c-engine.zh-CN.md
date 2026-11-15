@@ -1072,7 +1072,7 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 
 ## 用 apply 传下参数时不造 arguments 对象
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 `f.apply(this, arguments)` 是一个函数把全部参数原样传下去的写法：老式写法造出的类，构造函数就是这样（`function K() { this.initialize.apply(this, arguments); }`），还有在调用前后加一步的包装函数。参数列表简单的非严格函数，原来不管拿 arguments 做什么，进入时都先造出映射的 arguments 对象，因为只有严格函数才在读取需要时再造。随后 `apply` 把这个对象的长度和每个元素读进自己的一个列表（`build_arg_list`），再经 `JS_CallInternal` 调用 `f`，那里又开一轮寄存器循环。在 Apple M4 上，这样一次调用比直接调用 `f` 多约 1,650 条指令，还多占一层调用深度。
 
@@ -1175,7 +1175,7 @@ V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个�
 
 ## for in 循环的下一个键在寄存器循环里取
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 `for in` 循环的一步原来是寄存器循环的两个操作：先是 W_FOR_IN_NEXT，它调用 `rv_w_for_in_next`，再经它调用 `js_for_in_next`，把键和一个结束标志放进临时槽，然后按这个标志跳转。MUI 的订单页每次渲染走 34,096 步，长 Markdown 走 215,983 步。现在，`for_in_next` 后面跟着它的 `if_false`、而且没有跳转落到这个 `if_false` 上时（解析器给每个 `for in` 循环排的就是这个样子），转换把两者合成一个操作 FINEXT。迭代器按对象的 shape 遍历（见 [for in 循环持有它的对象的 shape](objects-and-shapes.zh-CN.md#for-in-循环持有它的对象的-shape)），而对象还是这个 shape 时，FINEXT 直接从 shape 里取下一个键，跳回循环体。其他的步照旧调用 `rv_w_for_in_next`，再按它给的标志跳转：`js_for_in_next` 的 shape 路径跳过的键、shape 已经变了的对象、从列表里取的键、原型链和循环结束。在 tifa 的页面上，一次渲染取的键有 98% 到 100% 来自循环开始时的 shape。
 
@@ -1193,7 +1193,7 @@ V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个�
 
 ## 读 for in 循环刚给出的键
 
-发布版本：Unreleased。
+发布版本：v0.31.1。
 
 tifa 页面上的 `for in` 循环大多会读刚拿到的键的值：`for (k in o) ... o[k]`，MUI 的订单页每次渲染 34,291 次，商店的商品页 11,940 次，工作台的 studio 页 7,989 次。每次读取原来是 GETEL 或 GETELT，用 `rv_getel_atom` 在 `o` 的 shape 里[查这个键的原子](#自身就是原子的字符串键按具名属性读取)。其实循环已经知道这个键在哪里：迭代器按对象的 shape 遍历，它最后给出的键就在它当前位置的前一个槽。转换遇到按解析器的样子排好的 `for in` 循环（`for_in_start`，跳到末尾的 `for_in_next`，它的 `if_false` 跳回到对键的 `put_loc` 或 `put_arg`），就为循环体记下键所在的局部变量或参数，以及迭代器所在的临时槽。循环体里的读取 `o[k]`，如果键就是那个局部变量，而迭代器还在它的临时槽里，就变成 GETELE（`o` 在临时槽里时是 GETELET），迭代器作为第四个操作数。`o` 的 shape 正是迭代器持有的 shape，键又正是迭代器位置前一个槽的原子时，这个操作直接读那个槽的值。没有原子的键，比如对数组、字符串或 `arguments` 循环给出的下标新字符串，直接走 GETEL 的通用路径（`rv_getel_slow`），不经过 `rv_getel_atom`，因为它对任何没有原子的键都会放弃。其他情况和 GETEL、GETELT 做的一样。
 

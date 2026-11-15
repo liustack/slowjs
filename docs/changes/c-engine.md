@@ -1072,7 +1072,7 @@ In instructions a render, counted on 2026-11-14 against main at 78a90364 ([perfo
 
 ## Passing arguments on with apply makes no arguments object
 
-Release: Unreleased.
+Release: v0.31.1.
 
 `f.apply(this, arguments)` is how a function passes all its arguments on: the constructors of classes made the old way (`function K() { this.initialize.apply(this, arguments); }`), and wrappers that add a step before or after a call. A sloppy function with a simple parameter list made its mapped arguments object at entry, whatever it did with it, as only strict functions made theirs when a read needed it. `apply` then read the length and each element of the object into a list of its own (`build_arg_list`) and called `f` through `JS_CallInternal`, which started a new run of the register loop. On an Apple M4 that cost about 1,650 instructions a call more than calling `f` directly, and two levels of call depth.
 
@@ -1175,7 +1175,7 @@ The change is in C (`engine/regvm-ops-object.h`). `engine/test/compare/array_ind
 
 ## The next key of a for in loop is taken in the register loop
 
-Release: Unreleased.
+Release: v0.31.1.
 
 A step of a `for in` loop was two ops of the register loop: W_FOR_IN_NEXT, which called `rv_w_for_in_next` and through it `js_for_in_next`, and left the key and a done flag in temps, then a branch on the flag. MUI's orders page takes 34,096 steps a render, long Markdown 215,983. The pass now makes one op, FINEXT, of a `for_in_next` and the `if_false` after it when no jump reaches the `if_false`, which is how the parser lays out every `for in` loop. When the iterator walks the shape of its object (see [A for in loop holds the shape of its object](objects-and-shapes.md#a-for-in-loop-holds-the-shape-of-its-object)) and the object still has that shape, FINEXT takes the next key from the shape itself and jumps back into the body. Any other step calls `rv_w_for_in_next` as before and branches on its flag: a key the shape path of `js_for_in_next` skips, an object whose shape changed, keys from a list, the prototype chain and the end. On tifa's pages 98% to 100% of the keys a render takes come from the shape the loop started from.
 
@@ -1193,7 +1193,7 @@ The change is in C (`engine/regvm-ops-window.h`). `engine/test/compare/for_in_st
 
 ## The read of the key a for in loop just gave
 
-Release: Unreleased.
+Release: v0.31.1.
 
 Most `for in` loops on tifa's pages read the value of the key they were just given: `for (k in o) ... o[k]`, 34,291 reads a render on MUI's orders page, 11,940 on the store's products page, 7,989 on the workbench's studio page. Each read was GETEL or GETELT, which [looks the key's atom up](#a-string-key-that-is-its-own-atom-is-read-as-a-named-property) in the shape of `o` with `rv_getel_atom`. The loop already knows where that key is: the iterator walks the shape of the object, and the key it gave last is at the slot before the one it is at. When the pass converts a `for in` loop as the parser lays it out (`for_in_start`, a jump to the `for_in_next` at the end, its `if_false` back to a `put_loc` or `put_arg` of the key), it notes the key's local or argument and the temp of the iterator for the body. A read `o[k]` in the body whose key is that local, while the iterator is still in its temp, becomes GETELE, or GETELET when `o` is a temp, with the iterator as a fourth operand. When `o` has the shape the iterator holds and the key is the atom of the slot before the iterator's, the op reads the value of that slot. A key with no atom, such as the new string of an index that a loop over an array, a string or `arguments` gives, goes straight to the generic path of GETEL (`rv_getel_slow`), past `rv_getel_atom`, which gives up on any key with no atom. Anything else does what GETEL or GETELT does.
 
