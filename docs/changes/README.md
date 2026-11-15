@@ -134,6 +134,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Strings a script returns or throws stop converting at the top level too | Unreleased | [go-api.md](go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too) |
 | TrackRejections and UnhandledRejections | Unreleased | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
 | More values than the engine can count fail | Unreleased | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
+| Package tifa: `tifa.Register` sets a VM up as tifa does | Unreleased | [go-api.md](go-api.md#package-tifa) |
 
 ## Limits that hold
 

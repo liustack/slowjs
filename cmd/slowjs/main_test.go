@@ -450,6 +450,19 @@ fmt.printf("%s|", "p"); fmt.println("q"); print("r");
 `)).want(t, 0, "1.234.567,891\nJanuary 1, 1970\n2026-03-01\nhttps://example.com/b?x=1&y=2+3\n003.1|ff\np|q\nr\n")
 }
 
+// TestTifaHooks: the VM has the functions named __tifa_* that tifa gives
+// each VM, those of tifa.Hooks, and they work.
+func TestTifaHooks(t *testing.T) {
+	runCmd(t, "-e", `
+print(Object.getOwnPropertyNames(globalThis).filter((n) => n.startsWith("__tifa_")).sort().join(" "));
+print(__tifa_escape("<a&b>"), __tifa_murmur2__("color:red;"), __tifa_random_bytes__(3).length);
+`).want(t, 0, "__tifa_async_context__ __tifa_copy_props __tifa_end_tag __tifa_escape __tifa_murmur2__ __tifa_random_bytes__ __tifa_start_tag\n&lt;a&amp;b&gt; "+murmur2Red+" 4\n")
+}
+
+// murmur2Red is the hash @emotion/hash 0.9.2 gives "color:red;", as Node
+// runs emotionHash of engine/test/render-test/murmur2.js.
+const murmur2Red = "tokvmb"
+
 // TestDefaults: the limits are those docs/command.md gives.
 func TestDefaults(t *testing.T) {
 	r := runCmd(t, "-h")

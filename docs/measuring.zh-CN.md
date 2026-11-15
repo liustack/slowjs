@@ -60,6 +60,19 @@ read_when:
 9. **旁边用 callgrind 计数，永远不要拿它代替计时**（`bench cg -small 0 -big 3 -dumps -sim`）。每个二进制一个进程，先热身每个页面，然后只数基准用客户端请求标出的那个窗口，也就是每个页面 3 次渲染（见 [testing.md](testing.zh-CN.md#给两个构建计时对比)）。表里显示整个程序和解释器自己的代码：指令数，分支数，预测错的分支数和缓存未命中数，原始文件也保留。callgrind 的预测器和缓存是对旧硬件的模型，不是对 Zen 3 的，所以它的未命中数上升，是该看得更仔细的理由，不是结论。计数和计时不一致时，继续测。两者谁也推翻不了谁。
 10. **在新数据上确认胜出者。** 试了几个变体并保留其中一个时，在引用它之前，用一次新的运行再给它计时（新文件，因此有新的实验 id 和新的顺序）。judge 比较的是一个应用上的一对边。它不对多个应用或多对边做校正：当一个改动在 4 个应用上各按 95% 判断时，某个应用出现假的"更慢"或"更快"的概率最高约五分之一（1 - 0.95^4），所以单独一个应用的偏差只是很弱的证据。
 
+## 页面程序
+
+`internal/measure/pages` 渲染 `engine/pgo/pages` 里 tifa 的页面（`-kind wb`、`store`、`mui` 或 `react`），不需要 tifa 的检出。它是一个单独的模块，用 `bench build -app internal/measure/pages -pkg . -test` 对着每一边的源码树构建。默认（`-mode tifa`）按 tifa 的方式配置虚拟机：`tifa.Register`、tifa 的上限、共享字节码、`RenderVM` 和 tifa 的池。`-mode standin` 是测量 v0.31.1 及之前版本的那个程序（替身 `Intl`，五个函数，不还内存），用来和它们的数字比，`-bare` 不注册任何 `__tifa_*` 函数。包加载之前，守卫找出包里每个 `__tifa_*` 名字：每个都必须已注册，或者带着理由列在 `guard.go` 的表里，否则运行停下并写出这个名字。每次运行都打印它的模式和注册了的函数。
+
+```sh
+# a timing: one P50 per page (Pages/MODE/PAGE)
+taskset -c 2 go tool measure bench run -bin bin -out wb.jsonl -kind wb -parse gobench:p50-ms -env GOMAXPROCS=1 -cpu 2 -sib 6 \
+    -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind wb
+# a count in the window, linux/amd64
+go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 0 -big 3 -dumps -sim -out cg -env GODEBUG=asyncpreemptoff=1 \
+    -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind wb -cg -timed {N} -evaltimeout 1h
+```
+
 ## 默认值和原因
 
 | 设置 | 默认值 | 原因 |

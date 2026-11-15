@@ -58,6 +58,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/goversion/` | The error of a build with a Go newer than the one the engine was checked with, which `internal/cengine` imports |
 | `internal/faulttest/` | For the tests that make a memory fault on purpose: `Room`, which a test calls right before a fault in Go code so that windows has the room to write the state of the CPU, and `Unsafe`, for the faults in Go code that `Room` cannot come right before (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)) |
 | `internal/measure/` | `go tool measure bench`: builds a program at several code positions, times them in turn and counts instructions |
+| `internal/measure/pages/` | A module of its own that renders tifa's pages as tifa does, for a timing or a count ([measuring.md](measuring.md#the-pages-program)) |
 | `intl/` | Package `github.com/liustack/slowjs/intl`, `Intl` for a VM |
 | `internal/gointl/internal/qjspack/gen/` | The shared Intl data packs, selected with Chromium's ICU inventory |
 | `intl/testdata/chromium/` | What Chromium answers, for the golden test, and `record.cjs`, which records it |
@@ -68,6 +69,7 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `slowjs` sets (`vmhook.go`) |
 | `fmt/` | Package `github.com/liustack/slowjs/fmt` |
 | `url/` | Package `github.com/liustack/slowjs/url`, `URL` and `URLSearchParams` for a VM |
+| `tifa/` | Package `github.com/liustack/slowjs/tifa`: `Register` sets a VM up as tifa does, for tifa, `cmd/slowjs` and `internal/measure/pages` |
 | `url/testdata/` | The web-platform-tests files of `url/` that `TestWPT` runs in a VM, the testharness shell, the code of core-js that detects a native URL, and the answers of the tamper and shape tests |
 | `internal/whatwgurl/` | The URL parser behind package `url` (see [url.md](changes/url.md)): the state machine, the host parser, the setters and the serializer, with `idna/` and `bidi/`, the part of golang.org/x/net and x/text it needs, with its Unicode 17 tables. `testdata/` has the web-platform-tests URL data and `known-failures.txt` |
 | `cmd/slowjs/` | The `slowjs` command, which runs a JavaScript file through the Go API (see [command.md](command.md)), and its tests. `scripts/slowjs-release.sh` builds it for the release ([releasing.md](releasing.md#the-release-job)) |

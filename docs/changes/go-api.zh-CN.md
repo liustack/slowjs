@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名，脚本返回或抛出的字符串在调用顶层也会停止转换，TrackRejections 和 UnhandledRejections 报告没有处理函数接住的拒绝'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名，脚本返回或抛出的字符串在调用顶层也会停止转换，TrackRejections 和 UnhandledRejections 报告没有处理函数接住的拒绝，以及 tifa 包'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -647,3 +647,9 @@ Release: Unreleased.
 ，在任何东西被截成 32 位之前就报（`engine.go` 里的 `maxValues` 和 `valuesFit`，`tmpValues` 和 `result.go` 里对结果的遍历都用它）。以前 `tmpValues` 先把整串值复制到引擎内存的一个块里，而一个块不到 4 GiB，所以这样的调用在个数被截断之前就以内存耗尽失败了：这项检查把上限写明，块变大时也仍然成立。对结果的遍历以前没有这项检查：一个 Go 函数返回 2^31 个值的切片，在内存够做快照的机器上，节点编号会被截成负的 int32，以下标越界 panic。它只是在本来就要复制或遍历一串值的地方多查一次长度，所以调用的开销不变。
 
 测试：`valuesfit_test.go` 里的 `TestValuesFit` 在上限（`maxValues`）的两边检查它。`TestSnapshotTooManyValues` 给结果的遍历设上 3 或 4 的上限（它的字段 `max`，除了测试都是 `maxValues`），遍历含有更多 `Value` 的切片、`[]any` 和 map：遍历在超过上限的节点或子项之前就以这个错误失败，并且仍然拿到每个引用，交给快照释放。没有测试造 2^31 个值的列表：它在 Go 里要占 32 GiB。
+
+## tifa 包
+
+发布版本：Unreleased。
+
+`tifa.Register(vm)` 给虚拟机配上 tifa 给它池里每个虚拟机的东西，顺序和 tifa 相同：`URL`、`Intl`、`Temporal`，然后是 tifa 的 bundle 要用的名为 `__tifa_*` 的函数（`tifa.Hooks()` 列出它们）。tifa、`slowjs` 命令和测量 tifa 页面的程序都调用它，所以三者配置虚拟机的方式相同。哈希、随机字节和异步上下文从 tifa 搬到了这里。上限、bundle 和回收仍由宿主负责。

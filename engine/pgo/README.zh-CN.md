@@ -46,9 +46,9 @@ C 改了以后检查可能不过。这时为它点名的路径写一段循环或
 | 路径 | 内容 | 大小 |
 | --- | --- | --- |
 | `pages/shop/shop.js` | tifa 的 `examples/shop` 的服务端 bundle，构建成 ES 模块，再由 `compare/engines/cmd/modulescript` 转成脚本。React、tifa 的运行时和应用用到的包 | 1.6 MB |
-| `pages/shop/in/*.json` | shop 的 10 个页面的输入：工作台 3 个（`wb-studio`、`wb-order-studio`、`wb-stats-studio`），en-US 的商店 7 个（首页、商品列表、商品、日志、文章、购物车、结算） | 0.18 MB |
+| `pages/shop/in/*.json` | shop 的 20 个页面的输入：工作台 6 个（`wb-studio`、`wb-order-studio`、`wb-stats-studio`，以及 `weekend` 的同样 3 个），en-US 和 zh-CN 的商店各 7 个（首页、商品列表、商品、日志、文章、购物车、结算）。训练渲染 `studio` 的 3 个和 en-US 的 7 个，计时用全部（`internal/measure/pages`） | 0.35 MB |
 | `pages/mui/mui.js` | tifa 的 `test/apps/mui` 的服务端 bundle，做法相同。React、MUI 和 emotion | 0.76 MB |
-| `pages/mui/in/home.json` | 该应用首页的输入 | 7 KB |
+| `pages/mui/in/*.json` | 该应用 3 个页面的输入：训练渲染的 `home`，以及 `orders` 和 `order` | 24 KB |
 | `pages/fakeintl.js` | 原生宿主加载 bundle 需要的一个小 `Intl`，因为 C 引擎没有它（它来自 Go 包 `intl` 和 `temporal`）。它用 `toFixed` 格式化数字，日期写成 ISO 日期，复数只分 one 和 other，所以这几处的 HTML 和 tifa 的真实页面不同，Intl 内部的工作也不在画像里 |
 | `pages/THIRD_PARTY_NOTICES.md` | 两个 bundle 里的包，带版本、许可证和许可证文本 |
 
