@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- `split`, `replace` with a function and `match` by a regexp that nothing changed find their matches without calls of `exec`, and a regexp that starts with `\s` skips to where a match can start: the RegExp benchmark of the V8 suite runs 44% fewer instructions ([performance.md](docs/performance.md#split-replace-with-a-function-and-match-without-exec)). A regexp whose flag getters or `exec` a script replaced is now told apart by the slots of its shape, so `replace` by it calls them as the specification says.
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
