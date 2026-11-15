@@ -56906,6 +56906,17 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    js_end_tag gives the end tag. target then holds other strings than React's
    would, and the same text when they are joined.
 
+   Its seventh argument, mode, says which of React's functions it stands in
+   for. undefined (a caller that passes six) and 0: pushStartGenericElement.
+   1: pushSelfClosing, which React uses for img (after its image preload) and
+   the void elements (br, hr, meta, source and the like): the same loop, with
+   "children" and "dangerouslySetInnerHTML" a throw when not null or
+   undefined, then pushViewTransitionAttributes, "/>" and no text, and a
+   return of null. js_start_tag declines a call with children, so that React
+   throws, and is otherwise the generic call with "/>" for ">". It declines
+   any other mode, so that a caller that asks for a mode this engine does not
+   have gets React's function.
+
    js_start_tag returns its argument decline, having changed nothing, for any
    call where React's functions could do something else than it does, and the
    script then runs them. It writes only when:
@@ -56990,6 +57001,13 @@ enum {
     JS_EMIT_CHILDREN,
     JS_EMIT_STYLE_NAME,  /* a style name, hyphenated */
     JS_EMIT_STYLE_CUSTOM, /* a style name that starts with --, as it is */
+};
+
+/* the mode of a start tag: the function of React it writes as */
+enum {
+    JS_EMIT_MODE_GENERIC, /* pushStartGenericElement */
+    JS_EMIT_MODE_SELF,    /* pushSelfClosing */
+    JS_EMIT_MODE_LAST = JS_EMIT_MODE_SELF,
 };
 
 enum {
@@ -58187,7 +58205,8 @@ static BOOL js_emit_target_plain(JSContext *ctx, JSEmitCache *ec, JSObject *p)
         f->u.cfunc.magic == 0;
 }
 
-/* startTag(target, props, type, formatContext, hasOwnProperty, decline) */
+/* startTag(target, props, type, formatContext, hasOwnProperty, decline,
+            mode) */
 static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
                             int argc, JSValueConst *argv)
 {
@@ -58202,9 +58221,16 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
     uint8_t kinds[JS_EMIT_PROPS_MAX];
     JSValue str, ret;
     uint32_t count;
-    int i, n, tag, valid, r = 0;
+    int i, n, tag, valid, mode, r = 0;
 
-    /* argv has the six values: that is the length of the function */
+    /* argv has the seven values: that is the length of the function */
+    if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_UNDEFINED)
+        mode = JS_EMIT_MODE_GENERIC;
+    else if (JS_VALUE_GET_TAG(argv[6]) == JS_TAG_INT &&
+             (uint32_t)JS_VALUE_GET_INT(argv[6]) <= JS_EMIT_MODE_LAST)
+        mode = JS_VALUE_GET_INT(argv[6]);
+    else
+        goto decline;
     if (JS_VALUE_GET_TAG(target) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(props) != JS_TAG_OBJECT ||
         JS_VALUE_GET_TAG(typev) != JS_TAG_STRING ||
@@ -58254,6 +58280,11 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
         case JS_EMIT_SKIP:
             break;
         case JS_EMIT_CHILDREN:
+            /* pushSelfClosing throws */
+            if (mode == JS_EMIT_MODE_SELF) {
+                r = 1;
+                break;
+            }
             children = v;
             break;
         case JS_EMIT_STYLE:
@@ -58303,7 +58334,9 @@ static JSValue js_start_tag(JSContext *ctx, JSValueConst this_val,
             break;
         }
     }
-    if (r == 0) {
+    if (r == 0 && mode == JS_EMIT_MODE_SELF) {
+        js_emit_s8(&b, "/>");
+    } else if (r == 0) {
         js_emit_c8(&b, '>');
         tag = JS_VALUE_GET_TAG(children);
         if (tag == JS_TAG_STRING || tag == JS_TAG_STRING_ROPE)
@@ -58556,7 +58589,7 @@ static JSValue js_emit_new_function(JSContext *ctx, JSCFunction *func, int lengt
 
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len)
 {
-    return js_emit_new_function(ctx, js_start_tag, 6, name, name_len);
+    return js_emit_new_function(ctx, js_start_tag, 7, name, name_len);
 }
 
 JSValue JS_NewEndTagFunction(JSContext *ctx, const char *name, size_t name_len)

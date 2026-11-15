@@ -4,13 +4,14 @@
 // root of this repository.
 // startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) against
 // the functions of React DOM 19.3 they stand in for: pushStartGenericElement,
-// with what it calls, and endChunkForTag. The functions between the two
-// "React DOM" lines are those of react-dom-server-legacy.browser.production.js
-// of react-dom 19.3.1, as they are (MIT, Copyright (c) Meta Platforms, Inc. and
-// affiliates). For every call, listed or random, startTag either pushes onto
-// target one string that is the text React's function pushes, and returns
-// what it returns, or returns decline and leaves target as it was. It never
-// takes a call where React throws, and it throws nothing here.
+// with what it calls, pushSelfClosing (startTag with mode 1) and
+// endChunkForTag. The functions between the two "React DOM" lines are those
+// of react-dom-server-legacy.browser.production.js of react-dom 19.3.1, as
+// they are (MIT, Copyright (c) Meta Platforms, Inc. and affiliates). For
+// every call, listed or random, startTag either pushes onto target one string
+// that is the text React's function pushes, and returns what it returns, or
+// returns decline and leaves target as it was. It never takes a call where
+// React throws, and it throws nothing here.
 'use strict'
 // ---- React DOM 19.3.1 ----
 function formatProdErrorMessage(code) {
@@ -430,6 +431,24 @@ function pushInnerHTML(target, innerHTML, children) {
     null !== innerHTML && void 0 !== innerHTML && target.push("" + innerHTML);
   }
 }
+function pushSelfClosing(target, props, tag, formatContext) {
+  target.push(startChunkForTag(tag));
+  for (var propKey in props)
+    if (hasOwnProperty.call(props, propKey)) {
+      var propValue = props[propKey];
+      if (null != propValue)
+        switch (propKey) {
+          case "children":
+          case "dangerouslySetInnerHTML":
+            throw Error(formatProdErrorMessage(399, tag));
+          default:
+            pushAttribute(target, propKey, propValue);
+        }
+    }
+  pushViewTransitionAttributes(target, formatContext);
+  target.push("/>");
+  return null;
+}
 function pushStartGenericElement(target, props, tag, formatContext) {
   target.push(startChunkForTag(tag));
   var innerHTML = (tag = null),
@@ -488,20 +507,21 @@ function show(v) {
   try { return typeof v === 'string' ? JSON.stringify(v) : String(v) } catch (e) { return typeof v }
 }
 
-// pushStartGenericElement and startTag on the same arguments. want is 'take',
-// 'decline' or undefined (either is right).
-function check(name, tag, props, want, fc, hop, target) {
+// pushStartGenericElement and startTag on the same arguments, or with mode 1
+// pushSelfClosing and startTag with mode 1. want is 'take', 'decline' or
+// undefined (either is right).
+function check(name, tag, props, want, fc, hop, target, mode) {
   fc = fc || FC
   hop = hop || hasOwnProperty
   count++
   const o = []
   let ro, oerr = null
-  try { ro = pushStartGenericElement(o, props, tag, fc) } catch (e) { oerr = e }
+  try { ro = (mode === 1 ? pushSelfClosing : pushStartGenericElement)(o, props, tag, fc) } catch (e) { oerr = e }
   const c = target || ['before']
   const before = c.slice()
   let rc
   try {
-    rc = startTag(c, props, tag, fc, hop, D)
+    rc = mode ? startTag(c, props, tag, fc, hop, D, mode) : startTag(c, props, tag, fc, hop, D)
   } catch (e) {
     fail(name + ': threw ' + e)
     return
@@ -686,6 +706,66 @@ cases.forEach(([tag, props, want], i) => check('case ' + i + ' <' + show(tag) + 
   if (startTag(t, f, 'ul', FC, hasOwnProperty, D) !== fn) fail('function children not returned')
 }
 
+// pushSelfClosing, which writes img and the void elements: the props and
+// "/>", and a throw for children or dangerouslySetInnerHTML
+const selfCases = [
+  ['img', { src: '/i/kettle.jpg', alt: 'Pour-over kettle', width: 640, height: 480, loading: 'lazy', decoding: 'async', className: cls60 }, 'take'],
+  ['img', { src: '/a.png', srcSet: '/a.png 1x, /a@2x.png 2x', sizes: '100vw', fetchPriority: 'low', crossOrigin: 'anonymous' }, 'take'],
+  ['img', { alt: '<"&>', src: '', style: { width: 10, objectFit: 'cover', aspectRatio: 1.5 } }, 'take'],
+  ['img', { src: fn, alt: sym, hidden: true, onLoad: fn, ref: fn, suppressHydrationWarning: true }, 'take'],
+  ['img', { 'data-x': true, 'aria-hidden': false, draggable: false, title: 0 }, 'take'],
+  ['img', { alt: '中文 \ud800', title: 'Ā'.repeat(3000) }, 'take'],
+  ['br', {}, 'take'],
+  ['hr', { className: 'my-4 border-zinc-200' }, 'take'],
+  ['wbr', { children: null }, 'take'],
+  ['br', { children: undefined, dangerouslySetInnerHTML: null }, 'take'],
+  ['meta', { name: 'description', content: 'a "b" <c>' }, 'take'],
+  ['meta', { charSet: 'utf-8' }, 'take'],
+  ['link', { rel: 'stylesheet', href: '/s.css', precedence: 'default' }, 'take'],
+  ['source', { srcSet: '/x.webp', type: 'image/webp', media: '(min-width: 600px)' }, 'take'],
+  ['area', { href: '/x', alt: 'x', shape: 'rect', coords: '0,0,1,1' }, 'take'],
+  ['embed', { src: '/x.svg', type: 'image/svg+xml', width: '1.5' }, 'take'],
+  ['base', { href: 'https://example.com/' }, 'take'],
+  ['track', { kind: 'captions', srcLang: 'en', default: true }, 'take'],
+  ['param', { name: 'a', value: 'b' }, 'take'],
+  ['keygen', { name: 'k' }, 'take'],
+  ['col', { span: 2 }, 'decline'],
+  ['img', { src: '/a.png', children: 'x' }, 'decline'],
+  ['img', { src: '/a.png', children: '' }, 'decline'],
+  ['img', { children: 0 }, 'decline'],
+  ['img', { children: false }, 'decline'],
+  ['img', { children: [] }, 'decline'],
+  ['img', { children: fn }, 'decline'],
+  ['br', { dangerouslySetInnerHTML: { __html: 'x' } }, 'decline'],
+  ['img', { src: 'javascript:alert(1)' }, 'decline'],
+  ['img', { src: ' JAVASCRIPT:x' }, 'decline'],
+  ['img', { srcSet: 'javascript:x' }, 'take'],
+  ['img', { xlinkHref: '/a' }, 'decline'],
+  ['img', { a: {} }, 'decline'],
+  ['img', { a: 1n }, 'decline'],
+  ['1img', {}, 'decline'],
+  ['', {}, 'decline'],
+]
+selfCases.forEach(([tag, props, want], i) => check('self case ' + i + ' <' + show(tag) + '>', tag, props, want, FC, null, null, 1))
+check('self with viewTransition', 'img', { src: '/a.png' }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 1)
+check('self into a frozen target', 'br', {}, 'decline', FC, null, Object.freeze([]), 1)
+check('self into a target that grew', 'br', {}, 'take', FC, null, Array.from({ length: 100 }, (_, i) => 's' + i), 1)
+
+// the mode: undefined and 0 are the generic element, which returns its
+// children, and a mode the function does not know declines
+for (const m of [undefined, 0]) {
+  count++
+  const t = [], r = startTag(t, { children: 'x' }, 'b', FC, hasOwnProperty, D, m)
+  if (r !== null || t.length !== 1 || t[0] !== '<b>x') fail('mode ' + show(m) + ': ' + show(r) + ' ' + show(t[0]))
+  const k = startTag(t, { children: kids }, 'b', FC, hasOwnProperty, D, m)
+  if (k !== kids || t[1] !== '<b>') fail('mode ' + show(m) + ': children not returned')
+}
+for (const m of [false, true, null, -1, 3, 2 ** 31 - 1, 1.5, NaN, '1', 1n, {}, [1], fn, sym]) {
+  count++
+  const t = ['x']
+  if (startTag(t, {}, 'br', FC, hasOwnProperty, D, m) !== D || t.length !== 1) fail('mode ' + show(m) + ' taken')
+}
+
 // what the call finds around it
 check('another hasOwnProperty', 'div', { a: 1 }, 'decline', FC, function () {})
 check('a bound hasOwnProperty', 'div', { a: 1 }, 'decline', FC, hasOwnProperty.bind(null))
@@ -830,6 +910,8 @@ function props() {
 }
 for (let t = 0; t < 4000; t++)
   check('random ' + t, rand(20) === 0 ? pick(['1x', 'my-el', 'svg', 'x:y', '']) : 'div', props())
+for (let t = 0; t < 2000; t++)
+  check('random self ' + t, rand(20) === 0 ? pick(['1x', 'x:y', '']) : pick(['img', 'br', 'hr', 'source', 'meta']), props(), undefined, FC, null, null, 1)
 
 // An index on Array.prototype makes push set it there, and React's push runs
 // the setter. startTag declines from then on, as push leaves its fast path.
@@ -876,7 +958,7 @@ out.unshift(count + ' calls: ' + (bad ? bad + ' wrong' : 'all as React') + '; st
 }
 
 // the functions are built-ins
-for (const [f, name, length] of [[startTag, 'startTag', 6], [endTag, 'endTag', 1]]) {
+for (const [f, name, length] of [[startTag, 'startTag', 7], [endTag, 'endTag', 1]]) {
   const shape = JSON.stringify([f.name, f.length, Object.hasOwn(f, 'prototype'), Object.getPrototypeOf(f) === Function.prototype,
     (() => { try { new f([], {}, 'div', FC, hasOwnProperty, D); return 'made' } catch (e) { return e.name } })(), String(f).includes('[native code]')])
   if (shape !== JSON.stringify([name, length, false, true, 'TypeError', true])) fail('shape of ' + name + ': ' + shape)

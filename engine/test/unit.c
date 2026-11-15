@@ -3836,13 +3836,13 @@ static JSValue tag_call(JSContext *ctx)
 {
     JSValue g = JS_GetGlobalObject(ctx);
     JSValue f = JS_GetPropertyStr(ctx, g, "F"), a = JS_GetPropertyStr(ctx, g, "A");
-    JSValue argv[6], len = JS_GetPropertyStr(ctx, a, "length"), r;
+    JSValue argv[7], len = JS_GetPropertyStr(ctx, a, "length"), r;
     int32_t n = 0;
     int k;
 
     JS_ToInt32(ctx, &n, len);
     JS_FreeValue(ctx, len);
-    for (k = 0; k < n && k < 6; k++)
+    for (k = 0; k < n && k < 7; k++)
         argv[k] = JS_GetPropertyUint32(ctx, a, k);
     r = JS_Call(ctx, f, JS_UNDEFINED, k, argv);
     while (k > 0)
@@ -3876,6 +3876,7 @@ static void test_tag_polls(void)
         "var o = { toString() { return tg } }\n"
         "function key(p) { return Object.keys(p.style)[0] }\n"
         "function start(p, type) { F = startTag; A = [T, p, type, fc, hop, d] }\n"
+        "function self(p, type) { F = startTag; A = [T, p, type, fc, hop, d, 1] }\n"
         "0";
     static const struct {
         const char *prep, *want;
@@ -3883,10 +3884,12 @@ static void test_tag_polls(void)
     } cases[] = {
         /* the scan of the tag, its copy and the copy of the start tag: 8, 8 and 9 steps */
         { "start({}, tg)", "'<' + tg + '>'", 25 },
+        { "self({}, tg)", "'<' + tg + '/>'", 25 },
         /* the escape: 256 steps of 4096 */
         { "start({ children: kids }, 'div')", "'<div>' + kids.replaceAll('<', '&lt;')", 256 },
         { "start({ children: wide }, 'div')", "'<div>' + wide.replaceAll('&', '&amp;')", 256 },
         { "start({ title: q }, 'div')", "'<div title=\"' + q.replaceAll('\"', '&quot;') + '\">'", 256 },
+        { "self({ alt: q }, 'img')", "'<img alt=\"' + q.replaceAll('\"', '&quot;') + '\"/>'", 256 },
         /* the white space, then the escape */
         { "start({ style: { color: sv } }, 'div')", "'<div style=\"color:' + sv.trim().replaceAll('<', '&lt;') + '\">'", 512 },
         { "start({ href: ul }, 'a')", "'<a href=\"' + ul + '\">'", 512 },

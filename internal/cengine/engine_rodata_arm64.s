@@ -1694,7 +1694,7 @@ DATA ·engine_rodata+14400(SB)/8, $0x0000050400000005
 DATA ·engine_rodata+14424(SB)/8, $0x0000000300030000
 DATA ·engine_rodata+14736(SB)/8, $0x6e61725477656976
 DATA ·engine_rodata+14744(SB)/8, $0x70006e6f69746973
-DATA ·engine_rodata+14752(SB)/8, $0x0000000000687375
+DATA ·engine_rodata+14752(SB)/8, $0x00003e2f00687375
 DATA ·engine_rodata+14760(SB)/8, $·engine_rodata+15328(SB)
 DATA ·engine_rodata+14768(SB)/8, $·engine_rodata+15352(SB)
 DATA ·engine_rodata+14776(SB)/8, $·engine_rodata+15364(SB)

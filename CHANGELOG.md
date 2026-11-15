@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Added
+
+- The start tag function of `VM.RegisterStartTag` takes a seventh argument, the mode: 1 writes `img` and the void elements as React DOM's `pushSelfClosing` does. With tifa's plugin calling it, the store pages run 0.8% fewer instructions and the workbench pages 0.35% fewer, with the same HTML.
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
