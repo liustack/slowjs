@@ -7480,6 +7480,47 @@ static void test_regvm_incdec_store(void)
     }
 }
 
+/* l = x[k] = v and l = o.f = v into a local l: the value goes into l first
+   and the put reads l, so no MOVT, SWAP or MOV of the value is left
+   (rv_chain_store of engine/regvm-ops-basic.h). Where a closure reads l or
+   a catch is around, the copies stay, in the order of QuickJS. */
+static void test_regvm_chain_store(void)
+{
+    static const struct { const char *what, *src; int moves; } cases[] = {
+        { "l = x[k] = v", "var x = [0, 0], l; l = x[a] = b * 2; return l + x[1];", 0 },
+        { "l = o.f = v", "var o = {}, l; l = o.f = b * 2; return l + o.f;", 0 },
+        { "(l = x[k] = v) kept", "var x = [0, 0], l; var r = (l = x[a] = b * 2); return r + l;", 0 },
+        { "a closure reads l", "var x = [0, 0], l, g = function () { return l; }; l = x[a] = b * 2; return g();", 1 },
+        { "a catch around", "var x = [0, 0], l; try { l = x[a] = b * 2; } catch (e) { return l; } return l;", 1 },
+    };
+    int k, i, len, moves, op[3];
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    op[0] = regvm_op("MOV");
+    op[1] = regvm_op("MOVT");
+    op[2] = regvm_op("SWAP");
+    CHECK(op[0] >= 0 && op[1] >= 0 && op[2] >= 0, "the names of MOV, MOVT and SWAP");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        moves = 0;
+        for (i = 0; code && i + 2 < len; i++) {
+            if ((code[i] == op[1] || code[i] == op[2]) && (int8_t)code[i + 1] >= 0 && (int8_t)code[i + 2] >= 0)
+                moves++;
+        }
+        if (cases[k].moves)
+            CHECK(moves > 0, "%s: no MOVT or SWAP of temps, the old order wants them", cases[k].what);
+        else
+            CHECK(moves == 0, "%s: %d MOVT or SWAP of temps", cases[k].what, moves);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -8601,6 +8642,7 @@ int main(int argc, char **argv)
     test_regvm_call_copies();
     test_regvm_dup_get_field();
     test_regvm_incdec_store();
+    test_regvm_chain_store();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();

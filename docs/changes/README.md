@@ -62,6 +62,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
 | A destructuring that renames its fields (`const { a: b } = f()`) reads each field of the temp itself, with no copy of the object for each field | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
 | `++k` or `--k` of a local that is also read below it (`x[k] = x[++k]`) writes the local in its INC or DEC, with no copy into the local after it | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
+| A chained assignment into a local (`l = x[k] = v`, `l = o.f = v`) puts the value into the local first and the element or field takes it from there, with no copies, where no closure reads the local and no catch is around | Unreleased | [c-engine.md](c-engine.md#the-register-interpreter) |
 
 ## The generator
 
