@@ -16217,9 +16217,47 @@ static BOOL js_object_has_name(JSContext *ctx, JSValueConst obj)
     return (p->len != 0);
 }
 
+/* set_name after the closure of a function with no name of its own
+   (`{ a: () => x }`, `const f = function () {}`): the closure has its name
+   already, the empty string, with these flags. Defining it again with the
+   same flags only changes the value, which is done here in place, as
+   JS_DefineProperty would do it, without its general path (about 215
+   instructions a closure). A function object of the engine has no exotic
+   handler. 1 when the name is set, 0 when the general path must run, -1 on
+   an exception. JS_DefineObjectName and its copy rv_define_object_name
+   (engine/regvm-ops-window.h) both start with it. */
+static force_inline int js_object_name_in_place(JSContext *ctx,
+                                                JSValueConst obj,
+                                                JSAtom name, int flags)
+{
+    JSObject *p;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    JSValue str;
+
+    if (name == JS_ATOM_NULL || !JS_IsObject(obj))
+        return 0;
+    p = JS_VALUE_GET_OBJ(obj);
+    prs = find_own_property(&pr, p, JS_ATOM_name);
+    if (!prs || prs->flags != flags || p->is_exotic ||
+        JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_STRING ||
+        JS_VALUE_GET_STRING(pr->u.value)->len != 0)
+        return 0;
+    str = JS_AtomToString(ctx, name);
+    if (JS_IsException(str))
+        return -1;
+    /* the empty string is an atom: freeing it runs no code */
+    JS_FreeValue(ctx, pr->u.value);
+    pr->u.value = str;
+    return 1;
+}
+
 static int JS_DefineObjectName(JSContext *ctx, JSValueConst obj,
                                JSAtom name, int flags)
 {
+    int r = js_object_name_in_place(ctx, obj, name, flags);
+    if (r != 0)
+        return r < 0 ? -1 : 0;
     if (name != JS_ATOM_NULL
     &&  JS_IsObject(obj)
     &&  !js_object_has_name(ctx, obj)
