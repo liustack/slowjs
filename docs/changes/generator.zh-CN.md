@@ -136,7 +136,7 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 
 - `engine/pgo/train.sh` 训练画像。它按生成器编译引擎的方式构建宿主，所以画像里每个函数的哈希和生成器看到的一致。`engine/pgo/loops.js` 跑到的、页面留成冷的而微基准跑到的路径不足 95%，或者循环的某一部分不再走到它的函数时，它就停下（`engine/pgo/cover.awk`）。
 - `TestInlineRemarks`、`TestStripCGProfile`、`TestProfileNames`、`TestUnprofiledFunctions`、`TestStaleWarnings` 和 `TestMisexpectLines`（`internal/goasm/gen/pgo_test.go`）检查第一遍的记录、模块标志、画像里的名字、哪些函数没有画像，以及警告。
-- `TestPassPollsProfile`（`internal/goasm/gen/poll_test.go`，需要 `QUICKJS_LLVM` 和 `QUICKJS_SHADOW_PASS`）检查轮询 pass 选计数器位置的方式和没有画像时相同，画像里某个权重的数字恰好和 pass 自己的罕见分支相同时也一样。
+- `TestPassPollsProfile`（`internal/goasm/gen/poll_test.go`，需要 `SLOWJS_LLVM` 和 `SLOWJS_SHADOW_PASS`）检查轮询 pass 选计数器位置的方式和没有画像时相同，画像里某个权重的数字恰好和 pass 自己的罕见分支相同时也一样。
 - `TestLowerARM64EngineLRTuplePaths`（`internal/goasm/gen`）检查 arm64 上扩展后的证明。
 - `scripts/check-gen-test.sh` 检查 `scripts/check-gen.sh` 总会显示画像的行。它在 `scripts/check.sh` 的 `scripts` 步骤里运行。
 - `compare/engines` 里的 `go run ./cmd/notices` 为训练用 bundle 里的包做声明文件（`TestGeneratePages`）。
@@ -152,3 +152,15 @@ v0.30.6 在该版的 C 上重新训练了画像，C 里带着它的三项新改�
 为什么安全：声明只是给函数一个名字，代码和栈帧都没变。Go 代码不能调用叶子函数，所以 `internal/cengine/gocalls.txt` 里出现叶子函数时生成器会停下。
 
 测试：`TestLeafDecl`（`internal/goasm/gen`）检查存了寄存器的叶子函数和有调用的叶子函数都有声明，并且 `go vet -asmdecl` 接受，两样都没有的叶子函数写 `NOFRAME`，没有声明。`TestEngineAsmDecl` 在五个目标上对引擎跑 `go vet -asmdecl`。
+
+## 跳转表项可以指向代码末尾
+
+版本：v0.31.0。
+
+LLVM 证明 `switch` 的某个值不可能出现时，跳转表里这个值的那一项指向一个没有指令的块。llc 可能把这个块放在函数最后，这一项就指向函数代码的末尾，那里没有指令。用了 v0.30.7 的画像之后，引擎里出现了一张这样的表，在 amd64 的 `put_lvalue` 里。链接后检查要求每一项都指向一条它对上了的指令，所以拒绝了这张表（`entry 2 reaches ..., no instruction of the body`），从 v0.30.7 起，用每个 Go 版本做的检查都过不了。
+
+现在检查接受这样的项，条件有两个：在二进制里它也指向 llc 的代码所对应的生成代码的末尾，也就是同一个位置，并且那里是跳到 Go 收尾代码的跳转，或者收尾代码本身，也就是函数返回时去的地方。从不返回的函数在那里放的是它的数据，这样的项会被拒绝。在 llc 的目标文件里指向末尾、在二进制里指向别处的项会被拒绝，指向末尾的分支也一样被拒绝。生成的代码不变。
+
+为什么安全：这一项对应的值，LLVM 已经证明 `switch` 拿不到，所以它从不会被走到，原生构建和生成的代码都一样。检查仍然要求这一项落在 llc 给它的位置上。
+
+测试：`internal/goasm/gen/testdata/check/mini.c` 里的 `hole` 是一个带这种项的 `switch`。`TestPostLinkCheck` 检查 llc 的这一项确实指向代码末尾，检查能通过，并且把这一项改到别的块上会被拒绝。

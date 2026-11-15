@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl"
 )
 
 // Plural rules are looked up by truncating the locale, as ICU's PluralRules

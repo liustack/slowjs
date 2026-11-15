@@ -9,8 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/layout"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/layout"
 )
 
 func mustLocale(t *testing.T, s string) intl.DataLocale {

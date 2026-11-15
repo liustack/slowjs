@@ -2,7 +2,7 @@
 summary: 'C 引擎每个版本渲染页面快了多少，怎样在 tifa 里和在不同代码位置上测量一个引擎改动，以及每项提速改动的测量（热循环、追加、对象、调用、C 里的 React 辅助函数、JSON、局部变量、寄存器解释器、优化器 pass、tifa 页面的性能画像、生成的代码相对原生 C 的开销、负载下的稳定性），连同试过但没做的事'
 read_when:
   - 要为提速改动引擎，或者审阅这样的改动
-  - 发布前要在 tifa 的页面上测量 liustack/quickjs 的某个分支
+  - 发布前要在 tifa 的页面上测量 liustack/slowjs 的某个分支
   - 一个只有百分之几的速度结果，可能只是代码落在了哪里
   - 要试一个可能已经试过的引擎想法
   - 规划渲染速度的下一轮工作
@@ -20,9 +20,9 @@ read_when:
 
 [English](performance.md) · 简体中文
 
-liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.md)。
+liustack/slowjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成 HTML，所以渲染速度用 tifa 示例商店的页面来测：一个热身后的 VM 渲染它两个店各自的订单列表、一个订单和统计页（tifa 的 `test/ssr` 里的 `BenchmarkShop`）。每项提速改动都保持 HTML 逐字节不变。[changes](changes/README.zh-CN.md) 里每项改动的文档有完整的测量，tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) 讲这些数字对一个应用意味着什么。这个引擎和其他纯 Go 引擎的比较，在 tifa 的页面上和一般负载上，见 [benchmarks.md](benchmarks.md)。
 
-光是到 v0.26.15 为止的引擎改动，就让渲染比 liustack/quickjs 起步时的引擎（modernc.org/quickjs v0.25.0 加 libquickjs v0.13.1）快了 1.63 到 1.66 倍，再加上 tifa 的 Vite 插件重写和 PGO，是 2.07 倍（2026-10-20 测量）。C 引擎之前的引擎（到 v0.28）的数字在 [history.md](history.zh-CN.md)。
+光是到 v0.26.15 为止的引擎改动，就让渲染比 liustack/slowjs 起步时的引擎（modernc.org/quickjs v0.25.0 加 libquickjs v0.13.1）快了 1.63 到 1.66 倍，再加上 tifa 的 Vite 插件重写和 PGO，是 2.07 倍（2026-10-20 测量）。C 引擎之前的引擎（到 v0.28）的数字在 [history.md](history.zh-CN.md)。
 
 ## 数字是怎么测的
 
@@ -68,16 +68,17 @@ liustack/quickjs 是为 tifa 做的，tifa 在引擎里把 React 页面渲染成
 | v0.30.5 | 引擎带着 [tifa 页面的性能画像](#tifa-页面的性能画像)生成，另有寄存器解释器的五项改动：atom 表、`'' + x`、按键读取、字符串记住自己的键 atom、对象的 rest 和展开 | 相对 v0.30.4，在 linux/amd64 上（4 核的 AMD EPYC 7B13，用一个核，16 种代码布局的平均，各页中位数之和）：商店的六个工作台页是原来时间的 0.871，十四个店面页 0.874，三个 MUI 页 0.888，React 页 0.882，长 Markdown 页 0.966。单是画像是 0.916 到 0.946。不带画像时长 Markdown 页是 v0.30.4 的 1.022，原因还没找到（[不带画像时的长 Markdown](#不带画像时的长-markdown)） |
 | v0.30.6 | [寄存器循环直接回答的内置函数](changes/c-engine.zh-CN.md#寄存器循环直接回答的内置函数)、[热调用少传参数字](changes/c-engine.zh-CN.md#热调用少传参数字)，以及在它们之上重新训练的画像 | 相对 v0.30.5，在 linux/amd64 上（4 核的 AMD EPYC 7B13，用一个核，16 种代码布局的平均，各页中位数之和）：商店的十四个店面页是原来时间的 0.979，React 页 0.979，六个工作台页 0.987，长 Markdown 页 0.994。三个 MUI 页（0.993）和三个打包文件的加载看不出变化（[v0.30.6 对 v0.30.5](#v0306-对-v0305)） |
 | v0.30.7 | [按键和按名加键的写入](#按键和按名加键的写入)、[两个字符串的加法不走通用路径](#两个字符串的加法不走通用路径)、[不造迭代器地展开普通数组](#不造迭代器地展开普通数组)、[不走通用查找的属性描述符和 bind](#不走通用查找的属性描述符和-bind)、[页面的 UTF-8，一次处理八个 ASCII 单元](#页面的-utf-8一次处理八个-ascii-单元)，以及加了[第二份输入](#画像的第二份输入)重新训练的画像 | 相对 v0.30.6，在 linux/amd64 上（4 核的 AMD EPYC 7B13，用一个核，16 种代码布局的平均，各页中位数之和）：商店的六个工作台页是原来时间的 0.977，三个 MUI 页 0.983，十四个店面页 0.984，长 Markdown 页 0.986。React 页看不出变化。一次渲染少跑 2.9% 到 4.7% 的指令，React 少 0.8%（[v0.30.7 对 v0.30.6](#v0307-对-v0306)） |
+| v0.31.0 | [不再是快数组的数组](#不再是快数组的数组)、[instanceof 不再调用 Symbol.hasInstance](#instanceof-不再调用-symbolhasinstance)、[for in 循环的迭代器和它的 shape](#for-in-循环的迭代器和它的-shape)，以及在它们上面重新训练的画像 | 相对 v0.30.7，在 linux/amd64 上（4 核的 AMD EPYC 7B13，用一个核，16 种代码布局的平均，各页中位数之和）：tifa 的页面没有哪一类慢过 1% 的 delta，也没有哪一页多跑指令。React 页少跑 0.63% 的指令。V8 套件的分数高 5.4%，Crypto 高 29.6%，EarleyBoyer 高 14.1%（[v0.31.0 对 v0.30.7](#v0310-对-v0307)） |
 
 ## 在 tifa 里测量
 
 每个计时都要按 [measuring.md](measuring.zh-CN.md) 的规程来判断。这一节讲怎样针对一份检出的代码构建并运行 tifa。
 
-要在发布前测量 liustack/quickjs 的某个分支，用 `replace` 把 tifa 指向那份检出的代码，构建示例应用，然后运行 tifa 的 [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons) 里的基准：
+要在发布前测量 liustack/slowjs 的某个分支，用 `replace` 把 tifa 指向那份检出的代码，构建示例应用，然后运行 tifa 的 [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons) 里的基准：
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/quickjs=../quickjs
+go mod edit -replace github.com/liustack/slowjs=../slowjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr
@@ -348,7 +349,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里的 React DOM 文本转义
 
-[`VM.RegisterEscapeText`](changes/go-api.zh-CN.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/quickjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterEscapeText`](changes/go-api.zh-CN.md#registerescapetext) 把 React DOM 的 `escapeTextForBrowser` 作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_escape`，它的 Vite 插件让 React 的字符串渲染器在原来调用它的 JavaScript 函数的地方改调这个，那个 JavaScript 函数是 tifa 给它加了转义缓存、并用五次 `replaceAll` 代替 React 的循环的版本。之前的一步是 liustack/slowjs main（4cdd3a27）加 tifa main（363b6b1）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 在 linux/amd64（EPYC 7B13 的一个核，同伴核空闲）上，在 8 个代码位置各跑 3 轮。时间是一个应用的各页 p50 之和，取各位置配对比值的中位数。指令数是 callgrind 的，每次渲染所有页，位置 0.0（5 次渲染的运行和 2 次渲染的运行之差）：
 
@@ -381,7 +382,7 @@ for in 循环和 hasOwnProperty.call，对比前面的调用改动：
 
 ### C 里复制 React 元素的 props
 
-[`VM.RegisterCopyProps`](changes/go-api.zh-CN.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/quickjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
+[`VM.RegisterCopyProps`](changes/go-api.zh-CN.md#registercopyprops) 把 React 的 `createElement` 和 `cloneElement` 用来把 config 的键复制进元素 props 的那个循环，作为引擎的一个 C 函数提供给宿主。tifa 把它注册为 `__tifa_copy_props`，它的 Vite 插件让这两个函数在循环之前先问它。之前的一步是 liustack/slowjs main（a5feface）加 tifa main（4b511fc）。之后的一步是这个分支加用到它的 tifa 分支。16 个页（六个工作台页、五个店面页、三个 MUI 页和两个 bench 页）的 HTML 在遮掉渲染时间戳之后逐字节相同。
 
 它被问到的频率，来自 tifa 里每个页的一次渲染，带一个数它的回答的包装：六个工作台页用 `createElement` 做了 980 个元素，用 `cloneElement` 做了 518 个，五个店面页是 2,507 和 328，三个 MUI 页是 3,266 和 114，每个 bench 页是 1。这个函数复制了其中所有的，只有一个有 39 个键的 config 除外（MUI 的 input，在订单列表和订单页上），它超过了函数接受的 32 个键，走循环。
 
@@ -649,7 +650,7 @@ C 引擎比 C 版 QuickJS 构建慢的地方，用同样的 `engine/` 的 C 代�
 | `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
 | `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
 
-liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 和固定的 QuickJS 一样快，或者更快），所以剩下的是汇编的代价：这三个脚本上 20% 到 30%，`r_react_ssr` 上 6%。在 `q_regexp_ascii` 上，同样的 C 比固定的 QuickJS 慢 8%（0.829，对 0.765 到 0.777）。原因没有去找：原生宿主也调用 `host_poll`（占 2% 的样本）。perf（4999 Hz，同样 20 次运行的样本，汇编对同样的 C）：
+liustack/slowjs 对 C 的改动在前两个脚本上不花什么（同样的 C 和固定的 QuickJS 一样快，或者更快），所以剩下的是汇编的代价：这三个脚本上 20% 到 30%，`r_react_ssr` 上 6%。在 `q_regexp_ascii` 上，同样的 C 比固定的 QuickJS 慢 8%（0.829，对 0.765 到 0.777）。原因没有去找：原生宿主也调用 `host_poll`（占 2% 的样本）。perf（4999 Hz，同样 20 次运行的样本，汇编对同样的 C）：
 
 - `c_array_methods`：`js_array_includes` 6020 个样本，对 1826，`js_array_indexOf` 3915，对 957，`JS_CallInternal` 10743，对 8749，其余相近（`js_strict_eq2` 13630，对 13231）。这些循环对每个元素调用 `js_strict_eq2`，而带可能轮询的调用的循环把它的轮询计数放在内存里，每轮就是对一个字做读、减、写：`js_array_includes` 36% 的样本落在那个减法上。用[不经调用就判定大多数元素](changes/upstream-commits.zh-CN.md#indexof-和-includes-对大多数元素不用调用就能判断)修好了：脚本用了原来时间的 0.583。
 - `c_string_methods`：38900 个样本，对 30440，分散在许多小函数里：`JS_CallInternal` +940，`js_call_c_function` 1964，对 1210，`JS_ToStringInternal` 1726，对 1122，`JS_ConcatString` 1182，对 658，`js_string_includes` 967，对 523。没有哪个循环里有一条热指令。这是生成代码每次调用的代价（参数和结果经过内存、栈检查、轮询计数）。
@@ -863,7 +864,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 这一节是在栈式解释器上量的，也就是 v0.30.1 及以前的引擎。v0.30.2 的寄存器解释器跑一次渲染的方式不同，下面的占比已经不能说明它。
 
-来自 callgrind 在生成引擎（amd64）上的结果，周期按指令数加每次 L1 未命中 10 加每次最后一级未命中 40 来估计（最后一级 512 KB，和 Zen 3 的 L2 一样）。每个页是一次渲染次数多的运行减去次数少的运行，所以加载和热身抵消掉。`JS_CallInternal` 的各行，是用同样页面上带调试行号的原生构建拆分的。2026-10-29 在 liustack/quickjs `6c757279` 上测量，在 40 字节对象和对共用字节码的轮询只扫描一次之前。
+来自 callgrind 在生成引擎（amd64）上的结果，周期按指令数加每次 L1 未命中 10 加每次最后一级未命中 40 来估计（最后一级 512 KB，和 Zen 3 的 L2 一样）。每个页是一次渲染次数多的运行减去次数少的运行，所以加载和热身抵消掉。`JS_CallInternal` 的各行，是用同样页面上带调试行号的原生构建拆分的。2026-10-29 在 liustack/slowjs `6c757279` 上测量，在 40 字节对象和对共用字节码的轮询只扫描一次之前。
 
 | 一次渲染的占比 | 商店工作台 | 店面 | MUI | bench | `r_react_ssr` | Markdown 400 KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -883,7 +884,7 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 - 一次工作台渲染大约运行 73,000 次 JavaScript 调用和 128 万个操作码：每个操作码 81 条原生指令（算上它调用的东西），在入口、出口和调用操作码里，每次调用约 190 条，其中约 95 条是入口。入口里最大的一块是把局部变量设成 `undefined` 的循环（占 `JS_CallInternal` 原生指令的 2.1%）。
 - 轮询，通过构建一个没有它们的引擎来测：商店、店面和 MUI 页用了原来时间的 0.953 到 0.955，bench 页 0.930，8 个位置全部如此。指令少 4.9% 到 8.3%。`JS_CallInternal` 占一个店面页轮询指令的 41%，占一个 bench 页的 64%，其余分散在约 40 个函数里。栈检查是 1320 个函数里 729 个开头的 4 条指令，占一个页指令数的 1.2% 到 1.8%。
 - 回收只在长 Markdown 上要紧：占它时间的 8.5%，占它最后一级未命中的 40%。在 tifa 的页面上它低于 2%。
-- 对比带 `--jitless` 的 Node，liustack/quickjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的回收器（`resetHooksState` 3.5 到 4.9 倍）。
+- 对比带 `--jitless` 的 Node，liustack/slowjs 在商店工作台上用了 1.82 倍的时间，店面上 1.67，MUI 上 1.52。比值最高的 JavaScript 函数是小的（3 到 5 倍，因为代价是一次调用的固定价格），React 里带 `hasOwnProperty.call` 的 `for in`（2.0 到 2.6 倍，后来已经做了：[调用 for in 和 hasOwnProperty.call](#调用for-in-和-hasownpropertycall)以及 [C 里复制 React 元素的 props](#c-里复制-react-元素的-props)），以及引用计数降到 0 时在赋值处释放一整条链的函数，Node 把这留给它的回收器（`resetHooksState` 3.5 到 4.9 倍）。
 
 ### 正则从哪里开始找，编译时算一次
 
@@ -1088,6 +1089,55 @@ liustack/quickjs 对 C 的改动在前两个脚本上不花什么（同样的 C 
 
 在原生构建上，amd64 的一次两个字符串的加法比以前少大约 30 条指令（MUI 的页面和 React 的页面：省下的指令除以表里的加法次数）。用 v0.30.6 的画像生成时，除 MUI 之外每个页面都多跑 0.6% 到 1.1% 的指令：生成器发现 `JS_RegvmRun` 的 C 代码在训练画像之后改过，就不用画像编译它，这比改动省下的还多。重新训练画像之后，amd64 上每个页面都少跑，所以带这个改动的版本发布之前必须重新训练画像（[releasing.md](releasing.zh-CN.md#性能画像)）。M4 上的计数一轮和一轮之间差约 0.3%，所以它低于这个数的一行单独看说明不了什么。长 Markdown 只在原生 C 树上数过。
 
+### 不再是快数组的数组
+
+[不再是快数组的数组按原子读写下标](changes/c-engine.zh-CN.md#不再是快数组的数组按原子读写下标)，2026-11-15 对照 `b0271108`（v0.30.7 的改动）数的。原生：clang 编出的测试宿主。amd64 是 AMD EPYC 7B13 上的 callgrind，arm64 是 Apple M4 上退休的指令数。产品：通过 Go API 的生成引擎（V8 基准在一个 VM 里用 `Eval` 跑，页面在 tifa 的 `test/ssr` 里），linux/amd64 上用 callgrind，M4 上用退休的指令数（3 轮取最低）。“照生成”用 v0.30.7 的 profile，其中 `rv_getel_atom`、`rv_getel3_slow` 和 `rv_putel_slow` 和它们的 C 对不上了，两个新函数没有 profile。`JS_RegvmRun` 保留它的 profile。“重新训练”用在这次改动上重新训练的 profile。
+
+V8 基准 Crypto，每次迭代的指令（12 次减 4 次，除以 8）：
+
+| 基准 | 原生 amd64 | 原生 M4 | 产品 amd64，照生成 | 产品 amd64，重新训练 | 产品 M4，照生成 | 产品 M4，重新训练 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Crypto 解密 | -19.8% | -20.5% | -22.5% | -22.7% | -22.4% | -22.9% |
+| Crypto 加密 | -19.4% | -20.0% | -22.1% | -22.3% | -22.6% | -22.8% |
+
+其他基准在 amd64 上不变（callgrind，原生和产品都在 -0.08% 到 +0.04% 之间），只有 EarleyBoyer 的第一部分在原生宿主上多 0.32%，通过 Go API 多 0.48%（重新训练后 0.46%）：它每次迭代在不是 Array 的对象上按整数键读 96K 次，每次都为一次放弃的调用多付约 25 条指令。RegExp 没算进来：它一次迭代的工作量不固定（`replace` 的调用次数每次运行相差 1.2%）。在 M4 上，每次迭代只有几百万条指令的基准（Richards、Splay）随回收器每次运行相差好几个百分点。
+
+页面，每次渲染的指令，HTML 相同：
+
+| 页面 | 原生 amd64 | 原生 M4 | 产品 amd64，照生成 | 产品 amd64，重新训练 | 产品 M4，照生成 | 产品 M4，重新训练 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| React 的页面 | -0.01% | +0.11% | -0.12% | -0.06% | -0.19% | -0.23% |
+| 商店，店面首页（en-US） | -0.01% | +0.24% | +0.10% | +0.09% | +0.02% | -0.28% |
+| 商店，店面商品页（zh-CN） | -0.01% | -0.16% | +0.07% | +0.08% | -0.17% | -0.35% |
+| 商店，工作台 studio | -0.03% | -0.56% | 0.00% | +0.04% | -0.12% | -0.24% |
+| 商店，工作台 stats | -0.03% | +0.13% | +0.05% | +0.13% | -0.02% | -0.14% |
+| MUI 首页 | -0.02% | -0.11% | +0.28% | +0.14% | -0.12% | -0.37% |
+| MUI 订单页 | -0.02% | -0.12% | -0.01% | -0.14% | -0.15% | -0.27% |
+| 长 Markdown | -0.44% | -0.64% | | | | |
+
+M4 上的原生数字每次运行相差约 0.3%。在 amd64 上通过 Go API，页面变化在 -0.14% 到 +0.28% 之间，而它们的原生数字变化不到 0.04%：三个改了的函数和它们旁边的生成代码重新排布了。在 M4 上，每个页面通过 Go API 的指令都变少了。
+
+`compare/testdata` 的微基准（原生，M4）：几何平均少 0.11% 的指令。`array_prop_create` 多 1.4%（amd64 多 2.6%，每次追加从 235 条到 241 条）：它的 `tab[i] = i` 通过 `rv_putel_slow` 往快数组末尾追加，这个函数现在在另一个分支上还有对 `rv_putel_index` 的调用，要在栈上多存两个值。其他基准最多多 0.73%（`prop_create`，不走这条路径）。
+
+读这种数组的一个元素约 94 条指令，原来 180 条（amd64，Crypto：`rv_getel_atom` 35 条，`rv_getel_index` 59 条），写一次 104 条，原来 199 条。页面不做这种读写：长 Markdown 在 amd64 上少 0.44%（M4 上少 0.64%），来自读快数组元素数之外的下标。
+
+### for in 循环的迭代器和它的 shape
+
+[for in 循环的迭代器能找到它的空 shape](changes/objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape)，2026-11-15 对照 `b0271108` 计数。React 的页面每次渲染开始 718 个 for in 循环，其中 717 个做出它们迭代器的空 shape 再释放掉。其他页面开始 616 个（workbench 的 stats 页面）到 10,376 个（MUI 的 orders 页面）循环，长 Markdown 41,841 个，没有一个做这个 shape：这些页面上有东西让一个没有原型的对象一直活着。不做 shape 的循环少跑大约 215 条指令（`for (k in null)` 的微基准，原生，M4：每个循环从 937 条到 722 条）。
+
+一次渲染的指令。原生是 clang 编译的 C 树，在 AMD EPYC 7B13（linux/amd64）上用 callgrind 数（两次预热之后三次计时渲染，每次之后一次新生代回收，不算 `host_poll`，store 用 URL 替身 `urlmemo.js`，Markdown 是一次预热之后两次），以及 Apple M4 上同样这些渲染退休的指令（3 轮中最低的一轮）。产品是配上针对这个改动重新训练的性能画像生成的引擎，linux/amd64 上用 callgrind 数（两次预热渲染，然后三次渲染和一次渲染之差的一半），对照的是配自己画像的 v0.30.7。v0.30.7 用同样方法重新训练画像，自己会变动 -0.04% 到 +0.11%。每个页面的 HTML 都相同。
+
+| 页面 | 原生，amd64 | 原生，M4 | 产品，amd64，训练 |
+| --- | ---: | ---: | ---: |
+| React 的页面 | -0.55% | -0.52% | -0.45% |
+| store 首页 | 0.00% | -0.07% | -0.00% |
+| store 商品页 | 0.00% | -0.12% | -0.00% |
+| workbench 的 studio 页面 | 0.00% | -0.21% | +0.01% |
+| workbench 的 stats 页面 | 0.00% | -0.07% | +0.02% |
+| MUI 的 orders 页面 | 0.00% | -0.02% | +0.01% |
+| MUI 的首页 | +0.01% | -0.15% | -0.03% |
+| 长 Markdown（400 节） | 0.00% | -0.09% | |
+
 ### 寄存器解释器
 
 [寄存器解释器](changes/c-engine.zh-CN.md#寄存器解释器)用来跑 JavaScript，取代 QuickJS 的栈式解释器。它在 tifa 里有两次读数，每次都是一个引擎对另一个引擎，每个页面的 HTML 都相同。两次都没有做同一个构建对自己的对照。
@@ -1166,6 +1216,46 @@ M4 上一次渲染的指令（退休指令，每页取各次渲染的中位数�
 | React 页 | -0.16% | -0.30% |
 
 长 Markdown 页（react-markdown，100 节，不用池子）每次渲染定义 35,000 个属性，改动涉及的函数每次渲染少执行 600 万条指令（0.12%）。整次渲染的指令会随循环回收器运行的位置变化，而改动挪动了这些位置：在 linux/amd64 上，暖 1 次后每次渲染多 0.41% 的指令，暖 2 次后少 0.28%，差别都在回收的标记上。
+
+### instanceof 不再调用 Symbol.hasInstance
+
+[instanceof 不再调用 Symbol.hasInstance](changes/operators.zh-CN.md#instanceof-不再调用-symbolhasinstance)，对照 `b0271108`（batch 6 之前的 v0.30.7 代码树）。走这条路径的一次 `instanceof` 在 linux/amd64 上少跑约 380 条指令。这里数的是指令，不是计时。每个页面的 HTML 都一样。
+
+V8 测试套件的 EarleyBoyer，每轮的指令数：12 轮和 4 轮之差除以 8。原生是 C 树的 `jsrun`，linux/amd64 用 callgrind，Apple M4 用退休指令数（3 次运行取最少）。产品是 `make gen` 生成的引擎，linux/amd64 上用 callgrind：分生成时的和按这个改动重新训练 profile 之后的。
+
+| 测试 | 原生 linux/amd64 | 原生 darwin/arm64 | 产品，生成时 | 产品，重新训练后 |
+| --- | ---: | ---: | ---: | ---: |
+| Earley | -6.25% | -6.55% | -6.15% | -6.66% |
+| Boyer | -19.41% | -20.15% | -20.46% | -21.95% |
+
+上面和下面的数字量在这条路径读中断标志之前（见改动说明）。在 linux/amd64 上生成时的产品里，这次读每次测试约多 7 条指令：带上它，Boyer 是 -20.12%，Earley 是 -6.04%，tifa 的页面生成时是 +0.62% 到 +1.11%，在一次运行的噪声之内和不带它一样。原生测试宿主通过调用 `host_poll` 读这个标志，所以在原生构建上它更贵：linux/amd64 上 Boyer -18.08%，Earley -5.80%。
+
+tifa 的页面每次渲染做 0 次（React）到 680 次（商店的英文首页）`instanceof` 测试。在 linux/amd64 的原生 C 树上（callgrind，预热之后计时的那几次渲染，不算 `host_poll`）：
+
+| 页面 | 变化 |
+| --- | ---: |
+| 工作台 studio 页 | -0.04% |
+| 工作台统计页 | -0.05% |
+| 商店英文首页 | -0.19% |
+| 商店中文商品页 | -0.18% |
+| MUI 订单页 | -0.02% |
+| MUI 首页 | -0.08% |
+| React 页 | -0.00% |
+| 长 Markdown 页（react-markdown，400 节） | +0.00% |
+
+tifa `test/ssr` 里生成的引擎。`JS_RegvmRun` 改了，所以在重新训练 profile 之前 `make gen` 编译它时不用 profile，新的 `rv_instof` 也没有 profile：生成时每个页面多跑 0.5% 到 1.6% 的指令。按这个改动训练的 profile 把它们拿了回来。linux/amd64 用 callgrind，两次预热渲染，然后取三次渲染和一次渲染之差的一半。每个页面一次运行，React 页、工作台统计页和 MUI 订单页取四次的中位数：同一个构建的几次运行最多差 0.4%，因为 Go 的 map 每次运行的遍历顺序都不一样。在工作台统计页上，训练后的构建比用发布时 profile 的基线多 0.11%，但同样重新训练 profile 的基线也一样高（四次运行）：和它比，这个改动是 +0.02%。Apple M4 上是退休指令数，10 次渲染（React 页 40 次）的中位数，3 轮取最少。
+
+| 页面 | linux/amd64，生成时 | linux/amd64，训练后 | darwin/arm64，生成时 | darwin/arm64，训练后 |
+| --- | ---: | ---: | ---: | ---: |
+| 工作台 studio 页 | +0.56% | -0.25% | +0.94% | -0.09% |
+| 工作台统计页 | +1.13% | +0.11% | +0.89% | -0.07% |
+| 商店英文首页 | +0.82% | -0.19% | +1.01% | -0.23% |
+| 商店中文商品页 | +0.77% | -0.24% | +0.97% | -0.07% |
+| MUI 订单页 | +0.82% | -0.01% | +0.90% | -0.08% |
+| MUI 首页 | +0.56% | -0.22% | +0.86% | -0.12% |
+| React 页 | +1.09% | -0.02% | +1.59% | +0.01% |
+
+长 Markdown 页每次渲染做 32 次 `instanceof` 测试。在原生构建上它的寄存器循环每次渲染多跑 50 万条指令（0.003%）：`JS_RegvmRun` 里多了这个调用，clang 对它的布局稍有不同。`compare/testdata` 的 64 个微基准都不做 `instanceof` 测试：在 M4 的原生构建上它们的几何平均少 0.17%，最多的一个多 0.86%（`array_for`，在它那次短运行的噪声之内）。
 
 ### tifa 页面的性能画像
 
@@ -1422,6 +1512,51 @@ v0.30.7 在 2026-11-14 计时，用的服务器和上面的 v0.30.6 同一型号
 
 更慢的 14 个，每圈循环的指令（linux/amd64 上的 callgrind，`jsrun -n 1`，3N 减 N 再除以 2N，同样两个引擎）说明大部分是代码和数据落在哪里，不是工作变多了。`global_write`（时间多 8.05%）和 `global_write_strict`（多 8.80%）的指令相差不到 0.02%：它们的时间按数据落在哪里停在约 100 ms 或约 120 ms，这个版本在 16 种位置里落到慢那一档的比 v0.30.6 多。`array_write` 指令多 1.53%，时间多 8.58%，也是这两档。`regexp_ascii` 和 `regexp_utf16` 指令少 2.97% 和 3.05%，时间却多 7.87% 和 8.53%，`map_delete`、`map_set_string`、`float_to_string`、`string_build4` 和 `weak_map_delete` 指令少 0.23% 到 0.62%。有三个指令变多：`int_to_string2` 多 1.86%（它的 `n + ''` 在走通用路径之前先检查 `n` 的标签，见[两个字符串的加法](#两个字符串的加法不走通用路径)），`array_prop_create` 多 1.30%（在 `rv_putel_slow` 之前检查键的标签，见[加键的写入](#按键和按名加键的写入)），`weak_map_set` 多 1.20%。`global_destruct_strict` 多 0.12%。
 
+#### v0.31.0 对 v0.30.7
+
+v0.31.0 在 2026-11-15 计时，用的服务器和上面的 v0.30.7 同一型号，方法也一样（linux/amd64，4 核的 AMD EPYC 7B13 服务器，在 core 0 上计时，整台机器安静，[measuring.md](measuring.zh-CN.md#规程) 的 16 种布局，2 轮，每种 18 个单元，按 1% 的 delta 和 95% 区间判断）。两方：v0.30.7（d7c86e16），和带画像的 v0.31.0 提交（81885e3b，在它自己的 C 上重新训练，2,791 个函数，没有过期的）。页面是画像训练所用的打包文件里的商店、MUI 应用、React 和长 Markdown 页面。两方每个页面的 HTML 都相同。每一类都跑满了 18 个单元，店面页面有一个块因为受到干扰重跑了一次。这次发布没有给 `compare/testdata` 的微基准计时。
+
+| 页面 | 各布局的平均 | 正式布局 |
+| --- | ---: | ---: |
+| tifa 的商店，六个工作台页面 | -0.09%（-0.44% 到 +0.26%），没有超过 delta 的退步 | -0.42%（-1.33% 到 +0.49%），没有超过 delta 的退步 |
+| tifa 的商店，十四个店面页面 | -0.42%（-0.85% 到 +0.01%），没有超过 delta 的退步 | -0.34%（-1.24% 到 +0.57%），没有超过 delta 的退步 |
+| tifa 的 MUI 测试应用，三个页面 | +0.38%（-0.31% 到 +1.07%），无法定论 | -0.99%（-1.59% 到 -0.39%），更快 |
+| React 的页面 | +0.05%（-0.51% 到 +0.61%），没有超过 delta 的退步 | -1.48%（-2.43% 到 -0.53%），更快 |
+| 长 Markdown 页面，100 节和 400 节 | -7.98%（-8.42% 到 -7.53%），更快 | -8.57%（-9.54% 到 -7.60%），更快 |
+
+同样两个构建一次渲染的指令，linux/amd64 上的 callgrind，每组一个页面，一次预热之后 3 次渲染和 1 次之差的一半（400 节的 Markdown：2 次减 1 次）。每个页面的 HTML 都相同。
+
+| 页面 | amd64 |
+| --- | ---: |
+| 店面首页 | -0.15% |
+| 店面商品列表页 | -0.14% |
+| 工作台 studio 页 | -0.03% |
+| 工作台统计页 | -0.06% |
+| MUI 订单页 | -0.01% |
+| MUI 首页 | -0.04% |
+| React 的页面 | -0.63% |
+| 长 Markdown（400 节） | -0.37% |
+
+这次发布的改动针对的是 tifa 页面很少跑的代码：不再是快数组的数组，普通函数的 `instanceof`，`for in` 循环迭代器的 shape，最后这一项给了 React 页面那 0.63%。所以没有哪一页多跑指令，商店、MUI 和 React 的时间也停在原处。MUI 的三个页面按各布局的平均无法定论（它们的布局 SD 是 1.19%），按正式布局快 0.99%。
+
+长 Markdown 页面变快不是因为它的工作变少了。这一类在一个不用池的 VM 里先渲染 100 节的页面，再渲染 400 节的，所以引擎按自己的阈值决定何时回收。按这个顺序，400 节的页面按各布局的平均少用 9.57% 的时间，进程的内存峰值是 258 MB，v0.30.7 是 356 MB（每方在正式布局上跑 4 次，缺页 10.8 万次对 15.5 万次）：引擎回收落在了别的时刻。单独渲染时，400 节的页面两方的峰值都是 276 MB，时间少 1.2%（每方在正式布局上跑 4 次），100 节的页面按各布局的平均少 0.91%（-1.60% 到 -0.22%）。
+
+V8 套件（`compare/engines` 的 `jsbench v8`，每方用正式构建，在同一台安静服务器的 core 0 上轮流各跑 10 次，取分数的中位数，越高越好）：
+
+| 基准 | v0.30.7 | v0.31.0 | 变化 |
+| --- | ---: | ---: | ---: |
+| 总分 | 1528.5 | 1611.5 | +5.4% |
+| Crypto | 1091.5 | 1414.5 | +29.6% |
+| EarleyBoyer | 2398.5 | 2736 | +14.1% |
+| NavierStokes | 2405 | 2494 | +3.7% |
+| Richards | 1110 | 1143.5 | +3.0% |
+| RegExp | 571.5 | 575 | +0.6% |
+| Splay | 4713.5 | 4718 | +0.1% |
+| DeltaBlue | 1036.5 | 1029 | -0.7% |
+| RayTrace | 1531 | 1511.5 | -1.3% |
+
+Crypto 读写不再是快数组的数组的元素，它的两部分每次迭代少跑 22.3% 和 22.7% 的指令（callgrind，同样的构建）。EarleyBoyer 用到 `instanceof`：Earley 少跑 6.05%，Boyer 少跑 21.51%。其余基准的指令和 v0.30.7 相差不到 0.08%，所以它们分数的变化，包括 NavierStokes 的 3.7%，来自代码落在哪里。
+
 #### 2026-11-13 的研究
 
 发现这份画像的研究用一半页面训练（工作台 studio、14 个 en-US 商店页里的 7 个、MUI 首页），对比同样的 C 不用画像生成的引擎，每个页面的 HTML 相同。linux/amd64 上的时间（AMD EPYC 7B13 服务器，4 核，用一个核，整台机器安静），`go tool measure bench`，16 种代码布局，每种 2 轮，3 次正式重复，每组页面一个 VM，预热 3 次，计时 7 次渲染，取 P50，`GOMAXPROCS=1`。每种的 18 个单元全部跑完，没有重跑的块。按 1% 的 delta 判断，95% 区间：
@@ -1548,7 +1683,7 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 
 每一项说明它能带来什么，以及为什么放弃。试其中任何一项之前先在这里查一下。这些数字来自 tifa 的 [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) 和 [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md)，以及各项改动的文档。
 
-- **通过闭包或函数表分发操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/quickjs 只做机械改动的规则。没有试。
+- **通过闭包或函数表分发操作码**，像一些 Go 解释器那样：要重写解释器，违背 liustack/slowjs 只做机械改动的规则。没有试。
 - **在 `createElement` 和 `cloneElement` 的 props 的一次展开前面用 JavaScript 做检查**，在 v0.29.1 上、`RegisterCopyProps` 之前测的：插件检查 config（原型、symbol、`__proto__`、`__self` 和 `__source`、`key` 背后的 getter），然后用解构的其余部分复制它。这个检查每次调用花 310 到 380 ns，比循环处理没有键、一个键或两个键的 config 还多，所以 `createElement` 在没有键时用了 1.57 倍的时间，一个键时 1.07，一个 `key` 加一两个其他键时 1.13 到 1.40。商店用了 0.99 的时间（指令少 1.6% 到 2.5%），没有页面过规则。它也排除不了 proxy、删除后面一个键的 getter，以及 React 加载之后加到 `Object.prototype` 上的 setter。同样的检查在 C 里比空循环花得更少，这个函数让指令少 2.1% 到 4.1%。
 - **对象展开的快速路径**（`JS_CopyDataProperties`）：在 Apple M4 的微基准里，一次展开 240 ns，原来是 415 ns，但商店没变（0.997 到 1.005）。后来已经做了，连同键的列举一起，它和 `for in` 和 `Object.keys` 共用后者（见[从 shape 里列出自有键](changes/objects-and-shapes.zh-CN.md#自有键从-shape-列出)）。
 - **在 `JS_CallInternal` 入口处调用 `_js_uncatchable_pending` 之前先测无法捕获标志**：这个辅助函数太大，没法内联进解释器，所以每次 JavaScript 调用都要付一次真正的调用。先内联地测运行时的标志，在正常路径上跳过这次调用，并保留完整检查，那仍然需要，因为异常被取走之后标志仍然置着。V8 上指令少 0.06%，商店少 0.09%，MUI 少 0.41%。在三种代码布局上跑六轮，V8 是基线分数的 0.9988（0.9883 到 1.0254），商店是时间的 0.9927（0.9859 到 1.0014），MUI 0.9850（0.9763 到 1.0265）。符号跟着布局走：MUI 在一种布局的两轮里是时间的 1.027 和 1.012，在另外两种布局的四轮里是 0.976 到 0.988。这个收益和布局的噪声分不开。
@@ -1637,6 +1772,8 @@ C 引擎最长的一次等待，`fib` 里的 1.3 ms，1,857 次 GC 里出现一�
 - **寄存器循环** `JS_RegvmRun` 在 64 字节行内的位置：它的函数体和别的函数一样跟在 `PCALIGN $16` 之后，随它前面链接的代码移动。2026-11-13 量的那个构建里，它从 32 字节的边界开始，不是 64 字节。把位置固定下来没有好处。2026-11-13（批次 2 的引擎，amd64，AMD EPYC 7B13，按 [measuring.md](measuring.zh-CN.md) 的 16 种布局，每组 4 轮）用生成器的 `-align64` 把函数体放在行内第 0 或第 8 字节，和基线比，基线的函数体由布局放在 0、16、32、48。按布局的平均，先第 0 字节后第 8 字节：工作台 -0.22% [-0.64%, +0.20%] 和 -0.17% [-0.57%, +0.24%]，商店 -0.20% [-0.55%, +0.14%] 和 -0.44% [-0.89%, +0.01%]，MUI +0.28% [-0.22%, +0.78%] 和 -0.19% [-0.67%, +0.30%]。在所有构建和布局上拟合，函数体的 8 个位置各自的时间都在平均的 0.992 到 1.008 之间，最好的位置每组都不同（工作台 40 或 48，商店 24 或 40，MUI 56 或 0）。
 - **内存**，每个 VM：渲染临时空间里的空闲页、影子栈碰过的页，以及空闲块之间的空洞，构成一个 VM 的常驻内存和引擎对它的块的计数之间的差距（商店每个 VM 4.2 MiB，MUI 2.9，来自渲染后 8 个 VM 对 1 个）。池让一个 VM 等待时，`ReleaseMemory` 把空闲页还回去。
 - **Go 代码调用的函数的结果**：Go 代码调用的 91 个函数仍然存结果，因为 Go 从内存读汇编函数的结果。给其中热的每个生成一个 Go 入口，由它调用一个不存结果的函数体，那么生成的代码调用这些函数体时就不用存了：店面页面最多省 0.24% 的指令，工作台 0.21%，MUI 0.11%，React 0.14%（arm64，把每个这样的存储写两遍测得），再减去每次从 Go 调用多出的一次调用。两个链接后检查都要认识一种新的函数。
+- **把元素留在一整块里、带空洞的数组**：写到末尾之后或删过元素的 Array 会变成属性数组，再也变不回快数组（[不再是快数组的数组按原子读写下标](changes/c-engine.zh-CN.md#不再是快数组的数组按原子读写下标)）。V8 把这样的数组留在原来那块里，给每个缺的元素做个记号。上游 QuickJS 和 quickjs-ng 把它变成属性，和本引擎一样。要留住那一块，引擎读快数组那一块的每个地方都得检查这个记号：`quickjs.c` 里大约 60 个函数（`js_get_fast_array` 和调用它的函数，`push`、`pop`、`includes`、`indexOf`、`slice`、`splice`、`with` 和 `toSpliced` 的快路，JSON，`for in`，`for of`，`delete`，`set_array_length`，`JS_GetOwnPropertyNames`，回收器和对象的释放，`JS_WriteArray`，`build_arg_list`，`JS_CopySubArray`），还有寄存器循环（GETEL、GETEL3、PUTEL、DSTART 和 DNEXT、展开、它直接回答的内置函数）。页面上每次读元素都要多付这次检查，而页面根本不做这种读。按原子读一次约 94 条指令，读块里的元素约 10 条，所以只有这种数组很热的地方才有收益，V8 基准里是 Crypto。
+- **for in 循环取下一个键，和读这个键**（`for (k in o) ... o[k]`），2026-11-15 对照 `b0271108` 计数：一次渲染里 MUI 的 orders 页面取 34,096 次下一个键，读刚给出的键 34,244 次，它的首页 12,523 次和 11,986 次，store 商品页 16,450 次和 11,940 次，store 首页 8,465 次和 5,709 次，workbench 的 studio 页面 9,934 次和 7,989 次，React 的页面 2,399 次和 1,681 次。寄存器循环里如果有一个操作，从循环检查过的 shape 给出下一个键、在结束时跳转、再读循环所在那一格的值，每个键能省两次分派和读取时的查找：按计数估算，MUI 的 orders 页面约 0.7% 到 1.2%，它的首页 0.6% 到 1.0%，别的页面不到 0.3%。光把取下一个键从它的窗口里拿出来，arm64 上每个键只省约 16 条指令。合起来的操作要在 pass 里加一个新操作和它的跳转，还要检查 `JS_RegvmRun` 的栈帧。
 
 下面几条是在栈式解释器上量的，也就是 v0.30.1 及以前的引擎。v0.30.2 的寄存器解释器跑一次渲染的方式不同，这些占比和计数已经不能说明它：
 

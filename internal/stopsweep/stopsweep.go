@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -34,7 +34,7 @@
 // Under -short a sweep stops a call at three places in it, a quarter, a half
 // and three quarters of its time, so that it takes a few runs of the call
 // on any machine.
-package stopsweep // import "github.com/liustack/quickjs/internal/stopsweep"
+package stopsweep // import "github.com/liustack/slowjs/internal/stopsweep"
 
 import (
 	"errors"
@@ -44,7 +44,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // The fixed part of the grace, and what one P adds to it.
@@ -102,7 +102,7 @@ func timeouts(whole time.Duration) []time.Duration {
 // grace after (see the package comment), or ended with another error than
 // the interrupt. A function reads vmhook.Stop at least every piece units of
 // each pass.
-func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
+func Sweep(t *testing.T, vm *slowjs.VM, call string, n, piece int) {
 	t.Helper()
 	// The first call loads what the call needs once, such as the data of a
 	// locale, which is not work on the input. The next are timed, and the
@@ -110,7 +110,7 @@ func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 	whole := time.Hour
 	for i := range 3 {
 		start := time.Now()
-		if _, err := vm.Eval(call, quickjs.EvalGlobal); err != nil {
+		if _, err := vm.Eval(call, slowjs.EvalGlobal); err != nil {
 			t.Fatalf("%s: %v", call, err)
 		}
 		if i > 0 {
@@ -130,7 +130,7 @@ func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 			}
 			w := watch(timeout + grace)
 			start := time.Now()
-			_, err := vm.Eval(call, quickjs.EvalGlobal)
+			_, err := vm.Eval(call, slowjs.EvalGlobal)
 			took := time.Since(start)
 			tries = append(tries, fmt.Sprintf("try %d: %v, %s", try+1, round(took), w.end()))
 			if err := vm.SetEvalTimeout(0); err != nil {
@@ -144,7 +144,7 @@ func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 			// A call that ends with no error after its timeout is late too:
 			// the timeout came in a part with no check, and nothing read
 			// it until the end of the call.
-			var e *quickjs.Error
+			var e *slowjs.Error
 			if err != nil && (!errors.As(err, &e) || !e.Interrupted) {
 				t.Fatalf("%s with a timeout of %v: %v, want the interrupt", call, timeout, err)
 			}
@@ -158,7 +158,7 @@ func Sweep(t *testing.T, vm *quickjs.VM, call string, n, piece int) {
 	if len(late) > 0 {
 		t.Errorf("%s, of %v whole with a grace of %v, stopped\n\t%s", call, round(whole), round(grace), strings.Join(late, "\n\t"))
 	}
-	if v, err := vm.Eval(`1+1`, quickjs.EvalGlobal); err != nil || v != 2 {
+	if v, err := vm.Eval(`1+1`, slowjs.EvalGlobal); err != nil || v != 2 {
 		t.Fatalf("the VM after the sweep: 1+1 got %v, %v", v, err)
 	}
 }

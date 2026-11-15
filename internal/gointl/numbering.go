@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/numdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/numdata"
 )
 
 // Numbering systems: which ten digits a number is written with.

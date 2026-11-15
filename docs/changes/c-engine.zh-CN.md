@@ -27,13 +27,13 @@ read_when:
 
 [English](c-engine.md) · 简体中文
 
-`engine/` 是本模块的引擎：钉住的提交上的 QuickJS 加上 liustack/quickjs 的改动，由生成器编译成 Go 汇编。下面的表列出它和上游 QuickJS 有哪些不同，从上游和 quickjs-ng 取来哪些修复，以及 v0.28 或更早版本的用户相对他们当时跑的引擎（ccgo 翻译成 Go 的 QuickJS，下文叫“旧引擎”）会看到什么。更新记录里有一份给用户看的同样的清单。
+`engine/` 是本模块的引擎：钉住的提交上的 QuickJS 加上 liustack/slowjs 的改动，由生成器编译成 Go 汇编。下面的表列出它和上游 QuickJS 有哪些不同，从上游和 quickjs-ng 取来哪些修复，以及 v0.28 或更早版本的用户相对他们当时跑的引擎（ccgo 翻译成 Go 的 QuickJS，下文叫“旧引擎”）会看到什么。更新记录里有一份给用户看的同样的清单。
 
 ## 与上游 QuickJS 的差异
 
 | 改动 | 程序会看到什么变化 | 由什么检查 |
 | --- | --- | --- |
-| 引擎用 `-ffreestanding -nostdinc` 对着 `engine/libc` 构建 | 在 linux/amd64 上 `Math.*` 的结果和旧引擎逐位相同。在 darwin/arm64 上末位可能不同（见“小libc”） | `check-symbols.sh`、`libc-test.sh`、`math.sh` |
+| 引擎用 `-ffreestanding -nostdinc` 对着 `engine/libc` 构建 | 在 linux/amd64 上 `Math.*` 的结果和旧引擎逐位相同，小于 -1 的 `Math.acosh` 除外（见“Math.acosh 小于 -1 时是 NaN”）。在 darwin/arm64 上末位可能不同（见“小libc”） | `check-symbols.sh`、`libc-test.sh`、`math.sh` |
 | `Date` 和 `Math.random` 的种子来自 `host_now` | Go 宿主用 VM 的时钟回答 | 原生宿主，`HOST_CLOCK` |
 | `abort` 是对宿主的一个请求：带 `HOST_CALL_ABORT` 的 `host_call` | Go 宿主 panic，VM 之后只能关闭。陷阱指令会变成信号，让整个进程结束 | `api-test.c` |
 | `Atomics.wait` 抛错，`Atomics.notify` 不唤醒任何人 | `Atomics.wait` 像浏览器主线程一样抛 `TypeError`。引擎里没有线程 | test262，用 `engine/test/test262.conf` |
@@ -52,6 +52,7 @@ read_when:
 
 | 改动 | 程序会看到什么变化 | 由什么检查 |
 | --- | --- | --- |
+| 小于 -1 的值的 `Math.acosh` 是 NaN | `Math.acosh(-9115.56)` 过去是 -13.31，`Math.acosh(-8192)` 过去是 `-Infinity`：musl 的 `acosh` 不看符号。musl `3e80328d`，作为小 libc 的补丁拿进来，见 [Math.acosh 小于 -1 时是 NaN](#mathacosh-小于--1-时是-nan) | `compare/math_domain.js`，`math.sh` |
 | 模板字面量把每个代入值立刻转成字符串 | `${c} ${c.n++}`，以及被后面的代入值改掉的 `Date`，现在打印 Node 打印的结果，被改过的 `String.prototype.concat` 也不再影响模板。上游 QuickJS `f8199dc`，见 [upstream-commits.zh-CN.md](upstream-commits.zh-CN.md) | `compare/template_literal.js` |
 | 负的 BigInt 和负的浮点数比较正确 | `-0.5 < -1n` 过去是 true。上游 QuickJS 和旧引擎有同样的 bug | `compare/number_compare.js` |
 | 编译 `\p{Script=...}` 时内存不足，调用以内存不足错误结束 | 过去进程崩溃。上游 QuickJS `817509a` | `unit-oom`（`test_regexp_script_oom`） |
@@ -78,7 +79,7 @@ read_when:
 
 整个引擎也带 `-ffp-contract=off` 构建，生成器会拒绝 IR 里出现 `llvm.fmuladd` 或 `llvm.fma` 以及任何 fast-math 标志（`reassoc`、`nnan`、`ninf`、`nsz`、`arcp`、`contract`、`afn`，或 `unsafe-fp-math` 属性），在 arm64 上还拒绝 llc 文本里出现融合指令（`fmadd`、`fmsub`、`fnmadd`、`fnmsub`、`fmla`、`fmls`）。测了什么，没测什么：
 
-- linux/amd64：`engine/test/math.sh` 逐位检查，对 libc 的 33 个函数各取 100000 个输入，对脚本看到的 33 个 `Math` 运算也各取 100000 个，和 `engine/test/math` 里保存的哈希比较。这些哈希最初是从旧引擎记下来的，C 引擎每个结果的位都和它相同。JavaScript 的检查把 NaN 写成 JavaScript 里唯一的那个 NaN，所以不检查 NaN 的符号和负载。libc 的检查会检查，所以只在 x86-64 上跑。
+- linux/amd64：`engine/test/math.sh` 逐位检查，对 libc 的 33 个函数各取 100000 个输入，对脚本看到的 33 个 `Math` 运算也各取 100000 个，和 `engine/test/math` 里保存的哈希比较。这些哈希最初是从旧引擎记下来的，C 引擎每个结果的位都和它相同，直到下面 `acosh` 的修复改了 `acosh` 对负数输入的结果。JavaScript 的检查把 NaN 写成 JavaScript 里唯一的那个 NaN，所以不检查 NaN 的符号和负载。libc 的检查会检查，所以只在 x86-64 上跑。
 - macOS arm64：`math.sh` 在那里检查 JavaScript 的哈希。libc 的结果除了 NaN 的符号（由处理器决定，arm64 上为正，amd64 上为负）之外都相同，所以那部分在 arm64 上不检查。
 - 引擎只在 amd64 和 arm64 上运行，所以两者末位相同是有证据的。
 
@@ -88,6 +89,18 @@ read_when:
 格式串在到达这个 `abort` 之前就被检查了。引擎文件用 `-Werror=format` 和 `-Werror=format-nonliteral` 构建（`engine/test/flags.sh`），所以格式串和参数一致，并且要么是字符串常量，要么是带 `printf` 属性并把它往下传的函数的格式串（`JS_ThrowError2`、`JS_ThrowError` 和 `js_parse_error_v` 有这个属性，`va_list` 形式用 `format(printf, 3, 0)`）。`JS_ThrowTypeErrorAtom` 和 `JS_ThrowSyntaxErrorAtom` 背后的两个辅助函数，传格式串时用 atom 的名字代替参数，clang 跟不上这一点，于是用一个 pragma 只对这两个函数关掉检查。
 
 `check-symbols.sh` 只证明符号这一层。引擎文件加上 libc，除了 `engine/host.h` 的回调和 `engine/heap.h` 的 `host_memory_grow` 之外，不留任何未定义符号。分配器（[allocator.zh-CN.md](../allocator.zh-CN.md)）是引擎文件之一，引擎不调用 malloc：`dbuf` 和 `CharRange` 没有默认分配器，libc 的 `stdlib.h` 也没有声明。它不能证明机器码不用线程局部存储、不含系统调用指令、不用固定地址。这些检查随生成器一起来，不在这之前。
+
+### Math.acosh 小于 -1 时是 NaN
+
+Release: v0.31.0.
+
+对每个小于 1 的 `x`，`Math.acosh(x)` 都是 NaN，规范这么写，Node 和各浏览器也这么给。以前小 libc 里 musl 的 `acosh` 只读 `x` 的指数，不看符号，所以负的 `x` 走的是同样大小的正数的公式。从 -1 到大约 -8192，这个公式仍然给出 NaN，但从那里往下到 -2^26，许多 `x` 会得到一个数：`Math.acosh(-8192)` 是 `-Infinity`，`Math.acosh(-9115.56)` 是 -13.31，`Math.acosh(-67108863)` 是 0.69。旧引擎给出同样的数（从它记下的 `engine/test/math` 哈希和这些结果一致）。
+
+修复是 musl 自己的，2026-08-03 的提交 `3e80328d`（"math: fix acosh for x<0"），比小 libc 钉住的 musl 提交新。它放在 `engine/libc/patches/acosh.c.patch`，由 `engine/libc/vendor.sh` 应用，`MUSL.sha256` 记下它（见 [README](../../engine/libc/README.zh-CN.md#musl)），钉住的提交越过它时就去掉。取指数的移位现在保留符号位，所以负的 `x` 越过两个公式，落到新加的对这一位的判断上，返回 NaN。小于 2^26 的正数 `x` 执行的指令和以前一样，大于等于 2^26 的多一次判断。
+
+为什么安全：补丁就是 musl 做的改动，打在同一个文件上（`vendor.sh --verify MUSL_DIR` 在 musl 检出上重放它，得到这里的文件，也就是 musl 在那个提交的文件）。只有负数输入换了路径。`engine/test/math` 的哈希里，只有 `acosh` 的结果变了，JavaScript 文件和 libc 文件都是，输入和其他所有函数都没变。
+
+测试：`engine/test/compare/math_domain.js` 打印 `acosh`、`asinh`、`atanh`、`log`、`log1p`、`log2`、`log10`、`sqrt` 和负底数的 `pow` 在定义域边上的输入的结果种类（NaN、无穷、带符号的零，或有限数的符号），以及 `acosh` 在 -1 到 -2^40 之间 321 个值上的结果。它的文件是 Node 24 打印的内容。修复前这 321 个值里有 79 个不是 NaN。`engine/test/math.sh` 检查逐位结果。
 
 ## 时钟、abort 与宿主
 
@@ -197,7 +210,7 @@ C 能在 Go 代码不会出错的地方出错，而 Go 进程对其中大多数�
 
 linux 和 darwin 没有改：它们的代码除了函数的位置以外逐字节相同，所以 tifa 的页面、已知的 test262 错误和调用深度都和原来一样。深度由引擎自己计数，不取决于 Go 的栈。
 
-在 windows 上的代价：每次调用生成的函数多 4 条指令（一条 `LEA`、一条 `CMP`、一次跳转、一个单字节的空操作），NOSPLIT 列表上的 176 个函数为载入 g 再多 2 到 3 条，回调返回时调用一次 `goasm_room`。在 linux/amd64（AMD EPYC 7B13）上打开 windows 的代码（`-asmflags=github.com/liustack/quickjs/internal/cengine=-D=GOOS_windows`）测量，6 轮交替运行，取每轮变化的中位数，括号里是各轮的范围：
+在 windows 上的代价：每次调用生成的函数多 4 条指令（一条 `LEA`、一条 `CMP`、一次跳转、一个单字节的空操作），NOSPLIT 列表上的 176 个函数为载入 g 再多 2 到 3 条，回调返回时调用一次 `goasm_room`。在 linux/amd64（AMD EPYC 7B13）上打开 windows 的代码（`-asmflags=github.com/liustack/slowjs/internal/cengine=-D=GOOS_windows`）测量，6 轮交替运行，取每轮变化的中位数，括号里是各轮的范围：
 
 | 渲染 | 变化 |
 | --- | --- |
@@ -313,7 +326,7 @@ VM 以内存块为单位向系统要内存（`host_memory_grow`），系统拒�
 
 宿主在那里跑代码：它用 `JS_NewClass` 创建的类的终结函数，以及 `JS_NewHostFunctionRelease` 的函数的 `host_release`。回收器把状态存在运行时里（引用计数降到零的对象的列表，正在释放的环的列表，阶段），而终结函数里开始的一次回收，会在调用终结函数的那次释放进行到一半时重用这份状态。在 `free_zero_refcount` 里，内层回收第二次进入 `free_zero_refcount`，`JS_NEST_FREE` 用一次 abort 把它拦下，而年轻代回收会先释放列表上的每个对象，正在跑终结函数的那个也在其中。在 `gc_free_cycles` 里，内层回收重新开始了外层正在走的列表，并释放了外层随后又去读的对象：AddressSanitizer 报告读了已释放的内存。引擎自己的终结函数不开始回收（`cycles.sh` 对这两处都检查 `free_zero_refcount`），所以只有用 C 写的宿主，比如原生测试宿主，才能碰到。Go API 碰不到：它不创建类，释放期间唯一会跑的 Go 代码是 `gohost.Release`，它清掉句柄，不运行用户的代码。
 
-上游 QuickJS 和 quickjs-ng 有同样的入口，没有检查。Bellard 修了引擎里到达嵌套回收的一条路径，即用可能抛错的内存排队的 `FinalizationRegistry` 任务（bellard/quickjs#494，`5022f2b`），liustack/quickjs 也用不会抛错的内存排这个任务。CPython 和 Lua 做的和这次改动一样：回收运行期间 `gc.collect()` 返回 0，Lua 在终结函数运行期间停止它的回收步骤和 `lua_gc`。
+上游 QuickJS 和 quickjs-ng 有同样的入口，没有检查。Bellard 修了引擎里到达嵌套回收的一条路径，即用可能抛错的内存排队的 `FinalizationRegistry` 任务（bellard/quickjs#494，`5022f2b`），liustack/slowjs 也用不会抛错的内存排这个任务。CPython 和 Lua 做的和这次改动一样：回收运行期间 `gc.collect()` 返回 0，Lua 在终结函数运行期间停止它的回收步骤和 `lua_gc`。
 
 为什么安全：跳过的回收什么也没释放，它本来要释放的东西仍然是垃圾，下一次回收会释放。阈值不动，在释放之后创建的下一个对象时会再检查，那时堆如果仍然超过阈值，就开始回收。做了这次释放的完整回收在结尾会重新设置阈值，一如既往。在终结函数里调用了 `JS_RunGC` 的宿主得不到回收，可以在释放对象的那个调用返回后再要求。终结函数也可以调用 `JS_ComputeMemoryUsage` 和 `JS_DumpMemoryUsage`，它们读存活对象的列表，而释放不动那个列表。终结函数仍然不能做的，是 QuickJS 的规矩：运行 JavaScript，释放运行时，或在运行时被释放期间创建对象，那会在运行时消失后让这个对象仍留在使用中。
 
@@ -336,7 +349,7 @@ Go 运行时要停住一个 goroutine（为了回收，或者为了运行另一�
 
 `JSRuntime` 里有一个中断标志，宿主用 `JS_GetInterruptFlag` 拿到它的地址。Go 里的 `Interrupt` 记下时间，下一次 `host_poll` 往标志里写 1。只有运行脚本的 goroutine 写这个标志，所以 C 用普通加载读它。原生测试宿主用线程做同样的事：另一个线程要求的停止（`host_interrupt`，或者 120 秒后结束测试的线程）在宿主里等着，为这个宿主构建、带 `JS_HOST_POLL` 的引擎，在每次读标志时（`cutils.h` 里的 `poll_flag`）调用宿主的 `host_poll`，宿主在引擎的线程上写标志。为 Go 构建时，`poll_flag` 是一次普通读，生成的代码和没有它时一样。引擎在能抛错的地方读标志：解释器在调用、跳转和它计数的其他地方，正则的执行和编译，字符串搜索，类型化数组 `indexOf`、`lastIndexOf`、`includes`、`fill` 和 `copyWithin` 的循环，`String.prototype.repeat`，`Array.prototype.fill`（每 4096 个元素）和 `join`（每 1024 个），`String.prototype.normalize`（把字符串变成码点时每 4096 个字符，它的三遍中每一遍，以及构建结果时），`localeCompare`（同样，比较时再加每 4096 个码点），`toUpperCase` 和 `toLowerCase`（每 4096 个字符，以及找大写 sigma 周围单词结尾时），`isWellFormed` 和 `toWellFormed`（每 4096 个字符，以及 `toWellFormed` 复制的 4096 字符一块之间），`split`（它的搜索，和 `indexOf` 一样，以及每 1024 段），用字符串的 `replace` 和 `replaceAll`（它们的搜索，和 `indexOf` 一样，以及每 1024 次匹配），`padStart` 和 `padEnd`（每写 65536 个字符，比这更长的填充物按这么多一步），`trim`、`trimStart` 和 `trimEnd`（每跳过 4096 个字符），`trim`、`slice`、`substring`、`substr` 和 `split` 切出的片段超过 1048576 个字符时（16 位的字符串先扫描有没有超过 0xff 的字符，再按这么多一块复制），`anchor`、`fontcolor`、`fontsize` 和 `link` 的属性（每 1024 个字符），`escape`、`unescape`、`encodeURI`、`encodeURIComponent`、`decodeURI` 和 `decodeURIComponent`（每 1024 个字符），`Array.from`、`TypedArray.from` 和类型化数组的构造函数（从类数组读取时每 1024 个元素），内置迭代器的 `next` 的调用（字符串、数组、Map、Set 或迭代器辅助函数的迭代器：`JS_IteratorNext2` 不经 `JS_CallInternal` 调用它，后者在调用开始时读标志，所以它自己读标志，而 `Object.fromEntries`、展开、`Iterator.prototype.toArray`、`Math.sumPrecise` 和遍历迭代器的 `Set` 的方法，都随它停止），`Set` 的方法对自己的集合做的复制（每 1024 条记录），长字符串或 rope 的 `Map` 或 `Set` 键的哈希（每 65536 个字符，rope 的一段字符串算比它的长度多一：`map_hash_key_poll` 用它查找和添加，而表增长时，已经在表里的键哈希时不读标志），以及把 rope 拼平，或用 `<` 比较两个 rope（每 65536 个字符，rope 的各段字符串算比它们的长度多一），BigInt 的长循环（乘法和除法的每一行，转成字符串时的除法和数字，从字符串转来时的乘法和数字，每 32,768 个 limb 或数字读一次：`js_bigint_poll`），把字符串转成数字或 BigInt（前后的空白、数字的扫描、数字的复制、`js_atod` 读的数字、BigInt 开头的零，以及 JSON 文本里的数字和空白，每 65536 个字符读一次），脚本和 JSON 的解析器（两个记号之间的空白和换行、注释、标识符、字符串、模板、正则，以及看下一个记号，每 65536 个字节读一次，还有长记号的 atom、行号列号和保存的源码），`<` 和不带比较函数的排序对两个长字符串的比较，`Symbol.for` 的键，把长字符串复制进字符串缓冲区（每 65536 个字符，按字节复制时每 1 MiB 读一次），`resize` 或 `transfer` 改变的 `ArrayBuffer` 那块内存的搬动和清零（每 1 MiB），在 C 里做匹配的全局 `replace` 的循环，`JSON.parse` 和 `JSON.stringify` 在每个值上，以及排序在每次比较之后。它们的长循环按最多 64Ki 个元素或 1 MiB 一块运行，两块之间读标志。这些读取代价很小。`JS_IteratorNext2` 里的那一次，是内置迭代器每次 `next` 一次加载一次分支，对数组做 `for of` 时每个元素 680 条指令里的 2 条（指令多 0.29%，Map 多 0.44%，数组、Set 和字符串的展开多 0.43%）。tifa 的页面和一次 React 渲染，指令多或少都在 0.15% 以内（callgrind，商店的六个工作台页面渲染 +0.05%，MUI 页面 -0.05%，bench 应用的页面 +0.14%，`r_react_ssr` +0.04%）。用字符串的 `replace` 和 `replaceAll` 用 `js_string_find` 搜索，对 16 个字符的字符串多约 160 条指令，而 `Map` 或 `Set` 对短字符串键的一次操作多 7 到 16 条。类型化数组的搜索一次看 16 个元素，在生成器证明很短的有计数循环里，所以不需要自己的计数。在那里引擎抛 `InternalError: interrupted`，任何 `try` 都无法捕获，宿主在下一次从 Go 进入引擎时清掉标志。宿主转换这个错误时不运行 JavaScript：标志置位时，任何函数调用都会再次抛错。有无法捕获的异常挂起时，引擎自己在标志里保持 2，这样内置函数让脚本带着这种异常接着运行时，脚本在下一次读标志时停下（[uncatchable.md](uncatchable.zh-CN.md#没有调用的循环也会在挂起的无法捕获的异常处结束)）。
 
-排序在第一次比较发现标志置位或有异常时停止（`cutils.c` 里的 `rqsort_stop`）：`Array.prototype.sort` 然后什么也不写回，而没有比较函数、原地工作的类型化数组排序，会让元素处于某种顺序。从不读标志的循环，比如 `Array.prototype.slice`、`TypedArray.prototype.set`，会一直跑下去。如果 `Interrupt` 之后的宽限（`SetKillGrace`，默认 50 ms）过了脚本仍在运行，且自从设置标志的那次轮询以来引擎已轮询了 1000 次（`gohost.KillPolls`），那次 `host_poll` 会以 `gohost.ErrKilled` panic，它穿过里面的调用（包括回调以及回调里运行的脚本）向上传播，goroutine 恢复它的 `SetPanicOnFault`。最外层的调用返回一个与 `quickjs.ErrKilled` 匹配（`errors.Is`）的被中断的 `*Error`，而这个 VM 只能 `Close`：返回错误的方法返回一个与 `ErrKilled` 匹配的错误，其他方法 panic，`Value.Free` 什么也不做。轮询次数用来区分仍在运行的脚本和线程没得到运行的脚本：宽限是时钟上的时间，而操作系统或 Go 调度器让它等着的线程，或者脚本调用的 Go 函数，不用引擎做任何工作就会过完它。只看时间的话，一个本来几次轮询就会停下的脚本，只要有这样一次 50 ms 的等待落在 `Interrupt` 和它停下之间就会被杀掉，负载高的机器（3 核的 CI 机器跑两个包的测试，或者 goroutine 比核多的服务器）时不时就会这样。在 Apple M 的性能核心上，读标志的脚本在标志置位后 1 到 13 次轮询内停下，先要释放或回收它所创建的东西的脚本约 600 次内停下（对 500,000 个数字的副本做默认排序是 10 ms），而从不读标志的循环每毫秒轮询 33 到 163 次，所以 1000 次轮询落在它的宽限之内。
+排序在第一次比较发现标志置位或有异常时停止（`cutils.c` 里的 `rqsort_stop`）：`Array.prototype.sort` 然后什么也不写回，而没有比较函数、原地工作的类型化数组排序，会让元素处于某种顺序。从不读标志的循环，比如 `Array.prototype.slice`、`TypedArray.prototype.set`，会一直跑下去。如果 `Interrupt` 之后的宽限（`SetKillGrace`，默认 50 ms）过了脚本仍在运行，且自从设置标志的那次轮询以来引擎已轮询了 1000 次（`gohost.KillPolls`），那次 `host_poll` 会以 `gohost.ErrKilled` panic，它穿过里面的调用（包括回调以及回调里运行的脚本）向上传播，goroutine 恢复它的 `SetPanicOnFault`。最外层的调用返回一个与 `slowjs.ErrKilled` 匹配（`errors.Is`）的被中断的 `*Error`，而这个 VM 只能 `Close`：返回错误的方法返回一个与 `ErrKilled` 匹配的错误，其他方法 panic，`Value.Free` 什么也不做。轮询次数用来区分仍在运行的脚本和线程没得到运行的脚本：宽限是时钟上的时间，而操作系统或 Go 调度器让它等着的线程，或者脚本调用的 Go 函数，不用引擎做任何工作就会过完它。只看时间的话，一个本来几次轮询就会停下的脚本，只要有这样一次 50 ms 的等待落在 `Interrupt` 和它停下之间就会被杀掉，负载高的机器（3 核的 CI 机器跑两个包的测试，或者 goroutine 比核多的服务器）时不时就会这样。在 Apple M 的性能核心上，读标志的脚本在标志置位后 1 到 13 次轮询内停下，先要释放或回收它所创建的东西的脚本约 600 次内停下（对 500,000 个数字的副本做默认排序是 10 ms），而从不读标志的循环每毫秒轮询 33 到 163 次，所以 1000 次轮询落在它的宽限之内。
 
 只有运行脚本的调用才会被杀死。宿主用 `EnterScript` 为它进入引擎，其他任何事（回收、内存报告或归还内存）用 `Enter`，它的轮询只置标志：在一次长回收期间调用 `Interrupt` 的看门狗，不会弄坏一个没运行任何页面代码的 VM。最外层的入口是什么，决定了它里面的调用。带超时的 `EnterScript` 还在单调时钟上设一个截止时间，过了它的第一次 `host_poll` 的行为，就像 `Interrupt` 在截止时间调用了一样：标志置位，宽限从截止时间开始算。晚于截止时间的 `Interrupt` 不会把它往后推：宽限从两者中较早的那个开始算。它里面某个回调运行的脚本，得到的是剩下的时间。
 
@@ -1096,3 +1109,23 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 收益：在原生宿主上，amd64 每次渲染的指令少 0.35%（店面首页）到 1.45%（MUI 订单页），MUI 订单页每次渲染 22.5K 次这样的写入，每次少约 120 条，长 Markdown 少 0.25%。React 每次渲染只有 30 次这样的写入，指令多 0.10%，是去原路径途中多出的检查。在产品上，重新训练画像之后，MUI 少 1.2% 到 2.1%，工作台少 1.1% 到 1.4%，店面少 0.3% 到 0.9%，React 不变。代价：这个改动让 `JS_RegvmRun` 的画像过期，重新训练画像之前（[releasing.md](../releasing.zh-CN.md#性能画像)），产品在 React 上最多多跑 1.4% 的指令，在店面上最多多 0.9%。数组的快路不回答的下标写入（比如追加元素）多付 3 条指令。数字见 [performance.md](../performance.zh-CN.md#按键和按名加键的写入)。
 
 改动在 C 里（`engine/regvm-ops-basic.h`、`engine/regvm-ops-object.h`）。`engine/test/regvm/js/o-putel-atom.js` 把每次写入在两个同样造出来的接收者上各做一次：一次用原来的键，一次用重新做成非原子字符串的同一个键，后者走不了新路径。它对 25 个键（新的和已有的名字，原型上是数据、只读数据、setter 或只有 getter 的名字，`length`、`__proto__`、`prototype`、`stack`，像数字的字符串，空字符串）和 37 种接收者（各种形式的普通对象，原型为 null 的对象，上一层和上三层有 setter 的原型，不可扩展、密封和冻结的对象，数组，类型化数组，`arguments`，String 对象，函数，类，错误对象，Proxy，原型是这些对象之一的对象，全局对象，原始值）都这样做，对象、键和值分别放在局部变量、临时槽和常量里，宽松和严格模式都有，也包括 `o.x = v`。两次写入必须给出同样的结果或异常，用同样的接收者运行同样的 setter 和陷阱，留下同样的自有键，顺序和特性都一样。它的 golden 由改动前的引擎写出。拿掉任何一个检查，它都会失败。`engine/test/regvm/js/o-putel-realm.js` 跨两个领域（原生宿主的 `newRealm`）做同样成对的写入：执行写入的代码、接收者和它的原型（带可写键、只读键、setter 和只有 getter 的键的对象，数组，Int8Array 或 `Object.prototype`）各自来自两个领域之一，接收者有普通的和不可扩展的，每个领域的全局对象也作为接收者。两次写入抛出的异常必须来自同一个领域。`engine/test/compare/putel_atom_ns.mjs` 在模块命名空间和原型是命名空间的对象上做同样的事。`unit-white`（`test_putel_atom_shape`）检查这些写入造出的对象，和 `Object.assign`、`Reflect.set`、字面量造出的对象共享形状，形状缓存开着和关着都查。`unit-white`（`test_putel_atom_each_failing`）还让分配器的每一次调用依次失败，每次都在新的 VM 里，覆盖按键和按名的加键：属性数组变大、克隆别的对象共用的形状、造 300 个新形状（让形状哈希表变大）。值是新造的对象，操作数分别放在参数、局部变量和临时槽里，形状缓存开着和关着都查。每次调用要么抛出内存不足错误，要么给出正确的结果，留下的对象、字符串和形状数和之前一样，释放 VM 时也没有剩下的内存块，在 AddressSanitizer 下也一样。在任何一个函数里去掉加键失败后对值的释放，这个测试都会失败。`unit-oom`（`test_putel_atom_oom`）在从太少开始逐步放宽的内存上限下做按键加键。
+
+## 不再是快数组的数组按原子读写下标
+
+发布版本：v0.31.0。
+
+一个 Array 是快数组，元素放在一整块内存里，直到有元素写到了末尾之后（从高到低填 `new Array()`，在长度为 2 的数组上写 `a[5] = x`），或者元素被删除、被改成访问器或只读，或者数组被冻结、密封。这之后它的元素就是形状里的属性，再也变不回快数组。在这样的数组上，`a[i]` 原来要走 `rv_getel_slow`、`JS_GetPropertyValue`，为下标新建一个原子，再走通用的 `JS_GetPropertyInternal`。`a[i] = v` 要走 `rv_putel_slow`、`JS_SetPropertyValue` 和通用的 `JS_SetPropertyInternal`。V8 基准 Crypto 就是这样造它的大数，这两条路径占了它 43% 的指令。现在循环自己的数组快路不回答时调用的 `rv_getel_atom` 把整数键交给 `rv_getel_index`，GETEL3（`a[i] += v`）也调用它。它取下标的整数原子，像 `rv_getel_atom` 对字符串键那样沿着 Array 和它的原型走一遍。`rv_putel_slow` 对不是快数组的 Array 调用 `rv_putel_index`：下标是一个可写的自有数据属性时，新值直接放进去。其他情况都和原来一样。
+
+为什么安全：结果和 `JS_GetPropertyInternal`、`JS_SetPropertyInternal` 对同一个原子给的一样，因为两条路径只做它们读写普通数据属性的那一部分，遇到不回答的情况就停下。从 0 开始的整数都是整数原子（最大 2^31 - 1），2^31 及以上的下标对应的原子不是整数原子，小于 0 的键是名字。它的检查，以及每个检查挡住的情况：
+
+- 键是不小于 0 的整数，对象是 Array（`JS_CLASS_ARRAY`）。键是浮点数（2^31 及以上、`1.5`、`-0`、`NaN`）、字符串（`"1"`、`"01"`、`"1.0"`）或小于 0 时走原来的路径：小于 0 的键是名字，不是下标。其他对象（类型化数组、`arguments`、普通对象）也走原来的路径，让这条路径只用在为它做过、测过的对象上。
+- 读只取普通数据属性：访问器、首次使用时才建的属性和闭包变量都交回去，所以 getter 还在原来的地方运行。
+- 在原型链上，这一遍经过普通对象，以及没有这个自有元素的 Array。一个快数组、下标又小于它的元素数时交回去（它的元素不在形状里），其他异质对象也一样：Proxy（有陷阱）、类型化数组、String 对象、`arguments`、模块命名空间。
+- 写只写可写的、不是 `length` 的自有数据属性。访问器、只读元素（包括冻结的数组）和不存在的元素都交回去：这时原型上的 setter 或只读下标、数组的长度和可扩展性都有关系，由通用路径决定。
+- 键小于 0 的写入交回去（`idx > JS_ATOM_MAX_INT`，键按无符号数看）：-1 的整数原子会是元素 2^31 - 1 的原子。
+
+两条路径都不运行代码，也不分配内存：旧值在新值存好之后才释放，和快数组的元素一样。测试的抛错注入要抛错的那次读走原来的路径，和其他快路一样。两者都是单独的叶子函数，所以 `rv_getel_slow`、`rv_getel3_slow` 和 `rv_putel_slow` 这几个 getter 或 setter 会在其上运行的函数保持原来的 Go 栈帧（amd64 上 176、128、144 字节，arm64 上 200、136、136 字节），寄存器循环（amd64 上 SHADOW 256，arm64 上 176）和 `JS_CallInternal`（112 和 96）也一样。`rv_getel_atom` 不运行代码，它在 amd64 上为调用的参数从 144 字节涨到 192 字节。`rv_getel_atom` 的字符串路径保持原来的代码，它在调用前只检查整数键的标签：把这一遍内联进去，或者把键和类的检查也放进去，LLVM 都会给整个函数换一套寄存器，按字符串键读一次要多跑 1 到 3 条指令（MUI 首页的 callgrind）。
+
+收益：Crypto 每次迭代的指令在原生宿主上少 20%（amd64 和 M4），通过 Go API 少 22%（amd64 和 M4）：解密在 amd64 上从 1,120M 降到 899M，加密从 59.7M 降到 48.1M。读这种数组的一个元素约 94 条指令，原来 180 条（amd64，Crypto 的 callgrind），写一次 104 条，原来 199 条。一个读写这种数组的循环在 M4 上少 31% 的指令。读快数组元素数之外的下标，在 Array 和它的原型上什么都找不到，也走这一遍，少约 190 条指令。页面不做这种读：原生指令在 amd64 上变化不到 0.04%，HTML 相同，长 Markdown 少 0.44%。通过 Go API，它们在 amd64 上变化在 -0.14% 到 +0.28% 之间，因为改了的函数周围的生成代码重新排布了，在 M4 上用重新训练的 profile 少 0.14% 到 0.48%。代价：给不是快数组的 Array 加元素的写入，在走原来的路径之前要多查一次下标，在 M4 上每次多约 36 条指令（5%）。通过 `rv_putel_slow` 往快数组末尾追加，在 amd64 上多约 6 条，因为这个函数为另一个分支上的调用要在栈上多存两个值。在 Array 以外的对象上按整数键读，要多付一次放弃的调用：amd64 上约 25 条，M4 上约 7 条，EarleyBoyer 的第一部分因此在 amd64 上慢 0.32%。数字见 [performance.md](../performance.zh-CN.md#不再是快数组的数组)。
+
+改动在 C 里（`engine/regvm-ops-object.h`）。`engine/test/compare/array_index_slow.js` 和 Node 24 对照，读写这样的数组（从高到低填的、有空洞的、删过元素的、有带 getter 和 setter 的元素的、冻结的、密封的、不可扩展的、长度只读的、有一个只读元素的），键放在局部变量、临时寄存器和常量里，有 GETEL3（`+=`、`++`），键从 2^31 - 2 到 2^32，还有 `-1`、`-0`、`1.5`、`NaN` 和字符串 `"1"`、`"01"`、`"1.0"`、`"-0"`、`" 1"`。原型上有下标的（在 `Array.prototype` 和 `Object.prototype` 上，作为值、getter、setter 和只读属性），原型是异质对象的（Proxy、Int8Array、String 对象、`arguments`、快数组和不是快数组的 Array、`null`），还有改长度、`delete` 之后再读、Array 的子类和另一个 realm 的 Array。`engine/test/regvm/js/o-getel-index.js` 把每次读和 `Reflect.get` 比，把每次写（宽松模式和严格模式）和在一个同样造出来的孪生数组上的 `Reflect.set` 比，数运行了哪些 getter、setter 和陷阱以及它们的接收者，之后比较自有属性。它还在有元素 2^31 - 1 的数组上读写小于 0 的键，并在不是对象的值上跑 GETEL3。去掉对小于 0 的键的检查（读或写）、读时对访问器的检查、对原型链上异质对象或快数组元素的检查，写时对只读元素的检查，或者 GETEL3 对对象的检查，测试都会失败。读时对类的检查和写时对属性种类的检查，是让这条路径只用在它为之而做的对象上：去掉它们，结果仍然正确。它们的 golden 是改动之前的引擎写的，`o-getel-index.js` 的抛错注入 golden 也是。

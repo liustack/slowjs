@@ -3,7 +3,7 @@ package intl
 import (
 	"strconv"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/reltimedata"
+	"github.com/liustack/slowjs/internal/gointl/internal/reltimedata"
 )
 
 // The names of the option values, as JavaScript spells them: what String

@@ -4,7 +4,7 @@ import (
 	"math"
 	"unicode/utf16"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Date.parse, as V8's DateParser reads a string: ECMA-262's date time

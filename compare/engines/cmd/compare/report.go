@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -32,7 +32,6 @@ type Results struct {
 	Timed      map[string]map[string][]json.RawMessage `json:"timed,omitempty"` // workload -> engine -> one result per round
 	Disturbed  map[string]int                          `json:"disturbed_reruns,omitempty"`
 	MemCap     string                                  `json:"memory_cap"`
-	Test262    *T262Summary                            `json:"test262,omitempty"`
 	Added      []Added                                 `json:"added,omitempty"` // engines merged in from runs made later
 }
 
@@ -257,10 +256,10 @@ func (n *notes) write(b *strings.Builder) {
 func renderMarkdown(res *Results) string {
 	var b strings.Builder
 	p := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
-	p("# Pure Go JavaScript engines: run %s\n\n", res.Name)
+	p("# JavaScript engines: run %s\n\n", res.Name)
 	m := res.Machine
 	p("- Started %s, finished %s\n", res.Started, res.Finished)
-	p("- liustack/quickjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
+	p("- liustack/slowjs and this comparison at `%s` (%s)\n", res.Source.Describe, res.Source.Commit)
 	if len(res.Drivers) > 0 {
 		p("- Driver (`cmd/compare`) at %s, the engine binaries are from the commit above\n", strings.Join(res.Drivers, ", "))
 	}
@@ -321,9 +320,6 @@ func renderMarkdown(res *Results) string {
 	}
 	if res.Features != nil {
 		renderFeatures(&b, res, names)
-	}
-	if res.Test262 != nil {
-		renderTest262(&b, res)
 	}
 	return strings.TrimRight(b.String(), " \t\n") + "\n"
 }
@@ -398,7 +394,7 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 
 	if _, ok := res.Timed["cold"]; ok {
 		var n notes
-		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-quickjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
+		p("\n### Cold start and memory\n\nCold start: a new VM, then the React bundle (117 KB) loaded into it. \"From program\" runs a program compiled once beforehand, for engines whose compiled programs work on any VM. Memory: what the process grows by per VM, with 100 VMs alive, each with the bundle loaded and one page rendered. RSS counts memory outside the Go heap too (liustack-slowjs and modernc-quickjs keep the memory of a VM there), and can be lower than the Go heap growth when the heap reuses pages it already had.\n\n")
 		p("| Engine | New VM | New VM + load source | New VM + load program | First render | RSS per VM (MiB) | Go heap per VM (MiB) |\n|---|---|---|---|---|---|---|\n")
 		for _, e := range names {
 			raws := res.Timed["cold"][e]
@@ -437,8 +433,8 @@ func renderSpeed(b *strings.Builder, res *Results, names []string) {
 	}
 
 	if _, ok := res.Timed["upstream"]; ok {
-		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-quickjs, geometric mean over the tests both engines run (below 1 is faster than liustack-quickjs).\n\n")
-		p("| Engine | Tests run | Geomean time vs liustack-quickjs | Faster than liustack-quickjs on |\n|---|---|---|---|\n")
+		p("\n### QuickJS micro benchmarks (`compare/testdata`)\n\nTime per iteration against liustack-slowjs, geometric mean over the tests both engines run (below 1 is faster than liustack-slowjs).\n\n")
+		p("| Engine | Tests run | Geomean time vs liustack-slowjs | Faster than liustack-slowjs on |\n|---|---|---|---|\n")
 		base := upstreamMedians(res.Timed["upstream"][selfRow(res.Timed["upstream"])])
 		for _, e := range names {
 			mine := upstreamMedians(res.Timed["upstream"][e])
@@ -527,16 +523,17 @@ func v8Bench(name string) func(json.RawMessage) (float64, string) {
 	}
 }
 
-// selfRow is the name of the row of liustack/quickjs in a results file. Files
-// made from 2026-10-24 to 2026-10-29, while the module was
-// github.com/liustack/slowjs, name it slowjs.
+// selfRow is the name of the row of liustack/slowjs in a results file. Files
+// made while the module was github.com/liustack/quickjs (v0.30.0 to v0.30.7)
+// name it liustack-quickjs, and files made from 2026-10-24 to 2026-10-29, while
+// the module was github.com/liustack/slowjs the first time, name it slowjs.
 func selfRow(byEngine map[string][]json.RawMessage) string {
-	if _, ok := byEngine["liustack-quickjs"]; !ok {
-		if _, old := byEngine["slowjs"]; old {
-			return "slowjs"
+	for _, name := range []string{"liustack-slowjs", "liustack-quickjs", "slowjs"} {
+		if _, ok := byEngine[name]; ok {
+			return name
 		}
 	}
-	return "liustack-quickjs"
+	return "liustack-slowjs"
 }
 
 func upstreamMedians(raws []json.RawMessage) map[string]float64 {
@@ -632,48 +629,4 @@ func pct(a, t int) string {
 		return "n/a"
 	}
 	return fmt.Sprintf("%.1f%%", 100*float64(a)/float64(t))
-}
-
-func renderTest262(b *strings.Builder, res *Results) {
-	p := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
-	t := res.Test262
-	var ex []string
-	for k, v := range t.Excluded {
-		ex = append(ex, fmt.Sprintf("%d %s", v, k))
-	}
-	sort.Strings(ex)
-	p("\n## test262\n\ntest262 at `%s`, directories %s: %d files. Left out for every engine: %s (module tests need a loader each engine wires differently, the others need host hooks such as `$262.createRealm` or `$262.detachArrayBuffer`). The rest run once sloppy and once strict unless their flags say otherwise: %d runs per engine. Each run gets a fresh VM and a 10 s limit, and each test262 process a memory cap. Out of memory: tests that went over the cap when run alone in a new process. Memory restarts: times a process went over the cap while the test it was on, run alone, did not; the memory came from earlier tests. \"ES2023 and older\" counts the runs in language and built-ins of tests whose feature tags are all from ES2023 or earlier (the list of newer tags is `t262.Newer`).\n\n",
-		t.Commit, strings.Join(t.Dirs, ", "), t.Files, strings.Join(ex, ", "), t.Runs)
-	p("| Engine | All | language | built-ins | intl402 | ES2023 and older | ES2023 language | ES2023 built-ins | Crashes | Timeouts | Out of memory | Memory restarts |\n|---|---|---|---|---|---|---|---|---|---|---|---|\n")
-	var names []string
-	for n := range t.Engines {
-		names = append(names, n)
-	}
-	sort.Slice(names, func(i, j int) bool { return t.Engines[names[i]].Pass > t.Engines[names[j]].Pass })
-	for _, n := range names {
-		e := t.Engines[n]
-		var cnt = map[string][2]int{}
-		for a, c := range e.Areas {
-			top := strings.SplitN(a, "/", 2)[0]
-			x := cnt[top]
-			x[0] += c[0]
-			x[1] += c[1]
-			cnt[top] = x
-		}
-		es := e.ES2023
-		p("| %s | %s (%d/%d) | %s | %s | %s | %s (%d/%d) | %s | %s | %d | %d | %d | %d |\n", n, pct(e.Pass, e.Runs), e.Pass, e.Runs,
-			pct(cnt["language"][0], cnt["language"][1]), pct(cnt["built-ins"][0], cnt["built-ins"][1]), pct(cnt["intl402"][0], cnt["intl402"][1]),
-			pct(es["all"][0]-es["intl402"][0], es["all"][1]-es["intl402"][1]), es["all"][0]-es["intl402"][0], es["all"][1]-es["intl402"][1],
-			pct(es["language"][0], es["language"][1]), pct(es["built-ins"][0], es["built-ins"][1]), e.Crashes, e.Timeout, e.OOM, e.MemRestarts)
-	}
-	tags := []string{"class", "generators", "async-functions", "async-iteration", "Proxy", "Reflect", "BigInt", "regexp-named-groups", "regexp-lookbehind", "regexp-unicode-property-escapes", "regexp-v-flag", "optional-chaining", "coalesce-expression", "class-fields-private", "WeakRef", "Array.prototype.at", "Temporal", "iterator-helpers", "set-methods"}
-	p("\n### test262 by feature tag\n\nPass rate of the runs whose `features` include the tag.\n\n| Tag | %s |\n|---|%s\n", strings.Join(names, " | "), strings.Repeat("---|", len(names)))
-	for _, tag := range tags {
-		row := []string{"`" + tag + "`"}
-		for _, n := range names {
-			c := t.Engines[n].Feature[tag]
-			row = append(row, pct(c[0], c[1]))
-		}
-		p("| %s |\n", strings.Join(row, " | "))
-	}
 }

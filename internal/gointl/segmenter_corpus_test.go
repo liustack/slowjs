@@ -10,8 +10,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/gointl/internal/corpus"
+	intl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl/internal/corpus"
 )
 
 // TestSegmenterMatchesICU replays the golden corpus's Segmenter cases: a

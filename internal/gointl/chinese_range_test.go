@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // ICU's Chinese astronomy (ChineseAstronomy) cannot reckon a date where

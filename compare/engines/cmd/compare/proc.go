@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -19,13 +19,12 @@ import (
 )
 
 // Every engine process runs under a hard memory cap. GOMEMLIMIT is not
-// enough: liustack-quickjs and modernc-quickjs keep the memory of a VM outside the Go heap. On Linux the cap is a cgroup
+// enough: liustack-slowjs keeps the memory of a VM outside the Go heap. On Linux the cap is a cgroup
 // (systemd-run --user --scope -p MemoryMax), which counts all of it. On top
 // of that, and as the only cap elsewhere, the driver reads the resident size
 // of the process and kills it when it goes over.
 var (
 	flagMemCap    = flag.String("memcap", "4G", "memory cap per engine process for timed workloads and probes")
-	flagMemCap262 = flag.String("memcap-test262", "2G", "memory cap per test262 process")
 	flagCgroup    = flag.Bool("cgroup", true, "on Linux, also put each engine process in a systemd scope with MemoryMax")
 	cgroupOK      bool
 	cgroupChecked sync.Once
@@ -61,7 +60,7 @@ func capDesc() string {
 	if useCgroup() {
 		how = "cgroup MemoryMax (systemd-run --user --scope), swap off, and resident size checked by the driver"
 	}
-	return fmt.Sprintf("%s for timed workloads and probes, %s for test262: %s", *flagMemCap, *flagMemCap262, how)
+	return fmt.Sprintf("%s for timed workloads and probes: %s", *flagMemCap, how)
 }
 
 // argv puts the cgroup cap and the CPU pinning in front of the command.

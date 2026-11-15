@@ -1,13 +1,13 @@
-# 参与 liustack/quickjs
+# 参与 liustack/slowjs
 
 [English](CONTRIBUTING.md) · 简体中文
 
-先说规矩：**liustack/quickjs 不接受 pull request。** 引擎、生成器和 Go API 的每一行都由一个维护者审读、负责到底，正是这样收紧的流程让它靠得住。
+先说规矩：**liustack/slowjs 不接受 pull request。** 引擎、生成器和 Go API 的每一行都由一个维护者审读、负责到底，正是这样收紧的流程让它靠得住。
 
 真正有用的参与方式有两种：
 
-- **[提一个 issue](https://github.com/liustack/quickjs/issues/new/choose)。** 脚本算错了，渲染慢，限制没拦住，报错看不懂，文档写得不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。模板里写了要附上哪些信息。中文英文都行。
-- **Fork 一份。** liustack/quickjs 自己写的文件用 MIT 许可，来自其他项目的代码保留各自的许可（见 [NOTICE.md](NOTICE.md)）。你的那份完全归你，想怎么改、怎么发布都行。
+- **[提一个 issue](https://github.com/liustack/slowjs/issues/new/choose)。** 脚本算错了，渲染慢，限制没拦住，报错看不懂，文档写得不清楚，都可以提。每个 issue 都会读，它决定下一步做什么。模板里写了要附上哪些信息。中文英文都行。
+- **Fork 一份。** liustack/slowjs 自己写的文件用 MIT 许可，来自其他项目的代码保留各自的许可（见 [NOTICE.md](NOTICE.md)）。你的那份完全归你，想怎么改、怎么发布都行。
 
 安全问题请私下报告，不要开公开 issue，见 [SECURITY.zh-CN.md](SECURITY.zh-CN.md)。
 
@@ -15,7 +15,7 @@
 
 ## 范围
 
-liustack/quickjs 是给 Go 程序用的 JavaScript 引擎，为 [tifa](https://github.com/liustack/tifa) 而建、为它维护。tifa 在 Go 进程里把 React 页面渲染成 HTML。它会一直保持：
+liustack/slowjs 是给 Go 程序用的 JavaScript 引擎，为 [tifa](https://github.com/liustack/tifa) 而建、为它维护。tifa 在 Go 进程里把 React 页面渲染成 HTML。它会一直保持：
 
 - 纯 Go，用 `CGO_ENABLED=0` 构建，使用这个模块的人不需要 C 编译器，也不需要动态库
 - 是引擎，不是 Node：没有 `require`、`fs`、`process`，也没有自己的事件循环。脚本需要什么，由宿主通过 Go API 提供

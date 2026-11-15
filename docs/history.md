@@ -1,5 +1,5 @@
 ---
-summary: 'The speed numbers of the engine liustack/quickjs ran before the C engine (QuickJS translated to Go by ccgo, up to v0.28): what each release gained, the cost of the patch on native C, the Intl formatting plans, the comparison with the C engine at the switch, the acceptance run, and what was tried and dropped on that engine'
+summary: 'The speed numbers of the engine liustack/slowjs ran before the C engine (QuickJS translated to Go by ccgo, up to v0.28): what each release gained, the cost of the patch on native C, the Intl formatting plans, the comparison with the C engine at the switch, the acceptance run, and what was tried and dropped on that engine'
 read_when:
   - Asking what the ccgo engine of v0.28 and earlier gained in each release
   - Asking how fast the C engine was against the ccgo engine when it replaced it, or what it had to pass first
@@ -12,7 +12,7 @@ read_when:
 
 English · [简体中文](history.zh-CN.md)
 
-These are the measurements of the engine that ran up to v0.28, QuickJS translated to Go by ccgo, and of the switch to the C engine in v0.29.0. That engine is gone, so nothing here describes how liustack/quickjs runs now. It is kept because the numbers are the record of why some things are the way they are, and a reader sometimes needs to look one up. The speed of the C engine, and how to measure a change, are in [performance.md](performance.md).
+These are the measurements of the engine that ran up to v0.28, QuickJS translated to Go by ccgo, and of the switch to the C engine in v0.29.0. That engine is gone, so nothing here describes how liustack/slowjs runs now. It is kept because the numbers are the record of why some things are the way they are, and a reader sometimes needs to look one up. The speed of the C engine, and how to measure a change, are in [performance.md](performance.md).
 
 In these sections `lib` is the ccgo engine (the `lib/` folder it lived in), "with PGO" means tifa was built with an engine profile collected on that engine, and counts such as the 58 known test262 errors are the counts of that day (33 now).
 
@@ -69,7 +69,7 @@ Whole releases, measured in tifa:
 What it costs in memory: v0.26.16 makes one VM of the shop hold 722 KiB more after a GC (8.03 MiB rather than 7.33), 647 KiB of it the kept shapes. Outside linux each VM keeps up to 1 MiB of TLS stack since v0.26.15.
 
 
-### Against the engine liustack/quickjs started from
+### Against the engine liustack/slowjs started from
 
 Measured in tifa on 2026-10-20 against `modernc.org/quickjs` v0.25.0 with libquickjs v0.13.1, on the same SSR bundle and host program (tifa's [docs/studies/moejs.md](https://github.com/liustack/tifa/blob/main/docs/studies/moejs.md)): the engine changes up to v0.26.15 alone make renders 1.63 to 1.66 times as fast. With the rewrites of tifa's Vite plugin and PGO, pages render 2.07 times as fast as on the original engine with neither.
 
@@ -101,7 +101,7 @@ The page ratios range from 0.9998 to 1.0081. The call-level gain does not establ
 
 This section measured the patch of the ccgo engine (`quickjs.diff`, now deleted) on native C builds. It stays as the record of why computed goto stayed on in the C tree.
 
-Measured on 2026-10-22, using the pinned Bellard source `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` and liustack/quickjs at `620658c`. The old C patch unconditionally set `DIRECT_DISPATCH` to zero. That translation setting predates the exception changes of liustack/quickjs. Native C therefore used a central switch instead of upstream's computed goto dispatch.
+Measured on 2026-10-22, using the pinned Bellard source `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` and liustack/slowjs at `620658c`. The old C patch unconditionally set `DIRECT_DISPATCH` to zero. That translation setting predates the exception changes of liustack/slowjs. Native C therefore used a central switch instead of upstream's computed goto dispatch.
 
 The machine was the AMD EPYC 7B13 VM described above. Both compilers used the upstream Makefile at `-O2`, gcc 15.3 and clang 22.1.8. The V8-v7 harness was `tests/bench-v8/combined.js` from Bellard's 2026-06-04 extras, retaining strict mode, as in [goc's comparison](https://github.com/LoyieKing/goc/blob/8482979acbc8f10f76d9715d88c1beed55df230b/docs/benchmark/README.md). Native invocations passed `--stack-size 16M` in every variant.
 
@@ -212,7 +212,7 @@ Measured and left (shares of a render on the C engine, from callgrind):
 
 ## Acceptance before the switch
 
-Run on 2026-10-29 at liustack/quickjs `75052b72` and tifa `41dcf45` (branch `phase5/accept`: tifa upgraded to that commit of liustack/quickjs, with its engine profile collected again), on the Google Cloud VM above. The C engine is built without PGO. Where it is compared with the engine of `lib/`, that one is built with the tifa engine profile.
+Run on 2026-10-29 at liustack/slowjs `75052b72` and tifa `41dcf45` (branch `phase5/accept`: tifa upgraded to that commit of liustack/slowjs, with its engine profile collected again), on the Google Cloud VM above. The C engine is built without PGO. Where it is compared with the engine of `lib/`, that one is built with the tifa engine profile.
 
 | Gate | Result |
 | --- | --- |

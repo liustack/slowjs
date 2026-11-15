@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -21,12 +21,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/liustack/quickjs/compare/engines/engine"
+	"github.com/liustack/slowjs/compare/engines/engine"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: jsbench info|feature|t262|react|v8|micro|upstream|cold|mem [flags]")
+		fmt.Fprintln(os.Stderr, "usage: jsbench info|feature|react|v8|micro|upstream|cold|mem [flags]")
 		os.Exit(2)
 	}
 	eng, err := engine.Get()
@@ -57,13 +57,6 @@ func main() {
 		file := fs.String("file", "features/features.json", "feature table")
 		fs.Parse(args)
 		out = runFeature(eng, *file, *id)
-	case "t262":
-		root := fs.String("root", "", "test262 checkout")
-		list := fs.String("list", "", "file of tests to run, one per line: <mode> <path>")
-		timeout := fs.Duration("timeout", 10*time.Second, "time limit per test")
-		fs.Parse(args)
-		runTest262(eng, *root, *list, *timeout)
-		return
 	case "react":
 		bundle := fs.String("bundle", "react/react-ssr.js", "bundle")
 		expected := fs.String("expected", "react/react-ssr.expected.html", "reference output")

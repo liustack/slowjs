@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -28,7 +28,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/liustack/quickjs/internal/measure/hwm"
+	"github.com/liustack/slowjs/internal/measure/hwm"
 )
 
 // vm is what the runner needs of an engine.

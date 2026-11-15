@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"unsafe"
@@ -11,10 +11,10 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // The constructors built on go-intl (internal/gointl) resolve their locales
@@ -62,7 +62,7 @@ func goMatcher(s gointl.Service) (*gointl.LocaleMatcher, error) {
 // RangeError. It is for a Builtin of vm, which a long list stops at the
 // eval timeout or Interrupt (see tagTurns). units are the lengths of the tags
 // the locales come from, for the pieces of the work on them (see pieceEnd).
-func goLocales(vm *quickjs.VM, tags []string) (r []gointl.Locale, units []int, err error) {
+func goLocales(vm *slowjs.VM, tags []string) (r []gointl.Locale, units []int, err error) {
 	c, err := goCanonicalizer()
 	if err != nil {
 		return nil, nil, err
@@ -104,7 +104,7 @@ func pieceEnd(units []int, i int) int {
 // goResolve is ResolveLocale for s as far as the locale: the first of tags
 // s is available in, with its Unicode extension, or else en-US. Both
 // matchers match alike, in V8 as in go-intl.
-func goResolve(vm *quickjs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
+func goResolve(vm *slowjs.VM, s gointl.Service, tags []string) (gointl.Locale, error) {
 	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return gointl.Locale{}, err
@@ -132,7 +132,7 @@ func goResolve(vm *quickjs.VM, s gointl.Service, tags []string) (gointl.Locale, 
 
 // goSupported is SupportedLocales for s: those of tags s is available in, in
 // canonical form.
-func goSupported(vm *quickjs.VM, s gointl.Service, tags []string) ([]string, error) {
+func goSupported(vm *slowjs.VM, s gointl.Service, tags []string) ([]string, error) {
 	l, units, err := goLocales(vm, tags)
 	if err != nil {
 		return nil, err
@@ -301,7 +301,7 @@ const checkEvery = 256
 
 // checkTurn calls intlhook.Check on turn i of such a loop, once every
 // checkEvery turns.
-func checkTurn(vm *quickjs.VM, i int) {
+func checkTurn(vm *slowjs.VM, i int) {
 	if i%checkEvery == checkEvery-1 {
 		intlhook.Check(vm)
 	}
@@ -313,7 +313,7 @@ func checkTurn(vm *quickjs.VM, i int) {
 // its length, up to intlhook.MaxTag units, and checkEvery tags at the cap
 // held the eval timeout 60 ms on an Apple M4.
 type tagTurns struct {
-	vm           *quickjs.VM
+	vm           *slowjs.VM
 	turns, units int
 }
 
@@ -330,7 +330,7 @@ func (t *tagTurns) turn(n int) {
 
 // limitsOf are the checks of a call on vm, for the work of gointl that is
 // one piece no Builtin can cut (gointl.Limits).
-func limitsOf(vm *quickjs.VM) *gointl.Limits {
+func limitsOf(vm *slowjs.VM) *gointl.Limits {
 	return &gointl.Limits{
 		Check: func() { intlhook.Check(vm) },
 		Room:  func(n int64) { intlhook.Room(vm, n) },
@@ -345,7 +345,7 @@ func limitsOf(vm *quickjs.VM) *gointl.Limits {
 //
 // The work takes its long arrays from the OS (gointl's qjs_blocks.go), which
 // the caller gives back with Done once the work is over.
-func callLimits(vm *quickjs.VM) *gointl.Limits {
+func callLimits(vm *slowjs.VM) *gointl.Limits {
 	var held int64
 	return &gointl.Limits{
 		Check: func() { intlhook.Check(vm) },
@@ -364,6 +364,6 @@ func callLimits(vm *quickjs.VM) *gointl.Limits {
 // stopTurn is checkTurn for a loop that has made javascript values, which
 // it frees before it returns when stopTurn is true: then the call is to
 // end, with its error pending, and the Builtin returns at once.
-func stopTurn(vm *quickjs.VM, i int) bool {
+func stopTurn(vm *slowjs.VM, i int) bool {
 	return i%checkEvery == checkEvery-1 && vmhook.Stop(vm)
 }

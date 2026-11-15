@@ -1,9 +1,9 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
-  - 修改 quickjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
+  - 修改 slowjs.go，或者字符串、错误或宿主函数在 Go 与 javascript 之间传递的方式
   - 从 javascript 得到的 Go 字符串里有替换字符，或者从 Go 传出的字符串在 javascript 里读起来不一样
   - 区分中断或内存不足与脚本抛出的错误
   - 用全局对象已经有的名字注册 Go 函数
@@ -29,7 +29,7 @@ read_when:
 
 [English](go-api.md) · 简体中文
 
-嵌入方在 `github.com/liustack/quickjs` 的方法返回值里看到的改动。中断、超时或内存不足时一次调用如何结束的改动，见 [uncatchable.zh-CN.md](uncatchable.zh-CN.md)。
+嵌入方在 `github.com/liustack/slowjs` 的方法返回值里看到的改动。中断、超时或内存不足时一次调用如何结束的改动，见 [uncatchable.zh-CN.md](uncatchable.zh-CN.md)。
 
 ## Call 报告函数表达式的异常
 
@@ -67,7 +67,7 @@ read_when:
 
 `*Error` 说明调用是否以脚本无法捕获的异常结束，以及原因，这样嵌入方不必比较名字和消息，而脚本是可以复制名字和消息的。VM 内存不足时（`OutOfMemory`，引擎造不出错误而抛出 `null` 时也算），`Interrupt` 或 eval 超时停住了脚本时（`Interrupted`），以及 javascript 调用的 Go 函数 panic 时（两者都不是），`Uncatchable` 为 true。Go 函数从它所求值的 javascript 得到的错误同样如此。脚本抛出的东西永远不是无法捕获的，即使是 `new InternalError('interrupted')` 或 `{name: 'InternalError', message: 'out of memory'}`，这些过去看起来和真的一模一样。取走一个无法捕获的错误不运行任何页面代码：`Name` 是 `InternalError`，`Message` 和 `Stack` 是错误自己的属性，`Error()` 是 `InternalError: <message>`。它过去会调用页面代码安装的 `Error.prototype.toString` 或 `name` getter，这可能改写消息。中断时在构造错误的过程中内存不足，算作 `OutOfMemory`。
 
-脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。脚本停下之后引擎做的事也算：异常展开时引擎要释放脚本造的东西，正在进行的回收也要做完，它们要多久就轮询多久，所以造了很大数组的脚本可能在停下之后被杀掉。在 Apple M4 上于 055d56cd 测量，每个循环在 eval 超时和 `Interrupt` 下各停 12 次，共 24 次：每轮用展开（`[...big]`）复制一个 100 万个数的数组的循环，从请求到调用结束最多 618 次轮询、64.5 ms。数组换成 400 万个数时，24 次调用里有 21 次被杀，在请求之后 96 到 153 ms。100 万或 400 万个数的数组取 rest（`const [x, ...r] = big`）最多 526 次轮询、9.9 ms。在同一提交上，linux/amd64（AMD EPYC 7B13 服务器，测试钉在一个核上）每个循环在 eval 超时下停 12 次：100 万个数的数组取 rest、带空洞时取 rest、`Array.from` 和读到末尾的 `for-of` 最多 454 次轮询、6.1 ms，展开 596 次轮询、46.4 ms，都没被杀。展开 200 万个数时 12 次调用全部被杀，在请求之后 51 到 91 ms，400 万个数时 12 次里 11 次被杀，在请求之后 131 到 173 ms。不算这部分的话，大堆 VM 上的调用会超过期限好几秒才结束：释放 1 GiB 的数组就要这么久。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, quickjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
+脚本在 eval 超时或 `Interrupt` 之后又跑了 50 ms，并且自从被要求停止以来让引擎工作了 1000 次轮询，就会被杀死。花在脚本调用的 Go 函数里的时间，或者操作系统或 Go 调度器运行别的东西的时间，不会增加轮询次数。脚本停下之后引擎做的事也算：异常展开时引擎要释放脚本造的东西，正在进行的回收也要做完，它们要多久就轮询多久，所以造了很大数组的脚本可能在停下之后被杀掉。在 Apple M4 上于 055d56cd 测量，每个循环在 eval 超时和 `Interrupt` 下各停 12 次，共 24 次：每轮用展开（`[...big]`）复制一个 100 万个数的数组的循环，从请求到调用结束最多 618 次轮询、64.5 ms。数组换成 400 万个数时，24 次调用里有 21 次被杀，在请求之后 96 到 153 ms。100 万或 400 万个数的数组取 rest（`const [x, ...r] = big`）最多 526 次轮询、9.9 ms。在同一提交上，linux/amd64（AMD EPYC 7B13 服务器，测试钉在一个核上）每个循环在 eval 超时下停 12 次：100 万个数的数组取 rest、带空洞时取 rest、`Array.from` 和读到末尾的 `for-of` 最多 454 次轮询、6.1 ms，展开 596 次轮询、46.4 ms，都没被杀。展开 200 万个数时 12 次调用全部被杀，在请求之后 51 到 91 ms，400 万个数时 12 次里 11 次被杀，在请求之后 131 到 173 ms。不算这部分的话，大堆 VM 上的调用会超过期限好几秒才结束：释放 1 GiB 的数组就要这么久。调用返回一个同时匹配 `ErrKilled` 的被中断的 `*Error`（`errors.Is(err, slowjs.ErrKilled)`），而 VM 只能 `Close`：返回错误的方法返回一个匹配 `ErrKilled` 的错误，其他方法 panic，`Value.Free` 什么也不做。`MemorySize` 和 `GCThreshold` 是例外：它们只读一个计数器，所以像在任何 VM 上一样回答，池子可以在替换 VM 之前读到它占了多少内存。
 
 测试：`uncatchable_test.go`、`hostuncatchable_test.go`、`hostpanic_test.go` 和 `killed_test.go`。
 
@@ -351,18 +351,18 @@ C 的部分是 `engine/quickjs.c` 和 `quickjs.h` 里的 `js_start_tag`、`js_en
 用比检查过引擎的 Go 更新的 Go 构建，会以一个错误停下：
 
 ```
-undefined: quickjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_quickjs_anygo
+undefined: slowjs_is_checked_up_to_go1_27_see_docs_upgrading_md_or_build_with_tags_slowjs_anygo
 ```
 
-引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !quickjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。
+引擎的 Go 汇编依赖了 Go 里一些 Go 1 承诺没有覆盖的东西：汇编器如何布局栈帧并开始一个函数，它让哪些小函数不做栈检查，以及内存故障变成 panic 时 Go 往栈上放什么（[upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。更新的 Go 无论如何都能构建这个模块，其中任何一项的变化只有在程序运行时才会显现。现在构建会停下。模块允许构建的每个 Go，1.26.6 和 1.26 的更晚发布版本，以及 1.27 的每个发布版本，都照常构建：构建行里的 `go1.N` 标签跟着构建所用的 Go，所以 `go1.28 && !slowjs_anygo` 这一行对它们都是 false。下限是 `go.mod` 的 `go` 行，在引擎用 Go 1.26 检查过之后同时从 1.27.0 降到 1.26.6（为什么是 1.26.6 而不是 1.26.0，见 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go)）。
 
-- **仍要构建时**，用一个 liustack/quickjs 没有检查过的 Go，加上 `-tags quickjs_anygo`。
-- **新的Go发布时**，liustack/quickjs 用它运行 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/quickjs 的这个发布版本。
+- **仍要构建时**，用一个 liustack/slowjs 没有检查过的 Go，加上 `-tags slowjs_anygo`。
+- **新的Go发布时**，liustack/slowjs 用它运行 [upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的检查，并在一个补丁发布里把这一行移到下一个版本。迁到新 Go 的程序也就迁到 liustack/slowjs 的这个发布版本。
 - **Go 的补丁发布**不加区分：构建行可以写 `go1.28`，但不能写 `go1.27.3`。
 
 这个错误在它自己的包 `internal/goversion` 里，`internal/cengine` 导入它，所以 go 命令先构建它，它是构建报告的唯一错误。
 
-测试：`TestNewerGoStops`（`internal/goversion`）用被检查过的 Go 的发布标签、接下来两个版本的标签和 `quickjs_anygo` 读构建行，并检查错误的名字和这一行给出的是同一个版本。`TestEngineNewerGo`（`enginedeps_test.go`）用手工给出的这一行的 `go1.N` 标签构建这个包：构建只以 `internal/goversion/newer.go` 的错误失败，其中一个是上面那个名字，而再加上 `quickjs_anygo` 就能构建。手工给出的标签还会让 go 命令说这个文件要求更新的 Go，更新的 Go 不会这么说。
+测试：`TestNewerGoStops`（`internal/goversion`）用被检查过的 Go 的发布标签、接下来两个版本的标签和 `slowjs_anygo` 读构建行，并检查错误的名字和这一行给出的是同一个版本。`TestEngineNewerGo`（`enginedeps_test.go`）用手工给出的这一行的 `go1.N` 标签构建这个包：构建只以 `internal/goversion/newer.go` 的错误失败，其中一个是上面那个名字，而再加上 `slowjs_anygo` 就能构建。手工给出的标签还会让 go 命令说这个文件要求更新的 Go，更新的 Go 不会这么说。
 
 ## 会改变汇编器对引擎编码方式的构建选项会让构建停下
 
@@ -381,7 +381,7 @@ asm: goasm_tripwire.amd64.s:32: when dynamic linking, R15 is clobbered by a glob
 asm: do not know how to handle TYPE_ADDR in 00002 (.../goasm_tripwire.arm64.s:26)	MOVWU	$...goasmTripwireVar(SB), R0 with -dynlink
 ```
 
-文件里每一行上面的注释说明是哪个选项，并说 liustack/quickjs 不能用它构建。这个函数从不被调用，也从不被链接，所以它不给程序增加任何东西。这些文件用带点的名字 `goasm_tripwire.<arch>.s`，因为 `make gen` 会删除文件夹里每个 `*_<arch>.s`。每一行都是汇编器按原样接受、在该选项下拒绝的指令（`CALL (AX)` 是经内存的调用，retpoline 没法替换它，而在全局访问之后读 R15 在 `-dynlink` 下被拒绝）。
+文件里每一行上面的注释说明是哪个选项，并说 liustack/slowjs 不能用它构建。这个函数从不被调用，也从不被链接，所以它不给程序增加任何东西。这些文件用带点的名字 `goasm_tripwire.<arch>.s`，因为 `make gen` 会删除文件夹里每个 `*_<arch>.s`。每一行都是汇编器按原样接受、在该选项下拒绝的指令（`CALL (AX)` 是经内存的调用，retpoline 没法替换它，而在全局访问之后读 R15 在 `-dynlink` 下被拒绝）。
 
 - **让引擎保持原样的选项。**`-shared`（linux 和 darwin 上 `-buildmode=pie` 传的就是它）、`-spectre=index`、`-race`、`-msan`、`-asan`、`-cover` 和 `-gcflags` 到不了汇编器，或者只改变汇编器在固定字节之前写的前导。在 linux/amd64 上，`-shared` 让函数开头的栈检查长 2 个字节（见 `quickjs_0_amd64.s`），这会移动函数体，但不移动里面的任何分支。引擎用 `-buildmode=pie` 在 linux/amd64 上构建时通过它的测试。
 - **新的Go发布时**，[upgrading.md](../upgrading.zh-CN.md#换用更新的-go) 的步骤包括再用这些选项构建一次。
@@ -583,3 +583,19 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 代价：没有 ASCII 段的文字（西里尔字母、中文、emoji）用的指令比以前少 2% 到多 2.2%，十个单元的字符串最多多大约 30 条指令。一个只由 8 到 15 个 ASCII 单元的段和其他字符交替组成的字符串最多多 18%，每段多一次调用：没有哪一页是这个样子。
 
 测试：`utf16_test.go` 里的 `TestUTF16Boundaries` 和 `FuzzUTF16String`（种子语料在 `testdata/fuzz/FuzzUTF16String`），`utf16room_test.go` 里的 `TestUTF16RealCuts`（长度从 `stringStep` 和 `stepScratch` 少 9 个单元到多 9 个单元，每种单元都放在切点上）、`TestUTF16WritesStayInRoom`（空间前后的哨兵字节）和 `TestUTF16ScratchReused`（三个字符串用同一块池里的缓冲），`utf16fault_test.go` 里的 `TestUTF16ReadsStayInSource`（单元结束在一个映射页的末尾，后面紧跟一个不可读的页，linux 和 darwin），以及原有的 `TestUTF16StringUnitByUnit`、`TestArgStringSameAsEngine` 和 `TestScratchPutBack`。
+
+## EvalFile 给脚本一个文件名
+
+发布版本：v0.31.0。
+
+`VM.EvalFile(name, javascript, flags)` 就是 `EvalValue`，只是把 `name` 作为脚本的文件名，而其他所有 eval 都叫它 `<eval>`。它的调用栈帧和语法错误显示 `at f (repro.js:1:31)`，而不是 `at f (<eval>:1:31)`，用 `EvalModule` 时模块的名字也是 `name`。它不读任何文件。一个虚拟机里跑多个脚本的程序，或者运行一个文件的命令，能从栈里看出每一帧在哪个脚本里。
+
+引擎一直随源码一起接收文件名：Go API 传的是 `<eval>`，把它拷贝到交给 `JS_Eval` 的那块内存里、源码前面（`engine.go` 的 `evalSource`）。EvalFile 改为拷贝给定的名字，所以 C 和生成的引擎都不用改。名字先在 Go 里清理（`eval.go` 的 `cleanEvalName`），让栈的每一帧保持一行，并且引擎读到的是它能接收的字符串：不是 UTF-8 的字节、控制字符（包括换行和 0 字节，0 字节在 C 里还会让名字提前结束）以及 U+2028 和 U+2029 都变成 U+FFFD，超过 1,024 字节的名字在最后一个放得下的字符处截断。空名字就是 `<eval>`。
+
+模块的名字就是它的身份，清理会让它丢失：`a\nb` 和 `a\rb` 都会变成 `a`、U+FFFD、`b`，前 1,024 字节相同的两个长名字会变成同一个。所以用 `EvalModule` 时，清理会改变的名字（空名字除外）是一个错误，什么都不拷贝也不运行。同名的两个模块的情况和 `Eval` 的模块一样保持不变（`Eval` 的模块都叫 `<eval>`）：两个都运行，`import.meta` 和按这个名字的 import 找到的是第一个。
+
+它是安全的，因为 `evalSource` 写入的字节和以前一样有界：它在申请内存之前，用清理后的名字和源码的长度算出字节数，从虚拟机的影子栈或堆里拿到正好这么多字节，或者一个字节也拿不到（内存不足，此时什么都还没写），然后通过一个正好这么长的切片写入。不给名字时，写入的字节和以前一样：`<eval>`、一个 0 字节、源码、一个 0 字节。
+
+代价：不给名字时没有代价，其他所有 eval 照旧传 `<eval>`。给了名字时，脚本的函数还活着期间，引擎把名字作为一个 atom 保留，需要清理的名字在 Go 里多一次分配。
+
+测试在 `evalfile_test.go`：`TestEvalFile`（结果、带名字的栈帧和语法错误、空名字，以及 `Eval` 仍是 `<eval>`），`TestEvalFileName`（换行、回车、0 字节、制表符、DEL、U+2028 和 U+2029、不是 UTF-8 的字节、在字符之间截断的 1,200 字节名字、在放不下的字符前截断的名字和 1 MiB 的名字，每个都经过一次调用栈检查），`TestEvalFileNameBound`（1 MiB 的名字配上大小在拷贝从影子栈换到堆的边界附近的源码：写入的字节是名字、0 字节、源码、0 字节，影子栈上它们后面的标记没被动过。内存上限放不下的源码以内存不足结束，虚拟机继续可用）和 `TestEvalFileSameAsEval`（不给名字、给 `<eval>` 和给 `repro.js` 时，结果相同，Go 的分配次数相同，函数释放后引擎的块数、字节数和 atom 数也相同）。另外还有 `TestEvalFileModuleName`（用 `EvalModule` 时，清理会改变的名字被拒绝：换行、回车、0 字节、非法 UTF-8、U+2028，以及前 1,024 字节相同的两个名字，而清理不改变的名字就是 import 找到的名字），`TestEvalModuleSameName`（同名的两个模块，不论由 `EvalFile` 还是 `Eval` 给出，都会运行，`import.meta` 和 import 找到的是第一个），`TestEvalFileStops`（放在堆块里的源码被 eval 超时和 `Interrupt` 停下：块被归还，虚拟机继续可用）和 `TestEvalSourceRounding`（最小的块 3 字节，影子栈从 16 字节边界留出 16 字节：引擎用 `strlen` 读名字，一次读一个对齐的整字，所以最多读到 0 字节之后 7 字节，都在这个取整范围内，堆块也取整到 8 字节）。`TestEvalFileName` 还加了 C1 控制字符，以及截断落在 3 字节和 4 字节字符中间、紧挨被替换字符的情况。

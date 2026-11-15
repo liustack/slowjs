@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/unitdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/unitdata"
 )
 
 // Measurements: "987 km/h", "1 Stunde", "2 Stunden".

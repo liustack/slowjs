@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"errors"
 	"sync"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // segmenter is a resolved Intl.Segmenter.
@@ -96,9 +96,9 @@ type vmCursors struct {
 }
 
 // cursors holds the cursors of each VM until it is closed.
-var cursors sync.Map // *quickjs.VM -> *vmCursors
+var cursors sync.Map // *slowjs.VM -> *vmCursors
 
-func cursorsOf(vm *quickjs.VM) *vmCursors {
+func cursorsOf(vm *slowjs.VM) *vmCursors {
 	if c, ok := cursors.Load(vm); ok {
 		return c.(*vmCursors)
 	}
@@ -157,7 +157,7 @@ func (v *vmCursors) add(c *cursor) {
 // each next segment ends, in UTF-16 code units, as twice the offset, plus one
 // for a segment that is word-like. The breaks are all
 // there once the last one is the length of the text.
-var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.Value, error) {
+var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
 	id, _ := a.Number(2)
 	have, _ := a.Number(3)
@@ -175,7 +175,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 	if c == nil || c.n != int(have) {
 		s, ok, err := formatterOf[*segmenter](a)
 		if !ok {
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}
 
 		door := intlhook.Open(a)
@@ -193,7 +193,7 @@ var segBreaks = intlhook.NewBuiltin("breaks", 4, func(a quickjs.Args) (quickjs.V
 			_, ok := c.it.Next()
 			inNext = false
 			if !ok {
-				return quickjs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
+				return slowjs.Value{}, errors.New("intl: internal error: a Segments object has more breaks than its text")
 			}
 			c.n++
 		}

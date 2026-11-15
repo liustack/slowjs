@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
@@ -36,6 +36,7 @@ files() {
 	cat <<LIST
 COPYRIGHT COPYRIGHT
 src/internal/libm.h internal/libm.h libm.h.patch
+src/math/acosh.c math/acosh.c acosh.c.patch
 src/string/bcmp.c string/bcmp.c
 src/string/bzero.c string/bzero.c
 src/string/memchr.c string/memchr.c
@@ -50,7 +51,7 @@ src/string/strlen.c string/strlen.c
 src/string/strrchr.c string/strrchr.c
 LIST
 	for f in __cos __expo2 __math_divzero __math_invalid __math_oflow __math_uflow \
-		__math_xflow __rem_pio2 __rem_pio2_large __sin __tan acos acosh asin asinh \
+		__math_xflow __rem_pio2 __rem_pio2_large __sin __tan acos asin asinh \
 		atan atan2 atanh cbrt ceil copysign cos cosh exp exp_data expm1 floor fmax \
 		fmin fmod hypot log log10 log1p log2 log2_data log_data lrint modf pow \
 		pow_data rint round scalbn sin sinh tan tanh trunc; do

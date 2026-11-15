@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -8,8 +8,8 @@ package intlhook
 import (
 	"errors"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/vmhook"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/vmhook"
 )
 
 // The functions here make every string and array a Builtin of intl or
@@ -21,19 +21,19 @@ import (
 const emitEvery = 4096
 
 // Emit is the javascript string of s.
-func Emit(vm *quickjs.VM, s string) (quickjs.Value, error) { return vm.NewString(s) }
+func Emit(vm *slowjs.VM, s string) (slowjs.Value, error) { return vm.NewString(s) }
 
 // EmitStrings is a javascript array of the strings of l.
-func EmitStrings(vm *quickjs.VM, l []string) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, 0, len(l))
+func EmitStrings(vm *slowjs.VM, l []string) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(l))
 	defer func() { freeAll(vals) }()
 	for i, s := range l {
 		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		}
 		v, err := vm.NewString(s)
 		if err != nil {
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		vals = append(vals, v)
 	}
@@ -41,24 +41,24 @@ func EmitStrings(vm *quickjs.VM, l []string) (quickjs.Value, error) {
 }
 
 // EmitMixed is a javascript array of l, strings and ints.
-func EmitMixed(vm *quickjs.VM, l []any) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, 0, len(l))
+func EmitMixed(vm *slowjs.VM, l []any) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, 0, len(l))
 	defer func() { freeAll(vals) }()
 	for i, x := range l {
 		if i%emitEvery == emitEvery-1 && vmhook.Stop(vm) {
-			return quickjs.UndefinedValue, nil
+			return slowjs.UndefinedValue, nil
 		}
-		var v quickjs.Value
+		var v slowjs.Value
 		switch x := x.(type) {
 		case string:
 			var err error
 			if v, err = vm.NewString(x); err != nil {
-				return quickjs.Value{}, err
+				return slowjs.Value{}, err
 			}
 		case int:
 			v = vm.NewInt(x)
 		default:
-			return quickjs.Value{}, errors.New("intlhook: internal error: a value of another type in an array")
+			return slowjs.Value{}, errors.New("intlhook: internal error: a value of another type in an array")
 		}
 		vals = append(vals, v)
 	}
@@ -66,8 +66,8 @@ func EmitMixed(vm *quickjs.VM, l []any) (quickjs.Value, error) {
 }
 
 // EmitInts is a javascript array of the numbers of l.
-func EmitInts(vm *quickjs.VM, l []int) (quickjs.Value, error) {
-	vals := make([]quickjs.Value, len(l))
+func EmitInts(vm *slowjs.VM, l []int) (slowjs.Value, error) {
+	vals := make([]slowjs.Value, len(l))
 	for i, n := range l {
 		vals[i] = vm.NewInt(n)
 	}
@@ -76,14 +76,14 @@ func EmitInts(vm *quickjs.VM, l []int) (quickjs.Value, error) {
 
 // EmitValues is a javascript array of vals, made by the functions above or
 // numbers, which it borrows as VM.NewArray does.
-func EmitValues(vm *quickjs.VM, vals []quickjs.Value) (quickjs.Value, error) {
+func EmitValues(vm *slowjs.VM, vals []slowjs.Value) (slowjs.Value, error) {
 	return vm.NewArray(vals...)
 }
 
 // freeAll frees each value of vals. A caller defers it in a closure, so
 // that it sees vals as far as it has been filled when the caller returns:
 // NewArray borrows the values, and the array holds its own references.
-func freeAll(vals []quickjs.Value) {
+func freeAll(vals []slowjs.Value) {
 	for i := range vals {
 		vals[i].Free()
 	}

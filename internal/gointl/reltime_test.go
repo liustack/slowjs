@@ -5,7 +5,7 @@ package intl_test
 import (
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 func newRelative(t *testing.T, tag string, opts intl.RelativeTimeFormatOptions) *intl.RelativeTimeFormat {

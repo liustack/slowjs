@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // Options say where an Environment reckons: the data, the locale the zone

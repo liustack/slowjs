@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"errors"
@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs"
-	gointl "github.com/liustack/quickjs/internal/gointl"
-	"github.com/liustack/quickjs/internal/intlhook"
+	"github.com/liustack/slowjs"
+	gointl "github.com/liustack/slowjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/intlhook"
 )
 
 // The work Intl does in Go for a script stays inside the limits of its VM:
@@ -24,7 +24,7 @@ import (
 // evalGuarded evaluates src on vm in a goroutine, and returns its result, its
 // error, what it panicked with and how long it took. A call that has not
 // returned by deadline fails the test.
-func evalGuarded(t *testing.T, vm *quickjs.VM, src string, deadline time.Duration) (res any, err error, pan any, elapsed time.Duration) {
+func evalGuarded(t *testing.T, vm *slowjs.VM, src string, deadline time.Duration) (res any, err error, pan any, elapsed time.Duration) {
 	t.Helper()
 	type out struct {
 		res any
@@ -39,7 +39,7 @@ func evalGuarded(t *testing.T, vm *quickjs.VM, src string, deadline time.Duratio
 			o.pan = recover()
 			ch <- o
 		}()
-		o.res, o.err = vm.Eval(src, quickjs.EvalGlobal)
+		o.res, o.err = vm.Eval(src, slowjs.EvalGlobal)
 	}()
 	select {
 	case o := <-ch:
@@ -54,7 +54,7 @@ func evalGuarded(t *testing.T, vm *quickjs.VM, src string, deadline time.Duratio
 // or as an interrupt when interrupted is set.
 func wantUncatchable(t *testing.T, err error, interrupted bool) {
 	t.Helper()
-	var e *quickjs.Error
+	var e *slowjs.Error
 	if !errors.As(err, &e) || !e.Uncatchable || e.Interrupted != interrupted || e.OutOfMemory == interrupted {
 		t.Fatalf("got %v (%#v), want the uncatchable error of %s", err, e, map[bool]string{false: "running out of memory", true: "an interrupt"}[interrupted])
 	}
@@ -111,27 +111,27 @@ func TestLongListTimeout(t *testing.T) {
 	}
 	for name, c := range map[string]struct {
 		js string
-		fn func(*quickjs.VM) (quickjs.Value, error)
+		fn func(*slowjs.VM) (slowjs.Value, error)
 	}{
 		"getCanonicalLocales": {js: `bridge.getCanonicalLocales(undefined, bridge._list)`},
 		"supportedLocalesOf":  {js: `bridge.supportedLocalesOf("NumberFormat", undefined, bridge._list)`},
-		"resolve": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+		"resolve": {fn: func(vm *slowjs.VM) (slowjs.Value, error) {
 			_, err := goResolve(vm, gointl.ServiceNumberFormat, tags)
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}},
-		"supported": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+		"supported": {fn: func(vm *slowjs.VM) (slowjs.Value, error) {
 			_, err := goSupported(vm, gointl.ServiceNumberFormat, tags)
-			return quickjs.UndefinedValue, err
+			return slowjs.UndefinedValue, err
 		}},
-		"list": {fn: func(vm *quickjs.VM) (quickjs.Value, error) {
+		"list": {fn: func(vm *slowjs.VM) (slowjs.Value, error) {
 			items, _ := listItems(vm, list.String())
 			return listParts(vm, items, lf.f.FormatToPartsCheck(items, func(i int) { checkTurn(vm, i) }))
 		}},
-		"stringArray": {fn: func(vm *quickjs.VM) (quickjs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
+		"stringArray": {fn: func(vm *slowjs.VM) (slowjs.Value, error) { return intlhook.EmitStrings(vm, tags) }},
 	} {
 		t.Run(name, func(t *testing.T) {
 			vm := newVM(t)
-			fns := map[string]*quickjs.Builtin{"work": intlhook.NewBuiltin("work", 0, func(a quickjs.Args) (quickjs.Value, error) {
+			fns := map[string]*slowjs.Builtin{"work": intlhook.NewBuiltin("work", 0, func(a slowjs.Args) (slowjs.Value, error) {
 				return c.fn(a.VM())
 			})}
 			for _, b := range bridge {
@@ -146,7 +146,7 @@ func TestLongListTimeout(t *testing.T) {
 				fns[n.(string)] = b
 				f.Free()
 			}
-			set, err := vm.EvalValue(`(name, f) => { (globalThis.bridge ??= {})[name] = f }`, quickjs.EvalGlobal)
+			set, err := vm.EvalValue(`(name, f) => { (globalThis.bridge ??= {})[name] = f }`, slowjs.EvalGlobal)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -156,13 +156,13 @@ func TestLongListTimeout(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				_, err = set.Call(quickjs.UndefinedValue, n, f)
+				_, err = set.Call(slowjs.UndefinedValue, n, f)
 				f.Free()
 				if err != nil {
 					t.Fatal(err)
 				}
 			}
-			if _, err := set.Call(quickjs.UndefinedValue, "_list", list.String()); err != nil {
+			if _, err := set.Call(slowjs.UndefinedValue, "_list", list.String()); err != nil {
 				t.Fatal(err)
 			}
 			js := c.js

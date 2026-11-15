@@ -4,13 +4,14 @@ read_when:
   - 找 Eval 和 Call 之外的某个 Go API 函数
   - 给 Go API 加函数或类型（中英两份都写在这里）
   - 想知道某个函数是哪个版本加的
+  - 不写 Go 就运行引擎（slowjs 命令）
 ---
 
 # Eval 和 Call 之外的 Go API
 
 [English](api.md) · 简体中文
 
-API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外还有下面这些。每一条都链到一份文档，讲它为什么安全、怎么测的。v0.28.0 到 v0.29.11 发布时的模块路径是 `github.com/liustack/slowjs`。
+API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slowjs)。每个程序都从 `NewVM`、`VM.Eval`、`VM.Call` 和 `Value` 开始。除此之外还有下面这些。每一条都链到一份文档，讲它为什么安全、怎么测的。v0.30.0 到 v0.30.7 发布时的模块路径是 `github.com/liustack/quickjs`。
 
 ## 从 JavaScript 调 Go
 
@@ -37,6 +38,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 ## 源码和时间
 
 - **`VM.SetStrip(s)`** 和 `type Strip`（v0.26.17）：`StripSource` 编译函数时不留源码，函数的 `toString` 显示 `[native code]`，`StripDebug` 不留行号和列号。[详情](changes/go-api.zh-CN.md#setstrip)
+- **`VM.EvalFile(name, javascript, flags)`**（v0.31.0）：就是 `EvalValue`，只是把 `name` 作为脚本的文件名，它的栈帧和语法错误显示 `repro.js:1:31`，其他 eval 显示 `<eval>`。名字会被清理成一行合法的 UTF-8，最多 1,024 字节，清理会改变的模块名是一个错误。[详情](changes/go-api.zh-CN.md#evalfile-给脚本一个文件名)
 - **`VM.SetClock(now)` 和 `VM.Now()`**（v0.28.2）：设置和读取一个 VM 的墙上时钟，Date、Intl 和 Temporal 都读它。传 nil 恢复真实时钟。[详情](changes/time-and-intl.zh-CN.md#每个-vm-一个墙上时钟)
 - **`temporal` 包**（v0.27.0）：`temporal.Register(vm)` 加上 `Temporal`，V8 提供的每个类型和方法都有，由 go-intl 在 Go 里计算，内置 ICU 的 tz 2026e 时区数据，从不读主机的 zoneinfo。`Temporal.Now` 读 VM 的时钟，`temporal.Clock` 只给 `Temporal.Now` 换一个时钟。它让二进制变大多少，见链接的文档。[详情](changes/temporal.zh-CN.md)
 - **`url` 包**（v0.30.3）：`url.Register(vm)` 加上 `URL` 和 `URLSearchParams`，标准的全部，解析在 Go 里做。core-js 见到过得了它自己检查的原生 URL 就什么也不装，所以带着它的 bundle 不用改。它接受的字符串最多 65,536 个 UTF-16 单位，所以一次 Go 的调用只要几毫秒：超过的输入不是 URL，查询串里超过的名或值是 `RangeError`。一个 URL 是 VM 里的对象，受内存上限管，eval 超时和 `Interrupt` 在下一次调用或下一次轮询时结束脚本。Node 24（ada）和标准不同的地方，这里按标准：检查域名的 Bidi 规则，只含 ASCII 的 `xn--` 标签照写保留，带 `#` 的输入对有 opaque path 的 base 解析会失败，把没有主机的 URL 的 `host` 设成空值时给它一个空主机。[详情](changes/url.zh-CN.md#解析在-go-里的-url-和-urlsearchparams)
@@ -48,3 +50,7 @@ API 文档在 [pkg.go.dev](https://pkg.go.dev/github.com/liustack/quickjs)。每
 - **`VM.RegisterEscapeText(name)`**（v0.29.2）：像 React DOM 的字符串渲染器那样为 HTML 转义文本（`&`、`<`、`>`、`"` 和 `'` 变成实体，参数按 `"" + text` 变成字符串）。tifa 用上它以后，示例商店的页面渲染时间变成原来的 0.974，bench 页面变成 0.938。[详情](changes/go-api.zh-CN.md#registerescapetext)
 - **`VM.RegisterCopyProps(name)`**（v0.29.3）：替 React 的 `createElement` 和 `cloneElement` 里把 config 的键复制进元素 props 的那个循环干活。只在它和循环的结果不可能不同的时候复制，其他 config 一律回答 `false`，脚本再交给循环处理。tifa 用上它以后，示例商店的页面渲染时间变成原来的 0.988 和 0.989，MUI 页面变成 0.980。[详情](changes/go-api.zh-CN.md#registercopyprops)
 - **`VM.RegisterStartTag(name)` 和 `VM.RegisterEndTag(name)`**（v0.29.10）：像 React DOM 服务端渲染器的 `pushStartGenericElement` 那样写出元素的开始标签，带属性、样式和文本，像 `endChunkForTag` 那样给出结束标签。开始标签函数只在 React 的函数也只可能写出同样内容时才写，其他调用一律返回调用方给的 `decline` 对象，脚本再交给 React 处理。在 tifa 示例页面一次渲染的所有开始和结束标签上，它们跑的指令数约为 React 函数的五分之一。[详情](changes/go-api.zh-CN.md#registerstarttag-和-registerendtag)
+
+## 不写 Go
+
+- **`slowjs` 命令**（v0.31.0）：在这个引擎里运行一个 JavaScript 文件，虚拟机按 tifa 的方式配置（Intl、Temporal、URL），有 `print`、`console.log`，以及一定生效的超时和内存上限：不写 Go 就能用一个脚本复现问题或跑脚本。每个 GitHub release 里都有为五个目标预编译好的它。[详情](command.zh-CN.md)

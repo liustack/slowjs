@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/gointl/internal/normdata"
+	"github.com/liustack/slowjs/internal/gointl/internal/normdata"
 )
 
 // Unicode normalization.

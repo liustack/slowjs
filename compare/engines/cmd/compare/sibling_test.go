@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -40,8 +40,8 @@ func TestSiblingBusy(t *testing.T) {
 }
 
 func TestArgvNice(t *testing.T) {
-	got := argv(1<<30, "0", 19, "bin/x", []string{"t262"})
-	tail := []string{"taskset", "-c", "0", "nice", "-n", "19", "bin/x", "t262"}
+	got := argv(1<<30, "0", 19, "bin/x", []string{"v8"})
+	tail := []string{"taskset", "-c", "0", "nice", "-n", "19", "bin/x", "v8"}
 	if len(got) < len(tail) || !slices.Equal(got[len(got)-len(tail):], tail) {
 		t.Fatalf("argv = %q", got)
 	}

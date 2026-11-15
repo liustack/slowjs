@@ -10,7 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // resolvedTypes are the types each service's ResolvedOptions returns.

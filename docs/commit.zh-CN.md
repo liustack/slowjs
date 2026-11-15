@@ -32,7 +32,7 @@ read_when:
 fix(engine): make javascript's local time UTC whatever zone the process has
 perf(engine): count the interrupt counter down inside the interpreter
 feat(gen): refuse a call the stack check does not cover
-build!: rename the module to github.com/liustack/quickjs
+build!: rename the module to github.com/liustack/slowjs
 ```
 
 ## 原子提交

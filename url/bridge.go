@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -6,9 +6,9 @@
 package url
 
 import (
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/intlhook"
-	"github.com/liustack/quickjs/internal/whatwgurl"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/intlhook"
+	"github.com/liustack/slowjs/internal/whatwgurl"
 )
 
 // The Builtins url.js is called with. They keep no state: a URL is javascript's,
@@ -44,7 +44,7 @@ const (
 // parseArgs parses argument 0 against argument 1, a base or undefined. ok is
 // false when the input is not a URL, a string is longer than MaxUnits, the URL
 // would be, or the call is to end.
-func parseArgs(a quickjs.Args) (*whatwgurl.URL, bool) {
+func parseArgs(a slowjs.Args) (*whatwgurl.URL, bool) {
 	in, present, v := admit(a, 2, 0, 0, 1)
 	if v != admitted || !present[0] {
 		return nil, false
@@ -65,7 +65,7 @@ func parseArgs(a quickjs.Args) (*whatwgurl.URL, bool) {
 // username, password, host, hostname, port, pathname, search, hash and
 // origin, and last the bits of the record the getters do not show, which with
 // the parts make the record again (record).
-func parts(vm *quickjs.VM, u *whatwgurl.URL) (quickjs.Value, error) {
+func parts(vm *slowjs.VM, u *whatwgurl.URL) (slowjs.Value, error) {
 	p, href := u.Parts()
 	host := p.Hostname.Text()
 	if port := p.Port.Text(); port != "" {
@@ -97,14 +97,14 @@ func parts(vm *quickjs.VM, u *whatwgurl.URL) (quickjs.Value, error) {
 	if p.HasFragment {
 		flags |= hasFragment
 	}
-	var vals [len(strs) + 1]quickjs.Value
+	var vals [len(strs) + 1]slowjs.Value
 	for i, s := range strs {
 		v, err := emit(vm, s)
 		if err != nil {
 			for _, f := range vals[:i] {
 				f.Free()
 			}
-			return quickjs.Value{}, err
+			return slowjs.Value{}, err
 		}
 		vals[i] = v
 	}
@@ -117,16 +117,16 @@ func parts(vm *quickjs.VM, u *whatwgurl.URL) (quickjs.Value, error) {
 }
 
 // parseBuiltin is parse(input, base): the parts of the URL, or undefined.
-var parseBuiltin = newBuiltin("parse", 2, func(a quickjs.Args) (quickjs.Value, error) {
+var parseBuiltin = newBuiltin("parse", 2, func(a slowjs.Args) (slowjs.Value, error) {
 	u, ok := parseArgs(a)
 	if !ok {
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}
 	return parts(a.VM(), u)
 })
 
 // canParseBuiltin is canParse(input, base): 1 or 0.
-var canParseBuiltin = newBuiltin("canParse", 2, func(a quickjs.Args) (quickjs.Value, error) {
+var canParseBuiltin = newBuiltin("canParse", 2, func(a slowjs.Args) (slowjs.Value, error) {
 	if _, ok := parseArgs(a); ok {
 		return a.VM().NewInt(1), nil
 	}
@@ -136,7 +136,7 @@ var canParseBuiltin = newBuiltin("canParse", 2, func(a quickjs.Args) (quickjs.Va
 // errNotParts is the error of set for arguments that url.js does not hand it:
 // a part that is not a setter's, or a record that is not a URL's. A script
 // cannot reach set (see docs/changes/url.md), so only a fault of url.js could.
-var errNotParts = &quickjs.Error{Name: "TypeError", Message: "URL: the record of the URL is not that of a URL"}
+var errNotParts = &slowjs.Error{Name: "TypeError", Message: "URL: the record of the URL is not that of a URL"}
 
 // setBuiltin is set(part, value, flags, protocol, username, password,
 // hostname, port, pathname, search, hash): the setter of a part on the URL
@@ -145,17 +145,17 @@ var errNotParts = &quickjs.Error{Name: "TypeError", Message: "URL: the record of
 // than MaxUnits or the URL would be, and undefined when the call is to end.
 // Parts and bits that are not those of a URL, and a part number that is not
 // one of the setters, are a TypeError: the URL is not changed.
-var setBuiltin = newBuiltin("set", 11, func(a quickjs.Args) (quickjs.Value, error) {
+var setBuiltin = newBuiltin("set", 11, func(a slowjs.Args) (slowjs.Value, error) {
 	vm := a.VM()
 	pn, ok := a.Number(0)
 	part := int(pn)
 	if !ok || float64(part) != pn || part < setProtocol || part > setHash {
-		return quickjs.Value{}, errNotParts
+		return slowjs.Value{}, errNotParts
 	}
 	fn, ok := a.Number(2)
 	f := int(fn)
 	if !ok || float64(f) != fn || f&^(hasHost|opaque|hasQuery|hasFragment) != 0 {
-		return quickjs.Value{}, errNotParts
+		return slowjs.Value{}, errNotParts
 	}
 	// FromParts parses the hostname of the record again, which IDNA may take
 	// when it holds a percent-encoded code point, and a setter of the host
@@ -169,13 +169,13 @@ var setBuiltin = newBuiltin("set", 11, func(a quickjs.Args) (quickjs.Value, erro
 	case v == tooLong:
 		return vm.NewInt(0), nil
 	case v == notParts:
-		return quickjs.Value{}, errNotParts
+		return slowjs.Value{}, errNotParts
 	case v != admitted:
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}
 	for _, ok := range present[:9] {
 		if !ok {
-			return quickjs.Value{}, errNotParts
+			return slowjs.Value{}, errNotParts
 		}
 	}
 	u, err := whatwgurl.FromParts(whatwgurl.Parts{
@@ -184,7 +184,7 @@ var setBuiltin = newBuiltin("set", 11, func(a quickjs.Args) (quickjs.Value, erro
 		HasHost: f&hasHost != 0, Opaque: f&opaque != 0, HasQuery: f&hasQuery != 0, HasFragment: f&hasFragment != 0,
 	})
 	if err != nil {
-		return quickjs.Value{}, errNotParts
+		return slowjs.Value{}, errNotParts
 	}
 	switch value := in[0]; part {
 	case setProtocol:
@@ -214,41 +214,41 @@ var setBuiltin = newBuiltin("set", 11, func(a quickjs.Args) (quickjs.Value, erro
 
 // errTooLong is the error of a name or a value of a query string, or of its
 // encoding, that is longer than MaxUnits.
-var errTooLong = &quickjs.Error{Name: "RangeError", Message: "URLSearchParams: a name or a value, or its encoding, is longer than 65536 UTF-16 code units"}
+var errTooLong = &slowjs.Error{Name: "RangeError", Message: "URLSearchParams: a name or a value, or its encoding, is longer than 65536 UTF-16 code units"}
 
 // formDecodeBuiltin is formDecode(field): a name or a value of a query string
 // as the application/x-www-form-urlencoded parser makes it. url.js splits the
 // string at & and = and calls it for a field that has a + or a %.
-var formDecodeBuiltin = newBuiltin("formDecode", 1, func(a quickjs.Args) (quickjs.Value, error) {
+var formDecodeBuiltin = newBuiltin("formDecode", 1, func(a slowjs.Args) (slowjs.Value, error) {
 	in, present, v := admit(a, 0, 0, 0)
 	switch {
 	case v == tooLong:
-		return quickjs.Value{}, errTooLong
+		return slowjs.Value{}, errTooLong
 	case v != admitted || !present[0]:
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}
 	return emit(a.VM(), whatwgurl.FormDecode(in[0]))
 })
 
 // formEncodeBuiltin is formEncode(field): a name or a value as the
 // application/x-www-form-urlencoded serializer writes it.
-var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a quickjs.Args) (quickjs.Value, error) {
+var formEncodeBuiltin = newBuiltin("formEncode", 1, func(a slowjs.Args) (slowjs.Value, error) {
 	in, present, v := admit(a, 0, 0, 0)
 	switch {
 	case v == tooLong:
-		return quickjs.Value{}, errTooLong
+		return slowjs.Value{}, errTooLong
 	case v != admitted || !present[0]:
-		return quickjs.UndefinedValue, nil
+		return slowjs.UndefinedValue, nil
 	}
 	out, err := whatwgurl.FormEncode(in[0])
 	if err != nil {
-		return quickjs.Value{}, errTooLong
+		return slowjs.Value{}, errTooLong
 	}
 	return emit(a.VM(), out)
 })
 
 // bridge is the list of Builtins url.js is a function of, in its order.
-var bridge = []*quickjs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
+var bridge = []*slowjs.Builtin{parseBuiltin, setBuiltin, formDecodeBuiltin, formEncodeBuiltin, canParseBuiltin}
 
 // callHook, when a test sets it, is called as each Builtin of this package
 // starts (enter true) and as it ends.
@@ -260,8 +260,8 @@ var callHook func(enter bool)
 // a Builtin taking a few milliseconds would make many such calls between two
 // polls: the look ends the script at the call after the one in which the eval
 // timeout or Interrupt came.
-func newBuiltin(name string, length int, fn func(quickjs.Args) (quickjs.Value, error)) *quickjs.Builtin {
-	return intlhook.NewBuiltin(name, length, func(a quickjs.Args) (quickjs.Value, error) {
+func newBuiltin(name string, length int, fn func(slowjs.Args) (slowjs.Value, error)) *slowjs.Builtin {
+	return intlhook.NewBuiltin(name, length, func(a slowjs.Args) (slowjs.Value, error) {
 		intlhook.Check(a.VM())
 		if h := callHook; h != nil {
 			h(true)

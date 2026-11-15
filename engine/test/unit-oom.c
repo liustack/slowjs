@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The liustack/quickjs Authors.
+ * Copyright (c) 2026 The liustack/slowjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
@@ -1267,6 +1267,65 @@ static void test_uncatchable_fast_call(void)
     vm_free(&v);
 }
 
+/* x instanceof C that the register loop answers itself (rv_instof), without
+   the call of Function.prototype[Symbol.hasInstance], fails while an
+   uncatchable exception is pending, as that call does: the code after it
+   does not run. The exception is left pending by an async function whose
+   first run fails, by an interrupt or by running out of memory, and the left
+   side is an object or a primitive. */
+static void test_uncatchable_instanceof(void)
+{
+    static const char *const lefts[] = { "{}", "1" };
+    End end;
+    size_t i;
+
+    for (end = END_INTERRUPT; end <= END_OOM; end++) {
+        for (i = 0; i < sizeof(lefts) / sizeof(lefts[0]); i++) {
+            const char *what = end == END_OOM ? "out of memory" : "interrupt";
+            VM v = vm_new();
+            JSValue r, g, f;
+            char *text = NULL, call[64];
+            int st, unc = 0, ended;
+
+            g = JS_GetGlobalObject(v.ctx);
+            JS_SetPropertyStr(v.ctx, g, "stop", JS_NewCFunction(v.ctx, js_stop, "stop", 0));
+            eval_ok(v.ctx, fail_js[end]);
+            eval_ok(v.ctx, "var after = 0; function io(x, k) { var r = x instanceof Object;"
+                    " if (k) { (async () => { fail() })(); r = x instanceof Object; after = 1; } return r; }"
+                    " void Function.prototype[Symbol.hasInstance]; io({}, 0); io(1, 0);");
+            f = JS_GetPropertyStr(v.ctx, g, "io");
+            st = JS_RegvmFuncStat(v.ctx, f, 0);
+            CHECK(st == 1, "instanceof, %s, left %s: io is not in the register loop (state %d)",
+                  what, lefts[i], st);
+            JS_FreeValue(v.ctx, f);
+            JS_FreeValue(v.ctx, g);
+            if (end == END_OOM)
+                room(&v, 1 << 20);
+            snprintf(call, sizeof(call), "io(%s, 1)", lefts[i]);
+            r = JS_Eval(v.ctx, call, strlen(call), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            if (JS_IsException(r)) {
+                unc = JS_IsUncatchableException(v.ctx);
+                /* the host takes its stop back to read the error */
+                *JS_GetInterruptFlag(v.rt) &= ~1;
+                text = exception_text(v.ctx);
+            }
+            JS_FreeValue(v.ctx, r);
+            if (end == END_OOM)
+                unlimit(&v);
+            *JS_GetInterruptFlag(v.rt) = 0;
+            ended = end == END_INTERRUPT ? text && strcmp(text, "InternalError: interrupted") == 0 :
+                text && (strstr(text, "out of memory") || strcmp(text, "null") == 0);
+            CHECK(unc && ended, "instanceof, %s, left %s: ended with %s, want the uncatchable %s",
+                  what, lefts[i], text ? text : "no error", what);
+            CHECK(eval_is(v.ctx, "after", "0"),
+                  "instanceof, %s, left %s: the code after instanceof ran with the exception pending",
+                  what, lefts[i]);
+            free(text);
+            vm_free(&v);
+        }
+    }
+}
+
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
    alone: set when an exception is made uncatchable, cleared when it is taken
    or made catchable, never set for a catchable one or with nothing pending,
@@ -1787,6 +1846,38 @@ static void test_fast_builtins_oom(void)
     static const char *const want[] = { "80,3104", NULL };
 
     sweep("fast built-ins", "fast_builtins.js", setup, "run()", want, 32768);
+}
+
+/* for in loops over objects, arrays, strings, null and a prototype, nested
+   and in a generator: with too little memory (the iterator, its object, the
+   empty shape the context then holds, the keys) they fail with the out of
+   memory error and leave nothing behind. The first sweep makes the shape in
+   its setup, the second makes it under the room. */
+static void test_for_in_oom(void)
+{
+    static const char fns[] =
+        "function keys(o) { var r = ''; for (var k in o) r += k; return r }\n"
+        "function* gen(o) { for (var k in o) yield k }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var g = gen({ g: i, h: i });\n"
+        "    out.push(keys({ a: 1, b: 2 }), keys([1, 2]), keys('xy'), keys(null),\n"
+        "      keys(Object.create({ p: 1 })), g.next().value);\n"
+        "    for (var k in { n: 1 }) out.push(keys({ m: k }));\n"
+        "    out.push(g.next().value);\n"
+        "  }\n"
+        "  return out.join();\n"
+        "}\n";
+    static const char *const want[] = {
+        "ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h,ab,01,01,,p,g,m,h",
+        NULL
+    };
+    char setup[sizeof(fns) + 16];
+
+    snprintf(setup, sizeof(setup), "%srun();\n", fns);
+    sweep("for in", "for_in.js", setup, "run()", want, 16384);
+    sweep("for in, first loop", "for_in.js", fns, "run()", want, 32768);
 }
 
 /* Object.defineProperty, Object.defineProperties, Object.create and
@@ -2864,6 +2955,7 @@ int main(void)
     test_field_chain_uncatchable();
     test_uncatchable_then_loop();
     test_uncatchable_fast_call();
+    test_uncatchable_instanceof();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
@@ -2890,6 +2982,7 @@ int main(void)
     test_truth_oom();
     test_array_literal_oom();
     test_fast_builtins_oom();
+    test_for_in_oom();
     test_define_desc_oom();
     test_bind_oom();
     test_bind_host_oom();

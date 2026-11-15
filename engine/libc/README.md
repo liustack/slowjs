@@ -10,7 +10,7 @@ The small libc of the C tree in `engine/`. The engine C is built with `-ffreesta
 | --- | --- | --- |
 | Memory and string functions: `memmove memset memcmp bcmp bzero memchr memrchr strlen strcmp strchr strchrnul strrchr` | `string/` | musl, as it is |
 | `memcpy` | `string/memcpy.c` | written here, in place of musl's. Overlapping loads and stores of one width up to 128 bytes, then a loop of 128 bytes with the destination aligned to 16. SSE2 and NEON moves only, no `REP MOVSB`, no AVX. Tested by `engine/test/libc-test.sh` |
-| 34 math functions: the 22 that need a real algorithm (`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`), the 12 that are exact (`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`), and the helpers and tables they use | `math/`, `internal/libm.h` | musl. `libm.h` has a patch (below) |
+| 34 math functions: the 22 that need a real algorithm (`sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp expm1 log log10 log1p log2 pow cbrt hypot`), the 12 that are exact (`fmod floor ceil trunc round rint lrint modf fmin fmax copysign scalbn`), and the helpers and tables they use | `math/`, `internal/libm.h` | musl. `libm.h` and `acosh.c` have a patch (below) |
 | `snprintf`, `vsnprintf` | `stdio.c` | written here. Flags `- + space 0 #`, width and precision (a number or `*`), lengths `hh h l ll z j t` on the integer conversions only, conversions `d i u x X o c s p %`. No floating-point conversions. Anything else calls `abort` before the argument is read: another conversion, a length on `c s p %`, a format that ends inside a conversion, a width or precision that does not fit an int, an output over INT_MAX |
 | `abort` | `abort.c` | written here. It calls `host_call` with the magic `HOST_CALL_ABORT`. The Go host panics and marks the VM close-only. A trap would be a signal, and a signal kills the Go process |
 | `sqrt`, `fabs` | `math.c` | written here, one instruction each. musl's `sqrt` is in software |
@@ -31,6 +31,8 @@ The files in `string/` and `math/` (all but `string/memcpy.c`), `COPYRIGHT` and 
 - the long double layouts are gone, as the C tree has no long double
 - `fp_barrier` returns its input and `FORCE_EVAL` does nothing, as the C tree does not look at the floating-point flags
 - it fails to compile when `__FP_FAST_FMA` or `__FP_FAST_FMAF` is defined
+
+`math/acosh.c` is musl's with `patches/acosh.c.patch`, which is musl commit `3e80328d45b73604012b9b174f11e3ed632005ce` (2026-08-03, "math: fix acosh for x<0"), newer than the pinned one. Before it, `acosh` read only the exponent of `x` and not its sign, and gave a finite number for many `x` between -2^26 and -2, where the result is NaN. When the pinned commit moves past it, the patch goes.
 
 musl's `log`, `log2` and `pow` have a second path for a hardware fma, and the two paths differ in the last bit. The build takes the path without fma on every target, with `-ffp-contract=off -U__FP_FAST_FMA -U__FP_FAST_FMAF`. Then arm64 and amd64 give the same bits.
 

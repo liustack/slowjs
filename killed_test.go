@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 // A script that runs on 50 ms past its deadline or an Interrupt, and has
 // polled 1000 times since, is killed: the call returns an interrupted error
@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs/internal/gohost"
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 // killedVM returns a VM a kill left good only for Close, with the error of

@@ -117,14 +117,14 @@ vm.SetClock(nil)
 
 这第一批构造函数的代价，在 AMD EPYC 7B13 的一个核上，不开 PGO，对比之前的版本：
 
-- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags quickjs_intl_nonames,quickjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.zh-CN.md#更新-intl-的数据internalgointl)）：带上它们，商店大 12.6 MB。
+- 下面 Temporal 格式化改动之前的体积：tifa 的示例商店为 linux/amd64 构建，大 9.8 MB（37.6 MB，对比 27.9 MB），几乎全是 go-intl 的数据：`core.bin`（4.4 MB）、`names.bin`（1.9 MB）、`cjdict.bin`（2.0 MB）和 `tz.bin`（91 KB）。用 `-tags slowjs_intl_nonames,slowjs_intl_nocjdict` 构建，会去掉显示名称（这时 `Intl.DisplayNames` 对每个代码都返回它的回退值）以及中文和日文的词典（这时一段中文或日文就是一个词），大 5.8 MB。go-intl 的日期和时区名（2.8 MB）只有它的 `DateTimeFormat` 才读，在那个阶段没有编进二进制（见 [Updating go-intl](../upgrading.zh-CN.md#更新-intl-的数据internalgointl)）：带上它们，商店大 12.6 MB。
 - 内存和启动：`Register` 多用 0.01 ms 和 4 KB。VM 里第一次使用用 0.49 ms（以前 0.24 ms），用过 `Intl` 的 VM 比 `Register` 之后多占 151 KB（以前 77 KB）。它安装的 JavaScript 从 17 KB 的源码变成了 36 KB。进程里第一次排序用 4.7 ms，第一次分词用 2.7 ms，用来读取它们的数据。
 - 调用：`new Intl.Collator('de')` 用 2.8 µs，`compare` 用 2.4 µs，`new Intl.Segmenter('en', {granularity: 'word'})` 用 4.0 µs，遍历 60 个字符的词用 78 µs（它的字素用 185 µs），`RelativeTimeFormat.format` 用 2.4 µs，三项的 `ListFormat.format` 用 6.5 µs，`DisplayNames.of` 用 1.6 µs，`DurationFormat.format` 用 11 到 16 µs，`new Intl.Locale` 用 19 µs，`maximize` 用 18 µs，`getWeekInfo` 用 105 µs，`supportedValuesOf('timeZone')` 用 61 µs，60 个字符的 `toLocaleUpperCase('tr')` 用 4.8 µs（不带 locale 时 1.4 µs）。
 - 创建 `NumberFormat` 或 `PluralRules` 多用 0.1 µs，创建 `DateTimeFormat` 多用 0.3 µs。格式化用时不变。
 
 现在导入 `intl` 的程序会链接 `internal/gointl` 和 `internal/gointl/temporal`，并且必须附带它们的声明（见 [NOTICE.md](../../NOTICE.md#what-a-program-that-ships-a-binary-must-include)）。
 
-测试：`intl/golden_gointl_test.go`、`intl/chromiumroot_test.go`、`intl/registry_gointl_test.go`、`intl/values_test.go`、`intl/shape_test.go`、`intl/tamper_test.go`、`intl/link_test.go`、`intl/nonames_test.go`（带 `-tags quickjs_intl_nonames`）、`internal/gointl/qjs_readers_test.go`，以及检查 `Args.WTF8` 的 `builtin_test.go`。
+测试：`intl/golden_gointl_test.go`、`intl/chromiumroot_test.go`、`intl/registry_gointl_test.go`、`intl/values_test.go`、`intl/shape_test.go`、`intl/tamper_test.go`、`intl/link_test.go`、`intl/nonames_test.go`（带 `-tags slowjs_intl_nonames`）、`internal/gointl/qjs_readers_test.go`，以及检查 `Args.WTF8` 的 `builtin_test.go`。
 
 ## Intl 不动页面放在替身位置上的东西
 
@@ -178,7 +178,7 @@ Intl 和 Temporal 共用内嵌的 ICU tz 2026e 数据包。伪造的 `ZONEINFO` 
 
 在 GCP linux/amd64 上，test262 `2e0a5676` 用同样的新建 VM 运行器，注册 Intl 和 Temporal，两种模式运行每个 Intl402 文件。对比 main `641e996`，通过数从 6764 个运行中的 6276 个升到 6618 个。新增通过 366 个，新增失败 24 个。Chromium 156 在这 24 个断言上也全部失败：伊斯兰历的回退、旧的 ACT 时区别名，以及 Temporal 的纪元和小时周期规则。其余 146 个失败包括 NumberFormat 的范围、运行器承载不了的第二个 realm 的测试，以及已有的 V8 差异。没有哪个新增失败的用例在 Chromium 里是通过的。引擎单独的 58 个错误的测试集没有重跑。
 
-数字数据包记录了它的 ICU 资源已经解析好。go-intl 的原始源保留各自独立的数字和货币别名规则。`data.sh test` 拿原始的完整数据对照上游语料检查，`test-chromium` 则拿发布的数据包对照 liustack/quickjs 的浏览器语料检查。
+数字数据包记录了它的 ICU 资源已经解析好。go-intl 的原始源保留各自独立的数字和货币别名规则。`data.sh test` 拿原始的完整数据对照上游语料检查，`test-chromium` 则拿发布的数据包对照 liustack/slowjs 的浏览器语料检查。
 
 六个链接进来的数据包共 9,352,287 字节。猜测主机时区的数据包仍然不链接。在 GCP linux/amd64、Go 1.27.2 上，tifa 商店 `fb31f616` 用 `go tool tifa build` 加 `-ldflags=-w` 和同一份应用 PGO profile 构建，是 31,967,614 字节，main `641e996` 上是 32,078,049。小了 110,435 字节，约 0.34%。profile 的 SHA256 是 `9a3ca92cd8f8ab68477e5e5fe3e27fafee8719ac59223c6526a122d10d1de64a`。
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestDateTimeResolvedMatchesNode holds ResolvedOptions to what Node's

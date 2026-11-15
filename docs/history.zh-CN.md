@@ -1,5 +1,5 @@
 ---
-summary: 'liustack/quickjs 在 C 引擎之前所用引擎（ccgo 把 QuickJS 翻译成 Go，到 v0.28 为止）的速度数字：每个版本的收益、补丁在原生 C 上的开销、Intl 格式化方案、切换时与 C 引擎的对比、验收运行，以及在那个引擎上试过又放弃的事'
+summary: 'liustack/slowjs 在 C 引擎之前所用引擎（ccgo 把 QuickJS 翻译成 Go，到 v0.28 为止）的速度数字：每个版本的收益、补丁在原生 C 上的开销、Intl 格式化方案、切换时与 C 引擎的对比、验收运行，以及在那个引擎上试过又放弃的事'
 read_when:
   - 想知道 v0.28 及更早的 ccgo 引擎每个版本带来了什么
   - 想知道 C 引擎替换 ccgo 引擎时比它快多少，或者替换前要过哪些关
@@ -12,7 +12,7 @@ read_when:
 
 [English](history.md) · 简体中文
 
-这里是到 v0.28 为止所用引擎（ccgo 把 QuickJS 翻译成 Go）的测量，以及 v0.29.0 切换到 C 引擎时的测量。那个引擎已经删掉，所以这里没有一条在描述 liustack/quickjs 现在怎么运行。留着它们，是因为这些数字记录了有些事为什么是现在这样，读者有时需要查一个数。C 引擎的速度和怎样测量一个改动，见 [performance.zh-CN.md](performance.zh-CN.md)。
+这里是到 v0.28 为止所用引擎（ccgo 把 QuickJS 翻译成 Go）的测量，以及 v0.29.0 切换到 C 引擎时的测量。那个引擎已经删掉，所以这里没有一条在描述 liustack/slowjs 现在怎么运行。留着它们，是因为这些数字记录了有些事为什么是现在这样，读者有时需要查一个数。C 引擎的速度和怎样测量一个改动，见 [performance.zh-CN.md](performance.zh-CN.md)。
 
 这几节里 `lib` 指 ccgo 引擎（它所在的 `lib/` 文件夹），「with PGO」指 tifa 用那个引擎上收集的引擎 profile 构建，58 个已知 test262 错误这类数字是当天的数字（现在是 33 个）。
 
@@ -69,7 +69,7 @@ read_when:
 内存上的代价：v0.26.16 让商店的一个 VM 在一次 GC 后多占 722 KiB（8.03 MiB，原来是 7.33），其中 647 KiB 是留存的 shape。自 v0.26.15 起，非 linux 上每个 VM 最多留着 1 MiB 的 TLS 栈。
 
 
-### 对比 liustack/quickjs 起步时的引擎
+### 对比 liustack/slowjs 起步时的引擎
 
 2026-10-20 在 tifa 里测的，对比 `modernc.org/quickjs` v0.25.0 加 libquickjs v0.13.1，用同一个 SSR bundle 和宿主程序（tifa 的 [docs/studies/moejs.md](https://github.com/liustack/tifa/blob/main/docs/studies/moejs.md)）：光是到 v0.26.15 为止的引擎改动，渲染就是原来的 1.63 到 1.66 倍快。再加上 tifa 的 Vite 插件重写和 PGO，页面渲染比两样都没有的原引擎快 2.07 倍。
 
@@ -101,7 +101,7 @@ v0.27.0，对比 main `641e996`，tifa 商店用 `fb31f616`。共用的 go-intl 
 
 这一节在原生 C 构建上测了 ccgo 引擎的补丁（`quickjs.diff`，现已删除）。留着它，是因为它记录了 C 树里为什么一直开着 computed goto。
 
-2026-10-22 测量，用固定的 Bellard 源码 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` 和 liustack/quickjs 的 `620658c`。旧的 C 补丁无条件把 `DIRECT_DISPATCH` 设成 0。这个翻译设置早于 liustack/quickjs 的异常处理改动。所以原生 C 当时用一个中央 switch 代替上游的 computed goto 分发。
+2026-10-22 测量，用固定的 Bellard 源码 `3d5e064e9dd67c70f7962836505a7fa067bf0a4e` 和 liustack/slowjs 的 `620658c`。旧的 C 补丁无条件把 `DIRECT_DISPATCH` 设成 0。这个翻译设置早于 liustack/slowjs 的异常处理改动。所以原生 C 当时用一个中央 switch 代替上游的 computed goto 分发。
 
 机器是上面说的 AMD EPYC 7B13 VM。两个编译器都用上游 Makefile 的 `-O2`，gcc 15.3 和 clang 22.1.8。V8-v7 测试程序是 Bellard 2026-06-04 extras 里的 `tests/bench-v8/combined.js`，保留 strict 模式，和 [goc 的对比](https://github.com/LoyieKing/goc/blob/8482979acbc8f10f76d9715d88c1beed55df230b/docs/benchmark/README.md)一样。每个变体的原生调用都传了 `--stack-size 16M`。
 
@@ -212,7 +212,7 @@ tifa 的接线相对它之前的 C 引擎改了什么，用 callgrind 每次渲�
 
 ## 切换前的验收
 
-2026-10-29 在 liustack/quickjs `75052b72` 和 tifa `41dcf45` 上运行（分支 `phase5/accept`：tifa 升级到 liustack/quickjs 的这个 commit，并重新收集了它的引擎 profile），在上面那台 Google Cloud VM 上。C 引擎没有用 PGO 构建。和 `lib/` 的引擎对比时，后者使用 tifa 的引擎 profile 构建。
+2026-10-29 在 liustack/slowjs `75052b72` 和 tifa `41dcf45` 上运行（分支 `phase5/accept`：tifa 升级到 liustack/slowjs 的这个 commit，并重新收集了它的引擎 profile），在上面那台 Google Cloud VM 上。C 引擎没有用 PGO 构建。和 `lib/` 的引擎对比时，后者使用 tifa 的引擎 profile 构建。
 
 | 关卡 | 结果 |
 | --- | --- |

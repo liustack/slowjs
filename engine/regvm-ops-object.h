@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The liustack/quickjs Authors.
+ * Copyright (c) 2026 The liustack/slowjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
@@ -216,6 +216,60 @@ static inline BOOL rv_ta_num(int class_id)
         class_id != JS_CLASS_BIG_INT64_ARRAY && class_id != JS_CLASS_BIG_UINT64_ARRAY;
 }
 
+/* GETEL (and GETEL3, which keeps the key) of the Array p by an int key i,
+   ip at d o key|k: the index is read by its atom, an int atom, as
+   rv_getel_atom reads a string key. The elements of an Array that is not
+   a fast array are properties of its shape, and an Array has no other own
+   properties than those of its shape and the elements below the count of
+   a fast array. So the walk takes a plain data property of p or of an
+   object on its chain of prototypes, goes on past an Array that has no
+   such own element and past an ordinary object, and gives undefined at the
+   end of the chain. Then the result is put in d, o freed for the T forms,
+   and it gives TRUE. It gives FALSE with nothing done for a key below 0,
+   for an object that is not an Array, and when the walk meets anything
+   else (an accessor, a property made on first use, an element of a fast
+   array on the chain, any other exotic object: a typed array, a Proxy, a
+   String object, arguments): rv_getel_slow then reads it from the start.
+   No code runs and nothing is allocated, as in rv_getel_atom, and the key
+   is an int, which is never freed. It is a function of its own, so that
+   the string key path of rv_getel_atom keeps its code. */
+static no_inline BOOL rv_getel_index(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                     BOOL t, JSObject *p, int32_t i)
+{
+    JSValue obj = F[(int8_t)ip[1]], val;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    JSAtom atom;
+    uint32_t idx = i;
+
+    if (i < 0 || p->class_id != JS_CLASS_ARRAY)
+        return FALSE;
+    /* every int from 0 is an int atom (2^31 - 1 at most) */
+    atom = __JS_AtomFromUInt32(idx);
+    for (;;) {
+        prs = find_own_property(&pr, p, atom);
+        if (prs) {
+            if (unlikely(prs->flags & JS_PROP_TMASK))
+                return FALSE;
+            val = JS_DupValue(ctx, pr->u.value);
+            break;
+        }
+        if (unlikely(p->is_exotic) &&
+            (p->class_id != JS_CLASS_ARRAY ||
+             (p->fast_array && idx < p->u.array.count)))
+            return FALSE;
+        p = p->shape->proto;
+        if (!p) {
+            val = JS_UNDEFINED;
+            break;
+        }
+    }
+    if (t)
+        JS_FreeValue(ctx, obj);
+    rv_put(ctx, F, (int8_t)ip[0], val);
+    return TRUE;
+}
+
 /* GETEL of an object by a string key, ip at d o key|k, read as GETF reads
    a named property when the key is a string atom JS_ValueToAtom takes as
    its own atom (an atom of the type string, not empty, not starting with a
@@ -235,7 +289,7 @@ static inline BOOL rv_ta_num(int class_id)
    keep them in registers on the path of an array element too. The loop
    calls it before RV_SYNC_TOP, as it frees a T object on its array path
    without it: nothing here runs code or collects, and freeing a value
-   does neither. */
+   does neither. An int key goes to rv_getel_index. */
 static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip,
                                     BOOL k, BOOL t)
 {
@@ -245,9 +299,14 @@ static no_inline BOOL rv_getel_atom(JSContext *ctx, JSValue *F, const uint8_t *i
     JSProperty *pr;
     JSShapeProperty *prs;
     key = k ? ((RVHeader *)F)->k[ip[2]] : F[(int8_t)ip[2]];
-    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT ||
-        JS_VALUE_GET_TAG(key) != JS_TAG_STRING)
+    if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return FALSE;
+    if (JS_VALUE_GET_TAG(key) != JS_TAG_STRING) {
+        if (JS_VALUE_GET_TAG(key) != JS_TAG_INT)
+            return FALSE;
+        return rv_getel_index(ctx, F, ip, t, JS_VALUE_GET_OBJ(obj),
+                              JS_VALUE_GET_INT(key));
+    }
     /* the test of the key and its atom in one read (JSString.key_atom) */
     atom = JS_VALUE_GET_STRING(key)->key_atom;
     if (atom == JS_ATOM_NULL)
@@ -324,6 +383,12 @@ static no_inline int rv_getel3_slow(JSContext *ctx, JSValue *F, const uint8_t *i
     JSValue *pk = &F[(int8_t)ip[2]], val;
     if (RV_INJ_HIT(ctx))
         return -1;
+    /* an index of an Array, as GETEL reads it: d is a temp */
+    if (JS_VALUE_GET_TAG(*pk) == JS_TAG_INT &&
+        JS_VALUE_GET_TAG(F[(int8_t)ip[1]]) == JS_TAG_OBJECT &&
+        rv_getel_index(ctx, F, ip, FALSE, JS_VALUE_GET_OBJ(F[(int8_t)ip[1]]),
+                       JS_VALUE_GET_INT(*pk)))
+        return 0;
     switch (JS_VALUE_GET_TAG(*pk)) {
     case JS_TAG_INT:
     case JS_TAG_STRING:
@@ -422,6 +487,32 @@ static no_inline int rv_putel_atom(JSContext *ctx, JSValue *F, const uint8_t *ip
     return r < 0 ? -1 : 1;
 }
 
+/* rv_putel_slow on an Array p that is not a fast array, at an index idx
+   from an int key: when p has idx as an own writable data property (its
+   elements are properties of its shape), v takes its place, as
+   JS_SetPropertyInternal does for such a property of the receiver, and it
+   gives TRUE with v taken. FALSE with nothing done for anything else (no
+   such own element, so that the prototypes and the length matter, an
+   accessor, a read-only element, an int key below 0), which rv_putel_slow
+   then does as before. No code runs before v is stored: the old value is
+   freed after. It is a function of its own, so that the frame of
+   rv_putel_slow, which a setter it calls sits on, does not grow. */
+static no_inline BOOL rv_putel_index(JSContext *ctx, JSValue *F, const uint8_t *ip,
+                                     JSObject *p, uint32_t idx)
+{
+    JSProperty *pr;
+    JSShapeProperty *prs;
+
+    if (idx > JS_ATOM_MAX_INT)
+        return FALSE;
+    prs = find_own_property(&pr, p, __JS_AtomFromUInt32(idx));
+    if (!prs || (prs->flags & (JS_PROP_TMASK | JS_PROP_WRITABLE | JS_PROP_LENGTH)) !=
+        JS_PROP_WRITABLE)
+        return FALSE;
+    set_value(ctx, &pr->u.value, rv_take(ctx, F, (int8_t)ip[2]));
+    return TRUE;
+}
+
 /* the slow side of PUTEL, ip at o key v: the end of a fast array, as
    QuickJS's put_array_el, else JS_SetPropertyValue. v and a key in a temp
    are taken, a temp o freed. */
@@ -447,8 +538,11 @@ static no_inline int rv_putel_slow(JSContext *ctx, JSValue *F, const uint8_t *ip
         }
         if (unlikely(idx != (uint32_t)p->u.array.count ||
                      !p->fast_array ||
-                     !can_extend_fast_array(p)))
+                     !can_extend_fast_array(p))) {
+            if (!p->fast_array && rv_putel_index(ctx, F, ip, p, idx))
+                goto done;
             goto slow_path;
+        }
         /* the length of an array is an int below 2^31 */
         if (unlikely(JS_VALUE_GET_TAG(p->prop[0].u.value) != JS_TAG_INT))
             goto slow_path;
@@ -541,6 +635,89 @@ static no_inline int rv_defm(JSContext *ctx, JSValue *F, const uint8_t *ip)
         ret = JS_DefineProperty(ctx, obj, atom, value, getter, setter, flags);
     JS_FreeValue(ctx, v);
     return ret < 0 ? -1 : 0;
+}
+
+/* x instanceof C with nothing run, ip at d a b: 1 with the boolean in d and
+   the temps a and b freed, 0 with nothing done, for rv_obj2_slow. The
+   specification's InstanceofOperator(a, b) calls GetMethod(b, @@hasInstance),
+   then that method. When b is a function (callable, not a proxy, not bound)
+   and no object from b up to the Function.prototype of this realm has an own
+   @@hasInstance or is exotic, the method is the one Function.prototype got
+   when the realm was made, js_function_hasInstance (not writable and not
+   configurable, so it is still that one, once a read has made it), and its
+   call is
+   OrdinaryHasInstance(b, a): false for a that is not an object, else the own
+   data property prototype of b, an object, looked for in the chain of a,
+   which must have no proxy. Anything else (a getter, the prototype not made
+   yet, an error to throw, a proxy) is left to the generic path, which does
+   it all again: nothing here can be seen, throws, allocates or calls. The
+   call this skips is the one of the built-in, with the checks at its entry:
+   the interrupt flag is read here as there, and the level of depth it
+   counted is not counted (a script recurses deeper, never less deep). */
+static no_inline int rv_instof(JSContext *ctx, JSValue *F, const uint8_t *ip)
+{
+    JSValue v = F[(int8_t)ip[1]], fv = F[(int8_t)ip[2]];
+    JSObject *f, *p, *fproto;
+    JSProperty *pr;
+    JSShapeProperty *prs;
+    BOOL ret;
+
+    /* the call of the built-in stops at the host's stop and while an
+       uncatchable exception is pending (its 2 in the flag), so the code
+       after the test does not run: the generic path makes that call */
+    if (unlikely(poll_flag(&ctx->rt->interrupt_flag)) ||
+        JS_VALUE_GET_TAG(fv) != JS_TAG_OBJECT)
+        return 0;
+    f = JS_VALUE_GET_OBJ(fv);
+    if (f->is_exotic || f->class_id == JS_CLASS_BOUND_FUNCTION ||
+        (f->class_id != JS_CLASS_BYTECODE_FUNCTION &&
+         !ctx->rt->class_array[f->class_id].call))
+        return 0;
+    /* @@hasInstance: the realm's own, with no other on the way */
+    fproto = JS_VALUE_GET_OBJ(ctx->function_proto);
+    for (p = f; p != fproto; ) {
+        if (p->is_exotic || find_own_property(&pr, p, JS_ATOM_Symbol_hasInstance))
+            return 0;
+        p = p->shape->proto;
+        if (!p)
+            return 0;
+    }
+    /* and made already: the read of the generic path makes it the first
+       time, and a test answered here must leave the memory as that read */
+    prs = find_own_property(&pr, fproto, JS_ATOM_Symbol_hasInstance);
+    if (!prs || (prs->flags & JS_PROP_TMASK))
+        return 0;
+    if (JS_VALUE_GET_TAG(v) != JS_TAG_OBJECT) {
+        ret = FALSE;
+    } else {
+        prs = find_own_property(&pr, f, JS_ATOM_prototype);
+        if (!prs || (prs->flags & JS_PROP_TMASK) ||
+            JS_VALUE_GET_TAG(pr->u.value) != JS_TAG_OBJECT)
+            return 0;
+        fproto = JS_VALUE_GET_OBJ(pr->u.value);
+        /* the walk of JS_OrdinaryIsInstanceOf: only an exotic object with
+           no prototype in its shape (a proxy) has another one */
+        for (p = JS_VALUE_GET_OBJ(v); ; ) {
+            JSObject *p1 = p->shape->proto;
+            if (!p1) {
+                if (p->is_exotic && !p->fast_array)
+                    return 0;
+                ret = FALSE;
+                break;
+            }
+            p = p1;
+            if (p == fproto) {
+                ret = TRUE;
+                break;
+            }
+        }
+    }
+    if (rv_is_temp(F, (int8_t)ip[1]))
+        JS_FreeValue(ctx, v);
+    if (rv_is_temp(F, (int8_t)ip[2]))
+        JS_FreeValue(ctx, fv);
+    rv_put(ctx, F, (int8_t)ip[0], JS_NewBool(ctx, ret));
+    return 1;
 }
 
 /* regexp, in and instanceof, ip at d a b: both taken */
@@ -654,8 +831,9 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
 }
 #elif RV_PART == RV_PART_RUN
     /* get_array_el: an element of a fast array here, as QuickJS's
-       GET_ARRAY_EL_INLINE, a string key that is its own atom in
-       rv_getel_atom, the rest in rv_getel_slow */
+       GET_ARRAY_EL_INLINE, a string key that is its own atom and an index
+       of an Array that is not a fast array in rv_getel_atom, the rest in
+       rv_getel_slow */
 #define RV_GETEL(label, kexpr, isk, temp)                               \
  label:                                                                 \
     ip = pc; pc += 3;                                                   \
@@ -799,10 +977,14 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
         goto rv_exception;
     RV_NEXT();
 
+ rv_INSTOF:
+    if (!RV_INJ_ARMED && rv_instof(ctx, F, pc)) {
+        pc += 3;
+        RV_NEXT();
+    }
  rv_REGEXP:
  rv_IN:
  rv_INK:
- rv_INSTOF:
     ip = pc; pc += 3;
     RV_SYNC_TOP();
     if (rv_obj2_slow(ctx, F, ip, ip[-1]))

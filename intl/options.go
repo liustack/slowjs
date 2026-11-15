@@ -2,14 +2,14 @@
 // Use of the source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package intl // import "github.com/liustack/quickjs/intl"
+package intl // import "github.com/liustack/slowjs/intl"
 
 import (
 	"fmt"
 	"math"
 	"slices"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // part is one element of an Intl formatToParts result.
@@ -24,7 +24,7 @@ type request struct {
 	Options map[string]any `json:"options"`
 	// vm is the VM whose Builtin resolves the request, which a long list of
 	// locales stops at its eval timeout (see goLocales).
-	vm *quickjs.VM
+	vm *slowjs.VM
 }
 
 // jsError is an error that crosses into javascript as a particular error type.

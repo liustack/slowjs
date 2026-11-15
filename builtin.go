@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/idtable"
+	"github.com/liustack/slowjs/internal/idtable"
 )
 
 // A Builtin is a Go function that javascript calls as a built-in function:
@@ -77,11 +77,11 @@ var builtins struct {
 func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin {
 	switch {
 	case strings.IndexByte(name, 0) >= 0:
-		panic(fmt.Sprintf("quickjs: the name of a Builtin cannot contain a NUL byte: %q", name))
+		panic(fmt.Sprintf("slowjs: the name of a Builtin cannot contain a NUL byte: %q", name))
 	case length < 0 || length > math.MaxUint8:
-		panic(fmt.Sprintf("quickjs: the length of Builtin %s is %d, not in 0 to 255", name, length))
+		panic(fmt.Sprintf("slowjs: the length of Builtin %s is %d, not in 0 to 255", name, length))
 	case fn == nil:
-		panic(fmt.Sprintf("quickjs: Builtin %s has no function", name))
+		panic(fmt.Sprintf("slowjs: Builtin %s has no function", name))
 	}
 
 	builtins.mu.Lock()
@@ -92,7 +92,7 @@ func NewBuiltin(name string, length int, fn func(Args) (Value, error)) *Builtin 
 		list = *p
 	}
 	if len(list) > math.MaxInt16 {
-		panic("quickjs: too many Builtins")
+		panic("slowjs: too many Builtins")
 	}
 
 	b := &Builtin{name: validUTF8(name), length: int32(length), fn: fn, magic: int32(len(list))}

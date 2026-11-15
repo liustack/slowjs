@@ -136,7 +136,7 @@ Known and open in this release. Each is a follow-up.
 
 - `engine/pgo/train.sh` trains the profile. It builds the host as the generator compiles the engine, so the hash of each function in the profile matches the one the generator sees. It stops when `engine/pgo/loops.js` runs less than 95% of the paths the pages leave cold and the micro benchmarks run, or when a part of the loops no longer reaches its function (`engine/pgo/cover.awk`).
 - `TestInlineRemarks`, `TestStripCGProfile`, `TestProfileNames`, `TestUnprofiledFunctions`, `TestStaleWarnings` and `TestMisexpectLines` (`internal/goasm/gen/pgo_test.go`) check the notes of the first pass, the module flag, the names in the profile, which functions have none and the warnings.
-- `TestPassPollsProfile` (`internal/goasm/gen/poll_test.go`, needs `QUICKJS_LLVM` and `QUICKJS_SHADOW_PASS`) checks that the poll pass chooses the place of a counter as it does without a profile, also when a weight of the profile has the numbers of the pass's own rare branches.
+- `TestPassPollsProfile` (`internal/goasm/gen/poll_test.go`, needs `SLOWJS_LLVM` and `SLOWJS_SHADOW_PASS`) checks that the poll pass chooses the place of a counter as it does without a profile, also when a weight of the profile has the numbers of the pass's own rare branches.
 - `TestLowerARM64EngineLRTuplePaths` (`internal/goasm/gen`) checks the extended proof on arm64.
 - `scripts/check-gen-test.sh` checks that `scripts/check-gen.sh` always shows the profile lines. It runs in the `scripts` step of `scripts/check.sh`.
 - `go run ./cmd/notices` in `compare/engines` makes the notices of the packages in the bundles of the training (`TestGeneratePages`).
@@ -152,3 +152,15 @@ It came up with the profile: on amd64 the profile makes `memmove` save RBX, and 
 Why it is safe: the declaration only names the function, and the code and the frame are what they were. Go code must not call a leaf, so the generator stops when `internal/cengine/gocalls.txt` names one.
 
 Tests: `TestLeafDecl` (`internal/goasm/gen`) checks that a leaf that saved registers and a leaf that calls get a declaration that `go vet -asmdecl` takes, and that a leaf with neither says `NOFRAME` and gets none. `TestEngineAsmDecl` runs `go vet -asmdecl` on the engine for the five targets.
+
+## A jump table entry may reach the end of the code
+
+Release: v0.31.0.
+
+When LLVM proves that a value of a `switch` cannot occur, the entry of the jump table for that value goes to a block that holds no instruction. llc may put that block last in the function, and then the entry reaches the end of the function's code, where no instruction is. With the profile of v0.30.7 one such table came to be in the engine, in `put_lvalue` on amd64. The post-link check wants every entry to reach an instruction it has matched, so it refused that table (`entry 2 reaches ..., no instruction of the body`), and the check with every Go release failed for v0.30.7 and after.
+
+The check now takes such an entry on two conditions: in the binary it reaches the end of the generated code that llc's code explains, the same place, and what is there is the jump to the Go epilogue or the epilogue itself, where a return of the function goes. A function that never returns has its data there, and its entry is refused. An entry that reaches the end in llc's object and any other place in the binary is refused, and so is a branch that reaches the end. The generated code does not change.
+
+Why it is safe: the entry is for a value LLVM proved the `switch` never gets, so it is never taken, in the native build or in the generated one. The check still holds the entry to the place llc gave it.
+
+Tests: `hole` in `internal/goasm/gen/testdata/check/mini.c` is a `switch` with such an entry. `TestPostLinkCheck` checks that llc's entry reaches the end of the code, that the check passes on it, and that an entry moved to another block is refused.

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
@@ -18,7 +18,7 @@
 # Run it from anywhere: it works on the module the script is in.
 #
 #	data.sh checkout       clone go-intl at UPSTREAM's commit into $GOINTL_UPSTREAM
-#	                       (default: $HOME/.cache/quickjs-gointl/go-intl), and
+#	                       (default: $HOME/.cache/slowjs-gointl/go-intl), and
 #	                       make its data again next to it with the time zones
 #	                       of the update qjstz names (see tz_data). A checkout
 #	                       that has the commit and that data already needs no
@@ -50,7 +50,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 . "$here/UPSTREAM"
 . "$here/qjstz"
-upstream=${GOINTL_UPSTREAM:-$HOME/.cache/quickjs-gointl/go-intl}
+upstream=${GOINTL_UPSTREAM:-$HOME/.cache/slowjs-gointl/go-intl}
 cache=$(dirname "$upstream")
 # tzdata is a copy of the checkout whose data/ has the time zones of
 # qjstz's update, which the pack tool reads (see tz_data).
@@ -156,7 +156,7 @@ test)
 	# are, and so do the module's requirements and their sums, so the copy
 	# builds what the module builds.
 	deps=$(cd "$root" && go list -deps -test -tags gointl_all \
-		-f '{{if .Module}}{{if eq .Module.Path "github.com/liustack/quickjs"}}{{.Dir}}{{end}}{{end}}' ./internal/gointl/...)
+		-f '{{if .Module}}{{if eq .Module.Path "github.com/liustack/slowjs"}}{{.Dir}}{{end}}{{end}}' ./internal/gointl/...)
 	while read -r dir; do
 		case $dir in
 		"" | "$here" | "$here"/*) continue ;;

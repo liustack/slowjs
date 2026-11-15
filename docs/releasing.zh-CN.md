@@ -1,9 +1,10 @@
 ---
-summary: '怎么发布一个版本：只发补丁版本，在 main 的合并提交上打轻量标签，打标签和推送前先问，发布前要更新什么，以及发布后重新运行和其他 Go 引擎的对比，并把 tifa 升级到新版本'
+summary: '怎么发布一个版本：只发补丁版本，在 main 的合并提交上打轻量标签，打标签和推送前先问，发布前要更新什么，构建 slowjs 命令并把它附到标签的 GitHub release 上的发布任务，以及发布后重新运行和其他 Go 引擎的对比，并把 tifa 升级到新版本'
 read_when:
   - 一个分支已合并进 main，准备发布
   - 选下一个版本的版本号
   - 要创建或推送标签
+  - 发布任务失败了，或者某个 GitHub release 里没有 slowjs 的二进制
   - 版本发出去了，tifa 应该用上它
   - 重新运行和其他 Go 版 JavaScript 引擎的对比
 ---
@@ -15,8 +16,8 @@ read_when:
 ## 版本
 
 - 发布的是补丁版本：v0.30.0、v0.30.1，依此类推。一个修复或一次提速，哪怕很大，也是下一个补丁版本。删除或改变公开 API 的版本是下一个次版本，v0.27.0 就是这样，它删除了模块加载器。别的情况都不要升到新的次版本：那由仓库的所有者决定。
-- `github.com/liustack/quickjs` 没有 GitHub releases。一个版本就是一个标签，用户用 `go get github.com/liustack/quickjs@<version>` 获取。
-- 从 v0.28.0 到 v0.29.11 的版本在 `github.com/liustack/slowjs`，其余都在 `github.com/liustack/quickjs`。Go 模块代理会继续在那里提供旧版本，v0.29.11 的 `go.mod` 把该模块标为已弃用，并写出了新路径。改名的经过见 [upstream.md](upstream.zh-CN.md#从-githubcomliustackslowjs-换过来)。
+- 模块的一个版本就是一个标签，用户用 `go get github.com/liustack/slowjs@<version>` 获取。从 v0.31.0 起，推送标签还会为它生成一个 GitHub release，里面只放 `slowjs` 命令的预编译二进制（[command.md](command.zh-CN.md)）：见[发布任务](#发布任务)。
+- v0.27.3 及之前和 v0.30.0 到 v0.30.7 的版本声明的模块路径是 `github.com/liustack/quickjs`，其余是 `github.com/liustack/slowjs`。Go 模块代理会继续在旧路径下提供旧版本，v0.31.0 的 `go.mod` 撤回了声明旧路径的 v0.30.0 到 v0.30.7。改名的经过见 [upstream.md](upstream.zh-CN.md#从-githubcomliustackquickjs-换过来)。
 
 ## 发布前
 
@@ -73,51 +74,58 @@ git commit -m "build(pgo): train the profile again"
    git push origin <version>
    ```
 
-3. 检查代理上有了它：`GOPROXY=https://proxy.golang.org go list -m github.com/liustack/quickjs@<version>`。
+3. 检查代理上有了它：`GOPROXY=https://proxy.golang.org go list -m github.com/liustack/slowjs@<version>`。
+
+4. 检查发布任务为这个标签生成了 GitHub release（`gh run list --workflow release.yml`，再看 release 页面）：五个压缩包和 `checksums.txt`。
+
+### 发布任务
+
+`.github/workflows/release.yml` 在推送 `v*` 标签时运行。它生成的 GitHub release 只是为了放 `slowjs` 的二进制：模块仍然是那个标签，Go 用户永远用不到这个 release。
+
+1. **build**（linux/amd64）：`scripts/slowjs-release.sh <tag> dist` 为五个目标构建 `cmd/slowjs`，用 `CGO_ENABLED=0`、`-trimpath`、`-ldflags "-s -w"`，把标签作为版本号打进去，用的是 `go.mod` 里 `go` 那一行的 Go，和 CI 测试用的一样。它把每个二进制和它的许可证文本打成包，并写出 `checksums.txt`（SHA-256）。
+2. **test**，在五个系统上各跑一次，和 CI 一样（darwin/amd64 在 Rosetta 下）：用 `checksums.txt` 校验压缩包，解压，对这个二进制运行 `cmd/slowjs` 的测试（`SLOWJS_BIN`，见 [command.md](command.zh-CN.md#测试)），其中包括 V8 套件，并要求它报告的版本就是这个标签。
+3. **release**，只在五个都通过、并且是推送的标签时运行：为这个标签生成 GitHub release，标题是标签，附上各个压缩包和 `checksums.txt`，说明里链接 [command.md](command.zh-CN.md) 和更新记录。只有这个任务有 `contents: write`。对一个已经有 release 的标签再运行一次，它会替换里面的文件。
+
+一个 release 里有：
+
+| 文件 | 是什么 |
+| --- | --- |
+| `slowjs-linux-amd64.tar.gz` | linux/amd64 |
+| `slowjs-linux-arm64.tar.gz` | linux/arm64 |
+| `slowjs-darwin-amd64.tar.gz` | darwin/amd64 |
+| `slowjs-darwin-arm64.tar.gz` | darwin/arm64 |
+| `slowjs-windows-amd64.zip` | windows/amd64 |
+| `checksums.txt` | 每个压缩包的 SHA-256，格式和 `sha256sum` 写的一样 |
+
+文件名里带的是 Go 叫法的目标名，不带版本号，这样 `releases/latest/download/<name>` 总是指向最新的那个。每个压缩包里是一个同名的文件夹，放着二进制（`slowjs` 或 `slowjs.exe`）、`NOTICE.md`，以及 [NOTICE.md](../NOTICE.md#what-a-program-that-ships-a-binary-must-include) 说二进制必须附带的文本，路径和在本仓库里一样：`LICENSE`、`LICENSE-MIT`、`LICENSE-LIBQUICKJS`、`LICENSE-MODERNC-LIBQUICKJS`、`LICENSE-TLSF`、`engine/libc/COPYRIGHT`，`intl` 和 `temporal` 的（`intl/LICENSE-DATA`、`internal/gointl/LICENSE` 和 `internal/gointl/qjsdata/` 下的四份声明），`url` 的（`internal/whatwgurl/LICENSE-WHATWG-URL` 和 `LICENSE-GO`），`fmt` 的（`fmt/LICENSE-GO`），还有 `third_party/` 下 Go 和 golang.org/x/sys 的许可证。如果二进制链接了 golang.org/x/sys 之外的模块，脚本会停下，否则那个模块会没有许可证就发出去。
+
+一个版本的分支合并之前，在分支上手动运行这个任务（`gh workflow run release.yml --ref <branch>`）：它构建并测试二进制，版本号是 `dev-<commit>`，不生成 release。同样的构建在本地用 `scripts/slowjs-release.sh <version> <dir>` 运行。
+
+推送标签之后任务失败了，模块照样已经发出去了：标签保留。机器的问题，重跑失败的任务就好。需要改代码的问题，修复放进下一个补丁版本，那个版本的 release 里就有二进制。
 
 ## 发布后
 
 ### 重新和其他引擎对比
 
-次版本发布时，重新运行和其他纯 Go JavaScript 引擎的对比（[benchmarks.md](benchmarks.md)）。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。它在 `compare/engines` 里，是一个独立的模块，在一台 Linux 机器上运行，为它留出一个 CPU 和它的超线程兄弟（下面的 CPU 1 和 CPU 5）：
+次版本发布时，重新运行和其他 Go 的 JavaScript 引擎以及原生引擎的对比（[benchmarks.md](benchmarks.zh-CN.md)）。补丁版本跳过它，除非所有者要求：引擎每周都在变，每个补丁都出一张新表，要花机器好几个小时，说明的东西却很少。一次运行是两张表：tifa 页面的渲染时间和 V8 套件，只在解释器之间比（带 JIT 的引擎关掉 JIT 来跑，或者不比）。它在 `compare/engines` 里，是一个独立的 Go 模块，在没有别的任务的四核 Linux 机器上运行。命令见 [compare/engines/README.zh-CN.md](../compare/engines/README.zh-CN.md)。
 
-1. 让对比指向这个版本，如果其他引擎的最新版本应该参加这次运行，就更新它们：
+1. 让对比指向这个版本，如果其他引擎的最新版本该进这次运行，就更新它们：
 
    ```sh
    cd compare/engines
-   go get <module>@latest && go mod tidy      # optional, for each other engine
+   go get <module>@latest && go mod tidy      # 可选，对每个其他引擎
    ```
 
-   `compare/engines` 通过对仓库根目录的 `replace` 找到这个模块，所以这次运行测的是它所在的检出：先检出那个标签。
+   `compare/engines` 通过一条指向仓库根的 `replace` 引用本模块，所以运行测的是它所在的检出：先检出这个标签。
 
-2. 运行每个工作负载，五轮，以及带参考行的 tifa 页面：
-
-   ```sh
-   run="<date>-<version>-<host>"
-   go run ./cmd/compare -cpu 1 -sibling 5 -name "$run"
-   tifa/polyfill/build.sh && native/build.sh "$HOME/jsnative"
-   page_dir=$(mktemp -d "/tmp/$run-pages.XXXXXX")
-   tifa/run.sh "$page_dir" bin "$HOME/jsnative"    # TIFA_ONLY=a,b runs only some engines
-   go run ./cmd/behind "results/$run.json"
-   ```
-
-   带 `-cpu 1 -sibling 5` 时，驱动程序把计时的进程钉在 CPU 1 上，GOMAXPROCS=1。`tifa/run.sh` 把功能检查（正常、桩和代理）和计时的进程都钉在 CPU 1 上，GOMAXPROCS=1，TZ=UTC。两个阶段用同样限定 4 GiB 的入口，因 CPU 干扰最多允许三次尝试。二进制用 `-pgo=off` 构建。在共用的机器上，用 `-add` 把运行切成几段，并把 test262 放到另一个 CPU 上以低优先级运行，如 [benchmarks.md](benchmarks.md#rerun) 所示。当某个引擎在 shop 页面上失败并关闭了它的运行时，把其他页面放在单独的一次运行里测，同一节也这样说。
-
-3. 在任何补测运行或单个页面的探测之后，用一条命令写出并提交两个页面文件：
-
-   ```sh
-   go run ./cmd/pages "$page_dir" --output "results/$run-pages" &&
-     git add "results/$run-pages.md" "results/$run-pages.json" &&
-     git commit -m "docs(bench): record $run pages" -m "Archive page times and normalized HTML digests so equality can be checked from the saved results."
-   ```
-
-   JSON 保存原始的进程结果、补测运行、探测、尝试次数和每个页面的 HTML 比较。也提交 `results/<run>.json` 和 `results/<run>.md`，更新 [benchmarks.md](benchmarks.md) 的表格和引擎远远落后之处的列表，并把这次运行加进它的 History。
-4. 如果方法变了（一个工作负载、一个引擎、一个钉住的输入、一个设置），在 `compare/engines/CHANGELOG.md` 里加一条。
+2. 构建各引擎和原生参照（`native/build.sh`），按 README 所说运行：tifa 页面每次调用一个引擎，V8 套件五轮。每次计时的调用独占整台机器，钉在一个核上。所有的计时都在同一次会话里重新跑。对比从不在其他引擎上运行 test262。机器是共用的话，用 `-add` 把运行切成几段。
+3. 用 `go run ./cmd/pages "$page_dir" --output "results/$run-pages"` 写页面文件，和这次运行的 V8 文件一起提交。同一个提交里删掉上一次运行的结果文件：`results/` 只留最近一次。更新 [benchmarks.md](benchmarks.zh-CN.md) 的表格。
+4. 如果方法变了（负载、引擎、固定的输入、某项设置），在 `compare/engines/CHANGELOG.md` 里加一条。
 
 ### 升级 tifa
 
-liustack/quickjs 是为 tifa 而存在的，所以每个版本接下来都要进 tifa：
+liustack/slowjs 是为 tifa 而存在的，所以每个版本接下来都要进 tifa：
 
-1. 在 tifa 里运行 `go get github.com/liustack/quickjs@<version>` 和 `go mod tidy`。
+1. 在 tifa 里运行 `go get github.com/liustack/slowjs@<version>` 和 `go mod tidy`。
 2. 把每个改动合并之前测得的数字，放进 tifa 的 docs/performance.md 和它的更新记录。不要把整个版本再测一遍：每个改动都已经对着 main 测过了。只有在所有者要求，或者这个版本的两个改动可能互相影响时，才在 tifa 的页面上测（[Measuring in tifa](performance.zh-CN.md#在-tifa-里测量)）。
 3. 运行 tifa 的检查。SSR 浸泡测试（`TIFA_SSR_SOAK=1`）也覆盖内存耗尽和 VM 复用。

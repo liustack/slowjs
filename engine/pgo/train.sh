@@ -1,5 +1,5 @@
 #!/bin/sh
-# Copyright (c) 2026 The liustack/quickjs Authors.
+# Copyright (c) 2026 The liustack/slowjs Authors.
 # SPDX-License-Identifier: MIT
 # Use of this source code is governed by the MIT license in LICENSE-MIT at the
 # root of this repository.
@@ -120,7 +120,7 @@ cold=$("$llvm/llvm-profdata" show -detailed-summary "$out/pages.profdata" | awk 
 need="rv_ta_get js_set_fast_array_element_out_of_line js_dataview_getValue js_dataview_setValue \
 lre_exec_backtrack js_bigint_cmp js_Date_parse string_get_tzabbr js_number_toPrecision \
 js_number_toExponential upper_ascii delete_property set_array_length js_binary_logic_slow \
-map_delete_record"
+map_delete_record rv_getel_index rv_instof"
 awk -v cold="$cold" -v hot=100 -v floor="${COVER_FLOOR:-95}" -v need="$need" -f engine/pgo/cover.awk \
 	"$out/pages.profile.txt" "$out/micro.profile.txt" "$out/loops.profile.txt"
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl"
 )
 
 // ResolveLocale and SupportedLocales by lookup, with Node's answers: the

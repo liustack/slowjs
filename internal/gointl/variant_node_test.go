@@ -15,7 +15,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	intl "github.com/liustack/quickjs/internal/gointl"
+	intl "github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestVariantMatchesNode replays testdata/variant_node.js: every service

@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build testhooks
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 // What the system refusing memory in the middle of a render does on the C
 // engine: hostmem.SetFault makes the calls to the OS fail. The one VM whose
@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/liustack/quickjs/internal/gohost"
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/gohost"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // growScript holds a few MiB in many strings and objects, which the engine

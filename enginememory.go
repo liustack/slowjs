@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 //go:build ((linux || darwin) && (amd64 || arm64)) || (windows && amd64)
 
-package quickjs // import "github.com/liustack/quickjs"
+package slowjs // import "github.com/liustack/slowjs"
 
 // Memory on the engine: what a VM holds, what it gives back, and the shared
 // bytecode outside every VM.
@@ -13,8 +13,8 @@ package quickjs // import "github.com/liustack/quickjs"
 import (
 	"unsafe"
 
-	"github.com/liustack/quickjs/internal/cengine"
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/cengine"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // allocShared returns a copy of the bytes of a SharedBytecode in a read-only
@@ -28,7 +28,7 @@ func allocShared(b []byte) (uintptr, error) {
 // more.
 func freeShared(p uintptr, n int) {
 	if err := hostmem.UnmapReadOnly(p, n); err != nil {
-		panic("quickjs: " + err.Error())
+		panic("slowjs: " + err.Error())
 	}
 }
 

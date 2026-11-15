@@ -1,14 +1,14 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs
+package slowjs
 
 import (
 	"testing"
 
-	"github.com/liustack/quickjs/internal/hostmem"
+	"github.com/liustack/slowjs/internal/hostmem"
 )
 
 // A VM keeps the block given back for its next call when it fits under the

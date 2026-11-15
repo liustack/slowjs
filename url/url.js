@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -740,5 +740,5 @@
 
 	// How the host recognizes a VM it has registered: keyed by the import
 	// path, invisible to enumeration and JSON.
-	defineProperty(g, Symbol.for('github.com/liustack/quickjs/url'), {__proto__: null, value: true});
+	defineProperty(g, Symbol.for('github.com/liustack/slowjs/url'), {__proto__: null, value: true});
 })

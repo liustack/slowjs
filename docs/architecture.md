@@ -13,16 +13,16 @@ read_when:
 
 English · [简体中文](architecture.zh-CN.md)
 
-`github.com/liustack/quickjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/slowjs` from v0.28.0 to v0.29.11. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
+`github.com/liustack/slowjs` is a pure Go, cgo-free embeddable JavaScript engine (ES2023), named `github.com/liustack/quickjs` up to v0.27.3 and from v0.30.0 to v0.30.7. The engine is QuickJS in C, in `engine/`, compiled by LLVM to Go assembly that is checked in, so a user of the module needs no C compiler and no LLVM. It is QuickJS release 2026-06-04 (commit `3d5e064`) with the changes that [changes](changes/README.md) lists. Until v0.28 the engine was QuickJS translated to Go by ccgo, which the C engine replaced. [upstream.md](upstream.md) says where the code comes from.
 
 There is no cgo and no shared library: the module cross-compiles as ordinary Go, for the targets the engine runs on. `grep -rn 'import "C"'` finds nothing. Do not bring cgo in.
 
 ## The layers
 
-1. **`engine/`**: the C of QuickJS with the changes of liustack/quickjs, built with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc. It asks its host only for the callbacks of `engine/host.h`: memory, clocks, the interrupt poll and a few requests (`host_call`). It has no global, no lock and no system call. `engine/test/` is a native host that runs it, for the tests that need no Go.
+1. **`engine/`**: the C of QuickJS with the changes of liustack/slowjs, built with `-ffreestanding -nostdinc` against `engine/libc`, its own small libc. It asks its host only for the callbacks of `engine/host.h`: memory, clocks, the interrupt poll and a few requests (`host_call`). It has no global, no lock and no system call. `engine/test/` is a native host that runs it, for the tests that need no Go.
 2. **`internal/cengine/`**: the engine as Go assembly, generated from `engine/` by `internal/goasm/gen` and checked in (`make gen`, `make check-gen`). The Go files next to it are the host of the callbacks and a VM with the calls the root package needs.
 3. **The Go host**: `internal/gohost` answers the callbacks of a VM, `internal/hostmem` maps its memory outside Go's heap (chunks, a shadow stack with a guard page), and `internal/idtable` holds the ids that the engine passes back to Go.
-4. **The Go API** (`quickjs.go` and the files next to it): what users import.
+4. **The Go API** (`slowjs.go` and the files next to it): what users import.
 
 JavaScript runs in a register interpreter. The C engine converts each function from its bytecode to register code at its first call and runs it in one loop, `JS_RegvmRun`, on a register stack of its own, and a call from one JavaScript function to another stays in that loop. [The register interpreter](changes/c-engine.md#the-register-interpreter) says how it works and what it costs.
 
@@ -44,8 +44,8 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 
 | Path | What it holds |
 | --- | --- |
-| `quickjs.go` and the other `.go` files of the root | The Go API, on the engine layer (see [The engine layer](#the-engine-layer)) |
-| `engine/` | The C tree of the engine: QuickJS at the pinned commit with the C changes of liustack/quickjs. No Go file, and no Go package may hold a C file (`layout_test.go`) |
+| `slowjs.go` and the other `.go` files of the root | The Go API, on the engine layer (see [The engine layer](#the-engine-layer)) |
+| `engine/` | The C tree of the engine: QuickJS at the pinned commit with the C changes of liustack/slowjs. No Go file, and no Go package may hold a C file (`layout_test.go`) |
 | `engine/libc/` | The small libc of the C tree: musl's memory, string and math functions, a `snprintf` and the headers, so that the engine builds with `-ffreestanding -nostdinc` (see its [README](../engine/libc/README.md)) |
 | `engine/host.h` | The callbacks the engine asks of its host. The native test host and the Go host implement them |
 | `engine/test/` | The native test host: the C tree built by plain clang with its small libc, and test262, the recorded outputs and the checks in C run on it, also under AddressSanitizer and UndefinedBehaviorSanitizer (see [testing.md](testing.md#the-c-tree-and-its-native-test-host)). Never part of a Go build |
@@ -58,18 +58,19 @@ The shared files hold the API: `vm.go` (making, setting and closing a VM), `eval
 | `internal/goversion/` | The error of a build with a Go newer than the one the engine was checked with, which `internal/cengine` imports |
 | `internal/faulttest/` | For the tests that make a memory fault on purpose: `Room`, which a test calls right before a fault in Go code so that windows has the room to write the state of the CPU, and `Unsafe`, for the faults in Go code that `Room` cannot come right before (see [c-engine.md](changes/c-engine.md#room-for-a-fault-on-windows)) |
 | `internal/measure/` | `go tool measure bench`: builds a program at several code positions, times them in turn and counts instructions |
-| `intl/` | Package `github.com/liustack/quickjs/intl`, `Intl` for a VM |
+| `intl/` | Package `github.com/liustack/slowjs/intl`, `Intl` for a VM |
 | `internal/gointl/internal/qjspack/gen/` | The shared Intl data packs, selected with Chromium's ICU inventory |
 | `intl/testdata/chromium/` | What Chromium answers, for the golden test, and `record.cjs`, which records it |
-| `temporal/` | Package `github.com/liustack/quickjs/temporal`, `Temporal` for a VM |
+| `temporal/` | Package `github.com/liustack/slowjs/temporal`, `Temporal` for a VM |
 | `temporal/testdata/` | The expressions compared with Chromium and its answers, and the program the link test builds |
 | `internal/gointl/` | Our ECMA-402 and Temporal in pure Go, copied once from go-intl, behind every `intl` constructor and behind `temporal` (see [upgrading.md](upgrading.md#updating-the-data-of-intl-internalgointl)) |
 | `internal/intlhook/` | What package `temporal` takes from package `intl`: the formatting of its `toLocaleString` and a VM's default zone |
-| `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `quickjs` sets (`vmhook.go`) |
-| `fmt/` | Package `github.com/liustack/quickjs/fmt` |
-| `url/` | Package `github.com/liustack/quickjs/url`, `URL` and `URLSearchParams` for a VM |
+| `internal/vmhook/` | How the Go functions of `intl`, `temporal`, `fmt` and `url` keep the limits of the VM that called them: `Stop` for the eval timeout and `Interrupt`, `Room` and `OutOfMemory` for the memory limit, which package `slowjs` sets (`vmhook.go`) |
+| `fmt/` | Package `github.com/liustack/slowjs/fmt` |
+| `url/` | Package `github.com/liustack/slowjs/url`, `URL` and `URLSearchParams` for a VM |
 | `url/testdata/` | The web-platform-tests files of `url/` that `TestWPT` runs in a VM, the testharness shell, the code of core-js that detects a native URL, and the answers of the tamper and shape tests |
 | `internal/whatwgurl/` | The URL parser behind package `url` (see [url.md](changes/url.md)): the state machine, the host parser, the setters and the serializer, with `idna/` and `bidi/`, the part of golang.org/x/net and x/text it needs, with its Unicode 17 tables. `testdata/` has the web-platform-tests URL data and `known-failures.txt` |
+| `cmd/slowjs/` | The `slowjs` command, which runs a JavaScript file through the Go API (see [command.md](command.md)), and its tests. `scripts/slowjs-release.sh` builds it for the release ([releasing.md](releasing.md#the-release-job)) |
 | `compare/` | A module of its own, kept from upstream, that runs QuickJS's micro benchmarks on this engine, goja and fastschema/qjs |
 | `internal/arewefastyet/` | The V8 benchmark suite (v8-v7) that compare/engines runs |
 | `scripts/docs-list.sh` | The index of `docs/` |
@@ -118,9 +119,9 @@ A call into the engine keeps its P (the processor of the Go scheduler that runs 
 - **`intl/`**: All `Intl` constructors, `toLocale*` and `localeCompare`, for a VM that calls `Register(vm)`. QuickJS has no `Intl`, so a page that reaches for it without `Register` gets a `ReferenceError`. The javascript side is `intl.js` and `stub.js`, the decisions are made in Go on `internal/gointl`, and the comment at the top of `bridge.go` says how to add a constructor. After touching a formatter, `intl/golden_test.go` is the check that matters: the data knows details the spec does not. How it works, and how the output is checked against Chromium: [time-and-intl.md](changes/time-and-intl.md).
 - **`temporal/`**: `Temporal`, for a VM that calls `Register(vm)`, built as `intl/` is. go-intl's temporal package does every computation, through one Builtin in `bridge.go` whose first argument names the operation (the `opNames` list). See [temporal.md](changes/temporal.md).
 - **`internal/gointl/`**: our ECMA-402 and Temporal in pure Go, copied once from go-intl v0.6.1 and changed freely since, used by `intl` and `temporal`. Its packs in `qjsdata/` are made from the data of the go-intl release in `internal/gointl/UPSTREAM` by `data.sh` (see [Updating the data of Intl](upgrading.md#updating-the-data-of-intl-internalgointl)). `make gointl` runs the checks that need build tags, and checks that the packs in `qjsdata/` are current.
-- **`fmt/`**: package `github.com/liustack/quickjs/fmt`, part of this module. It gives a VM Go's `fmt.Printf`, `Println`, `Sprintf` and `Sprint` with `Register(obj Value, opts ...Option)`, with lower-case names in javascript (`fmt.println`). Each first bounds the bytes of its output from the format and the arguments (`fmt/bound.go`), and ends the call with the out of memory error when what making the output may make Go allocate, 16 times the bound and a few KiB for the printer that makes it, is more than the VM has left under its memory limit (what Go's runtime sets up for its pools is not counted). A VM with no memory limit has room for an output of 16 MiB. An output whose bound is more than 64 KiB is made a verb at a time, and a long string, object or BigInt a part at a time, with checks of the call between parts (`fmt/printf.go`, a port of Go's `doPrintf`), in the same bytes as Go's fmt. `printf` and `println` write it to `os.Stdout`, or to the writer of the option `Writer`, 64 KiB at a time, and stop between two writes.
+- **`fmt/`**: package `github.com/liustack/slowjs/fmt`, part of this module. It gives a VM Go's `fmt.Printf`, `Println`, `Sprintf` and `Sprint` with `Register(obj Value, opts ...Option)`, with lower-case names in javascript (`fmt.println`). Each first bounds the bytes of its output from the format and the arguments (`fmt/bound.go`), and ends the call with the out of memory error when what making the output may make Go allocate, 16 times the bound and a few KiB for the printer that makes it, is more than the VM has left under its memory limit (what Go's runtime sets up for its pools is not counted). A VM with no memory limit has room for an output of 16 MiB. An output whose bound is more than 64 KiB is made a verb at a time, and a long string, object or BigInt a part at a time, with checks of the call between parts (`fmt/printf.go`, a port of Go's `doPrintf`), in the same bytes as Go's fmt. `printf` and `println` write it to `os.Stdout`, or to the writer of the option `Writer`, 64 KiB at a time, and stop between two writes.
 - **`url/`**: `URL` and `URLSearchParams`, for a VM that calls `Register(vm)`, built as `intl/` is, but installed at once. Go parses (`internal/whatwgurl`) and keeps nothing: a URL is the array of its record (the parts its getters show and four bits) that `url.js` keeps in a private field, and a setter hands Go the record, the part and the new value. See [url.md](changes/url.md).
-- **`compare/`**: a module of its own (`github.com/liustack/quickjs/compare`) that runs the micro benchmarks of QuickJS in `compare/testdata/` on this engine, on goja and on `github.com/fastschema/qjs`. `make benchmark` runs there. It is a module of its own so that its dependencies stay out of the library's `go.mod`. `compare/go.mod` replaces `github.com/liustack/quickjs` with `../`, so the benchmarks build the work tree and `go mod tidy` (which the `benchmark` target runs first) takes the other versions from the root `go.mod`: never copy them by hand.
+- **`compare/`**: a module of its own (`github.com/liustack/slowjs/compare`) that runs the micro benchmarks of QuickJS in `compare/testdata/` on this engine, on goja and on `github.com/fastschema/qjs`. `make benchmark` runs there. It is a module of its own so that its dependencies stay out of the library's `go.mod`. `compare/go.mod` replaces `github.com/liustack/slowjs` with `../`, so the benchmarks build the work tree and `go mod tidy` (which the `benchmark` target runs first) takes the other versions from the root `go.mod`: never copy them by hand.
 
 ## Platforms
 

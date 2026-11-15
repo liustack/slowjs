@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -244,6 +244,52 @@ taBigInt(BigUint64Array);
             t[0] = j & 7; t[3] = 1; t[5] = t[2]; t[7] = 2;
         }
     }
+    use(s);
+})();
+
+// Arrays that are no longer fast arrays: one written past its end and one
+// with an element deleted keep their elements as properties of their shape.
+// The interpreter reads such an element through rv_getel_index (also a read
+// past the end of a fast array, which finds nothing on the chain) and
+// writes one it has through rv_putel_index.
+(function () {
+    var s = 0;
+    for (var r = 0; r < 40; r++) {
+        var a = [];
+        for (var i = 0; i < 48; i++) a.push(i);
+        a[100] = r;
+        for (var i = 0; i < 48; i++) a[i] = a[i] + 1;
+        for (var i = 0; i < 48; i++) s += a[i];
+        var b = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        delete b[5];
+        for (var j = 0; j < 64; j++) {
+            b[j & 15] = j;
+            s += b[(j + 3) & 15] | 0;
+        }
+        var c = [1, 2, 3];
+        for (var j = 0; j < 8; j++) s += c[j] === undefined ? 1 : c[j];
+    }
+    use(s);
+})();
+
+// instanceof of a plain function, which the interpreter answers in
+// rv_instof: a hit at the first and the second step of the chain, a miss
+// that walks to its end, a miss on an object with no prototype, and a left
+// side that is not an object.
+(function () {
+    function A() {}
+    function B() {}
+    B.prototype = Object.create(A.prototype);
+    function C() {}
+    var vals = [new A(), new B(), {}, [], new C(), Object.create(null), 1, "x"];
+    var s = 0;
+    for (var r = 0; r < 600; r++)
+        for (var i = 0; i < vals.length; i++) {
+            var v = vals[i];
+            if (v instanceof A) s += 1;
+            if (v instanceof B) s += 2;
+            if (v instanceof C) s += 4;
+        }
     use(s);
 })();
 sink;

@@ -2,7 +2,7 @@
 summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
-  - Measuring a branch of liustack/quickjs on tifa's pages before a release
+  - Measuring a branch of liustack/slowjs on tifa's pages before a release
   - A speed result of a few percent, which may only be where the code landed
   - About to try an engine idea that may already have been tried
   - Planning the next round of work on render speed
@@ -20,9 +20,9 @@ read_when:
 
 English · [简体中文](performance.zh-CN.md)
 
-liustack/quickjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
+liustack/slowjs is made for tifa, which renders React pages to HTML in the engine, so render speed is measured on the pages of tifa's example shop: one warm VM rendering the order list, an order and the stats of each of its two shops (`BenchmarkShop` in tifa's `test/ssr`). Every change for speed leaves the HTML the same byte for byte. The doc of each change in [changes](changes/README.md) has its full measurement, and tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md) has what the numbers mean for an app. How the engine compares with the other pure Go engines, on tifa's pages and on general workloads, is in [benchmarks.md](benchmarks.md).
 
-The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/quickjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).
+The engine changes up to v0.26.15 alone made renders 1.63 to 1.66 times as fast as on the engine liustack/slowjs started from (modernc.org/quickjs v0.25.0 with libquickjs v0.13.1), and 2.07 times as fast with the rewrites of tifa's Vite plugin and PGO (measured on 2026-10-20). The numbers of the engine before the C engine (up to v0.28) are in [history.md](history.md).
 
 ## How the numbers were measured
 
@@ -68,16 +68,17 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.5 | The engine is generated with [a profile of tifa's pages](#a-profile-of-tifas-pages), on top of five changes of the register interpreter: the atom table, `'' + x`, the keyed read, the key atom of a string, object rest and spread | Against v0.30.4, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.871 of the time, its fourteen store pages 0.874, the three MUI pages 0.888, React's page 0.882 and the long Markdown page 0.966. The profile alone gives 0.916 to 0.946. Without it the long Markdown page takes 1.022 of the time of v0.30.4, for a cause not found yet ([Long Markdown without the profile](#long-markdown-without-the-profile)) |
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
 | v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
+| v0.31.0 | [Arrays that are no longer fast arrays](#arrays-that-are-no-longer-fast-arrays), [instanceof without the call of Symbol.hasInstance](#instanceof-without-the-call-of-symbolhasinstance), [the iterator of a for in loop and its shape](#the-iterator-of-a-for-in-loop-and-its-shape), and the profile trained again on them | Against v0.30.7, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no kind of tifa's pages is slower beyond the delta of 1%, and none runs more instructions. React's page runs 0.63% fewer. The V8 suite scores 5.4% higher, Crypto 29.6% and EarleyBoyer 14.1% ([v0.31.0 against v0.30.7](#v0310-against-v0307)) |
 
 ## Measuring in tifa
 
 Judge every timing by the protocol of [measuring.md](measuring.md). This section is how to build and run tifa against a checkout.
 
-To measure a branch of liustack/quickjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
+To measure a branch of liustack/slowjs before it is released, point tifa at the checkout with a `replace`, build the example app, and run the benchmarks of tifa's [docs/testing.md](https://github.com/liustack/tifa/blob/main/docs/testing.md#performance-comparisons):
 
 ```sh
 # in tifa
-go mod edit -replace github.com/liustack/quickjs=../quickjs
+go mod edit -replace github.com/liustack/slowjs=../slowjs
 (cd examples/shop && pnpm install --frozen-lockfile && go tool tifa build)
 TIFA_SSR_SHOP=1 go test -run '^$' -bench 'Shop/^render' -benchtime 2000x ./test/ssr
 TIFA_SSR_SHOP=1 go test -run ShopVMMemory -v ./test/ssr
@@ -348,7 +349,7 @@ The second change is [a call setting its locals eight to a turn](changes/c-engin
 
 ### React DOM's text escape in C
 
-[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is liustack/quickjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+[`VM.RegisterEscapeText`](changes/go-api.md#registerescapetext) gives a host React DOM's `escapeTextForBrowser` as a C function of the engine. tifa registers it as `__tifa_escape`, and its Vite plugin makes React's string renderer call it where the renderer called its JavaScript function, which tifa had given a cache of escapes and five `replaceAll` calls in place of React's loop. The step before is liustack/slowjs main (4cdd3a27) with tifa main (363b6b1). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
 
 On linux/amd64 (one core of an EPYC 7B13, its sibling idle), 3 rounds at the 8 code positions. Time is the sum of the p50 of the pages of an app, as the median over positions of the paired ratios. Instructions are callgrind's, per render of every page, at position 0.0 (the difference of a run of 5 renders and one of 2):
 
@@ -381,7 +382,7 @@ Memory does not change that can be told from the heap's own spread: the live hea
 
 ### The copy of the props of a React element in C
 
-[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) gives a host the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, as a C function of the engine. tifa registers it as `__tifa_copy_props`, and its Vite plugin makes both functions ask it before their loop. The step before is liustack/quickjs main (a5feface) with tifa main (4b511fc). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
+[`VM.RegisterCopyProps`](changes/go-api.md#registercopyprops) gives a host the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element, as a C function of the engine. tifa registers it as `__tifa_copy_props`, and its Vite plugin makes both functions ask it before their loop. The step before is liustack/slowjs main (a5feface) with tifa main (4b511fc). The step after is this branch with the tifa branch that uses it. The HTML of the 16 pages (the six workbench pages, the five storefront pages, the three MUI pages and the two bench pages) is the same byte for byte, with the render time stamp masked.
 
 How often it is asked, from one render of each page in tifa with a wrapper that counted its answers: the six workbench pages make 980 elements with `createElement` and 518 with `cloneElement`, the five storefront pages 2,507 and 328, the three MUI pages 3,266 and 114, and each bench page 1. The function copies all of them but one config of 39 keys (MUI's input, on the order list and on an order page), which is over the 32 keys it takes and goes through the loop.
 
@@ -649,7 +650,7 @@ Where the C engine was slower than the C QuickJS builds, the same C of `engine/`
 | `q_regexp_ascii` | 376.0 | 0.829 | 0.765 | 0.777 | 0.746 | 0.774 |
 | `r_react_ssr` | 386.6 | 0.940 | 1.073 | 1.062 | 1.031 | 1.049 |
 
-The C changes of liustack/quickjs cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
+The C changes of liustack/slowjs cost nothing on the first two (the same C is as fast as the pinned QuickJS or faster), so what is left is the cost of the assembly: 20% to 30% on these three scripts, 6% on `r_react_ssr`. On `q_regexp_ascii` the same C is 8% slower than the pinned QuickJS (0.829 against 0.765 to 0.777). The cause was not looked for: the native host also calls `host_poll` (2% of the samples). perf (4999 Hz, samples of the same 20 runs, the assembly against the same C):
 
 - `c_array_methods`: `js_array_includes` 6020 samples against 1826, `js_array_indexOf` 3915 against 957, `JS_CallInternal` 10743 against 8749, the rest alike (`js_strict_eq2` 13630 against 13231). The loops called `js_strict_eq2` for each element, and a loop with a call that may poll keeps its poll counter in memory, which is a read, decrement and write of one word per turn: 36% of the samples of `js_array_includes` sit on that decrement. Fixed by [deciding most elements without a call](changes/upstream-commits.md#indexof-and-includes-decide-most-elements-without-a-call): the script took 0.583 of the time.
 - `c_string_methods`: 38900 samples against 30440, spread over many small functions: `JS_CallInternal` +940, `js_call_c_function` 1964 against 1210, `JS_ToStringInternal` 1726 against 1122, `JS_ConcatString` 1182 against 658, `js_string_includes` 967 against 523. No loop with one hot instruction. It is the cost of each call of the generated code (arguments and results through memory, a stack check, the poll counter).
@@ -863,7 +864,7 @@ All changes in time are under 3%, so the instructions are the measure. All 4 pos
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so the shares below no longer describe it.
 
-From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/quickjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
+From callgrind on the generated engine (amd64), with cycles estimated as instructions plus 10 for each L1 miss plus 40 for each last level miss (last level 512 KB, as on Zen 3's L2). Each page is a run of renders less a run of fewer, so loading and warm-up cancel out. The lines of `JS_CallInternal` were split by a native build with debug lines on the same pages. Measured on 2026-10-29 on liustack/slowjs `6c757279`, before the objects of 40 bytes and the single scan of shared bytecode for polls.
 
 | Share of a render | shop workbench | store | MUI | bench | `r_react_ssr` | Markdown 400 KB |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -883,7 +884,7 @@ From callgrind on the generated engine (amd64), with cycles estimated as instruc
 - A workbench render runs about 73,000 JavaScript calls and 1.28 million opcodes: 81 native instructions per opcode counting what it calls, and about 190 per call in the entry, the exit and the call opcodes, of which about 95 are the entry. The largest piece of the entry is the loop that sets the locals to `undefined` (2.1% of the native instructions of `JS_CallInternal`).
 - The polls, measured by building the engine without them: the shop, store and MUI pages took 0.953 to 0.955 of the time and the bench pages 0.930, at 8 of 8 positions. 4.9% to 8.3% fewer instructions. `JS_CallInternal` holds 41% of the polls' instructions on a store page and 64% on a bench page, and the rest is spread over about 40 functions. The stack check is 4 instructions at the start of 729 of 1320 functions, 1.2% to 1.8% of the instructions of a page.
 - Collection matters only on the long Markdown: 8.5% of the time and 40% of its last level misses. On tifa's pages it is under 2%.
-- Against Node with `--jitless`, liustack/quickjs took 1.82 times as long on the shop workbench, 1.67 on the store and 1.52 on MUI. The JavaScript functions with the highest ratio are small ones (3 to 5 times, since the cost is the fixed price of a call), React's `for in` with `hasOwnProperty.call` (2.0 to 2.6 times, done since: [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall) and [The copy of the props of a React element in C](#the-copy-of-the-props-of-a-react-element-in-c)), and functions where a reference count reaching 0 frees a whole chain at the assignment, where Node leaves it to its collector (`resetHooksState` 3.5 to 4.9 times).
+- Against Node with `--jitless`, liustack/slowjs took 1.82 times as long on the shop workbench, 1.67 on the store and 1.52 on MUI. The JavaScript functions with the highest ratio are small ones (3 to 5 times, since the cost is the fixed price of a call), React's `for in` with `hasOwnProperty.call` (2.0 to 2.6 times, done since: [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall) and [The copy of the props of a React element in C](#the-copy-of-the-props-of-a-react-element-in-c)), and functions where a reference count reaching 0 frees a whole chain at the assignment, where Node leaves it to its collector (`resetHooksState` 3.5 to 4.9 times).
 
 ### Where a regexp starts, worked out once
 
@@ -1088,6 +1089,55 @@ The micro benchmarks of `compare/testdata` by instructions (native, Apple M4, th
 
 Native, an add of two strings costs about 30 instructions less than before on amd64 (MUI's pages and React's page: the instructions saved over the adds of the table). As generated with the profile of v0.30.6, every page but MUI's runs 0.6% to 1.1% more instructions: the generator finds that the C of `JS_RegvmRun` changed since the profile was trained and compiles it with no profile, which costs more than the change saves. With the profile trained again every page runs fewer on amd64, so the profile must be trained again before a release that has this change ([releasing.md](releasing.md#the-profile)). The counts on the M4 differ by about 0.3% from one round to the next, so a row of it below that says nothing alone. Long Markdown was counted on the native C tree only.
 
+### Arrays that are no longer fast arrays
+
+[An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom), counted on 2026-11-15 against `b0271108` (the changes of v0.30.7). Native: the test host built by clang. amd64 is callgrind on an AMD EPYC 7B13, arm64 the retired instructions on an Apple M4. Product: the generated engine through the Go API (a V8 benchmark run by `Eval` in one VM, the pages in tifa's `test/ssr`), callgrind on linux/amd64 and retired instructions on the M4 (the lowest of 3 rounds). "As generated" has the profile of v0.30.7, in which `rv_getel_atom`, `rv_getel3_slow` and `rv_putel_slow` no longer match their C and the two new functions have none. `JS_RegvmRun` keeps its profile. "Trained" has the profile trained again on the change.
+
+The V8 benchmark Crypto, instructions an iteration (12 runs less 4, over 8):
+
+| Benchmark | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Crypto decrypt | -19.8% | -20.5% | -22.5% | -22.7% | -22.4% | -22.9% |
+| Crypto encrypt | -19.4% | -20.0% | -22.1% | -22.3% | -22.6% | -22.8% |
+
+The other benchmarks run the same on amd64 (callgrind, -0.08% to +0.04%, native and product), but EarleyBoyer's first part runs 0.32% more on the native host and 0.48% more through the Go API (0.46% trained): it reads 96K int keys an iteration on objects that are not Arrays, and each pays about 25 instructions for the call that gives up. RegExp is left out: the work of an iteration is not fixed (the calls of `replace` differ by 1.2% from one run to the next). On the M4 the benchmarks of a few million instructions an iteration (Richards, Splay) move by several percent from run to run with the collector.
+
+Pages, instructions a render, with the same HTML:
+
+| Page | Native amd64 | Native M4 | Product amd64, as generated | Product amd64, trained | Product M4, as generated | Product M4, trained |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| React's page | -0.01% | +0.11% | -0.12% | -0.06% | -0.19% | -0.23% |
+| shop, store home (en-US) | -0.01% | +0.24% | +0.10% | +0.09% | +0.02% | -0.28% |
+| shop, store products (zh-CN) | -0.01% | -0.16% | +0.07% | +0.08% | -0.17% | -0.35% |
+| shop, workbench studio | -0.03% | -0.56% | 0.00% | +0.04% | -0.12% | -0.24% |
+| shop, workbench stats | -0.03% | +0.13% | +0.05% | +0.13% | -0.02% | -0.14% |
+| MUI home | -0.02% | -0.11% | +0.28% | +0.14% | -0.12% | -0.37% |
+| MUI orders | -0.02% | -0.12% | -0.01% | -0.14% | -0.15% | -0.27% |
+| long Markdown | -0.44% | -0.64% | | | | |
+
+The native counts of the M4 move by about 0.3% from run to run. Through the Go API on amd64 the pages move by -0.14% to +0.28%, where their native counts move by less than 0.04%: the generated code of the three changed functions and of what is next to them is laid out again. On the M4 every page runs fewer instructions through the Go API.
+
+The micro benchmarks of `compare/testdata` (native, M4): the geometric mean is 0.11% fewer instructions. `array_prop_create` runs 1.4% more (amd64 2.6%, 235 to 241 instructions an append): its `tab[i] = i` appends to a fast array through `rv_putel_slow`, which now also has the call of `rv_putel_index` on its other branch and keeps two more values on its stack. No other benchmark runs more than 0.73% more (`prop_create`, which does not take the path).
+
+A read of an element of such an array costs about 94 instructions instead of 180 (amd64, Crypto: 35 in `rv_getel_atom`, 59 in `rv_getel_index`), a write 104 instead of 199. The pages make no such reads and writes: long Markdown runs 0.44% fewer on amd64 (0.64% on the M4), from reads past the count of a fast array.
+
+### The iterator of a for in loop and its shape
+
+[The iterator of a for in loop finds its empty shape](changes/objects-and-shapes.md#the-iterator-of-a-for-in-loop-finds-its-empty-shape), counted on 2026-11-15 against `b0271108`. A render starts 718 for in loops on React's page, and 717 of them made the empty shape of their iterator and freed it again. The other pages start 616 (the workbench's stats page) to 10,376 (MUI's orders page) loops, and long Markdown 41,841, and none of them made the shape: something on those pages keeps an object with no prototype alive. A loop that makes no shape runs about 215 instructions less (a micro benchmark of `for (k in null)`, native, M4: 937 to 722 a loop).
+
+Instructions a render. Native is the C tree built by clang, callgrind on an AMD EPYC 7B13 (linux/amd64, three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with the URL stand-in `urlmemo.js`, Markdown two after one), and the retired instructions of the same renders on an Apple M4 (the lowest of 3 rounds). The product is the generated engine with the profile trained again on this change, callgrind on linux/amd64 (two warm renders, then the difference of three renders and one, halved), against v0.30.7 with its own profile. v0.30.7 with its profile trained again the same way moves by -0.04% to +0.11%. Every page gives the same HTML.
+
+| Page | Native, amd64 | Native, M4 | Product, amd64, trained |
+| --- | ---: | ---: | ---: |
+| React's page | -0.55% | -0.52% | -0.45% |
+| The store's home page | 0.00% | -0.07% | -0.00% |
+| The store's products page | 0.00% | -0.12% | -0.00% |
+| The workbench's studio page | 0.00% | -0.21% | +0.01% |
+| The workbench's stats page | 0.00% | -0.07% | +0.02% |
+| MUI's orders page | 0.00% | -0.02% | +0.01% |
+| MUI's home page | +0.01% | -0.15% | -0.03% |
+| Long Markdown (400 sections) | 0.00% | -0.09% | |
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1166,6 +1216,46 @@ The generated engine as `make gen` makes it, in tifa's `test/ssr` (the shop's pa
 | React's page | -0.16% | -0.30% |
 
 The long Markdown page (react-markdown, 100 sections, no pool) defines 35,000 properties a render, and the functions of the change run 6 million fewer instructions a render (0.12%). Its whole render moves with the places where the cycle collector runs, which the change shifts: on linux/amd64 a render takes 0.41% more instructions after one warm render and 0.28% fewer after two, the difference being the marking of the collections.
+
+### instanceof without the call of Symbol.hasInstance
+
+[instanceof without the call of Symbol.hasInstance](changes/operators.md#instanceof-without-the-call-of-symbolhasinstance), against `b0271108` (the tree of v0.30.7 before batch 6). An `instanceof` that takes the path runs about 380 fewer instructions on linux/amd64. Instructions are counted, not timed. The HTML of every page is the same.
+
+EarleyBoyer of the V8 suite, instructions an iteration: the difference of 12 iterations and 4, divided by 8. Natively the C tree's `jsrun` on linux/amd64 (callgrind) and on an Apple M4 (the retired instructions, the lowest of 3 runs). The product is the generated engine as `make gen` makes it, under callgrind on linux/amd64: as generated, and with the profile trained again on the change.
+
+| Benchmark | native linux/amd64 | native darwin/arm64 | product as generated | product trained again |
+| --- | ---: | ---: | ---: | ---: |
+| Earley | -6.25% | -6.55% | -6.15% | -6.66% |
+| Boyer | -19.41% | -20.15% | -20.46% | -21.95% |
+
+These numbers and the ones below are from before the path read the interrupt flag (see the change). The read costs about 7 instructions a test in the product as generated on linux/amd64: with it Boyer is -20.12% and Earley -6.04%, and tifa's pages as generated are +0.62% to +1.11%, the same as without it within the noise of a run. The native test host reads the flag through a call to `host_poll`, so natively it costs more: Boyer -18.08% and Earley -5.80% on linux/amd64.
+
+tifa's pages test `instanceof` 0 (React) to 680 (the shop's English home page) times a render. On the native C tree on linux/amd64 (callgrind, the timed renders after the warm ones, `host_poll` left out):
+
+| Page | change |
+| --- | ---: |
+| the workbench studio page | -0.04% |
+| the workbench stats page | -0.05% |
+| the shop's English home page | -0.19% |
+| the shop's Chinese products page | -0.18% |
+| MUI's orders page | -0.02% |
+| MUI's home page | -0.08% |
+| React's page | -0.00% |
+| the long Markdown page (react-markdown, 400 sections) | +0.00% |
+
+The generated engine in tifa's `test/ssr`. `JS_RegvmRun` changed, so `make gen` compiles it without the profile until the profile is trained again, and the new `rv_instof` has none: as generated every page runs 0.5% to 1.6% more instructions. The profile trained on the change gives them back. On linux/amd64 callgrind, two warm renders and then the difference of three renders and one, halved. One run a page, and the median of four for React's page, the workbench stats page and MUI's orders page: runs of one build differ by up to 0.4%, as the order of Go's maps changes from run to run. On the workbench stats page the trained build is 0.11% over the base with its shipped profile, but the base with its profile trained again the same way is as high (four runs): against it the change is +0.02%. On an Apple M4 the retired instructions, the median of 10 renders (40 for React's page), the lowest of 3 rounds.
+
+| Page | linux/amd64, as generated | linux/amd64, trained | darwin/arm64, as generated | darwin/arm64, trained |
+| --- | ---: | ---: | ---: | ---: |
+| the workbench studio page | +0.56% | -0.25% | +0.94% | -0.09% |
+| the workbench stats page | +1.13% | +0.11% | +0.89% | -0.07% |
+| the shop's English home page | +0.82% | -0.19% | +1.01% | -0.23% |
+| the shop's Chinese products page | +0.77% | -0.24% | +0.97% | -0.07% |
+| MUI's orders page | +0.82% | -0.01% | +0.90% | -0.08% |
+| MUI's home page | +0.56% | -0.22% | +0.86% | -0.12% |
+| React's page | +1.09% | -0.02% | +1.59% | +0.01% |
+
+The long Markdown page tests `instanceof` 32 times a render. Natively its register loop runs 0.5 million more instructions a render (0.003%): clang lays out `JS_RegvmRun` a little differently with the new call in it. The 64 micro benchmarks of `compare/testdata` test no `instanceof`: natively on the M4 their geometric mean is 0.17% lower, none more than 0.86% higher (`array_for`, within the noise of its short run).
 
 ### A profile of tifa's pages
 
@@ -1422,6 +1512,51 @@ At the mean of the layouts 23 run faster, 11 show no regression beyond the delta
 
 Instructions per turn of the loop of the 14 that are slower (callgrind on linux/amd64, `jsrun -n 1` at 3N less N over 2N, the same two engines) say that most of it is where the code and the data land, not more work. `global_write` (+8.05% in time) and `global_write_strict` (+8.80%) run the same instructions within 0.02%: their time sits at about 100 ms or about 120 ms by where the data lands, and the release falls on the slow level at more of the 16 placements than v0.30.6. `array_write` runs 1.53% more for 8.58% more time, the same two levels. `regexp_ascii` and `regexp_utf16` run 2.97% and 3.05% fewer instructions and take 7.87% and 8.53% more time, and `map_delete`, `map_set_string`, `float_to_string`, `string_build4` and `weak_map_delete` run 0.23% to 0.62% fewer. Three run more: `int_to_string2` 1.86% (its `n + ''` tests the tag of `n` before the generic path, [two strings added](#two-strings-added-without-the-generic-path)), `array_prop_create` 1.30% (the test of the key's tag before `rv_putel_slow`, [stores that add a key](#keyed-and-named-stores-that-add-a-key)) and `weak_map_set` 1.20%. `global_destruct_strict` runs 0.12% more.
 
+#### v0.31.0 against v0.30.7
+
+v0.31.0 was timed on 2026-11-15 on a server of the same type as v0.30.7 above, in the same way (linux/amd64, an AMD EPYC 7B13 server with 4 cores, core 0 with the whole machine quiet, the 16 layouts of [measuring.md](measuring.md#the-protocol), 2 rounds, 18 units of every kind, a delta of 1% and 95% intervals). Two sides: v0.30.7 (d7c86e16) and the commit of v0.31.0 with its profile (81885e3b, trained again on its C, 2,791 functions, none stale). The pages are those of the shop, the MUI app, React and the long Markdown in the bundles the profile trains on. Both sides give the same HTML on every page. Every kind ran its 18 units, and one block of the store pages ran again for a disturbance. The micro benchmarks of `compare/testdata` were not timed for this release.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -0.09% (-0.44% to +0.26%) no regression beyond delta | -0.42% (-1.33% to +0.49%) no regression beyond delta |
+| tifa's shop, fourteen store pages | -0.42% (-0.85% to +0.01%) no regression beyond delta | -0.34% (-1.24% to +0.57%) no regression beyond delta |
+| tifa's MUI test app, three pages | +0.38% (-0.31% to +1.07%) inconclusive | -0.99% (-1.59% to -0.39%) faster |
+| React's page | +0.05% (-0.51% to +0.61%) no regression beyond delta | -1.48% (-2.43% to -0.53%) faster |
+| The long Markdown page, 100 and 400 sections | -7.98% (-8.42% to -7.53%) faster | -8.57% (-9.54% to -7.60%) faster |
+
+Instructions a render, the same two builds, callgrind on linux/amd64, one page of each group, half the difference of 3 renders and 1 after a warm one (Markdown, 400 sections: 2 renders less 1). Every page gives the same HTML.
+
+| Page | amd64 |
+| --- | ---: |
+| The store's home page | -0.15% |
+| The store's products page | -0.14% |
+| The workbench's studio page | -0.03% |
+| The workbench's stats page | -0.06% |
+| MUI's orders page | -0.01% |
+| MUI's home page | -0.04% |
+| React's page | -0.63% |
+| Long Markdown (400 sections) | -0.37% |
+
+The changes of this release are for code that tifa's pages run little: arrays that are no longer fast arrays, `instanceof` of a plain function, and the shape of a `for in` loop's iterator, which gives React's page its 0.63%. So no page runs more instructions, and the time of the shop, MUI and React stays where it was. MUI's three pages cannot tell at the mean of the layouts (their layout SD is 1.19%) and are 0.99% faster at the formal layout.
+
+The long Markdown page is not faster by its work. The kind renders the page of 100 sections and then that of 400 in one VM with no pool, so the engine collects when its own threshold says. In that order the page of 400 sections took 9.57% less time at the mean of the layouts, and the process peaked at 258 MB of memory against 356 MB for v0.30.7 (4 runs of each at the formal layout, 108 thousand page faults against 155 thousand): the engine's collections land at other points. Rendered alone, the page of 400 sections peaks at 276 MB on both sides and takes 1.2% less time (4 runs of each at the formal layout), and the page of 100 sections takes 0.91% less (-1.60% to -0.22%) at the mean of the layouts.
+
+The V8 suite (`compare/engines`, `jsbench v8`, the formal build of each side, 10 runs each in turn on core 0 of the same quiet server, the median score, higher is better):
+
+| Benchmark | v0.30.7 | v0.31.0 | Change |
+| --- | ---: | ---: | ---: |
+| Score | 1528.5 | 1611.5 | +5.4% |
+| Crypto | 1091.5 | 1414.5 | +29.6% |
+| EarleyBoyer | 2398.5 | 2736 | +14.1% |
+| NavierStokes | 2405 | 2494 | +3.7% |
+| Richards | 1110 | 1143.5 | +3.0% |
+| RegExp | 571.5 | 575 | +0.6% |
+| Splay | 4713.5 | 4718 | +0.1% |
+| DeltaBlue | 1036.5 | 1029 | -0.7% |
+| RayTrace | 1531 | 1511.5 | -1.3% |
+
+Crypto reads and writes the elements of arrays that are no longer fast arrays, and runs 22.3% and 22.7% fewer instructions an iteration in its two parts (callgrind, the same builds). EarleyBoyer tests `instanceof`: Earley runs 6.05% fewer and Boyer 21.51% fewer. The other benchmarks run within 0.08% of the instructions of v0.30.7, so their changes of score, NavierStokes' 3.7% among them, are where the code lands.
+
 #### The study of 2026-11-13
 
 The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
@@ -1548,7 +1683,7 @@ Every bad request failed with a deadline error, every one got a new VM, no good 
 
 Each item says what it would give and why it was dropped. Check here before trying one of them again. The numbers come from tifa's [docs/performance.md](https://github.com/liustack/tifa/blob/main/docs/performance.md#what-was-tried-and-not-done) and [docs/studies/engine-hotspots.md](https://github.com/liustack/tifa/blob/main/docs/studies/engine-hotspots.md), and from the docs of the changes.
 
-- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/quickjs to make only mechanical changes. Not tried.
+- **Dispatching opcodes through closures or a table of functions**, as some Go interpreters do: a rewrite of the interpreter, against the rule of liustack/slowjs to make only mechanical changes. Not tried.
 - **A check in JavaScript in front of one spread for the props of `createElement` and `cloneElement`**, measured on v0.29.1 before `RegisterCopyProps`: the plugin tested the config (the prototype, the symbols, `__proto__`, `__self` and `__source`, a getter behind `key`) and then copied it with the rest of a destructuring. The test took 310 to 380 ns a call, more than the loop takes for a config of none, one or two keys, so `createElement` took 1.57 times as long for no keys, 1.07 for one key and 1.13 to 1.40 for a `key` and one or two more. The shop took 0.99 of the time (1.6% to 2.5% fewer instructions) and no page passed the rule. It also could not rule out a proxy, a getter that deletes a later key and a setter added to `Object.prototype` after React loaded. The same checks in C cost less than the empty loop, and the function gives 2.1% to 4.1% fewer instructions.
 - **A fast path for object spread** (`JS_CopyDataProperties`): one spread took 240 ns rather than 415 in a micro benchmark on the Apple M4, but the shop did not change (0.997 to 1.005). It is done since together with the listing of keys, which it shares with `for in` and `Object.keys` (see [Own keys listed from the shape](changes/objects-and-shapes.md#own-keys-listed-from-the-shape)).
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
@@ -1637,6 +1772,8 @@ What the measurements above leave for the C engine, none of it large. A change u
 - **The place of the register loop** `JS_RegvmRun` in its line of 64 bytes: its body sits after a `PCALIGN $16` like any other function and moves with the code linked before it. In the build measured on 2026-11-13 it started on a boundary of 32 bytes, not 64. Fixing its place does not pay. On 2026-11-13 (batch 2's engine, amd64, an AMD EPYC 7B13, 16 layouts of [measuring.md](measuring.md), 4 rounds per group) the generator's `-align64` put the body at byte 0 or byte 8 of its line, against the base, whose body the layouts put at 0, 16, 32 and 48. Mean of the layouts, byte 0 then byte 8: workbench -0.22% [-0.64%, +0.20%] and -0.17% [-0.57%, +0.24%], store -0.20% [-0.55%, +0.14%] and -0.44% [-0.89%, +0.01%], MUI +0.28% [-0.22%, +0.78%] and -0.19% [-0.67%, +0.30%]. Fitted over every side and layout, each of the 8 places of the body takes 0.992 to 1.008 of the mean time, and the best place differs by group (workbench 40 or 48, store 24 or 40, MUI 56 or 0).
 - **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
 - **Results of the functions Go code calls**: the 91 functions Go code calls still store their result, because Go reads the result of an assembly function from memory. A generated Go entry for each hot one, which calls a body that stores nothing, would remove the stores of those bodies when generated code calls them: at most 0.24% of the instructions on the store pages, 0.21% on the workbench, 0.11% on MUI and 0.14% on React (arm64, writing each such store twice), less one extra call for each call from Go. It needs a new kind of function in both post-link checks.
+- **Arrays that keep their elements in one block with holes**: an Array written past its end, or with an element deleted, becomes an array of properties and never becomes a fast array again ([An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom)). V8 keeps such an array in its block, with a mark for each missing element. Upstream QuickJS and quickjs-ng turn it into properties, as this engine does. Keeping the block would need the mark checked wherever the engine reads the block of a fast array: about 60 functions of `quickjs.c` (`js_get_fast_array` and its callers, the fast paths of `push`, `pop`, `includes`, `indexOf`, `slice`, `splice`, `with` and `toSpliced`, JSON, `for in`, `for of`, `delete`, `set_array_length`, `JS_GetOwnPropertyNames`, the collector and the free of an object, `JS_WriteArray`, `build_arg_list`, `JS_CopySubArray`) and the register loop (GETEL, GETEL3, PUTEL, DSTART and DNEXT, the spread, the built-ins it answers), and every read of an element on the pages would pay the check, while the pages make no such reads. The read by atom takes about 94 instructions where an element of a block takes about 10, so the block would gain only where such arrays are hot, Crypto among the V8 benchmarks.
+- **The next key of a for in loop and the read of it** (`for (k in o) ... o[k]`), counted on 2026-11-15 against `b0271108`: a render takes 34,096 next keys and 34,244 reads of the key just given on MUI's orders page, 12,523 and 11,986 on its home page, 16,450 and 11,940 on the store's products page, 8,465 and 5,709 on its home page, 9,934 and 7,989 on the workbench's studio page, and 2,399 and 1,681 on React's page. One op of the register loop that gives the next key from the shape the loop checked, branches on the end and reads the value at the slot the loop is at would save two dispatches a key and the lookup of the read: about 0.7% to 1.2% of MUI's orders page and 0.6% to 1.0% of its home page, under 0.3% elsewhere, estimated from the counts. Taking the next out of its window alone saves only about 16 instructions a key on arm64. The fused op needs a new op of the pass and its branch, and the frame of `JS_RegvmRun` checked.
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
 

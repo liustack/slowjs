@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
@@ -8,7 +8,7 @@ package url
 import (
 	"testing"
 
-	"github.com/liustack/quickjs"
+	"github.com/liustack/slowjs"
 )
 
 // TestStateIsUnreachable checks that no script reaches the record of a URL or
@@ -151,7 +151,7 @@ func TestStateIsUnreachable(t *testing.T) {
 		res.join(' ') === 'not the record forged http://h/q http://h/q true TypeError TypeError TypeError TypeError TypeError TypeError TypeError TypeError true http://r/ http://h/p ws://other/changed?b b= http://x/?c c= RangeError http://x/?c' ? 'ok' : res.join(' ') }`)
 
 	// A VM is one realm: a URL of one VM is not a value of another.
-	other, err := quickjs.NewVM()
+	other, err := slowjs.NewVM()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,17 +159,17 @@ func TestStateIsUnreachable(t *testing.T) {
 	if err := Register(other); err != nil {
 		t.Fatal(err)
 	}
-	u, err := vm.EvalValue(`new URL("http://h/")`, quickjs.EvalGlobal)
+	u, err := vm.EvalValue(`new URL("http://h/")`, slowjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer u.Free()
-	get, err := other.EvalValue(`(u) => Object.getOwnPropertyDescriptor(URL.prototype, 'href').get.call(u)`, quickjs.EvalGlobal)
+	get, err := other.EvalValue(`(u) => Object.getOwnPropertyDescriptor(URL.prototype, 'href').get.call(u)`, slowjs.EvalGlobal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer get.Free()
-	if got, err := get.Call(quickjs.UndefinedValue, u); err == nil {
+	if got, err := get.Call(slowjs.UndefinedValue, u); err == nil {
 		t.Errorf("a URL of another VM: %v, want an error", got)
 	}
 }

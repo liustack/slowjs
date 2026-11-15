@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs/internal/gointl"
+	"github.com/liustack/slowjs/internal/gointl"
 )
 
 // TestSupportedValuesMatchNode compares every list Intl.supportedValuesOf

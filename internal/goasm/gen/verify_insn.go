@@ -1,4 +1,4 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 //
 // Instruction-level post-link check of the whole engine. The lowering reads
@@ -1231,6 +1231,12 @@ type matcher struct {
 	argBase   int64
 	body      uint64 // address of the body in the binary
 	lowSym    elf.Symbol
+	// end is the index in B of what follows the last generated instruction
+	// llc's code explains: where a label at the end of llc's code goes.
+	end int
+	// retAt holds the addresses in the binary a return of the function goes
+	// to: the Go epilogue, and the jump over the constants to it.
+	retAt map[uint64]bool
 }
 
 func (m *matcher) next(what string) (insn, error) {
@@ -1358,9 +1364,11 @@ func (k *checker) checkUnified(meta Meta) error {
 	if err := m.run(); err != nil {
 		return err
 	}
+	m.end = m.j
 	// The code ends with the result jump target: the Go epilogue, or a jump
 	// over the constants to it.
 	retAt := map[uint64]bool{e: true}
+	m.retAt = retAt
 	if m.j == len(B.ins)-1 {
 		last := B.ins[m.j].in
 		if rel, ok := last.Args[0].(x86asm.Rel); last.Op == x86asm.JMP && ok && plain(last) &&
@@ -2304,11 +2312,28 @@ func (m *matcher) bodyData() error {
 			}
 			lt := uint64(int64(r.sym.Value) + r.add - int64(i))
 			li, ok := m.L.at[lt]
+			v := int32(binary.LittleEndian.Uint32(got[i:]))
+			bt := uint64(int64(at) + int64(v))
+			if ok && li == len(m.L.ins) {
+				// The entry reaches the end of llc's code: an empty block
+				// llc put last, which is the block of a switch value LLVM
+				// proved cannot occur (default.unreachable). It holds no
+				// instruction to compare, so the entry has to reach the end
+				// of the generated code the same way, and what is there has
+				// to be the jump to the Go epilogue or the epilogue itself:
+				// a function that returns nowhere has its data there.
+				if bi, ok := m.B.at[bt]; !ok || bi != m.end {
+					return fmt.Errorf("body data %s: entry %d reaches the end of llc's code (%#x), and %#x in the binary, which is not the end of the generated code", o.Label, i/4, lt, bt)
+				}
+				if !m.retAt[bt] {
+					return fmt.Errorf("body data %s: entry %d reaches the end of the code (%#x in the binary), where no return of the function goes: neither the Go epilogue nor the jump to it is there", o.Label, i/4, bt)
+				}
+				i += 4
+				continue
+			}
 			if !ok || li >= len(m.L.ins) || m.bStart[li] < 0 {
 				return fmt.Errorf("body data %s: entry %d reaches %#x, no instruction of the body", o.Label, i/4, lt)
 			}
-			v := int32(binary.LittleEndian.Uint32(got[i:]))
-			bt := uint64(int64(at) + int64(v))
 			if bi, ok := m.B.at[bt]; !ok || bi != m.bStart[li] {
 				return fmt.Errorf("body data %s: entry %d reaches %#x in the binary, not where llc's %#x went", o.Label, i/4, bt, lt)
 			}

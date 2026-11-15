@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 The liustack/quickjs Authors.
+ * Copyright (c) 2026 The liustack/slowjs Authors.
  * SPDX-License-Identifier: MIT
  * Use of this source code is governed by the MIT license in LICENSE-MIT at the
  * root of this repository.
@@ -772,6 +772,79 @@ static void test_class_shape_set_proto(void)
     JS_FreeValue(ctx, obj);
     JS_FreeValue(ctx, q);
     JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The iterator of a for in loop is an object with a null prototype: the
+   context holds its empty shape once a loop has made it, so a hundred more
+   loops make no shape, and an object of Object.create(null) that gets keys
+   leaves that shape empty. A second context finds the shape the first one
+   holds and holds it too, so it stays when the first is freed. */
+static void test_for_in_shape(void)
+{
+    /* each loop, and the same script with no loop, run first so that what
+       the context keeps for it is in the base */
+    static const char *const loops[][2] = {
+        { "for (var k in null) ;", "var k;" },
+        { "for (var k in { a: 1 }) ;", "var k; ({ a: 1 })" },
+        { "for (var k in [1, 2]) ;", "var k; [1, 2]" },
+        { "(function* () { for (var k in { b: 1 }) yield k; })().next()",
+          "(function* () { yield 'b'; })().next()" },
+    };
+    static const char hundred[] =
+        "for (var i = 0; i < 100; i++) { for (var k in { a: i }) ; "
+        "for (var k in null) ; }";
+    static const char nulls[] =
+        "(function () { var n = Object.create(null); n.x = 1; n.y = 2; "
+        "delete n.x; var r = 0; for (var k in n) r++; "
+        "return [r, Object.getOwnPropertyNames(Object.create(null)).length]"
+        ".join(); })()";
+    JSRuntime *rt;
+    JSContext *ctx, *ctx2;
+    int64_t base, one, many, n;
+    int i;
+
+    for(i = 0; i < (int)countof(loops); i++) {
+        rt = host_new_runtime();
+        ctx = JS_NewContext(rt);
+        CHECK(eval(ctx, loops[i][1]), "the script threw");
+        JS_RunGC(rt);
+        base = shapes(rt);
+        CHECK(eval(ctx, loops[i][0]), "the script threw");
+        JS_RunGC(rt);
+        one = shapes(rt) - base;
+        CHECK(eval(ctx, hundred), "the script threw");
+        JS_RunGC(rt);
+        many = shapes(rt) - base;
+        CHECK(one == 1 && many == 1, "%s: %lld shapes kept after one loop, "
+              "%lld after a hundred, want 1", loops[i][0], (long long)one,
+              (long long)many);
+        CHECK(eval_is(ctx, nulls, "1,0"), "objects with a null prototype");
+        JS_RunGC(rt);
+        CHECK(shapes(rt) - base == 1, "%lld shapes after the objects with a "
+              "null prototype, want 1", (long long)(shapes(rt) - base));
+        JS_FreeContext(ctx);
+        host_free_runtime(rt);
+    }
+
+    rt = host_new_runtime();
+    ctx = JS_NewContext(rt);
+    ctx2 = JS_NewContext(rt);
+    CHECK(eval(ctx, loops[1][0]), "the script threw");
+    JS_RunGC(rt);
+    base = shapes(rt);
+    CHECK(eval(ctx2, hundred), "the script threw");
+    JS_RunGC(rt);
+    CHECK(shapes(rt) == base, "%lld shapes after the loops of the second "
+          "context, want %lld", (long long)shapes(rt), (long long)base);
+    JS_FreeContext(ctx);
+    JS_RunGC(rt);
+    n = shapes(rt);
+    CHECK(eval(ctx2, hundred), "the script threw");
+    JS_RunGC(rt);
+    CHECK(shapes(rt) == n, "%lld shapes after the loops with the first "
+          "context freed, want %lld", (long long)shapes(rt), (long long)n);
+    JS_FreeContext(ctx2);
     host_free_runtime(rt);
 }
 
@@ -4791,6 +4864,7 @@ int main(void)
     test_func_shapes_kept();
     test_class_shapes();
     test_class_shape_set_proto();
+    test_for_in_shape();
     test_object_lit_size();
     test_object_lit_one_block();
     test_atom_keys();

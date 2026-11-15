@@ -1,11 +1,11 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
 package idna
 
-import gointl "github.com/liustack/quickjs/internal/gointl"
+import gointl "github.com/liustack/slowjs/internal/gointl"
 
 // Widest walks the tables of every code point and returns the two that grow
 // the most in the IDNA of a domain, for each UTF-16 unit they take, with what

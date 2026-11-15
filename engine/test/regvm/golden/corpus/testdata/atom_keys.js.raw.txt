@@ -55,6 +55,6 @@ result symbol text sym gsym str:desc str:glob true true 1 ["desc","glob","Symbol
 result rebuilt "rebuilt0" 0 true ["rebuilt0"]
 result rebuilt "rebuilt1" 1 true ["rebuilt1"]
 result rebuilt "rebuilt0" 2 true ["rebuilt0"]
-mem-end obj=202 atom=557 shape=171 prop=986 jsfunc=0 cfunc=138 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=202 atom=557 shape=171 prop=986 jsfunc=0 cfunc=138 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=202 atom=557 shape=172 prop=986 jsfunc=0 cfunc=138 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=202 atom=557 shape=172 prop=986 jsfunc=0 cfunc=138 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

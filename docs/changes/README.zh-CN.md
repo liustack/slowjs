@@ -1,5 +1,5 @@
 ---
-summary: 'liustack/quickjs 对 QuickJS 的 C 树和 Go API 所做的全部改动的索引，按领域分组：每项改动一行，写明它在哪个版本发布，以及哪份文档说明了它做什么、为什么安全、收益是什么、由哪些测试检查'
+summary: 'liustack/slowjs 对 QuickJS 的 C 树和 Go API 所做的全部改动的索引，按领域分组：每项改动一行，写明它在哪个版本发布，以及哪份文档说明了它做什么、为什么安全、收益是什么、由哪些测试检查'
 read_when:
   - 想知道某项对引擎的改动为什么安全、代价是什么、收益是什么
   - 改动同一段代码之前，想找到相关改动的文档
@@ -12,7 +12,7 @@ read_when:
 
 引擎是 QuickJS 的 2026-06-04 版（提交 `3d5e064`，C 代码），上面加了下面这些改动。下面每份文档讲一个领域。对每项改动，它们说明改动做什么、为什么安全、收益或代价是什么以及怎么测的，还有哪些测试检查它。[upgrading.md](../upgrading.zh-CN.md) 写了怎样接入新的 QuickJS 版本，[CHANGELOG.md](../../CHANGELOG.zh-CN.md) 写了每个版本对用户的改变。
 
-引擎是 `engine/` 里的 C，由生成器编译成 Go 汇编。对它的改动就是对 C 的改动，和生成的文件一起提交（见 [AGENTS.md](../../AGENTS.md)）。到 v0.28 为止的版本，跑的是 ccgo 翻译成 Go 的 QuickJS，liustack/quickjs 的改动由一个现在已经没有的工具写进那份 Go。提到这些版本的条目在这里保留了改动的 C 形式，它们的计时是在那个引擎上测的。[performance.md](../performance.zh-CN.md) 写了 C 引擎的速度。
+引擎是 `engine/` 里的 C，由生成器编译成 Go 汇编。对它的改动就是对 C 的改动，和生成的文件一起提交（见 [AGENTS.md](../../AGENTS.md)）。到 v0.28 为止的版本，跑的是 ccgo 翻译成 Go 的 QuickJS，liustack/slowjs 的改动由一个现在已经没有的工具写进那份 Go。提到这些版本的条目在这里保留了改动的 C 形式，它们的计时是在那个引擎上测的。[performance.md](../performance.zh-CN.md) 写了 C 引擎的速度。
 
 ## C 引擎
 
@@ -57,6 +57,8 @@ read_when:
 | 两个热调用少传参数字：解释器直接调 C 函数和 `js_call_c_hop` 改调 `js_call_c_plain`（5 个字，原来 8 个），引擎自己的 `JS_GetProperty` 改调 `JS_GetPropertyObj`（5 个，原来 7 个）。在 arm64 上，这两个调用都不再在影子栈上用参数块传参 | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#热调用少传参数字) |
 | 寄存器循环不经调用直接回答 `Math.clz32`，Map、Set、WeakMap 和 WeakSet 的 `has` 和 `get`，`Array.isArray`，数组的 `push`、`includes` 和 `indexOf`，字符串的 `indexOf`、`includes`、`startsWith` 和 `endsWith`，`Object.hasOwn`、`hasOwnProperty`，以及参数是字符串的 `String` | v0.30.6 | [c-engine.md](c-engine.zh-CN.md#寄存器循环直接回答的内置函数) |
 | `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
+| 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | v0.31.0 | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
+| `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | v0.31.0 | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
 
 ## 生成器
 
@@ -66,6 +68,7 @@ read_when:
 | 画像除了页面还用普通循环训练（`engine/pgo/loops.js`），页面从不走的路径不再按从不执行编译，`train.sh` 检查循环确实走到这些路径 | v0.30.7 | [generator.md](generator.zh-CN.md#第二份输入普通循环) |
 | 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 | 循环向量化器不再从画像里取循环圈数：`memmove` 又是没有栈帧的叶子函数，一次渲染少跑 0.07% 到 0.22% 的指令 | v0.30.7 | [generator.md](generator.zh-CN.md#画像决定什么) |
+| 链接后检查接受指向函数代码末尾的跳转表项（`switch` 里不可能出现的值的那一项），条件是它在二进制里也指向同一个位置 | v0.31.0 | [generator.md](generator.zh-CN.md#跳转表项可以指向代码末尾) |
 
 ## 上游 QuickJS 的提交
 
@@ -122,6 +125,7 @@ read_when:
 | 长字符串和结果的转换在调用的限制处停下 | v0.30.3 | [go-api.md](go-api.zh-CN.md#长字符串和结果的转换在调用的限制处停下) |
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 | 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | v0.30.7 | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
+| EvalFile 给脚本一个文件名 | v0.31.0 | [go-api.md](go-api.zh-CN.md#evalfile-给脚本一个文件名) |
 
 ## 守得住的限额
 
@@ -247,6 +251,7 @@ read_when:
 | --- | --- | --- |
 | 浮点数的位运算跳过慢路径 | v0.26.17 | [operators.md](operators.zh-CN.md#浮点数的位运算跳过慢路径) |
 | 常见的比较在解释器里直接回答 | v0.26.17 | [operators.md](operators.zh-CN.md#常见的比较在解释器里直接回答) |
+| 普通函数的 `instanceof` 不调用 `Symbol.hasInstance` 就给出答案 | v0.31.0 | [operators.md](operators.zh-CN.md#instanceof-不再调用-symbolhasinstance) |
 
 ## 对象和 shape
 
@@ -282,6 +287,7 @@ read_when:
 | 内存不够时 bind 以内存不足的错误失败，不再崩溃，也不再返回缺 length 或 name 的绑定函数 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#内存不够时-bind-整个失败) |
 | `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
 | `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
+| `for in` 循环不再做 shape：context 拿着迭代器起步时那个没有原型的空 shape | v0.31.0 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape) |
 
 ## 内存
 
@@ -309,6 +315,12 @@ read_when:
 | 改动 | 版本 | 文档 |
 | --- | --- | --- |
 | quickjs-libc.c 只保留 Go API 会调用的部分 | v0.27.0 | [trimmed.md](trimmed.zh-CN.md#没有-shell-库) |
+
+## 命令
+
+| 改动 | 版本 | 文档 |
+| --- | --- | --- |
+| `slowjs`，一个运行 JavaScript 文件的命令，虚拟机按 tifa 的方式配置，有 `print`、`console.log` 以及一定生效的超时和内存上限，每个标签的 GitHub release 里都有为五个目标预编译好的它 | v0.31.0 | [command.md](../command.zh-CN.md) |
 
 ## 新增一项改动
 

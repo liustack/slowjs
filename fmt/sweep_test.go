@@ -1,17 +1,17 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package fmt // import "github.com/liustack/quickjs/fmt"
+package fmt // import "github.com/liustack/slowjs/fmt"
 
 import (
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/liustack/quickjs"
-	"github.com/liustack/quickjs/internal/stopsweep"
+	"github.com/liustack/slowjs"
+	"github.com/liustack/slowjs/internal/stopsweep"
 )
 
 // swept are long calls of fmt, each with an output or an argument of n units
@@ -65,7 +65,7 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 			if testing.Short() && !c.short {
 				t.Skip("not under -short")
 			}
-			vm, err := quickjs.NewVM()
+			vm, err := slowjs.NewVM()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -79,7 +79,7 @@ func TestLongCallsStopAtEveryTimeout(t *testing.T) {
 			if strings.Contains(c.call, "arr") {
 				setup += "; " + arrSetup
 			}
-			if _, err := vm.Eval(setup, quickjs.EvalGlobal); err != nil {
+			if _, err := vm.Eval(setup, slowjs.EvalGlobal); err != nil {
 				t.Fatal(err)
 			}
 			stopsweep.Sweep(t, vm, c.call, c.n, 1<<16)

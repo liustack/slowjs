@@ -1,9 +1,9 @@
-// Copyright (c) 2026 The liustack/quickjs Authors.
+// Copyright (c) 2026 The liustack/slowjs Authors.
 // SPDX-License-Identifier: MIT
 // Use of this source code is governed by the MIT license in LICENSE-MIT at the
 // root of this repository.
 
-package quickjs
+package slowjs
 
 import (
 	"encoding/binary"
@@ -25,7 +25,7 @@ func utf16StringRef(u []uint16, wtf8 bool) string {
 // unit, as utf16String converts it, and returns how many bytes it wrote.
 func utf16WriteRef(out []byte, u []uint16, wtf8 bool) int {
 	if len(out) < 3*len(u) {
-		panic("quickjs: no room for the UTF-8 of the units")
+		panic("slowjs: no room for the UTF-8 of the units")
 	}
 	d := unsafe.Pointer(unsafe.SliceData(out))
 	j := uintptr(0)
