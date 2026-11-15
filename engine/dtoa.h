@@ -44,6 +44,10 @@
 #define JS_DTOA_EXP_MASK     (3 << 2)
 
 #define JS_DTOA_MINUS_ZERO   (1 << 4) /* show the minus sign for -0 */
+/* the free format in radix 10 through the big number loop and not the
+   shortest conversion of dtoa_shortest10, which gives the same string: for
+   the tests that compare them */
+#define JS_DTOA_BIGNUM       (1 << 5)
 
 /* only accepts integers (no dot, no exponent) */
 #define JS_ATOD_INT_ONLY       (1 << 0)

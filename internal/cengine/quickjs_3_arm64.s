@@ -3132,7 +3132,7 @@ TEXT ·rv_old(SB), $328-32
 	MOVD $·engine_rodata+7069(SB), R22
 	WORD $0xf94097e8
 	WORD $0xf940a7f5
-	MOVD $·engine_rodata+113602(SB), R25
+	MOVD $·engine_rodata+123474(SB), R25
 	WORD $0xaa0003f7
 	WORD $0xaa0103f8
 	WORD $0x91084114

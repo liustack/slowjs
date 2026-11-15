@@ -26607,7 +26607,7 @@ TEXT ·JS_NewCFunction3(SB), $152-16
 	WORD $0x5280040a
 	WORD $0x52803beb
 	WORD $0x1a9f314a
-	MOVD $·engine_rodata+113602(SB), R12
+	MOVD $·engine_rodata+123474(SB), R12
 	WORD $0xf10001bf
 	WORD $0x0a0b0129
 	WORD $0x2a0a0108

@@ -12322,7 +12322,7 @@ TEXT ·re_emit_string_list(SB), $216-24
 	WORD $0x924009e8
 	WORD $0xf1001d1f
 	WORD $0x540091c0
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90047e8
 	WORD $0xd37ef628
@@ -13256,7 +13256,7 @@ TEXT ·re_emit_string_list(SB), $216-24
 	WORD $0x92400908
 	WORD $0xf1001d1f
 	WORD $0x54002b20
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf9405be9
 	WORD $0xf90047e8
@@ -15637,7 +15637,7 @@ TEXT ·parse_unicode_property(SB), $248-48
 	WORD $0x92400a28
 	WORD $0xf1001d1f
 	WORD $0x54002760
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf9004be8
 	WORD $0xd37ef588
@@ -17884,7 +17884,7 @@ TEXT ·re_string_list_canonicalize(SB), $248-32
 	WORD $0x92400a08
 	WORD $0xf1001d1f
 	WORD $0x540031c0
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf9004fe8
 	WORD $0xd37ef668
@@ -22342,7 +22342,7 @@ TEXT ·re_string_list_op(SB), $248-32
 	WORD $0x924009e8
 	WORD $0xf1001d1f
 	WORD $0x54005500
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90053e8
 	WORD $0xd37ef628
@@ -22427,7 +22427,7 @@ TEXT ·re_string_list_op(SB), $248-32
 	WORD $0x924009e8
 	WORD $0xf1001d1f
 	WORD $0x54004aa0
-	MOVD $·engine_rodata+113648(SB), R9
+	MOVD $·engine_rodata+123520(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90053e8
 	WORD $0xd37ef628

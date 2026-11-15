@@ -5330,7 +5330,7 @@ TEXT ·js_regexp_Symbol_split(SB), $320-48
 	BYTE $0x04
 	BYTE $0x75
 	BYTE $0x59
-	LEAQ ·engine_rodata+114638(SB), R14
+	LEAQ ·engine_rodata+124510(SB), R14
 	LEAQ ·engine_rodata+23374(SB), SI
 	QUAD $0x0000013024ac8b4c
 	QUAD $0x4c2424894cc7894d

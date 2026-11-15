@@ -10901,7 +10901,7 @@ TEXT ·re_emit_string_list(SB), $240-24
 	BYTE $0x19
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948d1048b4a
 	QUAD $0x9d3c8d48000000a8
 	QUAD $0xdd048d4800000000
@@ -11703,7 +11703,7 @@ TEXT ·re_emit_string_list(SB), $240-24
 	QUAD $0x07ba840f07f88348
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948c1048b48
 	QUAD $0x24848b48000000a8
 	QUAD $0x850c8d48000000d0
@@ -13683,7 +13683,7 @@ TEXT ·parse_unicode_property(SB), $256-48
 	QUAD $0x0767840f07fb8348
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948d9048b48
 	QUAD $0x24848b48000000a0
 	QUAD $0x850c8d4800000090
@@ -15659,7 +15659,7 @@ TEXT ·re_string_list_canonicalize(SB), $240-32
 	BYTE $0x0a
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948d1048b4a
 	QUAD $0x9d3c8d48000000b0
 	QUAD $0xdd048d4800000000
@@ -19208,7 +19208,7 @@ TEXT ·re_string_list_op(SB), $256-32
 	BYTE $0x0f
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948d1048b4a
 	QUAD $0x9d3c8d48000000b8
 	QUAD $0xdd048d4800000000
@@ -19282,7 +19282,7 @@ TEXT ·re_string_list_op(SB), $256-32
 	BYTE $0x0e
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24848948d1048b4a
 	QUAD $0x9d3c8d48000000b8
 	QUAD $0xdd048d4800000000

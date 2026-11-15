@@ -2812,7 +2812,7 @@ TEXT ·cr_sort_and_remove_overlap(SB), $160-16
 	QUAD $0x050b840f07f88348
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+124568(SB), CX
 	QUAD $0x24448948c1048b48
 	QUAD $0x00000095148d4a78
 	QUAD $0xfffff8d5048d4a00

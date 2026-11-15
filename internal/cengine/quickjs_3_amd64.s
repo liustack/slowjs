@@ -2507,7 +2507,7 @@ TEXT ·rv_old(SB), $288-32
 	BYTE $0xff
 	BYTE $0xff
 	LEAQ ·engine_rodata+7085(SB), R14
-	LEAQ ·engine_rodata+114638(SB), AX
+	LEAQ ·engine_rodata+124510(SB), AX
 	QUAD $0x0000011824a48b4c
 	QUAD $0x0000010824ac8b4c
 	QUAD $0x8948d78948f78949

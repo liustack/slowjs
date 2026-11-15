@@ -26563,7 +26563,7 @@ TEXT ·js_json_to_str(SB), $264-16
 	MOVD $·engine_rodata+588(SB), R22
 	WORD $0xf9403bf7
 	WORD $0xf94047f8
-	MOVD $·engine_rodata+113602(SB), R25
+	MOVD $·engine_rodata+123474(SB), R25
 	WORD $0x91018114
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
