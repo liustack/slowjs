@@ -28,7 +28,7 @@ git add engine/pgo/profile.txt internal/cengine
 
 ## 循环
 
-页面让引擎的许多路径计数为 0：typed array、DataView、非 Latin-1 文本上的正则、BigInt、`Date.parse`、运算符的慢路径等等。LLVM 把计数为 0 的路径当成从不执行，把溢出放进去，把它的基本块挪开，真走这些路径的脚本就要付出代价。`loops.js` 把每类这样的路径各跑几千次。它和页面原样合并，两份输入都不放大：它的计数约占画像的 3%，足以把这些路径抬到 0 以上，又远不足以改变页面走的路径。它的收益和代价见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#第二份输入普通循环)。
+页面让引擎的许多路径计数为 0：typed array、DataView、非 Latin-1 文本上的正则、BigInt、`Date.parse`、运算符的慢路径、用 `apply` 把参数传下去的函数等等。LLVM 把计数为 0 的路径当成从不执行，把溢出放进去，把它的基本块挪开，真走这些路径的脚本就要付出代价。`loops.js` 把每类这样的路径各跑几千次。它和页面原样合并，两份输入都不放大：它的计数约占画像的 3%，足以把这些路径抬到 0 以上，又远不足以改变页面走的路径。它的收益和代价见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#第二份输入普通循环)。
 
 这些循环是专为训练写的。`compare/testdata` 的微基准用来衡量画像对没训练过的路径有什么影响，所以它们一个也不能进 `loops.js`，哪怕一部分也不行。
 

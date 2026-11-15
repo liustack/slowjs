@@ -1,0 +1,174 @@
+result sloppy, no parameters 0: string:this:obj:t n:0
+result sloppy, no parameters 1: string:this:obj:t n:1 number:1
+result sloppy, no parameters 2: string:this:obj:t n:2 number:1 number:2
+result sloppy, no parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+result sloppy, no parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result sloppy, two parameters 0: string:this:obj:t n:0
+result sloppy, two parameters 1: string:this:obj:t n:1 number:1
+result sloppy, two parameters 2: string:this:obj:t n:2 number:1 number:2
+result sloppy, two parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+result sloppy, two parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result strict, no parameters 0: string:this:obj:t n:0
+result strict, no parameters 1: string:this:obj:t n:1 number:1
+result strict, no parameters 2: string:this:obj:t n:2 number:1 number:2
+result strict, no parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+result strict, no parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result strict, two parameters 0: string:this:obj:t n:0
+result strict, two parameters 1: string:this:obj:t n:1 number:1
+result strict, two parameters 2: string:this:obj:t n:2 number:1 number:2
+result strict, two parameters 3: string:this:obj:t n:3 number:1 number:2 number:3
+result strict, two parameters 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result result dropped 0: number:0
+result result dropped 1: number:0
+result result dropped 2: number:0
+result result dropped 3: number:0
+result result dropped 5: number:0
+result result dropped, callee logs 0: string:done
+result result dropped, callee logs 1: string:done
+result result dropped, callee logs 2: string:done
+result result dropped, callee logs 3: string:done
+result result dropped, callee logs 5: string:done
+result callee logged 0,1,2,3,5
+result sloppy, parameters written before 0: string:this:obj:t n:0
+result sloppy, parameters written before 1: string:this:obj:t n:1 string:A
+result sloppy, parameters written before 2: string:this:obj:t n:2 string:A string:B
+result sloppy, parameters written before 3: string:this:obj:t n:3 string:A string:B number:3
+result sloppy, parameters written before 5: string:this:obj:t n:5 string:A string:B number:3 number:4 number:5
+result strict, parameters written before 0: string:this:obj:t n:0
+result strict, parameters written before 1: string:this:obj:t n:1 number:1
+result strict, parameters written before 2: string:this:obj:t n:2 number:1 number:2
+result strict, parameters written before 3: string:this:obj:t n:3 number:1 number:2 number:3
+result strict, parameters written before 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result sloppy with a default, parameter written 0: string:this:obj:t n:0
+result sloppy with a default, parameter written 1: string:this:obj:t n:1 number:1
+result sloppy with a default, parameter written 2: string:this:obj:t n:2 number:1 number:2
+result sloppy with a default, parameter written 3: string:this:obj:t n:3 number:1 number:2 number:3
+result sloppy with a default, parameter written 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result sloppy, parameter written after 0: string:this:obj:t n:0 | undefined 0
+result sloppy, parameter written after 1: string:this:obj:t n:1 number:1 | late 1
+result sloppy, parameter written after 2: string:this:obj:t n:2 number:1 number:2 | late 2
+result sloppy, parameter written after 3: string:this:obj:t n:3 number:1 number:2 number:3 | late 3
+result sloppy, parameter written after 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5 | late 5
+result sloppy, reads and forwards 0: string:0 undefined | this:obj:t n:0
+result sloppy, reads and forwards 1: string:1 undefined | this:obj:t n:1 number:1
+result sloppy, reads and forwards 2: string:2 2 | this:obj:t n:2 number:1 number:2
+result sloppy, reads and forwards 3: string:3 2 | this:obj:t n:3 number:1 number:2 number:3
+result sloppy, reads and forwards 5: string:5 2 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result strict, reads and forwards 0: string:0 undefined | this:obj:t n:0
+result strict, reads and forwards 1: string:1 undefined | this:obj:t n:1 number:1
+result strict, reads and forwards 2: string:2 2 | this:obj:t n:2 number:1 number:2
+result strict, reads and forwards 3: string:3 2 | this:obj:t n:3 number:1 number:2 number:3
+result strict, reads and forwards 5: string:5 2 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result two forwards 0: string:key:undefined | this:obj:t n:0
+result two forwards 1: string:key:1 | this:obj:t n:1 number:1
+result two forwards 2: string:key:1 | this:obj:t n:2 number:1 number:2
+result two forwards 3: string:key:1 | this:obj:t n:3 number:1 number:2 number:3
+result two forwards 5: string:key:1 | this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result arguments[0] written 0: string:this:obj:t n:0 a=undefined
+result arguments[0] written 1: string:this:obj:t n:1 string:w a=w
+result arguments[0] written 2: string:this:obj:t n:2 string:w number:2 a=w
+result arguments[0] written 3: string:this:obj:t n:3 string:w number:2 number:3 a=w
+result arguments[0] written 5: string:this:obj:t n:5 string:w number:2 number:3 number:4 number:5 a=w
+result kept in a variable 0: string:this:obj:t n:0 | undefined
+result kept in a variable 1: string:this:obj:t n:1 string:late | late
+result kept in a variable 2: string:this:obj:t n:2 string:late number:2 | late
+result kept in a variable 3: string:this:obj:t n:3 string:late number:2 number:3 | late
+result kept in a variable 5: string:this:obj:t n:5 string:late number:2 number:3 number:4 number:5 | late
+result spread 0: string:this:u n:0
+result spread 1: string:this:u n:1 number:1
+result spread 2: string:this:u n:2 number:1 number:2
+result spread 3: string:this:u n:3 number:1 number:2 number:3
+result spread 5: string:this:u n:5 number:1 number:2 number:3 number:4 number:5
+result apply through call 0: string:this:obj:t n:0
+result apply through call 1: string:this:obj:t n:1 number:1
+result apply through call 2: string:this:obj:t n:2 number:1 number:2
+result apply through call 3: string:this:obj:t n:3 number:1 number:2 number:3
+result apply through call 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result Reflect.apply 0: string:this:obj:t n:0
+result Reflect.apply 1: string:this:obj:t n:1 number:1
+result Reflect.apply 2: string:this:obj:t n:2 number:1 number:2
+result Reflect.apply 3: string:this:obj:t n:3 number:1 number:2 number:3
+result Reflect.apply 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result apply with a third argument 0: string:this:obj:t n:0
+result apply with a third argument 1: string:this:obj:t n:1 number:1
+result apply with a third argument 2: string:this:obj:t n:2 number:1 number:2
+result apply with a third argument 3: string:this:obj:t n:3 number:1 number:2 number:3
+result apply with a third argument 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5
+result from an arrow function 0: string:this:obj:t n:0
+result from an arrow function 1: string:this:obj:t n:1 string:A
+result from an arrow function 2: string:this:obj:t n:2 string:A number:2
+result from an arrow function 3: string:this:obj:t n:3 string:A number:2 number:3
+result from an arrow function 5: string:this:obj:t n:5 string:A number:2 number:3 number:4 number:5
+result length set 0: string:this:obj:t n:1 u
+result length set 1: string:this:obj:t n:1 number:1
+result length set 2: string:this:obj:t n:1 number:1
+result length set 3: string:this:obj:t n:1 number:1
+result length set 5: string:this:obj:t n:1 number:1
+result callee read after 0: string:this:obj:t n:0 callee true
+result callee read after 1: string:this:obj:t n:1 number:1 callee true
+result callee read after 2: string:this:obj:t n:2 number:1 number:2 callee true
+result callee read after 3: string:this:obj:t n:3 number:1 number:2 number:3 callee true
+result callee read after 5: string:this:obj:t n:5 number:1 number:2 number:3 number:4 number:5 callee true
+result sloppy callee, this undefined: string:this:global n:2 number:1 number:2
+result strict callee, this undefined: string:this:u n:2 number:1 number:2
+result sloppy callee, this null: string:this:global n:2 number:1 number:2
+result strict callee, this null: string:this:n n:2 number:1 number:2
+result sloppy callee, this a number: string:this:box:number:5 n:2 number:1 number:2
+result strict callee, this a number: string:this:number:5 n:2 number:1 number:2
+result sloppy callee, this a string: string:this:box:string:s n:2 number:1 number:2
+result strict callee, this a string: string:this:string:s n:2 number:1 number:2
+result sloppy callee, this an object: string:this:obj:t n:2 number:1 number:2
+result strict callee, this an object: string:this:obj:t n:2 number:1 number:2
+result sloppy forward to an arrow function: string:arrow 3
+result strict forward to an arrow function: string:arrow 3
+result sloppy forward to a bound function: string:this:obj:bound n:4 string:b0 number:1 number:2 number:3
+result strict forward to a bound function: string:this:obj:bound n:4 string:b0 number:1 number:2 number:3
+result sloppy forward to a bound arrow function: string:x/1/2/3
+result strict forward to a bound arrow function: string:x/1/2/3
+result sloppy forward to a proxy: string:trap 3 this:obj:t n:3 number:1 number:2 number:3
+result strict forward to a proxy: string:trap 3 this:obj:t n:3 number:1 number:2 number:3
+result sloppy forward to a revoked proxy: string:throws TypeError
+result strict forward to a revoked proxy: string:throws TypeError
+result sloppy forward to a class: string:throws TypeError
+result strict forward to a class: string:throws TypeError
+result sloppy forward to a derived class: string:throws TypeError
+result strict forward to a derived class: string:throws TypeError
+result sloppy forward to Math.max: number:3
+result strict forward to Math.max: number:3
+result sloppy forward to Array.prototype.push on this: number:4
+result strict forward to Array.prototype.push on this: number:4
+result sloppy forward to a generator function: string:gen number:1 number:2
+result strict forward to a generator function: string:gen number:1 number:2
+result sloppy forward to an async function: string:promise
+result strict forward to an async function: string:promise
+result sloppy forward to a method: string:m 12
+result strict forward to a method: string:m 12
+result sloppy forward to a getter of a function: string:getter 3
+result strict forward to a getter of a function: string:getter 3
+result sloppy forward to an object: string:throws TypeError
+result strict forward to an object: string:throws TypeError
+result sloppy forward to undefined: string:throws TypeError
+result strict forward to undefined: string:throws TypeError
+result sloppy forward to a number: string:throws TypeError
+result strict forward to a number: string:throws TypeError
+result sloppy forward to an object with apply: string:throws TypeError
+result strict forward to an object with apply: string:throws TypeError
+result new.target: string:no new.target
+result apply replaced: string:replaced obj:t 3 [object Arguments] | replaced obj:t 1 [object Arguments]
+result apply as a getter: string:this:obj:t n:2 number:1 number:2 | reads true
+result apply deleted: string:throws TypeError
+result apply of the callee shadowed: string:own apply 2
+result apply restored: string:this:obj:t n:1 string:r
+result call of another prototype chain: string:chain 3
+result callee writes the caller parameter: string:callee sees 1 1 a=changed arg0=changed
+result callee writes its own arguments: string:callee mine2 a=orig
+result recursion 1000: number:500500
+result recursion with extra arguments: number:50
+result 10000 arguments: string:49995000:10000
+result 10000 arguments, strict: number:118904
+result callee throws: string:throws TypeError k2
+result callee throws, strict: string:throws TypeError k3
+result callee throws, caught by the caller: string:caught k4 2
+mem-end obj=275 atom=694 shape=156 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
+mem-gc obj=275 atom=694 shape=156 prop=1244 jsfunc=49 cfunc=143 array=11 fast_array=11 elements=10192 binary=0
+--- status exit 0

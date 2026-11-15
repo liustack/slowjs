@@ -11595,22 +11595,28 @@ static JSString *js_backtrace_func_name(JSContext *ctx, JSValueConst fun)
 /* a walk of the frames of the stack for a stack trace: each JSStackFrame,
    and for the one of an entry of the register loop (JS_MODE_REGVM) each of
    its frames, from the top frame it saved (cur_sp, at the pc cur_pc) down
-   to its entry frame (engine/regvm-run.h) */
+   to its entry frame (engine/regvm-run.h). A frame of the loop that CALLMA
+   entered for Function.prototype.apply has the frame of apply right below
+   it, as the C call of apply had one (rv_frame_applied). */
 typedef struct JSFrameWalk {
     JSStackFrame *sf;
     JSValue *F;          /* a frame of the register loop in sf, or NULL */
     const uint8_t *pc;   /* the pc of F */
+    BOOL apply;          /* at the frame of apply below F */
 } JSFrameWalk;
 
 static JSValue rv_frame_func(JSValue *F);
 static uint32_t rv_frame_pc(JSValue *F, const uint8_t *pc);
 static JSValue *rv_frame_caller(JSValue *F, const uint8_t **ppc);
+static BOOL rv_frame_applied(JSValue *F);
+static JSValue rv_frame_apply(JSValue *F);
 
 static void js_frame_enter(JSFrameWalk *w, JSStackFrame *sf)
 {
     w->sf = sf;
     w->F = NULL;
     w->pc = NULL;
+    w->apply = FALSE;
     if (sf && (sf->js_mode & JS_MODE_REGVM)) {
         w->F = sf->cur_sp;
         w->pc = sf->cur_pc;
@@ -11620,11 +11626,24 @@ static void js_frame_enter(JSFrameWalk *w, JSStackFrame *sf)
 static void js_frame_next(JSFrameWalk *w)
 {
     if (w->F) {
+        if (!w->apply && rv_frame_applied(w->F)) {
+            w->apply = TRUE;
+            return;
+        }
+        w->apply = FALSE;
         w->F = rv_frame_caller(w->F, &w->pc);
         if (w->F)
             return;
     }
     js_frame_enter(w, w->sf->prev_frame);
+}
+
+/* the function of the frame of w */
+static JSValueConst js_frame_func(const JSFrameWalk *w)
+{
+    if (!w->F)
+        return w->sf->cur_func;
+    return w->apply ? rv_frame_apply(w->F) : rv_frame_func(w->F);
 }
 
 /* record the frame of w in f. With hold set, f holds the bytecode, so it
@@ -11633,7 +11652,7 @@ static void js_backtrace_frame(JSContext *ctx, JSBacktraceFrame *f,
                                const JSFrameWalk *w, BOOL hold)
 {
     JSFunctionBytecode *b;
-    JSValueConst func = w->F ? rv_frame_func(w->F) : w->sf->cur_func;
+    JSValueConst func = js_frame_func(w);
 
     f->func_name = js_backtrace_func_name(ctx, func);
     b = JS_GetFunctionBytecode(func);
@@ -11999,7 +12018,7 @@ static int js_backtrace_count(JSContext *ctx, int backtrace_flags,
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
             continue;
         }
-        b = JS_GetFunctionBytecode(w.F ? rv_frame_func(w.F) : w.sf->cur_func);
+        b = JS_GetFunctionBytecode(js_frame_func(&w));
         if (b && b->func_name == JS_ATOM__eval_)
             *ptop_level = TRUE;
         n++;
@@ -35829,7 +35848,7 @@ JSAtom JS_GetScriptOrModuleName(JSContext *ctx, int n_stack_levels)
             return JS_ATOM_NULL;
     }
     for(;;) {
-        func = w.F ? rv_frame_func(w.F) : w.sf->cur_func;
+        func = js_frame_func(&w);
         if (JS_VALUE_GET_TAG(func) != JS_TAG_OBJECT)
             return JS_ATOM_NULL;
         p = JS_VALUE_GET_OBJ(func);

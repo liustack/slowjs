@@ -78,6 +78,31 @@ static JSValue *rv_frame_caller(JSValue *F, const uint8_t **ppc)
     return h->caller;
 }
 
+/* the frame F was entered by CALLMA for Function.prototype.apply
+   (regvm-ops-args.h): a stack trace has the frame of apply below it, whose
+   function the caller keeps in the slot of the result of its call, below
+   the window w (retpc is the end of the CALLM or CALLMD w 2) */
+static BOOL rv_frame_applied(JSValue *F)
+{
+    return (((RVHeader *)F)->dst & RV_DST_APPLY) != 0;
+}
+
+static JSValue rv_frame_apply(JSValue *F)
+{
+    RVHeader *h = (RVHeader *)F;
+    return h->caller[(int8_t)h->retpc[-2] - 1];
+}
+
+/* the return or the unwinding of such a frame, the header h: apply
+   freed, its slot to have the result of the call */
+static no_inline void rv_apply_unpark(JSContext *ctx, RVHeader *h)
+{
+    JSValue *q = &h->caller[(int8_t)h->retpc[-2] - 1];
+    JSValue v = *q;
+    *q = JS_UNDEFINED;
+    JS_FreeValue(ctx, v);
+}
+
 
 /* the caller_ctx of JS_CallInternal for the frame F of the context ctx: an
    entry frame keeps the one JS_RegvmRun was given, a call inside the loop
@@ -373,6 +398,8 @@ static no_inline const uint8_t *rv_unwind(JSContext *ctx, JSStackFrame *sf,
         rt->call_depth--;
         if (h->dst & RV_DST_SEG)
             rv_seg_back(rt, rv_frame_end(h->caller));
+        if (h->dst & RV_DST_APPLY)
+            rv_apply_unpark(ctx, h);
         if (RV_DST_SLOT(h->dst) == RV_DST_ENTRY) {
             return NULL;
         }
@@ -713,6 +740,8 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
         rv_free_extra(ctx, F);
     if (h->dst & RV_DST_SEG)
         rv_seg_back(rt, rv_frame_end(h->caller));
+    if (h->dst & RV_DST_APPLY)
+        rv_apply_unpark(ctx, h);
     dst = RV_DST_SLOT(h->dst);
     if (dst == RV_DST_ENTRY)
         goto rv_done;
