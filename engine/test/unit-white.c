@@ -7823,6 +7823,81 @@ static void test_array_from_past_32_bits(void)
     vm_free(&v);
 }
 
+/* ---- Object.defineProperty on a property that is there, out of memory ----
+
+   A define that changes the flags of a property that is there copies the
+   shape of the object when another object shares it, which can run out of
+   memory. Each call of the allocator fails in turn in a define of the
+   length of a new array, of a data property and of an accessor of a new
+   literal, each sharing its shape (with the context, or with a twin o2),
+   and after each the property is as it was (the define threw out of
+   memory) or as the define makes it.
+   Before, the length or the value was set first, and a failed copy left it
+   set with the flags as they were. */
+static void test_define_existing_oom(void)
+{
+    static const struct {
+        const char *name, *reset, *desc, *state, *before, *after;
+    } cases[] = {
+        { "the length and writable of an array", "o = []", "'length', { value: 2, writable: false }",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable", "0:true", "2:false" },
+        { "the length of an array and writable after a shorter one", "o = [1, 2, 3, 4]",
+          "'length', { value: 2, writable: false }",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable + ':' + o.join()",
+          "4:true:1,2,3,4", "2:false:1,2" },
+        { "a value and writable", "o = { x: 1 }; o2 = { x: 1 }", "'x', { value: 2, writable: false }",
+          "o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "1:true", "2:false" },
+        { "a value and enumerable", "o = { x: 1 }; o2 = { x: 1 }", "'x', { value: 2, enumerable: false }",
+          "o.x + ':' + Object.keys(o).length", "1:1", "2:0" },
+        { "a getter and enumerable", "o = mk(); o2 = mk()",
+          "'x', { get: function () { return 2 }, enumerable: false }", "o.x + ':' + Object.keys(o).length", "1:1",
+          "2:0" },
+    };
+    VM v = vm_new();
+    size_t c;
+    char src[256];
+
+    for (c = 0; c < countof(cases); c++) {
+        JSValue g, f;
+        int fail, n = 0, ooms = 0;
+
+        snprintf(src, sizeof(src), "var o, o2; function mk() { return { get x() { return 1 } } }"
+                 " function change() { Object.defineProperty(o, %s) }", cases[c].desc);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[c].name);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "change");
+        JS_FreeValue(v.ctx, g);
+        /* once, so that the code of change is compiled and its atoms made */
+        CHECK(eval_ok(v.ctx, cases[c].reset) && eval_ok(v.ctx, "change()"), "%s: the first change threw",
+              cases[c].name);
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            int made;
+            JSValue r;
+
+            CHECK(eval_ok(v.ctx, cases[c].reset), "%s: the reset threw", cases[c].name);
+            CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: before call %d", cases[c].name, fail);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(fail > 0 && JS_IsUncatchableException(v.ctx), "%s: call %d failing: not out of memory",
+                      cases[c].name, fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: call %d failing: the define changed it",
+                      cases[c].name, fail);
+            } else {
+                JS_FreeValue(v.ctx, r);
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].after), "%s: call %d failing: not defined",
+                      cases[c].name, fail);
+            }
+        }
+        CHECK(n > 0 && ooms > 0, "%s: %d calls of the allocator, %d failed the define", cases[c].name, n, ooms);
+        JS_FreeValue(v.ctx, f);
+    }
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7905,6 +7980,7 @@ int main(int argc, char **argv)
     test_max_index();
     test_max_props();
     test_array_from_past_32_bits();
+    test_define_existing_oom();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();

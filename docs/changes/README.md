@@ -287,6 +287,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A shape holds at most 2^26 - 1 properties, so that a lookup cannot miss one past that | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-shape-holds-at-most-226---1-properties) |
 | An element added to an array is refused, or fails, before the array changes: a refused store does not throw the RangeError of a conversion, and an element that fails leaves the length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#an-array-element-is-refused-before-the-array-changes) |
 | `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
+| A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included | Unreleased | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 
 ## Memory
 

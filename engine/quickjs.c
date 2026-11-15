@@ -15513,6 +15513,11 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
             goto redo_prop_update;
         }
 
+        /* A define that changes the flags of the property makes the shape
+           p's own (js_shape_prepare_update), and copying a shared shape can
+           run out of memory. Each path below does that before it changes
+           anything (a getter, a value, the length of an array), so that a
+           define that fails leaves the property as it was. */
         if (flags & (JS_PROP_HAS_VALUE | JS_PROP_HAS_WRITABLE |
                      JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
             if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
@@ -15558,6 +15563,12 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                             goto not_configurable;
                         }
                     }
+                    /* the flags set at the end */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if (((prs->flags ^ flags) & mask) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                 }
                 if (flags & JS_PROP_HAS_GET) {
                     if (pr->u.getset.getter)
@@ -15617,6 +15628,15 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                 }
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) {
+                    /* the variable made read-only below, or the flags set
+                       at the end */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if ((((prs->flags ^ flags) & mask) ||
+                         (flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                         JS_PROP_HAS_WRITABLE) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         if (p->class_id == JS_CLASS_MODULE_NS) {
                             /* JS_PROP_WRITABLE is always true for variable
@@ -15650,6 +15670,13 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                         }
                     }
                 } else if (prs->flags & JS_PROP_LENGTH) {
+                    /* the length made read-only below. A shape that
+                       set_array_length compacts is p's own too. */
+                    if ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                        JS_PROP_HAS_WRITABLE &&
+                        (prs->flags & JS_PROP_WRITABLE) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         /* Note: no JS code is executable because
                            'val' is guaranted to be a Uint32 */
@@ -15671,16 +15698,18 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                     return res;
                 } else {
+                    /* the flags before the value, which cannot fail */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) & JS_PROP_C_W_E;
+                    if ((prs->flags ^ flags) & mask) {
+                        if (js_shape_prepare_update(ctx, p, &prs))
+                            return -1;
+                        prs->flags = (prs->flags & ~mask) | (flags & mask);
+                    }
                     if (flags & JS_PROP_HAS_VALUE) {
                         JS_FreeValue(ctx, pr->u.value);
                         pr->u.value = JS_DupValue(ctx, val);
                     }
-                    if (flags & JS_PROP_HAS_WRITABLE) {
-                        if (js_update_property_flags(ctx, p, &prs,
-                                                     (prs->flags & ~JS_PROP_WRITABLE) |
-                                                     (flags & JS_PROP_WRITABLE)))
-                            return -1;
-                    }
+                    return TRUE;
                 }
             }
         }
