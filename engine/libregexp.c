@@ -4602,7 +4602,7 @@ static void lre_set_add_range(LRESet *set, uint32_t low, uint32_t high)
    and steps over the other assertions: they can only stop a match. It
    gives up when a path can reach the end of the regexp without consuming a
    unit, at a backward jump, at an op that consumes a unit it does not know
-   (., \s, a back reference, a class that ignores case, ...), at an op that
+   (., a back reference, a class that ignores case, ...), at an op that
    moves back, and after LRE_FIRST_BUDGET ops.
 
    A character that ignores case matches the units whose canonical form,
@@ -4689,6 +4689,18 @@ static BOOL lre_first_set(LRESet *set, const uint8_t *pc0)
             n = get_u16(pc + 1);
             for (k = 0; k < n; k++)
                 lre_set_add_range(set, get_u32(pc + 3 + 8 * k), get_u32(pc + 7 + 8 * k));
+            break;
+        case REOP_space:
+        case REOP_not_space:
+            /* the units below 256 that lre_is_space takes (\s), or the
+               others (\S), and the units from 256 up, which hold both
+               (U+1680, U+2000 to U+200A, U+FEFF ... are spaces). Outside
+               unicode mode the op reads one unit, whatever the case flag. */
+            for (c = 0; c < 256; c++) {
+                if ((lre_is_space_byte(c) != 0) == (*pc == REOP_space))
+                    lre_set_add(set, c);
+            }
+            set->high = TRUE;
             break;
         default:
             return FALSE;

@@ -89,6 +89,7 @@ int white_regexp_standard(JSContext *ctx, const char *name);
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
+int white_lre_plan(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
@@ -5858,6 +5859,46 @@ static void test_regexp_literal(void)
     vm_free(&v);
 }
 
+/* The units a match can start with (lre_first_set), as the plan of lre_skip
+   keeps them (white_lre_plan): \s and \S start a match at the units the
+   machine takes for them (lre_is_space: 9 to 13, 32 and 160 below 256, and
+   units from 256 up), alone, after an optional part, in alternatives and
+   after a lookbehind, with i, and not with u or y, which keep the loop. A
+   class, alternatives of characters and a dot are as before. */
+static void test_regexp_first_set(void)
+{
+    enum { I = 2, U = 16, Y = 32 };
+    static const struct {
+        const char *re;
+        int flags;
+        const char *want;
+    } cases[] = {
+        { "\\s+", 0, "set high 9-13 32 160" },
+        { "\\s", I, "set high 9-13 32 160" },
+        { "\\S", 0, "set high 0-8 14-31 33-159 161-255" },
+        { "\\S|a", 0, "set high 0-8 14-31 33-159 161-255" },
+        /* the regexp of a split of the V8 RegExp benchmark */
+        { "\\s?;\\s?", 0, "set high 9-13 32 59 160" },
+        { "\\s*x", 0, "set high 9-13 32 120 160" },
+        { "(?:^|\\s+)x(?:\\s+|$)", 0, "set high 9-13 32 120 160" },
+        { "(?<=a)\\s", 0, "set high 9-13 32 160" },
+        { "\\s", U, "loop" },
+        { "\\s", Y, "loop" },
+        { "[ab]", 0, "range 97-98" },
+        { "a|b", 0, "set 97-98" },
+        { ".x", 0, "loop" },
+    };
+    VM v = vm_new();
+    char out[256];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int n = white_lre_plan(cases[i].re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n >= 0 && !strcmp(out, cases[i].want), "/%s/ flags %d: \"%s\", want \"%s\"",
+              cases[i].re, cases[i].flags, out, cases[i].want);
+    }
+    vm_free(&v);
+}
+
 /* lre_split with the chains gives the machine what the walk over the split
    ops one at a time gives it (white_lre_split_same), at every split op it can
    be called at, on each character of a list and at the end of the string:
@@ -8564,6 +8605,7 @@ int main(int argc, char **argv)
     test_regexp_split_budget();
     test_regexp_chains();
     test_regexp_literal();
+    test_regexp_first_set();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
