@@ -36,12 +36,17 @@ type variant struct {
 	Bin  string   // binary name
 	Tags string   // build tags
 	Env  []string // extra environment
+	// PagesOnly: a variant of an engine that is already in the list, for the
+	// page runs of tifa/run.sh. It is built, but the V8 suite runs it only
+	// when -engines names it.
+	PagesOnly bool
 }
 
 var variants = []variant{
-	{"liustack-slowjs", "liustack", "eng_liustack", nil},
-	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil},
-	{"moejs", "moejs", "eng_moejs", nil},
+	{"liustack-slowjs", "liustack", "eng_liustack", nil, false},
+	{"liustack-slowjs-polyfill", "liustackpolyfill", "eng_liustackpolyfill", nil, true},
+	{"go-quickjs-interp", "goquickjs", "eng_goquickjs", nil, false},
+	{"moejs", "moejs", "eng_moejs", nil, false},
 }
 
 var (
@@ -223,9 +228,11 @@ func check(err error) {
 	}
 }
 
+// selected is the variants to build and run: all of them for -engines, else every
+// engine, and the PagesOnly variants only when only the binaries are built.
 func selected() []variant {
 	if *flagEngines == "" {
-		return variants
+		return slices.DeleteFunc(slices.Clone(variants), func(v variant) bool { return v.PagesOnly && !*flagBuildOnl })
 	}
 	var out []variant
 	for _, n := range strings.Split(*flagEngines, ",") {
