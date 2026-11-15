@@ -216,6 +216,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The strings of a Date are written without snprintf | v0.31.1 | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
 | A context keeps the fields of the last time value | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
 | `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts`, on the range formatter of `internal/gointl` | Unreleased | [intl/intl.js](../../intl/intl.js), `numberRangeFormatted` in [intl/bridge.go](../../intl/bridge.go) |
+| A collator compares two short Latin strings from a table of their characters, with no normal form, and `localeCompare` with no locales or options keeps one collator | Unreleased | [internal/gointl/qjs_collshort.go](../../internal/gointl/qjs_collshort.go), `localeCompare` in [intl/intl.js](../../intl/intl.js) |
 
 ## Temporal
 

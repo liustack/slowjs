@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/liustack/slowjs/internal/gointl/internal/colldata"
 )
@@ -111,6 +112,11 @@ type Collator struct {
 	variableTop        uint32
 	// skipPrefix is the IdenticalPrefix divergence.
 	skipPrefix bool
+	// short holds the elements of the characters below U+0180 whose
+	// elements no context changes, built at the compare compares counts to
+	// shortAfter (qjs_collshort.go).
+	short    atomic.Pointer[shortTable]
+	compares atomic.Uint32
 }
 
 // The strengths, as ICU numbers the levels.
@@ -514,6 +520,17 @@ func (c *Collator) CompareLimited(a, b string, l *Limits) int {
 	if a == b {
 		return 0
 	}
+	if t := c.shortTableOf(); t != nil {
+		if r, ok := c.compareShort(t, a, b, l); ok {
+			return r
+		}
+	}
+	return c.compareGeneral(a, b, l)
+}
+
+// compareGeneral is CompareLimited of any two strings that differ: the
+// elements of their normal forms, built whole.
+func (c *Collator) compareGeneral(a, b string, l *Limits) int {
 	if c.skipPrefix {
 		start := c.comparisonStart(a, b, l)
 		return c.compareElements(c.sortElementsFrom(a, start, l), c.sortElementsFrom(b, start, l), l)

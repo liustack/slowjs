@@ -1127,9 +1127,19 @@
 		return toString(s);
 	}
 
+	let defaultCollator;
+
 	const string = {
 		localeCompare(that, locales = undefined, options = undefined) {
 			const s = thisString(this, 'localeCompare'), t = toString(that);
+			if (locales === undefined && options === undefined) {
+				// The collator of a sort by name, kept apart from the cache:
+				// no key to build and look up on each compare.
+				if (defaultCollator === undefined) {
+					defaultCollator = collator(undefined, undefined);
+				}
+				return call(defaultCollator, colCompare, s, t);
+			}
 			const c = cached(cacheKey('collator', locales, options), function () {
 				return collator(locales, options);
 			});

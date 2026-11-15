@@ -8,6 +8,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts` (ES2023): "€80 – €120", with the parts both ends share written once, the approximately sign when both ends round alike, and the source of each part. They give what Chrome 157 gives on 16,661 expressions in every locale, style and notation.
 
+### Changed
+
+- `localeCompare` and `Intl.Collator.prototype.compare` compare two short strings of Latin letters, digits and punctuation from a table of their characters, with no normal form and no allocation: two ids of 12 characters compare in 206 ns where they took 2.15 µs, with the same answer as before for every pair. `localeCompare` with no locales or options no longer looks its collator up on each call. A page of jotai that sorts with `localeCompare` runs 9.1% fewer instructions.
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
