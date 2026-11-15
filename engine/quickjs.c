@@ -60813,80 +60813,105 @@ static int value_buffer_append(ValueBuffer *b, JSValue val)
     return 0;
 }
 
-/* find in 'p' or its prototypes */
-static JSShapeProperty *find_property_regexp(JSProperty **ppr,
-                                             JSObject *p, JSAtom atom)
-{
-    JSShapeProperty *prs;
+/* The places of the properties of RegExp.prototype that RegExp.prototype
+   [Symbol.replace], [Symbol.match] and [Symbol.split] read: JS_AddIntrinsicRegExp
+   adds them in the order of js_regexp_proto_funcs, then constructor. A script
+   that deletes one and adds it again moves it, and the checks below then find
+   another atom at its place and say no. */
+#define JS_REGEXP_PROTO_FLAGS 0
+#define JS_REGEXP_PROTO_GLOBAL 2 /* the 8 flags, in the order of js_regexp_flag_getters */
+#define JS_REGEXP_PROTO_EXEC 10
+#define JS_REGEXP_PROTO_MATCH 15
+#define JS_REGEXP_PROTO_CONSTRUCTOR 19
 
-    for(;;) {
-        prs = find_own_property(ppr, p, atom);
-        if (prs)
-            return prs;
-        p = p->shape->proto;
-        if (!p)
-            return NULL;
-        if (p->is_exotic)
-            return NULL;
-    }
+static const struct {
+    uint16_t atom, mask;
+} js_regexp_flag_getters[8] = {
+    { JS_ATOM_global, LRE_FLAG_GLOBAL },
+    { JS_ATOM_ignoreCase, LRE_FLAG_IGNORECASE },
+    { JS_ATOM_multiline, LRE_FLAG_MULTILINE },
+    { JS_ATOM_dotAll, LRE_FLAG_DOTALL },
+    { JS_ATOM_unicode, LRE_FLAG_UNICODE },
+    { JS_ATOM_unicodeSets, LRE_FLAG_UNICODE_SETS },
+    { JS_ATOM_sticky, LRE_FLAG_STICKY },
+    { JS_ATOM_hasIndices, LRE_FLAG_INDICES },
+};
+
+/* TRUE when f is the C function func with magic made for the realm ctx: a
+   built-in of ctx that the script cannot make again, only move. */
+static BOOL js_regexp_own_cfunc(JSContext *ctx, JSObject *f, void *func, int magic)
+{
+    return f && f->class_id == JS_CLASS_C_FUNCTION &&
+        f->u.cfunc.c_function.generic == func && f->u.cfunc.magic == magic &&
+        f->u.cfunc.realm == ctx;
 }
 
-static BOOL check_regexp_getter(JSContext *ctx,
-                                JSObject *p, JSAtom atom,
-                                JSCFunction *func, int magic)
+/* TRUE when the property at place i of the prototype proto is the getter
+   func with magic of the realm ctx, under the name atom */
+static BOOL js_regexp_proto_getter(JSContext *ctx, JSObject *proto, int i,
+                                   JSAtom atom, void *func, int magic)
 {
-    JSProperty *pr;
-    JSShapeProperty *prs;
+    JSShapeProperty *prs = &get_shape_prop(proto->shape)[i];
 
-    prs = find_property_regexp(&pr, p, atom);
-    if (!prs)
-        return FALSE;
-    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_GETSET)
-        return FALSE;
-    if (!pr->u.getset.getter)
-        return FALSE;
-    return JS_IsCFunction(ctx, JS_MKPTR(JS_TAG_OBJECT, pr->u.getset.getter),
-                          func, magic);
+    return prs->atom == atom && (prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET &&
+        js_regexp_own_cfunc(ctx, proto->prop[i].u.getset.getter, func, magic);
 }
 
+/* TRUE when obj is a regexp of the realm ctx whose replace, match and split
+   can run without the steps of the specification that a script could see:
+   an object of ctx->regexp_shape (its prototype is RegExp.prototype of ctx,
+   its one own property is lastIndex, writable, as the constructor made it),
+   lastIndex a number (ToLength calls nothing), and the flags getter, the 8
+   flag getters and exec of RegExp.prototype the built-ins of ctx. Then reading
+   flags calls no script and gives the flags of the bytecode, and exec is
+   js_regexp_exec. A script that changes one of them, on RegExp.prototype or
+   on the object, makes this FALSE until it puts the built-in back. exec may
+   not have been made yet (JS_PROP_AUTOINIT): it is then the entry of
+   js_regexp_proto_funcs, made for ctx. */
 static BOOL js_is_standard_regexp(JSContext *ctx, JSValueConst obj)
 {
-    JSObject *p;
-    JSProperty *pr;
+    JSObject *p, *proto;
     JSShapeProperty *prs;
+    JSProperty *pr;
+    const JSCFunctionListEntry *e;
     JSCFunctionType ft;
-    
+    int i;
+
     if (JS_VALUE_GET_TAG(obj) != JS_TAG_OBJECT)
         return FALSE;
     p = JS_VALUE_GET_OBJ(obj);
-    if (p->class_id != JS_CLASS_REGEXP)
+    if (p->class_id != JS_CLASS_REGEXP || p->shape != ctx->regexp_shape ||
+        !JS_IsNumber(p->prop[0].u.value))
         return FALSE;
-    /* check that the lastIndex is a number (no side effect while getting it) */
-    prs = find_own_property(&pr, p, JS_ATOM_lastIndex);
-    if (!prs)
+    proto = p->shape->proto;
+    if (proto->shape->prop_count <= JS_REGEXP_PROTO_EXEC)
         return FALSE;
-    if (!JS_IsNumber(pr->u.value))
-        return FALSE;
-
-    /* check the 'exec' method. */
-    prs = find_property_regexp(&pr, p, JS_ATOM_exec);
-    if (!prs)
-        return FALSE;
-    if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
-        return FALSE;
-    if (!JS_IsCFunction(ctx, pr->u.value, js_regexp_exec, 0))
-        return FALSE;
-    /* check the flag getters */
     ft.getter = js_regexp_get_flags;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_flags, ft.generic, 0))
+    if (!js_regexp_proto_getter(ctx, proto, JS_REGEXP_PROTO_FLAGS, JS_ATOM_flags, ft.generic, 0))
         return FALSE;
     ft.getter_magic = js_regexp_get_flag;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_global, ft.generic, LRE_FLAG_GLOBAL))
+    for (i = 0; i < countof(js_regexp_flag_getters); i++) {
+        if (!js_regexp_proto_getter(ctx, proto, JS_REGEXP_PROTO_GLOBAL + i,
+                                    js_regexp_flag_getters[i].atom, ft.generic,
+                                    js_regexp_flag_getters[i].mask))
+            return FALSE;
+    }
+    prs = &get_shape_prop(proto->shape)[JS_REGEXP_PROTO_EXEC];
+    pr = &proto->prop[JS_REGEXP_PROTO_EXEC];
+    if (prs->atom != JS_ATOM_exec)
         return FALSE;
-    if (!check_regexp_getter(ctx, p, JS_ATOM_unicode, ft.generic, LRE_FLAG_UNICODE))
+    switch (prs->flags & JS_PROP_TMASK) {
+    case JS_PROP_NORMAL:
+        return JS_VALUE_GET_TAG(pr->u.value) == JS_TAG_OBJECT &&
+            js_regexp_own_cfunc(ctx, JS_VALUE_GET_OBJ(pr->u.value), js_regexp_exec, 0);
+    case JS_PROP_AUTOINIT:
+        e = pr->u.init.opaque;
+        return js_autoinit_get_realm(pr) == ctx &&
+            js_autoinit_get_id(pr) == JS_AUTOINIT_ID_PROP &&
+            e->def_type == JS_DEF_CFUNC && e->u.func.cfunc.generic == js_regexp_exec;
+    default:
         return FALSE;
-    /* XXX: need to check all accessors, need a faster way.  */
-    return TRUE;
+    }
 }
 
 static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
@@ -60928,7 +60953,10 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
             goto exception;
     }
 
-    if (!functionalReplace && js_is_standard_regexp(ctx, rx)) {
+    /* while an uncatchable exception is pending (left by a toString of str
+       or rep), the generic path fails at its first call */
+    if (!functionalReplace && !js_uncatchable_pending(ctx->rt) &&
+        js_is_standard_regexp(ctx, rx)) {
         /* use faster version for simple cases */
         res = js_regexp_replace(ctx, rx, str, rep_val);
         if (!JS_IsUndefined(res))

@@ -1326,6 +1326,73 @@ static void test_uncatchable_instanceof(void)
     }
 }
 
+/* A RegExp method that does its work without the calls of the specification,
+   on a regexp that nothing changed, fails as those calls do while an
+   uncatchable exception is pending: here one left by the toString of an
+   argument, which returned undefined. Called by the host, the method
+   returns the exception, not a value. Called from a script, the code after
+   it does not run. A replace first makes RegExp.prototype.exec, so that the
+   replace of the case is not the first one. */
+static void test_uncatchable_regexp_fast(void)
+{
+    static const struct { const char *name, *fn, *self, *args; int argc; } cases[] = {
+        { "replace with a string", "RegExp.prototype[Symbol.replace]", "/a/g", "'aa', o", 2 },
+    };
+    size_t i;
+    int host;
+
+    for (i = 0; i < countof(cases); i++) {
+        for (host = 0; host < 2; host++) {
+            VM v = vm_new();
+            JSValue r, c = JS_UNDEFINED;
+            char js[256], *text = NULL;
+            const char *how = host ? "called by the host" : "called from a script";
+            int unc = 0;
+
+            eval_ok(v.ctx, fail_js[END_OOM]);
+            /* the resolve function of a promise, given a thenable whose then
+               getter runs out of memory, rejects the promise and returns */
+            eval_ok(v.ctx, "/b/[Symbol.replace]('b', 'c'); var after = 0, ran = 0, res;"
+                    " new Promise(r => { res = r });"
+                    " var o = { toString: res.bind(undefined, { get then() { fail() } }) }");
+            if (host) {
+                snprintf(js, sizeof(js), "[%s, %s, %s]", cases[i].fn, cases[i].self, cases[i].args);
+                c = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                CHECK(!JS_IsException(c), "regexp %s: %s threw", cases[i].name, js);
+            }
+            room(&v, 1 << 20);
+            if (host) {
+                JSValue f = JS_GetPropertyUint32(v.ctx, c, 0), self = JS_GetPropertyUint32(v.ctx, c, 1);
+                JSValue argv[2] = { JS_GetPropertyUint32(v.ctx, c, 2), JS_GetPropertyUint32(v.ctx, c, 3) };
+                r = JS_Call(v.ctx, f, self, cases[i].argc, argv);
+                JS_FreeValue(v.ctx, f);
+                JS_FreeValue(v.ctx, self);
+                JS_FreeValue(v.ctx, argv[0]);
+                JS_FreeValue(v.ctx, argv[1]);
+            } else {
+                snprintf(js, sizeof(js), "%s.call(%s, %s); after = 1", cases[i].fn, cases[i].self, cases[i].args);
+                r = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+            }
+            if (JS_IsException(r)) {
+                unc = JS_IsUncatchableException(v.ctx);
+                text = exception_text(v.ctx);
+            }
+            JS_FreeValue(v.ctx, r);
+            JS_FreeValue(v.ctx, c);
+            unlimit(&v);
+            CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+                  "regexp %s, %s: ended with %s, want the uncatchable out of memory error", cases[i].name,
+                  how, text ? text : "no error");
+            CHECK(eval_is(v.ctx, "after", "0"), "regexp %s, %s: the code after it ran with the exception pending",
+                  cases[i].name, how);
+            CHECK(eval_is(v.ctx, "ran", "0"), "regexp %s, %s: a function ran with the exception pending",
+                  cases[i].name, how);
+            free(text);
+            vm_free(&v);
+        }
+    }
+}
+
 /* f.apply(this, arguments) in the register loop (CALLMA,
    engine/regvm-ops-args.h) calls f from the loop only when no uncatchable
    exception is pending: with one pending, after an async function ran out
@@ -3208,6 +3275,7 @@ int main(void)
     test_uncatchable_fast_call();
     test_uncatchable_instanceof();
     test_uncatchable_apply_forward();
+    test_uncatchable_regexp_fast();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();

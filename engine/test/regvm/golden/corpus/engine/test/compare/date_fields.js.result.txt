@@ -1,4 +1,4 @@
-mem-end obj=251 atom=616 shape=124 prop=1126 jsfunc=10 cfunc=176 array=3 fast_array=3 elements=205 binary=0
-mem-gc obj=249 atom=615 shape=122 prop=1122 jsfunc=9 cfunc=176 array=3 fast_array=3 elements=205 binary=0
+mem-end obj=250 atom=616 shape=124 prop=1124 jsfunc=10 cfunc=175 array=3 fast_array=3 elements=205 binary=0
+mem-gc obj=248 atom=615 shape=122 prop=1120 jsfunc=9 cfunc=175 array=3 fast_array=3 elements=205 binary=0
 hash result 187 759959fe72038b25
 --- status exit 0

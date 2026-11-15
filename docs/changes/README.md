@@ -239,6 +239,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A regexp looks for the literal every match holds before the backtracking machine runs, and has no match when the string does not hold it. Bytecode version 13 | v0.31.1 | [regexp.md](regexp.md#a-literal-every-match-holds) |
 | Compiled regexps kept per VM | v0.27.0 | [regexp.md](regexp.md#compiled-regexps-kept-per-vm) |
 | Classes of regexps with the v flag parsed as the specification does | v0.28.3 | [regexp.md](regexp.md#classes-of-regexps-with-the-v-flag) |
+| A regexp that nothing changed is told by the slots of its shape and of `RegExp.prototype`, so a replace by a regexp whose flag getter a script replaced calls it | Unreleased | `js_is_standard_regexp` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Strings
 

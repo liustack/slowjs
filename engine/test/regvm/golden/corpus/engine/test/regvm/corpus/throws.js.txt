@@ -25,6 +25,6 @@ result TypeError: getter
 result Error: boom v
 result Error: boom 11 1
 result     at boom /    at d1 /    at d2 /    at d3 /    at names /    at <anonymous> /    at <eval> /
-mem-end obj=195 atom=547 shape=126 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=195 atom=547 shape=126 prop=957 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=194 atom=547 shape=126 prop=955 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=194 atom=547 shape=126 prop=955 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

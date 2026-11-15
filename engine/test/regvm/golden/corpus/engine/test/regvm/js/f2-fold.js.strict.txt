@@ -34,6 +34,6 @@ result loop 150 1368
 result for-of 200 -23,-22,-21
 result closures 300 498
 result generator 1038
-mem-end obj=199 atom=567 shape=139 prop=968 jsfunc=1 cfunc=134 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=197 atom=565 shape=137 prop=964 jsfunc=0 cfunc=134 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=198 atom=567 shape=139 prop=966 jsfunc=1 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=196 atom=565 shape=137 prop=962 jsfunc=0 cfunc=133 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

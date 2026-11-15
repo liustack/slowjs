@@ -900,6 +900,19 @@ int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes,
     return count;
 }
 
+/* ---- regexps that nothing changed ---- */
+
+/* 1 when the value of the global name of ctx is a regexp whose replace and
+   match take the fast paths (js_is_standard_regexp), else 0 */
+int white_regexp_standard(JSContext *ctx, const char *name)
+{
+    JSValue v = JS_GetPropertyStr(ctx, ctx->global_obj, name);
+    int r = js_is_standard_regexp(ctx, v);
+
+    JS_FreeValue(ctx, v);
+    return r;
+}
+
 /* ---- one request to the heap that fails ---- */
 
 /* Compile js (not run) in ctx with request number fail failing, 0 for none, and
