@@ -1423,6 +1423,7 @@ var goasmKeep = []any{
 	rv_dst_next,
 	rv_dst_site,
 	rv_dup_branch,
+	rv_dup_get_field,
 	rv_emit,
 	rv_emit_ret,
 	rv_enter_args,

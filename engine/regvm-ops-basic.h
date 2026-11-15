@@ -110,6 +110,32 @@ RV_OP(SWAP)                                           /* a b: the values of temp
         *term = 1;
         return 0;
 #elif RV_PART == RV_PART_PASS_FN
+/* dup of a temp then get_field or get_length (a destructuring, o.a.b ??
+   ...): the field of the temp into the temp above it, as get_field2 does,
+   with no copy of the object. GETF leaves its object where it is. The
+   get_field names the instruction, as it does in QuickJS's interpreter. */
+static BOOL rv_dup_get_field(RVPass *s, int pos)
+{
+    int q = pos + 1, d;
+    if (s->fold || s->st[s->sp - 1].kind != RV_E_TEMP || q >= s->len || s->leader[q] ||
+        (s->bc[q] != OP_get_field && s->bc[q] != OP_get_length))
+        return FALSE;
+    s->pos = q;
+#ifdef RV_INJECT
+    s->ipos = q;
+#endif
+    d = rv_tslot(s, s->sp);
+    rv_emit(s, RV_GETF);
+    rv_byte(s, d);
+    rv_byte(s, s->st[s->sp - 1].slot);
+    rv_u32(s, s->bc[q] == OP_get_length ? JS_ATOM_length : get_u32(s->bc + q + 1));
+    rv_throws(s, rv_owned(s, 0));
+    rv_push(s, RV_E_TEMP, d, 0);
+    rv_mark_dst(s, d);
+    s->skip_to = q + short_opcode_info(s->bc[q]).size;
+    return TRUE;
+}
+
 /* a binary op: add, sub (the result is a number or a string), lt, strict_eq */
 static void rv_binop(RVPass *s, int op_rr, int op_rk, int op_kr)
 {
@@ -351,7 +377,7 @@ static void rv_call(RVPass *s, int argc, int method, int tail)
     case OP_dup:
         {
             static const int8_t m[] = { 0, 0 };
-            if (rv_dup_branch(s, pos))
+            if (rv_dup_branch(s, pos) || rv_dup_get_field(s, pos))
                 break;
             rv_shuffle(s, 1, m, 2);
         }

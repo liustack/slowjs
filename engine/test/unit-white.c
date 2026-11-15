@@ -7381,6 +7381,72 @@ static void test_regvm_call_copies(void)
     }
 }
 
+/* the number of the register op named name */
+static int regvm_op(const char *name)
+{
+    int i;
+    for (i = 0; i < 256; i++) {
+        const char *n = JS_RegvmOpName(i);
+        if (n && !strcmp(n, name))
+            return i;
+    }
+    return -1;
+}
+
+/* globalThis.f = function (a, b) { 'use strict'; body }, called once with
+   (1, 2): its register code, or NULL */
+static const uint8_t *regvm_code_of_body(VM *v, const char *body, JSValue *f, int *len)
+{
+    char src[512];
+    JSValue g;
+    snprintf(src, sizeof(src), "function h() { return { x: 1, y: 2, a: { x: 3 } }; }"
+             " globalThis.f = function (a, b) { 'use strict'; %s }; 0", body);
+    if (!eval_ok(v->ctx, src))
+        return NULL;
+    g = JS_GetGlobalObject(v->ctx);
+    *f = JS_GetPropertyStr(v->ctx, g, "f");
+    JS_FreeValue(v->ctx, g);
+    if (!eval_ok(v->ctx, "f(1, 2); 0"))
+        return NULL;
+    return white_regvm_code(*f, len);
+}
+
+/* dup of a temp then get_field (a destructuring): GETF reads the temp, with
+   no MOV of it into the temp above and no GETFT that frees the copy
+   (rv_dup_get_field of engine/regvm-ops-basic.h) */
+static void test_regvm_dup_get_field(void)
+{
+    static const struct { const char *what, *src; int getfl; } cases[] = {
+        { "renamed fields of a call", "var { x: p, y: q } = h(); return p + q;", 2 },
+        { "an assignment pattern", "var p, q; ({ x: p, y: q } = h()); return p + q;", 2 },
+        { "a nested pattern", "var { a: { x: p }, y: q } = h(); return p + q;", 2 },
+    };
+    int k, i, len, mov = regvm_op("MOV"), getft = regvm_op("GETFT"), getfl = regvm_op("GETFL");
+    int copies, n;
+    const uint8_t *code;
+    VM v;
+    JSValue f;
+
+    CHECK(mov >= 0 && getft >= 0 && getfl >= 0, "the names of MOV, GETFT and GETFL");
+    for (k = 0; k < (int)countof(cases); k++) {
+        v = vm_new();
+        f = JS_UNDEFINED;
+        code = regvm_code_of_body(&v, cases[k].src, &f, &len);
+        CHECK(code != NULL, "%s: f has no register code", cases[k].what);
+        copies = n = 0;
+        for (i = 0; code && i < len; i++) {
+            if (code[i] == mov && i + 5 < len && code[i + 3] == getft && code[i + 5] == code[i + 1])
+                copies++;
+            if (code[i] == getfl)
+                n++;
+        }
+        CHECK(copies == 0, "%s: %d MOV then GETFT of the copy", cases[k].what, copies);
+        CHECK(n >= cases[k].getfl, "%s: %d GETFL, want %d", cases[k].what, n, cases[k].getfl);
+        JS_FreeValue(v.ctx, f);
+        vm_free(&v);
+    }
+}
+
 static void test_regvm_ret_value(void)
 {
     static const char src[] = "(function () { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]; })";
@@ -8500,6 +8566,7 @@ int main(int argc, char **argv)
     test_regvm_bad_ret();
     test_regvm_ret_value();
     test_regvm_call_copies();
+    test_regvm_dup_get_field();
     test_regvm_dst();
     test_regvm_dst_alloc();
     test_regvm_forin();
