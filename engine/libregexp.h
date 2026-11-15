@@ -53,6 +53,10 @@ const char *lre_get_groupnames(const uint8_t *bc_buf);
 int lre_exec(uint8_t **capture,
              const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
              int cbuf_type, void *opaque);
+/* lre_exec that never starts a match at clen, with cindex < clen */
+int lre_exec_inside(uint8_t **capture,
+                    const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+                    int cbuf_type, void *opaque);
 
 int lre_parse_escape(const uint8_t **pp, int allow_utf16);
 /* lre_parse_escape that reads *flag (poll_flag) every LRE_SCAN_STEP digits of

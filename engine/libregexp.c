@@ -5175,13 +5175,30 @@ static void lre_plan_literal(const uint8_t *bc, uint8_t *plan, int prefix)
         put_u16(plan + LRE_PLAN_LIT_UNITS + 2 * k, best_units[k]);
 }
 
+/* lre_has_loop tells whether the bytecode bc starts with the loop that
+   tries each position, as the code of a regexp that is not sticky does,
+   followed by save_start 0 and an op. */
+static BOOL lre_has_loop(const uint8_t *bc)
+{
+    const uint8_t *loop = bc + RE_HEADER_LEN;
+
+    /* The bytecode holds at least the loop, save_start 0 and the op after
+       it: an empty regexp is followed by save_end 0, then match. */
+    if (get_u32(bc + RE_HEADER_BYTECODE_LEN) < LRE_SKIP_LOOP + 2 + 1)
+        return FALSE;
+    return loop[0] == REOP_split_goto_first && get_u32(loop + 1) == 1 + 5 &&
+        loop[5] == REOP_any && loop[6] == REOP_goto &&
+        (int)get_u32(loop + 7) == -LRE_SKIP_LOOP &&
+        loop[LRE_SKIP_LOOP] == REOP_save_start && loop[LRE_SKIP_LOOP + 1] == 0;
+}
+
 /* lre_plan writes the plan of the regexp of bytecode bc into the
    LRE_PLAN_LEN bytes after its bytecode, which hold 0: how lre_skip starts
    (see "Skip to where a regexp can match" above), and the literal every
    match holds (lre_plan_literal). */
 static void lre_plan(uint8_t *bc)
 {
-    const uint8_t *loop = bc + RE_HEADER_LEN, *op = bc + LRE_SKIP_BODY;
+    const uint8_t *op = bc + LRE_SKIP_BODY;
     uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
     int flags = get_u16(bc + RE_HEADER_FLAGS), c, kind;
     BOOL unicode = (flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
@@ -5189,14 +5206,7 @@ static void lre_plan(uint8_t *bc)
 
     if (flags & LRE_FLAG_STICKY)
         return;
-    /* The bytecode holds at least the loop, save_start 0 and the op after
-       it: an empty regexp is followed by save_end 0, then match. */
-    if (get_u32(bc + RE_HEADER_BYTECODE_LEN) < LRE_SKIP_LOOP + 2 + 1)
-        return;
-    if (loop[0] != REOP_split_goto_first || get_u32(loop + 1) != 1 + 5 ||
-        loop[5] != REOP_any || loop[6] != REOP_goto ||
-        (int)get_u32(loop + 7) != -LRE_SKIP_LOOP ||
-        loop[LRE_SKIP_LOOP] != REOP_save_start || loop[LRE_SKIP_LOOP + 1] != 0)
+    if (!lre_has_loop(bc))
         return;
 #ifndef LRE_NO_LITERAL
     if (*op != REOP_line_start) {
@@ -5504,6 +5514,105 @@ int lre_exec(uint8_t **capture,
     }
 
     ret = lre_run(s, capture, bc_buf, cptr, &skip);
+
+    if (s->stack_buf != s->static_stack_buf)
+        lre_realloc(s->opaque, s->stack_buf, 0);
+    return ret;
+}
+
+/* lre_run_each does what the loop at the start of a regexp that is not
+   sticky does, for the positions from cptr to the one before the end of the
+   string only: it runs the machine from the op after the loop at each, and
+   when that fails clears the captures, as the loop has them, and steps over
+   one unit, or over a surrogate pair when the regexp is unicode, as the op
+   any of the loop does. It polls the interrupt counter after each failed
+   match, as lre_run does. */
+static intptr_t lre_run_each(REExecContext *s, uint8_t **capture,
+                             const uint8_t *bc, const uint8_t *cptr)
+{
+    intptr_t r;
+    uint32_t c;
+
+    for (;;) {
+        r = lre_exec_backtrack(s, capture, bc + LRE_SKIP_MATCH, cptr);
+        if (r != 0)
+            return r;
+        lre_clear(capture, 2 * s->capture_count);
+        GET_CHAR(c, cptr, s->cbuf_end, s->cbuf_type);
+        (void)c;
+        if (cptr >= s->cbuf_end)
+            return 0;
+        if (lre_poll_timeout(s))
+            return LRE_RET_TIMEOUT;
+    }
+}
+
+/* lre_exec_inside is lre_exec for a search that never starts a match at
+   the end of the string, as the loop of split, which tries q < clen:
+   cindex < clen, and the regexp still sees the whole string (an assertion,
+   a lookahead, the end of a match). The loop at the start of a regexp that
+   is not sticky would try clen last, where a match could run for a long
+   time or run out of memory before it fails, so with no plan to skip by,
+   lre_run_each takes its place, from where the literal every match holds
+   lets a match start, as lre_skip has it. A plan that skips tries only a
+   position that holds a unit a match can start with, never clen, and a
+   sticky regexp tries cindex alone: lre_exec does those. The rest is
+   lre_exec, which this keeps unchanged for its profile: change both
+   alike. */
+int lre_exec_inside(uint8_t **capture,
+                    const uint8_t *bc_buf, const uint8_t *cbuf, int cindex, int clen,
+                    int cbuf_type, void *opaque)
+{
+    REExecContext s_s, *s = &s_s;
+    int re_flags, i, ret;
+    const uint8_t *cptr, *plan;
+
+    re_flags = lre_get_flags(bc_buf);
+    plan = bc_buf + RE_HEADER_LEN + get_u32(bc_buf + RE_HEADER_BYTECODE_LEN);
+    if (cbuf_type == 0 || cbuf_type == 1) {
+        if ((plan[0] & ~LRE_PLAN_LITERAL) != LRE_PLAN_LOOP)
+            return lre_exec(capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque);
+    }
+    if ((re_flags & LRE_FLAG_STICKY) || !lre_has_loop(bc_buf))
+        return lre_exec(capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque);
+    if ((plan[0] & LRE_PLAN_LITERAL) && (cbuf_type == 0 || cbuf_type == 1)) {
+        /* as lre_skip: no match, or an interrupt, with the captures
+           cleared, or where a match can start first */
+        ret = lre_literal(plan, cbuf, cindex, clen, cbuf_type, opaque);
+        if (ret < 0) {
+            lre_clear(capture, 2 * bc_buf[RE_HEADER_CAPTURE_COUNT]);
+            return ret == LRE_RET_TIMEOUT ? ret : 0;
+        }
+        cindex = ret;
+    }
+    s->is_unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    s->capture_count = bc_buf[RE_HEADER_CAPTURE_COUNT];
+    s->cbuf = cbuf;
+    s->cbuf_end = cbuf + (clen << cbuf_type);
+    s->cbuf_type = cbuf_type;
+    if (s->cbuf_type == 1 && s->is_unicode)
+        s->cbuf_type = 2;
+    s->interrupt_flag = lre_interrupt_flag(opaque);
+    s->opaque = opaque;
+    s->code = bc_buf + RE_HEADER_LEN;
+    s->chains = plan + LRE_PLAN_LEN;
+    s->chain_count = plan[LRE_PLAN_CHAINS];
+
+    s->stack_buf = s->static_stack_buf;
+    s->stack_size = countof(s->static_stack_buf);
+
+    for(i = 0; i < s->capture_count * 2; i++)
+        capture[i] = NULL;
+
+    cptr = cbuf + (cindex << cbuf_type);
+    if (0 < cindex && cindex < clen && s->cbuf_type == 2) {
+        const uint16_t *p = (const uint16_t *)cptr;
+        if (is_lo_surrogate(*p) && is_hi_surrogate(p[-1])) {
+            cptr = (const uint8_t *)(p - 1);
+        }
+    }
+
+    ret = lre_run_each(s, capture, bc_buf, cptr);
 
     if (s->stack_buf != s->static_stack_buf)
         lre_realloc(s->opaque, s->stack_buf, 0);

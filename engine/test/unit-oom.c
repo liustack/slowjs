@@ -1337,6 +1337,8 @@ static void test_uncatchable_regexp_fast(void)
 {
     static const struct { const char *name, *fn, *self, *args; int argc; } cases[] = {
         { "replace with a string", "RegExp.prototype[Symbol.replace]", "/a/g", "'aa', o", 2 },
+        { "split", "RegExp.prototype[Symbol.split]", "/b/", "o", 1 },
+        { "split with a limit", "RegExp.prototype[Symbol.split]", "/b/", "o, 1", 2 },
     };
     size_t i;
     int host;
@@ -2019,6 +2021,25 @@ static void test_integrity_oom(void)
     };
 
     sweep("integrity levels", "integrity.js", setup, "run()", want, 16384);
+}
+
+/* split by a regexp that nothing changed, which does its work without the
+   splitter and the calls of exec (js_regexp_split_fast): with too little
+   memory (the captures, the array and its pieces) it fails with the out of
+   memory error, and leaves nothing behind. */
+static void test_regexp_fast_oom(void)
+{
+    static const char setup[] =
+        "function run() {\n"
+        "  var s = 'a1b22c333d4444e55555f'.repeat(4) + '\\u4e2d1\\u00e92', out = [];\n"
+        "  out.push(s.split(/(\\d)(x)?/).length, s.split(/\\d+/, 7).join('-'), s.split(/(?:)/u).length);\n"
+        "  return out.join(',');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = { "187,a-b-c-d-e-fa-b,88", NULL };
+
+    sweep("regexp fast paths", "regexp_fast.js", setup, "run()", want, 32768);
 }
 
 /* Object.defineProperty, Object.defineProperties, Object.create and
@@ -3306,6 +3327,7 @@ int main(void)
     test_array_literal_oom();
     test_fast_builtins_oom();
     test_for_in_oom();
+    test_regexp_fast_oom();
     test_define_desc_oom();
     test_integrity_oom();
     test_bind_oom();

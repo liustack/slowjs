@@ -3323,6 +3323,65 @@ static void test_regexp_stops(void)
     host_free_runtime(rt);
 }
 
+/* split by a regexp that nothing changed (js_regexp_split_fast) tries a
+   match at the positions the generic path tries, from 0 to the one before
+   the end, and never at the end: a regexp that fails at once everywhere but
+   backtracks for ever at the end splits as fast as on the generic path
+   (with 100000 readings of the flag allowed, which a search at the end of
+   the string would pass), with u and without, with a literal every match
+   holds and without, in strings of 8 and 16 bits, one with a surrogate
+   pair. And split reads the interrupt flag before it
+   looks at the limit or the string, as the generic path does at the call of
+   the species getter: with the flag set as the string is converted, a split
+   with the limit 0 or of the empty string is stopped on both paths. */
+static void test_regexp_split_fast_stops(void)
+{
+    static const char *const regexps[] = {
+        "/$(?<=b(a+a+)+)/", "/$(?<=b(a+a+)+)/u", "/$(?<=b(a+a+)+)x/u", "/\\s*$(?<=b(a+a+)+)x/",
+    };
+    static const char *const strings[] = {
+        "'x' + 'a'.repeat(32)", "'x\\u4e00' + 'a'.repeat(32)", "'x\\ud83d\\ude00' + 'a'.repeat(32)",
+    };
+    static const char *const stops[] = {
+        "re[Symbol.split](T('abc'), 0)", "re[Symbol.split](T(''))", "re[Symbol.split](T(''), 0)",
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    char src[256];
+    size_t i, j;
+    int k;
+
+    add_interrupt(ctx);
+    for (i = 0; i < countof(regexps); i++) {
+        for (j = 0; j < countof(strings); j++) {
+            for (k = 0; k < 2; k++) {
+                snprintf(src, sizeof(src),
+                         "var s = %s, re = %s; if (%d) re.extra = 1;\n"
+                         "var r = re[Symbol.split](s); r.length === 1 && r[0] === s",
+                         strings[j], regexps[i], k);
+                host_poll_stop_after(100000);
+                CHECK(eval_is(ctx, src, "true"), "%s split by %s on the %s path", strings[j],
+                      regexps[i], k ? "generic" : "fast");
+                host_poll_stop_after(0);
+                *JS_GetInterruptFlag(rt) = 0;
+                /* a failure leaves its exception pending */
+                JS_FreeValue(ctx, JS_GetException(ctx));
+            }
+        }
+    }
+    for (i = 0; i < countof(stops); i++) {
+        for (k = 0; k < 2; k++) {
+            snprintf(src, sizeof(src), "var re = /a/; if (%d) re.extra = 1; 0", k);
+            CHECK(eval(ctx, src), "the script threw");
+            CHECK(interrupted(ctx, stops[i]), "%s on the %s path was not interrupted", stops[i],
+                  k ? "generic" : "fast");
+        }
+    }
+    *JS_GetInterruptFlag(rt) = 0;
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* z|z|...|z, 4098 alternatives, made by test_regexp_skip_polls */
 static char zs[2 * 4098];
 
@@ -5284,6 +5343,7 @@ int main(void)
     test_date_clock();
     test_canonicalize_ascii();
     test_regexp_stops();
+    test_regexp_split_fast_stops();
     test_regexp_skip_polls();
     test_rope_polls();
     test_rope_key_compare_polls();

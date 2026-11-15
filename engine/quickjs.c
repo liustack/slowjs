@@ -60481,6 +60481,17 @@ fail:
     return JS_EXCEPTION;
 }
 
+/* append val at *plen to A, a new array that no script has seen */
+static int js_regexp_array_push(JSContext *ctx, JSValueConst A, uint32_t *plen,
+                                JSValue val)
+{
+    uint32_t len = (*plen)++;
+
+    if (likely(len < INT32_MAX))
+        return add_fast_array_element(ctx, JS_VALUE_GET_OBJ(A), val, JS_PROP_THROW);
+    return JS_DefinePropertyValueInt64(ctx, A, len, val, JS_PROP_C_W_E | JS_PROP_THROW);
+}
+
 static JSValue JS_RegExpExec(JSContext *ctx, JSValueConst r, JSValueConst s)
 {
     JSValue method, ret;
@@ -61180,6 +61191,165 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* TRUE when RegExp.prototype[Symbol.split] can split by rx without the
+   splitter the specification makes: rx is a regexp that nothing changed
+   (js_is_standard_regexp), so reading its flags calls no script and gives the
+   flags of its bytecode, and the splitter would be made with no script run
+   either. SpeciesConstructor reads constructor, here the RegExp of ctx, and
+   its Symbol.species, the getter of ctx, and the constructor reads
+   Symbol.match of RegExp.prototype for IsRegExp, a data property. The
+   splitter is then a regexp of the same pattern and flags plus y, of ctx
+   (js_regexp_split_fast). */
+static BOOL js_regexp_split_is_standard(JSContext *ctx, JSValueConst rx)
+{
+    JSObject *proto, *ctor;
+    JSShapeProperty *prs;
+    JSProperty *pr;
+    JSValueConst c;
+    JSCFunctionType ft;
+
+    if (!js_is_standard_regexp(ctx, rx))
+        return FALSE;
+    proto = JS_VALUE_GET_OBJ(rx)->shape->proto;
+    if (proto->shape->prop_count <= JS_REGEXP_PROTO_CONSTRUCTOR)
+        return FALSE;
+    prs = get_shape_prop(proto->shape);
+    if (prs[JS_REGEXP_PROTO_MATCH].atom != JS_ATOM_Symbol_match ||
+        (prs[JS_REGEXP_PROTO_MATCH].flags & JS_PROP_TMASK) == JS_PROP_GETSET)
+        return FALSE;
+    c = proto->prop[JS_REGEXP_PROTO_CONSTRUCTOR].u.value;
+    if (prs[JS_REGEXP_PROTO_CONSTRUCTOR].atom != JS_ATOM_constructor ||
+        (prs[JS_REGEXP_PROTO_CONSTRUCTOR].flags & JS_PROP_TMASK) != JS_PROP_NORMAL ||
+        JS_VALUE_GET_TAG(c) != JS_TAG_OBJECT ||
+        JS_VALUE_GET_OBJ(c) != JS_VALUE_GET_OBJ(ctx->regexp_ctor))
+        return FALSE;
+    ctor = JS_VALUE_GET_OBJ(c);
+    prs = find_own_property(&pr, ctor, JS_ATOM_Symbol_species);
+    ft.getter = js_get_this;
+    return prs && (prs->flags & JS_PROP_TMASK) == JS_PROP_GETSET &&
+        js_regexp_own_cfunc(ctx, pr->u.getset.getter, ft.generic, 0);
+}
+
+/* RegExp.prototype[Symbol.split] of the string str_val by a regexp rx that
+   js_regexp_split_is_standard accepts, with the limit lim. The specification
+   makes a sticky copy of rx and runs it at each position q from the end p of
+   the last piece: after a miss, or a match that ends at p, it steps q over one
+   character (one code point with u or v), and a match at q that ends at e > p
+   cuts the string at q. No script runs in the loop, and the copy, its
+   lastIndex and the arrays of its results cannot be seen, so they are left
+   out: rx itself, unless it is sticky, is run from q by lre_exec, which tries
+   the positions from q in the same order and with the same steps (its loop
+   reads a code point with u or v, as AdvanceStringIndex steps over one, and a
+   position it skips is one where no match can start), runs the same bytecode
+   at each with the captures cleared, and gives the first that matches, with
+   the match the copy finds there. A lookbehind reads the string before the
+   position in both. So one call finds the q at which the loop of the
+   specification next cuts or meets a match that ends at p. The
+   specification never tries a match at size (it tries q < size), and
+   lre_exec_inside does not either: a match there could run long or run
+   out of memory before it fails. A sticky rx is run at each q, as the copy
+   is.
+   lre_exec moves a q in the middle of a surrogate pair back with u or v, but
+   q is never there: it starts at 0, steps over code points and goes to the
+   ends of matches, which read whole code points. The interrupt flag is read
+   first, as the call of the species getter reads it, then before each
+   lre_exec, as the call of exec read it, and lre_exec reads it in a long
+   scan. */
+static JSValue js_regexp_split_fast(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val, uint32_t lim)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int capture_count = lre_get_capture_count(bc), alloc_count = lre_get_alloc_count(bc);
+    BOOL sticky = (re_flags & LRE_FLAG_STICKY) != 0;
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    uint32_t size = str->len, p = 0, q = 0, start, e, lengthA = 0;
+    int rc, i;
+    JSValue A, sub;
+
+    /* the generic path reads the flag as it calls the species getter,
+       before it looks at the limit or the string */
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    A = JS_NewArray(ctx);
+    if (JS_IsException(A) || lim == 0)
+        return A;
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail;
+    }
+    if (size == 0) {
+        rc = lre_exec(capture, bc, buf, 0, 0, shift, ctx);
+        if (rc < 0)
+            goto fail_exec;
+        if (rc == 1)
+            goto done;
+        goto add_tail;
+    }
+    while (q < size) {
+        if (js_poll_interrupts(ctx))
+            goto fail;
+        /* a match starts before size: the specification tries q < size */
+        rc = lre_exec_inside(capture, bc, buf, q, size, shift, ctx);
+        if (rc < 0)
+            goto fail_exec;
+        if (rc == 0) {
+            if (!sticky)
+                break;
+            q = string_advance_index(str, q, unicode);
+            continue;
+        }
+        start = (capture[0] - buf) >> shift;
+        e = (capture[1] - buf) >> shift;
+        if (e == p) {
+            /* an empty match at p: start is q and p */
+            q = string_advance_index(str, q, unicode);
+            continue;
+        }
+        sub = js_sub_string(ctx, str, p, start);
+        if (JS_IsException(sub) ||
+            js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+            goto fail;
+        if (lengthA == lim)
+            goto done;
+        p = e;
+        for (i = 1; i < capture_count; i++) {
+            sub = JS_UNDEFINED;
+            if (capture[2 * i] && capture[2 * i + 1]) {
+                sub = js_sub_string(ctx, str, (capture[2 * i] - buf) >> shift,
+                                    (capture[2 * i + 1] - buf) >> shift);
+                if (JS_IsException(sub))
+                    goto fail;
+            }
+            if (js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+                goto fail;
+            if (lengthA == lim)
+                goto done;
+        }
+        q = p;
+    }
+add_tail:
+    sub = js_sub_string(ctx, str, p, size);
+    if (JS_IsException(sub) ||
+        js_regexp_array_push(ctx, A, &lengthA, sub) < 0)
+        goto fail;
+done:
+    js_free(ctx, capture);
+    return A;
+fail_exec:
+    if (rc == LRE_RET_TIMEOUT)
+        JS_ThrowInterrupted(ctx);
+    else
+        JS_ThrowOutOfMemory(ctx);
+fail:
+    js_free(ctx, capture);
+    JS_FreeValue(ctx, A);
+    return JS_EXCEPTION;
+}
+
 static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
                                        int argc, JSValueConst *argv)
 {
@@ -61203,6 +61373,18 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
     str = JS_ToString(ctx, argv[0]);
     if (JS_IsException(str))
         goto exception;
+    /* a regexp that nothing changed, and a limit whose conversion calls
+       nothing: the steps up to the conversion of the limit call no script
+       either. While an uncatchable exception is pending (left by a toString
+       of str), the generic path fails at its first call. */
+    if ((JS_IsUndefined(argv[1]) || JS_IsNumber(argv[1])) &&
+        !js_uncatchable_pending(ctx->rt) && js_regexp_split_is_standard(ctx, rx)) {
+        lim = 0xffffffff;
+        if (!JS_IsUndefined(argv[1]) && JS_ToUint32(ctx, &lim, argv[1]) < 0)
+            goto exception;
+        A = js_regexp_split_fast(ctx, rx, str, lim);
+        goto done;
+    }
     ctor = JS_SpeciesConstructor(ctx, rx, ctx->regexp_ctor);
     if (JS_IsException(ctor))
         goto exception;
