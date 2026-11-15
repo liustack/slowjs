@@ -2,7 +2,7 @@
 summary: 'What the Go API has beyond NewVM, Eval, Call and Value: each function and type, what it is for, what it gains in tifa, and the release it came in'
 read_when:
   - Looking for a Go function of the API that is not Eval or Call
-  - Adding a function or type to the Go API (add it here, in both languages)
+  - Adding a function or type to the Go API (add it here)
   - Asking which release added a function
   - Running the engine without writing Go (the slowjs command)
 ---

@@ -8,7 +8,7 @@
 #
 #   scripts/docs-list.sh           print the index
 #   scripts/docs-list.sh --check   also fail when a doc has no summary, or when
-#                                  a doc has no Chinese version next to it
+#                                  README.md or README.zh-CN.md is missing
 #
 # Front matter format:
 #
@@ -20,9 +20,8 @@
 #
 # read_when also accepts the inline form: read_when: [a, b]
 #
-# Chinese versions (*.zh-CN.md) are not listed. --check fails when a doc of
-# docs/ or one of the files in $paired has no Chinese version, or when a
-# Chinese version has no English doc.
+# Only README.md has a Chinese version (README.zh-CN.md). Every other doc is
+# English only (AGENTS.md).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,9 +38,8 @@ if [ ! -d "$docs" ]; then
   exit 1
 fi
 
-# Drafts and history are not part of the index. A *.zh-CN.md file is the
-# Chinese version of the English doc next to it, so it is not listed again.
-files="$(cd "$root" && find docs -type f -name '*.md' -not -name '*.zh-CN.md' \
+# Drafts and history are not part of the index.
+files="$(cd "$root" && find docs -type f -name '*.md' \
   -not -path 'docs/archive/*' -not -path 'docs/research/*' | LC_ALL=C sort)"
 
 missing=0
@@ -95,20 +93,11 @@ fi
 echo
 echo 'Reminder: before coding, check the "Read when" hints above and read the docs that apply.'
 
-# Every doc is in English and in Chinese (AGENTS.md).
-paired="README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md compare/engines/CHANGELOG.md compare/engines/README.md engine/libc/README.md engine/pgo/README.md internal/goasm/gen/README.md internal/arewefastyet/README.md"
 unpaired=0
 if $check; then
-  for file in $files $paired; do
-    if [ ! -f "$root/${file%.md}.zh-CN.md" ]; then
-      echo "warning: $file has no Chinese version ${file%.md}.zh-CN.md" >&2
-      unpaired=$((unpaired + 1))
-    fi
-  done
-  zh="$(cd "$root" && find docs -type f -name '*.zh-CN.md' | LC_ALL=C sort)"
-  for file in $zh $(for p in $paired; do echo "${p%.md}.zh-CN.md"; done); do
-    if [ -f "$root/$file" ] && [ ! -f "$root/${file%.zh-CN.md}.md" ]; then
-      echo "warning: $file has no English doc ${file%.zh-CN.md}.md" >&2
+  for file in README.md README.zh-CN.md; do
+    if [ ! -f "$root/$file" ]; then
+      echo "warning: $file is missing" >&2
       unpaired=$((unpaired + 1))
     fi
   done
