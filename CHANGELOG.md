@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- A return frees the slots of a frame of more than 8 slots 8 to a turn, where it took one a turn. tifa's pages run 0.6% to 2.7% fewer instructions and React's page 2.9% fewer ([performance.md](docs/performance.md#the-slots-of-a-return-8-to-a-turn)).
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed

@@ -1368,6 +1368,20 @@ The ways of placing the code that were tried, each generated with a profile trai
 
 The code inline gives most of the gain on NavierStokes, but it moves the register allocation of the whole interpreter: on the shop `ctx` is read from the stack about 3.2 million more times a render, in the call and return path, not in the arithmetic. Mul through a block of its own makes Crypto, which multiplies ints, run its int path of mul with `ip` kept on the stack and a few moves more, about 8 instructions more on each of its 158,000 int muls an iteration. As generated with the profile of v0.30.7, which has no data for `JS_RegvmRun` once its C changes, the pages run 1.2% to 1.9% more in the engine (NavierStokes still 1.9% fewer), so the profile must be trained again before the release ([releasing.md](releasing.md#the-profile)).
 
+### The slots of a return, 8 to a turn
+
+[A return frees the slots of a frame of more than 8 slots 8 to a turn](changes/c-engine.md#the-frame-and-the-window-of-a-call), counted on 2026-11-16 against v0.31.1. A return frees 6.7 (the store's home page) to 8.5 (the workbench's stats page) slots on average. The returns of frames of more than 8 slots, which take the loop, are 21% to 31% of the returns and free 17 to 19 slots each, 54% to 67% of all slots. In llc's output a slot that holds no counted value took 9 instructions and takes 3, and a turn of 8 adds 7. Callgrind on linux/amd64, the whole program in tifa mode (`internal/measure/pages`), both sides with the profile trained again the same way. Every page gives the same HTML.
+
+| Pages | Instructions |
+| --- | ---: |
+| React's page | -2.86% |
+| tifa's shop, 14 store pages | -0.63% to -2.68% |
+| tifa's shop, 6 workbench pages | -1.95% to -2.44% |
+| tifa's MUI app, 3 pages | -1.89% to -2.03% |
+| Long Markdown (100 sections) | -0.46% |
+
+As generated with the checked-in profile, which `rv_free_slots` alone loses, the store's home page runs 2.16% fewer, the workbench's studio page 1.96%, MUI's orders page 1.71% and React's page 2.86%. The time falls much less than the instructions. On linux/amd64 with an AMD EPYC 7B13, over 16 code layouts with both sides trained the same way (the mean of the layouts, `go tool measure bench`), React's page took 0.60% less time (8 rounds, -0.99% to -0.21%), and the store (two runs of 2 rounds), the workbench (2 rounds) and MUI (6 rounds) moved by -0.07% and -0.23%, -0.26% and 0.00%, all within 1%.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
