@@ -201,9 +201,11 @@ func TestInterruptStopsLongBuiltins(t *testing.T) {
 	bigResults := []struct{ name, setup, call, top, also string }{
 		{"split", `var s = 'ab,'.repeat(1 << 21)`, `s.split(',')`, "split", ""},
 		{"split by nothing", `var s = 'a'.repeat(1 << 22)`, `s.split('')`, "split", ""},
-		// split by a regexp that nothing changed finds the matches in a loop of its own, with no
-		// splitter and no call of exec.
+		// split, match and replace with a function by a regexp that nothing changed find the matches
+		// in a loop of their own, with no call of exec. replace then calls the function for each.
 		{"split by a regexp", `var s = 'ab,'.repeat(1 << 21)`, `s.split(/(,)/)`, "[Symbol.split]", ""},
+		{"match, global", `var s = 'ab'.repeat(1 << 21)`, `s.match(/a/g)`, "[Symbol.match]", ""},
+		{"replace with a function", `var s = 'ab'.repeat(1 << 21)`, `s.replace(/a/g, String)`, "[Symbol.replace]", ""},
 		{"Array.from, a string", `var s = 'ab'.repeat(1 << 21)`, `Array.from(s)`, "from", ""},
 		{"Array.from, an array-like", `var o = { length: 1 << 22 }`, `Array.from(o)`, "from", ""},
 		// A typed array of an iterable is made from an array of its pieces, which

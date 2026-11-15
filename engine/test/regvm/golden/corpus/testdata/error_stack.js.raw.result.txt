@@ -557,6 +557,6 @@ result     at th2 (<eval>:106:45)
 result 
 result == async
 result     at af (<eval>:100:51)
-mem-end obj=1263 atom=614 shape=163 prop=3154 jsfunc=19 cfunc=156 array=4 fast_array=4 elements=1075 binary=0
-mem-gc obj=1261 atom=613 shape=161 prop=3150 jsfunc=18 cfunc=156 array=4 fast_array=4 elements=1075 binary=0
+mem-end obj=1262 atom=614 shape=163 prop=3152 jsfunc=19 cfunc=155 array=4 fast_array=4 elements=1075 binary=0
+mem-gc obj=1260 atom=613 shape=161 prop=3148 jsfunc=18 cfunc=155 array=4 fast_array=4 elements=1075 binary=0
 --- status exit 0

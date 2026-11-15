@@ -292,6 +292,6 @@ result limit throws: throws Error: limit
 result the replacement of replaceAll: "x<ab>y <ab> <a>" [fn(ab,b,1,xaby ab a) fn(ab,b,5,xaby ab a) fn(a,undefined,8,xaby ab a)]
 result replaceAll without g: throws TypeError
 result 293 lines
-mem-end obj=3750 atom=601 shape=2364 prop=18853 jsfunc=15 cfunc=2478 array=40 fast_array=40 elements=339 binary=0
+mem-end obj=3747 atom=601 shape=2364 prop=18847 jsfunc=15 cfunc=2475 array=40 fast_array=40 elements=339 binary=0
 mem-gc obj=261 atom=600 shape=158 prop=1139 jsfunc=15 cfunc=148 array=21 fast_array=21 elements=339 binary=0
 --- status exit 0

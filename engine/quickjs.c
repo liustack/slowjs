@@ -60481,6 +60481,8 @@ fail:
     return JS_EXCEPTION;
 }
 
+static BOOL js_is_standard_regexp(JSContext *ctx, JSValueConst obj);
+
 /* append val at *plen to A, a new array that no script has seen */
 static int js_regexp_array_push(JSContext *ctx, JSValueConst A, uint32_t *plen,
                                 JSValue val)
@@ -60490,6 +60492,262 @@ static int js_regexp_array_push(JSContext *ctx, JSValueConst A, uint32_t *plen,
     if (likely(len < INT32_MAX))
         return add_fast_array_element(ctx, JS_VALUE_GET_OBJ(A), val, JS_PROP_THROW);
     return JS_DefinePropertyValueInt64(ctx, A, len, val, JS_PROP_C_W_E | JS_PROP_THROW);
+}
+
+/* RegExp.prototype[Symbol.replace] of the string str_val with the function
+   rep, by a regexp rx that js_is_standard_regexp accepts, or JS_UNDEFINED
+   when rx has named groups (the generic path makes their object). The
+   specification first runs exec until it gives null (once when rx is not
+   global) and keeps every result, then calls rep for each. No script runs in
+   the first part, and its results cannot be seen: so it is done here with
+   lre_exec, as exec would do it (from lastIndex with g or y, from 0
+   otherwise, an empty match of a global rx stepped over one character, or
+   one code point with u or v), keeping only where each match and capture
+   starts and ends, and leaving lastIndex where the calls of exec leave it,
+   also when the first part fails (interrupted, out of memory).
+   Then rep gets for each match what the generic path gives it: the match,
+   the captures (undefined for one that did not take part), the position and
+   the string. The interrupt flag is read before each lre_exec, and every
+   1024 matches in the second part, as the generic path reads it. */
+static JSValue js_regexp_replace_fn(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val, JSValueConst rep)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int capture_count = lre_get_capture_count(bc), alloc_count = lre_get_alloc_count(bc);
+    BOOL global = (re_flags & LRE_FLAG_GLOBAL) != 0;
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    int32_t *pos = NULL; /* 2 * capture_count per match: start and end, -1 */
+    size_t n_pos = 0, size_pos = 0, j;
+    int64_t last_index;
+    int rc, i, k, next_src_pos, start, end;
+    StringBuffer b_s, *b = &b_s;
+    JSValue *args = NULL, rep_str;
+
+    if (lre_get_groupnames(bc))
+        return JS_UNDEFINED;
+    string_buffer_init(ctx, b, 0);
+    last_index = 0;
+    if (global) {
+        /* the generic path reads the flag as it calls the flags getter,
+           before it sets lastIndex to 0 */
+        if (js_poll_interrupts(ctx) || js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+            goto fail;
+    } else if (re_flags & LRE_FLAG_STICKY) {
+        if (js_regexp_get_lastIndex(ctx, &last_index, rx))
+            goto fail;
+    }
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail_search;
+    }
+    for (;;) {
+        if (js_poll_interrupts(ctx))
+            goto fail_search;
+        if (last_index > str->len) {
+            rc = 2;
+        } else {
+            rc = lre_exec(capture, bc, buf, last_index, str->len, shift, ctx);
+        }
+        if (rc != 1) {
+            if (rc < 0) {
+                if (rc == LRE_RET_TIMEOUT)
+                    JS_ThrowInterrupted(ctx);
+                else
+                    JS_ThrowOutOfMemory(ctx);
+                goto fail_search;
+            }
+            if (rc == 2 || (re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY))) {
+                if (js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+                    goto fail;
+            }
+            break;
+        }
+        /* exec has set lastIndex to the end of the match (with g or y) */
+        end = (capture[1] - buf) >> shift;
+        if (global) {
+            last_index = end;
+        } else if (re_flags & LRE_FLAG_STICKY) {
+            if (js_regexp_set_lastIndex(ctx, rx, end) < 0)
+                goto fail;
+        }
+        if (n_pos + 2 * capture_count > size_pos) {
+            size_t new_size = size_pos + size_pos / 2 + 64 * capture_count;
+            int32_t *new_pos = js_realloc(ctx, pos, new_size * sizeof(pos[0]));
+            if (!new_pos)
+                goto fail_search;
+            pos = new_pos;
+            size_pos = new_size;
+        }
+        for (i = 0; i < 2 * capture_count; i += 2) {
+            if (capture[i] && capture[i + 1]) {
+                pos[n_pos + i] = (capture[i] - buf) >> shift;
+                pos[n_pos + i + 1] = (capture[i + 1] - buf) >> shift;
+            } else {
+                pos[n_pos + i] = pos[n_pos + i + 1] = -1;
+            }
+        }
+        start = pos[n_pos];
+        n_pos += 2 * capture_count;
+        if (!global)
+            break;
+        if (end == start)
+            last_index = string_advance_index(str, end, unicode);
+    }
+    js_free(ctx, capture);
+    capture = NULL;
+
+    args = js_malloc(ctx, sizeof(args[0]) * (capture_count + 2));
+    if (!args)
+        goto fail;
+    next_src_pos = 0;
+    for (j = 0; j < n_pos; j += 2 * capture_count) {
+        if (((j / (2 * capture_count)) & 1023) == 1023 && js_poll_interrupts(ctx))
+            goto fail;
+        for (k = 0; k < capture_count; k++) {
+            if (pos[j + 2 * k] < 0) {
+                args[k] = JS_UNDEFINED;
+            } else {
+                args[k] = js_sub_string(ctx, str, pos[j + 2 * k], pos[j + 2 * k + 1]);
+                if (JS_IsException(args[k]))
+                    goto fail_args;
+            }
+        }
+        start = pos[j];
+        args[capture_count] = JS_NewInt32(ctx, start);
+        args[capture_count + 1] = JS_DupValue(ctx, str_val);
+        /* as js_function_apply calls it on the generic path: no level for
+           an entry of the host */
+        rep_str = JS_ToStringFree(ctx, js_call_fwd(ctx, rep, JS_UNDEFINED,
+                                                   capture_count + 2, (JSValueConst *)args));
+        for (k = 0; k < capture_count + 2; k++)
+            JS_FreeValue(ctx, args[k]);
+        if (JS_IsException(rep_str))
+            goto fail;
+        if (start >= next_src_pos) {
+            if (string_buffer_concat(b, str, next_src_pos, start)) {
+                JS_FreeValue(ctx, rep_str);
+                goto fail;
+            }
+            if (string_buffer_concat_value_free(b, rep_str))
+                goto fail;
+            next_src_pos = pos[j + 1];
+        } else {
+            JS_FreeValue(ctx, rep_str);
+        }
+    }
+    if (string_buffer_concat(b, str, next_src_pos, str->len))
+        goto fail;
+    js_free(ctx, args);
+    js_free(ctx, pos);
+    return string_buffer_end(b);
+fail_search:
+    /* the call of exec that failed, or what failed after it, leaves
+       lastIndex where the last call left it: 0 set above, then the end of
+       each match, stepped over an empty one. The slot holds the 0 that was
+       set, an int that can be written, so this calls nothing. */
+    if (global)
+        js_regexp_set_lastIndex(ctx, rx, last_index);
+    goto fail;
+fail_args:
+    while (--k >= 0)
+        JS_FreeValue(ctx, args[k]);
+fail:
+    js_free(ctx, args);
+    js_free(ctx, pos);
+    js_free(ctx, capture);
+    string_buffer_free(b);
+    return JS_EXCEPTION;
+}
+
+/* RegExp.prototype[Symbol.match] of the string str_val by a regexp rx that
+   js_is_standard_regexp accepts. Not global, it is the call of exec. Global,
+   the specification runs exec from lastIndex 0 until it gives null and
+   collects the matches: no script runs in that loop and its results cannot
+   be seen, so it is done here with lre_exec, as exec does it, an empty match
+   stepped over one character, or one code point with u or v, and lastIndex
+   left at 0 as the last call of exec leaves it, or where the calls before it
+   left it when the loop fails (interrupted, out of memory). The interrupt
+   flag is read before each lre_exec. */
+static JSValue js_regexp_match_fast(JSContext *ctx, JSValueConst rx,
+                                    JSValueConst str_val)
+{
+    JSString *str = JS_VALUE_GET_STRING(str_val);
+    uint8_t *bc = JS_VALUE_GET_OBJ(rx)->u.regexp.bytecode->u.str8;
+    uint8_t **capture = NULL, *buf = str->u.str8;
+    int re_flags = lre_get_flags(bc), shift = str->is_wide_char;
+    int alloc_count = lre_get_alloc_count(bc);
+    BOOL unicode = (re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    int64_t last_index = 0;
+    int rc, start, end;
+    uint32_t n = 0;
+    JSValue A, sub;
+
+    /* the generic path reads the flag as it calls the flags getter, before
+       it calls exec or sets lastIndex to 0 */
+    if (js_poll_interrupts(ctx))
+        return JS_EXCEPTION;
+    if (!(re_flags & LRE_FLAG_GLOBAL))
+        return js_regexp_exec(ctx, rx, 1, &str_val);
+    if (js_regexp_set_lastIndex(ctx, rx, 0) < 0)
+        return JS_EXCEPTION;
+    A = JS_NewArray(ctx);
+    if (JS_IsException(A))
+        return A;
+    if (alloc_count > 0) {
+        capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
+        if (!capture)
+            goto fail;
+    }
+    for (;;) {
+        if (js_poll_interrupts(ctx))
+            goto fail;
+        if (last_index > str->len) {
+            rc = 0;
+        } else {
+            rc = lre_exec(capture, bc, buf, last_index, str->len, shift, ctx);
+        }
+        if (rc != 1) {
+            if (rc < 0) {
+                if (rc == LRE_RET_TIMEOUT)
+                    JS_ThrowInterrupted(ctx);
+                else
+                    JS_ThrowOutOfMemory(ctx);
+                goto fail;
+            }
+            break;
+        }
+        start = (capture[0] - buf) >> shift;
+        end = (capture[1] - buf) >> shift;
+        last_index = end;
+        sub = js_sub_string(ctx, str, start, end);
+        if (JS_IsException(sub) || js_regexp_array_push(ctx, A, &n, sub) < 0)
+            goto fail;
+        if (end == start)
+            last_index = string_advance_index(str, end, unicode);
+    }
+    js_free(ctx, capture);
+    if (js_regexp_set_lastIndex(ctx, rx, 0) < 0) {
+        JS_FreeValue(ctx, A);
+        return JS_EXCEPTION;
+    }
+    if (n == 0) {
+        JS_FreeValue(ctx, A);
+        return JS_NULL;
+    }
+    return A;
+fail:
+    /* the call of exec that failed, or what failed after it, leaves
+       lastIndex where the last call left it: 0 set above, then the end of
+       each match, stepped over an empty one. The slot holds the 0 that was
+       set, an int that can be written, so this calls nothing. */
+    js_regexp_set_lastIndex(ctx, rx, last_index);
+    js_free(ctx, capture);
+    JS_FreeValue(ctx, A);
+    return JS_EXCEPTION;
 }
 
 static JSValue JS_RegExpExec(JSContext *ctx, JSValueConst r, JSValueConst s)
@@ -60546,6 +60804,13 @@ static JSValue js_regexp_Symbol_match(JSContext *ctx, JSValueConst this_val,
     S = JS_ToString(ctx, argv[0]);
     if (JS_IsException(S))
         goto exception;
+    /* while an uncatchable exception is pending (left by a toString of S),
+       the generic path fails at its first call */
+    if (!js_uncatchable_pending(ctx->rt) && js_is_standard_regexp(ctx, rx)) {
+        A = js_regexp_match_fast(ctx, rx, S);
+        JS_FreeValue(ctx, S);
+        return A;
+    }
 
     flags = JS_GetProperty(ctx, rx, JS_ATOM_flags);
     if (JS_IsException(flags))
@@ -60966,10 +61231,12 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
 
     /* while an uncatchable exception is pending (left by a toString of str
        or rep), the generic path fails at its first call */
-    if (!functionalReplace && !js_uncatchable_pending(ctx->rt) &&
-        js_is_standard_regexp(ctx, rx)) {
+    if (!js_uncatchable_pending(ctx->rt) && js_is_standard_regexp(ctx, rx)) {
         /* use faster version for simple cases */
-        res = js_regexp_replace(ctx, rx, str, rep_val);
+        if (functionalReplace)
+            res = js_regexp_replace_fn(ctx, rx, str, rep);
+        else
+            res = js_regexp_replace(ctx, rx, str, rep_val);
         if (!JS_IsUndefined(res))
             goto done;
     }

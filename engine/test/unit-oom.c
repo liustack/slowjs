@@ -1339,6 +1339,9 @@ static void test_uncatchable_regexp_fast(void)
         { "replace with a string", "RegExp.prototype[Symbol.replace]", "/a/g", "'aa', o", 2 },
         { "split", "RegExp.prototype[Symbol.split]", "/b/", "o", 1 },
         { "split with a limit", "RegExp.prototype[Symbol.split]", "/b/", "o, 1", 2 },
+        { "replace with a function", "RegExp.prototype[Symbol.replace]", "/a/g", "o, () => (ran = 1, 'x')", 2 },
+        { "match", "RegExp.prototype[Symbol.match]", "/a/", "o", 1 },
+        { "global match", "RegExp.prototype[Symbol.match]", "/a/g", "o", 1 },
     };
     size_t i;
     int host;
@@ -2023,21 +2026,26 @@ static void test_integrity_oom(void)
     sweep("integrity levels", "integrity.js", setup, "run()", want, 16384);
 }
 
-/* split by a regexp that nothing changed, which does its work without the
-   splitter and the calls of exec (js_regexp_split_fast): with too little
-   memory (the captures, the array and its pieces) it fails with the out of
-   memory error, and leaves nothing behind. */
+/* split, replace with a function and match by a regexp that nothing changed,
+   which do their work without the calls of exec (js_regexp_split_fast,
+   js_regexp_replace_fn, js_regexp_match_fast): with too little memory (the
+   captures, the array and its pieces, the positions kept, the arguments of
+   the function, the string made) they fail with the out of memory error, and
+   leave nothing behind. */
 static void test_regexp_fast_oom(void)
 {
     static const char setup[] =
         "function run() {\n"
-        "  var s = 'a1b22c333d4444e55555f'.repeat(4) + '\\u4e2d1\\u00e92', out = [];\n"
+        "  var s = 'a1b22c333d4444e55555f'.repeat(4) + '\\u4e2d1\\u00e92', r = /(\\d)(\\d)?/g, out = [];\n"
         "  out.push(s.split(/(\\d)(x)?/).length, s.split(/\\d+/, 7).join('-'), s.split(/(?:)/u).length);\n"
+        "  out.push(s.replace(r, (m, a, b, p) => (b === undefined ? '_' : b) + p).length, r.lastIndex);\n"
+        "  out.push(s.replace(/[a-f]/y, m => m.toUpperCase()).slice(0, 3));\n"
+        "  out.push(s.match(/\\d+/g).length, s.match(/(?:)/g).length, s.match(/(\\d)(\\d)/).index);\n"
         "  return out.join(',');\n"
         "}\n"
         /* once before the sweep, so that its register code is made */
         "run();\n";
-    static const char *const want[] = { "187,a-b-c-d-e-fa-b,88", NULL };
+    static const char *const want[] = { "187,a-b-c-d-e-fa-b,88,136,0,A1b,22,89,3", NULL };
 
     sweep("regexp fast paths", "regexp_fast.js", setup, "run()", want, 32768);
 }
