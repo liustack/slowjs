@@ -54,12 +54,19 @@
 # engine/test/regvm/golden/inject by default. A script with no G/SCRIPT.txt
 # differs, unless G/skip names it on a line "SCRIPT WHY" (a script with too
 # many places to inject in the time of a test): it prints "SKIP SCRIPT: WHY"
-# and runs nothing. -update writes G/SCRIPT.txt again from the run, for a new
-# script or a change of output that is meant: read the diff before it goes
-# into a commit. The places hold while the
-# bytecode of the script is the same. It prints one line per run that
-# differs and a line for each script, and exits with 1 when any run
-# differs. The transcripts of a run that differs are in DIR/inject/SCRIPT-N/.
+# and runs nothing. The places hold while the bytecode of the script is the
+# same. It prints one line per run that differs and a line for each script,
+# and exits with 1 when any run differs. The transcripts of a run that
+# differs are in DIR/inject/SCRIPT-N/.
+#
+# -update writes G/SCRIPT.txt again from the run, for a new script or a
+# change of behaviour that is meant (make inject-goldens does it for the
+# whole set). For each place it prints the keys that changed ("CHANGED
+# SCRIPT PLACE: KEY,..."), the places no run reaches any more ("GONE") and
+# those that are new ("NEW"), then the counts of each script and of all. A
+# run that fails by its status (a leak, a signal) writes no line: the old
+# line of its place stays, and the run still differs. Read the diff before
+# it goes into a commit.
 #
 # -every K runs none of the places the sampling picks: of each script only the
 # lines 1, 1 + K, 1 + 2K and so on of G/SCRIPT.txt and its last line, besides
@@ -157,6 +164,82 @@ summary() {
 	echo "$s"
 }
 
+# changes OLD NEW KEYS: for -update, a line for each place of the golden OLD
+# that the golden NEW gives other values ("CHANGED SCRIPT PLACE: KEY,..."),
+# has and OLD has not ("NEW") or has not and OLD has ("GONE"). It writes to
+# KEYS the count of places of each key that changed and of the new and gone
+# ones, a line "NAME COUNT" each.
+changes() {
+	awk -v sc="$sc" -v keys="$3" '
+	function fields(line, m,   i, n, f, k) {
+		split("", m)
+		n = split(line, f, " ")
+		for (i = 3; i <= n; i++) {
+			k = f[i]
+			sub(/=.*/, "", k)
+			m[k] = f[i]
+		}
+	}
+	FNR == NR { old[$1] = $0; next }
+	{ new[$1] = $0 }
+	END {
+		for (p in new)
+			if (!(p in old)) {
+				print "NEW " sc " " p
+				count["new"]++
+			}
+		for (p in old) {
+			if (!(p in new)) {
+				print "GONE " sc " " p
+				count["gone"]++
+				continue
+			}
+			fields(old[p], a)
+			fields(new[p], b)
+			changed = ""
+			for (k in b)
+				if (!(k in a)) a[k] = ""
+			for (k in a)
+				if (a[k] != b[k]) {
+					changed = changed "," k
+					count["key " k]++
+				}
+			if (changed != "") {
+				print "CHANGED " sc " " p ": " substr(changed, 2)
+				count["changed"]++
+			}
+		}
+		for (k in count)
+			print k, count[k] > keys
+		close(keys)
+	}' "$1" "$2"
+	[ -f "$3" ] || : > "$3"
+}
+
+# changes_line KEYS: the counts of changes of KEYS (lines "NAME COUNT", of
+# one golden or summed over several) as a line: "C changed (KEY N, ...), A
+# new, D gone"
+changes_line() {
+	awk '
+	{ n[$1 == "key" ? "key " $2 : $1] += $NF }
+	END {
+		order = "status out result exception stack job job-stack"
+		m = split(order, o, " ")
+		ks = ""
+		for (i = 1; i <= m; i++)
+			if (("key " o[i]) in n) {
+				ks = ks ", " o[i] " " n["key " o[i]]
+				delete n["key " o[i]]
+			}
+		for (k in n)
+			if (k ~ /^key /)
+				ks = ks ", " substr(k, 5) " " n[k]
+		printf "%d changed", n["changed"]
+		if (ks != "") printf " (%s)", substr(ks, 3)
+		printf ", %d new, %d gone\n", n["new"], n["gone"]
+	}' "$1"
+}
+
 # one_run DIR KEY VAR=VAL: the run with the register loop on alone, its
 # transcript as its golden to the folder DIR (rvdiff -golden of an empty
 # folder with -update)
@@ -177,6 +260,12 @@ if [ -n "$single" ]; then
 	*.*) var=RV_INJECT_SITE val="${n%.*} ${n#*.}" ;;
 	*) var=RV_INJECT val=$n ;;
 	esac
+	# for -update, a run that failed (a leak, a signal, the time limit): it
+	# writes no golden line, the old line of its place stays
+	keep_line() {
+		[ -z "$update" ] || [ -z "$place" ] ||
+			grep "^$place " "$golden/$base.txt" > "$work/$name.gline" 2>/dev/null || true
+	}
 	one_run "$work/$name" "$key" "$var=$val"
 	grep "^hit " "$key" >> "$work/$base.hits" 2>/dev/null || true
 	at=$(grep -E '^(at|nokey|real|skip|miss|outside)' "$key" 2>/dev/null || echo '?')
@@ -187,15 +276,22 @@ if [ -n "$single" ]; then
 	g=$(find "$work/$name" -name "*.txt" | head -1)
 	if [ -z "$g" ]; then
 		echo "DIFF $sc N=$n status ($at): $(grep '^NOUPDATE' "$work/$name.log" | cut -c1-200)"
+		keep_line
 		exit 0
 	fi
 	want=
 	[ -z "$place" ] || want=$(grep "^$place " "$golden/$base.txt" 2>/dev/null | cut -d' ' -f3- || true)
 	got=$(summary "$g")
 	# the line of its golden, for -update: a place where the register loop
-	# threw that the count of its old instruction names
-	[ -z "$update" ] || [ -z "$place" ] || [ ! -s "$key" ] ||
-		echo "$place $n $got" > "$work/$name.gline"
+	# threw that the count of its old instruction names, in a run that ended
+	# as a script does
+	if [ -n "$update" ] && [ -n "$place" ] && [ -s "$key" ]; then
+		if grep -q '^--- status exit [01]$' "$g"; then
+			echo "$place $n $got" > "$work/$name.gline"
+		else
+			keep_line
+		fi
+	fi
 	if echo "$at" | grep -q '^miss'; then
 		echo "DIFF $sc N=$n $at: the instruction ran to its end, no hook of its handler threw"
 	elif echo "$at" | grep -q '^outside'; then
@@ -295,10 +391,22 @@ for sc in $scripts; do
 	find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
 	# shellcheck disable=SC2086
 	printf '%s\n' $ns | xargs -P "$jobs" -I{} "$self" -golden "$golden" ${update:+-update} -one "$dir" {} "$sc" > "$out" || true
+	# for -update, one line a place: two runs can throw at one place when the
+	# places of a script moved
 	if [ -n "$update" ]; then
-		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort -u > "$golden/$base.txt"
+		find "$work" -maxdepth 1 -name "$base-*.gline" -exec cat {} + 2>/dev/null | LC_ALL=C sort |
+			LC_ALL=C sort -u -k1,1 > "$work/$base.new"
 		find "$work" -maxdepth 1 -name "$base-*.gline" -exec rm -f {} +
-		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places"
+		if [ -f "$golden/$base.txt" ]; then
+			changes "$golden/$base.txt" "$work/$base.new" "$work/$base.keys" | LC_ALL=C sort
+			what=$(changes_line "$work/$base.keys")
+			cat "$work/$base.keys" >> "$work/update.$$"
+			rm -f "$work/$base.keys"
+		else
+			what="a new golden"
+		fi
+		mv "$work/$base.new" "$golden/$base.txt"
+		echo "UPDATE $golden/$base.txt: $(wc -l < "$golden/$base.txt" | tr -d ' ') places, $what"
 	elif [ -f "$golden/$base.txt" ]; then
 		# each place of the golden the runs were to compare was reached: a
 		# place no run threw at any more is compared with nothing
@@ -326,5 +434,9 @@ for sc in $scripts; do
 	nruns=$((nruns + runs)) nbad=$((nbad + bad))
 	[ "$bad" = 0 ] || status=1
 done
+if [ -n "$update" ] && [ -f "$work/update.$$" ]; then
+	echo "inject: the goldens written again, against the old ones: $(changes_line "$work/update.$$")"
+	rm -f "$work/update.$$"
+fi
 echo "inject: $nscripts scripts, $nruns injected, $nbad differ"
 exit $status

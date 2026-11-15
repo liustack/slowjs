@@ -6,8 +6,10 @@
 #
 # Test inject.sh. With no argument, with a stand-in for rvdiff (no build):
 # a golden holds no memory counts, so a run whose counts moved alone passes,
-# a run whose result moved fails, and a place of the golden no run reaches
-# fails (also among the lines -every picks).
+# a run whose result moved fails, a place of the golden no run reaches
+# fails (also among the lines -every picks), -update says which places
+# changed and in which key, which are new and which are gone, and it keeps
+# the old line of a place whose run failed by its status.
 #
 # With DIR, a build with -DRV_INJECT (see inject.sh), it runs that build
 # instead: it records the golden of a small script, then plants a leak in
@@ -105,6 +107,27 @@ EOS
 	printf '1 1 1 1 a\n2 1 9 1 b\n3 1 3 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places4"
 	FAKE_PLACES=$d/places4 FAKE_MEM=10 run "a place -every does not pick moved" pass -every 2
 
+	# -update says what changed: 1_2_1 gives B, 1_3_1 is gone, 1_4_1 is new
+	printf '1 1 1 1 a\n2 1 2 1 B\n3 1 4 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places5"
+	FAKE_PLACES=$d/places5 FAKE_MEM=12 run "record the golden again" fail -update
+	has "the report of -update" "CHANGED $d/s.js 1_2_1: result"
+	has "the report of -update" "GONE $d/s.js 1_3_1"
+	has "the report of -update" "NEW $d/s.js 1_4_1"
+	has "the report of -update" "1 changed (result 1), 1 new, 1 gone"
+	FAKE_PLACES=$d/places5 FAKE_MEM=10 run "the golden recorded again" pass
+	FAKE_PLACES=$d/places5 FAKE_MEM=10 run "the same golden recorded again" pass -update
+	has "the report of a -update that changes nothing" "0 changed, 0 new, 0 gone"
+	# a run that fails by its status writes no golden line: the old one stays
+	cp "$d/golden/s.js.txt" "$d/before"
+	printf '1 1 1 1 a\n2 1 2 1 B 87\n3 1 4 1 c\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places6"
+	FAKE_PLACES=$d/places6 FAKE_MEM=10 run "a run that leaks, recorded again" fail -update
+	cmp -s "$d/before" "$d/golden/s.js.txt" || fail "a run that leaks, recorded again: the golden changed"
+	has "a run that leaks, recorded again" "status=exit_87"
+	# two runs throw at one place (the third now at 1_1_1): one line a place
+	printf '1 1 1 1 a\n2 1 2 1 B\n3 1 1 1 a\n4 2 1 1 d\n5 2 2 1 e\n' > "$d/places7"
+	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "two runs at one place, recorded again" pass -update
+	[ -z "$(cut -d' ' -f1 "$d/golden/s.js.txt" | sort | uniq -d)" ] || fail "two runs at one place, recorded again: $(cat "$d/golden/s.js.txt")"
+	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "two runs at one place, the golden recorded" pass
 	exit 0
 fi
 

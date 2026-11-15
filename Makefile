@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl gen check-gen check-fast check-full bench remote
+.PHONY:	all build_all_targets clean edit editor work test cpu mem shorttest benchmark compare-engines cover gointl gen check-gen check-fast check-full bench remote inject-goldens
 
 all: editor
 	golint 2>&1
@@ -42,6 +42,18 @@ check-gen:
 # make bench ARGS="report -in shop.jsonl -base base -new new".
 bench:
 	go tool measure bench $(ARGS)
+
+# The goldens of the throw injection of the register loop written again from a
+# run of every place, with the places and keys that changed
+# (engine/test/regvm/inject.sh -update). About 10 hours on one core: run it on
+# a server, make remote RUN=inject-goldens with -g engine/test/regvm/golden/inject
+# in REMOTE_FLAGS to bring the goldens back. INJECT_PATHS names fewer scripts.
+INJECT_JOBS ?= 4
+INJECT_PATHS ?= engine/test/regvm/corpus engine/test/regvm/js
+inject-goldens:
+	EXTRA_DEFS=-DRV_INJECT engine/test/build.sh plain engine/test/out/inject-plain
+	EXTRA_DEFS=-DRV_INJECT engine/test/regvm/build.sh plain engine/test/out/inject-plain
+	engine/test/regvm/inject.sh -update -j $(INJECT_JOBS) engine/test/out/inject-plain $(INJECT_PATHS)
 
 # A make target on another machine (scripts/remote.sh): make remote RUN="gen",
 # make remote REF=my-branch TREE=new RUN="check-fast". The machine comes from
