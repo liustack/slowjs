@@ -1,11 +1,12 @@
 ---
-summary: 'How to measure whether a change makes renders faster or slower, down to a fraction of a percent: the protocol (layouts checked against the formal binary, balanced blocks, whole AB/BA units, the manifest of a run, the verdict against a stated delta, callgrind next to it), its defaults and why, what one batch of runs with known effects gave, how to read a result, its known limits and when not to trust one'
+summary: 'How to measure whether a change makes renders faster or slower, down to a fraction of a percent: the protocol (layouts checked against the formal binary, balanced blocks, whole AB/BA units, the manifest of a run, the verdict against a stated delta, callgrind next to it), its defaults and why, what one batch of runs with known effects gave, how to read a result, its known limits and when not to trust one, and how to get a count from CI'
 read_when:
   - Timing a change to the engine or to tifa against the code before it
   - Deciding whether a change of less than a few percent is real
   - Reading the output of measure bench judge, or a result someone else measured
   - Changing measure bench, the layouts it builds or the defaults of the protocol
   - Using callgrind to explain a timing
+  - Counting a branch against main in CI (count.yml), or asking whether a hosted runner can time
 ---
 
 # Measuring a change
@@ -70,6 +71,12 @@ taskset -c 2 go tool measure bench run -bin bin -out wb.jsonl -kind wb -parse go
 go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 0 -big 3 -dumps -sim -out cg -env GODEBUG=asyncpreemptoff=1 \
     -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind wb -cg -timed {N} -evaltimeout 1h
 ```
+
+## Counts in CI
+
+`.github/workflows/count.yml` counts a branch against its base on GitHub's runners, so a count does not wait for a server. Push the branch as `count/<topic>` (`git push origin HEAD:count/<topic>`), or run the workflow by hand with a `base` (the count is against the merge base of the commit with it, `main` by default) and `gen: true` for a branch whose generated engine is stale. The run's summary, and its artifact `table`, has one row per page and a sum per kind: the instructions a render of each side and the change, for the whole program and for the engine's own code (the functions of `internal/cengine`). A job fails when a page renders other HTML in the two builds. The raw dumps stay 7 days.
+
+`scripts/count-pages.sh` does the work, the same on any linux/amd64 machine with valgrind: the formal binary of each side, then each page (and each suite of the V8 benchmarks, as a bundle whose render runs the suite once) in its own process under callgrind, `-cg -warm 2 -timed 3`, with `GOMAXPROCS=1 GODEBUG=asyncpreemptoff=1 GOGC=off`. With Go's collector on, it runs in the window of one run and not of the next, and the same binary moved by up to 0.3% on store home. Without it the whole program held to 0.03% and the engine's own code to 0.01%. So a change under 0.1% is not a change, and Go's collector is not in the count.
 
 ## The defaults and why
 
