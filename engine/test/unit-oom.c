@@ -430,6 +430,54 @@ static void test_compile_oom(void)
     }
 }
 
+/* new from the register loop of constructors whose register code is made at
+   that new and runs out of memory: rv_new_frame must send them out of the
+   loop as functions without register code, with more arguments than
+   parameters too, and the new ends with the out of memory error. Each room
+   gives the result or that error, and the runtime frees every block. */
+static void test_new_convert_oom(void)
+{
+    static const char js[] =
+        "function C(a) { this.a = a; }\n"
+        "function D() { this.d = 1; }\n"
+        "function f(n) {\n"
+        "    var s = 0;\n"
+        "    for (var i = 0; i < n; i++) s += new C(i, 1, 2).a + new D(1).d + new C(1).a;\n"
+        "    return s;\n"
+        "}\n"
+        "f(0);\n";
+    size_t n;
+    int failed = 0, ran = 0;
+
+    for (n = 0; n <= 16 << 10 && ran < 4; n += 8) {
+        VM v = vm_new();
+        JSContext *ctx = v.ctx;
+        JSValue g, f, arg = JS_NewInt32(ctx, 3), val;
+        int32_t r = 0;
+
+        CHECK(eval_ok(ctx, js), "new_convert_oom: the script");
+        g = JS_GetGlobalObject(ctx);
+        f = JS_GetPropertyStr(ctx, g, "f");
+        room(&v, n);
+        val = JS_Call(ctx, f, JS_UNDEFINED, 1, &arg);
+        if (JS_IsException(val)) {
+            CHECK(JS_IsUncatchableException(ctx), "new_convert_oom, room %zu: fails without the out of memory error", n);
+            free(exception_text(ctx));
+            failed++;
+        } else {
+            CHECK(JS_ToInt32(ctx, &r, val) == 0 && r == 9, "new_convert_oom, room %zu: f(3) is %d, want 9", n, r);
+            ran++;
+        }
+        JS_FreeValue(ctx, val);
+        unlimit(&v);
+        CHECK(eval_is(ctx, "f(3)", "9"), "new_convert_oom, room %zu: f(3) afterwards", n);
+        JS_FreeValue(ctx, f);
+        JS_FreeValue(ctx, g);
+        vm_free(&v);
+    }
+    CHECK(failed > 0 && ran > 0, "new_convert_oom: %d rooms failed and %d ran", failed, ran);
+}
+
 /* test_compile_oom in steps of 4 bytes, from no memory left up to well past
    where the script first runs. */
 static void test_compile_oom_fine(void)
@@ -3192,6 +3240,7 @@ int main(void)
     test_define_oom();
     test_function_name_oom();
     test_compile_oom();
+    test_new_convert_oom();
     test_compile_oom_fine();
     test_write_bytecode_oom();
     test_buffer_after_failure();
