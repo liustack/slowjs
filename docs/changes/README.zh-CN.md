@@ -60,6 +60,8 @@ read_when:
 | 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | v0.31.0 | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
 | `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | v0.31.0 | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
 | 参数列表简单的非严格函数等读取需要时才造 arguments 对象，`f.apply(this, arguments)` 在寄存器循环里直接用帧里的参数调用 `f`，不造 arguments 对象和参数列表，只占一层调用深度 | Unreleased | [c-engine.md](c-engine.zh-CN.md#用-apply-传下参数时不造-arguments-对象) |
+| `for in` 循环遍历的对象还是循环开始时的 shape 时，一步在寄存器循环的一个操作里取出键并跳回（FINEXT），不调用 `js_for_in_next` | Unreleased | [c-engine.md](c-engine.zh-CN.md#for-in-循环的下一个键在寄存器循环里取) |
+| 读 `for in` 循环刚给出的键 `o[k]` 时，对象是循环遍历的 shape，就直接取 shape 里这个键的槽的值（GETELE、GETELET），不再查找这个键 | Unreleased | [c-engine.md](c-engine.zh-CN.md#读-for-in-循环刚给出的键) |
 
 ## 生成器
 

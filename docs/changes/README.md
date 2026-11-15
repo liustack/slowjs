@@ -60,6 +60,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `a[i]` and `a[i] = v` on an Array that is no longer a fast array read and write the index by its atom, without the generic path | v0.31.0 | [c-engine.md](c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom) |
 | `Math.acosh` of a value below -1 is NaN: musl's fix of `acosh` for negative inputs (commit `3e80328d`), taken as a patch of the small libc | v0.31.0 | [c-engine.md](c-engine.md#mathacosh-below--1-is-nan) |
 | A sloppy function with a simple parameter list makes its arguments object only when a read needs it, and `f.apply(this, arguments)` calls `f` in the register loop with the frame's arguments, with no arguments object, no list and one level of call depth | Unreleased | [c-engine.md](c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object) |
+| A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | Unreleased | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
+| A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | Unreleased | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
 
 ## The generator
 

@@ -1,0 +1,63 @@
+plain: a=1,b=2,c=3,d=4
+empty: -
+one key: only=x
+many keys: 259
+numeric looking keys: 1=2,4294967294=6,b=1,01=3,-0=4,4294967295=5,a=7
+symbols left out: a=1,b=3
+same shape, read on the other object: a=1,b=2,c=30,d=4
+other shape, read on the other object: a=10,b=20,c=30,d=40
+key changed before the read: a>d=4,b>a=1,c>a=1,d>zz=undefined
+key made again before the read: a=1,b=2,c=3,d=4
+keys of an array read on other objects: 0=5,q0,s 1=6,undefined,t 2=7,q2,undefined
+key made a number before the read: 0=zero,zero,a=1,zero,b=2,zero
+read of a key of the loop outside: d=4 4
+compound and update: a=24,b=26,c=28,d=30
+written during the loop: aa,bb,cc,dd a=aa,b=bb,c=cc,d=dd
+next key deleted: a=1,c=3,d=4
+key just given deleted: a=undefined,b=undefined,c=undefined,d=undefined -
+all keys deleted at the first: a
+deleted and added again: a=1,b=2,c=33,d=4 a=1,b=2,d=4,c=33
+added during: a=1,b=2,c=3,d=4 8
+value changed, shape kept: a=1,b=2,c=3,d=Dc
+a later key made a getter: a=1,b=2,c=got,d=4 1
+a later key made not enumerable: a=1,b=2,c=3,d=4
+the key just given made a getter: a=g,b=g,c=g,d=g
+frozen during: a=1,TypeError,b=2,TypeError,c=3,TypeError,d=4,TypeError
+sealed and not extensible: a=1,b=2,c=3,d=4 x=1,y=2
+shape changed back and forth: a=1,b=2,c=3,d=4
+shadowed: a=ta,t=tt,y=by
+getter on the prototype, data on the object: b=2,a=proto getter
+own getters and setters: a=1,b=b1,c=undefined,d=4 1
+getter that deletes the next key: a=1,b=B,d=4
+getter that adds keys: a=A,b=2 abe
+not enumerable: a=1,b=3
+class instance and methods: x=1,y=2
+error object: code=7
+array: 0=5,1=6,3=8
+array with keys: 0=1,1=2,x=ax
+typed array: 0=3,1=4 0=0.5
+string: 0=x,1=y,2=z
+String object: 0=a,1=b,q=1
+arguments: 0=p,1=q
+function: prop=1
+null prototype: b=1,a=2
+number and null: [][][]
+proxy: a=p1,b=p2
+let and const: a=1,b=2,c=3,d=4,a,b,c,d
+captured: a=1,b=2,c=3,d=4
+captured var: d=4
+argument: a=1,b=2,c=3,d=4
+property: a=1,b=2,c=3,d=4
+element: a=1,b=2,c=3,d=4
+destructured: ab,cd
+break: 1,2
+continue: 1,3,4
+return: c,none
+throw in the body: 1,2,at b,a,b,c,d
+throw from a getter: throws TypeError getter
+labelled: xp,xq,zp
+nested over the same object: aa=2,ab=3,ba=3,bb=4
+recursion: 15
+generators: a=1,a=1,c=3,d=4,b=2,stop,true,in
+many loops: 10000
+global: g1=x,g2=y g2

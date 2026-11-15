@@ -1243,6 +1243,34 @@ The `dates` page gains: its date-fns and dayjs call 136,524 getters, 6,058 sette
 
 The micro benchmark `date_parse` of `compare/testdata` (native) runs 28,498 instructions a turn where it ran 42,158 (-32%). `JS_RegvmRun` and `JS_CallInternal` keep their frames on both systems (SHADOW 256 and 112 on amd64, 176 and 96 on arm64), and so does the trained engine on amd64.
 
+### The next key of a for in loop and the read of it
+
+[The next key of a for in loop is taken in the register loop](changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) and [the read of the key a for in loop just gave](changes/c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave), counted on 2026-11-15 against v0.31.0. A render takes 2,399 steps of for in loops on React's page, 8,465 on the store's home page, 16,450 on its products page, 9,934 on the workbench's studio page, 4,111 on its stats page, 34,096 on MUI's orders page, 12,523 on its home page and 215,983 in long Markdown, and reads the key just given 1,681, 5,709, 11,940, 7,989, 3,248, 34,291, 12,116 and 24,184 times. 98% to 100% of the keys come from the shape the loop started from. In a loop over 8 keys on amd64 (callgrind, `host_poll` left out) a step took 155 instructions and takes 89, and a read `x = o[k]` took 103 and takes 68, where `x = o.c` takes 48. On the M4 (the native host built by LLVM 22, the lowest of 3 runs) a step took 174 and takes 111, and a read 88 and 67. A loop over an array that reads its elements by key (`array_for_in` of `compare/testdata`) took 603 instructions a step on amd64 and takes 560, and on the M4 572 and 541.
+
+Instructions a render on the native host, callgrind on linux/amd64 (three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with `urlmemo.js`, Markdown two after one), for the next key alone and for both changes. Every page gives the same HTML.
+
+| Page | Next key | Both |
+| --- | ---: | ---: |
+| React's page | -0.38% | -0.76% |
+| The store's home page | -0.32% | -0.54% |
+| The store's products page | -0.42% | -0.68% |
+| The workbench's studio page | -0.37% | -0.61% |
+| The workbench's stats page | -0.25% | -0.44% |
+| MUI's orders page | -1.12% | -1.74% |
+| MUI's home page | -0.92% | -1.39% |
+| Long Markdown (400 sections) | -0.02% | -0.11% |
+
+In the product (tifa's `test/ssr`, callgrind on linux/amd64 for one page of each group, three timed renders less one, halved), as generated with the profile of v0.31.0, and with the profile trained again on both changes against v0.31.0 trained again the same way. Trained again the same way, v0.31.0 itself moves by -0.19% to +0.03%. Every page gives the same HTML.
+
+| Page | As generated | Trained |
+| --- | ---: | ---: |
+| React's page | +0.41% | -0.66% |
+| The store's home page | +0.29% | -0.41% |
+| The workbench's studio page | +0.03% | -0.71% |
+| MUI's orders page | -1.28% | -2.14% |
+
+As generated, the changes make the profile of `JS_RegvmRun`, `rv_getel` and `rv_one` stale, and `JS_RegvmRun` without its profile costs more than the changes gain on React's page and the store. Trained again, every page runs fewer instructions.
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -2034,7 +2062,6 @@ What the measurements above leave for the C engine, none of it large. A change u
 - **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
 - **Results of the functions Go code calls**: the 91 functions Go code calls still store their result, because Go reads the result of an assembly function from memory. A generated Go entry for each hot one, which calls a body that stores nothing, would remove the stores of those bodies when generated code calls them: at most 0.24% of the instructions on the store pages, 0.21% on the workbench, 0.11% on MUI and 0.14% on React (arm64, writing each such store twice), less one extra call for each call from Go. It needs a new kind of function in both post-link checks.
 - **Arrays that keep their elements in one block with holes**: an Array written past its end, or with an element deleted, becomes an array of properties and never becomes a fast array again ([An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom)). V8 keeps such an array in its block, with a mark for each missing element. Upstream QuickJS and quickjs-ng turn it into properties, as this engine does. Keeping the block would need the mark checked wherever the engine reads the block of a fast array: about 60 functions of `quickjs.c` (`js_get_fast_array` and its callers, the fast paths of `push`, `pop`, `includes`, `indexOf`, `slice`, `splice`, `with` and `toSpliced`, JSON, `for in`, `for of`, `delete`, `set_array_length`, `JS_GetOwnPropertyNames`, the collector and the free of an object, `JS_WriteArray`, `build_arg_list`, `JS_CopySubArray`) and the register loop (GETEL, GETEL3, PUTEL, DSTART and DNEXT, the spread, the built-ins it answers), and every read of an element on the pages would pay the check, while the pages make no such reads. The read by atom takes about 94 instructions where an element of a block takes about 10, so the block would gain only where such arrays are hot, Crypto among the V8 benchmarks.
-- **The next key of a for in loop and the read of it** (`for (k in o) ... o[k]`), counted on 2026-11-15 against `b0271108`: a render takes 34,096 next keys and 34,244 reads of the key just given on MUI's orders page, 12,523 and 11,986 on its home page, 16,450 and 11,940 on the store's products page, 8,465 and 5,709 on its home page, 9,934 and 7,989 on the workbench's studio page, and 2,399 and 1,681 on React's page. One op of the register loop that gives the next key from the shape the loop checked, branches on the end and reads the value at the slot the loop is at would save two dispatches a key and the lookup of the read: about 0.7% to 1.2% of MUI's orders page and 0.6% to 1.0% of its home page, under 0.3% elsewhere, estimated from the counts. Taking the next out of its window alone saves only about 16 instructions a key on arm64. The fused op needs a new op of the pass and its branch, and the frame of `JS_RegvmRun` checked.
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
 

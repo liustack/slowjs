@@ -1172,3 +1172,42 @@ V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个�
 收益：Crypto 每次迭代的指令在原生宿主上少 20%（amd64 和 M4），通过 Go API 少 22%（amd64 和 M4）：解密在 amd64 上从 1,120M 降到 899M，加密从 59.7M 降到 48.1M。读这种数组的一个元素约 94 条指令，原来 180 条（amd64，Crypto 的 callgrind），写一次 104 条，原来 199 条。一个读写这种数组的循环在 M4 上少 31% 的指令。读快数组元素数之外的下标，在 Array 和它的原型上什么都找不到，也走这一遍，少约 190 条指令。页面不做这种读：原生指令在 amd64 上变化不到 0.04%，HTML 相同，长 Markdown 少 0.44%。通过 Go API，它们在 amd64 上变化在 -0.14% 到 +0.28% 之间，因为改了的函数周围的生成代码重新排布了，在 M4 上用重新训练的 profile 少 0.14% 到 0.48%。代价：给不是快数组的 Array 加元素的写入，在走原来的路径之前要多查一次下标，在 M4 上每次多约 36 条指令（5%）。通过 `rv_putel_slow` 往快数组末尾追加，在 amd64 上多约 6 条，因为这个函数为另一个分支上的调用要在栈上多存两个值。在 Array 以外的对象上按整数键读，要多付一次放弃的调用：amd64 上约 25 条，M4 上约 7 条，EarleyBoyer 的第一部分因此在 amd64 上慢 0.32%。数字见 [performance.md](../performance.zh-CN.md#不再是快数组的数组)。
 
 改动在 C 里（`engine/regvm-ops-object.h`）。`engine/test/compare/array_index_slow.js` 和 Node 24 对照，读写这样的数组（从高到低填的、有空洞的、删过元素的、有带 getter 和 setter 的元素的、冻结的、密封的、不可扩展的、长度只读的、有一个只读元素的），键放在局部变量、临时寄存器和常量里，有 GETEL3（`+=`、`++`），键从 2^31 - 2 到 2^32，还有 `-1`、`-0`、`1.5`、`NaN` 和字符串 `"1"`、`"01"`、`"1.0"`、`"-0"`、`" 1"`。原型上有下标的（在 `Array.prototype` 和 `Object.prototype` 上，作为值、getter、setter 和只读属性），原型是异质对象的（Proxy、Int8Array、String 对象、`arguments`、快数组和不是快数组的 Array、`null`），还有改长度、`delete` 之后再读、Array 的子类和另一个 realm 的 Array。`engine/test/regvm/js/o-getel-index.js` 把每次读和 `Reflect.get` 比，把每次写（宽松模式和严格模式）和在一个同样造出来的孪生数组上的 `Reflect.set` 比，数运行了哪些 getter、setter 和陷阱以及它们的接收者，之后比较自有属性。它还在有元素 2^31 - 1 的数组上读写小于 0 的键，并在不是对象的值上跑 GETEL3。去掉对小于 0 的键的检查（读或写）、读时对访问器的检查、对原型链上异质对象或快数组元素的检查，写时对只读元素的检查，或者 GETEL3 对对象的检查，测试都会失败。读时对类的检查和写时对属性种类的检查，是让这条路径只用在它为之而做的对象上：去掉它们，结果仍然正确。它们的 golden 是改动之前的引擎写的，`o-getel-index.js` 的抛错注入 golden 也是。
+
+## for in 循环的下一个键在寄存器循环里取
+
+发布版本：Unreleased。
+
+`for in` 循环的一步原来是寄存器循环的两个操作：先是 W_FOR_IN_NEXT，它调用 `rv_w_for_in_next`，再经它调用 `js_for_in_next`，把键和一个结束标志放进临时槽，然后按这个标志跳转。MUI 的订单页每次渲染走 34,096 步，长 Markdown 走 215,983 步。现在，`for_in_next` 后面跟着它的 `if_false`、而且没有跳转落到这个 `if_false` 上时（解析器给每个 `for in` 循环排的就是这个样子），转换把两者合成一个操作 FINEXT。迭代器按对象的 shape 遍历（见 [for in 循环持有它的对象的 shape](objects-and-shapes.zh-CN.md#for-in-循环持有它的对象的-shape)），而对象还是这个 shape 时，FINEXT 直接从 shape 里取下一个键，跳回循环体。其他的步照旧调用 `rv_w_for_in_next`，再按它给的标志跳转：`js_for_in_next` 的 shape 路径跳过的键、shape 已经变了的对象、从列表里取的键、原型链和循环结束。在 tifa 的页面上，一次渲染取的键有 98% 到 100% 来自循环开始时的 shape。
+
+为什么安全：这个操作对同一步做的事和 `js_for_in_next` 的 shape 路径一样，检查也一样，有一项不满足就什么都不做：
+
+- 值下面的临时槽放的是 `ForInIterator` 类的对象。`JS_ReadObject` 读进来的字节码可能在那里放任何东西，别的东西都走原路径，照旧抛错。
+- 迭代器持有一个 shape，它的位置还在这个 shape 的键里，对象也还是这个 shape。迭代器持有这个 shape 的引用，所以对对象的任何改动（加键、删键、把键改成不可枚举、getter、`Object.freeze`、新的原型）都会让对象换一个 shape，这一步就走原路径。
+- 这个位置上的键是字符串原子（`js_for_in_shape_key`，`js_for_in_next` 用的同一个检查），而且可枚举。
+
+它和 `js_for_in_next` 一样给出键的一个新引用，再把位置往后移。这条路径上不运行任何代码，也不分配内存。Proxy、数组、类型化数组、字符串、`arguments` 和原型链上的键都不走它。测试的抛错注入已经瞄准的那一步走原路径，所以注入能到达的地方和以前一样。FINEXT 不代替任何函数调用，所以有不可捕获的异常待处理时也没有区别：`js_for_in_next` 从来不看它。往回跳的轮询还在，权重也还是往回跳的权重，所以 `Interrupt` 和超时照旧能在任何一步停下循环。原路径抛错时（内存不足，原型链上 Proxy 的陷阱），值所在的临时槽是 `undefined`，归抛错那一项管。循环结束时 FINEXT 在值的临时槽里留下 `undefined`，循环后面对它的 `drop` 什么都不释放。帧大小不变：`JS_RegvmRun` 在 amd64 上还是 SHADOW 256，arm64 上 176，`JS_CallInternal` 是 112 和 96，递归能到的深度也一样。
+
+收益：在 amd64 上（callgrind，原生宿主），8 个键的循环里每一步从 155 条指令降到 89 条（在 LLVM 22 编译的原生宿主上，M4 从 174 条降到 111 条），MUI 订单页每次渲染少 1.12% 的指令，首页少 0.92%，商店商品页少 0.42%，React 的页面少 0.38%，工作台的 studio 页少 0.37%。代价：`JS_RegvmRun` 变了，在 `engine/pgo/train.sh` 重新训练之前，它的画像是过期的。数字见 [performance.md](../performance.zh-CN.md#for-in-循环的下一个键和对它的读取)。
+
+改动在 C 里（`engine/regvm-ops-window.h`）。`engine/test/compare/for_in_step.js` 打印的内容和 Node 24 一样，覆盖循环过程中对象被改动的各种情况：删键、加键、删了再加，把键改成 getter 或不可枚举，冻结对象，原型链上被遮住的键，不可枚举的键，getter，数组，类型化数组，字符串，`arguments`，键写进局部变量、参数、被捕获的绑定、全局变量、属性和解构目标，循环体抛错，`break`、`continue` 和 `return`，以及停在循环里、中间经过一次回收的生成器。`engine/test/regvm/js/o-forin-step.js` 跑 Node 没法对照的情况：两个领域的循环遍历两边的对象，两个领域的生成器停在循环里、中间经过几次回收，Proxy 陷阱的顺序，循环中设置原型，从列表取的键，以及 `with` 里的循环。它们的 golden 和 `o-forin-step.js` 的注入 golden 都由改动前的引擎写出。`engine/test/unit-white.c` 里的 `test_regvm_forin` 检查转换把哪些循环做成 FINEXT，`engine/test/unit-oom.c` 里的 `test_for_in_oom` 在每一档内存余量下跑循环，现在也会从 FINEXT 的原路径抛错。
+
+## 读 for in 循环刚给出的键
+
+发布版本：Unreleased。
+
+tifa 页面上的 `for in` 循环大多会读刚拿到的键的值：`for (k in o) ... o[k]`，MUI 的订单页每次渲染 34,291 次，商店的商品页 11,940 次，工作台的 studio 页 7,989 次。每次读取原来是 GETEL 或 GETELT，用 `rv_getel_atom` 在 `o` 的 shape 里[查这个键的原子](#自身就是原子的字符串键按具名属性读取)。其实循环已经知道这个键在哪里：迭代器按对象的 shape 遍历，它最后给出的键就在它当前位置的前一个槽。转换遇到按解析器的样子排好的 `for in` 循环（`for_in_start`，跳到末尾的 `for_in_next`，它的 `if_false` 跳回到对键的 `put_loc` 或 `put_arg`），就为循环体记下键所在的局部变量或参数，以及迭代器所在的临时槽。循环体里的读取 `o[k]`，如果键就是那个局部变量，而迭代器还在它的临时槽里，就变成 GETELE（`o` 在临时槽里时是 GETELET），迭代器作为第四个操作数。`o` 的 shape 正是迭代器持有的 shape，键又正是迭代器位置前一个槽的原子时，这个操作直接读那个槽的值。没有原子的键，比如对数组、字符串或 `arguments` 循环给出的下标新字符串，直接走 GETEL 的通用路径（`rv_getel_slow`），不经过 `rv_getel_atom`，因为它对任何没有原子的键都会放弃。其他情况和 GETEL、GETELT 做的一样。
+
+为什么安全：只有当读取 `o[k]` 本来就会把这个槽当作自有数据属性找到时，这个操作才读它。这一点由下面的检查自己保证，和转换记下了什么无关：
+
+- `o` 是对象，键是知道原子的字符串（`key_atom`），第四个操作数是 `ForInIterator` 类的对象。`JS_ReadObject` 读进来的字节码可能在那个临时槽里放任何东西，别的东西都走原路径。
+- `o` 的 shape 是迭代器持有的 shape，而且迭代器已经过了第一个键。一个 shape 里每个键只出现一次，所以原子等于键的原子的那个槽，在这个 shape 的任何对象上都是 `o[k]` 会找到的自有属性。`o` 是不是循环的对象、循环体有没有改过 `k` 都没有关系：比较的是槽的原子和这次读取拿到的键的原子。
+- 这个槽是普通数据：getter 或 setter、全局对象的闭包变量、首次使用时才建立的属性（`JS_PROP_TMASK`）都走原路径。错误对象的 `stack` 也走原路径，`rv_getel_atom` 同样把它交给通用路径。
+- 没有原子的字符串键跳过 `rv_getel_atom`：不管对象是什么，它对这样的键都给不出结果，接着就是 `rv_getel_slow`，所以跳过它不改变任何结果。
+
+自有属性在对象的任何特殊行为之前、在原型之前就会被找到，所以 Proxy、数组、原型链上的 getter 都看不出区别。这条路径上不运行任何代码，也不分配内存。测试的抛错注入已经瞄准的读取走原路径，所以注入能到达的地方和以前一样。GETELE 不代替任何调用。帧大小不变：`JS_RegvmRun` 在 amd64 上还是 SHADOW 256，arm64 上 176，`JS_CallInternal` 是 112 和 96，递归能到的深度也一样。
+
+有些读取转换认不出来，它们仍是 GETEL：键放在属性或全局变量里（`for (t.p in o)`），被闭包捕获的 `let` 键，键是另一个变量的读取，循环体之外的读取，以及不是按解析器的样子排的循环。转换最多跟踪四层嵌套的循环，内层循环里读外层循环的键也能认出来。
+
+收益：在 amd64 上（callgrind，原生宿主），8 个键的循环里一次读取 `x = o[k]` 从 103 条指令降到 68 条，`x = o.c` 是 48 条，在 M4 上（LLVM 22 编译的原生宿主）从 88 条降到 67 条。在下一个键已经在寄存器循环里取的基础上，每次渲染的指令 MUI 订单页再少 0.64%，首页少 0.48%，React 的页面少 0.38%，商店首页和商品页少 0.21% 和 0.26%，工作台的 studio 页和统计页少 0.24% 和 0.19%，长 Markdown 少 0.09%。对数组循环并按键读元素（`compare/testdata` 的 `array_for_in`），两个改动合起来每一步从 603 条指令降到 560 条，在 M4 上从 572 条降到 541 条：下一个键还是走原路径，读取跳过了 `rv_getel_atom`。代价：在 `engine/pgo/train.sh` 重新训练之前，`rv_getel` 的画像和 `JS_RegvmRun` 的一样是过期的。数字见 [performance.md](../performance.zh-CN.md#for-in-循环的下一个键和对它的读取)。
+
+改动在 C 里（`engine/regvm-ops-object.h`、`engine/regvm-ops-window.h`、`engine/regvm-pass.h`）。`engine/test/compare/for_in_step.js` 和 `engine/test/regvm/js/o-forin-step.js`（见[上文](#for-in-循环的下一个键在寄存器循环里取)）在它们跑的每个循环里都读 `o[k]`，包括循环体改过 `k`、`o` 或 `o` 的 shape 之后，在 shape 相同的另一个对象上读，用 `o[k] +=` 和 `o[k]++` 读，以及通过记录 `get` 陷阱的 Proxy 读，还读重新造出来的键，以及在别的对象和字符串上读数组循环给出的键。`engine/test/unit-white.c` 里的 `test_regvm_forin` 检查转换把哪些读取做成 GETELE：键在 `var`、参数和 `let` 里，嵌套的循环，生成器，而键在属性里、被捕获的 `let`、别的键和循环之后的读取都不做。

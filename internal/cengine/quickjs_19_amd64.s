@@ -8849,7 +8849,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0xff
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+7872(SB), R10
+	LEAQ ·engine_rodata+7920(SB), R10
 	QUAD $0xf9894d117728fb83
 	QUAD $0x1c894108c383d989
 	QUAD $0x8d4d09ebcf894924
@@ -8893,7 +8893,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0x7c
 	BYTE $0x24
 	BYTE $0x30
-	LEAQ ·engine_rodata+7872(SB), R10
+	LEAQ ·engine_rodata+7920(SB), R10
 	QUAD $0x245c8b4c245c8b44
 	QUAD $0x8b4c2824448b4c48
 	QUAD $0x4424748b44382464
@@ -8948,7 +8948,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0x4c
 	BYTE $0x24
 	BYTE $0x30
-	LEAQ ·engine_rodata+7872(SB), R10
+	LEAQ ·engine_rodata+7920(SB), R10
 	QUAD $0x245c8b4c245c8b44
 	QUAD $0x8b4c2824448b4c48
 	QUAD $0x4424748b44382464

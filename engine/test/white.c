@@ -1613,6 +1613,47 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
     return rf->code;
 }
 
+/* the for in loops of the function f, converted, found by their pcmap
+   entries: n[0] the for_in_next the pass made FINEXT (its entry for the
+   next ends the four bytes of the instruction), n[1] those it made
+   W_FOR_IN_NEXT (two bytes), n[2] the get_array_el it made GETELE or
+   GETELET (five bytes), n[3] those it made GETEL or GETELT (four bytes).
+   -1 when f has no register code (engine/regvm-ops-window.h). */
+int white_regvm_forin_sites(JSValueConst f, int n[4])
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    int i;
+
+    n[0] = n[1] = n[2] = n[3] = 0;
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const RVPcMask *m = &rf->pcmap[i];
+        if (m->old < 0 || m->old >= b->byte_code_len)
+            continue;
+        if (b->byte_code_buf[m->old] == OP_for_in_next) {
+            if (m->end >= 4 && rf->code[m->end - 4] == RV_FINEXT)
+                n[0]++;
+            else if (m->end >= 2 && rf->code[m->end - 2] == RV_W_FOR_IN_NEXT)
+                n[1]++;
+        } else if (b->byte_code_buf[m->old] == OP_get_array_el) {
+            if (m->end >= 5 && (rf->code[m->end - 5] == RV_GETELE ||
+                                rf->code[m->end - 5] == RV_GETELET))
+                n[2]++;
+            else if (m->end >= 4 && (rf->code[m->end - 4] == RV_GETEL ||
+                                     rf->code[m->end - 4] == RV_GETELT))
+                n[3]++;
+        }
+    }
+    return 0;
+}
+
 /* the for_of_start of the function f, converted: how many the pass made
    DSTART (*dst) and how many W_FOR_OF_START (*win), found by their pcmap
    entries, which name the old for_of_start and end after the two bytes of

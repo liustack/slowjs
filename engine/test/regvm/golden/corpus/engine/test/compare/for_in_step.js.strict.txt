@@ -1,0 +1,66 @@
+result plain: a=1,b=2,c=3,d=4
+result empty: -
+result one key: only=x
+result many keys: 259
+result numeric looking keys: 1=2,4294967294=6,b=1,01=3,-0=4,4294967295=5,a=7
+result symbols left out: a=1,b=3
+result same shape, read on the other object: a=1,b=2,c=30,d=4
+result other shape, read on the other object: a=10,b=20,c=30,d=40
+result key changed before the read: a>d=4,b>a=1,c>a=1,d>zz=undefined
+result key made again before the read: a=1,b=2,c=3,d=4
+result keys of an array read on other objects: 0=5,q0,s 1=6,undefined,t 2=7,q2,undefined
+result key made a number before the read: 0=zero,zero,a=1,zero,b=2,zero
+result read of a key of the loop outside: d=4 4
+result compound and update: a=24,b=26,c=28,d=30
+result written during the loop: aa,bb,cc,dd a=aa,b=bb,c=cc,d=dd
+result next key deleted: a=1,c=3,d=4
+result key just given deleted: a=undefined,b=undefined,c=undefined,d=undefined -
+result all keys deleted at the first: a
+result deleted and added again: a=1,b=2,c=33,d=4 a=1,b=2,d=4,c=33
+result added during: a=1,b=2,c=3,d=4 8
+result value changed, shape kept: a=1,b=2,c=3,d=Dc
+result a later key made a getter: a=1,b=2,c=got,d=4 1
+result a later key made not enumerable: a=1,b=2,c=3,d=4
+result the key just given made a getter: a=g,b=g,c=g,d=g
+result frozen during: a=1,TypeError,b=2,TypeError,c=3,TypeError,d=4,TypeError
+result sealed and not extensible: a=1,b=2,c=3,d=4 x=1,y=2
+result shape changed back and forth: a=1,b=2,c=3,d=4
+result shadowed: a=ta,t=tt,y=by
+result getter on the prototype, data on the object: b=2,a=proto getter
+result own getters and setters: a=1,b=b1,c=undefined,d=4 1
+result getter that deletes the next key: a=1,b=B,d=4
+result getter that adds keys: a=A,b=2 abe
+result not enumerable: a=1,b=3
+result class instance and methods: x=1,y=2
+result error object: code=7
+result array: 0=5,1=6,3=8
+result array with keys: 0=1,1=2,x=ax
+result typed array: 0=3,1=4 0=0.5
+result string: 0=x,1=y,2=z
+result String object: 0=a,1=b,q=1
+result arguments: 0=p,1=q
+result function: prop=1
+result null prototype: b=1,a=2
+result number and null: [][][]
+result proxy: a=p1,b=p2
+result let and const: a=1,b=2,c=3,d=4,a,b,c,d
+result captured: a=1,b=2,c=3,d=4
+result captured var: d=4
+result argument: a=1,b=2,c=3,d=4
+result property: a=1,b=2,c=3,d=4
+result element: a=1,b=2,c=3,d=4
+result destructured: ab,cd
+result break: 1,2
+result continue: 1,3,4
+result return: c,none
+result throw in the body: 1,2,at b,a,b,c,d
+result throw from a getter: throws TypeError getter
+result labelled: xp,xq,zp
+result nested over the same object: aa=2,ab=3,ba=3,bb=4
+result recursion: 15
+result generators: a=1,a=1,c=3,d=4,b=2,stop,true,in
+result many loops: 10000
+result global: g1=x,g2=y g2
+mem-end obj=207 atom=611 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
+mem-gc obj=207 atom=611 shape=212 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
+--- status exit 0

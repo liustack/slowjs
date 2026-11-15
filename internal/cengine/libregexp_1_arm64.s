@@ -288,7 +288,7 @@ TEXT ·lre_exec(SB), $184-16
 	WORD $0xf9403be0
 	WORD $0xf9405ff6
 	WORD $0x385fa129
-	MOVD $·engine_rodata+5204(SB), R10
+	MOVD $·engine_rodata+5252(SB), R10
 	WORD $0x7869794a
 	WORD $0x9ba8d94a
 	WORD $0x785fe14b

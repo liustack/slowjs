@@ -143,6 +143,7 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
+int white_regvm_forin_sites(JSValueConst f, int n[4]);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
 uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
@@ -7360,6 +7361,67 @@ static JSValue dst_call(VM *v, const char *name, JSValue *fun)
     return r;
 }
 
+/* The next key and the read of it of a for in loop (engine/regvm-ops-window.h,
+   engine/regvm-ops-object.h): the pass makes FINEXT for the for_in_next
+   followed by its if_false, whatever stores the key, and GETELE or GETELET
+   for the read o[k] inside the loop whose key k is the local or argument the
+   loop stores, not for a read with another key, a key in a property, a let
+   a closure captures (which the pass does not take as the slot of the key)
+   or a read outside the loop. The read checks the key it is given, so a
+   miss of the pass costs only the fast path. Each function is run once
+   first, so that it has its register code, and its result is checked. */
+static void forin_case(VM *v, const char *name, const char *want, int fin, int win,
+                       int ele, int el)
+{
+    char expr[64];
+    JSValue g, fun;
+    int n[4];
+
+    snprintf(expr, sizeof(expr), "%s(src)", name);
+    CHECK(eval_is(v->ctx, expr, want), "%s: the result is not %s", name, want);
+    g = JS_GetGlobalObject(v->ctx);
+    fun = JS_GetPropertyStr(v->ctx, g, name);
+    JS_FreeValue(v->ctx, g);
+    CHECK(white_regvm_forin_sites(fun, n) == 0, "%s: no register code", name);
+    CHECK(n[0] == fin && n[1] == win && n[2] == ele && n[3] == el,
+          "%s: FINEXT %d, W_FOR_IN_NEXT %d, GETELE %d, GETEL %d, not %d %d %d %d",
+          name, n[0], n[1], n[2], n[3], fin, win, ele, el);
+    JS_FreeValue(v->ctx, fun);
+}
+
+static void test_regvm_forin(void)
+{
+    static const char src[] =
+        "globalThis.src = { a: 1, b: { x: 2, y: 3 }, c: 4 };"
+        "globalThis.plain = function (o) { var s = ''; for (var k in o) s += k + o[k]; return s; };"
+        "globalThis.arg = function (o, k) { var s = ''; for (k in o) s += o[k]; return s; };"
+        "globalThis.prop = function (o) { var t = {}, s = ''; for (t.p in o) s += o[t.p]; return s; };"
+        "globalThis.other = function (o) { var s = '', j = 'a'; for (var k in o) s += o[j]; return s; };"
+        "globalThis.after = function (o) { var k; for (k in o); return o[k]; };"
+        "globalThis.nest = function (o) { var s = ''; for (var a in o) if (typeof o[a] == 'object')"
+        " for (var b in o[a]) s += a + b + o[a][b]; return s; };"
+        "globalThis.letk = function (o) { var s = ''; for (let k in o) s += o[k]; return s; };"
+        "globalThis.cap = function (o) { var s = '', fs = []; for (let k in o) { fs.push(() => k);"
+        " s += o[k]; } return s + fs.map(f => f()).join(''); };"
+        "globalThis.gen = function* (o) { for (var k in o) yield o[k]; };"
+        "globalThis.genr = function (o) { return [...gen(o)].join(); }; 0";
+    VM v;
+
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, src), "the setup threw");
+    forin_case(&v, "plain", "a1b[object Object]c4", 1, 0, 1, 0);
+    forin_case(&v, "arg", "1[object Object]4", 1, 0, 1, 0);
+    forin_case(&v, "prop", "1[object Object]4", 1, 0, 0, 1);
+    forin_case(&v, "other", "111", 1, 0, 0, 1);
+    forin_case(&v, "after", "4", 1, 0, 0, 1);
+    forin_case(&v, "nest", "bx2by3", 2, 0, 4, 0);
+    forin_case(&v, "letk", "1[object Object]4", 1, 0, 1, 0);
+    forin_case(&v, "cap", "1[object Object]4abc", 1, 0, 0, 1);
+    CHECK(eval_is(v.ctx, "genr(src)", "1,[object Object],4"), "gen: the values differ");
+    forin_case(&v, "gen", "[object Generator]", 1, 0, 1, 0);
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -8336,6 +8398,7 @@ int main(int argc, char **argv)
     test_regvm_call_copies();
     test_regvm_dst();
     test_regvm_dst_alloc();
+    test_regvm_forin();
     test_spread_alloc();
     test_spread_refs();
     test_days_to_date();

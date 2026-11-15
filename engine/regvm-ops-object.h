@@ -15,6 +15,8 @@
    T: o is a temp, freed after. */
 RV_OP(GETEL) RV_OP(GETELT) RV_OP(GETELK) RV_OP(GETELKT)
 RV_OP(GETEL3)   /* d o t: as GETEL, o and the temp t kept, t made a key */
+RV_OP(GETELE) RV_OP(GETELET) /* d o key it: GETEL and GETELT of the key of the for in
+                               loop whose iterator is the temp it */
 RV_OP(PUTEL)    /* o key v: o[key] = v, a temp o freed */
 RV_OP(DEFEL)    /* o i v: define o[i] = v, o and i kept */
 RV_OP(OBJ)      /* d: a new object */
@@ -52,16 +54,43 @@ static void rv_obj_op(RVPass *s, int rop, int d, int n)
         rv_byte(s, a[i]);
 }
 
+/* the iterator temp of the innermost for in loop (rv_for_in_ctx,
+   regvm-ops-window.h) whose body the old instruction at s->pos is in and
+   whose key slot the key entry ek reads, when the iterator is still at its
+   depth under the two operands, or -1 */
+static int rv_for_in_it(RVPass *s, RVEnt ek)
+{
+    int i;
+    if (ek.kind != RV_E_SLOT)
+        return -1;
+    for (i = s->fi_n - 1; i >= 0; i--) {
+        if (s->pos < s->fi[i].lo || s->pos >= s->fi[i].hi ||
+            ek.slot != s->fi[i].key)
+            continue;
+        if (s->fi[i].d >= s->sp - 2 ||
+            s->st[s->fi[i].d].kind != RV_E_TEMP ||
+            s->st[s->fi[i].d].slot != s->fi[i].it)
+            return -1;
+        return s->fi[i].it;
+    }
+    return -1;
+}
+
 /* get_array_el (el2 FALSE): o key -> value, get_array_el2: o key -> o
-   value */
+   value. A read of the key of a for in loop in its body is GETELE or
+   GETELET, which name the iterator too. */
 static void rv_getel(RVPass *s, BOOL el2)
 {
-    int o, d;
+    int o, d, it = -1;
     RVEnt ek;
     o = rv_slot_of(s, s->sp - 2);
     ek = s->st[s->sp - 1];
     d = rv_tslot(s, s->sp - (el2 ? 1 : 2));
-    if (el2)
+    if (!el2)
+        it = rv_for_in_it(s, ek);
+    if (it >= 0)
+        rv_emit(s, s->st[s->sp - 2].kind == RV_E_TEMP ? RV_GETELET : RV_GETELE);
+    else if (el2)
         rv_emit(s, ek.kind == RV_E_K ? RV_GETELK : RV_GETEL);
     else if (s->st[s->sp - 2].kind == RV_E_TEMP)
         rv_emit(s, ek.kind == RV_E_K ? RV_GETELKT : RV_GETELT);
@@ -70,6 +99,8 @@ static void rv_getel(RVPass *s, BOOL el2)
     rv_byte(s, d);
     rv_byte(s, o);
     rv_byte(s, ek.kind == RV_E_K ? ek.k : ek.slot);
+    if (it >= 0)
+        rv_byte(s, it);
     rv_throws(s, rv_owned(s, el2 ? 1 : 2));
     s->sp -= el2 ? 1 : 2;
     rv_push(s, RV_E_TEMP, d, 0);
@@ -875,6 +906,57 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     RV_GETEL(rv_GETELK, RV_K(ip[2]), TRUE, FALSE)
     RV_GETEL(rv_GETELKT, RV_K(ip[2]), TRUE, TRUE)
 #undef RV_GETEL
+
+    /* the read of the key of a for in loop (rv_getel, d o key it): when o
+       has the shape the iterator in the temp it holds and the key is the
+       atom string of the slot before the one the iterator is at, the key
+       the loop gave last, the value of that slot when it is plain data, as
+       rv_getel_atom finds it. The iterator holds its shape, so an object
+       of that shape got it before the loop and keeps it until it changes
+       a key or a flag, which gives it another shape: the slot is the key's
+       on any object of it. Else as GETEL and GETELT of a string key. */
+#define RV_GETELE(label, temp)                                          \
+ label:                                                                 \
+    ip = pc; pc += 4;                                                   \
+    {                                                                   \
+        JSValue obj = RV_R(ip[1]), key = RV_R(ip[2]), itv = RV_R(ip[3]); \
+        if (likely(JS_VALUE_GET_TAG(key) == JS_TAG_STRING)) {           \
+            JSAtom atom = JS_VALUE_GET_STRING(key)->key_atom;           \
+            /* rv_getel_atom gives up on a key with no atom, such as   \
+               the new string of an index a loop over an array, a      \
+               string or arguments gives */                            \
+            if (unlikely(atom == JS_ATOM_NULL))                         \
+                goto label##_slow;                                      \
+            if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT &&        \
+                       JS_VALUE_GET_TAG(itv) == JS_TAG_OBJECT && !RV_INJ_ARMED && \
+                       JS_VALUE_GET_OBJ(itv)->class_id == JS_CLASS_FOR_IN_ITERATOR)) { \
+                JSForInIterator *it = JS_VALUE_GET_OBJ(itv)->u.for_in_iterator; \
+                p = JS_VALUE_GET_OBJ(obj);                              \
+                if (likely(p->shape == it->sh && it->idx != 0)) {       \
+                    JSShapeProperty *prs = &get_shape_prop(p->shape)[it->idx - 1]; \
+                    JSValue v_ = p->prop[it->idx - 1].u.value;          \
+                    if (likely(prs->atom == atom && !(prs->flags & JS_PROP_TMASK) && \
+                               !(atom == JS_ATOM_stack &&               \
+                                 JS_VALUE_GET_TAG(v_) == JS_TAG_OBJECT))) { \
+                        RV_PUTD(ip[0], JS_DupValue(ctx, v_));           \
+                        if (temp)                                       \
+                            JS_FreeValue(ctx, obj);                     \
+                        RV_NEXT();                                      \
+                    }                                                   \
+                }                                                       \
+            }                                                           \
+        }                                                               \
+        if (!RV_INJ_ARMED && rv_getel_atom(ctx, F, ip, FALSE, temp))   \
+            RV_NEXT();                                                  \
+    label##_slow:                                                       \
+        RV_SYNC_TOP();                                                  \
+        if (rv_getel_slow(ctx, F, ip, FALSE, temp))                     \
+            goto rv_exception;                                          \
+    }                                                                   \
+    RV_NEXT();
+    RV_GETELE(rv_GETELE, FALSE)
+    RV_GETELE(rv_GETELET, TRUE)
+#undef RV_GETELE
 
  rv_GETEL3:
     ip = pc; pc += 3;
