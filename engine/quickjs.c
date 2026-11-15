@@ -60150,7 +60150,7 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
     JSValue indices, indices_groups;
     uint8_t *re_bytecode;
     uint8_t **capture, *str_buf;
-    int rc, capture_count, shift, i, re_flags, alloc_count;
+    int rc, capture_count, shift, i, i_end, re_flags, alloc_count;
     int64_t last_index;
     const char *group_name_ptr;
     JSObject *p_obj;
@@ -60252,7 +60252,12 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
         if (expand_fast_array(ctx, p_obj, capture_count))
             goto fail;
         
-        for(i = 0; i < capture_count; i++) {
+        i = 0;
+    next_captures:
+        /* a regexp has up to 32767 groups: read the flag every 1024, with
+           no test in the loop for the regexps of fewer */
+        i_end = min_int(capture_count, i + 1024);
+        for(; i < i_end; i++) {
             uint8_t **match = &capture[2 * i];
             int start = -1;
             int end = -1;
@@ -60332,6 +60337,11 @@ static JSValue js_regexp_exec(JSContext *ctx, JSValueConst this_val,
                 group_name = JS_ATOM_NULL;
             }
             p_obj->u.array.u.values[p_obj->u.array.count++] = val;
+        }
+        if (i < capture_count) {
+            if (js_poll_interrupts(ctx))
+                goto fail;
+            goto next_captures;
         }
 
         if (!JS_IsUndefined(indices)) {
@@ -61012,6 +61022,9 @@ static JSValue js_regexp_Symbol_replace(JSContext *ctx, JSValueConst this_val,
             goto exception;
         for(n = 1; n < nCaptures; n++) {
             JSValue capN;
+            /* the length of a result of a custom exec is any number */
+            if ((n & 1023) == 0 && js_poll_interrupts(ctx))
+                goto exception;
             capN = JS_GetPropertyInt64(ctx, result, n);
             if (JS_IsException(capN))
                 goto exception;
@@ -61247,6 +61260,9 @@ static JSValue js_regexp_Symbol_split(JSContext *ctx, JSValueConst this_val,
                 if (js_get_length64(ctx, &numberOfCaptures, z))
                     goto exception;
                 for(i = 1; i < numberOfCaptures; i++) {
+                    /* the length of a result of a custom exec is any number */
+                    if ((i & 1023) == 0 && js_poll_interrupts(ctx))
+                        goto exception;
                     sub = JS_GetPropertyInt64(ctx, z, i);
                     if (JS_IsException(sub))
                         goto exception;

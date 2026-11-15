@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/liustack/slowjs/internal/gohost"
 )
 
 // A regexp takes as many capture groups as V8 does, 32767 and group 0 (a
@@ -128,6 +130,68 @@ func TestRegExpManyCapturesStop(t *testing.T) {
 				start := time.Now()
 				_, err := m.Eval(w.loop, EvalGlobal)
 				checkStopped(t, m, err, time.Since(start), stepStopPolls, "")
+			})
+		}
+	}
+}
+
+// captureLoops are scripts that spend their time in the loops over the
+// captures of a match: the result of an exec of 32767 groups, the captures
+// replace reads for "$1" (the named group keeps replace off its fast path,
+// which reads none), the pieces of split, and the result of an exec of the
+// script whose length is any number, which replace and split read capture by
+// capture. The regexp of 32767 groups matches "b" in its last alternative:
+// the matcher reads the flag at each alternative it leaves, where a match
+// through 32767 groups in a row is one run of about 98,000 ops that reads
+// none.
+var captureLoops = []struct{ name, setup, loop string }{
+	{"exec", captureMany, `for (;;) re.exec("b")`},
+	{"replace", captureMany, `for (;;) "b".replace(re, "$1")`},
+	{"split", captureMany, `for (;;) s.split(re)`},
+	{"custom replace", `var re = /a/; re.exec = function () { if (this.done) return null; this.done = true; return {length: 1e9, 0: "a", index: 0} }; 0`,
+		`re.done = false; re[Symbol.replace]("a", "")`},
+	{"custom split", `class R extends RegExp { exec() { if (this.lastIndex != 0) return null; this.lastIndex = 1; return {length: 1e9, 0: "a", index: 0} } }; var re = new R("a"); 0`,
+		`re[Symbol.split]("ab")`},
+}
+
+const captureMany = `var re = new RegExp("(?<n>a)|" + "(a)|".repeat(32765) + "(b)"), s = "b".repeat(64); 0`
+
+// The eval timeout and Interrupt stop the loops of captureLoops with the
+// interrupt, not the kill: the loops over the captures read the flag every
+// 1024 captures. Before, replace and split read the captures of a custom exec
+// result of length 1e9 until the kill. What the loops made is freed after the
+// stop, and those polls are as many as it is long: TestRegExpCaptureLoopsStopPolls
+// counts the others.
+func TestRegExpCaptureLoopsStop(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		arm  func(m *VM) (stop func())
+	}{
+		{"timeout", func(m *VM) func() {
+			m.SetEvalTimeout(10 * time.Millisecond)
+			return func() {}
+		}},
+		{"interrupt", func(m *VM) func() { return interruptAfter(m, 10*time.Millisecond) }},
+	} {
+		for _, w := range captureLoops {
+			t.Run(c.name+"/"+w.name, func(t *testing.T) {
+				m := newTestVM(t)
+				if _, err := m.Eval(w.setup, EvalGlobal); err != nil {
+					t.Fatal(err)
+				}
+				stop := c.arm(m)
+				start := time.Now()
+				_, err := m.Eval(w.loop, EvalGlobal)
+				took := time.Since(start)
+				stop()
+				m.SetEvalTimeout(0)
+				if errors.Is(err, ErrKilled) {
+					t.Fatalf("killed after %v, want the interrupt", took)
+				}
+				checkStopped(t, m, err, took, gohost.KillPolls, "")
+				if v, err := m.Eval(`/(a)(b)/.exec("ab").length`, EvalGlobal); err != nil || fmt.Sprint(v) != "3" {
+					t.Fatalf("after: %v, %v", v, err)
+				}
 			})
 		}
 	}
