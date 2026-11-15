@@ -60395,7 +60395,9 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     re_flags = lre_get_flags(re_bytecode);
 
     if (re_flags & LRE_FLAG_GLOBAL) {
-        if (js_regexp_set_lastIndex(ctx, this_val, 0))
+        /* the generic path reads the flag as it calls the flags getter,
+           before it sets lastIndex to 0 */
+        if (js_poll_interrupts(ctx) || js_regexp_set_lastIndex(ctx, this_val, 0))
             goto fail;
     }
     if ((re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY)) == 0) {
@@ -60408,7 +60410,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     if (alloc_count > 0) {
         capture = js_malloc(ctx, sizeof(capture[0]) * alloc_count);
         if (!capture)
-            goto fail;
+            goto fail_search;
     }
     capture_count = lre_get_capture_count(re_bytecode);
     fullUnicode = ((re_flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0);
@@ -60419,7 +60421,7 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
         /* a global replace of a long string makes a match for every few
            characters, none of which reads the flag by itself */
         if (js_poll_interrupts(ctx))
-            goto fail;
+            goto fail_search;
         if (last_index > str->len) {
             ret = 0;
         } else {
@@ -60438,13 +60440,20 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
                 } else {
                     JS_ThrowOutOfMemory(ctx);
                 }
-                goto fail;
+                goto fail_search;
             }
             break;
         }
         start = (capture[0] - str_buf) >> shift;
         end = (capture[1] - str_buf) >> shift;
+        /* exec has set lastIndex to the end of the match (with g or y) */
         last_index = end;
+        if ((re_flags & (LRE_FLAG_GLOBAL | LRE_FLAG_STICKY)) == LRE_FLAG_STICKY) {
+            if (js_regexp_set_lastIndex(ctx, this_val, end) < 0)
+                goto fail;
+        }
+        /* the generic path makes the result after the last call of exec,
+           which left lastIndex at 0 with g */
         if (next_src_pos < start) {
             if (string_buffer_concat(b, str, next_src_pos, start))
                 goto fail;
@@ -60457,13 +60466,8 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
             }
         }
         next_src_pos = end;
-        if (!(re_flags & LRE_FLAG_GLOBAL)) {
-            if (re_flags & LRE_FLAG_STICKY) {
-                if (js_regexp_set_lastIndex(ctx, this_val, end) < 0)
-                    goto fail;
-            }
+        if (!(re_flags & LRE_FLAG_GLOBAL))
             break;
-        }
         if (end == start) {
             end = string_advance_index(str, end, fullUnicode);
         }
@@ -60474,6 +60478,13 @@ static JSValue js_regexp_replace(JSContext *ctx, JSValueConst this_val, JSValueC
     JS_FreeValue(ctx, str_val);
     js_free(ctx, capture);
     return string_buffer_end(b);
+fail_search:
+    /* the call of exec that failed leaves lastIndex where the last call
+       left it: 0 set above, then the end of each match, stepped over an
+       empty one. The slot holds the 0 that was set, an int that can be
+       written, so this calls nothing. */
+    if (re_flags & LRE_FLAG_GLOBAL)
+        js_regexp_set_lastIndex(ctx, this_val, last_index);
 fail:
     JS_FreeValue(ctx, str_val);
     js_free(ctx, capture);

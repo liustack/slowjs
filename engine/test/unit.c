@@ -3360,10 +3360,11 @@ static void test_regexp_stops(void)
     host_free_runtime(rt);
 }
 
-/* match and replace with a function by a regexp that nothing changed find
-   the matches without calling exec (js_regexp_match_fast,
-   js_regexp_replace_fn). Stopped, they leave lastIndex where the generic path
-   leaves it, which a regexp with a property of its own takes. Stopped as
+/* match and replace by a regexp that nothing changed find the matches
+   without calling exec (js_regexp_match_fast, js_regexp_replace_fn, and
+   js_regexp_replace for a string). Stopped, they leave lastIndex where the
+   generic path leaves it, which a regexp with a property of its own takes.
+   Stopped as
    they start, where the generic path stops at the call of the flags getter,
    they leave it as it was: the 0 that a global regexp gets next is not set,
    and a sticky one does not match. Stopped in the long search after 100
@@ -3386,6 +3387,9 @@ static void test_regexp_fast_stop_last_index(void)
         { "re[Symbol.replace](%s, () => 'z')", "/a|(x+x+)+y/g", 77777, 77777, 100 },
         { "re[Symbol.replace](%s, () => 'z')", "/(x+x+)+y/y", 100, 100, 100 },
         { "re[Symbol.replace](%s, () => 'z')", "/a/y", 0, 0, -1 },
+        { "re[Symbol.replace](%s, '$&')", "/a|(x+x+)+y/g", 77777, 77777, 100 },
+        { "re[Symbol.replace](%s, '$&')", "/(x+x+)+y/y", 100, 100, 100 },
+        { "re[Symbol.replace](%s, '$&')", "/a/y", 0, 0, -1 },
         { "re[Symbol.split](%s)", "/a|(x+x+)+y/", 77777, 77777, 77777 },
         { "re[Symbol.split](%s)", "/a|(x+x+)+y/g", 77777, 77777, 77777 },
     };
