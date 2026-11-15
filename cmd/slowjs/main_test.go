@@ -228,14 +228,16 @@ print("sync");
 `)).want(t, 0, "sync\nthen 1\nasync\n")
 }
 
-// TestTimeout: the timeout ends the script, and no catch or finally runs.
+// TestTimeout: the timeout ends the script, and no catch or finally runs. The
+// timeout is for the whole run, so it leaves the VM time to be set up before
+// the script prints: 200ms was too short for a slow machine.
 func TestTimeout(t *testing.T) {
-	r := runCmd(t, "--timeout", "200ms", script(t, `
+	r := runCmd(t, "--timeout", "2s", script(t, `
 print("start");
 try { for (;;) {} } catch (e) { print("caught") } finally { print("finally") }
 `))
 	r.want(t, exitTimeout, "start\n")
-	if !strings.Contains(r.stderr, "200ms") || !strings.Contains(r.stderr, "--timeout") {
+	if !strings.Contains(r.stderr, "2s") || !strings.Contains(r.stderr, "--timeout") {
 		t.Fatalf("stderr %q", r.stderr)
 	}
 	if r.took > 30*time.Second {
