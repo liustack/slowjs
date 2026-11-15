@@ -1,7 +1,8 @@
 // The post-link check's own test program: each rewrite the lowering makes
 // appears at least once. Calls with arguments and results (one returning a
 // JSValue), values kept across calls in the frame and in callee-saved
-// registers, floating-point constants, a jump table, engine_rodata holding
+// registers, floating-point constants, a jump table, a jump table with an
+// entry for a value that cannot occur, engine_rodata holding
 // pointers to strings and to functions and tables of relative offsets, an
 // indirect call, the address of a function, a call to a register-entry leaf
 // and a leaf that calls another, a cold function (which llc would put in
@@ -56,6 +57,28 @@ long pick(long k, long x) {
 		return x / 7;
 	default:
 		return -1;
+	}
+}
+
+// hole: k is never 2 and never past 6, so the entry of the jump table for 2
+// goes to a block that holds no instruction, which llc puts last: the entry
+// reaches the end of the function's code.
+long hole(long k, long x) {
+	switch (k) {
+	case 0:
+		return mul3(x, 3, 5);
+	case 1:
+		return add3(x, 7, 1);
+	case 3:
+		return mul3(x, x, 2);
+	case 4:
+		return add3(x, x, x);
+	case 5:
+		return x / 7;
+	case 6:
+		return x ^ 19;
+	default:
+		__builtin_unreachable();
 	}
 }
 

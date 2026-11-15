@@ -143,7 +143,8 @@ func TestDecodeFixtures(t *testing.T) {
 
 // TestPostLinkCheck runs testdata/check/mini.c through cmd/engine, builds a
 // Go binary of the package and runs the post-link check on it, which must
-// pass in both call modes. It then builds the package from wrong code or
+// pass in both call modes (hole of mini.c has a jump table entry that reaches
+// the end of its code). It then builds the package from wrong code or
 // data, one fault at a time, each a mistake the lowering or the data plan
 // could make, and the check must reject every one. It needs LLVM 22.1.8
 // (SLOWJS_LLVM), the built pass (SLOWJS_SHADOW_PASS) and the go tool, and
@@ -444,6 +445,25 @@ func TestPostLinkCheck(t *testing.T) {
 		otherEntry++
 	}
 	pool := find("scale", `^\s*\.quad\s+\S+$`, find("scale", `^\s*scale\.const:`, -1))
+	// hole's table has an entry for a value that cannot occur. llc sends it to
+	// a block that holds no instruction and puts that block last, so the entry
+	// reaches the end of the function's code: the label right before the end
+	// of hole in llc's assembly.
+	llcAsm, err := os.ReadFile(filepath.Join(work, "w-body", "engine.s"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	atEnd := regexp.MustCompile(`(?m)^(\.LBB\w+):.*\n\.Lfunc_end\d+:\n\s*\.size\s+hole,`).FindSubmatch(llcAsm)
+	if atEnd == nil {
+		t.Fatal("llc put no empty block at the end of hole: no jump table entry reaches the end of the code")
+	}
+	endLabel := string(atEnd[1])
+	endEntry := find("hole", `^\s*\.long\s+`+regexp.QuoteMeta(endLabel)+`-\.LJTI\w+$`, -1)
+	holeEntry := find("hole", `^\s*\.long\s+\.LBB\w+-\.LJTI\w+$`, -1)
+	holeTarget := reEntry.FindStringSubmatch(lines[holeEntry])[1]
+	if holeEntry == endEntry {
+		t.Fatal("the first entry of hole's table is the one that reaches the end of the code")
+	}
 
 	for _, c := range []struct{ name, edit, want string }{
 		{"a misread operand", replace(misread, "1234567", "1234568"), "generated"},
@@ -459,6 +479,8 @@ func TestPostLinkCheck(t *testing.T) {
 		{"a constant read from the wrong place", replace(cpRef, cpLabel+"(%rip)", cpLabel+"+8(%rip)"), "should point to"},
 		{"a wrong jump table entry", replace(entry, target, reEntry.FindStringSubmatch(lines[otherEntry])[1]), "entry 0 reaches"},
 		{"a wrong constant", fmt.Sprintf("%d\x1f\t.quad 0x1234", pool+1), "in llc's object"},
+		{"an entry for the end of the code that goes to a block", replace(endEntry, endLabel, holeTarget), "is not the end of the generated code"},
+		{"an entry for a block that goes to the end of the code", replace(holeEntry, holeTarget, endLabel), "hole: body data"},
 	} {
 		env := []string{"GEN_EDIT_LOWERED=" + c.edit}
 		emit("body", env)

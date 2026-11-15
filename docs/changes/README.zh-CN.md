@@ -68,6 +68,7 @@ read_when:
 | 画像除了页面还用普通循环训练（`engine/pgo/loops.js`），页面从不走的路径不再按从不执行编译，`train.sh` 检查循环确实走到这些路径 | v0.30.7 | [generator.md](generator.zh-CN.md#第二份输入普通循环) |
 | 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 | 循环向量化器不再从画像里取循环圈数：`memmove` 又是没有栈帧的叶子函数，一次渲染少跑 0.07% 到 0.22% 的指令 | v0.30.7 | [generator.md](generator.zh-CN.md#画像决定什么) |
+| 链接后检查接受指向函数代码末尾的跳转表项（`switch` 里不可能出现的值的那一项），条件是它在二进制里也指向同一个位置 | v0.31.0 | [generator.md](generator.zh-CN.md#跳转表项可以指向代码末尾) |
 
 ## 上游 QuickJS 的提交
 
