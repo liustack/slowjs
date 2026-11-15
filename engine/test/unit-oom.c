@@ -2184,6 +2184,9 @@ static void test_tags_oom(void)
         "  r = startTag(T, { type: 'checkbox', value: 'v<', checked: true, name: 'n' + L.slice(0, 3) }, 'input', fc, hop, d, 2);\n"
         "  s = T.length === 2 ? T.pop() : '';\n"
         "  out.push('/' + r + s);\n"
+        "  r = startTag(T, { 'data-emotion': 'css ' + L.slice(0, 3), dangerouslySetInnerHTML: { __html: '.a{}' + L.slice(0, 2) } }, 'style', fc, hop, d, 3);\n"
+        "  s = T.length === 2 ? T.pop() : '';\n"
+        "  out.push('/' + r + s);\n"
         "  return out.join('');\n"
         "}\n";
     static const char *const want[] = {
@@ -2193,7 +2196,7 @@ static void test_tags_oom(void)
         "<div class=\"c3\" data-3=\"3\" style=\"margin-top:3px;width:3.5px;--v3:a&amp;b\">text &lt;3\xc4\x80</div></s3></u3></v3>"
         "<div class=\"c4\" data-4=\"4\" style=\"margin-top:4px;width:4.5px;--v4:a&amp;b\">text &lt;4</div></s4></u4></v4>"
         "<div class=\"c5\" data-5=\"5\" style=\"margin-top:5px;width:5.5px;--v5:a&amp;b\">text &lt;5\xc4\x80</div></s5></u5></v5>"
-        "/null<i id=\"z\">/null<img alt=\"a&lt;b\" style=\"width:1px\"/>/null<input type=\"checkbox\" name=\"nyyy\" checked=\"\" value=\"v&lt;\"/>",
+        "/null<i id=\"z\">/null<img alt=\"a&lt;b\" style=\"width:1px\"/>/null<input type=\"checkbox\" name=\"nyyy\" checked=\"\" value=\"v&lt;\"/>/null<style data-emotion=\"css yyy\">.a{}yy</style>",
         NULL
     };
 

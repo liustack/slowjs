@@ -21156,7 +21156,7 @@ TEXT ·js_compile_regexp(SB), $288-48
 	BYTE $0x01
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+22435(SB), R14
+	LEAQ ·engine_rodata+22438(SB), R14
 	QUAD $0x0000010024a48b4c
 	QUAD $0x000000f824bc8b4c
 	QUAD $0x246c894c2424894c

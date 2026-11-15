@@ -755,6 +755,7 @@ var goasmKeep = []any{
 	js_emit_buf_end,
 	js_emit_buf_take,
 	js_emit_copy_long,
+	js_emit_inner_html,
 	js_emit_input_tail,
 	js_emit_is_javascript_url,
 	js_emit_name_add,

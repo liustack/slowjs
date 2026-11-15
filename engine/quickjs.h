@@ -1356,7 +1356,9 @@ JSValue JS_NewCopyPropsFunction(JSContext *ctx, const char *name, size_t name_le
    text, a decline for children, and null returned), 2 the case "input" of
    pushStartInstance (as 1, with name, the form attributes, checked and value
    written last as React does, and a decline for a formAction that is a
-   function). It declines any other mode. It throws only when the engine has no memory or the host interrupts
+   function), 3 the branch of the case "style" that writes the element where
+   it is (the attributes, ">", the __html of dangerouslySetInnerHTML, the end
+   tag, and a decline for children). It declines any other mode. It throws only when the engine has no memory or the host interrupts
    it, with target unchanged. Its length is 7, it has no prototype property
    and cannot be called with new. */
 JSValue JS_NewStartTagFunction(JSContext *ctx, const char *name, size_t name_len);

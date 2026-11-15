@@ -3878,6 +3878,7 @@ static void test_tag_polls(void)
         "function start(p, type) { F = startTag; A = [T, p, type, fc, hop, d] }\n"
         "function self(p, type) { F = startTag; A = [T, p, type, fc, hop, d, 1] }\n"
         "function inp(p) { F = startTag; A = [T, p, 'input', fc, hop, d, 2] }\n"
+        "function sty(p) { F = startTag; A = [T, p, 'style', fc, hop, d, 3] }\n"
         "0";
     static const struct {
         const char *prep, *want;
@@ -3892,6 +3893,8 @@ static void test_tag_polls(void)
         { "start({ title: q }, 'div')", "'<div title=\"' + q.replaceAll('\"', '&quot;') + '\">'", 256 },
         { "self({ alt: q }, 'img')", "'<img alt=\"' + q.replaceAll('\"', '&quot;') + '\"/>'", 256 },
         { "inp({ value: q, name: 'n' })", "'<input name=\"n\" value=\"' + q.replaceAll('\"', '&quot;') + '\"/>'", 256 },
+        /* the copy of dangerouslySetInnerHTML: 8 steps */
+        { "sty({ dangerouslySetInnerHTML: { __html: tg } })", "'<style>' + tg + '</style>'", 8 },
         /* the white space, then the escape */
         { "start({ style: { color: sv } }, 'div')", "'<div style=\"color:' + sv.trim().replaceAll('<', '&lt;') + '\">'", 512 },
         { "start({ href: ul }, 'a')", "'<a href=\"' + ul + '\">'", 512 },

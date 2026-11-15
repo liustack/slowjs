@@ -215,7 +215,7 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0x2a1f03ee
 	WORD $0x2a1f03f1
 	WORD $0x91002113
-	MOVD $·engine_rodata+56936(SB), R20
+	MOVD $·engine_rodata+56952(SB), R20
 	WORD $0x926799a8
 	WORD $0xf940c108
 	WORD $0x4b1001e9
@@ -251,7 +251,7 @@ TEXT ·lre_compile(SB), $136-16
 	BL ·host_poll(SB)
 	WORD $0xf94047ed
 	WORD $0xb9403ff5
-	MOVD $·engine_rodata+56936(SB), R20
+	MOVD $·engine_rodata+56952(SB), R20
 	WORD $0x294943f1
 	WORD $0x926799a8
 	WORD $0xf94023f3
@@ -335,7 +335,7 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0x294943f1
 	WORD $0xf94023f3
 	WORD $0xb94053ef
-	MOVD $·engine_rodata+56936(SB), R20
+	MOVD $·engine_rodata+56952(SB), R20
 	WORD $0xb94063ee
 	WORD $0xf94047ed
 	WORD $0x17ffff84
@@ -410,7 +410,7 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0xf900c128
 	WORD $0xb940b1a8
 	WORD $0x35003e68
-	MOVD $·engine_rodata+55889(SB), R22
+	MOVD $·engine_rodata+55905(SB), R22
 	WORD $0x140001e7
 	WORD $0xb1000d3f
 	WORD $0xb90063ec
@@ -863,7 +863,7 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0xa940a5a8
 	WORD $0x8b090108
 	WORD $0x17fffe09
-	MOVD $·engine_rodata+55856(SB), R22
+	MOVD $·engine_rodata+55872(SB), R22
 	WORD $0x14000021
 	WORD $0x2a1f03ee
 	WORD $0x17fffdf3
@@ -889,8 +889,8 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0xf94047ed
 	WORD $0x34001020
 	WORD $0xf9403da8
-	MOVD $·engine_rodata+55921(SB), R9
-	MOVD $·engine_rodata+56981(SB), R10
+	MOVD $·engine_rodata+55937(SB), R9
+	MOVD $·engine_rodata+56997(SB), R10
 	WORD $0xf9400908
 	WORD $0xb949d908
 	WORD $0x7100011f
@@ -911,8 +911,8 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0xb94099a8
 	WORD $0x34000268
 	WORD $0xf9403da8
-	MOVD $·engine_rodata+55921(SB), R9
-	MOVD $·engine_rodata+56981(SB), R10
+	MOVD $·engine_rodata+55937(SB), R9
+	MOVD $·engine_rodata+56997(SB), R10
 	WORD $0x910501b4
 	WORD $0x910021b5
 	WORD $0xf9400908
@@ -1019,7 +1019,7 @@ TEXT ·lre_compile(SB), $136-16
 	WORD $0x17fffd87
 	WORD $0xf94047f7
 	WORD $0x926799a9
-	MOVD $·engine_rodata+55921(SB), R22
+	MOVD $·engine_rodata+55937(SB), R22
 	WORD $0x910501b4
 	WORD $0x910021b5
 	WORD $0xf900c128

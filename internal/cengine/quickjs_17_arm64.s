@@ -616,7 +616,7 @@ TEXT ·rv_run_seg(SB), $200-16
 	WORD $0x7103fd1f
 	WORD $0x540003c8
 	WORD $0x32180108
-	MOVD $·engine_rodata+56981(SB), R22
+	MOVD $·engine_rodata+56997(SB), R22
 	WORD $0xaa0903f5
 	WORD $0x79139148
 	WORD $0xf94067e8
@@ -1825,7 +1825,7 @@ TEXT ·rv_seg_move(SB), $168-16
 	WORD $0x7103fd1f
 	WORD $0x540003a8
 	WORD $0x32180108
-	MOVD $·engine_rodata+56981(SB), R22
+	MOVD $·engine_rodata+56997(SB), R22
 	WORD $0xaa1403f7
 	WORD $0x91004294
 	WORD $0xaa0903f5
@@ -4004,7 +4004,7 @@ TEXT ·JS_NewCFunction3(SB), $152-16
 	WORD $0xf94047f4
 	WORD $0x52808008
 	WORD $0x17ffff74
-	MOVD $·engine_rodata+123898(SB), R22
+	MOVD $·engine_rodata+123914(SB), R22
 	WORD $0x17ffff7d
 	WORD $0x52804008
 	WORD $0x17ffff6f
@@ -15769,7 +15769,7 @@ TEXT ·JS_SetPropertyInternal_block(SB), $168-24
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x36000589
-	MOVD $·engine_rodata+55288(SB), R9
+	MOVD $·engine_rodata+55304(SB), R9
 	WORD $0xaa1f03e1
 	WORD $0xf8685928
 	WORD $0xf9414d89
@@ -19323,7 +19323,7 @@ TEXT ·JS_GetPropertyInternal_block(SB), $136-32
 	WORD $0x72a00069
 	WORD $0x1ac82529
 	WORD $0x3607f789
-	MOVD $·engine_rodata+55288(SB), R9
+	MOVD $·engine_rodata+55304(SB), R9
 	WORD $0xf8685928
 	WORD $0xf9414d89
 	WORD $0xf8686933
@@ -23585,7 +23585,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $184-16
 	WORD $0x924009c8
 	WORD $0xf1001d1f
 	WORD $0x540019c0
-	MOVD $·engine_rodata+123944(SB), R9
+	MOVD $·engine_rodata+123960(SB), R9
 	WORD $0xf8687928
 	WORD $0xf90047e8
 	WORD $0xd37ef608
@@ -24255,7 +24255,7 @@ TEXT ·js_promise_executor(SB), $72-16
 	WORD $0xa9012928
 	WORD $0xaa1f03e0
 	WORD $0x1400000b
-	MOVD $·engine_rodata+27072(SB), R22
+	MOVD $·engine_rodata+27088(SB), R22
 	WORD $0x910042f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -26620,7 +26620,7 @@ TEXT ·js_array_iterator_next(SB), $136-16
 	WORD $0xeb09015f
 	WORD $0xf9403bea
 	WORD $0x54ffed2d
-	MOVD $·engine_rodata+49286(SB), R22
+	MOVD $·engine_rodata+49302(SB), R22
 	WORD $0x17ffffb5
 	WORD $0xaa1803e0
 	WORD $0x37f804b8
@@ -26653,7 +26653,7 @@ TEXT ·js_array_iterator_next(SB), $136-16
 	BL ·__JS_FreeValueRT(SB)
 	WORD $0x17ffff80
 	WORD $0xf9403bea
-	MOVD $·engine_rodata+49286(SB), R22
+	MOVD $·engine_rodata+49302(SB), R22
 	WORD $0x17ffff93
 	WORD $0xb9403ac8
 	WORD $0xf9403bea

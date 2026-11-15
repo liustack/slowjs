@@ -133,7 +133,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | TrackRejections and UnhandledRejections | v0.31.1 | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
 | More values than the engine can count fail | v0.31.1 | [go-api.md](go-api.md#more-values-than-the-engine-can-count-fail) |
 | Package tifa: `tifa.Register` sets a VM up as tifa does | v0.31.1 | [go-api.md](go-api.md#package-tifa) |
-| The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` as `pushStartInstance` does, when its seventh argument, the mode, is 1 or 2 | Unreleased | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
+| The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` and emotion's inline `style` as `pushStartInstance` does, when its seventh argument, the mode, is 1, 2 or 3 | Unreleased | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 
 ## Limits that hold
 

@@ -33,7 +33,12 @@ import (
 // the case "input" of pushStartInstance: the same, with name, formAction,
 // formEncType, formMethod, formTarget, checked and value (or defaultChecked
 // and defaultValue) written after the other props, as React writes them, and a
-// decline when formAction is a function.
+// decline when formAction is a function. 3 is the branch of the case "style"
+// of pushStartInstance that writes the element where it is, as emotion's style
+// elements are written: the attributes, ">", the __html of
+// dangerouslySetInnerHTML as it is and the end tag, null returned, and a
+// decline for children and for an __html that is not a string, null or
+// undefined.
 // undefined and 0 are pushStartGenericElement, and any other mode declines,
 // so that a script that asks for a mode the engine does not have gets
 // React's function. When it cannot be sure to

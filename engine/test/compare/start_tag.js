@@ -5,7 +5,8 @@
 // startTag and endTag (JS_NewStartTagFunction, JS_NewEndTagFunction) against
 // the functions of React DOM 19.3 they stand in for: pushStartGenericElement,
 // with what it calls, pushSelfClosing (startTag with mode 1), the case
-// "input" of pushStartInstance (mode 2) and endChunkForTag. The functions
+// "input" of pushStartInstance (mode 2), the branch of its case "style" that
+// writes the element in place (mode 3) and endChunkForTag. The functions
 // between the two "React DOM" lines are those of
 // react-dom-server-legacy.browser.production.js of react-dom 19.3.1, as they
 // are (MIT, Copyright (c) Meta Platforms, Inc. and affiliates). For
@@ -494,6 +495,10 @@ function pushFormActionAttribute(
   null != formTarget && pushAttribute(target, "formTarget", formTarget);
   return formData;
 }
+var styleRegex = /(<\/|<)(s)(tyle)/gi;
+function styleReplacer(match, prefix, s, suffix) {
+  return "" + prefix + ("s" === s ? "\\73 " : "\\53 ") + suffix;
+}
 function pushSelfClosing(target, props, tag, formatContext) {
   target.push(startChunkForTag(tag));
   for (var propKey in props)
@@ -644,6 +649,49 @@ function pushInput(target$jscomp$0, props, formatContext, resumableState, render
   }
 }
 function injectFormReplayingRuntime() {}
+// The branch of the case "style" of pushStartInstance that writes the element
+// in place, as React DOM 19.3.1 has it, made a function of its own (startTag
+// with mode 3): the caller asks startTag only once React has chosen it
+function pushStyleInPlace(target$jscomp$0, props) {
+        target$jscomp$0.push(startChunkForTag("style"));
+        var children$jscomp$6 = null,
+          innerHTML$jscomp$5 = null,
+          propKey$jscomp$8;
+        for (propKey$jscomp$8 in props)
+          if (hasOwnProperty.call(props, propKey$jscomp$8)) {
+            var propValue$jscomp$8 = props[propKey$jscomp$8];
+            if (null != propValue$jscomp$8)
+              switch (propKey$jscomp$8) {
+                case "children":
+                  children$jscomp$6 = propValue$jscomp$8;
+                  break;
+                case "dangerouslySetInnerHTML":
+                  innerHTML$jscomp$5 = propValue$jscomp$8;
+                  break;
+                default:
+                  pushAttribute(
+                    target$jscomp$0,
+                    propKey$jscomp$8,
+                    propValue$jscomp$8
+                  );
+              }
+          }
+        target$jscomp$0.push(">");
+        var child = Array.isArray(children$jscomp$6)
+          ? 2 > children$jscomp$6.length
+            ? children$jscomp$6[0]
+            : null
+          : children$jscomp$6;
+        "function" !== typeof child &&
+          "symbol" !== typeof child &&
+          null !== child &&
+          void 0 !== child &&
+          target$jscomp$0.push(("" + child).replace(styleRegex, styleReplacer));
+        pushInnerHTML(target$jscomp$0, innerHTML$jscomp$5, children$jscomp$6);
+        target$jscomp$0.push(endChunkForTag("style"));
+        var JSCompiler_inline_result$jscomp$6 = null;
+  return JSCompiler_inline_result$jscomp$6;
+}
 
 const D = {}
 const FC = { insertionMode: 2, selectedValue: null, tagScope: 0, viewTransition: null }
@@ -658,8 +706,8 @@ function show(v) {
 }
 
 // pushStartGenericElement and startTag on the same arguments, or with mode 1
-// pushSelfClosing, or with mode 2 the case "input", and startTag with the
-// mode. want is 'take', 'decline' or undefined (either is right).
+// pushSelfClosing, with mode 2 the case "input", with mode 3 the style written
+// in place, and startTag with the mode. want is 'take', 'decline' or undefined (either is right).
 function check(name, tag, props, want, fc, hop, target, mode) {
   fc = fc || FC
   hop = hop || hasOwnProperty
@@ -669,6 +717,7 @@ function check(name, tag, props, want, fc, hop, target, mode) {
   try {
     ro = mode === 1 ? pushSelfClosing(o, props, tag, fc)
       : mode === 2 ? pushInput(o, props, fc, { idPrefix: '', nextFormID: 0, instructions: 0 }, {})
+      : mode === 3 ? pushStyleInPlace(o, props)
       : pushStartGenericElement(o, props, tag, fc)
   } catch (e) { oerr = e }
   const c = target || ['before']
@@ -914,7 +963,7 @@ for (const m of [undefined, 0]) {
   const k = startTag(t, { children: kids }, 'b', FC, hasOwnProperty, D, m)
   if (k !== kids || t[1] !== '<b>') fail('mode ' + show(m) + ': children not returned')
 }
-for (const m of [false, true, null, -1, 3, 2 ** 31 - 1, 1.5, NaN, '1', 1n, {}, [1], fn, sym]) {
+for (const m of [false, true, null, -1, 4, 2 ** 31 - 1, 1.5, NaN, '1', 1n, {}, [1], fn, sym]) {
   count++
   const t = ['x']
   if (startTag(t, {}, 'br', FC, hasOwnProperty, D, m) !== D || t.length !== 1) fail('mode ' + show(m) + ' taken')
@@ -981,6 +1030,57 @@ check('input of 32 props', 'input', Object.fromEntries(Array.from({ length: 23 }
   .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'take', FC, null, null, 2)
 check('input of 33 props', 'input', Object.fromEntries(Array.from({ length: 24 }, (_, i) => ['data-' + i, i])
   .concat([['name', 'n'], ['formAction', '/a'], ['formEncType', 'e'], ['formMethod', 'm'], ['formTarget', 't'], ['checked', 1], ['defaultChecked', 1], ['value', 'v'], ['defaultValue', 'd']])), 'decline', FC, null, null, 2)
+
+// the style written in place: the props, ">", the __html of
+// dangerouslySetInnerHTML as it is, and "</style>", and a throw for children
+// with dangerouslySetInnerHTML or for dangerouslySetInnerHTML with no __html
+const css = '.css-1n2mv2k{display:flex;-webkit-box-pack:center;justify-content:center;}'
+const proto = { __html: css }
+const styleCases = [
+  [{ 'data-emotion': 'css 1n2mv2k', dangerouslySetInnerHTML: { __html: css } }, 'take'],
+  [{ 'data-emotion': 'css-global 0', dangerouslySetInnerHTML: { __html: css }, nonce: undefined }, 'take'],
+  [{ 'data-emotion': 'css a', dangerouslySetInnerHTML: { __html: css }, nonce: 'n"<' }, 'take'],
+  [{ 'data-emotion': 'css', dangerouslySetInnerHTML: { __html: '' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: '</style><script>alert(1)</script>' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: 'Ā'.repeat(3000) + '\ud800' } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: css + css.repeat(2) } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: null } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: undefined } }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: css, other: 1 } }, 'take'],
+  [{ dangerouslySetInnerHTML: null, children: null }, 'take'],
+  [{ dangerouslySetInnerHTML: undefined }, 'take'],
+  [{}, 'take'],
+  [{ media: 'print', className: 'c', style: { color: 'red' }, precedence: 'p', href: 'h' }, 'take'],
+  [{ dangerouslySetInnerHTML: { __html: 5 } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: true } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: { toString() { return 'x' } } } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: fn } }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: sym } }, 'decline'],
+  [{ dangerouslySetInnerHTML: {} }, 'decline'],
+  [{ dangerouslySetInnerHTML: 'x' }, 'decline'],
+  [{ dangerouslySetInnerHTML: 1 }, 'decline'],
+  [{ dangerouslySetInnerHTML: [css] }, 'decline'],
+  [{ dangerouslySetInnerHTML: fn }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.create(proto) }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.assign(Object.create(null), { __html: css }) }, 'decline'],
+  [{ dangerouslySetInnerHTML: Object.defineProperty({}, '__html', { get() { return css }, enumerable: true }) }, 'decline'],
+  [{ dangerouslySetInnerHTML: new Proxy({ __html: css }, {}) }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, children: 'x' }, 'decline'],
+  [{ children: 'a{}' }, 'decline'],
+  [{ children: ['a{}'] }, 'decline'],
+  [{ children: 7 }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, xlinkHref: 'x' }, 'decline'],
+  [{ dangerouslySetInnerHTML: { __html: css }, onLoad: fn, 'data-n': 1 }, 'take'],
+]
+styleCases.forEach(([props, want], i) => check('style case ' + i, 'style', props, want, FC, null, null, 3))
+check('style of a rope', 'style', { dangerouslySetInnerHTML: { __html: css.repeat(40) + String(count) } }, 'take', FC, null, null, 3)
+check('style with viewTransition', 'style', { dangerouslySetInnerHTML: { __html: css } }, 'decline', { viewTransition: { name: 'auto', nameIdx: 0, update: 'u', enter: 'none', exit: 'none', share: 'none' } }, null, null, 3)
+check('style into a frozen target', 'style', { dangerouslySetInnerHTML: { __html: css } }, 'decline', FC, null, Object.freeze([]), 3)
+{
+  count++
+  const t = [], r = startTag(t, { 'data-emotion': 'css x', dangerouslySetInnerHTML: { __html: css } }, 'style', FC, hasOwnProperty, D, 3)
+  if (r !== null || t.length !== 1 || t[0] !== '<style data-emotion="css x">' + css + '</style>') fail('style: ' + show(r) + ' ' + show(t[0]))
+}
 
 // what the call finds around it
 check('another hasOwnProperty', 'div', { a: 1 }, 'decline', FC, function () {})
@@ -1133,6 +1233,13 @@ for (let t = 0; t < 2000; t++) {
   const p = props()
   for (let i = rand(5); i > 0; i--) p[pick(heldNames)] = rand(3) ? str() : value()
   check('random input ' + t, 'input', p, undefined, FC, null, null, 2)
+}
+const htmls = [null, undefined, css, '', '<\/style>', 5, {}, 'x'.repeat(rand(200))]
+for (let t = 0; t < 2000; t++) {
+  const p = props()
+  if (rand(3)) p.dangerouslySetInnerHTML = rand(8) ? { __html: pick(htmls) } : pick(htmls)
+  if (rand(2)) delete p.children
+  check('random style ' + t, 'style', p, undefined, FC, null, null, 3)
 }
 
 // An index on Array.prototype makes push set it there, and React's push runs
