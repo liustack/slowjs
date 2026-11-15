@@ -1,7 +1,7 @@
 ---
-summary: 'Changes to operators: bitwise operators on two numbers and the usual pairs of ===, !==, == and != answered without the slow paths, with what each gains, why it is safe'
+summary: 'Changes to operators: bitwise operators on two numbers, the usual pairs of ===, !==, == and !=, and add and sub of two numbers answered without the slow paths, with what each gains, why it is safe'
 read_when:
-  - A bitwise operator or a comparison gives another result than before, or a compared value is freed twice
+  - A bitwise operator, a comparison, an add or a sub gives another result than before, or a compared value is freed twice
 ---
 
 # Operators
@@ -38,3 +38,25 @@ Strings that are both atoms are told apart only when both are string atoms: the 
 
 On linux/amd64 without PGO, against v0.26.16 over 10 rounds, a render of tifa's example shop takes 0.982 of the time (0.974 to 0.989), the spiral and table pages of its bench app 0.940 and 0.942 (with wide ranges, 0.859 to 0.969 and 0.871 to 1.030), and its MUI pages 0.982 to 0.985. The HTML and the memory of a VM stay the same.
 
+
+## Add and sub of two numbers without the shared tail
+
+Release: Unreleased.
+
+`+` and `-` of two numbers no longer go through the tail that the eight forms of add and sub share (`rv_arith_other`) when the result is not an int from two ints. That covers two floats, an int with a float, and two ints whose sum does not fit in an int. Each handler did two ints itself and jumped to the tail for anything else. The tail then found the form again from the opcode byte, read both operands again and tested each tag twice before it computed. Now the handler tests both tags in one step (`JS_TAG_INT` is 0, `JS_TAG_FLOAT64` is 8, and every other tag has another bit set) and jumps to one block for the eight forms (`rv_arith_num`). The block reads the two operands as doubles and stores a float made by `__JS_NewFloat64`, as QuickJS's `OP_add` and `OP_sub` do: NaN, -0 and the infinities are what the C arithmetic gives, and a whole result such as `1.5 + 1.5` stays a float. The tail keeps two strings and the slow path.
+
+Mul is left as it was. Its handler does two ints and jumps to the tail of the other binary operators (`rv_bin_other`), which already did two numbers in its first lines. Division, `%` and the compares are left as they were too: a NavierStokes or RayTrace iteration and a tifa page run too few of them on floats to pay for the work.
+
+Why this is safe: numbers hold no reference, and for two numbers the slow path only converts them, which cannot throw or call a script. A local that receives the result has its old value freed after the write, as the int case does. Under the throw injection the handlers skip the block, as they skip the int case.
+
+What it costs and gains: each handler gets a test of the tags and a jump. NavierStokes runs 1.9% fewer instructions, MUI's pages 0.25% fewer, and no page runs more. Every other way of placing the code made something run more, because the register allocation of the whole interpreter moved with it:
+
+- the number code written into each of the ten handlers of add, sub and mul: NavierStokes 12% fewer, but the shop's pages 0.12% to 0.17% more, nearly all in the call and return path of the interpreter, which read `ctx` from the stack again where it had kept it in a register
+- a call of a function from each handler: NavierStokes 27% more
+- the float pair alone inline: the MUI pages 1.1% more
+- the three register forms inline and the rest in the block: the shop 0.06% to 0.08% more
+- mul through a block of its own as add and sub do, tested in the handler, in its own tail or in an `else` of the int test: NavierStokes 2.6% to 4.1% fewer, but V8's Crypto 0.7% to 1.8% more. Crypto multiplies ints, and the int path of mul kept `ip` on the stack.
+
+The counts of each are in [performance.md](../performance.md#numbers-added-and-subtracted-without-the-shared-tail).
+
+Tests: `engine/test/compare/double_arith.js` compares add, sub and mul of floats, ints and their edges (NaN, -0, the infinities, values around 2^53, whole results, int overflow), objects with `valueOf`, strings and the BigInt `TypeError`, in each form, with what Node 24 prints. `engine/test/regvm/js/q4-floatarith.js` runs the forms with old values to free and temps a call below owns, with its goldens for the corpus and the throw injection. A part of `engine/pgo/loops.js` runs the block, which tifa's pages run too little to train it.

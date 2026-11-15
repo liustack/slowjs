@@ -247,6 +247,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | --- | --- | --- |
 | Bitwise operators on floats skip the slow path | v0.26.17 | [operators.md](operators.md#bitwise-operators-on-floats-skip-the-slow-path) |
 | The usual comparisons answered in the interpreter | v0.26.17 | [operators.md](operators.md#the-usual-comparisons-answered-in-the-interpreter) |
+| Add and sub of two numbers without the shared tail | Unreleased | [operators.md](operators.md#add-and-sub-of-two-numbers-without-the-shared-tail) |
 
 ## Objects and shapes
 

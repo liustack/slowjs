@@ -544,6 +544,13 @@ static no_inline JSValue JS_RegvmRun(JSContext *caller_ctx, JSValueConst func_ob
    The operands are read before. */
 #define RV_PUTD(i, v) rv_put(ctx, F, (int8_t)(i), (v))
 #define RV_K(i) (((RVHeader *)F)->k[(i)])
+/* two numbers, ints or floats: JS_TAG_INT is 0, JS_TAG_FLOAT64 is 8 and
+   every other tag has another bit set. RV_NUMBER is the double of one. */
+#define RV_BOTH_NUMBERS(a, b)                                           \
+    (((uint32_t)(JS_VALUE_GET_TAG(a) | JS_VALUE_GET_TAG(b)) &           \
+      ~(uint32_t)JS_TAG_FLOAT64) == 0)
+#define RV_NUMBER(v) (JS_VALUE_GET_TAG(v) == JS_TAG_INT ?               \
+                      (double)JS_VALUE_GET_INT(v) : JS_VALUE_GET_FLOAT64(v))
 /* the reading of the interrupt flag of a conditional jump, with pc at the
    end of its instruction and before it moves: an interrupt leaves pc where
    the pcmap names what the jump did, as QuickJS's interpreter reads the flag

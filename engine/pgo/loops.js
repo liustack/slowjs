@@ -230,6 +230,31 @@ taBigInt(BigUint64Array);
     use(s + x + str.length);
 })();
 
+// Floats added, subtracted and multiplied in every form the interpreter has
+// for them: both operands in registers, a constant operand, the result into a
+// local, and an int with a float. Numbers that are not both ints take a path
+// of their own in those instructions, which tifa's pages run too little to
+// train it.
+(function () {
+    var a = [], b = [], n = 200, s = 0.5, t = 1.5, u = 0.25, w = 0.75;
+    for (var i = 0; i < n; i++) { a.push(i * 0.25 + 0.5); b.push(1.5 - i * 0.125); }
+    for (var r = 0; r < 25; r++) {
+        for (var i = 1; i < n - 1; i++) {
+            var x = a[i], y = b[i];
+            u = x + y;
+            w = x - y;
+            u = u + 0.25;
+            w = w - 0.75;
+            s = s + x * y - w * 1e-3;
+            t = t - (y - 0.5) * (x + 1.25);
+            a[i] = (a[i - 1] + a[i + 1]) * 0.5 - u * 1e-4 + i;
+            b[i] = y * 0.999 - t * 1e-9 + (x - i) * 2;
+        }
+        if (s > 1e12 || s < -1e12) s = 0.5;
+    }
+    use(s + t + u + w);
+})();
+
 // Typed arrays of every kind and a plain array read and written at constant
 // indexes (t[0], t[1], ...), which the interpreter runs through other
 // instructions than a variable index.

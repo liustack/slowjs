@@ -247,6 +247,7 @@ read_when:
 | --- | --- | --- |
 | 浮点数的位运算跳过慢路径 | v0.26.17 | [operators.md](operators.zh-CN.md#浮点数的位运算跳过慢路径) |
 | 常见的比较在解释器里直接回答 | v0.26.17 | [operators.md](operators.zh-CN.md#常见的比较在解释器里直接回答) |
+| 两个数的加和减不再经过共用的尾段 | Unreleased | [operators.md](operators.zh-CN.md#两个数的加和减不再经过共用的尾段) |
 
 ## 对象和 shape
 
