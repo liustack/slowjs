@@ -60,6 +60,16 @@ show("key changed before the read", function () {
   for (var k in o) { var j = k; k = k === "a" ? "d" : k === "d" ? "zz" : "a"; r.push(j + ">" + k + "=" + o[k]); }
   return r.join(",");
 });
+show("key made again before the read", function () {
+  var o = make(), r = [];
+  for (var k in o) { k = (k + "!").slice(0, -1); r.push(k + "=" + o[k]); }
+  return r.join(",");
+});
+show("keys of an array read on other objects", function () {
+  var a = [5, 6, 7], q = { 0: "q0", 2: "q2", x: 1 }, s = "st", r = [];
+  for (var k in a) r.push(k + "=" + a[k] + "," + q[k] + "," + s[k]);
+  return r.join(" ");
+});
 show("key made a number before the read", function () {
   var o = { a: 1, 0: "zero", b: 2 }, r = [];
   for (var k in o) { r.push(k + "=" + o[k]); k = 0; r.push(o[k]); }

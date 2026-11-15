@@ -917,28 +917,35 @@ static no_inline int rv_topk_slow(JSContext *ctx, JSValue *F, const uint8_t *ip)
     ip = pc; pc += 4;                                                   \
     {                                                                   \
         JSValue obj = RV_R(ip[1]), key = RV_R(ip[2]), itv = RV_R(ip[3]); \
-        if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT &&            \
-                   JS_VALUE_GET_TAG(key) == JS_TAG_STRING &&            \
-                   JS_VALUE_GET_TAG(itv) == JS_TAG_OBJECT && !RV_INJ_ARMED && \
-                   JS_VALUE_GET_OBJ(itv)->class_id == JS_CLASS_FOR_IN_ITERATOR)) { \
-            JSForInIterator *it = JS_VALUE_GET_OBJ(itv)->u.for_in_iterator; \
+        if (likely(JS_VALUE_GET_TAG(key) == JS_TAG_STRING)) {           \
             JSAtom atom = JS_VALUE_GET_STRING(key)->key_atom;           \
-            p = JS_VALUE_GET_OBJ(obj);                                  \
-            if (likely(p->shape == it->sh && it->idx != 0 && atom != JS_ATOM_NULL)) { \
-                JSShapeProperty *prs = &get_shape_prop(p->shape)[it->idx - 1]; \
-                JSValue v_ = p->prop[it->idx - 1].u.value;              \
-                if (likely(prs->atom == atom && !(prs->flags & JS_PROP_TMASK) && \
-                           !(atom == JS_ATOM_stack &&                   \
-                             JS_VALUE_GET_TAG(v_) == JS_TAG_OBJECT))) { \
-                    RV_PUTD(ip[0], JS_DupValue(ctx, v_));               \
-                    if (temp)                                           \
-                        JS_FreeValue(ctx, obj);                         \
-                    RV_NEXT();                                          \
+            /* rv_getel_atom gives up on a key with no atom, such as   \
+               the new string of an index a loop over an array, a      \
+               string or arguments gives */                            \
+            if (unlikely(atom == JS_ATOM_NULL))                         \
+                goto label##_slow;                                      \
+            if (likely(JS_VALUE_GET_TAG(obj) == JS_TAG_OBJECT &&        \
+                       JS_VALUE_GET_TAG(itv) == JS_TAG_OBJECT && !RV_INJ_ARMED && \
+                       JS_VALUE_GET_OBJ(itv)->class_id == JS_CLASS_FOR_IN_ITERATOR)) { \
+                JSForInIterator *it = JS_VALUE_GET_OBJ(itv)->u.for_in_iterator; \
+                p = JS_VALUE_GET_OBJ(obj);                              \
+                if (likely(p->shape == it->sh && it->idx != 0)) {       \
+                    JSShapeProperty *prs = &get_shape_prop(p->shape)[it->idx - 1]; \
+                    JSValue v_ = p->prop[it->idx - 1].u.value;          \
+                    if (likely(prs->atom == atom && !(prs->flags & JS_PROP_TMASK) && \
+                               !(atom == JS_ATOM_stack &&               \
+                                 JS_VALUE_GET_TAG(v_) == JS_TAG_OBJECT))) { \
+                        RV_PUTD(ip[0], JS_DupValue(ctx, v_));           \
+                        if (temp)                                       \
+                            JS_FreeValue(ctx, obj);                     \
+                        RV_NEXT();                                      \
+                    }                                                   \
                 }                                                       \
             }                                                           \
         }                                                               \
         if (!RV_INJ_ARMED && rv_getel_atom(ctx, F, ip, FALSE, temp))   \
             RV_NEXT();                                                  \
+    label##_slow:                                                       \
         RV_SYNC_TOP();                                                  \
         if (rv_getel_slow(ctx, F, ip, FALSE, temp))                     \
             goto rv_exception;                                          \

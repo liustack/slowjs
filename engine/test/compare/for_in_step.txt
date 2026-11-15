@@ -7,6 +7,8 @@ symbols left out: a=1,b=3
 same shape, read on the other object: a=1,b=2,c=30,d=4
 other shape, read on the other object: a=10,b=20,c=30,d=40
 key changed before the read: a>d=4,b>a=1,c>a=1,d>zz=undefined
+key made again before the read: a=1,b=2,c=3,d=4
+keys of an array read on other objects: 0=5,q0,s 1=6,undefined,t 2=7,q2,undefined
 key made a number before the read: 0=zero,zero,a=1,zero,b=2,zero
 read of a key of the loop outside: d=4 4
 compound and update: a=24,b=26,c=28,d=30

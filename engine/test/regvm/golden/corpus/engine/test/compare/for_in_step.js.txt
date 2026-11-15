@@ -7,6 +7,8 @@ result symbols left out: a=1,b=3
 result same shape, read on the other object: a=1,b=2,c=30,d=4
 result other shape, read on the other object: a=10,b=20,c=30,d=40
 result key changed before the read: a>d=4,b>a=1,c>a=1,d>zz=undefined
+result key made again before the read: a=1,b=2,c=3,d=4
+result keys of an array read on other objects: 0=5,q0,s 1=6,undefined,t 2=7,q2,undefined
 result key made a number before the read: 0=zero,zero,a=1,zero,b=2,zero
 result read of a key of the loop outside: d=4 4
 result compound and update: a=24,b=26,c=28,d=30
@@ -59,6 +61,6 @@ result recursion: 15
 result generators: a=1,a=1,c=3,d=4,b=2,stop,true,in
 result many loops: 10000
 result global: g1=x,g2=y g2
-mem-end obj=206 atom=611 shape=208 prop=987 jsfunc=3 cfunc=138 array=3 fast_array=3 elements=63 binary=0
-mem-gc obj=206 atom=611 shape=208 prop=987 jsfunc=3 cfunc=138 array=3 fast_array=3 elements=63 binary=0
+mem-end obj=207 atom=611 shape=211 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
+mem-gc obj=207 atom=611 shape=211 prop=989 jsfunc=3 cfunc=139 array=3 fast_array=3 elements=65 binary=0
 --- status exit 0
