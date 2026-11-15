@@ -132,6 +132,15 @@ EOS
 	: > "$d/golden/s.js.txt"
 	FAKE_PLACES=$d/places7 FAKE_MEM=10 run "an empty golden recorded again" pass -update
 	has "an empty golden recorded again" "0 changed, 4 new, 0 gone"
+	# a script that is not there is a mistake of the command, not a script
+	# whose run ends with nothing
+	set +e
+	"$here/inject.sh" -golden "$d/golden" "$bin" "$d/gone.js" > "$d/log" 2>&1
+	rc=$?
+	set -e
+	[ "$rc" -eq 2 ] || fail "a script that is not there: should stop with 2, got $rc"
+	has "a script that is not there" "no script $d/gone.js"
+	echo "inject-test: a script that is not there: stops, as expected"
 	exit 0
 fi
 

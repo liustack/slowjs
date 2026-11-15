@@ -321,8 +321,11 @@ for p in "$@"; do
 		for f in "$p"/*.js; do
 			if [ -f "$f" ]; then scripts="$scripts $f"; fi
 		done
-	else
+	elif [ -f "$p" ]; then
 		scripts="$scripts $p"
+	else
+		echo "inject.sh: no script $p" >&2
+		exit 2
 	fi
 done
 
