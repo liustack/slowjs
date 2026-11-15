@@ -168,3 +168,30 @@ for what in atom object; do
 	grep -q '^DIFF .* N=[0-9.]* status (nokey)' "$d/log" || fail "an $what leaked after each injected throw: no run at a place with no key failed"
 done
 unset RV_INJECT_PLANT
+
+# The leak check is no leak of its own: a FinalizationRegistry whose target
+# the last collection freed queues a job that holds the context, a WeakRef
+# whose target died holds nothing, and a callback that registers a new
+# target queues the next job itself. Each run ends with exit 0.
+cat > "$d/finreg.js" <<'EOS'
+globalThis.r = new FinalizationRegistry((v) => print("cleanup " + v));
+(() => { const o = {}; o.self = o; r.register(o, 1); })();
+EOS
+cat > "$d/weakref.js" <<'EOS'
+globalThis.w = new WeakRef({ a: 1 });
+globalThis.w2 = (() => { const o = {}; o.self = o; return new WeakRef(o); })();
+EOS
+cat > "$d/again.js" <<'EOS'
+let n = 0;
+globalThis.r = new FinalizationRegistry(() => { n++; r.register({}, n); });
+(() => { const o = {}; o.self = o; r.register(o, 0); })();
+EOS
+for s in finreg weakref again; do
+	mkdir "$d/g-$s"
+	"$bin/rvdiff" -q -golden "$d/g-$s" -update -root "$d" "$d/$s.js" > "$d/log" 2>&1 || true
+	t=$(find "$d/g-$s" -name '*.txt' | head -1)
+	{ [ -n "$t" ] && grep -q '^--- status exit 0$' "$t"; } ||
+		fail "$s.js with no leak: $( [ -n "$t" ] && sed -n 's/^--- status //p' "$t")"
+	echo "inject-test: $s.js with no leak: exit 0, as expected"
+done
+grep -q '^out cleanup 1$' "$d/g-finreg/finreg.js.txt" || fail "finreg.js: the cleanup did not run: $(cat "$d/g-finreg/finreg.js.txt")"

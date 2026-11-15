@@ -288,6 +288,9 @@ static void mem_counts(JSRuntime *rt, char *buf, size_t size)
              (long long)u.fast_array_elements, (long long)u.binary_object_count);
 }
 
+/* the most rounds of jobs and collections a run gets after its end */
+#define JOB_ROUNDS 8
+
 static void tr_mem(JSRuntime *rt, const char *kind)
 {
     char counts[512];
@@ -418,6 +421,7 @@ static int child_run(void *p)
     char dir[4096];
     const char *slash;
     char before[512], left[512];
+    int rounds;
 
     src = read_file(path, &len);
     if (!src) {
@@ -576,6 +580,20 @@ static int child_run(void *p)
     tr_mem(rt, "mem-end");
     JS_RunGC(rt);
     tr_mem(rt, "mem-gc");
+    /* That collection can queue jobs: the cleanup of a FinalizationRegistry
+       whose target it freed. A host would run them, and a queued job holds
+       the context, which the leak check below would take for a leak. So
+       they run here, before the info, and the runtime collects again, in
+       at most JOB_ROUNDS rounds: a callback can register a new target and
+       queue the next round itself. */
+    for (rounds = 0; rounds < JOB_ROUNDS && JS_IsJobPending(rt); rounds++) {
+        while ((r = JS_ExecutePendingJob(rt, &job_ctx)) != 0) {
+            if (r < 0)
+                tr_exception(job_ctx, "job", "job-stack");
+            JS_ClearKeptObjects(rt);
+        }
+        JS_RunGC(rt);
+    }
     ops_counted = tr_expect_ops(ctx, path);
     fprintf(tr, "--- info\n");
     fprintf(tr, "engine %s\n", RV_ENGINE_STAMP);
@@ -601,6 +619,13 @@ static int child_run(void *p)
        JS_FreeRuntime frees whatever its count. Counts, not bytes: a change
        of what the engine allocates moves neither side. The regexp cache of
        the runtime is let go of first: what it keeps is no leak. */
+    if (JS_IsJobPending(rt)) {
+        /* the jobs never ran out: what they hold is not known */
+        fprintf(tr, "leak not checked: jobs still queued after %d rounds\n", JOB_ROUNDS);
+        fflush(tr);
+        host_free_runtime(rt);
+        return 0;
+    }
     JS_SetRegExpCache(rt, 0, 0);
     JS_RunGC(rt);
     mem_counts(rt, left, sizeof(left));
