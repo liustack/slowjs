@@ -13,8 +13,6 @@ read_when:
 
 # The generator
 
-English · [简体中文](generator.zh-CN.md)
-
 How `make gen` turns the C of `engine/` into the Go assembly in `internal/cengine`. The rest of the generator is in [its README](../../internal/goasm/gen/README.md). Here are the changes to how it is generated.
 
 ## A profile of tifa's pages

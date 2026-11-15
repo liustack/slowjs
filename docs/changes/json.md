@@ -6,8 +6,6 @@ read_when:
 
 # JSON
 
-English · [简体中文](json.zh-CN.md)
-
 ## JSON copies runs of plain characters
 
 Release: v0.26.17.

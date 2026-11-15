@@ -9,8 +9,6 @@ read_when:
 
 # Commit rules
 
-English · [简体中文](commit.zh-CN.md)
-
 ## Format
 
 ```

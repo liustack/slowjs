@@ -1,7 +1,5 @@
 # Contributing to liustack/slowjs
 
-English · [简体中文](CONTRIBUTING.zh-CN.md)
-
 First, the policy: **liustack/slowjs does not accept pull requests.** One maintainer reviews and owns every line of the engine, the generator and the Go API, and keeping that loop tight is what keeps it dependable.
 
 Two contributions that help:

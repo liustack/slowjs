@@ -9,8 +9,6 @@ read_when:
 
 # The allocator of the C engine
 
-English · [简体中文](allocator.zh-CN.md)
-
 The allocator of the C engine in `engine/`. The Go host and the native test host (`engine/test/`) both use it.
 
 ## Layers

@@ -1,7 +1,5 @@
 # Security policy
 
-English · [简体中文](SECURITY.zh-CN.md)
-
 ## Reporting a vulnerability
 
 Report a security problem privately, not in a public issue.

@@ -8,8 +8,6 @@ read_when:
 
 # Upstream
 
-English · [简体中文](upstream.zh-CN.md)
-
 ## Where the code comes from
 
 - **The engine** is [QuickJS](https://bellard.org/quickjs), the JavaScript engine in C by Fabrice Bellard and Charlie Gordon, at the release of 2026-06-04, commit `3d5e064e9dd67c70f7962836505a7fa067bf0a4e`. `engine/` holds that C with the changes of liustack/slowjs on top. `internal/goasm/gen` compiles it to Go assembly, which is checked in. The generated files are never edited by hand, and `make check-gen` fails when they are not what the generator makes. The test262 suite gives 33 known failures, listed in `engine/test/test262_errors.txt`.
