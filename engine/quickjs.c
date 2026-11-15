@@ -565,6 +565,12 @@ struct JSRuntime {
        before them keep their offsets. */
     uint32_t gc_join_depth;
     void *gc_join_sb[8];
+    /* the number the next rejection kept gets (JS_TrackRejections). It is
+       never reset, also when tracking is turned off and on again, so that a
+       mark read before still comes before every rejection kept since, and
+       it has 64 bits, so that it never wraps. At the end, so that the
+       fields before it keep their offsets. */
+    uint64_t rejection_seq;
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -3507,6 +3513,7 @@ size_t JS_FreeRuntime(JSRuntime *rt)
         js_free_rt(rt, e);
     }
     init_list_head(&rt->job_list);
+    JS_TrackRejections(rt, 0);
 
     /* don't remove the weak objects to avoid create new jobs with
        FinalizationRegistry */
@@ -65761,8 +65768,160 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt,
                                        JSHostPromiseRejectionTracker *cb,
                                        void *opaque)
 {
+    JS_TrackRejections(rt, 0); /* frees the rejections kept, if any */
     rt->host_promise_rejection_tracker = cb;
     rt->host_promise_rejection_tracker_opaque = opaque;
+}
+
+/* The rejections a host asked the runtime to keep (JS_TrackRejections): the
+   promises rejected while no handler was attached, with their reasons,
+   oldest first, until a handler is attached or the host takes them. The
+   tracker of the runtime points to the list, so a runtime that keeps none
+   runs the rejection of a promise as before. The values it holds are
+   references of their own, which the collector counts as it counts those of
+   the job list: what the list holds stays alive until it is taken. */
+typedef struct JSRejection {
+    struct list_head link;
+    JSValue promise, reason;
+    uint64_t seq; /* the order it was kept in (rt->rejection_seq) */
+} JSRejection;
+
+typedef struct JSRejections {
+    struct list_head list; /* JSRejection.link */
+    uint32_t max, count;
+    uint32_t dropped; /* not kept since the host last read it */
+} JSRejections;
+
+static void js_rejection_free(JSRuntime *rt, JSRejections *r, JSRejection *e)
+{
+    list_del(&e->link);
+    r->count--;
+    JS_FreeValueRT(rt, e->promise);
+    JS_FreeValueRT(rt, e->reason);
+    js_free_rt(rt, e);
+}
+
+/* js_track_rejection is the tracker of a runtime that keeps rejections. It
+   allocates with js_malloc_rt, which throws nothing: a rejection it has no
+   room or no memory for is counted, never an error of the script. */
+static void js_track_rejection(JSContext *ctx, JSValueConst promise,
+                               JSValueConst reason, BOOL is_handled,
+                               void *opaque)
+{
+    JSRuntime *rt = ctx->rt;
+    JSRejections *r = opaque;
+    JSRejection *e;
+    struct list_head *el;
+
+    if (is_handled) {
+        list_for_each(el, &r->list) {
+            e = list_entry(el, JSRejection, link);
+            if (JS_VALUE_GET_PTR(e->promise) == JS_VALUE_GET_PTR(promise)) {
+                js_rejection_free(rt, r, e);
+                break;
+            }
+        }
+        return;
+    }
+    e = NULL;
+    if (r->count < r->max)
+        e = js_malloc_rt(rt, sizeof(*e));
+    if (!e) {
+        if (r->dropped != UINT32_MAX)
+            r->dropped++;
+        return;
+    }
+    e->promise = JS_DupValueRT(rt, promise);
+    e->reason = JS_DupValueRT(rt, reason);
+    e->seq = rt->rejection_seq++;
+    list_add_tail(&e->link, &r->list);
+    r->count++;
+}
+
+static JSRejections *js_rejections(JSRuntime *rt)
+{
+    if (rt->host_promise_rejection_tracker != js_track_rejection)
+        return NULL;
+    return rt->host_promise_rejection_tracker_opaque;
+}
+
+int JS_TrackRejections(JSRuntime *rt, uint32_t max)
+{
+    JSRejections *r = js_rejections(rt);
+    struct list_head *el, *el1;
+
+    if (max == 0) {
+        if (r) {
+            list_for_each_safe(el, el1, &r->list)
+                js_rejection_free(rt, r, list_entry(el, JSRejection, link));
+            js_free_rt(rt, r);
+            rt->host_promise_rejection_tracker = NULL;
+            rt->host_promise_rejection_tracker_opaque = NULL;
+        }
+        return 0;
+    }
+    if (!r) {
+        r = js_malloc_rt(rt, sizeof(*r));
+        if (!r)
+            return -1;
+        init_list_head(&r->list);
+        r->count = 0;
+        r->dropped = 0;
+        rt->host_promise_rejection_tracker = js_track_rejection;
+        rt->host_promise_rejection_tracker_opaque = r;
+    }
+    r->max = max;
+    return 0;
+}
+
+uint64_t JS_RejectionMark(JSRuntime *rt)
+{
+    return rt->rejection_seq;
+}
+
+/* the oldest rejection kept, when it was kept before the mark, or NULL */
+static JSRejection *js_rejection_before(JSRuntime *rt, uint64_t mark)
+{
+    JSRejections *r = js_rejections(rt);
+    JSRejection *e;
+
+    if (!r || list_empty(&r->list))
+        return NULL;
+    e = list_entry(r->list.next, JSRejection, link);
+    /* kept at or after the mark: the oldest is, so are the others */
+    if (e->seq >= mark)
+        return NULL;
+    return e;
+}
+
+int JS_HasRejection(JSRuntime *rt, uint64_t mark)
+{
+    return js_rejection_before(rt, mark) != NULL;
+}
+
+JSValue JS_TakeRejection(JSRuntime *rt, uint64_t mark)
+{
+    JSRejection *e = js_rejection_before(rt, mark);
+    JSValue reason;
+
+    if (!e)
+        return JS_UNINITIALIZED;
+    reason = e->reason;
+    e->reason = JS_UNDEFINED;
+    js_rejection_free(rt, js_rejections(rt), e);
+    return reason;
+}
+
+uint32_t JS_TakeDroppedRejections(JSRuntime *rt)
+{
+    JSRejections *r = js_rejections(rt);
+    uint32_t n;
+
+    if (!r)
+        return 0;
+    n = r->dropped;
+    r->dropped = 0;
+    return n;
 }
 
 static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,

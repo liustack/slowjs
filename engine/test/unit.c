@@ -1382,6 +1382,212 @@ static void test_async_context_job(void)
     host_free_runtime(rt);
 }
 
+/* ---- the unhandled rejections the runtime keeps (JS_TrackRejections) ---- */
+
+/* take_rejections takes the reasons the runtime keeps, oldest first, and
+   returns them as text joined by commas (malloc'd). */
+static char *take_rejections(JSContext *ctx)
+{
+    char buf[1024];
+    size_t n = 0;
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    uint64_t mark = JS_RejectionMark(rt);
+    JSValue r;
+
+    buf[0] = 0;
+    while (!JS_IsUninitialized(r = JS_TakeRejection(rt, mark))) {
+        const char *s = JS_ToCString(ctx, r);
+
+        if (n < sizeof(buf))
+            n += snprintf(buf + n, sizeof(buf) - n, "%s%s", n ? "," : "", s ? s : "?");
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, r);
+    }
+    return strdup(buf);
+}
+
+static int rejections_are(JSContext *ctx, const char *want)
+{
+    char *got = take_rejections(ctx);
+    int ok = strcmp(got, want) == 0;
+
+    if (!ok)
+        printf("rejections %s, want %s\n", got, want);
+    free(got);
+    return ok;
+}
+
+/* A promise rejected while no handler is attached is kept, in the order of
+   the rejections, until a handler is attached or the host takes it: the
+   rejection of a promise that then or an async function made counts, the
+   handled ones do not. Off, nothing is kept. */
+static void test_rejections_kept(void)
+{
+    static const char src[] =
+        "Promise.reject(1);\n"
+        "var p2 = Promise.reject(2);\n"
+        "Promise.reject(3).catch(() => {});\n"
+        "var p4 = Promise.reject(4);\n"
+        "(async () => { throw 5 })();\n"
+        "new Promise((_, r) => r(6)).then(() => {});\n"
+        "(async () => { try { await Promise.reject(7) } catch (e) {} })();\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval(ctx, "Promise.reject(0)"), "the script threw");
+    CHECK(rejections_are(ctx, ""), "kept with tracking off");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped with tracking off");
+
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, src), "the script threw");
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval(ctx, "p2.catch(() => {})"), "the script threw");
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(rejections_are(ctx, "1,4,5,6"), "the rejections kept");
+    CHECK(rejections_are(ctx, ""), "kept again after they were taken");
+    /* a handler attached after the host took the rejection changes nothing */
+    CHECK(eval(ctx, "p4.catch(() => {})"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped under the limit");
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    CHECK(eval(ctx, "Promise.reject(9)"), "the script threw");
+    CHECK(rejections_are(ctx, ""), "kept after tracking was turned off");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* At most max rejections are kept, the others counted, and the count starts
+   again once it is read. Turning tracking off frees what is kept, and a
+   runtime freed with rejections kept frees them (host_free_runtime checks that no
+   block is left). */
+static void test_rejections_max(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t before;
+
+    CHECK(JS_TrackRejections(rt, 2) == 0, "no memory for the list");
+    CHECK(eval(ctx, "for (var i = 1; i <= 5; i++) Promise.reject(i)"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 3, "dropped past the limit");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped read twice");
+    CHECK(rejections_are(ctx, "1,2"), "the rejections kept");
+    /* a lower limit keeps what is there and takes no more */
+    CHECK(eval(ctx, "Promise.reject('a'); Promise.reject('b')"), "the script threw");
+    CHECK(JS_TrackRejections(rt, 1) == 0, "the new limit");
+    CHECK(eval(ctx, "Promise.reject('c')"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 1, "dropped under the lower limit");
+    CHECK(rejections_are(ctx, "a,b"), "the rejections kept");
+
+    /* off frees the reasons: the array of 10,000 values the list kept alive
+       through a collection is gone after the next one. The script itself
+       may leave a few blocks (atoms, shapes), so the check is on the size
+       of the array, not on the size before the script. */
+    CHECK(eval(ctx, "Promise.reject(new Array(10000).fill(1))"), "the script threw");
+    JS_RunGC(rt);
+    before = JS_GetMemorySize(rt);
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    JS_RunGC(rt);
+    CHECK(JS_GetMemorySize(rt) + 10000 * sizeof(JSValue) <= before,
+          "%zu bytes after off, %zu while kept", (size_t)JS_GetMemorySize(rt), before);
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject({ big: new Array(10000).fill(1) })"), "the script threw");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A take with a mark takes only the rejections kept before the mark was
+   read, oldest first: one kept after it waits for the next mark, also once
+   all before it are taken or handled. */
+static void test_rejections_mark(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    uint64_t mark;
+    JSValue r;
+
+    CHECK(JS_RejectionMark(rt) == 0, "a mark with no list");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(1); var p2 = Promise.reject(2)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(eval(ctx, "Promise.reject(3); p2.catch(() => {})"), "the script threw");
+    CHECK(JS_HasRejection(rt, mark), "none before the mark");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 1, "the first before the mark");
+    CHECK(!JS_HasRejection(rt, mark), "one before the mark after the first");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_IsUninitialized(r), "one kept after the mark taken with it");
+    CHECK(rejections_are(ctx, "3"), "the one kept after the mark");
+    /* off and on again, the numbers go on: a mark read before comes before
+       what is kept since */
+    CHECK(eval(ctx, "Promise.reject(4)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(5)"), "the script threw");
+    CHECK(!JS_HasRejection(rt, mark), "one kept after the mark, once off and on");
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, mark)), "one kept after the mark taken with it, once off and on");
+    CHECK(rejections_are(ctx, "5"), "the one kept after off and on");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The list belongs to the runtime: a reason made in a context that is
+   freed is read from another context of the runtime, and freed with no
+   leak (host_free_runtime checks). */
+static void test_rejections_context(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx1 = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    JSValue r;
+    const char *s;
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx1, "Promise.reject(new Error(\"from one\")); Promise.reject({ toString() { return \"two\" } })"),
+          "the script threw");
+    JS_FreeContext(ctx1);
+    JS_RunGC(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
+    s = JS_ToCString(ctx2, r);
+    CHECK(s && strcmp(s, "Error: from one") == 0, "the first read %s", s ? s : "(null)");
+    JS_FreeCString(ctx2, s);
+    JS_FreeValue(ctx2, r);
+    CHECK(rejections_are(ctx2, "two"), "the second, read in the other context");
+    JS_FreeContext(ctx2);
+    host_free_runtime(rt);
+}
+
+/* The collector keeps what the list holds: a reason that holds its own
+   promise, a cycle nothing else reaches, outlives a full and a young
+   collection, and goes once taken and freed. */
+static void test_rejections_collected(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue r, p;
+    int32_t n = 0;
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx, "(function () { var o = { n: 42 }; o.p = Promise.reject(o) })()"),
+          "the script threw");
+    JS_RunYoungGC(rt);
+    JS_RunGC(rt);
+    JS_RunYoungGC(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
+    CHECK(JS_IsObject(r), "no reason kept");
+    p = JS_GetPropertyStr(ctx, r, "p");
+    CHECK(JS_PromiseState(ctx, p) == JS_PROMISE_REJECTED, "the promise of the reason");
+    JS_FreeValue(ctx, p);
+    p = JS_GetPropertyStr(ctx, r, "n");
+    JS_ToInt32(ctx, &n, p);
+    CHECK(n == 42, "the reason read %d", n);
+    JS_FreeValue(ctx, p);
+    JS_FreeValue(ctx, r);
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, JS_RejectionMark(rt))), "a second reason");
+    JS_RunGC(rt);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* depth_reached runs a recursion until it throws and returns how many levels
    it went down, or -1 when it did not end with a RangeError. The host's
    JS_Eval counts one level and the global code one more, so a plain function
@@ -4900,6 +5106,11 @@ int main(void)
     test_regexp_compile_polls();
     test_regexp_cache_polls();
     test_async_context_job();
+    test_rejections_kept();
+    test_rejections_max();
+    test_rejections_mark();
+    test_rejections_context();
+    test_rejections_collected();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;

@@ -126,6 +126,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | Args.StringLen reads the length of a string in place | v0.30.3 | [go-api.md](go-api.md#argsstringlen-reads-the-length-of-a-string-in-place) |
 | A 16-bit string goes to UTF-8 eight ASCII units at a time | v0.30.7 | [go-api.md](go-api.md#a-16-bit-string-goes-to-utf-8-eight-ascii-units-at-a-time) |
 | EvalFile gives a script a file name | v0.31.0 | [go-api.md](go-api.md#evalfile-gives-a-script-a-file-name) |
+| Strings a script returns or throws stop converting at the top level too | Unreleased | [go-api.md](go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too) |
+| TrackRejections and UnhandledRejections | Unreleased | [go-api.md](go-api.md#trackrejections-and-unhandledrejections) |
 
 ## Limits that hold
 

@@ -1,5 +1,5 @@
 ---
-summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名'
+summary: 'Go API 的改动：Call 报告什么，Go 无法转换的字符串，Go 与 javascript 之间的孤立代理项和非法 UTF-8，*Error 对无法捕获的结束说了什么，对已有名字 RegisterFunc，NewVM 干净地失败，SetShapeCache，SetRegExpCache，Builtin，Args.WTF8，Builtin 的字符串在 Go 里转换，Args.Latin1 和 Args.UTF16 以及 NewStringLatin1 和 NewStringUTF16，NewArray，SetStrip，在 Go 里造的 Error 的文本，RunGC、MemorySize 和 GCThreshold，OnClose，SharedBytecode，EvalBytecode 如何等待模块的顶层 await，模块如何释放它的顶层，promise 任务为 AsyncLocalStorage 保存的异步上下文，RegisterEscapeText（用 C 写的 React DOM 的 HTML 转义），RegisterCopyProps（用 C 写的 React 复制元素 props 的循环），RegisterStartTag 和 RegisterEndTag（用 C 写的 React DOM 为元素写的开始标签和结束标签），MemoryUsage 和 ReleaseMemory，已经去掉的模块加载器、shell 辅助函数和 SetCanBlock，以及会让构建停下的情形：更新的 Go，和汇编器选项 -spectre=ret 与 -dynlink，每个入口都拒绝别的 VM 的 Value，值的构造函数报告内存不足，转换失败的结果不留下任何东西，UndefinedValue 和零值 Value 被当作 undefined，在对 VM 的调用进行中拒绝 Close，Then 返回 then getter 的异常，Go map 变成只有自有数据属性的对象，作为 any 返回的 Value 按 Value 接管，结果两次到达的同一个位置只算一个引用，拒绝包含自身的结果，长字符串和结果的转换在调用的限制处停下，Args.StringLen 就地读字符串的长度，16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元，EvalFile 给脚本一个文件名，脚本返回或抛出的字符串在调用顶层也会停止转换，TrackRejections 和 UnhandledRejections 报告没有处理函数接住的拒绝'
 read_when:
   - 在 javascript 调用的 Go 函数里关闭 VM
   - 把 Value 交给 VM 的方法，或者从 Go 函数返回 Value 或 map，这些 Value 由谁释放，以及失败时会怎样
@@ -599,3 +599,42 @@ Go 从 javascript 读到的字符串（`Call` 的结果、Go 函数或 Builtin �
 代价：不给名字时没有代价，其他所有 eval 照旧传 `<eval>`。给了名字时，脚本的函数还活着期间，引擎把名字作为一个 atom 保留，需要清理的名字在 Go 里多一次分配。
 
 测试在 `evalfile_test.go`：`TestEvalFile`（结果、带名字的栈帧和语法错误、空名字，以及 `Eval` 仍是 `<eval>`），`TestEvalFileName`（换行、回车、0 字节、制表符、DEL、U+2028 和 U+2029、不是 UTF-8 的字节、在字符之间截断的 1,200 字节名字、在放不下的字符前截断的名字和 1 MiB 的名字，每个都经过一次调用栈检查），`TestEvalFileNameBound`（1 MiB 的名字配上大小在拷贝从影子栈换到堆的边界附近的源码：写入的字节是名字、0 字节、源码、0 字节，影子栈上它们后面的标记没被动过。内存上限放不下的源码以内存不足结束，虚拟机继续可用）和 `TestEvalFileSameAsEval`（不给名字、给 `<eval>` 和给 `repro.js` 时，结果相同，Go 的分配次数相同，函数释放后引擎的块数、字节数和 atom 数也相同）。另外还有 `TestEvalFileModuleName`（用 `EvalModule` 时，清理会改变的名字被拒绝：换行、回车、0 字节、非法 UTF-8、U+2028，以及前 1,024 字节相同的两个名字，而清理不改变的名字就是 import 找到的名字），`TestEvalModuleSameName`（同名的两个模块，不论由 `EvalFile` 还是 `Eval` 给出，都会运行，`import.meta` 和 import 找到的是第一个），`TestEvalFileStops`（放在堆块里的源码被 eval 超时和 `Interrupt` 停下：块被归还，虚拟机继续可用）和 `TestEvalSourceRounding`（最小的块 3 字节，影子栈从 16 字节边界留出 16 字节：引擎用 `strlen` 读名字，一次读一个对齐的整字，所以最多读到 0 字节之后 7 字节，都在这个取整范围内，堆块也取整到 8 字节）。`TestEvalFileName` 还加了 C1 控制字符，以及截断落在 3 字节和 4 字节字符中间、紧挨被替换字符的情况。
+## 脚本返回或抛出的字符串在顶层也会停止转换
+
+发布版本：Unreleased。
+
+长字符串的转换现在在调用的顶层也会在 `Interrupt` 和 eval 超时时停下，不只是在 javascript 调用的 Go 函数里：`Eval`、`Call`、`Value.Any` 等返回 Go 值的函数在脚本跑完之后转换脚本返回或抛出的字符串，或者对象的 JSON。这个字符串有多长，转换要多久，由脚本决定，只受内存上限约束：在 amd64 上读一个 64 Mi 个字符的字符串要 0.5 秒，期间不看停止，所以一次调用可能在超时之后这么久才结束。现在调用以中断结束，和 Go 函数里一样每 256 Ki 个字符看一次，虚拟机之后照常运行脚本。在对虚拟机的调用之外，比如 `NewString` 转换一个 Go 字符串时，没有停止可看，和以前一样。
+
+不是字符串的值，比如抛出的带自己 `toString` 的对象，以前经过 `JS_ToCStringLen2`，它把整个字符串做成一份 UTF-8 拷贝，Go 再一次性复制。现在由引擎生成字符串（`JS_ToString`，运行 javascript 时会看中断标志），Go 像读其他字符串一样就地读它。
+
+测试：`stringstop_test.go` 的 `TestTopLevelConversionStops`：`Eval` 返回的字符串、以它为 message 抛出的 `Error`、`toString` 返回它的被抛出对象，每种字符串，在 `Interrupt` 和 eval 超时时。调用在第一次读停止时以中断结束，不是被杀掉，虚拟机之后照常运行脚本。改动之前，字符串整个返回，被抛出的对象转换时一次也不看停止。
+
+## TrackRejections 和 UnhandledRejections
+
+发布版本：Unreleased。
+
+`VM.TrackRejections(max)` 让虚拟机保留被拒绝时还没有处理函数的 promise，最多 `max` 个（上限 `MaxTrackedRejections`，1,024），按先后顺序，直到有处理函数挂上（`then`、`catch`、`finally`、`await`）或者 `VM.UnhandledRejections()` 把它们取走。`UnhandledRejections` 把每个拒绝原因按调用抛出的错误来读（Error 读出 `Name`、`Message`、`Stack`，其他值读出文本），并返回自上次调用以来丢掉了多少个拒绝：超过 `max` 的，或者没有内存保留的。换一个 `max` 只改上限，已保留的照样保留，哪怕超过更低的上限。`max` 为 0 时关闭并丢掉已保留的。虚拟机开始时是关闭的。
+
+宿主运行脚本和它的任务，然后报告没有处理函数接住的拒绝，和 Node 报告未处理的拒绝一样。以前这样的拒绝在虚拟机里不留痕迹：宿主只看到脚本的结果，或者什么结果也没有，却没有任何说明。
+
+列表由引擎保存（`engine/quickjs.c` 的 `JS_TrackRejections`、`JS_RejectionMark`、`JS_HasRejection`、`JS_TakeRejection` 和 `JS_TakeDroppedRejections`），作为 `JS_SetHostPromiseRejectionTracker` 的跟踪函数：QuickJS 在 promise 被拒绝而没有处理函数时调用它，在之后给这样的 promise 挂上处理函数时再调用一次，第一次加一项，第二次去掉这一项。跟踪函数是 C 函数，因为只能通过 `host_call` 进入 Go。
+
+一次读取持有多少、要多久，都有上限，因为拒绝原因是给日志看的，而它有多大由 javascript 决定：
+
+- Go 从一个拒绝原因读出的每段文本，即它的字符串、`Name`、`Message`、`Stack` 和 `FileName`，都截到 UTF-8 的前 8 KiB，为了不切断字符最多再少三个字节，原文更长时后面加上 ` [cut]`。截取最多只读引擎字符串的这么多个字符，所以几百 MiB 的拒绝原因，或者对同一个字符串的上千个引用，代价不比短的多。rope 或者不是字符串的值，先由引擎做成一个字符串，和任何转换一样。
+- Go 每段文本只分配一次，大小就是留下的字节数，每个拒绝原因还有一个 112 字节的 `*Error`。Go 把一次分配向上取到它的大小档，最多多出四分之一再加 16 字节，所以 n 字节的分配，读取从剩余空间里扣 n + n/4 + 16：8,198 字节的一段文本扣 10,263，一个完整的拒绝原因扣 51,471，拒绝原因的切片在读第一个时分配，扣 10,256。所以读 1,024 个拒绝原因最多让 Go 分配 52,716,560 字节（50.3 MiB），其中留下的文本最多 41,973,760 字节（40 MiB）。读每个拒绝原因之前，先检查虚拟机在内存上限下剩下的空间，是否比已经扣掉的多出 51,471 字节：不够就以内存不足错误结束，和 `fmt`、`url` 的 Go 函数一样，这个拒绝仍然保留。之后每段文本在复制之前扣自己的那份，在它之前运行的 getter 已经跑完，所以把空间用光的 getter 会让读取在下一次复制之前结束。以前在 64 MiB 内存、对一个 1 MiB 字符串的 1,024 个引用下，一次读取会在 Go 里分配 1 GiB，而五段文本都是以 ASCII 为主的 16 位字符串的拒绝原因，会让 Go 分配 106,526 字节，读取只检查了 82,236 字节。
+- 读取结束时返回的错误也一样截取：它的 `Message` 和 `Stack`，getter 抛出的值则是每段文本，所以一次读取返回的全部内容都在这些上限之内。只有读取会截：`Eval`、`Call` 等调用的错误和以前一样。以前 getter 在一个名字有 128 KiB 的函数里内存不足，这个错误的 `Stack` 就有 128 KiB。
+- 读每个拒绝原因之前都会看 eval 超时和 `Interrupt`，读取时运行的 javascript（拒绝原因的 getter）自己也会看。其中一个结束读取时，返回之前读到的拒绝原因和中断错误，正在读的那一项之后的拒绝仍然保留。
+- 一次读取只取开始时已保留的拒绝（`JS_RejectionMark`，每一项按顺序得到一个 64 位的编号，由运行时保存，从不重置，关闭再打开跟踪也不重置，所以不会回绕）：拒绝原因的 getter 新造的拒绝留给下一次读取，那时它的任务已经有机会挂上处理函数。以前一个再次拒绝自己拒绝原因的 getter 能让 `max` 为 1 的一次读取取出 100 个，去掉计数器就永不结束。而且 getter 通过 Go 函数关闭再打开跟踪，编号会从 0 重新开始，读取就会取走开始之后才造的拒绝。
+- 一次读取进行时，它是这个虚拟机上唯一的读取：它运行的 javascript 通过 Go 函数调用同一个虚拟机的 `UnhandledRejections` 或 `TrackRejections`，会得到错误，什么也不改变。以前这样的 getter 能在读取中途自己读一次，取走排在它后面的拒绝，或者关闭再打开跟踪、改掉上限。
+
+它是安全的，因为：
+
+- 不保留的虚拟机和以前一样运行：拒绝 promise 时读的还是原来那个跟踪函数指针，它是 NULL，promise 的函数都没改。列表挂在跟踪函数的 opaque 指针上。`JSRuntime` 多了一个字段，放在最后，前面的字段偏移不变：下一个保留的拒绝得到的编号。
+- 跟踪函数不抛异常：它用 `js_malloc_rt` 分配一项，没有空位或没有内存时只计入 `dropped`，绝不变成脚本的错误。
+- 列表持有的是自己的引用，指向 promise 和拒绝原因，回收器像对待任务列表的引用一样计算它们：在被取走之前它们一直活着，包括环在内。`JS_FreeRuntime` 在释放任务列表之后、最后一次回收之前释放这个列表。设置别的跟踪函数也会释放它。
+- 列表有界：在虚拟机的内存上限之内最多 1,024 项，每项 56 字节，给一个被拒绝时没有处理函数的 promise 挂上处理函数，最多遍历 1,024 项把它去掉。在 Apple M4 上，遍历 1,024 项约 2 µs。在保留的 1,024 个之外再拒绝 1,000,000 个 promise，倒序给每个挂上处理函数，用了 2.98 秒，关闭跟踪时是 1.06 秒，eval 超时和 `Interrupt` 在 20 ms 和 100 ms 之后 1 ms 内结束了这个循环，因为 javascript 的循环在两次遍历之间会看它们。
+
+代价：不保留的虚拟机没有代价。打开时，每个发生时没有处理函数的拒绝占一项和两个引用，之后给这样的 promise 挂处理函数要遍历一次列表，拒绝原因在被取走之前一直活着。一次读取在 Go 里持有的内存不算在虚拟机的内存大小里：一段文本复制之后，getter 运行的 javascript 还能用掉这段文本扣过的空间，所以虚拟机和读取加起来可能超过内存上限，超出的部分不超过读取在 Go 里持有的：每个读过的拒绝原因最多 51,471 字节，再加 10,256 字节，1,024 个拒绝原因是 50.3 MiB。
+
+测试：`engine/test/unit.c` 的 `test_rejections_kept`、`test_rejections_max`、`test_rejections_mark`、`test_rejections_context` 和 `test_rejections_collected`（顺序，之后挂上的处理函数，`then` 和 async 函数生成的 promise，上限和丢掉的计数，关闭时释放，带编号的读取留下编号之后保留的，关闭再打开跟踪之后也一样，与自己的 promise 成环的拒绝原因在一次完整回收和一次年轻代回收后仍然保留，带着保留项释放运行时，在已释放的上下文里造的拒绝原因从同一运行时的另一个上下文读出），`engine/test/unit-oom.c` 的 `test_rejections_oom`（列表没有内存：返回 `-1`，什么也不保留，一项没有内存：计数，promise 照样被拒绝，没有泄漏），以及 `rejections_test.go` 的 `TestRejectionsOff`、`TestRejections`、`TestRejectionsMax`、`TestRejectionsReadStops`（永不结束的 getter 被 eval 超时停下，下一个拒绝仍然保留）、`TestRejectionsClose`（带着保留的拒绝关闭虚拟机，`Close` 之后这两个方法和其他方法一样 panic）、`TestRejectionsText`（8 位字符、16 位字符和代理对字符串的拒绝原因，每段文本都截在不切断字符的地方）、`TestRejectionsGoMemory`（64 MiB 的虚拟机里对 1 MiB 的 1,024 个引用：Go 最多分配 10,256 加 1,024 乘 51,471 字节）、`TestRejectionsWideMemory`（64 个拒绝原因，五段文本都是 8,192 个 ASCII 字符加一个汉字，读之前清空 Go 为转换留下的内存：Go 分配的不超过扣掉的空间）、`TestRejectionsGetterRoom`（stack 的 getter 把空间用光：读取在复制 fileName 之前以内存不足错误结束）、`TestRejectionsRoom`（内存不足时读到一部分，其余留给下一次读取）、`TestRejectionsReadSweep`（64 个每个运行 1 ms javascript 的拒绝原因，eval 超时从 1 ms 到 32 ms：读取在超时加上杀掉之前的宽限期内结束，返回中断错误或全部拒绝原因，除了正在读的那个，一个也不丢）、`TestRejectionsLongReasonsTimeout`（1 ms 超时下对 4 Mi 个字符的 64 个引用）、`TestRejectionsStopBetween`（不运行 javascript 的读取之前调用 `Interrupt`：一个也不取，全部保留）、`TestRejectionsReadRange`（再次拒绝自己拒绝原因的 getter，有计数器和没有计数器两种，以及 getter 造的拒绝在下一次读取前被它的任务处理掉）、`TestRejectionsReadAlone`（通过 Go 函数调用这两个方法的 getter：得到错误，什么也没取走，上限不变）、`TestRejectionsErrorCut`（名字有 128 KiB 的函数：内存不足错误的 `Stack` 被截取）、`TestRejectionsOddReasons`（Symbol、已撤销的 Proxy、trap 抛异常的 Proxy、抛出原始值的 toString：读出它们给得出的文本，读取继续）、`TestRejectionsLoneSurrogateCut`（单独的代理项是 U+FFFD，放得下就留下，放不下就不要）和 `TestRejectionsInterruptGetter`（getter 运行时从另一个 goroutine 调用 `Interrupt`：返回中断错误，下一个拒绝仍然保留）。改动之前，`TestRejectionsText`、`TestRejectionsGoMemory`、`TestRejectionsWideMemory`、`TestRejectionsGetterRoom`、`TestRejectionsRoom`、`TestRejectionsStopBetween`、`TestRejectionsReadRange`、`TestRejectionsReadAlone` 和 `TestRejectionsErrorCut` 都会失败。

@@ -25,6 +25,7 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slo
 
 - **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`** (v0.26.7): why a call ended, which no script can fake. [More](changes/go-api.md#error-says-why-a-call-ended)
 - **`Error()` of an `*Error` made in Go** (v0.26.17) is `Name: Message`, as `Error.prototype.toString` writes it, where it was empty. An error taken from JavaScript keeps the engine's text. [More](changes/go-api.md#error-of-an-error-made-in-go)
+- **`VM.TrackRejections(max)` and `VM.UnhandledRejections()`** (Unreleased): keep the promises rejected with no handler, at most `max`, and take them after a script and its jobs, each reason read as an `*Error` with its texts cut to 8 KiB, to report what no handler took. A VM keeps none unless asked. While a read runs, both return an error to javascript it runs that calls them, and change nothing. [More](changes/go-api.md#trackrejections-and-unhandledrejections)
 
 ## Memory and GC
 
