@@ -357,6 +357,7 @@ CHECK_TAGS=slowjs_anygo make check-fast      # with tags added to every go comma
 | `host-plain`、`compare-plain`、`cycles` | 快档 | `engine/test/build.sh plain`、`compare.sh plain` 和 `render-test.sh plain`、`cycles.sh` |
 | `scripts` | 快档 | `engine/test/compare-test.sh`、`scripts/go-versions-test.sh`、`scripts/llvm-bin-test.sh`（LLVM 的查找）、`scripts/check-gen-test.sh`、`engine/test/test262-test.sh`：检查所用 shell 脚本的测试，用代替它们所运行程序的桩 |
 | `inject-goldens` | 快档 | 对 `engine/test/regvm/corpus` 和 `engine/test/regvm/js` 运行 `engine/test/regvm/inject.sh -goldens`：注入抛错的每个脚本都有黄金文件，或者在 `golden/inject/skip` 里有一行 |
+| `pages` | 快档 | 在 `internal/measure/pages` 里运行 `go vet .` 和 `go test -short .`，它是一个单独的模块（[measuring.md](measuring.zh-CN.md#页面程序)） |
 | `gen` | 全档 | `scripts/check-gen.sh`（`make check-gen`）：把两种架构生成到 `.build/check-gen/` 里，要求 `internal/cengine` 的每个文件字节相同，没有缺的，没有多余的，也没有在 git 之外的。提交进仓库的就是 git 暂存区里的内容（被忽略的文件不算，`make gen` 之后要 `git add` 这些文件），目录必须字节相同，生成的文件靠其中任意位置的 `Code generated` 头找到，旧版生成器的文件名（`engine_decl.go`、`engine_keep.go`、`engine_negative.go`）不管有没有这个头，都算多余的 |
 | `math` | 全档 | `engine/test/math.sh`（约 4 分钟，大部分是在 shell 里算哈希） |
 | `heap` | 全档 | `engine/test/heap.sh -s 2 -n 100000`：分配器的各个场景，以及对堆 100000 步、对运行时 300000 步的两个种子的随机序列，用 plain 构建（约 30 秒）。poison 和其他模式见[分配器的检查](#分配器) |
@@ -428,7 +429,7 @@ go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 2 -big 12 -ou
     -- -test.run '^$' -test.bench 'Shop/^render' -test.benchtime {N}x    # the older difference of two runs
 ```
 
-带 `-dumps` 和 `-small 0` 的 `bench cg` 对每个二进制运行一次 valgrind 的 callgrind，只读基准自己标出的那个窗口：热身之后它把计数清零（客户端请求 `CALLGRIND_ZERO_STATS`），把每个页面渲染 `{N}` 次并写出（`CALLGRIND_DUMP_STATS`），工具读的就是那一份转储。在 amd64 上，客户端请求是一段固定的指令（对 `rdi` 做四次 `rolq`，分别移 3、13、61 和 51，然后 `xchgq rbx, rbx`，参数的地址放在 `rax` 里），也就是几行 Go 汇编。tifa 的 `test/ssr` 里还没有这样的基准（上面的 `AppCG` 代指一个：每个页面一个池，热身，然后在两个请求之间把每个页面渲染 `{N}` 次）。不要用 `-toggle` 数一个 Go 函数：当里面的 goroutine 换到另一个栈或线程时，callgrind 丢掉了大约十分之一的计数，每个函数丢的比例相同。`-sim` 加上分支和缓存的模拟。它保留原始的 `.cg` 文件、每个函数一行的表（`.fn.tsv`）和进程的输出，并打印整个程序以及解释器自己的代码每次渲染的数字。callgrind 需要 `GODEBUG=asyncpreemptoff=1`，并以 `--vgdb=no` 运行。不带 `-small 0` 时，它把每个二进制运行两次并取差，这样加载和编译就抵消了。valgrind 没有安装时，`-valgrind-root DIR` 指向一个里面有 `usr/bin/valgrind` 的目录（`apt-get download valgrind` 再 `dpkg -x` 到一个目录里就够了）。
+带 `-dumps` 和 `-small 0` 的 `bench cg` 对每个二进制运行一次 valgrind 的 callgrind，只读基准自己标出的那个窗口：热身之后它把计数清零（客户端请求 `CALLGRIND_ZERO_STATS`），把每个页面渲染 `{N}` 次并写出（`CALLGRIND_DUMP_STATS`），工具读的就是那一份转储。在 amd64 上，客户端请求是一段固定的指令（对 `rdi` 做四次 `rolq`，分别移 3、13、61 和 51，然后 `xchgq rbx, rbx`，参数的地址放在 `rax` 里），也就是几行 Go 汇编。`internal/measure/pages` 用 `-cg` 标出这个窗口（上面的 `AppCG` 代指它，见 [measuring.md](measuring.zh-CN.md#页面程序)）。不要用 `-toggle` 数一个 Go 函数：当里面的 goroutine 换到另一个栈或线程时，callgrind 丢掉了大约十分之一的计数，每个函数丢的比例相同。`-sim` 加上分支和缓存的模拟。它保留原始的 `.cg` 文件、每个函数一行的表（`.fn.tsv`）和进程的输出，并打印整个程序以及解释器自己的代码每次渲染的数字。callgrind 需要 `GODEBUG=asyncpreemptoff=1`，并以 `--vgdb=no` 运行。不带 `-small 0` 时，它把每个二进制运行两次并取差，这样加载和编译就抵消了。valgrind 没有安装时，`-valgrind-root DIR` 指向一个里面有 `usr/bin/valgrind` 的目录（`apt-get download valgrind` 再 `dpkg -x` 到一个目录里就够了）。
 
 改了工具或换了机器之后，要做一次 A/A 运行（把同一个二进制复制成第二个边的名字），并按 [measuring.md](measuring.zh-CN.md#什么时候不要信一个结果) 所说去读它。
 

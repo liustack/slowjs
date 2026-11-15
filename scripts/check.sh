@@ -106,6 +106,7 @@ step compare-plain fast last "engine/test/compare.sh plain && engine/test/render
 step cycles fast last "engine/test/cycles.sh $llvm"
 step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && scripts/check-gen-test.sh && engine/test/test262-test.sh"
 step inject-goldens fast last "engine/test/regvm/inject.sh -goldens engine/test/regvm/corpus engine/test/regvm/js"
+step pages fast tests "cd internal/measure/pages && $gc vet . && $gc test -count=1 -v -short ."
 # Full: the end of a batch.
 step gen full last "scripts/check-gen.sh"
 step math full last "engine/test/math.sh"

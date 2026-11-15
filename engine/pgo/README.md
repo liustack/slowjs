@@ -46,9 +46,9 @@ The training renders real pages of two apps of [tifa](https://github.com/liustac
 | Path | What | Size |
 | --- | --- | --- |
 | `pages/shop/shop.js` | The server bundle of tifa's `examples/shop`, built as an ES module and turned into a script by `compare/engines/cmd/modulescript`. React, tifa's runtime and the packages the app uses | 1.6 MB |
-| `pages/shop/in/*.json` | The input of 10 pages of the shop: 3 of the workbench (`wb-studio`, `wb-order-studio`, `wb-stats-studio`) and 7 of the store in en-US (home, products, product, journal, post, cart, checkout) | 0.18 MB |
+| `pages/shop/in/*.json` | The input of 20 pages of the shop: 6 of the workbench (`wb-studio`, `wb-order-studio`, `wb-stats-studio` and the same of `weekend`) and 14 of the store in en-US and zh-CN (home, products, product, journal, post, cart, checkout). The training renders the 3 of `studio` and the 7 in en-US, all of them are timed (`internal/measure/pages`) | 0.35 MB |
 | `pages/mui/mui.js` | The server bundle of tifa's `test/apps/mui`, made the same way. React, MUI and emotion | 0.76 MB |
-| `pages/mui/in/home.json` | The input of the home page of that app | 7 KB |
+| `pages/mui/in/*.json` | The input of 3 pages of that app: `home`, which the training renders, `orders` and `order` | 24 KB |
 | `pages/fakeintl.js` | A small `Intl` the native host needs to load the bundles, because the C engine has none (it comes from the Go packages `intl` and `temporal`). It formats numbers with `toFixed`, dates as ISO dates and plurals as one or other, so the HTML differs from tifa's real pages in those places, and the work done inside Intl is not in the profile |
 | `pages/THIRD_PARTY_NOTICES.md` | The packages inside the two bundles with their versions, licenses and license texts |
 
