@@ -1438,6 +1438,49 @@ static void test_uncatchable_apply_forward(void)
     vm_free(&v);
 }
 
+/* A replace that runs out of memory as it makes the strings of a match
+   leaves lastIndex where the generic path leaves it: its exec of the match
+   set lastIndex to the end of the match before it made them. The match is
+   not the whole string, so its string is a copy. */
+static void test_regexp_replace_oom_last_index(void)
+{
+    static const char *const reps[] = { "rep", "'$&'" };
+    static const char *const flags[] = { "g", "gy", "y" };
+    size_t i, j;
+    int generic;
+
+    for (i = 0; i < countof(reps); i++) {
+        for (j = 0; j < countof(flags); j++) {
+            for (generic = 0; generic < 2; generic++) {
+                VM v = vm_new();
+                JSValue r;
+                char js[256], *text = NULL;
+
+                snprintf(js, sizeof(js),
+                         "var s = 'a'.repeat(2097152), re = /a{2097151}/%s; re.exec('');"
+                         " if (%d) re.extra = 1; function rep() { return '' }",
+                         flags[j], generic);
+                eval_ok(v.ctx, js);
+                snprintf(js, sizeof(js), "re[Symbol.replace](s, %s)", reps[i]);
+                room(&v, 1 << 20);
+                r = JS_Eval(v.ctx, js, strlen(js), "<unit>", JS_EVAL_TYPE_GLOBAL);
+                if (JS_IsException(r))
+                    text = exception_text(v.ctx);
+                JS_FreeValue(v.ctx, r);
+                unlimit(&v);
+                CHECK(text && strstr(text, "out of memory"),
+                      "replace with %s, /%s, %s path: ended with %s, want out of memory", reps[i], flags[j],
+                      generic ? "generic" : "fast", text ? text : "no error");
+                CHECK(eval_is(v.ctx, "re.lastIndex", "2097151"),
+                      "replace with %s, /%s, %s path: lastIndex is not the end of the match", reps[i], flags[j],
+                      generic ? "generic" : "fast");
+                free(text);
+                vm_free(&v);
+            }
+        }
+    }
+}
+
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
    alone: set when an exception is made uncatchable, cleared when it is taken
    or made catchable, never set for a catchable one or with nothing pending,
@@ -3305,6 +3348,7 @@ int main(void)
     test_uncatchable_instanceof();
     test_uncatchable_apply_forward();
     test_uncatchable_regexp_fast();
+    test_regexp_replace_oom_last_index();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
