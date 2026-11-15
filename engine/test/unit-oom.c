@@ -2689,20 +2689,46 @@ static void test_regvm_args_oom(void)
         "})();\n";
     static const char *const want_mapped[] = { "3:A:undefined:y:A|1:A:undefined:undefined:A", NULL };
 
-    static const char setup_apply[] =
-        "var fw = (function () {\n"
-        "  function show() { return this.k + ':' + Array.prototype.join.call(arguments, ','); }\n"
-        "  function f(a) { a = 'A'; return show.apply(this, arguments); }\n"
-        "  function m(a) { return Math.max.apply(null, arguments) + ':' + arguments[5]; }\n"
-        "  function s(a) { 'use strict'; return Math.min.apply(null, arguments); }\n"
-        "  var o = { k: 'o' };\n"
-        "  return function () { return f.call(o, 1, 2) + '|' + m(3, 9, 4) + '|' + s(5, 1); };\n"
-        "})();\n";
-    static const char *const want_apply[] = { "o:A,2|9:undefined|1", NULL };
+#define SETUP_APPLY \
+        "var fw = (function () {\n" \
+        "  function show() {\n" \
+        "    var s = this.k + ':' + Array.prototype.join.call(arguments, ',');\n" \
+        "    return s + ':' + s.repeat(1000).length;\n" \
+        "  }\n" \
+        "  function f(a) { a = 'A'; return show.apply(this, arguments); }\n" \
+        "  function m(a) { return Math.max.apply(null, arguments) + ':' + arguments[5]; }\n" \
+        "  function s(a) { 'use strict'; return Math.min.apply(null, arguments); }\n" \
+        "  var o = { k: 'o' };\n" \
+        "  var r = function () { return f.call(o, 1, 2) + '|' + m(3, 9, 4) + '|' + s(5, 1); };\n" \
+        "  r.show = show;\n" \
+        "  return r;\n" \
+        "})();\n"
+    /* cold, show is called first under the limit: not converted yet, the
+       call goes out of the loop to the C apply, which builds the object.
+       Warm, show was called before the limit and is converted: f calls it
+       in the loop, and running out of memory in show leaves its frame,
+       which keeps apply (RV_DST_APPLY), with apply freed. show makes a
+       string of 5000 bytes, more than the compile of fw() takes and gives
+       back, so that some rooms run out there. Math.max and Math.min are C
+       functions, called by the C apply either way. */
+    static const char setup_apply[] = SETUP_APPLY;
+    static const char setup_apply_warm[] = SETUP_APPLY "fw();\n";
+#undef SETUP_APPLY
+    static const char *const want_apply[] = { "o:A,2:5000|9:undefined|1", NULL };
+    VM v;
+    JSValue show;
 
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
     sweep("mapped arguments built on a read", "<args>", setup_mapped, "m()", want_mapped, 16384);
     sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 16384);
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, setup_apply_warm), "apply, warm: the setup failed");
+    show = JS_Eval(v.ctx, "fw.show", strlen("fw.show"), "<args>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_RegvmFuncStat(v.ctx, show, 0) == 1, "apply, warm: show is not in the register loop");
+    JS_FreeValue(v.ctx, show);
+    vm_free(&v);
+    sweep("arguments passed on by apply to a converted function", "<args>", setup_apply_warm,
+          "fw()", want_apply, 16384);
 }
 
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h) makes the

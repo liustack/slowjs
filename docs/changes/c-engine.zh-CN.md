@@ -1097,8 +1097,8 @@ V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个�
 
 - `engine/test/compare/apply_arguments.js`：在非严格和严格函数里调用 `f.apply(x, arguments)`，实参比参数少、一样多和多，调用前后写参数，读、写、留下或展开这个对象，每种被调用者和 `this`，`apply` 被换掉、经 getter 读取、被遮住和经 `call` 调用，`Reflect.apply`，被调用者经闭包写调用者的参数，递归，很多参数，以及被调用者抛出的错误。`engine/test/compare/sloppy_arguments_reads.js`：非严格函数里的 `arguments.length` 和 `arguments[key]`，每种键，经参数和经对象的写入，同一个参数名写两次。两个文件都是 Node 24 的输出，main 也给出同样的输出。
 - `engine/test/regvm/js/c-applyargs.js`：同样的写法，0 到 7 个和 300 个实参，丢弃结果，连续两次传下去，嵌套传下去，构造函数传给自己的 `init`，绑定函数、Proxy、类构造函数、C 函数，别的 realm 的函数和 `apply`，在被调用者里造出和抛出的错误的栈，以及经它递归的深度。`engine/test/regvm/js/e-applyargs-interrupt.js`：在传下去的调用里来一次中断。两者都有语料三种模式的金标准输出和注入集的金标准输出（`// inject-hit: CALLMA 1`）。
-- `test_regvm_args_oom`（`engine/test/unit-oom.c`）：延后造的映射对象和每种传下去的调用，同时让每次分配轮流失败。`test_uncatchable_apply_forward`：不可捕获错误待抛之后，传下去的调用不运行被调用者。
-- `TestRegvmApplyArgumentsStops`：eval 超时和 `Interrupt` 能停下传下去的调用里的循环，栈里被调用者和它的调用者之间有 `apply`，停下之后 VM 照常应答。
+- `test_regvm_args_oom`（`engine/test/unit-oom.c`）：延后造的映射对象和每种传下去的调用，同时让每次分配轮流失败。一遍让被调用者在内存上限下第一次被调用（走 C 的 `apply`），一遍让它事先转换好，内存在传下去的调用里耗尽，运行时释放时不能剩下任何块。`test_uncatchable_apply_forward`：不可捕获错误待抛之后，传下去的调用不运行被调用者。
+- `TestRegvmApplyArgumentsStops`：eval 超时和 `Interrupt` 能停下传给事先转换好的函数的调用里的循环，栈里被调用者和它的调用者之间有 `apply`，停下之后 VM 照常应答，它的运行时释放时不剩任何块。
 
 ## 热调用少传参数字
 
