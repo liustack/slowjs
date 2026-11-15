@@ -9465,6 +9465,22 @@ static void js_array_finalizer(JSRuntime *rt, JSValue val)
     js_free_rt(rt, p->u.array.u.values);
 }
 
+/* The elements of the array p, inlined into mark_children in the passes of
+   a full collection, as js_bytecode_function_mark_in is. */
+static force_inline void js_array_mark_in(JSRuntime *rt, JSObject *p,
+                                          JS_MarkFunc *mark_func)
+{
+    int i;
+
+    for(i = 0; i < p->u.array.count; i++) {
+        JS_MarkValue(rt, p->u.array.u.values[i], mark_func);
+    }
+}
+
+/* Its own loop, as on main, not a call of js_array_mark_in: the young
+   collection calls it, and the trained profile then still fits it (as
+   a call of js_array_mark_in it had none, and React's page ran about
+   15K more instructions a render). */
 static void js_array_mark(JSRuntime *rt, JSValueConst val,
                           JS_MarkFunc *mark_func)
 {
@@ -9558,9 +9574,12 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
 #endif
                     JS_FreeValueRT(rt, cells[i].value);
                 }
-                for(i = 0; i < b->closure_var_count; i++) {
-                    if (!js_is_value_cell(var_refs[i], cells, n))
-                        free_var_ref(rt, var_refs[i]);
+                /* when every closure variable is a cell, they were all freed */
+                if (n != b->closure_var_count) {
+                    for(i = 0; i < b->closure_var_count; i++) {
+                        if (!js_is_value_cell(var_refs[i], cells, n))
+                            free_var_ref(rt, var_refs[i]);
+                    }
                 }
             }
             /* var_refs is in the block of p (js_new_function_object) */
@@ -9569,19 +9588,22 @@ static void js_bytecode_function_finalizer(JSRuntime *rt, JSValue val)
     }
 }
 
-static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
-                                      JS_MarkFunc *mark_func)
+/* The children of the closure p. mark_children inlines it in the passes of
+   a full collection, so that each copy of mark_children that LLVM makes for
+   one mark_func calls that function directly, or inlines it, rather than
+   through the class table and a pointer: the cycle collector marks every
+   closure in each of its passes, and pages that keep rows of closures have
+   many. */
+static force_inline void js_bytecode_function_mark_in(JSRuntime *rt, JSObject *p,
+                                                      JS_MarkFunc *mark_func)
 {
-    JSObject *p = JS_VALUE_GET_OBJ(val);
     JSVarRef **var_refs = p->u.func.var_refs;
     JSFunctionBytecode *b = p->u.func.function_bytecode;
     JSValueCell *cells;
     int i, n;
 
-    if (p->u.func.home_object) {
-        JS_MarkValue(rt, JS_MKPTR(JS_TAG_OBJECT, p->u.func.home_object),
-                     mark_func);
-    }
+    if (p->u.func.home_object)
+        mark_func(rt, &p->u.func.home_object->header);
     if (b) {
         if (var_refs) {
             n = b->by_value_count;
@@ -9593,16 +9615,25 @@ static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
                     mark_func(rt, &cells[i].real->header);
 #endif
             }
-            for(i = 0; i < b->closure_var_count; i++) {
-                JSVarRef *var_ref = var_refs[i];
-                if (var_ref && !js_is_value_cell(var_ref, cells, n))
-                    mark_func(rt, &var_ref->header);
+            /* when every closure variable is a cell, they were all marked */
+            if (n != b->closure_var_count) {
+                for(i = 0; i < b->closure_var_count; i++) {
+                    JSVarRef *var_ref = var_refs[i];
+                    if (var_ref && !js_is_value_cell(var_ref, cells, n))
+                        mark_func(rt, &var_ref->header);
+                }
             }
         }
         /* must mark the function bytecode because template objects may be
            part of a cycle */
-        JS_MarkValue(rt, JS_MKPTR(JS_TAG_FUNCTION_BYTECODE, b), mark_func);
+        mark_func(rt, &b->header);
     }
+}
+
+static void js_bytecode_function_mark(JSRuntime *rt, JSValueConst val,
+                                      JS_MarkFunc *mark_func)
+{
+    js_bytecode_function_mark_in(rt, JS_VALUE_GET_OBJ(val), mark_func);
 }
 
 static void js_bound_function_free(JSRuntime *rt, JSBoundFunction *bf)
@@ -9997,6 +10028,10 @@ void JS_MarkValue(JSRuntime *rt, JSValueConst val, JS_MarkFunc *mark_func)
     }
 }
 
+static void gc_decref_child(JSRuntime *rt, JSGCObjectHeader *p);
+static void gc_scan_incref_child(JSRuntime *rt, JSGCObjectHeader *p);
+static void gc_scan_incref_child2(JSRuntime *rt, JSGCObjectHeader *p);
+
 static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
                           JS_MarkFunc *mark_func)
 {
@@ -10037,7 +10072,19 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             if (p->class_id != JS_CLASS_OBJECT) {
                 JSClassGCMark *gc_mark;
                 gc_mark = rt->class_array[p->class_id].gc_mark;
-                if (gc_mark)
+                /* closures and arrays inline, in the passes of a full
+                   collection only: mark_func is a constant in each copy
+                   LLVM makes, so the copies of the young collection stay
+                   as small as they were. A larger frame there costs at
+                   every object it visits, and it visits few closures. */
+                BOOL full = mark_func == gc_decref_child ||
+                    mark_func == gc_scan_incref_child ||
+                    mark_func == gc_scan_incref_child2;
+                if (full && gc_mark == js_bytecode_function_mark)
+                    js_bytecode_function_mark_in(rt, p, mark_func);
+                else if (full && gc_mark == js_array_mark)
+                    js_array_mark_in(rt, p, mark_func);
+                else if (gc_mark)
                     gc_mark(rt, JS_MKPTR(JS_TAG_OBJECT, p), mark_func);
             }
         }
