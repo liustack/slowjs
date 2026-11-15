@@ -215,6 +215,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A Date finds its year, month and day with no loop | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop) |
 | The strings of a Date are written without snprintf | v0.31.1 | [time-and-intl.md](time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) |
 | A context keeps the fields of the last time value | v0.31.1 | [time-and-intl.md](time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value) |
+| `Intl.NumberFormat.prototype.formatRange` and `formatRangeToParts`, on the range formatter of `internal/gointl` | Unreleased | [intl/intl.js](../../intl/intl.js), `numberRangeFormatted` in [intl/bridge.go](../../intl/bridge.go) |
 
 ## Temporal
 

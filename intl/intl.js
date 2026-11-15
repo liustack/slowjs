@@ -15,7 +15,7 @@
 // property descriptors and the arrays it passes on without a prototype.
 
 (function (P, zone, optionLists, state,
-	nfResolve, nfFormat, nfParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
+	nfResolve, nfFormat, nfParts, nfRange, nfRangeParts, dtfResolve, dtfFormat, dtfParts, prResolve, prSelect, prSelectRange,
 	optionsOf, canonicalLocales, supportedLocales,
 	colResolve, colCompare, segResolve, segBreaks, rtfResolve, rtfFormat, rtfParts,
 	lfResolve, lfParts, dnResolve, dnOf, dfResolve, dfFormat, dfParts, valuesOf, localeCheck, localeNew, localeInfo, caseLanguage, casePremap, tfResolve, tfFormat, tfParts, tfRange, tfRangeParts) {
@@ -482,6 +482,22 @@
 		return call(i, fn, t === 'string' ? p : +p);
 	}
 
+	// numberRange is formatRange and formatRangeToParts: each end converted as
+	// numberCall converts a value, the start first, with its BigInt flag after
+	// it. The Builtin refuses an end that is NaN once both are converted.
+	function numberRange(i, fn, start, end) {
+		if (start === undefined || end === undefined) {
+			throw new TypeError('start or end is undefined');
+		}
+		const p = isObject(start) ? toPrimitiveNumber(start) : start;
+		const pBig = typeof p === 'bigint';
+		const x = pBig ? String(p) : typeof p === 'string' ? p : +p;
+		const q = isObject(end) ? toPrimitiveNumber(end) : end;
+		const qBig = typeof q === 'bigint';
+		const y = qBig ? String(q) : typeof q === 'string' ? q : +q;
+		return call(i, fn, x, pBig, y, qBig);
+	}
+
 	function isObject(v) {
 		return typeof v === 'object' ? v !== null : typeof v === 'function';
 	}
@@ -530,6 +546,12 @@
 		},
 		formatToParts(value) {
 			return parts(numberCall(internal(this, 'NumberFormat'), nfParts, value));
+		},
+		formatRange(start, end) {
+			return numberRange(internal(this, 'NumberFormat'), nfRange, start, end);
+		},
+		formatRangeToParts(start, end) {
+			return rangeParts(numberRange(internal(this, 'NumberFormat'), nfRangeParts, start, end));
 		},
 		resolvedOptions() {
 			return parse(call(internal(this, 'NumberFormat', NumberFormat), optionsOf));

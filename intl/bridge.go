@@ -10,6 +10,7 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
@@ -512,6 +513,12 @@ var bridge = []*slowjs.Builtin{
 	intlhook.NewBuiltin("formatToParts", 3, func(a slowjs.Args) (slowjs.Value, error) {
 		return numberFormatted(a, true)
 	}),
+	intlhook.NewBuiltin("formatRange", 5, func(a slowjs.Args) (slowjs.Value, error) {
+		return numberRangeFormatted(a, false)
+	}),
+	intlhook.NewBuiltin("formatRangeToParts", 5, func(a slowjs.Args) (slowjs.Value, error) {
+		return numberRangeFormatted(a, true)
+	}),
 	resolveBuiltin(dateTimeFormatCtor),
 	intlhook.NewBuiltin("format", 2, func(a slowjs.Args) (slowjs.Value, error) {
 		return dateFormatted(a, false)
@@ -884,6 +891,40 @@ func numberFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
 	parts := f.format(v)
 
 	return formatted(a.VM(), parts, wantParts)
+}
+
+// numberRangeFormatted is formatRange and formatRangeToParts of a
+// NumberFormat: arguments 1 and 3 are the ends, each a number or a numeric
+// string, and arguments 2 and 4 say whether the string is the digits of a
+// BigInt. The parts are their type, value and source in turn.
+func numberRangeFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
+	door := intlhook.Open(a)
+	f, ok, err := formatterOf[*numberFormat](a)
+	if !ok {
+		return slowjs.UndefinedValue, err
+	}
+
+	start, end := f.rangeEnd(a, &door, 1), f.rangeEnd(a, &door, 3)
+	// PartitionNumberRangePattern refuses NaN once both ends are converted.
+	if start.IsNaN() || end.IsNaN() {
+		return slowjs.Value{}, jsErr(rangeError("Invalid number range: an end is NaN"))
+	}
+	parts, err := f.f.FormatDecimalRangeToParts(start, end)
+	if err != nil {
+		return slowjs.Value{}, jsErr(err)
+	}
+	if !wantParts {
+		var text strings.Builder
+		for _, p := range parts {
+			text.WriteString(p.Value)
+		}
+		return intlhook.Emit(a.VM(), text.String())
+	}
+	list := make([]string, 0, 3*len(parts))
+	for _, p := range parts {
+		list = append(list, string(p.Kind), p.Value, p.Source.String())
+	}
+	return intlhook.EmitStrings(a.VM(), list)
 }
 
 func dateFormatted(a slowjs.Args, wantParts bool) (slowjs.Value, error) {
