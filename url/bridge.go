@@ -133,22 +133,39 @@ func parts(vm *slowjs.VM, u *whatwgurl.URL) (slowjs.Value, error) {
 	if p.HasFragment {
 		flags |= hasFragment
 	}
+	// Each string is made once: a URL has several empty parts, and its host is
+	// its hostname when it has no port. first[i] is where strs[i] is first.
 	var vals [len(strs) + 1]slowjs.Value
+	var first [len(strs)]int
+	free := func(n int) {
+		for i := range n {
+			if first[i] == i {
+				vals[i].Free()
+			}
+		}
+	}
 	for i, s := range strs {
+		first[i] = i
+		for j := range i {
+			if strs[j] == s {
+				first[i] = j
+				break
+			}
+		}
+		if first[i] != i {
+			vals[i] = vals[first[i]]
+			continue
+		}
 		v, err := emit(vm, s)
 		if err != nil {
-			for _, f := range vals[:i] {
-				f.Free()
-			}
+			free(i)
 			return slowjs.Value{}, err
 		}
 		vals[i] = v
 	}
 	vals[len(strs)] = vm.NewInt(flags)
 	arr, err := vm.NewArray(vals[:]...)
-	for _, v := range vals {
-		v.Free()
-	}
+	free(len(strs))
 	return arr, err
 }
 
