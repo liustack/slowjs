@@ -54854,9 +54854,14 @@ static no_inline int js_string_find_short(JSStringFind *f, const void *hay,
    looks at each character of the needle a few times to find its critical
    factorization, and compares at most two characters for each index of hay.
    It checks the interrupt counter after at most 2 JS_STRING_FIND_STEP units
-   of work. The table of shifts has an entry for each low byte: 16-bit
-   characters with the same low byte share one, which holds the shift of the
-   one nearest the end of the needle, and a shorter shift is still safe. */
+   of work. The table of shifts has an entry for each low byte: how far the
+   last character of the needle with that low byte is from its end, or the
+   length of the needle for a byte it does not have, at most 255 so that the
+   table is 256 bytes. 16-bit characters with the same low byte share one
+   entry, which holds the shift of the one nearest the end of the needle, and
+   a shorter shift is still safe. A run of windows whose last character has a
+   shift is skipped in one tight loop, at most as many windows as are left of
+   the step, so that the counter is checked as often as before. */
 static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
                                           int hw, int lo, int hi,
                                           const void *needle, int nw, int l,
@@ -54864,17 +54869,16 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
 {
 #define JS_TW_HAY(v) js_string_unit(hay, hw, rev ? hi + l - 1 - (v) : lo + (v))
 #define JS_TW_NEEDLE(j) js_string_unit(needle, nw, rev ? l - 1 - (j) : (j))
-    uint32_t shift[256], set[256 / 32] = { 0 };
-    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e;
+    uint8_t shift[256];
+    int i, ip, jp, k, p, p0, ms, mem, mem0, s, last, a, b, e, n;
 
+    memset(shift, min_int(l, 255), sizeof(shift));
     for(i = 0; i < l; i++) {
         a = JS_TW_NEEDLE(i);
         /* a string of 8-bit characters cannot have it */
         if (!hw && a > 0xff)
             return -1;
-        a &= 0xff;
-        set[a >> 5] |= 1u << (a & 31);
-        shift[a] = i + 1;
+        shift[a & 0xff] = min_int(l - 1 - i, 255);
         JS_STRING_FIND_WORK(f, 1);
     }
 
@@ -54955,20 +54959,21 @@ static force_inline int js_string_two_way(JSStringFind *f, const void *hay,
             return -1;
         JS_STRING_FIND_WORK(f, 1);
         /* the last character first: move on by its shift when it is not
-           the last of the needle */
-        a = JS_TW_HAY(s + l - 1) & 0xff;
-        if (set[a >> 5] >> (a & 31) & 1) {
-            k = l - shift[a];
-            if (k) {
-                if (k < mem)
-                    k = mem;
-                s += k;
-                mem = 0;
-                continue;
-            }
-        } else {
-            s += l;
+           the last of the needle, and so on over the next windows, as many
+           as are left of the step */
+        k = shift[JS_TW_HAY(s + l - 1) & 0xff];
+        if (k) {
+            if (k < mem)
+                k = mem;
+            s += k;
             mem = 0;
+            n = JS_STRING_FIND_STEP - f->work;
+            while (n > 0 && s <= last &&
+                   (k = shift[JS_TW_HAY(s + l - 1) & 0xff]) != 0) {
+                s += k;
+                n--;
+            }
+            f->work = JS_STRING_FIND_STEP - n;
             continue;
         }
         /* the right half */

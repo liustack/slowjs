@@ -83,5 +83,22 @@
       }
     }
   }
+  // Needles longer than the 255 characters a shift of the table holds, in
+  // strings of both widths: of a character far from the end of the needle,
+  // of one it does not have, and of one that shares a low byte with it.
+  const longs = ['b' + 'a'.repeat(300) + 'b', 'b' + 'c'.repeat(400) + 'a', '一' + 'x'.repeat(280) + '丁', 'q'.repeat(600), 'b' + '乢'.repeat(260) + 'c', 'a'.repeat(299) + 'b']
+  for (const v of longs) {
+    for (const f of ['z', 'b', 'a', 'c', '乢', 'b' + 'z'.repeat(254)]) {
+      for (const h of [f.repeat(700) + v + f.repeat(300), f.repeat(400) + v.slice(0, -1) + 'z' + v + f, v.slice(1) + f.repeat(500), (f + v.slice(0, 200)).repeat(4)]) {
+        const L = h.length
+        const tag = JSON.stringify([h.slice(0, 20), L, v.slice(0, 10), v.length])
+        for (const p of [0, L >> 1, L]) {
+          check('longer indexOf at ' + p + ' ' + tag, h.indexOf(v, p), find(h, v, p, false))
+          check('longer lastIndexOf at ' + p + ' ' + tag, h.lastIndexOf(v, p), find(h, v, p, true))
+          check('longer includes at ' + p + ' ' + tag, h.includes(v, p), find(h, v, p, false) >= 0)
+        }
+      }
+    }
+  }
   return bad.length ? bad.join('\n') : 'ok ' + n
 })()

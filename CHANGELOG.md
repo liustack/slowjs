@@ -7,6 +7,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 ### Changed
 
 - `Array.prototype.join` of an array of strings makes the result in one block and reads the elements in place: a render of tifa's pages runs up to 0.75% fewer instructions.
+- A search for a string of more than 8 characters moves over the text in a tighter loop, as tifa's search of each page's HTML does: a render of tifa's pages runs up to 0.45% fewer instructions.
 
 ## [v0.31.1] - 2026-11-16
 

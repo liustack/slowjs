@@ -252,6 +252,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A power of two prints its shortest digits, as Node does: 54 of them printed one digit too many | v0.31.1 | [strings.md](strings.md#a-power-of-two-prints-its-shortest-digits) |
 | A number that is not an integer converts to text in radix 10 by Schubfach, with integer arithmetic and a table of 617 powers of ten, not with big numbers | v0.31.1 | [strings.md](strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers) |
 | `Array.prototype.join` of a fast array of strings, ropes, `undefined` and `null` makes one block of the length and width of the result and reads the elements in place, without a property read for each | Unreleased | `js_join_plan` in [engine/quickjs.c](../../engine/quickjs.c) |
+| The search for a needle of more than 8 characters keeps a table of 256 one-byte shifts and moves over a run of windows in one tight loop, checking the step counter as often as before | Unreleased | `js_string_two_way` in [engine/quickjs.c](../../engine/quickjs.c) |
 
 ## JSON
 
