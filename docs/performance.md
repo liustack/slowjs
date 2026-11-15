@@ -979,6 +979,69 @@ The instructions fall on every group on both architectures: this takes back a sm
 
 The Go engine gains less than the C tree on the same pages: the Go engine spends more of a render elsewhere, and `js_append_enumerate`, whose C changed, compiles without its profile until the next training (`js_append_array` and `js_spread_iterator` are new and have none either). React, which spreads no array, runs 0.13% more on the Go engine and the same on the C tree, under the 0.3% that counts: the cause was not traced to a function. The 64 micro benchmarks run between 0.54% fewer and 0.11% more instructions a turn: none of them spreads an array. The timing is left to the train.
 
+### Passing arguments on with apply
+
+[Passing arguments on with apply makes no arguments object](changes/c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object), counted on 2026-11-15 against main at d7c86e16 (v0.30.7). How often each form runs, counted with counters added to the native C tree for the count only: V8's RayTrace makes 66,594 calls of `f.apply(this, arguments)` an iteration and the same number of mapped arguments objects, Earley 5,840 mapped objects that it reads by `length` and index, and the other benchmarks of the suite none. The 12 React pages on widely used libraries (counted outside the repository), a render:
+
+| Page | `f.apply(this, arguments)` | Mapped objects | Rest parameters | Spread calls |
+| --- | ---: | ---: | ---: | ---: |
+| chart | 619 | 13,844 | | |
+| state | 1,048 | 1,198 | 612 | |
+| radix | 159 | 1,813 | 5,076 | 1,894 |
+| antd | 468 | 9,537 | 4,646 | 3,722 |
+| styled | | 720 | | |
+| i18n | | | 7,146 | 7,233 |
+| dates | | | 4,603 | |
+| markdown | | | 3,966 | 4,171 |
+| table | | | | 6,929 |
+| forms | | | | 4,598 |
+
+diff and domain make none of these. `Reflect.apply(f, x, arguments)`, a spread of `arguments` and `new` or `super` with one run nowhere in these pages or in the suite. tifa's pages make 0 to 171 arguments objects a render.
+
+The cost of each form on an Apple M4, instructions a call over a direct call of the same function (1,135): `f.apply(this, arguments)` 1,655 more in a sloppy function, 1,466 in a strict one, an `apply` of an array literal 1,261, a rest parameter spread into the call 1,911, a spread of an array 1,791 and a spread of `arguments` 4,603.
+
+Retired instructions on the M4 (darwin/arm64), the native test host built with `-O2`, the median of 3 runs. A call, in a loop of a million:
+
+| Form | main | This change |
+| --- | ---: | ---: |
+| sloppy `f.apply(this, arguments)`, 2 arguments | 2,874 | 1,516 |
+| the same with no arguments | 2,765 | 1,410 |
+| strict, no arguments | 2,596 | 1,404 |
+| sloppy, 3 parameters | 2,891 | 1,437 |
+| sloppy `arguments.length` only | 1,597 | 788 |
+| sloppy `arguments.length` only, 3 parameters | 1,893 | 880 |
+| strict `arguments.length` only | 787 | 785 |
+| a direct call | 1,092 | 1,094 |
+
+The V8 suite, an iteration (6 iterations less 2, over 4): RayTrace 347.2 M to 261.4 M (-24.72%), Earley -3.07%, DeltaBlue -1.00%, Richards -0.38%, Encrypt, Decrypt, Boyer, RegExp and NavierStokes within 0.34%. Splay moves by tens of percent from run to run with the collector and is no reading.
+
+The 12 React pages, a render (3 renders less 1, over 2). Native: the test host built with `-O2` and `host_poll` left out, callgrind on linux/amd64 (an AMD EPYC 7B13). The Go engine (`gorender`, one VM, `GOMAXPROCS=1`): retired instructions on the M4, the median of 3 runs, as generated, with the profile of v0.30.7, and trained, with a profile trained again on this tree with the part of `loops.js` below. The HTML of every page is the same.
+
+| Page | Native, amd64 | Go engine, as generated | Go engine, trained |
+| --- | ---: | ---: | ---: |
+| chart | -2.33% | -2.00% | -2.57% |
+| radix | -0.58% | +0.14% | -0.72% |
+| styled | -0.45% | +1.03% | -0.69% |
+| antd | -0.35% | +0.53% | -0.20% |
+| diff | +0.02% | +0.76% | -0.05% |
+| domain | +0.03% | +0.64% | -0.35% |
+| i18n | +0.03% | +1.05% | -0.35% |
+| dates | +0.04% | +0.67% | +0.30% |
+| table | +0.05% | +0.84% | -0.28% |
+| markdown | +0.06% | +0.16% | +0.02% |
+| state | +0.08% | +0.54% | +0.14% |
+| forms | +0.15% | +0.89% | +0.01% |
+
+The counter of the M4 moves a page by up to 1.5% from run to run (radix on main: 276.6 M to 284.0 M a render over 5 runs), so a column of the M4 reads only changes larger than that, and chart is the one page that has one: -2.27% natively on the M4, as on amd64. The pages that run 0.02% to 0.15% more natively make no forward and read no sloppy `arguments`: it is where the code of `JS_RegvmRun` landed.
+
+The V8 suite natively on amd64 (callgrind, 12 iterations less 4, over 8, and Splay 50 less 10): RayTrace 366.1 M to 280.6 M an iteration (-23.35%), Earley -3.22%, DeltaBlue +0.08%, Richards +0.05%, Splay +0.02%, and Encrypt, Decrypt, Boyer, RegExp and NavierStokes within 0.01%.
+
+tifa's pages natively on amd64 (the same host, callgrind, 3 renders after 2 warm, a young collection after each): wb studio +0.96%, wb stats +0.87%, the store's home +0.78% and products +0.84%, MUI home +1.04% and orders +1.09%, React +1.62% and long Markdown +1.15%, with the same HTML. None of them forwards arguments. On React the 1.45 M instructions more over 3 renders are spread over the handlers of `JS_RegvmRun` (lines without a line number in its handlers of calls and properties, about 1.3 M), with 114 K for the test of `RV_DST_APPLY` on the return that leaves the fast path: clang allocates the registers of the native loop differently with the new handler. The Go engine, compiled from the same C by the generator with its profile, does not show it once trained (below).
+
+tifa's pages on the Go engine, retired instructions a render inside tifa's `test/ssr` on the M4, the median render of each page averaged over the group, the lowest of 3 rounds that alternate with main. As generated: React +1.44%, the fourteen store pages +0.83%, the six workbench pages +0.41%, MUI's three pages +0.30%. Trained: React +0.05%, the store pages -0.10%, the workbench pages -0.26%, MUI +0.10%, where main moves by up to 0.5% from round to round. The trained engine with callgrind on linux/amd64 (the whole process, 3 renders less 1, over 2): React +0.07%, the store's home +0.06%, wb studio +0.10%, MUI orders +0.04%, chart -2.59%, dates +0.04%. The forward runs on none of tifa's pages: what they gain or lose is where the training and the code landed. The HTML of every page is the same.
+
+As generated, the engine compiles the functions whose C changed without a profile (`JS_RegvmRun`, `rv_call`, `rv_lazy_args`, `rv_lazy_fast`, `rv_args_pass`, `rv_unwind`, `js_frame_next`, `js_backtrace_frame`, `js_backtrace_count` and `JS_GetScriptOrModuleName`), and `JS_RegvmRun` is the loop every page runs: that is the cost on the pages that make no forward. The new path is one tifa's pages never run, so a training on the pages alone leaves it cold. `engine/pgo/loops.js` has a part for it: a sloppy and a strict function that forward 0 to 5 arguments to a function with `apply`, a constructor that forwards to its `init`, and `arguments.length` and `arguments[i]` read in a sloppy function, with `rv_callma` in the list of functions `train.sh` checks.
+
 ### Fewer argument words into hot calls
 
 [Fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), against the train at 1e2e9227. Timed on server A (linux/amd64, one core, `GOMAXPROCS=1`) with the 16 code layouts of [measuring.md](measuring.md): one VM per run with the bundle loaded once, each page rendered 3 times to warm and 7 times timed (React's page 8 and 20), the median of each page, summed over the pages of a group. The change is the mean over the layouts with its 95% interval. The formal layout, the binary that ships, is given apart. Store and workbench ran 4 rounds (36 units), MUI and React 6 (54 units). Instructions are per render, amd64 callgrind. Every page gives the same HTML.
@@ -1554,6 +1617,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
 - **Reading the count of locals once, alone**: at the start of a call the interpreter read `b->var_count` again after each local it set. Reading it once gave React 1.0% fewer instructions but a loop of arithmetic 3.9% more, from a register spilled in one handler, and the time did not change. It is done since together with setting four locals a turn and freeing two values a turn (see [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall)).
 - **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules. Corrected on 2026-11-14: that no longer holds for today's pages. wb studio spreads arrays 2,432 times a render at about 1,450 instructions each, the storefront 968 to 1,415 times, and the spread with no iterator is done since, in the C engine (see [The spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator)).
+- **A rest parameter or an array spread into a call, in the register loop** (`f(...rest)`, `f(...args)`), counted on 2026-11-15 next to [passing arguments on with apply](#passing-arguments-on-with-apply): on an Apple M4 a rest parameter spread into a call costs about 1,900 instructions more than a direct call and a spread of an array about 1,800, but the 12 React pages on widely used libraries make at most about 7,200 of each a render, so taking all of that cost away would give at most 2.3% of a render on i18n, 1.4% on table, 1.3% on radix and under 1% on the others, and a rest parameter still needs its array. Not built. `Reflect.apply(f, x, arguments)`, a spread of `arguments` and `new` or `super` with one were not built either: neither these pages nor V8's suite runs them.
 - **Keeping the in-between shapes of every object literal**, before v0.26.16: about 2% more on top of the new property fast path, but the two list pages ran out of VM memory, because the kept shapes held their prototypes and everything those reach. v0.26.16 keeps only shapes whose prototype is `Object.prototype`, at most 32 keys and no unregistered symbol key, in a ring of 2048 (see [Kept shapes](changes/objects-and-shapes.md#kept-shapes)).
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.
 - **Literal templates in the bytecode**, as V8 copies a prebuilt object: needs compiler and bytecode format changes, and quickjs-ng saw no clear difference when it tried. It is done since, as one opcode for each run of plain keys whose final shape the function keeps (see [Object literals made at their final shape](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)).
