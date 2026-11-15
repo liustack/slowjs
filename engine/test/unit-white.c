@@ -87,6 +87,7 @@ int white_function_debug(JSValueConst script, int i, const uint8_t **source, siz
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
+int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
@@ -5676,6 +5677,108 @@ static void test_regexp_chains(void)
     vm_free(&v);
 }
 
+/* The literal every match of a regexp holds (lre_plan_literal, see "A literal
+   every match holds" in engine/libregexp.c), for each rule of what makes it
+   required (white_lre_literal): the run of char ops that no jump from before
+   it crosses, the longest, the first of the longest, at most 16 units, with
+   the saves of captures inside it, never inside an alternative, an optional
+   group, a quantifier of 0, a lookahead or a lookbehind, ended by a back
+   reference, a char32, a class, a dot or a loop, under i only the ASCII
+   characters and not k and s under u and v, none for a sticky regexp, one
+   that starts with ^ or the literal prefix lre_skip compares, and the most
+   units a match reads before it. */
+static void test_regexp_literal(void)
+{
+    enum { I = 2, M = 4, S = 8, U = 16, Y = 32, V = 256 };
+    static const struct {
+        const char *re;
+        int flags;
+        const char *want;
+    } cases[] = {
+        /* the regexp of the V8 RegExp benchmark */
+        { "(^|[^\\\\])\"\\\\\\/Qngr\\((-?[0-9]+)\\)\\\\\\/\"", 0, "\"\\/Qngr( key 3 before 1" },
+        /* the literal prefix of LRE_PLAN_CHAR is not taken, a longer run is */
+        { "abc", 0, "-" },
+        { "abc", U, "abc key 1 before ?" },
+        { "a(b)c", 0, "abc key 1 before 0" },
+        { "x(?:abc)+d", 0, "d key 0 before ?" },
+        { "ab{0}c", 0, "-" },
+        { "abc$", 0, "-" },
+        /* alternatives, optional groups, quantifiers */
+        { "xa|ya", 0, "-" },
+        { "(?:foo|foo)", 0, "-" },
+        { "(?:xa|ya)b", 0, "b key 0 before 2" },
+        { "(?:abc)?d", 0, "d key 0 before 3" },
+        { "(?:abc)*d", 0, "d key 0 before ?" },
+        { "(?:abc)+d", 0, "d key 0 before ?" },
+        { ".(?:abc){2}d", 0, "abc key 1 before 1" },
+        { "a{2}bc", 0, "bc key 0 before ?" },
+        { "ab?c", 0, "c key 0 before 2" },
+        { ".{0,3}abc", 0, "abc key 1 before ?" },
+        { ".?.?abc", 0, "abc key 1 before 2" },
+        { "a(?:b|c)*d", 0, "d key 0 before ?" },
+        { "(?:a|b)xy(?:c|d)xyz", 0, "xyz key 2 before 4" },
+        { "(?:a|b)xyz(?:c|d)xyz", 0, "xyz key 2 before 1" },
+        /* lookarounds */
+        { "a(?=bc)", 0, "-" },
+        { "(?=abc)", 0, "-" },
+        { ".(?=bc)d", 0, "d key 0 before 1" },
+        { ".(?!bc)d", 0, "d key 0 before 1" },
+        { ".(?<=bc)d", 0, "d key 0 before 1" },
+        { ".(?<!bc)d", 0, "d key 0 before 1" },
+        { "(?<=abc)", 0, "-" },
+        { "(?!foo)bar", 0, "bar key 0 before 0" },
+        { "(?<=foo)bar", 0, "bar key 0 before 0" },
+        /* back references and named groups */
+        { ".(a)\\1b", 0, "a key 0 before 1" },
+        { "(?<n>ab)c\\k<n>", 0, "abc key 1 before 0" },
+        /* ignore case */
+        { "abc", I, "~a~b~c key 1 before 0" },
+        { "a-b", I, "~a-~b key 2 before 0" },
+        { "k1", I, "~k1 key 0 before 0" },
+        { "k1", I | U, "1 key 0 before ?" },
+        { "s1", I | V, "1 key 0 before ?" },
+        { "K1", I | U, "1 key 0 before ?" },
+        { ".x\xc3\xa9y", I, "~x key 0 before 1" },
+        { "x(?i:ab)y", 0, "x~a~by key 0 before 0" },
+        { "x(?-i:ab)y", I, "~xab~y key 0 before 0" },
+        /* unicode, lone surrogates, characters from 256 up */
+        { "\xf0\x9f\x98\x80x", U, "x key 0 before ?" },
+        { "\\ud83dx", U, "\\ud83dx key 0 before ? wide" },
+        { "a\xe4\xb8\xad" "b", 0, "-" },
+        { ".a\xe4\xb8\xad" "b", 0, "a\\u4e2db key 1 before 1 wide" },
+        /* sticky, ^, other assertions */
+        { ".abc", Y, "-" },
+        { "^abc", 0, "-" },
+        { "^abc", M, "abc key 1 before 0" },
+        { "\\babc", 0, "abc key 1 before 0" },
+        { ".a\\nb", S, "a\\u000ab key 1 before 1" },
+        /* at most 16 units */
+        { ".abcdefghijklmnopqrstuvwxyz", 0, "abcdefghijklmnop key 9 before 1" },
+    };
+    VM v = vm_new();
+    char out[256];
+    static char big[60000];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int n = white_lre_literal(cases[i].re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n >= 0 && !strcmp(out, cases[i].want), "/%s/ flags %d: \"%s\", want \"%s\"",
+              cases[i].re, cases[i].flags, out, cases[i].want);
+    }
+    /* a literal past the bytes of code the walk reads (LRE_SCAN_STEP) is not
+       found, and one before it is */
+    for (int k = 0; k < 6000; k++)
+        memcpy(big + 4 * k, "[ab]", 4);
+    strcpy(big + 4 * 6000, "zz");
+    white_lre_literal(big, 0, v.ctx, out, sizeof(out));
+    CHECK(!strcmp(out, "-"), "6000 classes then zz: \"%s\", want \"-\"", out);
+    memmove(big + 3, big, 4 * 6000 + 3);
+    memcpy(big, ".zq", 3);
+    white_lre_literal(big, 0, v.ctx, out, sizeof(out));
+    CHECK(!strcmp(out, "zq key 1 before 1"), "zq then 6000 classes: \"%s\"", out);
+    vm_free(&v);
+}
+
 /* lre_split with the chains gives the machine what the walk over the split
    ops one at a time gives it (white_lre_split_same), at every split op it can
    be called at, on each character of a list and at the end of the string:
@@ -8380,6 +8483,7 @@ int main(int argc, char **argv)
     test_regexp_cache_memory();
     test_regexp_split_budget();
     test_regexp_chains();
+    test_regexp_literal();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);

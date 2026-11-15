@@ -3258,35 +3258,42 @@ static void test_sort_stop_bound(void)
    50th reading must stop it too, which shows that the regexp reads the flag
    again and again as it works, not once at the end of it:
    when no position can start a match, when each can but the match fails
-   there, and in the loop of a greedy x+, which jumps back by a split op that
-   pushes nothing. */
+   there, in the loop of a greedy x+, which jumps back by a split op that
+   pushes nothing, and in the scan for the literal every match holds
+   (lre_literal). The string of a regexp whose match runs long starts with
+   that literal (head), so that the scan finds it at once and the matches
+   run long as before: without it the scan alone would tell there is none. */
 static void test_regexp_stops(void)
 {
     static const struct {
         const char *name, *s, *re;
         int log2len;
+        const char *head;
     } cases[] = {
-        { "8bit", "'a'", "/[\"&<>]/", 22 },
-        { "16bit", "'\\u4e2d'", "/[\"&<>]/", 22 },
-        { "8bit/each", "'a'", "/ab/", 22 },
-        { "16bit/each", "'\\u4e2d'", "/\\u4e2db/", 22 },
-        { "8bit/set", "'a'", "/(?:a|c)b/", 22 },
-        { "16bit/set", "'\\u4e2d'", "/(?:\\u4e2d|c)b/", 22 },
-        { "plus", "'a'", "/a+b/", 17 },
-        { "plus/unicode", "'a'", "/a+b/u", 17 },
-        { "plus/16bit", "'\\u4e2d'", "/\\u4e2d+b/", 17 },
-        { "plus/ignore case", "'a'", "/A+b/i", 17 },
-        { "class", "'a'", "/\\w+@/", 17 },
-        { "capture", "'a'", "/(a)+b/", 17 },
-        { "alternatives", "'a'", "/(?:a|c)+b/", 17 },
+        { "8bit", "'a'", "/[\"&<>]/", 22, "" },
+        { "16bit", "'\\u4e2d'", "/[\"&<>]/", 22, "" },
+        { "8bit/each", "'a'", "/ab/", 22, "" },
+        { "16bit/each", "'\\u4e2d'", "/\\u4e2db/", 22, "" },
+        { "8bit/set", "'a'", "/(?:a|c)b/", 22, "" },
+        { "16bit/set", "'\\u4e2d'", "/(?:\\u4e2d|c)b/", 22, "" },
+        { "literal", "'a'", "/(?:a|c)xyz/", 22, "" },
+        { "literal/16bit", "'\\u4e2d'", "/(?:a|c)xyz/", 22, "" },
+        { "literal/ignore case", "'a'", "/(?:a|c)xyz/i", 22, "" },
+        { "plus", "'a'", "/a+b/", 17, "b" },
+        { "plus/unicode", "'a'", "/a+b/u", 17, "b" },
+        { "plus/16bit", "'\\u4e2d'", "/\\u4e2d+b/", 17, "b" },
+        { "plus/ignore case", "'a'", "/A+b/i", 17, "b" },
+        { "class", "'a'", "/\\w+@/", 17, "@" },
+        { "capture", "'a'", "/(a)+b/", 17, "b" },
+        { "alternatives", "'a'", "/(?:a|c)+b/", 17, "b" },
         /* sticky, a match is tried once: only the split ops that push nothing
            read the flag on the way */
-        { "plus/sticky", "'a'", "/a+b/y", 17 },
-        { "plus/16bit/sticky", "'\\u4e2d'", "/\\u4e2d+b/y", 17 },
-        { "plus/ignore case/sticky", "'a'", "/A+b/iy", 17 },
-        { "class/sticky", "'a'", "/\\w+@/y", 17 },
-        { "capture/sticky", "'a'", "/(a)+b/y", 17 },
-        { "alternatives/sticky", "'a'", "/(?:a|c)+b/y", 17 },
+        { "plus/sticky", "'a'", "/a+b/y", 17, "" },
+        { "plus/16bit/sticky", "'\\u4e2d'", "/\\u4e2d+b/y", 17, "" },
+        { "plus/ignore case/sticky", "'a'", "/A+b/iy", 17, "" },
+        { "class/sticky", "'a'", "/\\w+@/y", 17, "" },
+        { "capture/sticky", "'a'", "/(a)+b/y", 17, "" },
+        { "alternatives/sticky", "'a'", "/(?:a|c)+b/y", 17, "" },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -3296,8 +3303,8 @@ static void test_regexp_stops(void)
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         char src[256];
 
-        snprintf(src, sizeof(src), "var s = %s.repeat(1 << %d), re = %s; 0",
-                 cases[i].s, cases[i].log2len, cases[i].re);
+        snprintf(src, sizeof(src), "var s = '%s' + %s.repeat(1 << %d), re = %s; 0",
+                 cases[i].head, cases[i].s, cases[i].log2len, cases[i].re);
         CHECK(eval(ctx, src), "the script threw");
         CHECK(interrupted(ctx, "re.test(T(s))"), "%s: /%s/ was not interrupted",
               cases[i].name, cases[i].re);
@@ -3362,6 +3369,19 @@ static void test_regexp_skip_polls(void)
         { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
         { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
         { zs, "z", 4096, 0, 1, 4097 },
+        /* the scan for the literal every match holds (lre_literal): it
+           reads the flag after each LRE_SKIP_CHUNK units it looks at or
+           compares, and not at the end of the string, where the machine
+           would run at every position (each holds an x) */
+        { "(?:x|c)b", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "(?:x|c)b", "x", 3 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "(?:x|c)b", "x", CHUNK + 1, 0, 0, 1 },
+        { "(?:x|c)b", "x", CHUNK, 0, 0, 0 },
+        { "(?:x|c)b", "\xe4\xb8\xad", 2 * CHUNK + 1, 0, 0, 2 },
+        { "(?:x|c)(?i:b)", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        /* an x at every position, where the scan compares the literal xxb:
+           3 units more each */
+        { "(?:a|c)xxb", "x", 3 * CHUNK, 0, 0, 8 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -5138,11 +5158,29 @@ static void test_map_key_polls(void)
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
    whose upper case is below 128 stays as it is. lre_first_set relies on it
-   for the characters that ignore case. */
+   for the characters that ignore case. In unicode mode it gives the lower
+   case of an ASCII letter, every other ASCII unit as it is, and an ASCII
+   unit for no other character but U+017F ('s') and U+212A ('k'), which
+   lre_plan_literal relies on. */
 static void test_canonicalize_ascii(void)
 {
     uint32_t c, got, want;
     int bad = 0;
+
+    for (c = 0; c <= 0x10ffff; c++) {
+        got = lre_canonicalize(c, 1);
+        want = c;
+        if (c >= 'A' && c <= 'Z')
+            want = c - 'A' + 'a';
+        else if (c == 0x17f)
+            want = 's';
+        else if (c == 0x212a)
+            want = 'k';
+        if ((c < 128 || c == 0x17f || c == 0x212a) ? got != want : got < 128) {
+            if (bad++ < 10)
+                printf("lre_canonicalize(%#x, 1) = %#x\n", c, got);
+        }
+    }
 
     for (c = 0; c <= 0xffff; c++) {
         got = lre_canonicalize(c, 0);

@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to regular expressions: skipping to where a regexp can start to match, working out once per regexp where it starts to look, not pushing the alternatives that cannot match at a position, keeping the bytecode of compiled regexps per VM, and parsing the classes of regexps with the v flag as the specification does, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, why a regexp still holds at most 254 capture groups'
+summary: 'Changes to regular expressions: skipping to where a regexp can start to match, working out once per regexp where it starts to look, ruling a match out by a literal every match holds, not pushing the alternatives that cannot match at a position, keeping the bytecode of compiled regexps per VM, and parsing the classes of regexps with the v flag as the specification does, with what each gains and costs in memory, which regexps take them, how timeouts still stop them, why a regexp still holds at most 254 capture groups'
 read_when:
   - Changing the parser of classes in libregexp.c, or a regexp with the v flag throws a SyntaxError that Node does not
   - A regexp throws "too many captures"
@@ -103,6 +103,48 @@ Callgrind on linux/arm64, the instructions of the engine in a render, against `6
 
 
 The change is in C (`engine/libregexp.c`): `lre_chains`, called by `lre_compile`, and `lre_chain_next` and `lre_split`, which read the chains. `lre_get_groupnames` and `lre_dump_bytecode` step over them, and `BC_VERSION` in `engine/quickjs.c` is 10. `engine/test/unit-white.c` checks which runs are kept (`test_regexp_chains`) and that `lre_split` gives what the walk one at a time gives at every split op of each kind of run, on characters that fold to one another, from 256 up and above U+FFFF and at the end of the string, and for runs of 4095 to 4097 split ops (`test_regexp_split_same`). `engine/test/unit.c` checks that the flag is read as often as before. `q3-regexp-alt.js` of `engine/test/regvm/js` gives the matches and captures of such regexps under every builtin, as Node gives them, and `TestRegexLongScanStops` stops a long run of them.
+
+## A literal every match holds
+
+Release: Unreleased.
+
+A regexp such as `/(^|[^\\])"\\\/Date\((-?[0-9]+)\)\\\/"/`, which reads dates out of JSON, can only match where the string holds `"\/Date(`. The skip found where a match can start by its first character, and the first characters of this one are almost every character, so the backtracking machine was tried at nearly every position of a long string that held no date at all. Now `lre_compile` also finds, in `lre_plan`, the longest literal every match must hold, up to 16 units, and `lre_exec` looks for it first. When the rest of the string does not hold it, there is no match, and the machine does not run. When it does, no match starts more than the most units a match can read before the literal ahead of where it is first found, and the search starts there.
+
+What makes a literal one every match holds:
+
+- It is a run of char ops that every path from the start of the match to its end goes through. An op is on every path when no jump from an op before it lands past it. So the ops of an alternative, of an optional group or atom (`?`, `*`, `{0,n}`), of a lookahead or a lookbehind of either sign, are never taken. A literal of a negative lookaround is one a match must not hold, one of a positive lookahead may lie past the end of the match, and one of a lookbehind before its start. An atom repeated at least once (`+`, `{2}`) is taken: its loop only jumps back.
+- Between two of its chars may stand only the saves of a capture, so its units are next to each other in the string. A back reference, a class, a dot, a character above U+FFFF or a loop ends it.
+- With `i`, it takes ASCII characters only, a letter as either case: outside unicode mode no other unit folds to an ASCII one (`test_canonicalize_ascii`). In unicode mode U+017F folds to `s` and U+212A (the Kelvin sign) to `k`, so those two letters end it there.
+- A sticky regexp gets none, since it matches only where the search starts, and neither does one that starts with `^` outside multiline mode. Nor does the literal prefix that [the skip](#where-a-regexp-starts-is-worked-out-once) compares already, unless a longer run follows.
+- The most units a match reads before the literal is known when every path to it reads one unit an op and jumps only forward, in the first 256 bytes of the code, and not in unicode mode, where a character may take two units. Otherwise the search starts where it did.
+
+The scan looks for the rarest unit of the literal, by a table of how often each byte occurs in the HTML, the JSON and the JavaScript of tifa's pages, then compares the rest of the literal where it finds it. In an 8-bit string it uses `memchr` past 32 bytes and a plain loop below, and a plain loop for a letter of either case and in a 16-bit string. A literal with a unit from 256 up is in no 8-bit string, which is known without a scan.
+
+Why this is safe: a match holds the literal at or after its start, so a string that does not hold it from where the search starts has no match, and a position before the first place of the literal less what a match reads before it is one where no match can start. The machine is the same and runs from the same or a later position, with the captures cleared as before, so the matches, the captures, `lastIndex` and the errors are the same. A sticky regexp keeps its one try. The scan stops at the first place of the literal, which lies at or before the literal of any match, so it never reads further than the machine would, and it reads the interrupt flag after every 65,536 units it looks at or compares, as the scan of the skip does: one call over a long string still stops when the eval timeout fires or `Interrupt` is called. Nothing is kept between calls.
+
+The plan after the bytecode of a regexp goes from 36 bytes to 74, which counts against the memory limit of the VM and the bytes of the cache. The bytecode of a function holds the bytecode of its regexp literals, so the bytecode version goes from 12 to 13: bytecode written by an earlier release no longer loads (`SyntaxError: invalid version`).
+
+A regexp without a literal, or with nothing to skip, leaves `lre_skip` after the same one test as before: the kind of its plan carries a bit for the literal.
+
+Callgrind on linux/amd64, instructions against `d7c86e16`, each the difference of two runs of different length, so that the setup cancels out. On the native test host (`engine/test`, built by plain clang), with the same output and the same HTML:
+
+| Script | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| V8 RegExp benchmark, one iteration | 1,926.6M | 897.3M | -53.4% |
+| The whole V8 suite, one iteration | 5,087.9M | 4,064.5M | -20.1% |
+| Long Markdown, one render | 17,351.2M | 16,921.1M | -2.48% |
+| re17 of the V8 benchmark, `"\/Qngr(` found once in a short JSON string, 1,000 execs | 7,855K | 2,241K | -71.5% |
+| `/(\d+)em/`, the string holds no `em`, 1,000 execs | 3,982K | 1,115K | -72.0% |
+| `/(\d+)px/`, `px` found at once, 1,000 execs | 2,426K | 2,654K | +9.4% |
+| `/\w+@\w+\.com/`, `.com` found, nothing known of what comes before it, 1,000 execs | 23,748K | 24,461K | +3.0% |
+| `/\d+/`, no literal, 1,000 execs | 2,053K | 2,055K | +0.10% |
+| `regexp_ascii` and `regexp_utf16` of `compare/testdata`, 1,000 execs | 2,963K, 3,238K | 2,965K, 3,240K | +0.07%, +0.06% |
+
+When the literal is found but rules nothing out, the scan is the cost: about 230 instructions an exec for a literal at the start of a short string, and the length of the scan when nothing is known of what comes before the literal. tifa's 7 pages run from -0.01% to +0.12% on the native host. Of that, the regexp functions are at most 28K instructions a render (0.009%, the English product list), and the rest is in functions that hash on addresses (`js_closure`, `add_property`, `js_own_key_kinds`), which are called as often as before and cost more or less with any change to where memory lands. The build with `-DLRE_NO_LITERAL` moves the same page by +0.03% with no literal taken. Of the 13 wider pages, the native host runs from -0.79% (a Markdown page) to +0.36% (an i18n page, where a regexp finds its literal in most strings it runs on, with nothing known before it: 10,890 scans a render cost 2.2M instructions and save 0.2M).
+
+In the Go product, each C with a profile trained the same way (`engine/pgo/train.sh`, with the loops of this change in `engine/pgo/loops.js`): the V8 RegExp benchmark runs 971.1M instructions an iteration where it ran 2,149.8M (-54.8%) and long Markdown 1.04% fewer. The engine alone (the functions of `internal/cengine`, without the Go runtime, whose scheduler moves by up to 0.35% between two runs of one binary) runs 0.04% to 0.25% fewer instructions a render on tifa's 7 pages: the scan runs from 0 to 156 times a render there (0 on the English storefront home, which gains as much), and the gain is in `lre_find` and `lre_exec_backtrack`, which the new profile lays out better with the same calls. The 12 wider pages run from -0.64% to +0.12% (the i18n page, +0.17% for the engine alone).
+
+The change is in C (`engine/libregexp.c`): `lre_plan_literal` and `lre_literal_before`, called by `lre_plan`, and `lre_literal`, called by `lre_skip`. `BC_VERSION` in `engine/quickjs.c` is 13. Built with `-DLRE_NO_LITERAL`, the engine takes no literal, for a run against the engine without it. `engine/test/unit-white.c` checks the literal, its rarest unit and what a match reads before it for each rule above (`test_regexp_literal`), `engine/test/unit.c` that the scan reads the flag as often as it should, also where every position holds the unit it looks for (`test_regexp_skip_polls`) and that a long match still stops (`test_regexp_stops`). `engine/test/compare/regexp_literal.js` gives what every builtin returns for regexps of each rule, flag and kind of string, as Node gives it, and `TestRegexLongScanStops` stops a long scan of a literal.
 
 ## Compiled regexps kept per VM
 

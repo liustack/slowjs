@@ -90,6 +90,32 @@ taBigInt(BigUint64Array);
     use(n);
 })();
 
+// Regular expressions with a literal every match holds, which the matcher
+// looks for before it runs: in Latin-1 text and in UTF-16 text, where the
+// text holds it and where it does not, of letters of either case (the i
+// flag).
+(function () {
+    var json = "", wide = "";
+    for (var i = 0; i < 300; i++) {
+        json += '{"id":' + i + ',"d":"\\/Date(' + i * 7919 + ')\\/","n":"item ' + i + '"},';
+        wide += "日本語 item " + i + (i % 5 ? " " : " Total, ");
+    }
+    var res = [/(^|[^\\])"\\\/Date\((-?[0-9]+)\)\\\/"/g, /(^|[^\\])"\\\/Qngr\((-?[0-9]+)\)\\\/"/g,
+        /\s(\w+)\s+total,/gi, /[a-z]+:\/\/[^\s"]+/g, /(?:id|n)":"?(\d+)x/g];
+    var n = 0;
+    for (var r = 0; r < 20; r++) {
+        for (var j = 0; j < res.length; j++) {
+            for (var t = 0; t < 2; t++) {
+                var re = res[j], s = t ? wide : json, m;
+                re.lastIndex = 0;
+                while ((m = re.exec(s)) !== null) n += m.index;
+                n += s.replace(re, "#").length + (re.test(s) ? 1 : 0);
+            }
+        }
+    }
+    use(n);
+})();
+
 // BigInt arithmetic, comparison and BigInt keys of a Map.
 (function () {
     var m = new Map(), s = 0n, x = 1n;

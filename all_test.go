@@ -798,8 +798,12 @@ func TestBytecode(t *testing.T) {
 	// destructuring with the keys it leaves out in a list, comes after
 	// OP_copy_data_properties, and the opcodes after it moved by one: bd 2a be
 	// 3a 01 9a cd 29.
+	//
+	// 2026-11-15, version 13: the plan after the bytecode of a regexp is 74
+	// bytes, with the literal every match holds. The code of this script is the
+	// same.
 	hex := hex.EncodeToString(bytecode)
-	if g, e := hex, "0c000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
+	if g, e := hex, "0d000c000600a801000100020000000801aa0100000000bd2abe3a019acd29a8010400001b0600"; g != e {
 		t.Fatalf("got %s, expected %s", g, e)
 	}
 

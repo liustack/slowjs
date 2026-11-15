@@ -132,10 +132,25 @@ static const REOpCode reopcode_info[REOP_COUNT] = {
 #define RE_HEADER_LEN 8
 
 /* the plan of lre_skip after the bytecode (see lre_plan) */
-#define LRE_PLAN_LEN 36
+#define LRE_PLAN_LEN (LRE_PLAN_LIT_UNITS + 2 * LRE_LIT_MAX)
 /* its byte that holds how many chains of literal alternatives follow it
    (see "Chains of literal alternatives" at lre_split) */
 #define LRE_PLAN_CHAINS 3
+/* The literal every match holds (see "A literal every match holds" at
+   lre_plan_literal), after the table of the plan: how many units it has (0:
+   none), which of them the scan looks for first, the most units a match
+   reads before it (LRE_LIT_UNKNOWN: not known), whether a unit is from 256
+   up, the units that are an ASCII letter of either case (bit k for unit k,
+   a u16), and its units (u16 each, the lower case of a letter of either
+   case). */
+#define LRE_PLAN_LIT 36
+#define LRE_PLAN_LIT_KEY 37
+#define LRE_PLAN_LIT_BEFORE 38
+#define LRE_PLAN_LIT_WIDE 39
+#define LRE_PLAN_LIT_FOLD 40
+#define LRE_PLAN_LIT_UNITS 42
+#define LRE_LIT_MAX 16
+#define LRE_LIT_UNKNOWN 255
 
 /* A chain, after the plan: the offset of its first split op from the start
    of the code (u32), its number of split ops (u16), its kind (one byte,
@@ -4491,13 +4506,14 @@ static intptr_t lre_exec_backtrack(REExecContext *s, uint8_t **capture,
    Which of these a regexp takes, and its set of first units, depend on its
    bytecode only, so lre_compile works them out once (lre_plan) and keeps
    them in the LRE_PLAN_LEN bytes right after the bytecode, before the group
-   names: the kind (LRE_PLAN_LOOP, ...), whether every unit from 256 up can
-   start a match, for LRE_PLAN_CHAR how many char ops follow the first one
-   (at most LRE_PREFIX_MAX), how many chains follow the plan (LRE_PLAN_CHAINS,
-   see lre_chains), and a table of 256 bits, bit c of byte
-   c / 8 for unit c, of the units below 256 that can start a match. The
-   table is exact for LRE_PLAN_RANGE and LRE_PLAN_SET and unused for the
-   other kinds. */
+   names: the kind (LRE_PLAN_LOOP, ..., with LRE_PLAN_LITERAL when there is
+   a literal), whether every unit from 256 up can start a match, for
+   LRE_PLAN_CHAR how many char ops follow the first one (at most
+   LRE_PREFIX_MAX), how many chains follow the plan (LRE_PLAN_CHAINS, see
+   lre_chains), a table of 256 bits, bit c of byte c / 8 for unit c, of the
+   units below 256 that can start a match, and the literal every match holds
+   (LRE_PLAN_LIT, see lre_plan_literal). The table is exact for
+   LRE_PLAN_RANGE and LRE_PLAN_SET and unused for the other kinds. */
 #define LRE_SKIP_LOOP (5 + 1 + 5)
 #define LRE_SKIP_MATCH (RE_HEADER_LEN + LRE_SKIP_LOOP)
 #define LRE_SKIP_BODY (LRE_SKIP_MATCH + 2)
@@ -4510,6 +4526,10 @@ enum {
     LRE_PLAN_RANGE, /* the first op is one class */
     LRE_PLAN_SET, /* the first units are those of the table and high */
 };
+/* with the kind in the byte of the kind: the plan holds a literal
+   (LRE_PLAN_LIT), so that a regexp without one and with nothing to skip
+   leaves lre_skip after one test, as before there were literals */
+#define LRE_PLAN_LITERAL 0x80
 #define LRE_PLAN_HIGH 1
 #define LRE_PLAN_PREFIX 2
 #define LRE_PLAN_TABLE 4
@@ -4547,7 +4567,7 @@ typedef struct {
 
 typedef struct {
     int index; /* the position of the string to start from */
-    int pc; /* the offset in the bytecode of the first op to run, or 0: run nothing, return index */
+    int pc; /* the offset in the bytecode of the first op to run */
     int kind; /* LRE_RUN_ONCE, ... */
     const uint8_t *op; /* the first op of the regexp, for LRE_RUN_CHAR and LRE_RUN_RANGE */
     const uint8_t *table; /* the table of the plan, for LRE_RUN_SET */
@@ -4814,17 +4834,360 @@ static void lre_clear(uint8_t **capture, int n)
         capture[i] = NULL;
 }
 
+/* A literal every match holds.
+
+   A regexp such as /(^|[^\\])"\\\/Date\((-?[0-9]+)\)\\\/"/ can only match
+   where the string holds "\/Date(, whatever it does around it. When the
+   string does not hold it from where the search starts, there is no match,
+   and one scan of the string tells that without the backtracking machine,
+   which would try every position. When it does, no match can start more
+   than the most units a match reads before the literal ahead of where it is
+   first found.
+
+   lre_plan_literal finds such a literal in the code, as a run of char ops
+   that every path from the start of the match to its end goes through, one
+   after the other. An op is on every path when no jump from an op before it
+   lands past it: a path that goes from before the op to after it either
+   runs it or jumps over it, and a backward jump only comes back to it. So
+   the ops of an alternative, of a group or an atom with a quantifier of 0
+   (?, *, {0,n}) and of a lookahead or lookbehind of either sign, which the
+   code jumps over, are never taken: a literal of a negative lookaround is
+   one a match must not have, one of a positive lookahead may lie anywhere
+   after the start, even past the end of the match, and one of a lookbehind
+   before the start. The ops of an atom repeated at least once are on every
+   path (its loop jumps back to it). Between two char ops of the run there
+   may be only ops that read nothing and jump nowhere (the saves of
+   captures), so the units of the run are next to each other in the string,
+   at or after the start of the match. Each char op reads one unit: a char
+   of a unit (in unicode mode, a character up to U+FFFF is one unit, a lone
+   surrogate is a unit the string must hold too), or a char_i (ignore case)
+   of an ASCII character, which only that character, and the other case of a
+   letter, fold to: lre_canonicalize gives no other unit an ASCII canonical
+   form, but in unicode mode U+017F and U+212A fold to 's' and 'k', so those
+   two end the run there. A char32 and every other op end it.
+
+   The walk reads the code once from the start, up to LRE_SCAN_STEP bytes:
+   the runs found before it stops hold whatever comes after (whether an op
+   is on every path depends on the ops before it only). It takes the
+   longest run, at most LRE_LIT_MAX units, the first of the longest. A sticky
+   regexp, which matches only where the search starts, and one that starts
+   with ^, which tries the start only, get none: a scan of the whole string
+   would cost more than the match. Neither does the literal prefix of
+   LRE_PLAN_CHAR, which lre_skip looks for already. */
+
+/* the rank of each unit below 256 by how often it occurs, 0 the rarest:
+   counted in the HTML, the inputs as JSON and the JavaScript of the pages of
+   tifa's example shop and test app of MUI, each kind weighed the same */
+static const uint8_t lre_unit_rank[256] = {
+      0,   1,   2,   3,   4,   5,   6,   7,   8,  82,  87,   9,  10,  11,  12,  13,
+     14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,
+    245, 177, 254, 182, 188,  98, 200,  90, 229, 228, 125, 179, 243, 239, 237, 216,
+    234, 227, 226, 217, 212, 214, 208, 202, 204, 205, 242, 206, 209, 235, 213, 189,
+     93, 196, 184, 207, 178, 185, 169, 147, 171, 175, 135, 151, 181, 191, 187, 186,
+    180, 103, 176, 201, 192, 155, 149, 152, 111, 124, 157, 211, 252, 210,  88, 194,
+    225, 251, 224, 240, 241, 255, 231, 230, 233, 246, 195, 219, 244, 232, 249, 247,
+    236, 165, 250, 248, 253, 238, 221, 215, 218, 220, 198, 223, 193, 222,  85,  66,
+    172, 128, 156, 118, 120, 134, 123, 139, 141, 168, 109, 161, 167, 133, 104, 160,
+    126,  99, 117, 127, 148, 114, 122, 138, 110, 170, 137, 142, 166, 158, 100, 121,
+     94, 131, 115, 107, 130, 129, 132,  96, 164, 108,  95,  97, 101, 113, 112, 154,
+    150, 102, 106,  91, 119,  92, 153, 146, 173, 116, 162, 163, 159, 145, 144, 143,
+     30,  31,  89,  84,  83,  81,  71,  69,  68,  72,  70,  74,  79,  73,  78,  76,
+     80,  77,  32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,
+     46,  75, 105, 136, 183, 203, 199, 197, 174, 190,  47,  48,  49,  67,  50, 140,
+     86,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65,
+};
+
+/* the rank of a unit from 256 up: in the middle, as a string of such units
+   holds many of them */
+#define LRE_RANK_WIDE 128
+
+/* lre_op_size gives the bytes of the op at pc. */
+static int lre_op_size(const uint8_t *pc)
+{
+    int len = reopcode_info[pc[0]].size;
+
+    switch (pc[0]) {
+    case REOP_range:
+    case REOP_range_i:
+        len += get_u16(pc + 1) * 4;
+        break;
+    case REOP_range32:
+    case REOP_range32_i:
+        len += get_u16(pc + 1) * 8;
+        break;
+    case REOP_back_reference:
+    case REOP_back_reference_i:
+    case REOP_backward_back_reference:
+    case REOP_backward_back_reference_i:
+        len += pc[1];
+        break;
+    }
+    return len;
+}
+
+/* lre_op_jump gives the offset in the code that the op at offset pos can
+   jump to, -1 when it never jumps, or -2 for an op it does not know. */
+static int lre_op_jump(const uint8_t *code, int pos)
+{
+    const uint8_t *pc = code + pos;
+
+    switch (pc[0]) {
+    case REOP_goto:
+    case REOP_split_goto_first:
+    case REOP_split_next_first:
+    case REOP_lookahead:
+    case REOP_negative_lookahead:
+        return pos + 5 + (int)get_u32(pc + 1);
+    case REOP_loop:
+        return pos + 6 + (int)get_u32(pc + 2);
+    case REOP_loop_split_goto_first:
+    case REOP_loop_split_next_first:
+    case REOP_loop_check_adv_split_goto_first:
+    case REOP_loop_check_adv_split_next_first:
+        return pos + 10 + (int)get_u32(pc + 6);
+    case REOP_char:
+    case REOP_char_i:
+    case REOP_char32:
+    case REOP_char32_i:
+    case REOP_dot:
+    case REOP_any:
+    case REOP_space:
+    case REOP_not_space:
+    case REOP_line_start:
+    case REOP_line_start_m:
+    case REOP_line_end:
+    case REOP_line_end_m:
+    case REOP_match:
+    case REOP_lookahead_match:
+    case REOP_negative_lookahead_match:
+    case REOP_save_start:
+    case REOP_save_end:
+    case REOP_save_reset:
+    case REOP_set_i32:
+    case REOP_word_boundary:
+    case REOP_word_boundary_i:
+    case REOP_not_word_boundary:
+    case REOP_not_word_boundary_i:
+    case REOP_back_reference:
+    case REOP_back_reference_i:
+    case REOP_backward_back_reference:
+    case REOP_backward_back_reference_i:
+    case REOP_range:
+    case REOP_range_i:
+    case REOP_range32:
+    case REOP_range32_i:
+    case REOP_set_char_pos:
+    case REOP_check_advance:
+    case REOP_prev:
+        return -1;
+    default:
+        return -2;
+    }
+}
+
+/* the bytes of code from the start of the match that lre_literal_before
+   follows */
+#define LRE_BEFORE_SPAN 256
+
+/* lre_literal_before gives the most units a match reads before the op at
+   offset lit of the code, an op every path goes through, or LRE_LIT_UNKNOWN.
+   It follows every path from the start of the match (offset body) forward,
+   each op reading one unit or none, and the path of a lookahead or a
+   lookbehind straight to the op after it, which reads nothing. It does not
+   know the most at a backward jump, at an op that reads a number of units it
+   cannot tell (a back reference, a step back, a character of two units),
+   in unicode mode (where a character may be two units), or past
+   LRE_BEFORE_SPAN bytes. */
+static int lre_literal_before(const uint8_t *code, int body, int lit)
+{
+    int16_t most[LRE_BEFORE_SPAN];
+    int pos, size, t, w, k, v;
+
+    if (lit - body >= LRE_BEFORE_SPAN)
+        return LRE_LIT_UNKNOWN;
+    for (k = 0; k <= lit - body; k++)
+        most[k] = -1;
+    most[0] = 0;
+    for (pos = body; pos < lit; pos += size) {
+        const uint8_t *pc = code + pos;
+        size = lre_op_size(pc);
+        if (most[pos - body] < 0)
+            continue;
+        switch (pc[0]) {
+        case REOP_char:
+        case REOP_char_i:
+        case REOP_dot:
+        case REOP_any:
+        case REOP_space:
+        case REOP_not_space:
+        case REOP_range:
+        case REOP_range_i:
+            w = 1;
+            break;
+        case REOP_save_start:
+        case REOP_save_end:
+        case REOP_save_reset:
+        case REOP_set_i32:
+        case REOP_set_char_pos:
+        case REOP_check_advance:
+        case REOP_line_start:
+        case REOP_line_start_m:
+        case REOP_line_end:
+        case REOP_line_end_m:
+        case REOP_word_boundary:
+        case REOP_word_boundary_i:
+        case REOP_not_word_boundary:
+        case REOP_not_word_boundary_i:
+        case REOP_goto:
+        case REOP_split_goto_first:
+        case REOP_split_next_first:
+        case REOP_lookahead:
+        case REOP_negative_lookahead:
+            w = 0;
+            break;
+        default:
+            return LRE_LIT_UNKNOWN;
+        }
+        v = most[pos - body] + w;
+        /* where the op jumps to, then the op after it */
+        t = lre_op_jump(code, pos);
+        if (t >= 0) {
+            if (t <= pos || t > lit)
+                return LRE_LIT_UNKNOWN;
+            if (most[t - body] < v)
+                most[t - body] = v;
+        }
+        if (pc[0] != REOP_goto && pc[0] != REOP_lookahead &&
+            pc[0] != REOP_negative_lookahead) {
+            if (pos + size > lit)
+                return LRE_LIT_UNKNOWN;
+            if (most[pos + size - body] < v)
+                most[pos + size - body] = v;
+        }
+    }
+    k = most[lit - body];
+    return k < 0 || k >= LRE_LIT_UNKNOWN ? LRE_LIT_UNKNOWN : k;
+}
+
+/* lre_plan_literal writes into the plan the literal every match of the
+   regexp of bytecode bc holds, when it finds one (see "A literal every match
+   holds" above). The code starts with the loop over positions and save_start
+   0. prefix is the number of units of the literal prefix lre_skip compares
+   (LRE_PLAN_CHAR), or 0: a run that starts the regexp and is no longer is
+   then not taken. */
+static void lre_plan_literal(const uint8_t *bc, uint8_t *plan, int prefix)
+{
+    const uint8_t *code = bc + RE_HEADER_LEN;
+    int len = get_u32(bc + RE_HEADER_BYTECODE_LEN), body = LRE_SKIP_LOOP + 2;
+    BOOL unicode = (get_u16(bc + RE_HEADER_FLAGS) &
+                    (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
+    int end = len - body > LRE_SCAN_STEP ? body + LRE_SCAN_STEP : len;
+    int pos, size = 0, t, c, k, reach = 0, n = 0, start = 0, best = 0, best_start = 0;
+    int key, rank, r, before;
+    uint16_t units[LRE_LIT_MAX], best_units[LRE_LIT_MAX], fold = 0, best_fold = 0;
+    BOOL wide;
+
+    for (pos = body;; pos += size) {
+        const uint8_t *pc = code + pos;
+        c = -1;
+        if (pos < end) {
+            size = lre_op_size(pc);
+            if (reach <= pos && pc[0] == REOP_char) {
+                c = get_u16(pc + 1);
+            } else if (reach <= pos && pc[0] == REOP_char_i) {
+                c = get_u16(pc + 1);
+                if (c >= 128) {
+                    c = -1;
+                } else if ((c | 0x20) >= 'a' && (c | 0x20) <= 'z') {
+                    c |= 0x20;
+                    if (unicode && (c == 'k' || c == 's'))
+                        c = -1;
+                    else
+                        c |= 0x10000; /* a letter of either case */
+                }
+            }
+        }
+        if (c >= 0) {
+            if (n == 0) {
+                start = pos;
+                fold = 0;
+            }
+            if (n < LRE_LIT_MAX) {
+                units[n] = c;
+                if (c & 0x10000)
+                    fold |= 1 << n;
+                n++;
+            }
+        } else if (pos < end && n > 0 && reach <= pos &&
+                   (pc[0] == REOP_save_start || pc[0] == REOP_save_end ||
+                    pc[0] == REOP_save_reset)) {
+            /* reads nothing and jumps nowhere: the run goes on */
+        } else {
+            /* the run ends: keep it when it is the longest so far */
+            if (n > best && !(start == body && n <= prefix)) {
+                best = n;
+                best_start = start;
+                best_fold = fold;
+                memcpy(best_units, units, n * sizeof(units[0]));
+            }
+            n = 0;
+        }
+        if (pos >= end)
+            break;
+        t = lre_op_jump(code, pos);
+        if (t == -2) {
+            /* an op it does not know: the runs found so far hold */
+            end = pos;
+            size = 0;
+            continue;
+        }
+        if (t > reach)
+            reach = t;
+    }
+    if (best == 0)
+        return;
+    key = 0;
+    rank = 256;
+    wide = FALSE;
+    for (k = 0; k < best; k++) {
+        c = best_units[k];
+        if ((best_fold >> k) & 1)
+            r = max_int(lre_unit_rank[c], lre_unit_rank[c - 'a' + 'A']);
+        else if (c < 256)
+            r = lre_unit_rank[c];
+        else
+            r = LRE_RANK_WIDE;
+        if (!((best_fold >> k) & 1) && c >= 256)
+            wide = TRUE;
+        if (r < rank) {
+            rank = r;
+            key = k;
+        }
+    }
+    before = unicode ? LRE_LIT_UNKNOWN : lre_literal_before(code, body, best_start);
+    plan[0] |= LRE_PLAN_LITERAL;
+    plan[LRE_PLAN_LIT] = best;
+    plan[LRE_PLAN_LIT_KEY] = key;
+    plan[LRE_PLAN_LIT_BEFORE] = before;
+    plan[LRE_PLAN_LIT_WIDE] = wide;
+    put_u16(plan + LRE_PLAN_LIT_FOLD, best_fold);
+    for (k = 0; k < best; k++)
+        put_u16(plan + LRE_PLAN_LIT_UNITS + 2 * k, best_units[k]);
+}
+
 /* lre_plan writes the plan of the regexp of bytecode bc into the
    LRE_PLAN_LEN bytes after its bytecode, which hold 0: how lre_skip starts
-   (see "Skip to where a regexp can match" above). */
+   (see "Skip to where a regexp can match" above), and the literal every
+   match holds (lre_plan_literal). */
 static void lre_plan(uint8_t *bc)
 {
     const uint8_t *loop = bc + RE_HEADER_LEN, *op = bc + LRE_SKIP_BODY;
     uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
     int flags = get_u16(bc + RE_HEADER_FLAGS), c, kind;
+    BOOL unicode = (flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS)) != 0;
     LRESet set;
 
-    if (flags & (LRE_FLAG_UNICODE | LRE_FLAG_UNICODE_SETS | LRE_FLAG_STICKY))
+    if (flags & LRE_FLAG_STICKY)
         return;
     /* The bytecode holds at least the loop, save_start 0 and the op after
        it: an empty regexp is followed by save_end 0, then match. */
@@ -4835,12 +5198,25 @@ static void lre_plan(uint8_t *bc)
         (int)get_u32(loop + 7) != -LRE_SKIP_LOOP ||
         loop[LRE_SKIP_LOOP] != REOP_save_start || loop[LRE_SKIP_LOOP + 1] != 0)
         return;
+#ifndef LRE_NO_LITERAL
+    if (*op != REOP_line_start) {
+        /* the units of the literal prefix of LRE_PLAN_CHAR, as below */
+        c = 0;
+        if (!unicode && *op == REOP_char) {
+            for (c = 1; c <= LRE_PREFIX_MAX && op[3 * c] == REOP_char; c++)
+                continue;
+        }
+        lre_plan_literal(bc, plan, c);
+    }
+#endif
+    if (unicode)
+        return;
     switch (*op) {
     case REOP_line_start:
-        plan[0] = LRE_PLAN_LINE_START;
+        plan[0] |= LRE_PLAN_LINE_START;
         return;
     case REOP_char:
-        plan[0] = LRE_PLAN_CHAR;
+        plan[0] |= LRE_PLAN_CHAR;
         for (c = 0; c < LRE_PREFIX_MAX && op[3 * (c + 1)] == REOP_char; c++)
             continue;
         plan[LRE_PLAN_PREFIX] = c;
@@ -4854,7 +5230,7 @@ static void lre_plan(uint8_t *bc)
     }
     if (!lre_first_set(&set, op))
         return;
-    plan[0] = kind;
+    plan[0] |= kind;
     plan[LRE_PLAN_HIGH] = set.high;
     for (c = 0; c < 256; c++) {
         if ((set.bits[c >> 6] >> (c & 63)) & 1)
@@ -4862,31 +5238,136 @@ static void lre_plan(uint8_t *bc)
     }
 }
 
+/* lre_literal_at says whether the string cbuf holds the n units of the
+   literal at units (u16 each, those of the bits of fold an ASCII letter of
+   either case, as its lower case) at position g. */
+static BOOL lre_literal_at(const uint8_t *units, int n, int fold,
+                           const uint8_t *cbuf, int g, int cbuf_type, int *work)
+{
+    int k;
+    uint32_t c, u;
+
+    for (k = 0; k < n; k++) {
+        c = cbuf_type == 0 ? cbuf[g + k] : ((const uint16_t *)cbuf)[g + k];
+        u = get_u16(units + 2 * k);
+        if ((fold >> k) & 1)
+            c |= 0x20;
+        if (c != u)
+            break;
+    }
+    *work += k + 1;
+    return k == n;
+}
+
+/* lre_literal looks for the literal of the plan of a regexp in the string
+   cbuf of clen units from cindex (see "A literal every match holds" at
+   lre_plan_literal). When the string holds it, it returns where lre_skip
+   should start: no match starts before the first place of the literal less
+   the most units a match reads before it, when that is known, else cindex.
+   It returns -1 when the string does not hold the literal from cindex, so
+   that there is no match, or LRE_RET_TIMEOUT when an interrupt comes
+   first. It looks for the unit LRE_PLAN_LIT_KEY of the literal, with
+   memchr over 32 bytes or more when it can, and compares the others where it
+   finds it, and checks
+   for an interrupt after every LRE_SKIP_CHUNK units it looks at or compares.
+   In unicode mode a match can start one unit before cindex, when cindex is
+   in the middle of a pair (see lre_exec), but it reads the pair first, so
+   its literal still lies from cindex + 1. */
+static no_inline int lre_literal(const uint8_t *plan, const uint8_t *cbuf,
+                                 int cindex, int clen, int cbuf_type,
+                                 void *opaque)
+{
+    int n = plan[LRE_PLAN_LIT], key = plan[LRE_PLAN_LIT_KEY];
+    int before = plan[LRE_PLAN_LIT_BEFORE], fold = get_u16(plan + LRE_PLAN_LIT_FOLD);
+    const uint8_t *units = plan + LRE_PLAN_LIT_UNITS;
+    uint32_t want = get_u16(units + 2 * key), mask = ((fold >> key) & 1) ? 0x20 : 0;
+    int p, last, stop, work = 0;
+
+    /* a unit from 256 up is in no string of 8 bits */
+    if (cbuf_type == 0 && plan[LRE_PLAN_LIT_WIDE])
+        return -1;
+    /* the unit key of the literal at each position from cindex to clen - n */
+    p = cindex + key;
+    last = clen - n + key;
+    while (p <= last) {
+        stop = last - p >= LRE_SKIP_CHUNK - work ? p + LRE_SKIP_CHUNK - work : last + 1;
+        work += stop - p;
+        if (cbuf_type == 0) {
+            /* memchr costs more than the loop up to about 32 bytes */
+            if (mask == 0 && stop - p >= 32) {
+                const uint8_t *q = memchr(cbuf + p, want, stop - p);
+                if (q) {
+                    work -= stop - (q - cbuf);
+                    p = q - cbuf;
+                } else {
+                    p = stop;
+                }
+            } else {
+                for (; p < stop && (cbuf[p] | mask) != want; p++)
+                    continue;
+                work -= stop - p;
+            }
+        } else {
+            const uint16_t *b = (const uint16_t *)cbuf;
+            for (; p < stop && (b[p] | mask) != want; p++)
+                continue;
+            work -= stop - p;
+        }
+        if (p < stop) {
+            if (lre_literal_at(units, n, fold, cbuf, p - key, cbuf_type, &work)) {
+                p -= key;
+                return before != LRE_LIT_UNKNOWN && p - before > cindex ? p - before : cindex;
+            }
+            p++;
+        }
+        if (work >= LRE_SKIP_CHUNK) {
+            if (p <= last && lre_check_timeout(opaque))
+                return LRE_RET_TIMEOUT;
+            work = 0;
+        }
+    }
+    return -1;
+}
+
 /* lre_skip fills st with where lre_exec starts to look for a match of the
    regexp of bytecode bc in the string cbuf of clen units (8-bit when
    cbuf_type is 0, 16-bit when it is 1) from cindex, and how lre_run goes on
-   from there, as the plan lre_plan wrote says. When st->pc is 0, lre_exec
+   from there, as the plan lre_plan wrote says: first the literal every
+   match holds (lre_literal), then the start. It returns FALSE when lre_exec
    runs nothing and returns st->index: 0 for no match, or LRE_RET_TIMEOUT
    when an interrupt came first, with the captures cleared. */
-static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
+static BOOL lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
                      const uint8_t *cbuf, int cindex, int clen, int cbuf_type,
                      void *opaque)
 {
     const uint8_t *plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
-    int ret;
+    int ret, kind;
 
     st->index = cindex;
     st->pc = RE_HEADER_LEN;
     st->kind = LRE_RUN_ONCE;
     if (plan[0] == LRE_PLAN_LOOP || (cbuf_type != 0 && cbuf_type != 1))
-        return;
+        return TRUE;
+    kind = plan[0];
+    if (kind & LRE_PLAN_LITERAL) {
+        ret = lre_literal(plan, cbuf, cindex, clen, cbuf_type, opaque);
+        if (ret < 0) {
+            if (ret != LRE_RET_TIMEOUT)
+                ret = 0;
+            goto none;
+        }
+        st->index = cindex = ret;
+        kind &= ~LRE_PLAN_LITERAL;
+        if (kind == LRE_PLAN_LOOP)
+            return TRUE;
+    }
     st->pc = LRE_SKIP_MATCH;
     st->op = bc + LRE_SKIP_BODY;
-    switch (plan[0]) {
+    switch (kind) {
     case LRE_PLAN_LINE_START:
         if (cindex == 0) {
             st->index = 0;
-            return;
+            return TRUE;
         }
         ret = 0;
         goto none;
@@ -4910,11 +5391,11 @@ static void lre_skip(LRESkip *st, uint8_t **capture, const uint8_t *bc,
     }
     ret = lre_find(st, cbuf, cindex, clen, cbuf_type, opaque, &st->index);
     if (ret == 1)
-        return;
+        return TRUE;
  none:
     lre_clear(capture, 2 * bc[RE_HEADER_CAPTURE_COUNT]);
     st->index = ret;
-    st->pc = 0;
+    return FALSE;
 }
 
 /* lre_prefix says whether the string cbuf of clen units holds, after its
@@ -4990,8 +5471,7 @@ int lre_exec(uint8_t **capture,
     const uint8_t *cptr, *plan;
     LRESkip skip;
 
-    lre_skip(&skip, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque);
-    if (skip.pc == 0)
+    if (!lre_skip(&skip, capture, bc_buf, cbuf, cindex, clen, cbuf_type, opaque))
         return skip.index;
     cindex = skip.index;
     re_flags = lre_get_flags(bc_buf);

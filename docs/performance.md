@@ -916,6 +916,25 @@ A regexp with a list of 16 alternatives or more that start with a literal [goes 
 
 The workbench gains from react-spring's 148 color names: the matcher runs 2,601K instructions a render there, where it ran 4,877K. The other pages have no such list, and their matcher runs up to 69K more instructions a render. The time of the pages was not measured. `BenchmarkRegexColors` on an Apple M with other work on the machine takes 0.48 of the time on a value with a name and 0.28 on a shadow with none.
 
+### A literal every match holds
+
+A regexp [looks first for the longest literal every match must hold](changes/regexp.md#a-literal-every-match-holds), and runs nothing when the string does not hold it. Callgrind on linux/amd64, instructions against `d7c86e16`, with the same HTML. The native test host counts one render or iteration as the difference of two runs. The Go product counts the engine alone (the functions of `internal/cengine`), each C with a profile trained the same way with the loops of the change:
+
+| Script | Native host | Go product, the engine |
+| --- | ---: | ---: |
+| V8 RegExp benchmark | -53.4% | -54.8% (the whole program) |
+| The whole V8 suite | -20.1% | |
+| Long Markdown | -2.48% | -0.91% |
+| tifa's shop, English storefront home | +0.04% | -0.21% |
+| tifa's shop, English product list | +0.07% | -0.21% |
+| tifa's shop, workbench | +0.07% | -0.20% |
+| tifa's shop, workbench stats | +0.05% | -0.25% |
+| tifa's MUI app, orders | -0.01% | -0.04% |
+| tifa's MUI app, home | +0.06% | -0.05% |
+| `r_react_ssr` | +0.12% | -0.07% |
+
+On tifa's pages the literal rules out little: the scan runs 0 to 156 times a render. On the native host the regexp functions there cost at most 28K instructions a render (0.009%), and the rest of the rise is in functions that hash on addresses, which move with any change to where memory lands. In the product the gain comes from the profile trained on the new C, which lays out `lre_find` and `lre_exec_backtrack` better with the same calls. A regexp that finds its literal but rules nothing out pays for the scan, up to +0.36% on one of the 13 wider pages (an i18n page) natively and +0.17% in the product. The time was not measured.
+
 ### Arrays that are appended to take room for 8 elements at first
 
 [An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).

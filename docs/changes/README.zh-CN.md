@@ -236,6 +236,7 @@ read_when:
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
 | 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | v0.30.2 | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
 | 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | v0.30.2 | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
+| 正则在回溯机运行前先找每个匹配都含有的字面量，字符串不含它就没有匹配。字节码版本 13 | Unreleased | [regexp.md](regexp.zh-CN.md#每个匹配都含有的字面量) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 

@@ -13534,7 +13534,7 @@ TEXT ·rv_defm(SB), $232-32
 	MOVD $·engine_rodata+7133(SB), R22
 	WORD $0xf9406be8
 	WORD $0xf94077f5
-	MOVD $·engine_rodata+123402(SB), R25
+	MOVD $·engine_rodata+123826(SB), R25
 	WORD $0xaa0003f7
 	WORD $0xaa0103f8
 	WORD $0x91018114
