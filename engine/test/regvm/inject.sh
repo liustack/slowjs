@@ -13,16 +13,20 @@
 # and a temp freed twice or not at all shows. Each run (RV_INJECT=N) goes
 # through rvdiff (see rvdiff.c) once and says where the throw was: a
 # bytecode instruction and how many times it ran (its place). A run at a
-# place the goldens have is compared with the old loop's run with the same
-# throw, recorded at deb70815 while the old loop existed: the status, and
-# the count and checksum of each kind (output, result, exception, stack,
-# job, the counts of the runtime after a collection). A run at a place with
-# no golden, or with no place, is judged by its status: it must end with
-# exit 0 or 1 (an uncaught throw). A leak found when the runtime is freed
-# (87), a sanitizer report (86), a signal (an abort of a self check), the
-# time limit, an instruction that was to throw and ran to its end ("miss"),
-# or whose throw a hook of JS it ran took ("outside"), is a difference. The
-# run with no injection must end with exit 0 or 1.
+# place the goldens have is compared with its golden, first recorded from
+# the old loop's run with the same throw at deb70815: the status, and the
+# count and checksum of each kind (output, result, exception, stack, job).
+# A run at a place with no golden, or with no place, is judged by its
+# status: it must end with exit 0 or 1 (an uncaught throw). A leak (87: the
+# host found blocks still in use when the runtime was freed, or rvdiff found
+# the runtime holds other counts of objects, atoms or shapes once the
+# context is freed than before it was made), a sanitizer report (86), a
+# signal (an abort of a self check, as a value freed twice gives), the time
+# limit, an instruction that was to throw and ran to its end ("miss"), or
+# whose throw a hook of JS it ran took ("outside"), is a difference. The
+# run with no injection must end with exit 0 or 1. The counts of memory at
+# the end of a run are not in the goldens: they move with any change of what
+# the engine keeps, and the leak check above compares the run with itself.
 #
 # A run that throws also says at which hook: "hit NAME P", the P-th place
 # of the register instruction NAME. A script that has a line
@@ -132,10 +136,15 @@ ASAN_OPTIONS=${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_leaks=0
 export ASAN_OPTIONS
 
 # the line of a golden file of rvdiff (see rvdiff.c): its status, and the
-# count and checksum of each kind but expect (the hash of a kind kept as one)
+# count and checksum of each kind (the hash of a kind kept as one) but expect
+# and the counts of memory, mem-end and mem-gc. Those move with any change
+# of what the engine keeps (a shape held for the context, an object it no
+# longer makes) and say nothing of the throw: a leak is the status of the
+# run, 87, which rvdiff gives when the runtime holds more once the context
+# is freed than before it was made.
 summary() {
 	s="status=$(sed -n 's/^--- status //p' "$1" | tr ' ' _)"
-	for k in out result exception stack job job-stack mem-end mem-gc; do
+	for k in out result exception stack job job-stack; do
 		h=$(grep "^hash $k " "$1" | cut -d' ' -f3,4 | tr ' ' /)
 		if [ -n "$h" ]; then
 			s="$s $k=fnv$h"

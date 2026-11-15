@@ -104,7 +104,7 @@ step cengine fast tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/c
 step host-plain fast - "engine/test/build.sh plain"
 step compare-plain fast last "engine/test/compare.sh plain && engine/test/render-test.sh plain"
 step cycles fast last "engine/test/cycles.sh $llvm"
-step scripts fast last "engine/test/compare-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && scripts/check-gen-test.sh && engine/test/test262-test.sh"
+step scripts fast last "engine/test/compare-test.sh && engine/test/regvm/inject-test.sh && scripts/go-versions-test.sh && scripts/llvm-bin-test.sh && scripts/check-gen-test.sh && engine/test/test262-test.sh"
 step inject-goldens fast last "engine/test/regvm/inject.sh -goldens engine/test/regvm/corpus engine/test/regvm/js"
 step pages fast tests "cd internal/measure/pages && $gc vet . && $gc test -count=1 -v -short ."
 # Full: the end of a batch.
@@ -112,7 +112,7 @@ step gen full last "scripts/check-gen.sh"
 step math full last "engine/test/math.sh"
 step heap full last "engine/test/heap.sh -s 2 -n 100000"
 step golden full last "engine/test/regvm/build.sh plain && engine/test/regvm/golden.sh -j 2 plain"
-step inject full last 'EXTRA_DEFS=-DRV_INJECT engine/test/build.sh plain engine/test/out/inject-plain && EXTRA_DEFS=-DRV_INJECT engine/test/regvm/build.sh plain engine/test/out/inject-plain && engine/test/regvm/inject.sh -max 1 engine/test/out/inject-plain $(grep -v "^#" engine/test/regvm/inject-check.txt)'
+step inject full last 'EXTRA_DEFS=-DRV_INJECT engine/test/build.sh plain engine/test/out/inject-plain && EXTRA_DEFS=-DRV_INJECT engine/test/regvm/build.sh plain engine/test/out/inject-plain && engine/test/regvm/inject-test.sh engine/test/out/inject-plain && engine/test/regvm/inject.sh -max 1 engine/test/out/inject-plain $(grep -v "^#" engine/test/regvm/inject-check.txt)'
 step inject-sample full last 'EXTRA_DEFS=-DRV_INJECT engine/test/build.sh plain engine/test/out/inject-plain && EXTRA_DEFS=-DRV_INJECT engine/test/regvm/build.sh plain engine/test/out/inject-plain && engine/test/regvm/inject.sh -every 20 engine/test/out/inject-plain engine/test/regvm/corpus engine/test/regvm/js'
 step testhooks full tests "$gc test -count=1 -v -tags testhooks$xtags ./internal/gohost ./internal/hostmem ./internal/idtable"
 step root full tests "$gc test -count=1 -v -p 1 -timeout 60m ."

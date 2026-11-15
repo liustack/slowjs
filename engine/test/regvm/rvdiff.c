@@ -275,17 +275,46 @@ static int add_print(JSContext *ctx)
     return r;
 }
 
-static void tr_mem(JSRuntime *rt, const char *kind)
+/* the counts of what rt holds, as a line of mem-end and mem-gc writes them */
+static void mem_counts(JSRuntime *rt, char *buf, size_t size)
 {
     JSMemoryUsage u;
 
     JS_ComputeMemoryUsage(rt, &u);
-    fprintf(tr, "%s obj=%lld atom=%lld shape=%lld prop=%lld jsfunc=%lld cfunc=%lld array=%lld fast_array=%lld elements=%lld binary=%lld\n",
-            kind, (long long)u.obj_count, (long long)u.atom_count, (long long)u.shape_count,
-            (long long)u.prop_count, (long long)u.js_func_count, (long long)u.c_func_count,
-            (long long)u.array_count, (long long)u.fast_array_count,
-            (long long)u.fast_array_elements, (long long)u.binary_object_count);
+    snprintf(buf, size, "obj=%lld atom=%lld shape=%lld prop=%lld jsfunc=%lld cfunc=%lld array=%lld fast_array=%lld elements=%lld binary=%lld",
+             (long long)u.obj_count, (long long)u.atom_count, (long long)u.shape_count,
+             (long long)u.prop_count, (long long)u.js_func_count, (long long)u.c_func_count,
+             (long long)u.array_count, (long long)u.fast_array_count,
+             (long long)u.fast_array_elements, (long long)u.binary_object_count);
 }
+
+static void tr_mem(JSRuntime *rt, const char *kind)
+{
+    char counts[512];
+
+    mem_counts(rt, counts, sizeof(counts));
+    fprintf(tr, "%s %s\n", kind, counts);
+}
+
+#ifdef RV_INJECT
+const char *JS_RegvmInjectResult(void);
+
+/* The test of the throw injection itself (engine/test/regvm/inject-test.sh):
+   RV_INJECT_PLANT=atom or object leaks one at the end of a run where the
+   injection threw, as a handler that keeps a reference on its error path
+   would, so that the test shows such a leak fails the run. */
+static void plant_leak(JSContext *ctx)
+{
+    const char *what = getenv("RV_INJECT_PLANT");
+
+    if (!what || !strstr(JS_RegvmInjectResult(), "\nhit "))
+        return;
+    if (!strcmp(what, "atom"))
+        JS_NewAtom(ctx, "rvdiff: a planted leak");
+    else if (!strcmp(what, "object"))
+        JS_NewObject(ctx);
+}
+#endif
 
 typedef struct Job {
     const char *path;
@@ -388,6 +417,7 @@ static int child_run(void *p)
     int r, module = is_module(path);
     char dir[4096];
     const char *slash;
+    char before[512], left[512];
 
     src = read_file(path, &len);
     if (!src) {
@@ -406,6 +436,8 @@ static int child_run(void *p)
         len += sizeof(d) - 1;
     }
     rt = host_new_runtime();
+    if (rt)
+        mem_counts(rt, before, sizeof(before));
     ctx = rt ? JS_NewContext(rt) : NULL;
     if (!ctx || JS_SetShapeCache(ctx, SHAPE_CACHE) < 0 || define_globals(ctx) < 0 || add_print(ctx) < 0 ||
         add_rv_expect(ctx) < 0) {
@@ -530,6 +562,9 @@ static int child_run(void *p)
     }
  end:
     JS_FreeValue(ctx, v);
+#ifdef RV_INJECT
+    plant_leak(ctx);
+#endif
     /* what the run left: the jobs a format queued too */
     while ((r = JS_ExecutePendingJob(rt, &job_ctx)) != 0) {
         if (r < 0)
@@ -556,10 +591,27 @@ static int child_run(void *p)
             JS_RegvmStat(ctx, 3), JS_RegvmStat(ctx, 4));
     fprintf(tr, "dispatches %d calls C>rv %d rv>bytecode %d rv>C %d\n",
             JS_RegvmStat(ctx, 10), JS_RegvmStat(ctx, 13), JS_RegvmStat(ctx, 14), JS_RegvmStat(ctx, 15));
-    fflush(tr);
     JS_SetShapeCache(ctx, 0);
     JS_SetAsyncContext(ctx, JS_UNDEFINED);
     JS_FreeContext(ctx);
+    /* Whatever the script ran and wherever it threw, once its context is
+       freed and collected the runtime holds what it held before the
+       context was made. More is a leak: an object or a string the host
+       also finds when it frees the runtime (87), or an atom, which
+       JS_FreeRuntime frees whatever its count. Counts, not bytes: a change
+       of what the engine allocates moves neither side. The regexp cache of
+       the runtime is let go of first: what it keeps is no leak. */
+    JS_SetRegExpCache(rt, 0, 0);
+    JS_RunGC(rt);
+    mem_counts(rt, left, sizeof(left));
+    fflush(tr);
+    if (strcmp(left, before) != 0) {
+        fprintf(tr, "leak %s, before the context %s\n", left, before);
+        fprintf(stderr, "rvdiff: %s: a leak: once its context was freed the runtime holds %s, before the context %s\n",
+                path, left, before);
+        host_free_runtime(rt);
+        return 87;
+    }
     host_free_runtime(rt);
     return 0;
 }
