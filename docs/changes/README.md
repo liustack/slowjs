@@ -72,6 +72,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A register-entry leaf that saves registers or calls gets a Go declaration, so `go vet` passes on amd64 | v0.30.5 | [generator.md](generator.md#a-register-entry-leaf-with-a-frame-has-a-go-declaration) |
 | The loop vectorizer no longer takes the number of turns from the profile: `memmove` is a leaf without a frame again, and a render runs 0.07% to 0.22% fewer instructions | v0.30.7 | [generator.md](generator.md#what-the-profile-decides) |
 | The post-link check takes a jump table entry that reaches the end of the function's code, the entry of a `switch` value that cannot occur, when it reaches the same place in the binary | v0.31.0 | [generator.md](generator.md#a-jump-table-entry-may-reach-the-end-of-the-code) |
+| The shadow-stack pass gives a phi one address of a local per incoming block, so a phi that names one block several times (cases of one `switch`) passes LLVM's verifier. The generated engine does not change | Unreleased | [generator.md](generator.md#a-phi-gets-one-address-of-a-local-per-incoming-block) |
 
 ## Commits of upstream QuickJS
 
