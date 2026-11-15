@@ -1,0 +1,14 @@
+result this realm a=1,b=2|x=1,y=2,z=3|x=10,y=20,z=30
+result other realm a=1,b=2|x=1,y=2,z=3|0=7,1=8
+result other shape read x=10,y=20,z=30
+result nested p:r=p,s=2,q:r=q,s=2
+result generators a=1,x=10,x=10,a=1 c=3,y=20,y=20,c=3 ,z=30,z=30, true,true,true,true 20
+result proxy a=1,b=2 [ownKeys;gopd a;gopd b;gopd a;get a;gopd b;get b;proto]
+result proxy proto own=0,a=1,b=2 [ownKeys;gopd a;gopd b;ownKeys;gopd a;gopd b;gopd a;get a;gopd b;get b;proto]
+result prototype set a=1,b=2,c=3,z=pz
+result listed a=1,e=5
+result listed again a=1,e=5
+result a=11,b=21
+mem-end obj=379 atom=569 shape=272 prop=1903 jsfunc=0 cfunc=255 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=195 atom=569 shape=154 prop=970 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

@@ -1,0 +1,16 @@
+result sink array-like 0: [0,["length=0"]]
+result sink iterable 0: [0,["length=0"]]
+result keep array-like 0: [0,[]]
+result keep iterable 0: [0,[]]
+result sink array-like 1: [1,["0","length=1"]]
+result sink iterable 1: [1,["0","length=1"]]
+result keep array-like 1: [1,["number:0"]]
+result keep iterable 1: [1,["a0"]]
+result sink array-like 3: [3,["0","1","2","length=3"]]
+result sink iterable 3: [3,["0","1","2","length=3"]]
+result keep array-like 3: [3,["number:0","number:1","number:2"]]
+result keep iterable 3: [3,["a0","b1","c2"]]
+result length set through a setter of the object: 0
+mem-end obj=204 atom=561 shape=140 prop=983 jsfunc=8 cfunc=132 array=2 fast_array=2 elements=13 binary=0
+mem-gc obj=202 atom=561 shape=139 prop=979 jsfunc=6 cfunc=132 array=2 fast_array=2 elements=13 binary=0
+--- status exit 0

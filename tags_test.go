@@ -172,7 +172,10 @@ func TestTagsStop(t *testing.T) {
 		{"attribute", `var p = { title: '"'.repeat(1 << 24) }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		// a rope, made flat by the first call
 		{"style value", `var p = { style: { color: ' '.repeat(1 << 25) + 'x' + ' '.repeat(1 << 25) } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
-		{"style name", `var p = { style: { ['aB'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
+		// the scan of a style name for a character that is not ASCII reads
+		// the flag every 524,288 characters, 8 to a tick on amd64 (32 on
+		// arm64): 65,536 ticks, up to 7 polls when the stop comes in it
+		{"style name", `var p = { style: { ['aB'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stepStopPolls},
 		{"custom style name", `var p = { style: { ['--' + '&'.repeat(1 << 23)]: 1 } }`, `for (;;) st([], p, 'div', fc, hop, d)`, stopPolls},
 		// the scan of a tag reads the flag every 524,288 characters: up to 53 polls
 		{"tag", `var p = {}, tag = 'a'.repeat(1 << 25)`, `for (;;) st([], p, tag, fc, hop, d)`, 80},

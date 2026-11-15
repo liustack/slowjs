@@ -4,6 +4,38 @@
 
 ## [Unreleased]
 
+## [v0.31.1] - 2026-11-16
+
+### Changed
+
+- 页面渲染时间比 v0.31.0 最多少 2.2%，V8 测试套件得分高 18.7%，靠下面这些改动和在它们之上重新训练的画像。在一台 AMD EPYC 7B13 的 linux/amd64 机器上（16 种代码布局的平均），React 页面少用 2.2% 的时间，tifa 的工作台页面少 1.5%，MUI 页面少 1.1%，店面页面的计时看不出变化。V8 套件里 RegExp 得分高 97%，RayTrace 高 49%，EarleyBoyer 高 15%（[performance.md](docs/performance.zh-CN.md#v0311-对-v0310)）。
+- 已知缺口：长 Markdown 文档的渲染比 v0.31.0 慢约 3%，在同一个 VM 里接在一篇短文档之后渲染时，进程内存峰值是 460 MB，原来是 258 MB。现在每个正则多带 38 个字节，而这个页面每次渲染要编译约 5,500 个正则，所以引擎的回收落在了别的时间点。下一版只让用得上的正则带这些字节。
+- [docs/benchmarks.md](docs/benchmarks.zh-CN.md) 在 v0.31.1 上重跑了：在 Go 的引擎里，liustack/slowjs 渲染 tifa 的页面最快，V8 套件上和 moejs 打平。页面那张表多了一行用 polyfill 的 liustack/slowjs，V8 那张表多了一行 Node `--jitless`。
+- 字节码版本 13：更早版本的 `Compile` 写出的字节码不能再加载，重新编译即可。
+- 正则在回溯机运行之前，先找每个匹配都必须含有的最长字面量。V8 套件的 RegExp 基准少跑 54% 的指令（[regexp.md](docs/changes/regexp.zh-CN.md#每个匹配都含有的字面量)）。
+- `f.apply(this, arguments)` 直接用当前帧的参数调用 `f`：不造 arguments 对象，调用深度只占一层（原来两层）。RayTrace 少跑 23% 的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#用-apply-传下参数时不造-arguments-对象)）。
+- 用 `new` 造的对象能找到之前的对象走过的 shape，自己不再新建。Boyer 少跑 9.4% 的指令，RayTrace 7.1%（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#构造函数的对象找到之前的对象走过的-shape)）。
+- `for in` 循环的一步，以及读它刚给出的键 `o[k]`，都留在寄存器循环里完成。MUI 订单页少跑 2.1% 的指令（[c-engine.md](docs/changes/c-engine.zh-CN.md#for-in-循环的下一个键在寄存器循环里取)）。
+- `Object.isFrozen`、`isSealed`、`freeze` 和 `seal` 把对象的 shape 走一遍就完成。用 Redux Toolkit 存状态的页面少跑 44% 的指令（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape)）。
+- 不是整数的数转成文字改用 Schubfach 算法，每个数约 460 条指令，原来 2,585 条。图表页少跑 8.7%（[strings.md](docs/changes/strings.zh-CN.md#不是整数的数转成文字不再用大数)）。
+- Date 不用循环求年月日，字符串不再经过 `snprintf`，context 记住上一个时间值的各个字段。用 date-fns 和 dayjs 的页面少跑 3.2% 的指令（[time-and-intl.md](docs/changes/time-and-intl.zh-CN.md#date-不用循环求年月日)）。
+- 两个数的 `+` 和 `-` 不再经过加和减各种形式共用的尾段。NavierStokes 少跑 1.9% 的指令（[operators.md](docs/changes/operators.zh-CN.md#两个数的加和减不再经过共用的尾段)）。
+
+### Added
+
+- `VM.TrackRejections(max)` 和 `VM.UnhandledRejections()`：VM 记住被拒绝时没有处理函数的 promise，供宿主报告（[go-api.md](docs/changes/go-api.zh-CN.md#trackrejections-和-unhandledrejections)）。
+- `tifa` 包：`tifa.Register(vm)` 给 VM 装上 tifa 给池里每个 VM 的那一套（`URL`、`Intl`、`Temporal` 和名字以 `__tifa_` 开头的函数）。`slowjs` 命令也用它，所以它跑的脚本同样有这些函数（[go-api.md](docs/changes/go-api.zh-CN.md#tifa-包)）。
+
+
+### Fixed
+
+- 脚本返回或抛出的长字符串，在转成 Go 值时遇到 eval 超时和 `Interrupt` 会停下。原来一次调用可能在超时之后 0.5 秒才结束（[go-api.md](docs/changes/go-api.zh-CN.md#脚本返回或抛出的字符串在顶层也会停止转换)）。
+- 有 54 个 2 的幂多输出一位：`2 ** -44` 现在是 `5.684341886080802e-14`，和 Node 一样（[strings.md](docs/changes/strings.zh-CN.md#2-的幂输出最短的数字)）。
+- 追加元素或定义属性时内存不足，数组和属性保持原样。原来追加失败会让长度比元素多一个（[upstream-commits.md](docs/changes/upstream-commits.zh-CN.md#追加因内存不够失败时长度不变)，[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败)）。
+- 一个对象最多有 2^26 - 1 个属性，再多一个就抛出 RangeError。原来超过之后查找可能漏掉属性（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性)）。
+- `Object.isFrozen` 和 `Object.isSealed` 按规范先问 `isExtensible`。给模块命名空间定义属性而绑定还没初始化时，抛出 `ReferenceError`（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展)）。
+- 在构造函数上调用 `Array.from`，以及 Go 函数返回的值多到 32 位放不下时，个数不再被截断（[objects-and-shapes.md](docs/changes/objects-and-shapes.zh-CN.md#在构造函数上调用-arrayfrom-传完整的下标和长度)，[go-api.md](docs/changes/go-api.zh-CN.md#引擎数不过来的值会报错)）。
+
 ## [v0.31.0] - 2026-11-15
 
 ### Changed
@@ -724,7 +756,8 @@ fork 的第一个版本，起点是 modernc.org/quickjs v0.25.0 和 libquickjs v
 - VM 在 `JSON.parse` 里，或在其他把含非 ASCII 字符的字符串转成 UTF-8 的地方耗尽内存时，不再泄漏那个字符串。
 - `VM.Call` 和 `VM.CallValue` 报告求值函数表达式时抛出的异常，不再报 `cannot call a non-function`。
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.1...main
+[v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6

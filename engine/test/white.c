@@ -19,6 +19,11 @@
 static int white_poll_skip_flag;
 #define JS_POLL_SKIP() white_poll_skip_flag
 
+/* white_array_from_first is the first index of Array.from (JS_ARRAY_FROM_FIRST),
+   0 but in a test of the indices past 32 bits. */
+static long long white_array_from_first;
+#define JS_ARRAY_FROM_FIRST() white_array_from_first
+
 #include "../quickjs.h"
 
 /* JS_HEAP_FAILS makes the engine fail the request to the heap number
@@ -1287,6 +1292,59 @@ int white_shape_hashed(JSValueConst obj)
     return JS_VALUE_GET_OBJ(obj)->shape->is_hashed;
 }
 
+/* The shapes on the lists of the collector of rt, in the shape hash table or
+   not: *count of them whose prototype is proto (an object), *parented of
+   those that hold a parent (js_shape_leave). Return how many shapes of rt
+   break the rule of parents: a shape holds a parent when and only when its
+   parent_ok says so, and then it is in the table, and so is its parent,
+   which has its prototype, one key less, the same keys and flags before its
+   last one, and a count of at least one. */
+int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented)
+{
+    struct list_head *heads[2] = { &rt->gc_obj_list, &rt->young_obj_list };
+    JSObject *pp = JS_VALUE_GET_OBJ(proto);
+    int k, i, bad = 0;
+
+    *count = *parented = 0;
+    for(k = 0; k < 2; k++) {
+        struct list_head *el;
+
+        list_for_each(el, heads[k]) {
+            JSGCObjectHeader *gp = list_entry(el, JSGCObjectHeader, link);
+            JSShape *sh, *ps;
+
+            if (js_rc(gp)->gc_obj_type != JS_GC_OBJ_TYPE_SHAPE)
+                continue;
+            sh = (JSShape *)gp;
+            ps = sh->parent;
+            if (sh->proto == pp) {
+                (*count)++;
+                if (ps)
+                    (*parented)++;
+            }
+            if (!ps) {
+                if (sh->parent_ok == JS_SHAPE_PARENT_HELD)
+                    bad++;
+                continue;
+            }
+            if (sh->parent_ok != JS_SHAPE_PARENT_HELD || !sh->is_hashed || !ps->is_hashed ||
+                ps->proto != sh->proto ||
+                ps->prop_count + 1 != sh->prop_count || js_rc(ps)->ref_count < 1) {
+                bad++;
+                continue;
+            }
+            for(i = 0; i < ps->prop_count; i++) {
+                if (get_shape_prop(ps)[i].atom != get_shape_prop(sh)[i].atom ||
+                    get_shape_prop(ps)[i].flags != get_shape_prop(sh)[i].flags) {
+                    bad++;
+                    break;
+                }
+            }
+        }
+    }
+    return bad;
+}
+
 /* ---- the atom a string is as a key ---- */
 
 /* The key_atom of the string v (a JS_TAG_STRING value). */
@@ -1553,6 +1611,47 @@ const uint8_t *white_regvm_code(JSValueConst f, int *code_len)
         return NULL;
     *code_len = rf->code_len;
     return rf->code;
+}
+
+/* the for in loops of the function f, converted, found by their pcmap
+   entries: n[0] the for_in_next the pass made FINEXT (its entry for the
+   next ends the four bytes of the instruction), n[1] those it made
+   W_FOR_IN_NEXT (two bytes), n[2] the get_array_el it made GETELE or
+   GETELET (five bytes), n[3] those it made GETEL or GETELT (four bytes).
+   -1 when f has no register code (engine/regvm-ops-window.h). */
+int white_regvm_forin_sites(JSValueConst f, int n[4])
+{
+    JSFunctionBytecode *b;
+    const RVFunc *rf;
+    int i;
+
+    n[0] = n[1] = n[2] = n[3] = 0;
+    if (JS_VALUE_GET_TAG(f) != JS_TAG_OBJECT ||
+        !js_class_has_bytecode(JS_VALUE_GET_OBJ(f)->class_id))
+        return -1;
+    b = JS_VALUE_GET_OBJ(f)->u.func.function_bytecode;
+    rf = b->rv;
+    if (rf == RV_UNCONVERTED || rf == RV_REFUSED || rf->arg_count < 0)
+        return -1;
+    for (i = 0; i < rf->pcmap_count; i++) {
+        const RVPcMask *m = &rf->pcmap[i];
+        if (m->old < 0 || m->old >= b->byte_code_len)
+            continue;
+        if (b->byte_code_buf[m->old] == OP_for_in_next) {
+            if (m->end >= 4 && rf->code[m->end - 4] == RV_FINEXT)
+                n[0]++;
+            else if (m->end >= 2 && rf->code[m->end - 2] == RV_W_FOR_IN_NEXT)
+                n[1]++;
+        } else if (b->byte_code_buf[m->old] == OP_get_array_el) {
+            if (m->end >= 5 && (rf->code[m->end - 5] == RV_GETELE ||
+                                rf->code[m->end - 5] == RV_GETELET))
+                n[2]++;
+            else if (m->end >= 4 && (rf->code[m->end - 4] == RV_GETEL ||
+                                     rf->code[m->end - 4] == RV_GETELT))
+                n[3]++;
+        }
+    }
+    return 0;
 }
 
 /* the for_of_start of the function f, converted: how many the pass made
@@ -2450,4 +2549,63 @@ long white_call_debt(JSContext *ctx, int direct, int *depth)
     if (rt->stack_debt != debt || rt->call_depth != d)
         return -2;
     return white_seen_debt - debt;
+}
+
+/* the year, month and day of the count of days from 1970-01-01 that
+   get_date_fields gives the getters of Date */
+void white_days_to_date(int64_t days, int *y, int *m, int *d)
+{
+    days_to_date(days, y, m, d);
+}
+
+/* white_array_fake_count gives the fast array a the count count and a length
+   of count, and gives back the count it had. Its block and its room stay as
+   they are: a test of an element added at 2^31 - 1, which cannot take the
+   32 GiB of such an array, puts the count back before anything reads past
+   the block (a collection, the free of a). */
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+    uint32_t old = p->u.array.count;
+
+    p->u.array.count = count;
+    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, count));
+    return old;
+}
+
+/* white_shape_fake_count gives the shape of the object o the property count
+   count, and gives back the count it had, or -1 when the shape is shared or
+   in the shape table (it must be o's own, as after a delete). Its blocks
+   stay as they are: a test of a shape at JS_SHAPE_PROP_MAX properties puts
+   the count back before anything reads past them. */
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count)
+{
+    JSShape *sh = JS_VALUE_GET_OBJ(o)->shape;
+    uint32_t old = sh->prop_count;
+
+    if (sh->is_hashed || js_rc(sh)->ref_count != 1)
+        return -1;
+    sh->prop_count = count;
+    return old;
+}
+
+/* white_shape_prop_max is JS_SHAPE_PROP_MAX. */
+uint32_t white_shape_prop_max(void)
+{
+    return JS_SHAPE_PROP_MAX;
+}
+
+/* white_set_array_from_first sets the first index of Array.from. */
+void white_set_array_from_first(long long k)
+{
+    white_array_from_first = k;
+}
+
+/* white_array_room gives the room of the block of the fast array a, -1 when
+   a is not a fast array. */
+int64_t white_array_room(JSValueConst a)
+{
+    JSObject *p = JS_VALUE_GET_OBJ(a);
+
+    return p->fast_array ? p->u.array.u1.size : -1;
 }

@@ -73,6 +73,6 @@ result reflect true Bnt 2
 result reflect default true 1
 result reflect true Bnt 4
 result reflect default true 2
-mem-end obj=237 atom=581 shape=143 prop=1055 jsfunc=21 cfunc=132 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=195 atom=541 shape=121 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=237 atom=581 shape=150 prop=1055 jsfunc=21 cfunc=132 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=195 atom=541 shape=122 prop=969 jsfunc=0 cfunc=132 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

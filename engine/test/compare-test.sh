@@ -30,7 +30,7 @@ fi
 cat "$FAKE_OUT"
 exit "${FAKE_RC:-0}"
 EOS
-for u in unit unit-oom unit-api unit-white; do printf '#!/bin/sh\nexit 0\n' > "$d/bin/$u"; done
+for u in unit unit-oom unit-api unit-white dtoa-test; do printf '#!/bin/sh\nexit 0\n' > "$d/bin/$u"; done
 chmod +x "$d/bin/"*
 printf 'hello\n' > "$d/want.txt"
 printf 'hello\n' > "$d/same.txt"

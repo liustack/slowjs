@@ -70,7 +70,7 @@ read_when:
 | 内存不足时，惰性属性保持惰性 | 内置函数或对象（`JSON.parse`、`Reflect`）或函数的 `prototype` 在第一次读它的属性时才创建。创建它占内部深度的一层，到了上限，这次读会抛 `RangeError`，属性也仍保持惰性。旧引擎在创建时内存不足，会让它在这个上下文的整个生命期里都是 `undefined`，所以之后的调用会抛可以捕获的 `TypeError`，而不是内存不足错误。现在下次读会重新创建。为全局对象创建的值如果引用没建成，以及经原型上这样的属性写入的值，也会丢失，释放运行时时还会因此 abort | `unit-oom`（`test_autoinit_oom`） |
 | 给代码要用的变量添加条目时内存不足，编译失败 | 编译器在函数的代码（或其中某个函数的代码）第一次用到 `this`、`new.target`、`arguments`、函数表达式的名字、home object 和派生类构造函数的 active function 时，会为它们添加变量，直接 eval 能用的变量也是这样添加。旧引擎添加失败时，把这个函数当作没有这个变量，再往外层找：名字变成了脚本的变量或全局变量，内存不足错误还挂着没处理，所以代码能跑起来却读到错的值，箭头函数里读 `arguments` 或函数名时，则在下标 -1 处读写变量，也就是数组之外。现在编译以内存不足错误失败 | `unit-white`（`test_added_vars_oom`） |
 | 编译所要的任何一个块被拒绝时，编译都以内存不足错误失败 | 解析器的前瞻（读到右括号为止的 token，用来区分箭头函数或解构赋值与表达式）把遇到的错误丢掉了，内存不足也一样：编译照常进行，错误却还挂着，或者猜错。现在它只丢掉语法错误，内存不足或中断会让编译失败。函数、类的默认构造函数和设置其字段的函数，拿了无法增长的常量池给出的 `-1` 当下标，最后落在一个 assert 上（旧引擎往池子之前写）。解构参数里没名字的参数，以及正则字面量的源码，添加时没有看结果，带标签的模板遇到非法转义时把内存不足当成了转义非法，把它的文本变成 `undefined`。在 `lre_compile` 里，分组名留下的一条消息，在一个失败的类之后被读成语法错误（`n`），写分组名失败也从没人看：正则编译出来却没有名字。现在这些情况都以内存不足错误让编译失败。只有出错路径变了。上游 QuickJS（19d6bd86）和 quickjs-ng（7a23d8e3）有同样的代码 | `unit-white`（`test_compile_one_failure`，在某一时刻让 `js_malloc_rt` 或 `js_realloc_rt` 失败） |
-| 造不出来的名字会抛内存不足错误 | 名字（atom）进运行时的 atom 表，表满了就增长一半。旧引擎在表长不动时没有造名字，也没抛任何东西，所以遇到新标识符的编译，以及用字符串造属性键的代码，会在没有挂起异常的情况下失败。现在造名字会抛内存不足错误，少数过去没有这个名字也继续往下走的调用方（编译器的字符串常量、内置函数的别名、函数的文件名、缩短元素下标超过 2^31 - 1 的数组）也就在那里停下 | `unit-oom`（`test_compile_names_oom`、`test_key_names_oom`） |
+| 造不出来的名字会抛内存不足错误 | 名字（atom）进运行时的 atom 表，表满了就增长一半。旧引擎在表长不动时没有造名字，也没抛任何东西，所以遇到新标识符的编译，以及用字符串造属性键的代码，会在没有挂起异常的情况下失败。现在造名字会抛内存不足错误，少数过去没有这个名字也继续往下走的调用方（编译器的字符串常量、内置函数的别名、函数的文件名）也就在那里停下。缩短元素下标超过 2^31 - 1 的数组后来不再造名字（[objects-and-shapes.md](objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败)） | `unit-oom`（`test_compile_names_oom`、`test_key_names_oom`） |
 
 
 ## 小 libc
@@ -1070,6 +1070,49 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 - `test_spread_refs`（`engine/test/unit-white.c`）：把一个对象、一个 80 个字符的字符串和一个 symbol 展开三次，分别进字面量和调用，源数组一个能被复制、一个被拒绝，同时让每次分配轮流失败，第三次展开时数组的增长也在其中。每次运行之后，每个元素的引用数都和之前一样：复制多留一个引用就会让它失败，而 `test_spread_alloc` 的整数元素看不出这一点。
 - `engine/test/compare/spread_iterator.js`（见上一节）覆盖复制不接手的迭代器。
 
+## 用 apply 传下参数时不造 arguments 对象
+
+发布版本：v0.31.1。
+
+`f.apply(this, arguments)` 是一个函数把全部参数原样传下去的写法：老式写法造出的类，构造函数就是这样（`function K() { this.initialize.apply(this, arguments); }`），还有在调用前后加一步的包装函数。参数列表简单的非严格函数，原来不管拿 arguments 做什么，进入时都先造出映射的 arguments 对象，因为只有严格函数才在读取需要时再造。随后 `apply` 把这个对象的长度和每个元素读进自己的一个列表（`build_arg_list`），再经 `JS_CallInternal` 调用 `f`，那里又开一轮寄存器循环。在 Apple M4 上，这样一次调用比直接调用 `f` 多约 1,650 条指令，还多占一层调用深度。
+
+V8 的 RayTrace 每轮迭代有 66,594 次这样的调用，都来自同一个这种函数。在仓库之外计数的 12 个基于常用库的 React 页面（recharts 和 d3、Redux Toolkit 和 immer、Radix、antd、styled-components 等）里，chart 每次渲染有 619 次，state 1,048 次，antd 468 次，radix 159 次，算上别的用法，chart 每次渲染造 13,844 个映射的 arguments 对象，antd 9,537 个，radix 1,813 个。tifa 的页面每次渲染最多造 171 个 arguments 对象。
+
+两处改动，都在 `engine/regvm-ops-args.h`：
+
+- **映射的 arguments 等读取需要时再造。** `rv_lazy_args` 现在也接受参数列表简单的非严格函数（`rv_args_mapped`）。`arguments.length` 和 `arguments[i]` 直接读帧（`ARGLEN`、`ARGGET`），对这个局部变量的其他读取先造出映射对象，用的是进入时用的那个函数（`rv_build_mapped_arguments`）。照旧拒绝的有：`arguments` 局部变量被捕获的函数（箭头函数或直接 `eval` 读了它）、生成器和 async 函数，现在再加上经 `with` 或直接 `eval` 引用参数的函数（`make_arg_ref`）。参数列表不简单的非严格代码，照旧在进入时造不映射的对象。
+- **`CALLMA`。** 一个带两个参数的方法调用，最后一个参数是这个延后造的局部变量，并且中间什么也没有就直接读到时，转换在这次调用的 `CALLM` 或 `CALLMD` 前面放一个 `CALLMA`。只要对象还没造出、方法是 `Function.prototype.apply`，`CALLMA` 就自己调用 `f`：把帧里的参数复制进这次调用的窗口作为参数，把 `apply` 留在结果的槽里，经慢入口（`rv_enter_args`）在同一个循环里进入 `f`，新帧的头里带上标志 `RV_DST_APPLY`。其他情况下，它把对象造进局部变量，作为最后一个参数传过去，由 `CALLM` 照旧调用 `apply`。
+
+### 为什么结果不变
+
+映射对象把参数个数以内的每个下标映射到参数本身，所以读到的是读取那一刻参数的值，而不是进入时的值。帧运行期间，它的槽里放着每个参数，捕获参数的闭包也经它的引用读写这个槽。超出参数个数的实参没有名字，除了对象本身没有东西能写它。所以在第一次需要它的读取时造出的对象，内容和进入时造出的对象在那一刻的内容相同，之后的读取看到的都是这同一个对象。严格函数的对象复制的是进入时的值，所以它仍然要求没有任何指令写参数。带 `make_arg_ref` 的函数也一并拒绝：这种函数很少，拒绝它不需要证明。
+
+下面几条全部成立时 `CALLMA` 才自己调用，否则照旧：
+
+- 局部变量还是 undefined：还没有读取造出过对象，所以脚本不可能改过它
+- 读到的方法是本 realm 的 `Function.prototype.apply`：一个 C 函数，函数是 `js_function_apply` 且 magic 为 0（`Reflect.apply` 和带展开的 `new` 用 2 和 1），realm 是本 realm。`apply` 的 getter 此时已经照旧跑过
+- `f` 是本 realm 的字节码函数，并且寄存器循环能运行它
+- 参数个数不超过 65,534，即 `apply` 检查的上限（`JS_MAX_LOCAL_VARS`），寄存器栈的当前段放得下这个帧，中断标志没有置位，没有待抛的不可捕获错误，调用深度没到上限，也就是循环内调用要做的那些检查
+
+拿本 realm 的 arguments 对象调用 `apply`，会读它的 `length` 和其下的每个下标。对象还没造出时，长度就是实参个数，每个下标都是对象自己的属性，值是参数此刻的值或传进来的实参，所以 `Object.prototype` 上的 getter 跑不到，而 `CALLMA` 复制的正是这些值。它像 `apply` 一样原样传 `this`，非严格的 `f` 照旧在入口处转换 `this`。绑定函数、Proxy、C 函数、类构造函数（照旧在自己的帧里抛错）、别的 realm 的函数、被换掉、删掉或在 `f` 上被遮住的 `apply`，以及已经造出的对象，都走原来的路。
+
+在 `f` 里或它下面造出的错误，栈里 `f` 和它的调用者之间照旧有 `at apply (native)`，和 C 调用 `apply` 时一样：遍历帧（`JSFrameWalk`，`engine/quickjs.c`）时，每个带 `RV_DST_APPLY` 的帧下面都给出一个 `apply` 的帧，它的函数就是调用者槽里留着的 `apply`。这种帧返回或展开时，先释放这个 `apply`，槽再拿到结果（`rv_apply_unpark`）。被调用的函数在入口处读中断标志，和循环里每次调用一样，所以 eval 超时和 `Interrupt` 能停下它里面的循环。有不可捕获错误待抛时，`CALLMA` 走原来的路，照旧拒绝这次调用。
+
+变了但脚本看不到的：不造 arguments 对象，也不造参数列表，一次调用分配更少，在内存上限下，内存不足的错误可能来得更晚，或者不来。传下去的调用只占一层调用深度，`apply` 原来占两层，所以经过它的递归更深：默认 `SetMaxStackSize` 下，非严格的从 2,497 层变成 4,988 层，中间隔一次调用的严格递归从 1,664 层变成 2,495 层。用数组调用 `f.apply` 照旧是 2,497 层。
+
+帧：`JS_RegvmRun`（amd64 上 256 字节，arm64 上 176）和 `JS_CallInternal`（112 和 96）的影子帧不变。`rv_callma` 占 80 和 64 字节，它在 `f` 运行前就返回，所以传下去的每一层不占影子栈，也不占 Go 栈，而 C 调用 `apply` 要占 `JS_CallInternal` 的帧和新一轮 `JS_RegvmRun` 的帧。转换阶段的函数 `rv_call` 在两种架构上都从 64 字节变成 128，只在转换时出现。`rv_args` 现在调用 `rv_build_mapped_arguments`（48 字节），原来是内联的。深度测试（`TestRegvmDepth`、`TestShadowStack*`、`TestCCallDepth`、`TestRegvmFrame`）照常通过。
+
+### 收益
+
+2026-11-15 对照 main 的 d7c86e16 计数（做法和更多数字见 [performance.md](../performance.zh-CN.md#用-apply-传下参数)）。Apple M4 上的本地 C 树：一次 `f.apply(this, arguments)` 调用从 2,874 条指令降到 1,516 条，非严格函数读 `arguments.length` 从 1,597 条降到 788 条。linux/amd64 上用 callgrind 数本地 C 树：RayTrace 每轮迭代少 23.35% 的指令，Earley 少 3.22%，V8 套件其余基准变化在 0.08% 以内，12 个 React 页面里 chart 每次渲染少 2.33%，radix 少 0.58%，styled 少 0.45%，antd 少 0.35%，其余最多多 0.15%。tifa 的页面不传参数，在本地 C 树上多 0.8% 到 1.6%，分散在 clang 本地编译出的 `JS_RegvmRun` 循环里。在用 `engine/pgo/loops.js` 里为这条路径加的那段重新训练 profile 的 Go 引擎上（M4），chart 少 2.57%，其余页面和 tifa 的页面的变化都在计数器的噪声以内，amd64 上用 callgrind 数，tifa 的页面多 0.04% 到 0.10%。每个页面的 HTML 都不变。
+
+### 测试
+
+- `engine/test/compare/apply_arguments.js`：在非严格和严格函数里调用 `f.apply(x, arguments)`，实参比参数少、一样多和多，调用前后写参数，读、写、留下或展开这个对象，每种被调用者和 `this`，`apply` 被换掉、经 getter 读取、被遮住和经 `call` 调用，`Reflect.apply`，被调用者经闭包写调用者的参数，递归，很多参数，以及被调用者抛出的错误。`engine/test/compare/sloppy_arguments_reads.js`：非严格函数里的 `arguments.length` 和 `arguments[key]`，每种键，经参数和经对象的写入，同一个参数名写两次。两个文件都是 Node 24 的输出，main 也给出同样的输出。
+- `engine/test/regvm/js/c-applyargs.js`：同样的写法，0 到 7 个和 300 个实参，丢弃结果，连续两次传下去，嵌套传下去，构造函数传给自己的 `init`，绑定函数、Proxy、类构造函数、C 函数，别的 realm 的函数和 `apply`，在被调用者里造出和抛出的错误的栈，以及经它递归的深度。`engine/test/regvm/js/e-applyargs-interrupt.js`：在传下去的调用里来一次中断。两者都有语料三种模式的金标准输出和注入集的金标准输出（`// inject-hit: CALLMA 1`）。
+- `test_regvm_args_oom`（`engine/test/unit-oom.c`）：延后造的映射对象和每种传下去的调用，同时让每次分配轮流失败。一遍让被调用者在内存上限下第一次被调用（走 C 的 `apply`），一遍让它事先转换好，内存在传下去的调用里耗尽，运行时释放时不能剩下任何块。`test_uncatchable_apply_forward`：不可捕获错误待抛之后，传下去的调用不运行被调用者。
+- `TestRegvmApplyArgumentsStops`：eval 超时和 `Interrupt` 能停下传给事先转换好的函数的调用里的循环，栈里被调用者和它的调用者之间有 `apply`，停下之后 VM 照常应答，它的运行时释放时不剩任何块。
+
 ## 热调用少传参数字
 
 发布：v0.30.6。
@@ -1129,3 +1172,42 @@ arm64 不变：它的 `ldr q` 和 `str q` 不需要对齐，pass 的这条规则
 收益：Crypto 每次迭代的指令在原生宿主上少 20%（amd64 和 M4），通过 Go API 少 22%（amd64 和 M4）：解密在 amd64 上从 1,120M 降到 899M，加密从 59.7M 降到 48.1M。读这种数组的一个元素约 94 条指令，原来 180 条（amd64，Crypto 的 callgrind），写一次 104 条，原来 199 条。一个读写这种数组的循环在 M4 上少 31% 的指令。读快数组元素数之外的下标，在 Array 和它的原型上什么都找不到，也走这一遍，少约 190 条指令。页面不做这种读：原生指令在 amd64 上变化不到 0.04%，HTML 相同，长 Markdown 少 0.44%。通过 Go API，它们在 amd64 上变化在 -0.14% 到 +0.28% 之间，因为改了的函数周围的生成代码重新排布了，在 M4 上用重新训练的 profile 少 0.14% 到 0.48%。代价：给不是快数组的 Array 加元素的写入，在走原来的路径之前要多查一次下标，在 M4 上每次多约 36 条指令（5%）。通过 `rv_putel_slow` 往快数组末尾追加，在 amd64 上多约 6 条，因为这个函数为另一个分支上的调用要在栈上多存两个值。在 Array 以外的对象上按整数键读，要多付一次放弃的调用：amd64 上约 25 条，M4 上约 7 条，EarleyBoyer 的第一部分因此在 amd64 上慢 0.32%。数字见 [performance.md](../performance.zh-CN.md#不再是快数组的数组)。
 
 改动在 C 里（`engine/regvm-ops-object.h`）。`engine/test/compare/array_index_slow.js` 和 Node 24 对照，读写这样的数组（从高到低填的、有空洞的、删过元素的、有带 getter 和 setter 的元素的、冻结的、密封的、不可扩展的、长度只读的、有一个只读元素的），键放在局部变量、临时寄存器和常量里，有 GETEL3（`+=`、`++`），键从 2^31 - 2 到 2^32，还有 `-1`、`-0`、`1.5`、`NaN` 和字符串 `"1"`、`"01"`、`"1.0"`、`"-0"`、`" 1"`。原型上有下标的（在 `Array.prototype` 和 `Object.prototype` 上，作为值、getter、setter 和只读属性），原型是异质对象的（Proxy、Int8Array、String 对象、`arguments`、快数组和不是快数组的 Array、`null`），还有改长度、`delete` 之后再读、Array 的子类和另一个 realm 的 Array。`engine/test/regvm/js/o-getel-index.js` 把每次读和 `Reflect.get` 比，把每次写（宽松模式和严格模式）和在一个同样造出来的孪生数组上的 `Reflect.set` 比，数运行了哪些 getter、setter 和陷阱以及它们的接收者，之后比较自有属性。它还在有元素 2^31 - 1 的数组上读写小于 0 的键，并在不是对象的值上跑 GETEL3。去掉对小于 0 的键的检查（读或写）、读时对访问器的检查、对原型链上异质对象或快数组元素的检查，写时对只读元素的检查，或者 GETEL3 对对象的检查，测试都会失败。读时对类的检查和写时对属性种类的检查，是让这条路径只用在它为之而做的对象上：去掉它们，结果仍然正确。它们的 golden 是改动之前的引擎写的，`o-getel-index.js` 的抛错注入 golden 也是。
+
+## for in 循环的下一个键在寄存器循环里取
+
+发布版本：v0.31.1。
+
+`for in` 循环的一步原来是寄存器循环的两个操作：先是 W_FOR_IN_NEXT，它调用 `rv_w_for_in_next`，再经它调用 `js_for_in_next`，把键和一个结束标志放进临时槽，然后按这个标志跳转。MUI 的订单页每次渲染走 34,096 步，长 Markdown 走 215,983 步。现在，`for_in_next` 后面跟着它的 `if_false`、而且没有跳转落到这个 `if_false` 上时（解析器给每个 `for in` 循环排的就是这个样子），转换把两者合成一个操作 FINEXT。迭代器按对象的 shape 遍历（见 [for in 循环持有它的对象的 shape](objects-and-shapes.zh-CN.md#for-in-循环持有它的对象的-shape)），而对象还是这个 shape 时，FINEXT 直接从 shape 里取下一个键，跳回循环体。其他的步照旧调用 `rv_w_for_in_next`，再按它给的标志跳转：`js_for_in_next` 的 shape 路径跳过的键、shape 已经变了的对象、从列表里取的键、原型链和循环结束。在 tifa 的页面上，一次渲染取的键有 98% 到 100% 来自循环开始时的 shape。
+
+为什么安全：这个操作对同一步做的事和 `js_for_in_next` 的 shape 路径一样，检查也一样，有一项不满足就什么都不做：
+
+- 值下面的临时槽放的是 `ForInIterator` 类的对象。`JS_ReadObject` 读进来的字节码可能在那里放任何东西，别的东西都走原路径，照旧抛错。
+- 迭代器持有一个 shape，它的位置还在这个 shape 的键里，对象也还是这个 shape。迭代器持有这个 shape 的引用，所以对对象的任何改动（加键、删键、把键改成不可枚举、getter、`Object.freeze`、新的原型）都会让对象换一个 shape，这一步就走原路径。
+- 这个位置上的键是字符串原子（`js_for_in_shape_key`，`js_for_in_next` 用的同一个检查），而且可枚举。
+
+它和 `js_for_in_next` 一样给出键的一个新引用，再把位置往后移。这条路径上不运行任何代码，也不分配内存。Proxy、数组、类型化数组、字符串、`arguments` 和原型链上的键都不走它。测试的抛错注入已经瞄准的那一步走原路径，所以注入能到达的地方和以前一样。FINEXT 不代替任何函数调用，所以有不可捕获的异常待处理时也没有区别：`js_for_in_next` 从来不看它。往回跳的轮询还在，权重也还是往回跳的权重，所以 `Interrupt` 和超时照旧能在任何一步停下循环。原路径抛错时（内存不足，原型链上 Proxy 的陷阱），值所在的临时槽是 `undefined`，归抛错那一项管。循环结束时 FINEXT 在值的临时槽里留下 `undefined`，循环后面对它的 `drop` 什么都不释放。帧大小不变：`JS_RegvmRun` 在 amd64 上还是 SHADOW 256，arm64 上 176，`JS_CallInternal` 是 112 和 96，递归能到的深度也一样。
+
+收益：在 amd64 上（callgrind，原生宿主），8 个键的循环里每一步从 155 条指令降到 89 条（在 LLVM 22 编译的原生宿主上，M4 从 174 条降到 111 条），MUI 订单页每次渲染少 1.12% 的指令，首页少 0.92%，商店商品页少 0.42%，React 的页面少 0.38%，工作台的 studio 页少 0.37%。代价：`JS_RegvmRun` 变了，在 `engine/pgo/train.sh` 重新训练之前，它的画像是过期的。数字见 [performance.md](../performance.zh-CN.md#for-in-循环的下一个键和对它的读取)。
+
+改动在 C 里（`engine/regvm-ops-window.h`）。`engine/test/compare/for_in_step.js` 打印的内容和 Node 24 一样，覆盖循环过程中对象被改动的各种情况：删键、加键、删了再加，把键改成 getter 或不可枚举，冻结对象，原型链上被遮住的键，不可枚举的键，getter，数组，类型化数组，字符串，`arguments`，键写进局部变量、参数、被捕获的绑定、全局变量、属性和解构目标，循环体抛错，`break`、`continue` 和 `return`，以及停在循环里、中间经过一次回收的生成器。`engine/test/regvm/js/o-forin-step.js` 跑 Node 没法对照的情况：两个领域的循环遍历两边的对象，两个领域的生成器停在循环里、中间经过几次回收，Proxy 陷阱的顺序，循环中设置原型，从列表取的键，以及 `with` 里的循环。它们的 golden 和 `o-forin-step.js` 的注入 golden 都由改动前的引擎写出。`engine/test/unit-white.c` 里的 `test_regvm_forin` 检查转换把哪些循环做成 FINEXT，`engine/test/unit-oom.c` 里的 `test_for_in_oom` 在每一档内存余量下跑循环，现在也会从 FINEXT 的原路径抛错。
+
+## 读 for in 循环刚给出的键
+
+发布版本：v0.31.1。
+
+tifa 页面上的 `for in` 循环大多会读刚拿到的键的值：`for (k in o) ... o[k]`，MUI 的订单页每次渲染 34,291 次，商店的商品页 11,940 次，工作台的 studio 页 7,989 次。每次读取原来是 GETEL 或 GETELT，用 `rv_getel_atom` 在 `o` 的 shape 里[查这个键的原子](#自身就是原子的字符串键按具名属性读取)。其实循环已经知道这个键在哪里：迭代器按对象的 shape 遍历，它最后给出的键就在它当前位置的前一个槽。转换遇到按解析器的样子排好的 `for in` 循环（`for_in_start`，跳到末尾的 `for_in_next`，它的 `if_false` 跳回到对键的 `put_loc` 或 `put_arg`），就为循环体记下键所在的局部变量或参数，以及迭代器所在的临时槽。循环体里的读取 `o[k]`，如果键就是那个局部变量，而迭代器还在它的临时槽里，就变成 GETELE（`o` 在临时槽里时是 GETELET），迭代器作为第四个操作数。`o` 的 shape 正是迭代器持有的 shape，键又正是迭代器位置前一个槽的原子时，这个操作直接读那个槽的值。没有原子的键，比如对数组、字符串或 `arguments` 循环给出的下标新字符串，直接走 GETEL 的通用路径（`rv_getel_slow`），不经过 `rv_getel_atom`，因为它对任何没有原子的键都会放弃。其他情况和 GETEL、GETELT 做的一样。
+
+为什么安全：只有当读取 `o[k]` 本来就会把这个槽当作自有数据属性找到时，这个操作才读它。这一点由下面的检查自己保证，和转换记下了什么无关：
+
+- `o` 是对象，键是知道原子的字符串（`key_atom`），第四个操作数是 `ForInIterator` 类的对象。`JS_ReadObject` 读进来的字节码可能在那个临时槽里放任何东西，别的东西都走原路径。
+- `o` 的 shape 是迭代器持有的 shape，而且迭代器已经过了第一个键。一个 shape 里每个键只出现一次，所以原子等于键的原子的那个槽，在这个 shape 的任何对象上都是 `o[k]` 会找到的自有属性。`o` 是不是循环的对象、循环体有没有改过 `k` 都没有关系：比较的是槽的原子和这次读取拿到的键的原子。
+- 这个槽是普通数据：getter 或 setter、全局对象的闭包变量、首次使用时才建立的属性（`JS_PROP_TMASK`）都走原路径。错误对象的 `stack` 也走原路径，`rv_getel_atom` 同样把它交给通用路径。
+- 没有原子的字符串键跳过 `rv_getel_atom`：不管对象是什么，它对这样的键都给不出结果，接着就是 `rv_getel_slow`，所以跳过它不改变任何结果。
+
+自有属性在对象的任何特殊行为之前、在原型之前就会被找到，所以 Proxy、数组、原型链上的 getter 都看不出区别。这条路径上不运行任何代码，也不分配内存。测试的抛错注入已经瞄准的读取走原路径，所以注入能到达的地方和以前一样。GETELE 不代替任何调用。帧大小不变：`JS_RegvmRun` 在 amd64 上还是 SHADOW 256，arm64 上 176，`JS_CallInternal` 是 112 和 96，递归能到的深度也一样。
+
+有些读取转换认不出来，它们仍是 GETEL：键放在属性或全局变量里（`for (t.p in o)`），被闭包捕获的 `let` 键，键是另一个变量的读取，循环体之外的读取，以及不是按解析器的样子排的循环。转换最多跟踪四层嵌套的循环，内层循环里读外层循环的键也能认出来。
+
+收益：在 amd64 上（callgrind，原生宿主），8 个键的循环里一次读取 `x = o[k]` 从 103 条指令降到 68 条，`x = o.c` 是 48 条，在 M4 上（LLVM 22 编译的原生宿主）从 88 条降到 67 条。在下一个键已经在寄存器循环里取的基础上，每次渲染的指令 MUI 订单页再少 0.64%，首页少 0.48%，React 的页面少 0.38%，商店首页和商品页少 0.21% 和 0.26%，工作台的 studio 页和统计页少 0.24% 和 0.19%，长 Markdown 少 0.09%。对数组循环并按键读元素（`compare/testdata` 的 `array_for_in`），两个改动合起来每一步从 603 条指令降到 560 条，在 M4 上从 572 条降到 541 条：下一个键还是走原路径，读取跳过了 `rv_getel_atom`。代价：在 `engine/pgo/train.sh` 重新训练之前，`rv_getel` 的画像和 `JS_RegvmRun` 的一样是过期的。数字见 [performance.md](../performance.zh-CN.md#for-in-循环的下一个键和对它的读取)。
+
+改动在 C 里（`engine/regvm-ops-object.h`、`engine/regvm-ops-window.h`、`engine/regvm-pass.h`）。`engine/test/compare/for_in_step.js` 和 `engine/test/regvm/js/o-forin-step.js`（见[上文](#for-in-循环的下一个键在寄存器循环里取)）在它们跑的每个循环里都读 `o[k]`，包括循环体改过 `k`、`o` 或 `o` 的 shape 之后，在 shape 相同的另一个对象上读，用 `o[k] +=` 和 `o[k]++` 读，以及通过记录 `get` 陷阱的 Proxy 读，还读重新造出来的键，以及在别的对象和字符串上读数组循环给出的键。`engine/test/unit-white.c` 里的 `test_regvm_forin` 检查转换把哪些读取做成 GETELE：键在 `var`、参数和 `let` 里，嵌套的循环，生成器，而键在属性里、被捕获的 `let`、别的键和循环之后的读取都不做。

@@ -25,6 +25,7 @@ The API is documented at [pkg.go.dev](https://pkg.go.dev/github.com/liustack/slo
 
 - **`*Error` fields `Uncatchable`, `OutOfMemory` and `Interrupted`** (v0.26.7): why a call ended, which no script can fake. [More](changes/go-api.md#error-says-why-a-call-ended)
 - **`Error()` of an `*Error` made in Go** (v0.26.17) is `Name: Message`, as `Error.prototype.toString` writes it, where it was empty. An error taken from JavaScript keeps the engine's text. [More](changes/go-api.md#error-of-an-error-made-in-go)
+- **`VM.TrackRejections(max)` and `VM.UnhandledRejections()`** (v0.31.1): keep the promises rejected with no handler, at most `max`, and take them after a script and its jobs, each reason read as an `*Error` with its texts cut to 8 KiB, to report what no handler took. A VM keeps none unless asked. While a read runs, both return an error to javascript it runs that calls them, and change nothing. [More](changes/go-api.md#trackrejections-and-unhandledrejections)
 
 ## Memory and GC
 
@@ -50,6 +51,7 @@ Each of these defines a function on the global object, written in C inside the e
 - **`VM.RegisterEscapeText(name)`** (v0.29.2): escapes text for HTML as React DOM's string renderer does (`&`, `<`, `>`, `"` and `'` become entities, and the argument becomes a string as in `"" + text`). With it in tifa, the pages of its example shop render in 0.974 of the time and its bench pages in 0.938. [More](changes/go-api.md#registerescapetext)
 - **`VM.RegisterCopyProps(name)`** (v0.29.3): does the work of the loop with which React's `createElement` and `cloneElement` copy the keys of their config into the props of an element. It copies only where its result and the loop's cannot differ, and answers `false` for any other config, which the script gives to the loop. With it in tifa, the pages of its example shop render in 0.988 and 0.989 of the time and its MUI pages in 0.980. [More](changes/go-api.md#registercopyprops)
 - **`VM.RegisterStartTag(name)` and `VM.RegisterEndTag(name)`** (v0.29.10): write the start tag of an element, with its attributes, style and text, as React DOM's server renderer does in `pushStartGenericElement`, and give its end tag as `endChunkForTag` does. The start tag function writes only where React's functions could write nothing else, and returns the caller's `decline` object for any other call, which the script gives to React. On the start and end tags of one render of tifa's example pages they run about a fifth of the instructions React's functions take. [More](changes/go-api.md#registerstarttag-and-registerendtag)
+- **Package `tifa`** (v0.31.1): `tifa.Register(vm)` sets a VM up as tifa sets up each VM of its pool: `URL`, `Intl`, `Temporal` and the functions named `__tifa_*` its bundles ask for, these among them. [More](changes/go-api.md#package-tifa)
 
 ## Without Go
 

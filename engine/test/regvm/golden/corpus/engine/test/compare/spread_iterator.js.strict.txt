@@ -80,6 +80,6 @@ result kept literal: [[[20,30],true],[[],true],[[40],true]]
 result kept call: [[[20,30],true],[[],true],[[40],true]]
 result kept new: [[[20,30],true],[[],true],[[40],true]]
 result kept super: [[[20,30],true],[[],true],[[40],true]]
-mem-end obj=208 atom=558 shape=149 prop=988 jsfunc=6 cfunc=133 array=1 fast_array=0 elements=0 binary=0
-mem-gc obj=196 atom=547 shape=141 prop=964 jsfunc=0 cfunc=133 array=1 fast_array=0 elements=0 binary=0
+mem-end obj=208 atom=558 shape=150 prop=988 jsfunc=6 cfunc=133 array=1 fast_array=0 elements=0 binary=0
+mem-gc obj=196 atom=547 shape=142 prop=964 jsfunc=0 cfunc=133 array=1 fast_array=0 elements=0 binary=0
 --- status exit 0

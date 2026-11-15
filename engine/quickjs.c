@@ -565,6 +565,12 @@ struct JSRuntime {
        before them keep their offsets. */
     uint32_t gc_join_depth;
     void *gc_join_sb[8];
+    /* the number the next rejection kept gets (JS_TrackRejections). It is
+       never reset, also when tracking is turned off and on again, so that a
+       mark read before still comes before every rejection kept since, and
+       it has 64 bits, so that it never wraps. At the end, so that the
+       fields before it keep their offsets. */
+    uint64_t rejection_seq;
 #ifdef RV_STATS
     /* the dispatches of each register op (JS_RegvmStat 1000 + op) */
     uint32_t rv_opcount[256];
@@ -800,6 +806,11 @@ struct JSContext {
     /* the atoms and the caches of JS_NewStartTagFunction and
        JS_NewEndTagFunction, or NULL until one of them ran (see js_start_tag) */
     struct JSEmitCache *emit_cache;
+    /* the fields 0 to 7 of get_date_fields for the time value date_key in
+       ms, local or UTC (date_fields_of), and INT64_MIN, which no time value
+       is, for none yet */
+    int64_t date_key;
+    double date_fields[8];
 };
 
 typedef union JSFloat64Union {
@@ -1273,9 +1284,13 @@ typedef struct JSProperty {
 #define JS_PROP_INITIAL_SIZE 2
 #define JS_PROP_INITIAL_HASH_SIZE 4 /* must be a power of two */
 
+/* the width of JSShapeProperty.hash_next, which holds the index of a property
+   plus one: a shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX) */
+#define JS_SHAPE_HASH_NEXT_BITS 26
+
 typedef struct JSShapeProperty {
-    uint32_t hash_next : 26; /* 0 if last in list */
-    uint32_t flags : 6;   /* JS_PROP_XXX */
+    uint32_t hash_next : JS_SHAPE_HASH_NEXT_BITS; /* 0 if last in list */
+    uint32_t flags : 32 - JS_SHAPE_HASH_NEXT_BITS;   /* JS_PROP_XXX */
     JSAtom atom; /* JS_ATOM_NULL = free property entry */
 } JSShapeProperty;
 
@@ -1297,6 +1312,13 @@ struct JSShape {
        in the table do not change (see js_own_key_kinds). Fits in the
        padding. */
     uint8_t for_in_keys;
+    /* whether the shape may take a parent (js_shape_leave): 0 while it may
+       and holds none, JS_SHAPE_PARENT_HELD while it holds one, and
+       JS_SHAPE_PARENT_NO once it was to take one with the Object.prototype
+       of that context as its prototype or with more than
+       JS_SHAPE_MAX_PROPS keys. Back to 0 when it lets its parent go or gets
+       a key in place, and in a copy. Fits in the padding. */
+    uint8_t parent_ok;
     uint32_t hash; /* current hash value */
     uint32_t prop_hash_mask; /* >= 2 */
     int prop_size; /* allocated properties */
@@ -1310,8 +1332,17 @@ struct JSShape {
     uint32_t parent_id;
     JSShape *shape_hash_next; /* in JSRuntime.shape_hash[h] list */
     JSObject *proto;
+    /* a reference to the shape an object left when add_property found this
+       one for its next key, or NULL (see js_shape_leave) */
+    JSShape *parent;
     uint32_t hash_table[]; /* prop_hash_mask + 1 elements */
     /* followed by JSShapeProperty prop[prop_size]; */
+};
+
+/* JSShape.parent_ok, besides 0 */
+enum {
+    JS_SHAPE_PARENT_NO = 1,
+    JS_SHAPE_PARENT_HELD,
 };
 
 /* JSObject.rv_fast */
@@ -3507,6 +3538,7 @@ size_t JS_FreeRuntime(JSRuntime *rt)
         js_free_rt(rt, e);
     }
     init_list_head(&rt->job_list);
+    JS_TrackRejections(rt, 0);
 
     /* don't remove the weak objects to avoid create new jobs with
        FinalizationRegistry */
@@ -3858,6 +3890,7 @@ JSContext *JS_NewContextRaw(JSRuntime *rt)
     ctx->iterator_ctor = JS_NULL;
     ctx->regexp_ctor = JS_NULL;
     ctx->promise_ctor = JS_NULL;
+    ctx->date_key = INT64_MIN;
     init_list_head(&ctx->loaded_modules);
 
     if (JS_AddIntrinsicBasicObjects(ctx)) {
@@ -4789,6 +4822,37 @@ JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n)
             return JS_ATOM_NULL;
         return js_new_string_atom(ctx, JS_VALUE_GET_STRING(val));
     }
+}
+
+/* The atom of the index n when there is one, or JS_ATOM_NULL, with no
+   reference taken. Unlike JS_NewAtomUInt32 it makes nothing, so it cannot
+   fail: no property is named n when the atom is not there. An index past
+   JS_ATOM_MAX_INT is a string atom, found as __JS_NewAtom finds it (its
+   characters may be 8 or 16 bits wide). */
+static JSAtom js_find_index_atom(JSRuntime *rt, uint32_t n)
+{
+    char buf[11];
+    uint32_t h, i;
+    size_t len, k;
+    JSAtomStruct *p;
+
+    if (n <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(n);
+    len = u32toa(buf, n);
+    h = hash_string8((const uint8_t *)buf, len, JS_ATOM_TYPE_STRING) &
+        JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0;
+         i = p->hash_next) {
+        p = rt->atom_array[i];
+        if (p->hash == h && p->atom_type == JS_ATOM_TYPE_STRING &&
+            p->len == len) {
+            for (k = 0; k < len && string_get(p, k) == (uint8_t)buf[k]; k++)
+                continue;
+            if (k == len)
+                return i;
+        }
+    }
+    return JS_ATOM_NULL;
 }
 
 static JSAtom JS_NewAtomInt64(JSContext *ctx, int64_t n)
@@ -7588,9 +7652,11 @@ static void js_shape_hash_unlink(JSRuntime *rt, JSShape *sh)
 /* The ids of the shapes of the shape hash table (JSShape.id and parent_id).
    A shape of the table gets a new id when it is made and each time it gets
    a key (add_shape_property), and the id it had then becomes its parent id.
-   Nothing else changes a shape of the table: js_shape_prepare_update takes a
-   shape out of it for good before its keys, flags or prototype change, and
-   gives it the id 0. The one place that changes flags in place without it,
+   find_hashed_shape_prop also gives the shape it finds one key after sh,
+   whose keys and flags it compared with those of sh, the id of sh as its
+   parent id. Nothing else changes a shape of the table:
+   js_shape_prepare_update takes a shape out of it for good before its
+   keys, flags or prototype change, and gives it the id 0. The one place that changes flags in place without it,
    js_closure_define_global_var, changes those of the global object, whose
    shape is never in the table: it is made out of the table
    (JS_NewObjectProtoClassAlloc), a shape made out of the table never goes
@@ -7654,6 +7720,8 @@ static inline JSShape *js_new_shape_nohash(JSContext *ctx, JSObject *proto,
     sh->is_hashed = FALSE;
     sh->inline_grew = FALSE;
     sh->for_in_keys = 0;
+    sh->parent = NULL;
+    sh->parent_ok = 0;
     return sh;
 }
 
@@ -7706,6 +7774,8 @@ static JSShape *js_clone_shape(JSContext *ctx, JSShape *sh1)
     js_rc(sh)->ref_count = 1;
     add_gc_object(ctx->rt, &sh->header, JS_GC_OBJ_TYPE_SHAPE);
     sh->is_hashed = FALSE;
+    sh->parent = NULL;
+    sh->parent_ok = 0;
     if (sh->proto) {
         JS_DupValue(ctx, JS_MKPTR(JS_TAG_OBJECT, sh->proto));
     }
@@ -7890,16 +7960,19 @@ static JSShape *js_shape_keep(JSRuntime *rt, JSShape *sh)
     return old;
 }
 
-static void js_free_shape0(JSRuntime *rt, JSShape *sh)
+/* Free sh, whose count is 0, or give it to the shape cache, and return the
+   parent it held (see js_shape_leave), whose count the caller drops. */
+static inline JSShape *js_free_shape1(JSRuntime *rt, JSShape *sh)
 {
     uint32_t i;
     JSShapeProperty *pr;
+    JSShape *parent;
 
     assert(js_rc(sh)->ref_count == 0);
     /* keep sh in the shape cache, or free the shape the cache let go */
     sh = js_shape_keep(rt, sh);
     if (!sh)
-        return;
+        return NULL;
     if (sh->is_hashed)
         js_shape_hash_unlink(rt, sh);
     if (sh->proto != NULL) {
@@ -7910,8 +7983,28 @@ static void js_free_shape0(JSRuntime *rt, JSShape *sh)
         JS_FreeAtomRT(rt, pr->atom);
         pr++;
     }
+    parent = sh->parent;
     remove_gc_object(&sh->header);
     js_free_rt(rt, sh);
+    return parent;
+}
+
+/* Drop the count of the parent a freed shape held, and free the parents
+   whose count gets to 0 one after another, so that a chain of shapes is
+   freed at one level of the C stack. Out of line: most shapes have no
+   parent. */
+static no_inline void js_free_shape_parents(JSRuntime *rt, JSShape *sh)
+{
+    while (sh != NULL && --js_rc(sh)->ref_count == 0)
+        sh = js_free_shape1(rt, sh);
+}
+
+static void js_free_shape0(JSRuntime *rt, JSShape *sh)
+{
+    JSShape *parent = js_free_shape1(rt, sh);
+
+    if (unlikely(parent != NULL))
+        js_free_shape_parents(rt, parent);
 }
 
 static void js_free_shape(JSRuntime *rt, JSShape *sh)
@@ -7925,6 +8018,20 @@ static void js_free_shape_null(JSRuntime *rt, JSShape *sh)
 {
     if (sh)
         js_free_shape(rt, sh);
+}
+
+/* Let go of the parent of sh (see js_shape_leave), when sh changes in a way
+   that makes it no longer the shape one key after its parent, and leave
+   whether sh may take one to be worked out again: its keys changed. */
+static void js_shape_drop_parent(JSRuntime *rt, JSShape *sh)
+{
+    JSShape *parent = sh->parent;
+
+    sh->parent_ok = 0;
+    if (parent) {
+        sh->parent = NULL;
+        js_free_shape(rt, parent);
+    }
 }
 
 /* The properties of an ordinary object made by OP_object_lit sit at the end
@@ -7960,6 +8067,16 @@ static JSProperty *js_resize_prop(JSContext *ctx, JSObject *p, uint32_t count,
     return js_realloc(ctx, p->prop, sizeof(new_prop[0]) * new_size);
 }
 
+/* The most properties a shape holds: hash_next and the hash table hold the
+   index of a property plus one, in JS_SHAPE_HASH_NEXT_BITS bits. Past it
+   the index would be cut and a lookup would miss a property that is there.
+   Upstream has no such limit. */
+#define JS_SHAPE_PROP_MAX ((1u << JS_SHAPE_HASH_NEXT_BITS) - 1)
+_Static_assert(JS_SHAPE_PROP_MAX < (1u << JS_SHAPE_HASH_NEXT_BITS),
+               "the index of a property plus one fits in hash_next");
+_Static_assert(JS_SHAPE_PROP_MAX <= INT32_MAX - 1, "the counts of a shape are ints");
+_Static_assert(sizeof(JSShapeProperty) == 8, "hash_next and flags share 32 bits");
+
 /* make space to hold at least 'count' properties */
 static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
                                        JSObject *p, uint32_t count)
@@ -7971,7 +8088,18 @@ static no_inline int resize_properties(JSContext *ctx, JSShape **psh,
     JSShape *old_sh;
 
     sh = *psh;
-    new_size = max_int(count, sh->prop_size * 3 / 2);
+    /* prop_size + prop_size / 2 is prop_size * 3 / 2, which overflows an
+       int past 715,827,882 */
+    new_size = max_uint32(count, (uint32_t)sh->prop_size + sh->prop_size / 2);
+    if (unlikely(new_size > JS_SHAPE_PROP_MAX)) {
+        /* an object of 2^26 - 1 properties, or the conversion of a fast
+           array of as many elements, asks for more */
+        if (count > JS_SHAPE_PROP_MAX) {
+            JS_ThrowRangeError(ctx, "too many properties");
+            return -1;
+        }
+        new_size = JS_SHAPE_PROP_MAX;
+    }
     /* Reallocate prop array first to avoid crash or size inconsistency
        in case of memory allocation failure */
     if (p) {
@@ -8148,6 +8276,8 @@ static int add_shape_property(JSContext *ctx, JSShape **psh,
     h = atom & hash_mask;
     pr->hash_next = sh->hash_table[h];
     sh->hash_table[h] = sh->prop_count;
+    /* sh grew in place: it is no longer one key after its parent */
+    js_shape_drop_parent(rt, sh);
     return 0;
 }
 
@@ -8219,6 +8349,10 @@ static JSShape *find_hashed_shape_prop(JSRuntime *rt, JSShape *sh,
                     abort();
 #endif
             }
+            /* sh1 starts with the keys of sh: the next shape of the id of
+               sh that gets this key finds sh1 by it, without comparing its
+               keys (a store that changes nothing when sh1 was found so) */
+            sh1->parent_id = sh->id;
             return sh1;
         }
     next: ;
@@ -9975,6 +10109,9 @@ static void mark_children(JSRuntime *rt, JSGCObjectHeader *gp,
             if (sh->proto != NULL) {
                 mark_func(rt, &sh->proto->header);
             }
+            if (sh->parent != NULL) {
+                mark_func(rt, &sh->parent->header);
+            }
         }
         break;
     case JS_GC_OBJ_TYPE_JS_CONTEXT:
@@ -11458,22 +11595,28 @@ static JSString *js_backtrace_func_name(JSContext *ctx, JSValueConst fun)
 /* a walk of the frames of the stack for a stack trace: each JSStackFrame,
    and for the one of an entry of the register loop (JS_MODE_REGVM) each of
    its frames, from the top frame it saved (cur_sp, at the pc cur_pc) down
-   to its entry frame (engine/regvm-run.h) */
+   to its entry frame (engine/regvm-run.h). A frame of the loop that CALLMA
+   entered for Function.prototype.apply has the frame of apply right below
+   it, as the C call of apply had one (rv_frame_applied). */
 typedef struct JSFrameWalk {
     JSStackFrame *sf;
     JSValue *F;          /* a frame of the register loop in sf, or NULL */
     const uint8_t *pc;   /* the pc of F */
+    BOOL apply;          /* at the frame of apply below F */
 } JSFrameWalk;
 
 static JSValue rv_frame_func(JSValue *F);
 static uint32_t rv_frame_pc(JSValue *F, const uint8_t *pc);
 static JSValue *rv_frame_caller(JSValue *F, const uint8_t **ppc);
+static BOOL rv_frame_applied(JSValue *F);
+static JSValue rv_frame_apply(JSValue *F);
 
 static void js_frame_enter(JSFrameWalk *w, JSStackFrame *sf)
 {
     w->sf = sf;
     w->F = NULL;
     w->pc = NULL;
+    w->apply = FALSE;
     if (sf && (sf->js_mode & JS_MODE_REGVM)) {
         w->F = sf->cur_sp;
         w->pc = sf->cur_pc;
@@ -11483,11 +11626,24 @@ static void js_frame_enter(JSFrameWalk *w, JSStackFrame *sf)
 static void js_frame_next(JSFrameWalk *w)
 {
     if (w->F) {
+        if (!w->apply && rv_frame_applied(w->F)) {
+            w->apply = TRUE;
+            return;
+        }
+        w->apply = FALSE;
         w->F = rv_frame_caller(w->F, &w->pc);
         if (w->F)
             return;
     }
     js_frame_enter(w, w->sf->prev_frame);
+}
+
+/* the function of the frame of w */
+static JSValueConst js_frame_func(const JSFrameWalk *w)
+{
+    if (!w->F)
+        return w->sf->cur_func;
+    return w->apply ? rv_frame_apply(w->F) : rv_frame_func(w->F);
 }
 
 /* record the frame of w in f. With hold set, f holds the bytecode, so it
@@ -11496,7 +11652,7 @@ static void js_backtrace_frame(JSContext *ctx, JSBacktraceFrame *f,
                                const JSFrameWalk *w, BOOL hold)
 {
     JSFunctionBytecode *b;
-    JSValueConst func = w->F ? rv_frame_func(w->F) : w->sf->cur_func;
+    JSValueConst func = js_frame_func(w);
 
     f->func_name = js_backtrace_func_name(ctx, func);
     b = JS_GetFunctionBytecode(func);
@@ -11862,7 +12018,7 @@ static int js_backtrace_count(JSContext *ctx, int backtrace_flags,
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
             continue;
         }
-        b = JS_GetFunctionBytecode(w.F ? rv_frame_func(w.F) : w.sf->cur_func);
+        b = JS_GetFunctionBytecode(js_frame_func(&w));
         if (b && b->func_name == JS_ATOM__eval_)
             *ptop_level = TRUE;
         n++;
@@ -14076,6 +14232,62 @@ JSValue JS_GetPropertyStr(JSContext *ctx, JSValueConst this_obj,
     return ret;
 }
 
+/* add_property found new_sh in the shape hash table as the shape one key
+   after sh, the shape of an object that now moves to new_sh, and the
+   reference of the object to sh was the last one (its count is 0). Make sh
+   the parent of new_sh, which takes that reference, or free sh.
+
+   `new C()` starts each object from the empty shape of C.prototype, and
+   nothing kept the shapes between that empty one and the shape the
+   constructor ends with: the objects of C all have their last shape. So each
+   object made a new empty shape and grew it in place key by key, until it
+   found the shape of an object of C made before, and freed its own then. A
+   shape found this way now holds the shape the object leaves, so the shapes
+   one key apart stay in the shape hash table as long as an object of the
+   last one lives: after a few objects, the next one finds the empty shape
+   and every shape after it, and makes and frees none. Only a shape that
+   would be freed is kept this way, so that add_property pays nothing more
+   when it finds a shape: it is the shape an object made for itself, which
+   the objects of a constructor leave as the chain forms.
+
+   A parent has the prototype of new_sh, and its keys are the keys of new_sh
+   but the last, so it holds alive no object and no atom that new_sh does
+   not hold: only its own memory, until new_sh is freed. It stays the shape
+   one key before new_sh: a shape in the table changes only by growing in
+   place (add_shape_property) or by leaving the table for good
+   (js_shape_prepare_update), and both let go of the parent. Shapes whose
+   prototype is the Object.prototype of ctx get no parent: the shape cache
+   keeps those (js_shape_keep). A parent is not taken past JS_SHAPE_MAX_PROPS
+   keys, so a chain is at most that long. Both are worked out once for each
+   shape (parent_ok), the first time it would take a parent. */
+static no_inline void js_shape_leave(JSContext *ctx, JSShape *new_sh, JSShape *sh)
+{
+    if (new_sh->parent_ok == 0) {
+        /* the prototype and the keys of a shape in the table do not change
+           while it is there, but by add_shape_property, which sets
+           parent_ok to 0 again */
+        if (new_sh->proto != JS_VALUE_GET_PTR(ctx->class_proto[JS_CLASS_OBJECT]) &&
+            new_sh->prop_count <= JS_SHAPE_MAX_PROPS) {
+            js_rc(sh)->ref_count = 1;
+            new_sh->parent = sh;
+            new_sh->parent_ok = JS_SHAPE_PARENT_HELD;
+            return;
+        }
+        new_sh->parent_ok = JS_SHAPE_PARENT_NO;
+    }
+    js_free_shape0(ctx->rt, sh);
+}
+
+/* add_property lets go of the reference of its object to sh, the shape the
+   object leaves for new_sh: the last one goes to new_sh or frees sh. A
+   function of its own, as js_free_shape was there, so that add_property has
+   the branches it had and keeps its profile (engine/pgo/README.md). */
+static void js_shape_release(JSContext *ctx, JSShape *new_sh, JSShape *sh)
+{
+    if (unlikely(--js_rc(sh)->ref_count <= 0))
+        js_shape_leave(ctx, new_sh, sh);
+}
+
 /* Note: the property value is not initialized. Return NULL if memory
    error. */
 static JSProperty *add_property(JSContext *ctx,
@@ -14124,7 +14336,7 @@ static JSProperty *add_property(JSContext *ctx,
             }
             js_shape_found(ctx);
             p->shape = js_dup_shape(new_sh);
-            js_free_shape(ctx->rt, sh);
+            js_shape_release(ctx, new_sh, sh);
             return &p->prop[new_sh->prop_count - 1];
         } else if (js_rc(sh)->ref_count != 1 || js_shape_keepable(ctx, sh)) {
             /* if the shape is shared, or the shape cache can keep it, clone
@@ -14419,20 +14631,21 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
             if (d <= sh->prop_count) {
                 JSAtom atom;
 
-                /* faster to iterate */
+                /* faster to iterate. The shape is made p's own first, the
+                   one step that can fail, and nothing has changed then:
+                   delete_property then cannot fail, and an index is looked
+                   up with no atom made for it. */
+                if (js_shape_prepare_update(ctx, p, NULL))
+                    return -1;
                 while (cur_len > len) {
-                    atom = JS_NewAtomUInt32(ctx, cur_len - 1);
-                    if (atom == JS_ATOM_NULL) {
-                        /* the elements from cur_len on are gone */
-                        set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, cur_len));
-                        return -1;
-                    }
-                    ret = delete_property(ctx, p, atom);
-                    JS_FreeAtom(ctx, atom);
-                    if (unlikely(!ret)) {
-                        /* unlikely case: property is not
-                           configurable */
-                        break;
+                    atom = js_find_index_atom(ctx->rt, cur_len - 1);
+                    if (atom != JS_ATOM_NULL) {
+                        ret = delete_property(ctx, p, atom);
+                        if (unlikely(!ret)) {
+                            /* unlikely case: property is not
+                               configurable */
+                            break;
+                        }
                     }
                     cur_len--;
                 }
@@ -14484,20 +14697,26 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
     return TRUE;
 }
 
-/* return -1 if exception */
+/* return -1 if exception. A fast array holds at most 2^31 - 1 elements (an
+   index of one is an int atom), and so does its room, so that an element
+   added after 2^31 - 1 elements is past the room and comes to the test of
+   expand_fast_array_append before the length or the block changes. new_len
+   is at most 2^31 - 1 (each caller tests it). */
 static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
-    uint32_t new_size;
-    size_t slack;
+    uint32_t new_size, size = p->u.array.u1.size;
+    size_t room, slack;
     JSValue *new_array_prop;
-    /* XXX: potential arithmetic overflow */
-    new_size = max_int(new_len, p->u.array.u1.size * 3 / 2);
+
+    /* size * 3 / 2, which overflows 32 bits past 2^32 / 3: with the room at
+       most 2^31 - 1 this does not */
+    new_size = max_uint32(new_len, size + size / 2);
     new_array_prop = js_realloc2(ctx, p->u.array.u.values, sizeof(JSValue) * new_size, &slack);
     if (!new_array_prop)
         return -1;
-    new_size += slack / sizeof(*new_array_prop);
+    room = (size_t)new_size + slack / sizeof(*new_array_prop);
     p->u.array.u.values = new_array_prop;
-    p->u.array.u1.size = new_size;
+    p->u.array.u1.size = unlikely(room > INT32_MAX) ? INT32_MAX : room;
     return 0;
 }
 
@@ -14508,23 +14727,56 @@ static int expand_fast_array(JSContext *ctx, JSObject *p, uint32_t new_len)
 #define JS_ARRAY_MIN_ROOM 8
 #endif
 
-/* expand_fast_array for an array that new_len elements are appended to */
+/* expand_fast_array for an array that new_len elements are appended to. Past
+   2^31 - 1 elements it is an error: an element added after them, by any way
+   to add one, comes here and fails before the length or the block changes. */
 static int expand_fast_array_append(JSContext *ctx, JSObject *p, uint32_t new_len)
 {
+    if (unlikely(new_len > INT32_MAX)) {
+        JS_ThrowRangeError(ctx, "invalid array length");
+        return -1;
+    }
     if (p->u.array.u1.size == 0 && new_len < JS_ARRAY_MIN_ROOM)
         new_len = JS_ARRAY_MIN_ROOM;
     return expand_fast_array(ctx, p, new_len);
 }
 
+/* The room for the element of add_fast_array_element, of new_len elements:
+   0, or -1 on exception. A length that cannot be written is tested first,
+   so that a store that fails on it allocates nothing: then it returns 1,
+   with no room made, and add_fast_array_element throws as it did. A
+   function of its own, so that an element added with room is the code it
+   was. */
+static no_inline int add_fast_array_room(JSContext *ctx, JSObject *p,
+                                         uint32_t new_len)
+{
+    if (JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+        new_len > (uint32_t)JS_VALUE_GET_INT(p->prop[0].u.value) &&
+        !(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))
+        return 1;
+    return expand_fast_array_append(ctx, p, new_len);
+}
+
 /* Preconditions: 'p' must be of class JS_CLASS_ARRAY, p->fast_array =
-   TRUE and p->extensible = TRUE */
+   TRUE and p->extensible = TRUE. After 2^31 - 1 elements it throws a
+   RangeError (expand_fast_array_append), where upstream b25da59 has each
+   caller test the index and convert the array, which then fails as well
+   (resize_properties) and costs a test on each element added. As in
+   b25da59, a length that cannot be written is tested before the room is
+   made (add_fast_array_room), and the room is made before the length
+   changes, so that a failure leaves the length. */
 static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                                          JSValue val, int flags)
 {
     uint32_t new_len, array_len;
     /* extend the array by one */
-    /* XXX: convert to slow array if new_len > 2^31-1 elements */
     new_len = p->u.array.count + 1;
+    if (unlikely(new_len > p->u.array.u1.size)) {
+        if (unlikely(add_fast_array_room(ctx, p, new_len) < 0)) {
+            JS_FreeValue(ctx, val);
+            return -1;
+        }
+    }
     /* update the length if necessary. We assume that if the length is
        not an integer, then if it >= 2^31.  */
     if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT)) {
@@ -14535,12 +14787,6 @@ static inline int add_fast_array_element(JSContext *ctx, JSObject *p,
                 return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
             }
             p->prop[0].u.value = JS_NewInt32(ctx, new_len);
-        }
-    }
-    if (unlikely(new_len > p->u.array.u1.size)) {
-        if (expand_fast_array_append(ctx, p, new_len)) {
-            JS_FreeValue(ctx, val);
-            return -1;
         }
     }
     p->u.array.u.values[new_len - 1] = val;
@@ -15184,29 +15430,59 @@ static int JS_CreateProperty(JSContext *ctx, JSObject *p,
                 } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
                     /* convert the fast array to normal array */
                 convert_to_array:
+                    /* the tests that refuse the element come first: the
+                       conversion can fail (too many properties, no
+                       memory), and it would then throw where the
+                       element is refused */
+                    if (!p->extensible)
+                        goto not_extensible;
+                    JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                    if (idx >= len &&
+                        unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
+                        return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
                     if (convert_fast_array_to_array(ctx, p))
                         return -1;
                     goto generic_array;
                 }
             } else if (JS_AtomIsArrayIndex(ctx, &idx, prop)) {
-                JSProperty *plen;
-                JSShapeProperty *pslen;
             generic_array:
                 /* adding the element fails when the array is not extensible,
                    and the length then stays as it is */
                 if (!p->extensible)
                     goto not_extensible;
-                /* update the length field */
-                plen = &p->prop[0];
-                JS_ToUint32(ctx, &len, plen->u.value);
-                if ((idx + 1) > len) {
-                    pslen = get_shape_prop(p->shape);
-                    if (unlikely(!(pslen->flags & JS_PROP_WRITABLE)))
+                JS_ToUint32(ctx, &len, p->prop[0].u.value);
+                if (idx >= len) {
+                    if (unlikely(!(get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE)))
                         return JS_ThrowTypeErrorReadOnly(ctx, flags, JS_ATOM_length);
-                    /* XXX: should update the length after defining
-                       the property */
-                    len = idx + 1;
-                    set_value(ctx, &plen->u.value, JS_NewUint32(ctx, len));
+                    /* the element is added as at the end of this function
+                       for an object that is not the global object, and the
+                       length is set once it is there, as
+                       ArrayDefineOwnProperty sets it: adding it can fail
+                       (too many properties, no memory) */
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        prop_flags = (flags & (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE)) |
+                            JS_PROP_GETSET;
+                    } else {
+                        prop_flags = flags & JS_PROP_C_W_E;
+                    }
+                    pr = add_property(ctx, p, prop, prop_flags);
+                    if (unlikely(!pr))
+                        return -1;
+                    if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
+                        pr->u.getset.getter = NULL;
+                        if ((flags & JS_PROP_HAS_GET) && JS_IsFunction(ctx, getter))
+                            pr->u.getset.getter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, getter));
+                        pr->u.getset.setter = NULL;
+                        if ((flags & JS_PROP_HAS_SET) && JS_IsFunction(ctx, setter))
+                            pr->u.getset.setter = JS_VALUE_GET_OBJ(JS_DupValue(ctx, setter));
+                    } else if (flags & JS_PROP_HAS_VALUE) {
+                        pr->u.value = JS_DupValue(ctx, val);
+                    } else {
+                        pr->u.value = JS_UNDEFINED;
+                    }
+                    /* the length is the first property of an array */
+                    set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, idx + 1));
+                    return TRUE;
                 }
             }
         } else if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
@@ -15352,6 +15628,8 @@ static int js_shape_prepare_update(JSContext *ctx, JSObject *p,
         } else {
             js_shape_hash_unlink(ctx->rt, sh);
             sh->is_hashed = FALSE;
+            /* its keys, flags or prototype change next (see js_shape_leave) */
+            js_shape_drop_parent(ctx->rt, sh);
         }
         /* out of the table for good: no id (see JS_SHAPE_ID_MAX) */
         sh->id = 0;
@@ -15399,6 +15677,15 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
  redo_prop_update:
     prs = find_own_property(&pr, p, prop);
     if (prs) {
+        /* the [[DefineOwnProperty]] of a module namespace asks for the
+           property first, which reads the binding: it throws while the
+           binding is not initialized */
+        if (unlikely((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) &&
+            p->class_id == JS_CLASS_MODULE_NS &&
+            JS_IsUninitialized(*pr->u.var_ref->pvalue)) {
+            JS_ThrowReferenceErrorUninitialized(ctx, prs->atom);
+            return -1;
+        }
         /* the range of the Array length property is always tested before */
         if ((prs->flags & JS_PROP_LENGTH) && (flags & JS_PROP_HAS_VALUE)) {
             uint32_t array_length;
@@ -15425,6 +15712,11 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
             goto redo_prop_update;
         }
 
+        /* A define that changes the flags of the property makes the shape
+           p's own (js_shape_prepare_update), and copying a shared shape can
+           run out of memory. Each path below does that before it changes
+           anything (a getter, a value, the length of an array), so that a
+           define that fails leaves the property as it was. */
         if (flags & (JS_PROP_HAS_VALUE | JS_PROP_HAS_WRITABLE |
                      JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
             if (flags & (JS_PROP_HAS_GET | JS_PROP_HAS_SET)) {
@@ -15470,6 +15762,12 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                             goto not_configurable;
                         }
                     }
+                    /* the flags set at the end */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if (((prs->flags ^ flags) & mask) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                 }
                 if (flags & JS_PROP_HAS_GET) {
                     if (pr->u.getset.getter)
@@ -15529,6 +15827,19 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                 }
                 if ((prs->flags & JS_PROP_TMASK) == JS_PROP_VARREF) {
+                    /* the variable made read-only below, or the flags set
+                       at the end. A module namespace refuses a read-only
+                       export below, and a define that is refused copies
+                       nothing (its exports are not configurable, so their
+                       flags are not changed at the end either). */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) &
+                        (JS_PROP_CONFIGURABLE | JS_PROP_ENUMERABLE);
+                    if ((((prs->flags ^ flags) & mask) ||
+                         ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                          JS_PROP_HAS_WRITABLE &&
+                          p->class_id != JS_CLASS_MODULE_NS)) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         if (p->class_id == JS_CLASS_MODULE_NS) {
                             /* JS_PROP_WRITABLE is always true for variable
@@ -15562,6 +15873,13 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                         }
                     }
                 } else if (prs->flags & JS_PROP_LENGTH) {
+                    /* the length made read-only below. A shape that
+                       set_array_length compacts is p's own too. */
+                    if ((flags & (JS_PROP_HAS_WRITABLE | JS_PROP_WRITABLE)) ==
+                        JS_PROP_HAS_WRITABLE &&
+                        (prs->flags & JS_PROP_WRITABLE) &&
+                        js_shape_prepare_update(ctx, p, &prs))
+                        return -1;
                     if (flags & JS_PROP_HAS_VALUE) {
                         /* Note: no JS code is executable because
                            'val' is guaranted to be a Uint32 */
@@ -15583,16 +15901,18 @@ int JS_DefineProperty(JSContext *ctx, JSValueConst this_obj,
                     }
                     return res;
                 } else {
+                    /* the flags before the value, which cannot fail */
+                    mask = (flags >> JS_PROP_HAS_SHIFT) & JS_PROP_C_W_E;
+                    if ((prs->flags ^ flags) & mask) {
+                        if (js_shape_prepare_update(ctx, p, &prs))
+                            return -1;
+                        prs->flags = (prs->flags & ~mask) | (flags & mask);
+                    }
                     if (flags & JS_PROP_HAS_VALUE) {
                         JS_FreeValue(ctx, pr->u.value);
                         pr->u.value = JS_DupValue(ctx, val);
                     }
-                    if (flags & JS_PROP_HAS_WRITABLE) {
-                        if (js_update_property_flags(ctx, p, &prs,
-                                                     (prs->flags & ~JS_PROP_WRITABLE) |
-                                                     (flags & JS_PROP_WRITABLE)))
-                            return -1;
-                    }
+                    return TRUE;
                 }
             }
         }
@@ -35528,7 +35848,7 @@ JSAtom JS_GetScriptOrModuleName(JSContext *ctx, int n_stack_levels)
             return JS_ATOM_NULL;
     }
     for(;;) {
-        func = w.F ? rv_frame_func(w.F) : w.sf->cur_func;
+        func = js_frame_func(&w);
         if (JS_VALUE_GET_TAG(func) != JS_TAG_OBJECT)
             return JS_ATOM_NULL;
         p = JS_VALUE_GET_OBJ(func);
@@ -44751,7 +45071,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 12
+#define BC_VERSION 13
 
 typedef struct BCWriterState {
     JSContext *ctx;
@@ -48379,6 +48699,137 @@ exception:
     return JS_EXCEPTION;
 }
 
+/* Object.isSealed, Object.isFrozen, Object.seal and Object.freeze of an
+   object whose own properties are all in its shape answer or change them in
+   a pass over the shape, without listing the keys and looking each one up:
+   an ordinary object, or an array (the elements of a fast array are made
+   properties of the shape first, as the generic path does). On such an
+   object listing the keys and reading or defining each runs no code, so the
+   order of the steps cannot be seen and one pass gives what the generic
+   path gives. A property that is a binding (JS_PROP_VARREF, the global
+   object) or made when first read (JS_PROP_AUTOINIT) leaves the object to the
+   generic path, as is every other object. Private names are not keys. A
+   pass reads the interrupt flag every JS_SHAPE_PASS_STEP properties. */
+#define JS_SHAPE_PASS_STEP 65536
+
+/* what js_shape_test_integrity and js_shape_set_integrity return for an
+   object they leave to the generic path */
+#define JS_SHAPE_PASS_GENERIC 2
+
+/* whether the generic path lists the key of prs: not a deleted property or
+   a private name */
+static BOOL js_shape_prop_is_key(JSContext *ctx, const JSShapeProperty *prs)
+{
+    return prs->atom != JS_ATOM_NULL &&
+        JS_AtomGetKind(ctx, prs->atom) != JS_ATOM_KIND_PRIVATE;
+}
+
+/* the object of js_shape_test_integrity and js_shape_set_integrity: one
+   whose own properties are all in its shape, once the elements of a fast
+   array are */
+static BOOL js_shape_pass_object(JSObject *p)
+{
+    return !p->is_exotic || p->class_id == JS_CLASS_ARRAY;
+}
+
+/* TestIntegrityLevel of p, which is not extensible: TRUE when no key is
+   configurable and, if is_frozen, no data property is writable (as the
+   generic path, it reads JS_PROP_WRITABLE, which an accessor never has).
+   Return JS_SHAPE_PASS_GENERIC for an object it does not answer for, and -1
+   when the interrupt flag stops it. */
+static int js_shape_test_integrity(JSContext *ctx, JSObject *p, BOOL is_frozen)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i, end, n, bad, res;
+
+    if (!js_shape_pass_object(p))
+        return JS_SHAPE_PASS_GENERIC;
+    /* the elements of a fast array are configurable */
+    if (p->fast_array && p->u.array.count != 0)
+        return FALSE;
+    sh = p->shape;
+    n = sh->prop_count;
+    /* JS_PROP_VARREF is a bit of JS_PROP_AUTOINIT too */
+    bad = JS_PROP_CONFIGURABLE | JS_PROP_VARREF |
+        (is_frozen ? JS_PROP_WRITABLE : 0);
+    res = TRUE;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if (likely(!(prs->flags & bad)))
+                continue;
+            /* even when an earlier property says no: the generic path may
+               throw at a binding that comes earlier in the order of the keys */
+            if ((prs->flags & JS_PROP_TMASK) >= JS_PROP_VARREF)
+                return JS_SHAPE_PASS_GENERIC;
+            if (js_shape_prop_is_key(ctx, prs))
+                res = FALSE;
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    return res;
+}
+
+/* SetIntegrityLevel of p once it is not extensible: every key not
+   configurable and, if freeze, every data property not writable. Return
+   TRUE when done, JS_SHAPE_PASS_GENERIC for an object it does not do, and
+   -1 with an exception (out of memory, or the interrupt flag). The shape
+   is made one that only p holds before a flag changes, as JS_DefineProperty
+   does (js_shape_prepare_update), and is left as it is when no flag
+   changes. */
+static int js_shape_set_integrity(JSContext *ctx, JSObject *p, BOOL freeze)
+{
+    JSShape *sh;
+    JSShapeProperty *prs;
+    int i, end, n, clear, t;
+    BOOL change;
+
+    if (!js_shape_pass_object(p))
+        return JS_SHAPE_PASS_GENERIC;
+    clear = JS_PROP_CONFIGURABLE | (freeze ? JS_PROP_WRITABLE : 0);
+    sh = p->shape;
+    n = sh->prop_count;
+    change = FALSE;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if ((prs->flags & JS_PROP_TMASK) >= JS_PROP_VARREF)
+                return JS_SHAPE_PASS_GENERIC;
+            if ((prs->flags & clear) && js_shape_prop_is_key(ctx, prs))
+                change = TRUE;
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    /* the first define of an element does this in the generic path, and
+       makes the shape one that only p holds */
+    if (p->fast_array && p->u.array.count != 0) {
+        if (convert_fast_array_to_array(ctx, p))
+            return -1;
+        change = TRUE;
+    }
+    if (!change)
+        return TRUE;
+    if (js_shape_prepare_update(ctx, p, NULL))
+        return -1;
+    sh = p->shape;
+    n = sh->prop_count;
+    for(i = 0; i < n; i = end) {
+        end = min_int(n, i + JS_SHAPE_PASS_STEP);
+        for(prs = get_shape_prop(sh) + i; i < end; i++, prs++) {
+            if (!(prs->flags & clear) || !js_shape_prop_is_key(ctx, prs))
+                continue;
+            t = prs->flags & JS_PROP_TMASK;
+            prs->flags &= ~(t == JS_PROP_GETSET ? JS_PROP_CONFIGURABLE : clear);
+        }
+        if (end < n && js_poll_interrupts(ctx))
+            return -1;
+    }
+    return TRUE;
+}
+
 static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv, int freeze_flag)
 {
@@ -48399,6 +48850,11 @@ static JSValue js_object_seal(JSContext *ctx, JSValueConst this_val,
     }
 
     p = JS_VALUE_GET_OBJ(obj);
+    res = js_shape_set_integrity(ctx, p, freeze_flag);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res != JS_SHAPE_PASS_GENERIC)
+        return JS_DupValue(ctx, obj);
     flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
     if (JS_GetOwnPropertyNamesInternal(ctx, &props, &len, p, flags))
         return JS_EXCEPTION;
@@ -48442,7 +48898,21 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
     if (!JS_IsObject(obj))
         return JS_TRUE;
 
+    /* TestIntegrityLevel asks first whether the object is extensible, and
+       an extensible object is neither sealed nor frozen: the keys of a proxy
+       are not asked for then */
+    res = JS_IsExtensible(ctx, obj);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res)
+        return JS_FALSE;
+
     p = JS_VALUE_GET_OBJ(obj);
+    res = js_shape_test_integrity(ctx, p, is_frozen);
+    if (res < 0)
+        return JS_EXCEPTION;
+    if (res != JS_SHAPE_PASS_GENERIC)
+        return JS_NewBool(ctx, res);
     flags = JS_GPN_STRING_MASK | JS_GPN_SYMBOL_MASK;
     if (JS_GetOwnPropertyNamesInternal(ctx, &props, &len, p, flags))
         return JS_EXCEPTION;
@@ -48463,10 +48933,7 @@ static JSValue js_object_isSealed(JSContext *ctx, JSValueConst this_val,
             }
         }
     }
-    res = JS_IsExtensible(ctx, obj);
-    if (res < 0)
-        return JS_EXCEPTION;
-    res ^= 1;
+    res = TRUE;
 done:
     JS_FreePropertyEnum(ctx, props, len);
     return JS_NewBool(ctx, res);
@@ -49565,6 +50032,13 @@ fail:
     return JS_EXCEPTION;
 }
 
+/* JS_ARRAY_FROM_FIRST() is the first index of Array.from, 0. white.c sets one
+   near 2^32, so that a test reaches the indices and lengths that pass 32 bits
+   without as many calls. */
+#ifndef JS_ARRAY_FROM_FIRST
+#define JS_ARRAY_FROM_FIRST() 0
+#endif
+
 static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                              int argc, JSValueConst *argv)
 {
@@ -49614,7 +50088,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         next_method = JS_GetProperty(ctx, enum_obj, JS_ATOM_next);
         if (JS_IsException(next_method))
             goto exception;
-        for (k = 0;; k++) {
+        for (k = JS_ARRAY_FROM_FIRST();; k++) {
             v = JS_IteratorNext(ctx, enum_obj, next_method, 0, NULL, &done);
             if (JS_IsException(v))
                 goto exception;
@@ -49622,7 +50096,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 break;
             if (mapping) {
                 args[0] = v;
-                args[1] = JS_NewInt32(ctx, k);
+                args[1] = JS_NewInt64(ctx, k);
                 v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
@@ -49649,7 +50123,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
         JS_FreeValue(ctx, v);
         if (JS_IsException(r))
             goto exception;
-        for(k = 0; k < len; k++) {
+        for(k = JS_ARRAY_FROM_FIRST(); k < len; k++) {
             if ((k & 1023) == 1023 && js_poll_interrupts(ctx))
                 goto exception;
             v = JS_GetPropertyInt64(ctx, arrayLike, k);
@@ -49657,7 +50131,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 goto exception;
             if (mapping) {
                 args[0] = v;
-                args[1] = JS_NewInt32(ctx, k);
+                args[1] = JS_NewInt64(ctx, k);
                 v2 = js_call(ctx, mapfn, this_arg, 2, args);
                 JS_FreeValue(ctx, v);
                 v = v2;
@@ -49669,7 +50143,7 @@ static JSValue js_array_from(JSContext *ctx, JSValueConst this_val,
                 goto exception;
         }
     }
-    if (JS_SetProperty(ctx, r, JS_ATOM_length, JS_NewUint32(ctx, k)) < 0)
+    if (JS_SetProperty(ctx, r, JS_ATOM_length, JS_NewInt64(ctx, k)) < 0)
         goto exception;
     goto done;
 
@@ -50845,7 +51319,7 @@ static no_inline int js_array_push_grow(JSContext *ctx, JSObject *p, uint32_t ne
 
     /* the growth of the block of elements (expand_fast_array) */
     js_trigger_gc_block(ctx->rt, sizeof(JSValue) *
-                        (size_t)(max_int(new_len, size * 3 / 2) - size));
+                        (size_t)(max_uint32(new_len, size + size / 2) - size));
     return expand_fast_array_append(ctx, p, new_len);
 }
 
@@ -65761,8 +66235,160 @@ void JS_SetHostPromiseRejectionTracker(JSRuntime *rt,
                                        JSHostPromiseRejectionTracker *cb,
                                        void *opaque)
 {
+    JS_TrackRejections(rt, 0); /* frees the rejections kept, if any */
     rt->host_promise_rejection_tracker = cb;
     rt->host_promise_rejection_tracker_opaque = opaque;
+}
+
+/* The rejections a host asked the runtime to keep (JS_TrackRejections): the
+   promises rejected while no handler was attached, with their reasons,
+   oldest first, until a handler is attached or the host takes them. The
+   tracker of the runtime points to the list, so a runtime that keeps none
+   runs the rejection of a promise as before. The values it holds are
+   references of their own, which the collector counts as it counts those of
+   the job list: what the list holds stays alive until it is taken. */
+typedef struct JSRejection {
+    struct list_head link;
+    JSValue promise, reason;
+    uint64_t seq; /* the order it was kept in (rt->rejection_seq) */
+} JSRejection;
+
+typedef struct JSRejections {
+    struct list_head list; /* JSRejection.link */
+    uint32_t max, count;
+    uint32_t dropped; /* not kept since the host last read it */
+} JSRejections;
+
+static void js_rejection_free(JSRuntime *rt, JSRejections *r, JSRejection *e)
+{
+    list_del(&e->link);
+    r->count--;
+    JS_FreeValueRT(rt, e->promise);
+    JS_FreeValueRT(rt, e->reason);
+    js_free_rt(rt, e);
+}
+
+/* js_track_rejection is the tracker of a runtime that keeps rejections. It
+   allocates with js_malloc_rt, which throws nothing: a rejection it has no
+   room or no memory for is counted, never an error of the script. */
+static void js_track_rejection(JSContext *ctx, JSValueConst promise,
+                               JSValueConst reason, BOOL is_handled,
+                               void *opaque)
+{
+    JSRuntime *rt = ctx->rt;
+    JSRejections *r = opaque;
+    JSRejection *e;
+    struct list_head *el;
+
+    if (is_handled) {
+        list_for_each(el, &r->list) {
+            e = list_entry(el, JSRejection, link);
+            if (JS_VALUE_GET_PTR(e->promise) == JS_VALUE_GET_PTR(promise)) {
+                js_rejection_free(rt, r, e);
+                break;
+            }
+        }
+        return;
+    }
+    e = NULL;
+    if (r->count < r->max)
+        e = js_malloc_rt(rt, sizeof(*e));
+    if (!e) {
+        if (r->dropped != UINT32_MAX)
+            r->dropped++;
+        return;
+    }
+    e->promise = JS_DupValueRT(rt, promise);
+    e->reason = JS_DupValueRT(rt, reason);
+    e->seq = rt->rejection_seq++;
+    list_add_tail(&e->link, &r->list);
+    r->count++;
+}
+
+static JSRejections *js_rejections(JSRuntime *rt)
+{
+    if (rt->host_promise_rejection_tracker != js_track_rejection)
+        return NULL;
+    return rt->host_promise_rejection_tracker_opaque;
+}
+
+int JS_TrackRejections(JSRuntime *rt, uint32_t max)
+{
+    JSRejections *r = js_rejections(rt);
+    struct list_head *el, *el1;
+
+    if (max == 0) {
+        if (r) {
+            list_for_each_safe(el, el1, &r->list)
+                js_rejection_free(rt, r, list_entry(el, JSRejection, link));
+            js_free_rt(rt, r);
+            rt->host_promise_rejection_tracker = NULL;
+            rt->host_promise_rejection_tracker_opaque = NULL;
+        }
+        return 0;
+    }
+    if (!r) {
+        r = js_malloc_rt(rt, sizeof(*r));
+        if (!r)
+            return -1;
+        init_list_head(&r->list);
+        r->count = 0;
+        r->dropped = 0;
+        rt->host_promise_rejection_tracker = js_track_rejection;
+        rt->host_promise_rejection_tracker_opaque = r;
+    }
+    r->max = max;
+    return 0;
+}
+
+uint64_t JS_RejectionMark(JSRuntime *rt)
+{
+    return rt->rejection_seq;
+}
+
+/* the oldest rejection kept, when it was kept before the mark, or NULL */
+static JSRejection *js_rejection_before(JSRuntime *rt, uint64_t mark)
+{
+    JSRejections *r = js_rejections(rt);
+    JSRejection *e;
+
+    if (!r || list_empty(&r->list))
+        return NULL;
+    e = list_entry(r->list.next, JSRejection, link);
+    /* kept at or after the mark: the oldest is, so are the others */
+    if (e->seq >= mark)
+        return NULL;
+    return e;
+}
+
+int JS_HasRejection(JSRuntime *rt, uint64_t mark)
+{
+    return js_rejection_before(rt, mark) != NULL;
+}
+
+JSValue JS_TakeRejection(JSRuntime *rt, uint64_t mark)
+{
+    JSRejection *e = js_rejection_before(rt, mark);
+    JSValue reason;
+
+    if (!e)
+        return JS_UNINITIALIZED;
+    reason = e->reason;
+    e->reason = JS_UNDEFINED;
+    js_rejection_free(rt, js_rejections(rt), e);
+    return reason;
+}
+
+uint32_t JS_TakeDroppedRejections(JSRuntime *rt)
+{
+    JSRejections *r = js_rejections(rt);
+    uint32_t n;
+
+    if (!r)
+        return 0;
+    n = r->dropped;
+    r->dropped = 0;
+    return n;
 }
 
 static void fulfill_or_reject_promise(JSContext *ctx, JSValueConst promise,
@@ -67484,38 +68110,100 @@ static int64_t days_in_year(int64_t y) {
     return 365 + !(y % 4) - !(y % 100) + !(y % 400);
 }
 
-/* return the year, update days */
-static int64_t year_from_days(int64_t *days) {
-    int64_t y, d1, nd, d = *days;
-    y = floor_div(d * 10000, 3652425) + 1970;
-    /* the initial approximation is very good, so only a few
-       iterations are necessary */
-    for(;;) {
-        d1 = d - days_from_year(y);
-        if (d1 < 0) {
-            y--;
-            d1 += days_in_year(y);
-        } else {
-            nd = days_in_year(y);
-            if (d1 < nd)
-                break;
-            d1 -= nd;
-            y++;
-        }
-    }
-    *days = d1;
-    return y;
-}
-
 static int const month_days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
 static char const month_names[] = "JanFebMarAprMayJunJulAugSepOctNovDec";
 static char const day_names[] = "SunMonTueWedThuFriSat";
 
-static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
-                                       double fields[minimum_length(9)], int is_local, int force)
+/* the year, the month (0 to 11) and the day of the month (1 to 31) of a
+   count of days from 1970-01-01, with no loop and no division but by
+   constants, after Neri and Schneider, "Euclidean affine functions and their
+   application to calendar algorithms" (2022). The count is moved to start on
+   0000-03-01 (719468 days before 1970-01-01), so that a year of the count
+   starts in March and ends with 29 February, plus 700 cycles of 400 years
+   (146097 days each): every day from -102,987,368 to 970,754,455, which holds
+   the -100,000,000 to 100,000,000 days of a time value and a day of time zone
+   past either end, is then an n >= 0 with 4 * n + 3 below 2^32. It gives
+   what the loops that stepped the year and counted off the months gave, for
+   every day of that range of a time value (test_days_to_date in
+   engine/test/unit-white.c). */
+static void days_to_date(int64_t days, int *py, int *pm, int *pd)
+{
+    uint32_t n, n1, c, nc, n2, z, ny, n3, m, d, j;
+    uint64_t p2;
+
+    n = (uint32_t)(days + 719468 + 146097 * 700);
+    /* the century of the count, and the day in it */
+    n1 = 4 * n + 3;
+    c = n1 / 146097;
+    nc = n1 % 146097 / 4;
+    /* the year in the century, and the day in the year */
+    n2 = 4 * nc + 3;
+    p2 = (uint64_t)2939745 * n2;
+    z = (uint32_t)(p2 >> 32);
+    ny = (uint32_t)p2 / 2939745 / 4;
+    /* the month, 3 to 14 for March to February, and the day in it */
+    n3 = 2141 * ny + 197913;
+    m = n3 >> 16;
+    d = (n3 & 0xffff) / 2141;
+    /* January and February are in the next year of the calendar */
+    j = ny >= 306;
+    *py = (int)(100 * c + z + j) - 400 * 700;
+    *pm = (int)(j ? m - 12 : m) - 1;
+    *pd = (int)d + 1;
+}
+
+/* fields 0 to 7 of get_date_fields for d, a time value in ms, already
+   moved to local time when that is asked */
+static no_inline void date_fields_find(int64_t d, double fields[minimum_length(8)])
+{
+    int64_t days, wd, h, m, s, ms;
+    int y, mon, md;
+
+    /* result is >= 0, we can use % */
+    h = math_mod(d, 86400000);
+    days = (d - h) / 86400000;
+    ms = h % 1000;
+    h = (h - ms) / 1000;
+    s = h % 60;
+    h = (h - s) / 60;
+    m = h % 60;
+    h = (h - m) / 60;
+    wd = math_mod(days + 4, 7); /* week day */
+    days_to_date(days, &y, &mon, &md);
+    fields[0] = y;
+    fields[1] = mon;
+    fields[2] = md;
+    fields[3] = h;
+    fields[4] = m;
+    fields[5] = s;
+    fields[6] = ms;
+    fields[7] = wd;
+}
+
+/* the fields 0 to 7 of d as date_fields_find gives them, kept in the
+   context for the last d asked: a page reads several getters of one Date,
+   or of copies of it, in a row. They depend on d alone, so no change of a
+   Date can make them wrong: a setter gives the Date a new time value, which
+   is another key. */
+static inline const double *date_fields_of(JSContext *ctx, int64_t d)
+{
+    if (unlikely(ctx->date_key != d)) {
+        date_fields_find(d, ctx->date_fields);
+        ctx->date_key = d;
+    }
+    return ctx->date_fields;
+}
+
+/* the time value of the Date obj in ms in *pd, moved to local time with
+   is_local, and the offset of local time in minutes in *ptz: TRUE, FALSE
+   for NaN (0 and TRUE with force), -1 with an exception when obj is not a
+   Date */
+static inline int date_time_value(JSContext *ctx, JSValueConst obj, int is_local,
+                                  int force, int64_t *pd, int *ptz)
 {
     double dval;
-    int64_t d, days, wd, y, i, md, h, m, s, ms, tz = 0;
+    int64_t d;
+    int tz = 0;
 
     if (JS_ThisTimeValue(ctx, &dval, obj))
         return -1;
@@ -67531,35 +68219,24 @@ static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
             d += tz * 60000;
         }
     }
+    *pd = d;
+    *ptz = tz;
+    return TRUE;
+}
 
-    /* result is >= 0, we can use % */
-    h = math_mod(d, 86400000);
-    days = (d - h) / 86400000;
-    ms = h % 1000;
-    h = (h - ms) / 1000;
-    s = h % 60;
-    h = (h - s) / 60;
-    m = h % 60;
-    h = (h - m) / 60;
-    wd = math_mod(days + 4, 7); /* week day */
-    y = year_from_days(&days);
+static __exception int get_date_fields(JSContext *ctx, JSValueConst obj,
+                                       double fields[minimum_length(9)], int is_local, int force)
+{
+    int64_t d;
+    int tz, res, i;
+    const double *f;
 
-    for(i = 0; i < 11; i++) {
-        md = month_days[i];
-        if (i == 1)
-            md += days_in_year(y) - 365;
-        if (days < md)
-            break;
-        days -= md;
-    }
-    fields[0] = y;
-    fields[1] = i;
-    fields[2] = days + 1;
-    fields[3] = h;
-    fields[4] = m;
-    fields[5] = s;
-    fields[6] = ms;
-    fields[7] = wd;
+    res = date_time_value(ctx, obj, is_local, force, &d, &tz);
+    if (res <= 0)
+        return res;
+    f = date_fields_of(ctx, d);
+    for (i = 0; i < 8; i++)
+        fields[i] = f[i];
     fields[8] = tz;
     return TRUE;
 }
@@ -67649,21 +68326,23 @@ static JSValue get_date_field(JSContext *ctx, JSValueConst this_val,
                               int argc, JSValueConst *argv, int magic)
 {
     // get_date_field(obj, n, is_local)
-    double fields[9];
-    int res, n, is_local;
+    int64_t d;
+    int res, n, is_local, tz;
+    double v;
 
     is_local = magic & 0x0F;
     n = (magic >> 4) & 0x0F;
-    res = get_date_fields(ctx, this_val, fields, is_local, 0);
+    res = date_time_value(ctx, this_val, is_local, 0, &d, &tz);
     if (res < 0)
         return JS_EXCEPTION;
     if (!res)
         return JS_NAN;
 
+    v = date_fields_of(ctx, d)[n];
     if (magic & 0x100) {    // getYear
-        fields[0] -= 1900;
+        v -= 1900;
     }
-    return JS_NewFloat64(ctx, fields[n]);
+    return JS_NewFloat64(ctx, v);
 }
 
 static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
@@ -67703,14 +68382,64 @@ static JSValue set_date_field(JSContext *ctx, JSValueConst this_val,
     return JS_SetThisTimeValue(ctx, this_val, d);
 }
 
+/* v in decimal at buf + pos, with at least ndigits digits, and a minus sign
+   before it when it is negative, or a plus sign when it is not and plus is
+   set: what snprintf's "%0*d" with a width of ndigits plus the sign gives,
+   and "%+0*d" with plus. Returns the position after it. */
+static int date_put_int(char *buf, int pos, int v, int ndigits, BOOL plus)
+{
+    char digits[10];
+    uint32_t u;
+    int n = 0;
+
+    if (v < 0) {
+        buf[pos++] = '-';
+        u = -(uint32_t)v;
+    } else {
+        if (plus)
+            buf[pos++] = '+';
+        u = v;
+    }
+    do {
+        digits[n++] = '0' + u % 10;
+        u /= 10;
+    } while (u != 0);
+    while (n < ndigits)
+        digits[n++] = '0';
+    while (n > 0)
+        buf[pos++] = digits[--n];
+    return pos;
+}
+
+/* the three letters of a name of names at index i, at buf + pos */
+static int date_put_name(char *buf, int pos, const char *names, int i)
+{
+    buf[pos] = names[i * 3];
+    buf[pos + 1] = names[i * 3 + 1];
+    buf[pos + 2] = names[i * 3 + 2];
+    return pos + 3;
+}
+
+/* h, m and s as hh:mm:ss at buf + pos */
+static int date_put_time(char *buf, int pos, int h, int m, int s)
+{
+    pos = date_put_int(buf, pos, h, 2, FALSE);
+    buf[pos++] = ':';
+    pos = date_put_int(buf, pos, m, 2, FALSE);
+    buf[pos++] = ':';
+    return date_put_int(buf, pos, s, 2, FALSE);
+}
+
 /* fmt:
    0: toUTCString: "Tue, 02 Jan 2018 23:04:46 GMT"
    1: toString: "Wed Jan 03 2018 00:05:22 GMT+0100 (CET)"
    2: toISOString: "2018-01-02T23:02:56.927Z"
    3: toLocaleString: "1/2/2018, 11:40:40 PM"
    part: 1=date, 2=time 3=all
-   XXX: should use a variant of strftime().
- */
+   The digits are written by hand, as snprintf's "%02d", "%0*d" and the
+   like gave them before: a call of snprintf took about 900 instructions,
+   and toString made three. The longest string, the toString of a year of
+   six digits and a minus sign, is 36 characters. */
 static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                                int argc, JSValueConst *argv, int magic)
 {
@@ -67748,34 +68477,49 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 1) { /* date part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s, %02d %.3s %0*d ",
-                            day_names + wd * 3, d,
-                            month_names + mon * 3, 4 + (y < 0), y);
+            /* "%.3s, %02d %.3s %0*d " */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ',';
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
+            buf[pos++] = ' ';
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%.3s %.3s %02d %0*d",
-                            day_names + wd * 3,
-                            month_names + mon * 3, d, 4 + (y < 0), y);
+            /* "%.3s %.3s %02d %0*d" */
+            pos = date_put_name(buf, pos, day_names, wd);
+            buf[pos++] = ' ';
+            pos = date_put_name(buf, pos, month_names, mon);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = ' ';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ' ';
             }
             break;
         case 2:
-            if (y >= 0 && y <= 9999) {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%04d", y);
-            } else {
-                pos += snprintf(buf + pos, sizeof(buf) - pos,
-                                "%+07d", y);
-            }
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "-%02d-%02dT", mon + 1, d);
+            /* "%04d" for 0 to 9999, else "%+07d", then "-%02d-%02dT" */
+            if (y >= 0 && y <= 9999)
+                pos = date_put_int(buf, pos, y, 4, FALSE);
+            else
+                pos = date_put_int(buf, pos, y, 6, TRUE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '-';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = 'T';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d/%02d/%0*d", mon + 1, d, 4 + (y < 0), y);
+            /* "%02d/%02d/%0*d" */
+            pos = date_put_int(buf, pos, mon + 1, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, d, 2, FALSE);
+            buf[pos++] = '/';
+            pos = date_put_int(buf, pos, y, 4, FALSE);
             if (part == 3) {
                 buf[pos++] = ',';
                 buf[pos++] = ' ';
@@ -67786,12 +68530,16 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
     if (part & 2) { /* time part */
         switch(fmt) {
         case 0:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             break;
         case 1:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d GMT", h, m, s);
+            /* "%02d:%02d:%02d GMT", the sign, "%02d%02d" */
+            pos = date_put_time(buf, pos, h, m, s);
+            memcpy(buf + pos, " GMT", 4);
+            pos += 4;
             if (tz < 0) {
                 buf[pos++] = '-';
                 tz = -tz;
@@ -67799,18 +68547,23 @@ static JSValue get_date_string(JSContext *ctx, JSValueConst this_val,
                 buf[pos++] = '+';
             }
             /* tz is >= 0, can use % */
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d%02d", tz / 60, tz % 60);
+            pos = date_put_int(buf, pos, tz / 60, 2, FALSE);
+            pos = date_put_int(buf, pos, tz % 60, 2, FALSE);
             /* XXX: tack the time zone code? */
             break;
         case 2:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d.%03dZ", h, m, s, ms);
+            /* "%02d:%02d:%02d.%03dZ" */
+            pos = date_put_time(buf, pos, h, m, s);
+            buf[pos++] = '.';
+            pos = date_put_int(buf, pos, ms, 3, FALSE);
+            buf[pos++] = 'Z';
             break;
         case 3:
-            pos += snprintf(buf + pos, sizeof(buf) - pos,
-                            "%02d:%02d:%02d %cM", (h + 11) % 12 + 1, m, s,
-                            (h < 12) ? 'A' : 'P');
+            /* "%02d:%02d:%02d %cM" */
+            pos = date_put_time(buf, pos, (h + 11) % 12 + 1, m, s);
+            buf[pos++] = ' ';
+            buf[pos++] = (h < 12) ? 'A' : 'P';
+            buf[pos++] = 'M';
             break;
         }
     }

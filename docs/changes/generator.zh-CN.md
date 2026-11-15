@@ -1,5 +1,5 @@
 ---
-summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，第二份输入普通循环，它的限制和检查），以及有栈帧的寄存器入口叶子函数的 Go 声明'
+summary: '引擎从 C 生成时的改动：make gen 用 tifa 页面训练出的性能画像编译（它是什么，怎么发现的，它可以决定什么、哪些被关掉，为什么安全，过期的画像损失什么，第二份输入普通循环，它的限制和检查），有栈帧的寄存器入口叶子函数的 Go 声明，以及 phi 从每个来源块拿到的那一个局部变量地址'
 read_when:
   - 想知道 make gen 为什么编译两遍，或 engine/pgo/profile.txt 有什么用
   - make gen 打印了以 "warning: profile:" 或 "profile:" 开头的行，或者改了一处没碰到某个生成函数的 C 之后，那个函数变了
@@ -8,6 +8,7 @@ read_when:
   - 重新训练画像，或取入一个改了寄存器循环的 QuickJS 提交
   - train.sh 在检查 engine/pgo/loops.js 时停下，或者想知道为什么不拿微基准训练
   - go vet 对某个生成的 .s 文件报 `function memmove missing Go declaration` 之类的错
+  - opt 在影子栈 pass 里停下，报 `PHI node has multiple entries for the same basic block with different incoming values!`
 ---
 
 # 生成器
@@ -164,3 +165,15 @@ LLVM 证明 `switch` 的某个值不可能出现时，跳转表里这个值的�
 为什么安全：这一项对应的值，LLVM 已经证明 `switch` 拿不到，所以它从不会被走到，原生构建和生成的代码都一样。检查仍然要求这一项落在 llc 给它的位置上。
 
 测试：`internal/goasm/gen/testdata/check/mini.c` 里的 `hole` 是一个带这种项的 `switch`。`TestPostLinkCheck` 检查 llc 的这一项确实指向代码末尾，检查能通过，并且把这一项改到别的块上会被拒绝。
+
+## phi 从每个来源块只拿一个局部变量地址
+
+版本：v0.31.1。
+
+影子栈 pass（`internal/goasm/gen/pass/shadow.cpp`）把每个局部变量搬到影子栈上，在每个用到它的地方写出它的地址，也就是参数 0 加上它的偏移。对 phi 来说，这个地方是值所来自的那个块的末尾。以前它给每个用处各做一个地址，而一个多次指向同一个块的 phi（同一个 `switch` 的三个分支跳到同一个块）每一项都是一个用处，于是这个块得到好几个不同的地址。LLVM 的校验器拒绝这样的 phi（`PHI node has multiple entries for the same basic block with different incoming values!`），生成就停下了，没有写出错误的代码。优化器会从带 `switch` 的代码里用计数器下标的两个局部变量的小数组（`next[n++] = t`）做出这种形状。引擎里原来没有，所以会做出它的 C 没法生成。
+
+现在 pass 对每个 phi 和每个来源块只做一个地址，这个 phi 来自这个块的每一项都用它。生成的引擎不变：`make check-gen` 在 amd64 和 arm64 上都得到已提交的文件。
+
+为什么安全：合法的 IR 里，phi 来自同一个块的每一项都是同一个值，所以其中一项是某个局部变量时，这些项全是这个局部变量，也都拿到它的地址。来自别的块的项可能是别的局部变量，它们拿各自的地址，在各自的块里做出来。地址做在来源块的结束指令之前，所以不管结束指令是什么（分支、`switch`、`indirectbr`、`invoke`），从这个块出去的每条边上它都在。每个块只出现一次的 phi，得到的地址和位置都和以前一样。
+
+测试：`TestPhiNamesBlockTwice`（`internal/goasm/gen`）在 `internal/goasm/gen/testdata/phi/switch.ll` 上跑 pass。文件里有两个 phi，各自三次指向一个 `switch` 所在的块，从这个块和另一个块各拿不同的局部变量。测试检查 opt 通过校验器，并且每个 phi 对每个块只有一个地址，做在那个块里，偏移是对应局部变量的偏移。

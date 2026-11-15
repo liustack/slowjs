@@ -1,0 +1,55 @@
+primitives: true/true/true true/true/true true/true/true true/true/true true/true/true true/true/true true/true/true
+plain: 100
+empty: 100
+empty, not extensible: 011
+one key, not extensible: 000
+sealed: 010 a:we- b:we-
+frozen: 011 a:-e- b:-e-
+freeze returns its argument: true
+accessors only, sealed: 011 a:ae- b:ae-
+accessors and data, frozen: 011 x:-e- a:ae- b:ae- c:ae- 12
+one key left writable: 010
+one key left configurable: 000
+keys made frozen one at a time: 100 011
+deleted key: 011 a:-e- c:-e-
+deleted key, then freeze: 011 b:-e- c:-e-
+symbol keys: 000 010 011 a:-e- Symbol(s):-e-
+numeric keys: 011 1:-e- 2:-e- 10:-e- b:-e- a:-e-
+many keys: 100 010 011 2871 2871 0:-e- 3:-e- 6:-e- 9:-e- 12:-e- 15:-e- 18 :-e- k296:-e- k297:-e- k298:-e- k299:-e-
+dictionary of many keys, one deleted: 011 0 0 1999
+writes after freeze: TypeError,TypeError,TypeError,TypeError 1 2 false
+writes after seal: TypeError,TypeError,TypeError 2 011 a:-e- g:ae-
+shared shape: the other object keeps its flags: 011 100 100 x:-e- y:-e- | x:wec y:wec z:wec | x:wec y:wec 11050
+shared shape: seal then freeze, then a new object: 100,010,011,011,100 100 99 p:we- q:we- | p:-e- q:-e-
+a lone object, written in a loop before and after freeze: TypeError 49 49 011100
+an object alone with its shape, written in a loop before and after freeze: TypeError 60 49 011100 lone1:wec lone2:wec
+for in over frozen and plain objects of one shape: abcabcabc
+freeze twice and isFrozen again and again: 100 a:-e- b:-e-
+private names do not count: 011 011 2 true y:-e-
+class instance with accessors on the prototype: 011 2 100 true
+null prototype: 011 a:-e-
+Object.create with descriptors: 010 a:--- b:w-- c:a--
+arrays: 100 | 100 | 000 | 010 | 011 | 011 | 011 0:-e- 2:-e- length:--- | 011 350 | TypeError | TypeError | 5 0:we- length:w-- | 0:-e- 1:-e- length:--- foo:-e-
+arrays made not extensible key by key: true 011 0:-e- 1:-e- length:---
+typed arrays: 100 011 011 freeze TypeError seal TypeError false
+strings: 100 011 000 011 0:-e- 1:-e- length:--- x:-e- 011
+arguments: 100 011 0:-e- 1:-e- length:--- callee:a-- Symbol(Symbol.iterator):--- 011 0:-e- 1:-e- length:--- callee:a-- Symbol(Symbol.iterator):--- 1
+functions: 011,011,011,011 length:--- name:--- prototype:--- | length:--- name:--- | length:--- name:--- prototype:--- s:-e-
+error with a stack: 100 011 string true boom
+built-in objects: 100 100 100 100 011
+Map and Set objects: 011 2 011 2
+Date and RegExp objects: 011 5 011 TypeError lastIndex:---
+proxy: isFrozen of an extensible target: false isExtensible
+proxy: isSealed of an extensible target: false isExtensible
+proxy: isFrozen of a frozen target: true isExtensible,ownKeys,gopd a,gopd b
+proxy: isFrozen of a sealed target stops at the first writable key: false isExtensible,ownKeys,gopd a
+proxy: isSealed of a target not extensible with a configurable key: false isExtensible,ownKeys,gopd a
+proxy: freeze: 011 preventExtensions,ownKeys,gopd a,define a configurable,writable,gopd b,define b configurable
+proxy: seal: 010 preventExtensions,ownKeys,define a configurable,define b configurable
+proxy: ownKeys throws, target extensible: false false
+proxy: ownKeys throws, target not extensible: throws RangeError
+proxy: isExtensible throws: throws SyntaxError
+proxy: preventExtensions returns false: throws TypeError
+revoked proxy: throws TypeError
+proxy of a frozen array: true isExtensible,ownKeys,gopd 0,gopd 1,gopd length
+global object: 100

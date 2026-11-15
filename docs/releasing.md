@@ -1,5 +1,5 @@
 ---
-summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, the release job that builds the slowjs command and attaches it to the GitHub release of the tag, and after it running the comparison with other Go engines again and upgrading tifa'
+summary: 'How a release is made: patch versions only, a lightweight tag on the merge commit of main, asking before tagging and pushing, what to update before, the release job that builds the slowjs command and attaches it to the GitHub release of the tag, running the comparison with other Go engines again before the tag so that the release ships its own numbers, and upgrading tifa after it'
 read_when:
   - A branch was merged into main and is ready to ship
   - Choosing the version of the next release
@@ -23,11 +23,13 @@ English · [简体中文](releasing.zh-CN.md)
 
 On the branch, before it is merged:
 
-1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass. `scripts/go-versions.sh` passes: the checks of the engine with every patch release of Go the module lets build, from the lowest Go of `go.mod` up (the Go tests, and on a machine with LLVM the generator tests and the post-link check, see [testing.md](testing.md#ci)).
+1. The checks of [testing.md](testing.md#before-committing) pass, and those for what the branch touches (the focused checks, test262, `make build_all_targets`). `make check-full` passes, on a machine with LLVM 22.1.8: the checked-in engine is what the generator makes, and the root package, the race detector, the sanitizers and test262 pass. `scripts/go-versions.sh` passes: the checks of the engine with every patch release of Go the module lets build, from the lowest Go of `go.mod` up (the Go tests, and on a machine with LLVM the generator tests and the post-link check, see [testing.md](testing.md#ci)). When the branch changes `engine/`, the whole throw injection passes too. Push the branch as `gates/<name>` (`git push origin HEAD:gates/<name>`): `gates.yml` runs the injection in 12 jobs and `go-versions.sh` one job for each Go release, about 40 minutes in all, next to `ci.yml` and `llvm-steps.yml` on the same commit. Push it again when the engine or a golden changes after that.
+
 2. Each change is in the doc of its area under [changes](changes/README.md), with its row in the index, and a change for speed is in [performance.md](performance.md).
 3. [CHANGELOG.md](../CHANGELOG.md) and [CHANGELOG.zh-CN.md](../CHANGELOG.zh-CN.md) say what the branch changes for users. The last commit of the branch puts it under the new version and the date (`docs(changelog): release <version>`), so that the merge commit you tag carries it.
 4. In [changes](changes/README.md), the changes of this release still say "Unreleased". Replace it with the new version in the tables of the index and in the `Release:` line of each area doc (`grep -rn Unreleased docs/changes`, leaving the sentence under "Adding a change"), in the same last commit as the changelogs. Nothing else does it, and a row left at "Unreleased" after the tag is wrong from then on.
 5. The profile is not stale where it matters: see [The profile](#the-profile) below.
+6. When this release runs the comparison with the other engines, it is run now, on the branch, and its tables are in the branch: see [The comparison with the other engines](#the-comparison-with-the-other-engines) below.
 
 Then merge it into `main` with a merge commit, `merge: <what the branch does>` (see [commit.md](commit.md#branches-and-merges)).
 
@@ -54,6 +56,25 @@ git commit -m "build(pgo): train the profile again"
 `train.sh` stops when its check of `engine/pgo/loops.js` fails: the loops no longer run enough of the paths the pages leave cold, or a part of them no longer reaches its function. [engine/pgo/README.md](../engine/pgo/README.md#the-loops) says what to do. Do not put the micro benchmarks of `compare/testdata` into the loops.
 
 The new profile and the files it changes go in one commit. Then run `make check-gen` again: no `warning: profile:` line should be left (the `profile:` line about `likely()` is a note, not a warning). Train again also after taking commits of upstream QuickJS ([upgrading.md](upgrading.md)) and after moving to another LLVM, whose profile format differs.
+
+## The comparison with the other engines
+
+A minor release runs the comparison with the other JavaScript engines for Go and the native engines again ([benchmarks.md](benchmarks.md)). It runs before the tag, on the branch of the release, after the last training of the profile and the last change of the engine, so that the release ships the numbers of its own engine in [benchmarks.md](benchmarks.md) and the README. A table made after the tag would be of a version whose docs still show the one before. Patch releases skip it unless the owner asks: while the engine changes from week to week, a new table each patch costs hours of a machine and says little. A run is two tables: the render time of tifa's pages and the V8 suite, among interpreters only (an engine with a JIT runs with it off or is left out). It lives in `compare/engines`, a module of its own, and runs on a Linux machine of four cores that nothing else uses. [compare/engines/README.md](../compare/engines/README.md) has the commands.
+
+1. Point the comparison at the branch, and update the other engines if their newest versions should be in the run:
+
+   ```sh
+   cd compare/engines
+   go get <module>@latest && go mod tidy      # optional, for each other engine
+   ```
+
+   `compare/engines` reaches this module through a `replace` of the repository root, so the run measures the checkout it is in: check out the commit of the branch that holds the final generated engine. The commits that follow it on the branch change docs and the files of the comparison only.
+
+2. Build the engines and the native references (`native/build.sh`), run the tifa pages one engine per call and the V8 suite for five rounds, as the README says. Each timed call holds the whole machine and is pinned to one core. All timings are run again in one session. The comparison never runs test262 on other engines. On a shared machine, cut the run into pieces with `-add`.
+
+3. Write the page files with `go run ./cmd/pages "$page_dir" --output "results/$run-pages"`, and commit them with the V8 file of the run. Delete the result files of the older run in the same commit: `results/` keeps the last run only. Update the tables of [benchmarks.md](benchmarks.md) and of the README, with the version the release will have.
+
+4. If the method changed (a workload, an engine, a pinned input, a setting), add an entry to `compare/engines/CHANGELOG.md`.
 
 ## Tagging
 
@@ -103,24 +124,6 @@ Before the branch of a release is merged, run the job by hand on it (`gh workflo
 When the job fails after the tag is pushed, the module is out all the same: the tag stays. A failure of the machine is fixed by running the failed jobs again. A failure that needs a change of the code ships its fix in the next patch version, whose release then has the binaries.
 
 ## After the release
-
-### Compare with the other engines again
-
-A minor release runs the comparison with the other JavaScript engines for Go and the native engines again ([benchmarks.md](benchmarks.md)). Patch releases skip it unless the owner asks: while the engine changes from week to week, a new table each patch costs hours of a machine and says little. A run is two tables: the render time of tifa's pages and the V8 suite, among interpreters only (an engine with a JIT runs with it off or is left out). It lives in `compare/engines`, a module of its own, and runs on a Linux machine of four cores that nothing else uses. [compare/engines/README.md](../compare/engines/README.md) has the commands.
-
-1. Point the comparison at the release, and update the other engines if their newest versions should be in the run:
-
-   ```sh
-   cd compare/engines
-   go get <module>@latest && go mod tidy      # optional, for each other engine
-   ```
-
-   `compare/engines` reaches this module through a `replace` of the repository root, so the run measures the checkout it is in: check out the tag first.
-
-2. Build the engines and the native references (`native/build.sh`), run the tifa pages one engine per call and the V8 suite for five rounds, as the README says. Each timed call holds the whole machine and is pinned to one core. All timings are run again in one session. The comparison never runs test262 on other engines. On a shared machine, cut the run into pieces with `-add`.
-
-3. Write the page files with `go run ./cmd/pages "$page_dir" --output "results/$run-pages"`, and commit them with the V8 file of the run. Delete the result files of the older run in the same commit: `results/` keeps the last run only. Update the tables of [benchmarks.md](benchmarks.md).
-4. If the method changed (a workload, an engine, a pinned input, a setting), add an entry to `compare/engines/CHANGELOG.md`.
 
 ### Upgrade tifa
 

@@ -28,7 +28,7 @@ git add engine/pgo/profile.txt internal/cengine
 
 ## 循环
 
-页面让引擎的许多路径计数为 0：typed array、DataView、非 Latin-1 文本上的正则、BigInt、`Date.parse`、运算符的慢路径等等。LLVM 把计数为 0 的路径当成从不执行，把溢出放进去，把它的基本块挪开，真走这些路径的脚本就要付出代价。`loops.js` 把每类这样的路径各跑几千次。它和页面原样合并，两份输入都不放大：它的计数约占画像的 3%，足以把这些路径抬到 0 以上，又远不足以改变页面走的路径。它的收益和代价见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#第二份输入普通循环)。
+页面让引擎的许多路径计数为 0：typed array、DataView、非 Latin-1 文本上的正则、BigInt、`Date.parse`、运算符的慢路径、用 `apply` 把参数传下去的函数等等。LLVM 把计数为 0 的路径当成从不执行，把溢出放进去，把它的基本块挪开，真走这些路径的脚本就要付出代价。`loops.js` 把每类这样的路径各跑几千次。它和页面原样合并，两份输入都不放大：它的计数约占画像的 3%，足以把这些路径抬到 0 以上，又远不足以改变页面走的路径。它的收益和代价见 [docs/changes/generator.zh-CN.md](../../docs/changes/generator.zh-CN.md#第二份输入普通循环)。
 
 这些循环是专为训练写的。`compare/testdata` 的微基准用来衡量画像对没训练过的路径有什么影响，所以它们一个也不能进 `loops.js`，哪怕一部分也不行。
 
@@ -46,9 +46,9 @@ C 改了以后检查可能不过。这时为它点名的路径写一段循环或
 | 路径 | 内容 | 大小 |
 | --- | --- | --- |
 | `pages/shop/shop.js` | tifa 的 `examples/shop` 的服务端 bundle，构建成 ES 模块，再由 `compare/engines/cmd/modulescript` 转成脚本。React、tifa 的运行时和应用用到的包 | 1.6 MB |
-| `pages/shop/in/*.json` | shop 的 10 个页面的输入：工作台 3 个（`wb-studio`、`wb-order-studio`、`wb-stats-studio`），en-US 的商店 7 个（首页、商品列表、商品、日志、文章、购物车、结算） | 0.18 MB |
+| `pages/shop/in/*.json` | shop 的 20 个页面的输入：工作台 6 个（`wb-studio`、`wb-order-studio`、`wb-stats-studio`，以及 `weekend` 的同样 3 个），en-US 和 zh-CN 的商店各 7 个（首页、商品列表、商品、日志、文章、购物车、结算）。训练渲染 `studio` 的 3 个和 en-US 的 7 个，计时用全部（`internal/measure/pages`） | 0.35 MB |
 | `pages/mui/mui.js` | tifa 的 `test/apps/mui` 的服务端 bundle，做法相同。React、MUI 和 emotion | 0.76 MB |
-| `pages/mui/in/home.json` | 该应用首页的输入 | 7 KB |
+| `pages/mui/in/*.json` | 该应用 3 个页面的输入：训练渲染的 `home`，以及 `orders` 和 `order` | 24 KB |
 | `pages/fakeintl.js` | 原生宿主加载 bundle 需要的一个小 `Intl`，因为 C 引擎没有它（它来自 Go 包 `intl` 和 `temporal`）。它用 `toFixed` 格式化数字，日期写成 ISO 日期，复数只分 one 和 other，所以这几处的 HTML 和 tifa 的真实页面不同，Intl 内部的工作也不在画像里 |
 | `pages/THIRD_PARTY_NOTICES.md` | 两个 bundle 里的包，带版本、许可证和许可证文本 |
 

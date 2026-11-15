@@ -87,11 +87,13 @@ int white_function_debug(JSValueConst script, int i, const uint8_t **source, siz
 int white_regexp_cache(JSRuntime *rt, char *out, size_t cap, size_t *bytes, uint32_t *buckets);
 int white_lre_split_budget(void);
 int white_lre_chains(const char *re, int flags, void *opaque, char *out, size_t n);
+int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n);
 int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t *units, int n, long *calls);
 JSValue white_compile_failing(JSContext *ctx, const char *js, int fail, int mode, int *nallocs);
 JSValue white_read_failing(JSContext *ctx, const uint8_t *buf, size_t len, int fail, int *nallocs);
 int white_op(int i);
 int white_op_count(void);
+void white_days_to_date(int64_t days, int *y, int *m, int *d);
 int white_poll_run(void);
 void white_poll_skip(int on);
 const char *white_poll_scan(const uint8_t *code, int len);
@@ -127,6 +129,7 @@ void white_shape_id_set(JSRuntime *rt, uint32_t next);
 int white_shape_ids_bad(JSRuntime *rt, int *count, int *parented);
 int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
+int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented);
 uint32_t white_key_atom(JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
@@ -141,8 +144,14 @@ int white_crafted(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_crafted_code(JSContext *ctx, JSValueConst f, int kind, int undo);
 int white_regvm_read_check(JSContext *ctx, JSValueConst f);
 int white_regvm_dst_sites(JSValueConst f, int *dst, int *win);
+int white_regvm_forin_sites(JSValueConst f, int n[4]);
 int white_regvm_stack(JSContext *ctx, long out[7]);
 int white_set_code(JSContext *ctx, JSValueConst f, const uint8_t *code, int len, int stack_size, int undo);
+uint32_t white_array_fake_count(JSContext *ctx, JSValueConst a, uint32_t count);
+int64_t white_array_room(JSValueConst a);
+int64_t white_shape_fake_count(JSValueConst o, uint32_t count);
+uint32_t white_shape_prop_max(void);
+void white_set_array_from_first(long long k);
 int white_drop_vardefs(JSValueConst f, int on);
 int white_opcode(int which);
 int white_regvm_oom_pending(JSContext *ctx);
@@ -2161,7 +2170,8 @@ static void lists(VM *v, int *old, int *young, const char *when)
    a shape found by its parent id that starts with other keys than the shape
    it grew from ends the test. Shapes are found by their parent id
    (white_shape_id_hits) where an object held the shape before, and again
-   once the ids were given anew. */
+   once the ids were given anew: by the parent id a comparison of the keys
+   gave them, and for a new stair. */
 static int global_shape_hashed(VM *v)
 {
     JSValue g = JS_GetGlobalObject(v->ctx);
@@ -2381,6 +2391,17 @@ static void test_shape_ids(void)
         CHECK(shape_of(&v, "w12") == shape_of(&v, "ws[11]"), "cache %d: w12 has a shape of its own", cache);
         CHECK(shape_of(&v, "k10b") == shape_of(&v, "ks[9]"), "cache %d: k10b has a shape of its own", cache);
 
+        /* the shapes numbered again have no parent id, so k10b found each
+           by comparing its keys, which gave it the id of the shape before
+           as its parent id: the next object finds them by it */
+        hits = white_shape_id_hits();
+        CHECK(eval_ok(v.ctx, "var k10c = build(10, 'k'); void 0"), "the script threw");
+        CHECK(white_shape_id_hits() >= hits + 9,
+              "cache %d: %lu shapes found by the parent id a comparison of their keys gave, want 9",
+              cache, white_shape_id_hits() - hits);
+        CHECK(shape_of(&v, "k10c") == shape_of(&v, "ks[9]"), "cache %d: k10c has a shape of its own", cache);
+        shape_ids_ok(&v, "parent ids from a comparison", cache);
+
         /* a new stair after the ids were given anew is found by parent id */
         CHECK(eval_ok(v.ctx, "var vs = stair(8, 'v'); void 0"), "the stair threw");
         hits = white_shape_id_hits();
@@ -2445,6 +2466,158 @@ static void test_shape_ids_copy_oom(void)
         CHECK(n > 0, "cache %d: adding the key makes no call of the allocator", cache);
     }
     CHECK(twins > 0, "no failing call of %ld left two shapes of one id", cases);
+}
+
+/* The shapes of the prototype the global expression proto names: *count of
+   them, *parented of those that hold a parent, and no shape of the runtime
+   breaks the rule of parents (white_shape_parents_bad). */
+static void shape_parents_ok(VM *v, const char *proto, const char *what, int cache,
+                             int *count, int *parented)
+{
+    JSValue p = JS_Eval(v->ctx, proto, strlen(proto), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    int bad;
+
+    CHECK(JS_IsObject(p), "cache %d, %s: %s is no object", cache, what, proto);
+    bad = white_shape_parents_bad(v->rt, p, count, parented);
+    CHECK(bad == 0, "cache %d, %s: %d shapes break the rule of parents", cache, what, bad);
+    JS_FreeValue(v->ctx, p);
+    shape_ids_ok(v, what, cache);
+}
+
+static int64_t shape_count(VM *v)
+{
+    JSMemoryUsage u;
+
+    JS_RunGC(v->rt);
+    JS_ComputeMemoryUsage(v->rt, &u);
+    return u.shape_count;
+}
+
+/* new F() of a function whose body sets four keys on this, with the shape
+   cache on and off (js_shape_leave): once a few objects were made and kept,
+   the shapes of F.prototype are the empty one and one for each key, each but
+   the empty one holding the one before it, and a hundred more objects make no
+   shape. Objects that leave the shape of the others (a delete, a new
+   prototype, a freeze, a key of their own) keep the rule, and once every
+   object is gone, so is every shape of F.prototype. A class with a field and
+   a derived class do the same (B.prototype also has the shape of
+   D.prototype, which has no parent). A constructor of 32 keys keeps a chain
+   of 33 shapes, one of 33 keys none (a parent past 32 keys is not taken, and
+   a chain is found from its last shape back), and a constructor whose
+   objects all go one by one, none kept, makes no chain (the first one makes
+   T.prototype, which has a shape of its own). */
+static void test_new_shapes(void)
+{
+    static const char setup[] =
+        "function F(v) { this.a = v; this.b = v; this.c = v; this.d = v }\n"
+        "class B { x = 1; constructor(v) { this.y = v } }\n"
+        "class D extends B { constructor(v) { super(v); this.z = v } }\n"
+        "function L(n) { for (let i = 0; i < n; i++) this['k' + i] = i }\n"
+        "function M(n) { for (let i = 0; i < n; i++) this['k' + i] = i }\n"
+        "function T(v) { this.p = v; this.q = v }\n"
+        "var keep = [], bs = [], ls = [], ms = [];\n"
+        "function make(n) { for (let i = 0; i < n; i++) keep.push(new F(i)) }\n"
+        "void 0";
+    int cache;
+
+    for (cache = 0; cache <= 1; cache++) {
+        VM v = vm_new();
+        int count, parented;
+        int64_t before;
+
+        JS_SetShapeCache(v.ctx, cache ? 2048 : 0);
+        CHECK(eval_ok(v.ctx, setup), "the setup threw");
+        CHECK(eval_ok(v.ctx, "make(10); void 0"), "make threw");
+        shape_parents_ok(&v, "F.prototype", "ten objects", cache, &count, &parented);
+        CHECK(count == 5 && parented == 4, "cache %d, ten objects: %d shapes of F.prototype, %d with a parent, want 5 and 4",
+              cache, count, parented);
+        before = shape_count(&v);
+        CHECK(eval_ok(v.ctx, "make(100); void 0"), "make threw");
+        CHECK(shape_count(&v) == before, "cache %d: 100 more objects made %lld shapes", cache,
+              (long long)(shape_count(&v) - before));
+        CHECK(eval_is(v.ctx, "keep.length + ' ' + Object.keys(keep[109]) + ' ' + keep[109].d", "110 a,b,c,d 99"),
+              "cache %d: the keys of the objects", cache);
+
+        CHECK(eval_ok(v.ctx,
+                      "delete keep[0].b; Object.setPrototypeOf(keep[1], {}); Object.freeze(keep[2]);\n"
+                      "keep[3].e = 1; keep[4].e = 1; keep[5].a = 'x'; make(5); void 0"), "the changes threw");
+        shape_parents_ok(&v, "F.prototype", "objects that left the shape", cache, &count, &parented);
+        CHECK(eval_is(v.ctx, "[0, 1, 2, 3, 114].map(i => Object.keys(keep[i])).join(' ')",
+                      "a,c,d a,b,c,d a,b,c,d a,b,c,d,e a,b,c,d"), "cache %d: keys after the changes", cache);
+
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 20; i++) { bs.push(new B(i)); bs.push(new D(i)) } void 0"),
+              "the classes threw");
+        shape_parents_ok(&v, "B.prototype", "class B", cache, &count, &parented);
+        CHECK(count == 4 && parented == 2, "cache %d, class B: %d shapes, %d with a parent, want 4 and 2",
+              cache, count, parented);
+        shape_parents_ok(&v, "D.prototype", "class D", cache, &count, &parented);
+        CHECK(count == 4 && parented == 3, "cache %d, class D: %d shapes, %d with a parent, want 4 and 3",
+              cache, count, parented);
+
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 40; i++) { ls.push(new L(32)); ms.push(new M(33)) } void 0"), "L threw");
+        shape_parents_ok(&v, "L.prototype", "32 keys", cache, &count, &parented);
+        CHECK(count == 33 && parented == 32, "cache %d, 32 keys: %d shapes, %d with a parent, want 33 and 32",
+              cache, count, parented);
+        shape_parents_ok(&v, "M.prototype", "33 keys", cache, &count, &parented);
+        CHECK(count == 1 && parented == 0, "cache %d, 33 keys: %d shapes, %d with a parent, want 1 and 0",
+              cache, count, parented);
+
+        CHECK(eval_ok(v.ctx, "new T(0); void 0"), "T threw");
+        before = shape_count(&v);
+        CHECK(eval_ok(v.ctx, "for (let i = 0; i < 50; i++) new T(i); void 0"), "T threw");
+        shape_parents_ok(&v, "T.prototype", "objects that go at once", cache, &count, &parented);
+        CHECK(count == 0 && shape_count(&v) == before, "cache %d, objects that go at once: %d shapes left, %lld more in all",
+              cache, count, (long long)(shape_count(&v) - before));
+
+        CHECK(eval_ok(v.ctx, "keep.length = 0; bs.length = 0; ls.length = 0; ms.length = 0; void 0"), "the drop threw");
+        JS_RunGC(v.rt);
+        shape_parents_ok(&v, "F.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of F.prototype with no object", cache, count);
+        shape_parents_ok(&v, "D.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of D.prototype with no object", cache, count);
+        shape_parents_ok(&v, "L.prototype", "no object", cache, &count, &parented);
+        CHECK(count == 0, "cache %d: %d shapes of L.prototype with no object", cache, count);
+        vm_free(&v);
+    }
+}
+
+/* new F() and new of a class with each allocation failing in turn, in a new
+   VM each time (each_vm_failing): the object, its property array, the empty
+   shape, a shape grown or copied, the property array growing when the object
+   takes a shape found with more room. Objects are kept and dropped, so that
+   the shapes of earlier ones are found and given a parent, and some of them
+   go before the next ones. The setup makes enough objects of F, C and W
+   that their chains are whole before the call, so that the call leaves as
+   many shapes as it found, and none of G, whose chain the call makes and
+   frees with its objects. The setup calls f once, so that what only a
+   first call leaves is there before. With the shape cache on and off. Each
+   call throws the out of memory error or gives the right answer, and leaves
+   as many objects, strings and shapes as before it. */
+static void test_new_shapes_each_failing(void)
+{
+    static const char setup[] =
+        "function F(v) { this.a = v; this.b = {}; this.c = v }\n"
+        "class C { x = {}; constructor(v) { this.y = v; this.z = {} } }\n"
+        "function W(v) { this.p = v; this.q = v; this.r = v; this.s = v; this.t = {} }\n"
+        "function G(v) { this.g = v; this.h = {}; this.i = v; this.j = v }\n"
+        "G.prototype;\n"
+        "var held = []; for (let i = 0; i < 8; i++) held.push(new F(i), new C(i), new W(i));\n";
+    static const struct { const char *what, *f, *want; } cases[] = {
+        { "new F, kept", "function f() { var k = []; for (var i = 0; i < 8; i++) k.push(new F(i)); return k.map(o => Object.keys(o).length).join('') }", "33333333" },
+        { "new F, dropped", "function f() { var s = 0; for (var i = 0; i < 8; i++) s += new F(i).c; return s }", "28" },
+        { "new class", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new C(i)); return k.map(o => Object.keys(o).join('')).join(' ') }", "xyz xyz xyz xyz xyz xyz" },
+        { "new W, five keys", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new W(i)); held = null; return k.map(o => Object.keys(o).length).join('') }", "555555" },
+        { "new G, the chain made in the call", "function f() { var k = []; for (var i = 0; i < 6; i++) k.push(new G(i)); return k.map(o => Object.keys(o).length).join('') }", "444444" },
+    };
+    char buf[4096];
+    int i, nocache;
+
+    for (i = 0; i < (int)(sizeof(cases) / sizeof(cases[0])); i++) {
+        for (nocache = 0; nocache <= 1; nocache++) {
+            snprintf(buf, sizeof(buf), "%s%s\nf();\n", setup, cases[i].f);
+            each_vm_failing(cases[i].what, nocache, buf, cases[i].want, 3);
+        }
+    }
 }
 
 /* New GC objects are young, a young collection makes what it keeps old, and a
@@ -5504,6 +5677,108 @@ static void test_regexp_chains(void)
     vm_free(&v);
 }
 
+/* The literal every match of a regexp holds (lre_plan_literal, see "A literal
+   every match holds" in engine/libregexp.c), for each rule of what makes it
+   required (white_lre_literal): the run of char ops that no jump from before
+   it crosses, the longest, the first of the longest, at most 16 units, with
+   the saves of captures inside it, never inside an alternative, an optional
+   group, a quantifier of 0, a lookahead or a lookbehind, ended by a back
+   reference, a char32, a class, a dot or a loop, under i only the ASCII
+   characters and not k and s under u and v, none for a sticky regexp, one
+   that starts with ^ or the literal prefix lre_skip compares, and the most
+   units a match reads before it. */
+static void test_regexp_literal(void)
+{
+    enum { I = 2, M = 4, S = 8, U = 16, Y = 32, V = 256 };
+    static const struct {
+        const char *re;
+        int flags;
+        const char *want;
+    } cases[] = {
+        /* the regexp of the V8 RegExp benchmark */
+        { "(^|[^\\\\])\"\\\\\\/Qngr\\((-?[0-9]+)\\)\\\\\\/\"", 0, "\"\\/Qngr( key 3 before 1" },
+        /* the literal prefix of LRE_PLAN_CHAR is not taken, a longer run is */
+        { "abc", 0, "-" },
+        { "abc", U, "abc key 1 before ?" },
+        { "a(b)c", 0, "abc key 1 before 0" },
+        { "x(?:abc)+d", 0, "d key 0 before ?" },
+        { "ab{0}c", 0, "-" },
+        { "abc$", 0, "-" },
+        /* alternatives, optional groups, quantifiers */
+        { "xa|ya", 0, "-" },
+        { "(?:foo|foo)", 0, "-" },
+        { "(?:xa|ya)b", 0, "b key 0 before 2" },
+        { "(?:abc)?d", 0, "d key 0 before 3" },
+        { "(?:abc)*d", 0, "d key 0 before ?" },
+        { "(?:abc)+d", 0, "d key 0 before ?" },
+        { ".(?:abc){2}d", 0, "abc key 1 before 1" },
+        { "a{2}bc", 0, "bc key 0 before ?" },
+        { "ab?c", 0, "c key 0 before 2" },
+        { ".{0,3}abc", 0, "abc key 1 before ?" },
+        { ".?.?abc", 0, "abc key 1 before 2" },
+        { "a(?:b|c)*d", 0, "d key 0 before ?" },
+        { "(?:a|b)xy(?:c|d)xyz", 0, "xyz key 2 before 4" },
+        { "(?:a|b)xyz(?:c|d)xyz", 0, "xyz key 2 before 1" },
+        /* lookarounds */
+        { "a(?=bc)", 0, "-" },
+        { "(?=abc)", 0, "-" },
+        { ".(?=bc)d", 0, "d key 0 before 1" },
+        { ".(?!bc)d", 0, "d key 0 before 1" },
+        { ".(?<=bc)d", 0, "d key 0 before 1" },
+        { ".(?<!bc)d", 0, "d key 0 before 1" },
+        { "(?<=abc)", 0, "-" },
+        { "(?!foo)bar", 0, "bar key 0 before 0" },
+        { "(?<=foo)bar", 0, "bar key 0 before 0" },
+        /* back references and named groups */
+        { ".(a)\\1b", 0, "a key 0 before 1" },
+        { "(?<n>ab)c\\k<n>", 0, "abc key 1 before 0" },
+        /* ignore case */
+        { "abc", I, "~a~b~c key 1 before 0" },
+        { "a-b", I, "~a-~b key 2 before 0" },
+        { "k1", I, "~k1 key 0 before 0" },
+        { "k1", I | U, "1 key 0 before ?" },
+        { "s1", I | V, "1 key 0 before ?" },
+        { "K1", I | U, "1 key 0 before ?" },
+        { ".x\xc3\xa9y", I, "~x key 0 before 1" },
+        { "x(?i:ab)y", 0, "x~a~by key 0 before 0" },
+        { "x(?-i:ab)y", I, "~xab~y key 0 before 0" },
+        /* unicode, lone surrogates, characters from 256 up */
+        { "\xf0\x9f\x98\x80x", U, "x key 0 before ?" },
+        { "\\ud83dx", U, "\\ud83dx key 0 before ? wide" },
+        { "a\xe4\xb8\xad" "b", 0, "-" },
+        { ".a\xe4\xb8\xad" "b", 0, "a\\u4e2db key 1 before 1 wide" },
+        /* sticky, ^, other assertions */
+        { ".abc", Y, "-" },
+        { "^abc", 0, "-" },
+        { "^abc", M, "abc key 1 before 0" },
+        { "\\babc", 0, "abc key 1 before 0" },
+        { ".a\\nb", S, "a\\u000ab key 1 before 1" },
+        /* at most 16 units */
+        { ".abcdefghijklmnopqrstuvwxyz", 0, "abcdefghijklmnop key 9 before 1" },
+    };
+    VM v = vm_new();
+    char out[256];
+    static char big[60000];
+
+    for (size_t i = 0; i < countof(cases); i++) {
+        int n = white_lre_literal(cases[i].re, cases[i].flags, v.ctx, out, sizeof(out));
+        CHECK(n >= 0 && !strcmp(out, cases[i].want), "/%s/ flags %d: \"%s\", want \"%s\"",
+              cases[i].re, cases[i].flags, out, cases[i].want);
+    }
+    /* a literal past the bytes of code the walk reads (LRE_SCAN_STEP) is not
+       found, and one before it is */
+    for (int k = 0; k < 6000; k++)
+        memcpy(big + 4 * k, "[ab]", 4);
+    strcpy(big + 4 * 6000, "zz");
+    white_lre_literal(big, 0, v.ctx, out, sizeof(out));
+    CHECK(!strcmp(out, "-"), "6000 classes then zz: \"%s\", want \"-\"", out);
+    memmove(big + 3, big, 4 * 6000 + 3);
+    memcpy(big, ".zq", 3);
+    white_lre_literal(big, 0, v.ctx, out, sizeof(out));
+    CHECK(!strcmp(out, "zq key 1 before 1"), "zq then 6000 classes: \"%s\"", out);
+    vm_free(&v);
+}
+
 /* lre_split with the chains gives the machine what the walk over the split
    ops one at a time gives it (white_lre_split_same), at every split op it can
    be called at, on each character of a list and at the end of the string:
@@ -7189,6 +7464,67 @@ static JSValue dst_call(VM *v, const char *name, JSValue *fun)
     return r;
 }
 
+/* The next key and the read of it of a for in loop (engine/regvm-ops-window.h,
+   engine/regvm-ops-object.h): the pass makes FINEXT for the for_in_next
+   followed by its if_false, whatever stores the key, and GETELE or GETELET
+   for the read o[k] inside the loop whose key k is the local or argument the
+   loop stores, not for a read with another key, a key in a property, a let
+   a closure captures (which the pass does not take as the slot of the key)
+   or a read outside the loop. The read checks the key it is given, so a
+   miss of the pass costs only the fast path. Each function is run once
+   first, so that it has its register code, and its result is checked. */
+static void forin_case(VM *v, const char *name, const char *want, int fin, int win,
+                       int ele, int el)
+{
+    char expr[64];
+    JSValue g, fun;
+    int n[4];
+
+    snprintf(expr, sizeof(expr), "%s(src)", name);
+    CHECK(eval_is(v->ctx, expr, want), "%s: the result is not %s", name, want);
+    g = JS_GetGlobalObject(v->ctx);
+    fun = JS_GetPropertyStr(v->ctx, g, name);
+    JS_FreeValue(v->ctx, g);
+    CHECK(white_regvm_forin_sites(fun, n) == 0, "%s: no register code", name);
+    CHECK(n[0] == fin && n[1] == win && n[2] == ele && n[3] == el,
+          "%s: FINEXT %d, W_FOR_IN_NEXT %d, GETELE %d, GETEL %d, not %d %d %d %d",
+          name, n[0], n[1], n[2], n[3], fin, win, ele, el);
+    JS_FreeValue(v->ctx, fun);
+}
+
+static void test_regvm_forin(void)
+{
+    static const char src[] =
+        "globalThis.src = { a: 1, b: { x: 2, y: 3 }, c: 4 };"
+        "globalThis.plain = function (o) { var s = ''; for (var k in o) s += k + o[k]; return s; };"
+        "globalThis.arg = function (o, k) { var s = ''; for (k in o) s += o[k]; return s; };"
+        "globalThis.prop = function (o) { var t = {}, s = ''; for (t.p in o) s += o[t.p]; return s; };"
+        "globalThis.other = function (o) { var s = '', j = 'a'; for (var k in o) s += o[j]; return s; };"
+        "globalThis.after = function (o) { var k; for (k in o); return o[k]; };"
+        "globalThis.nest = function (o) { var s = ''; for (var a in o) if (typeof o[a] == 'object')"
+        " for (var b in o[a]) s += a + b + o[a][b]; return s; };"
+        "globalThis.letk = function (o) { var s = ''; for (let k in o) s += o[k]; return s; };"
+        "globalThis.cap = function (o) { var s = '', fs = []; for (let k in o) { fs.push(() => k);"
+        " s += o[k]; } return s + fs.map(f => f()).join(''); };"
+        "globalThis.gen = function* (o) { for (var k in o) yield o[k]; };"
+        "globalThis.genr = function (o) { return [...gen(o)].join(); }; 0";
+    VM v;
+
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, src), "the setup threw");
+    forin_case(&v, "plain", "a1b[object Object]c4", 1, 0, 1, 0);
+    forin_case(&v, "arg", "1[object Object]4", 1, 0, 1, 0);
+    forin_case(&v, "prop", "1[object Object]4", 1, 0, 0, 1);
+    forin_case(&v, "other", "111", 1, 0, 0, 1);
+    forin_case(&v, "after", "4", 1, 0, 0, 1);
+    forin_case(&v, "nest", "bx2by3", 2, 0, 4, 0);
+    forin_case(&v, "letk", "1[object Object]4", 1, 0, 1, 0);
+    forin_case(&v, "cap", "1[object Object]4abc", 1, 0, 0, 1);
+    CHECK(eval_is(v.ctx, "genr(src)", "1,[object Object],4"), "gen: the values differ");
+    forin_case(&v, "gen", "[object Generator]", 1, 0, 1, 0);
+    vm_free(&v);
+}
+
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h): the pass
    makes DSTART for the for_of_start of a destructuring, and not for a
    for-of loop, yield* or a destructuring with a yield in a default (its
@@ -7573,6 +7909,471 @@ static void test_regvm_dst(void)
     }
 }
 
+/* ---- the date of a count of days ---- */
+
+/* The year, month and day as get_date_fields found them before
+   days_to_date: an estimate of the year stepped by whole years, then the
+   months counted off. */
+static int64_t ref_floor_div(int64_t a, int64_t b)
+{
+    int64_t m = a % b;
+    return (a - (m + (m < 0) * b)) / b;
+}
+
+static int64_t ref_days_from_year(int64_t y)
+{
+    return 365 * (y - 1970) + ref_floor_div(y - 1969, 4) -
+        ref_floor_div(y - 1901, 100) + ref_floor_div(y - 1601, 400);
+}
+
+static int64_t ref_days_in_year(int64_t y)
+{
+    return 365 + !(y % 4) - !(y % 100) + !(y % 400);
+}
+
+static void ref_days_to_date(int64_t days, int *py, int *pm, int *pd)
+{
+    static const int month_days[] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    int64_t y = ref_floor_div(days * 10000, 3652425) + 1970, d1, nd, md;
+    int i;
+
+    for (;;) {
+        d1 = days - ref_days_from_year(y);
+        if (d1 < 0) {
+            y--;
+            d1 += ref_days_in_year(y);
+        } else {
+            nd = ref_days_in_year(y);
+            if (d1 < nd)
+                break;
+            d1 -= nd;
+            y++;
+        }
+    }
+    for (i = 0; i < 11; i++) {
+        md = month_days[i];
+        if (i == 1)
+            md += ref_days_in_year(y) - 365;
+        if (d1 < md)
+            break;
+        d1 -= md;
+    }
+    *py = (int)y;
+    *pm = i;
+    *pd = (int)d1 + 1;
+}
+
+/* days_to_date gives the date the loops gave, for every day from 1148 to
+   2791, every day of two cycles of 400 years at each end of the days a time
+   value can name, and two days past each end (a day of time zone), and every
+   997th day between. A run over every day of that range, 200,000,005 days,
+   found no difference when it was written. */
+static void test_days_to_date(void)
+{
+    static const int64_t ranges[][3] = {
+        { -300000, 300000, 1 },
+        { -100000002, -100000002 + 2 * 146097, 1 },
+        { 100000002 - 2 * 146097, 100000002, 1 },
+        { -100000002, 100000002, 997 },
+    };
+    long bad = 0, n = 0;
+    int i;
+
+    for (i = 0; i < (int)countof(ranges); i++) {
+        int64_t x;
+        for (x = ranges[i][0]; x <= ranges[i][1]; x += ranges[i][2]) {
+            int y, m, d, ry, rm, rd;
+            white_days_to_date(x, &y, &m, &d);
+            ref_days_to_date(x, &ry, &rm, &rd);
+            if (y != ry || m != rm || d != rd) {
+                if (bad++ < 5)
+                    printf("day %lld: %d-%d-%d, the loops give %d-%d-%d\n",
+                           (long long)x, y, m + 1, d, ry, rm + 1, rd);
+            }
+            n++;
+        }
+    }
+    CHECK(bad == 0, "%ld of %ld days give another date", bad, n);
+}
+
+/* ---- an element added at 2^31 - 1 ----
+
+   A fast array holds at most 2^31 - 1 elements: an element added after them
+   leaves it as it was and throws, by each way to add one. Such an array takes
+   32 GiB, so the array of a case has 8 elements and is given a count and a
+   length of 2^31 - 1 (white_array_fake_count), with no collection while it
+   is so. Before, the element was written 16 GiB past the block, which was
+   made smaller. Each case runs in a process of its own, where a crash is one
+   failed case. */
+static const char *const max_index_ways[] = {
+    "JS_SetPropertyUint32", "JS_SetPropertyStr", "JS_DefinePropertyValueUint32",
+    "a[i] = v", "push", "splice",
+};
+
+static void max_index_case(int way)
+{
+    static const char setup[] =
+        "function put(a, i, v) { a[i] = v; }\n"
+        "function push(a, v) { return a.push(v); }\n"
+        "function splice(a, v) { return a.splice(a.length, 0, v); }\n"
+        /* once before, so that their register code is made */
+        "put([], 0, 0); push([], 0); splice([], 0);\n";
+    const char *want = "RangeError: invalid array length";
+    VM v = vm_new();
+    JSValue a, g, f, r = JS_UNDEFINED, args[3];
+    int64_t room;
+    size_t threshold;
+    uint32_t old, count;
+    int ret = 0;
+    char *t;
+
+    CHECK(eval_ok(v.ctx, setup), "%s: the setup", max_index_ways[way]);
+    a = JS_Eval(v.ctx, "[0, 1, 2, 3, 4, 5, 6, 7]", 24, "<unit>", JS_EVAL_TYPE_GLOBAL);
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, way == 3 ? "put" : way == 4 ? "push" : "splice");
+    room = white_array_room(a);
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    old = white_array_fake_count(v.ctx, a, INT32_MAX);
+    args[0] = a;
+    args[1] = JS_NewInt32(v.ctx, INT32_MAX);
+    args[2] = JS_NewInt32(v.ctx, 1);
+    switch (way) {
+    case 0: ret = JS_SetPropertyUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1)); break;
+    case 1: ret = JS_SetPropertyStr(v.ctx, a, "2147483647", JS_NewInt32(v.ctx, 1)); break;
+    case 2: ret = JS_DefinePropertyValueUint32(v.ctx, a, INT32_MAX, JS_NewInt32(v.ctx, 1), JS_PROP_C_W_E | JS_PROP_THROW); break;
+    case 3: r = JS_Call(v.ctx, f, JS_UNDEFINED, 3, args); break;
+    default: args[1] = args[2]; r = JS_Call(v.ctx, f, JS_UNDEFINED, 2, args); break;
+    }
+    t = exception_text(v.ctx);
+    CHECK((ret < 0 || JS_IsException(r)) && t && strcmp(t, want) == 0, "%s at 2^31 - 1: %s, want %s",
+          max_index_ways[way], t ? t : "no exception", want);
+    free(t);
+    JS_FreeValue(v.ctx, r);
+    CHECK(eval_is(v.ctx, "this.x = 1; 'ok'", "ok"), "%s: the context after", max_index_ways[way]);
+    r = JS_GetPropertyStr(v.ctx, a, "length");
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == INT32_MAX, "%s: the length is no longer 2^31 - 1",
+          max_index_ways[way]);
+    JS_FreeValue(v.ctx, r);
+    CHECK(white_array_room(a) == room, "%s: the room was %lld, is %lld", max_index_ways[way], (long long)room,
+          (long long)white_array_room(a));
+    count = white_array_fake_count(v.ctx, a, old);
+    CHECK(count == INT32_MAX, "%s: the count is %u", max_index_ways[way], count);
+    JS_SetGCThreshold(v.rt, threshold);
+    CHECK(eval_is(v.ctx, "put.length", "3"), "%s: a script after", max_index_ways[way]);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    JS_FreeValue(v.ctx, a);
+    vm_free(&v);
+}
+
+static void test_max_index(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_index_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-index";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "an element at 2^31 - 1 by %s: %s %d", max_index_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
+/* ---- a property added to a shape at its limit ----
+
+   A shape holds at most 2^26 - 1 properties (JS_SHAPE_PROP_MAX): the index
+   of a property plus one is kept in the 26 bits of hash_next, and past it a
+   lookup would miss a property that is there. One more throws and leaves the
+   object as it was, and a store that the object refuses anyway is refused as
+   before, by the length that cannot be written or the array that cannot be
+   extended, with no RangeError. Such an object takes gigabytes, so a small
+   one is given a count at the limit (white_shape_fake_count for its shape,
+   white_array_fake_count for a fast array), with no collection while it is
+   so. Before, the shape was copied with that count, past its block, an
+   element added to a normal array at the limit left its length one more, and
+   a store refused by the length or the array threw a RangeError. Each case
+   runs in a process of its own. */
+static const char *const max_props_ways[] = {
+    "a new key",
+    "an array made a normal one",
+    "an element at the end of a normal array",
+    "a store past a length that cannot be written",
+    "a store past the end of an array that cannot be extended",
+};
+
+static void max_props_case(int way)
+{
+    static const char *const setup[] = {
+        /* a delete takes the shape out of the shape table, as its own */
+        "var o = { a: 1, b: 2, c: 3 }; delete o.c; o",
+        /* a fast array of 2^26 - 1 elements and its length would be 2^26
+           properties as a normal array: an element far past its end makes it
+           one */
+        "var o = [1, 2, 3]; o",
+        /* the delete makes the array a normal one, with a shape of its own */
+        "var o = [1, 2, 3]; delete o[0]; o",
+        "var o = Object.defineProperty([1, 2, 3], 'length', { writable: false }); o",
+        "var o = Object.preventExtensions([1, 2, 3]); o",
+    };
+    /* what is left of o once its count is back */
+    static const char *const after[] = {
+        "o.a + o.b + ':' + ('z' in o)",
+        "o.join() + ':' + o.length + ':' + (1073741824 in o)",
+        "o.join() + ':' + o.length + ':' + (3 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+        "o.join() + ':' + o.length + ':' + (67108864 in o)",
+    };
+    static const char *const after_want[] = {
+        "3:false", "1,2,3:3:false", ",2,3:3:false", "1,2,3:3:false", "1,2,3:3:false",
+    };
+    VM v = vm_new();
+    JSValue o;
+    size_t threshold;
+    int64_t old = 0;
+    uint32_t max = white_shape_prop_max();
+    int ret, refused;
+    char *t;
+
+    CHECK(max == (1u << 26) - 1, "the limit is %u", max);
+    threshold = JS_GetGCThreshold(v.rt);
+    JS_SetGCThreshold(v.rt, (size_t)-1);
+    o = JS_Eval(v.ctx, setup[way], strlen(setup[way]), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(!JS_IsException(o), "%s: the setup threw", max_props_ways[way]);
+    refused = way >= 3;
+    switch (way) {
+    case 0:
+        old = white_shape_fake_count(o, max);
+        CHECK(old == 3, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyStr(v.ctx, o, "z", JS_NewInt32(v.ctx, 1));
+        white_shape_fake_count(o, (uint32_t)old);
+        break;
+    case 2:
+        /* length, a deleted 0, 1 and 2 */
+        old = white_shape_fake_count(o, max);
+        CHECK(old == 4, "%s: the shape was not its own (%lld)", max_props_ways[way], (long long)old);
+        ret = JS_SetPropertyUint32(v.ctx, o, 3, JS_NewInt32(v.ctx, 4));
+        white_shape_fake_count(o, (uint32_t)old);
+        break;
+    default:
+        old = white_array_fake_count(v.ctx, o, max);
+        ret = JS_SetPropertyUint32(v.ctx, o, way == 1 ? 1u << 30 : max + 1, JS_NewInt32(v.ctx, 1));
+        if (refused) {
+            t = exception_text(v.ctx);
+            CHECK(ret < 0 && t && strncmp(t, "TypeError: ", 11) == 0, "%s: %s", max_props_ways[way],
+                  t ? t : "no exception");
+            free(t);
+            /* in sloppy code the store does nothing, and Reflect.set gives
+               false */
+            CHECK(eval_is(v.ctx, "[Reflect.set(o, 67108864, 1), (function () { o[67108864] = 1; return 7 })()].join()",
+                          "false,7"),
+                  "%s: Reflect.set and a sloppy store", max_props_ways[way]);
+        }
+        white_array_fake_count(v.ctx, o, (uint32_t)old);
+        break;
+    }
+    if (!refused) {
+        t = exception_text(v.ctx);
+        CHECK(ret < 0 && t && strcmp(t, "RangeError: too many properties") == 0, "%s at the limit: %s",
+              max_props_ways[way], t ? t : "no exception");
+        free(t);
+    }
+    JS_SetGCThreshold(v.rt, threshold);
+    CHECK(eval_is(v.ctx, after[way], after_want[way]), "%s: the object after", max_props_ways[way]);
+    JS_FreeValue(v.ctx, o);
+    vm_free(&v);
+}
+
+static void test_max_props(void)
+{
+    char way_arg[16];
+    char *args[4];
+    int way, st;
+
+    for (way = 0; way < (int)countof(max_props_ways); way++) {
+        snprintf(way_arg, sizeof(way_arg), "%d", way);
+        args[1] = "max-props";
+        args[2] = way_arg;
+        args[3] = NULL;
+        st = run_self(args);
+        CHECK(WIFEXITED(st) && WEXITSTATUS(st) == 0, "a property at 2^26 - 1 by %s: %s %d", max_props_ways[way],
+              WIFSIGNALED(st) ? "stopped by signal" : "exit status", WIFSIGNALED(st) ? WTERMSIG(st) : WEXITSTATUS(st));
+    }
+}
+
+/* ---- Array.from past 32 bits ----
+
+   Array.from on a constructor of the program passes the mapping function an
+   index of 64 bits and sets the length it ends at, which a constructor whose
+   object keeps nothing can take past 2^32. Reaching that index would take
+   2^32 calls, so Array.from starts there (white_set_array_from_first). Before,
+   the index was cut to an int32 and the length to a uint32. */
+static void test_array_from_past_32_bits(void)
+{
+    VM v = vm_new();
+
+    CHECK(eval_is(v.ctx,
+                  "var log = [];"
+                  "function Sink() {"
+                  "  return new Proxy({}, {"
+                  "    defineProperty(t, k, d) { log.push(k + ':' + d.value); return true },"
+                  "    set(t, k, x) { log.push(k + '=' + x); return true },"
+                  "  })"
+                  "}"
+                  "function* two() { yield 'a'; yield 'b' }"
+                  "'' + log",
+                  ""),
+          "Array.from past 32 bits: the setup");
+    white_set_array_from_first(4294967295LL);
+    CHECK(eval_is(v.ctx,
+                  "Array.from.call(Sink, { length: 4294967297 }, (x, i) => i); log.push('|');"
+                  "Array.from.call(Sink, two(), (x, i) => x + i); log.push('|');"
+                  "Array.from.call(Sink, two()); '' + log",
+                  "4294967295:4294967295,4294967296:4294967296,length=4294967297,|,"
+                  "4294967295:a4294967295,4294967296:b4294967296,length=4294967297,|,"
+                  "4294967295:a,4294967296:b,length=4294967297"),
+          "Array.from past 32 bits");
+    white_set_array_from_first(0);
+    vm_free(&v);
+}
+
+/* ---- Object.defineProperty on a property that is there, out of memory ----
+
+   A define that changes the flags of a property that is there copies the
+   shape of the object when another object shares it, which can run out of
+   memory. Each call of the allocator fails in turn in a define of the
+   length of a new array, of a data property and of an accessor of a new
+   literal, each sharing its shape (with the context, or with a twin o2),
+   and after each the property is as it was (the define threw out of
+   memory) or as the define makes it.
+   Before, the length or the value was set first, and a failed copy left it
+   set with the flags as they were.
+   A define that is refused changes nothing and copies nothing, so it gives
+   false and never runs out of memory: a read-only export of a module
+   namespace, whose shape the namespace of a twin module shares.
+   Shortening an array past index 2^31 - 1 looks the names of the elements
+   up and makes none, so it cannot fail once it has deleted one. Before, it
+   made the name of each index, and when the second failed the first element
+   was gone, the define threw and still made the length read-only. */
+
+/* reset of test_define_existing_oom: "NS" makes two new modules with the same
+   export, whose namespaces share a shape, as ns1 and ns2 (a namespace whose
+   define copied its shape shares it no more) */
+static int define_reset(JSContext *ctx, const char *reset, int k)
+{
+    static const char mod_src[] = "export let x = 1;";
+    JSValue g, mod, r;
+    char name[32];
+    int i, ok = 1;
+
+    if (strcmp(reset, "NS") != 0)
+        return eval_ok(ctx, reset);
+    g = JS_GetGlobalObject(ctx);
+    for (i = 0; i < 2 && ok; i++) {
+        snprintf(name, sizeof(name), "ns%d-%d", i + 1, k);
+        mod = JS_Eval(ctx, mod_src, strlen(mod_src), name, JS_EVAL_TYPE_MODULE | JS_EVAL_FLAG_COMPILE_ONLY);
+        if (JS_IsException(mod)) {
+            ok = 0;
+            break;
+        }
+        r = JS_EvalFunction(ctx, JS_DupValue(ctx, mod));
+        ok = !JS_IsException(r);
+        JS_FreeValue(ctx, r);
+        if (ok)
+            JS_SetPropertyStr(ctx, g, i ? "ns2" : "ns1", JS_GetModuleNamespace(ctx, JS_VALUE_GET_PTR(mod)));
+        JS_FreeValue(ctx, mod);
+    }
+    JS_FreeValue(ctx, g);
+    return ok && eval_ok(ctx, "o = ns1; o2 = ns2; r = 0");
+}
+
+static void test_define_existing_oom(void)
+{
+    static const struct {
+        const char *name, *reset, *change, *state, *before, *after;
+        int oom; /* 1: some call fails and changes nothing, 0: none fails */
+    } cases[] = {
+        { "the length and writable of an array", "o = []",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable", "0:true", "2:false", 1 },
+        { "the length of an array and writable after a shorter one", "o = [1, 2, 3, 4]",
+          "Object.defineProperty(o, 'length', { value: 2, writable: false })",
+          "o.length + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable + ':' + o.join()",
+          "4:true:1,2,3,4", "2:false:1,2", 1 },
+        { "a value and writable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, writable: false })",
+          "o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "1:true", "2:false", 1 },
+        { "a value and enumerable", "o = { x: 1 }; o2 = { x: 1 }",
+          "Object.defineProperty(o, 'x', { value: 2, enumerable: false })", "o.x + ':' + Object.keys(o).length",
+          "1:1", "2:0", 1 },
+        { "a getter and enumerable", "o = mk(); o2 = mk()",
+          "Object.defineProperty(o, 'x', { get: function () { return 2 }, enumerable: false })",
+          "o.x + ':' + Object.keys(o).length", "1:1", "2:0", 1 },
+        { "a read-only export of a module namespace", "NS",
+          "r = Reflect.defineProperty(o, 'x', readOnly)",
+          "r + ':' + o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "0:1:true", "false:1:true", 0 },
+        { "the length and writable of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "Object.defineProperty(o, 'length', { value: 2147483648, writable: false })",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:false", 1 },
+        { "the length of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "o.length = 2147483648",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:true", 0 },
+    };
+    VM v = vm_new();
+    JSValue g;
+    size_t c;
+    int k = 0;
+    char src[320];
+
+    for (c = 0; c < countof(cases); c++) {
+        JSValue f;
+        int fail, n = 0, ooms = 0;
+
+        snprintf(src, sizeof(src), "var o, o2, r, readOnly = { writable: false };"
+                 " function mk() { return { get x() { return 1 } } }"
+                 " function change() { %s }", cases[c].change);
+        CHECK(eval_ok(v.ctx, src), "%s: the setup threw", cases[c].name);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, "change");
+        JS_FreeValue(v.ctx, g);
+        /* once, so that the code of change is compiled and its atoms made */
+        CHECK(define_reset(v.ctx, cases[c].reset, k++) && eval_ok(v.ctx, "change()"), "%s: the first change threw",
+              cases[c].name);
+        for (fail = 0; fail == 0 || fail <= n; fail++) {
+            int made;
+            JSValue r;
+
+            CHECK(define_reset(v.ctx, cases[c].reset, k++), "%s: the reset threw", cases[c].name);
+            CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: before call %d", cases[c].name, fail);
+            r = white_call_failing(v.ctx, f, JS_UNDEFINED, 0, NULL, fail, &made);
+            if (fail == 0)
+                n = made;
+            if (JS_IsException(r)) {
+                CHECK(cases[c].oom && fail > 0 && JS_IsUncatchableException(v.ctx),
+                      "%s: call %d failing: threw", cases[c].name, fail);
+                JS_FreeValue(v.ctx, JS_GetException(v.ctx));
+                ooms++;
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].before), "%s: call %d failing: the define changed it",
+                      cases[c].name, fail);
+            } else {
+                JS_FreeValue(v.ctx, r);
+                CHECK(eval_is(v.ctx, cases[c].state, cases[c].after), "%s: call %d failing: not defined",
+                      cases[c].name, fail);
+            }
+        }
+        if (cases[c].oom)
+            CHECK(n > 0 && ooms > 0, "%s: %d calls of the allocator, %d failed the define", cases[c].name, n, ooms);
+        JS_FreeValue(v.ctx, f);
+    }
+    vm_free(&v);
+}
+
 int main(int argc, char **argv)
 {
     /* one case of test_gc_in_free, in a process of its own */
@@ -7589,6 +8390,20 @@ int main(int argc, char **argv)
        its own */
     if (argc == 5 && strcmp(argv[1], "regvm-convert") == 0)
         regvm_convert_one(atoi(argv[2]), atoi(argv[3]), strcmp(argv[4], "small") == 0);
+    /* one case of test_max_index, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-index") == 0) {
+        failures = 0;
+        max_index_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
+    /* one case of test_max_props, in a process of its own */
+    if (argc == 3 && strcmp(argv[1], "max-props") == 0) {
+        failures = 0;
+        max_props_case(atoi(argv[2]));
+        fflush(stdout);
+        host_leave(failures ? 1 : 0);
+    }
     self_path = argv[0];
     test_json_string_run();
     test_json_quote_run();
@@ -7621,6 +8436,8 @@ int main(int argc, char **argv)
     test_object_spread_cache();
     test_shape_ids();
     test_shape_ids_copy_oom();
+    test_new_shapes();
+    test_new_shapes_each_failing();
     test_counted_call_debt();
     test_key_atom();
     test_young_lists();
@@ -7638,6 +8455,10 @@ int main(int argc, char **argv)
     test_fused_ops();
     test_typeof_is();
     test_share_local_slots();
+    test_max_index();
+    test_max_props();
+    test_array_from_past_32_bits();
+    test_define_existing_oom();
     test_iterator_close_oom();
     test_tdz_checks();
     test_capture_by_value();
@@ -7662,6 +8483,7 @@ int main(int argc, char **argv)
     test_regexp_cache_memory();
     test_regexp_split_budget();
     test_regexp_chains();
+    test_regexp_literal();
     test_regexp_split_same();
     test_compile_one_failure(0);
     test_compile_one_failure(1);
@@ -7680,8 +8502,10 @@ int main(int argc, char **argv)
     test_regvm_call_copies();
     test_regvm_dst();
     test_regvm_dst_alloc();
+    test_regvm_forin();
     test_spread_alloc();
     test_spread_refs();
+    test_days_to_date();
     if (failures) {
         printf("unit-white: %d of %ld checks failed\n", failures, checks);
         return 1;

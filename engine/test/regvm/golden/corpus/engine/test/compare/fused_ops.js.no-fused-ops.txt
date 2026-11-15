@@ -188,6 +188,6 @@ result switch in a loop: 2
 result switch on a symbol description: A
 result switch with a getter case: k after 1
 result async: async
-mem-end obj=333 atom=670 shape=148 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
-mem-gc obj=333 atom=670 shape=148 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
+mem-end obj=333 atom=670 shape=150 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
+mem-gc obj=333 atom=670 shape=150 prop=1251 jsfunc=79 cfunc=151 array=37 fast_array=37 elements=316 binary=0
 --- status exit 0

@@ -996,6 +996,155 @@ static uint64_t mul_pow_round_to_d(int *pe, mpb_t *a,
     return round_to_d(pe, a, e_offset, rnd_mode);
 }
 
+/* The shortest conversion in radix 10 (Number::toString), by the Schubfach
+   algorithm of Raffaello Giulietti ("The Schubfach way to render doubles",
+   2020), written from the paper: integer arithmetic only, one 64x64 -> 128 bit
+   multiply at a time, and a table of 617 powers of ten (9872 bytes of read-only
+   data, dtoa-pow10.h, written by internal/dtoatable). It gives the digits and
+   the exponent the big number loop of js_dtoa gives (the shortest that read
+   back, the closest of them, a tie to the even one): see docs/changes/strings.md. */
+#include "dtoa-pow10.h"
+
+static inline uint64_t dtoa_round_to_odd(const uint64_t *g, uint64_t cp)
+{
+    unsigned __int128 x, y;
+    uint64_t y0, y1;
+    /* y = floor(g * cp / 2^64), then the high 64 bits, odd when the bits
+       below them are not zero (above the error of g) */
+    x = (unsigned __int128)g[1] * cp;
+    y = (unsigned __int128)g[0] * cp + (uint64_t)(x >> 64);
+    y0 = (uint64_t)y;
+    y1 = (uint64_t)(y >> 64);
+    return y1 | (y0 > 1);
+}
+
+/* d = sign * fraction and exponent of 'bits', finite and not zero. Return
+   the shortest decimal significand 'mant' with no trailing zero, its number
+   of digits in *pP and the exponent in *pE such that d = 0.mant * 10^E. */
+static uint64_t dtoa_shortest10(uint64_t bits, int *pP, int *pE)
+{
+    uint64_t f, c, cbl, cb, cbr, vbl, vb, vbr, lower, upper, s, sp, r;
+    int be, q, k, h, P, even, closer;
+    const uint64_t *g;
+
+    be = (bits >> 52) & 0x7ff;
+    f = bits & (((uint64_t)1 << 52) - 1);
+    if (be == 0) {
+        c = f;
+        q = 1 - 1075;
+    } else {
+        c = f | ((uint64_t)1 << 52);
+        q = be - 1075;
+    }
+    even = (c & 1) == 0;
+    /* the next lower float64 is closer than the next higher one */
+    closer = (f == 0 && be > 1);
+    cbl = 4 * c - 2 + closer;
+    cb = 4 * c;
+    cbr = 4 * c + 2;
+    /* k = floor(log10(2^q)), or floor(log10(3/4 * 2^q)) when closer, h in [1, 4]
+       (internal/dtoatable checks the formulas) */
+    if (closer)
+        k = (q * 1262611 - 524031) >> 22;
+    else
+        k = (q * 1262611) >> 22;
+    h = q + ((-k * 1741647) >> 19) + 1;
+    g = dtoa_pow10[-k - DTOA_POW10_MIN];
+    vbl = dtoa_round_to_odd(g, cbl << h);
+    vb = dtoa_round_to_odd(g, cb << h);
+    vbr = dtoa_round_to_odd(g, cbr << h);
+    lower = vbl + !even;
+    upper = vbr - !even;
+    s = vb >> 2;
+    if (s >= 10) {
+        /* at most one multiple of 10^(k+1) is in the interval */
+        int u_in, w_in;
+        sp = s / 10;
+        u_in = lower <= 40 * sp;
+        w_in = 40 * sp + 40 <= upper;
+        if (u_in != w_in) {
+            r = sp + w_in;
+            k++;
+            goto found;
+        }
+    }
+    {
+        int u_in, w_in;
+        u_in = lower <= 4 * s;
+        w_in = 4 * s + 4 <= upper;
+        if (u_in != w_in) {
+            r = s + w_in;
+        } else {
+            /* both in: the closer one, the even one on a tie */
+            uint64_t mid = 4 * s + 2;
+            r = s + (vb > mid || (vb == mid && (s & 1) != 0));
+        }
+    }
+ found:
+    while (r % 10 == 0) {
+        r /= 10;
+        k++;
+    }
+    P = 1;
+    for (sp = 10; sp <= r; sp *= 10) /* r < 10^17 */
+        P++;
+    *pP = P;
+    *pE = k + P;
+    return r;
+}
+
+/* write d = 0.mant * 10^E, mant of P digits, as the output of js_dtoa below
+   writes it in radix 10 with JS_DTOA_EXP_AUTO (Number::toString) or, when
+   exp is set, JS_DTOA_EXP_ENABLED. Return the length. */
+static int dtoa_format10(char *buf, uint64_t mant, int P, int E, int exp)
+{
+    char d[20];
+    char *q = buf;
+    int i;
+
+    for (i = P - 1; i >= 0; i--) {
+        d[i] = '0' + mant % 10;
+        mant /= 10;
+    }
+    /* 21 is E_max of js_dtoa in radix 10: dtoa_max_digits_table[8] + 4 */
+    if (exp || E <= -6 || E > 21) {
+        *q++ = d[0];
+        if (P > 1) {
+            *q++ = '.';
+            memcpy(q, d + 1, P - 1);
+            q += P - 1;
+        }
+        *q++ = 'e';
+        E--;
+        if (E < 0) {
+            *q++ = '-';
+            E = -E;
+        } else {
+            *q++ = '+';
+        }
+        q += u32toa(q, E);
+    } else if (E <= 0) {
+        *q++ = '0';
+        *q++ = '.';
+        for (i = 0; i < -E; i++)
+            *q++ = '0';
+        memcpy(q, d, P);
+        q += P;
+    } else if (E < P) {
+        memcpy(q, d, E);
+        q += E;
+        *q++ = '.';
+        memcpy(q, d + E, P - E);
+        q += P - E;
+    } else {
+        memcpy(q, d, P);
+        q += P;
+        for (i = 0; i < E - P; i++)
+            *q++ = '0';
+    }
+    return q - buf;
+}
+
 #ifdef JS_DTOA_DUMP_STATS
 static int out_len_count[17];
 
@@ -1160,6 +1309,15 @@ int js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
         goto done;
     }
 #endif
+    /* the shortest digits in radix 10 (Number::toString, toExponential()) */
+    if (fmt == JS_DTOA_FORMAT_FREE && radix == 10 &&
+        (flags & JS_DTOA_EXP_MASK) != JS_DTOA_EXP_DISABLED &&
+        !(flags & JS_DTOA_BIGNUM)) {
+        uint64_t mant = dtoa_shortest10(a, &P, &E);
+        q += dtoa_format10(q, mant, P, E,
+                           (flags & JS_DTOA_EXP_MASK) == JS_DTOA_EXP_ENABLED);
+        goto done;
+    }
     
     /* this choice of E implies F=round(x*B^(P-E) is such as: 
        B^(P-1) <= F < 2.B^P. */
@@ -1188,6 +1346,22 @@ int js_dtoa(char *buf, double d, int radix, int n_digits, int flags,
                 if (mant < mant_max1)
                     break;
                 E++; /* at most one iteration is possible */
+            }
+            if (P_found != 0 && radix == 10 &&
+                (a & (((uint64_t)1 << 52) - 1)) == 0 && ((a >> 52) & 0x7ff) > 1) {
+                /* d is a power of two, and the float64 below it is closer
+                   than the one above: the P digits below d may not read back
+                   as d when the P digits above it do (2^-44 has 16 digits,
+                   5.684341886080802e-14). Take those above then. */
+                mpb_set_u64(tmp1, mant);
+                m1 = mul_pow_round_to_d(&e1, tmp1, radix1, radix_shift, E - P, JS_RNDN);
+                if (m1 != m || e1 != e) {
+                    mant++;
+                    if (mant == mant_max1) {
+                        mant /= radix;
+                        E++;
+                    }
+                }
             }
             /* remove useless trailing zero digits */
             while ((mant % radix) == 0) {

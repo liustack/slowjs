@@ -1,0 +1,16 @@
+result 0110000110110112 0100000110110112 0100000110110112 0110000110110112 0100000110110112 0100000110110112 x:we- y:we- g:ae- k1:-e- z:-e- 0:-e- 1:-e- 2:-e- length:--- 9 5
+result 0110000110110112 0100000110110112 0100000110110112 0110000110110112 0100000110110112 0100000110110112 x:we- y:we- g:ae- k1:-e- z:-e- 0:-e- 1:-e- 2:-e- length:--- 9 5
+result false true isExtensible,ownKeys,isExtensible,ownKeys 011 011 011
+result 100
+result true
+result true
+result 011
+result false
+result 010 011 299 2582
+result 010 011 299 2582
+result 011
+result 1
+result false
+mem-end obj=408 atom=670 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
+mem-gc obj=408 atom=670 shape=295 prop=2035 jsfunc=15 cfunc=267 array=4 fast_array=4 elements=14 binary=0
+--- status exit 0

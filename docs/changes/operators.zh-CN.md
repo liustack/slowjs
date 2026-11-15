@@ -1,7 +1,7 @@
 ---
-summary: '运算符的改动：两个数的位运算，常见的 ===、!==、== 和 != 组合，以及普通函数的 instanceof，不再走慢路径，每项的收益，为什么安全'
+summary: '运算符的改动：两个数的位运算，常见的 ===、!==、== 和 != 组合，普通函数的 instanceof，以及两个数的加和减，不再走慢路径，每项的收益，为什么安全'
 read_when:
-  - 位运算符或比较给出的结果和以前不一样，或者被比较的值被释放了两次
+  - 位运算符、比较、加法或减法给出的结果和以前不一样，或者被比较的值被释放了两次
   - instanceof 给出的答案或错误和以前不一样，或者某个 Symbol.hasInstance 方法没有被调用
 ---
 
@@ -62,3 +62,25 @@ read_when:
 `engine/test/unit-oom.c` 的 `test_uncatchable_instanceof` 先在一个 async 函数里留下待处理的中断和内存不足错误，再分别用对象和原始值在左边做 `instanceof` 测试：运行必须以这个不可捕获的错误结束，测试之后的语句不能运行。
 
 测试：`engine/test/compare/instanceof.js` 打印 Node 24 打印的内容，覆盖类和子类、内置构造函数、左边是原始值和原型为 null 的对象、箭头函数、async 函数和绑定函数（也包括有自己 `prototype` 的绑定函数）、可调用的 proxy、任一边链上的 proxy、自有的或继承来的 `Symbol.hasInstance`（方法、getter、`null`、不可调用、返回非布尔值、抛错）、在两次测试之间添加又删除、加在父类上、用 `Object.setPrototypeOf` 把函数的原型换成带这个方法的对象、`null` 和 proxy、`prototype` 是 getter（改变左边的链的、自己做 `instanceof` 测试的、抛错的）、继承来的、不是对象的、还没生成的，以及规范里看得到的各步骤的顺序。`engine/test/regvm/js/o-instanceof.js` 在两个 realm 之间做同样的事：代码、右边和左边各自来自任一个 realm，链经过另一个 realm 的 `Function.prototype` 的函数，另一个 realm 的函数上的遮蔽属性，以及每个错误的消息和所属 realm。它的抛错注入 golden 有 1,107 个位置，它的 `inject-hit` 行让注入测试在没有一次运行在 `INSTOF` 抛错时失败。`rv_instof` 的每个检查都轮流去掉过一次，每次这些测试都会失败（`Symbol.hasInstance` 的遍历、绑定函数和可调用的检查、左边的 proxy、`prototype` 的值、临时值的释放，以及属性已经生成的检查，由 golden 的内存计数发现），只有两个检查例外，它们留作第二道防线。一个是右边遍历里对 exotic 对象的检查：那里的 proxy 在 shape 里没有原型，遍历无论如何都在它那里结束，而且没有别的 exotic 类会在 shape 之外给出 symbol 键的属性。另一个是 `prototype` 必须是数据属性的检查：getter 或者还没生成的原型，它们的槽位读出来永远不是对象，所以对值的检查无论如何都会把它们交给原来的路径。
+
+## 两个数的加和减不再经过共用的尾段
+
+发布版本：v0.31.1。
+
+两个数的 `+` 和 `-`，只要结果不是由两个 int 得出的 int，就不再经过加减八种形式共用的尾段（`rv_arith_other`）。这包括两个浮点数、int 和浮点数，以及和放不进 int 的两个 int。原来每个处理分支只自己算两个 int，其余都跳到尾段，尾段再从操作码字节找出是哪种形式，重新读两个操作数，每个 tag 测两次，才开始计算。现在处理分支一步测完两个 tag（`JS_TAG_INT` 是 0，`JS_TAG_FLOAT64` 是 8，其他 tag 都有别的位），然后跳到八种形式共用的一个块（`rv_arith_num`）。这个块把两个操作数读成 double，存一个 `__JS_NewFloat64` 做出的浮点数，和 QuickJS 的 `OP_add`、`OP_sub` 一样：NaN、-0 和无穷大就是 C 运算给出的值，`1.5 + 1.5` 这样的整数结果仍是浮点数。尾段只剩两个字符串和慢路径。
+
+乘法保持原样。它的处理分支算两个 int，其余跳到其他二元运算符共用的尾段（`rv_bin_other`），那里开头几行本来就算两个数。除法、`%` 和比较也没有动：NavierStokes 和 RayTrace 的一轮迭代、tifa 的页面里，作用在浮点数上的这些运算太少，不值得做。
+
+为什么安全：数不持有引用，而对两个数来说，慢路径只是转换它们，不会抛错，也不会调用脚本。结果写进局部变量时，旧值在写入之后释放，和 int 的情况一样。抛错注入时处理分支跳过这个块，和跳过 int 的情况一样。
+
+代价与收益：每个处理分支多一次 tag 测试和一次跳转。NavierStokes 少跑 1.9% 的指令，MUI 的页面少 0.25%，没有页面多跑。别的放法都让某处多跑，因为整个解释器的寄存器分配跟着变了：
+
+- 把算数的代码写进加、减、乘的十个处理分支：NavierStokes 少 12%，但商店的页面多 0.12% 到 0.17%，几乎都在解释器的调用和返回路径上，那里原本放在寄存器里的 `ctx` 改成了从栈上重新读
+- 每个处理分支调用一个函数：NavierStokes 多 27%
+- 只把两个浮点数写进处理分支：MUI 的页面多 1.1%
+- 三个寄存器形式写进处理分支、其余走这个块：商店多 0.06% 到 0.08%
+- 乘法也像加减一样走自己的块，在处理分支里、在自己的尾段里或在 int 测试的 `else` 里测：NavierStokes 少 2.6% 到 4.1%，但 V8 的 Crypto 多 0.7% 到 1.8%。Crypto 做 int 乘法，而乘法的 int 路径把 `ip` 放到了栈上。
+
+各自的计数见 [performance.md](../performance.zh-CN.md#两个数的加和减不再经过共用的尾段)。
+
+测试：`engine/test/compare/double_arith.js` 把浮点数、int 及其边界值（NaN、-0、无穷大、2^53 附近的值、整数结果、int 溢出）、带 `valueOf` 的对象、字符串和 BigInt 的 `TypeError`，在每种形式下的加、减、乘，和 Node 24 打印的结果比较。`engine/test/regvm/js/q4-floatarith.js` 跑这些形式，带要释放的旧值和由下面的调用持有的临时值，并有语料和抛错注入的 golden。`engine/pgo/loops.js` 里有一段会跑这个块，tifa 的页面跑得太少，训练不到它。

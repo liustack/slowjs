@@ -1326,6 +1326,46 @@ static void test_uncatchable_instanceof(void)
     }
 }
 
+/* f.apply(this, arguments) in the register loop (CALLMA,
+   engine/regvm-ops-args.h) calls f from the loop only when no uncatchable
+   exception is pending: with one pending, after an async function ran out
+   of memory, the call goes out of the loop and fails there, and f does not
+   run. */
+static void test_uncatchable_apply_forward(void)
+{
+    VM v = vm_new();
+    JSValue r, g, f;
+    char *text = NULL;
+    int st, unc = 0;
+
+    eval_ok(v.ctx, fail_js[END_OOM]);
+    eval_ok(v.ctx, "var ran = 0, after = 0; function tg(a, b) { ran++; return a + b; }"
+            " function fa(k) { var n = tg.apply(this, arguments);"
+            " if (k) { (async () => { fail() })(); n += tg.apply(this, arguments); after = n; } return n; }"
+            " fa(0, 1); fa(0, 1);");
+    g = JS_GetGlobalObject(v.ctx);
+    f = JS_GetPropertyStr(v.ctx, g, "fa");
+    st = JS_RegvmFuncStat(v.ctx, f, 0);
+    CHECK(st == 1, "apply forward: fa is not in the register loop (state %d)", st);
+    JS_FreeValue(v.ctx, f);
+    JS_FreeValue(v.ctx, g);
+    eval_ok(v.ctx, "ran = 0");
+    room(&v, 1 << 20);
+    r = JS_Eval(v.ctx, "fa(1, 2)", strlen("fa(1, 2)"), "<unit>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(r)) {
+        unc = JS_IsUncatchableException(v.ctx);
+        text = exception_text(v.ctx);
+    }
+    JS_FreeValue(v.ctx, r);
+    unlimit(&v);
+    CHECK(unc && text && (strstr(text, "out of memory") || strcmp(text, "null") == 0),
+          "apply forward: ended with %s, want the uncatchable out of memory error", text ? text : "no error");
+    CHECK(eval_is(v.ctx, "ran", "1"), "apply forward: f ran with the exception pending");
+    CHECK(eval_is(v.ctx, "after", "0"), "apply forward: the code after the call ran with the exception pending");
+    free(text);
+    vm_free(&v);
+}
+
 /* The engine's 2 in the interrupt flag follows the uncatchable exception
    alone: set when an exception is made uncatchable, cleared when it is taken
    or made catchable, never set for a catchable one or with nothing pending,
@@ -1878,6 +1918,40 @@ static void test_for_in_oom(void)
     snprintf(setup, sizeof(setup), "%srun();\n", fns);
     sweep("for in", "for_in.js", setup, "run()", want, 16384);
     sweep("for in, first loop", "for_in.js", fns, "run()", want, 32768);
+}
+
+/* Object.freeze and Object.seal in one pass over the shape
+   (js_shape_set_integrity): of objects whose shape another object holds (the
+   shape is copied first), of an object alone with its shape, of arrays whose
+   elements are made properties first, of an empty array and of an object of
+   40 keys, and Object.isFrozen and Object.isSealed of each. With too little
+   memory a call fails with the out of memory error and loses nothing, and
+   the same calls on new objects then give the same levels. */
+static void test_integrity_oom(void)
+{
+    static const char setup[] =
+        "function lv(o) { return (Object.isExtensible(o) ? '1' : '0') + (Object.isSealed(o) ? 1 : 0) +"
+        " (Object.isFrozen(o) ? 1 : 0) }\n"
+        "function run() {\n"
+        "  var out = [];\n"
+        "  for (var i = 0; i < 4; i++) {\n"
+        "    var a = { x: i, y: 2, get g() { return 1 } }, b = { x: i, y: 2, get g() { return 1 } };\n"
+        "    var c = {}; c['k' + i] = 1; c.z = 2;\n"
+        "    var d = [i, 2, 3], e = [], big = {};\n"
+        "    for (var j = 0; j < 40; j++) big['p' + j] = j;\n"
+        "    Object.freeze(a); Object.seal(b); Object.freeze(c); Object.freeze(d); Object.seal(e);\n"
+        "    Object.freeze(big);\n"
+        "    out.push(lv(a) + lv(b) + lv(c) + lv(d) + lv(e) + lv(big));\n"
+        "  }\n"
+        "  return out.join(' ');\n"
+        "}\n"
+        /* once before the sweep, so that its register code is made */
+        "run();\n";
+    static const char *const want[] = {
+        "011010011011010011 011010011011010011 011010011011010011 011010011011010011", NULL
+    };
+
+    sweep("integrity levels", "integrity.js", setup, "run()", want, 16384);
 }
 
 /* Object.defineProperty, Object.defineProperties, Object.create and
@@ -2569,7 +2643,74 @@ static void test_array_room_oom(void)
 
         want[0] = cases[i].want;
         want[1] = NULL;
-        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 16384);
+        /* up to 16 KiB and an arena of small blocks (4 KiB): where a
+           script needs a new arena for a size class depends on the room
+           the blocks made before it left in the arenas the runtime has
+           (push many needs 12,872 bytes with shapes of 64 bytes before
+           their keys and 16,968 with shapes of 72) */
+        sweep(cases[i].name, "arrayroom.js", NULL, cases[i].src, want, 20480);
+    }
+}
+
+/* An element added at the end of an array whose block must grow, which
+   fails for want of memory, leaves the length as it was (upstream b25da59):
+   the run with the memory back finds the last element where the length says
+   it is. Before, the length counted the element that was not added. */
+static void test_array_length_oom(void)
+{
+    static const char setup[] = "var a = 'x'.repeat(200).split('');\n";
+    static const char src[] =
+        "var n = a.length, last = (n - 1) in a;\n"
+        "while (a.length < 1000) a[a.length] = 0;\n"
+        "last ? 'no hole' : 'a hole at ' + (n - 1)";
+    static const char *const want[] = { "no hole", NULL };
+
+    sweep_step = 64;
+    sweep("the length of a failed append", "arraylength.js", setup, src, want, 65536);
+    sweep_step = 8;
+}
+
+/* An element stored after the last one of an array whose length cannot be
+   written does nothing (a[0] = 1 in sloppy code) or gives false
+   (Reflect.set), with a full heap too: the length is tested before room is
+   made for the element. Before, the room came first, and with no memory the
+   call ended with the uncatchable out of memory error. */
+static void test_array_readonly_length_oom(void)
+{
+    static const char setup[] =
+        "var a = Object.defineProperty([], 'length', { writable: false });\n"
+        "function put() { a[0] = 1; return 7; }\n"
+        "function reflect() { return Reflect.set(a, 0, 1); }\n"
+        "put(); reflect();\n"
+        /* a new array, with no room yet */
+        "a = Object.defineProperty([], 'length', { writable: false });\n";
+    static const char *const names[] = { "put", "reflect" };
+    static const char *const want[] = { "7", "false" };
+    int i;
+
+    for (i = 0; i < 2; i++) {
+        VM v = vm_new();
+        JSValue g, f, r;
+        char *t;
+        int fail, unc;
+
+        CHECK(eval_ok(v.ctx, setup), "%s: the setup", names[i]);
+        g = JS_GetGlobalObject(v.ctx);
+        f = JS_GetPropertyStr(v.ctx, g, names[i]);
+        fill_memory(&v);
+        r = JS_Call(v.ctx, f, JS_UNDEFINED, 0, NULL);
+        fail = JS_IsException(r);
+        unc = JS_IsUncatchableException(v.ctx);
+        release_blocks(&v);
+        t = fail ? exception_text(v.ctx) : value_text(v.ctx, r);
+        CHECK(!fail && t && strcmp(t, want[i]) == 0, "%s on a length that cannot be written, a full heap: %s%s, want %s",
+              names[i], fail ? (unc ? "uncatchable " : "exception ") : "", t ? t : "?", want[i]);
+        free(t);
+        JS_FreeValue(v.ctx, r);
+        CHECK(eval_is(v.ctx, "a.length === 0 && !(0 in a)", "true"), "%s: the array changed", names[i]);
+        JS_FreeValue(v.ctx, f);
+        JS_FreeValue(v.ctx, g);
+        vm_free(&v);
     }
 }
 
@@ -2643,6 +2784,63 @@ static void test_finrec_job_full_heap(void)
     }
 }
 
+/* ---- the rejections kept for the host ---- */
+
+/* The two allocations of keeping rejections, each with no memory: the list,
+   which JS_TrackRejections makes and fails with -1 for, keeping nothing and
+   changing nothing, and the entry of a rejection, which the tracker counts
+   as dropped when it gets no memory: the rejection itself goes through, the
+   promise is rejected, and nothing leaks (vm_free). With memory, the same
+   rejection is kept. */
+static void test_rejections_oom(void)
+{
+    static const char setup[] = "var rej; var p = new Promise((_, r) => { rej = r }); p";
+    int full;
+
+    for (full = 0; full < 2; full++) {
+        VM v = vm_new();
+        JSValue arg = JS_NewInt32(v.ctx, 7), g, rej, p, r;
+        int32_t n = 0;
+
+        if (full) {
+            fill_memory(&v);
+            CHECK(JS_TrackRejections(v.rt, 4) == -1, "the list made with a full heap");
+            release_blocks(&v);
+            CHECK(eval_ok(v.ctx, "Promise.reject(1)"), "the script threw");
+            r = JS_TakeRejection(v.rt, JS_RejectionMark(v.rt));
+            CHECK(JS_IsUninitialized(r), "a rejection kept with no list");
+            JS_FreeValue(v.ctx, r);
+            CHECK(JS_TakeDroppedRejections(v.rt) == 0, "dropped with no list");
+        }
+        CHECK(JS_TrackRejections(v.rt, 4) == 0, "full %d: no list", full);
+        p = JS_Eval(v.ctx, setup, strlen(setup), "<unit>", JS_EVAL_TYPE_GLOBAL);
+        CHECK(JS_IsObject(p), "the setup failed");
+        g = JS_GetGlobalObject(v.ctx);
+        rej = JS_GetPropertyStr(v.ctx, g, "rej");
+        JS_FreeValue(v.ctx, g);
+        if (full)
+            fill_memory(&v);
+        r = JS_Call(v.ctx, rej, JS_UNDEFINED, 1, &arg);
+        if (full)
+            release_blocks(&v);
+        CHECK(!JS_IsException(r), "full %d: the rejection threw", full);
+        JS_FreeValue(v.ctx, r);
+        CHECK(JS_PromiseState(v.ctx, p) == JS_PROMISE_REJECTED, "full %d: not rejected", full);
+        CHECK(JS_TakeDroppedRejections(v.rt) == (uint32_t)full, "full %d: dropped", full);
+        r = JS_TakeRejection(v.rt, JS_RejectionMark(v.rt));
+        if (full) {
+            CHECK(JS_IsUninitialized(r), "full %d: a rejection kept", full);
+        } else {
+            JS_ToInt32(v.ctx, &n, r);
+            CHECK(n == 7, "full %d: the reason %d", full, n);
+        }
+        JS_FreeValue(v.ctx, r);
+        JS_FreeValue(v.ctx, rej);
+        JS_FreeValue(v.ctx, p);
+        vm_free(&v);
+    }
+}
+
 /* ---- the register loop ---- */
 
 /* A function converts to register code at its first call, with the memory
@@ -2701,7 +2899,10 @@ static void test_regvm_cases_oom(void)
    with nothing lost (the local is written only with the whole object), and
    the reads after the build in the same call see the object. The same for
    a function that also lets the object go, where it is built at that read
-   (ARGMAT). */
+   (ARGMAT). The same for the mapped object of a sloppy function, whose
+   parameters may be written first, and for f.apply(t, arguments) (CALLMA):
+   a call of a function of bytecode makes no object, and a call of a C
+   function builds it, where each allocation fails in turn. */
 static void test_regvm_args_oom(void)
 {
     static const char setup[] =
@@ -2726,7 +2927,57 @@ static void test_regvm_args_oom(void)
     static const char *const want_escape[] = { "3:x-y-z:x:z|1::w:w", NULL };
 
     sweep("arguments built on a read", "<args>", setup, "f()", want, 16384);
+    static const char setup_mapped[] =
+        "var m = (function () {\n"
+        "  function g(a, b) {\n"
+        "    a = 'A';\n"
+        "    var r = arguments.length + ':' + arguments[0] + ':' + arguments[3];\n"
+        "    return r + ':' + arguments[1] + ':' + a;\n"
+        "  }\n"
+        "  return function () { return g('x', 'y', 'z') + '|' + g('w'); };\n"
+        "})();\n";
+    static const char *const want_mapped[] = { "3:A:undefined:y:A|1:A:undefined:undefined:A", NULL };
+
+#define SETUP_APPLY \
+        "var fw = (function () {\n" \
+        "  function show() {\n" \
+        "    var s = this.k + ':' + Array.prototype.join.call(arguments, ',');\n" \
+        "    return s + ':' + s.repeat(1000).length;\n" \
+        "  }\n" \
+        "  function f(a) { a = 'A'; return show.apply(this, arguments); }\n" \
+        "  function m(a) { return Math.max.apply(null, arguments) + ':' + arguments[5]; }\n" \
+        "  function s(a) { 'use strict'; return Math.min.apply(null, arguments); }\n" \
+        "  var o = { k: 'o' };\n" \
+        "  var r = function () { return f.call(o, 1, 2) + '|' + m(3, 9, 4) + '|' + s(5, 1); };\n" \
+        "  r.show = show;\n" \
+        "  return r;\n" \
+        "})();\n"
+    /* cold, show is called first under the limit: not converted yet, the
+       call goes out of the loop to the C apply, which builds the object.
+       Warm, show was called before the limit and is converted: f calls it
+       in the loop, and running out of memory in show leaves its frame,
+       which keeps apply (RV_DST_APPLY), with apply freed. show makes a
+       string of 5000 bytes, more than the compile of fw() takes and gives
+       back, so that some rooms run out there. Math.max and Math.min are C
+       functions, called by the C apply either way. */
+    static const char setup_apply[] = SETUP_APPLY;
+    static const char setup_apply_warm[] = SETUP_APPLY "fw();\n";
+#undef SETUP_APPLY
+    static const char *const want_apply[] = { "o:A,2:5000|9:undefined|1", NULL };
+    VM v;
+    JSValue show;
+
     sweep("arguments built where they escape", "<args>", setup_escape, "h()", want_escape, 16384);
+    sweep("mapped arguments built on a read", "<args>", setup_mapped, "m()", want_mapped, 16384);
+    sweep("arguments passed on by apply", "<args>", setup_apply, "fw()", want_apply, 16384);
+    v = vm_new();
+    CHECK(eval_ok(v.ctx, setup_apply_warm), "apply, warm: the setup failed");
+    show = JS_Eval(v.ctx, "fw.show", strlen("fw.show"), "<args>", JS_EVAL_TYPE_GLOBAL);
+    CHECK(JS_RegvmFuncStat(v.ctx, show, 0) == 1, "apply, warm: show is not in the register loop");
+    JS_FreeValue(v.ctx, show);
+    vm_free(&v);
+    sweep("arguments passed on by apply to a converted function", "<args>", setup_apply_warm,
+          "fw()", want_apply, 16384);
 }
 
 /* Array destructuring with no iterator (engine/regvm-ops-dst.h) makes the
@@ -2956,6 +3207,7 @@ int main(void)
     test_uncatchable_then_loop();
     test_uncatchable_fast_call();
     test_uncatchable_instanceof();
+    test_uncatchable_apply_forward();
     test_uncatchable_flag_bit();
     test_weakref_kept_oom();
     test_symbol_copy_oom();
@@ -2966,12 +3218,15 @@ int main(void)
     test_syntax_error_stack_oom();
     test_empty_string_full_heap();
     test_finrec_job_full_heap();
+    test_rejections_oom();
     test_split_paths_oom();
     test_compile_names_oom();
     test_key_names_oom();
     test_normalize_oom();
     test_map_grow_oom();
     test_array_room_oom();
+    test_array_length_oom();
+    test_array_readonly_length_oom();
     test_string_append_oom();
     test_string_add_oom();
     test_copy_props_oom();
@@ -2984,6 +3239,7 @@ int main(void)
     test_fast_builtins_oom();
     test_for_in_oom();
     test_define_desc_oom();
+    test_integrity_oom();
     test_bind_oom();
     test_bind_host_oom();
     test_tags_oom();

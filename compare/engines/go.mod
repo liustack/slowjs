@@ -6,7 +6,7 @@ replace github.com/liustack/slowjs => ../../
 
 require (
 	github.com/MoeForge/moejs v0.1.0
-	github.com/go-quickjs/go-quickjs v0.37.3
+	github.com/go-quickjs/go-quickjs v0.38.0
 	github.com/liustack/slowjs v0.30.7
 )
 

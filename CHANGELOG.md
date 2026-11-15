@@ -4,6 +4,38 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+## [v0.31.1] - 2026-11-16
+
+### Changed
+
+- Pages render in up to 2.2% less time than with v0.31.0, and the V8 benchmark suite scores 18.7% higher, with the changes below and a profile trained again on them. On a linux/amd64 machine with an AMD EPYC 7B13 (the mean of 16 code layouts), React pages take 2.2% less time, tifa's workbench pages 1.5% less and the MUI pages 1.1% less, and for the store pages the timing shows no change. On the V8 suite RegExp scores 97% higher, RayTrace 49% and EarleyBoyer 15% ([performance.md](docs/performance.md#v0311-against-v0310)).
+- Known limit: a long Markdown document renders about 3% slower than with v0.31.0, and rendered after a shorter one in the same VM the process peaks at 460 MB where it peaked at 258 MB. Every regexp now carries 38 more bytes and that page compiles about 5,500 of them a render, so the engine's collections fall at other points. The next release gives the bytes only to the regexps that use them.
+- [docs/benchmarks.md](docs/benchmarks.md) is run again on v0.31.1: among the engines for Go, liustack/slowjs renders tifa's pages fastest and ties with moejs on the V8 suite. The page table has a row for liustack/slowjs on polyfills, and the V8 table one for Node `--jitless`.
+- Bytecode version 13: bytecode written by `Compile` of an earlier release no longer loads. Compile again.
+- A regexp looks for the longest literal every match must hold before its backtracking machine runs. The RegExp benchmark of the V8 suite runs 54% fewer instructions ([regexp.md](docs/changes/regexp.md#a-literal-every-match-holds)).
+- `f.apply(this, arguments)` calls `f` with the arguments of the frame: no arguments object, and one level of call depth where it took two. RayTrace runs 23% fewer instructions ([c-engine.md](docs/changes/c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object)).
+- Objects made with `new` find the shapes the objects before them went through and make none of their own. Boyer runs 9.4% fewer instructions, RayTrace 7.1% ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through)).
+- A step of a `for in` loop and the read `o[k]` of the key it just gave stay in the register loop. MUI's orders page runs 2.1% fewer instructions ([c-engine.md](docs/changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop)).
+- `Object.isFrozen`, `isSealed`, `freeze` and `seal` go over the shape of an object once. A page with its state in Redux Toolkit runs 44% fewer instructions ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape)).
+- A number that is not an integer converts to text by Schubfach, about 460 instructions where it took 2,585. A chart page runs 8.7% fewer ([strings.md](docs/changes/strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers)).
+- A Date finds its year, month and day without loops, writes its strings without `snprintf`, and a context keeps the fields of the last time value. A page of date-fns and dayjs runs 3.2% fewer instructions ([time-and-intl.md](docs/changes/time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop)).
+- `+` and `-` of two numbers skip the tail the forms of add and sub share. NavierStokes runs 1.9% fewer instructions ([operators.md](docs/changes/operators.md#add-and-sub-of-two-numbers-without-the-shared-tail)).
+
+### Added
+
+- `VM.TrackRejections(max)` and `VM.UnhandledRejections()`: a VM keeps the promises rejected with no handler, for the host to report ([go-api.md](docs/changes/go-api.md#trackrejections-and-unhandledrejections)).
+- Package `tifa`: `tifa.Register(vm)` gives a VM what tifa gives each VM of its pool (`URL`, `Intl`, `Temporal` and the functions named `__tifa_*`). The `slowjs` command uses it, so its scripts have those functions too ([go-api.md](docs/changes/go-api.md#package-tifa)).
+
+
+### Fixed
+
+- A long string a script returns or throws stops converting to Go at the eval timeout and at `Interrupt`: a call could end 0.5 seconds after its timeout ([go-api.md](docs/changes/go-api.md#strings-a-script-returns-or-throws-stop-converting-at-the-top-level-too)).
+- 54 powers of two printed one digit too many: `2 ** -44` is `5.684341886080802e-14`, as in Node ([strings.md](docs/changes/strings.md#a-power-of-two-prints-its-shortest-digits)).
+- An append or a define that runs out of memory leaves the array or the property as it was: an append left the length one past the elements ([upstream-commits.md](docs/changes/upstream-commits.md#an-append-that-runs-out-of-memory-leaves-the-length), [objects-and-shapes.md](docs/changes/objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything)).
+- An object holds at most 2^26 - 1 properties, and one more throws a RangeError: past that a lookup could miss a property ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#a-shape-holds-at-most-226---1-properties)).
+- `Object.isFrozen` and `Object.isSealed` ask `isExtensible` first, as the specification says, and defining a property of a module namespace whose binding is not initialized throws a `ReferenceError` ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#objectisfrozen-and-objectissealed-ask-first-whether-the-object-is-extensible)).
+- `Array.from` on a constructor and a Go function that returns more values than fit in 32 bits no longer cut the count ([objects-and-shapes.md](docs/changes/objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length), [go-api.md](docs/changes/go-api.md#more-values-than-the-engine-can-count-fail)).
+
 ## [v0.31.0] - 2026-11-15
 
 ### Changed
@@ -724,7 +756,8 @@ The first release of the fork, from modernc.org/quickjs v0.25.0 and libquickjs v
 - A VM that runs out of memory inside `JSON.parse`, or anything else that converts a string with non-ASCII characters to UTF-8, no longer leaks that string.
 - `VM.Call` and `VM.CallValue` report the exception thrown while evaluating the function expression instead of `cannot call a non-function`.
 
-[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.0...main
+[Unreleased]: https://github.com/liustack/slowjs/compare/v0.31.1...main
+[v0.31.1]: https://github.com/liustack/slowjs/compare/v0.31.0...v0.31.1
 [v0.31.0]: https://github.com/liustack/slowjs/compare/v0.30.7...v0.31.0
 [v0.30.7]: https://github.com/liustack/quickjs/compare/v0.30.6...v0.30.7
 [v0.30.6]: https://github.com/liustack/quickjs/compare/v0.30.5...v0.30.6

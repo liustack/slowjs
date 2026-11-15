@@ -60,6 +60,19 @@ Results hold for the machine they were measured on. A result on linux/amd64 says
 9. **Count with callgrind next to it, never instead** (`bench cg -small 0 -big 3 -dumps -sim`). One process per binary warms every page, then counts only the window the benchmark marks with client requests, 3 renders of every page (see [testing.md](testing.md#time-one-build-against-another)). The table shows the whole program and the interpreter's own code: instructions, branches, mispredicted branches and cache misses, and the raw files are kept. Callgrind's predictor and caches are models of old hardware, not of Zen 3, so a rise in its misses is a reason to look closer, not a verdict. When the counts and the timing disagree, keep measuring. Neither overrules the other.
 10. **Confirm a winner on new data.** When several variants were tried and one is kept, time it again in a new run (a new file, so a new experiment id and new orders) before quoting it. The judge compares one pair of sides on one app. It does no correction over apps or over pairs: when one change is judged on 4 apps at 95% each, the chance that some app shows a false "slower" or "faster" is up to about 1 in 5 (1 - 0.95^4), so a single app out of line is weak evidence on its own.
 
+## The pages program
+
+`internal/measure/pages` renders tifa's pages from `engine/pgo/pages` (`-kind wb`, `store`, `mui` or `react`) without a checkout of tifa. It is a module of its own, built against each side's tree with `bench build -app internal/measure/pages -pkg . -test`. By default (`-mode tifa`) it sets the VM up as tifa does, with `tifa.Register`, tifa's limits, shared bytecode, `RenderVM` and tifa's pool. `-mode standin` is the program that measured v0.31.1 and before (a stand-in `Intl`, five of the functions, no memory given back), for numbers to compare with theirs, and `-bare` registers no `__tifa_*` function. Before the bundle loads, the guard finds every name `__tifa_*` in it: each must be registered, or be in the table of `guard.go` with its reason, or the run stops naming it. Every run prints its mode and the functions it registered.
+
+```sh
+# a timing: one P50 per page (Pages/MODE/PAGE)
+taskset -c 2 go tool measure bench run -bin bin -out wb.jsonl -kind wb -parse gobench:p50-ms -env GOMAXPROCS=1 -cpu 2 -sib 6 \
+    -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind wb
+# a count in the window, linux/amd64
+go tool measure bench cg -bin bin/base@0.0 -bin bin/new@0.0 -small 0 -big 3 -dumps -sim -out cg -env GODEBUG=asyncpreemptoff=1 \
+    -- -test.run '^$' -test.bench Pages -test.benchtime 1x -kind wb -cg -timed {N} -evaltimeout 1h
+```
+
 ## The defaults and why
 
 | setting | default | why |

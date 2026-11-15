@@ -11,7 +11,7 @@ read_when:
 
 [English](benchmarks.md) · 简体中文
 
-2026-11-14 的运行：liustack/quickjs v0.30.7 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-14-v0.30.7-gcp-pages`、`-pages-moejs` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。这次运行是以 v0.30.7 做的，当时模块叫 `github.com/liustack/quickjs`（v0.30.0 到 v0.30.7），所以这一页写的是 liustack/quickjs，行叫 `liustack-quickjs`。从 v0.31.0 起模块是 `github.com/liustack/slowjs`，新的运行把这一行叫 `liustack-slowjs`。
+2026-11-16 的运行：liustack/slowjs v0.31.1 对 Go 的另外两个引擎和三个原生引擎，在 GCP t2d-standard-4（AMD EPYC 7B13，四核，没有 SMT）上，Linux 7.0，Go 1.27.4。每个计时的进程都在一个核上运行，整台机器为它独占，GOMAXPROCS=1。这次运行的文件在 [`compare/engines/results/`](../compare/engines/results/)（`2026-11-16-v0.31.1-gcp-pages` 和 `-v8`，各有 `.md` 和 `.json`），怎么重新运行见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)。数字都来自这一台机器：不要拿它们和别的机器的数字比。
 
 ## 比什么
 
@@ -23,8 +23,9 @@ read_when:
 
 | 引擎 | 版本 | 怎么运行 |
 |---|---|---|
-| liustack-quickjs | v0.30.7 | 注册本模块的 `intl`、`temporal` 和 `url` 三个包 |
-| go-quickjs-interp | go-quickjs v0.37.3 | 关 JIT，用它自己的 Intl |
+| liustack-slowjs | v0.31.1 | 注册本模块的 `intl`、`temporal` 和 `url` 三个包 |
+| liustack-slowjs-polyfill | v0.31.1 | 同一个引擎，不带这三个包，用 C QuickJS 和 Hermes 用的那些 polyfill。只在页面那张表里 |
+| go-quickjs-interp | go-quickjs v0.38.0 | 关 JIT，用它自己的 Intl |
 | moejs | v0.1.0 | 用它自己的（不完整的）Intl，外加一个 `FinalizationRegistry` 替身（`native/moejs-shim.js`） |
 | C QuickJS | 2026-06-04 | `qjs`，照发布的方式构建 |
 | Hermes V1 | `260318099.0.0-stable` | 这个版本没有 JIT，运行 `hermesc -O` 编好的字节码，就像应用发布的那样 |
@@ -34,21 +35,23 @@ read_when:
 
 ## 渲染
 
-tifa 页面一次渲染的 CPU 时间，表示成相对 liustack/quickjs 的比值：一组页面上的几何平均，括号里是范围。大于 1 表示比 liustack/quickjs 慢。
+tifa 页面一次渲染的 CPU 时间，表示成相对 liustack/slowjs 的比值：一组页面上的几何平均，括号里是范围。大于 1 表示比 liustack/slowjs 慢。
 
 | 引擎 | bench（2 个页面） | MUI（3 个页面） | 商店（20 个页面） |
 |---|---|---|---|
-| liustack-quickjs | 1.00 | 1.00 | 1.00 |
-| go-quickjs-interp | 2.35 (2.33–2.36) | 2.39 (2.32–2.51) | 3.32 (2.26–5.29) |
-| moejs（单独一个会话） | 1.35 (1.32–1.37) | 1.46 (1.45–1.46) | 1.78 (1.41–2.67) |
-| C QuickJS 2026-06-04 | 1.76 (1.63–1.90) | 3.53 (2.18–4.97) | 2.26 (1.45–2.95) |
-| Hermes V1，`-O` 字节码 | 0.91 (0.86–0.97) | 1.83 (1.18–2.50) | 1.66 (0.79–4.15) |
-| Node v24.22.3 `--jitless` | 0.85 (0.83–0.87) | 1.09 (1.03–1.11) | 0.86 (0.64–0.96) |
+| liustack-slowjs | 1.00 | 1.00 | 1.00 |
+| liustack-slowjs-polyfill | 1.02 (1.02–1.03) | 1.70 (1.19–2.12) | 1.63 (1.19–2.36) |
+| go-quickjs-interp | 2.51 (2.44–2.58) | 2.56 (2.46–2.62) | 3.55 (2.68–6.00) |
+| moejs | 1.29 (1.27–1.32) | 1.52 (1.49–1.55) | 1.86 (1.39–3.09) |
+| C QuickJS 2026-06-04 | 1.85 (1.71–1.99) | 3.64 (2.17–5.10) | 2.44 (1.74–3.29) |
+| Hermes V1，`-O` 字节码 | 0.97 (0.90–1.05) | 1.92 (1.21–2.56) | 1.78 (0.96–4.57) |
+| Node v24.22.3 `--jitless` | 0.91 (0.90–0.93) | 1.15 (1.13–1.16) | 0.94 (0.75–1.00) |
 
-- **哪些引擎用了 polyfill。** C QuickJS 和 Hermes 没有 Intl，在 MUI 和商店页面上用了 FormatJS。go-quickjs、C QuickJS 和 Hermes 的 URL、URLSearchParams 和 structuredClone 来自 core-js，moejs 的 URL、URLSearchParams 和迭代器辅助方法来自 core-js，Hermes 和 Node 的 `Iterator.concat` 也是。liustack/quickjs 和 Node 的 Intl 与 URL 不需要 polyfill。bench 页面不需要 Intl，所以那一列是每个引擎跑同样的 JavaScript：说这个引擎在同样的代码上比 C QuickJS 快，靠的是那一列和 V8 套件。core-js 在 C QuickJS 和 Hermes 里只替换了 `Function.prototype.toString` 和 `Iterator.prototype.drop`、`take`（C QuickJS 里还有 `flatMap`），而 bench 页面的渲染一个都不调用（每个页面数过 3 次渲染），也不调用 `new URL`，所以那一列测的是引擎本身。
-- **moejs** 要一个替身才能加载这些包：包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，`native/moejs-shim.js` 给它一个从不回调的注册表。有了它再加 core-js，25 个页面全部渲染。它在单独的一个会话里计时（文件 `2026-11-14-v0.30.7-gcp-pages-moejs`），liustack/quickjs 在那个会话里重新跑了一遍，所以它的比值是相对那次运行的，不是相对主运行的。
+- **第二行**是不带内置 Intl、URL 和 Temporal 的 liustack/slowjs，和 C QuickJS、Hermes 用同样的 polyfill。它显示 MUI 和商店页面上的领先有多少来自解释器，多少来自用 Go 写的 Intl。跑同样的 JavaScript 时，C QuickJS 在 bench 页面上用 1.8 倍的时间，MUI 上 2.1 倍，商店上 1.5 倍，Hermes 大致持平（0.95、1.13 和 1.09 倍）。这两列上其余的领先来自 Go 写的 Intl。
+- **哪些引擎用了 polyfill。** C QuickJS、Hermes 和第二行没有 Intl，在 MUI 和商店页面上用了 FormatJS。go-quickjs、C QuickJS、Hermes 和第二行的 URL、URLSearchParams 和 structuredClone 来自 core-js，moejs 的 URL、URLSearchParams 和迭代器辅助方法来自 core-js，Hermes 和 Node 的 `Iterator.concat` 也是。liustack/slowjs 和 Node 的 Intl 与 URL 不需要 polyfill。bench 页面不需要 Intl，所以那一列是每个引擎跑同样的 JavaScript：说这个引擎在同样的代码上比 C QuickJS 快，靠的是那一列和 V8 套件。core-js 在 C QuickJS 和 Hermes 里只替换了 `Function.prototype.toString` 和 `Iterator.prototype.drop`、`take`（C QuickJS 里还有 `flatMap`），而 bench 页面的渲染一个都不调用（每个页面数过 3 次渲染），也不调用 `new URL`，所以那一列测的是引擎本身。
+- **moejs** 要一个替身才能加载这些包：包在加载时读 `FinalizationRegistry`，moejs v0.1.0 没有它，`native/moejs-shim.js` 给它一个从不回调的注册表。有了它再加 core-js，25 个页面全部渲染。
 - **Hermes** 没有异步生成器，所以只为 Hermes，用 esbuild 把包里的异步生成器和 `for await` 降级成 ES2017 的 async 函数。一个很小的替身文件（`native/hermes-shim.js`）给 Hermes 补上包只在加载时读、而它没有的内置对象（可调整大小的 ArrayBuffer 的取值器、RegExp 标志的取值器、`SharedArrayBuffer`、`Float16Array`）。它的 shell 没有 `performance.now`，所以它的时间是整个计时循环的墙钟时间除以渲染次数。
-- **HTML。** go-quickjs、moejs 和 Node 在全部 25 个页面上和我们的 HTML 相同。C QuickJS 有 9 个页面不同，Hermes 是全部 25 个，不同的地方总是 Intl 格式化的文字，Hermes 还有路由的内嵌脚本。C QuickJS 用 FormatJS 把日期写成 `October 13, 14:32`，Go 的 Intl 写成 `October 13 at 14:32`，`AM` 和 `PM` 前面还是一个窄的不换行空格。Hermes 把路由的脱水函数打印成 `function($R){return ...}`，别的引擎打印的是原样的箭头函数（不在 Intl 的输出里），MUI 和工作台页面的日期文字和 C QuickJS 一样不同。其余每个字节都相同：不同的页面在 `-pages.md` 文件里列出，附上各自第一处不同的位置。
+- **HTML。** go-quickjs、moejs 和 Node 在全部 25 个页面上和我们的 HTML 相同。C QuickJS 有 9 个页面不同，第二行也是这 9 个（它的 HTML 在全部 25 个页面上和 C QuickJS 的相同），Hermes 是全部 25 个，不同的地方总是 Intl 格式化的文字，Hermes 还有路由的内嵌脚本。C QuickJS 用 FormatJS 把日期写成 `October 13, 14:32`，Go 的 Intl 写成 `October 13 at 14:32`，`AM` 和 `PM` 前面还是一个窄的不换行空格。Hermes 把路由的脱水函数打印成 `function($R){return ...}`，别的引擎打印的是原样的箭头函数（不在 Intl 的输出里），MUI 和工作台页面的日期文字和 C QuickJS 一样不同。其余每个字节都相同：不同的页面在 `-pages.md` 文件里列出，附上各自第一处不同的位置。
 
 ## V8 套件
 
@@ -56,13 +59,14 @@ tifa 页面一次渲染的 CPU 时间，表示成相对 liustack/quickjs 的比�
 
 | 引擎 | Richards | DeltaBlue | Crypto | RayTrace | EarleyBoyer | RegExp | Splay | NavierStokes | 得分 |
 |---|---|---|---|---|---|---|---|---|---|
-| liustack-quickjs | 1152 | 1011 | 1062 | 1553 | 2332 | 557 | 4238 | 2360 | 1493 (1440–1536) |
-| go-quickjs-interp | 989 | 864 | 1263 | 1543 | 1729 | 2947 | 2567 | 2335 | 1630 (1538–1712) |
-| moejs | 1261 | 1071 | 1319 | 1890 | 2519 | 1504 | 3151 | 3171 | 1852 (1741–1878) |
-| C QuickJS 2026-06-04 | 821 | 731 | 934 | 1561 | 2017 | 379 | 2809 | 1812 | 1161 (1132–1208) |
-| Hermes V1，`-O` 字节码 | 1297 | 1513 | 1734 | 4520 | 4757 | 548 | 2537 | 3446 | 2080 (2022–2179) |
+| liustack-slowjs | 1133 | 1004 | 1425 | 2202 | 3031 | 1120 | 4645 | 2454 | 1854 (1842–1863) |
+| go-quickjs-interp | 998 | 882 | 1299 | 1583 | 1863 | 2901 | 3069 | 2338 | 1702 (1693–1706) |
+| moejs | 1243 | 1080 | 1361 | 1933 | 2512 | 1475 | 3357 | 3145 | 1864 (1848–1875) |
+| C QuickJS 2026-06-04 | 829 | 753 | 889 | 1571 | 2012 | 375 | 3121 | 1777 | 1178 (1176–1183) |
+| Hermes V1，`-O` 字节码 | 1297 | 1521 | 1749 | 4593 | 4855 | 553 | 2857 | 3394 | 2136 (2107–2151) |
+| Node v24.22.3 `--jitless` | 1356 | 1445 | 1051 | 3534 | 5695 | 3037 | 3374 | 1645 | 2272 (2259–2290) |
 
-liustack/quickjs 的得分是 C QuickJS 的 1.29 倍。除 RayTrace 外每个子项都领先它（RayTrace 是 0.99，在各轮的波动之内算打平）。它不是这个套件上最快的引擎：moejs 的得分是它的 1.24 倍，go-quickjs 是 1.09 倍，Hermes 是 1.39 倍。差距在 RegExp（go-quickjs 5.3 倍，moejs 2.7 倍）、Crypto、RayTrace 和 NavierStokes。liustack/quickjs 在 Splay 上领先（是其他各行的 1.3 到 1.7 倍）。
+liustack/slowjs 的得分是 C QuickJS 的 1.57 倍，每个子项都领先它。在 Go 的引擎里它和 moejs 打平（1854 对 1864，两边各轮的范围有重叠），是 go-quickjs 的 1.09 倍。它不是这个套件上最快的引擎：Hermes 的得分是它的 1.15 倍，Node `--jitless` 是 1.23 倍。对 moejs，它在 Crypto、RayTrace、EarleyBoyer 和 Splay 上领先，在 RegExp（moejs 1.3 倍）、NavierStokes（1.3 倍）、Richards 和 DeltaBlue 上落后。go-quickjs 只在 RegExp 上领先（2.6 倍）。liustack/slowjs 在 Splay 上领先（是其他各行的 1.4 到 1.6 倍）。
 
 ## 页面
 
@@ -78,6 +82,8 @@ b0d5bc4bf6c795e6fe50de3beb10b4a55c7ece542c65dd01c71dcba3a8f6e439  shop.js
 
 ## 重新运行
 
-见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)：命令、需要的机器、怎么重新构建包，以及怎么测。每次发布时，按 [releasing.md](releasing.zh-CN.md#重新和其他引擎对比) 里的“重新和其他引擎对比”做。
+见 [`compare/engines/README.zh-CN.md`](../compare/engines/README.zh-CN.md)：命令、需要的机器、怎么重新构建包，以及怎么测。要重新跑对比的版本，打标签之前按 [releasing.md](releasing.zh-CN.md#和其他引擎的对比) 里的“和其他引擎的对比”做。
 
-test262 只在 liustack/quickjs 上运行，用仓库自己的检查（[testing.md](testing.zh-CN.md#test262)）：83426 个测试，33 个已知错误，每次运行都一样。
+
+test262 只在 liustack/slowjs 上运行
+，用仓库自己的检查（[testing.md](testing.zh-CN.md#test262)）：83426 个测试，33 个已知错误，每次运行都一样。

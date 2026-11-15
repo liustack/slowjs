@@ -1382,6 +1382,212 @@ static void test_async_context_job(void)
     host_free_runtime(rt);
 }
 
+/* ---- the unhandled rejections the runtime keeps (JS_TrackRejections) ---- */
+
+/* take_rejections takes the reasons the runtime keeps, oldest first, and
+   returns them as text joined by commas (malloc'd). */
+static char *take_rejections(JSContext *ctx)
+{
+    char buf[1024];
+    size_t n = 0;
+    JSRuntime *rt = JS_GetRuntime(ctx);
+    uint64_t mark = JS_RejectionMark(rt);
+    JSValue r;
+
+    buf[0] = 0;
+    while (!JS_IsUninitialized(r = JS_TakeRejection(rt, mark))) {
+        const char *s = JS_ToCString(ctx, r);
+
+        if (n < sizeof(buf))
+            n += snprintf(buf + n, sizeof(buf) - n, "%s%s", n ? "," : "", s ? s : "?");
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, r);
+    }
+    return strdup(buf);
+}
+
+static int rejections_are(JSContext *ctx, const char *want)
+{
+    char *got = take_rejections(ctx);
+    int ok = strcmp(got, want) == 0;
+
+    if (!ok)
+        printf("rejections %s, want %s\n", got, want);
+    free(got);
+    return ok;
+}
+
+/* A promise rejected while no handler is attached is kept, in the order of
+   the rejections, until a handler is attached or the host takes it: the
+   rejection of a promise that then or an async function made counts, the
+   handled ones do not. Off, nothing is kept. */
+static void test_rejections_kept(void)
+{
+    static const char src[] =
+        "Promise.reject(1);\n"
+        "var p2 = Promise.reject(2);\n"
+        "Promise.reject(3).catch(() => {});\n"
+        "var p4 = Promise.reject(4);\n"
+        "(async () => { throw 5 })();\n"
+        "new Promise((_, r) => r(6)).then(() => {});\n"
+        "(async () => { try { await Promise.reject(7) } catch (e) {} })();\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval(ctx, "Promise.reject(0)"), "the script threw");
+    CHECK(rejections_are(ctx, ""), "kept with tracking off");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped with tracking off");
+
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, src), "the script threw");
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(eval(ctx, "p2.catch(() => {})"), "the script threw");
+    CHECK(run_jobs(rt), "a job threw");
+    CHECK(rejections_are(ctx, "1,4,5,6"), "the rejections kept");
+    CHECK(rejections_are(ctx, ""), "kept again after they were taken");
+    /* a handler attached after the host took the rejection changes nothing */
+    CHECK(eval(ctx, "p4.catch(() => {})"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped under the limit");
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    CHECK(eval(ctx, "Promise.reject(9)"), "the script threw");
+    CHECK(rejections_are(ctx, ""), "kept after tracking was turned off");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* At most max rejections are kept, the others counted, and the count starts
+   again once it is read. Turning tracking off frees what is kept, and a
+   runtime freed with rejections kept frees them (host_free_runtime checks that no
+   block is left). */
+static void test_rejections_max(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    size_t before;
+
+    CHECK(JS_TrackRejections(rt, 2) == 0, "no memory for the list");
+    CHECK(eval(ctx, "for (var i = 1; i <= 5; i++) Promise.reject(i)"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 3, "dropped past the limit");
+    CHECK(JS_TakeDroppedRejections(rt) == 0, "dropped read twice");
+    CHECK(rejections_are(ctx, "1,2"), "the rejections kept");
+    /* a lower limit keeps what is there and takes no more */
+    CHECK(eval(ctx, "Promise.reject('a'); Promise.reject('b')"), "the script threw");
+    CHECK(JS_TrackRejections(rt, 1) == 0, "the new limit");
+    CHECK(eval(ctx, "Promise.reject('c')"), "the script threw");
+    CHECK(JS_TakeDroppedRejections(rt) == 1, "dropped under the lower limit");
+    CHECK(rejections_are(ctx, "a,b"), "the rejections kept");
+
+    /* off frees the reasons: the array of 10,000 values the list kept alive
+       through a collection is gone after the next one. The script itself
+       may leave a few blocks (atoms, shapes), so the check is on the size
+       of the array, not on the size before the script. */
+    CHECK(eval(ctx, "Promise.reject(new Array(10000).fill(1))"), "the script threw");
+    JS_RunGC(rt);
+    before = JS_GetMemorySize(rt);
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    JS_RunGC(rt);
+    CHECK(JS_GetMemorySize(rt) + 10000 * sizeof(JSValue) <= before,
+          "%zu bytes after off, %zu while kept", (size_t)JS_GetMemorySize(rt), before);
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject({ big: new Array(10000).fill(1) })"), "the script threw");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* A take with a mark takes only the rejections kept before the mark was
+   read, oldest first: one kept after it waits for the next mark, also once
+   all before it are taken or handled. */
+static void test_rejections_mark(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    uint64_t mark;
+    JSValue r;
+
+    CHECK(JS_RejectionMark(rt) == 0, "a mark with no list");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(1); var p2 = Promise.reject(2)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(eval(ctx, "Promise.reject(3); p2.catch(() => {})"), "the script threw");
+    CHECK(JS_HasRejection(rt, mark), "none before the mark");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_VALUE_GET_TAG(r) == JS_TAG_INT && JS_VALUE_GET_INT(r) == 1, "the first before the mark");
+    CHECK(!JS_HasRejection(rt, mark), "one before the mark after the first");
+    r = JS_TakeRejection(rt, mark);
+    CHECK(JS_IsUninitialized(r), "one kept after the mark taken with it");
+    CHECK(rejections_are(ctx, "3"), "the one kept after the mark");
+    /* off and on again, the numbers go on: a mark read before comes before
+       what is kept since */
+    CHECK(eval(ctx, "Promise.reject(4)"), "the script threw");
+    mark = JS_RejectionMark(rt);
+    CHECK(JS_TrackRejections(rt, 0) == 0, "turning it off failed");
+    CHECK(JS_TrackRejections(rt, 8) == 0, "no memory for the list");
+    CHECK(eval(ctx, "Promise.reject(5)"), "the script threw");
+    CHECK(!JS_HasRejection(rt, mark), "one kept after the mark, once off and on");
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, mark)), "one kept after the mark taken with it, once off and on");
+    CHECK(rejections_are(ctx, "5"), "the one kept after off and on");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* The list belongs to the runtime: a reason made in a context that is
+   freed is read from another context of the runtime, and freed with no
+   leak (host_free_runtime checks). */
+static void test_rejections_context(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx1 = JS_NewContext(rt), *ctx2 = JS_NewContext(rt);
+    JSValue r;
+    const char *s;
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx1, "Promise.reject(new Error(\"from one\")); Promise.reject({ toString() { return \"two\" } })"),
+          "the script threw");
+    JS_FreeContext(ctx1);
+    JS_RunGC(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
+    s = JS_ToCString(ctx2, r);
+    CHECK(s && strcmp(s, "Error: from one") == 0, "the first read %s", s ? s : "(null)");
+    JS_FreeCString(ctx2, s);
+    JS_FreeValue(ctx2, r);
+    CHECK(rejections_are(ctx2, "two"), "the second, read in the other context");
+    JS_FreeContext(ctx2);
+    host_free_runtime(rt);
+}
+
+/* The collector keeps what the list holds: a reason that holds its own
+   promise, a cycle nothing else reaches, outlives a full and a young
+   collection, and goes once taken and freed. */
+static void test_rejections_collected(void)
+{
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue r, p;
+    int32_t n = 0;
+
+    CHECK(JS_TrackRejections(rt, 4) == 0, "no memory for the list");
+    CHECK(eval(ctx, "(function () { var o = { n: 42 }; o.p = Promise.reject(o) })()"),
+          "the script threw");
+    JS_RunYoungGC(rt);
+    JS_RunGC(rt);
+    JS_RunYoungGC(rt);
+    r = JS_TakeRejection(rt, JS_RejectionMark(rt));
+    CHECK(JS_IsObject(r), "no reason kept");
+    p = JS_GetPropertyStr(ctx, r, "p");
+    CHECK(JS_PromiseState(ctx, p) == JS_PROMISE_REJECTED, "the promise of the reason");
+    JS_FreeValue(ctx, p);
+    p = JS_GetPropertyStr(ctx, r, "n");
+    JS_ToInt32(ctx, &n, p);
+    CHECK(n == 42, "the reason read %d", n);
+    JS_FreeValue(ctx, p);
+    JS_FreeValue(ctx, r);
+    CHECK(JS_IsUninitialized(JS_TakeRejection(rt, JS_RejectionMark(rt))), "a second reason");
+    JS_RunGC(rt);
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* depth_reached runs a recursion until it throws and returns how many levels
    it went down, or -1 when it did not end with a RangeError. The host's
    JS_Eval counts one level and the global code one more, so a plain function
@@ -3052,35 +3258,42 @@ static void test_sort_stop_bound(void)
    50th reading must stop it too, which shows that the regexp reads the flag
    again and again as it works, not once at the end of it:
    when no position can start a match, when each can but the match fails
-   there, and in the loop of a greedy x+, which jumps back by a split op that
-   pushes nothing. */
+   there, in the loop of a greedy x+, which jumps back by a split op that
+   pushes nothing, and in the scan for the literal every match holds
+   (lre_literal). The string of a regexp whose match runs long starts with
+   that literal (head), so that the scan finds it at once and the matches
+   run long as before: without it the scan alone would tell there is none. */
 static void test_regexp_stops(void)
 {
     static const struct {
         const char *name, *s, *re;
         int log2len;
+        const char *head;
     } cases[] = {
-        { "8bit", "'a'", "/[\"&<>]/", 22 },
-        { "16bit", "'\\u4e2d'", "/[\"&<>]/", 22 },
-        { "8bit/each", "'a'", "/ab/", 22 },
-        { "16bit/each", "'\\u4e2d'", "/\\u4e2db/", 22 },
-        { "8bit/set", "'a'", "/(?:a|c)b/", 22 },
-        { "16bit/set", "'\\u4e2d'", "/(?:\\u4e2d|c)b/", 22 },
-        { "plus", "'a'", "/a+b/", 17 },
-        { "plus/unicode", "'a'", "/a+b/u", 17 },
-        { "plus/16bit", "'\\u4e2d'", "/\\u4e2d+b/", 17 },
-        { "plus/ignore case", "'a'", "/A+b/i", 17 },
-        { "class", "'a'", "/\\w+@/", 17 },
-        { "capture", "'a'", "/(a)+b/", 17 },
-        { "alternatives", "'a'", "/(?:a|c)+b/", 17 },
+        { "8bit", "'a'", "/[\"&<>]/", 22, "" },
+        { "16bit", "'\\u4e2d'", "/[\"&<>]/", 22, "" },
+        { "8bit/each", "'a'", "/ab/", 22, "" },
+        { "16bit/each", "'\\u4e2d'", "/\\u4e2db/", 22, "" },
+        { "8bit/set", "'a'", "/(?:a|c)b/", 22, "" },
+        { "16bit/set", "'\\u4e2d'", "/(?:\\u4e2d|c)b/", 22, "" },
+        { "literal", "'a'", "/(?:a|c)xyz/", 22, "" },
+        { "literal/16bit", "'\\u4e2d'", "/(?:a|c)xyz/", 22, "" },
+        { "literal/ignore case", "'a'", "/(?:a|c)xyz/i", 22, "" },
+        { "plus", "'a'", "/a+b/", 17, "b" },
+        { "plus/unicode", "'a'", "/a+b/u", 17, "b" },
+        { "plus/16bit", "'\\u4e2d'", "/\\u4e2d+b/", 17, "b" },
+        { "plus/ignore case", "'a'", "/A+b/i", 17, "b" },
+        { "class", "'a'", "/\\w+@/", 17, "@" },
+        { "capture", "'a'", "/(a)+b/", 17, "b" },
+        { "alternatives", "'a'", "/(?:a|c)+b/", 17, "b" },
         /* sticky, a match is tried once: only the split ops that push nothing
            read the flag on the way */
-        { "plus/sticky", "'a'", "/a+b/y", 17 },
-        { "plus/16bit/sticky", "'\\u4e2d'", "/\\u4e2d+b/y", 17 },
-        { "plus/ignore case/sticky", "'a'", "/A+b/iy", 17 },
-        { "class/sticky", "'a'", "/\\w+@/y", 17 },
-        { "capture/sticky", "'a'", "/(a)+b/y", 17 },
-        { "alternatives/sticky", "'a'", "/(?:a|c)+b/y", 17 },
+        { "plus/sticky", "'a'", "/a+b/y", 17, "" },
+        { "plus/16bit/sticky", "'\\u4e2d'", "/\\u4e2d+b/y", 17, "" },
+        { "plus/ignore case/sticky", "'a'", "/A+b/iy", 17, "" },
+        { "class/sticky", "'a'", "/\\w+@/y", 17, "" },
+        { "capture/sticky", "'a'", "/(a)+b/y", 17, "" },
+        { "alternatives/sticky", "'a'", "/(?:a|c)+b/y", 17, "" },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -3090,8 +3303,8 @@ static void test_regexp_stops(void)
     for(i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         char src[256];
 
-        snprintf(src, sizeof(src), "var s = %s.repeat(1 << %d), re = %s; 0",
-                 cases[i].s, cases[i].log2len, cases[i].re);
+        snprintf(src, sizeof(src), "var s = '%s' + %s.repeat(1 << %d), re = %s; 0",
+                 cases[i].head, cases[i].s, cases[i].log2len, cases[i].re);
         CHECK(eval(ctx, src), "the script threw");
         CHECK(interrupted(ctx, "re.test(T(s))"), "%s: /%s/ was not interrupted",
               cases[i].name, cases[i].re);
@@ -3156,6 +3369,19 @@ static void test_regexp_skip_polls(void)
         { "(?:a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|aZ)+", "a", CHUNK, 0, 1, 17 * CHUNK + 2 },
         { zs, "a", 4096, 0, 0, 3 * 4096 + 2 },
         { zs, "z", 4096, 0, 1, 4097 },
+        /* the scan for the literal every match holds (lre_literal): it
+           reads the flag after each LRE_SKIP_CHUNK units it looks at or
+           compares, and not at the end of the string, where the machine
+           would run at every position (each holds an x) */
+        { "(?:x|c)b", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        { "(?:x|c)b", "x", 3 * CHUNK + 1, 1, LRE_RET_TIMEOUT, 1 },
+        { "(?:x|c)b", "x", CHUNK + 1, 0, 0, 1 },
+        { "(?:x|c)b", "x", CHUNK, 0, 0, 0 },
+        { "(?:x|c)b", "\xe4\xb8\xad", 2 * CHUNK + 1, 0, 0, 2 },
+        { "(?:x|c)(?i:b)", "x", 3 * CHUNK + 1, 0, 0, 3 },
+        /* an x at every position, where the scan compares the literal xxb:
+           3 units more each */
+        { "(?:a|c)xxb", "x", 3 * CHUNK, 0, 0, 8 },
     };
     JSRuntime *rt = host_new_runtime();
     JSContext *ctx = JS_NewContext(rt);
@@ -4483,6 +4709,168 @@ static void test_string_copy_polls(void)
     host_free_runtime(rt);
 }
 
+/* Object.isFrozen, Object.isSealed and Object.freeze where Node 24 answers
+   against the specification or cannot run the case (engine/test/compare/
+   integrity_levels.js has the rest, with what Node prints): an empty array
+   that is not extensible has a writable length, so it is sealed and not
+   frozen, and so is an array whose elements are frozen and whose length is
+   not; a typed array with elements that is not extensible has configurable
+   elements, so it is neither; one with no elements has no own key. The
+   global object is frozen with its var bindings, functions and the
+   built-ins it makes when first read. */
+static void test_integrity_levels(void)
+{
+    static const char arrays[] =
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "var a = [1, 2]\n"
+        "Object.defineProperty(a, 0, { configurable: false, writable: false })\n"
+        "Object.defineProperty(a, 1, { configurable: false, writable: false })\n"
+        "Object.preventExtensions(a)\n"
+        "var b = [1]; b.pop(); Object.preventExtensions(b)\n"
+        "var c = []; c.x = 1; Object.defineProperty(c, 'x', { configurable: false, writable: false })\n"
+        "Object.preventExtensions(c)\n"
+        "var r = [lv(Object.preventExtensions([])), lv(Object.seal([])), lv(a), lv(b), lv(c),\n"
+        "  lv(Object.preventExtensions(new Int16Array(3))), lv(Object.preventExtensions(new Int16Array(0)))]\n"
+        "Object.defineProperty(a, 'length', { writable: false })\n"
+        "Object.defineProperty(c, 'length', { writable: false })\n"
+        "r.push(lv(a), lv(c))\n"
+        "r.join(' ')\n";
+    static const char global[] =
+        "var gv = 1\n"
+        "let gl = 2\n"
+        "function gf() {}\n"
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "var fl = k => { var d = Object.getOwnPropertyDescriptor(globalThis, k);\n"
+        "  return ('value' in d ? (d.writable ? 'w' : '-') : 'a') + (d.enumerable ? 'e' : '-') +"
+        " (d.configurable ? 'c' : '-') }\n"
+        "var r = [lv(globalThis), fl('gv'), fl('gf'), fl('Array'), fl('Math')]\n"
+        "Object.preventExtensions(globalThis)\n"
+        "r.push(lv(globalThis))\n"
+        "Object.seal(globalThis)\n"
+        "r.push(lv(globalThis), fl('gv'), fl('Array'))\n"
+        "Object.freeze(globalThis)\n"
+        "r.push(lv(globalThis), fl('gv'), fl('gf'), fl('Array'), fl('globalThis'))\n"
+        "gv = 5\n"
+        "gl = 3\n"
+        "try { (function () { 'use strict'; gv = 6 })() } catch (e) { r.push(e.name) }\n"
+        "r.push(gv, gl, typeof Array, typeof Promise, typeof gf, Object.isFrozen(globalThis))\n"
+        "r.join(' ')\n";
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+
+    CHECK(eval_is(ctx, arrays, "010 010 010 010 010 000 011 011 011"), "arrays");
+    JS_FreeContext(ctx);
+    ctx = JS_NewContext(rt);
+    CHECK(eval_is(ctx, global,
+                  "100 we- we- w-c w-c 000 010 we- w-- 011 -e- -e- --- --- TypeError "
+                  "1 3 function function function true"), "the global object");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
+/* Object.isFrozen, Object.isSealed, Object.freeze and Object.seal of an
+   ordinary object or an array go over its shape in steps of 65,536
+   properties, with a reading of the interrupt flag between two steps
+   (js_shape_test_integrity and js_shape_set_integrity), called from C so that
+   the readings counted are those of the call. An object of 200,000
+   properties takes 4 steps: at least 3 readings for a test, 6 for a
+   freeze or seal, which goes over the shape twice. A flag set at the first
+   reading, the one in the middle and the last stops the call: it fails with
+   "interrupted", uncatchable, and the same call then gives what it gives
+   with no stop. An array of 200,000 elements is frozen after its elements
+   are made properties: one pass over them, at least 3 readings. */
+static JSValue integrity_call(JSContext *ctx, const char *fn, const char *obj)
+{
+    JSValue g = JS_GetGlobalObject(ctx), o = JS_GetPropertyStr(ctx, g, "Object");
+    JSValue f = JS_GetPropertyStr(ctx, o, fn), a = JS_GetPropertyStr(ctx, g, obj), r;
+
+    r = JS_Call(ctx, f, JS_UNDEFINED, 1, (JSValueConst *)&a);
+    JS_FreeValue(ctx, a);
+    JS_FreeValue(ctx, f);
+    JS_FreeValue(ctx, o);
+    JS_FreeValue(ctx, g);
+    return r;
+}
+
+static void test_integrity_polls(void)
+{
+    static const char setup[] =
+        "var lv = o => [Object.isExtensible(o), Object.isSealed(o), Object.isFrozen(o)]"
+        ".map(b => b ? 1 : 0).join('')\n"
+        "function make(n) { var o = {}; for (var i = 0; i < n; i++) o['p' + i] = i; return o }\n"
+        "var F = Object.freeze(make(200000)), P = Object.preventExtensions(make(200000)), O, A\n"
+        "0";
+    static const struct {
+        const char *prep, *fn, *obj, *want, *after, *after_want;
+        long reads;
+    } cases[] = {
+        { "0", "isFrozen", "F", "true", "lv(F)", "011", 3 },
+        { "0", "isSealed", "F", "true", "lv(F)", "011", 3 },
+        { "0", "isFrozen", "P", "false", "lv(P)", "000", 3 },
+        { "O = make(200000); 0", "freeze", "O", "[object Object]", "lv(O)", "011", 6 },
+        { "O = make(200000); 0", "seal", "O", "[object Object]", "lv(O)", "010", 6 },
+        { "A = Array.from({ length: 200000 }, (u, i) => i); 0", "freeze", "A", "", "lv(A) + A[5]", "0115", 3 },
+    };
+    JSRuntime *rt = host_new_runtime();
+    JSContext *ctx = JS_NewContext(rt);
+    JSValue r, e;
+    size_t i, j;
+
+    CHECK(eval(ctx, setup), "the setup threw");
+    for (i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        long before, reads, at[3];
+        const char *s;
+
+        CHECK(eval(ctx, cases[i].prep), "%s: the setup threw", cases[i].prep);
+        before = host_poll_reads;
+        r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+        reads = host_poll_reads - before;
+        s = JS_ToCString(ctx, r);
+        CHECK(s && !strncmp(s, cases[i].want, strlen(cases[i].want)), "%s of %s gives %s, want %s", cases[i].fn,
+              cases[i].obj, s ? s : "an exception", cases[i].want);
+        JS_FreeCString(ctx, s);
+        JS_FreeValue(ctx, r);
+        CHECK(eval_is(ctx, cases[i].after, cases[i].after_want), "%s of %s: the object after", cases[i].fn, cases[i].obj);
+        CHECK(reads >= cases[i].reads, "%s of %s: %ld readings of the flag, want at least %ld", cases[i].fn,
+              cases[i].obj, reads, cases[i].reads);
+        at[0] = 1;
+        at[1] = reads / 2;
+        at[2] = reads;
+        for (j = 0; j < 3; j++) {
+            const char *m;
+            int stopped;
+
+            CHECK(eval(ctx, cases[i].prep), "%s: the setup threw", cases[i].prep);
+            host_poll_stop_after(at[j]);
+            r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+            host_poll_stop_after(0);
+            *JS_GetInterruptFlag(rt) = 0;
+            stopped = JS_IsException(r) && JS_IsUncatchableException(ctx);
+            e = JS_GetException(ctx);
+            m = JS_ToCString(ctx, e);
+            CHECK(stopped && m && strstr(m, "interrupted"), "%s of %s was not stopped at reading %ld of %ld (%s)",
+                  cases[i].fn, cases[i].obj, at[j], reads, m ? m : "no exception");
+            JS_FreeCString(ctx, m);
+            JS_FreeValue(ctx, e);
+            if (!JS_IsException(r))
+                JS_FreeValue(ctx, r);
+            r = integrity_call(ctx, cases[i].fn, cases[i].obj);
+            s = JS_ToCString(ctx, r);
+            CHECK(s && !strncmp(s, cases[i].want, strlen(cases[i].want)), "%s of %s after a stop at reading %ld gives %s",
+                  cases[i].fn, cases[i].obj, at[j], s ? s : "an exception");
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, r);
+            CHECK(eval_is(ctx, cases[i].after, cases[i].after_want), "%s of %s after a stop at reading %ld: the object", cases[i].fn,
+                      cases[i].obj, at[j]);
+        }
+    }
+    CHECK(eval_is(ctx, "[1, 2, 3].map(x => x * 2).join()", "2,4,6"), "the context after the stops");
+    JS_FreeContext(ctx);
+    host_free_runtime(rt);
+}
+
 /* The export names of a module are sorted by a compare that reads the
    interrupt flag (exported_names_cmp, with rqsort_stop): two names of a
    million characters that differ in the last one and 3,000 short names in a
@@ -4770,11 +5158,29 @@ static void test_map_key_polls(void)
    letter, every other ASCII unit as it is, and an ASCII unit for no other
    unit, as Canonicalize of the specification does: a character from 128
    whose upper case is below 128 stays as it is. lre_first_set relies on it
-   for the characters that ignore case. */
+   for the characters that ignore case. In unicode mode it gives the lower
+   case of an ASCII letter, every other ASCII unit as it is, and an ASCII
+   unit for no other character but U+017F ('s') and U+212A ('k'), which
+   lre_plan_literal relies on. */
 static void test_canonicalize_ascii(void)
 {
     uint32_t c, got, want;
     int bad = 0;
+
+    for (c = 0; c <= 0x10ffff; c++) {
+        got = lre_canonicalize(c, 1);
+        want = c;
+        if (c >= 'A' && c <= 'Z')
+            want = c - 'A' + 'a';
+        else if (c == 0x17f)
+            want = 's';
+        else if (c == 0x212a)
+            want = 'k';
+        if ((c < 128 || c == 0x17f || c == 0x212a) ? got != want : got < 128) {
+            if (bad++ < 10)
+                printf("lre_canonicalize(%#x, 1) = %#x\n", c, got);
+        }
+    }
 
     for (c = 0; c <= 0xffff; c++) {
         got = lre_canonicalize(c, 0);
@@ -4893,6 +5299,8 @@ int main(void)
     test_long_utf8_decode();
     test_string_copy_polls();
     test_module_export_order();
+    test_integrity_levels();
+    test_integrity_polls();
     test_heap_move_polls();
     test_error_reads_no_flag();
     test_tag_polls();
@@ -4900,6 +5308,11 @@ int main(void)
     test_regexp_compile_polls();
     test_regexp_cache_polls();
     test_async_context_job();
+    test_rejections_kept();
+    test_rejections_max();
+    test_rejections_mark();
+    test_rejections_context();
+    test_rejections_collected();
     if (failures) {
         printf("unit: %d checks failed\n", failures);
         return 1;

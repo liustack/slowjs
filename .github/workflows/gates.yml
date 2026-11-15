@@ -1,0 +1,122 @@
+# The long checks a release waits for, cut into jobs that run side by side: the
+# whole throw injection of the register loop (about 10 hours on one core) and
+# scripts/go-versions.sh, one job for each Go release. They run when a branch
+# gates/<name> is pushed, or by hand. See "The long checks, in CI" in
+# docs/testing.md.
+name: gates
+
+on:
+  push:
+    branches:
+      - "gates/**"
+  workflow_dispatch:
+
+# A newer push to the same ref stops the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CGO_ENABLED: "0"
+  LLVM_BIN: /usr/lib/llvm-22/bin
+
+jobs:
+  inject:
+    name: inject (${{ matrix.shard }} of 12)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - name: Install LLVM 22 from apt.llvm.org
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22
+          $LLVM_BIN/clang --version
+      - name: Build the test host with the injection
+        run: |
+          export PATH=$LLVM_BIN:$PATH
+          EXTRA_DEFS=-DRV_INJECT engine/test/build.sh plain engine/test/out/inject-plain
+          EXTRA_DEFS=-DRV_INJECT engine/test/regvm/build.sh plain engine/test/out/inject-plain
+      - name: Every place of the scripts of this job
+        # The scripts in the order of their names, every 12th from this job's
+        # number: each job gets its share of the long ones.
+        run: |
+          export PATH=$LLVM_BIN:$PATH
+          ls engine/test/regvm/corpus/*.js engine/test/regvm/js/*.js |
+            awk -v i=${{ matrix.shard }} 'NR % 12 == i' >"$RUNNER_TEMP/scripts.txt"
+          wc -l <"$RUNNER_TEMP/scripts.txt"
+          engine/test/regvm/inject.sh -j "$(nproc)" engine/test/out/inject-plain $(cat "$RUNNER_TEMP/scripts.txt")
+      - name: Keep the runs that differ
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: inject-${{ matrix.shard }}
+          path: engine/test/out/inject-plain/inject
+          if-no-files-found: ignore
+          retention-days: 7
+
+  go-list:
+    name: the Go releases
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      versions: ${{ steps.list.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - id: list
+        run: |
+          list=$(GO_VERSIONS_LIST=1 scripts/go-versions.sh)
+          echo "$list"
+          echo "versions=$(echo "$list" | jq -R . | jq -sc .)" >>"$GITHUB_OUTPUT"
+
+  go-versions:
+    name: ${{ matrix.go }}
+    needs: go-list
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ${{ fromJSON(needs.go-list.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show the machine
+        run: lscpu | grep "Model name" && nproc
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Install LLVM 22 from apt.llvm.org
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-22 main" | sudo tee /etc/apt/sources.list.d/llvm22.list
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-22 llvm-22-dev lld-22
+          $LLVM_BIN/clang --version
+      - name: The checks of the engine with this Go
+        run: scripts/go-versions.sh ${{ matrix.go }}
+        env:
+          GO_VERSIONS_LLVM: "1"
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-versions-${{ matrix.go }}
+          path: .build/go-versions
+          if-no-files-found: ignore
+          retention-days: 7

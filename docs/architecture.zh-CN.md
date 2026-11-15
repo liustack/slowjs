@@ -58,6 +58,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `internal/goversion/` | 用比引擎核对过的版本更新的 Go 构建时的错误，由 `internal/cengine` import |
 | `internal/faulttest/` | 给故意制造内存错误的测试用：`Room` 由测试在 Go 代码里的错误之前紧接着调用，让 windows 有空间写下 CPU 的状态。`Unsafe` 用于 `Room` 没法紧挨在前面的 Go 代码里的错误（见 [c-engine.md](changes/c-engine.zh-CN.md#windows-上给故障留的空间)） |
 | `internal/measure/` | `go tool measure bench`：在几个代码位置上构建一个程序，轮流计时，并数指令数 |
+| `internal/measure/pages/` | 一个单独的模块，按 tifa 的方式渲染 tifa 的页面，用来计时或计数（[measuring.md](measuring.zh-CN.md#页面程序)） |
 | `intl/` | 包 `github.com/liustack/slowjs/intl`，给 VM 用的 `Intl` |
 | `internal/gointl/internal/qjspack/gen/` | 共用的 Intl 数据包，按 Chromium 的 ICU 清单挑选 |
 | `intl/testdata/chromium/` | Chromium 的答案，给 golden 测试用，以及记录它们的 `record.cjs` |
@@ -68,6 +69,7 @@ Go API 只通过下面这些文件调用引擎。包里其余部分不出现 `ce
 | `internal/vmhook/` | `intl`、`temporal`、`fmt` 和 `url` 的 Go 函数怎么守住调用它们的 VM 的限制：`Stop` 对应 eval 超时和 `Interrupt`，`Room` 和 `OutOfMemory` 对应内存上限，由包 `slowjs` 设置（`vmhook.go`） |
 | `fmt/` | 包 `github.com/liustack/slowjs/fmt` |
 | `url/` | 包 `github.com/liustack/slowjs/url`，给 VM 用的 `URL` 和 `URLSearchParams` |
+| `tifa/` | 包 `github.com/liustack/slowjs/tifa`：`Register` 按 tifa 的方式配置 VM，供 tifa、`cmd/slowjs` 和 `internal/measure/pages` 使用 |
 | `url/testdata/` | `TestWPT` 在 VM 里跑的 web-platform-tests `url/` 里的文件、testharness 的外壳、core-js 判断原生 URL 的那段代码，以及篡改测试和形状测试的答案 |
 | `internal/whatwgurl/` | 包 `url` 背后的 URL 解析器（见 [url.md](changes/url.zh-CN.md)）：状态机、主机解析、setter 和序列化，加上 `idna/` 和 `bidi/`，那是 golang.org/x/net 和 x/text 里它要用的部分，带 Unicode 17 的表。`testdata/` 里是 web-platform-tests 的 URL 数据和 `known-failures.txt` |
 | `cmd/slowjs/` | `slowjs` 命令，通过 Go API 运行一个 JavaScript 文件（见 [command.md](command.zh-CN.md)），以及它的测试。`scripts/slowjs-release.sh` 为发布构建它（[releasing.md](releasing.zh-CN.md#发布任务)） |

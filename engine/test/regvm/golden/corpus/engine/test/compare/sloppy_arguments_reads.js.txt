@@ -1,0 +1,42 @@
+result keys 0: 0 undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined 0 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 0
+result keys 1: 1 string:x undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined string:x undefined:undefined string:x undefined:undefined 1 undefined:undefined undefined:undefined function undefined:undefined undefined:undefined undefined:undefined 1
+result keys 2: 2 string:x 2 undefined:undefined undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 2 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 2
+result keys 3: 3 string:x 2 null undefined:undefined undefined:undefined undefined:undefined 2 string:x undefined:undefined string:x 2 3 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 3
+result keys 5: 5 1 2 3 undefined:undefined undefined:undefined undefined:undefined 2 1 undefined:undefined 1 2 5 undefined:undefined 2 function undefined:undefined undefined:undefined undefined:undefined 5
+result no parameters 0: 0 undefined:undefined
+result no parameters 3: 3 string:p string:q string:r undefined:undefined
+result writes 0: undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined undefined:undefined 0 A B C
+result writes 1: 1 undefined:undefined undefined:undefined string:A undefined:undefined undefined:undefined undefined:undefined 1 A B C
+result writes 2: 1 2 undefined:undefined string:A string:B undefined:undefined undefined:undefined 2 A B C
+result writes 4: 1 2 3 string:A string:B string:C 4 4 A B C
+result increments: 11 12 13 1
+result increments, no argument:    0
+result object writes 1: string:x string:w0 undefined:undefined string:w0 string:w1 string:w3 1 string:back
+result object writes 2: string:x string:w0 string:w1 string:w0 string:w1 string:w3 2 string:back
+result object writes 4: string:x string:w0 string:w1 string:w0 string:w1 string:w3 4 string:back
+result closure writes 1: string:orig string:closure string:closure 1
+result closure writes 0: undefined:undefined undefined:undefined string:closure 0
+result getter for a missing index: string:got object [object Arguments] string:written string:written string:b 42 string:five
+result kept: 1 42 written b five [object Arguments]
+result delete: undefined:undefined string:x 2 undefined:undefined string:y
+result defineProperty: string:defined string:defined string:param string:param string:param string:param2
+result length set: 1 string:x string:y 5 undefined:undefined
+result callee: function 1 string:x
+result iterated: string:A string:y 2
+result sliced: A,y,z 3
+result twice: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:2:string:t:undefined:undefined
+result twice extra: undefined:undefined 2:2:string:t01:undefined:undefined undefined:undefined 1:2:string:t0:undefined:undefined 0:3:string:t:string:e
+result sum none: 0/0/undefined:undefined
+result sum fewer: 1/1/1
+result sum more: 10/4/4
+result sum apply: 4498500/3000/2999
+result children 0: div undefined
+result children 1: div "a"
+result children 3: div ["a",1,[2]]
+result throwing getter: caught first object 1 string:only string:second
+result twice 2: 1 5 2
+result twice 1: 1 undefined:undefined 1
+result twice 3: 1 5 3
+mem-end obj=222 atom=609 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
+mem-gc obj=222 atom=609 shape=132 prop=1061 jsfunc=23 cfunc=132 array=4 fast_array=5 elements=3042 binary=0
+--- status exit 0

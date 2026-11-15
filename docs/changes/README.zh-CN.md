@@ -59,6 +59,9 @@ read_when:
 | `o[k] = v`（`k` 是自身就是原子的字符串）和 `o.x = v` 写可写的自有数据属性或给普通对象加键时不走通用路径 | v0.30.7 | [c-engine.md](c-engine.zh-CN.md#给普通对象加键的写入不走通用路径) |
 | 不再是快数组的 Array 上的 `a[i]` 和 `a[i] = v` 按下标的原子读写，不走通用路径 | v0.31.0 | [c-engine.md](c-engine.zh-CN.md#不再是快数组的数组按原子读写下标) |
 | `Math.acosh` 对小于 -1 的值给出 NaN：musl 对 `acosh` 负数输入的修复（提交 `3e80328d`），作为小 libc 的一个补丁拿进来 | v0.31.0 | [c-engine.zh-CN.md](c-engine.zh-CN.md#mathacosh-小于--1-时是-nan) |
+| 参数列表简单的非严格函数等读取需要时才造 arguments 对象，`f.apply(this, arguments)` 在寄存器循环里直接用帧里的参数调用 `f`，不造 arguments 对象和参数列表，只占一层调用深度 | v0.31.1 | [c-engine.md](c-engine.zh-CN.md#用-apply-传下参数时不造-arguments-对象) |
+| `for in` 循环遍历的对象还是循环开始时的 shape 时，一步在寄存器循环的一个操作里取出键并跳回（FINEXT），不调用 `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.zh-CN.md#for-in-循环的下一个键在寄存器循环里取) |
+| 读 `for in` 循环刚给出的键 `o[k]` 时，对象是循环遍历的 shape，就直接取 shape 里这个键的槽的值（GETELE、GETELET），不再查找这个键 | v0.31.1 | [c-engine.md](c-engine.zh-CN.md#读-for-in-循环刚给出的键) |
 
 ## 生成器
 
@@ -69,6 +72,7 @@ read_when:
 | 存寄存器或有调用的寄存器入口叶子函数有 Go 声明，amd64 上 `go vet` 能过 | v0.30.5 | [generator.md](generator.zh-CN.md#有栈帧的寄存器入口叶子函数有-go-声明) |
 | 循环向量化器不再从画像里取循环圈数：`memmove` 又是没有栈帧的叶子函数，一次渲染少跑 0.07% 到 0.22% 的指令 | v0.30.7 | [generator.md](generator.zh-CN.md#画像决定什么) |
 | 链接后检查接受指向函数代码末尾的跳转表项（`switch` 里不可能出现的值的那一项），条件是它在二进制里也指向同一个位置 | v0.31.0 | [generator.md](generator.zh-CN.md#跳转表项可以指向代码末尾) |
+| 影子栈 pass 对 phi 的每个来源块只给一个局部变量地址，多次指向同一个块的 phi（同一个 `switch` 的几个分支）能通过 LLVM 的校验器。生成的引擎不变 | v0.31.1 | [generator.md](generator.zh-CN.md#phi-从每个来源块只拿一个局部变量地址) |
 
 ## 上游 QuickJS 的提交
 
@@ -79,6 +83,7 @@ read_when:
 | 没有初始累加值时归约空迭代器，不关闭它 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#空迭代器的归约) |
 | 稀疏数组截断先移除下标，再压实属性表 | v0.29.8 | [upstream-commits.md](upstream-commits.zh-CN.md#数组截断) |
 | 展开字符串得到它的各个字符 | v0.30.5 | [upstream-commits.md](upstream-commits.zh-CN.md) |
+| 因内存不够而失败的追加让数组长度保持不变，在 2^31 - 1 个元素（没有脚本能到）之后加元素会抛 RangeError | v0.31.1 | [upstream-commits.md](upstream-commits.zh-CN.md#追加因内存不够失败时长度不变) |
 
 ## Go API
 
@@ -126,6 +131,10 @@ read_when:
 | Args.StringLen 就地读字符串的长度 | v0.30.3 | [go-api.md](go-api.zh-CN.md#argsstringlen-就地读字符串的长度) |
 | 16 位字符串转成 UTF-8 时一次处理八个 ASCII 单元 | v0.30.7 | [go-api.md](go-api.zh-CN.md#16-位字符串转成-utf-8-时一次处理八个-ascii-单元) |
 | EvalFile 给脚本一个文件名 | v0.31.0 | [go-api.md](go-api.zh-CN.md#evalfile-给脚本一个文件名) |
+| 脚本返回或抛出的字符串在顶层也会停止转换 | v0.31.1 | [go-api.md](go-api.zh-CN.md#脚本返回或抛出的字符串在顶层也会停止转换) |
+| TrackRejections 和 UnhandledRejections | v0.31.1 | [go-api.md](go-api.zh-CN.md#trackrejections-和-unhandledrejections) |
+| 引擎数不过来的值会报错 | v0.31.1 | [go-api.md](go-api.zh-CN.md#引擎数不过来的值会报错) |
+| tifa 包：`tifa.Register` 按 tifa 的方式配置虚拟机 | v0.31.1 | [go-api.md](go-api.zh-CN.md#tifa-包) |
 
 ## 守得住的限额
 
@@ -205,6 +214,9 @@ read_when:
 | 数字选项先检查范围再向下取整 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#数字选项先检查范围再向下取整) |
 | 长的 locale 标签按长度的线性时间解析 | v0.30.2 | [time-and-intl.md](time-and-intl.zh-CN.md#长的-locale-标签按长度的线性时间解析) |
 | 数字字符串按 Number 的方式读 | v0.30.3 | [time-and-intl.md](time-and-intl.zh-CN.md#数字字符串按-number-的方式读) |
+| Date 不用循环求年、月、日 | v0.31.1 | [time-and-intl.md](time-and-intl.zh-CN.md#date-不用循环求年月日) |
+| Date 的字符串不再经过 snprintf | v0.31.1 | [time-and-intl.md](time-and-intl.zh-CN.md#date-的字符串不再经过-snprintf) |
+| context 记住上一个时间值的字段 | v0.31.1 | [time-and-intl.md](time-and-intl.zh-CN.md#context-记住上一个时间值的字段) |
 
 ## Temporal
 
@@ -226,6 +238,7 @@ read_when:
 | 不会匹配的分支不入栈 | v0.26.17 | [regexp.md](regexp.zh-CN.md#不会匹配的分支不入栈) |
 | 正则从哪里开始找在编译时算一次，用首字符表，并先比较字面量前缀。字节码版本 9 | v0.30.2 | [regexp.md](regexp.zh-CN.md#正则从哪里开始找编译时算一次) |
 | 以字面量开头的一长串分支直接跳到以这个字符开头的那些。字节码版本 10 | v0.30.2 | [regexp.md](regexp.zh-CN.md#以字面量开头的一长串分支) |
+| 正则在回溯机运行前先找每个匹配都含有的字面量，字符串不含它就没有匹配。字节码版本 13 | v0.31.1 | [regexp.md](regexp.zh-CN.md#每个匹配都含有的字面量) |
 | 按 VM 保存编译好的正则 | v0.27.0 | [regexp.md](regexp.zh-CN.md#按-vm-保存编译好的正则) |
 | 带 v 标志的正则的类按规范解析 | v0.28.3 | [regexp.md](regexp.zh-CN.md#带-v-标志的正则的类) |
 
@@ -238,6 +251,8 @@ read_when:
 | atom 的哈希表两个桶只放一个 atom | v0.30.5 | [strings.md](strings.zh-CN.md#atom-的哈希表两个桶只放一个-atom) |
 | `+` 左边是空字符串时直接给出右边的字符串，不再复制 | v0.30.5 | [strings.md](strings.zh-CN.md#-左边是空字符串时直接给出右边的字符串) |
 | 寄存器循环把两个字符串的加法交给一个专门的小函数，不再走加、减和比较共用的通用路径 | v0.30.7 | [strings.md](strings.zh-CN.md#两个字符串的加法不走通用路径) |
+| 2 的幂输出最短的数字，和 Node 一样：其中 54 个以前多输出一位 | v0.31.1 | [strings.md](strings.zh-CN.md#2-的幂输出最短的数字) |
+| 不是整数的数用 Schubfach 转成十进制文字，只用整数运算和一张 617 个 10 的幂的表，不再用大数 | v0.31.1 | [strings.md](strings.zh-CN.md#不是整数的数转成文字不再用大数) |
 
 ## JSON
 
@@ -252,6 +267,7 @@ read_when:
 | 浮点数的位运算跳过慢路径 | v0.26.17 | [operators.md](operators.zh-CN.md#浮点数的位运算跳过慢路径) |
 | 常见的比较在解释器里直接回答 | v0.26.17 | [operators.md](operators.zh-CN.md#常见的比较在解释器里直接回答) |
 | 普通函数的 `instanceof` 不调用 `Symbol.hasInstance` 就给出答案 | v0.31.0 | [operators.md](operators.zh-CN.md#instanceof-不再调用-symbolhasinstance) |
+| 两个数的加和减不再经过共用的尾段 | v0.31.1 | [operators.md](operators.zh-CN.md#两个数的加和减不再经过共用的尾段) |
 
 ## 对象和 shape
 
@@ -288,6 +304,14 @@ read_when:
 | `Object.defineProperty` 和共用其转换的调用，从 shape 一次读完普通对象做的描述符 | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectdefineproperty-一次读完普通的描述符对象) |
 | `Function.prototype.bind` 从普通目标函数的 shape 读 length 和 name，并直接给绑定函数新函数的 shape | v0.30.7 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#bind-从普通目标函数的-shape-读-length-和-name) |
 | `for in` 循环不再做 shape：context 拿着迭代器起步时那个没有原型的空 shape | v0.31.0 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#for-in-循环的迭代器能找到它的空-shape) |
+| `Object.isFrozen` 和 `Object.isSealed` 按规范先问对象能不能扩展，proxy 的 `isExtensible` trap 抛错时不再让键的列表一直占着内存 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozen-和-objectissealed-先问对象能不能扩展) |
+| 给模块命名空间定义属性时先读它的绑定，绑定还没初始化时抛出 `ReferenceError` | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#给模块命名空间定义属性时先读它的绑定) |
+| 普通对象或数组的 `Object.isFrozen`、`Object.isSealed`、`Object.freeze` 和 `Object.seal` 走一遍它的 shape，不列键的列表，也不逐个查找 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#objectisfrozenobjectissealedobjectfreeze-和-objectseal-走一遍-shape) |
+| 一个 shape 最多放 2^26 - 1 个属性，查找不会漏掉超过这个数的属性 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#一个-shape-最多放-226---1-个属性) |
+| 往数组里加的元素在数组改动之前被拒绝或失败：被拒绝的存储不抛转换的 RangeError，失败的元素让长度不变 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#数组元素在数组改动之前被拒绝) |
+| 在构造函数上调用 `Array.from` 时，给映射函数完整的下标，设完整的长度 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#在构造函数上调用-arrayfrom-传完整的下标和长度) |
+| 改动已有属性标志的定义在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样，数组的长度也一样。被拒绝的定义什么都不复制，缩短下标超过 2^31 - 1 的数组时不造名字 | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#改动属性标志的定义在改动任何东西之前失败) |
+| 对象为下一个键找到的 shape 保留对象离开的那个 shape，于是构造函数的对象能找到之前的对象走过的每个 shape | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.zh-CN.md#构造函数的对象找到之前的对象走过的-shape) |
 
 ## 内存
 

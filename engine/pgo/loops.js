@@ -90,6 +90,32 @@ taBigInt(BigUint64Array);
     use(n);
 })();
 
+// Regular expressions with a literal every match holds, which the matcher
+// looks for before it runs: in Latin-1 text and in UTF-16 text, where the
+// text holds it and where it does not, of letters of either case (the i
+// flag).
+(function () {
+    var json = "", wide = "";
+    for (var i = 0; i < 300; i++) {
+        json += '{"id":' + i + ',"d":"\\/Date(' + i * 7919 + ')\\/","n":"item ' + i + '"},';
+        wide += "日本語 item " + i + (i % 5 ? " " : " Total, ");
+    }
+    var res = [/(^|[^\\])"\\\/Date\((-?[0-9]+)\)\\\/"/g, /(^|[^\\])"\\\/Qngr\((-?[0-9]+)\)\\\/"/g,
+        /\s(\w+)\s+total,/gi, /[a-z]+:\/\/[^\s"]+/g, /(?:id|n)":"?(\d+)x/g];
+    var n = 0;
+    for (var r = 0; r < 20; r++) {
+        for (var j = 0; j < res.length; j++) {
+            for (var t = 0; t < 2; t++) {
+                var re = res[j], s = t ? wide : json, m;
+                re.lastIndex = 0;
+                while ((m = re.exec(s)) !== null) n += m.index;
+                n += s.replace(re, "#").length + (re.test(s) ? 1 : 0);
+            }
+        }
+    }
+    use(n);
+})();
+
 // BigInt arithmetic, comparison and BigInt keys of a Map.
 (function () {
     var m = new Map(), s = 0n, x = 1n;
@@ -117,6 +143,23 @@ taBigInt(BigUint64Array);
         }
     var d = new Date(1700000000000);
     for (var r = 0; r < 200; r++) t += d.toISOString().length + d.toUTCString().length;
+    use(t);
+})();
+
+// The getters of Date, local and UTC, on a few time values by turns (the
+// fields of the last one are kept, so a turn finds them or works them out),
+// a setter between, and the strings of a Date.
+(function () {
+    var ds = [new Date(1700000000000), new Date(-5e12), new Date(0), new Date(2e14)], t = 0;
+    for (var r = 0; r < 600; r++) {
+        var d = ds[r & 3];
+        t += d.getFullYear() + d.getMonth() + d.getDate() + d.getDay() + d.getHours() + d.getMinutes();
+        t += d.getUTCSeconds() + d.getUTCMilliseconds() + d.getUTCDate() + d.getUTCFullYear();
+        if ((r & 31) === 0) {
+            d.setUTCHours(r & 15);
+            t += d.toString().length + d.toLocaleString().length + d.toDateString().length;
+        }
+    }
     use(t);
 })();
 
@@ -230,6 +273,31 @@ taBigInt(BigUint64Array);
     use(s + x + str.length);
 })();
 
+// Floats added, subtracted and multiplied in every form the interpreter has
+// for them: both operands in registers, a constant operand, the result into a
+// local, and an int with a float. Numbers that are not both ints take a path
+// of their own in those instructions, which tifa's pages run too little to
+// train it.
+(function () {
+    var a = [], b = [], n = 200, s = 0.5, t = 1.5, u = 0.25, w = 0.75;
+    for (var i = 0; i < n; i++) { a.push(i * 0.25 + 0.5); b.push(1.5 - i * 0.125); }
+    for (var r = 0; r < 25; r++) {
+        for (var i = 1; i < n - 1; i++) {
+            var x = a[i], y = b[i];
+            u = x + y;
+            w = x - y;
+            u = u + 0.25;
+            w = w - 0.75;
+            s = s + x * y - w * 1e-3;
+            t = t - (y - 0.5) * (x + 1.25);
+            a[i] = (a[i - 1] + a[i + 1]) * 0.5 - u * 1e-4 + i;
+            b[i] = y * 0.999 - t * 1e-9 + (x - i) * 2;
+        }
+        if (s > 1e12 || s < -1e12) s = 0.5;
+    }
+    use(s + t + u + w);
+})();
+
 // Typed arrays of every kind and a plain array read and written at constant
 // indexes (t[0], t[1], ...), which the interpreter runs through other
 // instructions than a variable index.
@@ -290,6 +358,30 @@ taBigInt(BigUint64Array);
             if (v instanceof B) s += 2;
             if (v instanceof C) s += 4;
         }
+    use(s);
+})();
+
+// Functions that pass their arguments on with f.apply(this, arguments),
+// sloppy and strict, with 0 to 5 arguments, a constructor that passes its
+// arguments to an init method that way, and arguments.length and
+// arguments[i] read in a sloppy function.
+(function () {
+    function add3(a, b, c) { return (a | 0) + (b | 0) + (c | 0); }
+    function fwd() { return add3.apply(this, arguments); }
+    function fwdS() { "use strict"; return add3.apply(this, arguments); }
+    function Point() { this.init.apply(this, arguments); }
+    Point.prototype.init = function (x, y) { this.x = x; this.y = y | 0; };
+    function count() {
+        var n = 0;
+        for (var i = 0; i < arguments.length; i++) n += arguments[i];
+        return n;
+    }
+    var s = 0;
+    for (var k = 0; k < 3000; k++) {
+        s += fwd() + fwd(k) + fwd(k, 1) + fwd(k, 1, 2) + fwdS(k, 2, 3, 4) + fwdS(k, 1, 2, 3, 4);
+        var p = new Point(k, k & 7);
+        s += p.x + p.y + count(k, 1, 2) + count();
+    }
     use(s);
 })();
 sink;

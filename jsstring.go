@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/bits"
 	"sync"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 
@@ -23,15 +24,17 @@ import (
 // piece is read where it is, as one copy, where JS_ToCStringLen2 made a UTF-8
 // copy of any string that is not ASCII in the VM's memory, which Go then
 // copied again. A rope, a string kept as the pieces it was joined from, is
-// joined first (JS_ToString), and any other value goes the way of
-// toGoString. ok is false, and the exception pending, when that threw, as
+// joined first (JS_ToString), and any other value made a string the same
+// way. ok is false, and the exception pending, when that threw, as
 // when there is no memory to join a rope.
 func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 	p, n, wide, ok := stringChars(v)
 	if !ok {
-		if tag(v) != tagStringRope {
-			return m.toGoString(v, wtf8)
-		}
+		// A rope is joined, and any other value made the string String(v)
+		// makes, by the engine, which reads the interrupt flag while
+		// javascript runs. The string is then read as any other, a piece at
+		// a time when it is long. JS_ToCStringLen2 made a UTF-8 copy of it,
+		// which Go copied in one go with no read of the stop.
 		flat := m.jsToString(v)
 		if isException(flat) {
 			return "", false
@@ -47,6 +50,103 @@ func (m *VM) argString(v jsValue, wtf8 bool) (string, bool) {
 		return latin1String(m, unsafe.Slice((*byte)(addr(p)), n))
 	}
 	return utf16String(m, unsafe.Slice((*uint16)(addr(p)), n), wtf8)
+}
+
+// cutMark ends a text cutString cut.
+const cutMark = " [cut]"
+
+// cutString is argString for a text Go keeps only to show, of a reason of
+// UnhandledRejections or of the error it ends with: the UTF-8 of v cut to
+// its first rejectionText bytes, or up to three fewer where a character
+// would be cut, with cutMark after it when v is longer. It reads at most
+// rejectionText characters of the string, so it takes about as long, and
+// makes Go allocate as much, for a string of any length: one allocation, of
+// the bytes it returns, at most rejectionText and cutMark. When t takes the
+// room, that is taken from the room of m first (textCut.take). A value that
+// is not a string in one piece is made one first, as argString does.
+// rejectionText is below stringStep, so the conversion reads no stop: the
+// caller reads it between two reasons.
+func (m *VM) cutString(v jsValue, t *textCut) (string, bool) {
+	p, n, wide, ok := stringChars(v)
+	if !ok {
+		flat := m.jsToString(v)
+		if isException(flat) {
+			return "", false
+		}
+		s, ok := m.cutString(flat, t)
+		m.jsFreeValue(flat)
+		return s, ok
+	}
+	if n == 0 {
+		return "", true
+	}
+	// k characters (units of u), size bytes of UTF-8, fit.
+	k, size := 0, 0
+	var b []byte
+	var u []uint16
+	if !wide {
+		b = unsafe.Slice((*byte)(addr(p)), n)
+		for ; k < n; k++ {
+			c := 1
+			if b[k] >= utf8.RuneSelf {
+				c = 2
+			}
+			if size+c > rejectionText {
+				break
+			}
+			size += c
+		}
+	} else {
+		u = unsafe.Slice((*uint16)(addr(p)), n)
+		for k < n {
+			// A lone surrogate becomes U+FFFD, three bytes.
+			c, w := 3, 1
+			switch x := u[k]; {
+			case x < 0x80:
+				c = 1
+			case x < 0x800:
+				c = 2
+			case x&0xFC00 == 0xD800 && k+1 < n && u[k+1]&0xFC00 == 0xDC00:
+				c, w = 4, 2
+			}
+			if size+c > rejectionText {
+				break
+			}
+			size += c
+			k += w
+		}
+	}
+	if k < n {
+		size += len(cutMark)
+	}
+	if !t.take(m, size) {
+		return "", false
+	}
+	out := make([]byte, 0, size)
+	if !wide {
+		for _, c := range b[:k] {
+			out = utf8.AppendRune(out, rune(c))
+		}
+	} else {
+		for i := 0; i < k; i++ {
+			r := rune(u[i])
+			if utf16.IsSurrogate(r) {
+				if i+1 < k {
+					r = utf16.DecodeRune(r, rune(u[i+1]))
+				} else {
+					r = utf8.RuneError
+				}
+				if r != utf8.RuneError {
+					i++
+				}
+			}
+			out = utf8.AppendRune(out, r)
+		}
+	}
+	if k < n {
+		out = append(out, cutMark...)
+	}
+	return unsafe.String(unsafe.SliceData(out), len(out)), true
 }
 
 // argBlock is argString for a Go function of a door (vmhook.LongWTF8) that
@@ -158,14 +258,18 @@ func (m *VM) atomOf(s string) (uint32, error) {
 
 // convStop reports whether a conversion of a long string is to stop, and
 // then leaves the uncatchable "interrupted" pending, as NewArray does
-// (goStop): only in a Go function that javascript called, at Interrupt,
-// the eval timeout or an uncatchable error of the call. m is nil for a
-// conversion that never stops.
+// (goStop): at Interrupt, the eval timeout or an uncatchable error of a
+// call into m. That holds at the top level of a call too, where Eval or
+// Call converts the string a script returned or threw: how long that
+// string is, and so how long its conversion takes, is up to the script.
+// The caller then takes the interrupt as the error of the call. Outside a
+// call into m, as NewString converts first, it reads nothing: an Interrupt
+// then is for no call. m is nil for a conversion that never stops.
 func (m *VM) convStop() bool {
 	if stringStepHook != nil {
 		stringStepHook()
 	}
-	return m != nil && m.host > 0 && m.goStop()
+	return m != nil && m.entered > 0 && m.goStop()
 }
 
 // elemStop counts an element or a property that the conversion of a result

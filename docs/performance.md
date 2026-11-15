@@ -1,5 +1,5 @@
 ---
-summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
+summary: 'How much faster each release of the C engine renders pages, how to measure an engine change in tifa and across code positions, and the measurements of each change for speed (hot loops, appends, objects, calls, React helpers in C, JSON, locals, numbers converted to text, the register interpreter, the optimizer pass, a profile of tifa pages, the cost of the generated code against native C, stability under load), with what was tried and not done'
 read_when:
   - Making a change to the engine for speed, or reviewing one
   - Measuring a branch of liustack/slowjs on tifa's pages before a release
@@ -69,6 +69,7 @@ Releases from v0.29.0 run the C engine. Instructions are counted with callgrind 
 | v0.30.6 | [Built-ins answered in the register loop](changes/c-engine.md#built-ins-answered-in-the-register-loop), [fewer argument words into hot calls](changes/c-engine.md#fewer-argument-words-into-hot-calls), and the profile trained again on them | Against v0.30.5, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the fourteen store pages of the shop take 0.979 of the time, React's page 0.979, the six workbench pages 0.987 and the long Markdown page 0.994. The three MUI pages (0.993) and the loads of three bundles show no change ([v0.30.6 against v0.30.5](#v0306-against-v0305)) |
 | v0.30.7 | [Stores that add a key](#keyed-and-named-stores-that-add-a-key), [two strings added without the generic path](#two-strings-added-without-the-generic-path), [the spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator), [property descriptors and bind without generic lookups](#property-descriptors-and-bind-without-generic-lookups), [the UTF-8 of a page eight ASCII units at a time](#the-utf-8-of-a-page-eight-ascii-units-at-a-time), and the profile trained again with [its second input](#the-second-input-of-the-profile) | Against v0.30.6, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): the six workbench pages of the shop take 0.977 of the time, the three MUI pages 0.983, its fourteen store pages 0.984 and the long Markdown page 0.986. React's page shows no change. A render runs 2.9% to 4.7% fewer instructions, React's 0.8% ([v0.30.7 against v0.30.6](#v0307-against-v0306)) |
 | v0.31.0 | [Arrays that are no longer fast arrays](#arrays-that-are-no-longer-fast-arrays), [instanceof without the call of Symbol.hasInstance](#instanceof-without-the-call-of-symbolhasinstance), [the iterator of a for in loop and its shape](#the-iterator-of-a-for-in-loop-and-its-shape), and the profile trained again on them | Against v0.30.7, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): no kind of tifa's pages is slower beyond the delta of 1%, and none runs more instructions. React's page runs 0.63% fewer. The V8 suite scores 5.4% higher, Crypto 29.6% and EarleyBoyer 14.1% ([v0.31.0 against v0.30.7](#v0310-against-v0307)) |
+| v0.31.1 | [Numbers converted to text by Schubfach](#numbers-converted-to-text-by-schubfach), [the fields and strings of a Date](#the-fields-and-strings-of-a-date), [integrity levels from the shape](#integrity-levels-from-the-shape), [objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes), [passing arguments on with apply](#passing-arguments-on-with-apply), [the next key of a for in loop and the read of it](#the-next-key-of-a-for-in-loop-and-the-read-of-it), [numbers added and subtracted without the shared tail](#numbers-added-and-subtracted-without-the-shared-tail), [a literal every match holds](#a-literal-every-match-holds), and the profile trained again on them | Against v0.31.0, on linux/amd64 (an AMD EPYC 7B13 with 4 cores, one core, the mean of 16 code layouts, sums of the pages' medians): React's page takes 2.2% less time, the six workbench pages 1.5% less and the three MUI pages 1.1% less, and the store pages show no change. The long Markdown page is 2.6% slower. The V8 suite scores 18.7% higher, RegExp 97.2% and RayTrace 48.6% ([v0.31.1 against v0.31.0](#v0311-against-v0310)) |
 
 ## Measuring in tifa
 
@@ -916,6 +917,25 @@ A regexp with a list of 16 alternatives or more that start with a literal [goes 
 
 The workbench gains from react-spring's 148 color names: the matcher runs 2,601K instructions a render there, where it ran 4,877K. The other pages have no such list, and their matcher runs up to 69K more instructions a render. The time of the pages was not measured. `BenchmarkRegexColors` on an Apple M with other work on the machine takes 0.48 of the time on a value with a name and 0.28 on a shadow with none.
 
+### A literal every match holds
+
+A regexp [looks first for the longest literal every match must hold](changes/regexp.md#a-literal-every-match-holds), and runs nothing when the string does not hold it. Callgrind on linux/amd64, instructions against `d7c86e16`, with the same HTML. The native test host counts one render or iteration as the difference of two runs. The Go product counts the engine alone (the functions of `internal/cengine`), each C with a profile trained the same way with the loops of the change:
+
+| Script | Native host | Go product, the engine |
+| --- | ---: | ---: |
+| V8 RegExp benchmark | -53.4% | -54.8% (the whole program) |
+| The whole V8 suite | -20.1% | |
+| Long Markdown | -2.48% | -0.91% |
+| tifa's shop, English storefront home | +0.04% | -0.21% |
+| tifa's shop, English product list | +0.07% | -0.21% |
+| tifa's shop, workbench | +0.07% | -0.20% |
+| tifa's shop, workbench stats | +0.05% | -0.25% |
+| tifa's MUI app, orders | -0.01% | -0.04% |
+| tifa's MUI app, home | +0.06% | -0.05% |
+| `r_react_ssr` | +0.12% | -0.07% |
+
+On tifa's pages the literal rules out little: the scan runs 0 to 156 times a render. On the native host the regexp functions there cost at most 28K instructions a render (0.009%), and the rest of the rise is in functions that hash on addresses, which move with any change to where memory lands. In the product the gain comes from the profile trained on the new C, which lays out `lre_find` and `lre_exec_backtrack` better with the same calls. A regexp that finds its literal but rules nothing out pays for the scan, up to +0.36% on one of the 13 wider pages (an i18n page) natively and +0.17% in the product. The time was not measured.
+
 ### Arrays that are appended to take room for 8 elements at first
 
 [An array that is appended to takes room for 8 elements at first](changes/objects-and-shapes.md#an-array-that-is-appended-to-takes-room-for-8-elements-at-first). Counted on 2026-11-12 on the native C tree at 641f7dc7 (linux/arm64 callgrind, the timed render only, `host_poll` and `__shadow_remaining` left out): a render makes 1.3K (React) to 20.5K (the shop's products page) arrays, and 0.25K to 8.2K of the allocations are regrows of an array that outgrew its first allocation (React 246, the shop's home 5.1K, products 8.2K, a workbench page 3.6K, MUI's orders page 7.0K, 3.0K of them in the results of `concat`), at about 108 instructions for a first allocation and 160 and 3 for each element copied for a regrow, so growth is 0.8% to 1.2% of a render and its regrows 0.30% to 0.58%. A first allocation of 4 slots took 0.09% (React), 0.10% (home), 0.19% (products), 0.20% (workbench) and 0.36% (MUI orders), and of 8 slots 0.10%, 0.23%, 0.23%, 0.19% and 0.39%. With the URL stand-in (a URL object reused after the first render) 8 slots took 0.14% (home), 0.14% (products), 0.19% (workbench) and 0.39% (MUI orders). Memory after 200 renders stays the same within 0.1%. A room remembered per place and the exact length for the results of `concat` and `map`, `Array(n)` and the own keys are in [What was tried and not done](#what-was-tried-and-not-done).
@@ -979,6 +999,69 @@ The instructions fall on every group on both architectures: this takes back a sm
 | long Markdown (400 sections) | | | -2.97% |
 
 The Go engine gains less than the C tree on the same pages: the Go engine spends more of a render elsewhere, and `js_append_enumerate`, whose C changed, compiles without its profile until the next training (`js_append_array` and `js_spread_iterator` are new and have none either). React, which spreads no array, runs 0.13% more on the Go engine and the same on the C tree, under the 0.3% that counts: the cause was not traced to a function. The 64 micro benchmarks run between 0.54% fewer and 0.11% more instructions a turn: none of them spreads an array. The timing is left to the train.
+
+### Passing arguments on with apply
+
+[Passing arguments on with apply makes no arguments object](changes/c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object), counted on 2026-11-15 against main at d7c86e16 (v0.30.7). How often each form runs, counted with counters added to the native C tree for the count only: V8's RayTrace makes 66,594 calls of `f.apply(this, arguments)` an iteration and the same number of mapped arguments objects, Earley 5,840 mapped objects that it reads by `length` and index, and the other benchmarks of the suite none. The 12 React pages on widely used libraries (counted outside the repository), a render:
+
+| Page | `f.apply(this, arguments)` | Mapped objects | Rest parameters | Spread calls |
+| --- | ---: | ---: | ---: | ---: |
+| chart | 619 | 13,844 | | |
+| state | 1,048 | 1,198 | 612 | |
+| radix | 159 | 1,813 | 5,076 | 1,894 |
+| antd | 468 | 9,537 | 4,646 | 3,722 |
+| styled | | 720 | | |
+| i18n | | | 7,146 | 7,233 |
+| dates | | | 4,603 | |
+| markdown | | | 3,966 | 4,171 |
+| table | | | | 6,929 |
+| forms | | | | 4,598 |
+
+diff and domain make none of these. `Reflect.apply(f, x, arguments)`, a spread of `arguments` and `new` or `super` with one run nowhere in these pages or in the suite. tifa's pages make 0 to 171 arguments objects a render.
+
+The cost of each form on an Apple M4, instructions a call over a direct call of the same function (1,135): `f.apply(this, arguments)` 1,655 more in a sloppy function, 1,466 in a strict one, an `apply` of an array literal 1,261, a rest parameter spread into the call 1,911, a spread of an array 1,791 and a spread of `arguments` 4,603.
+
+Retired instructions on the M4 (darwin/arm64), the native test host built with `-O2`, the median of 3 runs. A call, in a loop of a million:
+
+| Form | main | This change |
+| --- | ---: | ---: |
+| sloppy `f.apply(this, arguments)`, 2 arguments | 2,874 | 1,516 |
+| the same with no arguments | 2,765 | 1,410 |
+| strict, no arguments | 2,596 | 1,404 |
+| sloppy, 3 parameters | 2,891 | 1,437 |
+| sloppy `arguments.length` only | 1,597 | 788 |
+| sloppy `arguments.length` only, 3 parameters | 1,893 | 880 |
+| strict `arguments.length` only | 787 | 785 |
+| a direct call | 1,092 | 1,094 |
+
+The V8 suite, an iteration (6 iterations less 2, over 4): RayTrace 347.2 M to 261.4 M (-24.72%), Earley -3.07%, DeltaBlue -1.00%, Richards -0.38%, Encrypt, Decrypt, Boyer, RegExp and NavierStokes within 0.34%. Splay moves by tens of percent from run to run with the collector and is no reading.
+
+The 12 React pages, a render (3 renders less 1, over 2). Native: the test host built with `-O2` and `host_poll` left out, callgrind on linux/amd64 (an AMD EPYC 7B13). The Go engine (`gorender`, one VM, `GOMAXPROCS=1`): retired instructions on the M4, the median of 3 runs, as generated, with the profile of v0.30.7, and trained, with a profile trained again on this tree with the part of `loops.js` below. The HTML of every page is the same.
+
+| Page | Native, amd64 | Go engine, as generated | Go engine, trained |
+| --- | ---: | ---: | ---: |
+| chart | -2.33% | -2.00% | -2.57% |
+| radix | -0.58% | +0.14% | -0.72% |
+| styled | -0.45% | +1.03% | -0.69% |
+| antd | -0.35% | +0.53% | -0.20% |
+| diff | +0.02% | +0.76% | -0.05% |
+| domain | +0.03% | +0.64% | -0.35% |
+| i18n | +0.03% | +1.05% | -0.35% |
+| dates | +0.04% | +0.67% | +0.30% |
+| table | +0.05% | +0.84% | -0.28% |
+| markdown | +0.06% | +0.16% | +0.02% |
+| state | +0.08% | +0.54% | +0.14% |
+| forms | +0.15% | +0.89% | +0.01% |
+
+The counter of the M4 moves a page by up to 1.5% from run to run (radix on main: 276.6 M to 284.0 M a render over 5 runs), so a column of the M4 reads only changes larger than that, and chart is the one page that has one: -2.27% natively on the M4, as on amd64. The pages that run 0.02% to 0.15% more natively make no forward and read no sloppy `arguments`: it is where the code of `JS_RegvmRun` landed.
+
+The V8 suite natively on amd64 (callgrind, 12 iterations less 4, over 8, and Splay 50 less 10): RayTrace 366.1 M to 280.6 M an iteration (-23.35%), Earley -3.22%, DeltaBlue +0.08%, Richards +0.05%, Splay +0.02%, and Encrypt, Decrypt, Boyer, RegExp and NavierStokes within 0.01%.
+
+tifa's pages natively on amd64 (the same host, callgrind, 3 renders after 2 warm, a young collection after each): wb studio +0.96%, wb stats +0.87%, the store's home +0.78% and products +0.84%, MUI home +1.04% and orders +1.09%, React +1.62% and long Markdown +1.15%, with the same HTML. None of them forwards arguments. On React the 1.45 M instructions more over 3 renders are spread over the handlers of `JS_RegvmRun` (lines without a line number in its handlers of calls and properties, about 1.3 M), with 114 K for the test of `RV_DST_APPLY` on the return that leaves the fast path: clang allocates the registers of the native loop differently with the new handler. The Go engine, compiled from the same C by the generator with its profile, does not show it once trained (below).
+
+tifa's pages on the Go engine, retired instructions a render inside tifa's `test/ssr` on the M4, the median render of each page averaged over the group, the lowest of 3 rounds that alternate with main. As generated: React +1.44%, the fourteen store pages +0.83%, the six workbench pages +0.41%, MUI's three pages +0.30%. Trained: React +0.05%, the store pages -0.10%, the workbench pages -0.26%, MUI +0.10%, where main moves by up to 0.5% from round to round. The trained engine with callgrind on linux/amd64 (the whole process, 3 renders less 1, over 2): React +0.07%, the store's home +0.06%, wb studio +0.10%, MUI orders +0.04%, chart -2.59%, dates +0.04%. The forward runs on none of tifa's pages: what they gain or lose is where the training and the code landed. The HTML of every page is the same.
+
+As generated, the engine compiles the functions whose C changed without a profile (`JS_RegvmRun`, `rv_call`, `rv_lazy_args`, `rv_lazy_fast`, `rv_args_pass`, `rv_unwind`, `js_frame_next`, `js_backtrace_frame`, `js_backtrace_count` and `JS_GetScriptOrModuleName`), and `JS_RegvmRun` is the loop every page runs: that is the cost on the pages that make no forward. The new path is one tifa's pages never run, so a training on the pages alone leaves it cold. `engine/pgo/loops.js` has a part for it: a sloppy and a strict function that forward 0 to 5 arguments to a function with `apply`, a constructor that forwards to its `init`, and `arguments.length` and `arguments[i]` read in a sloppy function, with `rv_callma` in the list of functions `train.sh` checks.
 
 ### Fewer argument words into hot calls
 
@@ -1138,6 +1221,155 @@ Instructions a render. Native is the C tree built by clang, callgrind on an AMD 
 | MUI's home page | +0.01% | -0.15% | -0.03% |
 | Long Markdown (400 sections) | 0.00% | -0.09% | |
 
+### The fields and strings of a Date
+
+[A Date finds its year, month and day with no loop](changes/time-and-intl.md#a-date-finds-its-year-month-and-day-with-no-loop), [the strings of a Date are written without snprintf](changes/time-and-intl.md#the-strings-of-a-date-are-written-without-snprintf) and [a context keeps the fields of the last time value](changes/time-and-intl.md#a-context-keeps-the-fields-of-the-last-time-value), counted on 2026-11-15 against `d7c86e16` (v0.30.7), callgrind on linux/amd64. Native is the test host built by clang. The product is the generated engine in two Go programs: one renders tifa's pages from pinned bundles as tifa's pool keeps a VM (one VM, the bundle loaded once, a release and a collection after each render), the other calls `render` of a bundle in one VM. "As generated" is the engine with the profile of v0.30.7, in which `get_date_fields` and `get_date_string` changed and are compiled with no profile. "Trained" is the same engine with the profile trained again on it (`engine/pgo/train.sh`), in a copy, as the next release would ship it. For the twelve wider pages, each a bundle of open source libraries (`dates` uses date-fns and dayjs), a render is the difference of 4 renders and 2, halved. For tifa's pages it is the mean of 3 timed renders after 2 warm ones natively, and the difference of 3 timed renders and 1, halved, in the product (long Markdown: 2 and 1). Every page gives the same HTML before and after.
+
+On the dates page, each change against the one before it, native:
+
+| Change | Instructions a render | Against the one before |
+| --- | ---: | ---: |
+| v0.30.7 | 1,167,606,994 | |
+| the year, month and day with no loop | 1,153,224,724 | -1.23% |
+| the strings without snprintf | 1,146,058,451 | -0.62% |
+| the fields of the last time value kept | 1,126,445,373 | -1.71% |
+
+All three against v0.30.7, instructions a render:
+
+| Page | Native | Product, as generated | Product, trained |
+| --- | ---: | ---: | ---: |
+| `dates` | -3.53% | -3.19% | -3.22% |
+| `antd` | +0.01% | -0.01% | -0.01% |
+| `chart` | +0.02% | -0.02% | -0.02% |
+| `diff` | 0.00% | 0.00% | 0.00% |
+| `domain` | +0.10% | +0.10% | +0.10% |
+| `forms` | -0.05% | -0.05% | -0.01% |
+| `i18n` | -0.16% | -0.08% | -0.08% |
+| `markdown` | 0.00% | +0.01% | +0.01% |
+| `radix` | 0.00% | +0.02% | +0.01% |
+| `state` | 0.00% | 0.00% | 0.00% |
+| `styled` | +0.03% | -0.03% | 0.00% |
+| `table` | -0.06% | -0.06% | -0.05% |
+| the store's home page | +0.01% | +0.05% | -0.01% |
+| the store's products page | +0.03% | -0.02% | -0.02% |
+| the workbench's studio page | -0.02% | 0.00% | 0.00% |
+| the workbench's stats page | -0.10% | 0.00% | -0.02% |
+| MUI's orders page | -0.03% | 0.00% | 0.00% |
+| MUI's home page | -0.04% | +0.02% | +0.03% |
+| React's page | 0.00% | 0.00% | -0.04% |
+| Long Markdown (400 sections) | -0.05% | +0.03% | +0.04% |
+
+The `dates` page gains: its date-fns and dayjs call 136,524 getters, 6,058 setters and 3,132 `toString` a render. The other pages make few Dates and move by 0.16% or less either way. Where one runs more, as `domain` (+0.10%) and the store's products page natively (+0.03%), no function of Date runs more: the extra instructions are in `add_property`, `js_closure` and `js_create_from_ctor`, which find shapes in a hash table keyed by addresses, and the context is 72 bytes larger, so the blocks allocated after it lie at other addresses. Long Markdown runs 0.03% more in the product and 0.05% fewer natively, which was not looked into further. Trained again, the profile moves the `dates` page by 0.03 points.
+
+The micro benchmark `date_parse` of `compare/testdata` (native) runs 28,498 instructions a turn where it ran 42,158 (-32%). `JS_RegvmRun` and `JS_CallInternal` keep their frames on both systems (SHADOW 256 and 112 on amd64, 176 and 96 on arm64), and so does the trained engine on amd64.
+
+### The next key of a for in loop and the read of it
+
+[The next key of a for in loop is taken in the register loop](changes/c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) and [the read of the key a for in loop just gave](changes/c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave), counted on 2026-11-15 against v0.31.0. A render takes 2,399 steps of for in loops on React's page, 8,465 on the store's home page, 16,450 on its products page, 9,934 on the workbench's studio page, 4,111 on its stats page, 34,096 on MUI's orders page, 12,523 on its home page and 215,983 in long Markdown, and reads the key just given 1,681, 5,709, 11,940, 7,989, 3,248, 34,291, 12,116 and 24,184 times. 98% to 100% of the keys come from the shape the loop started from. In a loop over 8 keys on amd64 (callgrind, `host_poll` left out) a step took 155 instructions and takes 89, and a read `x = o[k]` took 103 and takes 68, where `x = o.c` takes 48. On the M4 (the native host built by LLVM 22, the lowest of 3 runs) a step took 174 and takes 111, and a read 88 and 67. A loop over an array that reads its elements by key (`array_for_in` of `compare/testdata`) took 603 instructions a step on amd64 and takes 560, and on the M4 572 and 541.
+
+Instructions a render on the native host, callgrind on linux/amd64 (three timed renders after two warm ones, a young collection after each, `host_poll` left out, the store with `urlmemo.js`, Markdown two after one), for the next key alone and for both changes. Every page gives the same HTML.
+
+| Page | Next key | Both |
+| --- | ---: | ---: |
+| React's page | -0.38% | -0.76% |
+| The store's home page | -0.32% | -0.54% |
+| The store's products page | -0.42% | -0.68% |
+| The workbench's studio page | -0.37% | -0.61% |
+| The workbench's stats page | -0.25% | -0.44% |
+| MUI's orders page | -1.12% | -1.74% |
+| MUI's home page | -0.92% | -1.39% |
+| Long Markdown (400 sections) | -0.02% | -0.11% |
+
+In the product (tifa's `test/ssr`, callgrind on linux/amd64 for one page of each group, three timed renders less one, halved), as generated with the profile of v0.31.0, and with the profile trained again on both changes against v0.31.0 trained again the same way. Trained again the same way, v0.31.0 itself moves by -0.19% to +0.03%. Every page gives the same HTML.
+
+| Page | As generated | Trained |
+| --- | ---: | ---: |
+| React's page | +0.41% | -0.66% |
+| The store's home page | +0.29% | -0.41% |
+| The workbench's studio page | +0.03% | -0.71% |
+| MUI's orders page | -1.28% | -2.14% |
+
+As generated, the changes make the profile of `JS_RegvmRun`, `rv_getel` and `rv_one` stale, and `JS_RegvmRun` without its profile costs more than the changes gain on React's page and the store. Trained again, every page runs fewer instructions.
+
+### Numbers added and subtracted without the shared tail
+
+[Add and sub of two numbers skip the shared tail](changes/operators.md#add-and-sub-of-two-numbers-without-the-shared-tail), counted on 2026-11-15 against `d7c86e16` (v0.30.7). The adds, subs and muls of two numbers that are not two ints with an int result (two floats, an int with a float, two ints whose result does not fit), per V8 iteration or per render, counted with counters added to the native C tree for the count only. Mul is in the table because it was tried and left as it was.
+
+| Run | Add and sub | Mul |
+| --- | ---: | ---: |
+| NavierStokes, an iteration | 3,245,534 | 1,853,164 |
+| RayTrace, an iteration | 125,797 | 128,715 |
+| MUI's orders page | 124,175 | 161,491 |
+| The chart page (wider pages) | 103,178 | 104,242 |
+| The store's home page | 224 | 10 |
+| The workbench's stats page | 26 | 81 |
+| React's page | 0 | 15 |
+| Crypto, an iteration | 38 | 77 |
+
+Instructions on linux/amd64 (AMD EPYC 7B13), callgrind. Native: the test host built by clang, the renders after the warm ones. Product: the generated engine inside tifa's `test/ssr`, `GOGC=off`, the difference of three renders and one, halved (long Markdown: two and one). Both product engines are generated with a profile trained on their own C, with the part of `engine/pgo/loops.js` this change adds, as the release will ship it. The whole program carries about 0.1% of noise from the Go runtime on React, so the engine alone (the functions of `internal/cengine`) is given too, which runs the same count each time. Every page gives the same HTML.
+
+| Page | Native | Product, engine | Product, whole program |
+| --- | ---: | ---: | ---: |
+| MUI's orders page | | -0.256% | -0.235% |
+| MUI's home page | | -0.254% | -0.255% |
+| MUI's three pages (mean) | -0.217% | | |
+| React's page | -0.018% | -0.014% | -0.049% |
+| The store's home page | -0.032% | -0.027% | -0.033% |
+| The store's products page | | -0.025% | -0.010% |
+| The workbench's studio page | | -0.019% | -0.087% |
+| The workbench's stats page | -0.014% | -0.008% | +0.002% |
+| Long Markdown (400 sections) | | -0.011% | -0.012% |
+
+The V8 suite, an iteration (product: `v8run`, whole program):
+
+| Benchmark | Native | Product |
+| --- | ---: | ---: |
+| NavierStokes | -2.37% | -1.88% |
+| RayTrace | -0.15% | -0.12% |
+| Splay | -0.13% | -0.14% |
+| Crypto | +0.001%, +0.006% | +0.002%, +0.005% |
+| DeltaBlue | 0.000% | +0.001% |
+| EarleyBoyer | +0.014%, 0.000% | +0.006%, -0.011% |
+| RegExp | 0.000% | 0.000% |
+| Richards | 0.000% | -0.006% |
+
+The wider pages, a render (`jsrun -call` native, `wrun` in the product):
+
+| Page | Native | Product, engine | Product, whole program |
+| --- | ---: | ---: | ---: |
+| antd | -0.153% | -0.156% | -0.154% |
+| chart | -0.138% | -0.112% | -0.115% |
+| dates | -0.024% | -0.019% | -0.019% |
+| diff | +0.006% | +0.013% | +0.011% |
+| domain | -0.016% | -0.014% | -0.015% |
+| forms | -0.010% | -0.007% | -0.005% |
+| i18n | -0.047% | -0.039% | -0.037% |
+| markdown | -0.018% | -0.013% | -0.010% |
+| radix | -0.021% | -0.015% | -0.025% |
+| state | -0.001% | +0.109% | +0.107% |
+| styled | -0.050% | -0.039% | -0.041% |
+| table | -0.011% | -0.008% | -0.004% |
+
+The state page runs the same natively. In the product its 0.11% more is all in `js_own_keys_scan`, whose C did not change: it inlines `is_num_string`, whose counts differ between two trainings of the same C (main trained twice differs there too).
+
+The ways of placing the code that were tried, each generated with a profile trained on it, against main trained the same way (the pages: the engine alone, the V8 benchmarks: the whole program):
+
+| Placement | Pages, engine | NavierStokes | Crypto |
+| --- | --- | ---: | ---: |
+| Add and sub in `rv_arith_num`, mul as before (this change) | -0.008% to -0.26% | -1.9% | +0.002% |
+| Add, sub and mul in `rv_arith_num` and a block for mul | -0.007% to -0.44% | -4.1% | +1.8% |
+| The same, mul tested in a tail of its own | MUI -0.07%, the others -0.01% to -0.03% | -2.6% | +1.4% |
+| The same, mul tested in an `else` of the int test | MUI +0.97% | -4.1% | +0.7% |
+| The number code in each of the ten handlers | the shop +0.12% to +0.17%, MUI -2.0% | -12.1% | |
+| The three register forms inline, the rest in the blocks | the shop +0.06% to +0.08%, React +0.05% | -11.2% | |
+| Add and mul inline | the shop +0.05% to +0.08%, React +0.04% | -11.3% | |
+| The pair of floats alone inline, after the int test | +0.15% to +0.23%, MUI +1.1% | -9.2% | |
+| The pair of floats alone through one block | React +0.09%, MUI +1.6% | -2.1% | |
+| A test at the entry of the tails | React +0.02%, the shop +0.03% | -2.9% | |
+| A call of a `no_inline` function from each handler | MUI +4%, the shop +0.1% to +0.17% | +27% | |
+
+The code inline gives most of the gain on NavierStokes, but it moves the register allocation of the whole interpreter: on the shop `ctx` is read from the stack about 3.2 million more times a render, in the call and return path, not in the arithmetic. Mul through a block of its own makes Crypto, which multiplies ints, run its int path of mul with `ip` kept on the stack and a few moves more, about 8 instructions more on each of its 158,000 int muls an iteration. As generated with the profile of v0.30.7, which has no data for `JS_RegvmRun` once its C changes, the pages run 1.2% to 1.9% more in the engine (NavierStokes still 1.9% fewer), so the profile must be trained again before the release ([releasing.md](releasing.md#the-profile)).
+
 ### The register interpreter
 
 [The register interpreter](changes/c-engine.md#the-register-interpreter) runs JavaScript in place of the stack interpreter of QuickJS. Two readings of it in tifa, each of one engine against another, with the HTML of every page the same. Neither has a control of a build against itself.
@@ -1256,6 +1488,159 @@ The generated engine in tifa's `test/ssr`. `JS_RegvmRun` changed, so `make gen` 
 | React's page | +1.09% | -0.02% | +1.59% | +0.01% |
 
 The long Markdown page tests `instanceof` 32 times a render. Natively its register loop runs 0.5 million more instructions a render (0.003%): clang lays out `JS_RegvmRun` a little differently with the new call in it. The 64 micro benchmarks of `compare/testdata` test no `instanceof`: natively on the M4 their geometric mean is 0.17% lower, none more than 0.86% higher (`array_for`, within the noise of its short run).
+
+### Numbers converted to text by Schubfach
+
+[Numbers that are not integers convert to text without big numbers](changes/strings.md#numbers-that-are-not-integers-convert-to-text-without-big-numbers), against v0.30.7 (`d7c86e16`). Instructions a render, callgrind on the AMD EPYC 7B13. The wider pages are 12 React pages built with other libraries (`chart` draws with recharts and d3) and the script `sh`. Native is the native C tree (`jsrun -call`, four renders less two, halved). The product is the generated engine through the Go API: the wider pages through `v8run` (four renders less two, halved), tifa's pages in the pages test of tifa's apps (three renders less one, halved, Markdown two less one), with `GOGC=off`, counting the instructions of the engine's functions alone (`internal/cengine`): what the Go runtime runs besides changes by up to 0.4% from one run to the next on the same build. First as generated with the profile of v0.30.7, in which `js_dtoa` no longer matches its C and so is compiled with no profile (and `dtoa_shortest10`, `dtoa_round_to_odd` and `dtoa_format10` are new), then with the profile trained again on the change (`engine/pgo/train.sh`). The HTML of every page is the same.
+
+| Page | Native | Product, profile of v0.30.7 | Product, trained again |
+| --- | ---: | ---: | ---: |
+| `chart` | -9.471% | -8.572% | -8.702% |
+| `diff` | +0.000% | +0.000% | +0.000% |
+| `dates` | +0.019% | +0.000% | -0.007% |
+| `forms` | -0.003% | +0.000% | -0.008% |
+| `i18n` | -0.113% | -0.106% | -0.108% |
+| `markdown` | +0.009% | +0.000% | +0.001% |
+| `radix` | +0.002% | -0.000% | -0.000% |
+| `styled` | +0.014% | +0.002% | +0.001% |
+| `table` | -0.070% | -0.059% | -0.061% |
+| `state` | -0.001% | -0.001% | -0.001% |
+| `antd` | -0.048% | -0.062% | -0.062% |
+| `domain` | +0.005% | -0.030% | -0.031% |
+| `sh` | -0.095% | | |
+
+| Page | Product, profile of v0.30.7 | Product, trained again |
+| --- | ---: | ---: |
+| The store's home page | -0.061% | -0.062% |
+| The store's products page | -0.006% | -0.038% |
+| The workbench's studio page | +0.001% | -0.001% |
+| The workbench's stats page | -0.065% | -0.068% |
+| MUI's orders page | -0.003% | -0.000% |
+| MUI's home page | -0.039% | -0.034% |
+| React's page | -0.252% | -0.259% |
+| Long Markdown (400 sections) | +0.000% | -0.001% |
+
+A render of `chart` converts 38,732 numbers in `js_dtoa`, which took 2,585 instructions each natively (11.5% of the render) and now take about 460. The other pages convert few numbers that are not integers. Natively, their changes of a few hundredths of a percent either way are where the heap lands: the hash of a new shape starts from the address of its prototype, and the 9.8 KB of the table move the heap, so the same calls of `add_property` look through more or fewer shapes (on `dates`, 895,000 instructions more in `add_property` over four renders, with the same calls and a fixed clock). In the product, counting the engine alone, no page runs more than 0.002% more. `sh` was counted natively only: through `v8run` it does not render more for more renders.
+
+The micro benchmarks of `compare/testdata` that convert numbers, instructions a turn (three conversions), native and product trained again: `float_toString` 9,026 to 3,162 natively (-65.0%) and 8,662 to 3,421 in the product (-60.5%), `float_to_string` 8,870 to 3,006 (-66.1%) and 8,622 to 3,381 (-60.8%). `float_toFixed`, `float_toPrecision` and `float_toExponential`, which give digits and keep the big numbers, run 1.0% to 1.1% more natively and 1.2% to 2.0% more in the product: `js_dtoa`, which holds the new path, gets other registers and spills from the compiler, and the fix of the powers of two alone adds 0.4% natively to `float_toFixed`. `int_toString`, `int_to_string` and `int_to_string2` run the same in both.
+
+The table of powers of ten is 9,872 bytes of read-only data. The native `dtoa.o` grows by 11,648 bytes with the code, and `v8run` (the Go product) by 16,184 bytes.
+### Integrity levels from the shape
+
+[Object.isFrozen, Object.isSealed, Object.freeze and Object.seal go over the shape](changes/objects-and-shapes.md#objectisfrozen-objectissealed-objectfreeze-and-objectseal-go-over-the-shape), against main at `d7c86e16` (v0.30.7). The 12 pages are React pages built on widely used libraries, in tifa's `test/apps/libs`. The state page keeps its state in Redux Toolkit, whose immer freezes what it hands out and asks `isFrozen` of every object it walks: about 156,000 calls of `isFrozen` and 2,900 of `freeze` a render. Instructions per render are from callgrind on the native C tree on linux/amd64, with `jsrun -call`: the difference of four renders and two, halved. The HTML of every page is the same.
+
+| Page | Before | After | Change |
+| --- | ---: | ---: | ---: |
+| state (immer and Redux Toolkit) | 1,273,874,249 | 728,769,446 | -42.79% |
+| antd | 3,008,791,497 | 3,009,257,916 | +0.02% |
+| markdown (react-markdown) | 1,672,961,653 | 1,672,890,481 | -0.00% |
+| dates (date-fns and dayjs) | 1,167,606,991 | 1,167,743,140 | +0.01% |
+| table (@tanstack/table) | 984,371,316 | 984,330,834 | -0.00% |
+| chart (recharts and d3) | 869,366,379 | 869,558,035 | +0.02% |
+| forms | 910,172,776 | 910,803,585 | +0.07% |
+| diff (jsdiff) | 782,314,693 | 782,321,512 | +0.00% |
+| i18n (i18next) | 648,792,336 | 648,825,785 | +0.01% |
+| domain | 435,456,323 | 435,536,936 | +0.02% |
+| radix (Radix) | 295,612,771 | 295,664,547 | +0.02% |
+| styled (styled-components) | 169,205,102 | 169,216,376 | +0.01% |
+
+The 630,000 more instructions of the forms page are in `js_closure` (+298,000), `add_property` (+161,000), `JS_DefineProperty` (+119,000) and `js_own_key_kinds` (+52,000), as the C compiler lays them out again. Of these the change only adds a test to `JS_DefineProperty`, for a binding of a module namespace.
+
+The generated engine, on linux/amd64, with tifa's pages and two of the 12: callgrind, a warm render, then the difference of three renders and one, halved (the long Markdown page: two renders and one). As `make gen` makes it, the profile is the one trained before the change: `JS_DefineProperty`, `js_object_isSealed` and `js_object_seal` changed and are compiled without it, and the four new functions have none. After the profile is trained again (`engine/pgo/train.sh`), tifa's pages reach the new functions (880 tests and 166 freezes or seals in the training), so `engine/pgo/loops.js` needs no new loop. The HTML of every page is the same.
+
+| Page | As `make gen` makes it | Trained again |
+| --- | ---: | ---: |
+| the workbench studio page | +0.02% | -0.01% |
+| the workbench stats page | -0.08% | +0.01% |
+| the shop's English home page | +0.03% | -0.04% |
+| the shop's English products page | +0.01% | +0.00% |
+| MUI's orders page | +0.04% | -0.02% |
+| MUI's home page | -0.05% | -0.01% |
+| React's page | +0.15% | +0.08% |
+| the long Markdown page | +0.07% | -0.04% |
+| state (immer and Redux Toolkit) | -43.38% | -43.79% |
+| forms | +0.07% | -0.03% |
+
+React's page runs 28,000 more instructions a render after training. A callgrind of each function puts none of them in the engine: its functions run 5,000 fewer a render, and the rest is the Go runtime walking stacks for the garbage collector, which moves with when it collects.
+
+Memory, after four renders on the native C tree: the state page holds 5.78 MB rather than 6.03 MB before a collection, since no array of keys is made a call, and 5,387,616 bytes rather than 5,384,080 after one, the same count of blocks. The other 11 pages hold the same.
+
+### Objects of a constructor that find their shapes
+
+[Objects of a constructor find the shapes the objects before them went through](changes/objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through), counted on 2026-11-15 against `d7c86e16` (v0.30.7). Native: the test host built by clang, callgrind on linux/amd64. A page is one timed render after 2 warm ones in the pool of tifa's settings, `host_poll` left out, the shop's pages with the URL objects reused. A V8 benchmark is the difference of 12 runs and 4, divided by 8 (Splay: 50 and 10, by 40). A wider page is the difference of 4 renders and 2 through `jsrun -call`, halved. The HTML of every page and the result of every benchmark are the same.
+
+The shapes made and freed and the keys compared, counted with counters added to the native C tree for the count only: an empty shape that `new` made for an object (`js_new_shape2` with the prototype of a constructor), and a shape that `find_hashed_shape_prop` found by comparing its keys.
+
+| | Empty shapes, v0.30.7 | Empty shapes, now | Shapes found by their keys, v0.30.7 | Shapes found by their keys, now |
+| --- | ---: | ---: | ---: | ---: |
+| an iteration of Boyer | 256,604 | 0 | 256,604 | 0 |
+| an iteration of RayTrace | 66,594 | 7,878 | 60,709 | 3,449 |
+| an iteration of Earley | 8,703 | 0 | 8,703 | 0 |
+| an iteration of Splay | 479 | 0 | 479 | 0 |
+| an iteration of DeltaBlue | 1,450 | 16 | 1,440 | 6 |
+| a render of the domain page | 30,172 | 23 | 30,283 | 26 |
+| a render of the dates page | 11,729 | 4,708 | 13,084 | 4,245 |
+| a render of the workbench studio page | 604 | 138 | 5,678 | 127 |
+| a render of MUI's orders page | 261 | 56 | 4,551 | 30 |
+| a render of the long Markdown page | 13,887 | 13,595 | 258,338 | 820 |
+
+| Native, linux/amd64 | Instructions |
+| --- | ---: |
+| Boyer | -9.45% |
+| RayTrace | -7.07% |
+| Earley | -5.52% |
+| Splay | -3.33% |
+| DeltaBlue | -1.77% |
+| Richards | +0.01% |
+| the domain page | -3.93% |
+| the dates page | -1.89% |
+| forms, chart, table, i18n, styled, state, radix, diff, antd | +0.04% to -0.08% |
+| the markdown page | +0.09% |
+
+The markdown page looks up about as many shapes a render as before (1% more) and takes more steps along the chains of the shape hash table for them, which now holds the shapes the chains keep: per line, the walk of the chains and its tests run 2.4 million more instructions in a run of 2 renders.
+
+The generated engine in tifa's pages app, against the same commit. "As generated" is the engine `make gen` makes with the profile of v0.30.7, which still fits `add_property` and `find_hashed_shape_prop` and no longer `js_free_shape0` and `mark_children`; the five new functions have none. "Trained" is the same C with the profile trained again on it in a scratch copy, which is not checked in. On linux/amd64 a page is callgrind, one warm render and then the difference of three renders and one, halved (the long Markdown page: two and one). The HTML of every page is the same. Training v0.30.7 again moves the counts by itself: +0.01% on MUI's orders page, -0.04% on its home page, +0.11% on React's page.
+
+| Page | Native | As generated | Trained |
+| --- | ---: | ---: | ---: |
+| the workbench studio page | -0.62% | -0.45% | -0.56% |
+| the workbench stats page | -0.42% | -0.26% | -0.36% |
+| the shop's English home page | -0.12% | -0.41% | -0.46% |
+| the shop's products page (native: Chinese, tifa: English) | -0.12% | -0.39% | -0.44% |
+| MUI's orders page | -0.14% | -0.16% | -0.16% |
+| MUI's order page | -0.10% | | |
+| MUI's home page | -0.06% | -0.08% | -0.08% |
+| React's page | +0.00% | +0.17% | +0.08% |
+| the long Markdown page | -1.41% | -0.33% | -0.64% |
+
+On React's page the engine itself runs 7,600 more instructions a render as generated (0.02%: `js_free_shape0` tests the parent of each shape it frees, and the young collection marks it), and the rest is `runtime.(*pageAlloc).find` and the poller of the Go runtime, which move by up to 70,000 instructions from one run to the next. Natively React's page runs 1,126 more instructions a render (0.004%).
+
+| V8, through the Go API | As generated | Trained |
+| --- | ---: | ---: |
+| Boyer | -9.47% | -9.42% |
+| RayTrace | -6.92% | -6.85% |
+| Earley | -4.45% | -5.28% |
+| Splay | -3.30% | -3.20% |
+| DeltaBlue | -1.65% | -1.76% |
+| Richards | +0.02% | +0.02% |
+
+Memory, the bytes the runtime holds after a full collection: after 200 renders of a page, after 20 of the long Markdown page, after 4 of a wider page, and after the 12 runs of a V8 benchmark.
+
+| Page | v0.30.7 | Now |
+| --- | ---: | ---: |
+| the workbench studio page | 13,849,568 | +56,832 |
+| the workbench stats page | 13,505,296 | +43,752 |
+| the shop's English home page | 13,902,320 | +42,224 |
+| the shop's Chinese products page | 14,534,768 | +74,360 |
+| MUI's orders page | 7,570,248 | -119,904 |
+| MUI's order page | 7,707,936 | -159,656 |
+| MUI's home page | 7,175,888 | -48,368 |
+| React's page | 970,736 | +11,928 |
+| the long Markdown page | 12,693,688 | -1,115,136 |
+| the wider pages | | -12,400 (i18n) to +73,640 (antd) |
+| a V8 benchmark | | -4,184 (Boyer) to +5,208 (DeltaBlue) |
+
+The frames of `JS_RegvmRun` (a shadow frame of 256 bytes on amd64, 176 on arm64) and `JS_CallInternal` (112, 96) are those of v0.30.7.
 
 ### A profile of tifa's pages
 
@@ -1557,6 +1942,48 @@ The V8 suite (`compare/engines`, `jsbench v8`, the formal build of each side, 10
 
 Crypto reads and writes the elements of arrays that are no longer fast arrays, and runs 22.3% and 22.7% fewer instructions an iteration in its two parts (callgrind, the same builds). EarleyBoyer tests `instanceof`: Earley runs 6.05% fewer and Boyer 21.51% fewer. The other benchmarks run within 0.08% of the instructions of v0.30.7, so their changes of score, NavierStokes' 3.7% among them, are where the code lands.
 
+#### v0.31.1 against v0.31.0
+
+v0.31.1 (1eeac784) was timed against v0.31.0 (7a2f394a) on 2026-11-15 on the server and in the way of v0.31.0 above, with the shop and MUI pages in an app that registers tifa's four functions and `__tifa_murmur2__` as tifa does, and both sides give the same HTML on every page.
+
+| Pages | Mean of the layouts | Formal layout |
+| --- | ---: | ---: |
+| tifa's shop, six workbench pages | -1.52% (-2.73% to -0.29%) faster | +0.24% (-2.22% to +2.75%) inconclusive |
+| tifa's shop, fourteen store pages | -0.35% (-1.19% to +0.50%) no regression beyond delta | +0.07% (-1.28% to +1.44%) inconclusive |
+| tifa's MUI test app, three pages | -1.09% (-1.72% to -0.46%) faster | -2.42% (-3.64% to -1.19%) faster |
+| React's page | -2.16% (-2.92% to -1.39%) faster | -1.53% (-2.62% to -0.43%) faster |
+| The long Markdown page, 100 and 400 sections | +2.58% (+0.67% to +4.53%) slower | +2.47% (-1.11% to +6.18%) inconclusive |
+| The long Markdown page, 400 sections alone (4 runs each) | | +2.9% (medians 4,007 ms and 4,122 ms) |
+
+Instructions a render (callgrind on linux/amd64, the shop and MUI pages with tifa's functions), against v0.31.0 with its profile trained again on the same server:
+
+| Page | amd64 |
+| --- | ---: |
+| The store's home page | -1.00% |
+| The store's products page | -1.10% |
+| The workbench's studio page | -1.38% |
+| The workbench's stats page | -1.26% |
+| MUI's orders page | -2.51% |
+| MUI's home page | -1.87% |
+| React's page | -0.98% |
+| Long Markdown (400 sections) | -0.17% |
+
+The V8 suite, measured as for v0.31.0:
+
+| Benchmark | v0.31.0 | v0.31.1 | Change |
+| --- | ---: | ---: | ---: |
+| Score | 1586 | 1882.5 | +18.7% |
+| RegExp | 568.5 | 1121 | +97.2% |
+| RayTrace | 1511 | 2246 | +48.6% |
+| EarleyBoyer | 2667 | 3067 | +15.0% |
+| Splay | 4258 | 4573.5 | +7.4% |
+| NavierStokes | 2535 | 2633.5 | +3.9% |
+| DeltaBlue | 1018.5 | 1043 | +2.4% |
+| Richards | 1106 | 1131.5 | +2.3% |
+| Crypto | 1423.5 | 1447 | +1.7% |
+
+The long Markdown page is slower although it runs fewer instructions, and 100 and then 400 sections rendered in one VM peak at 460 MB where v0.31.0 peaked at 258 MB: the plan the engine keeps for each regexp grew from 36 to 74 bytes, so the engine's own collections land at other points (one more in the three timed renders of 400 sections), and the next version is to fix it. Under tifa's limit of 128 MiB the page of 400 sections does not render, on v0.31.0 as on v0.31.1. The shop and MUI times of v0.30.5 to v0.31.0 were taken with an app that did not register tifa's functions, so they are of another workload.
+
 #### The study of 2026-11-13
 
 The study that found the profile trained it on half of the pages (workbench studio, 7 of the 14 en-US store pages, MUI home) and timed it against the same C generated without it, with the same HTML on every page. Time on linux/amd64 (an AMD EPYC 7B13 server with 4 cores, one core, the whole machine quiet), `go tool measure bench` with 16 layouts of the code, 2 rounds of each kind, 3 formal repeats, one VM for each group of pages, warm 3 and 7 timed renders a page, the P50, `GOMAXPROCS=1`. All 18 units of every kind ran with no block run again. Judged with a delta of 1%, 95% intervals:
@@ -1689,6 +2116,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **Testing the uncatchable flag before calling `_js_uncatchable_pending`** at the entry of `JS_CallInternal`: the helper is too large to inline into the interpreter, so every JavaScript call pays a real call to it. Testing the runtime's flag inline first skips that call on the normal path, and keeps the full check, which is still needed because the flag stays set after the exception is taken. 0.06% fewer instructions on V8, 0.09% on the shop and 0.41% on MUI. Over six rounds on three code layouts, V8 took 0.9988 of the base score (0.9883 to 1.0254), the shop 0.9927 of the time (0.9859 to 1.0014) and MUI 0.9850 (0.9763 to 1.0265). The sign follows the layout: MUI took 1.027 and 1.012 of the time in the two rounds of one layout, and 0.976 to 0.988 in the four rounds of the other two. The gain cannot be told from layout noise.
 - **Reading the count of locals once, alone**: at the start of a call the interpreter read `b->var_count` again after each local it set. Reading it once gave React 1.0% fewer instructions but a loop of arithmetic 3.9% more, from a register spilled in one handler, and the time did not change. It is done since together with setting four locals a turn and freeing two values a turn (see [Calls, for in and hasOwnProperty.call](#calls-for-in-and-hasownpropertycall)).
 - **Spreading a dense array without its iterator**: `[...a]` of three elements took 165 ns rather than 615, and a call with spread arguments 394 ns rather than 869, on v0.26.17 in a micro benchmark on linux/amd64. The shop's six pages (0.997) and three MUI pages (1.007) did not change beyond the spread that the layout of the code gives, since pages rarely spread arrays. It would have added about 870 lines of fixlib rules. Corrected on 2026-11-14: that no longer holds for today's pages. wb studio spreads arrays 2,432 times a render at about 1,450 instructions each, the storefront 968 to 1,415 times, and the spread with no iterator is done since, in the C engine (see [The spread of a plain array with no iterator](#the-spread-of-a-plain-array-with-no-iterator)).
+- **A rest parameter or an array spread into a call, in the register loop** (`f(...rest)`, `f(...args)`), counted on 2026-11-15 next to [passing arguments on with apply](#passing-arguments-on-with-apply): on an Apple M4 a rest parameter spread into a call costs about 1,900 instructions more than a direct call and a spread of an array about 1,800, but the 12 React pages on widely used libraries make at most about 7,200 of each a render, so taking all of that cost away would give at most 2.3% of a render on i18n, 1.4% on table, 1.3% on radix and under 1% on the others, and a rest parameter still needs its array. Not built. `Reflect.apply(f, x, arguments)`, a spread of `arguments` and `new` or `super` with one were not built either: neither these pages nor V8's suite runs them.
 - **Keeping the in-between shapes of every object literal**, before v0.26.16: about 2% more on top of the new property fast path, but the two list pages ran out of VM memory, because the kept shapes held their prototypes and everything those reach. v0.26.16 keeps only shapes whose prototype is `Object.prototype`, at most 32 keys and no unregistered symbol key, in a ring of 2048 (see [Kept shapes](changes/objects-and-shapes.md#kept-shapes)).
 - **Building a shape in place when no other object has its keys**: in the first form of the shape cache, copying every shape made objects of keys no other object has 22% slower to build. v0.26.16 earns one copy for each shape found, up to 64, which leaves those objects about 6% slower.
 - **Literal templates in the bytecode**, as V8 copies a prebuilt object: needs compiler and bytecode format changes, and quickjs-ng saw no clear difference when it tried. It is done since, as one opcode for each run of plain keys whose final shape the function keeps (see [Object literals made at their final shape](changes/objects-and-shapes.md#object-literals-made-at-their-final-shape)).
@@ -1730,6 +2158,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
 - **A call that also copies constants into its window**, measured on 2026-11-12 in llc's output of the generated engine. The first form of [the calls that copy their last locals](#calls-that-copy-their-last-locals) took a `LOADK` too, told a slot from a constant at each copy and tested the count from four down. A call with one copy, the most common, then ran more instructions than the `CALL` and the `MOV` it stood for, so the form kept takes slots only and tests a single copy first.
 - **Freeing the objects that die with an object by a direct call, to a depth cap**, rather than through `gc_zero_ref_count_list`, counted on 2026-11-12 and not built. Disassembled from the generated engine (5fe8d6f7): freeing an object whose count reaches zero, at phase NONE down to `free_object` and back, is 67 instructions on amd64 and 71 on arm64. Of these, 26 / 27 are the call (the Go prologue with its stack check, the loads of the arguments, the spills, the epilogue), 17 / 14 the dispatch on the tag and the phase, and 24 / 30 the round trip of `free_zero_refcount_first` (the moves between lists, the mark, the nesting count, the phase). An object that dies while another is freed costs `__JS_FreeValueRT` in phase DECREF (40 / 44) and an item of the loop of `free_zero_refcount` (29 / about 19). Per render, 4,171 objects are freed first and 2,003 die with them on React, 49,086 and 16,117 on the shop's store, 23,810 and 12,156 on wb, 29,083 and 14,868 on MUI. A direct call would save at most about 29 instructions for each object that dies with another: 0.19% of React, 0.20% of store, 0.37% of wb and 0.34% of MUI, upper bounds, and the first object of each free keeps its round trip. It changes the order of the finalizers: today an object's finalizer runs before those of its children, which go in reverse order of the properties, depth first, and with a direct call the children finish first. No script can see it (no JavaScript runs during a free, WeakRef, WeakMap and WeakSet read the count when a script runs, and FinalizationRegistry jobs are queued in the order of the registries in a collection, not of the frees). The Go side would get the calls of `host_release` in another order, so a later handle may get another number, which no API shows. Each level would take about 300 bytes of Go stack below the frame that drops the last reference, which lowers the depth floors unless the recursion stops where the stack has no more room than now.
 - **Room reserved by the place that creates an object**, so that an object starts with the room the objects made there before ended with, counted on 2026-11-12 on the native host set up as tifa's pool, with the shape cache on, and not built. Kept shapes take away most copies of shapes (MUI's orders page 10.2k to 3.0k a render, the shop's home 5.1k to 0.8k), but not the times the property array of an object grows after it is made (the shop's home 33.2k to 33.0k, its products page 57.1k to 55.1k). All those moves together are about 0.25% of a render's instructions, and about 0.15% after object literals got the room of an empty object (see [Object literals with the room of an empty object](#object-literals-with-the-room-of-an-empty-object)). The most a table per place could give is about 0.2%, not worth the table and the memory it holds.
+- **The last shape of a constructor kept on the function, and a property array of a size learned from the objects before**, counted on 2026-11-15 against v0.30.7 on the native C tree, and not built. These were the two other ways for `new C()` to stop making shapes, besides the parent a found shape keeps (see [Objects of a constructor that find their shapes](#objects-of-a-constructor-that-find-their-shapes)). A shape kept on the function would keep the prototype it was made with alive after a script gives the function another `prototype`, which a `WeakRef` can see, and letting it go needs a check on every store of `prototype`. Once the parents are kept, it could still save the empty shapes that are made: 7,878 an iteration of RayTrace (about 0.8% of its instructions), 4,708 a render of the dates page (0.2%), at most 181 a render on tifa's pages and none on Boyer and Earley. A property array of the right size would save the times an object takes a found shape with more room than its array (`js_resize_prop`): 54,291 an iteration of RayTrace (about 1.9%), 47,182 a render of the domain page (1.3%), 43,540 of the dates page (0.4%), 2,242 on the workbench studio page (0.2%) and fewer on the other pages, but every shape of a chain would need the room of the last one, or the function a size of its own. A link from a shape to the next one would only skip the lookup in the shape hash table, which the table of shape steps (above) already tried: fewer instructions and more time.
 - **The iterator of a `for in` loop in the block of its object**, so that a loop start makes one allocation rather than two, counted on 2026-11-12 and not built. As an upper bound, a probe that kept the last freed iterator and gave it to the next loop, so that nearly no loop allocated one, took 0.04% of the instructions of MUI's orders page (10,376 loops a render), 0.03% of the order page and nothing of the home page: the front cache makes a small block and its free cost about 9 instructions together. The rest of the cost of the iterator object is its object and finalizer, which this would keep.
 - **Room remembered per place for the arrays that are built by appending, and the exact length for the results of `concat` and `map`, `Array(n)` and the array of own keys**, counted and measured on 2026-11-12 on top of [arrays that take room for 8 elements at first](#arrays-that-are-appended-to-take-room-for-8-elements-at-first). The place is the bytecode site of an `[]` literal, remembering the smaller of the last two lengths its arrays ended with, as moejs's allocation sites do: modelled from the length of each array at its death, it saves 0.27% to 0.28% on the shop's pages, 0.23% on a workbench page and 0.06% on MUI's orders page, against 0.23%, 0.23%, 0.19% and 0.39% for the 8 slots, and needs a table and a lookup for each `[]`. One site of 41 makes 41% of the regrows of the shop's products page and one of 19 91% of MUI's orders page. Not built: the saving is the size of the room reserved by the place that creates an object (above), which was dropped. The exact length (the room of `Array(len)` for `map`, the sum of the lengths of the arrays that `concat` spreads, the number of own keys) was built and measured on top of 4 slots: React -0.001%, the shop's home -0.061%, its products page +0.012%, a workbench page +0.025% and MUI's orders page -0.076% of the instructions, under 0.3% on every page. It is kept as the commit `wip(engine): give the result of concat and map, Array(n) and the own keys room at once` of the branch `regvm/s1-reserve`, with its tests.
 - **Returning the receiver from `toLowerCase` and `toUpperCase` when no character changes** (and converting a string of 8 bits with only ASCII in one pass over its bytes when one does), measured on 2026-11-12 on the native C tree at 641f7dc7, kept as the commit `wip(engine): return the receiver when toLowerCase or toUpperCase changes nothing` of the branch `regvm/s1-case` and not handed in. A render of the store pages makes 1,963 (home) and 3,339 (products) conversions that are not of the empty string, of which 1,711 and 2,656 change nothing, and each cost about 555 instructions because a new string was made anyway. The change took 0.268% (home) and 0.297% (products) of a render's instructions (callgrind, `render tifa=1 young=1 shapes=2048`, one timed render after two warm ones, `host_poll` and `__shadow_remaining` left out), 0.121% on wb studio, 0.020% on MUI orders and 0.006% on a React render, under the 0.3% a change needs. Most of those calls come from the URL polyfill of core-js, which lowercases the scheme and host of every link and which a Go URL replaces in tifa. With a stand-in that reuses a URL object after the first render (`urlmemo.js`), the same pages make 295 (home) and 502 (products) conversions, of which 43 and 155 change nothing, so the polyfill makes 1,668 and 2,837 of them, and the change takes 0.054% (home), 0.071% (products), 0.057% (wb studio) and 0.018% (MUI orders), under the 0.2% a page must keep. A scan of 8 bytes at a time was slightly worse than the byte loop (0.290%).
@@ -1763,6 +2192,7 @@ Each item says what it would give and why it was dropped. Check here before tryi
   - The flat-loop threshold of the unroller at 0: one function changes (`js_Date_parse`, amd64 only), 0.01% to 0.03% fewer a render. At 1,000,000: 0.44% to 1.14% more a render. The threshold decides almost nothing today.
   - `engine/libc` compiled without the profile, which was the way named to take `memmove` back to a leaf without a frame. All of the libc: 219 functions change on amd64, the renders move by 0.03% or less, a bundle load runs 0.07% to 0.15% fewer instructions, and `date_parse` 4.4% more. Only `memcpy.c`, `memmove.c` and `memset.c`: 128 functions change (the post-link optimizer inlines those by name), 0.01% to 0.11% fewer a render, 0.02% fewer on the micro benchmarks. The vectorizer pin gives `memmove` back its leaf form with fewer changes and more gain, so neither was kept.
   - A fix of the inline replay for the calls it misses: about a day of work, and the functions those calls keep run 0 instructions in every count ([generator.md](changes/generator.md#limits)).
+- **A frozen bit on the shape**, as Hermes marks a hidden class sealed or frozen, so that `Object.isFrozen` of a frozen object answers without going over its properties. Counted on 2026-11-15 on top of [integrity levels from the shape](#integrity-levels-from-the-shape): on the state page `js_object_isSealed` runs 161 instructions a call, about 98 of them in the pass over some 20 properties, so the bit would save about 15 million instructions a render, 2.1% of that page and nothing on tifa's pages. Every change in place of a shape that is not hashed would have to clear the bit: adding a property, a private field added to a frozen object, changing flags, deleting, a property made on first read, the flags of bindings, about 15 places in the C. One missed place gives a wrong answer and no error. Not done.
 
 ## Where to continue
 
@@ -1773,7 +2203,6 @@ What the measurements above leave for the C engine, none of it large. A change u
 - **Memory** per VM: the free pages of the render's temporary space, the pages the shadow stack touched and the holes between free blocks make up the gap between a VM's resident memory and the engine's count of its blocks (4.2 MiB on the shop and 2.9 on MUI per VM, from 8 VMs against 1 after the renders). `ReleaseMemory` gives back the free pages when the pool lets a VM wait.
 - **Results of the functions Go code calls**: the 91 functions Go code calls still store their result, because Go reads the result of an assembly function from memory. A generated Go entry for each hot one, which calls a body that stores nothing, would remove the stores of those bodies when generated code calls them: at most 0.24% of the instructions on the store pages, 0.21% on the workbench, 0.11% on MUI and 0.14% on React (arm64, writing each such store twice), less one extra call for each call from Go. It needs a new kind of function in both post-link checks.
 - **Arrays that keep their elements in one block with holes**: an Array written past its end, or with an element deleted, becomes an array of properties and never becomes a fast array again ([An index of an Array that is not a fast array is read and written by its atom](changes/c-engine.md#an-index-of-an-array-that-is-not-a-fast-array-is-read-and-written-by-its-atom)). V8 keeps such an array in its block, with a mark for each missing element. Upstream QuickJS and quickjs-ng turn it into properties, as this engine does. Keeping the block would need the mark checked wherever the engine reads the block of a fast array: about 60 functions of `quickjs.c` (`js_get_fast_array` and its callers, the fast paths of `push`, `pop`, `includes`, `indexOf`, `slice`, `splice`, `with` and `toSpliced`, JSON, `for in`, `for of`, `delete`, `set_array_length`, `JS_GetOwnPropertyNames`, the collector and the free of an object, `JS_WriteArray`, `build_arg_list`, `JS_CopySubArray`) and the register loop (GETEL, GETEL3, PUTEL, DSTART and DNEXT, the spread, the built-ins it answers), and every read of an element on the pages would pay the check, while the pages make no such reads. The read by atom takes about 94 instructions where an element of a block takes about 10, so the block would gain only where such arrays are hot, Crypto among the V8 benchmarks.
-- **The next key of a for in loop and the read of it** (`for (k in o) ... o[k]`), counted on 2026-11-15 against `b0271108`: a render takes 34,096 next keys and 34,244 reads of the key just given on MUI's orders page, 12,523 and 11,986 on its home page, 16,450 and 11,940 on the store's products page, 8,465 and 5,709 on its home page, 9,934 and 7,989 on the workbench's studio page, and 2,399 and 1,681 on React's page. One op of the register loop that gives the next key from the shape the loop checked, branches on the end and reads the value at the slot the loop is at would save two dispatches a key and the lookup of the read: about 0.7% to 1.2% of MUI's orders page and 0.6% to 1.0% of its home page, under 0.3% elsewhere, estimated from the counts. Taking the next out of its window alone saves only about 16 instructions a key on arm64. The fused op needs a new op of the pass and its branch, and the frame of `JS_RegvmRun` checked.
 
 Measured on the stack interpreter, the engine up to v0.30.1. The register interpreter of v0.30.2 runs a render another way, so these shares and counts no longer describe it:
 

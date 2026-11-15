@@ -1,5 +1,5 @@
 ---
-summary: '对象和它们的 shape 的改动：普通对象新属性的快速路径，对象消失后仍保留的 shape，跳过没有可枚举属性的原型的 for in 循环，本来就是 atom 的字符串键，一次就放到 shape 上的新函数，在解释器里查找的字符串、数字和数组的方法，从 shape 列出的自有键，占 48 字节而不是 72 的普通对象，直接按最终 shape 创建的对象字面量，把属性放在对象自己内存块里的对象字面量，在轮到每个键时才查找它的展开、rest 和 Object.assign，持有其对象 shape 的 for in 循环，以及在解释器里直接回答的 hasOwnProperty.call，每项在内存上的收益和代价，怎样设定或关闭 shape 缓存，为什么安全'
+summary: '对象和它们的 shape 的改动：普通对象新属性的快速路径，对象消失后仍保留的 shape，跳过没有可枚举属性的原型的 for in 循环，本来就是 atom 的字符串键，一次就放到 shape 上的新函数，在解释器里查找的字符串、数字和数组的方法，从 shape 列出的自有键，占 48 字节而不是 72 的普通对象，直接按最终 shape 创建的对象字面量，把属性放在对象自己内存块里的对象字面量，在轮到每个键时才查找它的展开、rest 和 Object.assign，持有其对象 shape 的 for in 循环，在解释器里直接回答的 hasOwnProperty.call，以及能找到之前的对象走过的 shape 的构造函数对象，每项在内存上的收益和代价，怎样设定或关闭 shape 缓存，为什么安全'
 read_when:
   - VM 的运行接近它的内存上限，想知道要不要给它一个更小的 shape 缓存
   - 调用 VM.SetShapeCache，或者想知道 DefaultShapeCache 的代价
@@ -396,3 +396,92 @@ React 和它周围的库用 `Object.prototype.hasOwnProperty.call(obj, key)` 来
 脚本最后留下的对象、atom 和 shape 是 `engine/test/regvm` 的 golden 的一部分：跑过 for in 循环、又没有别的东西拿着这个 shape 的脚本，现在结束时多一个拿着的 shape，所以这个改动重新录了这些 golden 里记内存的那几行，别的都没动。
 
 改动在 C 里（`engine/quickjs.c` 的 `build_for_in_iterator`）。测试：`engine/test/compare/for_in_iterator.js`（内容就是 Node 24 的输出）在这些东西上跑循环：对象、数组、稀疏数组、字符串、String 对象、`null`、`undefined`、数、无原型的对象、冻结的对象、循环中删掉、加上、删掉又加回的键、原型链上被遮住的键、不可枚举的键、类的实例、Proxy（一个藏起一个键，一个的 `ownKeys` 会抛出），用 `return`、`break`、`continue`、带标签的 `break` 和抛出离开循环，循环套循环和递归里的循环，在循环里停住的生成器再往下跑、返回和抛入，同时停住 50 个生成器，在两次循环之间加键的无原型对象，以及连着跑 1000 次循环。`engine/test/regvm/js/o-forin-shape.js`（golden 是在改动前的引擎上录的）跑本 realm 和另一个 realm 的循环，遍历两边的对象，一个套在另一个里面，两个 realm 的生成器在循环里停住并跨过回收，两次循环之间被冻结和清空的无原型对象，以及 Proxy 的 trap 在两个 realm 里的调用顺序，这个顺序和 Node 24 的不同，保持原样。`engine/test/unit.c` 的 `test_for_in_shape` 检查一次循环之后 context 留下一个 shape、再跑一百次也不会更多，加键的 `Object.create(null)` 对象让它保持为空，第二个 context 也拿着第一个的 shape，第一个释放之后它还在：改动前它因为没有拿着的 shape 而失败。`engine/test/unit-oom.c` 的 `test_for_in_oom` 在 16 KiB 以内的每种剩余空间下和堆满时跑各种循环，包括嵌套的和生成器里的，一次让 shape 在准备阶段做好，一次让第一次循环在剩余空间里去做它，检查结果或者内存不足的错误，并且检查没有留下任何东西。
+
+## Object.isFrozen 和 Object.isSealed 先问对象能不能扩展
+
+版本：v0.31.1。
+
+`Object.isFrozen` 和 `Object.isSealed` 先列出对象的自有键，逐个取描述符，最后才问对象能不能扩展。规范（TestIntegrityLevel）先问这一步，能扩展的对象既不是 sealed 也不是 frozen，键就不用再问了。在 Proxy 上看得出区别。目标能扩展时，引擎调用 `ownKeys` 和 `getOwnPropertyDescriptor` 两个 trap，从不调用 `isExtensible`，而 Node 只调用 `isExtensible`。`ownKeys` trap 抛错时引擎的调用跟着抛错，而 Node 返回 false。目标不能扩展时，各个 trap 现在按 Node 的顺序调用，先调用 `isExtensible`。另外，键已经列出之后 `isExtensible` 抛错的话，这份键的列表从没释放：它占的块一直用着，直到 runtime 释放，测试宿主于是报 "1 runtimes freed with blocks still in use" 退出。上游 QuickJS 的顺序和引擎原来的一样。
+
+测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样）测试各种对象的完整性级别，以及 `Object.freeze`、`Object.seal`、`Object.preventExtensions` 之后的属性标志：原始值、普通对象、带访问器的对象、删过键的对象、symbol 键和数字键、键很多的对象、共用 shape 的对象、私有名字、类的实例、数组、类型化数组、`String` 对象、arguments、函数、错误对象、内置对象，以及 Proxy 的 trap 顺序、抛错的 trap 和已撤销的 Proxy。有三种情况 V8 的答案不合规范，所以由 `engine/test/unit.c` 的 `test_integrity_levels` 按规范检查：不能扩展的空数组，要等 length 不可写才算 frozen。有元素、不能扩展的类型化数组不算 sealed。元素都已冻结的数组，也要等 length 不可写才算 frozen。它还冻结全局对象，Node 在自己的 context 里做不到这一步。
+
+## 给模块命名空间定义属性时先读它的绑定
+
+版本：v0.31.1。
+
+模块命名空间的 `[[DefineOwnProperty]]` 先取这个属性，也就是读它的绑定，绑定还没初始化时读取会抛 `ReferenceError`（模块导入自己，在自己的 `let`、`const`、`class` 执行之前查看自己的命名空间）。引擎没有读：对这样的命名空间 `Object.seal` 直接返回它，对某个绑定 `Reflect.defineProperty` 返回 true 或 false，`Object.defineProperty` 抛 `TypeError`。现在 `JS_DefineProperty` 遇到模块命名空间里还没初始化的绑定时抛 `ReferenceError`，和 Node 一样。`Object.isSealed`、`Object.isFrozen` 和 `Object.freeze` 原来就抛这个错。
+
+测试：`engine/test/compare/integrity_levels_module.mjs`（输出和 Node 24 一样）在绑定初始化之前和之后，查看自己命名空间的完整性级别，封住、冻结它，并定义它的绑定。
+
+## Object.isFrozen、Object.isSealed、Object.freeze 和 Object.seal 走一遍 shape
+
+版本：v0.31.1。
+
+对不能扩展的对象，`Object.isFrozen` 和 `Object.isSealed` 先把它的键列进一个新数组，再逐个查找取描述符。`Object.freeze` 和 `Object.seal` 列出键后逐个重新定义，每个键都要查找一次、检查一次标志。Redux Toolkit 用的 immer 会冻结它交出去的状态，遍历时对每个对象先问 `isFrozen` 再冻结，一遍又一遍：用 Redux Toolkit 管状态的页面每次渲染调用约 156,000 次 `isFrozen`、2,900 次 `freeze`，多数是 9 个键的已冻结对象。现在对普通对象和数组，这四个调用直接走一遍对象的 shape，标志就存在 shape 的属性里：判断时每个属性的标志读一次（`js_shape_test_integrity`），冻结或封住时先读一遍看有没有要改的，再像 `JS_DefineProperty` 改标志之前那样让对象拥有自己的 shape（`js_shape_prepare_update`），第二遍清掉标志（`js_shape_set_integrity`）。已经冻结的对象保留原来的 shape。
+
+为什么安全：对这样的对象，列出键、逐个读取或定义都不运行代码，步骤的先后看不出来，走一遍得到的和通用路径一样。下面这些走通用路径：数组以外的特殊对象（Proxy、类型化数组、`String` 对象、arguments、模块命名空间），以及有属性是绑定（全局对象）或第一次读取时才创建的对象，这种属性由通用路径在读取时创建。数组的元素可以配置，所以有元素的数组既不是 sealed 也不是 frozen，冻结或封住时先把元素变成属性，和通用路径第一次定义时一样。私有名字和删掉的属性不是键，保持原样，访问器属性只去掉 configurable。每走 65,536 个属性检查一次中断标志，超时能停下来。复制共用的 shape 或复制元素时内存不够，调用失败，对象已经不能扩展，标志都没变，和通用路径在第一次定义时失败一样。
+
+收益：tifa 的 `test/apps/libs` 里的 state 页（immer 和 Redux Toolkit）每次渲染，在原生 C 树上少 42.8% 的指令，在生成的引擎上少 43.4%，重新训练 profile 后少 43.8%。这组的其余 11 页和 tifa 的页面变化都不到 0.1%（[performance.md](../performance.zh-CN.md#从-shape-读出完整性级别)）。state 页回收前少占 4% 的内存，回收后一样。每一页的 HTML 都一样。
+
+测试：`engine/test/compare/integrity_levels.js`（输出和 Node 24 一样，见[上文](#objectisfrozen-和-objectissealed-先问对象能不能扩展)）覆盖走两条路径的各种对象。`engine/test/unit.c` 的 `test_integrity_polls` 判断和冻结有 200,000 个属性的对象和数组，数中断标志的读取次数，并让每个调用分别在第一次、中间一次和最后一次读取时停下。`engine/test/unit-oom.c` 的 `test_integrity_oom` 在每次分配都内存不够的情况下，冻结和封住共用 shape 与独有 shape 的对象、数组和有 40 个键的对象。`engine/test/regvm/js/q7-integrity.js` 在 corpus 和抛错注入测试里，循环跑两条路径，也跑另一个 realm 的对象和冻结全局对象。
+
+## 一个 shape 最多放 2^26 - 1 个属性
+
+Release: v0.31.1.
+
+shape 为每个属性记下它的哈希链里下一个属性的序号加一，放在 `hash_next` 的 26 位里。属性超过 2^26 - 1 个时，这个序号会被截断，查找可能找不到一个确实存在的属性。脚本能走到这里，因为每个块都在分配器给单个块的 4 GiB 以内：一个有 2^26 - 1 个奇数下标的数组，加上长度，是一个有 2^26 个属性的普通数组，总共几 GiB，再在最后那个下标所在的桶里加一个键，那个元素就会读成 `undefined`。上游有同样的 26 位，也没有上限。
+
+现在 `resize_properties` 给一个 shape 最多 2^26 - 1 个属性（`JS_SHAPE_PROP_MAX`）。再加一个会抛 RangeError，"too many properties"，和快数组超过上限时抛 "invalid array length" 一样，对象保持原样：加一个键是这样，把这么多元素的快数组变成普通数组也是这样。`JS_SHAPE_HASH_NEXT_BITS` 给这个字段的宽度起了名字，几条静态断言把上限和它绑在一起。检查在 shape 增长的路径上，以前那里检查的是 2^31 - 2 的上限，所以页面在那里跑的指令不变。往数组里加的元素在碰到上限之前就会被拒绝（[见下](#数组元素在数组改动之前被拒绝)）。
+
+测试：`unit-white` 的 `test_max_props` 给一个小对象设上 2^26 - 1 的个数（shape 用 `white_shape_fake_count`，3 个元素的快数组用 `white_array_fake_count`，期间不做回收），再加一个，每种都在自己的进程里。给对象加一个键，以及在快数组远超末尾的地方加一个元素让它变成普通数组，都抛出这个 RangeError，对象保持原样。上限是 2^31 - 2 时，快数组那种会按这个个数复制 shape，读到块外面，以段错误结束。
+
+## 数组元素在数组改动之前被拒绝
+
+Release: v0.31.1.
+
+往数组里加的元素，在数组改动之前就被拒绝或失败，顺序和 ArrayDefineOwnProperty 一样（`JS_CreateProperty`）：
+
+- 为这个元素变成普通数组的快数组，先检查它能否扩展，元素在长度处或之后时还检查长度能否写入。它拒绝的存储和以前一样，在非严格代码里什么也不做，`Reflect.set` 得到 false，严格代码里抛 TypeError，而不是抛放不下的转换的 RangeError（[见上](#一个-shape-最多放-226---1-个属性)）。
+- 普通数组在元素放进去之后才设长度，所以放不下或没有内存的元素让长度保持不变。以前长度先设（上游在注释里说应该放在后面），这样的元素会让长度多一个，元素却不在。
+
+普通数组在一条自己的路径上加它的元素，`JS_CreateProperty` 的末尾保持原样。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 相同，和之前的构建相比：从 -0.006%（Markdown 页面）到 -0.0002%（商店的英文首页），没有一个变多。
+
+测试：`unit-white` 的 `test_max_props` 和上面一样，在到了上限的普通数组末尾加一个元素：它抛出这个 RangeError，长度不变。写到长度不可写或不可扩展的快数组末尾之后的存储，`JS_SetPropertyUint32` 抛 TypeError，`Reflect.set` 得到 false，非严格代码里什么也不做。长度先设时，普通数组的长度多一个，被拒绝的存储抛出 RangeError。
+
+## 在构造函数上调用 Array.from 传完整的下标和长度
+
+Release: v0.31.1.
+
+在程序自己的构造函数上调用 `Array.from`（`Array.from.call(C, items, f)`）时，元素用 64 位计数，但传给映射函数的下标是 int32，最后设的长度是 uint32。超过 2^31 个元素时映射函数拿到负的下标，超过 2^32 - 1 个时长度被截断：一个什么都不留的 `C` 对象，用很少的内存就能接下这么多。现在两者都是完整的计数（`JS_NewInt64`），和规范要求的一样，在 2^31 - 1 以内它们和以前是同样的整数。
+
+测试：`unit-white` 的 `test_array_from_past_32_bits` 让 `Array.from` 从下标 2^32 - 1 开始（`JS_ARRAY_FROM_FIRST`，除了 `white.c` 都是 0），这样两步就越过两个上限。在一个对象什么都不留的构造函数（一个接受所有定义的 proxy）上，对长度 2^32 + 1 的类数组和两个值的可迭代对象，带和不带映射函数，映射函数拿到 4294967295 和 4294967296，设的长度是 4294967297。用 32 位的写法时拿到的是 -1 和 0，长度是 1。从 0 开始要走 2^32 步才到这些下标。`engine/test/compare/array_from_ctor.js`（Node 24 打印的结果）在同一个构造函数和一个保留元素的构造函数上，用映射函数对 0 到 3 个元素的类数组和可迭代对象运行 `Array.from`，把脚本走的路径固定下来。
+
+## 改动属性标志的定义在改动任何东西之前失败
+
+Release: v0.31.1.
+
+在已有的属性上调用 `Object.defineProperty`，描述符改动它的标志时，要让对象的 shape 归它自己（`js_shape_prepare_update`）。和别的对象或和 context 共用的 shape 要为此复制一份，复制可能内存不够。以前复制在最后，在定义已经改了数组的长度（`set_array_length`）、值或 getter 之后：`Object.defineProperty(a, "length", {value: 2, writable: false})` 在那里内存不够时，`a` 被截成 2 个元素，长度却仍可写。现在每条路径都在改动任何东西之前让 shape 归对象自己，所以内存不够的定义让属性保持原样。数据属性先设标志，再设值，设值不会失败。数组的长度、访问器属性和闭包变量（全局对象的，或映射的 `arguments` 对象的）在定义把长度设为只读或改动标志时，先让 shape 归对象自己，再改长度、getter 或变量。`set_array_length` 压缩出的 shape 也归对象自己，所以它之后设标志不会失败。描述符不改任何标志时，像以前一样不复制。
+
+`Object.freeze` 和 `Object.seal` 用这种方式定义每个属性，所以内存不够的那个属性保持原样。它们仍可能在做完一部分属性后停下，规范允许这样（SetIntegrityLevel）。`Object.preventExtensions` 只设对象的一个标志，不会失败。
+
+被拒绝的定义什么都不改，也什么都不复制，所以内存不够时它也给出 false，或抛出它的 TypeError：模块命名空间在动 shape 之前就拒绝把导出设为只读。导出相同的两个模块的命名空间共用 shape，所以那里的复制原本可能失败。
+
+缩短数组时如果下标超过 2^31 - 1（`set_array_length` 逐个下标删除元素时），以前为每个下标造名字，也就是超过 2^31 - 1 的字符串，而造名字可能在一个元素删掉之后内存不够。调用抛出错误，长度停在剩下的元素处，定义长度时还会继续把它设为只读。现在先让数组的 shape 归它自己，这是唯一可能失败的一步，然后在 atom 表里查每个名字而不造它（`js_find_index_atom`）：没有名字的下标就没有元素。所以内存不够的缩短什么都不改。另一种缩短方式在剩下的属性比要删的下标少时遍历属性，它本来就不造名字，也先复制 shape。删不掉的元素（不可配置）让缩短停在它后面，这时定义仍然把长度设为只读，规范要求这样（ArraySetLength）：这是带改动的拒绝，不是失败。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 不变，和改动之前的构建相比：六个页面不变，商店商品页少 3 条指令，Markdown 页面 -0.0002%。
+
+数据属性已有描述符的标志时像以前一样不动，要改时一步设好，以前要两步。每次渲染的指令数（callgrind，linux/amd64，原生宿主），HTML 不变，和改动之前的构建相比：从 -0.042%（MUI 订单页）到 +0.007%（Markdown 页面）。
+
+测试：`unit-white` 的 `test_define_existing_oom` 在和另一个对象共用的 shape 上，把空数组和有 4 个元素的数组的长度定义为 2 并设为只读，把一个值设为只读，把一个值和一个 getter 设为不可枚举。它依次让定义的每次分配失败：每次失败都抛出内存不够的错误，属性保持原样，没有失败时定义完成。复制在最后时，每种情况都留下新值和旧标志。在导出相同的两个模块的命名空间上，用 `Reflect.defineProperty` 把导出设为只读，无论哪次分配失败都给出 false：它从不内存不够。一个在 2^31 + 2 有元素、还有另一个属性的数组，分别被把长度设为只读的定义和一次赋值缩短到 2^31：定义里的失败让数组保持原样，赋值不做会失败的分配。以前命名空间在该给 false 的地方内存不够，缩短时第二个名字失败而元素已经删掉：长度是 2^31 + 2，定义之后还是只读。
+
+## 构造函数的对象找到之前的对象走过的 shape
+
+发布版本：v0.31.1。
+
+对一个函数或类做 `new C()`，而它的构造函数一个接一个地给 `this` 设键时，每个对象从 `C.prototype` 的空 shape 开始，每个键换到一个新 shape。shape 缓存只保留原型是 `Object.prototype` 的 shape（[保留 shape](#保留-shape)），此外没有谁持有 `C.prototype` 的空 shape，以及它和最后一个 shape 之间的那些 shape：`C` 的对象都持有自己最后的 shape。所以每个对象都新建一个空 shape，一个键一个键地原地长大，直到找到之前某个对象的 shape，再释放自己的那个。在 V8 测试集里，Boyer 每轮新建并释放空 shape 256,604 次，RayTrace 66,594 次，Earley 8,703 次。现在，`add_property` 在 shape 哈希表里找到对象下一个键要换到的 shape 时，如果对象持有的是它离开的那个 shape 的最后一个引用，找到的 shape 就接过这个引用：离开的 shape 不再被释放，而是成为它的父 shape（`js_shape_leave`）。只有本来要释放的 shape 才这样保留，所以找到 shape 的路径不多花什么。于是相差一个键的那些 shape 只要还有一个对象持有最后的 shape，就一直留在哈希表里，几个对象之后，下一个对象就能找到空 shape 和它之后的每个 shape，不再新建和释放任何 shape：Boyer 和 Earley 每轮不再新建空 shape，RayTrace 是 7,878 次。V8、JavaScriptCore 和 Hermes 也这样保留最后一个键之前的 shape（反向指针）。
+
+这样找到的 shape 之后按编号找到。`find_hashed_shape_prop` 找比对象离开的 shape 多一个键的 shape 时，如果它的父编号就是那个 shape 的编号，就不比较键（[通过 shape 由哪个 shape 长出来来找到它](#通过-shape-由哪个-shape-长出来来找到它)），否则逐个比较每个键。现在它通过比较键找到一个 shape 后，把对象离开的 shape 的编号给它作父编号，于是下一个离开这个编号的 shape 的对象按编号找到它。MUI 的订单列表页面每次渲染原来要比较 4,551 个 shape 的键，现在是 30 个，长 Markdown 页面从 258,338 个降到 820 个。
+
+为什么安全：对象换到的 shape 和以前一样，原型、键和标志都相同，只是不再是新建的。存值时在原型链上遇到的东西，setter、只读键、Proxy，和以前一样在 `add_property` 之前查看，所以对象得到的键和它们的顺序不变。父 shape 的原型和子 shape 相同，它的键是子 shape 的键去掉最后一个，所以它不会让子 shape 没有持有的对象或 atom 继续存活：只占它自己的内存，直到子 shape 被释放。哈希表里的 shape 只有两种改变方式，原地长大（`add_shape_property`），或永久离开哈希表（`js_shape_prepare_update`，用于删除、新标志、新原型），两者都放开父 shape，所以父 shape 始终是少一个键的那个。shape 的副本不取父 shape。释放一个 shape 时，计数降到 0 的父 shape 用循环而不是递归释放（`js_free_shape_parents`），回收器也沿着这个引用走（`mark_children`），所以互相持有的构造函数、它的原型和它的对象，和以前一样由回收释放。原型是 `Object.prototype` 的 shape 不取父 shape（这些由 shape 缓存保留），超过 32 个键（`JS_SHAPE_MAX_PROPS`）也不取，所以一条链最多 33 个 shape。这两条在每个 shape 第一次要取父 shape 时判断一次，对照的是那个对象所在上下文的 `Object.prototype`，结果记在一个字节里（`parent_ok`），这个字节也表示 shape 是否持有父 shape。一个构造函数的对象如果都在下一个对象创建之前被释放，就什么都不保留：它最后的 shape 随对象释放，链也随之释放。比较键之后给出的父编号符合编号的规则（`JS_SHAPE_ID_MAX`）：父编号等于另一个 shape 编号的 shape，以那个 shape 的键和标志开头，原型也相同，这正是刚才的比较检查过的。
+
+代价是每个 shape 多 8 字节，键之前 72 字节而不是 64，以及一条链上的 shape，只要还有对象持有它最后的 shape。渲染 200 次之后，运行时在工作台和商店页面上多占 41 KiB 到 73 KiB，React 页面多 12 KiB，MUI 的页面少 47 KiB 到 156 KiB。长 Markdown 页面渲染 20 次之后少占 1.1 MB，更多页面渲染 4 次之后最多多 72 KiB（antd），V8 测试跑完之后最多多 5 KiB（DeltaBlue）。在原生 C 树上用 callgrind 统计（linux/amd64，对比 v0.30.7），Boyer 每轮少跑 9.4% 指令，RayTrace 7.1%，Earley 5.5%，Splay 3.3%，DeltaBlue 1.8%，Richards 不变。更多页面中，domain 页面每次渲染少跑 3.9%，dates 页面少 1.9%，其他页面的变化都小于 0.1%，最多的是 markdown 页面，多 0.09%。在 tifa 的页面上，工作台 studio 页面每次渲染少跑 0.62% 指令，它的统计页面少 0.42%，商店首页和商品页各少 0.12%，MUI 的订单列表页面少 0.14%，订单页面少 0.10%，首页少 0.06%，长 Markdown 页面少 1.41%，React 页面不变。tifa 里生成的引擎在重新训练 profile 之后，这些页面少跑 0.08% 到 0.64% 指令，React 页面多 0.08%，其中引擎自己多 0.02%，其余来自 Go 运行时，每次运行都会变（[performance.md](../performance.zh-CN.md#找到自己-shape-的构造函数对象)）。
+
+改动在 C 里（`engine/quickjs.c`）：`JSShape` 有字段 `parent` 和 `parent_ok`，`js_shape_leave` 在 `add_property` 里给出父 shape（经由 `js_shape_release`，这样 `add_property` 的分支和 profile 保持不变），`find_hashed_shape_prop` 给比较键找到的 shape 一个父编号，`js_shape_drop_parent` 在 `add_shape_property` 和 `js_shape_prepare_update` 里放开它，`js_free_shape0` 通过 `js_free_shape_parents` 释放父 shape，`mark_children` 标记父 shape。`engine/test/compare/new_shapes.js`（Node 24 的输出）创建许多函数和类的对象，有的保留有的丢弃，列出它们在构造函数运行时和之后的键：在已有对象之后放到原型上的 setter、只读键和只有 getter 的键，宽松和严格模式都有，作为原型的 Proxy，在两个对象之间改成另一个对象和数字的原型，删除后再添加的键，被冻结、密封或换了原型的对象，有分支或返回另一个对象的构造函数，类字段、私有名字和派生类，`Reflect.construct`，同一原型的 `Object.create`，带符号和数字键的 3 到 40 个键的构造函数，以及 for in 和 JSON。`engine/test/regvm/js/o-new-shapes-life.js` 用 `WeakRef` 检查：原型、构造函数和一个符号键在最后一个对象离开时、原型被替换时、对象离开其他对象的 shape 时都会消失，构造函数和它的对象组成的环随回收和年轻代回收消失，对象消失后堆里的块和之前一样多，以及另一个 realm 的对象。`engine/test/unit-white.c` 里的 `test_new_shapes` 数一个原型的 shape 和其中有父 shape 的个数（`white_shape_parents_bad` 检查每个父 shape 都在哈希表里，比子 shape 少一个键，原型、键和标志相同）：4 个键的构造函数在十个对象之后有 5 个 shape 的链，再建一百个不新建 shape，删除、新原型、冻结和新键之后规则不变，类和派生类，32 个键和 33 个键，逐个释放的对象，以及对象消失后每个 shape 都消失，shape 缓存开和关都测。`test_new_shapes_each_failing` 在创建、保留和丢弃函数和类的对象，以及形成一条链的时候，让每次分配依次失败，每次都在新 VM 里，检查每次调用要么以内存不足错误结束，要么给出正确答案，并且留下的对象、字符串和 shape 和之前一样多。`engine/test/unit-white.c` 里的 `test_shape_ids` 检查：shape 重新编号之后，前一个对象通过比较键找到的 9 个 shape，下一个对象按它们的父编号找到，并且 shape 符合编号的规则（`white_shape_ids_bad`）。

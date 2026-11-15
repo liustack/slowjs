@@ -41,7 +41,7 @@ import (
 )
 
 var (
-	goEngines = []string{"liustack-slowjs", "go-quickjs-interp", "moejs"}
+	goEngines = []string{"liustack-slowjs", "liustack-slowjs-polyfill", "go-quickjs-interp", "moejs"}
 	refEngine = []string{"quickjs-2026-06-04", "hermes", "node-jitless"}
 	// ownIntl are the engines that run the shop and MUI pages on an Intl of
 	// their own. The others run the FormatJS polyfill.

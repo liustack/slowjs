@@ -10,14 +10,15 @@
 //	slowjs [flags] -e code [args...]
 //
 // The script runs as a global script in one VM, then the promise jobs it
-// queued. The VM has Intl, Temporal, URL and URLSearchParams, registered as
-// tifa registers them, Go's fmt as fmt, and calls may nest 10000 deep, as in
-// tifa. The script also has print, console.log and console.error, which
-// write their arguments, each made a string, to stdout (stderr for
-// console.error), and scriptArgs, the arguments after the flags. It has no
-// file system, network, timers or modules. The run ends at the timeout and
-// at the memory limit whatever the script catches. docs/command.md has the
-// exit codes and why the defaults are what they are.
+// queued. The VM has what package tifa gives it, as tifa gives it to each VM
+// of its pool: Intl, Temporal, URL and URLSearchParams, and the functions
+// named __tifa_* of tifa.Hooks. It also has Go's fmt as fmt, and calls may
+// nest 10000 deep, as in tifa. The script also has print, console.log and
+// console.error, which write their arguments, each made a string, to stdout
+// (stderr for console.error), and scriptArgs, the arguments after the flags.
+// It has no file system, network, timers or modules. The run ends at the
+// timeout and at the memory limit whatever the script catches.
+// docs/command.md has the exit codes and why the defaults are what they are.
 package main
 
 import (
@@ -37,9 +38,7 @@ import (
 
 	"github.com/liustack/slowjs"
 	qjsfmt "github.com/liustack/slowjs/fmt"
-	"github.com/liustack/slowjs/intl"
-	"github.com/liustack/slowjs/temporal"
-	"github.com/liustack/slowjs/url"
+	"github.com/liustack/slowjs/tifa"
 )
 
 // The exit codes, in docs/command.md.
@@ -87,10 +86,10 @@ const usage = `usage: slowjs [flags] file.js [args...]
 
 Runs a JavaScript file, or the code of -e, as a global script, then the
 promise jobs it queued, in a VM set up as tifa sets it up: Intl, Temporal,
-URL and URLSearchParams, and calls nested up to 10000 deep. The script also
-has Go's fmt as fmt, print, console.log, console.error and scriptArgs (the
-arguments after the flags). It has no file system, network, timers or
-modules.
+URL and URLSearchParams, the functions named __tifa_* that tifa gives its
+bundles, and calls nested up to 10000 deep. The script also has Go's fmt
+as fmt, print, console.log, console.error and scriptArgs (the arguments
+after the flags). It has no file system, network, timers or modules.
 
 Flags:
   -e code              run code instead of a file
@@ -324,17 +323,11 @@ func runScript(name, src string, args []string, timeout time.Duration, limit uin
 }
 
 // register sets the VM up as tifa's renderer does, after the eval timeout:
-// the call depth, then URL, Intl and Temporal in that order, then fmt,
-// which tifa does not have.
+// the call depth, then what tifa.Register defines (URL, Intl, Temporal and
+// the functions named __tifa_*), then fmt, which tifa does not have.
 func register(vm *slowjs.VM) error {
 	vm.SetMaxStackSize(stackDepth)
-	err := url.Register(vm)
-	if err == nil {
-		err = intl.Register(vm)
-	}
-	if err == nil {
-		err = temporal.Register(vm)
-	}
+	err := tifa.Register(vm)
 	if err == nil {
 		err = qjsfmt.Register(vm.GlobalObject())
 	}

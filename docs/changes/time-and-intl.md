@@ -9,6 +9,7 @@ read_when:
   - A page changed a built-in and Intl gave another result
   - Changing a constructor built on go-intl, or chromiumData in intl/gointl.go
   - A page replaced or deleted Intl or a toLocaleString method before the first use, and Intl put it back
+  - A getter, a setter or a string of Date gives another value than Node, or reading the fields of a Date is slow
 ---
 
 # Time and Intl
@@ -292,3 +293,33 @@ Release: v0.30.3.
 `format` and `formatToParts` of `Intl.NumberFormat` now read the exponent and the mantissa of a numeric string as StrDecimalLiteral says, as `Number` does. They read an exponent with two signs when it was no int: `"1e+-5"` as Infinity and `"1e--5"` as zero, where both are NaN. And they took an exponent too large to write out for an infinity or a zero before they read the mantissa: `"1xe1073741825"` was Infinity where it is NaN, and `"0e1073741825"` Infinity where it is 0. The exponent is now checked to be one sign at most and digits, and the mantissa is read first.
 
 Tests: `TestParseDecimalExponent` in `internal/gointl/qjs_parse_test.go` (36 strings, 19 of which were read wrong).
+
+## A Date finds its year, month and day with no loop
+
+Release: v0.31.1.
+
+The getters of a Date (`getFullYear`, `getMonth`, `getDate`, `getDay` and the rest, local and UTC), its setters and its strings all find the year, the month and the day of the time value. QuickJS guessed the year with a division, stepped it until the day fell inside it, then counted off the months one by one. Now `days_to_date` works them out with a few multiplications and shifts, after Neri and Schneider, "Euclidean affine functions and their application to calendar algorithms" (2022). The days are counted from 1 March of a year 280,000 years before 1970: every day a time value can name, and a day of zone past either end, is then a count from 0 that fits in 32 bits, and February, with its leap day, ends the year.
+
+A Date's fields take 163 instructions where they took 261 (callgrind, linux/amd64, a loop of `setTime` and `getUTCDate` on days three apart). On the dates page of the study of 2026-11-15, whose date-fns and dayjs read 136,524 getters a render, a render takes 1.23% fewer instructions.
+
+Why it is safe: for each of the 200,000,005 days from -100,000,002 to 100,000,002, the days of every time value and a day on either side, a check program gave the same year, month and day as the old loops. `test_days_to_date` in `engine/test/unit-white.c` checks the same against a copy of the old loops, for every day of [-300000, 300000], the days at both ends of the range and every 997th day between.
+
+Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for every getter at the ends of the range, in negative years and around leap days, after each setter, for two Dates of one time value, NaN, a subclass and receivers that are not Dates, and sums over 292,574 days and 200,001 time values spread over the range.
+
+## The strings of a Date are written without snprintf
+
+Release: v0.31.1.
+
+`toString`, `toDateString`, `toTimeString`, `toUTCString`, `toISOString` and the engine's own `toLocaleString`, `toLocaleDateString` and `toLocaleTimeString` wrote each part of the string with `snprintf` of the engine's libc: the date, the time and the zone, about 940 instructions each. They now put the digits and the names in place themselves (`date_put_int`, `date_put_name`, `date_put_time`), the same characters: the sign and six digits of a year outside 0 to 9999 in `toISOString`, at least four digits of a year elsewhere, after a minus sign when it is negative, two digits for each part of the time, and `GMT+0000`. A loop of the four strings `toString`, `toISOString`, `toUTCString` and `toLocaleString` takes 6,132 instructions a turn where it took 14,006 (callgrind, linux/amd64), and the `date_parse` micro benchmark of `compare/testdata`, which makes six strings and parses them, 29,201 where it took 41,567. dayjs's `isValid` calls `toString`, 3,132 times a render on the dates page of the study of 2026-11-15, which takes 0.62% fewer instructions.
+
+Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for `toString`, `toDateString`, `toTimeString`, `toUTCString` and `toISOString` over the whole range (`toString` and `toTimeString` without the name of the zone Node adds). Node formats the three `toLocale*` strings with Intl, so `engine/test/compare/date_locale.js` holds what the engine printed for them before the change, at the ends of the range, in negative years, around noon and midnight and for 200,001 time values spread over the range.
+
+## A context keeps the fields of the last time value
+
+Release: v0.31.1.
+
+A page reads several getters of one Date in a row (`getFullYear`, `getMonth`, `getDate`), or of copies of it, as date-fns makes with `constructFrom`. Each getter worked out every field again. Now a context keeps the fields of the last time value it worked out, the year to the day of the week, in 72 bytes, and a getter that asks for the same time value reads its field from there. The key is the time value in milliseconds after the move to local time, and the fields depend on it alone, so no entry can be wrong: a setter gives the Date another time value, which is another key, and two Dates of one time value share the entry. Local time is UTC ([Local time is UTC in every VM](#local-time-is-utc-in-every-vm)), so the move is 0 and the compiler drops it: a local getter costs what a UTC one does.
+
+On the dates page of the study of 2026-11-15, 83.4% of the 145,714 times a render asks for the fields of a time value find them kept (two entries would find 92.6%, four 94.8%), and a render takes 1.71% fewer instructions than with the change before it. A loop that reads `getFullYear`, `getMonth` and `getDate` of one Date runs 1,266 instructions a turn, where it ran 1,722 with the change before it and 2,046 on v0.30.7 (callgrind, linux/amd64).
+
+Tests: `engine/test/compare/date_fields.js` prints what Node 24 prints for each getter after each setter, for two Dates of one time value when one of them is changed, for getters read by turns on Dates of different time values, and for NaN Dates, whose getters never read the entry.

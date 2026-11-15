@@ -1,0 +1,5 @@
+result early: false ReferenceError ReferenceError ReferenceError true ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError ReferenceError false
+result after: false true false true true TypeError true false true TypeError true false
+mem-end obj=205 atom=555 shape=124 prop=991 jsfunc=17 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=205 atom=555 shape=124 prop=991 jsfunc=17 cfunc=133 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0

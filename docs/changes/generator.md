@@ -1,5 +1,5 @@
 ---
-summary: 'Changes to how the engine is generated from the C: the profile of tifa pages that make gen compiles with (what it is, how it was found, what it may decide and what is pinned off, why it is safe, what a stale one costs, the second input of plain loops, its limits and checks), and the Go declaration of a register-entry leaf that has a frame'
+summary: 'Changes to how the engine is generated from the C: the profile of tifa pages that make gen compiles with (what it is, how it was found, what it may decide and what is pinned off, why it is safe, what a stale one costs, the second input of plain loops, its limits and checks), the Go declaration of a register-entry leaf that has a frame, and the one address of a local a phi gets per incoming block'
 read_when:
   - Asking why make gen compiles twice, or what engine/pgo/profile.txt is for
   - make gen prints a line that starts with "warning: profile:" or "profile:", or a generated function changed after a change of the C that did not touch it
@@ -8,6 +8,7 @@ read_when:
   - Training the profile again, or taking a commit of QuickJS that changes the register loop
   - train.sh stops at its check of engine/pgo/loops.js, or asking why the micro benchmarks are not trained on
   - go vet says `function memmove missing Go declaration` or the like for a generated .s file
+  - opt stops in the shadow-stack pass with `PHI node has multiple entries for the same basic block with different incoming values!`
 ---
 
 # The generator
@@ -164,3 +165,15 @@ The check now takes such an entry on two conditions: in the binary it reaches th
 Why it is safe: the entry is for a value LLVM proved the `switch` never gets, so it is never taken, in the native build or in the generated one. The check still holds the entry to the place llc gave it.
 
 Tests: `hole` in `internal/goasm/gen/testdata/check/mini.c` is a `switch` with such an entry. `TestPostLinkCheck` checks that llc's entry reaches the end of the code, that the check passes on it, and that an entry moved to another block is refused.
+
+## A phi gets one address of a local per incoming block
+
+Release: v0.31.1.
+
+The shadow-stack pass (`internal/goasm/gen/pass/shadow.cpp`) moves every local onto the shadow stack and writes the address of the local, argument 0 plus its offset, where each use needs it. For a phi, that is at the end of the block the value comes from. It made one address for each use, and a phi that names one block several times (three cases of one `switch` that go to the same block) holds one use per entry, so it got several different addresses for that block. LLVM's verifier refuses such a phi (`PHI node has multiple entries for the same basic block with different incoming values!`), and the generation stopped: no wrong code was written. The optimizer makes this shape from a small array of two locals indexed by a counter (`next[n++] = t`) in code with a `switch`. The engine had none, so C that made one could not be generated.
+
+The pass now makes one address per phi and incoming block, and every entry of that phi for that block takes it. The generated engine does not change: `make check-gen` gives the files checked in, for amd64 and arm64.
+
+Why it is safe: in valid IR every entry of a phi for one block holds the same value, so when one of them is a local, all of them are that local, and they all get its address. Entries for other blocks, which may hold other locals, get addresses of their own, made in their own block. The address is made before the terminator of the incoming block, so it is there on every edge that leaves it, whatever the terminator is (a branch, a `switch`, an `indirectbr`, an `invoke`). A phi that names each block once gets the same address in the same place as before.
+
+Tests: `TestPhiNamesBlockTwice` (`internal/goasm/gen`) runs the pass on `internal/goasm/gen/testdata/phi/switch.ll`, two phis that each name the block of a `switch` three times, each with another local from that block and from a second block. It checks that opt passes the verifier, and that each phi has one address per block, made in that block, at the offset of the right local.

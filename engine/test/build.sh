@@ -34,7 +34,7 @@
 #               the generator as empty functions) with -fprofile-instr-generate:
 #               the host that engine/pgo/train.sh trains the profile on
 # OUTDIR defaults to engine/test/out/MODE. It gets run-test262, jsrun (see
-# compare.sh), unit, unit-oom, unit-api and unit-white (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
+# compare.sh), unit, unit-oom, unit-api, unit-white and dtoa-test (see compare.sh), render, mathdump and libmath (see math.sh), api-test (see api-test.sh), host-test (see
 # host-test.sh), heap-test and, in asan-heap mode, poison-test (see heap.sh), and
 # the object files: those of the engine here, and those of its
 # libc in libc/ (heap-fuzz for fuzz), and engine.stamp, what they were built
@@ -199,7 +199,7 @@ build_host_test > /dev/null
 # poison-test asks AddressSanitizer what the allocator poisoned
 poisontest=
 case $defs in *JS_HEAP_POISON*) poisontest=poison-test ;; esac
-for f in run-test262 jsrun unit unit-oom unit-api mathdump api-test render $poisontest; do
+for f in run-test262 jsrun unit unit-oom unit-api dtoa-test mathdump api-test render $poisontest; do
 	[ -f "$here/$f.c" ] || continue
 	$cc $hostflags -c "$here/$f.c" -o "$out/$f.o"
 	$cc $san $engineobjs $libcobjs "$out/host.o" "$out/$f.o" -o "$out/$f" -lpthread

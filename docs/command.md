@@ -65,7 +65,7 @@ Then, which tifa does not have:
 - `console.error(...args)`: the same, to stderr.
 - `scriptArgs`: the arguments after the flags: the file and what follows it, or with `-e` only what follows.
 
-What tifa adds for its own bundle is not there: its functions named `__tifa_*` (random bytes, a hash, the escape of text and the tags React writes, the copy of props). They belong to tifa, not to the engine.
+A script also sees the functions named `__tifa_*` that tifa gives its bundles, since the command sets the VM up with `tifa.Register` ([api.md](api.md#rendering-react-faster)).
 
 Each call writes its line at once, and stdout is written before a line of stderr, so a terminal or a pipe sees the lines when the script prints them, in that order. A lone surrogate prints as U+FFFD.
 
