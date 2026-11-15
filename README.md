@@ -61,7 +61,7 @@ It scores 1.29 times C QuickJS. go-quickjs leads on the RegExp and Crypto benchm
 go get github.com/liustack/slowjs
 ```
 
-Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.3, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/slowjs has been checked with it and moves its limit in a patch release. `-tags slowjs_anygo` builds anyway (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
+Go 1.26.6 or later, up to Go 1.27. No cgo and no C compiler: it builds with `CGO_ENABLED=0` and cross-compiles like any Go code. The Go assembly of the engine was checked against every patch release from Go 1.26.6 to 1.27.4, and a new patch release is checked every week. It leans on how Go starts a function and handles a fault, so a newer Go stops the build until liustack/slowjs has been checked with it and moves its limit in a patch release. `-tags slowjs_anygo` builds anyway (see [Moving to a newer Go](docs/upgrading.md#moving-to-a-newer-go)).
 
 ## Platforms
 

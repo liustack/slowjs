@@ -61,7 +61,7 @@ tifa 几个应用的服务端代码渲染一次的 CPU 时间，跑在一个核�
 go get github.com/liustack/slowjs
 ```
 
-需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.3 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见[换用更新的 Go](docs/upgrading.zh-CN.md#换用更新的-go)）。
+需要 Go 1.26.6 或更新，最高到 Go 1.27。不用 cgo，也不用 C 编译器：`CGO_ENABLED=0` 就能构建，和普通 Go 代码一样交叉编译。引擎的 Go 汇编对 Go 1.26.6 到 1.27.4 的每个补丁版本都核对过，新的补丁版本每周核对一次。它依赖 Go 怎么开始一个函数、怎么处理出错，所以用更新的 Go 构建会直接报错，等 liustack/slowjs 用新版核对过、在补丁版本里放开上限再用。加 `-tags slowjs_anygo` 可以照样构建（见[换用更新的 Go](docs/upgrading.zh-CN.md#换用更新的-go)）。
 
 ## 支持的平台
 

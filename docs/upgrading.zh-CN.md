@@ -46,7 +46,7 @@ git fetch quickjs
 
 ## 换用更新的 Go
 
-C 引擎的 Go 汇编（`internal/cengine`，提交进仓库的）是用 Go 1.27.2 生成的。`scripts/go-versions.sh` 用从 1.26.6（`go.mod` 的 `go` 行）到 1.27.3（写这段时最新的版本）的每个 Go 补丁版本核对它（见 [testing.md](testing.zh-CN.md#ci)）。之后的 1.27 补丁版本在下一次每周运行里核对。`go.mod` 要求 1.26.6 或更新，更新的 Go 会让构建停下，报 `internal/goversion` 的错误（它的文件 `newer.go` 里的构建行是 `go1.28 && !slowjs_anygo`），因为这份汇编从没对着它核对过。`-tags slowjs_anygo` 仍然能构建。生成器的检查和它的测试依赖 Go 1.27.2 的这些东西：
+C 引擎的 Go 汇编（`internal/cengine`，提交进仓库的）是用 Go 1.27.2 生成的。`scripts/go-versions.sh` 用从 1.26.6（`go.mod` 的 `go` 行）到 1.27.4（写这段时最新的版本）的每个 Go 补丁版本核对它（见 [testing.md](testing.zh-CN.md#ci)）。之后的 1.27 补丁版本在下一次每周运行里核对。`go.mod` 要求 1.26.6 或更新，更新的 Go 会让构建停下，报 `internal/goversion` 的错误（它的文件 `newer.go` 里的构建行是 `go1.28 && !slowjs_anygo`），因为这份汇编从没对着它核对过。`-tags slowjs_anygo` 仍然能构建。生成器的检查和它的测试依赖 Go 1.27.2 的这些东西：
 
 - 每个非 NOSPLIT 函数开头的栈检查：把栈指针和 goroutine 里的保护值 `g.stackguard0` 比较（在 `g` 的偏移 16 处，`g` 在 amd64 上放在 R14，在 arm64 上放在 X28），一个分支跳到对 `runtime.morestack_noctxt.abi0` 的调用，再跳回开头（`internal/goasm/gen/verify_insn.go`、`arm64_verify.go`）。
 - 哪些函数是 NOSPLIT：生成器一个也不选，只标记寄存器入口的叶子，以及 Go 汇编器自己标为 NOSPLIT 的叶子，也就是什么也不调用、带保存的基址指针的栈帧小于 128 字节的函数（`internal/goasm/gen/nosplit.go`）。在引擎里它们都不调用任何东西，所以其中一个里的错误，拥有调用者的栈检查留下的空间，至少 800 字节减去它自己的栈帧，并且需要其中 16 字节（amd64）或 24 字节（arm64），用于 `runtime.sigpanic` 的调用和它对 morestack 的调用。如果汇编器自己标了别的叶子，或者不再标这些，链接后的检查就会失败。
