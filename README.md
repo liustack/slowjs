@@ -1,4 +1,4 @@
-<h1 align="center"><img src="assets/brand/quickjs-banner.png" alt="liustack/slowjs"></h1>
+<h1 align="center"><img src="assets/brand/slowjs-banner.png" alt="liustack/slowjs"></h1>
 
 <p align="center"><b>The fastest pure Go JavaScript engine for rendering React.</b></p>
 
@@ -172,4 +172,4 @@ A security problem goes in a private report, as [SECURITY.md](SECURITY.md) says.
 
 ## License
 
-The files liustack/slowjs created are under the [MIT license](LICENSE-MIT). Code that came from other projects keeps its own license: the C of QuickJS, what remains from modernc.org/quickjs, the TLSF allocator, musl's libc functions and the locale data of `intl` and go-intl. The gopher of the banner is drawn after the Go gopher by Renée French (CC BY 4.0). [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.
+The files liustack/slowjs created are under the [MIT license](LICENSE-MIT). Code that came from other projects keeps its own license: the C of QuickJS, what remains from modernc.org/quickjs, the TLSF allocator, musl's libc functions and the locale data of `intl` and go-intl. [NOTICE.md](NOTICE.md) says which license covers which path, and which notices a program that ships this module has to carry.

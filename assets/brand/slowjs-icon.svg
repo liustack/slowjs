@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="liustack/slowjs">
+  <title>liustack/slowjs</title>
+  <circle cx="100" cy="100" r="76" fill="#00add8"/>
+  <path d="M100 52c34 0 56 22 56 52s-24 50-56 50-56-20-56-50 22-52 56-52z" fill="#f6e7cc"/>
+  <ellipse cx="72" cy="102" rx="23" ry="12.5" transform="rotate(-32 72 102)" fill="#12303a"/>
+  <ellipse cx="128" cy="102" rx="23" ry="12.5" transform="rotate(32 128 102)" fill="#12303a"/>
+  <path d="M68 100q7 6 14 0M118 100q7 6 14 0" fill="none" stroke="#f6e7cc" stroke-width="4.5" stroke-linecap="round"/>
+  <ellipse cx="100" cy="114" rx="10" ry="7" fill="#12303a"/>
+  <path d="M87 128q13 10 26 0" fill="none" stroke="#12303a" stroke-width="4.5" stroke-linecap="round"/>
+</svg>
