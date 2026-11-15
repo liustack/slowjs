@@ -8,6 +8,7 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 - `Array.prototype.join` of an array of strings makes the result in one block and reads the elements in place: a render of tifa's pages runs up to 0.75% fewer instructions.
 - A search for a string of more than 8 characters moves over the text in a tighter loop, as tifa's search of each page's HTML does: a render of tifa's pages runs up to 0.45% fewer instructions.
+- A new VM keeps 512 compiled regexps where it kept 256 (`DefaultRegExpCache`), in the same 1 MiB: the post pages of tifa's shop compile none again after their first render and run 3.2% to 4.0% fewer instructions, and use less memory.
 
 ## [v0.31.1] - 2026-11-16
 

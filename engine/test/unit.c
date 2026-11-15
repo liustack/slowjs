@@ -145,34 +145,47 @@ static int64_t strings(JSRuntime *rt)
 }
 
 /* Regexps compiled from the same pattern and flags share the bytecode the
-   cache kept, and with the cache off each has its own. */
+   cache kept, and with the cache off each has its own: 200 regexps of 4
+   patterns, and 800 of 400 patterns made twice over, which a new runtime
+   keeps all of (the post of tifa's example shop compiles about 300
+   different ones a render). */
 static void test_regexp_cache(void)
 {
-    static const char src[] =
-        "var keep = [];\n"
-        "for (var i = 0; i < 200; i++) keep.push(new RegExp('x(y+)z' + (i % 4), 'g'));\n";
+    static const struct {
+        const char *src;
+        int64_t fewer; /* at least this many fewer strings with the cache */
+    } cases[] = {
+        { "var keep = [];\n"
+          "for (var i = 0; i < 200; i++) keep.push(new RegExp('x(y+)z' + (i % 4), 'g'));\n",
+          190 },
+        { "var keep = [];\n"
+          "for (var i = 0; i < 800; i++) keep.push(new RegExp('x(y+)z' + (i % 400), 'g'));\n",
+          390 },
+    };
     int64_t on, off;
+    size_t k;
     int i;
 
-    for (i = 0; i < 2; i++) {
-        JSRuntime *rt = host_new_runtime();
-        JSContext *ctx = JS_NewContext(rt);
-        int64_t before;
+    for (k = 0; k < countof(cases); k++) {
+        for (i = 0; i < 2; i++) {
+            JSRuntime *rt = host_new_runtime();
+            JSContext *ctx = JS_NewContext(rt);
+            int64_t before;
 
-        if (i == 1)
-            JS_SetRegExpCache(rt, 0, 0);
-        before = strings(rt);
-        CHECK(eval(ctx, src), "the script threw");
-        if (i == 0)
-            on = strings(rt) - before;
-        else
-            off = strings(rt) - before;
-        JS_FreeContext(ctx);
-        host_free_runtime(rt);
+            if (i == 1)
+                JS_SetRegExpCache(rt, 0, 0);
+            before = strings(rt);
+            CHECK(eval(ctx, cases[k].src), "the script threw");
+            if (i == 0)
+                on = strings(rt) - before;
+            else
+                off = strings(rt) - before;
+            JS_FreeContext(ctx);
+            host_free_runtime(rt);
+        }
+        CHECK(off - on >= cases[k].fewer, "case %zu: %lld strings with the cache, %lld without",
+              k, (long long)on, (long long)off);
     }
-    /* 200 patterns either way, 4 bytecodes with the cache, 200 without. */
-    CHECK(off - on >= 190, "%lld strings with the cache, %lld without",
-          (long long)on, (long long)off);
 }
 
 /* compile reports whether ctx compiled the regexp of pats[i] rather than
