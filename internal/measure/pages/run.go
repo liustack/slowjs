@@ -243,6 +243,14 @@ func (r *Runner) renderVM(input string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// The promise jobs the render queued run before the next one, as tifa runs them:
+		// TanStack Table queues one that holds the whole table.
+		if err := budget(); err != nil {
+			return "", err
+		}
+		if _, err := r.vm.ExecutePendingJobs(); err != nil {
+			return "", err
+		}
 		s, _ := v.(string)
 		return s, nil
 	}
