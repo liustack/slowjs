@@ -7836,7 +7836,11 @@ static void test_array_from_past_32_bits(void)
    set with the flags as they were.
    A define that is refused changes nothing and copies nothing, so it gives
    false and never runs out of memory: a read-only export of a module
-   namespace, whose shape the namespace of a twin module shares. */
+   namespace, whose shape the namespace of a twin module shares.
+   Shortening an array past index 2^31 - 1 looks the names of the elements
+   up and makes none, so it cannot fail once it has deleted one. Before, it
+   made the name of each index, and when the second failed the first element
+   was gone, the define threw and still made the length read-only. */
 
 /* reset of test_define_existing_oom: "NS" makes two new modules with the same
    export, whose namespaces share a shape, as ns1 and ns2 (a namespace whose
@@ -7894,6 +7898,14 @@ static void test_define_existing_oom(void)
         { "a read-only export of a module namespace", "NS",
           "r = Reflect.defineProperty(o, 'x', readOnly)",
           "r + ':' + o.x + ':' + Object.getOwnPropertyDescriptor(o, 'x').writable", "0:1:true", "false:1:true", 0 },
+        { "the length and writable of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "Object.defineProperty(o, 'length', { value: 2147483648, writable: false })",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:false", 1 },
+        { "the length of an array past 2^31 - 1", "o = []; o[2147483650] = 7; o.extra = 1",
+          "o.length = 2147483648",
+          "o.length + ':' + o[2147483650] + ':' + Object.getOwnPropertyDescriptor(o, 'length').writable",
+          "2147483651:7:true", "2147483648:undefined:true", 0 },
     };
     VM v = vm_new();
     JSValue g;

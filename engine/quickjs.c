@@ -4795,6 +4795,37 @@ JSAtom JS_NewAtomUInt32(JSContext *ctx, uint32_t n)
     }
 }
 
+/* The atom of the index n when there is one, or JS_ATOM_NULL, with no
+   reference taken. Unlike JS_NewAtomUInt32 it makes nothing, so it cannot
+   fail: no property is named n when the atom is not there. An index past
+   JS_ATOM_MAX_INT is a string atom, found as __JS_NewAtom finds it (its
+   characters may be 8 or 16 bits wide). */
+static JSAtom js_find_index_atom(JSRuntime *rt, uint32_t n)
+{
+    char buf[11];
+    uint32_t h, i;
+    size_t len, k;
+    JSAtomStruct *p;
+
+    if (n <= JS_ATOM_MAX_INT)
+        return __JS_AtomFromUInt32(n);
+    len = u32toa(buf, n);
+    h = hash_string8((const uint8_t *)buf, len, JS_ATOM_TYPE_STRING) &
+        JS_ATOM_HASH_MASK;
+    for (i = rt->atom_hash[h & (rt->atom_hash_size - 1)]; i != 0;
+         i = p->hash_next) {
+        p = rt->atom_array[i];
+        if (p->hash == h && p->atom_type == JS_ATOM_TYPE_STRING &&
+            p->len == len) {
+            for (k = 0; k < len && string_get(p, k) == (uint8_t)buf[k]; k++)
+                continue;
+            if (k == len)
+                return i;
+        }
+    }
+    return JS_ATOM_NULL;
+}
+
 static JSAtom JS_NewAtomInt64(JSContext *ctx, int64_t n)
 {
     if ((uint64_t)n <= JS_ATOM_MAX_INT) {
@@ -14444,20 +14475,21 @@ static int set_array_length(JSContext *ctx, JSObject *p, JSValue val,
             if (d <= sh->prop_count) {
                 JSAtom atom;
 
-                /* faster to iterate */
+                /* faster to iterate. The shape is made p's own first, the
+                   one step that can fail, and nothing has changed then:
+                   delete_property then cannot fail, and an index is looked
+                   up with no atom made for it. */
+                if (js_shape_prepare_update(ctx, p, NULL))
+                    return -1;
                 while (cur_len > len) {
-                    atom = JS_NewAtomUInt32(ctx, cur_len - 1);
-                    if (atom == JS_ATOM_NULL) {
-                        /* the elements from cur_len on are gone */
-                        set_value(ctx, &p->prop[0].u.value, JS_NewUint32(ctx, cur_len));
-                        return -1;
-                    }
-                    ret = delete_property(ctx, p, atom);
-                    JS_FreeAtom(ctx, atom);
-                    if (unlikely(!ret)) {
-                        /* unlikely case: property is not
-                           configurable */
-                        break;
+                    atom = js_find_index_atom(ctx->rt, cur_len - 1);
+                    if (atom != JS_ATOM_NULL) {
+                        ret = delete_property(ctx, p, atom);
+                        if (unlikely(!ret)) {
+                            /* unlikely case: property is not
+                               configurable */
+                            break;
+                        }
                     }
                     cur_len--;
                 }

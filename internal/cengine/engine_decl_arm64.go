@@ -807,6 +807,7 @@ func js_escape_text(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintp
 func js_execute_async_module(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_execute_sync_module(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
 func js_fast_array_find(a0 uintptr, a1 uintptr)
+func js_find_index_atom(a0 uintptr, a1 uintptr, a2 uintptr)
 func js_finrec_constructor(a0 uintptr, a1 uintptr, a2, a3 uintptr, a4 uintptr, a5 uintptr)
 func js_finrec_finalizer(a0 uintptr, a1 uintptr, a2, a3 uintptr)
 func js_finrec_job(a0 uintptr, a1 uintptr, a2 uintptr, a3 uintptr)
