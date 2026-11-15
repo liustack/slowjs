@@ -2,6 +2,12 @@
 
 English · [简体中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-16: the run of v0.31.1
+
+- moejs is timed in the same session as the other six page engines now, not in a session of its own, so its ratios come from the same session as the others'.
+- go-quickjs moved from v0.37.3 to v0.38.0 (`go.mod`, `go.sum`). moejs stays at v0.1.0, its newest release.
+- The V8 round has six sides: the three Go engines, C QuickJS, Hermes and Node `--jitless`, each once per round in a turning order. `liustack-slowjs-polyfill` is not in it.
+
 ## 2026-11-15: liustack-slowjs-polyfill, Node in the V8 suite
 
 - The page table has a second row for liustack/slowjs, `liustack-slowjs-polyfill`: the bare engine, with none of the packages `intl`, `temporal` and `url` and with the polyfills an engine without those features gets. It has its own adapter (`eng_liustackpolyfill`), binary (`liustackpolyfill`), `tifa/run.sh` runs (`TIFA_ONLY=liustack-slowjs-polyfill`, kinds `bench`, `pf` and `mui-pf`) and column in `cmd/pages`. Ratios stay against `liustack-slowjs`. `cmd/compare -build-only` builds it, and the V8 suite leaves it out unless `-engines` names it.
