@@ -6266,7 +6266,7 @@ TEXT ·JS_GetOwnPropertyNamesInternal(SB), $288-48
 	BYTE $0x89
 	BYTE $0xde
 	LEAQ ·num_keys_cmp(SB), DI
-	LEAQ ·engine_rodata+100404(SB), DX
+	LEAQ ·engine_rodata+100836(SB), DX
 	QUAD $0x8b4c00000008bf41
 	QUAD $0x8b4c000000b024a4
 	QUAD $0x894c000000c024ac
@@ -17768,7 +17768,7 @@ TEXT ·js_async_module_execution_fulfilled(SB), $224-64
 	BYTE $0x07
 	BYTE $0x00
 	BYTE $0x00
-	LEAQ ·engine_rodata+114696(SB), CX
+	LEAQ ·engine_rodata+115128(SB), CX
 	QUAD $0x24848948c9048b4a
 	QUAD $0x9d148d4a000000b0
 	QUAD $0xdd048d4a00000000

@@ -152,3 +152,49 @@ int white_lre_split_same(const char *re, int flags, void *opaque, const uint32_t
     lre_realloc(opaque, bc, 0);
     return diff;
 }
+
+/* white_lre_literal compiles the pattern re with the flags of lre_compile
+   and writes into out, at most n bytes, the literal its plan holds
+   (lre_plan_literal): its units, printable ASCII as it is, a letter of either
+   case as ~ and its lower case, others as \uXXXX, then " key K" (the unit the
+   scan looks for first), " before B" (the most units a match reads before
+   it, ? when not known) and " wide" when a unit is from 256 up, or "-" when
+   it has none. Returns -1 when the compile fails, else the number of units.
+   opaque is the context of lre_compile. */
+int white_lre_literal(const char *re, int flags, void *opaque, char *out, size_t n)
+{
+    char msg[64];
+    int len, k, count, used = 0, fold;
+    uint8_t *bc = lre_compile(&len, msg, sizeof(msg), re, strlen(re), flags, opaque);
+    const uint8_t *plan;
+    uint32_t c;
+
+    if (!bc)
+        return -1;
+    plan = bc + RE_HEADER_LEN + get_u32(bc + RE_HEADER_BYTECODE_LEN);
+    count = plan[LRE_PLAN_LIT];
+    fold = get_u16(plan + LRE_PLAN_LIT_FOLD);
+    out[0] = '\0';
+    for (k = 0; k < count; k++) {
+        c = get_u16(plan + LRE_PLAN_LIT_UNITS + 2 * k);
+        if ((fold >> k) & 1)
+            used += snprintf(out + used, n - used, "~%c", (int)c);
+        else if (c >= 0x20 && c < 0x7f && c != '~')
+            used += snprintf(out + used, n - used, "%c", (int)c);
+        else
+            used += snprintf(out + used, n - used, "\\u%04x", (unsigned)c);
+    }
+    if (count == 0) {
+        snprintf(out, n, "-");
+    } else {
+        used += snprintf(out + used, n - used, " key %d", plan[LRE_PLAN_LIT_KEY]);
+        if (plan[LRE_PLAN_LIT_BEFORE] == LRE_LIT_UNKNOWN)
+            used += snprintf(out + used, n - used, " before ?");
+        else
+            used += snprintf(out + used, n - used, " before %d", plan[LRE_PLAN_LIT_BEFORE]);
+        if (plan[LRE_PLAN_LIT_WIDE])
+            snprintf(out + used, n - used, " wide");
+    }
+    lre_realloc(opaque, bc, 0);
+    return count;
+}

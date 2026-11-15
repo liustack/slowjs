@@ -24,7 +24,10 @@ import (
 // string of 8 bits let 11 to 14 polls see it. An alternation of 20 literals
 // runs the machine at each position that holds a first letter, through the
 // chain of its split ops (lre_split in engine/libregexp.c), and polls there
-// as the walk over them did.
+// as the walk over them did. The scan for the literal every match holds
+// (lre_literal) reads the flag after every 65,536 units it looks at or
+// compares: with memchr, a byte at a time for a letter of either case or in
+// a string of 16 bits, and where every position holds the unit it looks for.
 func TestRegexLongScanStops(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -47,6 +50,10 @@ func TestRegexLongScanStops(t *testing.T) {
 			{"16bit/class", `'\u4e2d'.repeat(1 << 24)`, `/["&<>]/`},
 			{"16bit/set", `'\u4e2d'.repeat(1 << 24)`, `/(?:a|c)b/`},
 			{"16bit/escape", `'\u4e2d'.repeat(1 << 24)`, `/[\x00-\x07\x0b\x0e-\x1f<\u2028\u2029\ud800-\udfff]/`},
+			{"literal", `'x'.repeat(1 << 25)`, `/(?:a|c)xyz/`},
+			{"literal/ignore case", `'x'.repeat(1 << 25)`, `/(?:a|c)xyz/i`},
+			{"literal/every place", `'x'.repeat(1 << 25)`, `/(?:a|c)xxxxxxxxxxxxxxxb/`},
+			{"16bit/literal", `'\u4e2d'.repeat(1 << 24)`, `/(?:a|c)xyz/`},
 		} {
 			t.Run(c.name+"/"+w.name, func(t *testing.T) {
 				m := newTestVM(t)

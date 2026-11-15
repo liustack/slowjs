@@ -440,7 +440,10 @@ func TestRegexScanStops(t *testing.T) {
 // long, as soon as they fire. A greedy x+ jumps back by a split op, so over
 // a long string the machine counts steps toward its interrupt check only
 // through the pops of the states its splits push, and the split ops that
-// lreSplit lets push nothing must count and check themselves.
+// lreSplit lets push nothing must count and check themselves. Each string
+// starts with the literal every match of its regexp holds (head), so that
+// the scan for it (lre_literal in engine/libregexp.c) finds it at once and
+// the matches run long: without it the scan alone tells there is none.
 func TestRegexMatchStops(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -452,18 +455,18 @@ func TestRegexMatchStops(t *testing.T) {
 		}},
 		{"interrupt", func(m *VM) func() { return interruptAfter(m, 20*time.Millisecond) }},
 	} {
-		for _, w := range []struct{ name, s, re string }{
-			{"plus", `'a'`, `/a+b/`},
-			{"plus/unicode", `'a'`, `/a+b/u`},
-			{"plus/16bit", `'中'`, `/中+b/`},
-			{"plus/ignore case", `'a'`, `/A+b/i`},
-			{"class", `'a'`, `/\w+@/`},
-			{"capture", `'a'`, `/(a)+b/`},
-			{"alternatives", `'a'`, `/(?:a|c)+b/`},
+		for _, w := range []struct{ name, head, s, re string }{
+			{"plus", "b", `'a'`, `/a+b/`},
+			{"plus/unicode", "b", `'a'`, `/a+b/u`},
+			{"plus/16bit", "b", `'中'`, `/中+b/`},
+			{"plus/ignore case", "b", `'a'`, `/A+b/i`},
+			{"class", "@", `'a'`, `/\w+@/`},
+			{"capture", "b", `'a'`, `/(a)+b/`},
+			{"alternatives", "b", `'a'`, `/(?:a|c)+b/`},
 		} {
 			t.Run(c.name+"/"+w.name, func(t *testing.T) {
 				m := newTestVM(t)
-				if _, err := m.Eval(`var s = `+w.s+`.repeat(1 << 17); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
+				if _, err := m.Eval(`var s = '`+w.head+`' + `+w.s+`.repeat(1 << 17); var re = `+w.re+`; 0`, EvalGlobal); err != nil {
 					t.Fatal(err)
 				}
 				stop := c.arm(m)

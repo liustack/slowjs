@@ -44744,7 +44744,7 @@ typedef enum BCTagEnum {
     BC_TAG_OBJECT_REFERENCE,
 } BCTagEnum;
 
-#define BC_VERSION 12
+#define BC_VERSION 13
 
 typedef struct BCWriterState {
     JSContext *ctx;
