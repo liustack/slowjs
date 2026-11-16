@@ -60,6 +60,6 @@ result "aTc"
 result ["1","2","2"] ["1","1",~]@1 in 5 null
 result ["","",""] ["","","",""]
 result 61 lines
-mem-end obj=269 atom=683 shape=123 prop=1144 jsfunc=8 cfunc=148 array=6 fast_array=6 elements=249 binary=0
-mem-gc obj=269 atom=683 shape=123 prop=1144 jsfunc=8 cfunc=148 array=6 fast_array=6 elements=249 binary=0
+mem-end obj=269 atom=684 shape=123 prop=1144 jsfunc=8 cfunc=148 array=6 fast_array=6 elements=249 binary=0
+mem-gc obj=269 atom=684 shape=123 prop=1144 jsfunc=8 cfunc=148 array=6 fast_array=6 elements=249 binary=0
 --- status exit 0

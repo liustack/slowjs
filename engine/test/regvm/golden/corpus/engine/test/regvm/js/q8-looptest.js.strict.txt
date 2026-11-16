@@ -1,4 +1,4 @@
 result 10;0;0;20;321;531;6;6;4;10;0;0246;0,1,2;aaz;none;ran;4;3|n0,n1,n2,n3;third test     at thrower (<eval>:22:47)     at <anonymous> (<eval>:37:18);TypeError     at <anonymous> (<eval>:38:18);3;21;0abc;10;0;0;20;321;531;6;6;4;10;0;0246;0,1,2;aaz;none;ran;4;3|n0,n1,n2,n3;third test     at thrower (<eval>:22:47)     at <anonymous> (<eval>:37:18);TypeError     at <anonymous> (<eval>:38:18);3;21;0abc;10;0;0;20;321;531;6;6;4;10;0;0246;0,1,2;aaz;none;ran;4;3|n0,n1,n2,n3;third test     at thrower (<eval>:22:47)     at <anonymous> (<eval>:37:18);TypeError     at <anonymous> (<eval>:38:18);3;21;0abc
-mem-end obj=190 atom=543 shape=123 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
-mem-gc obj=190 atom=543 shape=123 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+mem-end obj=190 atom=544 shape=123 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
+mem-gc obj=190 atom=544 shape=123 prop=947 jsfunc=0 cfunc=128 array=1 fast_array=1 elements=0 binary=0
 --- status exit 0

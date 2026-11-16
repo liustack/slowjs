@@ -128,6 +128,6 @@ result ["a"]
 result ["ab","c"]
 result ["one","  ","two","\t","three"]
 result 129 lines
-mem-end obj=338 atom=708 shape=123 prop=1201 jsfunc=6 cfunc=141 array=12 fast_array=12 elements=596 binary=0
-mem-gc obj=338 atom=708 shape=123 prop=1201 jsfunc=6 cfunc=141 array=12 fast_array=12 elements=596 binary=0
+mem-end obj=338 atom=709 shape=123 prop=1201 jsfunc=6 cfunc=141 array=12 fast_array=12 elements=596 binary=0
+mem-gc obj=338 atom=709 shape=123 prop=1201 jsfunc=6 cfunc=141 array=12 fast_array=12 elements=596 binary=0
 --- status exit 0

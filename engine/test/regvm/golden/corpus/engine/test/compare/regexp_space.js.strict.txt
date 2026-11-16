@@ -18,6 +18,6 @@ result "a_;b;_c_;_d_e;_f_;g"
 result ["a",";b;","c",";","d","e;","f",";g"]
 result "xa ;b;  c\t;\u00a0d\t\n\u000b\f\r \u00a0\u1680\u2000\u2005\u200a\u2028\u2029\u202f\u205f\u3000\ufeffe; f\u3000;gx"
 result [true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true,true]
-mem-end obj=226 atom=567 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
-mem-gc obj=226 atom=567 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
+mem-end obj=226 atom=568 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
+mem-gc obj=226 atom=568 shape=122 prop=1017 jsfunc=2 cfunc=141 array=9 fast_array=9 elements=46 binary=0
 --- status exit 0

@@ -59,6 +59,6 @@ result many keys: 1085 {"k0":{"i":0},"k1":1,"k2":2,"k3":{"i":3},"k4":4,"k5":5,"k
 result a long key: 451 {"kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk...\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"q\"":2}
 result deep: 4001 [{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":[{"a":...}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]}]
 result nesting: true,true,RangeError
-mem-end obj=1378 atom=716 shape=223 prop=2272 jsfunc=101 cfunc=148 array=574 fast_array=573 elements=764 binary=0
-mem-gc obj=1345 atom=716 shape=221 prop=2224 jsfunc=101 cfunc=148 array=568 fast_array=567 elements=752 binary=0
+mem-end obj=1378 atom=717 shape=223 prop=2272 jsfunc=101 cfunc=148 array=574 fast_array=573 elements=764 binary=0
+mem-gc obj=1345 atom=717 shape=221 prop=2224 jsfunc=101 cfunc=148 array=568 fast_array=567 elements=752 binary=0
 --- status exit 0
