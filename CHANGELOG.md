@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- `JSON.stringify` remembers which strings it wrote with nothing to escape and copies them the next time without looking at them. Writing a small options object again runs 16% fewer instructions, 300 orders 21% fewer, and the react-intl page 1.9% fewer ([changes](docs/changes/README.md#json)).
+
 ### Fixed
 
 - An interrupt or the eval timeout stops a long match wherever it is. A pattern written out many times, a back reference over a long capture and a long `x+` or `x{n,}` did not look at the stop for as long as they ran: about 20 ms for `/^a+/` over a million characters, 40 ms for `\w+` over a million of 16 bits.

@@ -138,6 +138,7 @@ int white_shape_id_twins(JSRuntime *rt);
 int white_shape_hashed(JSValueConst obj);
 int white_shape_parents_bad(JSRuntime *rt, JSValueConst proto, int *count, int *parented);
 uint32_t white_key_atom(JSValueConst v);
+int white_string_plain(JSContext *ctx, JSValueConst v);
 long white_call_debt(JSContext *ctx, int direct, int *depth);
 int white_key_atoms_bad(JSRuntime *rt, int *live, int *keys);
 unsigned long white_gc_run_count(int young);
@@ -2526,6 +2527,121 @@ static void test_key_atom(void)
     key_atoms_ok(&v, "thousands of atoms");
     JS_RunGC(v.rt);
     key_atoms_ok(&v, "after a collection");
+    vm_free(&v);
+}
+
+/* white_string_plain of the value of the expression src, -1 when it is no
+   flat string */
+static int plain_of(JSContext *ctx, const char *src)
+{
+    JSValue v = JS_Eval(ctx, src, strlen(src), "<plain>", 0);
+    int r = JS_VALUE_GET_TAG(v) == JS_TAG_STRING ? white_string_plain(ctx, v) : -1;
+
+    JS_FreeValue(ctx, v);
+    return r;
+}
+
+/* The mark "needs no escape" (JSString.plain): JS_ToQuotedString sets it on
+   a string it wrote with no escape, an atom or not, and copies a marked
+   string with no look at its characters. A string with a quote, a control
+   character or a lone surrogate never gets it, a marked string is not
+   appended to in place, and the number of a freed atom comes back with no
+   mark. */
+static void test_json_plain(void)
+{
+    VM v = vm_new();
+    JSValue o, j;
+    JSAtom a, b;
+
+    /* strings that are no atoms: marked by a write with no escape */
+    CHECK(eval_ok(v.ctx,
+        "var a = ['wjp', 'Plain'].join(''), q = ['wjp', '\"q'].join(''),\n"
+        "  n = ['wjp', '\\n'].join(''), u = ['wjp', '\\ud800'].join(''),\n"
+        "  pr = ['wjp', '\\ud83d\\ude00'].join(''), w = ['wjp', '\\u4e2d'].join('');\n"), "the script threw");
+    CHECK(plain_of(v.ctx, "a") == 0, "a new string is marked");
+    CHECK(eval_is(v.ctx, "JSON.stringify([a, q, n, u, pr, w])",
+                  "[\"wjpPlain\",\"wjp\\\"q\",\"wjp\\n\",\"wjp\\ud800\",\"wjp\xf0\x9f\x98\x80\",\"wjp\xe4\xb8\xad\"]"),
+          "the first write");
+    CHECK(plain_of(v.ctx, "a") == 1 && plain_of(v.ctx, "w") == 1 && plain_of(v.ctx, "pr") == 1,
+          "a string written with no escape: %d %d %d", plain_of(v.ctx, "a"), plain_of(v.ctx, "w"),
+          plain_of(v.ctx, "pr"));
+    CHECK(plain_of(v.ctx, "q") == 0 && plain_of(v.ctx, "n") == 0 && plain_of(v.ctx, "u") == 0,
+          "a string with an escape or a lone surrogate is marked");
+    CHECK(eval_is(v.ctx, "JSON.stringify([a, q, n, u, pr, w])",
+                  "[\"wjpPlain\",\"wjp\\\"q\",\"wjp\\n\",\"wjp\\ud800\",\"wjp\xf0\x9f\x98\x80\",\"wjp\xe4\xb8\xad\"]"),
+          "the second write");
+
+    /* a marked string with room at its end is copied to append to: appended
+       to in place, it would keep the mark with a quote in it */
+    CHECK(eval_is(v.ctx,
+        "(function () { let m = 'wjp'; for (let i = 0; i < 20; i++) m += 'Mark';\n"
+        "  const j1 = JSON.stringify(m); m += '\"'; const j2 = JSON.stringify(m);\n"
+        "  return [j1.length === m.length + 1, j2.length === m.length + 3, j2.endsWith('\\\\\"\"'),\n"
+        "    JSON.stringify({ k: m }).endsWith('\\\\\"\"}')].join() })()",
+        "true,true,true,true"), "a marked string appended to");
+
+    /* strings of JSON.parse, written twice */
+    CHECK(eval_ok(v.ctx, "var pp = JSON.parse('[\"wjpParsedLong\", \"wjp\\\\nx\", \"wjp\\\\u0041\"]')"),
+          "the script threw");
+    CHECK(eval_is(v.ctx, "JSON.stringify(pp)", "[\"wjpParsedLong\",\"wjp\\nx\",\"wjpA\"]"), "the parsed strings");
+    CHECK(plain_of(v.ctx, "pp[0]") == 1 && plain_of(v.ctx, "pp[1]") == 0 && plain_of(v.ctx, "pp[2]") == 1,
+          "parsed strings written: %d %d %d", plain_of(v.ctx, "pp[0]"), plain_of(v.ctx, "pp[1]"),
+          plain_of(v.ctx, "pp[2]"));
+    CHECK(eval_is(v.ctx, "JSON.stringify(pp)", "[\"wjpParsedLong\",\"wjp\\nx\",\"wjpA\"]"), "the parsed strings again");
+
+    /* a string that keeps the atom of its key (the hash 1) and has the
+       mark: the mark is no part of the test of js_string_atom_or_key, so
+       the string is not appended to in place and gives its key back when
+       it is freed (vm_free finds an atom left) */
+    CHECK(eval_ok(v.ctx,
+        "var ko = { wjpKey: 1 }, kk = ['wjp', 'Key'].join(''); ko[kk]; JSON.stringify([kk]);"),
+          "the script threw");
+    {
+        JSValue s = JS_Eval(v.ctx, "kk", 2, "<plain>", 0);
+
+        CHECK(white_key_atom(s) != JS_ATOM_NULL && white_string_plain(v.ctx, s) == 1,
+              "the key %u and the mark %d of kk", white_key_atom(s), white_string_plain(v.ctx, s));
+        JS_FreeValue(v.ctx, s);
+    }
+    CHECK(eval_is(v.ctx, "kk += 'More'; [kk, ko[kk.slice(0, 6)], JSON.stringify(kk)].join()",
+                  "wjpKeyMore,1,\"wjpKeyMore\""), "kk appended to");
+    CHECK(eval_ok(v.ctx, "kk = undefined;"), "the script threw");
+
+    /* a long string, over several steps of the interrupt check */
+    CHECK(eval_is(v.ctx,
+        "var big = 'wjp'.repeat(40000) + 'x', s1 = JSON.stringify(big), s2 = JSON.stringify(big);\n"
+        "s1 === s2 && s1.length === big.length + 2", "true"), "a long marked string");
+
+    /* atoms: a key is marked by its first write */
+    a = JS_NewAtom(v.ctx, "wjpFirst");
+    o = JS_NewObject(v.ctx);
+    JS_SetProperty(v.ctx, o, a, JS_NewInt32(v.ctx, 1));
+    {
+        JSValue s = JS_AtomToString(v.ctx, a);
+
+        CHECK(white_string_plain(v.ctx, s) == 0, "a new atom is marked");
+        j = JS_JSONStringify(v.ctx, o, JS_UNDEFINED, JS_UNDEFINED);
+        CHECK(white_string_plain(v.ctx, s) == 1, "a key written: not marked");
+        JS_FreeValue(v.ctx, j);
+        JS_FreeValue(v.ctx, s);
+    }
+    JS_FreeValue(v.ctx, o);
+    JS_FreeAtom(v.ctx, a);
+    /* its number, given to the next atom, comes with no mark */
+    b = JS_NewAtom(v.ctx, "wjp\"Second");
+    CHECK(b == a, "the number %u of the freed atom was not given again (%u)", a, b);
+    o = JS_NewObject(v.ctx);
+    JS_SetProperty(v.ctx, o, b, JS_NewInt32(v.ctx, 2));
+    j = JS_JSONStringify(v.ctx, o, JS_UNDEFINED, JS_UNDEFINED);
+    {
+        const char *t = JS_ToCString(v.ctx, j);
+
+        CHECK(t && strcmp(t, "{\"wjp\\\"Second\":2}") == 0, "the key of the new atom: %s", t ? t : "(null)");
+        JS_FreeCString(v.ctx, t);
+    }
+    JS_FreeValue(v.ctx, j);
+    JS_FreeValue(v.ctx, o);
+    JS_FreeAtom(v.ctx, b);
     vm_free(&v);
 }
 
@@ -9370,6 +9486,7 @@ int main(int argc, char **argv)
     test_new_shapes_each_failing();
     test_counted_call_debt();
     test_key_atom();
+    test_json_plain();
     test_young_lists();
     test_young_leaves_no_zero_count();
     test_gc_in_free();

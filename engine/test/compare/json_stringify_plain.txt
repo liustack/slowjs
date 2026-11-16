@@ -1,0 +1,23 @@
+plain: true ["plainText","plainText","plainText"] {"plainText":"plainText"} ["plainText",{"plainText":"plainText"}]
+empty: true ["","",""] {"":""} ["",{"":""}]
+quote: true ["say \"hi\"","say \"hi\"","say \"hi\""] {"say \"hi\"":"say \"hi\""} ["say \"hi\"",{"say \"hi\"":"say \"hi\""}]
+backslash: true ["a\\b","a\\b","a\\b"] {"a\\b":"a\\b"} ["a\\b",{"a\\b":"a\\b"}]
+newline: true ["line\nnext","line\nnext","line\nnext"] {"line\nnext":"line\nnext"} ["line\nnext",{"line\nnext":"line\nnext"}]
+control: true ["bell\u0007\u001f","bell\u0007\u001f","bell\u0007\u001f"] {"bell\u0007\u001f":"bell\u0007\u001f"} ["bell\u0007\u001f",{"bell\u0007\u001f":"bell\u0007\u001f"}]
+latin1: true ["café ÿ","café ÿ","café ÿ"] {"café ÿ":"café ÿ"} ["café ÿ",{"café ÿ":"café ÿ"}]
+cjk: true ["中文","中文","中文"] {"中文":"中文"} ["中文",{"中文":"中文"}]
+pair: true ["smile 😀","smile 😀","smile 😀"] {"smile 😀":"smile 😀"} ["smile 😀",{"smile 😀":"smile 😀"}]
+high: true ["lone \ud800 high","lone \ud800 high","lone \ud800 high"] {"lone \ud800 high":"lone \ud800 high"} ["lone \ud800 high",{"lone \ud800 high":"lone \ud800 high"}]
+low: true ["lone \udc00 low","lone \udc00 low","lone \udc00 low"] {"lone \udc00 low":"lone \udc00 low"} ["lone \udc00 low",{"lone \udc00 low":"lone \udc00 low"}]
+long: true 72010 ["abcdefghabcdefghabcdefghabcdefghabcdef ... cdefghabcdefghabcdefghabcdefghabcdefgh"] 48007 {"abcdefghabcdefghabcdefghabcdefghabcdef ... cdefghabcdefghabcdefghabcdefghabcdefgh"} 72012 ["abcdefghabcdefghabcdefghabcdefghabcdef ... defghabcdefghabcdefghabcdefghabcdefgh"}]
+long quote: true 72016 ["abcdefghabcdefghabcdefghabcdefghabcdef ... efghabcdefghabcdefghabcdefghabcdefgh\""] 48011 {"abcdefghabcdefghabcdefghabcdefghabcdef ... efghabcdefghabcdefghabcdefghabcdefgh\""} 72018 ["abcdefghabcdefghabcdefghabcdefghabcdef ... fghabcdefghabcdefghabcdefghabcdefgh\""}]
+long wide: true 60010 ["中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中 ... 中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"] 40007 {"中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中 ... 中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"} 60012 ["中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中 ... 中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中中"}]
+append "\"": 84 mRoom\"" mRoom\"end"}
+append "\n": 84 mRoom\n" mRoom\nend"}
+append "\\": 84 mRoom\\" mRoom\\end"}
+append "\ud800": 84 m\ud800" m\ud800end"}
+append "x": 84 omRoomx" omRoomxend"}
+append "中": 84 omRoom中" omRoom中end"}
+parsed: {"a":"plain","b":"esc\"aped","c":"uniA","d":"\ud800","e":"café","f":"中"} ["plain","esc\"aped","uniA","\ud800","café","中"]
+keys: 961 [{"plainText":0,"":1,"say \"hi\"":2,"a\\ ... 14,"abcdefghabcd":16,"中中中中中中中中中中中中":17}]
+keys again: 961 [{"plainText":0,"":1,"say \"hi\"":2,"a\\ ... 14,"abcdefghabcd":16,"中中中中中中中中中中中中":17}]

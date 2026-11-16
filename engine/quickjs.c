@@ -838,7 +838,7 @@ typedef enum {
     JS_ATOM_KIND_PRIVATE,
 } JSAtomKindEnum;
 
-#define JS_ATOM_HASH_MASK  ((1 << 30) - 1)
+#define JS_ATOM_HASH_MASK  ((1 << 29) - 1)
 #define JS_ATOM_HASH_PRIVATE JS_ATOM_HASH_MASK
 
 struct JSString {
@@ -849,7 +849,14 @@ struct JSString {
        XXX: could change encoding to have one more bit in hash.
        A string that is no atom: 1 when it keeps a key (key_atom), else 0,
        see js_string_atom_or_key */
-    uint32_t hash : 30;
+    uint32_t hash : 29;
+    /* 1 when JSON.stringify writes every character as it is: set by the
+       first write that finds no character to escape (JS_ToQuotedString,
+       json_put_key) and kept for the life of the string, also when it
+       becomes an atom. A marked string is not appended to in place
+       (js_string_fixed). Not in the word of the length, whose reads it
+       would make mask one more bit. */
+    uint8_t plain : 1;
     uint8_t atom_type : 2; /* != 0 if atom, JS_ATOM_TYPE_x */
     uint32_t hash_next; /* atom_index for JS_ATOM_TYPE_SYMBOL */
     /* the atom of the string as a property key when JS_ValueToAtom takes the
@@ -3475,6 +3482,7 @@ static JSString *js_alloc_string_rt(JSRuntime *rt, int max_len, int is_wide_char
     str->len = max_len;
     str->atom_type = 0;
     str->hash = 0;          /* see js_string_atom_or_key */
+    str->plain = 0;
     str->hash_next = 0;     /* optional */
     str->key_atom = JS_ATOM_NULL;
 #ifdef DUMP_LEAKS
@@ -3509,12 +3517,22 @@ static no_inline void js_string_drop_key(JSRuntime *rt, JSString *p)
 /* Nonzero when p is an atom, or a string that is no atom and keeps an atom
    as its key: js_string_to_atom gives such a string the hash 1, and every
    other string that is no atom has the hash 0. Both fields are one 32-bit
-   word, so this is the one test that p->atom_type alone was. */
+   word, so this is the one test that p->atom_type alone was. The mark plain
+   between them is no part of it. */
 static force_inline BOOL js_string_atom_or_key(const JSString *p)
 {
-    /* written as two tests, which LLVM makes one compare of the word; an or
-       of the two fields it does not */
+    /* written as two tests, which LLVM makes one test of the word under a
+       mask; an or of the two fields it does not */
     return p->hash != 0 || p->atom_type != 0;
+}
+
+/* Nonzero when the characters of p must not change: an atom, a string that
+   keeps a key, or one with the mark plain, which JSON.stringify trusts.
+   The three fields are the whole word, so LLVM makes this one compare of
+   it with 0, the test the append in place made before the mark. */
+static force_inline BOOL js_string_fixed(const JSString *p)
+{
+    return p->hash != 0 || p->plain != 0 || p->atom_type != 0;
 }
 
 /* Free p, a string that is no atom and keeps a key, whose ref_count reached
@@ -4593,6 +4611,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
             js_rc(p)->ref_count = 1;
             p->is_wide_char = str->is_wide_char;
             p->len = str->len;
+            p->plain = str->plain;
 #ifdef DUMP_LEAKS
             list_add_tail(&p->link, &rt->string_list);
 #endif
@@ -4607,6 +4626,7 @@ static JSAtom __JS_NewAtom(JSRuntime *rt, JSString *str, int atom_type,
         js_rc(p)->ref_count = 1;
         p->is_wide_char = 1;    /* Hack to represent NULL as a JSString */
         p->len = 0;
+        p->plain = 0;
 #ifdef DUMP_LEAKS
         list_add_tail(&p->link, &rt->string_list);
 #endif
@@ -6892,7 +6912,8 @@ static no_inline JSValue JS_ConcatString1(JSContext *ctx,
    holder but the 'owners' references its caller knows of (1, or 2 for
    JS_ConcatStringAppend), and must not be an atom: the atom table holds the
    same JSString without counting a reference. Nor may it keep an atom as its
-   key (js_string_to_atom), which names its characters as they are. */
+   key (js_string_to_atom), which names its characters as they are, nor have
+   the mark plain, which says them free of escapes (js_string_fixed). */
 static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
                                                    JSValueConst op2, int owners)
 {
@@ -6902,7 +6923,7 @@ static force_inline BOOL js_concat_string_in_place(JSContext *ctx, JSString *p1,
 
         if (p2->len == 0)
             return TRUE;
-        if (js_rc(p1)->ref_count != owners || js_string_atom_or_key(p1))
+        if (js_rc(p1)->ref_count != owners || js_string_fixed(p1))
             return FALSE;
         size1 = js_malloc_usable_size(ctx, p1);
         if (p1->is_wide_char) {
@@ -24334,7 +24355,11 @@ static force_inline int goasm_case_table(JSValueConst v, const uint8_t *tab)
         p = JS_VALUE_GET_STRING(v);
         if (p->atom_type != JS_ATOM_TYPE_STRING)
             return -1;
-        m = (1u << tab[0]) - 1;
+        /* a table has far fewer than 2^29 slots: the mask of the hash in m
+           lets the compiler take the hash with one and. Without it LLVM
+           shifts the word to make the index of the first probe, two more
+           instructions. */
+        m = ((1u << tab[0]) - 1) & JS_ATOM_HASH_MASK;
         for (h = p->hash & m;; h = (h + 1) & m) {
             memcpy(&q, tab + 2 + sizeof(q) * h, sizeof(q));
             if (q == p)
@@ -63596,10 +63621,11 @@ typedef struct JSONStringifyContext {
    they are into b at once, and move *pi past them. A kept character is not
    '"', '\\' or below 0x20, which JS_ToQuotedString escapes, and, in a
    string of 16-bit units, no surrogate: a surrogate pair goes as it is and a
-   lone surrogate as \uXXXX, which JS_ToQuotedString decides. Return -1 when
-   b could not grow. */
-static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
-                          uint32_t *pwork)
+   lone surrogate as \uXXXX, which JS_ToQuotedString decides. With plain set
+   every character of p is kept (JSString.plain) and none is looked at.
+   Return -1 when b could not grow. */
+static force_inline int json_quote_run(StringBuffer *b, const JSString *p,
+                                       int *pi, uint32_t *pwork, BOOL plain)
 {
     int i = *pi, j = i, n = p->len;
     uint32_t c, w, left;
@@ -63612,7 +63638,13 @@ static int json_quote_run(StringBuffer *b, const JSString *p, int *pi,
     if ((uint32_t)(n - i) > left)
         n = i + left;
 
-    if (!p->is_wide_char) {
+    if (plain) {
+        j = n;
+        if (j > i && (!p->is_wide_char ?
+                      string_buffer_write8(b, p->u.str8 + i, j - i) :
+                      string_buffer_write16(b, p->u.str16 + i, j - i)))
+            return -1;
+    } else if (!p->is_wide_char) {
         const uint8_t *str = p->u.str8;
         for(; j < n; j++) {
             c = str[j];
@@ -63648,6 +63680,7 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
     JSString *p;
     int i;
     uint32_t c, work = 0;
+    uint32_t start;
     char buf[16];
 
     val = JS_ToStringCheckObject(ctx, val1);
@@ -63655,12 +63688,22 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
         return -1;
     p = JS_VALUE_GET_STRING(val);
 
+    start = b->len;
     if (string_buffer_putc8(b, '\"'))
         goto fail;
     i = 0;
+    if (p->plain) {
+        /* written before with no escape: copied with no look at its
+           characters, in the same steps */
+        while (i < p->len) {
+            if (json_quote_run(b, p, &i, &work, TRUE))
+                goto fail;
+        }
+        goto done;
+    }
     for(;;) {
         /* the characters kept as they are, in one run */
-        if (json_quote_run(b, p, &i, &work))
+        if (json_quote_run(b, p, &i, &work, FALSE))
             goto fail;
         if (i >= p->len)
             break;
@@ -63708,6 +63751,11 @@ static int JS_ToQuotedString(JSContext *ctx, StringBuffer *b, JSValueConst val1)
             break;
         }
     }
+    /* a string that went out at its length had no escape (a surrogate
+       pair, which ends a run, goes out as it is too): marked so */
+    if (b->len - start == p->len + 1)
+        p->plain = 1;
+ done:
     if (string_buffer_putc8(b, '\"'))
         goto fail;
     JS_FreeValue(ctx, val);
@@ -63942,17 +63990,21 @@ static no_inline int json_put_float64(StringBuffer *b, double d)
 /* Write the key ks of an object, quoted, and the colon after it, after a
    comma when comma is set. A short key of 8 bits with no character to
    escape, the common one, goes in one copy and counts the work
-   JS_ToQuotedString counts for it. */
+   JS_ToQuotedString counts for it. Its characters are looked at once:
+   after that it has the mark plain. */
 static int json_put_key(JSContext *ctx, StringBuffer *b, JSString *ks, BOOL comma)
 {
     if (!ks->is_wide_char && ks->len <= JSON_KEY_SHORT) {
         const uint8_t *s = ks->u.str8;
         int i, n = ks->len, need;
 
-        for (i = 0; i < n; i++) {
-            uint32_t c = s[i];
-            if (c < 0x20 || c == '\"' || c == '\\')
-                goto slow;
+        if (!ks->plain) {
+            for (i = 0; i < n; i++) {
+                uint32_t c = s[i];
+                if (c < 0x20 || c == '\"' || c == '\\')
+                    goto slow;
+            }
+            ks->plain = 1;
         }
         need = n + 3 + comma;
         if (b->len + need > b->size &&

@@ -13546,7 +13546,7 @@ TEXT ·js_object_isSealed(SB), $184-16
 	WORD $0x14000013
 	WORD $0x71000d5f
 	WORD $0x540022c1
-	WORD $0xb26077ea
+	WORD $0xb26073ea
 	WORD $0xea29015f
 	WORD $0x54fffec1
 	WORD $0x17fffff6

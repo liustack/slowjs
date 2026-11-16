@@ -3704,7 +3704,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x0b1302f3
 	WORD $0xf100011f
 	WORD $0x54fffb4c
-	WORD $0x140000d0
+	WORD $0x140000d1
 	WORD $0x7100833f
 	WORD $0x540001e8
 	WORD $0x3dc00020
@@ -3757,7 +3757,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x54000102
 	WORD $0xd1000508
 	WORD $0xf100011f
-	WORD $0x54001b6d
+	WORD $0x54001b8d
 	WORD $0x9102014a
 	WORD $0x9102016b
 	WORD $0x91020129
@@ -3790,10 +3790,10 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x35000050
 	WORD $0x382e6a3f
 	WORD $0x928000c1
-	WORD $0x140000fc
+	WORD $0x140000fd
 	WORD $0x927d1948
 	WORD $0xf100251f
-	WORD $0x54000c43
+	WORD $0x54000c63
 	WORD $0xf101e11f
 	WORD $0x54000328
 	WORD $0x91003d08
@@ -3805,7 +3805,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xf9414900
 	WORD $0x910a2108
 	WORD $0xeb08001f
-	WORD $0x54000ae0
+	WORD $0x54000b00
 	WORD $0x79404c09
 	WORD $0x7940480b
 	WORD $0x9baa0128
@@ -3816,7 +3816,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x79000109
 	WORD $0x79004c0c
 	WORD $0x7900440a
-	WORD $0x54000b40
+	WORD $0x54000b60
 	WORD $0x91002100
 	WORD $0x17ffff58
 	WORD $0xf103e11f
@@ -3848,7 +3848,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xa9093bef
 	WORD $0xf9005fed
 	WORD $0xf90047f0
-	WORD $0x54001360
+	WORD $0x54001380
 	WORD $0xf90053f4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
@@ -3868,8 +3868,9 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x91001916
 	WORD $0x17ffffbc
 	WORD $0xf94002e8
-	WORD $0xd360fd09
-	WORD $0xb5001169
+	WORD $0x92607d09
+	WORD $0xf242f93f
+	WORD $0x54001161
 	WORD $0xd10022ed
 	WORD $0x529fffe9
 	WORD $0x794001a8
@@ -3889,9 +3890,9 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xf942410c
 	WORD $0xf90002ec
 	WORD $0xf902410d
-	WORD $0x17ffff9c
+	WORD $0x17ffff9b
 	WORD $0xaa1f03f6
-	WORD $0x17ffffa3
+	WORD $0x17ffffa2
 	WORD $0xa909d3ee
 	WORD $0xf9005fed
 	WORD $0xa908bff0
@@ -3904,13 +3905,13 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xf9404fee
 	WORD $0xa948bff0
 	WORD $0xf9405fed
-	WORD $0xb5fff3c0
-	WORD $0x17ffffd1
+	WORD $0xb5fff3a0
+	WORD $0x17ffffd0
 	WORD $0xa9402809
 	WORD $0xf900052a
 	WORD $0xf9000149
 	WORD $0xa9007c1f
-	WORD $0x17ffffa3
+	WORD $0x17ffffa2
 	WORD $0xa90a03f4
 	WORD $0xf9005fed
 	WORD $0xa9093bef
@@ -3926,7 +3927,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xa94a03f4
 	WORD $0xb9407ff3
 	WORD $0xf9405fed
-	WORD $0x17fffef8
+	WORD $0x17fffef7
 	WORD $0xf94053f4
 	WORD $0xd10022e8
 	WORD $0xd10022f6
@@ -3937,7 +3938,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xf9000ff6
 	WORD $0xf90013f7
 	BL ·js_large_give(SB)
-	WORD $0x35fff400
+	WORD $0x35fff3e0
 	WORD $0xf9405fe8
 	WORD $0x529fffe9
 	WORD $0x79400108
@@ -3961,7 +3962,7 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0x51000588
 	WORD $0x72003d1f
 	WORD $0x781fa148
-	WORD $0x54fff0e1
+	WORD $0x54fff0c1
 	WORD $0xa97ea548
 	WORD $0x6f00e400
 	WORD $0xf9004ff5
@@ -4001,12 +4002,12 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xa94567e1
 	WORD $0xa94843f1
 	WORD $0xa9493bef
-	WORD $0x17ffff0b
+	WORD $0x17ffff0a
 	WORD $0xa9493bef
 	WORD $0x911202a0
 	WORD $0xf9405fed
 	WORD $0xf94047f0
-	WORD $0x17fffe9b
+	WORD $0x17fffe9a
 	WORD $0xd37efd08
 	WORD $0xb50000e8
 	WORD $0xa94a5bf4
@@ -4014,25 +4015,25 @@ TEXT ·js_emit_copy_long(SB), $184-24
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·js_free_string_keyed(SB)
-	WORD $0x17ffff52
+	WORD $0x17ffff51
 	WORD $0xa94a5bf4
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·JS_FreeAtomStruct(SB)
-	WORD $0x17ffff4c
+	WORD $0x17ffff4b
 	WORD $0xf9404fe8
 	WORD $0xf9405fe9
 	WORD $0x9111e108
 	WORD $0xeb08013f
-	WORD $0x54ffe8e0
+	WORD $0x54ffe8c0
 	WORD $0xa949d3f5
 	WORD $0xf9405ff6
 	WORD $0xf90007f4
 	WORD $0xf9000bf5
 	WORD $0xf9000ff6
 	BL ·heap_free(SB)
-	WORD $0x17ffff40
+	WORD $0x17ffff3f
 	WORD $0x8b0912a8
 	WORD $0xf941490d
 	WORD $0x910a2109
