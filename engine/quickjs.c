@@ -2138,36 +2138,36 @@ static inline int js_front_give(JSMallocContext *s, void *ptr)
 }
 
 /* Give every block of the front cache back to its arena, and tell whether
-   there was any. The cache is off while it does. */
+   there was any. The cache is off while it does. Each block leaves its list
+   and the counts before it is freed, so that a kill at a poll of the loop
+   leaves them right for JS_GetMemoryFree, which reads a killed VM. */
 static BOOL js_front_drain(JSMallocContext *s)
 {
-    JSMallocBlockHeader *b, *next;
+    JSMallocBlockHeader *b;
     int i, max = s->front_max;
     BOOL any = FALSE;
 
     s->front_max = 0;
     for(i = 0; i < JS_MALLOC_FRONT_LISTS; i++) {
-        for(b = s->front_head[i]; b; b = next) {
-            next = *(JSMallocBlockHeader **)b->user_data;
+        while ((b = s->front_head[i]) != NULL) {
+            s->front_head[i] = *(JSMallocBlockHeader **)b->user_data;
+            s->front_count[i]--;
             __js_free_block(s, b->user_data);
             any = TRUE;
         }
-        s->front_head[i] = NULL;
-        s->front_count[i] = 0;
     }
     for(i = 0; i < JS_LARGE_CACHE_LISTS; i++) {
-        void *p, *next;
-        for(p = s->large_head[i]; p; p = next) {
-            next = js_large_next(p);
+        void *p;
+        while ((p = s->large_head[i]) != NULL) {
+            s->large_head[i] = js_large_next(p);
+            s->large_count[i]--;
+            s->large_bytes -= heap_usable_size(container_of(p, JSMallocLargeBlockHeader, header.user_data));
             /* as any large block: with JS_MALLOC_USE_ITER it leaves the list
                of large blocks too */
             __js_free_block(s, p);
             any = TRUE;
         }
-        s->large_head[i] = NULL;
-        s->large_count[i] = 0;
     }
-    s->large_bytes = 0;
     s->front_max = max;
     return any;
 }
@@ -2305,6 +2305,10 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
     ar->n_blocks = n_blocks;
     ar->n_used_blocks = 0;
     ar->first_free_block = 0;
+    /* in the list of its class before the loops below, which may poll: a
+       kill there leaves it counted by JS_GetMemoryFree as the heap counts
+       it, all free */
+    list_add(&ar->link, &s->arena_list[block_size_idx]);
 #ifdef JS_MALLOC_USE_ITER
     {
         int n_bitmap_words = (n_blocks + 31) / 32;
@@ -2324,9 +2328,6 @@ static no_inline JSMallocArena *js_malloc_new_arena(JSMallocContext *s, int bloc
     heap_poison(b->user_data, block_size - sizeof(*b));
     /* what the heap gave beyond the slots */
     heap_poison((uint8_t *)ar + arena_size, heap_usable_size(ar) - arena_size);
-    
-    /* add to the head */
-    list_add(&ar->link, &s->arena_list[block_size_idx]);
     list_add(&ar->free_link, &s->free_arena_list[block_size_idx]);
     return ar;
 }

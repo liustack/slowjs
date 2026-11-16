@@ -417,11 +417,15 @@ func (m *VM) jsSetGCThreshold(threshold uintptr) {
 // killedReads reports whether m is a VM a kill left good only for Close and no
 // call is in progress. It is for the functions of the engine that only read a
 // counter of the runtime or its lists of arenas (jsGetGCThreshold,
-// jsGetMemorySize, jsGetMemoryFree): a kill ends the script at a poll, which
-// sits between two allocations, so a counter and the lists are still whole,
-// and reading them needs no entry into the engine, which a broken VM refuses
-// (outer). It reads on the shadow stack at start, as the frames above are
-// dead. Every other function of the engine is left to panic (outer).
+// jsGetMemorySize, jsGetMemoryFree): a kill ends the script at a poll, and at
+// every poll the counts of the heap, of the arenas and of the caches agree
+// (heap_free lowers the count before a block can poll, and js_front_drain
+// takes each block out of its cache before it frees it), so reading them
+// needs no entry into the engine, which a broken VM refuses (outer). The
+// walk of jsGetMemoryFree polls, and a poll of a killed VM does not kill it
+// again (gohost.Poll). It reads on the shadow stack at start, as the frames
+// above are dead. Every other function of the engine is left to panic
+// (outer).
 func (m *VM) killedReads() bool {
 	return m.entered == 0 && m.h.Killed()
 }

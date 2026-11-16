@@ -607,6 +607,22 @@ func TestPollKill(t *testing.T) {
 		t.Fatalf("after the kill: broken %v, killed %v", v.Broken(), v.Killed())
 	}
 	v.Leave()
+	// The host reads a killed VM through the engine, whose loops poll: those
+	// polls do not kill again, and only set the counter.
+	seen := v.StopPolls()
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				t.Fatalf("a poll after the kill panicked with %v", p)
+			}
+		}()
+		for range 3 * KillPolls {
+			Poll(base + 64)
+		}
+	}()
+	if v.StopPolls() != seen {
+		t.Fatalf("polls after the kill were counted as seeing the request: %d, then %d", seen, v.StopPolls())
+	}
 
 	w := newVM(t, small)
 	wb, _ := w.Stack()
