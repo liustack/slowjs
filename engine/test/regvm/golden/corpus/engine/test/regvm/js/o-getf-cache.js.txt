@@ -1,0 +1,718 @@
+result -- round 0
+result plain .a number 2
+result plain .a local number 2
+result plain .a temp number 2
+result b deleted .a number 2
+result b deleted .a local number 2
+result b deleted .a temp number 2
+result a deleted .a undefined undefined
+result a deleted .a local undefined undefined
+result a deleted .a temp undefined undefined
+result a added again .a string again
+result a added again .a local string again
+result a added again .a temp string again
+result dict before .a string da
+result dict before .a local string da
+result dict before .a temp string da
+result dict after .a string da
+result dict after .a local string da
+result dict after .a temp string da
+result dict moved .a string da2
+result dict moved .a local string da2
+result dict moved .a temp string da2
+result data .a number 1
+result data .a local number 1
+result data .a temp number 1
+result getter .a string ga
+result getter .a local string ga
+result getter .a temp string ga
+result getter calls number 3
+result data again .a string back
+result data again .a local string back
+result data again .a temp string back
+result lazy first string first
+result lazy then string made
+result writable .a string ro
+result writable .a local string ro
+result writable .a temp string ro
+result read-only .a string ro
+result read-only .a local string ro
+result read-only .a temp string ro
+result read-only changed .a string ro2
+result read-only changed .a local string ro2
+result read-only changed .a temp string ro2
+result not frozen .a string fa
+result not frozen .a local string fa
+result not frozen .a temp string fa
+result frozen .a string fa
+result frozen .a local string fa
+result frozen .a temp string fa
+result sealed .a string sa
+result sealed .a local string sa
+result sealed .a temp string sa
+result not extensible .a string na
+result not extensible .a local string na
+result not extensible .a temp string na
+result big .a string big
+result big .a local string big
+result big .a temp string big
+result other key at slot .a undefined undefined
+result other key at slot .a local undefined undefined
+result other key at slot .a temp undefined undefined
+result small .a string small
+result small .a local string small
+result small .a temp string small
+result empty .a undefined undefined
+result empty .a local undefined undefined
+result empty .a temp undefined undefined
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result proto none .a undefined undefined
+result proto none .a local undefined undefined
+result proto none .a temp undefined undefined
+result proto has .a string pa
+result proto has .a local string pa
+result proto has .a temp string pa
+result own over proto .a string own
+result own over proto .a local string own
+result own over proto .a temp string own
+result own gone .a string pa
+result own gone .a local string pa
+result own gone .a temp string pa
+result set proto .a string other proto
+result set proto .a local string other proto
+result set proto .a temp string other proto
+result proxy .a string ta
+result proxy .a local string ta
+result proxy .a temp string ta
+result under proxy .a string ta
+result under proxy .a local string ta
+result under proxy .a temp string ta
+result trap calls number 8
+result array length number 3
+result array shorter number 1
+result typed length number 5
+result string obj length number 4
+result string length number 5
+result args length number 2
+result fn length number 3
+result plain length string own
+result num undefined undefined
+result num proto string na
+result num gone undefined undefined
+result null throws TypeError cannot read property 'a' of null
+result undefined throws TypeError cannot read property 'a' of undefined
+result stack own string s
+result stack error string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error 2 string     at run (<eval>:160:43)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error again string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result global string global
+result global gone undefined undefined
+result method own string m1
+result method proto string proto m
+result method own over proto string own m
+result method proto again string proto m
+result method proto replaced string proto m2
+result method two up string proto m2
+result method two up again string proto m2
+result method nearer string D m
+result method proto deleted throws TypeError not a function
+result method nearer still string D m
+result method gone throws TypeError not a function
+result freed 0 string x0
+result after gc 0 string u0
+result freed 1 string x1
+result after gc 1 string u1
+result freed 2 string x2
+result after gc 2 string u2
+result freed 3 string x3
+result after gc 3 string u3
+result turns string 0120120120120120120120120120120120120120
+result turns then one string s1
+result turns deleted undefined undefined
+result turns proto changed string s3
+result realm code mine string mine
+result realm code theirs string theirs
+result this code theirs string theirs
+result this code mine string mine
+result realm method string other m
+result realm code method string proto m
+result realm deleted undefined undefined
+result realm deleted here undefined undefined
+result -- round 1
+result plain .a number 2
+result plain .a local number 2
+result plain .a temp number 2
+result b deleted .a number 2
+result b deleted .a local number 2
+result b deleted .a temp number 2
+result a deleted .a undefined undefined
+result a deleted .a local undefined undefined
+result a deleted .a temp undefined undefined
+result a added again .a string again
+result a added again .a local string again
+result a added again .a temp string again
+result dict before .a string da
+result dict before .a local string da
+result dict before .a temp string da
+result dict after .a string da
+result dict after .a local string da
+result dict after .a temp string da
+result dict moved .a string da2
+result dict moved .a local string da2
+result dict moved .a temp string da2
+result data .a number 1
+result data .a local number 1
+result data .a temp number 1
+result getter .a string ga
+result getter .a local string ga
+result getter .a temp string ga
+result getter calls number 3
+result data again .a string back
+result data again .a local string back
+result data again .a temp string back
+result lazy first string first
+result lazy then string made
+result writable .a string ro
+result writable .a local string ro
+result writable .a temp string ro
+result read-only .a string ro
+result read-only .a local string ro
+result read-only .a temp string ro
+result read-only changed .a string ro2
+result read-only changed .a local string ro2
+result read-only changed .a temp string ro2
+result not frozen .a string fa
+result not frozen .a local string fa
+result not frozen .a temp string fa
+result frozen .a string fa
+result frozen .a local string fa
+result frozen .a temp string fa
+result sealed .a string sa
+result sealed .a local string sa
+result sealed .a temp string sa
+result not extensible .a string na
+result not extensible .a local string na
+result not extensible .a temp string na
+result big .a string big
+result big .a local string big
+result big .a temp string big
+result other key at slot .a undefined undefined
+result other key at slot .a local undefined undefined
+result other key at slot .a temp undefined undefined
+result small .a string small
+result small .a local string small
+result small .a temp string small
+result empty .a undefined undefined
+result empty .a local undefined undefined
+result empty .a temp undefined undefined
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result proto none .a undefined undefined
+result proto none .a local undefined undefined
+result proto none .a temp undefined undefined
+result proto has .a string pa
+result proto has .a local string pa
+result proto has .a temp string pa
+result own over proto .a string own
+result own over proto .a local string own
+result own over proto .a temp string own
+result own gone .a string pa
+result own gone .a local string pa
+result own gone .a temp string pa
+result set proto .a string other proto
+result set proto .a local string other proto
+result set proto .a temp string other proto
+result proxy .a string ta
+result proxy .a local string ta
+result proxy .a temp string ta
+result under proxy .a string ta
+result under proxy .a local string ta
+result under proxy .a temp string ta
+result trap calls number 8
+result array length number 3
+result array shorter number 1
+result typed length number 5
+result string obj length number 4
+result string length number 5
+result args length number 2
+result fn length number 3
+result plain length string own
+result num undefined undefined
+result num proto string na
+result num gone undefined undefined
+result null throws TypeError cannot read property 'a' of null
+result undefined throws TypeError cannot read property 'a' of undefined
+result stack own string s
+result stack error string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error 2 string     at run (<eval>:160:43)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error again string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result global string global
+result global gone undefined undefined
+result method own string m1
+result method proto string proto m
+result method own over proto string own m
+result method proto again string proto m
+result method proto replaced string proto m2
+result method two up string proto m2
+result method two up again string proto m2
+result method nearer string D m
+result method proto deleted throws TypeError not a function
+result method nearer still string D m
+result method gone throws TypeError not a function
+result freed 0 string x0
+result after gc 0 string u0
+result freed 1 string x1
+result after gc 1 string u1
+result freed 2 string x2
+result after gc 2 string u2
+result freed 3 string x3
+result after gc 3 string u3
+result turns string 0120120120120120120120120120120120120120
+result turns then one string s1
+result turns deleted undefined undefined
+result turns proto changed string s3
+result realm code mine string mine
+result realm code theirs string theirs
+result this code theirs string theirs
+result this code mine string mine
+result realm method string other m
+result realm code method string proto m
+result realm deleted undefined undefined
+result realm deleted here undefined undefined
+result -- round 2
+result plain .a number 2
+result plain .a local number 2
+result plain .a temp number 2
+result b deleted .a number 2
+result b deleted .a local number 2
+result b deleted .a temp number 2
+result a deleted .a undefined undefined
+result a deleted .a local undefined undefined
+result a deleted .a temp undefined undefined
+result a added again .a string again
+result a added again .a local string again
+result a added again .a temp string again
+result dict before .a string da
+result dict before .a local string da
+result dict before .a temp string da
+result dict after .a string da
+result dict after .a local string da
+result dict after .a temp string da
+result dict moved .a string da2
+result dict moved .a local string da2
+result dict moved .a temp string da2
+result data .a number 1
+result data .a local number 1
+result data .a temp number 1
+result getter .a string ga
+result getter .a local string ga
+result getter .a temp string ga
+result getter calls number 3
+result data again .a string back
+result data again .a local string back
+result data again .a temp string back
+result lazy first string first
+result lazy then string made
+result writable .a string ro
+result writable .a local string ro
+result writable .a temp string ro
+result read-only .a string ro
+result read-only .a local string ro
+result read-only .a temp string ro
+result read-only changed .a string ro2
+result read-only changed .a local string ro2
+result read-only changed .a temp string ro2
+result not frozen .a string fa
+result not frozen .a local string fa
+result not frozen .a temp string fa
+result frozen .a string fa
+result frozen .a local string fa
+result frozen .a temp string fa
+result sealed .a string sa
+result sealed .a local string sa
+result sealed .a temp string sa
+result not extensible .a string na
+result not extensible .a local string na
+result not extensible .a temp string na
+result big .a string big
+result big .a local string big
+result big .a temp string big
+result other key at slot .a undefined undefined
+result other key at slot .a local undefined undefined
+result other key at slot .a temp undefined undefined
+result small .a string small
+result small .a local string small
+result small .a temp string small
+result empty .a undefined undefined
+result empty .a local undefined undefined
+result empty .a temp undefined undefined
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result shape 0 .a number 1
+result shape 0 .a local number 1
+result shape 0 .a temp number 1
+result shape 1 .a number 2
+result shape 1 .a local number 2
+result shape 1 .a temp number 2
+result shape 2 .a number 3
+result shape 2 .a local number 3
+result shape 2 .a temp number 3
+result shape 3 .a number 4
+result shape 3 .a local number 4
+result shape 3 .a temp number 4
+result shape 4 .a string pa
+result shape 4 .a local string pa
+result shape 4 .a temp string pa
+result shape 5 .a undefined undefined
+result shape 5 .a local undefined undefined
+result shape 5 .a temp undefined undefined
+result shape 6 .a string np
+result shape 6 .a local string np
+result shape 6 .a temp string np
+result shape 7 .a string arr
+result shape 7 .a local string arr
+result shape 7 .a temp string arr
+result shape 8 .a undefined undefined
+result shape 8 .a local undefined undefined
+result shape 8 .a temp undefined undefined
+result shape 9 .a string acc
+result shape 9 .a local string acc
+result shape 9 .a temp string acc
+result proto none .a undefined undefined
+result proto none .a local undefined undefined
+result proto none .a temp undefined undefined
+result proto has .a string pa
+result proto has .a local string pa
+result proto has .a temp string pa
+result own over proto .a string own
+result own over proto .a local string own
+result own over proto .a temp string own
+result own gone .a string pa
+result own gone .a local string pa
+result own gone .a temp string pa
+result set proto .a string other proto
+result set proto .a local string other proto
+result set proto .a temp string other proto
+result proxy .a string ta
+result proxy .a local string ta
+result proxy .a temp string ta
+result under proxy .a string ta
+result under proxy .a local string ta
+result under proxy .a temp string ta
+result trap calls number 8
+result array length number 3
+result array shorter number 1
+result typed length number 5
+result string obj length number 4
+result string length number 5
+result args length number 2
+result fn length number 3
+result plain length string own
+result num undefined undefined
+result num proto string na
+result num gone undefined undefined
+result null throws TypeError cannot read property 'a' of null
+result undefined throws TypeError cannot read property 'a' of undefined
+result stack own string s
+result stack error string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error 2 string     at run (<eval>:160:43)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result stack error again string     at run (<eval>:160:21)
+result     at <anonymous> (<eval>:233:6)
+result     at <eval> (<eval>:236:3)
+result 
+result global string global
+result global gone undefined undefined
+result method own string m1
+result method proto string proto m
+result method own over proto string own m
+result method proto again string proto m
+result method proto replaced string proto m2
+result method two up string proto m2
+result method two up again string proto m2
+result method nearer string D m
+result method proto deleted throws TypeError not a function
+result method nearer still string D m
+result method gone throws TypeError not a function
+result freed 0 string x0
+result after gc 0 string u0
+result freed 1 string x1
+result after gc 1 string u1
+result freed 2 string x2
+result after gc 2 string u2
+result freed 3 string x3
+result after gc 3 string u3
+result turns string 0120120120120120120120120120120120120120
+result turns then one string s1
+result turns deleted undefined undefined
+result turns proto changed string s3
+result realm code mine string mine
+result realm code theirs string theirs
+result this code theirs string theirs
+result this code mine string mine
+result realm method string other m
+result realm code method string proto m
+result realm deleted undefined undefined
+result realm deleted here undefined undefined
+result all match
+mem-end obj=388 atom=592 shape=308 prop=1931 jsfunc=5 cfunc=256 array=2 fast_array=2 elements=0 binary=0
+mem-gc obj=198 atom=586 shape=184 prop=981 jsfunc=0 cfunc=135 array=1 fast_array=1 elements=0 binary=0
+--- status exit 0
