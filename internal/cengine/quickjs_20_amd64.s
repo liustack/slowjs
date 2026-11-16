@@ -6828,7 +6828,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0xff
 	BYTE $0xff
 	BYTE $0xff
-	LEAQ ·engine_rodata+7936(SB), R10
+	LEAQ ·engine_rodata+8016(SB), R10
 	QUAD $0xf9894d117728fb83
 	QUAD $0x1c894108c383d989
 	QUAD $0x8d4d09ebcf894924
@@ -6872,7 +6872,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0x7c
 	BYTE $0x24
 	BYTE $0x30
-	LEAQ ·engine_rodata+7936(SB), R10
+	LEAQ ·engine_rodata+8016(SB), R10
 	QUAD $0x245c8b4c245c8b44
 	QUAD $0x8b4c2824448b4c48
 	QUAD $0x4424748b44382464
@@ -6928,7 +6928,7 @@ TEXT ·code_match(SB), $80-32
 	BYTE $0x4c
 	BYTE $0x24
 	BYTE $0x30
-	LEAQ ·engine_rodata+7936(SB), R10
+	LEAQ ·engine_rodata+8016(SB), R10
 	QUAD $0x245c8b4c245c8b44
 	QUAD $0x8b4c2824448b4c48
 	QUAD $0x4424748b44382464
@@ -7076,7 +7076,7 @@ TEXT ·JS_ThrowErrorf(SB), $48-40
 	BYTE $0x8d
 	BYTE $0x67
 	BYTE $0x20
-	LEAQ ·engine_rodata+1126(SB), R15
+	LEAQ ·engine_rodata+1271(SB), R15
 	QUAD $0x246c894c2424894c
 	QUAD $0x894c102474894c08
 	QUAD $0x20247c894818247c
@@ -7352,7 +7352,7 @@ TEXT ·emit_u8(SB), $32-24
 	BYTE $0x00
 	RET
 
-TEXT ·dbuf_put_u16_344(SB), $32-24
+TEXT ·dbuf_put_u16_347(SB), $32-24
 	NO_LOCAL_POINTERS
 #ifdef GOOS_windows
 	LEAQ -12288(SP), R12

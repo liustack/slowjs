@@ -291,12 +291,34 @@ func (m *VM) RunYoungGC() {
 // counts it. [VM.SetGCThreshold] counts it without the stack of the engine's
 // register loop. After [VM.RunGC] it is what the objects that javascript can
 // still reach take, with the arenas they are in, plus the runtime's own
-// structures and the object shapes it keeps for reuse.
+// structures and the object shapes it keeps for reuse: [VM.MemoryFree] says
+// how much of it no block in use holds.
 //
 // As with SetGCThreshold, no other goroutine may use m meanwhile (see [VM]),
 // and a call after Close panics.
 func (m *VM) MemorySize() uintptr {
 	return m.jsGetMemorySize()
+}
+
+// MemoryFree returns the bytes of [VM.MemorySize] that no block in use
+// holds: memory m keeps for reuse. Small blocks live in arenas of 4 KiB, and
+// MemorySize counts an arena whole while one of its blocks is in use, so the
+// garbage a collection frees among objects that stay leaves holes that
+// MemorySize still counts, more of them the more garbage there was at once.
+// MemoryFree counts those holes, the room of the arenas past their blocks,
+// and the freed blocks m keeps in its caches. So MemorySize less MemoryFree,
+// read after [VM.RunGC], is what the objects javascript can still reach take
+// with the runtime's own structures, which stays the same when the same
+// objects are kept, where MemorySize goes up and down with the holes. A
+// program that replaces a VM when it grows should judge it by that.
+//
+// It walks the arenas, not the objects: tens of microseconds for thousands
+// of arenas, a few hundred right after a collection. It can be read at any
+// time, from a Go function javascript called too, and, as MemorySize, after
+// a kill. No other goroutine may use m meanwhile (see [VM]), and a call after
+// Close panics.
+func (m *VM) MemoryFree() uintptr {
+	return m.jsGetMemoryFree()
 }
 
 // SetMaxStackSize limits the JS call depth. Deep recursion then throws a

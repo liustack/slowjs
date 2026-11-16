@@ -416,11 +416,12 @@ func (m *VM) jsSetGCThreshold(threshold uintptr) {
 
 // killedReads reports whether m is a VM a kill left good only for Close and no
 // call is in progress. It is for the functions of the engine that only read a
-// counter of the runtime (jsGetGCThreshold, jsGetMemorySize): a kill ends the
-// script at a poll, which sits between two allocations, so a counter is still
-// whole, and reading it needs no entry into the engine, which a broken VM
-// refuses (outer). It reads on the shadow stack at start, as the frames above
-// are dead. Every other function of the engine is left to panic (outer).
+// counter of the runtime or its lists of arenas (jsGetGCThreshold,
+// jsGetMemorySize, jsGetMemoryFree): a kill ends the script at a poll, which
+// sits between two allocations, so a counter and the lists are still whole,
+// and reading them needs no entry into the engine, which a broken VM refuses
+// (outer). It reads on the shadow stack at start, as the frames above are
+// dead. Every other function of the engine is left to panic (outer).
 func (m *VM) killedReads() bool {
 	return m.entered == 0 && m.h.Killed()
 }
@@ -469,6 +470,20 @@ func (m *VM) jsGetMemorySize() (r uintptr) {
 	}
 	m.toEngine()
 	r = cengine.JS_GetMemorySize(m.sp, m.rt)
+	m.inEngine--
+	return r
+}
+
+func (m *VM) jsGetMemoryFree() (r uintptr) {
+	if m.killedReads() {
+		return cengine.JS_GetMemoryFree(m.start, m.rt)
+	}
+	if m.entered == 0 {
+		m.outer(func() { r = m.jsGetMemoryFree() })
+		return r
+	}
+	m.toEngine()
+	r = cengine.JS_GetMemoryFree(m.sp, m.rt)
 	m.inEngine--
 	return r
 }

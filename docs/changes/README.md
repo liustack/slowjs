@@ -145,6 +145,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | The start tag function writes img and the void elements as React DOM's `pushSelfClosing` does, and `input` and emotion's inline `style` as `pushStartInstance` does, when its seventh argument, the mode, is 1, 2 or 3 | v0.31.2 | [go-api.md](go-api.md#registerstarttag-and-registerendtag) |
 | NewArray makes an array of fewer than 16,384 values in one call of the engine | v0.31.2 | [builtin.go](../../builtin.go) |
 | NewMurmur2Function: the hash of @emotion/hash in C, which package tifa gives as `__tifa_murmur2__` | v0.31.2 | [murmur2.go](../../murmur2.go) |
+| `VM.MemoryFree`: the bytes of MemorySize no block in use holds, the free slots of the arenas of small blocks and the freed blocks the heap keeps | Unreleased | [vm.go](../../vm.go), `JS_GetMemoryFree` in [quickjs.c](../../engine/quickjs.c) |
+| MemoryUsage counts the register code (`RegisterCodeCount`, `RegisterCodeSize`, in MemoryUsedSize too) and has `FreeSize` | Unreleased | [memory.go](../../memory.go), `compute_register_code_size` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Limits that hold
 

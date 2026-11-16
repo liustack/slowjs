@@ -233,7 +233,7 @@ func panicked(f func()) (r any) {
 	return nil
 }
 
-// MemorySize and GCThreshold read one counter of the runtime and change
+// MemorySize, MemoryFree and GCThreshold read the runtime and change
 // nothing, so they answer on a killed VM as they do on one that an Interrupt
 // stopped. The methods that collect, which
 // need the engine in a state a kill does not leave, still panic.
@@ -249,6 +249,12 @@ func TestKilledVMReportsItsMemory(t *testing.T) {
 	}
 	if got := m.MemorySize(); got == 0 {
 		t.Errorf("MemorySize after a kill is 0, it was %d before", before)
+	}
+	if p := panicked(func() { got := m.MemoryFree(); _ = got }); p != nil {
+		t.Fatalf("MemoryFree after a kill panicked with %v", p)
+	}
+	if free, size := m.MemoryFree(), m.MemorySize(); free > size {
+		t.Errorf("MemoryFree after a kill is %d, over MemorySize %d", free, size)
 	}
 	if p := panicked(func() { got := m.GCThreshold(); _ = got }); p != nil {
 		t.Fatalf("GCThreshold after a kill panicked with %v", p)

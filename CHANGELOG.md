@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Added
+
+- `VM.MemoryFree` gives the part of `MemorySize` that no block in use holds, mostly the holes collected garbage leaves in the arenas of the objects kept, so `MemorySize() - MemoryFree()` after `RunGC` stays the same while a VM keeps the same objects. `MemoryUsage` has it as `FreeSize` and now counts the register code of the functions that ran (`RegisterCodeCount`, `RegisterCodeSize`, and in `MemoryUsedSize`).
+
 ## [v0.31.3] - 2026-11-16
 
 ### Changed
