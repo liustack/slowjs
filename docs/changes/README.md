@@ -60,6 +60,7 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | A sloppy function with a simple parameter list makes its arguments object only when a read needs it, and `f.apply(this, arguments)` calls `f` in the register loop with the frame's arguments, with no arguments object, no list and one level of call depth | v0.31.1 | [c-engine.md](c-engine.md#passing-arguments-on-with-apply-makes-no-arguments-object) |
 | A step of a `for in` loop over an object that still has the shape the loop started from takes its key and branches back in one op of the register loop (FINEXT), without the call of `js_for_in_next` | v0.31.1 | [c-engine.md](c-engine.md#the-next-key-of-a-for-in-loop-is-taken-in-the-register-loop) |
 | A read `o[k]` of the key a `for in` loop just gave, on an object of the shape the loop walks, takes the value from the slot of that key in the shape (GETELE, GETELET), without looking the key up | v0.31.1 | [c-engine.md](c-engine.md#the-read-of-the-key-a-for-in-loop-just-gave) |
+| A full collection marks closures and arrays with no call through the class table, and the mark and the finalizer of a closure skip its closure variables when all of them are cells | Unreleased | `js_bytecode_function_mark_in` and `js_array_mark_in` in [quickjs.c](../../engine/quickjs.c) |
 
 ## The generator
 
@@ -310,6 +311,8 @@ The engine is the C in `engine/`, which the generator compiles to Go assembly. A
 | `Array.from` on a constructor passes the mapping function the whole index and sets the whole length | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#arrayfrom-on-a-constructor-passes-the-whole-index-and-length) |
 | A define that changes the flags of a property that is there makes the shape the object's own before it changes anything, so a define that runs out of memory leaves the property, the length of an array included. A refused define copies nothing, and shortening an array past index 2^31 - 1 makes no names | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#a-define-that-changes-the-flags-of-a-property-fails-before-it-changes-anything) |
 | A shape that an object finds for its next key keeps the shape the object left, so that the objects of a constructor find every shape the objects before them went through | v0.31.1 | [objects-and-shapes.md](objects-and-shapes.md#objects-of-a-constructor-find-the-shapes-the-objects-before-them-went-through) |
+| A closure is one block: the function object, its properties and its closure variables, where it took three | Unreleased | `js_new_function_object` in [quickjs.c](../../engine/quickjs.c) |
+| `set_name` gives a closure with no name of its own the name in place, without the generic define | Unreleased | `js_object_name_in_place` in [quickjs.c](../../engine/quickjs.c) |
 
 ## Memory
 

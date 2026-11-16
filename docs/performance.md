@@ -1640,6 +1640,23 @@ Memory, the bytes the runtime holds after a full collection: after 200 renders o
 
 The frames of `JS_RegvmRun` (a shadow frame of 256 bytes on amd64, 176 on arm64) and `JS_CallInternal` (112, 96) are those of v0.30.7.
 
+### Closures in one block
+
+[A closure is one block](changes/README.md#objects-and-shapes) with its properties and closure variables, [a full collection marks closures and arrays with no call through the class table](changes/README.md#the-c-engine), and [`set_name` names a closure in place](changes/README.md#objects-and-shapes). Counted on 2026-11-16 against `420dc95a`: the generated engine on linux/amd64 (AMD EPYC 7B13), callgrind, two warm renders and three counted, instructions per render. The first four pages are React pages of tifa's `test/apps/libs`, a group of tifa's pages is the sum of its pages, each counted alone. As `make gen` makes it, eight changed functions have no profile. Trained again, each side has a profile of its own (`engine/pgo/train.sh`). Every page gives the same HTML.
+
+| Page | As `make gen` makes it | Trained again |
+| --- | ---: | ---: |
+| table (@tanstack/table) | -5.66% | -8.15% |
+| query (@tanstack/query) | -3.73% | -6.17% |
+| forms | -0.93% | -1.44% |
+| markdown (react-markdown) | -1.07% | -1.96% |
+| tifa's shop, six workbench pages | -0.15% | -0.56% |
+| tifa's shop, fourteen store pages | -0.05% | -0.45% |
+| tifa's MUI test app, three pages | -0.11% | -0.34% |
+| React's page | +0.08% | +0.05% |
+
+Of the 83 million fewer instructions a render of table runs (trained), 62 million are in the cycle collector, which runs inside its renders over a heap of many closures and arrays, 11 million in making closures, 6 million in freeing them and 5 million in naming them. React's page runs 16,000 more a render (trained): `heap_realloc` copies 18,000 more in the same 45 calls, since the heap places its blocks elsewhere, and `free_object` pays 6,000 for its second test of where the properties of an object are. A closure takes one block header (8 bytes) less, two with closure variables, before its size is rounded to a size class. A function that is given more properties than its shape had room for when it was made moves them to a block of their own, and their room in its block stays unused.
+
 ### A profile of tifa's pages
 
 [A profile of tifa's pages](changes/generator.md#a-profile-of-tifas-pages): `make gen` compiles the engine with a profile of page renders, and the inlining stays what the build without a profile makes.

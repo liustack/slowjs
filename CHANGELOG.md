@@ -4,6 +4,10 @@ What changed in `github.com/liustack/slowjs` (its name from v0.28.0 to v0.29.11 
 
 ## [Unreleased]
 
+### Changed
+
+- A closure is one block of memory where it took three, a full collection marks closures and arrays without a call through the class table, and a function with no name of its own takes its name in place. With the profile trained again, the TanStack Table page runs 8.2% fewer instructions and TanStack Query 6.2% fewer ([performance.md](docs/performance.md#closures-in-one-block)).
+
 ## [v0.31.1] - 2026-11-16
 
 ### Changed
